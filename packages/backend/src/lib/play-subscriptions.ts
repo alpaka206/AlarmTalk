@@ -30,6 +30,15 @@ export interface SubscriptionV2Response {
    * confirm 의 구매-계정 바인딩 검증(billing-google.ts)에 쓴다.
    */
   externalAccountIdentifiers?: { obfuscatedExternalAccountId?: string };
+  /**
+   * **교체 구매(업/다운그레이드)에서 대체된 옛 purchaseToken.**
+   *
+   * Play 는 `setSubscriptionUpdateParams` 로 산 구독에 **새 purchaseToken** 을 발급하고,
+   * 옛 토큰을 여기 남긴다. 우리 RTDN 은 `store_transactions` 에 매핑된 토큰으로만
+   * 사용자를 찾으므로, 이 값이 없으면 전환 알림이 **매핑 없는 토큰**으로 버려진다
+   * (2026-08-11 확인 — 전환이 RTDN 으로 안 잡히던 원인).
+   */
+  linkedPurchaseToken?: string;
 }
 
 export const ENTITLED_STATES = new Set([
@@ -38,6 +47,16 @@ export const ENTITLED_STATES = new Set([
 ]);
 
 /** Play 구독 제어에 필요한 env 부분집합 (billing-google.ts confirm 과 동일 시크릿). */
+/**
+ * **결제 실패로 보류된(회복형) 상태인가** — 종료가 아니라 카드만 다시 긁는 중이다.
+ *
+ * ⚠ RTDN 갈래와 만료 크론 재조회가 **같은 판정을 써야 한다.** 갈라지면 한쪽은 그룹을
+ * 보존했는데 다른 쪽이 5분 뒤 해체하는 사고가 난다(실제로 그랬다).
+ */
+export function isRecoverablePlayState(state: string): boolean {
+  return state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';
+}
+
 export type PlayEnv = Pick<Env, 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON' | 'ANDROID_PACKAGE_NAME'>;
 
 /** 서비스 계정/패키지 env 미설정 — 호출자가 스텁 폴백이나 스킵을 판단한다. */

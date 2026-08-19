@@ -10,13 +10,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,16 +68,22 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
-    // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
+    /// planKey → **Play 가 준 표시가격**(`formattedPrice`, 지역 통화·세금 포함).
+    ///
+    /// ⚠ **없으면 빈 문자열로 둔다 — 앱에 박아 둔 숫자로 폴백하지 말 것.** 가격의 권위는
+    /// 스토어다. 예전에는 `strings.xml` 의 `billing_plan_*_price`(월 3,900원 …)로
+    /// 폴백했는데, Play 에서 가격을 바꾸거나 프로모션을 걸면 **앱이 틀린 가격을 자신
+    /// 있게 보여줬다.** 지역·통화가 다른 사용자에게는 애초에 맞은 적도 없다.
+    /// 모르면 숫자를 안 보여주는 게 맞다(카드는 :589 에서 빈 값을 알아서 숨긴다).
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
+    onGiftPersonal: (Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onRestorePurchases: () -> Unit,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
-    var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
@@ -103,7 +113,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = planPrices["personal"] ?: stringResource(R.string.billing_plan_personal_price),
+            price = planPriceLabel(planPrices, "personal"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -113,7 +123,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = planPrices["couple"] ?: stringResource(R.string.billing_plan_couple_price),
+            price = planPriceLabel(planPrices, "couple"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -125,7 +135,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = planPrices["family"] ?: stringResource(R.string.billing_plan_family_price),
+            price = planPriceLabel(planPrices, "family"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -212,11 +222,57 @@ internal fun SubscriptionPanel(
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
-                    onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
+                    extraAction = if (option.key == "personal") {
+                        @Composable { ->
+                            // ⚠ **`wakerCardBorder()` 로 되돌리지 말 것.** 그 테두리는
+                            // 카드 위에서 거의 안 보인다 — 현재 이용권 카드는 배경이
+                            // `primaryContainer` 라 옅은 회색 선이 묻힌다(2026-08-11 지적
+                            // "현재 이용권이 개인일 때 좀 안 보인다"). 강조색 테두리 + 옅은
+                            // 채움으로 두 배경(현재 카드/일반 카드) 모두에서 읽히게 한다.
+                            //
+                            // ⚠ 채워진 버튼으로 만들지는 말 것 — 결제 버튼과 무게가 같아져
+                            // 어느 것이 주 액션인지 흐려진다. 선물은 부가 액션이다.
+                            OutlinedButton(
+                                onClick = {
+                                    val activity = context.findActivity()
+                                    if (!billingBusy && activity != null) onGiftPersonal(activity)
+                                },
+                                enabled = !billingBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = WakerButtonShape,
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                    contentColor = MaterialTheme.colorScheme.primary,
+                                ),
+                            ) {
+                                // iOS 는 `Label(..., systemImage: "gift")` 로 아이콘을
+                                // 달고 있었다 — 안드로이드만 글자뿐이라 눈에 덜 걸렸다.
+                                Icon(
+                                    imageVector = Icons.Outlined.CardGiftcard,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
+                                Text(stringResource(R.string.billing_gift_personal_action))
+                            }
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
         }
+
+        // 선물하기 — 개인 이용권 1개월을 **결제해서** 코드로 만든다.
+        // ⚠ 무결제 발급이 아니다(서버가 production 에서 막는다). 1회성 인앱 상품을 산다.
+        // ⚠ **'개인 이용권 선물하기' 를 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청).
+        // 이제 **개인 플랜 카드 안**, 결제 버튼 바로 아래에 있다 — 무엇을 선물하는지가
+        // 카드 제목으로 자명해진다. 아이폰이 그렇게 돼 있다.
 
         // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
 
@@ -241,6 +297,22 @@ internal fun SubscriptionPanel(
                 )
             }
         }
+        // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
+        // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
+        // 일이 '다시 결제' 뿐이라 **같은 구독을 두 번 사게 된다**(플레이스토어에도 같은 기능이
+        // 있고, 애플은 심사 지침 3.1.1 로 요구한다).
+        // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
+        // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
+        OutlinedButton(
+            onClick = onRestorePurchases,
+            enabled = !billingBusy,
+            modifier = Modifier.fillMaxWidth(),
+            shape = WakerButtonShape,
+            border = wakerCardBorder(),
+            colors = wakerOutlinedButtonColors(),
+        ) {
+            Text(stringResource(R.string.billing_restore_purchases))
+        }
         // 상시 'Google Play 구독 관리' 링크는 제거 — 쿠폰/서버 부여 이용권 사용자에겐 Play 구독이
         // 없어 빈 화면만 열리는 혼란이 있었다. 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는
         // 해지 실패 다이얼로그가 manage URL 로 안내하는 폴백 경로가 그대로 남아 있다.
@@ -251,6 +323,8 @@ internal fun SubscriptionPanel(
     purchaseTarget?.let { option ->
         PlayPurchaseDialog(
             target = option,
+            // 이미 이용권이 있으면 이건 '시작' 이 아니라 '전환' 이다.
+            currentPlanKey = currentPlan?.key.takeIf { hasActive },
             busy = billingBusy,
             onDismiss = { purchaseTarget = null },
             onPurchase = {
@@ -276,41 +350,41 @@ internal fun SubscriptionPanel(
     }
 
     if (showLeaveDialog && sharedGroupId != null) {
-        BillingActionDialog(
+        IosAlertDialog(
             title = stringResource(R.string.billing_leave_shared_pass),
-            description = stringResource(R.string.billing_leave_shared_pass_description),
+            message = stringResource(R.string.billing_leave_shared_pass_description),
             onDismiss = { showLeaveDialog = false },
-        ) {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_leave_button),
-                primary = true,
-                destructive = true,
-                onClick = {
-                    showLeaveDialog = false
-                    onLeaveFamilyGroup(sharedGroupId)
-                },
-            )
-        }
-    }
-
-    changeTarget?.let { option ->
-        ChangePlanDialog(
-            target = option,
-            onDismiss = { changeTarget = null },
-            onConfirm = { atPeriodEnd ->
-                changeTarget = null
-                onChangePlan(option.key, atPeriodEnd)
-            },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { showLeaveDialog = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.billing_leave_button),
+                    destructive = true,
+                    onClick = {
+                        showLeaveDialog = false
+                        onLeaveFamilyGroup(sharedGroupId)
+                    },
+                ),
+            ),
         )
     }
 
+
     if (shareTarget.isNotEmpty()) {
-        BillingActionDialog(
+        // ⚠ **이건 알럿이 아니라 목록이다** — 바우처 중 하나를 고르는 화면이라
+        // 선택 시트가 맞다(CLAUDE.md 「모달 세 형태」). 예전에는 결제 전용 사설
+        // 껍데기를 써서 같은 '고르기' 인데 공휴일·목소리 고르기와 다르게 보였다.
+        WakerSelectionSheet(
             title = stringResource(R.string.billing_share_voucher_select_title),
-            description = stringResource(R.string.billing_share_voucher_select_description),
+            subtitle = stringResource(R.string.billing_share_voucher_select_description),
             onDismiss = { shareTarget = emptyList() },
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ) { _ ->
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 shareTarget.forEach { voucher ->
                     val issuedAtLabel = formatVoucherIssuedAt(voucher.issuedAt)
                     val subtitle = if (issuedAtLabel != null) {
@@ -341,21 +415,79 @@ internal fun SubscriptionPanel(
 @Composable
 private fun PlayPurchaseDialog(
     target: SubscriptionPlanOption,
+    /** 지금 쓰고 있는 유료 플랜 key. null 이면 신규 구매다. */
+    currentPlanKey: String?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
 ) {
-    BillingActionDialog(
-        title = stringResource(R.string.billing_play_purchase_title, target.name),
-        description = stringResource(R.string.billing_play_purchase_description, target.name, target.price),
+    // ⚠ **전환을 '시작' 이라고 말하지 말 것.** 카드 버튼은 '이용권 변경' 인데 모달은
+    // "…이용권을 시작할까요?" 였다(2026-08-11 실기기 확인). 게다가 **언제 바뀌는지**를
+    // 한마디도 안 했다 — 다운그레이드는 지금 과금되지 않고 다음 갱신일에 바뀌는데,
+    // 그걸 모르면 누르고 나서 "아무 일도 안 일어난다" 로 읽는다.
+    // 시점은 Play 가 정하므로 우리가 **고르게 하지는 않되, 알려는 준다**.
+    val isChange = currentPlanKey != null && currentPlanKey != target.key
+    val upgrade = isChange && PlayBillingProducts.isUpgrade(
+        PlayBillingProducts.productIdFor(currentPlanKey!!) ?: "",
+        PlayBillingProducts.productIdFor(target.key) ?: "",
+    )
+    // 정원이 줄면 사람이 빠진다 — 누르기 전에 말해야 되돌릴 기회가 있다.
+    val losesSeats = isChange && !upgrade && planSeats(target.key) < planSeats(currentPlanKey!!)
+
+    IosAlertDialog(
+        title = if (isChange) {
+            stringResource(R.string.billing_play_change_title, target.name)
+        } else {
+            stringResource(R.string.billing_play_purchase_title, target.name)
+        },
+        // ⚠ 가격은 스토어가 권위라 **없을 수도 있다**(Play 조회 실패·미출시 상품).
+        // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
+        // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
+        // 시트가 어차피 다시 보여준다.
+        message = when {
+            isChange -> buildString {
+                append(
+                    stringResource(
+                        if (upgrade) R.string.billing_play_change_upgrade
+                        else R.string.billing_play_change_downgrade,
+                        target.name,
+                    ),
+                )
+                if (losesSeats) {
+                    append(" ")
+                    append(stringResource(R.string.billing_play_change_seats_warning))
+                }
+            }
+            target.price.isBlank() ->
+                stringResource(R.string.billing_play_purchase_description_no_price, target.name)
+            else ->
+                stringResource(R.string.billing_play_purchase_description, target.name, target.price)
+        },
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButton(
-            label = stringResource(R.string.billing_monthly_subscription),
-            primary = true,
-            onClick = { if (!busy) onPurchase() },
-        )
-    }
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.billing_monthly_subscription),
+                emphasized = true,
+                // 결제 요청이 도는 동안 잠근다 — 두 번 눌러 같은 결제가 두 번 열리면 안 된다.
+                enabled = !busy,
+                onClick = onPurchase,
+            ),
+        ),
+    )
+}
+
+/**
+ * 그 플랜이 **함께 쓸 수 있는 인원**. 백엔드 `plans.max_members` 와 같은 값이다.
+ * 정원이 줄어드는 전환인지 판단하는 데만 쓴다.
+ */
+private fun planSeats(planKey: String): Int = when (planKey) {
+    "family" -> 5
+    "couple" -> 2
+    else -> 1
 }
 
 /** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */
@@ -363,121 +495,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
-}
-
-@Composable
-private fun BillingActionDialog(
-    title: String,
-    description: String,
-    onDismiss: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-            ) {
-                // 설명은 마침표(". ") 단위로 줄바꿈해 한 문장씩 읽기 쉽게 보여준다.
-                val formattedDescription = remember(description) {
-                    description.replace(". ", ".\n")
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = formattedDescription,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = stringResource(R.string.billing_close),
-                        )
-                    }
-                }
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun BillingDialogButton(
-    label: String,
-    primary: Boolean,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    if (primary) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            shape = WakerButtonShape,
-            colors = if (destructive) {
-                ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                )
-            } else {
-                ButtonDefaults.buttonColors()
-            },
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier,
-            shape = WakerButtonShape,
-            border = wakerCardBorder(),
-            colors = wakerOutlinedButtonColors(),
-        ) {
-            Text(label)
-        }
-    }
-}
-
-@Composable
-private fun BillingDialogButtonRow(content: @Composable RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        content()
-    }
 }
 
 @Composable
@@ -507,10 +524,17 @@ internal fun SubscriptionPlanCard(
     busy: Boolean,
     vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
-    onChange: () -> Unit,
     onShareVouchers: () -> Unit,
     // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
     currentStatusText: String? = null,
+    /**
+     * 카드 안 결제 버튼 **아래**에 붙는 부가 액션(개인 이용권 선물하기).
+     *
+     * ⚠ **화면 아래 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청). 선물은 '개인 이용권'
+     * 을 주는 일이라 그 카드 안에 있어야 무엇을 선물하는지가 자명하다 — 아래로 떼어 놓으면
+     * 어느 플랜을 선물하는지 제목을 읽어야 알 수 있었다. 아이폰이 그렇게 돼 있다.
+     */
+    extraAction: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -541,24 +565,17 @@ internal fun SubscriptionPlanCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
+                // ⚠ **이름과 요금을 한 덩어리로 묶지 말 것**(2026-08-17 지시 "아이폰처럼").
+                // 예전에는 둘을 간격 4의 안쪽 Column 에 넣어 거의 붙어 있었는데, iOS 는
+                // 요금이 카드 VStack 의 형제라 **다른 줄들과 같은 12** 를 받는다.
+                // 그래서 같은 카드가 안드로이드에서만 위쪽이 빽빽해 보였다.
+                Text(
+                    text = option.name,
+                    // iOS `.headline` = 17 semibold. `titleMedium`(16 Bold)이 아니다.
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = option.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (option.price.isNotBlank()) {
-                        Text(
-                            text = option.price,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+                )
                 if (isCurrent) {
                     Surface(
                         shape = WakerPillShape,
@@ -573,6 +590,15 @@ internal fun SubscriptionPlanCard(
                         )
                     }
                 }
+            }
+            if (option.price.isNotBlank()) {
+                Text(
+                    text = option.price,
+                    // iOS `.subheadline.weight(.semibold)` = 15 semibold.
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             if (isCurrent && currentStatusText != null) {
                 Text(
@@ -593,14 +619,19 @@ internal fun SubscriptionPlanCard(
                     PlanFeatureRow(feature)
                 }
             }
-            // 이용권 변경(/billing/change-plan)은 스텁 결제 전용이라 dev 에서만 노출한다.
-            // 운영 Play 결제에서는 CHECKOUT_DISABLED 로 항상 실패하므로, Play 구독 교체
-            // (업/다운그레이드) 플로우가 붙기 전까지 변경 버튼을 숨긴다.
-            val changePlanSupported = BuildConfig.FLAVOR == "dev"
-            if (option.key != "free" && !isCurrent && (!hasActiveSubscription || changePlanSupported)) {
+            // ⚠ **`BuildConfig.FLAVOR == "dev"` 게이트를 되살리지 말 것**(2026-08-11 제거).
+            // 그 게이트는 서버 주도 `/billing/change-plan`(스텁 결제 전용, 운영에서 항상 409)
+            // 때문에 있었다. 이제 전환은 **Play 결제 시트**가 처리하므로 운영에서도 동작한다 —
+            // 활성 구독이 있든 없든 같은 `onPurchase` 로 보낸다.
+            //
+            // 시점은 Play 가 정한다: 업그레이드는 즉시+비례정산, 다운그레이드는 다음 갱신일
+            // (`PlayBillingManager` 가 방향을 보고 교체 모드를 고른다). 그래서 우리가
+            // '지금/종료일' 을 묻는 모달을 두지 않는다 — `docs/spec/billing-lifecycle.md`.
+            if (option.key != "free" && !isCurrent) {
                 Button(
-                    onClick = if (hasActiveSubscription) onChange else onPurchase,
+                    onClick = onPurchase,
                     enabled = !busy,
+                    colors = wakerButtonColors(),
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
@@ -613,6 +644,9 @@ internal fun SubscriptionPlanCard(
                     )
                 }
             }
+            // 결제 버튼 **바로 아래** 부가 액션(개인 이용권 선물하기 등).
+            extraAction?.invoke(this)
+
             // 코드 공유는 '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
             // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
             if (isCurrent && vouchers.isNotEmpty()) {
@@ -712,50 +746,54 @@ internal fun PlayStoreManageDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    BillingActionDialog(
+    IosAlertDialog(
         title = stringResource(R.string.billing_play_manage_title),
-        description = stringResource(R.string.billing_play_manage_description),
+        message = stringResource(R.string.billing_play_manage_description),
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButton(
-            label = stringResource(R.string.billing_play_manage_open),
-            primary = true,
-            onClick = {
-                onDismiss()
-                runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(manageUrl)))
-                }
-            },
-        )
-    }
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.billing_play_manage_open),
+                emphasized = true,
+                onClick = {
+                    onDismiss()
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(manageUrl)))
+                    }
+                },
+            ),
+        ),
+    )
 }
 
-@Composable
-private fun ChangePlanDialog(
-    target: SubscriptionPlanOption,
-    onDismiss: () -> Unit,
-    onConfirm: (atPeriodEnd: Boolean) -> Unit,
-) {
-    BillingActionDialog(
-        title = stringResource(R.string.billing_change_plan_title, target.name),
-        description = stringResource(R.string.billing_change_plan_description),
-        onDismiss = onDismiss,
-    ) {
-        BillingDialogButtonRow {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_change_at_end_date),
-                primary = false,
-                modifier = Modifier.weight(1f),
-                onClick = { onConfirm(true) },
-            )
-            BillingDialogButton(
-                label = stringResource(R.string.billing_change_now),
-                primary = true,
-                modifier = Modifier.weight(1f),
-                onClick = { onConfirm(false) },
-            )
-        }
-    }
-}
 
+/**
+ * 스토어에서 가격을 못 받았을 때 쓰는 **폴백 가격**.
+ *
+ * ⚠ **스토어 가격이 언제나 이긴다.** 이건 "값이 아예 없어서 빈칸으로 보이는" 것을 막는
+ * 안전망일 뿐이다(2026-08-11 결정). 스토어가 값을 주면 그걸 쓴다 — 지역 통화·세금·
+ * 프로모션이 반영된 값이라 그쪽이 정확하다.
+ *
+ * ⚠ **숫자의 출처는 백엔드 `plans.price_krw` 다**(`packages/backend/src/lib/migrations.ts`
+ * 의 personal 3900 / couple 6900 / family 14900). 거기를 바꾸면 여기도 바꾼다 —
+ * 서버는 **현재 플랜 하나**만 내려주기 때문에 목록 화면에서는 이 표가 필요하다.
+ *
+ * ⚠ 한국 밖 사용자에게는 이 값이 틀릴 수 있다. 그래서 폴백이고, 실제 결제 금액은
+ * 스토어 결제 시트가 다시 보여준다.
+ */
+private val FallbackPlanPriceKrw = mapOf(
+    "personal" to 3900,
+    "couple" to 6900,
+    "family" to 14900,
+)
+
+/** 스토어 가격이 있으면 그걸, 없으면 폴백을 "월 3,900원" 꼴로 준다. */
+private fun planPriceLabel(planPrices: Map<String, String>, key: String): String {
+    planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
+    val krw = FallbackPlanPriceKrw[key] ?: return ""
+    return "월 %,d원".format(krw)
+}
 

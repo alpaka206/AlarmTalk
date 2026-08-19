@@ -23,6 +23,7 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
+  normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
@@ -738,8 +739,12 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  // ⚠ `SELECT *` 로 두지 말 것. 여기서 쓰는 건 `plan` 하나인데, users 행에는
+  // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`,
+  // `family_alarm_quiet_windows`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
+  // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
-    sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
   if (user.rows.length === 0) {
@@ -814,10 +819,20 @@ tts.post('/generate', async (c) => {
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  // F2: 기본(시스템) 목소리는 요금제와 무관하게 무료처럼 '프리셋(날씨/약)'만 허용한다.
-  // 커스텀 텍스트·운세/날씨 동적 생성·번역은 유료 '커스텀 클론' 전용이므로, 기본 목소리를
-  // 고른 유료 사용자도 무료와 동일하게 제한한다(→ 그만큼 커스텀 클론 슬롯 공간을 아낀다).
-  const presetOnlyRestricted = freePlanRestricted || isSystemVoice;
+  // 기본(시스템) 목소리는 원칙적으로 '프리셋(날씨/약)'만 허용한다 — 동적 생성·번역은
+  // 매번 비용이 들어 유료 커스텀 클론 전용이다.
+  //
+  // ⚠ **단 하나 예외: 유료 사용자의 '직접 입력' 은 기본 목소리로도 허용한다**
+  // (2026-08-11 결정). 예전에는 유료여도 기본 목소리면 직접 입력이 막혀서, 이용권을 산
+  // 사람이 **왜 안 되는지 알 수 없는 벽**을 만났다("왜 사라졌지"). 시스템 보이스에도
+  // `elevenlabs_voice_id` 가 있어 **말할 수는 있고**, 막던 이유는 비용이었다 —
+  // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
+  // 그래서 한도를 차감하는 조건으로 연다.
+  //
+  // 여전히 막는 것: 무료 플랜 / 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  const manualTextOnSystemVoice =
+    !freePlanRestricted && isSystemVoice && !randomRequested && body.translate !== true;
+  const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
   if (freePlanRestricted && !isSystemVoice) {
     return c.json(
@@ -1140,7 +1155,11 @@ tts.post('/generate', async (c) => {
       synthesisLanguage = inferred === 'en' && latinOverride ? requestedLanguage : inferred;
     }
 
-    if (synthesisText.length > 200) {
+    // ⚠ **태그를 뺀 길이로 잰다**(2026-08-13 — C안).
+    // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
+    // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
+    // 문구가 뒤늦게 400 으로 거절됐다.
+    if (normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
@@ -1248,7 +1267,13 @@ tts.post('/generate', async (c) => {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
-        anyUser: isSystemVoice,
+        // ⚠ **직접 입력은 사용자끼리 캐시를 공유하지 않는다.**
+        // 공유하면 남의 `messages` 행 id 를 그대로 돌려주는데, 그 행은 `is_preset` 이
+        // 0이라 `messageBelongsToCaller` 가 나중에 거절한다 — **들리는데 저장이 안 되는**
+        // 그 사고다(CLAUDE.md 「messageBelongsToCaller」 절). 게다가 캐시 히트가
+        // `reserveManualTtsQuota` 보다 앞이라, 남의 문구에 얹히면 **월 한도가 안 깎인다.**
+        // 프리셋(랜덤) 문구는 문구 자체가 우리 것이라 예전처럼 공유한다.
+        anyUser: isSystemVoice && !isManualGeneration,
       });
       if (cached) {
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
@@ -1835,8 +1860,41 @@ tts.get('/stock-clips', async (c) => {
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),
     })),
+    // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
+    // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.
+    //
+    // ⚠ **앱에 개수를 박아 두지 않으려고 서버가 내려준다.** 운영이 시드를 늘리면
+    // (예: 날씨 9 → 11) 앱 업데이트 없이 그 값이 따라와야 한다. 상수로 두면 늘어난 분을
+    // 영영 안 받고, 그 클립을 고른 알람이 무음이 된다.
+    // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
+    // 이 판정이 특히 중요하다.
+    expected_variants: expectedVariantCounts(),
   });
 });
+
+/**
+ * 목소리 종류별 · 카테고리별로 **완전한 세트의 클립 수**.
+ *
+ * ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다.** 지금도 `medication` 이 시스템 2 /
+ * 클론 3 이다. 그래서 하나로 합치면 안 된다 — 큰 쪽으로 합치면 기본 목소리의 **완전한**
+ * 세트(2개)가 '불완전' 으로 읽혀 오프라인 재생이 영영 안 켜지고, 작은 쪽으로 합치면 클론이
+ * 부분 세트인데도 완전하다고 읽혀 **없는 클립 자리를 재생하려 든다.**
+ *
+ * 출처: 시스템은 `STOCK_CLIP_PRESETS`, 클론은 `CLONE_CLIP_SEEDS`. 앱은 고른 목소리가
+ * 시스템인지에 따라 둘 중 하나를 본다.
+ */
+function expectedVariantCounts(): { system: Record<string, number>; clone: Record<string, number> } {
+  const system: Record<string, number> = {};
+  for (const preset of STOCK_CLIP_PRESETS) {
+    // 언어별 문구 수는 같아야 하지만, 어긋나도 ko 를 기준으로 삼는다(시드 원본이 ko 다).
+    system[preset.category] = preset.texts.ko?.length ?? 0;
+  }
+  const clone: Record<string, number> = {};
+  for (const group of CLONE_CLIP_SEEDS) {
+    clone[group.category] = group.seeds.length;
+  }
+  return { system, clone };
+}
 
 // 사전렌더 클론 버킷(날씨/운세)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve 한다. 클라는
 // 발사 전날 준비창(온라인)에서 이걸 호출해 알람에 인덱스를 스냅샷하고, 발사는 오프라인 lookup 만

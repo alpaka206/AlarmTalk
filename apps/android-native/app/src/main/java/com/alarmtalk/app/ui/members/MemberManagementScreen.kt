@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material3.AssistChip
@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -115,7 +116,7 @@ internal fun MemberManagementScreen(
             ) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.social_back_cd),
                     )
                 }
@@ -217,6 +218,7 @@ internal fun MemberManagementScreen(
                                 Button(
                                     onClick = { shareCode(shareVoucher.code) },
                                     enabled = !billingBusy && !isFull,
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

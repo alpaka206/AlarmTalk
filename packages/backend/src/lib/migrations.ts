@@ -728,7 +728,7 @@ export const migrations: Migration[] = [
     // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
     //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
     //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
-    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    //   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
     // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
     id: 36,
     name: 'subscriptions-apple-fields',
@@ -2010,6 +2010,235 @@ export const migrations: Migration[] = [
     id: 93,
     name: 'alarm-recipient-state-sender',
     statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN sender_user_id TEXT`],
+  },
+  {
+    /**
+     * push_tokens.platform CHECK 에 'ios' 를 되돌린다.
+     *
+     * #88 이 iOS 미운영을 이유로 CHECK 를 `('android','web')` 로 좁혔는데, iOS 앱을
+     * 되살리면서 **DB 가 iOS 토큰 등록을 거절하는** 상태가 됐다. 이게 막히면 가족 알람·
+     * 목소리 공유·목소리 철회 신호를 iOS 기기가 하나도 못 받는다.
+     *
+     * SQLite/libSQL 은 CHECK 제약을 ALTER 로 못 고쳐서 테이블 재작성이 유일한 방법이다.
+     * #88 과 같은 방식이되 **필터 없이 전 행을 옮긴다** — 좁힐 때와 달리 넓히는
+     * 방향이라 버릴 행이 없다. 기존 android/web 토큰은 그대로 보존된다.
+     *
+     * 인덱스는 **지금 살아 있는 2개만** 다시 만든다. `idx_push_tokens_user` 는 #89 가
+     * 중복이라고 지운 것이라(`idx_push_tokens_unique` 의 선두 컬럼이 user_id) 여기서
+     * 되살리면 그 정리를 무효화한다.
+     */
+    id: 94,
+    name: 'restore-ios-push-platform',
+    atomic: true,
+    statements: [
+      `CREATE TABLE push_tokens_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('ios','android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO push_tokens_v3 (id, user_id, token, platform, created_at, updated_at)
+        SELECT id, user_id, token, platform, created_at, updated_at FROM push_tokens`,
+      `DROP TABLE push_tokens`,
+      `ALTER TABLE push_tokens_v3 RENAME TO push_tokens`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
+    ],
+  },
+  {
+    /**
+     * Sign in with Apple 을 위해 users.apple_id 를 되돌린다.
+     *
+     * #82 가 "iOS 미운영" 을 이유로 떨궜던 것(그때 dev·prod 실측 0건이라 손실은 없었다)을
+     * 같은 정의로 되살린다 — 부분 UNIQUE 인덱스라 NULL 인 행끼리는 충돌하지 않으므로
+     * 기존 안드로이드·이메일 계정에는 아무 영향이 없다.
+     *
+     * App Store 심사 규정상 소셜 로그인(구글)이 있으면 Sign in with Apple 은 **필수**라
+     * 선택지가 아니다.
+     */
+    id: 95,
+    name: 'restore-apple-identity',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
+  {
+    /**
+     * Apple 결제(StoreKit 2)를 위한 스키마 복구. #82 가 떨궜던 것을 같은 정의로 되살리고,
+     * #88 이 `provider = 'google'` 로 좁혀 둔 store_transactions CHECK 를 넓힌다.
+     *
+     * store_transactions 는 CHECK 변경이라 테이블 재작성이 필요하다(#88·#94 와 같은 방식).
+     * **넓히는 방향이라 필터 없이 전 행을 옮긴다** — 기존 구글 결제 이력은 그대로 보존된다.
+     * 인덱스 3개를 모두 되살린다: #88 이 만든 provider_tx·user 둘과 #89 가 추가한
+     * subscription 하나(구독 해지 경로가 subscription_id 로 훑는다).
+     *
+     * subscriptions 의 apple 컬럼 3개는 ALTER ADD COLUMN 이라 append-only 다:
+     *   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+     *   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+     *   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
+     *
+     * ⚠ 기존 구글 경로는 건드리지 않는다. provider 를 좁히던 CHECK 만 넓히는 것이라
+     * 구글 결제 코드·데이터는 그대로 동작한다.
+     */
+    id: 96,
+    name: 'restore-apple-billing',
+    atomic: true,
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+      `CREATE TABLE store_transactions_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO store_transactions_v3 (
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      ) SELECT
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      FROM store_transactions`,
+      `DROP TABLE store_transactions`,
+      `ALTER TABLE store_transactions_v3 RENAME TO store_transactions`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription
+        ON store_transactions(subscription_id)`,
+    ],
+  },
+  {
+    /**
+     * 탈퇴 시 애플 연결을 끊기 위한 refresh token 보관.
+     *
+     * ⚠ **애플 심사 지침 5.1.1(v) 요구사항이다.** 계정 삭제를 제공하는 앱은 Sign in with
+     * Apple 연결도 함께 끊어야 한다. 안 끊으면 탈퇴한 사용자의 기기 '설정 → Apple 계정 →
+     * 암호 및 보안 → Apple로 로그인' 목록에 우리 앱이 **영원히 남는다** — 지웠다고 믿는
+     * 사용자에게 거짓말이 되고, 심사에서 반려된다.
+     *
+     * 왜 이 값이어야 하나: 애플의 `/auth/revoke` 는 폐기할 토큰을 요구하는데, 로그인
+     * 시점의 `id_token` 으로는 못 한다. `authorization_code` 는 5분·1회용이라 저장해 둘
+     * 수도 없다. 그래서 로그인 순간에 refresh token 으로 바꿔 이 컬럼에 넣어 둔다.
+     */
+    id: 97,
+    name: 'apple-refresh-token-for-revocation',
+    statements: [`ALTER TABLE users ADD COLUMN apple_refresh_token TEXT`],
+  },
+  {
+    /**
+     * 아무도 설정한 적 없는 '설정 불가능 시간' 을 지운다.
+     *
+     * ⚠ 마이그레이션 30 이 이 컬럼을 `DEFAULT '[{"days":[1,2,3,4,5],...09:00~18:30}]'`
+     * 로 만들었다. 그래서 **가입만 하면 평일 낮에 가족 알람이 막혔다** — 받는 사람은
+     * 자기가 막아 둔 줄 모르고, 보내는 사람은 왜 못 보내는지 모른다. 방해금지는
+     * 사용자가 **명시적으로 켜는** 기능이라는 것이 2026-08-08 결정이다.
+     *
+     * ⚠ **정확히 그 기본값인 행만** 비운다. 사용자가 직접 만든 창은 값이 다르므로
+     * 건드리지 않는다 — 공백까지 같은 문자열만 대상이라 오탐이 없다.
+     * (SQLite 는 컬럼 DEFAULT 를 바꿀 수 없어 새 행은 여전히 저 값으로 생기지만,
+     *  읽는 쪽이 그 값을 만들어 내지 않게 바꿨고 가입 응답도 빈 목록을 준다.)
+     */
+    id: 98,
+    name: 'clear-auto-added-family-quiet-windows',
+    statements: [
+      `UPDATE users
+          SET family_alarm_quiet_windows = '[]'
+        WHERE family_alarm_quiet_windows = '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
+    ],
+  },
+  {
+    /**
+     * 오디오 TTL 스윕이 `messages` 를 **행마다 풀스캔**하던 것을 막는다.
+     *
+     * 스윕 쿼리(`lib/audio-retention.ts`)는 만료 후보마다
+     * `NOT EXISTS (SELECT 1 FROM alarms a JOIN messages m ON m.id = a.message_id
+     *              WHERE m.audio_url = 'r2://' || g.audio_object_key)`
+     * 를 돈다. `messages.audio_url` 에 인덱스가 없어 후보 하나당 messages 전체를
+     * 훑었다 — 데이터가 늘수록 곱으로 느려진다.
+     *
+     * ⚠ **이게 느려지면 탈퇴자 목소리 파기까지 같이 멈춘다.** 스윕은 같은 크론
+     * 사이클에서 외부 삭제 큐를 함께 처리하므로, 여기서 시간을 다 쓰면 파기가
+     * 밀린다 — 개인정보 파기 약속이 걸린 자리다.
+     *
+     * 인덱스 추가는 되돌리기가 `DROP INDEX` 한 줄이라 데이터 손실이 0 이다.
+     */
+    id: 99,
+    name: 'index-audio-retention-sweep',
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_messages_audio_url ON messages(audio_url)`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_created
+         ON generated_audio_assets(created_at)`,
+    ],
+  },
+  {
+    id: 100,
+    name: 'index-missing-lookup-columns',
+    // 실제 스키마(마이그레이션 전량 적용)와 코드의 SQL 을 대조해 **필터로 쓰이는데
+    // 인덱스가 없는** 컬럼만 골랐다(2026-08-10). 인덱스만 만드는 append-only 라
+    // 되돌릴 수 없는 DDL 이 없고 기존 행도 건드리지 않는다.
+    //
+    // 뽑을 때 걸러낸 것들 — 이미 복합 인덱스가 덮고 있어 넣지 않았다:
+    //   store_transactions.provider_transaction_id → 조회가 항상 `provider = ? AND ...`
+    //     이라 `idx_store_transactions_provider_tx(provider, provider_transaction_id)` 가 탄다.
+    //   promo_code_redemptions(promo_code_id, user_id) 조회 → 기존 UNIQUE 인덱스가 덮는다.
+    //   plans 를 가리키는 *_plan_id → plans 는 행이 몇 개뿐이라 인덱스 이득이 없다.
+    statements: [
+      // 그룹 플랜의 핵심 조인. 한도 계산·그룹 전파·바우처 사용에서 매번 탄다.
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_group
+         ON subscriptions(plan_group_id)`,
+      // 결제 이벤트(RTDN)·만료 크론이 발급 구독으로 바우처를 되짚는다.
+      `CREATE INDEX IF NOT EXISTS idx_voucher_codes_issuer_subscription
+         ON voucher_codes(issuer_subscription_id)`,
+      // UNIQUE(user_id, voice_profile_id) 는 **user_id 가 앞**이라 프로필 단독 조회를
+      // 못 탄다. tts 요청 경로에서 쓰인다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_profile
+         ON voice_profile_relationships(voice_profile_id)`,
+      // 목소리 삭제·복구가 업로드 원본을 프로필로 찾는다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_uploads_profile
+         ON voice_uploads(voice_profile_id)`,
+      // 유료 만료 정리·스톡 클립 조회가 소유자로 큐를 훑는다(기존 인덱스는 status 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_voice_prerender_queue_owner
+         ON voice_prerender_queue(owner_user_id)`,
+      // 프로모 이력 조회가 사용자 단독으로 거른다(UNIQUE 는 promo_code_id 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_promo_redemptions_user
+         ON promo_code_redemptions(user_id)`,
+    ],
+  },
+  {
+    id: 101,
+    name: 'voice-prerender-replace-mode',
+    // 목소리 **교체**(같은 프로필의 음원만 갈아끼우기)를 위한 append-only 컬럼 하나.
+    //
+    // 지금까지 등록은 "새 프로필을 만들고 옛 것을 지운다" 였다. 지우는 순간 그 목소리를
+    // 쓰던 알람이 기본 알람음으로 떨어진다 — 사용자가 없애고 싶어 한 동작이다.
+    // 교체는 프로필 id·message id 를 **그대로 두고** 오디오 실체만 덮어쓰므로 알람이
+    // 아무것도 눈치채지 못한다.
+    //
+    // 큐가 이 회차를 '재렌더' 로 알아야 `generateStockClip` 이 기존 preset 을 no-op 로
+    // 건너뛰지 않고 **UPDATE** 한다. 기본값 0 이라 기존 행은 지금과 똑같이 동작한다.
+    statements: [
+      `ALTER TABLE voice_prerender_queue ADD COLUMN refresh_existing INTEGER NOT NULL DEFAULT 0`,
+    ],
   },
 ];
 

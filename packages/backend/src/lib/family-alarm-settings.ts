@@ -67,19 +67,25 @@ export function validateQuietDays(raw: unknown): number[] | null {
   return Array.from(new Set(raw as number[])).sort((a, b) => a - b);
 }
 
-export function normalizeQuietTime(raw: unknown, fallback: string): string {
-  return typeof raw === 'string' && TIME_RE.test(raw) ? raw : fallback;
-}
 
 export function validateQuietTime(raw: unknown): string | null {
   return typeof raw === 'string' && TIME_RE.test(raw) ? raw : null;
 }
 
+/**
+ * 저장된 방해금지 창을 읽는다.
+ *
+ * ⚠ **값이 없으면 빈 목록이다 — 기본 창을 만들어 내지 말 것**(2026-08-08 변경).
+ * 예전 기본값은 '평일 09:00–18:30' 이었다. 그래서 **가입만 하면 아무도 설정한 적 없는
+ * 시간대에 가족 알람이 막혔다** — 받는 사람은 자기가 막아 둔 줄 모르고, 보내는 사람은
+ * 왜 못 보내는지 모른다. 방해금지는 사용자가 **명시적으로 켜는** 기능이다.
+ *
+ * 빈 목록이면 `isBlockedByFamilyAlarmQuietTime` 이 곧바로 false 를 돌려주므로
+ * (그 함수의 `quietWindows.length === 0` 가드) 아무 시간도 막히지 않는다.
+ */
 export function normalizeQuietWindows(
   raw: unknown,
-  fallback: FamilyAlarmQuietWindow[] = [
-    { days: DEFAULT_QUIET_DAYS, start: DEFAULT_QUIET_START, end: DEFAULT_QUIET_END },
-  ],
+  fallback: FamilyAlarmQuietWindow[] = [],
 ): FamilyAlarmQuietWindow[] {
   if (typeof raw === 'string' && raw.trim()) {
     try {
@@ -117,8 +123,10 @@ export function familyAlarmSettingsFromRow(row: Record<string, unknown>): Family
   // 응답의 quietDays/Start/End 는 windows[0] 에서 파생한다 — 과거의 단일 필드 3컬럼(#29)은
   // #83 에서 제거됐고, 파싱 불가 시 폴백은 normalizeQuietWindows 의 기본 상수가 담당한다.
   const quietWindows = normalizeQuietWindows(row.family_alarm_quiet_windows);
+  // 창이 하나도 없으면 파생 필드(레거시 3필드)는 **기본 시간이 아니라 빈 요일**로 둔다.
+  // 여기서 평일 09:00-18:30 을 채우면 클라가 그걸 '설정된 값' 으로 읽어 화면에 그린다.
   const firstQuietWindow = quietWindows[0] ?? {
-    days: DEFAULT_QUIET_DAYS,
+    days: [] as number[],
     start: DEFAULT_QUIET_START,
     end: DEFAULT_QUIET_END,
   };

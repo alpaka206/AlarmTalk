@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
@@ -95,6 +96,11 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
     viewModelScope.launch {
         runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
+            .onSuccess { degraded ->
+                // 공유가 끊겨 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다.
+                DowngradeNoticeStore(getApplication())
+                    .record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
+            }
             .onSuccess { count ->
                 if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
             }
@@ -113,7 +119,10 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
         runCatching {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
-            message = getApplication<android.app.Application>().getString(R.string.msg_left_group)
+            // ⚠ **성공 토스트를 다시 넣지 말 것**(2026-08-15 지시).
+            // 나가면 이용권 카드가 곧바로 '무료' 로 바뀐다 — 화면이 이미 그 사실을 말한다.
+            // 토스트는 같은 말을 한 번 더 하면서 화면을 가리기만 한다.
+            // 실패는 계속 알린다(아래 onFailure) — 그건 화면에 안 나타나는 사실이다.
             // 성공 시엔 refreshSocial 이 busy 소유권을 이어받는다. 여기서 먼저 내려
             // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키고, 이후 무조건적인
             // `socialBusy = false` 로 진행 중인 refresh 의 true 를 덮어쓰지 않는다(가드 무력화 회귀 방지).

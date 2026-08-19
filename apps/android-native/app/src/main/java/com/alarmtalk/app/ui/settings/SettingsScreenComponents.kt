@@ -87,6 +87,7 @@ internal fun SettingsRow(
     label: String,
     value: String?,
     onClick: () -> Unit,
+    /// 되돌리기 어려운 행(로그아웃 등)은 라벨을 빨강으로 — iOS 와 같은 신호다.
 ) {
     Row(
         modifier = Modifier
@@ -172,39 +173,28 @@ internal fun FamilyAlarmQuietTimeDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    // ⚠ **가운데 카드 + X 로 되돌리지 말 것** — 아이폰의 폼 모달은 시트 + 상단바다
+    // (`ui/components/WakerModal.kt` 의 `WakerFormSheet` 주석 참조).
+    WakerFormSheet(
+        title = stringResource(R.string.hs_quiet_time_dialog_title),
+        onCancel = onDismiss,
+        onSave = { onConfirm(drafts.map { it.toWindow() }) },
+        saveLabel = stringResource(R.string.hs_save),
+        cancelLabel = stringResource(R.string.editor_cancel),
+        // 이 폼은 값이 갖춰져야만 저장할 수 있다(운세와 달리 어느 칸이 비었는지 카드마다
+        // 이미 보인다) — 그래서 잠근다.
+        saveEnabled = valid,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 22.dp, vertical = 22.dp)
-                    .heightIn(max = 620.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.hs_quiet_time_dialog_title),
-                    onDismiss = onDismiss,
-                )
                 Text(
                     text = stringResource(R.string.hs_quiet_time_dialog_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
                 )
+                // ⚠ 여기서 다시 `verticalScroll`·`weight` 를 쓰지 말 것 —
+                // 바깥 `WakerFormSheet` 가 이미 스크롤한다(스크롤 안의 스크롤은
+                // 높이 제약이 무한이라 `weight` 가 터진다).
                 Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     drafts.forEachIndexed { draftIndex, draft ->
@@ -245,23 +235,6 @@ internal fun FamilyAlarmQuietTimeDialog(
                         Text(stringResource(R.string.hs_quiet_time_add))
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = { onConfirm(drafts.map { it.toWindow() }) },
-                        enabled = valid,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.hs_save))
-                    }
-                }
-            }
-        }
     }
 
     timePickerTarget?.let { target ->
@@ -486,39 +459,38 @@ internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuiet
     return if (hidden > 0) context.getString(R.string.misc2_quiet_more, visible, hidden) else visible
 }
 
-internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String {
-    val value = listOf(country, city)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-    return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
-}
+/**
+ * 설정 행에 보이는 날씨 지역 — **도시만** 쓴다.
+ *
+ * ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 한다(서버가 동명
+ * 도시를 가르는 유일한 단서다 — `routes/tts.ts` 의 `resolveWeatherLocation`). 하지만
+ * **보여줄 때는 도시뿐**이다: 앱의 다른 자리가 전부 도시로 말한다(문구 요약 행의
+ * `날씨 · 서울`, 알람이 읽는 문장). 설정에서만 "대한민국 인천" 이면 같은 값이 두 이름을
+ * 갖는다. iOS `weatherLocationLabel` 도 같다.
+ */
+internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String =
+    city.trim().ifBlank { context.getString(R.string.misc2_settings_not_set) }
 
+/**
+ * 설정 행에 보이는 운세 정보 — **성별 · 생년월일**까지다.
+ *
+ * ⚠ **'설정됨' 으로 줄이지 말 것.** 이 행이 답해야 하는 질문은 둘이다: 넣었나, 그리고
+ * **제대로 넣었나**. 사주는 생년월일이 전부라 오타가 나면 알람 문구가 통째로 남의 것이
+ * 되는데, '설정됨' 은 그걸 영영 감춘다.
+ * ⚠ **태어난 시각까지 넣지도 말 것**(2026-08-17 정리). 셋을 다 넣으면 행이 넘쳐 잘리고,
+ * 잘리는 쪽은 값이다 — 훑어서 틀림을 알아채라고 둔 정보가 먼저 사라진다.
+ * 시각은 눌러서 여는 다이얼로그에 그대로 있다. iOS `fortuneInfoLabel` 도 같다.
+ */
 internal fun fortuneInfoSettingsLabel(
     context: Context,
     gender: String,
     birthDate: String,
-    birthTime: String,
 ): String {
-    val value = listOf(gender, compactBirthDate(birthDate), birthTime)
+    val value = listOf(gender, birthDate)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
     return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
-}
-
-/**
- * 설정 행에 쓰는 짧은 생년월일 — `2000-05-17` → `000517`.
- *
- * 행 하나에 성별·생년월일·태어난 시간이 다 들어가는데 `2000-05-17` 그대로면 폭을 다 먹는다.
- * 여섯 자리는 주민번호 앞자리와 같은 모양이라 한국어 사용자는 바로 읽고, 정확한 값은
- * 눌러서 여는 다이얼로그에 그대로 있다. **형식이 다르면 손대지 않는다.**
- */
-private fun compactBirthDate(raw: String): String {
-    val trimmed = raw.trim()
-    val looksLikeIsoDate = trimmed.length == 10 && trimmed[4] == '-' && trimmed[7] == '-' &&
-        trimmed.filter { it != '-' }.all { it.isDigit() }
-    return if (looksLikeIsoDate) trimmed.substring(2).replace("-", "") else trimmed
 }
 
 internal fun quietWindowLabel(context: Context, window: FamilyAlarmQuietWindow): String =

@@ -1,6 +1,8 @@
 ﻿# Google Play 제출 체크리스트
 
-이 문서는 Play Console 제출 전 개인정보 표시를 맞추기 위한 운영 체크리스트입니다. 실제 제출 시점의 SDK, 서버, 국가, 요금제, 결제 제공자에 맞게 최종 확인해야 합니다. (iOS 앱은 미운영이라 App Store 항목은 다루지 않습니다.)
+이 문서는 Play Console 제출 전 개인정보 표시를 맞추기 위한 운영 체크리스트입니다. 실제 제출 시점의 SDK, 서버, 국가, 요금제, 결제 제공자에 맞게 최종 확인해야 합니다.
+
+> ⚠ iOS 앱(App Store)은 준비 중이며 아직 제출된 적이 없습니다. App Store 제출 시에는 이 문서와 별도로 **App Privacy(영양성분표) 항목**을 작성해야 하고, 항목 구분이 Play Data safety 와 다릅니다(예: Apple 은 'Data Used to Track You' 를 따로 묻습니다). 아래 §2 는 Play 기준이므로 그대로 옮겨 쓰지 말 것.
 
 ## 1. 공개 URL
 
@@ -20,7 +22,7 @@
 - App activity: 알람 생성/수정/삭제, 음성 생성, 공유 기능 사용
 - App info and performance: 오류 로그, 진단 정보, 앱 버전
 - Device or other IDs: 푸시(FCM) 사용 시 기기 푸시 토큰, 기기/설치 식별자
-- Purchase history: 구독/이용권 상태, Google Play 인앱결제 거래 식별자(구매 토큰·주문 ID)
+- Purchase history: 구독/이용권 상태, 인앱결제 거래 식별자(Google Play=구매 토큰·주문 ID, App Store=transaction id·original transaction id)
 - User content: 알람 문구, TTS 문구, 음성 메시지, 문의 내용
 
 목적:

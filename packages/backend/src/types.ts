@@ -3,6 +3,55 @@ export interface Env {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
+  /**
+   * Sign in with Apple 검증용 **앱 번들 ID**. 네이티브 앱이 보내는 identity token 의
+   * `aud` 가 이 값이다. 미설정 시 POST /auth/apple 이 500 으로 fail-closed 된다 —
+   * aud 를 안 보면 다른 앱용으로 발급된 유효 토큰도 통과하기 때문이다.
+   * (예: `com.alarmtalk.app` — 실제 값은 `apps/ios-native/project.yml`)
+   *
+   * ⚠ 이건 `.p8` 개인키가 **아니다.** 네이티브 로그인 플로우는 공개키(JWKS) 검증만
+   * 하므로 비밀키가 필요 없다. `.p8` 은 웹/서버 대 서버 플로우에서만 쓴다.
+   */
+  APPLE_BUNDLE_ID?: string;
+  /**
+   * Apple Developer **Team ID**(10자). 로그인 client_secret 의 `iss`.
+   * 결제(App Store Server API)가 쓰는 `APPLE_ISSUER_ID` 와 **다른 값**이다.
+   */
+  APPLE_TEAM_ID?: string;
+  /**
+   * **Sign in with Apple** 키의 Key ID.
+   *
+   * ⚠ `APPLE_KEY_ID` 에 넣지 말 것 — 그건 App Store Server API(결제 검증)의 *다른 키*라,
+   * 같은 이름에 넣으면 애플 결제 검증이 통째로 죽는다.
+   */
+  APPLE_SIGNIN_KEY_ID?: string;
+  /**
+   * **Sign in with Apple** 키의 `.p8` **내용**(PEM 전문).
+   *
+   * ⚠ 파일 **경로가 아니다.** Cloudflare Workers 에는 파일시스템이 없어 경로를 넣으면
+   * 런타임에 아무것도 읽지 못한다.
+   * ⚠ 결제용 `APPLE_PRIVATE_KEY` 와 **다른 키**다(위와 같은 이유로 이름을 갈랐다).
+   */
+  APPLE_SIGNIN_PRIVATE_KEY?: string;
+  /** App Store Connect Issuer ID (UUID). 미설정 시 Apple 결제 503. */
+  APPLE_ISSUER_ID?: string;
+  /** App Store Server API 키의 Key ID. */
+  APPLE_KEY_ID?: string;
+  /** App Store Server API 개인키(.p8 PEM 전체). 결제 검증 **전용** — 로그인과 무관하다. */
+  APPLE_PRIVATE_KEY?: string;
+  /**
+   * **APNs**(iOS 푸시) 키의 Key ID.
+   *
+   * ⚠ 애플 키가 이제 셋이고 **전부 다르다.** 한쪽에 다른 쪽 값을 넣으면 그 기능만
+   * 조용히 401 로 죽는다:
+   *   - 로그인:  `APPLE_SIGNIN_KEY_ID` / `APPLE_SIGNIN_PRIVATE_KEY`
+   *   - 결제:    `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` (+ `APPLE_ISSUER_ID`)
+   *   - 푸시:    `APNS_KEY_ID` / `APNS_PRIVATE_KEY` (+ `APPLE_TEAM_ID`)
+   * 푸시 키는 Developer Portal → Keys 에서 **APNs** 권한으로 발급한다(추가 비용 없음).
+   */
+  APNS_KEY_ID?: string;
+  /** APNs 키의 `.p8` **내용**(PEM 전문). 파일 경로가 아니다(Workers 에 파일시스템이 없다). */
+  APNS_PRIVATE_KEY?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;

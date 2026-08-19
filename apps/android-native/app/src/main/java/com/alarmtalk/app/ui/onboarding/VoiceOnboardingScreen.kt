@@ -229,4 +229,3 @@ private const val ESCAPE_GRACE_MILLIS = 12_000L
 // 새벽 네이비 온보딩 배경(AuthScreen 의 장면 색과 동일 값 — 그쪽은 private 이라 재선언).
 private val OnbSceneTop = Color(0xFF1A2A52)
 private val OnbSceneBottom = Color(0xFF070C1D)
-private val OnbCardGlass = Color(0x14FFFFFF)

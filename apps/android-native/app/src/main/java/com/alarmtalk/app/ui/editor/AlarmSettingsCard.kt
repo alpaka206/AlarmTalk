@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,13 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -90,10 +88,6 @@ internal fun AlarmSettingsCard(
     alarmSoundLabel: String?,
     alarmSoundEnabled: Boolean,
     showAlarmSound: Boolean,
-    showVoiceOutput: Boolean,
-    voiceVolumePercent: Int,
-    voiceRepeat: Boolean,
-    voiceRepeatActive: Boolean,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onSnoozeRepeatLimitChange: (Int) -> Unit,
@@ -104,7 +98,6 @@ internal fun AlarmSettingsCard(
     onOpenSnoozeSettings: () -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
-    onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     // 라벨이 없으면(시스템 기본) 실제 기본 알람음 이름으로 보여준다.
@@ -148,7 +141,13 @@ internal fun AlarmSettingsCard(
                         )
                     },
                 )
-                if (showAlarmSound) {
+                // 재생 방식을 바꿀 때 이 행도 함께 늘었다 줄었다 한다(위 목소리 카드와 같은 전환).
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showAlarmSound,
+                    enter = playModeEnter(),
+                    exit = playModeExit(),
+                ) {
+                androidx.compose.foundation.layout.Column {
                     AlarmSettingDivider()
                     // 알람음 on/off 토글을 이 행에 함께 둔다. 끄면 알람은 계속 울리되(화면·진동·음성)
                     // 톤만 재생하지 않는다. 켜졌을 때만 볼륨·벨소리(부제 요약, 탭 시 상세)를 노출.
@@ -172,31 +171,13 @@ internal fun AlarmSettingsCard(
                         },
                     )
                 }
-                if (showVoiceOutput) {
-                    AlarmSettingDivider()
-                    AlarmSettingRow(
-                        title = stringResource(R.string.editor_voice_output_title),
-                        subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
-                        onClick = onOpenVoiceOutputSettings,
-                        trailing = {},
-                    )
                 }
+                // ⚠ **'목소리' 행을 여기에 다시 넣지 말 것.** 음량·반복은 목소리 카드 안의
+                // '목소리 크기' 행(`VoiceVolumeSummaryRow`)이 소유한다. 예전에는 이곳에도
+                // 같은 행이 있었고, 호출부가 `showVoiceOutput = false` 로 꺼 둔 채로
+                // 남아 있었다 — 살아있는 코드처럼 보이는 죽은 분기였다(2026-08-07 삭제).
             }
         }
-    }
-}
-
-private fun voiceOutputSummary(
-    context: android.content.Context,
-    voiceVolumePercent: Int,
-    voiceRepeat: Boolean,
-    voiceRepeatActive: Boolean,
-): String {
-    val volume = "${voiceVolumePercent.coerceIn(0, 100)}%"
-    return if (voiceRepeatActive && voiceRepeat) {
-        context.getString(R.string.editor2_voice_output_summary_repeat, volume)
-    } else {
-        volume
     }
 }
 
@@ -277,25 +258,13 @@ internal fun AlarmSoundSettingsPane(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_alarm_sound_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·문구 pane 이 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_alarm_sound_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(top = 24.dp),
+            )
 
             // 켜고 끄는 사용/무음 토글은 두지 않는다 — 알람음 여부는 '재생 방식'이 정하고,
             // 여기선 어떤 소리를 얼마나 크게 울릴지만 고른다(볼륨 0 = 무음).
@@ -337,11 +306,17 @@ internal fun AlarmSoundSettingsPane(
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
-                        Slider(
-                            value = alarmVolumePercent.toFloat(),
-                            onValueChange = { onAlarmVolumeChange(it.toInt().coerceIn(0, 100)) },
-                            valueRange = 0f..100f,
-                            steps = 9,
+                        // ⚠ **0 은 슬라이더로 만들 수 없다.** 0 은 '무음' 이라는 별개의 뜻이라
+                        // 위 알람음 스위치로만 표현한다 — 끝값으로 두면 실수로 닿아 알람이
+                        // 조용히 안 울리고, 무음으로 가는 길이 둘이 되어 상태를 읽기 어려워진다.
+                        // 공용 슬라이더 — 목소리 크기와 같은 물건이다(`WakerVolumeSlider`).
+                        WakerVolumeSlider(
+                            value = alarmVolumePercent.coerceIn(MinAlarmVolumePercent, 100).toFloat(),
+                            onValueChange = {
+                                onAlarmVolumeChange(it.toInt().coerceIn(MinAlarmVolumePercent, 100))
+                            },
+                            valueRange = MinAlarmVolumePercent.toFloat()..100f,
+                            stepSize = 10,
                         )
                     }
                 }
@@ -368,31 +343,26 @@ internal fun VibrationSettingsPane(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_vibration_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·문구 pane 이 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_vibration_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(top = 24.dp),
+            )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    // ⚠ **스크롤을 빼지 말 것.** 패턴이 12줄이라 목록이 화면 아래로 넘치는데,
+                    // 스크롤이 없으면 마지막 몇 줄은 **닿을 방법이 아예 없다**(2026-08-17
+                    // 실기기 SM-A325N: Zigzag 가 화면 끝에 잘린 채로 멈춰 있었다).
+                    // 줄 수가 적은 화면도 글꼴을 키우면 같은 일이 나므로 스누즈 pane 도 같다.
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    // 여백·간격은 스누즈 pane 과 같은 값이다(= 문구 pane·iOS `PaneScaffold`).
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(
                     shape = WakerPanelShape,
@@ -406,15 +376,13 @@ internal fun VibrationSettingsPane(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // ⚠ **상태말('사용 중'/'사용 안 함')로 되돌리지 말 것** — 스누즈 pane 과
+                        // 같은 규약이다. 스위치가 이미 상태를 말하므로 그 자리는 **무엇을
+                        // 켜는지** 이름을 댄다. 굵게·강조색도 쓰지 않는다(스위치와 무게 경쟁).
                         Text(
-                            text = if (vibrationEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (vibrationEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
+                            text = stringResource(R.string.editor_vibration_use),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         AlarmTalkSwitch(
                             checked = vibrationEnabled,
@@ -423,7 +391,7 @@ internal fun VibrationSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection {
+                SnoozeOptionSection(title = stringResource(R.string.editor_vibration_pattern)) {
                     VibrationOptions.forEachIndexed { index, pattern ->
                         SnoozeRadioRow(
                             label = vibrationLabel(context, pattern),

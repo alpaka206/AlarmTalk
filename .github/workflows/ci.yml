@@ -68,6 +68,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # iOS 주석이 대는 안드로이드·백엔드 근거가 실재하는지. iOS 는 안드로이드를 원본으로
+      # 삼으므로(CLAUDE.md) 주석 대부분이 "안드로이드 Foo.kt 미러" 꼴인데, 안드로이드가
+      # 그 화면을 지워도 주석은 남는다 — 그걸 믿고 고친 코드가 다시 틀렸다.
+      - name: Check cross-platform comment references
+        run: python3 scripts/check-cross-platform-refs.py
+
+      # 동작 규칙은 `docs/spec/` 한 곳에 모으고 CLAUDE.md 는 포인터만 남겼다. 그 포인터가
+      # 깨지면 규칙이 있는 줄도 모른 채 코드만 고치게 된다.
+      - name: Check docs links and spec index
+        run: python3 scripts/check-docs-links.py
+
+      # 새 입력창이 새니타이저를 건너뛰고 `it.take(50)` 처럼 생 리터럴로 자르는 것.
+      # 함수 단위 테스트로는 못 잡는다(함수는 멀쩡하고 아무도 안 부르는 게 문제다).
+      - name: Check input sanitizers
+        run: python3 scripts/check-input-sanitizers.py
+
+      # INSERT 가 NOT NULL 컬럼을 빠뜨리는 것. 타입체커는 SQL 문자열 안을 못 보고,
+      # 실패하면 트랜잭션이 통째로 롤백된다 — 실제로 **선물 결제 두 갈래**가 이걸로
+      # 죽어 있었다(스토어는 결제를 받았는데 바우처가 안 나갔다).
+      - name: Check INSERT statements cover NOT NULL columns
+        run: python3 scripts/check-insert-not-null.py
+
   typecheck:
     runs-on: ubuntu-latest
     strategy:

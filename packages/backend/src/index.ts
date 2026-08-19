@@ -28,6 +28,7 @@ import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
+import billingApple from './routes/billing-apple';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
@@ -228,6 +229,7 @@ api.route('/voice', voiceRoutes);
 api.route('/tts', ttsRoutes);
 api.route('/alarm', alarmRoutes);
 api.route('/user', userRoutes);
+api.route('/billing', billingApple);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
@@ -328,8 +330,13 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     const { purgeUserAccount, pseudonymizeBillingForRetention } =
       await import('./lib/account-deletion');
     const { withWriteTransaction } = await import('./lib/transactions');
+    // ⚠ **`apple_refresh_token` 을 함께 읽는다.** 파기하면 읽을 곳이 없어져 영영 폐기하지
+    // 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이 남는다(애플 심사 5.1.1(v)).
+    // 즉시 삭제(`DELETE /user/me`)에는 이 처리가 있었는데 **앱이 실제로 쓰는 경로**는
+    // 유예 삭제(`POST /user/me/deletion`)라, 정작 대부분의 탈퇴에서 빠져 있었다
+    // (2026-08-18 Codex #697 P1).
     const due = await db.execute({
-      sql: `SELECT id, google_id FROM users
+      sql: `SELECT id, google_id, apple_refresh_token FROM users
             WHERE deletion_status = 'pending_deletion'
               AND deletion_purge_at IS NOT NULL
               AND deletion_purge_at <= ?
@@ -344,9 +351,24 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // sendPushNotifications 는 호출마다 OAuth 를 새로 받아, 계정마다 나눠 부르면 틱당
     // 최대 50 왕복이 된다).
     try {
+      const { appleSignInConfig, revokeAppleToken } = await import('./lib/apple-revoke');
       for (const row of due.rows) {
         const userPk = String(row.id);
         const userId = (row.google_id as string | null) ?? userPk;
+        // 애플 연결을 끊는다 — **행을 지우기 전에.**
+        // ⚠ 실패해도 파기는 진행한다(즉시 삭제 경로와 같은 판단). 애플이 잠깐 죽었다고
+        // 파기를 막으면 사용자의 데이터가 유예 기간을 넘겨 남는다.
+        const appleRefreshToken = row.apple_refresh_token as string | null;
+        if (appleRefreshToken) {
+          const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
+          if (signInConfig) {
+            try {
+              await revokeAppleToken(signInConfig, appleRefreshToken);
+            } catch (err) {
+              captureCron('scheduled.account_purge.apple_revoke', err);
+            }
+          }
+        }
         const purged = await withWriteTransaction(db, async (tx) => {
           await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
           return purgeUserAccount(tx, userPk, userId);
@@ -422,7 +444,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
           await releasePrerenderClaim(db, voice.id, claim.claimToken);
           continue;
         }
-        const targets = await findMissingStockTargets(db, [voice]);
+        // ⚠ 교체 회차면 **전부** 다시 렌더한다. 그냥 두면 '빠진 것' 이 0이라
+        // 곧바로 done 으로 끝나고 목소리가 바뀌지 않는다.
+        const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
         if (targets.length === 0) {
           await markPrerenderDone(db, voice.id, claim.claimToken);
           continue;

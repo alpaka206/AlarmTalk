@@ -888,7 +888,7 @@ describe('GET /auth/me', () => {
   });
 
   // TTL 은 이 PR 의 본체다 — 상수를 되돌리면 이 테스트가 잡는다.
-  it('발급 토큰의 수명은 90일이다', async () => {
+  it('발급 토큰의 수명은 365일이다', async () => {
     await pushValidEmailVerification('ttl@test.com');
     mockDB.pushResult([]);
     mockDB.pushResult([], 1);
@@ -902,8 +902,8 @@ describe('GET /auth/me', () => {
     );
     const token = (await regRes.json()).token as string;
     const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
-    const NINETY_DAYS = 60 * 60 * 24 * 90;
-    expect(payload.exp - payload.iat).toBe(NINETY_DAYS);
+    const ONE_YEAR = 60 * 60 * 24 * 365;
+    expect(payload.exp - payload.iat).toBe(ONE_YEAR);
   });
 
   // DB 장애를 401 로 뭉개면 클라가 그걸 '세션 만료' 로 읽고 로그아웃시킨다. /auth/me 는

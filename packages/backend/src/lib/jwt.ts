@@ -15,16 +15,25 @@ export interface AppJwtPayload {
 const ISSUER = 'voice-alarm';
 const AUDIENCE = 'voice-alarm-clients';
 const ALG = 'HS256';
-// 90일. 예전에는 7일이었는데, 알람 앱은 **앱을 안 열어도 잘 돌아가는** 게 정상이라
-// (알람은 기기의 AlarmManager 가 울린다) 몇 주씩 안 여는 사용자가 흔하다. 그 사이 토큰이
-// 죽으면 다음에 열었을 때 조용히 로그아웃돼 있고, 1.2.1 부터는 그게 알람 목록·재예약의
-// 소유자 게이트에 걸려 **알람이 사라지고 울리지도 않는** 상태가 된다.
+// 365일. 7일 → 90일 → 365일로 늘려 왔다. 알람 앱은 **앱을 안 열어도 잘 돌아가는** 게
+// 정상이라(알람은 기기의 AlarmManager / AlarmKit 이 울린다) 몇 달씩 안 여는 사용자가
+// 흔하다. 그 사이 토큰이 죽으면 다음에 열었을 때 조용히 로그아웃돼 있고, 1.2.1 부터는
+// 그게 알람 목록·재예약의 소유자 게이트에 걸려 **알람이 사라지고 울리지도 않는** 상태가
+// 된다. 목표는 "한 번 로그인하면 다시 안 해도 되는 것" 이다.
+//
+// **만료를 아예 없애지는 않는다.** 무한 토큰은 유출됐을 때 시간으로 끊을 방법이 사라지고,
+// 서명 시크릿을 돌리는 것 말고는 손쓸 데가 없어진다(그건 전원 로그아웃이다). 대신 두
+// 장치로 "사실상 무기한" 을 만든다:
+//   1. **rolling refresh** — `GET /auth/me` 가 매번 새 토큰을 내려 준다.
+//   2. **백그라운드 갱신** — 만료가 가까우면 주기 동기화가 앱을 열지 않아도 갱신한다
+//      (안드로이드 `RemoteAlarmSyncWorker`, iOS `BackgroundSyncTask`). 이게 없던 시절엔
+//      갱신이 '앱을 여는 것' 에만 걸려 있어, 1년 안 여는 사용자에게는 무의미했다.
+// 즉 **1년에 한 번이라도 네트워크에 붙는 기기**는 만료를 만나지 않는다.
 //
 // 길게 잡아도 폐기 수단은 그대로다 — users.token_epoch 가 로그아웃(전 기기)·비밀번호
-// 재설정에서 +1 되고 authMiddleware 가 매 요청 비교하므로, 만료를 기다리지 않고 즉시 끊을
-// 수 있다. 그리고 GET /auth/me 가 열 때마다 새 토큰을 내려 주므로(rolling), 90일 안에 한
-// 번이라도 앱을 연 사용자는 사실상 만료를 만나지 않는다.
-const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 90;
+// 재설정에서 +1 되고 authMiddleware 가 매 요청 비교하므로, 만료를 기다리지 않고 즉시
+// 끊을 수 있다.
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 function base64UrlEncode(bytes: ArrayBuffer | Uint8Array): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -118,4 +127,3 @@ export async function verifyAppJwt(token: string, secret: string): Promise<AppJw
 }
 
 export const APP_JWT_ISSUER = ISSUER;
-export const APP_JWT_AUDIENCE = AUDIENCE;

@@ -2,18 +2,20 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,8 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -68,33 +72,24 @@ internal fun FortuneInfoDialog(
     val birthDateError = submitted && draftBirthDate.isBlank()
     val birthTimeError = submitted && draftBirthTime.isBlank()
 
-    Dialog(
-        onDismissRequest = onDismissWithoutSave,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 640.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+    // ⚠ **가운데 카드 + X 로 되돌리지 말 것** — 아이폰의 폼 모달은 시트 + 상단바다
+    // (`ui/components/WakerModal.kt` 의 `WakerFormSheet` 주석 참조).
+    WakerFormSheet(
+        title = stringResource(R.string.editorp_fortune_dialog_title),
+        onCancel = onDismissWithoutSave,
+        onSave = {
+            submitted = true
+            if (
+                draftGender.isNotBlank() &&
+                draftBirthDate.isNotBlank() &&
+                draftBirthTime.isNotBlank()
             ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editorp_fortune_dialog_title),
-                    onDismiss = onDismissWithoutSave,
-                )
+                onConfirm(draftGender.trim(), draftBirthDate.trim(), draftBirthTime.trim())
+            }
+        },
+        saveLabel = stringResource(R.string.editorp_fortune_save_button),
+        cancelLabel = stringResource(R.string.editor_cancel),
+    ) {
                 FortuneInputSection(title = stringResource(R.string.editorp_fortune_gender_section), error = genderError) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GenderChoice(
@@ -134,33 +129,6 @@ internal fun FortuneInfoDialog(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            submitted = true
-                            if (
-                                draftGender.isNotBlank() &&
-                                draftBirthDate.isNotBlank() &&
-                                draftBirthTime.isNotBlank()
-                            ) {
-                                onConfirm(
-                                    draftGender.trim(),
-                                    draftBirthDate.trim(),
-                                    draftBirthTime.trim(),
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.editorp_fortune_save_button))
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -229,6 +197,10 @@ private fun FortuneBirthDatePickers(
             placeholder = stringResource(R.string.editorp_fortune_birthdate_month),
             suffix = stringResource(R.string.editorp_fortune_unit_month),
             error = error,
+            // ⚠ **연 → 월 → 일 순서로만 고른다**(2026-08-11 요청, iOS 와 같다).
+            // 일(日)만 잠그면 월부터 골라 놓고 연도를 나중에 바꿀 수 있어, 그때 말일이
+            // 달라지며 고른 날이 조용히 당겨진다.
+            enabled = year != null,
             modifier = Modifier.weight(1f),
             onSelect = { emit(year, it, day) },
         )
@@ -295,7 +267,9 @@ private fun FortuneUnitDropdown(
     onSelect: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val menuItemHeightPx = with(LocalDensity.current) { MenuItemHeight.roundToPx() }
+    // 메뉴가 항목들에게 **폭**을 묻는 것(`maxIntrinsicWidth`)을 막으려면 폭이 미리 정해져
+    // 있어야 한다. 앵커(입력칸)를 재서 같은 폭으로 못 박는다 — 원래 메뉴도 앵커 폭을 따른다.
+    var anchorWidthPx by remember { mutableIntStateOf(0) }
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
         onExpandedChange = { if (enabled) expanded = it },
@@ -313,43 +287,67 @@ private fun FortuneUnitDropdown(
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned { anchorWidthPx = it.size.width }
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         // 연도는 100개가 넘는다. 열 때마다 맨 위(올해)에서 시작하면 1990년생은 매번
         // 서른여섯 번을 긁어 내려야 한다 — 이미 고른 값이 보이는 위치에서 연다.
+        // ⚠ 게으른 목록이라 **픽셀이 아니라 인덱스**로 옮긴다(항목 높이를 상수로 곱하면
+        // 글꼴 크기에 따라 어긋난다).
         LaunchedEffect(expanded, selected) {
             if (!expanded) return@LaunchedEffect
             val index = options.indexOf(selected)
-            if (index >= 0) scrollState.scrollTo(index * menuItemHeightPx)
+            if (index >= 0) listState.scrollToItem(index)
         }
         ExposedDropdownMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
-            scrollState = scrollState,
-            modifier = Modifier.heightIn(max = MenuMaxHeight),
         ) {
-            options.forEach { option ->
-                val isSelected = option == selected
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = "$option$suffix",
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                    },
-                    colors = MenuDefaults.itemColors(
-                        textColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+            // ⚠ **`forEach` 로 되돌리지 말 것.** 연도 목록은 121개(올해부터 120년 전)라,
+            // 전부 그리면 메뉴를 여는 순간 121개를 컴포즈·측정·배치한 뒤에야 화면에 뜬다 —
+            // 사용자가 "년도 고를 때 엄청 늦게 뜬다" 고 지적한 그것이다(2026-08-13).
+            // `heightIn` 은 **보이는 높이**만 막을 뿐 화면 밖 100여 개도 그대로 만들어진다.
+            // 월(12)·일(31)은 문제가 없어 이 드롭다운만 게으르게 그린다.
+            //
+            // ⚠⚠ **높이를 `heightIn`(상한)이 아니라 `height`(고정)로 줘야 한다.**
+            // `ExposedDropdownMenu` 는 내용을 그리기 전에 "높이가 얼마냐"(intrinsic)를 묻는데
+            // 게으른 목록은 그 질문에 답할 수 없어 **앱이 죽는다**:
+            //   IllegalStateException: Asking for intrinsic measurements of SubcomposeLayout
+            //   layouts is not supported. This includes ... lazy lists
+            // (2026-08-13 실기기에서 '연도' 를 누르는 순간 재현). 고정 높이를 주면 그 질문에
+            // 바로 답할 수 있다 — 연도는 121개라 어차피 늘 상한까지 찬다.
+            // ⚠ **너비도 고정해야 한다.** 메뉴는 높이뿐 아니라 **폭**도 항목들에게 묻는다
+            // (`maxIntrinsicWidth`) — 높이만 고정했을 때 같은 예외가 폭 쪽에서 다시 났다.
+            // 앵커(입력칸)와 같은 폭으로 못 박아 두 질문 모두 바로 답한다.
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .width(with(LocalDensity.current) { anchorWidthPx.toDp() })
+                    .height(MenuMaxHeight),
+            ) {
+                items(options, key = { it }) { option ->
+                    val isSelected = option == selected
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "$option$suffix",
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
                         },
-                    ),
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    },
-                )
+                        colors = MenuDefaults.itemColors(
+                            textColor = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        ),
+                        onClick = {
+                            onSelect(option)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
@@ -468,35 +466,7 @@ internal fun normalizeFortuneBirthTime(value: String): String {
     }
 }
 
-internal fun parseBirthDateMillis(value: String): Long? {
-    val digits = value.filter { it.isDigit() }
-    if (digits.length != 8) return null
-    val year = digits.substring(0, 4).toIntOrNull() ?: return null
-    val month = digits.substring(4, 6).toIntOrNull() ?: return null
-    val day = digits.substring(6, 8).toIntOrNull() ?: return null
-    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-        clear()
-        set(year, month - 1, day)
-    }
-    return calendar.timeInMillis
-}
 
-internal fun formatBirthDateIso(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    formatter.timeZone = TimeZone.getTimeZone("UTC")
-    return formatter.format(java.util.Date(millis))
-}
-
-internal fun formatBirthDateDisplay(context: android.content.Context, value: String): String {
-    val digits = value.filter { it.isDigit() }
-    if (digits.length != 8) return value
-    return context.getString(
-        R.string.editor2_birthdate_display,
-        digits.substring(0, 4),
-        digits.substring(4, 6).trimStart('0'),
-        digits.substring(6, 8).trimStart('0'),
-    )
-}
 
 // 섹션별 테두리 상자는 제거 — 내부 컨트롤(성별 칩·날짜 선택 행·시간 드롭다운)에 이미
 // 테두리가 있어 이중 테두리 시각 소음이었다. 라벨+컨트롤만 남기고 오류는 라벨 색·필수
@@ -528,48 +498,6 @@ internal fun FortuneInputSection(
             }
         }
         content()
-    }
-}
-
-@Composable
-internal fun FortuneSelectorRow(
-    value: String,
-    placeholderActive: Boolean,
-    error: Boolean,
-    onClick: () -> Unit,
-) {
-    val borderColor = when {
-        error -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.outline
-    }
-    Surface(
-        onClick = onClick,
-        shape = WakerInputShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, borderColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (placeholderActive) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -614,12 +542,21 @@ internal fun GenderChoice(
     }
 }
 
+/**
+ * 문구 화면에 보이는 날씨 지역 — **도시만** 쓴다(설정 화면의 `weatherLocationSettingsLabel`
+ * 과 같은 규칙, 2026-08-17 통일).
+ *
+ * ⚠ **`country` 를 붙이지 말 것.** 저장은 나라+도시 둘 다 하지만(서버가 동명 도시를
+ * 가르는 단서 — `routes/tts.ts` 의 `resolveWeatherLocation`), 화면에는 도시만 나온다.
+ * 나라를 채우기 시작한 순간 이 자리가 "대한민국 서울" 로 바뀌어 지적을 받았다 —
+ * 저장하는 값과 보여주는 값은 별개다.
+ *
+ * `country` 를 계속 받는 이유: 호출부가 둘 다 들고 있어 인자를 지우면 전부 고쳐야 하고,
+ * 나중에 "해외 도시일 때만 나라를 덧붙인다" 같은 규칙을 넣을 자리가 여기이기 때문이다.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun weatherLocationSummary(context: android.content.Context, country: String, city: String): String =
-    listOf(country, city)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-        .ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
+    city.trim().ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
 
 internal fun fortuneInfoSummary(context: android.content.Context, gender: String, birthDate: String, birthTime: String): String =
     listOf(gender, birthDate, birthTime)

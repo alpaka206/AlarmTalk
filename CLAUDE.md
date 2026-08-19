@@ -4,7 +4,11 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- iOS 앱은 없다. SwiftUI 앱(`apps/ios-native`)과 iOS 빌드 워크플로는 미운영이라 제거했다 — 재개 시 앱과 워크플로를 함께 되살린다.
+- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(브랜치 `feat/ios-revive`, 아직 미출시).
+  탭 구성·화면 구성 모두 안드로이드와 같다(알람/목소리/더보기) — 「iOS 는 안드로이드를
+  원본으로 삼는다」 절 참조. 빌드·테스트는 XcodeGen(`project.yml`)으로
+  `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
+  ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. Apple 개발자 계정이 선행이다.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경
@@ -28,6 +32,15 @@
     건너뛰고 다음 주기 재시도).
   - 마이그레이션이 실패하면 워크플로가 **빨간불로 죽는다**(러너가 throw). 창이 조용히
     길어지지는 않는다.
+- ⚠ **법무 문서 버전(`CURRENT_POLICY_VERSION`)은 앱 릴리스와 짝을 맞춰 올린다.**
+  문서 전문은 **APK/IPA 에 실려** 있고(빌드 시 `docs/legal` 복사 → `BuildConfig.LEGAL_POLICY_VERSION`),
+  앱은 그 값을 `document_version` 으로 보낸다. 서버가 먼저 올라가면
+  `POST /user/consents` 가 **409 POLICY_VERSION_MISMATCH** 로 전부 거부하고, 앱은 그걸
+  '업데이트 필요' 차단 화면으로 처리한다 — **받을 새 버전이 스토어에 없으면 신규 가입과
+  재동의가 통째로 막힌다.**
+  순서: 새 문서를 번들한 앱을 **스토어에 먼저 올린 뒤** 서버의 버전 상수를 main 에 머지한다.
+  강제 업데이트로 구버전을 잘라낼 거면 `app-version.ts` 의 `minSupported` 상향도 **그 릴리스가
+  게재된 뒤**여야 한다(안 그러면 받을 게 없는 강제 업데이트로 앱이 벽돌이 된다).
 - **init-db 시크릿**: dev/prod 분리. GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD`(**Repository** Actions secret)가 각 워커의 `INIT_DB_SECRET`(`.dev.vars.{dev,prod}` → `npm run secrets:sync:{dev,prod}`)과 일치해야 migrate 통과. 안 맞으면 404.
 
 ## Android dev 빌드 / 설치
@@ -98,6 +111,36 @@
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
   - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
 
+### 디자인 토큰 (iOS)
+
+같은 규약이 iOS 에도 적용된다. 값은 안드로이드와 **같은 숫자**다.
+
+- **모서리 반경**: `AlarmTalkShapes`(환경 — `theme.shapes.*`) / `AlarmTalkTheme.Shape.*`(정적).
+  둘은 같은 값이고, 환경을 안 받는 작은 시트·다이얼로그가 정적 쪽을 쓴다.
+  - 매핑: `extraSmall`(12) / `small`(14 = `WakerChipShape`) / `medium`·`button`(18 =
+    `WakerButtonShape`·`WakerInputShape`) / `card`(22 = `WakerCardShape`) / `large`(24) /
+    `extraLarge`(28).
+  - ⚠ **생 숫자(`cornerRadius: 14`)를 새로 박지 말 것.** 2026-08-07 전에는 iOS 가 47곳에서
+    생값을 썼고, 안드로이드에 없는 10·16 같은 값이 섞여 **같은 카드가 화면마다 다른 반경**
+    으로 그려졌다(카드 16 vs 22, 칩 10 vs 14).
+  - **예외(토큰화 안 함)**: 진행바 채움처럼 4~8 짜리 장식 도형. 안드로이드에 대응이 없다.
+- ⚠ **"안드로이드가 더 커 보인다" 는 대개 토큰이 아니라 기기 설정이다**(2026-08-17 실측).
+  같은 토큰인데 두 기기가 다르게 그리는 이유는 둘이 겹친 것이다:
+  - **안드로이드는 `sp` 라 시스템 글꼴 크기를 곱한다.** 테스트폰(SM-A325N)은
+    `settings get system font_scale` 이 **1.1** 이었다. 실제로 1.0 으로 바꿔 재보니
+    같은 글자의 높이가 80→74px, 68→63px 로 줄었다(≈8%, 되돌려 놓았다).
+  - **iOS 는 반대로 설정을 아예 무시한다.** `AlarmTalkTypography` 가
+    `Font.custom(_, size:)` 를 쓰는데 `relativeTo:` 가 없어 **Dynamic Type 을 따르지
+    않는다.** 그 아이폰은 `preferredContentSizeCategory` 가 **M**(기본 L 보다 한 칸
+    작음)이라 시스템 `.body` 는 16pt 로 그려지는데, 우리 글자는 그대로 17pt 다.
+  즉 두 기기가 **두 칸 어긋난 채** 비교되고 있었다. **토큰을 깎아 맞추지 말 것** —
+  그러면 1.0 인 기기에서 iOS 보다 작아지고, 사용자가 키운 글꼴을 앱이 도로 취소한다.
+  맞춰 보려면 두 기기의 글자 크기 설정을 같은 칸에 두고 비교한다.
+- **글자 크기가 자리를 넘칠 때**: 무조건 줄이지 않는다. 기준은 `WakerDesign.kt` 의
+  `fitToWidthScale` 주석에 표로 있다 — **줄바꿈으로 흐를 수 없는 자리**(울림 시계·타임휠·
+  하단 버튼 라벨)만 줄이고, 본문·제목·목록 행은 커지게 둔다. 전부에 걸면 사용자가 키운
+  글꼴 설정을 앱이 도로 취소하는 셈이다.
+
 ### 모달 = `IosAlertDialog` 하나 (Android)
 
 알럿 껍데기는 **하나뿐**이다: `ui/components/IosAlertDialog.kt`. 새 모달을 만들 때 M3
@@ -109,6 +152,13 @@
   적용된 곳: 프로모 코드 등록·닉네임 수정·스누즈 직접 입력·직접 문구·목소리 이름 변경.
 - **`IosAlertField` 를 M3 `OutlinedTextField` 로 바꾸지 말 것.** 시도했다가 되돌렸다 — M3 는
   최소 높이 56dp 라 알럿 안에서 비율이 깨진다(`IosAlertField` 는 48dp).
+- ⚠ **입력이 있는 알럿은 폼처럼 그린다**(2026-08-17). 순수 알럿과 두 가지가 다르다:
+  **입력칸은 글자 여백(30)이 아니라 버튼 여백(16)** 을 쓰고(세로로 맞닿은 두 상자의 폭이
+  다르면 그 어긋남만 눈에 걸린다), **제목·본문은 줄 수와 무관하게 왼쪽 정렬**이다(입력칸
+  글자는 언제나 왼쪽에서 시작하는데 그 위만 가운데면 한 모달에 시작점이 둘이 된다).
+  판정은 `content != null` 하나 — 순수 알럿은 예전 그대로(한 줄 가운데 / 여러 줄 왼쪽)다.
+  **iOS 는 여기만 따라오지 못한다** — 시스템 `.alert` 라 정렬을 못 바꾸고, 바꾸겠다고
+  껍데기를 새로 만들면 오히려 원본에서 멀어진다(위 「iOS 는 안드로이드를…」 절).
 - **버튼 2개는 가로, 3개 이상은 세로.** iOS UIAlertController 규칙 그대로.
 - **닫기(X)를 버튼과 같이 두지 말 것.** '건너뛰기'/'닫기' 와 같은 일을 하는 버튼이 둘이면
   어느 쪽이 취소인지 매번 읽어야 한다. 취소 동작은 액션 하나로만 낸다.
@@ -159,18 +209,17 @@
 게이트 제목은 정책을 말하므로 권한별로 "…권한을 허용해야 알람을 설정할 수 있어요" 로
 통일하고, 홈 화면은 위 표대로 **사실**을 말한다.
 
-### 1회성 오버레이는 **확인이 끝난 뒤에만** 판단한다 (Android)
+### 동의 화면 규약 → [`docs/spec/consent.md`](docs/spec/consent.md)
 
-PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버전 → 계정 상태 → 권한). 규약으로 고정한다.
+⚠ **미체크를 철회로 읽지 말 것.** 민감 동의는 선택이라 그냥 통과해도 `agreed=false` 가
+제출되는데, 그걸 철회로 처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.**
+판별·필드 표·재동의 레버는 전부 스펙에 있다.
 
-문제의 형태: 게이트 상태(`updateRequired`·`pendingDeletion`·`needsConsent` …)는 서버 응답으로 채워지는데, **응답 전 기본값 `false` 가 '아니오' 와 구분되지 않는다.** 그 틈에 1회성 오버레이(웰컴 프로모, 첫 권한 안내)가 떠서 **소진 플래그까지 태우고**, 뒤늦게 응답이 와 차단 화면이 깔리면 그 위를 덮는다. 사용자는 본 적도 없이 잃고, 플래그는 계정/기기에 남아 앱을 업데이트해도 되살아나지 않는다.
+### 1회성 오버레이·게이트 → [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md)
 
-- **소진되는 플래그를 태우는 오버레이는 관련 `checkXxx` 응답이 도착한 뒤에만 판단한다.** 현재 준비 신호 3종: `consentChecked`(`checkConsentStatus`) / `versionChecked`(`checkAppVersion`) / `accountStatusChecked`(`checkAccountStatus`).
-- **준비 신호는 성공·실패 모두 `true`.** 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다 — 네트워크 실패로 영영 `false` 면 그 오버레이는 영영 안 뜬다.
-- **가드만 넣지 말고 `LaunchedEffect` 키에도 넣어야 한다.** 키에 없으면 응답이 도착해도 효과가 재실행되지 않아, 게이트가 풀린 뒤에도 오버레이가 안 뜬다.
-- **계정별 신호는 세션 정리에서 `false` 로 되돌린다**(`clearUserScopedRemoteState` — `consentChecked`·`accountStatusChecked`). 앞 계정의 '확인 끝남' 이 새 계정에 새면 안 된다. 반면 `versionChecked` 는 앱·기기 단위라 되돌리지 않는다(계정이 바뀐다고 설치 버전이 바뀌지 않는다).
-- ⚠ **되돌리는 건 세션 정리뿐이다 — 같은 계정을 재확인한다고 `false` 로 내리지 말 것.** `checkConsentStatus` 는 토큰이 바뀔 때마다 다시 도는데, 그때 내리면 이미 홈을 쓰던 화면이 로딩 게이트로 덮인다. 그 화면은 뒤로가기를 삼키므로 **그 동안 앱이 안 닫힌다**(2026-08-05 재현). 그래서 판정은 `consentStatusChecked`(이 계정 응답을 실제로 받았나)로 하고, 캐시(`isConsentCachedDone`)로 하지 않는다 — 받을 게 남은 계정은 완료 캐시가 영영 안 만들어져 매번 다시 덮인다.
-- **로딩 게이트에는 `GateBackGuard` 를 두지 않는다.** 그 가드는 *화면에 정식 선택지가 있어서* 실수로 나가는 걸 막는 장치다. 응답을 기다리는 로딩 화면에는 지킬 선택지가 없고, 삼키면 네트워크가 느릴 때 뒤로가기가 죽은 것처럼 보인다.
+⚠ **응답 전 기본값 `false` 는 '아니오' 가 아니다.** 그 틈에 1회성 오버레이가 뜨면
+소진 플래그까지 태우고, 뒤늦게 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이
+잃는다. 같은 모양의 버그가 PR #660 에서만 네 번 났다. 준비 신호 목록은 스펙에 있다.
 
 ### 저장 뒤 검은 화면 (회귀 방지)
 
@@ -180,6 +229,62 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 - 실제로 이걸 밟는 경로는 '두 번 팝' 이다: 저장은 비동기라 그 사이 저장/취소를 한 번 더 누르거나 시스템 뒤로가기를 누르면, 화면은 이미 팝됐는데 저장 완료 콜백이 또 팝한다.
 - 그래서 **저장 중에는 버튼이 잠겨야 한다.** 편집기 로컬 플래그만으로는 부족하다 — 음성 생성 없이 저장하는 빠른 경로(알람 전용·녹음·오디오 재사용)는 편집기 입장에선 순식간이지만 뷰모델에는 Room 쓰기와 날씨 조회(네트워크)가 남아 있다. 판정은 언제나 `generating || saving`(`MainViewModel.alarmSaving`)이고, `alarmSaving` 은 **성공·실패 모두에서** 내린다(실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이 없다).
 - 새 게이트를 추가하면 **준비 신호도 함께 만든다.** 상태 하나만 추가하면 이 버그가 다섯 번째로 재현된다.
+
+### 재생 방식은 **둘뿐**이고, 소리는 **첫 샘플부터 제 크기**다 (양 앱)
+
+**재생 방식 = 알람 / 목소리.** '알람 + 목소리'(`alarm_voice`)를 되살리지 말 것.
+- 안드로이드에서 그 모드는 톤이 울리고 **해제할 때** 목소리가 한 번 났는데, 알림을 밀어서
+  없애면 건너뛰었다(`ACTION_DISMISS_SILENT`). 목소리를 들으려면 알람을 꺼야 하는 구조라
+  발견 자체가 어려웠고 "목소리가 안 나온다" 문의가 반복됐다.
+- iOS 는 AlarmKit 에 넘길 사운드가 **1개**라 '톤 먼저, 목소리 나중' 이 구조적으로 불가능했다.
+  재생 코드도 `!= .alarmOnly` 하나로만 갈라져 '목소리만' 과 완전히 같게 동작했다 —
+  픽커의 아이콘·설명만 달랐고 **없는 기능을 광고하고 있었다.**
+- 저장된 옛 값은 **목소리로 읽는다**(`AlarmPlayModes.normalize` / `AlarmPlayMode.decode`).
+  그 모드를 고른 사람은 목소리를 만들어 둔 사용자다 — 알람음으로 옮기면 애써 만든 목소리를
+  못 듣게 된다. 서버 `wake_mode` 계약(`voice_only` vs `sound_then_voice`)은 그대로 둔다.
+
+**페이드인을 다시 넣지 말 것.** 예전에는 첫 재생을 target 의 15%(하한 10%)에서 시작해
+6초에 걸쳐 올렸다. 그 6초가 TTS 한 문장보다 길어 **문장 전체가 램프 구간**이었고, 첫 1초가
+-16.5dB(체감 1/3)라 "소리가 안 난다" 로 읽혔다. 도입 커밋에 본문도 주석도 없어 무엇을
+지키려던 것인지 아무도 알 수 없었다. 클릭 노이즈 걱정은 없다 — 게인은 `start()`/`play()`
+**이전에** 확정된다.
+
+**음량 규약**
+- 하한은 **10%**, 0 은 슬라이더로 만들 수 없다. 0 은 '무음' 이라는 별개의 뜻이라 스위치로만
+  표현한다 — 끝값으로 두면 실수로 닿아 알람이 조용히 안 울린다.
+- ⚠ **곱하지 말 것.** 목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 = 톤 게인. iOS 는 예전에
+  둘을 곱했는데, 그 경로는 OS 톤을 함께 울리므로 알람 음량을 낮추면 **줄일 수 없는 톤은
+  그대로인 채 목소리만 묻혔다** — 의도와 정반대다.
+- **안드로이드는 울릴 때 기기 알람 볼륨을 맞춘다**(`AlarmStreamVolume`). `MediaPlayer.setVolume`
+  은 스트림 볼륨에 곱해지는 상대값이라 기기 볼륨이 낮으면 100% 로 맞춰도 작게 울린다.
+  ⚠ **원복이 그 클래스의 존재 이유다** — 원래 값을 올리기 **전에** SharedPreferences 에 적고,
+  프로세스가 죽어도 다음 실행이 되돌린다. 안 그러면 사용자의 알람 볼륨이 영구히 고정된다.
+- **iOS 에는 알람 음량 슬라이더를 두지 않는다.** AlarmKit 이 OS 톤을 소유해 아무것도 제어하지
+  못한다. 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고 확인하기를 반복하게 된다.
+- ⚠ **미리듣기는 울림과 같은 스트림(USAGE_ALARM)이어야 한다.** 기본값(USAGE_MEDIA)이면
+  미리듣기는 미디어 볼륨, 알람은 알람 볼륨으로 나가 같은 설정인데 크기가 다르게 들린다 —
+  폰으로 검증하는 사람이 문제를 영영 못 잡는다.
+
+### 동작 스펙은 **`docs/spec/`** 에 있다 (양 앱 + 백엔드 공통)
+
+⚠ **화면 동작·규칙을 고치기 전에 거기부터 읽는다.** 플랫폼마다 문서를 따로 두다가 같은
+규칙이 세 벌로 갈라졌고, 갈라진 줄 모른 채 한쪽만 고쳐 사고가 반복됐다. 이제 **동작은
+스펙이 유일 출처**이고 코드는 구현이다 — 다르면 구현이 틀린 것이다.
+
+| 스펙 | 다루는 것 |
+| --- | --- |
+| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | 울릴 때 전체화면/알림 판정, 스와이프=해제, 소리·음량, 권한별 사실 |
+| [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, 기본목소리 제한(**OR**), 직전 선택 유지, 버킷 선다운로드 |
+| [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
+| [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
+| [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
+| [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**, 받은 뒤엔 **전부 받은 사람 것**, 설정 불가능 시간은 **자동 생성 금지** |
+| [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
+| [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
+
+각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지
+적어 둔 것이라, **한 곳만 고치는 사고**를 막는다. 동작을 바꾸면 스펙을 먼저 고친다.
 
 ### 알람 편집기 기본값 = **직전 선택 유지** (회귀 방지)
 
@@ -195,9 +300,27 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   (`clonePrerenderBucketCategoryFor`) 사실상 **모든 저장**이 이 경로다. 그래서 `!voiceRandomPrompt`
   하나만 보고 판단하면 결과가 "가끔 안 된다" 가 아니라 "라이브 생성 폴백일 때만 된다" 가 된다.
   - 버킷/직접입력 판정식은 언제나 **`!voiceRandomPrompt && !isActiveBucketAlarm()`** 이고, 이걸 쓰는
-    자리는 셋이다: 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
-    `random_prompt`), 요약 행·문구 프리필(`VoiceAudioCard`, `manualText`). **한 곳만 고치지 말 것** —
-    2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데 눌러 열면 '직접 입력' 이었다.
+  - ⚠ **표시와 저장은 판정식이 다르다**(2026-08-16 분리). `isActiveBucketAlarm()` 은 첫 줄에서
+    `playMode == ALARM_ONLY` 면 false 다 — "**울릴 때** 클립을 쓰는가" 로는 맞지만, 그걸
+    **문구 종류 표시**에 쓰면 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` →
+    `직접 입력` 으로 뒤집힌다(실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 false).
+    **표시**(요약 행·pane 프리셀렉트·직접입력 여부)는 `hasBucketMessageChoice()`(재생 방식 무관),
+    **저장·오디오 바인딩**(`toDraft`·버킷 필드·컨텍스트 플래그)은 `isActiveBucketAlarm()`.
+    각 갈래 안에서는 여전히 철자까지 같아야 한다. 회귀 테스트
+    `AlarmEditorStateTest.alarmModeDoesNotChangeChosenMessageKind`.
+    자리는 **일곱**이다(2026-08-12 전수 확인): 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트와
+    `randomContext`·`manualText`(`AlarmEditorScreen` 의 `random_prompt`), `applyRandomPromptSettings`
+    의 `unchanged`, 요약 행(`VoiceAudioCard` 의 `MessageModeSummaryRow`), 목소리 교체 시
+    `losesManualText`(`VoiceAudioCard`), 무료 pane 의 `manualSelected`(`AlarmEditorScreen`).
+    **한 곳만 고치지 말 것** — 2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데
+    눌러 열면 '직접 입력' 이었다. 2026-08-12 에는 `manualSelected` 만 `selectedBucket == null` 을
+    직접 봐서(철자가 달랐다) 나머지 여섯과 반대로 답했다 — **철자까지 같아야 한다.**
+  - **iOS 도 같은 규약이다.** 대응 판정식은 `AlarmEditorSheet.currentMessageContext` 의
+    `!randomPrompt && !isActiveStockClipAlarm` 이고, 저장은 `saveFlow` 의 스톡 분기다.
+    ⚠ iOS 는 2026-08-12 까지 그 저장이 `voiceRandomContext = nil` 로 **종류를 통째로 버렸다** —
+    안드로이드에서 네 번 난 사고를 iOS 는 처음부터 깔고 있었다. 역매핑
+    `RandomPromptContext.forBucket` ↔ `bucketCategory` 는 **한 쌍**이고 회귀 테스트는
+    `MessageContextMemoryTests`.
   - 저장에서 종류를 잃으면 증상이 둘로 갈라져 보인다: **새 알람이 매번 '기본 인사말'** 이고,
     **그 알람을 다시 열면 '직접 입력'** 이다. 같은 원인이다.
   - 종류를 떨어뜨리던 시절의 옛 행은 종류가 null 이라, 열 때 `randomPromptContextForBucket(bucketId)`
@@ -212,12 +335,88 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   - 바뀐 이유: 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이 막힌다 — 그게 예전에 '기억하지 않는다' 를 택한 실질적 근거였다. 문구를 함께 이어받으면 글자가 같아 `AlarmAudioStore` 입력 캐시에 걸려 **서버 호출도 월 한도 차감도 없이** 곧바로 저장된다(오프라인 포함). 근거가 사라졌으니 규칙도 바뀐다.
   - ⚠ **기억되는 값은 입력 원문이 아니라 서버 표시 문구다.** 알람에 저장되는 게 그 값이라서다(`setGeneratedTtsAudio` — 잠금화면 문구와 음성을 맞추려고 일부러 그렇게 한다). 번역이 켜진 기기(앱 언어 ≠ ko)에서는 둘이 갈라지므로, 생성 후 **표시 문구 키로도 `linkTtsInput` 을 남긴다**. 안 그러면 다음 새 알람이 표시 문구로 열려 입력 캐시를 빗나가고, 위의 '재생성·한도 차감 없음' 약속이 조용히 깨진다(Codex #685).
   - **마지막 선택은 하나다.** 생성형을 저장하면 `saveLastMessageContext` 가 직접 입력 기록을 **지운다** — 별도 '어느 쪽이 마지막' 플래그를 두지 않는다(플래그와 값이 어긋나는 상태 자체를 없앤다). 그래서 `last_manual_text` 가 차 있다 = 마지막이 직접 입력이었다.
-  - ⚠ **요약 행에 문구를 반드시 함께 보여준다**(`MessageModeSummaryRow` 의 `manualText`). 생성형은 내용이 매번 새로 만들어져 틀릴 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온 새 알람을 알아챌 방법이 없다. 요약 행은 한 줄 말줄임, 전문은 문구 화면의 상세 카드에서 본다.
+  - ⚠ **요약 행에는 문장을 싣지 않는다**(2026-08-15 변경. 그전에는 반대였다). 편집기 본문의 문구 행은 **무엇을 골랐는지**(`직접 입력 문구` / `약` / `날씨 · 서울`)만 말하고, 알람이 읽어 줄 문장은 **문구 화면**에서 본다. 양쪽 다(`VoiceAudioCard.MessageModeSummaryRow` / `MessageSettingsPane.MessageModeSummaryRow`).
+    - 바뀐 이유: 편집기 본문에 문장이 있으면 재생 방식을 '알람' 으로 바꿀 때 사라지는 카드에 실려 잠깐 읽힌다("문구 잔재"). 세 번 지적됐다.
+    - 잃는 것을 알고 택했다 — 새 알람은 직전 직접입력 문구를 이어받으므로, 종류만 보이면 **어제 문구를 그대로 물고 온 것**을 요약 행에서는 알아챌 수 없다. 확인하려면 문구 행을 눌러 들어가야 한다(상세 카드에 전문이 있다).
   - 기존 알람을 편집할 때는 당연히 자기 문구가 그대로 남는다(delivery 태그 제거가 이걸 깎아먹지 않도록 `DeliveryTags.kt` 는 **우리가 내보낸 태그만** 벗긴다).
 - **이미 등록한 정보는 다시 묻지 않는다**(문구 화면). 날씨 지역·운세 사주·직접 입력 문구는 값이 **없을 때만** 고르는 순간 입력창이 뜬다. 이미 있으면 선택만 되고, 고치는 길은 리스트 아래 상세 카드의 '변경하기' 하나다(`RandomPromptDetailRow` 의 `onChange`). 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
 - **모달은 자기만 닫는다.** 날씨·운세·직접 입력 다이얼로그는 확인해도 문구 목록을 닫지 않는다(예전에는 확인이 곧 `onSaveSettings` 라 목록까지 닫혀, 도시 하나 바꾸려다 화면 밖으로 튕겼다). 최종 반영은 문구 화면의 저장 버튼 **한 곳**이다.
 - **삭제는 명시적 로그아웃·탈퇴에서만**(`clearCurrentDefaultVoicePreferences`). 자동 401(`clearSessionKeepingAlarms`)에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다(Codex #646 회귀).
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키(`bucketRotationIndex`/`bucketClipKeysJson` 등)는 알람별 상태라 절대 따라가지 않는다. 무료 버킷 **회전**(울릴 때마다 클립 순차 이동)과는 다른 축이라 서로 충돌하지 않는다.
+
+### iOS 는 안드로이드를 **원본**으로 삼는다 (2026-08-06 전수 대조)
+
+두 앱을 나란히 놓고 124건을 대조해 iOS 를 안드로이드에 맞췄다. 다시 갈라지지 않도록
+고정할 규약만 남긴다. **화면을 만들 때 안드로이드 대응 파일을 먼저 열 것.**
+
+- **주석의 '안드로이드 미러' 근거를 믿지 말고 확인할 것.** 틀린 근거가 계속 나왔다 —
+  `WakerBrandHeader:156-166`(존재하지 않음), `StockClipDropdown`(없음), `MenuScreen`(없음),
+  `SettingsToggleRow`(없음), `SharedVoiceViewerInfoDialog`(없음),
+  `editor_label_alarm_name`(문자열 자체가 없음), `AlarmTalkBottomBar.kt:117-121
+  isDarkScheme 분기`(이미 없앤 옛 디자인), 타임휠 `itemHeight = 72.dp`(실제 92).
+  **안드로이드가 이미 지운 화면을 베낀 주석이 그대로 남아 있었다.**
+  - **없는 동작을 근거로 쓴 주석이 더 위험하다.** 2026-08-07 당시 무료 테마 주석 2곳이
+    "클립이 울릴 때마다 순차 회전한다" 고 적었지만 그때 iOS 에는 그 회전이 없었다
+    (`clips.first` 하나만 썼다) — 코드가 아니라 주석이 기능을 광고하고 있었다.
+    (지금은 iOS 에도 회전이 있다 — `AlarmSoundResolver.rotatedBucketClipKey` +
+    `LocalAlarmStore.advancedBucketRotationIndex`. **이 서술 자체가 낡을 수 있다는 예다.**)
+  - **새 주석에는 줄번호를 쓰지 말 것.** 어차피 썩는다 — `ui/editor/Foo.kt` 처럼 경로와
+    심볼 이름만 적는다.
+  - 회귀 방지: `scripts/check-cross-platform-refs.py`(CI lint 잡에 포함). 주석이 대는
+    파일·줄·심볼이 실재하는지 검사한다.
+- **조사·요약을 원문 대신 인용하지 말 것.** 2026-08-12 에 "안드로이드는 테마를 고르는
+  순간 클립 11개를 받는다" 고 사용자에게 말했다가 반증됐다. `bindStockBucketClips` 는
+  `getCachedAudio(cacheKey) ?: 다운로드` 로 **캐시 우선**이고, 그 함수 주석도 "이미 있으면
+  재사용" 이라고 정확히 적고 있었다. 코드도 주석도 맞았는데, 조사 보고의 요약 문장을 —
+  **같은 세션에서 그 함수를 직접 읽고도** — 그대로 옮겼다.
+  - 앞의 '주석을 믿지 말 것' 과 같은 종류다. 근거의 출처가 주석이든 테스트든 조사
+    보고든, **읽지 않은 것을 근거로 말하지 않는다.**
+  - 특히 위험한 형태: "A 는 X 를 한다" 로 요약된 문장. 조건부 폴백(`?: 다운로드`)이
+    무조건 경로로 납작해지기 쉽다. **분기를 직접 볼 것.**
+  - 두 앱이 다르다고 말하기 전에 특히 확인한다 — 「iOS 는 안드로이드를 원본으로 삼는다」
+    때문에 그 판단은 곧바로 "고쳐야 한다" 로 이어진다. 없는 차이를 만들어 내면 멀쩡한
+    쪽을 망가뜨린다.
+- **테스트가 틀린 값을 지키고 있을 수 있다.** 클론 최소 길이 60초, 진동 12종,
+  "isDraft 는 더 이상 보내지 않는다(draft 플로우가 사라졌다)" — 셋 다 회귀 테스트가
+  잘못된 상태를 고정하고 있었다. 서버 라우트와 안드로이드를 근거로 삼는다.
+- **번역 카탈로그(`Localizable.xcstrings`)도 함께 고친다.** 소스만 고치면 en·ja 기기에
+  옛 문구가 그대로 남는다.
+- **iOS 가 안드로이드와 달라야 하는 곳은 딱 두 갈래다.**
+  1. **AlarmKit 제약**: 울림 화면을 우리가 못 그린다(시스템 ALERT UI 소유). 알람 음량
+     슬라이더도 두지 않는다 — 못 움직이는 컨트롤이라서. 대신 alert 제목과 Live Activity
+     에 **시각**을 넣어 정보량을 맞춘다.
+     - **진동도 같다(2026-08-17).** iOS 에는 진동 행·패턴 목록이 **없다.** 프레임워크가
+       받는 것은 `sound:` 하나뿐이고 SDK 인터페이스에 vibration·haptic 이라는 낱말이
+       나오지 않는다 — 예전 17종 목록은 무엇을 골라도 실제 알람이 같았고, 화면은 "실제
+       알람에서는 이 패턴이 반복돼요" 라고 **없는 기능을 광고**했다. 값(`vibrationPattern`)
+       은 계속 왕복시킨다 — 안드로이드에서 고른 패턴이 iOS 에서 알람을 고쳤다는 이유로
+       사라지면 안 된다. 안드로이드는 자체 울림을 소유하므로 목록이 그대로 있다.
+  2. **플랫폼 표준**: 확인 알럿은 시스템 `.alert` 를 쓴다(안드로이드의 `IosAlertDialog`
+     이 그걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다).
+  3. **글리프와 글자 크기 동작은 각 OS 것을 쓴다**(2026-08-17 지시).
+     - **아이콘**: iOS 는 SF 심볼, 안드로이드는 머티리얼. **통일하는 것은 뜻과 자리**(어떤
+       액션에 어떤 아이콘을 쓰는가)이지 글리프가 아니다. 예전에는 서로를 베끼고 있었다 —
+       iOS 하단바의 알람이 머티리얼 도형을 손으로 그린 것(`MaterialAlarmShape`)이었고,
+       안드로이드의 목소리·더보기 탭과 뒤로가기·미리듣기는 SF 심볼 모양의 자체
+       드로어블이었다. 지금 남은 자체 드로어블은 **브랜드(`ic_google_g`)와 알림 아이콘
+       (`ic_alarm_24`, 알림은 드로어블만 받는다)** 둘뿐이다.
+     - **글자 크기**: 두 앱 모두 **사용자의 시스템 글자 크기 설정을 따른다.** 안드로이드는
+       `sp`(기본), iOS 는 `Font.pretendard` 의 `relativeTo:`. 상한은 iOS 만 둔다
+       (`AlarmTalkApp` 의 `.dynamicTypeSize(...accessibility1)`) — 안드로이드는 이미
+       `fitToWidthScale`·타임휠 클램프로 큰 글씨를 견딘다.
+  그 외에는 **다르면 iOS 가 틀린 것**으로 본다.
+- **오디오 스테이징은 `AVAssetExportSession` 으로 하지 않는다.** `AVAssetExportPresetAppleM4A`
+  는 `.caf` 를 못 내므로 staging 이 **항상** 실패하고, 잠금화면·앱 종료 상태에서 목소리가
+  아예 안 울린다. `AVAssetReader`→`AVAssetWriter` 로 CAF(LPCM)를 직접 쓰고,
+  `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파일은 생기는데 열리지 않는다).
+  회귀 테스트: `AlarmSoundStagingCapabilityTests`.
+- **Keychain 저장 실패로 세션 반영을 버리지 않는다**(`AuthViewModel.persistSession`).
+  저장에 실패하면 잃는 건 재시작 시 자동 로그인뿐이지만, 갱신을 버리면 rolling refresh
+  가 죽어 90일 뒤 조용히 로그아웃된다.
+- **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
+  alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
+  DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
+  없어서 만든 진입점이다.
 
 ## 진행 중 작업 (세션 재개 시 먼저 읽을 것)
 현재 상태·폰 테스트 체크리스트·남은 follow-up: **[`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)**.

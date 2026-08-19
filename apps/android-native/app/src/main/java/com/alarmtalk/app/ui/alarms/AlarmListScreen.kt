@@ -52,6 +52,17 @@ internal fun AlarmListScreen(
     contentPadding: PaddingValues,
     selectedTab: NativeTab,
     onSelectTab: (NativeTab) -> Unit,
+    /**
+     * 하위 화면(이용권·코드 등록)의 뒤로가기.
+     *
+     * ⚠ **`onSelectTab(Menu)` 로 되돌리지 말 것 — 뒤로가기는 '이동' 이 아니라 '팝' 이다.**
+     * 탭 이동은 `popUpTo(알람) { saveState }` + `restoreState` 를 쓰는데, 이 조합은 팝한
+     * 스택을 **통째로 저장했다가 통째로 복원**한다. 그래서 이용권에서 뒤로가기를 누르면
+     * [알람, 더보기, 이용권] 을 저장했다가 그대로 되살려 **다시 이용권에 서 있었다**
+     * (2026-08-11 실기기 확인 — 눌러도 아무 일이 없었다). 설정·라이선스 등 나머지
+     * 하위 화면은 처음부터 `popBackStackOrHome()` 을 쓰고 있었다 — 같게 맞춘다.
+     */
+    onNavigateBack: () -> Unit,
     alarms: List<AlarmEntity>,
     // Room 첫 방출 여부 — false 인 동안 알람 탭은 빈 상태를 그리지 않는다(콜드 스타트 번쩍임 방지).
     alarmsLoaded: Boolean,
@@ -74,6 +85,8 @@ internal fun AlarmListScreen(
     sensitiveConsentMissing: List<String> = emptyList(),
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     // 알람에 마지막으로 쓴 목소리 — 편집기의 초기 선택에 쓴다.
     lastUsedVoiceId: String? = null,
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
@@ -93,7 +106,7 @@ internal fun AlarmListScreen(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
@@ -101,9 +114,10 @@ internal fun AlarmListScreen(
     onEnsureFamilyShareCode: () -> Unit,
     planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
+    onGiftPersonal: (android.app.Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onChangePlan: (String, Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -133,6 +147,23 @@ internal fun AlarmListScreen(
     val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
     val listState = rememberLazyListState()
+    // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
+    // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면 바뀐 이용권
+    // 카드(맨 위)가 안 보인다 — 무엇이 달라졌는지 알 수 없다. 예전에는 토스트가 그 일을
+    // 대신했지만, 화면이 이미 말하는 것을 한 번 더 말하는 것이라 없앴다(같은 지시).
+    // 판정은 그룹이 **사라진 순간**이다(있다 → 없다). 처음부터 없던 사람은 건드리지 않는다.
+    //
+    // ⚠ **이용권 탭으로 한정한다.** 나가기는 코드 등록 탭(`FamilyConnectionPanel` 의
+    // '나가고 등록하기')에서도 일어나는데, 거기서는 나간 **직후 입력창이 열린다** —
+    // 같이 맨 위로 올리면 방금 열린 그 입력창에서 사용자를 끌어내린다.
+    val sharedGroupId = familyGroup?.group?.id
+    var hadSharedGroup by remember { mutableStateOf(sharedGroupId != null) }
+    LaunchedEffect(sharedGroupId) {
+        if (hadSharedGroup && sharedGroupId == null && selectedTab == NativeTab.Billing) {
+            listState.animateScrollToItem(0)
+        }
+        hadSharedGroup = sharedGroupId != null
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
@@ -195,6 +226,21 @@ internal fun AlarmListScreen(
                 }
             }
         }
+        // ⚠ **하위 화면(이용권·코드 등록)의 상단바는 목록 밖에 고정한다.**
+        // 목록 안(`item`)에 두면 스크롤과 함께 위로 사라져, 내려간 상태에서 뒤로가기에
+        // 닿으려면 다시 맨 위로 올라와야 한다. iOS 는 이 화면들을 네비게이션 스택에
+        // push 해서 상단 바가 **항상 남는다**(`AuxiliarySheetHost` 의 `navigationTitle`).
+        // 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한 화면으로 읽힌다.
+        if (selectedTab == NativeTab.Billing || selectedTab == NativeTab.People) {
+            WakerTopBar(
+                title = stringResource(
+                    if (selectedTab == NativeTab.Billing) R.string.common_tab_billing
+                    else R.string.common_tab_code_register,
+                ),
+                onBack = onNavigateBack,
+                modifier = Modifier.padding(top = 24.dp),
+            )
+        }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -203,8 +249,12 @@ internal fun AlarmListScreen(
         contentPadding = PaddingValues(
             // 좌우 여백은 모든 탭 20dp 로 통일 — 탭 전환 시 콘텐츠 폭이 미세하게 널뛰지 않게.
             start = 20.dp,
-            // 알람 탭은 위 고정 헤더가 상단 여백을 이미 냈다.
-            top = if (selectedTab == NativeTab.Alarms) 0.dp else 24.dp,
+            // 알람 탭과 하위 화면(이용권·코드 등록)은 위 **고정 헤더/상단바**가 상단
+            // 여백을 이미 냈다.
+            top = when (selectedTab) {
+                NativeTab.Alarms, NativeTab.Billing, NativeTab.People -> 0.dp
+                else -> 24.dp
+            },
             end = 20.dp,
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
@@ -231,6 +281,7 @@ internal fun AlarmListScreen(
                         sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
+                        expectedVariants = expectedVariants,
                         onDownloadStockAudio = onDownloadStockAudio,
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,
@@ -316,9 +367,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.People -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_code_register))
-                }
+                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
                 item {
                     FamilyConnectionPanel(
                         socialBusy = socialBusy,
@@ -351,9 +400,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Billing -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_billing))
-                }
+                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
                 item {
                     SubscriptionPanel(
                         billingBusy = billingBusy,
@@ -362,10 +409,11 @@ internal fun AlarmListScreen(
                         vouchers = vouchers,
                         planPrices = planPrices,
                         onPurchasePlay = onPurchasePlay,
+                        onGiftPersonal = onGiftPersonal,
                         onCancelSubscription = onCancelSubscription,
-                        onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
+                        onRestorePurchases = onRestorePurchases,
                     )
                 }
             }

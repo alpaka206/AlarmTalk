@@ -44,6 +44,50 @@ class StockClipPrefetchWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
 
+    /**
+     * 받는 동안 **진행률을 폰에서 바로 보이게** 한다.
+     *
+     * ⚠ 소리 없는 낮은 중요도 채널이다 — 사용자가 요청한 알림이 아니라 표시일 뿐이라
+     * 소리를 내면 방해가 된다. iOS 는 갱신되는 진행률 알림이 없어 Live Activity 로 같은
+     * 일을 한다(docs/spec/voice-and-message.md).
+     */
+    private fun progressNotification(done: Int, total: Int): androidx.core.app.NotificationCompat.Builder {
+        val percent = if (total > 0) (done * 100 / total).coerceIn(0, 100) else 0
+        return androidx.core.app.NotificationCompat.Builder(
+            applicationContext,
+            com.alarmtalk.app.alarm.NotificationChannels.CLIP_PREFETCH_CHANNEL_ID,
+        )
+            .setSmallIcon(com.alarmtalk.app.R.drawable.ic_alarm_24)
+            .setContentTitle(applicationContext.getString(com.alarmtalk.app.R.string.clip_prefetch_notification_title))
+            .setContentText("$percent%")
+            .setProgress(100, percent, total <= 0)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+    }
+
+    private fun foregroundInfo(done: Int, total: Int): androidx.work.ForegroundInfo =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.work.ForegroundInfo(
+                CLIP_PREFETCH_NOTIFICATION_ID,
+                progressNotification(done, total).build(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            androidx.work.ForegroundInfo(CLIP_PREFETCH_NOTIFICATION_ID, progressNotification(done, total).build())
+        }
+
+    override suspend fun getForegroundInfo(): androidx.work.ForegroundInfo = foregroundInfo(0, 0)
+
+    /**
+     * 진행률을 알림에도 반영한다. 실패해도 다운로드는 계속한다 — 알림 권한이 없거나
+     * 포그라운드 승격이 막혀도(백그라운드 제한) **받는 일 자체를 멈추면 안 된다.**
+     */
+    private suspend fun publishProgress(done: Int, total: Int) {
+        setProgress(progressData(done = done, total = total))
+        runCatching { setForeground(foregroundInfo(done, total)) }
+    }
+
     override suspend fun doWork(): Result {
         val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
         return runCatching {
@@ -52,13 +96,64 @@ class StockClipPrefetchWorker(
             val language = deviceVoiceLanguage()
             val audioStore = AlarmAudioStore(applicationContext)
 
-            val clips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
-                .filter { it.targetsDefaultVoices(language) }
-            if (clips.isEmpty()) return@runCatching Result.success()
+            val allClips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
+            // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
+            // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.
+            // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
+            // ⚠ **공유받은 목소리는 넣지 않는다** — 그룹원 수만큼 곱해지는데 실제로 쓰는 것은
+            // 보통 하나다. 그건 알람에서 고르는 순간 받는다.
+            val ownedProfileIds = withContext(Dispatchers.IO) {
+                runCatching { api.listVoiceProfiles(auth).profiles }
+                    .getOrDefault(emptyList())
+                    .filterNot { isSystemVoiceId(it.id) }
+                    .map { it.id }
+                    .toSet()
+            }
+            val clips = allClips.filter {
+                // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
+                // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
+                it.targetsDefaultVoices(language) || it.voiceProfileId in ownedProfileIds
+            }
+
+            // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
+            // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를
+            // 바꾼 다음 실행)에도 재바인딩은 남아 있을 수 있다.
+            suspend fun rebind() {
+                runCatching {
+                    StockClipLanguageRebinder.rebindIfLanguageChanged(
+                        context = applicationContext,
+                        api = api,
+                        auth = auth,
+                        clips = allClips,
+                        language = language,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
+                // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
+                // ⚠ **위와 따로 잡는다** — 언어 재바인딩이 실패해도 이건 돌아야 한다.
+                // 둘 다 멱등이라 매 회차 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
+                // 하지 않고 다음 회차에 다시 시도한다.
+                runCatching {
+                    StockClipLanguageRebinder.rebindLiveGenerationRows(
+                        context = applicationContext,
+                        api = api,
+                        auth = auth,
+                        clips = allClips,
+                        language = language,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
+            }
+
+            if (clips.isEmpty()) {
+                rebind()
+                return@runCatching Result.success()
+            }
 
             val missing = clips.filter { audioStore.getCachedAudio(cacheKeyFor(it)) == null }
-            setProgress(progressData(done = clips.size - missing.size, total = clips.size))
-            if (missing.isEmpty()) return@runCatching Result.success()
+            publishProgress(done = clips.size - missing.size, total = clips.size)
+            if (missing.isEmpty()) {
+                rebind()
+                return@runCatching Result.success()
+            }
 
             var done = clips.size - missing.size
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
@@ -80,8 +175,9 @@ class StockClipPrefetchWorker(
                     }.awaitAll()
                 }
                 done += batch.size
-                setProgress(progressData(done = done, total = clips.size))
+                publishProgress(done = done, total = clips.size)
             }
+            rebind()
             Result.success()
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
@@ -156,6 +252,9 @@ class StockClipPrefetchWorker(
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
 
         private fun progressData(done: Int, total: Int) = workDataOf(KEY_DONE to done, KEY_TOTAL to total)
+
+        /** 진행률 알림 id. 알람 알림들과 겹치지 않는 고정값. */
+        private const val CLIP_PREFETCH_NOTIFICATION_ID = 7311
 
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)

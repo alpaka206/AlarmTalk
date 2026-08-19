@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +25,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -87,18 +87,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal fun expectedCloneBucketVariantCount(category: String): Int? =
-    when (category) {
-        // 날씨 = 조건 8 + '인터넷 안 돼서 못 알아봤어요' 미해결 안내 1(마지막 클립이 안내). data 계층
-        // 상수를 참조해 발사 폴백(bucketVariantIndex)과 단일 출처로 유지.
-        "weather" -> com.alarmtalk.app.data.WEATHER_CLONE_CLIP_COUNT
-        "fortune" -> 5
-        "love" -> 3
-        "medication" -> 3
-        "greeting" -> 1
-        else -> null
-    }
-
 private enum class AudioPreviewTarget {
     CachedAudio,
     StockClip,
@@ -120,6 +108,16 @@ internal fun AlarmEditorScreen(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). null 이면 완전성을 판정할 수 없어 라이브로 간다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
+    /** 목소리별 준비도(생성+다운로드). 준비 화면이 그린다. */
+    clipReadiness: List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress> = emptyList(),
+    /** 서버 생성이 실패한 목소리를 다시 큐에 올린다. */
+    onRetryClipRenders: () -> Unit = {},
+    /** 공유받은 목소리인데 소유자 쪽 생성이 아직인 것(진행률에 넣지 않고 다른 문구로 말한다). */
+    clipReadinessAwaitingOwner: Set<String> = emptySet(),
+    /** 관문이 막은 목소리를 준비 대상에 넣어 다시 세라고 알린다. */
+    onPrepareClipsFor: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
     // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
@@ -160,7 +158,17 @@ internal fun AlarmEditorScreen(
     // 로그인하지 않은 경우만 음성 모드를 잠근다.
     val voicePlanLocked = authSession == null
     // 무료 플랜 제한 모드: 녹음/파일·직접 입력·동적(날씨/운세) 문구·번역은 유료 게이트.
-    val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
+    //
+    // ⚠ **구독 응답이 오기 전에는 서버 `users.plan` 을 본다.** `hasPaidVoiceAccess` 는
+    // 응답이 없으면 false 라, 그것만 보면 편집기를 여는 순간 유료 사용자가 잠깐 무료로
+    // 판정된다 — 내 클론이 목록에서 사라지고 문구가 테마로 잠긴 채 보인다.
+    // 같은 폴백을 이미 알람 잠금 판정(`AlarmTalkApp` 의 `planIsFree`)이 쓰고 있다.
+    val planSaysPaid = authSession?.user?.plan
+        ?.lowercase()
+        ?.let { it.isNotBlank() && it != "free" } == true
+    val freeVoiceTier = authSession != null &&
+        !hasPaidVoiceAccess(subscriptionResponse) &&
+        !(subscriptionResponse == null && planSaysPaid)
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.
@@ -169,10 +177,12 @@ internal fun AlarmEditorScreen(
     } else {
         voiceProfiles
     }
-    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
+    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.VOICE_ONLY
     // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
-    // 노출하지 않는 '기본 인사말'=preset 으로 시작). '직접 입력'은 기억하지 않아 빈 직접입력으로
-    // 시작하지 않는다.
+    // 노출하지 않는 '기본 인사말'=preset 으로 시작).
+    // **직접 입력도 문구까지 기억한다**(2026-08-06 변경). 종류만 이어받으면 빈 직접입력으로
+    // 열려 저장이 막히는데, 문구를 함께 이어받으면 글자가 같아 AlarmAudioStore 입력 캐시에
+    // 걸려 서버 호출도 한도 차감도 없이 저장된다 — '기억하지 않는다' 의 근거가 사라졌다.
     val defaultRandomContext = lastMessageContext ?: DefaultRandomPromptContext
     val editor = remember(alarm?.id) {
         AlarmEditorState.from(
@@ -197,8 +207,10 @@ internal fun AlarmEditorScreen(
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
-    var dynamicPromptPreferences by remember(appContext) {
-        mutableStateOf(dynamicPromptPreferenceStore.read())
+    // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
+    val promptOwnerUserId = authSession?.user?.id
+    var dynamicPromptPreferences by remember(appContext, promptOwnerUserId) {
+        mutableStateOf(dynamicPromptPreferenceStore.read(promptOwnerUserId))
     }
     // 앱 전역 공휴일 달력 국가 + 그 국가의 다가오는 공휴일 목록(토글 아래 표시용).
     val holidayCountryStore = remember(appContext) { HolidayCountryPreferenceStore(appContext) }
@@ -235,6 +247,12 @@ internal fun AlarmEditorScreen(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
+
+    /** 아직 못 받은 목소리를 골랐을 때 띄우는 준비 화면. */
+    // ⚠ **어느 목소리 때문에 열렸는지 기억한다.** 예전에는 Boolean 이라 관문이 넘긴 id 를
+    // 버렸고, 공유받은 목소리가 준비 대상에서 빠져 "준비됐어요 100%" 만 보였다 —
+    // 돌아가면 관문이 또 막아 **빠져나갈 수 없는 고리**였다(2026-08-18).
+    var preparationVoiceId by remember { mutableStateOf<String?>(null) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
@@ -349,13 +367,6 @@ internal fun AlarmEditorScreen(
         audioMessage = null
     }
 
-    // 가족/상대방 알람 등록 흐름의 안내는 카드와 텍스트로만 노출한다.
-    // 토스트로 숨겨진 알림만 의존하지 않고 모든 모드에서 동일하게 확인할 수 있게 한다.
-    fun showFamilyAlarmToast(message: String) {
-        if (!familyAlarmMode) return
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
     fun stopPreview() {
         previewStopJob?.cancel()
         previewStopJob = null
@@ -380,6 +391,18 @@ internal fun AlarmEditorScreen(
         previewPreparing = true
 
         val player = MediaPlayer()
+        // ⚠ **울림과 같은 스트림으로 낸다(USAGE_ALARM).** 기본값(USAGE_MEDIA)으로 두면
+        // 미리듣기는 미디어 볼륨, 실제 알람은 알람 볼륨으로 나가 **같은 설정인데 크기가 다르게**
+        // 들린다. 그러면 목소리 크기 설정을 미리듣기로 검증할 수 없다 — 크게 들어보고 저장했는데
+        // 알람은 작은 상황이 생긴다. 조건은 RingingService.createVoicePlayer 와 같게 유지할 것.
+        runCatching {
+            player.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+        }
         mediaPlayer = player
         runCatching {
             player.setDataSource(context, uri)
@@ -450,32 +473,26 @@ internal fun AlarmEditorScreen(
         )
     }
 
-    // (보이스·버킷)의 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어(시스템 스톡 3개국),
-    // 없으면 그 보이스가 가진 유일한 언어 = 클론을 만들 때 고른 언어를 그대로 쓴다.
-    // 일본어로 만든 클론은 한국어 기기(공유받은 쪽 포함)에서도 일본어 클립을 소비한다.
-    fun bucketClipLanguageFor(category: String, profileId: String): String {
-        val langs = stockClips.asSequence()
-            .filter { it.voiceProfileId == profileId && it.category == category }
-            .map { it.language ?: "ko" }
-            .toSet()
-        return if (appVoiceLanguage in langs) appVoiceLanguage else langs.firstOrNull() ?: appVoiceLanguage
-    }
+    // ⚠ **클립 판정은 여기 없다** — 전부 `ClipPreparationGate.kt` 의 [ClipGate] 에 있다.
+    // 컴포저블 밖에 둬야 테스트에서 부를 수 있고, 판정식이 한 벌뿐임이 파일 경계로 못 박힌다.
+    // 여기서 본문을 다시 펼쳐 쓰지 말 것. 관문(`needsClipPreparation`)을 부르는 자리는 **셋**이다.
+    val clipGate = ClipGate(
+        stockClips = stockClips,
+        expectedVariants = expectedVariants,
+        appVoiceLanguage = appVoiceLanguage,
+    )
 
-    // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
-    // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
-    fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
-        val clipLanguage = bucketClipLanguageFor(category, profileId)
-        val variants = stockClips
-            .filter {
-                it.voiceProfileId == profileId &&
-                    it.category == category &&
-                    (it.language ?: "ko") == clipLanguage
-            }
-            .map { it.variant }
-            .toSet()
-        if (variants.isEmpty()) return false
-        val fullCount = expectedCloneBucketVariantCount(category) ?: return false
-        return variants == (0 until fullCount).toSet()
+    /**
+     * 준비 페이지를 연다. [needsClipPreparation] 이 true 인 **모든** 자리는 이걸 부른다 —
+     * 막기만 하고 보내지 않으면 사용자가 할 수 있는 일이 없다.
+     *
+     * `onPrepareClipsFor` 는 그 목소리를 진행률 계산 대상에 넣는다. 공유받은 목소리는 내
+     * 목록에 없어서, 안 넣으면 준비 페이지가 "준비됐어요 100%" 를 보여 주고 돌아가면 관문이
+     * 또 막는 **빠져나갈 수 없는 고리**가 된다(`refreshClipReadiness` 의 selectedVoiceProfileId).
+     */
+    fun openClipPreparation(profileId: String) {
+        preparationVoiceId = profileId
+        onPrepareClipsFor(profileId)
     }
 
     // 버킷 선택 코어: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
@@ -487,7 +504,7 @@ internal fun AlarmEditorScreen(
         profileId: String,
         contextVariantIndex: Int? = null,
     ): Boolean {
-        val clipLanguage = bucketClipLanguageFor(bucket, profileId)
+        val clipLanguage = clipGate.bucketClipLanguageFor(bucket, profileId)
         val clips = stockClips
             .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == clipLanguage }
             .sortedBy { it.variant }
@@ -556,7 +573,11 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_select_recipient)
             return
         }
-        showFamilyAlarmToast(context.getString(R.string.editor_family_alarm_set))
+        // ⚠ **여기서 성공을 말하지 않는다.** onSave 는 비동기라 서버 응답을 보기 전인데,
+        // 예전에는 Toast 로 '상대 알람을 설정했어요' 를 먼저 띄웠다 — 실패하면 그 뒤에
+        // '상대 알람 설정에 실패했어요' 가 이어져 **정면으로 모순되는 두 문장**이 연달아
+        // 떴다. 성공 확인은 서버 응답 뒤 뷰모델의 스낵바 한 번으로 충분하고, 그쪽은
+        // 수신자 이름까지 말해 준다.
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -608,11 +629,19 @@ internal fun AlarmEditorScreen(
     fun applyAlarmOutput(voice: Boolean, sound: Boolean) {
         val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
         editor.playMode = when {
-            voice && sound -> AlarmPlayModes.ALARM_VOICE
-            voice && !sound -> AlarmPlayModes.VOICE_ONLY
+            voice -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_ONLY
         }
-        editor.alarmSoundEnabled = sound
+        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
+        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
+        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
+        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
+        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
+        if (sound) {
+            editor.alarmSoundEnabled = true
+        } else if (!voice) {
+            editor.alarmSoundEnabled = false
+        }
         if (voice && authSession == null) {
             editor.voiceSource = VoiceSources.LOCAL_AUDIO
             editor.clearTtsMeta()
@@ -651,13 +680,11 @@ internal fun AlarmEditorScreen(
                     earliestLabel,
                 )
                 audioMessage = message
-                showFamilyAlarmToast(message)
                 return
             }
             if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
                 val message = context.getString(R.string.editor_error_family_alarm_time_unavailable)
                 audioMessage = message
-                showFamilyAlarmToast(message)
                 return
             }
         }
@@ -754,6 +781,29 @@ internal fun AlarmEditorScreen(
             submitDraft(editor.toDraft())
             return
         }
+        // ⚠ **관문 3/3 — 저장 직전.** 판정은 `needsClipPreparation` 한 곳에만 있다.
+        //
+        // 위 둘이 막았어야 하는 상태지만 창이 남는다: 목소리를 고른 뒤 매니페스트가 갱신되는
+        // 경우, 그리고 문구 종류를 바꾸고 저장까지 오는 경우가 그렇다. 그래서 여기는
+        // **fail-closed** 다 — 통과시키면 라이브 생성을 걷어낸 뒤에는 울릴 오디오가 없는
+        // 알람이 저장된다.
+        //
+        // ⚠ **자리가 중요하다 — 바로 위 `hasFreshTtsAudio` 조기 submit 뒤여야 한다.** 그 앞에
+        // 두면 **이미 오디오가 붙어 있는 알람의 시각만 고치는 재저장**까지 준비 페이지로 튀긴다.
+        // 생성할 것도 바인딩할 것도 없는데 클립을 기다리게 하는 셈이고, 매니페스트가 잠깐 비면
+        // 멀쩡한 알람을 고칠 길이 사라진다. 이 줄 아래로는 전부 오디오를 만드는 경로다.
+        //
+        // 막되 **버튼을 죽이지 않는다**(`editorSaveBlocked` 에 넣지 않은 이유). 여기까지 온
+        // 사람은 저장하려던 사람이고, 말 없이 비활성화된 버튼보다 준비 페이지가 낫다.
+        if (clipGate.needsClipPreparation(
+                profileId = profileId,
+                randomPrompt = editor.voiceRandomPrompt,
+                randomContext = editor.voiceRandomContext,
+            )
+        ) {
+            openClipPreparation(profileId)
+            return
+        }
         // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
         // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨.)
         //
@@ -797,33 +847,40 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             generating = true
-            // 1) 유료 클론 오프라인 버킷 시도: 사전렌더 대상 컨텍스트(사랑/약/운세/날씨)이고 그 목소리의
-            //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
-            //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
-            //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
-            // 가족 알람은 서버가 수신자별로 목소리를 생성(onGenerateTts targetUserId)해야 하고, 내 로컬
-            // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
-            // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
+            // 1) **문구 종류를 골랐으면 반드시 사전렌더 클립으로 묶는다.**
+            //
+            // ⚠ **여기서 라이브 생성으로 폴백하지 말 것**(2026-08-18 변경). 예전에는 버킷이
+            // 미완성이거나 다운로드가 실패하면 아래 라이브 생성으로 떨어졌는데, 알람 음성은
+            // 이제 **프리셋 + 직접 입력 둘뿐**이다(docs/qa/dev-test-handoff.md 5절).
+            // 폴백을 남겨 두면 그 경로로 저장된 알람이 **매일 같은 한 문장**을 반복한다 —
+            // 서버가 다시 지어 줄 일이 없기 때문이다.
+            //
+            // 못 묶으면 **준비 페이지로 보낸다**(관문과 같은 처리). 저장이 늦어지는 대신
+            // 되돌릴 수 없는 잘못된 행이 남지 않는다.
+            //
+            // 예전 제외 갈래 둘을 **없앴다**:
+            //  - `!familyAlarmMode`: 가족 알람도 이제 `bucket_id` 를 실어 보낸다(`f7385200`).
+            //    받는 사람이 그 테마의 자기 클립을 묶으므로 수신자 무음 문제가 사라졌고,
+            //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
+            //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
+            //    라이브 폴백뿐이었는데 그게 없어졌다.
             val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            val requiresCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
-                !isSystemVoiceId(profileId)
-            val tryCloneBucket = requiresCloneBucket && hasCompleteCloneBucket(cloneBucketCategory, profileId)
-            if (
-                tryCloneBucket &&
+            if (editor.voiceRandomPrompt && cloneBucketCategory != null) {
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                 // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
-                runCatching {
-                    bindStockBucketClips(cloneBucketCategory!!, profileId, editor.contextVariantIndex)
+                val bound = runCatching {
+                    bindStockBucketClips(cloneBucketCategory, profileId, editor.contextVariantIndex)
                 }.getOrDefault(false)
-            ) {
                 generating = false
-                submitDraft(editor.toDraft())
+                if (bound) {
+                    submitDraft(editor.toDraft())
+                } else {
+                    openClipPreparation(profileId)
+                }
                 return@launch
             }
-            // 2) 버킷 미대상/캐시 실패(사전렌더 미완성·클립 다운로드 실패 포함) → 기존 라이브 생성으로 폴백.
-            //    이미 등록된 클론 목소리라도 준비창 cron 이 풀셋을 만들기 전이면 '준비 중'에서 멈추지 말고
-            //    여기서 라이브로 저장한다(알람이 여러 cron 틱 동안 아예 저장 안 되는 것 방지). 라이브 생성은
-            //    random 경로라 월간 등록·원장·수동 quota 를 건드리지 않으므로 등록 전 목소리 이슈 없음.
+            // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
+            //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
             // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
             // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
             // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
@@ -834,40 +891,18 @@ internal fun AlarmEditorScreen(
                         text = text,
                         category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
-                        translate = editor.shouldTranslateVoiceText(),
-                        random = editor.voiceRandomPrompt,
-                        randomContext = if (editor.voiceRandomPrompt) {
-                            normalizedRandomPromptContext(editor.voiceRandomContext)
-                        } else {
-                            null
-                        },
-                        alarmHour = editor.hour,
-                        alarmMinute = editor.minute,
-                        weatherCountry = editor.voiceWeatherCountry.takeIf {
-                            editor.voiceRandomPrompt &&
-                                randomContextUsesWeather(editor.voiceRandomContext) &&
-                                editor.voiceWeatherCountry.isNotBlank()
-                        }?.trimmedOrNull(),
-                        weatherCity = editor.voiceWeatherCity.takeIf {
-                            editor.voiceRandomPrompt &&
-                                randomContextUsesWeather(editor.voiceRandomContext) &&
-                                editor.voiceWeatherCity.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneGender = editor.voiceFortuneGender.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneGender.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneBirthDate = editor.voiceFortuneBirthDate.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneBirthDate.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneBirthTime.isNotBlank()
-                        }?.trimmedOrNull(),
+                        translate = false,
+                        // ⚠ **`random` 은 언제나 false 다**(2026-08-18). 이 자리에 도달하는 건
+                        // 직접 입력뿐이라, 서버가 문장을 '지어내는' 갈래는 앱에서 사라졌다.
+                        // 되살리지 말 것 — 되살리면 그 알람은 매일 같은 한 문장을 반복한다
+                        // (서버가 다시 지어 줄 주기적 경로가 없다).
+                        //
+                        // ⚠ 같이 사라진 것: `randomContext`·`alarmHour`/`alarmMinute`·
+                        // `weather*`·`fortune*`. 그 값들은 **행에는 그대로 남는다** — 사전렌더
+                        // variant 를 고르는 데(`/tts/prerender-variant`) 쓰이기 때문이다.
+                        // 다만 `/tts/generate` 로는 다시 보내지 말 것.
+                        random = false,
+                        randomContext = null,
                         targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
                         listenerTitle = listenerTitleForSave,
                     ),
@@ -983,11 +1018,6 @@ internal fun AlarmEditorScreen(
                 editor.voiceLanguage = appVoiceLanguage
                 editor.clearTtsMeta()
             }
-            val automaticTranslation = !editor.voiceRandomPrompt && appVoiceLanguage != "ko"
-            if (editor.voiceTranslationEnabled != automaticTranslation) {
-                editor.voiceTranslationEnabled = automaticTranslation
-                if (!editor.voiceRandomPrompt) editor.clearTtsMeta()
-            }
         }
     }
 
@@ -1010,8 +1040,19 @@ internal fun AlarmEditorScreen(
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
             // 문구 개념이 없다.
             if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+                // ⚠ **제한 모드는 두 축을 묶고 있다 — 여기서 갈라야 한다.**
+                // `restrictToWeatherMedication` 은 "생성 문구를 날씨+약으로 제한한다"(기본
+                // 목소리는 그 둘의 스톡 클립만 있다)와 "직접 입력을 막는다" 를 함께 뜻했다.
+                // 이제 **유료면 기본 목소리로도 직접 입력이 된다**(횟수 차감). 그런데 아래
+                // 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 유료 사용자가 방금 친
+                // 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히 사라진다.**
+                // 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을 고른 상태면
+                // 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 예전 그대로 돈다.
+                val manualChosen = !editor.voiceRandomPrompt &&
+                    editor.selectedBucket == null &&
+                    editor.voiceText.isNotBlank()
+                if (!freeVoiceTier && manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-                if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
                 // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
@@ -1048,9 +1089,9 @@ internal fun AlarmEditorScreen(
     // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
-    var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
     // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
+    var freeManualDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
         visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
@@ -1085,35 +1126,40 @@ internal fun AlarmEditorScreen(
         return true
     }
 
-    // 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없어
-    // 저장 버튼 위에 사유를 함께 보여준다. null 이면 저장 가능.
-    val editorSaveBlockedReason: String? = when {
-        editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
-        // 녹음 모드 안내 문구는 두지 않는다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> null
+    // 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 하단 바에
+    // 한 줄씩 떴다). 이유를 말하는 자리는 **그 값이 사는 곳**이다:
+    //  - 목소리 → 목소리 카드의 `NoUsableVoiceProfileCallout`("아직 사용할 목소리가 없어요."
+    //    + [목소리 만들기])와 '삭제된 목소리' 배너. 둘 다 해결 액션까지 갖고 있다.
+    //  - 문구 → 문구 요약 행(`FreeThemeSummaryRow`)과 문구 화면의 상세 행.
+    //
+    // 바에 사유를 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 했다** — 배너는 "저장된
+    // 목소리는 그대로 울리지만", 바는 "쓸 수 없어요" 였다. 그리고 목소리 자동선택·클립
+    // 캐시히트처럼 한두 프레임짜리 과도기에 문구가 연달아 갈아치워져, 재생 방식을 목소리로
+    // 바꾸는 순간 "없던 문구가 주루룩 뜬다" 로 읽혔다(2026-08-18 사용자 보고).
+    //
+    // 미완성 상태 자체도 이제 만들어지지 않는다 — 문구 화면이 값 없는 종류를 선택시키지
+    // 않는다(`AlarmRandomPromptSettings` 의 `contextBeforeDialog`, 무료 pane 의 '먼저 묻고
+    // 확인해야 선택'). 남은 갈래는 과도기뿐이고 그건 안내할 것이 없다.
+    //
+    // 형태는 바로 아래 `recordingReady` 와 같다 — 문구 없이 저장만 비활성화한다.
+    val editorSaveBlocked: Boolean = when {
+        editor.playMode == AlarmPlayModes.ALARM_ONLY -> false
+        // 녹음 모드도 같다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> false
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
             when {
-                profileId == null -> stringResource(R.string.editor_save_blocked_select_voice)
-                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
-                    stringResource(R.string.editor_save_blocked_voice_unusable)
-                editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
-                    stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
-                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
+                profileId == null -> true
+                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) -> true
+                editor.voiceRandomPrompt && !randomPromptSettingsComplete() -> true
+                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다.
                 restrictToWeatherMedication && editor.selectedBucket == "weather" &&
-                    editor.voiceWeatherCity.isBlank() ->
-                    stringResource(R.string.editor_error_weather_location_required)
-                // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
-                // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
-                // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
-                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    when {
-                        !restrictToWeatherMedication -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
-                        !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
-                        else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
-                    }
-                else -> null
+                    editor.voiceWeatherCity.isBlank() -> true
+                // 무료는 문구를 직접 입력하지 않는다(테마 클립) — 빈 문구는 클립이 아직
+                // 붙지 않은 상태다. 그 사실은 문구 요약 행이 '준비 중/오프라인' 으로 말한다.
+                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() -> true
+                else -> false
             }
         }
     }
@@ -1121,18 +1167,10 @@ internal fun AlarmEditorScreen(
     val recordingReady = editor.playMode == AlarmPlayModes.ALARM_ONLY ||
         editor.voiceSource != VoiceSources.LOCAL_AUDIO ||
         !editor.localAudioUri.isNullOrBlank()
-    val editorCanSave = editorSaveBlockedReason == null && recordingReady
+    val editorCanSave = !editorSaveBlocked && recordingReady
 
     fun openRandomPromptSettings() {
-        randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
         settingsDetailPanel = "random_prompt"
-    }
-
-    fun dismissRandomPromptSettingsWithoutSave() {
-        if (!randomPromptWasEnabledWhenOpened) {
-            editor.voiceRandomPrompt = false
-        }
-        settingsDetailPanel = null
     }
 
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
@@ -1155,6 +1193,28 @@ internal fun AlarmEditorScreen(
             settingsDetailPanel = null
             return
         }
+        // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
+        //
+        // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`clonePrerenderBucketCategoryFor`).
+        // 서버 사전렌더는 category 단위로 끝나므로 '사랑' 은 준비됐는데 '약' 은 아직인 상태가
+        // 정상적으로 존재한다 — 특히 방금 공유받은 목소리가 그렇다. 목소리를 고를 때(관문 1)
+        // 통과한 것이 **그 뒤 고른 종류까지 보장하지는 않는다.**
+        //
+        // 여기서 안 막으면 저장에서 막히는데, 사유 문구를 없앤 뒤로 그건 **말 없이 비활성화된
+        // 저장 버튼**이다. 그래서 종류는 **바꾸지 않고**(고르기 전 그대로 둔다) 준비 페이지로
+        // 보낸다 — 목소리 관문이 목소리를 되돌리는 것과 같은 규칙이다.
+        val profileIdForClipGate = editor.voiceProfileId?.takeIf { it.isNotBlank() }
+        if (profileIdForClipGate != null &&
+            clipGate.needsClipPreparation(
+                profileId = profileIdForClipGate,
+                randomPrompt = true,
+                randomContext = result.randomContext,
+            )
+        ) {
+            settingsDetailPanel = null
+            openClipPreparation(profileIdForClipGate)
+            return
+        }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
@@ -1174,8 +1234,8 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCity.isNotBlank()
         ) {
-            dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
-            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (
@@ -1186,11 +1246,12 @@ internal fun AlarmEditorScreen(
             result.fortuneBirthTime.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveFortuneInfo(
+                promptOwnerUserId,
                 gender = result.fortuneGender,
                 birthDate = result.fortuneBirthDate,
                 birthTime = result.fortuneBirthTime,
             )
-            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (shouldSyncOwnDynamicPromptSettings) {
@@ -1199,11 +1260,10 @@ internal fun AlarmEditorScreen(
         settingsDetailPanel = null
     }
 
+    // 문구 pane 은 **자기 BackHandler 로** 뒤로가기를 받아 값을 반영하고 닫는다
+    // (`AlarmRandomPromptSettings` — 안쪽에서 더 늦게 등록되므로 그쪽이 먼저 잡는다).
+    // 여기서 또 가로채 '반영 없이 닫기' 를 하면 순서가 뒤집히는 날 값이 조용히 사라진다.
     BackHandler(enabled = settingsDetailPanel != null) {
-        if (settingsDetailPanel == "random_prompt") {
-            dismissRandomPromptSettingsWithoutSave()
-            return@BackHandler
-        }
         settingsDetailPanel = null
     }
 
@@ -1310,12 +1370,58 @@ internal fun AlarmEditorScreen(
                 // 이미 고르므로, 편집기에선 하단 저장 버튼 위에 '○○에게 설정돼요'로만 짧게 알린다.
 
                 item {
-                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                        // 목소리 on/off 토글은 목소리 카드 안에 있다(별도 '재생 방식' 카드 없음).
-                        // 끄면 playMode=ALARM_ONLY(목소리 미재생), 켜면 알람음 상태에 따라 ALARM_VOICE/VOICE_ONLY.
+                    // ⚠ Column 이다 — Box 로 두면 재생 방식 카드와 목소리 카드가 **겹친다**.
+                    androidx.compose.foundation.layout.Column(
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+                    ) {
                         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
+                        // ⚠ **재생 방식은 2택 세그먼트로 고른다** — 목소리 / 알람.
+                        // `PlayModeCard` 는 있는데 아무도 부르지 않아 **화면에 안 나오고**
+                        // 있었다(목소리 카드 안 스위치가 대신하고 있었다). 그러면 iOS 와
+                        // 다른 화면이 되고, 무엇보다 '둘 중 하나' 라는 결정이 스위치의
+                        // 켜짐/꺼짐으로 흐려진다. 실기기 대조로 잡았다.
+                        PlayModeCard(
+                            selected = editor.playMode,
+                            onSelect = { mode ->
+                                if (mode != AlarmPlayModes.ALARM_ONLY && voicePlanLocked) showVoicePlanGate()
+                                else applyAlarmOutput(
+                                    voice = mode != AlarmPlayModes.ALARM_ONLY,
+                                    sound = mode == AlarmPlayModes.ALARM_ONLY,
+                                )
+                            },
+                            voiceLocked = voicePlanLocked,
+                            onLockedVoiceClick = { showVoicePlanGate() },
+                        )
+                        // ⚠ **고른 쪽 박스만 그린다.** '알람' 이면 목소리 카드가 통째로 없고,
+                        // '목소리' 면 세부설정의 알람음 행이 없다(`showAlarmSound`). 둘 중
+                        // 하나라고 해 놓고 안 고른 쪽 설정을 계속 보여 주면, 만질 수는 있는데
+                        // 울릴 때 아무 영향이 없는 컨트롤이 남는다.
+                        // 사라질 때도 0.28초 동안은 **아직 컴포즈에 남아 있다**(줄어드는 중).
+                        // 그 사이 이 카드 안의 `LaunchedEffect` 는 목소리 선택 상태에만
+                        // 묶여 있어 재생 방식이 바뀌어도 다시 돌지 않는다 — 새 효과를 넣을 땐
+                        // `playMode` 를 키로 삼지 말 것.
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            enter = playModeEnter(),
+                            exit = playModeExit(),
+                        ) {
+                        androidx.compose.foundation.layout.Column {
+                        androidx.compose.foundation.layout.Spacer(
+                            Modifier.androidxHeight(12.dp),
+                        )
                         VoiceAudioCard(
-                            voiceEnabled = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            // ⚠ **아직 못 받은 목소리는 고를 수 없다** — 관문 **1/3**.
+                            // 판정은 `needsClipPreparation` 한 곳에만 있다(거기 주석 참조).
+                            // 여기는 "**고른 목소리**를 지금 기준으로 본다" 는 자리다.
+                            onNeedsClipPreparation = { profileId ->
+                                clipGate.needsClipPreparation(
+                                    profileId = profileId,
+                                    randomPrompt = editor.voiceRandomPrompt,
+                                    randomContext = editor.voiceRandomContext,
+                                )
+                            },
+                            onOpenClipPreparation = { profileId -> openClipPreparation(profileId) },
+                            voiceEnabled = true,
                             onVoiceEnabledChange = { on ->
                                 if (voicePlanLocked) showVoicePlanGate()
                                 else applyAlarmOutput(voice = on, sound = alarmSoundOn)
@@ -1363,6 +1469,8 @@ internal fun AlarmEditorScreen(
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
+                        }
+                        }
                     }
 
                 item {
@@ -1376,15 +1484,9 @@ internal fun AlarmEditorScreen(
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
-                            // 알람음 on/off 토글은 이 행에 함께 둔다. 행은 항상 노출.
                             alarmSoundEnabled = alarmSoundOn,
-                            showAlarmSound = true,
-                            // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
-                            // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
-                            showVoiceOutput = false,
-                            voiceVolumePercent = editor.voiceVolumePercent,
-                            voiceRepeat = editor.voiceRepeat,
-                            voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
+                            // 목소리 모드에서는 알람음 행 자체를 숨긴다(위 주석 참조).
+                            showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
                             onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                             onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                             onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -1397,7 +1499,6 @@ internal fun AlarmEditorScreen(
                             onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
-                            onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                         )
                     }
                 }
@@ -1413,16 +1514,9 @@ internal fun AlarmEditorScreen(
                     // 바 배경이 페이지 배경과 같아 경계가 없으면 스크롤 콘텐츠가 '잘린' 것처럼
                     // 보인다 — 다른 카드 구분선과 같은 풀 톤 헤어라인으로 바의 시작을 분명히 한다.
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (editorSaveBlockedReason != null) {
-                        Text(
-                            text = editorSaveBlockedReason,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
+                    // 이 슬롯은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은 전부
+                    // 값이 사는 자리(목소리 카드·문구 행)가 더 정확히 말한다.
                     Box(
                         modifier = Modifier
                             .padding(
@@ -1508,7 +1602,8 @@ internal fun AlarmEditorScreen(
                 // 버킷 여부를 함께 봐야 한다 — 버킷 알람도 voiceRandomPrompt=false 로 저장되므로
                 // (아래 manualText 와 같은 이유) 이것만으로 판별하면 '사랑'으로 저장한 알람을
                 // 다시 열었을 때 pane 이 '직접 입력'에 체크된 채 열린다.
-                randomContext = if (editor.voiceRandomPrompt || editor.isActiveBucketAlarm()) {
+                // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                randomContext = if (editor.voiceRandomPrompt || editor.hasBucketMessageChoice()) {
                     editor.voiceRandomContext
                 } else {
                     ManualMessageContext
@@ -1516,7 +1611,7 @@ internal fun AlarmEditorScreen(
                 // 직접 입력으로 저장된 알람만 기존 문구를 프리필한다. 버킷 알람도 저장 시
                 // voiceRandomPrompt=false + voiceText=클립문구가 되므로 버킷 여부를 함께 본다
                 // (안 그러면 사용자가 쓴 적 없는 클립 문구가 '내가 입력한 문구'처럼 나온다).
-                manualText = if (!editor.voiceRandomPrompt && !editor.isActiveBucketAlarm()) {
+                manualText = if (!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice()) {
                     editor.voiceText
                 } else {
                     ""
@@ -1536,7 +1631,6 @@ internal fun AlarmEditorScreen(
                 fortuneGender = editor.voiceFortuneGender,
                 fortuneBirthDate = editor.voiceFortuneBirthDate,
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
-                onDismissWithoutSave = ::dismissRandomPromptSettingsWithoutSave,
                 onSaveSettings = ::applyRandomPromptSettings,
             )
 
@@ -1544,9 +1638,18 @@ internal fun AlarmEditorScreen(
                 buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
                 selectedBucket = editor.selectedBucket,
                 onSelectBucket = { bucket ->
-                    if (bucket == "weather") {
-                        // 날씨는 저장한 도시 기준으로 매칭되므로, 고르는 시점에 도시를
-                        // 확인/수정하게 한다(이미 입력돼 있어도 다이얼로그에 채워서 보여줌).
+                    // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
+                    // 상세 행의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
+                    // 예전에는 저장 여부를 보지 않고 무조건 띄워, 이미 등록한 사람에게
+                    // 같은 것을 매번 다시 물었다.
+                    //
+                    // ⚠ **미완성 종류는 선택되지 않는다**(2026-08-18 변경). 도시가 없으면
+                    // 먼저 묻고, **확인했을 때만** 고른다(다이얼로그 `onConfirm` 의
+                    // `selectBucket("weather")`). 취소하면 라디오는 이전 선택에 남는다 —
+                    // 목소리 관문(`onNeedsClipPreparation`)과 같은 규칙이다.
+                    // 그전에는 먼저 고르고 나중에 물어서, 취소하면 **도시 없는 날씨**가
+                    // 선택된 채로 남고 편집기 하단 바가 "…도시를 입력해 주세요" 로 막았다.
+                    if (bucket == "weather" && editor.voiceWeatherCity.isBlank() && !savedWeatherConfigured) {
                         freeWeatherDialogOpen = true
                     } else {
                         selectBucket(bucket)
@@ -1554,6 +1657,49 @@ internal fun AlarmEditorScreen(
                 },
                 onDismiss = { settingsDetailPanel = null },
                 onManualLocked = { voicePlanGateOpen = true },
+                // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
+                manualLocked = freeVoiceTier,
+                // ⚠ **판정식은 언제나 `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.**
+                // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
+                // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
+                // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
+                manualSelected = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
+                onSelectManual = {
+                    // 문구가 **없을 때만** 입력창이 뜬다. 있으면 선택만 되고 '변경하기' 로 고친다.
+                    //
+                    // ⚠ 위 `onSelectBucket` 과 같은 규칙 — 문구가 없으면 **먼저 받고**,
+                    // 확인했을 때만 '직접 입력' 이 선택된다(다이얼로그 `onConfirm` 이
+                    // randomPrompt·selectedBucket 을 함께 푼다). 취소하면 이전 선택 그대로다.
+                    if (editor.voiceText.isBlank()) {
+                        freeManualDialogOpen = true
+                    } else {
+                        // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
+                        editor.voiceRandomPrompt = false
+                        editor.selectedBucket = null
+                    }
+                },
+                manualText = editor.voiceText,
+                onChangeManual = { freeManualDialogOpen = true },
+                // ⚠ **계정에 저장된 지역을 이어받는다**(2026-08-15 지적 "설정에는 값이 있는데
+                // 둘이 공유가 안 된다"). 유료 pane 은 처음부터 `ifBlank { saved… }` 로 이어받고
+                // 있었는데 여기만 알람 자체 값만 봐서, **설정에 서울이 있는데도** "아직 고르지
+                // 않았어요" 로 보였다. 게다가 모달을 띄울지 판정하는 쪽(`savedWeatherConfigured`)은
+                // 저장값을 보고 있어서 — 안 골랐다고 써 놓고 고르라는 모달도 안 떴다.
+                weatherRegionSummary = if (editor.selectedBucket == "weather") {
+                    val country = editor.voiceWeatherCountry
+                        .ifBlank { activeDynamicPromptPreferences.weatherCountry }
+                    val city = editor.voiceWeatherCity
+                        .ifBlank { activeDynamicPromptPreferences.weatherCity }
+                    // 나라는 국내면 비는 값이다 — 도시 하나로 판정한다(위 유료 pane 과 같다).
+                    if (city.isNotBlank()) {
+                        weatherLocationSummary(context, country, city)
+                    } else {
+                        stringResource(R.string.editorp_random_weather_region_required)
+                    }
+                } else {
+                    null
+                },
+                onChangeWeatherRegion = { freeWeatherDialogOpen = true },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -1568,14 +1714,41 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    if (freeManualDialogOpen) {
+        // 유료 pane 과 **같은 다이얼로그**를 쓴다(두 벌로 만들지 않는다).
+        ManualMessageDialog(
+            initialText = editor.voiceText,
+            onDismiss = { freeManualDialogOpen = false },
+            onConfirm = { text ->
+                // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
+                editor.voiceText = text
+                editor.voiceRandomPrompt = false
+                editor.selectedBucket = null
+                freeManualDialogOpen = false
+            },
+        )
+    }
+
     if (freeWeatherDialogOpen) {
         WeatherLocationDialog(
-            country = editor.voiceWeatherCountry,
-            city = editor.voiceWeatherCity,
+            // 저장된 지역이 있으면 그걸 채워서 연다 — 위 요약 행과 같은 값을 보여줘야 한다.
+            country = editor.voiceWeatherCountry.ifBlank { activeDynamicPromptPreferences.weatherCountry },
+            city = editor.voiceWeatherCity.ifBlank { activeDynamicPromptPreferences.weatherCity },
             onDismissWithoutSave = { freeWeatherDialogOpen = false },
             onConfirm = { country, city ->
                 editor.voiceWeatherCountry = country
                 editor.voiceWeatherCity = city
+                // ⚠ **여기서 저장하지 않으면 '날씨' 를 다시는 이어받지 못한다.**
+                // 다음 새 알람의 이어받기 가드는 `it != "weather" || savedWeatherConfigured
+                // || voiceWeatherCity.isNotBlank()` 인데, 둘 다 이 store 에서 읽는다.
+                // 그래서 저장을 빼먹으면 `rememberMessageChoiceUsed` 가 "weather" 를 정직하게
+                // 적어도 읽는 쪽이 버리고, 새 알람이 **매번 '약' 으로 되돌아간다** —
+                // CLAUDE.md 가 회귀라고 못 박은 바로 그 증상이다.
+                // 유료 pane(`applyRandomPromptSettings`)·설정 화면과 같은 자리에 쓴다.
+                if (!familyAlarmMode && city.isNotBlank()) {
+                    dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+                    dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
+                }
                 freeWeatherDialogOpen = false
                 selectBucket("weather")
             },
@@ -1583,26 +1756,97 @@ internal fun AlarmEditorScreen(
     }
 
     if (voicePlanGateOpen) {
+        // ⚠ **상태는 셋인데 분기는 둘이었다 — 그래서 유료 사용자가 '로그인이 필요해요' 를
+        // 봤다**(2026-08-07 사용자 문의로 확인). `freeVoiceTier` 는 `로그인함 && !유료` 라,
+        // 그 `else` 에는 비로그인뿐 아니라 **로그인한 유료 사용자**도 들어간다.
+        //
+        // 유료가 이 게이트에 닿는 길은 실재한다: 기본(시스템) 목소리를 고르면 유료여도
+        // 문구가 '날씨+약' 으로 제한되고(위 `restrictToWeatherMedication` 주석), 그 pane 의
+        // 잠긴 '직접 입력' 을 누르면 `onManualLocked` 가 이 게이트를 연다. 이용권을 이미
+        // 가진 사람에게 로그인을 요구하고 이용권을 팔려 든 셈이다.
+        //
+        // 이제 셋으로 가른다. **각 상태에 맞는 액션만 붙인다** — 쿠폰·이용권 버튼은
+        // '이용권이 없어서' 막힌 경우에만 뜻이 있다.
+        val gateReason = when {
+            authSession == null -> VoiceGateReason.LOGIN_REQUIRED
+            freeVoiceTier -> VoiceGateReason.PLAN_REQUIRED
+            // 로그인 + 유료인데 막혔다 = 목소리 종류의 문제다(플랜 문제가 아니다).
+            else -> VoiceGateReason.SYSTEM_VOICE_LIMIT
+        }
         PlanGateDialog(
-            title = if (freeVoiceTier) {
-                stringResource(R.string.r3dlg_plan_gate_title)
-            } else {
-                stringResource(R.string.editor_plan_gate_login_title)
-            },
-            message = if (freeVoiceTier) {
-                stringResource(R.string.editor_plan_gate_paid_features)
-            } else {
-                stringResource(R.string.editor_plan_gate_login_required)
-            },
+            title = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_title
+                    VoiceGateReason.PLAN_REQUIRED -> R.string.r3dlg_plan_gate_title
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_title
+                },
+            ),
+            message = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_required
+                    VoiceGateReason.PLAN_REQUIRED -> R.string.plan_gate_paid_message
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_message
+                },
+            ),
+            confirmLabel = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_confirm
+                    else -> R.string.r3dlg_plan_gate_confirm
+                },
+            ),
             onConfirm = {
                 voicePlanGateOpen = false
-                onOpenBilling()
+                // 유료인데 막힌 사람에게 결제 화면을 열면 살 게 없다 — 목소리 등록으로 보낸다.
+                if (gateReason == VoiceGateReason.SYSTEM_VOICE_LIMIT) {
+                    onCreateVoiceProfile()
+                } else {
+                    onOpenBilling()
+                }
             },
             onDismiss = { voicePlanGateOpen = false },
-            onRedeemCode = onRegisterCode,
+            // ⚠ 쿠폰 입력은 **이용권이 없을 때만** 붙인다. 비로그인에게 붙이면 등록할 계정이
+            // 없고, 이미 유료인 사람에게 붙이면 넣어 봐야 아무 일도 일어나지 않는다.
+            onRedeemCode = if (gateReason == VoiceGateReason.PLAN_REQUIRED) onRegisterCode else null,
             redeemBusy = redeemBusy,
         )
     }
+
+    // 아직 못 받은 목소리를 골랐을 때 — 준비 화면을 띄운다.
+    // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
+    // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
+    preparationVoiceId?.let { targetVoiceId ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
+            androidx.compose.material3.Surface(
+                shape = WakerDialogShape,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                com.alarmtalk.app.ui.voices.ClipPreparationScreen(
+                    voices = clipReadiness,
+                    awaitingOwner = targetVoiceId in clipReadinessAwaitingOwner,
+                    onRetry = onRetryClipRenders,
+                    onDismiss = { preparationVoiceId = null },
+                    modifier = Modifier.padding(vertical = 32.dp),
+                )
+            }
+        }
+    }
 }
 
+/**
+ * 목소리 게이트가 뜬 **이유**. 예전에는 이 셋을 불리언 하나(`freeVoiceTier`)로 갈라서,
+ * 로그인한 유료 사용자가 '로그인이 필요해요' 를 보는 사고가 났다.
+ */
+private enum class VoiceGateReason {
+    /** 세션이 없다. 쿠폰을 등록할 계정도 없다. */
+    LOGIN_REQUIRED,
 
+    /** 로그인했지만 이용권이 없다. 여기서만 쿠폰 입력이 뜻을 갖는다. */
+    PLAN_REQUIRED,
+
+    /**
+     * 로그인 + 유료인데 막혔다 = **목소리 종류**의 제약이다.
+     * 기본(시스템) 목소리는 준비된 문구만 말할 수 있어 직접 입력을 쓸 수 없다.
+     * 플랜 문제가 아니므로 결제 화면이 아니라 목소리 등록으로 보낸다.
+     */
+    SYSTEM_VOICE_LIMIT,
+}

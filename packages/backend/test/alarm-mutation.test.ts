@@ -1141,6 +1141,28 @@ describe('DELETE /alarms/:id', () => {
     );
     expect(cascadeDelete).toBeDefined();
     expect(cascadeDelete!.args).toContain(ID.message);
+
+    // ⚠ **포인터도 함께 끊는다.** R2 오브젝트와 에셋 행만 지우고 `messages.audio_url`
+    // 을 두면 `r2://...` 가 영구히 죽은 포인터로 남는다 — 그 메시지를 다시 쓰는 경로는
+    // 없는 오브젝트를 받으러 가고, TTL 스윕은 '아직 참조 중' 으로 오판해 청소를 건너뛴다.
+    const clearPointer = mockDB.calls.find((c) =>
+      c.sql.startsWith('UPDATE messages SET audio_url = NULL'),
+    );
+    expect(clearPointer).toBeDefined();
+    expect(clearPointer!.args).toContain(ID.message);
+  });
+
+  it('다른 알람이 같은 message_id 쓰면 audio_url 포인터도 보존', async () => {
+    mockDB.pushResult([{ message_id: ID.message }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ cnt: 1 }]);
+    const res = await buildApp().request(
+      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    expect(
+      mockDB.calls.some((c) => c.sql.startsWith('UPDATE messages SET audio_url = NULL')),
+    ).toBe(false);
   });
 
   it('다른 알람이 같은 message_id 쓰면 generated_audio_assets 보존', async () => {

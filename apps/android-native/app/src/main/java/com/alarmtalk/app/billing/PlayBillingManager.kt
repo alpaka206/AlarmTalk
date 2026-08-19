@@ -37,16 +37,60 @@ object PlayBillingProducts {
     const val COUPLE_MONTHLY = "couple_monthly"
     const val FAMILY_MONTHLY = "family_monthly"
 
+    /**
+     * 선물용 **1회성 인앱 상품**.
+     *
+     * ⚠ **구독이 아니다.** 자동 갱신 구독은 남에게 줄 수 없어(Play 가 구매자 계정에 묶는다)
+     * 선물은 1회성 상품을 팔고 그 대금으로 서버가 **바우처 코드**를 만든다.
+     * 그래서 조회·구매 모두 `ProductType.INAPP` 을 써야 한다 — SUBS 로 조회하면 안 나온다.
+     */
+    const val PERSONAL_GIFT_1M = "personal_gift_1m"
+
     val all: List<String> = listOf(
         PERSONAL_MONTHLY,
         COUPLE_MONTHLY,
         FAMILY_MONTHLY,
     )
 
+    /** 1회성 상품 목록. SUBS 조회에 섞으면 안 된다. */
+    val oneTime: List<String> = listOf(PERSONAL_GIFT_1M)
+
+    fun isOneTime(productId: String): Boolean = productId in oneTime
+
     /** 이용권 plan key("personal"/"couple"/"family") → Play 상품 ID. */
     fun productIdFor(planKey: String): String? {
         if (planKey !in setOf("personal", "couple", "family")) return null
         return "${planKey}_monthly"
+    }
+
+    /**
+     * 등급 순서. **업그레이드인지 다운그레이드인지 판정하는 유일 근거**다.
+     *
+     * ⚠ **가격으로 판정하지 말 것.** 가격은 스토어가 정하고 지역·프로모션마다 달라서,
+     * 같은 전환이 나라에 따라 업그레이드였다 다운그레이드였다 한다. 등급은 우리 제품
+     * 정의이므로 여기 박아 둔다(백엔드 `plans.price_krw` 의 순서와 같다:
+     * free 0 < personal 3900 < couple 6900 < family 14900).
+     *
+     * ⚠ 새 플랜을 추가하면 **여기도 함께** 넣는다. 빠지면 그 플랜으로/에서 가는 전환이
+     * 전부 다운그레이드로 처리된다(아래 `rank` 가 -1 을 돌려주므로).
+     */
+    private val RANK: Map<String, Int> = mapOf(
+        PERSONAL_MONTHLY to 1,
+        COUPLE_MONTHLY to 2,
+        FAMILY_MONTHLY to 3,
+    )
+
+    fun rank(productId: String): Int = RANK[productId] ?: -1
+
+    /**
+     * 지금 구독(`from`)에서 `to` 로 가는 것이 **상위 등급으로 가는 것인가.**
+     * 모르는 상품이 끼면 안전하게 **다운그레이드로 본다**(즉시 과금하지 않는 쪽).
+     */
+    fun isUpgrade(from: String, to: String): Boolean {
+        val a = rank(from)
+        val b = rank(to)
+        if (a < 0 || b < 0) return false
+        return b > a
     }
 }
 
@@ -180,6 +224,54 @@ class PlayBillingManager(
     }
 
     /**
+     * 1회성(INAPP) 상품 결제 시트를 띄운다 — 선물 전용.
+     *
+     * ⚠ 구독 경로와 **섞지 말 것**: INAPP 에는 offerToken 이 없고, 구독 교체
+     * (`setSubscriptionUpdateParams`)를 붙이면 Play 가 거절한다.
+     */
+    suspend fun launchOneTimePurchase(
+        activity: Activity,
+        productId: String,
+        userId: String? = null,
+    ): Boolean {
+        if (!ensureConnected()) return false
+        val details = productDetailsCache[productId] ?: run {
+            val fetched = billingClient.queryProductDetails(
+                QueryProductDetailsParams.newBuilder()
+                    .setProductList(
+                        listOf(
+                            QueryProductDetailsParams.Product.newBuilder()
+                                .setProductId(productId)
+                                .setProductType(BillingClient.ProductType.INAPP)
+                                .build(),
+                        ),
+                    )
+                    .build(),
+            ).productDetailsList?.firstOrNull()
+            if (fetched != null) productDetailsCache[productId] = fetched
+            fetched
+        } ?: run {
+            Log.w(TAG, "Play one-time product not found productId=$productId")
+            return false
+        }
+        val builder = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(
+                listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(details)
+                        .build(),
+                ),
+            )
+        userId?.takeIf { it.isNotBlank() }?.let { builder.setObfuscatedAccountId(sha256Hex(it)) }
+        val result = billingClient.launchBillingFlow(activity, builder.build())
+        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "launchBillingFlow(one-time) failed code=${result.responseCode}")
+            return false
+        }
+        return true
+    }
+
+    /**
      * 결제 시트를 띄운다. 결과(성공/보류/취소)는 [PurchasesUpdatedListener] 로 비동기 전달된다.
      *
      * @param userId 로그인 세션 사용자 id(서버 users.id 와 동일한 값). 구매를 앱 계정에
@@ -224,12 +316,30 @@ class PlayBillingManager(
         // Play 구독이 나란히 2개 생겨 이중 결제가 된다. 같은 상품 재구매/기존 구매 없음이면 현행대로.
         // accountHash 가 없으면(비로그인 등) 교체 대상 계정 대조가 불가능하므로 교체 없이 신규 구매.
         findActiveSubscriptionToReplace(productId, accountHash)?.let { existing ->
+            // ⚠ **교체 모드를 하나로 고정하지 말 것.** 예전에는 항상
+            // `WITH_TIME_PRORATION`(즉시 전환 + 비례정산)이었는데, 그건 **업그레이드용**이다.
+            // 다운그레이드에 걸면 사용자가 더 싼 플랜으로 내려가면서 **즉시** 바뀌고
+            // 남은 기간이 새 플랜 기준으로 환산된다 — 사용자는 "이번 달은 원래 플랜을
+            // 쓰다가 다음 달부터 바뀐다" 를 기대한다(2026-08-11 설계).
+            //
+            // - 업그레이드: `WITH_TIME_PRORATION` — 즉시 쓰게 해 주고 남은 기간을 환산
+            // - 다운그레이드: `DEFERRED` — **다음 갱신일에** 바뀐다. 지금은 과금하지 않고
+            //   현재 플랜을 기간 끝까지 그대로 쓴다.
+            //
+            // ⚠ `DEFERRED` 는 **지금 결제가 일어나지 않는다** — 그래서 구매 리스너로
+            // 새 purchase 가 즉시 오지 않는다. 화면이 "바로 바뀐다" 고 말하면 안 된다
+            // (호출부가 예약 안내를 띄운다).
+            val fromProductId = existing.products.firstOrNull().orEmpty()
+            val mode = if (PlayBillingProducts.isUpgrade(fromProductId, productId)) {
+                BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION
+            } else {
+                BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.DEFERRED
+            }
+            Log.i(TAG, "subscription replace from=$fromProductId to=$productId mode=$mode")
             flowParamsBuilder.setSubscriptionUpdateParams(
                 BillingFlowParams.SubscriptionUpdateParams.newBuilder()
                     .setOldPurchaseToken(existing.purchaseToken)
-                    .setSubscriptionReplacementMode(
-                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION,
-                    )
+                    .setSubscriptionReplacementMode(mode)
                     .build(),
             )
         }
@@ -286,25 +396,67 @@ class PlayBillingManager(
      */
     suspend fun resendUnconfirmedPurchases(): Int {
         if (!ensureConnected()) return 0
+        // ⚠ **구독(SUBS)만 보지 말 것**(2026-08-18 Codex #697 P1). 선물은 1회성 상품
+        // (INAPP)이라 여기에 안 잡히면 **재시도할 경로가 아예 없다** — 1회성 구매에는
+        // RTDN 도 오지 않는다. 서버가 바우처를 발급한 뒤 `:consume` 이 일시적으로 실패하면
+        // 그 구매는 미확인인 채 남고, Play 는 3일 뒤 자동 환불하는데 바우처는 그대로
+        // 쓸 수 있다(돈은 돌려주고 이용권은 나간 상태). 다시 보내면 서버의 중복 갈래가
+        // 소비를 재시도한다.
+        var resent = 0
+        for (type in listOf(BillingClient.ProductType.SUBS, BillingClient.ProductType.INAPP)) {
+            val result = billingClient.queryPurchasesAsync(
+                QueryPurchasesParams.newBuilder().setProductType(type).build(),
+            )
+            if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+                Log.w(TAG, "queryPurchasesAsync($type) failed code=${result.billingResult.responseCode}")
+                continue
+            }
+            result.purchasesList
+                .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
+                .forEach { purchase ->
+                    val productId = purchase.products.firstOrNull() ?: return@forEach
+                    Log.i(TAG, "Resending unconfirmed Play purchase type=$type productId=$productId")
+                    listener.onPurchaseReady(purchase.purchaseToken, productId)
+                    resent++
+                }
+        }
+        return resent
+    }
+
+    /**
+     * **이전 구매 복원** — 스토어에 남아 있는 활성 구독을 서버로 다시 보낸다.
+     *
+     * [resendUnconfirmedPurchases] 와 딱 하나 다르다: **acknowledge 여부를 보지 않는다.**
+     * 그 함수는 '결제 직후 앱이 죽어 서버 검증을 못 한 건' 을 위한 것이라 미확인 건만
+     * 고르는데, 복원이 필요한 상황은 대개 반대다 — 스토어에는 정상 구독(acknowledge 됨)이
+     * 있는데 **우리 서버에 그 기록이 없는** 경우(계정 갈아타기·서버 쪽 유실·재설치 후 다른
+     * 경로로 로그인)라, 미확인만 보내면 복원 버튼이 늘 "복원할 구매가 없어요" 를 낸다.
+     *
+     * 서버가 같은 토큰을 여러 번 받아도 안전하다(멱등) — 검증 후 같은 구독으로 수렴한다.
+     *
+     * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
+     */
+    suspend fun restorePurchases(): Int {
+        if (!ensureConnected()) return 0
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
                 .build(),
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
+            Log.w(TAG, "restorePurchases query failed code=${result.billingResult.responseCode}")
             return 0
         }
-        var resent = 0
+        var sent = 0
         result.purchasesList
-            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
+            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
-                Log.i(TAG, "Resending unconfirmed Play purchase productId=$productId")
+                Log.i(TAG, "Restoring Play purchase productId=$productId")
                 listener.onPurchaseReady(purchase.purchaseToken, productId)
-                resent++
+                sent++
             }
-        return resent
+        return sent
     }
 
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {

@@ -22,11 +22,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -140,13 +141,12 @@ internal fun VoicePreviewButtonIcon(
             strokeWidth = 2.dp,
         )
     } else {
-        // 목소리 탭 목록과 같은 전용 벡터(ic_voice_listen/stop_24) — 미리듣기 버튼이
-        // 화면마다 다른 아이콘을 쓰지 않게 한 벌로 통일한다. 이 토글은 실제로 '정지'다
+        // 미리듣기 아이콘은 앱 전체가 한 벌로 통일한다. 이 토글은 실제로 '정지'다
         // (다시 누르면 처음부터 재생) — 그래서 일시정지가 아니라 정지 모양을 쓴다.
+        // ⚠ **머티리얼 아이콘을 쓴다**(2026-08-17 "글리프는 각 OS 것"). 예전에는 SF 심볼
+        // (`speaker.wave.2.fill`·`stop.fill`) 모양을 베낀 자체 벡터였다.
         Icon(
-            painter = painterResource(
-                if (active) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
-            ),
+            imageVector = if (active) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
@@ -236,6 +236,8 @@ internal fun VoiceRecordControls(
     isRecordedPreviewActive: Boolean = false,
     isRecordedPreviewPreparing: Boolean = false,
     onPreviewRecording: (() -> Unit)? = null,
+    /** 녹음물을 비우고 대기 상태로 되돌린다. 주면 '다시 녹음' 버튼이 붙는다. */
+    onRedoRecording: (() -> Unit)? = null,
 ) {
     val recordingDone = recordedDurationMillis != null && !isRecording
     Surface(
@@ -248,128 +250,152 @@ internal fun VoiceRecordControls(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                RecordPulseRing(active = isRecording)
-                Button(
-                    onClick = onRecordClick,
-                    enabled = enabled,
-                    // 48dp — 카드 세로 패딩(16×2)과 합쳐 파일 업로드 존(80dp)과 높이가 같아진다.
-                    modifier = Modifier.size(48.dp),
-                    shape = CircleShape,
-                    // 기본 ContentPadding(좌우 24dp)은 원형 버튼 안 아이콘을 짓눌러
-                    // 아주 작게 그려지므로 0으로 두고 아이콘 크기로만 제어한다.
-                    contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
+            // 왼쪽: 지금 무슨 상태인지 + 시간. 오른쪽: 지금 할 수 있는 동작.
+            // (2026-08-16 지시로 iOS 녹음 카드와 같은 배치로 맞췄다 — 예전에는 마이크가
+            // 왼쪽, 시간이 오른쪽이라 같은 기능이 두 앱에서 반대로 놓여 있었다.)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = when {
+                        isRecording -> stringResource(R.string.common_voice_record_status_recording)
+                        recordedDurationMillis != null -> stringResource(R.string.voices_record_done)
+                        else -> idleStatusText
+                            ?: stringResource(R.string.common_voice_record_status_idle)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        // 솔리드 primary 원형 CTA 안이라 채운 글리프(Filled) — 하단바의
-                        // Filled.Mic(선택 상태)와 같은 계열로, 앱의 Outlined+Filled 체계를 유지한다.
-                        imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                    // 시간은 **항상** 같은 자리에 있다. 예전에는 녹음이 끝나면 이 자리가
+                    // 재생 버튼으로 바뀌어 시간이 사라졌다.
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(
+                                SpanStyle(
+                                    color = if (isRecording) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                ),
+                            ) {
+                                append(audioTimeLabel(recordedDurationMillis ?: elapsedMillis))
+                            }
+                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                                append(" / ${audioTimeLabel(maxDurationMillis)}")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    // 실제 마이크 진폭 — 애니메이션만으로는 마이크가 죽어 있어도 티가 안 난다.
+                    if (isRecording) {
+                        RecordingLevelBars(level = level)
+                    }
+                }
+                if (!notice.isNullOrBlank() && !recordingDone) {
+                    MutedText(notice)
+                }
+            }
+            if (recordingDone) {
+                if (onPreviewRecording != null) {
+                    VoiceRecordCircleButton(
+                        onClick = onPreviewRecording,
+                        enabled = enabled,
+                        filled = true,
+                        contentDescription = stringResource(R.string.common_voice_record_preview),
+                    ) {
+                        VoicePreviewButtonIcon(
+                            active = isRecordedPreviewActive,
+                            preparing = isRecordedPreviewPreparing,
+                        )
+                    }
+                }
+                if (onRedoRecording != null) {
+                    VoiceRecordCircleButton(
+                        onClick = onRedoRecording,
+                        enabled = enabled,
+                        filled = false,
+                        contentDescription = stringResource(R.string.common_voice_record_again),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                }
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    RecordPulseRing(active = isRecording)
+                    VoiceRecordCircleButton(
+                        onClick = onRecordClick,
+                        enabled = enabled,
+                        filled = true,
                         contentDescription = if (isRecording) {
                             stringResource(R.string.common_voice_record_stop)
                         } else {
                             stringResource(R.string.common_voice_record_start)
                         },
-                        modifier = Modifier.size(26.dp),
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = when {
-                            isRecording -> stringResource(R.string.common_voice_record_status_recording)
-                            recordedDurationMillis != null -> stringResource(
-                                R.string.voices_record_done_duration,
-                                audioTimeLabel(recordedDurationMillis),
-                            )
-                            else -> idleStatusText
-                                ?: stringResource(R.string.common_voice_record_status_idle)
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    // 실제 마이크 진폭 표시 — 애니메이션만으로는 마이크가 죽어 있어도
-                    // 티가 안 나므로, 입력이 들어오는지 여기서 바로 확인할 수 있게 한다.
-                    if (isRecording) {
-                        RecordingLevelBars(level = level)
+                    ) {
+                        Icon(
+                            // 마이크는 하단바 '목소리' 탭과 같은 글리프다(머티리얼 Mic).
+                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                        )
                     }
                 }
-                val supportingText = if (recordingDone) {
-                    stringResource(R.string.common_voice_record_again_hint)
-                } else {
-                    notice
-                }
-                if (!supportingText.isNullOrBlank()) {
-                    MutedText(supportingText)
-                }
-            }
-            if (recordingDone && onPreviewRecording != null) {
-                IconButton(
-                    onClick = onPreviewRecording,
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    VoicePreviewButtonIcon(
-                        active = isRecordedPreviewActive,
-                        preparing = isRecordedPreviewPreparing,
-                    )
-                }
-            } else {
-                // 경과/최대 시간을 같은 글자 크기의 한 줄로 — 두 줄 스택은 숫자 크기가
-                // 달라 보이고 줄바꿈처럼 읽혔다. tnum 으로 숫자 폭을 고정해
-                // 초가 바뀔 때마다 너비가 흔들리지 않게 한다.
-                // 시스템 큰 글씨에서 비가중 타이머가 상태 열 폭을 짓누르지 않도록
-                // 숫자 표시 확대는 1.3배로 제한한다(타임휠의 스케일 클램프와 같은 정책).
-                val fontScale = LocalDensity.current.fontScale
-                val timerStyle = MaterialTheme.typography.titleMedium
-                val timerFontSize = if (fontScale > 1.3f) {
-                    timerStyle.fontSize * (1.3f / fontScale)
-                } else {
-                    timerStyle.fontSize
-                }
-                Text(
-                    text = buildAnnotatedString {
-                        withStyle(
-                            SpanStyle(
-                                color = if (isRecording) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            ),
-                        ) {
-                            append(audioTimeLabel(elapsedMillis))
-                        }
-                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
-                            append(" / ${audioTimeLabel(maxDurationMillis)}")
-                        }
-                    },
-                    style = timerStyle.copy(
-                        fontSize = timerFontSize,
-                        fontFeatureSettings = "tnum",
-                    ),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
     }
 }
 
-/** 실제 마이크 입력 진폭을 따라 움직이는 미니 레벨 바 — 녹음 상태 텍스트 옆에 붙는다. */
+/**
+ * 녹음 카드의 원형 버튼 — **크기를 여기서만 정한다**(48dp 원 · 글리프 26dp).
+ * iOS `RecordingCircleButton` 과 짝이다(거긴 44pt · 20pt — 플랫폼 최소 터치 타깃이 다르다).
+ */
+@Composable
+private fun VoiceRecordCircleButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    filled: Boolean,
+    contentDescription: String,
+    content: @Composable () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(48.dp).semantics { this.contentDescription = contentDescription },
+        shape = CircleShape,
+        // 기본 ContentPadding(좌우 24dp)은 원형 버튼 안 아이콘을 짓눌러 아주 작게 그린다.
+        contentPadding = PaddingValues(0.dp),
+        colors = if (filled) {
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                contentColor = MaterialTheme.colorScheme.primary,
+            )
+        },
+    ) {
+        content()
+    }
+}
+
 @Composable
 private fun RecordingLevelBars(level: Float) {
     Row(
@@ -422,7 +448,7 @@ private fun RecordPulseRing(active: Boolean) {
 @Composable
 private fun UploadIcon() {
     Icon(
-        imageVector = Icons.Outlined.CloudUpload,
+        imageVector = Icons.Outlined.UploadFile,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.size(28.dp),
@@ -501,7 +527,7 @@ internal fun VoiceFileControls(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.CloudUpload,
+                        imageVector = Icons.Outlined.UploadFile,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),

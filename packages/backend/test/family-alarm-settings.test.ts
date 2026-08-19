@@ -3,6 +3,8 @@ import {
   coerceToPresetDays,
   isPresetQuietDays,
   isBlockedByFamilyAlarmQuietTime,
+  normalizeQuietWindows,
+  familyAlarmSettingsFromRow,
   validateQuietWindows,
   type FamilyAlarmSettings,
 } from '../src/lib/family-alarm-settings';
@@ -79,5 +81,29 @@ describe('isBlockedByFamilyAlarmQuietTime — 일회성 요일은 호출부가 �
   it('quiet 창이 비어 있으면 항상 통과', () => {
     const noWindows: FamilyAlarmSettings = { ...weekendNight, quietWindows: [] };
     expect(isBlockedByFamilyAlarmQuietTime('00:30', [], noWindows, 6)).toBe(false);
+  });
+});
+
+describe('가입 직후 방해금지 시간', () => {
+  // ⚠ 2026-08-08 규칙: **가입만으로 방해금지 시간이 생기지 않는다.**
+  // 예전 기본값은 평일 09:00-18:30 이었다. 그래서 아무도 설정한 적 없는 시간대에 가족
+  // 알람이 막혔고, 받는 사람은 자기가 막아 둔 줄 몰랐다. 되돌아가기 쉬운 규칙이라 고정한다.
+  it('컬럼이 비면 창이 없다 — 기본 창을 만들어 내지 않는다', () => {
+    expect(normalizeQuietWindows(undefined)).toEqual([]);
+    expect(normalizeQuietWindows(null)).toEqual([]);
+    expect(normalizeQuietWindows('')).toEqual([]);
+    expect(normalizeQuietWindows('[]')).toEqual([]);
+    expect(normalizeQuietWindows('망가진 JSON')).toEqual([]);
+  });
+
+  it('창이 없으면 어떤 시각도 막히지 않는다', () => {
+    const settings = familyAlarmSettingsFromRow({
+      allow_family_alarms: 1,
+      family_alarm_quiet_windows: null,
+    });
+    expect(settings.quietWindows).toEqual([]);
+    // 옛 기본 창의 한복판이던 시각도 통과해야 한다.
+    expect(isBlockedByFamilyAlarmQuietTime('12:00', [1, 2, 3, 4, 5], settings, 3)).toBe(false);
+    expect(isBlockedByFamilyAlarmQuietTime('09:30', [], settings, 1)).toBe(false);
   });
 });

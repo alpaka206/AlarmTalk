@@ -4,9 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -311,6 +308,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
         // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
         clearCurrentDefaultVoicePreferences()
+        // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
+        // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
+        // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
+        // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
+        com.alarmtalk.app.data.StockClipManifestStore.clear(getApplication())
+        stockClipManifestFetched = false
         // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
         // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
         clearSessionKeepingAlarms()
@@ -446,14 +449,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileLoadFinished by mutableStateOf(false)
         internal set
 
-    var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
-        internal set
-
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
+
+    /**
+     * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
+     *
+     * ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
+     * 기본 목소리와 등록 목소리는 개수가 다르므로 목소리 종류로 갈라 본다.
+     */
+    var expectedVariants by mutableStateOf<com.alarmtalk.app.network.ExpectedVariantCounts?>(null)
+
+    /** 목소리별 준비도(생성+다운로드). 준비 페이지와 편집기 관문이 함께 본다. */
+    var clipReadiness by mutableStateOf<List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>>(emptyList())
         internal set
 
-    var ttsMessageBusy by mutableStateOf(false)
+    /**
+     * 공유받은 목소리인데 **소유자 쪽 생성이 아직 안 끝난** 것.
+     *
+     * 받는 사람이 할 수 있는 일이 없으므로 진행률에 넣지 않는다(넣으면 영원히 안 차는
+     * 몫이 되고, '다시 시도' 도 소유자 큐라 누를 수 없다). 준비 화면이 다른 문구로 말한다.
+     */
+    var clipReadinessAwaitingOwner by mutableStateOf<Set<String>>(emptySet())
         internal set
+
+    /**
+     * 이번 실행에서 서버 매니페스트를 받았는가. **디스크 시드와 구분하기 위한 값이다** —
+     * `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간 재조회가 막혀, 운영이 추가한
+     * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     */
+    internal var stockClipManifestFetched = false
 
     var socialBusy by mutableStateOf(false)
         internal set
@@ -573,6 +597,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // consentCollect 중 '선택'(체크 없이 통과) 인 유형. 서버가 내려준다 — 화면이 목록을 따로
     // 들고 있으면 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
     var consentOptional by mutableStateOf<List<String>>(emptyList())
+
+    // collect 중 **이미 동의해 둔** 유형 — 동의 화면의 초기 체크 상태.
+    // 이걸 안 쓰면 이미 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로
+    // 제출돼 조용히 사라진다(목소리 기능 차단 + 마케팅 수신 동의 소멸).
+    var consentPrechecked by mutableStateOf<List<String>>(emptyList())
         internal set
 
     // 아직 없는 민감 동의(voice_biometric·overseas_transfer).
@@ -662,6 +691,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 마케팅 동의 POST 진행 중 여부. true 동안엔 토글을 비활성화해 동시/연속 쓰기를 막는다.
     // (늦게 도착한 옛 POST 가 최신 의도 뒤에 INSERT 되어 opt-out 이 유실되는 것 방지)
     var marketingConsentWriteInFlight by mutableStateOf(false)
+
+    /**
+     * 쓰기가 도는 동안 사용자가 또 토글했을 때의 **마지막 값**.
+     *
+     * 스위치를 상시 활성으로 둔 뒤로는(쓰기 중 비활성이면 색이 두 단계로 보인다) 연속
+     * 토글이 실제로 들어온다. 그때 새 요청을 그냥 버리면 **화면과 서버가 갈라진다** —
+     * 여기 담아 두고 지금 쓰기가 끝나면 이어서 보낸다.
+     */
+    var pendingMarketingConsent: Boolean? = null
         internal set
 
     // 직전 마케팅 동의 로드(GET)가 실패했는지. marketingConsentAgreed 가 null 인 동안 '로딩 중'과
@@ -849,9 +887,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 목소리(rememberVoiceUsed)와 한 쌍이라 기록 시점도 같다: **알람 저장 성공 시.**
      *
      * 편집기에서 문구를 눌러만 보고 취소한 것까지 기억하면, 만들지도 않은 알람의 선택이 다음
-     * 알람에 남는다. 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이고(사용자 확정),
-     * 빈 직접입력으로 시작하면 저장이 막힌다. 이어받는 것은 '종류' 하나뿐이고 회전 인덱스·
-     * 클립 키 같은 알람별 상태는 절대 따라가지 않는다.
+     * 알람에 남는다.
+     *
+     * **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 '빈 직접입력으로 열려 저장이
+     * 막힌다' 는 이유로 아예 기억하지 않았다). 문구를 함께 이어받으면 글자가 같아
+     * `AlarmAudioStore` 입력 캐시에 걸려 서버 호출도 월 한도 차감도 없이 저장되므로,
+     * 그 근거가 사라졌다.
+     *
+     * 이어받는 것은 '종류'(+직접 입력이면 그 문구)뿐이고 회전 인덱스·클립 키 같은 알람별
+     * 상태는 절대 따라가지 않는다.
      */
     internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
@@ -999,7 +1043,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         lastUsedVoiceId = null
-        ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
@@ -1018,6 +1061,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         consentChecked = false
         consentCollect = emptyList()
         consentOptional = emptyList()
+        consentPrechecked = emptyList()
         consentUnsupported = false
         consentNeedsCollection = false
         consentIsReconsent = false

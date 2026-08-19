@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 22,
+    version = 23,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -48,10 +48,21 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_19_20,
                     MIGRATION_20_21,
                     MIGRATION_21_22,
+                    MIGRATION_22_23,
                 )
-                    // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
-                    // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
-                    .fallbackToDestructiveMigration()
+                    // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
+                    //
+                    // 붙어 있던 근거는 "개발 중이라 보존할 데이터 없음" 이었는데 **그건 이제
+                    // 사실이 아니다.** 앱은 스토어에 있고 베타 테스터의 알람이 들어 있다.
+                    // 그 플래그가 켜져 있으면 마이그레이션을 빠뜨린 채 `version` 만 올렸을 때
+                    // Room 이 **DB 를 통째로 지우고 다시 만든다** — 사용자는 알람이 전부
+                    // 사라진 것만 보고, 우리 쪽에는 예외도 로그도 남지 않는다.
+                    //
+                    // 지금은 없는 게 안전하다: 1→23 마이그레이션이 **빠짐없이** 위에 있고,
+                    // 앞으로 빠뜨리면 앱이 **켜자마자 죽는다.** 죽는 건 즉시 눈에 띄어 고칠 수
+                    // 있지만, 조용히 지워진 알람은 되돌릴 방법이 없다.
+                    // 스키마를 바꿀 때는 `version` 을 올리고 **반드시** 여기에 마이그레이션을
+                    // 등록할 것. 회귀 방지: `AlarmDatabaseMigrationSafetyTest`.
                     .build()
                     .also { instance = it }
             }
@@ -231,6 +242,34 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundEnabled INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        // 재생 방식 2개화(2026-08-06). 자세한 이유는 AlarmPlayModes 주석 참조.
+        //
+        //  1. 'alarm_voice' → 'voice_only'. 그 모드를 고른 사람은 목소리를 만들어 둔
+        //     사용자이므로 목소리를 살린다(알람음으로 옮기면 애써 만든 목소리를 못 듣는다).
+        //  2. '목소리만' 인데 alarmSoundEnabled=0 으로 굳은 행을 되살린다. 편집기가 그 조합을
+        //     저장하고 있었는데, 그 알람이 유료 만료·목소리 삭제로 강등되면 톤 폴백까지 막혀
+        //     **소리가 하나도 안 났다**. 알람음을 거부한 게 아니라 목소리를 고른 것이다.
+        //  3. 음량 하한 10%. 0 은 '무음' 이라는 별개의 뜻이라 스위치로만 표현한다 —
+        //     슬라이더 끝값으로 만들어진 0 은 알람이 조용히 안 울리는 사고가 된다.
+        //     단 알람음 스위치를 끈 행(alarmSoundEnabled=0)의 0 은 의도된 무음이라 두지만,
+        //     위 2번에서 되살아난 행은 함께 올린다.
+        private val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE alarms SET playMode = 'voice_only' WHERE playMode = 'alarm_voice'")
+                db.execSQL("UPDATE alarms SET preLockPlayMode = 'voice_only' WHERE preLockPlayMode = 'alarm_voice'")
+                db.execSQL(
+                    "UPDATE alarms SET alarmSoundEnabled = 1 " +
+                        "WHERE alarmSoundEnabled = 0 AND " +
+                        "(playMode = 'voice_only' OR preLockPlayMode = 'voice_only')",
+                )
+                db.execSQL("UPDATE alarms SET voiceVolumePercent = 10 WHERE voiceVolumePercent < 10")
+                db.execSQL(
+                    "UPDATE alarms SET alarmVolumePercent = 10 " +
+                        "WHERE alarmVolumePercent < 10 AND alarmSoundEnabled = 1",
+                )
             }
         }
     }

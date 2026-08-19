@@ -49,7 +49,19 @@ private fun usesFreeSystemVoiceAlarm(
     rawAudioUri: String?,
     audioCacheKey: String?,
 ): Boolean {
-    if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+    if (playMode == AlarmPlayModes.ALARM_ONLY) return false
+    // **직접 녹음은 유료 기능이 아니다**(2026-08-12 확정). 내 폰에 있는 파일을 그대로
+    // 재생하는 것이라 서버 자산을 하나도 쓰지 않는다 — 클론 목소리·서버 생성 클립과 다르다.
+    //
+    // ⚠ 예전에는 여기서 `voiceSource == LOCAL_AUDIO` 를 곧바로 false 로 떨어뜨렸고, 이
+    // 함수를 보는 **세 게이트가 전부** 막혔다: 저장(`voiceAlarmAllowed`), 무료 강등
+    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`RingingService.downgradePaidVoice`).
+    // 그래서 무료 사용자는 녹음을 다 해 놓고 저장 단계에서 거절당했다.
+    //
+    // `localAudioUri` 를 함께 보는 이유: `degradeMatchingLocalOwnedVoiceAlarms` 가 강등
+    // 표식으로 `voiceSource=LOCAL_AUDIO + localAudioUri=null` 을 남기므로, 그 빈 껍데기를
+    // '녹음' 으로 오인하면 안 된다.
+    if (voiceSource == VoiceSources.LOCAL_AUDIO) return !localAudioUri.isNullOrBlank()
     if (!isSystemVoiceId(voiceProfileId)) return false
 
     val noCachedAudio = localAudioUri.isNullOrBlank() && rawAudioUri.isNullOrBlank()

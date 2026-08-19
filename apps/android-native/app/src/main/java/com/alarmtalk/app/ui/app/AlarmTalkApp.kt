@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -52,6 +53,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -96,10 +98,11 @@ internal fun AlarmTalkApp(
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
     val navController = rememberNavController()
+    val downgradeNoticeStore = remember(context) { DowngradeNoticeStore(context) }
+    var downgradeNotice by remember { mutableStateOf<DowngradeNoticeStore.Notice?>(null) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
     val selectedTab = currentTab ?: NativeTab.Alarms
-    var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
     // 인증 화면 백스택 — 로그인↔회원가입 전환 히스토리를 보존해 뒤로가기가 한 단계씩 돌아가게 한다.
     var authBackStack by remember { mutableStateOf(listOf<AuthRoute>(AuthRoute.Landing)) }
     val authRoute = authBackStack.last()
@@ -228,10 +231,50 @@ internal fun AlarmTalkApp(
         permissionState.refresh()
     }
 
+    /**
+     * 시스템이 **처음으로** 물어보는 런타임 권한인가.
+     *
+     * `shouldShowRequestPermissionRationale` 는 "사용자가 한 번 거부한 적이 있다" 일 때만
+     * true 다. 그러니 **false + 아직 미허용**이면 두 경우다 — 한 번도 안 물어봤거나,
+     * 영구 거부거나. 영구 거부는 우리가 따로 기록해 두므로(`InitialPermissionPromptStore`)
+     * 그 기록이 없으면 '처음' 이다.
+     */
+    fun isFirstRuntimeAsk(permission: String): Boolean {
+        val activity = context.findHostActivity() ?: return false
+        if (ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)) return false
+        return !initialPermissionPromptStore.hasPrompted(permission)
+    }
+
     fun requestFirstMissingAlarmPermission() {
-        // 토스트 대신 권한 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
-        // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         val target = PermissionSnapshot.read(context).firstMissingAlarmTarget() ?: return
+
+        // ⚠ **처음 물어볼 때는 우리 모달을 거치지 않는다.**
+        //
+        // 시스템 권한 다이얼로그가 이미 "무엇을 허용할지" 를 묻고, 우리는 그 위에
+        // `NSAlarmKitUsageDescription` 격의 설명을 붙여 둔다. 그 앞에 안내 모달을 하나 더
+        // 두면 **모든 신규 사용자가 같은 말을 두 번 읽고 탭을 한 번 더 해야 한다.**
+        // 안드로이드 가이드도 rationale 은 '거부한 뒤' 에 보이라고 한다.
+        //
+        // 모달이 값을 하는 경우는 남겨 둔다:
+        //  - 한 번 거부한 뒤(다시 물어보는 이유를 설명해야 한다)
+        //  - 런타임 권한이 아닌 것(정확 알람·전체화면 — 시스템이 설명 없이 **설정 화면**만
+        //    열어 주므로, 무엇을 켜야 하는지 우리가 말하지 않으면 알 수 없다)
+        val runtimePermission = when (target) {
+            PermissionTarget.Notifications ->
+                Manifest.permission.POST_NOTIFICATIONS.takeIf {
+                    context.shouldRequestNotificationRuntimePermission()
+                }
+            PermissionTarget.RecordAudio -> Manifest.permission.RECORD_AUDIO
+            PermissionTarget.ExactAlarms, PermissionTarget.FullScreenIntent -> null
+        }
+        if (runtimePermission != null && isFirstRuntimeAsk(runtimePermission)) {
+            initialPermissionPromptStore.markPrompted(runtimePermission)
+            runtimePermissionLauncher.launch(arrayOf(runtimePermission))
+            return
+        }
+
+        // 그 외에는 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
+        // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         viewModel.requestPermissionGate(target)
     }
 
@@ -346,7 +389,6 @@ internal fun AlarmTalkApp(
             navController.navigateHomeClearingStack()
         }
         viewModel.loadReceivedAlarmBadgeState()
-        planGateDialog = null
         authResetToLanding()
     }
 
@@ -432,6 +474,37 @@ internal fun AlarmTalkApp(
         viewModel.maybeShowWelcomePromo()
     }
 
+    // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
+    //
+    // ⚠ 준비 신호를 위 프로모와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
+    // 겹쳐 뜨면 읽을 수 없다 — `docs/spec/gates-and-overlays.md`.
+    // 다만 성질은 프로모와 다르다: 이건 **소진 플래그가 아니라 대기표**라, 못 보고 지나가도
+    // 지워지지 않는다(지우는 건 '확인' 뿐). 그래서 잘못 떠서 잃을 것이 없다.
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.permissionGateRequest,
+        viewModel.showVoiceSetup,
+        viewModel.showConsentScreen,
+        viewModel.consentStatusChecked,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
+        alarms,
+    ) {
+        if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
+        downgradeNotice = downgradeNoticeStore.read(authSession?.user?.id)
+    }
+
+
     LaunchedEffect(sessionRouteKey, alarms) {
         if (sessionRouteKey != null) {
             viewModel.ensureReceivedAlarmBadgeBaseline(alarms)
@@ -457,6 +530,10 @@ internal fun AlarmTalkApp(
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
         viewModel.prefetchStockClips()
+        // 준비도(생성+다운로드)를 함께 센다 — 편집기 관문과 준비 화면이 이 값을 본다.
+        // ⚠ **매번 다시 센다.** '한 번 받았다' 를 기록해 건너뛰면 캐시 삭제·기본 목소리
+        // 추가로 비어도 알아채지 못한다(docs/spec/voice-and-message.md).
+        viewModel.refreshClipReadinessAsync()
         viewModel.preloadSocial()
         viewModel.preloadBilling()
     }
@@ -669,6 +746,42 @@ internal fun AlarmTalkApp(
         )
     }
 
+    downgradeNotice?.let { notice ->
+        val isFreePlan = notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN
+        IosAlertDialog(
+            title = stringResource(
+                if (isFreePlan) R.string.downgrade_notice_free_title
+                else R.string.downgrade_notice_shared_title,
+            ),
+            message = stringResource(
+                if (isFreePlan) R.string.downgrade_notice_free_message
+                else R.string.downgrade_notice_shared_message,
+                notice.count,
+            ),
+            // ⚠ 바깥 탭·뒤로가기로 닫아도 **지우지 않는다** — 실수로 닫았을 뿐일 수 있다.
+            // 지우는 건 '확인' 하나뿐이다.
+            onDismiss = { downgradeNotice = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.downgrade_notice_open_billing),
+                    onClick = {
+                        downgradeNoticeStore.clear(authSession?.user?.id)
+                        downgradeNotice = null
+                        navigateToTab(NativeTab.Billing)
+                    },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.auth_confirm),
+                    emphasized = true,
+                    onClick = {
+                        downgradeNoticeStore.clear(authSession?.user?.id)
+                        downgradeNotice = null
+                    },
+                ),
+            ),
+        )
+    }
+
     if (viewModel.nicknameEditDialogOpen) {
         NicknameEditDialog(
             initial = authSession?.user?.name.orEmpty(),
@@ -752,21 +865,6 @@ internal fun AlarmTalkApp(
         )
     }
 
-    planGateDialog?.let { gate ->
-        PlanGateDialog(
-            title = gate.title ?: stringResource(R.string.r3dlg_plan_gate_title),
-            message = gate.message,
-            confirmLabel = gate.confirmLabel ?: stringResource(R.string.r3app_plan_gate_confirm),
-            onConfirm = {
-                planGateDialog = null
-                navController.navigateTopLevelTab(NativeTab.Billing)
-            },
-            onDismiss = { planGateDialog = null },
-            onRedeemCode = viewModel::registerCode,
-            redeemBusy = viewModel.billingBusy,
-        )
-    }
-
     viewModel.duplicateAlarmPrompt?.let { prompt ->
         DuplicateAlarmDialog(
             timeLabel = "%02d:%02d".format(prompt.hour, prompt.minute),
@@ -782,7 +880,10 @@ internal fun AlarmTalkApp(
         ) { dismiss ->
             WakerSheetOptionGroup {
                 // 아이콘 배지 없이 텍스트만 — 제목이 이미 대상을 다 말해주고, 같은 사람 아이콘이 행마다
-                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지). 다른 선택 시트(테마/국가/목소리)와 동일 문법.
+                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지).
+                // ⚠ **"다른 선택 시트와 동일" 이라고 적지 말 것 — 테마 시트는 아이콘을 쓴다.**
+                // 거기서는 세 항목이 서로 다른 개념(시스템/밝게/어둡게)이라 아이콘이 구분에
+                // 기여한다. 여기는 행마다 같은 '사람' 이라 기여하지 않는다 — 그 차이가 기준이다.
                 WakerSheetOptionRow(
                     title = stringResource(R.string.alarms_target_self_title),
                     selected = false,
@@ -822,8 +923,17 @@ internal fun AlarmTalkApp(
     // (collect=[marketing]) needsConsent 는 false 인데 동의 화면은 떠 있어서, 하단바와 ＋ FAB 가
     // 그 화면 아래에 그대로 남아 눌린다 — 수집이 끝나기 전에 탭을 바꾸거나 편집기 라우트를
     // 밀어 넣을 수 있다(Codex #660). 이 파일의 다른 게이트는 모두 이미 showConsentScreen 을 본다.
+    // ⚠ **하단바에 없는 탭은 '하위 화면' 이다 — 그때는 하단바도 감춘다.**
+    // `NativeTab` 다섯 중 하단바가 그리는 건 알람·목소리·더보기 셋뿐이고, 이용권·코드
+    // 등록은 더보기에서 들어가는 하위 화면이다(뒤로가기가 더보기로 돌아간다).
+    // 그런데도 하단바가 남아 있어서, 하위 화면에 있으면서 **아무 탭도 선택돼 보이지
+    // 않는** 하단바를 보게 됐다. iOS 는 이 화면들을 네비게이션 스택에 push 하고
+    // `BottomNavBar` 는 스택 루트에 있어서 자연히 사라진다(`MainTabsView`).
+    val isRootTab = currentTab == NativeTab.Alarms ||
+        currentTab == NativeTab.Voices ||
+        currentTab == NativeTab.Menu
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
-        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && isRootTab
 
     Scaffold(
         bottomBar = {
@@ -894,7 +1004,21 @@ internal fun AlarmTalkApp(
                   contentPadding = padding,
                   onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
               )
-              AuthRoute.ResetPassword -> PasswordResetScreen(
+              AuthRoute.ResetPassword -> {
+                  // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 안 지우면 뒤로 갔다가 다시
+                  // 들어왔을 때 아무것도 안 했는데 "인증 코드를 보냈어요" 가 떠 있고
+                  // 코드·새 비밀번호 단계가 **이미 열린 채**라, 오지도 않은 코드를
+                  // 기다리게 된다(iOS `PasswordResetView.onDisappear` 와 같은 처리).
+                  //
+                  // ⚠ 화면 이탈에서만 지운다 — 앱을 백그라운드로 보내는 것(메일 확인)은
+                  // 이탈이 아니다. `DisposableEffect` 는 컴포지션이 떠날 때만 돈다.
+                  DisposableEffect(Unit) {
+                      onDispose {
+                          viewModel.passwordResetCodeSentTo = null
+                          viewModel.message = null
+                      }
+                  }
+                  PasswordResetScreen(
                   contentPadding = padding,
                   busy = authBusy,
                   codeSentTo = viewModel.passwordResetCodeSentTo,
@@ -903,7 +1027,8 @@ internal fun AlarmTalkApp(
                   onConfirm = { resetEmail, resetCode, newPassword ->
                       viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
                   },
-              )
+                  )
+              }
               is AuthRoute.Auth -> AuthScreen(
                   contentPadding = padding,
                   mode = route.mode,
@@ -963,6 +1088,7 @@ internal fun AlarmTalkApp(
               collect = viewModel.consentCollect,
               isReconsent = viewModel.consentIsReconsent,
               optional = viewModel.consentOptional,
+              prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
           )
           return@Scaffold
@@ -1018,6 +1144,8 @@ internal fun AlarmTalkApp(
                           onAlarmSelectionModeChange = { alarmSelectionActive = it },
                           selectedTab = tab,
                           onSelectTab = ::navigateToTab,
+                          // 하위 화면 뒤로가기는 설정·라이선스와 **같은 한 가지**다.
+                          onNavigateBack = ::goBackInApp,
                           alarms = alarms,
                           alarmsLoaded = viewModel.alarmsLoaded,
                           authSession = authSession,
@@ -1041,6 +1169,7 @@ internal fun AlarmTalkApp(
                           sensitiveConsentMissing = viewModel.sensitiveConsentMissing,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
+                          expectedVariants = viewModel.expectedVariants,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
@@ -1063,9 +1192,10 @@ internal fun AlarmTalkApp(
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                           planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
+                          onGiftPersonal = viewModel::startGiftPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
-                          onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
+                          onRestorePurchases = viewModel::restorePurchases,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
@@ -1119,7 +1249,9 @@ internal fun AlarmTalkApp(
                   val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
                   AlarmEditorScreen(
                       contentPadding = padding,
-                      onRegisterCode = viewModel::registerCode,
+                      // ⚠ **편집기에서는 화면을 옮기지 않는다.** 옮기면 쿠폰을 넣는 순간
+                      // 홈으로 튕겨 편집 중이던 알람이 통째로 사라진다.
+                      onRegisterCode = { code -> viewModel.registerCode(code, navigateOnSuccess = false) },
                       redeemBusy = viewModel.billingBusy,
                       alarm = null,
                       authSession = authSession,
@@ -1131,6 +1263,11 @@ internal fun AlarmTalkApp(
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
+                          expectedVariants = viewModel.expectedVariants,
+                          clipReadiness = viewModel.clipReadiness,
+                          clipReadinessAwaitingOwner = viewModel.clipReadinessAwaitingOwner,
+                          onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
+                          onPrepareClipsFor = { viewModel.refreshClipReadinessAsync(it) },
                       lastUsedVoiceId = viewModel.lastUsedVoiceId,
                       lastMessageContext = lastMessageContext,
                       lastFreeBucket = lastFreeBucket,
@@ -1170,7 +1307,7 @@ internal fun AlarmTalkApp(
                   } else {
                       AlarmEditorScreen(
                           contentPadding = padding,
-                          onRegisterCode = viewModel::registerCode,
+                          onRegisterCode = { code -> viewModel.registerCode(code, navigateOnSuccess = false) },
                           redeemBusy = viewModel.billingBusy,
                           alarm = currentAlarm,
                           authSession = authSession,
@@ -1181,6 +1318,11 @@ internal fun AlarmTalkApp(
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
+                          expectedVariants = viewModel.expectedVariants,
+                          clipReadiness = viewModel.clipReadiness,
+                          clipReadinessAwaitingOwner = viewModel.clipReadinessAwaitingOwner,
+                          onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
+                          onPrepareClipsFor = { viewModel.refreshClipReadinessAsync(it) },
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },

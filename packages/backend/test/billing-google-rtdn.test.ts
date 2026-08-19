@@ -214,6 +214,104 @@ describe('billing google RTDN', () => {
       vi.unstubAllGlobals();
     });
 
+    // ⚠ **전환(업/다운그레이드)은 새 purchaseToken 으로 온다.** 그 토큰은 클라 confirm
+    // 전까지 store_transactions 에 없으므로, 예전에는 `unmapped_token` 으로 통째로
+    // 버려졌다 — 전환 반영이 클라 confirm 하나에만 매달렸다(2026-08-11 확인).
+    // 이제 권위 응답의 `linkedPurchaseToken` 으로 옛 구독의 주인을 찾아 잇는다.
+    /** 계정 바인딩 대조용 해시 — 클라가 setObfuscatedAccountId 로 싣는 값과 같은 계산. */
+    async function sha256hex(value: string): Promise<string> {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function stubLinkedLookup(obfuscatedId: string | null) {
+      const payload: Record<string, unknown> = {
+        subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+        linkedPurchaseToken: 'play-token-previous',
+        lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
+      };
+      if (obfuscatedId) {
+        payload.externalAccountIdentifiers = { obfuscatedExternalAccountId: obfuscatedId };
+      }
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('전환: 매핑 없는 새 토큰이어도 linkedPurchaseToken 으로 주인을 찾는다', async () => {
+      stubLinkedLookup(await sha256hex('user-pk-1')); // 결제 계정 == 옛 구독의 주인
+      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([TXN_ROW]); // linkedPurchaseToken 으로 재조회 → 주인 후보
+      mockDB.pushResult([{ google_id: 'google-user-1' }]); // 바인딩 대조용 로그인 id
+
+      // ⚠ 여기서 상태 코드를 단언하지 않는다. 주인을 찾은 뒤에는 entitle 경로가 이어져
+      // 플랜 조회 등 DB 결과가 더 필요한데, 이 테스트가 보려는 것은 **그 앞 단계**다 —
+      // "매핑 없는 새 토큰을 버리지 않고 linked 로 이어 붙였는가".
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      // 옛 토큰으로 store_transactions 를 한 번 더 뒤졌다는 게 핵심 증거다.
+      const lookups = mockDB.calls.filter((c) => c.sql.includes('FROM store_transactions'));
+      expect(lookups.length).toBe(2);
+      expect(lookups[1]!.args).toContain('play-token-previous');
+      // ⚠ **채택 여부를 직접 단언한다.** 예전에는 "DB 를 더 읽었는가" 로 대신 봤는데,
+      // 그건 뒤 단계 쿼리 개수에 딸린 값이라 무엇을 재는지 불분명했다(디버그 줄 하나만
+      // 넣어도 결과가 뒤집혔다). 채택하면 계정 바인딩 대조를 위해 users 를 읽는다 —
+      // 못 하면 그 전에 `unmapped_token` 으로 빠져나가 이 쿼리가 아예 없다.
+      expect(mockDB.calls.some((c) => c.sql.includes('FROM users'))).toBe(true);
+      // 이 테스트는 채택 단계까지만 본다. 그 뒤 entitle 경로는 여기서 스텁하지 않으므로
+      // 응답 코드는 단언하지 않는다(200 이 아니어도 이 테스트의 관심사가 아니다).
+      expect(res.status).toBeDefined();
+    });
+
+    // ⚠ **`linkedPurchaseToken` 은 '같은 사람' 을 뜻하지 않는다.**
+    // 업/다운그레이드뿐 아니라 **해지했지만 만료 전인 구독의 재가입**에도 실려 오는데,
+    // 그건 같은 **구글 계정**이면 되고 같은 **AlarmTalk 계정**이라는 보장이 없다.
+    // 검증 없이 옛 주인을 물려받으면: 계정 A 해지 → 계정 B 로 재구매 → RTDN 이 confirm 을
+    // 앞질러 도착 → **A 가 이용권을 받고** 새 토큰이 A 에게 영구 바인딩된다.
+    // 돈 낸 B 의 confirm 은 그 뒤로 영영 409(TRANSACTION_OWNED_BY_OTHER_USER)다.
+    it('linked 주인이 결제 계정과 다르면 채택하지 않는다(unmapped_token)', async () => {
+      stubLinkedLookup(await sha256hex('somebody-else')); // 다른 사람이 결제했다
+      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([TXN_ROW]); // 옛 토큰의 주인 후보 = user-pk-1
+      mockDB.pushResult([{ google_id: 'google-user-1' }]);
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      // **아무것도 쓰지 않는다** — 틀린 주인에게 붙이면 되돌릴 길이 없다.
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
+    // 식별자가 아예 없는 응답도 채택하지 않는다(fail-closed). confirm 은 호출자가 있어
+    // 403 으로 되돌려 줄 수 있지만, RTDN 은 알려 줄 사람이 없다.
+    it('linked 응답에 계정 식별자가 없으면 채택하지 않는다', async () => {
+      stubLinkedLookup(null);
+      mockDB.pushResult([]);
+      mockDB.pushResult([TXN_ROW]);
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
+    // linkedPurchaseToken 이 없거나 그 토큰도 모르면 예전처럼 조용히 흘려보낸다 —
+    // 최초 구매(confirm 전)가 여기로 온다.
+    it('전환이 아니면(linked 없음) 여전히 unmapped_token 으로 ack', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_ACTIVE', FUTURE);
+      mockDB.pushResult([]); // 매핑 없음
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
     it('스테일 토큰(비활성 구독 매핑) EXPIRED → 아무 것도 안 건드리고 200 ack', async () => {
       stubPlayLookup('SUBSCRIPTION_STATE_EXPIRED', PAST);
       mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
@@ -413,8 +511,8 @@ describe('billing google RTDN', () => {
       mockDB.pushResult([TXN_ROW]); // store_transactions 매핑 (subscription_id='sub-old')
       mockDB.pushResult([ACTIVE_MAPPED_ROW]); // 매핑 구독이 현재 활성 (게이트 통과)
       mockDB.pushResult([
-        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family' },
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family', plan_key: 'family' },
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
       ]); // 남은 활성 구독 (매핑 sub-old + 다른 유료 sub-other)
 
       const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
@@ -429,12 +527,62 @@ describe('billing google RTDN', () => {
       expect(findCall('UPDATE alarms')).toBeUndefined();
     });
 
+    // -------------------------------------------------------------------------
+    // 보류는 **그룹 전체**에 전파된다.
+    //
+    // ⚠ 예전에는 소유자만 free 가 되고 멤버는 유료 그대로였다 — 소유자는 돈을 안 내는데
+    //    가족·커플 전원이 최대 30일(Play 계정보류)간 유료 기능을 계속 썼다. 게다가 멤버
+    //    화면에는 공유 목소리가 멀쩡히 보이는데 그걸로 새 알람을 만들면 404 로 막혔다.
+    // ⚠ 그룹 구조는 **보존**해야 한다 — 결제가 복구되면 재초대 없이 살아나야 한다.
+    // -------------------------------------------------------------------------
+    it('suspend 시 그룹 멤버도 함께 free 로 내리되 그룹은 보존한다', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_ON_HOLD', FUTURE);
+      mockDB.pushResult([TXN_ROW]);
+      // 매핑 구독이 그룹 소유 구독이다.
+      mockDB.pushResult([{ plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' }]);
+      // 소유자 재계산 — 남은 건 정지된 구독뿐 → free
+      mockDB.pushResult([
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
+      ]);
+      mockDB.pushResult([], 1); // UPDATE users SET plan (소유자 → free)
+      // 그룹 멤버 목록
+      mockDB.pushResult([{ user_id: 'member-1' }]);
+      mockDB.pushResult([{ plan: 'family' }]); // 멤버 plan(before)
+      mockDB.pushResult([{ id: 'sub-member-1' }]); // 멤버의 그룹 구독
+      mockDB.pushResult([
+        { sub_id: 'sub-member-1', user_id: 'member-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
+      ]); // 멤버 재계산 대상(제외되면 유료 없음)
+      mockDB.pushResult([], 1); // UPDATE users SET plan (멤버 → free)
+      mockDB.pushResult([{ plan: 'free' }]); // 멤버 plan(after)
+      mockDB.pushResult([]); // FCM 토큰 조회(소유자)
+      mockDB.pushResult([]); // FCM 토큰 조회(멤버)
+
+      const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).action).toBe('suspended');
+
+      // 소유자와 멤버 **둘 다** free 로 내려간다.
+      const planUpdates = mockDB.calls.filter((c) => c.sql.includes('UPDATE users SET plan = ?'));
+      expect(planUpdates.map((c) => c.args)).toEqual([
+        ['free', 'user-pk-1'],
+        ['free', 'member-1'],
+      ]);
+
+      // ⚠ 그룹·멤버십·구독 행은 건드리지 않는다(재초대 없이 복구되어야 한다).
+      expect(findCall('DELETE FROM plan_group_members')).toBeUndefined();
+      expect(findCall('DELETE FROM plan_groups')).toBeUndefined();
+      expect(findCall("status = 'cancelled'")).toBeUndefined();
+      // 회복형이라 음성 접근 정리도 하지 않는다.
+      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+    });
+
     it('suspend 시 매핑 구독뿐이면(다른 유료 구독 없음) free 로 내린다 (E)', async () => {
       stubPlayLookup('SUBSCRIPTION_STATE_PAUSED', FUTURE);
       mockDB.pushResult([TXN_ROW]);
       mockDB.pushResult([ACTIVE_MAPPED_ROW]);
       mockDB.pushResult([
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
       ]); // 남은 활성 구독은 매핑(정지된) 구독뿐 → 제외하면 유료 없음
 
       const res = await buildApp().request(rtdnRequest(6), undefined, RTDN_ENV);

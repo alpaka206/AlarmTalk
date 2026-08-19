@@ -817,12 +817,55 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
-            val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
-                !alarm.localAudioUri.isNullOrBlank() ||
+    // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
+    // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
+    // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는
+    // 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가 뜬다. iOS 짝은
+    // `LocalAlarmRecord.usesPaidVoiceFeatures` · `PaidVoiceGate.usesPaidVoice` — 같이 고친다.
+            val usesVoice = !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) {
+                // 옛 규칙(직접 녹음 = 유료)으로 이미 잠긴 행은 여기서 **되돌린다.**
+                // 그냥 건너뛰면 잠긴 채 남는데, 이제 잠글 축이 사라졌으니 풀어 줄 다른
+                // 경로가 없다. 아래 '옛 버그로 잠긴 받은 알람' 과 같은 모양이다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
+            // ⚠ **받은 알람은 '받는 사람 플랜' 으로 다스리지 않는다 — 축이 다르다.**
+            // 받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. 공유가 끊기면
+            // 서버가 직접 걷어내고(`paid-voice-cleanup.ts` 가 `is_received` 까지
+            // sound-only 로 UPDATE) 그 결과가 pull sync 로 내려온다.
+            //
+            // 여기서 플랜으로 한 번 더 잠그면 **결제 보류(유예) 중에 오발한다** —
+            // `resolvePlanAfterSuspend` 는 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로,
+            // 카드가 잠깐 실패한 사이 파트너가 보낸 알람의 목소리가 잠긴다. 게다가
+            // `unlockPaidAlarmTalks` 는 **받는 사람이 유료가 될 때만** 돌아서, 결제가
+            // 복구돼도 그룹에서 나간 뒤라면 `preLockPlayMode` 가 영구히 남는다.
+            // iOS 는 `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` 로 처음부터 제외한다.
+            if (alarm.origin != AlarmOrigins.LOCAL_OWNED) {
+                // 옛 버그로 이미 잠긴 받은 알람은 여기서 **되돌린다.** 그냥 건너뛰면
+                // 잠긴 채로 남는데, 플랜 축이 사라졌으니 풀어 줄 다른 경로가 없다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
             // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 임자가 확정된 미기록
             // (레거시 null) 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
             // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
@@ -1448,7 +1491,7 @@ class AlarmRepository(
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
         require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
-        require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
+        require(draft.snoozeMinutes in SnoozeMinutes.range) { "Snooze must be between ${SnoozeMinutes.MIN} and ${SnoozeMinutes.MAX} minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
         require(draft.voiceVolumePercent in 0..100) { "Voice volume must be between 0 and 100." }

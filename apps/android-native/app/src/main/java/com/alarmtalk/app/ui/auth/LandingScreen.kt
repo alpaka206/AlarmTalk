@@ -574,19 +574,36 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .alpha(if (enabled) 1f else 0.45f),
+            // ⚠ 0.45 는 흰 글자까지 함께 흐려져 대비 3.4:1 이었다 — 0.6 으로 올린다
+            // (2026-08-17). iOS `GradientCta` 도 같은 값이다.
+            .alpha(if (enabled) 1f else 0.6f),
         shape = WakerButtonShape,
         color = Color.Transparent,
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                // ⚠ **`fillMaxSize()` 를 쓰지 말 것 — 버튼이 화면을 통째로 덮는다.**
+                //
+                // 높이 상한을 없앤 것(`height(56.dp)` → `heightIn(min = 56.dp)`)은 큰 글꼴에서
+                // 라벨이 잘리지 않게 하려던 것이라 의도는 맞다. 문제는 **안쪽이 부모가 주는
+                // 최대 높이까지 늘어난다**는 것이다: Column 은 weight 없는 자식을 **먼저**
+                // 들어온 최대 제약으로 재므로, 여기서 `fillMaxSize()` 를 하면 CTA 가 화면
+                // 전체를 가져가고 `weight(1f)` 로 잡아 둔 히어로 영역에 **0 이 남는다.**
+                // 실제로 랜딩이 파란 버튼 하나만 남고 제목·문구·미리듣기 카드가 전부
+                // 사라졌다(2026-08-10 S23 Ultra 실기기 재현, 뷰 트리에 텍스트 노드가
+                // '시작하기' 하나뿐이었다).
+                //
+                // 그래서 **최소 높이는 여기서만** 정하고 세로는 내용에 맞춘다 — 한 줄이면
+                // 56dp, 글꼴이 커져 두 줄이 되면 그만큼만 자란다.
+                .heightIn(min = 56.dp)
                 .background(Brush.horizontalGradient(listOf(BrandCtaStart, BrandCtaEnd))),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = text,
+                // 자랐을 때 글자가 위아래에 닿지 않도록.
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.titleMedium,
                 color = Color(0xFFFFFFFF),
                 fontWeight = FontWeight.Bold,

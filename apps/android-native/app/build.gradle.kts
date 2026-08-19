@@ -290,6 +290,18 @@ android {
     }
 }
 
+
+composeCompiler {
+    // 리스트·응답 모델을 stable 로 취급해 불필요한 리컴포지션을 막는다.
+    // 무엇을·왜 넣었는지는 그 파일 주석에 있다. **거짓말을 적으면 화면이 안 갱신된다.**
+    stabilityConfigurationFile =
+        rootProject.layout.projectDirectory.file("compose-stability.conf")
+    // 리컴포지션 상태를 다시 재려면 아래 두 줄을 켜고 빌드한 뒤
+    // `app/build/compose-reports/app_devDebug-composables.txt` 를 본다.
+    // metricsDestination = layout.buildDirectory.dir("compose-metrics")
+    // reportsDestination = layout.buildDirectory.dir("compose-reports")
+}
+
 tasks.named("preBuild").configure {
     dependsOn(generateAlarmTone)
     dependsOn(copyLegalDocs)

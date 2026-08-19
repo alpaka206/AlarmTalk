@@ -465,8 +465,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
         message = getApplication<android.app.Application>().getString(R.string.msg_time_format_required)
         return
     }
+    // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서 평일
+    // 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다 —
+    // "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 null 로 보낸다.
     val firstWindow = normalizedWindows.firstOrNull()
-        ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -477,9 +479,9 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 authorization,
                 com.alarmtalk.app.network.UpdateProfileRequest(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    familyAlarmQuietStart = firstWindow?.start,
+                    familyAlarmQuietEnd = firstWindow?.end,
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
@@ -487,9 +489,11 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             val updated = session.copy(
                 user = session.user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
+                    // 실제 판정은 언제나 `familyAlarmQuietWindows`(빈 목록 = 방해금지 없음)다.
+                    familyAlarmQuietStart = firstWindow?.start ?: "09:00",
+                    familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
@@ -628,6 +632,7 @@ internal fun MainViewModel.checkConsentStatus() {
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             val collected = status.collect.ifEmpty { status.missing }
             consentOptional = status.optional
+            consentPrechecked = status.prechecked
             // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
             // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
             consentUnsupported = collected.any {
@@ -761,6 +766,13 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             // 등록 화면에서 다시 만난다(그게 이 설계의 핵심이다).
             val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
             sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
+            // 마케팅을 이 화면에서 결정했으면 설정 토글과 캐시도 함께 맞춘다.
+            // 안 맞추면 방금 동의했는데 더보기 > 설정의 토글이 캐시 때문에 '거부' 로 보인다.
+            consents.firstOrNull { it.type == "marketing" }?.let { row ->
+                marketingConsentAgreed = row.agreed
+                com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>())
+                    .write(ownerUserId, row.agreed)
+            }
             consentChecked = true
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
@@ -891,8 +903,15 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
-    // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
-    if (marketingConsentWriteInFlight) return
+    // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
+    // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
+    // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
+    // 곧바로 하고, 실제 전송은 지금 쓰기가 끝난 뒤 이어서 한 번 더 보낸다.
+    if (marketingConsentWriteInFlight) {
+        marketingConsentAgreed = agreed
+        pendingMarketingConsent = agreed
+        return
+    }
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
@@ -928,15 +947,23 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
         // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
         if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+        marketingConsentWriteInFlight = false
+        // 진행 중에 사용자가 또 눌렀으면 **마지막 값**을 이어서 보낸다.
+        pendingMarketingConsent?.let { queued ->
+            pendingMarketingConsent = null
+            if (queued != agreed) {
+                updateMarketingConsent(queued)
+                return@launch
+            }
+        }
         result.onSuccess {
             val app = getApplication<android.app.Application>()
             // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).
             com.alarmtalk.app.data.MarketingConsentCache(app).write(userId, agreed)
-            message = if (agreed) {
-                app.getString(R.string.msg_marketing_consent_on)
-            } else {
-                app.getString(R.string.msg_marketing_consent_off)
-            }
+            // ⚠ **성공 토스트를 되살리지 말 것**(2026-08-11 요청). 스위치가 이미 결과를
+            // 보여주는데 토스트가 같은 말을 한 번 더 한다 — 켜고 끌 때마다 화면 아래가
+            // 가려진다. **실패는 그대로 알린다**(아래) — 그때는 스위치가 되돌아가므로
+            // 왜 되돌아갔는지 말해 줄 것이 필요하다.
         }.onFailure { error ->
             marketingConsentAgreed = previous
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
@@ -1098,7 +1125,7 @@ internal fun MainViewModel.syncNow() {
             val app = getApplication<android.app.Application>()
             when {
                 // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
-                // common_alarm_warning_sync_failed). 같은 말을 위에서 한 번 더 하면 사용자는
+                // `AlarmStates.FAILED` 배지). 같은 말을 위에서 한 번 더 하면 사용자는
                 // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
                 //
                 // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가

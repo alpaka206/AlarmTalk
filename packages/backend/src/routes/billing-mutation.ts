@@ -7,11 +7,12 @@ import {
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
   notifyPlanChanged,
+  notifyVoiceDeletionScheduled,
   scheduleCancelAtPeriodEnd,
   schedulePaidVoiceRetention,
-  schedulePlanChangeAtPeriodEnd,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
+import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from '../lib/store-billing';
 import { logStructured } from '../lib/logger';
 import {
   playCancelSubscription,
@@ -714,6 +715,29 @@ billingMutation.post('/cancel', async (c) => {
     productId: String(row.product_id),
   }));
 
+  // ⚠ **애플 결제 구독은 서버가 해지할 수 없다 — 여기서 막는다.**
+  //
+  // App Store Server API 에는 Play 의 `purchases.subscriptions.cancel` 에 해당하는
+  // 것이 없다. 자동갱신 구독은 사용자가 App Store 구독 관리 화면에서 직접 끊어야 한다.
+  // 그런데 아래 Play 처리는 `provider === 'google'` 만 보므로, 애플 트랜잭션은 스토어
+  // 호출 없이 **로컬 DB 만 취소**되고 200 이 나갔다 — 앱은 "이용권을 해지했어요" 를
+  // 띄우는데 **Apple 은 계속 과금한다.** 권한은 잃고 돈은 나가는, 가장 나쁜 조합이다.
+  //
+  // Play 실패 갈래와 같은 모양으로 낸다(무변경 + manage_url). 안드로이드 클라의
+  // `STORE_MANAGE_REQUIRED_CODES` 에 이미 이 코드가 들어 있고, iOS 는 이 코드를 받으면
+  // StoreKit 관리 시트를 연다.
+  const appleTxn = storeTxns.find((txn) => txn.provider === 'apple');
+  if (appleTxn) {
+    return c.json(
+      {
+        error: 'App Store subscriptions must be cancelled in the App Store',
+        error_code: 'STORE_CANCEL_UNSUPPORTED',
+        manage_url: APPLE_MANAGE_SUBSCRIPTIONS_URL,
+      },
+      409,
+    );
+  }
+
   // 같은 토큰이 여러 구독 행에 걸쳐 있어도 Play 호출은 토큰당 한 번만 한다.
   const googleTxns = new Map<string, { purchaseToken: string; productId: string }>();
   for (const txn of storeTxns) {
@@ -787,6 +811,8 @@ billingMutation.post('/cancel', async (c) => {
   });
   // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
   await notifyPlanChanged(db, c.env, Array.from(cancelAffected));
+  // 해지 직후가 예고를 보낼 자리다 — 3일 뒤 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.
+  await notifyVoiceDeletionScheduled(db, c.env, Array.from(cancelAffected));
   return c.json({
     success: true,
     mode,
@@ -798,115 +824,5 @@ billingMutation.post('/cancel', async (c) => {
 // 정책 변경: 무료 전환 시 유료 음성 데이터를 삭제하지 않고 보존·잠금하므로,
 // 사용자 즉시 삭제(POST /billing/voice-data/delete-now)는 제거했다. 데이터는 다시 유료가 되면
 // 그대로 복구된다. (명시적 개별 삭제는 DELETE /voice/:id, 계정 삭제는 회원 탈퇴 경로.)
-
-billingMutation.post('/change-plan', async (c) => {
-  if (!isBillingStubEnabled(c.env)) {
-    return c.json(checkoutDisabledResponse(), 409);
-  }
-
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  const body = await c.req
-    .json<{ plan_key?: unknown; mode?: unknown }>()
-    .catch((): { plan_key?: unknown; mode?: unknown } => ({
-      plan_key: undefined,
-      mode: undefined,
-    }));
-
-  const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
-  const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
-  if (!planKey) {
-    return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
-  }
-
-  const db = getDB(c.env);
-  const planRes = await db.execute({
-    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw, is_active
-          FROM plans WHERE key = ?`,
-    args: [planKey],
-  });
-  if (planRes.rows.length === 0) {
-    return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
-  }
-  const plan = planRes.rows[0]!;
-  if (Number(plan.is_active) !== 1) {
-    return c.json({ error: 'Plan is inactive', error_code: 'PLAN_INACTIVE' }, 400);
-  }
-  const planType = String(plan.plan_type);
-  if (!PAID_PLAN_TYPES.has(planType)) {
-    return c.json({ error: 'Free plan is not billable', error_code: 'FREE_NOT_BILLABLE' }, 400);
-  }
-
-  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
-  const active = activeSubscriptions[0] ?? null;
-  if (!active) {
-    return c.json(
-      { error: 'No active subscription', error_code: 'NO_ACTIVE_SUBSCRIPTION' },
-      404,
-    );
-  }
-
-  if (activeSubscriptions.every((subscription) => subscription.planId === String(plan.id))) {
-    return c.json({ error: 'Already on this plan', error_code: 'SAME_PLAN' }, 400);
-  }
-
-  if (mode === 'at_period_end') {
-    await withWriteTransaction(db, async (tx) => {
-      for (const subscription of activeSubscriptions) {
-        await schedulePlanChangeAtPeriodEnd(tx, subscription.subscriptionId, String(plan.id));
-      }
-    });
-    return c.json({
-      success: true,
-      mode,
-      subscription_id: active.subscriptionId,
-      next_plan_key: planKey,
-    });
-  }
-
-  const billablePlan = normalizeBillablePlan(plan);
-  const changeResult = await withWriteTransaction(db, async (tx) => {
-    const startsAt = new Date();
-    const freshActive = await findActiveSubscriptionsByUserPk(tx, userPk);
-    if (freshActive.length === 0) {
-      throw new Error('No active subscription during immediate plan change');
-    }
-    if (freshActive.every((subscription) => subscription.planId === billablePlan.id)) {
-      return { subscription_id: freshActive[0]!.subscriptionId, plan_group: null, voucher: null, affected: [] as string[] };
-    }
-
-    const affected = new Set<string>();
-    for (const subscription of freshActive) {
-      const ids = await cancelSubscriptionImmediate(tx, subscription, startsAt, { deleteVoiceData: false });
-      for (const id of ids) affected.add(id);
-    }
-    const created = await createPaidSubscriptionArtifacts(tx, {
-      userPk,
-      plan: billablePlan,
-      startsAt,
-    });
-    return {
-      subscription_id: created.subscription.id,
-      plan_group: created.plan_group,
-      voucher: created.voucher,
-      affected: Array.from(affected),
-    };
-  });
-  // 가족 소유자가 개인/다른 플랜으로 즉시 전환하면 소유 그룹이 해체돼 멤버가 강등된다 → plan_changed 푸시.
-  await notifyPlanChanged(db, c.env, changeResult.affected);
-
-  return c.json({
-    success: true,
-    mode,
-    requires_checkout: false,
-    subscription_id: changeResult.subscription_id,
-    plan_key: billablePlan.key,
-    plan_group: changeResult.plan_group,
-    voucher: changeResult.voucher,
-  });
-});
 
 export default billingMutation;

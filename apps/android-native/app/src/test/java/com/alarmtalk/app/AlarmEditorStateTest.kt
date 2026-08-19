@@ -26,12 +26,17 @@ import org.robolectric.annotation.Config
 class AlarmEditorStateTest {
     @Test
     fun cloneBucketsRequireEveryBackendVariant() {
-        assertEquals(9, expectedCloneBucketVariantCount("weather")) // 조건 8 + 미해결 안내 1
-        assertEquals(5, expectedCloneBucketVariantCount("fortune"))
-        assertEquals(3, expectedCloneBucketVariantCount("love"))
-        assertEquals(3, expectedCloneBucketVariantCount("medication"))
-        assertEquals(1, expectedCloneBucketVariantCount("greeting"))
-        assertNull(expectedCloneBucketVariantCount("unknown"))
+        // ⚠ 개수는 **서버가 내려준다**(`expected_variants`) — 앱 상수로 두지 않는다.
+        // 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 하고, 기본 목소리와 등록 목소리는
+        // 개수가 다르다(medication 2 vs 3). 계약 검증은 백엔드
+        // `test/expected-variants.test.ts` 가 맡는다.
+        val counts = com.alarmtalk.app.network.ExpectedVariantCounts(
+            system = mapOf("weather" to 9, "medication" to 2, "greeting" to 1),
+            clone = mapOf("weather" to 9, "fortune" to 5, "love" to 3, "medication" to 3, "greeting" to 1),
+        )
+        assertEquals(2, counts.countFor("medication", isSystemVoice = true))
+        assertEquals(3, counts.countFor("medication", isSystemVoice = false))
+        assertNull(counts.countFor("unknown", isSystemVoice = false))
     }
 
     @Test
@@ -49,11 +54,61 @@ class AlarmEditorStateTest {
         assertNull(randomPromptContextForBucket("unknown"))
     }
 
+    /**
+     * **재생 방식을 '알람' 으로 바꿔도 고른 문구 종류는 그대로여야 한다.**
+     *
+     * 2026-08-16 질문 "왜 알람으로 바꾸면 약이 직접 입력으로 바뀌냐". 원인은 표시 판정식이
+     * `isActiveBucketAlarm()` 을 쓰고 있던 것 — 그 함수는 첫 줄에서 `playMode == ALARM_ONLY`
+     * 면 false 를 돌려준다(그건 "울릴 때 클립을 쓰는가" 로는 맞다). 버킷이 붙으면
+     * `voiceRandomPrompt` 가 꺼지므로, 알람 모드가 되는 순간 `!false && !false` 가 되어
+     * 요약 행이 '직접 입력' 으로 뒤집혔다.
+     *
+     * 표시는 `hasBucketMessageChoice()`(재생 방식 무관), 저장·오디오는 `isActiveBucketAlarm()`.
+     * 둘을 다시 합치면 이 테스트가 깨진다.
+     */
+    @Test
+    fun alarmModeDoesNotChangeChosenMessageKind() {
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
+        editor.voiceProfileId = "clone-profile"
+        editor.voiceRandomPrompt = true
+        editor.voiceRandomContext = "medication"
+        editor.setBucketAudio(
+            audio = CachedAlarmAudio(
+                localAudioUri = "file://clip0.mp3",
+                rawAudioUri = "r2://clip0.mp3",
+                displayName = "clip0",
+                durationMillis = null,
+                cacheKey = "stock_clip-0",
+                messageId = "clip-0",
+            ),
+            profileId = "clone-profile",
+            messageId = "clip-0",
+            text = "약 먹을 시간이에요",
+            bucket = "medication",
+            language = "ko",
+            clipKeys = listOf("stock_clip-0", "stock_clip-1"),
+        )
+
+        // 목소리 모드: 둘 다 '테마 알람' 이라고 답한다.
+        assertTrue(editor.isActiveBucketAlarm())
+        assertTrue(editor.hasBucketMessageChoice())
+        assertFalse(!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice()) // = 직접 입력 아님
+
+        editor.playMode = AlarmPlayModes.ALARM_ONLY
+
+        // 울릴 때 클립을 쓰지 않는 건 맞다.
+        assertFalse(editor.isActiveBucketAlarm())
+        // ⚠ 그래도 **고른 문구는 그대로 '약'** 이다 — 여기서 true 가 되면 요약 행이
+        // '직접 입력' 으로 뒤집힌다(고친 버그).
+        assertTrue(editor.hasBucketMessageChoice())
+        assertFalse(!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice())
+    }
+
     @Test
     fun bucketAlarmKeepsItsMessageContextOnSave() {
         // 버킷을 붙이면 voiceRandomPrompt 가 꺼진다. 그때 종류까지 떨어뜨리면 다음 새 알람이
         // '기본 인사말'로 되돌아가고, 이 알람을 다시 열면 '직접 입력'으로 보인다.
-        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.ALARM_VOICE)
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = "love"
@@ -85,7 +140,7 @@ class AlarmEditorStateTest {
     @Test
     fun manualAlarmStillDropsItsMessageContextOnSave() {
         // 직접 입력은 종류가 없다 — 버킷 예외가 여기까지 새면 안 된다.
-        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.ALARM_VOICE)
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
         editor.voiceRandomContext = "love"
         editor.voiceRandomPrompt = false
@@ -99,7 +154,7 @@ class AlarmEditorStateTest {
         // 문구까지 이어받아야 새 알람이 **바로 저장 가능**하다(빈 직접입력이면 저장이 막힌다).
         val editor = AlarmEditorState.from(
             alarm = null,
-            defaultPlayMode = AlarmPlayModes.ALARM_VOICE,
+            defaultPlayMode = AlarmPlayModes.VOICE_ONLY,
             defaultManualText = "회의 자료 챙겨",
         )
 
@@ -122,7 +177,7 @@ class AlarmEditorStateTest {
     fun blankLastManualTextFallsBackToTheGenerativeChoice() {
         val editor = AlarmEditorState.from(
             alarm = null,
-            defaultPlayMode = AlarmPlayModes.ALARM_VOICE,
+            defaultPlayMode = AlarmPlayModes.VOICE_ONLY,
             defaultRandomContext = "love",
             defaultManualText = "   ",
         )
@@ -229,7 +284,7 @@ class AlarmEditorStateTest {
         snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
         snoozeCount = 0,
         vibrationPattern = VibrationPatterns.DEFAULT,
-        playMode = AlarmPlayModes.ALARM_VOICE,
+        playMode = AlarmPlayModes.VOICE_ONLY,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
         localAudioUri = "file://clip0.mp3",
         audioCacheKey = "stock_clip-0",
@@ -268,15 +323,15 @@ class AlarmEditorStateTest {
     )
 
     @Test
-    fun activeVoiceLanguageFollowsSupportedAppLanguageWithoutTranslationToggle() {
+    // 번역을 없앤 뒤에도 **언어 축은 살아 있어야 한다** — 스톡 클립을 어느 언어로 고를지와
+    // 캐시 키를 정하는 값이라, 같이 지우면 en·ja 기기에서 한국어 클립이 나온다.
+    fun activeVoiceLanguageFollowsSupportedAppLanguage() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceRandomPrompt = false
-        editor.voiceTranslationEnabled = false
 
         editor.voiceLanguage = "ja"
 
         assertEquals("ja", editor.activeVoiceLanguage())
-        assertTrue(editor.shouldTranslateVoiceText())
 
         editor.voiceLanguage = "fr"
 

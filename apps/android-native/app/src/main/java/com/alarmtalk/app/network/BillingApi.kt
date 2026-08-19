@@ -108,19 +108,7 @@ data class CancelSubscriptionResponse(
     @SerializedName("voice_retention_until") val voiceRetentionUntil: String? = null,
 )
 
-data class ChangePlanRequest(
-    @SerializedName("plan_key") val planKey: String,
-    val mode: String, // "immediate" | "at_period_end"
-)
 
-data class ChangePlanResponse(
-    val success: Boolean,
-    val mode: String,
-    @SerializedName("subscription_id") val subscriptionId: String? = null,
-    @SerializedName("requires_checkout") val requiresCheckout: Boolean = false,
-    @SerializedName("plan_key") val planKey: String? = null,
-    @SerializedName("next_plan_key") val nextPlanKey: String? = null,
-)
 
 interface BillingApi {
     @GET("billing/subscription")
@@ -159,9 +147,4 @@ interface BillingApi {
         @Body request: CancelSubscriptionRequest,
     ): CancelSubscriptionResponse
 
-    @POST("billing/change-plan")
-    suspend fun changePlan(
-        @Header("Authorization") authorization: String,
-        @Body request: ChangePlanRequest,
-    ): ChangePlanResponse
 }

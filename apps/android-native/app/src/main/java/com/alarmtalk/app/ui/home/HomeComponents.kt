@@ -1,10 +1,15 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import android.icu.text.MeasureFormat
 import android.icu.util.Measure
 import android.icu.util.MeasureUnit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Contrast
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +52,7 @@ import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -69,12 +78,10 @@ internal fun HomeHeader(
     // 그래서 헤드라인은 **언제나 남은 시간**이고, 무엇이 모자란지는 아래 배너가 말한다.
     val statusText: String? = when {
         nextAlarm != null -> {
-            val remainingMillis = nextAlarm.fireAtMillis - now
-            if (remainingMillis < 60_000L) {
-                stringResource(R.string.hs_status_ring_soon)
-            } else {
-                stringResource(R.string.hs_status_ring_in, remainingDurationLabel(remainingMillis))
-            }
+            // ⚠ **'곧 울려요' 분기를 되살리지 말 것**(2026-08-18 지시). 1분 미만일 때만
+            // 다른 문장이 되면 같은 자리의 말이 갑자기 바뀐다. 올림이라 1분 미만도
+            // "1분 후에 울려요" 로 읽힌다.
+            stringResource(R.string.hs_status_ring_in, remainingDurationLabel(nextAlarm.fireAtMillis - now))
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
         else -> stringResource(R.string.hs_status_no_alarm)
@@ -97,7 +104,8 @@ internal fun HomeHeader(
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
 private fun remainingDurationLabel(remainingMillis: Long): String {
-    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt()
+    // 최소 1분 — 0분이라고 말하지 않는다(iOS `remainingLabel` 과 같은 규칙).
+    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
     val days = totalMinutes / (24 * 60)
     val hours = totalMinutes % (24 * 60) / 60
     val minutes = totalMinutes % 60
@@ -252,6 +260,9 @@ internal fun MenuTabPanel(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
+                    // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시). 탈퇴도 이 행에서는
+                    // 아무 일도 일어나지 않는다 — 확인 모달의 [탈퇴하기]가 빨강이고,
+                    // 거기서만 되돌릴 수 없는 일이 벌어진다.
                     MenuTabRow(
                         label = stringResource(R.string.hs_settings_delete_account),
                         onClick = onDeleteAccount,
@@ -278,8 +289,19 @@ internal fun MenuTabPanel(
             val modes = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
             WakerSheetOptionGroup {
                 modes.forEachIndexed { index, mode ->
+                    // 행은 **아이콘 + 제목** 둘이다.
+                    // ⚠ **설명을 되살리지 말 것**(2026-08-17 지시 "설명이 꼭 있어야 할까").
+                    // 세 줄 다 라벨과 아이콘이 이미 말한 것을 되풀이했다 — "시스템 설정과
+                    // 같이" 밑의 "휴대폰 설정을 따라가요." 는 같은 말이고, 해·달 아이콘
+                    // 옆의 "낮에도 선명한/밤에 보기 편한" 은 **사용자가 왜 그걸 고르는지를
+                    // 앱이 넘겨짚는 문장**이다(늘 어둡게 쓰는 사람이 많다).
+                    // 아이콘·제목 구성은 iOS 와 계속 같다 — 거기서도 함께 지웠다.
                     WakerSheetOptionRow(
-                        title = themeModeLabel(context, mode),
+                        icon = themeModeIcon(mode),
+                        // iOS 와 같이 **맨몸 아이콘 + 끝까지 가는 구분선**이다(배지 없음).
+                        iconBadged = false,
+                        dividerInset = false,
+                        title = themeModeShortLabel(context, mode),
                         selected = themeMode == mode,
                         onClick = {
                             onChangeTheme(mode)
@@ -300,18 +322,22 @@ private fun MenuTabRow(
     value: String? = null,
 ) {
     // 토스처럼 텍스트+값+셰브론만 — 행마다 아이콘을 붙이지 않는다.
+    // ⚠ **높이는 최소치이고, 접히는 쪽은 값이다.** 설정 화면의 같은 모양 행
+    // (`ui/settings/SettingsScreenComponents.kt` 의 `SettingsRow`)이 이미 그 규칙을
+    // 주석으로 못박아 뒀는데 여기만 반대였다 — 높이가 `height(52.dp)` 고정이라 큰
+    // 글꼴에서 글자가 잘리고, `weight` 가 **라벨**에 붙어 있어 '초대 및 구성원 관리'
+    // 같은 **항목 이름**이 줄어들었다. 이름이 줄면 무엇을 누르는지 알 수 없다.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = label,
-            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -319,10 +345,16 @@ private fun MenuTabRow(
         if (value != null) {
             Text(
                 text = value,
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        } else {
+            Spacer(Modifier.weight(1f))
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
@@ -340,6 +372,21 @@ internal fun themeModeLabel(context: android.content.Context, mode: ThemeMode): 
     ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system)
     ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light)
     ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark)
+}
+
+/// 시트 행의 **짧은** 제목. 설정 행의 값에는 위 `themeModeLabel`(긴 문구)을 그대로 쓴다 —
+/// iOS 도 같은 구분이다(행 값 = label, 시트 제목 = pickerTitle).
+internal fun themeModeShortLabel(context: android.content.Context, mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system_short)
+    ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light_short)
+    ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark_short)
+}
+
+/// iOS SF Symbol 대응 — `circle.lefthalf.filled` / `sun.max.fill` / `moon.fill`.
+internal fun themeModeIcon(mode: ThemeMode): ImageVector = when (mode) {
+    ThemeMode.System -> Icons.Outlined.Contrast
+    ThemeMode.Light -> Icons.Outlined.LightMode
+    ThemeMode.Dark -> Icons.Outlined.DarkMode
 }
 
 @Composable
@@ -444,24 +491,56 @@ internal fun DeleteAccountConfirmDialog(
     )
 }
 
+/**
+ * 상단바와 그 아래 본문 사이 간격 — **상단바가 스스로 갖는다.**
+ *
+ * 편집기 pane 이 쓰던 값(바 아래 4 + 본문 위 12 = 16)을 그대로 옮긴 것이다.
+ */
+internal val WakerTopBarBottomGap = 16.dp
+
+/**
+ * 하위 화면의 **상단바** — 좌측 뒤로가기 + **가운데 제목**.
+ *
+ * ⚠ **왼쪽 정렬 큰 제목으로 되돌리지 말 것.** 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
+ * 가운데 작은 제목)로 뜨는데, 안드로이드에는 그 바가 없어 **나가는 길이 시스템 뒤로가기뿐**
+ * 이었다(2026-08-11 요청). 같은 모양으로 맞춘다.
+ *
+ * 제목은 **가운데**다 — `Row` 로 셋을 나란히 두면 뒤로가기 폭만큼 제목이 밀려 가운데가
+ * 아니게 되므로 겹쳐 놓는다.
+ */
 @Composable
-internal fun ScreenHeader(
+internal fun WakerTopBar(
     title: String,
-    subtitle: String? = null,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineLarge,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            // ⚠ **좌우 여백과 아래 간격은 이 컴포넌트가 갖는다**(2026-08-17 지시).
+            // 예전에는 화면마다 `padding(start=20, end=20, top=…, bottom=4)` 을 손으로
+            // 적고 본문이 다시 `top=12` 로 간격을 만들었다 — 열 곳에 흩어져 있으니
+            // 새 화면을 만들 때마다 값이 조금씩 달라졌다(설정 화면은 아래가 12,
+            // 편집기 pane 은 16). 위 여백만 화면이 정한다(상태바 인셋 유무가 다르다).
+            .padding(start = 20.dp, end = 20.dp, bottom = WakerTopBarBottomGap),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             text = title,
-            style = titleStyle,
-            fontWeight = FontWeight.Bold,
+            // ⚠ **iOS 인라인 내비게이션 타이틀과 같은 크기다**(2026-08-16 지시).
+            // 거긴 `.navigationBarTitleDisplayMode(.inline)` 이라 시스템 규격 **17 SemiBold**
+            // 인데, 여기는 M3 `titleLarge`(22 Bold)라 같은 화면이 두 앱에서 다르게 보였다.
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp),
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // 뒤로가기 모양은 공용 `WakerBackButton` 하나뿐이다 — 로그인 화면과 같은 원형이다.
+        WakerBackButton(
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.CenterStart),
+        )
     }
 }
+

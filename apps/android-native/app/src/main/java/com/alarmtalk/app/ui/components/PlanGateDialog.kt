@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -13,8 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
@@ -38,43 +36,65 @@ internal fun PlanGateDialog(
     confirmLabel: String = stringResource(R.string.r3dlg_plan_gate_confirm),
     onRedeemCode: ((String) -> Unit)? = null,
     redeemBusy: Boolean = false,
+    /// 코드 등록 실패 사유. 모달을 열어 둔 채 고칠 수 있게 필드 아래에 그린다.
+    redeemErrorText: String? = null,
 ) {
     var codeEntryOpen by remember { mutableStateOf(false) }
 
     if (codeEntryOpen && onRedeemCode != null) {
-        // 알럿 안에 입력 필드를 넣지 않고 별도 시트/다이얼로그로 뺀다 — iOS 알럿은 텍스트
-        // 액션만 두는 형식이라(IosAlertDialog 스펙) 입력란을 끼우면 그 규칙이 깨진다.
-        Dialog(onDismissRequest = { if (!redeemBusy) codeEntryOpen = false }) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = WakerDialogShape,
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+        // ⚠ **전용 `Dialog` 껍데기를 다시 만들지 말 것.** 예전에는 "iOS 알럿은 텍스트
+        // 액션만 두는 형식이라 입력란을 끼우면 규칙이 깨진다" 는 근거로 여기만 별도
+        // Surface 를 그렸는데, 그 근거는 철회됐다 — `IosAlertDialog` 은 `content` 슬롯에
+        // `IosAlertField` 를 받는다(CLAUDE.md 「입력이 있는 알럿도 이걸 쓴다」, 이미
+        // 프로모 코드·닉네임 수정·스누즈 직접 입력이 그렇게 쓴다).
+        //
+        // 껍데기가 갈려 있어서 같은 '코드 등록' 이 웰컴 안내와 유료 게이트에서 완전히
+        // 다르게 생겼고, **여기에는 실패 사유를 보여줄 자리가 없어** 코드가 틀리면
+        // 모달이 그냥 닫혔다.
+        var code by remember { mutableStateOf("") }
+        IosAlertDialog(
+            title = stringResource(R.string.plan_gate_redeem_title),
+            message = stringResource(R.string.plan_gate_redeem_desc),
+            onDismiss = { if (!redeemBusy) codeEntryOpen = false },
+            modifier = modifier,
+            content = {
+                IosAlertField(
+                    value = code,
+                    onValueChange = { code = sanitizeRedeemCode(it) },
+                    placeholder = stringResource(R.string.code_redeem_placeholder),
+                    enabled = !redeemBusy,
+                    modifier = Modifier.padding(top = 14.dp),
+                )
+                redeemErrorText?.let {
                     Text(
-                        text = stringResource(R.string.plan_gate_redeem_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    MutedText(stringResource(R.string.plan_gate_redeem_desc))
-                    CodeRedeemField(
-                        busy = redeemBusy,
-                        onSubmit = { code ->
-                            onRedeemCode(code)
-                            codeEntryOpen = false
-                            // 결과(성공/실패)는 공용 메시지 배너가 알려주므로 게이트도 닫는다 —
-                            // 코드가 통했다면 막고 있을 이유가 사라진다.
-                            onDismiss()
-                        },
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        style = IosAlertType.Message,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
                     )
                 }
-            }
-        }
+            },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = { if (!redeemBusy) codeEntryOpen = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.plan_gate_redeem_action),
+                    emphasized = true,
+                    enabled = !redeemBusy && code.isNotBlank(),
+                    onClick = {
+                        onRedeemCode(code)
+                        codeEntryOpen = false
+                        // 코드가 통했다면 막고 있을 이유가 사라진다.
+                        onDismiss()
+                    },
+                ),
+            ),
+        )
         return
     }
 
@@ -83,13 +103,10 @@ internal fun PlanGateDialog(
         message = message,
         onDismiss = onDismiss,
         modifier = modifier,
+        // ⚠ **순서는 [쿠폰이 있어요][이용권 보기][닫기] 다**(2026-08-15 지시).
+        // 하려던 일부터 위에 오고 빠져나가는 길이 맨 아래다 — iOS 알럿도 `.cancel` 을
+        // 맨 아래로 내리므로 두 앱이 같은 순서로 보인다.
         actions = buildList {
-            add(
-                IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
-                    onClick = onDismiss,
-                ),
-            )
             if (onRedeemCode != null) {
                 add(
                     IosAlertAction(
@@ -103,6 +120,12 @@ internal fun PlanGateDialog(
                     label = confirmLabel,
                     emphasized = true,
                     onClick = onConfirm,
+                ),
+            )
+            add(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = onDismiss,
                 ),
             )
         },

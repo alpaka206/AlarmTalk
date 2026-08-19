@@ -54,7 +54,9 @@ async function setupDb() {
       claimed_at TEXT,
       claim_token TEXT,
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      -- 마이그레이션 #101. 교체 회차인지(기존 preset 을 덮어쓸지) 나른다.
+      refresh_existing INTEGER NOT NULL DEFAULT 0
     );
   `);
   return db;

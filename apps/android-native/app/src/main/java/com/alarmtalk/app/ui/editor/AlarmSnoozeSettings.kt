@@ -7,10 +7,13 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,8 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -49,14 +52,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.data.SnoozeMinutes
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
@@ -97,7 +103,11 @@ internal fun AlarmSettingRow(
                 indication = LocalIndication.current,
                 onClick = onClick,
             )
-            .padding(vertical = 14.dp),
+            // ⚠ **치수는 iOS `AlarmSettingRow` 와 같은 값이다**(2026-08-16 지시
+            // "안드로이드가 살짝 커 보인다"). 거긴 `padding(.vertical, 12)` +
+            // `frame(minHeight: 56)` 이다 — 여기는 14 였고 최소 높이가 없어 더 두꺼웠다.
+            .heightIn(min = 56.dp)
+            .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -109,7 +119,9 @@ internal fun AlarmSettingRow(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                // iOS 는 `bodyLarge`(16) + semibold. M3 `titleMedium` 도 16 이지만
+                // 자간(0.15)이 더 벌어져 같은 글자가 더 넓게 퍼져 보였다.
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             MutedText(subtitle)
@@ -120,7 +132,9 @@ internal fun AlarmSettingRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            // iOS 셰브론은 SF Symbol 13pt 다. 머티리얼 글리프는 상자를 더 꽉 채우므로
+            // 같은 숫자를 쓰면 오히려 작아 보인다 — 16 이 눈으로 같은 크기다.
+            modifier = Modifier.size(16.dp),
         )
     }
 }
@@ -156,31 +170,24 @@ internal fun SnoozeSettingsPane(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_snooze_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·문구 pane 이 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_snooze_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(top = 24.dp),
+            )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    // 지금은 다 들어가지만 글꼴을 키우면 넘친다 — 진동 pane 과 같은 이유로 연다.
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    // 문구 pane·iOS `PaneScaffold` 와 같은 여백/간격
+                    // (`padding(.horizontal, 20).padding(.vertical, 16)` + `VStack(spacing: 16)`).
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(
                     shape = WakerPanelShape,
@@ -194,15 +201,13 @@ internal fun SnoozeSettingsPane(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // ⚠ **상태말('사용 중'/'사용 안 함')로 되돌리지 말 것.** 스위치가 이미
+                        // 상태를 말한다 — 그 자리는 **무엇을 켜는지** 이름을 대야 한다
+                        // (iOS `Toggle("다시 알림 사용")` 과 같은 말·같은 무게).
                         Text(
-                            text = if (snoozeEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (snoozeEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
+                            text = stringResource(R.string.editor_snooze_use),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         AlarmTalkSwitch(
                             checked = snoozeEnabled,
@@ -259,21 +264,32 @@ internal fun SnoozeSettingsPane(
         // 앱 공용 알럿으로 통일한다 — 입력이 하나뿐인 모달이라 별도 껍데기가 필요 없다.
         IosAlertDialog(
             title = stringResource(R.string.editor_snooze_custom_dialog_title),
-            message = null,
+            // ⚠ **범위는 묻기 전에 말한다**(2026-08-17 iOS 와 통일). 예전에는 벗어났을 때만
+            // 오류로 알려서, 처음 여는 사람은 몇 분까지 되는지 모른 채 넣어 보고 막혔다.
+            message = stringResource(R.string.editor_snooze_custom_range_hint),
             onDismiss = { customIntervalDialogOpen = false },
             actions = listOf(
                 IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    // 버튼 짝은 iOS 와 같은 [취소][확인] 이다 — 예전에는 [닫기][적용] 이라
+                    // 같은 모달이 두 앱에서 다른 말을 했다.
+                    label = stringResource(R.string.editor_cancel),
                     onClick = { customIntervalDialogOpen = false },
                 ),
                 IosAlertAction(
-                    label = stringResource(R.string.editor_apply),
+                    label = stringResource(R.string.auth_confirm),
                     emphasized = true,
                     // 범위 밖이면 **버튼을 흐리게** 둔다. 예전엔 '눌러도 닫히지 않는 것' 으로
                     // 알렸는데, 그건 고장과 구분되지 않는다(Codex #671 P2).
-                    enabled = customMinutes != null && customMinutes in 1..60,
+                    //
+                    // ⚠ 상한은 **30**이다 — 서버 계약(`routes/alarm-helpers.ts` 의
+                    // `INVALID_SNOOZE_MINUTES`)과 `AlarmRepository.saveAlarm` 의
+                    // `require(snoozeMinutes in 1..30)` 이 그렇다. 여기가 60 이던 시절에는
+                    // 31~60 을 넣으면 다이얼로그는 통과시켜 놓고 저장에서 예외가 났다 —
+                    // 사용자에겐 "알람 저장에 실패했어요" 만 보이고 이유가 없었다.
+                    // 세 숫자(UI·리포지토리·서버)는 항상 같이 움직인다.
+                    enabled = customMinutes != null && customMinutes in SnoozeMinutes.range,
                     onClick = {
-                        customMinutes?.takeIf { it in 1..60 }?.let {
+                        customMinutes?.takeIf { it in SnoozeMinutes.range }?.let {
                             onSnoozeMinutesChange(it)
                             customIntervalDialogOpen = false
                         }
@@ -290,7 +306,7 @@ internal fun SnoozeSettingsPane(
             // 범위를 벗어나면 이유를 말해 준다. 예전 Material 필드는 isError 로 테두리를
             // 붉혔는데, 알럿으로 옮기며 그 신호가 사라져 '적용을 눌러도 아무 일이 없는'
             // 상태가 됐다 — 눌리지 않는 이유는 눈에 보여야 한다.
-            if (customMinutesText.isNotBlank() && customMinutes !in 1..60) {
+            if (customMinutesText.isNotBlank() && customMinutes !in SnoozeMinutes.range) {
                 Text(
                     text = stringResource(R.string.editor_snooze_custom_range_error),
                     color = MaterialTheme.colorScheme.error,
@@ -310,14 +326,17 @@ internal fun SnoozeOptionSection(
     title: String? = null,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    // 제목 ↔ 목록 간격은 iOS 와 같은 16 이다(거긴 `EditorSectionTitle` 과 카드가
+    // `VStack(spacing: 16)` 의 형제라 그 간격을 그대로 받는다). 예전에는 3 이라 제목이
+    // 목록에 붙어 있었다.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (title != null) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 4.dp),
+                // iOS `EditorSectionTitle` = `titleSmall`(14) **bold**.
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
             )
         }
         Surface(
@@ -354,8 +373,9 @@ internal fun SnoozeRadioRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
+            // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
+            // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -378,12 +398,15 @@ internal fun SnoozeLockedRow(
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FeatureLockBadge(size = 18.dp, iconSize = 11.dp)
+        // ⚠ **라디오 점(18dp)보다 크게 둔다**(2026-08-15 지시 "자물쇠 좀 더 크게").
+        // 같은 크기면 잠긴 행인지 안 잠긴 행인지 한눈에 안 갈린다.
+        FeatureLockBadge(size = 24.dp, iconSize = 14.dp)
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
+            // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
+            // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -440,7 +463,15 @@ internal fun EditorActionButtons(
     recipientName: String? = null,
 ) {
     // 상단바를 없앴으므로 취소·저장을 하단에 한 쌍으로 모은다(삼성 시계식). 취소=외곽선, 저장=채움.
-    // 두 버튼은 같은 폭(각 weight 1). 저장은 '○○에게 저장'처럼 길어지면 maxLines=1 로 ... 축약된다.
+    // 두 버튼은 같은 폭(각 weight 1).
+    //
+    // ⚠ **여기가 `fitToWidthScale` 표의 세 번째 자리다**(WakerDesign.kt 의 '하단 액션
+    // 버튼 라벨 — 폭이 반으로 고정'). 표에는 적혀 있었는데 적용은 안 돼 있었고, 대신
+    // `maxLines=1` + `Ellipsis` 로 **잘라내고** 있었다 — '○○에게 저장' 이 '○○에…' 가
+    // 되면 누구에게 저장하는지 알 수 없다. 줄바꿈으로 흐를 수 없는 자리이므로 자르는
+    // 대신 줄인다(말줄임은 그래도 최후 안전망으로 남긴다).
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    val actionLabelScale = fitToWidthScale(maxWidth, 392.dp, minimumScale = 0.7f)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -454,6 +485,7 @@ internal fun EditorActionButtons(
         ) {
             Text(
                 text = stringResource(R.string.editor_cancel),
+                fontSize = LocalTextStyle.current.fontSize * actionLabelScale,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -461,6 +493,7 @@ internal fun EditorActionButtons(
         Button(
             onClick = onSave,
             enabled = canSave && !isSaving,
+            colors = wakerButtonColors(),
             modifier = Modifier.weight(1f),
             shape = WakerButtonShape,
         ) {
@@ -482,9 +515,11 @@ internal fun EditorActionButtons(
                     recipientName != null -> stringResource(R.string.editor_save_for, recipientName)
                     else -> stringResource(R.string.editor_save)
                 },
+                fontSize = LocalTextStyle.current.fontSize * actionLabelScale,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
     }
 }

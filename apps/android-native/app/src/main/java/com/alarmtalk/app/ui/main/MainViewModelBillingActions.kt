@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.viewModelScope
@@ -9,7 +10,6 @@ import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
-import com.alarmtalk.app.network.ChangePlanRequest
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
@@ -60,6 +60,36 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
     } finally {
         billingBusy = false
         socialBusy = false
+    }
+}
+
+/**
+ * **이전 구매 복원.** 스토어에 남아 있는 활성 구독을 서버로 다시 보내 이용권을 되찾는다.
+ *
+ * 왜 버튼이 필요한가: 결제는 스토어가 권위인데(`docs/spec/billing-lifecycle.md`), 우리
+ * 서버에 그 기록이 없는 상태가 생길 수 있다 — 기기를 바꾸거나 다른 경로로 로그인한 경우다.
+ * 그때 사용자가 할 수 있는 일이 '다시 결제' 뿐이면 **같은 구독을 두 번 사게 된다.**
+ * 애플이 심사 지침(3.1.1)으로 이 버튼을 요구하는 이유이고, 플레이에도 같은 기능이 있다.
+ *
+ * 복원 결과는 [MainViewModel.confirmGooglePurchase] 가 처리한다(성공하면 이용권이 갱신되고
+ * 그쪽이 안내를 낸다). 여기서는 **보낼 것이 없었을 때만** 따로 알려 준다 — 아무 일도 일어나지
+ * 않는 것과 구분되지 않기 때문이다.
+ */
+internal fun MainViewModel.restorePurchases() {
+    val app = getApplication<android.app.Application>()
+    bearerOrMessage(app.getString(R.string.msg_gb_login_required_share_code_info)) ?: return
+    if (billingBusy) return
+    billingBusy = true
+    message = app.getString(R.string.billing_restore_checking)
+    viewModelScope.launch {
+        val restored = runCatching { playBilling.restorePurchases() }
+            .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
+            .getOrDefault(0)
+        if (restored == 0) {
+            // 보낸 것이 없으면 `confirmGooglePurchase` 가 돌지 않는다 — 여기서 풀어 준다.
+            billingBusy = false
+            message = app.getString(R.string.billing_restore_none)
+        }
     }
 }
 
@@ -128,7 +158,6 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_plan_not_found)
         "PLAN_INACTIVE" -> context.getString(R.string.msg2_billing_fail_plan_inactive)
         "FREE_NOT_BILLABLE" -> context.getString(R.string.msg2_billing_fail_free_not_billable)
-        "GIFT_PERSONAL_ONLY" -> context.getString(R.string.msg2_billing_fail_gift_personal_only)
         "CHECKOUT_DISABLED" -> context.getString(R.string.msg2_billing_fail_checkout_disabled)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_user_not_found)
         else -> fallback
@@ -188,7 +217,19 @@ private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Bo
  * 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는 그 뒤로 가린다).
  * 넘기지 않으면 지금처럼 스낵바로만 알린다.
  */
-internal fun MainViewModel.registerCode(code: String, onResult: ((String?) -> Unit)? = null) {
+/**
+ * 코드 등록(초대·선물·프로모 공용).
+ *
+ * @param navigateOnSuccess 성공 시 화면을 옮길지. **편집기 게이트에서 부를 때는 false**다 —
+ *   true 로 두면 쿠폰을 넣는 순간 홈/구성원 탭으로 튕겨 **편집 중이던 알람이 통째로
+ *   사라진다**(시각·반복·문구를 다시 입력해야 한다). 잠금이 풀리는 것은 구독 갱신
+ *   (`refreshBillingAfterMutation`)이 하므로 화면을 옮기지 않아도 그 자리에서 이어서 쓴다.
+ */
+internal fun MainViewModel.registerCode(
+    code: String,
+    navigateOnSuccess: Boolean = true,
+    onResult: ((String?) -> Unit)? = null,
+) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code))
         ?: run {
             // 조기 반환도 결과를 알린다 — 안 그러면 호출부는 로딩도 에러도 없이 멈춘 것처럼 보인다.
@@ -221,10 +262,12 @@ internal fun MainViewModel.registerCode(code: String, onResult: ((String?) -> Un
             val joinedSharedPass = response.type == "invite" ||
                 response.type == "group_invite" ||
                 response.plan.isSharedPassPlan()
-            if (joinedSharedPass) {
-                navigateSharedPassTick++
-            } else {
-                navigateHomeTick++
+            if (navigateOnSuccess) {
+                if (joinedSharedPass) {
+                    navigateSharedPassTick++
+                } else {
+                    navigateHomeTick++
+                }
             }
             onResult?.invoke(null)
         }.onFailure { error ->
@@ -344,6 +387,44 @@ internal fun MainViewModel.checkoutPlan(planKey: String) {
             message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false
+    }
+}
+
+/**
+ * 선물 이용권 **구매**를 시작한다(1회성 인앱 상품).
+ *
+ * ⚠ **결제 없이 코드를 만들지 않는다.** 무결제 발급 경로(`POST /billing/checkout`
+ * gift:true)는 서버가 production 에서 항상 막는다 — 열면 누구나 무료로 유료 이용권을
+ * 뽑을 수 있다. 여기서는 1회성 상품을 실제로 사고, 서버가 그 구매를 검증해 바우처를 만든다.
+ *
+ * ⚠ 구독 경로(`startPlayPurchase`)와 **섞지 말 것**: INAPP 에는 offerToken 이 없고,
+ * 구독 교체 파라미터를 붙이면 Play 가 거절한다.
+ */
+internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
+        return
+    }
+    if (billingBusy) return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            playBilling.launchOneTimePurchase(
+                activity,
+                com.alarmtalk.app.billing.PlayBillingProducts.PERSONAL_GIFT_1M,
+                userId = session.user.id.takeIf { it.isNotBlank() },
+            )
+        }.onSuccess { launched ->
+            if (!launched) {
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
+                billingBusy = false
+            }
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to launch Play gift purchase", error)
+            message = getApplication<android.app.Application>().getString(R.string.billing_gift_failed)
+            billingBusy = false
+        }
     }
 }
 
@@ -538,7 +619,11 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
             repository.lockPaidAlarmTalks(expectedOwnerUserId = lockOwner)
         }.onSuccess { locked ->
             if (locked > 0) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_locked)
+                // ⚠ **토스트로 알리지 않는다**(2026-08-11 변경). 강등은 알람이 조용히 바뀌는
+                // 큰 사건인데 토스트는 놓치기 쉽고, 이 자리는 화면이 없을 수도 있다.
+                // 대기표에 적어 두고 앱이 보여줄 수 있을 때 모달로 띄운다.
+                DowngradeNoticeStore(getApplication())
+                    .record(lockOwner, DowngradeNoticeStore.Cause.FREE_PLAN, locked)
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to lock paid voice alarms on free plan", error)
@@ -548,6 +633,10 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
 
 /** 다시 유료가 되면 무료 동안 사운드온리로 잠갔던 목소리 알람을 원래 모드로 복원한다. */
 internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
+    // ⚠ **유료로 돌아오면 대기표를 비운다**(iOS `applyFreePlanVoiceLockIfNeeded` 와 같은 이유).
+    // ① 확인 안 한 강등 안내가 남아 있으면 이미 유료가 된 사람에게 "무료로 바뀌었어요" 를
+    //    띄우게 된다. ② 비워 둬야 다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다.
+    DowngradeNoticeStore(getApplication()).clear(authSession?.user?.id)
     viewModelScope.launch {
         runCatching {
             repository.unlockPaidAlarmTalks()
@@ -557,44 +646,3 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     }
 }
 
-internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
-    val mode = if (atPeriodEnd) "at_period_end" else "immediate"
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.changePlan(authorization, ChangePlanRequest(planKey = planKey, mode = mode))
-        }.onSuccess { response ->
-            if (response.requiresCheckout && response.planKey != null) {
-                // 즉시 변경: 기존 해지된 상태이므로 곧바로 새 결제 진행.
-                billingBusy = false
-                checkoutPlan(response.planKey)
-                return@onSuccess
-            }
-            message = if (atPeriodEnd) {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_scheduled)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_changed)
-            }
-            refreshBillingAfterMutation(authorization, "plan change")
-            refreshAppSession()
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to change plan key=$planKey mode=$mode", error)
-            val errorCode = apiErrorCode(error)
-            if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
-                message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, getApplication<android.app.Application>().getString(R.string.msg_gb_no_active_subscription_apply_new))
-                billingBusy = false
-                checkoutPlan(planKey)
-                return@onFailure
-            }
-            if (errorCode == "SAME_PLAN") {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_same_plan_in_use)
-                refreshBillingAfterMutation(authorization, "same plan check")
-                return@onFailure
-            }
-            message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_failed)))
-        }
-        billingBusy = false
-    }
-}

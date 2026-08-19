@@ -137,7 +137,7 @@
 | `TRANSACTION_ACCOUNT_MISMATCH` | 구매의 `obfuscatedAccountId` 가 다른 계정 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_ACCOUNT_UNVERIFIED` | 구매에 계정 식별자가 없어 귀속 확인 불가 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 이미 귀속된 트랜잭션 | 409 | `lib/store-billing.ts`(→ `billing-google.ts`) |
-| `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 403 | `routes/billing-mutation.ts` |
+| `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 409 | `routes/billing-mutation.ts` |
 | `PLAN_KEY_REQUIRED` | plan_key 필요 | 400 | `routes/billing-mutation.ts` |
 | `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
 | `PLAN_INACTIVE` | 비활성 플랜 | 400 | `routes/billing-mutation.ts` |
@@ -146,10 +146,16 @@
 | `INVALID_COUNT` | 테스트 코드 count 범위 오류(1~50) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_DAYS` | 테스트 코드 days 범위 오류(1~365) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
-| `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소/변경 대상 없음) | 400 | `routes/billing-mutation.ts` |
-| `SAME_PLAN` | 이미 해당 플랜 이용 중 | 400 | `routes/billing-mutation.ts` |
+| `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소 대상 없음) | 404 | `routes/billing-mutation.ts` |
 | `PLAY_CANCEL_FAILED` | Play 구독 해지 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
 | `PLAY_REVOKE_FAILED` | Play 구독 즉시 철회 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
+| `STORE_CANCEL_UNSUPPORTED` | **애플 구독은 서버가 못 끊는다**(+`manage_url`) — 앱이 App Store 관리 화면을 연다 | 409 | `routes/billing-mutation.ts` |
+| `APPLE_BILLING_UNCONFIGURED` | 애플 결제 시크릿 미설정 | 503 | `routes/billing-apple.ts` |
+| `TRANSACTION_NOT_FOUND` | App Store Server API 에 그 트랜잭션이 없음 | 404 | `routes/billing-apple.ts` |
+| `APPLE_VERIFICATION_FAILED` | 애플 서명 검증 실패 | 502 | `routes/billing-apple.ts` |
+| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id | 400 | `routes/billing-apple.ts` |
+| `TRANSACTION_REVOKED` | 환불·취소된 트랜잭션 | 400 | `routes/billing-apple.ts` |
+| `TRANSACTION_NOT_SUBSCRIPTION` | 만료일이 없는 트랜잭션(구독 아님) | 400 | `routes/billing-apple.ts` |
 | `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
 | `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 

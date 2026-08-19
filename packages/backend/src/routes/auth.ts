@@ -11,6 +11,7 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
+  AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
@@ -18,6 +19,8 @@ import {
   clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
+import { verifyAppleIdToken } from '../lib/apple-oauth';
+import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -458,8 +461,12 @@ auth.post('/register', async (c) => {
     // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
     // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, NULL, ?, ?)`,
+      // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+      // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+      // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+      // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name, family_alarm_quiet_windows)
+            VALUES (?, ?, NULL, ?, ?, '[]')`,
       args: [id, normalizedEmail, passwordHash, name],
     });
 
@@ -481,10 +488,13 @@ auth.post('/register', async (c) => {
           name,
           plan: 'free' as const,
           allow_family_alarms: false,
-          family_alarm_quiet_days: [1, 2, 3, 4, 5],
+          // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
+          // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
+          // 적 없는 시간대에 가족 알람이 막혔고, 받는 사람은 자기가 막아 둔 줄 몰랐다.
+          family_alarm_quiet_days: [],
           family_alarm_quiet_start: '09:00',
           family_alarm_quiet_end: '18:30',
-          family_alarm_quiet_windows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          family_alarm_quiet_windows: [],
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
@@ -676,8 +686,12 @@ auth.post('/google', async (c) => {
       userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name)
-              VALUES (?, ?, ?, ?)`,
+        // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+        // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+        // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+        // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+        sql: `INSERT INTO users (id, google_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
         args: [userId, googleId, email, name || null],
       });
     }
@@ -742,6 +756,194 @@ auth.post('/google', async (c) => {
         ? 401
         : 500;
     return c.json(jsonError('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
+  }
+});
+
+// Sign in with Apple. 구조는 POST /google 과 같고 식별자 컬럼만 apple_id 다.
+//
+// 애플 고유의 두 가지:
+//  1) **이름은 최초 1회만 온다.** 애플은 첫 로그인 응답에만 fullName 을 주고 그 뒤로는
+//     영영 안 준다. 그래서 앱이 그때 받은 값을 `full_name` 으로 보내 주고, 여기서
+//     빈 칸을 채우는 데만 쓴다.
+//  2) **이메일 가리기(Private Relay).** 사용자가 이메일 가리기를 고르면 `@privaterelay
+//     .appleid.com` 주소가 온다. 정상 값이라 그대로 저장한다. 아예 이메일이 없는 경우도
+//     있어(재로그인 시 미포함) 구글과 같은 방식으로 합성 주소를 쓴다.
+auth.post('/apple', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = AppleLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    // 구성 가드 — 구글과 같은 이유로 fail-closed. aud(번들 ID)를 모르면 **다른 앱용으로
+    // 발급된 유효한 애플 토큰**도 통과해 그 앱 사용자가 우리 계정을 차지할 수 있다.
+    if (!c.env.APPLE_BUNDLE_ID) {
+      return c.json(
+        jsonError('AUTH_APPLE_CONFIG_MISSING', 'Apple bundle ID is not configured'),
+        500,
+      );
+    }
+
+    const apple = await verifyAppleIdToken(
+      parsed.data.identity_token,
+      c.env.APPLE_BUNDLE_ID,
+      parsed.data.nonce,
+    );
+    const appleId = apple.sub;
+    const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
+    // 애플이 준 이름도 **외부 입력**이다(구글과 동일 규약 — CLAUDE.md 「입력 규칙은 한 곳에서만」).
+    const name = clampDisplayName(parsed.data.full_name ?? '');
+
+    const existing = await db.execute({
+      sql: `SELECT id, apple_id, email, name, plan, token_epoch,
+                   allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users
+            WHERE apple_id = ? OR email = ?
+            LIMIT 1`,
+      args: [appleId, email],
+    });
+
+    let userId: string;
+    let plan: 'free' | 'plus' | 'family';
+    let tokenEpoch = 0;
+    let effectiveName = name;
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<
+        {
+          id: string;
+          apple_id: string | null;
+          email: string;
+          name: string | null;
+          plan: 'free' | 'plus' | 'family' | null;
+          token_epoch: number | string | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
+      userId = row.id;
+      plan = row.plan ?? 'free';
+      tokenEpoch = Number(row.token_epoch ?? 0);
+      // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
+      // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
+      // 규칙을 통과시킨다.
+      const storedName = clampDisplayName(row.name ?? '');
+      effectiveName = storedName || name;
+
+      await db.execute({
+        sql: `UPDATE users
+              SET apple_id = ?, name = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        // ⚠ 구글 경로와 달리 **email 을 덮어쓰지 않는다.** 애플은 재로그인 때 이메일을
+        // 안 주는 경우가 있어, 그때 합성한 `<sub>@apple.local` 로 갱신하면 이미 저장된
+        // 진짜 주소가 지워진다.
+        args: [appleId, effectiveName || null, userId],
+      });
+    } else {
+      userId = crypto.randomUUID();
+      plan = 'free';
+      await db.execute({
+        // ⚠ 위 두 INSERT 와 같은 이유로 `family_alarm_quiet_windows` 를 명시한다 —
+        // 생략하면 컬럼 DEFAULT(평일 09:00-18:30)가 박힌다.
+        sql: `INSERT INTO users (id, apple_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
+        args: [userId, appleId, email, name || null],
+      });
+    }
+
+    // 탈퇴 때 애플 연결을 끊으려면 refresh token 이 있어야 한다(애플 심사 5.1.1(v)).
+    //
+    // ⚠ **여기서 실패해도 로그인은 성공시킨다.** 애플 토큰 엔드포인트가 잠깐 죽었다고
+    // 로그인을 막을 이유가 없고, 폐기는 다음 로그인에서 다시 채울 수 있다. 반대로
+    // 로그인을 막으면 사용자는 들어올 방법이 아예 없어진다.
+    //
+    // ⚠ authorization_code 는 **5분·1회용**이라 지금 교환하지 않으면 영영 못 쓴다.
+    if (parsed.data.authorization_code) {
+      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+      if (signInConfig) {
+        try {
+          const { refreshToken } = await exchangeAppleAuthorizationCode(
+            signInConfig,
+            parsed.data.authorization_code,
+          );
+          if (refreshToken) {
+            await db.execute({
+              sql: `UPDATE users SET apple_refresh_token = ? WHERE id = ?`,
+              args: [refreshToken, userId],
+            });
+          }
+        } catch (err) {
+          logRouteError(c, err);
+        }
+      }
+    }
+
+    // JWT sub 은 항상 users.id (구글 경로 주석 참고).
+    const token = await signAppJwt(
+      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
+      c.env.JWT_SECRET,
+    );
+
+    const fresh = await db.execute({
+      sql: `SELECT allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users WHERE id = ? LIMIT 1`,
+      args: [userId],
+    });
+    const familyAlarmSettings =
+      fresh.rows.length > 0
+        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : {
+            allowFamilyAlarms: false,
+            quietDays: [1, 2, 3, 4, 5],
+            quietStart: '09:00',
+            quietEnd: '18:30',
+            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          };
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
+
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email,
+        name: effectiveName,
+        plan,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
+      },
+    });
+  } catch (err) {
+    // 구글 경로와 동일 — 검증 실패 상세는 서버 로그에만, 클라에는 generic.
+    logRouteError(c, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const status =
+      detail.includes('Apple token') ||
+      detail.includes('Apple signing key') ||
+      detail.includes('Apple identity token') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('expired') ||
+      detail.includes('nonce') ||
+      detail.includes('Token')
+        ? 401
+        : 500;
+    return c.json(jsonError('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
 

@@ -18,8 +18,12 @@ dist/
 *.tsbuildinfo
 .turbo/
 .wrangler/
-ios/
-android/
+# ⚠ **앞의 `/` 를 빼지 말 것.** 이건 Expo 가 루트에 뱉던 네이티브 프로젝트 잔재인데,
+# 빗금 없는 `ios/` 는 **어느 깊이의 `ios` 디렉터리든** 삼킨다. 실제로 `docs/ios/` 가
+# 통째로 추적되지 않아서, CLAUDE.md 가 "상세는 docs/ios/" 라고 가리키는 문서와
+# parity 감사가 근거로 인용한 파일들이 저장소에 아예 없었다(클론하면 안 보인다).
+/ios/
+/android/
 
 # Native Android local/generated files
 apps/android-native/.gradle/
@@ -89,3 +93,21 @@ handoff
 voice-preview/
 # 로컬 QA용 임시 DB 조회 스크립트(시크릿 파일 경로 참조) — 커밋 금지
 *.tmp.mjs
+
+# Xcode 사용자별 상태(스킴 선택·창 배치 등) — 커밋하지 않는다.
+apps/ios-native/**/xcuserdata/
+
+# ⚠ 애플 개인키(.p8) — 절대 커밋 금지.
+# 이 파일 하나로 우리 팀 이름으로 Sign in with Apple 토큰 폐기·교환을 할 수 있고,
+# 애플은 **재발급 시 기존 키를 무효화**하므로 유출되면 그 자리에서 로그인이 끊긴다.
+# 확장자 자체를 막아 둔다 — 파일명을 바꿔 들여도 걸리도록.
+*.p8
+**/*.p8
+.secrets/
+**/.secrets/
+
+# 로컬 전용 빌드 설정 — Sentry DSN 등 시크릿이 들어간다. **공개 리포라 절대 커밋 금지.**
+# iOS 는 `VOICE_ALARM_SENTRY_DSN` 을 여기서 읽는다(apps/ios-native/README.md 참조).
+*.local.xcconfig
+Local.xcconfig
+apps/ios-native/Local.xcconfig

@@ -26,18 +26,28 @@ import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 
 const alarmMutation = new Hono<AppEnv>();
 
+/**
+ * 이 알람이 **서버가 값을 매기는 목소리 자산**을 쓰는가.
+ *
+ * ⚠ **`wake_mode === 'voice_only'` 를 여기에 넣지 말 것**(2026-08-12 제거).
+ * 그건 "목소리로 깨운다" 는 뜻일 뿐 **무엇으로** 깨우는지를 말하지 않는다.
+ * 사용자가 자기 폰에 직접 녹음한 소리로 깨우는 알람도 `voice_only` 로 오는데,
+ * 그 음원은 **서버에 올라오지 않는다**(양 앱의 `RemoteAlarmMapper` 가
+ * `mode: hasRemoteVoice ? 'tts' : 'sound-only'`, `hasRemoteVoice = ttsMessageId != nil`).
+ * 그래서 이 항이 있으면 **무료 사용자의 직접 녹음 알람이 403 으로 거절**되고,
+ * 앱은 로컬에만 저장돼 sync 가 영구히 실패한다.
+ *
+ * 유료 자산은 `message_id`(우리가 만든 클립)와 `voice_profile_id`(클론 목소리)뿐이다.
+ * `mode === 'tts'` 는 그 둘 중 하나가 있을 때만 붙지만, 옛 클라이언트가 단독으로 보낼
+ * 여지가 있어 남겨 둔다 — 남겨도 녹음 알람은 `sound-only` 라 걸리지 않는다.
+ */
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
   wake_mode?: string | null;
   message_id?: string | null;
   voice_profile_id?: string | null;
 }): boolean {
-  return (
-    body.mode === 'tts' ||
-    body.wake_mode === 'voice_only' ||
-    !!body.message_id ||
-    !!body.voice_profile_id
-  );
+  return body.mode === 'tts' || !!body.message_id || !!body.voice_profile_id;
 }
 
 /**
@@ -633,6 +643,15 @@ alarmMutation.patch('/:id', async (c) => {
     );
   }
 
+  // ⚠ **이 검사를 "트랜잭션 안에서 또 하니 중복" 이라며 지우지 말 것.** 두 검사는
+  // 역할이 다르다. 트랜잭션 안쪽은 TOCTOU 방어이고, **바깥쪽은 검증되지 않은 id 로
+  // 뒤따르는 쿼리가 도는 것을 막는 게이트**다 — 아래 greeting 버킷 정책은
+  // `messageGreetingUsesCloneVoice` 로 소유권 스코프 없이 messageId 를 조회하므로,
+  // 바깥 검사를 빼면 남의 메시지 id 를 넣었을 때 404 대신 400(INVALID_BUCKET_ID)이
+  // 나가 **그 메시지가 클론 보이스를 쓰는지 여부가 에러 코드로 새어 나간다.**
+  // 실제로 지워 봤다가 회귀 테스트 8건이 깨져 되돌렸다(2026-08-08).
+  // 쿼리 2~4회를 아끼자고 IDOR 라우트의 실패 순서를 바꿀 이유가 없다.
+  //
   // IDOR 방어: PATCH 로 새 message_id / voice_profile_id 를 기록하기 전에,
   // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
@@ -1035,6 +1054,15 @@ alarmMutation.delete('/:id', async (c) => {
       }
       await db.execute({
         sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
+        args: [messageId, ...ownerIds],
+      });
+      // ⚠ **그 오브젝트를 가리키던 포인터도 끊는다.** R2 오브젝트와 에셋 행만 지우고
+      // `messages.audio_url` 을 그대로 두면 `r2://...` 가 **영구히 죽은 포인터**로
+      // 남는다. 그 메시지를 다시 쓰는 경로가 있으면 없는 오브젝트를 받으러 가고,
+      // TTL 스윕은 그 행 때문에 '아직 참조 중' 으로 오판해 청소를 건너뛴다.
+      // 삭제와 **같은 소유권 스코프**를 건다(cross-tenant 파괴 방지, 위와 같은 이유).
+      await db.execute({
+        sql: 'UPDATE messages SET audio_url = NULL WHERE id = ? AND user_id IN (?, ?)',
         args: [messageId, ...ownerIds],
       });
     }

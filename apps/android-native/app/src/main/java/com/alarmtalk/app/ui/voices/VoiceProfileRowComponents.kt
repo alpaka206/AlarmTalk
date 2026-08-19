@@ -23,12 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -133,7 +131,11 @@ internal fun RelationshipDropdownField(
             OutlinedTextField(
                 value = selection.customLabel,
                 onValueChange = {
-                    onSelectionChange(selection.copy(customLabel = it.take(30)))
+                    onSelectionChange(
+                        selection.copy(
+                            customLabel = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength),
+                        ),
+                    )
                 },
                 label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
@@ -404,13 +406,10 @@ internal fun VoiceCatalogRow(
                 // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
                 Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
             }
-            // 듣기 ↔ 정지. 하단 탭과 같은 24dp 그리드·같은 선 굵기로 그린 전용 벡터라
-            // Material 기본 아이콘을 끌어다 쓴 티가 나지 않는다(ic_voice_listen/stop_24).
+            // 듣기 ↔ 정지 — 머티리얼 아이콘(2026-08-17 "글리프는 각 OS 것").
             IconButton(onClick = onPreview, enabled = enabled) {
                 Icon(
-                    painter = painterResource(
-                        if (isPlaying) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
-                    ),
+                    imageVector = if (isPlaying) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = stringResource(
                         if (isPlaying) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
                     ),
@@ -596,34 +595,6 @@ private fun VoiceProfileMenuSheet(
             // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
             destructive = true,
         )
-    }
-}
-
-@Composable
-internal fun PlayingEqualizer() {
-    val transition = rememberInfiniteTransition(label = "voicePlaying")
-    val barColor = MaterialTheme.colorScheme.primary
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        listOf(0, 160, 320, 120).forEachIndexed { index, delayMillis ->
-            val scale by transition.animateFloat(
-                initialValue = 0.35f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 520, delayMillis = delayMillis),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "bar$index",
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height((6 + scale * 14).dp)
-                    .background(barColor, WakerPillShape),
-            )
-        }
     }
 }
 

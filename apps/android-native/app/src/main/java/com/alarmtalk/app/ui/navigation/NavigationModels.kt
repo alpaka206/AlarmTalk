@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.People
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse

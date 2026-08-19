@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -126,7 +124,6 @@ internal class AlarmEditorState(
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
-    var voiceTranslationEnabled by mutableStateOf(!voiceRandomPrompt && (voiceLanguage ?: "ko") != "ko")
     var voiceRepeat by mutableStateOf(voiceRepeat)
     var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
@@ -270,13 +267,34 @@ internal class AlarmEditorState(
      * voiceText=클립문구가 되므로, `!voiceRandomPrompt` 만으로 판별하면 버킷 알람이 직접 입력으로
      * 오분류된다(그 오분류 때문에 2026-07-21 에 문구 프리필이 통째로 제거됐었다).
      *
-     * **판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
+     * **표시 판정식은 `!voiceRandomPrompt && !hasBucketMessageChoice()` 다**(2026-08-16 분리 —
+     * 위 `hasBucketMessageChoice` 주석 참조). 저장·오디오 판정식은 `!isActiveBucketAlarm()` 이고,
+     * 각 갈래 안에서는 여전히 **철자까지 같아야 한다.**
+     * 예전 주석: 판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
      * 한다**: 저장([toDraft] 의 voiceRandomContext), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
      * `random_prompt` → randomContext·manualText), 요약 행(`VoiceAudioCard` 의 isManual).
      * 2026-08-05 에 요약 행만 맞고 나머지가 틀려, 행은 '사랑'인데 눌러 열면 '직접 입력'이었다.
      */
     fun isActiveBucketAlarm(): Boolean {
         if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        return hasBucketMessageChoice()
+    }
+
+    /**
+     * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
+     *
+     * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
+     * 저쪽은 "**울릴 때** 버킷 클립을 쓰는가" 를 묻고, 그래서 알람 전용·직접 녹음이면
+     * false 다 — 그건 맞다. 그런데 그 함수를 **문구 종류 표시**에도 쓰고 있어서,
+     * 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` → `직접 입력` 으로 뒤집혔다
+     * (실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 true → false).
+     * 고른 문구는 그대로인데 재생 방식만 바뀐 것이므로 **표시가 틀린 것**이다.
+     *
+     * 나누는 기준:
+     *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
+     *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
+     */
+    fun hasBucketMessageChoice(): Boolean {
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
         return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
@@ -399,7 +417,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
@@ -433,7 +450,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         voiceText = text
         voiceLanguage = language
         localAudioUri = audio.localAudioUri
@@ -448,13 +464,20 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    /**
+     * ⚠ **이건 번역 스위치가 아니다 — 지우지 말 것.**
+     *
+     * 번역은 2026-08-12 지시("직접 입력한 거 그대로 나오도록")로 없앴다. 예전에는 앱 언어가
+     * 한국어가 아니면 직접 입력 문구를 서버가 그 언어로 **옮겨서** 읽었고, 그래서 사용자가
+     * 친 글자와 실제로 들리는 말이 달라졌다. 이제 TTS 요청의 `translate` 는 언제나 false 다.
+     *
+     * 반면 이 함수가 정하는 건 **어느 언어의 스톡 클립을 고를지**와 캐시 키다. 축이 다르다 —
+     * 번역을 없앴다고 이걸 같이 지우면 en·ja 기기에서 한국어 클립이 재생된다.
+     */
     fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
-
-    fun shouldTranslateVoiceText(): Boolean =
-        !voiceRandomPrompt && activeVoiceLanguage() != "ko"
 
     companion object {
         fun from(
@@ -614,4 +637,15 @@ internal fun randomPromptContextForBucket(bucket: String?): String? =
 private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"
-internal const val MinVoiceVolumePercent = 30
+/**
+ * 목소리 음량 하한. **0 을 허용하지 않는다** — 0 은 '무음' 이라는 별개의 뜻인데 슬라이더
+ * 끝값으로 두면 실수로 닿아 목소리 알람이 조용히 안 들리게 된다. 끄는 것은 재생 방식을
+ * '알람' 으로 바꾸는 것으로 표현한다. iOS `AlarmEditDraft.minVoiceVolumePercent` 와 같은 값.
+ */
+internal const val MinVoiceVolumePercent = 10
+
+/**
+ * 알람 음량 하한. 목소리와 같은 이유로 **0 을 슬라이더로 만들 수 없다** —
+ * 무음은 알람음 스위치(`alarmSoundEnabled`)로만 표현한다.
+ */
+internal const val MinAlarmVolumePercent = 10

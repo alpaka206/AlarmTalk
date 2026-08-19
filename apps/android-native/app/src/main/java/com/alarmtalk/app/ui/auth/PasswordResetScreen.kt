@@ -8,12 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Icon
@@ -29,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -81,7 +83,7 @@ internal fun PasswordResetScreen(
             ) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.auth_back),
                         tint = TextOnScene,
                     )
@@ -99,27 +101,29 @@ internal fun PasswordResetScreen(
                 color = TextOnSceneDim,
             )
 
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text(stringResource(R.string.auth_label_email)) },
-                singleLine = true,
-                enabled = !busy && !codeSent,
-                shape = WakerInputShape,
-                colors = authFieldColors(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AuthFieldLabel(stringResource(R.string.auth_label_email))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    singleLine = true,
+                    enabled = !busy && !codeSent,
+                    shape = WakerInputShape,
+                    colors = authFieldColors(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
 
             OutlinedButton(
                 onClick = { onRequestCode(email) },
                 enabled = !busy && emailLooksValid && !codeSent,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
+                    .heightIn(min = 54.dp),
                 shape = WakerButtonShape,
                 border = authOutlinedButtonBorder(!busy && emailLooksValid && !codeSent),
                 colors = authOutlinedButtonColors(),
@@ -134,56 +138,60 @@ internal fun PasswordResetScreen(
             }
 
             if (codeSent) {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                    label = { Text(stringResource(R.string.auth_label_verification_code)) },
-                    singleLine = true,
-                    enabled = !busy,
-                    shape = WakerInputShape,
-                    colors = authFieldColors(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.NumberPassword,
-                        imeAction = ImeAction.Next,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it.filter(Char::isDigit).take(6) },
+                        singleLine = true,
+                        enabled = !busy,
+                        shape = WakerInputShape,
+                        colors = authFieldColors(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.NumberPassword,
+                            imeAction = ImeAction.Next,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.auth_reset_new_password)) },
-                    singleLine = true,
-                    enabled = !busy,
-                    shape = WakerInputShape,
-                    colors = authFieldColors(),
-                    visualTransformation = if (passwordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) {
-                                    Icons.Outlined.VisibilityOff
-                                } else {
-                                    Icons.Outlined.Visibility
-                                },
-                                contentDescription = if (passwordVisible) {
-                                    stringResource(R.string.auth_password_hide)
-                                } else {
-                                    stringResource(R.string.auth_password_show)
-                                },
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AuthFieldLabel(stringResource(R.string.auth_reset_new_password))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        singleLine = true,
+                        enabled = !busy,
+                        shape = WakerInputShape,
+                        colors = authFieldColors(),
+                        visualTransformation = if (passwordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) {
+                                        Icons.Outlined.VisibilityOff
+                                    } else {
+                                        Icons.Outlined.Visibility
+                                    },
+                                    contentDescription = if (passwordVisible) {
+                                        stringResource(R.string.auth_password_hide)
+                                    } else {
+                                        stringResource(R.string.auth_password_show)
+                                    },
+                                )
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     PasswordRuleRow(
                         text = stringResource(R.string.auth_password_rule_min),

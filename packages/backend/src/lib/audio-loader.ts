@@ -40,14 +40,6 @@ export type AudioAccess =
  * (스킴/길이) — 소유권/SSRF 검증은 loadAudioBytes 에서 수행한다.
  * https 등 임의 원격 호스트 프록시는 SSRF 위험이라 더 이상 허용하지 않는다.
  */
-export function isStoredAudioUrl(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= MAX_AUDIO_URL_LENGTH &&
-    value.startsWith('r2://')
-  );
-}
 
 function r2KeyOwner(objectKey: string): string | null {
   for (const prefix of R2_USER_PREFIXES) {

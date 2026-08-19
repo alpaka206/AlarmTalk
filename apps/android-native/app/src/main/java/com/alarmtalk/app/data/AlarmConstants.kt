@@ -229,12 +229,46 @@ object HolidaySeedData {
     )
 }
 
+/**
+ * 재생 방식 — **알람 / 목소리 둘뿐이다(2026-08-06).**
+ *
+ * ⚠ `ALARM_VOICE`('알람 + 목소리')를 되살리지 말 것. 그 모드는 톤이 울리고 **해제할 때**
+ * 목소리가 한 번 났는데, 알림을 밀어서 없애면 건너뛰었다(`ACTION_DISMISS_SILENT`).
+ * 목소리를 들으려면 알람을 꺼야 하는 구조라 발견 자체가 어려웠고 "목소리가 안 나온다"
+ * 문의가 반복됐다. iOS 는 AlarmKit 에 넘길 사운드가 1개라 아예 구현조차 불가능했다.
+ *
+ * 저장된 옛 값은 [normalize] 로 읽는다 — `alarm_voice` 는 **목소리**로 옮긴다.
+ * 그 모드를 고른 사람은 목소리를 만들어 둔 사용자이므로 목소리를 살리는 쪽이 의도에 가깝다.
+ */
 object AlarmPlayModes {
     const val ALARM_ONLY = "alarm_only"
     const val VOICE_ONLY = "voice_only"
-    const val ALARM_VOICE = "alarm_voice"
 
-    val all = listOf(ALARM_ONLY, VOICE_ONLY, ALARM_VOICE)
+    /** 옛 값. 읽기 호환용으로만 남긴다 — 새로 저장하지 말 것. */
+    const val LEGACY_ALARM_VOICE = "alarm_voice"
+
+    val all = listOf(ALARM_ONLY, VOICE_ONLY)
+
+    /** 저장된 값을 현재 두 모드 중 하나로 정규화한다. */
+    fun normalize(raw: String?): String = when (raw) {
+        VOICE_ONLY, LEGACY_ALARM_VOICE -> VOICE_ONLY
+        else -> ALARM_ONLY
+    }
+}
+
+/// 다시 알림 간격의 허용 범위. **서버 계약이 원본**이다 —
+/// `packages/backend/src/routes/alarm-helpers.ts` 가 1~30 을 벗어나면
+/// `INVALID_SNOOZE_MINUTES` 로 400 을 낸다.
+///
+/// ⚠ 리터럴을 다시 박지 말 것. 예전에는 편집기 다이얼로그가 `1..60` 을 통과시키고
+/// `AlarmRepository.validateDraft` 가 `1..30` 으로 던져서, 31~60 을 넣으면 다이얼로그는
+/// 닫히는데 저장이 "알람 저장에 실패했어요" 로 끝났다 — 이유는 어디에도 안 보였다.
+/// iOS 는 `Views/Editor/AlarmSettingsPanes.swift` 에 같은 범위를 둔다.
+object SnoozeMinutes {
+    const val MIN = 1
+    const val MAX = 30
+
+    val range = MIN..MAX
 }
 
 object SnoozeRepeatLimits {

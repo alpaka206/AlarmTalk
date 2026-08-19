@@ -25,7 +25,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
-
 internal fun MainViewModel.loadVoiceProfiles() {
     fetchVoiceProfiles(showMessage = true)
 }
@@ -131,7 +130,7 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     if (!hasPaidVoiceAccess(subscriptionResponse)) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
+        message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
         return false
     }
     val drafts = items.map {
@@ -146,8 +145,16 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
-    // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
-    if (voiceProfiles.count { it.isSystem != true } >= MAX_VOICE_PROFILES || pendingVoiceDraft != null) {
+    //
+    // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
+    // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
+    // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
+    // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
+    //
+    // 다만 **초안이 이미 떠 있으면** 새로 만들지 않는다 — 그건 한도가 아니라 '결정을
+    // 안 끝낸 등록이 하나 있다' 는 뜻이라, 그 결정부터 마쳐야 한다. UI 쪽
+    // `canOpenCreateForm` 과 **같은 기준**이다.
+    if (pendingVoiceDraft != null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
         return false
     }
@@ -247,7 +254,14 @@ internal fun MainViewModel.createVoiceProfiles(
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
                 "INVALID_AUDIO_MIME_TYPE" -> app.getString(R.string.msg_voice_invalid_audio_format)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
-                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
+        // ⚠ 아래 셋은 **매핑이 없어서** 지금까지 일반 오류 문구로 떨어졌다(2026-08-11 전수 조사).
+        // 다시 시도해도 안 되는 종류인데 다시 시도하라고 말하고 있었다.
+        // 앞 둘은 **유료여도 뜬다** — 플랜이 아니라 목소리 종류의 문제라
+        // `plan_gate_paid_message` 를 쓰지 않는다.
+        "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY" ->
+            app.getString(R.string.msg_voice_preset_only)
+        "VOICE_LOCKED_FREE_PLAN" -> app.getString(R.string.msg_voice_locked_free_plan)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
@@ -258,7 +272,7 @@ internal fun MainViewModel.createVoiceProfiles(
     return true
 }
 
-internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
+internal fun MainViewModel.promoteVoiceDraft(profileId: String, replaceExisting: Boolean = false) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -268,7 +282,11 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
                 api.updateVoiceProfile(
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
-                    request = VoiceProfileUpdateRequest(isDraft = false, language = deviceAppVoiceLanguage()),
+                    request = VoiceProfileUpdateRequest(
+                        isDraft = false,
+                        language = deviceAppVoiceLanguage(),
+                        replaceExisting = if (replaceExisting) true else null,
+                    ),
                 ).profile
             }
         }.onSuccess { profile ->
@@ -288,7 +306,6 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
             )
             pendingVoiceDraft = null
             voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, official.name)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_create_failed))
@@ -491,7 +508,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             }
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
             // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
             // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
@@ -499,7 +515,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-                message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
                 viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
             } else {
                 if (originalProfile != null) {
@@ -517,7 +532,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
     check(hasPaidVoiceAccess(subscriptionResponse) || request.isFreeSystemPresetRequest()) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
+        getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
     }
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
     return withContext(Dispatchers.IO) {
@@ -532,26 +547,6 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         !translate &&
         language == "ko" &&
         text.isBlank()
-
-internal fun MainViewModel.loadTtsMessages() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_login_required)
-        return
-    }
-    viewModelScope.launch {
-        ttsMessageBusy = true
-        runCatching {
-            api.listTtsMessages(AlarmTalkApiClient.bearer(session.token)).messages
-        }.onSuccess { messages ->
-            ttsMessages = messages
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to load saved TTS messages", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_failed))
-        }
-        ttsMessageBusy = false
-    }
-}
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
@@ -741,8 +736,10 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
 ) {
     val session = authSession ?: return
     withContext(Dispatchers.IO) {
-        val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        val response = api.getStockClips(AlarmTalkApiClient.bearer(session.token))
+        val manifest = response.clips
         stockClips = manifest
+        response.expectedVariants?.let { expectedVariants = it }
         // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
         // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
         val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
@@ -817,12 +814,28 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     val session = authSession ?: return
     // stockClips 는 세션 전용 in-memory 캐시라 한번 채우면 재조회 안 함. 유료 클론 클립은 확정 후
     // cron 이 세션 중에 만들 수 있으므로, 클론 편집 진입 시 forceReload=true 로 매니페스트를 새로 받는다.
-    if (!forceReload && stockClips.isNotEmpty()) return
+    // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
+    // 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
+    // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
+    // 자세한 것은 `StockClipManifestStore` 주석.
+    if (stockClips.isEmpty()) {
+        com.alarmtalk.app.data.StockClipManifestStore.load(getApplication())?.let { cached ->
+            stockClips = cached.clips
+            cached.expectedVariants?.let { expectedVariants = it }
+        }
+    }
+    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
+    // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
+    if (!forceReload && stockClipManifestFetched) return
     viewModelScope.launch {
         runCatching {
-            api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
-        }.onSuccess { clips ->
+            api.getStockClips(AlarmTalkApiClient.bearer(session.token))
+        }.onSuccess { response ->
+            val clips = response.clips
             stockClips = clips
+            response.expectedVariants?.let { expectedVariants = it }
+            stockClipManifestFetched = true
+            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response)
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->
@@ -834,7 +847,6 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
         }
     }
 }
-
 
 /**
  * 클론 등록에 쓴 로컬 녹음 원본(음성 생체정보 **평문** .m4a)을 지운다.

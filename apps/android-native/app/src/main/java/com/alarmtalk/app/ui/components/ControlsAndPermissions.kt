@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -41,6 +42,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -54,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerTileShape
@@ -78,21 +82,15 @@ internal fun AlarmTalkSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    // 다크 팔레트는 onPrimary 가 진네이비라 켜짐 썸이 트랙보다 어두워져 꺼짐으로 오독될 수
-    // 있다 — 다크에선 밝은 썸(onPrimaryContainer)으로 켜짐을 명확히 하고, 라이트는 흰 썸 유지.
-    val checkedThumbColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onPrimary
-    }
-    // 꺼짐 썸도 다크에선 surface 가 트랙(surfaceVariant)과 동화돼 알맹이가 안 보인다 —
-    // 밝은 회색(onSurfaceVariant)으로 분리한다. 라이트는 기존 흰 썸 유지.
-    val uncheckedThumbColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    // 손잡이는 **켜짐/꺼짐 모두 흰색**이다(2026-08-10 결정 — iOS 시스템 스위치에 맞춘다).
+    //
+    // 예전에는 다크에서 켜짐 썸을 `onPrimaryContainer`, 꺼짐 썸을 `onSurfaceVariant` 로
+    // 따로 줬다. 이유는 타당했다(진네이비 썸이 밝은 트랙보다 어두워 꺼짐으로 오독된다 /
+    // surface 썸이 트랙과 동화된다). 다만 그러면 두 앱의 스위치가 서로 다른 물건으로
+    // 보였고, 흰 썸으로도 그 두 문제가 생기지 않는다 — 흰색은 켜짐 트랙(#A6D2FF)보다
+    // 밝고 꺼짐 트랙(surfaceVariant)과도 충분히 분리된다.
+    val checkedThumbColor = Color.White
+    val uncheckedThumbColor = Color.White
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -105,6 +103,37 @@ internal fun AlarmTalkSwitch(
             uncheckedThumbColor = uncheckedThumbColor,
             uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
+}
+
+/**
+ * 앱 공용 체크박스.
+ *
+ * ⚠ **머티리얼 기본 `Checkbox` 를 그대로 쓰지 말 것**(2026-08-16 정리). 스위치는
+ * `AlarmTalkSwitch` 하나로 모여 있었는데 체크박스만 **세 곳이 기본값**이라, 같은
+ * '켜고 끄는 자리'가 화면마다 다른 색으로 보였다. 색은 `AlarmTalkSwitch` 와 같은 축을 쓴다
+ * (켜짐=primary 바탕에 onPrimary 체크, 꺼짐=outline 테두리).
+ *
+ * 문서화된 예외: 로그인/동의 **브랜드 화면**(`ConsentScreen`)은 딥네이비 위 고정 팔레트라
+ * 그쪽 색을 그대로 둔다 — CLAUDE.md 「색」 절의 브랜드 비주얼 예외.
+ */
+@Composable
+internal fun AlarmTalkCheckbox(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Checkbox(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        colors = CheckboxDefaults.colors(
+            checkedColor = MaterialTheme.colorScheme.primary,
+            checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+            uncheckedColor = MaterialTheme.colorScheme.outline,
         ),
     )
 }
@@ -164,7 +193,9 @@ internal fun PermissionPanel(
                 onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
             )
             PermissionRow(
-                icon = Icons.Outlined.Mic,
+                // 마이크는 하단바 '목소리' 탭과 같은 글리프다 — 이제 둘 다 머티리얼
+                // `Icons.Outlined.Mic` 이다(2026-08-17 "글리프는 각 OS 것").
+                iconPainter = rememberVectorPainter(Icons.Outlined.Mic),
                 label = stringResource(R.string.common_permission_mic_label),
                 granted = permissions.recordAudio,
                 actionLabel = stringResource(R.string.common_permission_allow_action),
@@ -218,7 +249,9 @@ internal fun AlarmPermissionWarningBanner(
 
 @Composable
 internal fun PermissionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** 벡터 대신 그릴 리소스 아이콘. 마이크처럼 앱 전용 글리프가 있는 항목이 쓴다. */
+    iconPainter: androidx.compose.ui.graphics.painter.Painter? = null,
     label: String,
     granted: Boolean,
     actionLabel: String,
@@ -248,7 +281,14 @@ internal fun PermissionRow(
                 },
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    when {
+                        iconPainter != null -> Icon(
+                            painter = iconPainter,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
             Column {
@@ -584,13 +624,19 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     // 이건 다르다: 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
     alarm.state == AlarmStates.FAILED ->
         AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
-    // 유료 목소리를 못 써 기본 알람(사운드온리)으로 변환됨(preLockPlayMode 마커, 영구).
-    // 무료 강등은 목소리 참조를 남겨두므로(voiceProfileId 유지) '무료 요금제' 안내, 공유 목소리
-    // 해제는 참조를 비우므로(voiceProfileId=null) 원인 무관 중립 안내.
-    alarm.preLockPlayMode != null && !alarm.voiceProfileId.isNullOrBlank() ->
-        AlarmRowNotice(R.string.common_alarm_notice_free_downgraded, isError = false)
-    alarm.preLockPlayMode != null ->
-        AlarmRowNotice(R.string.common_alarm_notice_default_converted, isError = false)
+    // ⚠ **무료 강등 안내를 여기에 되살리지 말 것**(2026-08-11 제거).
+    // `preLockPlayMode` 는 **영구 마커**라(다시 유료가 되면 복원하려고 남긴다) 이 행에
+    // 걸면 안내가 영영 사라지지 않는다 — 해당 알람마다 매번 보인다.
+    //
+    // 그리고 **이미 1회성 안내가 있다**: 잠그는 순간 `applyFreePlanVoiceLock` 이
+    // `msg_gb_free_plan_voice_alarms_locked`("무료 이용권으로 전환되어 목소리 알람이
+    // 잠겼어요. 다시 이용권을 등록하면 복구돼요.")를 띄운다. 같은 말을 두 번, 그것도
+    // 한쪽은 영구로 하고 있었다. iOS 에는 이 행 배지가 아예 없다.
+    //
+    // 공유 목소리 해제도 **여기서 알리지 않는다**(2026-08-11). 이제 두 경우 모두
+    // `DowngradeNoticeStore` 대기표 → 1회성 모달이 맡는다.
+    // 행에 계속 붙여 두면 무료로 지내는 내내 알람마다 경고가 보이는데, **알람은 정상
+    // 작동 중이다**(기본 알람음으로 울린다) — 고장난 앱처럼 읽힐 뿐이다.
     else -> null
 }
 

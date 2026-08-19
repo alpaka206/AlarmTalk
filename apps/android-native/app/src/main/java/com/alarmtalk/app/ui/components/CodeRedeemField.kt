@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -103,9 +105,16 @@ internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): S
         .trimStart()
         .takeWithoutSplittingPairs(maxLength)
 
+/**
+ * 이용권·초대·프로모션 코드. **영문 대문자·숫자·`-`·`_` 만 남긴다.**
+ *
+ * ⚠ **`isLetterOrDigit()` 하나로 거르지 말 것.** 한글도 letter 라서 그대로 통과한다 —
+ * 코드에는 한글이 쓰이지 않는데 입력은 되니, 사용자는 다 치고 나서야 "잘못된 코드" 를
+ * 본다(2026-08-13 지시). 아예 안 들어가게 막는다. iOS `sanitizeRedeemCode` 와 같은 규칙.
+ */
 internal fun sanitizeRedeemCode(raw: String): String = raw
     .uppercase()
-    .filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+    .filter { (it.code < 128 && it.isLetterOrDigit()) || it == '-' || it == '_' }
     // 프로모 코드 최대 64자(admin 발급 폼 maxlength=64)와 맞춘다 — 32자 잘림으로 긴 코드가 실패하던 문제.
     .take(64)
 
@@ -121,19 +130,16 @@ internal fun CodeRedeemField(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedTextField(
+        // ⚠ **M3 `OutlinedTextField` 로 되돌리지 말 것.** 그건 최소 높이가 56이라 옆
+        // 버튼과 높이를 맞출 수 없다(2026-08-17: 버튼을 56으로 키우자 "버튼이 너무 크다,
+        // 입력칸을 줄여라"). 알럿에서 쓰던 컴팩트 필드를 모서리만 바꿔 재사용한다.
+        IosAlertField(
             value = code,
             onValueChange = { code = sanitizeRedeemCode(it) },
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.code_redeem_placeholder),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            singleLine = true,
+            placeholder = stringResource(R.string.code_redeem_placeholder),
             enabled = !busy,
+            minHeight = WakerControlHeight,
             shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.weight(1f),
         )
         Button(
@@ -144,7 +150,13 @@ internal fun CodeRedeemField(
                 code.trim().takeIf { it.isNotBlank() }?.let(onSubmit)
             },
             enabled = code.isNotBlank() && !busy,
+            colors = wakerButtonColors(),
             shape = WakerButtonShape,
+            // 입력칸과 **같은 높이·같은 최소 폭**이다(`WakerControlHeight`/`MinWidth`).
+            // iOS 도 같은 값을 쓴다 — 한쪽만 바꾸면 두 앱의 버튼 크기가 갈라진다.
+            modifier = Modifier
+                .height(WakerControlHeight)
+                .widthIn(min = WakerControlMinWidth),
         ) {
             if (busy) {
                 CircularProgressIndicator(

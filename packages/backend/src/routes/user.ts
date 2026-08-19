@@ -28,6 +28,7 @@ import {
   loadLatestConsents,
   missingConsentTypesFrom,
 } from '../lib/consent';
+import { appleSignInConfig, revokeAppleToken } from '../lib/apple-revoke';
 
 const user = new Hono<AppEnv>();
 
@@ -247,10 +248,30 @@ user.delete('/me', async (c) => {
     // 지워지고 나머지 PII 가 고아로 남는다(유예 파기 cron 은 row.google_id 를 읽어 이걸 피한다).
     const userLoginId = c.get('userLoginId') || userId;
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
+      sql: `SELECT id, apple_refresh_token FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [userLoginId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
+
+    // 애플 연결을 끊는다 — **행을 지우기 전에.** 지운 뒤에는 refresh token 을 읽을 곳이
+    // 없어 영영 폐기하지 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이
+    // 남는다(애플 심사 5.1.1(v)).
+    //
+    // ⚠ **실패해도 탈퇴는 진행한다.** 애플이 잠깐 죽었다고 탈퇴를 막으면 사용자는 자기
+    // 데이터를 못 지운다 — 그건 폐기 누락보다 나쁘다. 대신 로그에 남겨 추적한다.
+    const appleRefreshToken = userRes.rows.length > 0
+      ? (userRes.rows[0]!.apple_refresh_token as string | null)
+      : null;
+    if (appleRefreshToken) {
+      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+      if (signInConfig) {
+        try {
+          await revokeAppleToken(signInConfig, appleRefreshToken);
+        } catch (err) {
+          logRouteError(c, err);
+        }
+      }
+    }
 
     // 즉시 hard delete 경로에서도 전자상거래법(5년) 결제·구독 기록 가명보존을 먼저 수행한다.
     // (cron 유예 파기 경로와 동일하게 보존 후 파기 — 어느 경로든 보존 누락이 없도록)
@@ -370,8 +391,33 @@ user.post('/consents', async (c) => {
     // 지워 버린다.
     const finalAgreedByType = new Map<string, boolean>();
     for (const r of rows) finalAgreedByType.set(r.type, r.agreed);
+
+    // ⚠ **재동의 화면에서 안 누른 것을 '철회' 로 읽으면 안 된다.**
+    //
+    // 민감 동의(voice_biometric)는 `optional` 로 내려가므로 동의 화면의 CTA 가 체크를
+    // 요구하지 않는다. 그 상태에서 이미 동의한 사용자가 화면을 그냥 통과하면 `agreed=false`
+    // 가 제출되는데, 그걸 철회로 처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.**
+    // 사용자는 무언가를 지운다는 자각조차 없다.
+    //
+    // 판별 기준은 요청 모양이 아니라 **지금 그 유형을 다시 묻고 있었는가** 다:
+    //  - 재동의 대상(`collect`)에 있었다 → 화면이 물어본 것이다. false 는 '안 눌렀다' 이지
+    //    '지워 달라' 가 아니다. 기록만 하고 파기하지 않는다.
+    //  - 대상이 아니었다 → 아무도 묻지 않았는데 false 가 왔다 = 설정 화면의 명시적 철회다
+    //    (`withdrawVoiceBiometricConsent`). 그때만 파기한다.
+    //
+    // 요청 모양(항목 1개인가)으로 가르지 않는 이유: 개정이 민감 유형 하나만 대상으로 하면
+    // 동의 화면도 항목 1개를 보내므로 둘이 구분되지 않는다.
+    //
+    // 서버에서 막으므로 **구버전 클라도 즉시 보호된다** — 클라 수정을 기다리지 않는다.
+    const latestBeforeWrite = await loadLatestConsents(db, userPk);
+    const reAskedTypes = new Set([
+      ...missingConsentTypesFrom(latestBeforeWrite, REQUIRED_CONSENT_TYPES),
+      ...[...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES].filter(
+        (type) => !consentAnswerIsCurrent(latestBeforeWrite, type),
+      ),
+    ]);
     const withdrewSensitiveConsent = SENSITIVE_REQUIRED_CONSENTS.some(
-      (type) => finalAgreedByType.get(type) === false,
+      (type) => finalAgreedByType.get(type) === false && !reAskedTypes.has(type),
     );
 
     let downgradedAlarms: DowngradedAlarm[] = [];
@@ -457,6 +503,26 @@ user.get('/consents/status', async (c) => {
         (type) => !consentAnswerIsCurrent(latest, type),
       ),
     ];
+    // 마케팅 재유도 — **거절한 사람에게만**, 그리고 **다른 이유로 화면이 이미 뜰 때만** 덧붙인다.
+    //
+    // 왜 이 두 조건인가:
+    //  - `collect.length > 0` 이 없으면: 거절자는 이 항목 하나 때문에 동의 화면을 **영원히**
+    //    본다. 안 누르면 계속 남으니 빠져나갈 방법이 없다. 이 가드가 `needs_collection` 불변도
+    //    함께 보장한다(마케팅이 화면을 여는 유일한 사유가 되지 않는다).
+    //  - `agreed === false` 가 아니면(예: 미응답까지 포함하면): 위 filter 가 이미 미응답을
+    //    잡으므로 중복이고, **동의한 사람**까지 넣으면 화면에 뜬 항목을 무심코 지나칠 때
+    //    멀쩡한 동의가 사라진다(prechecked 로 완화되지만 애초에 넣지 않는 게 맞다).
+    //
+    // 빈도: 개정으로 다른 유형의 최소 버전이 오를 때만 = 개정 1회당 1번. 제출하면 거절이
+    // 새 버전으로 다시 기록돼 그 회차는 닫힌다.
+    //
+    // ⚠ **지금은 발동하지 않는다.** CONSENT_MIN_POLICY_VERSION 6종이 전부 3 이라 위 collect 가
+    // 늘 비어 있다. 실제로 켜는 레버는 그 상수를 올리는 것이고, 그건 별도 결재 사항이다.
+    // ⚠ **앱 내 화면에서만 유도한다.** 푸시·이메일로 재동의를 권하면 그 메시지 자체가
+    // 영리목적 광고성 정보로 평가돼 거절자에게는 정보통신망법 제50조 위반 소지가 있다.
+    if (collect.length > 0 && latest.get('marketing')?.agreed === false) {
+      if (!collect.includes('marketing')) collect.push('marketing');
+    }
     return c.json({
       // needs_consent 와 needs_collection 은 의미가 다르다. 섞어 쓰면 안 된다.
       //  - needs_consent: **앱을 못 쓰게 막는 게이트** 신호(필수 유형 기준). 선택 동의
@@ -474,6 +540,19 @@ user.get('/consents/status', async (c) => {
       // 가입 화면에 '선택' 으로 함께 띄우는 유형. 클라가 이 목록을 보고 필수와 다르게
       // 그린다(체크 안 해도 CTA 통과).
       optional: [...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES],
+      // `collect` 중 **이미 동의해 둔** 유형. 클라는 이걸 화면의 **초기 체크 상태**로 쓴다.
+      //
+      // 왜 필요한가: 선택/기능 동의는 체크 없이도 CTA 가 통과된다. 초기 상태를 항상 미체크로
+      // 두면, 이미 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 `agreed=false` 로
+      // 뒤집힌다 — 사용자는 아무것도 바꾼 적이 없는데 목소리 기능이 막히고(sensitive_missing),
+      // 마케팅 수신 동의가 사라진다. **가진 것을 보여주는 것**이지 미리 눌러 주는 게 아니다.
+      //
+      // ⚠ 필수 유형은 여기 담지 않는다 — 재동의는 명시적 체크로 받아야 한다.
+      prechecked: collect.filter(
+        (type) =>
+          !REQUIRED_CONSENT_TYPES.includes(type as (typeof REQUIRED_CONSENT_TYPES)[number]) &&
+          latest.get(type)?.agreed === true,
+      ),
       // 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. overseas_transfer 는 가입 필수라
       // 보통 비어 있고, 가입 때 voice_biometric 을 거절한 사람만 여기에 남는다 — 클라는
       // 목소리 등록 화면에서 이 값으로 인라인 동의 항목을 띄운다.
