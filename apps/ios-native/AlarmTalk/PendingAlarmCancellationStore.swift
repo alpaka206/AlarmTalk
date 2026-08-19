@@ -28,18 +28,46 @@ enum PendingAlarmCancellationStore {
         defaults.stringArray(forKey: key) ?? []
     }
 
+    /// 이 UUID 를 왜 끊으려 했는가.
+    ///
+    /// ⚠ **출처를 구분하지 않으면 회수가 남의 알람을 끈다**(Codex #699 P1).
+    /// 회수는 끊은 뒤 **행도 끄는데**(울려서 되살아난 경우를 되돌리려고), 그 처리가 맞는
+    /// 것은 **떠나는 계정의 종료**에서 온 UUID 뿐이다. 로그인 때 정리하는 **남의 계정**
+    /// 예약은 행을 일부러 켜 둔 것이라(자동 401 로 세션만 잃었다) 끄면 그 사람이 돌아왔을 때
+    /// 알람이 사라진다.
+    enum Origin: String {
+        /// 떠나는 계정의 종료 sweep — 행도 꺼져 있어야 한다.
+        case accountLeave
+        /// 로그인 시 남의 계정 예약 정리 — **행은 건드리지 않는다.**
+        case foreignCleanup
+    }
+
     /// 취소에 실패했을 때 적는다. 이미 있으면 그대로 둔다.
-    static func add(_ alarmKitID: String?) {
+    static func add(_ alarmKitID: String?, origin: Origin) {
         guard let id = alarmKitID?.nilIfBlank else { return }
         var current = all
         guard !current.contains(id) else { return }
         current.append(id)
         defaults.set(current, forKey: key)
+        var origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
+        origins[id] = origin.rawValue
+        defaults.set(origins, forKey: originsKey)
     }
+
+    /// 그 UUID 의 출처. 기록이 없으면(이 빌드 이전) **행을 건드리지 않는 쪽**으로 본다 —
+    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
+    static func origin(of alarmKitID: String) -> Origin {
+        let origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
+        return origins[alarmKitID].flatMap(Origin.init(rawValue:)) ?? .foreignCleanup
+    }
+
+    private static let originsKey = "pending_alarm_cancellation_origins\(TestIsolation.storageSuffix)"
 
     /// 끊었거나, OS 에 더 이상 없다고 확인했을 때 지운다.
     static func remove(_ alarmKitID: String?) {
         guard let id = alarmKitID?.nilIfBlank else { return }
+        var origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
+        if origins.removeValue(forKey: id) != nil { defaults.set(origins, forKey: originsKey) }
         let next = all.filter { $0 != id }
         guard next.count != all.count else { return }
         defaults.set(next, forKey: key)
@@ -48,5 +76,6 @@ enum PendingAlarmCancellationStore {
     /// 테스트 전용 — 회차 사이를 갈라 준다.
     static func removeAll() {
         defaults.removeObject(forKey: key)
+        defaults.removeObject(forKey: originsKey)
     }
 }

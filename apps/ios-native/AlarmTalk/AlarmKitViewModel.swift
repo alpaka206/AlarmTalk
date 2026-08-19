@@ -55,7 +55,7 @@ final class AlarmKitViewModel: ObservableObject {
         do {
             try AlarmManager.shared.cancel(id: id)
         } catch {
-            PendingAlarmCancellationStore.add(id.uuidString)
+            PendingAlarmCancellationStore.add(id.uuidString, origin: pendingCancellationOrigin)
         }
         #endif
     }
@@ -92,6 +92,11 @@ final class AlarmKitViewModel: ObservableObject {
     var isLeavingAccount: Bool { leavingAccountDepth > 0 }
 
     private var leavingAccountDepth = 0
+
+    /// 지금 실패하는 취소가 **어느 맥락**인가. 회수가 행까지 끌지를 이 값이 가른다
+    /// (`PendingAlarmCancellationStore.Origin`). 기본은 남의 계정 정리 쪽 —
+    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
+    private var pendingCancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
 
     #if DEBUG
     /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
@@ -417,15 +422,20 @@ final class AlarmKitViewModel: ObservableObject {
         var cleared = 0
         // 이번 회차에 **끝난** UUID 들(끊었거나, OS 에 이미 없다고 확인했거나).
         var resolved: Set<String> = []
+        // ⚠ **출처는 지우기 전에 담아 둔다.** `remove` 가 출처 기록도 함께 지우므로,
+        // 아래 행 정리에서 읽으면 항상 기본값(남의 계정 정리)이 나와 **행이 영영 안 꺼진다.**
+        var resolvedOrigins: [String: PendingAlarmCancellationStore.Origin] = [:]
         for raw in pending {
             guard let uuid = UUID(uuidString: raw) else {
                 // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
                 PendingAlarmCancellationStore.remove(raw)
                 resolved.insert(raw)
                 continue
             }
             if !liveIDs.contains(uuid) {
                 // OS 에 이미 없다(사용자가 지웠거나 발화 후 사라졌다).
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
                 PendingAlarmCancellationStore.remove(raw)
                 resolved.insert(raw)
                 cleared += 1
@@ -433,6 +443,7 @@ final class AlarmKitViewModel: ObservableObject {
             }
             do {
                 try AlarmManager.shared.cancel(id: uuid)
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
                 PendingAlarmCancellationStore.remove(raw)
                 resolved.insert(raw)
                 cleared += 1
@@ -462,7 +473,10 @@ final class AlarmKitViewModel: ObservableObject {
             //
             // 손잡이가 **이 UUID 와 같을 때만** 여기 걸리므로, 그 사이 새 UUID 로 다시 예약된
             // 행(사용자가 직접 켠 경우)은 건드리지 않는다.
-            if record.enabled {
+            // ⚠ **행을 끄는 것은 '떠나는 계정의 종료' 에서 온 UUID 뿐이다**(Codex #699 P1).
+            // 로그인 때 정리한 **남의 계정** 예약은 행을 일부러 켜 둔 것이라(자동 401 로
+            // 세션만 잃었다) 여기서 끄면 그 사람이 돌아왔을 때 알람이 사라진다.
+            if record.enabled, resolvedOrigins[handle] == .accountLeave {
                 store.setEnabled(id: record.id, enabled: false)
             }
             store.clearScheduleHandle(id: record.id)
@@ -558,7 +572,11 @@ final class AlarmKitViewModel: ObservableObject {
         // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
         invalidateInFlightSchedules()
         leavingAccountDepth += 1
-        defer { leavingAccountDepth -= 1 }
+        pendingCancellationOrigin = .accountLeave
+        defer {
+            leavingAccountDepth -= 1
+            if leavingAccountDepth == 0 { pendingCancellationOrigin = .foreignCleanup }
+        }
         var stopped = 0
         // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
         // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
@@ -991,7 +1009,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 호출부마다 기억하게 하면 언젠가 빠뜨리고, 빠뜨린 그 예약은 **아무도 모르는
             // 고아**가 된다 — 행에도 없고 목록에도 없으니 다음 로그인도 회수 sweep 도
             // 찾지 못한다. 판정을 취소 지점 **한 곳**에 둔다.
-            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString)
+            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString, origin: pendingCancellationOrigin)
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }

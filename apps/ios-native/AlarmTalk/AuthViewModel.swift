@@ -361,6 +361,12 @@ final class AuthViewModel: ObservableObject {
                 nextSession.user.appleUserId = hint
             }
             persistSession(nextSession)
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            await claimAlarmsForExpiredOwnerBeforeSignIn()
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
             SessionExpiryStore.clear()
             lastNetworkError = nil
@@ -431,6 +437,12 @@ final class AuthViewModel: ObservableObject {
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             persistSession(nextSession)
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            await claimAlarmsForExpiredOwnerBeforeSignIn()
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
             SessionExpiryStore.clear()
             lastNetworkError = nil
@@ -464,6 +476,12 @@ final class AuthViewModel: ObservableObject {
                 verificationCode: verificationCode
             )
             persistSession(nextSession)
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            await claimAlarmsForExpiredOwnerBeforeSignIn()
             // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
             SessionExpiryStore.clear()
             statusMessage = "환영해요! 계정이 만들어졌어요."
@@ -771,11 +789,17 @@ final class AuthViewModel: ObservableObject {
         //  2. 복구 표시가 없었다 → 아래 `onLeaveAccountStopAlarms` 는 저장소가 로드 전이면
         //     조용히 물러서는데, 그때 되짚을 근거가 하나도 없어 **탈퇴한 계정의 알람이
         //     그대로 예약된 채** 남는다.
+        // 계정이 사라지기 **전에** 뗀다(토큰이 아직 유효할 때).
+        // 즉시 탈퇴는 서버가 `push_tokens` 를 함께 지우므로(`lib/account-deletion.ts`)
+        // 여기서 실패해도 바인딩이 남지 않는다 — 재시도 근거를 붙들지 않는다.
         await onSignOutUnregisterPush(token)
-        PendingSignOutStore.mark(currentUserID)
 
         do {
             _ = try await api.deleteAccount(token: token)
+            // ⚠ **표시는 요청이 성공한 뒤에 남긴다**(Codex #699 P1). 먼저 남기면 요청이
+            // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
+            // 사용자를 로그아웃시키고 알람까지 끈다.**
+            PendingSignOutStore.mark(currentUserID)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
@@ -783,12 +807,14 @@ final class AuthViewModel: ObservableObject {
                 DynamicPromptPreferences.clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            await onLeaveAccountStopAlarms(currentUserID)
+            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 완료됐어요.")
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
-            // 서버 쪽은 계정 삭제로 이미 끝났고 푸시도 위에서 뗐다 — 표시를 내린다.
-            PendingSignOutStore.clear()
+            // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
+            // 저장소 로드가 상한 안에 안 끝나면 위 훅은 아무것도 못 끄고 물러서는데, 그때
+            // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
+            if cleaned { PendingSignOutStore.clear() }
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
         }
@@ -811,11 +837,20 @@ final class AuthViewModel: ObservableObject {
         // ⚠ 유예 탈퇴는 30일 안에 **복구할 수 있다** — 그때 다시 로그인하면 푸시가 다시
         // 등록되고(`registerToken`) 알람도 사용자가 켠다. 지금 떼는 것이 맞다:
         // 그 30일 동안 이 기기는 그 계정을 쓰지 않는데 알림만 받고 있을 이유가 없다.
-        await onSignOutUnregisterPush(token)
-        PendingSignOutStore.mark(currentUserID)
+        // ⚠ **유예 탈퇴는 즉시 탈퇴와 다르다** — 계정이 30일 동안 **살아 있으므로** 서버가
+        // `push_tokens` 를 지우지 않는다. 여기서 해제에 실패하면 그 30일 내내 이 기기로
+        // 그 계정 알림이 온다 — 재시도할 수 있게 토큰과 표시를 붙들어야 한다(Codex #699 P2).
+        let pushUnregistered = await onSignOutUnregisterPush(token)
 
         do {
             _ = try await api.requestAccountDeletion(token: token)
+            // 표시는 요청이 성공한 뒤에 남긴다(즉시 탈퇴 주석과 같은 이유).
+            PendingSignOutStore.mark(currentUserID)
+            if !pushUnregistered {
+                // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
+                // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
+                PendingSignOutStore.markServerCleanup(token: token)
+            }
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
@@ -823,11 +858,12 @@ final class AuthViewModel: ObservableObject {
                 DynamicPromptPreferences.clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            await onLeaveAccountStopAlarms(currentUserID)
+            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
-            PendingSignOutStore.clear()
+            // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
+            if cleaned && pushUnregistered { PendingSignOutStore.clear() }
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
         }
@@ -1173,7 +1209,9 @@ final class AuthViewModel: ObservableObject {
     ///
     /// ⚠ **자동 401 에서는 부르지 않는다.** 토큰이 낡은 것뿐인데 내일 아침 알람을
     /// 조용히 없애면 안 된다 — `signOut(revokeOnServer:)` 이 아니라 명시적 경로에서만 건다.
-    var onLeaveAccountStopAlarms: (String?) async -> Void = { _ in }
+    /// - Returns: 뒷정리가 **실제로 끝났는가**. 저장소가 로드되지 않아 물러선 경우 `false` —
+    ///   그때 복구 표시를 지우면 되짚을 근거가 사라진다(Codex #699 P1).
+    var onLeaveAccountStopAlarms: (String?) async -> Bool = { _ in true }
 
     /// **세션이 끝나기 직전에 소유자 미기록 알람에 그 계정을 새기는** 훅.
     ///
@@ -1196,6 +1234,15 @@ final class AuthViewModel: ObservableObject {
     /// ⚠ 끊긴 로그아웃을 이어서 끝내려는데 **그 사이 다른 계정이 로그인해 있는** 경우가 있다.
     /// 그때 `finishInterruptedSignOut()` 을 부르면 **지금 쓰고 있는 사람을 로그아웃시킨다.**
     /// 서버 쪽(떠난 계정의 푸시 바인딩·토큰)만 정리하고 물러선다.
+    /// 로그인 확정 **전에** 자동 만료 계정의 소유자 미기록 행을 그 계정으로 새긴다.
+    ///
+    /// 저장소 로드를 기다린 뒤 새기므로, 콜드 스타트에서 로드보다 로그인이 빨라도 놓치지 않는다.
+    /// 새길 것이 없으면 아무 일도 하지 않는다.
+    private func claimAlarmsForExpiredOwnerBeforeSignIn() async {
+        guard let expired = SessionExpiryStore.expiredOwnerUserId else { return }
+        await onSessionEndClaimAlarms(expired)
+    }
+
     func finishInterruptedServerCleanupOnly() async {
         let cleaned = await Self.runServerSignOutCleanup(
             token: PendingSignOutStore.serverCleanupToken,
@@ -1233,14 +1280,18 @@ final class AuthViewModel: ObservableObject {
     ) async -> Bool {
         guard let token = token?.nilIfBlank else { return true }
         let unregistered = await unregister(token)
-        var revoked = false
+        // ⚠ **해제가 실패했으면 토큰을 폐기하지 말 것**(Codex #699 P2). 폐기는 `token_epoch`
+        // 를 올려 그 토큰을 죽인다 — 다음 실행이 재시도하려 해도 **401 이 영원히** 돌아오고,
+        // 떠난 계정의 푸시 바인딩은 그대로 남는다. 재시도할 수 있게 토큰을 살려 둔다.
+        guard unregistered else { return false }
         do {
             try await api.logout(token: token)
-            revoked = true
+            return true
         } catch {
-            revoked = (error as? APIError)?.isUnauthorized == true
+            // 401 은 이미 폐기됐다는 뜻이라 성공으로 본다 — 아니면 지울 수도 없는 것을
+            // 영원히 재시도하게 된다.
+            return (error as? APIError)?.isUnauthorized == true
         }
-        return unregistered && revoked
     }
 
     func signOutExplicitly() {

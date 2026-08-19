@@ -170,7 +170,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 머지 경로는 throw 하지 않으므로 failed 는 0 이지만, Android 카운터 의미를
             // 보존하고 향후 throwing 작업이 추가돼도 retry 판단이 그대로 동작한다.)
             do {
-                switch try await mergeRemote(remote: remote, mapped: mapped, token: token) {
+                switch try await mergeRemote(remote: remote, mapped: mapped, token: token, pullOwnerUserID: userID) {
                 case .imported: imported += 1
                 case .updated: updated += 1
                 case .unchanged: break
@@ -214,7 +214,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// 단일 remote 알람을 로컬 store 와 머지하고, 집계용 결과를 반환한다.
     @discardableResult
-    private func mergeRemote(remote: RemoteAlarm, mapped initialMapped: LocalAlarmRecord, token: String) async throws -> MergeOutcome {
+    /// - Parameter pullOwnerUserID: 이 pull 이 **첫 네트워크 호출 전에** 잡아 둔 계정.
+    ///   반영 직전에 지금 계정과 대조해, 그 사이에 로그아웃·계정 전환이 끝났으면 물러선다.
+    private func mergeRemote(
+        remote: RemoteAlarm,
+        mapped initialMapped: LocalAlarmRecord,
+        token: String,
+        pullOwnerUserID: String
+    ) async throws -> MergeOutcome {
         var mapped = initialMapped
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
@@ -223,6 +230,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
             mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
+            guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
             // ⚠ **쓰기 직전에 취소를 다시 본다**(2026-08-18 Codex #697 P2).
             // 취소는 협력적이라 요청이 **성공한 직후**에 올 수 있다 — 그러면 `catch` 에
@@ -257,6 +266,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             return .updated
         } else {
             mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
+            guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
             // 위와 같은 이유 — 성공 직후에 온 취소는 `catch` 에 안 걸린다.
             try Task.checkCancellation()
@@ -270,6 +281,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 return .updated
             }
 
+            // ⚠ **음원을 받는 사이에 계정이 떠났으면 심지 않는다**(Codex #699 P1).
+            // 이 행은 **아직 없던 행**이라 위 가드(지워졌나·울리는 중인가·수신자가 고쳤나)에
+            // 하나도 안 걸린다 — 그대로 심으면 로그아웃 상태에서 **켜진 알람이 새로 생기고
+            // 예약까지 걸려**, 알람 화면에 못 들어가는 사용자가 끌 수가 없다.
+            // 종료 게이트(`isLeavingAccount`)는 sweep 가 도는 동안만 닫혀 있어 이걸 못 막는다.
+            // 안드로이드 짝은 `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조다.
+            guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
             // 신규 import.
             store.upsert(mapped, syncedNow: true)
 

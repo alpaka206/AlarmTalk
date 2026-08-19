@@ -629,33 +629,50 @@ final class PendingCancellationTests: XCTestCase {
     override func tearDown() { PendingAlarmCancellationStore.removeAll() }
 
     func test_적어_두면_남는다() {
-        PendingAlarmCancellationStore.add("KIT-1")
+        PendingAlarmCancellationStore.add("KIT-1", origin: .accountLeave)
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
 
     func test_같은_것을_두_번_적지_않는다() {
-        PendingAlarmCancellationStore.add("KIT-1")
-        PendingAlarmCancellationStore.add("KIT-1")
+        PendingAlarmCancellationStore.add("KIT-1", origin: .accountLeave)
+        PendingAlarmCancellationStore.add("KIT-1", origin: .accountLeave)
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"], "회차마다 목록이 불어난다")
     }
 
     func test_끊으면_지운다() {
-        PendingAlarmCancellationStore.add("KIT-1")
-        PendingAlarmCancellationStore.add("KIT-2")
+        PendingAlarmCancellationStore.add("KIT-1", origin: .accountLeave)
+        PendingAlarmCancellationStore.add("KIT-2", origin: .accountLeave)
         PendingAlarmCancellationStore.remove("KIT-1")
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-2"])
     }
 
     func test_빈_값은_적지_않는다() {
-        PendingAlarmCancellationStore.add(nil)
-        PendingAlarmCancellationStore.add("   ")
+        PendingAlarmCancellationStore.add(nil, origin: .accountLeave)
+        PendingAlarmCancellationStore.add("   ", origin: .accountLeave)
         XCTAssertTrue(PendingAlarmCancellationStore.all.isEmpty)
     }
 
     /// ⚠ **행이 다시 켜져도 목록은 그대로다.** 이게 행 상태로 기억하지 않는 이유다 —
     /// 고아 예약이 울려 `markRinging` 이 행을 켜도 회수 대상에서 빠지지 않아야 한다.
+    /// ⚠ **출처를 구분한다**(Codex #699 P1). 회수는 끊은 뒤 행도 끄는데, 그 처리가 맞는 것은
+    /// **떠나는 계정의 종료**에서 온 UUID 뿐이다 — 로그인 때 정리한 남의 계정 예약은 행을
+    /// 일부러 켜 둔 것이라(자동 401) 끄면 그 사람이 돌아왔을 때 알람이 사라진다.
+    func test_출처를_함께_기억한다() {
+        PendingAlarmCancellationStore.add("KIT-LEAVE", origin: .accountLeave)
+        PendingAlarmCancellationStore.add("KIT-FOREIGN", origin: .foreignCleanup)
+
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-LEAVE"), .accountLeave)
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-FOREIGN"), .foreignCleanup)
+    }
+
+    /// 기록이 없으면(이 빌드 이전에 적힌 값) **행을 건드리지 않는 쪽**으로 본다 —
+    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
+    func test_출처_기록이_없으면_남의_것으로_본다() {
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-UNKNOWN"), .foreignCleanup)
+    }
+
     func test_행_상태와_무관하다() {
-        PendingAlarmCancellationStore.add("KIT-1")
+        PendingAlarmCancellationStore.add("KIT-1", origin: .accountLeave)
         // (행을 어떻게 만지든 이 목록은 영향을 받지 않는다 — 저장소가 분리돼 있다.)
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }

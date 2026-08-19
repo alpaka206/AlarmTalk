@@ -308,14 +308,15 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in
             await deps.alarmStore.waitUntilLoadedFromDisk()
-            // 못 기다렸으면 표시를 남긴 채 물러선다(위 주석과 같은 이유).
-            guard deps.alarmStore.hasLoadedFromDisk else { return }
+            // 못 기다렸으면 **끝내지 못했다고 알린다** — 호출부가 복구 표시를 붙들어 둔다.
+            guard deps.alarmStore.hasLoadedFromDisk else { return false }
             _ = await deps.alarmKit.stopAllScheduledAlarms(
                 store: deps.alarmStore,
                 ownerUserId: departingUserID
             )
             // ⚠ 여기서 표시를 내리지 않는다 — **서버 쪽 뒷정리가 아직 남았다**
             // (푸시 해제·토큰 폐기). `signOutExplicitly` 가 그걸 마친 뒤 내린다.
+            return true
         }
 
         BackgroundSyncTask.register(
