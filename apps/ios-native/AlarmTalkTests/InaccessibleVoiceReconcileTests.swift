@@ -599,39 +599,47 @@ final class SchedulingSnapshotTests: XCTestCase {
     }
 }
 
-/// **취소에 실패해 남겨 둔 손잡이는 반드시 회수돼야 한다** (Codex #699 P1).
+/// **못 끊은 예약은 행 상태와 무관하게 기억한다** (Codex #699 P1).
 ///
-/// 남기기만 하고 쓰는 데가 없으면 남긴 의미가 없다 — 그 행은 꺼져 있어 복구가 건너뛰고,
-/// 같은 계정으로 다시 로그인해도 '남의 것 취소' 가 건너뛴다. 그동안 OS 예약은 살아 있어
-/// **꺼 놓은 알람이 울리고**, 울리면 `markRinging` 이 그 행을 도로 켠다.
+/// 처음에는 "꺼졌는데 손잡이가 남은 행" 으로 회수 대상을 골랐는데, 그 판정은 두 군데서
+/// 무너진다 — 그 예약이 **울리면** `markRinging` 이 행을 도로 켜 대상에서 빠지고,
+/// 남의 계정 알람은 애초에 끄지 않으므로 켜진 채라 대상이 아니다.
+/// 그래서 행이 아니라 **UUID** 를 따로 적는다.
 @MainActor
 final class PendingCancellationTests: XCTestCase {
 
-    private func alarm(id: String, enabled: Bool, kitID: String?) -> LocalAlarmRecord {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        var r = LocalAlarmRecord(
-            id: id, label: "아침", hour: 7, minute: 0, fireAtMillis: now + 60_000,
-            origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: now, updatedAtMillis: now
-        )
-        r.enabled = enabled
-        r.alarmKitID = kitID
-        return r
+    override func setUp() { PendingAlarmCancellationStore.removeAll() }
+    override func tearDown() { PendingAlarmCancellationStore.removeAll() }
+
+    func test_적어_두면_남는다() {
+        PendingAlarmCancellationStore.add("KIT-1")
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
 
-    func test_꺼졌는데_손잡이가_남은_행만_회수한다() {
-        let candidates = AlarmKitViewModel.pendingCancellationCandidates([
-            alarm(id: "못끔", enabled: false, kitID: "KIT-1"),   // 취소 실패로 남긴 것
-            alarm(id: "정상끔", enabled: false, kitID: nil),      // 평범하게 꺼진 행
-            alarm(id: "켜짐", enabled: true, kitID: "KIT-2"),     // 멀쩡히 예약된 알람
-        ])
-
-        XCTAssertEqual(candidates.map(\.id), ["못끔"], "켜진 알람을 끊으면 멀쩡한 알람이 죽는다")
+    func test_같은_것을_두_번_적지_않는다() {
+        PendingAlarmCancellationStore.add("KIT-1")
+        PendingAlarmCancellationStore.add("KIT-1")
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"], "회차마다 목록이 불어난다")
     }
 
-    func test_회수할_것이_없으면_빈_목록() {
-        let candidates = AlarmKitViewModel.pendingCancellationCandidates([
-            alarm(id: "켜짐", enabled: true, kitID: "KIT-1")
-        ])
-        XCTAssertTrue(candidates.isEmpty)
+    func test_끊으면_지운다() {
+        PendingAlarmCancellationStore.add("KIT-1")
+        PendingAlarmCancellationStore.add("KIT-2")
+        PendingAlarmCancellationStore.remove("KIT-1")
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-2"])
+    }
+
+    func test_빈_값은_적지_않는다() {
+        PendingAlarmCancellationStore.add(nil)
+        PendingAlarmCancellationStore.add("   ")
+        XCTAssertTrue(PendingAlarmCancellationStore.all.isEmpty)
+    }
+
+    /// ⚠ **행이 다시 켜져도 목록은 그대로다.** 이게 행 상태로 기억하지 않는 이유다 —
+    /// 고아 예약이 울려 `markRinging` 이 행을 켜도 회수 대상에서 빠지지 않아야 한다.
+    func test_행_상태와_무관하다() {
+        PendingAlarmCancellationStore.add("KIT-1")
+        // (행을 어떻게 만지든 이 목록은 영향을 받지 않는다 — 저장소가 분리돼 있다.)
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
 }

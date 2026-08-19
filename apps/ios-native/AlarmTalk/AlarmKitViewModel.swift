@@ -366,48 +366,44 @@ final class AlarmKitViewModel: ObservableObject {
     ///
     /// 소유자·`enabled` 와 무관하게 돈다. 지우는 것은 **우리가 못 끈 예약**뿐이라 남의
     /// 계정 것을 건드릴 위험이 없다.
-    /// 회수 대상: **꺼져 있는데 손잡이가 남은 행.**
-    ///
-    /// 평소에는 끄면서 손잡이를 함께 비우므로(`LocalAlarmStore.setEnabled`), 이 조합은
-    /// '취소에 실패해 일부러 남겼다' 는 뜻뿐이다. 켜진 행은 대상이 아니다 — 그건 정상적으로
-    /// 예약돼 있는 것이고, 여기서 끊으면 멀쩡한 알람을 죽인다.
-    nonisolated static func pendingCancellationCandidates(
-        _ alarms: [LocalAlarmRecord]
-    ) -> [LocalAlarmRecord] {
-        alarms.filter { !$0.enabled && $0.alarmKitID != nil }
-    }
-
     @discardableResult
     func retryPendingCancellations(store: LocalAlarmStore) async -> Int {
         #if canImport(AlarmKit)
-        let pending = Self.pendingCancellationCandidates(store.alarms)
+        let pending = PendingAlarmCancellationStore.all
         guard !pending.isEmpty else { return 0 }
         // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
-        // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 손잡이는 그대로 남아 다음 기회에.
+        // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 목록은 그대로 남아 다음 기회에.
         guard let live = try? AlarmManager.shared.alarms else { return 0 }
         let liveIDs = Set(live.map(\.id))
         var cleared = 0
-        for record in pending {
-            guard let uuid = record.alarmKitUUID else {
-                // 손잡이가 UUID 로 읽히지 않는다 — 취소할 방법이 없으니 붙들고 있을 이유도 없다.
-                store.clearScheduleHandle(id: record.id)
+        for raw in pending {
+            guard let uuid = UUID(uuidString: raw) else {
+                // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
+                PendingAlarmCancellationStore.remove(raw)
                 continue
             }
             if !liveIDs.contains(uuid) {
-                // OS 에 이미 없다. 손잡이만 남은 것이므로 비운다.
-                store.clearScheduleHandle(id: record.id)
+                // OS 에 이미 없다(사용자가 지웠거나 발화 후 사라졌다).
+                PendingAlarmCancellationStore.remove(raw)
                 cleared += 1
                 continue
             }
             do {
                 try AlarmManager.shared.cancel(id: uuid)
-                store.clearScheduleHandle(id: record.id)
+                PendingAlarmCancellationStore.remove(raw)
                 cleared += 1
             } catch {
                 // ⚠ **여기서 `statusMessage` 를 세우지 않는다.** 이 sweep 는 앱을 열 때마다
                 // 도는데, 사용자가 시킨 적 없는 실패를 매번 알리면 그 문구가 소음이 된다.
-                // 손잡이를 그대로 두어 다음 기회에 다시 시도한다.
+                // 목록에 그대로 두어 다음 기회에 다시 시도한다.
             }
+        }
+        // 목록에서 사라진 예약을 가리키던 손잡이는 함께 비운다 — 남겨 두면 다음에 켤 때
+        // 어긋난다. (행이 이미 새 UUID 로 다시 예약됐다면 그 값은 건드리지 않는다.)
+        let stillPending = Set(PendingAlarmCancellationStore.all)
+        for record in store.alarms {
+            guard let handle = record.alarmKitID, !record.enabled, !stillPending.contains(handle) else { continue }
+            store.clearScheduleHandle(id: record.id)
         }
         return cleared
         #else
@@ -437,6 +433,10 @@ final class AlarmKitViewModel: ObservableObject {
             if await cancelScheduledAlarm(record: record) {
                 store.clearScheduleHandle(id: record.id)
                 cancelled += 1
+            } else {
+                // ⚠ 남의 계정 행은 **끄지 않는다**(그 의도는 그 사람 것이다). 그래서 행
+                // 상태로는 이 실패를 기억할 수 없다 — UUID 로 적어야 회수 대상이 된다.
+                PendingAlarmCancellationStore.add(record.alarmKitID)
             }
         }
         return cancelled
@@ -462,6 +462,10 @@ final class AlarmKitViewModel: ObservableObject {
                     // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
                     store.clearScheduleHandle(id: record.id)
                 } else {
+                    // ⚠ **행이 아니라 UUID 로 적는다**(`PendingAlarmCancellationStore` 주석).
+                    // 행 상태로 기억하면 그 예약이 울리는 순간 `markRinging` 이 행을 도로 켜
+                    // 회수 대상에서 빠진다 — 회수하려던 고아를 회수 시도가 만들어 낸다.
+                    PendingAlarmCancellationStore.add(record.alarmKitID)
                     keepHandle = true
                 }
             }

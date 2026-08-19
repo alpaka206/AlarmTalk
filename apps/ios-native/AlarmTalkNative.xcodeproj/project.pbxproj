@@ -303,6 +303,7 @@
 		FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */; };
 		FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7EBDD70C5FB802C400559B /* AlarmsListView.swift */; };
 		FE2B275819243CE8B5EE7AC1 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */; };
+		FED2B0B63F72394D0E380983 /* PendingAlarmCancellationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */; };
 		FF962A30E585F0B94F270A70 /* voice_greeting_adam_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 927710A2BFE14D1CDCFEAC77 /* voice_greeting_adam_ko.mp3 */; };
 		FF9FFB0FCEFBA8AB01BC3511 /* NonceGeneratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B49A7ECFA042EE038EE23D /* NonceGeneratorTests.swift */; };
 		FFAF00219B2E6FF83B6357FA /* AlarmSoundResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601CCC6270DF54E411B83B10 /* AlarmSoundResolver.swift */; };
@@ -567,6 +568,7 @@
 		ACD1A5C25E56DD57B17BE473 /* UpdateRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateRequiredView.swift; sourceTree = "<group>"; };
 		AFDD372A3465266C2A553883 /* HelperFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperFormatters.swift; sourceTree = "<group>"; };
 		B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketVariantResolver.swift; sourceTree = "<group>"; };
+		B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingAlarmCancellationStore.swift; sourceTree = "<group>"; };
 		B5CCEC96A4778ED2DEC90A7C /* CodeRegisterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeRegisterRow.swift; sourceTree = "<group>"; };
 		B63D58A42E36FE6F60DC05E0 /* ConsentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentView.swift; sourceTree = "<group>"; };
 		B7065575F6074636D0156AA8 /* RepeatCardSpacingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatCardSpacingUITests.swift; sourceTree = "<group>"; };
@@ -1143,6 +1145,7 @@
 				26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */,
 				53224031E3CB9F18979BB95B /* NonceGenerator.swift */,
 				ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */,
+				B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */,
 				49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */,
 				BB22C58302991D362441AF21 /* PushNotificationCoordinator.swift */,
 				F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */,
@@ -1516,6 +1519,7 @@
 				6952BAD905EFB40D45C4EEF4 /* PaidGateCopy.swift in Sources */,
 				E94CC690A94BFFFF3999081A /* PaidVoiceGate.swift in Sources */,
 				5D1519E70208996918C80652 /* PasswordResetView.swift in Sources */,
+				FED2B0B63F72394D0E380983 /* PendingAlarmCancellationStore.swift in Sources */,
 				86FBE60255EEA72E499A3DF8 /* PendingPlanPurchase.swift in Sources */,
 				33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */,
 				A2CA2AEBEAE902FB976735CA /* PlanTier.swift in Sources */,

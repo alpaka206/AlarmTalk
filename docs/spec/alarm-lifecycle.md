@@ -74,8 +74,16 @@
 로그인해도 '남의 것 취소' 가 건너뛴다. 그동안 예약은 살아 있어 **꺼 놓은 알람이 울리고**,
 울리는 순간 `markRinging` 이 그 행을 **도로 켠다.**
 
-회수 대상은 **꺼져 있는데 손잡이가 남은 행**이다. 평소에는 끄면서 손잡이를 함께 비우므로
-이 조합은 '취소 실패' 에서만 생긴다. 앱 시작·전경 복귀에서 재예약보다 **먼저** 돈다.
+⚠ **회수 대상을 행 상태로 고르지 말 것**(같은 리뷰에서 한 번 더 뒤집혔다). "꺼졌는데
+손잡이가 남은 행" 으로 골랐더니 두 군데서 무너졌다:
+
+1. 회수가 또 실패한 뒤 그 예약이 **울리면** `markRinging` 이 행을 도로 켜서 다음 회차부터
+   대상에서 빠진다 — **회수하려던 고아를 회수 시도가 만들어 낸다.**
+2. 남의 계정 알람은 **끄지 않으므로**(그 의도는 그 사람 것이다) 켜진 채라 애초에 대상이 아니다.
+
+그래서 행이 아니라 **UUID 를 따로 적는다.** 행 생애(켜짐·꺼짐·삭제·재예약)와 무관해지고,
+행이 새 UUID 로 다시 예약돼도 옛 고아를 잃지 않는다 — `alarmKitID` 한 칸으로는 둘을
+동시에 들 수 없다. 앱 시작·전경 복귀에서 재예약보다 **먼저** 돈다.
 
 ### 1-4. 삭제는 **예약을 먼저** 끊는다
 
@@ -161,6 +169,6 @@
 | 1-5 `.failed` 낙인 규칙 | — | `AlarmRepository` 의 두 `AlarmStates.FAILED` 자리 | `LocalAlarmStore.markFailed` 의 `enabled` 가드 |
 | 1-5 행 경고 문구 | — | `ui/components/ControlsAndPermissions.alarmRowNotice` | `Views/Alarms/AlarmRow.rowNotice` |
 | 1-6 업데이트 뒤 재예약 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms` |
-| 1-3 못 끊은 예약 회수 | — | (해당 없음 — `AlarmManager.cancel` 은 실패를 알리지 않는다) | `AlarmKitViewModel.retryPendingCancellations` |
+| 1-3 못 끊은 예약 회수 | — | (해당 없음 — `AlarmManager.cancel` 은 실패를 알리지 않는다) | `AlarmKitViewModel.retryPendingCancellations` + `PendingAlarmCancellationStore` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |
