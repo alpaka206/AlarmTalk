@@ -145,12 +145,10 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     ///   A 의 바인딩은 B 가 등록할 때 서버가 이미 지웠다(`token = ? AND user_id != ?`).
     @discardableResult
     func unregisterCurrentToken(authToken: String, expectedOwnerUserID: String? = nil) async -> Bool {
-        if let expected = expectedOwnerUserID?.nilIfBlank,
-           let current = lastRegisteredUserID?.nilIfBlank,
-           current != expected {
-            // 이 기기 토큰은 이미 다른 계정 것이다 — 지울 것이 없다.
-            return true
-        }
+        // ⚠ **줄부터 선다 — 여기서 미리 판단하지 않는다**(Codex #699 P2). 앞선
+        // `registerToken` 이 아직 줄에 있거나 날아가는 중이면 캐시는 **옛 주인**을 가리킨다.
+        // 그걸 보고 "내 것이 아니다" 며 그냥 돌아가면, 뒤이어 끝난 그 등록이 **떠난 계정에
+        // 기기를 묶어 놓은 채** 남는다 — 뒤에 정리할 사람이 없다.
         var result = false
         await serializePushMutation { [weak self] in
             guard let self else { return }

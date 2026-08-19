@@ -877,6 +877,38 @@ final class ServerSignOutCleanupTests: XCTestCase {
         XCTAssertEqual(seenOwner ?? nil, "A", "누구 몫인지 모르면 남의 푸시를 끊는다")
     }
 
+    /// ⚠ **철회되면 서버 호출 자체를 멈춘다**(Codex #699 P1). 로컬 `signOut` 만 막는 것으로는
+    /// 늦다 — `/auth/logout` 이 이미 `token_epoch` 를 올려 **방금 되살린 세션을 죽인 뒤**다.
+    func test_더_이상_필요없으면_서버를_부르지_않는다() async {
+        let api = StubAPI()
+        var unregisterCalls = 0
+        let done = await AuthViewModel.runServerSignOutCleanup(
+            token: "T",
+            ownerUserId: "A",
+            unregister: { _, _ in unregisterCalls += 1; return true },
+            api: api,
+            stillNeeded: { false }
+        )
+        XCTAssertFalse(done)
+        XCTAssertEqual(unregisterCalls, 0)
+        XCTAssertEqual(api.logoutCalls, 0, "철회됐는데 폐기하면 되살린 세션이 죽는다")
+    }
+
+    /// 해제가 도는 사이에 철회되면 **폐기는 하지 않는다** — 폐기는 되돌릴 수 없다.
+    func test_해제_뒤에_철회되면_폐기하지_않는다() async {
+        let api = StubAPI()
+        var needed = true
+        let done = await AuthViewModel.runServerSignOutCleanup(
+            token: "T",
+            ownerUserId: "A",
+            unregister: { _, _ in needed = false; return true },   // 해제 도중 철회된 상황
+            api: api,
+            stillNeeded: { needed }
+        )
+        XCTAssertFalse(done)
+        XCTAssertEqual(api.logoutCalls, 0)
+    }
+
     func test_토큰이_없으면_할_일이_없다() async {
         let api = StubAPI()
         let done = await AuthViewModel.runServerSignOutCleanup(token: nil, ownerUserId: nil, unregister: { _, _ in true }, api: api)

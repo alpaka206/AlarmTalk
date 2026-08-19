@@ -1287,7 +1287,8 @@ final class AuthViewModel: ObservableObject {
             token: PendingSignOutStore.serverCleanupToken(for: userId),
             ownerUserId: userId,
             unregister: onSignOutUnregisterPush,
-            api: api
+            api: api,
+            stillNeeded: { PendingSignOutStore.isPending(userId) }
         )
         if cleaned { PendingSignOutStore.clear(userId) }
     }
@@ -1304,7 +1305,8 @@ final class AuthViewModel: ObservableObject {
             token: revokeToken,
             ownerUserId: userId,
             unregister: onSignOutUnregisterPush,
-            api: api
+            api: api,
+            stillNeeded: { PendingSignOutStore.isPending(userId) }
         )
         // ⚠ **철회됐는지 다시 본다**(Codex #699 P1). 위 서버 왕복이 도는 사이에 그 사용자가
         // 탈퇴를 철회할 수 있는데, 그때 세션 id 는 **그대로**라 계정 비교만으로는 못 걸러진다.
@@ -1327,18 +1329,26 @@ final class AuthViewModel: ObservableObject {
     ///
     /// 401 은 **성공으로 본다** — 그 토큰은 이미 폐기됐다는 뜻이라, 실패로 치면 지울 수도
     /// 없는 것을 영원히 재시도하게 된다.
+    /// - Parameter stillNeeded: **각 서버 호출 직전에** 다시 묻는다. 그 사이에 사용자가
+    ///   탈퇴를 철회하면 그 계정은 **되살아난 상태**인데, 그대로 `/auth/logout` 을 부르면
+    ///   `token_epoch` 가 올라가 **방금 되살린 세션이 죽는다**(Codex #699 P1).
+    ///   로컬 `signOut` 만 막는 것으로는 늦다 — 서버 쪽은 이미 벌어진 뒤다.
     static func runServerSignOutCleanup(
         token: String?,
         ownerUserId: String?,
         unregister: (String, String?) async -> Bool,
-        api: AuthAPIProviding
+        api: AuthAPIProviding,
+        stillNeeded: () -> Bool = { true }
     ) async -> Bool {
         guard let token = token?.nilIfBlank else { return true }
+        guard stillNeeded() else { return false }
         let unregistered = await unregister(token, ownerUserId)
         // ⚠ **해제가 실패했으면 토큰을 폐기하지 말 것**(Codex #699 P2). 폐기는 `token_epoch`
         // 를 올려 그 토큰을 죽인다 — 다음 실행이 재시도하려 해도 **401 이 영원히** 돌아오고,
         // 떠난 계정의 푸시 바인딩은 그대로 남는다. 재시도할 수 있게 토큰을 살려 둔다.
         guard unregistered else { return false }
+        // ⚠ 해제가 도는 사이에 철회됐을 수 있다 — 폐기는 되돌릴 수 없다.
+        guard stillNeeded() else { return false }
         do {
             try await api.logout(token: token)
             return true
