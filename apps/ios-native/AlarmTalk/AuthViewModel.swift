@@ -77,6 +77,29 @@ final class AuthViewModel: ObservableObject {
     /// (`ui/auth/AuthScreen.kt` 의 `loginError`).
     @Published var loginError: String?
 
+    /// 진행 중인 **서버 쪽 로그아웃 뒷정리**. 로그인은 이게 끝난 뒤에 세션을 심는다.
+    ///
+    /// ⚠ 표시를 지우는 것으로는 **이미 날아간 요청을 취소하지 못한다**(Codex #699 P1).
+    /// `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 처리되는 동안
+    /// 새 로그인이 끝나면 **방금 발급받은 세션이 무효가 된다.** 그래서 순서를 세운다.
+    private var authServerMutation: Task<Void, Never>?
+
+    /// 앞선 서버 뒷정리가 끝난 뒤에 실행한다.
+    private func serializeAuthServerMutation(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = authServerMutation
+        let current = Task { @MainActor in
+            await previous?.value
+            await body()
+        }
+        authServerMutation = current
+        await current.value
+    }
+
+    /// 로그인 직전에 부른다 — 진행 중인 로그아웃 뒷정리가 끝나기를 기다린다.
+    func awaitPendingServerSignOut() async {
+        await authServerMutation?.value
+    }
+
     /// 로그인 실패를 사용자 문구로 바꾼다.
     ///
     /// 서버는 **미가입과 비밀번호 불일치를 구분하지 않고** `AUTH_INVALID_CREDENTIALS` 401
@@ -373,6 +396,10 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
+            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
+            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
+            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -458,6 +485,10 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
+            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
+            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
+            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -506,6 +537,10 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
+            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
+            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
+            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -1295,6 +1330,10 @@ final class AuthViewModel: ObservableObject {
     }
 
     func finishInterruptedServerCleanupOnly(for userId: String?) async {
+        await serializeAuthServerMutation { [weak self] in await self?.runInterruptedServerCleanup(for: userId) }
+    }
+
+    private func runInterruptedServerCleanup(for userId: String?) async {
         let cleaned = await Self.runServerSignOutCleanup(
             token: PendingSignOutStore.serverCleanupToken(for: userId),
             ownerUserId: userId,
@@ -1306,6 +1345,10 @@ final class AuthViewModel: ObservableObject {
     }
 
     func finishInterruptedSignOut(for userId: String?) async {
+        await serializeAuthServerMutation { [weak self] in await self?.runInterruptedSignOut(for: userId) }
+    }
+
+    private func runInterruptedSignOut(for userId: String?) async {
         // ⚠ **그 계정의 토큰만 쓴다**(Codex #699 P1). 예전에는 `session?.token` 을 먼저 봤는데,
         // 이 뒷정리가 도는 사이에 **다른 계정이 로그인해 있을 수 있다** — 그러면 지금 쓰는
         // 사람의 토큰으로 푸시를 떼고 폐기하고, 이어지는 `signOut` 이 그 사람을 로그아웃시킨다.
@@ -1424,8 +1467,19 @@ final class AuthViewModel: ObservableObject {
             isBusy = false
             signOut(revokeOnServer: false)
             // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
-            if await Self.runServerSignOutCleanup(token: revokeToken, ownerUserId: departingUserID, unregister: unregister, api: api) {
-                PendingSignOutStore.clear(departingUserID)
+            // ⚠ 줄에 태운다 — 이 요청이 날아가는 동안 새 로그인이 끝나면 `token_epoch` 가
+            // 올라가 **그 새 세션이 죽는다**(`authServerMutation` 주석).
+            await serializeAuthServerMutation { [weak self] in
+                guard let self else { return }
+                if await Self.runServerSignOutCleanup(
+                    token: revokeToken,
+                    ownerUserId: departingUserID,
+                    unregister: unregister,
+                    api: self.api,
+                    stillNeeded: { PendingSignOutStore.isPending(departingUserID) }
+                ) {
+                    PendingSignOutStore.clear(departingUserID)
+                }
             }
         }
     }

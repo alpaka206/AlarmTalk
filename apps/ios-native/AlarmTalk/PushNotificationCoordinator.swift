@@ -106,9 +106,13 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     func registerToken(_ deviceToken: Data, session: AuthSession?) async {
         guard let session else { return }
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
-        guard hex != lastRegisteredToken || session.user.id != lastRegisteredUserID else { return }
+        // ⚠ **중복 판정도 줄을 선 뒤에 한다**(Codex #699 P2). 같은 계정이 다시 로그인할 때,
+        // 앞선 **해제**가 아직 줄에 있으면 캐시는 여전히 그 계정을 가리킨다 — 여기서 "이미
+        // 올렸다" 며 돌아가면 뒤이어 그 해제가 서버 바인딩을 지우고 캐시까지 비운다.
+        // 그러면 **등록해 줄 사람이 아무도 없다**(다음 실행의 APNs 등록까지 푸시를 놓친다).
         await serializePushMutation { [weak self] in
             guard let self else { return }
+            guard hex != self.lastRegisteredToken || session.user.id != self.lastRegisteredUserID else { return }
             do {
                 try await AlarmTalkAPI.shared.registerPushToken(
                     token: hex,
