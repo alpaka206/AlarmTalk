@@ -8,8 +8,13 @@ import XCTest
 ///
 /// ⚠ **이 테스트는 진짜 세션을 로그아웃시킨다.** `-UIPreviewSeed` 가짜 세션이 아니라
 /// 기기에 실제로 로그인된 계정을 쓴다 — 사용자 동의를 받고 돌린다(2026-08-19).
-/// 평소 스위트에 섞이면 안 되므로 이름을 `Device` 로 구분하고, 돌릴 때 `-only-testing` 으로
-/// 명시적으로 고른다.
+///
+/// ⚠ **이름과 주석으로는 못 막는다**(Codex #699 P1). 공유 스킴의 Test 액션은
+/// `AlarmTalkUITests` 타깃을 통째로 켜므로, 누가 평범하게 "테스트 실행" 만 해도 XCTest 가
+/// 이 클래스를 **찾아내서 실기기의 진짜 계정을 로그아웃시킨다.** 그래서 실행 시점에
+/// 환경변수로 **명시적으로 켜야만** 돌게 한다 — 안 켜면 건너뛴다.
+///
+///     ALARMTALK_DEVICE_LOGOUT_TEST=1 xcodebuild test -only-testing:... 
 ///
 /// 확인하는 것:
 ///   1. 알람을 만들면 켜진 채 예약된다.
@@ -41,7 +46,16 @@ final class LeaveAccountDeviceUITests: XCTestCase {
         add(tree)
     }
 
-    func test_로그아웃까지_한_흐름으로_밟는다() {
+    /// 실행 인자로 켜지 않으면 건너뛴다 — 이 테스트는 **진짜 계정을 로그아웃시킨다.**
+    private func requireExplicitOptIn() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["ALARMTALK_DEVICE_LOGOUT_TEST"] == "1",
+            "실기기 로그아웃 테스트는 ALARMTALK_DEVICE_LOGOUT_TEST=1 일 때만 돈다"
+        )
+    }
+
+    func test_로그아웃까지_한_흐름으로_밟는다() throws {
+        try requireExplicitOptIn()
         let app = XCUIApplication()
         app.launch()
 
@@ -100,7 +114,8 @@ final class LeaveAccountDeviceUITests: XCTestCase {
     ///
     /// 위 테스트가 로그아웃시켜 놓은 상태에서 이어서 돈다(이름 순서상 뒤에 실행된다).
     /// 일부러 틀린 비밀번호로 **진짜 서버에** 붙는다 — 그 401 이 있어야 문구가 뜬다.
-    func test_비밀번호가_틀리면_입력창_아래에_빨간_문구가_뜬다() {
+    func test_비밀번호가_틀리면_입력창_아래에_빨간_문구가_뜬다() throws {
+        try requireExplicitOptIn()
         let app = XCUIApplication()
         app.launchArguments = ["-UIPreviewAuthScreen", "login"]
         app.launch()

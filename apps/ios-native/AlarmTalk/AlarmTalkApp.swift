@@ -348,6 +348,12 @@ struct AlarmTalkApp: App {
                                 // 프로세스가 죽으면 키체인 세션이 그대로 남는다 — 알람만
                                 // 끄면 **직접 로그아웃한 사용자가 그 계정으로 로그인된 채**다.
                                 // 서버 뒷정리(푸시 해제·토큰 폐기)까지 여기서 마친다.
+                                // ⚠ **다시 확인한다 — 그 사이 탈퇴가 철회됐을 수 있다**
+                                // (Codex #699 P1). 위 `stopAllScheduledAlarms` 는 await 이라,
+                                // 그 동안 사용자가 탈퇴를 철회하면 표시가 지워진다. 그런데도
+                                // 나아가면 **방금 계정을 되살린 사람을 로그아웃시키고** 그
+                                // 세션의 토큰까지 폐기한다.
+                                guard PendingSignOutStore.pendingUserId != nil else { return }
                                 await auth.finishInterruptedSignOut()
                             } else {
                                 // 다른 계정이 쓰는 중 — 알람과 세션은 그대로 두고 서버만 정리한다.
