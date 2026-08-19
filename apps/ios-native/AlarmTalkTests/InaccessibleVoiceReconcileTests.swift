@@ -683,3 +683,63 @@ final class AccountEpochTests: XCTestCase {
         XCTAssertEqual(kit.accountEpoch, before + 1)
     }
 }
+
+/// **세션이 끝나기 전에 소유자를 새긴다** (Codex #699 P1).
+///
+/// 실제로 쓰이던 알람들은 소유자 없이 저장돼 있었다. 그 상태로 A 의 세션이 자동 401 로
+/// 끊기면 행은 계속 `nil` 이고, 뒤이어 B 가 로그인했다 **명시적으로 로그아웃**하면
+/// `nil` 을 '떠나는 계정 것' 으로 보는 규칙이 **A 의 알람을 영구히 끈다.**
+@MainActor
+final class ClaimUnownedAlarmsTests: XCTestCase {
+
+    private func makeStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("claim-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    private func alarm(id: String, owner: String?) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: id, label: "아침", hour: 7, minute: 0, fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: now, updatedAtMillis: now
+        )
+        r.enabled = true
+        r.ownerUserId = owner
+        return r
+    }
+
+    func test_소유자_미기록_행에만_새긴다() {
+        let store = makeStore()
+        [alarm(id: "옛행", owner: nil), alarm(id: "남의것", owner: "B")].forEach { store.upsert($0) }
+
+        let claimed = store.claimUnownedAlarms(for: "A")
+
+        XCTAssertEqual(claimed, 1)
+        XCTAssertEqual(store.record(id: "옛행")?.ownerUserId, "A")
+        XCTAssertEqual(store.record(id: "남의것")?.ownerUserId, "B", "남의 행에 덮어썼다")
+    }
+
+    /// 새겨 두면 그 뒤에 들어온 계정이 로그아웃해도 앞 계정 알람이 살아남는다.
+    func test_새긴_뒤에는_다음_계정_로그아웃이_건드리지_못한다() async {
+        let store = makeStore()
+        store.upsert(alarm(id: "A의것", owner: nil))
+        store.claimUnownedAlarms(for: "A")   // A 의 세션이 끝나는 순간
+
+        _ = await AlarmKitViewModel().stopAllScheduledAlarms(store: store, ownerUserId: "B")
+
+        XCTAssertEqual(
+            store.record(id: "A의것")?.enabled, true,
+            "새기지 않았다면 B 의 로그아웃이 A 의 알람을 영구히 껐을 것이다"
+        )
+    }
+
+    func test_계정이_없으면_아무것도_새기지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "옛행", owner: nil))
+        XCTAssertEqual(store.claimUnownedAlarms(for: nil), 0)
+        XCTAssertNil(store.record(id: "옛행")?.ownerUserId)
+    }
+}

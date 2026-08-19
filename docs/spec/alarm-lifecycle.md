@@ -55,6 +55,12 @@
 
 - 소유자 미기록(옛 행)은 **현재 계정 것으로 본다** — 저장소의 다른 파괴적 경로
   (무료 잠금·복원·목소리 강등)와 같은 관용이다.
+- ⚠ **그 관용을 쓰려면 세션이 끝날 때 소유자를 새겨 둬야 한다**(2026-08-19 Codex #699 P1).
+  실제로 쓰이던 알람들은 소유자 없이 저장돼 있었다. 그 상태로 A 의 세션이 자동 401 로
+  끊기면 행은 계속 `nil` 이고, 뒤이어 B 가 로그인했다 **명시적으로 로그아웃**하면
+  `nil` 을 '떠나는 계정 것' 으로 보는 규칙이 **A 의 알람을 영구히 끈다.**
+  `nil` 을 현재 계정으로 보는 것은 **읽기**에서는 맞지만, 파괴적 경로에서 같은 관용을
+  쓰려면 그전에 누구 것인지 확정해야 한다 — **세션이 끝나는 순간이 마지막 기회다.**
 - **로그아웃 상태(계정 없음)에서는 목록에 아무것도 보이지 않는다.**
 - ⚠ **재무장 대상은 "자동으로 끊긴 그 계정" 이다** — 계정이 없다고 건너뛰지도, 아무나
   되살리지도 않는다(2026-08-19 Codex #699 P1에서 양쪽 극단을 다 밟았다).
@@ -196,6 +202,7 @@
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-2 떠날 때 소유자 새기기 | — | `AlarmRepository.claimUnownedAlarmsFor` | `LocalAlarmStore.claimUnownedAlarms` ← `AuthViewModel.onSessionEndClaimAlarms` |
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |
 | 1-2 로그인 시 남의 예약 취소 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` | `AlarmKitViewModel.cancelScheduledAlarmsNotOwnedBy` |
 | 1-1 중복 시각 판정도 소유자로 | — | (해당 없음 — DAO 가 이미 소유자 조건) | `LocalAlarmStore.conflictingAlarms` · `requireUniqueTime` |

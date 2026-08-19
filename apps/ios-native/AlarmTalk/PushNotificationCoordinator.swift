@@ -274,6 +274,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 로그아웃·탈퇴 때 OS 예약을 끊고, **떠나는 계정의 행은 함께 끈다**(2026-08-19 지시).
         // 예약 취소는 전부에 걸지만 `enabled = false` 는 떠나는 계정 것만이다 — 남의 계정
         // 행까지 끄면 자동 401 로 세션만 잃은 사람의 알람이 영영 꺼진다(Codex #699 P1).
+        // 세션이 끝나기 직전에 소유자 미기록 알람에 그 계정을 새긴다 — 그 뒤로는
+        // 누구 것이었는지 알 길이 없다(안드로이드 `claimUnownedAlarmsFor` 의 짝).
+        deps.auth.onSessionEndClaimAlarms = { departingUserID in
+            deps.alarmStore.claimUnownedAlarms(for: departingUserID)
+        }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in
             _ = await deps.alarmKit.stopAllScheduledAlarms(
                 store: deps.alarmStore,

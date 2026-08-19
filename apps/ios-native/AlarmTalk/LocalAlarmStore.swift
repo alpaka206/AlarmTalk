@@ -116,6 +116,32 @@ final class LocalAlarmStore: ObservableObject {
         return alarms.filter { $0.ownerUserId == nil || $0.ownerUserId == owner }
     }
 
+    /// **소유자 미기록(옛 행)에 지금 떠나는 계정을 새긴다.** 안드로이드
+    /// `data/AlarmRepository.claimUnownedAlarmsFor` 의 짝이다.
+    ///
+    /// ⚠ 없으면 이렇게 된다(Codex #699 P1): 실제로 쓰이던 알람들은 소유자 없이 저장돼
+    /// 있었는데(`ownerUserId == nil`), A 의 세션이 자동 401 로 끊겨도 그 행들은 계속
+    /// `nil` 이다. 그 뒤 B 가 로그인했다 **명시적으로 로그아웃**하면, `nil` 을 '떠나는 계정
+    /// 것' 으로 보는 규칙이 **A 의 알람을 B 것으로 오인해 영구히 끈다** — A 가 돌아와도
+    /// 꺼진 채다.
+    ///
+    /// `nil` 을 현재 계정으로 보는 관용은 **읽기**에서는 맞다(옛 행을 보여 줘야 하니까).
+    /// 파괴적 경로에서 같은 관용을 쓰려면, 그전에 **누구 것인지 확정**해 둬야 한다.
+    /// 세션이 끝나는 순간이 그 마지막 기회다 — 그 뒤로는 누가 주인이었는지 알 길이 없다.
+    ///
+    /// - Returns: 새긴 행 수.
+    @discardableResult
+    func claimUnownedAlarms(for ownerUserId: String?) -> Int {
+        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
+        var claimed = 0
+        for index in alarms.indices where alarms[index].ownerUserId?.nilIfBlank == nil {
+            alarms[index].ownerUserId = owner
+            claimed += 1
+        }
+        if claimed > 0 { persist() }
+        return claimed
+    }
+
     func countByAudioCacheKey(_ key: String) -> Int {
         alarms.reduce(0) { acc, record in
             (record.audioCacheKey == key) ? acc + 1 : acc
