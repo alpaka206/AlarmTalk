@@ -201,7 +201,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 이유를 알 수 없다. 서버에 따로 물어 셋을 구분한다(`GET /alarm/declined`).
         // **못 물어보면 아무것도 지우지 않는다** — 네트워크 실패를 이유로 남의 알람을 지우는
         // 쪽으로 기울면 안 된다.
-        await applyRecipientState(
+        try await applyRecipientState(
             servedReceivedIDs: Set(receivedRemoteAlarms.map(\.id)),
             allRemoteIDs: Set(remoteAlarms.map(\.id)),
             token: token
@@ -222,7 +222,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             guard !Self.isInFlight(existing) else { return .unchanged }
 
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
-            mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
+            mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
 
             // ── 반영 구간: 위 `existing` 은 **다운로드 전 값**이다. 그걸로 판단·머지하면
             // 그 사이에 사용자가 한 일이 조용히 뒤집힌다. 전부 최신 행에서 다시 가져온다.
@@ -250,7 +250,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             }
             return .updated
         } else {
-            mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
+            mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
 
             // 다운로드 사이에 다른 회차가 같은 remote 를 먼저 넣었을 수 있다. 그대로 upsert 하면
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
@@ -464,8 +464,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         servedReceivedIDs: Set<String>,
         allRemoteIDs: Set<String>,
         token: String
-    ) async {
-        guard let state = await fetchRecipientState(token: token) else {
+    ) async throws {
+        guard let state = try await fetchRecipientState(token: token) else {
             // 못 물어봤다 — 아무것도 건드리지 않는다.
             Self.logger.warning("Pull sync: /alarm/declined unavailable; skipping recipient-state pruning")
             return
@@ -550,7 +550,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// `GET /alarm/declined` 를 **끝까지** 받아 온다. 한 페이지만 보고 지우면 뒤 페이지에
     /// 있는 그만받기 알람이 계속 울린다. 실패하면 nil — 호출자가 아무것도 안 한다.
-    private func fetchRecipientState(token: String) async -> (declined: Set<String>, revoked: Set<String>)? {
+    private func fetchRecipientState(token: String) async throws -> (declined: Set<String>, revoked: Set<String>)? {
         var declined = Set<String>()
         var revoked = Set<String>()
         var offset = 0
@@ -566,8 +566,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // 어긋나지 않는다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
                 offset += rows
             } catch {
-                // 취소든 오류든 **모른다**(nil)로 돌려준다 — 부분 결과로 판단하면
-                // 받은 알람을 잘못 지운다. 취소는 여기서 더 돌지 않는 것으로 충분하다.
+                // ⚠ **취소와 조회 실패를 가른다**(2026-08-18 Codex #697 P2).
+                // 예전에는 둘 다 `nil`(모른다)로 뭉갰다. `nil` 은 "부분 결과로 판단하지
+                // 않는다" 는 뜻으로는 맞지만 **회차를 멈추지는 못해서**, 취소된 뒤에도
+                // 호출부가 예약 재조정·복구까지 마저 돌았다.
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                // 진짜 조회 실패는 그대로 '모른다' — 부분 결과로 판단하면 받은 알람을
+                // 잘못 지운다.
                 return nil
             }
         }
@@ -632,7 +637,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         cacheKey: String,
         rawAudioUri: String?,
         token: String
-    ) async {
+    ) async throws {
         do {
             let audio = try await api.getTtsAudio(messageId: messageId, token: token)
             _ = try audioCache.cacheBytes(
@@ -646,16 +651,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 enforceMaxDuration: false
             )
         } catch {
-            // ⚠ 취소면 폴백을 타지 않는다 — 회차를 접으라는 신호인데 여기서 **또 다른
-            // 네트워크 요청**을 시작하는 셈이 된다. 캐시 키는 비어 있으므로 다음 sync 가
-            // 다시 시도한다(아래 폴백 실패 경로와 같은 결말).
-            if error is CancellationError || Task.isCancelled { return }
+            // ⚠ **취소면 던져 올린다.** 폴백을 타지 않는 것만으로는 부족했다 — 조용히
+            // 돌아가면 호출부가 "받아 오지 못했다" 로 읽어 목소리 메타를 벗기고 그대로
+            // 다시 예약한다. 회차를 접는 신호가 파괴적 쓰기로 바뀌는 자리다.
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
             // 캐싱 실패는 sync 전체를 실패시키지 않는다. 무음 알람을 막기 위해
             // 원본 오디오 URL 직다운로드 폴백을 먼저 시도한다.
             Self.logger.warning(
                 "TTS 캐싱 실패 (messageId: \(messageId, privacy: .public)): \(error.localizedDescription, privacy: .public) — 원본 오디오 폴백 시도"
             )
-            await cacheRawAudioFallback(rawAudioUri: rawAudioUri, cacheKey: cacheKey, messageId: messageId)
+            try await cacheRawAudioFallback(rawAudioUri: rawAudioUri, cacheKey: cacheKey, messageId: messageId)
         }
     }
 
@@ -663,7 +668,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// 직접 다운로드해 **같은 cacheKey** 로 저장하는 폴백.
     /// 이것마저 실패하면 호출자(`recordWithCachedTTSIfNeeded`)가 캐시 키를 비워
     /// 두므로 다음 sync 사이클의 fresh mapped 레코드에서 재시도된다.
-    private func cacheRawAudioFallback(rawAudioUri: String?, cacheKey: String, messageId: String) async {
+    private func cacheRawAudioFallback(rawAudioUri: String?, cacheKey: String, messageId: String) async throws {
         guard let raw = rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty,
               let url = URL(string: raw),
@@ -703,13 +708,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 enforceMaxDuration: false
             )
         } catch {
+            // ⚠ **취소는 '실패' 가 아니다.** 여기서 조용히 끝내면 호출부가 "받아 오지
+            // 못했다" 로 읽어 **목소리 메타를 벗기고** 그 상태로 다시 예약한다 — 회차를
+            // 접으라는 신호가 되레 파괴적 쓰기가 된다(2026-08-18 Codex #697 P2).
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
             Self.logger.error(
                 "원본 오디오 폴백 실패 (messageId: \(messageId, privacy: .public)): \(error.localizedDescription, privacy: .public) — 캐시 키를 비워 두고 다음 sync 에서 재시도"
             )
         }
     }
 
-    private func recordWithCachedTTSIfNeeded(_ record: LocalAlarmRecord, token: String) async -> LocalAlarmRecord {
+    private func recordWithCachedTTSIfNeeded(_ record: LocalAlarmRecord, token: String) async throws -> LocalAlarmRecord {
         var copy = record
         guard let cacheKey = copy.audioCacheKey,
               let messageId = copy.ttsMessageId,
@@ -718,7 +727,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
 
         if audioCache.cachedURL(for: cacheKey) == nil {
-            await fetchAndCacheTTS(
+            try await fetchAndCacheTTS(
                 messageId: messageId,
                 cacheKey: cacheKey,
                 rawAudioUri: copy.rawAudioUri,
