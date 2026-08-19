@@ -153,6 +153,7 @@
 		75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */; };
 		7638CB240847562DCB768E5F /* AlarmTalkMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */; };
 		76F875CA136A77C1804563CD /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
+		770D3A7591CEAA2CA5D80396 /* ScreenProbeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D26B874EF55767FFEE03E9 /* ScreenProbeUITests.swift */; };
 		770FB03D2E3917E515FF9241 /* AlarmVoicePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CE60628CC826194C627674A /* AlarmVoicePlayer.swift */; };
 		786ACCD0B7CE5906A798C1FD /* BucketVariantResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */; };
 		79714047645222078079375D /* NonceGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53224031E3CB9F18979BB95B /* NonceGenerator.swift */; };
@@ -422,6 +423,7 @@
 		4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundPlanTests.swift; sourceTree = "<group>"; };
 		4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeRegistrationErrorTests.swift; sourceTree = "<group>"; };
 		431B4F1B68A4F2AD65B924D9 /* RememberChoicesGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RememberChoicesGuardTests.swift; sourceTree = "<group>"; };
+		43D26B874EF55767FFEE03E9 /* ScreenProbeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenProbeUITests.swift; sourceTree = "<group>"; };
 		4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureLockBadge.swift; sourceTree = "<group>"; };
 		463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortuneDialogScreenshotUITests.swift; sourceTree = "<group>"; };
 		473E04E3AE046A9066B33515 /* AlarmCancelDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmCancelDeletionTests.swift; sourceTree = "<group>"; };
@@ -711,6 +713,7 @@
 				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
 				903CF0F5BED76AD923151223 /* PromoKeyboardUITests.swift */,
 				B7065575F6074636D0156AA8 /* RepeatCardSpacingUITests.swift */,
+				43D26B874EF55767FFEE03E9 /* ScreenProbeUITests.swift */,
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
 				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
 				F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */,
@@ -1391,6 +1394,7 @@
 				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
 				4EB9F73F6B4B2F339F2A4CEB /* PromoKeyboardUITests.swift in Sources */,
 				E6B183AE33A777D1D25D8546 /* RepeatCardSpacingUITests.swift in Sources */,
+				770D3A7591CEAA2CA5D80396 /* ScreenProbeUITests.swift in Sources */,
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,
 				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
 				2D3C0A9E656BEC6E425C4AD7 /* SystemAlertMetricsUITests.swift in Sources */,
