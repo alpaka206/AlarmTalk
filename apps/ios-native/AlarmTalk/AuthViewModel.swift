@@ -1306,6 +1306,10 @@ final class AuthViewModel: ObservableObject {
             unregister: onSignOutUnregisterPush,
             api: api
         )
+        // ⚠ **철회됐는지 다시 본다**(Codex #699 P1). 위 서버 왕복이 도는 사이에 그 사용자가
+        // 탈퇴를 철회할 수 있는데, 그때 세션 id 는 **그대로**라 계정 비교만으로는 못 걸러진다.
+        // 그대로 나아가면 **방금 계정을 되살린 사람을 로그아웃시킨다.**
+        guard PendingSignOutStore.isPending(userId) else { return }
         // ⚠ **그 계정이 아직 활성일 때만 로그아웃한다.** await 사이에 다른 계정이
         // 로그인했으면 그 사람을 끊게 된다.
         if session == nil || session?.user.id.nilIfBlank == userId?.nilIfBlank {

@@ -68,6 +68,26 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         }
     }
 
+    /// 등록/해제를 **한 줄로 세운다.**
+    ///
+    /// ⚠ 둘 다 네트워크 왕복이라 서로 끼어든다(Codex #699 P2). A 의 해제 요청이 날아가는
+    /// 동안 B 가 같은 기기 토큰으로 등록을 마치면, 서버의 `/push/unregister` 는 **토큰만 보고
+    /// 지우므로** 뒤늦게 도착한 A 의 요청이 **B 의 새 바인딩을 지운다.** 완료 처리도 B 의
+    /// 등록 캐시를 비운다. 주인 검사만으로는 그 창을 못 닫는다 — 검사는 요청 **전에** 하고,
+    /// 사고는 요청이 **떠 있는 동안** 나기 때문이다.
+    private var pushMutationChain: Task<Void, Never>?
+
+    /// 앞선 등록/해제가 끝난 뒤에 실행한다.
+    private func serializePushMutation(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = pushMutationChain
+        let current = Task { @MainActor in
+            await previous?.value
+            await body()
+        }
+        pushMutationChain = current
+        await current.value
+    }
+
     private static let lastTokenKey = "push_last_registered_token"
     private static let lastUserKey = "push_last_registered_user"
 
@@ -87,17 +107,20 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         guard let session else { return }
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
         guard hex != lastRegisteredToken || session.user.id != lastRegisteredUserID else { return }
-        do {
-            try await AlarmTalkAPI.shared.registerPushToken(
-                token: hex,
-                platform: "ios",
-                authToken: session.token
-            )
-            lastRegisteredToken = hex
-            lastRegisteredUserID = session.user.id
-        } catch {
-            // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
-            // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+        await serializePushMutation { [weak self] in
+            guard let self else { return }
+            do {
+                try await AlarmTalkAPI.shared.registerPushToken(
+                    token: hex,
+                    platform: "ios",
+                    authToken: session.token
+                )
+                self.lastRegisteredToken = hex
+                self.lastRegisteredUserID = session.user.id
+            } catch {
+                // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
+                // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+            }
         }
     }
 
@@ -128,18 +151,31 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             // 이 기기 토큰은 이미 다른 계정 것이다 — 지울 것이 없다.
             return true
         }
-        guard let deviceToken = lastRegisteredToken?.nilIfBlank else {
-            // 올린 적이 없다 — 지울 것도 없으므로 끝난 것으로 본다.
-            clearRegistrationCache()
-            return true
+        var result = false
+        await serializePushMutation { [weak self] in
+            guard let self else { return }
+            // ⚠ **줄을 선 뒤에 다시 본다.** 기다리는 동안 다른 계정이 등록을 마쳤을 수 있다.
+            if let expected = expectedOwnerUserID?.nilIfBlank,
+               let current = self.lastRegisteredUserID?.nilIfBlank,
+               current != expected {
+                result = true
+                return
+            }
+            guard let deviceToken = self.lastRegisteredToken?.nilIfBlank else {
+                // 올린 적이 없다 — 지울 것도 없으므로 끝난 것으로 본다.
+                self.clearRegistrationCache()
+                result = true
+                return
+            }
+            do {
+                try await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
+                self.clearRegistrationCache()
+                result = true
+            } catch {
+                result = false
+            }
         }
-        do {
-            try await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
-            clearRegistrationCache()
-            return true
-        } catch {
-            return false
-        }
+        return result
     }
 
     /// 로그아웃 시 다음 로그인에서 반드시 다시 올리도록 캐시를 비운다.

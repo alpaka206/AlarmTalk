@@ -41,6 +41,11 @@ enum PendingSignOutStore {
         defaults.set(current, forKey: key)
     }
 
+    /// 그 계정의 뒷정리가 아직 남아 있는가. 철회·완료로 사라졌는지 **await 뒤에 다시** 볼 때 쓴다.
+    static func isPending(_ userId: String?) -> Bool {
+        pendingUserIds.contains(userId?.nilIfBlank ?? unknownMarker)
+    }
+
     /// 그 계정의 뒷정리가 **실제로 끝났을 때만** 지운다(서버 쪽까지 포함).
     static func clear(_ userId: String?) {
         let resolved = userId?.nilIfBlank ?? unknownMarker
