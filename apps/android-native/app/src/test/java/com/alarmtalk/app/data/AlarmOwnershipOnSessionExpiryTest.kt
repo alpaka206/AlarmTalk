@@ -91,6 +91,50 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /** 기본값은 ownerUserId 컬럼이 생기기 전에 만들어진 '소유자 미기록' 알람. */
+    /**
+     * **로그아웃이 끄는 것은 떠나는 계정 것뿐이다** (Codex #699 P1, 2026-08-19 감사에서 테스트 부재 확인).
+     *
+     * 예약 취소는 전부에 걸어도 되지만(주인이 다시 로그인하면 되살아난다) `enabled=false` 는
+     * 되돌릴 수 없다. A 가 자동 401 로 세션만 잃은 상태에서 B 가 로그인했다 로그아웃하면
+     * **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다.
+     *
+     * iOS 에는 같은 규칙의 테스트가 있는데(`LeaveAccountScopeTests`) 안드로이드에는 없어서,
+     * 필터를 `settled.filter { it.enabled }` 로 바꿔 전부 끄게 만들어도 전 스위트가 통과했다.
+     */
+    @Test
+    fun signOutDisablesOnlyTheDepartingAccountsAlarms() = runBlocking {
+        seedLegacyAlarm(id = "a-owned", owner = "account-A")
+        seedLegacyAlarm(id = "b-owned", owner = "account-B")
+        currentUser = "account-B"
+
+        repository.detachAlarmsOnSignOut("account-B") { }
+
+        assertEquals(
+            "떠나는 계정(B)의 알람은 꺼져야 한다",
+            false,
+            dao.getById("b-owned")?.enabled,
+        )
+        assertEquals(
+            "자동 401 로 세션만 잃은 A 의 알람이 B 의 로그아웃에 꺼졌다 — A 는 영영 되찾지 못한다",
+            true,
+            dao.getById("a-owned")?.enabled,
+        )
+    }
+
+    /**
+     * 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다 — 단 **소유권 확정에 성공했을 때만**이다.
+     * 확정 전 스냅샷으로 판정하면 앞 계정 행을 오인한다(같은 리뷰에서 한 번 밟았다).
+     */
+    @Test
+    fun signOutDisablesOwnerlessRowsAsTheDepartingAccount() = runBlocking {
+        seedLegacyAlarm(id = "legacy", owner = null)
+        currentUser = "account-B"
+
+        repository.detachAlarmsOnSignOut("account-B") { }
+
+        assertEquals(false, dao.getById("legacy")?.enabled)
+    }
+
     private suspend fun seedLegacyAlarm(
         id: String = "legacy-1",
         owner: String? = null,

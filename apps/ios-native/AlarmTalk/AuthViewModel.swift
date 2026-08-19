@@ -1171,6 +1171,20 @@ final class AuthViewModel: ObservableObject {
     /// 그래서 여기서 순서대로 마저 한다: 푸시 해제 → 토큰 폐기 → 로컬 세션 정리.
     /// (순서가 뒤바뀌면 폐기가 먼저 `token_epoch` 를 올려 해제가 401 로 죽는다 —
     /// `signOutExplicitly` 주석과 같은 이유다.)
+    /// **서버 쪽 뒷정리만** 마저 한다. 로컬 세션은 건드리지 않는다.
+    ///
+    /// ⚠ 끊긴 로그아웃을 이어서 끝내려는데 **그 사이 다른 계정이 로그인해 있는** 경우가 있다.
+    /// 그때 `finishInterruptedSignOut()` 을 부르면 **지금 쓰고 있는 사람을 로그아웃시킨다.**
+    /// 서버 쪽(떠난 계정의 푸시 바인딩·토큰)만 정리하고 물러선다.
+    func finishInterruptedServerCleanupOnly() async {
+        let cleaned = await Self.runServerSignOutCleanup(
+            token: PendingSignOutStore.serverCleanupToken,
+            unregister: onSignOutUnregisterPush,
+            api: api
+        )
+        if cleaned { PendingSignOutStore.clear() }
+    }
+
     func finishInterruptedSignOut() async {
         // 세션이 이미 지워진 뒤에 죽었을 수 있다 — 그때는 따로 남겨 둔 토큰을 쓴다.
         let revokeToken = session?.token.nilIfBlank ?? PendingSignOutStore.serverCleanupToken

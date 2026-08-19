@@ -372,6 +372,15 @@ final class LocalAlarmStore: ObservableObject {
     /// - Parameter soundFingerprint: 이 예약에 실어 보낸 소리의 지문
     ///   (`AlarmSoundPlan.fingerprint`). 나중에 행이 바뀌었는지 비교하는 기준이 된다.
     ///   **예약과 지문은 여기서 한 번에 기록된다** — 따로 쓰면 어긋난다.
+    func markScheduled(localID: String, alarmKitID: String, soundFingerprint: String? = nil) {
+        guard let index = alarms.firstIndex(where: { $0.id == localID }) else { return }
+        alarms[index].alarmKitID = alarmKitID
+        alarms[index].scheduledSoundFingerprint = soundFingerprint
+        alarms[index].enabled = true
+        alarms[index].state = AlarmRuntimeState.armed.rawValue
+        persist()
+    }
+
     /// OS 예약 핸들만 지운다. **`enabled` 과 상태는 건드리지 않는다.**
     ///
     /// 로그아웃·탈퇴에서 예약을 끊은 뒤 부른다 — 핸들이 남아 있으면
@@ -381,15 +390,6 @@ final class LocalAlarmStore: ObservableObject {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         alarms[index].alarmKitID = nil
         alarms[index].scheduledSoundFingerprint = nil
-        persist()
-    }
-
-    func markScheduled(localID: String, alarmKitID: String, soundFingerprint: String? = nil) {
-        guard let index = alarms.firstIndex(where: { $0.id == localID }) else { return }
-        alarms[index].alarmKitID = alarmKitID
-        alarms[index].scheduledSoundFingerprint = soundFingerprint
-        alarms[index].enabled = true
-        alarms[index].state = AlarmRuntimeState.armed.rawValue
         persist()
     }
 

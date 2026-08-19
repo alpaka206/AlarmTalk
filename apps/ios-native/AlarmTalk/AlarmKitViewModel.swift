@@ -93,6 +93,18 @@ final class AlarmKitViewModel: ObservableObject {
 
     private var leavingAccountDepth = 0
 
+    #if DEBUG
+    /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
+    ///
+    /// ⚠ 왜 이런 것이 필요한가: `stopAllScheduledAlarms` 안에는 **진짜 suspension 이 없어서**
+    /// (AlarmKit 취소가 동기다) MainActor 에서 원자적으로 끝난다 — 밖에서 "도는 동안 닫혀
+    /// 있는지" 를 관찰할 창이 없다. 그래서 게이트가 **열리고 닫히는 규칙**을 여기서 잰다.
+    /// 이걸 안 두면 테스트가 `false` 만 두 번 확인하게 되고, 그건 게이트를 통째로 지워도
+    /// 통과한다(2026-08-19 감사에서 실제로 그랬다).
+    func __beginLeavingAccountForTests() { leavingAccountDepth += 1 }
+    func __endLeavingAccountForTests() { leavingAccountDepth -= 1 }
+    #endif
+
     /// **진행 중인 예약을 그 자리에서 무효화한다.**
     ///
     /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
@@ -379,48 +391,6 @@ final class AlarmKitViewModel: ObservableObject {
     }
     #endif
 
-    /// 예약 복구 sweep.
-    /// - Parameter forceHolidayOffRecompute: true 면 발화 시각이 미래여도 모든
-    ///   enabled `.fixed` 공휴일off one-shot 을 후보에 포함해 절대 시각을 재계산+재무장한다.
-    ///   timezone/시간 변경 알림용 — `.fixed` 는 절대 instant 라 새 zone 에 자동 재anchor
-    ///   되지 않으므로(어느 방향으로든 이동 가능) 강제 recompute 가 필요하다.
-    /// **계정을 떠날 때 알람을 전부 끈다** — OS 예약을 취소하고 행도 `enabled = false` 로.
-    ///
-    /// 로그아웃·탈퇴에서 부른다. 두 가지를 지킨다:
-    ///  1. **떠난 계정으로 알람이 울리면 안 된다.** 받은 알람은 보낸 사람의 복제 목소리를
-    ///     담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
-    ///  2. **다시 로그인해도 저절로 울리기 시작하지 않는다.**
-    ///
-    /// ⚠ **`enabled` 도 끈다 — 예약만 끊고 끝내지 말 것**(2026-08-19 지시).
-    /// 처음엔 "`enabled` 는 사용자 의도라 남긴다" 로 만들었지만, **로그아웃은 이 앱을 그만
-    /// 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능 자체를
-    /// 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이 저절로
-    /// 울리기 시작하는 편이 오히려 놀랍다.
-    ///
-    /// ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다** — `RootView` 가
-    /// `!auth.isAuthenticated` 면 `AuthGateView` 를 띄운다. 그래서 예약이 남아 있으면
-    /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
-    ///
-    /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
-    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
-    /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
-    ///
-    /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게
-    /// 아니라 토큰이 낡은 것뿐이라, 내일 아침 알람을 조용히 없애면 안 된다.
-    /// (저장소의 `clearSessionKeepingAlarms` 와 같은 판단이다.)
-    ///
-    /// ⚠ **끄는 것은 떠나는 계정 것만이다 — 예약 취소와 범위가 다르다**(Codex #699 P1).
-    /// 예약 취소는 **전부**에 건다(로그아웃 상태에서는 누구의 알람도 울리면 안 되고, 그건
-    /// 되돌릴 수 있다 — 주인이 다시 로그인하면 `recoverScheduledAlarms` 가 다시 건다).
-    /// 반면 `enabled = false` 는 **되돌릴 수 없다.** 남의 계정 행까지 끄면 이렇게 된다:
-    /// A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
-    /// **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
-    ///
-    /// - Parameter ownerUserId: 지금 떠나는 계정. `nil`(누구인지 모름)이면 켜진 행을 전부
-    ///   끈다 — 판단할 근거가 없을 때는 **안 울리는 쪽**이 안전하다.
-    /// - Returns: 실제로 끈 알람 수.
-    ///
-    /// 로그인 쪽 짝은 `cancelScheduledAlarmsNotOwnedBy` 다 — **한쪽만 고치지 말 것.**
     /// **취소에 실패해 남겨 둔 손잡이를 다시 써 본다.**
     ///
     /// ⚠ 이게 없으면 손잡이를 남긴 의미가 없다(Codex #699 P1). `stopAllScheduledAlarms` 는
@@ -523,6 +493,48 @@ final class AlarmKitViewModel: ObservableObject {
         #endif
     }
 
+    /// 예약 복구 sweep.
+    /// - Parameter forceHolidayOffRecompute: true 면 발화 시각이 미래여도 모든
+    ///   enabled `.fixed` 공휴일off one-shot 을 후보에 포함해 절대 시각을 재계산+재무장한다.
+    ///   timezone/시간 변경 알림용 — `.fixed` 는 절대 instant 라 새 zone 에 자동 재anchor
+    ///   되지 않으므로(어느 방향으로든 이동 가능) 강제 recompute 가 필요하다.
+    /// **계정을 떠날 때 알람을 전부 끈다** — OS 예약을 취소하고 행도 `enabled = false` 로.
+    ///
+    /// 로그아웃·탈퇴에서 부른다. 두 가지를 지킨다:
+    ///  1. **떠난 계정으로 알람이 울리면 안 된다.** 받은 알람은 보낸 사람의 복제 목소리를
+    ///     담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    ///  2. **다시 로그인해도 저절로 울리기 시작하지 않는다.**
+    ///
+    /// ⚠ **`enabled` 도 끈다 — 예약만 끊고 끝내지 말 것**(2026-08-19 지시).
+    /// 처음엔 "`enabled` 는 사용자 의도라 남긴다" 로 만들었지만, **로그아웃은 이 앱을 그만
+    /// 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능 자체를
+    /// 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이 저절로
+    /// 울리기 시작하는 편이 오히려 놀랍다.
+    ///
+    /// ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다** — `RootView` 가
+    /// `!auth.isAuthenticated` 면 `AuthGateView` 를 띄운다. 그래서 예약이 남아 있으면
+    /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
+    ///
+    /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
+    /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
+    ///
+    /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게
+    /// 아니라 토큰이 낡은 것뿐이라, 내일 아침 알람을 조용히 없애면 안 된다.
+    /// (저장소의 `clearSessionKeepingAlarms` 와 같은 판단이다.)
+    ///
+    /// ⚠ **끄는 것은 떠나는 계정 것만이다 — 예약 취소와 범위가 다르다**(Codex #699 P1).
+    /// 예약 취소는 **전부**에 건다(로그아웃 상태에서는 누구의 알람도 울리면 안 되고, 그건
+    /// 되돌릴 수 있다 — 주인이 다시 로그인하면 `recoverScheduledAlarms` 가 다시 건다).
+    /// 반면 `enabled = false` 는 **되돌릴 수 없다.** 남의 계정 행까지 끄면 이렇게 된다:
+    /// A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+    /// **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+    ///
+    /// - Parameter ownerUserId: 지금 떠나는 계정. `nil`(누구인지 모름)이면 켜진 행을 전부
+    ///   끈다 — 판단할 근거가 없을 때는 **안 울리는 쪽**이 안전하다.
+    /// - Returns: 실제로 끈 알람 수.
+    ///
+    /// 로그인 쪽 짝은 `cancelScheduledAlarmsNotOwnedBy` 다 — **한쪽만 고치지 말 것.**
     @discardableResult
     func stopAllScheduledAlarms(store: LocalAlarmStore, ownerUserId: String?) async -> Int {
         #if canImport(AlarmKit)
@@ -653,6 +665,15 @@ final class AlarmKitViewModel: ObservableObject {
 
         for record in candidates {
             // PR3 FIX: double-arm race guard. rearmIfHolidayOffOneShot(dismiss 경로)나
+            // ⚠ **매 회차 다시 확인한다 — 후보 목록은 await 앞에서 굳은 복사본이다**(감사 지적).
+            // 이 sweep 가 `await schedule` 로 멈춘 사이 로그아웃이 통째로 끝날 수 있는데,
+            // 그러면 남은 후보들은 **방금 꺼진 행**이다. 그대로 나아가면
+            // `prepareForScheduleRecovery` 가 그 행을 도로 켜고(`enabled = true` 를 직접 쓴다)
+            // 이어지는 예약이 게이트가 이미 닫힌 뒤라 그대로 성공해, **로그아웃한 계정의
+            // 알람이 로그인 화면 뒤에서 되살아난다.** 종료 게이트는 `schedule` 진입점에만
+            // 있어 이 경로를 못 막는다.
+            guard !isLeavingAccount else { break }
+            guard let live = store.record(id: record.id), live.enabled else { continue }
             // 또 다른 recovery sweep 가 같은 record 를 await schedule() 중이면 건너뛴다.
             // (`.fixed` one-shot 이 중복 schedule 되어 다음 회차가 이중 발화하는 것을 방지)
             guard !rearmInFlight.contains(record.id) else { continue }

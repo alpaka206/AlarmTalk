@@ -324,22 +324,30 @@ struct AlarmTalkApp: App {
                         // 통째로 건너뛰어질 수 있다 — 그 계정의 예약은 살아 있는데 화면에는
                         // 못 들어간다. 표시가 남아 있으면 여기서 끝낸다.
                         if let pending = PendingSignOutStore.pendingUserId {
-                            alarmStore.claimUnownedAlarms(for: pending)
-                            await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
-                            // ⚠ **세션까지 끝내야 로그아웃이다**(Codex #699 P1). 표시를 남긴
-                            // 직후 프로세스가 죽으면 키체인 세션이 그대로 남는다 — 알람만
-                            // 끄고 표시를 지우면 **직접 로그아웃한 사용자가 그 계정으로
-                            // 로그인된 채** 남고, 되짚을 근거도 함께 사라진다.
-                            // 계정이 일치할 때만 끊는다: 그 사이 다른 계정으로 로그인했다면
-                            // 그 사람을 로그아웃시킬 이유가 없다.
-                            // 서버 쪽 뒷정리(푸시 해제·토큰 폐기)까지 마저 한다 — 안 하면
-                            // 로그아웃한 기기로 그 계정의 알림이 계속 온다. 세션이 이미
-                            // 지워진 뒤에 죽었어도 따로 남겨 둔 토큰으로 시도한다.
-                            let sameAccount = pending.map { auth.session?.user.id == $0 } ?? false
-                            if sameAccount || auth.session == nil {
+                            // ⚠ **그 사이 다른 계정이 로그인했을 수 있다**(감사 지적).
+                            // 그때 알람을 건드리면 **지금 쓰는 사람의 알람을 끈다** —
+                            // 특히 받은 가족 알람은 소유자가 미기록이라 `claimUnownedAlarms`
+                            // 가 그걸 떠난 계정 것으로 낙인찍고 `stopAll` 이 꺼 버린다.
+                            // 로컬 뒷정리는 **아무도 없거나 그 계정 본인일 때만** 한다.
+                            let signedIn = auth.session?.user.id.nilIfBlank
+                            let safeToTouchAlarms = signedIn == nil || (pending != nil && signedIn == pending)
+                            if safeToTouchAlarms {
+                                alarmStore.claimUnownedAlarms(for: pending)
+                                await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
+                                // ⚠ **세션까지 끝내야 로그아웃이다.** 표시를 남긴 직후
+                                // 프로세스가 죽으면 키체인 세션이 그대로 남는다 — 알람만
+                                // 끄면 **직접 로그아웃한 사용자가 그 계정으로 로그인된 채**다.
+                                // 서버 뒷정리(푸시 해제·토큰 폐기)까지 여기서 마친다.
                                 await auth.finishInterruptedSignOut()
+                            } else {
+                                // 다른 계정이 쓰는 중 — 알람과 세션은 그대로 두고 서버만 정리한다.
+                                await auth.finishInterruptedServerCleanupOnly()
                             }
-                            PendingSignOutStore.clear()
+                            // ⚠ **여기서 표시를 지우지 않는다**(감사 지적 — 5개 렌즈가 같은 줄을
+                            // 지목했다). 예전에는 결과와 무관하게 `clear()` 를 불러, 두 함수의
+                            // "서버 뒷정리가 성공했을 때만 지운다" 가드를 **죽은 코드로** 만들었다.
+                            // 오프라인·5xx 에서 표시와 키체인 토큰이 함께 사라져 재시도할
+                            // 근거가 영영 없어진다.
                         }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과

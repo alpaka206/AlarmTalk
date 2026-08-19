@@ -794,17 +794,40 @@ final class LeavingAccountGateTests: XCTestCase {
         )
     }
 
+    /// ⚠ **`false` 만 단언하면 아무것도 못 지킨다**(2026-08-19 감사 지적). 예전 이 테스트는
+    /// 종료 전후로 `isLeavingAccount == false` 만 봤다 — 게이트를 통째로 지워도(항상 false)
+    /// 초록이었다.
+    ///
+    /// 밖에서 "sweep 가 도는 동안" 을 관찰할 수는 없다 — 그 함수 안에는 진짜 suspension 이
+    /// 없어 MainActor 에서 원자적으로 끝난다. 그래서 **겹침 규칙 자체**를 잰다:
+    /// 이 단언은 카운터를 불리언으로 되돌리는 순간 깨진다.
+    func test_겹친_종료_중_하나가_끝나도_문은_닫혀_있다() {
+        let kit = AlarmKitViewModel()
+        XCTAssertFalse(kit.isLeavingAccount, "전제: 시작 전에는 열려 있다")
+
+        kit.__beginLeavingAccountForTests()
+        XCTAssertTrue(kit.isLeavingAccount, "종료가 시작됐는데 문이 열려 있다 — 새 예약이 빠져나간다")
+
+        kit.__beginLeavingAccountForTests()
+        kit.__endLeavingAccountForTests()
+        XCTAssertTrue(
+            kit.isLeavingAccount,
+            "겹친 종료 중 하나가 끝났다고 문이 열렸다 — 아직 취소를 기다리는 쪽 옆으로 새 예약이 빠져나간다"
+        )
+
+        kit.__endLeavingAccountForTests()
+        XCTAssertFalse(kit.isLeavingAccount, "마지막까지 끝났는데 닫힌 채면 알람을 영영 못 건다")
+    }
+
+    /// 겹쳐 돌려도 **마지막 하나가 끝날 때까지** 닫혀 있어야 한다(카운터인 이유).
     func test_겹친_종료가_모두_끝나야_문이_닫힌다() async {
         let kit = AlarmKitViewModel()
         let store = makeStore()
-        XCTAssertFalse(kit.isLeavingAccount)
 
-        // 두 종료를 겹쳐 돌린다. 하나가 끝나도 다른 하나가 도는 동안은 닫혀 있어야 한다.
         async let first: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
         async let second: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
         _ = await (first, second)
 
-        // 둘 다 끝났으면 다시 예약할 수 있어야 한다 — 카운터가 새면 영영 못 건다.
         XCTAssertFalse(kit.isLeavingAccount, "종료가 끝났는데 문이 닫힌 채면 알람을 영영 못 건다")
     }
 }
