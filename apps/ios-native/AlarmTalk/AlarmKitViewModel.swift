@@ -315,30 +315,46 @@ final class AlarmKitViewModel: ObservableObject {
     ///   enabled `.fixed` 공휴일off one-shot 을 후보에 포함해 절대 시각을 재계산+재무장한다.
     ///   timezone/시간 변경 알림용 — `.fixed` 는 절대 instant 라 새 zone 에 자동 재anchor
     ///   되지 않으므로(어느 방향으로든 이동 가능) 강제 recompute 가 필요하다.
-    /// **모든 OS 예약을 끊는다 — 행과 `enabled` 는 그대로 둔다.**
+    /// **계정을 떠날 때 알람을 전부 끈다** — OS 예약을 취소하고 행도 `enabled = false` 로.
     ///
-    /// 로그아웃·탈퇴에서 부른다. 이유는 하나다: **더 이상 이 계정이 아닌데 알람이 울리면
-    /// 안 된다.** 특히 받은 알람은 보낸 사람의 복제 목소리를 담고 있어, 로그아웃한 기기가
-    /// 남의 생체정보로 계속 우는 셈이 된다.
+    /// 로그아웃·탈퇴에서 부른다. 두 가지를 지킨다:
+    ///  1. **떠난 계정으로 알람이 울리면 안 된다.** 받은 알람은 보낸 사람의 복제 목소리를
+    ///     담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    ///  2. **다시 로그인해도 저절로 울리기 시작하지 않는다.**
     ///
-    /// ⚠ **`enabled` 를 끄지 말 것.** 그건 **사용자 의도**이고 예약은 **수단**이다. 끄면
-    /// 다시 로그인했을 때 알람이 전부 꺼진 채로 보여서 하나씩 다시 켜야 한다.
-    /// 예약만 끊어 두면 `recoverScheduledAlarms` 의 첫 조건(`enabled && alarmKitUUID == nil`)
-    /// 이 앱 시작·전경 복귀에서 **자동으로 다시 걸어 준다** — 새 장치가 필요 없다.
+    /// ⚠ **`enabled` 도 끈다 — 예약만 끊고 끝내지 말 것**(2026-08-19 지시).
+    /// 처음엔 "`enabled` 는 사용자 의도라 남긴다" 로 만들었지만, **로그아웃은 이 앱을 그만
+    /// 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능 자체를
+    /// 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이 저절로
+    /// 울리기 시작하는 편이 오히려 놀랍다.
+    ///
+    /// ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다** — `RootView` 가
+    /// `!auth.isAuthenticated` 면 `AuthGateView` 를 띄운다. 그래서 예약이 남아 있으면
+    /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
+    ///
+    /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
+    /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
     ///
     /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게
     /// 아니라 토큰이 낡은 것뿐이라, 내일 아침 알람을 조용히 없애면 안 된다.
     /// (저장소의 `clearSessionKeepingAlarms` 와 같은 판단이다.)
     ///
-    /// - Returns: 실제로 끊은 예약 수.
+    /// - Returns: 실제로 끈 알람 수.
     @discardableResult
     func stopAllScheduledAlarms(store: LocalAlarmStore) async -> Int {
         #if canImport(AlarmKit)
         var stopped = 0
-        for record in store.alarms where record.alarmKitID != nil {
-            if await cancelScheduledAlarm(record: record) { stopped += 1 }
-            // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 재로그인 때 복구 후보에서 빠진다.
-            store.clearScheduleHandle(id: record.id)
+        for record in store.alarms {
+            if record.alarmKitID != nil {
+                _ = await cancelScheduledAlarm(record: record)
+                // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
+                store.clearScheduleHandle(id: record.id)
+            }
+            if record.enabled {
+                store.setEnabled(id: record.id, enabled: false)
+                stopped += 1
+            }
         }
         return stopped
         #else

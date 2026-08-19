@@ -562,6 +562,30 @@ class AlarmRepository(
         // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
         // 취소 루프 전체가 건너뛰어진다.
         all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
+        // ⚠ **행도 끈다 — 예약만 취소하고 `enabled=1` 로 남기지 말 것**(2026-08-19 지시).
+        // 예전에는 "재로그인하면 그대로 돌아오게" 하려고 켜진 채 뒀는데, **로그아웃은 이 앱을
+        // 그만 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능
+        // 자체를 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이
+        // 저절로 울리기 시작하는 편이 오히려 놀랍다.
+        //
+        // ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다**(로그인 게이트).
+        // 그래서 예약이 남으면 사용자가 **끌 방법이 없는 알람**이 우는 셈이다 —
+        // 위 주석의 "목록에서 감춰져 사용자가 끌 수도 없는데" 와 같은 말이다.
+        //
+        // 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+        // `hs_status_inactive`("모든 알람이 꺼진 상태입니다.")가 홈 headline 으로 뜬다.
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms` — **한쪽만 고치지 말 것.**
+        val now = System.currentTimeMillis()
+        all.filter { it.enabled }.forEach { alarm ->
+            runCatching {
+                alarmDao.setState(
+                    id = alarm.id,
+                    state = AlarmStates.DISABLED,
+                    enabled = false,
+                    updatedAtMillis = now,
+                )
+            }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
+        }
         // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
         // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
         // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자

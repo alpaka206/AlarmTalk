@@ -270,16 +270,17 @@ final class LeaveAccountAlarmTests: XCTestCase {
         return r
     }
 
-    /// 예약 핸들만 지우고 `enabled` 는 남는다 — 그래야 복구 후보(`enabled && kitID == nil`)가 된다.
-    func test_예약_핸들만_지우고_켜짐은_유지한다() {
+    /// `clearScheduleHandle` 은 **핸들만** 지운다 — 끄는 것은 호출부(`stopAllScheduledAlarms`)
+    /// 의 책임이다. 둘을 한 함수에 묶으면 재예약 경로가 핸들만 비우고 싶을 때 쓸 수 없다.
+    func test_핸들_지우기는_켜짐을_건드리지_않는다() {
         let store = makeStore()
         store.upsert(alarm(id: "a", enabled: true, kitID: "KIT-1"))
 
         store.clearScheduleHandle(id: "a")
 
         let r = store.record(id: "a")
-        XCTAssertNil(r?.alarmKitID, "예약 핸들이 남으면 재로그인해도 다시 안 걸린다")
-        XCTAssertEqual(r?.enabled, true, "사용자 의도(켜짐)를 끄면 재로그인 때 전부 꺼져 보인다")
+        XCTAssertNil(r?.alarmKitID, "예약 핸들이 남으면 다음에 켤 때 어긋난다")
+        XCTAssertEqual(r?.enabled, true)
     }
 
     /// ⚠ **켜기 실패 경로가 실제로 이 순서다** — 되돌려 끈 뒤 실패를 새긴다.
