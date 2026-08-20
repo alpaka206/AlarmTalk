@@ -12100,6 +12100,23 @@
         }
       }
     },
+    "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That email or password doesn't match. Please check and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールアドレスまたはパスワードが正しくありません。ご確認ください。"
+          }
+        }
+      }
+    },
     "이메일 인증": {
       "extractionState": "manual",
       "localizations": {

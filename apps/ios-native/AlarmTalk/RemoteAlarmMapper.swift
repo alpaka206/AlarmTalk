@@ -109,6 +109,16 @@ enum RemoteAlarmMapper {
         // ⚠ `LocalAlarmRecord` 의 명시적 init 에 `bucketId` 가 **없어서** 생성 뒤에 대입한다.
         // (그 init 이 빠뜨린 것이 iOS 가 이 값을 '로컬 전용' 으로 다뤄 온 실질적 이유다.)
         record.bucketId = trimmedOrNil(remote.bucketId)
+        // ⚠ **받은 알람에도 소유자를 새긴다**(감사 지적 — 안드로이드의 절반만 옮겨져 있었다).
+        // 안드로이드는 행을 만들 때 `resolveReceivedOwner(existing, currentUserId)` 로
+        // **현재 수신자**를 기록하는데(`RemoteAlarmPullSyncService.kt`), iOS 매퍼는 이 값을
+        // 아예 세우지 않아 **받은 가족 알람이 언제나 소유자 미기록**이었다.
+        // 그 결과가 이 PR 에서 특히 나빴다: 소유자 미기록을 '현재 계정 것' 으로 보는 관용이
+        // 파괴적 경로(로그아웃 시 끄기·소유자 새기기)에도 적용되므로, 떠나는 계정의 뒷정리가
+        // **지금 쓰는 사람이 받은 알람**을 자기 것으로 낙인찍고 꺼 버릴 수 있었다.
+        // 기존 행의 소유자는 머지가 보존한다(`RemoteAlarmPullSync.merge`) — 여기서는
+        // 새로 들어오는 행에 지금 계정을 새기는 것이 전부다.
+        record.ownerUserId = currentUserID.nilIfBlank
         return record
     }
 

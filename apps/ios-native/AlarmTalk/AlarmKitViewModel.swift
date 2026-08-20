@@ -43,6 +43,87 @@ final class AlarmKitViewModel: ObservableObject {
     /// 두 경로 모두 @MainActor 격리라 추가 락 없이 안전하다.
     private var rearmInFlight: Set<String> = []
 
+    /// **방금 만든 예약을 되돌린다.**
+    ///
+    /// ⚠ **`try?` 로 실패를 버리지 말 것**(Codex #699 P1). 되돌리기가 실패하면 OS 에는
+    /// 예약이 남는데 행에는 아직 그 UUID 가 적히기 전이라, **아무도 모르는 고아**가 된다 —
+    /// 행에도 없고 회수 목록에도 없으니 다음 로그인도, 회수 sweep 도 그 예약을 못 찾는다.
+    /// 그래서 실패는 반드시 회수 목록에 태운다. OS 에 이미 없는 경우는 회수 sweep 가
+    /// `AlarmManager.shared.alarms` 로 확인해 목록에서 조용히 빼 준다.
+    private func revertJustScheduled(_ id: UUID) async {
+        #if canImport(AlarmKit)
+        do {
+            try AlarmManager.shared.cancel(id: id)
+        } catch {
+            PendingAlarmCancellationStore.add(id.uuidString, origin: .foreignCleanup)
+        }
+        #endif
+    }
+
+    /// 활성 계정이 바뀐 횟수. **예약이 await 하는 동안 계정이 바뀌었는지** 가르는 값이다.
+    ///
+    /// ⚠ `SchedulingSnapshot` 으로는 이걸 못 잡는다(Codex #699 P1) — 그 스냅샷은 **행**이
+    /// 바뀌었는지만 보고, 활성 계정도 `ownerUserId` 도 담고 있지 않다. 그래서 이런 일이
+    /// 벌어졌다: A 의 복구가 `AlarmManager.schedule` 을 await 하는 사이 B 가 로그인하면,
+    /// 로그인 정리(`cancelScheduledAlarmsNotOwnedBy`)는 **아직 저장되지 않은 새 UUID** 를
+    /// 못 보고 지나가고, 뒤늦게 끝난 A 의 예약이 **B 의 앱에 보이지 않는 A 의 예약**으로
+    /// 남는다. 소유자 판정은 await **앞**에서만 이뤄지므로 순서를 어떻게 놓아도 닫히지 않는다.
+    ///
+    /// 그래서 값 하나로 잰다 — await 전에 적어 두고, 돌아와서 달라졌으면 방금 건 예약을 되돌린다.
+    private(set) var accountEpoch = 0
+
+    /// 마지막으로 본 활성 계정. `nil` 은 '아직 본 적 없음' 이라 첫 관찰은 세대를 올리지 않는다
+    /// (앱을 켤 때마다 진행 중인 예약을 무의미하게 취소하지 않기 위해).
+    private var lastObservedAccountID: String??
+
+    /// **지금 계정을 떠나는 중인가.** 참이면 새 예약을 만들지 않는다.
+    ///
+    /// ⚠ 진행 중인 예약을 무효화하는 것만으로는 부족하다(Codex #699 P1). 무효화 **뒤에**
+    /// 시작한 예약은 새 세대를 들고 시작하므로 그대로 성공하고, 종료가 끝난 뒤에 **켜진
+    /// 채 로그인 화면 뒤에 숨은 알람**이 된다. 원격 pull 이 종료 도중에 받은 알람을
+    /// 들여오는 경우가 실제로 그렇다.
+    ///
+    /// 경로마다 쫓는 대신 **만드는 것 자체를 막는다** — 종료 중에는 아무도 예약하지 못한다.
+    ///
+    /// ⚠ **불리언이 아니라 카운터다**(Codex #699 P1). 종료 sweep 는 겹칠 수 있다 —
+    /// 콜드 스타트 로그아웃이 로드를 끝내는 순간, 로그아웃 태스크와 '미완 로그아웃 이어서
+    /// 끝내기' 가 **둘 다** 들어온다. 불리언이면 **먼저 끝난 쪽이 문을 열어 버려**,
+    /// 아직 취소를 기다리는 다른 쪽 옆으로 새 예약이 빠져나간다.
+    var isLeavingAccount: Bool { leavingAccountDepth > 0 }
+
+    private var leavingAccountDepth = 0
+
+    #if DEBUG
+    /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
+    ///
+    /// ⚠ 왜 이런 것이 필요한가: `stopAllScheduledAlarms` 안에는 **진짜 suspension 이 없어서**
+    /// (AlarmKit 취소가 동기다) MainActor 에서 원자적으로 끝난다 — 밖에서 "도는 동안 닫혀
+    /// 있는지" 를 관찰할 창이 없다. 그래서 게이트가 **열리고 닫히는 규칙**을 여기서 잰다.
+    /// 이걸 안 두면 테스트가 `false` 만 두 번 확인하게 되고, 그건 게이트를 통째로 지워도
+    /// 통과한다(2026-08-19 감사에서 실제로 그랬다).
+    func __beginLeavingAccountForTests() { leavingAccountDepth += 1 }
+    func __endLeavingAccountForTests() { leavingAccountDepth -= 1 }
+    #endif
+
+    /// **진행 중인 예약을 그 자리에서 무효화한다.**
+    ///
+    /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
+    /// 예약을 다 끊은 **뒤에야** 세션을 비우므로, 그 사이에 끝난 예약은 `noteActiveAccount`
+    /// 만으로는 못 막는다 — 그때는 아직 계정이 그대로다.
+    func invalidateInFlightSchedules() {
+        accountEpoch &+= 1
+    }
+
+    /// 활성 계정을 알린다. 바뀌었으면 세대를 올린다.
+    func noteActiveAccount(_ userID: String?) {
+        let normalized = userID?.nilIfBlank
+        defer { lastObservedAccountID = .some(normalized) }
+        guard let previous = lastObservedAccountID else { return }  // 첫 관찰
+        if previous != normalized {
+            accountEpoch &+= 1
+        }
+    }
+
     /// 지금 이 알람을 다른 경로가 재예약하는 중인가.
     ///
     /// ⚠ **예약 경로가 겹치면 취소 불가능한 유령 알람이 남는다.** `schedule` 은 매번 새 UUID를
@@ -310,20 +391,292 @@ final class AlarmKitViewModel: ObservableObject {
     }
     #endif
 
+    /// **취소에 실패해 남겨 둔 손잡이를 다시 써 본다.**
+    ///
+    /// ⚠ 이게 없으면 손잡이를 남긴 의미가 없다(Codex #699 P1). `stopAllScheduledAlarms` 는
+    /// 취소가 실패하면 다시 시도하려고 `alarmKitID` 를 남기는데, **그 뒤로 아무도 그 값을
+    /// 쓰지 않았다**: 그 행은 이미 꺼져 있어 `recoverScheduledAlarms` 가 건너뛰고,
+    /// 같은 계정으로 다시 로그인하면 `cancelScheduledAlarmsNotOwnedBy` 도 건너뛴다.
+    /// 그동안 OS 예약은 살아 있어 **꺼 놓은 알람이 운다** — 게다가 울리면
+    /// `processAlarmUpdate` 가 `markRinging` 으로 그 행을 **도로 켠다.**
+    ///
+    /// 대상은 **꺼져 있는데 손잡이가 남은 행**이다. 평소에는 끄면서 손잡이를 함께 비우므로
+    /// (`setEnabled`), 이 조합은 위의 '취소 실패' 에서만 생긴다 — 정확한 신호다.
+    ///
+    /// 소유자·`enabled` 와 무관하게 돈다. 지우는 것은 **우리가 못 끈 예약**뿐이라 남의
+    /// 계정 것을 건드릴 위험이 없다.
+    @discardableResult
+    func retryPendingCancellations(store: LocalAlarmStore) async -> Int {
+        #if canImport(AlarmKit)
+        let pending = PendingAlarmCancellationStore.all
+        guard !pending.isEmpty else { return 0 }
+        // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
+        // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 목록은 그대로 남아 다음 기회에.
+        guard let live = try? AlarmManager.shared.alarms else { return 0 }
+        let liveIDs = Set(live.map(\.id))
+        var cleared = 0
+        // 이번 회차에 **끝난** UUID 들(끊었거나, OS 에 이미 없다고 확인했거나).
+        var resolved: Set<String> = []
+        // ⚠ **출처는 지우기 전에 담아 둔다.** `remove` 가 출처 기록도 함께 지우므로,
+        // 아래 행 정리에서 읽으면 항상 기본값(남의 계정 정리)이 나와 **행이 영영 안 꺼진다.**
+        var resolvedOrigins: [String: PendingAlarmCancellationStore.Origin] = [:]
+        for raw in pending {
+            guard let uuid = UUID(uuidString: raw) else {
+                // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+                continue
+            }
+            if !liveIDs.contains(uuid) {
+                // OS 에 이미 없다(사용자가 지웠거나 발화 후 사라졌다).
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+                cleared += 1
+                continue
+            }
+            do {
+                try AlarmManager.shared.cancel(id: uuid)
+                resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+                cleared += 1
+            } catch {
+                // ⚠ **여기서 `statusMessage` 를 세우지 않는다.** 이 sweep 는 앱을 열 때마다
+                // 도는데, 사용자가 시킨 적 없는 실패를 매번 알리면 그 문구가 소음이 된다.
+                // 목록에 그대로 두어 다음 기회에 다시 시도한다.
+            }
+        }
+        // 끝난 UUID 를 가리키던 손잡이를 비운다.
+        //
+        // ⚠ **`enabled` 를 보지 말 것**(Codex #699 P1). 회수가 늦어져 그 고아가 울면
+        // `markRinging` 이 행을 켜는데, 그때 이 정리를 건너뛰면 행에 **이미 취소된 UUID** 가
+        // 남는다 — 복구 sweep 는 "핸들이 있으니 예약돼 있다" 고 보고 건너뛰어, 반복 알람의
+        // 다음 회차부터 **조용히 안 울린다.**
+        // 안전판은 `enabled` 가 아니라 **UUID 일치**다: 그 사이 새 UUID 로 다시 예약된
+        // 행이라면 값이 달라 여기 걸리지 않는다.
+        for record in store.alarms {
+            guard let handle = record.alarmKitID, resolved.contains(handle) else { continue }
+            // ⚠ **울려서 되살아난 행을 다시 끈다**(2026-08-19 감사 P3). 회수가 늦어져 그 고아가
+            // 먼저 울면 `markRinging` 이(반복 알람은 해제 시 `markStopped` 도) 행을
+            // `enabled = true` 로 되돌린다. 손잡이만 지우고 끝내면 그 행은
+            // `enabled = true, alarmKitID = nil` 로 남아 **정확히 복구 후보 조건**이 되고,
+            // 그 계정이 다시 로그인하는 순간 자동으로 재무장된다 —
+            // "로그아웃하면 꺼 둔다 / 재로그인해도 저절로 울리지 않는다" 가 그 알람에 한해
+            // 조용히 무효가 된다.
+            //
+            // 손잡이가 **이 UUID 와 같을 때만** 여기 걸리므로, 그 사이 새 UUID 로 다시 예약된
+            // 행(사용자가 직접 켠 경우)은 건드리지 않는다.
+            // ⚠ **행을 끄는 것은 '떠나는 계정의 종료' 에서 온 UUID 뿐이다**(Codex #699 P1).
+            // 로그인 때 정리한 **남의 계정** 예약은 행을 일부러 켜 둔 것이라(자동 401 로
+            // 세션만 잃었다) 여기서 끄면 그 사람이 돌아왔을 때 알람이 사라진다.
+            if record.enabled, resolvedOrigins[handle] == .accountLeave {
+                store.setEnabled(id: record.id, enabled: false)
+            }
+            store.clearScheduleHandle(id: record.id)
+        }
+        return cleared
+        #else
+        return 0
+        #endif
+    }
+
+    /// **다른 계정 소유의 OS 예약을 끊는다.** 로그인 확정 직후에 부른다.
+    ///
+    /// 안드로이드 `data/AlarmRepository.cancelAlarmsNotOwnedBy` 의 짝이다. 없으면 이런 일이
+    /// 벌어진다(Codex #699 P1): A 의 세션이 **자동 401** 로 끊기면 예약은 일부러 살려 두는데,
+    /// 그 상태에서 B 가 로그인하면 목록·복구는 소유자로 걸러 A 의 알람을 **감추기만 한다** —
+    /// 예약은 그대로라 **A 의 알람이 울리는데 B 는 그걸 볼 수도 끌 수도 없다.**
+    ///
+    /// 행(`enabled`)은 건드리지 않는다. A 의 의도는 A 것이고, A 가 다시 로그인하면
+    /// `recoverScheduledAlarms` 가 그대로 되살린다 — 여기서 끄면 그 길이 막힌다.
+    /// 소유자 미기록(옛 행)은 건너뛴다: 그건 지금 계정 것으로 보는 게 저장소의 관용이다.
+    @discardableResult
+    func cancelScheduledAlarmsNotOwnedBy(_ ownerUserId: String?, store: LocalAlarmStore) async -> Int {
+        #if canImport(AlarmKit)
+        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
+        var cancelled = 0
+        for record in store.alarms {
+            guard let recordOwner = record.ownerUserId?.nilIfBlank, recordOwner != owner else { continue }
+            guard record.alarmKitID != nil else { continue }
+            // 취소에 실패하면 손잡이를 남긴다 — 지우면 고아 예약이 된다(위 주석과 같은 규칙).
+            if await cancelScheduledAlarm(record: record) {
+                store.clearScheduleHandle(id: record.id)
+                cancelled += 1
+            }
+            // 실패해도 여기서 따로 적지 않는다 — `cancelScheduledAlarm` 이 이미 회수
+            // 목록에 남긴다. 남의 계정 행은 **끄지 않으므로**(그 의도는 그 사람 것이다)
+            // 행 상태로는 이 실패를 기억할 수 없고, 그래서 UUID 목록이 필요하다.
+        }
+        return cancelled
+        #else
+        return 0
+        #endif
+    }
+
     /// 예약 복구 sweep.
     /// - Parameter forceHolidayOffRecompute: true 면 발화 시각이 미래여도 모든
     ///   enabled `.fixed` 공휴일off one-shot 을 후보에 포함해 절대 시각을 재계산+재무장한다.
     ///   timezone/시간 변경 알림용 — `.fixed` 는 절대 instant 라 새 zone 에 자동 재anchor
     ///   되지 않으므로(어느 방향으로든 이동 가능) 강제 recompute 가 필요하다.
+    /// **계정을 떠날 때 알람을 전부 끈다** — OS 예약을 취소하고 행도 `enabled = false` 로.
+    ///
+    /// 로그아웃·탈퇴에서 부른다. 두 가지를 지킨다:
+    ///  1. **떠난 계정으로 알람이 울리면 안 된다.** 받은 알람은 보낸 사람의 복제 목소리를
+    ///     담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    ///  2. **다시 로그인해도 저절로 울리기 시작하지 않는다.**
+    ///
+    /// ⚠ **`enabled` 도 끈다 — 예약만 끊고 끝내지 말 것**(2026-08-19 지시).
+    /// 처음엔 "`enabled` 는 사용자 의도라 남긴다" 로 만들었지만, **로그아웃은 이 앱을 그만
+    /// 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능 자체를
+    /// 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이 저절로
+    /// 울리기 시작하는 편이 오히려 놀랍다.
+    ///
+    /// ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다** — `RootView` 가
+    /// `!auth.isAuthenticated` 면 `AuthGateView` 를 띄운다. 그래서 예약이 남아 있으면
+    /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
+    ///
+    /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
+    /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
+    ///
+    /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게
+    /// 아니라 토큰이 낡은 것뿐이라, 내일 아침 알람을 조용히 없애면 안 된다.
+    /// (저장소의 `clearSessionKeepingAlarms` 와 같은 판단이다.)
+    ///
+    /// ⚠ **끄는 것은 떠나는 계정 것만이다 — 예약 취소와 범위가 다르다**(Codex #699 P1).
+    /// 예약 취소는 **전부**에 건다(로그아웃 상태에서는 누구의 알람도 울리면 안 되고, 그건
+    /// 되돌릴 수 있다 — 주인이 다시 로그인하면 `recoverScheduledAlarms` 가 다시 건다).
+    /// 반면 `enabled = false` 는 **되돌릴 수 없다.** 남의 계정 행까지 끄면 이렇게 된다:
+    /// A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+    /// **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+    ///
+    /// - Parameter ownerUserId: 지금 떠나는 계정. `nil`(누구인지 모름)이면 켜진 행을 전부
+    ///   끈다 — 판단할 근거가 없을 때는 **안 울리는 쪽**이 안전하다.
+    /// - Returns: 실제로 끈 알람 수.
+    ///
+    /// 로그인 쪽 짝은 `cancelScheduledAlarmsNotOwnedBy` 다 — **한쪽만 고치지 말 것.**
     @discardableResult
+    func stopAllScheduledAlarms(store: LocalAlarmStore, ownerUserId: String?) async -> Int {
+        #if canImport(AlarmKit)
+        let owner = ownerUserId?.nilIfBlank
+        // ⚠ **먼저 진행 중인 예약을 무효화한다**(Codex #699 P1). 세션은 이 함수가 끝난
+        // 뒤에야 비므로, 그 전에 끝나는 예약은 계정이 그대로라 스스로 물러서지 않는다.
+        // 아래 루프의 스냅샷은 그 새 UUID 를 못 보고 지나가는데, 이어지는 `setEnabled` 가
+        // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
+        invalidateInFlightSchedules()
+        leavingAccountDepth += 1
+        defer { leavingAccountDepth -= 1 }
+        var stopped = 0
+        // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
+        // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
+        // (상한을 두는 것은 무한 루프 방지 — 그 사이에도 `isLeavingAccount` 가 새 예약을 막는다).
+        // ⚠ **"끈 게 없다" 는 "할 일이 없다" 가 아니다**(Codex #699 P1). 남의 계정 예약만
+        // 취소하고 끝난 회차는 0을 돌려주는데, 그 취소가 만든 `await` 사이에 원격 pull 이
+        // **새 행을 들여올 수 있다.** 그래서 저장소가 그대로였는지도 함께 본다 —
+        // 아무것도 안 끄고 **아무것도 안 바뀐** 회차가 나와야 끝난다.
+        for _ in 0..<5 {
+            let before = Self.storeSignature(store)
+            let handled = await stopOnePass(store: store, owner: owner)
+            stopped += handled
+            if handled == 0 && Self.storeSignature(store) == before { break }
+        }
+        return stopped
+        #else
+        return 0
+        #endif
+    }
+
+    /// 종료 sweep 가 "그 사이 아무 일도 없었다" 를 판정하는 지문.
+    /// 행이 추가·삭제되거나 켜짐·예약 핸들이 바뀌면 값이 달라진다.
+    private static func storeSignature(_ store: LocalAlarmStore) -> [String] {
+        store.alarms.map { "\($0.id)|\($0.enabled)|\($0.alarmKitID ?? "-")" }
+    }
+
+    /// `stopAllScheduledAlarms` 의 한 회차. 처리한 행 수를 돌려준다(0이면 더 할 일이 없다).
+    private func stopOnePass(store: LocalAlarmStore, owner: String?) async -> Int {
+        #if canImport(AlarmKit)
+        var stopped = 0
+        for snapshot in store.alarms {
+            // ⚠ **행을 다시 읽는다.** 위 배열은 루프 시작 시점의 **복사본**이고, 아래
+            // `await` 사이에 다른 경로가 새 UUID 를 적을 수 있다. 낡은 값으로 판단하면
+            // 그 예약을 건너뛰고, 그러고도 손잡이를 지워 흔적을 없앤다.
+            guard let record = store.record(id: snapshot.id) else { continue }
+            // ⚠ **취소가 실패했으면 핸들을 지우지 말 것**(Codex #699 P1).
+            // `alarmKitID` 는 그 예약을 취소할 **유일한 손잡이**다. 실패했는데 지우면
+            // OS 에는 예약이 남고 우리에겐 취소할 방법이 없는 **고아 예약**이 된다 —
+            // 로그아웃 뒤라 화면에 들어갈 수도 없으니 사용자는 울리는 걸 보고만 있게 된다.
+            // 남겨 두면 다음 기회(재로그인·복구 sweep)에 그 손잡이로 다시 시도한다.
+            // ⚠ **출처는 행마다 정한다**(Codex #699 P1). 이 sweep 는 **모든** 예약을 끊지만
+            // `enabled = false` 는 떠나는 계정 것만이다. 출처를 sweep 통째로 `.accountLeave`
+            // 로 두면, 자동 401 로 세션만 잃고 기다리던 **남의 행**의 취소 실패까지 그렇게
+            // 기록돼 나중 회수가 그 행을 영구히 끈다.
+            let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner
+            var keepHandle = false
+            if record.alarmKitID != nil {
+                if await cancelScheduledAlarm(
+                    record: record,
+                    cancellationOrigin: departing ? .accountLeave : .foreignCleanup
+                ) {
+                    // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
+                    store.clearScheduleHandle(id: record.id)
+                } else {
+                    // 실패는 `cancelScheduledAlarm` 이 회수 목록에 적어 둔다(단일 출처).
+                    // 여기서는 손잡이만 남긴다 — 다음에 켤 때 어긋나지 않도록.
+                    keepHandle = true
+                }
+            }
+            // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용
+            // (위 `departing` 이 그 판정이고, 출처도 같은 값으로 정해 둔다).
+            if record.enabled && departing {
+                // ⚠ `setEnabled` 는 기본적으로 핸들을 함께 비운다 — 위에서 취소에 실패해
+                // 남겨 둔 손잡이를 **그 한 줄이 도로 버린다.** 그래서 여기까지 이어 준다.
+                store.setEnabled(id: record.id, enabled: false, keepScheduleHandle: keepHandle)
+                stopped += 1
+            }
+        }
+        return stopped
+        #else
+        return 0
+        #endif
+    }
+
+    @discardableResult
+    /// - Parameter ownerUserId: **지금 로그인한 계정.** 반드시 넘긴다.
+    ///   - `nil`(로그아웃 상태) 이면 **아무것도 재무장하지 않는다.** 계정을 떠난 기기에서
+    ///     알람이 다시 살아나면 안 된다 — `stopAllScheduledAlarms` 로 끊어 둔 것을 이
+    ///     sweep 가 곧바로 되살리면 그 조치가 무의미해진다.
+    ///   - 다른 계정으로 로그인했으면 **앞 계정 알람은 건드리지 않는다.** 예전에는 소유자를
+    ///     보지 않아, B 로 로그인하면 A 의 알람이 그대로 다시 걸렸다(2026-08-19 지적).
+    ///   - 소유자 미기록(옛 행)은 이 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
     func recoverScheduledAlarms(
         store: LocalAlarmStore,
+        ownerUserId: String?,
         forceHolidayOffRecompute: Bool = false
     ) async -> Int {
         #if canImport(AlarmKit)
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let holidayPredicate = holidayStore.holidayPredicate()
+        // ⚠ **계정이 없다고 재무장을 통째로 건너뛰지도, 아무나 되살리지도 말 것**
+        // (Codex #699 P1 — 두 번에 걸쳐 양쪽 극단을 다 밟았다).
+        //
+        // 처음에는 여기서 곧바로 `return 0` 이었다. 그러면 **자동 401** 로 세션만 잃은
+        // 기기가 부팅·업데이트·타임존 변경으로 예약을 잃었을 때 **다시 로그인할 때까지
+        // 아무 알람도 안 울린다** — 자동 401 을 예외로 둔 뜻이 정반대로 뒤집힌다.
+        //
+        // 그렇다고 `nil` 을 "아무나" 로 읽으면 반대쪽으로 넘어간다. 한 기기에 계정이 여럿
+        // 오갔다면(A 만료 → B 로그인 → B 도 만료) **A 와 B 의 알람이 함께** 살아난다.
+        // 그래서 **자동으로 끊긴 그 계정**을 남겨 두고 그것만 되살린다.
+        // 안드로이드 `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` 를 옮긴 것이다.
+        // 표시가 없는 기기는 아무것도 되살리지 않는다 — 못 가릴 때는 되살려서 못 끄게
+        // 만드는 쪽보다 로그인 한 번 시키는 쪽이 안전하다.
+        guard let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId else {
+            return 0
+        }
         let candidates = store.alarms.filter { record in
+            // 앞 계정 알람을 **다른 계정의** 로그인으로 되살리지 않는다.
+            (record.ownerUserId == nil || record.ownerUserId == owner) &&
             record.enabled && (
                 record.alarmKitUUID == nil ||
                 record.runtimeStateEnum == .failed ||
@@ -342,6 +695,15 @@ final class AlarmKitViewModel: ObservableObject {
 
         for record in candidates {
             // PR3 FIX: double-arm race guard. rearmIfHolidayOffOneShot(dismiss 경로)나
+            // ⚠ **매 회차 다시 확인한다 — 후보 목록은 await 앞에서 굳은 복사본이다**(감사 지적).
+            // 이 sweep 가 `await schedule` 로 멈춘 사이 로그아웃이 통째로 끝날 수 있는데,
+            // 그러면 남은 후보들은 **방금 꺼진 행**이다. 그대로 나아가면
+            // `prepareForScheduleRecovery` 가 그 행을 도로 켜고(`enabled = true` 를 직접 쓴다)
+            // 이어지는 예약이 게이트가 이미 닫힌 뒤라 그대로 성공해, **로그아웃한 계정의
+            // 알람이 로그인 화면 뒤에서 되살아난다.** 종료 게이트는 `schedule` 진입점에만
+            // 있어 이 경로를 못 막는다.
+            guard !isLeavingAccount else { break }
+            guard let live = store.record(id: record.id), live.enabled else { continue }
             // 또 다른 recovery sweep 가 같은 record 를 await schedule() 중이면 건너뛴다.
             // (`.fixed` one-shot 이 중복 schedule 되어 다음 회차가 이중 발화하는 것을 방지)
             guard !rearmInFlight.contains(record.id) else { continue }
@@ -481,6 +843,12 @@ final class AlarmKitViewModel: ObservableObject {
         store: LocalAlarmStore,
         retriesLeft: Int
     ) async -> Bool {
+        // ⚠ **계정을 떠나는 중에는 새 예약을 만들지 않는다**(Codex #699 P1).
+        // 종료 sweep 가 도는 동안 만들어진 예약은 그 sweep 가 못 보고 지나가, 로그아웃이
+        // 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**으로 남는다.
+        guard !isLeavingAccount else { return false }
+        // ⚠ **await 하기 전에** 적어 둔다 — 돌아와서 달라졌으면 계정이 바뀐 것이다.
+        let epochAtStart = accountEpoch
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
         // 걸려는 게 아니다. 권한 프롬프트가 떠서 화면을 가리는 것도 막는다.
         //
@@ -533,7 +901,18 @@ final class AlarmKitViewModel: ObservableObject {
             // 없는 고아다(아래 '지워졌다' 갈래와 같은 사고). `markScheduled` 로 나아가는
             // 것도 안 된다: 그건 "끝났다" 고 통보한 사이클이 로컬을 더 만지는 것이다.
             if Task.isCancelled {
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
+                return false
+            }
+
+            // ⚠ **await 사이에 계정이 바뀌었을 수 있다**(Codex #699 P1). 그대로 나아가면
+            // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
+            // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
+            if accountEpoch != epochAtStart || isLeavingAccount {
+                await revertJustScheduled(id)
+                Self.paidGateLogger.info(
+                    "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                )
                 return false
             }
 
@@ -552,7 +931,7 @@ final class AlarmKitViewModel: ObservableObject {
             guard let afterAwait = store.record(id: record.id) else {
                 // **지워졌다.** `markScheduled` 는 행이 없으면 조용히 no-op 이라, 그냥 두면
                 // OS 에만 남아 **취소할 핸들이 없는 고아**가 된다 — 지운 알람이 운다.
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm deleted while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
@@ -563,7 +942,7 @@ final class AlarmKitViewModel: ObservableObject {
                 // 방금 건 예약은 낡았으므로 되돌린다. `AlarmScheduleReconciler` 는
                 // **소리 지문만** 비교하므로 시각만 바뀐 경우는 아무도 고쳐 주지 않는다 —
                 // 여기서 처리하지 않으면 알람이 옛 시각에 운다.
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm changed while scheduling — rescheduling with the fresh row (id: \(record.id, privacy: .public))"
                 )
@@ -615,7 +994,15 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     @discardableResult
-    func cancelScheduledAlarm(record: LocalAlarmRecord) async -> Bool {
+    /// - Parameter cancellationOrigin: 실패했을 때 회수 목록에 **어떤 맥락**으로 적을지.
+    ///   ⚠ **앰비언트 상태로 두지 말 것**(Codex #699 P1). 예전에는 sweep 가 프로퍼티에
+    ///   세팅해 뒀는데, 그 값이 **sweep 이 끝난 뒤에도 남아** 뒤이은 남의 계정 정리의 실패가
+    ///   `.accountLeave` 를 물려받았다 — 그러면 회수가 그 사람의 알람을 영구히 끈다.
+    ///   기본값은 **행을 건드리지 않는 쪽**이다.
+    func cancelScheduledAlarm(
+        record: LocalAlarmRecord,
+        cancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
+    ) async -> Bool {
         #if canImport(AlarmKit)
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         do {
@@ -625,6 +1012,11 @@ final class AlarmKitViewModel: ObservableObject {
             // (실패는 결과가 달라지므로 아래 catch 에서 계속 알린다.)
             return true
         } catch {
+            // ⚠ **실패한 취소는 예외 없이 여기서 회수 목록에 남긴다**(Codex #699 P1).
+            // 호출부마다 기억하게 하면 언젠가 빠뜨리고, 빠뜨린 그 예약은 **아무도 모르는
+            // 고아**가 된다 — 행에도 없고 목록에도 없으니 다음 로그인도 회수 sweep 도
+            // 찾지 못한다. 판정을 취소 지점 **한 곳**에 둔다.
+            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString, origin: cancellationOrigin)
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }

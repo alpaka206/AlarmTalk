@@ -54,12 +54,23 @@ enum AlarmScheduleReconciler {
     }
 
     /// 어긋난 예약을 다시 건다.
+    ///
+    /// ⚠ **소유자 범위 안에서만 건다**(Codex #699 P1). 예전에는 `store.alarms` 를 통째로
+    /// 돌았다. 그러면 A 의 세션이 자동 401 로 끊긴 상태에서 B 가 로그인했을 때, 이 sweep 가
+    /// **A 의 알람을 B 의 앱에서 다시 예약한다** — 목록에는 안 보이는데 울리고, B 는 끌 수
+    /// 없다. 로그인 때 남의 예약을 끊어도(`cancelScheduledAlarmsNotOwnedBy`) 이쪽이 도로
+    /// 걸면 소용이 없다. 두 경로는 **같은 범위**를 봐야 한다.
+    ///
+    /// - Parameter ownerUserId: 지금 로그인한 계정. `nil` 이면 **자동으로 끊긴 계정**
+    ///   (`SessionExpiryStore`)으로 되짚고, 그것도 없으면 아무것도 하지 않는다 —
+    ///   `AlarmKitViewModel.recoverScheduledAlarms` 와 같은 판정이다.
     /// - Returns: 다시 예약한 알람 수.
     @discardableResult
     static func reconcile(
         store: LocalAlarmStore,
         alarmKit: AlarmKitViewModel,
-        audioCache: AudioCacheStore = .shared
+        audioCache: AudioCacheStore = .shared,
+        ownerUserId: String?
     ) async -> Int {
         guard !isRunning else { return 0 }
         isRunning = true
@@ -71,7 +82,8 @@ enum AlarmScheduleReconciler {
         // 백그라운드 동기화)에서 또 한 번 기회가 온다.
         var attempted: Set<String> = []
 
-        for snapshot in store.alarms {
+        let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
+        for snapshot in store.alarms(visibleTo: owner) {
             guard !attempted.contains(snapshot.id) else { continue }
 
             // ⚠ **반영 직전에 다시 읽는다.** 위 배열은 루프 시작 시점의 **복사본**이고,

@@ -246,7 +246,7 @@ final class BackgroundSyncTask {
             // 위 갱신들이 행의 음원을 갈아 끼웠다면 예약도 맞춰야 한다 — iOS 는 예약 시점에
             // 받아 간 파일을 그대로 울리므로, 행만 고치면 옛 소리가 그대로 난다.
             if let store, let alarmKit {
-                await AlarmScheduleReconciler.reconcile(store: store, alarmKit: alarmKit)
+                await AlarmScheduleReconciler.reconcile(store: store, alarmKit: alarmKit, ownerUserId: BackgroundDependencies.shared.auth.session?.user.id)
             }
             // PR3: `.fixed` 공휴일off one-shot proactive 재무장 sweep. iOS 의 유일한 주기
             // wake 가 BGAppRefreshTask 이므로, kill 상태에서 발화 후 dismiss-재무장을 놓친
@@ -255,7 +255,11 @@ final class BackgroundSyncTask {
             // dismiss 경로 + foreground recovery 가 1차. 25s executionTimeout 안에서 동작.
             #if canImport(AlarmKit)
             if let store, let alarmKit, store.hasLoadedFromDisk {
-                await alarmKit.recoverScheduledAlarms(store: store)
+                await alarmKit.recoverScheduledAlarms(
+                    store: store,
+                    // 백그라운드에도 세션이 있다(launch 에서 키체인으로 채택한다).
+                    ownerUserId: KeychainStore.readSession()?.user.id
+                )
             }
             #endif
             timeoutTask.cancel()

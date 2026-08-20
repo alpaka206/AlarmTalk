@@ -53,6 +53,11 @@ class AlarmRepository(
     // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
+    // 로그아웃 때 끄기가 실패해 아직 켜진 채인 알람. 메모리 게이트로만 막으면 프로세스가
+    // 죽는 순간 사라져, 재로그인이 명시적으로 로그아웃한 알람을 되살린다(Codex #699 P2).
+    private val pendingDisableAlarmIdsProvider: () -> Set<String> = { emptySet() },
+    private val onPendingDisableAdded: (Collection<String>) -> Unit = {},
+    private val onPendingDisableCleared: (Collection<String>) -> Unit = {},
     // 지금 실제로 울리는 중이거나 리시버→서비스 인계 중인 알람 id**들**(없으면 빈 집합).
     // 영속 상태(state=RINGING)가 아니라 이걸로 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이
     // 복구에서 영구 배제되지 않는다. **하나가 아니라 집합인 이유**는
@@ -502,7 +507,11 @@ class AlarmRepository(
      *
      * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
      * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
-     * 않게 한다. 본인이 다시 로그인하면 [reschedulePendingAlarms] 가 되살린다.
+     * 않게 한다.
+     *
+     * ⚠ **행도 끈다**(2026-08-19 정책). 그래서 본인이 다시 로그인해도 [reschedulePendingAlarms]
+     * 가 되살리지 **않는다** — 그 sweep 는 켜진 행만 후보로 잡는다. 돌아온 사용자는 목록에서
+     * 알람이 꺼진 것을 보고 직접 켠다. 예전 이 문장은 "되살린다" 였고, 그건 뒤집힌 정책이다.
      * 목록 노출은 [observeAlarms] 의 소유자 필터가 막는다.
      *
      * 반환값은 예약을 내린 알람 수.
@@ -554,6 +563,18 @@ class AlarmRepository(
         }
     }
 
+    /** 한 행을 끈다. 성공 여부를 돌려준다 — 호출부가 재시도·게이트를 판단한다. */
+    private suspend fun disableOnSignOut(id: String, nowMillis: Long): Boolean =
+        runCatching {
+            alarmDao.setState(
+                id = id,
+                state = AlarmStates.DISABLED,
+                enabled = false,
+                updatedAtMillis = nowMillis,
+            )
+        }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
+            .isSuccess
+
     private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
@@ -562,6 +583,19 @@ class AlarmRepository(
         // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
         // 취소 루프 전체가 건너뛰어진다.
         all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
+        // ⚠ **행도 끈다 — 예약만 취소하고 `enabled=1` 로 남기지 말 것**(2026-08-19 지시).
+        // 예전에는 "재로그인하면 그대로 돌아오게" 하려고 켜진 채 뒀는데, **로그아웃은 이 앱을
+        // 그만 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능
+        // 자체를 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이
+        // 저절로 울리기 시작하는 편이 오히려 놀랍다.
+        //
+        // ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다**(로그인 게이트).
+        // 그래서 예약이 남으면 사용자가 **끌 방법이 없는 알람**이 우는 셈이다 —
+        // 위 주석의 "목록에서 감춰져 사용자가 끌 수도 없는데" 와 같은 말이다.
+        //
+        // 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+        // `hs_status_inactive`("모든 알람이 꺼진 상태입니다.")가 홈 headline 으로 뜬다.
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms` — **한쪽만 고치지 말 것.**
         // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
         // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
         // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자
@@ -570,6 +604,61 @@ class AlarmRepository(
             // 새기기가 실패해도 예약은 이미 내려갔다. 임자 표시가 남아 다음 기회에 다시 시도한다.
             runCatching { claimUnownedAlarmsFor(signedOutUserId) }
                 .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        }
+        // ⚠ **끄는 것은 떠나는 계정 것만이다 — 위 예약 취소와 범위가 다르다**(Codex #699 P1).
+        // 취소는 되돌릴 수 있지만(주인이 다시 로그인하면 reschedulePendingAlarms 가 다시 건다)
+        // `enabled = false` 는 되돌릴 수 없다. 남의 계정 행까지 끄면 이렇게 된다:
+        // A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+        // **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+        //
+        // 소유권 확정 **뒤에** 판단하고, ⚠ **행을 다시 읽는다.** 위 `settlePendingAlarmOwnership`
+        // 은 **앞 계정(A)** 의 미해결 행을 A 로 새긴다 — 확정 전 스냅샷(`all`)으로 판정하면
+        // 그 행이 아직 null 로 보여 **지금 떠나는 B 것으로 오인해 A 의 알람을 꺼 버린다.**
+        // (이 함수가 막으려는 바로 그 사고를, 스냅샷을 재사용하는 것만으로 다시 낸다.)
+        //
+        // 다시 읽으면 A 것은 A 로, B 의 옛 행은 방금 `claimUnownedAlarmsFor` 가 B 로 새겼다.
+        // **다시 읽는 데 성공했는데도** null 이 남았다면 새기기가 실패한 것이라 임자를 알 수
+        // 없으므로 끄는 쪽에 넣는다(안 울리는 쪽이 안전하다). `signedOutUserId` 가 비어
+        // 누구인지 모를 때도 같다. **다시 읽기 자체가 실패한 경우는 아래에서 따로 가른다.**
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms`.
+        val now = System.currentTimeMillis()
+        val leaving = signedOutUserId?.takeIf { it.isNotBlank() }
+        val rereadOrNull = runCatching { alarmDao.getAllAlarms() }
+            .onFailure { error -> Log.w(TAG, "Failed to re-read alarms after ownership settle", error) }
+            .getOrNull()
+        // ⚠ **다시 읽기가 실패하면 옛 스냅샷으로 되돌아가지 말 것**(Codex #699 P1).
+        // 그 스냅샷에서는 방금 A 로 새겨진 행이 아직 `ownerUserId == null` 이라, 아래 판정이
+        // 그걸 **지금 떠나는 B 것으로 오인해 영구히 끈다** — 다시 읽기를 넣은 이유가 정확히
+        // 그 사고를 막는 것이었는데, 폴백이 그 구멍을 도로 뚫는다.
+        // 그래서 실패했을 때는 **임자가 모호한 행(owner == null)을 아예 건드리지 않는다.**
+        // 그 행들의 예약은 위에서 이미 취소했으므로 울지 않고, 켜짐은 주인이 돌아왔을 때
+        // 되살아난다 — 잃는 것이 없는 쪽이다.
+        val settled = rereadOrNull ?: all
+        val ownershipIsCertain = rereadOrNull != null
+        settled.filter { alarm ->
+            if (!alarm.enabled) return@filter false
+            if (leaving == null) return@filter true
+            when (alarm.ownerUserId) {
+                leaving -> true
+                null -> ownershipIsCertain
+                else -> false
+            }
+        }.let { targets ->
+            // ⚠ **끄기 실패를 로그만 남기고 넘어가지 말 것**(2026-08-19 Codex #699 P2).
+            // 예약은 이미 취소됐지만 행이 켜진 채 남으면, 같은 계정으로 다시 로그인할 때
+            // `reschedulePendingAlarms` 가 **명시적으로 로그아웃한 알람을 자동으로 되살린다.**
+            // Room/디스크의 일시적 실패가 대부분이라 **한 번 더** 시도하고,
+            // 그래도 안 되면 이 프로세스의 재예약을 막는 게이트를 세운다.
+            val failed = targets.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            val stillFailed = failed.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            if (stillFailed.isNotEmpty()) {
+                Log.w(TAG, "Failed to disable ${stillFailed.size} alarms on sign-out — persisting for retry")
+                // 이 프로세스에서 락을 기다리던 복원을 막고,
+                signOutWithoutSessionClearOwner = signedOutUserId
+                // **프로세스가 죽어도 남게** 적어 둔다 — 다음 기회에 마저 끈다.
+                runCatching { onPendingDisableAdded(stillFailed.map { it.id }) }
+                    .onFailure { error -> Log.w(TAG, "Failed to persist pending disables", error) }
+            }
         }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size
@@ -1150,9 +1239,11 @@ class AlarmRepository(
             // 계정이 실제로 로그인한' 시점에 onSignedIn 의 cancelAlarmsNotOwnedBy 가 한다.
             //
             // **비로그인일 때 되살릴 수 있는 건 '자동으로 끊긴 그 계정' 의 알람뿐이다.**
-            // detachAlarmsOnSignOut 은 예약만 취소하고 행은 enabled=1 로 남기므로(재로그인하면
-            // 되살리려고), 비로그인을 전부 '이 기기 것' 으로 다루면 사용자가 끝낸 계정의 알람이
-            // 콜드스타트·부팅·업데이트마다 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.**
+            // 자동 401 은 행을 켠 채 두므로(사용자가 그만두겠다고 한 게 아니다), 비로그인을
+            // 전부 '이 기기 것' 으로 다루면 그 계정들 알람이 콜드스타트·부팅·업데이트마다
+            // 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.**
+            // (명시적 로그아웃은 detachAlarmsOnSignOut 이 행까지 끄므로 여기 후보에 없다 —
+            //  2026-08-19 정책 변경 전에는 그쪽도 켜진 채 남아 이 게이트가 유일한 방어였다.)
             // 한 기기에 여러 계정이 오갔다면 그 계정들 알람이 한꺼번에 살아난다(Codex #665 P1).
             //
             // 복원 대상이 없으면(명시적 로그아웃·이 빌드 이전 상태) 소유자 있는 행은 건드리지
@@ -1170,6 +1261,19 @@ class AlarmRepository(
             if (blockedOwner != null && (alarm.ownerUserId == null || alarm.ownerUserId == blockedOwner)) {
                 alarmScheduler.cancel(alarm.id)
                 return@forEach
+            }
+            // ⚠ **밀린 끄기를 먼저 마저 한다**(Codex #699 P2). 로그아웃 때 쓰기가 실패해 켜진
+            // 채 남은 행들이다 — 여기서 안 끄면 바로 아래 재예약이 **명시적으로 로그아웃한
+            // 알람을 되살린다.**
+            val pendingDisable = runCatching { pendingDisableAlarmIdsProvider() }.getOrDefault(emptySet())
+            if (pendingDisable.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val done = pendingDisable.filter { id ->
+                    alarmScheduler.cancel(id)
+                    disableOnSignOut(id, now)
+                }
+                runCatching { onPendingDisableCleared(done) }
+                    .onFailure { error -> Log.w(TAG, "Failed to clear pending disables", error) }
             }
             val restorableOwner = currentUser ?: sessionExpiredOwnerUserIdProvider()
             if (alarm.ownerUserId != null && alarm.ownerUserId != restorableOwner) {

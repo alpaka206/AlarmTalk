@@ -416,6 +416,16 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 
 - **WSAEFAULT(10014)**: 소켓 bind/listen 간헐 실패로 Gradle 데몬·adb 기동 실패 → 성공까지 재시도. adb가 아예 죽으면 라온 보안 드라이버 정지(관리자): `Stop-Service AnySign4PC Launcher, MagicLine4NXSVC, 'RAON K', WizveraPMSvc` + `sc stop KingsNET` `sc stop TNXNET_SVR` → `adb start-server`. 상세=메모리 `reference_winsock_wsaefault_build_workaround`.
 - **K2 캐스케이드**: 같은 모듈 멀쩡한 심볼이 무더기 "Unresolved reference" → clean 재빌드로 해결.
+- ⚠ **iOS 실기기 테스트는 예전에 그 폰의 로그인·알람·목소리를 지웠다**(2026-08-19 원인 규명·수정).
+  유닛 테스트가 **호스트 앱 프로세스**에서 돌아 기본 저장 위치가 사용자의 것과 같았다 —
+  `AuthViewModelTests` 가 진짜 `signOut()` 을 불러 키체인 세션을 지웠고, `AlarmAppContextTests`
+  의 `setUp` 이 알람 JSON 을 `removeItem` 했고, 그 바람에 스톡 클립도 함께 날아가 **다음
+  로그인이 기본 목소리를 전부 다시 받았다**("로그인마다 다시 받는다" 제보의 정체).
+  앱 데이터 컨테이너는 멀쩡했으므로(며칠 전 파일이 그대로 있었다) **재설치 탓이 아니다.**
+  이제 `AlarmTalk/TestIsolation.swift` 가 저장 위치를 한 곳에서 가르고, 우회는
+  `scripts/check-test-isolation.py`(CI lint)가 막는다. 회귀 테스트 `TestIsolationTests`.
+  검증 방법: 진짜 경로에 센티넬을 심고 전체 스위트를 돌린 뒤 그대로인지 본다
+  (`devicectl device copy to --domain-type appDataContainer ... --user mobile`).
 
 ## 5. 알람 음성의 **최종 목적지** (2026-08-18 지시 — 5단계의 미결을 이걸로 닫는다)
 

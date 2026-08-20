@@ -77,6 +77,11 @@ internal class RemoteAlarmPullSyncService(
         token: String,
     ): RemoteAlarmPullResult {
         val authorization = AlarmTalkApiClient.bearer(token)
+        // ⚠ **첫 네트워크 호출보다 먼저 잡는다**(2026-08-19 Codex #699 P1). 목록 요청이
+        // 도는 동안 세션이 비워질 수 있는데, 그때 잡으면 이 값도 null 이 되어 아래 대조가
+        // **null == null 로 통과**한다 — 로그아웃 뒤에 받은 알람이 그대로 심긴다.
+        // 요청에 쓰는 토큰과 **같은 시점**의 계정이어야 짝이 맞는다.
+        val pullOwnerUserId = currentUserIdProvider()
         // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 받은 알람만 가져온다 —
         // 판별은 서버가 뷰어의 두 식별자(PK·로그인 id)를 모두 담은 집합으로 계산한 is_received 를 쓴다.
@@ -106,6 +111,12 @@ internal class RemoteAlarmPullSyncService(
         var skipped = 0
         var failed = 0
 
+        // 반영 구간은 음성 다운로드(네트워크, 수 초) 뒤에 락을 **되잡아** 돌므로, 그 사이에
+        // 로그아웃이 전부 끝나 있을 수 있다. 그때 그대로 반영하면 `existing == null` 이라
+        // 아래 세 가드(지워졌나·울리는 중인가·수신자가 고쳤나)에 하나도 안 걸리고 **새 행을
+        // enabled=1 로 심고 예약까지 건다** — 로그아웃 상태에서 끌 방법이 없는 알람이 우는,
+        // 이 변경이 통째로 막으려던 그 상태다.
+        // iOS 는 `AlarmKitViewModel.isLeavingAccount` 게이트가 같은 일을 한다.
         remoteAlarms.forEach { remote ->
             runCatching {
                 // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
@@ -167,6 +178,16 @@ internal class RemoteAlarmPullSyncService(
                     // 둘 다 사용자가 못 일어나거나 고친 게 없어지는 결과라, 반영 직전의 행을
                     // 기준으로 다시 판단한다(Codex #675 P1).
                     val current = alarmDao.getAllByRemoteAlarmId(remote.id).firstOrNull()
+
+                    // ⚠ **대기하는 사이에 계정이 떠났으면 반영하지 않는다**(위 pullOwnerUserId 주석).
+                    // 로그아웃·계정 전환 둘 다 여기서 걸린다. 서버 행은 그대로 남으므로
+                    // 그 계정이 다시 로그인하면 다음 pull 이 정상적으로 들여온다.
+                    // `pullOwnerUserId` 가 null 이면 시작 시점에 이미 계정이 없었다는 뜻이라
+                    // 반영할 근거가 없다 — 같은 null 이라고 통과시키지 않는다.
+                    if (pullOwnerUserId == null || currentUserIdProvider() != pullOwnerUserId) {
+                        skipped += 1
+                        return@withLock
+                    }
 
                     // 대기 중에 **지워졌으면 되살리지 않는다.** 그대로 upsert 하면 사용자가
                     // 지운 알람이 다시 생겨 울린다(Codex #675 P1).

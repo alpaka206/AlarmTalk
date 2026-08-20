@@ -8,13 +8,23 @@ final class LocalAlarmStore: ObservableObject {
 
     private let persistence: LocalAlarmPersistence
 
+    /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
+    ///
+    /// ⚠ 기본 생성자를 쓰는 테스트가 사용자의 알람 파일을 그대로 잡지 않게 가른다
+    /// (`AlarmAppContextTests` 가 실제로 그랬다) — 근거는 `TestIsolation`.
+    nonisolated static func defaultStorageURL() -> URL {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return directory.appendingPathComponent(
+            "voice-alarm-ios-alarms\(TestIsolation.storageSuffix).json"
+        )
+    }
+
     init(storageURL: URL? = nil, loadFromDisk: Bool = true) {
         let resolvedStorageURL: URL
         if let storageURL {
             resolvedStorageURL = storageURL
         } else {
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            resolvedStorageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
+            resolvedStorageURL = Self.defaultStorageURL()
         }
         self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
         guard loadFromDisk else {
@@ -91,6 +101,47 @@ final class LocalAlarmStore: ObservableObject {
         alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
     }
 
+    /// **이 계정에게 보여도 되는 알람.** 안드로이드 `AlarmDao` 의
+    /// `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` 와 같은 조건이다.
+    ///
+    /// ⚠ 없으면 로그아웃 뒤 다른 계정으로 들어왔을 때 **앞 계정 알람이 목록에 그대로
+    /// 보인다**(2026-08-19 지적). 예약은 `stopAllScheduledAlarms` 가 끊어 두지만 화면은
+    /// 그것과 별개다 — 남의 알람을 보고 끄거나 지울 수 있으면 안 된다.
+    ///
+    /// 로그아웃 상태(`nil`)에서는 **아무것도 보이지 않는다.** 그 화면은 로그인 게이트라
+    /// 목록 자체가 뜨지 않지만, 판정을 여기서 한 번에 끝내 둔다.
+    /// 소유자 미기록(옛 행)은 이 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
+    func alarms(visibleTo ownerUserId: String?) -> [LocalAlarmRecord] {
+        guard let owner = ownerUserId?.nilIfBlank else { return [] }
+        return alarms.filter { $0.ownerUserId == nil || $0.ownerUserId == owner }
+    }
+
+    /// **소유자 미기록(옛 행)에 지금 떠나는 계정을 새긴다.** 안드로이드
+    /// `data/AlarmRepository.claimUnownedAlarmsFor` 의 짝이다.
+    ///
+    /// ⚠ 없으면 이렇게 된다(Codex #699 P1): 실제로 쓰이던 알람들은 소유자 없이 저장돼
+    /// 있었는데(`ownerUserId == nil`), A 의 세션이 자동 401 로 끊겨도 그 행들은 계속
+    /// `nil` 이다. 그 뒤 B 가 로그인했다 **명시적으로 로그아웃**하면, `nil` 을 '떠나는 계정
+    /// 것' 으로 보는 규칙이 **A 의 알람을 B 것으로 오인해 영구히 끈다** — A 가 돌아와도
+    /// 꺼진 채다.
+    ///
+    /// `nil` 을 현재 계정으로 보는 관용은 **읽기**에서는 맞다(옛 행을 보여 줘야 하니까).
+    /// 파괴적 경로에서 같은 관용을 쓰려면, 그전에 **누구 것인지 확정**해 둬야 한다.
+    /// 세션이 끝나는 순간이 그 마지막 기회다 — 그 뒤로는 누가 주인이었는지 알 길이 없다.
+    ///
+    /// - Returns: 새긴 행 수.
+    @discardableResult
+    func claimUnownedAlarms(for ownerUserId: String?) -> Int {
+        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
+        var claimed = 0
+        for index in alarms.indices where alarms[index].ownerUserId?.nilIfBlank == nil {
+            alarms[index].ownerUserId = owner
+            claimed += 1
+        }
+        if claimed > 0 { persist() }
+        return claimed
+    }
+
     func countByAudioCacheKey(_ key: String) -> Int {
         alarms.reduce(0) { acc, record in
             (record.audioCacheKey == key) ? acc + 1 : acc
@@ -99,13 +150,19 @@ final class LocalAlarmStore: ObservableObject {
 
     /// `AlarmRepository.requireUniqueTime` 와 동일 의미. mask 동일 + 동일 시각이면 중복.
     /// 단순화: hour+minute 만 일치해도 중복으로 본다 (Android 원본 의도와 동일).
+    ///
+    /// ⚠ **소유자를 반드시 넘긴다 — 목록만 거르면 뚫린다**(Codex #699 P1).
+    /// 목록에서 남의 알람을 감춰도 이 판정이 저장소 전체를 보면, B 가 A 의 **숨은** 알람과
+    /// 같은 시각을 고르는 순간 "중복" 으로 막힌다. 보이지도 않는 알람 때문에 막히니
+    /// 사용자는 이유를 알 길이 없다.
     func requireUniqueTime(
         hour: Int,
         minute: Int,
         repeatDaysMask: Int,
-        excludingID: String? = nil
+        excludingID: String? = nil,
+        ownerUserId: String?
     ) throws {
-        let collision = alarms.contains { record in
+        let collision = alarms(visibleTo: ownerUserId).contains { record in
             record.id != excludingID &&
                 record.hour == hour &&
                 record.minute == minute
@@ -115,8 +172,17 @@ final class LocalAlarmStore: ObservableObject {
 
     /// 같은 시각(hour+minute)의 기존 알람들. "한 시각에는 알람 하나" 교체 흐름에서
     /// 충돌 대상을 찾아 라벨 표시·삭제에 쓴다.
-    func conflictingAlarms(hour: Int, minute: Int, excludingID: String? = nil) -> [LocalAlarmRecord] {
-        alarms.filter { record in
+    /// ⚠ **소유자를 반드시 넘긴다**(Codex #699 P1). 이 결과는 화면에 **남의 알람 이름을
+    /// 그대로 띄우고**(교체 모달의 `existingLabel`), 사용자가 '교체' 를 누르면
+    /// `cancel(record:store:)` 로 **그 알람을 지운다.** 소유자를 안 거르면 B 가 A 의 숨은
+    /// 알람 이름을 보고, 그것을 **영구히 삭제**할 수 있다 — 목록에서 감춘 의미가 사라진다.
+    func conflictingAlarms(
+        hour: Int,
+        minute: Int,
+        excludingID: String? = nil,
+        ownerUserId: String?
+    ) -> [LocalAlarmRecord] {
+        alarms(visibleTo: ownerUserId).filter { record in
             record.id != excludingID && record.hour == hour && record.minute == minute
         }
     }
@@ -210,6 +276,7 @@ final class LocalAlarmStore: ObservableObject {
     @discardableResult
     func copyAlarm(
         id: String,
+        ownerUserId: String?,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) },
         idFactory: () -> String = { UUID().uuidString }
@@ -221,7 +288,8 @@ final class LocalAlarmStore: ObservableObject {
         try requireUniqueTime(
             hour: copiedTime.hour,
             minute: copiedTime.minute,
-            repeatDaysMask: current.repeatDaysMask
+            repeatDaysMask: current.repeatDaysMask,
+            ownerUserId: ownerUserId
         )
 
         var copied = current
@@ -310,6 +378,18 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].scheduledSoundFingerprint = soundFingerprint
         alarms[index].enabled = true
         alarms[index].state = AlarmRuntimeState.armed.rawValue
+        persist()
+    }
+
+    /// OS 예약 핸들만 지운다. **`enabled` 과 상태는 건드리지 않는다.**
+    ///
+    /// 로그아웃·탈퇴에서 예약을 끊은 뒤 부른다 — 핸들이 남아 있으면
+    /// `recoverScheduledAlarms` 의 `alarmKitUUID == nil` 조건에 걸리지 않아
+    /// **재로그인해도 다시 걸리지 않는다.**
+    func clearScheduleHandle(id: String) {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[index].alarmKitID = nil
+        alarms[index].scheduledSoundFingerprint = nil
         persist()
     }
 
@@ -404,6 +484,17 @@ final class LocalAlarmStore: ObservableObject {
 
     func markFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        // ⚠ **꺼진 알람에는 실패를 새기지 않는다**(2026-08-19 실기기 확인).
+        // `.failed` 는 행에 빨간 "알람을 다시 예약하지 못했어요" 를 띄우는데, 꺼진 알람은
+        // 애초에 울릴 일이 없어 그 말이 거짓이다. 더 나쁜 건 **아무도 치워 주지 않는다**
+        // 는 것 — `recoverScheduledAlarms` 는 켜진 알람만 후보로 잡으므로, 한번 이 상태가
+        // 되면 사용자가 직접 열어 다시 저장할 때까지 경고가 영원히 붙는다.
+        //
+        // 실제 경로: 켜기 실패 시 `AlarmsListView` 가 **되돌려 끈 뒤** 이 함수를 부른다
+        // (`setEnabled(false)` → `markFailed`). 호출부 한 곳만 고치면 같은 실수가 또
+        // 나므로 여기서 불변식으로 막는다 — **`.failed` 는 켜진 알람에만 의미가 있다.**
+        // 사용자에게는 그 자리에서 `actionMessage` 로 이미 알린다.
+        guard alarms[index].enabled else { return }
         alarms[index].state = AlarmRuntimeState.failed.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         persist()
@@ -450,9 +541,14 @@ final class LocalAlarmStore: ObservableObject {
         return alarms[index]
     }
 
+    /// - Parameter keepScheduleHandle: 끄면서도 `alarmKitID` 를 남길지.
+    ///   ⚠ **취소가 실패했을 때만 `true`** 다(Codex #699 P1). 그 값은 OS 예약을 취소할
+    ///   **유일한 손잡이**라, 취소에 실패했는데 지우면 예약은 남고 취소할 방법만 사라진다
+    ///   (고아 예약). 평소에는 `false` — 남겨 두면 다음에 켤 때 옛 핸들과 어긋난다.
     func setEnabled(
         id: String,
         enabled: Bool,
+        keepScheduleHandle: Bool = false,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
     ) {
@@ -478,7 +574,9 @@ final class LocalAlarmStore: ObservableObject {
         } else {
             alarms[index].enabled = false
             alarms[index].state = AlarmRuntimeState.disabled.rawValue
-            alarms[index].alarmKitID = nil
+            if !keepScheduleHandle {
+                alarms[index].alarmKitID = nil
+            }
         }
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
         alarms[index].updatedAtMillis = nowMillis

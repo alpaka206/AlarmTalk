@@ -1020,6 +1020,22 @@ enum APIError: LocalizedError {
         }
     }
 
+    /// 탈퇴 유예 계정이라 막힌 것인가(403 `ACCOUNT_PENDING_DELETION`).
+    ///
+    /// 그 상태에서는 백엔드가 **탈퇴 철회와 푸시 해제만** 허용한다
+    /// (`packages/backend/src/middleware/auth.ts`, 개인정보보호법 제21조). 그래서
+    /// `/auth/logout` 은 **성공할 수가 없다** — 실패로 치면 뒷정리 재시도가 영원히 돈다.
+    var isAccountPendingDeletion: Bool {
+        if case .server(_, _, let code) = self { return code == "ACCOUNT_PENDING_DELETION" }
+        return false
+    }
+
+    /// 인증 실패(401)인가. 로그아웃 뒷정리에서 **이미 폐기된 토큰**을 성공으로 보기 위해 쓴다.
+    var isUnauthorized: Bool {
+        if case .server(let status, _, _) = self { return status == 401 }
+        return false
+    }
+
     /// 매핑된 백엔드 error_code 가 있으면 노출. VoiceStudioViewModel.mapVoiceError 가 사용.
     var serverErrorCode: String? {
         if case .server(_, _, let code) = self { return code }

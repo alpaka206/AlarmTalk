@@ -176,6 +176,13 @@ struct LoginView: View {
         .navigationDestination(isPresented: $showPasswordReset) {
             PasswordResetView()
         }
+        // 고쳐 치기 시작하면 지운다 — 안드로이드의 `onClearLoginError`(입력창 onValueChange)와
+        // 같은 시점이다. 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
+        .onChange(of: password) { _, _ in auth.loginError = nil }
+        .onChange(of: email) { _, _ in auth.loginError = nil }
+        // 로그인↔가입을 오갈 때도 지운다(안드로이드는 `authRoute` 가 바뀔 때 지운다) —
+        // 가입 화면에서는 이 자리에 비밀번호 규칙이 온다.
+        .onChange(of: mode) { _, _ in auth.loginError = nil }
     }
 
     // MARK: - Sections
@@ -308,13 +315,33 @@ struct LoginView: View {
 
     private var confirmCodeEnabled: Bool { !auth.isBusy && verificationCode.count == 6 }
 
+    /// 로그인 실패는 **여기**, 비밀번호 입력창 바로 아래에 붙는다.
+    ///
+    /// ⚠ 하단 `statusMessage` 로 보내지 말 것 — 그 자리는 제출 버튼·비밀번호 찾기·애플
+    /// 로그인 행을 다 지나서야 나와서, 틀린 사람이 **틀린 줄도 모른다**(2026-08-19 실기기
+    /// 보고). 안드로이드는 `OutlinedTextField.supportingText` 로 처음부터 여기 붙였다
+    /// (`ui/auth/AuthScreen.kt`). 테두리도 함께 빨개진다(`isError`).
     private var passwordField: some View {
-        VocaSecureField(
-            title: "비밀번호",
-            text: $password,
-            isVisible: $isPasswordVisible,
-            enabled: !auth.isBusy
-        )
+        VStack(alignment: .leading, spacing: 6) {
+            VocaSecureField(
+                title: "비밀번호",
+                text: $password,
+                isVisible: $isPasswordVisible,
+                enabled: !auth.isBusy,
+                isError: showsLoginError
+            )
+            if showsLoginError, let message = auth.loginError {
+                Text(message)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(AuthSceneColors.error)
+            }
+        }
+    }
+
+    /// 회원가입 모드에서는 이 자리에 비밀번호 **규칙**이 오므로 로그인 오류를 그리지 않는다
+    /// (안드로이드도 `mode == AuthMode.Login` 일 때만 붙인다).
+    private var showsLoginError: Bool {
+        mode == .login && auth.loginError != nil
     }
 
     private var passwordRules: some View {

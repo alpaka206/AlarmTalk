@@ -20,6 +20,7 @@ final class LocalAlarmStoreCopyTests: XCTestCase {
 
         let copied = try store.copyAlarm(
             id: source.id,
+            ownerUserId: "u1",
             nowMillis: millis(2026, 5, 26, 7, 0),
             isHoliday: { _ in false },
             idFactory: { "copy" }
@@ -47,6 +48,7 @@ final class LocalAlarmStoreCopyTests: XCTestCase {
 
         let copied = try store.copyAlarm(
             id: source.id,
+            ownerUserId: "u1",
             nowMillis: millis(2026, 5, 26, 7, 0),
             isHoliday: { _ in false },
             idFactory: { "copy-late" }
@@ -66,6 +68,7 @@ final class LocalAlarmStoreCopyTests: XCTestCase {
         XCTAssertThrowsError(
             try store.copyAlarm(
                 id: source.id,
+                ownerUserId: "u1",
                 nowMillis: millis(2026, 5, 26, 7, 0),
                 isHoliday: { _ in false },
                 idFactory: { "copy" }

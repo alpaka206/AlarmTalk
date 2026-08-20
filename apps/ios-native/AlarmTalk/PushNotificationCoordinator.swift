@@ -68,6 +68,26 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         }
     }
 
+    /// 등록/해제를 **한 줄로 세운다.**
+    ///
+    /// ⚠ 둘 다 네트워크 왕복이라 서로 끼어든다(Codex #699 P2). A 의 해제 요청이 날아가는
+    /// 동안 B 가 같은 기기 토큰으로 등록을 마치면, 서버의 `/push/unregister` 는 **토큰만 보고
+    /// 지우므로** 뒤늦게 도착한 A 의 요청이 **B 의 새 바인딩을 지운다.** 완료 처리도 B 의
+    /// 등록 캐시를 비운다. 주인 검사만으로는 그 창을 못 닫는다 — 검사는 요청 **전에** 하고,
+    /// 사고는 요청이 **떠 있는 동안** 나기 때문이다.
+    private var pushMutationChain: Task<Void, Never>?
+
+    /// 앞선 등록/해제가 끝난 뒤에 실행한다.
+    private func serializePushMutation(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = pushMutationChain
+        let current = Task { @MainActor in
+            await previous?.value
+            await body()
+        }
+        pushMutationChain = current
+        await current.value
+    }
+
     private static let lastTokenKey = "push_last_registered_token"
     private static let lastUserKey = "push_last_registered_user"
 
@@ -86,18 +106,25 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     func registerToken(_ deviceToken: Data, session: AuthSession?) async {
         guard let session else { return }
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
-        guard hex != lastRegisteredToken || session.user.id != lastRegisteredUserID else { return }
-        do {
-            try await AlarmTalkAPI.shared.registerPushToken(
-                token: hex,
-                platform: "ios",
-                authToken: session.token
-            )
-            lastRegisteredToken = hex
-            lastRegisteredUserID = session.user.id
-        } catch {
-            // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
-            // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+        // ⚠ **중복 판정도 줄을 선 뒤에 한다**(Codex #699 P2). 같은 계정이 다시 로그인할 때,
+        // 앞선 **해제**가 아직 줄에 있으면 캐시는 여전히 그 계정을 가리킨다 — 여기서 "이미
+        // 올렸다" 며 돌아가면 뒤이어 그 해제가 서버 바인딩을 지우고 캐시까지 비운다.
+        // 그러면 **등록해 줄 사람이 아무도 없다**(다음 실행의 APNs 등록까지 푸시를 놓친다).
+        await serializePushMutation { [weak self] in
+            guard let self else { return }
+            guard hex != self.lastRegisteredToken || session.user.id != self.lastRegisteredUserID else { return }
+            do {
+                try await AlarmTalkAPI.shared.registerPushToken(
+                    token: hex,
+                    platform: "ios",
+                    authToken: session.token
+                )
+                self.lastRegisteredToken = hex
+                self.lastRegisteredUserID = session.user.id
+            } catch {
+                // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
+                // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
+            }
         }
     }
 
@@ -110,13 +137,56 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     ///
     /// ⚠ **`/auth/logout` 보다 먼저** 불러야 한다(토큰이 아직 유효할 때).
     /// 실패해도 로그아웃은 그대로 진행한다 — 막으면 로그아웃을 못 하게 된다.
-    func unregisterCurrentToken(authToken: String) async {
-        guard let deviceToken = lastRegisteredToken?.nilIfBlank else {
-            clearRegistrationCache()
-            return
+    /// - Returns: 실제로 해제됐는가. ⚠ **실패를 삼키지 말 것**(Codex #699 P2) —
+    ///   호출부가 이 값으로 "다시 시도해야 하는가" 를 판단한다. 실패했는데 성공으로
+    ///   보고하면 로그아웃 복구 표시가 지워져 **기기가 떠난 계정에 묶인 채 영구히** 남는다.
+    ///   같은 이유로 **실패 시 기기 토큰 캐시도 비우지 않는다** — 그 값이 없으면 다음
+    ///   시도가 무엇을 지워야 할지 모른다.
+    /// - Parameter expectedOwnerUserID: 이 해제가 **어느 계정 몫**인가. 지금 캐시된 기기
+    ///   토큰의 주인이 다르면 **아무것도 하지 않는다**(Codex #699 P2).
+    ///   서버의 `/push/unregister` 는 **토큰만 보고 지우므로**(`routes/push.ts`), 떠난 계정 A 의
+    ///   뒷정리가 지금 B 에게 등록된 그 토큰을 지워 **B 가 가족 알람 푸시를 놓친다.**
+    ///   A 의 바인딩은 B 가 등록할 때 서버가 이미 지웠다(`token = ? AND user_id != ?`).
+    @discardableResult
+    /// - Parameter stillNeeded: **줄을 선 뒤에** 다시 묻는다. 앞선 등록 뒤에 대기하는 사이
+    ///   사용자가 탈퇴를 철회하면, 그대로 요청하면 **되살아난 계정의 새 바인딩을 지운다**
+    ///   (Codex #699 P2).
+    func unregisterCurrentToken(
+        authToken: String,
+        expectedOwnerUserID: String? = nil,
+        stillNeeded: @escaping @Sendable () -> Bool = { true }
+    ) async -> Bool {
+        // ⚠ **줄부터 선다 — 여기서 미리 판단하지 않는다**(Codex #699 P2). 앞선
+        // `registerToken` 이 아직 줄에 있거나 날아가는 중이면 캐시는 **옛 주인**을 가리킨다.
+        // 그걸 보고 "내 것이 아니다" 며 그냥 돌아가면, 뒤이어 끝난 그 등록이 **떠난 계정에
+        // 기기를 묶어 놓은 채** 남는다 — 뒤에 정리할 사람이 없다.
+        var result = false
+        await serializePushMutation { [weak self] in
+            guard let self else { return }
+            // ⚠ **줄을 선 뒤에 다시 본다.** 기다리는 동안 철회되거나 다른 계정이 등록을
+            // 마쳤을 수 있다.
+            guard stillNeeded() else { result = false; return }
+            if let expected = expectedOwnerUserID?.nilIfBlank,
+               let current = self.lastRegisteredUserID?.nilIfBlank,
+               current != expected {
+                result = true
+                return
+            }
+            guard let deviceToken = self.lastRegisteredToken?.nilIfBlank else {
+                // 올린 적이 없다 — 지울 것도 없으므로 끝난 것으로 본다.
+                self.clearRegistrationCache()
+                result = true
+                return
+            }
+            do {
+                try await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
+                self.clearRegistrationCache()
+                result = true
+            } catch {
+                result = false
+            }
         }
-        try? await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
-        clearRegistrationCache()
+        return result
     }
 
     /// 로그아웃 시 다음 로그인에서 반드시 다시 올리도록 캐시를 비운다.
@@ -196,6 +266,18 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
+        // ⚠ **푸시 해제 훅도 launch 에서 꽂는다**(Codex #699 P2). 예전에는 화면의
+        // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
+        // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
+        // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
+        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner, stillNeeded in
+            guard let push else { return false }
+            return await push.unregisterCurrentToken(
+                authToken: token,
+                expectedOwnerUserID: expectedOwner,
+                stillNeeded: stillNeeded
+            )
+        }
         let launchPull = RemoteAlarmPullSync(
             store: deps.alarmStore,
             alarmKit: deps.alarmKit,
@@ -248,7 +330,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             guard degraded > 0 else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
-                alarmKit: deps.alarmKit
+                alarmKit: deps.alarmKit,
+                ownerUserId: deps.auth.session?.user.id
             )
         }
         deps.push.onPlanChanged = {
@@ -265,8 +348,38 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             guard deps.socialFeatures.entitlementSnapshotComplete else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
-                alarmKit: deps.alarmKit
+                alarmKit: deps.alarmKit,
+                ownerUserId: deps.auth.session?.user.id
             )
+        }
+
+        // 로그아웃·탈퇴 때 OS 예약을 끊고, **떠나는 계정의 행은 함께 끈다**(2026-08-19 지시).
+        // 예약 취소는 전부에 걸지만 `enabled = false` 는 떠나는 계정 것만이다 — 남의 계정
+        // 행까지 끄면 자동 401 로 세션만 잃은 사람의 알람이 영영 꺼진다(Codex #699 P1).
+        // 세션이 끝나기 직전에 소유자 미기록 알람에 그 계정을 새긴다 — 그 뒤로는
+        // 누구 것이었는지 알 길이 없다(안드로이드 `claimUnownedAlarmsFor` 의 짝).
+        deps.auth.onSessionEndClaimAlarms = { departingUserID in
+            // ⚠ **로드를 기다린다.** 콜드 스타트 중이면 `alarms` 가 아직 비어 있어
+            // 빈 배열을 새기고 끝난다(Codex #699 P1).
+            await deps.alarmStore.waitUntilLoadedFromDisk()
+            // ⚠ 그 기다림은 **상한이 있다**(BGTask 예산 때문에 3초). 못 기다렸으면
+            // 빈 목록을 새기지 말고 물러선다 — `PendingSignOutStore` 표시가 남아 다음
+            // 실행이 마저 한다. 자동 401 은 `SessionExpiryStore` 가 같은 근거가 된다.
+            guard deps.alarmStore.hasLoadedFromDisk else { return false }
+            deps.alarmStore.claimUnownedAlarms(for: departingUserID)
+            return true
+        }
+        deps.auth.onLeaveAccountStopAlarms = { departingUserID in
+            await deps.alarmStore.waitUntilLoadedFromDisk()
+            // 못 기다렸으면 **끝내지 못했다고 알린다** — 호출부가 복구 표시를 붙들어 둔다.
+            guard deps.alarmStore.hasLoadedFromDisk else { return false }
+            _ = await deps.alarmKit.stopAllScheduledAlarms(
+                store: deps.alarmStore,
+                ownerUserId: departingUserID
+            )
+            // ⚠ 여기서 표시를 내리지 않는다 — **서버 쪽 뒷정리가 아직 남았다**
+            // (푸시 해제·토큰 폐기). `signOutExplicitly` 가 그걸 마친 뒤 내린다.
+            return true
         }
 
         BackgroundSyncTask.register(

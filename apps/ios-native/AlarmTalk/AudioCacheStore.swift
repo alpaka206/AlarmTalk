@@ -630,7 +630,12 @@ final class AudioCacheStore {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             base = support
         }
-        let directory = base.appendingPathComponent("audio-cache", isDirectory: true)
+        // ⚠ 테스트는 별도 디렉터리를 쓴다 — 안 그러면 기기에서 테스트를 돌릴 때마다
+        // 받아 둔 스톡 클립이 함께 지워져 다음 로그인이 전부 다시 받는다(`TestIsolation`).
+        let directory = base.appendingPathComponent(
+            "audio-cache\(TestIsolation.storageSuffix)",
+            isDirectory: true
+        )
         if !FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.createDirectory(
                 at: directory,
@@ -648,7 +653,13 @@ final class AudioCacheStore {
     /// 파일 시스템만 다루므로 `nonisolated` — 백그라운드 캐싱에서도 호출 가능.
     nonisolated static func legacyAudioDirectory() throws -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let directory = support.appendingPathComponent("AlarmTalkAudio", isDirectory: true)
+        // ⚠ 여기도 테스트를 갈라야 한다(Codex #699 P2). `cache(tts:)` 가 이 옛 경로로
+        // 파일을 쓰므로, 안 가르면 기기 테스트가 **사용자의 실제 음원 디렉터리**에 쓰고
+        // id 가 겹치면 진짜 파일을 덮어쓴다 — `audio-cache` 만 가른 것으로는 부족했다.
+        let directory = support.appendingPathComponent(
+            "AlarmTalkAudio\(TestIsolation.storageSuffix)",
+            isDirectory: true
+        )
         if !FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.createDirectory(
                 at: directory,

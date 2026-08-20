@@ -286,10 +286,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 목록에서 감추는데, OS 예약은 그대로 남아 AlarmReceiver 가 Room 에서 바로 읽어 울린다.
      * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
      */
-    internal suspend fun clearSignedInSession() {
+    /**
+     * @param departingUserId 떠나는 계정. 호출부가 **네트워크 왕복을 시작하기 전에** 잡아
+     *   넘긴다.
+     *
+     * ⚠ **여기서 [authSession] 을 읽는 것만으로는 부족하다**(2026-08-19 감사 P2).
+     * 로그아웃은 `api.logout()` 으로 `token_epoch` 를 먼저 올리는데, 그러면 진행 중이던
+     * 다른 요청이 401 로 돌아와 `handleSessionExpired` 가 세션을 비운다. 그 뒤 여기서 읽으면
+     * **null** 이고, null 은 '누구인지 모름' 이라 [detachAlarmsOnSignOut] 이 **켜진 알람을
+     * 전부** 끈다 — 자동 401 로 세션만 잃고 기다리던 **다른 계정의 알람까지 영구히 꺼진다.**
+     * 로그아웃 버튼 연타로도 같은 상태가 된다.
+     */
+    internal suspend fun clearSignedInSession(departingUserId: String? = null) {
         // 로그아웃이 끝날 때까지 401 처리기를 잠근다 — 이유는 [signingOut] 주석 참고.
         signingOut = true
-        val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        val signedOutUserId = departingUserId?.takeIf { it.isNotBlank() }
+            ?: authSession?.user?.id?.takeIf { it.isNotBlank() }
         // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
         // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
         // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)

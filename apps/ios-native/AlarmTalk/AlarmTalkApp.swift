@@ -153,7 +153,7 @@ struct AlarmTalkApp: App {
                                 // 않아** 예약이 하나씩 늘었다(같은 시각에 옛 클립과 새 클립이
                                 // 함께 울린다). 리컨사일러가 '새로 예약 → 성공하면 옛것 취소'
                                 // 순서를 한 곳에서 지킨다.
-                                await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit)
+                                await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
                             }
                         }
                         // PR3 FIX: AlarmKitViewModel 이 앱-레벨 단일 HolidayStore 를
@@ -170,6 +170,7 @@ struct AlarmTalkApp: App {
                                 guard alarmStore.hasLoadedFromDisk else { return }
                                 await alarmKit.recoverScheduledAlarms(
                                     store: alarmStore,
+                                    ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
                                     forceHolidayOffRecompute: true
                                 )
                             }
@@ -226,11 +227,9 @@ struct AlarmTalkApp: App {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
                         }
-                        // 로그아웃한 기기가 그 계정의 알림을 계속 받지 않게 한다
-                        // (`PushNotificationCoordinator.unregisterCurrentToken` 주석).
-                        auth.onSignOutUnregisterPush = { token in
-                            await push.unregisterCurrentToken(authToken: token)
-                        }
+                        // ⚠ 푸시 해제 훅은 **launch 에서** 꽂는다(`PushAppDelegate`) —
+                        // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
+                        // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
@@ -271,7 +270,7 @@ struct AlarmTalkApp: App {
                         // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
                         // 옛 언어 파일을 그대로 재생한다 — 이 클래스가 고치려던 증상이
                         // ("앱은 영어인데 알람만 한국어") 예약 쪽에 그대로 남아 있었다.
-                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit)
+                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
                     }
                     .task(id: auth.session?.user.id) {
                         remoteSync.clearUserScopedRemoteState()
@@ -283,14 +282,92 @@ struct AlarmTalkApp: App {
                     .task(id: voiceStudio.needsScheduleReconcile) {
                         guard voiceStudio.needsScheduleReconcile else { return }
                         voiceStudio.needsScheduleReconcile = false
-                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit)
+                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
                     }
                     .task(id: freePlanVoiceLockKey) {
                         await applyFreePlanVoiceLockIfNeeded()
                     }
+                    // ⚠ **로그인 확정 직후 남의 계정 예약을 끊는다**(Codex #699 P1).
+                    // A 의 세션이 자동 401 로 끊기면 예약은 일부러 살려 두는데, 그 상태에서
+                    // B 가 로그인하면 목록·복구는 소유자로 걸러 A 의 알람을 **감추기만 한다** —
+                    // 예약은 그대로라 **A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.**
+                    // 안드로이드는 `onSignedIn` 에서 `cancelAlarmsNotOwnedBy` 로 같은 일을 한다.
+                    // ⚠ **판정에 로드 상태를 함께 넣는다**(Codex #699 P1). 계정 id 만 걸면
+                    // **콜드 스타트**에서 저장소가 아직 로드 중이라 여기서 그대로 돌아가고,
+                    // 그 뒤로 id 가 안 바뀌므로 **다시 돌지 않는다** — 앞 계정의 예약이
+                    // 새 계정 아래에 숨은 채 영원히 남는다.
+                    .task(id: "\(auth.session?.user.id ?? "-")|\(alarmStore.hasLoadedFromDisk)") {
+                        // ⚠ **먼저 계정 세대를 올린다**(Codex #699 P1). 진행 중인 예약이
+                        // await 에서 돌아와 이 값을 보고 스스로 물러선다 — 아래 정리는
+                        // **아직 저장되지 않은 UUID** 를 못 보므로 그것만으로는 못 닫힌다.
+                        alarmKit.noteActiveAccount(auth.session?.user.id)
+                        guard alarmStore.hasLoadedFromDisk, let signedIn = auth.session?.user.id else { return }
+                        await alarmKit.cancelScheduledAlarmsNotOwnedBy(signedIn, store: alarmStore)
+                    }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
-                        await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                        // ⚠ **먼저** 못 끈 예약을 다시 끊는다(Codex #699 P1). 로그아웃 때
+                        // 취소가 실패해 남겨 둔 손잡이는 여기서만 소비된다 — 그 행은 꺼져
+                        // 있어 아래 복구가 건너뛰고, 같은 계정으로 다시 로그인해도
+                        // `cancelScheduledAlarmsNotOwnedBy` 가 건너뛴다.
+                        await alarmKit.retryPendingCancellations(store: alarmStore)
+                        // ⚠ **로드가 끝난 뒤 소유자 새기기를 다시 시도한다**(Codex #699 P1).
+                        // 자동 401 이 콜드 스타트 중에 오면 그 시도가 **빈 배열**을 새기고
+                        // 끝난다 — 로드가 그 뒤에 옛 행들을 채우기 때문이다. 그러면 그
+                        // 행들은 `nil` 로 남아, 다음 계정이 로그아웃할 때 자기 것으로
+                        // 오인해 영구히 꺼 버린다. 근거는 `SessionExpiryStore` 뿐이다.
+                        // ⚠ **세션 가드보다 **먼저** 처리한다**(Codex #699 P1). 로그인 시점의
+                        // 새기기가 로드 상한에 걸려 실패하면 표시가 남는데, 그때는 이미 B 의
+                        // 세션이 저장된 뒤다 — `auth.session == nil` 을 요구하면 **유일한
+                        // 재시도가 건너뛰어져** A 의 옛 행이 임자 없이 남고, B 가 로그아웃할 때
+                        // 영구히 꺼진다.
+                        if let expired = SessionExpiryStore.expiredOwnerUserId {
+                            alarmStore.claimUnownedAlarms(for: expired)
+                            // 다른 계정이 쓰는 중이면 이 표시의 목적(옛 행 확정)은 끝났다.
+                            // 아무도 없으면 남겨 둔다 — 복구 대상을 가리는 기준이기도 하다.
+                            if let signedIn = auth.session?.user.id.nilIfBlank, signedIn != expired {
+                                SessionExpiryStore.clear()
+                            }
+                        }
+                        // ⚠ **끝내지 못한 로그아웃을 마저 한다**(Codex #699 P1). 콜드 스타트
+                        // 직후 로그아웃하면 저장소 로드가 상한(3초) 안에 안 끝나 뒷정리가
+                        // 통째로 건너뛰어질 수 있다 — 그 계정의 예약은 살아 있는데 화면에는
+                        // 못 들어간다. 표시가 남아 있으면 여기서 끝낸다.
+                        // ⚠ **계정별로 쌓인다** — 여러 계정의 뒷정리가 밀려 있을 수 있다.
+                        for pendingRaw in PendingSignOutStore.pendingUserIds {
+                            let pending = pendingRaw.nilIfBlank
+                            // ⚠ **그 사이 다른 계정이 로그인했을 수 있다.** 그때 알람을
+                            // 건드리면 **지금 쓰는 사람의 알람을 끈다** — 특히 받은 가족
+                            // 알람은 소유자가 미기록이라 `claimUnownedAlarms` 가 그걸 떠난
+                            // 계정 것으로 낙인찍고 `stopAll` 이 꺼 버린다.
+                            // 로컬 뒷정리는 **아무도 없거나 그 계정 본인일 때만** 한다.
+                            let signedIn = auth.session?.user.id.nilIfBlank
+                            let safeToTouchAlarms = signedIn == nil || (pending != nil && signedIn == pending)
+                            if safeToTouchAlarms {
+                                alarmStore.claimUnownedAlarms(for: pending)
+                                await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
+                                // ⚠ **다시 확인한다 — 그 사이 탈퇴가 철회됐을 수 있다.**
+                                // 위 호출은 await 이라, 그동안 사용자가 철회하면 표시가
+                                // 지워진다. 그런데도 나아가면 **방금 계정을 되살린 사람을
+                                // 로그아웃시키고** 그 세션의 토큰까지 폐기한다.
+                                guard PendingSignOutStore.pendingUserIds.contains(pendingRaw) else { continue }
+                                // ⚠ **계정도 다시 본다.** 위 sweep 가 도는 사이에 로그인이
+                                // 끝났을 수 있다 — 그대로 나아가면 지금 쓰는 사람을 끊는다.
+                                let stillSafe = auth.session?.user.id.nilIfBlank == nil
+                                    || auth.session?.user.id.nilIfBlank == pending
+                                guard stillSafe else {
+                                    await auth.finishInterruptedServerCleanupOnly(for: pending)
+                                    continue
+                                }
+                                // 세션까지 끝내야 로그아웃이다. 서버 뒷정리(푸시 해제·토큰
+                                // 폐기)도 여기서 마친다. 표시는 그 결과가 참일 때만 내려간다.
+                                await auth.finishInterruptedSignOut(for: pending)
+                            } else {
+                                // 다른 계정이 쓰는 중 — 알람과 세션은 그대로 두고 서버만 정리한다.
+                                await auth.finishInterruptedServerCleanupOnly(for: pending)
+                            }
+                        }
+                        await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.
                         // 현재 알람이 참조하는 cacheKey 는 나이와 무관하게 보존.
@@ -325,7 +402,9 @@ struct AlarmTalkApp: App {
             case .active:
                 Task {
                     guard alarmStore.hasLoadedFromDisk else { return }
-                    await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                    // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.
+                    await alarmKit.retryPendingCancellations(store: alarmStore)
+                    await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                 }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
@@ -386,7 +465,7 @@ struct AlarmTalkApp: App {
         // OS 가 예약 때 받아 간 옛 파일이 그대로 울린다(동적 문구 알람은 매일 새 문구를
         // 만들어 놓고 어제 문구로 울었다 — 서버 호출과 월 한도는 매번 차감하면서).
         // 어긋난 예약을 여기서 한 번에 맞춘다.
-        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit)
+        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
     }
 
     /// PR3: timezone / 시간 변경 알림을 관찰해 `.fixed` 공휴일off one-shot 을 새 시각으로
@@ -436,7 +515,11 @@ struct AlarmTalkApp: App {
     ) async {
         for await _ in NotificationCenter.default.notifications(named: name) {
             guard store.hasLoadedFromDisk else { continue }
-            await kit.recoverScheduledAlarms(store: store, forceHolidayOffRecompute: true)
+            await kit.recoverScheduledAlarms(
+                store: store,
+                ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
+                forceHolidayOffRecompute: true
+            )
         }
     }
 
