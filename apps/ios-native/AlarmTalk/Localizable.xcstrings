@@ -6598,19 +6598,19 @@
         }
       }
     },
-    "백그라운드에서 계속 받기": {
+    "백그라운드에서 계속": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep downloading in the background"
+            "value": "Continue in the background"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックグラウンドで受信を続ける"
+            "value": "バックグラウンドで続ける"
           }
         }
       }

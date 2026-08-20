@@ -12,7 +12,7 @@ import SwiftUI
 ///
 /// ⚠ **여기서 갇히면 앱을 아예 못 쓴다.** 그래서 몇 초 뒤에는 어떤 상태에서든 탈출구를
 /// 보여주고, 문구는 **다운로드가 살아 있는지**로 가른다(실패 여부가 아니다). 받는 중이면
-/// '백그라운드에서 계속 받기'(화면만 닫으므로 실제로 계속 받는다), 끝난 상태면 '나중에 받기'.
+/// '백그라운드에서 계속'(화면만 닫으므로 실제로 계속 받는다), 끝난 상태면 '나중에 받기'.
 struct VoiceSetupView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.voiceAlarmTheme) private var theme
@@ -69,7 +69,7 @@ struct VoiceSetupView: View {
                     }
                 }
                 if showEscape {
-                    Button(prefetcher.isRunning ? "백그라운드에서 계속 받기" : "나중에 받기") {
+                    Button(prefetcher.isRunning ? "백그라운드에서 계속" : "나중에 받기") {
                         // ⚠ 다운로드를 취소하지 않는다 — 화면만 닫는다. 그래서
                         // '계속 받기' 가 거짓말이 아니다.
                         onSkip?()
