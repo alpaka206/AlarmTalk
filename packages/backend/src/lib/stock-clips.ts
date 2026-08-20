@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
+import { extractDeliveryTags, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
@@ -736,12 +736,15 @@ export async function generateStockClip(
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
     });
-    displayText = generated.text;
-    // 태그를 문장마다 다시 앞세워 클립 끝까지 전달 톤이 풀리지 않게 한다.
-    synthesisText = generated.tag
-      ? applyDeliveryTagPerSentence(generated.tag, generated.text)
-      : generated.text;
-    deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
+    // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
+    // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나
+    // 선두 하나뿐이면 문장마다 다시 앞세운 형태다. 여기서 한 번 더 `applyDeliveryTagPerSentence`
+    // 를 태우면 `[warmly] [warmly] …` 로 겹친다.
+    synthesisText = generated.text;
+    // 표시 문구(잠금화면·요약)는 **태그를 벗긴 것**이다. 예전에는 모델이 태그를 안 냈기에
+    // 그냥 써도 티가 안 났지만, 인라인 태그가 들어오면 대괄호가 그대로 화면에 새어 나간다.
+    displayText = stripDeliveryTags(generated.text) || generated.text;
+    deliveryTagsJson = JSON.stringify(extractDeliveryTags(generated.text));
   } else {
     // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴(딜리버리 태그 포함)이다.
     // translate/autoTag 를 끄면 Vertex 호출 없이 로컬 패스스루로 태그만 추출된다

@@ -327,7 +327,8 @@ function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext):
   if (isMetaJsonResponse(text)) return true;
   if (text.length > 200) return true;
   if (hasLanguageMismatch(text, context.targetLanguage)) return true;
-  if (hasUnsupportedListenerAddress(text, context.listenerTitle)) return true;
+  if (hasUnsupportedListenerAddress(text, context.listenerTitle, context.relationshipLabel))
+    return true;
   if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
   // text 안의 브래킷/지문은 HARD. 태그는 별도 필드라 정상 출력은 여기서 안 걸린다.
   if (hasDeliveryTagOrStageDirection(text)) return true;
@@ -613,8 +614,8 @@ NEVER
 
 OUTPUT
 - Return STRICT JSON only, matching the schema: {"text": string, "tag": string}. "text" = the
-  final spoken line in the target language (no brackets). "tag" = exactly one allowlisted tag
-  name, lowercase, no brackets, or "" for none.`;
+  final spoken line in the target language, WITH delivery tags written inline in square
+  brackets where the delivery changes. "tag" = "" (legacy field, no longer used).`;
 
 // 구조화 출력(§4.7). responseMimeType/json·thinkingBudget:0 과 함께 1차 파서로 쓰고,
 // 간헐 빈응답 대비 brace-slice 파서를 최후 폴백으로 유지한다.
@@ -704,31 +705,37 @@ function activeLanguageBlock(targetLanguage: string): string {
   return '';
 }
 
-// few-shot(§4.9). 출력계약이 {text, tag}이므로 표의 [tag] 접두는 tag 필드로 분리해 주입한다.
-const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string; tag: string }>> = {
+// few-shot(§4.9).
+//
+// ⚠ **예시가 곧 계약이다**(2026-08-20). 프롬프트에는 "태그를 문장 안 전달이 바뀌는 자리마다
+// 인라인으로 쓰라" 고 적어 두고, 정작 예시는 `text` 에 태그가 없고 `tag` 한 개만 채운
+// 형태였다. 모델은 지시문이 아니라 **예시와 반환 형식을 따랐다** — dev 실측에서 받은 응답이
+// 전부 무태그 `text` + `tag:"cheerfully"` 였다. 지시만 고치고 예시를 두면 또 무효가 된다.
+const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>> = {
   ko: [
-    { context: 'wake_weather, 손녀→할아버지, rain', text: '할아버지, 좋은 아침이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요.', tag: 'cheerfully' },
-    { context: 'wake_weather, 연인, dust', text: '자기야, 일어나자. 오늘 미세먼지 많대. 나갈 때 마스크 꼭 챙겨, 알았지?', tag: 'cheerfully' },
-    { context: 'wake_fortune, 중립', text: '좋은 아침이에요. 오늘은 작은 선택에 좋은 기운이 따른대요. 가벼운 마음으로 시작해요.', tag: 'playfully' },
+    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 좋은 아침이에요. [brightly] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
+    { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
+    { context: 'wake_fortune, 중립', text: '[cheerfully] 좋은 아침이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해요.' },
   ],
   ja: [
-    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: 'おばあちゃん、おはよう。今日は雨が降るみたい、出かけるとき傘忘れないでね。', tag: 'cheerfully' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: 'おはようございます。今日は冷えるみたいなので、一枚羽織ってくださいね。', tag: 'cheerfully' },
-    { context: 'wake_fortune, 중립/casual', text: 'おはよう。今日はちょっといいことがありそうだよ。気楽にいこうね。', tag: 'playfully' },
+    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、おはよう。[brightly] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[cheerfully] おはようございます。[warmly] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '[playfully] おはよう。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
-    { context: 'wake_weather, neutral, rain', text: 'Morning… time to get up. Looks like rain later, grab your umbrella before you head out.', tag: 'cheerfully' },
-    { context: 'love, romantic, babe', text: "Morning, babe. Take your time getting up — I've got you today, okay?", tag: 'happy' },
+    { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
+    { context: 'love, romantic, babe', text: "[playfully] Morning, babe. [warmly] Take your time getting up — I've got you today, okay?" },
   ],
 };
 
 function fewShotBlock(targetLanguage: string): string {
   const examples = DYNAMIC_FEW_SHOT[targetLanguage];
   if (!examples || examples.length === 0) return '';
-  const lines = examples.map(
-    (ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":"${ex.tag}"}`,
-  );
-  return ['Few-shot examples (target language, follow the {text, tag} contract):', ...lines].join('\n');
+  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":""}`);
+  return [
+    'Few-shot examples — note the tags live INSIDE "text" and the "tag" field stays empty:',
+    ...lines,
+  ].join('\n');
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
@@ -743,7 +750,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. Use this only to choose a natural speech register and warmth. Never mention the relationship label in the text, and never write phrases like "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", or "speaking as your ${context.relationshipLabel}". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
@@ -800,7 +807,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     tagAllowlistInstruction,
     fewShotBlock(context.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -830,7 +837,7 @@ function prerenderClipPrompt(params: {
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${params.relationshipLabel}" relationship. Use this ONLY to choose a natural speech register and warmth. Never mention the relationship label in the text. ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
@@ -864,6 +871,17 @@ Leave the separate "tag" field as "" — it is legacy.`;
             : ''
         }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
       : '';
+  // 아이 목소리로 **판정된 경우에만** 켠다(SpeechStyle.childlike). 어른 목소리가 이렇게
+  // 말하면 이상하므로 분석 쪽에서 보수적으로 판단하고, 여기서는 그 결과를 그대로 따른다.
+  // 알람이라 알아들을 수 있어야 하므로 '늘어진 발음' 은 한두 낱말까지만 허용한다.
+  const childlikeInstruction = params.speechStyle?.childlike
+    ? [
+        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one.',
+        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses.',
+        'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
+        'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
+      ].join(' ')
+    : '';
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     activeLanguageBlock(params.targetLanguage),
@@ -871,6 +889,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     relationship,
     romanticToneInstruction,
     speechStyleInstruction,
+    childlikeInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
@@ -880,7 +899,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel warm and human, not a robotic prerecorded template.',
     tagAllowlistInstruction,
     fewShotBlock(params.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -908,31 +927,6 @@ export async function generatePrerenderClipText(
   if (!hasGeminiConfiguration(env)) {
     throw new AlarmTextPreparationInvalidError();
   }
-  const prompt = prerenderClipPrompt({ ...params, targetLanguage });
-  let raw: string;
-  try {
-    raw = await generateContentText(env, prompt, {
-      temperature: 0.6,
-      maxOutputTokens: 256,
-      systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
-      responseSchema: DYNAMIC_RESPONSE_SCHEMA,
-    });
-  } catch {
-    throw new AlarmTextPreparationInvalidError();
-  }
-  const parsed = parseDynamicAlarmTextResult(raw);
-  const text = parsed.text.trim();
-  if (
-    !text ||
-    isMetaJsonResponse(text) ||
-    text.length > 200 ||
-    hasLanguageMismatch(text, targetLanguage, params.listenerTitle) ||
-    hasDeliveryTagOrStageDirection(text) ||
-    hasUnsupportedListenerAddress(text, params.listenerTitle) ||
-    hasRelationshipLabelLeak(text, params.relationshipLabel, params.listenerTitle)
-  ) {
-    throw new AlarmTextPreparationInvalidError();
-  }
   // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
   // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
@@ -940,8 +934,79 @@ export async function generatePrerenderClipText(
     const approved = normalizeApprovedTag(raw);
     return approved && !isLowArousalTag(approved) ? approved : '';
   };
-  const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
-  return { text, tag };
+
+  // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
+  // throw 했고, cron 은 그걸 5번 반복한 뒤 큐를 `failed` 로 내렸다. 그런데 거절 사유가
+  // **결정적**이면(같은 시드+관계에서 모델이 매번 같은 문장을 낸다) 재시도는 전부 같은
+  // 결과라, 21개 중 1개가 영구히 안 만들어지고 '다시 시도' 버튼도 무력했다 —
+  // 실제로 사랑 3번 시드 × 관계 '엄마' 에서 그렇게 막혔다.
+  // 그래서 **회차마다 제약을 더해** 다시 묻는다. 마지막 회차는 관계 낱말 자체를 금지한다.
+  const MAX_ATTEMPTS = 3;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const label = params.relationshipLabel?.trim();
+    const retryHint =
+      attempt === 1
+        ? ''
+        : attempt === 2
+          ? 'RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.'
+          : label
+            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.`
+            : 'RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.';
+    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
+      .filter(Boolean)
+      .join('\n');
+    let raw: string;
+    try {
+      raw = await generateContentText(env, prompt, {
+        // 회차마다 온도를 올려 같은 문장이 되풀이되는 것을 피한다.
+        temperature: attempt === 1 ? 0.6 : 0.9,
+        maxOutputTokens: 256,
+        systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
+        responseSchema: DYNAMIC_RESPONSE_SCHEMA,
+      });
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    const parsed = parseDynamicAlarmTextResult(raw);
+    const text = parsed.text.trim();
+    // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
+    // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
+    const spoken = normalizeAlarmTextWithoutTags(text);
+    if (
+      !text ||
+      isMetaJsonResponse(text) ||
+      spoken.length > 200 ||
+      hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
+      hasDeliveryTagOrStageDirection(text) ||
+      hasUnsupportedListenerAddress(spoken, params.listenerTitle, params.relationshipLabel) ||
+      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle)
+    ) {
+      lastError = new AlarmTextPreparationInvalidError();
+      continue;
+    }
+    // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
+    // 다시 앞세운다 — v3 태그는 뒤로 갈수록 풀려 끝 문장이 빨라진다
+    // (`normalizeSameLanguageTaggedText` 와 같은 규칙, 한 곳에서 두 번 정하지 않는다).
+    const inlineTags = extractTags(text);
+    const onlyLeadingTag =
+      inlineTags.length === 1 && text.trimStart().startsWith(`[${inlineTags[0]!}]`);
+    const primaryTag =
+      sanitizePrerenderTag(inlineTags[0] ?? '') ||
+      sanitizePrerenderTag(parsed.tag) ||
+      sanitizePrerenderTag(params.defaultTag ?? '');
+    if (inlineTags.length === 0 || onlyLeadingTag) {
+      return {
+        text: primaryTag ? applyDeliveryTagPerSentence(primaryTag, spoken) : spoken,
+        tag: primaryTag,
+      };
+    }
+    return { text, tag: primaryTag };
+  }
+  throw lastError instanceof AlarmTextPreparationInvalidError
+    ? lastError
+    : new AlarmTextPreparationInvalidError();
 }
 
 /**
@@ -964,6 +1029,16 @@ export interface SpeechStyle {
    * 어미를 늘이며 반말". 특징이 없으면 ''.
    */
   persona: string;
+  /**
+   * 화자가 **어린아이**로 판단되는가. true 일 때만 문구 생성이 아이 말투(늘어진 발음·
+   * 반복·짧은 문장)를 쓴다.
+   *
+   * ⚠ **판단 근거는 오디오가 아니라 전사 텍스트뿐이다** — 목소리 높이를 듣는 게 아니라
+   * 낱말·문장 구조를 본다. 어른이 아이처럼 말하면 이상하므로(사용자 지시) 모델에게
+   * **확신할 때만** true 를 내라고 하고, 기본은 false 다. 옛 행에는 이 필드가 없으므로
+   * `parseSpeechStyle` 이 false 로 채운다.
+   */
+  childlike: boolean;
 }
 
 const SPEECH_STYLE_RESPONSE_SCHEMA = {
@@ -974,9 +1049,10 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
     register: { type: 'STRING' },
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
     persona: { type: 'STRING' },
+    childlike: { type: 'BOOLEAN' },
     confidence: { type: 'NUMBER' },
   },
-  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'confidence'],
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'confidence'],
 } as const;
 
 function speechStylePrompt(transcript: string, language: string): string {
@@ -989,7 +1065,8 @@ function speechStylePrompt(transcript: string, language: string): string {
   return [
     'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
     dialectGuide,
-    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","confidence":0.0-1.0}.',
+    'Also decide "childlike": is this speaker a young child (roughly preschool to early elementary)? Judge ONLY from how the transcript reads — very short simple sentences, a small everyday vocabulary, childish word choice or mispronunciations written out, talking about school/toys/parents from a child\'s position. A short or casual line from an adult is NOT enough. Default to false: only set true when the transcript would read as a child to any reader. Getting this wrong is worse than leaving it off, because it makes an adult voice speak like a toddler.',
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","childlike":true or false,"confidence":0.0-1.0}.',
     'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
     `TRANSCRIPT (${language}):`,
     transcript.slice(0, 2000),
@@ -1047,9 +1124,10 @@ export async function analyzeSpeechStyleWithVertex(
       typeof (parsed as { persona?: unknown }).persona === 'string'
         ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
         : '';
-    if (!dialect && !register && markers.length === 0 && !persona) return null;
+    const childlike = (parsed as { childlike?: unknown }).childlike === true;
+    if (!dialect && !register && markers.length === 0 && !persona && !childlike) return null;
     // 표준어인데 사투리 강도만 있는 모순 정리.
-    return { dialect, strength: dialect ? strength : '', register, markers, persona };
+    return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike };
   } catch {
     return null;
   }
@@ -1070,6 +1148,8 @@ export function parseSpeechStyle(value: unknown): SpeechStyle | null {
         ? parsed.markers.filter((m): m is string => typeof m === 'string').slice(0, 5)
         : [],
       persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
+      // 옛 행에는 이 필드가 없다 — 없으면 false(아이 말투를 켜지 않는다)가 안전한 기본이다.
+      childlike: parsed.childlike === true,
     };
   } catch {
     return null;
@@ -1341,13 +1421,41 @@ function dynamicAlarmTextPreparationFallback(
 const FAMILY_TITLE_RE =
   /(^|[\s"'“”‘’(（])(할머니|할머님|할아버지|할아버님|엄마|어머니|어머님|아빠|아버지|아버님|부모님|할미|할배|손녀|손자|딸|아들)(?:님)?(?:아|야)?(?=[\s,，.!！?？~]|$)/g;
 
+/**
+ * 이 목소리가 **상대를 부를 만한 호칭** — 관계 라벨에서 유도한다.
+ *
+ * ⚠ 호칭(`listener_title`)은 선택 입력이라 비어 있는 경우가 흔한데, 그때
+ * `hasUnsupportedListenerAddress` 가 가족 호칭을 전부 막아 버리면 **아이 목소리가 부모를
+ * 부를 수가 없다**(2026-08-20 실측: 관계 '아들'·아이 말투로 생성한 6번 중 4번이 "엄마," 를
+ * 썼다는 이유로 거절됐다). 목소리가 '아들/딸' 이면 듣는 사람은 부모이므로 엄마·아빠는
+ * 정답이다. 엄마인지 아빠인지는 알 수 없으니 둘 다 허용한다.
+ *
+ * 사용자가 호칭을 직접 넣었으면 그쪽이 우선이고, 이건 **추가로** 허용되는 목록이다.
+ */
+function counterpartAddressTitles(relationshipLabel: string | null | undefined): string[] {
+  const label = normalizeAddressLabel(relationshipLabel);
+  if (!label) return [];
+  if (['아들', '딸'].includes(label)) return ['엄마', '어머니', '아빠', '아버지', '부모님'];
+  if (['손녀', '손자', '손주'].includes(label)) return ['할머니', '할아버지'];
+  if (['엄마', '어머니', '아빠', '아버지', '부모님'].includes(label)) return ['아들', '딸'];
+  if (['할머니', '할아버지'].includes(label)) return ['손녀', '손자', '손주'];
+  return [];
+}
+
 function hasUnsupportedListenerAddress(
   text: string,
   listenerTitle: string | null | undefined,
+  relationshipLabel?: string | null,
 ): boolean {
   const allowedTitle = normalizeAddressLabel(listenerTitle);
+  const counterparts = new Set(
+    counterpartAddressTitles(relationshipLabel)
+      .map((title) => normalizeAddressLabel(title))
+      .filter((title): title is string => title != null),
+  );
   for (const match of text.matchAll(FAMILY_TITLE_RE)) {
     const matchedTitle = normalizeAddressLabel(match[2]);
+    if (matchedTitle != null && counterparts.has(matchedTitle)) continue;
     // 청자 호칭이 "우리 딸"/"사랑하는 아들"처럼 수식어+가족토큰(공백 구분)이면
     // FAMILY_TITLE_RE 는 bare 토큰("딸")만 뽑고 allowedTitle 은 공백제거형("우리딸")이라
     // strict 비교가 항상 어긋난다. matched 토큰이 allowedTitle 의 접미이면 지원 호칭으로 본다.
@@ -1374,11 +1482,17 @@ function hasRelationshipLabelLeak(
   const sourcePhrase = new RegExp(`${escapedLabel}\\s*(?:목소리|voice)`, 'i');
   if (sourcePhrase.test(text)) return true;
 
-  const koreanSelfReference = new RegExp(
-    `${escapedLabel}\\s*(?:가|이|는|은|도|의|로|으로|에게|한테|처럼|입장에서|대신)`,
-    'i',
-  );
-  if (koreanSelfReference.test(text)) return true;
+  // ⚠ **화자가 자기를 3인칭으로 부르는 것은 유출이 아니다**(2026-08-20).
+  // 예전에는 `엄마` + 조사(가/는/도/의/에게/한테…)를 전부 거절했는데, "엄마는 늘 네 편이야"
+  // 는 엄마가 자식에게 하는 **가장 자연스러운 한국어**다. 실제로 그 때문에 사랑 3번
+  // 시드("늘 네 편이라고 응원한다")가 관계=엄마에서 **영구 실패**했다 — 모델이 매번
+  // "엄마는 늘 네 편인 거 알지?" 를 내놓고 매번 거절돼 21개 중 20개에서 멈췄다
+  // (dev 실측: cron 5틱 연속 AlarmTextPreparationInvalidError → 큐 failed).
+  //
+  // 남겨 두는 것은 **화자가 그 사람이 아님을 드러내는** 쓰임뿐이다:
+  // `엄마처럼`(엄마가 아닌 사람의 비유) / `엄마 대신` / `엄마 입장에서`.
+  const thirdPartyReference = new RegExp(`${escapedLabel}\\s*(?:처럼|입장에서|대신)`, 'i');
+  if (thirdPartyReference.test(text)) return true;
 
   const allowedAddress =
     normalizeAddressLabel(label) !== null &&
@@ -1687,6 +1801,14 @@ function normalizeSameLanguageTaggedText(
 // 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
 // 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
 // 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
+/// 문구에 인라인으로 박힌 딜리버리 태그 목록(중복 제거·소문자). `messages.delivery_tags_json`
+/// 처럼 "이 클립이 어떤 전달 톤으로 합성됐나" 를 남길 때 쓴다.
+///
+/// ⚠ 정규식을 호출부에 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
+export function extractDeliveryTags(text: string): string[] {
+  return extractTags(text);
+}
+
 export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
   const trimmed = text.trim();
   if (!tag) return trimmed;

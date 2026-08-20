@@ -532,7 +532,13 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('손녀 목소리');
   });
 
-  it('falls back when Gemini writes as the speaker relationship', async () => {
+  // ⚠ **이 테스트는 2026-08-20 에 뒤집혔다 — 예전에는 이걸 거절하도록 고정하고 있었다.**
+  // "민지야, … 엄마가 응원할게!" 는 엄마가 딸에게 하는 **가장 자연스러운 한국어**다.
+  // 그런데 옛 가드가 `엄마`+조사를 전부 유출로 보고 떨어뜨렸고, 그 탓에 사전렌더
+  // 사랑 3번 시드("늘 네 편이라고 응원한다") × 관계 '엄마' 가 **영구 실패**했다
+  // (dev 실측: cron 5틱 연속 거절 → 큐 failed → 앱에 "생성에 실패했어요").
+  // 화자의 3인칭 자기 지칭은 통과시키고, 화자가 그 사람이 **아님**을 드러내는 쓰임만 막는다.
+  it('keeps the line when the speaker refers to themselves in the third person', async () => {
     queueContent(
       geminiText('{"text":"민지야, 실내에서 가볍게 운동하자. 엄마가 응원할게!"}'),
     );
@@ -546,9 +552,58 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       listenerTitle: '민지야',
     });
 
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).toContain('엄마가 응원할게');
+  });
+
+  // ⚠ 호칭(listener_title)은 **선택 입력**이라 비어 있는 경우가 흔하다. 그때 가족 호칭을
+  // 전부 막으면 아이 목소리가 부모를 부를 수가 없다 — 실제로 관계 '아들' 로 생성한 6번 중
+  // 4번이 "엄마," 를 썼다는 이유로 거절됐다(2026-08-20 실측). 목소리가 아들/딸이면 듣는
+  // 사람은 부모이므로 엄마·아빠는 정답이다.
+  it('lets the voice address the listener by the relationship counterpart title', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).toContain('엄마');
+  });
+
+  it('still falls back when the line uses a family title the relationship does not imply', async () => {
+    queueContent(geminiText('{"text":"할머니, 일어나세요! 오늘도 좋은 하루 보내세요."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
     expect(generated.provider).toBe('local');
-    expect(generated.text).toContain('민지야');
-    expect(generated.text).not.toContain('엄마가');
+  });
+
+  it('still falls back when the line speaks as if the relationship were someone else', async () => {
+    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게']) {
+      queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider).toBe('local');
+    }
   });
 
   // ⚠ **대괄호 태그는 이제 정상이다**(2026-08-13 — C안). 막는 것은 소괄호·전각괄호 지문과

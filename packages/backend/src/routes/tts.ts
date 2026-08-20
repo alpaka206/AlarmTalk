@@ -940,7 +940,13 @@ tts.post('/generate', async (c) => {
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
               speechStyle: parseSpeechStyle(vp.speech_style),
             });
-            requestText = generated.text;
+            // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
+            // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
+            // 돌려준다. 그런데 이 값은 `preview_text` 로 저장돼 **사용자가 직접 고치는**
+            // 문구이고, 아래에서 `applyDeliveryTagPerSentence` 로 태그를 다시 입힌다 —
+            // 그대로 받으면 화면에 대괄호가 노출되고 합성 문구는 `[cheerfully] [cheerfully] …`
+            // 로 겹친다(테스트 `draft 미리듣기는 … 톤 적응 문구로 합성한다` 가 잡았다).
+            requestText = normalizeAlarmTextWithoutTags(generated.text) || generated.text;
             if (generated.tag) draftPreviewTag = generated.tag;
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
@@ -962,7 +968,10 @@ tts.post('/generate', async (c) => {
                       AND (preview_claimed_at IS NULL
                         OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
               args: [
-                generated.text,
+                // 위에서 태그를 벗겨 `requestText` 로 쓴 그 문구를 그대로 저장한다.
+                // `generated.text`(태그 포함)를 저장하면 **저장본과 합성·표시본이 갈려**
+                // 다음 재생이 캐시를 빗나가고, 사용자가 고치는 화면에 대괄호가 뜬다.
+                requestText,
                 draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
