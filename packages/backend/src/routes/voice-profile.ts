@@ -1109,7 +1109,18 @@ voiceProfile.patch('/:id', async (c) => {
       c.executionCtx.waitUntil(
         (async () => {
           const { runPrerenderBatch } = await import('../lib/stock-clips');
-          await runPrerenderBatch(db, c.env, { maxClips: 10, maxVoices: 1, voiceProfileId: id });
+          // ⚠ **응답 뒤 수명 안에서 확실히 끝나는 양만** 돌린다(Codex #701 P2).
+          // 10개를 걸면 Gemini→ElevenLabs→R2 를 열 번 도는 동안 `waitUntil` 수명이 끊길 수
+          // 있는데, 그러면 우리 코드가 한 줄도 못 도는 채 큐 행이 **15분 임대에 묶인다** —
+          // 다음 cron 틱이 그 목소리를 집지 못해, 빠르게 하려던 것이 되레 십여 분을 더
+          // 세운다. 3개면 우선순위 정렬 덕에 인사말·약이 들어가고(사용자가 처음 부딪히는
+          // 것), 나머지는 5분 뒤 cron 이 이어받는다. `deadlineMs` 는 그 위의 이중 안전장치다.
+          await runPrerenderBatch(db, c.env, {
+            maxClips: 3,
+            maxVoices: 1,
+            voiceProfileId: id,
+            deadlineMs: 15_000,
+          });
         })().catch(() => {}),
       );
     } catch {

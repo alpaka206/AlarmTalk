@@ -667,6 +667,16 @@ export async function runPrerenderBatch(
     voiceProfileId?: string;
     /** 클립 1개 실패를 관측자에게 알린다(cron 은 Sentry 로 보낸다). */
     onClipError?: (error: unknown) => void;
+    /**
+     * 이 시간(ms)이 지나면 **새 클립을 시작하지 않고** 임대를 놓아 준다.
+     *
+     * ⚠ 응답 뒤 `waitUntil` 로 도는 경로에는 **반드시 준다**(Codex #701 P2).
+     * 그 수명은 짧은데 클립 하나가 Gemini→ElevenLabs→R2 라 몇 초씩 걸린다. 수명이
+     * 끊기면 우리 코드가 한 줄도 못 도는 채 큐 행이 **15분 임대에 묶여**, 다음 cron 틱이
+     * 그 목소리를 집지 못한다 — 빠르게 하려던 것이 되레 십여 분을 더 세우는 셈이다.
+     * 그래서 시작 자체를 시간 안쪽으로 묶고, 남은 것은 정상적으로 임대를 놓아 넘긴다.
+     */
+    deadlineMs?: number;
   },
 ): Promise<{ claimed: number; rendered: number }> {
   const maxClips = Math.max(1, Math.trunc(options.maxClips));
@@ -687,6 +697,10 @@ export async function runPrerenderBatch(
     }
   }
 
+  const startedAt = Date.now();
+  const outOfTime = (): boolean =>
+    options.deadlineMs != null && Date.now() - startedAt >= options.deadlineMs;
+
   let rendered = 0;
   let subrequestExhausted = false;
   for (const voice of cloneVoices) {
@@ -697,7 +711,7 @@ export async function runPrerenderBatch(
       await markPrerenderFailed(db, voice.id, claim.claimToken);
       continue;
     }
-    if (rendered >= maxClips) {
+    if (rendered >= maxClips || outOfTime()) {
       await releasePrerenderClaim(db, voice.id, claim.claimToken);
       continue;
     }
@@ -711,7 +725,8 @@ export async function runPrerenderBatch(
     let voiceRendered = 0;
     let voiceError = false;
     for (const target of targets) {
-      if (rendered >= maxClips) break;
+      // 남은 시간이 없으면 **시작하지 않는다** — 시작해 놓고 끊기면 임대만 잡아먹는다.
+      if (rendered >= maxClips || outOfTime()) break;
       rendered += 1;
       try {
         await generateStockClip(db, env, target);
