@@ -1114,14 +1114,22 @@ tts.post('/generate', async (c) => {
         tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
+      // ⚠ **모델이 배치한 인라인 태그를 살린다**(Codex #701 P2).
+      // 예전에는 `tags[0]` 하나를 뽑아 문장마다 다시 앞세웠다. 모델이 태그를 인라인으로
+      // 내기 시작하면 그 경로는 배치를 뭉갤 뿐 아니라, `tags` 가 빈 채로 남아
+      // `delivery_tags_json` 이 `[]` 가 되고 대괄호가 화면 문구로 샌다.
+      // `synthesisText` 가 있으면 그게 곧 합성 문구다(표시는 아래 `messageText` 가 태그 없는
+      // `dynamicGenerated.text` 를 쓴다). 없으면 예전대로 태그 하나를 문장마다 입힌다.
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
       // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
-      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
-      const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
+      const taggedText =
+        dynamicGenerated.synthesisText ??
+        applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
+      const tagApplied = taggedText !== dynamicGenerated.text;
       prepared = {
         text: taggedText,
         translated: false,
-        tags: tagApplied ? [dynamicTag] : [],
+        tags: tagApplied ? dynamicGenerated.tags : [],
       };
     } else {
       const shouldTranslate =

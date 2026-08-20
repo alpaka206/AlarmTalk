@@ -575,6 +575,28 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).toContain('엄마');
   });
 
+  // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를
+  // 벗긴 본문, 합성용(`synthesisText`)은 모델이 배치한 그대로, `tags` 에는 전부 담긴다.
+  it('splits inline delivery tags into synthesis text, display text and tag metadata', async () => {
+    queueContent(
+      geminiText('{"text":"[warmly] 좋은 아침이에요. [brightly] 오늘도 힘내요!","tag":""}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).not.toContain('[');
+    expect(generated.text).toContain('좋은 아침이에요');
+    expect(generated.synthesisText).toContain('[warmly]');
+    expect(generated.synthesisText).toContain('[brightly]');
+    expect(generated.tags).toEqual(['warmly', 'brightly']);
+  });
+
   // ⚠ 관계에서 유도한 호칭은 **호칭이 비었을 때만** 쓰는 보완책이다(Codex #701 P1).
   // 사용자가 "자기야" 라고 넣었는데 "엄마," 로 시작하는 문구가 통과하면, 프롬프트가 약속한
   // 호칭과 다른 말이 사전렌더 클립에 영구 저장된다.

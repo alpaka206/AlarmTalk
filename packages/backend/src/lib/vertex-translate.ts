@@ -24,9 +24,18 @@ type VertexGenerateContentResponse = {
 };
 
 export type AlarmTextPreparation = {
+  /** **표시용** 문구 — 딜리버리 태그가 없는 순수 낭독 텍스트. 화면·저장은 이걸 쓴다. */
   text: string;
   translated: boolean;
   tags: string[];
+  /**
+   * **합성용** 문구 — 모델이 배치한 인라인 태그가 그대로 박힌 텍스트. 없으면 호출부가
+   * `text` 에 태그를 다시 입힌다(`applyDeliveryTagPerSentence`).
+   *
+   * ⚠ `text` 와 나뉘어 있는 이유: 예전에는 하나였는데, 모델이 인라인 태그를 내기
+   * 시작하자 **그 대괄호가 화면 문구로 그대로 샜다**(Codex #701 P2).
+   */
+  synthesisText?: string;
   provider: 'vertex' | 'local';
 };
 
@@ -301,18 +310,34 @@ export async function generateDynamicAlarmTextWithVertex(
     }
 
     const parsed = parseDynamicAlarmTextResult(raw);
-    // SOFT 자동수리: 손주 존대 어체·날씨 문장의 조사/띄어쓰기 슬립을 reject가 아니라 수리한다.
-    const text = polishDynamicAlarmText(parsed.text.trim(), context);
+    const raw2 = parsed.text.trim();
+    // ⚠ **검증·수리·표시는 태그를 뺀 본문으로 한다**(Codex #701 P2).
+    // 모델이 인라인 태그를 내기 시작하면서 `[warmly]` 같은 영어 대괄호가 본문에 섞이는데,
+    // 그대로 재면 (1) 200자 상한에 장식이 얹히고 (2) `hasLanguageMismatch` 가 한국어
+    // 문구를 영어 섞임으로 오판하며 (3) 무엇보다 그 대괄호가 **화면 문구로 샌다.**
+    const spoken = polishDynamicAlarmText(normalizeAlarmTextWithoutTags(raw2), context);
 
-    if (dynamicTextHardFailure(text, context)) {
+    // 태그 검사만 **원문**으로 한다 — 저각성 태그(`[quietly]`)는 벗긴 뒤엔 보이지 않아
+    // 그대로 통과해 버린다. 나머지(길이·언어·호칭·유출)는 태그를 뺀 본문 기준이다.
+    if (dynamicTextHardFailure(spoken, context, raw2)) {
       continue; // HARD → 1회 재롤
     }
 
-    const tag = sanitizeDeliveryTag(parsed.tag);
+    // 저각성 태그는 기상을 방해하므로 여기서 떨군다(`sanitizeDeliveryTag` 와 같은 규칙).
+    const inlineTags = extractTags(raw2)
+      .map((tag) => sanitizeDeliveryTag(tag))
+      .filter(Boolean);
+    const legacyTag = sanitizeDeliveryTag(parsed.tag);
+    const tags = inlineTags.length > 0 ? inlineTags : legacyTag ? [legacyTag] : [];
+    // 모델이 배치한 자리를 살린다. 다만 저각성 태그를 떨궜다면 원문을 그대로 쓸 수 없으므로
+    // (떨군 태그가 남는다) 그때는 호출부가 `text` 에 다시 입히게 넘기지 않는다.
+    const keptAllInlineTags =
+      inlineTags.length > 0 && inlineTags.length === extractTags(raw2).length;
     return {
-      text,
+      text: spoken,
       translated: false,
-      tags: tag ? [tag] : [],
+      tags,
+      ...(keptAllInlineTags ? { synthesisText: raw2 } : {}),
       provider: 'vertex',
     };
   }
@@ -321,7 +346,12 @@ export async function generateDynamicAlarmTextWithVertex(
 }
 
 // HARD 차단(§4.7): 차단 시 재롤→폴백. allowlist/단일태그/저각성 가드는 별도(태그 정제는 SOFT).
-function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext): boolean {
+function dynamicTextHardFailure(
+  text: string,
+  context: DynamicAlarmTextContext,
+  /** 태그가 붙어 있는 원문. 태그 관련 검사만 이걸 본다(없으면 `text`). */
+  taggedText?: string,
+): boolean {
   if (!text) return true;
   // 파싱불가/메타 JSON('here is the json' 등)은 형식 위반.
   if (isMetaJsonResponse(text)) return true;
@@ -330,8 +360,9 @@ function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext):
   if (hasUnsupportedListenerAddress(text, context.listenerTitle, context.relationshipLabel))
     return true;
   if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
-  // text 안의 브래킷/지문은 HARD. 태그는 별도 필드라 정상 출력은 여기서 안 걸린다.
-  if (hasDeliveryTagOrStageDirection(text)) return true;
+  // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
+  // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
+  if (hasDeliveryTagOrStageDirection(taggedText ?? text)) return true;
   if (hasAlarmTimeEcho(text, context.alarmTimeLabel)) return true;
   if (hasDateLabelEcho(text, context.dateLabel)) return true;
   // 연인/배우자 톤: '새 인연/연애운/질투' 어휘만 HARD. 정중 어미 슬립은 SOFT로 강등.
