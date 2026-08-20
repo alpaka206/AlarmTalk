@@ -1021,7 +1021,10 @@ export async function generatePrerenderClipText(
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
     if (
-      !text ||
+      // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
+      // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
+      // 클립이 영구 저장된다.
+      !spoken ||
       isMetaJsonResponse(text) ||
       spoken.length > 200 ||
       hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
