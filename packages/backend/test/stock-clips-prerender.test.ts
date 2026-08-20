@@ -277,22 +277,6 @@ describe('사전렌더 큐 헬퍼', () => {
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
   });
 
-  // 등록 직후 첫 배치는 **그 목소리만** 집어야 한다. 그러지 않으면 남의 큐 항목을 물고
-  // 요청 컨텍스트에서 돌려 버려, 응답이 끝난 뒤 엉뚱한 목소리의 임대만 잡아먹는다.
-  it('voiceProfileId 를 주면 그 목소리만 claim 한다(등록 직후 첫 배치)', async () => {
-    const db = await setupDb();
-    await enqueuePrerender(db, 'v1', 'owner-1', 'ko');
-    await enqueuePrerender(db, 'v2', 'owner-2', 'ko');
-
-    const claimed = await claimPendingPrerenderVoices(db, 5, 'v2');
-
-    expect(claimed).toHaveLength(1);
-    expect(claimed[0]?.voiceProfileId).toBe('v2');
-    // 나머지는 그대로 남아 다음 cron 틱이 받는다.
-    const rest = await claimPendingPrerenderVoices(db, 5);
-    expect(rest.map((c) => c.voiceProfileId)).toEqual(['v1']);
-  });
-
   it('첫 cron이 임대한 pending 행은 겹친 cron이 다시 claim하지 않는다', async () => {
     const db = await setupDb();
     await enqueuePrerender(db, 'v1', 'owner-1', 'en');

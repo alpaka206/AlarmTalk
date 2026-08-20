@@ -1092,42 +1092,6 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // ⚠ **등록 직후 첫 배치를 여기서 바로 돌린다**(2026-08-20).
-  // 예전에는 큐에 넣기만 하고 **다음 cron 틱(최대 5분)을 그냥 기다렸다.** 21개를 틱당
-  // 몇 개씩 채우는 구조라 사용자는 십수 분을 기다렸는데, 그 첫 5분은 아무 일도 일어나지
-  // 않는 순수 대기였다. 응답을 막지 않고(waitUntil) 첫 배치를 돌리면 그 5분이 사라지고,
-  // 우선순위 정렬(`sortTargetsByFirstUse`) 덕에 **제일 먼저 쓸 인사말·약**이 이 배치에
-  // 들어간다 — 목소리를 저장하고 알람을 만들러 가는 동안 이미 준비된다.
-  //
-  // cron 과 **같은 함수**를 쓴다(`runPrerenderBatch`) — 드레인 규칙이 두 벌이 되면
-  // 한쪽만 고치는 사고가 난다. 임대(claim)로 직렬화되므로 마침 도는 cron 틱과 겹쳐도
-  // 같은 클립을 두 번 만들지 않는다.
-  // executionCtx 없는 컨텍스트(테스트)에선 접근이 던지므로 try 로 생략 — 그 경우 기존대로
-  // 다음 cron 틱이 받는다.
-  if (promotesDraftToOfficial) {
-    try {
-      c.executionCtx.waitUntil(
-        (async () => {
-          const { runPrerenderBatch } = await import('../lib/stock-clips');
-          // ⚠ **응답 뒤 수명 안에서 확실히 끝나는 양만** 돌린다(Codex #701 P2).
-          // 10개를 걸면 Gemini→ElevenLabs→R2 를 열 번 도는 동안 `waitUntil` 수명이 끊길 수
-          // 있는데, 그러면 우리 코드가 한 줄도 못 도는 채 큐 행이 **15분 임대에 묶인다** —
-          // 다음 cron 틱이 그 목소리를 집지 못해, 빠르게 하려던 것이 되레 십여 분을 더
-          // 세운다. 3개면 우선순위 정렬 덕에 인사말·약이 들어가고(사용자가 처음 부딪히는
-          // 것), 나머지는 5분 뒤 cron 이 이어받는다. `deadlineMs` 는 그 위의 이중 안전장치다.
-          await runPrerenderBatch(db, c.env, {
-            maxClips: 3,
-            maxVoices: 1,
-            voiceProfileId: id,
-            deadlineMs: 15_000,
-          });
-        })().catch(() => {}),
-      );
-    } catch {
-      // executionCtx 없음(비-fetch/테스트) → 다음 cron 틱이 이어받는다.
-    }
-  }
-
   // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다 — 받은 쪽이
   // 새로고침 없이 목소리 탭에서 바로 보이게(가족 알람 push 와 동일 패턴, 실패는 무시).
   // waitUntil 등록 필수: 미등록 fire-and-forget 은 응답 직후 워커가 종료되면 FCM 호출이
