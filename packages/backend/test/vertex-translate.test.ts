@@ -556,11 +556,10 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).toContain('엄마가 응원할게');
   });
 
-  // ⚠ 호칭(listener_title)은 **선택 입력**이라 비어 있는 경우가 흔하다. 그때 가족 호칭을
-  // 전부 막으면 아이 목소리가 부모를 부를 수가 없다 — 실제로 관계 '아들' 로 생성한 6번 중
-  // 4번이 "엄마," 를 썼다는 이유로 거절됐다(2026-08-20 실측). 목소리가 아들/딸이면 듣는
-  // 사람은 부모이므로 엄마·아빠는 정답이다.
-  it('lets the voice address the listener by the relationship counterpart title', async () => {
+  // ⚠ **관계 라벨로 상대 호칭을 추측하지 않는다**(Codex #701 P2). 2026-08-20 에 잠깐
+  // 열었다가 되돌렸다 — 관계 '아들' 은 화자가 아들이라는 뜻일 뿐 듣는 사람이 엄마인지
+  // 아빠인지는 모른다. 추측을 허용하면 **엄마를 "아빠" 라고 부르는 클립이 영구 저장**된다.
+  it('rejects a guessed family title when no listener title was provided', async () => {
     queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -571,8 +570,23 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       relationshipLabel: '아들',
     });
 
-    expect(generated.provider).toBe('vertex');
-    expect(generated.text).toContain('엄마');
+    expect(generated.provider).toBe('local');
+  });
+
+  // ⚠ 태그 문법(ASCII)에 안 맞는 대괄호는 **벗겨지지도 인식되지도 않는다** — 그대로 두면
+  // 낭독되거나 화면에 뜬다(Codex #701 P2).
+  it('falls back when the line carries a bracketed direction outside the tag grammar', async () => {
+    queueContent(geminiText('{"text":"[다정하게] 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[다정하게]');
   });
 
   // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를

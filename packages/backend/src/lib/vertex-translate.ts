@@ -368,8 +368,7 @@ function dynamicTextHardFailure(
   if (isMetaJsonResponse(text)) return true;
   if (text.length > 200) return true;
   if (hasLanguageMismatch(text, context.targetLanguage)) return true;
-  if (hasUnsupportedListenerAddress(text, context.listenerTitle, context.relationshipLabel))
-    return true;
+  if (hasUnsupportedListenerAddress(text, context.listenerTitle)) return true;
   if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
   // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
   // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
@@ -790,7 +789,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   // 것도 그 탓이었다.
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : counterpartAddressGuidance(context.relationshipLabel);
+    : neutralAddressGuidance();
   // 어체는 관계 기반(auto)으로만 결정한다.
   const koreanRegisterInstruction =
     context.targetLanguage === 'ko'
@@ -880,7 +879,7 @@ function prerenderClipPrompt(params: {
   const listenerTitle = params.listenerTitle?.trim();
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use it naturally, do not translate it, and never replace it with guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : counterpartAddressGuidance(params.relationshipLabel);
+    : neutralAddressGuidance();
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
@@ -1027,7 +1026,7 @@ export async function generatePrerenderClipText(
       spoken.length > 200 ||
       hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
       hasDeliveryTagOrStageDirection(text) ||
-      hasUnsupportedListenerAddress(spoken, params.listenerTitle, params.relationshipLabel) ||
+      hasUnsupportedListenerAddress(spoken, params.listenerTitle) ||
       hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle)
     ) {
       lastError = new AlarmTextPreparationInvalidError();
@@ -1469,62 +1468,27 @@ const FAMILY_TITLE_RE =
   /(^|[\s"'“”‘’(（])(할머니|할머님|할아버지|할아버님|엄마|어머니|어머님|아빠|아버지|아버님|부모님|할미|할배|손녀|손자|딸|아들)(?:님)?(?:아|야)?(?=[\s,，.!！?？~]|$)/g;
 
 /**
- * 이 목소리가 **상대를 부를 만한 호칭** — 관계 라벨에서 유도한다.
+ * 호칭(`listener_title`)이 비었을 때의 지시.
  *
- * ⚠ 호칭(`listener_title`)은 선택 입력이라 비어 있는 경우가 흔한데, 그때
- * `hasUnsupportedListenerAddress` 가 가족 호칭을 전부 막아 버리면 **아이 목소리가 부모를
- * 부를 수가 없다**(2026-08-20 실측: 관계 '아들'·아이 말투로 생성한 6번 중 4번이 "엄마," 를
- * 썼다는 이유로 거절됐다). 목소리가 '아들/딸' 이면 듣는 사람은 부모이므로 엄마·아빠는
- * 정답이다. 엄마인지 아빠인지는 알 수 없으니 둘 다 허용한다.
+ * ⚠ **관계 라벨로 상대 호칭을 추측하지 않는다**(Codex #701 P2). 2026-08-20 에 한 번
+ * 열었다가 되돌렸다: 관계 '아들' 은 **화자가 아들**이라는 뜻일 뿐, 듣는 사람이 엄마인지
+ * 아빠인지는 알려 주지 않는다. 둘 다 허용하고 모델에게 고르게 하면 **엄마를 "아빠" 라고
+ * 부르는 클립이 영구 저장**될 수 있다(손녀/손자, 아들/딸도 같다).
  *
- * 사용자가 호칭을 직접 넣었으면 그쪽이 우선이고, 이건 **추가로** 허용되는 목록이다.
+ * 대신 지시를 **분명하게** 준다. 앞선 실패(아이 목소리가 매번 거절됨)는 이 규칙 자체가
+ * 아니라 지시가 흐릿한데 가드만 빡빡해서 났다 — 무엇을 쓰면 되는지 말해 주면 맞춘다.
  */
-function counterpartAddressTitles(relationshipLabel: string | null | undefined): string[] {
-  const label = normalizeAddressLabel(relationshipLabel);
-  if (!label) return [];
-  if (['아들', '딸'].includes(label)) return ['엄마', '어머니', '아빠', '아버지', '부모님'];
-  if (['손녀', '손자', '손주'].includes(label)) return ['할머니', '할아버지'];
-  if (['엄마', '어머니', '아빠', '아버지', '부모님'].includes(label)) return ['아들', '딸'];
-  if (['할머니', '할아버지'].includes(label)) return ['손녀', '손자', '손주'];
-  return [];
-}
-
-/**
- * 호칭(`listener_title`)이 비었을 때 **상대를 어떻게 부를지** 모델에게 알려 준다.
- *
- * 허용 목록(`counterpartAddressTitles`)과 **같은 출처**여야 한다 — 가드는 열어 두고 지시는
- * 막아 두면 모델이 안 쓰고, 지시만 열고 가드가 막으면 매번 거절된다. 둘 다 겪었다.
- */
-function counterpartAddressGuidance(relationshipLabel: string | null | undefined): string {
-  const titles = counterpartAddressTitles(relationshipLabel);
-  if (titles.length === 0) {
-    return 'No listener title was provided, so do not guess a family title (grandmother, grandfather, mom, dad, son, daughter, grandson, granddaughter). Use a neutral warm address instead.';
-  }
-  return `No listener title was provided. Because this voice is the user's "${relationshipLabel}", you MAY address the listener with the natural counterpart title (${titles.join(
-    ', ',
-  )}) — pick the one that fits and use it naturally. Do not use any other family title, and never invent a personal name.`;
+function neutralAddressGuidance(): string {
+  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "좋은 아침이에요", "잘 잤어?"), or use an affectionate title-free address. This is a hard requirement.';
 }
 
 function hasUnsupportedListenerAddress(
   text: string,
   listenerTitle: string | null | undefined,
-  relationshipLabel?: string | null,
 ): boolean {
   const allowedTitle = normalizeAddressLabel(listenerTitle);
-  // ⚠ **사용자가 호칭을 직접 넣었으면 그쪽이 절대 우선이다**(Codex #701 P1).
-  // 관계에서 유도한 호칭은 호칭이 **비었을 때만** 쓰는 보완책이다. 둘 다 허용하면
-  // `listenerTitle="자기야"` 인데 "엄마," 로 시작하는 문구가 통과해, 프롬프트가 약속한
-  // 호칭과 다른 말이 사전렌더 클립에 **영구 저장**된다.
-  const counterparts = new Set(
-    allowedTitle == null
-      ? counterpartAddressTitles(relationshipLabel)
-          .map((title) => normalizeAddressLabel(title))
-          .filter((title): title is string => title != null)
-      : [],
-  );
   for (const match of text.matchAll(FAMILY_TITLE_RE)) {
     const matchedTitle = normalizeAddressLabel(match[2]);
-    if (matchedTitle != null && counterparts.has(matchedTitle)) continue;
     // 청자 호칭이 "우리 딸"/"사랑하는 아들"처럼 수식어+가족토큰(공백 구분)이면
     // FAMILY_TITLE_RE 는 bare 토큰("딸")만 뽑고 allowedTitle 은 공백제거형("우리딸")이라
     // strict 비교가 항상 어긋난다. matched 토큰이 allowedTitle 의 접미이면 지원 호칭으로 본다.
@@ -1581,7 +1545,23 @@ function hasRelationshipLabelLeak(
 ///  1. **전각/소괄호 지문** — `（다정하게）` `(웃으며)` 는 ElevenLabs 가 태그로 안 읽고
 ///     **글자 그대로 낭독**한다. 대괄호만 태그다.
 ///  2. **저각성 지시** — 대괄호든 아니든, 졸리게 말하라는 뜻이면 깨우는 알람에 맞지 않는다.
+/**
+ * 태그 문법에 **맞지 않는 대괄호**가 남아 있는가 — 예: `[다정하게]`, `[아침 인사]`.
+ *
+ * ⚠ `TAG_BODY_PATTERN` 은 ASCII 소문자만 받는다(`[a-z][a-z ,-]{1,48}`). 그래서 한글
+ * 대괄호 지문은 **태그로 인식되지도, 벗겨지지도 않는다** — 그대로 두면 합성 문구에도
+ * 표시 문구에도 남아 낭독되거나 화면에 뜬다(Codex #701 P2). 인라인 태그를 쓰라고
+ * 지시하기 시작하면서 모델이 이 형태를 낼 여지가 커졌으므로 명시적으로 거절한다.
+ */
+function hasUnknownBracketedSegment(text: string): boolean {
+  const all = text.match(/\[[^\]]{1,60}\]/g) ?? [];
+  if (all.length === 0) return false;
+  const known = new Set(text.match(TAG_RE_GLOBAL) ?? []);
+  return all.some((segment) => !known.has(segment));
+}
+
 function hasDeliveryTagOrStageDirection(text: string): boolean {
+  if (hasUnknownBracketedSegment(text)) return true;
   // 소괄호·전각괄호로 시작하면 지문이다(대괄호는 태그라 통과).
   if (/^\s*[（(]/.test(text)) return true;
 
