@@ -315,16 +315,27 @@ export async function generateDynamicAlarmTextWithVertex(
     // 모델이 인라인 태그를 내기 시작하면서 `[warmly]` 같은 영어 대괄호가 본문에 섞이는데,
     // 그대로 재면 (1) 200자 상한에 장식이 얹히고 (2) `hasLanguageMismatch` 가 한국어
     // 문구를 영어 섞임으로 오판하며 (3) 무엇보다 그 대괄호가 **화면 문구로 샌다.**
-    const spoken = polishDynamicAlarmText(normalizeAlarmTextWithoutTags(raw2), context);
+    // ⚠ **수리(polish)는 합성 문구에도 반영돼야 한다**(Codex #701 P2).
+    // 예전에는 태그를 벗긴 본문만 수리하고 합성에는 원문을 넘겨, 조사·띄어쓰기 수리가
+    // 화면에만 반영되고 **실제로 들리는 소리는 안 고쳐진** 상태가 됐다.
+    // 태그가 붙은 원문을 그대로 수리하되, 수리가 태그를 건드렸으면(개수·내용이 달라지면)
+    // 그 결과는 믿지 않고 태그 없는 쪽만 쓴다.
+    const polishedTagged = polishDynamicAlarmText(raw2, context);
+    const tagsSurvivedPolish =
+      JSON.stringify(extractTags(polishedTagged)) === JSON.stringify(extractTags(raw2));
+    const taggedSource = tagsSurvivedPolish ? polishedTagged : raw2;
+    const spoken = tagsSurvivedPolish
+      ? normalizeAlarmTextWithoutTags(polishedTagged)
+      : polishDynamicAlarmText(normalizeAlarmTextWithoutTags(raw2), context);
 
     // 태그 검사만 **원문**으로 한다 — 저각성 태그(`[quietly]`)는 벗긴 뒤엔 보이지 않아
     // 그대로 통과해 버린다. 나머지(길이·언어·호칭·유출)는 태그를 뺀 본문 기준이다.
-    if (dynamicTextHardFailure(spoken, context, raw2)) {
+    if (dynamicTextHardFailure(spoken, context, taggedSource)) {
       continue; // HARD → 1회 재롤
     }
 
     // 저각성 태그는 기상을 방해하므로 여기서 떨군다(`sanitizeDeliveryTag` 와 같은 규칙).
-    const inlineTags = extractTags(raw2)
+    const inlineTags = extractTags(taggedSource)
       .map((tag) => sanitizeDeliveryTag(tag))
       .filter(Boolean);
     const legacyTag = sanitizeDeliveryTag(parsed.tag);
@@ -332,12 +343,12 @@ export async function generateDynamicAlarmTextWithVertex(
     // 모델이 배치한 자리를 살린다. 다만 저각성 태그를 떨궜다면 원문을 그대로 쓸 수 없으므로
     // (떨군 태그가 남는다) 그때는 호출부가 `text` 에 다시 입히게 넘기지 않는다.
     const keptAllInlineTags =
-      inlineTags.length > 0 && inlineTags.length === extractTags(raw2).length;
+      inlineTags.length > 0 && inlineTags.length === extractTags(taggedSource).length;
     return {
       text: spoken,
       translated: false,
       tags,
-      ...(keptAllInlineTags ? { synthesisText: raw2 } : {}),
+      ...(keptAllInlineTags ? { synthesisText: taggedSource } : {}),
       provider: 'vertex',
     };
   }
@@ -773,9 +784,13 @@ function fewShotBlock(targetLanguage: string): string {
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
   const listenerTitle = context.listenerTitle?.trim();
+  // ⚠ **지시와 가드를 같이 움직인다**(Codex #701 P2). 호칭이 비었을 때 가드는 관계에서
+  // 유도한 상대 호칭(아들/딸 → 엄마·아빠)을 허용하는데, 지시가 "가족 호칭을 쓰지 말라" 로
+  // 남아 있으면 모델은 안 쓰고 어색한 무호칭 문장을 낸다. 아이 목소리가 부모를 못 부르는
+  // 것도 그 탓이었다.
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
+    : counterpartAddressGuidance(context.relationshipLabel);
   // 어체는 관계 기반(auto)으로만 결정한다.
   const koreanRegisterInstruction =
     context.targetLanguage === 'ko'
@@ -865,7 +880,7 @@ function prerenderClipPrompt(params: {
   const listenerTitle = params.listenerTitle?.trim();
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use it naturally, do not translate it, and never replace it with guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : 'Do not address the listener by guessed family titles. Use a neutral warm address instead.';
+    : counterpartAddressGuidance(params.relationshipLabel);
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
@@ -1472,6 +1487,22 @@ function counterpartAddressTitles(relationshipLabel: string | null | undefined):
   if (['엄마', '어머니', '아빠', '아버지', '부모님'].includes(label)) return ['아들', '딸'];
   if (['할머니', '할아버지'].includes(label)) return ['손녀', '손자', '손주'];
   return [];
+}
+
+/**
+ * 호칭(`listener_title`)이 비었을 때 **상대를 어떻게 부를지** 모델에게 알려 준다.
+ *
+ * 허용 목록(`counterpartAddressTitles`)과 **같은 출처**여야 한다 — 가드는 열어 두고 지시는
+ * 막아 두면 모델이 안 쓰고, 지시만 열고 가드가 막으면 매번 거절된다. 둘 다 겪었다.
+ */
+function counterpartAddressGuidance(relationshipLabel: string | null | undefined): string {
+  const titles = counterpartAddressTitles(relationshipLabel);
+  if (titles.length === 0) {
+    return 'No listener title was provided, so do not guess a family title (grandmother, grandfather, mom, dad, son, daughter, grandson, granddaughter). Use a neutral warm address instead.';
+  }
+  return `No listener title was provided. Because this voice is the user's "${relationshipLabel}", you MAY address the listener with the natural counterpart title (${titles.join(
+    ', ',
+  )}) — pick the one that fits and use it naturally. Do not use any other family title, and never invent a personal name.`;
 }
 
 function hasUnsupportedListenerAddress(
