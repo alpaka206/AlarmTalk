@@ -29,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.work.WorkInfo
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -89,15 +88,13 @@ internal fun VoiceOnboardingScreen(
     // 받지 못하고 성공(SUCCEEDED)으로 끝난 경우 — 실패도 대기도 아닌데 게이트는 안 닫힌다.
     // 둘 다 진행 표시만 도는 화면에 뒤로가기까지 막힌 상태로 영원히 남는다.
     //
-    // 그래서 보장은 시간으로 건다. 아는 상태(failed/stalled)면 즉시 열고, 모르는 조합이어도
-    // 유예가 지나면 무조건 열린다. 원래 의도('몇 초면 끝날 일에 선택지를 내밀지 않는다')는
-    // 유예 안에서 그대로 지켜진다.
-    var graceElapsed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(ESCAPE_GRACE_MILLIS)
-        graceElapsed = true
-    }
-    val showEscape = failed || stalled || graceElapsed
+    // ⚠ **처음부터 보여준다 — 12초 유예를 되돌리지 말 것**(2026-08-20 지시).
+    // 예전에는 `ESCAPE_GRACE_MILLIS`(12초)를 기다렸다. 의도는 "몇 초면 끝날 일에 선택지를
+    // 내밀지 않는다" 였는데, 실제로는 **버튼이 중간에 불쑥 나타나** 더 이상해 보였다.
+    // 없다가 생기는 컨트롤은 사용자가 "뭔가 잘못됐나" 로 읽는다. 게다가 그 12초 동안은
+    // 뒤로가기까지 막혀 있어(아래 `BackHandler`) 빠져나갈 길이 아예 없었다.
+    // 이 버튼은 다운로드를 취소하지 않는다(계속 받는다) — 숨길 이유가 없다.
+    val showEscape = true
 
     // 뒤로가기: 탈출구가 보일 때는 그 동작(나중에 받기)에 잇고, 정상적으로 받는 중에는
     // 삼킨다. 그대로 두면 시스템 기본 동작이 앱을 닫아 버려, 몇 초 기다리면 될 일에
@@ -177,10 +174,9 @@ internal fun VoiceOnboardingScreen(
                         enabled = true,
                     )
                 }
-                // 정상적으로 받는 중에는 숨긴다 — 몇 초면 끝나는 일에 선택지를 내밀 필요가 없다.
-                // 그 '몇 초' 가 지나면 어떤 상태든 반드시 보여준다. 여기서 갇히면 앱을 아예 못 쓴다.
+                // **처음부터 보여준다**(위 `showEscape` 주석). 여기서 갇히면 앱을 아예 못 쓴다.
                 //
-                // 문구는 **상태에 따라 다르다.** 받는 중이면 '백그라운드에서 계속 받기' 다 —
+                // 문구는 **상태에 따라 다르다.** 받는 중이면 '백그라운드에서 계속' 이다 —
                 // 이 버튼은 워커를 취소하지 않으므로(skipVoiceSetup 은 화면만 닫는다) 실제로
                 // 계속 받는다. 미루는 것처럼 말하면 사용자는 알람 음성이 없는 줄 알고 기다린다.
                 //
@@ -219,12 +215,6 @@ internal fun stockPrefetchStalled(state: WorkInfo.State?, runAttemptCount: Int):
         // 끝났는데 이 화면이 아직 떠 있다 = 워커가 빈손으로 성공한 것이다(매니페스트 미도착
         // 등). completeVoiceSetupIfDownloaded 가 캐시 0 이라 게이트를 못 닫는다.
         state?.isFinished == true
-
-/**
- * 탈출구가 늦어도 이때까지는 열린다. 프리페치는 보통 이보다 훨씬 빨리 끝나므로 정상 경로의
- * 사용자는 이 버튼을 볼 일이 없고, 막힌 사용자는 확실히 빠져나간다.
- */
-private const val ESCAPE_GRACE_MILLIS = 12_000L
 
 // 새벽 네이비 온보딩 배경(AuthScreen 의 장면 색과 동일 값 — 그쪽은 private 이라 재선언).
 private val OnbSceneTop = Color(0xFF1A2A52)

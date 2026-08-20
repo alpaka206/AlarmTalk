@@ -1860,6 +1860,21 @@ internal fun VoiceProfileManagementPanel(
                                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                         )
                                     }
+                                    // ⚠ **나가는 길을 X 에만 맡기지 말 것**(2026-08-20 지시).
+                                    // 예전에는 전용 버튼 없이 부제로만 "지금 닫아도 계속
+                                    // 만들어져요" 라고 안내했다. 그런데 이 대기는 서버 cron
+                                    // 배치라 십수 분이 걸리는데, 화면에는 누를 것이 오른쪽 위
+                                    // X 뿐이라 "닫으면 취소되는 것 아닌가" 로 읽힌다.
+                                    // 최초 기본 목소리 다운로드 화면과 **같은 낱말·같은 자리**로
+                                    // 맞춘다(`onb_voice_download_background`) — 두 화면이 하는
+                                    // 일이 같으니 말도 같아야 한다.
+                                    Spacer(Modifier.height(6.dp))
+                                    TextButton(onClick = { closeCreateDialog() }) {
+                                        Text(
+                                            text = stringResource(R.string.onb_voice_download_background),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
 
