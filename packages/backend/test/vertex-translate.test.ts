@@ -659,7 +659,8 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('still falls back when the line speaks as if the relationship were someone else', async () => {
-    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게']) {
+    // 전언 구문("엄마가 … 달라고 했어")은 화자가 심부름꾼이라는 뜻이다 — 자기 지칭과 반대다.
+    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게', '엄마가 깨워 달라고 했어']) {
       queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
 
       const generated = await generateDynamicAlarmTextWithVertex(ENV, {

@@ -1527,6 +1527,15 @@ function hasRelationshipLabelLeak(
   const thirdPartyReference = new RegExp(`${escapedLabel}\\s*(?:처럼|입장에서|대신)`, 'i');
   if (thirdPartyReference.test(text)) return true;
 
+  // **전언(傳言) 구문도 화자가 그 사람이 아님을 드러낸다**(Codex #701 P2).
+  // "엄마가 깨워 달라고 했어" 는 화자가 심부름꾼이라는 뜻이라, 자기 지칭("엄마는 늘 네
+  // 편이야")과는 정반대다. 라벨 뒤 짧은 구간에 전언 어미가 오면 거절한다.
+  const reportedSpeech = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|께서)?[^.!?]{0,20}?(?:달라고|라고\\s*(?:했|하셨|말했|전했|하더)|랬|댔|그랬)`,
+    'i',
+  );
+  if (reportedSpeech.test(text)) return true;
+
   const allowedAddress =
     normalizeAddressLabel(label) !== null &&
     normalizeAddressLabel(label) === normalizeAddressLabel(listenerTitle);
