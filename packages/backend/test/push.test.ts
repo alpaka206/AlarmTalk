@@ -93,8 +93,13 @@ describe('POST /push/register — FCM 토큰 등록', () => {
 describe('POST /push/unregister — 토큰 해제(로그아웃)', () => {
   beforeEach(() => mockDB.reset());
 
-  it('토큰 전역 제거 → success', async () => {
-    mockDB.pushResult([], 1); // DELETE FROM push_tokens WHERE token = ?
+  // ⚠ **호출자 소유의 행만 지운다**(2026-08-20 Codex #699 P2). 토큰만 보고 지우면,
+  // A 의 해제 요청이 떠 있는 동안 B 가 같은 기기 토큰으로 등록을 마쳤을 때 뒤늦게 도착한
+  // A 의 요청이 **B 의 새 바인딩을 지운다** — B 는 다음 등록까지 알림을 놓친다.
+  // "delete-on-register 로 전역 단일 소유자" 라는 근거는 범위를 좁혀도 그대로 성립한다:
+  // 지금 그 토큰의 주인이 곧 호출자다.
+  it('호출자 소유의 행만 지운다 → success', async () => {
+    mockDB.pushResult([], 1); // DELETE FROM push_tokens WHERE token = ? AND user_id = ?
     const res = await buildApp('user-1').request(
       jsonReq('POST', '/push/unregister', { token: 'fcm-token-abc' }),
     );
@@ -102,8 +107,8 @@ describe('POST /push/unregister — 토큰 해제(로그아웃)', () => {
     expect((await res.json()).success).toBe(true);
     const del = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM push_tokens'));
     expect(del).toBeDefined();
-    expect(del!.sql).toContain('WHERE token = ?');
-    expect(del!.args).toEqual(['fcm-token-abc']);
+    expect(del!.sql).toContain('WHERE token = ? AND user_id = ?');
+    expect(del!.args).toEqual(['fcm-token-abc', 'user-1']);
   });
 
   it('token 누락 → 400', async () => {

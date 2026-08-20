@@ -68,10 +68,17 @@ push.post('/register', async (c) => {
   return c.json({ success: true });
 });
 
-// 로그아웃/기기 해제 시 이 기기의 FCM 토큰을 제거해 더 이상 alarm push 가 오지 않게 한다. 기기 토큰은
-// delete-on-register 로 전역 단일 소유자라, 토큰 자체로 삭제하면 로그아웃한(또는 공유) 기기가 이전
-// 계정의 알람 알림을 계속 받는 것을 막는다. 로그아웃 시 클라가 token_epoch 무효화(/auth/logout) 전에 호출.
+// 로그아웃/기기 해제 시 이 기기의 FCM 토큰을 제거해 더 이상 alarm push 가 오지 않게 한다.
+// 로그아웃 시 클라가 token_epoch 무효화(/auth/logout) 전에 호출한다.
+//
+// ⚠ **호출자 소유의 행만 지운다**(2026-08-20 Codex #699 P2). 예전에는 토큰만 보고 지웠는데,
+// 그 근거였던 "delete-on-register 로 전역 단일 소유자" 는 **범위를 좁혀도 그대로 성립**한다 —
+// 지금 그 토큰의 주인이 곧 호출자이기 때문이다. 반대로 넓게 두면 실제 사고가 난다:
+// A 의 해제 요청이 네트워크에 떠 있는 동안 B 가 같은 기기 토큰으로 등록을 마치면, 뒤늦게
+// 도착한 A 의 요청이 **B 의 새 바인딩을 지운다** — B 는 다음 APNs/FCM 등록까지 가족 알람
+// 알림을 놓친다. 클라이언트도 등록/해제를 직렬화하지만, 그건 한 기기 안에서만 유효하다.
 push.post('/unregister', async (c) => {
+  const userPk = c.get('userIdPK') || c.get('userId');
   const db = getDB(c.env);
 
   let body: { token?: unknown };
@@ -87,8 +94,8 @@ push.post('/unregister', async (c) => {
   }
 
   await db.execute({
-    sql: 'DELETE FROM push_tokens WHERE token = ?',
-    args: [token],
+    sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id = ?',
+    args: [token, userPk],
   });
 
   return c.json({ success: true });
