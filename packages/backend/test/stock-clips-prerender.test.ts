@@ -164,6 +164,28 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
   });
 
+  // ⚠ **먼저 쓸 것부터 만든다**(2026-08-20). 사전렌더는 5분 주기 배치라 풀셋이 채워지기까지
+  // 십수 분이 걸리는데, 그동안 사용자가 부딪히는 건 처음 고르는 문구 하나다. 예전에는 시드
+  // 선언 순서(날씨 9개 먼저)라 인사말 하나 들으려고 날씨 아홉 개를 기다렸다.
+  it('첫 배치가 인사말·약부터 만들도록 대상이 정렬된다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready' });
+
+    const targets = await findMissingStockTargets(db, [cloneVoice()]);
+
+    expect(targets[0]?.category).toBe('greeting');
+    const categoryOrder = targets.map((t) => t.category);
+    expect(categoryOrder.indexOf('medication')).toBeLessThan(categoryOrder.indexOf('weather'));
+    expect(categoryOrder.indexOf('weather')).toBeLessThan(categoryOrder.indexOf('fortune'));
+
+    // 같은 카테고리 안의 variant 순서는 **계약**이다(날씨 variant = 조건 인덱스).
+    // 정렬이 안정적이지 않으면 사전렌더 인덱스와 클라 매칭이 어긋난다.
+    const weatherVariants = targets
+      .filter((t) => t.category === 'weather')
+      .map((t) => t.variantIndex);
+    expect(weatherVariants).toEqual([...weatherVariants].sort((a, b) => a - b));
+  });
+
   it('languageOverride 를 en 으로 주면 en 으로만 대상 생성', async () => {
     const db = await setupDb();
     await insertVoice(db, { id: 'clone-ready' });
@@ -253,6 +275,22 @@ describe('사전렌더 큐 헬퍼', () => {
     });
     await markPrerenderDone(db, 'v1', claimed[0]!.claimToken);
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
+  });
+
+  // 등록 직후 첫 배치는 **그 목소리만** 집어야 한다. 그러지 않으면 남의 큐 항목을 물고
+  // 요청 컨텍스트에서 돌려 버려, 응답이 끝난 뒤 엉뚱한 목소리의 임대만 잡아먹는다.
+  it('voiceProfileId 를 주면 그 목소리만 claim 한다(등록 직후 첫 배치)', async () => {
+    const db = await setupDb();
+    await enqueuePrerender(db, 'v1', 'owner-1', 'ko');
+    await enqueuePrerender(db, 'v2', 'owner-2', 'ko');
+
+    const claimed = await claimPendingPrerenderVoices(db, 5, 'v2');
+
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]?.voiceProfileId).toBe('v2');
+    // 나머지는 그대로 남아 다음 cron 틱이 받는다.
+    const rest = await claimPendingPrerenderVoices(db, 5);
+    expect(rest.map((c) => c.voiceProfileId)).toEqual(['v1']);
   });
 
   it('첫 cron이 임대한 pending 행은 겹친 cron이 다시 claim하지 않는다', async () => {
