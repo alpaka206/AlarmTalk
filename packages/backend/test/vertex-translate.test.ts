@@ -575,6 +575,24 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).toContain('엄마');
   });
 
+  // ⚠ 관계에서 유도한 호칭은 **호칭이 비었을 때만** 쓰는 보완책이다(Codex #701 P1).
+  // 사용자가 "자기야" 라고 넣었는데 "엄마," 로 시작하는 문구가 통과하면, 프롬프트가 약속한
+  // 호칭과 다른 말이 사전렌더 클립에 영구 저장된다.
+  it('prefers the explicit listener title over the inferred counterpart title', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+      listenerTitle: '자기야',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
   it('still falls back when the line uses a family title the relationship does not imply', async () => {
     queueContent(geminiText('{"text":"할머니, 일어나세요! 오늘도 좋은 하루 보내세요."}'));
 

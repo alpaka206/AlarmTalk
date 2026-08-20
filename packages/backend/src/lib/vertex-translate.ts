@@ -592,22 +592,23 @@ REGISTER (one consistent register per line, matched to the relationship)
   title-free greeting.
 
 DELIVERY TAG (ElevenLabs v3)
-- You MAY prepend AT MOST ONE delivery tag, chosen ONLY from the allowlist in the user message,
-  matching the mode/relationship mood. Return it in the separate "tag" field WITHOUT brackets;
-  the backend prepends it as [tag]. Do NOT put any bracket/[tag]/stage direction inside "text".
-- One tag, or none. Never combine tags, never invent tags, never use a tag mid-line.
-- For pauses/pacing use punctuation and ellipses (…), NOT tags — the engine has no SSML breaks
+- Write delivery tags INLINE inside "text", in square brackets, at each point where the delivery
+  changes — including mid-line. Use as many as the line needs (typically 1 to 3).
+- Leave the separate "tag" field as "" — it is a legacy field the backend no longer reads.
+- For pauses/pacing use punctuation and ellipses (…) as well — the engine has no SSML breaks
   and a soft '…' or comma after the greeting is the soft-start.
-- If the line is very short (under ~20 characters) or no tag clearly fits, leave "tag" empty —
-  punctuation alone is fine, and an under-realized tag can be read aloud.
+- If a line is very short (under ~20 characters), one tag is plenty; never stack tags on a
+  single short clause, and never invent a tag that the delivery does not actually change.
 - Tag effects are SUBTLE in Japanese and Korean — carry the emotion in word/particle/ending
-  choice; treat the tag as a light touch only.
+  choice too; treat tags as a light touch, not a replacement for good wording.
 
 NEVER
 - Never recite raw values the user did not write: temperatures, percentages, weather codes, exact
   clock time, dates, weekdays, birth date/time, zodiac specifics, or city/district/country/
   location labels.
-- Never state whose voice this is or name the relationship.
+- Never describe the voice from outside ("your mom's voice", "speaking as your mom") or speak as
+  if you were someone else standing in for that person ("엄마처럼", "엄마 대신"). Referring to
+  yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine.
 - Never use a stiff/formal/business register (Korean 합니다체; Japanese ビジネス敬語/文語;
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
@@ -1448,10 +1449,16 @@ function hasUnsupportedListenerAddress(
   relationshipLabel?: string | null,
 ): boolean {
   const allowedTitle = normalizeAddressLabel(listenerTitle);
+  // ⚠ **사용자가 호칭을 직접 넣었으면 그쪽이 절대 우선이다**(Codex #701 P1).
+  // 관계에서 유도한 호칭은 호칭이 **비었을 때만** 쓰는 보완책이다. 둘 다 허용하면
+  // `listenerTitle="자기야"` 인데 "엄마," 로 시작하는 문구가 통과해, 프롬프트가 약속한
+  // 호칭과 다른 말이 사전렌더 클립에 **영구 저장**된다.
   const counterparts = new Set(
-    counterpartAddressTitles(relationshipLabel)
-      .map((title) => normalizeAddressLabel(title))
-      .filter((title): title is string => title != null),
+    allowedTitle == null
+      ? counterpartAddressTitles(relationshipLabel)
+          .map((title) => normalizeAddressLabel(title))
+          .filter((title): title is string => title != null)
+      : [],
   );
   for (const match of text.matchAll(FAMILY_TITLE_RE)) {
     const matchedTitle = normalizeAddressLabel(match[2]);
