@@ -1554,10 +1554,11 @@ function hasRelationshipLabelLeak(
  * 지시하기 시작하면서 모델이 이 형태를 낼 여지가 커졌으므로 명시적으로 거절한다.
  */
 function hasUnknownBracketedSegment(text: string): boolean {
-  const all = text.match(/\[[^\]]{1,60}\]/g) ?? [];
-  if (all.length === 0) return false;
-  const known = new Set(text.match(TAG_RE_GLOBAL) ?? []);
-  return all.some((segment) => !known.has(segment));
+  // 인식되는 태그를 먼저 걷어내고, **대괄호가 한 짝이라도 남으면** 거절한다.
+  // ⚠ 닫히지 않은 지문(`[다정하게 좋은 아침이에요`)은 `[...]` 쌍 매칭으로는 잡히지 않는다 —
+  // 남은 낱개 `[`·`]` 까지 봐야 합성·표시 문구에 새는 것을 막는다(Codex #701 P2).
+  const withoutKnownTags = text.replace(TAG_RE_GLOBAL, '');
+  return withoutKnownTags.includes('[') || withoutKnownTags.includes(']');
 }
 
 function hasDeliveryTagOrStageDirection(text: string): boolean {

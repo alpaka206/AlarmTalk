@@ -589,6 +589,21 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('[다정하게]');
   });
 
+  // ⚠ 닫히지 않은 대괄호는 `[...]` 쌍 매칭으로 잡히지 않는다(Codex #701 P2).
+  it('falls back when a bracketed direction is left unclosed', async () => {
+    queueContent(geminiText('{"text":"[다정하게 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[');
+  });
+
   // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를
   // 벗긴 본문, 합성용(`synthesisText`)은 모델이 배치한 그대로, `tags` 에는 전부 담긴다.
   it('splits inline delivery tags into synthesis text, display text and tag metadata', async () => {
