@@ -808,7 +808,7 @@
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
     <string name="onb_voice_download_later">あとで受信</string>
-    <string name="onb_voice_download_background">バックグラウンドで受信を続ける</string>
+    <string name="onb_voice_download_background">バックグラウンドで続ける</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
     <string name="voicesr_preview_action">再生</string>
@@ -889,4 +889,6 @@
     <string name="msg_voice_preset_only">基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。</string>
     <string name="msg_voice_locked_free_plan">無料利用券に変わり、この声は使えません。利用券を登録し直すと戻ります。</string>
     <string name="clip_prefetch_notification_title">音声をダウンロードしています</string>
+    <string name="voices_clip_prep_done">完了</string>
+    <string name="voices_clip_prep_background">バックグラウンドで続ける</string>
 </resources>

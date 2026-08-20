@@ -928,4 +928,6 @@
     <string name="msg_voice_preset_only">기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.</string>
     <string name="msg_voice_locked_free_plan">무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요.</string>
     <string name="clip_prefetch_notification_title">목소리를 받고 있어요</string>
+    <string name="voices_clip_prep_done">완료</string>
+    <string name="voices_clip_prep_background">백그라운드에서 계속</string>
 </resources>

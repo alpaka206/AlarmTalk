@@ -800,7 +800,7 @@ for a smooth and secure experience.</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
     <string name="onb_voice_download_retry">Try again</string>
     <string name="onb_voice_download_later">Download later</string>
-    <string name="onb_voice_download_background">Keep downloading in the background</string>
+    <string name="onb_voice_download_background">Continue in the background</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
     <string name="voicesr_preview_action">Play</string>
@@ -881,4 +881,6 @@ Pass code: %1$s
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
     <string name="msg_voice_locked_free_plan">Your pass ended, so this voice can\'t be used. Register a pass again to bring it back.</string>
     <string name="clip_prefetch_notification_title">Downloading voices</string>
+    <string name="voices_clip_prep_done">Done</string>
+    <string name="voices_clip_prep_background">Continue in the background</string>
 </resources>

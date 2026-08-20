@@ -15,6 +15,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.alarmtalk.app.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.ClipReadiness
@@ -95,7 +97,13 @@ fun ClipPreparationScreen(
         if (onDismiss != null) {
             Spacer(Modifier.padding(top = 12.dp))
             TextButton(onClick = onDismiss) {
-                Text(if (ready) "완료" else "백그라운드에서 계속 받기")
+                // ⚠ 문구를 여기 박아 두면 en·ja 기기에 한국어가 그대로 뜬다(Codex #701 P2).
+                Text(
+                    stringResource(
+                        if (ready) R.string.voices_clip_prep_done
+                        else R.string.voices_clip_prep_background,
+                    ),
+                )
             }
         }
     }
