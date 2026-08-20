@@ -111,3 +111,6 @@ apps/ios-native/**/xcuserdata/
 *.local.xcconfig
 Local.xcconfig
 apps/ios-native/Local.xcconfig
+
+# 실기기 QA 캡처(로컬 전용)
+qa-shots/

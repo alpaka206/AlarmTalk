@@ -940,7 +940,13 @@ tts.post('/generate', async (c) => {
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
               speechStyle: parseSpeechStyle(vp.speech_style),
             });
-            requestText = generated.text;
+            // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
+            // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
+            // 돌려준다. 그런데 이 값은 `preview_text` 로 저장돼 **사용자가 직접 고치는**
+            // 문구이고, 아래에서 `applyDeliveryTagPerSentence` 로 태그를 다시 입힌다 —
+            // 그대로 받으면 화면에 대괄호가 노출되고 합성 문구는 `[cheerfully] [cheerfully] …`
+            // 로 겹친다(테스트 `draft 미리듣기는 … 톤 적응 문구로 합성한다` 가 잡았다).
+            requestText = normalizeAlarmTextWithoutTags(generated.text) || generated.text;
             if (generated.tag) draftPreviewTag = generated.tag;
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
@@ -962,7 +968,10 @@ tts.post('/generate', async (c) => {
                       AND (preview_claimed_at IS NULL
                         OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
               args: [
-                generated.text,
+                // 위에서 태그를 벗겨 `requestText` 로 쓴 그 문구를 그대로 저장한다.
+                // `generated.text`(태그 포함)를 저장하면 **저장본과 합성·표시본이 갈려**
+                // 다음 재생이 캐시를 빗나가고, 사용자가 고치는 화면에 대괄호가 뜬다.
+                requestText,
                 draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
@@ -1105,14 +1114,22 @@ tts.post('/generate', async (c) => {
         tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
+      // ⚠ **모델이 배치한 인라인 태그를 살린다**(Codex #701 P2).
+      // 예전에는 `tags[0]` 하나를 뽑아 문장마다 다시 앞세웠다. 모델이 태그를 인라인으로
+      // 내기 시작하면 그 경로는 배치를 뭉갤 뿐 아니라, `tags` 가 빈 채로 남아
+      // `delivery_tags_json` 이 `[]` 가 되고 대괄호가 화면 문구로 샌다.
+      // `synthesisText` 가 있으면 그게 곧 합성 문구다(표시는 아래 `messageText` 가 태그 없는
+      // `dynamicGenerated.text` 를 쓴다). 없으면 예전대로 태그 하나를 문장마다 입힌다.
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
       // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
-      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
-      const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
+      const taggedText =
+        dynamicGenerated.synthesisText ??
+        applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
+      const tagApplied = taggedText !== dynamicGenerated.text;
       prepared = {
         text: taggedText,
         translated: false,
-        tags: tagApplied ? [dynamicTag] : [],
+        tags: tagApplied ? dynamicGenerated.tags : [],
       };
     } else {
       const shouldTranslate =

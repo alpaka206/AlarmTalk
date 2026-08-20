@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
+import { extractDeliveryTags, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
@@ -491,7 +491,42 @@ export async function findMissingStockTargets(
       }
     }
   }
-  return targets;
+  return sortTargetsByFirstUse(targets);
+}
+
+/**
+ * **먼저 쓸 것부터 만든다** — 21개가 다 있어야 알람을 만들 수 있는 게 아니다.
+ *
+ * 사전렌더는 5분 주기 cron 배치라 풀셋이 채워지기까지 십수 분이 걸린다. 그동안 사용자가
+ * 실제로 부딪히는 것은 **처음 고르는 문구 하나**뿐인데, 예전에는 시드 선언 순서(날씨 9개
+ * 먼저)로 만들어서 인사말 하나 들으려고 날씨 아홉 개를 기다렸다.
+ *
+ * 순서 근거:
+ *  - `greeting` — 목소리 미리듣기이자 '기본 인사말' 알람이다. 1개뿐이고 제일 먼저 눌린다.
+ *  - `medication` — 무료/기본 경로의 첫 버킷(`FreeBucketOrder` 첫 값 '약')과 같은 순서.
+ *  - `weather` — 그다음으로 많이 쓰는 생성형 문구.
+ *  - `love`/`fortune` — 나머지는 조용히 채운다.
+ *
+ * 같은 카테고리 안에서는 선언 순서(variant)를 지킨다 — 날씨 variant 는 조건 인덱스라
+ * 순서가 계약이고, 정렬은 **안정 정렬**이어야 그 계약이 유지된다.
+ */
+const FIRST_USE_CATEGORY_ORDER: readonly string[] = [
+  STOCK_GREETING_CATEGORY,
+  'medication',
+  'weather',
+  'love',
+  'fortune',
+];
+
+function sortTargetsByFirstUse(targets: StockClipTarget[]): StockClipTarget[] {
+  const rank = (category: string): number => {
+    const index = FIRST_USE_CATEGORY_ORDER.indexOf(category);
+    // 목록에 없는 카테고리(나중에 추가된 것)는 맨 뒤로 — 순서를 모르면 미루는 쪽이 안전하다.
+    return index < 0 ? FIRST_USE_CATEGORY_ORDER.length : index;
+  };
+  // Array.prototype.sort 는 안정 정렬이 보장된다(ES2019+). 같은 카테고리의 variant 순서가
+  // 그대로 남아야 날씨 조건 인덱스 계약이 깨지지 않는다.
+  return [...targets].sort((a, b) => rank(a.category) - rank(b.category));
 }
 
 /**
@@ -596,6 +631,97 @@ export async function markPrerenderFailed(
           WHERE voice_profile_id = ? AND status = 'pending' AND claim_token = ?`,
     args: [voiceProfileId, claimToken],
   });
+}
+
+/**
+ * 사전렌더 큐를 한 번 드레인한다 — **cron 틱과 등록 직후가 같은 코드를 쓴다.**
+ *
+ * 예전에는 이 루프가 `index.ts` 의 cron 안에만 있었고, 등록은 큐에 넣고 **다음 틱(최대
+ * 5분)을 그냥 기다렸다.** 21개를 틱당 6개씩 채우니 사용자는 십수 분을 기다렸는데, 그중
+ * 첫 5분은 아무것도 하지 않는 순수 대기였다. 이제 등록 응답이 `waitUntil` 로 첫 배치를
+ * 바로 돌린다(`runPrerenderBatch(..., { voiceProfileId })`).
+ *
+ * 한 클립이 실패해도 그 목소리의 나머지를 버리지 않는다. 진전이 있으면 pending 을 유지해
+ * 다음 틱이 이어받고, **진전 0 + 에러**일 때만 attempts 를 올린다(영구 실패 클립의 무한
+ * 재시도 방지). 서브리퀘스트 예산이 소진되면 즉시 멈춘다 — 남은 시도는 전부 같은 오류다.
+ */
+export async function runPrerenderBatch(
+  db: Client,
+  env: Env,
+  options: {
+    /** 이번 배치에서 만들 클립 수 상한. */
+    maxClips: number;
+    /** 동시에 손댈 목소리 수 상한. */
+    maxVoices?: number;
+    /** 클립 1개 실패를 관측자에게 알린다(cron 은 Sentry 로 보낸다). */
+    onClipError?: (error: unknown) => void;
+  },
+): Promise<{ claimed: number; rendered: number }> {
+  const maxClips = Math.max(1, Math.trunc(options.maxClips));
+  const claimed = await claimPendingPrerenderVoices(db, Math.max(1, Math.trunc(options.maxVoices ?? 5)));
+  if (claimed.length === 0) return { claimed: 0, rendered: 0 };
+
+  const cloneVoices = await listReadyCloneVoices(db, claimed);
+  const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
+  // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
+  const readyIds = new Set(cloneVoices.map((v) => v.id));
+  for (const req of claimed) {
+    if (!readyIds.has(req.voiceProfileId)) {
+      await markPrerenderFailed(db, req.voiceProfileId, req.claimToken);
+    }
+  }
+
+  let rendered = 0;
+  let subrequestExhausted = false;
+  for (const voice of cloneVoices) {
+    if (subrequestExhausted) break;
+    const claim = claimByVoiceId.get(voice.id);
+    if (!claim) continue;
+    if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
+      await markPrerenderFailed(db, voice.id, claim.claimToken);
+      continue;
+    }
+    if (rendered >= maxClips) {
+      await releasePrerenderClaim(db, voice.id, claim.claimToken);
+      continue;
+    }
+    // ⚠ 교체 회차면 **전부** 다시 렌더한다. 그냥 두면 '빠진 것' 이 0이라
+    // 곧바로 done 으로 끝나고 목소리가 바뀌지 않는다.
+    const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
+    if (targets.length === 0) {
+      await markPrerenderDone(db, voice.id, claim.claimToken);
+      continue;
+    }
+    let voiceRendered = 0;
+    let voiceError = false;
+    for (const target of targets) {
+      if (rendered >= maxClips) break;
+      rendered += 1;
+      try {
+        await generateStockClip(db, env, target);
+        voiceRendered += 1;
+      } catch (genErr) {
+        options.onClipError?.(genErr);
+        voiceError = true;
+        // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
+        // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우
+        // 15분 임대 만료가 회수해 다음 틱에 재시도된다.
+        if (String(genErr).includes('Too many subrequests')) {
+          subrequestExhausted = true;
+          break;
+        }
+      }
+    }
+    // 재조회 없이 판정: 이번 배치에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
+    if (voiceRendered === targets.length && !voiceError) {
+      await markPrerenderDone(db, voice.id, claim.claimToken);
+    } else if (voiceError && voiceRendered === 0) {
+      await markPrerenderFailed(db, voice.id, claim.claimToken);
+    } else {
+      await releasePrerenderClaim(db, voice.id, claim.claimToken);
+    }
+  }
+  return { claimed: claimed.length, rendered };
 }
 
 /** 스톡 클립 삭제 필터. 비우면 전체(reset), 채우면 특정 보이스(+카테고리)만. */
@@ -736,12 +862,15 @@ export async function generateStockClip(
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
     });
-    displayText = generated.text;
-    // 태그를 문장마다 다시 앞세워 클립 끝까지 전달 톤이 풀리지 않게 한다.
-    synthesisText = generated.tag
-      ? applyDeliveryTagPerSentence(generated.tag, generated.text)
-      : generated.text;
-    deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
+    // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
+    // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나
+    // 선두 하나뿐이면 문장마다 다시 앞세운 형태다. 여기서 한 번 더 `applyDeliveryTagPerSentence`
+    // 를 태우면 `[warmly] [warmly] …` 로 겹친다.
+    synthesisText = generated.text;
+    // 표시 문구(잠금화면·요약)는 **태그를 벗긴 것**이다. 예전에는 모델이 태그를 안 냈기에
+    // 그냥 써도 티가 안 났지만, 인라인 태그가 들어오면 대괄호가 그대로 화면에 새어 나간다.
+    displayText = stripDeliveryTags(generated.text) || generated.text;
+    deliveryTagsJson = JSON.stringify(extractDeliveryTags(generated.text));
   } else {
     // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴(딜리버리 태그 포함)이다.
     // translate/autoTag 를 끄면 Vertex 호출 없이 로컬 패스스루로 태그만 추출된다

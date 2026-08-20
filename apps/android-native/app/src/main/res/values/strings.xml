@@ -553,8 +553,7 @@
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="voices_name_label">목소리 이름</string>
     <string name="voices_prerender_ready_title">이 목소리로 알람 문구를 만들고 있어요</string>
-    <string name="voices_prerender_ready_body">지금 닫아도 계속 만들어져요.
-준비되는 대로 알람에서 쓸 수 있어요.</string>
+    <string name="voices_prerender_ready_body">준비되는 대로 알람에서 쓸 수 있어요.</string>
     <string name="voices_language_label">알람을 읽어줄 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>
@@ -854,7 +853,7 @@
     <string name="onb_voice_download_failed">잠시 뒤 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>
-    <string name="onb_voice_download_background">백그라운드에서 계속 받기</string>
+    <string name="onb_voice_download_background">백그라운드에서 계속</string>
     <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
     <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
     <string name="voicesr_preview_action">듣기</string>
@@ -929,4 +928,6 @@
     <string name="msg_voice_preset_only">기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.</string>
     <string name="msg_voice_locked_free_plan">무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요.</string>
     <string name="clip_prefetch_notification_title">목소리를 받고 있어요</string>
+    <string name="voices_clip_prep_done">완료</string>
+    <string name="voices_clip_prep_background">백그라운드에서 계속</string>
 </resources>

@@ -532,7 +532,13 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('손녀 목소리');
   });
 
-  it('falls back when Gemini writes as the speaker relationship', async () => {
+  // ⚠ **이 테스트는 2026-08-20 에 뒤집혔다 — 예전에는 이걸 거절하도록 고정하고 있었다.**
+  // "민지야, … 엄마가 응원할게!" 는 엄마가 딸에게 하는 **가장 자연스러운 한국어**다.
+  // 그런데 옛 가드가 `엄마`+조사를 전부 유출로 보고 떨어뜨렸고, 그 탓에 사전렌더
+  // 사랑 3번 시드("늘 네 편이라고 응원한다") × 관계 '엄마' 가 **영구 실패**했다
+  // (dev 실측: cron 5틱 연속 거절 → 큐 failed → 앱에 "생성에 실패했어요").
+  // 화자의 3인칭 자기 지칭은 통과시키고, 화자가 그 사람이 **아님**을 드러내는 쓰임만 막는다.
+  it('keeps the line when the speaker refers to themselves in the third person', async () => {
     queueContent(
       geminiText('{"text":"민지야, 실내에서 가볍게 운동하자. 엄마가 응원할게!"}'),
     );
@@ -546,9 +552,128 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       listenerTitle: '민지야',
     });
 
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).toContain('엄마가 응원할게');
+  });
+
+  // ⚠ **관계 라벨로 상대 호칭을 추측하지 않는다**(Codex #701 P2). 2026-08-20 에 잠깐
+  // 열었다가 되돌렸다 — 관계 '아들' 은 화자가 아들이라는 뜻일 뿐 듣는 사람이 엄마인지
+  // 아빠인지는 모른다. 추측을 허용하면 **엄마를 "아빠" 라고 부르는 클립이 영구 저장**된다.
+  it('rejects a guessed family title when no listener title was provided', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
     expect(generated.provider).toBe('local');
-    expect(generated.text).toContain('민지야');
-    expect(generated.text).not.toContain('엄마가');
+  });
+
+  // ⚠ 태그 문법(ASCII)에 안 맞는 대괄호는 **벗겨지지도 인식되지도 않는다** — 그대로 두면
+  // 낭독되거나 화면에 뜬다(Codex #701 P2).
+  it('falls back when the line carries a bracketed direction outside the tag grammar', async () => {
+    queueContent(geminiText('{"text":"[다정하게] 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[다정하게]');
+  });
+
+  // ⚠ 닫히지 않은 대괄호는 `[...]` 쌍 매칭으로 잡히지 않는다(Codex #701 P2).
+  it('falls back when a bracketed direction is left unclosed', async () => {
+    queueContent(geminiText('{"text":"[다정하게 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[');
+  });
+
+  // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를
+  // 벗긴 본문, 합성용(`synthesisText`)은 모델이 배치한 그대로, `tags` 에는 전부 담긴다.
+  it('splits inline delivery tags into synthesis text, display text and tag metadata', async () => {
+    queueContent(
+      geminiText('{"text":"[warmly] 좋은 아침이에요. [brightly] 오늘도 힘내요!","tag":""}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).not.toContain('[');
+    expect(generated.text).toContain('좋은 아침이에요');
+    expect(generated.synthesisText).toContain('[warmly]');
+    expect(generated.synthesisText).toContain('[brightly]');
+    expect(generated.tags).toEqual(['warmly', 'brightly']);
+  });
+
+  // ⚠ 관계에서 유도한 호칭은 **호칭이 비었을 때만** 쓰는 보완책이다(Codex #701 P1).
+  // 사용자가 "자기야" 라고 넣었는데 "엄마," 로 시작하는 문구가 통과하면, 프롬프트가 약속한
+  // 호칭과 다른 말이 사전렌더 클립에 영구 저장된다.
+  it('prefers the explicit listener title over the inferred counterpart title', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+      listenerTitle: '자기야',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
+  it('still falls back when the line uses a family title the relationship does not imply', async () => {
+    queueContent(geminiText('{"text":"할머니, 일어나세요! 오늘도 좋은 하루 보내세요."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
+  it('still falls back when the line speaks as if the relationship were someone else', async () => {
+    // 전언 구문("엄마가 … 달라고 했어")은 화자가 심부름꾼이라는 뜻이다 — 자기 지칭과 반대다.
+    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게', '엄마가 깨워 달라고 했어']) {
+      queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider).toBe('local');
+    }
   });
 
   // ⚠ **대괄호 태그는 이제 정상이다**(2026-08-13 — C안). 막는 것은 소괄호·전각괄호 지문과

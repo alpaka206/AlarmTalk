@@ -10,9 +10,9 @@ import SwiftUI
 /// **등록** 플로우에만 있다. 이 파일의 옛 주석도 "Android VoiceOnboardingScreen.kt 미러"
 /// 라고 적혀 있었지만 실제로는 전혀 다른 화면이었다 — **주석의 미러 주장을 믿지 말 것.**
 ///
-/// ⚠ **여기서 갇히면 앱을 아예 못 쓴다.** 그래서 몇 초 뒤에는 어떤 상태에서든 탈출구를
-/// 보여주고, 문구는 **다운로드가 살아 있는지**로 가른다(실패 여부가 아니다). 받는 중이면
-/// '백그라운드에서 계속 받기'(화면만 닫으므로 실제로 계속 받는다), 끝난 상태면 '나중에 받기'.
+/// ⚠ **여기서 갇히면 앱을 아예 못 쓴다.** 그래서 탈출구를 **처음부터** 보여주고,
+/// 문구는 **다운로드가 살아 있는지**로 가른다(실패 여부가 아니다). 받는 중이면
+/// '백그라운드에서 계속'(화면만 닫으므로 실제로 계속 받는다), 끝난 상태면 '나중에 받기'.
 struct VoiceSetupView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.voiceAlarmTheme) private var theme
@@ -25,9 +25,6 @@ struct VoiceSetupView: View {
     var onSkip: (() -> Void)?
 
     @StateObject private var prefetcher = StockClipPrefetcher()
-    /// 정상적으로 받는 중에는 탈출구를 숨긴다 — 몇 초면 끝나는 일에 선택지를 내밀 필요가
-    /// 없다. 그 몇 초가 지나면 어떤 상태든 반드시 보여준다.
-    @State private var showEscape = false
 
     private var failed: Bool { prefetcher.state == .failed }
 
@@ -68,16 +65,22 @@ struct VoiceSetupView: View {
                         prefetcher.start(session: auth.session)
                     }
                 }
-                if showEscape {
-                    Button(prefetcher.isRunning ? "백그라운드에서 계속 받기" : "나중에 받기") {
-                        // ⚠ 다운로드를 취소하지 않는다 — 화면만 닫는다. 그래서
-                        // '계속 받기' 가 거짓말이 아니다.
-                        onSkip?()
-                    }
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .padding(.top, failed ? 12 : 0)
+                // ⚠ **처음부터 보여준다 — 지연을 되돌리지 말 것**(2026-08-20).
+                // 예전에는 6초를 기다린 뒤에야 띄웠다(안드로이드는 12초였다). 의도는 "몇 초면
+                // 끝날 일에 선택지를 내밀지 않는다" 였는데, 실제로는 버튼이 **중간에 불쑥
+                // 나타나** 오히려 이상해 보이고, 그동안은 빠져나갈 길이 아예 없었다.
+                // 이 버튼은 다운로드를 취소하지 않으므로(화면만 닫는다) 숨길 이유가 없다.
+                // ⚠ **첫 프레임의 `.idle` 을 '끝난 것' 으로 읽지 말 것**(Codex #701 P2).
+                // `.task` 가 `start()` 를 부르기 전 한 프레임은 `.idle` 인데, 버튼이 이제
+                // 처음부터 보이므로 그 틈에 누를 수 있다. 그때 '나중에 받기' 로 뜨면
+                // `skipVoiceSetup()` 이 **영구히 '안 받겠다'** 를 기록하고 게이트를 닫는다 —
+                // 정상 다운로드 경로인데도. 곧 시작될 상태이므로 '계속' 쪽으로 읽는다.
+                Button(prefetcher.state == .finished || failed ? "나중에 받기" : "백그라운드에서 계속") {
+                    onSkip?()
                 }
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .padding(.top, failed ? 12 : 0)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
@@ -86,8 +89,6 @@ struct VoiceSetupView: View {
         .homeGradientBackground()
         .task {
             prefetcher.start(session: auth.session)
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
-            showEscape = true
         }
         .onChange(of: prefetcher.state) { _, new in
             if new == .finished { onComplete?() }

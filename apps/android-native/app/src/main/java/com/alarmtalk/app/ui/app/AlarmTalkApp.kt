@@ -1124,7 +1124,12 @@ internal fun AlarmTalkApp(
               stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
               // 아직 끝나지 않은 워커일 때만 '백그라운드에서 계속 받기' 라고 말한다.
               // 상태를 모르면(null) 계속된다고 단정하지 않는다 — 모르면 약속하지 않는다.
-              downloadContinuing = prefetchInfo?.state?.isFinished == false,
+              // ⚠ **모르는 상태(null)를 '끝난 것' 으로 읽지 말 것**(Codex #701 P2).
+              // `collectAsState(initial = null)` 이라 첫 프레임은 null 인데, 탈출구를 이제
+              // 처음부터 띄우므로 그 틈에 누를 수 있다. 그때 '나중에 받기' 로 뜨면
+              // `skipVoiceSetup()` 이 **영구히 '안 받겠다'** 를 기록한다 — 워커는 막 시작하려던
+              // 참인데도. 아직 모르면 '곧 돌 것' 으로 읽는다(iOS `VoiceSetupView` 와 같은 규칙).
+              downloadContinuing = prefetchInfo?.state?.isFinished != true,
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )

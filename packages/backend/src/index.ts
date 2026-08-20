@@ -405,88 +405,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
   // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
   try {
-    const {
-      claimPendingPrerenderVoices,
-      listReadyCloneVoices,
-      findMissingStockTargets,
-      generateStockClip,
-      markPrerenderDone,
-      markPrerenderFailed,
-      releasePrerenderClaim,
-    } = await import('./lib/stock-clips');
-    const { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } = await import('./lib/consent');
-    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드라 서브리퀘스트·
-    // 비용·rate 를 제한하되, 목소리 1개 풀셋(21클립)이 너무 늦지 않게 6으로 잡는다(≈4틱, keep 후 ~20분).
-    // 발사 시각 알람 푸시는 cron 에서 제거돼(중복 알림) 이 드레인이 틱의 시간민감 작업을 막을 일은 없다.
-    const MAX_CLIPS_PER_TICK = 6;
-    const claimed = await claimPendingPrerenderVoices(db, 5);
-    if (claimed.length > 0) {
-      const cloneVoices = await listReadyCloneVoices(db, claimed);
-      const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
-      // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
-      const readyIds = new Set(cloneVoices.map((v) => v.id));
-      for (const req of claimed) {
-        if (!readyIds.has(req.voiceProfileId)) {
-          await markPrerenderFailed(db, req.voiceProfileId, req.claimToken);
-        }
-      }
-      let rendered = 0;
-      let subrequestExhausted = false;
-      for (const voice of cloneVoices) {
-        if (subrequestExhausted) break;
-        const claim = claimByVoiceId.get(voice.id);
-        if (!claim) continue;
-        if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
-          await markPrerenderFailed(db, voice.id, claim.claimToken);
-          continue;
-        }
-        if (rendered >= MAX_CLIPS_PER_TICK) {
-          await releasePrerenderClaim(db, voice.id, claim.claimToken);
-          continue;
-        }
-        // ⚠ 교체 회차면 **전부** 다시 렌더한다. 그냥 두면 '빠진 것' 이 0이라
-        // 곧바로 done 으로 끝나고 목소리가 바뀌지 않는다.
-        const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
-        if (targets.length === 0) {
-          await markPrerenderDone(db, voice.id, claim.claimToken);
-          continue;
-        }
-        let voiceRendered = 0;
-        let voiceError = false;
-        for (const target of targets) {
-          if (rendered >= MAX_CLIPS_PER_TICK) break;
-          rendered += 1;
-          try {
-            await generateStockClip(db, env, target);
-            voiceRendered += 1;
-          } catch (genErr) {
-            // 한 클립 실패가 이 보이스의 나머지 클립(예: love/medication)을 버리지 않도록, 그 클립만
-            // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
-            captureCron('scheduled.stock_clips.generate', genErr);
-            voiceError = true;
-            // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
-            // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우
-            // 15분 임대 만료가 회수해 다음 틱에 재시도된다. (7/11~ dev 실사례: 매 틱 실패하던
-            // account_purge 가 파기 시퀀스로 예산을 태워 프리렌더가 항상 이 오류로 죽었다.)
-            if (String(genErr).includes('Too many subrequests')) {
-              subrequestExhausted = true;
-              break;
-            }
-          }
-        }
-        // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
-        if (voiceRendered === targets.length && !voiceError) {
-          await markPrerenderDone(db, voice.id, claim.claimToken);
-        } else if (voiceError && voiceRendered === 0) {
-          // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
-          await markPrerenderFailed(db, voice.id, claim.claimToken);
-        } else {
-          await releasePrerenderClaim(db, voice.id, claim.claimToken);
-        }
-      }
-      if (rendered > 0) {
-        logStructured('info', { at: 'scheduled.stock_clips', rendered, claimed: claimed.length });
-      }
+    const { runPrerenderBatch } = await import('./lib/stock-clips');
+    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
+    //
+    // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
+    // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
+    // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
+    // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
+    // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
+    const result = await runPrerenderBatch(db, env, {
+      maxClips: 10,
+      maxVoices: 5,
+      onClipError: (genErr) => captureCron('scheduled.stock_clips.generate', genErr),
+    });
+    if (result.rendered > 0) {
+      logStructured('info', {
+        at: 'scheduled.stock_clips',
+        rendered: result.rendered,
+        claimed: result.claimed,
+      });
     }
   } catch (err) {
     captureCron('scheduled.stock_clips', err);

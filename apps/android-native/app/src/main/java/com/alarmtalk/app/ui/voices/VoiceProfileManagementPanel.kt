@@ -1573,19 +1573,26 @@ internal fun VoiceProfileManagementPanel(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(
-                            onClick = {
-                                // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
-                                if (inDraftDecisionFlow) {
-                                    draftExitWarningOpen = true
-                                } else {
-                                    closeCreateDialog()
-                                }
-                            },
-                            enabled = !voiceProfileBusy,
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                        // ⚠ **사전 생성 단계에는 X 를 두지 않는다**(2026-08-20).
+                        // 그 단계는 아래에 '백그라운드에서 계속' 버튼이 있고, X 도 같은
+                        // `closeCreateDialog()` 를 부른다 — 같은 일을 하는 컨트롤이 둘이면
+                        // 어느 쪽이 취소인지 매번 읽어야 한다(CLAUDE.md 「모달」: 닫기(X)를
+                        // 버튼과 같이 두지 말 것). 무엇을 하는지 말해 주는 쪽을 남긴다.
+                        if (!inPrerenderingFlow) {
+                            IconButton(
+                                onClick = {
+                                    // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
+                                    if (inDraftDecisionFlow) {
+                                        draftExitWarningOpen = true
+                                    } else {
+                                        closeCreateDialog()
+                                    }
+                                },
+                                enabled = !voiceProfileBusy,
+                                modifier = Modifier.size(42.dp),
+                            ) {
+                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                            }
                         }
                     }
 
@@ -1858,6 +1865,21 @@ internal fun VoiceProfileManagementPanel(
                                                 .height(8.dp),
                                             strokeCap = StrokeCap.Round,
                                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        )
+                                    }
+                                    // ⚠ **나가는 길을 X 에만 맡기지 말 것**(2026-08-20 지시).
+                                    // 예전에는 전용 버튼 없이 부제로만 "지금 닫아도 계속
+                                    // 만들어져요" 라고 안내했다. 그런데 이 대기는 서버 cron
+                                    // 배치라 십수 분이 걸리는데, 화면에는 누를 것이 오른쪽 위
+                                    // X 뿐이라 "닫으면 취소되는 것 아닌가" 로 읽힌다.
+                                    // 최초 기본 목소리 다운로드 화면과 **같은 낱말·같은 자리**로
+                                    // 맞춘다(`onb_voice_download_background`) — 두 화면이 하는
+                                    // 일이 같으니 말도 같아야 한다.
+                                    Spacer(Modifier.height(6.dp))
+                                    TextButton(onClick = { closeCreateDialog() }) {
+                                        Text(
+                                            text = stringResource(R.string.onb_voice_download_background),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }

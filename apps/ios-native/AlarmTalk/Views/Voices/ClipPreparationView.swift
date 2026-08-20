@@ -15,7 +15,7 @@ struct ClipPreparationView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @StateObject private var readiness = ClipReadinessModel()
 
-    /// 닫기(백그라운드에서 계속 받기). nil 이면 닫기 줄을 그리지 않는다.
+    /// 닫기(백그라운드에서 계속). nil 이면 닫기 줄을 그리지 않는다.
     var onDismiss: (() -> Void)?
 
     /// ⚠ **관문이 막은 그 목소리.** 넘기지 않으면 공유받은 목소리가 대상에서 빠져
@@ -67,7 +67,7 @@ struct ClipPreparationView: View {
                 }
 
                 if let onDismiss {
-                    Button(readiness.isReady ? "완료" : "백그라운드에서 계속 받기") {
+                    Button(readiness.isReady ? "완료" : "백그라운드에서 계속") {
                         onDismiss()
                     }
                     .font(theme.typography.bodyMedium)

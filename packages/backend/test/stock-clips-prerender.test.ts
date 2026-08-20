@@ -164,6 +164,28 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
   });
 
+  // ⚠ **먼저 쓸 것부터 만든다**(2026-08-20). 사전렌더는 5분 주기 배치라 풀셋이 채워지기까지
+  // 십수 분이 걸리는데, 그동안 사용자가 부딪히는 건 처음 고르는 문구 하나다. 예전에는 시드
+  // 선언 순서(날씨 9개 먼저)라 인사말 하나 들으려고 날씨 아홉 개를 기다렸다.
+  it('첫 배치가 인사말·약부터 만들도록 대상이 정렬된다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready' });
+
+    const targets = await findMissingStockTargets(db, [cloneVoice()]);
+
+    expect(targets[0]?.category).toBe('greeting');
+    const categoryOrder = targets.map((t) => t.category);
+    expect(categoryOrder.indexOf('medication')).toBeLessThan(categoryOrder.indexOf('weather'));
+    expect(categoryOrder.indexOf('weather')).toBeLessThan(categoryOrder.indexOf('fortune'));
+
+    // 같은 카테고리 안의 variant 순서는 **계약**이다(날씨 variant = 조건 인덱스).
+    // 정렬이 안정적이지 않으면 사전렌더 인덱스와 클라 매칭이 어긋난다.
+    const weatherVariants = targets
+      .filter((t) => t.category === 'weather')
+      .map((t) => t.variantIndex);
+    expect(weatherVariants).toEqual([...weatherVariants].sort((a, b) => a - b));
+  });
+
   it('languageOverride 를 en 으로 주면 en 으로만 대상 생성', async () => {
     const db = await setupDb();
     await insertVoice(db, { id: 'clone-ready' });
