@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import com.alarmtalk.app.WakerInputShape
 import com.alarmtalk.app.WakerPillShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.clip
@@ -268,7 +269,13 @@ internal fun IosAlertField(
     minHeight: Dp = 48.dp,
     /// 모서리. 알럿 안에서는 캡슐이지만, **알럿 밖에서도 쓴다** — 코드 등록 행처럼
     /// 옆에 버튼이 서는 자리는 M3 `OutlinedTextField`(최소 56)로는 높이를 맞출 수 없다.
-    shape: Shape = WakerPillShape,
+    ///
+    /// ⚠ **캡슐은 한 줄일 때만이다**(2026-08-20). 캡슐 반경은 999 라 실제 반경이 높이의
+    /// 절반으로 잘리는데, 직접 입력처럼 `minHeight = 108` 인 여러 줄 칸에서는 그게 **반경
+    /// 54** 가 되어 좌우가 통째로 반원이 된다 — 아래 실측 근거(h=48·r=24)는 한 줄 칸의
+    /// 것이고, 여러 줄에 그대로 쓰면 근거 없는 모양이 나온다. 여러 줄은 앱 표준 입력
+    /// 반경(`WakerInputShape`)을 쓴다.
+    shape: Shape = if (singleLine) WakerPillShape else WakerInputShape,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val scheme = MaterialTheme.colorScheme

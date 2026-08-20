@@ -46,7 +46,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.TextButton
@@ -414,8 +413,18 @@ internal fun RandomPromptDetailRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        // ⚠ **위 목록 카드와 같은 껍데기다**(2026-08-20). 예전에는 `surfaceVariant` 를
+        // 45% 로 얹었는데, 라이트에서 그 색(#EDEEF3 의 45%)이 배경(#F7F7FA)과 거의 같아
+        // **경계가 사라졌다** — 같은 화면 위쪽 카드는 흰 바탕에 실선 테두리라 또렷한데
+        // 아래만 배경에 잠겨 보였다(실기기 확인). 다크는 원래도 계산값이 `surface`
+        // 근처(#19203A ≈ #1B2542)라 보이는 모양이 그대로다.
+        //
+        // iOS `PromptDetailCard` 도 처음부터 `EditorCard`(surface + outlineVariant 1px)
+        // 였다 — 갈라져 있던 쪽은 안드로이드다. 반경도 형제 카드(`SnoozeOptionSection`)와
+        // 같은 18 로 맞춘다(더 큰 블록이 더 작은 14 를 쓰던 역전).
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
     ) {
         Row(
             modifier = Modifier.padding(start = 14.dp, top = 12.dp, end = 6.dp, bottom = 12.dp),
