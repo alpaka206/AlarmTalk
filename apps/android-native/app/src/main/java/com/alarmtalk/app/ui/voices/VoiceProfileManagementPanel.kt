@@ -1573,19 +1573,26 @@ internal fun VoiceProfileManagementPanel(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(
-                            onClick = {
-                                // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
-                                if (inDraftDecisionFlow) {
-                                    draftExitWarningOpen = true
-                                } else {
-                                    closeCreateDialog()
-                                }
-                            },
-                            enabled = !voiceProfileBusy,
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                        // ⚠ **사전 생성 단계에는 X 를 두지 않는다**(2026-08-20).
+                        // 그 단계는 아래에 '백그라운드에서 계속' 버튼이 있고, X 도 같은
+                        // `closeCreateDialog()` 를 부른다 — 같은 일을 하는 컨트롤이 둘이면
+                        // 어느 쪽이 취소인지 매번 읽어야 한다(CLAUDE.md 「모달」: 닫기(X)를
+                        // 버튼과 같이 두지 말 것). 무엇을 하는지 말해 주는 쪽을 남긴다.
+                        if (!inPrerenderingFlow) {
+                            IconButton(
+                                onClick = {
+                                    // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
+                                    if (inDraftDecisionFlow) {
+                                        draftExitWarningOpen = true
+                                    } else {
+                                        closeCreateDialog()
+                                    }
+                                },
+                                enabled = !voiceProfileBusy,
+                                modifier = Modifier.size(42.dp),
+                            ) {
+                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                            }
                         }
                     }
 

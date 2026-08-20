@@ -70,7 +70,12 @@ struct VoiceSetupView: View {
                 // 끝날 일에 선택지를 내밀지 않는다" 였는데, 실제로는 버튼이 **중간에 불쑥
                 // 나타나** 오히려 이상해 보이고, 그동안은 빠져나갈 길이 아예 없었다.
                 // 이 버튼은 다운로드를 취소하지 않으므로(화면만 닫는다) 숨길 이유가 없다.
-                Button(prefetcher.isRunning ? "백그라운드에서 계속" : "나중에 받기") {
+                // ⚠ **첫 프레임의 `.idle` 을 '끝난 것' 으로 읽지 말 것**(Codex #701 P2).
+                // `.task` 가 `start()` 를 부르기 전 한 프레임은 `.idle` 인데, 버튼이 이제
+                // 처음부터 보이므로 그 틈에 누를 수 있다. 그때 '나중에 받기' 로 뜨면
+                // `skipVoiceSetup()` 이 **영구히 '안 받겠다'** 를 기록하고 게이트를 닫는다 —
+                // 정상 다운로드 경로인데도. 곧 시작될 상태이므로 '계속' 쪽으로 읽는다.
+                Button(prefetcher.state == .finished || failed ? "나중에 받기" : "백그라운드에서 계속") {
                     onSkip?()
                 }
                 .font(theme.typography.bodyMedium)
