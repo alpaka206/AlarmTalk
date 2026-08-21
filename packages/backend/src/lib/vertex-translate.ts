@@ -1555,7 +1555,8 @@ const QUOTATIVE_LOOKALIKES = new Set([
  * 이게 없으면 "엄마가 시켜서 억지로 하지는 마"(청자에게 주는 당부)나 "엄마가 시켜서 하는 게
  * 아니라 네가 하고 싶어서 하는 거야"(오히려 부정하는 말)까지 떨어진다 — 둘 다 실측 오탐이다.
  */
-const PROXY_ACTION = '(?:왔|오는\\s*길|들렀|깨우|깨워|전하|전해|알려|대신)';
+const PROXY_ACTION =
+  '(?:왔|오는\\s*길|들렀|깨우|깨워|전하|전해|알려|대신|전화|말해|말하|데리러)';
 
 /**
  * 트리거 뒤에 **라벨이 아닌 다른 사람**이 행위자로 나오는가. 나오면 화자는 대리인이 아니다 —
@@ -1576,29 +1577,30 @@ function hasOtherActor(segment: string, label: string): boolean {
 }
 
 /**
- * 매치 뒤에서 **같은 문장**까지만 잘라 낸다.
- *
- * ⚠ 고정 길이로 뒤를 훑으면 다음 문장까지 넘어간다(Codex #702 P2):
- * "엄마가 시켜서 깨우러 왔어. **아빠한테도** 전화해야 해" 에서 뒷문장의 `아빠한테` 를 보고
- * '다른 행위자가 있으니 대리가 아니다' 로 판정해 **진짜 유출을 통과시킨다.**
- */
-function sameSentenceSuffix(text: string, from: number): string {
-  const rest = text.slice(from, from + 40);
-  const stop = rest.search(/[.!?。！？…]/);
-  return stop === -1 ? rest : rest.slice(0, stop);
-}
-
-/**
  * `pattern` 에 걸리되, **다른 행위자**가 끼어 있지 않은 자리가 하나라도 있는가.
  *
- * 매치 **구간 안**도 함께 본다 — "엄마가 부탁해서 아빠가 깨우러" 는 대리 행동(`깨우`)까지가
+ * 매치 **구간 안**은 언제나 본다 — "엄마가 부탁해서 아빠가 깨우러" 는 대리 행동(`깨우`)까지가
  * 한 매치라, 뒤만 보면 `아빠가` 를 놓친다(실측 오탐).
+ *
+ * ⚠ **뒤를 훑을지는 패턴이 대리 행동을 이미 품었는지로 갈린다**(Codex #702 P2).
+ *  - `requestFromLabel`·`orderedByLabel` 은 패턴 끝이 `PROXY_ACTION` 이라 **대리 행동까지가
+ *    매치**다. 그 뒤는 딴 이야기이므로 훑으면 안 된다 — "엄마가 시켜서 깨우러 왔어,
+ *    아빠한테도 전화해야 해" 의 `아빠한테` 를 보고 **진짜 유출을 통과시킨다.**
+ *  - `thirdPartyReference`(`엄마 대신`)는 행동이 매치 **밖**에 있으므로 뒤를 봐야 한다 —
+ *    "엄마를 대신해서 오늘은 아빠가 데리러 갈 거야" 의 `아빠가` 가 거기 있다.
+ * 문장부호로 자르는 것으로는 이 둘을 가를 수 없다(쉼표로 자르면 두 번째가 되돌아온다).
  */
-function matchesWithoutOtherActor(text: string, label: string, pattern: string): boolean {
+function matchesWithoutOtherActor(
+  text: string,
+  label: string,
+  pattern: string,
+  scanAfterMatch = false,
+): boolean {
   for (const m of text.matchAll(new RegExp(pattern, 'gi'))) {
     const end = m.index + m[0].length;
+    const suffix = scanAfterMatch ? text.slice(end, end + 40) : '';
     // 매치 시작 부분의 라벨 자체는 `hasOtherActor` 가 라벨 비교로 걸러 준다.
-    if (!hasOtherActor(m[0] + sameSentenceSuffix(text, end), label)) return true;
+    if (!hasOtherActor(m[0] + suffix, label)) return true;
   }
   return false;
 }
@@ -1696,6 +1698,7 @@ function hasRelationshipLabelLeak(
       text,
       label,
       `${escapedLabel}\\s*(?:을|를)?\\s*(?:처럼|입장에서|대신(?!할|하는|한\\s))`,
+      true,
     )
   ) {
     return true;
@@ -1727,10 +1730,15 @@ function hasRelationshipLabelLeak(
   //    형태라, 엄마가 자기 말에 쓰지 않는다. 그래서 넓게 잡아도 안전하다.
   // ⚠ `바라다`·`자라다` 는 활용형이 그대로 겹친다("네 행복을 바라네", "키가 자라며") —
   //   앞글자로 뺀다. `~다더라` 는 넣지 않는다: "비가 온다더라" 는 `~대` 와 같은 사실 전달이다.
+  //
+  // ⚠ 축약형 `~란다`·`~랍니다`(= `~라고 한다`)도 같은 갈래다(Codex #702 P2). 다만 **계사
+  //   `~이란다` 는 정반대**라 반드시 빼야 한다 — 실 Vertex 출력이 "할머니는 늘 네 편이란다"
+  //   를 냈다(2026-08-21 실측). `~ㄹ 거란다`("좋은 하루가 될 거란다")·`아니란다` 도 같다.
   const presentQuotative = new RegExp(
     `${escapedLabel}\\s*(?:가|이|는|은|도|께서)?[^.!?]{0,20}?` +
       `(?:(?<![바자])라(?:네|셔|셨|잖아|며|던데|는데)|라고\\s*(?:해|하네|하셔|하시|하더|한다|부탁)|` +
-      `달라(?:네|셔|잖아|는데)|(?<![바자])라\\s*(?:해|하|했|시켜|시키))`,
+      `달라(?:네|셔|잖아|는데)|(?<![바자])라\\s*(?:해|하|했|시켜|시키)|` +
+      `(?<![바자이거])(?<!아니)(?:란다|랍니다))`,
     'i',
   );
   if (presentQuotative.test(text)) return true;
