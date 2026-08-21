@@ -1566,9 +1566,26 @@ const OTHER_ACTOR_RE =
 
 function hasOtherActor(segment: string, label: string): boolean {
   for (const m of segment.matchAll(OTHER_ACTOR_RE)) {
-    if (m[1] !== label) return true;
+    // ⚠ **부분 일치를 라벨로 인정한다**(Codex #702 P2). 라벨은 자유 입력이라 "우리 엄마" 처럼
+    // 가족 토큰을 품은 복합어일 수 있다. 잡힌 토큰(`엄마`)을 라벨 전체(`우리 엄마`)와 그대로
+    // 비교하면 **자기 자신을 남으로 읽어** 대리 구문 탐지가 통째로 꺼진다.
+    if (label.includes(m[1]!)) continue;
+    return true;
   }
   return false;
+}
+
+/**
+ * 매치 뒤에서 **같은 문장**까지만 잘라 낸다.
+ *
+ * ⚠ 고정 길이로 뒤를 훑으면 다음 문장까지 넘어간다(Codex #702 P2):
+ * "엄마가 시켜서 깨우러 왔어. **아빠한테도** 전화해야 해" 에서 뒷문장의 `아빠한테` 를 보고
+ * '다른 행위자가 있으니 대리가 아니다' 로 판정해 **진짜 유출을 통과시킨다.**
+ */
+function sameSentenceSuffix(text: string, from: number): string {
+  const rest = text.slice(from, from + 40);
+  const stop = rest.search(/[.!?。！？…]/);
+  return stop === -1 ? rest : rest.slice(0, stop);
 }
 
 /**
@@ -1581,7 +1598,7 @@ function matchesWithoutOtherActor(text: string, label: string, pattern: string):
   for (const m of text.matchAll(new RegExp(pattern, 'gi'))) {
     const end = m.index + m[0].length;
     // 매치 시작 부분의 라벨 자체는 `hasOtherActor` 가 라벨 비교로 걸러 준다.
-    if (!hasOtherActor(m[0] + text.slice(end, end + 40), label)) return true;
+    if (!hasOtherActor(m[0] + sameSentenceSuffix(text, end), label)) return true;
   }
   return false;
 }

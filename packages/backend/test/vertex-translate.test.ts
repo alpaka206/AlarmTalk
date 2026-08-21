@@ -702,6 +702,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       '엄마의 말씀을 전하러 왔어',
       '엄마의 부탁 때문에 깨우러 왔어',
       '엄마한테 부탁을 하나 받아서 왔어',
+      // ⚠ '다른 행위자' 검사는 **같은 문장**까지만이다(Codex #702 P2). 뒷문장의 사람을 보고
+      // 대리 판정을 꺼 버리면 진짜 유출이 통과한다.
+      '엄마가 시켜서 깨우러 왔어. 아빠한테도 전화해야 해',
     ]) {
       queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
 
@@ -715,6 +718,26 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       });
 
       expect(generated.provider, leak).toBe('local');
+    }
+  });
+
+  // ⚠ 관계 라벨은 **자유 입력**이라 "우리 엄마" 처럼 가족 토큰을 품은 복합어일 수 있다
+  // (Codex #702 P2). 잡힌 토큰(`엄마`)을 라벨 전체와 그대로 비교하면 자기 자신을 '다른
+  // 행위자' 로 읽어 대리 구문 탐지가 통째로 꺼진다.
+  it('still detects proxy wording when the relationship label is a compound', async () => {
+    for (const label of ['우리 엄마', '사랑하는 엄마']) {
+      queueContent(geminiText(`{"text":"민지야, ${label}가 시켜서 깨우러 왔어. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: label,
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, label).toBe('local');
     }
   });
 
