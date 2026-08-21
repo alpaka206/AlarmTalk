@@ -717,6 +717,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       '엄마께서 시키신 일이라 왔어',
       '엄마가 보내서 깨우러 왔어',
       '엄마가 보내셔서 전하러 왔어',
+      // 뒤를 훑는 갈래(`엄마 대신`)도 **같은 문장까지만** 본다 — 뒷문장의 사람을 보고
+      // 대리 판정을 끄면 진짜 유출이 통과한다(Codex #702 P2).
+      '엄마 대신 깨우러 왔어. 아빠한테도 전화해야 해',
     ]) {
       queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
 
@@ -730,6 +733,59 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       });
 
       expect(generated.provider, leak).toBe('local');
+    }
+  });
+
+  // ⚠ **라벨은 앱 언어와 무관하게 한국어 정규값으로 저장된다**(안드로이드 `RelationshipPreset`).
+  // 그래서 en·ja 문구에는 `엄마` 라는 글자가 없고, 한국어 조사·어미만 보는 가드는 그 두
+  // 언어에서 통째로 무력했다(Codex #702 P2). 프롬프트는 세 언어에 걸려 있는데 백스톱만 비어
+  // 있던 것이다.
+  it('rejects messenger wording in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, your mom asked me to wake you up. Time to get going!' },
+      { lang: 'en', listener: 'Minji', text: "Minji, I'm here on behalf of your mom. Rise and shine!" },
+      { lang: 'en', listener: 'Minji', text: "Minji, this is your mom's voice reminding you to get up." },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんに頼まれて起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママの代わりに起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんが早く起きなさいって言ってたよ。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('local');
+    }
+  });
+
+  // 자기 3인칭 지칭은 en·ja 에서도 자연스럽다 — 전달 틀이 없으면 통과해야 한다.
+  it('keeps third-person self-reference in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, good morning! Mom is always on your side. Have a great day.' },
+      { lang: 'en', listener: 'Minji', text: 'Minji, it might rain today. Mom wants you to take an umbrella.' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、おはよう。ママはいつも味方だからね。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママが作った朝ごはん、ちゃんと食べてね。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('vertex');
     }
   });
 

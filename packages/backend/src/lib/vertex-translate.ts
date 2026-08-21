@@ -123,6 +123,19 @@ const LOW_AROUSAL_WORDS = [
   'mumbl', 'murmur',
 ];
 
+/**
+ * 프롬프트에 그대로 실을 금지 태그 문구. `LOW_AROUSAL_WORDS` 에서 **파생**시킨다.
+ *
+ * ⚠ 손으로 적어 두면 가드와 어긋난다(실측 2026-08-21): 목록에 `[gently]` 만 있고
+ * `[gentle]` 이 없어서, 모델이 형용사형 `[gentle]` 을 붙였다가 가드에 걸려 일본어 운세
+ * '건강' 시드가 3회 전부 실패했다. 무엇이 막히는지 모델에게 정확히 알려 준다.
+ */
+const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
+  (word) => !word.endsWith('l') && word !== 'mumbl',
+)
+  .map((word) => `[${word}]`)
+  .join(', ');
+
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
 function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
@@ -369,7 +382,16 @@ function dynamicTextHardFailure(
   if (text.length > 200) return true;
   if (hasLanguageMismatch(text, context.targetLanguage)) return true;
   if (hasUnsupportedListenerAddress(text, context.listenerTitle)) return true;
-  if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
+  if (
+    hasRelationshipLabelLeak(
+      text,
+      context.relationshipLabel,
+      context.listenerTitle,
+      context.targetLanguage,
+    )
+  ) {
+    return true;
+  }
   // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
   // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
   if (hasDeliveryTagOrStageDirection(taggedText ?? text)) return true;
@@ -830,7 +852,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up, and a low-arousal delivery works against that.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
 Leave the separate "tag" field as "" — it is legacy.`;
 
   return [
@@ -899,7 +921,7 @@ function prerenderClipPrompt(params: {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
 Leave the separate "tag" field as "" — it is legacy.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
@@ -994,14 +1016,20 @@ export async function generatePrerenderClipText(
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
+    // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
+    // 관계 '엄마' 가 3회 전부 `[softly]` 를 붙여 나와 저각성 가드에 걸려 **영구 실패**했다.
+    // '다르게 써 봐' 만으로는 모델이 문장만 바꾸고 태그는 그대로 둔다.
+    const retryTagHint =
+      ` The rejection may have been the delivery tags: never use sleepy or hushed ones` +
+      ` (${LOW_AROUSAL_TAG_EXAMPLES}) — this line must wake someone up.`;
     const retryHint =
       attempt === 1
         ? ''
         : attempt === 2
-          ? 'RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.'
+          ? `RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.${retryTagHint}`
           : label
-            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.`
-            : 'RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.';
+            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
+            : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
     const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
       .filter(Boolean)
       .join('\n');
@@ -1033,7 +1061,7 @@ export async function generatePrerenderClipText(
       hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
       hasDeliveryTagOrStageDirection(text) ||
       hasUnsupportedListenerAddress(spoken, params.listenerTitle) ||
-      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle)
+      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle, targetLanguage)
     ) {
       lastError = new AlarmTextPreparationInvalidError();
       continue;
@@ -1604,7 +1632,10 @@ function hasOtherActor(segment: string, label: string): boolean {
  *    아빠한테도 전화해야 해" 의 `아빠한테` 를 보고 **진짜 유출을 통과시킨다.**
  *  - `thirdPartyReference`(`엄마 대신`)는 행동이 매치 **밖**에 있으므로 뒤를 봐야 한다 —
  *    "엄마를 대신해서 오늘은 아빠가 데리러 갈 거야" 의 `아빠가` 가 거기 있다.
- * 문장부호로 자르는 것으로는 이 둘을 가를 수 없다(쉼표로 자르면 두 번째가 되돌아온다).
+ *
+ * ⚠ 뒤를 훑을 때도 **같은 문장까지만**이다(Codex #702 P2). "엄마 대신 깨우러 왔어.
+ * 아빠한테도 전화해야 해" 의 뒷문장을 보고 대리 판정을 끄면 진짜 유출이 통과한다.
+ * 오탐을 막아 주는 `아빠가` 는 언제나 같은 문장 안에 있다.
  */
 function matchesWithoutOtherActor(
   text: string,
@@ -1614,7 +1645,12 @@ function matchesWithoutOtherActor(
 ): boolean {
   for (const m of text.matchAll(new RegExp(pattern, 'gi'))) {
     const end = m.index + m[0].length;
-    const suffix = scanAfterMatch ? text.slice(end, end + 40) : '';
+    let suffix = '';
+    if (scanAfterMatch) {
+      suffix = text.slice(end, end + 40);
+      const stop = suffix.search(/[.!?。！？…]/);
+      if (stop !== -1) suffix = suffix.slice(0, stop);
+    }
     // 매치 시작 부분의 라벨 자체는 `hasOtherActor` 가 라벨 비교로 걸러 준다.
     if (!hasOtherActor(m[0] + suffix, label)) return true;
   }
@@ -1662,6 +1698,79 @@ function hasPresentReportedSpeech(text: string, escapedLabel: string): boolean {
 }
 
 /**
+ * 관계 라벨(한국어 정규값)이 en·ja 출력에서 어떤 낱말로 나오는가.
+ *
+ * ⚠ **라벨은 앱 언어와 무관하게 한국어로 저장된다**(안드로이드 `RelationshipPreset` 의
+ * `label` 은 정규값이고 로케일 리소스는 표시용일 뿐이다). 그래서 en·ja 문구에는 `엄마` 라는
+ * 글자가 아예 없고, 한국어 조사·어미만 보는 가드는 **그 두 언어에서 통째로 무력**했다
+ * (Codex #702 P2). 프롬프트는 세 언어 모두에 걸려 있지만 백스톱이 비어 있었다.
+ *
+ * 자유 입력 라벨은 여기 없다 — 그건 한국어 갈래로만 걸러진다(알려진 한계).
+ */
+const RELATIONSHIP_LABEL_TRANSLATIONS: Record<string, { en: string[]; ja: string[] }> = {
+  엄마: { en: ['mom', 'mum', 'mother', 'mommy'], ja: ['お母さん', 'ママ', '母'] },
+  아빠: { en: ['dad', 'father', 'daddy'], ja: ['お父さん', 'パパ', '父'] },
+  할머니: { en: ['grandma', 'grandmother', 'granny'], ja: ['おばあちゃん', '祖母'] },
+  할아버지: { en: ['grandpa', 'grandfather'], ja: ['おじいちゃん', '祖父'] },
+  아들: { en: ['son'], ja: ['息子'] },
+  딸: { en: ['daughter'], ja: ['娘'] },
+  손녀: { en: ['granddaughter'], ja: ['孫娘'] },
+  손주: { en: ['grandson', 'grandchild'], ja: ['孫'] },
+  '형제·자매': { en: ['brother', 'sister', 'sibling'], ja: ['兄弟', '姉妹'] },
+  남자친구: { en: ['boyfriend'], ja: ['彼氏'] },
+  여자친구: { en: ['girlfriend'], ja: ['彼女'] },
+  남편: { en: ['husband'], ja: ['夫', '旦那'] },
+  아내: { en: ['wife'], ja: ['妻', '奥さん'] },
+  친구: { en: ['friend'], ja: ['友達'] },
+  연예인: { en: ['celebrity'], ja: ['芸能人'] },
+};
+
+/**
+ * 한국어가 아닌 출력에서 **화자가 전달자처럼 말하는가.**
+ *
+ * 한국어와 달리 en·ja 는 전달 구문이 **1인칭 대명사를 요구**해서("mom asked **me** to",
+ * "**私**が頼まれて") 훨씬 덜 모호하다. 그래서 라벨 낱말 + 전달 틀이 붙은 형태만 좁게 본다.
+ * 자기 3인칭 지칭("Mom is always on your side", "ママはいつも味方だよ")은 틀이 없으니 통과한다.
+ */
+function hasForeignLanguageProxy(
+  text: string,
+  label: string,
+  targetLanguage: string,
+): boolean {
+  const language = targetLanguage === 'en' || targetLanguage === 'ja' ? targetLanguage : null;
+  if (!language) return false;
+  const words = RELATIONSHIP_LABEL_TRANSLATIONS[label.trim()]?.[language];
+  if (!words?.length) return false;
+  const alternation = words.map(escapeRegExp).join('|');
+
+  if (language === 'en') {
+    // "your mom's voice" — 목소리를 밖에서 묘사한다.
+    if (new RegExp(`(?:${alternation})(?:'s|s')\\s+voice`, 'i').test(text)) return true;
+    // "mom asked me to wake you" / "mom wants me to" / "mom sent me" / "on behalf of your mom"
+    return (
+      new RegExp(
+        `(?:${alternation})\\b[^.!?]{0,20}?\\b(?:asked|told|wanted|wants|needs|sent|had)\\s+me\\b`,
+        'i',
+      ).test(text) ||
+      new RegExp(`\\bon\\s+behalf\\s+of\\b[^.!?]{0,15}?(?:${alternation})\\b`, 'i').test(text) ||
+      new RegExp(`\\b(?:instead\\s+of|in\\s+place\\s+of)\\s+(?:your\\s+)?(?:${alternation})\\b`, 'i').test(
+        text,
+      )
+    );
+  }
+
+  // ja: 「お母さんに頼まれて」「ママの代わりに」「お母さんの声」「お母さんが起こしてって」
+  return (
+    new RegExp(`(?:${alternation})の声`).test(text) ||
+    new RegExp(`(?:${alternation})(?:に|から)[^。！？]{0,10}?(?:頼まれ|言われ|頼まれて|命じられ)`).test(
+      text,
+    ) ||
+    new RegExp(`(?:${alternation})の代わり`).test(text) ||
+    new RegExp(`(?:${alternation})が[^。！？]{0,15}?(?:って言ってた|と言ってた|だって)`).test(text)
+  );
+}
+
+/**
  * 문구가 **화자가 그 관계의 사람이 아닌 것처럼** 말하는가.
  *
  * ⚠ **이 가드는 백스톱이지 유일 방어선이 아니다.** 1차는 프롬프트다(3곳: 시스템 지시·동적·
@@ -1688,9 +1797,12 @@ function hasRelationshipLabelLeak(
   text: string,
   relationshipLabel: string | null | undefined,
   listenerTitle: string | null | undefined,
+  targetLanguage: string,
 ): boolean {
   const label = relationshipLabel?.trim();
   if (!label) return false;
+
+  if (hasForeignLanguageProxy(text, label, targetLanguage)) return true;
 
   const escapedLabel = escapeRegExp(label);
   const sourcePhrase = new RegExp(`${escapedLabel}\\s*(?:목소리|voice)`, 'i');
