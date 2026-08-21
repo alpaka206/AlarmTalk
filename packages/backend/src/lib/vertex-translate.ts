@@ -1534,6 +1534,16 @@ function hasUnsupportedListenerAddress(
  * 따뜻하게 입고 나가요" 가 그대로 나왔다(2026-08-21 실측). "엄마가 데리러 올 거래" 같은
  * 전언도 같은 꼴이라 갈라낼 수 없는데, 실제로 나오는 쪽은 날씨다.
  */
+/**
+ * 절이 끝났다고 볼 문장부호. 전각(`，`)·말줄임(`…`)까지 넣는 이유는 모델이 실제로 섞어
+ * 쓰기 때문이다(Codex #702 P2).
+ *
+ * ⚠ **공백만으로는 절 끝으로 보지 않는다.** `래` 는 용언 뒤에서는 전언("깨우래")이지만
+ * 체언 뒤에서는 계사 전언("휴일이래", "30도래")이라 `~대`(비 온대)와 같은 **사실 전달**이다.
+ * 부호 없이 이어지는 자리까지 열면 그 계사형이 통째로 걸려 멀쩡한 문구가 떨어진다.
+ */
+const CLAUSE_END_PUNCTUATION = '[.!?~,、。，…！？]';
+
 const QUOTATIVE_LOOKALIKE_NOUNS = new Set([
   '노래',
   '빨래',
@@ -1547,7 +1557,7 @@ const QUOTATIVE_LOOKALIKE_NOUNS = new Set([
 
 function hasPresentReportedSpeech(text: string, escapedLabel: string): boolean {
   const re = new RegExp(
-    `${escapedLabel}\\s*(?:가|이|께서)\\s*[^.!?]{0,20}?([가-힣])래(?=요?\\s*(?:[.!?~,、。]|$))`,
+    `${escapedLabel}\\s*(?:가|이|께서)\\s*[^.!?]{0,20}?([가-힣])래(?=요?\\s*(?:${CLAUSE_END_PUNCTUATION}|$))`,
     'gi',
   );
   for (const match of text.matchAll(re)) {
