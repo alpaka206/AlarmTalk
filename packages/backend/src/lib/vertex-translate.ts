@@ -650,6 +650,9 @@ NEVER
 - Never describe the voice from outside ("your mom's voice", "speaking as your mom") or speak as
   if you were someone else standing in for that person ("엄마처럼", "엄마 대신"). Referring to
   yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine.
+- Never speak as a MESSENGER for that person — you are that person, not someone carrying their
+  words or running their errand: no "엄마가 깨우래", "엄마가 깨워 달래", "엄마한테 부탁받아서
+  왔어", "엄마가 시켜서", "엄마 심부름으로".
 - Never use a stiff/formal/business register (Korean 합니다체; Japanese ビジネス敬語/文語;
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
@@ -796,7 +799,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${context.relationshipLabel}가 깨우래", "${context.relationshipLabel}한테 부탁받아서", "${context.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
@@ -883,7 +886,7 @@ function prerenderClipPrompt(params: {
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
-    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${params.relationshipLabel}가 깨우래", "${params.relationshipLabel}한테 부탁받아서", "${params.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
@@ -1514,6 +1517,53 @@ function hasUnsupportedListenerAddress(
   return false;
 }
 
+/**
+ * 라벨 뒤에 **현재형 전언 어미**(`~래`)가 붙었는가 — "엄마가 깨우래".
+ *
+ * ⚠ 정규식만으로는 가를 수 없어 코드로 거른다. 한국어에는 낱말 경계가 없어서 `래` 한 글자는
+ * 세 가지와 겹친다:
+ *  - **권유형 `~ㄹ래`**("입을래?", "갈래?", "들어줄래?") — 앞 글자 받침이 ㄹ 이다.
+ *  - **명사**("노래", "빨래", "미래") — 통째로 걸러낸다.
+ *  - **전언형 `~래`**("깨우래", "일어나래") — 이것만 유출이다.
+ * 그래서 ①라벨이 **주격**(가/이/께서)이고 ②`래` 가 **절 끝**(뒤에 `요?` + 문장부호/끝)이며
+ * ③앞 글자가 ㄹ받침이 아니고 ④명사 목록에 없을 때만 전언으로 본다.
+ *
+ * ⚠ `~대`(비 온대, 많대요)는 **넣지 않는다.** 날씨 전달의 표준 어미라 프롬프트 few-shot 이
+ * 직접 쓰고 있다("비가 올 수 있대요") — 넣으면 멀쩡한 날씨 문구가 통째로 떨어진다.
+ * 같은 이유로 `~ㄹ 거래`(= `~ㄹ 거라고 해`)도 뺀다: 실 Vertex 호출에서 "오늘은 흐릴 거래,
+ * 따뜻하게 입고 나가요" 가 그대로 나왔다(2026-08-21 실측). "엄마가 데리러 올 거래" 같은
+ * 전언도 같은 꼴이라 갈라낼 수 없는데, 실제로 나오는 쪽은 날씨다.
+ */
+const QUOTATIVE_LOOKALIKE_NOUNS = new Set([
+  '노래',
+  '빨래',
+  '미래',
+  '유래',
+  '장래',
+  '원래',
+  '이래',
+  '거래',
+]);
+
+function hasPresentReportedSpeech(text: string, escapedLabel: string): boolean {
+  const re = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|께서)\\s*[^.!?]{0,20}?([가-힣])래(?=요?\\s*(?:[.!?~,、。]|$))`,
+    'gi',
+  );
+  for (const match of text.matchAll(re)) {
+    const prev = match[1]!;
+    // "깨워 달래" 는 `달라고 해` 의 준말이라 앞 글자 받침이 ㄹ 이지만 전언이 맞다. 어루만지는
+    // `달래다`("엄마가 달래 줄게")는 뒤에 용언이 붙어 절 끝 조건에서 이미 걸러진다.
+    if (prev === '달') return true;
+    const syllable = prev.charCodeAt(0) - 0xac00;
+    // 받침 ㄹ(종성 인덱스 8) = 권유형 `~ㄹ래`.
+    if (syllable >= 0 && syllable < 11172 && syllable % 28 === 8) continue;
+    if (QUOTATIVE_LOOKALIKE_NOUNS.has(`${prev}래`)) continue;
+    return true;
+  }
+  return false;
+}
+
 function hasRelationshipLabelLeak(
   text: string,
   relationshipLabel: string | null | undefined,
@@ -1535,7 +1585,11 @@ function hasRelationshipLabelLeak(
   //
   // 남겨 두는 것은 **화자가 그 사람이 아님을 드러내는** 쓰임뿐이다:
   // `엄마처럼`(엄마가 아닌 사람의 비유) / `엄마 대신` / `엄마 입장에서`.
-  const thirdPartyReference = new RegExp(`${escapedLabel}\\s*(?:처럼|입장에서|대신)`, 'i');
+  // 목적격 조사를 허용하는 이유는 `엄마를 대신해서` 가 `엄마 대신` 과 같은 말이기 때문이다.
+  const thirdPartyReference = new RegExp(
+    `${escapedLabel}\\s*(?:을|를)?\\s*(?:처럼|입장에서|대신)`,
+    'i',
+  );
   if (thirdPartyReference.test(text)) return true;
 
   // **전언(傳言) 구문도 화자가 그 사람이 아님을 드러낸다**(Codex #701 P2).
@@ -1546,6 +1600,27 @@ function hasRelationshipLabelLeak(
     'i',
   );
   if (reportedSpeech.test(text)) return true;
+  if (hasPresentReportedSpeech(text, escapedLabel)) return true;
+
+  // **대리(代理) 구문**(Codex #701 P2 후속). 어미가 아니라 **조사**로 화자를 심부름꾼으로
+  // 만드는 형태라 위의 전언 정규식이 통째로 비켜 간다 — "엄마한테 부탁받아서 깨우러 왔어",
+  // "엄마 부탁으로", "엄마가 시켜서". 라벨을 **부탁한 사람**으로 세우는 낱말만 좁게 잡는다.
+  // ⚠ `부탁` 만으로는 안 된다 — "엄마 부탁 하나만 들어줄래?" 는 엄마 자신의 말이다.
+  // 잡는 것은 **받는 쪽 표현**(부탁받다/부탁으로/시켜서/심부름)뿐이다.
+  const errandReference = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|께서|한테서?|에게서?|의|을|를)?\\s*[^.!?]{0,6}?(?:부탁\\s*(?:을\\s*)?받|부탁으로|시켜서|시키셔서|시키셔|심부름)`,
+    'i',
+  );
+  if (errandReference.test(text)) return true;
+
+  // "엄마가 부탁해서 깨우러 왔어" 처럼 **부탁 + 대리 행동**이 이어지는 형태. `부탁해서` 자체는
+  // 양쪽으로 읽히므로("엄마가 부탁해서 미안한데" 는 엄마 자신의 말) 뒤에 **화자가 대신 하는
+  // 행동**이 올 때만 거절한다.
+  const commissionedAction = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|께서)\\s*[^.!?]{0,6}?부탁(?:해|하셔|하시어)서\\s*[^.!?]{0,8}?(?:왔|오는\\s*길|전하|전해|알려|깨우|대신)`,
+    'i',
+  );
+  if (commissionedAction.test(text)) return true;
 
   const allowedAddress =
     normalizeAddressLabel(label) !== null &&

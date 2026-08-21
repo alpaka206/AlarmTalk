@@ -660,7 +660,24 @@ describe('generateDynamicAlarmTextWithVertex', () => {
 
   it('still falls back when the line speaks as if the relationship were someone else', async () => {
     // 전언 구문("엄마가 … 달라고 했어")은 화자가 심부름꾼이라는 뜻이다 — 자기 지칭과 반대다.
-    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게', '엄마가 깨워 달라고 했어']) {
+    //
+    // ⚠ **어미만 보면 안 된다**(Codex #701 P2 후속). 대리 구문은 조사로도 만들어져서
+    // ("엄마한테 부탁받아서 깨우러 왔어") 전언 어미 검사를 통째로 비켜 갔다 —
+    // 그대로 두면 엄마 목소리가 "엄마가 시켜서 왔어" 라고 말하는 클립이 영구 저장된다.
+    for (const leak of [
+      '엄마처럼 챙겨 줄게',
+      '오늘은 엄마 대신 깨워 줄게',
+      '엄마가 깨워 달라고 했어',
+      '엄마를 대신해서 깨우러 왔어',
+      '엄마한테 부탁받아서 깨우러 왔어',
+      '엄마 부탁으로 알려 주는 거야',
+      '엄마가 시켜서 왔어',
+      '엄마 심부름으로 왔어',
+      '엄마가 부탁해서 깨우러 왔어',
+      '엄마가 깨우래',
+      '엄마가 깨워 달래',
+      '엄마가 얼른 일어나래요',
+    ]) {
       queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
 
       const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -672,7 +689,38 @@ describe('generateDynamicAlarmTextWithVertex', () => {
         listenerTitle: '민지야',
       });
 
-      expect(generated.provider).toBe('local');
+      expect(generated.provider, leak).toBe('local');
+    }
+  });
+
+  // ⚠ 대리 구문 가드가 **자기 지칭까지 삼키면 안 된다.** 한국어에는 낱말 경계가 없어서
+  // `~래` 한 글자가 권유형(`입을래?`)·명사(`노래`)와 겹치고, `~대` 는 날씨 전달의 표준
+  // 어미라 프롬프트 few-shot 이 직접 쓴다("비가 올 수 있대요"). 넓게 잡으면 멀쩡한 문구가
+  // 떨어지고, 그게 사랑 3번 시드를 영구 실패시켰던 바로 그 사고다.
+  it('keeps natural self-reference that only looks like reported speech', async () => {
+    for (const line of [
+      '민지야, 엄마가 사 준 옷 입을래? 오늘 좀 쌀쌀해',
+      '민지야, 엄마가 데려다줄까? 아니면 같이 걸어갈래?',
+      '민지야, 일어나면 엄마가 틀어 주는 노래. 그거 듣고 힘내자',
+      '민지야, 속상하면 엄마가 달래 줄게. 얼른 일어나자',
+      '민지야, 엄마가 보니까 오늘 비 온대. 우산 꼭 챙겨',
+      // 실 Vertex 출력(2026-08-21): `~ㄹ 거래` 는 날씨 전달의 표준 어미다.
+      '민지야, 엄마가 창밖 보니 오늘은 흐릴 거래. 따뜻하게 입고 나가',
+      '민지야, 엄마가 부탁해서 미안한데 오늘은 좀 일찍 나가 줘',
+      '민지야, 일어나면 엄마한테 전화 한 통 줘',
+    ]) {
+      queueContent(geminiText(`{"text":"${line}!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, line).toBe('vertex');
     }
   });
 
