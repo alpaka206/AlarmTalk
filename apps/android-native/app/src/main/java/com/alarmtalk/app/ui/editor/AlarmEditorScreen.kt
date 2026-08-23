@@ -95,6 +95,20 @@ private enum class AudioPreviewTarget {
 // 세부 설정 pane 슬라이드용 emphasized 이징(타임휠 세틀과 같은 계열의 감속 곡선).
 private val EditorPaneEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
+
+/**
+ * 저장이 막힌 사유. **버튼을 죽이는 대신 알럿으로 말하기 위한** 값이다
+ * (`AlarmEditorScreen.editorSaveBlockReason` 주석 참조).
+ */
+internal enum class SaveBlockReason {
+    RECORDING_MISSING,
+    VOICE_MISSING,
+    VOICE_UNAVAILABLE,
+    WEATHER_LOCATION_MISSING,
+    FORTUNE_INFO_MISSING,
+    MESSAGE_PREPARING,
+}
+
 @Composable
 internal fun AlarmEditorScreen(
     contentPadding: PaddingValues,
@@ -227,6 +241,14 @@ internal fun AlarmEditorScreen(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var audioMessage by remember { mutableStateOf<String?>(null) }
+    // ⚠ **가족 알람 저장이 막힌 이유는 알럿으로 말한다**(2026-08-24).
+    // 예전에는 `audioMessage` 에 넣었는데, 그 문구를 그리는 곳이 `VoiceAudioCard` 안이라
+    // **재생 방식이 '알람' 이면 카드째 숨겨져 아무것도 안 보였다** — 사용자에겐 "저장 버튼이
+    // 안 눌린다" 로 나타난다(실기기 재현). 목소리 모드여도 카드는 화면 중간이고 저장 버튼은
+    // 하단 고정이라, 아래로 스크롤해 저장하면 역시 화면 밖이다.
+    // 이건 안내가 아니라 **차단**이라(시각을 고쳐야 진행된다) 사라지는 스낵바도 맞지 않는다.
+    // iOS 는 처음부터 `validationAlert` 알럿이었다 — 양쪽을 같은 동작으로 맞춘다.
+    var familyBlockAlert by remember { mutableStateOf<Pair<String, String>?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     // 음성 생성 구간(편집기 안에서 도는 부분). 저장 전체는 아래 [busy] 로 본다.
     var generating by remember { mutableStateOf(false) }
@@ -679,12 +701,12 @@ internal fun AlarmEditorScreen(
                     R.string.editor_error_family_alarm_lead_too_soon,
                     earliestLabel,
                 )
-                audioMessage = message
+                familyBlockAlert = context.getString(R.string.editor_error_family_alarm_lead_title) to message
                 return
             }
             if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
-                val message = context.getString(R.string.editor_error_family_alarm_time_unavailable)
-                audioMessage = message
+                familyBlockAlert = context.getString(R.string.editor_error_family_alarm_unavailable_title) to
+                    context.getString(R.string.editor_error_family_alarm_time_unavailable)
                 return
             }
         }
@@ -1100,16 +1122,22 @@ internal fun AlarmEditorScreen(
             }.map { it.id }
         ).toSet()
 
+    /**
+     * 날씨 문구에 필요한 **지역이 확보돼 있는가** — 두 곳(`randomPromptSettingsComplete`,
+     * `editorSaveBlocked` 의 무료 버킷 갈래)이 **반드시 이 함수 하나를 본다.**
+     *
+     * ⚠ 예전에는 판정식이 두 벌이었고 한쪽에만 `targetProvidesWeather` 탈출구가 있었다.
+     * 그래서 **수신자가 날씨를 설정해 뒀는데도**(`weather_ready=true`) 기본 목소리를 고르면
+     * 저장이 영구히 막혔다(2026-08-24 실기기). 가족 알람에서 지역 칸이 비어 있는 것은
+     * **정상**이다 — 서버가 프라이버시 때문에 남의 값을 숨기고 준비 여부만 내려준다.
+     */
+    fun weatherLocationReady(): Boolean =
+        editor.voiceWeatherCity.isNotBlank() || targetProvidesWeather
+
     fun randomPromptSettingsComplete(): Boolean {
         if (!editor.voiceRandomPrompt) return false
         val context = normalizedRandomPromptContext(editor.voiceRandomContext)
-        // 가족 알람에서 수신자가 이미 설정을 갖고 있으면 여기 칸이 비어 있어도 완성이다 —
-        // 값은 서버가 수신자 것으로 채운다(targetProvidesWeather 주석 참고).
-        if (
-            randomContextUsesWeather(context) &&
-            editor.voiceWeatherCity.isBlank() &&
-            !targetProvidesWeather
-        ) {
+        if (randomContextUsesWeather(context) && !weatherLocationReady()) {
             return false
         }
         if (
@@ -1141,33 +1169,46 @@ internal fun AlarmEditorScreen(
     // 않는다(`AlarmRandomPromptSettings` 의 `contextBeforeDialog`, 무료 pane 의 '먼저 묻고
     // 확인해야 선택'). 남은 갈래는 과도기뿐이고 그건 안내할 것이 없다.
     //
-    // 형태는 바로 아래 `recordingReady` 와 같다 — 문구 없이 저장만 비활성화한다.
-    val editorSaveBlocked: Boolean = when {
-        editor.playMode == AlarmPlayModes.ALARM_ONLY -> false
-        // 녹음 모드도 같다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> false
+    /**
+     * 저장이 막힌 **이유**. 없으면 저장 가능하다.
+     *
+     * ⚠ **버튼을 죽이지 않는다**(2026-08-24 변경. 그전에는 사유 없이 비활성화만 했다).
+     * 사유를 그 값이 사는 자리에만 두자던 앞선 설계는 실기기에서 무너졌다 — 재생 방식이
+     * '알람' 이면 목소리 카드가 통째로 숨겨지고, 목소리 모드여도 카드는 화면 중간인데
+     * 저장 버튼은 하단 고정이라 **아래로 스크롤해 저장을 누르면 사유가 화면 밖**이다.
+     * 사용자에게는 "버튼이 죽었다 = 고장" 으로 보인다(2026-08-24 보고).
+     *
+     * 그래서 **누르게 두고, 왜 안 되는지 알럿으로 말한다** — 가족 알람 차단 알럿과 같은
+     * 껍데기(`IosAlertDialog`)를 쓴다.
+     */
+    val editorSaveBlockReason: SaveBlockReason? = when {
+        editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
+            if (editor.localAudioUri.isNullOrBlank()) SaveBlockReason.RECORDING_MISSING else null
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
             when {
-                profileId == null -> true
-                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) -> true
-                editor.voiceRandomPrompt && !randomPromptSettingsComplete() -> true
-                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다.
+                profileId == null -> SaveBlockReason.VOICE_MISSING
+                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
+                    SaveBlockReason.VOICE_UNAVAILABLE
+                editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
+                    if (randomContextUsesWeather(normalizedRandomPromptContext(editor.voiceRandomContext))) {
+                        SaveBlockReason.WEATHER_LOCATION_MISSING
+                    } else {
+                        SaveBlockReason.FORTUNE_INFO_MISSING
+                    }
+                // 무료 날씨 버킷은 지역이 있어야 조건 매칭이 된다. 판정은 위
+                // `weatherLocationReady()` 하나뿐이다 — 여기에 조건을 다시 쓰지 말 것.
                 restrictToWeatherMedication && editor.selectedBucket == "weather" &&
-                    editor.voiceWeatherCity.isBlank() -> true
-                // 무료는 문구를 직접 입력하지 않는다(테마 클립) — 빈 문구는 클립이 아직
-                // 붙지 않은 상태다. 그 사실은 문구 요약 행이 '준비 중/오프라인' 으로 말한다.
-                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() -> true
-                else -> false
+                    !weatherLocationReady() -> SaveBlockReason.WEATHER_LOCATION_MISSING
+                // 빈 문구는 클립이 아직 안 붙은 과도기다.
+                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
+                    SaveBlockReason.MESSAGE_PREPARING
+                else -> null
             }
         }
     }
-    // 녹음 모드에서 아직 녹음 파일이 없으면 안내 문구 없이 저장만 비활성화한다.
-    val recordingReady = editor.playMode == AlarmPlayModes.ALARM_ONLY ||
-        editor.voiceSource != VoiceSources.LOCAL_AUDIO ||
-        !editor.localAudioUri.isNullOrBlank()
-    val editorCanSave = !editorSaveBlocked && recordingReady
 
     fun openRandomPromptSettings() {
         settingsDetailPanel = "random_prompt"
@@ -1528,8 +1569,39 @@ internal fun AlarmEditorScreen(
                     ) {
                         EditorActionButtons(
                             isSaving = busy,
-                            canSave = editorCanSave,
-                            onSave = ::saveEditor,
+                            // ⚠ **항상 활성화다.** 막힘은 누른 뒤 알럿으로 말한다.
+                            canSave = true,
+                            // ⚠ **사유 판정은 여기서 한다.** `saveEditor` 안이 아니다 —
+                            // 그 함수는 `editorSaveBlockReason` 보다 **먼저** 선언돼 있어
+                            // 지역 val 을 볼 수 없다(코틀린 지역 선언 순서).
+                            onSave = {
+                                val reason = editorSaveBlockReason
+                                if (reason == null) {
+                                    saveEditor()
+                                } else {
+                                    val titleRes = when (reason) {
+                                        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_title
+                                        SaveBlockReason.VOICE_MISSING,
+                                        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_title
+                                        SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
+                                        SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
+                                        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
+                                    }
+                                    val messageRes = when (reason) {
+                                        SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
+                                        SaveBlockReason.VOICE_MISSING -> R.string.editor_block_voice_message
+                                        SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_unavailable_message
+                                        SaveBlockReason.WEATHER_LOCATION_MISSING ->
+                                            if (familyAlarmMode) R.string.editor_block_weather_family_message
+                                            else R.string.editor_block_weather_message
+                                        SaveBlockReason.FORTUNE_INFO_MISSING ->
+                                            if (familyAlarmMode) R.string.editor_block_fortune_family_message
+                                            else R.string.editor_block_fortune_message
+                                        SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
+                                    }
+                                    familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
+                                }
+                            },
                             onCancel = onCancel,
                             recipientName = if (familyAlarmMode) {
                                 selectedFamilyRecipientValue?.name?.trimmedOrNull()
@@ -1752,6 +1824,23 @@ internal fun AlarmEditorScreen(
                 freeWeatherDialogOpen = false
                 selectBucket("weather")
             },
+        )
+    }
+
+    // ⚠ **어떤 조건 블록 안에도 두지 말 것.** 처음에 `if (voicePlanGateOpen)` 안에 넣었다가
+    // 알럿이 영영 안 떴다(실기기 확인) — 저장 차단은 플랜 게이트와 아무 상관이 없다.
+    familyBlockAlert?.let { (alertTitle, alertMessage) ->
+        IosAlertDialog(
+            title = alertTitle,
+            message = alertMessage,
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.auth_confirm),
+                    emphasized = true,
+                    onClick = { familyBlockAlert = null },
+                ),
+            ),
+            onDismiss = { familyBlockAlert = null },
         )
     }
 

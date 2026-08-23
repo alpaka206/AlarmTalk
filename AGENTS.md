@@ -42,12 +42,17 @@ AlarmTalk은 OS 네이티브 **목소리 알람 앱**이다. 네이티브 리라
   즉시 반영). 대상: ① 공유 플랜에서 상대가 내 알람을 설정, ② 목소리 공유 on/off,
   ③ 플랜 변경(구독 만료·취소·**스토어 전환**), ④ 플랜 변경으로 알람이 강등돼야 할 때,
   ⑤ 멤버 내보내기.
-  구현: `lib/billing-cancel.ts` 의 `notifyPlanChanged` → `lib/fcm.ts` → 안드로이드
-  `fcm/AlarmTalkMessagingService.kt`. 결제 흐름에서의 위치는
+  구현: `lib/billing-cancel.ts` 의 `notifyPlanChanged` → 안드로이드는 `lib/fcm.ts` →
+  `fcm/AlarmTalkMessagingService.kt`, iOS 는 `lib/apns.ts` → `PushNotificationCoordinator.swift`.
+  결제 흐름에서의 위치는
   [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) 「구현 지도」 참조.
 - 단 **FCM 은 '즉시성'을 위한 것일 뿐 유일 경로가 아니다** — 오프라인·미배달로 놓쳐도 로컬
   폴백(앱 시작 시 재조회 + 울림 시점 게이트)이 정확성을 보장해야 한다. 상태 변경은 반드시
   서버 응답으로 재확인 후 적용한다(푸시만 믿고 바꾸지 않는다).
+- ⚠ **이 불변식이 말하는 것은 '내 기기에 이미 선 알람의 발사' 다.** 남이 보낸 알람의
+  **도착**은 예외다 — 가족 알람 리드타임이 5분인데 폴백 폴링은 15분 주기라, 푸시를 놓치면
+  **울리기 전에 도착하지 못할 수 있다**(`docs/spec/family-alarm.md` 3절). 도착한 뒤부터는
+  다시 전부 로컬이다. 리드타임을 더 내리려면 이 간극부터 메워야 한다.
 - 알람 엔진 변경은 **실기기에서 검증한다.** 로그인·소셜·빌링 확장이 검증된 알람 엔진을
   약화시키면 안 된다.
 

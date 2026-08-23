@@ -224,7 +224,10 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(sent2!.message_id).toBeNull();
   });
 
-  it('purgeUserAccount(B, 계정 삭제): 나를 target 으로 한 알람 행도 함께 삭제한다', async () => {
+  // ⚠ **뒤집힌 테스트다**(2026-08-24). 예전에는 "나를 target 으로 한 알람 행도 함께
+  // 삭제한다" 를 고정하고 있었다. 그 행의 주인은 **발신자 A** 이고 거기엔 내 목소리가
+  // 없다 — 탈퇴가 파기해야 할 것은 **내 생체정보**이지 남의 발신 기록이 아니다.
+  it('purgeUserAccount(B, 계정 삭제): 남이 나에게 보낸 알람 행은 건드리지 않는다', async () => {
     await db.execute({
       sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
             VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
@@ -233,8 +236,8 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
 
     await purgeUserAccount(db, 'B', 'google-B');
 
-    // 계정 삭제는 수신자 없는 알람을 남기지 않는다.
-    expect(await getAlarm(db, 'al-sent')).toBeNull();
+    // 발신자 A 의 행이므로 남는다. B 계정만 사라진다.
+    expect(await getAlarm(db, 'al-sent')).not.toBeNull();
     expect((await db.execute(`SELECT id FROM users WHERE id = 'B'`)).rows).toEqual([]);
   });
 });

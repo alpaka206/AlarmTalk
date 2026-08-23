@@ -59,13 +59,32 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         var failed: Int
     }
 
-    /// 단일 remote 알람 머지의 결과 분류. `runOnce` 의 카운터 집계에만 쓰인다.
+    /// 단일 remote 알람 머지의 결과 분류. 카운터 집계와 **수신 확인(ack) 판정**에 쓰인다.
+    ///
+    /// `deliveryComplete` 는 "서버 행을 지워도 되는가" 다 — 로컬 행이 서고 **음원까지**
+    /// 확보됐을 때만 true. 반영하지 않은 회차(`unchanged`)는 애초에 ack 대상이 아니다.
     private enum MergeOutcome {
-        case imported
-        case updated
-        /// 충돌 정책(`shouldApplyRemote == false`)으로 서버 응답을 적용하지 않음.
-        /// Android 와 동일하게 imported/updated/failed 어디에도 포함되지 않는다.
+        case imported(deliveryComplete: Bool)
+        case updated(deliveryComplete: Bool)
+        /// 충돌 정책(`shouldApplyRemote == false`)·계정 이탈·울리는 중 등으로 서버 응답을
+        /// 적용하지 않음. Android 와 동일하게 imported/updated/failed 어디에도 포함되지 않는다.
         case unchanged
+
+        /// 서버 행을 지워도 되는가. `unchanged` 는 언제나 false 다 — 반영한 것이 없으므로
+        /// 서버 행이 다음 회차의 유일한 재시도 근거로 남아야 한다.
+        var deliveryComplete: Bool {
+            switch self {
+            case let .imported(complete), let .updated(complete): return complete
+            case .unchanged: return false
+            }
+        }
+    }
+
+    /// 음원 확보를 마친 레코드와 그 성패. `recordWithCachedTTSIfNeeded` 의 반환형이다.
+    private struct PreparedRecord {
+        let record: LocalAlarmRecord
+        /// 음원을 실제로 손에 넣었는가. 받을 음원이 애초에 없는 알람(알람음 전용)도 true.
+        let audioSecured: Bool
     }
 
     private let api: AlarmTalkAPI
@@ -170,10 +189,28 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 머지 경로는 throw 하지 않으므로 failed 는 0 이지만, Android 카운터 의미를
             // 보존하고 향후 throwing 작업이 추가돼도 retry 판단이 그대로 동작한다.)
             do {
-                switch try await mergeRemote(remote: remote, mapped: mapped, token: token, pullOwnerUserID: userID) {
-                case .imported: imported += 1
-                case .updated: updated += 1
+                let outcome = try await mergeRemote(remote: remote, mapped: mapped, token: token, pullOwnerUserID: userID)
+                switch outcome {
+                case .imported(_): imported += 1
+                case .updated(_): updated += 1
                 case .unchanged: break
+                }
+                // ⚠ **다 받았을 때만 서버 행을 지우게 한다**(안드로이드 pull 과 같은 지점).
+                //
+                // 서버의 알람 행은 전달 수단이면서 동시에 **음원을 받을 권리**다 —
+                // `GET /tts/messages/:id/audio` 의 수신자 갈래가 `EXISTS (SELECT 1 FROM alarms
+                // WHERE message_id = ? AND target_user_id = 나)` 로 판정한다(routes/tts.ts).
+                // 그래서 음원 확보에 실패한 회차나 아예 반영하지 않은 회차(`unchanged`)에
+                // ack 하면 그 알람은 **영영 목소리를 못 받는다** — 행이 없으니 다음 pull
+                // 목록에도 안 실리고 음원 요청은 404 다.
+                //
+                // ack 자체의 실패는 삼킨다. 행이 남는 쪽이 안전한 실패다(재전달은 멱등하다).
+                if outcome.deliveryComplete {
+                    try? await AlarmTalkAPI.shared.markAlarmReceived(id: remote.id, token: token)
+                } else {
+                    Self.logger.warning(
+                        "Pull sync: kept server row (delivery incomplete) for remote alarm (id: \(remote.id, privacy: .public))"
+                    )
                 }
             } catch is CancellationError {
                 // ⚠ **취소는 실패가 아니다 — 회차를 멈춘다**(2026-08-18 Codex #697 P2).
@@ -224,13 +261,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         pullOwnerUserID: String
     ) async throws -> MergeOutcome {
         var mapped = initialMapped
+        var audioSecured = false
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
             guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
             guard !Self.isInFlight(existing) else { return .unchanged }
 
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
-            mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            let prepared = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            mapped = prepared.record
+            audioSecured = prepared.audioSecured
             // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
@@ -264,9 +304,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if merged.originEnum == .receivedRemote && merged.enabled {
                 await rescheduleReceivedRemote(record: merged, existing: current)
             }
-            return .updated
+            return .updated(deliveryComplete: audioSecured)
         } else {
-            mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            let prepared = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+            mapped = prepared.record
+            audioSecured = prepared.audioSecured
             // 위 신규 import 갈래와 같은 이유 — 떠난 뒤에 반영하면 그 계정 알람을 되살린다.
             guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return .unchanged }
 
@@ -279,7 +321,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 guard !Self.isInFlight(raced) else { return .unchanged }
                 guard !Self.locallyEditedByRecipient(raced) else { return .unchanged }
                 store.upsert(Self.merge(existing: raced, mapped: mapped), syncedNow: true)
-                return .updated
+                return .updated(deliveryComplete: audioSecured)
             }
 
             // ⚠ **음원을 받는 사이에 계정이 떠났으면 심지 않는다**(Codex #699 P1).
@@ -301,7 +343,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 title: RemoteAlarmMapper.resolveLabel(remote),
                 time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
             )
-            return .imported
+            return .imported(deliveryComplete: audioSecured)
         }
     }
 
@@ -731,8 +773,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// TTS 메시지 오디오 API 가 실패했을 때 레코드의 원본 오디오 URL(rawAudioUri)을
     /// 직접 다운로드해 **같은 cacheKey** 로 저장하는 폴백.
-    /// 이것마저 실패하면 호출자(`recordWithCachedTTSIfNeeded`)가 캐시 키를 비워
-    /// 두므로 다음 sync 사이클의 fresh mapped 레코드에서 재시도된다.
+    /// 이것마저 실패하면 호출자(`recordWithCachedTTSIfNeeded`)가 캐시 키를 비우고
+    /// `audioSecured: false` 를 돌려준다 — 그러면 **수신 확인(ack)을 보내지 않아**
+    /// 서버 행이 남고, 다음 sync 사이클이 그 행을 다시 보고 재시도한다.
+    /// ⚠ ack 를 먼저 보내면 서버 행이 사라져 **재시도할 근거 자체가 없어진다.**
     private func cacheRawAudioFallback(rawAudioUri: String?, cacheKey: String, messageId: String) async throws {
         guard let raw = rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty,
@@ -783,12 +827,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
     }
 
-    private func recordWithCachedTTSIfNeeded(_ record: LocalAlarmRecord, token: String) async throws -> LocalAlarmRecord {
+    private func recordWithCachedTTSIfNeeded(_ record: LocalAlarmRecord, token: String) async throws -> PreparedRecord {
         var copy = record
         guard let cacheKey = copy.audioCacheKey,
               let messageId = copy.ttsMessageId,
               !messageId.isEmpty else {
-            return copy.playModeEnum == .alarmOnly ? copy : Self.withoutUnavailableRemoteAudio(copy)
+            // 알람음 전용이면 받을 음원이 없다 — 그것만으로 전달이 끝난 것이다.
+            // 목소리 알람인데 참조가 비어 있으면 받을 길이 없다는 뜻이라 미확보로 둔다.
+            if copy.playModeEnum == .alarmOnly {
+                return PreparedRecord(record: copy, audioSecured: true)
+            }
+            return PreparedRecord(record: Self.withoutUnavailableRemoteAudio(copy), audioSecured: false)
         }
 
         if audioCache.cachedURL(for: cacheKey) == nil {
@@ -801,12 +850,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
         if let cached = audioCache.cachedURL(for: cacheKey) {
             copy.localAudioUri = cached.lastPathComponent
-        } else {
-            // 1차 캐싱 + 원본 오디오 폴백 모두 실패. 캐시 키를 비운 alarmOnly 로
-            // 강등해 두면, 다음 sync 의 mapped 레코드가 다시 캐싱을 시도한다.
-            copy = Self.withoutUnavailableRemoteAudio(copy)
+            return PreparedRecord(record: copy, audioSecured: true)
         }
-        return copy
+        // 1차 캐싱 + 원본 오디오 폴백 모두 실패. 캐시 키를 비운 alarmOnly 로 강등해 알람
+        // 자체는 서게 하되, **수신 확인은 하지 않는다** — ack 하면 서버가 알람 행을 지우고,
+        // 그 행은 음원을 받을 권리이기도 해서(`GET /tts/messages/:id/audio` 의 수신자 갈래)
+        // 이 알람은 영영 목소리를 못 받게 된다. 행이 남아야 다음 회차가 재시도할 수 있다.
+        copy = Self.withoutUnavailableRemoteAudio(copy)
+        return PreparedRecord(record: copy, audioSecured: false)
     }
 
     static func withoutUnavailableRemoteAudio(_ record: LocalAlarmRecord) -> LocalAlarmRecord {

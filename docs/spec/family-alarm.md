@@ -22,6 +22,39 @@
 「자기 기기에서 자유롭게」는 시각만이 아니다. **시각·요일·스누즈·재생 방식·목소리·문구·
 볼륨·알람음 — 무엇이든** 받은 사람이 고칠 수 있고, 고친 값은 **영구히** 남는다.
 
+⚠ **수신은 계정당 한 기기다.** 먼저 받은 기기가 원본이고, 같은 계정의 다른 기기에는
+내려가지 않는다 — 수신 확인(아래 1-2)이 기기가 아니라 **사용자** 단위라 첫 기기가
+확인하는 순간 서버 행이 사라지기 때문이다.
+
+### 1-2. 전달이 끝나면 **서버 행을 지운다** (2026-08-24)
+
+서버의 알람 행은 **전달 수단**이다. 수신자 기기가 로컬 행을 세우고 음원까지 받으면
+전달은 끝났고, 그 뒤로 그 행을 읽을 일이 없다 — 내 알람은 서버에서 다시 받아오지 않고
+(pull 은 `isReceived` 만 임포트한다), 알람의 원본은 언제나 기기다.
+
+그래서 양 앱의 pull 은 임포트 직후 `POST /alarm/:id/received` 를 부르고, 서버는
+tombstone 을 남긴 뒤 `alarms` 행을 지운다.
+
+**왜 지우나.** 남겨 두면 `audio-retention` 이 "아직 쓰는 알람이 있다" 고 보아 **클론
+음원을 TTL(30일)이 지나도 영구 보존**한다. 생체정보에서 파생된 데이터를 이유 없이
+붙들고 있게 된다.
+
+⚠ **행은 '음원을 받을 권리' 이기도 하다.** `GET /tts/messages/:id/audio` 의 수신자
+갈래가 `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND target_user_id = 나)` 로
+판정한다(`routes/tts.ts`). 그래서 **음원 확보가 끝난 뒤에만 ack 한다** — 다운로드가
+실패한 회차나 아예 반영하지 않은 회차에 ack 하면 그 알람은 **영영 목소리를 못 받는다**
+(행이 없으니 다음 pull 목록에도 안 실리고 음원 요청은 404 다). 판정은 안드로이드
+`audioSecured`, iOS `MergeOutcome.deliveryComplete`. 서버는 이걸 강제할 수 없다.
+
+⚠ **지우기 전에 tombstone 을 남긴다** — 실패하면 지우지 않는다(fail-closed). 행이
+없어지면 나중에 발신자가 목소리를 지웠을 때 **어느 수신 알람을 걷어내야 하는지** 알
+방법이 사라진다. 옮겨 적는 것은 둘이다: 발신자(`sender_user_id`)와 **그 알람이 쓰는
+클론 목소리**(`alarm_recipient_state.voice_profile_id`). 스톡 목소리는 없어지지 않으므로
+적지 않는다.
+
+**그래서 이 스펙의 다른 규칙들 사정거리가 ack 전으로 줄었다** — 재구성, 서버가 끄는
+같은-시각 슬롯(1-3), 발신자의 원격 조작. 전부 아직 수신 확인이 안 온 알람에만 닿는다.
+
 그러니 **서버 값은 처음 받을 때의 씨앗일 뿐이다.** 보낸 사람은 고칠 수단이 없으므로
 (위 표), 매 pull 이 서버 값을 다시 입힐 이유가 애초에 없다.
 
@@ -40,7 +73,7 @@
 
 | | 판정 | 그때 하는 일 |
 | --- | --- | --- |
-| 아직 안 고친 행 | `updatedAtMillis == lastSyncedAtMillis` | 서버본으로 재구성(첫 수신·음성 다운로드 실패분 재시도) |
+| 아직 안 고친 행 | `updatedAtMillis == lastSyncedAtMillis` | 서버본으로 재구성(첫 수신, 그리고 음성 다운로드 실패로 아직 ack 하지 않은 알람의 재시도) |
 | 수신자가 고친 행 | `updatedAtMillis > lastSyncedAtMillis` | **아무것도 하지 않는다** |
 
 - 두 시각의 등호가 '아직 안 고침' 의 신호다. pull 이 쓸 때 **같은 값**을 넣고
@@ -62,6 +95,13 @@
 중복을 막는 시스템 동작**이다. 그래서 `resolveReceivedRemoteEnabled` 의 원격 끄기 반영은
 **죽은 코드가 아니다** — 지우면 남이 보낸 옛 알람이 수신자 기기에 켜진 채 남아 같은 시각에
 둘이 운다. (수신자가 고친 행에는 이것도 오지 않는다 — 위 표대로 재구성 자체를 건너뛴다.)
+
+⚠ **다만 이 서버 경로는 ack 전까지만 닿는다**(1-2). 수신 확인이 끝난 알람은 서버 행이
+없어 `claimTargetedAlarmSlot` 의 UPDATE 가 훑을 대상이 아니고, pull 목록에도 안 실려
+`is_active` 가 내려올 길이 없다. **이미 받은 알람의 같은 시각 중복은 클라가 막는다** —
+pull 이 새 알람을 세울 때 같은 시각의 수신자 소유 알람을 로컬에서 끈다
+(안드로이드 `alarmDao.getEnabledAtTime`). 두 겹이 서로 다른 구간을 덮는 것이지
+한쪽이 남는 것이 아니다.
 
 ⚠ **수신자의 변경을 서버에 올리지 말 것.** 받은 알람에도 `remoteAlarmId` 가 있지만 그건
 **보낸 사람의 행**이다. `PATCH /alarm/:id` 는 소유권 게이트(`WHERE a.id = ? AND a.user_id
@@ -109,8 +149,23 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 
 ## 3. 리드타임
 
-가족 알람은 **최소 30분 뒤**여야 만들 수 있다. 받는 사람 기기가 서버 신호를 받아
-로컬에 예약할 시간이 필요하다 — 그보다 가까우면 신호가 도착하기 전에 시각이 지난다.
+가족 알람은 **최소 5분 뒤**여야 만들 수 있다. 받는 사람 기기가 신호를 받아 로컬에
+예약할 시간이 필요하다 — 그보다 가까우면 신호가 도착하기 전에 시각이 지난다.
+
+⚠ **값은 세 곳에 있고 반드시 같아야 한다.** 하나만 내리면 앱은 통과시키는데 서버가
+400 `FAMILY_ALARM_LEAD_TIME` 으로 거절해, 사용자에게는 이유를 알 수 없는 "상대 알람
+설정에 실패했어요" 만 보인다(2026-08-21 실기기에서 실제로 그랬다).
+
+| 서버 | Android | iOS |
+| --- | --- | --- |
+| `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` | `ui/editor/AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS` | `AlarmEditorSheet.familyAlarmMinLeadMillis` |
+
+**30분이었던 이유와 바뀐 이유.** 예전에는 받은 알람을 가져오는 길이 **15분 주기 폴링**
+뿐이라, 폴링 한 번을 놓쳐도 남는 여유가 필요했다. 지금은 `family_alarm` 푸시가 즉시
+pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
+
+**0 으로는 두지 않는다.** 받는 기기가 오프라인이거나 Doze 에 들어가 있으면 푸시가 늦고,
+그러면 알람이 **울리지 않은 채 시각이 지나간다.** 보낸 사람은 보냈다고 믿는다.
 
 ## 4. 문구는 **받는 사람 기준**으로 고른다 (2026-08-18 결정)
 
@@ -144,12 +199,14 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
-| 리드타임 | — | `FamilyAlarmScheduleRules` | `routes/alarm-helpers.ts` |
+| 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
+| 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` 일 때만) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete`) | `POST /alarm/:id/received` |
+| 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |
 | '안 고침' 불변식 세우기 | `buildReceivedAlarmRow`(같은 `now`) | `LocalAlarmStore.upsert(_:syncedNow:)` | — |
 | 수신자 편집을 서버에 안 올림 | `AlarmSyncService`(`origin == LOCAL_OWNED`) | `RemoteAlarmPushSync` + `AlarmsListView.shouldPushToServer` | `alarm-mutation.ts` PATCH 소유권 게이트 |
 | 그만받기(삭제) | `MainViewModelAlarmActions`(decline) | `RemoteAlarmSyncViewModel`(decline) | `POST /alarm/:id/decline`, `GET /alarm/declined` |
-| 발신자 탈퇴 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `GET /alarm/declined` 의 `revokedAlarmIds` |
+| 목소리가 사라짐 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `lib/voice-revocation.ts` → `GET /alarm/declined` 의 `revokedAlarmIds` |
 | 회귀 테스트 | `RemoteAlarmPullSyncServiceTest` | `RemoteAlarmPullSyncTests` | — |
 
 ## 검증 방법

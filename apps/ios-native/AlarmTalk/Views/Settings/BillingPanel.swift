@@ -25,7 +25,8 @@ import UIKit
 /// 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**
 /// (업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). Apple 확인 시트가 그걸 문장으로
 /// 알려 주므로, 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다.
-/// 지금 플랜 카드만 `.disabled(isCurrent)` 이고 나머지는 그대로 눌리는 게 그 경로다.
+/// 지금 플랜 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
+/// 눌리되 라벨이 '이용권 변경' 인 게 그 경로다 — 결제가 아니라 전환이라는 뜻이다.
 /// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -87,6 +88,7 @@ struct BillingPanel: View {
                     PlanCard(
                         tier: tier,
                         isCurrent: tier == currentTier,
+                        hasActivePlan: currentTier != .free,
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
                         onPurchase: { product in
@@ -107,7 +109,42 @@ struct BillingPanel: View {
                 }
             }
 
+            // ⚠ **복원 → 해지·나가기 순서로 **붙여** 둔다**(2026-08-24 지시, 안드로이드
+            // `BillingPanels.kt` 와 같은 배치). 예전에는 이 둘 사이에 약관 각주와 결과
+            // 메시지가 끼어 있어 **다른 묶음처럼** 보였다. 되돌릴 수 있는 액션(복원)이
+            // 위, 되돌릴 수 없는 액션(해지·나가기)이 아래다.
             restorePurchasesButton
+
+            if isSharedMember {
+                Button(role: .destructive) {
+                    showLeaveSharedPassConfirm = true
+                } label: {
+                    // ⚠ **'이전 구매 복원' 과 같은 폭·같은 여백이다**(2026-08-24 지시).
+                    // 글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것 — 위아래 버튼이 전부
+                    // 화면 폭인데 여기만 작으면 눌러야 할 것으로 보이지 않는다.
+                    Label("공유 이용권에서 나가기", systemImage: "rectangle.portrait.and.arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .disabled(socialFeatures.isBusy)
+            } else if socialFeatures.subscription?.subscription != nil {
+                Button(role: .destructive) {
+                    showCancelSubscriptionSheet = true
+                } label: {
+                    // 나가기와 **같은 글리프**다 — 둘 다 이 이용권에서 빠져나가는 뜻이고,
+                    // 한 자리에서 갈리는 if/else 라 아이콘까지 다르면 다른 버튼처럼 보인다.
+                    // 나가기와 **같은 자리·같은 규격**이다(if/else 로 갈리는 한 버튼이라
+                    // 한쪽만 작으면 계정 종류에 따라 다른 화면처럼 보인다).
+                    Label("이용권 해지", systemImage: "rectangle.portrait.and.arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .disabled(socialFeatures.isBusy)
+            }
 
             SubscriptionTermsFootnote()
 
@@ -123,24 +160,6 @@ struct BillingPanel: View {
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.error)
                     .padding(.top, 4)
-            }
-
-            if isSharedMember {
-                Button(role: .destructive) {
-                    showLeaveSharedPassConfirm = true
-                } label: {
-                    Label("공유 이용권에서 나가기", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .buttonStyle(.bordered)
-                .disabled(socialFeatures.isBusy)
-            } else if socialFeatures.subscription?.subscription != nil {
-                Button(role: .destructive) {
-                    showCancelSubscriptionSheet = true
-                } label: {
-                    Label("이용권 해지", systemImage: "xmark.circle")
-                }
-                .buttonStyle(.bordered)
-                .disabled(socialFeatures.isBusy)
             }
 
             if !socialFeatures.vouchers.isEmpty {

@@ -750,6 +750,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request("alarm/\(id)/decline", method: "POST", token: token)
     }
 
+    /// `POST /alarm/:id/received` — **다 받았으니 서버 행을 지워도 된다**고 알린다.
+    ///
+    /// 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
+    /// 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
+    /// 클론 음원을 TTL 이 지나도 영구 보존한다.
+    ///
+    /// 실패는 호출부가 삼킨다 — 다음 pull 이 같은 알람을 다시 보고 재시도한다.
+    func markAlarmReceived(id: String, token: String) async throws {
+        let _: EmptyResponse = try await request("alarm/\(id)/received", method: "POST", token: token)
+    }
+
     /// `GET /alarm/declined` 한 페이지. 서버가 limit 을 100 으로 클램프한다.
     func declinedAlarms(limit: Int = 100, offset: Int = 0, token: String) async throws -> DeclinedAlarmsResponse {
         try await request("alarm/declined?limit=\(limit)&offset=\(offset)", token: token)

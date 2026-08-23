@@ -7567,23 +7567,6 @@
         }
       }
     },
-    "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alarms for others can be set for at least 30 min from now."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手のアラームは今から30分後以降に設定できます。"
-          }
-        }
-      }
-    },
     "상대 알람은 커플/가족 이용권에서 사용할 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
@@ -13915,23 +13898,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "これまでに作成した声と録音した元の音声、生成された音声ファイル、保存したアラーム文がすぐに削除され、元に戻せません。この声で鳴っていたアラームは、家族に共有したものも含めて標準のアラーム音に変わります。もう一度使うには、最初から録音し直す必要があります。"
-          }
-        }
-      }
-    },
-    "지금부터 30분 뒤 알람부터 설정할 수 있어요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can set alarms for at least 30 min from now."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今から30分後以降のアラームから設定できます。"
           }
         }
       }

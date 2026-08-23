@@ -96,6 +96,21 @@ interface RemoteAlarmApi {
     )
 
     /**
+     * 수신 확인 — **다 받았으니 서버 행을 지워도 된다**고 알린다.
+     *
+     * 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
+     * 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
+     * 클론 음원을 TTL 이 지나도 영구 보존한다.
+     *
+     * 실패해도 무시한다 — 다음 pull 이 같은 알람을 다시 임포트하며 재시도한다.
+     */
+    @POST("alarm/{id}/received")
+    suspend fun markAlarmReceived(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    )
+
+    /**
      * 이 계정이 '그만받기' 한 알람 id 목록.
      *
      * 받은 알람이 서버 목록에서 사라지는 이유는 두 가지인데(수신자 그만받기 / 발신자 삭제)

@@ -284,6 +284,13 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   // 2) TTS 캐시 — 알람이 message_id → messages.audio_url 로 참조 중인 오브젝트는
   //    보존한다. 이 가드가 없으면 활성 알람이 쓰는 TTS 오브젝트가 TTL 후 삭제되어
   //    알람이 무음이 된다.
+  //
+  //    ⚠ **받은(가족) 알람은 이 보존 대상이 아니다.** 수신 확인이 끝나면 서버 행이
+  //    지워지므로(`POST /alarm/:id/received`) 이 EXISTS 에 걸리지 않고, 그 음원은 TTL
+  //    대로 정리된다. 그래도 되는 이유는 **수신자 기기가 이미 음원을 로컬에 갖고 있기
+  //    때문**이다 — ack 는 다운로드가 끝난 뒤에만 나간다. 뒤집어 말하면 클라가 음원
+  //    확보 전에 ack 하면 이 정리가 그 알람의 음원을 지워도 아무도 막지 못한다.
+  //    (전달 전 알람은 행이 남아 있으므로 여기서 정상적으로 보존된다.)
   const generated = await db.execute({
     sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
           WHERE g.created_at <= ?

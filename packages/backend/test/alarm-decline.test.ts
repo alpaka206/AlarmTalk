@@ -88,6 +88,137 @@ it('대상이 아닌 사용자(생성자 A)는 decline 할 수 없다(404)', asy
   });
 });
 
+// 받은 알람은 **로컬이 원본**이라, 수신자가 다 받고 나면 서버 행은 소임을 다한다.
+// 남겨 두면 `audio-retention` 이 "아직 쓰는 알람이 있다" 고 보아 클론 음원을 영구 보존한다.
+describe('수신자 수신 확인(received) — 서버 행 정리', () => {
+  beforeEach(async () => {
+    testDb = await seed();
+  });
+
+  it('수신자 B 가 확인하면 알람 행이 지워지고, tombstone 에 발신자가 남는다', async () => {
+    const res = await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { deleted: boolean }).deleted).toBe(true);
+
+    const row = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(row.rows.length).toBe(0);
+
+    // ⚠ tombstone 이 없으면 발신자 탈퇴 시 철회 대상을 찾지 못한다(Codex #676 P1 과 같은 장치).
+    const st = await testDb.execute({
+      sql: `SELECT sender_user_id, declined, revoked FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = 'B'`,
+      args: [ALARM_ID],
+    });
+    expect(st.rows.length).toBe(1);
+    expect(String(st.rows[0]!.sender_user_id)).toBe('A');
+    // 아직 아무 효력이 없어야 한다 — 지금 막 정상 수신한 알람이다.
+    expect(Number(st.rows[0]!.declined)).toBe(0);
+    expect(Number(st.rows[0]!.revoked)).toBe(0);
+  });
+
+  it('두 번 불러도 성공한다(멱등) — 재시도가 500 이 되지 않게', async () => {
+    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    const again = await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { deleted: boolean }).deleted).toBe(false);
+  });
+
+  it('대상이 아닌 사용자(생성자 A)는 확인할 수 없다(404)', async () => {
+    const res = await appFor('A').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    expect(res.status).toBe(404);
+    const row = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(row.rows.length).toBe(1);
+  });
+
+  it('수신 확인 뒤 발신자가 탈퇴해도 철회 대상으로 잡힌다(tombstone 갈래)', async () => {
+    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    const { downgradedAlarms } = await purgeUserAccount(testDb, 'A', 'gA');
+    expect(downgradedAlarms.map((t) => t.ownerUserId)).toContain('B');
+  });
+
+  it('tombstone 에 그 알람이 쓰는 클론 목소리를 적어 둔다 — 철회 판정의 유일한 근거', async () => {
+    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    const st = await testDb.execute({
+      sql: `SELECT voice_profile_id FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = 'B'`,
+      args: [ALARM_ID],
+    });
+    expect(String(st.rows[0]!.voice_profile_id)).toBe('vp-A');
+  });
+});
+
+// **철회의 축은 '목소리' 하나다.** 탈퇴·플랜 강등·직접 삭제 모두 같은 함수를 부른다
+// (`lib/voice-revocation.ts`). 그래서 파기할 내 녹음이 없는 알람은 어느 경로로도 안 건드린다.
+describe('철회는 목소리 기준이다', () => {
+  beforeEach(async () => {
+    testDb = await seed();
+  });
+
+  it('스톡 목소리로 보낸 알람은 발신자가 탈퇴해도 철회되지 않는다', async () => {
+    // A 가 **기본(시스템) 목소리**로 B 에게 보낸 알람. 파기해야 할 A 의 생체정보가 없다 —
+    // 받은 순간부터 그 알람은 B 것이고, A 의 탈퇴는 B 의 기상 시각을 건드릴 이유가 없다.
+    const STOCK_ALARM = '22222222-2222-2222-2222-222222222222';
+    await testDb.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, is_system) VALUES ('vp-sys','A','기본',1)`,
+      args: [],
+    });
+    await testDb.execute({
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text) VALUES ('m-sys','A','vp-sys','일어나')`,
+      args: [],
+    });
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active)
+            VALUES (?, 'A', 'B', 'm-sys', 'vp-sys', '08:00', 'tts', 1)`,
+      args: [STOCK_ALARM],
+    });
+    await appFor('B').request('/' + STOCK_ALARM + '/received', { method: 'POST' });
+
+    // 스톡이므로 목소리 참조를 적지 않는다 — 적어 두면 "걷어낼 것이 있다" 는 거짓 근거가 된다.
+    const st = await testDb.execute({
+      sql: `SELECT voice_profile_id FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [STOCK_ALARM],
+    });
+    expect(st.rows[0]!.voice_profile_id).toBeNull();
+
+    const { downgradedAlarms } = await purgeUserAccount(testDb, 'A', 'gA');
+    expect(downgradedAlarms.map((t) => t.alarmId)).not.toContain(STOCK_ALARM);
+    const after = await testDb.execute({
+      sql: `SELECT revoked FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [STOCK_ALARM],
+    });
+    expect(Number(after.rows[0]!.revoked)).toBe(0);
+  });
+
+  it('목소리만 지워도(탈퇴 없이) 이미 전달이 끝난 알람이 철회된다', async () => {
+    const { revokeDeletedVoices } = await import('../src/lib/voice-revocation');
+    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    // 이 시점에 alarms 행은 없다 — tombstone 만으로 찾아내야 한다.
+    const gone = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(gone.rows.length).toBe(0);
+
+    const { downgradedAlarms } = await revokeDeletedVoices(testDb, {
+      voiceProfileIds: ['vp-A'],
+      ownerUserIds: ['A'],
+    });
+    expect(downgradedAlarms).toContainEqual({ alarmId: ALARM_ID, ownerUserId: 'B', isReceived: true });
+
+    const st = await testDb.execute({
+      sql: `SELECT revoked, voice_profile_id FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [ALARM_ID],
+    });
+    expect(Number(st.rows[0]!.revoked)).toBe(1);
+    // 소비했으므로 참조는 지운다 — 다음 삭제가 같은 알람을 또 집지 않게.
+    expect(st.rows[0]!.voice_profile_id).toBeNull();
+  });
+
+  it('남이 나에게 보낸 알람 행은 내 탈퇴로 지워지지 않는다(내 데이터가 아니다)', async () => {
+    // B 가 탈퇴해도 A 가 만든 행은 A 것이다. 지우면 A 쪽 같은 시각 슬롯 이력이 조용히 사라진다.
+    await purgeUserAccount(testDb, 'B', 'gB');
+    const row = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(row.rows.length).toBe(1);
+  });
+});
+
 describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
   beforeEach(async () => {
     testDb = await seed();

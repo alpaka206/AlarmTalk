@@ -23,6 +23,7 @@ import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
+import { resolveClonedVoiceForAlarm } from '../lib/voice-revocation';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -335,7 +336,7 @@ alarmMutation.post('/', async (c) => {
       }
 
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
-      // 수신자 기준 시각 가드(허용 여부·30분 리드타임·quiet 요일). 발신자 body.timezone 은
+      // 수신자 기준 시각 가드(허용 여부·최소 리드타임·quiet 요일). 발신자 body.timezone 은
       // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
       // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
       const guard = await evaluateFamilyAlarmTimingGuard(
@@ -897,9 +898,9 @@ alarmMutation.patch('/:id', async (c) => {
   });
 });
 
-// 수신자 '그만받기'(opt-out). 자기가 대상(target_user_id)인 알람만 가능하며, 생성자 소유의
-// 알람 행은 건드리지 않고 alarm_recipient_state 에 수신자별 decline 만 영구 기록한다. 이후
-// list/tick/cron 이 이 수신자에게는 해당 알람을 배달하지 않는다(재설치·동기화로 부활 안 함).
+// **수신 대상 검증만 하는 공용 헬퍼** — `POST /:id/decline` 과 `POST /:id/received` 가 쓴다.
+// "이 호출자가 이 알람의 수신자인가" 만 답하고, 그 뒤에 무엇을 하는지는 각 라우트가 정한다
+// (decline 은 알람 행을 그대로 두고 거절만 기록하고, received 는 행을 지운다).
 async function resolveDeclineTarget(
   c: Context<AppEnv>,
 ): Promise<{ id: string; target: string } | { error: Response }> {
@@ -942,6 +943,9 @@ async function resolveDeclineTarget(
   return { id, target };
 }
 
+// 수신자 '그만받기'(opt-out). 자기가 대상(target_user_id)인 알람만 가능하며, 생성자 소유의
+// 알람 행은 건드리지 않고 alarm_recipient_state 에 수신자별 decline 만 영구 기록한다. 이후
+// list/tick/cron 이 이 수신자에게는 해당 알람을 배달하지 않는다(재설치·동기화로 부활 안 함).
 alarmMutation.post('/:id/decline', async (c) => {
   const resolved = await resolveDeclineTarget(c);
   if ('error' in resolved) return resolved.error;
@@ -954,6 +958,61 @@ alarmMutation.post('/:id/decline', async (c) => {
     args: [resolved.id, resolved.target],
   });
   return c.json({ success: true, declined: true });
+});
+
+// 수신자 '다 받았어요'(delivery ack) — **전달이 끝난 알람은 서버에 남길 이유가 없다.**
+//
+// ⚠ 왜 지우나: 서버의 알람 행은 **전달 수단**이다. 수신자가 행을 받아 로컬에 세우고
+// 음원까지 내려받으면 전달은 끝났고, 내 알람은 서버에서 다시 받아오지 않는다
+// (pull 이 `isReceived` 만 임포트한다). 남겨 두면 `audio-retention` 이 "아직 쓰는 알람이
+// 있다" 고 보아 **클론 음원을 TTL 이 지나도 영구 보존**한다 — 생체정보에서 파생된 데이터다.
+//
+// ⚠ **행은 음원을 받을 권리이기도 하다.** `GET /tts/messages/:id/audio` 의 수신자 갈래가
+// `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND target_user_id = 나)` 로 판정한다
+// (routes/tts.ts). 그래서 이 라우트는 **음원 확보가 끝난 뒤에만** 불려야 하고, 양 앱이
+// 그렇게 한다(안드로이드 `audioSecured`, iOS `MergeOutcome.deliveryComplete`).
+// 서버는 그 판단을 강제할 수 없다 — 클라가 일찍 부르면 그 알람은 목소리를 잃는다.
+//
+// ⚠ **지우기 전에 tombstone 을 남긴다.** 행이 없어지면 나중에 발신자가 목소리를 지우거나
+// 탈퇴했을 때 **어느 수신 알람을 걷어내야 하는지** 알 방법이 사라진다. 그래서 두 가지를
+// 옮겨 적는다: 발신자(`sender_user_id`)와 **그 알람이 쓰는 클론 목소리**
+// (`voice_profile_id`). 걷어내기는 목소리 기준이다 — `lib/voice-revocation.ts` 참조.
+//
+// ⚠ **여러 기기로 받는 경우 첫 기기에서만 받는다.** ack 는 기기 단위가 아니라 사용자
+// 단위라, 두 번째 기기는 그 알람을 받지 못한다(`docs/spec/family-alarm.md` 「받은 뒤에는
+// 전부 받은 사람 것이다」에 규칙으로 적어 두었다).
+alarmMutation.post('/:id/received', async (c) => {
+  const resolved = await resolveDeclineTarget(c);
+  if ('error' in resolved) return resolved.error;
+  const db = getDB(c.env);
+  const senderRes = await db.execute({
+    sql: 'SELECT user_id FROM alarms WHERE id = ? LIMIT 1',
+    args: [resolved.id],
+  });
+  // 이미 지워졌으면(발신자 삭제·다른 기기 ack) 멱등 성공. 클라가 재시도로 500 을 보지 않게 한다.
+  if (senderRes.rows.length === 0) {
+    return c.json({ success: true, deleted: false });
+  }
+  const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
+  const voiceProfileId = await resolveClonedVoiceForAlarm(db, resolved.id);
+  // **먼저 적고, 실패하면 지우지 않는다.** 순서가 뒤집히면 알람도 표식도 없는 상태가
+  // 남아 목소리를 걷어낼 근거가 영영 사라진다(발신자 삭제 경로와 같은 이유, Codex #678 P1).
+  await db.execute({
+    sql: `INSERT INTO alarm_recipient_state
+            (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
+             created_at, updated_at)
+          VALUES (?, ?, 0, 0, ?, ?, datetime('now'), datetime('now'))
+          ON CONFLICT(alarm_id, recipient_user_id)
+          DO UPDATE SET sender_user_id = excluded.sender_user_id,
+                        voice_profile_id = excluded.voice_profile_id,
+                        updated_at = datetime('now')`,
+    args: [resolved.id, resolved.target, senderUserId, voiceProfileId],
+  });
+  await db.execute({
+    sql: 'DELETE FROM alarms WHERE id = ? AND target_user_id IS NOT NULL',
+    args: [resolved.id],
+  });
+  return c.json({ success: true, deleted: true });
 });
 
 alarmMutation.delete('/:id', async (c) => {
@@ -994,17 +1053,21 @@ alarmMutation.delete('/:id', async (c) => {
   // 되고 잃는 것이 없다(CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」 규약).
   //
   // `declined=0, revoked=0` 이라 지금은 아무 효력이 없다(GET /alarm/declined 는 둘 중
-  // 하나가 1 인 행만 내보낸다). 탈퇴 때 purgeUserAccount 가 revoked=1 로 바꾸고
-  // sender_user_id 는 지운다.
+  // 하나가 1 인 행만 내보낸다). 나중에 **그 목소리가 사라지면** `revokeDeletedVoices` 가
+  // 이 행을 찾아 revoked=1 로 바꾼다 — 그래서 `voice_profile_id` 도 함께 적어 둔다.
   if (recipientUserId) {
     try {
+      const voiceProfileId = await resolveClonedVoiceForAlarm(db, id);
       await db.execute({
         sql: `INSERT INTO alarm_recipient_state
-                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, created_at, updated_at)
-              VALUES (?, ?, 0, 0, ?, datetime('now'), datetime('now'))
+                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
+                 created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, ?, datetime('now'), datetime('now'))
               ON CONFLICT(alarm_id, recipient_user_id)
-              DO UPDATE SET sender_user_id = excluded.sender_user_id, updated_at = datetime('now')`,
-        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!],
+              DO UPDATE SET sender_user_id = excluded.sender_user_id,
+                            voice_profile_id = excluded.voice_profile_id,
+                            updated_at = datetime('now')`,
+        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!, voiceProfileId],
       });
     } catch (err) {
       logRouteError(c, err);

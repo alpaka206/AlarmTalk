@@ -62,7 +62,15 @@ struct AlarmsListView: View {
             Task { await openCreateAlarm() }
         }
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
-        .sheet(isPresented: $wakeTargetSheetOpen) {
+        // ⚠ **`.sheet` 가 아니라 `.bottomSheet` 다**(2026-08-24). `SelectionSheet` 은
+        // "배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다" 를 전제로 만들어져 있어서,
+        // 시스템 `.sheet` 로 직접 띄우면 **배경이 안 칠해지고 좌우도 꽉 차지 않는다**
+        // (실기기 확인). 다른 선택 시트(공휴일 국가·화면 테마)는 전부 `.bottomSheet` 를 쓴다 —
+        // 이 시트만 빠져 있어서 같은 껍데기인데 혼자 다르게 보였다.
+        .bottomSheet(
+            isPresented: $wakeTargetSheetOpen,
+            onDismiss: { wakeTargetSheetOpen = false }
+        ) {
             WakeTargetSheet(
                 recipients: familyRecipients,
                 onSelectSelf: {
@@ -75,7 +83,8 @@ struct AlarmsListView: View {
                     openEditor(.createFamily(recipientUserID: recipient.userId))
                 }
             )
-            .presentationDetents([.height(260), .medium])
+            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — `presentationDetents` 는
+            // `BottomSheetHost` 경로에서 쓰지 않는다(고정 260 이면 구성원 수에 따라 남거나 잘린다).
         }
     }
 

@@ -21,6 +21,8 @@ import {
   releasePrerenderClaim,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
+import { revokeDeletedVoices } from '../lib/voice-revocation';
+import { notifyDowngradedAlarms } from '../lib/fcm';
 import {
   MAX_PROVIDER_CLONE_VOICES,
   evictLruClonesIfOverCapTx,
@@ -2288,22 +2290,34 @@ voiceProfile.delete('/:id', async (c) => {
     args: [id],
   });
 
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only',
-              wake_mode = 'sound_then_voice',
-              message_id = NULL,
-              voice_profile_id = NULL
-
-          WHERE voice_profile_id = ?
-             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
-    args: [id, id],
+  // ⚠ **목소리가 사라졌을 때 도는 로직은 여기 한 곳이다.** 탈퇴·플랜 강등도 같은 함수를
+  // 부른다(`lib/voice-revocation.ts`) — 셋 다 "이 클론이 이제 없다" 는 같은 사건이다.
+  //
+  // 예전에는 이 자리에서 `UPDATE alarms SET mode='sound-only' ...` 만 조용히 돌렸다.
+  // 두 가지가 빠져 있었다:
+  //  ① **알리지 않았다.** 알람의 원본은 기기라, 서버 행만 고치면 그 기기는 아무것도
+  //     모른 채 캐시된 녹음으로 계속 운다 — 지운 목소리가 다음 앱 실행까지 살아 있다.
+  //  ② **이미 전달이 끝난 가족 알람을 놓쳤다.** 그 알람의 서버 행은 수신 확인 때 지워져
+  //     `WHERE voice_profile_id = ?` 로는 영영 찾지 못한다(tombstone 이 유일한 근거다).
+  const revocation = await revokeDeletedVoices(db, {
+    voiceProfileIds: [id],
+    ownerUserIds: ids,
   });
 
   await db.execute({
     sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
     args: [id],
   });
+
+  // DB 쓰기가 끝난 뒤에 보낸다(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지 않는다 —
+  // 정확성은 클라의 재조회(VoiceAccessSyncWorker 하루 주기·앱 시작)가 보장하고
+  // 푸시는 즉시성만 맡는다.
+  await notifyDowngradedAlarms(
+    db,
+    c.env,
+    revocation.downgradedAlarms,
+    revocation.voiceAccessRevokedUserIds,
+  );
 
   return c.json({ success: true, deleted: true });
 });

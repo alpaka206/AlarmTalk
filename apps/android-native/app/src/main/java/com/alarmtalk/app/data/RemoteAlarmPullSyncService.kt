@@ -289,6 +289,28 @@ internal class RemoteAlarmPullSyncService(
                 } else {
                     updated += 1
                 }
+                // ⚠ **음원까지 손에 넣었을 때만 '다 받았다' 고 말한다.**
+                //
+                // ack 하면 서버가 알람 행을 지운다. 그 행은 전달 수단이면서 동시에
+                // **음원을 받을 권리**이기도 하다 — `GET /tts/messages/:id/audio` 의 수신자
+                // 갈래가 `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND
+                // target_user_id = 나)` 로 판정한다(routes/tts.ts). 그래서 다운로드가 실패한
+                // 회차에 ack 하면 그 알람은 **영영 목소리를 못 받는다**: 행이 없으니 다음
+                // pull 목록에도 안 실리고, 음원 요청은 404 로 막힌다.
+                //
+                // [fetchRemoteMessageAudio] 는 실패를 삼키고 null 을 돌려준다(알람 자체는
+                // 기본 알람음으로라도 서야 하므로 그게 맞다). 그 null 을 여기서 붙잡는다.
+                // 실패하면 ack 하지 않고 서버 행을 남긴다 — 다음 pull 이 같은 알람을 다시
+                // 보고 재시도하는 유일한 근거다.
+                val audioSecured = !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
+                if (audioSecured) {
+                    // ack 자체의 실패는 삼킨다 — 다음 pull 이 재시도한다. 행이 남아 있는 쪽이
+                    // 안전한 실패다(중복 전달은 멱등하게 흡수된다).
+                    runCatching { api.markAlarmReceived(authorization, remote.id) }
+                        .onFailure { Log.w(TAG, "Failed to ack received alarm remoteId=${remote.id}", it) }
+                } else {
+                    Log.w(TAG, "Kept server row: audio not secured for remoteId=${remote.id}")
+                }
             }.onFailure { error ->
                 failed += 1
                 AlarmTalkLog.reportError("Failed to pull received alarm remoteId=${remote.id}", error)

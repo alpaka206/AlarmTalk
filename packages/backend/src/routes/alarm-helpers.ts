@@ -185,8 +185,18 @@ export function validateAlarmFields(body: {
 // 타인 발신(가족/친구) 알람 가드 — 수신자 시간대 판정 + (수신자, time) 슬롯 원자 점유
 // ---------------------------------------------------------------------------
 
-/** 타인 발신 알람의 최소 리드타임(분). 다음 발사 시각이 이보다 임박하면 400 으로 거부한다. */
-export const FAMILY_ALARM_MIN_LEAD_MINUTES = 30;
+/**
+ * 타인 발신 알람의 최소 리드타임(분). 다음 발사 시각이 이보다 임박하면 400 으로 거부한다.
+ *
+ * ⚠ **앱의 같은 상수와 반드시 같은 값이다** — 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS`,
+ * iOS `familyAlarmMinLeadMillis`. 앱만 낮추면 앱은 통과시키고 서버가 400 으로 막아
+ * **"상대 알람 설정에 실패했어요" 만 뜨는 막다른 길**이 된다(2026-08-24 실기기 재현).
+ *
+ * ⚠ 예전 값 30분은 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을 가져오던 시절의
+ * 것이다. 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로 그 근거가 사라졌다.
+ * 0 으로 두지 않는 이유는 앱 쪽 주석과 같다(수신 기기 오프라인·Doze 면 pull 이 늦는다).
+ */
+export const FAMILY_ALARM_MIN_LEAD_MINUTES = 5;
 
 /**
  * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
@@ -363,7 +373,7 @@ export function computeNextAlarmFire(
  *
  * 요청 body 의 timezone 은 '발신자' 기기 값이라 어떤 경우에도 판정 기준으로 신뢰하지
  * 않는다 — 수신자 기록이 없을 때 body 로 폴백하면 발신자가 오프셋이 다른 시간대를 보내
- * 30분 리드타임/quiet 판정을 우회할 수 있으므로, 폴백은 Asia/Seoul 고정이다.
+ * 리드타임(FAMILY_ALARM_MIN_LEAD_MINUTES)/quiet 판정을 우회할 수 있으므로, 폴백은 Asia/Seoul 고정이다.
  * 호출부는 이 함수가 돌려준 효과 시간대를 알람 행(timezone)에 그대로 저장해, cron
  * 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.
  * (본인 알람(비-target) 생성의 timezone 저장 동작과는 무관.)
@@ -437,7 +447,7 @@ export type FamilyAlarmTimingGuardResult =
  * 발신자 body.timezone 은 어떤 경우에도 신뢰하지 않고, resolveEffectiveTimezone 이 산출한
  * 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로 다음 발사 시각을 구해 판정한다.
  *  ① 수신자가 알람 수신을 허용하지 않으면 403 FAMILY_ALARM_DISABLED
- *  ② 다음 발사 시각이 30분 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME
+ *  ② 다음 발사 시각이 FAMILY_ALARM_MIN_LEAD_MINUTES 미만이면 400 FAMILY_ALARM_LEAD_TIME
  *  ③ 다음 발사 요일·시각이 수신자 quiet 창에 걸리면 403 FAMILY_ALARM_QUIET_TIME
  * 통과 시 { ok:true, effectiveTimezone } — 호출부는 이 효과 시간대를 알람 행(timezone)에
  * 그대로 저장해 cron 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.

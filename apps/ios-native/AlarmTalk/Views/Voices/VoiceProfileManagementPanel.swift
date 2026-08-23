@@ -93,6 +93,19 @@ struct VoiceProfileManagementPanel: View {
             }
         }
         .task { await voice.refresh(session: auth.session) }
+        // ⚠ **이용권도 여기서 갱신한다**(안드로이드 `NativeTab.Voices → preloadSocial()` 대응).
+        //
+        // 예전에는 이 화면이 목소리 목록만 새로 받고 **권한은 앱 시작의 캐시 스냅샷**
+        // (`restoreAccessSnapshot`)에 기대고 있었다. 그래서 이 기기 밖에서 플랜이 바뀌면
+        // (다른 기기 결제·선물 코드·가족 그룹 합류) 캐시가 옛 '무료' 인 채로 남아,
+        // **가족 이용권 사용자가 '추가' 를 눌렀는데 이용권 안내 모달이 떴다**
+        // (2026-08-24 실기기). 이용권 화면에 한 번 다녀오면 그제야 풀렸는데, 그건 그 화면만
+        // `refreshAll` 을 부르기 때문이었다 — 목소리를 만들려는 사람이 이용권 화면에
+        // 들를 이유가 없으니 영영 막힌 것처럼 보인다.
+        //
+        // `force` 를 주지 않는 이유: 탭을 오갈 때마다 재조회하지 않도록 뷰모델의 스로틀에
+        // 맡긴다(안드로이드 `preloadSocial` 과 같은 결).
+        .task { await socialFeatures.refreshAll(session: auth.session) }
         // 내 목소리 행의 ⋮ — 안드로이드는 관리 시트(이름 수정·공유·삭제)를 연다.
         .confirmationDialog(
             actionSheetTarget?.name ?? "",

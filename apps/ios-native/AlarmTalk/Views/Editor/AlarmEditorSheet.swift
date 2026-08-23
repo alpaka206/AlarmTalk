@@ -169,7 +169,24 @@ struct AlarmEditorSheet: View {
         return nil
     }
 
-    static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
+    /// 상대 알람의 **최소 예약 여유**. 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS` 와 같은 값이다.
+    ///
+    /// ⚠ 예전 값 30분은 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을 가져오던 시절의
+    /// 것이다. 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로(`push.onFamilyAlarm`
+    /// → `remoteSync.runFullSync()`) 그 근거가 사라졌다.
+    ///
+    /// ⚠ **0 으로 두지는 않는다.** 푸시는 즉시지만 보장은 아니다 — 수신 기기가 오프라인이면
+    /// pull 이 늦고, 그 사이 알람 시각이 지나면 **울리지 않은 채 지나간다**(보낸 사람은
+    /// 보냈다고 믿는다).
+    static let familyAlarmMinLeadMillis: Int64 = 5 * 60 * 1000
+
+    /// 리드타임 안내에 쓰는 시각 포맷터 — 기기 12/24시간 설정을 따른다.
+    private static let leadTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
 
     struct ValidationAlertContent: Identifiable {
         let id = UUID()
@@ -2655,9 +2672,12 @@ struct AlarmEditorSheet: View {
             referenceMillis: nowMillis
         )
         if fireAtMillis - nowMillis < Self.familyAlarmMinLeadMillis {
+            // ⚠ **언제부터 되는지 시각으로 말한다**(안드로이드 문구와 같은 형태).
+            // "지금부터 N분 뒤" 는 사용자가 직접 계산해야 해서, 바로 고칠 수가 없다.
+            let earliest = Date(timeIntervalSince1970: Double(nowMillis + Self.familyAlarmMinLeadMillis) / 1000)
             validationAlert = ValidationAlertContent(
                 title: "조금 더 뒤로 설정해 주세요",
-                message: "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
+                message: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
             )
             return nil
         }

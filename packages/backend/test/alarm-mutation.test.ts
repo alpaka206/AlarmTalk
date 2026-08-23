@@ -223,8 +223,8 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     expect(deactivate!.args).toContain('07:30');
   });
 
-  it('타깃 알람: 수신자 시간대 기준 30분 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
-    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:20 은 20분 뒤.
+  it('타깃 알람: 수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
+    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:03 은 3분 뒤(리드타임 미만).
     mockDB.pushResult([
       {
         id: 'friend-pk-1',
@@ -242,7 +242,7 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', {
         ...validBody,
-        time: '09:20',
+        time: '09:03',
         target_user_id: 'friend-1',
         timezone: 'Asia/Seoul',
       }),

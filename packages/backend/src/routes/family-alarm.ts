@@ -185,7 +185,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
   // JWT sub 이 users.id 로 통일돼, google_id 로 저장하면 수신자가 자기 알람을 못 본다.
   const recipientLegacyId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
-  // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(30분 리드타임 + quiet 요일).
+  // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(FAMILY_ALARM_MIN_LEAD_MINUTES 리드타임 + quiet 요일).
   // 발신자 body.timezone 은 판정·저장 어디에도 쓰지 않는다(우회 차단).
   const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLegacyId]);
   const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);

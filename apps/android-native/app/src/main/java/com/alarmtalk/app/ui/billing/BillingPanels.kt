@@ -20,8 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.CardGiftcard
-import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -276,6 +277,35 @@ internal fun SubscriptionPanel(
 
         // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
 
+        // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
+        // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
+        // 일이 '다시 결제' 뿐이라 **같은 구독을 두 번 사게 된다**(플레이스토어에도 같은 기능이
+        // 있고, 애플은 심사 지침 3.1.1 로 요구한다).
+        // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
+        // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
+        //
+        // ⚠ **해지·나가기보다 위다**(2026-08-24 지시). 되돌릴 수 있는 액션(복원)을 위에,
+        // 되돌릴 수 없는 액션(해지·나가기)을 맨 아래에 둔다 — 실수로 누를 확률이 낮아지고,
+        // 목록의 마지막이 가장 무거운 액션이라는 순서가 다른 화면과도 맞는다.
+        OutlinedButton(
+            onClick = onRestorePurchases,
+            enabled = !billingBusy,
+            modifier = Modifier.fillMaxWidth(),
+            shape = WakerButtonShape,
+            border = wakerCardBorder(),
+            colors = wakerOutlinedButtonColors(),
+        ) {
+            // ⚠ **글리프는 머티리얼을 쓴다**(CLAUDE.md 「글리프와 글자 크기 동작은 각 OS 것을
+            // 쓴다」). iOS 는 SF 심볼 `arrow.clockwise.circle` 인데, 통일하는 것은 **뜻과
+            // 자리**(어떤 액션에 어떤 아이콘을 쓰는가)이지 그림 자체가 아니다.
+            Icon(
+                imageVector = Icons.Outlined.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(R.string.billing_restore_purchases))
+        }
         if (hasActive) {
             OutlinedButton(
                 onClick = {
@@ -287,6 +317,16 @@ internal fun SubscriptionPanel(
                 border = wakerCardBorder(),
                 colors = wakerOutlinedButtonColors(),
             ) {
+                // 해지와 나가기는 **같은 글리프**를 쓴다(2026-08-24 지시). 둘 다 '이 이용권에서
+                // 빠져나간다' 는 같은 뜻이고, 한 자리에서 갈리는 if/else 라 아이콘까지 다르면
+                // 같은 버튼이 상태에 따라 다른 것으로 보인다.
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Logout,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = if (isSharedMember) {
                         stringResource(R.string.billing_leave_shared_pass)
@@ -296,22 +336,6 @@ internal fun SubscriptionPanel(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-        }
-        // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
-        // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
-        // 일이 '다시 결제' 뿐이라 **같은 구독을 두 번 사게 된다**(플레이스토어에도 같은 기능이
-        // 있고, 애플은 심사 지침 3.1.1 로 요구한다).
-        // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
-        // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
-        OutlinedButton(
-            onClick = onRestorePurchases,
-            enabled = !billingBusy,
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerButtonShape,
-            border = wakerCardBorder(),
-            colors = wakerOutlinedButtonColors(),
-        ) {
-            Text(stringResource(R.string.billing_restore_purchases))
         }
         // 상시 'Google Play 구독 관리' 링크는 제거 — 쿠폰/서버 부여 이용권 사용자에겐 Play 구독이
         // 없어 빈 화면만 열리는 혼란이 있었다. 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는

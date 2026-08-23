@@ -10,6 +10,11 @@
 ⚠ **둘을 같은 것으로 다루면 사고가 난다.** 예약만 끊으면 화면은 켜졌다고 말하는데 안
 울리고, 행만 지우면 OS 예약이 남아 **없는 알람이 운다.**
 
+**서버 행은 이 둘 중 어느 것도 아니다.** 남에게 보내는 알람의 **전달 수단**일 뿐이고,
+수신 확인이 끝나면 지워진다(`docs/spec/family-alarm.md` 1-2). 그러니 "서버에 있는 알람"
+을 원본이나 백업으로 읽지 말 것 — **알람의 원본은 언제나 기기다.** 서버를 훑어 무언가를
+판정하는 코드를 새로 만들면, 이미 전달이 끝난 알람은 거기 없다.
+
 ---
 
 ## 1. 공통 규칙 — 세 구현이 모두 지킨다
@@ -27,6 +32,17 @@
 
 떠나는 계정이 누구인지 모르면(`nil`) 켜진 것을 전부 끈다 — 근거가 없을 때는 안 울리는 쪽이 안전하다. 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다.
 
+⚠ **탈퇴가 서버에서 하는 일도 같은 선을 지킨다**(2026-08-24). 탈퇴는 **내 목소리를
+파기하는 것**이고, 알람에 대해서는 **내가 만든 행만** 지운다(`account-deletion.ts` —
+`alarms.user_id` 가 `users(id)` FK 라 남기면 탈퇴가 FK 로 실패한다). **남이 나에게 보낸
+행은 남긴다** — 내 데이터가 아니고, 지우면 발신자 쪽 같은 시각 슬롯 이력이 조용히
+사라진다.
+
+그래서 남의 기기에서 알람을 걷어내는 판정은 **목소리 하나**로 한다: 내 클론을 쓰던
+알람만 목소리를 잃고, 기본 목소리로 보낸 알람은 그대로 남는다. 파기 대상은 내
+**생체정보**이지 남의 기상 시각이 아니다. 탈퇴·목소리 삭제·플랜 강등이 **같은 함수**를
+부른다(`lib/voice-revocation.ts`) — 같은 사건이므로 결과도 같아야 한다.
+
 ⚠ **단, "임자를 모른다" 와 "확인에 실패했다" 는 다르다**(2026-08-19 Codex #699 P1).
 안드로이드는 소유권을 확정한 **뒤에 행을 다시 읽어** 판정하는데, 그 읽기가 실패하면
 **옛 스냅샷으로 되돌아가면 안 된다** — 거기서는 방금 앞 계정(A)으로 새겨진 행이 아직
@@ -40,8 +56,17 @@
 **그 행은 아직 없던 행**이라 '지워졌나·울리는 중인가·수신자가 고쳤나' 세 가드에 하나도
 안 걸리고 **켜진 채로 새로 생겨 예약까지 걸린다** — 로그아웃 상태에서 끌 방법이 없는
 알람이 우는, 이 규칙이 통째로 막으려던 그 상태다.
-그래서 pull 은 **시작할 때의 계정을 기억했다가 반영 직전에 대조**한다(안드로이드).
-iOS 는 `isLeavingAccount` 게이트가 같은 일을 한다.
+그래서 **양 앱 모두** pull 은 **시작할 때의 계정을 기억했다가 반영 직전에 대조**한다
+(안드로이드 `pullOwnerUserId`, iOS `RemoteAlarmPullSync.mergeRemote` 의 `pullOwnerUserID`).
+
+⚠ **iOS 의 `isLeavingAccount` 로는 이걸 못 막는다** — 그 게이트는 종료 sweep 가 도는
+동안만 닫혀 있고, 새 예약 생성 자체를 막는 별개 장치다(바로 아래 규칙). 대조가 중복이라
+생각해 걷어내면 이 사고가 그대로 재발한다. 코드 주석도 같은 말을 적어 두었다.
+
+⚠ **반영을 건너뛴 회차는 수신 확인(ack)도 하지 않는다.** ack 하면 서버가 그 알람 행을
+지우는데(`docs/spec/family-alarm.md` 1-2), 여기서 걸러 낸 회차는 로컬에 아무것도 세우지
+않았다 — ack 까지 나가면 그 알람은 **어디에도 없는 알람**이 된다. 서버 행이 다음 회차의
+유일한 재시도 근거다.
 
 ⚠ **종료 중에는 아무도 예약하지 못하게 막는다.** 진행 중인 것을 무효화하는 것만으로는
 부족하다 — 무효화 **뒤에** 시작한 예약은 새 세대를 들고 시작해 그대로 성공하고, 종료가
@@ -239,10 +264,14 @@ iOS 는 `isLeavingAccount` 게이트가 같은 일을 한다.
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
+| 1-1 탈퇴는 내 행만 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…)` | — | — |
+| 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
-| 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `AlarmKitViewModel.isLeavingAccount` |
+| 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `RemoteAlarmPullSync.mergeRemote` 의 `pullOwnerUserID` 대조 |
+| 1-1 종료 중 새 예약 차단 | — | (해당 없음 — 세션 클리어가 동기라 창이 없다) | `AlarmKitViewModel.isLeavingAccount` |
+| 1-1 반영 안 한 회차는 ack 안 함 | `POST /alarm/:id/received` | `RemoteAlarmPullSyncService` 의 `audioSecured` | `RemoteAlarmPullSync` 의 `MergeOutcome.deliveryComplete` |
 | 1-1 미완 로그아웃 이어서 끝내기 | — | `AlarmRepository` 의 `signOutWithoutSessionClearOwner` 게이트 | `PendingSignOutStore` |
 | 1-2 떠날 때 소유자 새기기 | — | `AlarmRepository.claimUnownedAlarmsFor` | `LocalAlarmStore.claimUnownedAlarms` ← `AuthViewModel.onSessionEndClaimAlarms` |
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |

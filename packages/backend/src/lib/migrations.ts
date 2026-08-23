@@ -2240,6 +2240,21 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_prerender_queue ADD COLUMN refresh_existing INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: 102,
+    name: 'alarm-recipient-state-voice-ref',
+    // **받은 알람이 어느 목소리를 쓰는지 서버가 기억하는 유일한 자리.**
+    //
+    // 수신 확인(`POST /alarm/:id/received`)이 끝나면 `alarms` 행을 지운다 — 전달이
+    // 끝났고 아무도 그 행을 읽지 않기 때문이다. 그런데 그러고 나면 발신자가 나중에
+    // **목소리를 지웠을 때** 어느 수신 알람을 걷어내야 하는지 알 방법이 사라진다.
+    // 그래서 지우기 직전에 목소리 id 를 이 tombstone 에 옮겨 적는다.
+    //
+    // ⚠ **클론(비-system)만 적는다.** 스톡 목소리는 없어지지 않으므로 적을 이유가 없고,
+    // 적어 두면 "이 알람은 걷어낼 것이 있다" 는 잘못된 근거가 된다.
+    // 값은 revoke 하는 순간 NULL 로 지운다 — 소비하고 나면 남길 이유가 없다.
+    statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN voice_profile_id TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

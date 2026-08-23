@@ -1,6 +1,6 @@
 // 타인 발신 알람 가드 실동작 검증 — mock 결과 주입이 아니라 실제 libsql DB 에 전체
 // 마이그레이션을 올리고 실제 라우트(POST /alarms, target_user_id 경로)를 호출해,
-// (수신자, HH:mm) 슬롯의 원자적 교체·멱등, 30분 리드타임, 수신자 시간대 quiet 요일
+// (수신자, HH:mm) 슬롯의 원자적 교체·멱등, 리드타임, 수신자 시간대 quiet 요일
 // 판정을 DB 상태로 확인한다.
 //
 // libsql `:memory:` 는 연결마다 별도 DB 라 autocommit execute 와 transaction 이 스키마를
@@ -201,11 +201,11 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
   });
 });
 
-describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임', () => {
-  it('수신자 시간대 기준 30분 미만이면 400 FAMILY_ALARM_LEAD_TIME, 행 미생성', async () => {
-    // now = KST 09:00 → KST 09:20 은 20분 뒤.
+describe('타인 발신 알람 — 수신자 시간대 기준 리드타임(FAMILY_ALARM_MIN_LEAD_MINUTES)', () => {
+  it('수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME, 행 미생성', async () => {
+    // now = KST 09:00 → KST 09:03 은 3분 뒤(리드타임 미만).
     const res = await postAlarm(SENDER_A, {
-      time: '09:20',
+      time: '09:03',
       target_user_id: RECIPIENT.login,
       timezone: 'Asia/Seoul',
     });
@@ -217,7 +217,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
     expect(Number(count.rows[0]!.cnt)).toBe(0);
   });
 
-  it('30분 이상이면 201', async () => {
+  it('리드타임 이상이면 201', async () => {
     const res = await postAlarm(SENDER_A, {
       time: '09:40',
       target_user_id: RECIPIENT.login,
@@ -233,11 +233,11 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
             VALUES ('guard-tz', ?, '12:00', 'America/New_York', 1)`,
       args: [RECIPIENT.login],
     });
-    // now = 2026-07-15T00:00Z = NY(EDT) 7/14 20:00 → '20:15' 는 NY 기준 15분 뒤.
+    // now = 2026-07-15T00:00Z = NY(EDT) 7/14 20:00 → '20:03' 은 NY 기준 3분 뒤(리드타임 미만).
     // 발신자가 body 에 Asia/Seoul 을 보내도(서울로 해석하면 11시간 이상 남아 201 이 났을 것 =
     // 리드타임 우회) 수신자 저장 tz 가 우선하므로 400 이어야 한다.
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
       timezone: 'Asia/Seoul',
     });
@@ -254,7 +254,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
       args: [RECIPIENT.login],
     });
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
     });
     expect(res.status).toBe(400);
@@ -270,7 +270,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
     // Asia/Seoul(11시간 이상 리드타임)이므로 201 이어야 한다. 저장 timezone 도
     // 발신자 값이 아니라 효과 시간대여야 한다.
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
       timezone: 'America/New_York',
     });
@@ -339,7 +339,7 @@ describe('타인 발신 알람 — quiet 요일을 수신자 시간대의 발사
 
 describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결과) 기준으로 재실행', () => {
   it('PATCH time 을 리드타임 미만으로 바꾸면 400 FAMILY_ALARM_LEAD_TIME, 행 미변경', async () => {
-    // now = KST 09:00. 12:00 로 정상 생성 후 09:20(20분 뒤)로 PATCH → 리드타임 위반.
+    // now = KST 09:00. 12:00 로 정상 생성 후 09:03(3분 뒤)로 PATCH → 리드타임 위반.
     const create = await postAlarm(SENDER_A, {
       time: '12:00',
       target_user_id: RECIPIENT.login,
@@ -348,7 +348,7 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
     expect(create.status).toBe(201);
     const id = ((await create.json()) as { alarm: { id: string } }).alarm.id;
 
-    const res = await patchAlarm(SENDER_A, id, { time: '09:20' });
+    const res = await patchAlarm(SENDER_A, id, { time: '09:03' });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error_code: string }).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
     expect(String((await alarmRow(id))!.time)).toBe('12:00'); // 거부됐으므로 변경 안 됨
