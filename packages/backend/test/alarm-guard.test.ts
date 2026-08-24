@@ -163,6 +163,12 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const id1 = ((await res1.json()) as { alarm: { id: string } }).alarm.id;
     const firstDeliveryVersion = String((await alarmRow(id1))!.delivery_version);
     expect(firstDeliveryVersion).toMatch(/^[0-9a-f-]{36}$/);
+    await db.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
+            VALUES (?, ?, 0, 1, datetime('now'), datetime('now'))`,
+      args: [id1, RECIPIENT.login],
+    });
 
     const res2 = await postAlarm(SENDER_A, {
       time: '23:00',
@@ -184,6 +190,12 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(Number(row!.snooze_minutes)).toBe(12); // 재전송 내용으로 UPDATE 됨
     expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
     expect(String(row!.delivery_version)).not.toBe(firstDeliveryVersion);
+    const recipientState = await db.execute({
+      sql: `SELECT revoked FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = ?`,
+      args: [id1, RECIPIENT.login],
+    });
+    expect(Number(recipientState.rows[0]!.revoked)).toBe(0);
     // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
     expect(String(row!.timezone)).toBe('Asia/Seoul');
   });

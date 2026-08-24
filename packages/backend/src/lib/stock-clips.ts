@@ -628,31 +628,31 @@ export async function markPrerenderDone(
   });
 }
 
-/** 제자리 교체의 모든 새 클립이 게시된 뒤 공유 사용자들의 매니페스트 재조회를 깨운다. */
+/** 제자리 교체 완료 뒤 소유자 기기와 공유 사용자들의 매니페스트 재조회를 깨운다. */
 export async function notifySharedVoicePrerenderComplete(
   db: Client,
   env: Env,
   voiceProfileId: string,
   ownerUserId: string,
 ): Promise<void> {
+  const recipientUserIds = new Set([ownerUserId]);
   const shared = await db.execute({
     sql: `SELECT 1 FROM voice_profiles
           WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_shared, 0) = 1
           LIMIT 1`,
     args: [voiceProfileId],
   });
-  if (shared.rows.length === 0) return;
-  const members = await db.execute({
-    sql: `SELECT DISTINCT m2.user_id
-          FROM plan_group_members m1
-          JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-          WHERE m1.user_id = ? AND m2.user_id != ?`,
-    args: [ownerUserId, ownerUserId],
-  });
-  const recipientUserIds = members.rows.map((row) => String(row.user_id));
-  if (recipientUserIds.length > 0) {
-    await sendVoiceShareChangedPush(db, env, recipientUserIds);
+  if (shared.rows.length > 0) {
+    const members = await db.execute({
+      sql: `SELECT DISTINCT m2.user_id
+            FROM plan_group_members m1
+            JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+            WHERE m1.user_id = ? AND m2.user_id != ?`,
+      args: [ownerUserId, ownerUserId],
+    });
+    for (const row of members.rows) recipientUserIds.add(String(row.user_id));
   }
+  await sendVoiceShareChangedPush(db, env, Array.from(recipientUserIds));
 }
 
 /** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */

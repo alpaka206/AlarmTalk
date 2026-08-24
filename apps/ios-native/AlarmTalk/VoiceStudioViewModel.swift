@@ -564,35 +564,40 @@ final class VoiceStudioViewModel: ObservableObject {
     func refreshChangedCachedStockClips(session: AuthSession?) async -> Bool {
         guard let token = session?.token else { return false }
         let cache = AudioCacheStore.shared
-        let stale = stockClips.filter { clip in
-            let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
-            return cache.cachedURL(for: key) != nil
-                && cache.isStale(cacheKey: key, remoteAudioUri: clip.audioUrl)
+        let stale = stockClips.compactMap { clip -> (StockClip, [String])? in
+            let keys = AudioCacheStore.messageCacheKeys(messageId: clip.messageId).filter { key in
+                cache.isStale(cacheKey: key, remoteAudioUri: clip.audioUrl)
+            }
+            return keys.isEmpty ? nil : (clip, keys)
         }
         guard !stale.isEmpty else { return false }
 
         var refreshedKeys = Set<String>()
         for batchStart in stride(from: 0, to: stale.count, by: 4) {
             let batch = Array(stale[batchStart..<min(batchStart + 4, stale.count)])
-            await withTaskGroup(of: String?.self) { group in
-                for clip in batch {
+            await withTaskGroup(of: [String].self) { group in
+                for (clip, cacheKeys) in batch {
                     group.addTask { [api] in
+                        var refreshed: [String] = []
                         do {
                             let response = try await api.getTTSMessageAudio(id: clip.messageId, token: token)
-                            let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
-                            _ = try await AudioCacheStore.cacheStockClipOffMain(
-                                audio: response,
-                                messageId: clip.messageId,
-                                cacheKey: key
-                            )
-                            return key
+                            for key in cacheKeys {
+                                if (try? await AudioCacheStore.cacheStockClipOffMain(
+                                    audio: response,
+                                    messageId: clip.messageId,
+                                    cacheKey: key
+                                )) != nil {
+                                    refreshed.append(key)
+                                }
+                            }
                         } catch {
-                            return nil
+                            return refreshed
                         }
+                        return refreshed
                     }
                 }
-                for await key in group {
-                    if let key { refreshedKeys.insert(key) }
+                for await keys in group {
+                    refreshedKeys.formUnion(keys)
                 }
             }
         }
@@ -660,7 +665,8 @@ final class VoiceStudioViewModel: ObservableObject {
     private func reuseStockPreviewCache(for clip: StockClip, stockKey: String) throws -> CachedVoiceAudio {
         let store = AudioCacheStore.shared
         let previewKey = AudioCacheStore.stockPreviewCacheKey(messageId: clip.messageId)
-        guard let previewURL = store.cachedURL(for: previewKey) else {
+        guard let previewURL = store.cachedURL(for: previewKey),
+              !store.isStale(cacheKey: previewKey, remoteAudioUri: clip.audioUrl) else {
             throw LocalAlarmAudioError.missingSource
         }
         let data = try Data(contentsOf: previewURL)

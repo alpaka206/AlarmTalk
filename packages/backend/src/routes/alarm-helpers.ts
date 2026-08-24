@@ -439,6 +439,16 @@ export async function claimTargetedAlarmSlot(
   const alarmId = reused ? String(existing.rows[0]!.id) : newAlarmId;
   const previousMessageId =
     reused && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
+  if (reused) {
+    // 같은 id라도 재전송은 새 전달 세대다. 옛 목소리 철회 표식을 남기면 새 세대의 정상
+    // 목소리까지 수신자가 다시 걷어내므로 revoked만 내린다(declined는 수신자 선택이라 보존).
+    await executor.execute({
+      sql: `UPDATE alarm_recipient_state
+            SET revoked = 0, updated_at = datetime('now')
+            WHERE alarm_id = ? AND recipient_user_id IN (?, ?)`,
+      args: [alarmId, recipientIds[0], recipientIds[1]],
+    });
+  }
   // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
   await executor.execute({
     sql: `UPDATE alarms

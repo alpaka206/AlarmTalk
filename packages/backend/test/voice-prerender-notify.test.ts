@@ -30,11 +30,11 @@ describe('제자리 목소리 교체 완료 알림', () => {
     expect(sendVoiceShareChangedPush).toHaveBeenCalledWith(
       db.client,
       {},
-      ['member-1', 'member-2'],
+      ['owner-1', 'member-1', 'member-2'],
     );
   });
 
-  it('공유하지 않는 프로필은 그룹원을 조회하거나 알리지 않는다', async () => {
+  it('공유하지 않는 프로필도 소유자의 다른 기기에는 갱신 신호를 보낸다', async () => {
     db.pushResult([]);
 
     await notifySharedVoicePrerenderComplete(
@@ -44,7 +44,7 @@ describe('제자리 목소리 교체 완료 알림', () => {
       'owner-1',
     );
 
-    expect(sendVoiceShareChangedPush).not.toHaveBeenCalled();
+    expect(sendVoiceShareChangedPush).toHaveBeenCalledWith(db.client, {}, ['owner-1']);
     expect(db.calls).toHaveLength(1);
   });
 });

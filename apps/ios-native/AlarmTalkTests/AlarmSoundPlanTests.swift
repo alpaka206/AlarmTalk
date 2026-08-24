@@ -88,6 +88,27 @@ final class AlarmSoundPlanTests: XCTestCase {
         XCTAssertNotEqual(yesterday, today)
     }
 
+    func test_fingerprint_movesWhenBytesChangeUnderTheSameCacheKey() throws {
+        let (store, keys) = try seedBucket(clipCount: 1)
+        var record = makeBucketRecord(bucketId: nil, keys: nil)
+        let key = keys[0]
+        record.audioCacheKey = key
+        let bytes = try Data(contentsOf: XCTUnwrap(store.cachedURL(for: key)))
+
+        _ = try store.cacheBytes(
+            bytes, cacheKey: key, mimeType: "audio/wav", rawAudioUri: "r2://old",
+            durationOverrideMs: 1_000, enforceMaxDuration: false
+        )
+        let old = AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint
+        _ = try store.cacheBytes(
+            bytes, cacheKey: key, mimeType: "audio/wav", rawAudioUri: "r2://new",
+            durationOverrideMs: 1_000, enforceMaxDuration: false
+        )
+        let new = AlarmSoundResolver.plan(for: record, audioCache: store).fingerprint
+
+        XCTAssertNotEqual(old, new, "같은 message ID의 새 바이트도 AlarmKit 재예약을 깨워야 한다.")
+    }
+
     // MARK: - 지문이 움직이면 안 되는 변경
 
     func test_fingerprint_ignoresChangesThatDoNotAffectSound() throws {

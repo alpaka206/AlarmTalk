@@ -16,6 +16,9 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
@@ -514,10 +517,11 @@ class AlarmAudioStore(
         rawAudioUri: String?,
         messageId: String?,
     ): CachedAlarmAudio {
-        if (cachedAudioIsStale(resolvedCacheKey, rawAudioUri)) {
-            deleteCachedAudio(resolvedCacheKey)
-        }
-        findCachedFile(resolvedCacheKey)?.let { cached ->
+        require(bytes.isNotEmpty()) { "Voice audio must not be empty." }
+        val existing = findCachedFile(resolvedCacheKey)
+        val stale = existing != null && cachedAudioIsStale(resolvedCacheKey, rawAudioUri)
+        if (existing != null && !stale) {
+            val cached = existing
             val cachedUri = cached.toUri()
             val metadata = readMetadata(resolvedCacheKey)
             return CachedAlarmAudio(
@@ -529,7 +533,9 @@ class AlarmAudioStore(
                 messageId = metadata.messageId ?: messageId,
             )
         }
-        val target = File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
+        // stale 교체도 기존 경로를 유지한다. DB/예약이 localAudioUri를 들고 있어 새 확장자
+        // 경로로 바꾸면 파일을 잘 받아 놓고도 옛 경로를 재생하게 된다.
+        val target = existing ?: File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
         // 임시 파일에 쓴 뒤 rename 한다. 곧바로 target 에 쓰면 쓰기 도중 프로세스가 죽었을 때
         // '잘린 mp3'가 남고, findCachedFile 은 파일 존재만 보므로 이후 다운로드가 그 클립을
         // 영원히 건너뛴다 -> 그 알람은 무음이 된다. rename 은 같은 파일시스템에서 원자적이라
@@ -542,29 +548,28 @@ class AlarmAudioStore(
             "${safeCacheKey(resolvedCacheKey)}.$extension.${System.nanoTime()}.$PARTIAL_EXTENSION",
         )
         staging.writeBytes(bytes)
-        if (!staging.renameTo(target)) {
-            staging.delete()
-            // 경합에서 진 쪽: 다른 호출이 먼저 완성해 두었으면 그 결과를 그대로 쓴다.
-            findCachedFile(resolvedCacheKey)?.let { winner ->
-                val metadata = readMetadata(resolvedCacheKey)
-                return CachedAlarmAudio(
-                    localAudioUri = winner.toUri().toString(),
-                    rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
-                    displayName = winner.name,
-                    durationMillis = readDurationMillis(winner.toUri()),
-                    cacheKey = resolvedCacheKey,
-                    messageId = metadata.messageId ?: messageId,
+        val durationMillis = readDurationMillis(staging.toUri())
+        requireWithinLimit(durationMillis)
+        try {
+            try {
+                Files.move(
+                    staging.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
                 )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(staging.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
-            throw java.io.IOException("Failed to finalize cached audio: ${target.name}")
+        } catch (error: Exception) {
+            staging.delete()
+            throw java.io.IOException("Failed to finalize cached audio: ${target.name}", error)
         }
         writeMetadata(
             cacheKey = resolvedCacheKey,
             rawAudioUri = rawAudioUri,
             messageId = messageId,
         )
-        val durationMillis = readDurationMillis(target.toUri())
-        requireWithinLimit(durationMillis)
         Log.i(TAG, "Cached generated voice audio path=${target.absolutePath} durationMillis=$durationMillis")
         return CachedAlarmAudio(
             localAudioUri = target.toUri().toString(),
@@ -578,7 +583,6 @@ class AlarmAudioStore(
 
     fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
         if (cachedAudioIsStale(cacheKey, rawAudioUri)) {
-            deleteCachedAudio(cacheKey)
             return null
         }
         val cached = findCachedFile(cacheKey) ?: return null
@@ -1027,6 +1031,13 @@ class AlarmAudioStore(
          * 이 파일들은 특정 알람에 묶이지 않아 in-use 집합에 안 들어가므로 sweep 에서 제외한다.
          */
         const val STOCK_CACHE_KEY_PREFIX = "stock_"
+
+        /** 같은 서버 message ID를 담을 수 있는 캐시 네임스페이스. 존재하는 stale 키만 갱신한다. */
+        fun messageCacheKeys(messageId: String): List<String> = listOf(
+            "$STOCK_CACHE_KEY_PREFIX$messageId",
+            "remote-message-$messageId",
+            "greeting_$messageId",
+        )
 
         // 백엔드 /voice/clone 은 audio/* 접두 MIME 만 받는다(아니면 INVALID_AUDIO_MIME_TYPE).
         // 이 확장자들은 업로드 시 대응 audio/* 로 매핑되고(voiceUploadPart), 목록 밖 컨테이너는

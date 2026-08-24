@@ -45,15 +45,17 @@ enum AlarmSoundResolution: Equatable {
 /// 재예약 누락 다섯 건을 만든 원인이다(`fireAtMillis` 는 운세 클립을 고르는 씨앗인데
 /// 아무도 그걸 '소리 필드' 로 분류하지 않았다).
 enum AlarmSoundPlan: Equatable {
-    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int)
+    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int, revision: String?)
     case alarmSoundFile(url: URL, stagingKey: String, volumePercent: Int)
     case systemDefault
 
     /// 예약된 소리와 지금 울려야 할 소리가 같은지 비교하는 값.
-    /// 파일 경로·길이는 넣지 않는다 — 같은 클립을 다시 받아도 소리는 그대로다.
+    /// 파일 경로·길이는 넣지 않되 원격 주소 세대는 넣는다. 같은 message ID 아래 음원이
+    /// 교체되면 AlarmKit 예약도 새 바이트로 다시 만들어야 한다.
     var fingerprint: String {
         switch self {
-        case .voiceClip(let key, _, _, let volume): return "voice:\(key):v\(volume)"
+        case .voiceClip(let key, _, _, let volume, let revision):
+            return "voice:\(key):r\(revision ?? "-"):v\(volume)"
         case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
         case .systemDefault: return "default"
         }
@@ -142,7 +144,14 @@ enum AlarmSoundResolver {
            let key = rotatedBucketClipKey(for: record, audioCache: audioCache) ?? record.audioCacheKey,
            let url = audioCache.cachedURL(for: key) {
             let duration = audioCache.readMetadata(cacheKey: key)?.durationMs ?? 0
-            return .voiceClip(cacheKey: key, url: url, durationMs: duration, volumePercent: record.voiceVolumePercent)
+            let revision = audioCache.readMetadata(cacheKey: key)?.rawAudioUri
+            return .voiceClip(
+                cacheKey: key,
+                url: url,
+                durationMs: duration,
+                volumePercent: record.voiceVolumePercent,
+                revision: revision
+            )
         }
 
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
@@ -160,7 +169,7 @@ enum AlarmSoundResolver {
         audioCache: AudioCacheStore
     ) -> AlarmSoundResolution {
         switch plan(for: record, audioCache: audioCache) {
-        case .voiceClip(let key, let url, let duration, let volumePercent):
+        case .voiceClip(let key, let url, let duration, let volumePercent, _):
             // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
             // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
             // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.

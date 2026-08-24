@@ -173,6 +173,11 @@ final class AudioCacheStore {
     /// 스톡 클립 미리듣기용 cacheKey (`stock_preview_<messageId>`). Android 와 동일.
     nonisolated static func stockPreviewCacheKey(messageId: String) -> String { "stock_preview_\(messageId)" }
 
+    /// 같은 서버 message ID를 담을 수 있는 캐시 네임스페이스. 존재하는 stale 키만 갱신한다.
+    nonisolated static func messageCacheKeys(messageId: String) -> [String] {
+        [stockCacheKey(messageId: messageId), stockPreviewCacheKey(messageId: messageId), "remote-message-\(messageId)"]
+    }
+
     // MARK: Off-main caching (change 5)
 
     /// `cacheStockClip` 의 off-main 래퍼. base64 디코드/디스크 쓰기/길이 측정을

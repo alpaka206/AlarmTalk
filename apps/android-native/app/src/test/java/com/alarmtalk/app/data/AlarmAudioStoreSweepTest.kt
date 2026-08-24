@@ -91,9 +91,11 @@ class AlarmAudioStoreSweepTest {
     }
 
     @Test
-    fun invalidatesSameMessageCacheWhenServerAudioUrlChanges() {
+    fun keepsOldMessageCacheUntilReplacementIsSecured() {
+        val oldBytes = ByteArray(4 * 1024) { 1 }
+        val newBytes = ByteArray(4 * 1024) { 2 }
         store.cacheGeneratedAudio(
-            bytes = ByteArray(4 * 1024),
+            bytes = oldBytes,
             format = "mp3",
             rawAudioUri = "r2://old-voice",
             cacheKey = "stock_message-1",
@@ -102,6 +104,21 @@ class AlarmAudioStoreSweepTest {
 
         assertNotNull(store.getCachedAudio("stock_message-1", "r2://old-voice"))
         assertNull(store.getCachedAudio("stock_message-1", "r2://new-voice"))
-        assertFalse(audioDir.listFiles().orEmpty().any { it.nameWithoutExtension == "stock_message-1" })
+        val oldFile = audioDir.listFiles().orEmpty().single {
+            it.nameWithoutExtension == "stock_message-1" && it.extension != "meta"
+        }
+        assertTrue(oldFile.exists())
+        assertEquals(oldBytes.toList(), oldFile.readBytes().toList())
+
+        store.cacheGeneratedAudio(
+            bytes = newBytes,
+            format = "mp3",
+            rawAudioUri = "r2://new-voice",
+            cacheKey = "stock_message-1",
+            messageId = "message-1",
+        )
+
+        assertNotNull(store.getCachedAudio("stock_message-1", "r2://new-voice"))
+        assertEquals(newBytes.toList(), oldFile.readBytes().toList())
     }
 }

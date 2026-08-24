@@ -114,7 +114,9 @@ class StockClipPrefetchWorker(
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
                 it.targetsDefaultVoices(language) ||
                     it.voiceProfileId in ownedProfileIds ||
-                    audioStore.isCachedAudioStale(cacheKeyFor(it), it.audioUrl)
+                    AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
+                        audioStore.isCachedAudioStale(key, it.audioUrl)
+                    }
             }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
@@ -150,8 +152,14 @@ class StockClipPrefetchWorker(
                 return@runCatching Result.success()
             }
 
-            val missing = clips.filter {
-                audioStore.getCachedAudio(cacheKeyFor(it), it.audioUrl) == null
+            val missing = clips.mapNotNull { clip ->
+                val prefetchStock = clip.targetsDefaultVoices(language) || clip.voiceProfileId in ownedProfileIds
+                val keys = AlarmAudioStore.messageCacheKeys(clip.messageId).filter { key ->
+                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                        (prefetchStock && key == cacheKeyFor(clip) &&
+                            audioStore.getCachedAudio(key, clip.audioUrl) == null)
+                }
+                keys.takeIf { it.isNotEmpty() }?.let { clip to it }
             }
             publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
@@ -164,17 +172,20 @@ class StockClipPrefetchWorker(
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             missing.chunked(PARALLELISM).forEach { batch ->
                 coroutineScope {
-                    batch.map { clip ->
+                    batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
                             val response = api.getTtsMessageAudio(auth, clip.messageId)
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKeyFor(clip),
-                                cacheKey = cacheKeyFor(clip),
-                                messageId = clip.messageId,
-                            )
+                            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                            cacheKeys.forEach { key ->
+                                audioStore.cacheGeneratedAudio(
+                                    bytes = bytes,
+                                    format = response.audioFormat,
+                                    rawAudioUri = response.audioUrl,
+                                    displayName = key,
+                                    cacheKey = key,
+                                    messageId = clip.messageId,
+                                )
+                            }
                         }
                     }.awaitAll()
                 }

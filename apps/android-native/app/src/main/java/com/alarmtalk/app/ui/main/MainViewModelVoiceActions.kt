@@ -880,25 +880,31 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
             withContext(Dispatchers.IO) {
                 val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-                val stale = clips.filter { clip ->
-                    val key = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                    audioStore.isCachedAudioStale(key, clip.audioUrl)
+                val stale = clips.mapNotNull { clip ->
+                    val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
+                        .filter { key -> audioStore.isCachedAudioStale(key, clip.audioUrl) }
+                    keys.takeIf { it.isNotEmpty() }?.let { clip to it }
                 }
                 stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
                     kotlinx.coroutines.coroutineScope {
-                        batch.map { clip ->
+                        batch.map { (clip, cacheKeys) ->
                             async {
                                 try {
-                                    val key = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
                                     val audio = downloadTtsMessageAudio(clip.messageId)
-                                    audioStore.cacheGeneratedAudio(
-                                        bytes = android.util.Base64.decode(audio.audioBase64, android.util.Base64.DEFAULT),
-                                        format = audio.audioFormat,
-                                        rawAudioUri = audio.audioUrl,
-                                        displayName = key,
-                                        cacheKey = key,
-                                        messageId = clip.messageId,
+                                    val bytes = android.util.Base64.decode(
+                                        audio.audioBase64,
+                                        android.util.Base64.DEFAULT,
                                     )
+                                    cacheKeys.forEach { key ->
+                                        audioStore.cacheGeneratedAudio(
+                                            bytes = bytes,
+                                            format = audio.audioFormat,
+                                            rawAudioUri = audio.audioUrl,
+                                            displayName = key,
+                                            cacheKey = key,
+                                            messageId = clip.messageId,
+                                        )
+                                    }
                                 } catch (error: kotlin.coroutines.cancellation.CancellationException) {
                                     throw error
                                 } catch (error: Exception) {
