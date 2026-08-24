@@ -43,7 +43,7 @@ final class VoiceStudioViewModel: ObservableObject {
         #if DEBUG
         if UIPreviewSeed.isEnabled { return UIPreviewSeed.makeVoiceProfiles() }
         #endif
-        return []
+        return bundledSystemVoiceProfiles()
     }()
     @Published var familyVoices: [FamilyVoiceProfile] = []
     /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
@@ -154,7 +154,7 @@ final class VoiceStudioViewModel: ObservableObject {
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         recorder.clearLatest()
-        profiles = []
+        profiles = bundledSystemVoiceProfiles()
         familyVoices = []
         stockClips = []
         // ⚠ **권위도 함께 내린다.** 안 내리면 로그아웃 뒤 밀려 들어온
@@ -1367,4 +1367,3 @@ final class VoiceStudioViewModel: ObservableObject {
         return "\(seconds)초"
     }
 }
-

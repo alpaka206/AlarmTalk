@@ -1267,6 +1267,7 @@ internal fun AlarmTalkApp(
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
+                      voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
                       stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
                           clipReadiness = viewModel.clipReadiness,
@@ -1322,6 +1323,7 @@ internal fun AlarmTalkApp(
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
+                          voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
                           stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
                           clipReadiness = viewModel.clipReadiness,
@@ -1444,4 +1446,3 @@ internal fun AlarmTalkApp(
       }
     }
 }
-

@@ -141,6 +141,20 @@
 
 울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, **미리** 받아 둔다.
 
+#### 기본 목소리 카탈로그는 앱에도 들어 있다
+
+기본 목소리 4종은 ID·이름·`ready` 상태를 앱에 번들한다. 앱 시작 직후와 오프라인에서도
+목소리 탭과 새 알람 편집기가 이 목록을 즉시 그리며, 서버 `GET /voice` 가 성공하면 응답
+전체로 교체한다. 서버 조회를 없애는 규칙이 아니라 **첫 응답 전의 빈 목록을 없애는 규칙**이다.
+
+- 개인·공유 목소리는 번들하거나 이전 응답으로 되살리지 않는다. 삭제·공유 해제된 생체정보가
+  서버 확인 전에 다시 보이면 안 된다.
+- 서버가 기본 목소리를 추가·수정하면 성공 응답이 그 회차의 권위다. 다음 앱 릴리스에서
+  번들 카탈로그도 함께 맞춘다.
+- 편집기 기본 목소리 선택은 스크롤 안 카드가 아니라 **화면 스코프**에서 한다. 작은 화면에서
+  목소리 카드가 아직 구성되지 않아도 저장 상태와 선택 상태가 갈라지지 않아야 한다.
+- 조회 시작 전/진행 중의 빈 목록과, 조회가 끝난 뒤 실제로 고를 목소리가 없는 상태를 구분한다.
+
 #### 무엇을 언제 받는가 (2026-08-18 확정)
 
 **목표: 알람을 만들 때 쓸 수 있는 클립은 전부 이미 폰에 있다.** 그래야 그 자리에서
@@ -320,6 +334,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
+| 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

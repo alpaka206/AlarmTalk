@@ -60,6 +60,20 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 import androidx.compose.ui.text.style.TextOverflow
 
+/** 마지막 사용값이 있으면 그룹보다 우선하고, 없을 때만 내 것 → 공유 → 기본 순으로 고른다. */
+internal fun preferredInitialVoiceProfileId(
+    lastUsedVoiceId: String?,
+    ownVoiceIds: List<String>,
+    familyVoiceIds: List<String>,
+    systemVoiceIds: List<String>,
+): String? {
+    val available = ownVoiceIds + familyVoiceIds + systemVoiceIds
+    return lastUsedVoiceId?.takeIf(available::contains)
+        ?: ownVoiceIds.firstOrNull()
+        ?: familyVoiceIds.firstOrNull()
+        ?: systemVoiceIds.firstOrNull()
+}
+
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
@@ -72,8 +86,8 @@ internal fun VoiceAudioCard(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
+    voiceProfileLoadFinished: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
-    lastUsedVoiceId: String? = null,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
@@ -223,35 +237,13 @@ internal fun VoiceAudioCard(
         }
         if (voiceEnabled) {
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
-                    if (
-                        visibleVoiceSource == VoiceSources.TTS_PROFILE &&
-                        !voiceProfileBusy &&
-                        profileOptions.isNotEmpty()
-                    ) {
-                        val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
-                        if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 처음 고르는 목소리: 마지막에 쓴 목소리가 **어느 그룹이든 최우선**이다.
-                            // 그룹을 먼저 보면(내 클론 우선) 클론을 가진 사람이 마지막에 기본
-                            // 목소리나 공유받은 목소리를 썼을 때 그 선택이 매번 무시된다 —
-                            // 사용자에겐 '고른 게 유지되지 않는' 리셋으로 보인다.
-                            // 마지막에 쓴 게 없을 때만 내 목소리 → 공유받은 목소리 → 목록 첫째.
-                            editor.selectVoiceProfile(
-                                profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
-                                    ?: readyOwnProfiles.firstOrNull()?.id
-                                    ?: readyFamilyVoices.firstOrNull()?.id
-                                    ?: profileOptions.first().id,
-                            )
-                        }
-                    }
-                }
-                val selectedProfileUnavailable = !voiceProfileBusy &&
+                val selectedProfileUnavailable = voiceProfileLoadFinished && !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
                 // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
                 // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
                 // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
-                if (voiceProfileBusy) {
+                if (voiceProfileBusy || (!voiceProfileLoadFinished && profileOptions.isEmpty())) {
                     MutedText(stringResource(R.string.editor_voice_loading))
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)

@@ -640,6 +640,13 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
+            // 기본 목소리 카탈로그는 번들돼 있으므로 서버 왕복 전에 선택까지 끝낼 수 있다.
+            // 단 유료 사용자의 마지막 선택이 클론이면 그 목소리가 서버에서 올 때까지 기다린다 —
+            // 여기서 시스템 목소리를 먼저 넣으면 성공 응답 뒤에도 마지막 선택이 밀려난다.
+            let lastUsedVoiceID = voiceStudio.lastUsedVoiceId
+            if freeVoiceTier || lastUsedVoiceID == nil || isSystemVoiceId(lastUsedVoiceID) {
+                selectDefaultVoiceProfileIfNeeded()
+            }
             Task {
                 await voiceStudio.refresh(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()

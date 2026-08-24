@@ -116,6 +116,10 @@
 
 `ownerUserId == null || ownerUserId == 현재 계정` 인 것만 보이고, 그것만 다시 건다.
 
+로컬 저장소의 첫 로드가 끝나기 전 빈 배열은 **실제 빈 목록이 아니다.** 알람 화면은 이때
+"알람이 없어요"를 그리지 않고 로드 완료를 기다린다. 네트워크를 기다리는 규칙이 아니라
+Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
+
 - 소유자 미기록(옛 행)은 **현재 계정 것으로 본다** — 저장소의 다른 파괴적 경로
   (무료 잠금·복원·목소리 강등)와 같은 관용이다.
 - ⚠ **그 관용을 쓰려면 세션이 끝날 때 소유자를 새겨 둬야 한다**(2026-08-19 Codex #699 P1).
@@ -268,6 +272,7 @@
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
+| 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
 | 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `RemoteAlarmPullSync.mergeRemote` 의 `pullOwnerUserID` 대조 |
 | 1-1 종료 중 새 예약 차단 | — | (해당 없음 — 세션 클리어가 동기라 창이 없다) | `AlarmKitViewModel.isLeavingAccount` |

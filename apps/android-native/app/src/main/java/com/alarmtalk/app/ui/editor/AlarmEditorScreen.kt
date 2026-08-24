@@ -121,6 +121,7 @@ internal fun AlarmEditorScreen(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
+    voiceProfileLoadFinished: Boolean,
     stockClips: List<StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). null 이면 완전성을 판정할 수 없어 라이브로 간다. */
     expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
@@ -1122,6 +1123,40 @@ internal fun AlarmEditorScreen(
             }.map { it.id }
         ).toSet()
 
+    val readyOwnVoiceIds = visibleVoiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem != true
+    }.map { it.id }
+    val readyFamilyVoiceIds = familyVoices.filter {
+        (it.status == null || it.status == "ready") && it.isShared != false
+    }.map { it.id }
+    val readySystemVoiceIds = visibleVoiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem == true
+    }.map { it.id }
+
+    // 목소리 카드는 LazyColumn 아래쪽에 있어 작은 화면에서는 아직 구성되지 않을 수 있다.
+    // 기본 선택은 저장 판정과 같은 화면 스코프에서 끝내야 스크롤 위치가 상태를 바꾸지 않는다.
+    LaunchedEffect(
+        editor.playMode,
+        editor.voiceSource,
+        editor.voiceProfileId,
+        lastUsedVoiceId,
+        readyOwnVoiceIds,
+        readyFamilyVoiceIds,
+        readySystemVoiceIds,
+    ) {
+        if (editor.playMode != AlarmPlayModes.ALARM_ONLY &&
+            editor.voiceSource != VoiceSources.LOCAL_AUDIO &&
+            editor.voiceProfileId.isNullOrBlank()
+        ) {
+            preferredInitialVoiceProfileId(
+                lastUsedVoiceId = lastUsedVoiceId,
+                ownVoiceIds = readyOwnVoiceIds,
+                familyVoiceIds = readyFamilyVoiceIds,
+                systemVoiceIds = readySystemVoiceIds,
+            )?.let(editor::selectVoiceProfile)
+        }
+    }
+
     /**
      * 날씨 문구에 필요한 **지역이 확보돼 있는가** — 두 곳(`randomPromptSettingsComplete`,
      * `editorSaveBlocked` 의 무료 버킷 갈래)이 **반드시 이 함수 하나를 본다.**
@@ -1478,8 +1513,8 @@ internal fun AlarmEditorScreen(
                                 previewPlayingVoiceId = voicePreview.playingVoiceId,
                                 previewPreparingVoiceId = voicePreview.preparingVoiceId,
                                 voiceProfileBusy = voiceProfileBusy,
+                                voiceProfileLoadFinished = voiceProfileLoadFinished,
                                 stockClips = stockClips,
-                                lastUsedVoiceId = lastUsedVoiceId,
                                 restrictToWeatherMedication = restrictToWeatherMedication,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,

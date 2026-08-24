@@ -26,34 +26,38 @@ struct AlarmsListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            pinnedHeader
+            // 로컬 JSON 첫 로드 전의 빈 배열은 실제 빈 목록이 아니다. 안드로이드의
+            // `alarmsLoaded` 와 같이 헤더·빈 상태를 모두 늦춰 거짓 화면 깜빡임을 막는다.
+            if store.hasLoadedFromDisk {
+                pinnedHeader
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
-                    // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
-                    // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                    if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
-                        alarmPermissionBanner
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
+                        // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
+                        // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
+                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
+                            alarmPermissionBanner
+                        }
+                        // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
+                        // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
+                        // Android syncNow / msg_sync_*_partial_failed parity.
+                        if let displayedMessage {
+                            Text(displayedMessage)
+                                .font(.footnote)
+                                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                                .padding(.horizontal, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { dismissDisplayedMessage() }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("탭하면 닫혀요")
+                        }
+                        localAlarmSection
                     }
-                    // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
-                    // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
-                    // Android syncNow / msg_sync_*_partial_failed parity.
-                    if let displayedMessage {
-                        Text(displayedMessage)
-                            .font(.footnote)
-                            .foregroundStyle(AlarmTalkTheme.textSecondary)
-                            .padding(.horizontal, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture { dismissDisplayedMessage() }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityHint("탭하면 닫혀요")
-                    }
-                    localAlarmSection
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
             }
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }

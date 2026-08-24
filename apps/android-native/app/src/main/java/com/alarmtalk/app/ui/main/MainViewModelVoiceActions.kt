@@ -17,10 +17,12 @@ import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -31,8 +33,8 @@ internal fun MainViewModel.loadVoiceProfiles() {
 
 internal fun MainViewModel.preloadVoiceProfiles() {
     if (authSession == null || voiceProfileBusy) return
-    val cachedSystemOnly = voiceProfiles.isNotEmpty() && voiceProfiles.all { it.isSystem == true }
-    if (voiceProfiles.isNotEmpty() && !(cachedSystemOnly && hasPaidVoiceAccess(subscriptionResponse))) {
+    // 번들 기본 목소리는 '첫 응답 전 화면 시드'일 뿐 서버 조회 성공을 뜻하지 않는다.
+    if (voiceProfilesLoadedFresh) {
         voiceProfileLoadFinished = true
         return
     }
@@ -54,26 +56,44 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         voiceProfileLoadFinished = false
         voiceProfileBusy = true
         try {
-            runCatching {
+            supervisorScope {
                 val authorization = AlarmTalkApiClient.bearer(session.token)
+                // 목록과 초안은 서로 독립이다. 초안이 느리거나 실패해도 기본/개인 목소리
+                // 목록은 첫 왕복이 끝나는 즉시 화면에 반영한다.
+                val draftRequest = async { api.getVoiceDraft(authorization).profile }
                 val profiles = api.listVoiceProfiles(authorization).profiles
-                val draft = api.getVoiceDraft(authorization).profile
-                profiles to draft
-            }.onSuccess { (profiles, draft) ->
                 if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
                     Log.i(TAG, "Dropping stale voice profile list: session ended or switched")
-                    return@onSuccess
+                    return@supervisorScope
                 }
                 voiceProfiles = profiles
-                pendingVoiceDraft = draft
                 voiceProfilesLoadedFresh = true
+                // 초안 요청은 목록 표시와 독립이다. 여기서 목록 로드를 끝내야 느린 초안이
+                // 편집기의 "불러오는 중" 상태를 붙잡지 않는다.
+                voiceProfileBusy = false
+                voiceProfileLoadFinished = true
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
                 reconcileInaccessibleVoiceAlarms(requestOwner)
                 // 삭제 화면에서 '이번 달 재생성 가능 여부'를 판정하도록 월 생성 쿼터도 함께 갱신.
                 loadVoiceDraftQuota()
-            }.onFailure { error ->
+                try {
+                    val draft = draftRequest.await()
+                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                        pendingVoiceDraft = draft
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // 초안 조회 실패가 이미 받은 목록을 지우거나 실패로 보이게 하지 않는다.
+                    AlarmTalkLog.reportError("Failed to load voice draft", error)
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
                 AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
             }

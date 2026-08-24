@@ -16,6 +16,7 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.bundledSystemVoiceProfiles
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
@@ -445,7 +446,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var syncBusy by mutableStateOf(false)
         internal set
 
-    var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
+    var voiceProfiles by mutableStateOf(bundledSystemVoiceProfiles())
         internal set
 
     var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
@@ -1049,7 +1050,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         shareToggleJobs.clear()
         shareToggleDesired.clear()
         prerenderDrive = null
-        voiceProfiles = emptyList()
+        voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
