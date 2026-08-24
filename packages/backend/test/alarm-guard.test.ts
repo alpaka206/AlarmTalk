@@ -165,8 +165,9 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(firstDeliveryVersion).toMatch(/^[0-9a-f-]{36}$/);
     await db.execute({
       sql: `INSERT INTO alarm_recipient_state
-              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
-            VALUES (?, ?, 0, 1, datetime('now'), datetime('now'))`,
+              (alarm_id, recipient_user_id, declined, revoked, voice_profile_id,
+               sender_voice_upload, created_at, updated_at)
+            VALUES (?, ?, 1, 1, 'old-voice', 1, datetime('now'), datetime('now'))`,
       args: [id1, RECIPIENT.login],
     });
 
@@ -191,11 +192,14 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
     expect(String(row!.delivery_version)).not.toBe(firstDeliveryVersion);
     const recipientState = await db.execute({
-      sql: `SELECT revoked FROM alarm_recipient_state
+      sql: `SELECT declined, revoked, voice_profile_id, sender_voice_upload FROM alarm_recipient_state
             WHERE alarm_id = ? AND recipient_user_id = ?`,
       args: [id1, RECIPIENT.login],
     });
+    expect(Number(recipientState.rows[0]!.declined)).toBe(1);
     expect(Number(recipientState.rows[0]!.revoked)).toBe(0);
+    expect(recipientState.rows[0]!.voice_profile_id).toBeNull();
+    expect(Number(recipientState.rows[0]!.sender_voice_upload)).toBe(0);
     // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
     expect(String(row!.timezone)).toBe('Asia/Seoul');
   });

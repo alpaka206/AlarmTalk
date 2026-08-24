@@ -2271,6 +2271,8 @@ export const migrations: Migration[] = [
     name: 'alarm-delivery-version',
     // 같은 발신자가 같은 수신자·시각으로 다시 보내면 알람 id는 유지되고 내용만 교체된다.
     // 구버전 다운로드가 늦게 끝나도 신버전 행을 ACK로 지우지 못하게 전달 세대를 구분한다.
+    // 기존 행은 새 전달 세대의 UUID와 구별되는 32자리 hex로 채워, 적용 표식이 없던 구형
+    // 클라이언트가 이 세대만 안전하게 부트스트랩할 수 있게 한다.
     statements: [
       `ALTER TABLE alarms ADD COLUMN delivery_version TEXT`,
       `UPDATE alarms SET delivery_version = lower(hex(randomblob(16)))

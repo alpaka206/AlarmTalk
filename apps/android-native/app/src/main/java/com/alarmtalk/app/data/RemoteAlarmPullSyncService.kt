@@ -36,7 +36,14 @@ internal fun receivedAlarmDeliveryComplete(
 internal fun receivedAlarmDeliveryVersionAlreadyApplied(
     existing: AlarmEntity,
     deliveryVersion: String?,
-): Boolean = !deliveryVersion.isNullOrBlank() && existing.remoteDeliveryVersion == deliveryVersion
+): Boolean {
+    val version = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    if (existing.remoteDeliveryVersion == version) return true
+    // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 예외에 들어오지 않는다.
+    return existing.remoteDeliveryVersion == null &&
+        version.length == 32 &&
+        version.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
+}
 
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
@@ -169,14 +176,21 @@ internal class RemoteAlarmPullSyncService(
                 // 아직 안 고친 행은 그대로 두어 **음성 다운로드 실패분의 재시도**를 살린다.
                 if (existing != null && locallyEditedByRecipient(existing)) {
                     if (receivedAlarmDeliveryVersionAlreadyApplied(existing, remote.deliveryVersion)) {
-                        runCatching {
-                            api.markAlarmReceived(
-                                authorization,
-                                remote.id,
-                                RemoteAlarmReceivedRequest(requireNotNull(remote.deliveryVersion)),
-                            )
-                        }.onFailure {
-                            Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
+                        val deliveryVersion = requireNotNull(remote.deliveryVersion)
+                        val versionPersisted = existing.remoteDeliveryVersion == deliveryVersion ||
+                            withContext(NonCancellable) {
+                                alarmDao.markRemoteDeliveryVersion(existing.id, deliveryVersion) > 0
+                            }
+                        if (versionPersisted) {
+                            runCatching {
+                                api.markAlarmReceived(
+                                    authorization,
+                                    remote.id,
+                                    RemoteAlarmReceivedRequest(deliveryVersion),
+                                )
+                            }.onFailure {
+                                Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
+                            }
                         }
                     }
                     skipped += 1

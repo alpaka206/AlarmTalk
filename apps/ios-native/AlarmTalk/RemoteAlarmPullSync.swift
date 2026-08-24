@@ -574,7 +574,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ) -> Bool {
         guard existing.originEnum == .receivedRemote,
               let deliveryVersion = deliveryVersion?.nilIfBlank else { return false }
-        return existing.remoteDeliveryVersion == deliveryVersion
+        if existing.remoteDeliveryVersion == deliveryVersion { return true }
+        // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 예외에 들어오지 않는다.
+        return existing.remoteDeliveryVersion == nil
+            && deliveryVersion.utf8.count == 32
+            && deliveryVersion.utf8.allSatisfy {
+                ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 70) || ($0 >= 97 && $0 <= 102)
+            }
     }
 
     /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.

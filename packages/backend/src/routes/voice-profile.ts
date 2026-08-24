@@ -1605,10 +1605,9 @@ voiceProfile.post('/clone', async (c) => {
     // 등록 원본을 R2+voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 —
     // 말투 분석 재시도(/:id/speech-style/retry)의 전사 소스. 실패해도 등록은 막지
     // 않는다(best-effort, 재시도가 SOURCE_AUDIO_MISSING 409 로 대신 안내).
-    // 수명주기는 별도 관리 불필요: TTL 7일 sweep(audio-retention.cleanupExpiredAudio)이
-    // R2 오브젝트·행을 함께 정리하고, 계정 삭제(account-deletion)·유료 음성 정리
-    // (paid-voice-cleanup)도 voice_uploads 를 사용자 단위로 지운다. draft 가 승격 전에
-    // 삭제돼 행이 남아도 같은 TTL sweep 이 거둔다.
+    // 확정 목소리의 원본은 재생성·말투 분석 재시도용으로 프로필 수명 동안 보관한다.
+    // 계정 삭제(account-deletion)·유료 음성 정리(paid-voice-cleanup)는 사용자 단위로 지우고,
+    // 승격되지 않은 draft·미연결 원본만 7일 TTL sweep이 거둔다.
     // R2 저장은 성공했는데 아래 INSERT 가 실패하면 추적행 없는 고아 객체가 남는다
     // (TTL sweep 은 voice_uploads 행 기준이라 회수 못 함) → catch 에서 보상 삭제 큐에
     // 적재할 수 있도록 저장된 키를 바깥 스코프로 올린다.
