@@ -251,7 +251,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
     func promoteVoiceDraft(
         id: String,
         token: String,
-        replaceExisting: Bool = false
+        replaceExisting: Bool = false,
+        isShared: Bool = false
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
@@ -259,7 +260,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: VoiceDraftPromoteRequest(
                 isDraft: false,
-                replaceExisting: replaceExisting ? true : nil
+                replaceExisting: replaceExisting ? true : nil,
+                isShared: isShared
             )
         )
         return response.profile

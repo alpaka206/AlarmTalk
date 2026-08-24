@@ -20,10 +20,12 @@ struct VoicePreviewConfirmView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     let draft: VoiceProfile
     /// 저장(승격) 완료 — 부모가 목록으로 돌린다.
-    let onSaved: () -> Void
+    let onSaved: (String) -> Void
     /// 다시 만들기 — 부모가 등록 폼으로 되돌린다.
     let onDiscarded: () -> Void
 
@@ -37,6 +39,8 @@ struct VoicePreviewConfirmView: View {
     @State private var errorMessage: String?
     /// 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있을 때만 보인다.
     @State private var replaceExisting = false
+    /// 공유 여부는 초안 입력 단계가 아니라 실제로 저장하는 이 단계에서 고른다.
+    @State private var isShared = false
     /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
     /// (안드로이드 `VoiceProfileManagementPanel.kt:2141` `draftExitWarningOpen`).
     @State private var exitWarningOpen = false
@@ -60,6 +64,8 @@ struct VoicePreviewConfirmView: View {
                     .foregroundStyle(theme.palette.error)
             }
 
+            sharingSection
+
             // 교체 체크는 **저장 버튼 바로 위**에 둔다 — 무엇에 동의하고 누르는지가
             // 손가락 옆에 있어야 한다.
             replaceConsent
@@ -68,10 +74,52 @@ struct VoicePreviewConfirmView: View {
         }
         .padding(.vertical, 4)
         .task {
+            isShared = draft.isShared == true && canShareVoice
             // 문구는 합성 응답이 알려 준다(서버가 그때 확정한다) — 여기선 비워 두고
             // 첫 재생이 채운다. 들어보라고 만든 화면이니 들어오자마자 한 번 들려준다.
             await play()
         }
+    }
+
+    private var sharingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("공유 설정")
+                .font(theme.typography.titleSmall)
+                .fontWeight(.semibold)
+            Toggle(isOn: $isShared) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("가족·연인에게 공유 허용")
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.semibold)
+                    Text(canShareVoice
+                         ? "등록한 목소리를 가족·연인도 함께 사용할 수 있어요."
+                         : "공유는 커플/가족 이용권에서 사용할 수 있어요.")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+            }
+            .alarmTalkSwitch()
+            .disabled(!canShareVoice || busy)
+        }
+        .padding(14)
+        .background(
+            theme.palette.surface,
+            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
+    }
+
+    private var canShareVoice: Bool {
+        canShareVoiceWithOthers(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            authSession: auth.session,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
     }
 
     // MARK: - 미리듣기 카드
@@ -311,13 +359,16 @@ struct VoicePreviewConfirmView: View {
         busy = true
         defer { saving = false; busy = false }
         do {
-            _ = try await AlarmTalkAPI.shared.promoteVoiceDraft(
+            let promoted = try await AlarmTalkAPI.shared.promoteVoiceDraft(
                 id: draft.id,
                 token: token,
-                replaceExisting: replaceExisting
+                replaceExisting: replaceExisting,
+                isShared: isShared && canShareVoice
             )
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
-            onSaved()
+            // 교체 갈래는 draft id 가 아니라 기존 공식 프로필 id 를 반환한다. 준비 페이지가
+            // 삭제된 draft 를 기다리지 않도록 서버가 돌려준 실제 id 를 넘긴다.
+            onSaved(promoted.id)
         } catch {
             errorMessage = voice.mapVoiceError(error)
         }

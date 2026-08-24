@@ -672,13 +672,14 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **성공 여부는 반환값으로만 알린다.** 호출부가 `statusMessage` 를 읽어 성공을
     /// 판정하면 안 된다 — 실패 문구 "2분 이하 음성으로 **등록**할 수 있어요." 에도 '등록' 이
     /// 들어 있어 부분 문자열 판정이 실패를 성공으로 읽는다(실제로 그랬다).
-    /// 형제 메서드(`cloneWithNoiseRemoval`/`cloneAudioForProfile`)와 시그니처를 맞춘다.
+    /// 형제 메서드(`cloneAudioForProfile`)와 시그니처를 맞춘다.
     @discardableResult
     func uploadRecordingForClone(
         session: AuthSession?,
         isShared: Bool = false,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -715,55 +716,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: durationMs,
                 token: token,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
+                listenerTitle: fields.listenerTitle,
+                language: language
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
-            await refresh(session: session, force: true, successMessage: nil)
-            return profile
-        } catch {
-            statusMessage = mapVoiceError(error)
-            return nil
-        }
-    }
-
-    /// 배경음 자동 제거 옵션을 켠 채로 클로닝. `feat/voice-clone-noise-removal` 머지 후 활성.
-    func cloneWithNoiseRemoval(
-        audioFileURL: URL,
-        name: String,
-        durationMs: Int,
-        isShared: Bool,
-        session: AuthSession?,
-        relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
-    ) async -> VoiceProfile? {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return nil
-        }
-        guard let fields = requiredVoiceProfileFields(
-            name: name,
-            relationshipLabel: relationshipLabel,
-            listenerTitle: listenerTitle
-        ) else {
-            return nil
-        }
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            let profile = try await api.cloneVoice(
-                audioFileURL: audioFileURL,
-                name: fields.name,
-                isShared: isShared,
-                durationMs: durationMs,
-                token: token,
-                noiseRemoval: true,
-                relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
-            )
-            selectedProfileID = profile.id
-            statusMessage = "배경음 제거 학습이 완료됐어요."
             await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
@@ -779,10 +736,10 @@ final class VoiceStudioViewModel: ObservableObject {
         durationMs: Int,
         isShared: Bool,
         session: AuthSession?,
-        noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -811,13 +768,13 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
-                noiseRemoval: noiseRemoval,
                 uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
+                listenerTitle: fields.listenerTitle,
+                language: language
             )
             selectedProfileID = profile.id
-            statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."
+            statusMessage = "목소리 학습을 등록했어요."
             await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
@@ -1267,8 +1224,8 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private struct RequiredVoiceProfileFields {
         var name: String
-        var relationshipLabel: String
-        var listenerTitle: String
+        var relationshipLabel: String?
+        var listenerTitle: String?
     }
 
     private func requiredVoiceProfileFields(
@@ -1282,16 +1239,12 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "목소리 이름을 입력해 주세요."
             return nil
         }
-        guard let relationship = requiredVoiceRelationshipFields(
-            relationshipLabel: relationshipLabel,
-            listenerTitle: listenerTitle
-        ) else {
-            return nil
-        }
         return RequiredVoiceProfileFields(
             name: normalizedName,
-            relationshipLabel: relationship.relationshipLabel,
-            listenerTitle: relationship.listenerTitle
+            // 등록에서는 관계·호칭이 선택값이다. 공유받은 목소리의 viewer 정보는 아래
+            // `requiredVoiceRelationshipFields` 를 계속 거쳐 둘 다 필수로 받는다.
+            relationshipLabel: relationshipLabel?.nilIfBlank,
+            listenerTitle: listenerTitle?.nilIfBlank
         )
     }
 

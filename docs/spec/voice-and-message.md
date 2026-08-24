@@ -87,6 +87,29 @@
 상세(저장 키 이름, 버킷 판정식, 직접 입력 문구 기억)는 `CLAUDE.md`
 「알람 편집기 기본값 = 직전 선택 유지」 절에 있다.
 
+## 4-1. 목소리 등록은 **같은 5단계**다
+
+안드로이드와 iOS 모두 `음원 준비 → 세부 정보 → 생성 중 → 미리듣기·확정 → 오프라인 준비`
+순서로 진행한다. 한 긴 폼에 전부 펼치지 않는다 — 먼저 녹음을 끝낸 뒤 이름을 입력하고,
+실제 클론이 생긴 뒤에 들어보고 유지 여부를 정해야 각 버튼이 지금 하는 일이 하나뿐이다.
+
+| 단계 | 화면에 두는 것 | 다음 조건 |
+| --- | --- | --- |
+| 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원 |
+| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭은 선택 |
+| 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
+| 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
+| 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
+
+- **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
+  승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
+- **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
+  작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
+- 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
+  이 값이 미리듣기와 매일 사전렌더 문구의 언어가 된다.
+- 생성 중·미리듣기에서 그냥 나가면 임시 목소리가 남거나 사라진 이유를 알 수 없다.
+  생성 중에는 이탈을 막고, 미리듣기에서는 삭제 결과를 명시한 확인을 거친다.
+
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
 테마 하나에 클립이 여럿이고, 알람이 울릴 때마다 순서대로 넘어간다. 같은 테마라도
@@ -336,6 +359,9 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
+| 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
+| 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
+| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | `PATCH /voice/:id` (`is_shared` + `is_draft=false`) |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

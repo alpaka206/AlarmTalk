@@ -638,9 +638,9 @@ type ReplaceResult =
  */
 async function replaceVoiceInPlace(
   db: ReturnType<typeof getDB>,
-  params: { targetUserIds: string[]; draftProfileId: string; language: string },
+  params: { targetUserIds: string[]; draftProfileId: string; language: string; isShared?: boolean },
 ): Promise<ReplaceResult> {
-  const { targetUserIds, draftProfileId, language } = params;
+  const { targetUserIds, draftProfileId, language, isShared } = params;
   const ph = targetUserIds.map(() => '?').join(',');
 
   const draftRes = await db.execute({
@@ -694,7 +694,7 @@ async function replaceVoiceInPlace(
         draft.preview_text ?? null,
         draft.preview_language ?? null,
         draft.speech_style ?? null,
-        Number(draft.is_shared ?? 0),
+        isShared === undefined ? Number(draft.is_shared ?? 0) : (isShared ? 1 : 0),
         targetId,
       ],
     });
@@ -945,6 +945,7 @@ voiceProfile.patch('/:id', async (c) => {
         targetUserIds: ids,
         draftProfileId: id,
         language: prerenderLanguage,
+        isShared: isSharedUpdate,
       });
       if (!replaced.ok) {
         return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);

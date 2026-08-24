@@ -224,14 +224,15 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(fields["listenerTitle"], "grandpa")
     }
 
-    func test_voiceCloneMultipartFields_keepBlankRelationshipPartsForServerValidation() {
+    func test_voiceCloneMultipartFields_keepOptionalPersonaBlankAndSelectedLanguage() {
         let fields = AlarmTalkAPI.voiceCloneMultipartFields(
             name: "Draft",
             isShared: false,
             durationMs: 60_000,
             noiseRemoval: true,
             relationshipLabel: nil,
-            listenerTitle: "   "
+            listenerTitle: "   ",
+            language: "ja"
         )
 
         XCTAssertEqual(fields["relationshipLabel"], "")
@@ -243,7 +244,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         // 등록이 곧바로 정식 프로필이 되어 결과를 들어보기도 전에 페르소나가 잠긴다.
         XCTAssertEqual(fields["isDraft"], "true")
         // 사전렌더 언어. 미전송 시 서버가 'ko' 로 폴백해 비-한국어 사용자가 버킷을 못 받는다.
-        XCTAssertEqual(fields["language"], "ko")
+        XCTAssertEqual(fields["language"], "ja")
         // noiseRemoval/noise_removal 필드는 제거됨(Android 도 더는 전송 안 함, 백엔드 무시).
         XCTAssertNil(fields["noiseRemoval"])
         XCTAssertNil(fields["noise_removal"])
@@ -252,6 +253,17 @@ final class VoiceStudioViewModelTests: XCTestCase {
         // 안드로이드도 보내지 않고 UI 도 없다(VoiceProfileApi.createVoiceClone).
         XCTAssertNil(fields["voiceGender"])
         XCTAssertNil(fields["speechFormality"])
+    }
+
+    func test_voiceDraftPromotionCarriesSharingChoice() throws {
+        let data = try JSONEncoder().encode(
+            VoiceDraftPromoteRequest(isDraft: false, replaceExisting: true, isShared: true)
+        )
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(body["isDraft"] as? Bool, false)
+        XCTAssertEqual(body["replaceExisting"] as? Bool, true)
+        XCTAssertEqual(body["isShared"] as? Bool, true)
     }
 
     func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {

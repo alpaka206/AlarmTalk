@@ -419,6 +419,8 @@ struct VoiceDraftPromoteRequest: Encodable {
     /// 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 재사용한다).
     /// nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
     var replaceExisting: Bool?
+    /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
+    var isShared: Bool
 }
 
 struct VoicePreviewPlayedRequest: Encodable {

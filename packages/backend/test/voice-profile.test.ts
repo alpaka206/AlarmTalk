@@ -1121,12 +1121,27 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     // ② 현역 개수(한도 검사) — 1이면 교체 갈래로 간다
     mockDB.pushResult([{ active_count: 1 }]);
     // ③ replaceVoiceInPlace: draft 조회 → 교체 대상 조회 → 트랜잭션 → 최종 조회
-    mockDB.pushResult([{ id: V2, user_id: 'user-pk-1', name: '새 목소리', elevenlabs_voice_id: 'elv-new' }]);
+    mockDB.pushResult([{
+      id: V2,
+      user_id: 'user-pk-1',
+      name: '새 목소리',
+      elevenlabs_voice_id: 'elv-new',
+      is_shared: 0,
+    }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
     for (let i = 0; i < 8; i += 1) mockDB.pushResult([], 1);
     mockDB.pushResult([{ id: V1, name: '새 목소리', status: 'ready' }]);
 
-    await req(buildApp(), jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }));
+    await req(buildApp(), jsonReq('PATCH', `/vp/${V2}`, {
+      is_draft: false,
+      replace_existing: true,
+      is_shared: true,
+    }));
+
+    const profileReplace = mockDB.calls.find(
+      (call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?'),
+    );
+    expect(profileReplace?.args[7], '확정 화면의 공유 선택이 교체된 프로필에 반영되지 않았다').toBe(1);
 
     const alarmUpdate = mockDB.calls.find(
       (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),

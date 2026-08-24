@@ -230,7 +230,7 @@ internal fun VoiceProfileManagementPanel(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
@@ -2242,7 +2242,11 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = {
                                         confirmNewVoice?.let {
                                             promotedForPrerenderId = it.id
-                                            onPromoteVoiceDraft(it.id, replaceExistingChecked)
+                                            onPromoteVoiceDraft(
+                                                it.id,
+                                                replaceExistingChecked,
+                                                shareVoice && canShareVoice,
+                                            )
                                         }
                                     },
                                     // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다.
@@ -2368,4 +2372,3 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 }
-
