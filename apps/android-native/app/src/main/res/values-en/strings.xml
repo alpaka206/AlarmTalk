@@ -91,6 +91,7 @@
     <string name="billing_plan_free_feature_stock_voice">Alarms with default voices</string>
     <string name="billing_plan_free_name">Free</string>
     <string name="billing_plan_free_price">Free</string>
+    <string name="billing_plan_monthly_price_fallback">KRW %1$,d/month</string>
     <string name="billing_plan_personal_feature_daily_prompt">Fresh lines every day: weather, fortune, and more</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_name">Personal</string>

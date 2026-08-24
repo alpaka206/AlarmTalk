@@ -69,8 +69,24 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 }
                 voiceProfiles = profiles
                 voiceProfilesLoadedFresh = true
-                // 초안 요청은 목록 표시와 독립이다. 여기서 목록 로드를 끝내야 느린 초안이
-                // 편집기의 "불러오는 중" 상태를 붙잡지 않는다.
+                // 목록은 먼저 화면에 반영하되, 등록 잠금(busy)은 기존 초안 확인이 끝날 때까지
+                // 유지한다. 여기서 먼저 풀면 사용자가 새 초안을 만드는 사이 앞서 시작한 GET이
+                // 늦게 도착해 pendingVoiceDraft를 과거 값으로 덮을 수 있다.
+                try {
+                    val draft = draftRequest.await()
+                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                        pendingVoiceDraft = draft
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // 초안 조회 실패가 이미 받은 목록을 지우거나 실패로 보이게 하지 않는다.
+                    AlarmTalkLog.reportError("Failed to load voice draft", error)
+                }
+                if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                    Log.i(TAG, "Dropping stale voice draft: session ended or switched")
+                    return@supervisorScope
+                }
                 voiceProfileBusy = false
                 voiceProfileLoadFinished = true
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
@@ -87,17 +103,6 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 } catch (error: Throwable) {
                     // 한도 조회 실패는 목록·초안을 지우거나 실패로 보이게 하지 않는다.
                     AlarmTalkLog.reportError("Failed to load voice draft quota", error)
-                }
-                try {
-                    val draft = draftRequest.await()
-                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
-                        pendingVoiceDraft = draft
-                    }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    // 초안 조회 실패가 이미 받은 목록을 지우거나 실패로 보이게 하지 않는다.
-                    AlarmTalkLog.reportError("Failed to load voice draft", error)
                 }
             }
         } catch (error: CancellationException) {

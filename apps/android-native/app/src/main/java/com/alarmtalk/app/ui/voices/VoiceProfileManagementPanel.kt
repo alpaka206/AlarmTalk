@@ -7,9 +7,16 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
@@ -31,7 +38,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -68,6 +74,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -143,6 +150,14 @@ private fun VoiceRecordScriptCard(
     modifier: Modifier = Modifier,
 ) {
     var scriptExpanded by rememberSaveable { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (scriptExpanded) 180f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "voiceScriptArrowRotation",
+    )
     OutlinedCard(
         modifier = modifier,
         shape = WakerCardShape,
@@ -173,33 +188,35 @@ private fun VoiceRecordScriptCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Icon(
-                    imageVector = if (scriptExpanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
+                    imageVector = Icons.Outlined.KeyboardArrowDown,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.graphicsLayer { rotationZ = arrowRotation },
                 )
             }
-            if (scriptExpanded) {
-            Text(
-                text = stringResource(R.string.voices2_record_script),
-                modifier = Modifier
-                    // 헤더가 제 여백을 가져갔으니 본문도 제 여백을 갖는다.
-                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-                    .then(
-                        if (fillHeight) {
-                            Modifier.weight(1f, fill = false)
-                        } else {
-                            Modifier.heightIn(max = 240.dp)
-                        },
-                    )
-                    .verticalScroll(rememberScrollState()),
-                style = MaterialTheme.typography.bodyMedium,
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            AnimatedVisibility(
+                visible = scriptExpanded,
+                modifier = if (fillHeight) Modifier.weight(1f, fill = false) else Modifier,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices2_record_script),
+                    modifier = Modifier
+                        // 헤더가 제 여백을 가져갔으니 본문도 제 여백을 갖는다.
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                        .then(
+                            if (!fillHeight) {
+                                Modifier.heightIn(max = 240.dp)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .verticalScroll(rememberScrollState()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }
@@ -284,9 +301,8 @@ internal fun VoiceProfileManagementPanel(
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
 
-    // 하한(12초) 미달로 버려진 녹음이 있었는지. 버려지면 selectedAudio 가 null 이라 길이만
-    // 봐서는 "아직 녹음 안 함" 과 구분되지 않는데, 이 둘의 안내는 달라야 한다 —
-    // 전자는 '12초 이상 녹음해 주세요', 후자는 '다음'(흐림).
+    // 하한(12초) 미달 녹음이 있는지. 실제 길이는 카드에 남기되 유효한 완료본처럼
+    // 재생·다시 녹음을 열지 않고, 카드와 하단 버튼이 같은 이유를 말한다.
     var recordTooShort by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
@@ -665,20 +681,18 @@ internal fun VoiceProfileManagementPanel(
                 val duration = audio.durationMillis
                 val error = voiceProfileDurationError(context, duration)
                 if (error == null) {
+                    recordTooShort = false
                     applySelectedAudio(audio)
                 } else {
-                    // 짧아서 버려진 녹음은 타이머도 0으로 되돌린다 — 지난 시간이 남아 있으면
-                    // 저장된 것처럼 보인다.
-                    selectedAudio = null
-                    recordingElapsedMillis = 0L
-                    // 짧아서 버려졌으면 그렇다고 말한다. 위에서 오디오와 타이머를 되돌리므로
-                    // 아무 말도 안 하면 화면에는 아무 일도 일어나지 않은 것처럼 보인다.
-                    // 다만 **하한 미달은 배너로 띄우지 않는다** — 그 말이 필요한 곳은 못 넘어가는
-                    // '다음' 버튼 자리다. 화면 위쪽 배너는 버튼에서 멀어 왜 안 눌리는지 이어지지
-                    // 않는다. 길이를 못 읽는 등 다른 실패만 배너로 남긴다.
                     if (duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+                        // 실제 시간은 보여 주되 완료본처럼 재생/되돌리기를 열지 않는다.
+                        // 카드와 하단 버튼이 같은 이유를 말하고, 마이크를 누르면 바로 덮어쓴다.
+                        selectedAudio = audio
+                        recordingElapsedMillis = duration
                         recordTooShort = true
+                        localMessage = null
                     } else {
+                        selectedAudio = null
                         localMessage = error
                     }
                 }
@@ -694,6 +708,12 @@ internal fun VoiceProfileManagementPanel(
         // 미리듣기(방금 녹음 클립 등)가 재생 중이면 먼저 멈춘다 — 스피커 소리가
         // 새 녹음(클론 원본)에 섞여 들어가는 것을 막는다.
         stopMediaPreview()
+        selectedAudio?.takeIf { recordTooShort }?.let { discarded ->
+            selectedAudio = null
+            discarded.cacheKey?.let { cacheKey ->
+                scope.launch(Dispatchers.IO) { audioStore.deleteCachedAudio(cacheKey) }
+            }
+        }
         runCatching {
             recorder.start(maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
             recordingElapsedMillis = 0L
@@ -1614,6 +1634,16 @@ internal fun VoiceProfileManagementPanel(
                                         if (inputMode != it) {
                                             stopMediaPreview()
                                             localMessage = null
+                                            if (recordTooShort) {
+                                                val discarded = selectedAudio
+                                                selectedAudio = null
+                                                recordingElapsedMillis = 0L
+                                                discarded?.cacheKey?.let { cacheKey ->
+                                                    scope.launch(Dispatchers.IO) {
+                                                        audioStore.deleteCachedAudio(cacheKey)
+                                                    }
+                                                }
+                                            }
                                             recordTooShort = false
                                         }
                                         inputMode = it
@@ -1628,6 +1658,11 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
+                                        idleStatusText = if (recordTooShort) {
+                                            stringResource(R.string.voices_record_too_short)
+                                        } else {
+                                            null
+                                        },
                                         // ⚠ **`idleStatusText = ""` 로 비우지 말 것**(2026-08-18 되돌림).
                                         // 빈 문자열은 `?:` 를 통과해 **빈 `Text` 가 한 줄을 차지**하므로,
                                         // 카드에 이유 없는 빈 칸이 남는다("녹음하기 글자가 안 보인다"로
@@ -1645,9 +1680,22 @@ internal fun VoiceProfileManagementPanel(
                                                 recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                             }
                                         },
-                                        recordedDurationMillis = selectedAudio?.durationMillis,
+                                        recordedDurationMillis = selectedAudio?.durationMillis
+                                            ?.takeIf { it >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS },
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
+                                        onRedoRecording = {
+                                            stopMediaPreview()
+                                            val discarded = selectedAudio
+                                            selectedAudio = null
+                                            recordingElapsedMillis = 0L
+                                            recordTooShort = false
+                                            discarded?.cacheKey?.let { cacheKey ->
+                                                scope.launch(Dispatchers.IO) {
+                                                    audioStore.deleteCachedAudio(cacheKey)
+                                                }
+                                            }
+                                        },
                                     )
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
                                     // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.

@@ -55,6 +55,7 @@ struct VoiceCloneUploadFlow: View {
     @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
     @State private var localError: String?
     @State private var scriptExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeDurationMs: Int {
         switch sourceMode {
@@ -179,8 +180,15 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .onChange(of: sourceMode) { _, newValue in
+            voice.previewPlayer.stop()
             if newValue == .file, voice.recorder.isRecording {
                 voice.stopRecording()
+            }
+            if newValue == .file,
+               voice.recorder.latestRecordingURL != nil,
+               (voice.recorder.latestDurationMs ?? Int(voice.recorder.elapsedSeconds * 1000))
+                    < VoiceProfileLimits.minDurationMs {
+                voice.recorder.clearLatest()
             }
         }
     }
@@ -242,23 +250,37 @@ struct VoiceCloneUploadFlow: View {
     /// 같은 일(녹음)을 하는 화면이 앱마다·화면마다 다른 모양이었다. 이제 `RecordingCard`
     /// 하나를 두 화면이 함께 쓴다(안드로이드도 `VoiceRecordControls` 하나로 합쳤다).
     private var recordingSection: some View {
-        RecordingCard(
+        let hasRecording = voice.recorder.latestRecordingURL != nil
+        let recordingIsLongEnough = hasRecording
+            && activeDurationMs >= VoiceProfileLimits.minDurationMs
+        return RecordingCard(
             isRecording: voice.recorder.isRecording,
             elapsedMs: activeDurationMs,
             maxDurationMs: VoiceProfileLimits.maxDurationMs,
-            hasRecording: voice.recorder.latestRecordingURL != nil,
-            isPreviewing: false,
+            hasRecording: recordingIsLongEnough,
+            isPreviewing: voice.previewPlayer.isPlaying,
+            statusText: hasRecording && !recordingIsLongEnough
+                ? "12초 이상 녹음해 주세요"
+                : nil,
             note: nil,
             onRecord: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if voice.recorder.isRecording {
                     voice.stopRecording()
                 } else {
+                    // 짧은 녹음은 완료본이 아니다. 마이크를 누르면 그 파일을 지우고
+                    // 같은 자리에서 곧바로 다시 시작한다.
+                    if hasRecording && !recordingIsLongEnough {
+                        voice.recorder.clearLatest()
+                    }
                     Task { await voice.startRecording() }
                 }
             },
             onPreview: { voice.playRecording() },
-            onRedo: { voice.recorder.clearLatest() }
+            onRedo: {
+                voice.previewPlayer.stop()
+                voice.recorder.clearLatest()
+            }
         )
     }
 
@@ -280,18 +302,39 @@ struct VoiceCloneUploadFlow: View {
     }
 
     private var scriptSection: some View {
-        DisclosureGroup(isExpanded: $scriptExpanded) {
-            Text(recordingScript)
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurface)
-                .padding(.top, 8)
-        } label: {
-            Text("예시 대본")
-                .font(theme.typography.titleSmall)
-                .fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(reduceMotion
+                    ? .easeOut(duration: 0.15)
+                    : .spring(response: 0.35, dampingFraction: 1)) {
+                    scriptExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("예시 대본")
+                        .font(theme.typography.titleSmall)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .rotationEffect(.degrees(scriptExpanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+                .padding(16)
+            }
+            .buttonStyle(.plain)
+
+            if scriptExpanded {
+                Text(recordingScript)
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurface)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .tint(theme.palette.onSurfaceVariant)
-        .padding(16)
         .background(theme.palette.surfaceVariant.opacity(0.38))
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         .overlay(
@@ -396,17 +439,27 @@ struct VoiceCloneUploadFlow: View {
         HStack(spacing: 8) {
             ForEach(VoiceCloneSourceMode.allCases) { mode in
                 if sourceMode == mode {
-                    Button(mode.label) { sourceMode = mode }
+                    Button { sourceMode = mode } label: {
+                        Text(mode.label)
+                            .font(theme.typography.bodyMedium.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                    }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
                         .tint(theme.palette.secondary)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 } else {
-                    Button(mode.label) { sourceMode = mode }
+                    Button { sourceMode = mode } label: {
+                        Text(mode.label)
+                            .font(theme.typography.bodyMedium.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                    }
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .tint(theme.palette.primary)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
         }

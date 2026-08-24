@@ -91,6 +91,7 @@
     <string name="billing_plan_free_feature_stock_voice">基本の声のアラーム</string>
     <string name="billing_plan_free_name">無料</string>
     <string name="billing_plan_free_price">無料</string>
+    <string name="billing_plan_monthly_price_fallback">月額%1$,dウォン</string>
     <string name="billing_plan_personal_feature_daily_prompt">天気・運勢など毎日新しいひとこと</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_name">パーソナル</string>

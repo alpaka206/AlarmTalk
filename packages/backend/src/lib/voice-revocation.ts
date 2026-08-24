@@ -175,8 +175,10 @@ export async function revokeDeletedVoices(
  * 알람 하나가 쓰는 **클론** 목소리를 찾는다. 스톡(is_system)이면 null 을 돌려준다 —
  * 없어지지 않는 목소리를 tombstone 에 적어 두면 "걷어낼 것이 있다" 는 거짓 근거가 된다.
  *
- * 알람은 목소리를 **직접**(`alarms.voice_profile_id`) 가리키기도 하고 그 목소리로 만든
- * **문구를 통해**(`messages.voice_profile_id`) 가리키기도 한다. 둘 다 본다.
+ * 재생되는 음원이 있는 알람은 **문구를 만든 목소리**(`messages.voice_profile_id`)가 기준이다.
+ * 구형 클라이언트가 `alarms.voice_profile_id`에 다른 값을 함께 보내도, 수신자가 실제로 받은
+ * 음성은 message 쪽이므로 그 클론을 tombstone에 남긴다. message가 없을 때만 알람의 직접
+ * 참조를 쓴다.
  */
 export async function resolveClonedVoiceForAlarm(
   tx: DbExecutor,
@@ -186,7 +188,7 @@ export async function resolveClonedVoiceForAlarm(
     sql: `SELECT vp.id AS voice_profile_id
             FROM alarms a
             LEFT JOIN messages m ON m.id = a.message_id
-            JOIN voice_profiles vp ON vp.id = COALESCE(a.voice_profile_id, m.voice_profile_id)
+            JOIN voice_profiles vp ON vp.id = COALESCE(m.voice_profile_id, a.voice_profile_id)
            WHERE a.id = ? AND COALESCE(vp.is_system, 0) = 0
            LIMIT 1`,
     args: [alarmId],

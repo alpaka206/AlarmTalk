@@ -110,7 +110,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = planPriceLabel(planPrices, "personal"),
+            price = planPriceLabel(context, planPrices, "personal"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -120,7 +120,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = planPriceLabel(planPrices, "couple"),
+            price = planPriceLabel(context, planPrices, "couple"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -132,7 +132,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = planPriceLabel(planPrices, "family"),
+            price = planPriceLabel(context, planPrices, "family"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -810,9 +810,9 @@ private val FallbackPlanPriceKrw = mapOf(
     "family" to 14900,
 )
 
-/** 스토어 가격이 있으면 그걸, 없으면 폴백을 "월 3,900원" 꼴로 준다. */
-private fun planPriceLabel(planPrices: Map<String, String>, key: String): String {
+/** 스토어 가격이 있으면 그걸, 없으면 현재 언어의 월 가격 문구로 준다. */
+private fun planPriceLabel(context: Context, planPrices: Map<String, String>, key: String): String {
     planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
     val krw = FallbackPlanPriceKrw[key] ?: return ""
-    return "월 %,d원".format(krw)
+    return context.getString(R.string.billing_plan_monthly_price_fallback, krw)
 }

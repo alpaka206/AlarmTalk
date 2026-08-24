@@ -94,6 +94,7 @@
     <string name="billing_plan_free_feature_stock_voice">기본 목소리 알람</string>
     <string name="billing_plan_free_name">무료</string>
     <string name="billing_plan_free_price">0원</string>
+    <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
     <string name="billing_plan_personal_feature_daily_prompt">날씨·운세 등 매일 다른 문구</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_name">개인</string>

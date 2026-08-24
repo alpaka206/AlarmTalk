@@ -43,6 +43,8 @@ struct RecordingCard: View {
     /// 녹음물이 이미 있는가(방금 녹음했거나 알람에 붙어 있거나).
     let hasRecording: Bool
     let isPreviewing: Bool
+    /// 기본 상태 문구를 바꿔야 하는 경우(예: 12초 미달). nil이면 공용 기본 문구를 쓴다.
+    var statusText: String? = nil
     /// 카드 아래 한 줄. **상태를 되풀이하지 말 것** — 제목이 이미 말한다.
     let note: String?
     let onRecord: () -> Void
@@ -53,6 +55,7 @@ struct RecordingCard: View {
 
     private var title: String {
         if isRecording { return "녹음 중…" }
+        if let statusText { return statusText }
         return hasRecording ? "녹음을 저장했어요" : "녹음하기"
     }
 

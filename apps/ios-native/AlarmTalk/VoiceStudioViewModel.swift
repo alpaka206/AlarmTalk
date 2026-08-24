@@ -657,6 +657,8 @@ final class VoiceStudioViewModel: ObservableObject {
 
     func startRecording() async {
         do {
+            // 재생 중인 녹음이 새 마이크 입력에 섞이지 않게 먼저 멈춘다.
+            previewPlayer.stop()
             try await recorder.start()
             // 녹음 카드가 상태와 시간을 직접 보여 준다. 별도 안내를 띄우면 Android에는
             // 없는 고정 문구가 카드 아래에 한 줄 더 생긴다.
@@ -995,6 +997,10 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     func playRecording() {
+        if previewPlayer.isPlaying {
+            previewPlayer.stop()
+            return
+        }
         guard let url = recorder.latestRecordingURL else {
             statusMessage = "재생할 녹음이 없어요."
             return

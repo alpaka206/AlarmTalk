@@ -40,8 +40,15 @@ final class VoiceAddButtonUITests: XCTestCase {
         addButton.tap()
 
         XCTAssertTrue(app.staticTexts["목소리 만들기"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["녹음"].exists)
-        XCTAssertTrue(app.buttons["파일"].exists)
+        let record = app.buttons["녹음"]
+        let file = app.buttons["파일"]
+        XCTAssertTrue(record.exists)
+        XCTAssertTrue(file.exists)
+        // 버튼 바깥 frame만 늘리면 보이는 캡슐은 글자 크기로 남는다. 두 라벨 자체가
+        // 전체 칸을 채우고 Android 2분할과 같은 높이인지 실제 접근성 프레임으로 고정한다.
+        XCTAssertEqual(record.frame.width, file.frame.width, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(record.frame.height, 38)
+        XCTAssertGreaterThan(record.frame.width, 120)
         XCTAssertTrue(app.staticTexts["너무 짧으면 목소리가 다르게 나올 수 있어요."].exists)
         XCTAssertTrue(app.staticTexts["원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists)
         XCTAssertFalse(app.staticTexts["12초 이상 2분 이하로 녹음해 주세요"].exists)
