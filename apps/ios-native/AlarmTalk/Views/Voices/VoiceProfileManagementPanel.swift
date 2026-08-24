@@ -72,7 +72,7 @@ struct VoiceProfileManagementPanel: View {
         // 주석과 알람 탭의 무제목 규칙에 맞춤).
         //
         // ⚠ **'목소리 슬롯' 진행바 카드도 두지 않는다.** 안드로이드에 없는 컨트롤이다 —
-        // 남은 개수는 '내 목소리' 섹션 헤더의 '이번 달 n/m' 이 말하고, 슬롯이 가득 차면
+        // 남은 개수는 '내 목소리' 섹션 헤더의 '생성 가능 n/m회'가 말하고, 슬롯이 가득 차면
         // 추가 버튼을 누를 때 안내 모달이 뜬다. 진행바는 상시로 자리만 차지했다.
         VStack(alignment: .leading, spacing: 16) {
             if let message = voice.statusMessage {
@@ -274,7 +274,7 @@ struct VoiceProfileManagementPanel: View {
     // MARK: - Slot status card
 
     /// 화면에 숫자를 띄울 쿼터. **유료 사용자에게만** 의미가 있다 —
-    /// 무료에게 '이번 달 0/1' 은 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
+    /// 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
     private var monthlyQuota: VoiceDraftQuotaResponse? {
         guard hasPaidVoiceAccess, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
         return quota
@@ -346,14 +346,14 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 섹션 헤더 오른쪽 — 이번 달 남은 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1274-1305`.
+    /// 섹션 헤더 오른쪽 — 남은 생성 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1274-1305`.
     private var addVoiceHeaderTrailing: some View {
         HStack(spacing: 10) {
-            // ⚠ **유료만 숫자를 본다.** 무료에게 '이번 달 0/1' 은 마치 이용권만 있으면
+            // ⚠ **유료만 숫자를 본다.** 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면
             // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
             // 눌렀을 때 이용권 안내로 보낸다.
             if let quota = monthlyQuota, hasPaidVoiceAccess, quota.registrationLimit > 0 {
-                Text("이번 달 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)")
+                Text("생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
@@ -411,7 +411,7 @@ struct VoiceProfileManagementPanel: View {
             // ⚠ **이번 달을 다 썼으면 버튼을 끈다** — 안드로이드
             // (`ui/voices/VoiceProfileManagementPanel.kt` 의 `enabled = !voiceProfileBusy
             // && !monthlyExhausted`)와 같다. 흐려도 '왜' 가 읽히는 건 **바로 옆에
-            // '이번 달 0/1' 이 있기 때문**이고, 그 숫자는 유료일 때만 뜨는데
+            // '생성 가능 0/1회'가 있기 때문**이고, 그 숫자는 유료일 때만 뜨는데
             // `monthlyExhausted` 도 유료일 때만 참이라 둘은 항상 같이 나타난다.
             //
             // (예전 주석은 "안드로이드는 켜 두고 눌렀을 때 이유를 말한다" 고 적어 두고
@@ -563,4 +563,3 @@ struct VoiceProfileManagementPanel: View {
         )
     }
 }
-

@@ -1052,6 +1052,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prerenderDrive = null
         voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
+        voiceDraftQuota = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false

@@ -828,7 +828,7 @@
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
     <string name="voicesr_preview_action">再生</string>
     <string name="voices_add">追加</string>
-    <string name="voices_monthly_quota">今月 %1$d/%2$d</string>
+    <string name="voices_monthly_quota">作成可能 %1$d/%2$d回</string>
     <string name="voices_limit_title">今月の声はもう作りました</string>
     <string name="voices_limit_message">声は月に1つ作れます。次は来月に作れます。今の声を削除しても今月は作れません。</string>
     <string name="voices_my_voices_title">自分の声</string>

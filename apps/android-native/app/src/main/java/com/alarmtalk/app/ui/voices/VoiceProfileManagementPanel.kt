@@ -1302,9 +1302,9 @@ internal fun VoiceProfileManagementPanel(
             expanded = ownSectionExpanded,
             onToggle = { ownSectionExpanded = !ownSectionExpanded },
         ) {
-            // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
+            // 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
             // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
-            // 유료만 숫자를 본다. 무료에게 '이번 달 0/1'은 마치 이용권만 있으면 이미 다 쓴
+            // 유료만 숫자를 본다. 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴
             // 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고 눌렀을 때 안내한다.
             val monthlyQuota = voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }
             monthlyQuota?.let { quota ->
@@ -1317,7 +1317,7 @@ internal fun VoiceProfileManagementPanel(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
             }
-            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '이번 달 0/1'이 있어
+            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '생성 가능 0/1회'가 있어
             // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
             // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
             val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0

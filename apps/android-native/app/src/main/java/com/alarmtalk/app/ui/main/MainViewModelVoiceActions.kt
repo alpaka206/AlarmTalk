@@ -58,9 +58,10 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         try {
             supervisorScope {
                 val authorization = AlarmTalkApiClient.bearer(session.token)
-                // 목록과 초안은 서로 독립이다. 초안이 느리거나 실패해도 기본/개인 목소리
-                // 목록은 첫 왕복이 끝나는 즉시 화면에 반영한다.
+                // 목록·초안·월 등록 한도는 서로 독립이다. 한도가 목록 뒤에 시작하면
+                // '생성 가능 n/m회'만 한 왕복 늦게 나타나므로 셋을 함께 시작한다.
                 val draftRequest = async { api.getVoiceDraft(authorization).profile }
+                val quotaRequest = async { api.getVoiceDraftQuota(authorization) }
                 val profiles = api.listVoiceProfiles(authorization).profiles
                 if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
                     Log.i(TAG, "Dropping stale voice profile list: session ended or switched")
@@ -76,8 +77,17 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
                 reconcileInaccessibleVoiceAlarms(requestOwner)
-                // 삭제 화면에서 '이번 달 재생성 가능 여부'를 판정하도록 월 생성 쿼터도 함께 갱신.
-                loadVoiceDraftQuota()
+                try {
+                    val quota = quotaRequest.await()
+                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                        voiceDraftQuota = quota
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // 한도 조회 실패는 목록·초안을 지우거나 실패로 보이게 하지 않는다.
+                    AlarmTalkLog.reportError("Failed to load voice draft quota", error)
+                }
                 try {
                     val draft = draftRequest.await()
                     if (responseStillBelongsToRequester(requestOwner, startGeneration)) {

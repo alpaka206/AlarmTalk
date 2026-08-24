@@ -438,6 +438,8 @@ final class VoiceStudioViewModel: ObservableObject {
 
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
+            // 목록·가족 목소리와 함께 시작한다. 뒤에서 시작하면 한도 숫자만 한 왕복 늦게 뜬다.
+            async let nextQuota: VoiceDraftQuotaResponse? = try? api.voiceDraftQuota(token: token)
             // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
             // ⚠ **실패와 '없음' 을 구분해 남긴다.** 403 은 "이 플랜엔 공유 목소리가 없다" 는
@@ -454,7 +456,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 familyAuthoritative = false
             }
             // 쿼터도 실패해도 무시한다 — 숫자를 못 보여줄 뿐 목소리 목록은 정상이어야 한다.
-            let quotaResult = try? await api.voiceDraftQuota(token: token)
+            let quotaResult = await nextQuota
             let resolvedProfiles = try await nextProfiles
             guard activeUserID == userID else { return }
             // ⚠ **상태를 쓰기 전에 취소를 확인한다**(2026-08-18 Codex #697 P2).

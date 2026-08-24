@@ -820,7 +820,7 @@ for a smooth and secure experience.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
     <string name="voicesr_preview_action">Play</string>
     <string name="voices_add">Add</string>
-    <string name="voices_monthly_quota">%1$d/%2$d this month</string>
+    <string name="voices_monthly_quota">%1$d/%2$d creations available</string>
     <string name="voices_limit_title">Monthly voice limit reached</string>
     <string name="voices_limit_message">You can create one voice per month. Your next one is available next month — deleting this voice will not give this month back.</string>
     <string name="voices_my_voices_title">My voices</string>

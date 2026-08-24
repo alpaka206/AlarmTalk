@@ -262,7 +262,7 @@ internal sealed interface CloneVoiceReadiness {
  * 다시 한 번 가려지는데, 이 화면을 고친 이유가 바로 그거였다. 접기는 목소리가 많아졌을 때
  * 스스로 접는 선택지로만 둔다.
  *
- * [trailing] 은 '내 목소리' 머리의 [이번 달 n/1][추가] 자리.
+ * [trailing] 은 '내 목소리' 머리의 [생성 가능 n/1회][추가] 자리.
  */
 @Composable
 internal fun VoiceCatalogSectionHeader(
@@ -614,5 +614,4 @@ internal fun SharedVoiceProfileRow(
         onPreview = onPlay,
     )
 }
-
 

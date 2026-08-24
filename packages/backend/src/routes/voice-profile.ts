@@ -414,7 +414,7 @@ voiceProfile.get('/draft-quota', async (c) => {
   const registration = await readMonthlyRegistrationUsage(db, userPk);
   return c.json({
     ...quota,
-    // 클라가 '이번 달 n/1'로 보여주는 값. draft 시도 쿼터(limit 3)와 다르다.
+    // 클라가 '생성 가능 n/1회'로 보여주는 값. draft 시도 쿼터(limit 0)와 다르다.
     registration_limit: registration.limit,
     registration_used: registration.used,
     registration_remaining: registration.remaining,
