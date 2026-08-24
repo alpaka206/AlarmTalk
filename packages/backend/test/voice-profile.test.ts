@@ -1161,7 +1161,6 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     for (let i = 0; i < 8; i += 1) mockDB.pushResult([], 1);
     mockDB.pushResult([{ id: V1, name: '새 목소리', status: 'ready' }]);
 
-    mockDB.pushResultFor('FROM plan_group_members m1', []);
     const execution = fakeExecutionCtx();
     const response = await buildApp().fetch(
       jsonReq('PATCH', `/vp/${V2}`, {
@@ -1195,8 +1194,8 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     expect(audioClear!.sql).toContain("category = 'custom'");
     expect(
       mockDB.calls.some((call) => call.sql.includes('FROM plan_group_members m1')),
-      '제자리 교체의 공유 변경이 그룹원 push fanout을 예약하지 않았다',
-    ).toBe(true);
+      '새 클립 게시 전 그룹원에게 갱신 push를 보내면 옛 캐시를 다시 확정한다',
+    ).toBe(false);
   });
 });
 

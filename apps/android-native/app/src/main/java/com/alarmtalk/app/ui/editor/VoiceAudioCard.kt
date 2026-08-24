@@ -66,8 +66,12 @@ internal fun preferredInitialVoiceProfileId(
     ownVoiceIds: List<String>,
     familyVoiceIds: List<String>,
     systemVoiceIds: List<String>,
+    profileLoadFinished: Boolean,
 ): String? {
     val available = ownVoiceIds + familyVoiceIds + systemVoiceIds
+    if (!profileLoadFinished && lastUsedVoiceId != null && lastUsedVoiceId !in systemVoiceIds) {
+        return null
+    }
     return lastUsedVoiceId?.takeIf(available::contains)
         ?: ownVoiceIds.firstOrNull()
         ?: familyVoiceIds.firstOrNull()

@@ -112,7 +112,9 @@ class StockClipPrefetchWorker(
             val clips = allClips.filter {
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
-                it.targetsDefaultVoices(language) || it.voiceProfileId in ownedProfileIds
+                it.targetsDefaultVoices(language) ||
+                    it.voiceProfileId in ownedProfileIds ||
+                    audioStore.isCachedAudioStale(cacheKeyFor(it), it.audioUrl)
             }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
@@ -148,7 +150,9 @@ class StockClipPrefetchWorker(
                 return@runCatching Result.success()
             }
 
-            val missing = clips.filter { audioStore.getCachedAudio(cacheKeyFor(it)) == null }
+            val missing = clips.filter {
+                audioStore.getCachedAudio(cacheKeyFor(it), it.audioUrl) == null
+            }
             publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
                 rebind()

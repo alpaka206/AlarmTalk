@@ -298,6 +298,15 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로 돌아온다 —
             // 그러면 철회 이전 목록으로 판단하게 된다(Codex #697 P1).
             await deps.voiceStudio.refresh(session: deps.auth.session, force: true)
+            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session) {
+                await deps.alarmStore.waitUntilLoadedFromDisk()
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: deps.alarmStore,
+                    alarmKit: deps.alarmKit,
+                    ownerUserId: deps.auth.session?.user.id
+                )
+            }
         }
 
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.

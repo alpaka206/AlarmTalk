@@ -674,7 +674,7 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
                     batch.map { clip ->
                         async {
                             val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                            if (audioStore.getCachedAudio(cacheKey) == null) {
+                            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                                 val response = downloadTtsMessageAudio(clip.messageId)
                                 audioStore.cacheGeneratedAudio(
                                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -789,7 +789,7 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
         onProgress(0, clips.size)
         clips.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
-            if (audioStore.getCachedAudio(cacheKey) == null) {
+            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                 val response = downloadTtsMessageAudio(clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -876,6 +876,39 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             response.expectedVariants?.let { expectedVariants = it }
             stockClipManifestFetched = true
             com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response)
+            // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
+            // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
+            withContext(Dispatchers.IO) {
+                val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+                val stale = clips.filter { clip ->
+                    val key = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
+                    audioStore.isCachedAudioStale(key, clip.audioUrl)
+                }
+                stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
+                    kotlinx.coroutines.coroutineScope {
+                        batch.map { clip ->
+                            async {
+                                try {
+                                    val key = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
+                                    val audio = downloadTtsMessageAudio(clip.messageId)
+                                    audioStore.cacheGeneratedAudio(
+                                        bytes = android.util.Base64.decode(audio.audioBase64, android.util.Base64.DEFAULT),
+                                        format = audio.audioFormat,
+                                        rawAudioUri = audio.audioUrl,
+                                        displayName = key,
+                                        cacheKey = key,
+                                        messageId = clip.messageId,
+                                    )
+                                } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                }
+            }
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->

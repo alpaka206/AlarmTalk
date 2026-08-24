@@ -103,8 +103,9 @@
 
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
-  공유 on/off 푸시도 일반 승격과 제자리 교체가 같다. 교체 응답이 먼저 끝나 그룹원의 목록과
-  로컬 알람이 다음 주기까지 옛 접근권을 유지하게 두지 않는다.
+  일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
+  프리셋 재렌더가 게시된 **뒤에** 그룹원에게 갱신 신호를 보낸다. 먼저 알리면 같은 message ID의
+  옛 클립을 다시 확정해 버린다. 공유를 끄는 교체만 접근권 철회를 위해 즉시 알린다.
 - **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
   작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
 - 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
@@ -217,6 +218,11 @@
 받아야 할 목록은 서버가 정한다(`GET /tts/stock-clips` 의 목록, 클론은
 `GET /voice/:id/prerender-status` 의 `total`). 앱은 그 목록과 **디스크에 실제로 있는 것**을
 비교해 **없는 것만** 받는다.
+
+제자리 교체는 message ID를 보존하므로 파일 존재만으로는 충분하지 않다. 매니페스트의
+`audio_url`을 캐시 메타데이터의 원격 주소와 비교하고, 다르면 같은 `stock_<messageId>` 파일을
+낡은 것으로 보아 다시 받는다. 서버는 교체 렌더마다 새 R2 주소를 게시하고, 전체 게시 완료 뒤
+`voice_share_changed`를 보내 매니페스트 재조회와 재다운로드를 깨운다.
 
 - **운영이 서버 시드를 늘리는 것을 전제로 짠다.** 프리셋을 11개에서 13개로 늘려 배포하면
   앱은 **비는 2개만** 받아야 한다. 코드나 상수에 11을 적어 두면 그 2개는 영영 안 받아지고,
@@ -397,7 +403,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
-| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | `PATCH /voice/:id` (`is_shared` + `is_draft=false`) → `scheduleVoiceShareChangedPush`(일반 승격·제자리 교체 공용) |
+| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

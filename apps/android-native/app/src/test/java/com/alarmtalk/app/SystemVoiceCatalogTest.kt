@@ -24,6 +24,7 @@ class SystemVoiceCatalogTest {
                 ownVoiceIds = listOf("own"),
                 familyVoiceIds = listOf("family"),
                 systemVoiceIds = listOf("system"),
+                profileLoadFinished = false,
             ),
         )
         assertEquals(
@@ -33,6 +34,31 @@ class SystemVoiceCatalogTest {
                 ownVoiceIds = listOf("own"),
                 familyVoiceIds = listOf("family"),
                 systemVoiceIds = listOf("system"),
+                profileLoadFinished = true,
+            ),
+        )
+    }
+
+    @Test
+    fun waitsForSavedCloneBeforeFallingBackToSystemVoice() {
+        assertEquals(
+            null,
+            preferredInitialVoiceProfileId(
+                lastUsedVoiceId = "saved-clone",
+                ownVoiceIds = emptyList(),
+                familyVoiceIds = emptyList(),
+                systemVoiceIds = listOf("system"),
+                profileLoadFinished = false,
+            ),
+        )
+        assertEquals(
+            "saved-clone",
+            preferredInitialVoiceProfileId(
+                lastUsedVoiceId = "saved-clone",
+                ownVoiceIds = listOf("saved-clone"),
+                familyVoiceIds = emptyList(),
+                systemVoiceIds = listOf("system"),
+                profileLoadFinished = true,
             ),
         )
     }

@@ -150,7 +150,7 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
 
     // 울리는 기기의 주인은 target_user_id(수신자)다 — user_id(발신자)를 보내면
     // 정작 캐시된 녹음으로 울리는 기기는 신호를 못 받는다.
-    expect(downgraded).toEqual([
+    expect(downgraded.downgradedAlarms).toEqual([
       { alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true },
     ]);
   });

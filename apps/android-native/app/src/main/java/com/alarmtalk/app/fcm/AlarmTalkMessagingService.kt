@@ -35,6 +35,9 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         // 상대가 목소리 공유를 켜거나/끄면 → 공유 목록·클립 매니페스트 즉시 새로고침 신호.
         // UI 가 없으면 무시(다음 앱 시작의 초기 로드가 폴백).
         if (message.data["type"] == "voice_share_changed") {
+            // 프로세스에 UI가 없어도 제자리 교체된 공유 목소리 캐시를 새 audio_url로 갱신한다.
+            // 워커는 매니페스트에서 기존 캐시가 stale인 공유 클립만 추가로 포함한다.
+            com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(applicationContext)
             com.alarmtalk.app.core.AppSignals.emitVoiceShareChanged()
         }
         // 구독 만료 → 무료 강등 신호. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉 → 백그라운드에서

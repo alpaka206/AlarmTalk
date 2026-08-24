@@ -18,6 +18,7 @@ import {
   findMissingStockTargets,
   generateStockClip,
   markPrerenderDone,
+  notifySharedVoicePrerenderComplete,
   releasePrerenderClaim,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
@@ -644,7 +645,7 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
 });
 
 type ReplaceResult =
-  | { ok: true; profile: Record<string, unknown> }
+  | { ok: true; profile: Record<string, unknown>; notifyShareRemoval: boolean }
   | { ok: false; error: string; errorCode: string; status: 404 | 409 };
 
 /**
@@ -688,7 +689,7 @@ async function replaceVoiceInPlace(
   // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
   // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
   const targetRes = await db.execute({
-    sql: `SELECT id, elevenlabs_voice_id
+    sql: `SELECT id, elevenlabs_voice_id, is_shared
           FROM voice_profiles
           WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
             AND COALESCE(is_draft, 0) = 0 AND id != ?`,
@@ -706,6 +707,9 @@ async function replaceVoiceInPlace(
   const targetId = String(target.id);
   const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
   const ownerUserId = String(draft.user_id);
+  const finalIsShared =
+    isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
+  const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
 
   await withWriteTransaction(db, async (tx) => {
     await tx.execute({
@@ -722,7 +726,7 @@ async function replaceVoiceInPlace(
         draft.preview_text ?? null,
         draft.preview_language ?? null,
         draft.speech_style ?? null,
-        isShared === undefined ? Number(draft.is_shared ?? 0) : (isShared ? 1 : 0),
+        finalIsShared ? 1 : 0,
         targetId,
       ],
     });
@@ -788,7 +792,11 @@ async function replaceVoiceInPlace(
           FROM voice_profiles WHERE id = ? LIMIT 1`,
     args: [targetId],
   });
-  return { ok: true, profile: (refreshed.rows[0] ?? {}) as Record<string, unknown> };
+  return {
+    ok: true,
+    profile: (refreshed.rows[0] ?? {}) as Record<string, unknown>,
+    notifyShareRemoval,
+  };
 }
 
 voiceProfile.patch('/:id', async (c) => {
@@ -978,7 +986,9 @@ voiceProfile.patch('/:id', async (c) => {
       if (!replaced.ok) {
         return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);
       }
-      if (hasShared) scheduleVoiceShareChangedPush(c, db, userPk);
+      // 공유 중인 옛 목소리를 끄는 것은 접근권 철회라 즉시 알린다. 새 공유 목소리의 갱신은
+      // 모든 preset 게시가 끝난 뒤 notifySharedVoicePrerenderComplete 가 알린다.
+      if (replaced.notifyShareRemoval) scheduleVoiceShareChangedPush(c, db, userPk);
       return c.json({ profile: replaced.profile, replaced: true });
     }
   }
@@ -2123,7 +2133,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
               OR claim_token NOT LIKE 'adv-%'
               OR claimed_at <= datetime('now', '-2 minutes')
             )
-          RETURNING language`,
+          RETURNING language, refresh_existing`,
     args: [claimToken, id],
   });
   if (claimed.rows.length === 0) {
@@ -2143,6 +2153,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
   const language = String(claimed.rows[0]!.language ?? 'ko');
+  const refreshExisting = Number(claimed.rows[0]!.refresh_existing ?? 0) === 1;
 
   const voices = await listReadyCloneVoices(db, [
     { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
@@ -2156,9 +2167,12 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     );
   }
 
-  const targets = await findMissingStockTargets(db, [voice]);
+  const targets = await findMissingStockTargets(db, [voice], refreshExisting);
   if (targets.length === 0) {
     await markPrerenderDone(db, id, claimToken);
+    if (refreshExisting) {
+      await notifySharedVoicePrerenderComplete(db, c.env, id, userPk);
+    }
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
 
@@ -2180,6 +2194,9 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const done = made >= targets.length;
   if (done) {
     await markPrerenderDone(db, id, claimToken);
+    if (refreshExisting) {
+      await notifySharedVoicePrerenderComplete(db, c.env, id, userPk);
+    }
   } else {
     // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
     await releasePrerenderClaim(db, id, claimToken);

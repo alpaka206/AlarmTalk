@@ -58,6 +58,12 @@ async function setupDb() {
       -- 마이그레이션 #101. 교체 회차인지(기존 preset 을 덮어쓸지) 나른다.
       refresh_existing INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE generated_audio_assets (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      provider_voice_id TEXT NOT NULL,
+      audio_url TEXT
+    );
   `);
   return db;
 }
@@ -205,6 +211,27 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     const targets = await findMissingStockTargets(db, [cloneVoice()]);
     expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
     expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 0)).toBeUndefined();
+  });
+
+  it('교체 배치는 새 provider로 게시된 항목을 건너뛰고 남은 클립부터 이어간다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready', voiceId: 'el-new' });
+    await db.execute({
+      sql: `INSERT INTO messages
+              (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
+            VALUES ('m-new', 'owner-1', 'clone-ready', 'greeting', 'ko', 0, 1, 'r2://new')`,
+      args: [],
+    });
+    await db.execute({
+      sql: `INSERT INTO generated_audio_assets (id, message_id, provider_voice_id, audio_url)
+            VALUES ('ga-new', 'm-new', 'el-new', 'r2://new')`,
+      args: [],
+    });
+
+    const targets = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-new' })], true);
+
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
+    expect(targets.find((t) => t.category === 'greeting' && t.variantIndex === 0)).toBeUndefined();
   });
 
   it('다른 보이스의 기존 클립은 이 보이스 스코프에 영향 없음(전유저 스캔 아님)', async () => {

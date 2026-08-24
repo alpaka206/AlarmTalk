@@ -1,6 +1,7 @@
 import type { Client } from '@libsql/client/web';
 import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
+import { sendVoiceShareChangedPush } from './fcm';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import { extractDeliveryTags, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
@@ -427,17 +428,29 @@ export async function findMissingStockTargets(
   const voiceIds = prerenderVoices.map((voice) => voice.id);
   const ph = voiceIds.map(() => '?').join(',');
   const existing = await db.execute({
-    sql: `SELECT voice_profile_id, category, language, variant
-          FROM messages
-          WHERE COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL
-            AND voice_profile_id IN (${ph})`,
+    sql: `SELECT m.voice_profile_id, m.category, m.language, m.variant,
+                 ga.provider_voice_id AS published_provider_voice_id
+          FROM messages m
+          LEFT JOIN generated_audio_assets ga
+            ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+          WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
+            AND m.voice_profile_id IN (${ph})`,
     args: voiceIds,
   });
-  const seen = refreshExisting ? new Set<string>() : new Set(
-    existing.rows.map(
+  const voiceById = new Map(prerenderVoices.map((voice) => [voice.id, voice]));
+  const seen = new Set(
+    existing.rows
+      .filter((row) => {
+        if (!refreshExisting) return true;
+        const voice = voiceById.get(String(row.voice_profile_id));
+        // 교체 배치는 여러 cron/advance 호출에 걸친다. 지금 프로필의 새 provider 로 이미
+        // 게시된 행만 완료로 세야 앞쪽 클립을 매번 다시 만드는 무한 루프가 생기지 않는다.
+        return voice?.elevenlabsVoiceId === String(row.published_provider_voice_id ?? '');
+      })
+      .map(
       (row) =>
         `${row.voice_profile_id}|${row.category}|${row.language}|${Number(row.variant ?? 0)}`,
-    ),
+      ),
   );
 
   const targets: StockClipTarget[] = [];
@@ -615,6 +628,33 @@ export async function markPrerenderDone(
   });
 }
 
+/** 제자리 교체의 모든 새 클립이 게시된 뒤 공유 사용자들의 매니페스트 재조회를 깨운다. */
+export async function notifySharedVoicePrerenderComplete(
+  db: Client,
+  env: Env,
+  voiceProfileId: string,
+  ownerUserId: string,
+): Promise<void> {
+  const shared = await db.execute({
+    sql: `SELECT 1 FROM voice_profiles
+          WHERE id = ? AND deleted_at IS NULL AND COALESCE(is_shared, 0) = 1
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return;
+  const members = await db.execute({
+    sql: `SELECT DISTINCT m2.user_id
+          FROM plan_group_members m1
+          JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+          WHERE m1.user_id = ? AND m2.user_id != ?`,
+    args: [ownerUserId, ownerUserId],
+  });
+  const recipientUserIds = members.rows.map((row) => String(row.user_id));
+  if (recipientUserIds.length > 0) {
+    await sendVoiceShareChangedPush(db, env, recipientUserIds);
+  }
+}
+
 /** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */
 export async function markPrerenderFailed(
   db: Client,
@@ -690,6 +730,9 @@ export async function runPrerenderBatch(
     const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
     if (targets.length === 0) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
+      if (claim.refreshExisting) {
+        await notifySharedVoicePrerenderComplete(db, env, voice.id, claim.ownerUserId);
+      }
       continue;
     }
     let voiceRendered = 0;
@@ -715,6 +758,9 @@ export async function runPrerenderBatch(
     // 재조회 없이 판정: 이번 배치에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
     if (voiceRendered === targets.length && !voiceError) {
       await markPrerenderDone(db, voice.id, claim.claimToken);
+      if (claim.refreshExisting) {
+        await notifySharedVoicePrerenderComplete(db, env, voice.id, claim.ownerUserId);
+      }
     } else if (voiceError && voiceRendered === 0) {
       await markPrerenderFailed(db, voice.id, claim.claimToken);
     } else {

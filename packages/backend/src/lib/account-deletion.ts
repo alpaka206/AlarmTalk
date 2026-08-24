@@ -234,17 +234,15 @@ export async function purgeUserAccount(
              WHERE sender_user_id IN (?, ?)`,
       args: userIds,
     });
-    // ⚠ **내가 만든 행만 지운다**(2026-08-24 축소). 예전에는 `target_user_id IN (나)` 까지
-    // 지워서 **남이 나에게 보낸 행**(주인은 발신자)을 함께 없앴다. 그 행에는 내 목소리가
-    // 없고(발신자 목소리이거나 기본 목소리) 내 데이터도 아니다 — 탈퇴가 파기해야 할 것은
-    // **내 생체정보**이지 남의 발신 기록이 아니다. 지우면 발신자 쪽 같은 시각 슬롯 이력까지
-    // 조용히 사라진다.
-    //
-    // 이 DELETE 자체는 뺄 수 없다 — `alarms.user_id` 가 `users(id)` FK 라, 내 행을 남기면
-    // 아래 `DELETE FROM users` 가 FK 로 실패해 탈퇴가 통째로 500 이 된다.
+    // 서버 알람 행은 로컬 원본이 아니라 **수신 확인 전 전달 대기열**이다. 내가 만든 행뿐 아니라
+    // 나를 target 으로 한 행도 지운다. 후자는 계정이 사라지면 영원히 pull/ack 될 수 없고,
+    // 남겨 두면 audio-retention 이 message_id 를 영구 사용 참조로 오인한다. 이미 전달된 알람은
+    // ack 때 서버 행이 없어졌으므로 수신자 기기의 로컬 알람에는 영향이 없다.
+    // `user_id` 갈래는 users FK 때문에도 반드시 필요하다.
     await tx.execute({
-      sql: `DELETE FROM alarms WHERE user_id IN (?, ?)`,
-      args: userIds,
+      sql: `DELETE FROM alarms
+            WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
+      args: [...userIds, ...userIds],
     });
     if (cloneIds.length > 0) {
       const cph = cloneIds.map(() => '?').join(', ');

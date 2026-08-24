@@ -106,7 +106,9 @@ final class StockClipPrefetcher: ObservableObject {
 
             let cache = AudioCacheStore.shared
             let missing = clips.filter {
-                cache.cachedURL(for: AudioCacheStore.stockCacheKey(messageId: $0.messageId)) == nil
+                let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
+                return cache.cachedURL(for: key) == nil
+                    || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
             }
             var done = clips.count - missing.count
             state = .running(done: done, total: clips.count)

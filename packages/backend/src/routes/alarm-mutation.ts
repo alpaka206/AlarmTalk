@@ -13,6 +13,7 @@ import {
   normalizeAlarmRow,
   normalizeTimezone,
   claimTargetedAlarmSlot,
+  alarmDeliveryVersionSupported,
   evaluateFamilyAlarmTimingGuard,
   type AlarmRow,
   type AlarmMode,
@@ -428,7 +429,10 @@ alarmMutation.post('/', async (c) => {
   }
 
   let alarmId = crypto.randomUUID();
-  const deliveryVersion = targetUserIdForAlarm ? crypto.randomUUID() : null;
+  const deliveryVersionSupported = targetUserIdForAlarm
+    ? await alarmDeliveryVersionSupported(db)
+    : false;
+  const deliveryVersion = deliveryVersionSupported ? crypto.randomUUID() : null;
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
@@ -443,8 +447,8 @@ alarmMutation.post('/', async (c) => {
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id, delivery_version)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             timezone, bucket_id${deliveryVersionSupported ? ', delivery_version' : ''})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${deliveryVersionSupported ? ', ?' : ''})`,
       args: [
         alarmId,
         userId,
@@ -459,7 +463,7 @@ alarmMutation.post('/', async (c) => {
         body.voice_profile_id ?? null,
         storedTimezone,
         body.bucket_id ?? null,
-        deliveryVersion,
+        ...(deliveryVersionSupported ? [deliveryVersion] : []),
       ],
     });
   // 타인 발신 알람: 같은 (수신자, time) 슬롯을 멱등·교체 규칙으로 원자 점유한다.
@@ -470,14 +474,21 @@ alarmMutation.post('/', async (c) => {
     executor: DbExecutor,
     recipientIds: [string, string],
   ): Promise<string> => {
-    const claimed = await claimTargetedAlarmSlot(executor, userId, recipientIds, body.time, alarmId);
+    const claimed = await claimTargetedAlarmSlot(
+      executor,
+      userId,
+      recipientIds,
+      body.time,
+      alarmId,
+      deliveryVersionSupported,
+    );
     if (claimed.reused) {
       await executor.execute({
         sql: `UPDATE alarms SET
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
                 vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
-                timezone = ?, bucket_id = ?,
-                delivery_version = ?, is_active = 1, updated_at = datetime('now')
+                timezone = ?, bucket_id = ?${deliveryVersionSupported ? ', delivery_version = ?' : ''},
+                is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
         args: [
           resolvedMessageId,
@@ -489,7 +500,7 @@ alarmMutation.post('/', async (c) => {
           body.voice_profile_id ?? null,
           storedTimezone,
           body.bucket_id ?? null,
-          deliveryVersion,
+          ...(deliveryVersionSupported ? [deliveryVersion] : []),
           claimed.alarmId,
         ],
       });
@@ -709,6 +720,9 @@ alarmMutation.patch('/:id', async (c) => {
     typeof current.target_user_id === 'string' && current.target_user_id.length > 0
       ? current.target_user_id
       : null;
+  const deliveryVersionSupported = patchTargetUserId
+    ? await alarmDeliveryVersionSupported(db)
+    : false;
   const reactivating = body.is_active === true && Number(current.is_active) === 0;
   const willBeActive =
     body.is_active !== undefined ? body.is_active : Number(current.is_active) === 1;
@@ -836,7 +850,7 @@ alarmMutation.patch('/:id', async (c) => {
 
   // 타깃 알람의 서버 변경은 수신자가 봐야 할 새 전달 세대다. 옛 스냅샷 ACK가 수정된 행을
   // 지우면 원격 끄기·시각 변경을 못 보므로 모든 PATCH에서 버전을 회전한다.
-  if (patchTargetUserId) {
+  if (patchTargetUserId && deliveryVersionSupported) {
     updates.push('delivery_version = ?');
     args.push(crypto.randomUUID());
   }
@@ -877,10 +891,11 @@ alarmMutation.patch('/:id', async (c) => {
             //  비활성화돼 두 알람이 모두 꺼지는 버그가 있었다: Codex #563.)
             await tx.execute({
               sql: `UPDATE alarms
-                    SET is_active = 0, delivery_version = ?, updated_at = datetime('now')
+                    SET is_active = 0${deliveryVersionSupported ? ', delivery_version = ?' : ''},
+                        updated_at = datetime('now')
                     WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
               args: [
-                crypto.randomUUID(),
+                ...(deliveryVersionSupported ? [crypto.randomUUID()] : []),
                 familyReclaim.ids[0],
                 familyReclaim.ids[1],
                 familyReclaim.time,
@@ -905,6 +920,18 @@ alarmMutation.patch('/:id', async (c) => {
           FROM alarms WHERE id = ?`,
     args: [id],
   });
+
+  // 전달 세대를 바꾼 커밋을 즉시 알린다. 생성 때 보낸 신호는 이미 소비됐을 수 있으므로,
+  // 버전만 회전하고 여기서 깨우지 않으면 15분 폴백 전에 옛 알람이 울릴 수 있다.
+  if (patchTargetUserId) {
+    try {
+      c.executionCtx.waitUntil(
+        sendFamilyAlarmPush(db, c.env, patchTargetUserId, id).catch(() => {}),
+      );
+    } catch {
+      // executionCtx 없음(비-fetch/테스트) → push 생략, pull 폴백.
+    }
+  }
 
   return c.json({
     success: true,

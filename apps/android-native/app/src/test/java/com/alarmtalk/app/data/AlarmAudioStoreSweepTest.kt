@@ -5,6 +5,8 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -86,5 +88,20 @@ class AlarmAudioStoreSweepTest {
         )
 
         assertTrue("미리 받아둔 기본 목소리 클립은 TTL 과 무관하게 남는다", clip.exists())
+    }
+
+    @Test
+    fun invalidatesSameMessageCacheWhenServerAudioUrlChanges() {
+        store.cacheGeneratedAudio(
+            bytes = ByteArray(4 * 1024),
+            format = "mp3",
+            rawAudioUri = "r2://old-voice",
+            cacheKey = "stock_message-1",
+            messageId = "message-1",
+        )
+
+        assertNotNull(store.getCachedAudio("stock_message-1", "r2://old-voice"))
+        assertNull(store.getCachedAudio("stock_message-1", "r2://new-voice"))
+        assertFalse(audioDir.listFiles().orEmpty().any { it.nameWithoutExtension == "stock_message-1" })
     }
 }

@@ -1,6 +1,6 @@
 import type { DbExecutor } from './transactions';
 import { enqueueExternalDeletion, enqueueUserVoiceArtifacts } from './audio-retention';
-import { revokeDeletedVoices } from './voice-revocation';
+import { revokeDeletedVoices, type VoiceRevocationNotifications } from './voice-revocation';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
@@ -286,9 +286,9 @@ export async function deleteSensitiveVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
   userLoginId?: string | null,
-): Promise<DowngradedAlarm[]> {
+): Promise<VoiceRevocationNotifications> {
   const ids = uniqueIds([userPk, userLoginId]);
-  if (ids.length === 0) return [];
+  if (ids.length === 0) return { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
   const ph = placeholders(ids);
   const downgraded = new Map<string, DowngradedAlarm>();
 
@@ -384,5 +384,8 @@ export async function deleteSensitiveVoiceDataForUser(
   });
   await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({ sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, args: ids });
-  return Array.from(downgraded.values());
+  return {
+    downgradedAlarms: Array.from(downgraded.values()),
+    voiceAccessRevokedUserIds: revocation.voiceAccessRevokedUserIds,
+  };
 }

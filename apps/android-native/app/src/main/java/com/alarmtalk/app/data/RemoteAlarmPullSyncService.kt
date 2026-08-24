@@ -499,7 +499,7 @@ internal class RemoteAlarmPullSyncService(
             // 그때마다 같은 파일을 다시 내려받으면 재로그인 한 번에 받은 알람 수만큼 왕복이
             // 생긴다(생성 음성은 messageId 당 불변이라 다시 받을 이유가 없다).
             // 기본 목소리 프리페치(StockClipPrefetchWorker)는 이미 이렇게 하고 있었다.
-            alarmAudioStore.getCachedAudio(cacheKey) ?: runCatching {
+            alarmAudioStore.getCachedAudio(cacheKey, remote.messageAudioUrl) ?: runCatching {
                 val audio = api.getTtsMessageAudio(authorization, messageId)
                 alarmAudioStore.cacheGeneratedAudio(
                     bytes = Base64.decode(audio.audioBase64, Base64.DEFAULT),

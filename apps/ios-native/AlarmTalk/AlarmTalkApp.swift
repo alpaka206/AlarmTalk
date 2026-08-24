@@ -222,6 +222,15 @@ struct AlarmTalkApp: App {
                             // `force` 가 없으면 진행 중인 새로고침에 막혀 철회 이전 목록으로
                             // 판단하게 된다(Codex #697 P1).
                             await voiceStudio.refresh(session: auth.session, force: true)
+                            _ = await voiceStudio.loadStockClips(session: auth.session, force: true)
+                            if await voiceStudio.refreshChangedCachedStockClips(session: auth.session) {
+                                await alarmStore.waitUntilLoadedFromDisk()
+                                _ = await AlarmScheduleReconciler.reconcile(
+                                    store: alarmStore,
+                                    alarmKit: alarmKit,
+                                    ownerUserId: auth.session?.user.id
+                                )
+                            }
                         }
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)

@@ -540,7 +540,7 @@ internal fun AlarmEditorScreen(
         val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
         clips.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
-            val cached = audioStore.getCachedAudio(cacheKey) ?: run {
+            val cached = audioStore.getCachedAudio(cacheKey, clip.audioUrl) ?: run {
                 val response = onDownloadStockAudio(clip.messageId)
                 withContext(Dispatchers.IO) {
                     audioStore.cacheGeneratedAudio(
@@ -1143,6 +1143,7 @@ internal fun AlarmEditorScreen(
         readyOwnVoiceIds,
         readyFamilyVoiceIds,
         readySystemVoiceIds,
+        voiceProfileLoadFinished,
     ) {
         if (editor.playMode != AlarmPlayModes.ALARM_ONLY &&
             editor.voiceSource != VoiceSources.LOCAL_AUDIO &&
@@ -1153,6 +1154,7 @@ internal fun AlarmEditorScreen(
                 ownVoiceIds = readyOwnVoiceIds,
                 familyVoiceIds = readyFamilyVoiceIds,
                 systemVoiceIds = readySystemVoiceIds,
+                profileLoadFinished = voiceProfileLoadFinished,
             )?.let(editor::selectVoiceProfile)
         }
     }

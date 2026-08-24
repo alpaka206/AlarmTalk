@@ -529,7 +529,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 매니페스트가 비면 알람 편집기의 테마 목록이 통째로 비어, 문구 행이
     /// "불러오는 중이에요" 에서 벗어나지 못한다.
     @discardableResult
-    func loadStockClips(session: AuthSession?) async -> Bool {
+    func loadStockClips(session: AuthSession?, force: Bool = false) async -> Bool {
         // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가
         // 생기고, 관문(`needsPreparation`: nil → 막지 않음)과 저장(`hasCompleteBucket`:
         // nil → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
@@ -542,7 +542,7 @@ final class VoiceStudioViewModel: ObservableObject {
         guard let token = session?.token else { return !stockClips.isEmpty }
         // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
         // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
-        guard !manifestFetchedThisSession else { return true }
+        guard force || !manifestFetchedThisSession else { return true }
         do {
             let manifest = try await api.getStockClipManifest(token: token)
             stockClips = manifest.clips
@@ -558,6 +558,50 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.
     private var manifestFetchedThisSession = false
+
+    /// 제자리 교체가 같은 message ID에 게시한 새 오디오만 다시 받는다.
+    /// 반환값이 true면 iOS 예약에 구워 둔 사운드도 다시 맞춰야 한다.
+    func refreshChangedCachedStockClips(session: AuthSession?) async -> Bool {
+        guard let token = session?.token else { return false }
+        let cache = AudioCacheStore.shared
+        let stale = stockClips.filter { clip in
+            let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
+            return cache.cachedURL(for: key) != nil
+                && cache.isStale(cacheKey: key, remoteAudioUri: clip.audioUrl)
+        }
+        guard !stale.isEmpty else { return false }
+
+        var refreshedKeys = Set<String>()
+        for batchStart in stride(from: 0, to: stale.count, by: 4) {
+            let batch = Array(stale[batchStart..<min(batchStart + 4, stale.count)])
+            await withTaskGroup(of: String?.self) { group in
+                for clip in batch {
+                    group.addTask { [api] in
+                        do {
+                            let response = try await api.getTTSMessageAudio(id: clip.messageId, token: token)
+                            let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
+                            _ = try await AudioCacheStore.cacheStockClipOffMain(
+                                audio: response,
+                                messageId: clip.messageId,
+                                cacheKey: key
+                            )
+                            return key
+                        } catch {
+                            return nil
+                        }
+                    }
+                }
+                for await key in group {
+                    if let key { refreshedKeys.insert(key) }
+                }
+            }
+        }
+        // AlarmKit은 예약 때 Library/Sounds 사본을 고정하므로 새 캐시만 받아서는 부족하다.
+        for key in refreshedKeys {
+            AlarmSoundStaging.clearStagedSound(forKey: key)
+        }
+        return !refreshedKeys.isEmpty
+    }
 
     /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는
     /// `PreparedAlarmTalk` 을 만든다. 생성 TTS 와 동일하게 `preparedAlarm` 에 실어
@@ -577,7 +621,8 @@ final class VoiceStudioViewModel: ObservableObject {
             // 주석의 "받아 두니 네트워크 없어도 테마를 고를 수 있다" 는 약속이 거짓이었다.
             // 안드로이드 `bindStockBucketClips` 는 `audioStore.getCachedAudio(cacheKey) ?: 다운로드`
             // 로 캐시 우선이다.
-            if let url = AudioCacheStore.shared.cachedURL(for: stockKey) {
+            if let url = AudioCacheStore.shared.cachedURL(for: stockKey),
+               !AudioCacheStore.shared.isStale(cacheKey: stockKey, remoteAudioUri: clip.audioUrl) {
                 let cached = CachedVoiceAudio(
                     url: url,
                     fileName: url.lastPathComponent,

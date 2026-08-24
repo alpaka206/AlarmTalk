@@ -32,11 +32,11 @@
 
 떠나는 계정이 누구인지 모르면(`nil`) 켜진 것을 전부 끈다 — 근거가 없을 때는 안 울리는 쪽이 안전하다. 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다.
 
-⚠ **탈퇴가 서버에서 하는 일도 같은 선을 지킨다**(2026-08-24). 탈퇴는 **내 목소리를
-파기하는 것**이고, 알람에 대해서는 **내가 만든 행만** 지운다(`account-deletion.ts` —
-`alarms.user_id` 가 `users(id)` FK 라 남기면 탈퇴가 FK 로 실패한다). **남이 나에게 보낸
-행은 남긴다** — 내 데이터가 아니고, 지우면 발신자 쪽 같은 시각 슬롯 이력이 조용히
-사라진다.
+⚠ **탈퇴가 서버에서 하는 일도 서버 행의 성격에 맞춘다**(2026-08-24). 서버 알람 행은
+원본이 아니라 아직 수신 확인되지 않은 **전달 대기열**이다. 탈퇴 시에는 내가 만든 행과
+`target_user_id = 나`인 미전달 행을 모두 지운다(`account-deletion.ts`). 후자는 받을 계정이
+사라져 영원히 ack될 수 없고, 남겨 두면 `audio-retention`이 그 음원을 영구 참조로 오인한다.
+이미 전달된 알람은 ack 때 서버 행이 지워졌으므로 수신자 기기의 로컬 원본에는 영향이 없다.
 
 그래서 남의 기기에서 알람을 걷어내는 판정은 **목소리 하나**로 한다: 내 클론을 쓰던
 알람만 목소리를 잃고, 기본 목소리로 보낸 알람은 그대로 남는다. 파기 대상은 내
@@ -268,7 +268,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
-| 1-1 탈퇴는 내 행만 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…)` | — | — |
+| 1-1 탈퇴는 내 행과 나를 향한 미전달 행을 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…) OR target_user_id IN (…)` | — | — |
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |

@@ -420,7 +420,9 @@ internal fun VoiceProfileManagementPanel(
     // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
     suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
         val cacheKey = "greeting_${clip.messageId}"
-        withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey) }?.let { return it }
+        withContext(Dispatchers.IO) {
+            audioStore.getCachedAudio(cacheKey, clip.audioUrl)
+        }?.let { return it }
         val response = onDownloadStockAudio(clip.messageId)
         return withContext(Dispatchers.IO) {
             // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
@@ -973,7 +975,9 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         val total = allClips.size
-        var done = allClips.count { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        var done = allClips.count {
+            audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+        }
         if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         CloneAlarmBucketCategories.forEach { category ->
             val clipLanguage = cloneClipLanguageFor(profileId, category)
@@ -984,7 +988,7 @@ internal fun VoiceProfileManagementPanel(
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"
-                    if (audioStore.getCachedAudio(cacheKey) == null) {
+                    if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                         runCatching {
                             val response = onDownloadStockAudio(clip.messageId)
                             audioStore.cacheGeneratedAudio(
@@ -1022,7 +1026,9 @@ internal fun VoiceProfileManagementPanel(
                     it.voiceProfileId == profileId && it.category == category &&
                         (it.language ?: "ko") == clipLanguage
                 }
-                .all { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+                .all {
+                    audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+                }
         }
     }
 

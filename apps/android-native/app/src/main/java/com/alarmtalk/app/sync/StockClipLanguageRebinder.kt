@@ -167,7 +167,7 @@ object StockClipLanguageRebinder {
         val texts = mutableListOf<String>()
         target.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
-            val cached = audioStore.getCachedAudio(cacheKey) ?: runCatching {
+            val cached = audioStore.getCachedAudio(cacheKey, clip.audioUrl) ?: runCatching {
                 val response = api.getTtsMessageAudio(auth, clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),

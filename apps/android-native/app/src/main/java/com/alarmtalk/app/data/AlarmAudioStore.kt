@@ -514,6 +514,9 @@ class AlarmAudioStore(
         rawAudioUri: String?,
         messageId: String?,
     ): CachedAlarmAudio {
+        if (cachedAudioIsStale(resolvedCacheKey, rawAudioUri)) {
+            deleteCachedAudio(resolvedCacheKey)
+        }
         findCachedFile(resolvedCacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val metadata = readMetadata(resolvedCacheKey)
@@ -574,6 +577,10 @@ class AlarmAudioStore(
     }
 
     fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
+        if (cachedAudioIsStale(cacheKey, rawAudioUri)) {
+            deleteCachedAudio(cacheKey)
+            return null
+        }
         val cached = findCachedFile(cacheKey) ?: return null
         val uri = cached.toUri()
         val metadata = readMetadata(cacheKey)
@@ -585,6 +592,17 @@ class AlarmAudioStore(
             cacheKey = cacheKey,
             messageId = metadata.messageId,
         )
+    }
+
+    fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean =
+        cachedAudioIsStale(cacheKey, incomingRawAudioUri)
+
+    /** 같은 message ID라도 서버의 R2 주소가 바뀌면 제자리 목소리 교체로 게시된 새 음원이다. */
+    private fun cachedAudioIsStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+        if (findCachedFile(cacheKey) == null) return false
+        val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        val stored = readMetadata(cacheKey).rawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        return stored != incoming
     }
 
     /**

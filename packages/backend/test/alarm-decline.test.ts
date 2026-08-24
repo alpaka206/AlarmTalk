@@ -433,14 +433,15 @@ describe('철회는 목소리 기준이다', () => {
     expect(st.rows[0]!.voice_profile_id).toBeNull();
   });
 
-  it('남이 나에게 보낸 알람 행은 내 탈퇴로 지워지지 않는다(내 데이터가 아니다)', async () => {
-    // B 가 탈퇴해도 A 가 만든 행은 A 것이다. 지우면 A 쪽 같은 시각 슬롯 이력이 조용히 사라진다.
+  it('수신자가 탈퇴하면 아직 전달되지 않은 서버 알람 행을 지운다', async () => {
+    // 서버 행은 A의 로컬 원본이 아니라 B에게 보내는 전달 대기열이다. B가 사라지면 영원히
+    // pull/ack할 수 없고 음원 보관만 붙드므로 제거한다. 전달 완료 행은 이미 ack 때 없다.
     await purgeUserAccount(testDb, 'B', 'gB');
     const row = await testDb.execute({
       sql: `SELECT id FROM alarms WHERE id = ?`,
       args: [ALARM_ID],
     });
-    expect(row.rows.length).toBe(1);
+    expect(row.rows.length).toBe(0);
   });
 });
 
