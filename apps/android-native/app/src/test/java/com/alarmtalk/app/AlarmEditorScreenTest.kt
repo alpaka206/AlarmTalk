@@ -6,7 +6,9 @@ import com.google.gson.Gson
 import com.alarmtalk.app.data.fortuneThemeIndex
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,6 +122,19 @@ class AlarmEditorScreenTest {
                 nowMillis = nowMillis,
             ),
         )
+    }
+
+    @Test
+    fun familyAlarmLeadSuggestionRoundsUpAndLeavesRequestMargin() {
+        val nowMillis = LocalDateTime.of(2026, 5, 11, 10, 0, 30)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val suggested = Instant.ofEpochMilli(earliestSelectableFamilyAlarmMillis(nowMillis))
+            .atZone(ZoneId.systemDefault())
+            .toLocalTime()
+
+        assertEquals(LocalTime.of(10, 7), suggested)
     }
 
     @Test

@@ -334,6 +334,12 @@ iOS `selectedBucketDraft`).
   `is_received` 포함) → pull sync 로 양 앱에 내려온다.
 - 그래서 잠금(`lockPaidAlarmTalks` / `paidAlarmTalks`)은 **`origin == LOCAL_OWNED` 만** 본다.
 
+⚠ **발신자가 직접 녹음해 보낸 `family-voice`는 클론 프로필 음원이 아니다.** 메시지 행의
+`voice_profile_id`는 수신자 프로필을 임시로 채운 값이고 실제 파일은 발신자의
+`voice_uploads.object_key`다. 수신 확인 tombstone은 이를 `sender_voice_upload=1`로 따로
+기억해, 발신자의 탈퇴·음성 동의 철회 때만 걷어낸다. 수신자의 무관한 클론 삭제로는
+걷어내지 않는다.
+
 ⚠ **플랜 축을 받은 알람에 걸면 결제 보류(유예)에서 오발한다.** `resolvePlanAfterSuspend` 는
 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로, 카드가 잠깐 실패한 사이 파트너가 보낸
 알람의 목소리가 잠긴다. 게다가 해제는 **받는 사람이 유료가 될 때만** 돌아 영구히 남을 수

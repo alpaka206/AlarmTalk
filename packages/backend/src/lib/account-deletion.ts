@@ -154,6 +154,7 @@ export async function purgeUserAccount(
     const revocation = await revokeDeletedVoices(tx, {
       voiceProfileIds: cloneIds,
       ownerUserIds: userIds,
+      senderVoiceOwnerUserIds: userIds,
       // 내 기기는 곧 사라진다 — 나에게 보내는 철회 푸시는 받을 사람이 없다.
       excludeOwnerUserIds: userIds,
     });

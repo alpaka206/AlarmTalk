@@ -69,6 +69,15 @@ internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
  * 보냈다고 믿는다). 전달 + 음원 바인딩에 필요한 최소 여유만 남긴다.
  */
 internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 5 * 60 * 1_000L
+private const val FAMILY_ALARM_REQUEST_MARGIN_MILLIS = 60_000L
+private const val MILLIS_PER_MINUTE = 60_000L
+
+/** 분 단위 선택기에서 실제로 고를 수 있고, 서버 왕복 중에도 5분 하한을 지키는 첫 시각. */
+internal fun earliestSelectableFamilyAlarmMillis(nowMillis: Long = System.currentTimeMillis()): Long {
+    val threshold = nowMillis + FAMILY_ALARM_MIN_LEAD_MILLIS
+    val roundedUp = ((threshold + MILLIS_PER_MINUTE - 1) / MILLIS_PER_MINUTE) * MILLIS_PER_MINUTE
+    return roundedUp + FAMILY_ALARM_REQUEST_MARGIN_MILLIS
+}
 
 // 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 리드타임을 요구한다
 // saveEditor()와 단위 테스트가 함께 쓰는 단일 판정 출처.

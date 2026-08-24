@@ -2255,6 +2255,17 @@ export const migrations: Migration[] = [
     // 값은 revoke 하는 순간 NULL 로 지운다 — 소비하고 나면 남길 이유가 없다.
     statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN voice_profile_id TEXT`],
   },
+  {
+    id: 103,
+    name: 'alarm-recipient-state-sender-voice-upload',
+    // `family-voice`의 실제 음원은 messages.voice_profile_id가 아니라 발신자의 직접 업로드다.
+    // 수신 확인 뒤 alarms/messages가 없어져도 탈퇴·음성 동의 철회 시 그 녹음만 걷어내도록
+    // tombstone에 출처 종류를 남긴다. sender_user_id는 #93 컬럼을 그대로 쓴다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN sender_voice_upload INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

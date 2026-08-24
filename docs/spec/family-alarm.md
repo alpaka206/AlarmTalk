@@ -48,9 +48,15 @@ tombstone 을 남긴 뒤 `alarms` 행을 지운다.
 
 ⚠ **지우기 전에 tombstone 을 남긴다** — 실패하면 지우지 않는다(fail-closed). 행이
 없어지면 나중에 발신자가 목소리를 지웠을 때 **어느 수신 알람을 걷어내야 하는지** 알
-방법이 사라진다. 옮겨 적는 것은 둘이다: 발신자(`sender_user_id`)와 **그 알람이 쓰는
-클론 목소리**(`alarm_recipient_state.voice_profile_id`). 스톡 목소리는 없어지지 않으므로
-적지 않는다.
+방법이 사라진다. 옮겨 적는 것은 발신자와 **실제 재생 음원의 출처**다.
+
+- 클론으로 합성한 음원: `voice_profile_id`
+- 발신자가 직접 녹음해 보낸 `family-voice`: `sender_user_id` + `sender_voice_upload=1`
+
+`family-voice`의 `messages.voice_profile_id`는 메시지 행을 만들기 위해 넣은 수신자 프로필일
+뿐 재생 음원의 출처가 아니다. 그것을 tombstone에 적으면 수신자의 무관한 클론을 지울 때
+발신자 녹음이 철회되고, 정작 발신자가 동의를 철회할 때는 남는 방향으로 판정이 뒤집힌다.
+스톡 목소리는 없어지지 않으므로 어느 출처에도 적지 않는다.
 
 **그래서 이 스펙의 다른 규칙들 사정거리가 ack 전으로 줄었다** — 재구성, 서버가 끄는
 같은-시각 슬롯(1-3), 발신자의 원격 조작. 전부 아직 수신 확인이 안 온 알람에만 닿는다.
@@ -152,6 +158,12 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 가족 알람은 **최소 5분 뒤**여야 만들 수 있다. 받는 사람 기기가 신호를 받아 로컬에
 예약할 시간이 필요하다 — 그보다 가까우면 신호가 도착하기 전에 시각이 지난다.
 
+⚠ 편집기가 안내하는 "가능한 가장 이른 시각"은 `현재+5분`을 시:분으로 잘라 보여주지
+않는다. 선택기는 분 단위이므로 **다음 분으로 올린 뒤 전송 여유 1분을 더한 시각**을 안내한다.
+예를 들어 10:00:30이면 10:07부터 안내한다. 10:05는 실제로 4분 30초 뒤이고, 단순 올림한
+10:06도 10:00:59에 저장하면 서버 도착 시 5분 아래로 내려갈 수 있다. 서버의 실제 하한은
+5분 그대로고, 추가 1분은 앱 안내·선택에만 쓰는 전송 여유다.
+
 ⚠ **값은 세 곳에 있고 반드시 같아야 한다.** 하나만 내리면 앱은 통과시키는데 서버가
 400 `FAMILY_ALARM_LEAD_TIME` 으로 거절해, 사용자에게는 이유를 알 수 없는 "상대 알람
 설정에 실패했어요" 만 보인다(2026-08-21 실기기에서 실제로 그랬다).
@@ -199,7 +211,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
-| 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
+| 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` 일 때만) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete`) | `POST /alarm/:id/received` |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |

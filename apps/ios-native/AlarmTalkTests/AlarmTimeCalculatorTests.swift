@@ -2,6 +2,31 @@ import XCTest
 @testable import AlarmTalk
 
 final class AlarmTimeCalculatorTests: XCTestCase {
+    func testFamilyAlarmLeadSuggestionRoundsUpAndLeavesRequestMargin() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026,
+            month: 5,
+            day: 11,
+            hour: 10,
+            minute: 0,
+            second: 30
+        ))!
+        let suggested = AlarmEditorSheet.earliestSelectableFamilyAlarmMillis(
+            nowMillis: Int64(now.timeIntervalSince1970 * 1000)
+        )
+        let expected = calendar.date(from: DateComponents(
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026,
+            month: 5,
+            day: 11,
+            hour: 10,
+            minute: 7
+        ))!
+
+        XCTAssertEqual(suggested, Int64(expected.timeIntervalSince1970 * 1000))
+    }
 
     private let utc = TimeZone(secondsFromGMT: 0)!
 

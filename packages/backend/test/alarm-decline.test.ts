@@ -27,6 +27,7 @@ function appFor(userId: string) {
 }
 
 const ALARM_ID = '11111111-1111-1111-1111-111111111111';
+const FAMILY_VOICE_ALARM_ID = '44444444-4444-4444-4444-444444444444';
 const FAMILY_PLAN_ID = '70000000-0000-4000-8000-000000000003'; // 마이그레이션 시드 '가족' 플랜
 
 async function seed() {
@@ -55,6 +56,29 @@ async function seed() {
     args: [ALARM_ID],
   });
   return db;
+}
+
+async function seedFamilyVoiceUploadAlarm() {
+  await testDb.execute({
+    sql: `INSERT INTO voice_profiles (id, user_id, name) VALUES ('vp-B','B','recipient placeholder')`,
+    args: [],
+  });
+  await testDb.execute({
+    sql: `INSERT INTO voice_uploads (id, user_id, object_key, mime_type, size_bytes)
+          VALUES ('upload-A','A','uploads/A/family.m4a','audio/mp4',1234)`,
+    args: [],
+  });
+  await testDb.execute({
+    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+          VALUES ('m-family-voice','B','vp-B','일어나','uploads/A/family.m4a','family-voice')`,
+    args: [],
+  });
+  await testDb.execute({
+    sql: `INSERT INTO alarms
+            (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active)
+          VALUES (?, 'A', 'B', 'm-family-voice', 'vp-B', '09:00', 'tts', 1)`,
+    args: [FAMILY_VOICE_ALARM_ID],
+  });
 }
 
 describe('가족 알람 수신자 그만받기(decline)', () => {
@@ -185,6 +209,72 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
       args: [ALARM_ID],
     });
     expect(String(st.rows[0]!.voice_profile_id)).toBe('vp-A');
+  });
+
+  it('family-voice는 수신자 프로필이 아니라 발신자 직접 업로드로 기록한다', async () => {
+    await seedFamilyVoiceUploadAlarm();
+    await appFor('B').request('/' + FAMILY_VOICE_ALARM_ID + '/received', { method: 'POST' });
+
+    const st = await testDb.execute({
+      sql: `SELECT voice_profile_id, sender_user_id, sender_voice_upload, revoked
+              FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [FAMILY_VOICE_ALARM_ID],
+    });
+    expect(st.rows[0]!.voice_profile_id).toBeNull();
+    expect(String(st.rows[0]!.sender_user_id)).toBe('A');
+    expect(Number(st.rows[0]!.sender_voice_upload)).toBe(1);
+    expect(Number(st.rows[0]!.revoked)).toBe(0);
+  });
+
+  it('family-voice는 수신자 클론 삭제로 철회되지 않고 발신자 파기 때만 철회된다', async () => {
+    const { revokeDeletedVoices } = await import('../src/lib/voice-revocation');
+    await seedFamilyVoiceUploadAlarm();
+    await appFor('B').request('/' + FAMILY_VOICE_ALARM_ID + '/received', { method: 'POST' });
+
+    const unrelated = await revokeDeletedVoices(testDb, {
+      voiceProfileIds: ['vp-B'],
+      ownerUserIds: ['B'],
+    });
+    expect(unrelated.downgradedAlarms.map((target) => target.alarmId)).not.toContain(
+      FAMILY_VOICE_ALARM_ID,
+    );
+
+    // 발신자에게 클론이 하나도 없어도 직접 업로드는 발신자의 생체정보라 파기 대상이다.
+    await testDb.execute({
+      sql: `UPDATE voice_profiles SET is_system = 1 WHERE id = 'vp-A'`,
+      args: [],
+    });
+    const purged = await purgeUserAccount(testDb, 'A', 'gA');
+    expect(purged.downgradedAlarms).toContainEqual({
+      alarmId: FAMILY_VOICE_ALARM_ID,
+      ownerUserId: 'B',
+      isReceived: true,
+    });
+    const after = await testDb.execute({
+      sql: `SELECT revoked FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [FAMILY_VOICE_ALARM_ID],
+    });
+    expect(Number(after.rows[0]!.revoked)).toBe(1);
+  });
+
+  it('철회가 먼저 기록된 뒤 늦은 수신 확인이 와도 revoked를 되돌리지 않는다', async () => {
+    await testDb.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
+            VALUES (?, 'B', 0, 1, datetime('now'), datetime('now'))`,
+      args: [ALARM_ID],
+    });
+
+    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+
+    const st = await testDb.execute({
+      sql: `SELECT revoked, voice_profile_id, sender_voice_upload
+              FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [ALARM_ID],
+    });
+    expect(Number(st.rows[0]!.revoked)).toBe(1);
+    expect(st.rows[0]!.voice_profile_id).toBeNull();
+    expect(Number(st.rows[0]!.sender_voice_upload)).toBe(0);
   });
 });
 

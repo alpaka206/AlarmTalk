@@ -341,6 +341,16 @@ export async function deleteSensitiveVoiceDataForUser(
       await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
     }
   }
+
+  // 클론과 발신자 직접 업로드를 **지우기 전에** 한 번에 철회한다. family-voice의
+  // messages.voice_profile_id는 수신자 프로필이라 클론 목록으로는 찾을 수 없다.
+  const revocation = await revokeDeletedVoices(db, {
+    voiceProfileIds: cloneIds,
+    ownerUserIds: ids,
+    senderVoiceOwnerUserIds: ids,
+  });
+  for (const target of revocation.downgradedAlarms) downgraded.set(target.alarmId, target);
+
   for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
     downgraded.set(target.alarmId, target);
   }
@@ -352,11 +362,6 @@ export async function deleteSensitiveVoiceDataForUser(
   // 이 자리는 **이미 전달이 끝난 가족 알람을 놓쳤다** — 그 알람의 서버 행은 수신 확인 때
   // 지워져 `WHERE voice_profile_id = ?` 로는 영영 찾지 못한다(tombstone 이 유일한 근거다).
   if (hasClones) {
-    const revocation = await revokeDeletedVoices(db, {
-      voiceProfileIds: cloneIds,
-      ownerUserIds: ids,
-    });
-    for (const target of revocation.downgradedAlarms) downgraded.set(target.alarmId, target);
     await db.execute({
       sql: `DELETE FROM generated_audio_assets WHERE voice_profile_id IN (${cph})`,
       args: cloneIds,

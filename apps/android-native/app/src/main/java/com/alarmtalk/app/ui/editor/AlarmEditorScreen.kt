@@ -695,7 +695,7 @@ internal fun AlarmEditorScreen(
             }
             if (isFamilyAlarmLeadTooSoon(editor.hour, editor.minute, editor.repeatDaysMask, editor.holidayOff)) {
                 // 그냥 막지 말고 "언제부터 되는지"를 구체 시각으로 알려 바로 고치게 한다.
-                val earliestMillis = System.currentTimeMillis() + FAMILY_ALARM_MIN_LEAD_MILLIS
+                val earliestMillis = earliestSelectableFamilyAlarmMillis()
                 val earliestLabel = android.text.format.DateFormat.getTimeFormat(context)
                     .format(java.util.Date(earliestMillis))
                 val message = context.getString(

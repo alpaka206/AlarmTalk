@@ -23,7 +23,7 @@ import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
-import { resolveClonedVoiceForAlarm } from '../lib/voice-revocation';
+import { resolveAlarmVoiceRevocationSource } from '../lib/voice-revocation';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -672,8 +672,6 @@ alarmMutation.patch('/:id', async (c) => {
   ) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
-
-
   // greeting 버킷 정책: PATCH 로 bucket/voice/message 를 바꿔 '시스템 보이스 + greeting'
   // 조합(무료 우회)을 만들 수 없게, 수정 결과(effective) 기준으로 클론 여부를 검증한다.
   // 관련 필드를 건드리지 않는 PATCH(예: time 만 변경)는 검사하지 않는다.
@@ -994,19 +992,28 @@ alarmMutation.post('/:id/received', async (c) => {
     return c.json({ success: true, deleted: false });
   }
   const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
-  const voiceProfileId = await resolveClonedVoiceForAlarm(db, resolved.id);
-  // **먼저 적고, 실패하면 지우지 않는다.** 순서가 뒤집히면 알람도 표식도 없는 상태가
-  // 남아 목소리를 걷어낼 근거가 영영 사라진다(발신자 삭제 경로와 같은 이유, Codex #678 P1).
+  const source = await resolveAlarmVoiceRevocationSource(db, resolved.id);
+  // **먼저 적고, 실패하면 지우지 않는다.** 철회가 먼저 revoked=1을 세웠다면 출처를
+  // 되살리지 않는다. 반대 순서는 revokeDeletedVoices가 이 tombstone을 찾아 철회한다.
   await db.execute({
     sql: `INSERT INTO alarm_recipient_state
             (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
-             created_at, updated_at)
-          VALUES (?, ?, 0, 0, ?, ?, datetime('now'), datetime('now'))
+             sender_voice_upload, created_at, updated_at)
+          VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(alarm_id, recipient_user_id)
           DO UPDATE SET sender_user_id = excluded.sender_user_id,
-                        voice_profile_id = excluded.voice_profile_id,
+                        voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
+                          THEN NULL ELSE excluded.voice_profile_id END,
+                        sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
+                          THEN 0 ELSE excluded.sender_voice_upload END,
                         updated_at = datetime('now')`,
-    args: [resolved.id, resolved.target, senderUserId, voiceProfileId],
+    args: [
+      resolved.id,
+      resolved.target,
+      senderUserId,
+      source.voiceProfileId,
+      source.senderVoiceUpload ? 1 : 0,
+    ],
   });
   await db.execute({
     sql: 'DELETE FROM alarms WHERE id = ? AND target_user_id IS NOT NULL',
@@ -1057,17 +1064,26 @@ alarmMutation.delete('/:id', async (c) => {
   // 이 행을 찾아 revoked=1 로 바꾼다 — 그래서 `voice_profile_id` 도 함께 적어 둔다.
   if (recipientUserId) {
     try {
-      const voiceProfileId = await resolveClonedVoiceForAlarm(db, id);
+      const source = await resolveAlarmVoiceRevocationSource(db, id);
       await db.execute({
         sql: `INSERT INTO alarm_recipient_state
                 (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
-                 created_at, updated_at)
-              VALUES (?, ?, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                 sender_voice_upload, created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
               ON CONFLICT(alarm_id, recipient_user_id)
               DO UPDATE SET sender_user_id = excluded.sender_user_id,
-                            voice_profile_id = excluded.voice_profile_id,
+                            voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN NULL ELSE excluded.voice_profile_id END,
+                            sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN 0 ELSE excluded.sender_voice_upload END,
                             updated_at = datetime('now')`,
-        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!, voiceProfileId],
+        args: [
+          id,
+          recipientUserId,
+          c.get('userIdPK') ?? ownerIds[0]!,
+          source.voiceProfileId,
+          source.senderVoiceUpload ? 1 : 0,
+        ],
       });
     } catch (err) {
       logRouteError(c, err);

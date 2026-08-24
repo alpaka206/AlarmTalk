@@ -179,6 +179,15 @@ struct AlarmEditorSheet: View {
     /// pull 이 늦고, 그 사이 알람 시각이 지나면 **울리지 않은 채 지나간다**(보낸 사람은
     /// 보냈다고 믿는다).
     static let familyAlarmMinLeadMillis: Int64 = 5 * 60 * 1000
+    private static let familyAlarmRequestMarginMillis: Int64 = 60 * 1000
+
+    /// 분 단위 선택기로 고를 수 있고 서버 왕복 중에도 하한을 지키는 첫 시각.
+    static func earliestSelectableFamilyAlarmMillis(nowMillis: Int64) -> Int64 {
+        let minute: Int64 = 60 * 1000
+        let threshold = nowMillis + familyAlarmMinLeadMillis
+        let roundedUp = ((threshold + minute - 1) / minute) * minute
+        return roundedUp + familyAlarmRequestMarginMillis
+    }
 
     /// 리드타임 안내에 쓰는 시각 포맷터 — 기기 12/24시간 설정을 따른다.
     private static let leadTimeFormatter: DateFormatter = {
@@ -2681,7 +2690,9 @@ struct AlarmEditorSheet: View {
         if fireAtMillis - nowMillis < Self.familyAlarmMinLeadMillis {
             // ⚠ **언제부터 되는지 시각으로 말한다**(안드로이드 문구와 같은 형태).
             // "지금부터 N분 뒤" 는 사용자가 직접 계산해야 해서, 바로 고칠 수가 없다.
-            let earliest = Date(timeIntervalSince1970: Double(nowMillis + Self.familyAlarmMinLeadMillis) / 1000)
+            let earliest = Date(
+                timeIntervalSince1970: Double(Self.earliestSelectableFamilyAlarmMillis(nowMillis: nowMillis)) / 1000
+            )
             validationAlert = ValidationAlertContent(
                 title: "조금 더 뒤로 설정해 주세요",
                 message: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
