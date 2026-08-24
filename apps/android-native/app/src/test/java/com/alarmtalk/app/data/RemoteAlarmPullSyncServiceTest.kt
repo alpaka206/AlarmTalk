@@ -175,8 +175,11 @@ class RemoteAlarmPullSyncServiceTest {
         assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, null))
 
         val legacy = existing.copy(remoteDeliveryVersion = null)
-        assertTrue(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "0123456789abcdef0123456789abcdef"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "0123456789abcdef0123456789abcdef"))
+        assertTrue(isLegacyBackfilledDelivery(legacy, "0123456789abcdef0123456789abcdef"))
+        assertFalse(isLegacyBackfilledDelivery(existing, "0123456789abcdef0123456789abcdef"))
         assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "11111111-1111-4111-8111-111111111111"))
+        assertFalse(isLegacyBackfilledDelivery(legacy, "11111111-1111-4111-8111-111111111111"))
     }
 
     @Test

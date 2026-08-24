@@ -36,14 +36,17 @@ internal fun receivedAlarmDeliveryComplete(
 internal fun receivedAlarmDeliveryVersionAlreadyApplied(
     existing: AlarmEntity,
     deliveryVersion: String?,
-): Boolean {
-    val version = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
-    if (existing.remoteDeliveryVersion == version) return true
-    // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 예외에 들어오지 않는다.
-    return existing.remoteDeliveryVersion == null &&
-        version.length == 32 &&
-        version.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
-}
+): Boolean = !deliveryVersion.isNullOrBlank() && existing.remoteDeliveryVersion == deliveryVersion
+
+internal fun isLegacyBackfilledDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean =
+    existing.remoteDeliveryVersion == null &&
+        !deliveryVersion.isNullOrBlank() &&
+        // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 복구에 들어오지 않는다.
+        deliveryVersion.length == 32 &&
+        deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
@@ -177,25 +180,25 @@ internal class RemoteAlarmPullSyncService(
                 if (existing != null && locallyEditedByRecipient(existing)) {
                     if (receivedAlarmDeliveryVersionAlreadyApplied(existing, remote.deliveryVersion)) {
                         val deliveryVersion = requireNotNull(remote.deliveryVersion)
-                        val versionPersisted = existing.remoteDeliveryVersion == deliveryVersion ||
-                            withContext(NonCancellable) {
-                                alarmDao.markRemoteDeliveryVersion(existing.id, deliveryVersion) > 0
-                            }
-                        if (versionPersisted) {
-                            runCatching {
-                                api.markAlarmReceived(
-                                    authorization,
-                                    remote.id,
-                                    RemoteAlarmReceivedRequest(deliveryVersion),
-                                )
-                            }.onFailure {
-                                Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
-                            }
+                        runCatching {
+                            api.markAlarmReceived(
+                                authorization,
+                                remote.id,
+                                RemoteAlarmReceivedRequest(deliveryVersion),
+                            )
+                        }.onFailure {
+                            Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
                         }
+                        skipped += 1
+                        return@runCatching
                     }
-                    skipped += 1
-                    Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
-                    return@runCatching
+                    // #104 이전에 행만 만들어진 알람은 적용 버전이 없다. 32자리 backfill이면
+                    // 아래에서 음원과 **현재 편집본의 OS 예약**을 먼저 확보한 뒤 ACK한다.
+                    if (!isLegacyBackfilledDelivery(existing, remote.deliveryVersion)) {
+                        skipped += 1
+                        Log.i(TAG, "Kept recipient-edited alarm; skipped new delivery remoteId=${remote.id}")
+                        return@runCatching
+                    }
                 }
                 // **락 밖에서 받는다** — 음성 다운로드는 오래 걸려서, 잡고 있으면 그동안
                 // 스누즈·해제가 막힌다. 행을 만드는 일은 여기서 하지 않는다(아래 참조).
@@ -209,6 +212,8 @@ internal class RemoteAlarmPullSyncService(
                 // 아래 알림·집계를 건너뛴다.
                 var applied: AlarmEntity? = null
                 var scheduleSucceeded = true
+                var editedDeliveryVersionToAck: String? = null
+                var editedDeliveryIncomplete = false
                 // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
                 // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
                 alarmMutationLock.withLock {
@@ -249,10 +254,50 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
                     // 다운로드하는 사이에 수신자가 고쳤을 수도 있다 — 위 1차 거르기와 같은 판정을
-                    // 반영 직전에 한 번 더 한다. 받아 둔 음성은 주인이 없으니 미참조면 정리한다.
+                    // 반영 직전에 한 번 더 한다. 서버본으로 덮지는 않되, #104 backfill 세대는
+                    // 음원과 현재 편집본의 OS 예약을 확보해야만 적용 버전을 기록하고 ACK한다.
                     if (current != null && locallyEditedByRecipient(current)) {
                         skipped += 1
-                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cachedAudio?.cacheKey)
+                        val deliveryVersion = remote.deliveryVersion
+                        when {
+                            receivedAlarmDeliveryVersionAlreadyApplied(current, deliveryVersion) -> {
+                                editedDeliveryVersionToAck = deliveryVersion
+                            }
+                            isLegacyBackfilledDelivery(current, deliveryVersion) -> {
+                                val audioSecured =
+                                    !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
+                                val legacyScheduleSucceeded = !current.enabled ||
+                                    runCatching { alarmScheduler.schedule(current) }
+                                        .onFailure { error ->
+                                            Log.w(
+                                                TAG,
+                                                "Failed to schedule legacy edited alarm id=${current.id}",
+                                                error,
+                                            )
+                                        }
+                                        .isSuccess
+                                val complete = receivedAlarmDeliveryComplete(
+                                    audioSecured = audioSecured,
+                                    enabled = current.enabled,
+                                    scheduleSucceeded = legacyScheduleSucceeded,
+                                    deliveryVersion = deliveryVersion,
+                                )
+                                if (complete) {
+                                    val version = requireNotNull(deliveryVersion)
+                                    val persisted = withContext(NonCancellable) {
+                                        alarmDao.markRemoteDeliveryVersion(current.id, version) > 0
+                                    }
+                                    if (persisted) editedDeliveryVersionToAck = version
+                                    else editedDeliveryIncomplete = true
+                                } else {
+                                    editedDeliveryIncomplete = true
+                                }
+                            }
+                            else -> alarmAudioStore.deleteCachedAudioIfUnreferenced(
+                                alarmDao,
+                                cachedAudio?.cacheKey,
+                            )
+                        }
                         Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
                         return@withLock
                     }
@@ -317,6 +362,21 @@ internal class RemoteAlarmPullSyncService(
                         }
                     }
                     applied = local
+                }
+                editedDeliveryVersionToAck?.let { deliveryVersion ->
+                    runCatching {
+                        api.markAlarmReceived(
+                            authorization,
+                            remote.id,
+                            RemoteAlarmReceivedRequest(deliveryVersion),
+                        )
+                    }.onFailure {
+                        Log.w(TAG, "Failed to ack secured edited alarm remoteId=${remote.id}", it)
+                    }
+                }
+                if (editedDeliveryIncomplete) {
+                    failed += 1
+                    Log.w(TAG, "Kept legacy server row: edited delivery incomplete remoteId=${remote.id}")
                 }
                 val saved = applied ?: return@runCatching
                 if (existing == null) {

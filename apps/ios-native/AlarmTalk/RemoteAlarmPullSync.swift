@@ -69,6 +69,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         case updated(deliveryComplete: Bool)
         /// 이 전달 세대는 이전 회차에서 이미 음원·예약까지 확보했고 ACK만 재시도하면 된다.
         case alreadyApplied
+        /// 구형 전달의 음원 또는 현재 편집본의 OS 예약을 아직 확보하지 못해 재시도가 필요하다.
+        case incomplete
         /// 충돌 정책(`shouldApplyRemote == false`)·계정 이탈·울리는 중 등으로 서버 응답을
         /// 적용하지 않음. Android 와 동일하게 imported/updated/failed 어디에도 포함되지 않는다.
         case unchanged
@@ -79,7 +81,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             switch self {
             case let .imported(complete), let .updated(complete): return complete
             case .alreadyApplied: return true
-            case .unchanged: return false
+            case .incomplete, .unchanged: return false
             }
         }
     }
@@ -212,6 +214,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                     if !outcome.deliveryComplete { failed += 1 }
                 case .alreadyApplied:
                     break
+                case .incomplete:
+                    failed += 1
                 case .unchanged:
                     break
                 }
@@ -295,12 +299,21 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
             if Self.locallyEditedByRecipient(existing) {
-                return Self.receivedDeliveryVersionAlreadyApplied(
+                if Self.receivedDeliveryVersionAlreadyApplied(
                     existing: existing,
                     deliveryVersion: remote.deliveryVersion
-                ) ? .alreadyApplied : .unchanged
+                ) {
+                    return .alreadyApplied
+                }
+                // #104 backfill은 형식만 보고 ACK하지 않는다. 아래에서 음원을 받고 현재
+                // 편집본을 그대로 예약한 뒤에만 적용 완료로 올린다.
+                guard Self.isLegacyBackfilledDelivery(
+                    existing: existing,
+                    deliveryVersion: remote.deliveryVersion
+                ) else { return .unchanged }
+            } else {
+                guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
             }
-            guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
             guard !Self.isInFlight(existing) else { return .unchanged }
 
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
@@ -330,10 +343,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             guard !Self.isInFlight(current) else { return .unchanged }
             // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
             if Self.locallyEditedByRecipient(current) {
-                return Self.receivedDeliveryVersionAlreadyApplied(
+                return await outcomeForEditedDelivery(
                     existing: current,
+                    prepared: prepared,
                     deliveryVersion: remote.deliveryVersion
-                ) ? .alreadyApplied : .unchanged
+                )
             }
             guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
 
@@ -367,10 +381,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
                 guard !Self.isInFlight(raced) else { return .unchanged }
                 if Self.locallyEditedByRecipient(raced) {
-                    return Self.receivedDeliveryVersionAlreadyApplied(
+                    return await outcomeForEditedDelivery(
                         existing: raced,
+                        prepared: prepared,
                         deliveryVersion: remote.deliveryVersion
-                    ) ? .alreadyApplied : .unchanged
+                    )
                 }
                 let merged = Self.merge(existing: raced, mapped: mapped)
                 store.upsert(merged, syncedNow: true)
@@ -574,10 +589,18 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ) -> Bool {
         guard existing.originEnum == .receivedRemote,
               let deliveryVersion = deliveryVersion?.nilIfBlank else { return false }
-        if existing.remoteDeliveryVersion == deliveryVersion { return true }
-        // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 예외에 들어오지 않는다.
-        return existing.remoteDeliveryVersion == nil
-            && deliveryVersion.utf8.count == 32
+        return existing.remoteDeliveryVersion == deliveryVersion
+    }
+
+    static func isLegacyBackfilledDelivery(
+        existing: LocalAlarmRecord,
+        deliveryVersion: String?
+    ) -> Bool {
+        guard existing.originEnum == .receivedRemote,
+              existing.remoteDeliveryVersion == nil,
+              let deliveryVersion = deliveryVersion?.nilIfBlank else { return false }
+        // #104 backfill만 32자리 hex다. 새 세대(UUID)는 이 복구에 들어오지 않는다.
+        return deliveryVersion.utf8.count == 32
             && deliveryVersion.utf8.allSatisfy {
                 ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 70) || ($0 >= 97 && $0 <= 102)
             }
@@ -605,6 +628,36 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
         return scheduled
+    }
+
+    /// #104 이전에 이미 편집된 행은 서버본으로 다시 만들지 않는다. 서버 음원을 캐시한 뒤
+    /// 수신자가 고친 현재 행 그대로 예약까지 성공해야만 이 backfill 세대를 ACK할 수 있다.
+    private func outcomeForEditedDelivery(
+        existing: LocalAlarmRecord,
+        prepared: PreparedRecord,
+        deliveryVersion: String?
+    ) async -> MergeOutcome {
+        if Self.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: deliveryVersion
+        ) {
+            return .alreadyApplied
+        }
+        guard Self.isLegacyBackfilledDelivery(
+            existing: existing,
+            deliveryVersion: deliveryVersion
+        ) else { return .unchanged }
+        guard prepared.audioSecured else { return .incomplete }
+
+        let scheduleSucceeded = existing.enabled
+            ? await rescheduleReceivedRemote(record: existing, existing: existing)
+            : true
+        return Self.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: existing.enabled,
+            scheduleSucceeded: scheduleSucceeded,
+            deliveryVersion: deliveryVersion
+        ) ? .alreadyApplied : .incomplete
     }
 
     // MARK: Cascade delete

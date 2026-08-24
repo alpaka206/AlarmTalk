@@ -604,6 +604,28 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     expect(row.rows[0]!.sender_user_id).toBeNull();
   });
 
+  it('발신자 삭제가 실패하면 출처 tombstone도 함께 롤백한다', async () => {
+    await testDb.execute(
+      `CREATE TRIGGER fail_sender_delete BEFORE DELETE ON alarms
+       BEGIN SELECT RAISE(FAIL, 'forced sender delete failure'); END`,
+    );
+
+    const res = await appFor('A').request('/' + ALARM_ID, { method: 'DELETE' });
+
+    expect(res.status).toBe(500);
+    const alarm = await testDb.execute({
+      sql: 'SELECT id FROM alarms WHERE id = ?',
+      args: [ALARM_ID],
+    });
+    const tombstone = await testDb.execute({
+      sql: `SELECT alarm_id FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = 'B'`,
+      args: [ALARM_ID],
+    });
+    expect(alarm.rows).toHaveLength(1);
+    expect(tombstone.rows).toHaveLength(0);
+  });
+
   it('표식을 못 남기면 알람도 지우지 않는다 — 알람만 사라지는 상태를 만들지 않는다', async () => {
     // 배포 직후 마이그레이션 93 이 아직 안 돌았을 때가 실제로 이 상황이다. 지운 뒤에
     // 적으면서 실패를 삼키면 알람도 표식도 없어 걷어낼 근거가 영영 사라진다(Codex #678 P1).

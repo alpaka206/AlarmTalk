@@ -979,18 +979,6 @@ alarmMutation.delete('/:id', async (c) => {
     return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
-  const targetRes = await db.execute({
-    sql: `SELECT message_id, target_user_id FROM alarms
-           WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
-    args: [id, ...ownerIds],
-  });
-  const targetAlarm =
-    targetRes.rows.length > 0
-      ? typedRow<{ message_id: string | null; target_user_id: string | null }>(targetRes.rows[0]!)
-      : null;
-  const messageId = targetAlarm?.message_id ?? null;
-  const recipientUserId = targetAlarm?.target_user_id ?? null;
-
   // **남에게 보낸 알람이면 지우기 전에 보낸이를 적어 둔다.**
   //
   // 수신자 기기는 이 알람을 지우지 않는다 — 받은 뒤부터는 받는 사람 것이라, 기대고 자던
@@ -1007,12 +995,29 @@ alarmMutation.delete('/:id', async (c) => {
   // `declined=0, revoked=0` 이라 지금은 아무 효력이 없다(GET /alarm/declined 는 둘 중
   // 하나가 1 인 행만 내보낸다). 나중에 **그 목소리가 사라지면** `revokeDeletedVoices` 가
   // 이 행을 찾아 revoked=1 로 바꾼다 — 그래서 `voice_profile_id` 도 함께 적어 둔다.
-  if (recipientUserId) {
-    try {
-      const source = await resolveAlarmVoiceRevocationSource(db, id);
-      if (!source) throw new Error(`Alarm disappeared before voice source was recorded: ${id}`);
-      await db.execute({
-        sql: `INSERT INTO alarm_recipient_state
+  // 조회→출처 기록→삭제를 한 쓰기 트랜잭션으로 직렬화한다. 같은 계정의 다른 기기가
+  // 같은 슬롯을 재전송해 id를 재사용하더라도, 삭제가 옛 세대 전체보다 먼저 또는 새 세대
+  // 전체보다 뒤에만 놓이므로 옛 출처를 남기고 새 세대를 지우는 중간 상태가 없다.
+  let deletedAlarm: { messageId: string | null } | null;
+  try {
+    deletedAlarm = await withWriteTransaction(db, async (tx) => {
+      const targetRes = await tx.execute({
+        sql: `SELECT message_id, target_user_id FROM alarms
+              WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+        args: [id, ...ownerIds],
+      });
+      if (targetRes.rows.length === 0) return null;
+      const targetAlarm = typedRow<{
+        message_id: string | null;
+        target_user_id: string | null;
+      }>(targetRes.rows[0]!);
+      const recipientUserId = targetAlarm.target_user_id;
+
+      if (recipientUserId) {
+        const source = await resolveAlarmVoiceRevocationSource(tx, id);
+        if (!source) throw new Error(`Alarm disappeared before voice source was recorded: ${id}`);
+        await tx.execute({
+          sql: `INSERT INTO alarm_recipient_state
                 (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
                  sender_voice_upload, created_at, updated_at)
               VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
@@ -1023,31 +1028,34 @@ alarmMutation.delete('/:id', async (c) => {
                             sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
                               THEN 0 ELSE excluded.sender_voice_upload END,
                             updated_at = datetime('now')`,
-        args: [
-          id,
-          recipientUserId,
-          c.get('userIdPK') ?? ownerIds[0]!,
-          source.voiceProfileId,
-          source.senderVoiceUpload ? 1 : 0,
-        ],
+          args: [
+            id,
+            recipientUserId,
+            c.get('userIdPK') ?? ownerIds[0]!,
+            source.voiceProfileId,
+            source.senderVoiceUpload ? 1 : 0,
+          ],
+        });
+      }
+
+      const result = await tx.execute({
+        sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
+        args: [id, ...ownerIds],
       });
-    } catch (err) {
-      logRouteError(c, err);
-      return c.json(
-        { error: 'Failed to delete alarm', error_code: 'ALARM_DELETE_FAILED' },
-        500,
-      );
-    }
+      if ((result.rowsAffected ?? 0) === 0) {
+        throw new Error(`Alarm disappeared during delete transaction: ${id}`);
+      }
+      return { messageId: targetAlarm.message_id };
+    });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to delete alarm', error_code: 'ALARM_DELETE_FAILED' }, 500);
   }
 
-  const result = await db.execute({
-    sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
-    args: [id, ...ownerIds],
-  });
-
-  if (result.rowsAffected === 0) {
+  if (!deletedAlarm) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
+  const messageId = deletedAlarm.messageId;
 
   if (messageId) {
     const refRes = await db.execute({

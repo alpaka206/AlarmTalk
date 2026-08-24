@@ -54,11 +54,19 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         ))
 
         existing.remoteDeliveryVersion = nil
-        XCTAssertTrue(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "0123456789abcdef0123456789abcdef"
+        ))
+        XCTAssertTrue(RemoteAlarmPullSync.isLegacyBackfilledDelivery(
             existing: existing,
             deliveryVersion: "0123456789abcdef0123456789abcdef"
         ))
         XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "11111111-1111-4111-8111-111111111111"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.isLegacyBackfilledDelivery(
             existing: existing,
             deliveryVersion: "11111111-1111-4111-8111-111111111111"
         ))
