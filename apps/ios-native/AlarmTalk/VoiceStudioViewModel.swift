@@ -658,7 +658,9 @@ final class VoiceStudioViewModel: ObservableObject {
     func startRecording() async {
         do {
             try await recorder.start()
-            statusMessage = "녹음 중이에요. 12초 이상 2분 이하로 녹음해 주세요."
+            // 녹음 카드가 상태와 시간을 직접 보여 준다. 별도 안내를 띄우면 Android에는
+            // 없는 고정 문구가 카드 아래에 한 줄 더 생긴다.
+            statusMessage = nil
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -666,7 +668,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     func stopRecording() {
         recorder.stop()
-        statusMessage = "녹음을 저장했어요. \(recordingDurationLabel)"
+        statusMessage = nil
     }
 
     /// 녹음본으로 목소리를 등록한다.

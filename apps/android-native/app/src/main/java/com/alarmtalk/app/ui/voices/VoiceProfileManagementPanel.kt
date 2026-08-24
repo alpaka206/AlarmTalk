@@ -1560,41 +1560,28 @@ internal fun VoiceProfileManagementPanel(
                         .fillMaxSize()
                         .imePadding(),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.voices_create_dialog_title),
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        // ⚠ **사전 생성 단계에는 X 를 두지 않는다**(2026-08-20).
-                        // 그 단계는 아래에 '백그라운드에서 계속' 버튼이 있고, X 도 같은
-                        // `closeCreateDialog()` 를 부른다 — 같은 일을 하는 컨트롤이 둘이면
-                        // 어느 쪽이 취소인지 매번 읽어야 한다(CLAUDE.md 「모달」: 닫기(X)를
-                        // 버튼과 같이 두지 말 것). 무엇을 하는지 말해 주는 쪽을 남긴다.
-                        if (!inPrerenderingFlow) {
-                            IconButton(
-                                onClick = {
-                                    // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
-                                    if (inDraftDecisionFlow) {
-                                        draftExitWarningOpen = true
-                                    } else {
-                                        closeCreateDialog()
-                                    }
-                                },
-                                enabled = !voiceProfileBusy,
-                                modifier = Modifier.size(42.dp),
-                            ) {
-                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                    WakerTopBar(
+                        title = stringResource(R.string.voices_create_dialog_title),
+                        onBack = when (currentStep) {
+                            VoiceRegistrationStep.Source -> ::closeCreateDialog
+                            VoiceRegistrationStep.Details -> {
+                                {
+                                    currentStep = VoiceRegistrationStep.Source
+                                    createSubmitAttempted = false
+                                    localMessage = null
+                                }
                             }
-                        }
-                    }
+                            VoiceRegistrationStep.Preview -> {
+                                { draftExitWarningOpen = true }
+                            }
+                            // 생성 중에는 이탈 불가. 준비 중에는 본문의
+                            // '백그라운드에서 계속'이 나가는 유일한 행동이다.
+                            VoiceRegistrationStep.Creating,
+                            VoiceRegistrationStep.Prerendering -> null
+                        },
+                        backEnabled = !voiceProfileBusy,
+                        modifier = Modifier.padding(top = 18.dp),
+                    )
 
                     // 녹음 모드(첫 스텝)는 대사 카드가 남은 화면 높이를 채우고 카드 안에서만
                     // 스크롤하므로 페이지 스크롤을 끈다. 파일 모드·다른 스텝은 콘텐츠가
@@ -2125,28 +2112,6 @@ internal fun VoiceProfileManagementPanel(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (currentStep == VoiceRegistrationStep.Details) {
-                            OutlinedButton(
-                                onClick = {
-                                    currentStep = VoiceRegistrationStep.Source
-                                    createSubmitAttempted = false
-                                    localMessage = null
-                                },
-                                enabled = !voiceProfileBusy && !createPreparing,
-                                modifier = Modifier.weight(1f),
-                                shape = WakerButtonShape,
-                                border = wakerCardBorder(),
-                                colors = wakerOutlinedButtonColors(),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.voices_previous))
-                            }
-                        }
                         when (currentStep) {
                             VoiceRegistrationStep.Source -> {
                                 Button(

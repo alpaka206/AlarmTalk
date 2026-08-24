@@ -18,11 +18,35 @@ struct ClipPreparationView: View {
     /// 닫기(백그라운드에서 계속). nil 이면 닫기 줄을 그리지 않는다.
     var onDismiss: (() -> Void)?
 
+    /// 목소리 등록 직후에는 Android 등록 5단계의 마지막 화면 문법을 쓴다.
+    /// 편집기에서 여는 일반 준비 관문은 기존 퍼센트 화면을 유지한다.
+    var registrationStyle = false
+
     /// ⚠ **관문이 막은 그 목소리.** 넘기지 않으면 공유받은 목소리가 대상에서 빠져
     /// "준비됐어요 100%" 만 보이고, 돌아가면 관문이 또 막는다(빠져나갈 수 없는 고리).
     var targetVoiceID: String?
 
     var body: some View {
+        Group {
+            if registrationStyle {
+                registrationPreparation
+            } else {
+                standardPreparation
+            }
+        }
+        .task { await refresh() }
+        // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 캐시 파일 검사라 값싸고,
+        // 서버 렌더 상태만 네트워크를 탄다.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if Task.isCancelled { break }
+                await refresh()
+            }
+        }
+    }
+
+    private var standardPreparation: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
@@ -81,16 +105,43 @@ struct ClipPreparationView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.palette.surface)
-        .task { await refresh() }
-        // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 캐시 파일 검사라 값싸고,
-        // 서버 렌더 상태만 네트워크를 탄다.
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if Task.isCancelled { break }
-                await refresh()
+    }
+
+    private var registrationPreparation: some View {
+        VStack(spacing: 0) {
+            WakerTopBar(title: "목소리 만들기", onBack: nil)
+                .padding(.top, 18)
+            Spacer(minLength: 0)
+            VStack(spacing: 12) {
+                Text("이 목소리로 알람 문구를 만들고 있어요")
+                    .font(theme.typography.titleMedium)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(theme.palette.onSurface)
+                Text("준비되는 대로 알람에서 쓸 수 있어요.")
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+                Spacer().frame(height: 6)
+                if readiness.voices.isEmpty || readiness.isRefreshing {
+                    ProgressView()
+                        .frame(maxWidth: 280)
+                } else {
+                    ProgressView(value: Double(readiness.percent), total: 100)
+                        .tint(theme.palette.primary)
+                        .frame(maxWidth: 280)
+                }
+                Spacer().frame(height: 6)
+                if let onDismiss {
+                    Button("백그라운드에서 계속") { onDismiss() }
+                        .buttonStyle(.plain)
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
             }
+            .padding(.horizontal, 24)
+            Spacer(minLength: 0)
         }
+        .homeGradientBackground()
     }
 
     private var headline: String {
@@ -125,6 +176,9 @@ struct ClipPreparationView: View {
             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
             selectedVoiceProfileID: targetVoiceID
         )
+        if registrationStyle, readiness.isReady, !readiness.voices.isEmpty {
+            onDismiss?()
+        }
     }
 
     /// 공유받은 목소리인데 소유자 쪽 생성이 아직인가.

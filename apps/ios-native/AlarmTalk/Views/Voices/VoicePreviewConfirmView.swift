@@ -34,6 +34,8 @@ struct VoicePreviewConfirmView: View {
     @State private var editDraft = ""
     @State private var saving = false
     @State private var busy = false
+    /// 첫 미리듣기 요청이 끝났는지. 빈 문자열을 로딩과 실패로 구분한다.
+    @State private var previewAttempted = false
     /// 미리듣기를 끝까지 들었는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
@@ -46,47 +48,67 @@ struct VoicePreviewConfirmView: View {
     @State private var exitWarningOpen = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("이 목소리로 저장할까요?")
-                .font(theme.typography.titleMedium)
-                .fontWeight(.semibold)
-                .foregroundStyle(theme.palette.onSurface)
+        VStack(spacing: 0) {
+            WakerTopBar(
+                title: "목소리 만들기",
+                onBack: { exitWarningOpen = true },
+                backEnabled: !busy
+            )
+            .padding(.top, 18)
 
-            Text("저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.")
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("이 목소리로 저장할까요?")
+                        .font(theme.typography.titleMedium)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(theme.palette.onSurface)
 
-            previewCard
+                    Text("저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.")
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
 
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.error)
+                    previewCard
+                    Text("말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요.")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.error)
+                    }
+
+                    sharingSection
+                    replaceConsent
+                    Spacer(minLength: 4)
+                }
+                .padding(.horizontal, 20)
             }
-
-            sharingSection
-
-            // 교체 체크는 **저장 버튼 바로 위**에 둔다 — 무엇에 동의하고 누르는지가
-            // 손가락 옆에 있어야 한다.
-            replaceConsent
-
             actions
         }
-        .padding(.vertical, 4)
+        .homeGradientBackground()
         .task {
             isShared = draft.isShared == true && canShareVoice
             // 문구는 합성 응답이 알려 준다(서버가 그때 확정한다) — 여기선 비워 두고
             // 첫 재생이 채운다. 들어보라고 만든 화면이니 들어오자마자 한 번 들려준다.
             await play()
         }
+        .alert("나가면 임시 목소리가 삭제돼요", isPresented: $exitWarningOpen) {
+            Button("나가고 삭제", role: .destructive) {
+                Task { await discard() }
+            }
+            Button("계속 만들기", role: .cancel) {}
+        } message: {
+            Text("지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.")
+        }
     }
 
     private var sharingSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("공유 설정")
                 .font(theme.typography.titleSmall)
                 .fontWeight(.semibold)
-            Toggle(isOn: $isShared) {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("가족·연인에게 공유 허용")
                         .font(theme.typography.bodyMedium)
@@ -97,19 +119,21 @@ struct VoicePreviewConfirmView: View {
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
+                Spacer(minLength: 0)
+                Toggle("", isOn: $isShared)
+                    .labelsHidden()
+                    .alarmTalkSwitch()
             }
-            .alarmTalkSwitch()
             .disabled(!canShareVoice || busy)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(theme.palette.surfaceVariant.opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
         }
-        .padding(14)
-        .background(
-            theme.palette.surface,
-            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
     }
 
     private var canShareVoice: Bool {
@@ -131,8 +155,13 @@ struct VoicePreviewConfirmView: View {
                     .frame(minHeight: 72)
                     .font(theme.typography.bodyMedium)
                     .scrollContentBackground(.hidden)
-                    .background(theme.palette.surfaceVariant.opacity(0.4))
+                    .padding(10)
+                    .background(theme.palette.surface.opacity(0.74))
                     .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                            .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                    )
                     .onChange(of: editDraft) { _, new in
                         // ⚠ **이 글자는 TTS 가 읽는다** — 제어문자·제로폭이 그대로 들어가면
                         // 낭독이 망가진다. 줄바꿈은 지우지 않고 공백으로 바꾼다(안드로이드
@@ -154,7 +183,7 @@ struct VoicePreviewConfirmView: View {
                     .frame(maxWidth: .infinity)
                     .disabled(saving)
 
-                    Button(saving ? "저장 중…" : "이 문구로 다시 듣기") {
+                    Button(saving ? "재생성 중…" : "재생성") {
                         Task { await savePreviewText() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -163,30 +192,40 @@ struct VoicePreviewConfirmView: View {
                     .disabled(saving || editDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             } else {
-                Text(previewText.isEmpty ? "미리듣기 문구를 불러오는 중이에요." : previewText)
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 12) {
-                    Button {
-                        Task { await play() }
-                    } label: {
-                        Label("다시 듣기", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(busy)
+                HStack(spacing: 8) {
+                    Text(previewDisplayText)
+                        .font(theme.typography.bodyLarge)
+                        .foregroundStyle(
+                            previewText.isEmpty ? theme.palette.onSurfaceVariant : theme.palette.onSurface
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     Button {
                         editDraft = previewText
                         editing = true
                     } label: {
-                        Label("문구 수정", systemImage: "pencil")
+                        Image(systemName: "pencil")
+                            .frame(width: 36, height: 36)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
                     .disabled(busy || previewText.isEmpty)
+                    .accessibilityLabel("문구 수정")
 
-                    Spacer(minLength: 0)
+                    Button {
+                        Task { await play() }
+                    } label: {
+                        if busy {
+                            ProgressView().frame(width: 36, height: 36)
+                        } else {
+                            Image(systemName: "play.fill")
+                                .frame(width: 36, height: 36)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.palette.primary)
+                    .disabled(busy)
+                    .accessibilityLabel("다시 듣기")
                 }
             }
         }
@@ -200,6 +239,12 @@ struct VoicePreviewConfirmView: View {
             RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                 .stroke(theme.palette.outlineVariant, lineWidth: 1)
         )
+    }
+
+    private var previewDisplayText: String {
+        if !previewText.isEmpty { return "“\(previewText)”" }
+        if busy || !previewAttempted { return "문구를 준비하고 있어요…" }
+        return "문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요."
     }
 
     /// 이미 등록된 **내** 목소리(이 초안 제외). 있으면 저장이 한도에 걸리므로
@@ -271,8 +316,8 @@ struct VoicePreviewConfirmView: View {
             Button("다시 만들기") {
                 Task { await discard() }
             }
-            .buttonStyle(.bordered)
-            .frame(maxWidth: .infinity)
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.palette.error)
             .disabled(busy)
 
             Button(saving ? "저장 중…" : "저장하기") {
@@ -289,29 +334,8 @@ struct VoicePreviewConfirmView: View {
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
             .disabled(busy || !listened || (registeredVoice != nil && !replaceExisting))
         }
-        // ⚠ **기본 뒤로가기를 그대로 두지 말 것.** 이 화면을 벗어나면 초안이 삭제되는데,
-        // 시스템 back 은 아무 말 없이 나간다 — 사용자는 만들던 목소리를 잃고도 왜 사라졌는지
-        // 모른다. 안드로이드는 여기서 경고를 띄운다.
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    exitWarningOpen = true
-                } label: {
-                    Label("뒤로", systemImage: "chevron.left")
-                }
-                .disabled(busy)
-            }
-        }
-        .alert("나가면 임시 목소리가 삭제돼요", isPresented: $exitWarningOpen) {
-            // ⚠ **되돌릴 수 없는 쪽을 기본으로 두지 않는다.** '계속 만들기' 가 취소 역할이다.
-            Button("나가고 삭제", role: .destructive) {
-                Task { await discard() }
-            }
-            Button("계속 만들기", role: .cancel) {}
-        } message: {
-            Text("지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.")
-        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     // MARK: - 동작
@@ -322,6 +346,7 @@ struct VoicePreviewConfirmView: View {
         defer { busy = false }
         errorMessage = nil
         let outcome = await voice.playDraftPreview(draft: draft, session: auth.session)
+        previewAttempted = true
         switch outcome {
         case .played(let text):
             if !text.isEmpty { previewText = text }

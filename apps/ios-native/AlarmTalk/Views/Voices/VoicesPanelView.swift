@@ -44,6 +44,7 @@ struct VoicesPanelView: View {
             NavigationStack {
                 subflow
             }
+            .toolbar(.hidden, for: .navigationBar)
             .interactiveDismissDisabled()
         }
     }
@@ -63,24 +64,14 @@ struct VoicesPanelView: View {
         case .management:
             EmptyView()
         case .clone:
-            ScrollView {
-                VoiceCloneUploadFlow(route: $route)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
-            }
-            .homeGradientBackground()
+            VoiceCloneUploadFlow(route: $route)
         case .preview(let draftID):
             if let draft = voice.profiles.first(where: { $0.id == draftID }) ?? voice.pendingDraft {
-                ScrollView {
-                    VoicePreviewConfirmView(
-                        draft: draft,
-                        onSaved: { route = .preparation($0) },
-                        onDiscarded: { route = .clone }
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
-                }
-                .homeGradientBackground()
+                VoicePreviewConfirmView(
+                    draft: draft,
+                    onSaved: { route = .preparation($0) },
+                    onDiscarded: { route = .clone }
+                )
             } else {
                 // 초안을 못 찾으면(새로고침 중 유실 등) 갇히지 않게 목록으로 돌린다.
                 Color.clear.onAppear { route = .management }
@@ -88,6 +79,7 @@ struct VoicesPanelView: View {
         case .preparation(let voiceID):
             ClipPreparationView(
                 onDismiss: { route = .management },
+                registrationStyle: true,
                 targetVoiceID: voiceID
             )
         }

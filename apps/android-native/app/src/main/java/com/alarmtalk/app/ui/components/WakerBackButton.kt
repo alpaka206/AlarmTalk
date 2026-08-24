@@ -36,8 +36,9 @@ internal fun WakerBackButton(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
 ) {
-    IconButton(onClick = onBack, modifier = modifier) {
+    IconButton(onClick = onBack, enabled = enabled, modifier = modifier) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = stringResource(R.string.auth_back),

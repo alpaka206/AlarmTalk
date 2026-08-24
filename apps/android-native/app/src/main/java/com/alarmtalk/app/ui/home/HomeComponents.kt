@@ -511,8 +511,9 @@ internal val WakerTopBarBottomGap = 16.dp
 @Composable
 internal fun WakerTopBar(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    backEnabled: Boolean = true,
 ) {
     Box(
         modifier = modifier
@@ -537,10 +538,12 @@ internal fun WakerTopBar(
             overflow = TextOverflow.Ellipsis,
         )
         // 뒤로가기 모양은 공용 `WakerBackButton` 하나뿐이다 — 로그인 화면과 같은 원형이다.
-        WakerBackButton(
-            onBack = onBack,
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
+        if (onBack != null) {
+            WakerBackButton(
+                onBack = onBack,
+                enabled = backEnabled,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+        }
     }
 }
-

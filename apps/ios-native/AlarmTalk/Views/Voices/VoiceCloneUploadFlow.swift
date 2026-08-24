@@ -28,6 +28,7 @@ private enum RegistrationStep {
 /// Android `VoiceProfileManagementPanel.VoiceRegistrationStep` 의 Source/Details/Creating 을
 /// SwiftUI 화면으로 분리한 것. 이후 Preview/Prerendering 은 `VoicesRoute` 가 잇는다.
 struct VoiceCloneUploadFlow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
@@ -128,19 +129,39 @@ struct VoiceCloneUploadFlow: View {
         !voice.isBusy && !voice.recorder.isRecording && hasPreparedSource && isInValidRange
     }
 
+    private var topBarBackAction: (() -> Void)? {
+        guard registrationStep != .creating else { return nil }
+        return { goBack() }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            switch registrationStep {
-            case .source:
-                sourceSection
-            case .details:
-                detailsSection
-            case .creating:
-                creatingSection
+        VStack(spacing: 0) {
+            WakerTopBar(
+                title: "목소리 만들기",
+                onBack: topBarBackAction,
+                backEnabled: !voice.isBusy
+            )
+            .padding(.top, 18)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    switch registrationStep {
+                    case .source:
+                        sourceSection
+                    case .details:
+                        detailsSection
+                    case .creating:
+                        creatingSection
+                    }
+                    statusSection
+                    Spacer(minLength: 4)
+                }
+                .padding(.horizontal, 20)
             }
-            statusSection
+
+            bottomActions
         }
+        .homeGradientBackground()
         .onAppear {
             profileName = voice.cloneName
         }
@@ -162,32 +183,6 @@ struct VoiceCloneUploadFlow: View {
                 voice.stopRecording()
             }
         }
-        .onChange(of: voice.recorder.isRecording) { wasRecording, isRecording in
-            // 2분 하드 캡(VoiceRecorder) 으로 녹음이 자동 정지되면, 수동 정지와 동일하게
-            // 안내 문구를 '저장' 상태로 갱신한다. Android `:599-601`.
-            guard wasRecording, !isRecording else { return }
-            if voice.recorder.latestRecordingURL != nil {
-                voice.statusMessage = "녹음을 저장했어요. \(voice.recordingDurationLabel)"
-            }
-        }
-    }
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            if registrationStep != .creating {
-                Button(action: goBack) {
-                    Label(registrationStep == .details ? "이전" : "뒤로", systemImage: "chevron.left")
-                }
-                .buttonStyle(.borderless)
-                .tint(AlarmTalkTheme.primary)
-            }
-            Spacer()
-            Text("목소리 만들기")
-                .font(.headline)
-            Spacer()
-            // 제목을 가운데에 두되, 뒤로 버튼이 없는 생성 중에도 폭이 흔들리지 않게 맞춘다.
-            Color.clear.frame(width: registrationStep == .creating ? 0 : 52, height: 1)
-        }
     }
 
     private func goBack() {
@@ -200,11 +195,11 @@ struct VoiceCloneUploadFlow: View {
     }
 
     private var nameSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("이름")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("목소리 이름")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            TextField("목소리 이름", text: $profileName)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+            TextField("예: 엄마 목소리", text: $profileName)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
                     let cleaned = InputSanitizer.clampVoiceName(newValue)
@@ -222,31 +217,24 @@ struct VoiceCloneUploadFlow: View {
 
             VoiceRelationshipInputField(
                 selection: $relationshipSelection,
+                title: "나와의 관계 (선택)",
                 submitted: submitted,
                 required: false
             )
             .padding(.top, 4)
 
-            Text("이 목소리가 부를 호칭")
+            Text("이 목소리가 나를 부를 이름 (선택)")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
                 .padding(.top, 4)
-            TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
+            TextField("예: 엄마, 자기, 김팀장", text: $listenerTitle)
                 .onChange(of: listenerTitle) { _, newValue in
                     if newValue.count > 30 {
                         listenerTitle = InputSanitizer.clampDisplayName(newValue)
                     }
                 }
                 .alarmTalkFieldStyle()
-            Text("선택하면 랜덤 문구에서 이 이름으로 나를 불러요.")
-                .font(.caption2)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            VoiceListenerPreviewCard(
-                listenerTitle: listenerTitle,
-                relationshipLabel: relationshipSelection.resolved
-            )
         }
-        .sectionSurface()
     }
 
     /// ⚠ **녹음 UI 를 여기서 새로 그리지 말 것**(2026-08-16 정리).
@@ -256,11 +244,11 @@ struct VoiceCloneUploadFlow: View {
     private var recordingSection: some View {
         RecordingCard(
             isRecording: voice.recorder.isRecording,
-            elapsedMs: Int(voice.recorder.elapsedSeconds * 1000),
+            elapsedMs: activeDurationMs,
             maxDurationMs: VoiceProfileLimits.maxDurationMs,
             hasRecording: voice.recorder.latestRecordingURL != nil,
             isPreviewing: false,
-            note: "12초 이상 2분 이하로 녹음해 주세요.",
+            note: nil,
             onRecord: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if voice.recorder.isRecording {
@@ -279,40 +267,37 @@ struct VoiceCloneUploadFlow: View {
         sourceModeSection
         if sourceMode == .record {
             recordingSection
-            Text("너무 짧으면 목소리가 다르게 나올 수 있어요.")
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            Text("원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.")
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("너무 짧으면 목소리가 다르게 나올 수 있어요.")
+                Text("원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.")
+            }
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
             scriptSection
         } else {
             fileSection
         }
-        Button {
-            voice.statusMessage = nil
-            registrationStep = .details
-        } label: {
-            Text(activeDurationMs > 0 && !isInValidRange ? "12초 이상 준비해 주세요" : "다음")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(AlarmTalkTheme.primary)
-        .disabled(!canAdvanceFromSource)
     }
 
     private var scriptSection: some View {
         DisclosureGroup(isExpanded: $scriptExpanded) {
             Text(recordingScript)
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.text)
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurface)
                 .padding(.top, 8)
         } label: {
             Text("예시 대본")
-                .font(.subheadline.weight(.semibold))
+                .font(theme.typography.titleSmall)
+                .fontWeight(.semibold)
         }
-        .tint(AlarmTalkTheme.textSecondary)
-        .sectionSurface()
+        .tint(theme.palette.onSurfaceVariant)
+        .padding(16)
+        .background(theme.palette.surfaceVariant.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
     }
 
     private var recordingScript: String {
@@ -376,24 +361,6 @@ struct VoiceCloneUploadFlow: View {
         nameSection
         languageSection
         consentSection
-        HStack(spacing: 8) {
-            Button {
-                submitted = false
-                registrationStep = .source
-            } label: {
-                Text("이전").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-
-            Button {
-                Task { await submit() }
-            } label: {
-                Text("등록").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .disabled(!canSubmit)
-        }
     }
 
     private var languageSection: some View {
@@ -407,18 +374,18 @@ struct VoiceCloneUploadFlow: View {
             }
             .pickerStyle(.segmented)
         }
-        .sectionSurface()
     }
 
     private var creatingSection: some View {
         VStack(spacing: 18) {
             ProgressView()
                 .controlSize(.large)
-            Text("목소리를 만들고 있어요")
-                .font(.headline)
-            Text("잠시만 기다려 주세요. 완성되면 바로 들어볼 수 있어요.")
-                .font(.subheadline)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+            Text("목소리를 만드는 중이에요")
+                .font(theme.typography.titleMedium)
+                .fontWeight(.semibold)
+            Text("잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.")
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -426,83 +393,85 @@ struct VoiceCloneUploadFlow: View {
     }
 
     private var sourceModeSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("입력 방식")
-                .font(.subheadline.weight(.semibold))
-            Picker("입력 방식", selection: $sourceMode) {
-                ForEach(VoiceCloneSourceMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
+        HStack(spacing: 8) {
+            ForEach(VoiceCloneSourceMode.allCases) { mode in
+                if sourceMode == mode {
+                    Button(mode.label) { sourceMode = mode }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .tint(theme.palette.secondary)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Button(mode.label) { sourceMode = mode }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .tint(theme.palette.primary)
+                        .frame(maxWidth: .infinity)
                 }
             }
-            .pickerStyle(.segmented)
         }
-        .sectionSurface()
     }
 
     private var fileSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("파일/영상으로 목소리 만들기")
-                        .font(.subheadline.weight(.semibold))
-                    Text("12초 이상 2분 이하 구간만 학습에 사용할 수 있어요.")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+            Button { fileImporterPresented = true } label: {
+                VStack(spacing: 10) {
+                    Image(systemName: "arrow.up.doc")
+                        .font(.system(size: selectedFileURL == nil ? 28 : 18))
+                    Text(selectedFileURL == nil ? "파일 또는 영상 업로드" : "재업로드")
+                        .font(theme.typography.bodyMedium)
+                        .fontWeight(.semibold)
                 }
-                Spacer(minLength: 0)
-                Button {
-                    fileImporterPresented = true
-                } label: {
-                    Label("선택", systemImage: "arrow.up.doc")
-                }
-                .buttonStyle(.bordered)
+                .foregroundStyle(theme.palette.onSurface)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, selectedFileURL == nil ? 22 : 12)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .background(theme.palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
 
             if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
+                Text("12초 이상 2분 이하 구간을 선택해 주세요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
                 fileCropCard(url: url, durationMs: durationMs)
-            } else {
-                EmptyStatePlaceholder(
-                    title: "선택한 음성 파일이나 영상이 없어요.",
-                    subtitle: "m4a, mp3, wav, mp4 등 iOS가 읽을 수 있는 파일을 선택해 주세요.",
-                    icon: "arrow.up.doc"
-                )
+                Text("한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
             }
 
             if let localError {
                 Text(localError)
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
+                    .foregroundStyle(theme.palette.error)
             }
         }
-        .sectionSurface()
     }
 
     private func fileCropCard(url: URL, durationMs: Int) -> some View {
         let effectiveEndMs = min(cropEndMs, durationMs)
         let effectiveDurationMs = max(0, effectiveEndMs - cropStartMs)
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedFileName ?? "선택한 파일")
-                        .font(.subheadline.weight(.semibold))
-                    Text("전체 \(HelperFormatters.audioTimeLabel(durationMs)) · 사용할 구간 \(HelperFormatters.audioTimeLabel(effectiveDurationMs))")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-                Spacer(minLength: 0)
-                Button {
-                    clearImportedFile()
-                } label: {
-                    Image(systemName: "xmark.circle")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-
             if durationMs >= VoiceProfileLimits.minDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))")
-                        .font(.caption.weight(.semibold))
+                    HStack {
+                        Text("구간 자르기")
+                            .font(theme.typography.labelLarge)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Text(HelperFormatters.audioTimeLabel(effectiveDurationMs))
+                            .font(theme.typography.labelMedium)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(theme.palette.onSecondaryContainer)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(theme.palette.secondaryContainer, in: Capsule())
+                    }
                     // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 60~120초 구간을 직접 고른다
                     // (이전엔 시작점만 움직이고 길이는 항상 120초로 고정됐음).
                     AudioCropRangeSlider(
@@ -512,9 +481,6 @@ struct VoiceCloneUploadFlow: View {
                         cropStartMs: $cropStartMs,
                         cropEndMs: $cropEndMs
                     )
-                    Text("12초 이상 2분 이하 구간을 골라 주세요.")
-                        .font(.caption2)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
             }
 
@@ -527,18 +493,15 @@ struct VoiceCloneUploadFlow: View {
                 onError: { localError = $0 }
             )
 
-            if durationMs < VoiceProfileLimits.minDurationMs {
-                Text("12초 이상 파일을 선택해 주세요.")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
-            } else if effectiveDurationMs < VoiceProfileLimits.minDurationMs {
-                Text("12초 이상 들리는 구간을 선택해 주세요.")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
-            }
         }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant.opacity(0.44), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.palette.surfaceVariant.opacity(0.38))
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
     }
 
     /// 등록 직전 고지·동의. 생체정보 동의는 **전용 모달이 아니라 폼 안의 체크박스**로 받는다
@@ -548,24 +511,22 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 10) {
             // 권리 보증은 **약관 제7조**가 담당한다(가입 시 필수 동의). 여기서는 업로드
             // 시점 고지만 남긴다 — 체크박스로 다시 받지 않는다.
-            Label(
-                "본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요. 권한 없는 등록으로 생기는 책임은 등록한 사람에게 있어요(이용약관 제7조).",
-                systemImage: "info.circle"
-            )
-            .font(.footnote)
-            .foregroundStyle(AlarmTalkTheme.textSecondary)
+            Text("본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요. 권한 없는 등록으로 생기는 책임은 등록한 사람에게 있어요(이용약관 제7조).")
+            .font(theme.typography.bodySmall)
+            .foregroundStyle(theme.palette.onSurfaceVariant)
             .fixedSize(horizontal: false, vertical: true)
             if needsBiometricConsent {
                 consentCheck(
                     isOn: $voiceBiometricAgreed,
-                    label: "내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다."
+                    label: "음성 생체정보 처리에 동의해요",
+                    description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요. 목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
                 )
             }
         }
         .sectionSurface()
     }
 
-    private func consentCheck(isOn: Binding<Bool>, label: String) -> some View {
+    private func consentCheck(isOn: Binding<Bool>, label: String, description: String) -> some View {
         Button {
             isOn.wrappedValue.toggle()
         } label: {
@@ -573,10 +534,15 @@ struct VoiceCloneUploadFlow: View {
                 Image(systemName: isOn.wrappedValue ? "checkmark.square.fill" : "square")
                     .font(.title3)
                     .foregroundStyle(isOn.wrappedValue ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
-                Text(label)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.text)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text(description)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -592,6 +558,44 @@ struct VoiceCloneUploadFlow: View {
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .padding(.horizontal, 4)
         }
+    }
+
+    @ViewBuilder
+    private var bottomActions: some View {
+        switch registrationStep {
+        case .source:
+            Button {
+                voice.statusMessage = nil
+                registrationStep = .details
+            } label: {
+                Text(sourceActionTitle).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
+            .disabled(!canAdvanceFromSource)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        case .details:
+            Button {
+                Task { await submit() }
+            } label: {
+                Text("등록").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
+            .disabled(!canSubmit)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        case .creating:
+            EmptyView()
+        }
+    }
+
+    private var sourceActionTitle: String {
+        guard hasPreparedSource, !isInValidRange else { return "다음" }
+        return sourceMode == .record
+            ? "12초 이상 녹음해 주세요"
+            : "12초 이상인 파일을 선택해 주세요"
     }
 
     // MARK: - Actions
@@ -772,15 +776,6 @@ struct VoiceCloneUploadFlow: View {
     private func applyCropDefaults(durationMs: Int) {
         cropStartMs = 0
         cropEndMs = min(durationMs, VoiceProfileLimits.maxDurationMs)
-    }
-
-    private func clearImportedFile() {
-        selectedFileURL = nil
-        selectedFileName = nil
-        selectedFileDurationMs = nil
-        cropStartMs = 0
-        cropEndMs = VoiceProfileLimits.maxDurationMs
-        localError = nil
     }
 
 }

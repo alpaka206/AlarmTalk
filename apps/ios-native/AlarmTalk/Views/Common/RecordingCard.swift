@@ -53,7 +53,7 @@ struct RecordingCard: View {
 
     private var title: String {
         if isRecording { return "녹음 중…" }
-        return hasRecording ? "녹음을 저장했어요." : "녹음하기"
+        return hasRecording ? "녹음을 저장했어요" : "녹음하기"
     }
 
     var body: some View {
@@ -95,7 +95,7 @@ struct RecordingCard: View {
                     RecordingCircleButton(
                         systemName: isRecording ? "stop.fill" : "mic.fill",
                         filled: true,
-                        tint: isRecording ? theme.palette.error : theme.palette.primary,
+                        tint: theme.palette.primary,
                         onTint: theme.palette.onPrimary,
                         action: onRecord
                     )
@@ -108,8 +108,12 @@ struct RecordingCard: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
         }
-        .padding(12)
-        .background(theme.palette.surfaceVariant.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
+        .padding(16)
+        .background(theme.palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
     }
 }
