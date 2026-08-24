@@ -339,7 +339,7 @@ alarmMutation.post('/', async (c) => {
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
       // 수신자 기준 시각 가드(허용 여부·최소 리드타임·quiet 요일). 발신자 body.timezone 은
       // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
-      // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
+      // Asia/Seoul)로 판정한다. 보낸 뒤 PATCH는 금지되므로 생성·재전송에서만 이 가드를 돈다.
       const guard = await evaluateFamilyAlarmTimingGuard(
         db,
         [targetPk, targetLegacyId],
@@ -432,7 +432,13 @@ alarmMutation.post('/', async (c) => {
   const deliveryVersionSupported = targetUserIdForAlarm
     ? await alarmDeliveryVersionSupported(db)
     : false;
-  const deliveryVersion = deliveryVersionSupported ? crypto.randomUUID() : null;
+  if (targetUserIdForAlarm && !deliveryVersionSupported) {
+    return c.json(
+      { error: 'Alarm schema is upgrading', error_code: 'ALARM_SCHEMA_UPGRADING' },
+      503,
+    );
+  }
+  const deliveryVersion = targetUserIdForAlarm ? crypto.randomUUID() : null;
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
@@ -447,8 +453,8 @@ alarmMutation.post('/', async (c) => {
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id${deliveryVersionSupported ? ', delivery_version' : ''})
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${deliveryVersionSupported ? ', ?' : ''})`,
+             timezone, bucket_id${targetUserIdForAlarm ? ', delivery_version' : ''})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${targetUserIdForAlarm ? ', ?' : ''})`,
       args: [
         alarmId,
         userId,
@@ -463,7 +469,7 @@ alarmMutation.post('/', async (c) => {
         body.voice_profile_id ?? null,
         storedTimezone,
         body.bucket_id ?? null,
-        ...(deliveryVersionSupported ? [deliveryVersion] : []),
+        ...(targetUserIdForAlarm ? [deliveryVersion] : []),
       ],
     });
   // 타인 발신 알람: 같은 (수신자, time) 슬롯을 멱등·교체 규칙으로 원자 점유한다.
@@ -480,14 +486,13 @@ alarmMutation.post('/', async (c) => {
       recipientIds,
       body.time,
       alarmId,
-      deliveryVersionSupported,
     );
     if (claimed.reused) {
       await executor.execute({
         sql: `UPDATE alarms SET
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
                 vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
-                timezone = ?, bucket_id = ?${deliveryVersionSupported ? ', delivery_version = ?' : ''},
+                timezone = ?, bucket_id = ?, delivery_version = ?,
                 is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
         args: [
@@ -500,7 +505,7 @@ alarmMutation.post('/', async (c) => {
           body.voice_profile_id ?? null,
           storedTimezone,
           body.bucket_id ?? null,
-          ...(deliveryVersionSupported ? [deliveryVersion] : []),
+          deliveryVersion,
           claimed.alarmId,
         ],
       });
@@ -568,19 +573,6 @@ alarmMutation.post('/', async (c) => {
   );
 });
 
-/** 저장된 repeat_days JSON 문자열('[1,3,5]')을 number[] 로 파싱한다(0-6 정수만). */
-function parseStoredRepeatDays(raw: unknown): number[] {
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.filter((n): n is number => Number.isInteger(n));
-    } catch {
-      // 손상 값은 빈 배열로 취급.
-    }
-  }
-  return [];
-}
-
 alarmMutation.patch('/:id', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
@@ -634,6 +626,12 @@ alarmMutation.patch('/:id', async (c) => {
     bucket_id?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
+  if (typeof current.target_user_id === 'string' && current.target_user_id.length > 0) {
+    return c.json(
+      { error: 'Sent alarms cannot be edited', error_code: 'TARGETED_ALARM_IMMUTABLE' },
+      409,
+    );
+  }
   const resolvedUserPk = c.get('userIdPK');
   const creatorHasPaidVoice =
     !resolvedUserPk || current.user_plan === undefined || isPaidVoicePlan(current.user_plan);
@@ -712,69 +710,6 @@ alarmMutation.patch('/:id', async (c) => {
     }
   }
 
-  // 타인 발신(가족/친구) 알람 가드 재실행(A): 발신자가 PATCH 로 time/repeat_days/timezone 을
-  // 바꾸거나 비활성 알람을 재활성(is_active 0→1)해 POST 의 리드타임·quiet·수신자 시간대 가드를
-  // 우회하지 못하게, 수정 결과(effective)가 '활성'이 되는 경우에 한해 POST 와 동일한 헬퍼를 다시
-  // 돈다. 본인 알람(target_user_id 없음)·최종 비활성 알람은 대상 아님(울리지 않으므로).
-  const patchTargetUserId =
-    typeof current.target_user_id === 'string' && current.target_user_id.length > 0
-      ? current.target_user_id
-      : null;
-  const deliveryVersionSupported = patchTargetUserId
-    ? await alarmDeliveryVersionSupported(db)
-    : false;
-  const reactivating = body.is_active === true && Number(current.is_active) === 0;
-  const willBeActive =
-    body.is_active !== undefined ? body.is_active : Number(current.is_active) === 1;
-  const changesTiming =
-    body.time !== undefined || body.repeat_days !== undefined || body.timezone !== undefined;
-  // 통과 시 저장할 효과 시간대(발신자 body.timezone 대신 이 값을 행에 기록).
-  let familyGuardTimezone: string | null = null;
-  // (수신자, 새 time) 슬롯 원자 재점유 파라미터(time 변경 또는 재활성화 시).
-  let familyReclaim: { ids: [string, string]; time: string } | null = null;
-  if (patchTargetUserId && willBeActive && (changesTiming || reactivating)) {
-    // 수신자 재조회(allowFamilyAlarms·quiet). target_user_id 는 로그인 id(google_id) 또는 pk.
-    const recipientRes = await db.execute({
-      sql: `SELECT id, google_id, allow_family_alarms,
-                   family_alarm_quiet_windows
-            FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [patchTargetUserId, patchTargetUserId],
-    });
-    if (recipientRes.rows.length === 0) {
-      // 수신자를 확인할 수 없으면 수신 허용·quiet 를 검증할 수 없어 시각 변경/재활성화를 거부한다.
-      return c.json(
-        { error: '상대방이 알람 설정을 허용하지 않았습니다.', error_code: 'FAMILY_ALARM_DISABLED' },
-        403,
-      );
-    }
-    const recipient = recipientRes.rows[0]!;
-    const recipientPk = String(recipient.id);
-    // 읽기(기존 행 매칭)용 — 저장은 하지 않는다.
-    const recipientLegacyId = (recipient.google_id as string | null) ?? recipientPk;
-    const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
-    // effective 값: PATCH 로 안 바꾼 필드는 기존 행 값을 쓴다(수정 결과 기준 판정).
-    const effectiveTime = body.time !== undefined ? body.time : String(current.time ?? '');
-    const effectiveRepeatDays =
-      body.repeat_days !== undefined
-        ? body.repeat_days
-        : parseStoredRepeatDays(current.repeat_days);
-    const guard = await evaluateFamilyAlarmTimingGuard(
-      db,
-      [recipientPk, recipientLegacyId],
-      recipientSettings,
-      effectiveTime,
-      effectiveRepeatDays,
-    );
-    if (!guard.ok) {
-      return c.json({ error: guard.error, error_code: guard.error_code }, guard.status);
-    }
-    familyGuardTimezone = guard.effectiveTimezone;
-    // time 변경 또는 재활성화면 (수신자, 새 time) 슬롯을 원자 재점유해 이 알람만 활성으로 남긴다.
-    if (body.time !== undefined || reactivating) {
-      familyReclaim = { ids: [recipientPk, recipientLegacyId], time: effectiveTime };
-    }
-  }
-
   const updates: string[] = [];
   const args: (string | number | null)[] = [];
 
@@ -823,37 +758,10 @@ alarmMutation.patch('/:id', async (c) => {
     args.push(body.bucket_id);
   }
 
-  // 타인 발신 알람 가드가 돌았으면 저장 timezone 을 효과 시간대로 강제한다(발신자 body.timezone
-  // 무시 — 검증=저장 정합, cron 이 검증과 같은 시간대로 해석). body.timezone 절이 이미 있으면
-  // 그 값을 효과 시간대로 덮고, 없으면 새 절을 추가한다.
-  if (familyGuardTimezone !== null) {
-    const tzIdx = updates.indexOf('timezone = ?');
-    if (tzIdx >= 0) {
-      args[tzIdx] = familyGuardTimezone;
-    } else {
-      updates.push('timezone = ?');
-      args.push(familyGuardTimezone);
-    }
-  }
-
-  // 슬롯 재점유 경로에서는 PATCH 대상이 (수신자, time) 슬롯의 유일 승자이므로 반드시 활성으로
-  // 남긴다. time 만 바꾸는 경우 is_active 가 updates 에 없어 기존 활성값이 유지되지만, 명시적으로
-  // 1 을 보장해 아래 슬롯 비활성화 UPDATE 로 대상이 함께 꺼지는 일이 없게 한다.
-  if (familyReclaim && !updates.includes('is_active = ?')) {
-    updates.push('is_active = ?');
-    args.push(1);
-  }
-
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
 
-  // 타깃 알람의 서버 변경은 수신자가 봐야 할 새 전달 세대다. 옛 스냅샷 ACK가 수정된 행을
-  // 지우면 원격 끄기·시각 변경을 못 보므로 모든 PATCH에서 버전을 회전한다.
-  if (patchTargetUserId && deliveryVersionSupported) {
-    updates.push('delivery_version = ?');
-    args.push(crypto.randomUUID());
-  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -864,8 +772,7 @@ alarmMutation.patch('/:id', async (c) => {
     });
   const updateResult =
     (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
-    (body.message_id !== undefined && body.message_id !== null) ||
-    familyReclaim
+    (body.message_id !== undefined && body.message_id !== null)
       ? await withWriteTransaction(db, async (tx) => {
           if (
             body.voice_profile_id !== undefined &&
@@ -880,28 +787,6 @@ alarmMutation.patch('/:id', async (c) => {
             !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
-          }
-          if (familyReclaim) {
-            // (수신자, 새 time) 슬롯을 PATCH 대상(id)이 유일 승자가 되도록 원자 재점유한다.
-            // 같은 슬롯의 다른 활성 발신 알람(다른 발신자 + 같은 발신자의 같은 시각 이중 예약
-            // 포함)을 전부 비활성화하되 PATCH 대상(id != ?)은 제외한다. 대상은 위에서 is_active=1
-            // 을 보장했으므로 아래 updateAlarm 으로 활성 상태로 확정된다.
-            // (POST 용 claimTargetedAlarmSlot 은 '기존 행을 keeper 로 재사용'하는 의미라 특정
-            //  행을 수정하는 PATCH 에는 부적합 — 대상이 아닌 행이 keeper 로 뽑혀 대상까지
-            //  비활성화돼 두 알람이 모두 꺼지는 버그가 있었다: Codex #563.)
-            await tx.execute({
-              sql: `UPDATE alarms
-                    SET is_active = 0${deliveryVersionSupported ? ', delivery_version = ?' : ''},
-                        updated_at = datetime('now')
-                    WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
-              args: [
-                ...(deliveryVersionSupported ? [crypto.randomUUID()] : []),
-                familyReclaim.ids[0],
-                familyReclaim.ids[1],
-                familyReclaim.time,
-                id,
-              ],
-            });
           }
           return { status: 'ok' as const, result: await updateAlarm(tx) };
         })
@@ -920,18 +805,6 @@ alarmMutation.patch('/:id', async (c) => {
           FROM alarms WHERE id = ?`,
     args: [id],
   });
-
-  // 전달 세대를 바꾼 커밋을 즉시 알린다. 생성 때 보낸 신호는 이미 소비됐을 수 있으므로,
-  // 버전만 회전하고 여기서 깨우지 않으면 15분 폴백 전에 옛 알람이 울릴 수 있다.
-  if (patchTargetUserId) {
-    try {
-      c.executionCtx.waitUntil(
-        sendFamilyAlarmPush(db, c.env, patchTargetUserId, id).catch(() => {}),
-      );
-    } catch {
-      // executionCtx 없음(비-fetch/테스트) → push 생략, pull 폴백.
-    }
-  }
 
   return c.json({
     success: true,

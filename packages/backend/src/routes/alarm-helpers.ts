@@ -18,8 +18,8 @@ export type WakeMode = (typeof WAKE_MODES)[number];
 
 /**
  * 배포가 Worker → 원격 migration 순서라 새 코드가 #104 이전 스키마를 잠깐 만날 수 있다.
- * 타깃 알람 경로만 이 값을 확인해 그 짧은 창에는 구형 전달 방식으로 저장한다. 마이그레이션이
- * 끝나면 다음 요청부터 버전 가드가 켜진다(프로세스 캐시는 두지 않는다).
+ * 타깃 알람 경로는 이 값이 false면 쓰기를 거부한다. 구형 방식으로 저장하면 컬럼 확인 직후
+ * migration이 끝나는 경합에서 delivery_version=NULL 행이 영구히 남을 수 있다.
  */
 export async function alarmDeliveryVersionSupported(db: DbExecutor): Promise<boolean> {
   const columns = await db.execute({ sql: "PRAGMA table_info('alarms')", args: [] });
@@ -427,7 +427,6 @@ export async function claimTargetedAlarmSlot(
   recipientIds: [string, string],
   time: string,
   newAlarmId: string,
-  deliveryVersionSupported = true,
 ): Promise<{ alarmId: string; reused: boolean; previousMessageId: string | null }> {
   const existing = await executor.execute({
     sql: `SELECT id, message_id FROM alarms
@@ -452,11 +451,11 @@ export async function claimTargetedAlarmSlot(
   // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
   await executor.execute({
     sql: `UPDATE alarms
-          SET is_active = 0${deliveryVersionSupported ? ', delivery_version = ?' : ''},
+          SET is_active = 0, delivery_version = ?,
               updated_at = datetime('now')
           WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
     args: [
-      ...(deliveryVersionSupported ? [crypto.randomUUID()] : []),
+      crypto.randomUUID(),
       recipientIds[0],
       recipientIds[1],
       time,
@@ -472,7 +471,7 @@ export type FamilyAlarmTimingGuardResult =
   | { ok: false; error: string; error_code: string; status: 400 | 403 };
 
 /**
- * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성)·PATCH(수정) 공용.
+ * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성) 전용.
  * 발신자 body.timezone 은 어떤 경우에도 신뢰하지 않고, resolveEffectiveTimezone 이 산출한
  * 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로 다음 발사 시각을 구해 판정한다.
  *  ① 수신자가 알람 수신을 허용하지 않으면 403 FAMILY_ALARM_DISABLED

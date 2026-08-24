@@ -47,6 +47,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var ttsMessageId: String?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
+    var remoteDeliveryVersion: String?
     var syncState: String           // AlarmSyncState.rawValue
     var origin: String              // AlarmOrigin.rawValue
     var alarmVolumePercent: Int     // 0..100
@@ -285,6 +286,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
+        remoteDeliveryVersion: String? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
         alarmVolumePercent: Int = 100,
@@ -332,6 +334,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
+        self.remoteDeliveryVersion = remoteDeliveryVersion
         self.syncState = syncState
         self.origin = origin
         self.alarmVolumePercent = alarmVolumePercent
@@ -381,6 +384,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case ttsMessageId
         case remoteAlarmId
         case lastSyncedAtMillis
+        case remoteDeliveryVersion
         case syncState
         case origin
         case alarmVolumePercent
@@ -467,6 +471,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
+        self.remoteDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .remoteDeliveryVersion)
 
         // syncState 보정: remoteAlarmId 가 있으면 synced, 없으면 local_only.
         if let raw = try c.decodeIfPresent(String.self, forKey: .syncState),
@@ -553,6 +558,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
         try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
         try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
+        try c.encodeIfPresent(remoteDeliveryVersion, forKey: .remoteDeliveryVersion)
         try c.encode(syncState, forKey: .syncState)
         try c.encode(origin, forKey: .origin)
         try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)
@@ -663,4 +669,3 @@ actor LocalAlarmPersistence {
         try? data.write(to: storageURL, options: [.atomic])
     }
 }
-

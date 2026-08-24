@@ -78,6 +78,9 @@ data class AlarmEntity(
     // 잠금/복원은 현재 세션이 이 알람의 소유자일 때만 수행한다 — 다른 계정으로 로그인해 무료/유료가 돼도
     // 남의 목소리 알람을 잠그거나(→소유자가 복원 못하는 영구 잠금) 복원하지(→남의 목소리 재생) 못하게 한다.
     val ownerUserId: String? = null,
+    // 받은 알람의 음원 확보와 OS 예약까지 끝난 전달 세대. 서버 ACK보다 먼저 저장해 ACK 실패 뒤
+    // 수신자가 편집해도 같은 세대만 안전하게 재확인할 수 있게 한다.
+    val remoteDeliveryVersion: String? = null,
 )
 
 data class AlarmDraft(

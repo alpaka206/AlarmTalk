@@ -11,6 +11,9 @@ const V_BAD = 'not-a-uuid';
 const mockDB = createMockDB();
 const mockCreateInstantClone = vi.fn();
 const mockDeleteVoice = vi.fn();
+const { mockNotifyDowngradedAlarms } = vi.hoisted(() => ({
+  mockNotifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
+}));
 
 function consentRow(type: string) {
   return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
@@ -36,6 +39,11 @@ vi.mock('../src/lib/elevenlabs', () => ({
     this.createInstantClone = mockCreateInstantClone;
     this.deleteVoice = mockDeleteVoice;
   }),
+}));
+
+vi.mock('../src/lib/fcm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/fcm')>()),
+  notifyDowngradedAlarms: mockNotifyDowngradedAlarms,
 }));
 
 import voiceProfile from '../src/routes/voice-profile';
@@ -92,6 +100,7 @@ beforeEach(() => {
   mockDB.reset();
   mockCreateInstantClone.mockReset();
   mockDeleteVoice.mockReset();
+  mockNotifyDowngradedAlarms.mockClear();
 });
 
 /* ------------------------------------------------------------------ */
@@ -1014,12 +1023,16 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(updateQueries[0]!.sql).toContain('deleted_at');
   });
 
-  it('ElevenLabs voice 삭제 호출', async () => {
+  it('철회 알림을 먼저 보낸 뒤 ElevenLabs voice를 정리한다', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-xyz' }]);
     mockDB.pushResult([], 1);
     mockDeleteVoice.mockResolvedValue(undefined);
     await req(buildApp(), new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }));
+    expect(mockNotifyDowngradedAlarms).toHaveBeenCalledTimes(1);
     expect(mockDeleteVoice).toHaveBeenCalledWith('elv-xyz');
+    expect(mockNotifyDowngradedAlarms.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteVoice.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('ElevenLabs 삭제 실패해도 로컬 삭제 진행', async () => {

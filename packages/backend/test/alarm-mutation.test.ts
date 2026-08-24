@@ -229,7 +229,7 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     expect(deactivate!.args).toContain('07:30');
   });
 
-  it('#104 적용 전에도 타깃 알람 생성이 500 없이 구형 스키마로 저장된다', async () => {
+  it('#104 적용 전에는 NULL 전달 버전을 만들지 않고 타깃 알람 생성을 503으로 막는다', async () => {
     mockDB.pushResultFor("PRAGMA table_info('alarms')", []);
     mockDB.pushResult([{
       id: 'friend-pk-1',
@@ -253,9 +253,10 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
       jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'friend-1' }),
     );
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('ALARM_SCHEMA_UPGRADING');
     const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'));
-    expect(insert?.sql).not.toContain('delivery_version');
+    expect(insert).toBeUndefined();
   });
 
   it('타깃 알람: 수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
@@ -799,7 +800,7 @@ describe('PATCH /alarms/:id', () => {
     expect(body.alarm.time).toBe('08:00');
   });
 
-  it('타깃 알람 PATCH 커밋 뒤 수신자에게 즉시 pull 신호를 보낸다', async () => {
+  it('타깃 알람은 보낸 뒤 PATCH할 수 없다', async () => {
     mockDB.pushResult([{
       id: ID.alarm,
       target_user_id: 'recipient-1',
@@ -811,19 +812,6 @@ describe('PATCH /alarms/:id', () => {
       bucket_id: null,
       user_plan: 'personal',
     }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{
-      id: ID.alarm,
-      user_id: 'user-1',
-      target_user_id: 'recipient-1',
-      time: '07:30',
-      repeat_days: '[]',
-      is_active: 0,
-      snooze_minutes: 12,
-      mode: 'sound-only',
-      vibration_pattern: 'default',
-      wake_mode: 'sound_then_voice',
-    }]);
     const tasks: Promise<unknown>[] = [];
 
     const res = await buildApp().fetch(
@@ -833,13 +821,10 @@ describe('PATCH /alarms/:id', () => {
     );
     await Promise.all(tasks);
 
-    expect(res.status).toBe(200);
-    expect(sendFamilyAlarmPush).toHaveBeenCalledWith(
-      mockDB.client,
-      expect.anything(),
-      'recipient-1',
-      ID.alarm,
-    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('TARGETED_ALARM_IMMUTABLE');
+    expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE alarms SET'))).toBe(false);
+    expect(sendFamilyAlarmPush).not.toHaveBeenCalled();
   });
 
   it('여러 필드 동시 수정', async () => {

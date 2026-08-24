@@ -52,12 +52,13 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
 알람 id를 재사용하고 내용을 교체한다(`claimTargetedAlarmSlot`). 다운로드 중 교체될 수 있으므로
 목록 응답의 `delivery_version`을 ack 본문에 그대로 보내고, 서버는 현재 행의 버전이 같을
 때만 tombstone을 남기고 삭제한다. 구버전 ack가 새 내용을 지우면 새 알람은 어느 기기에도
-전달되지 않는다. 재전송으로 내용을 교체할 때뿐 아니라 **수신자가 반드시 봐야 하는 서버
-변경마다** 버전은 새 UUID로 바꾼다. 같은 시각의 새 알람이 와 기존 행을 끄는 경우와 타깃
-알람 PATCH도 포함한다. 옛 ACK가 변경된 행을 먼저 지우면 수신자는 원격 끄기·수정을 못 본다.
+전달되지 않는다. 재전송으로 내용을 교체하거나 같은 시각의 새 알람이 기존 행을 끄는 등
+**수신자가 반드시 봐야 하는 서버 변경마다** 버전은 새 UUID로 바꾼다. 단 보낸 뒤에는
+발신자가 타깃 알람을 수정할 수 없다. `PATCH /alarm/:id` 는 타깃 행이면 409
+`TARGETED_ALARM_IMMUTABLE` 로 거부하고, 바꾸려면 보내기 흐름으로 다시 전송한다.
 버전을 바꾼 커밋 뒤에는 반드시 `family_alarm` 신호도 보낸다. 버전만 바꾸면 옛 ACK가 새 행을
 지우는 것은 막지만, 이미 생성 신호를 소비한 수신자는 15분 폴백 전까지 새 세대를 알 수 없다.
-가족 알람 최소 리드타임이 5분이므로 PATCH의 시각·켜짐·음원 변경도 생성과 같은 즉시 배달이다.
+가족 알람 최소 리드타임이 5분이므로 재전송도 생성과 같은 즉시 배달이다.
 같은 id를 재사용해 새 세대를 만들 때는 그 id의 옛 `revoked` 표식도 함께 내린다. 철회 표식이
 전달 버전과 무관하게 남으면 새 세대가 정상 목소리를 써도 수신자가 다시 걷어내 버린다.
 
@@ -133,6 +134,16 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 저장하지 못했어요" 만 뜬다. 일괄 push 는 `origin == localOwned` 로 거르지만, **단건 push
 호출부가 `remoteAlarmId != nil` 만 보고 빠져나간 적이 있다**(iOS 목록의 켜기/끄기 토글,
 2026-08-18 수정). 새 push 호출부를 만들면 **origin 을 함께 볼 것.**
+
+⚠ **적용한 전달 버전을 로컬에 남긴다.** 음원 확보와 OS 예약이 끝나면 서버 ack보다 먼저
+`remoteDeliveryVersion`을 로컬 행에 저장한다. ack 네트워크 호출이 실패한 뒤 수신자가 알람을
+고쳐도, 다음 pull은 서버 버전과 이 값이 정확히 같을 때만 병합 없이 ack를 재시도할 수 있다.
+값이 다르면 다른 전달 세대이므로 수신자 편집을 보존하고 ack하지 않는다.
+
+⚠ **#104 마이그레이션 전에는 타깃 알람 생성을 fail-closed 한다.** Worker가
+`delivery_version` 컬럼이 없는 스키마를 만나면 503 `ALARM_SCHEMA_UPGRADING`을 반환한다.
+구형 INSERT로 내려가면 컬럼 확인 직후 마이그레이션이 끝나는 경합에서 NULL 버전 행이 생겨
+영원히 ack할 수 없으므로, 본인 알람만 계속 허용하고 타깃 쓰기는 잠깐 재시도하게 한다.
 
 ⚠ **편집기 안에 '받는 사람 바꾸기' 를 두지 말 것.** 받는 사람은 「누구를 깨울까요?」
 시트에서 정해져 편집기로 넘어오고, 그 뒤로 바뀌지 않는다. iOS 에 한때 그 카드가 있었으나
@@ -230,7 +241,8 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
-| 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `deliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `deliveryVersion`) | `claimTargetedAlarmSlot`·타깃 PATCH(변경마다 버전 회전), `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
+| 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
+| 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |
 | '안 고침' 불변식 세우기 | `buildReceivedAlarmRow`(같은 `now`) | `LocalAlarmStore.upsert(_:syncedNow:)` | — |

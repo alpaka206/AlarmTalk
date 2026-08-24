@@ -248,7 +248,13 @@ familyAlarm.post('/alarms/voice', async (c) => {
   const messageId = crypto.randomUUID();
   const newAlarmId = crypto.randomUUID();
   const deliveryVersionSupported = await alarmDeliveryVersionSupported(db);
-  const deliveryVersion = deliveryVersionSupported ? crypto.randomUUID() : null;
+  if (!deliveryVersionSupported) {
+    return c.json(
+      { error: 'Alarm schema is upgrading', error_code: 'ALARM_SCHEMA_UPGRADING' },
+      503,
+    );
+  }
+  const deliveryVersion = crypto.randomUUID();
   const audioUrl = objectKey;
 
   // TTS 경로와 동일한 원자 교체: 같은 발신자 재전송은 기존 행 UPDATE(멱등, id 유지) +
@@ -266,19 +272,18 @@ familyAlarm.post('/alarms/voice', async (c) => {
       [recipientPk, recipientLegacyId],
       wakeAt,
       newAlarmId,
-      deliveryVersionSupported,
     );
     if (claimed.reused) {
       await tx.execute({
         sql: `UPDATE alarms SET message_id = ?, repeat_days = ?, mode = 'sound-only', timezone = ?,
-                ${deliveryVersionSupported ? 'delivery_version = ?, ' : ''}is_active = 1,
+                delivery_version = ?, is_active = 1,
                 updated_at = datetime('now')
               WHERE id = ?`,
         args: [
           messageId,
           JSON.stringify(repeatDays),
           effectiveTimezone,
-          ...(deliveryVersionSupported ? [deliveryVersion] : []),
+          deliveryVersion,
           claimed.alarmId,
         ],
       });
@@ -287,9 +292,9 @@ familyAlarm.post('/alarms/voice', async (c) => {
     } else {
       await tx.execute({
         sql: `INSERT INTO alarms
-              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone
-               ${deliveryVersionSupported ? ', delivery_version' : ''})
-              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?${deliveryVersionSupported ? ', ?' : ''})`,
+              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone,
+               delivery_version)
+              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?, ?)`,
         args: [
           claimed.alarmId,
           userId,
@@ -298,7 +303,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
           wakeAt,
           JSON.stringify(repeatDays),
           effectiveTimezone,
-          ...(deliveryVersionSupported ? [deliveryVersion] : []),
+          deliveryVersion,
         ],
       });
     }

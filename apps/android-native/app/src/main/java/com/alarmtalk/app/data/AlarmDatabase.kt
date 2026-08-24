@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 23,
+    version = 24,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -49,6 +49,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_20_21,
                     MIGRATION_21_22,
                     MIGRATION_22_23,
+                    MIGRATION_23_24,
                 )
                     // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                     //
@@ -58,7 +59,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     // Room 이 **DB 를 통째로 지우고 다시 만든다** — 사용자는 알람이 전부
                     // 사라진 것만 보고, 우리 쪽에는 예외도 로그도 남지 않는다.
                     //
-                    // 지금은 없는 게 안전하다: 1→23 마이그레이션이 **빠짐없이** 위에 있고,
+                    // 지금은 없는 게 안전하다: 1→24 마이그레이션이 **빠짐없이** 위에 있고,
                     // 앞으로 빠뜨리면 앱이 **켜자마자 죽는다.** 죽는 건 즉시 눈에 띄어 고칠 수
                     // 있지만, 조용히 지워진 알람은 되돌릴 방법이 없다.
                     // 스키마를 바꿀 때는 `version` 을 올리고 **반드시** 여기에 마이그레이션을
@@ -270,6 +271,12 @@ abstract class AlarmDatabase : RoomDatabase() {
                     "UPDATE alarms SET alarmVolumePercent = 10 " +
                         "WHERE alarmVolumePercent < 10 AND alarmSoundEnabled = 1",
                 )
+            }
+        }
+
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN remoteDeliveryVersion TEXT")
             }
         }
     }

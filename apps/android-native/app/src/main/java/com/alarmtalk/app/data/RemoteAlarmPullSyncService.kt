@@ -12,6 +12,8 @@ import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.RemoteAlarmReceivedRequest
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -30,6 +32,11 @@ internal fun receivedAlarmDeliveryComplete(
     deliveryVersion: String?,
 ): Boolean =
     audioSecured && (!enabled || scheduleSucceeded) && !deliveryVersion.isNullOrBlank()
+
+internal fun receivedAlarmDeliveryVersionAlreadyApplied(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean = !deliveryVersion.isNullOrBlank() && existing.remoteDeliveryVersion == deliveryVersion
 
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
@@ -161,6 +168,17 @@ internal class RemoteAlarmPullSyncService(
                 // upsertPreservingServerSyncFields 로 lastSyncedAt 을 보존).
                 // 아직 안 고친 행은 그대로 두어 **음성 다운로드 실패분의 재시도**를 살린다.
                 if (existing != null && locallyEditedByRecipient(existing)) {
+                    if (receivedAlarmDeliveryVersionAlreadyApplied(existing, remote.deliveryVersion)) {
+                        runCatching {
+                            api.markAlarmReceived(
+                                authorization,
+                                remote.id,
+                                RemoteAlarmReceivedRequest(requireNotNull(remote.deliveryVersion)),
+                            )
+                        }.onFailure {
+                            Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
+                        }
+                    }
                     skipped += 1
                     Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
                     return@runCatching
@@ -321,16 +339,24 @@ internal class RemoteAlarmPullSyncService(
                     deliveryVersion = remote.deliveryVersion,
                 )
                 if (deliveryComplete) {
-                    // ack 자체의 실패는 삼킨다 — 다음 pull 이 재시도한다. 행이 남아 있는 쪽이
-                    // 안전한 실패다(중복 전달은 멱등하게 흡수된다).
-                    runCatching {
-                        api.markAlarmReceived(
-                            authorization,
-                            remote.id,
-                            RemoteAlarmReceivedRequest(requireNotNull(remote.deliveryVersion)),
-                        )
+                    // 예약까지 끝낸 세대를 ACK보다 먼저 로컬에 남긴다. 이 짧은 구간은 취소돼도
+                    // 끝내야, ACK 실패 뒤 사용자가 편집한 경우 다음 pull이 같은 세대를 재확인한다.
+                    val deliveryVersion = requireNotNull(remote.deliveryVersion)
+                    val versionPersisted = withContext(NonCancellable) {
+                        alarmDao.markRemoteDeliveryVersion(saved.id, deliveryVersion) > 0
                     }
+                    if (versionPersisted) {
+                        runCatching {
+                            api.markAlarmReceived(
+                                authorization,
+                                remote.id,
+                                RemoteAlarmReceivedRequest(deliveryVersion),
+                            )
+                        }
                         .onFailure { Log.w(TAG, "Failed to ack received alarm remoteId=${remote.id}", it) }
+                    } else {
+                        Log.w(TAG, "Skipped ack because received row disappeared remoteId=${remote.id}")
+                    }
                 } else {
                     failed += 1
                     Log.w(
@@ -819,6 +845,7 @@ internal fun buildReceivedAlarmRow(
         bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
         remoteAlarmId = remote.id,
         lastSyncedAtMillis = now,
+        remoteDeliveryVersion = existing?.remoteDeliveryVersion,
         syncState = AlarmSyncStates.SYNCED,
         origin = AlarmOrigins.RECEIVED_REMOTE,
         alarmVolumePercent = existing?.alarmVolumePercent ?: 100,

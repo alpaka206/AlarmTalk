@@ -36,6 +36,24 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         ))
     }
 
+    func test_editedReceivedAlarmRetriesAckOnlyForAppliedDeliveryVersion() {
+        var existing = makeReceivedRemote(remoteID: "remote-1")
+        existing.remoteDeliveryVersion = "version-1"
+
+        XCTAssertTrue(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "version-2"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: nil
+        ))
+    }
+
     // MARK: - shouldApplyRemote
 
     func test_shouldApplyRemote_localDirty_returnsFalse() {
@@ -329,6 +347,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             lastSyncedAtMillis: 777,
             syncState: .synced
         )
+        store.markRemoteDeliveryVersion(remoteID: "remote-new", deliveryVersion: "version-1")
 
         // 편집기가 들고 있던 **옛 스냅샷**으로 커밋한다.
         var stale = record
@@ -338,6 +357,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(committed.label, "사용자가 고친 라벨", "사용자 편집은 반영된다")
         XCTAssertEqual(committed.remoteAlarmId, "remote-new", "push 가 새긴 값이 살아남아야 한다")
         XCTAssertEqual(committed.lastSyncedAtMillis, 777)
+        XCTAssertEqual(committed.remoteDeliveryVersion, "version-1")
         // remoteAlarmId 가 있으므로 편집분은 dirty 여야 다음 push 가 update 로 간다.
         XCTAssertEqual(committed.syncState, AlarmSyncState.dirty.rawValue)
     }

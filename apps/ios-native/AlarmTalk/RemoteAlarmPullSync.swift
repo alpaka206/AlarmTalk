@@ -67,6 +67,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     private enum MergeOutcome {
         case imported(deliveryComplete: Bool)
         case updated(deliveryComplete: Bool)
+        /// 이 전달 세대는 이전 회차에서 이미 음원·예약까지 확보했고 ACK만 재시도하면 된다.
+        case alreadyApplied
         /// 충돌 정책(`shouldApplyRemote == false`)·계정 이탈·울리는 중 등으로 서버 응답을
         /// 적용하지 않음. Android 와 동일하게 imported/updated/failed 어디에도 포함되지 않는다.
         case unchanged
@@ -76,6 +78,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         var deliveryComplete: Bool {
             switch self {
             case let .imported(complete), let .updated(complete): return complete
+            case .alreadyApplied: return true
             case .unchanged: return false
             }
         }
@@ -207,6 +210,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 case .updated:
                     updated += 1
                     if !outcome.deliveryComplete { failed += 1 }
+                case .alreadyApplied:
+                    break
                 case .unchanged:
                     break
                 }
@@ -221,6 +226,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 //
                 // ack 자체의 실패는 삼킨다. 행이 남는 쪽이 안전한 실패다(재전달은 멱등하다).
                 if outcome.deliveryComplete, let deliveryVersion = remote.deliveryVersion {
+                    // ACK보다 먼저 영속한다. 네트워크 실패 뒤 사용자가 편집해도 다음 pull은
+                    // 정확히 이 세대만 병합 없이 ACK를 재시도할 수 있다.
+                    store.markRemoteDeliveryVersion(
+                        remoteID: remote.id,
+                        deliveryVersion: deliveryVersion
+                    )
                     try? await AlarmTalkAPI.shared.markAlarmReceived(
                         id: remote.id,
                         deliveryVersion: deliveryVersion,
@@ -283,6 +294,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         var audioSecured = false
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
+            if Self.locallyEditedByRecipient(existing) {
+                return Self.receivedDeliveryVersionAlreadyApplied(
+                    existing: existing,
+                    deliveryVersion: remote.deliveryVersion
+                ) ? .alreadyApplied : .unchanged
+            }
             guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
             guard !Self.isInFlight(existing) else { return .unchanged }
 
@@ -312,6 +329,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
             guard !Self.isInFlight(current) else { return .unchanged }
             // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
+            if Self.locallyEditedByRecipient(current) {
+                return Self.receivedDeliveryVersionAlreadyApplied(
+                    existing: current,
+                    deliveryVersion: remote.deliveryVersion
+                ) ? .alreadyApplied : .unchanged
+            }
             guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
 
             let merged = Self.merge(existing: current, mapped: mapped)
@@ -343,7 +366,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
                 guard !Self.isInFlight(raced) else { return .unchanged }
-                guard !Self.locallyEditedByRecipient(raced) else { return .unchanged }
+                if Self.locallyEditedByRecipient(raced) {
+                    return Self.receivedDeliveryVersionAlreadyApplied(
+                        existing: raced,
+                        deliveryVersion: remote.deliveryVersion
+                    ) ? .alreadyApplied : .unchanged
+                }
                 let merged = Self.merge(existing: raced, mapped: mapped)
                 store.upsert(merged, syncedNow: true)
                 let scheduleSucceeded = merged.enabled
@@ -423,6 +451,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.id = existing.id                                  // 로컬 ID 유지
         merged.alarmKitID = existing.alarmKitID                  // 스케줄러 ID 보존
         merged.createdAtMillis = existing.createdAtMillis
+        merged.remoteDeliveryVersion = existing.remoteDeliveryVersion
 
         // ── (1) **서버에 사본이 없는 로컬 전용 값**은 origin 과 무관하게 지킨다.
         // 매퍼는 이 값들을 기본치(100·nil·false 등)로 만들어 내므로, 여기서 잃으면 영영 잃는다.
@@ -536,6 +565,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         guard existing.originEnum == .receivedRemote else { return false }
         guard let lastSynced = existing.lastSyncedAtMillis else { return true }
         return existing.updatedAtMillis > lastSynced
+    }
+
+    /// 로컬에 실제 확보한 세대와 서버 세대가 정확히 같을 때만 편집된 행의 ACK를 재시도한다.
+    static func receivedDeliveryVersionAlreadyApplied(
+        existing: LocalAlarmRecord,
+        deliveryVersion: String?
+    ) -> Bool {
+        guard existing.originEnum == .receivedRemote,
+              let deliveryVersion = deliveryVersion?.nilIfBlank else { return false }
+        return existing.remoteDeliveryVersion == deliveryVersion
     }
 
     /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.

@@ -2322,6 +2322,17 @@ voiceProfile.delete('/:id', async (c) => {
   if (deletionState.status === 'not_found' || !deletionState.profile) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
+
+  // 철회 fanout은 커밋 직후 먼저 보낸다. provider 정리는 DB 큐에도 적재돼 있으므로 지연돼도
+  // 재시도할 수 있지만, 여기서 먼저 기다리면 Worker 종료 뒤 DELETE 재시도가 404가 되어
+  // 수신 기기에 철회 신호를 영영 못 보낼 수 있다.
+  await notifyDowngradedAlarms(
+    db,
+    c.env,
+    deletionState.revocation.downgradedAlarms,
+    deletionState.revocation.voiceAccessRevokedUserIds,
+  );
+
   const profile = deletionState.profile;
   if (profile.elevenlabs_voice_id) {
     const providerVoiceId = profile.elevenlabs_voice_id as string;
@@ -2337,16 +2348,6 @@ voiceProfile.delete('/:id', async (c) => {
       logRouteError(c, error);
     }
   }
-
-  // DB 쓰기가 끝난 뒤에 보낸다(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지 않는다 —
-  // 정확성은 클라의 재조회(VoiceAccessSyncWorker 하루 주기·앱 시작)가 보장하고
-  // 푸시는 즉시성만 맡는다.
-  await notifyDowngradedAlarms(
-    db,
-    c.env,
-    deletionState.revocation.downgradedAlarms,
-    deletionState.revocation.voiceAccessRevokedUserIds,
-  );
 
   return c.json({ success: true, deleted: true });
 });

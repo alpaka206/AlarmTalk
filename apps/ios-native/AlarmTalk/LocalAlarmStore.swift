@@ -234,7 +234,7 @@ final class LocalAlarmStore: ObservableObject {
     /// **stale 스냅샷의 nil 로 되돌린다.** 그러면 다음 push 가 같은 알람을 또 create 한다 —
     /// 서버에 두 행이 생기는 **두 번째 경로**다(첫 번째는 겹친 sync, `eb70f2f2` 에서 막았다).
     ///
-    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `syncState` **뿐이다.**
+    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `remoteDeliveryVersion` / `syncState` **뿐이다.**
     /// ⚠ `alarmKitID`·`fireAtMillis`·`enabled` 는 절대 병합하지 말 것 — `alarmKitID` 를
     /// 되살리면 방금 재예약한 핸들과 어긋나 취소·재예약이 깨진다(알람이 안 울리는 방향).
     ///
@@ -245,6 +245,7 @@ final class LocalAlarmStore: ObservableObject {
         if let fresh = alarms.first(where: { $0.id == updated.id }) {
             next.remoteAlarmId = fresh.remoteAlarmId
             next.lastSyncedAtMillis = fresh.lastSyncedAtMillis
+            next.remoteDeliveryVersion = fresh.remoteDeliveryVersion
             next.syncState = nextLocalSyncState(for: next).rawValue
         }
         return upsert(next)
@@ -307,6 +308,7 @@ final class LocalAlarmStore: ObservableObject {
         )
         copied.remoteAlarmId = nil
         copied.lastSyncedAtMillis = nil
+        copied.remoteDeliveryVersion = nil
         copied.syncState = AlarmSyncState.localOnly.rawValue
         copied.origin = AlarmOrigin.localOwned.rawValue
         copied.enabled = true
@@ -595,6 +597,14 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].lastSyncedAtMillis = lastSyncedAtMillis
         alarms[index].syncState = syncState.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        persist()
+    }
+
+    /// 음원·AlarmKit 예약까지 확보한 전달 세대를 ACK보다 먼저 저장한다.
+    /// 사용자 편집 판정에 쓰는 updatedAtMillis는 일부러 건드리지 않는다.
+    func markRemoteDeliveryVersion(remoteID: String, deliveryVersion: String) {
+        guard let index = alarms.firstIndex(where: { $0.remoteAlarmId == remoteID }) else { return }
+        alarms[index].remoteDeliveryVersion = deliveryVersion
         persist()
     }
 

@@ -158,7 +158,7 @@ interface AlarmDao {
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
-     * remoteAlarmId/lastSyncedAtMillis 와, 동일 날씨 컨텍스트의 variant/freshness 를
+     * remoteAlarmId/lastSyncedAtMillis/remoteDeliveryVersion 와, 동일 날씨 컨텍스트의 variant/freshness 를
      * [updated] 에 병합한 뒤 저장한다. sync/worker 만 갱신하는 값을 편집이 읽은 stale
      * 스냅샷으로 덮어쓰지 않는다.
      *
@@ -193,6 +193,7 @@ interface AlarmDao {
             updated.copy(
                 remoteAlarmId = fresh.remoteAlarmId,
                 lastSyncedAtMillis = fresh.lastSyncedAtMillis,
+                remoteDeliveryVersion = fresh.remoteDeliveryVersion,
                 contextVariantIndex = if (preserveFreshWeatherVariant) {
                     fresh.contextVariantIndex
                 } else {
@@ -207,6 +208,10 @@ interface AlarmDao {
         }
         upsert(merged)
     }
+
+    /** 음원·OS 예약까지 확보한 전달 세대를 ACK보다 먼저 영속한다. 사용자 수정 시각은 건드리지 않는다. */
+    @Query("UPDATE alarms SET remoteDeliveryVersion = :deliveryVersion WHERE id = :id")
+    suspend fun markRemoteDeliveryVersion(id: String, deliveryVersion: String): Int
 
     @Delete
     suspend fun delete(alarm: AlarmEntity)

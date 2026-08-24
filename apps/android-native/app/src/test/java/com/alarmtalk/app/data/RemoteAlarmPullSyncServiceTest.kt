@@ -166,6 +166,16 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun editedReceivedAlarmRetriesAckOnlyForAppliedDeliveryVersion() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(remoteDeliveryVersion = "version-1")
+
+        assertTrue(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-1"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-2"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, null))
+    }
+
+    @Test
     fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
         assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원"))
     }

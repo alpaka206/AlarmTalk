@@ -185,6 +185,7 @@ class AlarmRepository(
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
+            remoteDeliveryVersion = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
@@ -272,6 +273,7 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            remoteDeliveryVersion = null,
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -1039,6 +1041,7 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            remoteDeliveryVersion = null,
             // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
             // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
             // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
