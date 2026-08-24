@@ -9,6 +9,33 @@ import XCTest
 @MainActor
 final class RemoteAlarmPullSyncTests: XCTestCase {
 
+    func test_deliveryCompletesOnlyAfterEnabledAlarmIsScheduledAndVersioned() {
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: false,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            deliveryVersion: nil
+        ))
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            deliveryVersion: "version-1"
+        ))
+    }
+
     // MARK: - shouldApplyRemote
 
     func test_shouldApplyRemote_localDirty_returnsFalse() {

@@ -39,7 +39,7 @@ class RemoteAlarmSyncWorker(
                 TAG,
                 "Remote alarm worker complete total=${result.total} imported=${result.imported} updated=${result.updated} failed=${result.failed}",
             )
-            if (result.failed > 0 && result.imported == 0 && result.updated == 0) {
+            if (result.failed > 0) {
                 Result.retry()
             } else {
                 Result.success()

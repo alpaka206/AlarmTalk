@@ -158,6 +158,14 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun receivedAlarmAcksOnlyAfterEnabledAlarmIsScheduledAndVersioned() {
+        assertFalse(receivedAlarmDeliveryComplete(true, true, false, "version-1"))
+        assertFalse(receivedAlarmDeliveryComplete(true, true, true, null))
+        assertTrue(receivedAlarmDeliveryComplete(true, true, true, "version-1"))
+        assertTrue(receivedAlarmDeliveryComplete(true, false, false, "version-1"))
+    }
+
+    @Test
     fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
         assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원"))
     }

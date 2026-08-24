@@ -33,7 +33,9 @@
 (pull 은 `isReceived` 만 임포트한다), 알람의 원본은 언제나 기기다.
 
 그래서 양 앱의 pull 은 임포트 직후 `POST /alarm/:id/received` 를 부르고, 서버는
-tombstone 을 남긴 뒤 `alarms` 행을 지운다.
+tombstone 을 남긴 뒤 `alarms` 행을 지운다. 단 켜진 알람은 **OS 예약까지 성공한 뒤에만**
+ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 실패했다면 전달은 끝난
+것이 아니다. 서버 행을 남겨 다음 pull·예약 복구가 다시 시도하게 한다.
 
 **왜 지우나.** 남겨 두면 `audio-retention` 이 "아직 쓰는 알람이 있다" 고 보아 **클론
 음원을 TTL(30일)이 지나도 영구 보존**한다. 생체정보에서 파생된 데이터를 이유 없이
@@ -45,6 +47,12 @@ tombstone 을 남긴 뒤 `alarms` 행을 지운다.
 실패한 회차나 아예 반영하지 않은 회차에 ack 하면 그 알람은 **영영 목소리를 못 받는다**
 (행이 없으니 다음 pull 목록에도 안 실리고 음원 요청은 404 다). 판정은 안드로이드
 `audioSecured`, iOS `MergeOutcome.deliveryComplete`. 서버는 이걸 강제할 수 없다.
+
+⚠ **ack는 가져온 버전에 묶는다.** 같은 발신자가 같은 수신자·시각으로 다시 보내면 서버는
+알람 id를 재사용하고 내용을 교체한다(`claimTargetedAlarmSlot`). 다운로드 중 교체될 수 있으므로
+목록 응답의 `delivery_version`을 ack 본문에 그대로 보내고, 서버는 현재 행의 버전이 같을
+때만 tombstone을 남기고 삭제한다. 구버전 ack가 새 내용을 지우면 새 알람은 어느 기기에도
+전달되지 않는다. 재전송으로 내용을 교체할 때마다 버전은 새 UUID로 바꾼다.
 
 ⚠ **지우기 전에 tombstone 을 남긴다** — 실패하면 지우지 않는다(fail-closed). 행이
 없어지면 나중에 발신자가 목소리를 지웠을 때 **어느 수신 알람을 걷어내야 하는지** 알
@@ -212,7 +220,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
-| 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` 일 때만) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete`) | `POST /alarm/:id/received` |
+| 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `deliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `deliveryVersion`) | `POST /alarm/:id/received`(현재 `delivery_version` 일치 시만 삭제) |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |
 | '안 고침' 불변식 세우기 | `buildReceivedAlarmRow`(같은 `now`) | `LocalAlarmStore.upsert(_:syncedNow:)` | — |

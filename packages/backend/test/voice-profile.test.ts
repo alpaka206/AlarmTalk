@@ -938,6 +938,24 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(update?.sql).toContain('is_shared = 0');
   });
 
+  it('철회 컬럼이 아직 없으면 프로필 삭제도 함께 롤백한다', async () => {
+    mockDB.pushResultFor('SELECT * FROM voice_profiles', [
+      { id: V1, elevenlabs_voice_id: 'elv-not-deleted' },
+    ]);
+    mockDB.pushResultFor('UPDATE voice_profiles', [], 1);
+    mockDB.pushErrorFor('sender_voice_upload', new Error('no such column: sender_voice_upload'));
+
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
+    );
+
+    expect(res.status).toBe(500);
+    expect(mockDB.transactions.rollbacks).toBe(1);
+    expect(mockDB.transactions.commits).toBe(0);
+    expect(mockDeleteVoice).not.toHaveBeenCalled();
+  });
+
   it('삭제해도 이번 달 목소리 변경 원장은 남는다 — 지웠다 만들기로 월 1회를 우회할 수 없다', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);

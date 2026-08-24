@@ -67,7 +67,8 @@ function patchAlarm(
 
 async function alarmRow(id: string) {
   const res = await db.execute({
-    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes, timezone
+    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes, timezone,
+                 delivery_version
           FROM alarms WHERE id = ?`,
     args: [id],
   });
@@ -158,6 +159,8 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     });
     expect(res1.status).toBe(201);
     const id1 = ((await res1.json()) as { alarm: { id: string } }).alarm.id;
+    const firstDeliveryVersion = String((await alarmRow(id1))!.delivery_version);
+    expect(firstDeliveryVersion).toMatch(/^[0-9a-f-]{36}$/);
 
     const res2 = await postAlarm(SENDER_A, {
       time: '23:00',
@@ -177,6 +180,8 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const row = await alarmRow(id1);
     expect(Number(row!.is_active)).toBe(1);
     expect(Number(row!.snooze_minutes)).toBe(12); // 재전송 내용으로 UPDATE 됨
+    expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(String(row!.delivery_version)).not.toBe(firstDeliveryVersion);
     // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
     expect(String(row!.timezone)).toBe('Asia/Seoul');
   });

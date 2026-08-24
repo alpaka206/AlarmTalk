@@ -2266,6 +2266,17 @@ export const migrations: Migration[] = [
          ADD COLUMN sender_voice_upload INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: 104,
+    name: 'alarm-delivery-version',
+    // 같은 발신자가 같은 수신자·시각으로 다시 보내면 알람 id는 유지되고 내용만 교체된다.
+    // 구버전 다운로드가 늦게 끝나도 신버전 행을 ACK로 지우지 못하게 전달 세대를 구분한다.
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN delivery_version TEXT`,
+      `UPDATE alarms SET delivery_version = lower(hex(randomblob(16)))
+        WHERE target_user_id IS NOT NULL AND delivery_version IS NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

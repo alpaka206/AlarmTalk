@@ -28,7 +28,17 @@ function appFor(userId: string) {
 
 const ALARM_ID = '11111111-1111-1111-1111-111111111111';
 const FAMILY_VOICE_ALARM_ID = '44444444-4444-4444-4444-444444444444';
+const DELIVERY_VERSION_1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const DELIVERY_VERSION_2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const FAMILY_PLAN_ID = '70000000-0000-4000-8000-000000000003'; // 마이그레이션 시드 '가족' 플랜
+
+function markReceived(id: string, userId = 'B', deliveryVersion = DELIVERY_VERSION_1) {
+  return appFor(userId).request('/' + id + '/received', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delivery_version: deliveryVersion }),
+  });
+}
 
 async function seed() {
   const db = createClient({ url: ':memory:' });
@@ -51,9 +61,11 @@ async function seed() {
   });
   // A 가 B 를 대상으로 만든 가족 반복 알람
   await db.execute({
-    sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active)
-          VALUES (?, 'A', 'B', 'm1', 'vp-A', '07:00', 'tts', 1)`,
-    args: [ALARM_ID],
+    sql: `INSERT INTO alarms
+            (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active,
+             delivery_version)
+          VALUES (?, 'A', 'B', 'm1', 'vp-A', '07:00', 'tts', 1, ?)`,
+    args: [ALARM_ID, DELIVERY_VERSION_1],
   });
   return db;
 }
@@ -75,9 +87,10 @@ async function seedFamilyVoiceUploadAlarm() {
   });
   await testDb.execute({
     sql: `INSERT INTO alarms
-            (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active)
-          VALUES (?, 'A', 'B', 'm-family-voice', 'vp-B', '09:00', 'tts', 1)`,
-    args: [FAMILY_VOICE_ALARM_ID],
+            (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active,
+             delivery_version)
+          VALUES (?, 'A', 'B', 'm-family-voice', 'vp-B', '09:00', 'tts', 1, ?)`,
+    args: [FAMILY_VOICE_ALARM_ID, DELIVERY_VERSION_1],
   });
 }
 
@@ -132,7 +145,7 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
   });
 
   it('수신자 B 가 확인하면 알람 행이 지워지고, tombstone 에 발신자가 남는다', async () => {
-    const res = await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    const res = await markReceived(ALARM_ID);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { deleted: boolean }).deleted).toBe(true);
 
@@ -156,14 +169,48 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
   });
 
   it('두 번 불러도 성공한다(멱등) — 재시도가 500 이 되지 않게', async () => {
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
-    const again = await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
+    const again = await markReceived(ALARM_ID);
     expect(again.status).toBe(200);
     expect(((await again.json()) as { deleted: boolean }).deleted).toBe(false);
   });
 
+  it('전달 버전이 없는 ACK는 서버 행을 지우지 않는다', async () => {
+    const res = await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    expect(res.status).toBe(400);
+
+    const row = await testDb.execute({
+      sql: 'SELECT id FROM alarms WHERE id = ?',
+      args: [ALARM_ID],
+    });
+    expect(row.rows.length).toBe(1);
+  });
+
+  it('구버전 ACK는 같은 id로 교체된 새 알람을 지우지 않는다', async () => {
+    await testDb.execute({
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text)
+            VALUES ('m2','A','vp-A','new wake up')`,
+      args: [],
+    });
+    await testDb.execute({
+      sql: `UPDATE alarms SET message_id = 'm2', delivery_version = ? WHERE id = ?`,
+      args: [DELIVERY_VERSION_2, ALARM_ID],
+    });
+
+    const stale = await markReceived(ALARM_ID, 'B', DELIVERY_VERSION_1);
+    expect(stale.status).toBe(200);
+    expect(((await stale.json()) as { deleted: boolean }).deleted).toBe(false);
+
+    const current = await testDb.execute({
+      sql: 'SELECT message_id, delivery_version FROM alarms WHERE id = ?',
+      args: [ALARM_ID],
+    });
+    expect(String(current.rows[0]!.message_id)).toBe('m2');
+    expect(String(current.rows[0]!.delivery_version)).toBe(DELIVERY_VERSION_2);
+  });
+
   it('대상이 아닌 사용자(생성자 A)는 확인할 수 없다(404)', async () => {
-    const res = await appFor('A').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    const res = await markReceived(ALARM_ID, 'A');
     expect(res.status).toBe(404);
     const row = await testDb.execute({
       sql: `SELECT id FROM alarms WHERE id = ?`,
@@ -173,13 +220,13 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
   });
 
   it('수신 확인 뒤 발신자가 탈퇴해도 철회 대상으로 잡힌다(tombstone 갈래)', async () => {
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
     const { downgradedAlarms } = await purgeUserAccount(testDb, 'A', 'gA');
     expect(downgradedAlarms.map((t) => t.ownerUserId)).toContain('B');
   });
 
   it('tombstone 에 그 알람이 쓰는 클론 목소리를 적어 둔다 — 철회 판정의 유일한 근거', async () => {
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
     const st = await testDb.execute({
       sql: `SELECT voice_profile_id FROM alarm_recipient_state
             WHERE alarm_id = ? AND recipient_user_id = 'B'`,
@@ -201,7 +248,7 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
       args: [ALARM_ID],
     });
 
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
 
     const st = await testDb.execute({
       sql: `SELECT voice_profile_id FROM alarm_recipient_state
@@ -213,7 +260,7 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
 
   it('family-voice는 수신자 프로필이 아니라 발신자 직접 업로드로 기록한다', async () => {
     await seedFamilyVoiceUploadAlarm();
-    await appFor('B').request('/' + FAMILY_VOICE_ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(FAMILY_VOICE_ALARM_ID);
 
     const st = await testDb.execute({
       sql: `SELECT voice_profile_id, sender_user_id, sender_voice_upload, revoked
@@ -229,7 +276,7 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
   it('family-voice는 수신자 클론 삭제로 철회되지 않고 발신자 파기 때만 철회된다', async () => {
     const { revokeDeletedVoices } = await import('../src/lib/voice-revocation');
     await seedFamilyVoiceUploadAlarm();
-    await appFor('B').request('/' + FAMILY_VOICE_ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(FAMILY_VOICE_ALARM_ID);
 
     const unrelated = await revokeDeletedVoices(testDb, {
       voiceProfileIds: ['vp-B'],
@@ -265,7 +312,7 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
       args: [ALARM_ID],
     });
 
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
 
     const st = await testDb.execute({
       sql: `SELECT revoked, voice_profile_id, sender_voice_upload
@@ -298,11 +345,13 @@ describe('철회는 목소리 기준이다', () => {
       args: [],
     });
     await testDb.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active)
-            VALUES (?, 'A', 'B', 'm-sys', 'vp-sys', '08:00', 'tts', 1)`,
-      args: [STOCK_ALARM],
+      sql: `INSERT INTO alarms
+              (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, is_active,
+               delivery_version)
+            VALUES (?, 'A', 'B', 'm-sys', 'vp-sys', '08:00', 'tts', 1, ?)`,
+      args: [STOCK_ALARM, DELIVERY_VERSION_1],
     });
-    await appFor('B').request('/' + STOCK_ALARM + '/received', { method: 'POST' });
+    await markReceived(STOCK_ALARM);
 
     // 스톡이므로 목소리 참조를 적지 않는다 — 적어 두면 "걷어낼 것이 있다" 는 거짓 근거가 된다.
     const st = await testDb.execute({
@@ -322,7 +371,7 @@ describe('철회는 목소리 기준이다', () => {
 
   it('목소리만 지워도(탈퇴 없이) 이미 전달이 끝난 알람이 철회된다', async () => {
     const { revokeDeletedVoices } = await import('../src/lib/voice-revocation');
-    await appFor('B').request('/' + ALARM_ID + '/received', { method: 'POST' });
+    await markReceived(ALARM_ID);
     // 이 시점에 alarms 행은 없다 — tombstone 만으로 찾아내야 한다.
     const gone = await testDb.execute({
       sql: `SELECT id FROM alarms WHERE id = ?`,

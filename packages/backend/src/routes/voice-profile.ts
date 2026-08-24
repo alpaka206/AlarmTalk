@@ -2196,6 +2196,7 @@ voiceProfile.delete('/:id', async (c) => {
 
   const ph = ids.map(() => '?').join(',');
   const draftOnly = c.req.query('draftOnly') === 'true';
+  const noRevocation = { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
 
   const deletionState = await withWriteTransaction(db, async (tx) => {
     const current = await tx.execute({
@@ -2204,7 +2205,12 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id, ...ids],
     });
     if (current.rows.length === 0) {
-      return { status: 'not_found' as const, profile: null, tombstoned: null };
+      return {
+        status: 'not_found' as const,
+        profile: null,
+        tombstoned: null,
+        revocation: noRevocation,
+      };
     }
     const currentProfile = current.rows[0]!;
     if (draftOnly && Number(currentProfile.is_draft ?? 0) !== 1) {
@@ -2212,6 +2218,7 @@ voiceProfile.delete('/:id', async (c) => {
         status: 'not_a_draft' as const,
         profile: currentProfile,
         tombstoned: null,
+        revocation: noRevocation,
       };
     }
     const tombstoned = await tx.execute({
@@ -2222,7 +2229,12 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id],
     });
     if ((tombstoned.rowsAffected ?? 0) === 0) {
-      return { status: 'not_found' as const, profile: currentProfile, tombstoned };
+      return {
+        status: 'not_found' as const,
+        profile: currentProfile,
+        tombstoned,
+        revocation: noRevocation,
+      };
     }
     await tx.execute({
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
@@ -2260,10 +2272,26 @@ voiceProfile.delete('/:id', async (c) => {
       sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
       args: [id],
     });
+
+    // 프로필 tombstone·원본 삭제와 철회는 **한 커밋**이다. 새 철회 컬럼 마이그레이션이
+    // 아직이면 전부 롤백돼 재시도할 수 있어야 한다. 프로필만 먼저 사라지면 재시도는 404다.
+    const revocation = await revokeDeletedVoices(tx, {
+      voiceProfileIds: [id],
+      ownerUserIds: ids,
+    });
+    await tx.execute({
+      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
+      args: [id],
+    });
+    await tx.execute({
+      sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
+      args: [id],
+    });
     return {
       status: 'deleted' as const,
       profile: currentProfile,
       tombstoned,
+      revocation,
     };
   });
   if (deletionState.status === 'not_a_draft') {
@@ -2288,38 +2316,14 @@ voiceProfile.delete('/:id', async (c) => {
     }
   }
 
-  await db.execute({
-    sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
-    args: [id],
-  });
-
-  // ⚠ **목소리가 사라졌을 때 도는 로직은 여기 한 곳이다.** 탈퇴·플랜 강등도 같은 함수를
-  // 부른다(`lib/voice-revocation.ts`) — 셋 다 "이 클론이 이제 없다" 는 같은 사건이다.
-  //
-  // 예전에는 이 자리에서 `UPDATE alarms SET mode='sound-only' ...` 만 조용히 돌렸다.
-  // 두 가지가 빠져 있었다:
-  //  ① **알리지 않았다.** 알람의 원본은 기기라, 서버 행만 고치면 그 기기는 아무것도
-  //     모른 채 캐시된 녹음으로 계속 운다 — 지운 목소리가 다음 앱 실행까지 살아 있다.
-  //  ② **이미 전달이 끝난 가족 알람을 놓쳤다.** 그 알람의 서버 행은 수신 확인 때 지워져
-  //     `WHERE voice_profile_id = ?` 로는 영영 찾지 못한다(tombstone 이 유일한 근거다).
-  const revocation = await revokeDeletedVoices(db, {
-    voiceProfileIds: [id],
-    ownerUserIds: ids,
-  });
-
-  await db.execute({
-    sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
-    args: [id],
-  });
-
   // DB 쓰기가 끝난 뒤에 보낸다(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지 않는다 —
   // 정확성은 클라의 재조회(VoiceAccessSyncWorker 하루 주기·앱 시작)가 보장하고
   // 푸시는 즉시성만 맡는다.
   await notifyDowngradedAlarms(
     db,
     c.env,
-    revocation.downgradedAlarms,
-    revocation.voiceAccessRevokedUserIds,
+    deletionState.revocation.downgradedAlarms,
+    deletionState.revocation.voiceAccessRevokedUserIds,
   );
 
   return c.json({ success: true, deleted: true });

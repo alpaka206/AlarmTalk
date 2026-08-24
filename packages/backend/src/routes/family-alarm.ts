@@ -246,6 +246,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const messageId = crypto.randomUUID();
   const newAlarmId = crypto.randomUUID();
+  const deliveryVersion = crypto.randomUUID();
   const audioUrl = objectKey;
 
   // TTS 경로와 동일한 원자 교체: 같은 발신자 재전송은 기존 행 UPDATE(멱등, id 유지) +
@@ -267,17 +268,24 @@ familyAlarm.post('/alarms/voice', async (c) => {
     if (claimed.reused) {
       await tx.execute({
         sql: `UPDATE alarms SET message_id = ?, repeat_days = ?, mode = 'sound-only', timezone = ?,
-                is_active = 1, updated_at = datetime('now')
+                delivery_version = ?, is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [messageId, JSON.stringify(repeatDays), effectiveTimezone, claimed.alarmId],
+        args: [
+          messageId,
+          JSON.stringify(repeatDays),
+          effectiveTimezone,
+          deliveryVersion,
+          claimed.alarmId,
+        ],
       });
       // 재전송으로 교체돼 고아가 된 이전 message 행을 같은 트랜잭션에서 정리(누적 방지).
       await cleanupReplacedFamilyMessage(tx, claimed.previousMessageId, messageId, recipientPk);
     } else {
       await tx.execute({
         sql: `INSERT INTO alarms
-              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone)
-              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?)`,
+              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone,
+               delivery_version)
+              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?, ?)`,
         args: [
           claimed.alarmId,
           userId,
@@ -286,6 +294,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
           wakeAt,
           JSON.stringify(repeatDays),
           effectiveTimezone,
+          deliveryVersion,
         ],
       });
     }

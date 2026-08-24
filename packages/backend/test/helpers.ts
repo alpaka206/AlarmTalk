@@ -57,14 +57,17 @@ export function createMockDB() {
    * "몇 번째"가 아니라 "어떤 쿼리"로 짝지어야 읽을 수 있다.
    * 한 번 쓰면 소비된다 — 같은 SQL 이 여러 번 오면 그만큼 등록한다.
    */
-  const matchers: { fragment: string; result: MockExecuteResult }[] = [];
+  const matchers: { fragment: string; entry: MockQueueEntry }[] = [];
   function pushResultFor(fragment: string, rows: MockRow[] = [], rowsAffected = 0) {
-    matchers.push({ fragment, result: { rows, rowsAffected } });
+    matchers.push({ fragment, entry: { rows, rowsAffected } });
   }
-  function takeMatched(sql: string): MockExecuteResult | null {
+  function pushErrorFor(fragment: string, error: Error) {
+    matchers.push({ fragment, entry: { error } });
+  }
+  function takeMatched(sql: string): MockQueueEntry | null {
     const i = matchers.findIndex((m) => sql.includes(m.fragment));
     if (i === -1) return null;
-    return matchers.splice(i, 1)[0]!.result;
+    return matchers.splice(i, 1)[0]!.entry;
   }
 
   /**
@@ -123,6 +126,7 @@ export function createMockDB() {
       const matched = takeMatched(query.sql);
       if (matched) {
         calls.push({ sql: query.sql, args: query.args });
+        if ('error' in matched) throw matched.error;
         return matched;
       }
       // user_consents 조회 처리:
@@ -186,6 +190,7 @@ export function createMockDB() {
     calls,
     pushResult,
     pushResultFor,
+    pushErrorFor,
     pushError,
     reset,
     clearResults,

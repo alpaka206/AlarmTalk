@@ -265,12 +265,13 @@ final class BackgroundSyncTask {
             timeoutTask.cancel()
 
             // Android `RemoteAlarmSyncWorker.doWork` 의 retry 조건과 동일:
-            // pull 이 전부 실패(failed>0)했고 새로 반영된 게 하나도 없으면(imported==0
-            // && updated==0) 재시도가 의미 있다. WorkManager 는 이때 Result.retry() 로
+            // 하나라도 전달 미완료면 재시도한다. 로컬 행·음원까지 저장됐어도 OS 예약이
+            // 실패한 알람은 5분 리드타임 안에 다시 걸어야 해서 부분 성공도 미룰 수 없다.
+            // WorkManager 는 이때 Result.retry() 로
             // 지수 백오프 재실행하지만, BGAppRefreshTask 에는 동등한 exponential backoff
             // API 가 없다. setTaskCompleted(success:false) + 더 짧은 earliestBeginDate
             // 로 재예약하는 것이 가장 근접한 근사다(정확한 지수 백오프는 재현 불가).
-            if pullResult.failed > 0 && pullResult.imported == 0 && pullResult.updated == 0 {
+            if pullResult.failed > 0 {
                 scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
                 task.setTaskCompleted(success: false)
             } else {

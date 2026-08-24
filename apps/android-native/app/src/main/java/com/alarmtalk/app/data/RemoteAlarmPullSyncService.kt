@@ -10,6 +10,7 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.RemoteAlarmReceivedRequest
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,6 +22,14 @@ data class RemoteAlarmPullResult(
     val skipped: Int,
     val failed: Int,
 )
+
+internal fun receivedAlarmDeliveryComplete(
+    audioSecured: Boolean,
+    enabled: Boolean,
+    scheduleSucceeded: Boolean,
+    deliveryVersion: String?,
+): Boolean =
+    audioSecured && (!enabled || scheduleSucceeded) && !deliveryVersion.isNullOrBlank()
 
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
@@ -167,6 +176,7 @@ internal class RemoteAlarmPullSyncService(
                 // 실제로 저장한 행. 건너뛴 경우(삭제됨·울리는 중·형식 불량)는 null 로 남아
                 // 아래 알림·집계를 건너뛴다.
                 var applied: AlarmEntity? = null
+                var scheduleSucceeded = true
                 // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
                 // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
                 alarmMutationLock.withLock {
@@ -268,10 +278,11 @@ internal class RemoteAlarmPullSyncService(
                         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
                     }
                     if (local.enabled) {
-                        runCatching { alarmScheduler.schedule(local) }
-                            .onFailure { error ->
-                                Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
-                            }
+                        val scheduleResult = runCatching { alarmScheduler.schedule(local) }
+                        scheduleSucceeded = scheduleResult.isSuccess
+                        scheduleResult.onFailure { error ->
+                            Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
+                        }
                     }
                     applied = local
                 }
@@ -289,7 +300,7 @@ internal class RemoteAlarmPullSyncService(
                 } else {
                     updated += 1
                 }
-                // ⚠ **음원까지 손에 넣었을 때만 '다 받았다' 고 말한다.**
+                // ⚠ **음원과 켜진 알람의 OS 예약까지 끝났을 때만 '다 받았다' 고 말한다.**
                 //
                 // ack 하면 서버가 알람 행을 지운다. 그 행은 전달 수단이면서 동시에
                 // **음원을 받을 권리**이기도 하다 — `GET /tts/messages/:id/audio` 의 수신자
@@ -303,13 +314,29 @@ internal class RemoteAlarmPullSyncService(
                 // 실패하면 ack 하지 않고 서버 행을 남긴다 — 다음 pull 이 같은 알람을 다시
                 // 보고 재시도하는 유일한 근거다.
                 val audioSecured = !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
-                if (audioSecured) {
+                val deliveryComplete = receivedAlarmDeliveryComplete(
+                    audioSecured = audioSecured,
+                    enabled = saved.enabled,
+                    scheduleSucceeded = scheduleSucceeded,
+                    deliveryVersion = remote.deliveryVersion,
+                )
+                if (deliveryComplete) {
                     // ack 자체의 실패는 삼킨다 — 다음 pull 이 재시도한다. 행이 남아 있는 쪽이
                     // 안전한 실패다(중복 전달은 멱등하게 흡수된다).
-                    runCatching { api.markAlarmReceived(authorization, remote.id) }
+                    runCatching {
+                        api.markAlarmReceived(
+                            authorization,
+                            remote.id,
+                            RemoteAlarmReceivedRequest(requireNotNull(remote.deliveryVersion)),
+                        )
+                    }
                         .onFailure { Log.w(TAG, "Failed to ack received alarm remoteId=${remote.id}", it) }
                 } else {
-                    Log.w(TAG, "Kept server row: audio not secured for remoteId=${remote.id}")
+                    failed += 1
+                    Log.w(
+                        TAG,
+                        "Kept server row: delivery incomplete remoteId=${remote.id} audioSecured=$audioSecured scheduleSucceeded=$scheduleSucceeded versionPresent=${!remote.deliveryVersion.isNullOrBlank()}",
+                    )
                 }
             }.onFailure { error ->
                 failed += 1

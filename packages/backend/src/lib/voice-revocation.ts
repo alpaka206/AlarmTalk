@@ -229,17 +229,19 @@ export async function revokeDeletedVoices(
 export async function resolveAlarmVoiceRevocationSource(
   tx: DbExecutor,
   alarmId: string,
-): Promise<{ voiceProfileId: string | null; senderVoiceUpload: boolean }> {
+  expectedDeliveryVersion?: string,
+): Promise<{ voiceProfileId: string | null; senderVoiceUpload: boolean } | null> {
+  const deliveryGuard = expectedDeliveryVersion === undefined ? '' : 'AND a.delivery_version = ?';
   const res = await tx.execute({
     sql: `SELECT vp.id AS voice_profile_id, vp.is_system, m.category AS message_category
             FROM alarms a
             LEFT JOIN messages m ON m.id = a.message_id
             LEFT JOIN voice_profiles vp ON vp.id = COALESCE(m.voice_profile_id, a.voice_profile_id)
-           WHERE a.id = ?
+           WHERE a.id = ? ${deliveryGuard}
            LIMIT 1`,
-    args: [alarmId],
+    args: expectedDeliveryVersion === undefined ? [alarmId] : [alarmId, expectedDeliveryVersion],
   });
-  if (res.rows.length === 0) return { voiceProfileId: null, senderVoiceUpload: false };
+  if (res.rows.length === 0) return null;
   const row = res.rows[0]!;
   if (String(row.message_category ?? '') === 'family-voice') {
     return { voiceProfileId: null, senderVoiceUpload: true };

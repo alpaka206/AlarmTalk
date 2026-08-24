@@ -349,6 +349,12 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     /// 돌려준다(`SELECT a.*`). 2026-08-18 전에는 이 필드가 **읽기 모델에 아예 없어서**,
     /// 받는 사람이 테마를 볼 방법이 없었다. 안드로이드 `RemoteAlarm.bucketId` 짝.
     var bucketId: String?
+    /// 같은 알람 id가 재전송으로 교체돼도 구버전 ACK가 새 행을 지우지 못하게 하는 전달 세대.
+    var deliveryVersion: String? = nil
+}
+
+struct AlarmReceiptRequest: Encodable {
+    var deliveryVersion: String
 }
 
 struct RemoteAlarmWriteRequest: Encodable {

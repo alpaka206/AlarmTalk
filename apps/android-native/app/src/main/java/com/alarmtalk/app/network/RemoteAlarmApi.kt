@@ -40,6 +40,11 @@ data class RemoteAlarm(
     // 받은 알람만 임포트한다 — 클라측 session.user.id 비교는 계정 연동 시 네임스페이스가 어긋난다.
     @SerializedName("is_received") val isReceived: Boolean = false,
     @SerializedName("bucket_id") val bucketId: String? = null,
+    @SerializedName("delivery_version") val deliveryVersion: String? = null,
+)
+
+data class RemoteAlarmReceivedRequest(
+    @SerializedName("delivery_version") val deliveryVersion: String,
 )
 
 data class RemoteAlarmWriteRequest(
@@ -96,7 +101,7 @@ interface RemoteAlarmApi {
     )
 
     /**
-     * 수신 확인 — **다 받았으니 서버 행을 지워도 된다**고 알린다.
+     * 수신 확인 — 음원 확보와 켜진 알람의 OS 예약까지 끝나 **서버 행을 지워도 된다**고 알린다.
      *
      * 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
      * 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
@@ -108,6 +113,7 @@ interface RemoteAlarmApi {
     suspend fun markAlarmReceived(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
+        @Body request: RemoteAlarmReceivedRequest,
     )
 
     /**

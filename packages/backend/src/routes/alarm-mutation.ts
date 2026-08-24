@@ -428,6 +428,7 @@ alarmMutation.post('/', async (c) => {
   }
 
   let alarmId = crypto.randomUUID();
+  const deliveryVersion = targetUserIdForAlarm ? crypto.randomUUID() : null;
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
@@ -442,8 +443,8 @@ alarmMutation.post('/', async (c) => {
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             timezone, bucket_id, delivery_version)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         alarmId,
         userId,
@@ -458,6 +459,7 @@ alarmMutation.post('/', async (c) => {
         body.voice_profile_id ?? null,
         storedTimezone,
         body.bucket_id ?? null,
+        deliveryVersion,
       ],
     });
   // 타인 발신 알람: 같은 (수신자, time) 슬롯을 멱등·교체 규칙으로 원자 점유한다.
@@ -475,7 +477,7 @@ alarmMutation.post('/', async (c) => {
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
                 vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
                 timezone = ?, bucket_id = ?,
-                is_active = 1, updated_at = datetime('now')
+                delivery_version = ?, is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
         args: [
           resolvedMessageId,
@@ -487,6 +489,7 @@ alarmMutation.post('/', async (c) => {
           body.voice_profile_id ?? null,
           storedTimezone,
           body.bucket_id ?? null,
+          deliveryVersion,
           claimed.alarmId,
         ],
       });
@@ -967,8 +970,9 @@ alarmMutation.post('/:id/decline', async (c) => {
 //
 // ⚠ **행은 음원을 받을 권리이기도 하다.** `GET /tts/messages/:id/audio` 의 수신자 갈래가
 // `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND target_user_id = 나)` 로 판정한다
-// (routes/tts.ts). 그래서 이 라우트는 **음원 확보가 끝난 뒤에만** 불려야 하고, 양 앱이
-// 그렇게 한다(안드로이드 `audioSecured`, iOS `MergeOutcome.deliveryComplete`).
+// (routes/tts.ts). 그래서 이 라우트는 **음원 확보와 켜진 알람의 OS 예약이 끝난 뒤에만**
+// 불려야 하고, 양 앱이 그렇게 한다(안드로이드 `receivedAlarmDeliveryComplete`, iOS
+// `MergeOutcome.deliveryComplete`).
 // 서버는 그 판단을 강제할 수 없다 — 클라가 일찍 부르면 그 알람은 목소리를 잃는다.
 //
 // ⚠ **지우기 전에 tombstone 을 남긴다.** 행이 없어지면 나중에 발신자가 목소리를 지우거나
@@ -980,19 +984,44 @@ alarmMutation.post('/:id/decline', async (c) => {
 // 단위라, 두 번째 기기는 그 알람을 받지 못한다(`docs/spec/family-alarm.md` 「받은 뒤에는
 // 전부 받은 사람 것이다」에 규칙으로 적어 두었다).
 alarmMutation.post('/:id/received', async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  if (
+    body === null ||
+    typeof body !== 'object' ||
+    !Object.prototype.hasOwnProperty.call(body, 'delivery_version')
+  ) {
+    return c.json(
+      { error: 'delivery_version is required', error_code: 'DELIVERY_VERSION_REQUIRED' },
+      400,
+    );
+  }
+  const deliveryVersion = (body as { delivery_version?: unknown }).delivery_version;
+  if (
+    typeof deliveryVersion !== 'string' ||
+    (!UUID_RE.test(deliveryVersion) && !/^[0-9a-f]{32}$/i.test(deliveryVersion))
+  ) {
+    return c.json(
+      { error: 'Invalid delivery_version format', error_code: 'INVALID_DELIVERY_VERSION' },
+      400,
+    );
+  }
   const resolved = await resolveDeclineTarget(c);
   if ('error' in resolved) return resolved.error;
   const db = getDB(c.env);
   const senderRes = await db.execute({
-    sql: 'SELECT user_id FROM alarms WHERE id = ? LIMIT 1',
-    args: [resolved.id],
+    sql: 'SELECT user_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
+    args: [resolved.id, deliveryVersion],
   });
-  // 이미 지워졌으면(발신자 삭제·다른 기기 ack) 멱등 성공. 클라가 재시도로 500 을 보지 않게 한다.
+  // 이미 지워졌거나 그 사이 같은 id의 새 전달 세대로 교체됐으면 멱등 성공. 구버전 ACK가
+  // 새 알람을 지우면 수신자는 그 내용을 영영 못 받는다.
   if (senderRes.rows.length === 0) {
     return c.json({ success: true, deleted: false });
   }
   const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
-  const source = await resolveAlarmVoiceRevocationSource(db, resolved.id);
+  const source = await resolveAlarmVoiceRevocationSource(db, resolved.id, deliveryVersion);
+  // 위 SELECT 뒤에 재전송이 끼었으면 출처도 현재 세대와 일치하지 않는다. 아무 표식도 쓰지
+  // 않고 새 서버 행을 남겨 다음 pull 이 새 내용을 받게 한다.
+  if (!source) return c.json({ success: true, deleted: false });
   // **먼저 적고, 실패하면 지우지 않는다.** 철회가 먼저 revoked=1을 세웠다면 출처를
   // 되살리지 않는다. 반대 순서는 revokeDeletedVoices가 이 tombstone을 찾아 철회한다.
   await db.execute({
@@ -1015,11 +1044,12 @@ alarmMutation.post('/:id/received', async (c) => {
       source.senderVoiceUpload ? 1 : 0,
     ],
   });
-  await db.execute({
-    sql: 'DELETE FROM alarms WHERE id = ? AND target_user_id IS NOT NULL',
-    args: [resolved.id],
+  const deleted = await db.execute({
+    sql: `DELETE FROM alarms
+          WHERE id = ? AND target_user_id IS NOT NULL AND delivery_version = ?`,
+    args: [resolved.id, deliveryVersion],
   });
-  return c.json({ success: true, deleted: true });
+  return c.json({ success: true, deleted: (deleted.rowsAffected ?? 0) > 0 });
 });
 
 alarmMutation.delete('/:id', async (c) => {
@@ -1065,6 +1095,7 @@ alarmMutation.delete('/:id', async (c) => {
   if (recipientUserId) {
     try {
       const source = await resolveAlarmVoiceRevocationSource(db, id);
+      if (!source) throw new Error(`Alarm disappeared before voice source was recorded: ${id}`);
       await db.execute({
         sql: `INSERT INTO alarm_recipient_state
                 (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,

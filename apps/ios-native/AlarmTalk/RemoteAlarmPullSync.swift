@@ -51,7 +51,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ///   - imported: 신규 import (로컬에 없던 receivedRemote 를 새로 저장)
     ///   - updated:  기존 receivedRemote 갱신
     ///   - skipped:  time 등이 유효하지 않아 mapped 가 nil 인 행 (07:00 보정 없이 skip)
-    ///   - failed:   단일 알람 머지 중 throw 된 행 (사이클 전체를 중단시키지 않음)
+    ///   - failed:   단일 알람 머지 실패 또는 음원·OS 예약·전달 버전 미완료
     struct PullResult: Equatable, Sendable {
         var imported: Int
         var updated: Int
@@ -61,8 +61,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// 단일 remote 알람 머지의 결과 분류. 카운터 집계와 **수신 확인(ack) 판정**에 쓰인다.
     ///
-    /// `deliveryComplete` 는 "서버 행을 지워도 되는가" 다 — 로컬 행이 서고 **음원까지**
-    /// 확보됐을 때만 true. 반영하지 않은 회차(`unchanged`)는 애초에 ack 대상이 아니다.
+    /// `deliveryComplete` 는 "서버 행을 지워도 되는가" 다 — 로컬 행·음원·켜진 알람의
+    /// OS 예약과 전달 버전이 모두 확보됐을 때만 true. 반영하지 않은 회차(`unchanged`)는
+    /// 애초에 ack 대상이 아니다.
     private enum MergeOutcome {
         case imported(deliveryComplete: Bool)
         case updated(deliveryComplete: Bool)
@@ -78,6 +79,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             case .unchanged: return false
             }
         }
+    }
+
+    static func receivedAlarmDeliveryComplete(
+        audioSecured: Bool,
+        enabled: Bool,
+        scheduleSucceeded: Bool,
+        deliveryVersion: String?
+    ) -> Bool {
+        audioSecured && (!enabled || scheduleSucceeded) && deliveryVersion?.isEmpty == false
     }
 
     /// 음원 확보를 마친 레코드와 그 성패. `recordWithCachedTTSIfNeeded` 의 반환형이다.
@@ -191,9 +201,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             do {
                 let outcome = try await mergeRemote(remote: remote, mapped: mapped, token: token, pullOwnerUserID: userID)
                 switch outcome {
-                case .imported(_): imported += 1
-                case .updated(_): updated += 1
-                case .unchanged: break
+                case .imported:
+                    imported += 1
+                    if !outcome.deliveryComplete { failed += 1 }
+                case .updated:
+                    updated += 1
+                    if !outcome.deliveryComplete { failed += 1 }
+                case .unchanged:
+                    break
                 }
                 // ⚠ **다 받았을 때만 서버 행을 지우게 한다**(안드로이드 pull 과 같은 지점).
                 //
@@ -205,8 +220,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // 목록에도 안 실리고 음원 요청은 404 다.
                 //
                 // ack 자체의 실패는 삼킨다. 행이 남는 쪽이 안전한 실패다(재전달은 멱등하다).
-                if outcome.deliveryComplete {
-                    try? await AlarmTalkAPI.shared.markAlarmReceived(id: remote.id, token: token)
+                if outcome.deliveryComplete, let deliveryVersion = remote.deliveryVersion {
+                    try? await AlarmTalkAPI.shared.markAlarmReceived(
+                        id: remote.id,
+                        deliveryVersion: deliveryVersion,
+                        token: token
+                    )
                 } else {
                     Self.logger.warning(
                         "Pull sync: kept server row (delivery incomplete) for remote alarm (id: \(remote.id, privacy: .public))"
@@ -301,10 +320,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             store.upsert(merged, syncedNow: true)
 
             // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
-            if merged.originEnum == .receivedRemote && merged.enabled {
-                await rescheduleReceivedRemote(record: merged, existing: current)
-            }
-            return .updated(deliveryComplete: audioSecured)
+            let scheduleSucceeded = merged.enabled
+                ? await rescheduleReceivedRemote(record: merged, existing: current)
+                : true
+            return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
+                audioSecured: audioSecured,
+                enabled: merged.enabled,
+                scheduleSucceeded: scheduleSucceeded,
+                deliveryVersion: remote.deliveryVersion
+            ))
         } else {
             let prepared = try await recordWithCachedTTSIfNeeded(mapped, token: token)
             mapped = prepared.record
@@ -320,8 +344,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
                 guard !Self.isInFlight(raced) else { return .unchanged }
                 guard !Self.locallyEditedByRecipient(raced) else { return .unchanged }
-                store.upsert(Self.merge(existing: raced, mapped: mapped), syncedNow: true)
-                return .updated(deliveryComplete: audioSecured)
+                let merged = Self.merge(existing: raced, mapped: mapped)
+                store.upsert(merged, syncedNow: true)
+                let scheduleSucceeded = merged.enabled
+                    ? await rescheduleReceivedRemote(record: merged, existing: raced)
+                    : true
+                return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
+                    audioSecured: audioSecured,
+                    enabled: merged.enabled,
+                    scheduleSucceeded: scheduleSucceeded,
+                    deliveryVersion: remote.deliveryVersion
+                ))
             }
 
             // ⚠ **음원을 받는 사이에 계정이 떠났으면 심지 않는다**(Codex #699 P1).
@@ -335,15 +368,21 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             store.upsert(mapped, syncedNow: true)
 
             // receivedRemote 신규 알람이면 곧바로 AlarmKit 스케줄.
+            var scheduleSucceeded = true
             if mapped.originEnum == .receivedRemote && mapped.enabled {
-                await alarmKit.schedule(record: mapped, store: store)
+                scheduleSucceeded = await alarmKit.schedule(record: mapped, store: store)
             }
             await SocialNotificationTracker.notifyReceivedAlarm(
                 alarmID: mapped.id,
                 title: RemoteAlarmMapper.resolveLabel(remote),
                 time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
             )
-            return .imported(deliveryComplete: audioSecured)
+            return .imported(deliveryComplete: Self.receivedAlarmDeliveryComplete(
+                audioSecured: audioSecured,
+                enabled: mapped.enabled,
+                scheduleSucceeded: scheduleSucceeded,
+                deliveryVersion: remote.deliveryVersion
+            ))
         }
     }
 
@@ -513,13 +552,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         return true
     }
 
-    private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async {
+    private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async -> Bool {
         // 새 예약을 먼저 성공시킨 뒤 기존 AlarmKit ID 를 해제해 로컬 레코드가
         // 삭제되거나 무예약 상태로 남는 일을 막는다.
         let scheduled = await alarmKit.schedule(record: record, store: store)
         if scheduled, existing.alarmKitID != nil {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
+        return scheduled
     }
 
     // MARK: Cascade delete
