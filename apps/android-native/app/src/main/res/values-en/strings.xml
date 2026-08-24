@@ -82,7 +82,7 @@
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
     <string name="billing_plan_couple_feature_voice_share">Share each other\'s voices</string>
     <string name="billing_plan_couple_name">Couple</string>
-    <string name="billing_plan_family_feature_max_six">Up to 5 people together</string>
+    <string name="billing_plan_family_feature_max_five">Up to 5 people together</string>
     <string name="billing_plan_family_feature_message">Send alarms to your family</string>
     <string name="billing_plan_family_feature_voice_share">Share family voices</string>
     <string name="billing_plan_feature_includes_personal">Everything in Personal</string>

@@ -29,4 +29,26 @@ final class VoiceAddButtonUITests: XCTestCase {
             "'추가' 버튼이 안드로이드(40dp)보다 눈에 띄게 작다 — 여백을 라벨이 아니라 버튼 바깥에 줬나?"
         )
     }
+
+    func test_목소리_만들기_첫화면이_안드로이드와_같은_안내를_쓴다() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "voices"]
+        app.launch()
+
+        let addButton = app.buttons["추가"].firstMatch
+        XCTAssertTrue(addButton.waitForExistence(timeout: 30))
+        addButton.tap()
+
+        XCTAssertTrue(app.staticTexts["목소리 만들기"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["녹음"].exists)
+        XCTAssertTrue(app.buttons["파일"].exists)
+        XCTAssertTrue(app.staticTexts["너무 짧으면 목소리가 다르게 나올 수 있어요."].exists)
+        XCTAssertTrue(app.staticTexts["원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요."].exists)
+        XCTAssertFalse(app.staticTexts["12초 이상 2분 이하로 녹음해 주세요"].exists)
+
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "voice-clone-source"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 }

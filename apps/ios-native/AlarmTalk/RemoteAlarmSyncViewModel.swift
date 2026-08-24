@@ -10,11 +10,9 @@ import OSLog
 // 의존성 주입:
 //   - 메인 앱(`AlarmTalkApp`) 이 `configure(store:alarmKit:auth:)` 를
 //     `task { ... }` 안에서 한 번 호출해 pull/push 인스턴스를 초기화한다.
-//   - configure 가 호출되기 전이라도 기존 fallback (API 직접 호출) 으로 동작한다.
+//   - configure 전 refresh 는 로컬에 반영할 대상이 없으므로 조용히 건너뛴다.
 @MainActor
 final class RemoteAlarmSyncViewModel: ObservableObject {
-    @Published var remoteAlarms: [RemoteAlarm] = []
-    @Published var voiceProfiles: [VoiceProfile] = []
     @Published var statusMessage: String?
     @Published var isBusy = false
 
@@ -27,8 +25,6 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 
     func clearUserScopedRemoteState() {
-        remoteAlarms = []
-        voiceProfiles = []
         statusMessage = nil
     }
 
@@ -53,7 +49,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// 신규 receivedRemote 자동 스케줄링과 **그만받기 정리**까지 수행한다
     /// (서버 목록에서 사라졌다고 지우지는 않는다 — `RemoteAlarmPullSync` 헤더 참조).
     func refresh(session: AuthSession?, force: Bool = false) async {
-        guard let token = session?.token else { return }
+        guard session?.token != nil else { return }
         guard force || !isBusy else { return }
         let shouldManageBusy = !isBusy
         if shouldManageBusy {
@@ -69,10 +65,6 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             if let pull {
                 try await pull.runOnce()
             }
-            async let alarmsTask = api.listAlarms(token: token)
-            async let profilesTask = api.listVoiceProfiles(token: token)
-            remoteAlarms = try await alarmsTask
-            voiceProfiles = try await profilesTask
             // ⚠ **성공을 알리지 말 것.** 이 동기화는 사용자가 누른 게 아니라 화면 진입·
             // 전경 복귀에서 자동으로 돈다. 성공은 알람 목록이 이미 보여 주므로, 여기에
             // 문구를 세우면 사용자가 한 적 없는 일의 결과가 매번 떠 있는다.
@@ -230,4 +222,3 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 
 }
-

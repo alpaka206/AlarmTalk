@@ -472,7 +472,7 @@ struct VoiceCloneUploadFlow: View {
                             .padding(.vertical, 4)
                             .background(theme.palette.secondaryContainer, in: Capsule())
                     }
-                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 60~120초 구간을 직접 고른다
+                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 12~120초 구간을 직접 고른다.
                     // (이전엔 시작점만 움직이고 길이는 항상 120초로 고정됐음).
                     AudioCropRangeSlider(
                         durationMs: durationMs,

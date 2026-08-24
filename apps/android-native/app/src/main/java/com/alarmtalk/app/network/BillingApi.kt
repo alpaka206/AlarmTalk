@@ -58,26 +58,6 @@ data class VoucherItem(
     @SerializedName("use_count") val useCount: Int = 0,
 )
 
-data class CheckoutRequest(
-    @SerializedName("plan_key") val planKey: String,
-)
-
-data class CheckoutResponse(
-    val success: Boolean,
-    @SerializedName("checkout_stub") val checkoutStub: Boolean = false,
-    val subscription: BillingSubscription?,
-    val plan: BillingPlan,
-    val voucher: CheckoutVoucher? = null,
-)
-
-data class CheckoutVoucher(
-    val id: String,
-    val code: String,
-    @SerializedName("expires_at") val expiresAt: String,
-    @SerializedName("max_uses") val maxUses: Int = 1,
-    @SerializedName("use_count") val useCount: Int = 0,
-)
-
 data class EnsureFamilyShareCodeResponse(
     val success: Boolean,
     val voucher: VoucherItem,
@@ -116,12 +96,6 @@ interface BillingApi {
 
     @GET("billing/vouchers")
     suspend fun listVouchers(@Header("Authorization") authorization: String): VoucherListResponse
-
-    @POST("billing/checkout")
-    suspend fun checkoutPlan(
-        @Header("Authorization") authorization: String,
-        @Body request: CheckoutRequest,
-    ): CheckoutResponse
 
     /** Google Play 구매 토큰 서버 검증. 서버가 Play Developer API 로 검증·acknowledge 한다. */
     @POST("billing/google/confirm")

@@ -71,11 +71,7 @@ internal fun SubscriptionPanel(
     vouchers: List<VoucherItem>,
     /// planKey → **Play 가 준 표시가격**(`formattedPrice`, 지역 통화·세금 포함).
     ///
-    /// ⚠ **없으면 빈 문자열로 둔다 — 앱에 박아 둔 숫자로 폴백하지 말 것.** 가격의 권위는
-    /// 스토어다. 예전에는 `strings.xml` 의 `billing_plan_*_price`(월 3,900원 …)로
-    /// 폴백했는데, Play 에서 가격을 바꾸거나 프로모션을 걸면 **앱이 틀린 가격을 자신
-    /// 있게 보여줬다.** 지역·통화가 다른 사용자에게는 애초에 맞은 적도 없다.
-    /// 모르면 숫자를 안 보여주는 게 맞다(카드는 :589 에서 빈 값을 알아서 숨긴다).
+    /// 스토어 값이 권위이며, 아직 못 받았을 때만 백엔드의 한국 가격표와 같은 폴백을 쓴다.
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
     onGiftPersonal: (Activity) -> Unit,
@@ -142,7 +138,7 @@ internal fun SubscriptionPanel(
                 stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_family_feature_voice_share),
                 stringResource(R.string.billing_plan_family_feature_message),
-                stringResource(R.string.billing_plan_family_feature_max_six),
+                stringResource(R.string.billing_plan_family_feature_max_five),
             ),
         ),
     )
@@ -820,4 +816,3 @@ private fun planPriceLabel(planPrices: Map<String, String>, key: String): String
     val krw = FallbackPlanPriceKrw[key] ?: return ""
     return "월 %,d원".format(krw)
 }
-

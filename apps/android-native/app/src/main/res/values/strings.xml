@@ -85,7 +85,7 @@
     <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기</string>
     <string name="billing_plan_couple_feature_voice_share">서로의 목소리 공유</string>
     <string name="billing_plan_couple_name">커플</string>
-    <string name="billing_plan_family_feature_max_six">최대 5명이 함께 사용</string>
+    <string name="billing_plan_family_feature_max_five">최대 5명이 함께 사용</string>
     <string name="billing_plan_family_feature_message">가족에게 알람 보내기</string>
     <string name="billing_plan_family_feature_voice_share">가족 목소리 공유</string>
     <string name="billing_plan_feature_includes_personal">개인 이용권 기능 전부 포함</string>

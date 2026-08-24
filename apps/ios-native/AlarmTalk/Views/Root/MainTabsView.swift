@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// 인증된 상태에서 보여주는 본 메인 화면. 4개 탭 라우팅 + 시트 호스트.
+/// 인증된 상태에서 보여주는 본 메인 화면. 3개 탭 라우팅 + 보조 화면 호스트.
 ///
 /// ContentView 의 `mainApp` 을 그대로 옮겨 router 책임에 집중시켰다.
-/// 설정/보조/편집 화면을 독립 sheet 로 관리한다.
+/// 설정/보조/편집 화면을 같은 `NavigationStack`의 push 화면으로 관리한다.
 struct MainTabsView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel

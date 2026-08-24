@@ -268,7 +268,7 @@ export const migrations: Migration[] = [
     id: 6,
     name: 'plans-and-subscriptions',
     statements: [
-      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 6인
+      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 5인
       `CREATE TABLE IF NOT EXISTS plans (
         id TEXT PRIMARY KEY,
         key TEXT UNIQUE NOT NULL,

@@ -82,7 +82,7 @@
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
     <string name="billing_plan_couple_feature_voice_share">お互いの声を共有</string>
     <string name="billing_plan_couple_name">カップル</string>
-    <string name="billing_plan_family_feature_max_six">最大5人で一緒に利用</string>
+    <string name="billing_plan_family_feature_max_five">最大5人で一緒に利用</string>
     <string name="billing_plan_family_feature_message">家族へのアラーム送信</string>
     <string name="billing_plan_family_feature_voice_share">家族の声を共有</string>
     <string name="billing_plan_feature_includes_personal">パーソナルの全機能を含む</string>

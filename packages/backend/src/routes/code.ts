@@ -54,8 +54,7 @@ codeRoutes.post('/register', async (c) => {
       return c.json(result);
     } catch (error) {
       if (!(error instanceof VoucherRedemptionError)) throw error;
-      // voucher 에 없는(CODE_NOT_FOUND) 코드만 다음 단계로 폴백한다: INV- 는 가족 초대(2단계)로,
-      // 그 외(GIFT- 형식과 겹치는 프로모 코드 등)는 프로모(3단계)로 넘어간다. 만료/중복 같은
+      // voucher 에 없는(CODE_NOT_FOUND) 코드만 프로모 단계로 넘긴다. 만료/중복 같은
       // 확정 오류는 그대로 반환한다.
       if (error.errorCode !== 'CODE_NOT_FOUND') {
         return c.json(

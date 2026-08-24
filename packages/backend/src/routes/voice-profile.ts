@@ -4,7 +4,7 @@ import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
-import { logRouteError } from '../lib/logger';
+import { logRouteError, logStructured } from '../lib/logger';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
@@ -1580,9 +1580,11 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
     if (completion.evicted > 0) {
-      console.log(
-        `[voice] LRU-evicted ${completion.evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
-      );
+      logStructured('info', {
+        at: 'voice.clone.evict',
+        removed: completion.evicted,
+        capacity: MAX_PROVIDER_CLONE_VOICES,
+      });
     }
 
     // 등록 원본을 R2+voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 —

@@ -43,9 +43,7 @@ struct LandingView: View {
 
                             VStack(alignment: .leading, spacing: 0) {
                                 // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
-                                (Text("좋아하는 ")
-                                    + Text("목소리").foregroundColor(AuthSceneColors.accent)
-                                    + Text("로\n깨어나는 아침"))
+                                Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                                     .font(theme.typography.headlineLarge)
                                     .fontWeight(.bold)
                                     .foregroundStyle(AuthSceneColors.text)

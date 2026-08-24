@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// People/Billing 보조 화면들의 단일 시트 진입점.
+/// People/Billing 보조 화면들의 단일 진입점.
 ///
-/// ContentView 의 `auxiliarySheet(_:)` 를 옮긴 것. 시트의 NavigationStack 과
-/// X 닫기 버튼은 본 호스트가 표준화한다. 부모(MainTabsView)는 어떤 화면을 띄울지만
-/// `.sheet(item:)` 으로 결정하면 된다.
+/// 예전에는 시트였지만 지금은 `MainTabsView`의 `NavigationStack`에 push된다.
 struct AuxiliarySheetHost: View {
     /// 맨 위로 올릴 때 쓰는 목적지 표식.
     private static let topAnchorID = "auxiliary-screen-top"
@@ -78,25 +76,6 @@ struct AuxiliarySheetHost: View {
             }
             .homeGradientBackground()
         }
-    }
-}
-
-private struct AuxiliaryStatusBanner: View {
-    let message: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.primary)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

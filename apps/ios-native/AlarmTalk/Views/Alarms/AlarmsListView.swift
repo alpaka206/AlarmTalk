@@ -10,6 +10,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
+    @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @State private var actionMessage: String?
     /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
@@ -254,13 +255,13 @@ struct AlarmsListView: View {
             let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
             return trimmed.isEmpty ? name : trimmed
         }
-        if let profile = remoteSync.voiceProfiles.first(where: { $0.id == id }) {
+        if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
             return label(profile.name, profile.relationshipLabel)
         }
         // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
         // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
         // 그 목록은 `familyVoices` 에 따로 온다.
-        if let shared = socialFeatures.familyVoices.first(where: { $0.id == id }) {
+        if let shared = voiceStudio.familyVoices.first(where: { $0.id == id }) {
             return label(shared.name, shared.relationshipLabel)
         }
         return nil
