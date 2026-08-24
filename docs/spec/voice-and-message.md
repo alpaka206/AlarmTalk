@@ -106,6 +106,13 @@
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
   프리셋 재렌더가 게시된 **뒤에** 그룹원에게 갱신 신호를 보낸다. 먼저 알리면 같은 message ID의
   옛 클립을 다시 확정해 버린다. 공유를 끄는 교체만 접근권 철회를 위해 즉시 알린다.
+- **교체의 서버 쓰기는 한 트랜잭션이다.** 현역 프로필 덮어쓰기·새 등록 원본의 현역 id 승계·
+  옛 원본·provider voice 삭제 큐·드래프트 소비·프리셋 재렌더 큐가 함께 커밋된다. 재렌더 큐
+  컬럼이 아직 없는 배포 창이나 어느 쓰기든 실패하면 전부 롤백해, 새 프로필인데 옛 클립만
+  남는 상태를 만들지 않는다.
+- **직접 입력 custom은 재렌더하지 않는다.** 아직 전달 중인 서버 알람뿐 아니라 ACK가 끝나
+  tombstone만 남은 수신 알람도 `custom_voice` 표식으로 찾아 목소리를 철회하고 즉시 알린다.
+  preset tombstone은 건드리지 않아 같은 message id의 새 렌더를 다시 받게 한다.
 - **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
   작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
 - 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
@@ -410,6 +417,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
+| 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
+| 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

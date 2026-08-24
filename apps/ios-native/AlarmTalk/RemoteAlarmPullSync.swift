@@ -606,6 +606,36 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             }
     }
 
+    static func linkRecoveredLegacyRemoteAudio(
+        existing: LocalAlarmRecord,
+        prepared: LocalAlarmRecord
+    ) -> LocalAlarmRecord {
+        let isFailedImportPlaceholder = existing.playModeEnum == .alarmOnly
+            && existing.localAudioUri?.nilIfBlank == nil
+            && existing.audioCacheKey?.nilIfBlank == nil
+            && existing.ttsMessageId?.nilIfBlank == nil
+            && existing.voiceProfileId?.nilIfBlank == nil
+            && existing.voiceText?.nilIfBlank == nil
+            && existing.voiceCategory?.nilIfBlank == nil
+        guard isFailedImportPlaceholder,
+              prepared.localAudioUri?.nilIfBlank != nil,
+              prepared.audioCacheKey?.nilIfBlank != nil else { return existing }
+
+        var recovered = existing
+        recovered.playMode = prepared.playMode
+        recovered.localAudioUri = prepared.localAudioUri
+        recovered.audioCacheKey = prepared.audioCacheKey
+        recovered.rawAudioUri = prepared.rawAudioUri
+        recovered.voiceSource = prepared.voiceSource
+        recovered.voiceProfileId = prepared.voiceProfileId
+        recovered.voiceText = prepared.voiceText
+        recovered.voiceCategory = prepared.voiceCategory
+        recovered.voiceLanguage = prepared.voiceLanguage
+        recovered.ttsMessageId = prepared.ttsMessageId
+        recovered.bucketId = prepared.bucketId
+        return recovered
+    }
+
     /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.
     /// 내가 만든 서버 알람은 push sync 의 결과물이므로 received import 대상으로 삼지 않는다.
     static func isReceivedRemoteCandidate(_ remote: RemoteAlarm, currentUserID: String) -> Bool {
@@ -649,12 +679,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         ) else { return .unchanged }
         guard prepared.audioSecured else { return .incomplete }
 
-        let scheduleSucceeded = existing.enabled
-            ? await rescheduleReceivedRemote(record: existing, existing: existing)
+        var recovered = Self.linkRecoveredLegacyRemoteAudio(
+            existing: existing,
+            prepared: prepared.record
+        )
+        if recovered.localAudioUri != existing.localAudioUri
+            || recovered.audioCacheKey != existing.audioCacheKey {
+            recovered = store.upsert(recovered)
+        }
+        let scheduleSucceeded = recovered.enabled
+            ? await rescheduleReceivedRemote(record: recovered, existing: existing)
             : true
         return Self.receivedAlarmDeliveryComplete(
             audioSecured: true,
-            enabled: existing.enabled,
+            enabled: recovered.enabled,
             scheduleSucceeded: scheduleSucceeded,
             deliveryVersion: deliveryVersion
         ) ? .alreadyApplied : .incomplete

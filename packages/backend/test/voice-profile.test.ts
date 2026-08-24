@@ -1171,8 +1171,21 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       is_shared: 0,
     }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
-    for (let i = 0; i < 8; i += 1) mockDB.pushResult([], 1);
-    mockDB.pushResult([{ id: V1, name: '새 목소리', status: 'ready' }]);
+    mockDB.pushResultFor('SELECT id FROM voice_uploads WHERE voice_profile_id', [
+      { id: 'upload-new' },
+    ]);
+    mockDB.pushResultFor('SELECT object_key FROM voice_uploads WHERE voice_profile_id', [
+      { object_key: 'uploads/old.wav' },
+    ]);
+    mockDB.pushResultFor('SELECT a.id AS alarm_id', [
+      { alarm_id: 'alarm-live', recipient_user_id: 'recipient-live' },
+    ]);
+    mockDB.pushResultFor('SELECT alarm_id, recipient_user_id FROM alarm_recipient_state', [
+      { alarm_id: 'alarm-delivered', recipient_user_id: 'recipient-delivered' },
+    ]);
+    mockDB.pushResultFor('SELECT id, name, status, is_shared', [
+      { id: V1, name: '새 목소리', status: 'ready' },
+    ]);
 
     const execution = fakeExecutionCtx();
     const response = await buildApp().fetch(
@@ -1205,10 +1218,70 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     );
     expect(audioClear, '못 쓰게 된 음원 참조를 끊지 않는다').toBeDefined();
     expect(audioClear!.sql).toContain("category = 'custom'");
+
+    const uploadMove = mockDB.calls.find(
+      (call) => call.sql.includes('UPDATE voice_uploads SET voice_profile_id = ?'),
+    );
+    expect(uploadMove?.args).toEqual([V1, V2]);
+    expect(
+      mockDB.calls.some(
+        (call) =>
+          call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions') &&
+          call.args.includes('uploads/old.wav'),
+      ),
+      '교체 전 원본 녹음이 보존 큐 없이 사라진다',
+    ).toBe(true);
+
+    const deliveredRevoke = mockDB.calls.find(
+      (call) =>
+        call.sql.includes('UPDATE alarm_recipient_state') &&
+        call.sql.includes('custom_voice = 1'),
+    );
+    expect(deliveredRevoke, 'ACK 뒤 custom 음원을 철회하는 tombstone UPDATE가 없다').toBeDefined();
+    expect(mockNotifyDowngradedAlarms).toHaveBeenCalledWith(
+      mockDB.client,
+      ENV,
+      expect.arrayContaining([
+        { alarmId: 'alarm-live', ownerUserId: 'recipient-live', isReceived: true },
+        { alarmId: 'alarm-delivered', ownerUserId: 'recipient-delivered', isReceived: true },
+      ]),
+      [],
+    );
+    expect(mockDB.transactions.commits).toBe(1);
     expect(
       mockDB.calls.some((call) => call.sql.includes('FROM plan_group_members m1')),
       '새 클립 게시 전 그룹원에게 갱신 push를 보내면 옛 캐시를 다시 확정한다',
     ).toBe(false);
+  });
+
+  it('프리셋 재렌더 큐 쓰기가 실패하면 프로필 교체도 롤백한다', async () => {
+    mockDB.pushResult([{ id: V2, is_draft: 1, previewed_at: '2026-08-12T00:00:00Z' }]);
+    mockDB.pushResult([{ active_count: 1 }]);
+    mockDB.pushResult([{
+      id: V2,
+      user_id: 'user-pk-1',
+      name: '새 목소리',
+      elevenlabs_voice_id: 'elv-new',
+      is_shared: 0,
+    }]);
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
+    mockDB.pushErrorFor(
+      'INSERT INTO voice_prerender_queue',
+      new Error('no such column: refresh_existing'),
+    );
+
+    const response = await buildApp().fetch(
+      jsonReq('PATCH', `/vp/${V2}`, {
+        is_draft: false,
+        replace_existing: true,
+      }),
+      ENV,
+    );
+
+    expect(response.status).toBe(500);
+    expect(mockDB.transactions.rollbacks).toBe(1);
+    expect(mockDB.transactions.commits).toBe(0);
+    expect(mockNotifyDowngradedAlarms).not.toHaveBeenCalled();
   });
 });
 

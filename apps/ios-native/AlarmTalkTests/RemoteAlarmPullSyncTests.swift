@@ -72,6 +72,54 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         ))
     }
 
+    func test_legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
+        var existing = makeReceivedRemote(remoteID: "remote-1")
+        existing.hour = 9
+        existing.minute = 17
+        existing.playMode = AlarmPlayMode.alarmOnly.rawValue
+        existing.localAudioUri = nil
+        existing.audioCacheKey = nil
+        existing.ttsMessageId = nil
+        existing.voiceProfileId = nil
+        existing.voiceText = nil
+        existing.voiceCategory = nil
+
+        var prepared = existing
+        prepared.playMode = AlarmPlayMode.voiceOnly.rawValue
+        prepared.localAudioUri = "remote-message-message-1.mp3"
+        prepared.audioCacheKey = "remote-message-message-1"
+        prepared.rawAudioUri = "r2://voice.mp3"
+        prepared.voiceSource = VoiceSource.serverTts.rawValue
+        prepared.voiceProfileId = "voice-1"
+        prepared.voiceText = "일어나세요"
+        prepared.voiceCategory = "custom"
+        prepared.ttsMessageId = "message-1"
+
+        let recovered = RemoteAlarmPullSync.linkRecoveredLegacyRemoteAudio(
+            existing: existing,
+            prepared: prepared
+        )
+
+        XCTAssertEqual(recovered.hour, 9)
+        XCTAssertEqual(recovered.minute, 17)
+        XCTAssertEqual(recovered.playModeEnum, .voiceOnly)
+        XCTAssertEqual(recovered.localAudioUri, prepared.localAudioUri)
+        XCTAssertEqual(recovered.audioCacheKey, prepared.audioCacheKey)
+        XCTAssertEqual(recovered.ttsMessageId, "message-1")
+        XCTAssertEqual(recovered.voiceProfileId, "voice-1")
+
+        var recipientVoice = existing
+        recipientVoice.playMode = AlarmPlayMode.voiceOnly.rawValue
+        recipientVoice.localAudioUri = "my-recording.m4a"
+        recipientVoice.voiceSource = VoiceSource.localAudio.rawValue
+        let preserved = RemoteAlarmPullSync.linkRecoveredLegacyRemoteAudio(
+            existing: recipientVoice,
+            prepared: prepared
+        )
+        XCTAssertEqual(preserved.localAudioUri, "my-recording.m4a")
+        XCTAssertEqual(preserved.voiceSourceEnum, .localAudio)
+    }
+
     // MARK: - shouldApplyRemote
 
     func test_shouldApplyRemote_localDirty_returnsFalse() {

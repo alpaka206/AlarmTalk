@@ -48,6 +48,38 @@ internal fun isLegacyBackfilledDelivery(
         deliveryVersion.length == 32 &&
         deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
+internal fun linkRecoveredLegacyRemoteAudio(
+    current: AlarmEntity,
+    remote: RemoteAlarm,
+    cachedAudio: CachedAlarmAudio?,
+): AlarmEntity {
+    if (cachedAudio == null) return current
+    val isFailedImportPlaceholder =
+        current.playMode == AlarmPlayModes.ALARM_ONLY &&
+            current.localAudioUri.isNullOrBlank() &&
+            current.audioCacheKey.isNullOrBlank() &&
+            current.ttsMessageId.isNullOrBlank() &&
+            current.voiceProfileId.isNullOrBlank() &&
+            current.voiceText.isNullOrBlank() &&
+            current.voiceCategory.isNullOrBlank()
+    if (!isFailedImportPlaceholder) return current
+
+    val lockState = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, current)
+    return current.copy(
+        playMode = lockState.playMode,
+        preLockPlayMode = lockState.preLockPlayMode,
+        localAudioUri = cachedAudio.localAudioUri,
+        audioCacheKey = cachedAudio.cacheKey,
+        rawAudioUri = cachedAudio.rawAudioUri,
+        voiceSource = VoiceSources.SERVER_TTS,
+        voiceProfileId = remote.voiceProfileId,
+        voiceText = remote.messageText,
+        voiceCategory = remote.category,
+        ttsMessageId = remote.messageId?.trim()?.takeIf { it.isNotBlank() },
+        bucketId = remote.bucketId?.trim()?.takeIf { it.isNotBlank() },
+    )
+}
+
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
     private val alarmScheduler: AlarmScheduler,
@@ -266,26 +298,32 @@ internal class RemoteAlarmPullSyncService(
                             isLegacyBackfilledDelivery(current, deliveryVersion) -> {
                                 val audioSecured =
                                     !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
-                                val legacyScheduleSucceeded = !current.enabled ||
-                                    runCatching { alarmScheduler.schedule(current) }
+                                val recovered = linkRecoveredLegacyRemoteAudio(
+                                    current = current,
+                                    remote = remote,
+                                    cachedAudio = cachedAudio,
+                                )
+                                if (recovered != current) alarmDao.upsert(recovered)
+                                val legacyScheduleSucceeded = !recovered.enabled ||
+                                    runCatching { alarmScheduler.schedule(recovered) }
                                         .onFailure { error ->
                                             Log.w(
                                                 TAG,
-                                                "Failed to schedule legacy edited alarm id=${current.id}",
+                                                "Failed to schedule legacy edited alarm id=${recovered.id}",
                                                 error,
                                             )
                                         }
                                         .isSuccess
                                 val complete = receivedAlarmDeliveryComplete(
                                     audioSecured = audioSecured,
-                                    enabled = current.enabled,
+                                    enabled = recovered.enabled,
                                     scheduleSucceeded = legacyScheduleSucceeded,
                                     deliveryVersion = deliveryVersion,
                                 )
                                 if (complete) {
                                     val version = requireNotNull(deliveryVersion)
                                     val persisted = withContext(NonCancellable) {
-                                        alarmDao.markRemoteDeliveryVersion(current.id, version) > 0
+                                        alarmDao.markRemoteDeliveryVersion(recovered.id, version) > 0
                                     }
                                     if (persisted) editedDeliveryVersionToAck = version
                                     else editedDeliveryIncomplete = true

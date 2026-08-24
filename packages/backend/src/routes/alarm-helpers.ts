@@ -443,7 +443,7 @@ export async function claimTargetedAlarmSlot(
     // 삭제가 새 세대까지 걷어내므로 함께 비운다(declined는 수신자 선택이라 보존).
     await executor.execute({
       sql: `UPDATE alarm_recipient_state
-            SET revoked = 0, voice_profile_id = NULL, sender_voice_upload = 0,
+            SET revoked = 0, voice_profile_id = NULL, sender_voice_upload = 0, custom_voice = 0,
                 updated_at = datetime('now')
             WHERE alarm_id = ? AND recipient_user_id IN (?, ?)`,
       args: [alarmId, recipientIds[0], recipientIds[1]],

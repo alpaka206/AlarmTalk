@@ -940,14 +940,16 @@ alarmMutation.post('/:id/received', async (c) => {
     await tx.execute({
       sql: `INSERT INTO alarm_recipient_state
               (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
-               sender_voice_upload, created_at, updated_at)
-            VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
+               sender_voice_upload, custom_voice, created_at, updated_at)
+            VALUES (?, ?, 0, 0, ?, ?, ?, ?, datetime('now'), datetime('now'))
             ON CONFLICT(alarm_id, recipient_user_id)
             DO UPDATE SET sender_user_id = excluded.sender_user_id,
                           voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
                             THEN NULL ELSE excluded.voice_profile_id END,
                           sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
                             THEN 0 ELSE excluded.sender_voice_upload END,
+                          custom_voice = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN 0 ELSE excluded.custom_voice END,
                           updated_at = datetime('now')`,
       args: [
         resolved.id,
@@ -955,6 +957,7 @@ alarmMutation.post('/:id/received', async (c) => {
         senderUserId,
         source.voiceProfileId,
         source.senderVoiceUpload ? 1 : 0,
+        source.customVoice ? 1 : 0,
       ],
     });
     const result = await tx.execute({
@@ -1019,14 +1022,16 @@ alarmMutation.delete('/:id', async (c) => {
         await tx.execute({
           sql: `INSERT INTO alarm_recipient_state
                 (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
-                 sender_voice_upload, created_at, updated_at)
-              VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
+                 sender_voice_upload, custom_voice, created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, ?, ?, ?, datetime('now'), datetime('now'))
               ON CONFLICT(alarm_id, recipient_user_id)
               DO UPDATE SET sender_user_id = excluded.sender_user_id,
                             voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
                               THEN NULL ELSE excluded.voice_profile_id END,
                             sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
                               THEN 0 ELSE excluded.sender_voice_upload END,
+                            custom_voice = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN 0 ELSE excluded.custom_voice END,
                             updated_at = datetime('now')`,
           args: [
             id,
@@ -1034,6 +1039,7 @@ alarmMutation.delete('/:id', async (c) => {
             c.get('userIdPK') ?? ownerIds[0]!,
             source.voiceProfileId,
             source.senderVoiceUpload ? 1 : 0,
+            source.customVoice ? 1 : 0,
           ],
         });
       }

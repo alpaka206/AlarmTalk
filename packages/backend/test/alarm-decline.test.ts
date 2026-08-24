@@ -258,14 +258,30 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
     expect(downgradedAlarms.map((t) => t.ownerUserId)).toContain('B');
   });
 
-  it('tombstone 에 그 알람이 쓰는 클론 목소리를 적어 둔다 — 철회 판정의 유일한 근거', async () => {
+  it('preset tombstone은 목소리만 기록하고 custom 표식은 남기지 않는다', async () => {
+    await testDb.execute("UPDATE messages SET category = 'greeting' WHERE id = 'm1'");
     await markReceived(ALARM_ID);
     const st = await testDb.execute({
-      sql: `SELECT voice_profile_id FROM alarm_recipient_state
+      sql: `SELECT voice_profile_id, custom_voice FROM alarm_recipient_state
             WHERE alarm_id = ? AND recipient_user_id = 'B'`,
       args: [ALARM_ID],
     });
     expect(String(st.rows[0]!.voice_profile_id)).toBe('vp-A');
+    expect(Number(st.rows[0]!.custom_voice)).toBe(0);
+  });
+
+  it('custom 음원 ACK는 교체 때 preset과 구분할 표식을 남긴다', async () => {
+    await testDb.execute("UPDATE messages SET category = 'custom' WHERE id = 'm1'");
+
+    await markReceived(ALARM_ID);
+
+    const st = await testDb.execute({
+      sql: `SELECT voice_profile_id, custom_voice FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = 'B'`,
+      args: [ALARM_ID],
+    });
+    expect(String(st.rows[0]!.voice_profile_id)).toBe('vp-A');
+    expect(Number(st.rows[0]!.custom_voice)).toBe(1);
   });
 
   it('알람 직접 참조와 문구 목소리가 다르면 실제 재생되는 문구 목소리를 기록한다', async () => {

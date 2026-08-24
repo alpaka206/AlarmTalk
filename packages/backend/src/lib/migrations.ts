@@ -2279,6 +2279,17 @@ export const migrations: Migration[] = [
         WHERE target_user_id IS NOT NULL AND delivery_version IS NULL`,
     ],
   },
+  {
+    id: 105,
+    name: 'alarm-recipient-state-custom-voice',
+    // 전달이 끝난 custom 음원은 alarms 행이 없어 목소리 교체 때 preset 과 구분할 수 없다.
+    // preset 은 같은 message id로 재렌더하지만 custom 은 재생성하지 않으므로, ACK 직전에
+    // 이 한 비트만 tombstone에 남겨 교체 시 custom 캐시만 정확히 철회한다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN custom_voice INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

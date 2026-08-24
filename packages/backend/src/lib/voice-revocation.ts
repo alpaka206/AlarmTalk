@@ -186,6 +186,7 @@ export async function revokeDeletedVoices(
           WHERE target_user_id IS NOT NULL AND ${scope}
           ON CONFLICT(alarm_id, recipient_user_id)
             DO UPDATE SET revoked = 1, voice_profile_id = NULL, sender_voice_upload = 0,
+                          custom_voice = 0,
                           updated_at = datetime('now')`,
     args: scopeArgs,
   });
@@ -209,6 +210,7 @@ export async function revokeDeletedVoices(
   await tx.execute({
     sql: `UPDATE alarm_recipient_state
              SET revoked = 1, voice_profile_id = NULL, sender_voice_upload = 0,
+                 custom_voice = 0,
                  updated_at = datetime('now')
            WHERE ${tombstoneScope}`,
     args: tombstoneArgs,
@@ -238,7 +240,11 @@ export async function resolveAlarmVoiceRevocationSource(
   tx: DbExecutor,
   alarmId: string,
   expectedDeliveryVersion?: string,
-): Promise<{ voiceProfileId: string | null; senderVoiceUpload: boolean } | null> {
+): Promise<{
+  voiceProfileId: string | null;
+  senderVoiceUpload: boolean;
+  customVoice: boolean;
+} | null> {
   const deliveryGuard = expectedDeliveryVersion === undefined ? '' : 'AND a.delivery_version = ?';
   const res = await tx.execute({
     sql: `SELECT vp.id AS voice_profile_id, vp.is_system, m.category AS message_category
@@ -252,11 +258,12 @@ export async function resolveAlarmVoiceRevocationSource(
   if (res.rows.length === 0) return null;
   const row = res.rows[0]!;
   if (String(row.message_category ?? '') === 'family-voice') {
-    return { voiceProfileId: null, senderVoiceUpload: true };
+    return { voiceProfileId: null, senderVoiceUpload: true, customVoice: false };
   }
   const value = Number(row.is_system ?? 0) === 0 ? row.voice_profile_id : null;
   return {
     voiceProfileId: value == null ? null : String(value),
     senderVoiceUpload: false,
+    customVoice: value != null && String(row.message_category ?? '') === 'custom',
   };
 }

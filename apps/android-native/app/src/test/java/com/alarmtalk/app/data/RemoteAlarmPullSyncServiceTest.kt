@@ -183,6 +183,48 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
+        val current = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(hour = 9, minute = 17, updatedAtMillis = 2_000L)
+        val remote = remote().copy(
+            messageId = "message-1",
+            messageAudioUrl = "r2://voice.mp3",
+            voiceProfileId = "voice-1",
+            messageText = "일어나세요",
+            category = "custom",
+        )
+        val cached = CachedAlarmAudio(
+            localAudioUri = "remote-message-message-1.mp3",
+            rawAudioUri = "r2://voice.mp3",
+            displayName = "voice.mp3",
+            durationMillis = 3_000L,
+            cacheKey = "remote-message-message-1",
+            messageId = "message-1",
+        )
+
+        val recovered = linkRecoveredLegacyRemoteAudio(current, remote, cached)
+
+        assertEquals(9, recovered.hour)
+        assertEquals(17, recovered.minute)
+        assertEquals(2_000L, recovered.updatedAtMillis)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, recovered.playMode)
+        assertEquals(cached.localAudioUri, recovered.localAudioUri)
+        assertEquals(cached.cacheKey, recovered.audioCacheKey)
+        assertEquals("message-1", recovered.ttsMessageId)
+        assertEquals("voice-1", recovered.voiceProfileId)
+
+        val recipientVoice = current.copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            localAudioUri = "my-recording.m4a",
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+        )
+        assertEquals(
+            recipientVoice,
+            linkRecoveredLegacyRemoteAudio(recipientVoice, remote, cached),
+        )
+    }
+
+    @Test
     fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
         assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원"))
     }

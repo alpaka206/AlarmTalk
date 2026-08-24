@@ -645,7 +645,12 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
 });
 
 type ReplaceResult =
-  | { ok: true; profile: Record<string, unknown>; notifyShareRemoval: boolean }
+  | {
+      ok: true;
+      profile: Record<string, unknown>;
+      notifyShareRemoval: boolean;
+      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string; isReceived: true }>;
+    }
   | { ok: false; error: string; errorCode: string; status: 404 | 409 };
 
 /**
@@ -663,9 +668,9 @@ type ReplaceResult =
  * 1. 드래프트에서 새 목소리의 실체(provider voice id·이름·페르소나·미리듣기)를 읽는다.
  * 2. 한 트랜잭션에서 **옛 프로필에 덮어쓰고**, 드래프트 행은 소비된 것으로 지운다.
  * 3. 프리셋 클립 재렌더를 큐에 넣는다(`refresh_existing = 1`) — 클립은 cron 이 덮어쓴다.
- * 4. 옛 provider voice 는 **커밋 뒤에** 외부 삭제 큐로 넘긴다.
+ * 4. 옛 provider voice 는 같은 트랜잭션에서 외부 삭제 큐로 넘긴다.
  */
-async function replaceVoiceInPlace(
+export async function replaceVoiceInPlace(
   db: ReturnType<typeof getDB>,
   params: { targetUserIds: string[]; draftProfileId: string; language: string; isShared?: boolean },
 ): Promise<ReplaceResult> {
@@ -711,7 +716,7 @@ async function replaceVoiceInPlace(
     isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
   const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
 
-  await withWriteTransaction(db, async (tx) => {
+  const replacementState = await withWriteTransaction(db, async (tx) => {
     await tx.execute({
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
@@ -730,6 +735,35 @@ async function replaceVoiceInPlace(
         targetId,
       ],
     });
+
+    // 말투 분석·재생성은 현역 프로필에 연결된 최신 등록 원본을 읽는다. 새 원본이 실제로
+    // 있을 때만 옛 원본을 즉시 폐기하고, 드래프트 연결을 현역 id로 승계한다.
+    const replacementUploads = await tx.execute({
+      sql: 'SELECT id FROM voice_uploads WHERE voice_profile_id = ? LIMIT 1',
+      args: [draftProfileId],
+    });
+    if (replacementUploads.rows.length > 0) {
+      const staleUploads = await tx.execute({
+        sql: 'SELECT object_key FROM voice_uploads WHERE voice_profile_id = ?',
+        args: [targetId],
+      });
+      await enqueueExternalDeletionsBatch(
+        tx,
+        'r2_object',
+        staleUploads.rows.map((row) => row.object_key as string | null),
+      );
+      await tx.execute({
+        sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
+        args: [targetId],
+      });
+      await tx.execute({
+        sql: 'UPDATE voice_uploads SET voice_profile_id = ? WHERE voice_profile_id = ?',
+        args: [targetId, draftProfileId],
+      });
+    }
+    if (staleProviderVoiceId && staleProviderVoiceId !== String(draft.elevenlabs_voice_id ?? '')) {
+      await enqueueExternalDeletion(tx, 'elevenlabs_voice', staleProviderVoiceId);
+    }
     // 드래프트는 소비됐다. provider voice 는 **대상 프로필로 넘어갔으므로 지우지 않는다** —
     // 여기서 외부 삭제 큐에 넣으면 방금 앉힌 목소리를 스스로 지운다.
     await tx.execute({
@@ -748,6 +782,62 @@ async function replaceVoiceInPlace(
     // 목소리 **삭제** 경로(`DELETE /voice/:id`)가 하는 것과 같은 정리이고, 다른 점은
     // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
     // 살아남아야 한다.
+    const liveCustom = await tx.execute({
+      sql: `SELECT a.id AS alarm_id, a.target_user_id AS recipient_user_id
+            FROM alarms a
+            JOIN messages m ON m.id = a.message_id
+            WHERE a.target_user_id IS NOT NULL
+              AND m.voice_profile_id = ? AND m.category = 'custom'`,
+      args: [targetId],
+    });
+    const deliveredCustom = await tx.execute({
+      sql: `SELECT alarm_id, recipient_user_id FROM alarm_recipient_state
+            WHERE voice_profile_id = ? AND custom_voice = 1 AND revoked = 0`,
+      args: [targetId],
+    });
+    const revokedCustomAlarms = new Map<
+      string,
+      { alarmId: string; ownerUserId: string; isReceived: true }
+    >();
+    for (const row of [...liveCustom.rows, ...deliveredCustom.rows]) {
+      const alarmId = String(row.alarm_id);
+      const ownerUserId = String(row.recipient_user_id);
+      revokedCustomAlarms.set(`${alarmId}:${ownerUserId}`, {
+        alarmId,
+        ownerUserId,
+        isReceived: true,
+      });
+    }
+
+    // 아직 ACK 전인 custom 알람도 이미 수신자 기기에 들어갔을 수 있다. 서버 행 강등만으로는
+    // 편집된 로컬 행에 닿지 않으므로 revoked tombstone을 먼저 선점한다.
+    await tx.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
+               voice_profile_id, sender_voice_upload, custom_voice, created_at, updated_at)
+            SELECT a.id, a.target_user_id, 0, 1, a.user_id,
+                   NULL, 0, 0, datetime('now'), datetime('now')
+            FROM alarms a
+            JOIN messages m ON m.id = a.message_id
+            WHERE a.target_user_id IS NOT NULL
+              AND m.voice_profile_id = ? AND m.category = 'custom'
+            ON CONFLICT(alarm_id, recipient_user_id)
+            DO UPDATE SET revoked = 1, voice_profile_id = NULL,
+                          sender_voice_upload = 0, custom_voice = 0,
+                          updated_at = datetime('now')`,
+      args: [targetId],
+    });
+    // ACK가 이미 지운 행은 custom_voice 표식으로만 구분된다. preset tombstone은 건드리지
+    // 않아 재렌더된 같은 message id를 계속 쓸 수 있게 한다.
+    await tx.execute({
+      sql: `UPDATE alarm_recipient_state
+            SET revoked = 1, voice_profile_id = NULL,
+                sender_voice_upload = 0, custom_voice = 0,
+                updated_at = datetime('now')
+            WHERE voice_profile_id = ? AND custom_voice = 1`,
+      args: [targetId],
+    });
+
     await tx.execute({
       sql: `UPDATE alarms
             SET mode = 'sound-only',
@@ -766,26 +856,22 @@ async function replaceVoiceInPlace(
             WHERE voice_profile_id = ? AND category = 'custom'`,
       args: [targetId],
     });
-  });
 
-  // 프리셋 클립 재렌더 예약. `refresh_existing = 1` 이라 `generateStockClip` 이 기존
-  // preset 을 no-op 로 건너뛰지 않고 덮어쓴다. 이미 큐에 행이 있으면 그 행을 재렌더로
-  // 되돌린다(done 으로 끝나 있던 경우 포함).
-  await db.execute({
-    sql: `INSERT INTO voice_prerender_queue
-            (voice_profile_id, owner_user_id, language, status, attempts, refresh_existing)
-          VALUES (?, ?, ?, 'pending', 0, 1)
-          ON CONFLICT(voice_profile_id) DO UPDATE SET
-            status = 'pending', attempts = 0, refresh_existing = 1,
-            claimed_at = NULL, claim_token = NULL,
-            language = excluded.language, updated_at = datetime('now')`,
-    args: [targetId, ownerUserId, language],
-  });
+    // 프리셋 클립 재렌더 예약도 프로필 교체와 같은 커밋이다. #101 배포 창이나 큐 쓰기
+    // 실패 시 현역 프로필 덮어쓰기와 드래프트 소비까지 전부 롤백한다.
+    await tx.execute({
+      sql: `INSERT INTO voice_prerender_queue
+              (voice_profile_id, owner_user_id, language, status, attempts, refresh_existing)
+            VALUES (?, ?, ?, 'pending', 0, 1)
+            ON CONFLICT(voice_profile_id) DO UPDATE SET
+              status = 'pending', attempts = 0, refresh_existing = 1,
+              claimed_at = NULL, claim_token = NULL,
+              language = excluded.language, updated_at = datetime('now')`,
+      args: [targetId, ownerUserId, language],
+    });
 
-  // 옛 provider voice 정리는 **맨 마지막**이다(위 주석 참조).
-  if (staleProviderVoiceId && staleProviderVoiceId !== String(draft.elevenlabs_voice_id ?? '')) {
-    await enqueueExternalDeletion(db, 'elevenlabs_voice', staleProviderVoiceId);
-  }
+    return { revokedCustomAlarms: Array.from(revokedCustomAlarms.values()) };
+  });
 
   const refreshed = await db.execute({
     sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at
@@ -796,6 +882,7 @@ async function replaceVoiceInPlace(
     ok: true,
     profile: (refreshed.rows[0] ?? {}) as Record<string, unknown>,
     notifyShareRemoval,
+    revokedCustomAlarms: replacementState.revokedCustomAlarms,
   };
 }
 
@@ -986,6 +1073,7 @@ voiceProfile.patch('/:id', async (c) => {
       if (!replaced.ok) {
         return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);
       }
+      await notifyDowngradedAlarms(db, c.env, replaced.revokedCustomAlarms, []);
       // 공유 중인 옛 목소리를 끄는 것은 접근권 철회라 즉시 알린다. 새 공유 목소리의 갱신은
       // 모든 preset 게시가 끝난 뒤 notifySharedVoicePrerenderComplete 가 알린다.
       if (replaced.notifyShareRemoval) scheduleVoiceShareChangedPush(c, db, userPk);

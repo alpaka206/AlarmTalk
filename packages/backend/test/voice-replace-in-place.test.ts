@@ -12,7 +12,11 @@
 //   4. `audio_url` 은 **반드시 달라진다** — 기기 캐시는 이 값으로만 낡음을 판별한다.
 import { describe, it, expect } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
+import { replaceVoiceInPlace } from '../src/routes/voice-profile';
 
 async function migratedDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -20,7 +24,110 @@ async function migratedDb(): Promise<Client> {
   return db;
 }
 
+async function replacementDb(): Promise<{ db: Client; path: string }> {
+  const path = join(tmpdir(), `alarmtalk-voice-replace-${crypto.randomUUID()}.db`);
+  const db = createClient({ url: `file:${path}` });
+  await runMigrations(db);
+  await db.batch([
+    "INSERT INTO users (id, google_id, email, name) VALUES ('u1','g1','u1@test.com','나')",
+    "INSERT INTO users (id, google_id, email, name) VALUES ('u2','g2','u2@test.com','가족')",
+    `INSERT INTO voice_profiles
+       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at)
+     VALUES ('vp1','u1','옛 목소리','ready','eleven-old',0,datetime('now'))`,
+    `INSERT INTO voice_profiles
+       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at)
+     VALUES ('vp2','u1','새 목소리','ready','eleven-new',1,datetime('now'))`,
+    `INSERT INTO voice_uploads
+       (id, user_id, object_key, mime_type, size_bytes, voice_profile_id)
+     VALUES ('up-old','u1','uploads/old.wav','audio/wav',100,'vp1')`,
+    `INSERT INTO voice_uploads
+       (id, user_id, object_key, mime_type, size_bytes, voice_profile_id)
+     VALUES ('up-new','u1','uploads/new.wav','audio/wav',100,'vp2')`,
+    `INSERT INTO messages
+       (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+     VALUES ('m-custom','u1','vp1','직접 문구','custom','ko',0,0,'r2://custom')`,
+    `INSERT INTO messages
+       (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+     VALUES ('m-preset','u1','vp1','인사','greeting','ko',0,1,'r2://preset')`,
+    `INSERT INTO alarms
+       (id, user_id, target_user_id, time, mode, voice_profile_id, message_id, delivery_version)
+     VALUES ('a-live','u1','u2','07:00','tts','vp1','m-custom','v-live')`,
+    `INSERT INTO alarm_recipient_state
+       (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
+        voice_profile_id, sender_voice_upload, custom_voice)
+     VALUES ('a-delivered','u2',0,0,'u1','vp1',0,1)`,
+    `INSERT INTO alarm_recipient_state
+       (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
+        voice_profile_id, sender_voice_upload, custom_voice)
+     VALUES ('a-preset','u2',0,0,'u1','vp1',0,0)`,
+  ]);
+  return { db, path };
+}
+
 describe('목소리 교체 — 제자리 덮어쓰기', () => {
+  it('교체 트랜잭션이 원본 승계·custom 철회·재렌더 예약을 함께 커밋한다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      const result = await replaceVoiceInPlace(db as never, {
+        targetUserIds: ['u1'],
+        draftProfileId: 'vp2',
+        language: 'ko',
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.error);
+      expect(result.revokedCustomAlarms).toEqual(expect.arrayContaining([
+        { alarmId: 'a-live', ownerUserId: 'u2', isReceived: true },
+        { alarmId: 'a-delivered', ownerUserId: 'u2', isReceived: true },
+      ]));
+
+      const target = await db.execute("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp1'");
+      expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-new');
+      const draft = await db.execute("SELECT deleted_at FROM voice_profiles WHERE id = 'vp2'");
+      expect(draft.rows[0]!.deleted_at).not.toBeNull();
+
+      const uploads = await db.execute('SELECT id, voice_profile_id FROM voice_uploads ORDER BY id');
+      expect(uploads.rows.map((row) => [String(row.id), String(row.voice_profile_id)])).toEqual([
+        ['up-new', 'vp1'],
+      ]);
+      const deletionQueue = await db.execute(
+        'SELECT kind, ref FROM pending_external_deletions ORDER BY kind',
+      );
+      expect(deletionQueue.rows.map((row) => [String(row.kind), String(row.ref)]))
+        .toEqual(expect.arrayContaining([
+          ['elevenlabs_voice', 'eleven-old'],
+          ['r2_object', 'uploads/old.wav'],
+        ]));
+
+      const delivered = await db.execute(
+        "SELECT revoked, voice_profile_id FROM alarm_recipient_state WHERE alarm_id = 'a-delivered'",
+      );
+      expect(Number(delivered.rows[0]!.revoked)).toBe(1);
+      expect(delivered.rows[0]!.voice_profile_id).toBeNull();
+      const preset = await db.execute(
+        "SELECT revoked, voice_profile_id FROM alarm_recipient_state WHERE alarm_id = 'a-preset'",
+      );
+      expect(Number(preset.rows[0]!.revoked)).toBe(0);
+      expect(String(preset.rows[0]!.voice_profile_id)).toBe('vp1');
+
+      const renderer = await db.execute(
+        "SELECT refresh_existing FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+      );
+      expect(Number(renderer.rows[0]!.refresh_existing)).toBe(1);
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  it('마이그레이션 #105가 전달 완료 custom 음원을 구분한다', async () => {
+    const db = await migratedDb();
+    const cols = await db.execute("PRAGMA table_info('alarm_recipient_state')");
+    const col = cols.rows.find((row) => String(row.name) === 'custom_voice');
+    expect(col).toBeTruthy();
+    expect(String(col!.dflt_value)).toBe('0');
+  });
+
   it('마이그레이션 #101 이 refresh_existing 을 기본 0 으로 추가한다', async () => {
     const db = await migratedDb();
     const cols = await db.execute("PRAGMA table_info('voice_prerender_queue')");

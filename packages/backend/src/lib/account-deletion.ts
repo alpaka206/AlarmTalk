@@ -5,6 +5,12 @@ import { revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
 
+export function billingRetentionUntil(now: Date): Date {
+  const retainUntil = new Date(now);
+  retainUntil.setUTCFullYear(retainUntil.getUTCFullYear() + 5);
+  return retainUntil;
+}
+
 /**
  * user_id 를 비가역 가명 키로 변환한다 (개인정보보호법 제2조 가명처리).
  * pseudonym = SHA-256(user_id + salt). salt(=PASSWORD_PEPPER) 없이는 원본을 복원할 수 없다.
@@ -30,7 +36,7 @@ export async function pseudonymizeBillingForRetention(
   now: Date,
 ): Promise<void> {
   const pseudonym = await pseudonymizeUserId(userPk, salt);
-  const retainUntil = new Date(now.getTime() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
+  const retainUntil = billingRetentionUntil(now).toISOString();
   // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
   const subs = await tx.execute({
     sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
