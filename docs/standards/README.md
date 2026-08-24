@@ -56,9 +56,9 @@
 | 레이어 | 도구 | 명령 |
 |---|---|---|
 | 백엔드 | Vitest + in-memory libSQL | `npm run test --workspace=backend` |
-| Android 유닛 | JUnit | `./gradlew :app:testDebugUnitTest` |
+| Android 유닛 | JUnit | `./gradlew :app:testDevDebugUnitTest` |
 | Android 계측 | Compose UI Test | `./gradlew :app:connectedAndroidTest` |
-| Android 린트 | AGP Lint | `./gradlew :app:lintDebug` |
+| Android 린트 | AGP Lint | `./gradlew :app:lintDevDebug` |
 
 - 실기기 검증은 `apps/android-native/README.md` 의 Physical Device Checklist 로 한다.
 - 외부 프로바이더(ElevenLabs, FCM, Vertex)는 테스트에서 스텁한다. **자동 테스트가 유료 크레딧을 쓰면 안 된다.**

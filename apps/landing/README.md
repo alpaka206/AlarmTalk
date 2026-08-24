@@ -34,15 +34,7 @@ npm run build        # 정적 사이트를 out/ 디렉터리로 export
 - `i18n/routing.ts` — 지원 로케일(`ko`, `en`, `ja`)과 기본 로케일 정의
 - `i18n/request.ts` — 요청 로케일 해석 + 해당 `messages/<locale>.json` 로드
 - `i18n/navigation.ts` — 로케일 인식 `Link`/`useRouter` 등 내비게이션 헬퍼
-- `messages/{ko,en,ja}.json` — 네임스페이스별 카피(meta/hero/faq/waitlist 등)
-
-## 배포 (Vercel)
-
-프로덕션은 Vercel에 배포되어 있습니다.
-
-- **리디렉션은 `vercel.json`이 담당합니다.** `output: "export"`에서는 `next.config.ts`의 `redirects()`가 동작하지 않고, `public/_redirects`(Netlify/Cloudflare Pages 형식)는 Vercel이 무시합니다. `_redirects`는 다른 정적 호스트로 옮길 때를 대비한 백업입니다.
-- 로케일 프리픽스 없는 경로(`/privacy`, `/terms`, `/account-deletion`, `/company`, `/contact`)는 `/ko/...`로 308 리디렉션됩니다. 스토어 심사(Google Play 개인정보처리방침 URL 등)에 `https://alarm-talk.com/privacy` 같은 짧은 URL을 제출해도 동작해야 하기 때문입니다.
-- **도메인 설정**: 코드의 canonical/sitemap/robots는 모두 `https://alarm-talk.com`(non-www, `lib/site.ts`의 `SITE_URL`)을 기준으로 합니다. Vercel 대시보드의 Domains 설정에서 반드시 `alarm-talk.com`을 primary로 두고 `www.alarm-talk.com`을 308로 apex에 리디렉션해야 합니다. 반대로 설정하면 canonical URL이 리디렉션을 가리키게 되어 Search Console에서 색인 문제가 발생합니다.
+- `messages/{ko,en,ja}.json` — 네임스페이스별 카피(meta/hero/pricing/faq 등)
 
 ## 디자인 토큰
 
@@ -89,17 +81,20 @@ components/
   html-lang-sync.tsx      클라이언트에서 <html lang> 동기화
   brand-mark.tsx          로고 SVG
   phone-preview.tsx       Hero 폰 목업 (앱 LandingScreen 톤 재현)
+  home-content.tsx        홈 섹션 조립
   store-badges.tsx        Google Play 배지
   legal-markdown.tsx      법무 마크다운 → HTML 렌더러
+  motion/                 reveal·스크롤·파형 모션과 reduced-motion 대응
   sections/
     hero.tsx              히어로
     trust.tsx             신뢰 지표
     feature-section.tsx   기능 섹션 공통 레이아웃(좌우 반전 지원)
-    feature-visuals.tsx   음성/공유/언어 기능 비주얼
+    product-scroll.tsx    제품 화면 소개
     scenarios.tsx         사용 시나리오
-    quotes.tsx            인용/후기
+    pricing.tsx           요금제
+    declare.tsx           제품 선언
     faq.tsx               자주 묻는 질문
-    waitlist.tsx          대기자 신청 폼 (현재 mock 제출, 백엔드 미연동)
+    final-cta.tsx         마지막 스토어 CTA
     site-footer.tsx       푸터
 i18n/                     next-intl 라우팅/요청/내비게이션 설정
 lib/
@@ -108,9 +103,4 @@ lib/
 messages/                 ko/en/ja 카피
 ```
 
-## TODO
-
-- 대기자 폼을 실제 엔드포인트(Cloudflare Workers)와 연결 (현재 mock 제출)
-- 실제 도메인 연결 후 OG·sitemap의 `SITE_URL`(`NEXT_PUBLIC_SITE_URL`) 갱신
-- 스토어 링크 환경변수(`NEXT_PUBLIC_GOOGLE_PLAY_URL`) 설정
-- 정책 문구의 운영자/수탁사/시행일 정보를 출시 전 최종 확정
+출시 URL·스토어 링크·법무 문구의 운영 체크는 루트 문서와 `docs/legal/`에서 관리한다.

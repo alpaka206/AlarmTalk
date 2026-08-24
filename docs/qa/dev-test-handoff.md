@@ -1,83 +1,23 @@
-# Dev 테스트 핸드오프 (갱신 2026-08-11)
+# Dev 테스트 핸드오프 (갱신 2026-08-24)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
-## 0. 진행 중 — 클립 선다운로드 5단계 (2026-08-18 새벽 작업)
+## 0. 진행 중 — 클립 선다운로드 후속
 
-목표: **알람을 만들 때 쓸 클립이 전부 폰에 있다** → 라이브 생성 폴백이 필요 없어진다.
-규약은 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) 「미리 받아 둔다」 절.
+클립 선다운로드 1~5단계는 양 앱과 백엔드에서 모두 완료됐다. 라이브 랜덤 생성은
+`3929214c`에서 제거되어 알람 음성을 **사전렌더 프리셋 + 직접 입력** 두 경로로만 만든다.
+현재 규약과 구현 지도는 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md)를 본다.
 
-| 단계 | 상태 | 커밋 |
-| --- | --- | --- |
-| 1. 클론도 사전렌더를 쓴다(iOS) + 세트 크기를 서버가 정한다 | **완료** | `ae0e4e7a` |
-| 2. 내가 등록한 목소리 프리셋을 선다운로드 대상에 | **완료** | `88f8180c` |
-| 3. 준비 페이지(생성+다운로드 합산 %) | **화면까지 완료** | `54394cb4` `38b74419` `ab233b06` `5a2bf4c2` |
-| 4. 관문 — 못 받은 목소리는 고를 수 없다 | **완료(양 앱)** | `bbbecc80` `cf686c2d` |
-| 5. 라이브 생성 제거 | 남음 | — |
+지금 남은 것은 **iOS 백그라운드 진행 표시 연결 하나**다. Android는 WorkManager 진행률
+알림이 동작한다. iOS는 `Shared/ClipPrefetchActivityAttributes.swift`와
+`AlarmTalkWidget/ClipPrefetchLiveActivity.swift`가 번들에 등록돼 있지만
+`StockClipPrefetcher`가 아직 Live Activity를 시작·갱신·종료하지 않는다.
 
-### 지금 남은 것 (정확히 셋)
-
-1. **안드로이드 관문 배선** — 판정·화면·파라미터는 다 있고, `VoiceAudioCard` 의
-   `onNeedsClipPreparation` / `onOpenClipPreparation` 에 **아직 아무도 값을 안 넘긴다**
-   (기본값이 '막지 않음' 이라 현재 동작은 예전 그대로). 넘길 값:
-   - 판정: iOS `needsPreparation` 과 같은 규칙 — 시스템 목소리·직접 입력·매니페스트
-     미수신은 통과, 그 외에는 `ClipReadiness` 로 그 목소리가 완전한지 본다.
-   - 화면: `ClipPreparationScreen(voices = viewModel.clipReadiness, onRetry = …)`,
-     상태 갱신은 `MainViewModel.refreshClipReadiness()`.
-2. **백그라운드 진행 표시**
-   - 안드로이드: **완료**(`23f6cac2`). 워커가 진행률 알림을 띄운다.
-   - iOS: **껍데기만 완료.** `Shared/ClipPrefetchActivityAttributes.swift` 와
-     `AlarmTalkWidget/ClipPrefetchLiveActivity.swift` 는 들어가 있고 번들에도 등록됐지만,
-     **아직 아무도 시작·갱신하지 않는다.**
-     ⚠ 막힌 지점: `StockClipPrefetcher` 에서 `Activity.update/end` 를 부르면 Swift 6
-     동시성 검사가 `sending 'activity' risks causing data races` 로 막는다(`Activity` 가
-     Sendable 이 아니다). `@MainActor` 로 감싸거나 `Task` 로 미뤄도 같은 에러다.
-     시도한 것: async 화, `Task { @MainActor in }`, 제네릭 명시 — 전부 같은 지점에서 막힘.
-     다음 시도 후보: Activity 조작만 하는 별도 `actor`/`@unchecked Sendable` 래퍼로 감싸기,
-     또는 `Activity.activities` 로 매번 찾아 쓰되 그 호출을 nonisolated 컨텍스트에 두기.
-3. **5단계: 라이브 생성 제거** — 위 둘이 끝나야 안전하다. 대상은 iOS
-   `DynamicVoiceRefreshService` + 안드로이드 동적 갱신 워커 + 편집기 라이브 폴백 +
-   서버 랜덤 생성 갈래. **한쪽만 지우면 두 앱이 갈라진다.**
-
-### 3단계에서 남은 것 — **화면**
-
-계산은 끝났다(양 앱 `ClipReadiness`, 각 8건 테스트·같은 기대값 표). 남은 것은 그리는 쪽이다.
-
-**이미 있어서 새로 만들지 않아도 되는 것** (이 목록을 먼저 볼 것 — 중복 구현 방지):
-
-| 필요한 것 | 이미 있는 것 |
-| --- | --- |
-| 진행률 값 | `ClipReadiness.percent(...)` (양 앱) |
-| 목소리별 렌더 상태 | iOS `AlarmTalkAPI.voicePrerenderStatus(id:token:)` → `{status, total}`. 안드로이드도 같은 라우트를 이미 호출한다 |
-| 다운로드 진행 | iOS `StockClipPrefetcher.state` = `.running(done:total:)`. 안드로이드 `StockClipPrefetchWorker` 가 `setProgress(progressData(done, total))` 로 이미 낸다(WorkManager 로 관찰) |
-| 퍼센트를 그리는 예 | iOS `Views/Auth/VoiceSetupView.swift` 가 `.running(done,total)` 을 이미 표시한다 — 이 화면의 표현을 재사용 |
-| 재시도 | `POST /voice/:id/prerender-retry` — 양 앱의 목소리 관리 화면 버튼이 이미 호출한다 |
-| iOS 잠금화면 진행 | `AlarmTalkWidget/AlarmLiveActivity.swift`(알람용). **같은 위젯 확장에 Activity 를 하나 더** 추가하는 형태 |
-
-**연결 순서 제안**: (1) `ClipReadiness.evaluate` 에 넣을 입력을 모으는 얇은 뷰모델
-(대상 목소리 = 기본 전부 + `ownedVoiceProfileIDs`, 카테고리, 캐시 여부) →
-(2) 그 값을 그리는 페이지 → (3) 백그라운드 진행 표시(알림 / Live Activity) → (4) 재시도 버튼.
-(1)까지 하면 4단계 관문이 바로 붙는다.
-
-- **준비 페이지**: `ClipReadiness.percent` 하나를 크게. 목소리별 진행/실패도 함께.
-- **백그라운드 진행**: 페이지를 떠나도 계속 받고, 진행률이 폰에서 보여야 한다.
-  - 안드로이드: 포그라운드 서비스 + 진행률 알림
-  - iOS: **Live Activity**(진행률 알림이 없다. 인프라는 `AlarmTalkWidget/AlarmLiveActivity.swift` 에 이미 있다)
-- **재시도**: 서버 생성 실패는 `POST /voice/:id/prerender-retry`(양 앱이 이미 호출한다 —
-  목소리 관리 화면의 버튼을 이 페이지에서도 쓴다), 다운로드 실패는 그 클립만 다시.
-- **안드로이드에 `ClipReadiness` 대응이 아직 없다** — 같은 계산을 옮기고 같은 기대값으로 테스트를 건다.
-
-### 4단계 — 관문
-- 편집기 진입 시 준비가 안 됐으면 준비 페이지로. ⚠ **알람 만들기 자체를 막지 않는다**
-  (오프라인이면 이미 받은 것으로 진행. 막는 것은 **목소리 등록**뿐).
-- **공유받은 목소리**는 선다운로드 대상이 아니다 — 알람에서 **고르는 순간** 없으면 모달 →
-  준비 페이지. 그 목소리만 잠그고 나머지로는 알람을 만들 수 있어야 한다.
-
-### 5단계 — 라이브 생성 제거
-1~4가 끝나야 판단할 수 있다. 지금 지우면 사전렌더가 안 끝난 목소리로 알람을 못 만든다.
-대상: iOS `DynamicVoiceRefreshService`(+ 안드로이드 동적 갱신 워커), 편집기의 라이브 폴백,
-서버의 랜덤 생성 갈래. **한쪽만 지우면 두 앱이 갈라진다.**
+Swift 6에서 `Activity`가 `Sendable`이 아니어서 `update/end` 전달 시 데이터 레이스 진단이
+발생한다. 기존에 `@MainActor`, `Task { @MainActor in }`, 제네릭 명시를 시도했으나 같은
+지점에서 막혔다. 다시 작업할 때는 Activity 조작을 소유하는 별도 경계에서 해결하되,
+`@unchecked Sendable`로 경고만 숨기지 말고 실제 실행 순서를 직렬화한다.
 
 ## 1. 남은 것 = 실기기 검증 체크리스트
 

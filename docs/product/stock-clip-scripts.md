@@ -133,7 +133,7 @@ variant 순서는 `CLONE_WEATHER_CONDITIONS` 와 **반드시 일치**한다.
 
 ---
 
-# 운세 (fortune) — 신규 제안, 미구현
+# 운세 (fortune) — 구현됨
 
 유료 클론과 **같은 5종**이다(`CLONE_FORTUNE_THEMES` 순서: luck / caution / wealth / health / relationship).
 variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고른 테마와 맞는다.
@@ -168,7 +168,7 @@ variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고�
 
 ---
 
-# 사랑 (love) — 신규 제안, 미구현
+# 사랑 (love) — 구현됨
 
 유료 클론과 **같은 3종**이다.
 
