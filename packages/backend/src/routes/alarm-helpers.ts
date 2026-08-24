@@ -430,9 +430,10 @@ export async function claimTargetedAlarmSlot(
     reused && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
   // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
   await executor.execute({
-    sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+    sql: `UPDATE alarms
+          SET is_active = 0, delivery_version = ?, updated_at = datetime('now')
           WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
-    args: [recipientIds[0], recipientIds[1], time, alarmId],
+    args: [crypto.randomUUID(), recipientIds[0], recipientIds[1], time, alarmId],
   });
   return { alarmId, reused, previousMessageId };
 }

@@ -61,6 +61,17 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
+function fakeExecutionCtx() {
+  const tasks: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (task: Promise<unknown>) => tasks.push(task),
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    drain: () => Promise.all(tasks),
+  };
+}
+
 function cloneForm(
   audio: Uint8Array | null,
   name: string | null,
@@ -1150,11 +1161,19 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     for (let i = 0; i < 8; i += 1) mockDB.pushResult([], 1);
     mockDB.pushResult([{ id: V1, name: '새 목소리', status: 'ready' }]);
 
-    await req(buildApp(), jsonReq('PATCH', `/vp/${V2}`, {
-      is_draft: false,
-      replace_existing: true,
-      is_shared: true,
-    }));
+    mockDB.pushResultFor('FROM plan_group_members m1', []);
+    const execution = fakeExecutionCtx();
+    const response = await buildApp().fetch(
+      jsonReq('PATCH', `/vp/${V2}`, {
+        is_draft: false,
+        replace_existing: true,
+        is_shared: true,
+      }),
+      ENV,
+      execution.ctx,
+    );
+    expect(response.status).toBe(200);
+    await execution.drain();
 
     const profileReplace = mockDB.calls.find(
       (call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?'),
@@ -1174,6 +1193,10 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     );
     expect(audioClear, '못 쓰게 된 음원 참조를 끊지 않는다').toBeDefined();
     expect(audioClear!.sql).toContain("category = 'custom'");
+    expect(
+      mockDB.calls.some((call) => call.sql.includes('FROM plan_group_members m1')),
+      '제자리 교체의 공유 변경이 그룹원 push fanout을 예약하지 않았다',
+    ).toBe(true);
   });
 });
 

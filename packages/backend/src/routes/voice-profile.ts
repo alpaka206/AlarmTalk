@@ -38,6 +38,34 @@ import {
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
+
+/** 공유 상태를 커밋한 뒤 같은 그룹 기기들의 권위 목록 재조회를 깨운다. */
+function scheduleVoiceShareChangedPush(
+  c: Context<AppEnv>,
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+): void {
+  try {
+    c.executionCtx.waitUntil(
+      (async () => {
+        const { sendVoiceShareChangedPush } = await import('../lib/fcm');
+        const memberRes = await db.execute({
+          sql: `SELECT DISTINCT m2.user_id
+                FROM plan_group_members m1
+                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+                WHERE m1.user_id = ? AND m2.user_id != ?`,
+          args: [userPk, userPk],
+        });
+        const recipients = memberRes.rows.map((row) => String(row.user_id));
+        if (recipients.length > 0) {
+          await sendVoiceShareChangedPush(db, c.env, recipients);
+        }
+      })().catch(() => {}),
+    );
+  } catch {
+    // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
+  }
+}
 // draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
@@ -950,6 +978,7 @@ voiceProfile.patch('/:id', async (c) => {
       if (!replaced.ok) {
         return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);
       }
+      if (hasShared) scheduleVoiceShareChangedPush(c, db, userPk);
       return c.json({ profile: replaced.profile, replaced: true });
     }
   }
@@ -1095,33 +1124,9 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다 — 받은 쪽이
-  // 새로고침 없이 목소리 탭에서 바로 보이게(가족 알람 push 와 동일 패턴, 실패는 무시).
-  // waitUntil 등록 필수: 미등록 fire-and-forget 은 응답 직후 워커가 종료되면 FCM 호출이
-  // 실행되기 전에 끊길 수 있다. executionCtx 없는 컨텍스트(테스트)에선 접근이 던지므로
-  // try 로 생략 — 인자 평가 전에 던져서 멤버 조회도 안 돌아 mock FIFO 도 안 밀린다.
-  if (hasShared) {
-    try {
-      c.executionCtx.waitUntil(
-        (async () => {
-          const { sendVoiceShareChangedPush } = await import('../lib/fcm');
-          const memberRes = await db.execute({
-            sql: `SELECT DISTINCT m2.user_id
-                  FROM plan_group_members m1
-                  JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-                  WHERE m1.user_id = ? AND m2.user_id != ?`,
-            args: [userPk, userPk],
-          });
-          const recipients = memberRes.rows.map((row) => String(row.user_id));
-          if (recipients.length > 0) {
-            await sendVoiceShareChangedPush(db, c.env, recipients);
-          }
-        })().catch(() => {}),
-      );
-    } catch {
-      // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
-    }
-  }
+  // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다. 일반 승격과
+  // 제자리 교체가 같은 경로를 써야 어느 한쪽의 조기 return에서 빠지지 않는다.
+  if (hasShared) scheduleVoiceShareChangedPush(c, db, userPk);
 
   return c.json({
     profile: {

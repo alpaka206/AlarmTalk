@@ -1,13 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { Hono } from 'hono';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
 
-// 실제 libSQL(인메모리) + 실제 라우트로 수신자 '그만받기'(decline)를 end-to-end 검증한다.
+// 실제 libSQL(임시 파일) + 실제 라우트로 수신자 '그만받기'(decline)를 end-to-end 검증한다.
+// received ACK는 쓰기 트랜잭션을 쓰므로 연결별 DB인 :memory: 대신 파일 DB가 필요하다.
 // 감사 A-1/A-2/A-3: 로컬 삭제는 부활하지만, 서버 decline 은 비파괴적으로 수신자에게만 배달을
 // 영구 차단해야 한다(생성자 알람은 보존, 재조회에도 되살아나지 않음).
 
 let testDb: Client;
+const DB_PATH = join(tmpdir(), `alarmtalk-alarm-decline-${process.pid}.db`);
 vi.mock('../src/lib/db', () => ({ getDB: () => testDb }));
 
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
@@ -41,7 +46,9 @@ function markReceived(id: string, userId = 'B', deliveryVersion = DELIVERY_VERSI
 }
 
 async function seed() {
-  const db = createClient({ url: ':memory:' });
+  testDb?.close();
+  for (const suffix of ['', '-shm', '-wal']) rmSync(`${DB_PATH}${suffix}`, { force: true });
+  const db = createClient({ url: `file:${DB_PATH}` });
   await runMigrations(db);
   await db.execute({
     sql: `INSERT INTO users (id, google_id, email) VALUES ('A','gA','a@x.com')`,
@@ -69,6 +76,11 @@ async function seed() {
   });
   return db;
 }
+
+afterAll(() => {
+  testDb?.close();
+  for (const suffix of ['', '-shm', '-wal']) rmSync(`${DB_PATH}${suffix}`, { force: true });
+});
 
 async function seedFamilyVoiceUploadAlarm() {
   await testDb.execute({
@@ -184,6 +196,27 @@ describe('수신자 수신 확인(received) — 서버 행 정리', () => {
       args: [ALARM_ID],
     });
     expect(row.rows.length).toBe(1);
+  });
+
+  it('ACK 삭제가 실패하면 tombstone 기록도 함께 롤백한다', async () => {
+    await testDb.execute(
+      `CREATE TRIGGER fail_received_delete BEFORE DELETE ON alarms
+       BEGIN SELECT RAISE(FAIL, 'forced delete failure'); END`,
+    );
+
+    const res = await markReceived(ALARM_ID);
+    expect(res.status).toBe(500);
+    const alarm = await testDb.execute({
+      sql: 'SELECT id FROM alarms WHERE id = ?',
+      args: [ALARM_ID],
+    });
+    const tombstone = await testDb.execute({
+      sql: `SELECT alarm_id FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = 'B'`,
+      args: [ALARM_ID],
+    });
+    expect(alarm.rows).toHaveLength(1);
+    expect(tombstone.rows).toHaveLength(0);
   });
 
   it('구버전 ACK는 같은 id로 교체된 새 알람을 지우지 않는다', async () => {
@@ -379,10 +412,12 @@ describe('철회는 목소리 기준이다', () => {
     });
     expect(gone.rows.length).toBe(0);
 
-    const { downgradedAlarms } = await revokeDeletedVoices(testDb, {
+    const { downgradedAlarms, voiceAccessRevokedUserIds } = await revokeDeletedVoices(testDb, {
       voiceProfileIds: ['vp-A'],
       ownerUserIds: ['A'],
     });
+    // 삭제를 누른 현재 기기 외에도 같은 계정의 다른 기기가 미동기화 로컬 알람을 가질 수 있다.
+    expect(voiceAccessRevokedUserIds).toEqual(['A']);
     expect(downgradedAlarms).toContainEqual({
       alarmId: ALARM_ID,
       ownerUserId: 'B',

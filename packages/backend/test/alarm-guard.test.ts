@@ -133,6 +133,7 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     });
     expect(resA.status).toBe(201);
     const idA = ((await resA.json()) as { alarm: { id: string } }).alarm.id;
+    const versionA = String((await alarmRow(idA))!.delivery_version);
 
     const resB = await postAlarm(SENDER_B, {
       time: '23:00',
@@ -146,6 +147,7 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const rowA = await alarmRow(idA);
     const rowB = await alarmRow(idB);
     expect(Number(rowA!.is_active)).toBe(0); // 이전 발신자 알람은 비활성화(교체)
+    expect(String(rowA!.delivery_version)).not.toBe(versionA); // 옛 ACK가 원격 끄기를 지우지 못함
     expect(Number(rowB!.is_active)).toBe(1); // 최신 발신 알람만 활성
     expect(String(rowB!.target_user_id)).toBe(RECIPIENT.login);
   });
@@ -184,6 +186,20 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(String(row!.delivery_version)).not.toBe(firstDeliveryVersion);
     // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
     expect(String(row!.timezone)).toBe('Asia/Seoul');
+  });
+
+  it('타깃 알람의 일반 PATCH도 전달 버전을 회전한다', async () => {
+    const created = await postAlarm(SENDER_A, {
+      time: '23:00',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+    });
+    const id = ((await created.json()) as { alarm: { id: string } }).alarm.id;
+    const before = String((await alarmRow(id))!.delivery_version);
+
+    const patched = await patchAlarm(SENDER_A, id, { snooze_minutes: 12 });
+    expect(patched.status).toBe(200);
+    expect(String((await alarmRow(id))!.delivery_version)).not.toBe(before);
   });
 
   it('수신자 본인이 만든 같은 시각 알람(target 없음)은 서버가 건드리지 않는다', async () => {
@@ -391,6 +407,8 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
       timezone: 'Asia/Seoul',
     });
     const idB = ((await rb.json()) as { alarm: { id: string } }).alarm.id;
+    const versionABeforePatch = String((await alarmRow(idA))!.delivery_version);
+    const versionBBeforePatch = String((await alarmRow(idB))!.delivery_version);
     expect(Number((await alarmRow(idA))!.is_active)).toBe(0); // B 가 A 를 교체
     expect(Number((await alarmRow(idB))!.is_active)).toBe(1);
 
@@ -398,6 +416,8 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
     expect(res.status).toBe(200);
     expect(Number((await alarmRow(idA))!.is_active)).toBe(1); // A 재활성화(슬롯 되찾음)
     expect(Number((await alarmRow(idB))!.is_active)).toBe(0); // 이전 활성(B) 비활성화
+    expect(String((await alarmRow(idA))!.delivery_version)).not.toBe(versionABeforePatch);
+    expect(String((await alarmRow(idB))!.delivery_version)).not.toBe(versionBBeforePatch);
   });
 
   it('같은 슬롯에 발신자 활성 알람이 둘이어도 PATCH 대상이 승자로 남고 나머지만 비활성화(Codex #563)', async () => {

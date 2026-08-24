@@ -834,6 +834,12 @@ alarmMutation.patch('/:id', async (c) => {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
 
+  // 타깃 알람의 서버 변경은 수신자가 봐야 할 새 전달 세대다. 옛 스냅샷 ACK가 수정된 행을
+  // 지우면 원격 끄기·시각 변경을 못 보므로 모든 PATCH에서 버전을 회전한다.
+  if (patchTargetUserId) {
+    updates.push('delivery_version = ?');
+    args.push(crypto.randomUUID());
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -870,9 +876,16 @@ alarmMutation.patch('/:id', async (c) => {
             //  행을 수정하는 PATCH 에는 부적합 — 대상이 아닌 행이 keeper 로 뽑혀 대상까지
             //  비활성화돼 두 알람이 모두 꺼지는 버그가 있었다: Codex #563.)
             await tx.execute({
-              sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+              sql: `UPDATE alarms
+                    SET is_active = 0, delivery_version = ?, updated_at = datetime('now')
                     WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
-              args: [familyReclaim.ids[0], familyReclaim.ids[1], familyReclaim.time, id],
+              args: [
+                crypto.randomUUID(),
+                familyReclaim.ids[0],
+                familyReclaim.ids[1],
+                familyReclaim.time,
+                id,
+              ],
             });
           }
           return { status: 'ok' as const, result: await updateAlarm(tx) };
@@ -1008,48 +1021,50 @@ alarmMutation.post('/:id/received', async (c) => {
   const resolved = await resolveDeclineTarget(c);
   if ('error' in resolved) return resolved.error;
   const db = getDB(c.env);
-  const senderRes = await db.execute({
-    sql: 'SELECT user_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
-    args: [resolved.id, deliveryVersion],
+  const deleted = await withWriteTransaction(db, async (tx) => {
+    const senderRes = await tx.execute({
+      sql: 'SELECT user_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
+      args: [resolved.id, deliveryVersion],
+    });
+    // 이미 지워졌거나 같은 id의 새 전달 세대로 교체됐으면 멱등 성공. 구버전 ACK가
+    // 새 알람을 지우면 수신자는 그 내용을 영영 못 받는다.
+    if (senderRes.rows.length === 0) return false;
+    const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
+    const source = await resolveAlarmVoiceRevocationSource(tx, resolved.id, deliveryVersion);
+    if (!source) return false;
+
+    // 출처 조회·tombstone·삭제는 한 쓰기 트랜잭션이다. 재전송이 중간에 끼어 옛 출처를
+    // 같은 id의 새 전달에 남기지 못하게 한다.
+    // **먼저 적고, 실패하면 지우지 않는다.** 철회가 먼저 revoked=1을 세웠다면 출처를
+    // 되살리지 않는다. 반대 순서는 revokeDeletedVoices가 이 tombstone을 찾아 철회한다.
+    await tx.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
+               sender_voice_upload, created_at, updated_at)
+            VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(alarm_id, recipient_user_id)
+            DO UPDATE SET sender_user_id = excluded.sender_user_id,
+                          voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN NULL ELSE excluded.voice_profile_id END,
+                          sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN 0 ELSE excluded.sender_voice_upload END,
+                          updated_at = datetime('now')`,
+      args: [
+        resolved.id,
+        resolved.target,
+        senderUserId,
+        source.voiceProfileId,
+        source.senderVoiceUpload ? 1 : 0,
+      ],
+    });
+    const result = await tx.execute({
+      sql: `DELETE FROM alarms
+            WHERE id = ? AND target_user_id IS NOT NULL AND delivery_version = ?`,
+      args: [resolved.id, deliveryVersion],
+    });
+    return (result.rowsAffected ?? 0) > 0;
   });
-  // 이미 지워졌거나 그 사이 같은 id의 새 전달 세대로 교체됐으면 멱등 성공. 구버전 ACK가
-  // 새 알람을 지우면 수신자는 그 내용을 영영 못 받는다.
-  if (senderRes.rows.length === 0) {
-    return c.json({ success: true, deleted: false });
-  }
-  const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
-  const source = await resolveAlarmVoiceRevocationSource(db, resolved.id, deliveryVersion);
-  // 위 SELECT 뒤에 재전송이 끼었으면 출처도 현재 세대와 일치하지 않는다. 아무 표식도 쓰지
-  // 않고 새 서버 행을 남겨 다음 pull 이 새 내용을 받게 한다.
-  if (!source) return c.json({ success: true, deleted: false });
-  // **먼저 적고, 실패하면 지우지 않는다.** 철회가 먼저 revoked=1을 세웠다면 출처를
-  // 되살리지 않는다. 반대 순서는 revokeDeletedVoices가 이 tombstone을 찾아 철회한다.
-  await db.execute({
-    sql: `INSERT INTO alarm_recipient_state
-            (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
-             sender_voice_upload, created_at, updated_at)
-          VALUES (?, ?, 0, 0, ?, ?, ?, datetime('now'), datetime('now'))
-          ON CONFLICT(alarm_id, recipient_user_id)
-          DO UPDATE SET sender_user_id = excluded.sender_user_id,
-                        voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
-                          THEN NULL ELSE excluded.voice_profile_id END,
-                        sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
-                          THEN 0 ELSE excluded.sender_voice_upload END,
-                        updated_at = datetime('now')`,
-    args: [
-      resolved.id,
-      resolved.target,
-      senderUserId,
-      source.voiceProfileId,
-      source.senderVoiceUpload ? 1 : 0,
-    ],
-  });
-  const deleted = await db.execute({
-    sql: `DELETE FROM alarms
-          WHERE id = ? AND target_user_id IS NOT NULL AND delivery_version = ?`,
-    args: [resolved.id, deliveryVersion],
-  });
-  return c.json({ success: true, deleted: (deleted.rowsAffected ?? 0) > 0 });
+  return c.json({ success: true, deleted });
 });
 
 alarmMutation.delete('/:id', async (c) => {

@@ -103,6 +103,8 @@
 
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
+  공유 on/off 푸시도 일반 승격과 제자리 교체가 같다. 교체 응답이 먼저 끝나 그룹원의 목록과
+  로컬 알람이 다음 주기까지 옛 접근권을 유지하게 두지 않는다.
 - **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
   작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
 - 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
@@ -346,6 +348,10 @@ iOS `selectedBucketDraft`).
 재시도는 404가 되고, 받은 기기의 캐시 음성을 철회할 근거가 영구히 남지 않는다. 외부
 ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 
+목소리 삭제 푸시는 그룹원뿐 아니라 **삭제한 계정 자신의 다른 기기**에도 보낸다. 현재 기기가
+로컬 정리를 했어도 다른 기기의 아직 미동기화된 알람은 서버 알람 조회로 찾을 수 없다. 단
+계정 탈퇴는 그 계정의 기기가 곧 정리되므로 `excludeOwnerUserIds`로 본인 통지를 제외한다.
+
 ⚠ **플랜 축을 받은 알람에 걸면 결제 보류(유예)에서 오발한다.** `resolvePlanAfterSuspend` 는
 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로, 카드가 잠깐 실패한 사이 파트너가 보낸
 알람의 목소리가 잠긴다. 게다가 해제는 **받는 사람이 유료가 될 때만** 돌아 영구히 남을 수
@@ -391,7 +397,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
-| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | `PATCH /voice/:id` (`is_shared` + `is_draft=false`) |
+| 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | `PATCH /voice/:id` (`is_shared` + `is_draft=false`) → `scheduleVoiceShareChangedPush`(일반 승격·제자리 교체 공용) |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

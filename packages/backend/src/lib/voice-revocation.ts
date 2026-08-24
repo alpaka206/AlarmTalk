@@ -86,9 +86,15 @@ export async function revokeDeletedVoices(
   const addTarget = (target: RevokedAlarmTarget) => {
     targets.set(`${target.alarmId}:${target.ownerUserId}`, target);
   };
-  const voiceAccessRevokedUserIds: string[] = [];
+  const excluded = new Set(excludeOwnerUserIds);
+  // 현재 기기만 로컬 cascade를 했다고 끝이 아니다. 같은 계정의 다른 기기에만 있는
+  // 미동기화 알람은 서버 행 조회로 찾을 수 없으므로 소유자도 접근권 재확인을 받아야 한다.
+  // 탈퇴처럼 계정 자체가 사라지는 경우만 excludeOwnerUserIds로 제외한다.
+  const voiceAccessRevokedUserIds = new Set(
+    voiceProfileIds.length > 0 ? ownerUserIds.filter((id) => !excluded.has(id)) : [],
+  );
   if (voiceProfileIds.length === 0 && senderVoiceOwnerUserIds.length === 0) {
-    return { downgradedAlarms: [], voiceAccessRevokedUserIds };
+    return { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
   }
 
   // ── 1. 이 목소리를 볼 수 있었던 사람 ──────────────────────────────────────────
@@ -105,7 +111,7 @@ export async function revokeDeletedVoices(
              WHERE m1.user_id IN (${oph}) AND m2.user_id NOT IN (${oph})`,
       args: [...ownerUserIds, ...ownerUserIds],
     });
-    for (const row of members.rows) voiceAccessRevokedUserIds.push(String(row.user_id));
+    for (const row of members.rows) voiceAccessRevokedUserIds.add(String(row.user_id));
   }
 
   // ── 2. 이미 전달이 끝난 알람(tombstone) ──────────────────────────────────────
@@ -159,7 +165,6 @@ export async function revokeDeletedVoices(
            WHERE ${scope}`,
     args: scopeArgs,
   });
-  const excluded = new Set(excludeOwnerUserIds);
   for (const row of liveAlarms.rows) {
     const ownerUserId = String(row.owner_user_id);
     // 주인이 곧 사라지는 계정이면 알리지 않는다 — 받을 기기가 없다.
@@ -213,7 +218,10 @@ export async function revokeDeletedVoices(
     args: scopeArgs,
   });
 
-  return { downgradedAlarms: Array.from(targets.values()), voiceAccessRevokedUserIds };
+  return {
+    downgradedAlarms: Array.from(targets.values()),
+    voiceAccessRevokedUserIds: Array.from(voiceAccessRevokedUserIds),
+  };
 }
 
 /**
