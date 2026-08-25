@@ -158,6 +158,11 @@ struct VoiceReplacementMarkerStore {
         //  - `applied` 보다 **뒤 세대**의 칸: 남긴다 — 그게 진짜 '아직 반영 안 됨' 이다.
         let appliedField = appliedKey(userID, profileID)
         let settledBox = SettledBox()
+        // ⚠ **스냅샷 이후에 얹힌 것은 건드리지 않는다**(Codex #703 P1). 확정은 비동기 예약
+        // 정리가 끝난 뒤에 오는데, 그 사이 다른 신호가 **새 칸을 얹거나 기존 칸에 id 를
+        // 더할 수 있다.** 그것들은 이 회차가 확인한 적이 없으므로 지우면 재시도 근거가
+        // 사라진다 — 지울 대상은 **내가 스냅샷에서 본 그 id 들**뿐이다.
+        let snapshot = buckets
         return PendingApply(
             profileID: profileID,
             degraded: degraded,
@@ -167,8 +172,18 @@ struct VoiceReplacementMarkerStore {
                     commit()
                     var latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
                     let applied = defaults.string(forKey: appliedField) ?? ""
-                    latest = latest.filter { generation, _ in
-                        generation != mine && !generation.isEmpty && generation > applied
+                    for (generation, snapshotIDs) in snapshot {
+                        // 이 확정으로 끝난 칸인가 — 내 칸, 세대 없는 칸(스스로는 영영 못
+                        // 비운다), 그리고 `applied` 이하로 밀려난 옛 칸.
+                        let settled = generation == mine || generation.isEmpty || generation <= applied
+                        guard settled else { continue }
+                        // **스냅샷에서 본 id 만** 뺀다 — 그 뒤에 더해진 id 는 남긴다.
+                        let remainingIDs = (latest[generation] ?? []).filter { !snapshotIDs.contains($0) }
+                        if remainingIDs.isEmpty {
+                            latest.removeValue(forKey: generation)
+                        } else {
+                            latest[generation] = remainingIDs
+                        }
                     }
                     if latest.isEmpty {
                         defaults.removeObject(forKey: key)
@@ -277,15 +292,30 @@ struct VoiceReplacementMarkerStore {
     }
 
     /// 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다.
+    /// 이 세대를 지금 반영해야 하는가.
+    ///
+    /// ⚠ **판정은 '봤다' 가 아니라 '반영했다' 기준이다**(Codex #703 P1 — 2026-08-25 설계 정정).
+    /// 예전에는 `seen` 하나만 보고 `incoming > seen` 으로 갈랐는데, `seen` 은 확정할 때도 함께
+    /// 올라갔다. 그래서 **강등이 실패한 세대**도 `seen` 은 이미 그 값이라 다음 회차부터
+    /// '바뀐 것 없음' 이 되어 **영영 재시도되지 않았다** — 재시작하면 메모리 표시도 사라져,
+    /// 회수된 목소리를 문 알람이 그대로 남고 그 목소리를 다시 고를 수도 있게 된다.
+    ///
+    /// 두 값의 역할을 갈랐다:
+    ///  - `seen`: **처음 본 세대**(설치·업그레이드 직후의 기준선). **한 번만 쓴다.**
+    ///    첫 조회를 '바뀌었다' 로 읽으면 모든 설치가 직접 입력 알람을 날리므로 필요하다.
+    ///  - `applied`: **확정한 세대.** 확정은 강등과 예약 정리가 모두 끝나야 일어난다.
+    ///
+    /// 그래서 반영하지 못한 세대는 `applied` 가 그대로라 **끝날 때까지 매 회차 다시 집힌다.**
     private func changedLocked(_ userID: String, _ profileID: String, _ invalidatedAt: String?) -> Bool {
         let key = seenKey(userID, profileID)
         let incoming = invalidatedAt ?? ""
-        guard let previous = defaults.string(forKey: key) else {
+        guard let baseline = defaults.string(forKey: key) else {
             defaults.set(incoming, forKey: key)
             return false
         }
-        // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
-        return incoming > previous
+        // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다.
+        let applied = defaults.string(forKey: appliedKey(userID, profileID)) ?? ""
+        return incoming > baseline && incoming > applied
     }
 
     /// 이미 반영한 세대인가. **같은 값만 보면 안 된다** — 교체가 두 번 일어난 뒤 앞선 세대의
@@ -296,11 +326,13 @@ struct VoiceReplacementMarkerStore {
     }
 
     /// 앞선 세대로 되돌리지 않는다.
+    ///
+    /// ⚠ **`seen` 은 건드리지 않는다**(2026-08-25 설계 정정). 그건 '처음 본 기준선' 이라
+    /// 한 번만 쓴다 — 확정할 때 함께 올리면 **실패한 세대가 '이미 본 것'** 이 되어 다음
+    /// 회차부터 재시도되지 않는다(`changedLocked` 주석).
     private func commitLocked(_ userID: String, _ profileID: String, _ invalidatedAt: String?) {
         let value = invalidatedAt ?? ""
-        let seen = seenKey(userID, profileID)
         let applied = appliedKey(userID, profileID)
-        defaults.set(max(value, defaults.string(forKey: seen) ?? ""), forKey: seen)
         defaults.set(max(value, defaults.string(forKey: applied) ?? ""), forKey: applied)
     }
 

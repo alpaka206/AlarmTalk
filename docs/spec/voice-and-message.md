@@ -524,6 +524,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
 | 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | `confirmIfReservationsSettled` 가 **실패하는 한 곳**에서 `suppressReplacedProfile` | — |
+| '봤다' 와 '반영했다' | — | `seen`=처음 본 기준선(**한 번만 씀**) / `applied`=확정한 세대. 재시도 판정은 **applied 기준** | `custom_audio_invalidated_at` |
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
 | 변화 없는 회차도 확인은 잇는다 | — | `applyIfChanged` — 바뀐 게 없어도 남은 칸이 있으면 **확인만** 이어서 한다 | — |
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |

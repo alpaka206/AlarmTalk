@@ -1159,7 +1159,11 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **목록에서 빼는 것이 아니라 '고를 수 없음' 이다**(2026-08-25 지시). 감추면
     /// 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 흐리게
     /// 그린 뒤 이유를 말한다.
-    private(set) var replacementSuppressedProfileIDs: Set<String> = []
+    /// ⚠ **`@Published` 여야 한다**(Codex #703 P2). 이 값은 목록 행의 흐림·저장 게이트·
+    /// 배너를 모두 좌우하는데, 푸시 경로의 정리는 새로고침이 끝난 **뒤에** 이 집합만
+    /// 바꾼다 — 관측되지 않으면 이미 열려 있는 편집기가 옛 상태(고를 수 있음·배너 없음)를
+    /// 계속 그린다. 저장은 탭 시점 판정이 막지만, 화면이 그 이유를 말하지 못한다.
+    @Published private(set) var replacementSuppressedProfileIDs: Set<String> = []
 
     /// 서버가 준 목록 **그대로**(가리기 전). 강등·표식 판정은 언제나 이걸 본다.
     private(set) var authoritativeProfiles: [VoiceProfile] = []

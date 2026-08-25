@@ -110,6 +110,44 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         )
     }
 
+    /// ⚠ **반영하지 못한 세대는 끝날 때까지 매 회차 다시 집힌다**(Codex #703 P1).
+    /// 예전에는 `seen` 이 확정할 때 함께 올라가, 강등이 **실패한** 세대도 다음 회차부터
+    /// '바뀐 것 없음' 이 되어 영영 재시도되지 않았다 — 재시작하면 메모리 표시도 사라져
+    /// 회수된 목소리를 문 알람이 그대로 남는다.
+    func test_반영하지_못한_세대는_계속_다시_집힌다() {
+        let store = store()
+        // 첫 조회는 기준선만 적는다(강등하지 않는다).
+        _ = store.applyIfChanged(userID: "u-retry", profileID: "vp", invalidatedAt: "2026-08-25 01:00:00") { [] }
+
+        // 새 세대가 왔는데 **강등이 실패**한다(nil) — 확정되지 않는다.
+        let failed = store.applyIfChanged(
+            userID: "u-retry",
+            profileID: "vp",
+            invalidatedAt: "2026-08-25 02:00:00"
+        ) { nil }
+        XCTAssertTrue(failed.failed, "실패는 프로필 id 와 함께 돌아와야 한다")
+
+        // 같은 세대가 다음 회차에 **다시 집혀야** 한다.
+        var retried = false
+        let second = store.applyIfChanged(
+            userID: "u-retry",
+            profileID: "vp",
+            invalidatedAt: "2026-08-25 02:00:00"
+        ) { retried = true; return ["a1"] }
+        XCTAssertTrue(retried, "확정하지 못한 세대가 '이미 본 것' 으로 묻히면 영영 회수되지 않는다")
+        XCTAssertEqual(second.degraded, ["a1"])
+
+        // 확정한 뒤에는 지나간다.
+        _ = second.confirm()
+        var thirdRan = false
+        _ = store.applyIfChanged(
+            userID: "u-retry",
+            profileID: "vp",
+            invalidatedAt: "2026-08-25 02:00:00"
+        ) { thirdRan = true; return [] }
+        XCTAssertFalse(thirdRan, "확정한 세대를 또 내리면 새 목소리로 만든 알람이 벗겨진다")
+    }
+
     /// ⚠ 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다 — 뒤 세대로 만든 알람을
     /// 지우면 안 된다.
     func test_앞선_세대의_푸시는_이미_처리한_것으로_본다() {
