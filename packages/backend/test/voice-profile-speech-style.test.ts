@@ -552,8 +552,13 @@ describe('GET /:id/prerender-status — 사전렌더 준비 상태', () => {
     expect(body.generated).toBe(21);
     const countCall = mockDB.calls.find((call) => call.sql.includes('FROM messages'));
     expect(countCall).toBeDefined();
-    expect(countCall!.sql).toContain('COALESCE(is_preset, 0) = 1');
+    expect(countCall!.sql).toContain('COALESCE(m.is_preset, 0) = 1');
     expect(countCall!.sql).toContain('audio_url IS NOT NULL');
+    // ⚠ **교체 회차는 '지금 목소리로 만든 것' 만 센다**(Codex #703 P2).
+    // `refresh_existing = 1` 은 옛 클립을 그대로 둔 채 다시 굽는 방식이라, 개수만 세면
+    // 첫 조회부터 만점이 나와 앱이 '준비 100%' 를 띄운다.
+    expect(countCall!.sql).toContain('provider_voice_id');
+    expect(countCall!.sql).toContain('refresh_existing');
     expect(countCall!.args).toContain(V1);
   });
 

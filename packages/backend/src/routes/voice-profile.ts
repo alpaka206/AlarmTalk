@@ -2383,8 +2383,30 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
 
   const [generatedRes, queueRes] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as count FROM messages
-            WHERE voice_profile_id = ? AND COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
+      // ⚠ **교체 회차는 '지금 목소리로 만든 것' 만 센다**(Codex #703 P2).
+      // `refresh_existing = 1` 은 옛 클립을 **그대로 둔 채** 다시 굽는 방식이라, 개수만
+      // 세면 첫 조회부터 21/21 이 나온다 — iOS 는 '준비 100%' 를 띄우고 안드로이드는
+      // 서버 생성 구간(진행바 앞 절반)을 통째로 먼저 채운다. 게시된 자산의 provider
+      // 보이스가 지금 프로필의 것과 같은 클립만 센다(`advance` 의 `countGenerated`·
+      // `findMissingStockTargets` 의 완료 판정과 같은 기준).
+      //
+      // 첫 등록(재렌더 아님)에는 옛 클립이 없으므로 이 조건이 결과를 바꾸지 않는다.
+      // 다만 `provider_voice_id` 가 비어 있던 시절의 행은 세지 못하므로, **재렌더일
+      // 때만** 좁힌다 — 안 그러면 옛 목소리의 진행률이 0 에서 멈춘 것처럼 보인다.
+      sql: `SELECT COUNT(DISTINCT m.id) as count
+              FROM messages m
+              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+              LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
+             WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
+               AND m.audio_url IS NOT NULL
+               AND (
+                 COALESCE(q.refresh_existing, 0) = 0
+                 OR EXISTS (
+                   SELECT 1 FROM generated_audio_assets ga
+                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                      AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                 )
+               )`,
       args: [id],
     }),
     db.execute({

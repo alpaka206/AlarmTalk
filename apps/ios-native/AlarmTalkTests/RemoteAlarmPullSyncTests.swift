@@ -93,18 +93,20 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             existing: existing,
             deliveryVersion: "0123456789abcdef0123456789abcdef"
         ))
-        XCTAssertTrue(RemoteAlarmPullSync.isLegacyBackfilledDelivery(
-            existing: existing,
-            deliveryVersion: "0123456789abcdef0123456789abcdef"
-        ))
         XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
             existing: existing,
             deliveryVersion: "11111111-1111-4111-8111-111111111111"
         ))
-        XCTAssertFalse(RemoteAlarmPullSync.isLegacyBackfilledDelivery(
-            existing: existing,
-            deliveryVersion: "11111111-1111-4111-8111-111111111111"
-        ))
+        // ⚠ **세대 형식으로 가르지 않는다**(Codex #703 P2). 적용 세대를 모르는 편집본은
+        // 구형 backfill(32자리 hex)이든 지금 세대(UUID)든 **같은 복구**를 거친다 —
+        // 형식으로 가르면 일반 세대가 영영 ACK 되지 못하고 서버 행과 음원이 남는다.
+        XCTAssertTrue(RemoteAlarmPullSync.deliveryVersionUnknownLocally(existing))
+        var applied = existing
+        applied.remoteDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+        XCTAssertFalse(
+            RemoteAlarmPullSync.deliveryVersionUnknownLocally(applied),
+            "적용 세대를 아는 행은 이 복구 대상이 아니다"
+        )
     }
 
     func test_legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {

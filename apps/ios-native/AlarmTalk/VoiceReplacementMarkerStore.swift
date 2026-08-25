@@ -67,7 +67,10 @@ struct VoiceReplacementMarkerStore {
                 commitLocked(userID, profileID, invalidatedAt)
             }
         }
-        guard let degraded = degrade() else { return .failure(profileID: profileID) }
+        guard let degraded = degrade() else {
+            markRetryLocked(userID, profileID, invalidatedAt)
+            return .failure(profileID: profileID)
+        }
         return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, degraded) {
             commitLocked(userID, profileID, invalidatedAt)
         }
@@ -90,7 +93,10 @@ struct VoiceReplacementMarkerStore {
         defer { Self.lock.unlock() }
         let generation = invalidatedAt?.nilIfBlank
         if let generation, hasAppliedLocked(userID, profileID, generation) { return .nothing }
-        guard let degraded = degrade() else { return .failure(profileID: profileID) }
+        guard let degraded = degrade() else {
+            markRetryLocked(userID, profileID, invalidatedAt)
+            return .failure(profileID: profileID)
+        }
         guard let generation else {
             // 세대를 모르는 옛 신호는 반영만 하고 **확정하지 않는다**(무엇을 봤는지 모른다).
             // ⚠ 그래도 **미확인 목록은 디스크에 남긴다**(Codex #703 P1). 메모리에만 두면
@@ -315,7 +321,20 @@ struct VoiceReplacementMarkerStore {
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다.
         let applied = defaults.string(forKey: appliedKey(userID, profileID)) ?? ""
-        return incoming > baseline && incoming > applied
+        guard incoming > applied else { return false }
+        // ⚠ **기준선과 같은 세대라도 '시도했다 실패한' 것이면 다시 집는다**(Codex #703 P1).
+        // 목록이 먼저 도착해 그 세대를 기준선으로 적어 둔 뒤, **같은 푸시**의 반영이
+        // 실패하면 그 세대는 `incoming > baseline` 을 영영 통과하지 못한다 — `applied` 는
+        // 비어 있는데도 다시 집을 길이 없어, 회수된 목소리가 예약된 채 남고 재시작하면
+        // 메모리의 '정리 중' 표시마저 사라진다.
+        if incoming == defaults.string(forKey: retryKey(userID, profileID)) { return true }
+        return incoming > baseline
+    }
+
+    /// 반영에 실패해 **다시 집어야 하는** 세대. 확정하면 지운다.
+    private func markRetryLocked(_ userID: String, _ profileID: String, _ generation: String?) {
+        guard let generation = generation?.nilIfBlank else { return }
+        defaults.set(generation, forKey: retryKey(userID, profileID))
     }
 
     /// 이미 반영한 세대인가. **같은 값만 보면 안 된다** — 교체가 두 번 일어난 뒤 앞선 세대의
@@ -334,6 +353,10 @@ struct VoiceReplacementMarkerStore {
         let value = invalidatedAt ?? ""
         let applied = appliedKey(userID, profileID)
         defaults.set(max(value, defaults.string(forKey: applied) ?? ""), forKey: applied)
+        // 반영했으니 재시도 표시는 지운다(그 세대든 그보다 앞선 것이든 끝났다).
+        if let retry = defaults.string(forKey: retryKey(userID, profileID)), retry <= value {
+            defaults.removeObject(forKey: retryKey(userID, profileID))
+        }
     }
 
     /// 저장소는 값 타입이라 호출부마다 새로 만들어진다 — 락은 **타입 단위**여야 한다.
@@ -342,11 +365,15 @@ struct VoiceReplacementMarkerStore {
     private static let pendingPrefix = "voice_replaced_pending_"
     private static let seenPrefix = "voice_replaced_seen_"
     private static let appliedPrefix = "voice_replaced_applied_"
+    private static let retryPrefix = "voice_replaced_retry_"
     private func seenKey(_ userID: String, _ profileID: String) -> String {
         "\(Self.seenPrefix)\(userID):\(profileID)"
     }
     private func appliedKey(_ userID: String, _ profileID: String) -> String {
         "\(Self.appliedPrefix)\(userID):\(profileID)"
+    }
+    private func retryKey(_ userID: String, _ profileID: String) -> String {
+        "\(Self.retryPrefix)\(userID):\(profileID)"
     }
     private func pendingKey(_ userID: String, _ profileID: String) -> String {
         "\(Self.pendingPrefix)\(userID):\(profileID)"

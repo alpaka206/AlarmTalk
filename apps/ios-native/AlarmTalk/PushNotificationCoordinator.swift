@@ -358,6 +358,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **빈 회차를 그냥 확정하지 말 것.** 지난 회차에서 강등은 됐는데 예약 정리가
             // 실패했다면 그 행들은 이미 톤이라 다시 강등 대상이 아니다 — `unverified` 로
             // 넘어온 그 행들의 예약을 확인한 뒤에야 확정할 수 있다.
+            // 위와 같은 이유 — 비동기 정리에 들어가기 전에 먼저 가린다.
+            if !pending.profileID.isEmpty, !pending.degraded.isEmpty || pending.failed {
+                deps.voiceStudio.suppressReplacedProfile(pending.profileID)
+            }
             // ⚠ **실패한 회차는 반드시 확정 함수를 거친다**(Codex #703 P1). 강등이 실패하면
             // 내린 것도 확인할 것도 없어 아래 빈 회차 갈래로 새는데, 거기서 그냥 `confirm()`
             // 하면 **아무 표시도 남기지 않고** 끝난다 — 그 목소리가 확정 없이 고를 수 있는
@@ -452,6 +456,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                     // ⚠ 그 사이 계정이 바뀌었으면 확정하지 않는다 — 소유자 불일치로 돌려받은
                     // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
                     return deps.auth.session?.user.id == ownerID ? ids : nil
+                }
+                // ⚠ **비동기 정리 전에 먼저 가린다**(Codex #703 P1). 아래 예약 정리는
+                // `await` 이라, 그 사이 **이미 열려 있는 편집기**가 이 목소리로 알람을
+                // 저장할 수 있다 — 정리가 실패하면 다음 회차가 그 새 알람까지 벗긴다.
+                // 확정에 성공하면 `confirmIfReservationsSettled` 가 곧바로 푼다.
+                if !pending.profileID.isEmpty, !pending.degraded.isEmpty || pending.failed {
+                    deps.voiceStudio.suppressReplacedProfile(pending.profileID)
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += pending.degraded.count
