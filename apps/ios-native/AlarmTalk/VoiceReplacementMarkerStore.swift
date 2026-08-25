@@ -56,7 +56,7 @@ struct VoiceReplacementMarkerStore {
         defer { Self.lock.unlock() }
         guard changedLocked(userID, profileID, invalidatedAt) else { return .nothing }
         guard let degraded = degrade() else { return .nothing }
-        return pendingApply(userID, profileID, degraded) {
+        return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, degraded) {
             commitLocked(userID, profileID, invalidatedAt)
         }
     }
@@ -83,7 +83,7 @@ struct VoiceReplacementMarkerStore {
             // 세대를 모르는 옛 신호는 반영만 하고 확정하지 않는다.
             return PendingApply(profileID: profileID, degraded: degraded, unverified: degraded, commit: nil)
         }
-        return pendingApply(userID, profileID, degraded) {
+        return pendingApply(userID, profileID, generation: generation, degraded) {
             commitLocked(userID, profileID, generation)
         }
     }
@@ -100,26 +100,43 @@ struct VoiceReplacementMarkerStore {
     private func pendingApply(
         _ userID: String,
         _ profileID: String,
+        generation: String?,
         _ degraded: [String],
         commit: @escaping () -> Void
     ) -> PendingApply {
         let key = pendingKey(userID, profileID)
-        let carried = defaults.stringArray(forKey: key) ?? []
-        let unverified = carried + degraded.filter { !carried.contains($0) }
-        if unverified != carried { defaults.set(unverified, forKey: key) }
+        // ⚠ **세대별로 나눠 들고 있는다**(Codex #703 P1). 한 배열에 섞으면 어느 순서로든
+        // 사고가 난다: 앞 세대가 먼저 확정하며 통째로 비우면 뒤 세대의 목록이 사라지고,
+        // 반대로 늦게 온 옛 세대가 뒤 세대의 id 를 **자기 것으로 주워** 확정하며 지워도
+        // 같다. 어느 쪽이든 그 세대는 강등할 행이 없어(이미 톤이다) 다음 회차가 예약을
+        // 확인하지 않은 채 확정한다 — 실패했던 예약이 회수된 목소리를 그대로 물고 남는다.
+        //
+        // **확인은 전부, 제거는 내 것만.** 확인은 읽기라 남의 세대 것을 함께 봐도 해가 없고
+        // (오히려 봐야 한다), 지우는 것만 자기 칸으로 한정한다.
+        let mine = generation ?? ""
+        var buckets = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
+        // 세대별로 나누기 **전에** 적어 둔 값은 평평한 배열이다 — 업그레이드 도중에 미확인
+        // 목록을 잃지 않도록 세대 없는 칸으로 옮긴다(그 칸은 옛 신호와 같은 취급이다).
+        if buckets.isEmpty, let legacy = defaults.stringArray(forKey: key), !legacy.isEmpty {
+            buckets[""] = legacy
+        }
+        let carriedMine = buckets[mine] ?? []
+        let updatedMine = carriedMine + degraded.filter { !carriedMine.contains($0) }
+        if updatedMine != carriedMine {
+            buckets[mine] = updatedMine
+            defaults.set(buckets, forKey: key)
+        }
+        // 확인 대상은 **모든 세대**의 합집합이다(중복 제거, 순서 유지).
+        var seen = Set<String>()
+        let unverified = buckets.keys.sorted().flatMap { buckets[$0] ?? [] }.filter { seen.insert($0).inserted }
         return PendingApply(profileID: profileID, degraded: degraded, unverified: unverified) { [defaults] in
             commit()
-            // ⚠ **이 회차가 확인한 id 만 지운다 — 키를 통째로 비우지 말 것**(Codex #703 P1).
-            // 같은 프로필의 **다음 세대**가 앞 세대의 확인을 기다리는 동안 같은 키에 자기
-            // id 를 얹는다. 앞 세대가 먼저 확정하며 키를 비우면 **뒤 세대의 미확인 목록이
-            // 사라지고**, 그 세대는 강등할 행이 남아 있지 않아(이미 톤이다) 다음 회차가
-            // 예약을 확인하지 않은 채 그냥 확정한다 — 실패했던 예약이 회수된 목소리를
-            // 그대로 물고 남는다.
-            let remaining = (defaults.stringArray(forKey: key) ?? []).filter { !unverified.contains($0) }
-            if remaining.isEmpty {
+            var latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
+            latest.removeValue(forKey: mine)
+            if latest.isEmpty {
                 defaults.removeObject(forKey: key)
             } else {
-                defaults.set(remaining, forKey: key)
+                defaults.set(latest, forKey: key)
             }
         }
     }

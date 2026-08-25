@@ -111,12 +111,22 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
             // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
             for ((profileId, invalidatedAt) in markerCandidates) {
                 var degradedNow = 0
-                markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
+                val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
                     degradedNow =
                         repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
                     // 그 사이 계정이 바뀌었으면 확정하지 않는다 — 저장소가 소유자 불일치로
                     // 돌려준 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
                     if (authSession?.user?.id == listOwner) degradedNow else null
+                }
+                // ⚠ **'정리 중' 표시를 여기서 올리고 내린다**(Codex #703 P1). 승격 경로만
+                // 표시를 올리면 두 가지가 어긋난다: 이 새로고침이 재시도에 **성공해도** 표시가
+                // 남아 그 목소리를 프로세스가 끝날 때까지 못 고르고, 반대로 재시작하면 표시가
+                // (메모리 전용이라) 비어 있어 **재시도 전에 잠깐 고를 수 있게** 된다 —
+                // 그때 만든 알람을 그 재시도가 벗긴다.
+                settlingVoiceProfileIds = if (result.persisted) {
+                    settlingVoiceProfileIds - profileId
+                } else {
+                    settlingVoiceProfileIds + profileId
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += degradedNow

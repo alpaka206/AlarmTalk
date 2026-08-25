@@ -304,6 +304,18 @@ internal class RemoteAlarmPullSyncService(
                                     cachedAudio = cachedAudio,
                                 )
                                 if (recovered != current) alarmDao.upsert(recovered)
+                                // ⚠ **못 붙인 음원은 여기서 정리한다**(Codex #703 P2).
+                                // 수신자가 이미 자기 음원을 연결해 둔 행은 복구가 **일부러
+                                // 그대로 두는데**(`linkRecoveredLegacyRemoteAudio` 가 `current`
+                                // 를 그대로 돌려준다), 그 직전에 내려받은 발신자 음원은 어느
+                                // 행도 가리키지 않은 채 남는다 — ACK 로 서버 행까지 사라지면
+                                // 30일 낡은 캐시 정리(`STALE_CACHE_MAX_AGE_MILLIS`)까지
+                                // **남의 생체 음원이 디스크에 그대로** 있다.
+                                // 붙은 경우에는 행이 참조하므로 이 호출이 지우지 않는다.
+                                alarmAudioStore.deleteCachedAudioIfUnreferenced(
+                                    alarmDao,
+                                    cachedAudio?.cacheKey,
+                                )
                                 val legacyScheduleSucceeded = !recovered.enabled ||
                                     runCatching { alarmScheduler.schedule(recovered) }
                                         .onFailure { error ->

@@ -47,7 +47,15 @@ final class BackgroundDependencies {
     ) async -> Bool {
         var settled = true
         for id in pending.unverified {
-            // 사라진 행은 확인할 것이 없다.
+            // ⚠ **행이 사라져도 그 행이 남긴 예약은 남는다**(Codex #703 P1). 강등 재예약이
+            // 옛 손잡이를 회수 목록에 남긴 뒤 사용자가 그 알람을 지우면(지금 손잡이 취소는
+            // 성공했으므로 삭제는 통과한다) 옛 고아는 **어느 행도 가리키지 않은 채** 남는다.
+            // 행이 없다고 건너뛰면 그대로 확정되어, 아무도 못 끄는 예약이 회수된 목소리로
+            // 운다. 주인 행 id 는 회수 목록에 적혀 있으므로 행 없이도 되짚을 수 있다.
+            if await alarmKit.releaseOwedHandles(forAlarmID: id, store: alarmStore) == false {
+                settled = false
+            }
+            // 사라진 행은 그 밖에 확인할 것이 없다.
             guard let record = alarmStore.record(id: id) else { continue }
             // ⚠ **지문이 없던 시절의 예약은 리컨사일러가 건너뛴다.**
             // `needsReschedule` 은 `scheduledSoundFingerprint == nil` 이면 false 를 돌려주는데
@@ -93,12 +101,23 @@ final class BackgroundDependencies {
             // 리컨사일러가 다시 걸고 옛 손잡이 취소에 실패하면, 행에는 **새 톤 지문**이
             // 새겨져 `needsReschedule` 이 "맞았다" 고 답한다 — 그대로 확정하면 회수된
             // 목소리를 문 옛 예약이 살아 있는 채로 그 목소리가 다시 고를 수 있게 된다.
-            // 지문이 없던 갈래만이 아니라 **모든 행**에 대해 회수 목록을 확인한다.
-            if await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: alarmStore) == false {
-                settled = false
-            }
+            // 회수 목록 확인은 **루프 첫머리에서 행 유무와 무관하게** 이미 했다.
         }
-        guard settled, auth.session?.user.id == ownerID else { return false }
+        // ⚠ **예약을 맞춘 결과가 디스크에 남아야 확정이다**(Codex #703 P1). `schedule` 은
+        // `markScheduled` 로 새 손잡이·지문을 행에 적지만 그 저장은 **비동기 Task 만 띄운다** —
+        // 백그라운드 실행이 그 전에 끝나면 다음 실행은 **옛 손잡이와 옛 지문**을 다시 읽는다.
+        // 표식은 이미 확정된 뒤라 그 세대를 다시 집지 않고, 지문이 없던 행은 리컨사일러가
+        // 일부러 건너뛰므로 **새로 건 예약이 영영 관리 밖으로 떨어진다.**
+        if settled, alarmStore.saveNow() == false { settled = false }
+        guard settled, auth.session?.user.id == ownerID else {
+            // ⚠ **실패하면 그 목소리를 계속 '정리 중' 으로 둔다**(Codex #703 P1).
+            // 예전에는 승격 화면만 이 처리를 했는데, 이 함수는 **푸시·새로고침 훅**도 부른다 —
+            // 다른 기기나 공유받은 목소리의 교체가 여기서 실패하면 그 목소리가 그대로 고를 수
+            // 있는 채 남고, 그때 만든 알람을 다음 재시도가 되돌릴 수 없이 벗긴다.
+            // 판정을 호출부마다 두면 언젠가 빠뜨리므로 **실패하는 이 한 곳**에 둔다.
+            if !pending.profileID.isEmpty { voiceStudio.suppressReplacedProfile(pending.profileID) }
+            return false
+        }
         pending.confirm()
         // 정리가 끝났으니 그 목소리를 다시 고를 수 있다.
         if !pending.profileID.isEmpty { voiceStudio.releaseReplacedProfile(pending.profileID) }

@@ -522,6 +522,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
+| 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | `confirmIfReservationsSettled` 가 **실패하는 한 곳**에서 `suppressReplacedProfile` | — |
+| 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
 | 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·배너) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
 | 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `clearSameTimeConflicts` — 끄고 예약 취소, **실패하면 ACK 보류** | — |
