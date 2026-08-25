@@ -135,9 +135,7 @@ struct RootView: View {
         // 지워지지 않는다(지우는 건 '확인' 뿐) — 잘못 떠서 잃을 것이 없다.
         .task(id: promoGateKey) { evaluateDowngradeNotice() }
         .alert(
-            downgradeNotice?.cause == .freePlan
-                ? "무료 이용권으로 바뀌었어요"
-                : "공유 이용권에서 나가게 됐어요",
+            downgradeNoticeTitle(downgradeNotice?.cause),
             isPresented: Binding(
                 get: { downgradeNotice != nil },
                 // ⚠ 바깥 탭·취소로 닫아도 **지우지 않는다** — 실수로 닫았을 수 있다.
@@ -150,13 +148,10 @@ struct RootView: View {
                 downgradeNotice = nil
             }
         } message: { notice in
-            // ⚠ **두 원인의 결말이 다르다.** 무료 강등은 이용권을 다시 등록하면 돌아오지만,
-            // 공유 해제는 **돌아오지 않는다** — 같은 말로 뭉치면 기다리면 될 줄 안다.
-            Text(
-                notice.cause == .freePlan
-                    ? "목소리 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
-                    : "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
-            )
+            // ⚠ **세 원인의 결말이 다르다.** 무료 강등은 이용권을 다시 등록하면 돌아오지만,
+            // 공유 해제는 **돌아오지 않고**(다시 공유받아야 한다), 목소리 교체는 이용권과
+            // 아예 무관하다 — 같은 말로 뭉치면 기다리거나 결제하면 될 줄 안다.
+            Text(downgradeNoticeMessage(notice))
         }
         // ⚠ **알럿형 카드로 되돌리지 말 것**(2026-08-18 지시로 시트가 됐다). 이유는
         // `WelcomePromoSheet` 주석에 있다 — 닫아도 되는 안내이고, 액션이 셋이라 알럿에서는
@@ -248,6 +243,28 @@ struct RootView: View {
     ///  - 이 계정에 아직 안 띄웠을 것
     /// 노출과 동시에 '봤음' 을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
     /// 대기표에 적힌 강등 안내가 있으면 모달을 연다. 조건은 웰컴 프로모와 같다.
+    /// ⚠ 반환 타입이 `LocalizedStringKey` 여야 `.alert(_:)`·`Text(_:)` 가 **번역 카탈로그를
+    /// 본다.** `String` 을 돌려주면 비-지역화 오버로드에 묶여, 카탈로그에 en·ja 를 넣어도
+    /// 한국어 그대로 나온다(고쳐도 안 고쳐지는 것처럼 보인다).
+    private func downgradeNoticeTitle(_ cause: DowngradeNoticeStore.Cause?) -> LocalizedStringKey {
+        switch cause {
+        case .freePlan: return "무료 이용권으로 바뀌었어요"
+        case .voiceReplaced: return "새 목소리로 바뀌었어요"
+        default: return "공유 이용권에서 나가게 됐어요"
+        }
+    }
+
+    private func downgradeNoticeMessage(_ notice: DowngradeNoticeStore.Notice) -> LocalizedStringKey {
+        switch notice.cause {
+        case .freePlan:
+            return "목소리 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
+        case .voiceReplaced:
+            return "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요."
+        case .sharedReleased:
+            return "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
+        }
+    }
+
     private func evaluateDowngradeNotice() {
         guard auth.consentStatusChecked, versionGate.checked, !blockingGateActive else { return }
         let notice = DowngradeNoticeStore().read(userID: auth.session?.user.id)

@@ -101,8 +101,8 @@ class AlarmRepository(
      * 음성 다운로드)를 락 밖에 두므로 이 락이 오래 잡히지 않는다.
      *
      * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
-     * 추가할 것. (지금은 [degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile]
-     * 이 공통 private 인 [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
+     * 추가할 것. (지금은 공개 강등 진입점이 전부 공통 private 인
+     * [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
      * 이중 획득이 없다. [pullReceivedAlarms] 도 이 락을 잡은 채로 불리지 않는다 — 잠금 순서는
      * 항상 pullMutex → restoreMutex 한 방향이라 순환이 없다.)
      */
@@ -794,9 +794,34 @@ class AlarmRepository(
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
+    /**
+     * **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람으로 내린다.
+     *
+     * 삭제와 다른 점이 하나 있다: **프리셋(버킷) 알람은 살린다.** 서버가 같은 message id 로
+     * 새 목소리를 다시 만들어 게시하므로(`voice_prerender_queue.refresh_existing`) 여기서
+     * 벗기면 되돌릴 수 없이 잃는다. 직접 입력은 반대로 서버가 `messages.audio_url` 을 비워
+     * **다시 받을 수도 없다** — 기기에 남은 것은 지운 사람의 목소리뿐이라 내리는 것만이 답이다.
+     *
+     * ⚠ 교체는 프로필 **id 를 그대로 재사용**한다. 그래서 접근권 대조
+     * ([degradeAlarmsWithInaccessibleVoice])로는 영원히 안 걸린다 — 목록에 그대로 있기 때문이다.
+     *
+     * @param expectedOwnerUserId 이 강등을 확정한 계정. 백그라운드 워커에서 부를 때 반드시 넘긴다
+     *   (계정 전환 중이면 남의 알람을 되돌릴 수 없게 부순다 — Codex #646/#665 규약).
+     */
+    suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
+        voiceProfileId: String,
+        expectedOwnerUserId: String?,
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
+            alarm.voiceProfileId == voiceProfileId &&
+                !isSystemVoiceId(alarm.voiceProfileId) &&
+                alarm.usesCustomMessageVoice()
+        }
+
     // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).
-    // 두 공개 진입점([degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile])이
-    // 모두 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입 불가).
+    // **모든 공개 진입점**이 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입
+    // 불가 — 진입점에서 또 잡으면 그대로 교착이다). 진입점을 새로 만들 때도 반드시 이 함수를
+    // 거칠 것.
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
         expectedOwnerUserId: String?,
         match: (AlarmEntity) -> Boolean,

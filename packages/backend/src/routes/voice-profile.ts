@@ -19,6 +19,7 @@ import {
   generateStockClip,
   markPrerenderDone,
   notifySharedVoicePrerenderComplete,
+  PrerenderSupersededError,
   releasePrerenderClaim,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
@@ -67,6 +68,30 @@ function scheduleVoiceShareChangedPush(
     // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
   }
 }
+
+/**
+ * 커밋 직후의 **후속 fanout**(철회 신호·공유 갱신 신호)을 응답과 분리해 예약한다.
+ *
+ * ⚠ **그냥 `await` 하지 말 것.** 교체·삭제 커밋은 **재시도할 수 없다** — 드래프트·프로필이
+ * 이미 tombstone 이라 같은 요청을 다시 보내면 404다. 응답 전에 FCM/APNs 왕복을 기다리는
+ * 동안 요청 컨텍스트가 끊기면 철회 신호가 영영 안 나가고, 수신 기기는 다음 폴백까지
+ * **회수된 목소리로 계속 운다.** `waitUntil` 은 응답 뒤에도 완료를 보장한다.
+ *
+ * ⚠ **`scheduleVoiceShareChangedPush` 와 fallback 이 다르다.** executionCtx 가 없는
+ * 컨텍스트(테스트·비-fetch)에서 저쪽은 push 를 **생략**하지만(목록 갱신이라 주기 재조회로
+ * 충분), 이쪽은 **직접 기다린다** — 생략하면 철회가 조용히 사라진다. 둘을 하나로 합치지 말 것.
+ */
+function schedulePostCommitFanout(c: Context<AppEnv>, task: Promise<void>): Promise<void> {
+  // 전송 실패는 이미 notifyDowngradedAlarms 안에서 삼킨다(즉시성만 잃는다).
+  const settled = task.catch(() => {});
+  try {
+    c.executionCtx.waitUntil(settled);
+    return Promise.resolve();
+  } catch {
+    // executionCtx 없음 → 응답을 막더라도 반드시 보낸다.
+    return settled;
+  }
+}
 // draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
@@ -85,14 +110,23 @@ const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
 const MAX_LISTENER_TITLE_LENGTH = 30;
 const OFFICIAL_VOICE_CHANGE_TYPE = 'official_voice';
 
+// 승격과 제자리 교체가 **같은 몸통**을 돌려줘야 클라가 한 갈래만 처리하면 된다.
+// 두 곳에 리터럴로 적어 두면 한쪽만 고쳐져 같은 거절이 다른 화면으로 보인다.
+const VOICE_PAID_PLAN_REQUIRED = {
+  error: 'Voice features require a paid plan.',
+  error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+} as const;
+const VOICE_CONSENT_REQUIRED = {
+  error: 'Required voice consent is missing.',
+  error_code: 'CONSENT_REQUIRED',
+} as const;
+const VOICE_MONTHLY_LIMIT = {
+  error: '목소리는 한 달에 1번만 변경할 수 있습니다.',
+  error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
+} as const;
+
 function monthlyVoiceChangeLimitResponse(c: Context<AppEnv>) {
-  return c.json(
-    {
-      error: '목소리는 한 달에 1번만 변경할 수 있습니다.',
-      error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
-    },
-    429,
-  );
+  return c.json({ ...VOICE_MONTHLY_LIMIT }, 429);
 }
 
 function currentKstMonthSql(): string {
@@ -384,7 +418,7 @@ voiceProfile.get('/', async (c) => {
       // (`elevenlabs_voice_id`) 처럼 **클라가 쓰지도 않고 나가서도 안 되는** 컬럼이 있다.
       // 같은 파일이 users 조회에는 이미 컬럼을 나열하고 있었다 — 여기만 빠져 있었다.
       // 목록은 두 앱의 모델(`VoiceProfileApi.kt` / `AlarmTalkAPIModels.swift`)이 읽는 것.
-      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at, custom_audio_invalidated_at FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -649,9 +683,19 @@ type ReplaceResult =
       ok: true;
       profile: Record<string, unknown>;
       notifyShareRemoval: boolean;
-      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string; isReceived: true }>;
+      /** 강등된 직접 입력(custom) 알람 — 받은 알람과 **소유자 본인 알람**을 함께 담는다. */
+      revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>;
+      /** 알람 행과 무관하게 깨워야 할 계정. 아직 서버에 없는 로컬 알람 때문에 소유자는 항상 넣는다. */
+      voiceAccessRevokedUserIds: string[];
     }
-  | { ok: false; error: string; errorCode: string; status: 404 | 409 };
+  | {
+      ok: false;
+      error: string;
+      errorCode: string;
+      status: 403 | 404 | 409 | 429;
+      /** CONSENT_REQUIRED 일 때만 — 승격 경로와 같은 필드로 어떤 동의가 빠졌는지 싣는다. */
+      consent?: string;
+    };
 
 /**
  * **목소리 교체 — 옛 프로필 자리에 새 목소리를 앉힌다.**
@@ -672,56 +716,96 @@ type ReplaceResult =
  */
 export async function replaceVoiceInPlace(
   db: ReturnType<typeof getDB>,
-  params: { targetUserIds: string[]; draftProfileId: string; language: string; isShared?: boolean },
+  params: {
+    targetUserIds: string[];
+    draftProfileId: string;
+    language: string;
+    isShared?: boolean;
+    /**
+     * `users.id` — 월 원장·동의·플랜 조회의 기준.
+     * ⚠ 아래 지역 변수 `ownerUserId`(= `voice_profiles.user_id`)를 대신 쓰지 말 것. 구 토큰
+     * 계정은 거기에 google_id 가 들어 있어, 승격(`userPk`)과 **다른 달력**으로 원장을 세게 된다.
+     */
+    ownerPk: string;
+    /** 토큰의 로그인 식별자(구 토큰이면 google_id) — 플랜 조회 보조 매칭(승격과 같은 조건). */
+    loginId?: string;
+  },
 ): Promise<ReplaceResult> {
-  const { targetUserIds, draftProfileId, language, isShared } = params;
+  const { targetUserIds, draftProfileId, language, isShared, ownerPk, loginId } = params;
   const ph = targetUserIds.map(() => '?').join(',');
 
-  const draftRes = await db.execute({
-    sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
-                 preview_text, preview_language, speech_style, is_shared
-          FROM voice_profiles
-          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
-            AND COALESCE(is_draft, 0) = 1
-          LIMIT 1`,
-    args: [draftProfileId, ...targetUserIds],
-  });
-  const draft = draftRes.rows[0];
-  if (!draft) {
-    return { ok: false, error: 'Voice draft not found', errorCode: 'VOICE_PROFILE_NOT_FOUND', status: 404 };
-  }
-
-  // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
-  // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
-  const targetRes = await db.execute({
-    sql: `SELECT id, elevenlabs_voice_id, is_shared
-          FROM voice_profiles
-          WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
-            AND COALESCE(is_draft, 0) = 0 AND id != ?`,
-    args: [...targetUserIds, draftProfileId],
-  });
-  if (targetRes.rows.length !== 1) {
-    return {
-      ok: false,
-      error: 'Exactly one registered voice is required to replace.',
-      errorCode: 'VOICE_REPLACE_TARGET_AMBIGUOUS',
-      status: 409,
-    };
-  }
-  const target = targetRes.rows[0]!;
-  const targetId = String(target.id);
-  const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
-  const ownerUserId = String(draft.user_id);
-  const finalIsShared =
-    isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
-  const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
-
   const replacementState = await withWriteTransaction(db, async (tx) => {
+    // ⚠ **조회도 이 트랜잭션 안이다.** 밖에서 읽으면 읽은 뒤 쓰기 전에 같은 초안이
+    // 다른 요청에 소비되거나 플랜·동의가 바뀔 수 있다. 단일 writer 안에서 읽고 써야
+    // 게이트 판정과 쓰기가 같은 스냅샷이 된다.
+    const draftRes = await tx.execute({
+      sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
+                   preview_text, preview_language, speech_style, speech_style_status, is_shared
+            FROM voice_profiles
+            WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 1
+            LIMIT 1`,
+      args: [draftProfileId, ...targetUserIds],
+    });
+    const draft = draftRes.rows[0];
+    if (!draft) return { status: 'not_found' as const };
+
+    // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
+    // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
+    const targetRes = await tx.execute({
+      sql: `SELECT id, elevenlabs_voice_id, is_shared
+            FROM voice_profiles
+            WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
+              AND COALESCE(is_draft, 0) = 0 AND id != ?`,
+      args: [...targetUserIds, draftProfileId],
+    });
+    if (targetRes.rows.length !== 1) return { status: 'ambiguous' as const };
+
+    const target = targetRes.rows[0]!;
+    const targetId = String(target.id);
+    const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
+    const ownerUserId = String(draft.user_id);
+    const finalIsShared =
+      isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
+    const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
+
+    // ── 승격과 **같은 게이트**를 여기서 다시 본다 ────────────────────────────────
+    //
+    // 초안을 만들 때 통과했다는 것은 근거가 못 된다. 초안이 남아 있는 동안 결제가
+    // 보류되거나(`ON_HOLD/PAUSED` → `users.plan` 회수) 생체정보 동의가 철회될 수 있고,
+    // **월 1회 등록 한도는 교체로 풀리지 않는다** — 앱이 보여 주는 `등록 n/1` 이 그 숫자다.
+    // 예전에는 이 갈래가 승격 트랜잭션(아래)에 닿기 전에 return 해서 셋 다 건너뛰었다.
+    const plan = await tx.execute({
+      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      args: [ownerPk, loginId ?? ownerPk],
+    });
+    if (plan.rows.length === 0 || !isPaidVoicePlan(plan.rows[0]!.plan)) {
+      return { status: 'paid_required' as const };
+    }
+    const missingConsent = await missingConsentType(tx, ownerPk, SENSITIVE_REQUIRED_CONSENTS);
+    if (missingConsent) {
+      return { status: 'consent_required' as const, consent: missingConsent };
+    }
+    // 원장은 **마지막에** 잡는다 — 앞 게이트에서 돌아서면 예약 자체가 없어야 한다.
+    // 뒤에서 무엇이 실패하든 트랜잭션이 통째로 롤백되므로 예약이 유령으로 남지 않는다.
+    const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, ownerPk);
+    if (!ledgerId) return { status: 'monthly_limit' as const };
+
     await tx.execute({
+      // ⚠ `speech_style` 과 `speech_style_status` 는 **한 쌍이다.** 하나만 옮기면 분석에
+      // 실패한 새 목소리가 '분석 완료'로 보이고(재시도 버튼이 사라진다), 재시도 라우트는
+      // `status = 'failed'` 를 요구해 0행이라 되돌릴 길도 없다.
+      //
+      // ⚠ `custom_audio_invalidated_at` 은 이 교체가 **직접 입력 음원을 무효로 만들었다**는
+      // 표식이다. 푸시를 놓친 기기가 다음 목록 조회에서 스스로 알아채는 유일한 근거다
+      // (프로필 id 는 그대로라 접근권 대조로는 영원히 안 걸린다). #106 배포 창에는 컬럼이
+      // 없어 이 트랜잭션이 통째로 롤백된다 — 재시도하면 되고, 그게 옳다.
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
-                preview_text = ?, preview_language = ?, speech_style = ?, is_shared = ?,
-                status = 'ready'
+                preview_text = ?, preview_language = ?, speech_style = ?, speech_style_status = ?,
+                is_shared = ?, status = 'ready',
+                custom_audio_invalidated_at = datetime('now'),
+                updated_at = datetime('now')
             WHERE id = ?`,
       args: [
         draft.name ?? null,
@@ -731,6 +815,7 @@ export async function replaceVoiceInPlace(
         draft.preview_text ?? null,
         draft.preview_language ?? null,
         draft.speech_style ?? null,
+        draft.speech_style_status ?? null,
         finalIsShared ? 1 : 0,
         targetId,
       ],
@@ -782,12 +867,26 @@ export async function replaceVoiceInPlace(
     // 목소리 **삭제** 경로(`DELETE /voice/:id`)가 하는 것과 같은 정리이고, 다른 점은
     // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
     // 살아남아야 한다.
+    //
+    // ⚠ **받은 알람만 세지 말 것**(Codex #703 P1). 소유자 본인 알람은 `target_user_id`
+    // 가 NULL 이라 예전 조회(`target_user_id IS NOT NULL`)에서 통째로 빠졌는데, 본인
+    // 알람은 **pull 대상이 아니다**(`RemoteAlarmPullSyncService` 는 받은 알람만 훑는다).
+    // 서버 행만 내려 봐야 그 기기의 로컬 행·캐시된 음원·OS 예약은 그대로라, 등록 기기와
+    // 다른 기기 양쪽에서 **지운 목소리가 계속 울린다.**
     const liveCustom = await tx.execute({
-      sql: `SELECT a.id AS alarm_id, a.target_user_id AS recipient_user_id
+      // ⚠ **임자를 목소리 주인으로 뭉개지 말 것.** 공유 목소리는 같은 플랜 그룹의 다른
+      // 사람도 자기 알람에 직접 입력 문구를 만들어 쓸 수 있다(`findUsableVoiceProfile`).
+      // 그 행도 `target_user_id` 가 비어 있어 '본인 알람' 으로 잡히는데, 임자는 주인이
+      // 아니라 **그 멤버**다 — 주인에게만 알리면 멤버 기기는 아무 신호도 못 받는다.
+      // `users` 조인은 레거시 google_id 를 users.id 로 정규화하기 위한 것이다(신호가 같은
+      // 계정에 두 번 나가지 않게).
+      sql: `SELECT a.id AS alarm_id,
+                   COALESCE(a.target_user_id, owner_u.id, a.user_id) AS row_owner_user_id,
+                   a.target_user_id IS NOT NULL AS is_received
             FROM alarms a
             JOIN messages m ON m.id = a.message_id
-            WHERE a.target_user_id IS NOT NULL
-              AND m.voice_profile_id = ? AND m.category = 'custom'`,
+            LEFT JOIN users owner_u ON owner_u.id = a.user_id OR owner_u.google_id = a.user_id
+            WHERE m.voice_profile_id = ? AND m.category = 'custom'`,
       args: [targetId],
     });
     const deliveredCustom = await tx.execute({
@@ -797,16 +896,21 @@ export async function replaceVoiceInPlace(
     });
     const revokedCustomAlarms = new Map<
       string,
-      { alarmId: string; ownerUserId: string; isReceived: true }
+      { alarmId: string; ownerUserId: string; isReceived: boolean }
     >();
-    for (const row of [...liveCustom.rows, ...deliveredCustom.rows]) {
+    const addRevoked = (alarmId: string, owner: string, isReceived: boolean) => {
+      revokedCustomAlarms.set(`${alarmId}:${owner}`, { alarmId, ownerUserId: owner, isReceived });
+    };
+    for (const row of liveCustom.rows) {
       const alarmId = String(row.alarm_id);
-      const ownerUserId = String(row.recipient_user_id);
-      revokedCustomAlarms.set(`${alarmId}:${ownerUserId}`, {
-        alarmId,
-        ownerUserId,
-        isReceived: true,
-      });
+      if (Number(row.is_received) === 1) {
+        addRevoked(alarmId, String(row.row_owner_user_id), true);
+        continue;
+      }
+      addRevoked(alarmId, String(row.row_owner_user_id), false);
+    }
+    for (const row of deliveredCustom.rows) {
+      addRevoked(String(row.alarm_id), String(row.recipient_user_id), true);
     }
 
     // 아직 ACK 전인 custom 알람도 이미 수신자 기기에 들어갔을 수 있다. 서버 행 강등만으로는
@@ -867,22 +971,94 @@ export async function replaceVoiceInPlace(
               status = 'pending', attempts = 0, refresh_existing = 1,
               claimed_at = NULL, claim_token = NULL,
               language = excluded.language, updated_at = datetime('now')`,
-      args: [targetId, ownerUserId, language],
+      // 사전렌더 언어는 '등록 때 고른 언어'(preview_language)가 단일 출처다 — 승격 경로와
+      // 같은 이유(클라가 보낸 기기 언어로 큐잉하면 일본어로 만든 목소리가 한국어 기기에서
+      // 확정될 때 한국어 클립이 만들어진다). 초안에 값이 없을 때만 요청 언어로 폴백한다.
+      args: [targetId, ownerUserId, String(draft.preview_language ?? language)],
     });
 
-    return { revokedCustomAlarms: Array.from(revokedCustomAlarms.values()) };
+    // 공유 중이던 목소리는 **같은 그룹원의 기기도 깨워야 한다.** 그들이 이 목소리로 만든
+    // 직접 입력 알람도 방금 무효가 됐는데, 그 행은 `target_user_id` 가 없어 pull 로 돌아오지
+    // 않는다. `revokeDeletedVoices` 가 삭제 경로에서 하는 것과 같은 스코프다(같은 그룹 동석).
+    // 과다발송해도 각 기기가 자기 알람만 보고 판단하므로 안전하다 — 반대로 빠뜨리면 지운
+    // 목소리가 남의 기기에서 계속 운다.
+    const wakeUserIds = new Set<string>([ownerPk]);
+    if (Number(target.is_shared ?? 0) === 1) {
+      const members = await tx.execute({
+        sql: `SELECT DISTINCT m2.user_id
+                FROM plan_group_members m1
+                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+               WHERE m1.user_id = ? AND m2.user_id != ?`,
+        args: [ownerPk, ownerPk],
+      });
+      for (const row of members.rows) wakeUserIds.add(String(row.user_id));
+    }
+
+    await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
+    return {
+      status: 'ok' as const,
+      targetId,
+      notifyShareRemoval,
+      revokedCustomAlarms: Array.from(revokedCustomAlarms.values()),
+      wakeUserIds: Array.from(wakeUserIds),
+    };
   });
+
+  if (replacementState.status !== 'ok') {
+    switch (replacementState.status) {
+      case 'not_found':
+        return {
+          ok: false,
+          error: 'Voice draft not found',
+          errorCode: 'VOICE_PROFILE_NOT_FOUND',
+          status: 404,
+        };
+      case 'ambiguous':
+        return {
+          ok: false,
+          error: 'Exactly one registered voice is required to replace.',
+          errorCode: 'VOICE_REPLACE_TARGET_AMBIGUOUS',
+          status: 409,
+        };
+      case 'paid_required':
+        return {
+          ok: false,
+          error: VOICE_PAID_PLAN_REQUIRED.error,
+          errorCode: VOICE_PAID_PLAN_REQUIRED.error_code,
+          status: 403,
+        };
+      case 'consent_required':
+        return {
+          ok: false,
+          error: VOICE_CONSENT_REQUIRED.error,
+          errorCode: VOICE_CONSENT_REQUIRED.error_code,
+          consent: replacementState.consent,
+          status: 403,
+        };
+      case 'monthly_limit':
+        return {
+          ok: false,
+          error: VOICE_MONTHLY_LIMIT.error,
+          errorCode: VOICE_MONTHLY_LIMIT.error_code,
+          status: 429,
+        };
+    }
+  }
 
   const refreshed = await db.execute({
     sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at
           FROM voice_profiles WHERE id = ? LIMIT 1`,
-    args: [targetId],
+    args: [replacementState.targetId],
   });
   return {
     ok: true,
     profile: (refreshed.rows[0] ?? {}) as Record<string, unknown>,
-    notifyShareRemoval,
+    notifyShareRemoval: replacementState.notifyShareRemoval,
     revokedCustomAlarms: replacementState.revokedCustomAlarms,
+    // 행이 하나도 안 잡혀도 소유자(와 공유 중이었다면 그룹원)는 깨운다 — 아직 서버에
+    // 올라오지 않은 로컬 custom 알람이 다른 기기에 있을 수 있고, 그 기기의 캐시된 음원은
+    // 이미 못 쓰는 것이다(`revokeDeletedVoices` 가 소유자를 항상 넣는 것과 같은 이유).
+    voiceAccessRevokedUserIds: replacementState.wakeUserIds,
   };
 }
 
@@ -1069,14 +1245,32 @@ voiceProfile.patch('/:id', async (c) => {
         draftProfileId: id,
         language: prerenderLanguage,
         isShared: isSharedUpdate,
+        ownerPk: userPk,
+        loginId: userId,
       });
       if (!replaced.ok) {
-        return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);
+        return c.json(
+          replaced.consent
+            ? { error: replaced.error, error_code: replaced.errorCode, consent: replaced.consent }
+            : { error: replaced.error, error_code: replaced.errorCode },
+          replaced.status,
+        );
       }
-      await notifyDowngradedAlarms(db, c.env, replaced.revokedCustomAlarms, []);
+      await schedulePostCommitFanout(
+        c,
+        notifyDowngradedAlarms(
+          db,
+          c.env,
+          replaced.revokedCustomAlarms,
+          replaced.voiceAccessRevokedUserIds,
+          { replacedVoiceProfileId: String(replaced.profile.id ?? '') || undefined },
+        ),
+      );
       // 공유 중인 옛 목소리를 끄는 것은 접근권 철회라 즉시 알린다. 새 공유 목소리의 갱신은
       // 모든 preset 게시가 끝난 뒤 notifySharedVoicePrerenderComplete 가 알린다.
       if (replaced.notifyShareRemoval) scheduleVoiceShareChangedPush(c, db, userPk);
+      // `replaced: true` 는 등록 기기가 **자기 직접 입력 알람을 곧바로 내리는** 신호다
+      // (푸시를 기다리지 않는다). 다른 기기는 아래 fanout 의 voice_access_revoked 로 안다.
       return c.json({ profile: replaced.profile, replaced: true });
     }
   }
@@ -1191,23 +1385,10 @@ voiceProfile.patch('/:id', async (c) => {
     return monthlyVoiceChangeLimitResponse(c);
   }
   if (updateRes.status === 'paid_required') {
-    return c.json(
-      {
-        error: 'Voice features require a paid plan.',
-        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-      },
-      403,
-    );
+    return c.json({ ...VOICE_PAID_PLAN_REQUIRED }, 403);
   }
   if (updateRes.status === 'consent_required') {
-    return c.json(
-      {
-        error: 'Required voice consent is missing.',
-        error_code: 'CONSENT_REQUIRED',
-        consent: updateRes.consent,
-      },
-      403,
-    );
+    return c.json({ ...VOICE_CONSENT_REQUIRED, consent: updateRes.consent }, 403);
   }
   if ((updateRes.rowsAffected ?? 0) === 0) {
     if (promotesDraftToOfficial || hasRelationship || hasListenerTitle) {
@@ -2258,7 +2439,11 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   if (targets.length === 0) {
     await markPrerenderDone(db, id, claimToken);
     if (refreshExisting) {
-      await notifySharedVoicePrerenderComplete(db, c.env, id, userPk);
+      // 큐는 이미 done 이라 재시도해도 이 신호를 다시 만들 수 없다 — waitUntil 로 태운다.
+      await schedulePostCommitFanout(
+        c,
+        notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+      );
     }
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
@@ -2267,22 +2452,33 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   // 무료 플랜 한도(50) 안에 안전하게 들어가는 수로 잡는다. 남은 몫은 클라 재호출/cron.
   const MAX_CLIPS_PER_CALL = 3;
   let made = 0;
+  let superseded = false;
   for (const target of targets.slice(0, MAX_CLIPS_PER_CALL)) {
     try {
       await generateStockClip(db, c.env, target);
       made += 1;
     } catch (genErr) {
+      if (genErr instanceof PrerenderSupersededError) {
+        // 그 사이 교체가 한 번 더 일어나 이 큐는 새 주인의 것이다 — 이 호출의 렌더는
+        // 전부 옛 목소리라 버린다. done 으로 끝내면 새 회차가 영영 안 돌아 옛 목소리가
+        // 그대로 남는다.
+        superseded = true;
+        break;
+      }
       logRouteError(c, genErr);
       // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
       if (String(genErr).includes('Too many subrequests')) break;
     }
   }
 
-  const done = made >= targets.length;
+  const done = !superseded && made >= targets.length;
   if (done) {
     await markPrerenderDone(db, id, claimToken);
     if (refreshExisting) {
-      await notifySharedVoicePrerenderComplete(db, c.env, id, userPk);
+      await schedulePostCommitFanout(
+        c,
+        notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+      );
     }
   } else {
     // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
@@ -2410,14 +2606,18 @@ voiceProfile.delete('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // 철회 fanout은 커밋 직후 먼저 보낸다. provider 정리는 DB 큐에도 적재돼 있으므로 지연돼도
-  // 재시도할 수 있지만, 여기서 먼저 기다리면 Worker 종료 뒤 DELETE 재시도가 404가 되어
-  // 수신 기기에 철회 신호를 영영 못 보낼 수 있다.
-  await notifyDowngradedAlarms(
-    db,
-    c.env,
-    deletionState.revocation.downgradedAlarms,
-    deletionState.revocation.voiceAccessRevokedUserIds,
+  // 철회 fanout은 커밋 직후, **provider 정리보다 먼저** 태운다. DELETE 커밋은 재시도할 수
+  // 없으므로(재요청은 deleted_at 가드에 걸려 404) 이 신호를 놓치면 수신 기기가 회수된
+  // 목소리로 계속 운다. provider 정리는 DB 큐에도 적재돼 있어 지연돼도 cron 이 거둔다.
+  // ⚠ 맨 `await` 로 되돌리지 말 것 — 응답 뒤 완료를 보장하는 것은 waitUntil 뿐이다.
+  await schedulePostCommitFanout(
+    c,
+    notifyDowngradedAlarms(
+      db,
+      c.env,
+      deletionState.revocation.downgradedAlarms,
+      deletionState.revocation.voiceAccessRevokedUserIds,
+    ),
   );
 
   const profile = deletionState.profile;

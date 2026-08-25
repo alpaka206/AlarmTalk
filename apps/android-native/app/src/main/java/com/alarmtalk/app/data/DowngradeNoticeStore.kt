@@ -21,12 +21,25 @@ class DowngradeNoticeStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("downgrade_notice", Context.MODE_PRIVATE)
 
+    /**
+     * ⚠ **선언 순서가 곧 우선순위다**(앞이 셈). 원인이 섞이면 **가장 할 수 있는 일이 많은
+     * 쪽**으로 말한다 — 무료 강등은 이용권을 다시 등록하면 복원되고, 공유 해제는 새 초대
+     * 코드가 필요하며, 교체는 아무 액션도 없다. 뒤엣것으로 뭉치면 사용자가 할 수 있는 일을
+     * 안내에서 잃는다.
+     */
     enum class Cause {
         /** 유료 → 무료 강등. 이용권을 다시 등록하면 **복원된다**. */
         FREE_PLAN,
 
         /** 공유받던 목소리가 끊겼다(그룹에서 나감·내보내짐·공유 해제). **복원되지 않는다.** */
         SHARED_RELEASED,
+
+        /**
+         * 내가 **목소리를 새로 등록하며 옛 목소리를 교체**했다. 직접 입력 문구로 만들어 둔
+         * 알람은 옛 목소리로 합성해 둔 것이라 다시 만들 수 없어 기본 알람음이 된다.
+         * 프리셋 알람은 새 목소리로 다시 만들어지므로 그대로 남는다. **복원되지 않는다.**
+         */
+        VOICE_REPLACED,
     }
 
     data class Notice(val cause: Cause, val count: Int)
@@ -37,7 +50,11 @@ class DowngradeNoticeStore(context: Context) {
         // 확인 전에 또 강등되면 **합쳐서** 한 번만 알린다 — 모달을 두 번 띄우지 않는다.
         // 원인이 섞이면 무료 강등 쪽으로 말한다(그쪽이 복구 가능하다는 더 쓸모 있는 정보다).
         val mergedCount = (previous?.count ?: 0) + count
-        val mergedCause = if (previous != null && previous.cause != cause) Cause.FREE_PLAN else cause
+        // 섞이면 **우선순위가 높은(= 안내할 액션이 있는) 쪽**으로 말한다. 새로 온 원인으로
+        // 덮어쓰면, '이용권 보기' 가 필요한 공유 해제가 액션 없는 교체 안내로 바뀌어 사용자가
+        // 고칠 방법을 못 본다. 반대로 전부 FREE_PLAN 으로 뭉치면 유료 사용자에게 "무료로
+        // 바뀌었어요" 라는 거짓말을 하게 된다.
+        val mergedCause = if (previous == null) cause else minOf(previous.cause, cause)
         prefs.edit()
             .putString(causeKey(userId), mergedCause.name)
             .putInt(countKey(userId), mergedCount)

@@ -12,11 +12,26 @@ import Foundation
 /// 화면 아래에서 잘못 뜨면 **본 적도 없이 소진**된다(`docs/spec/gates-and-overlays.md`).
 /// 여기는 반대로 **'확인' 을 눌러야 지운다** — 못 보고 지나가면 다음에 또 뜬다.
 struct DowngradeNoticeStore {
-    enum Cause: String {
+    /// ⚠ **선언 순서가 곧 우선순위다**(앞이 셈). 안드로이드 `DowngradeNoticeStore.Cause` 와
+    /// 같은 순서여야 한다 — 섞였을 때 두 앱이 다른 문구를 말하면 안 된다.
+    enum Cause: String, Comparable {
+        static func < (lhs: Cause, rhs: Cause) -> Bool { lhs.rank < rhs.rank }
+        private var rank: Int {
+            switch self {
+            case .freePlan: return 0
+            case .sharedReleased: return 1
+            case .voiceReplaced: return 2
+            }
+        }
+
         /// 유료 → 무료 강등. 이용권을 다시 등록하면 **복원된다**.
         case freePlan
         /// 공유받던 목소리가 끊겼다. **복원되지 않는다** — 다시 공유받아야 한다.
         case sharedReleased
+        /// 내가 **목소리를 새로 등록하며 옛 목소리를 교체**했다. 직접 입력으로 만들어 둔
+        /// 알람은 옛 목소리로 합성해 둔 것이라 다시 만들 수 없어 기본 알람음이 된다.
+        /// 프리셋 알람은 새 목소리로 다시 만들어지므로 그대로 남는다. **복원되지 않는다.**
+        case voiceReplaced
     }
 
     struct Notice: Equatable {
@@ -33,10 +48,10 @@ struct DowngradeNoticeStore {
     func record(userID: String?, cause: Cause, count: Int) {
         guard let userID, !userID.isEmpty, count > 0 else { return }
         // 확인 전에 또 강등되면 **합쳐서** 한 번만 알린다.
-        // 원인이 섞이면 무료 강등 쪽으로 말한다(복구 가능하다는 더 쓸모 있는 정보다).
         let previous = read(userID: userID)
         let mergedCount = (previous?.count ?? 0) + count
-        let mergedCause: Cause = (previous != nil && previous?.cause != cause) ? .freePlan : cause
+        // 섞이면 **우선순위가 높은(= 안내할 액션이 있는) 쪽**으로 말한다(안드로이드와 같은 규칙).
+        let mergedCause = previous.map { min($0.cause, cause) } ?? cause
         defaults.set(mergedCause.rawValue, forKey: causeKey(userID))
         defaults.set(mergedCount, forKey: countKey(userID))
     }

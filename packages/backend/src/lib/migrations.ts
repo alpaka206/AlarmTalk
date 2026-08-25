@@ -2290,6 +2290,23 @@ export const migrations: Migration[] = [
          ADD COLUMN custom_voice INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: 106,
+    name: 'voice-profile-custom-audio-invalidated-at',
+    // **제자리 교체는 프로필 id 를 그대로 재사용한다.** 그래서 클라의 '접근 가능 목소리
+    // 목록 대조'로는 교체를 절대 감지할 수 없고, 본인 소유 알람은 pull 대상도 아니다.
+    // 푸시(voice_access_revoked + voiceProfileId)는 즉시성만 맡는다 — best-effort 라
+    // 오프라인·강제종료에서 조용히 버려지므로, **정확성을 맡을 표식**이 따로 필요하다.
+    //
+    // ⚠ `updated_at` 으로 대신하지 말 것. 이름 변경·공유 토글도 그 값을 올리므로,
+    // 그걸 기준으로 강등하면 **이름만 바꿔도** 직접 입력 알람이 되돌릴 수 없이 사라진다.
+    //
+    // 백필하지 않는다(NULL 유지) — 값을 채우면 기존 설치가 첫 조회에서 전부 '방금 교체됨'
+    // 으로 읽는다.
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN custom_audio_invalidated_at TEXT`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

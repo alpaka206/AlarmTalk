@@ -107,13 +107,13 @@ final class AudioCacheStore {
             throw AudioCacheError.invalidBase64
         }
         let format = Self.normalizedFormat(tts.audioFormat)
-        let fileName = "\(tts.messageId).\(format)"
-        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: Self.audioWriteOptions)
 
         // 새 cacheKey 캐시에도 동시 저장 (위젯 공유 캐시 + cascade cleanup 대상).
         let cacheKey = nonBlank(overrideCacheKey) ?? nonBlank(tts.cacheKey) ?? Self.computeCacheKey(data)
-        _ = try? Self.shared.cacheBytes(
+        // `cacheStockClip` 과 같은 이유로 **먼저, 전파하며** 쓴다 — 이 호출이 실패하면
+        // 돌려주는 `cacheKey` 자리에 파일이 없는데 알람은 그 키로 음원을 찾는다.
+        // 삼키면 저장은 성공한 알람이 울릴 때 조용히 기본 알람음으로 떨어진다.
+        _ = try Self.shared.cacheBytes(
             data,
             cacheKey: cacheKey,
             mimeType: Self.mimeType(forFormat: format),
@@ -123,6 +123,10 @@ final class AudioCacheStore {
             durationOverrideMs: nil,
             enforceMaxDuration: false  // tts 길이는 서버가 보장. 한도는 메타에만.
         )
+
+        let fileName = "\(tts.messageId).\(format)"
+        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
+        try data.write(to: url, options: Self.audioWriteOptions)
 
         return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
     }
@@ -146,11 +150,17 @@ final class AudioCacheStore {
             throw AudioCacheError.invalidBase64
         }
         let format = Self.normalizedFormat(response.audioFormat)
-        let fileName = "\(messageId).\(format)"
-        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: Self.audioWriteOptions)
 
-        _ = try? Self.shared.cacheBytes(
+        // ⚠ **정본은 `cacheKey` 자리다 — 이 실패를 삼키지 말 것**(Codex #703 P1).
+        // 울릴 때 읽는 것도, 예약 지문의 **세대**(`rawAudioUri`)를 읽는 것도 이 메타다
+        // (`AlarmSoundResolver.plan`). 삼키면 호출자는 "새 음원으로 갈았다" 로 읽고 구워 둔
+        // `Library/Sounds` 사본까지 버리는데, 메타는 옛 세대 그대로라 지문이 같아 **재예약이
+        // 오지 않는다** — 예약은 없는 이름을 가리킨 채 남고 고칠 계기도 사라진다.
+        // 던지면 그 키는 stale 로 남아 다음 회차가 다시 받는다.
+        //
+        // 옛 별칭(`<messageId>.<ext>`)보다 **먼저** 쓴다. 순서를 뒤집으면 실패했을 때
+        // 별칭만 새 바이트인 반쯤 갱신된 상태가 남는다.
+        _ = try Self.shared.cacheBytes(
             data,
             cacheKey: cacheKey,
             mimeType: Self.mimeType(forFormat: format),
@@ -160,6 +170,10 @@ final class AudioCacheStore {
             durationOverrideMs: nil,
             enforceMaxDuration: false
         )
+
+        let fileName = "\(messageId).\(format)"
+        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
+        try data.write(to: url, options: Self.audioWriteOptions)
 
         return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
     }
@@ -311,13 +325,25 @@ final class AudioCacheStore {
         // 소리를 쓴다. 키에 버전이 없으니 판별은 **`audio_url` 이 달라졌는가**로 한다 —
         // 그 값은 이미 메타에 `rawAudioUri` 로 저장하고 있었는데 **아무도 비교하지
         // 않았다.** 서버가 새 오디오를 새 R2 키에 올리면 이 값이 반드시 달라진다.
-        let stale = Self.isStaleCachedFile(at: target, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+        // ⚠ **낡음 판정은 확장자를 건너 봐야 한다.** `target` 은 이번 mime 의 확장자로
+        // 만든 경로라, 교체본의 형식이 달라지면(mp3 → m4a) 그 자리에는 파일이 없어
+        // '낡지 않았다' 로 읽힌다. 그러면 옛 `<key>.mp3` 를 그대로 둔 채 새
+        // `<key>.m4a` 를 하나 더 쓰고, `cachedURL(for:)` 은 디렉터리 순서대로 **둘 중
+        // 아무거나** 돌려준다 — 옛 파일이 뽑히면 메타는 이미 새 주소라 stale 도 아니어서
+        // 지운 목소리가 계속 울린다(Codex #703 P1).
+        let existingURL = cachedURL(for: cacheKey)
+        let stale = existingURL.map {
+            Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+        } ?? false
         if stale || !FileManager.default.fileExists(atPath: target.path) {
             do {
                 try data.write(to: target, options: Self.audioWriteOptions)
             } catch {
                 throw AudioCacheError.writeFailed(error)
             }
+            // 새 파일을 **안전하게 쓴 뒤에** 같은 키의 다른 확장자 사본을 지운다. 먼저
+            // 지우면 쓰기가 실패했을 때 이미 예약된 알람이 쓸 파일까지 사라진다.
+            removeAudioFiles(forCacheKey: cacheKey, keeping: target)
             if stale {
                 // ⚠ **구워 둔 알람 사운드도 함께 버린다.** iOS 는 예약 시점에 캐시 파일을
                 // `Library/Sounds/voice-<key>.caf` 로 복사해 그 이름을 AlarmKit 에 박는다.
@@ -389,18 +415,33 @@ final class AudioCacheStore {
         return Self.isStaleCachedFile(at: url, storedFor: cacheKey, incomingAudioUri: remoteAudioUri)
     }
 
+    /// ⚠ **디렉터리 순서에 기대지 말 것.** 한 키에 본체가 둘 남아 있을 수 있다(확장자가
+    /// 바뀐 교체를 겪은 옛 설치본). 그때 `contentsOfDirectory` 의 첫 번째를 그냥 돌려주면
+    /// **옛 바이트가 뽑히는데 메타는 이미 새 세대**라, 낡음 판정도 지문도 통과해 지운
+    /// 목소리가 계속 울린다. 그래서 메타가 말하는 형식을 우선으로 고른다(새로 쓰는 경로는
+    /// `cacheBytes` 가 사본을 하나로 정리하므로 여기 걸릴 일이 없다).
     nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        var candidates: [URL] = []
         for name in files {
-            let url = directory.appendingPathComponent(name)
             let (base, ext) = Self.splitName(name)
             if base == safeKey && ext != "meta.json" && ext != "json" {
-                return url
+                candidates.append(directory.appendingPathComponent(name))
             }
         }
-        return nil
+        if candidates.count <= 1 { return candidates.first }
+        if let mimeType = readMetadata(cacheKey: cacheKey)?.mimeType {
+            let preferred = Self.fileExtension(forMimeType: mimeType)
+            if let match = candidates.first(where: { $0.pathExtension == preferred }) { return match }
+        }
+        // 메타가 없거나 형식이 안 맞으면 **가장 최근에 쓴 것**이 새 세대다.
+        return candidates.max(by: { lhs, rhs in
+            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return (l ?? .distantPast) < (r ?? .distantPast)
+        })
     }
 
     /// 메타 사이드카 조회.
@@ -809,12 +850,19 @@ final class AudioCacheStore {
         // 기존 음원 파일을 먼저 지우고, audio/aac(m4a) 로 다시 캐싱한다. 메타의
         // durationMs 는 실제 트림 길이(<=30s)로 다시 기록된다.
         let trimmedDuration = await Self.loadDurationMillis(url: trimmed) ?? AlarmAudioLimits.maxDurationMillis
+        // ⚠ **세대 표식(`rawAudioUri`)을 지우지 말 것.** 낡음 판정은 그 값 하나로 하는데,
+        // 트림이 메타를 새로 쓰면서 비우면 그 키는 **영영 낡지 않은 것**이 된다 — 목소리를
+        // 교체해도 다시 받지 않고, 예약 지문도 그대로라 지운 목소리로 계속 운다.
+        // 트림은 바이트와 길이만 갈아 끼우는 일이므로 나머지는 그대로 물려준다.
+        let previous = readMetadata(cacheKey: cacheKey)
         removeAudioFile(forCacheKey: cacheKey)
         _ = try? cacheBytes(
             data,
             cacheKey: cacheKey,
             mimeType: "audio/aac",
-            source: "raw_audio",
+            source: previous?.source ?? "raw_audio",
+            messageId: previous?.messageId,
+            rawAudioUri: previous?.rawAudioUri,
             durationOverrideMs: min(trimmedDuration, AlarmAudioLimits.maxDurationMillis),
             enforceMaxDuration: false
         )
@@ -827,10 +875,17 @@ final class AudioCacheStore {
     /// cacheKey 에 해당하는 음원 본체(메타 사이드카 제외)만 삭제한다. 트림 시 확장자가
     /// 달라질 수 있어 메타를 보존한 채 본체만 갈아끼우기 위해 사용한다.
     private nonisolated func removeAudioFile(forCacheKey cacheKey: String) {
+        removeAudioFiles(forCacheKey: cacheKey, keeping: nil)
+    }
+
+    /// 같은 cacheKey 의 음원 본체를 지운다. `keeping` 을 주면 그 파일만 남겨,
+    /// **확장자가 바뀐 교체**에서 옛 사본이 `cachedURL(for:)` 에 뽑히는 것을 막는다.
+    private nonisolated func removeAudioFiles(forCacheKey cacheKey: String, keeping survivor: URL?) {
         guard let directory = try? Self.audioDirectory() else { return }
         let safeKey = Self.safeCacheKey(cacheKey)
+        let survivorName = survivor?.lastPathComponent
         let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        for name in files {
+        for name in files where name != survivorName {
             let (base, ext) = Self.splitName(name)
             if base == safeKey, ext != "meta.json", ext != "json" {
                 try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))

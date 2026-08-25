@@ -26,6 +26,25 @@ fun bundledSystemVoiceProfiles(): List<VoiceProfile> = listOf(
 /** 시스템 제공(스톡) 보이스 id 인지 — 무료 플랜에서도 사용할 수 있다. */
 fun isSystemVoiceId(id: String?): Boolean = id?.startsWith(SYSTEM_VOICE_ID_PREFIX) == true
 
+/**
+ * **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
+ *
+ * 제자리 목소리 교체는 프리셋(버킷) 알람을 **같은 message id 로 재렌더해 살리고**, 다시 만들 수
+ * 없는 직접 입력만 내린다. 그래서 이 판정식을 넓히면 되돌릴 수 없이 프리셋 알람까지 벗긴다.
+ * 판정 축은 CLAUDE.md 의 `!voiceRandomPrompt && 버킷 아님` 규약 그대로다. iOS 짝은
+ * `LocalAlarmRecord.usesCustomMessageVoice` — **둘은 철자까지 같아야 한다.**
+ */
+fun AlarmEntity.usesCustomMessageVoice(): Boolean =
+    !voiceRandomPrompt &&
+        bucketId.isNullOrBlank() &&
+        // ⚠ **`voiceCategory == "custom"` 만 보면 안 된다.** 버킷이 붙으면
+        // `voiceRandomPrompt` 가 꺼지고 `activeVoiceCategory()` 가 "custom" 을 돌려주므로
+        // (CLAUDE.md 「버킷이 붙으면…」), 버킷 없이 프리셋 클립 하나만 물린 **옛 행**은
+        // 세 값이 직접 입력과 똑같아 보인다. 그 행은 캐시 키가 `stock_<messageId>` 라서
+        // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
+        audioCacheKey?.startsWith(AlarmAudioStore.STOCK_CACHE_KEY_PREFIX) != true &&
+        (voiceCategory == null || voiceCategory == "custom")
+
 fun AlarmDraft.usesFreeSystemVoiceAlarm(): Boolean =
     usesFreeSystemVoiceAlarm(
         playMode = playMode,

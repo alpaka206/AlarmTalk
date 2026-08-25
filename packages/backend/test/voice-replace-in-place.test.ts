@@ -16,6 +16,7 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
+import { CURRENT_POLICY_VERSION, SENSITIVE_REQUIRED_CONSENTS } from '../src/lib/consent';
 import { replaceVoiceInPlace } from '../src/routes/voice-profile';
 
 async function migratedDb(): Promise<Client> {
@@ -29,14 +30,18 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
   const db = createClient({ url: `file:${path}` });
   await runMigrations(db);
   await db.batch([
-    "INSERT INTO users (id, google_id, email, name) VALUES ('u1','g1','u1@test.com','나')",
+    // 교체도 승격과 같은 게이트(유료 플랜·민감 동의·월 1회 원장)를 통과해야 하므로
+    // 기본 시드는 '통과하는 계정' 이다. 게이트별 거절은 아래 테스트가 각각 무너뜨린다.
+    "INSERT INTO users (id, google_id, email, name, plan) VALUES ('u1','g1','u1@test.com','나','plus')",
     "INSERT INTO users (id, google_id, email, name) VALUES ('u2','g2','u2@test.com','가족')",
     `INSERT INTO voice_profiles
-       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at)
-     VALUES ('vp1','u1','옛 목소리','ready','eleven-old',0,datetime('now'))`,
+       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at,
+        preview_language, speech_style, speech_style_status)
+     VALUES ('vp1','u1','옛 목소리','ready','eleven-old',0,datetime('now'),'ko','{}','done')`,
     `INSERT INTO voice_profiles
-       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at)
-     VALUES ('vp2','u1','새 목소리','ready','eleven-new',1,datetime('now'))`,
+       (id, user_id, name, status, elevenlabs_voice_id, is_draft, previewed_at,
+        preview_language, speech_style_status)
+     VALUES ('vp2','u1','새 목소리','ready','eleven-new',1,datetime('now'),'ja','failed')`,
     `INSERT INTO voice_uploads
        (id, user_id, object_key, mime_type, size_bytes, voice_profile_id)
      VALUES ('up-old','u1','uploads/old.wav','audio/wav',100,'vp1')`,
@@ -60,8 +65,34 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
        (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
         voice_profile_id, sender_voice_upload, custom_voice)
      VALUES ('a-preset','u2',0,0,'u1','vp1',0,0)`,
+    // 소유자 본인 알람(target_user_id NULL) — pull 대상이 아니라 서버 강등만으로는 그 기기에 닿지 않는다.
+    `INSERT INTO alarms
+       (id, user_id, time, mode, voice_profile_id, message_id)
+     VALUES ('a-mine','u1','06:30','tts','vp1','m-custom')`,
+    ...SENSITIVE_REQUIRED_CONSENTS.map(
+      (type, i) => `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+                    VALUES ('c${i}','u1','${type}','${CURRENT_POLICY_VERSION}',1)`,
+    ),
   ]);
   return { db, path };
+}
+
+/** 게이트에 막힌 회차는 **한 줄도 쓰지 않아야** 한다. */
+async function expectUntouched(db: Client) {
+  const target = await db.execute("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp1'");
+  expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-old');
+  const draft = await db.execute("SELECT deleted_at FROM voice_profiles WHERE id = 'vp2'");
+  expect(draft.rows[0]!.deleted_at).toBeNull();
+  const queue = await db.execute('SELECT COUNT(*) AS n FROM voice_prerender_queue');
+  expect(Number(queue.rows[0]!.n)).toBe(0);
+  const deletions = await db.execute('SELECT COUNT(*) AS n FROM pending_external_deletions');
+  expect(Number(deletions.rows[0]!.n)).toBe(0);
+  const delivered = await db.execute(
+    "SELECT revoked FROM alarm_recipient_state WHERE alarm_id = 'a-delivered'",
+  );
+  expect(Number(delivered.rows[0]!.revoked)).toBe(0);
+  const audio = await db.execute("SELECT audio_url FROM messages WHERE id = 'm-custom'");
+  expect(String(audio.rows[0]!.audio_url)).toBe('r2://custom');
 }
 
 describe('목소리 교체 — 제자리 덮어쓰기', () => {
@@ -72,6 +103,8 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         targetUserIds: ['u1'],
         draftProfileId: 'vp2',
         language: 'ko',
+        ownerPk: 'u1',
+        loginId: 'g1',
       });
 
       expect(result.ok).toBe(true);
@@ -79,7 +112,19 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       expect(result.revokedCustomAlarms).toEqual(expect.arrayContaining([
         { alarmId: 'a-live', ownerUserId: 'u2', isReceived: true },
         { alarmId: 'a-delivered', ownerUserId: 'u2', isReceived: true },
+        // ⚠ 본인 소유 알람을 빼면 등록 기기 말고 다른 기기가 **지운 목소리로 계속 운다** —
+        // 본인 알람은 pull 대상이 아니라 서버 행 강등이 그 기기에 닿지 않는다(Codex #703 P1).
+        { alarmId: 'a-mine', ownerUserId: 'u1', isReceived: false },
       ]));
+      expect(result.voiceAccessRevokedUserIds).toEqual(['u1']);
+
+      // 교체는 '정식 등록' 이라 이번 달 원장을 소비한다.
+      const ledger = await db.execute(
+        "SELECT change_type, status FROM voice_profile_change_ledger WHERE owner_user_id = 'u1'",
+      );
+      expect(ledger.rows.length).toBe(1);
+      expect(String(ledger.rows[0]!.change_type)).toBe('official_voice');
+      expect(String(ledger.rows[0]!.status)).toBe('succeeded');
 
       const target = await db.execute("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp1'");
       expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-new');
@@ -111,9 +156,122 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       expect(String(preset.rows[0]!.voice_profile_id)).toBe('vp1');
 
       const renderer = await db.execute(
-        "SELECT refresh_existing FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+        "SELECT refresh_existing, language FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
       );
       expect(Number(renderer.rows[0]!.refresh_existing)).toBe(1);
+      // 사전렌더 언어는 등록 때 고른 언어가 단일 출처다 — 기기 언어로 큐잉하면 일본어로
+      // 만든 목소리가 한국어 클립으로 다시 만들어진다(승격 경로와 같은 규칙).
+      expect(String(renderer.rows[0]!.language)).toBe('ja');
+
+      const replacedRow = await db.execute(
+        `SELECT speech_style, speech_style_status, custom_audio_invalidated_at, updated_at
+           FROM voice_profiles WHERE id = 'vp1'`,
+      );
+      // 말투 분석 결과와 그 상태는 한 쌍이다 — 하나만 옮기면 실패한 분석이 완료로 보인다.
+      expect(String(replacedRow.rows[0]!.speech_style_status)).toBe('failed');
+      expect(replacedRow.rows[0]!.speech_style).toBeNull();
+      // 푸시를 놓친 기기가 스스로 알아챌 표식. 이게 없으면 폴백 경로가 없다.
+      expect(replacedRow.rows[0]!.custom_audio_invalidated_at).not.toBeNull();
+      expect(replacedRow.rows[0]!.updated_at).not.toBeNull();
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  // ── 교체는 승격과 **같은 게이트**를 통과한다 (Codex #703 P1) ──────────────────
+  //
+  // 초안을 만들 때 통과했다는 것은 근거가 못 된다. 초안이 남아 있는 동안 결제가 보류되거나
+  // 동의가 철회될 수 있고, 월 1회 등록 한도는 **교체로 풀리지 않는다**(앱의 `등록 n/1`).
+  const replaceWithGates = (db: Client) =>
+    replaceVoiceInPlace(db as never, {
+      targetUserIds: ['u1'],
+      draftProfileId: 'vp2',
+      language: 'ko',
+      ownerPk: 'u1',
+      loginId: 'g1',
+    });
+
+  it('같은 달에 이미 등록했으면 429로 막고 아무것도 쓰지 않는다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute(
+        `INSERT INTO voice_profile_change_ledger (id, owner_user_id, change_month, change_type, status)
+         VALUES ('led-1','u1', strftime('%Y-%m', 'now', '+9 hours'), 'official_voice', 'succeeded')`,
+      );
+
+      const result = await replaceWithGates(db);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('should have been rejected');
+      expect(result.errorCode).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+      expect(result.status).toBe(429);
+      await expectUntouched(db);
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  it('초안이 남아 있는 사이 무료로 내려갔으면 403이고 원장도 잡지 않는다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute("UPDATE users SET plan = 'free' WHERE id = 'u1'");
+
+      const result = await replaceWithGates(db);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('should have been rejected');
+      expect(result.errorCode).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+      expect(result.status).toBe(403);
+      const ledger = await db.execute(
+        "SELECT COUNT(*) AS n FROM voice_profile_change_ledger WHERE owner_user_id = 'u1'",
+      );
+      expect(Number(ledger.rows[0]!.n), '막힌 회차가 이번 달 등록을 소모했다').toBe(0);
+      await expectUntouched(db);
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  it('생체정보 동의를 철회했으면 403 CONSENT_REQUIRED', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute(
+        `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+         VALUES ('c-withdraw','u1','voice_biometric','${'${CURRENT_POLICY_VERSION}'}',0)`.replace(
+          '${CURRENT_POLICY_VERSION}',
+          CURRENT_POLICY_VERSION,
+        ),
+      );
+
+      const result = await replaceWithGates(db);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('should have been rejected');
+      expect(result.errorCode).toBe('CONSENT_REQUIRED');
+      expect(result.consent).toBe('voice_biometric');
+      await expectUntouched(db);
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  it('예약 뒤 쓰기가 실패하면 이번 달 등록도 함께 되돌린다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      // 재렌더 큐 쓰기를 실패시켜(배포 창 재현) 트랜잭션 전체를 롤백시킨다.
+      await db.execute('DROP TABLE voice_prerender_queue');
+
+      await expect(replaceWithGates(db)).rejects.toThrow();
+      const ledger = await db.execute(
+        "SELECT COUNT(*) AS n FROM voice_profile_change_ledger WHERE owner_user_id = 'u1'",
+      );
+      expect(
+        Number(ledger.rows[0]!.n),
+        '롤백된 교체가 이번 달 등록을 영구히 잡아먹으면 다음 시도가 429로 막힌다',
+      ).toBe(0);
+      const target = await db.execute("SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'vp1'");
+      expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-old');
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });

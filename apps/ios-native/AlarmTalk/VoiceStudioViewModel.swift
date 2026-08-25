@@ -582,13 +582,22 @@ final class VoiceStudioViewModel: ObservableObject {
                         do {
                             let response = try await api.getTTSMessageAudio(id: clip.messageId, token: token)
                             for key in cacheKeys {
-                                if (try? await AudioCacheStore.cacheStockClipOffMain(
-                                    audio: response,
-                                    messageId: clip.messageId,
-                                    cacheKey: key
-                                )) != nil {
-                                    refreshed.append(key)
+                                do {
+                                    _ = try await AudioCacheStore.cacheStockClipOffMain(
+                                        audio: response,
+                                        messageId: clip.messageId,
+                                        cacheKey: key
+                                    )
+                                } catch {
+                                    // ⚠ **실패한 키를 '갱신됨' 으로 세지 말 것**(Codex #703 P1).
+                                    // 아래에서 구워 둔 사운드를 버리는데, 캐시 메타는 옛 세대
+                                    // 그대로라 지문이 같아 재예약이 오지 않는다 — 예약만 없는
+                                    // 이름을 가리킨 채 남는다. 세지 않으면 그 키는 stale 로
+                                    // 남아 다음 회차가 다시 집는다. 같은 클립의 다른 키는
+                                    // 계속 시도한다.
+                                    continue
                                 }
+                                refreshed.append(key)
                             }
                         } catch {
                             return refreshed
@@ -1202,6 +1211,39 @@ final class VoiceStudioViewModel: ObservableObject {
             guard let voiceID = record.voiceProfileId?.nilIfBlank else { return false }
             // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
             return !isSystemVoiceId(voiceID) && !accessible.contains(voiceID)
+        }
+        guard !targets.isEmpty else { return 0 }
+        degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
+        return targets.count
+    }
+
+    /// **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람음으로 내린다.
+    ///
+    /// 교체는 옛 프로필 **행을 재사용**한다(id 가 그대로다). 그래서
+    /// `reconcileInaccessibleVoiceAlarms` 의 '접근 가능 목록 대조' 로는 영원히 안 걸리고,
+    /// 본인 소유 알람은 pull 대상도 아니라 서버가 행을 내려도 이 기기에 닿지 않는다 —
+    /// 놔두면 **지운 사람의 목소리로 계속 운다**(Codex #703 P1).
+    ///
+    /// 반대로 넓히면 안 된다: 프리셋(버킷) 알람은 서버가 같은 message id 로 새 목소리를
+    /// 다시 만들어 게시하므로 여기서 벗기면 되돌릴 수 없이 잃는다.
+    ///
+    /// ⚠ `cascadeAlarmsAfterVoiceDeletion` 을 재사용하지 말 것 — 그쪽은 origin·소유자를
+    /// 가리지 않아 **받은 알람까지** 벗긴다.
+    @discardableResult
+    func degradeCustomMessageAlarms(
+        forProfileID profileID: String,
+        alarmStore: LocalAlarmStore,
+        audioCache: AudioCacheStore?,
+        ownerUserId: String?
+    ) -> Int {
+        guard let owner = ownerUserId?.nilIfBlank, !isSystemVoiceId(profileID) else { return 0 }
+        let targets = alarmStore.alarms.filter { record in
+            // 받은 알람은 보낸 사람의 목소리로 성립한다 — 내 교체로 판단하지 않는다.
+            guard record.originEnum == .localOwned else { return false }
+            // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
+            guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
+            guard record.voiceProfileId == profileID else { return false }
+            return record.usesCustomMessageVoice
         }
         guard !targets.isEmpty else { return 0 }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)

@@ -106,13 +106,52 @@
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
   프리셋 재렌더가 게시된 **뒤에** 그룹원에게 갱신 신호를 보낸다. 먼저 알리면 같은 message ID의
   옛 클립을 다시 확정해 버린다. 공유를 끄는 교체만 접근권 철회를 위해 즉시 알린다.
-- **교체의 서버 쓰기는 한 트랜잭션이다.** 현역 프로필 덮어쓰기·새 등록 원본의 현역 id 승계·
-  옛 원본·provider voice 삭제 큐·드래프트 소비·프리셋 재렌더 큐가 함께 커밋된다. 재렌더 큐
-  컬럼이 아직 없는 배포 창이나 어느 쓰기든 실패하면 전부 롤백해, 새 프로필인데 옛 클립만
+- **교체의 서버 쓰기는 한 트랜잭션이다.** 대상 조회·현역 프로필 덮어쓰기·새 등록 원본의 현역
+  id 승계·옛 원본·provider voice 삭제 큐·드래프트 소비·프리셋 재렌더 큐가 함께 커밋된다. 재렌더
+  큐 컬럼이 아직 없는 배포 창이나 어느 쓰기든 실패하면 전부 롤백해, 새 프로필인데 옛 클립만
   남는 상태를 만들지 않는다.
+- **교체도 정식 등록과 같은 게이트를 통과한다.** 유료 플랜·민감 동의·월 1회 등록 원장을
+  **교체 트랜잭션 안에서** 다시 확인한다. 초안을 만들 때 통과했다는 것은 근거가 못 된다 —
+  초안이 남아 있는 동안 결제가 보류되거나 동의가 철회될 수 있고, **월 1회는 교체로 풀리지
+  않는다**(앱이 보여 주는 `등록 n/1` 이 그 숫자다). 게이트가 막으면 한 줄도 쓰이지 않고
+  돌아가며, 잡아 둔 원장도 함께 롤백된다. 응답 몸통은 일반 승격과 **같다**(403
+  `VOICE_FEATURE_REQUIRES_PAID_PLAN` / 403 `CONSENT_REQUIRED` / 429
+  `VOICE_MONTHLY_CHANGE_LIMIT_REACHED`) — 클라가 한 갈래만 처리하면 된다.
+- **재렌더는 최신 회차만 게시한다.** 마지막 인가 검사와 커밋 사이에는 R2 업로드가 들어간다.
+  그 사이 교체가 한 번 더 일어나면(큐 리셋 → 새 claim) 앞선 렌더는 **옛 목소리**다. 게시
+  직전에 큐의 claim 토큰과 프로필의 현재 provider 보이스를 함께 확인해, 어긋나면 자기 오브젝트만
+  치우고 물러난다 — **새 렌더의 음원을 지우지 않고, 큐를 done 으로 끝내지도 않는다**(끝내면
+  그 목소리는 영영 다시 만들어지지 않는다). 실패가 아니므로 attempts 도 올리지 않는다.
 - **직접 입력 custom은 재렌더하지 않는다.** 아직 전달 중인 서버 알람뿐 아니라 ACK가 끝나
   tombstone만 남은 수신 알람도 `custom_voice` 표식으로 찾아 목소리를 철회하고 즉시 알린다.
   preset tombstone은 건드리지 않아 같은 message id의 새 렌더를 다시 받게 한다.
+- **소유자 본인의 직접 입력 알람도 함께 내린다.** 받은 알람만 세면 안 된다 — 본인 알람은
+  `target_user_id` 가 비어 있고 **pull 대상도 아니라**, 서버 행을 내려도 그 기기의 로컬 행·캐시된
+  음원·OS 예약에는 닿지 않는다. 교체는 프로필 **id 를 그대로 재사용**하므로 클라의 '접근 가능
+  목록 대조' 로도 영원히 안 걸린다. 그래서 두 경로로 알린다:
+  - **등록한 기기**는 교체 성공(`replaced: true`) 즉시 그 프로필의 직접 입력 알람을 내리고 예약을
+    다시 맞춘다. 그 화면이 이미 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 라고
+    약속하고 동의를 받았으므로 별도 안내는 띄우지 않는다.
+  - **다른 기기**는 `voice_access_revoked` 에 `voiceProfileId` 와 `scope=custom_messages` 를 실어
+    보낸다(타입 문자열은 그대로 — 옛 클라도 접근권 재확인을 깨우고 추가 키는 무시한다). 화면이
+    없을 수 있으므로 강등 안내는 대기표에 적어 두고 다음에 앱을 열 때 말한다.
+  - **공유 중이던 목소리는 같은 플랜 그룹원도 깨운다.** 그들도 그 목소리로 직접 입력 문구를
+    만들어 자기 알람에 쓸 수 있고, 그 행 역시 pull 대상이 아니다.
+  - 프리셋 알람은 **양쪽 모두 건드리지 않는다** — 같은 message id 로 새 목소리가 다시 게시된다.
+- **푸시는 즉시성만 맡는다 — 정확성은 표식이 맡는다.** 교체는 `voice_profiles.custom_audio_invalidated_at`
+  을 함께 커밋하고 목록 응답에 실어 보낸다. 기기는 프로필별로 마지막에 본 값을 적어 두고,
+  달라졌을 때만 그 목소리의 직접 입력 알람을 내린다(앱 시작·탭 진입·주기 새로고침 전부 이
+  경로를 지난다). 이게 없으면 무음 푸시를 놓친 기기는 **영원히** 수렴하지 못한다 — iOS 는
+  강제 종료된 앱에 무음 푸시를 보내지 않고, 안드로이드도 절전 상태에서 data 메시지를 버린다.
+  - **처음 본 프로필은 조용히 적기만 한다.** 첫 조회를 '바뀌었다' 로 읽으면 업데이트 직후 모든
+    설치가 직접 입력 알람을 되돌릴 수 없이 날린다.
+  - **강등이 끝난 뒤에 적는다.** 먼저 적으면 실패한 회차가 신호를 삼켜 다시 시도하지 않는다.
+  - ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올리므로, **이름만
+    바꿔도** 직접 입력 알람이 사라진다.
+- **철회 fanout 은 응답과 분리해 예약한다**(`waitUntil`). 교체·삭제 커밋은 재시도할 수 없어
+  (드래프트·프로필이 이미 tombstone 이라 재요청은 404) 응답을 기다리다 컨텍스트가 끊기면 그
+  신호는 영영 안 나간다. 공유 갱신 push 와 달리 **실행 컨텍스트가 없으면 생략하지 않고 직접
+  기다린다** — 생략하면 철회가 조용히 사라진다.
 - **노이즈 제거 선택지는 두지 않는다.** 현재 클론 API와 백엔드가 그 값을 사용하지 않는다.
   작동하지 않는 토글을 보여 주는 것은 기능이 아니다.
 - 문구 언어 기본값은 앱 언어이고, 사용자가 `한국어/English/日本語` 중 바꿀 수 있다.
@@ -236,6 +275,11 @@
 비교한다. 새 파일을 완전히 쓴 뒤 원자 교체하며, 실패하면 이미 예약된 알람이 쓸 옛 파일을
 남긴다. iOS 예약 지문에는 캐시 키뿐 아니라 원격 주소 세대도 들어가야 같은 키의 새 바이트로
 AlarmKit 예약을 다시 만들 수 있다.
+
+**실패한 키는 갱신으로 세지 않는다.** 캐시 본체나 메타 쓰기가 실패했는데 '갱신됨' 으로 세면,
+구워 둔 알람 사운드를 버리면서도 메타의 세대는 옛 값이라 **지문이 같아 재예약이 오지 않는다** —
+예약만 없는 이름을 가리킨 채 남는다. 던져서 그 키를 낡은 상태로 남기면 다음 회차가 다시 집는다.
+같은 이유로 캐시 정본은 **키 자리**이고, 옛 별칭(`<messageId>.<ext>`)보다 먼저 쓴다.
 
 - **운영이 서버 시드를 늘리는 것을 전제로 짠다.** 프리셋을 11개에서 13개로 늘려 배포하면
   앱은 **비는 2개만** 받아야 한다. 코드나 상수에 11을 적어 두면 그 2개는 영영 안 받아지고,
@@ -418,7 +462,12 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
+| 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
+| 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
+| 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
+| 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |
+| 낡은 재렌더 폐기 | — | — | `generateStockClip`(claim·provider 보이스 가드) + `PrerenderSupersededError` |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |

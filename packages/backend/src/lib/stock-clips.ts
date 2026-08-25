@@ -737,6 +737,7 @@ export async function runPrerenderBatch(
     }
     let voiceRendered = 0;
     let voiceError = false;
+    let superseded = false;
     for (const target of targets) {
       if (rendered >= maxClips) break;
       rendered += 1;
@@ -744,6 +745,12 @@ export async function runPrerenderBatch(
         await generateStockClip(db, env, target);
         voiceRendered += 1;
       } catch (genErr) {
+        if (genErr instanceof PrerenderSupersededError) {
+          // 더 새 교체가 이미 이겼다 — 이 목소리의 남은 대상도 전부 옛 목소리로 만들 것이라
+          // 통째로 버린다. **실패가 아니므로** attempts 를 올리지 않고 관측자에게도 안 보낸다.
+          superseded = true;
+          break;
+        }
         options.onClipError?.(genErr);
         voiceError = true;
         // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
@@ -754,6 +761,12 @@ export async function runPrerenderBatch(
           break;
         }
       }
+    }
+    if (superseded) {
+      // 내 토큰이면 임대만 반납하고, 이미 남의 것이면 no-op 다(둘 다 claim_token 가드).
+      // **done 으로 끝내지 않는다** — 새 주인의 회차가 아직 남아 있다.
+      await releasePrerenderClaim(db, voice.id, claim.claimToken);
+      continue;
     }
     // 재조회 없이 판정: 이번 배치에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
     if (voiceRendered === targets.length && !voiceError) {
@@ -859,6 +872,20 @@ function stripDeliveryTags(text: string): string {
     .replace(new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi'), '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * **내 렌더는 낡았다 — 게시하지 않고 버렸다.**
+ *
+ * 실패(`markPrerenderFailed`)와 **구분한다**. 실패는 attempts 를 올려 5회에서 `failed` 로
+ * 내려앉지만, 이건 "그 사이 더 새 교체가 큐를 가져갔다" 는 뜻이라 이 회차만 버리면 된다.
+ * 큐는 새 주인의 것이므로 done/failed 로 끝내지 말고 **아무것도 하지 않고 물러난다.**
+ */
+export class PrerenderSupersededError extends Error {
+  constructor(message = 'Voice prerender render was superseded by a newer replacement.') {
+    super(message);
+    this.name = 'PrerenderSupersededError';
+  }
 }
 
 /**
@@ -1007,7 +1034,9 @@ export async function generateStockClip(
               SELECT 1 FROM voice_profiles vp
               JOIN voice_prerender_queue q ON q.voice_profile_id = vp.id
               WHERE vp.id = ? AND vp.deleted_at IS NULL AND vp.status = 'ready'
-                AND COALESCE(vp.is_draft, 0) = 0 AND q.owner_user_id = ?
+                AND COALESCE(vp.is_draft, 0) = 0
+                AND vp.elevenlabs_voice_id = ?
+                AND q.owner_user_id = ?
                 AND q.status = 'pending' AND q.claim_token = ?
             ))`,
       args: [
@@ -1027,6 +1056,9 @@ export async function generateStockClip(
         target.variantIndex,
         target.toneAdapt ? 1 : 0,
         target.voiceProfileId,
+        // 클레임 토큰만으로는 부족하다 — LRU 회수 뒤 복구(`voice-recover.ts`)는 큐를
+        // 건드리지 않고 provider 보이스만 갈아 끼우므로, 유효한 토큰과 바뀐 세대가 공존한다.
+        target.elevenlabsVoiceId,
         target.ownerUserId,
         target.claimToken ?? '',
       ],
@@ -1041,7 +1073,11 @@ export async function generateStockClip(
         args: [target.voiceProfileId, target.category, language, target.variantIndex],
       });
       const row = existing.rows[0];
-      if (!row) return null;
+      // 게시할 preset 행도 없는데 INSERT 가 0행이면 조건은 하나뿐이다: 위 인가 EXISTS 가
+      // 막았다(=클레임이 남의 것이거나 provider 보이스가 갈렸다). 교체 회차와 **같은 사건**
+      // 이므로 같은 결말로 다룬다 — 실패로 세어 attempts 를 태우면, LRU 회수 뒤 복구처럼
+      // 정상적인 세대 교체가 다섯 번 겹치는 것만으로 큐가 `failed` 로 주저앉는다.
+      if (!row) return { superseded: true as const, publishedAudioUrl: '' };
 
       // ── 목소리 교체: 기존 preset 을 **덮어쓴다** ────────────────────────────
       // ⚠ **`message_id` 는 그대로 둔다.** 알람이 그 값을 가리키고 있어서, 새 행을
@@ -1053,12 +1089,52 @@ export async function generateStockClip(
       // 달라진 것을 보고 다시 받는다(iOS `AudioCacheStore.isStale`).
       if (target.refreshExisting) {
         const existingMessageId = String(row.id);
-        await tx.execute({
+        // ⚠ **게시 직전에 다시 확인한다.** 마지막 인가 검사(`assertCloneAuthorization`,
+        // 합성 직후)와 이 커밋 사이에는 R2 업로드가 통째로 들어간다. 그 창에서 교체가 한 번
+        // 더 일어나면(큐 리셋 → 새 claim → 새 provider voice) 이 렌더는 **옛 목소리**다.
+        //
+        // 위의 조건부 INSERT 에 붙은 claim 가드는 교체 회차에서 **작동하지 않는다** —
+        // 같은 preset 이 이미 있어 `WHERE NOT EXISTS` 가 항상 거짓이라 0행이고, 그래서
+        // 이 UPDATE 가 유일한 문지기다. 놓치면 옛 목소리가 새 목소리를 덮고, 아래
+        // `replacedAudioUrl` 정리가 **방금 게시된 새 음원**을 R2 에서 지운다.
+        const replaced = await tx.execute({
           sql: `UPDATE messages
                 SET text = ?, synthesis_text = ?, delivery_tags_json = ?, audio_url = ?
-                WHERE id = ?`,
-          args: [displayText, synthesisText, deliveryTagsJson, audioUrl, existingMessageId],
+                WHERE id = ?
+                  AND EXISTS (
+                    SELECT 1 FROM voice_profiles vp
+                    JOIN voice_prerender_queue q ON q.voice_profile_id = vp.id
+                    WHERE vp.id = ? AND vp.deleted_at IS NULL AND vp.status = 'ready'
+                      AND COALESCE(vp.is_draft, 0) = 0
+                      AND vp.elevenlabs_voice_id = ?
+                      AND q.owner_user_id = ?
+                      AND q.status = 'pending' AND q.claim_token = ?
+                  )`,
+          args: [
+            displayText,
+            synthesisText,
+            deliveryTagsJson,
+            audioUrl,
+            existingMessageId,
+            target.voiceProfileId,
+            // 이 렌더를 만든 provider 보이스. 프로필이 그 사이 다른 보이스로 갈렸으면
+            // (교체 또는 LRU 복구) 내 산출물은 낡은 것이다.
+            target.elevenlabsVoiceId,
+            target.ownerUserId,
+            target.claimToken ?? '',
+          ],
         });
+        // `WHERE id = ?` 는 방금 같은 트랜잭션에서 SELECT 한 행이라 언제나 맞는다 —
+        // 0행은 오직 위 EXISTS 가 막았다는 뜻이다.
+        //
+        // ⚠ **이긴 렌더가 게시한 주소를 함께 들고 나간다.** 캐시 키는 (provider·보이스·문구·
+        // 형식) 해시라, 같은 보이스로 같은 문구를 만든 두 회차는 **같은 오브젝트 키**가 된다
+        // (클레임만 바뀐 경우 — advance 가 cron 클레임을 인수하는 경로가 실제로 그렇다).
+        // 그때 내 것이라고 지우면 방금 게시된 음원을 지운다. 아래 형제 가드
+        // (`publication.audioUrl !== audioUrl`)가 막는 것과 같은 우연이다.
+        if ((replaced.rowsAffected ?? 0) === 0) {
+          return { superseded: true as const, publishedAudioUrl: String(row.audio_url ?? '') };
+        }
         // 오디오 대장에도 새 렌더를 남긴다. `request_hash` 가 UNIQUE 라 같은 해시가 이미
         // 있으면(같은 목소리·같은 문구) 무시된다 — 교체는 provider voice id 가 달라
         // 해시가 반드시 갈라지므로 정상적으로 새 행이 생긴다.
@@ -1136,9 +1212,12 @@ export async function generateStockClip(
     throw error;
   }
 
-  if (!publication) {
-    await discardStagedAudio();
-    throw new Error('Preset publication authorization expired.');
+  if ('superseded' in publication) {
+    // 내가 만든 오브젝트만 치운다 — 새 렌더가 이미 앉혀 둔 음원은 **절대 건드리지 않는다.**
+    // 두 회차의 키가 우연히 같으면(같은 보이스·같은 문구) 그 오브젝트는 이제 **이긴 쪽의
+    // 것**이라 지우면 안 된다.
+    if (publication.publishedAudioUrl !== audioUrl) await discardStagedAudio();
+    throw new PrerenderSupersededError();
   }
   // ⚠ **교체 회차에서는 여기 걸리면 안 된다.** 이 가드는 "이미 다른 렌더가 이겼으니 내가
   // 만든 오브젝트는 쓰레기다" 를 뜻한다. 교체는 방금 만든 audioUrl 을 그대로 게시하므로

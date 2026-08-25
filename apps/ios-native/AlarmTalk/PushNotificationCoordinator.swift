@@ -38,6 +38,14 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// 이 클래스가 동기화 객체들을 직접 들면 순환 참조가 된다.
     var onFamilyAlarm: () async -> Void = {}
     var onVoiceChanged: () async -> Void = {}
+    /**
+     * **제자리 교체로 그 목소리의 직접 입력 음원이 무효가 됐다.**
+     *
+     * `onVoiceChanged` 로는 부족하다 — 교체는 프로필 행을 재사용해 id 가 목록에 그대로
+     * 남으므로 접근권 재확인이 아무것도 걸러내지 못한다. 그래서 서버가 payload 에 어떤
+     * 프로필인지를 실어 보내고, 앱이 그 목소리의 custom 알람만 좁혀 내린다.
+     */
+    var onVoiceReplaced: (String) async -> Void = { _ in }
     var onPlanChanged: () async -> Void = {}
 
     /// 마지막으로 **서버에 올린** 기기 토큰.
@@ -212,6 +220,12 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             return true
         case .voiceShareChanged, .voiceAccessRevoked:
             await onVoiceChanged()
+            // 교체 신호에만 실려 오는 payload. 목록 갱신만으로는 이 알람들을 못 찾는다.
+            if type == .voiceAccessRevoked,
+               userInfo["scope"] as? String == "custom_messages",
+               let profileID = (userInfo["voiceProfileId"] as? String)?.nilIfBlank {
+                await onVoiceReplaced(profileID)
+            }
             return true
         case .planChanged:
             await onPlanChanged()
@@ -309,6 +323,29 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             }
         }
 
+        // 제자리 교체로 무효가 된 **직접 입력** 알람을 내린다. 위 `onVoiceChanged` 의
+        // 목록 갱신·클립 재다운로드로는 못 잡는다 — 프로필 id 가 그대로 살아 있어서
+        // 접근권 재확인이 통과시키고, 그 알람의 음원은 서버에서 이미 사라졌다.
+        deps.push.onVoiceReplaced = { profileID in
+            await deps.alarmStore.waitUntilLoadedFromDisk()
+            guard deps.alarmStore.hasLoadedFromDisk else { return }
+            let ownerID = deps.auth.session?.user.id
+            let degraded = deps.voiceStudio.degradeCustomMessageAlarms(
+                forProfileID: profileID,
+                alarmStore: deps.alarmStore,
+                audioCache: .shared,
+                ownerUserId: ownerID
+            )
+            guard degraded > 0 else { return }
+            // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
+            DowngradeNoticeStore().record(userID: ownerID, cause: .voiceReplaced, count: degraded)
+            _ = await AlarmScheduleReconciler.reconcile(
+                store: deps.alarmStore,
+                alarmKit: deps.alarmKit,
+                ownerUserId: ownerID
+            )
+        }
+
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.
         // ⚠ **여기 한 곳에서만 꽂는다.** 화면에서 꽂으면 백그라운드로 깨어난 실행에는
         // scene 이 없어 빠진다 — 등록·실행기와 같은 이유다.
@@ -328,6 +365,31 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 audioCache: .shared,
                 ownerUserId: ownerID
             )
+            // ⚠ **제자리 교체는 위 대조로 절대 안 걸린다** — 프로필 id 가 그대로 살아 있다.
+            // 서버가 준 `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접
+            // 입력 알람만 내린다. 푸시(`onVoiceReplaced`)는 즉시성만 맡고, **정확성은 이
+            // 경로**가 맡는다 — 앱 시작·탭 진입·백그라운드 주기가 모두 여기를 지난다.
+            let markers = VoiceReplacementMarkerStore()
+            var replacedCount = 0
+            for profile in deps.voiceStudio.profiles {
+                guard markers.changed(
+                    userID: ownerID,
+                    profileID: profile.id,
+                    invalidatedAt: profile.customAudioInvalidatedAt
+                ) else { continue }
+                replacedCount += deps.voiceStudio.degradeCustomMessageAlarms(
+                    forProfileID: profile.id,
+                    alarmStore: deps.alarmStore,
+                    audioCache: .shared,
+                    ownerUserId: ownerID
+                )
+                // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
+                markers.commit(
+                    userID: ownerID,
+                    profileID: profile.id,
+                    invalidatedAt: profile.customAudioInvalidatedAt
+                )
+            }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본
             // 알람음으로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
@@ -335,8 +397,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `SHARED_RELEASED` 를 기록한다(2026-08-18 Codex #697 P2).
             // 원인이 **공유 해제**인 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라
             // 플랜 강등(복구되면 돌아온다)과 결말이 다르다 — 다시 공유받아야 한다.
-            DowngradeNoticeStore().record(userID: ownerID, cause: .sharedReleased, count: degraded)
-            guard degraded > 0 else { return }
+            // 원인별로 따로 적는다 — 대기표가 우선순위로 합친다(안내할 액션이 있는 쪽이 이긴다).
+            // 뭉쳐서 적으면 공유 해제의 안내를 액션 없는 교체 안내로 덮어쓴다.
+            let notices = DowngradeNoticeStore()
+            notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
+            notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
+            guard degraded + replacedCount > 0 else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,

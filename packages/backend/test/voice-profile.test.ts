@@ -76,8 +76,19 @@ function fakeExecutionCtx() {
       waitUntil: (task: Promise<unknown>) => tasks.push(task),
       passThroughOnException: () => {},
     } as unknown as ExecutionContext,
+    /** waitUntil 로 넘어간 작업들 — '응답을 막지 않았다' 를 이걸로 확인한다. */
+    tasks,
     drain: () => Promise.all(tasks),
   };
+}
+
+/**
+ * 교체(replace_existing) 갈래가 승격과 같은 게이트를 통과하도록 기본값을 깐다.
+ * 매처라 FIFO 큐 순서를 건드리지 않는다(기존 pushResult 단언 보존).
+ */
+function pushReplacementGatesPass(db: ReturnType<typeof createMockDB>) {
+  db.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
+  db.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 1);
 }
 
 function cloneForm(
@@ -1178,7 +1189,9 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       { object_key: 'uploads/old.wav' },
     ]);
     mockDB.pushResultFor('SELECT a.id AS alarm_id', [
-      { alarm_id: 'alarm-live', recipient_user_id: 'recipient-live' },
+      { alarm_id: 'alarm-live', row_owner_user_id: 'recipient-live', is_received: 1 },
+      // 소유자 본인 알람(target_user_id NULL) — pull 대상이 아니라 서버 강등이 안 닿는다.
+      { alarm_id: 'alarm-mine', row_owner_user_id: 'user-1', is_received: 0 },
     ]);
     mockDB.pushResultFor('SELECT alarm_id, recipient_user_id FROM alarm_recipient_state', [
       { alarm_id: 'alarm-delivered', recipient_user_id: 'recipient-delivered' },
@@ -1186,6 +1199,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     mockDB.pushResultFor('SELECT id, name, status, is_shared', [
       { id: V1, name: '새 목소리', status: 'ready' },
     ]);
+    pushReplacementGatesPass(mockDB);
 
     const execution = fakeExecutionCtx();
     const response = await buildApp().fetch(
@@ -1198,12 +1212,23 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       execution.ctx,
     );
     expect(response.status).toBe(200);
+    const responseBody = response.json() as Promise<{ replaced?: boolean }>;
     await execution.drain();
 
     const profileReplace = mockDB.calls.find(
       (call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?'),
     );
-    expect(profileReplace?.args[7], '확정 화면의 공유 선택이 교체된 프로필에 반영되지 않았다').toBe(1);
+    // 인자 순서는 SET 절과 같다: name, voice, relationship, listener, preview_text,
+    // preview_language, speech_style, speech_style_status, is_shared, id.
+    expect(profileReplace?.args[8], '확정 화면의 공유 선택이 교체된 프로필에 반영되지 않았다').toBe(1);
+    expect(
+      profileReplace?.sql,
+      '말투 분석 상태를 함께 옮기지 않으면 실패한 분석이 완료로 보인다',
+    ).toContain('speech_style_status = ?');
+    expect(
+      profileReplace?.sql,
+      '푸시를 놓친 기기가 스스로 알아챌 표식이 없다',
+    ).toContain('custom_audio_invalidated_at = ');
 
     const alarmUpdate = mockDB.calls.find(
       (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),
@@ -1244,9 +1269,15 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       expect.arrayContaining([
         { alarmId: 'alarm-live', ownerUserId: 'recipient-live', isReceived: true },
         { alarmId: 'alarm-delivered', ownerUserId: 'recipient-delivered', isReceived: true },
+        // 소유자 본인 알람도 알린다 — 안 알리면 등록 기기 말고 다른 기기가 지운 목소리로 운다.
+        { alarmId: 'alarm-mine', ownerUserId: 'user-1', isReceived: false },
       ]),
-      [],
+      ['user-1'],
+      // 교체는 프로필 id 가 살아 있어 '접근 가능 목록 대조' 로는 안 걸린다 — 무엇이
+      // 무효가 됐는지 payload 로 알려야 클라가 custom 알람만 좁혀 정리할 수 있다.
+      { replacedVoiceProfileId: V1 },
     );
+    expect((await responseBody).replaced, '등록 기기가 자기 알람을 정리할 신호가 없다').toBe(true);
     expect(mockDB.transactions.commits).toBe(1);
     expect(
       mockDB.calls.some((call) => call.sql.includes('FROM plan_group_members m1')),
@@ -1269,6 +1300,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       'INSERT INTO voice_prerender_queue',
       new Error('no such column: refresh_existing'),
     );
+    pushReplacementGatesPass(mockDB);
 
     const response = await buildApp().fetch(
       jsonReq('PATCH', `/vp/${V2}`, {
@@ -1282,6 +1314,146 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
     expect(mockDB.transactions.rollbacks).toBe(1);
     expect(mockDB.transactions.commits).toBe(0);
     expect(mockNotifyDowngradedAlarms).not.toHaveBeenCalled();
+  });
+
+  // 공유 목소리는 **같은 그룹원**도 자기 알람에 직접 입력 문구를 만들어 쓸 수 있다. 그 행도
+  // target_user_id 가 없어 pull 로 돌아오지 않으므로, 주인만 깨우면 그 기기에서 지운 목소리가
+  // 계속 운다.
+  it('공유 중이던 목소리를 교체하면 그룹원 기기도 깨운다', async () => {
+    mockDB.pushResult([{ id: V2, is_draft: 1, previewed_at: '2026-08-12T00:00:00Z' }]);
+    mockDB.pushResult([{ active_count: 1 }]);
+    mockDB.pushResult([{
+      id: V2,
+      user_id: 'user-1',
+      name: '새 목소리',
+      elevenlabs_voice_id: 'elv-new',
+      is_shared: 1,
+    }]);
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old', is_shared: 1 }]);
+    pushReplacementGatesPass(mockDB);
+    mockDB.pushResultFor('SELECT a.id AS alarm_id', [
+      { alarm_id: 'alarm-member', row_owner_user_id: 'member-2', is_received: 0 },
+    ]);
+    mockDB.pushResultFor('FROM plan_group_members m1', [{ user_id: 'member-2' }]);
+    mockDB.pushResultFor('SELECT id, name, status, is_shared', [
+      { id: V1, name: '새 목소리', status: 'ready' },
+    ]);
+
+    const response = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true, is_shared: true }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockNotifyDowngradedAlarms).toHaveBeenCalledWith(
+      mockDB.client,
+      ENV,
+      // 임자를 목소리 주인으로 뭉개면 그룹원 기기가 신호를 못 받는다.
+      [{ alarmId: 'alarm-member', ownerUserId: 'member-2', isReceived: false }],
+      expect.arrayContaining(['user-1', 'member-2']),
+      { replacedVoiceProfileId: V1 },
+    );
+  });
+
+  // **교체도 '정식 등록' 이다** — 승격이 보는 게이트를 그대로 통과해야 한다(Codex #703 P1).
+  //
+  // 예전에는 이 갈래가 승격 트랜잭션에 닿기 전에 return 해서, 초안이 남아 있는 동안 결제가
+  // 보류되거나 동의가 철회돼도 통과했고 **월 1회 등록 한도도 교체로는 소모되지 않았다** —
+  // 앱은 `등록 1/1` 이라 버튼을 막아 두는데 서버만 무제한이었다.
+  const pushReplaceLookups = () => {
+    mockDB.pushResult([{ id: V2, is_draft: 1, previewed_at: '2026-08-12T00:00:00Z' }]);
+    mockDB.pushResult([{ active_count: 1 }]);
+    mockDB.pushResult([{
+      id: V2,
+      user_id: 'user-pk-1',
+      name: '새 목소리',
+      elevenlabs_voice_id: 'elv-new',
+      is_shared: 0,
+    }]);
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
+  };
+
+  it('이번 달 등록을 이미 썼으면 교체도 429 — 한 줄도 쓰지 않는다', async () => {
+    pushReplaceLookups();
+    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'plus' }]);
+    // 원장이 이미 이번 달 행을 들고 있다 → INSERT OR IGNORE 가 0행.
+    mockDB.pushResultFor('INSERT OR IGNORE INTO voice_profile_change_ledger', [], 0);
+
+    const response = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }),
+    );
+
+    expect(response.status).toBe(429);
+    expect((await response.json()).error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    expect(
+      mockDB.calls.some((call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?')),
+      '게이트에 막혔는데 프로필을 덮어썼다',
+    ).toBe(false);
+    expect(mockNotifyDowngradedAlarms).not.toHaveBeenCalled();
+  });
+
+  it('초안이 남아 있는 사이 무료로 내려갔으면 교체도 403', async () => {
+    pushReplaceLookups();
+    mockDB.pushResultFor('SELECT plan FROM users', [{ plan: 'free' }]);
+
+    const response = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }),
+    );
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+    expect(
+      mockDB.calls.some((call) => call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger')),
+      '플랜 게이트에 막혔는데 이번 달 원장을 잡았다',
+    ).toBe(false);
+  });
+
+  // 커밋은 재시도할 수 없다(드래프트가 이미 tombstone → 재요청은 404). 그래서 철회 fanout 은
+  // 응답을 막지 않고 `waitUntil` 로 넘긴다 — 요청 컨텍스트가 끊겨도 런타임이 끝까지 보낸다.
+  it('철회 fanout 은 waitUntil 로 넘겨 응답을 막지 않는다', async () => {
+    pushReplaceLookups();
+    pushReplacementGatesPass(mockDB);
+    mockDB.pushResultFor('SELECT id, name, status, is_shared', [
+      { id: V1, name: '새 목소리', status: 'ready' },
+    ]);
+    let release!: () => void;
+    mockNotifyDowngradedAlarms.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = resolve; }),
+    );
+
+    const execution = fakeExecutionCtx();
+    const response = await buildApp().fetch(
+      jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }),
+      ENV,
+      execution.ctx,
+    );
+
+    // FCM/APNs 왕복이 아직 안 끝났는데도 응답이 돌아와야 한다.
+    expect(response.status).toBe(200);
+    expect(execution.tasks, '철회 fanout 이 waitUntil 에 등록되지 않았다').toHaveLength(1);
+    release();
+    await execution.drain();
+    expect(mockNotifyDowngradedAlarms).toHaveBeenCalledTimes(1);
+  });
+
+  // ⚠ `scheduleVoiceShareChangedPush` 와 다르다. 저쪽은 executionCtx 가 없으면 push 를
+  // **생략**하지만(목록 갱신이라 주기 재조회로 충분), 철회는 생략하면 조용히 사라진다.
+  it('ExecutionContext 가 없으면 생략하지 않고 직접 보낸다', async () => {
+    pushReplaceLookups();
+    pushReplacementGatesPass(mockDB);
+    mockDB.pushResultFor('SELECT id, name, status, is_shared', [
+      { id: V1, name: '새 목소리', status: 'ready' },
+    ]);
+
+    const response = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockNotifyDowngradedAlarms, '공유 push 처럼 생략하면 철회가 사라진다').toHaveBeenCalledTimes(1);
   });
 });
 

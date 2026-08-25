@@ -48,8 +48,14 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         // family_alarm 은 '받은 알람'만 갱신하고, plan_changed 는 '진짜 무료'일 때만 변환하므로
         // 둘 다 이 경우를 못 덮는다. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉.
         if (message.data["type"] == "voice_access_revoked") {
-            runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(applicationContext) }
-                .onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
+            // 제자리 교체 신호는 payload 에 무엇이 무효가 됐는지가 실려 온다. 교체는 프로필
+            // id 를 재사용하므로 워커의 '접근 가능 목록 대조' 로는 아무것도 안 걸린다 —
+            // 이 id 가 있어야 그 목소리의 직접 입력 알람을 내릴 수 있다.
+            val replacedVoiceId = message.data["voiceProfileId"]
+                ?.takeIf { message.data["scope"] == "custom_messages" }
+            runCatching {
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(applicationContext, replacedVoiceId)
+            }.onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
         }
         // 공유 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만
         // 포그라운드에서는 여기로만 오므로 직접 그린다(안 그리면 아무것도 안 보인다).

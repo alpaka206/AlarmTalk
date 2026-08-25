@@ -830,6 +830,8 @@
     <string name="voicesr_preview_action">再生</string>
     <string name="voices_add">追加</string>
     <string name="voices_monthly_quota">作成可能 %1$d/%2$d回</string>
+    <string name="msg_voice_monthly_change_limit">声は月に1回だけ変更できます。来月またお試しください。</string>
+    <string name="msg_voice_consent_required">声を作るには音声情報の利用同意が必要です。その他 → 規約と同意から、もう一度同意してください。</string>
     <string name="voices_limit_title">今月の声はもう作りました</string>
     <string name="voices_limit_message">声は月に1つ作れます。次は来月に作れます。今の声を削除しても今月は作れません。</string>
     <string name="voices_my_voices_title">自分の声</string>
@@ -899,6 +901,8 @@
     <string name="downgrade_notice_free_title">無料利用券に変わりました</string>
     <string name="downgrade_notice_free_message">声のアラーム%1$d件が基本アラーム音に変わりました。3日以内に利用券を登録し直すと声が戻り、過ぎると完全に削除されます。</string>
     <string name="downgrade_notice_shared_title">共有利用券から外れました</string>
+    <string name="downgrade_notice_replaced_title">新しい声に変わりました</string>
+    <string name="downgrade_notice_replaced_message">声を新しく登録したため、自由入力の文章で作ったアラーム%1$d件が標準のアラーム音に戻りました。新しい声で文章を作り直してください。</string>
     <string name="downgrade_notice_shared_message">共有されていた声が使えなくなり、アラーム%1$d件が基本アラーム音に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。</string>
     <string name="downgrade_notice_open_billing">利用券を見る</string>
     <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>

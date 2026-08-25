@@ -822,6 +822,8 @@ for a smooth and secure experience.</string>
     <string name="voicesr_preview_action">Play</string>
     <string name="voices_add">Add</string>
     <string name="voices_monthly_quota">%1$d/%2$d creations available</string>
+    <string name="msg_voice_monthly_change_limit">You can change your voice only once a month. Please try again next month.</string>
+    <string name="msg_voice_consent_required">Creating a voice needs your consent to use voice data. Go to More → Terms &amp; consents and agree again.</string>
     <string name="voices_limit_title">Monthly voice limit reached</string>
     <string name="voices_limit_message">You can create one voice per month. Your next one is available next month — deleting this voice will not give this month back.</string>
     <string name="voices_my_voices_title">My voices</string>
@@ -891,6 +893,8 @@ Pass code: %1$s
     <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
     <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back — after that they are deleted permanently.</string>
     <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
+    <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
+    <string name="downgrade_notice_replaced_message">Registering a new voice turned %1$d alarm(s) with custom text back into the default alarm sound. Create those messages again with the new voice.</string>
     <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use the default sound. To use it again you need your own pass or a new invite code.</string>
     <string name="downgrade_notice_open_billing">View passes</string>
     <string name="plan_gate_paid_message">This feature is available with a paid pass.</string>

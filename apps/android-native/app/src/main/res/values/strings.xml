@@ -393,6 +393,8 @@
     <string name="downgrade_notice_free_title">무료 이용권으로 바뀌었어요</string>
     <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
+    <string name="downgrade_notice_replaced_title">새 목소리로 바뀌었어요</string>
+    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
     <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
          무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다. -->
     <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
@@ -875,6 +877,8 @@
     <string name="voicesr_preview_action">듣기</string>
     <string name="voices_add">추가</string>
     <string name="voices_monthly_quota">생성 가능 %1$d/%2$d회</string>
+    <string name="msg_voice_monthly_change_limit">목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요.</string>
+    <string name="msg_voice_consent_required">목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.</string>
     <string name="voices_limit_title">이번 달 목소리는 다 만들었어요</string>
     <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.</string>
     <string name="voices_my_voices_title">내 목소리</string>

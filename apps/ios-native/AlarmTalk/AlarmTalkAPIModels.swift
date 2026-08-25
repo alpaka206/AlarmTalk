@@ -413,6 +413,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// 다시 시도할 수도 없었다**(서버에는 `/:id/speech-style/retry` 가 있다).
     /// 안드로이드는 `voicesr_speech_style_failed` + `_retry` 행을 그린다.
     var speechStyleStatus: String? = nil
+    /// **이 프로필의 직접 입력 음원이 무효가 된 시각**(제자리 교체). 값이 바뀌면 그 목소리로
+    /// 만들어 둔 직접 입력 알람은 다시 만들 수 없는 옛 목소리다.
+    ///
+    /// 교체는 프로필 **id 를 그대로 재사용**하므로 접근 가능 목록 대조로는 영원히 안 걸린다.
+    /// 푸시는 즉시성만 맡고, 정확성은 이 값을 `VoiceReplacementMarkerStore` 와 대조하는
+    /// 새로고침 경로가 맡는다. 안드로이드 `VoiceProfile.customAudioInvalidatedAt` 미러.
+    var customAudioInvalidatedAt: String? = nil
 }
 
 /// `PATCH voice/{id}` 로 초안을 승격할 때만 쓰는 최소 바디.

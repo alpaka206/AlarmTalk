@@ -15,6 +15,7 @@ import android.util.Log
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.VoiceReplacementMarkerStore
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,11 @@ import kotlinx.coroutines.withContext
  * 판단 기준은 화면 경로와 같다: 내 목소리 + 공유받은 목소리를 **신선하게** 다시 받아, 그 목록에
  * 없는 목소리를 쓰는 내 알람만 강등한다(degradeAlarmsWithInaccessibleVoice). 한쪽이라도 조회에
  * 실패하면 목록을 믿을 수 없으므로 강등하지 않고 retry 한다 — 오강등이 미강등보다 나쁘다.
+ *
+ * ⚠ **제자리 목소리 교체는 그 대조로 절대 안 걸린다.** 교체는 프로필 행을 **재사용**하므로
+ * id 가 목록에 그대로 있다. 그래서 서버가 [INPUT_REPLACED_VOICE_ID] 로 "이 목소리의 직접 입력
+ * 음원이 무효가 됐다" 를 실어 보내고, 그 경우에만 해당 프로필의 custom 알람을 함께 내린다
+ * (프리셋 알람은 새 목소리로 다시 만들어지므로 살린다).
  *
  * 경로는 셋이고 서로 폴백이다: 푸시([runOnce], 즉시) → 하루 주기([ensurePeriodic], 푸시 유실·앱
  * 미실행 대비) → 앱 시작 refreshSocial. 정확성은 뒤 둘이 보장하고 푸시는 즉시성만 맡는다.
@@ -79,14 +85,41 @@ class VoiceAccessSyncWorker(
             }
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
-            val degraded = AlarmAppContainer.repository(applicationContext)
+            val repository = AlarmAppContainer.repository(applicationContext)
+            val lostAccess = repository
                 .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
+            // 교체된 목소리의 직접 입력 알람 — 위 대조는 못 잡는다(id 가 그대로 살아 있다).
+            // ① 푸시가 실어 준 id(즉시성)
+            var replacedCount = 0
+            val replacedVoiceId = inputData.getString(INPUT_REPLACED_VOICE_ID)?.takeIf { it.isNotBlank() }
+            if (replacedVoiceId != null) {
+                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                    replacedVoiceId,
+                    session.user.id,
+                )
+            }
+            // ② 방금 받은 목록의 표식(정확성) — 푸시를 놓쳤어도 여기서 수렴한다.
+            //    하루 주기 폴백이 이 경로를 그대로 탄다.
+            val markers = VoiceReplacementMarkerStore(applicationContext)
+            for (profile in myVoices) {
+                if (!markers.changed(session.user.id, profile.id, profile.customAudioInvalidatedAt)) continue
+                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                    profile.id,
+                    session.user.id,
+                )
+                // 강등이 실제로 끝난 뒤에만 '봤다' 로 적는다 — 먼저 적으면 실패한 회차가
+                // 신호를 삼켜 다시는 시도하지 않는다.
+                markers.commit(session.user.id, profile.id, profile.customAudioInvalidatedAt)
+            }
             // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
             // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.
-            DowngradeNoticeStore(applicationContext)
-                .record(session.user.id, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
+            // 원인별로 따로 적는다 — 대기표가 우선순위로 합친다(안내할 액션이 있는 쪽이 이긴다).
+            val notices = DowngradeNoticeStore(applicationContext)
+            notices.record(session.user.id, DowngradeNoticeStore.Cause.SHARED_RELEASED, lostAccess)
+            notices.record(session.user.id, DowngradeNoticeStore.Cause.VOICE_REPLACED, replacedCount)
+            val degraded = lostAccess + replacedCount
             if (degraded > 0) {
-                Log.i(TAG, "Degraded $degraded alarm(s) after voice access was revoked")
+                Log.i(TAG, "Degraded $degraded alarm(s): access=$lostAccess replaced=$replacedCount")
             }
             Result.success()
         }.getOrElse { error ->
@@ -97,19 +130,36 @@ class VoiceAccessSyncWorker(
 
     companion object {
         private const val WORK_NAME = "voice_access_revoked_sync"
+        // ⚠ **교체 신호는 이름을 따로 쓴다.** 같은 이름이면 `REPLACE` 정책이 서로를 밀어내
+        // 접근권 철회와 교체가 겹칠 때 한쪽이 조용히 사라진다. 교체 쪽은 폴백이 없다
+        // (하루 주기 워커는 접근 가능 목록만 대조한다).
+        private const val REPLACED_WORK_NAME = "voice_replaced_sync"
         private const val PERIODIC_WORK_NAME = "voice_access_periodic_sync"
+
+        /** 제자리 교체로 직접 입력 음원이 무효가 된 프로필 id(푸시 payload 의 `voiceProfileId`). */
+        const val INPUT_REPLACED_VOICE_ID = "replaced_voice_profile_id"
 
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        /** voice_access_revoked 푸시 수신 시 호출. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉. */
-        fun runOnce(context: Context) {
+        /**
+         * voice_access_revoked 푸시 수신 시 호출. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉.
+         *
+         * @param replacedVoiceProfileId 제자리 교체 신호일 때만. 그 목소리의 직접 입력 알람을
+         *   함께 내린다 — 접근 가능 목록 대조로는 잡히지 않기 때문이다.
+         */
+        fun runOnce(context: Context, replacedVoiceProfileId: String? = null) {
             val request = OneTimeWorkRequestBuilder<VoiceAccessSyncWorker>()
                 .setConstraints(networkConstraints)
+                .setInputData(
+                    androidx.work.Data.Builder()
+                        .putString(INPUT_REPLACED_VOICE_ID, replacedVoiceProfileId.orEmpty())
+                        .build(),
+                )
                 .build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                WORK_NAME,
+                if (replacedVoiceProfileId.isNullOrBlank()) WORK_NAME else REPLACED_WORK_NAME,
                 ExistingWorkPolicy.REPLACE,
                 request,
             )

@@ -346,9 +346,33 @@ internal fun MainViewModel.promoteVoiceDraft(
             )
             pendingVoiceDraft = null
             voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
+            // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 화면이
+            // "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 라고 약속하고 동의까지
+            // 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**(Codex #703 P1).
+            // 다른 기기는 서버의 voice_access_revoked(voiceProfileId 동봉)가 깨운다.
+            // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
+            if (replaceExisting) {
+                val owner = session.user.id
+                viewModelScope.launch {
+                    runCatching {
+                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
+                    }.onFailure {
+                        AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
+                    }
+                }
+            }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_create_failed))
+            val app = getApplication<android.app.Application>()
+            // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이
+            // 없으면 영어 본문이 일반 실패 문구로 뭉개져 **왜 막혔는지**가 사라진다.
+            message = when (apiErrorCode(error)) {
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
+                "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
+                "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
+                else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
+            }
         }
         voiceProfileBusy = false
     }

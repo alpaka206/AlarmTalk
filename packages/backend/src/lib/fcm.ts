@@ -357,6 +357,15 @@ export async function sendVoiceShareChangedPush(
 export function buildDowngradeSignals(
   targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
   voiceAccessRevokedUserIds: string[] = [],
+  options: {
+    /**
+     * **제자리 교체**로 무효가 된 프로필 id. 이 값이 있으면 `voice_access_revoked` 에
+     * 실어 보낸다 — 교체는 프로필 행을 **재사용**하므로 id 가 여전히 목록에 있고,
+     * 클라의 '접근 가능 목록과 대조' 판정으로는 **아무것도 걸리지 않기 때문이다.**
+     * 클라는 이 id 로 그 목소리의 직접 입력(custom) 알람만 좁혀 정리한다.
+     */
+    replacedVoiceProfileId?: string;
+  } = {},
 ): SilentSignal[] {
   const receivedRepresentative = new Map<string, string>();
   for (const target of targets) {
@@ -376,8 +385,17 @@ export function buildDowngradeSignals(
   for (const [userId, alarmId] of receivedRepresentative) {
     signals.push({ userId, data: { type: 'family_alarm', alarmId } });
   }
+  // 타입 문자열은 그대로 둔다 — 옛 클라도 이 신호로 목소리 접근권 재확인을 깨우고,
+  // 추가 키는 무시한다. 새 클라만 `scope` 를 보고 custom 알람 정리로 좁힌다.
+  const revokedData: Record<string, string> = options.replacedVoiceProfileId
+    ? {
+        type: 'voice_access_revoked',
+        voiceProfileId: options.replacedVoiceProfileId,
+        scope: 'custom_messages',
+      }
+    : { type: 'voice_access_revoked' };
   for (const userId of voiceAccessOwners) {
-    signals.push({ userId, data: { type: 'voice_access_revoked' } });
+    signals.push({ userId, data: { ...revokedData } });
   }
   return signals;
 }
@@ -392,12 +410,14 @@ export async function notifyDowngradedAlarms(
    * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
    */
   voiceAccessRevokedUserIds: string[] = [],
+  /** 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. */
+  options: { replacedVoiceProfileId?: string } = {},
 ): Promise<void> {
   if (!env) return;
   if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
   // 신호를 모아 **플랫폼별 한 번에** 보낸다. iOS 토큰을 FCM에 섞으면 무효 토큰으로 오인해
   // 삭제하므로 모든 무음 신호가 쓰는 공통 라우터를 반드시 거친다.
-  const signals = buildDowngradeSignals(targets, voiceAccessRevokedUserIds);
+  const signals = buildDowngradeSignals(targets, voiceAccessRevokedUserIds, options);
   if (signals.length === 0) return;
   try {
     await sendSilentSignals(db, env, signals);

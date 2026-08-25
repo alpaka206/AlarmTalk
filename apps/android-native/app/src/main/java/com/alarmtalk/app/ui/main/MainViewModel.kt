@@ -1033,6 +1033,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
         // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
         dynamicPromptStore.clearLastSelections(userId)
+        // 목소리 교체 표식도 계정과 함께 떠난다. 남겨 두면 같은 기기에 다시 로그인했을 때
+        // '처음 본 프로필' 이 아니게 되어, 그 사이의 교체를 지난 값과 비교해 버린다.
+        com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication()).clear(userId)
     }
 
     internal fun clearUserScopedRemoteState() {

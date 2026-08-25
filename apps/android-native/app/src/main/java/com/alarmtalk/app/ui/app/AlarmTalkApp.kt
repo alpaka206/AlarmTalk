@@ -748,37 +748,51 @@ internal fun AlarmTalkApp(
 
     downgradeNotice?.let { notice ->
         val isFreePlan = notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN
+        // 목소리 교체는 **이용권과 무관하다** — 이용권을 봐도 할 수 있는 게 없으므로
+        // '이용권 보기' 를 두지 않는다(같은 일을 하지 않는 액션은 무게만 나눈다).
+        val isVoiceReplaced = notice.cause == DowngradeNoticeStore.Cause.VOICE_REPLACED
+        val confirmAction = IosAlertAction(
+            label = stringResource(R.string.auth_confirm),
+            emphasized = true,
+            onClick = {
+                downgradeNoticeStore.clear(authSession?.user?.id)
+                downgradeNotice = null
+            },
+        )
         IosAlertDialog(
             title = stringResource(
-                if (isFreePlan) R.string.downgrade_notice_free_title
-                else R.string.downgrade_notice_shared_title,
+                when {
+                    isFreePlan -> R.string.downgrade_notice_free_title
+                    isVoiceReplaced -> R.string.downgrade_notice_replaced_title
+                    else -> R.string.downgrade_notice_shared_title
+                },
             ),
             message = stringResource(
-                if (isFreePlan) R.string.downgrade_notice_free_message
-                else R.string.downgrade_notice_shared_message,
+                when {
+                    isFreePlan -> R.string.downgrade_notice_free_message
+                    isVoiceReplaced -> R.string.downgrade_notice_replaced_message
+                    else -> R.string.downgrade_notice_shared_message
+                },
                 notice.count,
             ),
             // ⚠ 바깥 탭·뒤로가기로 닫아도 **지우지 않는다** — 실수로 닫았을 뿐일 수 있다.
             // 지우는 건 '확인' 하나뿐이다.
             onDismiss = { downgradeNotice = null },
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.downgrade_notice_open_billing),
-                    onClick = {
-                        downgradeNoticeStore.clear(authSession?.user?.id)
-                        downgradeNotice = null
-                        navigateToTab(NativeTab.Billing)
-                    },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.auth_confirm),
-                    emphasized = true,
-                    onClick = {
-                        downgradeNoticeStore.clear(authSession?.user?.id)
-                        downgradeNotice = null
-                    },
-                ),
-            ),
+            actions = if (isVoiceReplaced) {
+                listOf(confirmAction)
+            } else {
+                listOf(
+                    IosAlertAction(
+                        label = stringResource(R.string.downgrade_notice_open_billing),
+                        onClick = {
+                            downgradeNoticeStore.clear(authSession?.user?.id)
+                            downgradeNotice = null
+                            navigateToTab(NativeTab.Billing)
+                        },
+                    ),
+                    confirmAction,
+                )
+            },
         )
     }
 

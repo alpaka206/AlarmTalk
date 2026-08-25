@@ -94,15 +94,31 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) {
     if (!familyVoicesLoadedFresh || !voiceProfilesLoadedFresh) return
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
+    // 제자리 교체는 프로필 id 를 재사용해 위 대조로는 **절대** 안 걸린다. 서버가 준
+    // `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접 입력 알람만 내린다 —
+    // 푸시를 놓친 기기가 스스로 수렴하는 유일한 경로다(정확성은 폴백이 맡는다).
+    val markers = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+    val replaced = voiceProfiles.filter { markers.changed(listOwner, it.id, it.customAudioInvalidatedAt) }
     viewModelScope.launch {
-        runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
-            .onSuccess { degraded ->
-                // 공유가 끊겨 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다.
-                DowngradeNoticeStore(getApplication())
-                    .record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
+        runCatching {
+            val lostAccess = repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner)
+            var replacedCount = 0
+            for (profile in replaced) {
+                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(profile.id, listOwner)
+                // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
+                markers.commit(listOwner, profile.id, profile.customAudioInvalidatedAt)
             }
-            .onSuccess { count ->
-                if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
+            lostAccess to replacedCount
+        }
+            .onSuccess { (lostAccess, replacedCount) ->
+                // 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다. **원인별로 따로 적는다** —
+                // 대기표가 우선순위로 합치므로(안내할 액션이 있는 쪽이 이긴다) 여기서 뭉치면
+                // 공유 해제의 '이용권 보기' 안내를 잃는다.
+                val notices = DowngradeNoticeStore(getApplication())
+                notices.record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, lostAccess)
+                notices.record(listOwner, DowngradeNoticeStore.Cause.VOICE_REPLACED, replacedCount)
+                val total = lostAccess + replacedCount
+                if (total > 0) Log.i(TAG, "Degraded $total alarm(s): access=$lostAccess replaced=$replacedCount")
             }
             .onFailure { error ->
                 Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)

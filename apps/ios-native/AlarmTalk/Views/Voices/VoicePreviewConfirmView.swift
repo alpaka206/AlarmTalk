@@ -22,6 +22,8 @@ struct VoicePreviewConfirmView: View {
     @EnvironmentObject private var voice: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var subscriptions: SubscriptionManager
+    /// 교체 확정 직후 **이 기기의** 직접 입력 알람을 곧바로 내리기 위해 든다.
+    @EnvironmentObject private var alarmStore: LocalAlarmStore
 
     let draft: VoiceProfile
     /// 저장(승격) 완료 — 부모가 목록으로 돌린다.
@@ -390,6 +392,23 @@ struct VoicePreviewConfirmView: View {
                 replaceExisting: replaceExisting,
                 isShared: isShared && canShareVoice
             )
+            // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
+            // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 바로
+            // 위에서 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 를 읽고 체크한
+            // 그 기기에서 **지운 목소리가 계속 울린다**(Codex #703 P1). 다른 기기는 서버의
+            // voice_access_revoked(voiceProfileId 동봉)가 깨운다.
+            // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
+            if replaceExisting {
+                // 이 화면에서 이미 동의를 받았으므로 대기표(모달)는 남기지 않는다.
+                // `degrade` 가 세우는 `needsScheduleReconcile` 을 `AlarmTalkApp` 이 받아
+                // AlarmKit 예약(구워 둔 .caf)까지 맞춘다.
+                voice.degradeCustomMessageAlarms(
+                    forProfileID: promoted.id,
+                    alarmStore: alarmStore,
+                    audioCache: .shared,
+                    ownerUserId: auth.session?.user.id
+                )
+            }
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
             // 교체 갈래는 draft id 가 아니라 기존 공식 프로필 id 를 반환한다. 준비 페이지가
             // 삭제된 draft 를 기다리지 않도록 서버가 돌려준 실제 id 를 넘긴다.

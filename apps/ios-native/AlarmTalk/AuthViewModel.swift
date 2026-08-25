@@ -909,6 +909,9 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
+                // 목소리 교체 표식도 계정과 함께 떠난다 — 남기면 재로그인 시 '처음 본
+                // 프로필' 이 아니게 되어 그 사이의 교체를 지난 값과 비교해 버린다.
+                VoiceReplacementMarkerStore().clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -960,6 +963,9 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
+                // 목소리 교체 표식도 계정과 함께 떠난다 — 남기면 재로그인 시 '처음 본
+                // 프로필' 이 아니게 되어 그 사이의 교체를 지난 값과 비교해 버린다.
+                VoiceReplacementMarkerStore().clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1465,6 +1471,7 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
+        VoiceReplacementMarkerStore().clear(userID: userID)
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
         // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로
