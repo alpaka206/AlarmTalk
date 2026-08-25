@@ -71,6 +71,10 @@ extension VoiceStudioViewModel {
         // 다시 시도' 로 떨어져, 다음 달까지 풀리지 않는 한도를 계속 두드리게 된다.
         case "VOICE_MONTHLY_CHANGE_LIMIT_REACHED":
             return "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요."
+        case "VOICE_PREVIEW_REQUIRED":
+            // 다른 기기가 미리듣기 문구를 고쳐 previewed_at 이 지워진 경우. 다시 시도해도
+            // 안 되는 종류라 '잠시 후 다시' 로 뭉개면 영영 눌러 보게 된다.
+            return "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요."
         case "CONSENT_REQUIRED":
             return "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요."
         case "AUDIO_DURATION_TOO_SHORT":
@@ -115,6 +119,7 @@ extension VoiceStudioViewModel {
         "VOICE_SLOT_EXHAUSTED",
         "VOICE_FEATURE_REQUIRES_PAID_PLAN",
         "VOICE_MONTHLY_CHANGE_LIMIT_REACHED",
+        "VOICE_PREVIEW_REQUIRED",
         "CONSENT_REQUIRED",
         "FREE_PLAN_PRESET_ONLY",
         "BASIC_VOICE_PRESET_ONLY",

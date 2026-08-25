@@ -44,8 +44,11 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
      * `onVoiceChanged` 로는 부족하다 — 교체는 프로필 행을 재사용해 id 가 목록에 그대로
      * 남으므로 접근권 재확인이 아무것도 걸러내지 못한다. 그래서 서버가 payload 에 어떤
      * 프로필인지를 실어 보내고, 앱이 그 목소리의 custom 알람만 좁혀 내린다.
+     *
+     * 두 번째 인자는 그 교체의 **세대**다. 이미 반영한 세대면 무시해야 한다 — 늦게 도착한
+     * 푸시가 그 사이 사용자가 **새 목소리로** 다시 만든 알람까지 지우면 안 된다.
      */
-    var onVoiceReplaced: (String) async -> Void = { _ in }
+    var onVoiceReplaced: (String, String?) async -> Void = { _, _ in }
     var onPlanChanged: () async -> Void = {}
 
     /// 마지막으로 **서버에 올린** 기기 토큰.
@@ -224,7 +227,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             if type == .voiceAccessRevoked,
                userInfo["scope"] as? String == "custom_messages",
                let profileID = (userInfo["voiceProfileId"] as? String)?.nilIfBlank {
-                await onVoiceReplaced(profileID)
+                await onVoiceReplaced(profileID, (userInfo["invalidatedAt"] as? String)?.nilIfBlank)
             }
             return true
         case .planChanged:
@@ -326,16 +329,25 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 제자리 교체로 무효가 된 **직접 입력** 알람을 내린다. 위 `onVoiceChanged` 의
         // 목록 갱신·클립 재다운로드로는 못 잡는다 — 프로필 id 가 그대로 살아 있어서
         // 접근권 재확인이 통과시키고, 그 알람의 음원은 서버에서 이미 사라졌다.
-        deps.push.onVoiceReplaced = { profileID in
+        deps.push.onVoiceReplaced = { profileID, generation in
             await deps.alarmStore.waitUntilLoadedFromDisk()
             guard deps.alarmStore.hasLoadedFromDisk else { return }
             let ownerID = deps.auth.session?.user.id
+            let markers = VoiceReplacementMarkerStore()
+            // ⚠ **이미 반영한 세대면 아무것도 하지 않는다.** 늦게 도착한 푸시는, 그 사이
+            // 사용자가 **새 목소리로** 다시 만든 직접 입력 알람까지 되돌릴 수 없이 지운다.
+            guard !markers.hasApplied(userID: ownerID, profileID: profileID, invalidatedAt: generation)
+            else { return }
             let degraded = deps.voiceStudio.degradeCustomMessageAlarms(
                 forProfileID: profileID,
                 alarmStore: deps.alarmStore,
                 audioCache: .shared,
                 ownerUserId: ownerID
             )
+            // 세대를 알고, 그 사이 계정이 바뀌지 않았을 때만 '봤다' 로 적는다.
+            if generation != nil, deps.auth.session?.user.id == ownerID {
+                markers.commit(userID: ownerID, profileID: profileID, invalidatedAt: generation)
+            }
             guard degraded > 0 else { return }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
             DowngradeNoticeStore().record(userID: ownerID, cause: .voiceReplaced, count: degraded)
@@ -371,23 +383,31 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 경로**가 맡는다 — 앱 시작·탭 진입·백그라운드 주기가 모두 여기를 지난다.
             let markers = VoiceReplacementMarkerStore()
             var replacedCount = 0
-            for profile in deps.voiceStudio.profiles {
+            // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께
+            // 무효가 되는데, 내 목록만 보면 공유받은 기기는 푸시를 놓쳤을 때 영영 모른다.
+            let markerCandidates: [(id: String, invalidatedAt: String?)] =
+                deps.voiceStudio.profiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
+                deps.voiceStudio.familyVoices.map { ($0.id, $0.customAudioInvalidatedAt) }
+            for candidate in markerCandidates {
                 guard markers.changed(
                     userID: ownerID,
-                    profileID: profile.id,
-                    invalidatedAt: profile.customAudioInvalidatedAt
+                    profileID: candidate.id,
+                    invalidatedAt: candidate.invalidatedAt
                 ) else { continue }
                 replacedCount += deps.voiceStudio.degradeCustomMessageAlarms(
-                    forProfileID: profile.id,
+                    forProfileID: candidate.id,
                     alarmStore: deps.alarmStore,
                     audioCache: .shared,
                     ownerUserId: ownerID
                 )
                 // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
+                // ⚠ 그 사이 계정이 바뀌었으면 적지 않는다 — 소유자 불일치로 돌려받은 0을
+                // '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
+                guard deps.auth.session?.user.id == ownerID else { break }
                 markers.commit(
                     userID: ownerID,
-                    profileID: profile.id,
-                    invalidatedAt: profile.customAudioInvalidatedAt
+                    profileID: candidate.id,
+                    invalidatedAt: candidate.invalidatedAt
                 )
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기

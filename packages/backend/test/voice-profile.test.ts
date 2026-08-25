@@ -1180,6 +1180,8 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       name: '새 목소리',
       elevenlabs_voice_id: 'elv-new',
       is_shared: 0,
+      // 교체 트랜잭션도 '끝까지 들어본 뒤 저장' 을 같은 스냅샷에서 다시 본다.
+      previewed_at: '2026-08-12T00:00:00Z',
     }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
     mockDB.pushResultFor('SELECT id FROM voice_uploads WHERE voice_profile_id', [
@@ -1294,6 +1296,8 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       name: '새 목소리',
       elevenlabs_voice_id: 'elv-new',
       is_shared: 0,
+      // 교체 트랜잭션도 '끝까지 들어본 뒤 저장' 을 같은 스냅샷에서 다시 본다.
+      previewed_at: '2026-08-12T00:00:00Z',
     }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
     mockDB.pushErrorFor(
@@ -1328,6 +1332,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       name: '새 목소리',
       elevenlabs_voice_id: 'elv-new',
       is_shared: 1,
+      previewed_at: '2026-08-12T00:00:00Z',
     }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old', is_shared: 1 }]);
     pushReplacementGatesPass(mockDB);
@@ -1369,6 +1374,8 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       name: '새 목소리',
       elevenlabs_voice_id: 'elv-new',
       is_shared: 0,
+      // 교체 트랜잭션도 '끝까지 들어본 뒤 저장' 을 같은 스냅샷에서 다시 본다.
+      previewed_at: '2026-08-12T00:00:00Z',
     }]);
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
   };

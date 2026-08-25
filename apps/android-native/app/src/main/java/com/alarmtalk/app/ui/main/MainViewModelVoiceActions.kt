@@ -357,6 +357,15 @@ internal fun MainViewModel.promoteVoiceDraft(
                 viewModelScope.launch {
                     runCatching {
                         repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
+                    }.onSuccess {
+                        // ⚠ **여기서 표식을 확정하지 않으면 이 기기가 자기 알람을 지운다.**
+                        // 이 화면이 이미 내렸는데 표식이 옛 값이면, 사용자가 곧바로 **새
+                        // 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이 '아직 안 내린
+                        // 교체' 로 보고 되돌릴 수 없이 지운다.
+                        official.customAudioInvalidatedAt?.let { generation ->
+                            com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+                                .commit(owner, official.id, generation)
+                        }
                     }.onFailure {
                         AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
                     }
@@ -371,6 +380,9 @@ internal fun MainViewModel.promoteVoiceDraft(
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
                 "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
                 "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
+                // 다른 기기가 미리듣기 문구를 고쳐 previewed_at 이 지워진 경우. 다시 시도해도
+                // 안 되는 종류라 '잠시 후 다시' 로 뭉개면 영영 눌러 보게 된다.
+                "VOICE_PREVIEW_REQUIRED" -> app.getString(R.string.msg_voice_preview_required)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }

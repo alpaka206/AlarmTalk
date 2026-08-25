@@ -523,7 +523,11 @@ voiceProfile.get('/family', async (c) => {
 
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
+    // ⚠ `custom_audio_invalidated_at` 을 빼지 말 것. 공유받은 사람도 이 목소리로 **자기**
+    // 직접 입력 알람을 만들 수 있는데, 그 행은 pull 대상이 아니라 서버 강등이 닿지 않는다.
+    // 푸시를 놓친 기기가 스스로 알아채는 근거가 이 값 하나다(내 목소리 목록과 같은 규약).
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
+                 vp.custom_audio_invalidated_at,
                  vpr.relationship_label AS relationship_label,
                  vpr.listener_title AS listener_title,
                  vpr.relationship_label AS viewer_relationship_raw,
@@ -687,6 +691,8 @@ type ReplaceResult =
       revokedCustomAlarms: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>;
       /** 알람 행과 무관하게 깨워야 할 계정. 아직 서버에 없는 로컬 알람 때문에 소유자는 항상 넣는다. */
       voiceAccessRevokedUserIds: string[];
+      /** 이번 교체의 세대(`custom_audio_invalidated_at`). 푸시가 이 값을 함께 실어 보낸다. */
+      customAudioInvalidatedAt: string | null;
     }
   | {
       ok: false;
@@ -740,7 +746,8 @@ export async function replaceVoiceInPlace(
     // 게이트 판정과 쓰기가 같은 스냅샷이 된다.
     const draftRes = await tx.execute({
       sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
-                   preview_text, preview_language, speech_style, speech_style_status, is_shared
+                   preview_text, preview_language, speech_style, speech_style_status, is_shared,
+                   previewed_at
             FROM voice_profiles
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1
@@ -749,6 +756,11 @@ export async function replaceVoiceInPlace(
     });
     const draft = draftRes.rows[0];
     if (!draft) return { status: 'not_found' as const };
+    // ⚠ **'끝까지 들어본 뒤 저장' 도 이 스냅샷에서 다시 본다.** 라우트 앞단의 확인과 이
+    // 트랜잭션 사이에 다른 기기가 미리듣기 문구를 고치면 서버가 `previewed_at` 을 지우는데,
+    // 여기서 안 보면 **한 번도 들어보지 않은 목소리**로 초안과 월 원장을 소비한다.
+    // 승격 경로의 `AND previewed_at IS NOT NULL` 과 같은 가드다.
+    if (!draft.previewed_at) return { status: 'preview_required' as const };
 
     // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
     // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
@@ -1020,6 +1032,13 @@ export async function replaceVoiceInPlace(
           errorCode: 'VOICE_REPLACE_TARGET_AMBIGUOUS',
           status: 409,
         };
+      case 'preview_required':
+        return {
+          ok: false,
+          error: 'Listen to the preview before keeping this voice.',
+          errorCode: 'VOICE_PREVIEW_REQUIRED',
+          status: 409,
+        };
       case 'paid_required':
         return {
           ok: false,
@@ -1046,19 +1065,25 @@ export async function replaceVoiceInPlace(
   }
 
   const refreshed = await db.execute({
-    sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at
+    sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at,
+                 custom_audio_invalidated_at
           FROM voice_profiles WHERE id = ? LIMIT 1`,
     args: [replacementState.targetId],
   });
+  const refreshedRow = refreshed.rows[0];
   return {
     ok: true,
-    profile: (refreshed.rows[0] ?? {}) as Record<string, unknown>,
+    profile: (refreshedRow ?? {}) as Record<string, unknown>,
     notifyShareRemoval: replacementState.notifyShareRemoval,
     revokedCustomAlarms: replacementState.revokedCustomAlarms,
     // 행이 하나도 안 잡혀도 소유자(와 공유 중이었다면 그룹원)는 깨운다 — 아직 서버에
     // 올라오지 않은 로컬 custom 알람이 다른 기기에 있을 수 있고, 그 기기의 캐시된 음원은
     // 이미 못 쓰는 것이다(`revokeDeletedVoices` 가 소유자를 항상 넣는 것과 같은 이유).
     voiceAccessRevokedUserIds: replacementState.wakeUserIds,
+    customAudioInvalidatedAt:
+      refreshedRow?.custom_audio_invalidated_at == null
+        ? null
+        : String(refreshedRow.custom_audio_invalidated_at),
   };
 }
 
@@ -1263,7 +1288,10 @@ voiceProfile.patch('/:id', async (c) => {
           c.env,
           replaced.revokedCustomAlarms,
           replaced.voiceAccessRevokedUserIds,
-          { replacedVoiceProfileId: String(replaced.profile.id ?? '') || undefined },
+          {
+            replacedVoiceProfileId: String(replaced.profile.id ?? '') || undefined,
+            replacedGeneration: replaced.customAudioInvalidatedAt ?? undefined,
+          },
         ),
       );
       // 공유 중인 옛 목소리를 끄는 것은 접근권 철회라 즉시 알린다. 새 공유 목소리의 갱신은

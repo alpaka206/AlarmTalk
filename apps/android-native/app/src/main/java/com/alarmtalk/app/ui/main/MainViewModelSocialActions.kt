@@ -98,15 +98,22 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     // `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접 입력 알람만 내린다 —
     // 푸시를 놓친 기기가 스스로 수렴하는 유일한 경로다(정확성은 폴백이 맡는다).
     val markers = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
-    val replaced = voiceProfiles.filter { markers.changed(listOwner, it.id, it.customAudioInvalidatedAt) }
+    // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께 무효가 되는데,
+    // 내 목록만 보면 공유받은 쪽 기기는 푸시를 놓쳤을 때 영영 모른다.
+    val markerCandidates = voiceProfiles.map { it.id to it.customAudioInvalidatedAt } +
+        familyVoices.map { it.id to it.customAudioInvalidatedAt }
+    val replaced = markerCandidates.filter { (id, at) -> markers.changed(listOwner, id, at) }
     viewModelScope.launch {
         runCatching {
             val lostAccess = repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner)
             var replacedCount = 0
-            for (profile in replaced) {
-                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(profile.id, listOwner)
+            for ((profileId, invalidatedAt) in replaced) {
+                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
                 // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
-                markers.commit(listOwner, profile.id, profile.customAudioInvalidatedAt)
+                // ⚠ 그 사이 계정이 바뀌었으면 적지 않는다 — 저장소가 소유자 불일치로 돌려준
+                // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
+                if (authSession?.user?.id != listOwner) break
+                markers.commit(listOwner, profileId, invalidatedAt)
             }
             lostAccess to replacedCount
         }

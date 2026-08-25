@@ -365,6 +365,14 @@ export function buildDowngradeSignals(
      * 클라는 이 id 로 그 목소리의 직접 입력(custom) 알람만 좁혀 정리한다.
      */
     replacedVoiceProfileId?: string;
+    /**
+     * 그 교체의 **세대**(`voice_profiles.custom_audio_invalidated_at`).
+     *
+     * ⚠ **id 만 보내면 안 된다.** 푸시가 늦게 도착하는 사이 기기가 이미 그 교체를 반영하고
+     * 사용자가 **새 목소리로** 직접 입력 알람을 다시 만들었을 수 있는데(프로필 id 는 그대로다),
+     * 세대가 없으면 그 새 알람까지 되돌릴 수 없이 지운다. 기기는 이미 적용한 세대면 무시한다.
+     */
+    replacedGeneration?: string;
   } = {},
 ): SilentSignal[] {
   const receivedRepresentative = new Map<string, string>();
@@ -392,6 +400,8 @@ export function buildDowngradeSignals(
         type: 'voice_access_revoked',
         voiceProfileId: options.replacedVoiceProfileId,
         scope: 'custom_messages',
+        // 세대가 없으면(옛 서버) 클라는 예전처럼 id 만 보고 정리한다.
+        ...(options.replacedGeneration ? { invalidatedAt: options.replacedGeneration } : {}),
       }
     : { type: 'voice_access_revoked' };
   for (const userId of voiceAccessOwners) {
@@ -411,7 +421,7 @@ export async function notifyDowngradedAlarms(
    */
   voiceAccessRevokedUserIds: string[] = [],
   /** 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. */
-  options: { replacedVoiceProfileId?: string } = {},
+  options: { replacedVoiceProfileId?: string; replacedGeneration?: string } = {},
 ): Promise<void> {
   if (!env) return;
   if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;

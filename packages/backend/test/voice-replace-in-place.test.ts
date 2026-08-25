@@ -117,6 +117,9 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         { alarmId: 'a-mine', ownerUserId: 'u1', isReceived: false },
       ]));
       expect(result.voiceAccessRevokedUserIds).toEqual(['u1']);
+      // 푸시는 세대를 함께 싣는다 — id 만 보내면 이미 반영한 기기가 **새 목소리로 만든**
+      // 알람까지 지운다.
+      expect(result.customAudioInvalidatedAt).not.toBeNull();
 
       // 교체는 '정식 등록' 이라 이번 달 원장을 소비한다.
       const ledger = await db.execute(
@@ -226,6 +229,26 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         "SELECT COUNT(*) AS n FROM voice_profile_change_ledger WHERE owner_user_id = 'u1'",
       );
       expect(Number(ledger.rows[0]!.n), '막힌 회차가 이번 달 등록을 소모했다').toBe(0);
+      await expectUntouched(db);
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  it('다른 기기가 미리듣기를 리셋했으면 409 — 안 들어본 목소리로 확정되지 않는다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      // 라우트 앞단 확인과 이 트랜잭션 사이에 다른 기기가 미리듣기 문구를 고치면 서버가
+      // previewed_at 을 지운다. 그 창에서 확정되면 **한 번도 들어보지 않은 목소리**로
+      // 초안과 월 원장을 소비하게 된다.
+      await db.execute("UPDATE voice_profiles SET previewed_at = NULL WHERE id = 'vp2'");
+
+      const result = await replaceWithGates(db);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('should have been rejected');
+      expect(result.errorCode).toBe('VOICE_PREVIEW_REQUIRED');
+      expect(result.status).toBe(409);
       await expectUntouched(db);
     } finally {
       db.close();

@@ -14,9 +14,13 @@ import android.content.Context
  * 워커·앱 시작 새로고침)가 서버의 `custom_audio_invalidated_at` 을 여기 적힌 값과 대조해
  * 맡는다. 이게 없으면 푸시를 놓친 기기가 **영원히** 지운 목소리로 운다.
  *
- * ⚠ **처음 본 프로필은 조용히 적기만 한다.** 첫 조회에서 '바뀌었다' 로 읽으면 업그레이드
- * 직후 모든 설치가 직접 입력 알람을 되돌릴 수 없이 날린다. 값이 **이미 있었고 달라졌을
- * 때만** 참이다.
+ * **본 값과 반영한 값을 따로 적는다.** 처음 본 프로필은 조용히 '봤다' 로만 적는데, 그걸
+ * '반영했다' 로도 읽으면 곧이어 도착한 푸시가 **아무것도 하지 않고** 끝난다(둘의 순서는
+ * 플랫폼마다 다르다 — iOS 는 목록 갱신이 푸시 처리보다 먼저 끝난다).
+ *
+ * ⚠ **표식은 뒤로 가지 않는다.** 공유 목소리 목록은 내 목소리 목록과 갱신 경로가 달라
+ * 한쪽이 몇 분 낡은 채로 판정에 들어올 수 있다. 되돌아가는 것을 허용하면 이미 처리한
+ * 교체를 다시 처리하고, 그 사이 **새 목소리로** 만든 알람을 지운다.
  *
  * ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올리므로, 이름만 바꿔도
  * 알람이 사라진다.
@@ -35,29 +39,53 @@ class VoiceReplacementMarkerStore(context: Context) {
      */
     fun changed(userId: String?, profileId: String, invalidatedAt: String?): Boolean {
         if (userId.isNullOrBlank() || profileId.isBlank()) return false
-        val key = key(userId, profileId)
+        val key = seenKey(userId, profileId)
         val incoming = invalidatedAt.orEmpty()
         if (!prefs.contains(key)) {
             prefs.edit().putString(key, incoming).apply()
             return false
         }
-        return prefs.getString(key, "").orEmpty() != incoming
+        // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
+        return incoming > prefs.getString(key, "").orEmpty()
     }
 
-    /** 강등까지 끝났으니 이 값을 '본 것' 으로 확정한다. */
+    /**
+     * **이미 반영한 세대인가.** 푸시 경로 전용 — 늦게 도착한 푸시가 그 사이 사용자가
+     * **새 목소리로** 다시 만든 직접 입력 알람까지 지우는 것을 막는다.
+     *
+     * [changed] 가 조용히 적어 둔 '봤다' 는 여기 걸리지 않는다 — 그건 아직 아무것도 내리지
+     * 않았다는 뜻이라, 그걸 반영으로 읽으면 푸시가 통째로 무력해진다.
+     */
+    fun hasApplied(userId: String?, profileId: String, invalidatedAt: String?): Boolean {
+        if (userId.isNullOrBlank() || profileId.isBlank() || invalidatedAt.isNullOrBlank()) return false
+        return prefs.getString(appliedKey(userId, profileId), null) == invalidatedAt
+    }
+
+    /** 강등까지 끝났으니 이 값을 '봤고 반영했다' 로 확정한다. */
     fun commit(userId: String?, profileId: String, invalidatedAt: String?) {
         if (userId.isNullOrBlank() || profileId.isBlank()) return
-        prefs.edit().putString(key(userId, profileId), invalidatedAt.orEmpty()).apply()
+        val value = invalidatedAt.orEmpty()
+        prefs.edit()
+            .putString(seenKey(userId, profileId), value)
+            .putString(appliedKey(userId, profileId), value)
+            .apply()
     }
 
     /** 명시적 로그아웃·탈퇴에서만 부른다(자동 401 은 같은 사람이 다시 들어온다). */
     fun clear(userId: String?) {
         if (userId.isNullOrBlank()) return
-        val prefix = "$userId:"
-        val doomed = prefs.all.keys.filter { it.startsWith(prefix) }
+        val doomed = prefs.all.keys.filter {
+            it.startsWith("$SEEN_PREFIX$userId:") || it.startsWith("$APPLIED_PREFIX$userId:")
+        }
         if (doomed.isEmpty()) return
         prefs.edit().apply { doomed.forEach { remove(it) } }.apply()
     }
 
-    private fun key(userId: String, profileId: String) = "$userId:$profileId"
+    private fun seenKey(userId: String, profileId: String) = "$SEEN_PREFIX$userId:$profileId"
+    private fun appliedKey(userId: String, profileId: String) = "$APPLIED_PREFIX$userId:$profileId"
+
+    private companion object {
+        const val SEEN_PREFIX = "seen:"
+        const val APPLIED_PREFIX = "applied:"
+    }
 }

@@ -53,8 +53,15 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
             // 이 id 가 있어야 그 목소리의 직접 입력 알람을 내릴 수 있다.
             val replacedVoiceId = message.data["voiceProfileId"]
                 ?.takeIf { message.data["scope"] == "custom_messages" }
+            // 세대까지 함께 넘긴다 — 이미 반영한 교체면 워커가 건너뛴다(늦게 온 푸시가 그
+            // 사이 **새 목소리로** 만든 알람까지 지우면 안 된다).
+            val replacedGeneration = message.data["invalidatedAt"]?.takeIf { replacedVoiceId != null }
             runCatching {
-                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(applicationContext, replacedVoiceId)
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(
+                    applicationContext,
+                    replacedVoiceId,
+                    replacedGeneration,
+                )
             }.onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
         }
         // 공유 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만

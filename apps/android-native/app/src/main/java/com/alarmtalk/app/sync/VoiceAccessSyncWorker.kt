@@ -88,28 +88,51 @@ class VoiceAccessSyncWorker(
             val repository = AlarmAppContainer.repository(applicationContext)
             val lostAccess = repository
                 .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
+            // ⚠ **표식을 확정하기 전에 계정이 그대로인지 다시 본다.** 강등은 저장소 락과 DB
+            // 쓰기를 기다리는 사이 계정이 바뀔 수 있고, 그때 저장소는 소유자 불일치로 0을
+            // 돌려준다 — 그 0을 '처리 완료' 로 적으면 그 사람이 다시 로그인했을 때 표식이
+            // 맞아떨어져 **영영 재시도하지 않는다.**
+            val stillSameSession = {
+                val now = sessionStore.read()
+                now != null && now.user.id == session.user.id &&
+                    sessionStore.sessionGeneration() == startGeneration
+            }
             // 교체된 목소리의 직접 입력 알람 — 위 대조는 못 잡는다(id 가 그대로 살아 있다).
-            // ① 푸시가 실어 준 id(즉시성)
+            val markers = VoiceReplacementMarkerStore(applicationContext)
             var replacedCount = 0
+            // ① 푸시가 실어 준 id(즉시성). 세대가 함께 왔고 이미 반영했으면 건너뛴다 —
+            //    늦게 도착한 푸시가 그 사이 **새 목소리로** 만든 알람까지 지우면 안 된다.
             val replacedVoiceId = inputData.getString(INPUT_REPLACED_VOICE_ID)?.takeIf { it.isNotBlank() }
-            if (replacedVoiceId != null) {
+            val replacedGeneration = inputData.getString(INPUT_REPLACED_GENERATION)?.takeIf { it.isNotBlank() }
+            if (replacedVoiceId != null &&
+                !markers.hasApplied(session.user.id, replacedVoiceId, replacedGeneration)
+            ) {
                 replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
                     replacedVoiceId,
                     session.user.id,
                 )
+                if (replacedGeneration != null && stillSameSession()) {
+                    markers.commit(session.user.id, replacedVoiceId, replacedGeneration)
+                }
             }
             // ② 방금 받은 목록의 표식(정확성) — 푸시를 놓쳤어도 여기서 수렴한다.
             //    하루 주기 폴백이 이 경로를 그대로 탄다.
-            val markers = VoiceReplacementMarkerStore(applicationContext)
-            for (profile in myVoices) {
-                if (!markers.changed(session.user.id, profile.id, profile.customAudioInvalidatedAt)) continue
+            //    ⚠ **공유받은 목소리도 함께 본다** — 그 목소리로 만든 내 직접 입력 알람도
+            //    같이 무효가 되는데, 내 목록만 보면 그 기기는 영영 모른다.
+            val markerCandidates = myVoices.map { it.id to it.customAudioInvalidatedAt } +
+                sharedVoices.map { it.id to it.customAudioInvalidatedAt }
+            for ((profileId, invalidatedAt) in markerCandidates) {
+                if (!markers.changed(session.user.id, profileId, invalidatedAt)) continue
                 replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
-                    profile.id,
+                    profileId,
                     session.user.id,
                 )
                 // 강등이 실제로 끝난 뒤에만 '봤다' 로 적는다 — 먼저 적으면 실패한 회차가
                 // 신호를 삼켜 다시는 시도하지 않는다.
-                markers.commit(session.user.id, profile.id, profile.customAudioInvalidatedAt)
+                // ⚠ `break` 다 — 아래 대기표 기록까지 건너뛰면 이미 강등된 알람의 이유를
+                // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 break 한다).
+                if (!stillSameSession()) break
+                markers.commit(session.user.id, profileId, invalidatedAt)
             }
             // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
             // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.
@@ -139,6 +162,9 @@ class VoiceAccessSyncWorker(
         /** 제자리 교체로 직접 입력 음원이 무효가 된 프로필 id(푸시 payload 의 `voiceProfileId`). */
         const val INPUT_REPLACED_VOICE_ID = "replaced_voice_profile_id"
 
+        /** 그 교체의 세대(푸시 payload 의 `invalidatedAt`). 이미 반영했으면 건너뛰는 기준. */
+        const val INPUT_REPLACED_GENERATION = "replaced_voice_generation"
+
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -148,13 +174,20 @@ class VoiceAccessSyncWorker(
          *
          * @param replacedVoiceProfileId 제자리 교체 신호일 때만. 그 목소리의 직접 입력 알람을
          *   함께 내린다 — 접근 가능 목록 대조로는 잡히지 않기 때문이다.
+         * @param replacedGeneration 그 교체의 세대. 이미 반영한 세대면 건너뛴다 — 늦게 온
+         *   푸시가 그 사이 새 목소리로 만든 알람까지 지우지 않게 한다.
          */
-        fun runOnce(context: Context, replacedVoiceProfileId: String? = null) {
+        fun runOnce(
+            context: Context,
+            replacedVoiceProfileId: String? = null,
+            replacedGeneration: String? = null,
+        ) {
             val request = OneTimeWorkRequestBuilder<VoiceAccessSyncWorker>()
                 .setConstraints(networkConstraints)
                 .setInputData(
                     androidx.work.Data.Builder()
                         .putString(INPUT_REPLACED_VOICE_ID, replacedVoiceProfileId.orEmpty())
+                        .putString(INPUT_REPLACED_GENERATION, replacedGeneration.orEmpty())
                         .build(),
                 )
                 .build()

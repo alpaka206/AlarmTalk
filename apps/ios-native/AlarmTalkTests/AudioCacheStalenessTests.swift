@@ -143,6 +143,45 @@ final class AudioCacheStalenessTests: XCTestCase {
         XCTAssertTrue(AudioCacheStore.shared.isStale(cacheKey: k, remoteAudioUri: "r2://new-object"))
     }
 
+    /// ⚠ **정본이 커밋된 뒤의 별칭 실패는 '갱신 실패' 가 아니다.** 정본이 새 세대로 올라가면
+    /// 그 키는 더 이상 stale 이 아니라 다음 회차가 다시 받지 않는다 — 호출자가 접어 버리면
+    /// 재예약도 안 돌아 예약이 옛 사본을 가리킨 채 남는다.
+    func test_별칭_쓰기만_실패하면_정본은_커밋된_채_구분해서_던진다() throws {
+        let k = "stock_test-alias-\(UUID().uuidString)"
+        let messageId = "msg-\(UUID().uuidString)"
+        defer { cleanup(k) }
+
+        _ = try AudioCacheStore.shared.cacheBytes(
+            Data(repeating: 0xAA, count: 2048), cacheKey: k, mimeType: mime,
+            messageId: messageId, rawAudioUri: "r2://old-object", enforceMaxDuration: false
+        )
+        // 옛 별칭 자리를 디렉터리로 막아 별칭 쓰기만 실패시킨다(정본 디렉터리는 그대로).
+        let legacy = try AudioCacheStore.legacyAudioDirectory()
+            .appendingPathComponent("\(messageId).mp3")
+        try? FileManager.default.removeItem(at: legacy)
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: legacy) }
+
+        let response = TtsMessageAudioResponse(
+            messageId: messageId,
+            audioBase64: Data(repeating: 0xBB, count: 4096).base64EncodedString(),
+            audioFormat: "mp3",
+            audioUrl: "r2://new-object"
+        )
+        XCTAssertThrowsError(
+            try AudioCacheStore.cacheStockClip(audio: response, messageId: messageId, cacheKey: k)
+        ) { error in
+            guard case AudioCacheError.legacyAliasFailed = error else {
+                return XCTFail("별칭 실패를 정본 실패와 같이 다루면 그 키는 다시 받지도, 재예약되지도 않는다")
+            }
+        }
+        XCTAssertEqual(
+            AudioCacheStore.shared.readMetadata(cacheKey: k)?.rawAudioUri, "r2://new-object",
+            "정본은 이미 커밋됐다"
+        )
+        XCTAssertFalse(AudioCacheStore.shared.isStale(cacheKey: k, remoteAudioUri: "r2://new-object"))
+    }
+
     func test_isStale은_바뀐_경우에만_참이다() throws {
         let k = key("flag")
         defer { cleanup(k) }

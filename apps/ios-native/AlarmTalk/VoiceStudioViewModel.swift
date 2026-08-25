@@ -588,6 +588,10 @@ final class VoiceStudioViewModel: ObservableObject {
                                         messageId: clip.messageId,
                                         cacheKey: key
                                     )
+                                } catch AudioCacheError.legacyAliasFailed {
+                                    // 정본은 커밋됐다 — 그 키는 더 이상 stale 이 아니라 다음
+                                    // 회차가 다시 받지 않는다. 여기서 접으면 재예약도 안 돌아
+                                    // 예약이 옛 사본을 가리킨 채 남으므로 **갱신으로 센다**.
                                 } catch {
                                     // ⚠ **실패한 키를 '갱신됨' 으로 세지 말 것**(Codex #703 P1).
                                     // 아래에서 구워 둔 사운드를 버리는데, 캐시 메타는 옛 세대

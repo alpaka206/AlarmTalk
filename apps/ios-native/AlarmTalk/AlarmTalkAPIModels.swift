@@ -737,6 +737,10 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var listenerTitle: String?
     /// Server-side flag for shared voices that still need viewer-specific labels.
     var needsViewerInfo: Bool?
+    /// 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
+    /// (`VoiceProfile.customAudioInvalidatedAt`) — 공유받은 사람도 그 목소리로 자기 직접
+    /// 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
+    var customAudioInvalidatedAt: String?
 }
 
 extension FamilyVoiceProfile {

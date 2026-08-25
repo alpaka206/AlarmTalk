@@ -150,6 +150,12 @@ data class FamilyVoiceProfile(
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
     @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
+    /**
+     * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
+     * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접
+     * 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
+     */
+    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
 data class FamilyVoiceProfileListResponse(

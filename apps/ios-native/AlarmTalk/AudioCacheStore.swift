@@ -42,6 +42,16 @@ enum AudioCacheError: LocalizedError {
     case durationExceedsLimit(Int64)
     case appGroupContainerUnavailable
     case writeFailed(Error)
+    /**
+     * **정본(cacheKey)은 커밋됐고 옛 별칭(`<messageId>.<ext>`) 쓰기만 실패했다.**
+     *
+     * 이 둘을 같은 실패로 뭉치면 안 된다. 정본이 이미 새 세대로 올라갔으므로 그 키는 더 이상
+     * stale 이 아니고 — 다음 회차가 **다시 받지 않는다** — 호출자가 '갱신 실패' 로 접으면
+     * 재예약(reconcile)도 돌지 않아 예약이 옛 사본을 가리킨 채 남는다.
+     * 별칭이 꼭 필요한 호출자(저장·미리듣기)는 그대로 실패로 다루면 되고, 새로고침 경로는
+     * **갱신됨으로 센다.**
+     */
+    case legacyAliasFailed(Error)
 
     var errorDescription: String? {
         switch self {
@@ -52,6 +62,8 @@ enum AudioCacheError: LocalizedError {
         case .appGroupContainerUnavailable:
             return "오디오 저장 공간을 사용할 수 없어요."
         case .writeFailed(let error):
+            return "오디오 파일을 저장하지 못했어요."
+        case .legacyAliasFailed(let error):
             return "오디오 파일을 저장하지 못했어요."
         }
     }
@@ -125,10 +137,13 @@ final class AudioCacheStore {
         )
 
         let fileName = "\(tts.messageId).\(format)"
-        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: Self.audioWriteOptions)
-
-        return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
+        do {
+            let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
+            try data.write(to: url, options: Self.audioWriteOptions)
+            return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
+        } catch {
+            throw AudioCacheError.legacyAliasFailed(error)
+        }
     }
 
     /// 스톡 클립 음원(`GET /tts/messages/:id/audio` 응답)을 캐싱한다.
@@ -172,10 +187,15 @@ final class AudioCacheStore {
         )
 
         let fileName = "\(messageId).\(format)"
-        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: Self.audioWriteOptions)
-
-        return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
+        do {
+            let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
+            try data.write(to: url, options: Self.audioWriteOptions)
+            return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
+        } catch {
+            // 정본은 이미 커밋됐다(위). 여기서 일반 실패로 돌리면 그 키는 stale 이 아닌 채
+            // 남아 다시 받지도, 재예약되지도 않는다 — 별칭 실패만 따로 알린다.
+            throw AudioCacheError.legacyAliasFailed(error)
+        }
     }
 
     /// 스톡 클립 선택용 cacheKey (`stock_<messageId>`). Android 와 동일 규칙.
