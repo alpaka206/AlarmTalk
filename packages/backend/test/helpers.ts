@@ -162,6 +162,12 @@ export function createMockDB() {
         calls.push({ sql: query.sql, args: query.args });
         return { rows: [{ name: 'delivery_version' }], rowsAffected: 0 };
       }
+      // #106(교체 표식) 전후 호환 판정도 같은 이유로 최신 스키마를 기본으로 한다.
+      // ⚠ calls 에 넣지 않는다 — 목록 라우트마다 도는 부수 쿼리라, 넣으면 기존 테스트의
+      // calls 인덱스 단언이 통째로 밀린다(user_consents 격리와 같은 이유).
+      if (/PRAGMA table_info\('voice_profiles'\)/i.test(query.sql)) {
+        return { rows: [{ name: 'custom_audio_invalidated_at' }], rowsAffected: 0 };
+      }
       calls.push({ sql: query.sql, args: query.args });
       return takeNext();
     },

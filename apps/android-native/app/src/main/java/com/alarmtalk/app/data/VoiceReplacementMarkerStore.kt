@@ -25,6 +25,11 @@ import android.content.Context
  * ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올리므로, 이름만 바꿔도
  * 알람이 사라진다.
  *
+ * ⚠ **읽고-고쳐-쓰기를 직렬화한다.** 전경 새로고침과 [VoiceAccessSyncWorker] 는 같은 프로세스의
+ * 다른 스레드에서 동시에 돌 수 있다. 둘이 같은 옛 값을 읽고 각자 max 를 계산하면 **늦게 쓴
+ * 쪽이 이겨** 표식이 과거로 되돌아가고, 다음 회차가 이미 처리한 교체를 다시 처리한다
+ * (그 사이 새 목소리로 만든 알람을 지운다). 값 비교만으로는 못 막는다.
+ *
  * 계정별이다. 앞 사람의 표식이 새 계정 판정에 쓰이면 안 된다.
  *
  * ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이
@@ -41,17 +46,18 @@ class VoiceReplacementMarkerStore(context: Context) {
      * ⚠ 바뀐 값은 여기서 적지 **않는다** — 강등이 실제로 끝난 뒤 [commit] 으로 적는다.
      * 여기서 미리 적으면 강등이 실패했을 때 다시는 시도하지 않는다(신호를 잃는다).
      */
-    fun changed(userId: String?, profileId: String, invalidatedAt: String?): Boolean {
-        if (userId.isNullOrBlank() || profileId.isBlank()) return false
-        val key = seenKey(userId, profileId)
-        val incoming = invalidatedAt.orEmpty()
-        if (!prefs.contains(key)) {
-            prefs.edit().putString(key, incoming).apply()
-            return false
+    fun changed(userId: String?, profileId: String, invalidatedAt: String?): Boolean =
+        synchronized(LOCK) {
+            if (userId.isNullOrBlank() || profileId.isBlank()) return@synchronized false
+            val key = seenKey(userId, profileId)
+            val incoming = invalidatedAt.orEmpty()
+            if (!prefs.contains(key)) {
+                prefs.edit().putString(key, incoming).commit()
+                return@synchronized false
+            }
+            // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
+            incoming > prefs.getString(key, "").orEmpty()
         }
-        // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
-        return incoming > prefs.getString(key, "").orEmpty()
-    }
 
     /**
      * **이미 반영한 세대인가.** 푸시 경로 전용 — 늦게 도착한 푸시가 그 사이 사용자가
@@ -62,7 +68,8 @@ class VoiceReplacementMarkerStore(context: Context) {
      */
     fun hasApplied(userId: String?, profileId: String, invalidatedAt: String?): Boolean {
         if (userId.isNullOrBlank() || profileId.isBlank() || invalidatedAt.isNullOrBlank()) return false
-        val applied = prefs.getString(appliedKey(userId, profileId), null) ?: return false
+        val applied = synchronized(LOCK) { prefs.getString(appliedKey(userId, profileId), null) }
+            ?: return false
         // ⚠ **같은 값만 보면 안 된다.** 교체가 두 번 일어난 뒤 **앞선** 세대의 푸시가 늦게
         // 도착하면 '아직 안 본 것' 으로 읽혀, 뒤 세대로 만든 알람을 되돌릴 수 없이 지우고
         // 표식까지 과거로 되돌린다. 이미 그 뒤를 반영했으면 처리 완료다.
@@ -80,10 +87,15 @@ class VoiceReplacementMarkerStore(context: Context) {
         val value = invalidatedAt.orEmpty()
         val seen = seenKey(userId, profileId)
         val applied = appliedKey(userId, profileId)
-        prefs.edit()
-            .putString(seen, maxOf(value, prefs.getString(seen, "").orEmpty()))
-            .putString(applied, maxOf(value, prefs.getString(applied, "").orEmpty()))
-            .apply()
+        // ⚠ 읽기와 쓰기가 한 덩어리여야 한다 — 값 비교만으로는 동시에 도는 두 회차가 같은
+        // 옛 값을 읽고 늦게 쓴 쪽으로 되돌아가는 것을 못 막는다. `commit()`(동기 쓰기)이라
+        // 락을 놓기 전에 디스크까지 반영된다.
+        synchronized(LOCK) {
+            prefs.edit()
+                .putString(seen, maxOf(value, prefs.getString(seen, "").orEmpty()))
+                .putString(applied, maxOf(value, prefs.getString(applied, "").orEmpty()))
+                .commit()
+        }
     }
 
     private fun seenKey(userId: String, profileId: String) = "$SEEN_PREFIX$userId:$profileId"
@@ -92,5 +104,8 @@ class VoiceReplacementMarkerStore(context: Context) {
     private companion object {
         const val SEEN_PREFIX = "seen:"
         const val APPLIED_PREFIX = "applied:"
+
+        /** 저장소 인스턴스는 호출부마다 새로 만들어지므로 락은 **프로세스 단위**여야 한다. */
+        val LOCK = Any()
     }
 }

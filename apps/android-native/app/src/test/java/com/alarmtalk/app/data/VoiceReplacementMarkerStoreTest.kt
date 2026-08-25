@@ -81,6 +81,35 @@ class VoiceReplacementMarkerStoreTest {
         assertTrue(store.changed("u8", "vp1", "2026-08-25 02:00:00"))
     }
 
+    /**
+     * ⚠ **동시에 도는 두 회차가 표식을 과거로 되돌리면 안 된다.** 값 비교만으로는 못 막는다 —
+     * 둘이 같은 옛 값을 읽고 각자 계산하면 늦게 쓴 쪽이 이긴다.
+     */
+    @Test
+    fun concurrentCommitsNeverMoveTheMarkerBackwards() {
+        val newer = "2026-08-25 02:00:00"
+        val older = "2026-08-25 01:00:00"
+        store.changed("u11", "vp1", null)
+
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        try {
+            val tasks = (0 until 200).map { index ->
+                java.util.concurrent.Callable {
+                    store.commit("u11", "vp1", if (index % 2 == 0) newer else older)
+                }
+            }
+            pool.invokeAll(tasks)
+        } finally {
+            pool.shutdown()
+        }
+
+        assertTrue(store.hasApplied("u11", "vp1", newer))
+        assertFalse(
+            "표식이 과거로 되돌아가면 이미 처리한 교체를 다시 처리한다",
+            store.changed("u11", "vp1", newer),
+        )
+    }
+
     @Test
     fun markersAreScopedPerAccount() {
         store.changed("u3", "vp1", null)

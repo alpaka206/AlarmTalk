@@ -129,6 +129,32 @@ function monthlyVoiceChangeLimitResponse(c: Context<AppEnv>) {
   return c.json({ ...VOICE_MONTHLY_LIMIT }, 429);
 }
 
+/**
+ * **#106 배포 창을 견디는 읽기.**
+ *
+ * 배포가 마이그레이션보다 먼저 도는 구조라(AGENTS.md) 새 컬럼을 그대로 SELECT 하면 그 사이
+ * `GET /voice`·`GET /voice/family` 가 **전부 500** 이 된다 — 목소리 탭도 편집기 목소리 목록도
+ * 그 1분 동안 열리지 않는다.
+ *
+ * ⚠ **쓰기 경로에는 이 관용을 쓰지 말 것.** 쓰기가 새 컬럼만 빼고 진행하면 그 한 번의 요청이
+ * 영구히 잘못된 행을 남긴다(그래서 교체 트랜잭션은 컬럼이 없으면 통째로 실패한다). 읽기는
+ * 반대다 — 그 창에는 **교체 자체가 커밋될 수 없으므로** 표식이 비어 있는 것이 사실이고,
+ * 클라는 '처음 본 프로필' 로 조용히 적어 둘 뿐 아무것도 강등하지 않는다.
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다.
+ */
+let voiceProfileMarkerColumnReady = false;
+export async function customAudioMarkerSelect(db: DbExecutor): Promise<string> {
+  if (!voiceProfileMarkerColumnReady) {
+    const columns = await db.execute({ sql: "PRAGMA table_info('voice_profiles')", args: [] });
+    voiceProfileMarkerColumnReady = columns.rows.some(
+      (row) => String(row.name) === 'custom_audio_invalidated_at',
+    );
+  }
+  return voiceProfileMarkerColumnReady ? 'custom_audio_invalidated_at' : "NULL AS custom_audio_invalidated_at";
+}
+
 function currentKstMonthSql(): string {
   return "strftime('%Y-%m', 'now', '+9 hours')";
 }
@@ -406,6 +432,7 @@ voiceProfile.get('/', async (c) => {
 
   // 시스템 제공(스톡) 보이스는 모든 사용자에게 노출 — 무료 플랜의 기본 목소리.
   // 내 목소리가 먼저, 시스템 보이스가 뒤에 오도록 정렬한다.
+  const markerSelect = await customAudioMarkerSelect(db);
   const [countRes, result] = await Promise.all([
     db.execute({
       sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
@@ -418,7 +445,7 @@ voiceProfile.get('/', async (c) => {
       // (`elevenlabs_voice_id`) 처럼 **클라가 쓰지도 않고 나가서도 안 되는** 컬럼이 있다.
       // 같은 파일이 users 조회에는 이미 컬럼을 나열하고 있었다 — 여기만 빠져 있었다.
       // 목록은 두 앱의 모델(`VoiceProfileApi.kt` / `AlarmTalkAPIModels.swift`)이 읽는 것.
-      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at, custom_audio_invalidated_at FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at, ${markerSelect} FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -522,12 +549,13 @@ voiceProfile.get('/family', async (c) => {
   }
 
   const placeholders = memberIds.map(() => '?').join(',');
+  const familyMarkerSelect = await customAudioMarkerSelect(db);
   const voicesRes = await db.execute({
     // ⚠ `custom_audio_invalidated_at` 을 빼지 말 것. 공유받은 사람도 이 목소리로 **자기**
     // 직접 입력 알람을 만들 수 있는데, 그 행은 pull 대상이 아니라 서버 강등이 닿지 않는다.
     // 푸시를 놓친 기기가 스스로 알아채는 근거가 이 값 하나다(내 목소리 목록과 같은 규약).
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
-                 vp.custom_audio_invalidated_at,
+                 ${familyMarkerSelect === 'custom_audio_invalidated_at' ? 'vp.custom_audio_invalidated_at' : familyMarkerSelect},
                  vpr.relationship_label AS relationship_label,
                  vpr.listener_title AS listener_title,
                  vpr.relationship_label AS viewer_relationship_raw,

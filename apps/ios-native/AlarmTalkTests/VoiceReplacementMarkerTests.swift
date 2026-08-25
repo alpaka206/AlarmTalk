@@ -99,6 +99,36 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         XCTAssertTrue(store.changed(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
     }
 
+    /// ⚠ **동시에 도는 두 회차가 표식을 과거로 되돌리면 안 된다.** 값 비교만으로는 못 막는다 —
+    /// 둘이 같은 옛 값을 읽고 각자 계산하면 늦게 쓴 쪽이 이긴다. 되돌아가면 다음 회차가 이미
+    /// 처리한 교체를 다시 처리하며 그 사이 만든 알람을 지운다.
+    func test_동시_확정에도_표식이_뒤로_가지_않는다() {
+        let store = VoiceReplacementMarkerStore(defaults: defaults)
+        let newer = "2026-08-25 02:00:00"
+        let older = "2026-08-25 01:00:00"
+        _ = store.changed(userID: "u11", profileID: "vp1", invalidatedAt: nil)
+
+        let group = DispatchGroup()
+        for index in 0..<200 {
+            group.enter()
+            DispatchQueue.global().async {
+                store.commit(
+                    userID: "u11",
+                    profileID: "vp1",
+                    invalidatedAt: index.isMultiple(of: 2) ? newer : older
+                )
+                group.leave()
+            }
+        }
+        group.wait()
+
+        XCTAssertTrue(store.hasApplied(userID: "u11", profileID: "vp1", invalidatedAt: newer))
+        XCTAssertFalse(
+            store.changed(userID: "u11", profileID: "vp1", invalidatedAt: newer),
+            "표식이 과거로 되돌아가면 이미 처리한 교체를 다시 처리한다"
+        )
+    }
+
     func test_계정별로_갈린다() {
         let store = VoiceReplacementMarkerStore(defaults: defaults)
         _ = store.changed(userID: "u3", profileID: "vp1", invalidatedAt: nil)

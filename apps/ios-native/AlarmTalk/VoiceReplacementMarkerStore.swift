@@ -22,6 +22,11 @@ import Foundation
 ///
 /// ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올린다.
 ///
+/// ⚠ **읽고-고쳐-쓰기를 직렬화한다.** 푸시 처리와 새로고침 훅은 각자 `await` 경계를 넘나들며
+/// 도는데, 둘이 같은 옛 값을 읽고 각자 max 를 계산하면 **늦게 쓴 쪽이 이겨** 표식이 과거로
+/// 되돌아간다. 그러면 다음 회차가 이미 처리한 교체를 다시 처리하며, 그 사이 새 목소리로 만든
+/// 알람을 지운다. 값 비교만으로는 못 막는다.
+///
 /// ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이
 /// 다른 기기에서 교체가 일어나고 같은 계정이 다시 들어오면, 표식이 없는 기기는 첫 조회를
 /// '처음 봤다' 로 읽어 **영영 강등하지 않는다.** 그 알람을 다시 켜면 지운 목소리로 운다.
@@ -38,6 +43,8 @@ struct VoiceReplacementMarkerStore {
     /// 미리 적으면 강등이 실패했을 때 다시는 시도하지 않는다(신호를 잃는다).
     func changed(userID: String?, profileID: String, invalidatedAt: String?) -> Bool {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return false }
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         let key = seenKey(userID, profileID)
         let incoming = invalidatedAt ?? ""
         guard let previous = defaults.string(forKey: key) else {
@@ -54,6 +61,8 @@ struct VoiceReplacementMarkerStore {
     /// `changed` 가 조용히 적어 둔 '봤다' 는 여기 걸리지 않는다 — 그건 아직 아무것도 내리지
     /// 않았다는 뜻이라, 그걸 반영으로 읽으면 푸시가 통째로 무력해진다.
     func hasApplied(userID: String?, profileID: String, invalidatedAt: String?) -> Bool {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty,
               let invalidatedAt = invalidatedAt?.nilIfBlank,
               let applied = defaults.string(forKey: appliedKey(userID, profileID)) else { return false }
@@ -69,6 +78,10 @@ struct VoiceReplacementMarkerStore {
     /// 이미 처리한 교체를 다시 처리한다.
     func commit(userID: String?, profileID: String, invalidatedAt: String?) {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return }
+        // ⚠ 읽기와 쓰기가 한 덩어리여야 한다 — 값 비교만으로는 동시에 도는 두 회차가 같은
+        // 옛 값을 읽고 늦게 쓴 쪽으로 되돌아가는 것을 못 막는다.
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         let value = invalidatedAt ?? ""
         let seen = seenKey(userID, profileID)
         let applied = appliedKey(userID, profileID)
@@ -76,6 +89,8 @@ struct VoiceReplacementMarkerStore {
         defaults.set(max(value, defaults.string(forKey: applied) ?? ""), forKey: applied)
     }
 
+    /// 저장소는 값 타입이라 호출부마다 새로 만들어진다 — 락은 **타입 단위**여야 한다.
+    private static let lock = NSLock()
     private static let seenPrefix = "voice_replaced_seen_"
     private static let appliedPrefix = "voice_replaced_applied_"
     private func seenKey(_ userID: String, _ profileID: String) -> String {
