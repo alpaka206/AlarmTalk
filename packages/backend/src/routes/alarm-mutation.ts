@@ -626,6 +626,24 @@ alarmMutation.patch('/:id', async (c) => {
     bucket_id?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
+  // ⚠⚠ **보낸 알람은 절대 수정할 수 없다 — 이 게이트를 완화하지 말 것.**
+  //
+  // `docs/spec/family-alarm.md` 의 「보내면 끝」이 이 한 줄로 강제된다. 지우거나 조건을
+  // 좁히면 **앱을 고치지 않아도** 보낸 알람이 수정 가능해진다 — 아래 소유권 조건
+  // (`a.user_id IN (호출자)`)만으로는 못 막기 때문이다. 보낸 가족 알람의 `user_id` 는
+  // **발신자 자신**이라 그 조건을 그냥 통과한다. 2026-08-24 이전이 정확히 그 상태였고,
+  // 앱에 화면이 없었을 뿐 API 를 직접 부르면 시각·요일·켜기끄기·음성이 다 바뀌었다.
+  //
+  // 왜 막아야 하는가: 받는 쪽은 「받은 뒤엔 전부 받은 사람 것」이라 발신자의 변경을
+  // 의도적으로 무시한다(`locallyEditedByRecipient`·`merge`). 그래서 수정을 받아 주면
+  // **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다** — 조용히 어긋나는 쪽이라
+  // 아무도 못 알아챈다. 게다가 클라가 새 세대를 적용하지 않은 채 ack 해 서버 행이
+  // 영구히 사라질 수 있다(Codex #703 리뷰 25번).
+  //
+  // ⚠ **"푸시를 보내면 되지 않나" 는 이미 시도했다가 되돌린 길이다.** 2026-08-24 에
+  // PATCH 마다 세대를 회전하고 수신자에게 push 하는 코드를 넣었는데(같은 리뷰 14번),
+  // 다음 회차에 스펙 위반으로 통째로 걷어냈다. 내용을 바꾸려면 **새로 보내는 것**이
+  // 유일한 길이다(`claimTargetedAlarmSlot` 이 같은 슬롯을 교체한다).
   if (typeof current.target_user_id === 'string' && current.target_user_id.length > 0) {
     return c.json(
       { error: 'Sent alarms cannot be edited', error_code: 'TARGETED_ALARM_IMMUTABLE' },

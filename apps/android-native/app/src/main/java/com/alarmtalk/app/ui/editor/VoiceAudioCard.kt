@@ -89,11 +89,18 @@ internal fun VoiceAudioCard(
     onVoiceEnabledChange: (Boolean) -> Unit,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
+    /**
+     * 교체 정리가 끝나지 않아 **아직 고를 수 없는** 목소리들.
+     * 목록에는 그대로 두고 흐리게 그린다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
+     */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
     voiceProfileBusy: Boolean,
     voiceProfileLoadFinished: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
+    /** 아직 고를 수 없는 목소리를 눌렀을 때 이유를 알린다(교체 정리 중 등). */
+    onVoiceUnavailable: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
     previewPreparingVoiceId: String? = null,
     // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
@@ -168,11 +175,14 @@ internal fun VoiceAudioCard(
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
     }
+    val settlingReason = stringResource(R.string.editor_voice_replacement_settling)
+    val settlingMessage = stringResource(R.string.msg_voice_replacement_settling)
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
             name = it.name,
             detail = ownedVoiceDetail(context, it),
+            unavailableReason = settlingReason.takeIf { _ -> it.id in settlingVoiceProfileIds },
         )
     } +
         readyFamilyVoices.map { profile ->
@@ -221,6 +231,7 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
+                onUnavailableSelect = { onVoiceUnavailable(settlingMessage) },
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
@@ -454,6 +465,13 @@ private data class VoiceProfileOption(
     val id: String,
     val name: String,
     val detail: String,
+    /**
+     * **지금은 고를 수 없는 이유.** `null` 이면 고를 수 있다.
+     *
+     * ⚠ 목록에서 빼지 말고 이걸 쓴다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
+     * iOS `VoiceSelectionSheet.Option.unavailableReason` 과 같은 규칙이다.
+     */
+    val unavailableReason: String? = null,
 )
 
 @Composable
@@ -494,6 +512,8 @@ private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
     onSelect: (VoiceProfileOption) -> Unit,
+    /** 지금 고를 수 없는 행을 눌렀을 때 — 이유를 말한다(시트는 닫지 않는다). */
+    onUnavailableSelect: () -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
     playingVoiceId: String?,
@@ -552,9 +572,17 @@ private fun VoiceProfileSelector(
             options.forEachIndexed { index, option ->
                 WakerSheetOptionRow(
                     title = option.name,
-                    description = option.detail,
+                    // 이유가 있으면 그것을 말한다 — 원래 설명보다 지금 중요한 정보다.
+                    description = option.unavailableReason ?: option.detail,
                     selected = option.id == selectedOption?.id,
+                    dimmed = option.unavailableReason != null,
                     onClick = {
+                        // 정리 중인 목소리는 고르지 않고 이유만 말한다(시트도 닫지 않는다) —
+                        // 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수 없이 벗긴다.
+                        if (option.unavailableReason != null) {
+                            onUnavailableSelect()
+                            return@WakerSheetOptionRow
+                        }
                         onSelect(option)
                         dismiss()
                     },

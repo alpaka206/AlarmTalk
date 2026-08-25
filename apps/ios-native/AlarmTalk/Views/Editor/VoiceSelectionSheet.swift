@@ -29,6 +29,12 @@ struct VoiceSelectionSheet: View {
         /// 들어볼 수 있는 항목인가. '직접 녹음' 은 아직 녹음한 것이 없으므로 **false** —
         /// 눌러도 아무 소리가 안 나는 버튼을 두지 않는다.
         var previewable: Bool = true
+        /// **지금은 고를 수 없는 이유.** `nil` 이면 고를 수 있다.
+        ///
+        /// ⚠ **목록에서 빼지 말고 이걸 쓴다**(2026-08-25 지시). 잠깐 못 고르는 목소리를
+        /// 감추면 사용자에게는 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 흐리게
+        /// 그린 뒤 이유를 말한다 — 곧 돌아온다는 것을 알 수 있어야 한다.
+        var unavailableReason: String? = nil
     }
 
     let options: [Option]
@@ -67,20 +73,32 @@ struct VoiceSelectionSheet: View {
         HStack(spacing: 12) {
             Button {
                 onSelect(option)
-                // 잠긴 항목은 안내만 뜨고 선택되지 않으므로 시트를 닫지 않는다.
-                if !option.locked { onClose() }
+                // 잠긴 항목·정리 중인 항목은 안내만 뜨고 선택되지 않으므로 시트를 닫지 않는다.
+                if !option.locked && option.unavailableReason == nil { onClose() }
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(option.name)
                             .font(theme.typography.bodyLarge)
                             .fontWeight(.semibold)
-                            .foregroundStyle(theme.palette.onSurface)
+                            .foregroundStyle(
+                                option.unavailableReason == nil
+                                    ? theme.palette.onSurface
+                                    : theme.palette.onSurfaceVariant
+                            )
                         if option.locked {
                             FeatureLockBadge(size: 18, iconSize: 11)
                         }
+                        if option.unavailableReason != nil {
+                            ProgressView().controlSize(.mini)
+                        }
                     }
-                    if let detail = option.detail, !detail.isEmpty {
+                    if let reason = option.unavailableReason {
+                        // 이유가 있으면 그것을 말한다 — 원래 설명보다 지금 중요한 정보다.
+                        Text(reason)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    } else if let detail = option.detail, !detail.isEmpty {
                         Text(detail)
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)

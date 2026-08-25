@@ -731,6 +731,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 가족 멤버에게 보내는 voice alarm 생성. Android `FamilyApi.kt:87` 의
     /// `createFamilyAlarmTalk`. targetUserId 가 수신자.
+    ///
+    /// ⚠ **짝이 되는 '수정' API 를 만들지 말 것.** 보낸 알람은 서버가
+    /// `PATCH /alarm/:id` 를 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다
+    /// (`docs/spec/family-alarm.md` 의 「보낸 알람은 절대 수정할 수 없다」).
+    /// 받는 쪽이 발신자의 변경을 의도적으로 무시하므로, 수정을 받아 주면
+    /// **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
+    /// 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다.**
     func createFamilyAlarmTalk(_ requestBody: FamilyAlarmTalkRequest, token: String) async throws -> FamilyAlarmTalkResponse {
         try await request(
             "family/alarms/voice",

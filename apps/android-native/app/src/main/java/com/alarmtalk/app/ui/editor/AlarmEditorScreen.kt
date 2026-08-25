@@ -120,6 +120,10 @@ internal fun AlarmEditorScreen(
     initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
+    /** 교체 정리가 끝나지 않아 아직 고를 수 없는 목소리들(흐리게 그리고 못 고르게 한다). */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
+    /** 그 목소리를 눌렀을 때 이유를 알린다. */
+    onVoiceUnavailable: (String) -> Unit = {},
     voiceProfileBusy: Boolean,
     voiceProfileLoadFinished: Boolean,
     stockClips: List<StockClip>,
@@ -1507,6 +1511,8 @@ internal fun AlarmEditorScreen(
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
+                                settlingVoiceProfileIds = settlingVoiceProfileIds,
+                                onVoiceUnavailable = onVoiceUnavailable,
                                 // 선택 시트에는 내 목소리와 공유받은 목소리가 섞여 있는데, 공유분은
                                 // visibleVoiceProfiles 에 없고 familyVoices 에만 있다. 여기서 내 목록만
                                 // 뒤지면 공유 목소리 ▶ 가 조용히 아무것도 안 한다 — 미리듣기는 id 로

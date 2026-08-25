@@ -377,14 +377,20 @@ internal fun MainViewModel.promoteVoiceDraft(
                 }
             }
             if (cascadeFailed) {
-                // ⚠ **실패했으면 목록에 올리지 않는다.** 올리는 순간 그 목소리로 새 알람을
-                // 만들 수 있는데, 강등 대상은 프로필 id 로만 고르므로 다음 회차가 그 **새
-                // 알람까지** 되돌릴 수 없이 벗긴다. 표식도 확정되지 않았으니 다시 시도하면
-                // 그대로 이어진다 — 사용자에게는 그 사실만 말한다.
-                voiceProfiles = voiceProfiles.filterNot { it.id == official.id }
+                // ⚠ **실패했으면 아직 고를 수 없게 한다.** 고를 수 있게 두는 순간 그 목소리로
+                // 새 알람을 만들 수 있는데, 강등 대상은 프로필 id 로만 고르므로 다음 회차가
+                // 그 **새 알람까지** 되돌릴 수 없이 벗긴다. 표식도 확정되지 않았으니 다시
+                // 시도하면 그대로 이어진다 — 사용자에게는 그 사실만 말한다.
+                //
+                // ⚠ **목록에서 빼지는 않는다**(2026-08-25 지시. 그전에는 뺐다). 감추면
+                // 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고
+                // 흐리게 그린 뒤 이유를 말한다(iOS `suppressReplacedProfile` 과 같은 규칙).
+                settlingVoiceProfileIds = settlingVoiceProfileIds + official.id
+                voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
                 message = getApplication<android.app.Application>()
                     .getString(R.string.msg_voice_replace_cleanup_failed)
             } else {
+                settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
             }
         } else {

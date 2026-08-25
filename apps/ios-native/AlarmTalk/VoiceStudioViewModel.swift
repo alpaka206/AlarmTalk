@@ -474,7 +474,10 @@ final class VoiceStudioViewModel: ObservableObject {
             // 거른 목록으로 판단하면 (a) 그 목소리를 쓰는 프리셋 알람이 '접근권 상실' 로
             // 되돌릴 수 없이 벗겨지고, (b) 미확정 표식을 다시 집을 기회가 사라진다.
             authoritativeProfiles = resolvedProfiles
-            profiles = resolvedProfiles.filter { !replacementSuppressedProfileIDs.contains($0.id) }
+            // ⚠ **정리 중인 목소리도 목록에 남긴다**(2026-08-25 지시). 감추면 사용자에게는
+            // **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 `replacementSuppressedProfileIDs`
+            // 로 흐리게 그린 뒤 못 고르게 한다(`VoiceSelectionSheet.Option.unavailableReason`).
+            profiles = resolvedProfiles
             familyVoices = familyResult
             // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
             accessibleVoicesAreAuthoritative = familyAuthoritative
@@ -1149,9 +1152,13 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 지워진 목소리가 그 기기에서 계속 울린다.
     /// **정리가 끝나지 않아 아직 고를 수 없는 교체 목소리.**
     ///
-    /// 교체는 프로필 id 를 재사용하므로, 정리(강등·예약)가 실패한 채 목록에 올리면 그 사이
-    /// 만든 **새 목소리 알람까지** 다음 회차가 되돌릴 수 없이 벗긴다. 다음 정리가 확정되면
-    /// 곧바로 풀린다(메모리 전용 — 재시작 후에는 새로고침이 다시 판단한다).
+    /// 교체는 프로필 id 를 재사용하므로, 정리(강등·예약)가 실패한 채 **고를 수 있게** 두면
+    /// 그 사이 만든 새 목소리 알람까지 다음 회차가 되돌릴 수 없이 벗긴다. 다음 정리가
+    /// 확정되면 곧바로 풀린다(메모리 전용 — 재시작 후에는 새로고침이 다시 판단한다).
+    ///
+    /// ⚠ **목록에서 빼는 것이 아니라 '고를 수 없음' 이다**(2026-08-25 지시). 감추면
+    /// 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 흐리게
+    /// 그린 뒤 이유를 말한다.
     private(set) var replacementSuppressedProfileIDs: Set<String> = []
 
     /// 서버가 준 목록 **그대로**(가리기 전). 강등·표식 판정은 언제나 이걸 본다.
@@ -1161,11 +1168,15 @@ final class VoiceStudioViewModel: ObservableObject {
         guard !profileID.isEmpty else { return }
         replacementSuppressedProfileIDs.insert(profileID)
         if !authoritativeProfiles.contains(where: { $0.id == profileID }),
-           let hidden = profiles.first(where: { $0.id == profileID }) {
+           let shown = profiles.first(where: { $0.id == profileID }) {
             // 아직 새로고침 전이면 권위 목록에도 남겨 둔다(판정에서 사라지면 안 된다).
-            authoritativeProfiles.append(hidden)
+            authoritativeProfiles.append(shown)
         }
-        profiles = profiles.filter { $0.id != profileID }
+    }
+
+    /// 그 목소리를 **지금 고를 수 있는가.** 정리가 끝나지 않았으면 false.
+    func isReplacementSettling(_ profileID: String) -> Bool {
+        replacementSuppressedProfileIDs.contains(profileID)
     }
 
     func releaseReplacedProfile(_ profileID: String) {

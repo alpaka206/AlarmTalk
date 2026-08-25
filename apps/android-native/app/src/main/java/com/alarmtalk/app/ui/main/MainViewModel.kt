@@ -445,6 +445,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var syncBusy by mutableStateOf(false)
         internal set
 
+    /**
+     * 교체 정리(강등·재예약)가 끝나지 않아 **아직 고를 수 없는** 목소리들.
+     *
+     * ⚠ **목록에서 빼는 것이 아니다**(2026-08-25 지시). 감추면 사용자에게는 목소리가
+     * 사라진 것으로 보여 고장으로 읽힌다 — 자리에 두고 흐리게 그린 뒤 이유를 말한다.
+     * 고를 수 있게 두면 그 사이 만든 새 알람을 다음 회차가 함께 벗긴다(강등 대상은
+     * 프로필 id 로만 고른다). iOS `VoiceStudioViewModel.replacementSuppressedProfileIDs`.
+     */
+    var settlingVoiceProfileIds by mutableStateOf<Set<String>>(emptySet())
+        internal set
+
     var voiceProfiles by mutableStateOf(bundledSystemVoiceProfiles())
         internal set
 

@@ -120,6 +120,17 @@ internal fun MainViewModel.createAlarm(
     }
 }
 
+/**
+ * 가족 알람을 **보낸다**. 이름 그대로 만들기 전용이다.
+ *
+ * ⚠ **보낸 알람을 고치는 함수를 여기 만들지 말 것.** 서버가 `PATCH /alarm/:id` 를
+ * 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다(`docs/spec/family-alarm.md`). 받는 쪽은
+ * 「받은 뒤엔 전부 받은 사람 것」이라 발신자의 변경을 무시하므로, 수정을 받아 주면
+ * **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
+ *
+ * 그래서 여기서는 **로컬 행도 만들지 않는다** — 목록에 없으니 편집기로 열 길이 없다.
+ * 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다**(서버가 옛 행을 교체한다).
+ */
 private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     val session = authSession
     if (session == null) {

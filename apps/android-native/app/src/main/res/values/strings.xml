@@ -260,6 +260,8 @@
     <string name="editor_voice_repeat_title">끌 때까지 반복</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
+    <string name="editor_voice_replacement_settling">목소리 정리 중이에요</string>
+    <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume">목소리 크기</string>

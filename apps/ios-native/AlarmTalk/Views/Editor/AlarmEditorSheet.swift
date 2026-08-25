@@ -1128,7 +1128,12 @@ struct AlarmEditorSheet: View {
                     name: $0.name,
                     detail: $0.relationshipLabel?.nilIfBlank,
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
-                    locked: freeVoiceTier
+                    locked: freeVoiceTier,
+                    // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
+                    // 사라진 것으로 보여 고장으로 읽힌다.
+                    unavailableReason: voiceStudio.isReplacementSettling($0.id)
+                        ? "목소리 정리 중이에요"
+                        : nil
                 )
             }
         let shared = voiceStudio.familyVoices
@@ -1185,6 +1190,16 @@ struct AlarmEditorSheet: View {
     func selectVoiceOption(_ option: VoiceSelectionSheet.Option) {
         if option.locked {
             showVoicePlanLockedAlert()
+            return
+        }
+        // 교체 정리가 끝나지 않은 목소리 — 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수
+        // 없이 벗긴다. 이유를 말하고 물러선다(행은 목록에 그대로 있다).
+        if option.unavailableReason != nil {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.",
+                offersPlanActions: false
+            )
             return
         }
         // '직접 녹음' 은 프로필이 아니라 **갈래 전환**이다. 예전에는 이 전환을 세그먼트의

@@ -250,6 +250,8 @@
     <string name="editor_voice_repeat_title">Repeat until dismissed</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_select_title">Choose a voice</string>
+    <string name="editor_voice_replacement_settling">Finishing up this voice</string>
+    <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
     <string name="editor_voice_local_detail">Record a sound just for this alarm</string>
     <string name="editor_voice_volume">Voice volume</string>

@@ -89,7 +89,11 @@ final class VoiceReplacementCascadeTests: XCTestCase {
     /// 받은 알람은 **보낸 사람의** 목소리로 성립한다 — 내 교체로 판단하지 않는다.
     /// ⚠ **정리가 끝나지 않은 교체 목소리는 아직 고를 수 없다.** 고를 수 있게 두면 그 사이
     /// 만든 새 알람을 다음 회차가 함께 지운다(강등 대상은 프로필 id 로만 고른다).
-    func test_정리가_끝나지_않으면_그_목소리를_숨긴다() {
+    ///
+    /// ⚠ **숨기지는 않는다**(2026-08-25 지시. 그전에는 목록에서 뺐다). 감추면 사용자에게는
+    /// 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 흐리게 그린 뒤
+    /// 이유를 말한다 — 곧 돌아온다는 것을 알 수 있어야 한다.
+    func test_정리가_끝나지_않으면_목록에_두되_고를_수_없다() {
         let voice = VoiceStudioViewModel()
         voice.profiles = [
             VoiceProfile(id: "clone-1", name: "엄마"),
@@ -97,11 +101,16 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         ]
 
         voice.suppressReplacedProfile("clone-1")
-        XCTAssertEqual(voice.profiles.map(\.id), ["clone-2"])
+        XCTAssertEqual(
+            voice.profiles.map(\.id), ["clone-1", "clone-2"],
+            "목록에서 빼면 사라진 것으로 보여 고장으로 읽힌다"
+        )
+        XCTAssertTrue(voice.isReplacementSettling("clone-1"), "고를 수는 없어야 한다")
+        XCTAssertFalse(voice.isReplacementSettling("clone-2"))
 
         voice.releaseReplacedProfile("clone-1")
         XCTAssertFalse(
-            voice.replacementSuppressedProfileIDs.contains("clone-1"),
+            voice.isReplacementSettling("clone-1"),
             "정리가 확정되면 곧바로 다시 고를 수 있어야 한다"
         )
     }
