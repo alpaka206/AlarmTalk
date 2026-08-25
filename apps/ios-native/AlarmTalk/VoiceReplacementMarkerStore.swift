@@ -21,6 +21,10 @@ import Foundation
 /// **새 목소리로** 만든 알람을 지운다.
 ///
 /// ⚠ `updated_at` 으로 대신하지 말 것 — 이름 변경·공유 토글도 그 값을 올린다.
+///
+/// ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이
+/// 다른 기기에서 교체가 일어나고 같은 계정이 다시 들어오면, 표식이 없는 기기는 첫 조회를
+/// '처음 봤다' 로 읽어 **영영 강등하지 않는다.** 그 알람을 다시 켜면 지운 목소리로 운다.
 struct VoiceReplacementMarkerStore {
     private let defaults: UserDefaults
 
@@ -51,26 +55,25 @@ struct VoiceReplacementMarkerStore {
     /// 않았다는 뜻이라, 그걸 반영으로 읽으면 푸시가 통째로 무력해진다.
     func hasApplied(userID: String?, profileID: String, invalidatedAt: String?) -> Bool {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty,
-              let invalidatedAt = invalidatedAt?.nilIfBlank else { return false }
-        return defaults.string(forKey: appliedKey(userID, profileID)) == invalidatedAt
+              let invalidatedAt = invalidatedAt?.nilIfBlank,
+              let applied = defaults.string(forKey: appliedKey(userID, profileID)) else { return false }
+        // ⚠ **같은 값만 보면 안 된다.** 교체가 두 번 일어난 뒤 **앞선** 세대의 푸시가 늦게
+        // 도착하면 '아직 안 본 것' 으로 읽혀, 뒤 세대로 만든 알람을 되돌릴 수 없이 지우고
+        // 표식까지 과거로 되돌린다. 이미 그 뒤를 반영했으면 처리 완료다.
+        return invalidatedAt <= applied
     }
 
     /// 강등까지 끝났으니 이 값을 '봤고 반영했다' 로 확정한다.
+    ///
+    /// ⚠ **앞선 세대로 되돌리지 않는다.** 늦게 도착한 옛 신호가 표식을 과거로 끌어내리면
+    /// 이미 처리한 교체를 다시 처리한다.
     func commit(userID: String?, profileID: String, invalidatedAt: String?) {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return }
         let value = invalidatedAt ?? ""
-        defaults.set(value, forKey: seenKey(userID, profileID))
-        defaults.set(value, forKey: appliedKey(userID, profileID))
-    }
-
-    /// 명시적 로그아웃·탈퇴에서만 부른다.
-    func clear(userID: String?) {
-        guard let userID = userID?.nilIfBlank else { return }
-        let prefixes = ["\(Self.seenPrefix)\(userID):", "\(Self.appliedPrefix)\(userID):"]
-        for key in defaults.dictionaryRepresentation().keys
-        where prefixes.contains(where: { key.hasPrefix($0) }) {
-            defaults.removeObject(forKey: key)
-        }
+        let seen = seenKey(userID, profileID)
+        let applied = appliedKey(userID, profileID)
+        defaults.set(max(value, defaults.string(forKey: seen) ?? ""), forKey: seen)
+        defaults.set(max(value, defaults.string(forKey: applied) ?? ""), forKey: applied)
     }
 
     private static let seenPrefix = "voice_replaced_seen_"

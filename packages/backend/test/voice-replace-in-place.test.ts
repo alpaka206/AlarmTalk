@@ -65,6 +65,10 @@ async function replacementDb(): Promise<{ db: Client; path: string }> {
        (alarm_id, recipient_user_id, declined, revoked, sender_user_id,
         voice_profile_id, sender_voice_upload, custom_voice)
      VALUES ('a-preset','u2',0,0,'u1','vp1',0,0)`,
+    // 옛 사전렌더 큐 행 — 소유자가 로그인 id 로 적혀 있다(이 테이블엔 FK 가 없다).
+    // cron 은 이 값으로 동의를 확인하므로 교체가 정규 id 로 고쳐 두어야 한다.
+    `INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, status)
+     VALUES ('vp1','g1','ko','done')`,
     // 소유자 본인 알람(target_user_id NULL) — pull 대상이 아니라 서버 강등만으로는 그 기기에 닿지 않는다.
     `INSERT INTO alarms
        (id, user_id, time, mode, voice_profile_id, message_id)
@@ -83,8 +87,13 @@ async function expectUntouched(db: Client) {
   expect(String(target.rows[0]!.elevenlabs_voice_id)).toBe('eleven-old');
   const draft = await db.execute("SELECT deleted_at FROM voice_profiles WHERE id = 'vp2'");
   expect(draft.rows[0]!.deleted_at).toBeNull();
-  const queue = await db.execute('SELECT COUNT(*) AS n FROM voice_prerender_queue');
-  expect(Number(queue.rows[0]!.n)).toBe(0);
+  // 씨앗으로 깔아 둔 옛 큐 행이 그대로여야 한다(재렌더 예약도, 소유자 교정도 없었다).
+  const queue = await db.execute(
+    "SELECT status, owner_user_id, refresh_existing FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+  );
+  expect(String(queue.rows[0]!.status)).toBe('done');
+  expect(String(queue.rows[0]!.owner_user_id)).toBe('g1');
+  expect(Number(queue.rows[0]!.refresh_existing)).toBe(0);
   const deletions = await db.execute('SELECT COUNT(*) AS n FROM pending_external_deletions');
   expect(Number(deletions.rows[0]!.n)).toBe(0);
   const delivered = await db.execute(
@@ -159,9 +168,13 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       expect(String(preset.rows[0]!.voice_profile_id)).toBe('vp1');
 
       const renderer = await db.execute(
-        "SELECT refresh_existing, language FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
+        "SELECT refresh_existing, language, owner_user_id FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",
       );
       expect(Number(renderer.rows[0]!.refresh_existing)).toBe(1);
+      // cron 은 이 값으로 동의를 확인한다(PK 키). `voice_prerender_queue.owner_user_id` 에는
+      // FK 가 없어 옛 행에 로그인 id 가 들어 있을 수 있는데, 그러면 동의 행을 못 찾아 재렌더가
+      // 통째로 실패한다 — 교체가 그 자리에서 고쳐 둔다.
+      expect(String(renderer.rows[0]!.owner_user_id)).toBe('u1');
       // 사전렌더 언어는 등록 때 고른 언어가 단일 출처다 — 기기 언어로 큐잉하면 일본어로
       // 만든 목소리가 한국어 클립으로 다시 만들어진다(승격 경로와 같은 규칙).
       expect(String(renderer.rows[0]!.language)).toBe('ja');

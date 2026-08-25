@@ -909,9 +909,10 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
-                // 목소리 교체 표식도 계정과 함께 떠난다 — 남기면 재로그인 시 '처음 본
-                // 프로필' 이 아니게 되어 그 사이의 교체를 지난 값과 비교해 버린다.
-                VoiceReplacementMarkerStore().clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -963,9 +964,10 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
-                // 목소리 교체 표식도 계정과 함께 떠난다 — 남기면 재로그인 시 '처음 본
-                // 프로필' 이 아니게 되어 그 사이의 교체를 지난 값과 비교해 버린다.
-                VoiceReplacementMarkerStore().clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1471,7 +1473,7 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
-        VoiceReplacementMarkerStore().clear(userID: userID)
+        // 목소리 교체 표식은 남긴다 — 위 주석 참조(로그아웃은 로컬 알람을 지우지 않는다).
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
         // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로

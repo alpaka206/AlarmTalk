@@ -69,6 +69,20 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         )
     }
 
+    /// 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다(뒤 세대 알람을 지우면 안 된다).
+    func test_앞선_세대의_푸시는_이미_처리한_것으로_본다() {
+        let store = VoiceReplacementMarkerStore(defaults: defaults)
+        store.commit(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00")
+
+        XCTAssertTrue(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"))
+        XCTAssertTrue(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
+        XCTAssertFalse(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00"))
+
+        // 옛 신호를 확정해도 표식이 과거로 되돌아가지 않는다.
+        store.commit(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00")
+        XCTAssertFalse(store.changed(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
+    }
+
     /// ⚠ **표식은 뒤로 가지 않는다.** 공유 목소리 목록은 갱신 경로가 따로라 낡은 값이
     /// 판정에 들어올 수 있는데, 되돌아가면 이미 처리한 교체를 다시 처리한다.
     func test_앞선_세대는_변화로_보지_않는다() {
@@ -85,15 +99,26 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         XCTAssertTrue(store.changed(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
     }
 
-    func test_계정별로_갈리고_로그아웃에서_지워진다() {
+    func test_계정별로_갈린다() {
         let store = VoiceReplacementMarkerStore(defaults: defaults)
         _ = store.changed(userID: "u3", profileID: "vp1", invalidatedAt: nil)
         XCTAssertTrue(store.changed(userID: "u3", profileID: "vp1", invalidatedAt: "t1"))
+        // 다른 계정은 아직 처음 보는 프로필이다.
         XCTAssertFalse(store.changed(userID: "u4", profileID: "vp1", invalidatedAt: "t1"))
+    }
 
-        store.commit(userID: "u3", profileID: "vp1", invalidatedAt: "t1")
-        store.clear(userID: "u3")
-        XCTAssertFalse(store.changed(userID: "u3", profileID: "vp1", invalidatedAt: "t2"))
-        XCTAssertFalse(store.changed(userID: "u4", profileID: "vp1", invalidatedAt: "t1"))
+    /// ⚠ **로그아웃에서 지우면 안 된다.** 로그아웃은 로컬 알람을 끄기만 하고 지우지 않는다 —
+    /// 그 사이 다른 기기에서 교체가 일어나고 같은 계정이 돌아오면, 표식이 없는 기기는 첫
+    /// 조회를 '처음 봤다' 로 읽어 영영 강등하지 않는다(그 알람을 다시 켜면 지운 목소리가 운다).
+    func test_로그아웃_뒤에도_기준이_남는다() {
+        let store = VoiceReplacementMarkerStore(defaults: defaults)
+        _ = store.changed(userID: "u9", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00")
+
+        // (로그아웃 — 이 저장소는 아무것도 지우지 않는다)
+        let afterRelogin = VoiceReplacementMarkerStore(defaults: defaults)
+        XCTAssertTrue(
+            afterRelogin.changed(userID: "u9", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00"),
+            "로그아웃 사이에 일어난 교체를 재로그인 후에도 알아채야 한다"
+        )
     }
 }

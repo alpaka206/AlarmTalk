@@ -82,15 +82,41 @@ class VoiceReplacementMarkerStoreTest {
     }
 
     @Test
-    fun markersAreScopedPerAccountAndClearedOnSignOut() {
+    fun markersAreScopedPerAccount() {
         store.changed("u3", "vp1", null)
         assertTrue(store.changed("u3", "vp1", "t1"))
         // 다른 계정은 아직 처음 보는 프로필이다.
         assertFalse(store.changed("u4", "vp1", "t1"))
+    }
 
-        store.commit("u3", "vp1", "t1")
-        store.clear("u3")
-        assertFalse("로그아웃 뒤엔 다시 '처음 본 프로필' 이어야 한다", store.changed("u3", "vp1", "t2"))
-        assertFalse("다른 계정 표식을 함께 지우면 안 된다", store.changed("u4", "vp1", "t1"))
+    /**
+     * ⚠ **로그아웃에서 지우면 안 된다.** 로그아웃은 로컬 알람을 끄기만 하고 지우지 않는다 —
+     * 그 사이 다른 기기에서 교체가 일어나고 같은 계정이 돌아오면, 표식이 없는 기기는 첫
+     * 조회를 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+     */
+    @Test
+    fun baselineSurvivesSignOut() {
+        store.changed("u9", "vp1", "2026-08-25 01:00:00")
+
+        // (로그아웃 — 이 저장소는 아무것도 지우지 않는다)
+        val afterRelogin = VoiceReplacementMarkerStore(context)
+        assertTrue(
+            "로그아웃 사이에 일어난 교체를 재로그인 후에도 알아채야 한다",
+            afterRelogin.changed("u9", "vp1", "2026-08-25 03:00:00"),
+        )
+    }
+
+    /** 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다(뒤 세대 알람을 지우면 안 된다). */
+    @Test
+    fun olderGenerationPushesAreTreatedAsHandled() {
+        store.commit("u10", "vp1", "2026-08-25 02:00:00")
+
+        assertTrue(store.hasApplied("u10", "vp1", "2026-08-25 01:00:00"))
+        assertTrue(store.hasApplied("u10", "vp1", "2026-08-25 02:00:00"))
+        assertFalse(store.hasApplied("u10", "vp1", "2026-08-25 03:00:00"))
+
+        // 옛 신호를 확정해도 표식이 과거로 되돌아가지 않는다.
+        store.commit("u10", "vp1", "2026-08-25 01:00:00")
+        assertFalse(store.changed("u10", "vp1", "2026-08-25 02:00:00"))
     }
 }

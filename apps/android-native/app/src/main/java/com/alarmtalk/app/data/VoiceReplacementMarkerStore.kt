@@ -26,6 +26,10 @@ import android.content.Context
  * 알람이 사라진다.
  *
  * 계정별이다. 앞 사람의 표식이 새 계정 판정에 쓰이면 안 된다.
+ *
+ * ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이
+ * 다른 기기에서 교체가 일어나고 같은 계정이 다시 들어오면, 표식이 없는 기기는 첫 조회를
+ * '처음 봤다' 로 읽어 **영영 강등하지 않는다.** 그 알람을 다시 켜면 지운 목소리로 운다.
  */
 class VoiceReplacementMarkerStore(context: Context) {
     private val prefs = context.applicationContext
@@ -58,27 +62,28 @@ class VoiceReplacementMarkerStore(context: Context) {
      */
     fun hasApplied(userId: String?, profileId: String, invalidatedAt: String?): Boolean {
         if (userId.isNullOrBlank() || profileId.isBlank() || invalidatedAt.isNullOrBlank()) return false
-        return prefs.getString(appliedKey(userId, profileId), null) == invalidatedAt
+        val applied = prefs.getString(appliedKey(userId, profileId), null) ?: return false
+        // ⚠ **같은 값만 보면 안 된다.** 교체가 두 번 일어난 뒤 **앞선** 세대의 푸시가 늦게
+        // 도착하면 '아직 안 본 것' 으로 읽혀, 뒤 세대로 만든 알람을 되돌릴 수 없이 지우고
+        // 표식까지 과거로 되돌린다. 이미 그 뒤를 반영했으면 처리 완료다.
+        return invalidatedAt <= applied
     }
 
-    /** 강등까지 끝났으니 이 값을 '봤고 반영했다' 로 확정한다. */
+    /**
+     * 강등까지 끝났으니 이 값을 '봤고 반영했다' 로 확정한다.
+     *
+     * ⚠ **앞선 세대로 되돌리지 않는다.** 늦게 도착한 옛 신호가 표식을 과거로 끌어내리면
+     * 이미 처리한 교체를 다시 처리한다.
+     */
     fun commit(userId: String?, profileId: String, invalidatedAt: String?) {
         if (userId.isNullOrBlank() || profileId.isBlank()) return
         val value = invalidatedAt.orEmpty()
+        val seen = seenKey(userId, profileId)
+        val applied = appliedKey(userId, profileId)
         prefs.edit()
-            .putString(seenKey(userId, profileId), value)
-            .putString(appliedKey(userId, profileId), value)
+            .putString(seen, maxOf(value, prefs.getString(seen, "").orEmpty()))
+            .putString(applied, maxOf(value, prefs.getString(applied, "").orEmpty()))
             .apply()
-    }
-
-    /** 명시적 로그아웃·탈퇴에서만 부른다(자동 401 은 같은 사람이 다시 들어온다). */
-    fun clear(userId: String?) {
-        if (userId.isNullOrBlank()) return
-        val doomed = prefs.all.keys.filter {
-            it.startsWith("$SEEN_PREFIX$userId:") || it.startsWith("$APPLIED_PREFIX$userId:")
-        }
-        if (doomed.isEmpty()) return
-        prefs.edit().apply { doomed.forEach { remove(it) } }.apply()
     }
 
     private fun seenKey(userId: String, profileId: String) = "$SEEN_PREFIX$userId:$profileId"

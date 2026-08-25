@@ -728,9 +728,10 @@ export async function replaceVoiceInPlace(
     language: string;
     isShared?: boolean;
     /**
-     * `users.id` — 월 원장·동의·플랜 조회의 기준.
-     * ⚠ 아래 지역 변수 `ownerUserId`(= `voice_profiles.user_id`)를 대신 쓰지 말 것. 구 토큰
-     * 계정은 거기에 google_id 가 들어 있어, 승격(`userPk`)과 **다른 달력**으로 원장을 세게 된다.
+     * `users.id` — 월 원장·동의·플랜 조회와 사전렌더 큐 소유자의 기준.
+     * ⚠ `voice_profiles.user_id` 를 대신 쓰지 말 것. 구 토큰 계정은 거기에 google_id 가
+     * 들어 있어, 승격(`userPk`)과 **다른 달력**으로 원장을 세고, cron 이 동의 행을 못 찾아
+     * 재렌더가 통째로 실패한다.
      */
     ownerPk: string;
     /** 토큰의 로그인 식별자(구 토큰이면 google_id) — 플랜 조회 보조 매칭(승격과 같은 조건). */
@@ -776,7 +777,6 @@ export async function replaceVoiceInPlace(
     const target = targetRes.rows[0]!;
     const targetId = String(target.id);
     const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
-    const ownerUserId = String(draft.user_id);
     const finalIsShared =
       isShared === undefined ? Number(draft.is_shared ?? 0) === 1 : isShared;
     const notifyShareRemoval = Number(target.is_shared ?? 0) === 1 && !finalIsShared;
@@ -976,17 +976,23 @@ export async function replaceVoiceInPlace(
     // 프리셋 클립 재렌더 예약도 프로필 교체와 같은 커밋이다. #101 배포 창이나 큐 쓰기
     // 실패 시 현역 프로필 덮어쓰기와 드래프트 소비까지 전부 롤백한다.
     await tx.execute({
+      // ⚠ **소유자는 `users.id`(ownerPk)여야 한다.** cron 이 이 값으로 동의를 확인하는데
+      // (`missingConsentType` 는 PK 키다) 옛 행에는 로그인 id(구글 계정은 google_id)가
+      // 들어 있을 수 있다. 그러면 동의 행을 못 찾아 **재렌더가 실패로 내려앉고** 모든 프리셋
+      // 클립이 옛 목소리에 남는다. 공유 완료 통지의 그룹 조회도 같은 값을 쓴다.
+      // 충돌 시 `owner_user_id` 도 갱신해 옛 행을 고쳐 둔다(승격 경로와 같은 기준).
       sql: `INSERT INTO voice_prerender_queue
               (voice_profile_id, owner_user_id, language, status, attempts, refresh_existing)
             VALUES (?, ?, ?, 'pending', 0, 1)
             ON CONFLICT(voice_profile_id) DO UPDATE SET
               status = 'pending', attempts = 0, refresh_existing = 1,
               claimed_at = NULL, claim_token = NULL,
+              owner_user_id = excluded.owner_user_id,
               language = excluded.language, updated_at = datetime('now')`,
       // 사전렌더 언어는 '등록 때 고른 언어'(preview_language)가 단일 출처다 — 승격 경로와
       // 같은 이유(클라가 보낸 기기 언어로 큐잉하면 일본어로 만든 목소리가 한국어 기기에서
       // 확정될 때 한국어 클립이 만들어진다). 초안에 값이 없을 때만 요청 언어로 폴백한다.
-      args: [targetId, ownerUserId, String(draft.preview_language ?? language)],
+      args: [targetId, ownerPk, String(draft.preview_language ?? language)],
     });
 
     // 공유 중이던 목소리는 **같은 그룹원의 기기도 깨워야 한다.** 그들이 이 목소리로 만든
