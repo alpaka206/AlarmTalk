@@ -1,6 +1,7 @@
 package com.alarmtalk.app.data
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -91,7 +92,15 @@ class VoiceReplacementMarkerStore(context: Context) {
         val key = seenKey(userId, profileId)
         val incoming = invalidatedAt.orEmpty()
         if (!prefs.contains(key)) {
-            prefs.edit().putString(key, incoming).commit()
+            // ⚠ **디스크 쓰기 실패를 메모리 값으로 덮지 말 것**(Codex #703 P1).
+            // `edit()` 은 성패와 무관하게 **메모리 맵을 먼저 고친다.** 그대로 두면 이
+            // 프로세스 안에서는 `contains` 가 true 라 시드가 다시 시도되지 않고, 재시작하면
+            // 디스크에 값이 없어 **그때의 세대를 '처음 봤다' 로 다시 적는다** — 그 사이의
+            // 교체를 영영 놓쳐 지운 목소리를 문 알람이 그대로 남는다.
+            // 실패하면 메모리도 되돌려 이번 회차 안에서 다시 시도할 수 있게 한다.
+            if (!prefs.edit().putString(key, incoming).commit()) {
+                prefs.edit().remove(key).commit()
+            }
             return false
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
@@ -107,21 +116,41 @@ class VoiceReplacementMarkerStore(context: Context) {
         return invalidatedAt <= applied
     }
 
-    /** 앞선 세대로 되돌리지 않는다. `commit()`(동기 쓰기)이라 락을 놓기 전에 디스크에 남는다. */
-    private fun commitLocked(userId: String, profileId: String, invalidatedAt: String?) {
+    /**
+     * 앞선 세대로 되돌리지 않는다. `commit()`(동기 쓰기)이라 락을 놓기 전에 디스크에 남는다.
+     *
+     * ⚠ **디스크에 못 남겼으면 메모리도 되돌린다**(Codex #703 P1). `edit()` 은 성패와 무관하게
+     * 메모리 맵을 먼저 고치므로, 실패를 버리면 이 프로세스는 '반영됨' 으로 읽어 **재시도를
+     * 잃고**, 재시작하면 값이 없어 그 세대를 되짚을 근거도 사라진다. 되돌려 두면 다음 회차가
+     * 다시 집는다(강등은 멱등이라 한 번 더 도는 것은 해가 없다).
+     *
+     * @return 디스크까지 남았는가.
+     */
+    private fun commitLocked(userId: String, profileId: String, invalidatedAt: String?): Boolean {
         val value = invalidatedAt.orEmpty()
         val seen = seenKey(userId, profileId)
         val applied = appliedKey(userId, profileId)
-        prefs.edit()
-            .putString(seen, maxOf(value, prefs.getString(seen, "").orEmpty()))
-            .putString(applied, maxOf(value, prefs.getString(applied, "").orEmpty()))
+        val previousSeen = prefs.getString(seen, null)
+        val previousApplied = prefs.getString(applied, null)
+        val committed = prefs.edit()
+            .putString(seen, maxOf(value, previousSeen.orEmpty()))
+            .putString(applied, maxOf(value, previousApplied.orEmpty()))
             .commit()
+        if (!committed) {
+            val rollback = prefs.edit()
+            if (previousSeen == null) rollback.remove(seen) else rollback.putString(seen, previousSeen)
+            if (previousApplied == null) rollback.remove(applied) else rollback.putString(applied, previousApplied)
+            rollback.commit()
+            Log.w(TAG, "Failed to persist replacement marker; leaving it retryable")
+        }
+        return committed
     }
 
     private fun seenKey(userId: String, profileId: String) = "$SEEN_PREFIX$userId:$profileId"
     private fun appliedKey(userId: String, profileId: String) = "$APPLIED_PREFIX$userId:$profileId"
 
     private companion object {
+        const val TAG = "VoiceReplacementMarker"
         const val SEEN_PREFIX = "seen:"
         const val APPLIED_PREFIX = "applied:"
 

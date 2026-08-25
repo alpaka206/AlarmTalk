@@ -223,6 +223,15 @@ final class BackgroundSyncTask {
             // 강등은 새로고침에 매달린 `onAuthoritativeRefresh` 훅이 한다. 조회가 실패한
             // 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
             // `refresh` 는 던지지 않는다(내부에서 삼킨다) — try 밖에 둬도 안전하다.
+            // ⚠ **못 끊은 예약 회수도 동기화와 묶지 않는다**(Codex #703 P1).
+            // 위 목소리 갱신과 **같은 이유**다 — push/pull 뒤에 두면 `/alarms` 하나만
+            // 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못하고, 그 사이 회수된
+            // 목소리나 밀어낸 알람의 예약이 **그대로 울린다.** 게다가 이 일은 통째로
+            // 로컬이라 네트워크 성패와 아무 상관이 없다. 그래서 **먼저, 독립적으로** 돌린다.
+            if let store, let alarmKit {
+                await alarmKit.retryPendingCancellations(store: store)
+            }
+
             if let voiceSession = KeychainStore.readSession() {
                 // 알람이 디스크에서 올라오기를 기다리는 일은 **강등 훅**
                 // (`onAuthoritativeRefresh`)이 한다 — 푸시로 온 회차도 같은 대기가 필요해

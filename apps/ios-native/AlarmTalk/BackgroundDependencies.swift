@@ -66,7 +66,19 @@ final class BackgroundDependencies {
                 }
                 if let previousHandle = previous.alarmKitID,
                    alarmStore.record(id: previous.id)?.alarmKitID != previousHandle {
-                    await alarmKit.cancelScheduledAlarm(record: previous)
+                    // ⚠ **해제 실패는 확정을 미룬다**(Codex #703 P1). 여기서 결과를 버리면
+                    // **회수된 목소리를 문 옛 예약이 살아 있는 채로** 세대가 확정되고 그
+                    // 목소리가 다시 고를 수 있게 된다 — 표식이 확정된 뒤라 다음 회차가 이
+                    // 행을 다시 집지도 않는다. `releaseScheduledAlarm` 은 이미 OS 에 없는
+                    // 예약을 성공으로 세므로(그 경우 끊을 것이 없다) 확정을 막지 않는다.
+                    if await alarmKit.releaseScheduledAlarm(record: previous) == false {
+                        settled = false
+                    }
+                }
+                // 이 행이 예전 회차에 남긴 고아도 함께 되짚는다 — 손잡이는 이미 밀려나
+                // 어느 행도 가리키지 않으므로 주인 행 id 로만 찾을 수 있다.
+                if await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: alarmStore) == false {
+                    settled = false
                 }
                 continue
             }

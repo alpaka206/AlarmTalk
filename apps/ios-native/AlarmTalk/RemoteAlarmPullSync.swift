@@ -168,20 +168,30 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         defer { Self.isRunning = false }
 
         var total = PullResult(imported: 0, updated: 0, skipped: 0, failed: 0)
-        repeat {
-            Self.requestedWhileRunning = false
-            let cycle = try await runCycle()
-            total = PullResult(
-                imported: total.imported + cycle.imported,
-                updated: total.updated + cycle.updated,
-                skipped: total.skipped + cycle.skipped,
-                failed: total.failed + cycle.failed
-            )
-        } while Self.requestedWhileRunning
+        do {
+            repeat {
+                Self.requestedWhileRunning = false
+                let cycle = try await runCycle()
+                total = PullResult(
+                    imported: total.imported + cycle.imported,
+                    updated: total.updated + cycle.updated,
+                    skipped: total.skipped + cycle.skipped,
+                    failed: total.failed + cycle.failed
+                )
+            } while Self.requestedWhileRunning
+        } catch {
+            // ⚠ **회차가 던져도 회수는 한다**(Codex #703 P1). 이 일은 통째로 로컬이라
+            // 네트워크 성패와 무관한데, 실패로 건너뛰면 회수된 목소리를 문 예약이 다음
+            // 성공 회차나 전경 복귀까지 살아남는다. `defer` 로는 못 한다(`await` 불가).
+            await alarmKit.retryPendingCancellations(store: store)
+            throw error
+        }
         // ⚠ **못 끊은 예약을 배경에서도 되짚는다**(Codex #703 P1). 전경 sweep
         // (`AlarmTalkApp` 의 `retryPendingCancellations`)는 앱을 열어야 돈다 — 백그라운드
         // pull 로 정리에 실패한 예약은 사용자가 앱을 열기 전에 울 수 있고, 목소리를 회수한
-        // 행처럼 **다음 pull 이 다시 집지 못하는** 갈래도 있다. 회차 끝에 한 번 훑는다.
+        // 행처럼 **다음 pull 이 다시 집지 못하는** 갈래도 있다.
+        // (BGTask 는 push/pull 앞에서 **독립적으로** 한 번 더 돈다 — push 가 먼저 실패하면
+        // 이 함수에 들어오지도 못하기 때문이다.)
         await alarmKit.retryPendingCancellations(store: store)
         return total
     }
