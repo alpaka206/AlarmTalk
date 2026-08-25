@@ -355,8 +355,21 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 // 그 사이 계정이 바뀌었으면 확정하지 않는다.
                 return deps.auth.session?.user.id == ownerID ? ids : nil
             }
-            guard !pending.degraded.isEmpty else {
+            // ⚠ **빈 회차를 그냥 확정하지 말 것.** 지난 회차에서 강등은 됐는데 예약 정리가
+            // 실패했다면 그 행들은 이미 톤이라 다시 강등 대상이 아니다 — `unverified` 로
+            // 넘어온 그 행들의 예약을 확인한 뒤에야 확정할 수 있다.
+            guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
                 pending.confirm()
+                return
+            }
+            guard !pending.degraded.isEmpty else {
+                // 이번엔 새로 내린 것이 없다 — 안내는 생략하고 예약만 확인한다.
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: deps.alarmStore,
+                    alarmKit: deps.alarmKit,
+                    ownerUserId: ownerID
+                )
+                deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
                 return
             }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
@@ -444,7 +457,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             let notices = DowngradeNoticeStore()
             notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
             notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
-            guard degraded + replacedCount > 0 else {
+            let unverifiedCount = pendingApplies.reduce(0) { $0 + $1.unverified.count }
+            guard degraded + replacedCount + unverifiedCount > 0 else {
                 pendingApplies.forEach { $0.confirm() }
                 return
             }

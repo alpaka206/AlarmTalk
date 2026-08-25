@@ -230,12 +230,24 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 //
                 // ack 자체의 실패는 삼킨다. 행이 남는 쪽이 안전한 실패다(재전달은 멱등하다).
                 if outcome.deliveryComplete, let deliveryVersion = remote.deliveryVersion {
-                    // ACK보다 먼저 영속한다. 네트워크 실패 뒤 사용자가 편집해도 다음 pull은
-                    // 정확히 이 세대만 병합 없이 ACK를 재시도할 수 있다.
-                    store.markRemoteDeliveryVersion(
+                    // ⚠ **ACK보다 먼저, 디스크까지 쓰고 확인한다.** 네트워크 실패 뒤 사용자가
+                    // 편집해도 다음 pull 이 정확히 이 세대만 병합 없이 ACK 를 재시도할 수 있어야
+                    // 하는데, 그 판단 근거가 이 값이다. 비동기 저장으로 두면 백그라운드 실행이
+                    // 쓰기 전에 끝났을 때 다음 실행이 값을 잃은 채 되살아나고, 그 뒤의 편집이
+                    // 병합과 ACK 를 함께 막아 **서버 행과 생성 음원이 영원히 남는다**
+                    // (다른 기기가 그걸 또 임포트한다). 안드로이드도 같은 자리에서 Room 쓰기를
+                    // 기다린다(`NonCancellable`).
+                    guard store.markRemoteDeliveryVersion(
                         remoteID: remote.id,
                         deliveryVersion: deliveryVersion
-                    )
+                    ) else {
+                        // 저장을 확인하지 못했으면 ACK 하지 않는다 — 서버 행이 남는 쪽이
+                        // 안전한 실패다(재전달은 멱등하고, 다음 pull 이 다시 시도한다).
+                        Self.logger.warning(
+                            "Pull sync: delivery version not persisted, deferring ACK (id: \(remote.id, privacy: .public))"
+                        )
+                        continue
+                    }
                     try? await AlarmTalkAPI.shared.markAlarmReceived(
                         id: remote.id,
                         deliveryVersion: deliveryVersion,

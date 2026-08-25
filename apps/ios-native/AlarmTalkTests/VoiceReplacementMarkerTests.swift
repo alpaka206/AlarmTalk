@@ -199,6 +199,39 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         XCTAssertTrue(store.saveNow(), "동기 저장이 성공을 보고해야 확정 여부를 판단할 수 있다")
     }
 
+    /// ⚠ **예약 확인이 끝날 때까지 내린 행들을 들고 간다.**
+    ///
+    /// 강등은 성공했는데 예약 정리가 실패해 확정을 미루면, 그 행들은 **이미 톤이라** 다음
+    /// 회차의 강등 대상이 되지 않는다(빈 결과). 빈 결과를 '확인할 것 없음' 으로 읽으면 그
+    /// 회차가 그냥 확정해 버려, 실패한 예약이 회수된 목소리를 그대로 물고 남는다.
+    func test_확인_전까지_내린_행들을_들고_간다() {
+        applyChanged("u12", nil, degraded: 0)
+
+        // 1회차: 강등은 됐지만 예약 확인이 안 돼 확정하지 않는다.
+        let first = store().applyIfChanged(
+            userID: "u12", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"
+        ) { ["a1", "a2"] }
+        XCTAssertEqual(first.degraded, ["a1", "a2"])
+        XCTAssertEqual(first.unverified, ["a1", "a2"])
+
+        // 2회차: 새로 내릴 것은 없지만 확인할 것은 남아 있다.
+        let second = store().applyIfChanged(
+            userID: "u12", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"
+        ) { [] }
+        XCTAssertTrue(second.degraded.isEmpty, "안내 개수는 이번에 내린 것만 센다")
+        XCTAssertEqual(
+            second.unverified, ["a1", "a2"],
+            "빈 회차를 '확인할 것 없음' 으로 읽으면 실패한 예약이 그대로 남는다"
+        )
+        second.confirm()
+
+        // 확정했으면 들고 있던 목록도 비운다.
+        let third = store().applyIfChanged(
+            userID: "u12", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"
+        ) { [] }
+        XCTAssertTrue(third.unverified.isEmpty)
+    }
+
     func test_계정별로_갈린다() {
         _ = applyChanged("u9", nil, degraded: 0)
         XCTAssertEqual(

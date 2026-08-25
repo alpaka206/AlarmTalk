@@ -35,15 +35,16 @@ final class BackgroundDependencies {
      * (또는 실행이 끊긴) 회차에서 확정해 버리면 다음 회차가 같은 세대를 건너뛰어 **회수된
      * 목소리가 예약된 채 남는다.** 확정하지 않으면 다음 회차가 다시 집는다(안전한 방향).
      *
-     * 판정은 이번에 내린 **그 행들만** 본다 — 전역으로 보면 결정적으로 실패하는 다른 행
-     * 하나가 이 세대의 확정을 영영 막는다.
+     * 판정은 이 세대로 내린 **그 행들만** 본다 — 전역으로 보면 결정적으로 실패하는 다른 행
+     * 하나가 이 세대의 확정을 영영 막는다. 지난 회차에서 확인하지 못하고 넘어온 행도
+     * 포함된다(그 행들은 이미 톤이라 다시 강등 대상이 되지 않는다).
      */
     @MainActor
     func confirmIfReservationsSettled(
         _ pending: VoiceReplacementMarkerStore.PendingApply,
         ownerID: String?
     ) {
-        let settled = pending.degraded.allSatisfy { id in
+        let settled = pending.unverified.allSatisfy { id in
             guard let record = alarmStore.record(id: id) else { return true }
             return !AlarmScheduleReconciler.needsReschedule(
                 record,

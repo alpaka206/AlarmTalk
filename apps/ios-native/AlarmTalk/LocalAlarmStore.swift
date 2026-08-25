@@ -608,10 +608,19 @@ final class LocalAlarmStore: ObservableObject {
 
     /// 음원·AlarmKit 예약까지 확보한 전달 세대를 ACK보다 먼저 저장한다.
     /// 사용자 편집 판정에 쓰는 updatedAtMillis는 일부러 건드리지 않는다.
-    func markRemoteDeliveryVersion(remoteID: String, deliveryVersion: String) {
-        guard let index = alarms.firstIndex(where: { $0.remoteAlarmId == remoteID }) else { return }
+    ///
+    /// ⚠ **디스크까지 쓰고 성공 여부를 돌려준다.** 비동기 저장으로 두면 ACK 가 실패한 채
+    /// 실행이 끝났을 때 다음 실행이 `remoteDeliveryVersion == nil` 로 되살아나고, 수신자가
+    /// 그 사이 편집하면 병합도 정확한 세대 ACK 도 막혀 **서버 행과 생성 음원이 영원히 남는다**
+    /// (다른 기기가 그걸 또 임포트한다). 안드로이드는 같은 자리에서 `NonCancellable` Room
+    /// 쓰기를 기다린다 — 두 앱이 같은 보장을 해야 한다.
+    ///
+    /// - Returns: 디스크에 실제로 남았는지. 거짓이면 호출자는 ACK 를 미룬다.
+    @discardableResult
+    func markRemoteDeliveryVersion(remoteID: String, deliveryVersion: String) -> Bool {
+        guard let index = alarms.firstIndex(where: { $0.remoteAlarmId == remoteID }) else { return false }
         alarms[index].remoteDeliveryVersion = deliveryVersion
-        persist()
+        return saveNow()
     }
 
     /// 동기화 실패 시 호출.

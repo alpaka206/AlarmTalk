@@ -157,6 +157,10 @@
   - **판정은 같은 값이 아니라 세대 비교다.** 교체가 두 번 일어난 뒤 **앞선** 세대의 푸시가
     늦게 오면 '아직 안 본 것' 으로 읽혀 뒤 세대로 만든 알람을 지운다. 이미 그 뒤를 반영했으면
     처리 완료로 보고, 확정도 앞선 세대로 되돌아가지 않는다.
+  - **확인이 끝날 때까지 내린 행 목록을 들고 간다.** 예약 정리가 실패해 확정을 미루면 그
+    행들은 **이미 톤이라** 다음 회차의 강등 대상이 되지 않는다 — 빈 회차를 '확인할 것 없음'
+    으로 읽고 확정해 버리면 실패한 예약이 회수된 목소리를 그대로 물고 남는다. 안내 개수는
+    **이번 회차에 내린 것만** 센다(들고 온 목록을 다시 세면 같은 안내가 반복된다).
   - **예약까지 맞춘 뒤에 확정한다.** 강등은 로컬 행만 고치고 실제로 울리는 것은 이미 구워 둔
     예약이다. 재예약이 실패했는데 확정하면 다음 회차가 같은 세대를 건너뛰어 **회수된 목소리가
     예약된 채 남는다.** 확정 판정은 이번에 내린 **그 행들만** 본다 — 전역으로 보면 결정적으로
@@ -509,6 +513,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
+| 전달 세대 ACK 전 영속 | `NonCancellable` Room 쓰기 | `markRemoteDeliveryVersion` → 동기 저장 확인 후 ACK | `POST /alarm/:id/received` |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |
 | 낡은 재렌더 폐기 | — | — | `generateStockClip`(claim·provider 보이스 가드) + `PrerenderSupersededError` |

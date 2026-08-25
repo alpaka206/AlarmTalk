@@ -56,7 +56,7 @@ struct VoiceReplacementMarkerStore {
         defer { Self.lock.unlock() }
         guard changedLocked(userID, profileID, invalidatedAt) else { return .nothing }
         guard let degraded = degrade() else { return .nothing }
-        return PendingApply(degraded: degraded) {
+        return pendingApply(userID, profileID, degraded) {
             commitLocked(userID, profileID, invalidatedAt)
         }
     }
@@ -81,10 +81,35 @@ struct VoiceReplacementMarkerStore {
         guard let degraded = degrade() else { return .nothing }
         guard let generation else {
             // 세대를 모르는 옛 신호는 반영만 하고 확정하지 않는다.
-            return PendingApply(degraded: degraded, commit: nil)
+            return PendingApply(degraded: degraded, unverified: degraded, commit: nil)
         }
-        return PendingApply(degraded: degraded) {
+        return pendingApply(userID, profileID, degraded) {
             commitLocked(userID, profileID, generation)
+        }
+    }
+
+    /**
+     * **확인이 남은 행 목록을 들고 다닌다.**
+     *
+     * 강등은 성공했는데 예약 정리가 실패하면 확정하지 않고 다음 회차에 맡기는데, 그때 그
+     * 행들은 **이미 톤으로 내려가 있어** 다시 강등 대상이 되지 않는다(빈 결과). 빈 결과를
+     * '확인할 것이 없다' 로 읽으면 그 회차가 그냥 확정해 버려, 실패한 예약이 회수된 목소리를
+     * 그대로 물고 남는다. 그래서 확정될 때까지 **디스크에 들고 있다가** 다음 회차에 함께
+     * 돌려준다.
+     */
+    private func pendingApply(
+        _ userID: String,
+        _ profileID: String,
+        _ degraded: [String],
+        commit: @escaping () -> Void
+    ) -> PendingApply {
+        let key = pendingKey(userID, profileID)
+        let carried = defaults.stringArray(forKey: key) ?? []
+        let unverified = carried + degraded.filter { !carried.contains($0) }
+        if unverified != carried { defaults.set(unverified, forKey: key) }
+        return PendingApply(degraded: degraded, unverified: unverified) { [defaults] in
+            commit()
+            defaults.removeObject(forKey: key)
         }
     }
 
@@ -97,22 +122,27 @@ struct VoiceReplacementMarkerStore {
      * 부르지 않으면 다음 회차가 다시 집는다(안전한 방향).
      */
     struct PendingApply {
-        /// 이번에 강등한 알람 id 들. 확정 전에 이 행들의 예약이 맞았는지 확인한다.
+        /// **이번 회차에** 강등한 알람 id 들. 사용자 안내(대기표) 개수는 이 값으로 센다.
         let degraded: [String]
+        /// 확정 전에 예약을 확인해야 할 id 들 — 이번 회차 것 **+ 지난 회차에서 확인하지 못하고
+        /// 넘어온 것**. 빈 회차를 '확인할 것 없음' 으로 읽으면 실패한 예약이 그대로 남는다.
+        let unverified: [String]
         private let commit: (() -> Void)?
 
-        init(degraded: [String], commit: (() -> Void)?) {
+        init(degraded: [String], unverified: [String], commit: (() -> Void)?) {
             self.degraded = degraded
+            self.unverified = unverified
             self.commit = commit
         }
 
-        fileprivate init(degraded: [String], commit: @escaping () -> Void) {
+        fileprivate init(degraded: [String], unverified: [String], commit: @escaping () -> Void) {
             self.degraded = degraded
+            self.unverified = unverified
             self.commit = commit
         }
 
         /// 아무것도 하지 않은 회차(판정에서 걸렸거나 강등이 확정을 거부했다).
-        static var nothing: PendingApply { PendingApply(degraded: [], commit: nil) }
+        static var nothing: PendingApply { PendingApply(degraded: [], unverified: [], commit: nil) }
 
         /// 예약까지 맞춘 뒤에만 부른다.
         ///
@@ -157,6 +187,7 @@ struct VoiceReplacementMarkerStore {
     /// 저장소는 값 타입이라 호출부마다 새로 만들어진다 — 락은 **타입 단위**여야 한다.
     /// (호출부는 전부 `@MainActor` 라 이 락 안에서 다시 이 저장소를 부르는 경로가 없다.)
     private static let lock = NSLock()
+    private static let pendingPrefix = "voice_replaced_pending_"
     private static let seenPrefix = "voice_replaced_seen_"
     private static let appliedPrefix = "voice_replaced_applied_"
     private func seenKey(_ userID: String, _ profileID: String) -> String {
@@ -164,5 +195,8 @@ struct VoiceReplacementMarkerStore {
     }
     private func appliedKey(_ userID: String, _ profileID: String) -> String {
         "\(Self.appliedPrefix)\(userID):\(profileID)"
+    }
+    private func pendingKey(_ userID: String, _ profileID: String) -> String {
+        "\(Self.pendingPrefix)\(userID):\(profileID)"
     }
 }
