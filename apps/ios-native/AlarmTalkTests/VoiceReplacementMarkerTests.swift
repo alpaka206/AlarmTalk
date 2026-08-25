@@ -1,7 +1,11 @@
 import XCTest
 @testable import AlarmTalk
 
-/// **교체 표식은 푸시를 놓친 기기가 스스로 수렴하는 유일한 근거다** — 그래서 두 규칙을 고정한다.
+/// **교체 표식은 푸시를 놓친 기기가 스스로 수렴하는 유일한 근거다** — 규칙을 고정한다.
+///
+/// ⚠ 이 저장소가 노출하는 것은 **판정→강등→확정을 한 임계구역에서 도는** 두 메서드뿐이다.
+/// 판정만 따로 해 두면, 그 값을 들고 기다리는 사이 더 새 세대가 반영되고 사용자가 **새
+/// 목소리로** 만든 알람을 뒤늦게 깨어난 옛 회차가 되돌릴 수 없이 지운다.
 ///
 /// 안드로이드 짝은 `VoiceReplacementMarkerStoreTest.kt`.
 final class VoiceReplacementMarkerTests: XCTestCase {
@@ -19,135 +23,161 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         super.tearDown()
     }
 
+    private func store() -> VoiceReplacementMarkerStore {
+        VoiceReplacementMarkerStore(defaults: defaults)
+    }
+
     func test_처음_본_프로필은_조용히_적기만_한다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        XCTAssertFalse(store.changed(userID: "u1", profileID: "vp1", invalidatedAt: "2026-08-25T00:00:00Z"))
-        XCTAssertFalse(store.changed(userID: "u1", profileID: "vp1", invalidatedAt: "2026-08-25T00:00:00Z"))
-    }
+        var degrades = 0
+        let applied = store().applyIfChanged(
+            userID: "u1", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"
+        ) { degrades += 1; return 3 }
 
-    func test_commit_전까지는_계속_바뀐_것으로_본다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = store.changed(userID: "u2", profileID: "vp1", invalidatedAt: nil)
-
-        XCTAssertTrue(store.changed(userID: "u2", profileID: "vp1", invalidatedAt: "t1"))
-        // ⚠ 강등이 실패했으면 다음 회차가 다시 집어야 한다.
-        XCTAssertTrue(store.changed(userID: "u2", profileID: "vp1", invalidatedAt: "t1"))
-
-        store.commit(userID: "u2", profileID: "vp1", invalidatedAt: "t1")
-        XCTAssertFalse(store.changed(userID: "u2", profileID: "vp1", invalidatedAt: "t1"))
-    }
-
-    /// 늦게 도착한 푸시가 그 사이 **새 목소리로** 만든 알람까지 지우지 않게 하는 판정.
-    func test_hasApplied_는_이미_반영한_세대만_참이다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        // 처음 보는 프로필은 false — 푸시 자체가 '방금 교체됐다' 는 증거다. 적지도 않는다.
-        XCTAssertFalse(store.hasApplied(userID: "u5", profileID: "vp1", invalidatedAt: "t1"))
-        XCTAssertFalse(store.changed(userID: "u5", profileID: "vp1", invalidatedAt: "t1"),
-                       "hasApplied 가 표식을 적어 버리면 changed 판정이 오염된다")
-
-        store.commit(userID: "u5", profileID: "vp1", invalidatedAt: "t1")
-        XCTAssertTrue(store.hasApplied(userID: "u5", profileID: "vp1", invalidatedAt: "t1"))
-        XCTAssertFalse(store.hasApplied(userID: "u5", profileID: "vp1", invalidatedAt: "t2"))
-        // 세대를 모르는 옛 서버 신호는 '반영했다' 로 볼 수 없다.
-        XCTAssertFalse(store.hasApplied(userID: "u5", profileID: "vp1", invalidatedAt: nil))
-    }
-
-    /// ⚠ **`changed` 가 조용히 적어 둔 '봤다' 를 '반영했다' 로 읽으면 푸시가 무력해진다.**
-    /// iOS 는 같은 푸시에서 목록 갱신이 교체 처리보다 **먼저** 끝나므로, 그 순간 표식이
-    /// 새 세대로 앞서 있게 된다 — 그걸 반영으로 보면 아무것도 내리지 않고 끝난다.
-    func test_봤다는_반영했다가_아니다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = store.changed(userID: "u6", profileID: "vp1", invalidatedAt: nil)   // 첫 조회 시드
-        XCTAssertTrue(store.changed(userID: "u6", profileID: "vp1", invalidatedAt: "t1"))
-
-        // 목록 갱신이 먼저 돌아 시드를 새 세대로 올려 놓은 상태를 흉내 낸다.
-        let seeded = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = seeded.changed(userID: "u7", profileID: "vp1", invalidatedAt: "t1")
-        XCTAssertFalse(
-            seeded.hasApplied(userID: "u7", profileID: "vp1", invalidatedAt: "t1"),
-            "첫 조회 시드를 반영으로 읽으면 뒤이은 푸시가 아무것도 내리지 않는다"
+        XCTAssertEqual(applied, 0)
+        XCTAssertEqual(degrades, 0, "첫 조회를 '바뀌었다' 로 읽으면 업데이트 직후 모든 설치가 알람을 날린다")
+        // 같은 값은 변화가 아니다.
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u1", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 3 },
+            0
         )
     }
 
-    /// 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다(뒤 세대 알람을 지우면 안 된다).
+    func test_새_세대는_강등하고_확정한다() {
+        _ = store().applyIfChanged(userID: "u2", profileID: "vp1", invalidatedAt: nil) { 0 }
+
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u2", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 2 },
+            2
+        )
+        // 확정됐으니 같은 세대로는 두 번 돌지 않는다.
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u2", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 2 },
+            0
+        )
+    }
+
+    /// ⚠ 강등이 실패했거나 계정이 바뀌었으면(=nil) **확정하지 않는다** — 다음 회차가 다시 집는다.
+    func test_강등이_확정을_거부하면_다음_회차가_다시_집는다() {
+        _ = store().applyIfChanged(userID: "u3", profileID: "vp1", invalidatedAt: nil) { 0 }
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u3", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { nil },
+            0
+        )
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u3", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 1 },
+            1
+        )
+    }
+
+    /// ⚠ **'봤다' 를 '반영했다' 로 읽으면 푸시가 무력해진다** — iOS 는 같은 푸시에서 목록
+    /// 갱신이 교체 처리보다 먼저 끝나므로, 그 시점에 표식이 새 세대로 앞서 있다.
+    func test_목록이_먼저_시드해도_푸시는_반영한다() {
+        // 첫 조회가 새 세대를 그대로 시드한다(강등은 하지 않는다).
+        _ = store().applyIfChanged(userID: "u4", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 9 }
+
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u4", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 2 },
+            2,
+            "시드를 반영으로 읽으면 뒤이은 푸시가 아무것도 내리지 않는다"
+        )
+        // 이제는 반영됐으므로 같은 푸시가 또 와도 지나간다.
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u4", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 2 },
+            0
+        )
+    }
+
+    /// ⚠ 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다 — 뒤 세대로 만든 알람을
+    /// 지우면 안 된다.
     func test_앞선_세대의_푸시는_이미_처리한_것으로_본다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        store.commit(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00")
+        _ = store().applyIfNotApplied(userID: "u5", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00") { 1 }
 
-        XCTAssertTrue(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"))
-        XCTAssertTrue(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
-        XCTAssertFalse(store.hasApplied(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00"))
-
-        // 옛 신호를 확정해도 표식이 과거로 되돌아가지 않는다.
-        store.commit(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00")
-        XCTAssertFalse(store.changed(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u5", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 5 },
+            0
+        )
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u5", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00") { 5 },
+            5
+        )
     }
 
-    /// ⚠ **표식은 뒤로 가지 않는다.** 공유 목소리 목록은 갱신 경로가 따로라 낡은 값이
-    /// 판정에 들어올 수 있는데, 되돌아가면 이미 처리한 교체를 다시 처리한다.
+    /// 세대를 모르는 옛 신호는 반영하되 **확정하지 않는다**(무엇을 봤는지 모른다).
+    func test_세대_없는_신호는_확정하지_않는다() {
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u6", profileID: "vp1", invalidatedAt: nil) { 1 },
+            1
+        )
+        XCTAssertEqual(
+            store().applyIfNotApplied(userID: "u6", profileID: "vp1", invalidatedAt: nil) { 1 },
+            1,
+            "무엇을 봤는지 모르면 확정하지 않는다 — 다음 신호도 그대로 반영한다"
+        )
+    }
+
+    /// ⚠ **낡은 목록이 표식을 과거로 되돌리면** 이미 처리한 교체를 다시 처리한다.
     func test_앞선_세대는_변화로_보지_않는다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = store.changed(userID: "u8", profileID: "vp1", invalidatedAt: nil)
-        XCTAssertTrue(store.changed(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"))
-        store.commit(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00")
+        _ = store().applyIfChanged(userID: "u7", profileID: "vp1", invalidatedAt: nil) { 0 }
+        _ = store().applyIfChanged(userID: "u7", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00") { 1 }
 
-        XCTAssertFalse(
-            store.changed(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-24 23:00:00"),
-            "낡은 목록이 표식을 과거로 되돌리면 그 사이 만든 알람이 지워진다"
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u7", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 1 },
+            0,
+            "낡은 목록이 표식을 되돌리면 그 사이 만든 알람이 지워진다"
         )
-        XCTAssertFalse(store.changed(userID: "u8", profileID: "vp1", invalidatedAt: nil))
-        XCTAssertTrue(store.changed(userID: "u8", profileID: "vp1", invalidatedAt: "2026-08-25 02:00:00"))
     }
 
-    /// ⚠ **동시에 도는 두 회차가 표식을 과거로 되돌리면 안 된다.** 값 비교만으로는 못 막는다 —
-    /// 둘이 같은 옛 값을 읽고 각자 계산하면 늦게 쓴 쪽이 이긴다. 되돌아가면 다음 회차가 이미
-    /// 처리한 교체를 다시 처리하며 그 사이 만든 알람을 지운다.
-    func test_동시_확정에도_표식이_뒤로_가지_않는다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        let newer = "2026-08-25 02:00:00"
+    /// ⚠ **판정과 강등 사이에 더 새 세대가 끼어들 수 없어야 한다.** 예전에는 판정을 먼저 해
+    /// 두고 나중에 강등해서, 그 사이 반영된 새 세대의 알람을 옛 회차가 지웠다.
+    func test_강등_중에는_다른_회차가_끼어들지_못한다() {
         let older = "2026-08-25 01:00:00"
-        _ = store.changed(userID: "u11", profileID: "vp1", invalidatedAt: nil)
+        let newer = "2026-08-25 02:00:00"
+        _ = store().applyIfChanged(userID: "u8", profileID: "vp1", invalidatedAt: nil) { 0 }
 
-        let group = DispatchGroup()
-        for index in 0..<200 {
-            group.enter()
+        var newerRan = 0
+        let done = DispatchSemaphore(value: 0)
+        // 옛 회차가 강등 중일 때 새 회차가 들어오려 하면, 락이 풀린 뒤에 실행된다.
+        let applied = store().applyIfChanged(userID: "u8", profileID: "vp1", invalidatedAt: older) {
             DispatchQueue.global().async {
-                store.commit(
-                    userID: "u11",
-                    profileID: "vp1",
-                    invalidatedAt: index.isMultiple(of: 2) ? newer : older
-                )
-                group.leave()
+                newerRan = self.store().applyIfChanged(
+                    userID: "u8", profileID: "vp1", invalidatedAt: newer
+                ) { 7 }
+                done.signal()
             }
+            // 새 회차는 락에 막혀 이 강등이 끝나기 전에는 시작조차 못 한다.
+            XCTAssertEqual(done.wait(timeout: .now() + 0.2), .timedOut, "판정·강등·확정이 직렬화되지 않았다")
+            return 1
         }
-        group.wait()
 
-        XCTAssertTrue(store.hasApplied(userID: "u11", profileID: "vp1", invalidatedAt: newer))
-        XCTAssertFalse(
-            store.changed(userID: "u11", profileID: "vp1", invalidatedAt: newer),
-            "표식이 과거로 되돌아가면 이미 처리한 교체를 다시 처리한다"
-        )
+        XCTAssertEqual(applied, 1)
+        // 락이 풀린 뒤에야 새 회차가 돈다 — 그때는 이미 옛 세대가 확정돼 있으므로 그대로 반영된다.
+        XCTAssertEqual(done.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(newerRan, 7, "새 세대는 옛 회차가 끝난 뒤 그대로 반영돼야 한다")
     }
 
     func test_계정별로_갈린다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = store.changed(userID: "u3", profileID: "vp1", invalidatedAt: nil)
-        XCTAssertTrue(store.changed(userID: "u3", profileID: "vp1", invalidatedAt: "t1"))
+        _ = store().applyIfChanged(userID: "u9", profileID: "vp1", invalidatedAt: nil) { 0 }
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u9", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 1 },
+            1
+        )
         // 다른 계정은 아직 처음 보는 프로필이다.
-        XCTAssertFalse(store.changed(userID: "u4", profileID: "vp1", invalidatedAt: "t1"))
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u10", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 1 },
+            0
+        )
     }
 
     /// ⚠ **로그아웃에서 지우면 안 된다.** 로그아웃은 로컬 알람을 끄기만 하고 지우지 않는다 —
-    /// 그 사이 다른 기기에서 교체가 일어나고 같은 계정이 돌아오면, 표식이 없는 기기는 첫
-    /// 조회를 '처음 봤다' 로 읽어 영영 강등하지 않는다(그 알람을 다시 켜면 지운 목소리가 운다).
+    /// 표식이 사라지면 그 사이의 교체를 재로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지
+    /// 않는다(그 알람을 다시 켜면 지운 목소리가 운다).
     func test_로그아웃_뒤에도_기준이_남는다() {
-        let store = VoiceReplacementMarkerStore(defaults: defaults)
-        _ = store.changed(userID: "u9", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00")
+        _ = store().applyIfChanged(userID: "u11", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00") { 0 }
 
         // (로그아웃 — 이 저장소는 아무것도 지우지 않는다)
-        let afterRelogin = VoiceReplacementMarkerStore(defaults: defaults)
-        XCTAssertTrue(
-            afterRelogin.changed(userID: "u9", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00"),
+        XCTAssertEqual(
+            store().applyIfChanged(userID: "u11", profileID: "vp1", invalidatedAt: "2026-08-25 03:00:00") { 4 },
+            4,
             "로그아웃 사이에 일어난 교체를 재로그인 후에도 알아채야 한다"
         )
     }

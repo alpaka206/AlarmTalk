@@ -333,20 +333,22 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             await deps.alarmStore.waitUntilLoadedFromDisk()
             guard deps.alarmStore.hasLoadedFromDisk else { return }
             let ownerID = deps.auth.session?.user.id
-            let markers = VoiceReplacementMarkerStore()
             // ⚠ **이미 반영한 세대면 아무것도 하지 않는다.** 늦게 도착한 푸시는, 그 사이
             // 사용자가 **새 목소리로** 다시 만든 직접 입력 알람까지 되돌릴 수 없이 지운다.
-            guard !markers.hasApplied(userID: ownerID, profileID: profileID, invalidatedAt: generation)
-            else { return }
-            let degraded = deps.voiceStudio.degradeCustomMessageAlarms(
-                forProfileID: profileID,
-                alarmStore: deps.alarmStore,
-                audioCache: .shared,
-                ownerUserId: ownerID
-            )
-            // 세대를 알고, 그 사이 계정이 바뀌지 않았을 때만 '봤다' 로 적는다.
-            if generation != nil, deps.auth.session?.user.id == ownerID {
-                markers.commit(userID: ownerID, profileID: profileID, invalidatedAt: generation)
+            // 판정·강등·확정은 저장소가 한 임계구역에서 돈다.
+            let degraded = VoiceReplacementMarkerStore().applyIfNotApplied(
+                userID: ownerID,
+                profileID: profileID,
+                invalidatedAt: generation
+            ) {
+                let count = deps.voiceStudio.degradeCustomMessageAlarms(
+                    forProfileID: profileID,
+                    alarmStore: deps.alarmStore,
+                    audioCache: .shared,
+                    ownerUserId: ownerID
+                )
+                // 그 사이 계정이 바뀌었으면 확정하지 않는다.
+                return deps.auth.session?.user.id == ownerID ? count : nil
             }
             guard degraded > 0 else { return }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
@@ -389,26 +391,23 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 deps.voiceStudio.profiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
                 deps.voiceStudio.familyVoices.map { ($0.id, $0.customAudioInvalidatedAt) }
             for candidate in markerCandidates {
-                guard markers.changed(
+                // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새
+                // 세대가 반영되고 사용자가 새 목소리로 만든 알람을 뒤늦게 지우게 된다.
+                replacedCount += markers.applyIfChanged(
                     userID: ownerID,
                     profileID: candidate.id,
                     invalidatedAt: candidate.invalidatedAt
-                ) else { continue }
-                replacedCount += deps.voiceStudio.degradeCustomMessageAlarms(
-                    forProfileID: candidate.id,
-                    alarmStore: deps.alarmStore,
-                    audioCache: .shared,
-                    ownerUserId: ownerID
-                )
-                // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
-                // ⚠ 그 사이 계정이 바뀌었으면 적지 않는다 — 소유자 불일치로 돌려받은 0을
-                // '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                guard deps.auth.session?.user.id == ownerID else { break }
-                markers.commit(
-                    userID: ownerID,
-                    profileID: candidate.id,
-                    invalidatedAt: candidate.invalidatedAt
-                )
+                ) {
+                    let count = deps.voiceStudio.degradeCustomMessageAlarms(
+                        forProfileID: candidate.id,
+                        alarmStore: deps.alarmStore,
+                        audioCache: .shared,
+                        ownerUserId: ownerID
+                    )
+                    // ⚠ 그 사이 계정이 바뀌었으면 확정하지 않는다 — 소유자 불일치로 돌려받은
+                    // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
+                    return deps.auth.session?.user.id == ownerID ? count : nil
+                }
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본

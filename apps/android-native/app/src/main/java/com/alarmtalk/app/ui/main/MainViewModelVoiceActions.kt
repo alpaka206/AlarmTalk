@@ -356,16 +356,13 @@ internal fun MainViewModel.promoteVoiceDraft(
                 val owner = session.user.id
                 viewModelScope.launch {
                     runCatching {
-                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
-                    }.onSuccess {
-                        // ⚠ **여기서 표식을 확정하지 않으면 이 기기가 자기 알람을 지운다.**
-                        // 이 화면이 이미 내렸는데 표식이 옛 값이면, 사용자가 곧바로 **새
-                        // 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이 '아직 안 내린
-                        // 교체' 로 보고 되돌릴 수 없이 지운다.
-                        official.customAudioInvalidatedAt?.let { generation ->
-                            com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
-                                .commit(owner, official.id, generation)
-                        }
+                        // ⚠ **표식 확정까지 한 임계구역에서 한다.** 확정을 빠뜨리면 사용자가
+                        // 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이
+                        // '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
+                        com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+                            .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
+                                repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
+                            }
                     }.onFailure {
                         AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
                     }

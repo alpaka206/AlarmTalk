@@ -102,18 +102,21 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     // 내 목록만 보면 공유받은 쪽 기기는 푸시를 놓쳤을 때 영영 모른다.
     val markerCandidates = voiceProfiles.map { it.id to it.customAudioInvalidatedAt } +
         familyVoices.map { it.id to it.customAudioInvalidatedAt }
-    val replaced = markerCandidates.filter { (id, at) -> markers.changed(listOwner, id, at) }
     viewModelScope.launch {
         runCatching {
             val lostAccess = repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner)
             var replacedCount = 0
-            for ((profileId, invalidatedAt) in replaced) {
-                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
-                // 강등이 끝난 뒤에만 '봤다' 로 적는다(실패하면 다음 회차가 다시 집는다).
-                // ⚠ 그 사이 계정이 바뀌었으면 적지 않는다 — 저장소가 소유자 불일치로 돌려준
-                // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                if (authSession?.user?.id != listOwner) break
-                markers.commit(listOwner, profileId, invalidatedAt)
+            // ⚠ **판정을 코루틴 밖에서 미리 하지 말 것.** 예전에는 여기 오기 전에 걸러 뒀는데,
+            // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 알람을 만들면 뒤늦게
+            // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
+            for ((profileId, invalidatedAt) in markerCandidates) {
+                replacedCount += markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
+                    val degraded =
+                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
+                    // 그 사이 계정이 바뀌었으면 확정하지 않는다 — 저장소가 소유자 불일치로
+                    // 돌려준 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
+                    if (authSession?.user?.id == listOwner) degraded else null
+                }
             }
             lostAccess to replacedCount
         }

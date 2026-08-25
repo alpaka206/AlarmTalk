@@ -98,21 +98,26 @@ class VoiceAccessSyncWorker(
                     sessionStore.sessionGeneration() == startGeneration
             }
             // 교체된 목소리의 직접 입력 알람 — 위 대조는 못 잡는다(id 가 그대로 살아 있다).
+            // ⚠ 판정·강등·확정은 저장소가 **한 임계구역**에서 돈다. 여기서 미리 판정해 두면
+            // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 만든 알람을, 뒤늦게
+            // 깨어난 옛 회차가 지운다(계정 재확인도 강등 직후에 그 안에서 한다).
             val markers = VoiceReplacementMarkerStore(applicationContext)
             var replacedCount = 0
             // ① 푸시가 실어 준 id(즉시성). 세대가 함께 왔고 이미 반영했으면 건너뛴다 —
             //    늦게 도착한 푸시가 그 사이 **새 목소리로** 만든 알람까지 지우면 안 된다.
             val replacedVoiceId = inputData.getString(INPUT_REPLACED_VOICE_ID)?.takeIf { it.isNotBlank() }
             val replacedGeneration = inputData.getString(INPUT_REPLACED_GENERATION)?.takeIf { it.isNotBlank() }
-            if (replacedVoiceId != null &&
-                !markers.hasApplied(session.user.id, replacedVoiceId, replacedGeneration)
-            ) {
-                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
-                    replacedVoiceId,
+            if (replacedVoiceId != null) {
+                replacedCount += markers.applyIfNotApplied(
                     session.user.id,
-                )
-                if (replacedGeneration != null && stillSameSession()) {
-                    markers.commit(session.user.id, replacedVoiceId, replacedGeneration)
+                    replacedVoiceId,
+                    replacedGeneration,
+                ) {
+                    val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                        replacedVoiceId,
+                        session.user.id,
+                    )
+                    if (stillSameSession()) degraded else null
                 }
             }
             // ② 방금 받은 목록의 표식(정확성) — 푸시를 놓쳤어도 여기서 수렴한다.
@@ -122,17 +127,16 @@ class VoiceAccessSyncWorker(
             val markerCandidates = myVoices.map { it.id to it.customAudioInvalidatedAt } +
                 sharedVoices.map { it.id to it.customAudioInvalidatedAt }
             for ((profileId, invalidatedAt) in markerCandidates) {
-                if (!markers.changed(session.user.id, profileId, invalidatedAt)) continue
-                replacedCount += repository.degradeCustomMessageAlarmsUsingVoiceProfile(
-                    profileId,
-                    session.user.id,
-                )
-                // 강등이 실제로 끝난 뒤에만 '봤다' 로 적는다 — 먼저 적으면 실패한 회차가
-                // 신호를 삼켜 다시는 시도하지 않는다.
                 // ⚠ `break` 다 — 아래 대기표 기록까지 건너뛰면 이미 강등된 알람의 이유를
-                // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 break 한다).
+                // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 멈춘다).
                 if (!stillSameSession()) break
-                markers.commit(session.user.id, profileId, invalidatedAt)
+                replacedCount += markers.applyIfChanged(session.user.id, profileId, invalidatedAt) {
+                    val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                        profileId,
+                        session.user.id,
+                    )
+                    if (stillSameSession()) degraded else null
+                }
             }
             // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
             // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.

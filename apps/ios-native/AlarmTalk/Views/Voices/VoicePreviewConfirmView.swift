@@ -402,21 +402,20 @@ struct VoicePreviewConfirmView: View {
                 // 이 화면에서 이미 동의를 받았으므로 대기표(모달)는 남기지 않는다.
                 // `degrade` 가 세우는 `needsScheduleReconcile` 을 `AlarmTalkApp` 이 받아
                 // AlarmKit 예약(구워 둔 .caf)까지 맞춘다.
-                voice.degradeCustomMessageAlarms(
-                    forProfileID: promoted.id,
-                    alarmStore: alarmStore,
-                    audioCache: .shared,
-                    ownerUserId: auth.session?.user.id
-                )
-                // ⚠ **여기서 표식을 확정한다.** 새로고침이 우연히 해 주기를 기다리지 않는다
-                // (안드로이드에는 그 우연이 없다 — 두 앱이 같은 자리에서 같은 일을 한다).
+                // ⚠ **강등과 표식 확정을 함께 한다.** 새로고침이 우연히 해 주기를 기다리지
+                // 않는다(안드로이드에는 그 우연이 없다 — 두 앱이 같은 자리에서 같은 일을 한다).
                 // 표식이 옛 값이면 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음
                 // 새로고침이 '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
-                if let generation = promoted.customAudioInvalidatedAt {
-                    VoiceReplacementMarkerStore().commit(
-                        userID: auth.session?.user.id,
-                        profileID: promoted.id,
-                        invalidatedAt: generation
+                VoiceReplacementMarkerStore().applyIfNotApplied(
+                    userID: auth.session?.user.id,
+                    profileID: promoted.id,
+                    invalidatedAt: promoted.customAudioInvalidatedAt
+                ) {
+                    voice.degradeCustomMessageAlarms(
+                        forProfileID: promoted.id,
+                        alarmStore: alarmStore,
+                        audioCache: .shared,
+                        ownerUserId: auth.session?.user.id
                     )
                 }
             }
