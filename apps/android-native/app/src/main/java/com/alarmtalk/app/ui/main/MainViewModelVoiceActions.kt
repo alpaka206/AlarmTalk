@@ -194,13 +194,11 @@ internal fun MainViewModel.createVoiceProfiles(
     // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
     // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
     //
-    // 다만 **초안이 이미 떠 있으면** 새로 만들지 않는다 — 그건 한도가 아니라 '결정을
-    // 안 끝낸 등록이 하나 있다' 는 뜻이라, 그 결정부터 마쳐야 한다. UI 쪽
-    // `canOpenCreateForm` 과 **같은 기준**이다.
-    if (pendingVoiceDraft != null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
-        return false
-    }
+    // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft != null`
+    // 로 막았다). 초안은 저장하지 않으면 없는 것이고, 남아 있다는 건 앱이 죽었다는 뜻이지
+    // 사용자가 결정을 미뤘다는 뜻이 아니다 — 서버가 새 등록을 받을 때 옛 초안을 버린다
+    // (`discardAbandonedDrafts`). 여기서 막으면 **녹음을 다 시킨 뒤 아무 반응 없이**
+    // 끝난다(이 함수가 false 를 돌려주면 패널은 스텝을 전진시키지 않는다).
     if (voiceProfileBusy) return false
 
     // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
