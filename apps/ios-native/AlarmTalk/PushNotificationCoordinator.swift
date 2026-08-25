@@ -369,7 +369,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                     alarmKit: deps.alarmKit,
                     ownerUserId: ownerID
                 )
-                deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
                 return
             }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
@@ -386,7 +386,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **예약까지 맞춘 뒤에 확정한다.** 강등은 로컬 행만 고치고 울리는 것은 이미
             // 구워 둔 예약이다 — 여기서 실패했는데 확정하면 다음 회차가 같은 세대를 건너뛰어
             // 회수된 목소리가 예약된 채 남는다. 안 맞으면 확정하지 않고 다음 회차에 맡긴다.
-            deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
         }
 
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.
@@ -468,7 +468,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 ownerUserId: deps.auth.session?.user.id
             )
             // 예약까지 맞춘 것만 확정한다(위 푸시 경로와 같은 규칙).
-            pendingApplies.forEach { deps.confirmIfReservationsSettled($0, ownerID: ownerID) }
+            for pending in pendingApplies {
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            }
         }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)

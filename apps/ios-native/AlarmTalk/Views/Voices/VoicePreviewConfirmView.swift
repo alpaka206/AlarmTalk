@@ -430,7 +430,19 @@ struct VoicePreviewConfirmView: View {
                     alarmKit: deps.alarmKit,
                     ownerUserId: auth.session?.user.id
                 )
-                deps.confirmIfReservationsSettled(pending, ownerID: auth.session?.user.id)
+                let cleaned = await deps.confirmIfReservationsSettled(
+                    pending,
+                    ownerID: auth.session?.user.id
+                )
+                if !cleaned {
+                    // ⚠ **정리가 끝나지 않았으면 이 목소리를 아직 고를 수 없게 둔다**(안드로이드
+                    // 승격 경로와 같다). 고를 수 있게 두면 그 사이 만든 새 알람을 다음 회차가
+                    // 함께 지운다 — 강등 대상은 프로필 id 로만 고르기 때문이다.
+                    // 다음 새로고침이 정리를 마치면 곧바로 풀린다.
+                    voice.suppressReplacedProfile(promoted.id)
+                    voice.statusMessage =
+                        "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요."
+                }
             }
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
             // 교체 갈래는 draft id 가 아니라 기존 공식 프로필 id 를 반환한다. 준비 페이지가

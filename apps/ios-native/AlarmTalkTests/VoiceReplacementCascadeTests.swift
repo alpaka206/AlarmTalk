@@ -87,6 +87,25 @@ final class VoiceReplacementCascadeTests: XCTestCase {
     }
 
     /// 받은 알람은 **보낸 사람의** 목소리로 성립한다 — 내 교체로 판단하지 않는다.
+    /// ⚠ **정리가 끝나지 않은 교체 목소리는 아직 고를 수 없다.** 고를 수 있게 두면 그 사이
+    /// 만든 새 알람을 다음 회차가 함께 지운다(강등 대상은 프로필 id 로만 고른다).
+    func test_정리가_끝나지_않으면_그_목소리를_숨긴다() {
+        let voice = VoiceStudioViewModel()
+        voice.profiles = [
+            VoiceProfile(id: "clone-1", name: "엄마"),
+            VoiceProfile(id: "clone-2", name: "아빠"),
+        ]
+
+        voice.suppressReplacedProfile("clone-1")
+        XCTAssertEqual(voice.profiles.map(\.id), ["clone-2"])
+
+        voice.releaseReplacedProfile("clone-1")
+        XCTAssertFalse(
+            voice.replacementSuppressedProfileIDs.contains("clone-1"),
+            "정리가 확정되면 곧바로 다시 고를 수 있어야 한다"
+        )
+    }
+
     func test_받은_알람은_대상이_아니다() {
         let store = makeStore()
         store.upsert(alarm(id: "recv", voiceProfileId: "clone-1", origin: .receivedRemote))

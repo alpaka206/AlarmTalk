@@ -81,7 +81,7 @@ struct VoiceReplacementMarkerStore {
         guard let degraded = degrade() else { return .nothing }
         guard let generation else {
             // 세대를 모르는 옛 신호는 반영만 하고 확정하지 않는다.
-            return PendingApply(degraded: degraded, unverified: degraded, commit: nil)
+            return PendingApply(profileID: profileID, degraded: degraded, unverified: degraded, commit: nil)
         }
         return pendingApply(userID, profileID, degraded) {
             commitLocked(userID, profileID, generation)
@@ -107,7 +107,7 @@ struct VoiceReplacementMarkerStore {
         let carried = defaults.stringArray(forKey: key) ?? []
         let unverified = carried + degraded.filter { !carried.contains($0) }
         if unverified != carried { defaults.set(unverified, forKey: key) }
-        return PendingApply(degraded: degraded, unverified: unverified) { [defaults] in
+        return PendingApply(profileID: profileID, degraded: degraded, unverified: unverified) { [defaults] in
             commit()
             defaults.removeObject(forKey: key)
         }
@@ -122,6 +122,8 @@ struct VoiceReplacementMarkerStore {
      * 부르지 않으면 다음 회차가 다시 집는다(안전한 방향).
      */
     struct PendingApply {
+        /// 어떤 목소리의 교체인가 — 정리가 끝날 때까지 그 목소리를 고르지 못하게 막는 데 쓴다.
+        let profileID: String
         /// **이번 회차에** 강등한 알람 id 들. 사용자 안내(대기표) 개수는 이 값으로 센다.
         let degraded: [String]
         /// 확정 전에 예약을 확인해야 할 id 들 — 이번 회차 것 **+ 지난 회차에서 확인하지 못하고
@@ -129,20 +131,17 @@ struct VoiceReplacementMarkerStore {
         let unverified: [String]
         private let commit: (() -> Void)?
 
-        init(degraded: [String], unverified: [String], commit: (() -> Void)?) {
-            self.degraded = degraded
-            self.unverified = unverified
-            self.commit = commit
-        }
-
-        fileprivate init(degraded: [String], unverified: [String], commit: @escaping () -> Void) {
+        init(profileID: String, degraded: [String], unverified: [String], commit: (() -> Void)?) {
+            self.profileID = profileID
             self.degraded = degraded
             self.unverified = unverified
             self.commit = commit
         }
 
         /// 아무것도 하지 않은 회차(판정에서 걸렸거나 강등이 확정을 거부했다).
-        static var nothing: PendingApply { PendingApply(degraded: [], unverified: [], commit: nil) }
+        static var nothing: PendingApply {
+            PendingApply(profileID: "", degraded: [], unverified: [], commit: nil)
+        }
 
         /// 예약까지 맞춘 뒤에만 부른다.
         ///

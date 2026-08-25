@@ -465,7 +465,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 온다. 그대로 진행하면 BGTask 가 "끝났다" 고 통보한 뒤에 목록을 갈아 끼우고
             // `onAuthoritativeRefresh` 가 알람을 강등·재예약한다.
             if Task.isCancelled { return }
-            profiles = resolvedProfiles
+            // ⚠ **정리가 끝나지 않은 교체 목소리는 아직 고를 수 없다.** 서버 목록은 이미 새
+            // 목소리를 주지만, 이 기기의 직접 입력 알람 정리(강등·예약)가 끝나지 않았으면
+            // 그 사이 만든 새 알람을 다음 회차가 함께 지운다 — 강등 대상은 프로필 id 로만
+            // 고르기 때문이다. 안드로이드 승격 경로도 같은 자리에서 목록에서 뺀다.
+            profiles = resolvedProfiles.filter { !replacementSuppressedProfileIDs.contains($0.id) }
             familyVoices = familyResult
             // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
             accessibleVoicesAreAuthoritative = familyAuthoritative
@@ -1138,6 +1142,23 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 자동 401 이 세션을 비웠을 수 있는데 그 경로는 로컬 알람 예약을 일부러 그대로
     /// 둔다(알람 전달이 인증 상태에 묶이면 안 되므로). 여기서 안 끊으면 서버에선 이미
     /// 지워진 목소리가 그 기기에서 계속 울린다.
+    /// **정리가 끝나지 않아 아직 고를 수 없는 교체 목소리.**
+    ///
+    /// 교체는 프로필 id 를 재사용하므로, 정리(강등·예약)가 실패한 채 목록에 올리면 그 사이
+    /// 만든 **새 목소리 알람까지** 다음 회차가 되돌릴 수 없이 벗긴다. 다음 정리가 확정되면
+    /// 곧바로 풀린다(메모리 전용 — 재시작 후에는 새로고침이 다시 판단한다).
+    private(set) var replacementSuppressedProfileIDs: Set<String> = []
+
+    func suppressReplacedProfile(_ profileID: String) {
+        guard !profileID.isEmpty else { return }
+        replacementSuppressedProfileIDs.insert(profileID)
+        profiles = profiles.filter { $0.id != profileID }
+    }
+
+    func releaseReplacedProfile(_ profileID: String) {
+        replacementSuppressedProfileIDs.remove(profileID)
+    }
+
     /// 마지막 새로고침의 목소리 목록이 **믿을 수 있는가**(= 서버가 확정해 준 값인가).
     /// 실패한 조회로 알람을 강등하지 않기 위한 게이트다.
     private(set) var accessibleVoicesAreAuthoritative = false

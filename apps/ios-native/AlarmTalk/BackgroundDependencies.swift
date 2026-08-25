@@ -40,20 +40,38 @@ final class BackgroundDependencies {
      * 포함된다(그 행들은 이미 톤이라 다시 강등 대상이 되지 않는다).
      */
     @MainActor
+    @discardableResult
     func confirmIfReservationsSettled(
         _ pending: VoiceReplacementMarkerStore.PendingApply,
         ownerID: String?
-    ) {
-        let settled = pending.unverified.allSatisfy { id in
-            guard let record = alarmStore.record(id: id) else { return true }
-            return !AlarmScheduleReconciler.needsReschedule(
+    ) async -> Bool {
+        var settled = true
+        for id in pending.unverified {
+            // 사라진 행은 확인할 것이 없다.
+            guard let record = alarmStore.record(id: id) else { continue }
+            // ⚠ **지문이 없던 시절의 예약은 리컨사일러가 건너뛴다.**
+            // `needsReschedule` 은 `scheduledSoundFingerprint == nil` 이면 false 를 돌려주는데
+            // (옛 행을 함부로 다시 걸지 않으려는 판단), 그대로 '맞았다' 로 읽으면 회수된
+            // 목소리를 문 예약을 그대로 둔 채 세대를 확정해 **다시는 고칠 기회가 없다.**
+            // 이 경로에서는 직접 다시 건다 — 성공하면 지문이 새겨져 이후 판정도 정상화된다.
+            if record.enabled, record.alarmKitID != nil, record.scheduledSoundFingerprint == nil {
+                if await alarmKit.schedule(record: record, store: alarmStore) { continue }
+                settled = false
+                continue
+            }
+            if AlarmScheduleReconciler.needsReschedule(
                 record,
                 alarmKit: alarmKit,
                 audioCache: .shared
-            )
+            ) {
+                settled = false
+            }
         }
-        guard settled, auth.session?.user.id == ownerID else { return }
+        guard settled, auth.session?.user.id == ownerID else { return false }
         pending.confirm()
+        // 정리가 끝났으니 그 목소리를 다시 고를 수 있다.
+        if !pending.profileID.isEmpty { voiceStudio.releaseReplacedProfile(pending.profileID) }
+        return true
     }
 
     private init() {
