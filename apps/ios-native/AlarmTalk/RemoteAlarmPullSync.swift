@@ -97,7 +97,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         deliveryVersion: String?
     ) -> Bool {
         audioSecured
-            && (!enabled || (scheduleSucceeded && conflictsCleared))
+            // ⚠ **정리는 꺼진 알람에도 요구한다**(Codex #703 P1). 서버가 받은 알람을 끄면
+            // 새로 걸 것은 없지만 **옛 예약은 지워야 한다** — 그 취소가 실패했는데 그냥
+            // ACK 하면 꺼진 행 뒤에 살아 있는 예약이 남고, 서버 행이 없어 다시 시도할
+            // 근거도 사라진다. 예약 성공(`scheduleSucceeded`)만 켜진 알람의 조건이다.
+            && conflictsCleared
+            && (!enabled || scheduleSucceeded)
             && deliveryVersion?.isEmpty == false
     }
 
@@ -173,6 +178,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 failed: total.failed + cycle.failed
             )
         } while Self.requestedWhileRunning
+        // ⚠ **못 끊은 예약을 배경에서도 되짚는다**(Codex #703 P1). 전경 sweep
+        // (`AlarmTalkApp` 의 `retryPendingCancellations`)는 앱을 열어야 돈다 — 백그라운드
+        // pull 로 정리에 실패한 예약은 사용자가 앱을 열기 전에 울 수 있고, 목소리를 회수한
+        // 행처럼 **다음 pull 이 다시 집지 못하는** 갈래도 있다. 회차 끝에 한 번 훑는다.
+        await alarmKit.retryPendingCancellations(store: store)
         return total
     }
 
@@ -787,6 +797,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ) async -> Bool {
         guard received.originEnum == .receivedRemote, received.enabled else { return true }
         let owedCancellations = Set(PendingAlarmCancellationStore.all)
+        // 그 행이 아직 못 끊은 예약이 있는가 — **지금 손잡이든 이미 밀려난 옛 손잡이든.**
+        // 주인 행 기록이 먼저이고, 주인을 안 적던 시절의 기록만 손잡이로 되짚는다.
+        func owesCleanup(_ row: LocalAlarmRecord) -> Bool {
+            if !PendingAlarmCancellationStore.owedHandles(forAlarmID: row.id).isEmpty { return true }
+            return row.alarmKitID.map { owedCancellations.contains($0) } ?? false
+        }
         var cleared = true
         for conflicting in store.conflictingAlarms(
             hour: received.hour,
@@ -794,7 +810,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             excludingID: received.id,
             ownerUserId: pullOwnerUserID
         ) where conflicting.remoteAlarmId != remoteID {
-            let owesCancellation = conflicting.alarmKitID.map { owedCancellations.contains($0) } ?? false
+            // ⚠ **주인 행으로 판정한다 — 지금 손잡이로는 부족하다**(Codex #703 P1).
+            // 한 행이 여러 번 밀리면 고아가 둘 이상 쌓이는데, 그중 **지금 손잡이만** 끊긴
+            // 회차가 오면 남은 옛 고아는 `all` 대조에 걸리지 않는다 — 정리가 끝났다고
+            // 답해 ACK 가 나가고, 그 예약은 행 없이 운다.
+            let owesCancellation = owesCleanup(conflicting)
             guard conflicting.enabled || owesCancellation else { continue }
             if conflicting.enabled {
                 var disabled = conflicting
@@ -948,12 +968,18 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 반복 알람은 재예약 계기도 없어 사실상 무기한이다 — 알람 앱에서 가장 나쁜
             // 결말이다. 저장소의 다른 재예약 경로(`applyFreePlanVoiceLock`·
             // `restorePaidVoiceAlarms`)가 쓰는 순서와 같게 맞춘다.
+            // ⚠ **여기 취소 실패는 다음 pull 이 다시 집지 못한다**(Codex #703 P1).
+            // 행은 이미 톤으로 내려가 `hasSenderVoice` 가 false 라 이 갈래에 다시 오지
+            // 않는다 — 전경 sweep 만이 유일한 회수 경로가 되어, 사용자가 앱을 열기 전에
+            // 그 예약이 **회수된 생체 목소리로 운다.** 그래서 이미 없는 예약을 성공으로
+            // 세는 `releaseScheduledAlarm` 을 쓰고, 그 행이 남긴 고아까지 함께 되짚는다.
             let previouslyScheduled = record
             if revoked.enabled {
                 if await alarmKit.schedule(record: revoked, store: store) {
                     if previouslyScheduled.alarmKitID != nil {
-                        await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
+                        await alarmKit.releaseScheduledAlarm(record: previouslyScheduled)
                     }
+                    await alarmKit.releaseOwedHandles(forAlarmID: revoked.id, store: store)
                 } else {
                     // ⚠ **여기서 멈추지 않는다 — 하지만 잊히지도 않는다.** 행은 이미 톤으로
                     // 내려갔고 `hasSenderVoice` 가 false 라 pull 은 다시 집지 않는다. 대신
@@ -966,7 +992,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 }
             } else {
                 // 꺼진 알람은 새로 걸 것이 없으니 옛것만 지운다.
-                await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
+                await alarmKit.releaseScheduledAlarm(record: previouslyScheduled)
+                await alarmKit.releaseOwedHandles(forAlarmID: revoked.id, store: store)
             }
             Self.logger.info("Pull sync: revoked sender voice on received alarm (remoteId: \(remoteID, privacy: .public))")
             // ⚠ **여기는 백그라운드다.** 목소리만 걷어내고 말면 사용자는 왜 알람이

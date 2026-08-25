@@ -51,12 +51,22 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             conflictsCleared: false,
             deliveryVersion: "version-1"
         ))
-        // 꺼진 채 받은 알람은 예약도 충돌도 없다 — 정리 실패로 막지 않는다.
-        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+        // ⚠ **꺼진 알람도 정리는 요구한다**(Codex #703 P1). 서버가 받은 알람을 끄면 새로
+        // 걸 것은 없지만 **옛 예약은 지워야 한다** — 그 취소가 실패했는데 ACK 하면 꺼진 행
+        // 뒤에 살아 있는 예약이 남고, 서버 행이 없어 다시 시도할 근거도 사라진다.
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
             audioSecured: true,
             enabled: false,
             scheduleSucceeded: false,
             conflictsCleared: false,
+            deliveryVersion: "version-1"
+        ))
+        // 정리가 끝났으면 꺼진 알람은 예약 성공을 요구하지 않는다.
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            conflictsCleared: true,
             deliveryVersion: "version-1"
         ))
     }

@@ -144,6 +144,14 @@ ack 하면 서버 행이 사라져 **다시 시도할 근거 자체가 없어진
 (`PendingAlarmCancellationStore.add(_:origin:alarmID:)`), 전달 정리는
 `releaseOwedHandles(forAlarmID:)` 로 그 행이 남긴 것을 전부 되짚는다.
 
+⚠ **정리는 꺼진 알람에도 요구한다.** 아래 규칙으로 옛 예약을 지우는 것까지가 전달이다 —
+취소가 실패했는데 그냥 ack 하면 **꺼진 행 뒤에 살아 있는 예약**이 남고, 서버 행이 없어 다시
+시도할 근거도 사라진다. 예약 성공을 요구하는 것만 켜진 알람의 조건이다.
+
+⚠ **못 끊은 예약은 pull 회차 끝에서도 훑는다.** 전경 sweep 는 앱을 열어야 도는데, 목소리를
+회수한 행처럼 **다음 pull 이 다시 집지 못하는** 갈래가 있다(`hasSenderVoice` 가 false 가 되어
+그 갈래에 다시 오지 않는다). 회차 끝에 `retryPendingCancellations` 를 한 번 돌린다.
+
 ⚠ **꺼진 채로 반영된 받은 알람도 예약을 지운다.** 서버는 받은 알람을 끌 수 있는데
 (`claimTargetedAlarmSlot` 의 `is_active = 0`), 행만 끄고 말면 **OS 예약은 그대로 남는다** —
 행이 꺼져 있어 리컨사일러도 복구 sweep 도 건너뛰므로, 목록에는 꺼진 알람이 있고 그 시각에는
