@@ -70,7 +70,7 @@ final class VoiceReplacementCascadeTests: XCTestCase {
             ownerUserId: "owner-1"
         )
 
-        XCTAssertEqual(degraded, 1)
+        XCTAssertEqual(degraded, ["custom"], "내린 행 id 를 돌려줘야 호출자가 예약까지 확인한다")
         XCTAssertNil(store.record(id: "custom")?.voiceProfileId)
         XCTAssertEqual(store.record(id: "custom")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
         XCTAssertEqual(
@@ -92,11 +92,10 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         store.upsert(alarm(id: "recv", voiceProfileId: "clone-1", origin: .receivedRemote))
         let voice = VoiceStudioViewModel()
 
-        XCTAssertEqual(
+        XCTAssertTrue(
             voice.degradeCustomMessageAlarms(
                 forProfileID: "clone-1", alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
-            ),
-            0
+            ).isEmpty
         )
         XCTAssertEqual(store.record(id: "recv")?.voiceProfileId, "clone-1")
     }
@@ -107,11 +106,10 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         store.upsert(alarm(id: "theirs", voiceProfileId: "clone-1", owner: "owner-2"))
         let voice = VoiceStudioViewModel()
 
-        XCTAssertEqual(
+        XCTAssertTrue(
             voice.degradeCustomMessageAlarms(
                 forProfileID: "clone-1", alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
-            ),
-            0
+            ).isEmpty
         )
         XCTAssertEqual(store.record(id: "theirs")?.voiceProfileId, "clone-1")
     }
@@ -122,11 +120,10 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         store.upsert(alarm(id: "sys", voiceProfileId: systemID))
         let voice = VoiceStudioViewModel()
 
-        XCTAssertEqual(
+        XCTAssertTrue(
             voice.degradeCustomMessageAlarms(
                 forProfileID: systemID, alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
-            ),
-            0
+            ).isEmpty
         )
     }
 }

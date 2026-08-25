@@ -360,6 +360,7 @@ internal fun MainViewModel.promoteVoiceDraft(
             // 켜져 있어 등록 화면이 다음 동작을 받지 않는다).
             // 다른 기기는 서버의 voice_access_revoked(voiceProfileId 동봉)가 깨운다.
             // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
+            var cascadeFailed = false
             if (replaceExisting) {
                 val owner = session.user.id
                 runCatching {
@@ -371,10 +372,21 @@ internal fun MainViewModel.promoteVoiceDraft(
                             repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
                         }
                 }.onFailure {
+                    cascadeFailed = true
                     AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
                 }
             }
-            voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            if (cascadeFailed) {
+                // ⚠ **실패했으면 목록에 올리지 않는다.** 올리는 순간 그 목소리로 새 알람을
+                // 만들 수 있는데, 강등 대상은 프로필 id 로만 고르므로 다음 회차가 그 **새
+                // 알람까지** 되돌릴 수 없이 벗긴다. 표식도 확정되지 않았으니 다시 시도하면
+                // 그대로 이어진다 — 사용자에게는 그 사실만 말한다.
+                voiceProfiles = voiceProfiles.filterNot { it.id == official.id }
+                message = getApplication<android.app.Application>()
+                    .getString(R.string.msg_voice_replace_cleanup_failed)
+            } else {
+                voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            }
         } else {
             val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)

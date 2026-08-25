@@ -43,8 +43,12 @@ final class PreviewSeedLeakTests: XCTestCase {
             createdAtMillis: now, updatedAtMillis: now
         )
 
-        let persistence = LocalAlarmPersistence(storageURL: url)
-        await persistence.save([mine, seeded])
+        // 쓰기는 동기·비동기가 같은 기록기를 거친다(늦은 옛 스냅샷이 새 파일을 덮지 않게).
+        let persistence = LocalAlarmPersistence(
+            storageURL: url,
+            writer: LocalAlarmFileWriter(url: url)
+        )
+        await persistence.save([mine, seeded], seq: 1)
 
         let loaded = await persistence.load()
         XCTAssertEqual(loaded.map(\.id), [mine.id], "표본 알람이 그대로 읽혔다 — sync 가 이걸 서버에 올린다")

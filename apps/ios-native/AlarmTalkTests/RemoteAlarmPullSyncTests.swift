@@ -540,6 +540,33 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
     /// **목소리만 걷어내고 알람은 남긴다.** 복제 목소리는 발신자의 생체정보라 파기
     /// 대상이지만, 시각·요일은 수신자가 기대고 자는 자기 정보다 — 통째로 지우면
     /// 그날 못 일어난다.
+    /// ⚠ **재예약이 실패해도 리컨사일러가 집을 수 있는 상태로 남아야 한다.**
+    ///
+    /// 철회는 로컬 행을 먼저 고치고(같은 캐시를 쓰는 다른 행까지 세어 파일을 지우려면 그
+    /// 순서여야 한다) 그다음 예약을 다시 건다. 그 재예약이 실패하면 pull 은 다시 집지
+    /// 않는다(`hasSenderVoice` 가 이제 false 다) — 그래서 **예약 수리는 리컨사일러 몫**이고,
+    /// 그러려면 판정 입력 둘(`alarmKitID`·`scheduledSoundFingerprint`)이 남아 있어야 한다.
+    /// 여기서 지우면 `needsReschedule` 이 첫 guard 에서 false 가 되어 회수된 목소리 예약이
+    /// 영영 남는다.
+    func test_withVoiceRevoked_keepsReconcilerInputs() {
+        var record = makeReceivedRemote(remoteID: "r6")
+        record.enabled = true
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
+        record.audioCacheKey = "remote-message-msg-6"
+        record.ttsMessageId = "msg-6"
+        record.alarmKitID = "alarmkit-handle-6"
+        record.scheduledSoundFingerprint = "voice:remote-message-msg-6:r-r2://old:v100"
+
+        let revoked = RemoteAlarmPullSync.withVoiceRevoked(record)
+
+        XCTAssertEqual(revoked.alarmKitID, "alarmkit-handle-6", "예약 핸들이 없으면 리컨사일러가 건너뛴다")
+        XCTAssertEqual(
+            revoked.scheduledSoundFingerprint,
+            "voice:remote-message-msg-6:r-r2://old:v100",
+            "구워 둔 지문이 남아 있어야 '지금 계획과 다르다' 를 알아챈다"
+        )
+    }
+
     func test_withVoiceRevoked_stripsVoiceButKeepsSchedule() {
         var record = makeReceivedRemote(remoteID: "r5")
         record.label = "엄마가 보낸 알람"

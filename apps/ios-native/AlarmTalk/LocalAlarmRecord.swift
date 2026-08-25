@@ -651,11 +651,50 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
 // MARK: - Persistence Actor
 // 디스크 I/O 를 별도 actor 로 격리. `LocalAlarmStore` 가 wrapper.
+/**
+ * **알람 파일 쓰기를 한 줄로 세운다 — 늦게 도착한 옛 스냅샷이 새 파일을 덮지 않게.**
+ *
+ * 비동기 저장(`persist`)은 upsert 마다 그때의 스냅샷을 실어 보내고, 동기 저장(`saveNow`)은
+ * 최신 스냅샷을 바로 쓴다. 둘이 다른 길로 가면 **먼저 큐에 실린 옛 스냅샷이 나중에 도착해**
+ * 방금 확인한 저장을 되돌린다 — 그 위에서 교체 표식이 '반영함' 으로 확정되면, 다음 실행은
+ * 목소리가 살아 있는 알람을 다시 읽어 오고도 영영 다시 내리지 않는다.
+ *
+ * 그래서 두 경로가 같은 자물쇠와 **스냅샷을 뜬 시점의 순번**을 쓴다. 순번이 뒤진 쓰기는 조용히
+ * 버린다(이미 더 새 내용이 파일에 있다).
+ */
+final class LocalAlarmFileWriter: @unchecked Sendable {
+    private let url: URL
+    private let lock = NSLock()
+    private var lastWrittenSeq: UInt64 = 0
+
+    init(url: URL) { self.url = url }
+
+    @discardableResult
+    func write(_ alarms: [LocalAlarmRecord], seq: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        // 이미 더 새 스냅샷이 파일에 있다 — 되돌리지 않는다(성공으로 본다).
+        guard seq >= lastWrittenSeq else { return true }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(alarms) else { return false }
+        do {
+            try data.write(to: url, options: [.atomic])
+            lastWrittenSeq = seq
+            return true
+        } catch {
+            return false
+        }
+    }
+}
+
 actor LocalAlarmPersistence {
     private let storageURL: URL
+    private let writer: LocalAlarmFileWriter
 
-    init(storageURL: URL) {
+    init(storageURL: URL, writer: LocalAlarmFileWriter) {
         self.storageURL = storageURL
+        self.writer = writer
     }
 
     func load() -> [LocalAlarmRecord] {
@@ -675,31 +714,14 @@ actor LocalAlarmPersistence {
         let cleaned = loaded.filter { !$0.id.hasPrefix(LocalAlarmRecord.previewIDPrefix) }
         // 걸러낸 것이 있으면 **파일도 그 자리에서 고친다.** 메모리에서만 빼면 표본은
         // 디스크에 남아, 이 걸름을 되돌리거나 다른 경로가 파일을 직접 읽는 순간 되살아난다.
-        if cleaned.count != loaded.count { save(cleaned) }
+        // 표본 청소는 아직 아무 쓰기도 없는 시점이라 순번 0 으로 남긴다.
+        if cleaned.count != loaded.count { save(cleaned, seq: 0) }
         return cleaned
     }
 
-    func save(_ alarms: [LocalAlarmRecord]) {
-        _ = Self.write(alarms, to: storageURL)
-    }
-
-    /**
-     * **동기 쓰기 — 성공 여부를 돌려준다.**
-     *
-     * 보통 경로는 비동기 `save` 로 충분하지만, "디스크에 실제로 남았는가" 가 정확성에 걸린
-     * 자리가 있다(교체 표식 확정 전). 거기서는 이 함수로 쓰고 확인한다 — 백그라운드 푸시로
-     * 깨어난 실행은 쓰기 전에 종료될 수 있고, 그러면 다음 실행이 **옛 목소리 알람을 다시
-     * 읽어 오는데** 표식은 이미 '반영함' 이라 영영 다시 내리지 않는다.
-     */
-    nonisolated static func write(_ alarms: [LocalAlarmRecord], to url: URL) -> Bool {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(alarms) else { return false }
-        do {
-            try data.write(to: url, options: [.atomic])
-            return true
-        } catch {
-            return false
-        }
+    /// 스냅샷을 뜬 시점의 순번과 함께 쓴다 — 동기 저장(`LocalAlarmStore.saveNow`)과 같은
+    /// 자물쇠를 거치므로 늦게 도착해도 새 파일을 덮지 않는다.
+    func save(_ alarms: [LocalAlarmRecord], seq: UInt64) {
+        writer.write(alarms, seq: seq)
     }
 }

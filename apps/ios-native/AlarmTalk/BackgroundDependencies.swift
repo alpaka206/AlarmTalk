@@ -28,6 +28,33 @@ final class BackgroundDependencies {
     /// 백그라운드 푸시에서도 필요하다.
     let voiceStudio: VoiceStudioViewModel
 
+    /**
+     * **예약까지 실제로 맞았을 때만** 교체 세대를 확정한다.
+     *
+     * 강등은 로컬 행만 고치고, 울리는 것은 이미 구워 둔 AlarmKit 예약이다. 재예약이 실패한
+     * (또는 실행이 끊긴) 회차에서 확정해 버리면 다음 회차가 같은 세대를 건너뛰어 **회수된
+     * 목소리가 예약된 채 남는다.** 확정하지 않으면 다음 회차가 다시 집는다(안전한 방향).
+     *
+     * 판정은 이번에 내린 **그 행들만** 본다 — 전역으로 보면 결정적으로 실패하는 다른 행
+     * 하나가 이 세대의 확정을 영영 막는다.
+     */
+    @MainActor
+    func confirmIfReservationsSettled(
+        _ pending: VoiceReplacementMarkerStore.PendingApply,
+        ownerID: String?
+    ) {
+        let settled = pending.degraded.allSatisfy { id in
+            guard let record = alarmStore.record(id: id) else { return true }
+            return !AlarmScheduleReconciler.needsReschedule(
+                record,
+                alarmKit: alarmKit,
+                audioCache: .shared
+            )
+        }
+        guard settled, auth.session?.user.id == ownerID else { return }
+        pending.confirm()
+    }
+
     private init() {
         // 화면 확인 모드에서는 표본이 진짜 저장소에 남지 않도록 임시 파일을 쓴다
         // (`UIPreviewSeed.ephemeralAlarmStorageURL` 주석).

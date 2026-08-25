@@ -783,9 +783,19 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // `restorePaidVoiceAlarms`)가 쓰는 순서와 같게 맞춘다.
             let previouslyScheduled = record
             if revoked.enabled {
-                if await alarmKit.schedule(record: revoked, store: store),
-                   previouslyScheduled.alarmKitID != nil {
-                    await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
+                if await alarmKit.schedule(record: revoked, store: store) {
+                    if previouslyScheduled.alarmKitID != nil {
+                        await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
+                    }
+                } else {
+                    // ⚠ **여기서 멈추지 않는다 — 하지만 잊히지도 않는다.** 행은 이미 톤으로
+                    // 내려갔고 `hasSenderVoice` 가 false 라 pull 은 다시 집지 않는다. 대신
+                    // 구워 둔 지문(`scheduledSoundFingerprint`)과 예약 핸들이 그대로 남아
+                    // `AlarmScheduleReconciler.needsReschedule` 이 다음 회차(앱 시작·전경
+                    // 복귀·백그라운드 동기화)에서 이 행을 집어 다시 건다.
+                    Self.logger.warning(
+                        "Pull sync: revoked reschedule failed, leaving it to the reconciler (remoteId: \(remoteID, privacy: .public))"
+                    )
                 }
             } else {
                 // 꺼진 알람은 새로 걸 것이 없으니 옛것만 지운다.

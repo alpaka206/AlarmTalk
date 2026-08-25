@@ -406,21 +406,31 @@ struct VoicePreviewConfirmView: View {
                 // 않는다(안드로이드에는 그 우연이 없다 — 두 앱이 같은 자리에서 같은 일을 한다).
                 // 표식이 옛 값이면 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음
                 // 새로고침이 '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
-                VoiceReplacementMarkerStore().applyIfNotApplied(
+                let pending = VoiceReplacementMarkerStore().applyIfNotApplied(
                     userID: auth.session?.user.id,
                     profileID: promoted.id,
                     invalidatedAt: promoted.customAudioInvalidatedAt
                 ) {
-                    let degraded = voice.degradeCustomMessageAlarms(
+                    let ids = voice.degradeCustomMessageAlarms(
                         forProfileID: promoted.id,
                         alarmStore: alarmStore,
                         audioCache: .shared,
                         ownerUserId: auth.session?.user.id
                     )
-                    // 디스크에 남은 뒤에만 확정한다 — 안 그러면 다음 실행이 옛 알람을 다시
-                    // 읽는데 표식만 앞서 나가 영영 다시 내리지 않는다.
-                    return alarmStore.saveNow() ? degraded : nil
+                    // 디스크에 남은 뒤에만 확정 후보가 된다 — 안 그러면 다음 실행이 옛 알람을
+                    // 다시 읽는데 표식만 앞서 나가 영영 다시 내리지 않는다.
+                    return alarmStore.saveNow() ? ids : nil
                 }
+                // ⚠ **예약까지 맞춘 뒤에 확정한다.** `degrade` 는 로컬 행만 고치고, 울리는
+                // 것은 이미 구워 둔 예약이다 — 여기서 확정해 버리면 재예약이 실패했을 때
+                // 다음 회차가 같은 세대를 건너뛰어 회수된 목소리가 예약된 채 남는다.
+                let deps = BackgroundDependencies.shared
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: alarmStore,
+                    alarmKit: deps.alarmKit,
+                    ownerUserId: auth.session?.user.id
+                )
+                deps.confirmIfReservationsSettled(pending, ownerID: auth.session?.user.id)
             }
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
             // 교체 갈래는 draft id 가 아니라 기존 공식 프로필 id 를 반환한다. 준비 페이지가

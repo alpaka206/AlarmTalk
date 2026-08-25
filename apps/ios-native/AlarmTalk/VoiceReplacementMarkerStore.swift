@@ -49,15 +49,16 @@ struct VoiceReplacementMarkerStore {
         userID: String?,
         profileID: String,
         invalidatedAt: String?,
-        degrade: () -> Int?
-    ) -> Int {
-        guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return 0 }
+        degrade: () -> [String]?
+    ) -> PendingApply {
+        guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return .nothing }
         Self.lock.lock()
         defer { Self.lock.unlock() }
-        guard changedLocked(userID, profileID, invalidatedAt) else { return 0 }
-        guard let degraded = degrade() else { return 0 }
-        commitLocked(userID, profileID, invalidatedAt)
-        return degraded
+        guard changedLocked(userID, profileID, invalidatedAt) else { return .nothing }
+        guard let degraded = degrade() else { return .nothing }
+        return PendingApply(degraded: degraded) {
+            commitLocked(userID, profileID, invalidatedAt)
+        }
     }
 
     /// **아직 반영하지 않은 세대면** 강등하고 확정한다(푸시·교체 직후 경로).
@@ -70,16 +71,59 @@ struct VoiceReplacementMarkerStore {
         userID: String?,
         profileID: String,
         invalidatedAt: String?,
-        degrade: () -> Int?
-    ) -> Int {
-        guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return 0 }
+        degrade: () -> [String]?
+    ) -> PendingApply {
+        guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return .nothing }
         Self.lock.lock()
         defer { Self.lock.unlock() }
         let generation = invalidatedAt?.nilIfBlank
-        if let generation, hasAppliedLocked(userID, profileID, generation) { return 0 }
-        guard let degraded = degrade() else { return 0 }
-        if let generation { commitLocked(userID, profileID, generation) }
-        return degraded
+        if let generation, hasAppliedLocked(userID, profileID, generation) { return .nothing }
+        guard let degraded = degrade() else { return .nothing }
+        guard let generation else {
+            // 세대를 모르는 옛 신호는 반영만 하고 확정하지 않는다.
+            return PendingApply(degraded: degraded, commit: nil)
+        }
+        return PendingApply(degraded: degraded) {
+            commitLocked(userID, profileID, generation)
+        }
+    }
+
+    /**
+     * 강등까지 끝났고, **확정만 남은 상태.**
+     *
+     * ⚠ `confirm()` 은 **예약(AlarmKit)까지 실제로 맞춘 뒤에** 부른다. 강등은 로컬 행을 고칠
+     * 뿐이고 울리는 것은 이미 구워 둔 예약이라, 확정을 먼저 하면 그 사이 실행이 끝났을 때
+     * 다음 회차가 같은 세대를 건너뛰어 **회수된 목소리가 그대로 예약된 채 남는다.**
+     * 부르지 않으면 다음 회차가 다시 집는다(안전한 방향).
+     */
+    struct PendingApply {
+        /// 이번에 강등한 알람 id 들. 확정 전에 이 행들의 예약이 맞았는지 확인한다.
+        let degraded: [String]
+        private let commit: (() -> Void)?
+
+        init(degraded: [String], commit: (() -> Void)?) {
+            self.degraded = degraded
+            self.commit = commit
+        }
+
+        fileprivate init(degraded: [String], commit: @escaping () -> Void) {
+            self.degraded = degraded
+            self.commit = commit
+        }
+
+        /// 아무것도 하지 않은 회차(판정에서 걸렸거나 강등이 확정을 거부했다).
+        static var nothing: PendingApply { PendingApply(degraded: [], commit: nil) }
+
+        /// 예약까지 맞춘 뒤에만 부른다.
+        ///
+        /// 확정도 판정과 **같은 자물쇠**를 거친다 — 다른 회차가 그 사이 값을 읽거나 쓰면
+        /// 표식이 과거로 되돌아갈 수 있다.
+        func confirm() {
+            guard let commit else { return }
+            VoiceReplacementMarkerStore.lock.lock()
+            defer { VoiceReplacementMarkerStore.lock.unlock() }
+            commit()
+        }
     }
 
     /// 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다.

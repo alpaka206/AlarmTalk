@@ -7,8 +7,10 @@ final class LocalAlarmStore: ObservableObject {
     @Published private(set) var hasLoadedFromDisk = false
 
     private let persistence: LocalAlarmPersistence
-    /// 동기 저장(`saveNow`)이 쓸 파일. 비동기 경로는 `persistence` 를 그대로 쓴다.
-    private let storageURL: URL
+    /// 비동기·동기 저장이 **함께** 쓰는 파일 기록기. 순번으로 순서를 지킨다.
+    private let writer: LocalAlarmFileWriter
+    /// 스냅샷을 뜰 때마다 올라가는 순번. 늦게 도착한 옛 스냅샷을 가려내는 기준이다.
+    private var saveSeq: UInt64 = 0
 
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
@@ -28,8 +30,9 @@ final class LocalAlarmStore: ObservableObject {
         } else {
             resolvedStorageURL = Self.defaultStorageURL()
         }
-        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
-        self.storageURL = resolvedStorageURL
+        let writer = LocalAlarmFileWriter(url: resolvedStorageURL)
+        self.writer = writer
+        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL, writer: writer)
         guard loadFromDisk else {
             self.hasLoadedFromDisk = true
             return
@@ -654,8 +657,10 @@ final class LocalAlarmStore: ObservableObject {
 
     private func persist() {
         let snapshot = alarms
+        saveSeq += 1
+        let seq = saveSeq
         Task { [persistence] in
-            await persistence.save(snapshot)
+            await persistence.save(snapshot, seq: seq)
         }
     }
 
@@ -670,6 +675,7 @@ final class LocalAlarmStore: ObservableObject {
      */
     @discardableResult
     func saveNow() -> Bool {
-        LocalAlarmPersistence.write(alarms, to: storageURL)
+        saveSeq += 1
+        return writer.write(alarms, seq: saveSeq)
     }
 }

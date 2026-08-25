@@ -338,32 +338,42 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 판정·강등·확정은 저장소가 한 임계구역에서 돈다.
             // ⚠ 확정을 미루더라도 **이미 내린 것은 세어 안내한다** — 강등은 이미 일어났고,
             // 그 이유를 말해 줄 곳이 여기뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
-            var degraded = 0
-            VoiceReplacementMarkerStore().applyIfNotApplied(
+            let pending = VoiceReplacementMarkerStore().applyIfNotApplied(
                 userID: ownerID,
                 profileID: profileID,
                 invalidatedAt: generation
             ) {
-                degraded = deps.voiceStudio.degradeCustomMessageAlarms(
+                let ids = deps.voiceStudio.degradeCustomMessageAlarms(
                     forProfileID: profileID,
                     alarmStore: deps.alarmStore,
                     audioCache: .shared,
                     ownerUserId: ownerID
                 )
-                // ⚠ **디스크에 남은 뒤에만 확정한다.** 백그라운드 실행은 비동기 쓰기 전에
-                // 끝날 수 있고, 그러면 다음 실행이 옛 알람을 다시 읽는데 표식만 앞서 나간다.
+                // ⚠ **디스크에 남은 뒤에만 확정 후보가 된다.** 백그라운드 실행은 비동기 쓰기
+                // 전에 끝날 수 있고, 그러면 다음 실행이 옛 알람을 다시 읽는데 표식만 앞서 나간다.
                 guard deps.alarmStore.saveNow() else { return nil }
                 // 그 사이 계정이 바뀌었으면 확정하지 않는다.
-                return deps.auth.session?.user.id == ownerID ? degraded : nil
+                return deps.auth.session?.user.id == ownerID ? ids : nil
             }
-            guard degraded > 0 else { return }
+            guard !pending.degraded.isEmpty else {
+                pending.confirm()
+                return
+            }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
-            DowngradeNoticeStore().record(userID: ownerID, cause: .voiceReplaced, count: degraded)
+            DowngradeNoticeStore().record(
+                userID: ownerID,
+                cause: .voiceReplaced,
+                count: pending.degraded.count
+            )
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
                 ownerUserId: ownerID
             )
+            // ⚠ **예약까지 맞춘 뒤에 확정한다.** 강등은 로컬 행만 고치고 울리는 것은 이미
+            // 구워 둔 예약이다 — 여기서 실패했는데 확정하면 다음 회차가 같은 세대를 건너뛰어
+            // 회수된 목소리가 예약된 채 남는다. 안 맞으면 확정하지 않고 다음 회차에 맡긴다.
+            deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
         }
 
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.
@@ -391,6 +401,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 경로**가 맡는다 — 앱 시작·탭 진입·백그라운드 주기가 모두 여기를 지난다.
             let markers = VoiceReplacementMarkerStore()
             var replacedCount = 0
+            // 확정은 아래 예약 정리가 끝난 뒤에 한다(예약이 안 맞으면 하지 않는다).
+            var pendingApplies: [VoiceReplacementMarkerStore.PendingApply] = []
             // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께
             // 무효가 되는데, 내 목록만 보면 공유받은 기기는 푸시를 놓쳤을 때 영영 모른다.
             let markerCandidates: [(id: String, invalidatedAt: String?)] =
@@ -399,26 +411,26 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             for candidate in markerCandidates {
                 // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새
                 // 세대가 반영되고 사용자가 새 목소리로 만든 알람을 뒤늦게 지우게 된다.
-                var degradedNow = 0
-                markers.applyIfChanged(
+                let pending = markers.applyIfChanged(
                     userID: ownerID,
                     profileID: candidate.id,
                     invalidatedAt: candidate.invalidatedAt
                 ) {
-                    degradedNow = deps.voiceStudio.degradeCustomMessageAlarms(
+                    let ids = deps.voiceStudio.degradeCustomMessageAlarms(
                         forProfileID: candidate.id,
                         alarmStore: deps.alarmStore,
                         audioCache: .shared,
                         ownerUserId: ownerID
                     )
-                    // 디스크에 남은 뒤에만 확정한다(위 푸시 경로와 같은 이유).
+                    // 디스크에 남은 뒤에만 확정 후보가 된다(위 푸시 경로와 같은 이유).
                     guard deps.alarmStore.saveNow() else { return nil }
                     // ⚠ 그 사이 계정이 바뀌었으면 확정하지 않는다 — 소유자 불일치로 돌려받은
                     // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                    return deps.auth.session?.user.id == ownerID ? degradedNow : nil
+                    return deps.auth.session?.user.id == ownerID ? ids : nil
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
-                replacedCount += degradedNow
+                replacedCount += pending.degraded.count
+                pendingApplies.append(pending)
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본
@@ -432,12 +444,17 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             let notices = DowngradeNoticeStore()
             notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
             notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
-            guard degraded + replacedCount > 0 else { return }
+            guard degraded + replacedCount > 0 else {
+                pendingApplies.forEach { $0.confirm() }
+                return
+            }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
                 ownerUserId: deps.auth.session?.user.id
             )
+            // 예약까지 맞춘 것만 확정한다(위 푸시 경로와 같은 규칙).
+            pendingApplies.forEach { deps.confirmIfReservationsSettled($0, ownerID: ownerID) }
         }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)

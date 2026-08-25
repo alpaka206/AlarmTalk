@@ -1233,14 +1233,16 @@ final class VoiceStudioViewModel: ObservableObject {
     ///
     /// ⚠ `cascadeAlarmsAfterVoiceDeletion` 을 재사용하지 말 것 — 그쪽은 origin·소유자를
     /// 가리지 않아 **받은 알람까지** 벗긴다.
+    /// - Returns: 강등한 알람 **id 들**. 호출자가 그 행들의 예약이 실제로 다시 깔렸는지
+    ///   확인한 뒤에야 교체 표식을 확정할 수 있다(개수만으로는 어느 행인지 알 수 없다).
     @discardableResult
     func degradeCustomMessageAlarms(
         forProfileID profileID: String,
         alarmStore: LocalAlarmStore,
         audioCache: AudioCacheStore?,
         ownerUserId: String?
-    ) -> Int {
-        guard let owner = ownerUserId?.nilIfBlank, !isSystemVoiceId(profileID) else { return 0 }
+    ) -> [String] {
+        guard let owner = ownerUserId?.nilIfBlank, !isSystemVoiceId(profileID) else { return [] }
         let targets = alarmStore.alarms.filter { record in
             // 받은 알람은 보낸 사람의 목소리로 성립한다 — 내 교체로 판단하지 않는다.
             guard record.originEnum == .localOwned else { return false }
@@ -1249,9 +1251,9 @@ final class VoiceStudioViewModel: ObservableObject {
             guard record.voiceProfileId == profileID else { return false }
             return record.usesCustomMessageVoice
         }
-        guard !targets.isEmpty else { return 0 }
+        guard !targets.isEmpty else { return [] }
         degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
-        return targets.count
+        return targets.map(\.id)
     }
 
     func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {
