@@ -103,6 +103,15 @@ class VoiceAccessSyncWorker(
             // 깨어난 옛 회차가 지운다(계정 재확인도 강등 직후에 그 안에서 한다).
             val markers = VoiceReplacementMarkerStore(applicationContext)
             var replacedCount = 0
+            // 표식을 디스크에 남기지 못한 회차가 하나라도 있으면 이 회차는 **끝난 것이 아니다.**
+            var markerPersistFailed = false
+            // ⚠ **두 루프의 판정을 합쳐 마지막에 한 번만 쓴다**(Codex #703 P1).
+            // 예전에는 각 루프가 그 자리에서 `setSettling` 을 불렀는데, 푸시 루프가 올린
+            // 표시를 **바로 아래 목록 루프가 같은 프로필에서 내렸다** — 그 회차는 이미
+            // 반영된 세대라 건너뛰며 '성공' 을 돌려주기 때문이다. 결과적으로 확정되지 않은
+            // 교체 목소리가 그 즉시 다시 고를 수 있게 됐다.
+            val touchedProfiles = mutableSetOf<String>()
+            val unpersistedProfiles = mutableSetOf<String>()
             // ① 푸시가 실어 준 id(즉시성). 세대가 함께 왔고 이미 반영했으면 건너뛴다 —
             //    늦게 도착한 푸시가 그 사이 **새 목소리로** 만든 알람까지 지우면 안 된다.
             val replacedVoiceId = inputData.getString(INPUT_REPLACED_VOICE_ID)?.takeIf { it.isNotBlank() }
@@ -111,12 +120,24 @@ class VoiceAccessSyncWorker(
                 // ⚠ 확정을 미루더라도 **이미 내린 것은 세어 안내한다** — 강등은 이미 일어났고
                 // 그 이유를 말해 줄 곳이 여기뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
                 var degradedNow = 0
-                markers.applyIfNotApplied(session.user.id, replacedVoiceId, replacedGeneration) {
+                val pushResult = markers.applyIfNotApplied(
+                    session.user.id,
+                    replacedVoiceId,
+                    replacedGeneration,
+                ) {
                     degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
                         replacedVoiceId,
                         session.user.id,
                     )
                     if (stillSameSession()) degradedNow else null
+                }
+                // ⚠ **확정 실패는 여기서도 끝난 일이 아니다**(Codex #703 P1). 워커에는
+                // 화면 상태가 없어 표시를 메모리에 둘 수 없다 — 디스크에 남겨 편집기가 보게
+                // 하고, 이 회차는 **완료로 보고하지 않는다**(WorkManager 가 다시 부른다).
+                touchedProfiles += replacedVoiceId
+                if (!pushResult.persisted) {
+                    unpersistedProfiles += replacedVoiceId
+                    markerPersistFailed = true
                 }
                 replacedCount += degradedNow
             }
@@ -131,12 +152,17 @@ class VoiceAccessSyncWorker(
                 // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 멈춘다).
                 if (!stillSameSession()) break
                 var degradedNow = 0
-                markers.applyIfChanged(session.user.id, profileId, invalidatedAt) {
+                val listResult = markers.applyIfChanged(session.user.id, profileId, invalidatedAt) {
                     degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
                         profileId,
                         session.user.id,
                     )
                     if (stillSameSession()) degradedNow else null
+                }
+                touchedProfiles += profileId
+                if (!listResult.persisted) {
+                    unpersistedProfiles += profileId
+                    markerPersistFailed = true
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += degradedNow
@@ -151,7 +177,19 @@ class VoiceAccessSyncWorker(
             if (degraded > 0) {
                 Log.i(TAG, "Degraded $degraded alarm(s): access=$lostAccess replaced=$replacedCount")
             }
-            Result.success()
+            // 두 루프를 마친 뒤 프로필마다 **한 번만** 쓴다 — 확정을 못 한 것만 올리고
+            // 나머지는 내린다. 디스크 쓰기가 실패하면 그것도 미완료로 센다.
+            touchedProfiles.forEach { profileId ->
+                val settling = profileId in unpersistedProfiles
+                if (!markers.setSettling(session.user.id, profileId, settling)) {
+                    markerPersistFailed = true
+                }
+            }
+            // ⚠ **확정 실패는 완료로 보고하지 않는다**(Codex #703 P1). 안내는 이미 남겼고
+            // 강등도 되돌리지 않는다 — 다시 부르면 대상이 0이라 같은 안내가 반복되지도
+            // 않는다. WorkManager 가 백오프로 다시 부르게 두는 편이, 확정 없이 끝나 그
+            // 목소리가 고를 수 있게 되는 것보다 안전하다.
+            if (markerPersistFailed) Result.retry() else Result.success()
         }.getOrElse { error ->
             AlarmTalkLog.reportError("voice_access_revoked handling failed", error)
             Result.retry()

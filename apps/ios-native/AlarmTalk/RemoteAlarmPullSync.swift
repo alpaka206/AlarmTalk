@@ -463,17 +463,24 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 신규 import.
             store.upsert(mapped, syncedNow: true)
 
-            // 같은 시각에 이 수신자가 켜 둔 알람을 먼저 비운다(끄기 + 예약 취소).
-            let conflictsCleared = await clearSameTimeConflicts(
-                with: mapped,
-                remoteID: remote.id,
-                pullOwnerUserID: pullOwnerUserID
-            )
-            // receivedRemote 신규 알람이면 곧바로 AlarmKit 스케줄.
+            // ⚠ **받은 알람을 먼저 걸고, 성공한 뒤에 밀어낸다**(Codex #703 P1).
+            // 순서를 뒤집으면 예약이 실패했을 때 **그 시각에 아무 예약도 없는 상태**가 된다 —
+            // 사용자의 멀쩡한 알람은 이미 꺼졌고 받은 알람은 서지 못했다. 가족 알람은 리드
+            // 타임이 5분이라 다음 회차 전에 그 시각이 지나갈 수 있다. 재예약 갈래
+            // (`rescheduleReceivedRemote`)가 쓰는 순서와 같게 맞춘다.
             var scheduleSucceeded = true
             if mapped.originEnum == .receivedRemote && mapped.enabled {
                 scheduleSucceeded = await alarmKit.schedule(record: mapped, store: store)
             }
+            // 밀어내기는 받은 알람이 실제로 선 뒤에만 한다. 못 섰으면 사용자의 알람을
+            // 건드리지 않고 물러선다 — 전달은 미완료라 다음 회차가 다시 시도한다.
+            let conflictsCleared = scheduleSucceeded
+                ? await clearSameTimeConflicts(
+                    with: mapped,
+                    remoteID: remote.id,
+                    pullOwnerUserID: pullOwnerUserID
+                )
+                : true
             await SocialNotificationTracker.notifyReceivedAlarm(
                 alarmID: mapped.id,
                 title: RemoteAlarmMapper.resolveLabel(remote),
@@ -880,6 +887,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         if recovered.localAudioUri != existing.localAudioUri
             || recovered.audioCacheKey != existing.audioCacheKey {
             recovered = store.upsert(recovered)
+        }
+        // ⚠ **못 붙인 음원은 여기서 정리한다**(Codex #703 P2, 안드로이드와 같은 처리).
+        // 수신자가 이미 자기 음원을 연결해 둔 행은 복구가 **일부러 그대로 두는데**
+        // (`linkRecoveredLegacyRemoteAudio` 가 `existing` 을 그대로 돌려준다), 그 직전에
+        // 내려받은 발신자 음원은 어느 행도 가리키지 않은 채 남는다 — ACK 로 서버 행까지
+        // 사라지면 30일 낡은 캐시 정리까지 **남의 생체 음원이 디스크에** 있다.
+        if let key = prepared.record.audioCacheKey?.nilIfBlank,
+           store.countByAudioCacheKey(key) == 0 {
+            try? audioCache.deleteCachedAudio(cacheKey: key)
         }
         let reschedule = recovered.enabled
             ? await rescheduleReceivedRemote(record: recovered, existing: existing)

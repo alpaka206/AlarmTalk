@@ -1027,14 +1027,14 @@ struct AlarmEditorSheet: View {
         // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
         // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
         // 말하는 자리는 아래 배너다.
-        let settling = voiceStudio.isReplacementSettling(profileID)
-        let profileReady = !settling && (
+        let profileReady = (
             voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
                 voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
         )
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
-        // 정리 중은 구워 둔 음원이 있어도 막는다 — 그 알람이 곧 강등 대상이 된다.
-        if settling { return true }
+        // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
+        // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
+        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리). 배너도 함께 뜬다.
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
@@ -2174,6 +2174,19 @@ struct AlarmEditorSheet: View {
         isWorking = true
         defer { isWorking = false }
 
+        // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlocked`
+        // 주석). 지금 저장하면 뒤이은 정리가 그 알람을 되돌릴 수 없이 벗긴다.
+        if let profileID = (voiceStudio.selectedProfileID).nilIfBlank,
+           draft.playMode != .alarmOnly,
+           voiceSourceMode == .ttsProfile,
+           voiceStudio.isReplacementSettling(profileID) {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                offersPlanActions: false
+            )
+            return
+        }
         let errors = draft.validate()
         if let first = errors.first {
             validationAlert = ValidationAlertContent(
@@ -2540,7 +2553,22 @@ struct AlarmEditorSheet: View {
     /// 충돌이 없거나 교체 동의 후, 실제 저장 + AlarmKit 예약을 수행한다. 예약 실패 시
     /// 롤백하고 false 를 반환한다(교체 흐름이 충돌 알람을 지우지 않도록).
     @discardableResult
+    /// 저장이 **실제로 일어나는 유일한 자리**. 그래서 정리 중 판정도 여기서 한 번 더 한다.
+    ///
+    /// ⚠ `saveFlow` 의 탭 시점 판정만으로는 부족하다(Codex #703 P1) — 같은 시각 알람 교체
+    /// 확인(`confirmReplaceDuplicate`)은 그 판정을 지나온 뒤 **다시 이 함수로 들어오고**,
+    /// 그 사이에 다른 기기의 교체가 반영돼 정리 중이 될 수 있다. 여기서 막지 않으면 정리
+    /// 중인 목소리로 알람이 저장되고, 그 호출은 **기존 알람까지 지운다.**
     func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async -> Bool {
+        if let profileID = merged.voiceProfileId?.nilIfBlank,
+           voiceStudio.isReplacementSettling(profileID) {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                offersPlanActions: false
+            )
+            return false
+        }
         // ⚠ 편집 커밋은 전용 진입점을 쓴다. 화면 진입 시점의 스냅샷으로 전체 행을 덮으면,
         // TTS 생성(수 초~수십 초) 사이에 push 가 새긴 remoteAlarmId 를 nil 로 되돌려
         // 다음 push 가 같은 알람을 또 create 한다(서버에 두 행).

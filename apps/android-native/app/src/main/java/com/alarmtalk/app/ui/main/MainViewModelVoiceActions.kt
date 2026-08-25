@@ -69,6 +69,14 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 }
                 voiceProfiles = profiles
                 voiceProfilesLoadedFresh = true
+                // ⚠ **'정리 중' 표시를 여기서 되살린다**(재시작 대비). 디스크에 남겨 둔 값을
+                // 읽는 곳이 새로고침(`reconcileInaccessibleVoiceAlarms`) 한 곳뿐이었는데,
+                // 그건 **두 목록이 모두 신선할 때만** 돈다 — 콜드 스타트에서 목소리 목록만
+                // 먼저 오면 그 사이 표시가 비어 **재시도 전에 교체 목소리를 고를 수 있다.**
+                // 목록이 화면에 오르는 이 자리가 가장 이른 시점이다.
+                settlingVoiceProfileIds = com.alarmtalk.app.data.VoiceReplacementMarkerStore(
+                    getApplication(),
+                ).settlingProfileIds(requestOwner) + settlingUnpersistedIds
                 // 목록은 먼저 화면에 반영하되, 등록 잠금(busy)은 기존 초안 확인이 끝날 때까지
                 // 유지한다. 여기서 먼저 풀면 사용자가 새 초안을 만드는 사이 앞서 시작한 GET이
                 // 늦게 도착해 pendingVoiceDraft를 과거 값으로 덮을 수 있다.
@@ -361,13 +369,14 @@ internal fun MainViewModel.promoteVoiceDraft(
             // 다른 기기는 서버의 voice_access_revoked(voiceProfileId 동봉)가 깨운다.
             // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
             var cascadeFailed = false
+            val markerStore = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
             if (replaceExisting) {
                 val owner = session.user.id
                 runCatching {
                     // ⚠ **표식 확정까지 한 임계구역에서 한다.** 확정을 빠뜨리면 사용자가
                     // 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이
                     // '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
-                    com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+                    markerStore
                         .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
                             repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
                         }
@@ -390,11 +399,18 @@ internal fun MainViewModel.promoteVoiceDraft(
                 // ⚠ **목록에서 빼지는 않는다**(2026-08-25 지시. 그전에는 뺐다). 감추면
                 // 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고
                 // 흐리게 그린 뒤 이유를 말한다(iOS `suppressReplacedProfile` 과 같은 규칙).
+                // 디스크에 못 남기면 메모리에서라도 들고 있어야 한다 — 다음 목록 조회가
+                // 디스크만 보고 이 표시를 지워 버리지 않도록.
+                if (!markerStore.setSettling(session.user.id, official.id, true)) {
+                    settlingUnpersistedIds = settlingUnpersistedIds + official.id
+                }
                 settlingVoiceProfileIds = settlingVoiceProfileIds + official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
                 message = getApplication<android.app.Application>()
                     .getString(R.string.msg_voice_replace_cleanup_failed)
             } else {
+                markerStore.setSettling(session.user.id, official.id, false)
+                settlingUnpersistedIds = settlingUnpersistedIds - official.id
                 settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
                 voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
             }

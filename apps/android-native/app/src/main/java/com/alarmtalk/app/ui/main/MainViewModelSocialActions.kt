@@ -123,14 +123,18 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
                 // 남아 그 목소리를 프로세스가 끝날 때까지 못 고르고, 반대로 재시작하면 표시가
                 // (메모리 전용이라) 비어 있어 **재시도 전에 잠깐 고를 수 있게** 된다 —
                 // 그때 만든 알람을 그 재시도가 벗긴다.
-                settlingVoiceProfileIds = if (result.persisted) {
-                    settlingVoiceProfileIds - profileId
-                } else {
-                    settlingVoiceProfileIds + profileId
+                // 표시는 **디스크가 단일 출처**다 — 워커(백그라운드)도 같은 값을 쓰고,
+                // 재시작해도 남아야 재시도 전에 잠깐 고를 수 있게 되는 일이 없다.
+                if (!markers.setSettling(listOwner, profileId, !result.persisted)) {
+                    // 디스크에 못 남겼으면 메모리에서 들고 간다(다음 조회가 덮지 않게).
+                    settlingUnpersistedIds = settlingUnpersistedIds + profileId
+                } else if (result.persisted) {
+                    settlingUnpersistedIds = settlingUnpersistedIds - profileId
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += degradedNow
             }
+            settlingVoiceProfileIds = markers.settlingProfileIds(listOwner) + settlingUnpersistedIds
             lostAccess to replacedCount
         }
             .onSuccess { (lostAccess, replacedCount) ->

@@ -358,6 +358,15 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **빈 회차를 그냥 확정하지 말 것.** 지난 회차에서 강등은 됐는데 예약 정리가
             // 실패했다면 그 행들은 이미 톤이라 다시 강등 대상이 아니다 — `unverified` 로
             // 넘어온 그 행들의 예약을 확인한 뒤에야 확정할 수 있다.
+            // ⚠ **실패한 회차는 반드시 확정 함수를 거친다**(Codex #703 P1). 강등이 실패하면
+            // 내린 것도 확인할 것도 없어 아래 빈 회차 갈래로 새는데, 거기서 그냥 `confirm()`
+            // 하면 **아무 표시도 남기지 않고** 끝난다 — 그 목소리가 확정 없이 고를 수 있는
+            // 채로 남고, 그때 만든 알람을 다음 재시도가 벗긴다. 확정 함수만이 실패를 보고
+            // '정리 중' 으로 올린다.
+            guard !pending.failed else {
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                return
+            }
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
                 pending.confirm()
                 return
@@ -461,8 +470,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
             notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
             let unverifiedCount = pendingApplies.reduce(0) { $0 + $1.unverified.count }
-            guard degraded + replacedCount + unverifiedCount > 0 else {
-                pendingApplies.forEach { $0.confirm() }
+            // ⚠ **실패한 회차가 하나라도 있으면 빈 회차로 접지 않는다**(Codex #703 P1).
+            // 그냥 `confirm()` 하면 아무 표시도 남기지 않고 끝나 그 목소리가 확정 없이
+            // 고를 수 있게 된다 — 확정 함수만이 실패를 '정리 중' 으로 올린다.
+            let anyFailed = pendingApplies.contains(where: \.failed)
+            guard anyFailed || degraded + replacedCount + unverifiedCount > 0 else {
+                pendingApplies.forEach { _ = $0.confirm() }
                 return
             }
             _ = await AlarmScheduleReconciler.reconcile(

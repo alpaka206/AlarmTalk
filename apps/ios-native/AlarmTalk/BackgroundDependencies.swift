@@ -108,6 +108,9 @@ final class BackgroundDependencies {
         // 백그라운드 실행이 그 전에 끝나면 다음 실행은 **옛 손잡이와 옛 지문**을 다시 읽는다.
         // 표식은 이미 확정된 뒤라 그 세대를 다시 집지 않고, 지문이 없던 행은 리컨사일러가
         // 일부러 건너뛰므로 **새로 건 예약이 영영 관리 밖으로 떨어진다.**
+        // ⚠ **강등 자체가 실패한 회차는 확정 대상이 아니다**(Codex #703 P1). 프로필 id 만
+        // 들고 오므로 아래 `guard` 가 그것을 '정리 중' 으로 올리고 물러선다.
+        if pending.failed { settled = false }
         if settled, alarmStore.saveNow() == false { settled = false }
         guard settled, auth.session?.user.id == ownerID else {
             // ⚠ **실패하면 그 목소리를 계속 '정리 중' 으로 둔다**(Codex #703 P1).
@@ -118,9 +121,18 @@ final class BackgroundDependencies {
             if !pending.profileID.isEmpty { voiceStudio.suppressReplacedProfile(pending.profileID) }
             return false
         }
-        pending.confirm()
-        // 정리가 끝났으니 그 목소리를 다시 고를 수 있다.
-        if !pending.profileID.isEmpty { voiceStudio.releaseReplacedProfile(pending.profileID) }
+        // ⚠ **다른 세대가 남아 있으면 아직 풀지 않는다**(Codex #703 P1). 이 회차의
+        // `unverified` 는 만들어질 때의 스냅샷이라, 그 뒤에 도착한 세대의 칸은 담고 있지
+        // 않다 — 그대로 풀면 아직 반영되지 않은 세대의 목소리로 알람을 만들 수 있고
+        // 그 세대가 재시도할 때 벗겨진다.
+        let allGenerationsSettled = pending.confirm()
+        if !pending.profileID.isEmpty {
+            if allGenerationsSettled {
+                voiceStudio.releaseReplacedProfile(pending.profileID)
+            } else {
+                voiceStudio.suppressReplacedProfile(pending.profileID)
+            }
+        }
         return true
     }
 

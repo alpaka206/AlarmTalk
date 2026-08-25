@@ -55,7 +55,7 @@ struct VoiceReplacementMarkerStore {
         Self.lock.lock()
         defer { Self.lock.unlock() }
         guard changedLocked(userID, profileID, invalidatedAt) else { return .nothing }
-        guard let degraded = degrade() else { return .nothing }
+        guard let degraded = degrade() else { return .failure(profileID: profileID) }
         return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, degraded) {
             commitLocked(userID, profileID, invalidatedAt)
         }
@@ -78,10 +78,16 @@ struct VoiceReplacementMarkerStore {
         defer { Self.lock.unlock() }
         let generation = invalidatedAt?.nilIfBlank
         if let generation, hasAppliedLocked(userID, profileID, generation) { return .nothing }
-        guard let degraded = degrade() else { return .nothing }
+        guard let degraded = degrade() else { return .failure(profileID: profileID) }
         guard let generation else {
-            // 세대를 모르는 옛 신호는 반영만 하고 확정하지 않는다.
-            return PendingApply(profileID: profileID, degraded: degraded, unverified: degraded, commit: nil)
+            // 세대를 모르는 옛 신호는 반영만 하고 **확정하지 않는다**(무엇을 봤는지 모른다).
+            // ⚠ 그래도 **미확인 목록은 디스크에 남긴다**(Codex #703 P1). 메모리에만 두면
+            // 예약 정리가 실패한 채 실행이 끝났을 때 되짚을 근거가 사라진다 — 앞선 새로고침이
+            // 이미 지금 세대를 시드해 뒀으면 다음 회차들은 '바뀐 것 없음' 으로 지나가고,
+            // 그 예약은 회수된 목소리를 문 채 무기한 남는다. 이 칸은 확정이 없어 스스로
+            // 비지 않으므로, **세대를 아는 회차가 확정하며 함께 비운다**(그 회차의 확인
+            // 대상은 모든 칸의 합집합이라 이 id 들도 그때 확인된다).
+            return pendingApply(userID, profileID, generation: nil, degraded, commit: nil)
         }
         return pendingApply(userID, profileID, generation: generation, degraded) {
             commitLocked(userID, profileID, generation)
@@ -102,7 +108,7 @@ struct VoiceReplacementMarkerStore {
         _ profileID: String,
         generation: String?,
         _ degraded: [String],
-        commit: @escaping () -> Void
+        commit: (() -> Void)?
     ) -> PendingApply {
         let key = pendingKey(userID, profileID)
         // ⚠ **세대별로 나눠 들고 있는다**(Codex #703 P1). 한 배열에 섞으면 어느 순서로든
@@ -129,16 +135,45 @@ struct VoiceReplacementMarkerStore {
         // 확인 대상은 **모든 세대**의 합집합이다(중복 제거, 순서 유지).
         var seen = Set<String>()
         let unverified = buckets.keys.sorted().flatMap { buckets[$0] ?? [] }.filter { seen.insert($0).inserted }
-        return PendingApply(profileID: profileID, degraded: degraded, unverified: unverified) { [defaults] in
-            commit()
-            var latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
-            latest.removeValue(forKey: mine)
-            if latest.isEmpty {
-                defaults.removeObject(forKey: key)
-            } else {
-                defaults.set(latest, forKey: key)
-            }
+        // 확정 뒤 이 프로필에 다른 세대가 남았는지 — 남았으면 그 목소리를 다시 고를 수
+        // 있게 하면 안 된다(뒤 세대가 재시도할 때 그 사이 만든 알람을 벗긴다).
+        //
+        // ⚠ **저장된 값을 그때그때 다시 읽는다.** 확정이 없는 회차(세대 없는 옛 신호)도
+        // 같은 판정을 써야 하므로, 커밋 클로저가 세운 지역 변수에 기대지 않는다.
+        let verifiedIDs = Set(unverified)
+        let noGenerationRemains: () -> Bool = { [defaults] in
+            let latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
+            return !latest.contains { _, ids in !ids.allSatisfy { verifiedIDs.contains($0) } }
         }
+        return PendingApply(
+            profileID: profileID,
+            degraded: degraded,
+            unverified: unverified,
+            commit: commit.map { commit in
+                { [defaults] in
+                    commit()
+                    var latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
+                    latest.removeValue(forKey: mine)
+                    // ⚠ **이 회차가 확인을 마친 칸은 전부 비운다.** `unverified` 는 만들어질
+                    // 때 **모든 칸의 합집합**이었고 확정은 그 전부의 예약을 확인한 뒤에만
+                    // 온다 — 그러니 그 안에 든 id 로만 이뤄진 칸은 이미 끝난 칸이다.
+                    // 내 칸만 지우면 **확정 없이 남은 옛 칸**(예: 앞 회차가 확인에 실패해
+                    // 남긴 것, 확정이 아예 없는 세대 없는 칸)이 영원히 남아, 아래
+                    // `remaining` 이 늘 참이 되고 그 목소리가 **영구히 '정리 중'** 으로
+                    // 굳는다 — 다시 고를 수 없다.
+                    //
+                    // 스냅샷 **뒤에** 새로 얹힌 칸(다음 세대)은 확인하지 못한 id 를 갖고
+                    // 있으므로 남는다 — 그게 `remaining` 이 잡아야 할 진짜 대상이다.
+                    latest = latest.filter { _, ids in !ids.allSatisfy { verifiedIDs.contains($0) } }
+                    if latest.isEmpty {
+                        defaults.removeObject(forKey: key)
+                    } else {
+                        defaults.set(latest, forKey: key)
+                    }
+                }
+            },
+            remainingAfterCommit: noGenerationRemains
+        )
     }
 
     /**
@@ -157,13 +192,35 @@ struct VoiceReplacementMarkerStore {
         /// 확정 전에 예약을 확인해야 할 id 들 — 이번 회차 것 **+ 지난 회차에서 확인하지 못하고
         /// 넘어온 것**. 빈 회차를 '확인할 것 없음' 으로 읽으면 실패한 예약이 그대로 남는다.
         let unverified: [String]
+        /// **강등 자체가 실패했다**(저장 실패·계정 변경). 확정할 수 없고, 그 목소리는
+        /// 계속 '정리 중' 이어야 한다.
+        ///
+        /// ⚠ `.nothing` 으로 뭉개지 말 것(Codex #703 P1) — 프로필 id 를 잃으면 실패한
+        /// 회차가 **아무 표시도 남기지 않고** 끝나, 그 목소리가 확정 없이 고를 수 있는 채 남는다.
+        let failed: Bool
+        /// 확정 뒤 이 프로필에 **다른 세대의 미확인 목록이 남았는가.**
+        private let remainingAfterCommit: (() -> Bool)?
         private let commit: (() -> Void)?
 
-        init(profileID: String, degraded: [String], unverified: [String], commit: (() -> Void)?) {
+        init(
+            profileID: String,
+            degraded: [String],
+            unverified: [String],
+            failed: Bool = false,
+            commit: (() -> Void)?,
+            remainingAfterCommit: (() -> Bool)? = nil
+        ) {
             self.profileID = profileID
             self.degraded = degraded
             self.unverified = unverified
+            self.failed = failed
             self.commit = commit
+            self.remainingAfterCommit = remainingAfterCommit
+        }
+
+        /// 강등이 실패해 확정할 수 없는 회차 — **프로필 id 는 들고 간다.**
+        static func failure(profileID: String) -> PendingApply {
+            PendingApply(profileID: profileID, degraded: [], unverified: [], failed: true, commit: nil)
         }
 
         /// 아무것도 하지 않은 회차(판정에서 걸렸거나 강등이 확정을 거부했다).
@@ -175,11 +232,25 @@ struct VoiceReplacementMarkerStore {
         ///
         /// 확정도 판정과 **같은 자물쇠**를 거친다 — 다른 회차가 그 사이 값을 읽거나 쓰면
         /// 표식이 과거로 되돌아갈 수 있다.
-        func confirm() {
-            guard let commit else { return }
+        /// - Returns: 이 프로필의 **모든 세대**가 끝났는가. false 면 다른 세대가 아직
+        ///   확인을 기다리는 것이라 그 목소리를 다시 고를 수 있게 하면 안 된다
+        ///   (Codex #703 P1 — 뒤 세대가 재시도할 때 그 사이 만든 알람을 벗긴다).
+        @discardableResult
+        func confirm() -> Bool {
+            guard !failed else { return false }
+            // ⚠ **확정하지 못하는 회차는 풀지 않는다.** 세대를 모르는 옛 신호는 `commit` 이
+            // nil 이라 `applied` 를 전진시키지 못한다 — 그런 회차가 "다 끝났다" 고 답하면
+            // **아직 반영되지 않은 진짜 세대가 남아 있는데도** 그 목소리가 다시 고를 수 있게
+            // 되고, 그때 만든 알람을 다음 회차가 벗긴다.
+            //
+            // 예약 확인만으로는 부족하다: `remainingAfterCommit` 은 "확인이 끝난 칸인가" 를
+            // 보지 "그 세대를 확정했는가" 를 보지 않는다. 확정 없이 푸는 유일한 갈래를 여기서
+            // 막는다(할 일이 없던 `.nothing` 은 호출부가 프로필 id 로 이미 걸러 낸다).
+            guard let commit else { return false }
             VoiceReplacementMarkerStore.lock.lock()
             defer { VoiceReplacementMarkerStore.lock.unlock() }
             commit()
+            return remainingAfterCommit?() ?? true
         }
     }
 

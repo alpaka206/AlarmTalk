@@ -456,6 +456,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var settlingVoiceProfileIds by mutableStateOf<Set<String>>(emptySet())
         internal set
 
+    /**
+     * 디스크에 **못 남긴** '정리 중' 표시들. 디스크를 다시 읽어 올 때 합집합으로 얹는다.
+     *
+     * ⚠ 없으면 디스크 재조회가 **맞는 메모리 값을 덮는다**(Codex #703 P1) — 쓰기에 실패한
+     * 표시는 디스크에 없으므로, 목록을 새로 받는 순간 그 목소리가 다시 고를 수 있게 된다.
+     */
+    internal var settlingUnpersistedIds: Set<String> = emptySet()
+
     var voiceProfiles by mutableStateOf(bundledSystemVoiceProfiles())
         internal set
 

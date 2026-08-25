@@ -375,30 +375,6 @@ internal class RemoteAlarmPullSyncService(
                     // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
                     // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                     alarmDao.upsert(local)
-                    // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
-                    // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
-                    // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
-                    if (local.enabled) {
-                        alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
-                            .filter { it.remoteAlarmId != remote.id }
-                            // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
-                            // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
-                            // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
-                            .filter { ownedByRecipient(it) }
-                            .forEach { conflicting ->
-                                alarmScheduler.cancel(conflicting.id)
-                                alarmDao.upsert(
-                                    conflicting.copy(
-                                        enabled = false,
-                                        updatedAtMillis = System.currentTimeMillis(),
-                                    ),
-                                )
-                                Log.i(
-                                    TAG,
-                                    "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
-                                )
-                            }
-                    }
                     // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
                     val previousCacheKey = existing?.audioCacheKey
                     if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
@@ -409,6 +385,36 @@ internal class RemoteAlarmPullSyncService(
                         scheduleSucceeded = scheduleResult.isSuccess
                         scheduleResult.onFailure { error ->
                             Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
+                        }
+                    }
+                    // ⚠ **밀어내기는 받은 알람이 실제로 선 뒤에만 한다**(Codex #703 P1).
+                    // 순서를 뒤집으면 예약이 실패했을 때 **그 시각에 아무 예약도 없는 상태**가
+                    // 된다 — 사용자의 멀쩡한 알람은 이미 꺼졌고 받은 알람은 서지 못했다.
+                    // 가족 알람은 리드타임이 5분이라 다음 회차 전에 그 시각이 지나갈 수 있다.
+                    if (scheduleSucceeded) {
+                        // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
+                        // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
+                        // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
+                        if (local.enabled) {
+                            alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
+                                .filter { it.remoteAlarmId != remote.id }
+                                // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
+                                // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
+                                // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
+                                .filter { ownedByRecipient(it) }
+                                .forEach { conflicting ->
+                                    alarmScheduler.cancel(conflicting.id)
+                                    alarmDao.upsert(
+                                        conflicting.copy(
+                                            enabled = false,
+                                            updatedAtMillis = System.currentTimeMillis(),
+                                        ),
+                                    )
+                                    Log.i(
+                                        TAG,
+                                        "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
+                                    )
+                                }
                         }
                     }
                     applied = local

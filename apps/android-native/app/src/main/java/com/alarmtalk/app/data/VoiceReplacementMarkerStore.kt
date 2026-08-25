@@ -106,6 +106,45 @@ class VoiceReplacementMarkerStore(context: Context) {
     /** 첫 조회 시드의 결과. `changed` 가 false 면 강등할 것이 없다. */
     private data class Seen(val changed: Boolean, val persisted: Boolean)
 
+    /**
+     * **아직 확정하지 못해 고를 수 없는 목소리들.**
+     *
+     * ⚠ **메모리에만 두면 안 된다**(Codex #703 P1). 확정 실패는 **워커(백그라운드)** 에서도
+     * 일어나는데 그쪽에는 화면 상태가 없고, 앱을 껐다 켜면 메모리 표시가 비어 **재시도 전에
+     * 잠깐 고를 수 있게** 된다 — 그때 만든 알람을 그 재시도가 벗긴다. 계정별이다.
+     */
+    fun settlingProfileIds(userId: String?): Set<String> {
+        val user = userId?.nilIfBlankOrNull() ?: return emptySet()
+        return prefs.getStringSet(settlingKey(user), emptySet())?.toSet().orEmpty()
+    }
+
+    /**
+     * 확정 성패에 따라 올리거나 내린다.
+     *
+     * ⚠ **디스크에 못 남겼으면 메모리도 되돌린다**(형제 `seenLocked`·`commitLocked` 와 같은
+     * 규칙). `edit()` 은 성패와 무관하게 메모리 맵을 먼저 고치므로, 실패를 버리면 이
+     * 프로세스에서만 맞는 값이 되어 **재시작하면 표시가 사라진다** — 재시도 전에 그 목소리를
+     * 잠깐 고를 수 있게 되고, 그때 만든 알람을 그 재시도가 벗긴다.
+     *
+     * @return 디스크까지 남았는가.
+     */
+    fun setSettling(userId: String?, profileId: String, settling: Boolean): Boolean {
+        val user = userId?.nilIfBlankOrNull() ?: return true
+        if (profileId.isBlank()) return true
+        val key = settlingKey(user)
+        val previous = prefs.getStringSet(key, emptySet())?.toSet().orEmpty()
+        val next = if (settling) previous + profileId else previous - profileId
+        if (next == previous) return true
+        if (prefs.edit().putStringSet(key, next.toMutableSet()).commit()) return true
+        prefs.edit().putStringSet(key, previous.toMutableSet()).commit()
+        Log.w(TAG, "Failed to persist settling state; leaving it retryable")
+        return false
+    }
+
+    private fun String.nilIfBlankOrNull(): String? = takeIf { it.isNotBlank() }
+
+    private fun settlingKey(userId: String) = "$SETTLING_PREFIX$userId"
+
     /** 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다. */
     private fun seenLocked(userId: String, profileId: String, invalidatedAt: String?): Seen {
         val key = seenKey(userId, profileId)
@@ -176,6 +215,7 @@ class VoiceReplacementMarkerStore(context: Context) {
     private companion object {
         const val TAG = "VoiceReplacementMarker"
         const val SEEN_PREFIX = "seen:"
+        const val SETTLING_PREFIX = "settling:"
         const val APPLIED_PREFIX = "applied:"
 
         /**
