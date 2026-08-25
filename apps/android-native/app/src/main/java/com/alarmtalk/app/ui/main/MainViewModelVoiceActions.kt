@@ -316,7 +316,9 @@ internal fun MainViewModel.promoteVoiceDraft(
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
-        runCatching {
+        // ⚠ `.onSuccess { }` 로 감싸지 않는다 — 아래 강등은 **정지 함수**이고, 성공 갈래를
+        // 그대로 코루틴 본문에 두는 편이 순서를 읽기도 쉽다.
+        val result = runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
                     authorization = AlarmTalkApiClient.bearer(session.token),
@@ -329,7 +331,9 @@ internal fun MainViewModel.promoteVoiceDraft(
                     ),
                 ).profile
             }
-        }.onSuccess { profile ->
+        }
+        val profile = result.getOrNull()
+        if (profile != null) {
             val draft = pendingVoiceDraft
             // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
             // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
@@ -345,30 +349,34 @@ internal fun MainViewModel.promoteVoiceDraft(
                 listenerTitle = profile.listenerTitle ?: draft?.listenerTitle,
             )
             pendingVoiceDraft = null
-            voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
-            // ⚠ **교체한 기기에서 곧바로 내린다.** 교체는 옛 프로필 행을 그대로 재사용하므로
-            // (id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지 않는다 — 놔두면 화면이
-            // "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 라고 약속하고 동의까지
-            // 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**(Codex #703 P1).
+            // ⚠ **교체한 기기에서 곧바로 내린다 — 목록에 올리기 전에.** 교체는 옛 프로필 행을
+            // 그대로 재사용하므로(id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지
+            // 않는다 — 놔두면 화면이 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다"
+            // 라고 약속하고 동의까지 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**.
+            //
+            // ⚠ **순서가 중요하다.** 목록에 먼저 올리면 그 순간부터 새 목소리를 고를 수 있는데,
+            // 강등은 프로필 id 로만 대상을 고르므로 그 사이에 만든 **새 목소리 알람까지**
+            // 되돌릴 수 없이 벗긴다. 이 갈래를 끝낸 뒤에 노출한다(`voiceProfileBusy` 도 아직
+            // 켜져 있어 등록 화면이 다음 동작을 받지 않는다).
             // 다른 기기는 서버의 voice_access_revoked(voiceProfileId 동봉)가 깨운다.
             // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
             if (replaceExisting) {
                 val owner = session.user.id
-                viewModelScope.launch {
-                    runCatching {
-                        // ⚠ **표식 확정까지 한 임계구역에서 한다.** 확정을 빠뜨리면 사용자가
-                        // 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이
-                        // '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
-                        com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
-                            .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
-                                repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
-                            }
-                    }.onFailure {
-                        AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
-                    }
+                runCatching {
+                    // ⚠ **표식 확정까지 한 임계구역에서 한다.** 확정을 빠뜨리면 사용자가
+                    // 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이
+                    // '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
+                    com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+                        .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
+                            repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
+                        }
+                }.onFailure {
+                    AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
                 }
             }
-        }.onFailure { error ->
+            voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+        } else {
+            val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
             val app = getApplication<android.app.Application>()
             // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이

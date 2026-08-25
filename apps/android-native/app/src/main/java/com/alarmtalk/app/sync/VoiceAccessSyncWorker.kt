@@ -108,17 +108,17 @@ class VoiceAccessSyncWorker(
             val replacedVoiceId = inputData.getString(INPUT_REPLACED_VOICE_ID)?.takeIf { it.isNotBlank() }
             val replacedGeneration = inputData.getString(INPUT_REPLACED_GENERATION)?.takeIf { it.isNotBlank() }
             if (replacedVoiceId != null) {
-                replacedCount += markers.applyIfNotApplied(
-                    session.user.id,
-                    replacedVoiceId,
-                    replacedGeneration,
-                ) {
-                    val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                // ⚠ 확정을 미루더라도 **이미 내린 것은 세어 안내한다** — 강등은 이미 일어났고
+                // 그 이유를 말해 줄 곳이 여기뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
+                var degradedNow = 0
+                markers.applyIfNotApplied(session.user.id, replacedVoiceId, replacedGeneration) {
+                    degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
                         replacedVoiceId,
                         session.user.id,
                     )
-                    if (stillSameSession()) degraded else null
+                    if (stillSameSession()) degradedNow else null
                 }
+                replacedCount += degradedNow
             }
             // ② 방금 받은 목록의 표식(정확성) — 푸시를 놓쳤어도 여기서 수렴한다.
             //    하루 주기 폴백이 이 경로를 그대로 탄다.
@@ -130,13 +130,16 @@ class VoiceAccessSyncWorker(
                 // ⚠ `break` 다 — 아래 대기표 기록까지 건너뛰면 이미 강등된 알람의 이유를
                 // 사용자가 영영 못 듣는다(iOS 도 같은 자리에서 멈춘다).
                 if (!stillSameSession()) break
-                replacedCount += markers.applyIfChanged(session.user.id, profileId, invalidatedAt) {
-                    val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                var degradedNow = 0
+                markers.applyIfChanged(session.user.id, profileId, invalidatedAt) {
+                    degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
                         profileId,
                         session.user.id,
                     )
-                    if (stillSameSession()) degraded else null
+                    if (stillSameSession()) degradedNow else null
                 }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += degradedNow
             }
             // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
             // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.

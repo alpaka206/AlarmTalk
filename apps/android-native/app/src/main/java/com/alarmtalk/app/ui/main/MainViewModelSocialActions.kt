@@ -110,13 +110,16 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
             // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 알람을 만들면 뒤늦게
             // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
             for ((profileId, invalidatedAt) in markerCandidates) {
-                replacedCount += markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
-                    val degraded =
+                var degradedNow = 0
+                markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
+                    degradedNow =
                         repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
                     // 그 사이 계정이 바뀌었으면 확정하지 않는다 — 저장소가 소유자 불일치로
                     // 돌려준 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                    if (authSession?.user?.id == listOwner) degraded else null
+                    if (authSession?.user?.id == listOwner) degradedNow else null
                 }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += degradedNow
             }
             lostAccess to replacedCount
         }

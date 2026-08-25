@@ -155,6 +155,28 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         XCTAssertEqual(newerRan, 7, "새 세대는 옛 회차가 끝난 뒤 그대로 반영돼야 한다")
     }
 
+    /// ⚠ **강등이 디스크에 남은 뒤에만 확정한다.** 백그라운드 푸시로 깨어난 실행은 비동기
+    /// 쓰기 전에 끝날 수 있는데, 그때 표식만 앞서 나가면 다음 실행이 옛 목소리 알람을 다시
+    /// 읽어 오고도 **영영 다시 내리지 않는다.**
+    @MainActor
+    func test_저장이_확인돼야_확정한다() {
+        let store = LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("marker-save-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var record = LocalAlarmRecord(
+            id: "a1", label: "아침", hour: 7, minute: 0,
+            fireAtMillis: now + 60_000, origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now, updatedAtMillis: now
+        )
+        record.voiceProfileId = "clone-1"
+        _ = store.upsert(record)
+
+        XCTAssertTrue(store.saveNow(), "동기 저장이 성공을 보고해야 확정 여부를 판단할 수 있다")
+    }
+
     func test_계정별로_갈린다() {
         _ = store().applyIfChanged(userID: "u9", profileID: "vp1", invalidatedAt: nil) { 0 }
         XCTAssertEqual(

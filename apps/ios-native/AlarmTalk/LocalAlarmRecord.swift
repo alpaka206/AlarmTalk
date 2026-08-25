@@ -680,9 +680,26 @@ actor LocalAlarmPersistence {
     }
 
     func save(_ alarms: [LocalAlarmRecord]) {
+        _ = Self.write(alarms, to: storageURL)
+    }
+
+    /**
+     * **동기 쓰기 — 성공 여부를 돌려준다.**
+     *
+     * 보통 경로는 비동기 `save` 로 충분하지만, "디스크에 실제로 남았는가" 가 정확성에 걸린
+     * 자리가 있다(교체 표식 확정 전). 거기서는 이 함수로 쓰고 확인한다 — 백그라운드 푸시로
+     * 깨어난 실행은 쓰기 전에 종료될 수 있고, 그러면 다음 실행이 **옛 목소리 알람을 다시
+     * 읽어 오는데** 표식은 이미 '반영함' 이라 영영 다시 내리지 않는다.
+     */
+    nonisolated static func write(_ alarms: [LocalAlarmRecord], to url: URL) -> Bool {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(alarms) else { return }
-        try? data.write(to: storageURL, options: [.atomic])
+        guard let data = try? encoder.encode(alarms) else { return false }
+        do {
+            try data.write(to: url, options: [.atomic])
+            return true
+        } catch {
+            return false
+        }
     }
 }

@@ -7,6 +7,8 @@ final class LocalAlarmStore: ObservableObject {
     @Published private(set) var hasLoadedFromDisk = false
 
     private let persistence: LocalAlarmPersistence
+    /// 동기 저장(`saveNow`)이 쓸 파일. 비동기 경로는 `persistence` 를 그대로 쓴다.
+    private let storageURL: URL
 
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
@@ -27,6 +29,7 @@ final class LocalAlarmStore: ObservableObject {
             resolvedStorageURL = Self.defaultStorageURL()
         }
         self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
+        self.storageURL = resolvedStorageURL
         guard loadFromDisk else {
             self.hasLoadedFromDisk = true
             return
@@ -654,5 +657,19 @@ final class LocalAlarmStore: ObservableObject {
         Task { [persistence] in
             await persistence.save(snapshot)
         }
+    }
+
+    /**
+     * 지금 상태를 **동기로** 쓰고 성공 여부를 돌려준다.
+     *
+     * ⚠ "디스크에 실제로 남았는가" 가 정확성에 걸린 자리에서만 쓴다 — 교체 표식은 강등이
+     * 디스크에 남은 뒤에야 '반영함' 으로 적을 수 있다. 평소 경로는 `persist()`(비동기)로
+     * 충분하다. 백그라운드 푸시로 깨어난 실행은 비동기 쓰기 전에 종료될 수 있고, 그러면
+     * 다음 실행이 옛 목소리 알람을 다시 읽어 오는데 표식만 앞서 나가 **영영 다시 내리지
+     * 않는다.**
+     */
+    @discardableResult
+    func saveNow() -> Bool {
+        LocalAlarmPersistence.write(alarms, to: storageURL)
     }
 }

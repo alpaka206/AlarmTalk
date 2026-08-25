@@ -336,19 +336,25 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **이미 반영한 세대면 아무것도 하지 않는다.** 늦게 도착한 푸시는, 그 사이
             // 사용자가 **새 목소리로** 다시 만든 직접 입력 알람까지 되돌릴 수 없이 지운다.
             // 판정·강등·확정은 저장소가 한 임계구역에서 돈다.
-            let degraded = VoiceReplacementMarkerStore().applyIfNotApplied(
+            // ⚠ 확정을 미루더라도 **이미 내린 것은 세어 안내한다** — 강등은 이미 일어났고,
+            // 그 이유를 말해 줄 곳이 여기뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
+            var degraded = 0
+            VoiceReplacementMarkerStore().applyIfNotApplied(
                 userID: ownerID,
                 profileID: profileID,
                 invalidatedAt: generation
             ) {
-                let count = deps.voiceStudio.degradeCustomMessageAlarms(
+                degraded = deps.voiceStudio.degradeCustomMessageAlarms(
                     forProfileID: profileID,
                     alarmStore: deps.alarmStore,
                     audioCache: .shared,
                     ownerUserId: ownerID
                 )
+                // ⚠ **디스크에 남은 뒤에만 확정한다.** 백그라운드 실행은 비동기 쓰기 전에
+                // 끝날 수 있고, 그러면 다음 실행이 옛 알람을 다시 읽는데 표식만 앞서 나간다.
+                guard deps.alarmStore.saveNow() else { return nil }
                 // 그 사이 계정이 바뀌었으면 확정하지 않는다.
-                return deps.auth.session?.user.id == ownerID ? count : nil
+                return deps.auth.session?.user.id == ownerID ? degraded : nil
             }
             guard degraded > 0 else { return }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
@@ -393,21 +399,26 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             for candidate in markerCandidates {
                 // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새
                 // 세대가 반영되고 사용자가 새 목소리로 만든 알람을 뒤늦게 지우게 된다.
-                replacedCount += markers.applyIfChanged(
+                var degradedNow = 0
+                markers.applyIfChanged(
                     userID: ownerID,
                     profileID: candidate.id,
                     invalidatedAt: candidate.invalidatedAt
                 ) {
-                    let count = deps.voiceStudio.degradeCustomMessageAlarms(
+                    degradedNow = deps.voiceStudio.degradeCustomMessageAlarms(
                         forProfileID: candidate.id,
                         alarmStore: deps.alarmStore,
                         audioCache: .shared,
                         ownerUserId: ownerID
                     )
+                    // 디스크에 남은 뒤에만 확정한다(위 푸시 경로와 같은 이유).
+                    guard deps.alarmStore.saveNow() else { return nil }
                     // ⚠ 그 사이 계정이 바뀌었으면 확정하지 않는다 — 소유자 불일치로 돌려받은
                     // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                    return deps.auth.session?.user.id == ownerID ? count : nil
+                    return deps.auth.session?.user.id == ownerID ? degradedNow : nil
                 }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += degradedNow
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본

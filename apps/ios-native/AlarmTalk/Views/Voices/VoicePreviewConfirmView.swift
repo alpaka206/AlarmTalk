@@ -411,12 +411,15 @@ struct VoicePreviewConfirmView: View {
                     profileID: promoted.id,
                     invalidatedAt: promoted.customAudioInvalidatedAt
                 ) {
-                    voice.degradeCustomMessageAlarms(
+                    let degraded = voice.degradeCustomMessageAlarms(
                         forProfileID: promoted.id,
                         alarmStore: alarmStore,
                         audioCache: .shared,
                         ownerUserId: auth.session?.user.id
                     )
+                    // 디스크에 남은 뒤에만 확정한다 — 안 그러면 다음 실행이 옛 알람을 다시
+                    // 읽는데 표식만 앞서 나가 영영 다시 내리지 않는다.
+                    return alarmStore.saveNow() ? degraded : nil
                 }
             }
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
