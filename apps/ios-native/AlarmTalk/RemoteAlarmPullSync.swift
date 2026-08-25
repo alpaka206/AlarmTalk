@@ -375,9 +375,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             store.upsert(merged, syncedNow: true)
 
             // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
-            let scheduleSucceeded = merged.enabled
+            let reschedule = merged.enabled
                 ? await rescheduleReceivedRemote(record: merged, existing: current)
-                : true
+                : await releaseDisabledReceivedReservation(merged)
             // ⚠ **여기서도 충돌 정리를 돌린다.** 첫 회차의 취소가 실패해 ACK 를 미루면
             // 다음 회차는 이 갈래로 들어온다 — 여기에 없으면 재시도할 곳이 사라진다.
             let conflictsCleared = await clearSameTimeConflicts(
@@ -388,8 +388,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
                 audioSecured: audioSecured,
                 enabled: merged.enabled,
-                scheduleSucceeded: scheduleSucceeded,
-                conflictsCleared: conflictsCleared,
+                scheduleSucceeded: reschedule.scheduled,
+                conflictsCleared: conflictsCleared && reschedule.previousReleased,
                 deliveryVersion: remote.deliveryVersion
             ))
         } else {
@@ -415,9 +415,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 }
                 let merged = Self.merge(existing: raced, mapped: mapped)
                 store.upsert(merged, syncedNow: true)
-                let scheduleSucceeded = merged.enabled
+                let reschedule = merged.enabled
                     ? await rescheduleReceivedRemote(record: merged, existing: raced)
-                    : true
+                    : await releaseDisabledReceivedReservation(merged)
                 // 위 갈래와 같은 이유 — 재시도가 여기로 들어올 수 있다.
                 let conflictsCleared = await clearSameTimeConflicts(
                     with: merged,
@@ -427,8 +427,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
                     audioSecured: audioSecured,
                     enabled: merged.enabled,
-                    scheduleSucceeded: scheduleSucceeded,
-                    conflictsCleared: conflictsCleared,
+                    scheduleSucceeded: reschedule.scheduled,
+                    conflictsCleared: conflictsCleared && reschedule.previousReleased,
                     deliveryVersion: remote.deliveryVersion
                 ))
             }
@@ -690,14 +690,73 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         return true
     }
 
-    private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async -> Bool {
+    /// 받은 알람을 다시 예약한 결과.
+    ///
+    /// ⚠ **옛 예약을 푼 것까지 결과에 넣는다**(Codex #703 P1). 예전에는 해제 실패를 버렸는데,
+    /// 그러면 **새 예약과 옛 예약이 둘 다 살아 있는 채로 전달 완료**가 되고 ACK 가 서버 행을
+    /// 지운다 — 같은 알람이 두 번 울고, 다시 시도할 근거는 사라진 뒤다. 같은 시각 충돌 정리
+    /// (`clearSameTimeConflicts`)는 **받은 행 자신을 제외**하므로 이걸 대신 잡아 주지 않는다.
+    struct RescheduleOutcome {
+        let scheduled: Bool
+        /// 옛 예약(`existing.alarmKitID`)까지 확실히 없앴는가.
+        let previousReleased: Bool
+
+        /// 예약이 필요 없는 갈래(꺼진 알람) — 남은 일이 없으니 둘 다 참이다.
+        static var notNeeded: RescheduleOutcome {
+            RescheduleOutcome(scheduled: true, previousReleased: true)
+        }
+    }
+
+    /// **꺼진 채로 반영된 받은 알람** — 새로 걸 것은 없지만 **옛 예약은 지워야 한다.**
+    ///
+    /// ⚠ 예전에는 이 갈래가 그냥 "할 일 없음" 이었다. 그런데 받은 알람은 서버가 끌 수 있고
+    /// (같은 슬롯에 새 가족 알람이 오면 `claimTargetedAlarmSlot` 이 `is_active = 0` 으로
+    /// 내린다 — `docs/spec/family-alarm.md`), 그때 행만 꺼지고 **OS 예약은 그대로 남는다.**
+    /// 행이 꺼져 있으니 리컨사일러도 복구 sweep 도 그 행을 건너뛴다 — 목록에는 꺼진 알람이,
+    /// 그 시각에는 울리는 알람이 있는 상태가 되고, ACK 뒤에는 서버가 손댈 수도 없다.
+    /// (목소리 철회 갈래는 이미 같은 일을 한다 — "꺼진 알람은 새로 걸 것이 없으니 옛것만
+    /// 지운다".)
+    private func releaseDisabledReceivedReservation(
+        _ record: LocalAlarmRecord
+    ) async -> RescheduleOutcome {
+        guard record.originEnum == .receivedRemote else { return .notNeeded }
+        let released = await alarmKit.releaseScheduledAlarm(record: record)
+        let owedCleared = await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: store)
+        return RescheduleOutcome(scheduled: true, previousReleased: released && owedCleared)
+    }
+
+    private func rescheduleReceivedRemote(
+        record: LocalAlarmRecord,
+        existing: LocalAlarmRecord
+    ) async -> RescheduleOutcome {
         // 새 예약을 먼저 성공시킨 뒤 기존 AlarmKit ID 를 해제해 로컬 레코드가
         // 삭제되거나 무예약 상태로 남는 일을 막는다.
         let scheduled = await alarmKit.schedule(record: record, store: store)
-        if scheduled, existing.alarmKitID != nil {
-            await alarmKit.cancelScheduledAlarm(record: existing)
+        guard scheduled else { return RescheduleOutcome(scheduled: false, previousReleased: true) }
+        guard let previousHandle = existing.alarmKitID else {
+            return RescheduleOutcome(
+                scheduled: true,
+                previousReleased: await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: store)
+            )
         }
-        return scheduled
+        // 새 핸들이 실제로 행에 새겨졌을 때만 옛것을 푼다(`AlarmScheduleReconciler` 와 같은
+        // 안전판). 값이 그대로면 그 사이 다른 경로가 개입한 것이고, 지금 그 예약이 유일한
+        // 예약이라 끊으면 무예약이 된다.
+        guard store.record(id: record.id)?.alarmKitID != previousHandle else {
+            return RescheduleOutcome(
+                scheduled: true,
+                previousReleased: await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: store)
+            )
+        }
+        // 받은 행은 켜진 채로 다시 예약된 것이라 출처는 기본값(행을 건드리지 않는 쪽)이 맞다.
+        let released = await alarmKit.releaseScheduledAlarm(record: existing)
+        // ⚠ **이 행이 예전에 남긴 고아도 함께 본다**(Codex #703 P1). 위 해제는 **직전**
+        // 손잡이 하나만 본다 — 지난 회차의 해제가 실패했다면 그 손잡이는 이미 행에서
+        // 밀려나(재예약이 새 UUID 를 새긴다) **어디서도 참조되지 않는다.** 그러면 다음
+        // 회차는 "끊을 게 없다" 고 답하고 ACK 가 서버 행을 지운다 — 그 예약은 행 없이 울어
+        // 목록에 보이지도, 끌 수도 없다. 손잡이가 아니라 **주인 행 id** 로 되짚는다.
+        let owedCleared = await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: store)
+        return RescheduleOutcome(scheduled: true, previousReleased: released && owedCleared)
     }
 
     /// **받은 알람과 같은 시각에 선 이 수신자의 알람을 끄고, 그 예약을 푼다.**
@@ -742,14 +801,23 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 disabled.enabled = false
                 _ = store.upsertPreservingServerSyncFields(disabled)
             }
-            if await alarmKit.cancelScheduledAlarm(record: conflicting) {
-                // ⚠ **끊은 UUID 는 회수 목록에서 지운다.** 안 지우면 다음 회차가 위
-                // `owesCancellation` 으로 같은 UUID 를 또 끊으려 들고, AlarmKit 이 **모르는
-                // id 는 throw** 라 그 재시도는 영원히 실패로 읽힌다 — 정리가 실제로 끝났는데도
-                // ACK 를 영영 미루게 된다. (전경 sweep 는 `AlarmManager.shared.alarms` 를
-                // 권위로 삼아 스스로 털지만, 그건 앱을 열어야 돈다.)
-                PendingAlarmCancellationStore.remove(conflicting.alarmKitID)
-            } else {
+            // ⚠ **`releaseScheduledAlarm` 이어야 한다.** OS 에 이미 없는 예약(한 번 울고
+            // 사라진 1회성 등)에 `cancel` 은 throw 하는데, 그걸 실패로 세면 끊을 것이 없는
+            // 알람 때문에 **ACK 가 영구히 미뤄진다**. 성공한 UUID 를 회수 목록에서 지우는
+            // 것도 그쪽이 한다 — 안 지우면 위 `owesCancellation` 이 같은 UUID 를 영원히
+            // 다시 집는다.
+            // ⚠ **출처는 `.conflictDisplacement`**(기본값 아님). 취소가 실패한 채 그 예약이
+            // 울면 `markRinging` 이 행을 도로 켜는데, 기본값(`.foreignCleanup`)이면 회수가
+            // 손잡이만 지우고 끝내 **밀어낸 알람이 되살아난다.**
+            if await alarmKit.releaseScheduledAlarm(
+                record: conflicting,
+                cancellationOrigin: .conflictDisplacement
+            ) == false {
+                cleared = false
+            }
+            // 밀어낸 행도 예전 회차의 고아를 남겼을 수 있다(사용자가 다시 켜서 재예약된 뒤
+            // 또 밀린 경우). 위 `owesCancellation` 은 **지금 손잡이**만 보므로 여기서 한 번 더.
+            if await alarmKit.releaseOwedHandles(forAlarmID: conflicting.id, store: store) == false {
                 cleared = false
             }
         }
@@ -783,16 +851,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             || recovered.audioCacheKey != existing.audioCacheKey {
             recovered = store.upsert(recovered)
         }
-        let scheduleSucceeded = recovered.enabled
+        let reschedule = recovered.enabled
             ? await rescheduleReceivedRemote(record: recovered, existing: existing)
-            : true
+            : await releaseDisabledReceivedReservation(recovered)
         return Self.receivedAlarmDeliveryComplete(
             audioSecured: true,
             enabled: recovered.enabled,
-            scheduleSucceeded: scheduleSucceeded,
+            scheduleSucceeded: reschedule.scheduled,
             // 수신자가 이미 고친 행이다 — 시각은 **그 사람이 정한 것**이라 같은 시각의
-            // 다른 알람을 우리가 끌 근거가 없다. 정리할 것이 애초에 없다.
-            conflictsCleared: true,
+            // 다른 알람을 우리가 끌 근거가 없다. 남는 것은 이 행 자신의 옛 예약뿐이다.
+            conflictsCleared: reschedule.previousReleased,
             deliveryVersion: deliveryVersion
         ) ? .alreadyApplied : .incomplete
     }
