@@ -522,7 +522,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
-| 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `conflictingAlarms` → `enabled=false` + 예약 취소(같은 자리) | — |
+| 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `clearSameTimeConflicts` — 끄고 예약 취소, **실패하면 ACK 보류** | — |
 | 전달 세대 ACK 전 영속 | `NonCancellable` Room 쓰기 | `markRemoteDeliveryVersion` → 동기 저장 확인 후 ACK | `POST /alarm/:id/received` |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |

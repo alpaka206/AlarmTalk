@@ -14,24 +14,49 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             audioSecured: true,
             enabled: true,
             scheduleSucceeded: false,
+            conflictsCleared: true,
             deliveryVersion: "version-1"
         ))
         XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
             audioSecured: true,
             enabled: true,
             scheduleSucceeded: true,
+            conflictsCleared: true,
             deliveryVersion: nil
         ))
         XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
             audioSecured: true,
             enabled: true,
             scheduleSucceeded: true,
+            conflictsCleared: true,
             deliveryVersion: "version-1"
         ))
         XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
             audioSecured: true,
             enabled: false,
             scheduleSucceeded: false,
+            conflictsCleared: true,
+            deliveryVersion: "version-1"
+        ))
+    }
+
+    /// ⚠ **같은 시각 충돌 정리에 실패하면 ACK 하지 않는다**(Codex #703 P1).
+    /// 행만 꺼지고 OS 예약이 살아 있는데 서버 행을 지우면 다시 시도할 근거가 사라진다 —
+    /// 백그라운드로 받은 알람은 전경 복귀 전에 울릴 수 있고, 그러면 둘이 같이 운다.
+    func test_deliveryIncompleteWhenSameTimeConflictCancellationFails() {
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            conflictsCleared: false,
+            deliveryVersion: "version-1"
+        ))
+        // 꺼진 채 받은 알람은 예약도 충돌도 없다 — 정리 실패로 막지 않는다.
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            conflictsCleared: false,
             deliveryVersion: "version-1"
         ))
     }

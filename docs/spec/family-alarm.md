@@ -128,8 +128,20 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
 없어 `claimTargetedAlarmSlot` 의 UPDATE 가 훑을 대상이 아니고, pull 목록에도 안 실려
 `is_active` 가 내려올 길이 없다. **이미 받은 알람의 같은 시각 중복은 클라가 막는다** —
 pull 이 새 알람을 세울 때 같은 시각의 수신자 소유 알람을 로컬에서 끈다
-(안드로이드 `alarmDao.getEnabledAtTime`). 두 겹이 서로 다른 구간을 덮는 것이지
-한쪽이 남는 것이 아니다.
+(안드로이드 `alarmDao.getEnabledAtTime`, iOS `RemoteAlarmPullSync.clearSameTimeConflicts`).
+두 겹이 서로 다른 구간을 덮는 것이지 한쪽이 남는 것이 아니다.
+
+⚠ **그 정리는 전달의 일부다 — 끝나야 ack 한다**(iOS). 행을 끄는 것과 OS 예약을 푸는 것은
+다른 일이고, iOS 는 뒤쪽이 실패할 수 있다(`AlarmManager.cancel` throw). 실패를 삼키고
+ack 하면 서버 행이 사라져 **다시 시도할 근거 자체가 없어진다** — 회수 목록
+(`PendingAlarmCancellationStore`)에 남지만 그 sweep 는 전경 복귀·콜드 스타트에서만 도니,
+백그라운드로 받은 알람이 앱을 열기 전에 울리면 **옛 예약과 새 알람이 같이 운다.**
+그래서 취소 실패는 `deliveryComplete = false` 로 돌아가고 다음 회차가 다시 시도한다.
+재시도 회차는 **이미 꺼 둔 행도** 봐야 한다 — 못 푼 예약이 있는지는 `enabled` 가 아니라
+회수 목록의 UUID 로 판정한다(행 상태로는 셀 수 없다). 그리고 **끊는 데 성공하면 그 UUID 를
+목록에서 지운다** — 안 지우면 다음 회차가 같은 UUID 를 또 끊으려 들고, AlarmKit 이 모르는
+id 는 throw 라 그 재시도가 영원히 실패로 읽혀 **정리가 끝났는데도 ACK 를 영영 미룬다.** 안드로이드는 취소가 실패를 돌려주지 않아
+(`AlarmScheduler.cancel` — PendingIntent 가 없으면 그냥 돌아간다) 이 갈래가 없다.
 
 ⚠ **수신자의 변경을 서버에 올리지 말 것.** 받은 알람에도 `remoteAlarmId` 가 있지만 그건
 **보낸 사람의 행**이다. `PATCH /alarm/:id` 는 소유권 게이트(`WHERE a.id = ? AND a.user_id

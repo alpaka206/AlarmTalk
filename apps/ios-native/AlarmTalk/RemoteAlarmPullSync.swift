@@ -86,13 +86,19 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
     }
 
+    /// - Parameter conflictsCleared: 같은 시각 충돌 정리(`clearSameTimeConflicts`)까지
+    ///   끝났는가. ⚠ **정리는 전달의 일부다** — 여기서 빼면 취소에 실패한 옛 예약이 살아
+    ///   있는데 ACK 가 서버 행을 지워, 다시 시도할 근거 자체가 사라진다.
     static func receivedAlarmDeliveryComplete(
         audioSecured: Bool,
         enabled: Bool,
         scheduleSucceeded: Bool,
+        conflictsCleared: Bool,
         deliveryVersion: String?
     ) -> Bool {
-        audioSecured && (!enabled || scheduleSucceeded) && deliveryVersion?.isEmpty == false
+        audioSecured
+            && (!enabled || (scheduleSucceeded && conflictsCleared))
+            && deliveryVersion?.isEmpty == false
     }
 
     /// 음원 확보를 마친 레코드와 그 성패. `recordWithCachedTTSIfNeeded` 의 반환형이다.
@@ -372,10 +378,18 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             let scheduleSucceeded = merged.enabled
                 ? await rescheduleReceivedRemote(record: merged, existing: current)
                 : true
+            // ⚠ **여기서도 충돌 정리를 돌린다.** 첫 회차의 취소가 실패해 ACK 를 미루면
+            // 다음 회차는 이 갈래로 들어온다 — 여기에 없으면 재시도할 곳이 사라진다.
+            let conflictsCleared = await clearSameTimeConflicts(
+                with: merged,
+                remoteID: remote.id,
+                pullOwnerUserID: pullOwnerUserID
+            )
             return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
                 audioSecured: audioSecured,
                 enabled: merged.enabled,
                 scheduleSucceeded: scheduleSucceeded,
+                conflictsCleared: conflictsCleared,
                 deliveryVersion: remote.deliveryVersion
             ))
         } else {
@@ -404,10 +418,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 let scheduleSucceeded = merged.enabled
                     ? await rescheduleReceivedRemote(record: merged, existing: raced)
                     : true
+                // 위 갈래와 같은 이유 — 재시도가 여기로 들어올 수 있다.
+                let conflictsCleared = await clearSameTimeConflicts(
+                    with: merged,
+                    remoteID: remote.id,
+                    pullOwnerUserID: pullOwnerUserID
+                )
                 return .updated(deliveryComplete: Self.receivedAlarmDeliveryComplete(
                     audioSecured: audioSecured,
                     enabled: merged.enabled,
                     scheduleSucceeded: scheduleSucceeded,
+                    conflictsCleared: conflictsCleared,
                     deliveryVersion: remote.deliveryVersion
                 ))
             }
@@ -422,26 +443,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 신규 import.
             store.upsert(mapped, syncedNow: true)
 
+            // 같은 시각에 이 수신자가 켜 둔 알람을 먼저 비운다(끄기 + 예약 취소).
+            let conflictsCleared = await clearSameTimeConflicts(
+                with: mapped,
+                remoteID: remote.id,
+                pullOwnerUserID: pullOwnerUserID
+            )
             // receivedRemote 신규 알람이면 곧바로 AlarmKit 스케줄.
             var scheduleSucceeded = true
             if mapped.originEnum == .receivedRemote && mapped.enabled {
-                // ⚠ **같은 시각에 내가 켜 둔 알람은 끈다**(안드로이드 pull 과 같은 규칙).
-                // 두 예약이 같은 분에 함께 서면 서로의 울림을 끊고, 받은 알람은 ACK 뒤
-                // 서버 행이 사라져 서버 쪽 슬롯 정리(`claimTargetedAlarmSlot`)도 손댈 수
-                // 없다. **지우지는 않는다** — 목록에 남겨 언제든 다시 켤 수 있게 한다.
-                // 대상은 '이 수신자의' 알람만이다 — 같은 기기에 남은 앞 계정 알람을 끄면
-                // 그 계정은 영영 모른 채 안 울린다.
-                for conflicting in store.conflictingAlarms(
-                    hour: mapped.hour,
-                    minute: mapped.minute,
-                    excludingID: mapped.id,
-                    ownerUserId: pullOwnerUserID
-                ) where conflicting.enabled && conflicting.remoteAlarmId != remote.id {
-                    var disabled = conflicting
-                    disabled.enabled = false
-                    _ = store.upsertPreservingServerSyncFields(disabled)
-                    await alarmKit.cancelScheduledAlarm(record: conflicting)
-                }
                 scheduleSucceeded = await alarmKit.schedule(record: mapped, store: store)
             }
             await SocialNotificationTracker.notifyReceivedAlarm(
@@ -453,6 +463,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 audioSecured: audioSecured,
                 enabled: mapped.enabled,
                 scheduleSucceeded: scheduleSucceeded,
+                conflictsCleared: conflictsCleared,
                 deliveryVersion: remote.deliveryVersion
             ))
         }
@@ -689,6 +700,62 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         return scheduled
     }
 
+    /// **받은 알람과 같은 시각에 선 이 수신자의 알람을 끄고, 그 예약을 푼다.**
+    /// 안드로이드 pull(`getEnabledAtTime` → `enabled=false`)과 같은 규칙이다.
+    ///
+    /// 두 예약이 같은 분에 함께 서면 서로의 울림을 끊는다. 받은 알람은 ACK 뒤 서버 행이
+    /// 사라져 서버 쪽 슬롯 정리(`claimTargetedAlarmSlot`)도 손댈 수 없으니 여기서 끝낸다.
+    /// **지우지는 않는다** — 목록에 남겨 언제든 다시 켤 수 있게 한다. 대상은 '이 수신자의'
+    /// 알람만이다 — 같은 기기에 남은 앞 계정 알람을 끄면 그 계정은 영영 모른 채 안 울린다.
+    ///
+    /// ⚠ **취소 실패를 삼키지 않는다**(Codex #703 P1). 행만 꺼지고 OS 예약이 살아 있는데
+    /// 그대로 ACK 하면 서버 행이 사라져 **다시 시도할 근거 자체가 없어진다.**
+    /// 회수 목록(`PendingAlarmCancellationStore`)에 남기는 하지만 그 sweep 는 **전경 복귀와
+    /// 콜드 스타트에서만** 돈다(`AlarmTalkApp` 의 `retryPendingCancellations`) — 백그라운드
+    /// pull 로 받은 알람이 사용자가 앱을 열기 전에 울리면 **옛 예약과 새 알람이 같이 운다.**
+    ///
+    /// ⚠ **재시도 회차는 이미 꺼 둔 행도 봐야 한다.** 첫 회차가 행을 끄는 데는 성공했으니
+    /// `enabled` 만 보면 다음 회차에서 대상이 아니게 되고, 정리가 끝났다고 오인해 그대로
+    /// ACK 한다. 못 푼 예약이 있는지는 행이 아니라 **회수 목록의 UUID** 로 판정한다
+    /// (`PendingAlarmCancellationStore` 주석의 그 이유와 같다 — 행 상태로는 못 센다).
+    ///
+    /// - Returns: 정리를 끝냈는가. 하나라도 취소가 실패하면 `false` — 전달 미완료로 남아
+    ///   서버 행이 보존되고 다음 회차가 다시 시도한다.
+    private func clearSameTimeConflicts(
+        with received: LocalAlarmRecord,
+        remoteID: String,
+        pullOwnerUserID: String
+    ) async -> Bool {
+        guard received.originEnum == .receivedRemote, received.enabled else { return true }
+        let owedCancellations = Set(PendingAlarmCancellationStore.all)
+        var cleared = true
+        for conflicting in store.conflictingAlarms(
+            hour: received.hour,
+            minute: received.minute,
+            excludingID: received.id,
+            ownerUserId: pullOwnerUserID
+        ) where conflicting.remoteAlarmId != remoteID {
+            let owesCancellation = conflicting.alarmKitID.map { owedCancellations.contains($0) } ?? false
+            guard conflicting.enabled || owesCancellation else { continue }
+            if conflicting.enabled {
+                var disabled = conflicting
+                disabled.enabled = false
+                _ = store.upsertPreservingServerSyncFields(disabled)
+            }
+            if await alarmKit.cancelScheduledAlarm(record: conflicting) {
+                // ⚠ **끊은 UUID 는 회수 목록에서 지운다.** 안 지우면 다음 회차가 위
+                // `owesCancellation` 으로 같은 UUID 를 또 끊으려 들고, AlarmKit 이 **모르는
+                // id 는 throw** 라 그 재시도는 영원히 실패로 읽힌다 — 정리가 실제로 끝났는데도
+                // ACK 를 영영 미루게 된다. (전경 sweep 는 `AlarmManager.shared.alarms` 를
+                // 권위로 삼아 스스로 털지만, 그건 앱을 열어야 돈다.)
+                PendingAlarmCancellationStore.remove(conflicting.alarmKitID)
+            } else {
+                cleared = false
+            }
+        }
+        return cleared
+    }
+
     /// #104 이전에 이미 편집된 행은 서버본으로 다시 만들지 않는다. 서버 음원을 캐시한 뒤
     /// 수신자가 고친 현재 행 그대로 예약까지 성공해야만 이 backfill 세대를 ACK할 수 있다.
     private func outcomeForEditedDelivery(
@@ -723,6 +790,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             audioSecured: true,
             enabled: recovered.enabled,
             scheduleSucceeded: scheduleSucceeded,
+            // 수신자가 이미 고친 행이다 — 시각은 **그 사람이 정한 것**이라 같은 시각의
+            // 다른 알람을 우리가 끌 근거가 없다. 정리할 것이 애초에 없다.
+            conflictsCleared: true,
             deliveryVersion: deliveryVersion
         ) ? .alreadyApplied : .incomplete
     }
