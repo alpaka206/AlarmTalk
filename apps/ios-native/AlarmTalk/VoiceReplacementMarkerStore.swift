@@ -54,7 +54,19 @@ struct VoiceReplacementMarkerStore {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return .nothing }
         Self.lock.lock()
         defer { Self.lock.unlock() }
-        guard changedLocked(userID, profileID, invalidatedAt) else { return .nothing }
+        guard changedLocked(userID, profileID, invalidatedAt) else {
+            // ⚠ **바뀐 게 없어도 남은 확인은 이어서 한다**(Codex #703 P1). 세대 없는 옛
+            // 신호가 남긴 칸은 **스스로 확정할 수 없고**, 그 뒤 목록은 늘 '바뀐 것 없음' 이라
+            // 여기서 물러서면 그 칸을 **다시 집을 경로가 하나도 없다** — 정리에 실패한 예약이
+            // 회수된 목소리를 문 채 무기한 남고(전경 sweep 전까지), 메모리 표시는 재시작에
+            // 사라져 그 목소리를 다시 고를 수도 있게 된다.
+            //
+            // 강등은 하지 않는다(바뀐 것이 없으니 내릴 것도 없다) — **확인만** 이어서 한다.
+            guard hasPendingLocked(userID, profileID) else { return .nothing }
+            return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, []) {
+                commitLocked(userID, profileID, invalidatedAt)
+            }
+        }
         guard let degraded = degrade() else { return .failure(profileID: profileID) }
         return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, degraded) {
             commitLocked(userID, profileID, invalidatedAt)
@@ -135,16 +147,17 @@ struct VoiceReplacementMarkerStore {
         // 확인 대상은 **모든 세대**의 합집합이다(중복 제거, 순서 유지).
         var seen = Set<String>()
         let unverified = buckets.keys.sorted().flatMap { buckets[$0] ?? [] }.filter { seen.insert($0).inserted }
-        // 확정 뒤 이 프로필에 다른 세대가 남았는지 — 남았으면 그 목소리를 다시 고를 수
-        // 있게 하면 안 된다(뒤 세대가 재시도할 때 그 사이 만든 알람을 벗긴다).
+        // ⚠ **남았는지는 '세대 값' 으로 가른다 — 알람 id 로 가르지 말 것**(Codex #703 P1).
+        // 두 세대가 **같은 알람들**에 영향을 주는 것이 보통이라, "내가 확인한 id 로만 이뤄진
+        // 칸" 을 지우면 **뒤 세대의 칸까지** 지운다 — 그 세대는 확정된 적이 없는데 목록이
+        // 비어 목소리가 풀리고, 그 사이 만든 알람을 뒤 세대의 재시도가 벗긴다.
         //
-        // ⚠ **저장된 값을 그때그때 다시 읽는다.** 확정이 없는 회차(세대 없는 옛 신호)도
-        // 같은 판정을 써야 하므로, 커밋 클로저가 세운 지역 변수에 기대지 않는다.
-        let verifiedIDs = Set(unverified)
-        let noGenerationRemains: () -> Bool = { [defaults] in
-            let latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
-            return !latest.contains { _, ids in !ids.allSatisfy { verifiedIDs.contains($0) } }
-        }
+        // 대신 확정으로 **`applied` 가 어디까지 올라갔는지**를 보고 가른다:
+        //  - 내 칸과 세대 없는 칸: 지운다(후자는 확정이 없어 **스스로는 영영 못 비운다**).
+        //  - `applied` 이하의 옛 칸: 이미 이 확정에 포함된 것이라 지운다(영구 잔류 방지).
+        //  - `applied` 보다 **뒤 세대**의 칸: 남긴다 — 그게 진짜 '아직 반영 안 됨' 이다.
+        let appliedField = appliedKey(userID, profileID)
+        let settledBox = SettledBox()
         return PendingApply(
             profileID: profileID,
             degraded: degraded,
@@ -153,27 +166,26 @@ struct VoiceReplacementMarkerStore {
                 { [defaults] in
                     commit()
                     var latest = (defaults.dictionary(forKey: key) as? [String: [String]]) ?? [:]
-                    latest.removeValue(forKey: mine)
-                    // ⚠ **이 회차가 확인을 마친 칸은 전부 비운다.** `unverified` 는 만들어질
-                    // 때 **모든 칸의 합집합**이었고 확정은 그 전부의 예약을 확인한 뒤에만
-                    // 온다 — 그러니 그 안에 든 id 로만 이뤄진 칸은 이미 끝난 칸이다.
-                    // 내 칸만 지우면 **확정 없이 남은 옛 칸**(예: 앞 회차가 확인에 실패해
-                    // 남긴 것, 확정이 아예 없는 세대 없는 칸)이 영원히 남아, 아래
-                    // `remaining` 이 늘 참이 되고 그 목소리가 **영구히 '정리 중'** 으로
-                    // 굳는다 — 다시 고를 수 없다.
-                    //
-                    // 스냅샷 **뒤에** 새로 얹힌 칸(다음 세대)은 확인하지 못한 id 를 갖고
-                    // 있으므로 남는다 — 그게 `remaining` 이 잡아야 할 진짜 대상이다.
-                    latest = latest.filter { _, ids in !ids.allSatisfy { verifiedIDs.contains($0) } }
+                    let applied = defaults.string(forKey: appliedField) ?? ""
+                    latest = latest.filter { generation, _ in
+                        generation != mine && !generation.isEmpty && generation > applied
+                    }
                     if latest.isEmpty {
                         defaults.removeObject(forKey: key)
                     } else {
                         defaults.set(latest, forKey: key)
                     }
+                    settledBox.allSettled = latest.isEmpty
                 }
             },
-            remainingAfterCommit: noGenerationRemains
+            remainingAfterCommit: { settledBox.allSettled }
         )
+    }
+
+    /// 확정 클로저가 계산한 "이 프로필의 모든 세대가 끝났는가" 를 담아 두는 상자.
+    /// 두 클로저가 **같은 값**을 봐야 해서 참조 타입으로 둔다.
+    private final class SettledBox {
+        var allSettled = false
     }
 
     /**
@@ -252,6 +264,16 @@ struct VoiceReplacementMarkerStore {
             commit()
             return remainingAfterCommit?() ?? true
         }
+    }
+
+    /// 확인이 남은 칸이 있는가. 락을 쥔 채로만 부른다.
+    private func hasPendingLocked(_ userID: String, _ profileID: String) -> Bool {
+        let key = pendingKey(userID, profileID)
+        if let buckets = defaults.dictionary(forKey: key) as? [String: [String]] {
+            return buckets.contains { !$0.value.isEmpty }
+        }
+        // 세대별로 나누기 전의 평평한 배열도 확인 대상이다.
+        return !(defaults.stringArray(forKey: key) ?? []).isEmpty
     }
 
     /// 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다.

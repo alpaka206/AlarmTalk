@@ -524,6 +524,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
 | 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | `confirmIfReservationsSettled` 가 **실패하는 한 곳**에서 `suppressReplacedProfile` | — |
+| 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
+| 변화 없는 회차도 확인은 잇는다 | — | `applyIfChanged` — 바뀐 게 없어도 남은 칸이 있으면 **확인만** 이어서 한다 | — |
 | 미확인 목록은 세대별로 | — | `pendingApply` 가 세대별 칸에 담고 **확인은 전부·제거는 내 것만** | — |
 | 정리 중인 교체 목소리 | `settlingVoiceProfileIds` — 목록엔 두되 흐리게, **자동 선택·저장 게이트에서 제외** | `isReplacementSettling` — 같은 규칙(`selectDefaultVoiceProfileIfNeeded`·저장 판정·배너) | — |
 | 표식 확정은 예약까지 | `commitLocked` — 디스크 실패 시 **메모리도 되돌려** 재시도 가능 | `confirmIfReservationsSettled` — 옛 예약 해제 실패면 확정 보류 | — |
