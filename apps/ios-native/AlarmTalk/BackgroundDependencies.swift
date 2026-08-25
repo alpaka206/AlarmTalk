@@ -89,6 +89,14 @@ final class BackgroundDependencies {
             ) {
                 settled = false
             }
+            // ⚠ **못 끊은 예약은 지문으로 드러나지 않는다**(Codex #703 P1).
+            // 리컨사일러가 다시 걸고 옛 손잡이 취소에 실패하면, 행에는 **새 톤 지문**이
+            // 새겨져 `needsReschedule` 이 "맞았다" 고 답한다 — 그대로 확정하면 회수된
+            // 목소리를 문 옛 예약이 살아 있는 채로 그 목소리가 다시 고를 수 있게 된다.
+            // 지문이 없던 갈래만이 아니라 **모든 행**에 대해 회수 목록을 확인한다.
+            if await alarmKit.releaseOwedHandles(forAlarmID: record.id, store: alarmStore) == false {
+                settled = false
+            }
         }
         guard settled, auth.session?.user.id == ownerID else { return false }
         pending.confirm()

@@ -371,6 +371,11 @@ internal fun MainViewModel.promoteVoiceDraft(
                         .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
                             repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
                         }
+                }.onSuccess { result ->
+                    // ⚠ **디스크에 못 남긴 확정은 확정이 아니다**(Codex #703 P1). 그대로
+                    // 고를 수 있게 두면 그 목소리로 만든 새 알람을 다음 회차가 '아직 안 내린
+                    // 교체' 로 보고 지운다 — 강등 자체가 성공했더라도 마찬가지다.
+                    if (!result.persisted) cascadeFailed = true
                 }.onFailure {
                     cascadeFailed = true
                     AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)

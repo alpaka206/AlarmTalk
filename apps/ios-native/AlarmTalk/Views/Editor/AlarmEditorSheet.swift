@@ -1024,9 +1024,17 @@ struct AlarmEditorSheet: View {
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
         // 말하는 자리: `unusableVoiceBanner`.
-        let profileReady = voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
-            voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
+        // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
+        // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
+        // 말하는 자리는 아래 배너다.
+        let settling = voiceStudio.isReplacementSettling(profileID)
+        let profileReady = !settling && (
+            voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
+                voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
+        )
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
+        // 정리 중은 구워 둔 음원이 있어도 막는다 — 그 알람이 곧 강등 대상이 된다.
+        if settling { return true }
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
@@ -2088,8 +2096,16 @@ struct AlarmEditorSheet: View {
     func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
         let selected = voiceStudio.selectedProfileID
-        let readyOwn = voiceStudio.profiles.filter { $0.isReadyForAlarmSelection }
-        let readyShared = voiceStudio.familyVoices.filter { $0.isReadyForAlarmSelection }
+        // ⚠ **정리 중인 목소리는 자동으로 고르지 않는다**(Codex #703 P1). 선택 시트의 탭만
+        // 막아서는 부족하다 — 그 목소리가 **마지막에 쓴 것**이면 새 편집기가 스스로 그것을
+        // 골라, 사용자는 아무것도 누르지 않았는데 그 목소리로 저장하게 된다. 뒤이은 정리가
+        // 그 새 알람을 되돌릴 수 없이 벗긴다. 시트에는 그대로 보인다(흐리게).
+        let readyOwn = voiceStudio.profiles.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
+        let readyShared = voiceStudio.familyVoices.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
 
         // 무료 등급은 서버가 시스템 보이스만 허용한다(tts.ts:684-693).
         // 비-시스템 프로필이 선택돼 있으면 시스템 보이스로 갈아끼워 403 을 예방한다.

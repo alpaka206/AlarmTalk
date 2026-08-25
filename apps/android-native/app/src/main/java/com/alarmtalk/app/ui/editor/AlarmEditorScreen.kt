@@ -104,6 +104,12 @@ internal enum class SaveBlockReason {
     RECORDING_MISSING,
     VOICE_MISSING,
     VOICE_UNAVAILABLE,
+
+    /**
+     * 교체 정리가 끝나지 않은 목소리. **잠깐이고 곧 풀린다** — 그래서 '쓸 수 없다' 와
+     * 문구를 나눈다(사용자가 목소리를 잃은 줄 알고 다시 만들지 않도록).
+     */
+    VOICE_SETTLING,
     WEATHER_LOCATION_MISSING,
     FORTUNE_INFO_MISSING,
     MESSAGE_PREPARING,
@@ -1120,21 +1126,31 @@ internal fun AlarmEditorScreen(
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
     var freeManualDialogOpen by remember { mutableStateOf(false) }
 
+    // ⚠ **정리 중인 목소리는 '고를 수 있는 것' 에서 뺀다**(Codex #703 P1). 선택 시트의 탭만
+    // 막아서는 부족하다 — 그 목소리가 **직전에 쓴 것**이거나 **이미 선택돼 있으면** 새 편집기가
+    // 자동으로 그것을 고르고 저장까지 통과해, 뒤이은 정리가 그 새 알람을 되돌릴 수 없이 벗긴다.
+    // 시트에는 그대로 보이되(흐리게) 자동 선택·저장 판정에서만 제외한다.
+    fun VoiceProfile.selectableNow() =
+        (status == null || status == "ready") && id !in settlingVoiceProfileIds
     val usableTtsProfileIds = (
-        visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+        visibleVoiceProfiles.filter { it.selectableNow() }.map { it.id } +
             familyVoices.filter {
-                (it.status == null || it.status == "ready") && it.isShared != false
+                (it.status == null || it.status == "ready") &&
+                    it.isShared != false &&
+                    it.id !in settlingVoiceProfileIds
             }.map { it.id }
         ).toSet()
 
     val readyOwnVoiceIds = visibleVoiceProfiles.filter {
-        (it.status == null || it.status == "ready") && it.isSystem != true
+        it.selectableNow() && it.isSystem != true
     }.map { it.id }
     val readyFamilyVoiceIds = familyVoices.filter {
-        (it.status == null || it.status == "ready") && it.isShared != false
+        (it.status == null || it.status == "ready") &&
+            it.isShared != false &&
+            it.id !in settlingVoiceProfileIds
     }.map { it.id }
     val readySystemVoiceIds = visibleVoiceProfiles.filter {
-        (it.status == null || it.status == "ready") && it.isSystem == true
+        it.selectableNow() && it.isSystem == true
     }.map { it.id }
 
     // 목소리 카드는 LazyColumn 아래쪽에 있어 작은 화면에서는 아직 구성되지 않을 수 있다.
@@ -1231,6 +1247,8 @@ internal fun AlarmEditorScreen(
             val text = editor.ttsTextForSave()
             when {
                 profileId == null -> SaveBlockReason.VOICE_MISSING
+                // 정리 중은 '쓸 수 없다' 와 다르다 — 곧 풀리므로 그렇게 말한다.
+                profileId in settlingVoiceProfileIds -> SaveBlockReason.VOICE_SETTLING
                 profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
                     SaveBlockReason.VOICE_UNAVAILABLE
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
@@ -1626,6 +1644,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_title
                                         SaveBlockReason.VOICE_MISSING,
                                         SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_title
+                                        SaveBlockReason.VOICE_SETTLING -> R.string.editor_block_voice_settling_title
                                         SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
                                         SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
@@ -1634,6 +1653,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.RECORDING_MISSING -> R.string.editor_block_recording_message
                                         SaveBlockReason.VOICE_MISSING -> R.string.editor_block_voice_message
                                         SaveBlockReason.VOICE_UNAVAILABLE -> R.string.editor_block_voice_unavailable_message
+                                        SaveBlockReason.VOICE_SETTLING -> R.string.msg_voice_replacement_settling
                                         SaveBlockReason.WEATHER_LOCATION_MISSING ->
                                             if (familyAlarmMode) R.string.editor_block_weather_family_message
                                             else R.string.editor_block_weather_message

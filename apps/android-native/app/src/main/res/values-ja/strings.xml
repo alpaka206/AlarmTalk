@@ -251,6 +251,7 @@
     <string name="editor_voice_select">声を選択</string>
     <string name="editor_voice_select_title">声を選ぶ</string>
     <string name="editor_voice_replacement_settling">音声を整理中です</string>
+    <string name="editor_block_voice_settling_title">まだ準備中です</string>
     <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度選んでください。</string>
     <string name="editor_voice_source_local">自分で録音</string>
     <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>

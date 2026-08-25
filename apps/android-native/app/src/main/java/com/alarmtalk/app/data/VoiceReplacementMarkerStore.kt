@@ -51,19 +51,22 @@ class VoiceReplacementMarkerStore(context: Context) {
      *
      * @param degrade 강등 개수. **null 이면 확정하지 않는다**(계정이 바뀌었거나 실패해
      *   다음 회차가 다시 집어야 하는 경우).
-     * @return 강등한 개수(건너뛰었으면 0).
+     * @return 강등 개수와 **디스크까지 남았는가**. 후자가 false 면 호출부가 그 목소리를
+     *   계속 '정리 중' 으로 두고 다음 회차가 같은 세대를 다시 집는다.
      */
     suspend fun applyIfChanged(
         userId: String?,
         profileId: String,
         invalidatedAt: String?,
         degrade: suspend () -> Int?,
-    ): Int = MUTEX.withLock {
-        if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock 0
-        if (!changedLocked(userId, profileId, invalidatedAt)) return@withLock 0
-        val degraded = degrade() ?: return@withLock 0
-        commitLocked(userId, profileId, invalidatedAt)
-        degraded
+    ): Result = MUTEX.withLock {
+        if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock Result.SKIPPED
+        // 첫 조회 시드가 디스크에 못 남으면 **기준선이 없는 것**이다 — 다음 회차가 그때의
+        // 세대를 '처음 봤다' 로 다시 적어 그 사이의 교체를 영영 놓친다. 실패를 알린다.
+        val seen = seenLocked(userId, profileId, invalidatedAt)
+        if (!seen.changed) return@withLock Result(0, seen.persisted)
+        val degraded = degrade() ?: return@withLock Result(0, persisted = false)
+        Result(degraded, commitLocked(userId, profileId, invalidatedAt))
     }
 
     /**
@@ -78,17 +81,33 @@ class VoiceReplacementMarkerStore(context: Context) {
         profileId: String,
         invalidatedAt: String?,
         degrade: suspend () -> Int?,
-    ): Int = MUTEX.withLock {
-        if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock 0
+    ): Result = MUTEX.withLock {
+        if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock Result.SKIPPED
         val generation = invalidatedAt?.takeIf { it.isNotBlank() }
-        if (generation != null && hasAppliedLocked(userId, profileId, generation)) return@withLock 0
-        val degraded = degrade() ?: return@withLock 0
-        if (generation != null) commitLocked(userId, profileId, generation)
-        degraded
+        if (generation != null && hasAppliedLocked(userId, profileId, generation)) return@withLock Result.SKIPPED
+        val degraded = degrade() ?: return@withLock Result(0, persisted = false)
+        // 세대를 모르는 옛 신호는 확정할 것이 없다 — 남길 값이 없으니 실패도 아니다.
+        val persisted = generation?.let { commitLocked(userId, profileId, it) } ?: true
+        Result(degraded, persisted)
     }
 
+    /**
+     * 한 회차의 결과. **강등 개수와 확정 여부를 분리한다** — 확정을 보류한 회차도 이미 내린
+     * 것은 사용자에게 알려야 하고(그 회차가 아니면 말할 기회가 없다), 확정하지 못한 세대는
+     * 호출부가 계속 '정리 중' 으로 두고 다음 회차가 다시 집어야 한다.
+     */
+    data class Result(val degraded: Int, val persisted: Boolean) {
+        companion object {
+            /** 할 일이 없었다 — 실패가 아니다. */
+            val SKIPPED = Result(0, persisted = true)
+        }
+    }
+
+    /** 첫 조회 시드의 결과. `changed` 가 false 면 강등할 것이 없다. */
+    private data class Seen(val changed: Boolean, val persisted: Boolean)
+
     /** 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다. */
-    private fun changedLocked(userId: String, profileId: String, invalidatedAt: String?): Boolean {
+    private fun seenLocked(userId: String, profileId: String, invalidatedAt: String?): Seen {
         val key = seenKey(userId, profileId)
         val incoming = invalidatedAt.orEmpty()
         if (!prefs.contains(key)) {
@@ -100,11 +119,16 @@ class VoiceReplacementMarkerStore(context: Context) {
             // 실패하면 메모리도 되돌려 이번 회차 안에서 다시 시도할 수 있게 한다.
             if (!prefs.edit().putString(key, incoming).commit()) {
                 prefs.edit().remove(key).commit()
+                Log.w(TAG, "Failed to seed replacement baseline; leaving it retryable")
+                return Seen(changed = false, persisted = false)
             }
-            return false
+            return Seen(changed = false, persisted = true)
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
-        return incoming > prefs.getString(key, "").orEmpty()
+        return Seen(
+            changed = incoming > prefs.getString(key, "").orEmpty(),
+            persisted = true,
+        )
     }
 
     /**

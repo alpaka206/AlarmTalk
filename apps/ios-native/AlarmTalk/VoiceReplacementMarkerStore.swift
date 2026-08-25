@@ -109,7 +109,18 @@ struct VoiceReplacementMarkerStore {
         if unverified != carried { defaults.set(unverified, forKey: key) }
         return PendingApply(profileID: profileID, degraded: degraded, unverified: unverified) { [defaults] in
             commit()
-            defaults.removeObject(forKey: key)
+            // ⚠ **이 회차가 확인한 id 만 지운다 — 키를 통째로 비우지 말 것**(Codex #703 P1).
+            // 같은 프로필의 **다음 세대**가 앞 세대의 확인을 기다리는 동안 같은 키에 자기
+            // id 를 얹는다. 앞 세대가 먼저 확정하며 키를 비우면 **뒤 세대의 미확인 목록이
+            // 사라지고**, 그 세대는 강등할 행이 남아 있지 않아(이미 톤이다) 다음 회차가
+            // 예약을 확인하지 않은 채 그냥 확정한다 — 실패했던 예약이 회수된 목소리를
+            // 그대로 물고 남는다.
+            let remaining = (defaults.stringArray(forKey: key) ?? []).filter { !unverified.contains($0) }
+            if remaining.isEmpty {
+                defaults.removeObject(forKey: key)
+            } else {
+                defaults.set(remaining, forKey: key)
+            }
         }
     }
 
