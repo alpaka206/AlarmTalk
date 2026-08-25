@@ -837,8 +837,6 @@
     <string name="msg_voice_replace_cleanup_failed">声は変わりましたが、以前のアラームの整理が終わりませんでした。声タブを更新してください。</string>
     <string name="msg_voice_preview_required">文章が変わりました。新しい文章を最後まで聴いてから保存してください。</string>
     <string name="msg_voice_consent_required">声を作るには音声情報の利用同意が必要です。その他 → 規約と同意から、もう一度同意してください。</string>
-    <string name="voices_limit_title">今月の声はもう作りました</string>
-    <string name="voices_limit_message">声は月に1つ作れます。次は来月に作れます。今の声を削除しても今月は作れません。</string>
     <string name="voices_my_voices_title">自分の声</string>
     <string name="voices_shared_voices_title">共有された声</string>
     <string name="voices_system_voices_title">標準の声</string>

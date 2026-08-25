@@ -326,7 +326,6 @@ internal fun VoiceProfileManagementPanel(
     }
     var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
-    var voiceLimitNoticeOpen by remember { mutableStateOf(false) }
     // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
     var ownSectionExpanded by remember { mutableStateOf(true) }
     var sharedSectionExpanded by remember { mutableStateOf(true) }
@@ -380,7 +379,6 @@ internal fun VoiceProfileManagementPanel(
                 it.status?.trim()?.lowercase() != "failed"
         }
     }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     // ⚠ **슬롯이 찼다고 폼을 막지 않는다**(2026-08-12 확정).
     // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**에서
     // "기존 목소리를 교체할까요"(`replaceExistingChecked`)를 묻는다. 예전에는 여기서
@@ -388,20 +386,23 @@ internal fun VoiceProfileManagementPanel(
     //
     // 막는 기준은 **월 등록 한도 하나**다(아래 `monthlyExhausted`) — 그건 교체해도 풀리지
     // 않으므로, 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
-    // 다만 **초안이 이미 떠 있으면**(pendingVoiceDraft) 새로 시작하지 않는다 — 그건 한도가
-    // 아니라 '결정을 안 끝낸 등록이 하나 있다' 는 뜻이라 그 결정부터 마쳐야 한다.
-    val canOpenCreateForm = canCreateVoice && pendingVoiceDraft == null
+    //
+    // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft == null`
+    // 을 함께 봤다). 초안은 **저장하지 않으면 없는 것**이라, 화면을 정상적으로 나가면 이미
+    // 지워진다 — 남아 있다는 건 앱이 죽었다는 뜻이지 사용자가 결정을 미뤘다는 뜻이 아니다.
+    // 그걸 근거로 "먼저 끝내라" 고 하면, 사용자는 **이미 사라진 화면**을 마치라는 말을 듣는다.
+    // 서버가 새 등록을 받을 때 옛 초안을 버리고(`discardAbandonedDrafts`), 아무도 다시
+    // 시작하지 않는 초안은 cron 이 1시간 뒤 거둔다(`DRAFT_VOICE_TTL_HOURS`).
+    val canOpenCreateForm = canCreateVoice
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
-    // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    // (유지/삭제를 골라야만 끝난다).
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
-    // promote 직후 사전렌더 진행 화면 — 등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지해야
+    // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
-    val maxProfilesReachedMessage =
-        stringResource(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
         if (invalidateGreetingPreview) greetingPreviewRequestId += 1
@@ -1349,11 +1350,7 @@ internal fun VoiceProfileManagementPanel(
             val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0
             Button(
                 onClick = {
-                    when {
-                        !canCreateVoice -> voicePlanGateOpen = true
-                        canOpenCreateForm -> showCreateForm = true
-                        else -> voiceLimitNoticeOpen = true
-                    }
+                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
                 colors = wakerButtonColors(),
@@ -1494,20 +1491,6 @@ internal fun VoiceProfileManagementPanel(
                     ),
                 )
             }
-    }
-
-    if (voiceLimitNoticeOpen) {
-        IosAlertDialog(
-            title = stringResource(R.string.voices_limit_title),
-            message = stringResource(R.string.voices_limit_message),
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
-                    onClick = { voiceLimitNoticeOpen = false },
-                ),
-            ),
-            onDismiss = { voiceLimitNoticeOpen = false },
-        )
     }
 
     if (voicePlanGateOpen) {

@@ -559,14 +559,32 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
   });
 
-  it('draft 슬롯이 차 있으면 403 VOICE_LIMIT_REACHED', async () => {
+  // ⚠ **남은 초안은 거절 사유가 아니라 버릴 것이다**(2026-08-25 지시).
+  // 초안은 저장하지 않으면 없는 것이고, 남아 있다는 건 앱이 죽었다는 뜻이지 사용자가
+  // 결정을 미뤘다는 뜻이 아니다 — 새로 시작하는 것을 '옛 초안을 버린다' 로 읽는다.
+  it('남은 초안이 있으면 거절하지 않고 버린 뒤 진행한다', async () => {
     pushPaidPlan();
-    mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
+    // 선검사·트랜잭션 안 두 번 모두 '초안이 하나 있다' 로 답하고, 버릴 초안 행을 준다.
+    mockDB.pushResultFor('AS draft_count', [{ draft_count: 1, official_count: 0 }]);
+    mockDB.pushResultFor('as draft_count', [{ draft_count: 1, official_count: 0 }]);
+    mockDB.pushResultFor('SELECT id, elevenlabs_voice_id FROM voice_profiles', [
+      { id: 'draft-old', elevenlabs_voice_id: 'elv-old' },
+    ]);
+    // 매처를 좁게 — 넓게 잡으면 완료 UPDATE(ready 전환)까지 삼켜 500 이 난다.
+    mockDB.pushResultFor("SET deleted_at = datetime('now')", [], 1);
+    // 버리는 과정이 중간 쿼리를 여럿 쓰므로 FIFO 로는 자리가 어긋난다 — 완료 UPDATE 도
+    // 매처로 집는다(0행이면 'Voice draft was removed during cloning.' 로 500).
+    mockDB.pushResultFor("status = 'processing'", [], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
-    expect(body.error).toContain('1');
+    expect(res.status).toBe(201);
+    const discard = mockDB.calls.find(
+      (call) =>
+        call.sql.includes('UPDATE voice_profiles') &&
+        call.sql.includes('deleted_at = datetime') &&
+        call.sql.includes('COALESCE(is_draft, 0) = 1'),
+    );
+    expect(discard, '옛 초안을 소프트 삭제해야 한다').toBeDefined();
   });
 
   // ⚠ **official 슬롯이 차 있어도 초안은 만들 수 있다**(2026-08-12 확정).
@@ -589,13 +607,27 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(res.status).toBe(201);
   });
 
-  // draft 슬롯 한도는 그대로 본다 — 동시에 여러 초안을 두는 것은 별개 축이다.
-  it('draft 슬롯이 차 있으면 여전히 403', async () => {
+  // 버린 초안의 외부 자원(provider 보이스·R2)은 큐로 넘겨 cron 이 거둔다 — 여기서
+  // 직접 지우면 실패했을 때 되돌릴 수 없다.
+  it('버린 초안의 외부 자원을 삭제 큐에 적는다', async () => {
     pushPaidPlan();
-    mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
+    mockDB.pushResultFor('AS draft_count', [{ draft_count: 1, official_count: 0 }]);
+    mockDB.pushResultFor('as draft_count', [{ draft_count: 1, official_count: 0 }]);
+    mockDB.pushResultFor('SELECT id, elevenlabs_voice_id FROM voice_profiles', [
+      { id: 'draft-old', elevenlabs_voice_id: 'elv-old' },
+    ]);
+    // 매처를 좁게 — 넓게 잡으면 완료 UPDATE(ready 전환)까지 삼켜 500 이 난다.
+    mockDB.pushResultFor("SET deleted_at = datetime('now')", [], 1);
+    // 버리는 과정이 중간 쿼리를 여럿 쓰므로 FIFO 로는 자리가 어긋난다 — 완료 UPDATE 도
+    // 매처로 집는다(0행이면 'Voice draft was removed during cloning.' 로 500).
+    mockDB.pushResultFor("status = 'processing'", [], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트3'));
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('VOICE_LIMIT_REACHED');
+    expect(res.status).toBe(201);
+    const queued = mockDB.calls.find((call) =>
+      call.sql.includes('pending_external_deletions'),
+    );
+    expect(queued, 'provider 보이스를 외부 삭제 큐에 적어야 한다').toBeDefined();
   });
 
   it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {

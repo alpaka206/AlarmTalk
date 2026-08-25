@@ -159,6 +159,72 @@ function currentKstMonthSql(): string {
   return "strftime('%Y-%m', 'now', '+9 hours')";
 }
 
+/**
+ * **버려진 초안을 지운다** — 새 등록을 시작할 때 같은 트랜잭션에서 부른다.
+ *
+ * 초안은 **저장하지 않으면 없는 것**이다. 앱은 등록 화면을 나갈 때 경고하고 지우지만
+ * (`draftExitWarningOpen` / `exitWarningOpen`), 앱이 죽거나 삭제 요청이 실패하면 행이 남는다.
+ * 그건 사용자가 결정한 상태가 아니라 사고의 잔해이므로, **새로 시작하는 순간 버린다.**
+ *
+ * 알람은 초안을 가리킬 수 없으므로(초안은 고를 수 없다) 철회(`revokeDeletedVoices`)는
+ * 필요 없다. 지울 것은 프로필 행·프리렌더 큐·원본 업로드·미리듣기로 만든 오디오뿐이다.
+ * 외부 자원(provider 보이스·R2 오브젝트)은 큐에 적어 cron 이 거둔다.
+ */
+async function discardAbandonedDrafts(tx: DbExecutor, ownerIds: string[]): Promise<number> {
+  const ph = ownerIds.map(() => '?').join(',');
+  const drafts = await tx.execute({
+    sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
+          WHERE user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1 AND status != 'failed'`,
+    args: ownerIds,
+  });
+  let discarded = 0;
+  for (const row of drafts.rows) {
+    const draftId = String(row.id);
+    // 소프트 삭제를 **먼저 클레임**한다 — 그 사이 승격(is_draft=0)된 행의 클론을 큐에
+    // 넣어 파기하는 TOCTOU 를 막는다(`cleanupStaleDraftVoices` 와 같은 순서).
+    const claimed = await tx.execute({
+      sql: `UPDATE voice_profiles
+            SET deleted_at = datetime('now'), updated_at = datetime('now')
+            WHERE id = ? AND COALESCE(is_draft, 0) = 1 AND deleted_at IS NULL`,
+      args: [draftId],
+    });
+    if ((claimed.rowsAffected ?? 0) === 0) continue;
+    await tx.execute({
+      sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      args: [draftId],
+    });
+    await enqueueExternalDeletion(
+      tx,
+      'elevenlabs_voice',
+      row.elevenlabs_voice_id as string | null,
+    );
+    const assets = await tx.execute({
+      sql: `SELECT audio_object_key FROM generated_audio_assets
+            WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
+      args: [draftId],
+    });
+    const uploads = await tx.execute({
+      sql: 'SELECT object_key FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [draftId],
+    });
+    await enqueueExternalDeletionsBatch(tx, 'r2_object', [
+      ...assets.rows.map((asset) => asset.audio_object_key as string | null),
+      ...uploads.rows.map((upload) => upload.object_key as string | null),
+    ]);
+    await tx.execute({
+      sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [draftId],
+    });
+    await tx.execute({
+      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
+      args: [draftId],
+    });
+    discarded += 1;
+  }
+  return discarded;
+}
+
 // 원장은 '이 달에 정식 목소리를 몇 번 바꿨나' 만 센다(월 1회 한도). 어느 프로필인지는
 // 판정에 쓰이지 않아 #90 에서 컬럼째 걷었다 — 인자도 함께 없앤다.
 async function reserveMonthlyOfficialVoiceChange(
@@ -1715,15 +1781,10 @@ voiceProfile.post('/clone', async (c) => {
       // `replace_existing` 이 생기면서 사라졌다 — 승격은 이제 기존 행을 **재사용**한다.
       // 월 등록 한도(`reserveMonthlyDraftAttempt`)는 그대로 남아 있어, 한 달에 한 번이라는
       // 규칙은 여기서 풀리지 않는다.
-      if (draftLimitReached) {
-        return c.json(
-          {
-            error: `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`,
-            error_code: 'VOICE_LIMIT_REACHED',
-          },
-          403,
-        );
-      }
+      // ⚠ **초안이 남아 있다고 거절하지 않는다**(2026-08-25 지시). 아래 예약 트랜잭션이
+      // 같은 스냅샷에서 그 초안을 **버리고** 진행한다 — 이유는 그쪽 주석에 있다.
+      // 이 선검사는 official 슬롯 수를 세는 용도로만 남는다(로그·지표).
+      void draftLimitReached;
     }
 
     if (!audioFile || !name) {
@@ -1808,7 +1869,18 @@ voiceProfile.post('/clone', async (c) => {
       });
       const slotRow = slotCounts.rows[0];
       if (Number(slotRow?.draft_count ?? 0) >= MAX_DRAFT_VOICE_PROFILES) {
-        return { status: 'voice_limit' as const, ledgerId: null };
+        // ⚠ **남은 초안은 거절 사유가 아니라 버릴 것이다**(2026-08-25 지시).
+        // 초안은 **저장하지 않으면 없는 것**이다 — 앱은 등록 화면을 나갈 때 지우고,
+        // 못 지운 채 죽었더라도 그건 사용자가 결정한 상태가 아니라 **사고의 잔해**다.
+        // 그걸 근거로 새 등록을 막으면, 사용자는 자기가 만든 적 없는 것 때문에
+        // "먼저 끝내라" 는 말을 듣는다(그 화면은 이미 사라졌는데).
+        //
+        // 그래서 **새로 시작하는 것 자체를 '옛 초안을 버린다' 는 뜻으로** 읽는다.
+        // cron 의 `cleanupStaleDraftVoices`(TTL 1시간)는 아무도 다시 시작하지 않는
+        // 초안을 거두는 뒷받침이고, 이 갈래는 그보다 먼저 오는 사용자 의사다.
+        //
+        // 월 등록 한도는 여기서 풀리지 않는다 — 그건 **확정**에서만 소모된다.
+        await discardAbandonedDrafts(tx, ids);
       }
       // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면
       // 등록 후 eviction 이 후보 부족으로 짧게 끝나 상한 초과가 지속된다 → enroll·쿼터 소모 전에
@@ -1835,15 +1907,6 @@ voiceProfile.post('/clone', async (c) => {
       });
       return { status: 'ok' as const, ledgerId: null };
     });
-    if (insertResult.status === 'voice_limit') {
-      return c.json(
-        {
-          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
-          error_code: 'VOICE_LIMIT_REACHED',
-        },
-        403,
-      );
-    }
     if (insertResult.status === 'clone_capacity') {
       return c.json(
         {

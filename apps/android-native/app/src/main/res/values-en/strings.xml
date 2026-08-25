@@ -829,8 +829,6 @@ for a smooth and secure experience.</string>
     <string name="msg_voice_replace_cleanup_failed">The voice was replaced, but tidying up your old alarms did not finish. Please refresh the Voices tab.</string>
     <string name="msg_voice_preview_required">The preview text changed. Listen to the new one all the way through, then save.</string>
     <string name="msg_voice_consent_required">Creating a voice needs your consent to use voice data. Go to More → Terms &amp; consents and agree again.</string>
-    <string name="voices_limit_title">Monthly voice limit reached</string>
-    <string name="voices_limit_message">You can create one voice per month. Your next one is available next month — deleting this voice will not give this month back.</string>
     <string name="voices_my_voices_title">My voices</string>
     <string name="voices_shared_voices_title">Shared with me</string>
     <string name="voices_system_voices_title">Built-in voices</string>
