@@ -314,6 +314,51 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     }
   });
 
+  // **교체 진행률은 '지금 목소리로 만든 클립' 만 센다** — 옛 클립은 전부 audio_url 을 들고
+  // 있어, 개수만 세면 첫 호출부터 완료로 보이고 클라의 구동 루프가 곧바로 멈춘다(프리셋
+  // 절반이 지운 목소리로 남는다).
+  it('교체 진행률은 옛 목소리로 만든 클립을 세지 않는다', async () => {
+    const db = await migratedDb();
+    try {
+      await db.batch([
+        "INSERT INTO users (id, email, name) VALUES ('u1','a@b.c','나')",
+        `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
+         VALUES ('vp1','u1','엄마','ready','eleven-NEW',0)`,
+        `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+         VALUES ('m-old','u1','vp1','옛 인사','greeting','ko',0,1,'r2://old')`,
+        `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+         VALUES ('m-new','u1','vp1','새 인사','greeting','ko',1,1,'r2://new')`,
+        `INSERT INTO generated_audio_assets
+           (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+            language, request_hash, text, audio_url)
+         VALUES ('ga-old','u1','vp1','m-old','elevenlabs','eleven-OLD','m1','ko','h-old','옛','r2://old')`,
+        `INSERT INTO generated_audio_assets
+           (id, user_id, voice_profile_id, message_id, provider, provider_voice_id, model_id,
+            language, request_hash, text, audio_url)
+         VALUES ('ga-new','u1','vp1','m-new','elevenlabs','eleven-NEW','m1','ko','h-new','새','r2://new')`,
+      ]);
+
+      const counted = await db.execute({
+        sql: `SELECT COUNT(DISTINCT m.id) AS count
+                FROM messages m
+                JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+                JOIN generated_audio_assets ga
+                  ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+               WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
+                 AND m.audio_url IS NOT NULL
+                 AND ga.provider_voice_id = vp.elevenlabs_voice_id`,
+        args: ['vp1'],
+      });
+
+      expect(
+        Number(counted.rows[0]!.count),
+        '옛 목소리로 만든 클립까지 세면 첫 호출부터 완료로 보여 구동 루프가 멈춘다',
+      ).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it('마이그레이션 #105가 전달 완료 custom 음원을 구분한다', async () => {
     const db = await migratedDb();
     const cols = await db.execute("PRAGMA table_info('alarm_recipient_state')");

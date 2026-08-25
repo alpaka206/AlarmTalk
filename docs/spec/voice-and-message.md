@@ -174,7 +174,12 @@
     않고**(iOS 는 목록에서 가린다) 이유를 말한다 — 올리는 순간 그 목소리로 새 알람을 만들 수
     있는데, 표식이 확정되지 않았으므로 다음 회차가 그 새 알람까지 함께 내린다. 다음 정리가
     확정되면 곧바로 풀린다.
-  - **지문이 없던 시절의 예약은 이 경로에서 직접 다시 건다.** 리컨사일러는 저장된 지문이
+  - **교체 진행률은 '지금 목소리로 만든 클립' 만 센다.** 교체 회차는 옛 클립이 전부 음원을
+    들고 있어, 개수만 세면 첫 호출부터 완료로 보이고 앱의 구동 루프가 곧바로 멈춘다 —
+    프리셋 절반이 지운 목소리로 남은 채 다음 cron 을 기다리게 된다.
+  - **지문이 없던 시절의 예약은 이 경로에서 직접 다시 건다.** 새로 걸고 나서 옛 예약을 푼다
+    (순서를 뒤집으면 실패했을 때 무예약이 된다) — 안 풀면 회수된 목소리를 문 예약이 행에서
+    손댈 수 없는 채로 남는다. 리컨사일러는 저장된 지문이
     없으면 물러서는데(옛 행을 함부로 다시 걸지 않으려는 판단), 그걸 '맞았다' 로 읽고 세대를
     확정하면 회수된 목소리를 문 예약을 그대로 둔 채 **다시 고칠 기회가 사라진다.** 강등 대상은 프로필 id 로만
     고르므로, 먼저 노출하면 그 사이에 만든 **새 목소리 알람까지** 되돌릴 수 없이 벗긴다.
@@ -517,6 +522,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
+| 같은 시각 충돌 알람 끄기 | `getEnabledAtTime` → `enabled=false`(pull 임포트) | `conflictingAlarms` → `enabled=false` + 예약 취소(같은 자리) | — |
 | 전달 세대 ACK 전 영속 | `NonCancellable` Room 쓰기 | `markRemoteDeliveryVersion` → 동기 저장 확인 후 ACK | `POST /alarm/:id/received` |
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |

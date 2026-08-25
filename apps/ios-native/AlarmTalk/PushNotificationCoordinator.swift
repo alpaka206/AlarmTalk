@@ -418,8 +418,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             var pendingApplies: [VoiceReplacementMarkerStore.PendingApply] = []
             // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께
             // 무효가 되는데, 내 목록만 보면 공유받은 기기는 푸시를 놓쳤을 때 영영 모른다.
+            // ⚠ **가려진 목소리도 본다**(`authoritativeProfiles`) — 정리에 실패해 목록에서
+            // 가린 그 프로필이야말로 다시 집어야 할 대상이다. 거른 목록으로 훑으면 사용자에게
+            // "새로고침해 주세요" 라고 해 놓고 새로고침이 아무 일도 하지 않는다.
             let markerCandidates: [(id: String, invalidatedAt: String?)] =
-                deps.voiceStudio.profiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
+                deps.voiceStudio.authoritativeProfiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
                 deps.voiceStudio.familyVoices.map { ($0.id, $0.customAudioInvalidatedAt) }
             for candidate in markerCandidates {
                 // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새

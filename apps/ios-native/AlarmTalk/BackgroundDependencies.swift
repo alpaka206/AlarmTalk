@@ -55,8 +55,19 @@ final class BackgroundDependencies {
             // 목소리를 문 예약을 그대로 둔 채 세대를 확정해 **다시는 고칠 기회가 없다.**
             // 이 경로에서는 직접 다시 건다 — 성공하면 지문이 새겨져 이후 판정도 정상화된다.
             if record.enabled, record.alarmKitID != nil, record.scheduledSoundFingerprint == nil {
-                if await alarmKit.schedule(record: record, store: alarmStore) { continue }
-                settled = false
+                // ⚠ **새로 걸고 나서 옛것을 푼다.** `schedule` 은 새 UUID 로 예약하고 행의
+                // 핸들만 갈아 끼우므로, 옛 예약을 취소하지 않으면 **회수된 목소리를 문 예약이
+                // 그대로 남는다** — 행에서 핸들이 사라져 다시 손댈 수도 없다.
+                // 순서를 뒤집지 않는 이유는 리컨사일러와 같다(실패 시 무예약이 최악).
+                let previous = record
+                guard await alarmKit.schedule(record: record, store: alarmStore) else {
+                    settled = false
+                    continue
+                }
+                if let previousHandle = previous.alarmKitID,
+                   alarmStore.record(id: previous.id)?.alarmKitID != previousHandle {
+                    await alarmKit.cancelScheduledAlarm(record: previous)
+                }
                 continue
             }
             if AlarmScheduleReconciler.needsReschedule(

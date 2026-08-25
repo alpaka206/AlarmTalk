@@ -469,6 +469,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 목소리를 주지만, 이 기기의 직접 입력 알람 정리(강등·예약)가 끝나지 않았으면
             // 그 사이 만든 새 알람을 다음 회차가 함께 지운다 — 강등 대상은 프로필 id 로만
             // 고르기 때문이다. 안드로이드 승격 경로도 같은 자리에서 목록에서 뺀다.
+            // ⚠ **가려진 목소리도 '접근 가능' 하고 '판정 대상' 이다.** 아래 강등 판정과
+            // 교체 표식 대조는 `authoritativeProfiles`(거르지 않은 서버 목록)를 본다 —
+            // 거른 목록으로 판단하면 (a) 그 목소리를 쓰는 프리셋 알람이 '접근권 상실' 로
+            // 되돌릴 수 없이 벗겨지고, (b) 미확정 표식을 다시 집을 기회가 사라진다.
+            authoritativeProfiles = resolvedProfiles
             profiles = resolvedProfiles.filter { !replacementSuppressedProfileIDs.contains($0.id) }
             familyVoices = familyResult
             // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
@@ -1149,9 +1154,17 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 곧바로 풀린다(메모리 전용 — 재시작 후에는 새로고침이 다시 판단한다).
     private(set) var replacementSuppressedProfileIDs: Set<String> = []
 
+    /// 서버가 준 목록 **그대로**(가리기 전). 강등·표식 판정은 언제나 이걸 본다.
+    private(set) var authoritativeProfiles: [VoiceProfile] = []
+
     func suppressReplacedProfile(_ profileID: String) {
         guard !profileID.isEmpty else { return }
         replacementSuppressedProfileIDs.insert(profileID)
+        if !authoritativeProfiles.contains(where: { $0.id == profileID }),
+           let hidden = profiles.first(where: { $0.id == profileID }) {
+            // 아직 새로고침 전이면 권위 목록에도 남겨 둔다(판정에서 사라지면 안 된다).
+            authoritativeProfiles.append(hidden)
+        }
         profiles = profiles.filter { $0.id != profileID }
     }
 
@@ -1220,7 +1233,9 @@ final class VoiceStudioViewModel: ObservableObject {
         ownerUserId: String?
     ) -> Int {
         guard accessibleVoicesAreAuthoritative, let owner = ownerUserId?.nilIfBlank else { return 0 }
-        var accessible = Set(profiles.map(\.id) + familyVoices.map(\.id))
+        // 가려진 교체 목소리도 접근 가능하다 — 거른 목록으로 판단하면 그 목소리를 쓰는
+        // 프리셋 알람이 '접근권 상실' 로 되돌릴 수 없이 벗겨진다.
+        var accessible = Set(authoritativeProfiles.map(\.id) + familyVoices.map(\.id))
         #if DEBUG
         if let testAccessibleVoiceIDsOverride { accessible = testAccessibleVoiceIDsOverride }
         #endif

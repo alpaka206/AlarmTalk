@@ -2425,12 +2425,24 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     );
   }
 
+  // ⚠ **지금 목소리로 만든 클립만 센다.** 교체 회차(`refresh_existing`)는 옛 클립이 전부
+  // `audio_url` 을 들고 있어, 개수만 세면 첫 호출부터 21/21 이 나온다 — 클라의 구동 루프는
+  // 세 번 연속 진행이 없으면 멈춘 것으로 보고 빠져나가므로(안드로이드 `startPrerenderDrive`),
+  // **프리셋 절반이 지운 목소리로 남은 채** 다음 cron 을 기다리게 된다.
+  // 판정 기준은 `findMissingStockTargets` 의 완료 판정과 같다 — 게시된 자산의
+  // provider 보이스가 지금 프로필의 것과 같은가.
   const countGenerated = async () =>
     Number(
       (
         await db.execute({
-          sql: `SELECT COUNT(*) AS count FROM messages
-                WHERE voice_profile_id = ? AND COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
+          sql: `SELECT COUNT(DISTINCT m.id) AS count
+                  FROM messages m
+                  JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+                  JOIN generated_audio_assets ga
+                    ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+                 WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
+                   AND m.audio_url IS NOT NULL
+                   AND ga.provider_voice_id = vp.elevenlabs_voice_id`,
           args: [id],
         })
       ).rows[0]?.count ?? 0,

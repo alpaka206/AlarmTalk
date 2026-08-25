@@ -425,6 +425,23 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // receivedRemote 신규 알람이면 곧바로 AlarmKit 스케줄.
             var scheduleSucceeded = true
             if mapped.originEnum == .receivedRemote && mapped.enabled {
+                // ⚠ **같은 시각에 내가 켜 둔 알람은 끈다**(안드로이드 pull 과 같은 규칙).
+                // 두 예약이 같은 분에 함께 서면 서로의 울림을 끊고, 받은 알람은 ACK 뒤
+                // 서버 행이 사라져 서버 쪽 슬롯 정리(`claimTargetedAlarmSlot`)도 손댈 수
+                // 없다. **지우지는 않는다** — 목록에 남겨 언제든 다시 켤 수 있게 한다.
+                // 대상은 '이 수신자의' 알람만이다 — 같은 기기에 남은 앞 계정 알람을 끄면
+                // 그 계정은 영영 모른 채 안 울린다.
+                for conflicting in store.conflictingAlarms(
+                    hour: mapped.hour,
+                    minute: mapped.minute,
+                    excludingID: mapped.id,
+                    ownerUserId: pullOwnerUserID
+                ) where conflicting.enabled && conflicting.remoteAlarmId != remote.id {
+                    var disabled = conflicting
+                    disabled.enabled = false
+                    _ = store.upsertPreservingServerSyncFields(disabled)
+                    await alarmKit.cancelScheduledAlarm(record: conflicting)
+                }
                 scheduleSucceeded = await alarmKit.schedule(record: mapped, store: store)
             }
             await SocialNotificationTracker.notifyReceivedAlarm(
