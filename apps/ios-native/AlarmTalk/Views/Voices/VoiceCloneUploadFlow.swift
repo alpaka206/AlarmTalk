@@ -55,6 +55,9 @@ struct VoiceCloneUploadFlow: View {
     @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
     @State private var localError: String?
     @State private var scriptExpanded = false
+    /// 선제 동의 시트를 띄우느라 멈춘 등록이 있는가 — 동의가 기록되면 **그 자리에서 이어서**
+    /// 등록한다. 안드로이드의 `SensitiveConsentRequest.resumeVoiceDrafts` 대응이다.
+    @State private var resumeSubmitAfterConsent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeDurationMs: Int {
@@ -187,6 +190,21 @@ struct VoiceCloneUploadFlow: View {
                 Task { await importAudioFile(source) }
             case .failure(let error):
                 localError = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
+            }
+        }
+        // ⚠ **동의를 받았으면 등록을 이어서 한다**(Codex #703 P2). 시트의 CTA 는
+        // '동의하고 목소리 만들기' 인데, 동의만 기록하고 끝나면 아무 일도 일어나지 않은
+        // 것처럼 보여 사용자가 등록을 다시 눌러야 한다는 걸 스스로 알아내야 한다.
+        .onChange(of: auth.consentSensitiveMissing) { _, _ in
+            guard resumeSubmitAfterConsent, unaskedSensitiveConsents.isEmpty else { return }
+            resumeSubmitAfterConsent = false
+            Task { await submit() }
+        }
+        // 시트를 그냥 닫았으면(동의 없이) 이어받기를 취소한다 — 안 그러면 한참 뒤 다른
+        // 이유로 목록이 바뀔 때 사용자가 누르지도 않은 등록이 시작된다.
+        .onChange(of: auth.pendingSensitiveConsent) { _, request in
+            if request == nil, !unaskedSensitiveConsents.isEmpty {
+                resumeSubmitAfterConsent = false
             }
         }
         .onChange(of: sourceMode) { _, newValue in
@@ -683,6 +701,10 @@ struct VoiceCloneUploadFlow: View {
                 types: auth.consentSensitiveMissing,
                 registeringVoice: true
             )
+            // **시트가 떴을 때만** 이어받는다. 모르는 유형이라 업데이트 게이트로 갔으면
+            // 이어받을 것이 없다 — 플래그를 켜 두면 한참 뒤 목록이 바뀔 때 사용자가 누르지도
+            // 않은 등록이 시작된다.
+            resumeSubmitAfterConsent = auth.pendingSensitiveConsent != nil
             return
         }
         // 인라인으로 받은 생체정보 동의를 **업로드 전에** 기록한다. 순서를 뒤집으면

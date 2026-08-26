@@ -107,6 +107,52 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.consentCollect.isEmpty, "그릴 수 없는 유형은 목록에서 빠진다")
         XCTAssertFalse(vm.consentNeedsCollection, "그릴 것이 없으면 화면을 띄우지 않는다")
         XCTAssertFalse(vm.consentUnsupported, "선택 유형은 버리고 지나간다 — 업데이트를 강요하지 않는다")
+        // ⚠ **완료 캐시도 필터링한 뒤 값으로 판정한다**(Codex #703 P2). 서버 플래그를 그대로
+        // 보면 '그릴 것 없음' 이라고 결론 내리고도 완료를 안 적어, 콜드 스타트마다 로딩
+        // 게이트가 동의 상태 응답을 기다린다(끊긴 네트워크에서는 타임아웃까지).
+        XCTAssertTrue(
+            ConsentCompletionStore().hasCompleted(
+                userID: "user-1",
+                policyVersion: AuthViewModel.currentPolicyVersion
+            ),
+            "받을 게 없다고 판단했으면 완료를 적어 다음 콜드 스타트를 즉시 통과시켜야 한다"
+        )
+    }
+
+    /// ⚠ **모르는 민감 동의를 조용히 버리지 않는다**(Codex #703 P2). 시트도 못 띄우고 그냥
+    /// 돌아오면 호출자(등록 플로우)는 멈추는데 화면에는 아무것도 안 떠서, 등록 버튼을 눌러도
+    /// **아무 일도 일어나지 않는다.**
+    func test_requestSensitiveConsent_모르는_유형은_업데이트_게이트로_보낸다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        let canProceed = vm.requestSensitiveConsent(types: ["voice_dna_v2"], registeringVoice: true)
+
+        XCTAssertFalse(canProceed, "받을 방법이 없으면 호출자는 멈춰야 한다")
+        XCTAssertNil(vm.pendingSensitiveConsent, "띄울 수 없는 시트를 만들지 않는다")
+        XCTAssertTrue(vm.consentUnsupported, "받을 방법이 없다는 사실은 업데이트 안내로 말한다")
+    }
+
+    /// 아는 유형이면 시트를 띄우고, 등록 문맥을 함께 넘긴다.
+    func test_requestSensitiveConsent_아는_유형은_등록_문맥으로_시트를_띄운다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        let canProceed = vm.requestSensitiveConsent(types: ["overseas_transfer"], registeringVoice: true)
+
+        XCTAssertFalse(canProceed)
+        XCTAssertEqual(vm.pendingSensitiveConsent?.types, ["overseas_transfer"])
+        XCTAssertEqual(vm.pendingSensitiveConsent?.registeringVoice, true, "동의 직후 목소리가 만들어진다는 걸 시트가 알아야 한다")
+        XCTAssertFalse(vm.consentUnsupported)
+    }
+
+    /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
+    func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        XCTAssertTrue(vm.requestSensitiveConsent(types: [], registeringVoice: true))
+        XCTAssertNil(vm.pendingSensitiveConsent)
     }
 
     /// ⚠ 모르는 **필수** 유형은 이 앱으로 받을 방법이 없다 — 동의 화면 대신 업데이트 게이트로

@@ -252,11 +252,26 @@ final class AuthViewModel: ObservableObject {
     ///
     /// 이미 유효한 동의는 서버 `sensitive_missing` 에서 빠지므로 여기 담기지 않는다 —
     /// **한 번 받은 동의를 다시 묻지 않는다**(`docs/spec/consent.md`).
-    func requestSensitiveConsent(types: [String], registeringVoice: Bool) {
-        guard pendingSensitiveConsent == nil else { return }
+    /// - Returns: 호출자가 **자기 동작을 그대로 이어서 해도 되는가**. false 면 멈춰야 한다 —
+    ///   시트가 떴거나 업데이트 게이트로 보냈다는 뜻이다. 멈춘 동작을 나중에 이어받을지는
+    ///   호출자가 정한다(`pendingSensitiveConsent` 가 떠 있으면 이어받을 수 있다).
+    @discardableResult
+    func requestSensitiveConsent(types: [String], registeringVoice: Bool) -> Bool {
         let wanted = types.filter { Self.sensitiveConsentTypes.contains($0) }
-        guard !wanted.isEmpty else { return }
+        // ⚠ **모르는 유형을 조용히 버리지 않는다**(Codex #703 P2). 이 앱으로 받을 방법이
+        // 없는 동의를 그냥 지나가면, 호출자는 '시트를 띄웠다' 고 믿고 자기 동작을 멈추는데
+        // 화면에는 아무것도 뜨지 않는다 — 등록 버튼을 눌러도 **아무 일도 일어나지 않는다.**
+        // 받을 방법이 없다는 사실을 말해 주는 자리는 업데이트 안내다.
+        if wanted.count != types.count {
+            consentUnsupported = true
+            return false
+        }
+        // 받을 것이 없으면 막지 않는다.
+        guard !wanted.isEmpty else { return true }
+        // 이미 시트가 떠 있으면 그것이 이 유형들을 덮는다 — 겹쳐 띄우지 않는다.
+        guard pendingSensitiveConsent == nil else { return false }
         pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice)
+        return false
     }
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
@@ -1078,7 +1093,12 @@ final class AuthViewModel: ObservableObject {
             consentStatusChecked = true
             // 더 받을 게 없으면 이 기기에 '완료' 를 적어 둔다 — 다음 콜드 스타트에서
             // 로딩 게이트를 즉시 통과시키기 위해서다. 받을 게 남았으면 적지 않는다.
-            if !status.needsConsent && !status.needsCollection {
+            //
+            // ⚠ **판정은 필터링한 뒤 값으로 한다**(Codex #703 P2). 서버 플래그를 그대로 보면,
+            // 앱이 모르는 **선택** 유형 하나 때문에 위에서 '그릴 것 없음' 으로 결론 내리고도
+            // 완료를 적지 않아 **콜드 스타트마다 로딩 게이트가 응답을 기다린다** — 느리거나
+            // 끊긴 네트워크에서는 타임아웃까지 앉아 있게 된다.
+            if !needsConsent && !consentNeedsCollection {
                 ConsentCompletionStore().markCompleted(
                     userID: session?.user.id,
                     policyVersion: Self.currentPolicyVersion
