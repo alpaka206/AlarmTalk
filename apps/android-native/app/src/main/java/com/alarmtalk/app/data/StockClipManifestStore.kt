@@ -62,18 +62,28 @@ object StockClipManifestStore {
      *   **아무것도 하지 않는다**(false).
      * @return 실제로 공개했는가.
      */
-    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): Boolean =
+    /**
+     * [save] 의 결과. **거절과 실패를 구분한다**(Codex #703 P1).
+     *
+     * 둘을 `false` 하나로 뭉치면 호출자가 잘못 판단한다 — 거절(더 새 매니페스트가 이미
+     * 나왔다)은 물러나는 게 맞지만, 실패(디스크 I/O)는 **아무도 공개하지 못한 상태**라
+     * 다시 시도해야 한다. 뭉치면 실패한 회차가 조용히 성공으로 끝나고, 완료 푸시를 놓친
+     * 기기에는 회수된 프리셋을 갈아 끼울 폴백이 남지 않는다.
+     */
+    enum class PublishResult { PUBLISHED, SUPERSEDED, FAILED }
+
+    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): PublishResult =
         // ⚠ **비교·쓰기·표 갱신이 한 임계구역이다**(Codex #703 P1). 비교만 잠그면 A 와 B 가
         // 둘 다 통과한 뒤 **쓰는 순서가 뒤집혀** A 가 B 를 덮을 수 있고, 두 writer 가 같은
         // `.tmp` 경로를 나눠 쓰기까지 한다. 파일 교체까지 잠근 채로 한다.
         synchronized(revisionLock) {
-            if (fetchTicket < publishedTicket) return false
+            if (fetchTicket < publishedTicket) return PublishResult.SUPERSEDED
             // ⚠ **실제로 갈아 끼운 뒤에만 표를 올린다**(Codex #703 P1). 쓰기가 실패했는데
             // 표만 올리면 디스크는 옛 매니페스트인데 뒤이은 응답이 전부 거절돼 **영영
             // 갱신되지 않는다** — 그 사이 캐시 쓰기는 옛 주소를 기준으로 새 바이트를 버린다.
-            if (!writeManifest(context, response)) return false
+            if (!writeManifest(context, response)) return PublishResult.FAILED
             publishedTicket = fetchTicket
-            return true
+            return PublishResult.PUBLISHED
         }
 
     /** 파일을 원자적으로 갈아 끼운다. 실패하면 false — 호출자가 표를 올리지 않는다. */

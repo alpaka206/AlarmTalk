@@ -106,11 +106,17 @@ class StockClipPrefetchWorker(
             // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
             val manifestTicket = StockClipManifestStore.beginFetch()
             val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
-            val manifestPublished = StockClipManifestStore.save(applicationContext, manifest, manifestTicket)
-            // ⚠ 공개하지 못했다 = **더 새 매니페스트가 이미 나왔다.** 이 회차의 목록으로
-            // 캐시를 갈아 끼우면 그 새 세대를 옛 바이트로 덮는다 — 아무것도 하지 않고
-            // 물러나면 그 새 매니페스트를 받은 쪽이 이어서 한다.
-            if (!manifestPublished) return@runCatching Result.success()
+            when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket)) {
+                // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
+                // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.
+                StockClipManifestStore.PublishResult.SUPERSEDED ->
+                    return@runCatching Result.success()
+                // ⚠ **디스크 쓰기 실패는 물러날 일이 아니다**(Codex #703 P1). 아무도 새
+                // 권위를 공개하지 못한 상태라, 여기서 성공으로 끝내면 완료 푸시를 놓친 기기에
+                // 회수된 프리셋을 갈아 끼울 폴백이 남지 않는다. 다시 온다.
+                StockClipManifestStore.PublishResult.FAILED -> return@runCatching Result.retry()
+                StockClipManifestStore.PublishResult.PUBLISHED -> Unit
+            }
             val allClips = manifest.clips
             // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
             // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.

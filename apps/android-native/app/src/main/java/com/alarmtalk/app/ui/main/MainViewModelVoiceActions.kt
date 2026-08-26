@@ -983,11 +983,12 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             // 표가 거절됐다 = **더 새 매니페스트가 이미 나왔다.** 그런데도 이 응답으로
             // `stockClips` 를 덮으면, 준비 판정이 **교체 이전 스냅샷**(전부 rendered=true)을
             // 보고 세대를 확정해 버린다 — 완료 푸시를 놓치면 되돌릴 폴백이 없다.
-            if (!com.alarmtalk.app.data.StockClipManifestStore.save(
+            // 거절이든 실패든, **디스크 권위가 되지 못한 응답은 판정의 권위도 아니다.**
+            if (com.alarmtalk.app.data.StockClipManifestStore.save(
                     getApplication(),
                     response,
                     manifestTicket,
-                )
+                ) != com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED
             ) {
                 return@onSuccess
             }

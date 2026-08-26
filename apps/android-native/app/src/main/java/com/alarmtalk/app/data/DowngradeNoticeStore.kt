@@ -46,6 +46,15 @@ class DowngradeNoticeStore(context: Context) {
 
     fun record(userId: String?, cause: Cause, count: Int) {
         if (userId.isNullOrBlank() || count <= 0) return
+        // ⚠ **읽기·합치기·쓰기를 통째로 잠근다**(Codex #703 P2). 전경 정리와
+        // `VoiceAccessSyncWorker` 가 **서로 다른 인스턴스로** 같은 계정에 동시에 적을 수
+        // 있는데, 둘이 같은 이전 값을 읽으면 나중 쓰기가 앞의 것을 통째로 덮는다 — 개수도
+        // 잃고, 이 저장소가 지키기로 한 **우선순위 병합**(액션이 있는 원인이 이긴다)도
+        // 깨진다. 잠금은 프로세스 전역이어야 한다(인스턴스마다 두면 소용없다).
+        synchronized(RECORD_LOCK) { recordLocked(userId, cause, count) }
+    }
+
+    private fun recordLocked(userId: String, cause: Cause, count: Int) {
         val previous = read(userId)
         // 확인 전에 또 강등되면 **합쳐서** 한 번만 알린다 — 모달을 두 번 띄우지 않는다.
         // 원인이 섞이면 무료 강등 쪽으로 말한다(그쪽이 복구 가능하다는 더 쓸모 있는 정보다).
@@ -55,10 +64,12 @@ class DowngradeNoticeStore(context: Context) {
         // 고칠 방법을 못 본다. 반대로 전부 FREE_PLAN 으로 뭉치면 유료 사용자에게 "무료로
         // 바뀌었어요" 라는 거짓말을 하게 된다.
         val mergedCause = if (previous == null) cause else minOf(previous.cause, cause)
+        // ⚠ `apply()` 가 아니라 `commit()` 이다 — 잠금을 놓기 전에 디스크에 남아야 다음
+        // 회차가 방금 합친 값을 읽는다(비동기로 미루면 그 사이 읽는 쪽이 옛 값을 본다).
         prefs.edit()
             .putString(causeKey(userId), mergedCause.name)
             .putInt(countKey(userId), mergedCount)
-            .apply()
+            .commit()
     }
 
     fun read(userId: String?): Notice? {
@@ -73,9 +84,18 @@ class DowngradeNoticeStore(context: Context) {
     /** 사용자가 '확인' 을 눌렀을 때만 부른다. */
     fun clear(userId: String?) {
         if (userId.isNullOrBlank()) return
-        prefs.edit().remove(causeKey(userId)).remove(countKey(userId)).apply()
+        // 지우는 것도 같은 잠금 아래에서 한다 — 합치는 중에 지워지면 방금 확인한 안내가
+        // 되살아난다(합친 값이 잠금 밖에서 뒤늦게 쓰인다).
+        synchronized(RECORD_LOCK) {
+            prefs.edit().remove(causeKey(userId)).remove(countKey(userId)).commit()
+        }
     }
 
     private fun causeKey(userId: String) = "pending_cause_$userId"
     private fun countKey(userId: String) = "pending_count_$userId"
+
+    private companion object {
+        /** `record`/`clear` 의 read-modify-write 를 직렬화한다 — 프로세스 전역이어야 한다. */
+        private val RECORD_LOCK = Any()
+    }
 }
