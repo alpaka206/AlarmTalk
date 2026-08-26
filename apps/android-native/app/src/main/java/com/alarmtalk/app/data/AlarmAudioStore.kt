@@ -519,7 +519,12 @@ class AlarmAudioStore(
     ): CachedAlarmAudio {
         require(bytes.isNotEmpty()) { "Voice audio must not be empty." }
         val existing = findCachedFile(resolvedCacheKey)
-        val stale = existing != null && cachedAudioIsStale(resolvedCacheKey, rawAudioUri)
+        // ⚠ **세대 표식이 없는 옛 캐시는 여기서 갈아 끼운다**(Codex #703 P1). 이미 바이트를
+        // 받아 온 자리라 다시 받는 비용이 없고, 이때 `rawAudioUri` 를 적어 두지 않으면
+        // 새로고침이 같은 키를 **매번 다시 고르고 매번 건너뛴다**(영원한 루프).
+        val stale = existing != null &&
+            (cachedAudioIsStale(resolvedCacheKey, rawAudioUri) ||
+                cachedAudioNeedsRevisionRefresh(resolvedCacheKey, rawAudioUri))
         if (existing != null && !stale) {
             val cached = existing
             val cachedUri = cached.toUri()
@@ -600,6 +605,24 @@ class AlarmAudioStore(
 
     fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean =
         cachedAudioIsStale(cacheKey, incomingRawAudioUri)
+
+    /**
+     * **세대 표식이 아예 없는 옛 캐시인가**(Codex #703 P1).
+     *
+     * 낡음 판정은 `audio_url` 비교 하나인데, `rawAudioUri` 를 적기 **전에** 받아 둔 캐시는
+     * 비교할 값이 없어 [cachedAudioIsStale] 이 늘 false 를 준다 — 제자리 목소리 교체가
+     * 일어나도 그 프리셋만 **영영 다시 받지 않고**, 알람이 회수된 옛 목소리로 계속 운다.
+     *
+     * ⚠ **[cachedAudioIsStale] 을 고치지 않는 이유**: 그 판정은 재생 경로도 본다.
+     * "모르면 낡지 않았다" 를 뒤집으면 알람마다 네트워크를 타고 **오프라인에서는 아예 못
+     * 쓴다**(그게 그 규칙의 존재 이유다). 그래서 **새로고침 선택**에서만 이 값을 함께 보고,
+     * 한 번 받아 두면 그때 표식이 적혀 다시 걸리지 않는다 — **한 번뿐인 보정**이다.
+     */
+    fun cachedAudioNeedsRevisionRefresh(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+        if (findCachedFile(cacheKey) == null) return false
+        if (incomingRawAudioUri?.takeIf { it.isNotBlank() } == null) return false
+        return readMetadata(cacheKey).rawAudioUri?.takeIf { it.isNotBlank() } == null
+    }
 
     /** 같은 message ID라도 서버의 R2 주소가 바뀌면 제자리 목소리 교체로 게시된 새 음원이다. */
     private fun cachedAudioIsStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {

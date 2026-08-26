@@ -382,8 +382,12 @@ final class AudioCacheStore {
         // 아무거나** 돌려준다 — 옛 파일이 뽑히면 메타는 이미 새 주소라 stale 도 아니어서
         // 지운 목소리가 계속 울린다(Codex #703 P1).
         let existingURL = cachedURL(for: cacheKey)
+        // ⚠ **세대 표식이 없는 옛 캐시는 여기서 갈아 끼운다**(Codex #703 P1). 이미 바이트를
+        // 받아 온 자리라 다시 받는 비용이 없고, 이때 `rawAudioUri` 를 적어 두지 않으면
+        // 새로고침이 같은 키를 **매번 다시 고르고 매번 건너뛴다**(영원한 루프).
         let stale = existingURL.map {
             Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+                || needsRevisionRefresh(cacheKey: cacheKey, remoteAudioUri: rawAudioUri)
         } ?? false
         if stale || !FileManager.default.fileExists(atPath: target.path) {
             do {
@@ -467,6 +471,22 @@ final class AudioCacheStore {
     nonisolated func isStale(cacheKey: String, remoteAudioUri: String?) -> Bool {
         guard let url = cachedURL(for: cacheKey) else { return false }
         return Self.isStaleCachedFile(at: url, storedFor: cacheKey, incomingAudioUri: remoteAudioUri)
+    }
+
+    /// **세대 표식이 아예 없는 옛 캐시인가**(Codex #703 P1).
+    ///
+    /// 낡음 판정은 `audio_url` 비교 하나인데, `rawAudioUri` 를 적기 **전에** 받아 둔 캐시는
+    /// 비교할 값이 없어 `isStale` 이 늘 false 를 준다 — 제자리 목소리 교체가 일어나도 그
+    /// 프리셋만 **영영 다시 받지 않고**, 알람이 회수된 옛 목소리로 계속 운다.
+    ///
+    /// ⚠ **`isStale` 을 고치지 않는 이유**: 그 판정은 재생 경로도 본다("모르면 stale 이
+    /// 아니다" — 뒤집으면 알람마다 네트워크를 타고 오프라인에서는 아예 못 쓴다).
+    /// **새로고침 선택**에서만 함께 보고, 한 번 받아 두면 표식이 적혀 다시 걸리지 않는다.
+    /// 안드로이드 짝은 `AlarmAudioStore.cachedAudioNeedsRevisionRefresh`.
+    nonisolated func needsRevisionRefresh(cacheKey: String, remoteAudioUri: String?) -> Bool {
+        guard cachedURL(for: cacheKey) != nil else { return false }
+        guard let incoming = remoteAudioUri, !incoming.isEmpty else { return false }
+        return (readMetadata(cacheKey: cacheKey)?.rawAudioUri ?? "").isEmpty
     }
 
     /// ⚠ **디렉터리 순서에 기대지 말 것.** 한 키에 본체가 둘 남아 있을 수 있다(확장자가

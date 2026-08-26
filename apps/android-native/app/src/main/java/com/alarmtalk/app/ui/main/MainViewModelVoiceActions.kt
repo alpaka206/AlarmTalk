@@ -981,7 +981,12 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
                 val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
                 val stale = clips.mapNotNull { clip ->
                     val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
-                        .filter { key -> audioStore.isCachedAudioStale(key, clip.audioUrl) }
+                        .filter { key ->
+                            audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                                // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
+                                // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
+                                audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
+                        }
                     keys.takeIf { it.isNotEmpty() }?.let { clip to it }
                 }
                 stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->

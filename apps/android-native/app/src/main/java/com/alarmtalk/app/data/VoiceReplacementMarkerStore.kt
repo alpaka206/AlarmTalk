@@ -146,14 +146,22 @@ class VoiceReplacementMarkerStore(context: Context) {
     fun setSettling(userId: String?, profileId: String, settling: Boolean): Boolean {
         val user = userId?.nilIfBlankOrNull() ?: return true
         if (profileId.isBlank()) return true
-        val key = settlingKey(user)
-        val previous = prefs.getStringSet(key, emptySet())?.toSet().orEmpty()
-        val next = if (settling) previous + profileId else previous - profileId
-        if (next == previous) return true
-        if (prefs.edit().putStringSet(key, next.toMutableSet()).commit()) return true
-        prefs.edit().putStringSet(key, previous.toMutableSet()).commit()
-        Log.w(TAG, "Failed to persist settling state; leaving it retryable")
-        return false
+        // ⚠ **집합 하나를 여럿이 고친다 — 읽기·고치기·쓰기를 통째로 잠근다**(Codex #703 P1).
+        // `SharedPreferences` 의 개별 연산이 스레드 안전한 것과 이 read-modify-write 가
+        // 안전한 것은 다르다. 전경 정리와 `VoiceAccessSyncWorker` 가 **서로 다른 인스턴스로**
+        // 동시에 부를 수 있는데, 둘이 같은 옛 집합을 읽으면 나중 쓰기가 앞의 추가를 지운다 —
+        // 빠진 프로필은 재시도가 남아 있는데도 고를 수 있게 되고, 그때 만든 알람을 그 재시도가
+        // 벗긴다. 잠금은 **프로세스 전역**이어야 한다(인스턴스마다 두면 소용없다).
+        synchronized(SETTLING_LOCK) {
+            val key = settlingKey(user)
+            val previous = prefs.getStringSet(key, emptySet())?.toSet().orEmpty()
+            val next = if (settling) previous + profileId else previous - profileId
+            if (next == previous) return true
+            if (prefs.edit().putStringSet(key, next.toMutableSet()).commit()) return true
+            prefs.edit().putStringSet(key, previous.toMutableSet()).commit()
+            Log.w(TAG, "Failed to persist settling state; leaving it retryable")
+            return false
+        }
     }
 
     private fun String.nilIfBlankOrNull(): String? = takeIf { it.isNotBlank() }
@@ -177,6 +185,13 @@ class VoiceReplacementMarkerStore(context: Context) {
                 prefs.edit().remove(key).commit()
                 Log.w(TAG, "Failed to seed replacement baseline; leaving it retryable")
                 return Seen(changed = false, persisted = false)
+            }
+            // ⚠ **이 기기가 반영에 실패한 적이 있으면 첫 조회라도 집는다**(Codex #703 P1).
+            // 기준선이 없던 시절의 실패는 sentinel 로만 남아 있다 — 그걸 안 보면 이 시드가
+            // '바뀐 것 없음' 으로 끝나 정리 중 표시가 풀린다. 업데이트 직후 모든 설치가
+            // 강등되는 일은 없다: sentinel 은 **실제로 실패한 기기에만** 있다.
+            if (prefs.getString(retryKey(userId, profileId), null) != null) {
+                return Seen(changed = true, persisted = true)
             }
             return Seen(changed = false, persisted = true)
         }
@@ -212,9 +227,15 @@ class VoiceReplacementMarkerStore(context: Context) {
      * 다음 권위 새로고침이 같은 값을 들고 와 그대로 다시 집는다.
      */
     private fun markRetryLocked(userId: String, profileId: String, invalidatedAt: String?) {
+        // ⚠ **기준선조차 없으면 sentinel 을 남긴다**(Codex #703 P1). 목록에 한 번도 오르지
+        // 않은 프로필에 옛 푸시가 와서 실패하면 세대도 기준선도 없어 적을 값이 없는데, 그냥
+        // 지나가면 다음 새로고침이 권위 세대를 **첫 조회로 시드하며 `persisted = true`** 로
+        // 답한다 — 정리 중 표시가 풀리고, 그 틈에 만든 알람을 뒤늦은 재시도가 벗긴다.
+        // sentinel 은 어떤 실제 세대보다 작아(`"0"` < `"2026-…"`) 첫 권위 세대가 확정하며
+        // 곧바로 지워 간다(`commitLocked` 의 `retry <= value`).
         val generation = invalidatedAt?.takeIf { it.isNotBlank() }
             ?: prefs.getString(seenKey(userId, profileId), null)?.takeIf { it.isNotBlank() }
-            ?: return
+            ?: RETRY_SENTINEL
         val key = retryKey(userId, profileId)
         val previous = prefs.getString(key, null)
         val newest = maxOf(generation, previous.orEmpty())
@@ -286,6 +307,18 @@ class VoiceReplacementMarkerStore(context: Context) {
         const val SEEN_PREFIX = "seen:"
         const val SETTLING_PREFIX = "settling:"
         const val RETRY_PREFIX = "retry:"
+
+        /**
+         * 세대도 기준선도 없을 때 남기는 재시도 표식.
+         *
+         * 실제 세대는 `datetime('now')` 문자열(`"2026-…"`)이라 사전순으로 이 값보다 크다 —
+         * 그래서 `maxOf` 는 언제나 진짜 세대를 택하고, `commitLocked` 의 `retry <= value` 는
+         * 첫 확정에서 이 값을 지워 간다.
+         */
+        const val RETRY_SENTINEL = "0"
+
+        /** `setSettling` 의 read-modify-write 를 직렬화한다 — 프로세스 전역이어야 한다. */
+        private val SETTLING_LOCK = Any()
         const val APPLIED_PREFIX = "applied:"
 
         /**

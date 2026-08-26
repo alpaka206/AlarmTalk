@@ -334,7 +334,13 @@ struct VoiceReplacementMarkerStore {
         let incoming = invalidatedAt ?? ""
         guard let baseline = defaults.string(forKey: key) else {
             defaults.set(incoming, forKey: key)
-            return false
+            // ⚠ **이 기기가 반영에 실패한 적이 있으면 첫 조회라도 집는다**(Codex #703 P1).
+            // 목록에 한 번도 오르지 않은 프로필에 옛 푸시가 와서 실패하면 세대도 기준선도
+            // 없어 sentinel 만 남는다 — 그걸 안 보면 이 시드가 '바뀐 것 없음' 으로 끝나
+            // 정리 중 표시가 풀리고, 그 틈에 만든 알람을 뒤늦은 재시도가 벗긴다.
+            // 업데이트 직후 모든 설치가 강등되는 일은 없다 — sentinel 은 **실제로 실패한
+            // 기기에만** 있다.
+            return defaults.string(forKey: retryKey(userID, profileID)) != nil
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다.
         let applied = defaults.string(forKey: appliedKey(userID, profileID)) ?? ""
@@ -362,8 +368,12 @@ struct VoiceReplacementMarkerStore {
     /// 세대는 기준선이므로 그 값을 적으면 다음 권위 새로고침이 그대로 다시 집는다.
     /// 안드로이드 짝은 `VoiceReplacementMarkerStore.markRetryLocked`.
     private func markRetryLocked(_ userID: String, _ profileID: String, _ generation: String?) {
-        guard let generation = generation?.nilIfBlank
-                ?? defaults.string(forKey: seenKey(userID, profileID))?.nilIfBlank else { return }
+        // 세대도 기준선도 없으면 sentinel 을 남긴다 — 실제 세대는 `datetime('now')` 문자열
+        // 이라 사전순으로 이 값보다 크므로, 첫 권위 세대가 확정하며 곧바로 지워 간다
+        // (`commitLocked` 의 `retry <= value`). 안드로이드 `RETRY_SENTINEL` 과 같은 값이다.
+        let generation = generation?.nilIfBlank
+            ?? defaults.string(forKey: seenKey(userID, profileID))?.nilIfBlank
+            ?? Self.retrySentinel
         let key = retryKey(userID, profileID)
         let previous = defaults.string(forKey: key) ?? ""
         let newest = max(generation, previous)
@@ -400,6 +410,9 @@ struct VoiceReplacementMarkerStore {
     private static let seenPrefix = "voice_replaced_seen_"
     private static let appliedPrefix = "voice_replaced_applied_"
     private static let retryPrefix = "voice_replaced_retry_"
+
+    /// 세대도 기준선도 없을 때 남기는 재시도 표식. 안드로이드 `RETRY_SENTINEL` 과 같은 값.
+    private static let retrySentinel = "0"
     private func seenKey(_ userID: String, _ profileID: String) -> String {
         "\(Self.seenPrefix)\(userID):\(profileID)"
     }

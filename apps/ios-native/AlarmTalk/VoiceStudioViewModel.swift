@@ -579,6 +579,9 @@ final class VoiceStudioViewModel: ObservableObject {
         let stale = stockClips.compactMap { clip -> (StockClip, [String])? in
             let keys = AudioCacheStore.messageCacheKeys(messageId: clip.messageId).filter { key in
                 cache.isStale(cacheKey: key, remoteAudioUri: clip.audioUrl)
+                    // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 — 비교할 값이 없어
+                    // 낡음 판정을 영영 통과하지 못한다(안드로이드도 같은 자리에서 함께 본다).
+                    || cache.needsRevisionRefresh(cacheKey: key, remoteAudioUri: clip.audioUrl)
             }
             return keys.isEmpty ? nil : (clip, keys)
         }
