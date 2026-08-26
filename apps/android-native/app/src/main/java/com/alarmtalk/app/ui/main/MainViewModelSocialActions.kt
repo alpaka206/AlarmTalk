@@ -109,6 +109,20 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
             // ⚠ **판정을 코루틴 밖에서 미리 하지 말 것.** 예전에는 여기 오기 전에 걸러 뒀는데,
             // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 알람을 만들면 뒤늦게
             // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
+            // ⚠ **프리셋 재렌더가 끝나야 세대를 확정한다**(Codex #703 P1, 워커와 같은 규칙).
+            // 서버는 교체 세대를 먼저 게시하고 프리셋은 cron 이 나중에 굽는다 — 그 사이에
+            // 확정하면 재렌더가 끝나도 다음 회차들이 그 세대를 건너뛰어 프리셋 알람이 회수된
+            // 목소리로 계속 운다. **이번 세션에 매니페스트를 못 받았으면 '모른다'** 이고,
+            // 모르면 확정하지 않는다(다음 새로고침이 다시 집는다).
+            val prerenderPendingIds =
+                if (stockClipManifestFetched) {
+                    stockClips.filterNot { it.isRendered }.map { it.voiceProfileId }.toSet()
+                } else {
+                    null
+                }
+            fun prerenderReady(voiceProfileId: String): Boolean =
+                prerenderPendingIds?.contains(voiceProfileId) == false
+            var presetCacheNeedsRefresh = false
             for ((profileId, invalidatedAt) in markerCandidates) {
                 var degradedNow = 0
                 val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
@@ -116,8 +130,14 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
                         repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
                     // 그 사이 계정이 바뀌었으면 확정하지 않는다 — 저장소가 소유자 불일치로
                     // 돌려준 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
-                    if (authSession?.user?.id == listOwner) degradedNow else null
+                    if (authSession?.user?.id == listOwner && prerenderReady(profileId)) {
+                        degradedNow
+                    } else {
+                        null
+                    }
                 }
+                // 교체 세대를 집었으면 프리셋도 다시 받아야 한다(워커가 매니페스트를 공개한다).
+                if (result.changed) presetCacheNeedsRefresh = true
                 // ⚠ **'정리 중' 표시를 여기서 올리고 내린다**(Codex #703 P1). 승격 경로만
                 // 표시를 올리면 두 가지가 어긋난다: 이 새로고침이 재시도에 **성공해도** 표시가
                 // 남아 그 목소리를 프로세스가 끝날 때까지 못 고르고, 반대로 재시작하면 표시가
@@ -133,6 +153,11 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += degradedNow
+            }
+            // 매니페스트와 낡은 프리셋 바이트는 전용 워커에 맡긴다 — 그 워커가 받은 매니페스트를
+            // 디스크에 공개하므로, 다음 새로고침의 준비 판정이 최신 값으로 이뤄진다.
+            if (presetCacheNeedsRefresh) {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
             }
             settlingVoiceProfileIds = markers.settlingProfileIds(listOwner) + settlingUnpersistedIds
             lostAccess to replacedCount

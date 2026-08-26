@@ -363,8 +363,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 했는데 예약 정리에 실패했으면, 이번 회차는 내릴 것이 없어 `degraded` 가 비고
             // `unverified` 만 차 있다 — 그 조건을 빼면 예약을 확인하는 내내 그 목소리를 고를
             // 수 있고, 확인이 또 실패하면 그 사이 만든 알람을 다음 재시도가 벗긴다.
-            if !pending.profileID.isEmpty,
-               !pending.degraded.isEmpty || !pending.unverified.isEmpty || pending.failed {
+            // ⚠ **확정될 때까지는 무조건 가린다**(Codex #703 P1). 내릴 것이 없던 회차
+            // (프리셋 알람만 쓰는 목소리)도 확정이 미뤄질 수 있는데 — 재렌더가 안 끝났으면
+            // 미룬다 — 그때 고를 수 있게 두면 사용자가 **새 목소리로 알람을 만들고**, 다음
+            // 회차가 같은 세대를 재시도하며 그 알람까지 벗긴다(강등은 프로필 id 로만 고른다).
+            // 확정에 성공하면 `confirmIfReservationsSettled` 가 곧바로 푼다.
+            if !pending.profileID.isEmpty {
                 deps.voiceStudio.suppressReplacedProfile(pending.profileID)
             }
             // ⚠ **실패한 회차는 반드시 확정 함수를 거친다**(Codex #703 P1). 강등이 실패하면
@@ -477,9 +481,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 // `await` 이라, 그 사이 **이미 열려 있는 편집기**가 이 목소리로 알람을
                 // 저장할 수 있다 — 정리가 실패하면 다음 회차가 그 새 알람까지 벗긴다.
                 // 확정에 성공하면 `confirmIfReservationsSettled` 가 곧바로 푼다.
-                // 위 푸시 경로와 같은 이유 — 넘어온 미확인 작업도 가린다(Codex #703 P1).
-                if !pending.profileID.isEmpty,
-                   !pending.degraded.isEmpty || !pending.unverified.isEmpty || pending.failed {
+                // 위 푸시 경로와 같은 이유 — **확정될 때까지 무조건 가린다**(Codex #703 P1).
+                if !pending.profileID.isEmpty {
                     deps.voiceStudio.suppressReplacedProfile(pending.profileID)
                 }
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.

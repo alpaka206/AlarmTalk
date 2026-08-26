@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
@@ -96,7 +97,15 @@ class StockClipPrefetchWorker(
             val language = deviceVoiceLanguage()
             val audioStore = AlarmAudioStore(applicationContext)
 
-            val allClips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
+            // ⚠ **받은 매니페스트를 먼저 공개한다**(Codex #703 P1). 캐시 쓰기 경로는 디스크
+            // 매니페스트를 '지금 무엇이 맞는가' 의 기준으로 삼는데(뒤처진 응답이 새 세대를
+            // 덮지 못하게 하는 가드), 이 워커가 새 매니페스트를 받아 놓고 공개하지 않으면
+            // 그 기준이 **옛 주소**로 남는다 — 방금 받은 새 바이트가 '지나간 응답' 으로 판정돼
+            // 버려지고, 워커는 성공으로 끝나 교체 표식이 확정된다. 결과는 회수된 목소리가
+            // 그대로 남는 것이다.
+            val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            StockClipManifestStore.save(applicationContext, manifest)
+            val allClips = manifest.clips
             // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
             // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.
             // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.

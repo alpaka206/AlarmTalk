@@ -1831,12 +1831,47 @@ tts.get('/messages/:id/audio', async (c) => {
   });
 });
 
+/**
+ * 프리셋 준비 신호를 만드는 SQL 조각. **컬럼이 없으면 '준비됨' 으로 답한다.**
+ *
+ * ⚠ 배포는 마이그레이션보다 먼저 돈다(CLAUDE.md). `voice_prerender_queue.refresh_existing`
+ * 을 그냥 참조하면 그 창(~1분) 동안 **모든 매니페스트 요청이 컬럼 없음으로 500** 이 되어
+ * 옛 클라까지 클립 목록을 못 받는다. 읽기 경로라 fail-closed 로 둘 이유도 없다 — 그 창에는
+ * 교체 자체가 커밋될 수 없으므로(쓰기 경로가 fail-closed 다) '준비됨' 이 사실이다.
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
+ */
+let prerenderRefreshColumnReady = false;
+async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
+  if (!prerenderRefreshColumnReady) {
+    const columns = await db.execute({
+      sql: "PRAGMA table_info('voice_prerender_queue')",
+      args: [],
+    });
+    prerenderRefreshColumnReady = columns.rows.some(
+      (row) => String(row.name) === 'refresh_existing',
+    );
+  }
+  if (!prerenderRefreshColumnReady) return '1 AS rendered_for_current_voice';
+  return `CASE
+                   WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
+                   WHEN EXISTS (
+                     SELECT 1 FROM generated_audio_assets ga
+                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ) THEN 1
+                   ELSE 0
+                 END AS rendered_for_current_voice`;
+}
+
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
   // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
   // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
   const userLoginId = c.get('userLoginId');
   const userPk = c.get('userIdPK') || userLoginId;
+  const renderedSelect = await renderedForCurrentVoiceSelect(db);
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name,
@@ -1848,15 +1883,7 @@ tts.get('/stock-clips', async (c) => {
                  -- 재렌더가 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
                  -- 판정은 GET /voice/:id/prerender-status 의 완료 판정과 같은 식이다:
                  -- 그 오디오가 프로필의 현재 provider voice 로 만들어졌는가.
-                 CASE
-                   WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
-                   WHEN EXISTS (
-                     SELECT 1 FROM generated_audio_assets ga
-                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
-                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
-                   ) THEN 1
-                   ELSE 0
-                 END AS rendered_for_current_voice
+                 ${renderedSelect}
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
