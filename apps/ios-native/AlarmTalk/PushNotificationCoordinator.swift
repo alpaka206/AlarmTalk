@@ -389,6 +389,15 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 것이고, 그 매니페스트가 '아직 안 구웠다' 고 말하면 여기서 확정하면 안 된다.
             // 확정해 버리면 cron 이 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어, 완료 푸시를
             // 놓친 기기는 회수된 프리셋을 캐시·예약에 문 채로 남는다.
+            // ⚠ **이 경로가 스스로 신선도를 확인한다**(Codex #703 P1). `onVoiceChanged` 가
+            // 방금 받아 왔더라도 그 콜백은 **별개**라 결과를 물려받을 수 없고, 강제 요청이
+            // 실패했으면 `stockClips` 는 **교체 이전 스냅샷**(전부 rendered=true)이다 —
+            // 그걸로 판단하면 세대를 확정해 버려 완료 푸시를 놓친 기기에 폴백이 남지 않는다.
+            // 교체 푸시는 드물어 한 번 더 받는 비용이 크지 않다.
+            let manifestFresh = await deps.voiceStudio.loadStockClips(
+                session: deps.auth.session,
+                force: true
+            )
             // 이 교체의 목소리만 본다 — 남의 목소리가 아직이라고 이 세대를 붙들지 않는다.
             let presetPending = !manifestFresh || deps.voiceStudio.stockClips.contains {
                 $0.voiceProfileId == pending.profileID && !$0.isRenderedForCurrentVoice

@@ -747,7 +747,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         if isLegacyBackfilledDelivery(existing, deliveryVersion) { return true }
         guard let incoming = deliveryVersion, !incoming.isEmpty,
               let observed = existing.observedDeliveryVersion, !observed.isEmpty else { return false }
-        return (existing.remoteDeliveryVersion ?? "").isEmpty && observed == incoming
+        // ⚠ **적용 세대가 비어 있는 것만 보지 말 것**(Codex #703 P1). 재전송 B 로 다시 지은
+        // 행은 도착 세대만 B 로 바뀌고 **적용 세대는 옛 A 가 남는다**. 그 상태에서 B 예약이
+        // 실패하고 수신자가 손대면 '비어 있는가' 로는 거절돼 이후 모든 pull 이 영원히 skip 한다.
+        return observed == incoming && existing.remoteDeliveryVersion != incoming
     }
 
     static func isLegacyBackfilledDelivery(

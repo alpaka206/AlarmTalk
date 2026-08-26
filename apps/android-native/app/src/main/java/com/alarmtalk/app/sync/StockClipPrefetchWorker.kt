@@ -106,7 +106,7 @@ class StockClipPrefetchWorker(
             // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
             val manifestTicket = StockClipManifestStore.beginFetch()
             val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
-            when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket)) {
+            when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket, session.user.id)) {
                 // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
                 // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.
                 StockClipManifestStore.PublishResult.SUPERSEDED ->

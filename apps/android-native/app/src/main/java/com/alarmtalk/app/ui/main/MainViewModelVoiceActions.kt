@@ -988,12 +988,11 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
                     getApplication(),
                     response,
                     manifestTicket,
+                    session.user.id,
                 ) != com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED
             ) {
                 return@onSuccess
             }
-            // 이 계정이 받은 매니페스트임을 적어 둔다 — 다른 계정이 로그인하면 지우는 근거다.
-            com.alarmtalk.app.data.StockClipManifestStore.markOwner(getApplication(), session.user.id)
             val clips = response.clips
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }

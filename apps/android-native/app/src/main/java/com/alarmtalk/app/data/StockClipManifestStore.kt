@@ -90,12 +90,6 @@ object StockClipManifestStore {
         if (owner != null && owner != current) clearAndInvalidate(context)
     }
 
-    /** 이 계정이 받은 매니페스트임을 적는다. [save] 성공 직후에 부른다. */
-    fun markOwner(context: Context, userId: String?) {
-        val current = userId?.takeIf { it.isNotBlank() } ?: return
-        ownerPrefs(context).edit().putString(OWNER_KEY, current).apply()
-    }
-
     private const val OWNER_KEY = "owner_user_id"
 
     fun clearAndInvalidate(context: Context) {
@@ -124,7 +118,17 @@ object StockClipManifestStore {
      */
     enum class PublishResult { PUBLISHED, SUPERSEDED, FAILED }
 
-    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): PublishResult =
+    /**
+     * @param ownerUserId 이 매니페스트를 받은 계정. **공개하는 쪽이 반드시 준다** —
+     *   따로 찍게 두면 한 경로만 빠져도(실제로 프리페치 워커가 그랬다) 임자가 null 로 남아
+     *   다른 계정이 그 파일을 시드한다(Codex #703 P1).
+     */
+    fun save(
+        context: Context,
+        response: StockClipListResponse,
+        fetchTicket: Long,
+        ownerUserId: String?,
+    ): PublishResult =
         // ⚠ **비교·쓰기·표 갱신이 한 임계구역이다**(Codex #703 P1). 비교만 잠그면 A 와 B 가
         // 둘 다 통과한 뒤 **쓰는 순서가 뒤집혀** A 가 B 를 덮을 수 있고, 두 writer 가 같은
         // `.tmp` 경로를 나눠 쓰기까지 한다. 파일 교체까지 잠근 채로 한다.
@@ -134,6 +138,10 @@ object StockClipManifestStore {
             seenTicket = fetchTicket
             // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
             if (!writeManifest(context, response)) return PublishResult.FAILED
+            // 파일과 임자는 **같은 임계구역에서** 함께 남긴다.
+            ownerUserId?.takeIf { it.isNotBlank() }?.let {
+                ownerPrefs(context).edit().putString(OWNER_KEY, it).commit()
+            }
             return PublishResult.PUBLISHED
         }
 

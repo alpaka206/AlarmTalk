@@ -16,6 +16,7 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.VoiceReplacementMarkerStore
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
@@ -103,7 +104,23 @@ class VoiceAccessSyncWorker(
             // 한도에 걸려 죽어도 되짚을 근거가 없다). 그래서 **매니페스트의 주소와 로컬
             // 캐시가 일치하는지**까지 본다 — 일치할 때까지는 확정하지 않고 retry 한다.
             val notReadyVoiceIds: Set<String>? = runCatching {
-                val clips = withContext(Dispatchers.IO) { api.getStockClips(auth) }.clips
+                // ⚠ **이 조회도 권위를 통해 공개한다**(Codex #703 P1). 그냥 읽고 버리면
+                // 수위선이 오르지 않아, 교체 **전에** 출발한 프리페치의 옛 응답이 나중에
+                // 통과해 디스크를 되돌린다 — 그 사이 이 판정은 '준비됨' 으로 확정해 버린다.
+                val ticket = StockClipManifestStore.beginFetch()
+                val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
+                val published = StockClipManifestStore.save(
+                    applicationContext,
+                    manifest,
+                    ticket,
+                    session.user.id,
+                )
+                // 더 새 매니페스트가 이미 나왔거나 디스크에 못 남겼으면 **판단하지 않는다**
+                // (null = 모른다 → 확정하지 않고 retry).
+                if (published != StockClipManifestStore.PublishResult.PUBLISHED) {
+                    throw IllegalStateException("manifest not published: $published")
+                }
+                val clips = manifest.clips
                 val store = AlarmAudioStore(applicationContext)
                 clips.filter { clip ->
                     !clip.isRendered ||

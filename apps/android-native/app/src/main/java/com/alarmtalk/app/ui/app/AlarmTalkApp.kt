@@ -1263,7 +1263,22 @@ internal fun AlarmTalkApp(
                   ),
                   // 편집기는 우측에서 페이지가 밀고 들어오는 표준 push 전환 — 하단바 슬라이드(220ms)와
                   // 같은 박자로 묶어 '크롬 사라짐 → 화면 전환' 두 박자가 아니라 한 번의 이동으로 보이게.
+                  //
+                  // ⚠ **네 방향을 다 지정한다**(2026-08-26). 들어오는 쪽만 지정하면 뒤 화면은
+                  // NavHost 기본값대로 **제자리에서 페이드**해, 한 겹만 움직이고 그 사이 두
+                  // 화면이 겹쳐 비친다. 나가는 화면을 함께 왼쪽으로 밀어야(iOS 시스템 push 와
+                  // 같은 결) 종이 두 장이 이어져 움직이는 깊이감이 난다.
+                  // 미는 폭이 화면의 1/4 인 이유: 전폭으로 밀면 뒤 화면이 완전히 빠져나가
+                  // 되돌아올 때 튀어 보인다(iOS 도 30% 안쪽으로만 민다).
                   enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
+                  exitTransition = {
+                      slideOutHorizontally(animationSpec = tween(220)) { -it / 4 } +
+                          fadeOut(animationSpec = tween(220))
+                  },
+                  popEnterTransition = {
+                      slideInHorizontally(animationSpec = tween(220)) { -it / 4 } +
+                          fadeIn(animationSpec = tween(220))
+                  },
                   popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
@@ -1324,8 +1339,17 @@ internal fun AlarmTalkApp(
               composable(
                   route = AppRoute.AlarmEdit,
                   arguments = listOf(navArgument(AppRoute.AlarmIdArg) { type = NavType.StringType }),
-                  // AlarmCreate 와 동일한 push 전환(하단바 슬라이드와 동박자).
+                  // AlarmCreate 와 **완전히 동일한** push 전환(네 방향, 하단바와 동박자).
+                  // 한쪽만 바꾸면 같은 편집기가 들어오는 길에 따라 다르게 움직인다.
                   enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
+                  exitTransition = {
+                      slideOutHorizontally(animationSpec = tween(220)) { -it / 4 } +
+                          fadeOut(animationSpec = tween(220))
+                  },
+                  popEnterTransition = {
+                      slideInHorizontally(animationSpec = tween(220)) { -it / 4 } +
+                          fadeIn(animationSpec = tween(220))
+                  },
                   popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)

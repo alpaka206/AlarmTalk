@@ -95,7 +95,11 @@ internal fun isRecoverableSameDelivery(
     if (isLegacyBackfilledDelivery(existing, deliveryVersion)) return true
     val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
     val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() } ?: return false
-    return existing.remoteDeliveryVersion.isNullOrBlank() && observed == incoming
+    // ⚠ **적용 세대가 비어 있는 것만 보지 말 것**(Codex #703 P1). 재전송 B 로 다시 지은 행은
+    // 도착 세대만 B 로 바뀌고 **적용 세대는 옛 A 가 그대로 남는다**(그 값은 보존 대상이다).
+    // 그 상태에서 B 예약이 실패하고 수신자가 손대면, '비어 있는가' 로만 보면 A 가 차 있어
+    // 거절되고 **이후 모든 pull 이 영원히 skip** 한다. 판정은 "이 세대를 적용했는가" 다.
+    return observed == incoming && existing.remoteDeliveryVersion != incoming
 }
 
 internal fun isLegacyBackfilledDelivery(
