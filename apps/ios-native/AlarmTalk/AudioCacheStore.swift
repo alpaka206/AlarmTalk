@@ -385,9 +385,17 @@ final class AudioCacheStore {
         // ⚠ **세대 표식이 없는 옛 캐시는 여기서 갈아 끼운다**(Codex #703 P1). 이미 바이트를
         // 받아 온 자리라 다시 받는 비용이 없고, 이때 `rawAudioUri` 를 적어 두지 않으면
         // 새로고침이 같은 키를 **매번 다시 고르고 매번 건너뛴다**(영원한 루프).
+        // ⚠ **뒤처진 응답이 새 세대를 덮지 못하게 한다**(Codex #703 P1). 직렬화는 순서를
+        // 정해 주지 않는다 — 프리페처가 **옛 매니페스트**로 받아 둔 바이트가 교체 새로고침의
+        // 새 바이트보다 늦게 도착하면, 저장된 주소와 다르다는 이유로 '낡음' 으로 읽혀 새
+        // 세대를 회수된 옛 바이트로 덮어쓰고 **구워 둔 사운드까지 지워** 다음 재예약이 옛
+        // 목소리를 굽는다. "다르면 새것" 이 아니라 **매니페스트가 지금 가리키는 주소인가**다.
+        let superseded = Self.incomingIsSupersededByManifest(messageId: messageId, incomingAudioUri: rawAudioUri)
         let stale = existingURL.map {
-            Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
-                || needsRevisionRefresh(cacheKey: cacheKey, remoteAudioUri: rawAudioUri)
+            !superseded && (
+                Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+                    || needsRevisionRefresh(cacheKey: cacheKey, remoteAudioUri: rawAudioUri)
+            )
         } ?? false
         if stale || !FileManager.default.fileExists(atPath: target.path) {
             do {
@@ -483,6 +491,20 @@ final class AudioCacheStore {
     /// 아니다" — 뒤집으면 알람마다 네트워크를 타고 오프라인에서는 아예 못 쓴다).
     /// **새로고침 선택**에서만 함께 보고, 한 번 받아 두면 표식이 적혀 다시 걸리지 않는다.
     /// 안드로이드 짝은 `AlarmAudioStore.cachedAudioNeedsRevisionRefresh`.
+    /// 들고 온 바이트가 **이미 지나간 매니페스트 세대**의 것인가.
+    ///
+    /// 매니페스트가 그 message ID 를 알고 있고 지금 가리키는 주소가 이 응답의 주소와 다르면
+    /// 이 응답은 뒤처진 것이다 — 덮어쓰지 않는다. 매니페스트가 모르는 message ID(직접 생성한
+    /// TTS 등)나 주소가 없는 응답은 판단 근거가 없으므로 **막지 않는다.**
+    /// 안드로이드 짝은 `AlarmAudioStore.incomingIsSupersededByManifest`.
+    nonisolated static func incomingIsSupersededByManifest(messageId: String?, incomingAudioUri: String?) -> Bool {
+        guard let id = messageId, !id.isEmpty,
+              let incoming = incomingAudioUri, !incoming.isEmpty,
+              let current = StockClipManifestStore.load()?.clips.first(where: { $0.messageId == id })?.audioUrl,
+              !current.isEmpty else { return false }
+        return current != incoming
+    }
+
     nonisolated func needsRevisionRefresh(cacheKey: String, remoteAudioUri: String?) -> Bool {
         guard cachedURL(for: cacheKey) != nil else { return false }
         guard let incoming = remoteAudioUri, !incoming.isEmpty else { return false }

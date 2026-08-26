@@ -176,14 +176,20 @@ class RemoteAlarmPullSyncServiceTest {
 
         val legacy = existing.copy(remoteDeliveryVersion = null)
         assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "0123456789abcdef0123456789abcdef"))
-        assertTrue(deliveryVersionUnknownLocally(legacy))
-        assertFalse(deliveryVersionUnknownLocally(existing))
+        assertTrue(isLegacyBackfilledDelivery(legacy, "0123456789abcdef0123456789abcdef"))
+        assertFalse(isLegacyBackfilledDelivery(existing, "0123456789abcdef0123456789abcdef"))
         assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "11111111-1111-4111-8111-111111111111"))
-        // ⚠ **세대 형식으로 판별하지 않는다**(Codex #703 P2). ACK 전에 수신자가 손댄 새
-        // 세대(UUID)도 적용 버전이 비어 있고, 형식으로 거르면 그 행이 영원히 skip 된다.
-        assertTrue(deliveryVersionUnknownLocally(legacy))
+        // ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다**(docs/spec/family-alarm.md).
+        // 넓히면 재전송을 삼킨다 — 첫 전달이 버전 없이 저장된 뒤 온 새 세대(UUID)를
+        // '복구 대상' 으로 읽으면, 수신자 편집을 보존한 채 그 세대를 ACK·삭제해 버린다.
+        assertFalse(isLegacyBackfilledDelivery(legacy, "11111111-1111-4111-8111-111111111111"))
         // 내가 만든 알람은 애초에 이 복구 대상이 아니다.
-        assertFalse(deliveryVersionUnknownLocally(legacy.copy(origin = AlarmOrigins.LOCAL_OWNED)))
+        assertFalse(
+            isLegacyBackfilledDelivery(
+                legacy.copy(origin = AlarmOrigins.LOCAL_OWNED),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
     }
 
     @Test

@@ -39,19 +39,31 @@ internal fun receivedAlarmDeliveryVersionAlreadyApplied(
 ): Boolean = !deliveryVersion.isNullOrBlank() && existing.remoteDeliveryVersion == deliveryVersion
 
 /**
- * **이 기기가 어떤 세대를 반영해 뒀는지 모르는** 수신 알람.
+ * #104 backfill 로 채워진 옛 전달인가 — **이 복구는 그 세대에만 허용한다.**
  *
- * ⚠ 예전에는 이걸 '#104 backfill(32자리 hex)' 형식으로 판별했는데(Codex #703 P2), 형식은
- * 세대의 출처일 뿐 **우리가 무엇을 반영했는지**를 말해 주지 않는다. 행은 만들어졌지만 ACK
- * 전에 수신자가 손댄 새 세대(UUID)도 적용 버전이 비어 있고, 그런 행은 형식 검사에 걸러져
- * **영원히 skip** 된다 — 음원도 OS 예약도 없는 채로 서버 행만 남는다.
+ * ⚠ 2026-08-26 에 이 판정을 "적용 버전이 비어 있는가" 로 넓혔다가 되돌렸다. 넓히면
+ * **재전송을 삼킨다**: 첫 전달 A 가 예약 실패로 버전 없이 저장되고 수신자가 고친 뒤
+ * 발신자가 그 슬롯을 다시 보내면(같은 알람 id, 새 버전 B), 넓힌 판정이 그 행을 '복구
+ * 대상' 으로 읽어 **A 를 보존한 채 B 를 기록하고 ACK·삭제한다** — 재전송한 내용은 어디에도
+ * 전달되지 않는다.
  *
- * 그래서 판정은 형식이 아니라 상태다: 수신 알람인데 적용 버전이 비었다. iOS 의
- * `deliveryVersionUnknownLocally` 와 같은 규칙이다(`docs/spec/family-alarm.md`).
+ * 스펙은 그 대신 "값이 다르면 다른 전달 세대이므로 수신자 편집을 보존하고 **ack 하지
+ * 않는다**" 를 택했다(`docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」).
+ * ACK 안 된 전달은 발신자에게 그대로 보이므로, 잘못 병합하는 것보다 낫다.
+ *
+ * 넓히자면 **스펙을 먼저 고쳐야 하고**, 실패한 첫 전달과 나중 재전송을 구분할 내구 상태가
+ * 함께 필요하다. iOS 짝은 `RemoteAlarmPullSync.isLegacyBackfilledDelivery`.
  */
-internal fun deliveryVersionUnknownLocally(existing: AlarmEntity): Boolean =
+internal fun isLegacyBackfilledDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean =
     existing.origin == AlarmOrigins.RECEIVED_REMOTE &&
-        existing.remoteDeliveryVersion.isNullOrBlank()
+        existing.remoteDeliveryVersion.isNullOrBlank() &&
+        !deliveryVersion.isNullOrBlank() &&
+        // #104 backfill 만 32자리 hex 다. 새 세대(UUID)는 하이픈이 있어 들어오지 않는다.
+        deliveryVersion.length == 32 &&
+        deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
 internal fun linkRecoveredLegacyRemoteAudio(
     current: AlarmEntity,
@@ -229,9 +241,9 @@ internal class RemoteAlarmPullSyncService(
                         skipped += 1
                         return@runCatching
                     }
-                    // 적용 버전이 비어 있으면 이 기기가 무엇을 반영했는지 모른다 — 아래에서
-                    // 음원과 **현재 편집본의 OS 예약**을 먼저 확보한 뒤 ACK한다.
-                    if (!deliveryVersionUnknownLocally(existing)) {
+                    // #104 backfill 세대만 복구 대상이다(`isLegacyBackfilledDelivery` 주석).
+                    // 아래에서 음원과 **현재 편집본의 OS 예약**을 먼저 확보한 뒤 ACK한다.
+                    if (!isLegacyBackfilledDelivery(existing, remote.deliveryVersion)) {
                         skipped += 1
                         Log.i(TAG, "Kept recipient-edited alarm; skipped new delivery remoteId=${remote.id}")
                         return@runCatching
@@ -291,8 +303,8 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
                     // 다운로드하는 사이에 수신자가 고쳤을 수도 있다 — 위 1차 거르기와 같은 판정을
-                    // 반영 직전에 한 번 더 한다. 서버본으로 덮지는 않되, 적용 버전을 모르는
-                    // 행은 음원과 현재 편집본의 OS 예약을 확보해야만 적용 버전을 기록하고 ACK한다.
+                    // 반영 직전에 한 번 더 한다. 서버본으로 덮지는 않되, #104 backfill 세대는
+                    // 음원과 현재 편집본의 OS 예약을 확보해야만 적용 버전을 기록하고 ACK한다.
                     if (current != null && locallyEditedByRecipient(current)) {
                         skipped += 1
                         val deliveryVersion = remote.deliveryVersion
@@ -300,7 +312,7 @@ internal class RemoteAlarmPullSyncService(
                             receivedAlarmDeliveryVersionAlreadyApplied(current, deliveryVersion) -> {
                                 editedDeliveryVersionToAck = deliveryVersion
                             }
-                            deliveryVersionUnknownLocally(current) -> {
+                            isLegacyBackfilledDelivery(current, deliveryVersion) -> {
                                 val audioSecured =
                                     !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
                                 val recovered = linkRecoveredLegacyRemoteAudio(

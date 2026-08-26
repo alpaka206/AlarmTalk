@@ -347,12 +347,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // 첫 예약이 실패해 `remoteDeliveryVersion` 이 비어 있는 채 수신자가 그 알람을
                 // 고치면, 예전에는 #104 backfill(32자리 hex)만 이 갈래를 통과해 **일반
                 // UUID 세대는 영영 ACK 되지 못했다** — 서버 행과 그 생체 음원이 무기한
-                // 남고, 다른 기기가 같은 전달을 또 받는다.
-                //
-                // 두 경우의 처리는 같다: 음원을 확보하고 **수신자가 고친 현재 행 그대로**
-                // 예약에 성공한 뒤에만 세대를 적고 ACK 한다(형식만 보고 올리지 않는다).
-                // 그러니 형식으로 가르지 않고 **'적용한 세대를 모른다'** 하나로 판정한다.
-                guard Self.deliveryVersionUnknownLocally(existing),
+                // 복구는 #104 backfill(32자리 hex)에만 허용한다 — `isLegacyBackfilledDelivery`
+                // 주석과 `docs/spec/family-alarm.md` 참조. 넓히면 재전송을 삼킨다.
+                guard Self.isLegacyBackfilledDelivery(existing, remote.deliveryVersion),
                       remote.deliveryVersion?.nilIfBlank != nil else { return .unchanged }
             } else {
                 guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
@@ -670,12 +667,28 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// 그때는 음원을 확보하고 **수신자가 고친 현재 행 그대로** 예약에 성공한 뒤에만
     /// 세대를 적고 ACK 한다 — 형식만 보고 올리지 않는다.
     ///
-    /// ⚠ **세대 형식으로 가르지 말 것**(Codex #703 P2). 예전에는 #104 backfill(32자리 hex)만
-    /// 이 복구를 통과시켰는데, 그러면 **일반 UUID 세대는 영영 ACK 되지 못한다** — 서버 행과
-    /// 그 생체 음원이 무기한 남고 다른 기기가 같은 전달을 또 받는다. 두 경우의 처리는 같다.
-    static func deliveryVersionUnknownLocally(_ existing: LocalAlarmRecord) -> Bool {
-        existing.originEnum == .receivedRemote
-            && (existing.remoteDeliveryVersion ?? "").isEmpty
+    /// ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다 — 스펙이 그렇게 못 박았다**
+    /// (`docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」).
+    ///
+    /// 2026-08-26 에 이 판정을 "적용 버전이 비어 있는가" 로 넓혔다가 되돌렸다. 넓히면
+    /// **재전송을 삼킨다**: 첫 전달 A 가 예약 실패로 버전 없이 저장되고 수신자가 고친 뒤
+    /// 발신자가 그 슬롯을 다시 보내면(같은 알람 id, 새 버전 B), 넓힌 판정이 그 행을
+    /// '복구 대상' 으로 읽어 **A 를 보존한 채 B 를 기록하고 ACK·삭제한다** — 재전송한
+    /// 내용은 어디에도 전달되지 않는다. 스펙은 그 대신 "값이 다르면 다른 전달 세대이므로
+    /// 수신자 편집을 보존하고 **ack 하지 않는다**" 를 택했다(ACK 안 된 전달은 발신자에게
+    /// 그대로 보인다 — 잘못 병합하는 것보다 낫다).
+    ///
+    /// 넓히자면 **스펙을 먼저 고쳐야 하고**, 실패한 첫 전달과 나중 재전송을 구분할
+    /// 내구 상태(예: 도착 시점의 버전을 따로 저장)가 함께 필요하다.
+    static func isLegacyBackfilledDelivery(
+        _ existing: LocalAlarmRecord,
+        _ deliveryVersion: String?
+    ) -> Bool {
+        guard existing.originEnum == .receivedRemote,
+              (existing.remoteDeliveryVersion ?? "").isEmpty,
+              let version = deliveryVersion, version.count == 32 else { return false }
+        // #104 backfill 만 32자리 hex 다. 새 세대(UUID)는 하이픈이 있어 들어오지 않는다.
+        return version.allSatisfy { $0.isHexDigit }
     }
 
     static func linkRecoveredLegacyRemoteAudio(
@@ -881,7 +894,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
         // 진입 판정과 **같은 기준**이어야 한다 — 위에서 통과시킨 회차를 여기서 되돌리면
         // 음원만 받아 두고 아무것도 못 하는 회차가 된다.
-        guard Self.deliveryVersionUnknownLocally(existing),
+        guard Self.isLegacyBackfilledDelivery(existing, deliveryVersion),
               deliveryVersion?.nilIfBlank != nil else { return .unchanged }
         guard prepared.audioSecured else { return .incomplete }
 

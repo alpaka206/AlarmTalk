@@ -496,6 +496,17 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 pendingApplies.forEach { _ = $0.confirm() }
                 return
             }
+            // ⚠ **프리셋 캐시도 여기서 갈아 끼운다**(Codex #703 P1). 예전에는
+            // `refreshChangedCachedStockClips` 를 **푸시 콜백에서만** 불렀다 — 교체 푸시를
+            // 놓치면(오프라인·스로틀링) 이 경로가 직접 입력 알람만 강등하고, 프리셋 캐시와
+            // 거기서 구워 둔 알람 사운드는 **회수된 목소리 그대로** 남는다. 그 알람은 다음
+            // 교체 푸시가 올 때까지 옛 목소리로 운다.
+            //
+            // 여기까지 온 것은 **교체를 실제로 감지했다**는 뜻이라(위 guard), 매 콜드
+            // 스타트가 아니라 그때만 도는 비용이다. 매니페스트는 강제로 다시 읽는다 —
+            // 캐시된 옛 매니페스트로는 어떤 클립이 바뀌었는지 알 수 없다.
+            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            _ = await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session)
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
