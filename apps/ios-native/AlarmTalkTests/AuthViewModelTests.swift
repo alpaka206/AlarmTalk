@@ -21,6 +21,21 @@ import XCTest
 @MainActor
 final class AuthViewModelTests: XCTestCase {
 
+    /// ⚠ **동의 완료 캐시는 `UserDefaults.standard` 에 남는다 — 테스트마다 지운다**
+    /// (Codex #703 P2). `checkConsentStatus` 가 그 저장소를 직접 만들어 쓰므로 주입할 자리가
+    /// 없고, 키는 `<계정><정책버전>` 으로 고정이라 **이 클래스의 다른 테스트끼리도 서로
+    /// 오염시킨다**(하나가 완료를 적으면 다음 테스트는 그 값을 보고 통과한다). 시뮬레이터를
+    /// 재사용하면 다음 실행까지 살아남아, `markCompleted` 를 아예 안 부르게 되는 회귀도
+    /// 조용히 통과한다.
+    /// `static` 인 이유: `addTeardownBlock` 의 클로저는 `@Sendable` 이라 `self` 를 넘길 수
+    /// 없고, `setUp`/`tearDown` 은 nonisolated 라 MainActor 격리된 이 클래스에서 오버라이드하면
+    /// "sending 'self' risks causing data races" 로 막힌다. 정책 버전도 MainActor 프로퍼티
+    /// (`AuthViewModel.currentPolicyVersion`) 대신 그 원본인 `LegalPolicy.bundledVersion` 을
+    /// 직접 읽는다 — 같은 값이다.
+    private static func clearConsentCompletionCache() {
+        ConsentCompletionStore().clear(userID: "user-1", policyVersion: LegalPolicy.bundledVersion)
+    }
+
     // MARK: - Helpers
 
     private func makeAppleSession(appleUserId: String? = "apple-sub-12345") -> AuthSession {
@@ -99,8 +114,17 @@ final class AuthViewModelTests: XCTestCase {
             collect: ["push_marketing"],
             optional: ["push_marketing"]
         ))
+        Self.clearConsentCompletionCache()
+        addTeardownBlock { Self.clearConsentCompletionCache() }
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
         vm._setSessionForTesting(makeEmailSession())
+        XCTAssertFalse(
+            ConsentCompletionStore().hasCompleted(
+                userID: "user-1",
+                policyVersion: AuthViewModel.currentPolicyVersion
+            ),
+            "앞선 테스트가 남긴 값이 있으면 아래 단언이 무의미해진다"
+        )
 
         await vm.checkConsentStatus()
 
@@ -110,6 +134,7 @@ final class AuthViewModelTests: XCTestCase {
         // ⚠ **완료 캐시도 필터링한 뒤 값으로 판정한다**(Codex #703 P2). 서버 플래그를 그대로
         // 보면 '그릴 것 없음' 이라고 결론 내리고도 완료를 안 적어, 콜드 스타트마다 로딩
         // 게이트가 동의 상태 응답을 기다린다(끊긴 네트워크에서는 타임아웃까지).
+        // (캐시는 `setUp`/`tearDown` 이 지운다 — 남아 있으면 이 단언이 항상 통과한다.)
         XCTAssertTrue(
             ConsentCompletionStore().hasCompleted(
                 userID: "user-1",
@@ -198,6 +223,8 @@ final class AuthViewModelTests: XCTestCase {
 
     /// **이미 동의한 사람에게는 아무것도 뜨지 않는다** — 규칙의 본체.
     func test_consentStatus_다_받은_사람에게는_아무것도_뜨지_않는다() async {
+        // 이 테스트도 같은 키에 완료를 적는다 — 남기면 위 테스트가 항상 통과한다.
+        addTeardownBlock { Self.clearConsentCompletionCache() }
         let api = MockAuthAPI()
         api.consentStatusResult = .success(ConsentStatusResponse(
             needsConsent: false,
