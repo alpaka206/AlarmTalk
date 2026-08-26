@@ -686,6 +686,20 @@ struct StockClip: Codable, Identifiable, Equatable {
     /// 안드로이드 `TtsApi.StockClip.variant` 미러.
     var variant: Int?
 
+    /// **서버가 이 클립을 '지금 목소리' 로 이미 구웠는가.**
+    ///
+    /// ⚠ 제자리 목소리 교체는 세대 표식(`custom_audio_invalidated_at`)을 **먼저 커밋하고**
+    /// 프리셋 재렌더는 큐에만 넣는다 — 굽는 것은 cron 이 나중에 한다. 그 사이 매니페스트의
+    /// `audioUrl` 은 **옛 클립 그대로**라, 앱이 "낡은 키가 없다 = 다 끝났다" 로 읽으면 교체
+    /// 세대를 확정해 버리고 재렌더가 끝난 뒤에도 다시 받지 않는다(Codex #703 P1).
+    /// false 인 클립이 하나라도 있으면 **아직 끝난 것이 아니다.**
+    ///
+    /// 옛 서버는 이 필드를 주지 않는다 — 그때는 예전처럼 동작하도록 `true` 로 읽는다.
+    var renderedForCurrentVoice: Bool?
+
+    /// 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다.
+    var isRenderedForCurrentVoice: Bool { renderedForCurrentVoice ?? true }
+
     var id: String { messageId }
 }
 

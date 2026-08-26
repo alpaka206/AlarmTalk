@@ -609,7 +609,12 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             return keys.isEmpty ? nil : (clip, keys)
         }
-        guard !stale.isEmpty else { return .init(changed: false, settled: true) }
+        // ⚠ **낡은 키가 없다고 '끝났다' 가 아니다**(Codex #703 P1). 서버는 교체 세대를 먼저
+        // 게시하고 프리셋은 cron 이 나중에 굽는다 — 그 사이 매니페스트는 옛 클립을 그대로
+        // 가리키므로, 캐시와 비교하면 당연히 낡은 것이 없다. 그 상태로 확정하면 재렌더가
+        // 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
+        let prerenderPending = stockClips.contains { !$0.isRenderedForCurrentVoice }
+        guard !stale.isEmpty else { return .init(changed: false, settled: !prerenderPending) }
 
         let staleKeyCount = stale.reduce(0) { $0 + $1.1.count }
         var refreshedKeys = Set<String>()
@@ -658,7 +663,10 @@ final class VoiceStudioViewModel: ObservableObject {
         for key in refreshedKeys {
             AlarmSoundStaging.clearStagedSound(forKey: key)
         }
-        return .init(changed: !refreshedKeys.isEmpty, settled: refreshedKeys.count == staleKeyCount)
+        return .init(
+            changed: !refreshedKeys.isEmpty,
+            settled: refreshedKeys.count == staleKeyCount && !prerenderPending
+        )
     }
 
     /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는

@@ -431,6 +431,29 @@ iOS `selectedBucketDraft`).
 ⚠ 이 화면은 **고르는 화면이 아니라 받는 화면**이다. "기본 목소리를 골라보세요" 같은
 피커로 되돌리지 말 것 — 목소리는 **알람 편집기에서** 고른다.
 
+## 5-2. 목소리를 제자리 교체하면 — **서버가 다 굽기 전에는 끝난 게 아니다**
+
+> 2026-08-26 신설. 프리셋 캐시가 회수된 옛 목소리로 남는 사고의 **뿌리**다.
+
+제자리 교체(`replaceVoiceInPlace`)는 한 트랜잭션에서 두 가지를 한다: 교체 세대
+(`custom_audio_invalidated_at`)를 **커밋**하고, 프리셋 클립 재렌더는 **큐에만 넣는다**
+(`refresh_existing = 1`). 실제로 굽는 것은 cron 이 나중에 한다.
+
+그래서 **표식이 올라간 뒤에도 매니페스트의 `audio_url` 은 한동안 옛 클립**이다.
+
+- ⚠ **"낡은 키가 없다" 를 "다 끝났다" 로 읽지 말 것.** 그 창에서 새로고침이 돌면 캐시와
+  매니페스트가 당연히 일치하므로, 앱이 그걸 근거로 교체 세대를 **확정**해 버린다. 그러면
+  재렌더가 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어 **프리셋 알람이 회수된 목소리로
+  계속 운다.** 푸시를 놓치면 스스로 낫지 않는다.
+- **판정은 서버가 준다.** 매니페스트의 클립마다 `rendered_for_current_voice` 가 붙는다 —
+  그 오디오가 프로필의 **현재** provider voice 로 만들어졌는가(`GET /voice/:id/prerender-status`
+  의 완료 판정과 같은 식). 하나라도 false 면 **아직이다.**
+- **아직이면 확정하지 않는다.** 강등(커스텀 문구 알람 내리기)은 그대로 하되 세대를 적지
+  않는다 — 다음 회차가 같은 일을 한 번 더 한다(멱등). 안드로이드 워커는 `Result.retry()`.
+- ⚠ **커스텀 알람이 성공했다는 이유로 확정하지 말 것.** 한 목소리를 커스텀 알람과 프리셋
+  알람이 **함께** 쓰는 경우가 흔하다 — 커스텀 쪽 성공으로 확정하면 프리셋 쪽이 영영 남는다.
+- **옛 서버는 이 필드를 주지 않는다** — 그때는 `true`(준비됨)로 읽어 예전처럼 동작한다.
+
 ## 6. 무료로 내려가면 — **알람은 잠그고, 목소리는 3일 뒤 지운다**
 
 축이 **둘**이다. 섞어 읽으면 반드시 사고가 난다.
@@ -524,6 +547,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 기본목소리 제한(OR) | `restrictToWeatherMedication` (`ui/editor/AlarmEditorScreen.kt`) | `restrictToWeatherMedication` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(restrictToWeatherMedication, …)` | `coerceFreeVoiceTierConstraints` | — |
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
+| 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
+| 아직이면 확정 안 함 | `prerenderPendingVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |

@@ -1839,9 +1839,27 @@ tts.get('/stock-clips', async (c) => {
   const userPk = c.get('userIdPK') || userLoginId;
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
-                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
+                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name,
+                 -- 이 클립이 '지금 목소리' 로 구워진 것인가 (Codex #703 P1).
+                 -- 제자리 교체는 custom_audio_invalidated_at 을 먼저 커밋하고 프리셋
+                 -- 재렌더는 큐에만 넣는다(replaceVoiceInPlace) — 실제 굽기는 cron 이 나중에
+                 -- 한다. 그래서 표식이 올라간 뒤에도 여기 audio_url 은 한동안 옛 클립이다.
+                 -- 앱이 그걸 모르면 '낡은 키가 없다 = 다 끝났다' 로 읽고 교체 세대를 확정해,
+                 -- 재렌더가 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
+                 -- 판정은 GET /voice/:id/prerender-status 의 완료 판정과 같은 식이다:
+                 -- 그 오디오가 프로필의 현재 provider voice 로 만들어졌는가.
+                 CASE
+                   WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
+                   WHEN EXISTS (
+                     SELECT 1 FROM generated_audio_assets ga
+                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ) THEN 1
+                   ELSE 0
+                 END AS rendered_for_current_voice
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+          LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
             AND (
               COALESCE(vp.is_system, 0) = 1
@@ -1876,6 +1894,9 @@ tts.get('/stock-clips', async (c) => {
       text: row.text,
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),
+      // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
+      // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
+      rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
     })),
     // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
     // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.

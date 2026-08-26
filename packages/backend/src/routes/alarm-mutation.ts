@@ -914,6 +914,41 @@ alarmMutation.post('/:id/decline', async (c) => {
 // ⚠ **여러 기기로 받는 경우 첫 기기에서만 받는다.** ack 는 기기 단위가 아니라 사용자
 // 단위라, 두 번째 기기는 그 알람을 받지 못한다(`docs/spec/family-alarm.md` 「받은 뒤에는
 // 전부 받은 사람 것이다」에 규칙으로 적어 두었다).
+/**
+ * 전달이 끝나 알람 행이 사라진 뒤, **그 전달만을 위해 만들어졌던 메시지 행**을 정리한다.
+ *
+ * 가족 알람은 전달마다 `messages` 행을 하나 만든다. ACK 가 `alarms` 행을 지우면 그 행이
+ * 유일한 참조였는데, 예전에는 메시지와 그 생성 오디오 기록이 **그대로 남아 계속 쌓였다**
+ * (Codex #703 P2). 문구와 메타데이터는 사용자가 보낸 내용이므로 남길 이유가 없다.
+ *
+ * ⚠ **지워도 되는 것만 지운다.** 판정 세 가지를 모두 만족할 때만이다:
+ *  1. **프리셋이 아니다**(`is_preset = 0`) — 프리셋은 여러 사람이 나눠 쓰는 공용 클립이라
+ *     참조가 잠깐 0 이어도 지우면 안 된다. 이게 가장 중요한 방어다.
+ *  2. **어떤 알람도 더는 가리키지 않는다** — 같은 메시지를 재전송이나 다른 수신자가 아직
+ *     쓰고 있으면 남긴다.
+ *  3. 방금 지운 그 전달의 메시지 id 하나만 본다 — 넓게 쓸어 담지 않는다.
+ *
+ * 실패해도 트랜잭션을 깨지 않는다면 tombstone·삭제가 롤백돼 전달이 되살아나므로, 같은
+ * 트랜잭션 안에서 그대로 던진다(정리 실패는 재시도로 해결된다 — ACK 는 멱등이다).
+ */
+async function deleteOrphanedDeliveryMessage(tx: DbExecutor, messageId: string): Promise<void> {
+  if (!messageId || !UUID_RE.test(messageId)) return;
+  const orphan = await tx.execute({
+    sql: `SELECT 1 FROM messages m
+          WHERE m.id = ?
+            AND COALESCE(m.is_preset, 0) = 0
+            AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = m.id)
+          LIMIT 1`,
+    args: [messageId],
+  });
+  if (orphan.rows.length === 0) return;
+  await tx.execute({
+    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
+    args: [messageId],
+  });
+  await tx.execute({ sql: 'DELETE FROM messages WHERE id = ?', args: [messageId] });
+}
+
 alarmMutation.post('/:id/received', async (c) => {
   const body = await c.req.json<unknown>().catch(() => null);
   if (
@@ -941,13 +976,15 @@ alarmMutation.post('/:id/received', async (c) => {
   const db = getDB(c.env);
   const deleted = await withWriteTransaction(db, async (tx) => {
     const senderRes = await tx.execute({
-      sql: 'SELECT user_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
+      sql: 'SELECT user_id, message_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
       args: [resolved.id, deliveryVersion],
     });
     // 이미 지워졌거나 같은 id의 새 전달 세대로 교체됐으면 멱등 성공. 구버전 ACK가
     // 새 알람을 지우면 수신자는 그 내용을 영영 못 받는다.
     if (senderRes.rows.length === 0) return false;
-    const senderUserId = String(typedRow<{ user_id: string }>(senderRes.rows[0]!).user_id);
+    const senderRow = typedRow<{ user_id: string; message_id: string }>(senderRes.rows[0]!);
+    const senderUserId = String(senderRow.user_id);
+    const deliveredMessageId = String(senderRow.message_id);
     const source = await resolveAlarmVoiceRevocationSource(tx, resolved.id, deliveryVersion);
     if (!source) return false;
 
@@ -983,7 +1020,9 @@ alarmMutation.post('/:id/received', async (c) => {
             WHERE id = ? AND target_user_id IS NOT NULL AND delivery_version = ?`,
       args: [resolved.id, deliveryVersion],
     });
-    return (result.rowsAffected ?? 0) > 0;
+    const removed = (result.rowsAffected ?? 0) > 0;
+    if (removed) await deleteOrphanedDeliveryMessage(tx, deliveredMessageId);
+    return removed;
   });
   return c.json({ success: true, deleted });
 });

@@ -527,12 +527,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             )
             // 예약까지 맞춘 것만 확정한다(위 푸시 경로와 같은 규칙).
             for pending in pendingApplies {
-                // 내릴 것도 확인할 것도 없던 회차는 **프리셋 캐시가 유일하게 남은 일**이다 —
-                // 그게 안 끝났으면 확정을 미뤄 다음 회차가 다시 집게 한다. 커스텀 알람 작업이
-                // 있던 회차는 그 성패로 판단하므로 여기서 붙들지 않는다(붙들면 프리셋 실패
-                // 하나가 멀쩡한 목소리를 계속 '정리 중' 으로 묶는다).
-                let presetOnly = pending.degraded.isEmpty && pending.unverified.isEmpty && !pending.failed
-                if presetOnly && !presetWorkSettled { continue }
+                // ⚠ **프리셋 작업이 남아 있으면 어떤 회차도 확정하지 않는다**(Codex #703 P1).
+                // 예전에는 '프리셋만 남은 회차' 로 좁혔는데, 한 목소리를 커스텀 알람과 프리셋
+                // 알람이 **함께** 쓰면 커스텀 강등이 성공했다는 이유로 세대가 확정돼 — 다음
+                // 회차부터 '이미 반영함' 이라 그 프리셋 알람이 회수된 목소리로 계속 운다.
+                // 확정을 미루는 비용은 다음 회차에 같은 일을 한 번 더 하는 것뿐이다(멱등).
+                if !presetWorkSettled { continue }
                 await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
             }
         }
