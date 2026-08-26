@@ -78,6 +78,15 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
  *  POST /user/consents 는 요청 바디의 version 을 받기만 하고 무시한다(클라가 보낸 버전을
  *  그대로 쓰면 위조된 높은 값이 이후의 재동의 요구를 영구히 무력화한다).
  *  재동의가 필요한지는 이 값이 아니라 CONSENT_MIN_POLICY_VERSION 이 결정한다.
+ *  '6' (2026-08-24 개정): **범위가 늘어나는 개정이라 재동의를 받는다.**
+ *   ① 확정된 목소리의 **원본 음성 보관 기간**을 '등록 7일 후 파기' 에서 '목소리·계정 삭제
+ *      또는 유료 정리까지' 로 정정했다(실제 구현이 그러했다 — 고지가 틀렸던 것이다).
+ *      보유 기간 확대이므로 privacy·voice_biometric 을 올린다.
+ *   ② **국외 이전 동의가 사실상 필수**임을 명시했다. 기본 목소리 알람을 포함한 음성 처리가
+ *      국외 AI 제공자를 거치므로 거부하면 가입을 마칠 수 없고, 철회는 탈퇴로만 가능하다.
+ *      동의의 성격이 바뀌었으므로 overseas_transfer 를 올린다.
+ *   ③ 환불·청약철회는 **법령이 보장하는 권리가 마켓 정책만으로 제한되지 않는다**고 명시했다.
+ *      이용자 권리를 넓히는 정정이라 terms 는 올리지 않는다(축소 개정과 같은 취급).
  *  '5' (2026-08-05 개정): iOS 앱 제공에 따라 Apple 로그인(Sign in with Apple) 수집 항목과
  *  App Store 인앱결제를 다시 고지하고, 위탁·국외이전 표에 Apple 을 추가했다. 결제가
  *  Google Play 단일 경로라는 기재를 앱 마켓별 경로로 정정. **범위가 늘어나는 개정**이지만
@@ -89,7 +98,7 @@ export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
  *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
  *  Firebase/FCM 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
  *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
-export const CURRENT_POLICY_VERSION = '5';
+export const CURRENT_POLICY_VERSION = '6';
 
 /**
  * 유형별 **최소 정책 버전** — 기록된 동의가 이 버전 이상이어야 유효하다.
@@ -121,6 +130,23 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   voice_biometric: 3,
   overseas_transfer: 3,
 };
+
+/**
+ * ⚠ **버전 6 의 재동의 여부는 아직 사람이 결정하지 않았다**(2026-08-26).
+ *
+ * 문서 버전은 6 으로 올렸다 — 본문이 바뀌었는데 같은 버전으로 내보내면 v5 에 동의한 사람이
+ * **바뀐 내용에 동의한 것으로 취급**되기 때문이다.
+ *
+ * 다만 위 최소 버전은 **3 그대로 두었다.** 올리면 베타 사용자 전원이 재동의 화면을 다시
+ * 타는데, 버전 6 의 두 변경은 성격이 갈린다:
+ *   - 원본 음성 보관 기간 확대(privacy·voice_biometric): **고지가 실제 구현과 달랐던 것**을
+ *     정정한 것이라 처리 자체는 처음부터 그러했다. 그래도 고지 기준으로는 확대다.
+ *   - 국외 이전이 사실상 필수임을 명시(overseas_transfer): 동의의 성격이 바뀌었다.
+ * 둘 다 형식만 보면 재동의 사유지만 실제로 받을지는 **법무 판단**이다 — 위 v5 주석이 같은
+ * 이유로 사람에게 넘긴 것과 같은 종류의 결정이다.
+ *
+ * 올리기로 하면 여기 세 유형을 6 으로 바꾼다(그 유형만 재동의 화면에 뜬다).
+ */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
 export type LatestConsent = { agreed: boolean; version: number };

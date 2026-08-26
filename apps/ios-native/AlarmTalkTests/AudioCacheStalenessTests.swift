@@ -193,4 +193,58 @@ final class AudioCacheStalenessTests: XCTestCase {
         XCTAssertFalse(AudioCacheStore.shared.isStale(cacheKey: k, remoteAudioUri: "r2://a"))
         XCTAssertTrue(AudioCacheStore.shared.isStale(cacheKey: k, remoteAudioUri: "r2://b"))
     }
+
+    /// ⚠ **한 캐시키의 갈아끼우기는 한 번에 하나씩이다**(Codex #703 P1).
+    ///
+    /// 교체는 판정 → 본체 쓰기 → 같은 키의 다른 확장자 사본 정리 → 메타 기록의 연속이라,
+    /// 두 회차가 겹치면 서로의 본체를 지우거나(확장자가 다르면 확실히 그렇다) 살아남은
+    /// 바이트와 메타의 세대가 어긋난다. 파일이 사라지면 예약된 알람이 소리를 잃고, 어긋나면
+    /// 메타가 이미 새 주소라 낡음 판정을 통과해 **지운 목소리가 계속 운다.**
+    func test_같은_키를_동시에_갈아끼워도_본체는_하나만_남는다() throws {
+        let k = key("concurrent")
+        defer { cleanup(k) }
+
+        _ = try AudioCacheStore.shared.cacheBytes(
+            Data(repeating: 0x01, count: 1024), cacheKey: k, mimeType: mime,
+            rawAudioUri: "r2://gen-0", enforceMaxDuration: false
+        )
+
+        // 형식을 번갈아 준다 — 같은 확장자끼리는 덮어쓰기라 겹쳐도 티가 안 나지만,
+        // 확장자가 갈리면 서로의 본체를 지운다.
+        DispatchQueue.concurrentPerform(iterations: 16) { index in
+            _ = try? AudioCacheStore.shared.cacheBytes(
+                Data(repeating: UInt8(index + 2), count: 1024),
+                cacheKey: k,
+                mimeType: index.isMultiple(of: 2) ? "audio/aac" : "audio/mpeg",
+                rawAudioUri: "r2://gen-\(index + 1)",
+                enforceMaxDuration: false
+            )
+        }
+
+        let directory = try AudioCacheStore.audioDirectory()
+        let safeKey = AudioCacheStore.safeCacheKey(k)
+        let bodies = try FileManager.default
+            .contentsOfDirectory(atPath: directory.path)
+            .filter { name in
+                let (base, ext) = AudioCacheStore.splitName(name)
+                return base == safeKey && ext != "meta.json" && ext != "json"
+            }
+        XCTAssertEqual(
+            bodies.count, 1,
+            "한 키에 본체가 둘 남으면 cachedURL 이 옛 바이트를 뽑을 수 있다"
+        )
+
+        let metadata = try XCTUnwrap(AudioCacheStore.shared.readMetadata(cacheKey: k))
+        XCTAssertEqual(
+            bodies.first.map { AudioCacheStore.splitName($0).ext },
+            AudioCacheStore.fileExtension(forMimeType: metadata.mimeType),
+            "남은 본체와 메타의 형식이 어긋나면 낡음 판정을 통과한 채 옛 소리가 운다"
+        )
+
+        let survivor = try XCTUnwrap(AudioCacheStore.shared.cachedURL(for: k))
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: survivor.path),
+            "예약된 알람이 가리킬 파일이 사라졌다"
+        )
+    }
 }

@@ -132,8 +132,14 @@ describe('lib/consent — config', () => {
   // docs/legal/*.ko.md 의 '정책 버전' 머리말과 함께 바꾸고, 왜 올렸는지 남길 것.
   // (안드로이드 빌드가 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을
   //  파싱해 BuildConfig.LEGAL_POLICY_VERSION 을 만든다 — 서버와 어긋나면 동의 기록이 409 된다.)
-  it('문서 버전은 5, 유형별 최소 버전은 전부 3 (v5 의 확대분은 iOS 이용자에만 적용 → Android 재동의 사유 아님)', () => {
-    expect(CURRENT_POLICY_VERSION).toBe('5');
+  // ⚠ **본문이 바뀌면 문서 버전을 올린다**(Codex #703 P1). 같은 버전으로 내보내면 앞 버전에
+  // 동의한 사람이 **바뀐 내용에 동의한 것으로 취급**된다. 버전 6 은 원본 음성 보관 기간
+  // 정정과 국외 이전 필수 명시를 담는다.
+  //
+  // 최소 버전은 아직 전부 3 이다 — 재동의를 실제로 받을지는 **법무 판단**이라 사람이
+  // 정한다(`CONSENT_MIN_POLICY_VERSION` 위 주석). 올리기로 하면 이 기대값도 함께 바꾼다.
+  it('문서 버전은 6, 유형별 최소 버전은 아직 전부 3 (재동의 여부는 사람이 정한다)', () => {
+    expect(CURRENT_POLICY_VERSION).toBe('6');
     expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
   });
 });

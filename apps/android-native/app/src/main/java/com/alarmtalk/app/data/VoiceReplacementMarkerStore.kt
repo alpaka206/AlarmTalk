@@ -65,7 +65,10 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 세대를 '처음 봤다' 로 다시 적어 그 사이의 교체를 영영 놓친다. 실패를 알린다.
         val seen = seenLocked(userId, profileId, invalidatedAt)
         if (!seen.changed) return@withLock Result(0, seen.persisted)
-        val degraded = degrade() ?: return@withLock Result(0, persisted = false)
+        val degraded = degrade() ?: run {
+            markRetryLocked(userId, profileId, invalidatedAt)
+            return@withLock Result(0, persisted = false)
+        }
         Result(degraded, commitLocked(userId, profileId, invalidatedAt))
     }
 
@@ -85,7 +88,10 @@ class VoiceReplacementMarkerStore(context: Context) {
         if (userId.isNullOrBlank() || profileId.isBlank()) return@withLock Result.SKIPPED
         val generation = invalidatedAt?.takeIf { it.isNotBlank() }
         if (generation != null && hasAppliedLocked(userId, profileId, generation)) return@withLock Result.SKIPPED
-        val degraded = degrade() ?: return@withLock Result(0, persisted = false)
+        val degraded = degrade() ?: run {
+            markRetryLocked(userId, profileId, generation)
+            return@withLock Result(0, persisted = false)
+        }
         // 세대를 모르는 옛 신호는 확정할 것이 없다 — 남길 값이 없으니 실패도 아니다.
         val persisted = generation?.let { commitLocked(userId, profileId, it) } ?: true
         Result(degraded, persisted)
@@ -145,6 +151,8 @@ class VoiceReplacementMarkerStore(context: Context) {
 
     private fun settlingKey(userId: String) = "$SETTLING_PREFIX$userId"
 
+    private fun retryKey(userId: String, profileId: String) = "$RETRY_PREFIX$userId:$profileId"
+
     /** 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다. */
     private fun seenLocked(userId: String, profileId: String, invalidatedAt: String?): Seen {
         val key = seenKey(userId, profileId)
@@ -164,10 +172,25 @@ class VoiceReplacementMarkerStore(context: Context) {
             return Seen(changed = false, persisted = true)
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
+        val applied = prefs.getString(appliedKey(userId, profileId), "").orEmpty()
+        if (incoming <= applied) return Seen(changed = false, persisted = true)
+        // ⚠ **기준선과 같은 세대라도 '시도했다 실패한' 것이면 다시 집는다**(Codex #703 P1,
+        // iOS 와 같은 규칙). 목록이 먼저 도착해 그 세대를 기준선으로 적어 둔 뒤 같은 회차의
+        // 반영이 실패하면, `incoming > baseline` 을 영영 통과하지 못해 `applied` 가 비어
+        // 있는데도 다시 집을 길이 없다 — 회수된 목소리가 예약된 채 남는다.
+        if (incoming == prefs.getString(retryKey(userId, profileId), null)) {
+            return Seen(changed = true, persisted = true)
+        }
         return Seen(
             changed = incoming > prefs.getString(key, "").orEmpty(),
             persisted = true,
         )
+    }
+
+    /** 반영에 실패해 **다시 집어야 하는** 세대. 확정하면 지운다. */
+    private fun markRetryLocked(userId: String, profileId: String, invalidatedAt: String?) {
+        val generation = invalidatedAt?.takeIf { it.isNotBlank() } ?: return
+        prefs.edit().putString(retryKey(userId, profileId), generation).commit()
     }
 
     /**
@@ -199,7 +222,13 @@ class VoiceReplacementMarkerStore(context: Context) {
             .putString(seen, maxOf(value, previousSeen.orEmpty()))
             .putString(applied, maxOf(value, previousApplied.orEmpty()))
             .commit()
-        if (!committed) {
+        if (committed) {
+            // 반영했으니 재시도 표시는 지운다(그 세대든 그보다 앞선 것이든 끝났다).
+            val retry = prefs.getString(retryKey(userId, profileId), null)
+            if (retry != null && retry <= value) {
+                prefs.edit().remove(retryKey(userId, profileId)).commit()
+            }
+        } else {
             val rollback = prefs.edit()
             if (previousSeen == null) rollback.remove(seen) else rollback.putString(seen, previousSeen)
             if (previousApplied == null) rollback.remove(applied) else rollback.putString(applied, previousApplied)
@@ -216,6 +245,7 @@ class VoiceReplacementMarkerStore(context: Context) {
         const val TAG = "VoiceReplacementMarker"
         const val SEEN_PREFIX = "seen:"
         const val SETTLING_PREFIX = "settling:"
+        const val RETRY_PREFIX = "retry:"
         const val APPLIED_PREFIX = "applied:"
 
         /**

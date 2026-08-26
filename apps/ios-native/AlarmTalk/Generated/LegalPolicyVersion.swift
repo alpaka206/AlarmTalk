@@ -4,5 +4,5 @@ enum LegalPolicy {
     /// 이 빌드가 번들에 담고 있는 법무 문서의 버전. `POST /user/consents` 의
     /// `document_version` 으로 보낸다. 서버의 CURRENT_POLICY_VERSION 과 다르면
     /// 409 POLICY_VERSION_MISMATCH 로 거부된다.
-    static let bundledVersion = "5"
+    static let bundledVersion = "6"
 }

@@ -69,6 +69,32 @@ enum AudioCacheError: LocalizedError {
     }
 }
 
+// MARK: - AudioCacheKeyLocks
+/// **한 캐시키를 갈아끼우는 동안 다른 갈아끼우기가 끼어들지 못하게 한다**(Codex #703 P1).
+///
+/// 교체는 한 걸음이 아니다 — 낡음 판정 → 본체 쓰기 → 같은 키의 다른 확장자 사본 정리 →
+/// 메타 기록 → 구워 둔 알람 사운드 무효화. 두 회차가 겹치면 A 가 방금 쓴 본체를 B 의 사본
+/// 정리가 지우고(확장자가 다르면 서로를 지운다), 살아남은 바이트와 메타의 세대가 어긋난다.
+/// 파일이 사라지면 예약된 알람이 소리를 잃고, 어긋나면 메타가 이미 새 주소라 낡음 판정을
+/// 통과해 **지운 목소리가 계속 운다.**
+///
+/// 스트라이프 32개 **고정**이라 캐시키가 늘어도 잠금이 늘지 않는다(키마다 잠금을 만들면
+/// 그 표가 프로세스 수명 내내 자란다). 다른 키가 한 스트라이프를 나눠 쓰면 잠깐 줄을 설
+/// 뿐 정확성에는 영향이 없다. `NSRecursiveLock` 인 이유는 잠근 채 `cacheBytes` 를 다시
+/// 부르는 경로가 있어서다(`trimCachedAudioIfNeeded`).
+private final class AudioCacheKeyLocks: @unchecked Sendable {
+    static let shared = AudioCacheKeyLocks()
+    private let stripes = (0..<32).map { _ in NSRecursiveLock() }
+
+    func lock(for key: String) -> NSRecursiveLock {
+        // Swift 의 `hashValue` 는 실행마다 시드가 달라도 되지만 여기선 한 프로세스 안에서만
+        // 쓰므로 상관없다. 그래도 분포가 확실한 FNV-1a 로 직접 센다.
+        var hash: UInt64 = 1_469_598_103_934_665_603
+        for byte in key.utf8 { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+        return stripes[Int(hash % UInt64(stripes.count))]
+    }
+}
+
 // MARK: - AudioCacheStore
 /// SHA-256 cacheKey 기반 음원 캐시.
 /// Android `AlarmAudioStore.kt` 의 동작을 이식하되, iOS 는 AVAsset 으로 길이를 측정한다.
@@ -340,6 +366,10 @@ final class AudioCacheStore {
         let safeKey = Self.safeCacheKey(cacheKey)
         let target = directory.appendingPathComponent("\(safeKey).\(ext)")
 
+        // ⚠ **아래 다섯 걸음은 한 덩어리다**(Codex #703 P1) — 판정과 쓰기 사이에 다른
+        // 회차가 끼어들면 서로의 본체를 지우거나 메타와 바이트의 세대가 갈라진다.
+        return try Self.withCacheKeyLock(cacheKey) {
+
         // ⚠ **파일이 있다고 무조건 건너뛰지 말 것 — 그러면 캐시가 write-once 가 된다.**
         // 서버가 같은 message_id 의 오디오 실체를 바꿔도(목소리 교체) 기기는 영영 옛
         // 소리를 쓴다. 키에 버전이 없으니 판별은 **`audio_url` 이 달라졌는가**로 한다 —
@@ -368,7 +398,10 @@ final class AudioCacheStore {
                 // ⚠ **구워 둔 알람 사운드도 함께 버린다.** iOS 는 예약 시점에 캐시 파일을
                 // `Library/Sounds/voice-<key>.caf` 로 복사해 그 이름을 AlarmKit 에 박는다.
                 // 캐시만 갈아 끼우면 알람은 **여전히 옛 목소리로** 운다.
-                Task { @MainActor in AlarmSoundStaging.clearStagedSound(forKey: cacheKey) }
+                // ⚠ **메인으로 건너뛰지 않는다.** `Task { @MainActor }` 로 미루면 무효화가
+                // 이 잠금 밖으로 새어 나가 **다음 staging 뒤에 도착**할 수 있다 — 그러면 방금
+                // 구운 새 목소리를 지우고 옛 소리가 다시 구워진다.
+                AlarmSoundStaging.clearStagedSoundFiles(forKey: cacheKey)
             }
         }
 
@@ -392,6 +425,7 @@ final class AudioCacheStore {
         try writeMetadata(metadata)
 
         return target
+        }
     }
 
     /// 받아 둔 무료 버킷 스톡 클립이 하나라도 있는가.
@@ -562,12 +596,15 @@ final class AudioCacheStore {
     nonisolated func deleteCachedAudio(cacheKey: String) throws {
         guard let directory = try? Self.audioDirectory() else { return }
         let safeKey = Self.safeCacheKey(cacheKey)
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        for name in files {
-            let (base, _) = Self.splitName(name)
-            if base == safeKey {
-                let url = directory.appendingPathComponent(name)
-                try? FileManager.default.removeItem(at: url)
+        // 갈아끼우기와 같은 줄에 세운다 — 지우는 도중에 새 본체가 들어오면 메타만 남는다.
+        Self.withCacheKeyLock(cacheKey) {
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            for name in files {
+                let (base, _) = Self.splitName(name)
+                if base == safeKey {
+                    let url = directory.appendingPathComponent(name)
+                    try? FileManager.default.removeItem(at: url)
+                }
             }
         }
     }
@@ -743,6 +780,18 @@ final class AudioCacheStore {
     }
 
     /// Android `safeCacheKey` 와 동일 규칙: 소문자 + [^a-z0-9_-] → "_", 최대 96 자.
+    /// 같은 cacheKey 의 본체·메타·staged 사운드를 만지는 구간을 직렬화한다.
+    ///
+    /// ⚠ **이 안에서 `await` 하지 말 것.** 잠근 스레드와 푸는 스레드가 달라질 수 있고,
+    /// 그건 정의되지 않은 동작이다. 오래 걸리는 일(크롭·길이 측정)은 잠그기 **전에** 끝내고,
+    /// 잠금 안에는 파일 갈아끼우기만 둔다.
+    nonisolated static func withCacheKeyLock<T>(_ cacheKey: String, _ body: () throws -> T) rethrows -> T {
+        let lock = AudioCacheKeyLocks.shared.lock(for: safeCacheKey(cacheKey))
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+
     nonisolated static func safeCacheKey(_ cacheKey: String) -> String {
         let lowered = cacheKey.lowercased()
         let sanitized = lowered.map { ch -> Character in
@@ -874,21 +923,25 @@ final class AudioCacheStore {
         // 트림이 메타를 새로 쓰면서 비우면 그 키는 **영영 낡지 않은 것**이 된다 — 목소리를
         // 교체해도 다시 받지 않고, 예약 지문도 그대로라 지운 목소리로 계속 운다.
         // 트림은 바이트와 길이만 갈아 끼우는 일이므로 나머지는 그대로 물려준다.
-        let previous = readMetadata(cacheKey: cacheKey)
-        removeAudioFile(forCacheKey: cacheKey)
-        _ = try? cacheBytes(
-            data,
-            cacheKey: cacheKey,
-            mimeType: "audio/aac",
-            source: previous?.source ?? "raw_audio",
-            messageId: previous?.messageId,
-            rawAudioUri: previous?.rawAudioUri,
-            durationOverrideMs: min(trimmedDuration, AlarmAudioLimits.maxDurationMillis),
-            enforceMaxDuration: false
-        )
-        // 트림 전 staged 파일이 남아 있으면 무효화해 다음 resolve 가 새 파일로 staging 한다.
-        // AlarmSoundStaging 은 @MainActor 이므로 메인에서 정리한다.
-        await MainActor.run { AlarmSoundStaging.clearStagedSound(forKey: cacheKey) }
+        // ⚠ **여기부터는 한 덩어리다**(Codex #703 P1). 본체를 지운 사이에 다른 회차가
+        // 새 본체를 써 넣으면 트림 결과가 그 위를 덮어 **새 세대가 옛 길이로** 남는다.
+        // 크롭·길이 측정 같은 `await` 는 위에서 이미 끝냈으므로 잠금 안은 파일 작업뿐이다.
+        Self.withCacheKeyLock(cacheKey) {
+            let previous = readMetadata(cacheKey: cacheKey)
+            removeAudioFile(forCacheKey: cacheKey)
+            _ = try? cacheBytes(
+                data,
+                cacheKey: cacheKey,
+                mimeType: "audio/aac",
+                source: previous?.source ?? "raw_audio",
+                messageId: previous?.messageId,
+                rawAudioUri: previous?.rawAudioUri,
+                durationOverrideMs: min(trimmedDuration, AlarmAudioLimits.maxDurationMillis),
+                enforceMaxDuration: false
+            )
+            // 트림 전 staged 파일이 남아 있으면 무효화해 다음 resolve 가 새 파일로 staging 한다.
+            AlarmSoundStaging.clearStagedSoundFiles(forKey: cacheKey)
+        }
         #endif
     }
 

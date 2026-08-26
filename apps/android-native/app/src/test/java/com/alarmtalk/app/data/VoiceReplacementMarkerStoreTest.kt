@@ -32,20 +32,20 @@ class VoiceReplacementMarkerStoreTest {
     @Test
     fun firstSightSeedsSilently() = runBlocking {
         var degrades = 0
-        val applied = store.applyIfChanged("u1", "vp1", "2026-08-25 01:00:00") { degrades++; 3 }
+        val applied = store.applyIfChanged("u1", "vp1", "2026-08-25 01:00:00") { degrades++; 3 }.degraded
 
         assertEquals(0, applied)
         assertEquals("첫 조회를 '바뀌었다' 로 읽으면 업데이트 직후 모든 설치가 알람을 날린다", 0, degrades)
-        assertEquals(0, store.applyIfChanged("u1", "vp1", "2026-08-25 01:00:00") { 3 })
+        assertEquals(0, store.applyIfChanged("u1", "vp1", "2026-08-25 01:00:00") { 3 }.degraded)
     }
 
     @Test
     fun newGenerationDegradesAndCommits() = runBlocking {
         store.applyIfChanged("u2", "vp1", null) { 0 }
 
-        assertEquals(2, store.applyIfChanged("u2", "vp1", "2026-08-25 01:00:00") { 2 })
+        assertEquals(2, store.applyIfChanged("u2", "vp1", "2026-08-25 01:00:00") { 2 }.degraded)
         // 확정됐으니 같은 세대로는 두 번 돌지 않는다.
-        assertEquals(0, store.applyIfChanged("u2", "vp1", "2026-08-25 01:00:00") { 2 })
+        assertEquals(0, store.applyIfChanged("u2", "vp1", "2026-08-25 01:00:00") { 2 }.degraded)
     }
 
     /** ⚠ 강등이 실패했거나 계정이 바뀌었으면(=null) **확정하지 않는다** — 다음 회차가 다시 집는다. */
@@ -53,8 +53,8 @@ class VoiceReplacementMarkerStoreTest {
     fun refusedCommitLeavesTheSignalForTheNextPass() = runBlocking {
         store.applyIfChanged("u3", "vp1", null) { 0 }
 
-        assertEquals(0, store.applyIfChanged("u3", "vp1", "2026-08-25 01:00:00") { null })
-        assertEquals(1, store.applyIfChanged("u3", "vp1", "2026-08-25 01:00:00") { 1 })
+        assertEquals(0, store.applyIfChanged("u3", "vp1", "2026-08-25 01:00:00") { null }.degraded)
+        assertEquals(1, store.applyIfChanged("u3", "vp1", "2026-08-25 01:00:00") { 1 }.degraded)
     }
 
     /**
@@ -69,9 +69,9 @@ class VoiceReplacementMarkerStoreTest {
         assertEquals(
             "시드를 반영으로 읽으면 뒤이은 푸시가 아무것도 내리지 않는다",
             2,
-            store.applyIfNotApplied("u4", "vp1", "2026-08-25 01:00:00") { 2 },
+            store.applyIfNotApplied("u4", "vp1", "2026-08-25 01:00:00") { 2 }.degraded,
         )
-        assertEquals(0, store.applyIfNotApplied("u4", "vp1", "2026-08-25 01:00:00") { 2 })
+        assertEquals(0, store.applyIfNotApplied("u4", "vp1", "2026-08-25 01:00:00") { 2 }.degraded)
     }
 
     /** ⚠ 늦게 도착한 **앞선** 세대의 푸시는 이미 처리한 것으로 본다(뒤 세대 알람을 지우면 안 된다). */
@@ -79,18 +79,18 @@ class VoiceReplacementMarkerStoreTest {
     fun olderGenerationPushesAreTreatedAsHandled() = runBlocking {
         store.applyIfNotApplied("u5", "vp1", "2026-08-25 02:00:00") { 1 }
 
-        assertEquals(0, store.applyIfNotApplied("u5", "vp1", "2026-08-25 01:00:00") { 5 })
-        assertEquals(5, store.applyIfNotApplied("u5", "vp1", "2026-08-25 03:00:00") { 5 })
+        assertEquals(0, store.applyIfNotApplied("u5", "vp1", "2026-08-25 01:00:00") { 5 }.degraded)
+        assertEquals(5, store.applyIfNotApplied("u5", "vp1", "2026-08-25 03:00:00") { 5 }.degraded)
     }
 
     /** 세대를 모르는 옛 신호는 반영하되 **확정하지 않는다**(무엇을 봤는지 모른다). */
     @Test
     fun signalsWithoutAGenerationAreNeverCommitted() = runBlocking {
-        assertEquals(1, store.applyIfNotApplied("u6", "vp1", null) { 1 })
+        assertEquals(1, store.applyIfNotApplied("u6", "vp1", null) { 1 }.degraded)
         assertEquals(
             "무엇을 봤는지 모르면 확정하지 않는다 — 다음 신호도 그대로 반영한다",
             1,
-            store.applyIfNotApplied("u6", "vp1", null) { 1 },
+            store.applyIfNotApplied("u6", "vp1", null) { 1 }.degraded,
         )
     }
 
@@ -103,7 +103,7 @@ class VoiceReplacementMarkerStoreTest {
         assertEquals(
             "낡은 목록이 표식을 되돌리면 그 사이 만든 알람이 지워진다",
             0,
-            store.applyIfChanged("u7", "vp1", "2026-08-25 01:00:00") { 1 },
+            store.applyIfChanged("u7", "vp1", "2026-08-25 01:00:00") { 1 }.degraded,
         )
     }
 
@@ -130,22 +130,48 @@ class VoiceReplacementMarkerStoreTest {
         }
         started.await()
         val newer = async(Dispatchers.Default) {
-            val applied = store.applyIfChanged("u8", "vp1", "2026-08-25 02:00:00") { 7 }
+            val applied = store.applyIfChanged("u8", "vp1", "2026-08-25 02:00:00") { 7 }.degraded
             newerFinished.complete(applied)
             applied
         }
 
-        assertEquals(1, older.await())
+        assertEquals(1, older.await().degraded)
         // 락이 풀린 뒤에야 새 회차가 돈다 — 그때는 옛 세대가 이미 확정돼 있어 그대로 반영된다.
         assertEquals("새 세대는 옛 회차가 끝난 뒤 그대로 반영돼야 한다", 7, newer.await())
+    }
+
+    /**
+     * ⚠ **반영하지 못한 세대는 끝날 때까지 매 회차 다시 집힌다**(Codex #703 P1).
+     *
+     * 목록 갱신이 먼저 끝나 그 세대를 **기준선으로 적어 둔 뒤** 같은 회차의 강등이 실패하면,
+     * `incoming > baseline` 을 영영 통과하지 못한다 — 반영한 적이 없는데 다시 집을 길이
+     * 없어 회수된 목소리를 문 알람이 그대로 남는다. iOS 짝은
+     * `VoiceReplacementMarkerTests.test_반영하지_못한_세대는_계속_다시_집힌다`.
+     */
+    @Test
+    fun generationsThatFailedToApplyAreRetried() = runBlocking {
+        // 첫 조회가 이 세대를 기준선으로 적는다(강등하지 않는다).
+        store.applyIfChanged("u12", "vp1", "2026-08-25 01:00:00") { 9 }
+
+        // 같은 세대의 푸시가 왔는데 **강등이 실패**한다 — 확정되지 않는다.
+        val failed = store.applyIfNotApplied("u12", "vp1", "2026-08-25 01:00:00") { null }
+        assertEquals(0, failed.degraded)
+
+        assertEquals(
+            "확정하지 못한 세대가 '이미 본 것' 으로 묻히면 영영 회수되지 않는다",
+            3,
+            store.applyIfChanged("u12", "vp1", "2026-08-25 01:00:00") { 3 }.degraded,
+        )
+        // 확정한 뒤에는 지나간다 — 새 목소리로 만든 알람을 다시 벗기면 안 된다.
+        assertEquals(0, store.applyIfChanged("u12", "vp1", "2026-08-25 01:00:00") { 3 }.degraded)
     }
 
     @Test
     fun markersAreScopedPerAccount() = runBlocking {
         store.applyIfChanged("u9", "vp1", null) { 0 }
-        assertEquals(1, store.applyIfChanged("u9", "vp1", "2026-08-25 01:00:00") { 1 })
+        assertEquals(1, store.applyIfChanged("u9", "vp1", "2026-08-25 01:00:00") { 1 }.degraded)
         // 다른 계정은 아직 처음 보는 프로필이다.
-        assertEquals(0, store.applyIfChanged("u10", "vp1", "2026-08-25 01:00:00") { 1 })
+        assertEquals(0, store.applyIfChanged("u10", "vp1", "2026-08-25 01:00:00") { 1 }.degraded)
     }
 
     /**
@@ -161,7 +187,7 @@ class VoiceReplacementMarkerStoreTest {
         assertEquals(
             "로그아웃 사이에 일어난 교체를 재로그인 후에도 알아채야 한다",
             4,
-            afterRelogin.applyIfChanged("u11", "vp1", "2026-08-25 03:00:00") { 4 },
+            afterRelogin.applyIfChanged("u11", "vp1", "2026-08-25 03:00:00") { 4 }.degraded,
         )
     }
 }
