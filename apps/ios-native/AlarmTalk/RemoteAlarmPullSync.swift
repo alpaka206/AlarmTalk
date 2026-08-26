@@ -336,7 +336,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         var audioSecured = false
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
-            if Self.locallyEditedByRecipient(existing) {
+            // ⚠ **재전송은 편집을 보존하지 않는다**(2026-08-26 확정). 다른 세대가 왔다는 것은
+            // 발신자가 **다시 보냈다**는 뜻이고, 막으면 그 슬롯이 이후 모든 전달을 영구히
+            // 거부한다(실기기 재현). 아래 일반 경로로 내려가 덮어쓴다.
+            if Self.locallyEditedByRecipient(existing),
+               !Self.isResendOfDifferentDelivery(existing, remote.deliveryVersion) {
                 if Self.receivedDeliveryVersionAlreadyApplied(
                     existing: existing,
                     deliveryVersion: remote.deliveryVersion
@@ -347,8 +351,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // 첫 예약이 실패해 `remoteDeliveryVersion` 이 비어 있는 채 수신자가 그 알람을
                 // 고치면, 예전에는 #104 backfill(32자리 hex)만 이 갈래를 통과해 **일반
                 // UUID 세대는 영영 ACK 되지 못했다** — 서버 행과 그 생체 음원이 무기한
-                // 복구는 #104 backfill(32자리 hex)에만 허용한다 — `isLegacyBackfilledDelivery`
-                // 주석과 `docs/spec/family-alarm.md` 참조. 넓히면 재전송을 삼킨다.
+                // 여기 오는 것은 **같은 전달 세대**다(재전송은 위에서 덮기로 갈렸다).
+                // 복구는 #104 backfill(32자리 hex)에만 허용한다 — `isLegacyBackfilledDelivery`.
                 guard Self.isLegacyBackfilledDelivery(existing, remote.deliveryVersion),
                       remote.deliveryVersion?.nilIfBlank != nil else { return .unchanged }
             } else {
@@ -382,7 +386,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
             guard !Self.isInFlight(current) else { return .unchanged }
             // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
-            if Self.locallyEditedByRecipient(current) {
+            if Self.locallyEditedByRecipient(current),
+               !Self.isResendOfDifferentDelivery(current, remote.deliveryVersion) {
                 return await outcomeForEditedDelivery(
                     existing: current,
                     prepared: prepared,
@@ -667,19 +672,41 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// 그때는 음원을 확보하고 **수신자가 고친 현재 행 그대로** 예약에 성공한 뒤에만
     /// 세대를 적고 ACK 한다 — 형식만 보고 올리지 않는다.
     ///
-    /// ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다 — 스펙이 그렇게 못 박았다**
+    /// ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다**
     /// (`docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」).
     ///
-    /// 2026-08-26 에 이 판정을 "적용 버전이 비어 있는가" 로 넓혔다가 되돌렸다. 넓히면
-    /// **재전송을 삼킨다**: 첫 전달 A 가 예약 실패로 버전 없이 저장되고 수신자가 고친 뒤
-    /// 발신자가 그 슬롯을 다시 보내면(같은 알람 id, 새 버전 B), 넓힌 판정이 그 행을
-    /// '복구 대상' 으로 읽어 **A 를 보존한 채 B 를 기록하고 ACK·삭제한다** — 재전송한
-    /// 내용은 어디에도 전달되지 않는다. 스펙은 그 대신 "값이 다르면 다른 전달 세대이므로
-    /// 수신자 편집을 보존하고 **ack 하지 않는다**" 를 택했다(ACK 안 된 전달은 발신자에게
-    /// 그대로 보인다 — 잘못 병합하는 것보다 낫다).
+    /// 여기서 다루는 것은 **재전송이 아닌** 경우다 — 재전송(다른 전달 세대)은
+    /// `isResendOfDifferentDelivery` 가 먼저 걸러 **덮어쓰기**로 보낸다. 이 복구는 "#104 가
+    /// 옛 전달에 뒤늦게 세대를 찍은" 상황 전용이고, 그때는 편집을 보존한 채 음원만 되살린다.
     ///
-    /// 넓히자면 **스펙을 먼저 고쳐야 하고**, 실패한 첫 전달과 나중 재전송을 구분할
-    /// 내구 상태(예: 도착 시점의 버전을 따로 저장)가 함께 필요하다.
+    /// ⚠ 이 판정을 "적용 버전이 비어 있는가" 로 넓히지 말 것 — 넓히면 **재전송을 삼킨다**
+    /// (옛 내용을 보존한 채 새 세대만 기록하고 ACK·삭제한다).
+    /**
+     * **발신자가 다시 보낸 것인가**(= 이 행이 받아 둔 전달과 다른 세대인가).
+     *
+     * 서버는 같은 (발신자·수신자·시각) 슬롯에 **같은 알람 id** 를 재사용하고 새
+     * `delivery_version` 만 발급한다. "다른 세대가 왔다" 는 곧 "새로 보냈다" 이고, 그때는
+     * 수신자가 그 슬롯을 고쳤든 껐든 **덮어쓴다**(`docs/spec/family-alarm.md`).
+     *
+     * ⚠ **관찰 세대가 없는 옛 행에는 쓰지 않는다** — '어느 전달을 받았는지 모른다' 가
+     * 사실이라 예전 규칙(32자리 backfill 예외)을 그대로 둔다.
+     * 안드로이드 짝은 `RemoteAlarmPullSyncService.isResendOfDifferentDelivery`.
+     */
+    static func isResendOfDifferentDelivery(
+        _ existing: LocalAlarmRecord,
+        _ deliveryVersion: String?
+    ) -> Bool {
+        guard let incoming = deliveryVersion, !incoming.isEmpty else { return false }
+        if let observed = existing.observedDeliveryVersion, !observed.isEmpty {
+            return observed != incoming
+        }
+        // ⚠ **관찰 세대가 없는 행도 뚫어 준다** — 그러지 않으면 이 필드가 생기기 전에 꼬인
+        // 행이 영원히 막힌 채 남는다(2026-08-26 실기기 재현). 단 #104 backfill(32자리 hex)은
+        // 예외다 — 그건 새로 보낸 것이 아니라 옛 전달에 뒤늦게 세대를 찍은 것이라, 편집을
+        // 보존한 채 음원만 복구하는 기존 경로가 맞다.
+        return !(incoming.count == 32 && incoming.allSatisfy { $0.isHexDigit })
+    }
+
     static func isLegacyBackfilledDelivery(
         _ existing: LocalAlarmRecord,
         _ deliveryVersion: String?

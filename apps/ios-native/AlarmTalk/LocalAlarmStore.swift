@@ -252,6 +252,9 @@ final class LocalAlarmStore: ObservableObject {
             next.remoteAlarmId = fresh.remoteAlarmId
             next.lastSyncedAtMillis = fresh.lastSyncedAtMillis
             next.remoteDeliveryVersion = fresh.remoteDeliveryVersion
+            // ⚠ **수신자 편집이 '어느 전달을 받았는지' 를 지우면 안 된다** — 지우면 그 행이
+            // 다시 '옛 행' 이 되어 재전송이 영영 덮이지 못한다(안드로이드 `AlarmDao` 와 같은 규약).
+            next.observedDeliveryVersion = fresh.observedDeliveryVersion
             next.syncState = nextLocalSyncState(for: next).rawValue
         }
         return upsert(next)
@@ -315,6 +318,8 @@ final class LocalAlarmStore: ObservableObject {
         copied.remoteAlarmId = nil
         copied.lastSyncedAtMillis = nil
         copied.remoteDeliveryVersion = nil
+        // 복사본은 받은 알람이 아니다 — 전달 이력을 물려주지 않는다.
+        copied.observedDeliveryVersion = nil
         copied.syncState = AlarmSyncState.localOnly.rawValue
         copied.origin = AlarmOrigin.localOwned.rawValue
         copied.enabled = true

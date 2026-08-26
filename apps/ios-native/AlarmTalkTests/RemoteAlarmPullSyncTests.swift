@@ -120,6 +120,36 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         )
     }
 
+    /// ⚠ **재전송은 수신자 편집을 덮는다**(2026-08-26 확정, docs/spec/family-alarm.md).
+    ///
+    /// 서버는 같은 슬롯에 **같은 알람 id** 를 재사용하고 새 `delivery_version` 만 발급한다.
+    /// 편집을 보존하면 그 슬롯은 **이후 모든 전달을 영구히 거부**한다 — 실기기에서 재현됐다.
+    func test_재전송은_수신자_편집을_덮는다() {
+        var received = makeReceivedRemote(remoteID: "remote-1")
+        received.observedDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+
+        // 같은 세대가 다시 오면 덮지 않는다 — 매 pull 마다 편집이 되돌아가면 안 된다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            received, "11111111-1111-4111-8111-111111111111"
+        ))
+        // 다른 세대 = 발신자가 다시 보냈다 → 덮는다.
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            received, "22222222-2222-4222-8222-222222222222"
+        ))
+        // ⚠ 관찰 세대가 없는 **옛 행도 뚫어 준다**(실기기 재현 — 영원히 막힌 행이 남았다).
+        var legacy = received
+        legacy.observedDeliveryVersion = nil
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            legacy, "22222222-2222-4222-8222-222222222222"
+        ))
+        // 단 #104 backfill(32자리 hex)은 새로 보낸 것이 아니다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            legacy, "0123456789abcdef0123456789abcdef"
+        ))
+        // 서버가 세대를 주지 않으면 판단 근거가 없다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(received, nil))
+    }
+
     func test_legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
         var existing = makeReceivedRemote(remoteID: "remote-1")
         existing.hour = 9

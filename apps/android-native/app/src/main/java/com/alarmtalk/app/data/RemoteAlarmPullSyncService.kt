@@ -41,19 +41,44 @@ internal fun receivedAlarmDeliveryVersionAlreadyApplied(
 /**
  * #104 backfill 로 채워진 옛 전달인가 — **이 복구는 그 세대에만 허용한다.**
  *
- * ⚠ 2026-08-26 에 이 판정을 "적용 버전이 비어 있는가" 로 넓혔다가 되돌렸다. 넓히면
- * **재전송을 삼킨다**: 첫 전달 A 가 예약 실패로 버전 없이 저장되고 수신자가 고친 뒤
- * 발신자가 그 슬롯을 다시 보내면(같은 알람 id, 새 버전 B), 넓힌 판정이 그 행을 '복구
- * 대상' 으로 읽어 **A 를 보존한 채 B 를 기록하고 ACK·삭제한다** — 재전송한 내용은 어디에도
- * 전달되지 않는다.
+ * 여기서 다루는 것은 **재전송이 아닌** 경우다 — 재전송(다른 전달 세대)은 위
+ * [isResendOfDifferentDelivery] 가 먼저 걸러 **덮어쓰기**로 보낸다. 이 복구는 "#104 가
+ * 옛 전달에 뒤늦게 세대를 찍은" 상황 전용이고, 그때는 편집을 보존한 채 음원만 되살린다.
  *
- * 스펙은 그 대신 "값이 다르면 다른 전달 세대이므로 수신자 편집을 보존하고 **ack 하지
- * 않는다**" 를 택했다(`docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」).
- * ACK 안 된 전달은 발신자에게 그대로 보이므로, 잘못 병합하는 것보다 낫다.
- *
- * 넓히자면 **스펙을 먼저 고쳐야 하고**, 실패한 첫 전달과 나중 재전송을 구분할 내구 상태가
- * 함께 필요하다. iOS 짝은 `RemoteAlarmPullSync.isLegacyBackfilledDelivery`.
+ * ⚠ 이 판정을 "적용 버전이 비어 있는가" 로 넓히지 말 것. 넓히면 **재전송을 삼킨다** —
+ * 옛 내용을 보존한 채 새 세대만 기록하고 ACK·삭제해 버려, 발신자가 다시 보낸 것이 어디에도
+ * 전달되지 않는다. iOS 짝은 `RemoteAlarmPullSync.isLegacyBackfilledDelivery`.
  */
+/**
+ * **발신자가 다시 보낸 것인가**(= 이 행이 받아 둔 전달과 다른 세대인가).
+ *
+ * 서버는 같은 (발신자·수신자·시각) 슬롯에 **같은 알람 id 를 재사용**하고 새
+ * `delivery_version` 만 발급한다(`claimTargetedAlarmSlot`). 그래서 "다른 세대가 왔다" 는
+ * 곧 "새로 보냈다" 는 뜻이고, 그때는 **수신자가 그 슬롯을 고쳤든 껐든 덮어쓴다**
+ * (`docs/spec/family-alarm.md` — 보낸 알람이 영영 전달되지 않는 것이 더 나쁘다).
+ *
+ * ⚠ **옛 행(관찰 세대가 없는 행)에는 쓰지 않는다.** 그 행들은 이 값을 적기 전에 만들어져
+ * '어느 전달을 받았는지 모른다' 가 사실이라, 예전 규칙(32자리 backfill 예외)을 그대로 둔다.
+ */
+internal fun isResendOfDifferentDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean {
+    val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() }
+    if (observed != null) return observed != incoming
+    // ⚠ **관찰 세대가 없는 행도 뚫어 준다** — 그러지 않으면 이 필드가 생기기 전에 꼬인 행이
+    // 영원히 막힌 채 남는다(2026-08-26 실기기: 그 슬롯의 모든 전달이 매번 skip 됐다).
+    // 단 #104 backfill(32자리 hex)은 예외다 — 그건 **새로 보낸 것이 아니라** 옛 전달에 뒤늦게
+    // 세대를 찍은 것이라, 편집을 보존한 채 음원만 복구하는 기존 경로가 맞다.
+    return !isLegacyBackfillVersion(incoming)
+}
+
+/** #104 backfill 이 채운 세대 형식인가(32자리 hex). 새 전달 세대는 UUID 라 여기 걸리지 않는다. */
+private fun isLegacyBackfillVersion(deliveryVersion: String): Boolean =
+    deliveryVersion.length == 32 &&
+        deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
+
 internal fun isLegacyBackfilledDelivery(
     existing: AlarmEntity,
     deliveryVersion: String?,
@@ -226,7 +251,12 @@ internal class RemoteAlarmPullSyncService(
                 // 수신자가 저장하면 updatedAt 만 커진다(updateAlarm 은
                 // upsertPreservingServerSyncFields 로 lastSyncedAt 을 보존).
                 // 아직 안 고친 행은 그대로 두어 **음성 다운로드 실패분의 재시도**를 살린다.
-                if (existing != null && locallyEditedByRecipient(existing)) {
+                // ⚠ **재전송은 편집을 보존하지 않는다**(2026-08-26 확정). 다른 세대가 왔다는
+                // 것은 발신자가 **다시 보냈다**는 뜻이고, 그걸 막으면 그 슬롯은 이후 모든
+                // 전달을 영구히 거부한다(실기기 재현). 아래 일반 경로로 내려가 덮어쓴다.
+                if (existing != null && locallyEditedByRecipient(existing) &&
+                    !isResendOfDifferentDelivery(existing, remote.deliveryVersion)
+                ) {
                     if (receivedAlarmDeliveryVersionAlreadyApplied(existing, remote.deliveryVersion)) {
                         val deliveryVersion = requireNotNull(remote.deliveryVersion)
                         runCatching {
@@ -303,9 +333,12 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
                     // 다운로드하는 사이에 수신자가 고쳤을 수도 있다 — 위 1차 거르기와 같은 판정을
-                    // 반영 직전에 한 번 더 한다. 서버본으로 덮지는 않되, #104 backfill 세대는
+                    // 반영 직전에 한 번 더 한다. **재전송이면 이미 위에서 덮기로 갈렸고**,
+                    // 여기 오는 것은 같은 전달 세대다. 서버본으로 덮지는 않되, #104 backfill 세대는
                     // 음원과 현재 편집본의 OS 예약을 확보해야만 적용 버전을 기록하고 ACK한다.
-                    if (current != null && locallyEditedByRecipient(current)) {
+                    if (current != null && locallyEditedByRecipient(current) &&
+                        !isResendOfDifferentDelivery(current, remote.deliveryVersion)
+                    ) {
                         skipped += 1
                         val deliveryVersion = remote.deliveryVersion
                         when {
@@ -993,6 +1026,11 @@ internal fun buildReceivedAlarmRow(
         remoteAlarmId = remote.id,
         lastSyncedAtMillis = now,
         remoteDeliveryVersion = existing?.remoteDeliveryVersion,
+        // ⚠ **받은 그 자리에서 적는다** — 반영·ACK 성패와 무관하다. 이 값이 있어야 다음 pull 이
+        // '내가 이미 받은 그 전달' 과 '발신자가 다시 보낸 것' 을 가른다(`isResendOfDifferentDelivery`).
+        // 서버가 세대를 주지 않으면(옛 서버) 옛 값을 그대로 둔다 — 없는 것을 지어내지 않는다.
+        observedDeliveryVersion = remote.deliveryVersion?.takeIf { it.isNotBlank() }
+            ?: existing?.observedDeliveryVersion,
         syncState = AlarmSyncStates.SYNCED,
         origin = AlarmOrigins.RECEIVED_REMOTE,
         alarmVolumePercent = existing?.alarmVolumePercent ?: 100,

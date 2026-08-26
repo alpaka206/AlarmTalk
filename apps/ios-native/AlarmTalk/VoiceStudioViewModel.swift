@@ -157,6 +157,11 @@ final class VoiceStudioViewModel: ObservableObject {
         profiles = bundledSystemVoiceProfiles()
         familyVoices = []
         stockClips = []
+        // ⚠ **떠 있는 매니페스트 조회의 세대를 죽인다**(Codex #703 P1). 안 죽이면 계정 A 의
+        // 응답이 로그아웃 뒤에 돌아와 A 의 **클론 매니페스트**(목소리 이름·문구 포함)를 다시
+        // 공개하고, 계정 B 가 오프라인이면 그걸 디스크에서 시드로 읽는다.
+        manifestRevision &+= 1
+        manifestFetchedThisSession = false
         // ⚠ **권위도 함께 내린다.** 안 내리면 로그아웃 뒤 밀려 들어온
         // `voice_access_revoked` 가 **빈 목록을 근거로** 이 계정의 목소리 알람을 전부
         // 강등한다 — 서버가 아무것도 확인해 주지 않았는데도(2026-08-18 Codex #697 P1).
@@ -551,10 +556,15 @@ final class VoiceStudioViewModel: ObservableObject {
             stockClips = cached.clips
             expectedVariants = cached.expectedVariants
         }
-        guard let token = session?.token else { return !stockClips.isEmpty }
+        // ⚠ **반환값은 '이번에 서버에서 새로 받았는가' 다**(Codex #703 P1). 예전에는
+        // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
+        // 그걸 '신선함' 으로 읽으면 **교체 이전 스냅샷**(전부 rendered=true)으로 세대를
+        // 확정한다 — 완료 푸시를 놓친 기기는 회수된 프리셋을 문 채 남는다.
+        guard let token = session?.token else { return false }
         // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
         // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
-        guard force || !manifestFetchedThisSession else { return true }
+        // 이번 세션에 이미 받았고 강제도 아니면 **새로 받은 것이 아니다.**
+        guard force || !manifestFetchedThisSession else { return false }
         // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
         // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 가, 서버의 현재
         // 음원이 '지나간 응답' 으로 판정돼 회수된 목소리가 그대로 남는다(Codex #703 P1).
@@ -563,15 +573,17 @@ final class VoiceStudioViewModel: ObservableObject {
         let revision = manifestRevision
         do {
             let manifest = try await api.getStockClipManifest(token: token)
-            guard revision == manifestRevision else { return !stockClips.isEmpty }
+            // 밀려난 응답은 공개하지 않으므로 '새로 받았다' 도 아니다.
+            guard revision == manifestRevision else { return false }
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
             manifestFetchedThisSession = true
             StockClipManifestStore.save(manifest)
             return true
         } catch {
-            // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 그걸로 계속 간다.
-            return !stockClips.isEmpty
+            // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 화면은 그걸로 계속
+            // 가지만, **새로 받은 것은 아니다.**
+            return false
         }
     }
 

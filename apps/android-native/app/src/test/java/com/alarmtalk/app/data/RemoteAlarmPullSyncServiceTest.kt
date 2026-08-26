@@ -192,6 +192,45 @@ class RemoteAlarmPullSyncServiceTest {
         )
     }
 
+    /**
+     * ⚠ **재전송은 수신자 편집을 덮는다**(2026-08-26 확정, docs/spec/family-alarm.md).
+     *
+     * 서버는 같은 슬롯에 **같은 알람 id** 를 재사용하고 새 `delivery_version` 만 발급한다.
+     * 그때 편집을 보존하면 그 슬롯은 **이후 모든 전달을 영구히 거부**한다 — 실기기에서
+     * 재현됐다(매 pull 마다 skipped=1, 수신자 화면엔 옛 알람 그대로).
+     */
+    @Test
+    fun resendOfDifferentDeliveryOverwritesRecipientEdits() {
+        val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(observedDeliveryVersion = "11111111-1111-4111-8111-111111111111")
+
+        // 같은 세대가 다시 오면 **덮지 않는다** — 매 pull 마다 수신자 편집이 되돌아가면 안 된다.
+        assertFalse(
+            isResendOfDifferentDelivery(received, "11111111-1111-4111-8111-111111111111"),
+        )
+        // 다른 세대 = 발신자가 다시 보냈다 → 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(received, "22222222-2222-4222-8222-222222222222"),
+        )
+        // ⚠ 관찰 세대가 없는 **옛 행도 뚫어 준다** — 이 필드가 생기기 전에 꼬인 행이 영원히
+        // 막히면 안 된다(실기기 재현). 새 전달 세대(UUID)면 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 단 #104 backfill(32자리 hex)은 새로 보낸 것이 아니다 — 편집 보존 경로가 맞다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
+        // 서버가 세대를 주지 않으면 판단 근거가 없다 — 덮지 않는다.
+        assertFalse(isResendOfDifferentDelivery(received, null))
+    }
+
     @Test
     fun legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
         val current = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)

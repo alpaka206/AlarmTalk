@@ -390,7 +390,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 $0.voiceProfileId == pending.profileID && !$0.isRenderedForCurrentVoice
             }
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
-                if !presetPending { pending.confirm() }
+                // ⚠ **확정만 하고 끝내지 않는다**(Codex #703 P2). 위에서 프로필을 가렸으므로
+                // 여기서 풀어 주지 않으면 그 목소리는 **프로세스가 끝날 때까지** 못 고른다.
+                // 확인할 예약이 없으니 같은 확정 함수를 태워 해제까지 한 번에 처리한다.
+                if !presetPending {
+                    await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                }
                 return
             }
             guard !pending.degraded.isEmpty else {

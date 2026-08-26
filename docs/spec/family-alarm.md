@@ -11,7 +11,13 @@
 | 만들기 | 한다 | — |
 | 만든 뒤 고치기 | **못 한다** | 자기 기기에서 자유롭게 |
 | 끄기·지우기 | **못 한다** | 한다 |
+| **다시 보내기** | 한다(= 새 알람을 또 보내는 것) | 받는다 — **끄든·고치든·지웠든 새 것이 이긴다** |
 | 그만받기 | — | 한다(그 사람에게서 오는 알람 차단) |
+
+⚠ **'고치기' 와 '다시 보내기' 는 다르다.** 보낸 알람을 **고치는** 길은 없다(서버가 409 로
+거절한다 — 완화 금지). 대신 **다시 보내면** 그것은 새 전달이고, 받는 사람 쪽에서 그 슬롯을
+어떻게 해 뒀든 새 것으로 덮인다(2026-08-26 확정. 상세는 「적용한 전달 버전을 로컬에
+남긴다」 절의 **재전송은 새 알람이다**).
 
 ⚠ **보낸 사람의 목록에 그 알람이 남지 않는다.** 양 앱 모두 가족 알람은 서버로만 보내고
 **로컬 행을 만들지 않는다**(`createFamilyTargetAlarm`). 그래서 보낸 사람에게는 고칠 화면
@@ -97,12 +103,18 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
 계산한다 → **받은 사람이 목소리로 바꿔 저장해도 다음 pull 이 알람음으로 되돌린다.**
 저장은 됐는데 되돌아가므로 "저장이 안 된다" 가 아니라 "자꾸 알람음으로 바뀐다" 로 겪는다.
 
-**그래서 방향을 뒤집었다: 고쳐진 행에는 손대지 않는다.**
+**그래서 방향을 뒤집었다: 고쳐진 행에는 손대지 않는다** — 단 **같은 전달 세대일 때만**이다
+(재전송은 예외. 아래 「재전송은 새 알람이다」).
 
 | | 판정 | 그때 하는 일 |
 | --- | --- | --- |
 | 아직 안 고친 행 | `updatedAtMillis == lastSyncedAtMillis` | 서버본으로 재구성(첫 수신, 그리고 음성 다운로드 실패로 아직 ack 하지 않은 알람의 재시도) |
-| 수신자가 고친 행 | `updatedAtMillis > lastSyncedAtMillis` | **아무것도 하지 않는다** |
+| 수신자가 고친 행 + **같은 전달 세대** | `updatedAtMillis > lastSyncedAtMillis` 이고 `observedDeliveryVersion == 서버 세대` | **아무것도 하지 않는다** |
+| 수신자가 고친 행 + **다른 전달 세대** | 세대가 다르다 = 발신자가 **다시 보냈다** | **덮어쓴다** — 아래 「재전송은 새 알람이다」 |
+
+⚠ **'고쳤다' 가 방패인 것은 같은 전달 안에서다.** 발신자가 다시 보내면 수신자가 그 알람을
+**끄든·고치든·지웠든 상관없이** 새 전달이 이긴다(2026-08-26 확정). 지운 행은 애초에 비교할
+것이 없으니 그대로 새로 들어온다.
 
 - 두 시각의 등호가 '아직 안 고침' 의 신호다. pull 이 쓸 때 **같은 값**을 넣고
   (안드로이드 `buildReceivedAlarmRow` 의 `now`, iOS `upsert(_:syncedNow:)`),
@@ -141,7 +153,8 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
 (`alarm-helpers.ts` 의 `claimTargetedAlarmSlot`). 발신자의 '수정' 이 아니라 **같은 시각
 중복을 막는 시스템 동작**이다. 그래서 `resolveReceivedRemoteEnabled` 의 원격 끄기 반영은
 **죽은 코드가 아니다** — 지우면 남이 보낸 옛 알람이 수신자 기기에 켜진 채 남아 같은 시각에
-둘이 운다. (수신자가 고친 행에는 이것도 오지 않는다 — 위 표대로 재구성 자체를 건너뛴다.)
+둘이 운다. (수신자가 고친 행에는 **같은 전달 세대인 한** 이것도 오지 않는다 — 위 표대로
+재구성 자체를 건너뛴다. 재전송이면 덮어쓰므로 이 정리도 그때 함께 돈다.)
 
 ⚠ **다만 이 서버 경로는 ack 전까지만 닿는다**(1-2). 수신 확인이 끝난 알람은 서버 행이
 없어 `claimTargetedAlarmSlot` 의 UPDATE 가 훑을 대상이 아니고, pull 목록에도 안 실려
@@ -208,7 +221,35 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 ⚠ **적용한 전달 버전을 로컬에 남긴다.** 음원 확보와 OS 예약이 끝나면 서버 ack보다 먼저
 `remoteDeliveryVersion`을 로컬 행에 저장한다. ack 네트워크 호출이 실패한 뒤 수신자가 알람을
 고쳐도, 다음 pull은 서버 버전과 이 값이 정확히 같을 때만 병합 없이 ack를 재시도할 수 있다.
-값이 다르면 다른 전달 세대이므로 수신자 편집을 보존하고 ack하지 않는다.
+
+⚠ **도착한 전달 버전도 함께 남긴다**(`observedDeliveryVersion`, 2026-08-26 신설). 행을
+만들거나 갱신하는 **그 순간** 적는다 — ack 성공과 무관하다. 이게 있어야 두 상황이 갈린다:
+
+| 서버가 준 세대 | 뜻 | 하는 일 |
+| --- | --- | --- |
+| `== observed` | **내가 이미 받은 그 전달**이다(반영에 실패했을 수도 있다) | 수신자 편집을 **보존**한다. 음원·예약을 확보해 ack만 재시도 |
+| `!= observed` | 발신자가 **다시 보냈다**(새 전달 세대) | **덮어쓴다.** 수신자가 그 슬롯을 고쳤든 껐든 신경 쓰지 않는다 |
+
+**재전송은 새 알람이다 — 옛 편집보다 우선한다**(2026-08-26 확정). 발신자가 같은 사람에게
+같은 시각으로 다시 보내면 서버가 **같은 알람 id를 재사용**하고 새 `delivery_version`만
+발급한다(`claimTargetedAlarmSlot`). 그때 수신자의 옛 편집을 보존하면 **보낸 알람이 영영
+전달되지 않는다** — 발신자는 보냈다고 믿고, 수신자 화면에는 옛 알람이 그대로 남는다.
+
+- ⚠ **이건 실제로 일어났다**(2026-08-26 실기기 재현). 적용 버전이 비어 있고 수신자가 손댄
+  행 하나가 그 슬롯의 **이후 모든 전달을 영구히 거부**했다 — 매 pull 마다 `skipped=1`.
+- 반대 방향(같은 세대를 덮는 것)은 여전히 금지다. 그러면 pull 이 돌 때마다 수신자가 고친
+  시각·재생 방식이 되돌아간다(2026-08-17 실기기 사고).
+
+⚠ **서버가 세대를 주지 않는 구간이 있다.** `delivery_version` 컬럼·ACK·이 판정은 전부
+#104 와 함께 처음 들어온다 — 그 전 서버에 붙은 새 클라이언트는 `delivery_version` 이
+**없는 응답**을 받는다. 그때는 재전송 판정이 서지 않으므로 **예전 동작 그대로**(편집 보존,
+ACK 없음) 가고, #104 가 배포되면 기존 행이 32자리 hex 로 채워져 복구 경로로 정리된다.
+2026-08-26 실기기 확인 중 이 구간을 '영구 차단 버그' 로 오진했다 — **버전이 없는 응답은
+배포 창의 정상 상태**다.
+
+`observedDeliveryVersion` 이 **비어 있는 옛 행**(#104 이전)은 예전 규칙 그대로다 — 아래
+32자리 hex 예외만 복구를 허용하고, 그 밖에는 편집을 보존한다. 새로 만들어지는 행은 언제나
+이 값을 갖는다.
 
 #104가 기존 서버 행에 채운 32자리 hex 버전은 예외다. 앱 업데이트 전에 이미 받은 뒤 편집한
 로컬 행에는 적용 버전 필드가 없다. 이때는 형식만 보고 받은 것으로 치지 않는다. 서버 음원을
@@ -320,6 +361,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
+| 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |

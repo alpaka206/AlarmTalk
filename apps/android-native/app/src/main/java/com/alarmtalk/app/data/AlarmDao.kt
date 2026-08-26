@@ -194,6 +194,10 @@ interface AlarmDao {
                 remoteAlarmId = fresh.remoteAlarmId,
                 lastSyncedAtMillis = fresh.lastSyncedAtMillis,
                 remoteDeliveryVersion = fresh.remoteDeliveryVersion,
+                // ⚠ **수신자 편집이 '어느 전달을 받았는지' 를 지우면 안 된다.** 편집 경로가
+                // 만드는 엔티티에는 이 값이 없어, 보존하지 않으면 그 행이 다시 '옛 행' 이 되고
+                // 재전송이 영영 덮이지 못한다(`isResendOfDifferentDelivery`).
+                observedDeliveryVersion = fresh.observedDeliveryVersion,
                 contextVariantIndex = if (preserveFreshWeatherVariant) {
                     fresh.contextVariantIndex
                 } else {

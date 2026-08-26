@@ -93,6 +93,11 @@ enum RemoteAlarmMapper {
             ttsMessageId: remoteMessageId,
             remoteAlarmId: remote.id,
             lastSyncedAtMillis: nowMillis,
+            // ⚠ **받은 그 자리에서 적는다** — 반영·ACK 성패와 무관하다. 다음 pull 이
+            // '내가 이미 받은 그 전달' 과 '발신자가 다시 보낸 것' 을 이 값으로 가른다
+            // (`RemoteAlarmPullSync.isResendOfDifferentDelivery`). 서버가 세대를 주지
+            // 않으면(옛 서버) nil 로 두어 예전 규칙이 그대로 적용되게 한다.
+            observedDeliveryVersion: remote.deliveryVersion?.nilIfBlank,
             syncState: AlarmSyncState.synced.rawValue,
             origin: origin.rawValue,
             alarmVolumePercent: 100,

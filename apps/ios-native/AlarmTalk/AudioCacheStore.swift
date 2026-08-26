@@ -52,9 +52,18 @@ enum AudioCacheError: LocalizedError {
      * **갱신됨으로 센다.**
      */
     case legacyAliasFailed(Error)
+    /**
+     * **이미 지나간 매니페스트 세대의 응답이다** — 쓰지 않고 물러났다(Codex #703 P1).
+     *
+     * 실패가 아니라 '이 바이트는 더 이상 맞지 않는다' 는 뜻이다. 호출자는 갱신으로 세지
+     * 말고 그 키를 낡은 채로 두면 된다 — 다음 회차가 새 매니페스트로 다시 받는다.
+     */
+    case superseded
 
     var errorDescription: String? {
         switch self {
+        case .superseded:
+            return "더 새 목소리가 게시돼 이 음원은 쓰지 않았어요."
         case .invalidBase64:
             return "음성 오디오를 해석하지 못했어요."
         case .durationExceedsLimit(let limit):
@@ -395,8 +404,14 @@ final class AudioCacheStore {
         // (Codex #703 P1). 아래 쓰기 조건에는 `!fileExists(target)` 갈래가 있어서, 옛 응답의
         // **형식이 다르면**(mp3 vs m4a) 그 자리에는 파일이 없어 조건이 참이 된다 — 옛
         // 바이트를 쓰고 `removeAudioFiles` 가 **현 세대 파일을 지운다.**
-        if superseded, let existing = existingURL {
-            return existing
+        // ⚠ **캐시 파일이 없어도 거절한다**(Codex #703 P1). 예전에는 기존 파일이 있을 때만
+        // 물러났는데, 첫 다운로드거나 캐시가 정리된 뒤라면 `existingURL` 이 nil 이라 그대로
+        // **회수된 옛 바이트를 써 넣었다** — 그 무렵 교체 정리는 '낡은 키 없음' 으로 세대를
+        // 확정해 버려 다시 받을 기회도 사라진다. 던지면 호출자가 '갱신 안 됨' 으로 세고
+        // 그 키는 낡은 채 남아 다음 회차가 새 매니페스트로 다시 받는다.
+        if superseded {
+            if let existing = existingURL { return existing }
+            throw AudioCacheError.superseded
         }
         let stale = existingURL.map {
             Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)

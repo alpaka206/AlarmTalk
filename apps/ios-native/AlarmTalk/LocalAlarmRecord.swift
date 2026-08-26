@@ -48,6 +48,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
     var remoteDeliveryVersion: String?
+    /// **이 행을 만들거나 갱신할 때 서버가 준 전달 세대.** 반영·ACK 성패와 무관하게 그 자리에서 적는다.
+    ///
+    /// ⚠ `remoteDeliveryVersion`(=음원·예약까지 끝냈다)과 다른 값이다. 이 값이 있어야
+    /// **재전송**과 **반영 실패**가 갈린다 — 서버 세대가 이 값과 같으면 내가 이미 받은 그
+    /// 전달이라 수신자 편집을 보존하고, 다르면 발신자가 **다시 보낸 것**이라 덮어쓴다.
+    /// 안드로이드 짝은 `AlarmEntity.observedDeliveryVersion`, 규칙은
+    /// `docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」.
+    var observedDeliveryVersion: String?
     var syncState: String           // AlarmSyncState.rawValue
     var origin: String              // AlarmOrigin.rawValue
     var alarmVolumePercent: Int     // 0..100
@@ -304,6 +312,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
         remoteDeliveryVersion: String? = nil,
+        observedDeliveryVersion: String? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
         alarmVolumePercent: Int = 100,
@@ -352,6 +361,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
         self.remoteDeliveryVersion = remoteDeliveryVersion
+        self.observedDeliveryVersion = observedDeliveryVersion
         self.syncState = syncState
         self.origin = origin
         self.alarmVolumePercent = alarmVolumePercent
@@ -402,6 +412,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case remoteAlarmId
         case lastSyncedAtMillis
         case remoteDeliveryVersion
+        case observedDeliveryVersion
         case syncState
         case origin
         case alarmVolumePercent
@@ -489,6 +500,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
         self.remoteDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .remoteDeliveryVersion)
+        // 옛 저장본에는 없다 — nil 이면 '어느 전달을 받았는지 모른다' 가 사실이라 예전 규칙을 쓴다.
+        self.observedDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .observedDeliveryVersion)
 
         // syncState 보정: remoteAlarmId 가 있으면 synced, 없으면 local_only.
         if let raw = try c.decodeIfPresent(String.self, forKey: .syncState),
@@ -576,6 +589,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
         try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
         try c.encodeIfPresent(remoteDeliveryVersion, forKey: .remoteDeliveryVersion)
+        try c.encodeIfPresent(observedDeliveryVersion, forKey: .observedDeliveryVersion)
         try c.encode(syncState, forKey: .syncState)
         try c.encode(origin, forKey: .origin)
         try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)
