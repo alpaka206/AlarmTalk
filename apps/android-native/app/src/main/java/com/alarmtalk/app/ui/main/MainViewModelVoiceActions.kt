@@ -979,11 +979,22 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
         }.onSuccess { response ->
             if (manifestRevision != stockClipManifestRevision) return@onSuccess
             if (authSession?.user?.id != session.user.id) return@onSuccess
+            // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
+            // 표가 거절됐다 = **더 새 매니페스트가 이미 나왔다.** 그런데도 이 응답으로
+            // `stockClips` 를 덮으면, 준비 판정이 **교체 이전 스냅샷**(전부 rendered=true)을
+            // 보고 세대를 확정해 버린다 — 완료 푸시를 놓치면 되돌릴 폴백이 없다.
+            if (!com.alarmtalk.app.data.StockClipManifestStore.save(
+                    getApplication(),
+                    response,
+                    manifestTicket,
+                )
+            ) {
+                return@onSuccess
+            }
             val clips = response.clips
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }
             stockClipManifestFetched = true
-            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response, manifestTicket)
             // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
             // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
             withContext(Dispatchers.IO) {

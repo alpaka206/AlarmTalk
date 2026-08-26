@@ -325,6 +325,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
         // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
         com.alarmtalk.app.data.StockClipManifestStore.clear(getApplication())
+        // ⚠ **떠 있는 조회의 표까지 죽인다**(Codex #703 P1). 지우기만 하면 계정 A 의 요청이
+        // 로그아웃 뒤에 돌아와 A 의 클론 매니페스트(목소리 이름·문구 포함)를 다시 공개하고,
+        // 계정 B 가 그걸 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있다.
+        com.alarmtalk.app.data.StockClipManifestStore.invalidateOutstandingTickets()
         stockClipManifestFetched = false
         // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
         // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.

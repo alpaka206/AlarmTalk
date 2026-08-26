@@ -45,17 +45,39 @@ object StockClipManifestStore {
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }
 
     /**
+     * **떠 있는 표를 전부 무효화한다.** 로그아웃·계정 전환에서 [clear] 와 함께 부른다.
+     *
+     * ⚠ 이게 없으면 계정 A 의 요청이 로그아웃 뒤에 돌아와 A 의 **클론 매니페스트**(목소리
+     * 이름·문구까지)를 공개하고, 계정 B 가 그걸 시드로 읽는다(Codex #703 P1). WorkManager
+     * 의 요청은 세션과 무관하게 살아 있으므로 취소로는 못 막는다 — 표를 죽인다.
+     */
+    fun invalidateOutstandingTickets() {
+        synchronized(revisionLock) { publishedTicket = nextFetchTicket + 1 }
+    }
+
+    /**
      * 매니페스트를 저장한다. 실패해도 조용히 넘어간다 — 이번 세션은 메모리 값으로 돈다.
      *
      * @param fetchTicket [beginFetch] 로 받은 표. 더 뒤에 출발한 응답이 이미 저장됐으면
      *   **아무것도 하지 않는다**(false).
      * @return 실제로 공개했는가.
      */
-    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): Boolean {
+    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): Boolean =
+        // ⚠ **비교·쓰기·표 갱신이 한 임계구역이다**(Codex #703 P1). 비교만 잠그면 A 와 B 가
+        // 둘 다 통과한 뒤 **쓰는 순서가 뒤집혀** A 가 B 를 덮을 수 있고, 두 writer 가 같은
+        // `.tmp` 경로를 나눠 쓰기까지 한다. 파일 교체까지 잠근 채로 한다.
         synchronized(revisionLock) {
             if (fetchTicket < publishedTicket) return false
+            // ⚠ **실제로 갈아 끼운 뒤에만 표를 올린다**(Codex #703 P1). 쓰기가 실패했는데
+            // 표만 올리면 디스크는 옛 매니페스트인데 뒤이은 응답이 전부 거절돼 **영영
+            // 갱신되지 않는다** — 그 사이 캐시 쓰기는 옛 주소를 기준으로 새 바이트를 버린다.
+            if (!writeManifest(context, response)) return false
             publishedTicket = fetchTicket
+            return true
         }
+
+    /** 파일을 원자적으로 갈아 끼운다. 실패하면 false — 호출자가 표를 올리지 않는다. */
+    private fun writeManifest(context: Context, response: StockClipListResponse): Boolean =
         runCatching {
             // ⚠ 임시 파일에 쓴 뒤 옮긴다. 쓰다 죽으면 반쪽 JSON 이 남아 다음 실행이
             // 매니페스트를 못 읽고, 그러면 이 파일을 둔 이유가 그대로 사라진다.
@@ -66,11 +88,10 @@ object StockClipManifestStore {
                 target.writeText(tmp.readText())
                 tmp.delete()
             }
+            true
         }.onFailure {
             AlarmTalkLog.reportError("Failed to persist the stock clip manifest", it)
-        }
-        return true
-    }
+        }.getOrDefault(false)
 
     /** 디스크에 남은 매니페스트. 없거나 깨졌으면 null. */
     fun load(context: Context): StockClipListResponse? {

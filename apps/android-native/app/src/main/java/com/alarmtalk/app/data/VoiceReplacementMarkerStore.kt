@@ -263,11 +263,18 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 쓰지 않는다.** 그 상태로 프로세스가 끝나면 디스크에는 기준선만 남고 `applied` 도
         // `retry` 도 없어, 권위 목록이 주는 그 세대가 '바뀐 것 없음' 으로 읽힌다 —
         // 정리 중 표시가 풀리고 회수된 목소리를 문 예약이 남는다.
-        if (!prefs.edit().putString(key, newest).commit()) {
-            val rollback = prefs.edit()
-            if (previous == null) rollback.remove(key) else rollback.putString(key, previous)
-            rollback.commit()
-            Log.w(TAG, "Failed to persist retry marker; leaving it retryable")
+        // ⚠ **재시도 표식 발행과 '정리 중' 갱신은 같은 잠금이어야 한다**(Codex #703 P1).
+        // 표식은 코루틴 `MUTEX` 아래에서, 표시는 `SETTLING_LOCK` 아래에서 움직였는데 —
+        // 그러면 뒤처진 회차가 "재시도 없음" 을 읽고 표시를 내리는 사이, 새 회차가 아직
+        // 표식을 쓰기 전일 수 있다. 그 틈에 그 목소리로 만든 알람을 새 회차의 재시도가 벗긴다.
+        // 잠금 순서는 언제나 MUTEX → SETTLING_LOCK 이라 교착이 없다(setSettling 은 후자만 잡는다).
+        synchronized(SETTLING_LOCK) {
+            if (!prefs.edit().putString(key, newest).commit()) {
+                val rollback = prefs.edit()
+                if (previous == null) rollback.remove(key) else rollback.putString(key, previous)
+                rollback.commit()
+                Log.w(TAG, "Failed to persist retry marker; leaving it retryable")
+            }
         }
     }
 
@@ -302,9 +309,12 @@ class VoiceReplacementMarkerStore(context: Context) {
             .commit()
         if (committed) {
             // 반영했으니 재시도 표시는 지운다(그 세대든 그보다 앞선 것이든 끝났다).
-            val retry = prefs.getString(retryKey(userId, profileId), null)
-            if (retry != null && retry <= value) {
-                prefs.edit().remove(retryKey(userId, profileId)).commit()
+            // 지우는 것도 같은 잠금 아래에서 한다(위 `markRetryLocked` 주석).
+            synchronized(SETTLING_LOCK) {
+                val retry = prefs.getString(retryKey(userId, profileId), null)
+                if (retry != null && retry <= value) {
+                    prefs.edit().remove(retryKey(userId, profileId)).commit()
+                }
             }
         } else {
             val rollback = prefs.edit()
