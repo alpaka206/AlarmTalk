@@ -592,13 +592,29 @@ final class VoiceStudioViewModel: ObservableObject {
     struct StockCacheRefreshOutcome {
         /// 실제로 갈아 끼운 키가 있다 — 재예약이 필요하다.
         let changed: Bool
-        /// 낡은 키가 남지 않았다(애초에 없었던 경우도 포함).
-        let settled: Bool
+        /// **아직 끝나지 않은 목소리들.** 서버가 재렌더를 안 끝냈거나, 낡은 키를 다 갈아
+        /// 끼우지 못한 프로필 id.
+        ///
+        /// ⚠ **프로필 단위여야 한다**(Codex #703 P2). 예전에는 전역 Bool 이라, 접근 가능한
+        /// **다른** 목소리의 렌더가 멈춰 있으면 멀쩡히 끝난 목소리까지 확정되지 못하고
+        /// 계속 가려졌다 — 그 목소리는 무기한 못 고르게 된다.
+        let pendingProfileIDs: Set<String>
+
+        /// 이 목소리의 프리셋 작업이 끝났는가.
+        func settled(forProfileID profileID: String) -> Bool {
+            !pendingProfileIDs.contains(profileID)
+        }
     }
 
     @discardableResult
     func refreshChangedCachedStockClips(session: AuthSession?) async -> StockCacheRefreshOutcome {
-        guard let token = session?.token else { return .init(changed: false, settled: false) }
+        // 토큰이 없으면 아무것도 확인하지 못했다 — 어떤 프로필도 '끝났다' 고 말할 수 없다.
+        guard let token = session?.token else {
+            return .init(
+                changed: false,
+                pendingProfileIDs: Set(stockClips.map(\.voiceProfileId))
+            )
+        }
         let cache = AudioCacheStore.shared
         let stale = stockClips.compactMap { clip -> (StockClip, [String])? in
             let keys = AudioCacheStore.messageCacheKeys(messageId: clip.messageId).filter { key in
@@ -613,10 +629,18 @@ final class VoiceStudioViewModel: ObservableObject {
         // 게시하고 프리셋은 cron 이 나중에 굽는다 — 그 사이 매니페스트는 옛 클립을 그대로
         // 가리키므로, 캐시와 비교하면 당연히 낡은 것이 없다. 그 상태로 확정하면 재렌더가
         // 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
-        let prerenderPending = stockClips.contains { !$0.isRenderedForCurrentVoice }
-        guard !stale.isEmpty else { return .init(changed: false, settled: !prerenderPending) }
+        let prerenderPending = Set(
+            stockClips.filter { !$0.isRenderedForCurrentVoice }.map(\.voiceProfileId)
+        )
+        guard !stale.isEmpty else {
+            return .init(changed: false, pendingProfileIDs: prerenderPending)
+        }
 
-        let staleKeyCount = stale.reduce(0) { $0 + $1.1.count }
+        // 갈아 끼우지 못한 키가 남은 목소리도 '아직' 이다 — 키를 프로필로 되짚기 위해 적어 둔다.
+        var keyOwner: [String: String] = [:]
+        for (clip, keys) in stale {
+            for key in keys { keyOwner[key] = clip.voiceProfileId }
+        }
         var refreshedKeys = Set<String>()
         for batchStart in stride(from: 0, to: stale.count, by: 4) {
             let batch = Array(stale[batchStart..<min(batchStart + 4, stale.count)])
@@ -663,9 +687,12 @@ final class VoiceStudioViewModel: ObservableObject {
         for key in refreshedKeys {
             AlarmSoundStaging.clearStagedSound(forKey: key)
         }
+        let unfinished = Set(
+            keyOwner.filter { !refreshedKeys.contains($0.key) }.values
+        )
         return .init(
             changed: !refreshedKeys.isEmpty,
-            settled: refreshedKeys.count == staleKeyCount && !prerenderPending
+            pendingProfileIDs: prerenderPending.union(unfinished)
         )
     }
 

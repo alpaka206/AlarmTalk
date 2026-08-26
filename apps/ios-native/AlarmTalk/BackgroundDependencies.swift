@@ -90,6 +90,15 @@ final class BackgroundDependencies {
                 }
                 continue
             }
+            // ⚠ **켜져 있는데 예약이 아예 없으면 끝난 것이 아니다**(Codex #703 P1).
+            // `needsReschedule` 은 `alarmKitID == nil` 이면 false 를 돌려준다(옛 행을 함부로
+            // 걸지 않으려는 판단) — 그걸 '맞았다' 로 읽으면, 앞서 예약에 실패해 손잡이가 없는
+            // 알람이 **OS 예약 없이** 세대만 확정된다. 다음 회차들은 그 세대를 건너뛰므로
+            // 그 알람은 무관한 복구가 돌기 전까지 **울지 못한 채** 남는다.
+            if record.enabled, record.alarmKitID == nil {
+                settled = false
+                continue
+            }
             if AlarmScheduleReconciler.needsReschedule(
                 record,
                 alarmKit: alarmKit,

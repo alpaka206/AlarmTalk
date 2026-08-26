@@ -39,7 +39,17 @@ object StockClipManifestStore {
      */
     private val revisionLock = Any()
     private var nextFetchTicket: Long = 0
-    private var publishedTicket: Long = 0
+
+    /**
+     * **여기까지의 응답은 이미 지나갔다**는 수위선.
+     *
+     * ⚠ 성공했을 때만 올리면 안 된다(Codex #703 P1). 교체 **뒤에** 출발한 B(표 7)의 쓰기가
+     * 실패했는데 수위선이 6 에 머물면, 뒤늦게 도착한 교체 **전**의 A(표 6)가 통과해 옛
+     * 매니페스트를 공개한다 — 그 뒤 캐시 대조가 되살아난 옛 주소를 기준으로 삼는다.
+     * 그래서 **더 새 응답을 본 순간** 올린다. 실패한 B 는 자기 retry 로 고치면 되고, 그
+     * 사이 디스크는 옛 상태로 남을 뿐 **더 나빠지지는 않는다.**
+     */
+    private var seenTicket: Long = 0
 
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }
@@ -52,7 +62,22 @@ object StockClipManifestStore {
      * 의 요청은 세션과 무관하게 살아 있으므로 취소로는 못 막는다 — 표를 죽인다.
      */
     fun invalidateOutstandingTickets() {
-        synchronized(revisionLock) { publishedTicket = nextFetchTicket + 1 }
+        synchronized(revisionLock) { seenTicket = nextFetchTicket + 1 }
+    }
+
+    /**
+     * **파일 삭제와 표 무효화를 한 번에** 한다. 로그아웃·계정 전환에서 이걸 부른다.
+     *
+     * ⚠ 둘로 나누면 그 사이에 앞 계정의 저장이 끼어들어 **지운 파일을 되살린다**
+     * (Codex #703 P1) — 그러면 뒤 계정이 앞 계정의 클론 매니페스트(목소리 이름·문구 포함)를
+     * 시드로 읽는다. 같은 잠금 안에서 지우고 무효화한다.
+     */
+    fun clearAndInvalidate(context: Context) {
+        synchronized(revisionLock) {
+            seenTicket = nextFetchTicket + 1
+            runCatching { file(context).delete() }
+                .onFailure { AlarmTalkLog.reportError("Failed to clear the stock clip manifest", it) }
+        }
     }
 
     /**
@@ -77,12 +102,11 @@ object StockClipManifestStore {
         // 둘 다 통과한 뒤 **쓰는 순서가 뒤집혀** A 가 B 를 덮을 수 있고, 두 writer 가 같은
         // `.tmp` 경로를 나눠 쓰기까지 한다. 파일 교체까지 잠근 채로 한다.
         synchronized(revisionLock) {
-            if (fetchTicket < publishedTicket) return PublishResult.SUPERSEDED
-            // ⚠ **실제로 갈아 끼운 뒤에만 표를 올린다**(Codex #703 P1). 쓰기가 실패했는데
-            // 표만 올리면 디스크는 옛 매니페스트인데 뒤이은 응답이 전부 거절돼 **영영
-            // 갱신되지 않는다** — 그 사이 캐시 쓰기는 옛 주소를 기준으로 새 바이트를 버린다.
+            if (fetchTicket < seenTicket) return PublishResult.SUPERSEDED
+            // 더 새 응답을 봤다 — 성패와 무관하게 수위선을 올린다(위 `seenTicket` 주석).
+            seenTicket = fetchTicket
+            // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
             if (!writeManifest(context, response)) return PublishResult.FAILED
-            publishedTicket = fetchTicket
             return PublishResult.PUBLISHED
         }
 
@@ -122,7 +146,9 @@ object StockClipManifestStore {
      * 다음 사람에게 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로 오프라인
      * 판정은 그때부터 정상으로 돌아온다.
      */
-    fun clear(context: Context) {
-        runCatching { file(context).delete() }
-    }
+    @Deprecated(
+        "표를 무효화하지 않아 앞 계정의 늦은 저장이 파일을 되살린다. clearAndInvalidate 를 쓸 것.",
+        ReplaceWith("clearAndInvalidate(context)"),
+    )
+    fun clear(context: Context) = clearAndInvalidate(context)
 }

@@ -385,7 +385,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 것이고, 그 매니페스트가 '아직 안 구웠다' 고 말하면 여기서 확정하면 안 된다.
             // 확정해 버리면 cron 이 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어, 완료 푸시를
             // 놓친 기기는 회수된 프리셋을 캐시·예약에 문 채로 남는다.
-            let presetPending = deps.voiceStudio.stockClips.contains { !$0.isRenderedForCurrentVoice }
+            // 이 교체의 목소리만 본다 — 남의 목소리가 아직이라고 이 세대를 붙들지 않는다.
+            let presetPending = deps.voiceStudio.stockClips.contains {
+                $0.voiceProfileId == pending.profileID && !$0.isRenderedForCurrentVoice
+            }
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
                 if !presetPending { pending.confirm() }
                 return
@@ -533,7 +536,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **프리셋 갱신이 남아 있으면 그 세대를 확정하지 않는다**(Codex #703 P1).
             // 매니페스트를 못 받았거나 낡은 키를 다 갈아 끼우지 못했는데 확정하면, 다음
             // 회차부터 '이미 반영함' 이라 프리셋 알람이 회수된 목소리로 계속 운다.
-            let presetWorkSettled = manifestFresh && presetRefresh.settled
+            // 프로필마다 따로 본다 — 남의 목소리가 아직이라고 내 목소리를 붙들지 않는다.
+            func presetWorkSettled(_ profileID: String) -> Bool {
+                manifestFresh && presetRefresh.settled(forProfileID: profileID)
+            }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
@@ -546,7 +552,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 // 알람이 **함께** 쓰면 커스텀 강등이 성공했다는 이유로 세대가 확정돼 — 다음
                 // 회차부터 '이미 반영함' 이라 그 프리셋 알람이 회수된 목소리로 계속 운다.
                 // 확정을 미루는 비용은 다음 회차에 같은 일을 한 번 더 하는 것뿐이다(멱등).
-                if !presetWorkSettled { continue }
+                if !presetWorkSettled(pending.profileID) { continue }
                 await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
             }
         }

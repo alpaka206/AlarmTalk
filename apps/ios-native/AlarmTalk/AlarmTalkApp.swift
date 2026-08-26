@@ -580,7 +580,9 @@ struct AlarmTalkApp: App {
             //    "무료로 바뀌었어요" 를 띄우게 된다.
             // ② 비워 둬야 **다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다**
             //    (2026-08-11 요청 "다시 요금제를 쓰면 나중에 바뀌었을 때 알람 뜰 수 있게").
-            DowngradeNoticeStore().clear(userID: auth.session?.user.id)
+            // ⚠ **무료 강등 안내만 지운다**(Codex #703 P2). 무조건 비우면 다른 기기가 적어
+            // 둔 목소리 교체 안내(복원되지 않는 안내)를 띄우기도 전에 지운다.
+            DowngradeNoticeStore().clear(userID: auth.session?.user.id, ifCause: .freePlan)
             _ = await socialFeatures.restorePaidVoiceAlarms(
                 alarmStore: alarmStore,
                 alarmKit: alarmKit,

@@ -72,6 +72,18 @@ struct DowngradeNoticeStore {
         defaults.removeObject(forKey: countKey(userID))
     }
 
+    /// **그 원인의 안내만** 지운다.
+    ///
+    /// ⚠ 유료 복원은 `.freePlan` 안내만 지워야 한다(Codex #703 P2). 무조건 비우면, 다른
+    /// 기기가 적어 둔 `.voiceReplaced`(복원되지 않는 안내)를 유료 사용자의 콜드 스타트가
+    /// 화면에 띄우기도 전에 지운다 — `docs/spec/voice-and-message.md` 는 그 안내를 **다음에
+    /// 앱을 열 때까지 남기라고** 규정한다.
+    func clear(userID: String?, ifCause cause: Cause) {
+        guard let userID, !userID.isEmpty else { return }
+        guard read(userID: userID)?.cause == cause else { return }
+        clear(userID: userID)
+    }
+
     private func causeKey(_ userID: String) -> String { "downgrade_notice_cause_\(userID)" }
     private func countKey(_ userID: String) -> String { "downgrade_notice_count_\(userID)" }
 }
