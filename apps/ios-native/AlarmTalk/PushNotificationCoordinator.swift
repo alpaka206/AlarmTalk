@@ -376,8 +376,14 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
                 return
             }
+            // ⚠ **프리셋 재렌더가 끝나야 이 세대를 확정한다**(Codex #703 P1) — 권위 경로와
+            // 같은 게이트다. 이 푸시는 `onVoiceChanged` 뒤에 오므로 목록은 방금 새로 받은
+            // 것이고, 그 매니페스트가 '아직 안 구웠다' 고 말하면 여기서 확정하면 안 된다.
+            // 확정해 버리면 cron 이 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어, 완료 푸시를
+            // 놓친 기기는 회수된 프리셋을 캐시·예약에 문 채로 남는다.
+            let presetPending = deps.voiceStudio.stockClips.contains { !$0.isRenderedForCurrentVoice }
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
-                pending.confirm()
+                if !presetPending { pending.confirm() }
                 return
             }
             guard !pending.degraded.isEmpty else {
@@ -387,7 +393,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                     alarmKit: deps.alarmKit,
                     ownerUserId: ownerID
                 )
-                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                if !presetPending {
+                    await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                }
                 return
             }
             // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
@@ -404,7 +412,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **예약까지 맞춘 뒤에 확정한다.** 강등은 로컬 행만 고치고 울리는 것은 이미
             // 구워 둔 예약이다 — 여기서 실패했는데 확정하면 다음 회차가 같은 세대를 건너뛰어
             // 회수된 목소리가 예약된 채 남는다. 안 맞으면 확정하지 않고 다음 회차에 맡긴다.
-            await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            // 프리셋 재렌더가 남아 있어도 같다(위 `presetPending` 주석).
+            if !presetPending {
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            }
         }
 
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.

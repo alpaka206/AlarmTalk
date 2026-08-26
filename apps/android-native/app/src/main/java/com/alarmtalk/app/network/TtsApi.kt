@@ -120,11 +120,17 @@ data class StockClip(
      * 세대를 확정해 버리고 재렌더가 끝난 뒤에도 다시 받지 않는다(Codex #703 P1).
      * false 인 클립이 하나라도 있으면 **아직 끝난 것이 아니다.**
      *
-     * 옛 서버는 이 필드를 주지 않는다 — 기본값 true 라 예전처럼 동작한다.
-     * iOS 짝은 `StockClip.renderedForCurrentVoice`.
+     * ⚠ **nullable 이어야 한다**(Codex #703 P2). Retrofit 의 Gson 은 이 클래스를 리플렉션으로
+     * 만들어 **코틀린 기본 인자를 적용하지 않는다** — 필드가 없으면 원시 Boolean 은 `false`
+     * 로 채워진다. 그러면 옛 서버에서 **모든 클립이 '아직 안 구워짐'** 이 되어 워커가 계속
+     * `Result.retry()` 만 하고 교체 표식을 영영 확정하지 못한다. 없으면 [isRendered] 가
+     * true 로 읽는다. iOS 짝은 `StockClip.renderedForCurrentVoice`(같은 이유로 옵셔널).
      */
-    @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean = true,
-)
+    @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
+) {
+    /** 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다. */
+    val isRendered: Boolean get() = renderedForCurrentVoice ?: true
+}
 
 data class PrerenderVariantResponse(
     val context: String? = null,

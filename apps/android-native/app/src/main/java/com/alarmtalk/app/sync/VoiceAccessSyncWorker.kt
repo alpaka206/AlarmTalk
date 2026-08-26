@@ -90,13 +90,20 @@ class VoiceAccessSyncWorker(
             // 다음 회차들이 그 세대를 건너뛰어 **프리셋 알람이 회수된 목소리로 계속 운다.**
             // 매니페스트가 클립마다 '지금 목소리로 구웠는가' 를 알려 주므로, 아직인 프로필은
             // 이 회차에서 **확정하지 않고**(강등은 한다) 아래에서 retry 로 다시 온다.
-            // 실패하면 빈 집합이다 — 못 물어봤다고 확정을 막으면 영영 진행하지 못한다.
-            val prerenderPendingVoiceIds = runCatching {
+            // ⚠ **못 물어본 것을 '다 준비됨' 으로 읽지 말 것**(Codex #703 P1). 조회가 실패했는데
+            // 빈 집합으로 떨어뜨리면 그 회차가 세대를 **확정**해 버리고, 그 뒤에 큐잉된
+            // 프리페치 워커가 아직 옛 매니페스트를 읽어 '낡은 것 없음' 으로 성공한다 —
+            // 완료 FCM 을 놓치면 다음 폴백은 확정된 표식 때문에 다시 시도하지도 않는다.
+            // null 은 **모른다**는 뜻이고, 모르면 확정하지 않고 retry 한다.
+            val prerenderPendingVoiceIds: Set<String>? = runCatching {
                 withContext(Dispatchers.IO) { api.getStockClips(auth) }
-                    .clips.filterNot { it.renderedForCurrentVoice }
+                    .clips.filterNot { it.isRendered }
                     .map { it.voiceProfileId }
                     .toSet()
-            }.getOrElse { emptySet() }
+            }.getOrNull()
+            // 확정해도 되는가 — 모르면(null) 안 된다.
+            fun prerenderReady(voiceProfileId: String): Boolean =
+                prerenderPendingVoiceIds?.contains(voiceProfileId) == false
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -145,8 +152,8 @@ class VoiceAccessSyncWorker(
                         replacedVoiceId,
                         session.user.id,
                     )
-                    // 프리셋이 아직 안 구워졌으면 강등만 하고 **확정하지 않는다**.
-                    if (stillSameSession() && replacedVoiceId !in prerenderPendingVoiceIds) {
+                    // 프리셋이 아직 안 구워졌거나 물어보지 못했으면 강등만 하고 **확정하지 않는다**.
+                    if (stillSameSession() && prerenderReady(replacedVoiceId)) {
                         degradedNow
                     } else {
                         null
@@ -180,7 +187,7 @@ class VoiceAccessSyncWorker(
                         session.user.id,
                     )
                     // 위와 같은 이유 — 프리셋 재렌더가 끝나야 이 세대를 확정한다.
-                    if (stillSameSession() && profileId !in prerenderPendingVoiceIds) {
+                    if (stillSameSession() && prerenderReady(profileId)) {
                         degradedNow
                     } else {
                         null
@@ -228,9 +235,9 @@ class VoiceAccessSyncWorker(
             // 강등도 되돌리지 않는다 — 다시 부르면 대상이 0이라 같은 안내가 반복되지도
             // 않는다. WorkManager 가 백오프로 다시 부르게 두는 편이, 확정 없이 끝나 그
             // 목소리가 고를 수 있게 되는 것보다 안전하다.
-            // 아직 안 구워진 프리셋이 있으면 이 회차는 **끝난 것이 아니다** — WorkManager 가
-            // 다시 부르게 한다. 그때 매니페스트가 준비돼 있으면 그 세대를 확정한다.
-            if (markerPersistFailed || prerenderPendingVoiceIds.isNotEmpty()) {
+            // 아직 안 구워진 프리셋이 있거나 **물어보지 못했으면** 이 회차는 끝난 것이 아니다 —
+            // WorkManager 가 다시 부르게 한다. 그때 준비돼 있으면 그 세대를 확정한다.
+            if (markerPersistFailed || prerenderPendingVoiceIds?.isNotEmpty() != false) {
                 Result.retry()
             } else {
                 Result.success()

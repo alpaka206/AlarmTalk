@@ -21,6 +21,7 @@ import {
   type WakeMode,
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
@@ -938,10 +939,29 @@ async function deleteOrphanedDeliveryMessage(tx: DbExecutor, messageId: string):
           WHERE m.id = ?
             AND COALESCE(m.is_preset, 0) = 0
             AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = m.id)
+            -- 보관함이 가리키면 지우지 않는다 (Codex #703 P1). message_library.message_id
+            -- 는 messages.id 를 참조하는 FK 이고, 생성 TTS 로 만든 가족 알람은
+            -- POST /tts/generate 가 발신자 보관함 행을 함께 만든다. 그걸 무시하고 지우면
+            -- FK 강제 시 이 트랜잭션이 통째로 롤백돼 **전달이 서버에 남아 계속 다시 내려가고**,
+            -- 강제가 없으면 dangling 행이 남는 데다 **발신자가 저장해 둔 문구가 사라진다.**
+            -- 보관함 행은 발신자의 것이라 여기서 지울 대상이 아니다 — 참조가 있으면 남긴다.
+            AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = m.id)
           LIMIT 1`,
     args: [messageId],
   });
   if (orphan.rows.length === 0) return;
+  // ⚠ **R2 객체는 자산 행을 통해서만 발견된다**(Codex #703 P2). 보관 스윕이 그 행의
+  // `audio_object_key` 로 객체를 찾으므로, 행만 지우면 오디오가 **영영 도달 불가**가 되어
+  // 수거되지 않는다. 지우기 전에 삭제 큐에 넘긴다.
+  const assets = await tx.execute({
+    sql: 'SELECT audio_object_key FROM generated_audio_assets WHERE message_id = ?',
+    args: [messageId],
+  });
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    assets.rows.map((row) => row.audio_object_key as string | null),
+  );
   await tx.execute({
     sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
     args: [messageId],
