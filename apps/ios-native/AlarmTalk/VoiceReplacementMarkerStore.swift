@@ -349,9 +349,26 @@ struct VoiceReplacementMarkerStore {
     }
 
     /// 반영에 실패해 **다시 집어야 하는** 세대. 확정하면 지운다.
+    ///
+    /// ⚠ **뒤로 되돌리지 않는다**(Codex #703 P1). 세대 B 가 실패해 표식이 남은 뒤 늦게
+    /// 도착한 **앞선** 세대 A 가 또 실패하면, 그대로 쓰면 표식이 A 로 내려간다. 권위 목록은
+    /// 여전히 B 를 주는데 B 는 기준선과 같으므로 `changedLocked` 가 `incoming == retry` 도
+    /// `incoming > baseline` 도 아니라고 답한다 — **B 는 영영 재시도되지 않는다.**
+    ///
+    /// ⚠ **세대를 모르는 실패는 기준선으로 대신 적는다**(Codex #703 P1). 옛 신호에는
+    /// 세대가 없어 남길 값이 없는데, 그냥 지나가면 프로세스가 끝나는 순간 재시도 근거가
+    /// 사라진다(메모리의 '정리 중' 표시는 사라지고, 다음 목록은 기준선과 같아 '바뀐 것
+    /// 없음' 이며, 성공한 갈래와 달리 **남겨 둔 칸도 없다**). 그 회차가 실제로 보고 있던
+    /// 세대는 기준선이므로 그 값을 적으면 다음 권위 새로고침이 그대로 다시 집는다.
+    /// 안드로이드 짝은 `VoiceReplacementMarkerStore.markRetryLocked`.
     private func markRetryLocked(_ userID: String, _ profileID: String, _ generation: String?) {
-        guard let generation = generation?.nilIfBlank else { return }
-        defaults.set(generation, forKey: retryKey(userID, profileID))
+        guard let generation = generation?.nilIfBlank
+                ?? defaults.string(forKey: seenKey(userID, profileID))?.nilIfBlank else { return }
+        let key = retryKey(userID, profileID)
+        let previous = defaults.string(forKey: key) ?? ""
+        let newest = max(generation, previous)
+        guard newest != previous else { return }
+        defaults.set(newest, forKey: key)
     }
 
     /// 이미 반영한 세대인가. **같은 값만 보면 안 된다** — 교체가 두 번 일어난 뒤 앞선 세대의

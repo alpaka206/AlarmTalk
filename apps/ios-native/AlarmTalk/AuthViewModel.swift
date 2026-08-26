@@ -241,6 +241,20 @@ final class AuthViewModel: ObservableObject {
     /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
     @Published var pendingSensitiveConsent: SensitiveConsentRequest?
 
+    /// 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+    ///
+    /// ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+    /// 실제로 있다 — 로그인 직후 조회와 전경 복귀 조회, 그리고 **동의 제출과 경합하는**
+    /// 조회. 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면, 이미 다 받은
+    /// 상태를 덮어 **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+    private var consentStatusRevision = 0
+
+    /// 지금 날아가고 있는 동의 상태 응답을 **전부 무효화**한다. 동의를 기록해 상태가 바뀐
+    /// 직후에 부른다 — 그 전에 떠난 조회의 답은 이미 낡았다.
+    private func invalidateInFlightConsentStatus() {
+        consentStatusRevision &+= 1
+    }
+
     /// 목소리 등록처럼 **곧 시작할 동작**이 요구하는 민감 동의를 선제적으로 받는다.
     ///
     /// ⚠ 이걸 두는 이유: 예전에는 `SensitiveConsentRequest` 를 만드는 곳이 403 핸들러
@@ -1064,9 +1078,11 @@ final class AuthViewModel: ObservableObject {
         // 받은 적 없는 동의를 받은 것으로 읽는다(안드로이드 `checkConsentStatus` 의
         // `if (authSession?.user?.id != userId) return@launch` 미러).
         let ownerUserID = session?.user.id
+        invalidateInFlightConsentStatus()
+        let revision = consentStatusRevision
         do {
             let status = try await api.consentStatus(token: token)
-            guard session?.user.id == ownerUserID else { return }
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
             // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
             // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
             let known = status.collect.filter { Self.knownConsentTypes.contains($0) }
@@ -1105,7 +1121,7 @@ final class AuthViewModel: ObservableObject {
                 )
             }
         } catch {
-            guard session?.user.id == ownerUserID else { return }
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             // ⚠ **403 이 세워 둔 게이트까지 지우지는 않는다.** `handleConsentRequired` 가
             // 채워 둔 `consentCollect` 를 뒤늦은 실패 응답이 비우면, 서버가 요구한 동의를
@@ -1213,6 +1229,8 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.recordConsents(request, token: token)
             // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
             guard session?.user.id == ownerUserID else { return }
+            // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
+            invalidateInFlightConsentStatus()
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -1262,6 +1280,8 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await api.recordConsents(request, token: token)
             guard session?.user.id == ownerUserID else { return false }
+            // 위 `submitConsents` 와 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
+            invalidateInFlightConsentStatus()
             consentSensitiveMissing.removeAll { recordable.contains($0) }
             pendingSensitiveConsent = nil
             return true

@@ -752,6 +752,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 한다(CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
      */
     var consentStatusChecked by mutableStateOf(false)
+
+    /**
+     * 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+     *
+     * ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+     * 있다 — `checkConsentStatus` 는 `viewModelScope.launch` 로 도는데 그건 토큰이 갱신돼
+     * `LaunchedEffect` 가 다시 걸려도 **취소되지 않는다.** 동의 제출과 경합하는 경우도 같다.
+     * 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면 이미 다 받은 상태를 덮어
+     * **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+     * iOS 짝은 `AuthViewModel.consentStatusRevision`.
+     */
+    var consentStatusRevision: Int = 0
         internal set
 
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —

@@ -196,10 +196,30 @@ class VoiceReplacementMarkerStore(context: Context) {
         )
     }
 
-    /** 반영에 실패해 **다시 집어야 하는** 세대. 확정하면 지운다. */
+    /**
+     * 반영에 실패해 **다시 집어야 하는** 세대. 확정하면 지운다.
+     *
+     * ⚠ **뒤로 되돌리지 않는다**(Codex #703 P1). 세대 B 가 실패해 `retry:B` 가 남은 뒤 늦게
+     * 도착한 **앞선** 세대 A 가 또 실패하면, 그대로 쓰면 표식이 `retry:A` 로 내려간다.
+     * 권위 목록은 여전히 B 를 주는데 B 는 기준선과 같으므로 `seenLocked` 가
+     * `incoming == retry` 도 `incoming > baseline` 도 아니라고 답한다 — **B 는 영영 재시도되지
+     * 않고** 회수된 목소리를 문 예약이 남는다. 그래서 항상 **더 뒤 세대**를 남긴다.
+     *
+     * ⚠ **세대를 모르는 실패는 기준선으로 대신 적는다**(Codex #703 P1). 옛 신호에는
+     * `invalidatedAt` 이 없어 남길 값이 없는데, 그냥 지나가면 프로세스가 죽는 순간 재시도
+     * 근거가 사라진다(메모리 표시는 사라지고, 다음 목록은 기준선과 같아 '바뀐 것 없음').
+     * 그 회차가 실제로 보고 있던 세대는 기준선이므로, 그 값을 재시도 대상으로 적으면
+     * 다음 권위 새로고침이 같은 값을 들고 와 그대로 다시 집는다.
+     */
     private fun markRetryLocked(userId: String, profileId: String, invalidatedAt: String?) {
-        val generation = invalidatedAt?.takeIf { it.isNotBlank() } ?: return
-        prefs.edit().putString(retryKey(userId, profileId), generation).commit()
+        val generation = invalidatedAt?.takeIf { it.isNotBlank() }
+            ?: prefs.getString(seenKey(userId, profileId), null)?.takeIf { it.isNotBlank() }
+            ?: return
+        val key = retryKey(userId, profileId)
+        val previous = prefs.getString(key, null).orEmpty()
+        val newest = maxOf(generation, previous)
+        if (newest == previous) return
+        prefs.edit().putString(key, newest).commit()
     }
 
     /**
