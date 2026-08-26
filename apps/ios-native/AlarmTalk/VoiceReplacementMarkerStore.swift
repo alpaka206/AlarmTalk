@@ -304,7 +304,6 @@ struct VoiceReplacementMarkerStore {
         }
     }
 
-    /// 확인이 남은 칸이 있는가. 락을 쥔 채로만 부른다.
     /**
      * **아직 끝나지 않은 정리가 남은 프로필인가**(재시작 뒤 '정리 중' 표시를 되살리는 근거).
      *
@@ -327,6 +326,7 @@ struct VoiceReplacementMarkerStore {
         )
     }
 
+    /// 확인이 남은 칸이 있는가. 락을 쥔 채로만 부른다.
     private func hasPendingLocked(_ userID: String, _ profileID: String) -> Bool {
         let key = pendingKey(userID, profileID)
         if let buckets = defaults.dictionary(forKey: key) as? [String: [String]] {
@@ -336,8 +336,7 @@ struct VoiceReplacementMarkerStore {
         return !(defaults.stringArray(forKey: key) ?? []).isEmpty
     }
 
-    /// 첫 조회 시드 + 세대 비교. 락을 쥔 채로만 부른다.
-    /// 이 세대를 지금 반영해야 하는가.
+    /// 이 세대를 지금 반영해야 하는가. 락을 쥔 채로만 부른다.
     ///
     /// ⚠ **판정은 '봤다' 가 아니라 '반영했다' 기준이다**(Codex #703 P1 — 2026-08-25 설계 정정).
     /// 예전에는 `seen` 하나만 보고 `incoming > seen` 으로 갈랐는데, `seen` 은 확정할 때도 함께

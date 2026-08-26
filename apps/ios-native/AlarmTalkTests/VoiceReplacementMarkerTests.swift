@@ -270,6 +270,66 @@ final class VoiceReplacementMarkerTests: XCTestCase {
         XCTAssertTrue(third.unverified.isEmpty)
     }
 
+    /// ⚠ **재시작 뒤에도 '정리 중' 을 다시 세울 수 있어야 한다**(Codex #703 P1).
+    ///
+    /// 그 표시는 뷰모델의 메모리 집합이라 프로세스가 끝나면 비는데, 저장소에는 미확인 칸·
+    /// 재시도 표식이 그대로 남는다. 되살리지 않으면 다음 정리가 돌기 **전에** 그 목소리를
+    /// 고를 수 있게 되고, 캐시에 남은 TTS 로 알람까지 저장된다 — 그 알람을 재시도가 벗긴다.
+    func test_확인이_남은_프로필은_재시작_뒤에도_집힌다() {
+        applyChanged("u-unsettled", nil, degraded: 0)
+
+        // 강등은 됐지만 예약 확인이 안 돼 확정하지 않는다 = 미확인 칸이 남는다.
+        let first = store().applyIfChanged(
+            userID: "u-unsettled", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"
+        ) { ["a1"] }
+        XCTAssertEqual(first.unverified, ["a1"])
+
+        // 재시작을 흉내 낸다 — 새 인스턴스로 저장소만 보고 답해야 한다.
+        XCTAssertEqual(
+            store().unsettledProfileIDs(userID: "u-unsettled", candidateProfileIDs: ["vp1", "vp2"]),
+            ["vp1"],
+            "저장소에 미완 작업이 남았는데 비어 돌아오면 그 틈에 만든 알람을 다음 회차가 벗긴다"
+        )
+
+        first.confirm()
+        XCTAssertTrue(
+            store().unsettledProfileIDs(userID: "u-unsettled", candidateProfileIDs: ["vp1"]).isEmpty,
+            "확정한 프로필까지 계속 가리면 멀쩡한 목소리를 영영 못 고른다"
+        )
+    }
+
+    /// 강등 자체가 실패해 **재시도 표식만** 남은 경우도 같다 — 미확인 칸은 없다.
+    func test_재시도_표식만_남아도_집힌다() {
+        let store = store()
+        _ = store.applyIfChanged(userID: "u-retry2", profileID: "vp", invalidatedAt: "2026-08-25 01:00:00") { [] }
+        let failed = store.applyIfChanged(
+            userID: "u-retry2", profileID: "vp", invalidatedAt: "2026-08-25 02:00:00"
+        ) { nil }
+        XCTAssertTrue(failed.failed)
+
+        XCTAssertEqual(
+            store.unsettledProfileIDs(userID: "u-retry2", candidateProfileIDs: ["vp"]),
+            ["vp"],
+            "강등이 실패한 목소리를 고를 수 있게 두면 다음 재시도가 그 알람을 되돌릴 수 없이 벗긴다"
+        )
+    }
+
+    /// 목록에 없는 프로필까지 답하지는 않는다 — 후보로 준 것만 본다.
+    func test_후보에_없는_프로필은_답하지_않는다() {
+        applyChanged("u-scope", nil, degraded: 0)
+        _ = store().applyIfChanged(
+            userID: "u-scope", profileID: "vp1", invalidatedAt: "2026-08-25 01:00:00"
+        ) { ["a1"] }
+
+        XCTAssertTrue(
+            store().unsettledProfileIDs(userID: "u-scope", candidateProfileIDs: ["vp9"]).isEmpty
+        )
+        XCTAssertTrue(
+            store().unsettledProfileIDs(userID: nil, candidateProfileIDs: ["vp1"]).isEmpty,
+            "계정이 없으면 판단할 근거도 없다"
+        )
+    }
+
     func test_계정별로_갈린다() {
         _ = applyChanged("u9", nil, degraded: 0)
         XCTAssertEqual(

@@ -456,15 +456,21 @@ internal class RemoteAlarmPullSyncService(
                     // 반대로 미리 지우면 `schedule` 이 권한 부족 등으로 실패했을 때 **멀쩡히
                     // 돌던 알람만 사라진다.** 가족 알람은 리드타임이 5분이라, 재시도가 원래
                     // 울릴 시각을 넘겨 도착할 수도 있다.
-                    // 새 행이 꺼짐이면 덮어쓸 예약이 없으니 그때만 지운다.
-                    if (existing != null && !local.enabled) {
-                        alarmScheduler.cancel(existing.id)
+                    // 새 행이 꺼짐이면 덮어쓸 예약이 없으니 그때만 지운다. 대상은 **다시 읽은
+                    // 행 기준의 `local.id`** 다 — 다운로드 전 스냅샷(`existing`)은 그 사이
+                    // 수신자가 지웠을 수 있어 이 자리에서 믿을 값이 아니다(바로 위 주석).
+                    // 예약이 없으면 `cancel` 은 그냥 아무 일도 하지 않는다(FLAG_NO_CREATE).
+                    if (!local.enabled) {
+                        alarmScheduler.cancel(local.id)
                     }
                     // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
                     // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                     alarmDao.upsert(local)
                     // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
-                    val previousCacheKey = existing?.audioCacheKey
+                    // 여기도 **다시 읽은 행**을 본다 — 다운로드 사이에 다른 회차가 음원을 갈아
+                    // 끼웠으면 스냅샷의 키는 이미 남의 것이 아니고, 정작 방금 밀려난 파일은
+                    // 아무도 안 지워 남의 생체 음원이 디스크에 남는다.
+                    val previousCacheKey = current?.audioCacheKey
                     if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
                         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
                     }

@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -1163,6 +1164,24 @@ internal fun AlarmTalkApp(
               navController = navController,
               startDestination = NativeTab.Alarms.route,
               modifier = Modifier.fillMaxSize(),
+              // ⚠ **전환은 여기 한 곳에서 정한다 — 라우트마다 붙이지 말 것**(2026-08-26).
+              // Navigation Compose 는 들어오는 전환을 **목적지**에서, 나가는 전환을
+              // **떠나는 화면**에서 가져온다. 그래서 하위 화면에만 붙이면 탭 → 편집기에서
+              // 편집기만 밀려 들어오고 **탭은 제자리에서 페이드**한다 — 한 겹만 움직이고
+              // 그 사이 두 화면이 겹쳐 비친다(그렇게 두 번 만들었다).
+              // 판정은 '어디로 가는가' 하나다(`PushEnterTransition` 주석 참조).
+              enterTransition = { if (targetState.isBottomBarTab()) FadeInTransition else PushEnterTransition() },
+              exitTransition = { if (targetState.isBottomBarTab()) FadeOutTransition else PushExitTransition() },
+              // 뒤로가기는 **양쪽 다 탭일 때만** 페이드다. 하위 화면에서 돌아오는 길은
+              // 왼쪽에서 되밀려 들어와야 앞으로 간 길과 짝이 맞는다.
+              popEnterTransition = {
+                  if (targetState.isBottomBarTab() && initialState.isBottomBarTab()) FadeInTransition
+                  else PushPopEnterTransition()
+              },
+              popExitTransition = {
+                  if (targetState.isBottomBarTab() && initialState.isBottomBarTab()) FadeOutTransition
+                  else PushPopExitTransition()
+              },
           ) {
               NativeTab.values().forEach { tab ->
                   composable(tab.route) {
@@ -1261,25 +1280,6 @@ internal fun AlarmTalkApp(
                           defaultValue = null
                       },
                   ),
-                  // 편집기는 우측에서 페이지가 밀고 들어오는 표준 push 전환 — 하단바 슬라이드(220ms)와
-                  // 같은 박자로 묶어 '크롬 사라짐 → 화면 전환' 두 박자가 아니라 한 번의 이동으로 보이게.
-                  //
-                  // ⚠ **네 방향을 다 지정한다**(2026-08-26). 들어오는 쪽만 지정하면 뒤 화면은
-                  // NavHost 기본값대로 **제자리에서 페이드**해, 한 겹만 움직이고 그 사이 두
-                  // 화면이 겹쳐 비친다. 나가는 화면을 함께 왼쪽으로 밀어야(iOS 시스템 push 와
-                  // 같은 결) 종이 두 장이 이어져 움직이는 깊이감이 난다.
-                  // 미는 폭이 화면의 1/4 인 이유: 전폭으로 밀면 뒤 화면이 완전히 빠져나가
-                  // 되돌아올 때 튀어 보인다(iOS 도 30% 안쪽으로만 민다).
-                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
-                  exitTransition = {
-                      slideOutHorizontally(animationSpec = tween(220)) { -it / 4 } +
-                          fadeOut(animationSpec = tween(220))
-                  },
-                  popEnterTransition = {
-                      slideInHorizontally(animationSpec = tween(220)) { -it / 4 } +
-                          fadeIn(animationSpec = tween(220))
-                  },
-                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
@@ -1339,18 +1339,6 @@ internal fun AlarmTalkApp(
               composable(
                   route = AppRoute.AlarmEdit,
                   arguments = listOf(navArgument(AppRoute.AlarmIdArg) { type = NavType.StringType }),
-                  // AlarmCreate 와 **완전히 동일한** push 전환(네 방향, 하단바와 동박자).
-                  // 한쪽만 바꾸면 같은 편집기가 들어오는 길에 따라 다르게 움직인다.
-                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
-                  exitTransition = {
-                      slideOutHorizontally(animationSpec = tween(220)) { -it / 4 } +
-                          fadeOut(animationSpec = tween(220))
-                  },
-                  popEnterTransition = {
-                      slideInHorizontally(animationSpec = tween(220)) { -it / 4 } +
-                          fadeIn(animationSpec = tween(220))
-                  },
-                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
                   val currentAlarm = alarms.firstOrNull { it.id == alarmId }
@@ -1496,3 +1484,49 @@ internal fun AlarmTalkApp(
       }
     }
 }
+
+/**
+ * **표준 push 전환 — 하위 화면으로 드나드는 모든 이동이 이걸 쓴다.**
+ *
+ * 우측에서 페이지가 밀고 들어오고, 뒤 화면은 왼쪽으로 조금 밀리며 흐려진다.
+ * 박자(220ms)는 하단바 슬라이드와 같다 — '크롬 사라짐 → 화면 전환' 두 박자가 아니라
+ * 한 번의 이동으로 보이게 하려는 것이다. iOS 는 `NavigationStack` 의 시스템 push 가
+ * 같은 결을 내므로 그쪽에 맞춘 것이다.
+ *
+ * ⚠ **붙이는 자리는 `NavHost` 하나다 — 라우트마다 붙이지 말 것.**
+ * Navigation Compose 는 들어오는 전환을 **목적지**에서, 나가는 전환을 **떠나는 화면**
+ * 에서 가져온다. 하위 화면에만 붙이면 탭 → 편집기에서 편집기만 밀려 들어오고 탭은
+ * 제자리에서 페이드해, 한 겹만 움직이고 그 사이 두 화면이 겹쳐 비친다.
+ *
+ * ⚠ **탭끼리는 페이드다.** 탭 전환은 위계가 없는 옆걸음이라 밀면 뒤로가기처럼 읽힌다.
+ * 판정은 `isBottomBarTab()` — **하단바가 그리는 셋**(알람·목소리·더보기)만 탭이고,
+ * 이용권·코드 등록은 `NativeTab` 값이어도 더보기에서 들어가는 **하위 화면**이라
+ * push 다(`navigateTopLevelTab` 이 그 둘만 `popUpTo` 없이 쌓는 것과 같은 이유).
+ *
+ * 미는 폭이 화면의 1/4 인 이유: 전폭으로 밀면 뒤 화면이 완전히 빠져나가 되돌아올 때
+ * 튀어 보인다(iOS 도 30% 안쪽으로만 민다).
+ */
+private fun PushEnterTransition() = slideInHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { it }
+
+private fun PushExitTransition() =
+    slideOutHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { -it / 4 } +
+        fadeOut(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private fun PushPopEnterTransition() =
+    slideInHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { -it / 4 } +
+        fadeIn(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private fun PushPopExitTransition() = slideOutHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { it }
+
+private val FadeInTransition = fadeIn(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private val FadeOutTransition = fadeOut(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+/** 하단바가 그리는 탭인가. 이용권·코드 등록은 `NativeTab` 값이어도 하위 화면이다(위 주석). */
+private fun NavBackStackEntry.isBottomBarTab(): Boolean =
+    destination.route in BottomBarTabRoutes
+
+private val BottomBarTabRoutes =
+    setOf(NativeTab.Alarms.route, NativeTab.Voices.route, NativeTab.Menu.route)
+
+private const val PUSH_TRANSITION_MILLIS = 220

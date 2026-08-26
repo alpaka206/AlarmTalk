@@ -90,7 +90,13 @@ object StockClipManifestStore {
         // ⚠ **임자가 없는 파일도 믿지 않는다**(Codex #703 P1). 이 표시가 생기기 **전** 버전이
         // 쓴 매니페스트는 owner 가 null 인데, 그걸 통과시키면 앞 계정의 파일이 그대로 남아
         // 다음 계정이 시드한다(오프라인이면 무기한). 지워도 잃는 것은 다음 조회 한 번이다.
-        if (owner != current) clearAndInvalidate(context)
+        if (owner == current) return
+        // 지울 파일도 표식도 없으면 **아무 일도 하지 않는다.** `clearAndInvalidate` 는 표
+        // (`seenTicket`)를 올려 **이미 날아간 조회를 전부 버리는데**, 이 자리는 토큰이 갱신될
+        // 때마다(rolling refresh) 다시 돈다 — 첫 조회가 아직 안 끝난 기기에서는 그 응답만
+        // 계속 SUPERSEDED 로 버려진다.
+        if (owner == null && !file(context).exists()) return
+        clearAndInvalidate(context)
     }
 
     private const val OWNER_KEY = "owner_user_id"

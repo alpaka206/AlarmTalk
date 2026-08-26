@@ -315,11 +315,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로 돌아온다 —
             // 그러면 철회 이전 목록으로 판단하게 된다(Codex #697 P1).
             await deps.voiceStudio.refresh(session: deps.auth.session, force: true)
-            // ⚠ **매니페스트를 새로 못 받았으면 그 목록으로 확정하지 않는다**(Codex #703 P1).
-            // 강제 요청이 실패하면 `stockClips` 는 **교체 이전 스냅샷**으로 남고, 그 값들은
-            // 전부 rendered=true 라 아래 `presetPending` 이 비어 세대가 확정된다 — 완료 푸시를
-            // 놓친 기기는 회수된 프리셋을 문 채 남는다.
-            let manifestFresh = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            // 목록을 **먼저** 새로 받는다 — 아래 비교는 매니페스트가 가리키는 주소와 캐시를
+            // 맞대 보는 것이라, 옛 목록으로 돌리면 갈아 끼울 것이 없다고 나온다.
+            // ⚠ 이 갈래는 **세대를 확정하지 않는다.** 확정은 권위 새로고침
+            // (`onAuthoritativeRefresh`)과 교체 푸시(`onVoiceReplaced`)에만 있고, 둘은
+            // 매니페스트를 새로 받았는지까지 보고 판단한다. 여기서 실패하면 잃는 것은
+            // 이번 회차의 지연 시간뿐이다.
+            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
             if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session).changed {
                 await deps.alarmStore.waitUntilLoadedFromDisk()
                 _ = await AlarmScheduleReconciler.reconcile(

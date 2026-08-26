@@ -45,6 +45,14 @@ struct DowngradeNoticeStore {
         self.defaults = defaults
     }
 
+    /// ⚠ **읽기·합치기·쓰기가 한 덩어리다 — 메인 액터에서만 부른다**(Codex #703 P2).
+    /// 안드로이드는 같은 자리에 프로세스 전역 잠금을 뒀다(`data/DowngradeNoticeStore.kt`) —
+    /// 거기서는 전경 정리와 `VoiceAccessSyncWorker` 가 **다른 스레드로** 함께 적기 때문이다.
+    /// iOS 는 세 호출부(권위 새로고침·교체 푸시·무료 잠금)가 전부 `@MainActor` 라 액터가
+    /// 그 직렬화를 대신한다. `@MainActor` 를 붙여 **컴파일러가 지키게** 한다 — 나중에
+    /// 백그라운드에서 부르면 둘이 같은 이전 값을 읽어 개수도 잃고, 이 저장소가 지키기로 한
+    /// 우선순위 병합(액션이 있는 원인이 이긴다)도 깨진다.
+    @MainActor
     func record(userID: String?, cause: Cause, count: Int) {
         guard let userID, !userID.isEmpty, count > 0 else { return }
         // 확인 전에 또 강등되면 **합쳐서** 한 번만 알린다.

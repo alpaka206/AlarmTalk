@@ -119,6 +119,19 @@
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
   - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
+- **화면 전환**: `ui/app/AlarmTalkApp.kt` 의 `PushEnterTransition`·`PushExitTransition`·
+  `PushPopEnterTransition`·`PushPopExitTransition` 네 짝이 유일 출처(220ms).
+  - ⚠ **붙이는 자리는 `NavHost` 하나다 — 라우트마다 붙이지 말 것.** Navigation Compose 는
+    들어오는 전환을 **목적지**에서, 나가는 전환을 **떠나는 화면**에서 가져온다. 하위 화면에만
+    붙이면 탭 → 편집기에서 **편집기만** 밀려 들어오고 탭은 제자리에서 페이드해, 한 겹만
+    움직이고 그 사이 두 화면이 겹쳐 비친다(2026-08-26 에 그렇게 두 번 만들었다).
+  - **판정은 `isBottomBarTab()` 하나.** 하단바가 그리는 셋(알람·목소리·더보기)끼리는 페이드,
+    나머지는 전부 push 다. 탭은 위계 없는 옆걸음이라 밀면 뒤로가기처럼 읽힌다.
+    ⚠ **이용권·코드 등록은 `NativeTab` 값이어도 탭이 아니다** — 더보기에서 들어가는 하위
+    화면이라 push 다(`navigateTopLevelTab` 이 그 둘만 `popUpTo` 없이 쌓는 것과 같은 이유).
+  - 나가는 화면은 화면의 **1/4** 만 민다 — 전폭으로 밀면 되돌아올 때 튄다.
+  - iOS 는 `NavigationStack` + `.navigationDestination` 의 **시스템 push** 를 그대로 쓴다
+    (가장자리 스와이프 뒤로가기가 딸려 온다). 이 토큰은 그 결을 안드로이드에 맞춘 것이다.
 
 ### 디자인 토큰 (iOS)
 
