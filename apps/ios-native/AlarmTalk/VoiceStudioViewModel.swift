@@ -555,8 +555,15 @@ final class VoiceStudioViewModel: ObservableObject {
         // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
         // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
         guard force || !manifestFetchedThisSession else { return true }
+        // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
+        // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 가, 서버의 현재
+        // 음원이 '지나간 응답' 으로 판정돼 회수된 목소리가 그대로 남는다(Codex #703 P1).
+        // 안드로이드 짝은 `MainViewModel.stockClipManifestRevision`.
+        manifestRevision &+= 1
+        let revision = manifestRevision
         do {
             let manifest = try await api.getStockClipManifest(token: token)
+            guard revision == manifestRevision else { return !stockClips.isEmpty }
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
             manifestFetchedThisSession = true
@@ -571,10 +578,27 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.
     private var manifestFetchedThisSession = false
 
+    /// 매니페스트 조회의 세대 — 늦게 도착한 앞선 응답을 버린다(`loadStockClips` 주석).
+    private var manifestRevision = 0
+
     /// 제자리 교체가 같은 message ID에 게시한 새 오디오만 다시 받는다.
     /// 반환값이 true면 iOS 예약에 구워 둔 사운드도 다시 맞춰야 한다.
-    func refreshChangedCachedStockClips(session: AuthSession?) async -> Bool {
-        guard let token = session?.token else { return false }
+    /// 프리셋 캐시 갱신 결과.
+    ///
+    /// `settled` 를 따로 두는 이유(Codex #703 P1): 교체 세대를 **확정해도 되는지**는
+    /// "뭔가 바꿨는가" 가 아니라 **"낡은 것을 남김없이 갈아 끼웠는가"** 로 갈린다. 남은 것이
+    /// 있는데 확정하면 다음 회차부터 '이미 반영함' 이라, 프리셋 알람이 회수된 목소리로
+    /// 계속 운다.
+    struct StockCacheRefreshOutcome {
+        /// 실제로 갈아 끼운 키가 있다 — 재예약이 필요하다.
+        let changed: Bool
+        /// 낡은 키가 남지 않았다(애초에 없었던 경우도 포함).
+        let settled: Bool
+    }
+
+    @discardableResult
+    func refreshChangedCachedStockClips(session: AuthSession?) async -> StockCacheRefreshOutcome {
+        guard let token = session?.token else { return .init(changed: false, settled: false) }
         let cache = AudioCacheStore.shared
         let stale = stockClips.compactMap { clip -> (StockClip, [String])? in
             let keys = AudioCacheStore.messageCacheKeys(messageId: clip.messageId).filter { key in
@@ -585,8 +609,9 @@ final class VoiceStudioViewModel: ObservableObject {
             }
             return keys.isEmpty ? nil : (clip, keys)
         }
-        guard !stale.isEmpty else { return false }
+        guard !stale.isEmpty else { return .init(changed: false, settled: true) }
 
+        let staleKeyCount = stale.reduce(0) { $0 + $1.1.count }
         var refreshedKeys = Set<String>()
         for batchStart in stride(from: 0, to: stale.count, by: 4) {
             let batch = Array(stale[batchStart..<min(batchStart + 4, stale.count)])
@@ -633,7 +658,7 @@ final class VoiceStudioViewModel: ObservableObject {
         for key in refreshedKeys {
             AlarmSoundStaging.clearStagedSound(forKey: key)
         }
-        return !refreshedKeys.isEmpty
+        return .init(changed: !refreshedKeys.isEmpty, settled: refreshedKeys.count == staleKeyCount)
     }
 
     /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는

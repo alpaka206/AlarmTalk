@@ -223,7 +223,7 @@ struct AlarmTalkApp: App {
                             // 판단하게 된다(Codex #697 P1).
                             await voiceStudio.refresh(session: auth.session, force: true)
                             _ = await voiceStudio.loadStockClips(session: auth.session, force: true)
-                            if await voiceStudio.refreshChangedCachedStockClips(session: auth.session) {
+                            if await voiceStudio.refreshChangedCachedStockClips(session: auth.session).changed {
                                 await alarmStore.waitUntilLoadedFromDisk()
                                 _ = await AlarmScheduleReconciler.reconcile(
                                     store: alarmStore,

@@ -64,10 +64,10 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 첫 조회 시드가 디스크에 못 남으면 **기준선이 없는 것**이다 — 다음 회차가 그때의
         // 세대를 '처음 봤다' 로 다시 적어 그 사이의 교체를 영영 놓친다. 실패를 알린다.
         val seen = seenLocked(userId, profileId, invalidatedAt)
-        if (!seen.changed) return@withLock Result(0, seen.persisted)
+        if (!seen.changed) return@withLock Result(0, seen.persisted, changed = false)
         val degraded = degrade() ?: run {
             markRetryLocked(userId, profileId, invalidatedAt)
-            return@withLock Result(0, persisted = false)
+            return@withLock Result(0, persisted = false, changed = true)
         }
         // ⚠ **확정에 실패한 것도 재시도 대상이다**(Codex #703 P1). 강등은 됐는데 표식만 못
         // 남긴 경우, `commitLocked` 의 롤백으로 기준선은 제자리로 돌아가지만 그 값이 **이미
@@ -76,7 +76,7 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 늦게 도착한 같은 세대의 푸시가 되돌릴 수 없이 벗긴다.
         val persisted = commitLocked(userId, profileId, invalidatedAt)
         if (!persisted) markRetryLocked(userId, profileId, invalidatedAt)
-        Result(degraded, persisted)
+        Result(degraded, persisted, changed = true)
     }
 
     /**
@@ -97,13 +97,13 @@ class VoiceReplacementMarkerStore(context: Context) {
         if (generation != null && hasAppliedLocked(userId, profileId, generation)) return@withLock Result.SKIPPED
         val degraded = degrade() ?: run {
             markRetryLocked(userId, profileId, generation)
-            return@withLock Result(0, persisted = false)
+            return@withLock Result(0, persisted = false, changed = true)
         }
         // 세대를 모르는 옛 신호는 확정할 것이 없다 — 남길 값이 없으니 실패도 아니다.
         val persisted = generation?.let { commitLocked(userId, profileId, it) } ?: true
         // 위 `applyIfChanged` 와 같은 이유로, 확정 실패도 재시도 표식을 남긴다.
         if (!persisted) markRetryLocked(userId, profileId, generation)
-        Result(degraded, persisted)
+        Result(degraded, persisted, changed = true)
     }
 
     /**
@@ -111,10 +111,21 @@ class VoiceReplacementMarkerStore(context: Context) {
      * 것은 사용자에게 알려야 하고(그 회차가 아니면 말할 기회가 없다), 확정하지 못한 세대는
      * 호출부가 계속 '정리 중' 으로 두고 다음 회차가 다시 집어야 한다.
      */
-    data class Result(val degraded: Int, val persisted: Boolean) {
+    /**
+     * @param degraded 이번 회차에 내린 알람 수.
+     * @param persisted 표식이 디스크까지 남았는가.
+     * @param changed **교체 세대를 실제로 집었는가.** `degraded` 로는 갈리지 않는다 —
+     *   그 목소리를 **프리셋 알람만** 쓰고 있으면 세대가 바뀌었어도 내릴 커스텀 알람이 없어
+     *   0 이 나온다(Codex #703 P1). 프리셋 캐시를 다시 받아야 할지는 이 값으로 판단한다.
+     */
+    data class Result(
+        val degraded: Int,
+        val persisted: Boolean,
+        val changed: Boolean = false,
+    ) {
         companion object {
             /** 할 일이 없었다 — 실패가 아니다. */
-            val SKIPPED = Result(0, persisted = true)
+            val SKIPPED = Result(0, persisted = true, changed = false)
         }
     }
 

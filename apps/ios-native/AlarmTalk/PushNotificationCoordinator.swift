@@ -316,7 +316,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 그러면 철회 이전 목록으로 판단하게 된다(Codex #697 P1).
             await deps.voiceStudio.refresh(session: deps.auth.session, force: true)
             _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
-            if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session) {
+            if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session).changed {
                 await deps.alarmStore.waitUntilLoadedFromDisk()
                 _ = await AlarmScheduleReconciler.reconcile(
                     store: deps.alarmStore,
@@ -496,7 +496,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 그 목소리를 **프리셋 알람만** 쓰고 있으면 `applyIfChanged` 는 확정 가능한
             // 세대를 빈 목록과 함께 돌려준다 — 여기서 접으면 표식만 확정되고, 다음 회차부터는
             // '이미 반영함' 이라 **캐시와 구워 둔 사운드가 회수된 목소리로 영영 남는다.**
-            let markerGenerationChanged = !pendingApplies.isEmpty
+            // ⚠ **배열 길이로 세지 말 것**(Codex #703 P2). 루프는 `.nothing` 회차도 그대로
+            // 담으므로, 길이로 보면 목소리를 하나라도 가진 계정에서는 **언제나 참**이 된다 —
+            // 콜드 스타트·탭 진입마다 매니페스트를 강제로 다시 받고 예약을 통째로 맞추게 된다.
+            // 실제로 뭔가 있었던 회차만 프로필 id 를 들고 온다.
+            let markerGenerationChanged = pendingApplies.contains { !$0.profileID.isEmpty }
             guard anyFailed || markerGenerationChanged || degraded + replacedCount + unverifiedCount > 0 else {
                 pendingApplies.forEach { _ = $0.confirm() }
                 return
@@ -510,8 +514,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 여기까지 온 것은 **교체를 실제로 감지했다**는 뜻이라(위 guard), 매 콜드
             // 스타트가 아니라 그때만 도는 비용이다. 매니페스트는 강제로 다시 읽는다 —
             // 캐시된 옛 매니페스트로는 어떤 클립이 바뀌었는지 알 수 없다.
-            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
-            _ = await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session)
+            let manifestFresh = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            let presetRefresh = await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session)
+            // ⚠ **프리셋 갱신이 남아 있으면 그 세대를 확정하지 않는다**(Codex #703 P1).
+            // 매니페스트를 못 받았거나 낡은 키를 다 갈아 끼우지 못했는데 확정하면, 다음
+            // 회차부터 '이미 반영함' 이라 프리셋 알람이 회수된 목소리로 계속 운다.
+            let presetWorkSettled = manifestFresh && presetRefresh.settled
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
@@ -519,6 +527,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             )
             // 예약까지 맞춘 것만 확정한다(위 푸시 경로와 같은 규칙).
             for pending in pendingApplies {
+                // 내릴 것도 확인할 것도 없던 회차는 **프리셋 캐시가 유일하게 남은 일**이다 —
+                // 그게 안 끝났으면 확정을 미뤄 다음 회차가 다시 집게 한다. 커스텀 알람 작업이
+                // 있던 회차는 그 성패로 판단하므로 여기서 붙들지 않는다(붙들면 프리셋 실패
+                // 하나가 멀쩡한 목소리를 계속 '정리 중' 으로 묶는다).
+                let presetOnly = pending.degraded.isEmpty && pending.unverified.isEmpty && !pending.failed
+                if presetOnly && !presetWorkSettled { continue }
                 await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
             }
         }

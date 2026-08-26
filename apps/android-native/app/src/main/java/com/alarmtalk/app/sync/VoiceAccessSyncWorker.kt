@@ -103,6 +103,8 @@ class VoiceAccessSyncWorker(
             // 깨어난 옛 회차가 지운다(계정 재확인도 강등 직후에 그 안에서 한다).
             val markers = VoiceReplacementMarkerStore(applicationContext)
             var replacedCount = 0
+            // 교체 세대를 하나라도 집었으면 프리셋 캐시(매니페스트 + 바이트)도 다시 받아야 한다.
+            var presetCacheNeedsRefresh = false
             // 표식을 디스크에 남기지 못한 회차가 하나라도 있으면 이 회차는 **끝난 것이 아니다.**
             var markerPersistFailed = false
             // ⚠ **두 루프의 판정을 합쳐 마지막에 한 번만 쓴다**(Codex #703 P1).
@@ -135,6 +137,7 @@ class VoiceAccessSyncWorker(
                 // 화면 상태가 없어 표시를 메모리에 둘 수 없다 — 디스크에 남겨 편집기가 보게
                 // 하고, 이 회차는 **완료로 보고하지 않는다**(WorkManager 가 다시 부른다).
                 touchedProfiles += replacedVoiceId
+                if (pushResult.changed) presetCacheNeedsRefresh = true
                 if (!pushResult.persisted) {
                     unpersistedProfiles += replacedVoiceId
                     markerPersistFailed = true
@@ -164,8 +167,20 @@ class VoiceAccessSyncWorker(
                     unpersistedProfiles += profileId
                     markerPersistFailed = true
                 }
+                // ⚠ **프리셋 캐시도 다시 받아야 한다**(Codex #703 P1). 이 워커는 교체 푸시를
+                // 놓쳤을 때의 **유일한 폴백**인데, 예전에는 커스텀 문구 알람만 강등하고
+                // 매니페스트·프리셋 바이트는 건드리지 않았다. 그 목소리를 **프리셋 알람만**
+                // 쓰고 있으면 `degradedNow` 가 0 인데 표식은 확정돼, 다음 회차부터 그 세대를
+                // 건너뛴다 — 사용자가 앱을 열 때까지 회수된 목소리로 계속 운다.
+                // 판정은 `degraded` 가 아니라 `changed` 다(같은 이유로 0 이 나올 수 있다).
+                if (listResult.changed) presetCacheNeedsRefresh = true
                 // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
                 replacedCount += degradedNow
+            }
+            // 매니페스트와 낡은 프리셋 바이트는 이 워커가 직접 받지 않고 전용 워커에 맡긴다
+            // (FCM `voice_share_changed` 도 같은 워커를 큐잉한다 — `AlarmTalkMessagingService`).
+            if (presetCacheNeedsRefresh) {
+                StockClipPrefetchWorker.enqueue(applicationContext)
             }
             // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
             // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.

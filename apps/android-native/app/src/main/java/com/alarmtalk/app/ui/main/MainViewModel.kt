@@ -510,6 +510,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal var stockClipManifestFetched = false
 
+    /**
+     * 매니페스트 조회의 **세대**. 늦게 도착한 앞선 응답이 새 매니페스트를 덮는 것을 막는다.
+     *
+     * ⚠ 이 값이 없으면 권위 자체가 뒤로 간다(Codex #703 P1). `loadStockClips` 는
+     * `viewModelScope.launch` 라 겹칠 수 있는데, 교체 **전에** 시작한 요청이 나중에 끝나면
+     * `stockClips` 와 디스크 매니페스트를 옛 것으로 되돌린다. 그러면 캐시 쓰기 경로의
+     * '지나간 응답인가' 대조가 **되살아난 옛 주소**를 기준으로 삼아, 서버의 현재 음원을
+     * 지나간 것으로 판정해 회수된 목소리를 그대로 남긴다.
+     */
+    internal var stockClipManifestRevision: Int = 0
+
     var socialBusy by mutableStateOf(false)
         internal set
 

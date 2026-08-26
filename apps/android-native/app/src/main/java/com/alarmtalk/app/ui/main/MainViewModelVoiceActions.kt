@@ -966,10 +966,16 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
     // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
     if (!forceReload && stockClipManifestFetched) return
+    // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
+    // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 간다.
+    stockClipManifestRevision += 1
+    val manifestRevision = stockClipManifestRevision
     viewModelScope.launch {
         runCatching {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { response ->
+            if (manifestRevision != stockClipManifestRevision) return@onSuccess
+            if (authSession?.user?.id != session.user.id) return@onSuccess
             val clips = response.clips
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }
