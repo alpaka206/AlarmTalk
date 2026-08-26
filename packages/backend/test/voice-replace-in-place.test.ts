@@ -208,6 +208,38 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       loginId: 'g1',
     });
 
+  // ⚠ **새 원본이 없어도 옛 원본은 지운다**(Codex #703 P1).
+  // 등록의 `voice_uploads` 저장은 best-effort 라(동의 철회·R2/INSERT 실패) 드래프트에
+  // 업로드 행이 하나도 없을 수 있다. 그때 옛 원본을 남기면 이 프로필은 **새 목소리를
+  // 뜻하게 됐는데 옛 사람 녹음을 문 채** 남고, 말투 재시도와 evict 복구가 그걸 읽는다.
+  it('드래프트에 새 원본이 없어도 옛 원본은 지운다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      // 등록이 원본을 못 남긴 상황을 만든다.
+      await db.execute("DELETE FROM voice_uploads WHERE id = 'up-new'");
+
+      const result = await replaceVoiceInPlace(db as never, {
+        targetUserIds: ['u1'],
+        draftProfileId: 'vp2',
+        language: 'ko',
+        ownerPk: 'u1',
+        loginId: 'g1',
+      });
+      expect(result.ok).toBe(true);
+
+      const uploads = await db.execute('SELECT id FROM voice_uploads');
+      expect(uploads.rows.map((row) => String(row.id))).toEqual([]);
+      // 행만 지우면 R2 객체가 도달 불가로 남는다 — 삭제 큐에 먼저 넣어야 한다.
+      const queue = await db.execute(
+        "SELECT ref FROM pending_external_deletions WHERE kind = 'r2_object'",
+      );
+      expect(queue.rows.map((row) => String(row.ref))).toContain('uploads/old.wav');
+    } finally {
+      db.close();
+      rmSync(path, { force: true });
+    }
+  });
+
   it('같은 달에 이미 등록했으면 429로 막고 아무것도 쓰지 않는다', async () => {
     const { db, path } = await replacementDb();
     try {

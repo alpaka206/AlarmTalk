@@ -958,7 +958,10 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
     // 자세한 것은 `StockClipManifestStore` 주석.
     if (stockClips.isEmpty()) {
-        com.alarmtalk.app.data.StockClipManifestStore.load(getApplication())?.let { cached ->
+        // 계정 id 를 함께 넘긴다 — 지우지 못해 격리된 파일은 **임자 본인에게만** 열린다
+        // (Codex #703 P1, `StockClipManifestStore.load` 주석).
+        com.alarmtalk.app.data.StockClipManifestStore
+            .load(getApplication(), authSession?.user?.id)?.let { cached ->
             stockClips = cached.clips
             cached.expectedVariants?.let { expectedVariants = it }
         }

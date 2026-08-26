@@ -1103,6 +1103,26 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                     // 구워 둔 지문(`scheduledSoundFingerprint`)과 예약 핸들이 그대로 남아
                     // `AlarmScheduleReconciler.needsReschedule` 이 다음 회차(앱 시작·전경
                     // 복귀·백그라운드 동기화)에서 이 행을 집어 다시 건다.
+                    //
+                    // ⚠ **지문이 없던 시절의 행은 그 그물에 걸리지 않는다**(Codex #703 P1).
+                    // `needsReschedule` 은 `scheduledSoundFingerprint` 가 nil 이면 **일부러**
+                    // false 를 돌려준다(옛 행을 전부 재예약하지 않으려는 가드). 그런데 이 행은
+                    // pull 도 다시 집지 않고, 핸들을 든 채 `.armed` 라 `recoverScheduledAlarms`
+                    // 후보도 아니다 — 폴백이 하나도 없어 **회수된 발신자 목소리를 문 옛 예약이
+                    // 무기한 울 수 있다.** 그 경우만 회수 목록에 명시적으로 남긴다.
+                    //
+                    // 출처는 `.foreignCleanup` 이어야 한다 — `.accountLeave` 계열은
+                    // `applyResolvedCancellations` 가 **행까지 끈다**(받은 알람이 이유 없이
+                    // 꺼진다). 끊고 나면 `enabled && alarmKitID == nil` 이 되어 같은 회차의
+                    // `recoverScheduledAlarms` 가 **톤으로 다시 건다.**
+                    if previouslyScheduled.scheduledSoundFingerprint == nil,
+                       let staleHandle = previouslyScheduled.alarmKitID {
+                        PendingAlarmCancellationStore.add(
+                            staleHandle,
+                            origin: .foreignCleanup,
+                            alarmID: revoked.id
+                        )
+                    }
                     Self.logger.warning(
                         "Pull sync: revoked reschedule failed, leaving it to the reconciler (remoteId: \(remoteID, privacy: .public))"
                     )

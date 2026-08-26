@@ -927,31 +927,38 @@ export async function replaceVoiceInPlace(
       ],
     });
 
-    // 말투 분석·재생성은 현역 프로필에 연결된 최신 등록 원본을 읽는다. 새 원본이 실제로
-    // 있을 때만 옛 원본을 즉시 폐기하고, 드래프트 연결을 현역 id로 승계한다.
-    const replacementUploads = await tx.execute({
-      sql: 'SELECT id FROM voice_uploads WHERE voice_profile_id = ? LIMIT 1',
-      args: [draftProfileId],
+    // 말투 분석·재생성은 현역 프로필에 연결된 최신 등록 원본을 읽는다.
+    //
+    // ⚠ **옛 원본은 새 원본의 유무와 무관하게 폐기한다**(Codex #703 P1). 예전에는 새 원본이
+    // 있을 때만 지웠는데, 등록의 `voice_uploads` 저장은 **best-effort** 라(동의 철회·R2 실패)
+    // 실패할 수 있다 — 그러면 이 프로필은 **새 목소리를 뜻하게 됐는데 옛 사람의 녹음을 문 채**
+    // 남는다. 그 상태에서 말투 재시도(`/:id/speech-style/retry`)와 evict 복구
+    // (`recloneEvictedVoiceProfile`)는 그 옛 녹음을 '이 프로필의 원본' 으로 읽는다 —
+    // `docs/spec/voice-and-message.md` 의 원본 삭제 계약도 조건 없이 지우라고 적혀 있다.
+    //
+    // 원본이 없는 상태는 **설계된 폴백**이다: 재시도는 409 `SOURCE_AUDIO_MISSING`,
+    // evict 복구는 `NO_VOICE_ID` 로 재등록을 유도한다. 잃는 것은 그 갈래의 복구 가능성이고,
+    // 얻는 것은 프로필이 조용히 **다른 사람 목소리**가 되지 않는 것이다.
+    //
+    // 순서는 **삭제 → 승계** 다. 뒤집으면 방금 승계한 새 행을 스스로 지운다. 승계 UPDATE 는
+    // 드래프트 업로드가 없으면 0행이라 자연스러운 no-op 이므로 따로 가드를 두지 않는다.
+    const staleUploads = await tx.execute({
+      sql: 'SELECT object_key FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [targetId],
     });
-    if (replacementUploads.rows.length > 0) {
-      const staleUploads = await tx.execute({
-        sql: 'SELECT object_key FROM voice_uploads WHERE voice_profile_id = ?',
-        args: [targetId],
-      });
-      await enqueueExternalDeletionsBatch(
-        tx,
-        'r2_object',
-        staleUploads.rows.map((row) => row.object_key as string | null),
-      );
-      await tx.execute({
-        sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
-        args: [targetId],
-      });
-      await tx.execute({
-        sql: 'UPDATE voice_uploads SET voice_profile_id = ? WHERE voice_profile_id = ?',
-        args: [targetId, draftProfileId],
-      });
-    }
+    await enqueueExternalDeletionsBatch(
+      tx,
+      'r2_object',
+      staleUploads.rows.map((row) => row.object_key as string | null),
+    );
+    await tx.execute({
+      sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [targetId],
+    });
+    await tx.execute({
+      sql: 'UPDATE voice_uploads SET voice_profile_id = ? WHERE voice_profile_id = ?',
+      args: [targetId, draftProfileId],
+    });
     if (staleProviderVoiceId && staleProviderVoiceId !== String(draft.elevenlabs_voice_id ?? '')) {
       await enqueueExternalDeletion(tx, 'elevenlabs_voice', staleProviderVoiceId);
     }

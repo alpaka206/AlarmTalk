@@ -121,13 +121,23 @@ final class BackgroundDependencies {
         // 들고 오므로 아래 `guard` 가 그것을 '정리 중' 으로 올리고 물러선다.
         if pending.failed { settled = false }
         if settled, alarmStore.saveNow() == false { settled = false }
-        guard settled, auth.session?.user.id == ownerID else {
+        let stillOwner = auth.session?.user.id == ownerID
+        guard settled, stillOwner else {
             // ⚠ **실패하면 그 목소리를 계속 '정리 중' 으로 둔다**(Codex #703 P1).
             // 예전에는 승격 화면만 이 처리를 했는데, 이 함수는 **푸시·새로고침 훅**도 부른다 —
             // 다른 기기나 공유받은 목소리의 교체가 여기서 실패하면 그 목소리가 그대로 고를 수
             // 있는 채 남고, 그때 만든 알람을 다음 재시도가 되돌릴 수 없이 벗긴다.
             // 판정을 호출부마다 두면 언젠가 빠뜨리므로 **실패하는 이 한 곳**에 둔다.
-            if !pending.profileID.isEmpty { voiceStudio.suppressReplacedProfile(pending.profileID) }
+            //
+            // ⚠ **단, 계정이 바뀌어서 들어온 회차는 표시를 세우지 않는다**(Codex #703 P2).
+            // 이 `guard` 는 '떠난 계정의 회차' 로도 들어오는데, 그때 세우면 **지금 사람의**
+            // 화면에서 남의 정리 때문에 목소리가 잠긴다 — 그 사람에게는 풀어 줄 작업 자체가
+            // 없다(표식이 앞 계정 것이라 `applyIfChanged` 가 `.nothing` 을 돌려준다).
+            // 잃는 것도 없다: 확정하지 못했으므로 `applied` 가 그대로라, 앞 계정이 다시
+            // 들어오면 그 세대를 다시 집어 스스로 가린다.
+            if !pending.profileID.isEmpty, stillOwner {
+                voiceStudio.suppressReplacedProfile(pending.profileID)
+            }
             return false
         }
         // ⚠ **다른 세대가 남아 있으면 아직 풀지 않는다**(Codex #703 P1). 이 회차의

@@ -1230,6 +1230,16 @@ tts.post('/generate', async (c) => {
       }
     };
     let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    // ⚠ **합성을 시작할 때의 교체 세대를 붙잡아 둔다**(Codex #703 P1). 게시 시점에 이 값이
+    // 달라졌으면 그 사이 **제자리 교체**가 일어난 것이고, 교체의 스냅샷 정리(회수된 목소리로
+    // 만든 custom 행을 톤으로 내리는 1회성 스윕)는 **이미 지나갔다** — 지금 게시하면 그
+    // 스윕이 다시는 훑지 않는 자리에 회수된 목소리 행이 영구히 남는다.
+    //
+    // ⚠ **전용 SELECT 를 새로 만들지 말 것.** `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창
+    // (마이그레이션이 배포보다 늦게 도는 창 — CLAUDE.md)에서도 그냥 `undefined` 이고,
+    // 그 창에는 제자리 교체 자체가 이 컬럼을 참조해 롤백되므로 지킬 대상이 없다.
+    // 전용 쿼리로 읽으면 그 창 동안 **모든 직접 입력 생성이 500** 이 된다.
+    const requestVoiceGeneration = String(vp.custom_audio_invalidated_at ?? '');
     const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
     const evictedProbeVoiceId = isEvictedWithoutVoice
       ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
@@ -1429,10 +1439,28 @@ tts.post('/generate', async (c) => {
               userPk,
               body.voice_profile_id,
             );
+            // ⚠ **'같은 프로필이 여전히 ready 인가' 만으로는 부족하다**(Codex #703 P1).
+            // 제자리 교체는 행 id·소유자·status 를 **그대로 둔 채** provider voice 만 갈아
+            // 끼우므로 이 셋은 교체 뒤에도 전부 참이다. 합성에 실제로 쓴 목소리와 지금 행의
+            // 목소리를 맞대 봐야 그 사이 교체가 있었는지 알 수 있다.
+            const publicationProviderVoiceId =
+              typeof publicationVoice?.elevenlabs_voice_id === 'string'
+                ? publicationVoice.elevenlabs_voice_id
+                : null;
+            // NULL 은 교체가 아니라 **LRU eviction** 일 수 있다(그건 음원을 무효로 만들지
+            // 않는다) — 그걸 이유로 멀쩡한 오디오를 버리지 않는다. 재클론은 새 id 를 행에
+            // 커밋하고 그 id 로 합성하므로 값이 일치해 오탐이 없다.
+            const replacedDuringSynthesis =
+              publicationProviderVoiceId !== null &&
+              publicationProviderVoiceId !== generated.providerVoiceId;
+            const generationChanged =
+              String(publicationVoice?.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration;
             if (
               !publicationVoice ||
               publicationVoice.status !== 'ready' ||
-              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested
+              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested ||
+              replacedDuringSynthesis ||
+              generationChanged
             ) {
               throw new VoiceAuthorizationChangedDuringTtsError();
             }

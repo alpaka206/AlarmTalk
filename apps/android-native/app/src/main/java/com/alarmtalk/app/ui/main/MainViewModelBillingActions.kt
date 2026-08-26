@@ -515,10 +515,14 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
 
 /** 다시 유료가 되면 무료 동안 사운드온리로 잠갔던 목소리 알람을 원래 모드로 복원한다. */
 internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
-    // ⚠ **유료로 돌아오면 대기표를 비운다**(iOS `applyFreePlanVoiceLockIfNeeded` 와 같은 이유).
-    // ① 확인 안 한 강등 안내가 남아 있으면 이미 유료가 된 사람에게 "무료로 바뀌었어요" 를
-    //    띄우게 된다. ② 비워 둬야 다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다.
-    DowngradeNoticeStore(getApplication()).clear(authSession?.user?.id)
+    // ⚠ **유료로 돌아오면 무료 강등 안내만 비운다**(iOS `applyFreePlanVoiceLockIfNeeded` 와
+    // 같은 이유). ① 확인 안 한 무료 강등 안내가 남아 있으면 이미 유료가 된 사람에게
+    // "무료로 바뀌었어요" 를 띄우게 된다. ② 비워 둬야 다음에 다시 무료가 됐을 때 깨끗이
+    // 다시 뜬다.
+    // ⚠ **원인을 가려서 지운다**(Codex #703 P2). 예전에는 통째로 비워서, 다른 기기가 적어 둔
+    // `VOICE_REPLACED`(이용권으로 복원되지 않는 안내)까지 사용자가 보기도 전에 사라졌다.
+    DowngradeNoticeStore(getApplication())
+        .clear(authSession?.user?.id, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {
         runCatching {
             repository.unlockPaidAlarmTalks()

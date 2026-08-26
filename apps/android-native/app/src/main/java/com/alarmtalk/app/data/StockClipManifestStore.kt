@@ -101,12 +101,49 @@ object StockClipManifestStore {
 
     private const val OWNER_KEY = "owner_user_id"
 
+    /**
+     * **지우려 했는데 못 지운 파일이 남아 있다**는 표시. 이게 서 있는 동안 [load] 는 파일이
+     * 있어도 **아무것도 돌려주지 않는다.**
+     *
+     * ⚠ `File.delete()` 는 거부당해도 **예외가 아니라 false** 를 돌려준다(Codex #703 P1).
+     * `runCatching` 만 두면 실패가 성공으로 읽히는데, 임자 표시는 이미 지운 뒤라 살아남은
+     * 파일이 **임자 없는 상태**가 된다 — 다음 계정이 그걸 그대로 시드해 앞 계정의 클론
+     * 이름·문구를 읽는다. 그래서 지우지 못하면 **임자를 그대로 두고**(불일치가 유지돼 다음
+     * 세션이 다시 시도한다) 이 표시를 세워 **읽는 쪽을 닫는다.**
+     */
+    private const val QUARANTINE_KEY = "needs_clear"
+
     fun clearAndInvalidate(context: Context) {
         synchronized(revisionLock) {
             seenTicket = nextFetchTicket + 1
-            runCatching { ownerPrefs(context).edit().remove(OWNER_KEY).apply() }
-            runCatching { file(context).delete() }
+            val target = file(context)
+            // 없으면 지운 것과 같다. 있으면 `delete()` 의 **반환값**까지 본다.
+            val removed = runCatching { !target.exists() || target.delete() }
                 .onFailure { AlarmTalkLog.reportError("Failed to clear the stock clip manifest", it) }
+                .getOrDefault(false)
+            val prefs = ownerPrefs(context)
+            if (removed) {
+                runCatching { prefs.edit().remove(OWNER_KEY).remove(QUARANTINE_KEY).apply() }
+            } else {
+                // 임자는 **남긴다** — 지워 버리면 살아남은 파일이 임자 없는 상태가 돼
+                // 다음 계정이 시드한다. 남겨 두면 불일치가 유지돼 다음 세션이 다시 지운다.
+                AlarmTalkLog.reportError(
+                    "Stock clip manifest deletion refused; quarantining the surviving file",
+                    IllegalStateException("delete() returned false"),
+                )
+                // `commit()` 도 false 를 돌려줄 수 있다 — 그러면 이번 프로세스는 메모리
+                // 맵으로 버티지만 재시작 뒤에는 표시를 잃는다. 임자는 남겨 뒀으므로 다음
+                // 세션이 삭제를 다시 시도하긴 하나, 조용히 넘기지는 않는다.
+                val marked = runCatching {
+                    prefs.edit().putBoolean(QUARANTINE_KEY, true).commit()
+                }.getOrDefault(false)
+                if (!marked) {
+                    AlarmTalkLog.reportError(
+                        "Failed to mark the surviving stock clip manifest as quarantined",
+                        IllegalStateException("commit() returned false"),
+                    )
+                }
+            }
         }
     }
 
@@ -147,9 +184,14 @@ object StockClipManifestStore {
             seenTicket = fetchTicket
             // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
             if (!writeManifest(context, response)) return PublishResult.FAILED
-            // 파일과 임자는 **같은 임계구역에서** 함께 남긴다.
+            // 파일과 임자는 **같은 임계구역에서** 함께 남긴다. 방금 이 계정의 내용으로
+            // 갈아 끼웠으므로 격리 표시도 함께 내린다 — 지우지 못했던 파일이 **덮여** 없어진
+            // 것이라, 계속 세워 두면 멀쩡한 파일을 영영 못 읽는다.
             ownerUserId?.takeIf { it.isNotBlank() }?.let {
-                ownerPrefs(context).edit().putString(OWNER_KEY, it).commit()
+                ownerPrefs(context).edit()
+                    .putString(OWNER_KEY, it)
+                    .remove(QUARANTINE_KEY)
+                    .commit()
             }
             return PublishResult.PUBLISHED
         }
@@ -171,8 +213,27 @@ object StockClipManifestStore {
             AlarmTalkLog.reportError("Failed to persist the stock clip manifest", it)
         }.getOrDefault(false)
 
-    /** 디스크에 남은 매니페스트. 없거나 깨졌으면 null. */
-    fun load(context: Context): StockClipListResponse? {
+    /**
+     * 디스크에 남은 매니페스트. 없거나 깨졌으면 null.
+     *
+     * @param currentUserId 지금 로그인한 계정. **격리된 파일을 읽을 수 있는지**를 이걸로 가른다
+     *   (아래). 모르면 null 을 넘긴다 — 그때는 격리 중 읽지 않는다(fail-closed).
+     */
+    fun load(context: Context, currentUserId: String? = null): StockClipListResponse? {
+        // ⚠ **지우지 못한 파일은 남에게 읽히지 않는다**(Codex #703 P1 — 위 `QUARANTINE_KEY`).
+        // 그 표시가 서 있는 동안 파일은 **지우기로 한 계정의 것**이라, 다른 계정이 읽으면
+        // 그 계정의 클론 이름·문구가 남의 화면에 시드된다.
+        //
+        // 다만 **임자 본인은 계속 읽는다.** 로그아웃에서 삭제가 거부돼 격리된 뒤 같은 사람이
+        // 다시 로그인한 경우까지 막으면, 이 파일을 둔 이유였던 '모른다' 상태(파일 머리말 주석
+        // — 관문은 '막지 않음', 저장은 '불완전' 으로 정반대로 답한다)로 오프라인 사용자가
+        // 그대로 돌아간다. 임자는 `save` 가 조회한 계정으로만 찍히므로 믿을 수 있다.
+        val prefs = ownerPrefs(context)
+        if (prefs.getBoolean(QUARANTINE_KEY, false)) {
+            val owner = prefs.getString(OWNER_KEY, null)
+            val me = currentUserId?.takeIf { it.isNotBlank() }
+            if (me == null || owner == null || owner != me) return null
+        }
         val target = file(context)
         if (!target.exists()) return null
         return runCatching {

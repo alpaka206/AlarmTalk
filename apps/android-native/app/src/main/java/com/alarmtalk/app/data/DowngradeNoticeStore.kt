@@ -48,51 +48,94 @@ class DowngradeNoticeStore(context: Context) {
         if (userId.isNullOrBlank() || count <= 0) return
         // ⚠ **읽기·합치기·쓰기를 통째로 잠근다**(Codex #703 P2). 전경 정리와
         // `VoiceAccessSyncWorker` 가 **서로 다른 인스턴스로** 같은 계정에 동시에 적을 수
-        // 있는데, 둘이 같은 이전 값을 읽으면 나중 쓰기가 앞의 것을 통째로 덮는다 — 개수도
-        // 잃고, 이 저장소가 지키기로 한 **우선순위 병합**(액션이 있는 원인이 이긴다)도
-        // 깨진다. 잠금은 프로세스 전역이어야 한다(인스턴스마다 두면 소용없다).
-        synchronized(RECORD_LOCK) { recordLocked(userId, cause, count) }
+        // 있는데, 둘이 같은 이전 값을 읽으면 나중 쓰기가 앞의 것을 통째로 덮는다 — 개수를
+        // 잃는다. 잠금은 프로세스 전역이어야 한다(인스턴스마다 두면 소용없다).
+        synchronized(RECORD_LOCK) {
+            migrateLegacy(userId)
+            val previous = prefs.getInt(countKey(userId, cause), 0)
+            // ⚠ `apply()` 가 아니라 `commit()` 이다 — 잠금을 놓기 전에 디스크에 남아야 다음
+            // 회차가 방금 합친 값을 읽는다(비동기로 미루면 그 사이 읽는 쪽이 옛 값을 본다).
+            prefs.edit().putInt(countKey(userId, cause), previous + count).commit()
+        }
     }
 
-    private fun recordLocked(userId: String, cause: Cause, count: Int) {
-        val previous = read(userId)
-        // 확인 전에 또 강등되면 **합쳐서** 한 번만 알린다 — 모달을 두 번 띄우지 않는다.
-        // 원인이 섞이면 무료 강등 쪽으로 말한다(그쪽이 복구 가능하다는 더 쓸모 있는 정보다).
-        val mergedCount = (previous?.count ?: 0) + count
-        // 섞이면 **우선순위가 높은(= 안내할 액션이 있는) 쪽**으로 말한다. 새로 온 원인으로
-        // 덮어쓰면, '이용권 보기' 가 필요한 공유 해제가 액션 없는 교체 안내로 바뀌어 사용자가
-        // 고칠 방법을 못 본다. 반대로 전부 FREE_PLAN 으로 뭉치면 유료 사용자에게 "무료로
-        // 바뀌었어요" 라는 거짓말을 하게 된다.
-        val mergedCause = if (previous == null) cause else minOf(previous.cause, cause)
-        // ⚠ `apply()` 가 아니라 `commit()` 이다 — 잠금을 놓기 전에 디스크에 남아야 다음
-        // 회차가 방금 합친 값을 읽는다(비동기로 미루면 그 사이 읽는 쪽이 옛 값을 본다).
-        prefs.edit()
-            .putString(causeKey(userId), mergedCause.name)
-            .putInt(countKey(userId), mergedCount)
-            .commit()
-    }
-
+    /**
+     * 지금 띄울 안내.
+     *
+     * ⚠ **원인은 따로 보관하고, 말할 때만 하나로 고른다**(Codex #703 P2). 예전에는 적는
+     * 순간 하나로 뭉갰는데(`minOf`), 그러면 `VOICE_REPLACED` 가 대기 중일 때 `FREE_PLAN`
+     * 이 하나 들어오는 것만으로 저장된 원인이 `FREE_PLAN` 이 되어, 유료 복원의
+     * `clear(FREE_PLAN)` 이 **복원되지 않는 교체 안내까지** 지웠다.
+     *
+     * 고르는 규칙은 그대로다 — **가장 할 수 있는 일이 많은 원인**(선언 순서가 앞선 것)으로
+     * 말하고, 개수는 대기 중인 것을 **전부 더한다** — 한 번 띄울 때 다 말한다.
+     *
+     * ⚠ 그래서 '확인' 을 누르면 한 번에 다 지워진다. 다만 **유료 복원처럼 원인 하나만
+     * 지우는 경우**에는 남은 원인이 다음에 다시 뜬다 — 그건 의도다(교체 안내는 이용권으로
+     * 복원되지 않으므로 사용자가 반드시 봐야 한다).
+     */
     fun read(userId: String?): Notice? {
         if (userId.isNullOrBlank()) return null
-        val rawCause = prefs.getString(causeKey(userId), null) ?: return null
-        val count = prefs.getInt(countKey(userId), 0)
-        if (count <= 0) return null
-        val cause = runCatching { Cause.valueOf(rawCause) }.getOrNull() ?: return null
-        return Notice(cause, count)
+        synchronized(RECORD_LOCK) { migrateLegacy(userId) }
+        var total = 0
+        var top: Cause? = null
+        for (cause in Cause.values()) {
+            val count = prefs.getInt(countKey(userId, cause), 0)
+            if (count <= 0) continue
+            total += count
+            if (top == null) top = cause
+        }
+        val cause = top ?: return null
+        return Notice(cause, total)
     }
 
-    /** 사용자가 '확인' 을 눌렀을 때만 부른다. */
+    /** 사용자가 '확인' 을 눌렀을 때만 부른다 — 말해 준 것을 전부 비운다. */
     fun clear(userId: String?) {
         if (userId.isNullOrBlank()) return
         // 지우는 것도 같은 잠금 아래에서 한다 — 합치는 중에 지워지면 방금 확인한 안내가
         // 되살아난다(합친 값이 잠금 밖에서 뒤늦게 쓰인다).
         synchronized(RECORD_LOCK) {
-            prefs.edit().remove(causeKey(userId)).remove(countKey(userId)).commit()
+            val edit = prefs.edit()
+            Cause.values().forEach { edit.remove(countKey(userId, it)) }
+            edit.remove(legacyCauseKey(userId)).remove(legacyCountKey(userId)).commit()
         }
     }
 
-    private fun causeKey(userId: String) = "pending_cause_$userId"
-    private fun countKey(userId: String) = "pending_count_$userId"
+    /**
+     * **그 원인의 안내만** 지운다.
+     *
+     * ⚠ 유료 복원은 `FREE_PLAN` 만 지워야 한다(Codex #703 P2). 무조건 비우면 다른 기기가
+     * 적어 둔 `VOICE_REPLACED`(복원되지 않는 안내)를 사용자가 보기도 전에 지운다 —
+     * `docs/spec/voice-and-message.md` 는 그 안내를 다음에 앱을 열 때까지 남기라고 한다.
+     */
+    fun clear(userId: String?, cause: Cause) {
+        if (userId.isNullOrBlank()) return
+        synchronized(RECORD_LOCK) {
+            migrateLegacy(userId)
+            prefs.edit().remove(countKey(userId, cause)).commit()
+        }
+    }
+
+    /**
+     * 원인을 하나로 뭉개 두던 시절의 행을 원인별 칸으로 옮긴다. 잠금을 쥔 채로만 부른다.
+     *
+     * 업그레이드 순간 대기 중이던 안내를 잃지 않기 위한 것이고, 한 번 옮기면 옛 키는 없앤다.
+     */
+    private fun migrateLegacy(userId: String) {
+        val rawCause = prefs.getString(legacyCauseKey(userId), null) ?: return
+        val count = prefs.getInt(legacyCountKey(userId), 0)
+        val cause = runCatching { Cause.valueOf(rawCause) }.getOrNull()
+        val edit = prefs.edit().remove(legacyCauseKey(userId)).remove(legacyCountKey(userId))
+        if (cause != null && count > 0) {
+            edit.putInt(countKey(userId, cause), prefs.getInt(countKey(userId, cause), 0) + count)
+        }
+        edit.commit()
+    }
+
+    private fun countKey(userId: String, cause: Cause) = "pending_count_${cause.name}_$userId"
+
+    private fun legacyCauseKey(userId: String) = "pending_cause_$userId"
+    private fun legacyCountKey(userId: String) = "pending_count_$userId"
 
     private companion object {
         /** `record`/`clear` 의 read-modify-write 를 직렬화한다 — 프로세스 전역이어야 한다. */

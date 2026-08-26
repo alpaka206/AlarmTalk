@@ -166,6 +166,10 @@ final class VoiceStudioViewModel: ObservableObject {
         // `voice_access_revoked` 가 **빈 목록을 근거로** 이 계정의 목소리 알람을 전부
         // 강등한다 — 서버가 아무것도 확인해 주지 않았는데도(2026-08-18 Codex #697 P1).
         accessibleVoicesAreAuthoritative = false
+        // ⚠ **정리 중 표시도 계정 것이다**(Codex #703 P2). 남겨 두면 다음 계정이 같은 공유
+        // 목소리에 접근할 때 이유 없이 잠긴 채로 보인다 — 그 계정에는 풀어 줄 작업이 없다.
+        unpersistedSuppressedProfileIDs = []
+        replacementSuppressedProfileIDs = []
         // 디스크 사본도 같이 지운다 — 매니페스트에는 **그 계정의 클론 클립**이 들어 있어
         // 계정이 바뀌면 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로
         // 오프라인 판정은 그때부터 정상으로 돌아온다.
@@ -483,13 +487,15 @@ final class VoiceStudioViewModel: ObservableObject {
             // 그 집합은 메모리 전용이라 프로세스가 끝나면 비는데, 저장소에는 미확인 칸·재시도
             // 표식이 그대로 남아 있다 — 되살리지 않으면 다음 정리가 돌기 **전에** 그 목소리를
             // 고를 수 있게 되고, 캐시에 남은 TTS 로 알람까지 저장된다(그 알람을 재시도가 벗긴다).
+            // ⚠ **합치지 않고 교체한다**(Codex #703 P2). 더하기만 하면 계정 A 가 떠날 때
+            // 가려져 있던 공유 목소리가 계정 B 에게도 남는다 — B 에게는 그걸 풀어 줄 정리
+            // 작업 자체가 없으므로(표식이 A 의 것이다) **프로세스가 끝날 때까지** 잠긴다.
+            // 저장소에서 되짚은 것과, 아직 적히지 못한 이 세션의 표시를 합쳐 **다시 만든다.**
             let unsettled = VoiceReplacementMarkerStore().unsettledProfileIDs(
                 userID: session?.user.id,
                 candidateProfileIDs: resolvedProfiles.map(\.id) + familyResult.map(\.id)
             )
-            if !unsettled.isEmpty {
-                replacementSuppressedProfileIDs.formUnion(unsettled)
-            }
+            replacementSuppressedProfileIDs = unsettled.union(unpersistedSuppressedProfileIDs)
             // ⚠ **정리 중인 목소리도 목록에 남긴다**(2026-08-25 지시). 감추면 사용자에게는
             // **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 `replacementSuppressedProfileIDs`
             // 로 흐리게 그린 뒤 못 고르게 한다(`VoiceSelectionSheet.Option.unavailableReason`).
@@ -1251,11 +1257,25 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 계속 그린다. 저장은 탭 시점 판정이 막지만, 화면이 그 이유를 말하지 못한다.
     @Published private(set) var replacementSuppressedProfileIDs: Set<String> = []
 
+    /**
+     * **아직 저장소에 남지 않은 '정리 중'.**
+     *
+     * 푸시·승격 경로는 표식을 적기 **전에** 먼저 가린다(그 사이에 고르면 캐시에 남은 TTS 로
+     * 알람이 만들어진다). 그 표시는 디스크에서 되짚을 수 없으므로 여기 따로 들고 있다가,
+     * 권위 새로고침이 노출 집합을 다시 만들 때 합친다 — 안드로이드의
+     * `settlingProfileIds(owner) + settlingUnpersistedIds` 와 같은 모양이다.
+     *
+     * ⚠ **합치기(formUnion)만 하면 계정이 바뀌어도 앞 계정 항목이 남는다**(Codex #703 P2).
+     * 그래서 새로고침은 **교체**하고, 이 집합은 계정 경계에서 비운다.
+     */
+    private var unpersistedSuppressedProfileIDs: Set<String> = []
+
     /// 서버가 준 목록 **그대로**(가리기 전). 강등·표식 판정은 언제나 이걸 본다.
     private(set) var authoritativeProfiles: [VoiceProfile] = []
 
     func suppressReplacedProfile(_ profileID: String) {
         guard !profileID.isEmpty else { return }
+        unpersistedSuppressedProfileIDs.insert(profileID)
         replacementSuppressedProfileIDs.insert(profileID)
         if !authoritativeProfiles.contains(where: { $0.id == profileID }),
            let shown = profiles.first(where: { $0.id == profileID }) {
@@ -1270,6 +1290,7 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     func releaseReplacedProfile(_ profileID: String) {
+        unpersistedSuppressedProfileIDs.remove(profileID)
         replacementSuppressedProfileIDs.remove(profileID)
     }
 

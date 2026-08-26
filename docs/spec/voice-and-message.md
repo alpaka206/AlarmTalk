@@ -110,6 +110,18 @@
   id 승계·옛 원본·provider voice 삭제 큐·드래프트 소비·프리셋 재렌더 큐가 함께 커밋된다. 재렌더
   큐 컬럼이 아직 없는 배포 창이나 어느 쓰기든 실패하면 전부 롤백해, 새 프로필인데 옛 클립만
   남는 상태를 만들지 않는다.
+  - ⚠ **옛 원본 삭제에 조건을 달지 말 것.** 등록의 원본 저장은 best-effort 라(동의 철회·R2
+    실패) 새 원본이 없을 수 있는데, 그때 "승계할 게 없으니 옛것도 둔다" 로 가면 프로필은
+    **새 목소리를 뜻하면서 옛 사람 녹음을 문 채** 남는다. 말투 재시도와 evict 복구가 그걸
+    '이 프로필의 원본' 으로 읽어, 프로필이 조용히 **다른 사람 목소리**가 된다.
+    원본이 없는 상태는 **설계된 폴백**이다 — 재시도는 409 `SOURCE_AUDIO_MISSING`, evict
+    복구는 `NO_VOICE_ID` 로 재등록을 유도한다.
+- **합성 중에 교체가 끼어들면 그 결과는 게시하지 않는다.** 제자리 교체는 행 id·소유자·
+  `status` 를 그대로 두므로 '같은 프로필이 여전히 ready 인가' 는 교체 뒤에도 참이다. 게시
+  트랜잭션은 **합성에 쓴 provider voice 와 교체 세대**를 그때의 행과 맞대 보고, 다르면
+  `VOICE_AUTHORIZATION_CHANGED` 로 거절한다. 교체의 스냅샷 정리는 커밋 시점의 행만 훑는
+  1회성 스윕이라, 그 뒤에 삽입된 회수된 목소리 행은 **아무도 다시 훑지 않는다.**
+  월 한도는 실패 경로가 환불하므로 사용자가 잃는 것은 없다(다시 저장하면 새 목소리로 합성된다).
 - **교체도 정식 등록과 같은 게이트를 통과한다.** 유료 플랜·민감 동의·월 1회 등록 원장과
   **'끝까지 들어본 뒤 저장'**(`previewed_at`)을 **교체 트랜잭션 안에서** 다시 확인한다. 초안을 만들 때 통과했다는 것은 근거가 못 된다 —
   초안이 남아 있는 동안 결제가 보류되거나 동의가 철회될 수 있고, **월 1회는 교체로 풀리지
@@ -561,7 +573,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체 시 전달 custom 철회 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `alarm_recipient_state.custom_voice` + `replaceVoiceInPlace` |
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
-| 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | `confirmIfReservationsSettled` 가 **실패하는 한 곳**에서 `suppressReplacedProfile` | — |
+| 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | 같음 — 권위 새로고침이 `unsettledProfileIDs` 로 **다시 만들고**(합치지 않는다), 아직 못 적은 표시는 `unpersistedSuppressedProfileIDs` 로 함께 싣는다. 올리는 자리는 `confirmIfReservationsSettled` 의 **실패하는 한 곳** | — |
 | 실패한 세대의 재시도 | — | `retry` 키 — 기준선과 같은 세대라도 **시도했다 실패한 것**이면 다시 집는다 | — |
 | '봤다' 와 '반영했다' | — | `seen`=처음 본 기준선(**한 번만 씀**) / `applied`=확정한 세대. 재시도 판정은 **applied 기준** | `custom_audio_invalidated_at` |
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |
