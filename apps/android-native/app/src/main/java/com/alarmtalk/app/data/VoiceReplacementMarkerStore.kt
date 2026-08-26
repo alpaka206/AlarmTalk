@@ -69,7 +69,14 @@ class VoiceReplacementMarkerStore(context: Context) {
             markRetryLocked(userId, profileId, invalidatedAt)
             return@withLock Result(0, persisted = false)
         }
-        Result(degraded, commitLocked(userId, profileId, invalidatedAt))
+        // ⚠ **확정에 실패한 것도 재시도 대상이다**(Codex #703 P1). 강등은 됐는데 표식만 못
+        // 남긴 경우, `commitLocked` 의 롤백으로 기준선은 제자리로 돌아가지만 그 값이 **이미
+        // 이 세대와 같으면**(목록이 먼저 시드해 둔 경우) `incoming > baseline` 을 통과하지
+        // 못한다 — 다음 회차가 '바뀐 것 없음' 으로 읽고 정리 중 표시를 풀어, 그때 만든 알람을
+        // 늦게 도착한 같은 세대의 푸시가 되돌릴 수 없이 벗긴다.
+        val persisted = commitLocked(userId, profileId, invalidatedAt)
+        if (!persisted) markRetryLocked(userId, profileId, invalidatedAt)
+        Result(degraded, persisted)
     }
 
     /**
@@ -94,6 +101,8 @@ class VoiceReplacementMarkerStore(context: Context) {
         }
         // 세대를 모르는 옛 신호는 확정할 것이 없다 — 남길 값이 없으니 실패도 아니다.
         val persisted = generation?.let { commitLocked(userId, profileId, it) } ?: true
+        // 위 `applyIfChanged` 와 같은 이유로, 확정 실패도 재시도 표식을 남긴다.
+        if (!persisted) markRetryLocked(userId, profileId, generation)
         Result(degraded, persisted)
     }
 

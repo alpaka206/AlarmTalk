@@ -54,6 +54,7 @@ struct VoiceReplacementMarkerStore {
         guard let userID = userID?.nilIfBlank, !profileID.isEmpty else { return .nothing }
         Self.lock.lock()
         defer { Self.lock.unlock() }
+        let generation = invalidatedAt?.nilIfBlank
         guard changedLocked(userID, profileID, invalidatedAt) else {
             // ⚠ **바뀐 게 없어도 남은 확인은 이어서 한다**(Codex #703 P1). 세대 없는 옛
             // 신호가 남긴 칸은 **스스로 확정할 수 없고**, 그 뒤 목록은 늘 '바뀐 것 없음' 이라
@@ -63,17 +64,33 @@ struct VoiceReplacementMarkerStore {
             //
             // 강등은 하지 않는다(바뀐 것이 없으니 내릴 것도 없다) — **확인만** 이어서 한다.
             guard hasPendingLocked(userID, profileID) else { return .nothing }
-            return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, []) {
-                commitLocked(userID, profileID, invalidatedAt)
-            }
+            return pendingApply(
+                userID, profileID,
+                generation: generation, [],
+                commit: commitClosure(userID, profileID, generation)
+            )
         }
         guard let degraded = degrade() else {
             markRetryLocked(userID, profileID, invalidatedAt)
             return .failure(profileID: profileID)
         }
-        return pendingApply(userID, profileID, generation: invalidatedAt?.nilIfBlank, degraded) {
-            commitLocked(userID, profileID, invalidatedAt)
-        }
+        return pendingApply(
+            userID, profileID,
+            generation: generation, degraded,
+            commit: commitClosure(userID, profileID, generation)
+        )
+    }
+
+    /// 확정 클로저 — **세대를 모르면 nil 이다**(Codex #703 P1).
+    ///
+    /// `PendingApply.confirm()` 은 `commit == nil` 을 "이 회차로는 풀 수 없다" 로 읽는다.
+    /// 세대 없는 회차에 클로저를 쥐여 주면 그 판정이 무너져, `applied` 를 전진시키지 못한
+    /// 채로 세대 없는 칸만 비우고 목소리를 풀어 준다 — 아직 반영되지 않은 진짜 세대가 남아
+    /// 있는데도 고를 수 있게 되고, 그때 만든 알람을 뒤늦은 중복 푸시가 벗긴다.
+    /// 그 칸은 **세대를 아는 회차가 확정하며 함께 비운다**(`pendingApply` 의 `settled` 판정).
+    private func commitClosure(_ userID: String, _ profileID: String, _ generation: String?) -> (() -> Void)? {
+        guard let generation else { return nil }
+        return { self.commitLocked(userID, profileID, generation) }
     }
 
     /// **아직 반영하지 않은 세대면** 강등하고 확정한다(푸시·교체 직후 경로).
