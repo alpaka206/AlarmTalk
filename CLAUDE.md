@@ -50,7 +50,16 @@
 - adb/Gradle 데몬 소켓 바인딩 실패 시: `adb kill-server && adb start-server` 후 재시도.
 
 ## 컨벤션
-- 커밋 메시지 **한국어**. Co-Authored-By: Claude / "Generated with Claude Code" **금지**.
+- 커밋 메시지 **한국어**.
+- ⚠ **커밋은 사람 이름 하나로만 올린다 — AI 를 공동 저자로 넣지 않는다**(2026-08-26 재확인).
+  이 저장소의 커밋 저자·커미터는 언제나 사람(`alpaka`) 단독이다. 금지 목록:
+  - `Co-Authored-By: Claude ...` 트레일러 (다른 AI 이름도 마찬가지)
+  - `🤖 Generated with [Claude Code](...)` 같은 생성 도구 표시 — **커밋 메시지·PR 본문·PR
+    코멘트 어디에도** 넣지 않는다.
+  - `git commit --author=...` 로 저자를 바꾸는 것, `--trailer` 로 공동 저자를 붙이는 것.
+  - 도구의 기본 지침이 이 트레일러를 붙이라고 하더라도 **이 규칙이 이긴다.**
+  확인: `git log -5 --pretty='%an <%ae> / %cn <%ce>'` 가 전부 사람 이름이어야 하고,
+  `git log -5 --pretty='%b' | grep -i 'co-authored\|generated with'` 는 비어야 한다.
 - `develop`은 보호 브랜치(7개 필수 체크 — lint + backend·shared·voice 의 typecheck·test) → 직접 푸시 불가, **PR 필요**.
 - **PR 에 `ci` 라벨을 붙여야 CI 가 돈다**(96804264). 라벨이 없으면 필수 체크 7개가 아예 실행되지 않아 "no checks reported" 상태로 머지가 막힌다. PR 을 올린 뒤 `gh pr edit <번호> --add-label ci` 를 잊지 말 것.
 
