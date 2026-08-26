@@ -67,6 +67,13 @@ internal fun isResendOfDifferentDelivery(
     val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
     val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() }
     if (observed != null) return observed != incoming
+    // ⚠ **이미 적용한 세대면 재전송이 아니다**(Codex #703 P1). 관찰 세대 컬럼이 생기기 **전**에
+    // 정상 반영된 행은 `observed` 가 null 인데 `remoteDeliveryVersion` 에는 그 세대가 그대로
+    // 적혀 있다. 그걸 안 보면 **같은 전달**을 매 pull 마다 재전송으로 읽어 서버 시드로 행을
+    // 다시 지어, 수신자가 바꾼 시각·꺼짐이 계속 지워진다.
+    // 진짜 재전송은 서버가 **새 세대**를 발급하므로(`claimTargetedAlarmSlot`) 적용 세대와
+    // 달라 여기 걸리지 않는다 — 「재전송은 새 알람이다」 규칙은 그대로 산다.
+    if (existing.remoteDeliveryVersion?.takeIf { it.isNotBlank() } == incoming) return false
     // ⚠ **관찰 세대가 없는 행도 뚫어 준다** — 그러지 않으면 이 필드가 생기기 전에 꼬인 행이
     // 영원히 막힌 채 남는다(2026-08-26 실기기: 그 슬롯의 모든 전달이 매번 skip 됐다).
     // 단 #104 backfill(32자리 hex)은 예외다 — 그건 **새로 보낸 것이 아니라** 옛 전달에 뒤늦게

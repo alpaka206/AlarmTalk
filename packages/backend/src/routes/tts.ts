@@ -1290,7 +1290,7 @@ tts.post('/generate', async (c) => {
       activePreviewClaimToken = previewClaimToken;
     }
 
-    for (const { cacheKey } of preparedAttempts) {
+    for (const { attempt: cacheAttempt, cacheKey } of preparedAttempts) {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
@@ -1303,6 +1303,27 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice && !isManualGeneration,
       });
       if (cached) {
+        // ⚠ **캐시 히트도 교체를 통과시키면 안 된다**(Codex #703 P1). 캐시 키는 **요청을
+        // 시작할 때의** provider voice 로 만들어지므로, 그 사이 제자리 교체가 커밋돼도
+        // 히트는 그대로 난다 — 교체가 `messages.audio_url` 을 비웠어도
+        // `generated_audio_assets.audio_url` 은 남아 있어 **회수된 목소리의 바이트와
+        // message id** 가 그대로 반환된다. 교체의 스냅샷 정리는 1회성이라, 클라가 그걸
+        // 저장하면 아무도 다시 훑지 않는다.
+        //
+        // 합성-게시 경로와 **같은 기준**으로 막는다. 여기는 `reserveManualTtsQuota` 보다
+        // 앞이라 월 한도를 태우지 않고, 클라는 다시 저장하면 새 목소리로 받는다.
+        // (`SELECT *` 인 `findUsableVoiceProfile` 로 읽는 이유는 아래 게시 검사와 같다 —
+        // 전용 SELECT 는 마이그레이션이 아직 안 돈 배포 창에서 전부 500 이 된다.)
+        const cacheVoice = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
+        const cacheProviderVoiceId =
+          typeof cacheVoice?.elevenlabs_voice_id === 'string' ? cacheVoice.elevenlabs_voice_id : null;
+        if (
+          !cacheVoice ||
+          (cacheProviderVoiceId !== null && cacheProviderVoiceId !== cacheAttempt.providerVoiceId) ||
+          String(cacheVoice.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration
+        ) {
+          throw new VoiceAuthorizationChangedDuringTtsError();
+        }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
         await db.execute({

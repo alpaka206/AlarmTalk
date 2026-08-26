@@ -227,6 +227,28 @@ class RemoteAlarmPullSyncServiceTest {
                 "0123456789abcdef0123456789abcdef",
             ),
         )
+        // ⚠ **이미 적용한 세대는 재전송이 아니다**(Codex #703 P1). 관찰 세대 컬럼이 생기기
+        // 전에 정상 반영된 행은 observed 가 null 인데 적용 세대에는 그 값이 적혀 있다 —
+        // 그걸 안 보면 같은 전달을 매 pull 마다 덮어써 수신자 편집이 계속 지워진다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 그 행에 **다른** 세대가 오면 진짜 재전송이다 — 여전히 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "33333333-3333-4333-8333-333333333333",
+            ),
+        )
         // 서버가 세대를 주지 않으면 판단 근거가 없다 — 덮지 않는다.
         assertFalse(isResendOfDifferentDelivery(received, null))
     }

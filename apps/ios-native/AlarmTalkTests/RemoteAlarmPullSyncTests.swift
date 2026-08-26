@@ -146,8 +146,57 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
             legacy, "0123456789abcdef0123456789abcdef"
         ))
+        // ⚠ **이미 적용한 세대는 재전송이 아니다**(Codex #703 P1). 관찰 세대 필드가 생기기
+        // 전에 정상 반영된 행은 observed 가 nil 인데 적용 세대에는 그 값이 적혀 있다 —
+        // 그걸 안 보면 같은 전달을 매 pull 마다 덮어써 수신자 편집이 계속 지워진다.
+        var appliedLegacy = legacy
+        appliedLegacy.remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222"
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            appliedLegacy, "22222222-2222-4222-8222-222222222222"
+        ))
+        // 그 행에 **다른** 세대가 오면 진짜 재전송이다 — 여전히 덮는다.
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            appliedLegacy, "33333333-3333-4333-8333-333333333333"
+        ))
         // 서버가 세대를 주지 않으면 판단 근거가 없다.
         XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(received, nil))
+    }
+
+    /// ⚠ **재전송은 편집 방패를 뚫는다**(Codex #703 P1).
+    ///
+    /// `shouldApplyRemote` 가 세대를 모르던 동안, 호출부가 재전송을 갈라 놓고도 이 함수가
+    /// 같은 행을 다시 `locallyEditedByRecipient` 로 잡아 되돌려보냈다 — 수신자가 고치거나
+    /// **끄기만 해도** 그 슬롯의 재전송이 한 번도 적용되지 않고 ACK 도 되지 않았다.
+    func test_재전송은_편집_방패를_뚫는다() {
+        var edited = makeReceivedRemote(remoteID: "remote-1")
+        edited.observedDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+        // 수신자가 손댔다 = 적용 시각이 동기 시각보다 뒤다.
+        edited.lastSyncedAtMillis = 1_000
+        edited.updatedAtMillis = 2_000
+
+        var mapped = makeReceivedRemote(remoteID: "remote-1")
+        mapped.lastSyncedAtMillis = 3_000
+
+        // 같은 세대라면 편집이 이긴다 — 매 pull 마다 수신자 값이 되돌아가면 안 된다.
+        XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped))
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped, isResend: false)
+        )
+        // 재전송이면 뚫는다.
+        XCTAssertTrue(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped, isResend: true)
+        )
+        // 단 dirty(로컬 우선)와 뒤처진 응답은 재전송이어도 막는다.
+        var dirty = edited
+        dirty.syncState = AlarmSyncState.dirty.rawValue
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: dirty, mapped: mapped, isResend: true)
+        )
+        var stale = mapped
+        stale.lastSyncedAtMillis = 500
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: stale, isResend: true)
+        )
     }
 
     func test_legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {

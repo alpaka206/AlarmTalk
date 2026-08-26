@@ -339,8 +339,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // ⚠ **재전송은 편집을 보존하지 않는다**(2026-08-26 확정). 다른 세대가 왔다는 것은
             // 발신자가 **다시 보냈다**는 뜻이고, 막으면 그 슬롯이 이후 모든 전달을 영구히
             // 거부한다(실기기 재현). 아래 일반 경로로 내려가 덮어쓴다.
-            if Self.locallyEditedByRecipient(existing),
-               !Self.isResendOfDifferentDelivery(existing, remote.deliveryVersion) {
+            let existingIsResend = Self.isResendOfDifferentDelivery(existing, remote.deliveryVersion)
+            if Self.locallyEditedByRecipient(existing), !existingIsResend {
                 if Self.receivedDeliveryVersionAlreadyApplied(
                     existing: existing,
                     deliveryVersion: remote.deliveryVersion
@@ -356,7 +356,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 guard Self.isRecoverableSameDelivery(existing, remote.deliveryVersion),
                       remote.deliveryVersion?.nilIfBlank != nil else { return .unchanged }
             } else {
-                guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
+                guard Self.shouldApplyRemote(
+                    existing: existing,
+                    mapped: mapped,
+                    isResend: existingIsResend
+                ) else { return .unchanged }
             }
             guard !Self.isInFlight(existing) else { return .unchanged }
 
@@ -386,21 +390,27 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
             guard !Self.isInFlight(current) else { return .unchanged }
             // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
-            if Self.locallyEditedByRecipient(current),
-               !Self.isResendOfDifferentDelivery(current, remote.deliveryVersion) {
+            // ⚠ 판정은 **한 번만** 하고 아래 셋(편집 방패·적용 가드·병합 방식)이 같은 값을
+            // 쓴다 — 따로 계산하면 어긋난다(Codex #703 P1: 가드만 재전송을 몰라 되돌려보냈다).
+            let currentIsResend = Self.isResendOfDifferentDelivery(current, remote.deliveryVersion)
+            if Self.locallyEditedByRecipient(current), !currentIsResend {
                 return await outcomeForEditedDelivery(
                     existing: current,
                     prepared: prepared,
                     deliveryVersion: remote.deliveryVersion
                 )
             }
-            guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
+            guard Self.shouldApplyRemote(
+                existing: current,
+                mapped: mapped,
+                isResend: currentIsResend
+            ) else { return .unchanged }
 
             // ⚠ **재전송이면 수신자 값을 물려받지 않는다**(docs/spec/family-alarm.md).
             // `merge` 는 받은 알람의 시각·꺼짐 같은 수신자 편집을 지켜 주는데, 그대로 두면
             // 새로 보낸 알람이 옛 시각에 **꺼진 채로** 앉는다 — 그 상태로 ACK 되면 서버 행까지
             // 지워져 보낸 알람이 영영 울리지 않는다. 행의 정체(id·예약 핸들)만 잇는다.
-            let merged = Self.isResendOfDifferentDelivery(current, remote.deliveryVersion)
+            let merged = currentIsResend
                 ? Self.rebuiltFromResend(existing: current, mapped: mapped)
                 : Self.merge(existing: current, mapped: mapped)
             // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
@@ -439,14 +449,19 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
                 guard !Self.isInFlight(raced) else { return .unchanged }
-                if Self.locallyEditedByRecipient(raced) {
+                // ⚠ **재전송을 먼저 가른다**(Codex #703 P1). 이 갈래만 순서가 반대여서,
+                // 다운로드 사이에 끼어든 행이 수신자 편집본이면 재전송인지 **묻기도 전에**
+                // `outcomeForEditedDelivery` 로 갔다 — 그 함수는 같은 세대 복구 전용이라
+                // 재전송을 `.unchanged` 로 돌려보낸다. 안드로이드와 같은 순서로 맞춘다.
+                let racedIsResend = Self.isResendOfDifferentDelivery(raced, remote.deliveryVersion)
+                if Self.locallyEditedByRecipient(raced), !racedIsResend {
                     return await outcomeForEditedDelivery(
                         existing: raced,
                         prepared: prepared,
                         deliveryVersion: remote.deliveryVersion
                     )
                 }
-                let merged = Self.isResendOfDifferentDelivery(raced, remote.deliveryVersion)
+                let merged = racedIsResend
                     ? Self.rebuiltFromResend(existing: raced, mapped: mapped)
                     : Self.merge(existing: raced, mapped: mapped)
                 store.upsert(merged, syncedNow: true)
@@ -652,12 +667,26 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// "이번 사이클의 mapped 가 서버 권위 응답으로서 existing 을 덮어써도 되는가?" 결정.
     /// 정책:
     ///   - existing.syncState == .dirty 이면 false (로컬 변경 우선)
-    ///   - 받은 알람을 수신자가 고쳤으면 false ([locallyEditedByRecipient])
+    ///   - 받은 알람을 수신자가 고쳤으면 false ([locallyEditedByRecipient]) —
+    ///     **단 발신자가 다시 보낸 세대(`isResend`)면 예외다.**
     ///   - mapped.lastSyncedAtMillis >= existing.lastSyncedAtMillis 이면 true
     ///   - 그 외 false
-    static func shouldApplyRemote(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> Bool {
+    ///
+    /// ⚠ **재전송은 편집 방패를 뚫는다**(Codex #703 P1, `docs/spec/family-alarm.md`
+    /// 「재전송은 새 알람이다」). 이 인자가 없던 동안, 호출부가 재전송을 갈라 놓고도 이
+    /// 함수가 같은 행을 다시 `locallyEditedByRecipient` 로 잡아 `.unchanged` 로 돌려보냈다 —
+    /// 수신자가 고치거나 **끄기만 해도**(`setEnabled` 가 `updatedAtMillis` 를 올린다)
+    /// 그 슬롯의 재전송이 **한 번도 적용되지 않고 ACK 도 되지 않았다.**
+    ///
+    /// 신선도 비교(마지막 줄)는 재전송에도 그대로 적용한다 — 뒤처진 pull 응답이 새 세대를
+    /// 덮지 못하게 하는 가드이고, 정상 재전송은 이번 회차 시각이라 항상 통과한다.
+    static func shouldApplyRemote(
+        existing: LocalAlarmRecord,
+        mapped: LocalAlarmRecord,
+        isResend: Bool = false
+    ) -> Bool {
         if existing.syncStateEnum == .dirty { return false }
-        if locallyEditedByRecipient(existing) { return false }
+        if !isResend, locallyEditedByRecipient(existing) { return false }
         return (mapped.lastSyncedAtMillis ?? 0) >= (existing.lastSyncedAtMillis ?? 0)
     }
 
@@ -721,6 +750,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         guard let incoming = deliveryVersion, !incoming.isEmpty else { return false }
         if let observed = existing.observedDeliveryVersion, !observed.isEmpty {
             return observed != incoming
+        }
+        // ⚠ **이미 적용한 세대면 재전송이 아니다**(Codex #703 P1). 관찰 세대 필드가 생기기
+        // **전**에 정상 반영된 행은 `observedDeliveryVersion` 이 nil 인데 적용 세대
+        // (`remoteDeliveryVersion`)에는 그 세대가 그대로 적혀 있다. 그걸 안 보면 **같은
+        // 전달**을 매 pull 마다 재전송으로 읽어 서버 시드로 행을 다시 지어, 수신자가 바꾼
+        // 시각·꺼짐이 계속 지워진다. 진짜 재전송은 서버가 새 세대를 발급하므로 여기 걸리지
+        // 않는다(안드로이드 `isResendOfDifferentDelivery` 와 같은 규칙).
+        if let applied = existing.remoteDeliveryVersion, !applied.isEmpty, applied == incoming {
+            return false
         }
         // ⚠ **관찰 세대가 없는 행도 뚫어 준다** — 그러지 않으면 이 필드가 생기기 전에 꼬인
         // 행이 영원히 막힌 채 남는다(2026-08-26 실기기 재현). 단 #104 backfill(32자리 hex)은
