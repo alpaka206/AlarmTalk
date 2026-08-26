@@ -398,10 +398,16 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 session: deps.auth.session,
                 force: true
             )
-            // 이 교체의 목소리만 본다 — 남의 목소리가 아직이라고 이 세대를 붙들지 않는다.
-            let presetPending = !manifestFresh || deps.voiceStudio.stockClips.contains {
-                $0.voiceProfileId == pending.profileID && !$0.isRenderedForCurrentVoice
-            }
+            // ⚠ **서버 플래그만 보지 않는다**(Codex #703 P1). 앞선 `onVoiceChanged` 의 다운로드나
+            // 캐시 쓰기가 실패했어도 이 두 번째 매니페스트 요청은 성공할 수 있는데, 그때
+            // 서버는 '다 구웠다' 고 답한다 — 그걸로 확정하면 **회수된 바이트와 구워 둔 사운드가
+            // 남은 채** 세대가 확정되고, 이후 정리는 그 세대를 건너뛴다.
+            // 그래서 **이 기기의 낡은 키를 실제로 다 갈았는지**까지 본다(권위 경로와 같은 기준).
+            let presetRefresh = await deps.voiceStudio.refreshChangedCachedStockClips(
+                session: deps.auth.session
+            )
+            let presetPending = !manifestFresh
+                || !presetRefresh.settled(forProfileID: pending.profileID)
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
                 // ⚠ **확정만 하고 끝내지 않는다**(Codex #703 P2). 위에서 프로필을 가렸으므로
                 // 여기서 풀어 주지 않으면 그 목소리는 **프로세스가 끝날 때까지** 못 고른다.

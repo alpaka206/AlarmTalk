@@ -450,7 +450,14 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
 
-                    if (existing != null) {
+                    // ⚠ **미리 취소하지 않는다**(Codex #703 P1). 예약의 요청 코드는 **알람 id
+                    // 하나로** 파생되므로(`AlarmScheduler.requestCodeFor`), 같은 id 로 다시
+                    // 걸면 옛 예약이 **원자적으로 교체**된다 — 미리 지울 이유가 없다.
+                    // 반대로 미리 지우면 `schedule` 이 권한 부족 등으로 실패했을 때 **멀쩡히
+                    // 돌던 알람만 사라진다.** 가족 알람은 리드타임이 5분이라, 재시도가 원래
+                    // 울릴 시각을 넘겨 도착할 수도 있다.
+                    // 새 행이 꺼짐이면 덮어쓸 예약이 없으니 그때만 지운다.
+                    if (existing != null && !local.enabled) {
                         alarmScheduler.cancel(existing.id)
                     }
                     // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은

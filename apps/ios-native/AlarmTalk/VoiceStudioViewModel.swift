@@ -479,6 +479,17 @@ final class VoiceStudioViewModel: ObservableObject {
             // 거른 목록으로 판단하면 (a) 그 목소리를 쓰는 프리셋 알람이 '접근권 상실' 로
             // 되돌릴 수 없이 벗겨지고, (b) 미확정 표식을 다시 집을 기회가 사라진다.
             authoritativeProfiles = resolvedProfiles
+            // ⚠ **재시작으로 사라진 '정리 중' 표시를 저장소에서 되살린다**(Codex #703 P1).
+            // 그 집합은 메모리 전용이라 프로세스가 끝나면 비는데, 저장소에는 미확인 칸·재시도
+            // 표식이 그대로 남아 있다 — 되살리지 않으면 다음 정리가 돌기 **전에** 그 목소리를
+            // 고를 수 있게 되고, 캐시에 남은 TTS 로 알람까지 저장된다(그 알람을 재시도가 벗긴다).
+            let unsettled = VoiceReplacementMarkerStore().unsettledProfileIDs(
+                userID: session?.user.id,
+                candidateProfileIDs: resolvedProfiles.map(\.id) + familyResult.map(\.id)
+            )
+            if !unsettled.isEmpty {
+                replacementSuppressedProfileIDs.formUnion(unsettled)
+            }
             // ⚠ **정리 중인 목소리도 목록에 남긴다**(2026-08-25 지시). 감추면 사용자에게는
             // **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고 `replacementSuppressedProfileIDs`
             // 로 흐리게 그린 뒤 못 고르게 한다(`VoiceSelectionSheet.Option.unavailableReason`).

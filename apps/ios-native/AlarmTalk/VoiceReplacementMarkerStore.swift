@@ -305,6 +305,28 @@ struct VoiceReplacementMarkerStore {
     }
 
     /// 확인이 남은 칸이 있는가. 락을 쥔 채로만 부른다.
+    /**
+     * **아직 끝나지 않은 정리가 남은 프로필인가**(재시작 뒤 '정리 중' 표시를 되살리는 근거).
+     *
+     * ⚠ 메모리 집합만으로는 부족하다(Codex #703 P1). 프로세스가 끝나면 그 집합은 비는데,
+     * 저장소에는 미확인 칸·재시도 표식이 그대로 남아 있다 — 다음 권위 새로고침이 표시를
+     * 다시 세우기 **전에** 편집기가 그 목소리를 고를 수 있게 되고, 캐시에 남은 TTS 로
+     * 알람까지 저장된다. 그 알람을 다음 재시도가 벗긴다.
+     * 안드로이드 짝은 `VoiceReplacementMarkerStore.settlingProfileIds`(디스크 집합).
+     */
+    func unsettledProfileIDs(userID: String?, candidateProfileIDs: [String]) -> Set<String> {
+        guard let userID = userID?.nilIfBlank else { return [] }
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        return Set(
+            candidateProfileIDs.filter { profileID in
+                !profileID.isEmpty &&
+                    (hasPendingLocked(userID, profileID) ||
+                        defaults.string(forKey: retryKey(userID, profileID)) != nil)
+            }
+        )
+    }
+
     private func hasPendingLocked(_ userID: String, _ profileID: String) -> Bool {
         let key = pendingKey(userID, profileID)
         if let buckets = defaults.dictionary(forKey: key) as? [String: [String]] {
