@@ -513,6 +513,14 @@ internal fun AlarmTalkApp(
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
+            // ⚠ **다른 계정의 매니페스트가 남아 있으면 여기서 지운다**(Codex #703 P1).
+            // 자동 401 은 파일을 일부러 남기는데(같은 사람 재로그인 시 오프라인 사용),
+            // 그 뒤 **다른 계정**이 로그인하면 그 파일이 그대로 시드된다 — 안에는 앞 계정의
+            // 클론 클립(목소리 이름·문구)이 들어 있다.
+            com.alarmtalk.app.data.StockClipManifestStore.clearIfOwnedByAnotherUser(
+                context,
+                authSession.user.id,
+            )
             viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()

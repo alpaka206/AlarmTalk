@@ -340,6 +340,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 종료에 쓴다 — 여기서 지우는 것은 '이 계정으로서의 세션 상태'까지다.
      */
     private fun clearSessionKeepingAlarms() {
+        // ⚠ **떠 있는 매니페스트 조회의 표는 여기서도 죽인다**(Codex #703 P1). 파일은 일부러
+        // 남기지만(위 주석 — 같은 사람 재로그인 시 오프라인 사용), 세션이 끝난 뒤 도착한
+        // 앞 계정의 응답이 그 파일을 **다시 공개하는 것**은 막아야 한다. WorkManager 요청은
+        // 세션과 무관하게 살아 있어 취소로는 못 막는다.
+        com.alarmtalk.app.data.StockClipManifestStore.invalidateOutstandingTickets()
         runCatching { authSessionStore.clear() }
         clearUserScopedRemoteState()
         authSession = null

@@ -353,7 +353,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // UUID 세대는 영영 ACK 되지 못했다** — 서버 행과 그 생체 음원이 무기한
                 // 여기 오는 것은 **같은 전달 세대**다(재전송은 위에서 덮기로 갈렸다).
                 // 복구는 #104 backfill(32자리 hex)에만 허용한다 — `isLegacyBackfilledDelivery`.
-                guard Self.isLegacyBackfilledDelivery(existing, remote.deliveryVersion),
+                guard Self.isRecoverableSameDelivery(existing, remote.deliveryVersion),
                       remote.deliveryVersion?.nilIfBlank != nil else { return .unchanged }
             } else {
                 guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
@@ -396,7 +396,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             }
             guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
 
-            let merged = Self.merge(existing: current, mapped: mapped)
+            // ⚠ **재전송이면 수신자 값을 물려받지 않는다**(docs/spec/family-alarm.md).
+            // `merge` 는 받은 알람의 시각·꺼짐 같은 수신자 편집을 지켜 주는데, 그대로 두면
+            // 새로 보낸 알람이 옛 시각에 **꺼진 채로** 앉는다 — 그 상태로 ACK 되면 서버 행까지
+            // 지워져 보낸 알람이 영영 울리지 않는다. 행의 정체(id·예약 핸들)만 잇는다.
+            let merged = Self.isResendOfDifferentDelivery(current, remote.deliveryVersion)
+                ? Self.rebuiltFromResend(existing: current, mapped: mapped)
+                : Self.merge(existing: current, mapped: mapped)
             // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
             // ([locallyEditedByRecipient] 가 두 시각의 등호로 판정한다.)
             store.upsert(merged, syncedNow: true)
@@ -440,7 +446,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                         deliveryVersion: remote.deliveryVersion
                     )
                 }
-                let merged = Self.merge(existing: raced, mapped: mapped)
+                let merged = Self.isResendOfDifferentDelivery(raced, remote.deliveryVersion)
+                    ? Self.rebuiltFromResend(existing: raced, mapped: mapped)
+                    : Self.merge(existing: raced, mapped: mapped)
                 store.upsert(merged, syncedNow: true)
                 let reschedule = merged.enabled
                     ? await rescheduleReceivedRemote(record: merged, existing: raced)
@@ -535,6 +543,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// ⚠ `shouldApplyRemote` 의 **dirty 가드만으로는** 받은 알람을 못 지킨다 —
     /// `nextLocalSyncState` 가 받은 알람을 항상 `.synced` 로 되돌리기 때문이다.
     /// 그래서 판정을 시각(`updatedAtMillis` vs `lastSyncedAtMillis`)으로 따로 둔다.
+    /**
+     * **재전송을 서버본 그대로 앉힌다** — 정체(로컬 id·예약 핸들·생성 시각)만 잇는다.
+     *
+     * `merge` 와 다른 점: 수신자가 바꿔 둔 시각·요일·스누즈·꺼짐을 **하나도 물려받지 않는다.**
+     * 재전송은 새 알람이기 때문이다(`docs/spec/family-alarm.md`).
+     */
+    static func rebuiltFromResend(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> LocalAlarmRecord {
+        var next = mapped
+        next.id = existing.id
+        next.alarmKitID = existing.alarmKitID
+        next.createdAtMillis = existing.createdAtMillis
+        return next
+    }
+
     static func merge(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> LocalAlarmRecord {
         var merged = mapped
         merged.id = existing.id                                  // 로컬 ID 유지
@@ -705,6 +727,27 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 예외다 — 그건 새로 보낸 것이 아니라 옛 전달에 뒤늦게 세대를 찍은 것이라, 편집을
         // 보존한 채 음원만 복구하는 기존 경로가 맞다.
         return !(incoming.count == 32 && incoming.allSatisfy { $0.isHexDigit })
+    }
+
+    /**
+     * **음원·예약을 확보해 ack 만 재시도하면 되는 전달인가.**
+     *
+     * 두 갈래를 함께 본다(`docs/spec/family-alarm.md`):
+     *  1. #104 backfill 세대(`isLegacyBackfilledDelivery`) — 옛 전달에 뒤늦게 세대를 찍은 것.
+     *  2. **내가 받았는데 반영에 실패한 그 세대** — 도착 세대는 적혔는데
+     *     (`observedDeliveryVersion`) 적용 세대(`remoteDeliveryVersion`)가 비어 있고 서버가
+     *     **같은 세대**를 다시 준 경우. 이걸 빼면 첫 반영이 실패한 뒤 수신자가 손댄 알람이
+     *     영원히 ack 되지 않는다.
+     * 안드로이드 짝은 `RemoteAlarmPullSyncService.isRecoverableSameDelivery`.
+     */
+    static func isRecoverableSameDelivery(
+        _ existing: LocalAlarmRecord,
+        _ deliveryVersion: String?
+    ) -> Bool {
+        if isLegacyBackfilledDelivery(existing, deliveryVersion) { return true }
+        guard let incoming = deliveryVersion, !incoming.isEmpty,
+              let observed = existing.observedDeliveryVersion, !observed.isEmpty else { return false }
+        return (existing.remoteDeliveryVersion ?? "").isEmpty && observed == incoming
     }
 
     static func isLegacyBackfilledDelivery(
@@ -921,7 +964,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
         // 진입 판정과 **같은 기준**이어야 한다 — 위에서 통과시킨 회차를 여기서 되돌리면
         // 음원만 받아 두고 아무것도 못 하는 회차가 된다.
-        guard Self.isLegacyBackfilledDelivery(existing, deliveryVersion),
+        guard Self.isRecoverableSameDelivery(existing, deliveryVersion),
               deliveryVersion?.nilIfBlank != nil else { return .unchanged }
         guard prepared.audioSecured else { return .incomplete }
 

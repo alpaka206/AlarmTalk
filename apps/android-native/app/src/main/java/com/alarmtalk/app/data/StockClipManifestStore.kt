@@ -72,9 +72,36 @@ object StockClipManifestStore {
      * (Codex #703 P1) — 그러면 뒤 계정이 앞 계정의 클론 매니페스트(목소리 이름·문구 포함)를
      * 시드로 읽는다. 같은 잠금 안에서 지우고 무효화한다.
      */
+    /**
+     * **이 파일이 누구 것인지** 적어 둔다(계정 id). 파일 안에는 그 계정의 **클론 클립**
+     * (목소리 이름·문구)이 들어 있다.
+     *
+     * ⚠ 자동 401 은 파일을 **일부러 남긴다**(같은 사람이 다시 로그인하는 경우가 대부분이고,
+     * 지우면 오프라인에서 알람을 못 만든다). 그런데 다른 계정이 로그인하면 그 파일이 그대로
+     * 시드된다 — 그래서 **임자 표시로 가른다**(Codex #703 P1).
+     */
+    private fun ownerPrefs(context: Context) =
+        context.getSharedPreferences("stock_clip_manifest_owner", Context.MODE_PRIVATE)
+
+    /** 다른 계정의 매니페스트가 남아 있으면 지운다. 세션이 시작될 때 부른다. */
+    fun clearIfOwnedByAnotherUser(context: Context, userId: String?) {
+        val current = userId?.takeIf { it.isNotBlank() } ?: return
+        val owner = ownerPrefs(context).getString(OWNER_KEY, null)
+        if (owner != null && owner != current) clearAndInvalidate(context)
+    }
+
+    /** 이 계정이 받은 매니페스트임을 적는다. [save] 성공 직후에 부른다. */
+    fun markOwner(context: Context, userId: String?) {
+        val current = userId?.takeIf { it.isNotBlank() } ?: return
+        ownerPrefs(context).edit().putString(OWNER_KEY, current).apply()
+    }
+
+    private const val OWNER_KEY = "owner_user_id"
+
     fun clearAndInvalidate(context: Context) {
         synchronized(revisionLock) {
             seenTicket = nextFetchTicket + 1
+            runCatching { ownerPrefs(context).edit().remove(OWNER_KEY).apply() }
             runCatching { file(context).delete() }
                 .onFailure { AlarmTalkLog.reportError("Failed to clear the stock clip manifest", it) }
         }

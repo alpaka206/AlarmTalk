@@ -15,6 +15,7 @@ import android.util.Log
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.VoiceReplacementMarkerStore
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
@@ -95,15 +96,26 @@ class VoiceAccessSyncWorker(
             // 프리페치 워커가 아직 옛 매니페스트를 읽어 '낡은 것 없음' 으로 성공한다 —
             // 완료 FCM 을 놓치면 다음 폴백은 확정된 표식 때문에 다시 시도하지도 않는다.
             // null 은 **모른다**는 뜻이고, 모르면 확정하지 않고 retry 한다.
-            val prerenderPendingVoiceIds: Set<String>? = runCatching {
-                withContext(Dispatchers.IO) { api.getStockClips(auth) }
-                    .clips.filterNot { it.isRendered }
-                    .map { it.voiceProfileId }
-                    .toSet()
+            //
+            // ⚠ **서버가 다 구웠다고 끝이 아니다 — 이 기기의 캐시도 갈려 있어야 한다**
+            // (Codex #703 P1). 확정한 뒤에는 다음 회차들이 그 세대를 건너뛰므로, 캐시가 아직
+            // 옛 바이트인 채로 확정하면 그 알람은 회수된 목소리로 운다(프리페치가 재시도
+            // 한도에 걸려 죽어도 되짚을 근거가 없다). 그래서 **매니페스트의 주소와 로컬
+            // 캐시가 일치하는지**까지 본다 — 일치할 때까지는 확정하지 않고 retry 한다.
+            val notReadyVoiceIds: Set<String>? = runCatching {
+                val clips = withContext(Dispatchers.IO) { api.getStockClips(auth) }.clips
+                val store = AlarmAudioStore(applicationContext)
+                clips.filter { clip ->
+                    !clip.isRendered ||
+                        AlarmAudioStore.messageCacheKeys(clip.messageId).any { key ->
+                            store.isCachedAudioStale(key, clip.audioUrl) ||
+                                store.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
+                        }
+                }.map { it.voiceProfileId }.toSet()
             }.getOrNull()
             // 확정해도 되는가 — 모르면(null) 안 된다.
             fun prerenderReady(voiceProfileId: String): Boolean =
-                prerenderPendingVoiceIds?.contains(voiceProfileId) == false
+                notReadyVoiceIds?.contains(voiceProfileId) == false
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -153,6 +165,10 @@ class VoiceAccessSyncWorker(
                         session.user.id,
                     )
                     // 프리셋이 아직 안 구워졌거나 물어보지 못했으면 강등만 하고 **확정하지 않는다**.
+                    // ⚠ **서버가 다 구웠다고 해도 이 기기의 캐시는 아직 옛 바이트다**
+                    // (Codex #703 P1). 확정은 프리페치가 실제로 갈아 끼운 **다음 회차**에
+                    // 맡긴다 — 여기서 확정해 버리면 그 사이 울리는 알람이 회수된 목소리를
+                    // 쓰고, 프리페치가 재시도 한도에 걸려 죽어도 되짚을 근거가 없다.
                     if (stillSameSession() && prerenderReady(replacedVoiceId)) {
                         degradedNow
                     } else {
@@ -186,7 +202,8 @@ class VoiceAccessSyncWorker(
                         profileId,
                         session.user.id,
                     )
-                    // 위와 같은 이유 — 프리셋 재렌더가 끝나야 이 세대를 확정한다.
+                    // 위와 같은 이유 — 프리셋 재렌더가 끝나고 **이 기기 캐시까지 갈아 끼운 뒤**
+                    // 확정한다(그 확정은 프리페치가 끝난 다음 회차가 한다).
                     if (stillSameSession() && prerenderReady(profileId)) {
                         degradedNow
                     } else {
@@ -237,7 +254,7 @@ class VoiceAccessSyncWorker(
             // 목소리가 고를 수 있게 되는 것보다 안전하다.
             // 아직 안 구워진 프리셋이 있거나 **물어보지 못했으면** 이 회차는 끝난 것이 아니다 —
             // WorkManager 가 다시 부르게 한다. 그때 준비돼 있으면 그 세대를 확정한다.
-            if (markerPersistFailed || prerenderPendingVoiceIds?.isNotEmpty() != false) {
+            if (markerPersistFailed || notReadyVoiceIds?.isNotEmpty() != false) {
                 Result.retry()
             } else {
                 Result.success()
@@ -288,8 +305,18 @@ class VoiceAccessSyncWorker(
                         .build(),
                 )
                 .build()
+            // ⚠ **교체 신호는 프로필마다 다른 이름으로 큐잉한다**(Codex #703 P1).
+            // 하나의 `voice_replaced_sync` 이름에 `REPLACE` 로 넣으면, 두 목소리의 교체 푸시가
+            // 잇달아 올 때 **뒤엣것이 앞엣것을 취소**하고 자기 프로필 id 만 들고 돈다.
+            // 살아남은 회차가 앞 프로필을 목록에서 되짚어 주지도 못한다 — 그 프로필에 표식
+            // 기준선이 없으면 첫 조회로 **이미 교체된 세대를 그대로 시드**하고 강등을 건너뛴다.
+            // 그러면 앞 목소리의 직접 입력 알람이 회수된 목소리를 문 채 남는다.
+            val uniqueName = when {
+                replacedVoiceProfileId.isNullOrBlank() -> WORK_NAME
+                else -> "$REPLACED_WORK_NAME:$replacedVoiceProfileId"
+            }
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                if (replacedVoiceProfileId.isNullOrBlank()) WORK_NAME else REPLACED_WORK_NAME,
+                uniqueName,
                 ExistingWorkPolicy.REPLACE,
                 request,
             )

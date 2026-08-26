@@ -315,7 +315,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로 돌아온다 —
             // 그러면 철회 이전 목록으로 판단하게 된다(Codex #697 P1).
             await deps.voiceStudio.refresh(session: deps.auth.session, force: true)
-            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            // ⚠ **매니페스트를 새로 못 받았으면 그 목록으로 확정하지 않는다**(Codex #703 P1).
+            // 강제 요청이 실패하면 `stockClips` 는 **교체 이전 스냅샷**으로 남고, 그 값들은
+            // 전부 rendered=true 라 아래 `presetPending` 이 비어 세대가 확정된다 — 완료 푸시를
+            // 놓친 기기는 회수된 프리셋을 문 채 남는다.
+            let manifestFresh = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
             if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session).changed {
                 await deps.alarmStore.waitUntilLoadedFromDisk()
                 _ = await AlarmScheduleReconciler.reconcile(
@@ -386,7 +390,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 확정해 버리면 cron 이 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어, 완료 푸시를
             // 놓친 기기는 회수된 프리셋을 캐시·예약에 문 채로 남는다.
             // 이 교체의 목소리만 본다 — 남의 목소리가 아직이라고 이 세대를 붙들지 않는다.
-            let presetPending = deps.voiceStudio.stockClips.contains {
+            let presetPending = !manifestFresh || deps.voiceStudio.stockClips.contains {
                 $0.voiceProfileId == pending.profileID && !$0.isRenderedForCurrentVoice
             }
             guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {

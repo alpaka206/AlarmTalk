@@ -79,6 +79,25 @@ private fun isLegacyBackfillVersion(deliveryVersion: String): Boolean =
     deliveryVersion.length == 32 &&
         deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
+/**
+ * **음원·예약을 확보해 ack 만 재시도하면 되는 전달인가.**
+ *
+ * 두 갈래를 함께 본다(`docs/spec/family-alarm.md`):
+ *  1. #104 backfill 세대([isLegacyBackfilledDelivery]) — 옛 전달에 뒤늦게 세대를 찍은 것.
+ *  2. **내가 받았는데 반영에 실패한 그 세대** — 도착 세대는 적혔는데(`observedDeliveryVersion`)
+ *     적용 세대(`remoteDeliveryVersion`)가 비어 있고, 서버가 **같은 세대**를 다시 준 경우.
+ *     이걸 빼면 첫 반영이 실패한 뒤 수신자가 손댄 알람이 영원히 ack 되지 않는다.
+ */
+internal fun isRecoverableSameDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean {
+    if (isLegacyBackfilledDelivery(existing, deliveryVersion)) return true
+    val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    return existing.remoteDeliveryVersion.isNullOrBlank() && observed == incoming
+}
+
 internal fun isLegacyBackfilledDelivery(
     existing: AlarmEntity,
     deliveryVersion: String?,
@@ -271,9 +290,14 @@ internal class RemoteAlarmPullSyncService(
                         skipped += 1
                         return@runCatching
                     }
-                    // #104 backfill 세대만 복구 대상이다(`isLegacyBackfilledDelivery` 주석).
+                    // 복구 대상은 둘이다(`docs/spec/family-alarm.md`):
+                    //  ① #104 backfill 세대
+                    //  ② **내가 받았지만 반영에 실패한 그 세대**(observed == 서버 세대인데
+                    //     applied 가 비어 있다) — 스펙이 "편집을 보존한 채 음원·예약·ack 를
+                    //     재시도한다" 고 정한 경우다. 이걸 빼면 첫 반영이 실패한 뒤 수신자가
+                    //     손댄 알람은 **영원히 ack 되지 않는다**.
                     // 아래에서 음원과 **현재 편집본의 OS 예약**을 먼저 확보한 뒤 ACK한다.
-                    if (!isLegacyBackfilledDelivery(existing, remote.deliveryVersion)) {
+                    if (!isRecoverableSameDelivery(existing, remote.deliveryVersion)) {
                         skipped += 1
                         Log.i(TAG, "Kept recipient-edited alarm; skipped new delivery remoteId=${remote.id}")
                         return@runCatching
@@ -345,7 +369,7 @@ internal class RemoteAlarmPullSyncService(
                             receivedAlarmDeliveryVersionAlreadyApplied(current, deliveryVersion) -> {
                                 editedDeliveryVersionToAck = deliveryVersion
                             }
-                            isLegacyBackfilledDelivery(current, deliveryVersion) -> {
+                            isRecoverableSameDelivery(current, deliveryVersion) -> {
                                 val audioSecured =
                                     !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
                                 val recovered = linkRecoveredLegacyRemoteAudio(
@@ -414,6 +438,9 @@ internal class RemoteAlarmPullSyncService(
                         existing = current,
                         cachedAudio = cachedAudio,
                         currentUserId = currentUserIdProvider(),
+                        // 재전송이면 수신자가 바꿔 둔 시각·꺼짐을 물려받지 않는다(그 주석 참조).
+                        treatAsFreshDelivery = current != null &&
+                            isResendOfDifferentDelivery(current, remote.deliveryVersion),
                     ) ?: run {
                         skipped += 1
                         return@withLock
@@ -950,20 +977,35 @@ internal fun buildReceivedAlarmRow(
     cachedAudio: CachedAlarmAudio?,
     currentUserId: String?,
     now: Long = System.currentTimeMillis(),
+    /**
+     * **이 전달을 '처음 받는 것' 으로 짓는다**(재전송).
+     *
+     * ⚠ 재전송은 수신자가 그 슬롯을 어떻게 해 뒀든 **덮어쓴다**(docs/spec/family-alarm.md).
+     * 그런데 [resolveReceivedSchedule]·[resolveReceivedRemoteEnabled] 는 받은 알람의 시각·
+     * 요일·스누즈·꺼짐을 **로컬 것으로 지켜 준다** — 그대로 두면 새로 보낸 6:30 알람이
+     * 수신자가 옛 전달에서 바꿔 둔 7:00 에, 그것도 **꺼진 채로** 앉는다. 꺼진 채로 앉으면
+     * 예약 없이도 전달 완료로 ACK 돼 서버 행까지 지워진다 — 보낸 알람이 영영 안 울린다.
+     *
+     * 그래서 이 갈래는 보존 규칙을 **건너뛰고 서버본을 그대로** 쓴다. 행 자체(id·remoteAlarmId)
+     * 는 그대로 재사용한다 — 새 행을 만들면 같은 전달이 두 줄이 된다.
+     */
+    treatAsFreshDelivery: Boolean = false,
 ): AlarmEntity? {
     val time = parseTime(remote.time) ?: return null
     val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
-    val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
+    // 보존 규칙을 태울 기준 행 — 재전송이면 '없는 것' 으로 본다(위 주석).
+    val preserveFrom = existing.takeUnless { treatAsFreshDelivery }
+    val enabled = resolveReceivedRemoteEnabled(preserveFrom, remote.isActive)
     val hasVoiceAudio = cachedAudio != null
 
     // 스누즈 '한 회차' 는 마감(fireAtMillis)·상태·누른 횟수가 한 묶음이라 따로 놀면 안 된다.
     // 마감만 지키고 state 를 SCHEDULED 로 되돌리면 정합성 복원이 이 알람을 다음 정규 발생으로
     // 밀어(SNOOZED 만 재계산에서 뺀다) 5분 뒤 울리기로 한 스누즈가 사라지고, 횟수를 0 으로
     // 되돌리면 같은 회차에서 스누즈 제한이 초기화된다(Codex #675 P1·P2).
-    val keepSnoozeEpisode = enabled && existing != null && existing.state == AlarmStates.SNOOZED
+    val keepSnoozeEpisode = enabled && preserveFrom != null && preserveFrom.state == AlarmStates.SNOOZED
 
     val schedule = resolveReceivedSchedule(
-        existing = existing,
+        existing = preserveFrom,
         remoteHour = time.first,
         remoteMinute = time.second,
         remoteRepeatDaysMask = repeatMask,
@@ -997,7 +1039,9 @@ internal fun buildReceivedAlarmRow(
         snoozeEnabled = schedule.snoozeEnabled,
         snoozeMinutes = schedule.snoozeMinutes,
         snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
-        snoozeCount = if (keepSnoozeEpisode) existing.snoozeCount else 0,
+        // `keepSnoozeEpisode` 는 `preserveFrom` 으로 판정하므로 여기서도 그 행을 본다
+        // (재전송이면 스누즈 회차도 물려받지 않는다 — 새 알람이다).
+        snoozeCount = if (keepSnoozeEpisode) preserveFrom!!.snoozeCount else 0,
         vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
         playMode = lockState.playMode,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,

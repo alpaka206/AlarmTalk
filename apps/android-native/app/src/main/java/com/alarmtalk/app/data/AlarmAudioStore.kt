@@ -53,6 +53,15 @@ data class CachedAlarmAudio(
     val messageId: String? = null,
 )
 
+/**
+ * **이미 지나간 매니페스트 세대의 응답이라 쓰지 않았다**(Codex #703 P1).
+ *
+ * 실패가 아니라 '이 바이트는 더 이상 맞지 않는다' 는 뜻이다. 호출자는 갱신으로 세지 말고
+ * 그 키를 낡은 채로 두면 된다 — 다음 회차가 새 매니페스트로 다시 받는다.
+ * iOS 짝은 `AudioCacheError.superseded`.
+ */
+class SupersededAudioException : IllegalStateException("Audio response is superseded by a newer manifest")
+
 class AlarmAudioStore(
     private val context: Context,
 ) {
@@ -525,7 +534,15 @@ class AlarmAudioStore(
         // 세대를 회수된 옛 바이트로 덮어쓴다(iOS 는 그때 구워 둔 사운드까지 지워 다음
         // 재예약이 옛 목소리를 굽는다). 그래서 "다르면 새것" 이 아니라 **매니페스트가 지금
         // 가리키는 주소인가**로 가른다.
-        val superseded = existing != null && incomingIsSupersededByManifest(messageId, rawAudioUri)
+        // ⚠ **캐시 파일이 없어도 거절한다**(Codex #703 P1, iOS 와 같은 규칙). 첫 다운로드거나
+        // 캐시가 정리된 뒤라면 `existing` 이 null 인데, 그때 그냥 쓰면 **회수된 옛 바이트**가
+        // 자리를 차지한다 — 그 무렵 교체 정리는 '낡은 키 없음' 으로 세대를 확정해 버려 다시
+        // 받을 기회도 사라진다.
+        val superseded = incomingIsSupersededByManifest(messageId, rawAudioUri)
+        // 쓸 것이 아무것도 없는데 응답까지 지나간 것이면 **던진다** — 호출자가 '갱신 안 됨'
+        // 으로 세고 그 키는 낡은 채 남아 다음 회차가 새 매니페스트로 다시 받는다.
+        if (superseded && existing == null) throw SupersededAudioException()
+        // 지나간 응답이면 낡음 판정을 하지 않는다 → 아래에서 기존 캐시를 그대로 돌려준다.
         val stale = existing != null && !superseded &&
             (cachedAudioIsStale(resolvedCacheKey, rawAudioUri) ||
                 cachedAudioNeedsRevisionRefresh(resolvedCacheKey, rawAudioUri))
