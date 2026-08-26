@@ -435,6 +435,15 @@ struct AlarmTalkApp: App {
                     guard auth.session != nil else { return }
                     await auth.refreshUser()
                     guard auth.session != nil else { return }
+                    // ⚠ **개정을 여기서도 집는다.** 예전에는 콜드 스타트와 로그인 직후에만
+                    // 봤는데, 앱을 계속 켜 두는 사람은 그 사이 올라간 재동의 요구를 며칠씩
+                    // 모르고 지낸다 — 그동안 서버는 데이터 라우트를 403 으로 막는다.
+                    // 안드로이드는 `LaunchedEffect(authSession?.token)` 이라 토큰이 갱신될
+                    // 때마다 다시 본다(`ui/app/AlarmTalkApp.kt`).
+                    // 이미 다 받은 사람에게는 아무 일도 일어나지 않는다 — 서버 `collect` 가
+                    // 비어 화면이 뜨지 않는다(「한 번 받은 동의는 다시 묻지 않는다」).
+                    await auth.checkConsentStatus()
+                    guard auth.session != nil else { return }
                     await remoteSync.runFullSync()
                     await refreshWeatherVariantsAndReconcile()
                 }

@@ -90,6 +90,16 @@ struct VoiceCloneUploadFlow: View {
         auth.consentSensitiveMissing.contains("voice_biometric")
     }
 
+    /// 이 화면의 **인라인 체크박스가 실제로 묻는** 유형. 여기 없는 유형은 그 체크로 기록하면
+    /// 안 되고(본 적 없는 동의가 기록된다), 전용 시트로 따로 물어야 한다.
+    /// 안드로이드 짝은 `MainViewModelVoiceActions.INLINE_COVERED_CONSENTS`.
+    private static let inlineCoveredConsents: Set<String> = ["voice_biometric"]
+
+    /// 인라인이 덮지 못하는, 아직 없는 민감 동의(보통 국외 이전 — 가입 필수라 대개 비어 있다).
+    private var unaskedSensitiveConsents: [String] {
+        auth.consentSensitiveMissing.filter { !Self.inlineCoveredConsents.contains($0) }
+    }
+
     /// 등록을 눌러도 되는지 — **법정 동의만** 본다.
     private var registrationConsentSatisfied: Bool {
         Self.registrationConsentSatisfied(
@@ -662,6 +672,17 @@ struct VoiceCloneUploadFlow: View {
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             voice.statusMessage = "목소리 이름을 입력해 주세요."
+            return
+        }
+        // ⚠ **인라인이 묻지 못한 민감 동의는 업로드 전에 시트로 받는다.** 그냥 올리면
+        // 녹음이 나간 **뒤에** 403 이 오고, 그 시트는 등록 문맥을 모른 채 TTS 카피를 띄운다.
+        if !unaskedSensitiveConsents.isEmpty {
+            auth.requestSensitiveConsent(
+                // 시트에는 **아직 없는 민감 동의 전체**를 담는다 — 인라인 체크는 아직 서버에
+                // 기록되지 않았으므로 여기서 함께 받아야 한 번에 끝난다.
+                types: auth.consentSensitiveMissing,
+                registeringVoice: true
+            )
             return
         }
         // 인라인으로 받은 생체정보 동의를 **업로드 전에** 기록한다. 순서를 뒤집으면

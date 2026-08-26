@@ -98,6 +98,9 @@ struct ConsentView: View {
     /// 없고(`docs/spec/consent.md`), 제22조제5항이 요구하는 것은 **선택을 따로 끌 수 있을 것**
     /// 이다. 그래서 `[필수]`/`[선택]` 표기와 개별 체크박스는 그대로 둔다.
     ///
+    /// 이 범위가 「한 번 받은 동의는 다시 묻지 않는다」를 돕는다 — 여기서 생체정보까지 한 번에
+    /// 켠 사람은 **첫 목소리 등록에서도 묻지 않는다**(`docs/spec/consent.md`).
+    ///
     /// ⚠ `setAll` 과 `allChecked` 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의
     /// 표시가 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다).
     private var masterTypes: [String] { shownTypes }
@@ -172,7 +175,11 @@ struct ConsentView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
-            .disabled(!allRequiredChecked || busy)
+            // ⚠ **그릴 것이 하나도 없으면 눌리지 않아야 한다.** `requiredTypes` 가 비면
+            // `allSatisfy` 가 true 라 CTA 가 켜지는데, 그 상태로 누르면 제출 폴백이
+            // **본 적 없는 가입 필수 4종을 동의로 기록**한다(안드로이드는 같은 자리에서
+            // `shownCount > 0` 을 함께 본다).
+            .disabled(shownTypes.isEmpty || !allRequiredChecked || busy)
             .padding(.vertical, 16)
         }
         .padding(.horizontal, 24)

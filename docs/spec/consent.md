@@ -59,6 +59,46 @@
   제7조**가 담고 있고 약관은 가입 필수 동의라 이미 받았다 — 등록마다 다시 받는 것은 계약상
   중복이었다. 화면에는 **비차단 안내**로만 남긴다. 되돌리려면 약관 제7조를 먼저 확인할 것.
   (생체정보 동의 체크박스는 그대로 — 서버 기록 기반 법정 동의라 성격이 다르다.)
+## 한 번 받은 동의는 다시 묻지 않는다
+
+> 규칙(2026-08-26 확정): **받아야 하는 동의는 전부 받는다. 한 번 받은 동의는 다시 묻지
+> 않는다 — 약관이 바뀌어 다시 받아야 하는 경우만 예외다.**
+
+앱을 처음 쓸 때 받았든 첫 목소리를 등록할 때 받았든 **한 번이면 끝**이다. 두 번째·세 번째
+목소리를 등록할 때도, 다음 로그인에서도, 콜드 스타트에서도 다시 묻지 않는다.
+
+- **판정은 서버가 한다.** 클라가 "이미 받았다" 를 기억해서 화면을 숨기는 구조가 아니다 —
+  `GET /user/consents/status` 가 **이번에 받을 것만** `collect`·`sensitive_missing` 에 담고,
+  앱은 그 목록대로 그린다. 그래서 기기를 바꿔도, 앱을 지웠다 깔아도 같은 답이 나온다.
+  - `collect` 를 만드는 곳은 **한 곳뿐**이다(`routes/user.ts`). 필수는 `missingConsentTypesFrom`
+    (미기록 | 미동의 | 최소버전 미달), 기능·선택은 `consentAnswerIsCurrent` — **`agreed` 를
+    보지 않고 버전만 본다.** 거절도 유효한 답이라 다시 묻지 않는다는 뜻이다.
+  - 목소리 라우트는 **매 등록마다 확인하지만 '없으면 403'** 이지 '매번 새로 받아라' 가 아니다.
+    기록이 있으면 그대로 통과한다.
+- **묻지 않은 것은 기록하지 않는다**(짝 규칙). 화면이 실제로 그린 유형만 제출한다 —
+  등록 화면의 인라인 체크박스는 `voice_biometric` 하나만 묻으므로, 그 체크로 다른 민감
+  동의까지 `agreed=true` 로 올리면 **사용자가 본 적 없는 동의가 기록된다.** 인라인이 덮지
+  못하는 유형이 남으면 **업로드 전에** 전용 시트로 따로 받는다.
+  - 같은 이유로 앱이 **모르는 필수 유형**이 오면 동의 화면 대신 **업데이트 차단 화면**으로
+    보낸다. 항목 0개짜리 화면에서 CTA 를 누르면 제출 폴백이 본 적 없는 동의를 기록한다.
+  - 그릴 것이 하나도 없으면 화면을 띄우지 않는다(`needs_collection && collect 비지 않음`).
+    서버 플래그를 날것으로 보면 **빈 동의 화면이 콜드 스타트마다** 뜬다.
+- **예외는 둘뿐이고 둘 다 서버가 만든다.**
+  1. `CONSENT_MIN_POLICY_VERSION` 상향 — **그 유형의 동의 내용이 실제로 바뀐 경우만**.
+     문서 버전이 올랐다는 이유로 올리지 않는다(바로 아래 불릿).
+  2. **마케팅 재유도** — 거절자에게, 그리고 **다른 이유로 화면이 이미 뜰 때만**.
+- **예외가 아닌 것**(다시 묻는 게 규칙 위반이 아닌 경우): 거절(`agreed=0`), 설정 화면의
+  명시적 철회, 403 `CONSENT_REQUIRED`. 셋 다 "**받은 적이 없다**" 이지 "받았는데 또 묻는다"
+  가 아니다.
+- ⚠ **레버는 올리는 방향만 있다.** `CURRENT_POLICY_VERSION` 을 **내리면**
+  `sanitizeStoredPolicyVersion` 이 그보다 높게 기록된 동의를 0 으로 떨어뜨려 **전원 재동의**가
+  된다(발급한 적 없는 버전은 위조로 보는 방어다). 버전을 되돌릴 때는 그 버전으로 기록된
+  행이 실제로 없는지부터 확인한다 — `main` 에 올라간 적 없는 버전이면 안전하다.
+- ⚠ **앱의 로컬 캐시는 이 규칙의 레버가 아니다.** 정책 버전을 키로 쓰는 통과 플래그
+  (Android `voice_alarm_consent`, iOS `ConsentCompletionStore`)는 **로딩 게이트를 빨리
+  통과시키는 용도**일 뿐, "다시 물을지" 를 정하지 않는다. 지워도 서버 답이 같으면 화면은
+  뜨지 않는다.
+
 - ⚠ **`CONSENT_MIN_POLICY_VERSION` 을 올리는 것이 재동의의 유일한 레버다.**
   `CURRENT_POLICY_VERSION`(문서 버전)이 올라도 재동의는 안 뜬다. 올릴 때는 **그 유형의 동의
   내용이 실제로 바뀐 경우만**, 그리고 **배포된 앱이 그 문서 버전을 번들한 뒤에** 올린다 —
@@ -73,7 +113,10 @@
 | 그릴 목록 | `collect` 그대로 | `collect` 그대로 | `GET /user/consents/status` |
 | 초기 체크 상태 | `prechecked` | `prechecked` (`ConsentView`) | 같은 필드 |
 | 철회 판별 | — | — | `withdrewSensitiveConsent` (`routes/user.ts`) |
-| 마스터 행 범위 | `필수 약관 전체 동의` | 같음 (`ConsentView`) | — |
+| 마스터 행 범위 | `masterTypes`=`shownTypes`, `setAll`·`allChecked` 도 같은 집합 (`ConsentScreen`) | 같음 (`ConsentView.masterTypes`) | — |
+| 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
+| 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |
+| 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `CURRENT_POLICY_VERSION` (409) |
 

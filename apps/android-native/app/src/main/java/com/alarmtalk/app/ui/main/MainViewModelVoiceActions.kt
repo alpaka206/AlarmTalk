@@ -204,10 +204,22 @@ internal fun MainViewModel.createVoiceProfiles(
     // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
     // 모달 없이 아래 코루틴에서 먼저 기록하고, 물어보지 못한 경로(예: 화면 밖에서 호출)
     // 에서만 전용 시트를 띄운다.
-    val consentsToRecord = sensitiveConsentMissing
-    if (consentsToRecord.isNotEmpty() && !consentAgreedInline) {
+    //
+    // ⚠ **화면이 실제로 물어본 유형만 기록한다.** 인라인 체크박스는 `voice_biometric`
+    // **하나만** 그리는데(`VoiceProfileManagementPanel.needsBiometricConsent`), 예전에는
+    // 그 체크 하나로 `sensitiveConsentMissing` **전부**를 `agreed=true` 로 올렸다 —
+    // 사용자가 본 적 없는 동의가 기록된다. 인라인이 덮지 않는 유형이 남으면 시트로 보낸다
+    // (`docs/spec/consent.md` 「한 번 받은 동의는 다시 묻지 않는다」의 짝 규칙:
+    //  **묻지 않은 것은 기록하지 않는다**).
+    val consentsToRecord =
+        if (consentAgreedInline) sensitiveConsentMissing.filter { it in INLINE_COVERED_CONSENTS }
+        else emptyList()
+    val unaskedConsents = sensitiveConsentMissing.filterNot { it in consentsToRecord }
+    if (unaskedConsents.isNotEmpty()) {
         pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
-            types = consentsToRecord,
+            // 시트는 남은 것뿐 아니라 **아직 없는 민감 동의 전체**를 다룬다 — 인라인 체크는
+            // 아직 서버에 기록되지 않았으므로 여기서 함께 받아야 한 번에 끝난다.
+            types = sensitiveConsentMissing,
             resumeVoiceDrafts = drafts,
         )
         return false
@@ -722,6 +734,15 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
 /** 스톡 클립 동시 다운로드 수. 순차는 약전파에서 1분을 넘기고, 과하면 서버·기기가 힘들다. */
+/**
+ * 목소리 등록 화면의 **인라인 동의 항목이 실제로 묻는** 유형.
+ *
+ * `VoiceProfileManagementPanel` 의 `needsBiometricConsent` 가 그리는 체크박스 하나에
+ * 대응한다 — 여기 없는 유형은 그 체크로 기록하면 안 되고, 전용 시트로 따로 물어야 한다.
+ * iOS 짝은 `VoiceCloneUploadFlow.inlineCoveredConsents`.
+ */
+private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
+
 private const val PREFETCH_PARALLELISM = 4
 
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
