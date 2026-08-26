@@ -492,7 +492,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 그냥 `confirm()` 하면 아무 표시도 남기지 않고 끝나 그 목소리가 확정 없이
             // 고를 수 있게 된다 — 확정 함수만이 실패를 '정리 중' 으로 올린다.
             let anyFailed = pendingApplies.contains(where: \.failed)
-            guard anyFailed || degraded + replacedCount + unverifiedCount > 0 else {
+            // ⚠ **강등한 알람이 없어도 세대가 바뀌었으면 캐시를 갱신해야 한다**(Codex #703 P1).
+            // 그 목소리를 **프리셋 알람만** 쓰고 있으면 `applyIfChanged` 는 확정 가능한
+            // 세대를 빈 목록과 함께 돌려준다 — 여기서 접으면 표식만 확정되고, 다음 회차부터는
+            // '이미 반영함' 이라 **캐시와 구워 둔 사운드가 회수된 목소리로 영영 남는다.**
+            let markerGenerationChanged = !pendingApplies.isEmpty
+            guard anyFailed || markerGenerationChanged || degraded + replacedCount + unverifiedCount > 0 else {
                 pendingApplies.forEach { _ = $0.confirm() }
                 return
             }

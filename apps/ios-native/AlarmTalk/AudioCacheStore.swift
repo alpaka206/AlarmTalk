@@ -391,11 +391,16 @@ final class AudioCacheStore {
         // 세대를 회수된 옛 바이트로 덮어쓰고 **구워 둔 사운드까지 지워** 다음 재예약이 옛
         // 목소리를 굽는다. "다르면 새것" 이 아니라 **매니페스트가 지금 가리키는 주소인가**다.
         let superseded = Self.incomingIsSupersededByManifest(messageId: messageId, incomingAudioUri: rawAudioUri)
+        // ⚠ **뒤처진 응답은 '낡음 아님' 으로 두는 것만으로 부족하다 — 곧바로 돌아간다**
+        // (Codex #703 P1). 아래 쓰기 조건에는 `!fileExists(target)` 갈래가 있어서, 옛 응답의
+        // **형식이 다르면**(mp3 vs m4a) 그 자리에는 파일이 없어 조건이 참이 된다 — 옛
+        // 바이트를 쓰고 `removeAudioFiles` 가 **현 세대 파일을 지운다.**
+        if superseded, let existing = existingURL {
+            return existing
+        }
         let stale = existingURL.map {
-            !superseded && (
-                Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
-                    || needsRevisionRefresh(cacheKey: cacheKey, remoteAudioUri: rawAudioUri)
-            )
+            Self.isStaleCachedFile(at: $0, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+                || needsRevisionRefresh(cacheKey: cacheKey, remoteAudioUri: rawAudioUri)
         } ?? false
         if stale || !FileManager.default.fileExists(atPath: target.path) {
             do {
@@ -945,6 +950,8 @@ final class AudioCacheStore {
     nonisolated func trimCachedAudioIfNeeded(cacheKey: String) async {
         #if canImport(AVFoundation)
         guard let url = cachedURL(for: cacheKey) else { return }
+        // 자르기 **전에** 이 캐시의 세대를 붙잡아 둔다 — 잠금 안에서 그대로인지 확인한다.
+        let sourceRevision = readMetadata(cacheKey: cacheKey)?.rawAudioUri ?? ""
         let limit = AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis
         guard let durationMs = await Self.loadDurationMillis(url: url), durationMs > limit else {
             return
@@ -970,6 +977,12 @@ final class AudioCacheStore {
         // 크롭·길이 측정 같은 `await` 는 위에서 이미 끝냈으므로 잠금 안은 파일 작업뿐이다.
         Self.withCacheKeyLock(cacheKey) {
             let previous = readMetadata(cacheKey: cacheKey)
+            // ⚠ **자르는 사이에 세대가 바뀌었으면 버린다**(Codex #703 P1). 크롭은 오래
+            // 걸리는데, 그동안 교체 다운로드가 새 세대를 캐시할 수 있다 — 그대로 쓰면 **옛
+            // 바이트에 새 주소**가 붙어 매니페스트 대조가 '현행' 으로 읽고 회수된 목소리를
+            // 영영 고치지 못한다. 원본이 사라진 경우도 같다(지워진 캐시를 되살리지 않는다).
+            guard (previous?.rawAudioUri ?? "") == sourceRevision,
+                  cachedURL(for: cacheKey) != nil else { return }
             removeAudioFile(forCacheKey: cacheKey)
             _ = try? cacheBytes(
                 data,
