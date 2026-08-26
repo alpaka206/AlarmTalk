@@ -216,10 +216,21 @@ class VoiceReplacementMarkerStore(context: Context) {
             ?: prefs.getString(seenKey(userId, profileId), null)?.takeIf { it.isNotBlank() }
             ?: return
         val key = retryKey(userId, profileId)
-        val previous = prefs.getString(key, null).orEmpty()
-        val newest = maxOf(generation, previous)
+        val previous = prefs.getString(key, null)
+        val newest = maxOf(generation, previous.orEmpty())
         if (newest == previous) return
-        prefs.edit().putString(key, newest).commit()
+        // ⚠ **디스크에 못 남겼으면 메모리도 되돌린다**(Codex #703 P1, `commitLocked` 와 같은
+        // 규약). `edit()` 은 성패와 무관하게 메모리 맵을 먼저 고치므로, 실패를 버리면 이
+        // 프로세스는 표식이 있다고 읽어 **다음 실패를 `newest == previous` 로 걸러 내고 다시
+        // 쓰지 않는다.** 그 상태로 프로세스가 끝나면 디스크에는 기준선만 남고 `applied` 도
+        // `retry` 도 없어, 권위 목록이 주는 그 세대가 '바뀐 것 없음' 으로 읽힌다 —
+        // 정리 중 표시가 풀리고 회수된 목소리를 문 예약이 남는다.
+        if (!prefs.edit().putString(key, newest).commit()) {
+            val rollback = prefs.edit()
+            if (previous == null) rollback.remove(key) else rollback.putString(key, previous)
+            rollback.commit()
+            Log.w(TAG, "Failed to persist retry marker; leaving it retryable")
+        }
     }
 
     /**
