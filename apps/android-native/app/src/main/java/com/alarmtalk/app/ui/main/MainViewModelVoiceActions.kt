@@ -970,6 +970,9 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 간다.
     stockClipManifestRevision += 1
     val manifestRevision = stockClipManifestRevision
+    // 디스크 권위의 표. **프로세스 전역**이라 프리페치 워커와도 순서가 맞는다
+    // (`stockClipManifestRevision` 은 이 뷰모델 안의 순서만 본다).
+    val manifestTicket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
     viewModelScope.launch {
         runCatching {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token))
@@ -980,7 +983,7 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }
             stockClipManifestFetched = true
-            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response)
+            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response, manifestTicket)
             // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
             // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
             withContext(Dispatchers.IO) {

@@ -103,8 +103,14 @@ class StockClipPrefetchWorker(
             // 그 기준이 **옛 주소**로 남는다 — 방금 받은 새 바이트가 '지나간 응답' 으로 판정돼
             // 버려지고, 워커는 성공으로 끝나 교체 표식이 확정된다. 결과는 회수된 목소리가
             // 그대로 남는 것이다.
+            // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
+            val manifestTicket = StockClipManifestStore.beginFetch()
             val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
-            StockClipManifestStore.save(applicationContext, manifest)
+            val manifestPublished = StockClipManifestStore.save(applicationContext, manifest, manifestTicket)
+            // ⚠ 공개하지 못했다 = **더 새 매니페스트가 이미 나왔다.** 이 회차의 목록으로
+            // 캐시를 갈아 끼우면 그 새 세대를 옛 바이트로 덮는다 — 아무것도 하지 않고
+            // 물러나면 그 새 매니페스트를 받은 쪽이 이어서 한다.
+            if (!manifestPublished) return@runCatching Result.success()
             val allClips = manifest.clips
             // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
             // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.

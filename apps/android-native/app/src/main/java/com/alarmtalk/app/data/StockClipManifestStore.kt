@@ -27,8 +27,35 @@ object StockClipManifestStore {
 
     private fun file(context: Context) = File(context.filesDir, FILE_NAME)
 
-    /** 매니페스트를 저장한다. 실패해도 조용히 넘어간다 — 이번 세션은 메모리 값으로 돈다. */
-    fun save(context: Context, response: StockClipListResponse) {
+    /**
+     * 이 파일의 **권위 세대**. 조회를 시작할 때 표를 뽑고([beginFetch]), 저장할 때 그 표를
+     * 낸다([save]) — 뒤처진 표는 거절된다.
+     *
+     * ⚠ **이게 없으면 권위가 뒤로 간다**(Codex #703 P1). 매니페스트를 받는 곳이 둘이다
+     * (전경 새로고침, 프리페치 워커). 교체 **전에** 출발한 요청이 나중에 끝나면 옛 매니페스트가
+     * 새 것을 덮어쓰고, 그러면 캐시 쓰기의 '지나간 응답인가' 판정이 **되살아난 옛 주소**를
+     * 기준으로 삼아 회수된 목소리를 그대로 남긴다. 프로세스 전역이어야 한다 — 저장소가
+     * `object` 라 자연히 그렇다.
+     */
+    private val revisionLock = Any()
+    private var nextFetchTicket: Long = 0
+    private var publishedTicket: Long = 0
+
+    /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
+    fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }
+
+    /**
+     * 매니페스트를 저장한다. 실패해도 조용히 넘어간다 — 이번 세션은 메모리 값으로 돈다.
+     *
+     * @param fetchTicket [beginFetch] 로 받은 표. 더 뒤에 출발한 응답이 이미 저장됐으면
+     *   **아무것도 하지 않는다**(false).
+     * @return 실제로 공개했는가.
+     */
+    fun save(context: Context, response: StockClipListResponse, fetchTicket: Long): Boolean {
+        synchronized(revisionLock) {
+            if (fetchTicket < publishedTicket) return false
+            publishedTicket = fetchTicket
+        }
         runCatching {
             // ⚠ 임시 파일에 쓴 뒤 옮긴다. 쓰다 죽으면 반쪽 JSON 이 남아 다음 실행이
             // 매니페스트를 못 읽고, 그러면 이 파일을 둔 이유가 그대로 사라진다.
@@ -42,6 +69,7 @@ object StockClipManifestStore {
         }.onFailure {
             AlarmTalkLog.reportError("Failed to persist the stock clip manifest", it)
         }
+        return true
     }
 
     /** 디스크에 남은 매니페스트. 없거나 깨졌으면 null. */

@@ -166,7 +166,13 @@ class VoiceReplacementMarkerStore(context: Context) {
         synchronized(SETTLING_LOCK) {
             val key = settlingKey(user)
             val previous = prefs.getStringSet(key, emptySet())?.toSet().orEmpty()
-            val next = if (settling) previous + profileId else previous - profileId
+            // ⚠ **내리는 것은 저장소가 '끝났다' 고 할 때만이다**(Codex #703 P1). 호출자는
+            // **자기 회차의 스냅샷**으로 판단하는데, 뒤처진 회차(옛 세대를 들고 온 워커)가
+            // 나중에 도착해 최신 세대의 표시를 풀어 버릴 수 있다 — 그 목소리를 고를 수 있게
+            // 되고, 남아 있던 재시도가 그때 만든 알람을 벗긴다.
+            // 재시도 표식이 있으면 아직 반영되지 않은 세대가 남았다는 뜻이므로 계속 가린다.
+            val stillPending = prefs.getString(retryKey(user, profileId), null) != null
+            val next = if (settling || stillPending) previous + profileId else previous - profileId
             if (next == previous) return true
             if (prefs.edit().putStringSet(key, next.toMutableSet()).commit()) return true
             prefs.edit().putStringSet(key, previous.toMutableSet()).commit()
