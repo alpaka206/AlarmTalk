@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
@@ -96,7 +97,27 @@ class StockClipPrefetchWorker(
             val language = deviceVoiceLanguage()
             val audioStore = AlarmAudioStore(applicationContext)
 
-            val allClips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
+            // ⚠ **받은 매니페스트를 먼저 공개한다**(Codex #703 P1). 캐시 쓰기 경로는 디스크
+            // 매니페스트를 '지금 무엇이 맞는가' 의 기준으로 삼는데(뒤처진 응답이 새 세대를
+            // 덮지 못하게 하는 가드), 이 워커가 새 매니페스트를 받아 놓고 공개하지 않으면
+            // 그 기준이 **옛 주소**로 남는다 — 방금 받은 새 바이트가 '지나간 응답' 으로 판정돼
+            // 버려지고, 워커는 성공으로 끝나 교체 표식이 확정된다. 결과는 회수된 목소리가
+            // 그대로 남는 것이다.
+            // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
+            val manifestTicket = StockClipManifestStore.beginFetch()
+            val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket, session.user.id)) {
+                // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
+                // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.
+                StockClipManifestStore.PublishResult.SUPERSEDED ->
+                    return@runCatching Result.success()
+                // ⚠ **디스크 쓰기 실패는 물러날 일이 아니다**(Codex #703 P1). 아무도 새
+                // 권위를 공개하지 못한 상태라, 여기서 성공으로 끝내면 완료 푸시를 놓친 기기에
+                // 회수된 프리셋을 갈아 끼울 폴백이 남지 않는다. 다시 온다.
+                StockClipManifestStore.PublishResult.FAILED -> return@runCatching Result.retry()
+                StockClipManifestStore.PublishResult.PUBLISHED -> Unit
+            }
+            val allClips = manifest.clips
             // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
             // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.
             // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
@@ -112,7 +133,11 @@ class StockClipPrefetchWorker(
             val clips = allClips.filter {
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
-                it.targetsDefaultVoices(language) || it.voiceProfileId in ownedProfileIds
+                it.targetsDefaultVoices(language) ||
+                    it.voiceProfileId in ownedProfileIds ||
+                    AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
+                        audioStore.isCachedAudioStale(key, it.audioUrl)
+                    }
             }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
@@ -148,7 +173,15 @@ class StockClipPrefetchWorker(
                 return@runCatching Result.success()
             }
 
-            val missing = clips.filter { audioStore.getCachedAudio(cacheKeyFor(it)) == null }
+            val missing = clips.mapNotNull { clip ->
+                val prefetchStock = clip.targetsDefaultVoices(language) || clip.voiceProfileId in ownedProfileIds
+                val keys = AlarmAudioStore.messageCacheKeys(clip.messageId).filter { key ->
+                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                        (prefetchStock && key == cacheKeyFor(clip) &&
+                            audioStore.getCachedAudio(key, clip.audioUrl) == null)
+                }
+                keys.takeIf { it.isNotEmpty() }?.let { clip to it }
+            }
             publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
                 rebind()
@@ -160,17 +193,20 @@ class StockClipPrefetchWorker(
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             missing.chunked(PARALLELISM).forEach { batch ->
                 coroutineScope {
-                    batch.map { clip ->
+                    batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
                             val response = api.getTtsMessageAudio(auth, clip.messageId)
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKeyFor(clip),
-                                cacheKey = cacheKeyFor(clip),
-                                messageId = clip.messageId,
-                            )
+                            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                            cacheKeys.forEach { key ->
+                                audioStore.cacheGeneratedAudio(
+                                    bytes = bytes,
+                                    format = response.audioFormat,
+                                    rawAudioUri = response.audioUrl,
+                                    displayName = key,
+                                    cacheKey = key,
+                                    messageId = clip.messageId,
+                                )
+                            }
                         }
                     }.awaitAll()
                 }

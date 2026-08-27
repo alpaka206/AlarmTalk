@@ -35,6 +35,9 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         // 상대가 목소리 공유를 켜거나/끄면 → 공유 목록·클립 매니페스트 즉시 새로고침 신호.
         // UI 가 없으면 무시(다음 앱 시작의 초기 로드가 폴백).
         if (message.data["type"] == "voice_share_changed") {
+            // 프로세스에 UI가 없어도 제자리 교체된 공유 목소리 캐시를 새 audio_url로 갱신한다.
+            // 워커는 매니페스트에서 기존 캐시가 stale인 공유 클립만 추가로 포함한다.
+            com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(applicationContext)
             com.alarmtalk.app.core.AppSignals.emitVoiceShareChanged()
         }
         // 구독 만료 → 무료 강등 신호. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉 → 백그라운드에서
@@ -45,8 +48,21 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         // family_alarm 은 '받은 알람'만 갱신하고, plan_changed 는 '진짜 무료'일 때만 변환하므로
         // 둘 다 이 경우를 못 덮는다. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉.
         if (message.data["type"] == "voice_access_revoked") {
-            runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(applicationContext) }
-                .onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
+            // 제자리 교체 신호는 payload 에 무엇이 무효가 됐는지가 실려 온다. 교체는 프로필
+            // id 를 재사용하므로 워커의 '접근 가능 목록 대조' 로는 아무것도 안 걸린다 —
+            // 이 id 가 있어야 그 목소리의 직접 입력 알람을 내릴 수 있다.
+            val replacedVoiceId = message.data["voiceProfileId"]
+                ?.takeIf { message.data["scope"] == "custom_messages" }
+            // 세대까지 함께 넘긴다 — 이미 반영한 교체면 워커가 건너뛴다(늦게 온 푸시가 그
+            // 사이 **새 목소리로** 만든 알람까지 지우면 안 된다).
+            val replacedGeneration = message.data["invalidatedAt"]?.takeIf { replacedVoiceId != null }
+            runCatching {
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(
+                    applicationContext,
+                    replacedVoiceId,
+                    replacedGeneration,
+                )
+            }.onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
         }
         // 공유 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만
         // 포그라운드에서는 여기로만 오므로 직접 그린다(안 그리면 아무것도 안 보인다).

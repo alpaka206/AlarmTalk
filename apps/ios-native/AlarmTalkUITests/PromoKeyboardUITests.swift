@@ -16,7 +16,7 @@ final class PromoKeyboardUITests: XCTestCase {
 
     func test_시트에서_키보드가_올라와도_입력창과_버튼이_보인다() {
         let app = XCUIApplication()
-        app.launchArguments = ["-UIPreviewAuthScreen", "promo"]
+        app.launchArguments = ["-UIPreviewSeed", "-UIPreviewAuthScreen", "promo"]
         app.launch()
 
         let field = app.textFields["초대·선물·프로모션 코드"]

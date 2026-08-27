@@ -510,10 +510,13 @@ internal fun EditorActionButtons(
                 Spacer(Modifier.width(8.dp))
             }
             Text(
-                text = when {
-                    isSaving -> stringResource(R.string.editor_saving)
-                    recipientName != null -> stringResource(R.string.editor_save_for, recipientName)
-                    else -> stringResource(R.string.editor_save)
+                // ⚠ **수신자 이름을 붙이지 않는다**(2026-08-24 지시). 가족 알람이라는 건
+                // 이미 '누구를 깨울까요?' 시트를 거쳐 들어온 문맥으로 알 수 있고, 이름이
+                // 길면 버튼 라벨이 잘린다(`Ellipsis`). 버튼은 무엇을 하는지만 말한다.
+                text = if (isSaving) {
+                    stringResource(R.string.editor_saving)
+                } else {
+                    stringResource(R.string.editor_save)
                 },
                 fontSize = LocalTextStyle.current.fontSize * actionLabelScale,
                 maxLines = 1,

@@ -660,7 +660,67 @@ describe('generateDynamicAlarmTextWithVertex', () => {
 
   it('still falls back when the line speaks as if the relationship were someone else', async () => {
     // 전언 구문("엄마가 … 달라고 했어")은 화자가 심부름꾼이라는 뜻이다 — 자기 지칭과 반대다.
-    for (const leak of ['엄마처럼 챙겨 줄게', '오늘은 엄마 대신 깨워 줄게', '엄마가 깨워 달라고 했어']) {
+    //
+    // ⚠ **어미만 보면 안 된다**(Codex #701 P2 후속). 대리 구문은 조사로도 만들어져서
+    // ("엄마한테 부탁받아서 깨우러 왔어") 전언 어미 검사를 통째로 비켜 갔다 —
+    // 그대로 두면 엄마 목소리가 "엄마가 시켜서 왔어" 라고 말하는 클립이 영구 저장된다.
+    for (const leak of [
+      '엄마처럼 챙겨 줄게',
+      '오늘은 엄마 대신 깨워 줄게',
+      '엄마가 깨워 달라고 했어',
+      '엄마를 대신해서 깨우러 왔어',
+      '엄마한테 부탁받아서 깨우러 왔어',
+      '엄마 부탁으로 알려 주는 거야',
+      '엄마가 시켜서 왔어',
+      '엄마 심부름으로 왔어',
+      '엄마가 부탁해서 깨우러 왔어',
+      '엄마가 깨우래',
+      '엄마가 깨워 달래',
+      '엄마가 얼른 일어나래요',
+      // 절 끝 부호는 마침표만이 아니다 — 쉼표·전각쉼표·말줄임도 절을 닫는다(Codex #702 P2).
+      '엄마가 깨우래, 얼른 준비하자',
+      '엄마가 깨우래， 서두르자',
+      '엄마가 깨우래요, 서두르자',
+      '엄마가 깨우래… 서두르자',
+      // 연결형 `래서` 도 전언이다 — 절 끝 부호가 아예 오지 않는다(Codex #702 P2).
+      '엄마가 깨우래서 왔어',
+      '엄마가 일어나래서 깨우는 거야',
+      '엄마가 깨워 달래서 왔어',
+      // **현재형 전언**은 지금 남의 말을 옮기는 형태라 엄마가 자기 말에 쓰지 않는다.
+      // 적대적 검증(754문장)에서 무더기로 새던 갈래다.
+      '엄마가 일어나라고 하네',
+      '엄마가 우산 챙기라잖아',
+      '엄마가 이제 일어나라네',
+      '엄마가 나더러 깨우라셔',
+      '엄마가 너 좀 깨워 달라네',
+      '엄마가 일어나라며 성화야',
+      '엄마가 깨우라던데 이제 일어나자',
+      '엄마가 나한테 널 깨우라고 부탁했어',
+      // **대리 구문 + 화자의 행동**. 지시 낱말만으로는 안 되고 대신 하는 행동이 있어야 한다.
+      '엄마가 시킨 대로 깨우러 왔어',
+      '엄마가 부탁하신 대로 깨우러 왔어',
+      '엄마의 말씀을 전하러 왔어',
+      '엄마의 부탁 때문에 깨우러 왔어',
+      '엄마한테 부탁을 하나 받아서 왔어',
+      // ⚠ '다른 행위자' 검사는 **대리 행동까지가 매치**인 갈래에서는 뒤를 보지 않는다
+      // (Codex #702 P2). 뒤에 이어지는 딴 이야기의 사람을 보고 대리 판정을 꺼 버리면
+      // 진짜 유출이 통과한다 — 마침표든 쉼표든 마찬가지다.
+      '엄마가 시켜서 깨우러 왔어. 아빠한테도 전화해야 해',
+      '엄마가 시켜서 깨우러 왔어, 아빠한테도 전화해야 해',
+      // 축약형 `~란다`·`~랍니다`(= `~라고 한다`)도 현재형 전언이다.
+      '엄마가 얼른 일어나란다',
+      '엄마가 얼른 일어나랍니다',
+      // 대리 행동은 깨우기·전달만이 아니다.
+      '엄마가 시켜서 전화했어',
+      '엄마가 부탁해서 말해 주는 거야',
+      '엄마가 얼른 일어나라네',
+      '엄마께서 시키신 일이라 왔어',
+      '엄마가 보내서 깨우러 왔어',
+      '엄마가 보내셔서 전하러 왔어',
+      // 뒤를 훑는 갈래(`엄마 대신`)도 **같은 문장까지만** 본다 — 뒷문장의 사람을 보고
+      // 대리 판정을 끄면 진짜 유출이 통과한다(Codex #702 P2).
+      '엄마 대신 깨우러 왔어. 아빠한테도 전화해야 해',
+    ]) {
       queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
 
       const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -672,7 +732,170 @@ describe('generateDynamicAlarmTextWithVertex', () => {
         listenerTitle: '민지야',
       });
 
-      expect(generated.provider).toBe('local');
+      expect(generated.provider, leak).toBe('local');
+    }
+  });
+
+  // ⚠ **라벨은 앱 언어와 무관하게 한국어 정규값으로 저장된다**(안드로이드 `RelationshipPreset`).
+  // 그래서 en·ja 문구에는 `엄마` 라는 글자가 없고, 한국어 조사·어미만 보는 가드는 그 두
+  // 언어에서 통째로 무력했다(Codex #702 P2). 프롬프트는 세 언어에 걸려 있는데 백스톱만 비어
+  // 있던 것이다.
+  it('rejects messenger wording in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, your mom asked me to wake you up. Time to get going!' },
+      { lang: 'en', listener: 'Minji', text: "Minji, I'm here on behalf of your mom. Rise and shine!" },
+      { lang: 'en', listener: 'Minji', text: "Minji, this is your mom's voice reminding you to get up." },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんに頼まれて起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママの代わりに起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんが早く起きなさいって言ってたよ。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('local');
+    }
+  });
+
+  // 자기 3인칭 지칭은 en·ja 에서도 자연스럽다 — 전달 틀이 없으면 통과해야 한다.
+  it('keeps third-person self-reference in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, good morning! Mom is always on your side. Have a great day.' },
+      { lang: 'en', listener: 'Minji', text: 'Minji, it might rain today. Mom wants you to take an umbrella.' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、おはよう。ママはいつも味方だからね。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママが作った朝ごはん、ちゃんと食べてね。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('vertex');
+    }
+  });
+
+  // ⚠ 관계 라벨은 **자유 입력**이라 "우리 엄마" 처럼 가족 토큰을 품은 복합어일 수 있다
+  // (Codex #702 P2). 잡힌 토큰(`엄마`)을 라벨 전체와 그대로 비교하면 자기 자신을 '다른
+  // 행위자' 로 읽어 대리 구문 탐지가 통째로 꺼진다.
+  it('still detects proxy wording when the relationship label is a compound', async () => {
+    for (const label of ['우리 엄마', '사랑하는 엄마']) {
+      queueContent(geminiText(`{"text":"민지야, ${label}가 시켜서 깨우러 왔어. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: label,
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, label).toBe('local');
+    }
+  });
+
+  // ⚠ 대리 구문 가드가 **자기 지칭까지 삼키면 안 된다.** 한국어에는 낱말 경계가 없어서
+  // `~래` 한 글자가 권유형(`입을래?`)·명사(`노래`)와 겹치고, `~대` 는 날씨 전달의 표준
+  // 어미라 프롬프트 few-shot 이 직접 쓴다("비가 올 수 있대요"). 넓게 잡으면 멀쩡한 문구가
+  // 떨어지고, 그게 사랑 3번 시드를 영구 실패시켰던 바로 그 사고다.
+  it('keeps natural self-reference that only looks like reported speech', async () => {
+    for (const line of [
+      '민지야, 엄마가 사 준 옷 입을래? 오늘 좀 쌀쌀해',
+      '민지야, 엄마가 데려다줄까? 아니면 같이 걸어갈래?',
+      '민지야, 일어나면 엄마가 틀어 주는 노래. 그거 듣고 힘내자',
+      '민지야, 속상하면 엄마가 달래 줄게. 얼른 일어나자',
+      '민지야, 엄마가 보니까 오늘 비 온대. 우산 꼭 챙겨',
+      // 실 Vertex 출력(2026-08-21): `~ㄹ 거래` 는 날씨 전달의 표준 어미다.
+      '민지야, 엄마가 창밖 보니 오늘은 흐릴 거래. 따뜻하게 입고 나가',
+      '민지야, 엄마가 부탁해서 미안한데 오늘은 좀 일찍 나가 줘',
+      '민지야, 일어나면 엄마한테 전화 한 통 줘',
+      // 쉼표를 절 끝으로 인정한 뒤에도 권유형·명사는 그대로 통과해야 한다.
+      '민지야, 엄마가 사 준 옷 입을래, 오늘 좀 쌀쌀해',
+      '민지야, 엄마가 틀어 주는 노래, 그거 듣고 힘내자',
+      // ⚠ **조사가 뜻을 뒤집는다**(Codex #702 P2). `부탁받다` 는 라벨이 **주는 쪽**일 때만
+      // 유출이다 — 주격이면 엄마가 부탁을 **받은** 쪽이라 자기 지칭이다.
+      '민지야, 엄마가 네 부탁받아서 오늘 일찍 깨워 주는 거야',
+      '민지야, 엄마가 부탁받아서 오늘은 일찍 깨워 줄게',
+      // `그래서`(접속부사)를 연결형 전언 `래서` 로 읽으면 안 된다.
+      '민지야, 엄마가 걱정돼서 그래서 깨우는 거야',
+      '민지야, 엄마가 심부름 좀 부탁할게. 우유 사다 줄래?',
+      // ── 아래는 적대적 검증(754문장)에서 나온 **실측 오탐**이다. 전부 엄마 자신의 말이다.
+      // 한 음절 어미가 다른 낱말과 겹치는 것들.
+      '민지야, 엄마가 걱정돼서 그랬어. 미안해',
+      '민지야, 엄마가 늘 그랬듯이 오늘도 응원할게',
+      '민지야, 엄마가 그랬잖아, 아침이 하루를 만든다고',
+      '민지야, 엄마가 오늘 하늘 봤는데 정말 파래',
+      '민지야, 엄마가 널 사랑한 지 참 오래',
+      '민지야, 엄마가 이마에 손을 댔더니 열이 좀 있네',
+      '민지야, 엄마가 네 행복을 늘 바라네. 오늘도 좋은 하루 보내',
+      '민지야, 엄마가 보니까 키가 많이 자라네. 밥 잘 챙겨 먹어',
+      // 과거형 인용은 **엄마가 자기 잔소리를 되짚는 말**과 형태가 같다.
+      '민지야, 엄마가 어릴 때부터 그러라고 했잖아? 아침밥은 꼭 먹기',
+      // 지시 낱말이 있어도 화자가 대신 하는 행동이 없으면 자기 서술이다.
+      '민지야, 엄마가 시켜서 억지로 하지는 마. 네가 하고 싶은 대로 해',
+      '민지야, 엄마가 시켜서 하는 게 아니라 네가 하고 싶어서 하는 거야',
+      '민지야, 엄마의 심부름 때문에 아침이 바쁘겠다. 얼른 일어나',
+      // 관형형 `부탁받은` 은 받은 쪽이 **청자**다.
+      '민지야, 엄마한테 부탁받은 우산 꼭 챙겨 가',
+      // 대신하는 사람이 **다른 사람**으로 적혀 있으면 화자가 대리인이 아니다.
+      '민지야, 엄마를 대신해서 오늘은 아빠가 데리러 갈 거야',
+      '민지야, 엄마가 부탁해서 아빠가 깨우러 갈 수도 있어',
+      '민지야, 엄마를 대신할 알람은 없으니까 얼른 일어나',
+      '민지야, 엄마를 대신해서, 오늘은 아빠가 데리러 갈 거야',
+      // ⚠ 계사 `~이란다`/`~ㄹ 거란다` 는 전언 `~란다` 와 정반대다. 실 Vertex 출력이
+      // "할머니는 늘 네 편이란다" 를 냈다(2026-08-21 실측).
+      '민지야, 엄마는 늘 네 편이란다. 얼른 일어나자',
+      '민지야, 엄마는 늘 네 편이랍니다. 얼른 일어나요',
+      '민지야, 엄마가 보기엔 오늘도 좋은 하루가 될 거란다. 힘내',
+      '민지야, 엄마가 화난 게 아니란다. 걱정 말고 일어나',
+      '민지야, 엄마는 네가 행복하기를 바란다. 오늘도 힘내',
+      '민지야, 엄마가 네 행복을 바랍니다',
+      // 대리 행동 낱말이 화자 자신의 행동일 때는 유출이 아니다.
+      '민지야, 엄마가 이따 전화할게. 얼른 일어나',
+      '민지야, 엄마가 데리러 갈게. 준비하고 있어',
+      // ⚠ 어간이 `라` 로 끝나는 용언은 전언이 아니다 — 바라다·자라다에 더해 `놀라다`.
+      '민지야, 엄마가 네 성장에 깜짝 놀라네. 오늘도 화이팅',
+      '민지야, 엄마가 놀란다. 얼른 일어나',
+      // 계사 `~이라네`/`~ㄹ 거라네`/`아니라네` 도 마찬가지.
+      '민지야, 엄마의 마음은 늘 사랑이라네. 힘내',
+      '민지야, 엄마가 보기엔 오늘도 좋은 날이라네',
+      '민지야, 엄마가 화난 게 아니라네. 걱정 마',
+      // ⚠ 맨 과거형 `시켰` 은 **자기 지시를 되짚는 말**과 구별되지 않는다.
+      '민지야, 엄마가 시켰잖아, 전화해 줘',
+      '민지야, 엄마가 시켰지? 얼른 전화해 줘',
+      // ⚠ 같은 낱말이라도 **청자에게 시키는 것**이면 화자의 대리 행동이 아니다.
+      '민지야, 엄마가 부탁해서 미안해, 전화해 줘',
+      '민지야, 엄마가 부탁해서 미안한데 이따 전화해 줄래?',
+      '민지야, 엄마가 부탁해서 전해 줘',
+      '민지야, 엄마가 보내서 온 택배 잊지 말고 받아',
+    ]) {
+      queueContent(geminiText(`{"text":"${line}!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, line).toBe('vertex');
     }
   });
 

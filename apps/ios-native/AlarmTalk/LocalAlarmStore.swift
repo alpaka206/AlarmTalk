@@ -7,6 +7,10 @@ final class LocalAlarmStore: ObservableObject {
     @Published private(set) var hasLoadedFromDisk = false
 
     private let persistence: LocalAlarmPersistence
+    /// 비동기·동기 저장이 **함께** 쓰는 파일 기록기. 순번으로 순서를 지킨다.
+    private let writer: LocalAlarmFileWriter
+    /// 스냅샷을 뜰 때마다 올라가는 순번. 늦게 도착한 옛 스냅샷을 가려내는 기준이다.
+    private var saveSeq: UInt64 = 0
 
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
@@ -26,7 +30,9 @@ final class LocalAlarmStore: ObservableObject {
         } else {
             resolvedStorageURL = Self.defaultStorageURL()
         }
-        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
+        let writer = LocalAlarmFileWriter(url: resolvedStorageURL)
+        self.writer = writer
+        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL, writer: writer)
         guard loadFromDisk else {
             self.hasLoadedFromDisk = true
             return
@@ -234,7 +240,7 @@ final class LocalAlarmStore: ObservableObject {
     /// **stale 스냅샷의 nil 로 되돌린다.** 그러면 다음 push 가 같은 알람을 또 create 한다 —
     /// 서버에 두 행이 생기는 **두 번째 경로**다(첫 번째는 겹친 sync, `eb70f2f2` 에서 막았다).
     ///
-    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `syncState` **뿐이다.**
+    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `remoteDeliveryVersion` / `syncState` **뿐이다.**
     /// ⚠ `alarmKitID`·`fireAtMillis`·`enabled` 는 절대 병합하지 말 것 — `alarmKitID` 를
     /// 되살리면 방금 재예약한 핸들과 어긋나 취소·재예약이 깨진다(알람이 안 울리는 방향).
     ///
@@ -245,6 +251,10 @@ final class LocalAlarmStore: ObservableObject {
         if let fresh = alarms.first(where: { $0.id == updated.id }) {
             next.remoteAlarmId = fresh.remoteAlarmId
             next.lastSyncedAtMillis = fresh.lastSyncedAtMillis
+            next.remoteDeliveryVersion = fresh.remoteDeliveryVersion
+            // ⚠ **수신자 편집이 '어느 전달을 받았는지' 를 지우면 안 된다** — 지우면 그 행이
+            // 다시 '옛 행' 이 되어 재전송이 영영 덮이지 못한다(안드로이드 `AlarmDao` 와 같은 규약).
+            next.observedDeliveryVersion = fresh.observedDeliveryVersion
             next.syncState = nextLocalSyncState(for: next).rawValue
         }
         return upsert(next)
@@ -307,6 +317,9 @@ final class LocalAlarmStore: ObservableObject {
         )
         copied.remoteAlarmId = nil
         copied.lastSyncedAtMillis = nil
+        copied.remoteDeliveryVersion = nil
+        // 복사본은 받은 알람이 아니다 — 전달 이력을 물려주지 않는다.
+        copied.observedDeliveryVersion = nil
         copied.syncState = AlarmSyncState.localOnly.rawValue
         copied.origin = AlarmOrigin.localOwned.rawValue
         copied.enabled = true
@@ -598,6 +611,23 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    /// 음원·AlarmKit 예약까지 확보한 전달 세대를 ACK보다 먼저 저장한다.
+    /// 사용자 편집 판정에 쓰는 updatedAtMillis는 일부러 건드리지 않는다.
+    ///
+    /// ⚠ **디스크까지 쓰고 성공 여부를 돌려준다.** 비동기 저장으로 두면 ACK 가 실패한 채
+    /// 실행이 끝났을 때 다음 실행이 `remoteDeliveryVersion == nil` 로 되살아나고, 수신자가
+    /// 그 사이 편집하면 병합도 정확한 세대 ACK 도 막혀 **서버 행과 생성 음원이 영원히 남는다**
+    /// (다른 기기가 그걸 또 임포트한다). 안드로이드는 같은 자리에서 `NonCancellable` Room
+    /// 쓰기를 기다린다 — 두 앱이 같은 보장을 해야 한다.
+    ///
+    /// - Returns: 디스크에 실제로 남았는지. 거짓이면 호출자는 ACK 를 미룬다.
+    @discardableResult
+    func markRemoteDeliveryVersion(remoteID: String, deliveryVersion: String) -> Bool {
+        guard let index = alarms.firstIndex(where: { $0.remoteAlarmId == remoteID }) else { return false }
+        alarms[index].remoteDeliveryVersion = deliveryVersion
+        return saveNow()
+    }
+
     /// 동기화 실패 시 호출.
     func markSyncFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
@@ -641,8 +671,25 @@ final class LocalAlarmStore: ObservableObject {
 
     private func persist() {
         let snapshot = alarms
+        saveSeq += 1
+        let seq = saveSeq
         Task { [persistence] in
-            await persistence.save(snapshot)
+            await persistence.save(snapshot, seq: seq)
         }
+    }
+
+    /**
+     * 지금 상태를 **동기로** 쓰고 성공 여부를 돌려준다.
+     *
+     * ⚠ "디스크에 실제로 남았는가" 가 정확성에 걸린 자리에서만 쓴다 — 교체 표식은 강등이
+     * 디스크에 남은 뒤에야 '반영함' 으로 적을 수 있다. 평소 경로는 `persist()`(비동기)로
+     * 충분하다. 백그라운드 푸시로 깨어난 실행은 비동기 쓰기 전에 종료될 수 있고, 그러면
+     * 다음 실행이 옛 목소리 알람을 다시 읽어 오는데 표식만 앞서 나가 **영영 다시 내리지
+     * 않는다.**
+     */
+    @discardableResult
+    func saveNow() -> Bool {
+        saveSeq += 1
+        return writer.write(alarms, seq: saveSeq)
     }
 }

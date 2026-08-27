@@ -697,6 +697,65 @@ final class PendingCancellationTests: XCTestCase {
         // (행을 어떻게 만지든 이 목록은 영향을 받지 않는다 — 저장소가 분리돼 있다.)
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
+
+    /// ⚠ **밀어낸 알람도 행을 다시 꺼야 한다**(Codex #703 P1).
+    /// 받은 가족 알람이 같은 시각에서 밀어낸 알람은 취소가 실패한 채 울면 `markRinging` 이
+    /// 행을 도로 켠다. 그때 회수가 손잡이만 지우고 끝내면 그 행은
+    /// `enabled = true, alarmKitID = nil` — 정확히 복구 후보라 곧바로 다시 예약되어
+    /// **받은 알람과 나란히 운다.**
+    func test_밀어낸_예약은_행도_다시_끈다() {
+        XCTAssertTrue(PendingAlarmCancellationStore.Origin.conflictDisplacement.restoresDisabledRow)
+        XCTAssertTrue(PendingAlarmCancellationStore.Origin.accountLeave.restoresDisabledRow)
+        XCTAssertFalse(
+            PendingAlarmCancellationStore.Origin.foreignCleanup.restoresDisabledRow,
+            "남의 계정 예약은 행을 일부러 켜 둔 것이다 — 끄면 그 사람이 돌아왔을 때 알람이 사라진다"
+        )
+    }
+
+    /// ⚠ **못 끊은 예약은 '주인 행' 으로 되짚는다**(Codex #703 P1).
+    /// 행의 `alarmKitID` 한 칸은 **지금 예약**을 가리키므로, 그 행이 한 번 더 재예약되면
+    /// 못 끊은 옛 손잡이는 어느 행도 가리키지 않는다 — 손잡이로만 찾으면 그때부터 영영
+    /// 못 찾고, 전달 정리는 "끊을 게 없다" 고 답해 ACK 가 서버 행을 지운다.
+    func test_못_끊은_예약을_주인_행으로_되짚는다() {
+        PendingAlarmCancellationStore.add("KIT-OLD", origin: .foreignCleanup, alarmID: "alarm-1")
+        PendingAlarmCancellationStore.add("KIT-OTHER", origin: .foreignCleanup, alarmID: "alarm-2")
+
+        XCTAssertEqual(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1"), ["KIT-OLD"])
+        XCTAssertEqual(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-2"), ["KIT-OTHER"])
+        XCTAssertTrue(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-3").isEmpty)
+    }
+
+    /// 같은 행이 여러 번 실패하면 전부 들고 있는다 — 한 회차에 하나씩만 갚으면
+    /// 나머지가 조용히 남는다.
+    func test_한_행의_고아를_모두_들고_있는다() {
+        PendingAlarmCancellationStore.add("KIT-A", origin: .conflictDisplacement, alarmID: "alarm-1")
+        PendingAlarmCancellationStore.add("KIT-B", origin: .conflictDisplacement, alarmID: "alarm-1")
+
+        XCTAssertEqual(
+            PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1").sorted(),
+            ["KIT-A", "KIT-B"]
+        )
+        PendingAlarmCancellationStore.remove("KIT-A")
+        XCTAssertEqual(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1"), ["KIT-B"])
+    }
+
+    /// 주인을 안 적은 옛 기록은 되짚히지 않는다 — 그건 전경 sweep 의 몫이다.
+    func test_주인_없는_기록은_행으로_되짚히지_않는다() {
+        PendingAlarmCancellationStore.add("KIT-LEGACY", origin: .accountLeave)
+
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-LEGACY"])
+        XCTAssertTrue(PendingAlarmCancellationStore.owedHandles(forAlarmID: "alarm-1").isEmpty)
+    }
+
+    /// 승격 규칙은 '계정 이탈' 이라는 특정 값이 아니라 **행을 꺼야 하는가**로 판정한다.
+    /// 값 목록을 조건문에 베끼면 출처가 늘 때마다 같이 고쳐야 하고, 언젠가 빠뜨린다.
+    func test_출처는_밀어내기로도_승격된다() {
+        PendingAlarmCancellationStore.add("KIT-Z", origin: .foreignCleanup)
+        PendingAlarmCancellationStore.add("KIT-Z", origin: .conflictDisplacement)
+
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-Z"), .conflictDisplacement)
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-Z"], "목록이 불어났다")
+    }
 }
 
 /// **예약이 await 하는 동안 계정이 바뀌면 그 예약은 되돌려져야 한다** (Codex #699 P1).

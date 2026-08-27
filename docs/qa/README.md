@@ -4,6 +4,7 @@
 
 - 릴리스 전 실기기 회귀: `apps/android-native/README.md` 의 Physical Device Checklist
 - 지금 진행 중인 검증 항목: [`dev-test-handoff.md`](dev-test-handoff.md)
+- 2026-08-24 네이티브 출시 점검 결과: [`release-readiness-2026-08-24.md`](release-readiness-2026-08-24.md)
 - 자동 테스트: 백엔드 Vitest(+ in-memory libSQL), Android JUnit — CI 에서 돈다
 
 ## 테스트 케이스
@@ -95,8 +96,8 @@ ID 규칙 `TC-<영역>-<번호>`. **P0 은 릴리스 차단**, P1 은 다음 릴
 
 | ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-SEC-001 | 레이트 리밋 | 1분에 80요청 | 429 `RATE_LIMITED` | P1 |
-| TC-SEC-002 | 과대 바디 | 600KB 바디 | 413 | P1 |
+| TC-SEC-001 | 레이트 리밋 | `middleware/rate-limit.ts`의 `MAX_REQUESTS`를 초과해 요청 | 429 `RATE_LIMITED` | P1 |
+| TC-SEC-002 | 과대 바디 | `middleware/body-limit.ts`의 `MAX_BODY_BYTES`를 초과한 바디 | 413 | P1 |
 | TC-SEC-003 | 클라 내 키 노출 | 빌드 산출물 grep | API 키 문자열 없음 | P0 |
 | TC-SEC-004 | HTTPS 전용 | http:// 접근 | https:// 로 리다이렉트 | P0 |
 

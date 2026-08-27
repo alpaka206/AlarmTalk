@@ -142,7 +142,7 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
  * 칸 높이는 iOS(약 44pt)보다 큰 Material 기본 56dp 를 **그대로 둔다** — 안드로이드
  * 최소 터치 타깃이 48dp 라 iOS 치수를 그대로 가져오면 오히려 규격을 깬다.
  */
-/** 스크롤 밖에 고정되는 원형 뒤로가기 줄. iOS `AuthCircleBackButton` 과 같은 스펙. */
+/** 스크롤 밖에 고정되는 원형 뒤로가기 줄. iOS `WakerBackButton` 과 같은 스펙. */
 @Composable
 private fun BackCircleRow(onBack: () -> Unit) {
     // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.

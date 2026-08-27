@@ -906,6 +906,8 @@ describe('POST /tts/generate — edge cases', () => {
         audio_format: 'mp3',
       },
     ]);
+    // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -944,6 +946,8 @@ describe('POST /tts/generate — edge cases', () => {
         audio_format: 'mp3',
       },
     ]);
+    // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
 
     const app = buildApp();
     const res = await app.request(

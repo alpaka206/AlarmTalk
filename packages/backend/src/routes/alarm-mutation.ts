@@ -13,6 +13,7 @@ import {
   normalizeAlarmRow,
   normalizeTimezone,
   claimTargetedAlarmSlot,
+  alarmDeliveryVersionSupported,
   evaluateFamilyAlarmTimingGuard,
   type AlarmRow,
   type AlarmMode,
@@ -20,9 +21,11 @@ import {
   type WakeMode,
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
+import { resolveAlarmVoiceRevocationSource } from '../lib/voice-revocation';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -335,9 +338,9 @@ alarmMutation.post('/', async (c) => {
       }
 
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
-      // 수신자 기준 시각 가드(허용 여부·30분 리드타임·quiet 요일). 발신자 body.timezone 은
+      // 수신자 기준 시각 가드(허용 여부·최소 리드타임·quiet 요일). 발신자 body.timezone 은
       // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
-      // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
+      // Asia/Seoul)로 판정한다. 보낸 뒤 PATCH는 금지되므로 생성·재전송에서만 이 가드를 돈다.
       const guard = await evaluateFamilyAlarmTimingGuard(
         db,
         [targetPk, targetLegacyId],
@@ -427,6 +430,16 @@ alarmMutation.post('/', async (c) => {
   }
 
   let alarmId = crypto.randomUUID();
+  const deliveryVersionSupported = targetUserIdForAlarm
+    ? await alarmDeliveryVersionSupported(db)
+    : false;
+  if (targetUserIdForAlarm && !deliveryVersionSupported) {
+    return c.json(
+      { error: 'Alarm schema is upgrading', error_code: 'ALARM_SCHEMA_UPGRADING' },
+      503,
+    );
+  }
+  const deliveryVersion = targetUserIdForAlarm ? crypto.randomUUID() : null;
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
@@ -441,8 +454,8 @@ alarmMutation.post('/', async (c) => {
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             timezone, bucket_id${targetUserIdForAlarm ? ', delivery_version' : ''})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${targetUserIdForAlarm ? ', ?' : ''})`,
       args: [
         alarmId,
         userId,
@@ -457,6 +470,7 @@ alarmMutation.post('/', async (c) => {
         body.voice_profile_id ?? null,
         storedTimezone,
         body.bucket_id ?? null,
+        ...(targetUserIdForAlarm ? [deliveryVersion] : []),
       ],
     });
   // 타인 발신 알람: 같은 (수신자, time) 슬롯을 멱등·교체 규칙으로 원자 점유한다.
@@ -467,13 +481,19 @@ alarmMutation.post('/', async (c) => {
     executor: DbExecutor,
     recipientIds: [string, string],
   ): Promise<string> => {
-    const claimed = await claimTargetedAlarmSlot(executor, userId, recipientIds, body.time, alarmId);
+    const claimed = await claimTargetedAlarmSlot(
+      executor,
+      userId,
+      recipientIds,
+      body.time,
+      alarmId,
+    );
     if (claimed.reused) {
       await executor.execute({
         sql: `UPDATE alarms SET
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
                 vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
-                timezone = ?, bucket_id = ?,
+                timezone = ?, bucket_id = ?, delivery_version = ?,
                 is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
         args: [
@@ -486,6 +506,7 @@ alarmMutation.post('/', async (c) => {
           body.voice_profile_id ?? null,
           storedTimezone,
           body.bucket_id ?? null,
+          deliveryVersion,
           claimed.alarmId,
         ],
       });
@@ -553,19 +574,6 @@ alarmMutation.post('/', async (c) => {
   );
 });
 
-/** 저장된 repeat_days JSON 문자열('[1,3,5]')을 number[] 로 파싱한다(0-6 정수만). */
-function parseStoredRepeatDays(raw: unknown): number[] {
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.filter((n): n is number => Number.isInteger(n));
-    } catch {
-      // 손상 값은 빈 배열로 취급.
-    }
-  }
-  return [];
-}
-
 alarmMutation.patch('/:id', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
@@ -619,6 +627,30 @@ alarmMutation.patch('/:id', async (c) => {
     bucket_id?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
+  // ⚠⚠ **보낸 알람은 절대 수정할 수 없다 — 이 게이트를 완화하지 말 것.**
+  //
+  // `docs/spec/family-alarm.md` 의 「보내면 끝」이 이 한 줄로 강제된다. 지우거나 조건을
+  // 좁히면 **앱을 고치지 않아도** 보낸 알람이 수정 가능해진다 — 아래 소유권 조건
+  // (`a.user_id IN (호출자)`)만으로는 못 막기 때문이다. 보낸 가족 알람의 `user_id` 는
+  // **발신자 자신**이라 그 조건을 그냥 통과한다. 2026-08-24 이전이 정확히 그 상태였고,
+  // 앱에 화면이 없었을 뿐 API 를 직접 부르면 시각·요일·켜기끄기·음성이 다 바뀌었다.
+  //
+  // 왜 막아야 하는가: 받는 쪽은 「받은 뒤엔 전부 받은 사람 것」이라 발신자의 변경을
+  // 의도적으로 무시한다(`locallyEditedByRecipient`·`merge`). 그래서 수정을 받아 주면
+  // **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다** — 조용히 어긋나는 쪽이라
+  // 아무도 못 알아챈다. 게다가 클라가 새 세대를 적용하지 않은 채 ack 해 서버 행이
+  // 영구히 사라질 수 있다(Codex #703 리뷰 25번).
+  //
+  // ⚠ **"푸시를 보내면 되지 않나" 는 이미 시도했다가 되돌린 길이다.** 2026-08-24 에
+  // PATCH 마다 세대를 회전하고 수신자에게 push 하는 코드를 넣었는데(같은 리뷰 14번),
+  // 다음 회차에 스펙 위반으로 통째로 걷어냈다. 내용을 바꾸려면 **새로 보내는 것**이
+  // 유일한 길이다(`claimTargetedAlarmSlot` 이 같은 슬롯을 교체한다).
+  if (typeof current.target_user_id === 'string' && current.target_user_id.length > 0) {
+    return c.json(
+      { error: 'Sent alarms cannot be edited', error_code: 'TARGETED_ALARM_IMMUTABLE' },
+      409,
+    );
+  }
   const resolvedUserPk = c.get('userIdPK');
   const creatorHasPaidVoice =
     !resolvedUserPk || current.user_plan === undefined || isPaidVoicePlan(current.user_plan);
@@ -671,8 +703,6 @@ alarmMutation.patch('/:id', async (c) => {
   ) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
-
-
   // greeting 버킷 정책: PATCH 로 bucket/voice/message 를 바꿔 '시스템 보이스 + greeting'
   // 조합(무료 우회)을 만들 수 없게, 수정 결과(effective) 기준으로 클론 여부를 검증한다.
   // 관련 필드를 건드리지 않는 PATCH(예: time 만 변경)는 검사하지 않는다.
@@ -696,66 +726,6 @@ alarmMutation.patch('/:id', async (c) => {
         },
         400,
       );
-    }
-  }
-
-  // 타인 발신(가족/친구) 알람 가드 재실행(A): 발신자가 PATCH 로 time/repeat_days/timezone 을
-  // 바꾸거나 비활성 알람을 재활성(is_active 0→1)해 POST 의 리드타임·quiet·수신자 시간대 가드를
-  // 우회하지 못하게, 수정 결과(effective)가 '활성'이 되는 경우에 한해 POST 와 동일한 헬퍼를 다시
-  // 돈다. 본인 알람(target_user_id 없음)·최종 비활성 알람은 대상 아님(울리지 않으므로).
-  const patchTargetUserId =
-    typeof current.target_user_id === 'string' && current.target_user_id.length > 0
-      ? current.target_user_id
-      : null;
-  const reactivating = body.is_active === true && Number(current.is_active) === 0;
-  const willBeActive =
-    body.is_active !== undefined ? body.is_active : Number(current.is_active) === 1;
-  const changesTiming =
-    body.time !== undefined || body.repeat_days !== undefined || body.timezone !== undefined;
-  // 통과 시 저장할 효과 시간대(발신자 body.timezone 대신 이 값을 행에 기록).
-  let familyGuardTimezone: string | null = null;
-  // (수신자, 새 time) 슬롯 원자 재점유 파라미터(time 변경 또는 재활성화 시).
-  let familyReclaim: { ids: [string, string]; time: string } | null = null;
-  if (patchTargetUserId && willBeActive && (changesTiming || reactivating)) {
-    // 수신자 재조회(allowFamilyAlarms·quiet). target_user_id 는 로그인 id(google_id) 또는 pk.
-    const recipientRes = await db.execute({
-      sql: `SELECT id, google_id, allow_family_alarms,
-                   family_alarm_quiet_windows
-            FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [patchTargetUserId, patchTargetUserId],
-    });
-    if (recipientRes.rows.length === 0) {
-      // 수신자를 확인할 수 없으면 수신 허용·quiet 를 검증할 수 없어 시각 변경/재활성화를 거부한다.
-      return c.json(
-        { error: '상대방이 알람 설정을 허용하지 않았습니다.', error_code: 'FAMILY_ALARM_DISABLED' },
-        403,
-      );
-    }
-    const recipient = recipientRes.rows[0]!;
-    const recipientPk = String(recipient.id);
-    // 읽기(기존 행 매칭)용 — 저장은 하지 않는다.
-    const recipientLegacyId = (recipient.google_id as string | null) ?? recipientPk;
-    const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
-    // effective 값: PATCH 로 안 바꾼 필드는 기존 행 값을 쓴다(수정 결과 기준 판정).
-    const effectiveTime = body.time !== undefined ? body.time : String(current.time ?? '');
-    const effectiveRepeatDays =
-      body.repeat_days !== undefined
-        ? body.repeat_days
-        : parseStoredRepeatDays(current.repeat_days);
-    const guard = await evaluateFamilyAlarmTimingGuard(
-      db,
-      [recipientPk, recipientLegacyId],
-      recipientSettings,
-      effectiveTime,
-      effectiveRepeatDays,
-    );
-    if (!guard.ok) {
-      return c.json({ error: guard.error, error_code: guard.error_code }, guard.status);
-    }
-    familyGuardTimezone = guard.effectiveTimezone;
-    // time 변경 또는 재활성화면 (수신자, 새 time) 슬롯을 원자 재점유해 이 알람만 활성으로 남긴다.
-    if (body.time !== undefined || reactivating) {
-      familyReclaim = { ids: [recipientPk, recipientLegacyId], time: effectiveTime };
     }
   }
 
@@ -807,27 +777,6 @@ alarmMutation.patch('/:id', async (c) => {
     args.push(body.bucket_id);
   }
 
-  // 타인 발신 알람 가드가 돌았으면 저장 timezone 을 효과 시간대로 강제한다(발신자 body.timezone
-  // 무시 — 검증=저장 정합, cron 이 검증과 같은 시간대로 해석). body.timezone 절이 이미 있으면
-  // 그 값을 효과 시간대로 덮고, 없으면 새 절을 추가한다.
-  if (familyGuardTimezone !== null) {
-    const tzIdx = updates.indexOf('timezone = ?');
-    if (tzIdx >= 0) {
-      args[tzIdx] = familyGuardTimezone;
-    } else {
-      updates.push('timezone = ?');
-      args.push(familyGuardTimezone);
-    }
-  }
-
-  // 슬롯 재점유 경로에서는 PATCH 대상이 (수신자, time) 슬롯의 유일 승자이므로 반드시 활성으로
-  // 남긴다. time 만 바꾸는 경우 is_active 가 updates 에 없어 기존 활성값이 유지되지만, 명시적으로
-  // 1 을 보장해 아래 슬롯 비활성화 UPDATE 로 대상이 함께 꺼지는 일이 없게 한다.
-  if (familyReclaim && !updates.includes('is_active = ?')) {
-    updates.push('is_active = ?');
-    args.push(1);
-  }
-
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
@@ -842,8 +791,7 @@ alarmMutation.patch('/:id', async (c) => {
     });
   const updateResult =
     (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
-    (body.message_id !== undefined && body.message_id !== null) ||
-    familyReclaim
+    (body.message_id !== undefined && body.message_id !== null)
       ? await withWriteTransaction(db, async (tx) => {
           if (
             body.voice_profile_id !== undefined &&
@@ -858,20 +806,6 @@ alarmMutation.patch('/:id', async (c) => {
             !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
-          }
-          if (familyReclaim) {
-            // (수신자, 새 time) 슬롯을 PATCH 대상(id)이 유일 승자가 되도록 원자 재점유한다.
-            // 같은 슬롯의 다른 활성 발신 알람(다른 발신자 + 같은 발신자의 같은 시각 이중 예약
-            // 포함)을 전부 비활성화하되 PATCH 대상(id != ?)은 제외한다. 대상은 위에서 is_active=1
-            // 을 보장했으므로 아래 updateAlarm 으로 활성 상태로 확정된다.
-            // (POST 용 claimTargetedAlarmSlot 은 '기존 행을 keeper 로 재사용'하는 의미라 특정
-            //  행을 수정하는 PATCH 에는 부적합 — 대상이 아닌 행이 keeper 로 뽑혀 대상까지
-            //  비활성화돼 두 알람이 모두 꺼지는 버그가 있었다: Codex #563.)
-            await tx.execute({
-              sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
-                    WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
-              args: [familyReclaim.ids[0], familyReclaim.ids[1], familyReclaim.time, id],
-            });
           }
           return { status: 'ok' as const, result: await updateAlarm(tx) };
         })
@@ -897,9 +831,9 @@ alarmMutation.patch('/:id', async (c) => {
   });
 });
 
-// 수신자 '그만받기'(opt-out). 자기가 대상(target_user_id)인 알람만 가능하며, 생성자 소유의
-// 알람 행은 건드리지 않고 alarm_recipient_state 에 수신자별 decline 만 영구 기록한다. 이후
-// list/tick/cron 이 이 수신자에게는 해당 알람을 배달하지 않는다(재설치·동기화로 부활 안 함).
+// **수신 대상 검증만 하는 공용 헬퍼** — `POST /:id/decline` 과 `POST /:id/received` 가 쓴다.
+// "이 호출자가 이 알람의 수신자인가" 만 답하고, 그 뒤에 무엇을 하는지는 각 라우트가 정한다
+// (decline 은 알람 행을 그대로 두고 거절만 기록하고, received 는 행을 지운다).
 async function resolveDeclineTarget(
   c: Context<AppEnv>,
 ): Promise<{ id: string; target: string } | { error: Response }> {
@@ -942,6 +876,9 @@ async function resolveDeclineTarget(
   return { id, target };
 }
 
+// 수신자 '그만받기'(opt-out). 자기가 대상(target_user_id)인 알람만 가능하며, 생성자 소유의
+// 알람 행은 건드리지 않고 alarm_recipient_state 에 수신자별 decline 만 영구 기록한다. 이후
+// list/tick/cron 이 이 수신자에게는 해당 알람을 배달하지 않는다(재설치·동기화로 부활 안 함).
 alarmMutation.post('/:id/decline', async (c) => {
   const resolved = await resolveDeclineTarget(c);
   if ('error' in resolved) return resolved.error;
@@ -956,6 +893,160 @@ alarmMutation.post('/:id/decline', async (c) => {
   return c.json({ success: true, declined: true });
 });
 
+// 수신자 '다 받았어요'(delivery ack) — **전달이 끝난 알람은 서버에 남길 이유가 없다.**
+//
+// ⚠ 왜 지우나: 서버의 알람 행은 **전달 수단**이다. 수신자가 행을 받아 로컬에 세우고
+// 음원까지 내려받으면 전달은 끝났고, 내 알람은 서버에서 다시 받아오지 않는다
+// (pull 이 `isReceived` 만 임포트한다). 남겨 두면 `audio-retention` 이 "아직 쓰는 알람이
+// 있다" 고 보아 **클론 음원을 TTL 이 지나도 영구 보존**한다 — 생체정보에서 파생된 데이터다.
+//
+// ⚠ **행은 음원을 받을 권리이기도 하다.** `GET /tts/messages/:id/audio` 의 수신자 갈래가
+// `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND target_user_id = 나)` 로 판정한다
+// (routes/tts.ts). 그래서 이 라우트는 **음원 확보와 켜진 알람의 OS 예약이 끝난 뒤에만**
+// 불려야 하고, 양 앱이 그렇게 한다(안드로이드 `receivedAlarmDeliveryComplete`, iOS
+// `MergeOutcome.deliveryComplete`).
+// 서버는 그 판단을 강제할 수 없다 — 클라가 일찍 부르면 그 알람은 목소리를 잃는다.
+//
+// ⚠ **지우기 전에 tombstone 을 남긴다.** 행이 없어지면 나중에 발신자가 목소리를 지우거나
+// 탈퇴했을 때 **어느 수신 알람을 걷어내야 하는지** 알 방법이 사라진다. 그래서 두 가지를
+// 옮겨 적는다: 발신자(`sender_user_id`)와 **그 알람이 쓰는 클론 목소리**
+// (`voice_profile_id`). 걷어내기는 목소리 기준이다 — `lib/voice-revocation.ts` 참조.
+//
+// ⚠ **여러 기기로 받는 경우 첫 기기에서만 받는다.** ack 는 기기 단위가 아니라 사용자
+// 단위라, 두 번째 기기는 그 알람을 받지 못한다(`docs/spec/family-alarm.md` 「받은 뒤에는
+// 전부 받은 사람 것이다」에 규칙으로 적어 두었다).
+/**
+ * 전달이 끝나 알람 행이 사라진 뒤, **그 전달만을 위해 만들어졌던 메시지 행**을 정리한다.
+ *
+ * 가족 알람은 전달마다 `messages` 행을 하나 만든다. ACK 가 `alarms` 행을 지우면 그 행이
+ * 유일한 참조였는데, 예전에는 메시지와 그 생성 오디오 기록이 **그대로 남아 계속 쌓였다**
+ * (Codex #703 P2). 문구와 메타데이터는 사용자가 보낸 내용이므로 남길 이유가 없다.
+ *
+ * ⚠ **지워도 되는 것만 지운다.** 판정 세 가지를 모두 만족할 때만이다:
+ *  1. **프리셋이 아니다**(`is_preset = 0`) — 프리셋은 여러 사람이 나눠 쓰는 공용 클립이라
+ *     참조가 잠깐 0 이어도 지우면 안 된다. 이게 가장 중요한 방어다.
+ *  2. **어떤 알람도 더는 가리키지 않는다** — 같은 메시지를 재전송이나 다른 수신자가 아직
+ *     쓰고 있으면 남긴다.
+ *  3. 방금 지운 그 전달의 메시지 id 하나만 본다 — 넓게 쓸어 담지 않는다.
+ *
+ * 실패해도 트랜잭션을 깨지 않는다면 tombstone·삭제가 롤백돼 전달이 되살아나므로, 같은
+ * 트랜잭션 안에서 그대로 던진다(정리 실패는 재시도로 해결된다 — ACK 는 멱등이다).
+ */
+async function deleteOrphanedDeliveryMessage(tx: DbExecutor, messageId: string): Promise<void> {
+  if (!messageId || !UUID_RE.test(messageId)) return;
+  const orphan = await tx.execute({
+    sql: `SELECT 1 FROM messages m
+          WHERE m.id = ?
+            AND COALESCE(m.is_preset, 0) = 0
+            AND NOT EXISTS (SELECT 1 FROM alarms a WHERE a.message_id = m.id)
+            -- 보관함이 가리키면 지우지 않는다 (Codex #703 P1). message_library.message_id
+            -- 는 messages.id 를 참조하는 FK 이고, 생성 TTS 로 만든 가족 알람은
+            -- POST /tts/generate 가 발신자 보관함 행을 함께 만든다. 그걸 무시하고 지우면
+            -- FK 강제 시 이 트랜잭션이 통째로 롤백돼 **전달이 서버에 남아 계속 다시 내려가고**,
+            -- 강제가 없으면 dangling 행이 남는 데다 **발신자가 저장해 둔 문구가 사라진다.**
+            -- 보관함 행은 발신자의 것이라 여기서 지울 대상이 아니다 — 참조가 있으면 남긴다.
+            AND NOT EXISTS (SELECT 1 FROM message_library ml WHERE ml.message_id = m.id)
+          LIMIT 1`,
+    args: [messageId],
+  });
+  if (orphan.rows.length === 0) return;
+  // ⚠ **R2 객체는 자산 행을 통해서만 발견된다**(Codex #703 P2). 보관 스윕이 그 행의
+  // `audio_object_key` 로 객체를 찾으므로, 행만 지우면 오디오가 **영영 도달 불가**가 되어
+  // 수거되지 않는다. 지우기 전에 삭제 큐에 넘긴다.
+  const assets = await tx.execute({
+    sql: 'SELECT audio_object_key FROM generated_audio_assets WHERE message_id = ?',
+    args: [messageId],
+  });
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    assets.rows.map((row) => row.audio_object_key as string | null),
+  );
+  await tx.execute({
+    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
+    args: [messageId],
+  });
+  await tx.execute({ sql: 'DELETE FROM messages WHERE id = ?', args: [messageId] });
+}
+
+alarmMutation.post('/:id/received', async (c) => {
+  const body = await c.req.json<unknown>().catch(() => null);
+  if (
+    body === null ||
+    typeof body !== 'object' ||
+    !Object.prototype.hasOwnProperty.call(body, 'delivery_version')
+  ) {
+    return c.json(
+      { error: 'delivery_version is required', error_code: 'DELIVERY_VERSION_REQUIRED' },
+      400,
+    );
+  }
+  const deliveryVersion = (body as { delivery_version?: unknown }).delivery_version;
+  if (
+    typeof deliveryVersion !== 'string' ||
+    (!UUID_RE.test(deliveryVersion) && !/^[0-9a-f]{32}$/i.test(deliveryVersion))
+  ) {
+    return c.json(
+      { error: 'Invalid delivery_version format', error_code: 'INVALID_DELIVERY_VERSION' },
+      400,
+    );
+  }
+  const resolved = await resolveDeclineTarget(c);
+  if ('error' in resolved) return resolved.error;
+  const db = getDB(c.env);
+  const deleted = await withWriteTransaction(db, async (tx) => {
+    const senderRes = await tx.execute({
+      sql: 'SELECT user_id, message_id FROM alarms WHERE id = ? AND delivery_version = ? LIMIT 1',
+      args: [resolved.id, deliveryVersion],
+    });
+    // 이미 지워졌거나 같은 id의 새 전달 세대로 교체됐으면 멱등 성공. 구버전 ACK가
+    // 새 알람을 지우면 수신자는 그 내용을 영영 못 받는다.
+    if (senderRes.rows.length === 0) return false;
+    const senderRow = typedRow<{ user_id: string; message_id: string }>(senderRes.rows[0]!);
+    const senderUserId = String(senderRow.user_id);
+    const deliveredMessageId = String(senderRow.message_id);
+    const source = await resolveAlarmVoiceRevocationSource(tx, resolved.id, deliveryVersion);
+    if (!source) return false;
+
+    // 출처 조회·tombstone·삭제는 한 쓰기 트랜잭션이다. 재전송이 중간에 끼어 옛 출처를
+    // 같은 id의 새 전달에 남기지 못하게 한다.
+    // **먼저 적고, 실패하면 지우지 않는다.** 철회가 먼저 revoked=1을 세웠다면 출처를
+    // 되살리지 않는다. 반대 순서는 revokeDeletedVoices가 이 tombstone을 찾아 철회한다.
+    await tx.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
+               sender_voice_upload, custom_voice, created_at, updated_at)
+            VALUES (?, ?, 0, 0, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(alarm_id, recipient_user_id)
+            DO UPDATE SET sender_user_id = excluded.sender_user_id,
+                          voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN NULL ELSE excluded.voice_profile_id END,
+                          sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN 0 ELSE excluded.sender_voice_upload END,
+                          custom_voice = CASE WHEN alarm_recipient_state.revoked = 1
+                            THEN 0 ELSE excluded.custom_voice END,
+                          updated_at = datetime('now')`,
+      args: [
+        resolved.id,
+        resolved.target,
+        senderUserId,
+        source.voiceProfileId,
+        source.senderVoiceUpload ? 1 : 0,
+        source.customVoice ? 1 : 0,
+      ],
+    });
+    const result = await tx.execute({
+      sql: `DELETE FROM alarms
+            WHERE id = ? AND target_user_id IS NOT NULL AND delivery_version = ?`,
+      args: [resolved.id, deliveryVersion],
+    });
+    const removed = (result.rowsAffected ?? 0) > 0;
+    if (removed) await deleteOrphanedDeliveryMessage(tx, deliveredMessageId);
+    return removed;
+  });
+  return c.json({ success: true, deleted });
+});
+
 alarmMutation.delete('/:id', async (c) => {
   // 조회·삭제·에셋 정리가 모두 같은 식별자 집합을 본다. 통일 이전에 만들어진 알람은
   // user_id 에 로그인 식별자가 들어 있어, users.id 하나로만 걸면 소유권 조회는 통과해도
@@ -967,18 +1058,6 @@ alarmMutation.delete('/:id', async (c) => {
   if (!UUID_RE.test(id)) {
     return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
-
-  const targetRes = await db.execute({
-    sql: `SELECT message_id, target_user_id FROM alarms
-           WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
-    args: [id, ...ownerIds],
-  });
-  const targetAlarm =
-    targetRes.rows.length > 0
-      ? typedRow<{ message_id: string | null; target_user_id: string | null }>(targetRes.rows[0]!)
-      : null;
-  const messageId = targetAlarm?.message_id ?? null;
-  const recipientUserId = targetAlarm?.target_user_id ?? null;
 
   // **남에게 보낸 알람이면 지우기 전에 보낸이를 적어 둔다.**
   //
@@ -994,35 +1073,72 @@ alarmMutation.delete('/:id', async (c) => {
   // 되고 잃는 것이 없다(CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」 규약).
   //
   // `declined=0, revoked=0` 이라 지금은 아무 효력이 없다(GET /alarm/declined 는 둘 중
-  // 하나가 1 인 행만 내보낸다). 탈퇴 때 purgeUserAccount 가 revoked=1 로 바꾸고
-  // sender_user_id 는 지운다.
-  if (recipientUserId) {
-    try {
-      await db.execute({
-        sql: `INSERT INTO alarm_recipient_state
-                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, created_at, updated_at)
-              VALUES (?, ?, 0, 0, ?, datetime('now'), datetime('now'))
-              ON CONFLICT(alarm_id, recipient_user_id)
-              DO UPDATE SET sender_user_id = excluded.sender_user_id, updated_at = datetime('now')`,
-        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!],
+  // 하나가 1 인 행만 내보낸다). 나중에 **그 목소리가 사라지면** `revokeDeletedVoices` 가
+  // 이 행을 찾아 revoked=1 로 바꾼다 — 그래서 `voice_profile_id` 도 함께 적어 둔다.
+  // 조회→출처 기록→삭제를 한 쓰기 트랜잭션으로 직렬화한다. 같은 계정의 다른 기기가
+  // 같은 슬롯을 재전송해 id를 재사용하더라도, 삭제가 옛 세대 전체보다 먼저 또는 새 세대
+  // 전체보다 뒤에만 놓이므로 옛 출처를 남기고 새 세대를 지우는 중간 상태가 없다.
+  let deletedAlarm: { messageId: string | null } | null;
+  try {
+    deletedAlarm = await withWriteTransaction(db, async (tx) => {
+      const targetRes = await tx.execute({
+        sql: `SELECT message_id, target_user_id FROM alarms
+              WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+        args: [id, ...ownerIds],
       });
-    } catch (err) {
-      logRouteError(c, err);
-      return c.json(
-        { error: 'Failed to delete alarm', error_code: 'ALARM_DELETE_FAILED' },
-        500,
-      );
-    }
+      if (targetRes.rows.length === 0) return null;
+      const targetAlarm = typedRow<{
+        message_id: string | null;
+        target_user_id: string | null;
+      }>(targetRes.rows[0]!);
+      const recipientUserId = targetAlarm.target_user_id;
+
+      if (recipientUserId) {
+        const source = await resolveAlarmVoiceRevocationSource(tx, id);
+        if (!source) throw new Error(`Alarm disappeared before voice source was recorded: ${id}`);
+        await tx.execute({
+          sql: `INSERT INTO alarm_recipient_state
+                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, voice_profile_id,
+                 sender_voice_upload, custom_voice, created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, ?, ?, ?, datetime('now'), datetime('now'))
+              ON CONFLICT(alarm_id, recipient_user_id)
+              DO UPDATE SET sender_user_id = excluded.sender_user_id,
+                            voice_profile_id = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN NULL ELSE excluded.voice_profile_id END,
+                            sender_voice_upload = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN 0 ELSE excluded.sender_voice_upload END,
+                            custom_voice = CASE WHEN alarm_recipient_state.revoked = 1
+                              THEN 0 ELSE excluded.custom_voice END,
+                            updated_at = datetime('now')`,
+          args: [
+            id,
+            recipientUserId,
+            c.get('userIdPK') ?? ownerIds[0]!,
+            source.voiceProfileId,
+            source.senderVoiceUpload ? 1 : 0,
+            source.customVoice ? 1 : 0,
+          ],
+        });
+      }
+
+      const result = await tx.execute({
+        sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
+        args: [id, ...ownerIds],
+      });
+      if ((result.rowsAffected ?? 0) === 0) {
+        throw new Error(`Alarm disappeared during delete transaction: ${id}`);
+      }
+      return { messageId: targetAlarm.message_id };
+    });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to delete alarm', error_code: 'ALARM_DELETE_FAILED' }, 500);
   }
 
-  const result = await db.execute({
-    sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
-    args: [id, ...ownerIds],
-  });
-
-  if (result.rowsAffected === 0) {
+  if (!deletedAlarm) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
+  const messageId = deletedAlarm.messageId;
 
   if (messageId) {
     const refRes = await db.execute({

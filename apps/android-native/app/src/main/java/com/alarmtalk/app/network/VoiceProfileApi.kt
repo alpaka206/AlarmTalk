@@ -128,6 +128,15 @@ data class VoiceProfile(
     @SerializedName("listener_title") val listenerTitle: String? = null,
     // 말투(스피치 스타일) 분석 상태: null | "pending" | "done" | "failed". 클론 보이스 전용.
     @SerializedName("speech_style_status") val speechStyleStatus: String? = null,
+    /**
+     * **이 프로필의 직접 입력 음원이 무효가 된 시각**(제자리 교체). 값이 바뀌면 그 목소리로
+     * 만들어 둔 직접 입력 알람은 다시 만들 수 없는 옛 목소리다.
+     *
+     * 교체는 프로필 **id 를 그대로 재사용**하므로 접근 가능 목록 대조로는 영원히 안 걸린다.
+     * 푸시(`voice_access_revoked` + voiceProfileId)는 즉시성만 맡고, 정확성은 이 값을
+     * `VoiceReplacementMarkerStore` 와 대조하는 주기·앱 시작 경로가 맡는다.
+     */
+    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -141,6 +150,12 @@ data class FamilyVoiceProfile(
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
     @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
+    /**
+     * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
+     * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접
+     * 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
+     */
+    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
 data class FamilyVoiceProfileListResponse(

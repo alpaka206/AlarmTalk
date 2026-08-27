@@ -268,7 +268,7 @@ export const migrations: Migration[] = [
     id: 6,
     name: 'plans-and-subscriptions',
     statements: [
-      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 6인
+      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 5인
       `CREATE TABLE IF NOT EXISTS plans (
         id TEXT PRIMARY KEY,
         key TEXT UNIQUE NOT NULL,
@@ -1961,6 +1961,11 @@ export const migrations: Migration[] = [
      *
      * 그래서 조건부 무효화에 기대지 않고 여기서 값을 지운다. 현재 문서 버전은 '4' 이고 서버는
      * 그보다 큰 값을 발급한 적이 없으므로, 4 를 넘는 행은 정의상 전부 위조·버그다.
+     *
+     * ⚠ **아래 `> 4` 는 이 마이그레이션을 쓰던 시점의 CURRENT_POLICY_VERSION 이다 — 문서
+     * 버전을 올려도 여기를 따라 올리지 말 것.** 마이그레이션은 append-only 라 한 번 돈 것을
+     * 고쳐도 다시 돌지 않고, 값을 올리면 **정상적으로 5 로 기록된 동의가 새 DB 에서만 0 이
+     * 되어** 그 사람들만 재동의를 받게 된다. 새로 걸러 낼 값이 생기면 새 id 를 추가한다.
      * 행 자체(누가·언제·동의했는지)는 남기고 **버전만 '0'(=모름)** 으로 바꾼다 — 어느 문서를
      * 보고 동의했는지 알 수 없다는 게 사실이고, 0 은 어떤 최소 버전도 만족하지 못해 재동의를
      * 받게 된다. 숫자가 아닌 값은 이미 0 으로 읽히므로 건드리지 않는다.
@@ -2238,6 +2243,73 @@ export const migrations: Migration[] = [
     // 건너뛰지 않고 **UPDATE** 한다. 기본값 0 이라 기존 행은 지금과 똑같이 동작한다.
     statements: [
       `ALTER TABLE voice_prerender_queue ADD COLUMN refresh_existing INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 102,
+    name: 'alarm-recipient-state-voice-ref',
+    // **받은 알람이 어느 목소리를 쓰는지 서버가 기억하는 유일한 자리.**
+    //
+    // 수신 확인(`POST /alarm/:id/received`)이 끝나면 `alarms` 행을 지운다 — 전달이
+    // 끝났고 아무도 그 행을 읽지 않기 때문이다. 그런데 그러고 나면 발신자가 나중에
+    // **목소리를 지웠을 때** 어느 수신 알람을 걷어내야 하는지 알 방법이 사라진다.
+    // 그래서 지우기 직전에 목소리 id 를 이 tombstone 에 옮겨 적는다.
+    //
+    // ⚠ **클론(비-system)만 적는다.** 스톡 목소리는 없어지지 않으므로 적을 이유가 없고,
+    // 적어 두면 "이 알람은 걷어낼 것이 있다" 는 잘못된 근거가 된다.
+    // 값은 revoke 하는 순간 NULL 로 지운다 — 소비하고 나면 남길 이유가 없다.
+    statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN voice_profile_id TEXT`],
+  },
+  {
+    id: 103,
+    name: 'alarm-recipient-state-sender-voice-upload',
+    // `family-voice`의 실제 음원은 messages.voice_profile_id가 아니라 발신자의 직접 업로드다.
+    // 수신 확인 뒤 alarms/messages가 없어져도 탈퇴·음성 동의 철회 시 그 녹음만 걷어내도록
+    // tombstone에 출처 종류를 남긴다. sender_user_id는 #93 컬럼을 그대로 쓴다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN sender_voice_upload INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 104,
+    name: 'alarm-delivery-version',
+    // 같은 발신자가 같은 수신자·시각으로 다시 보내면 알람 id는 유지되고 내용만 교체된다.
+    // 구버전 다운로드가 늦게 끝나도 신버전 행을 ACK로 지우지 못하게 전달 세대를 구분한다.
+    // 기존 행은 새 전달 세대의 UUID와 구별되는 32자리 hex로 채워, 적용 표식이 없던 구형
+    // 클라이언트가 이 세대만 안전하게 부트스트랩할 수 있게 한다.
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN delivery_version TEXT`,
+      `UPDATE alarms SET delivery_version = lower(hex(randomblob(16)))
+        WHERE target_user_id IS NOT NULL AND delivery_version IS NULL`,
+    ],
+  },
+  {
+    id: 105,
+    name: 'alarm-recipient-state-custom-voice',
+    // 전달이 끝난 custom 음원은 alarms 행이 없어 목소리 교체 때 preset 과 구분할 수 없다.
+    // preset 은 같은 message id로 재렌더하지만 custom 은 재생성하지 않으므로, ACK 직전에
+    // 이 한 비트만 tombstone에 남겨 교체 시 custom 캐시만 정확히 철회한다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN custom_voice INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 106,
+    name: 'voice-profile-custom-audio-invalidated-at',
+    // **제자리 교체는 프로필 id 를 그대로 재사용한다.** 그래서 클라의 '접근 가능 목소리
+    // 목록 대조'로는 교체를 절대 감지할 수 없고, 본인 소유 알람은 pull 대상도 아니다.
+    // 푸시(voice_access_revoked + voiceProfileId)는 즉시성만 맡는다 — best-effort 라
+    // 오프라인·강제종료에서 조용히 버려지므로, **정확성을 맡을 표식**이 따로 필요하다.
+    //
+    // ⚠ `updated_at` 으로 대신하지 말 것. 이름 변경·공유 토글도 그 값을 올리므로,
+    // 그걸 기준으로 강등하면 **이름만 바꿔도** 직접 입력 알람이 되돌릴 수 없이 사라진다.
+    //
+    // 백필하지 않는다(NULL 유지) — 값을 채우면 기존 설치가 첫 조회에서 전부 '방금 교체됨'
+    // 으로 읽는다.
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN custom_audio_invalidated_at TEXT`,
     ],
   },
 ];

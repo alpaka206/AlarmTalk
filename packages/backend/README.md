@@ -17,17 +17,8 @@ Cloudflare Workers + Hono 기반 API 서버.
 
 ## 환경 변수
 
-| 변수 | 설명 | 필수 |
-|---|---|---|
-| `TURSO_DATABASE_URL` | Turso DB URL | ✅ |
-| `TURSO_AUTH_TOKEN` | Turso 인증 토큰 | ✅ |
-| `JWT_SECRET` | JWT 서명 시크릿 (32자 이상 권장) | ✅ |
-| `PASSWORD_PEPPER` | 비밀번호 해싱 페퍼 | ✅ |
-| `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | 선택 |
-| `GOOGLE_VERTEX_CREDENTIALS_JSON` | Vertex AI service account JSON for translation and legacy dynamic text generation | Optional |
-| `GOOGLE_VERTEX_LOCATION` | Vertex AI location override | Optional |
-| `GOOGLE_VERTEX_MODEL` | Vertex AI model override | Optional |
-| `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` | Set to `true` only to re-enable Gemini-generated dynamic alarm text. Default is off; dynamic contexts use local/preset fallback. | Optional |
+전체 목록과 Apple 로그인·결제·APNs 키의 구분은 [`.dev.vars.example`](.dev.vars.example)이
+단일 출처다. 실제 값이 든 `.dev.vars.*`는 커밋하지 않는다.
 
 ## 로컬 실행
 
@@ -41,10 +32,12 @@ npm run dev                          # wrangler dev --env dev (localhost:8787)
 ## 마이그레이션
 
 마이그레이션은 `src/lib/migrations.ts`에 인라인 정의됨.
-서버 시작 시 `POST /api/init-db`로 실행하거나, 코드에서 `initDB(env)` 호출.
+배포 워커의 `POST /api/init-db`로 실행한다. `INIT_DB_SECRET`이 필요하며 원격 실행은
+`scripts/run-remote-migrations.ts`가 범위별로 나눠 호출한다.
 
 ```bash
-curl -X POST http://localhost:8787/api/init-db
+curl -X POST -H 'Authorization: Bearer <INIT_DB_SECRET>' \
+  'http://localhost:8787/api/init-db?from=1&to=50'
 ```
 
 ## 테스트
@@ -64,9 +57,9 @@ npm run typecheck # tsc --noEmit
 | `/api/voice/*` | 음성 프로필 CRUD + 업로드 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
 | `/api/alarm/*` | 알람 CRUD + 스케줄러 |
-| `/api/billing/*` | 결제 스텁 + 이용권 코드 |
+| `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권·코드 |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
-
-> iOS 를 재개하면 라우트·시크릿·컬럼을 함께 되살려야 한다.
-
+| `/api/push/*` | FCM·APNs 토큰 등록/해제 |
+| `/api/holiday/*` | 공휴일 조회 |
+| `/api/admin/*` | 운영자 콘솔 |

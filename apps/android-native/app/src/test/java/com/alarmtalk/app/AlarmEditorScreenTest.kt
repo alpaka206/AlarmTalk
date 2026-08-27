@@ -6,7 +6,9 @@ import com.google.gson.Gson
 import com.alarmtalk.app.data.fortuneThemeIndex
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -81,31 +83,58 @@ class AlarmEditorScreenTest {
         )
     }
 
+    /**
+     * ⚠ **분 단위 숫자를 다시 박지 말 것.** 예전 이름은
+     * `familyAlarmLeadRequiresAtLeastThirtyMinutes` 였고 6:20/6:30 을 고정으로 넣어
+     * **30분을 지키고 있었다.** 리드타임을 5분으로 내렸을 때 세 상수(서버·안드·iOS)는
+     * 고쳤는데 이 테스트만 남아, 값이 맞는데도 CI 가 빨간불이 됐다.
+     *
+     * 그래서 경계는 [FAMILY_ALARM_MIN_LEAD_MILLIS] 에서 **계산해서** 쓴다 — 값이 바뀌면
+     * 테스트도 따라 움직이고, 지키는 것은 숫자가 아니라 **경계의 방향**이다.
+     */
     @Test
-    fun familyAlarmLeadRequiresAtLeastThirtyMinutes() {
+    fun familyAlarmLeadRejectsTimesInsideTheMinimumLead() {
         val nowMillis = LocalDateTime.of(2026, 5, 11, 6, 0)
             .atZone(ZoneId.systemDefault())
             .toInstant()
             .toEpochMilli()
+        val leadMinutes = (FAMILY_ALARM_MIN_LEAD_MILLIS / 60_000L).toInt()
 
+        // 상한 바로 안쪽(1분 모자람) → 막는다.
+        val tooSoon = LocalDateTime.of(2026, 5, 11, 6, 0).plusMinutes(leadMinutes - 1L)
         assertTrue(
             isFamilyAlarmLeadTooSoon(
-                hour = 6,
-                minute = 20,
+                hour = tooSoon.hour,
+                minute = tooSoon.minute,
                 repeatDaysMask = 0,
                 holidayOff = false,
                 nowMillis = nowMillis,
             ),
         )
+        // 정확히 상한 → 통과한다(판정은 `<` 이므로 경계값은 허용이다).
+        val exactly = LocalDateTime.of(2026, 5, 11, 6, 0).plusMinutes(leadMinutes.toLong())
         assertFalse(
             isFamilyAlarmLeadTooSoon(
-                hour = 6,
-                minute = 30,
+                hour = exactly.hour,
+                minute = exactly.minute,
                 repeatDaysMask = 0,
                 holidayOff = false,
                 nowMillis = nowMillis,
             ),
         )
+    }
+
+    @Test
+    fun familyAlarmLeadSuggestionRoundsUpAndLeavesRequestMargin() {
+        val nowMillis = LocalDateTime.of(2026, 5, 11, 10, 0, 30)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+        val suggested = Instant.ofEpochMilli(earliestSelectableFamilyAlarmMillis(nowMillis))
+            .atZone(ZoneId.systemDefault())
+            .toLocalTime()
+
+        assertEquals(LocalTime.of(10, 7), suggested)
     }
 
     @Test

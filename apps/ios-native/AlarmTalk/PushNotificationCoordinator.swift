@@ -38,6 +38,17 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// 이 클래스가 동기화 객체들을 직접 들면 순환 참조가 된다.
     var onFamilyAlarm: () async -> Void = {}
     var onVoiceChanged: () async -> Void = {}
+    /**
+     * **제자리 교체로 그 목소리의 직접 입력 음원이 무효가 됐다.**
+     *
+     * `onVoiceChanged` 로는 부족하다 — 교체는 프로필 행을 재사용해 id 가 목록에 그대로
+     * 남으므로 접근권 재확인이 아무것도 걸러내지 못한다. 그래서 서버가 payload 에 어떤
+     * 프로필인지를 실어 보내고, 앱이 그 목소리의 custom 알람만 좁혀 내린다.
+     *
+     * 두 번째 인자는 그 교체의 **세대**다. 이미 반영한 세대면 무시해야 한다 — 늦게 도착한
+     * 푸시가 그 사이 사용자가 **새 목소리로** 다시 만든 알람까지 지우면 안 된다.
+     */
+    var onVoiceReplaced: (String, String?) async -> Void = { _, _ in }
     var onPlanChanged: () async -> Void = {}
 
     /// 마지막으로 **서버에 올린** 기기 토큰.
@@ -212,6 +223,12 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
             return true
         case .voiceShareChanged, .voiceAccessRevoked:
             await onVoiceChanged()
+            // 교체 신호에만 실려 오는 payload. 목록 갱신만으로는 이 알람들을 못 찾는다.
+            if type == .voiceAccessRevoked,
+               userInfo["scope"] as? String == "custom_messages",
+               let profileID = (userInfo["voiceProfileId"] as? String)?.nilIfBlank {
+                await onVoiceReplaced(profileID, (userInfo["invalidatedAt"] as? String)?.nilIfBlank)
+            }
             return true
         case .planChanged:
             await onPlanChanged()
@@ -298,6 +315,140 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로 돌아온다 —
             // 그러면 철회 이전 목록으로 판단하게 된다(Codex #697 P1).
             await deps.voiceStudio.refresh(session: deps.auth.session, force: true)
+            // 목록을 **먼저** 새로 받는다 — 아래 비교는 매니페스트가 가리키는 주소와 캐시를
+            // 맞대 보는 것이라, 옛 목록으로 돌리면 갈아 끼울 것이 없다고 나온다.
+            // ⚠ 이 갈래는 **세대를 확정하지 않는다.** 확정은 권위 새로고침
+            // (`onAuthoritativeRefresh`)과 교체 푸시(`onVoiceReplaced`)에만 있고, 둘은
+            // 매니페스트를 새로 받았는지까지 보고 판단한다. 여기서 실패하면 잃는 것은
+            // 이번 회차의 지연 시간뿐이다.
+            _ = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            if await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session).changed {
+                await deps.alarmStore.waitUntilLoadedFromDisk()
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: deps.alarmStore,
+                    alarmKit: deps.alarmKit,
+                    ownerUserId: deps.auth.session?.user.id
+                )
+            }
+        }
+
+        // 제자리 교체로 무효가 된 **직접 입력** 알람을 내린다. 위 `onVoiceChanged` 의
+        // 목록 갱신·클립 재다운로드로는 못 잡는다 — 프로필 id 가 그대로 살아 있어서
+        // 접근권 재확인이 통과시키고, 그 알람의 음원은 서버에서 이미 사라졌다.
+        deps.push.onVoiceReplaced = { profileID, generation in
+            await deps.alarmStore.waitUntilLoadedFromDisk()
+            guard deps.alarmStore.hasLoadedFromDisk else { return }
+            let ownerID = deps.auth.session?.user.id
+            // ⚠ **이미 반영한 세대면 아무것도 하지 않는다.** 늦게 도착한 푸시는, 그 사이
+            // 사용자가 **새 목소리로** 다시 만든 직접 입력 알람까지 되돌릴 수 없이 지운다.
+            // 판정·강등·확정은 저장소가 한 임계구역에서 돈다.
+            // ⚠ 확정을 미루더라도 **이미 내린 것은 세어 안내한다** — 강등은 이미 일어났고,
+            // 그 이유를 말해 줄 곳이 여기뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
+            let pending = VoiceReplacementMarkerStore().applyIfNotApplied(
+                userID: ownerID,
+                profileID: profileID,
+                invalidatedAt: generation
+            ) {
+                let ids = deps.voiceStudio.degradeCustomMessageAlarms(
+                    forProfileID: profileID,
+                    alarmStore: deps.alarmStore,
+                    audioCache: .shared,
+                    ownerUserId: ownerID
+                )
+                // ⚠ **디스크에 남은 뒤에만 확정 후보가 된다.** 백그라운드 실행은 비동기 쓰기
+                // 전에 끝날 수 있고, 그러면 다음 실행이 옛 알람을 다시 읽는데 표식만 앞서 나간다.
+                guard deps.alarmStore.saveNow() else { return nil }
+                // 그 사이 계정이 바뀌었으면 확정하지 않는다.
+                return deps.auth.session?.user.id == ownerID ? ids : nil
+            }
+            // ⚠ **빈 회차를 그냥 확정하지 말 것.** 지난 회차에서 강등은 됐는데 예약 정리가
+            // 실패했다면 그 행들은 이미 톤이라 다시 강등 대상이 아니다 — `unverified` 로
+            // 넘어온 그 행들의 예약을 확인한 뒤에야 확정할 수 있다.
+            // 위와 같은 이유 — 비동기 정리에 들어가기 전에 먼저 가린다.
+            // ⚠ **넘어온 미확인 작업도 가려야 한다**(Codex #703 P1). 지난 실행이 강등은
+            // 했는데 예약 정리에 실패했으면, 이번 회차는 내릴 것이 없어 `degraded` 가 비고
+            // `unverified` 만 차 있다 — 그 조건을 빼면 예약을 확인하는 내내 그 목소리를 고를
+            // 수 있고, 확인이 또 실패하면 그 사이 만든 알람을 다음 재시도가 벗긴다.
+            // ⚠ **확정될 때까지는 무조건 가린다**(Codex #703 P1). 내릴 것이 없던 회차
+            // (프리셋 알람만 쓰는 목소리)도 확정이 미뤄질 수 있는데 — 재렌더가 안 끝났으면
+            // 미룬다 — 그때 고를 수 있게 두면 사용자가 **새 목소리로 알람을 만들고**, 다음
+            // 회차가 같은 세대를 재시도하며 그 알람까지 벗긴다(강등은 프로필 id 로만 고른다).
+            // 확정에 성공하면 `confirmIfReservationsSettled` 가 곧바로 푼다.
+            if !pending.profileID.isEmpty {
+                deps.voiceStudio.suppressReplacedProfile(pending.profileID)
+            }
+            // ⚠ **실패한 회차는 반드시 확정 함수를 거친다**(Codex #703 P1). 강등이 실패하면
+            // 내린 것도 확인할 것도 없어 아래 빈 회차 갈래로 새는데, 거기서 그냥 `confirm()`
+            // 하면 **아무 표시도 남기지 않고** 끝난다 — 그 목소리가 확정 없이 고를 수 있는
+            // 채로 남고, 그때 만든 알람을 다음 재시도가 벗긴다. 확정 함수만이 실패를 보고
+            // '정리 중' 으로 올린다.
+            guard !pending.failed else {
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                return
+            }
+            // ⚠ **프리셋 재렌더가 끝나야 이 세대를 확정한다**(Codex #703 P1) — 권위 경로와
+            // 같은 게이트다. 이 푸시는 `onVoiceChanged` 뒤에 오므로 목록은 방금 새로 받은
+            // 것이고, 그 매니페스트가 '아직 안 구웠다' 고 말하면 여기서 확정하면 안 된다.
+            // 확정해 버리면 cron 이 끝난 뒤에도 다음 회차들이 그 세대를 건너뛰어, 완료 푸시를
+            // 놓친 기기는 회수된 프리셋을 캐시·예약에 문 채로 남는다.
+            // ⚠ **이 경로가 스스로 신선도를 확인한다**(Codex #703 P1). `onVoiceChanged` 가
+            // 방금 받아 왔더라도 그 콜백은 **별개**라 결과를 물려받을 수 없고, 강제 요청이
+            // 실패했으면 `stockClips` 는 **교체 이전 스냅샷**(전부 rendered=true)이다 —
+            // 그걸로 판단하면 세대를 확정해 버려 완료 푸시를 놓친 기기에 폴백이 남지 않는다.
+            // 교체 푸시는 드물어 한 번 더 받는 비용이 크지 않다.
+            let manifestFresh = await deps.voiceStudio.loadStockClips(
+                session: deps.auth.session,
+                force: true
+            )
+            // ⚠ **서버 플래그만 보지 않는다**(Codex #703 P1). 앞선 `onVoiceChanged` 의 다운로드나
+            // 캐시 쓰기가 실패했어도 이 두 번째 매니페스트 요청은 성공할 수 있는데, 그때
+            // 서버는 '다 구웠다' 고 답한다 — 그걸로 확정하면 **회수된 바이트와 구워 둔 사운드가
+            // 남은 채** 세대가 확정되고, 이후 정리는 그 세대를 건너뛴다.
+            // 그래서 **이 기기의 낡은 키를 실제로 다 갈았는지**까지 본다(권위 경로와 같은 기준).
+            let presetRefresh = await deps.voiceStudio.refreshChangedCachedStockClips(
+                session: deps.auth.session
+            )
+            let presetPending = !manifestFresh
+                || !presetRefresh.settled(forProfileID: pending.profileID)
+            guard !pending.degraded.isEmpty || !pending.unverified.isEmpty else {
+                // ⚠ **확정만 하고 끝내지 않는다**(Codex #703 P2). 위에서 프로필을 가렸으므로
+                // 여기서 풀어 주지 않으면 그 목소리는 **프로세스가 끝날 때까지** 못 고른다.
+                // 확인할 예약이 없으니 같은 확정 함수를 태워 해제까지 한 번에 처리한다.
+                if !presetPending {
+                    await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                }
+                return
+            }
+            guard !pending.degraded.isEmpty else {
+                // 이번엔 새로 내린 것이 없다 — 안내는 생략하고 예약만 확인한다.
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: deps.alarmStore,
+                    alarmKit: deps.alarmKit,
+                    ownerUserId: ownerID
+                )
+                if !presetPending {
+                    await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+                }
+                return
+            }
+            // 화면이 없을 수 있는 경로다 — 대기표에 적어 두면 다음에 앱을 열 때 말한다.
+            DowngradeNoticeStore().record(
+                userID: ownerID,
+                cause: .voiceReplaced,
+                count: pending.degraded.count
+            )
+            _ = await AlarmScheduleReconciler.reconcile(
+                store: deps.alarmStore,
+                alarmKit: deps.alarmKit,
+                ownerUserId: ownerID
+            )
+            // ⚠ **예약까지 맞춘 뒤에 확정한다.** 강등은 로컬 행만 고치고 울리는 것은 이미
+            // 구워 둔 예약이다 — 여기서 실패했는데 확정하면 다음 회차가 같은 세대를 건너뛰어
+            // 회수된 목소리가 예약된 채 남는다. 안 맞으면 확정하지 않고 다음 회차에 맡긴다.
+            // 프리셋 재렌더가 남아 있어도 같다(위 `presetPending` 주석).
+            if !presetPending {
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            }
         }
 
         // 접근권을 잃은 목소리를 쓰는 알람을 내리고 예약을 맞춘다.
@@ -319,6 +470,54 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 audioCache: .shared,
                 ownerUserId: ownerID
             )
+            // ⚠ **제자리 교체는 위 대조로 절대 안 걸린다** — 프로필 id 가 그대로 살아 있다.
+            // 서버가 준 `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접
+            // 입력 알람만 내린다. 푸시(`onVoiceReplaced`)는 즉시성만 맡고, **정확성은 이
+            // 경로**가 맡는다 — 앱 시작·탭 진입·백그라운드 주기가 모두 여기를 지난다.
+            let markers = VoiceReplacementMarkerStore()
+            var replacedCount = 0
+            // 확정은 아래 예약 정리가 끝난 뒤에 한다(예약이 안 맞으면 하지 않는다).
+            var pendingApplies: [VoiceReplacementMarkerStore.PendingApply] = []
+            // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께
+            // 무효가 되는데, 내 목록만 보면 공유받은 기기는 푸시를 놓쳤을 때 영영 모른다.
+            // ⚠ **가려진 목소리도 본다**(`authoritativeProfiles`) — 정리에 실패해 목록에서
+            // 가린 그 프로필이야말로 다시 집어야 할 대상이다. 거른 목록으로 훑으면 사용자에게
+            // "새로고침해 주세요" 라고 해 놓고 새로고침이 아무 일도 하지 않는다.
+            let markerCandidates: [(id: String, invalidatedAt: String?)] =
+                deps.voiceStudio.authoritativeProfiles.map { ($0.id, $0.customAudioInvalidatedAt) } +
+                deps.voiceStudio.familyVoices.map { ($0.id, $0.customAudioInvalidatedAt) }
+            for candidate in markerCandidates {
+                // 판정·강등·확정을 저장소가 함께 잠근다 — 판정만 먼저 해 두면 그 사이 더 새
+                // 세대가 반영되고 사용자가 새 목소리로 만든 알람을 뒤늦게 지우게 된다.
+                let pending = markers.applyIfChanged(
+                    userID: ownerID,
+                    profileID: candidate.id,
+                    invalidatedAt: candidate.invalidatedAt
+                ) {
+                    let ids = deps.voiceStudio.degradeCustomMessageAlarms(
+                        forProfileID: candidate.id,
+                        alarmStore: deps.alarmStore,
+                        audioCache: .shared,
+                        ownerUserId: ownerID
+                    )
+                    // 디스크에 남은 뒤에만 확정 후보가 된다(위 푸시 경로와 같은 이유).
+                    guard deps.alarmStore.saveNow() else { return nil }
+                    // ⚠ 그 사이 계정이 바뀌었으면 확정하지 않는다 — 소유자 불일치로 돌려받은
+                    // 0을 '처리 완료' 로 적으면 그 계정은 영영 재시도하지 않는다.
+                    return deps.auth.session?.user.id == ownerID ? ids : nil
+                }
+                // ⚠ **비동기 정리 전에 먼저 가린다**(Codex #703 P1). 아래 예약 정리는
+                // `await` 이라, 그 사이 **이미 열려 있는 편집기**가 이 목소리로 알람을
+                // 저장할 수 있다 — 정리가 실패하면 다음 회차가 그 새 알람까지 벗긴다.
+                // 확정에 성공하면 `confirmIfReservationsSettled` 가 곧바로 푼다.
+                // 위 푸시 경로와 같은 이유 — **확정될 때까지 무조건 가린다**(Codex #703 P1).
+                if !pending.profileID.isEmpty {
+                    deps.voiceStudio.suppressReplacedProfile(pending.profileID)
+                }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += pending.degraded.count
+                pendingApplies.append(pending)
+            }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본
             // 알람음으로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
@@ -326,13 +525,62 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // `SHARED_RELEASED` 를 기록한다(2026-08-18 Codex #697 P2).
             // 원인이 **공유 해제**인 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라
             // 플랜 강등(복구되면 돌아온다)과 결말이 다르다 — 다시 공유받아야 한다.
-            DowngradeNoticeStore().record(userID: ownerID, cause: .sharedReleased, count: degraded)
-            guard degraded > 0 else { return }
+            // 원인별로 따로 적는다 — 대기표가 우선순위로 합친다(안내할 액션이 있는 쪽이 이긴다).
+            // 뭉쳐서 적으면 공유 해제의 안내를 액션 없는 교체 안내로 덮어쓴다.
+            let notices = DowngradeNoticeStore()
+            notices.record(userID: ownerID, cause: .sharedReleased, count: degraded)
+            notices.record(userID: ownerID, cause: .voiceReplaced, count: replacedCount)
+            let unverifiedCount = pendingApplies.reduce(0) { $0 + $1.unverified.count }
+            // ⚠ **실패한 회차가 하나라도 있으면 빈 회차로 접지 않는다**(Codex #703 P1).
+            // 그냥 `confirm()` 하면 아무 표시도 남기지 않고 끝나 그 목소리가 확정 없이
+            // 고를 수 있게 된다 — 확정 함수만이 실패를 '정리 중' 으로 올린다.
+            let anyFailed = pendingApplies.contains(where: \.failed)
+            // ⚠ **강등한 알람이 없어도 세대가 바뀌었으면 캐시를 갱신해야 한다**(Codex #703 P1).
+            // 그 목소리를 **프리셋 알람만** 쓰고 있으면 `applyIfChanged` 는 확정 가능한
+            // 세대를 빈 목록과 함께 돌려준다 — 여기서 접으면 표식만 확정되고, 다음 회차부터는
+            // '이미 반영함' 이라 **캐시와 구워 둔 사운드가 회수된 목소리로 영영 남는다.**
+            // ⚠ **배열 길이로 세지 말 것**(Codex #703 P2). 루프는 `.nothing` 회차도 그대로
+            // 담으므로, 길이로 보면 목소리를 하나라도 가진 계정에서는 **언제나 참**이 된다 —
+            // 콜드 스타트·탭 진입마다 매니페스트를 강제로 다시 받고 예약을 통째로 맞추게 된다.
+            // 실제로 뭔가 있었던 회차만 프로필 id 를 들고 온다.
+            let markerGenerationChanged = pendingApplies.contains { !$0.profileID.isEmpty }
+            guard anyFailed || markerGenerationChanged || degraded + replacedCount + unverifiedCount > 0 else {
+                pendingApplies.forEach { _ = $0.confirm() }
+                return
+            }
+            // ⚠ **프리셋 캐시도 여기서 갈아 끼운다**(Codex #703 P1). 예전에는
+            // `refreshChangedCachedStockClips` 를 **푸시 콜백에서만** 불렀다 — 교체 푸시를
+            // 놓치면(오프라인·스로틀링) 이 경로가 직접 입력 알람만 강등하고, 프리셋 캐시와
+            // 거기서 구워 둔 알람 사운드는 **회수된 목소리 그대로** 남는다. 그 알람은 다음
+            // 교체 푸시가 올 때까지 옛 목소리로 운다.
+            //
+            // 여기까지 온 것은 **교체를 실제로 감지했다**는 뜻이라(위 guard), 매 콜드
+            // 스타트가 아니라 그때만 도는 비용이다. 매니페스트는 강제로 다시 읽는다 —
+            // 캐시된 옛 매니페스트로는 어떤 클립이 바뀌었는지 알 수 없다.
+            let manifestFresh = await deps.voiceStudio.loadStockClips(session: deps.auth.session, force: true)
+            let presetRefresh = await deps.voiceStudio.refreshChangedCachedStockClips(session: deps.auth.session)
+            // ⚠ **프리셋 갱신이 남아 있으면 그 세대를 확정하지 않는다**(Codex #703 P1).
+            // 매니페스트를 못 받았거나 낡은 키를 다 갈아 끼우지 못했는데 확정하면, 다음
+            // 회차부터 '이미 반영함' 이라 프리셋 알람이 회수된 목소리로 계속 운다.
+            // 프로필마다 따로 본다 — 남의 목소리가 아직이라고 내 목소리를 붙들지 않는다.
+            func presetWorkSettled(_ profileID: String) -> Bool {
+                manifestFresh && presetRefresh.settled(forProfileID: profileID)
+            }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit,
                 ownerUserId: deps.auth.session?.user.id
             )
+            // 예약까지 맞춘 것만 확정한다(위 푸시 경로와 같은 규칙).
+            for pending in pendingApplies {
+                // ⚠ **프리셋 작업이 남아 있으면 어떤 회차도 확정하지 않는다**(Codex #703 P1).
+                // 예전에는 '프리셋만 남은 회차' 로 좁혔는데, 한 목소리를 커스텀 알람과 프리셋
+                // 알람이 **함께** 쓰면 커스텀 강등이 성공했다는 이유로 세대가 확정돼 — 다음
+                // 회차부터 '이미 반영함' 이라 그 프리셋 알람이 회수된 목소리로 계속 운다.
+                // 확정을 미루는 비용은 다음 회차에 같은 일을 한 번 더 하는 것뿐이다(멱등).
+                if !presetWorkSettled(pending.profileID) { continue }
+                await deps.confirmIfReservationsSettled(pending, ownerID: ownerID)
+            }
         }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)

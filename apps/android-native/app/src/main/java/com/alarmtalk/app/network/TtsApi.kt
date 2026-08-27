@@ -111,7 +111,26 @@ data class StockClip(
     val variant: Int = 0,
     val text: String = "",
     @SerializedName("audio_url") val audioUrl: String? = null,
-)
+    /**
+     * **서버가 이 클립을 '지금 목소리' 로 이미 구웠는가.**
+     *
+     * ⚠ 제자리 목소리 교체는 세대 표식(custom_audio_invalidated_at)을 **먼저 커밋하고**
+     * 프리셋 재렌더는 큐에만 넣는다 — 굽는 것은 cron 이 나중에 한다. 그 사이 매니페스트의
+     * [audioUrl] 은 **옛 클립 그대로**라, 앱이 "낡은 키가 없다 = 다 끝났다" 로 읽으면 교체
+     * 세대를 확정해 버리고 재렌더가 끝난 뒤에도 다시 받지 않는다(Codex #703 P1).
+     * false 인 클립이 하나라도 있으면 **아직 끝난 것이 아니다.**
+     *
+     * ⚠ **nullable 이어야 한다**(Codex #703 P2). Retrofit 의 Gson 은 이 클래스를 리플렉션으로
+     * 만들어 **코틀린 기본 인자를 적용하지 않는다** — 필드가 없으면 원시 Boolean 은 `false`
+     * 로 채워진다. 그러면 옛 서버에서 **모든 클립이 '아직 안 구워짐'** 이 되어 워커가 계속
+     * `Result.retry()` 만 하고 교체 표식을 영영 확정하지 못한다. 없으면 [isRendered] 가
+     * true 로 읽는다. iOS 짝은 `StockClip.renderedForCurrentVoice`(같은 이유로 옵셔널).
+     */
+    @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
+) {
+    /** 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다. */
+    val isRendered: Boolean get() = renderedForCurrentVoice ?: true
+}
 
 data class PrerenderVariantResponse(
     val context: String? = null,

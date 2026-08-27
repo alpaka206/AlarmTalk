@@ -116,6 +116,10 @@ struct PlanCard: View {
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
     let isCurrent: Bool
+    /// 지금 **유료 이용권을 쓰는 중인가**. 다른 플랜 카드의 버튼 라벨이 이걸 본다 —
+    /// 쓰는 중이면 '결제하기' 가 아니라 '이용권 변경' 이다(안드로이드 `BillingPanels.kt`
+    /// 의 `hasActiveSubscription` 과 같은 축). 초대로 들어온 공유 멤버도 포함이다.
+    let hasActivePlan: Bool
     let isBusy: Bool
     let vouchers: [VoucherItem]
     let onPurchase: (SubscriptionProduct) -> Void
@@ -224,7 +228,13 @@ struct PlanCard: View {
 
     @ViewBuilder
     private func priceButton(for plan: SubscriptionProduct, periodLabel: String) -> some View {
-        if subscriptions.product(for: plan) != nil {
+        // ⚠ **현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
+        // `BillingPanels.kt` 의 `if (option.key != "free" && !isCurrent)` 와 같다).
+        // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서
+        // **누를 수 있는 것처럼** 보인다 — 카드 위쪽 '현재 이용권' 뱃지가 이미 같은 말을 한다.
+        if isCurrent {
+            EmptyView()
+        } else if subscriptions.product(for: plan) != nil {
             Button {
                 onPurchase(plan)
             } label: {
@@ -238,7 +248,8 @@ struct PlanCard: View {
                         // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청). 가격은 카드 위쪽
                         // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
                         // '이용권 변경' 처럼 액션 라벨만 둔다.
-                        Text(isCurrent ? "사용 중" : "결제하기")
+                        // 이미 유료를 쓰는 중이면 이건 **결제가 아니라 전환**이다.
+                        Text(hasActivePlan ? "이용권 변경" : "결제하기")
                             .font(.subheadline.weight(.semibold))
                     }
                 }
@@ -248,7 +259,7 @@ struct PlanCard: View {
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)
             .foregroundStyle(theme.palette.onPrimary)
-            .disabled(isBusy || subscriptions.isPurchasing || isCurrent)
+            .disabled(isBusy || subscriptions.isPurchasing)
         } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
             // 아직 첫 fetch 가 끝나지 않음 — "준비중" 대신 로딩 스켈레톤을 보여줘
             // 첫 진입이 망가진 화면처럼 보이지 않게 한다.

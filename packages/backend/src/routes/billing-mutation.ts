@@ -341,6 +341,10 @@ billingMutation.post('/checkout', async (c) => {
 });
 
 billingMutation.post('/test-codes', async (c) => {
+  if (c.env.ENVIRONMENT === 'production') {
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
+  }
+
   const userEmail = c.get('userEmail') || '';
   if (!isTestCodeIssuer(c.env, userEmail)) {
     return c.json({ error: 'Test code issuer access is required', error_code: 'FORBIDDEN' }, 403);

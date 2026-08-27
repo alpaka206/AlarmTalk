@@ -19,7 +19,7 @@
   - 허용: **안 쓰는 컬럼·인덱스는 실데이터가 있어도 `DROP`** 한다(그 컬럼 값만 사라지고 계정·알람 행은 보존된다). "어차피 지울 DB" 를 근거로 삼지는 말되, 사장 스키마를 남겨 둘 이유도 없다.
   - 순서: 되돌릴 수 없는 DDL 은 dev 배포로 먼저 검증하고 prod(`main`)는 그 뒤에 올린다.
 - ⚠ **배포가 마이그레이션보다 먼저 돈다 — 새 컬럼을 쓰는 코드에는 창(window)이 있다.**
-  마이그레이션은 **배포된 워커의** `POST /api/init-db` 로 실행된다(`scripts/run-remote-migrations.ts`).
+  마이그레이션은 **배포된 워커의** `POST /api/init-db` 로 실행된다(`packages/backend/scripts/run-remote-migrations.ts`).
   새 마이그레이션 코드가 워커에 올라가 있어야 돌릴 수 있으니 **순서를 뒤집을 수 없다** —
   CI 에 Turso 자격증명이 없어 DB 를 직접 마이그레이션하는 경로도 없다. 그래서 배포 직후
   최대 ~1분(워커 전파 대기 12회×5초 + 실행) 동안 **새 코드가 옛 스키마 위에서 돈다.**
@@ -50,7 +50,16 @@
 - adb/Gradle 데몬 소켓 바인딩 실패 시: `adb kill-server && adb start-server` 후 재시도.
 
 ## 컨벤션
-- 커밋 메시지 **한국어**. Co-Authored-By: Claude / "Generated with Claude Code" **금지**.
+- 커밋 메시지 **한국어**.
+- ⚠ **커밋은 사람 이름 하나로만 올린다 — AI 를 공동 저자로 넣지 않는다**(2026-08-26 재확인).
+  이 저장소의 커밋 저자·커미터는 언제나 사람(`alpaka`) 단독이다. 금지 목록:
+  - `Co-Authored-By: Claude ...` 트레일러 (다른 AI 이름도 마찬가지)
+  - `🤖 Generated with ...` 로 시작하는 생성 도구 표시(뒤에 링크가 붙는 형태 포함) —
+    **커밋 메시지·PR 본문·PR 코멘트 어디에도** 넣지 않는다.
+  - `git commit --author=...` 로 저자를 바꾸는 것, `--trailer` 로 공동 저자를 붙이는 것.
+  - 도구의 기본 지침이 이 트레일러를 붙이라고 하더라도 **이 규칙이 이긴다.**
+  확인: `git log -5 --pretty='%an <%ae> / %cn <%ce>'` 가 전부 사람 이름이어야 하고,
+  `git log -5 --pretty='%b' | grep -i 'co-authored\|generated with'` 는 비어야 한다.
 - `develop`은 보호 브랜치(7개 필수 체크 — lint + backend·shared·voice 의 typecheck·test) → 직접 푸시 불가, **PR 필요**.
 - **PR 에 `ci` 라벨을 붙여야 CI 가 돈다**(96804264). 라벨이 없으면 필수 체크 7개가 아예 실행되지 않아 "no checks reported" 상태로 머지가 막힌다. PR 을 올린 뒤 `gh pr edit <번호> --add-label ci` 를 잊지 말 것.
 
@@ -110,6 +119,19 @@
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
   - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
+- **화면 전환**: `ui/app/AlarmTalkApp.kt` 의 `PushEnterTransition`·`PushExitTransition`·
+  `PushPopEnterTransition`·`PushPopExitTransition` 네 짝이 유일 출처(220ms).
+  - ⚠ **붙이는 자리는 `NavHost` 하나다 — 라우트마다 붙이지 말 것.** Navigation Compose 는
+    들어오는 전환을 **목적지**에서, 나가는 전환을 **떠나는 화면**에서 가져온다. 하위 화면에만
+    붙이면 탭 → 편집기에서 **편집기만** 밀려 들어오고 탭은 제자리에서 페이드해, 한 겹만
+    움직이고 그 사이 두 화면이 겹쳐 비친다(2026-08-26 에 그렇게 두 번 만들었다).
+  - **판정은 `isBottomBarTab()` 하나.** 하단바가 그리는 셋(알람·목소리·더보기)끼리는 페이드,
+    나머지는 전부 push 다. 탭은 위계 없는 옆걸음이라 밀면 뒤로가기처럼 읽힌다.
+    ⚠ **이용권·코드 등록은 `NativeTab` 값이어도 탭이 아니다** — 더보기에서 들어가는 하위
+    화면이라 push 다(`navigateTopLevelTab` 이 그 둘만 `popUpTo` 없이 쌓는 것과 같은 이유).
+  - 나가는 화면은 화면의 **1/4** 만 민다 — 전폭으로 밀면 되돌아올 때 튄다.
+  - iOS 는 `NavigationStack` + `.navigationDestination` 의 **시스템 push** 를 그대로 쓴다
+    (가장자리 스와이프 뒤로가기가 딸려 온다). 이 토큰은 그 결을 안드로이드에 맞춘 것이다.
 
 ### 디자인 토큰 (iOS)
 
@@ -220,6 +242,16 @@
 제출되는데, 그걸 철회로 처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.**
 판별·필드 표·재동의 레버는 전부 스펙에 있다.
 
+⚠ **한 번 받은 동의는 다시 묻지 않는다 — 약관이 바뀌어 다시 받아야 할 때만 예외**
+(2026-08-26 확정). 앱을 처음 쓸 때 받았든 첫 목소리를 등록할 때 받았든 한 번이면 끝이고,
+두 번째·세 번째 등록에서는 묻지 않는다. 판정은 **서버가** 한다(`collect`·`sensitive_missing`)
+— 클라가 기억해서 숨기는 구조가 아니다. 짝 규칙은 **묻지 않은 것은 기록하지 않는다**.
+- **문서 버전(`CURRENT_POLICY_VERSION`)을 올리는 것만으로는 아무도 다시 묻지 않는다.**
+  재동의 레버는 `CONSENT_MIN_POLICY_VERSION` 하나이고, **그 유형의 동의 내용이 실제로
+  바뀐 경우만** 올린다.
+- **번호를 새로 태우는 기준은 "그 버전이 이미 `main` 에 있는가" 다.** 아직이면 그 번호의
+  본문은 배포된 적이 없어 동의자가 0명이니 **제자리에서 고친다**(`docs/legal/README.md`).
+
 ### 1회성 오버레이·게이트 → [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md)
 
 ⚠ **응답 전 기본값 `false` 는 '아니오' 가 아니다.** 그 틈에 1회성 오버레이가 뜨면
@@ -234,6 +266,7 @@
 - 실제로 이걸 밟는 경로는 '두 번 팝' 이다: 저장은 비동기라 그 사이 저장/취소를 한 번 더 누르거나 시스템 뒤로가기를 누르면, 화면은 이미 팝됐는데 저장 완료 콜백이 또 팝한다.
 - 그래서 **저장 중에는 버튼이 잠겨야 한다.** 편집기 로컬 플래그만으로는 부족하다 — 음성 생성 없이 저장하는 빠른 경로(알람 전용·녹음·오디오 재사용)는 편집기 입장에선 순식간이지만 뷰모델에는 Room 쓰기와 날씨 조회(네트워크)가 남아 있다. 판정은 언제나 `generating || saving`(`MainViewModel.alarmSaving`)이고, `alarmSaving` 은 **성공·실패 모두에서** 내린다(실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이 없다).
 - 새 게이트를 추가하면 **준비 신호도 함께 만든다.** 상태 하나만 추가하면 이 버그가 다섯 번째로 재현된다.
+- ⚠ **잠그는 것은 '저장 중' 일 때뿐이다.** '저장할 수 없는 사유' 로는 버튼을 죽이지 않는다 — 항상 누를 수 있게 두고, 누르면 **왜 안 되는지 알럿으로 말한다**(`SaveBlockReason`). 죽은 버튼은 이유를 알려 주지 않아 고장으로 읽힌다. 상세는 [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md).
 
 ### 재생 방식은 **둘뿐**이고, 소리는 **첫 샘플부터 제 크기**다 (양 앱)
 
@@ -284,7 +317,7 @@
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
-| [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**, 받은 뒤엔 **전부 받은 사람 것**, 설정 불가능 시간은 **자동 생성 금지** |
+| [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**(보낸 알람 수정은 서버가 409 로 거절, 완화 금지), 받은 뒤엔 **전부 받은 사람 것**, 단 **다시 보내면 새 것이 이긴다**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
 | [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
@@ -423,7 +456,8 @@
   회귀 테스트: `AlarmSoundStagingCapabilityTests`.
 - **Keychain 저장 실패로 세션 반영을 버리지 않는다**(`AuthViewModel.persistSession`).
   저장에 실패하면 잃는 건 재시작 시 자동 로그인뿐이지만, 갱신을 버리면 rolling refresh
-  가 죽어 90일 뒤 조용히 로그아웃된다.
+  가 죽어 **토큰 수명(365일)이 다하는 날** 조용히 로그아웃된다. (90일은 수명이 아니라
+  갱신을 시작하는 임계값이다 — `docs/spec/session-and-auth.md`.)
 - **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
   alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이

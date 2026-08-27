@@ -10,10 +10,8 @@ import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
-import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
-import com.alarmtalk.app.network.PromoRedeemRequest
 import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.R
 import kotlinx.coroutines.async
@@ -189,22 +187,6 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         else -> fallback
     }
 
-private fun promoRedeemFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
-    when (errorCode) {
-        // 바우처도 프로모도 아닌 코드 → 기존 "등록할 수 없는 코드" 문구 재사용.
-        "CODE_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_code_not_found)
-        "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
-        "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
-        "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
-        "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
-        // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
-        "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
-        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
-        "ACTIVE_SUBSCRIPTION_EXISTS" -> context.getString(R.string.msg2_promo_fail_active_subscription)
-        "PROMO_REDEEM_FAILED" -> context.getString(R.string.msg2_promo_fail_generic)
-        else -> fallback
-    }
-
 private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Boolean =
     this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
 
@@ -274,117 +256,17 @@ internal fun MainViewModel.registerCode(
             if (authSession?.user?.id != ownerUserId) return@onFailure
             // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
             val errorCode = apiErrorCode(error)
-            if (errorCode == "CODE_NOT_FOUND" || errorCode == "INVALID_FORMAT") {
-                // 바우처 코드가 아니면 공용 프로모 코드로 폴백 시도한다. 바우처는 hash 조회
-                // '전에' 형식(INV-/GIFT-...)을 먼저 검사하므로, 자유 문자열 프로모
-                // 코드는 CODE_NOT_FOUND 가 아니라 INVALID_FORMAT 으로 떨어진다(둘 다 폴백 대상).
-                // 그 외 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
-                redeemPromoCode(authorization, trimmedCode, ownerUserId, onResult)
+            AlarmTalkLog.reportError("Failed to register code", error)
+            val failure = codeRegistrationFailureMessage(
+                getApplication<android.app.Application>(),
+                errorCode,
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
+            )
+            if (onResult != null) {
+                onResult(failure)
             } else {
-                AlarmTalkLog.reportError("Failed to register code", error)
-                val failure = codeRegistrationFailureMessage(
-                    getApplication<android.app.Application>(),
-                    errorCode,
-                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
-                )
-                if (onResult != null) {
-                    onResult(failure)
-                } else {
-                    message = failure
-                }
+                message = failure
             }
-        }
-        billingBusy = false
-    }
-}
-
-/**
- * 공용 프로모 코드 사용. [registerCode] 의 바우처 등록이 CODE_NOT_FOUND 로 실패했을 때만
- * 폴백 호출된다(같은 코루틴·billingBusy 유지). 성공 시 바우처 성공과 동일하게 서버 기준으로
- * 구독/플랜을 재조회하고 홈(또는 공유패스)으로 이동한다.
- */
-private suspend fun MainViewModel.redeemPromoCode(
-    authorization: String,
-    code: String,
-    ownerUserId: String?,
-    onResult: ((String?) -> Unit)?,
-) {
-    runCatching {
-        api.redeemPromoCode(authorization, PromoRedeemRequest(code))
-    }.onSuccess { response ->
-        if (authSession?.user?.id != ownerUserId) return@onSuccess
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
-        refreshBillingAfterMutation(authorization, "promo redeem")
-        refreshSocial()
-        refreshAppSession()
-        if (response.plan.isSharedPassPlan()) {
-            navigateSharedPassTick++
-        } else {
-            navigateHomeTick++
-        }
-        onResult?.invoke(null)
-    }.onFailure { error ->
-        if (authSession?.user?.id != ownerUserId) return@onFailure
-        AlarmTalkLog.reportError("Failed to redeem promo code", error)
-        val failure = promoRedeemFailureMessage(
-            getApplication<android.app.Application>(),
-            apiErrorCode(error),
-            userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeem_failed)),
-        )
-        if (onResult != null) {
-            onResult(failure)
-        } else {
-            message = failure
-        }
-    }
-}
-
-// 이용권 '선물' 결제는 UI 가 없다(선물은 GIFT- 코드 등록/공유 경로로만 쓴다). 남아 있던
-// gift 인자와 그 분기를 걷었다 — 두 호출부 모두 기본값(false)으로만 불렀다.
-internal fun MainViewModel.checkoutPlan(planKey: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_change_plan)) ?: return
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey))
-        }.onSuccess { response ->
-            response.subscription?.let { subscription ->
-                val updatedSubscription = BillingSubscriptionResponse(
-                    subscription = subscription,
-                    plan = response.plan,
-                )
-                subscriptionResponse = updatedSubscription
-                saveSubscriptionSnapshot(updatedSubscription)
-            }
-            response.voucher?.let { voucher ->
-                vouchers = listOf(
-                    VoucherItem(
-                        id = voucher.id,
-                        code = voucher.code,
-                        planKey = response.plan.key,
-                        planName = response.plan.name,
-                        planType = response.plan.planType,
-                        status = "issued",
-                        expiresAt = voucher.expiresAt,
-                        maxUses = voucher.maxUses,
-                        useCount = voucher.useCount,
-                    ),
-                ) + vouchers
-            }
-            message = getApplication<android.app.Application>()
-                .getString(R.string.msg_gb_plan_applied_named, response.plan.name)
-            refreshBillingAfterMutation(authorization, "checkout")
-            refreshAppSession()
-            refreshSocial()
-            if (response.plan.isSharedPassPlan()) {
-                navigateSharedPassTick++
-            } else {
-                navigateHomeTick++
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to checkout plan key=$planKey", error)
-            val fallback = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_apply_failed)
-            message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false
     }
@@ -633,10 +515,14 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
 
 /** 다시 유료가 되면 무료 동안 사운드온리로 잠갔던 목소리 알람을 원래 모드로 복원한다. */
 internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
-    // ⚠ **유료로 돌아오면 대기표를 비운다**(iOS `applyFreePlanVoiceLockIfNeeded` 와 같은 이유).
-    // ① 확인 안 한 강등 안내가 남아 있으면 이미 유료가 된 사람에게 "무료로 바뀌었어요" 를
-    //    띄우게 된다. ② 비워 둬야 다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다.
-    DowngradeNoticeStore(getApplication()).clear(authSession?.user?.id)
+    // ⚠ **유료로 돌아오면 무료 강등 안내만 비운다**(iOS `applyFreePlanVoiceLockIfNeeded` 와
+    // 같은 이유). ① 확인 안 한 무료 강등 안내가 남아 있으면 이미 유료가 된 사람에게
+    // "무료로 바뀌었어요" 를 띄우게 된다. ② 비워 둬야 다음에 다시 무료가 됐을 때 깨끗이
+    // 다시 뜬다.
+    // ⚠ **원인을 가려서 지운다**(Codex #703 P2). 예전에는 통째로 비워서, 다른 기기가 적어 둔
+    // `VOICE_REPLACED`(이용권으로 복원되지 않는 안내)까지 사용자가 보기도 전에 사라졌다.
+    DowngradeNoticeStore(getApplication())
+        .clear(authSession?.user?.id, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {
         runCatching {
             repository.unlockPaidAlarmTalks()
@@ -645,4 +531,3 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
         }
     }
 }
-

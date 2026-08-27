@@ -16,6 +16,9 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
@@ -49,6 +52,15 @@ data class CachedAlarmAudio(
     val cacheKey: String?,
     val messageId: String? = null,
 )
+
+/**
+ * **이미 지나간 매니페스트 세대의 응답이라 쓰지 않았다**(Codex #703 P1).
+ *
+ * 실패가 아니라 '이 바이트는 더 이상 맞지 않는다' 는 뜻이다. 호출자는 갱신으로 세지 말고
+ * 그 키를 낡은 채로 두면 된다 — 다음 회차가 새 매니페스트로 다시 받는다.
+ * iOS 짝은 `AudioCacheError.superseded`.
+ */
+class SupersededAudioException : IllegalStateException("Audio response is superseded by a newer manifest")
 
 class AlarmAudioStore(
     private val context: Context,
@@ -514,7 +526,28 @@ class AlarmAudioStore(
         rawAudioUri: String?,
         messageId: String?,
     ): CachedAlarmAudio {
-        findCachedFile(resolvedCacheKey)?.let { cached ->
+        require(bytes.isNotEmpty()) { "Voice audio must not be empty." }
+        val existing = findCachedFile(resolvedCacheKey)
+        // ⚠ **뒤처진 응답이 새 세대를 덮지 못하게 한다**(Codex #703 P1). 직렬화는 순서를
+        // 정해 주지 않는다 — 프리페처가 **옛 매니페스트**로 받아 둔 바이트가 교체 새로고침의
+        // 새 바이트보다 늦게 도착하면, 저장된 주소와 다르다는 이유로 '낡음' 으로 읽혀 새
+        // 세대를 회수된 옛 바이트로 덮어쓴다(iOS 는 그때 구워 둔 사운드까지 지워 다음
+        // 재예약이 옛 목소리를 굽는다). 그래서 "다르면 새것" 이 아니라 **매니페스트가 지금
+        // 가리키는 주소인가**로 가른다.
+        // ⚠ **캐시 파일이 없어도 거절한다**(Codex #703 P1, iOS 와 같은 규칙). 첫 다운로드거나
+        // 캐시가 정리된 뒤라면 `existing` 이 null 인데, 그때 그냥 쓰면 **회수된 옛 바이트**가
+        // 자리를 차지한다 — 그 무렵 교체 정리는 '낡은 키 없음' 으로 세대를 확정해 버려 다시
+        // 받을 기회도 사라진다.
+        val superseded = incomingIsSupersededByManifest(messageId, rawAudioUri)
+        // 쓸 것이 아무것도 없는데 응답까지 지나간 것이면 **던진다** — 호출자가 '갱신 안 됨'
+        // 으로 세고 그 키는 낡은 채 남아 다음 회차가 새 매니페스트로 다시 받는다.
+        if (superseded && existing == null) throw SupersededAudioException()
+        // 지나간 응답이면 낡음 판정을 하지 않는다 → 아래에서 기존 캐시를 그대로 돌려준다.
+        val stale = existing != null && !superseded &&
+            (cachedAudioIsStale(resolvedCacheKey, rawAudioUri) ||
+                cachedAudioNeedsRevisionRefresh(resolvedCacheKey, rawAudioUri))
+        if (existing != null && !stale) {
+            val cached = existing
             val cachedUri = cached.toUri()
             val metadata = readMetadata(resolvedCacheKey)
             return CachedAlarmAudio(
@@ -526,7 +559,9 @@ class AlarmAudioStore(
                 messageId = metadata.messageId ?: messageId,
             )
         }
-        val target = File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
+        // stale 교체도 기존 경로를 유지한다. DB/예약이 localAudioUri를 들고 있어 새 확장자
+        // 경로로 바꾸면 파일을 잘 받아 놓고도 옛 경로를 재생하게 된다.
+        val target = existing ?: File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
         // 임시 파일에 쓴 뒤 rename 한다. 곧바로 target 에 쓰면 쓰기 도중 프로세스가 죽었을 때
         // '잘린 mp3'가 남고, findCachedFile 은 파일 존재만 보므로 이후 다운로드가 그 클립을
         // 영원히 건너뛴다 -> 그 알람은 무음이 된다. rename 은 같은 파일시스템에서 원자적이라
@@ -539,29 +574,28 @@ class AlarmAudioStore(
             "${safeCacheKey(resolvedCacheKey)}.$extension.${System.nanoTime()}.$PARTIAL_EXTENSION",
         )
         staging.writeBytes(bytes)
-        if (!staging.renameTo(target)) {
-            staging.delete()
-            // 경합에서 진 쪽: 다른 호출이 먼저 완성해 두었으면 그 결과를 그대로 쓴다.
-            findCachedFile(resolvedCacheKey)?.let { winner ->
-                val metadata = readMetadata(resolvedCacheKey)
-                return CachedAlarmAudio(
-                    localAudioUri = winner.toUri().toString(),
-                    rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
-                    displayName = winner.name,
-                    durationMillis = readDurationMillis(winner.toUri()),
-                    cacheKey = resolvedCacheKey,
-                    messageId = metadata.messageId ?: messageId,
+        val durationMillis = readDurationMillis(staging.toUri())
+        requireWithinLimit(durationMillis)
+        try {
+            try {
+                Files.move(
+                    staging.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
                 )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(staging.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
-            throw java.io.IOException("Failed to finalize cached audio: ${target.name}")
+        } catch (error: Exception) {
+            staging.delete()
+            throw java.io.IOException("Failed to finalize cached audio: ${target.name}", error)
         }
         writeMetadata(
             cacheKey = resolvedCacheKey,
             rawAudioUri = rawAudioUri,
             messageId = messageId,
         )
-        val durationMillis = readDurationMillis(target.toUri())
-        requireWithinLimit(durationMillis)
         Log.i(TAG, "Cached generated voice audio path=${target.absolutePath} durationMillis=$durationMillis")
         return CachedAlarmAudio(
             localAudioUri = target.toUri().toString(),
@@ -574,6 +608,9 @@ class AlarmAudioStore(
     }
 
     fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
+        if (cachedAudioIsStale(cacheKey, rawAudioUri)) {
+            return null
+        }
         val cached = findCachedFile(cacheKey) ?: return null
         val uri = cached.toUri()
         val metadata = readMetadata(cacheKey)
@@ -585,6 +622,51 @@ class AlarmAudioStore(
             cacheKey = cacheKey,
             messageId = metadata.messageId,
         )
+    }
+
+    fun isCachedAudioStale(cacheKey: String, incomingRawAudioUri: String?): Boolean =
+        cachedAudioIsStale(cacheKey, incomingRawAudioUri)
+
+    /**
+     * **세대 표식이 아예 없는 옛 캐시인가**(Codex #703 P1).
+     *
+     * 낡음 판정은 `audio_url` 비교 하나인데, `rawAudioUri` 를 적기 **전에** 받아 둔 캐시는
+     * 비교할 값이 없어 [cachedAudioIsStale] 이 늘 false 를 준다 — 제자리 목소리 교체가
+     * 일어나도 그 프리셋만 **영영 다시 받지 않고**, 알람이 회수된 옛 목소리로 계속 운다.
+     *
+     * ⚠ **[cachedAudioIsStale] 을 고치지 않는 이유**: 그 판정은 재생 경로도 본다.
+     * "모르면 낡지 않았다" 를 뒤집으면 알람마다 네트워크를 타고 **오프라인에서는 아예 못
+     * 쓴다**(그게 그 규칙의 존재 이유다). 그래서 **새로고침 선택**에서만 이 값을 함께 보고,
+     * 한 번 받아 두면 그때 표식이 적혀 다시 걸리지 않는다 — **한 번뿐인 보정**이다.
+     */
+    fun cachedAudioNeedsRevisionRefresh(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+        if (findCachedFile(cacheKey) == null) return false
+        if (incomingRawAudioUri?.takeIf { it.isNotBlank() } == null) return false
+        return readMetadata(cacheKey).rawAudioUri?.takeIf { it.isNotBlank() } == null
+    }
+
+    /**
+     * 들고 온 바이트가 **이미 지나간 매니페스트 세대**의 것인가.
+     *
+     * 매니페스트가 그 message ID 를 알고 있고 지금 가리키는 주소가 이 응답의 주소와 다르면,
+     * 이 응답은 뒤처진 것이다 — 덮어쓰지 않는다. 매니페스트가 모르는 message ID(직접 생성한
+     * TTS 등)나 주소가 없는 응답은 판단 근거가 없으므로 **막지 않는다.**
+     */
+    private fun incomingIsSupersededByManifest(messageId: String?, incomingRawAudioUri: String?): Boolean {
+        val id = messageId?.takeIf { it.isNotBlank() } ?: return false
+        val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        val current = StockClipManifestStore.load(context)
+            ?.clips?.firstOrNull { it.messageId == id }
+            ?.audioUrl?.takeIf { it.isNotBlank() } ?: return false
+        return current != incoming
+    }
+
+    /** 같은 message ID라도 서버의 R2 주소가 바뀌면 제자리 목소리 교체로 게시된 새 음원이다. */
+    private fun cachedAudioIsStale(cacheKey: String, incomingRawAudioUri: String?): Boolean {
+        if (findCachedFile(cacheKey) == null) return false
+        val incoming = incomingRawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        val stored = readMetadata(cacheKey).rawAudioUri?.takeIf { it.isNotBlank() } ?: return false
+        return stored != incoming
     }
 
     /**
@@ -1009,6 +1091,13 @@ class AlarmAudioStore(
          * 이 파일들은 특정 알람에 묶이지 않아 in-use 집합에 안 들어가므로 sweep 에서 제외한다.
          */
         const val STOCK_CACHE_KEY_PREFIX = "stock_"
+
+        /** 같은 서버 message ID를 담을 수 있는 캐시 네임스페이스. 존재하는 stale 키만 갱신한다. */
+        fun messageCacheKeys(messageId: String): List<String> = listOf(
+            "$STOCK_CACHE_KEY_PREFIX$messageId",
+            "remote-message-$messageId",
+            "greeting_$messageId",
+        )
 
         // 백엔드 /voice/clone 은 audio/* 접두 MIME 만 받는다(아니면 INVALID_AUDIO_MIME_TYPE).
         // 이 확장자들은 업로드 시 대응 audio/* 로 매핑되고(voiceUploadPart), 목록 밖 컨테이너는

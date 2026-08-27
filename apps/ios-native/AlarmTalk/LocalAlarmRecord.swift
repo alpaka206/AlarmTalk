@@ -47,6 +47,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var ttsMessageId: String?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
+    var remoteDeliveryVersion: String?
+    /// **이 행을 만들거나 갱신할 때 서버가 준 전달 세대.** 반영·ACK 성패와 무관하게 그 자리에서 적는다.
+    ///
+    /// ⚠ `remoteDeliveryVersion`(=음원·예약까지 끝냈다)과 다른 값이다. 이 값이 있어야
+    /// **재전송**과 **반영 실패**가 갈린다 — 서버 세대가 이 값과 같으면 내가 이미 받은 그
+    /// 전달이라 수신자 편집을 보존하고, 다르면 발신자가 **다시 보낸 것**이라 덮어쓴다.
+    /// 안드로이드 짝은 `AlarmEntity.observedDeliveryVersion`, 규칙은
+    /// `docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」.
+    var observedDeliveryVersion: String?
     var syncState: String           // AlarmSyncState.rawValue
     var origin: String              // AlarmOrigin.rawValue
     var alarmVolumePercent: Int     // 0..100
@@ -141,6 +150,23 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
             !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    /// **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
+    ///
+    /// 제자리 목소리 교체는 프리셋(버킷) 알람을 **같은 message id 로 재렌더해 살리고**, 다시
+    /// 만들 수 없는 직접 입력만 내린다. 그래서 이 판정식을 넓히면 되돌릴 수 없이 프리셋
+    /// 알람까지 벗긴다. 안드로이드 짝은 `AlarmEntity.usesCustomMessageVoice()` —
+    /// **둘은 철자까지 같아야 한다.**
+    var usesCustomMessageVoice: Bool {
+        // ⚠ **`voiceCategory == "custom"` 만 보면 안 된다.** 버킷이 붙으면 랜덤 생성이 꺼지고
+        // 저장 카테고리가 "custom" 이 되므로, 버킷 없이 프리셋 클립 하나만 물린 **옛 행**은
+        // 세 값이 직접 입력과 똑같아 보인다. 그 행은 캐시 키가 `stock_<messageId>` 라서
+        // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
+        !voiceRandomPrompt &&
+            bucketId?.nilIfBlank == nil &&
+            !(audioCacheKey?.hasPrefix(AudioCacheStore.stockCacheKeyPrefix) ?? false) &&
+            (voiceCategory == nil || voiceCategory == "custom")
     }
 
     /// 시스템 스톡 보이스 클립 알람인지 — 무료 플랜에서도 보존되어야 한다.
@@ -285,6 +311,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
+        remoteDeliveryVersion: String? = nil,
+        observedDeliveryVersion: String? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
         alarmVolumePercent: Int = 100,
@@ -332,6 +360,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
+        self.remoteDeliveryVersion = remoteDeliveryVersion
+        self.observedDeliveryVersion = observedDeliveryVersion
         self.syncState = syncState
         self.origin = origin
         self.alarmVolumePercent = alarmVolumePercent
@@ -381,6 +411,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case ttsMessageId
         case remoteAlarmId
         case lastSyncedAtMillis
+        case remoteDeliveryVersion
+        case observedDeliveryVersion
         case syncState
         case origin
         case alarmVolumePercent
@@ -467,6 +499,9 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
+        self.remoteDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .remoteDeliveryVersion)
+        // 옛 저장본에는 없다 — nil 이면 '어느 전달을 받았는지 모른다' 가 사실이라 예전 규칙을 쓴다.
+        self.observedDeliveryVersion = try c.decodeIfPresent(String.self, forKey: .observedDeliveryVersion)
 
         // syncState 보정: remoteAlarmId 가 있으면 synced, 없으면 local_only.
         if let raw = try c.decodeIfPresent(String.self, forKey: .syncState),
@@ -553,6 +588,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
         try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
         try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
+        try c.encodeIfPresent(remoteDeliveryVersion, forKey: .remoteDeliveryVersion)
+        try c.encodeIfPresent(observedDeliveryVersion, forKey: .observedDeliveryVersion)
         try c.encode(syncState, forKey: .syncState)
         try c.encode(origin, forKey: .origin)
         try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)
@@ -628,11 +665,50 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
 // MARK: - Persistence Actor
 // 디스크 I/O 를 별도 actor 로 격리. `LocalAlarmStore` 가 wrapper.
+/**
+ * **알람 파일 쓰기를 한 줄로 세운다 — 늦게 도착한 옛 스냅샷이 새 파일을 덮지 않게.**
+ *
+ * 비동기 저장(`persist`)은 upsert 마다 그때의 스냅샷을 실어 보내고, 동기 저장(`saveNow`)은
+ * 최신 스냅샷을 바로 쓴다. 둘이 다른 길로 가면 **먼저 큐에 실린 옛 스냅샷이 나중에 도착해**
+ * 방금 확인한 저장을 되돌린다 — 그 위에서 교체 표식이 '반영함' 으로 확정되면, 다음 실행은
+ * 목소리가 살아 있는 알람을 다시 읽어 오고도 영영 다시 내리지 않는다.
+ *
+ * 그래서 두 경로가 같은 자물쇠와 **스냅샷을 뜬 시점의 순번**을 쓴다. 순번이 뒤진 쓰기는 조용히
+ * 버린다(이미 더 새 내용이 파일에 있다).
+ */
+final class LocalAlarmFileWriter: @unchecked Sendable {
+    private let url: URL
+    private let lock = NSLock()
+    private var lastWrittenSeq: UInt64 = 0
+
+    init(url: URL) { self.url = url }
+
+    @discardableResult
+    func write(_ alarms: [LocalAlarmRecord], seq: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        // 이미 더 새 스냅샷이 파일에 있다 — 되돌리지 않는다(성공으로 본다).
+        guard seq >= lastWrittenSeq else { return true }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(alarms) else { return false }
+        do {
+            try data.write(to: url, options: [.atomic])
+            lastWrittenSeq = seq
+            return true
+        } catch {
+            return false
+        }
+    }
+}
+
 actor LocalAlarmPersistence {
     private let storageURL: URL
+    private let writer: LocalAlarmFileWriter
 
-    init(storageURL: URL) {
+    init(storageURL: URL, writer: LocalAlarmFileWriter) {
         self.storageURL = storageURL
+        self.writer = writer
     }
 
     func load() -> [LocalAlarmRecord] {
@@ -652,15 +728,14 @@ actor LocalAlarmPersistence {
         let cleaned = loaded.filter { !$0.id.hasPrefix(LocalAlarmRecord.previewIDPrefix) }
         // 걸러낸 것이 있으면 **파일도 그 자리에서 고친다.** 메모리에서만 빼면 표본은
         // 디스크에 남아, 이 걸름을 되돌리거나 다른 경로가 파일을 직접 읽는 순간 되살아난다.
-        if cleaned.count != loaded.count { save(cleaned) }
+        // 표본 청소는 아직 아무 쓰기도 없는 시점이라 순번 0 으로 남긴다.
+        if cleaned.count != loaded.count { save(cleaned, seq: 0) }
         return cleaned
     }
 
-    func save(_ alarms: [LocalAlarmRecord]) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(alarms) else { return }
-        try? data.write(to: storageURL, options: [.atomic])
+    /// 스냅샷을 뜬 시점의 순번과 함께 쓴다 — 동기 저장(`LocalAlarmStore.saveNow`)과 같은
+    /// 자물쇠를 거치므로 늦게 도착해도 새 파일을 덮지 않는다.
+    func save(_ alarms: [LocalAlarmRecord], seq: UInt64) {
+        writer.write(alarms, seq: seq)
     }
 }
-

@@ -349,6 +349,12 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     /// 돌려준다(`SELECT a.*`). 2026-08-18 전에는 이 필드가 **읽기 모델에 아예 없어서**,
     /// 받는 사람이 테마를 볼 방법이 없었다. 안드로이드 `RemoteAlarm.bucketId` 짝.
     var bucketId: String?
+    /// 같은 알람 id가 재전송으로 교체돼도 구버전 ACK가 새 행을 지우지 못하게 하는 전달 세대.
+    var deliveryVersion: String? = nil
+}
+
+struct AlarmReceiptRequest: Encodable {
+    var deliveryVersion: String
 }
 
 struct RemoteAlarmWriteRequest: Encodable {
@@ -407,6 +413,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// 다시 시도할 수도 없었다**(서버에는 `/:id/speech-style/retry` 가 있다).
     /// 안드로이드는 `voicesr_speech_style_failed` + `_retry` 행을 그린다.
     var speechStyleStatus: String? = nil
+    /// **이 프로필의 직접 입력 음원이 무효가 된 시각**(제자리 교체). 값이 바뀌면 그 목소리로
+    /// 만들어 둔 직접 입력 알람은 다시 만들 수 없는 옛 목소리다.
+    ///
+    /// 교체는 프로필 **id 를 그대로 재사용**하므로 접근 가능 목록 대조로는 영원히 안 걸린다.
+    /// 푸시는 즉시성만 맡고, 정확성은 이 값을 `VoiceReplacementMarkerStore` 와 대조하는
+    /// 새로고침 경로가 맡는다. 안드로이드 `VoiceProfile.customAudioInvalidatedAt` 미러.
+    var customAudioInvalidatedAt: String? = nil
 }
 
 /// `PATCH voice/{id}` 로 초안을 승격할 때만 쓰는 최소 바디.
@@ -419,6 +432,8 @@ struct VoiceDraftPromoteRequest: Encodable {
     /// 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 재사용한다).
     /// nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
     var replaceExisting: Bool?
+    /// 공유는 초안 입력이 아니라 실제 등록을 확정하는 화면에서 고른다.
+    var isShared: Bool
 }
 
 struct VoicePreviewPlayedRequest: Encodable {
@@ -671,6 +686,20 @@ struct StockClip: Codable, Identifiable, Equatable {
     /// 안드로이드 `TtsApi.StockClip.variant` 미러.
     var variant: Int?
 
+    /// **서버가 이 클립을 '지금 목소리' 로 이미 구웠는가.**
+    ///
+    /// ⚠ 제자리 목소리 교체는 세대 표식(`custom_audio_invalidated_at`)을 **먼저 커밋하고**
+    /// 프리셋 재렌더는 큐에만 넣는다 — 굽는 것은 cron 이 나중에 한다. 그 사이 매니페스트의
+    /// `audioUrl` 은 **옛 클립 그대로**라, 앱이 "낡은 키가 없다 = 다 끝났다" 로 읽으면 교체
+    /// 세대를 확정해 버리고 재렌더가 끝난 뒤에도 다시 받지 않는다(Codex #703 P1).
+    /// false 인 클립이 하나라도 있으면 **아직 끝난 것이 아니다.**
+    ///
+    /// 옛 서버는 이 필드를 주지 않는다 — 그때는 예전처럼 동작하도록 `true` 로 읽는다.
+    var renderedForCurrentVoice: Bool?
+
+    /// 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다.
+    var isRenderedForCurrentVoice: Bool { renderedForCurrentVoice ?? true }
+
     var id: String { messageId }
 }
 
@@ -722,6 +751,10 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var listenerTitle: String?
     /// Server-side flag for shared voices that still need viewer-specific labels.
     var needsViewerInfo: Bool?
+    /// 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
+    /// (`VoiceProfile.customAudioInvalidatedAt`) — 공유받은 사람도 그 목소리로 자기 직접
+    /// 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
+    var customAudioInvalidatedAt: String?
 }
 
 extension FamilyVoiceProfile {

@@ -77,6 +77,11 @@ struct AlarmTalkApp: App {
                     .environmentObject(auth)
                     .environmentObject(remoteSync)
                     .environmentObject(voiceStudio)
+                    // ⚠ **준비 화면도 프리페처를 깨울 수 있어야 한다**(Codex #703 P2).
+                    // 위 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번 세션에
+                    // 새로 소유하게 된 목소리로는 다시 돌지 않는다 — 그래서 첫 등록이
+                    // 앱을 껐다 켤 때까지 100% 미만에 갇혔다.
+                    .environmentObject(stockClipPrefetcher)
                     .environmentObject(socialFeatures)
                     .environmentObject(subscriptions)
                     .environmentObject(versionGate)
@@ -222,6 +227,15 @@ struct AlarmTalkApp: App {
                             // `force` 가 없으면 진행 중인 새로고침에 막혀 철회 이전 목록으로
                             // 판단하게 된다(Codex #697 P1).
                             await voiceStudio.refresh(session: auth.session, force: true)
+                            _ = await voiceStudio.loadStockClips(session: auth.session, force: true)
+                            if await voiceStudio.refreshChangedCachedStockClips(session: auth.session).changed {
+                                await alarmStore.waitUntilLoadedFromDisk()
+                                _ = await AlarmScheduleReconciler.reconcile(
+                                    store: alarmStore,
+                                    alarmKit: alarmKit,
+                                    ownerUserId: auth.session?.user.id
+                                )
+                            }
                         }
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
@@ -426,6 +440,15 @@ struct AlarmTalkApp: App {
                     guard auth.session != nil else { return }
                     await auth.refreshUser()
                     guard auth.session != nil else { return }
+                    // ⚠ **개정을 여기서도 집는다.** 예전에는 콜드 스타트와 로그인 직후에만
+                    // 봤는데, 앱을 계속 켜 두는 사람은 그 사이 올라간 재동의 요구를 며칠씩
+                    // 모르고 지낸다 — 그동안 서버는 데이터 라우트를 403 으로 막는다.
+                    // 안드로이드는 `LaunchedEffect(authSession?.token)` 이라 토큰이 갱신될
+                    // 때마다 다시 본다(`ui/app/AlarmTalkApp.kt`).
+                    // 이미 다 받은 사람에게는 아무 일도 일어나지 않는다 — 서버 `collect` 가
+                    // 비어 화면이 뜨지 않는다(「한 번 받은 동의는 다시 묻지 않는다」).
+                    await auth.checkConsentStatus()
+                    guard auth.session != nil else { return }
                     await remoteSync.runFullSync()
                     await refreshWeatherVariantsAndReconcile()
                 }
@@ -562,7 +585,9 @@ struct AlarmTalkApp: App {
             //    "무료로 바뀌었어요" 를 띄우게 된다.
             // ② 비워 둬야 **다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다**
             //    (2026-08-11 요청 "다시 요금제를 쓰면 나중에 바뀌었을 때 알람 뜰 수 있게").
-            DowngradeNoticeStore().clear(userID: auth.session?.user.id)
+            // ⚠ **무료 강등 안내만 지운다**(Codex #703 P2). 무조건 비우면 다른 기기가 적어
+            // 둔 목소리 교체 안내(복원되지 않는 안내)를 띄우기도 전에 지운다.
+            DowngradeNoticeStore().clear(userID: auth.session?.user.id, ifCause: .freePlan)
             _ = await socialFeatures.restorePaidVoiceAlarms(
                 alarmStore: alarmStore,
                 alarmKit: alarmKit,

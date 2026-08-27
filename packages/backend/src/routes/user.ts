@@ -421,6 +421,7 @@ user.post('/consents', async (c) => {
     );
 
     let downgradedAlarms: DowngradedAlarm[] = [];
+    let voiceAccessRevokedUserIds: string[] = [];
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
@@ -430,7 +431,13 @@ user.post('/consents', async (c) => {
         });
       }
       if (withdrewSensitiveConsent) {
-        downgradedAlarms = await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
+        const revocation = await deleteSensitiveVoiceDataForUser(
+          tx,
+          userPk,
+          c.get('userLoginId'),
+        );
+        downgradedAlarms = revocation.downgradedAlarms;
+        voiceAccessRevokedUserIds = revocation.voiceAccessRevokedUserIds;
       }
     });
     // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
@@ -440,7 +447,7 @@ user.post('/consents', async (c) => {
       db,
       c.env,
       downgradedAlarms,
-      withdrewSensitiveConsent ? [userPk] : [],
+      voiceAccessRevokedUserIds,
     );
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {

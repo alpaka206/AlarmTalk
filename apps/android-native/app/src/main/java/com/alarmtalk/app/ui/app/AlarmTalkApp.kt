@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -513,6 +514,14 @@ internal fun AlarmTalkApp(
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
+            // ⚠ **다른 계정의 매니페스트가 남아 있으면 여기서 지운다**(Codex #703 P1).
+            // 자동 401 은 파일을 일부러 남기는데(같은 사람 재로그인 시 오프라인 사용),
+            // 그 뒤 **다른 계정**이 로그인하면 그 파일이 그대로 시드된다 — 안에는 앞 계정의
+            // 클론 클립(목소리 이름·문구)이 들어 있다.
+            com.alarmtalk.app.data.StockClipManifestStore.clearIfOwnedByAnotherUser(
+                context,
+                authSession.user.id,
+            )
             viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
@@ -748,37 +757,51 @@ internal fun AlarmTalkApp(
 
     downgradeNotice?.let { notice ->
         val isFreePlan = notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN
+        // 목소리 교체는 **이용권과 무관하다** — 이용권을 봐도 할 수 있는 게 없으므로
+        // '이용권 보기' 를 두지 않는다(같은 일을 하지 않는 액션은 무게만 나눈다).
+        val isVoiceReplaced = notice.cause == DowngradeNoticeStore.Cause.VOICE_REPLACED
+        val confirmAction = IosAlertAction(
+            label = stringResource(R.string.auth_confirm),
+            emphasized = true,
+            onClick = {
+                downgradeNoticeStore.clear(authSession?.user?.id)
+                downgradeNotice = null
+            },
+        )
         IosAlertDialog(
             title = stringResource(
-                if (isFreePlan) R.string.downgrade_notice_free_title
-                else R.string.downgrade_notice_shared_title,
+                when {
+                    isFreePlan -> R.string.downgrade_notice_free_title
+                    isVoiceReplaced -> R.string.downgrade_notice_replaced_title
+                    else -> R.string.downgrade_notice_shared_title
+                },
             ),
             message = stringResource(
-                if (isFreePlan) R.string.downgrade_notice_free_message
-                else R.string.downgrade_notice_shared_message,
+                when {
+                    isFreePlan -> R.string.downgrade_notice_free_message
+                    isVoiceReplaced -> R.string.downgrade_notice_replaced_message
+                    else -> R.string.downgrade_notice_shared_message
+                },
                 notice.count,
             ),
             // ⚠ 바깥 탭·뒤로가기로 닫아도 **지우지 않는다** — 실수로 닫았을 뿐일 수 있다.
             // 지우는 건 '확인' 하나뿐이다.
             onDismiss = { downgradeNotice = null },
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.downgrade_notice_open_billing),
-                    onClick = {
-                        downgradeNoticeStore.clear(authSession?.user?.id)
-                        downgradeNotice = null
-                        navigateToTab(NativeTab.Billing)
-                    },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.auth_confirm),
-                    emphasized = true,
-                    onClick = {
-                        downgradeNoticeStore.clear(authSession?.user?.id)
-                        downgradeNotice = null
-                    },
-                ),
-            ),
+            actions = if (isVoiceReplaced) {
+                listOf(confirmAction)
+            } else {
+                listOf(
+                    IosAlertAction(
+                        label = stringResource(R.string.downgrade_notice_open_billing),
+                        onClick = {
+                            downgradeNoticeStore.clear(authSession?.user?.id)
+                            downgradeNotice = null
+                            navigateToTab(NativeTab.Billing)
+                        },
+                    ),
+                    confirmAction,
+                )
+            },
         )
     }
 
@@ -1141,6 +1164,24 @@ internal fun AlarmTalkApp(
               navController = navController,
               startDestination = NativeTab.Alarms.route,
               modifier = Modifier.fillMaxSize(),
+              // ⚠ **전환은 여기 한 곳에서 정한다 — 라우트마다 붙이지 말 것**(2026-08-26).
+              // Navigation Compose 는 들어오는 전환을 **목적지**에서, 나가는 전환을
+              // **떠나는 화면**에서 가져온다. 그래서 하위 화면에만 붙이면 탭 → 편집기에서
+              // 편집기만 밀려 들어오고 **탭은 제자리에서 페이드**한다 — 한 겹만 움직이고
+              // 그 사이 두 화면이 겹쳐 비친다(그렇게 두 번 만들었다).
+              // 판정은 '어디로 가는가' 하나다(`PushEnterTransition` 주석 참조).
+              enterTransition = { if (targetState.isBottomBarTab()) FadeInTransition else PushEnterTransition() },
+              exitTransition = { if (targetState.isBottomBarTab()) FadeOutTransition else PushExitTransition() },
+              // 뒤로가기는 **양쪽 다 탭일 때만** 페이드다. 하위 화면에서 돌아오는 길은
+              // 왼쪽에서 되밀려 들어와야 앞으로 간 길과 짝이 맞는다.
+              popEnterTransition = {
+                  if (targetState.isBottomBarTab() && initialState.isBottomBarTab()) FadeInTransition
+                  else PushPopEnterTransition()
+              },
+              popExitTransition = {
+                  if (targetState.isBottomBarTab() && initialState.isBottomBarTab()) FadeOutTransition
+                  else PushPopExitTransition()
+              },
           ) {
               NativeTab.values().forEach { tab ->
                   composable(tab.route) {
@@ -1239,10 +1280,6 @@ internal fun AlarmTalkApp(
                           defaultValue = null
                       },
                   ),
-                  // 편집기는 우측에서 페이지가 밀고 들어오는 표준 push 전환 — 하단바 슬라이드(220ms)와
-                  // 같은 박자로 묶어 '크롬 사라짐 → 화면 전환' 두 박자가 아니라 한 번의 이동으로 보이게.
-                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
-                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
@@ -1266,7 +1303,10 @@ internal fun AlarmTalkApp(
                       initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
+                      settlingVoiceProfileIds = viewModel.settlingVoiceProfileIds,
+                      onVoiceUnavailable = { reason -> viewModel.message = reason },
                       voiceProfileBusy = voiceProfileBusy,
+                      voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
                       stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
                           clipReadiness = viewModel.clipReadiness,
@@ -1299,9 +1339,6 @@ internal fun AlarmTalkApp(
               composable(
                   route = AppRoute.AlarmEdit,
                   arguments = listOf(navArgument(AppRoute.AlarmIdArg) { type = NavType.StringType }),
-                  // AlarmCreate 와 동일한 push 전환(하단바 슬라이드와 동박자).
-                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
-                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
                   val currentAlarm = alarms.firstOrNull { it.id == alarmId }
@@ -1321,7 +1358,10 @@ internal fun AlarmTalkApp(
                           familyAlarmMode = false,
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,
+                          settlingVoiceProfileIds = viewModel.settlingVoiceProfileIds,
+                          onVoiceUnavailable = { reason -> viewModel.message = reason },
                           voiceProfileBusy = voiceProfileBusy,
+                          voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
                           stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
                           clipReadiness = viewModel.clipReadiness,
@@ -1445,3 +1485,48 @@ internal fun AlarmTalkApp(
     }
 }
 
+/**
+ * **표준 push 전환 — 하위 화면으로 드나드는 모든 이동이 이걸 쓴다.**
+ *
+ * 우측에서 페이지가 밀고 들어오고, 뒤 화면은 왼쪽으로 조금 밀리며 흐려진다.
+ * 박자(220ms)는 하단바 슬라이드와 같다 — '크롬 사라짐 → 화면 전환' 두 박자가 아니라
+ * 한 번의 이동으로 보이게 하려는 것이다. iOS 는 `NavigationStack` 의 시스템 push 가
+ * 같은 결을 내므로 그쪽에 맞춘 것이다.
+ *
+ * ⚠ **붙이는 자리는 `NavHost` 하나다 — 라우트마다 붙이지 말 것.**
+ * Navigation Compose 는 들어오는 전환을 **목적지**에서, 나가는 전환을 **떠나는 화면**
+ * 에서 가져온다. 하위 화면에만 붙이면 탭 → 편집기에서 편집기만 밀려 들어오고 탭은
+ * 제자리에서 페이드해, 한 겹만 움직이고 그 사이 두 화면이 겹쳐 비친다.
+ *
+ * ⚠ **탭끼리는 페이드다.** 탭 전환은 위계가 없는 옆걸음이라 밀면 뒤로가기처럼 읽힌다.
+ * 판정은 `isBottomBarTab()` — **하단바가 그리는 셋**(알람·목소리·더보기)만 탭이고,
+ * 이용권·코드 등록은 `NativeTab` 값이어도 더보기에서 들어가는 **하위 화면**이라
+ * push 다(`navigateTopLevelTab` 이 그 둘만 `popUpTo` 없이 쌓는 것과 같은 이유).
+ *
+ * 미는 폭이 화면의 1/4 인 이유: 전폭으로 밀면 뒤 화면이 완전히 빠져나가 되돌아올 때
+ * 튀어 보인다(iOS 도 30% 안쪽으로만 민다).
+ */
+private fun PushEnterTransition() = slideInHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { it }
+
+private fun PushExitTransition() =
+    slideOutHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { -it / 4 } +
+        fadeOut(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private fun PushPopEnterTransition() =
+    slideInHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { -it / 4 } +
+        fadeIn(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private fun PushPopExitTransition() = slideOutHorizontally(animationSpec = tween(PUSH_TRANSITION_MILLIS)) { it }
+
+private val FadeInTransition = fadeIn(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+private val FadeOutTransition = fadeOut(animationSpec = tween(PUSH_TRANSITION_MILLIS))
+
+/** 하단바가 그리는 탭인가. 이용권·코드 등록은 `NativeTab` 값이어도 하위 화면이다(위 주석). */
+private fun NavBackStackEntry.isBottomBarTab(): Boolean =
+    destination.route in BottomBarTabRoutes
+
+private val BottomBarTabRoutes =
+    setOf(NativeTab.Alarms.route, NativeTab.Voices.route, NativeTab.Menu.route)
+
+private const val PUSH_TRANSITION_MILLIS = 220

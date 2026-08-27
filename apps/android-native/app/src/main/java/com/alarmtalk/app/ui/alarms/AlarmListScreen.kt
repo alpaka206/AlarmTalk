@@ -106,7 +106,7 @@ internal fun AlarmListScreen(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String, Boolean) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,

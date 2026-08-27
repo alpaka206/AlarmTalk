@@ -93,7 +93,10 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
             },
             renderState = { renderStates[it] ?: (false to false) },
             isCached = { clip ->
-                audioStore.getCachedAudio("${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}") != null
+                audioStore.getCachedAudio(
+                    "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
+                    clip.audioUrl,
+                ) != null
             },
         )
     }

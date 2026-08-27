@@ -22,8 +22,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.UploadFile
@@ -143,10 +143,10 @@ internal fun VoicePreviewButtonIcon(
     } else {
         // 미리듣기 아이콘은 앱 전체가 한 벌로 통일한다. 이 토글은 실제로 '정지'다
         // (다시 누르면 처음부터 재생) — 그래서 일시정지가 아니라 정지 모양을 쓴다.
-        // ⚠ **머티리얼 아이콘을 쓴다**(2026-08-17 "글리프는 각 OS 것"). 예전에는 SF 심볼
-        // (`speaker.wave.2.fill`·`stop.fill`) 모양을 베낀 자체 벡터였다.
+        // ⚠ **머티리얼 아이콘을 쓴다**(2026-08-17 "글리프는 각 OS 것"). 재생/정지는
+        // iOS 카드와 같은 행동이지만 글리프 자체는 플랫폼 기본 PlayArrow/Stop이다.
         Icon(
-            imageVector = if (active) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
+            imageVector = if (active) Icons.Filled.Stop else Icons.Filled.PlayArrow,
             contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
@@ -711,4 +711,3 @@ internal fun AudioCropRangeSelector(
         }
     }
 }
-

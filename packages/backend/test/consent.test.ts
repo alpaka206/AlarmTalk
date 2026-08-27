@@ -132,7 +132,14 @@ describe('lib/consent — config', () => {
   // docs/legal/*.ko.md 의 '정책 버전' 머리말과 함께 바꾸고, 왜 올렸는지 남길 것.
   // (안드로이드 빌드가 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을
   //  파싱해 BuildConfig.LEGAL_POLICY_VERSION 을 만든다 — 서버와 어긋나면 동의 기록이 409 된다.)
-  it('문서 버전은 5, 유형별 최소 버전은 전부 3 (v5 의 확대분은 iOS 이용자에만 적용 → Android 재동의 사유 아님)', () => {
+  // ⚠ **본문이 바뀌면 버전을 올린다 — 단, 그 버전이 이미 배포된 경우에만**(2026-08-26).
+  // 번호를 태우는 이유는 앞 버전 **본문에 동의한 사람**을 보호하기 위해서다. 버전 5 는
+  // 아직 prod(`main` = '4')에 없어 동의자가 0명이므로, 8-24 보완분은 5 본문을 제자리에서
+  // 고쳤다. 이 상수가 `main` 에 올라간 뒤의 개정은 **반드시** 새 번호를 태워야 한다.
+  //
+  // 최소 버전이 전부 3 인 것은 「한 번 받은 동의는 다시 묻지 않는다」 규칙의 집행이다 —
+  // 문서 버전이 올랐다는 이유로 여기를 올리지 말 것(docs/spec/consent.md).
+  it('문서 버전은 5, 유형별 최소 버전은 전부 3 (한 번 받은 동의는 다시 묻지 않는다)', () => {
     expect(CURRENT_POLICY_VERSION).toBe('5');
     expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
   });
@@ -483,6 +490,36 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   it('마케팅을 켜 둔 사용자는 collect 에 marketing 이 없다 (덮어쓰기로 인한 소실 방지)', async () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).not.toContain('marketing');
+  });
+
+  // ⚠ 규칙 본체: **한 번 받은 동의는 다시 묻지 않는다**(docs/spec/consent.md).
+  // 앱을 처음 쓸 때 받았든 첫 목소리를 등록할 때 받았든 한 번이면 끝이고, 두 번째·세 번째
+  // 목소리를 등록할 때도 묻지 않는다 — 그걸 보장하는 필드가 `sensitive_missing` 이다.
+  it('음성 생체정보에 한 번 동의하면 sensitive_missing 이 비어 두 번째 등록에서 안 묻는다', async () => {
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
+    const body = await consentStatus();
+    expect(body.sensitive_missing).toEqual([]);
+    expect(body.collect).toEqual([]);
+    expect(body.needs_collection).toBe(false);
+
+    // 가입 때 거절해 첫 등록에서 받은 경우도 같다 — 기록이 있으면 그 뒤로는 안 묻는다.
+    mockConsentRows = [
+      ...answeredRows({ voice_biometric: { agreed: 0 } }),
+      consentRow('marketing', 1, '3'),
+    ];
+    expect((await consentStatus()).sensitive_missing).toEqual(['voice_biometric']);
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
+    expect((await consentStatus()).sensitive_missing).toEqual([]);
+  });
+
+  // ⚠ 문서 버전이 올라가는 것만으로는 아무도 다시 묻지 않는다. 재동의 레버는
+  // CONSENT_MIN_POLICY_VERSION 하나이고, 그 유형의 동의 내용이 실제로 바뀔 때만 올린다.
+  it('문서 버전이 올라가도 최소 버전을 안 올리면 다시 묻지 않는다', async () => {
+    mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
+    expect((await consentStatus()).collect).toEqual([]);
+    // 최소 버전을 올린 유형만 다시 담긴다.
+    CONSENT_MIN_POLICY_VERSION.privacy = 5;
+    expect((await consentStatus()).collect).toEqual(['privacy']);
   });
 
   it('마케팅 거절 기록도 유효한 응답이라 다시 묻지 않는다', async () => {

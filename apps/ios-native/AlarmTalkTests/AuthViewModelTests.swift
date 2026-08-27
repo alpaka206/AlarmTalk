@@ -21,6 +21,21 @@ import XCTest
 @MainActor
 final class AuthViewModelTests: XCTestCase {
 
+    /// ⚠ **동의 완료 캐시는 `UserDefaults.standard` 에 남는다 — 테스트마다 지운다**
+    /// (Codex #703 P2). `checkConsentStatus` 가 그 저장소를 직접 만들어 쓰므로 주입할 자리가
+    /// 없고, 키는 `<계정><정책버전>` 으로 고정이라 **이 클래스의 다른 테스트끼리도 서로
+    /// 오염시킨다**(하나가 완료를 적으면 다음 테스트는 그 값을 보고 통과한다). 시뮬레이터를
+    /// 재사용하면 다음 실행까지 살아남아, `markCompleted` 를 아예 안 부르게 되는 회귀도
+    /// 조용히 통과한다.
+    /// `static` 인 이유: `addTeardownBlock` 의 클로저는 `@Sendable` 이라 `self` 를 넘길 수
+    /// 없고, `setUp`/`tearDown` 은 nonisolated 라 MainActor 격리된 이 클래스에서 오버라이드하면
+    /// "sending 'self' risks causing data races" 로 막힌다. 정책 버전도 MainActor 프로퍼티
+    /// (`AuthViewModel.currentPolicyVersion`) 대신 그 원본인 `LegalPolicy.bundledVersion` 을
+    /// 직접 읽는다 — 같은 값이다.
+    private static func clearConsentCompletionCache() {
+        ConsentCompletionStore().clear(userID: "user-1", policyVersion: LegalPolicy.bundledVersion)
+    }
+
     // MARK: - Helpers
 
     private func makeAppleSession(appleUserId: String? = "apple-sub-12345") -> AuthSession {
@@ -83,6 +98,147 @@ final class AuthViewModelTests: XCTestCase {
             ),
             nextPlan: nil
         )
+    }
+
+    // MARK: - 한 번 받은 동의는 다시 묻지 않는다 (docs/spec/consent.md)
+
+    /// ⚠ **그릴 것이 하나도 없으면 화면을 띄우지 않는다.** 서버 플래그를 날것으로 받으면
+    /// 앱이 모르는 **선택** 유형 하나 때문에 빈 동의 화면이 콜드 스타트마다 뜬다 —
+    /// 이미 다 동의한 사람에게 다시 묻는 셈이다. 안드로이드는
+    /// `consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()`.
+    func test_consentStatus_모르는_선택_유형만_남으면_동의화면을_띄우지_않는다() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: false,
+            needsCollection: true,
+            collect: ["push_marketing"],
+            optional: ["push_marketing"]
+        ))
+        Self.clearConsentCompletionCache()
+        addTeardownBlock { Self.clearConsentCompletionCache() }
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        XCTAssertFalse(
+            ConsentCompletionStore().hasCompleted(
+                userID: "user-1",
+                policyVersion: AuthViewModel.currentPolicyVersion
+            ),
+            "앞선 테스트가 남긴 값이 있으면 아래 단언이 무의미해진다"
+        )
+
+        await vm.checkConsentStatus()
+
+        XCTAssertTrue(vm.consentCollect.isEmpty, "그릴 수 없는 유형은 목록에서 빠진다")
+        XCTAssertFalse(vm.consentNeedsCollection, "그릴 것이 없으면 화면을 띄우지 않는다")
+        XCTAssertFalse(vm.consentUnsupported, "선택 유형은 버리고 지나간다 — 업데이트를 강요하지 않는다")
+        // ⚠ **완료 캐시도 필터링한 뒤 값으로 판정한다**(Codex #703 P2). 서버 플래그를 그대로
+        // 보면 '그릴 것 없음' 이라고 결론 내리고도 완료를 안 적어, 콜드 스타트마다 로딩
+        // 게이트가 동의 상태 응답을 기다린다(끊긴 네트워크에서는 타임아웃까지).
+        // (캐시는 `setUp`/`tearDown` 이 지운다 — 남아 있으면 이 단언이 항상 통과한다.)
+        XCTAssertTrue(
+            ConsentCompletionStore().hasCompleted(
+                userID: "user-1",
+                policyVersion: AuthViewModel.currentPolicyVersion
+            ),
+            "받을 게 없다고 판단했으면 완료를 적어 다음 콜드 스타트를 즉시 통과시켜야 한다"
+        )
+    }
+
+    /// ⚠ **모르는 민감 동의를 조용히 버리지 않는다**(Codex #703 P2). 시트도 못 띄우고 그냥
+    /// 돌아오면 호출자(등록 플로우)는 멈추는데 화면에는 아무것도 안 떠서, 등록 버튼을 눌러도
+    /// **아무 일도 일어나지 않는다.**
+    func test_requestSensitiveConsent_모르는_유형은_업데이트_게이트로_보낸다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        let canProceed = vm.requestSensitiveConsent(types: ["voice_dna_v2"], registeringVoice: true)
+
+        XCTAssertFalse(canProceed, "받을 방법이 없으면 호출자는 멈춰야 한다")
+        XCTAssertNil(vm.pendingSensitiveConsent, "띄울 수 없는 시트를 만들지 않는다")
+        XCTAssertTrue(vm.consentUnsupported, "받을 방법이 없다는 사실은 업데이트 안내로 말한다")
+    }
+
+    /// 아는 유형이면 시트를 띄우고, 등록 문맥을 함께 넘긴다.
+    func test_requestSensitiveConsent_아는_유형은_등록_문맥으로_시트를_띄운다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        let canProceed = vm.requestSensitiveConsent(types: ["overseas_transfer"], registeringVoice: true)
+
+        XCTAssertFalse(canProceed)
+        XCTAssertEqual(vm.pendingSensitiveConsent?.types, ["overseas_transfer"])
+        XCTAssertEqual(vm.pendingSensitiveConsent?.registeringVoice, true, "동의 직후 목소리가 만들어진다는 걸 시트가 알아야 한다")
+        XCTAssertFalse(vm.consentUnsupported)
+    }
+
+    /// 받을 것이 없으면 막지 않는다 — 호출자가 그대로 진행한다.
+    func test_requestSensitiveConsent_받을_것이_없으면_막지_않는다() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        XCTAssertTrue(vm.requestSensitiveConsent(types: [], registeringVoice: true))
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
+    /// ⚠ 모르는 **필수** 유형은 이 앱으로 받을 방법이 없다 — 동의 화면 대신 업데이트 게이트로
+    /// 보낸다. 항목 0개짜리 화면에서 CTA 를 누르면 제출 폴백이 **본 적 없는 동의를 기록**한다.
+    func test_consentStatus_모르는_필수_유형은_업데이트_게이트로_보낸다() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: true,
+            needsCollection: true,
+            collect: ["terms", "biometric_v2"],
+            optional: []
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.checkConsentStatus()
+
+        XCTAssertTrue(vm.consentUnsupported, "모르는 필수 유형은 업데이트 안내로 게이팅한다")
+        XCTAssertEqual(vm.consentCollect, ["terms"], "그릴 수 있는 것만 남긴다")
+    }
+
+    /// ⚠ **403 이 세워 둔 게이트를 뒤늦은 실패 응답이 지우지 않는다.** 안드로이드는 실패
+    /// 갈래에서 `needsConsent` 만 내리고 `collect` 는 건드리지 않는다.
+    func test_consentStatus_조회_실패가_이미_받아둔_목록을_지우지_않는다() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: true,
+            needsCollection: true,
+            collect: ["terms"],
+            optional: []
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.checkConsentStatus()
+        XCTAssertEqual(vm.consentCollect, ["terms"])
+
+        api.consentStatusResult = .failure(APIError.invalidResponse)
+        await vm.checkConsentStatus()
+
+        XCTAssertEqual(vm.consentCollect, ["terms"], "네트워크 실패로 받아야 할 동의를 잊으면 안 된다")
+        XCTAssertTrue(vm.needsConsent, "게이트도 그대로 남는다")
+    }
+
+    /// **이미 동의한 사람에게는 아무것도 뜨지 않는다** — 규칙의 본체.
+    func test_consentStatus_다_받은_사람에게는_아무것도_뜨지_않는다() async {
+        // 이 테스트도 같은 키에 완료를 적는다 — 남기면 위 테스트가 항상 통과한다.
+        addTeardownBlock { Self.clearConsentCompletionCache() }
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: false,
+            needsCollection: false,
+            collect: [],
+            sensitiveMissing: []
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.checkConsentStatus()
+
+        XCTAssertFalse(vm.showConsentScreen)
+        XCTAssertTrue(vm.consentSensitiveMissing.isEmpty, "두 번째 목소리 등록에서도 인라인 동의가 그려지지 않는다")
     }
 
     // MARK: - refreshUser status code branches

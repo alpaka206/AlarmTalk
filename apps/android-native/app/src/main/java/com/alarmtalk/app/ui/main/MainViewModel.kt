@@ -16,13 +16,13 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.bundledSystemVoiceProfiles
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
@@ -324,7 +324,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
         // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
         // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
-        com.alarmtalk.app.data.StockClipManifestStore.clear(getApplication())
+        // ⚠ **지우기와 표 무효화는 한 번에**(Codex #703 P1). 둘로 나누면 그 사이에 앞 계정의
+        // 저장이 끼어들어 지운 파일을 되살리고, 계정 B 가 A 의 클론 매니페스트(목소리 이름·
+        // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
+        // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
+        com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
         stockClipManifestFetched = false
         // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
         // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
@@ -336,6 +340,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 종료에 쓴다 — 여기서 지우는 것은 '이 계정으로서의 세션 상태'까지다.
      */
     private fun clearSessionKeepingAlarms() {
+        // ⚠ **떠 있는 매니페스트 조회의 표는 여기서도 죽인다**(Codex #703 P1). 파일은 일부러
+        // 남기지만(위 주석 — 같은 사람 재로그인 시 오프라인 사용), 세션이 끝난 뒤 도착한
+        // 앞 계정의 응답이 그 파일을 **다시 공개하는 것**은 막아야 한다. WorkManager 요청은
+        // 세션과 무관하게 살아 있어 취소로는 못 막는다.
+        com.alarmtalk.app.data.StockClipManifestStore.invalidateOutstandingTickets()
         runCatching { authSessionStore.clear() }
         clearUserScopedRemoteState()
         authSession = null
@@ -445,7 +454,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var syncBusy by mutableStateOf(false)
         internal set
 
-    var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
+    /**
+     * 교체 정리(강등·재예약)가 끝나지 않아 **아직 고를 수 없는** 목소리들.
+     *
+     * ⚠ **목록에서 빼는 것이 아니다**(2026-08-25 지시). 감추면 사용자에게는 목소리가
+     * 사라진 것으로 보여 고장으로 읽힌다 — 자리에 두고 흐리게 그린 뒤 이유를 말한다.
+     * 고를 수 있게 두면 그 사이 만든 새 알람을 다음 회차가 함께 벗긴다(강등 대상은
+     * 프로필 id 로만 고른다). iOS `VoiceStudioViewModel.replacementSuppressedProfileIDs`.
+     */
+    var settlingVoiceProfileIds by mutableStateOf<Set<String>>(emptySet())
+        internal set
+
+    /**
+     * 디스크에 **못 남긴** '정리 중' 표시들. 디스크를 다시 읽어 올 때 합집합으로 얹는다.
+     *
+     * ⚠ 없으면 디스크 재조회가 **맞는 메모리 값을 덮는다**(Codex #703 P1) — 쓰기에 실패한
+     * 표시는 디스크에 없으므로, 목록을 새로 받는 순간 그 목소리가 다시 고를 수 있게 된다.
+     */
+    internal var settlingUnpersistedIds: Set<String> = emptySet()
+
+    var voiceProfiles by mutableStateOf(bundledSystemVoiceProfiles())
         internal set
 
     var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
@@ -490,6 +518,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
      */
     internal var stockClipManifestFetched = false
+
+    /**
+     * 매니페스트 조회의 **세대**. 늦게 도착한 앞선 응답이 새 매니페스트를 덮는 것을 막는다.
+     *
+     * ⚠ 이 값이 없으면 권위 자체가 뒤로 간다(Codex #703 P1). `loadStockClips` 는
+     * `viewModelScope.launch` 라 겹칠 수 있는데, 교체 **전에** 시작한 요청이 나중에 끝나면
+     * `stockClips` 와 디스크 매니페스트를 옛 것으로 되돌린다. 그러면 캐시 쓰기 경로의
+     * '지나간 응답인가' 대조가 **되살아난 옛 주소**를 기준으로 삼아, 서버의 현재 음원을
+     * 지나간 것으로 판정해 회수된 목소리를 그대로 남긴다.
+     */
+    internal var stockClipManifestRevision: Int = 0
 
     var socialBusy by mutableStateOf(false)
         internal set
@@ -733,6 +772,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 한다(CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
      */
     var consentStatusChecked by mutableStateOf(false)
+
+    /**
+     * 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+     *
+     * ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+     * 있다 — `checkConsentStatus` 는 `viewModelScope.launch` 로 도는데 그건 토큰이 갱신돼
+     * `LaunchedEffect` 가 다시 걸려도 **취소되지 않는다.** 동의 제출과 경합하는 경우도 같다.
+     * 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면 이미 다 받은 상태를 덮어
+     * **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+     * iOS 짝은 `AuthViewModel.consentStatusRevision`.
+     */
+    var consentStatusRevision: Int = 0
         internal set
 
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
@@ -1033,6 +1084,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
         // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
         dynamicPromptStore.clearLastSelections(userId)
+        // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 여기서 지우지 않는다.**
+        // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전 기준**이다
+        // — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 표식을 지우면 그 사이의 교체를
+        // 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
     }
 
     internal fun clearUserScopedRemoteState() {
@@ -1049,8 +1104,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         shareToggleJobs.clear()
         shareToggleDesired.clear()
         prerenderDrive = null
-        voiceProfiles = emptyList()
+        voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
+        voiceDraftQuota = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false

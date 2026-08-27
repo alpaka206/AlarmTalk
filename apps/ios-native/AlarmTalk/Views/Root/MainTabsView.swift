@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// 인증된 상태에서 보여주는 본 메인 화면. 4개 탭 라우팅 + 시트 호스트.
+/// 인증된 상태에서 보여주는 본 메인 화면. 3개 탭 라우팅 + 보조 화면 호스트.
 ///
 /// ContentView 의 `mainApp` 을 그대로 옮겨 router 책임에 집중시켰다.
-/// 설정/보조/편집 화면을 독립 sheet 로 관리한다.
+/// 설정/보조/편집 화면을 같은 `NavigationStack`의 push 화면으로 관리한다.
 struct MainTabsView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
@@ -121,10 +121,10 @@ struct MainTabsView: View {
             // 어느 쪽이 정본인지 매번 헷갈린다.
             // ⚠ **화면급 이동은 `.sheet` 가 아니라 push 다.** 편집기·설정·이용권·코드
             // 등록·공유 이용권 다섯 화면이 iOS 만 아래에서 올라오는 시트였고, 안드로이드는
-            // 다섯 다 NavHost 목적지(옆에서 밀려옴)다. 특히 편집기는 안드로이드가
-            // `slideInHorizontally(tween(220))` 를 **일부러 지정**해 뒀다
-            // (`ui/app/AlarmTalkApp.kt` 의 AlarmCreate/AlarmEdit 라우트) — 의도한 차이가
-            // 아니라 iOS 가 틀린 것이었다(2026-08-10 사용자 지적).
+            // 다섯 다 NavHost 목적지(옆에서 밀려옴)다. 안드로이드는 그 push 전환을
+            // `ui/app/AlarmTalkApp.kt` 의 `PushEnterTransition` 네 짝으로 **일부러 지정**해
+            // 하위 화면 전부에 붙여 뒀다 — 의도한 차이가 아니라 iOS 가 틀린 것이었다
+            // (2026-08-10 사용자 지적).
             //
             // 하단바·＋FAB 가 함께 사라지는 것도 안드로이드와 같다 — 그쪽은 `showAppChrome`
             // 이 `currentTab != null` 을 보므로 탭이 아닌 목적지에서는 크롬을 내린다.

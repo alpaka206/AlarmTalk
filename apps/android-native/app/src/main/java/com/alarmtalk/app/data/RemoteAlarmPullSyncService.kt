@@ -10,7 +10,10 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.RemoteAlarmReceivedRequest
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -21,6 +24,133 @@ data class RemoteAlarmPullResult(
     val skipped: Int,
     val failed: Int,
 )
+
+internal fun receivedAlarmDeliveryComplete(
+    audioSecured: Boolean,
+    enabled: Boolean,
+    scheduleSucceeded: Boolean,
+    deliveryVersion: String?,
+): Boolean =
+    audioSecured && (!enabled || scheduleSucceeded) && !deliveryVersion.isNullOrBlank()
+
+internal fun receivedAlarmDeliveryVersionAlreadyApplied(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean = !deliveryVersion.isNullOrBlank() && existing.remoteDeliveryVersion == deliveryVersion
+
+/**
+ * #104 backfill 로 채워진 옛 전달인가 — **이 복구는 그 세대에만 허용한다.**
+ *
+ * 여기서 다루는 것은 **재전송이 아닌** 경우다 — 재전송(다른 전달 세대)은 위
+ * [isResendOfDifferentDelivery] 가 먼저 걸러 **덮어쓰기**로 보낸다. 이 복구는 "#104 가
+ * 옛 전달에 뒤늦게 세대를 찍은" 상황 전용이고, 그때는 편집을 보존한 채 음원만 되살린다.
+ *
+ * ⚠ 이 판정을 "적용 버전이 비어 있는가" 로 넓히지 말 것. 넓히면 **재전송을 삼킨다** —
+ * 옛 내용을 보존한 채 새 세대만 기록하고 ACK·삭제해 버려, 발신자가 다시 보낸 것이 어디에도
+ * 전달되지 않는다. iOS 짝은 `RemoteAlarmPullSync.isLegacyBackfilledDelivery`.
+ */
+/**
+ * **발신자가 다시 보낸 것인가**(= 이 행이 받아 둔 전달과 다른 세대인가).
+ *
+ * 서버는 같은 (발신자·수신자·시각) 슬롯에 **같은 알람 id 를 재사용**하고 새
+ * `delivery_version` 만 발급한다(`claimTargetedAlarmSlot`). 그래서 "다른 세대가 왔다" 는
+ * 곧 "새로 보냈다" 는 뜻이고, 그때는 **수신자가 그 슬롯을 고쳤든 껐든 덮어쓴다**
+ * (`docs/spec/family-alarm.md` — 보낸 알람이 영영 전달되지 않는 것이 더 나쁘다).
+ *
+ * ⚠ **옛 행(관찰 세대가 없는 행)에는 쓰지 않는다.** 그 행들은 이 값을 적기 전에 만들어져
+ * '어느 전달을 받았는지 모른다' 가 사실이라, 예전 규칙(32자리 backfill 예외)을 그대로 둔다.
+ */
+internal fun isResendOfDifferentDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean {
+    val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() }
+    if (observed != null) return observed != incoming
+    // ⚠ **이미 적용한 세대면 재전송이 아니다**(Codex #703 P1). 관찰 세대 컬럼이 생기기 **전**에
+    // 정상 반영된 행은 `observed` 가 null 인데 `remoteDeliveryVersion` 에는 그 세대가 그대로
+    // 적혀 있다. 그걸 안 보면 **같은 전달**을 매 pull 마다 재전송으로 읽어 서버 시드로 행을
+    // 다시 지어, 수신자가 바꾼 시각·꺼짐이 계속 지워진다.
+    // 진짜 재전송은 서버가 **새 세대**를 발급하므로(`claimTargetedAlarmSlot`) 적용 세대와
+    // 달라 여기 걸리지 않는다 — 「재전송은 새 알람이다」 규칙은 그대로 산다.
+    if (existing.remoteDeliveryVersion?.takeIf { it.isNotBlank() } == incoming) return false
+    // ⚠ **관찰 세대가 없는 행도 뚫어 준다** — 그러지 않으면 이 필드가 생기기 전에 꼬인 행이
+    // 영원히 막힌 채 남는다(2026-08-26 실기기: 그 슬롯의 모든 전달이 매번 skip 됐다).
+    // 단 #104 backfill(32자리 hex)은 예외다 — 그건 **새로 보낸 것이 아니라** 옛 전달에 뒤늦게
+    // 세대를 찍은 것이라, 편집을 보존한 채 음원만 복구하는 기존 경로가 맞다.
+    return !isLegacyBackfillVersion(incoming)
+}
+
+/** #104 backfill 이 채운 세대 형식인가(32자리 hex). 새 전달 세대는 UUID 라 여기 걸리지 않는다. */
+private fun isLegacyBackfillVersion(deliveryVersion: String): Boolean =
+    deliveryVersion.length == 32 &&
+        deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
+
+/**
+ * **음원·예약을 확보해 ack 만 재시도하면 되는 전달인가.**
+ *
+ * 두 갈래를 함께 본다(`docs/spec/family-alarm.md`):
+ *  1. #104 backfill 세대([isLegacyBackfilledDelivery]) — 옛 전달에 뒤늦게 세대를 찍은 것.
+ *  2. **내가 받았는데 반영에 실패한 그 세대** — 도착 세대는 적혔는데(`observedDeliveryVersion`)
+ *     적용 세대(`remoteDeliveryVersion`)가 비어 있고, 서버가 **같은 세대**를 다시 준 경우.
+ *     이걸 빼면 첫 반영이 실패한 뒤 수신자가 손댄 알람이 영원히 ack 되지 않는다.
+ */
+internal fun isRecoverableSameDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean {
+    if (isLegacyBackfilledDelivery(existing, deliveryVersion)) return true
+    val incoming = deliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    val observed = existing.observedDeliveryVersion?.takeIf { it.isNotBlank() } ?: return false
+    // ⚠ **적용 세대가 비어 있는 것만 보지 말 것**(Codex #703 P1). 재전송 B 로 다시 지은 행은
+    // 도착 세대만 B 로 바뀌고 **적용 세대는 옛 A 가 그대로 남는다**(그 값은 보존 대상이다).
+    // 그 상태에서 B 예약이 실패하고 수신자가 손대면, '비어 있는가' 로만 보면 A 가 차 있어
+    // 거절되고 **이후 모든 pull 이 영원히 skip** 한다. 판정은 "이 세대를 적용했는가" 다.
+    return observed == incoming && existing.remoteDeliveryVersion != incoming
+}
+
+internal fun isLegacyBackfilledDelivery(
+    existing: AlarmEntity,
+    deliveryVersion: String?,
+): Boolean =
+    existing.origin == AlarmOrigins.RECEIVED_REMOTE &&
+        existing.remoteDeliveryVersion.isNullOrBlank() &&
+        !deliveryVersion.isNullOrBlank() &&
+        // #104 backfill 만 32자리 hex 다. 새 세대(UUID)는 하이픈이 있어 들어오지 않는다.
+        deliveryVersion.length == 32 &&
+        deliveryVersion.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
+
+internal fun linkRecoveredLegacyRemoteAudio(
+    current: AlarmEntity,
+    remote: RemoteAlarm,
+    cachedAudio: CachedAlarmAudio?,
+): AlarmEntity {
+    if (cachedAudio == null) return current
+    val isFailedImportPlaceholder =
+        current.playMode == AlarmPlayModes.ALARM_ONLY &&
+            current.localAudioUri.isNullOrBlank() &&
+            current.audioCacheKey.isNullOrBlank() &&
+            current.ttsMessageId.isNullOrBlank() &&
+            current.voiceProfileId.isNullOrBlank() &&
+            current.voiceText.isNullOrBlank() &&
+            current.voiceCategory.isNullOrBlank()
+    if (!isFailedImportPlaceholder) return current
+
+    val lockState = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, current)
+    return current.copy(
+        playMode = lockState.playMode,
+        preLockPlayMode = lockState.preLockPlayMode,
+        localAudioUri = cachedAudio.localAudioUri,
+        audioCacheKey = cachedAudio.cacheKey,
+        rawAudioUri = cachedAudio.rawAudioUri,
+        voiceSource = VoiceSources.SERVER_TTS,
+        voiceProfileId = remote.voiceProfileId,
+        voiceText = remote.messageText,
+        voiceCategory = remote.category,
+        ttsMessageId = remote.messageId?.trim()?.takeIf { it.isNotBlank() },
+        bucketId = remote.bucketId?.trim()?.takeIf { it.isNotBlank() },
+    )
+}
 
 internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
@@ -151,10 +281,38 @@ internal class RemoteAlarmPullSyncService(
                 // 수신자가 저장하면 updatedAt 만 커진다(updateAlarm 은
                 // upsertPreservingServerSyncFields 로 lastSyncedAt 을 보존).
                 // 아직 안 고친 행은 그대로 두어 **음성 다운로드 실패분의 재시도**를 살린다.
-                if (existing != null && locallyEditedByRecipient(existing)) {
-                    skipped += 1
-                    Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
-                    return@runCatching
+                // ⚠ **재전송은 편집을 보존하지 않는다**(2026-08-26 확정). 다른 세대가 왔다는
+                // 것은 발신자가 **다시 보냈다**는 뜻이고, 그걸 막으면 그 슬롯은 이후 모든
+                // 전달을 영구히 거부한다(실기기 재현). 아래 일반 경로로 내려가 덮어쓴다.
+                if (existing != null && locallyEditedByRecipient(existing) &&
+                    !isResendOfDifferentDelivery(existing, remote.deliveryVersion)
+                ) {
+                    if (receivedAlarmDeliveryVersionAlreadyApplied(existing, remote.deliveryVersion)) {
+                        val deliveryVersion = requireNotNull(remote.deliveryVersion)
+                        runCatching {
+                            api.markAlarmReceived(
+                                authorization,
+                                remote.id,
+                                RemoteAlarmReceivedRequest(deliveryVersion),
+                            )
+                        }.onFailure {
+                            Log.w(TAG, "Failed to retry ack for recipient-edited alarm remoteId=${remote.id}", it)
+                        }
+                        skipped += 1
+                        return@runCatching
+                    }
+                    // 복구 대상은 둘이다(`docs/spec/family-alarm.md`):
+                    //  ① #104 backfill 세대
+                    //  ② **내가 받았지만 반영에 실패한 그 세대**(observed == 서버 세대인데
+                    //     applied 가 비어 있다) — 스펙이 "편집을 보존한 채 음원·예약·ack 를
+                    //     재시도한다" 고 정한 경우다. 이걸 빼면 첫 반영이 실패한 뒤 수신자가
+                    //     손댄 알람은 **영원히 ack 되지 않는다**.
+                    // 아래에서 음원과 **현재 편집본의 OS 예약**을 먼저 확보한 뒤 ACK한다.
+                    if (!isRecoverableSameDelivery(existing, remote.deliveryVersion)) {
+                        skipped += 1
+                        Log.i(TAG, "Kept recipient-edited alarm; skipped new delivery remoteId=${remote.id}")
+                        return@runCatching
+                    }
                 }
                 // **락 밖에서 받는다** — 음성 다운로드는 오래 걸려서, 잡고 있으면 그동안
                 // 스누즈·해제가 막힌다. 행을 만드는 일은 여기서 하지 않는다(아래 참조).
@@ -167,6 +325,9 @@ internal class RemoteAlarmPullSyncService(
                 // 실제로 저장한 행. 건너뛴 경우(삭제됨·울리는 중·형식 불량)는 null 로 남아
                 // 아래 알림·집계를 건너뛴다.
                 var applied: AlarmEntity? = null
+                var scheduleSucceeded = true
+                var editedDeliveryVersionToAck: String? = null
+                var editedDeliveryIncomplete = false
                 // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
                 // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
                 alarmMutationLock.withLock {
@@ -207,10 +368,71 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
                     // 다운로드하는 사이에 수신자가 고쳤을 수도 있다 — 위 1차 거르기와 같은 판정을
-                    // 반영 직전에 한 번 더 한다. 받아 둔 음성은 주인이 없으니 미참조면 정리한다.
-                    if (current != null && locallyEditedByRecipient(current)) {
+                    // 반영 직전에 한 번 더 한다. **재전송이면 이미 위에서 덮기로 갈렸고**,
+                    // 여기 오는 것은 같은 전달 세대다. 서버본으로 덮지는 않되, #104 backfill 세대는
+                    // 음원과 현재 편집본의 OS 예약을 확보해야만 적용 버전을 기록하고 ACK한다.
+                    if (current != null && locallyEditedByRecipient(current) &&
+                        !isResendOfDifferentDelivery(current, remote.deliveryVersion)
+                    ) {
                         skipped += 1
-                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cachedAudio?.cacheKey)
+                        val deliveryVersion = remote.deliveryVersion
+                        when {
+                            receivedAlarmDeliveryVersionAlreadyApplied(current, deliveryVersion) -> {
+                                editedDeliveryVersionToAck = deliveryVersion
+                            }
+                            isRecoverableSameDelivery(current, deliveryVersion) -> {
+                                val audioSecured =
+                                    !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
+                                val recovered = linkRecoveredLegacyRemoteAudio(
+                                    current = current,
+                                    remote = remote,
+                                    cachedAudio = cachedAudio,
+                                )
+                                if (recovered != current) alarmDao.upsert(recovered)
+                                // ⚠ **못 붙인 음원은 여기서 정리한다**(Codex #703 P2).
+                                // 수신자가 이미 자기 음원을 연결해 둔 행은 복구가 **일부러
+                                // 그대로 두는데**(`linkRecoveredLegacyRemoteAudio` 가 `current`
+                                // 를 그대로 돌려준다), 그 직전에 내려받은 발신자 음원은 어느
+                                // 행도 가리키지 않은 채 남는다 — ACK 로 서버 행까지 사라지면
+                                // 30일 낡은 캐시 정리(`STALE_CACHE_MAX_AGE_MILLIS`)까지
+                                // **남의 생체 음원이 디스크에 그대로** 있다.
+                                // 붙은 경우에는 행이 참조하므로 이 호출이 지우지 않는다.
+                                alarmAudioStore.deleteCachedAudioIfUnreferenced(
+                                    alarmDao,
+                                    cachedAudio?.cacheKey,
+                                )
+                                val legacyScheduleSucceeded = !recovered.enabled ||
+                                    runCatching { alarmScheduler.schedule(recovered) }
+                                        .onFailure { error ->
+                                            Log.w(
+                                                TAG,
+                                                "Failed to schedule legacy edited alarm id=${recovered.id}",
+                                                error,
+                                            )
+                                        }
+                                        .isSuccess
+                                val complete = receivedAlarmDeliveryComplete(
+                                    audioSecured = audioSecured,
+                                    enabled = recovered.enabled,
+                                    scheduleSucceeded = legacyScheduleSucceeded,
+                                    deliveryVersion = deliveryVersion,
+                                )
+                                if (complete) {
+                                    val version = requireNotNull(deliveryVersion)
+                                    val persisted = withContext(NonCancellable) {
+                                        alarmDao.markRemoteDeliveryVersion(recovered.id, version) > 0
+                                    }
+                                    if (persisted) editedDeliveryVersionToAck = version
+                                    else editedDeliveryIncomplete = true
+                                } else {
+                                    editedDeliveryIncomplete = true
+                                }
+                            }
+                            else -> alarmAudioStore.deleteCachedAudioIfUnreferenced(
+                                alarmDao,
+                                cachedAudio?.cacheKey,
+                            )
+                        }
                         Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
                         return@withLock
                     }
@@ -227,53 +449,91 @@ internal class RemoteAlarmPullSyncService(
                         existing = current,
                         cachedAudio = cachedAudio,
                         currentUserId = currentUserIdProvider(),
+                        // 재전송이면 수신자가 바꿔 둔 시각·꺼짐을 물려받지 않는다(그 주석 참조).
+                        treatAsFreshDelivery = current != null &&
+                            isResendOfDifferentDelivery(current, remote.deliveryVersion),
                     ) ?: run {
                         skipped += 1
                         return@withLock
                     }
 
-                    if (existing != null) {
-                        alarmScheduler.cancel(existing.id)
+                    // ⚠ **미리 취소하지 않는다**(Codex #703 P1). 예약의 요청 코드는 **알람 id
+                    // 하나로** 파생되므로(`AlarmScheduler.requestCodeFor`), 같은 id 로 다시
+                    // 걸면 옛 예약이 **원자적으로 교체**된다 — 미리 지울 이유가 없다.
+                    // 반대로 미리 지우면 `schedule` 이 권한 부족 등으로 실패했을 때 **멀쩡히
+                    // 돌던 알람만 사라진다.** 가족 알람은 리드타임이 5분이라, 재시도가 원래
+                    // 울릴 시각을 넘겨 도착할 수도 있다.
+                    // 새 행이 꺼짐이면 덮어쓸 예약이 없으니 그때만 지운다. 대상은 **다시 읽은
+                    // 행 기준의 `local.id`** 다 — 다운로드 전 스냅샷(`existing`)은 그 사이
+                    // 수신자가 지웠을 수 있어 이 자리에서 믿을 값이 아니다(바로 위 주석).
+                    // 예약이 없으면 `cancel` 은 그냥 아무 일도 하지 않는다(FLAG_NO_CREATE).
+                    if (!local.enabled) {
+                        alarmScheduler.cancel(local.id)
                     }
                     // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
                     // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                     alarmDao.upsert(local)
-                    // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
-                    // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
-                    // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
-                    if (local.enabled) {
-                        alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
-                            .filter { it.remoteAlarmId != remote.id }
-                            // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
-                            // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
-                            // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
-                            .filter { ownedByRecipient(it) }
-                            .forEach { conflicting ->
-                                alarmScheduler.cancel(conflicting.id)
-                                alarmDao.upsert(
-                                    conflicting.copy(
-                                        enabled = false,
-                                        updatedAtMillis = System.currentTimeMillis(),
-                                    ),
-                                )
-                                Log.i(
-                                    TAG,
-                                    "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
-                                )
-                            }
-                    }
                     // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
-                    val previousCacheKey = existing?.audioCacheKey
+                    // 여기도 **다시 읽은 행**을 본다 — 다운로드 사이에 다른 회차가 음원을 갈아
+                    // 끼웠으면 스냅샷의 키는 이미 남의 것이 아니고, 정작 방금 밀려난 파일은
+                    // 아무도 안 지워 남의 생체 음원이 디스크에 남는다.
+                    val previousCacheKey = current?.audioCacheKey
                     if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
                         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
                     }
                     if (local.enabled) {
-                        runCatching { alarmScheduler.schedule(local) }
-                            .onFailure { error ->
-                                Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
-                            }
+                        val scheduleResult = runCatching { alarmScheduler.schedule(local) }
+                        scheduleSucceeded = scheduleResult.isSuccess
+                        scheduleResult.onFailure { error ->
+                            Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
+                        }
+                    }
+                    // ⚠ **밀어내기는 받은 알람이 실제로 선 뒤에만 한다**(Codex #703 P1).
+                    // 순서를 뒤집으면 예약이 실패했을 때 **그 시각에 아무 예약도 없는 상태**가
+                    // 된다 — 사용자의 멀쩡한 알람은 이미 꺼졌고 받은 알람은 서지 못했다.
+                    // 가족 알람은 리드타임이 5분이라 다음 회차 전에 그 시각이 지나갈 수 있다.
+                    if (scheduleSucceeded) {
+                        // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
+                        // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
+                        // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
+                        if (local.enabled) {
+                            alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
+                                .filter { it.remoteAlarmId != remote.id }
+                                // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
+                                // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
+                                // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
+                                .filter { ownedByRecipient(it) }
+                                .forEach { conflicting ->
+                                    alarmScheduler.cancel(conflicting.id)
+                                    alarmDao.upsert(
+                                        conflicting.copy(
+                                            enabled = false,
+                                            updatedAtMillis = System.currentTimeMillis(),
+                                        ),
+                                    )
+                                    Log.i(
+                                        TAG,
+                                        "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
+                                    )
+                                }
+                        }
                     }
                     applied = local
+                }
+                editedDeliveryVersionToAck?.let { deliveryVersion ->
+                    runCatching {
+                        api.markAlarmReceived(
+                            authorization,
+                            remote.id,
+                            RemoteAlarmReceivedRequest(deliveryVersion),
+                        )
+                    }.onFailure {
+                        Log.w(TAG, "Failed to ack secured edited alarm remoteId=${remote.id}", it)
+                    }
+                }
+                if (editedDeliveryIncomplete) {
+                    failed += 1
+                    Log.w(TAG, "Kept legacy server row: edited delivery incomplete remoteId=${remote.id}")
                 }
                 val saved = applied ?: return@runCatching
                 if (existing == null) {
@@ -288,6 +548,52 @@ internal class RemoteAlarmPullSyncService(
                     imported += 1
                 } else {
                     updated += 1
+                }
+                // ⚠ **음원과 켜진 알람의 OS 예약까지 끝났을 때만 '다 받았다' 고 말한다.**
+                //
+                // ack 하면 서버가 알람 행을 지운다. 그 행은 전달 수단이면서 동시에
+                // **음원을 받을 권리**이기도 하다 — `GET /tts/messages/:id/audio` 의 수신자
+                // 갈래가 `EXISTS (SELECT 1 FROM alarms WHERE message_id = ? AND
+                // target_user_id = 나)` 로 판정한다(routes/tts.ts). 그래서 다운로드가 실패한
+                // 회차에 ack 하면 그 알람은 **영영 목소리를 못 받는다**: 행이 없으니 다음
+                // pull 목록에도 안 실리고, 음원 요청은 404 로 막힌다.
+                //
+                // [fetchRemoteMessageAudio] 는 실패를 삼키고 null 을 돌려준다(알람 자체는
+                // 기본 알람음으로라도 서야 하므로 그게 맞다). 그 null 을 여기서 붙잡는다.
+                // 실패하면 ack 하지 않고 서버 행을 남긴다 — 다음 pull 이 같은 알람을 다시
+                // 보고 재시도하는 유일한 근거다.
+                val audioSecured = !shouldDownloadRemoteMessageAudio(remote) || cachedAudio != null
+                val deliveryComplete = receivedAlarmDeliveryComplete(
+                    audioSecured = audioSecured,
+                    enabled = saved.enabled,
+                    scheduleSucceeded = scheduleSucceeded,
+                    deliveryVersion = remote.deliveryVersion,
+                )
+                if (deliveryComplete) {
+                    // 예약까지 끝낸 세대를 ACK보다 먼저 로컬에 남긴다. 이 짧은 구간은 취소돼도
+                    // 끝내야, ACK 실패 뒤 사용자가 편집한 경우 다음 pull이 같은 세대를 재확인한다.
+                    val deliveryVersion = requireNotNull(remote.deliveryVersion)
+                    val versionPersisted = withContext(NonCancellable) {
+                        alarmDao.markRemoteDeliveryVersion(saved.id, deliveryVersion) > 0
+                    }
+                    if (versionPersisted) {
+                        runCatching {
+                            api.markAlarmReceived(
+                                authorization,
+                                remote.id,
+                                RemoteAlarmReceivedRequest(deliveryVersion),
+                            )
+                        }
+                        .onFailure { Log.w(TAG, "Failed to ack received alarm remoteId=${remote.id}", it) }
+                    } else {
+                        Log.w(TAG, "Skipped ack because received row disappeared remoteId=${remote.id}")
+                    }
+                } else {
+                    failed += 1
+                    Log.w(
+                        TAG,
+                        "Kept server row: delivery incomplete remoteId=${remote.id} audioSecured=$audioSecured scheduleSucceeded=$scheduleSucceeded versionPresent=${!remote.deliveryVersion.isNullOrBlank()}",
+                    )
                 }
             }.onFailure { error ->
                 failed += 1
@@ -450,7 +756,7 @@ internal class RemoteAlarmPullSyncService(
             // 그때마다 같은 파일을 다시 내려받으면 재로그인 한 번에 받은 알람 수만큼 왕복이
             // 생긴다(생성 음성은 messageId 당 불변이라 다시 받을 이유가 없다).
             // 기본 목소리 프리페치(StockClipPrefetchWorker)는 이미 이렇게 하고 있었다.
-            alarmAudioStore.getCachedAudio(cacheKey) ?: runCatching {
+            alarmAudioStore.getCachedAudio(cacheKey, remote.messageAudioUrl) ?: runCatching {
                 val audio = api.getTtsMessageAudio(authorization, messageId)
                 alarmAudioStore.cacheGeneratedAudio(
                     bytes = Base64.decode(audio.audioBase64, Base64.DEFAULT),
@@ -695,20 +1001,35 @@ internal fun buildReceivedAlarmRow(
     cachedAudio: CachedAlarmAudio?,
     currentUserId: String?,
     now: Long = System.currentTimeMillis(),
+    /**
+     * **이 전달을 '처음 받는 것' 으로 짓는다**(재전송).
+     *
+     * ⚠ 재전송은 수신자가 그 슬롯을 어떻게 해 뒀든 **덮어쓴다**(docs/spec/family-alarm.md).
+     * 그런데 [resolveReceivedSchedule]·[resolveReceivedRemoteEnabled] 는 받은 알람의 시각·
+     * 요일·스누즈·꺼짐을 **로컬 것으로 지켜 준다** — 그대로 두면 새로 보낸 6:30 알람이
+     * 수신자가 옛 전달에서 바꿔 둔 7:00 에, 그것도 **꺼진 채로** 앉는다. 꺼진 채로 앉으면
+     * 예약 없이도 전달 완료로 ACK 돼 서버 행까지 지워진다 — 보낸 알람이 영영 안 울린다.
+     *
+     * 그래서 이 갈래는 보존 규칙을 **건너뛰고 서버본을 그대로** 쓴다. 행 자체(id·remoteAlarmId)
+     * 는 그대로 재사용한다 — 새 행을 만들면 같은 전달이 두 줄이 된다.
+     */
+    treatAsFreshDelivery: Boolean = false,
 ): AlarmEntity? {
     val time = parseTime(remote.time) ?: return null
     val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
-    val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
+    // 보존 규칙을 태울 기준 행 — 재전송이면 '없는 것' 으로 본다(위 주석).
+    val preserveFrom = existing.takeUnless { treatAsFreshDelivery }
+    val enabled = resolveReceivedRemoteEnabled(preserveFrom, remote.isActive)
     val hasVoiceAudio = cachedAudio != null
 
     // 스누즈 '한 회차' 는 마감(fireAtMillis)·상태·누른 횟수가 한 묶음이라 따로 놀면 안 된다.
     // 마감만 지키고 state 를 SCHEDULED 로 되돌리면 정합성 복원이 이 알람을 다음 정규 발생으로
     // 밀어(SNOOZED 만 재계산에서 뺀다) 5분 뒤 울리기로 한 스누즈가 사라지고, 횟수를 0 으로
     // 되돌리면 같은 회차에서 스누즈 제한이 초기화된다(Codex #675 P1·P2).
-    val keepSnoozeEpisode = enabled && existing != null && existing.state == AlarmStates.SNOOZED
+    val keepSnoozeEpisode = enabled && preserveFrom != null && preserveFrom.state == AlarmStates.SNOOZED
 
     val schedule = resolveReceivedSchedule(
-        existing = existing,
+        existing = preserveFrom,
         remoteHour = time.first,
         remoteMinute = time.second,
         remoteRepeatDaysMask = repeatMask,
@@ -742,7 +1063,9 @@ internal fun buildReceivedAlarmRow(
         snoozeEnabled = schedule.snoozeEnabled,
         snoozeMinutes = schedule.snoozeMinutes,
         snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
-        snoozeCount = if (keepSnoozeEpisode) existing.snoozeCount else 0,
+        // `keepSnoozeEpisode` 는 `preserveFrom` 으로 판정하므로 여기서도 그 행을 본다
+        // (재전송이면 스누즈 회차도 물려받지 않는다 — 새 알람이다).
+        snoozeCount = if (keepSnoozeEpisode) preserveFrom!!.snoozeCount else 0,
         vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
         playMode = lockState.playMode,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
@@ -770,6 +1093,12 @@ internal fun buildReceivedAlarmRow(
         bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
         remoteAlarmId = remote.id,
         lastSyncedAtMillis = now,
+        remoteDeliveryVersion = existing?.remoteDeliveryVersion,
+        // ⚠ **받은 그 자리에서 적는다** — 반영·ACK 성패와 무관하다. 이 값이 있어야 다음 pull 이
+        // '내가 이미 받은 그 전달' 과 '발신자가 다시 보낸 것' 을 가른다(`isResendOfDifferentDelivery`).
+        // 서버가 세대를 주지 않으면(옛 서버) 옛 값을 그대로 둔다 — 없는 것을 지어내지 않는다.
+        observedDeliveryVersion = remote.deliveryVersion?.takeIf { it.isNotBlank() }
+            ?: existing?.observedDeliveryVersion,
         syncState = AlarmSyncStates.SYNCED,
         origin = AlarmOrigins.RECEIVED_REMOTE,
         alarmVolumePercent = existing?.alarmVolumePercent ?: 100,

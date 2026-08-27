@@ -158,6 +158,144 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun receivedAlarmAcksOnlyAfterEnabledAlarmIsScheduledAndVersioned() {
+        assertFalse(receivedAlarmDeliveryComplete(true, true, false, "version-1"))
+        assertFalse(receivedAlarmDeliveryComplete(true, true, true, null))
+        assertTrue(receivedAlarmDeliveryComplete(true, true, true, "version-1"))
+        assertTrue(receivedAlarmDeliveryComplete(true, false, false, "version-1"))
+    }
+
+    @Test
+    fun editedReceivedAlarmRetriesAckOnlyForAppliedDeliveryVersion() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(remoteDeliveryVersion = "version-1")
+
+        assertTrue(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-1"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-2"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, null))
+
+        val legacy = existing.copy(remoteDeliveryVersion = null)
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "0123456789abcdef0123456789abcdef"))
+        assertTrue(isLegacyBackfilledDelivery(legacy, "0123456789abcdef0123456789abcdef"))
+        assertFalse(isLegacyBackfilledDelivery(existing, "0123456789abcdef0123456789abcdef"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "11111111-1111-4111-8111-111111111111"))
+        // ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다**(docs/spec/family-alarm.md).
+        // 넓히면 재전송을 삼킨다 — 첫 전달이 버전 없이 저장된 뒤 온 새 세대(UUID)를
+        // '복구 대상' 으로 읽으면, 수신자 편집을 보존한 채 그 세대를 ACK·삭제해 버린다.
+        assertFalse(isLegacyBackfilledDelivery(legacy, "11111111-1111-4111-8111-111111111111"))
+        // 내가 만든 알람은 애초에 이 복구 대상이 아니다.
+        assertFalse(
+            isLegacyBackfilledDelivery(
+                legacy.copy(origin = AlarmOrigins.LOCAL_OWNED),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
+    }
+
+    /**
+     * ⚠ **재전송은 수신자 편집을 덮는다**(2026-08-26 확정, docs/spec/family-alarm.md).
+     *
+     * 서버는 같은 슬롯에 **같은 알람 id** 를 재사용하고 새 `delivery_version` 만 발급한다.
+     * 그때 편집을 보존하면 그 슬롯은 **이후 모든 전달을 영구히 거부**한다 — 실기기에서
+     * 재현됐다(매 pull 마다 skipped=1, 수신자 화면엔 옛 알람 그대로).
+     */
+    @Test
+    fun resendOfDifferentDeliveryOverwritesRecipientEdits() {
+        val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(observedDeliveryVersion = "11111111-1111-4111-8111-111111111111")
+
+        // 같은 세대가 다시 오면 **덮지 않는다** — 매 pull 마다 수신자 편집이 되돌아가면 안 된다.
+        assertFalse(
+            isResendOfDifferentDelivery(received, "11111111-1111-4111-8111-111111111111"),
+        )
+        // 다른 세대 = 발신자가 다시 보냈다 → 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(received, "22222222-2222-4222-8222-222222222222"),
+        )
+        // ⚠ 관찰 세대가 없는 **옛 행도 뚫어 준다** — 이 필드가 생기기 전에 꼬인 행이 영원히
+        // 막히면 안 된다(실기기 재현). 새 전달 세대(UUID)면 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 단 #104 backfill(32자리 hex)은 새로 보낸 것이 아니다 — 편집 보존 경로가 맞다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
+        // ⚠ **이미 적용한 세대는 재전송이 아니다**(Codex #703 P1). 관찰 세대 컬럼이 생기기
+        // 전에 정상 반영된 행은 observed 가 null 인데 적용 세대에는 그 값이 적혀 있다 —
+        // 그걸 안 보면 같은 전달을 매 pull 마다 덮어써 수신자 편집이 계속 지워진다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 그 행에 **다른** 세대가 오면 진짜 재전송이다 — 여전히 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "33333333-3333-4333-8333-333333333333",
+            ),
+        )
+        // 서버가 세대를 주지 않으면 판단 근거가 없다 — 덮지 않는다.
+        assertFalse(isResendOfDifferentDelivery(received, null))
+    }
+
+    @Test
+    fun legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
+        val current = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(hour = 9, minute = 17, updatedAtMillis = 2_000L)
+        val remote = remote().copy(
+            messageId = "message-1",
+            messageAudioUrl = "r2://voice.mp3",
+            voiceProfileId = "voice-1",
+            messageText = "일어나세요",
+            category = "custom",
+        )
+        val cached = CachedAlarmAudio(
+            localAudioUri = "remote-message-message-1.mp3",
+            rawAudioUri = "r2://voice.mp3",
+            displayName = "voice.mp3",
+            durationMillis = 3_000L,
+            cacheKey = "remote-message-message-1",
+            messageId = "message-1",
+        )
+
+        val recovered = linkRecoveredLegacyRemoteAudio(current, remote, cached)
+
+        assertEquals(9, recovered.hour)
+        assertEquals(17, recovered.minute)
+        assertEquals(2_000L, recovered.updatedAtMillis)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, recovered.playMode)
+        assertEquals(cached.localAudioUri, recovered.localAudioUri)
+        assertEquals(cached.cacheKey, recovered.audioCacheKey)
+        assertEquals("message-1", recovered.ttsMessageId)
+        assertEquals("voice-1", recovered.voiceProfileId)
+
+        val recipientVoice = current.copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            localAudioUri = "my-recording.m4a",
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+        )
+        assertEquals(
+            recipientVoice,
+            linkRecoveredLegacyRemoteAudio(recipientVoice, remote, cached),
+        )
+    }
+
+    @Test
     fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
         assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원"))
     }

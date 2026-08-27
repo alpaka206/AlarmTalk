@@ -20,6 +20,7 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject var alarmKit: AlarmKitViewModel
     @EnvironmentObject var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject var prefetcher: StockClipPrefetcher
     @EnvironmentObject var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject var subscriptions: SubscriptionManager
 
@@ -109,6 +110,9 @@ struct AlarmEditorSheet: View {
         ClipPreparationView(onDismiss: { preparationVoiceID = nil }, targetVoiceID: preparationVoiceID)
             .environmentObject(auth)
             .environmentObject(voiceStudio)
+            // 시트는 환경을 그대로 물려받지 못하는 자리라 여기서도 다시 꽂는다
+            // (위 둘과 같은 이유). 준비 화면이 프리페처를 깨울 수 있어야 한다.
+            .environmentObject(prefetcher)
     }
     /// 현재 활성 미리듣기 대상(단일 진실 공급원, change 4). 스톡 클립 미리듣기 id 는
     /// `.stockClip(id)` 의 연관 값이 들고 있어 previewingStockMessageID 를 대체한다.
@@ -169,7 +173,33 @@ struct AlarmEditorSheet: View {
         return nil
     }
 
-    static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
+    /// 상대 알람의 **최소 예약 여유**. 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS` 와 같은 값이다.
+    ///
+    /// ⚠ 예전 값 30분은 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을 가져오던 시절의
+    /// 것이다. 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로(`push.onFamilyAlarm`
+    /// → `remoteSync.runFullSync()`) 그 근거가 사라졌다.
+    ///
+    /// ⚠ **0 으로 두지는 않는다.** 푸시는 즉시지만 보장은 아니다 — 수신 기기가 오프라인이면
+    /// pull 이 늦고, 그 사이 알람 시각이 지나면 **울리지 않은 채 지나간다**(보낸 사람은
+    /// 보냈다고 믿는다).
+    static let familyAlarmMinLeadMillis: Int64 = 5 * 60 * 1000
+    private static let familyAlarmRequestMarginMillis: Int64 = 60 * 1000
+
+    /// 분 단위 선택기로 고를 수 있고 서버 왕복 중에도 하한을 지키는 첫 시각.
+    static func earliestSelectableFamilyAlarmMillis(nowMillis: Int64) -> Int64 {
+        let minute: Int64 = 60 * 1000
+        let threshold = nowMillis + familyAlarmMinLeadMillis
+        let roundedUp = ((threshold + minute - 1) / minute) * minute
+        return roundedUp + familyAlarmRequestMarginMillis
+    }
+
+    /// 리드타임 안내에 쓰는 시각 포맷터 — 기기 12/24시간 설정을 따른다.
+    private static let leadTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        f.dateStyle = .none
+        return f
+    }()
 
     struct ValidationAlertContent: Identifiable {
         let id = UUID()
@@ -623,6 +653,13 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
+            // 기본 목소리 카탈로그는 번들돼 있으므로 서버 왕복 전에 선택까지 끝낼 수 있다.
+            // 단 유료 사용자의 마지막 선택이 클론이면 그 목소리가 서버에서 올 때까지 기다린다 —
+            // 여기서 시스템 목소리를 먼저 넣으면 성공 응답 뒤에도 마지막 선택이 밀려난다.
+            let lastUsedVoiceID = voiceStudio.lastUsedVoiceId
+            if freeVoiceTier || lastUsedVoiceID == nil || isSystemVoiceId(lastUsedVoiceID) {
+                selectDefaultVoiceProfileIfNeeded()
+            }
             Task {
                 await voiceStudio.refresh(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()
@@ -991,9 +1028,17 @@ struct AlarmEditorSheet: View {
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
         // 말하는 자리: `unusableVoiceBanner`.
-        let profileReady = voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
-            voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
+        // ⚠ 정리 중인 목소리는 **저장도 막는다**(Codex #703 P1) — 이미 선택돼 있던 경우가
+        // 남기 때문이다(자동 선택을 막아도 편집기를 열기 전부터 골라져 있을 수 있다).
+        // 말하는 자리는 아래 배너다.
+        let profileReady = (
+            voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
+                voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
+        )
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
+        // ⚠ **정리 중으로는 버튼을 죽이지 않는다**(Codex #703 P1 — CLAUDE.md 「잠그는 것은
+        // '저장 중' 일 때뿐이다」). 곧 풀리는 상태라 죽은 버튼은 고장으로 읽힌다 —
+        // 누를 수 있게 두고 **누르면 이유를 말한다**(`saveFlow` 첫머리). 배너도 함께 뜬다.
         if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
         // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
         if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
@@ -1095,7 +1140,12 @@ struct AlarmEditorSheet: View {
                     name: $0.name,
                     detail: $0.relationshipLabel?.nilIfBlank,
                     // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
-                    locked: freeVoiceTier
+                    locked: freeVoiceTier,
+                    // 교체 정리가 끝나지 않은 목소리는 **자리에 두되 못 고른다** — 감추면
+                    // 사라진 것으로 보여 고장으로 읽힌다.
+                    unavailableReason: voiceStudio.isReplacementSettling($0.id)
+                        ? "목소리 정리 중이에요"
+                        : nil
                 )
             }
         let shared = voiceStudio.familyVoices
@@ -1152,6 +1202,16 @@ struct AlarmEditorSheet: View {
     func selectVoiceOption(_ option: VoiceSelectionSheet.Option) {
         if option.locked {
             showVoicePlanLockedAlert()
+            return
+        }
+        // 교체 정리가 끝나지 않은 목소리 — 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수
+        // 없이 벗긴다. 이유를 말하고 물러선다(행은 목록에 그대로 있다).
+        if option.unavailableReason != nil {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.",
+                offersPlanActions: false
+            )
             return
         }
         // '직접 녹음' 은 프로필이 아니라 **갈래 전환**이다. 예전에는 이 전환을 세그먼트의
@@ -2040,8 +2100,16 @@ struct AlarmEditorSheet: View {
     func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
         let selected = voiceStudio.selectedProfileID
-        let readyOwn = voiceStudio.profiles.filter { $0.isReadyForAlarmSelection }
-        let readyShared = voiceStudio.familyVoices.filter { $0.isReadyForAlarmSelection }
+        // ⚠ **정리 중인 목소리는 자동으로 고르지 않는다**(Codex #703 P1). 선택 시트의 탭만
+        // 막아서는 부족하다 — 그 목소리가 **마지막에 쓴 것**이면 새 편집기가 스스로 그것을
+        // 골라, 사용자는 아무것도 누르지 않았는데 그 목소리로 저장하게 된다. 뒤이은 정리가
+        // 그 새 알람을 되돌릴 수 없이 벗긴다. 시트에는 그대로 보인다(흐리게).
+        let readyOwn = voiceStudio.profiles.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
+        let readyShared = voiceStudio.familyVoices.filter {
+            $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id)
+        }
 
         // 무료 등급은 서버가 시스템 보이스만 허용한다(tts.ts:684-693).
         // 비-시스템 프로필이 선택돼 있으면 시스템 보이스로 갈아끼워 403 을 예방한다.
@@ -2110,6 +2178,19 @@ struct AlarmEditorSheet: View {
         isWorking = true
         defer { isWorking = false }
 
+        // ⚠ **정리 중인 목소리는 여기서 막는다**(버튼은 살려 둔다 — 위 `editorSaveBlocked`
+        // 주석). 지금 저장하면 뒤이은 정리가 그 알람을 되돌릴 수 없이 벗긴다.
+        if let profileID = (voiceStudio.selectedProfileID).nilIfBlank,
+           draft.playMode != .alarmOnly,
+           voiceSourceMode == .ttsProfile,
+           voiceStudio.isReplacementSettling(profileID) {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                offersPlanActions: false
+            )
+            return
+        }
         let errors = draft.validate()
         if let first = errors.first {
             validationAlert = ValidationAlertContent(
@@ -2476,7 +2557,22 @@ struct AlarmEditorSheet: View {
     /// 충돌이 없거나 교체 동의 후, 실제 저장 + AlarmKit 예약을 수행한다. 예약 실패 시
     /// 롤백하고 false 를 반환한다(교체 흐름이 충돌 알람을 지우지 않도록).
     @discardableResult
+    /// 저장이 **실제로 일어나는 유일한 자리**. 그래서 정리 중 판정도 여기서 한 번 더 한다.
+    ///
+    /// ⚠ `saveFlow` 의 탭 시점 판정만으로는 부족하다(Codex #703 P1) — 같은 시각 알람 교체
+    /// 확인(`confirmReplaceDuplicate`)은 그 판정을 지나온 뒤 **다시 이 함수로 들어오고**,
+    /// 그 사이에 다른 기기의 교체가 반영돼 정리 중이 될 수 있다. 여기서 막지 않으면 정리
+    /// 중인 목소리로 알람이 저장되고, 그 호출은 **기존 알람까지 지운다.**
     func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async -> Bool {
+        if let profileID = merged.voiceProfileId?.nilIfBlank,
+           voiceStudio.isReplacementSettling(profileID) {
+            voiceGateAlert = VoiceGateAlertContent(
+                title: "아직 준비 중이에요",
+                message: "바꾼 목소리를 정리하고 있어요. 잠시 후 다시 저장해 주세요.",
+                offersPlanActions: false
+            )
+            return false
+        }
         // ⚠ 편집 커밋은 전용 진입점을 쓴다. 화면 진입 시점의 스냅샷으로 전체 행을 덮으면,
         // TTS 생성(수 초~수십 초) 사이에 push 가 새긴 remoteAlarmId 를 nil 로 되돌려
         // 다음 push 가 같은 알람을 또 create 한다(서버에 두 행).
@@ -2655,9 +2751,14 @@ struct AlarmEditorSheet: View {
             referenceMillis: nowMillis
         )
         if fireAtMillis - nowMillis < Self.familyAlarmMinLeadMillis {
+            // ⚠ **언제부터 되는지 시각으로 말한다**(안드로이드 문구와 같은 형태).
+            // "지금부터 N분 뒤" 는 사용자가 직접 계산해야 해서, 바로 고칠 수가 없다.
+            let earliest = Date(
+                timeIntervalSince1970: Double(Self.earliestSelectableFamilyAlarmMillis(nowMillis: nowMillis)) / 1000
+            )
             validationAlert = ValidationAlertContent(
                 title: "조금 더 뒤로 설정해 주세요",
-                message: "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
+                message: "상대 알람은 \(Self.leadTimeFormatter.string(from: earliest)) 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요."
             )
             return nil
         }

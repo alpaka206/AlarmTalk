@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 23,
+    version = 25,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -49,6 +49,8 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_20_21,
                     MIGRATION_21_22,
                     MIGRATION_22_23,
+                    MIGRATION_23_24,
+                    MIGRATION_24_25,
                 )
                     // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                     //
@@ -58,7 +60,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     // Room 이 **DB 를 통째로 지우고 다시 만든다** — 사용자는 알람이 전부
                     // 사라진 것만 보고, 우리 쪽에는 예외도 로그도 남지 않는다.
                     //
-                    // 지금은 없는 게 안전하다: 1→23 마이그레이션이 **빠짐없이** 위에 있고,
+                    // 지금은 없는 게 안전하다: 1→24 마이그레이션이 **빠짐없이** 위에 있고,
                     // 앞으로 빠뜨리면 앱이 **켜자마자 죽는다.** 죽는 건 즉시 눈에 띄어 고칠 수
                     // 있지만, 조용히 지워진 알람은 되돌릴 방법이 없다.
                     // 스키마를 바꿀 때는 `version` 을 올리고 **반드시** 여기에 마이그레이션을
@@ -270,6 +272,27 @@ abstract class AlarmDatabase : RoomDatabase() {
                     "UPDATE alarms SET alarmVolumePercent = 10 " +
                         "WHERE alarmVolumePercent < 10 AND alarmSoundEnabled = 1",
                 )
+            }
+        }
+
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN remoteDeliveryVersion TEXT")
+            }
+        }
+
+        /**
+         * 도착한 전달 세대를 따로 기록한다(`observedDeliveryVersion`).
+         *
+         * ⚠ **기존 행은 NULL 로 남긴다.** 그 행들은 이 값을 적기 전에 만들어졌으므로 '어느
+         * 전달을 받았는지 모른다' 가 사실이고, 그때는 예전 규칙(32자리 backfill 예외)을 그대로
+         * 적용한다. `remoteDeliveryVersion` 을 복사해 채우면 안 된다 — 그 값은 '반영까지
+         * 끝냈다' 는 뜻이라, 비어 있는 행(=반영 실패)이 그대로 NULL 이 되어 아무것도 달라지지
+         * 않고, 채워진 행은 재전송을 '같은 세대' 로 오인해 계속 덮지 못한다.
+         */
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN observedDeliveryVersion TEXT")
             }
         }
     }

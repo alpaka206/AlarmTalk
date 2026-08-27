@@ -1230,6 +1230,16 @@ tts.post('/generate', async (c) => {
       }
     };
     let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    // ⚠ **합성을 시작할 때의 교체 세대를 붙잡아 둔다**(Codex #703 P1). 게시 시점에 이 값이
+    // 달라졌으면 그 사이 **제자리 교체**가 일어난 것이고, 교체의 스냅샷 정리(회수된 목소리로
+    // 만든 custom 행을 톤으로 내리는 1회성 스윕)는 **이미 지나갔다** — 지금 게시하면 그
+    // 스윕이 다시는 훑지 않는 자리에 회수된 목소리 행이 영구히 남는다.
+    //
+    // ⚠ **전용 SELECT 를 새로 만들지 말 것.** `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창
+    // (마이그레이션이 배포보다 늦게 도는 창 — CLAUDE.md)에서도 그냥 `undefined` 이고,
+    // 그 창에는 제자리 교체 자체가 이 컬럼을 참조해 롤백되므로 지킬 대상이 없다.
+    // 전용 쿼리로 읽으면 그 창 동안 **모든 직접 입력 생성이 500** 이 된다.
+    const requestVoiceGeneration = String(vp.custom_audio_invalidated_at ?? '');
     const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
     const evictedProbeVoiceId = isEvictedWithoutVoice
       ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
@@ -1280,7 +1290,7 @@ tts.post('/generate', async (c) => {
       activePreviewClaimToken = previewClaimToken;
     }
 
-    for (const { cacheKey } of preparedAttempts) {
+    for (const { attempt: cacheAttempt, cacheKey } of preparedAttempts) {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
@@ -1293,6 +1303,27 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice && !isManualGeneration,
       });
       if (cached) {
+        // ⚠ **캐시 히트도 교체를 통과시키면 안 된다**(Codex #703 P1). 캐시 키는 **요청을
+        // 시작할 때의** provider voice 로 만들어지므로, 그 사이 제자리 교체가 커밋돼도
+        // 히트는 그대로 난다 — 교체가 `messages.audio_url` 을 비웠어도
+        // `generated_audio_assets.audio_url` 은 남아 있어 **회수된 목소리의 바이트와
+        // message id** 가 그대로 반환된다. 교체의 스냅샷 정리는 1회성이라, 클라가 그걸
+        // 저장하면 아무도 다시 훑지 않는다.
+        //
+        // 합성-게시 경로와 **같은 기준**으로 막는다. 여기는 `reserveManualTtsQuota` 보다
+        // 앞이라 월 한도를 태우지 않고, 클라는 다시 저장하면 새 목소리로 받는다.
+        // (`SELECT *` 인 `findUsableVoiceProfile` 로 읽는 이유는 아래 게시 검사와 같다 —
+        // 전용 SELECT 는 마이그레이션이 아직 안 돈 배포 창에서 전부 500 이 된다.)
+        const cacheVoice = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
+        const cacheProviderVoiceId =
+          typeof cacheVoice?.elevenlabs_voice_id === 'string' ? cacheVoice.elevenlabs_voice_id : null;
+        if (
+          !cacheVoice ||
+          (cacheProviderVoiceId !== null && cacheProviderVoiceId !== cacheAttempt.providerVoiceId) ||
+          String(cacheVoice.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration
+        ) {
+          throw new VoiceAuthorizationChangedDuringTtsError();
+        }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
         await db.execute({
@@ -1429,10 +1460,28 @@ tts.post('/generate', async (c) => {
               userPk,
               body.voice_profile_id,
             );
+            // ⚠ **'같은 프로필이 여전히 ready 인가' 만으로는 부족하다**(Codex #703 P1).
+            // 제자리 교체는 행 id·소유자·status 를 **그대로 둔 채** provider voice 만 갈아
+            // 끼우므로 이 셋은 교체 뒤에도 전부 참이다. 합성에 실제로 쓴 목소리와 지금 행의
+            // 목소리를 맞대 봐야 그 사이 교체가 있었는지 알 수 있다.
+            const publicationProviderVoiceId =
+              typeof publicationVoice?.elevenlabs_voice_id === 'string'
+                ? publicationVoice.elevenlabs_voice_id
+                : null;
+            // NULL 은 교체가 아니라 **LRU eviction** 일 수 있다(그건 음원을 무효로 만들지
+            // 않는다) — 그걸 이유로 멀쩡한 오디오를 버리지 않는다. 재클론은 새 id 를 행에
+            // 커밋하고 그 id 로 합성하므로 값이 일치해 오탐이 없다.
+            const replacedDuringSynthesis =
+              publicationProviderVoiceId !== null &&
+              publicationProviderVoiceId !== generated.providerVoiceId;
+            const generationChanged =
+              String(publicationVoice?.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration;
             if (
               !publicationVoice ||
               publicationVoice.status !== 'ready' ||
-              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested
+              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested ||
+              replacedDuringSynthesis ||
+              generationChanged
             ) {
               throw new VoiceAuthorizationChangedDuringTtsError();
             }
@@ -1831,17 +1880,62 @@ tts.get('/messages/:id/audio', async (c) => {
   });
 });
 
+/**
+ * 프리셋 준비 신호를 만드는 SQL 조각. **컬럼이 없으면 '준비됨' 으로 답한다.**
+ *
+ * ⚠ 배포는 마이그레이션보다 먼저 돈다(CLAUDE.md). `voice_prerender_queue.refresh_existing`
+ * 을 그냥 참조하면 그 창(~1분) 동안 **모든 매니페스트 요청이 컬럼 없음으로 500** 이 되어
+ * 옛 클라까지 클립 목록을 못 받는다. 읽기 경로라 fail-closed 로 둘 이유도 없다 — 그 창에는
+ * 교체 자체가 커밋될 수 없으므로(쓰기 경로가 fail-closed 다) '준비됨' 이 사실이다.
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
+ */
+let prerenderRefreshColumnReady = false;
+async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
+  if (!prerenderRefreshColumnReady) {
+    const columns = await db.execute({
+      sql: "PRAGMA table_info('voice_prerender_queue')",
+      args: [],
+    });
+    prerenderRefreshColumnReady = columns.rows.some(
+      (row) => String(row.name) === 'refresh_existing',
+    );
+  }
+  if (!prerenderRefreshColumnReady) return '1 AS rendered_for_current_voice';
+  return `CASE
+                   WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
+                   WHEN EXISTS (
+                     SELECT 1 FROM generated_audio_assets ga
+                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ) THEN 1
+                   ELSE 0
+                 END AS rendered_for_current_voice`;
+}
+
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
   // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
   // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
   const userLoginId = c.get('userLoginId');
   const userPk = c.get('userIdPK') || userLoginId;
+  const renderedSelect = await renderedForCurrentVoiceSelect(db);
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
-                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
+                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name,
+                 -- 이 클립이 '지금 목소리' 로 구워진 것인가 (Codex #703 P1).
+                 -- 제자리 교체는 custom_audio_invalidated_at 을 먼저 커밋하고 프리셋
+                 -- 재렌더는 큐에만 넣는다(replaceVoiceInPlace) — 실제 굽기는 cron 이 나중에
+                 -- 한다. 그래서 표식이 올라간 뒤에도 여기 audio_url 은 한동안 옛 클립이다.
+                 -- 앱이 그걸 모르면 '낡은 키가 없다 = 다 끝났다' 로 읽고 교체 세대를 확정해,
+                 -- 재렌더가 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
+                 -- 판정은 GET /voice/:id/prerender-status 의 완료 판정과 같은 식이다:
+                 -- 그 오디오가 프로필의 현재 provider voice 로 만들어졌는가.
+                 ${renderedSelect}
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+          LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
             AND (
               COALESCE(vp.is_system, 0) = 1
@@ -1876,6 +1970,9 @@ tts.get('/stock-clips', async (c) => {
       text: row.text,
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),
+      // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
+      // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
+      rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
     })),
     // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
     // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.

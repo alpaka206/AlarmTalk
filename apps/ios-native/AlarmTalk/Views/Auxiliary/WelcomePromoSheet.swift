@@ -114,8 +114,6 @@ struct WelcomePromoSheet: View {
 
     private func highlighted(_ text: String, _ emphasis: String) -> Text {
         guard let range = text.range(of: emphasis) else { return Text(text) }
-        return Text(text[text.startIndex..<range.lowerBound])
-            + Text(text[range]).foregroundColor(theme.palette.primary).fontWeight(.semibold)
-            + Text(text[range.upperBound...])
+        return Text("\(Text(text[text.startIndex..<range.lowerBound]))\(Text(text[range]).foregroundColor(theme.palette.primary).fontWeight(.semibold))\(Text(text[range.upperBound...]))")
     }
 }

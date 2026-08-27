@@ -17,10 +17,12 @@ import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -31,8 +33,8 @@ internal fun MainViewModel.loadVoiceProfiles() {
 
 internal fun MainViewModel.preloadVoiceProfiles() {
     if (authSession == null || voiceProfileBusy) return
-    val cachedSystemOnly = voiceProfiles.isNotEmpty() && voiceProfiles.all { it.isSystem == true }
-    if (voiceProfiles.isNotEmpty() && !(cachedSystemOnly && hasPaidVoiceAccess(subscriptionResponse))) {
+    // 번들 기본 목소리는 '첫 응답 전 화면 시드'일 뿐 서버 조회 성공을 뜻하지 않는다.
+    if (voiceProfilesLoadedFresh) {
         voiceProfileLoadFinished = true
         return
     }
@@ -54,26 +56,67 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         voiceProfileLoadFinished = false
         voiceProfileBusy = true
         try {
-            runCatching {
+            supervisorScope {
                 val authorization = AlarmTalkApiClient.bearer(session.token)
+                // 목록·초안·월 등록 한도는 서로 독립이다. 한도가 목록 뒤에 시작하면
+                // '생성 가능 n/m회'만 한 왕복 늦게 나타나므로 셋을 함께 시작한다.
+                val draftRequest = async { api.getVoiceDraft(authorization).profile }
+                val quotaRequest = async { api.getVoiceDraftQuota(authorization) }
                 val profiles = api.listVoiceProfiles(authorization).profiles
-                val draft = api.getVoiceDraft(authorization).profile
-                profiles to draft
-            }.onSuccess { (profiles, draft) ->
                 if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
                     Log.i(TAG, "Dropping stale voice profile list: session ended or switched")
-                    return@onSuccess
+                    return@supervisorScope
                 }
                 voiceProfiles = profiles
-                pendingVoiceDraft = draft
                 voiceProfilesLoadedFresh = true
+                // ⚠ **'정리 중' 표시를 여기서 되살린다**(재시작 대비). 디스크에 남겨 둔 값을
+                // 읽는 곳이 새로고침(`reconcileInaccessibleVoiceAlarms`) 한 곳뿐이었는데,
+                // 그건 **두 목록이 모두 신선할 때만** 돈다 — 콜드 스타트에서 목소리 목록만
+                // 먼저 오면 그 사이 표시가 비어 **재시도 전에 교체 목소리를 고를 수 있다.**
+                // 목록이 화면에 오르는 이 자리가 가장 이른 시점이다.
+                settlingVoiceProfileIds = com.alarmtalk.app.data.VoiceReplacementMarkerStore(
+                    getApplication(),
+                ).settlingProfileIds(requestOwner) + settlingUnpersistedIds
+                // 목록은 먼저 화면에 반영하되, 등록 잠금(busy)은 기존 초안 확인이 끝날 때까지
+                // 유지한다. 여기서 먼저 풀면 사용자가 새 초안을 만드는 사이 앞서 시작한 GET이
+                // 늦게 도착해 pendingVoiceDraft를 과거 값으로 덮을 수 있다.
+                try {
+                    val draft = draftRequest.await()
+                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                        pendingVoiceDraft = draft
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // 초안 조회 실패가 이미 받은 목록을 지우거나 실패로 보이게 하지 않는다.
+                    AlarmTalkLog.reportError("Failed to load voice draft", error)
+                }
+                if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                    Log.i(TAG, "Dropping stale voice draft: session ended or switched")
+                    return@supervisorScope
+                }
+                voiceProfileBusy = false
+                voiceProfileLoadFinished = true
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
                 reconcileInaccessibleVoiceAlarms(requestOwner)
-                // 삭제 화면에서 '이번 달 재생성 가능 여부'를 판정하도록 월 생성 쿼터도 함께 갱신.
-                loadVoiceDraftQuota()
-            }.onFailure { error ->
+                try {
+                    val quota = quotaRequest.await()
+                    if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                        voiceDraftQuota = quota
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    // 한도 조회 실패는 목록·초안을 지우거나 실패로 보이게 하지 않는다.
+                    AlarmTalkLog.reportError("Failed to load voice draft quota", error)
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (responseStillBelongsToRequester(requestOwner, startGeneration)) {
                 AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
             }
@@ -151,22 +194,32 @@ internal fun MainViewModel.createVoiceProfiles(
     // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
     // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
     //
-    // 다만 **초안이 이미 떠 있으면** 새로 만들지 않는다 — 그건 한도가 아니라 '결정을
-    // 안 끝낸 등록이 하나 있다' 는 뜻이라, 그 결정부터 마쳐야 한다. UI 쪽
-    // `canOpenCreateForm` 과 **같은 기준**이다.
-    if (pendingVoiceDraft != null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
-        return false
-    }
+    // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft != null`
+    // 로 막았다). 초안은 저장하지 않으면 없는 것이고, 남아 있다는 건 앱이 죽었다는 뜻이지
+    // 사용자가 결정을 미뤘다는 뜻이 아니다 — 서버가 새 등록을 받을 때 옛 초안을 버린다
+    // (`discardAbandonedDrafts`). 여기서 막으면 **녹음을 다 시킨 뒤 아무 반응 없이**
+    // 끝난다(이 함수가 false 를 돌려주면 패널은 스텝을 전진시키지 않는다).
     if (voiceProfileBusy) return false
 
     // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
     // 모달 없이 아래 코루틴에서 먼저 기록하고, 물어보지 못한 경로(예: 화면 밖에서 호출)
     // 에서만 전용 시트를 띄운다.
-    val consentsToRecord = sensitiveConsentMissing
-    if (consentsToRecord.isNotEmpty() && !consentAgreedInline) {
+    //
+    // ⚠ **화면이 실제로 물어본 유형만 기록한다.** 인라인 체크박스는 `voice_biometric`
+    // **하나만** 그리는데(`VoiceProfileManagementPanel.needsBiometricConsent`), 예전에는
+    // 그 체크 하나로 `sensitiveConsentMissing` **전부**를 `agreed=true` 로 올렸다 —
+    // 사용자가 본 적 없는 동의가 기록된다. 인라인이 덮지 않는 유형이 남으면 시트로 보낸다
+    // (`docs/spec/consent.md` 「한 번 받은 동의는 다시 묻지 않는다」의 짝 규칙:
+    //  **묻지 않은 것은 기록하지 않는다**).
+    val consentsToRecord =
+        if (consentAgreedInline) sensitiveConsentMissing.filter { it in INLINE_COVERED_CONSENTS }
+        else emptyList()
+    val unaskedConsents = sensitiveConsentMissing.filterNot { it in consentsToRecord }
+    if (unaskedConsents.isNotEmpty()) {
         pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
-            types = consentsToRecord,
+            // 시트는 남은 것뿐 아니라 **아직 없는 민감 동의 전체**를 다룬다 — 인라인 체크는
+            // 아직 서버에 기록되지 않았으므로 여기서 함께 받아야 한 번에 끝난다.
+            types = sensitiveConsentMissing,
             resumeVoiceDrafts = drafts,
         )
         return false
@@ -272,24 +325,33 @@ internal fun MainViewModel.createVoiceProfiles(
     return true
 }
 
-internal fun MainViewModel.promoteVoiceDraft(profileId: String, replaceExisting: Boolean = false) {
+internal fun MainViewModel.promoteVoiceDraft(
+    profileId: String,
+    replaceExisting: Boolean = false,
+    isShared: Boolean = false,
+) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
-        runCatching {
+        // ⚠ `.onSuccess { }` 로 감싸지 않는다 — 아래 강등은 **정지 함수**이고, 성공 갈래를
+        // 그대로 코루틴 본문에 두는 편이 순서를 읽기도 쉽다.
+        val result = runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileUpdateRequest(
+                        isShared = isShared,
                         isDraft = false,
                         language = deviceAppVoiceLanguage(),
                         replaceExisting = if (replaceExisting) true else null,
                     ),
                 ).profile
             }
-        }.onSuccess { profile ->
+        }
+        val profile = result.getOrNull()
+        if (profile != null) {
             val draft = pendingVoiceDraft
             // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
             // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
@@ -305,10 +367,78 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String, replaceExisting:
                 listenerTitle = profile.listenerTitle ?: draft?.listenerTitle,
             )
             pendingVoiceDraft = null
-            voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
-        }.onFailure { error ->
+            // ⚠ **교체한 기기에서 곧바로 내린다 — 목록에 올리기 전에.** 교체는 옛 프로필 행을
+            // 그대로 재사용하므로(id 가 같다) 어떤 접근권 재확인으로도 이 알람들은 잡히지
+            // 않는다 — 놔두면 화면이 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다"
+            // 라고 약속하고 동의까지 받은 바로 그 기기에서 **지운 목소리가 계속 울린다**.
+            //
+            // ⚠ **순서가 중요하다.** 목록에 먼저 올리면 그 순간부터 새 목소리를 고를 수 있는데,
+            // 강등은 프로필 id 로만 대상을 고르므로 그 사이에 만든 **새 목소리 알람까지**
+            // 되돌릴 수 없이 벗긴다. 이 갈래를 끝낸 뒤에 노출한다(`voiceProfileBusy` 도 아직
+            // 켜져 있어 등록 화면이 다음 동작을 받지 않는다).
+            // 다른 기기는 서버의 voice_access_revoked(voiceProfileId 동봉)가 깨운다.
+            // 프리셋 알람은 건드리지 않는다 — 서버가 같은 message id 로 새 목소리를 다시 만든다.
+            var cascadeFailed = false
+            val markerStore = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+            if (replaceExisting) {
+                val owner = session.user.id
+                runCatching {
+                    // ⚠ **표식 확정까지 한 임계구역에서 한다.** 확정을 빠뜨리면 사용자가
+                    // 곧바로 **새 목소리로** 만든 알람을 뒤늦은 푸시나 다음 새로고침이
+                    // '아직 안 내린 교체' 로 보고 되돌릴 수 없이 지운다.
+                    markerStore
+                        .applyIfNotApplied(owner, official.id, official.customAudioInvalidatedAt) {
+                            repository.degradeCustomMessageAlarmsUsingVoiceProfile(official.id, owner)
+                        }
+                }.onSuccess { result ->
+                    // ⚠ **디스크에 못 남긴 확정은 확정이 아니다**(Codex #703 P1). 그대로
+                    // 고를 수 있게 두면 그 목소리로 만든 새 알람을 다음 회차가 '아직 안 내린
+                    // 교체' 로 보고 지운다 — 강등 자체가 성공했더라도 마찬가지다.
+                    if (!result.persisted) cascadeFailed = true
+                }.onFailure {
+                    cascadeFailed = true
+                    AlarmTalkLog.reportError("Failed to degrade custom alarms after voice replacement", it)
+                }
+            }
+            if (cascadeFailed) {
+                // ⚠ **실패했으면 아직 고를 수 없게 한다.** 고를 수 있게 두는 순간 그 목소리로
+                // 새 알람을 만들 수 있는데, 강등 대상은 프로필 id 로만 고르므로 다음 회차가
+                // 그 **새 알람까지** 되돌릴 수 없이 벗긴다. 표식도 확정되지 않았으니 다시
+                // 시도하면 그대로 이어진다 — 사용자에게는 그 사실만 말한다.
+                //
+                // ⚠ **목록에서 빼지는 않는다**(2026-08-25 지시. 그전에는 뺐다). 감추면
+                // 사용자에게는 목소리가 **사라진 것으로 보여 고장으로 읽힌다.** 자리에 두고
+                // 흐리게 그린 뒤 이유를 말한다(iOS `suppressReplacedProfile` 과 같은 규칙).
+                // 디스크에 못 남기면 메모리에서라도 들고 있어야 한다 — 다음 목록 조회가
+                // 디스크만 보고 이 표시를 지워 버리지 않도록.
+                if (!markerStore.setSettling(session.user.id, official.id, true)) {
+                    settlingUnpersistedIds = settlingUnpersistedIds + official.id
+                }
+                settlingVoiceProfileIds = settlingVoiceProfileIds + official.id
+                voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+                message = getApplication<android.app.Application>()
+                    .getString(R.string.msg_voice_replace_cleanup_failed)
+            } else {
+                markerStore.setSettling(session.user.id, official.id, false)
+                settlingUnpersistedIds = settlingUnpersistedIds - official.id
+                settlingVoiceProfileIds = settlingVoiceProfileIds - official.id
+                voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            }
+        } else {
+            val error = result.exceptionOrNull() ?: IllegalStateException("promote failed")
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_create_failed))
+            val app = getApplication<android.app.Application>()
+            // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이
+            // 없으면 영어 본문이 일반 실패 문구로 뭉개져 **왜 막혔는지**가 사라진다.
+            message = when (apiErrorCode(error)) {
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
+                "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
+                "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
+                // 다른 기기가 미리듣기 문구를 고쳐 previewed_at 이 지워진 경우. 다시 시도해도
+                // 안 되는 종류라 '잠시 후 다시' 로 뭉개면 영영 눌러 보게 된다.
+                "VOICE_PREVIEW_REQUIRED" -> app.getString(R.string.msg_voice_preview_required)
+                else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
+            }
         }
         voiceProfileBusy = false
     }
@@ -604,6 +734,15 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
 /** 스톡 클립 동시 다운로드 수. 순차는 약전파에서 1분을 넘기고, 과하면 서버·기기가 힘들다. */
+/**
+ * 목소리 등록 화면의 **인라인 동의 항목이 실제로 묻는** 유형.
+ *
+ * `VoiceProfileManagementPanel` 의 `needsBiometricConsent` 가 그리는 체크박스 하나에
+ * 대응한다 — 여기 없는 유형은 그 체크로 기록하면 안 되고, 전용 시트로 따로 물어야 한다.
+ * iOS 짝은 `VoiceCloneUploadFlow.inlineCoveredConsents`.
+ */
+private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
+
 private const val PREFETCH_PARALLELISM = 4
 
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
@@ -634,7 +773,7 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = nul
                     batch.map { clip ->
                         async {
                             val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
-                            if (audioStore.getCachedAudio(cacheKey) == null) {
+                            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                                 val response = downloadTtsMessageAudio(clip.messageId)
                                 audioStore.cacheGeneratedAudio(
                                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -749,7 +888,7 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
         onProgress(0, clips.size)
         clips.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
-            if (audioStore.getCachedAudio(cacheKey) == null) {
+            if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                 val response = downloadTtsMessageAudio(clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -819,7 +958,10 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
     // 자세한 것은 `StockClipManifestStore` 주석.
     if (stockClips.isEmpty()) {
-        com.alarmtalk.app.data.StockClipManifestStore.load(getApplication())?.let { cached ->
+        // 계정 id 를 함께 넘긴다 — 지우지 못해 격리된 파일은 **임자 본인에게만** 열린다
+        // (Codex #703 P1, `StockClipManifestStore.load` 주석).
+        com.alarmtalk.app.data.StockClipManifestStore
+            .load(getApplication(), authSession?.user?.id)?.let { cached ->
             stockClips = cached.clips
             cached.expectedVariants?.let { expectedVariants = it }
         }
@@ -827,15 +969,81 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
     // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
     if (!forceReload && stockClipManifestFetched) return
+    // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
+    // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 간다.
+    stockClipManifestRevision += 1
+    val manifestRevision = stockClipManifestRevision
+    // 디스크 권위의 표. **프로세스 전역**이라 프리페치 워커와도 순서가 맞는다
+    // (`stockClipManifestRevision` 은 이 뷰모델 안의 순서만 본다).
+    val manifestTicket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
     viewModelScope.launch {
         runCatching {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { response ->
+            if (manifestRevision != stockClipManifestRevision) return@onSuccess
+            if (authSession?.user?.id != session.user.id) return@onSuccess
+            // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
+            // 표가 거절됐다 = **더 새 매니페스트가 이미 나왔다.** 그런데도 이 응답으로
+            // `stockClips` 를 덮으면, 준비 판정이 **교체 이전 스냅샷**(전부 rendered=true)을
+            // 보고 세대를 확정해 버린다 — 완료 푸시를 놓치면 되돌릴 폴백이 없다.
+            // 거절이든 실패든, **디스크 권위가 되지 못한 응답은 판정의 권위도 아니다.**
+            if (com.alarmtalk.app.data.StockClipManifestStore.save(
+                    getApplication(),
+                    response,
+                    manifestTicket,
+                    session.user.id,
+                ) != com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED
+            ) {
+                return@onSuccess
+            }
             val clips = response.clips
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }
             stockClipManifestFetched = true
-            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response)
+            // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
+            // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
+            withContext(Dispatchers.IO) {
+                val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+                val stale = clips.mapNotNull { clip ->
+                    val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
+                        .filter { key ->
+                            audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                                // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
+                                // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
+                                audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
+                        }
+                    keys.takeIf { it.isNotEmpty() }?.let { clip to it }
+                }
+                stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
+                    kotlinx.coroutines.coroutineScope {
+                        batch.map { (clip, cacheKeys) ->
+                            async {
+                                try {
+                                    val audio = downloadTtsMessageAudio(clip.messageId)
+                                    val bytes = android.util.Base64.decode(
+                                        audio.audioBase64,
+                                        android.util.Base64.DEFAULT,
+                                    )
+                                    cacheKeys.forEach { key ->
+                                        audioStore.cacheGeneratedAudio(
+                                            bytes = bytes,
+                                            format = audio.audioFormat,
+                                            rawAudioUri = audio.audioUrl,
+                                            displayName = key,
+                                            cacheKey = key,
+                                            messageId = clip.messageId,
+                                        )
+                                    }
+                                } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                }
+            }
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->

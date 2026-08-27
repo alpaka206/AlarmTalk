@@ -223,6 +223,15 @@ final class BackgroundSyncTask {
             // 강등은 새로고침에 매달린 `onAuthoritativeRefresh` 훅이 한다. 조회가 실패한
             // 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
             // `refresh` 는 던지지 않는다(내부에서 삼킨다) — try 밖에 둬도 안전하다.
+            // ⚠ **못 끊은 예약 회수도 동기화와 묶지 않는다**(Codex #703 P1).
+            // 위 목소리 갱신과 **같은 이유**다 — push/pull 뒤에 두면 `/alarms` 하나만
+            // 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못하고, 그 사이 회수된
+            // 목소리나 밀어낸 알람의 예약이 **그대로 울린다.** 게다가 이 일은 통째로
+            // 로컬이라 네트워크 성패와 아무 상관이 없다. 그래서 **먼저, 독립적으로** 돌린다.
+            if let store, let alarmKit {
+                await alarmKit.retryPendingCancellations(store: store)
+            }
+
             if let voiceSession = KeychainStore.readSession() {
                 // 알람이 디스크에서 올라오기를 기다리는 일은 **강등 훅**
                 // (`onAuthoritativeRefresh`)이 한다 — 푸시로 온 회차도 같은 대기가 필요해
@@ -265,12 +274,13 @@ final class BackgroundSyncTask {
             timeoutTask.cancel()
 
             // Android `RemoteAlarmSyncWorker.doWork` 의 retry 조건과 동일:
-            // pull 이 전부 실패(failed>0)했고 새로 반영된 게 하나도 없으면(imported==0
-            // && updated==0) 재시도가 의미 있다. WorkManager 는 이때 Result.retry() 로
+            // 하나라도 전달 미완료면 재시도한다. 로컬 행·음원까지 저장됐어도 OS 예약이
+            // 실패한 알람은 5분 리드타임 안에 다시 걸어야 해서 부분 성공도 미룰 수 없다.
+            // WorkManager 는 이때 Result.retry() 로
             // 지수 백오프 재실행하지만, BGAppRefreshTask 에는 동등한 exponential backoff
             // API 가 없다. setTaskCompleted(success:false) + 더 짧은 earliestBeginDate
             // 로 재예약하는 것이 가장 근접한 근사다(정확한 지수 백오프는 재현 불가).
-            if pullResult.failed > 0 && pullResult.imported == 0 && pullResult.updated == 0 {
+            if pullResult.failed > 0 {
                 scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
                 task.setTaskCompleted(success: false)
             } else {

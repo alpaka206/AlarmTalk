@@ -12,8 +12,9 @@ packages/shared/
 ├── src/
 │   ├── index.ts            barrel export
 │   └── schemas/
-│       ├── user.ts         UserPlan, UserSchema
-│       └── voice.ts        VoiceProfileStatus, VoiceProfileSchema
+│       ├── auth.ts         표시 이름·인증 입력 규칙
+│       ├── fortune.ts      운세 입력 규칙
+│       └── voice.ts        목소리 등록·합성 입력 규칙
 ├── test/
 │   └── schemas.test.ts     zod 스키마 단위 테스트
 ├── package.json
@@ -32,9 +33,10 @@ npm run test        # vitest
 ## 사용 예
 
 ```ts
-import { UserSchema } from "@alarmtalk/shared";
+import { DisplayNameSchema } from "@alarmtalk/shared";
 
-const user = UserSchema.parse(await fetchMe());
+const displayName = DisplayNameSchema.parse(input);
 ```
 
-> 현재는 스캐폴드만 있다. 실제 import 는 별도 이슈에서 백엔드·웹·모바일로 점진 확장한다.
+백엔드가 런타임 검증에 직접 사용한다. 네이티브 앱은 같은 상한과 정리 규칙을 각 언어의
+입력 유틸리티로 미러하며 정적 검사로 대조한다.

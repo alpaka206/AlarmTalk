@@ -94,15 +94,78 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) {
     if (!familyVoicesLoadedFresh || !voiceProfilesLoadedFresh) return
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
+    // 제자리 교체는 프로필 id 를 재사용해 위 대조로는 **절대** 안 걸린다. 서버가 준
+    // `custom_audio_invalidated_at` 이 지난번과 다르면 그 목소리의 직접 입력 알람만 내린다 —
+    // 푸시를 놓친 기기가 스스로 수렴하는 유일한 경로다(정확성은 폴백이 맡는다).
+    val markers = com.alarmtalk.app.data.VoiceReplacementMarkerStore(getApplication())
+    // ⚠ **공유받은 목소리도 본다** — 그 목소리로 만든 내 직접 입력 알람도 함께 무효가 되는데,
+    // 내 목록만 보면 공유받은 쪽 기기는 푸시를 놓쳤을 때 영영 모른다.
+    val markerCandidates = voiceProfiles.map { it.id to it.customAudioInvalidatedAt } +
+        familyVoices.map { it.id to it.customAudioInvalidatedAt }
     viewModelScope.launch {
-        runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
-            .onSuccess { degraded ->
-                // 공유가 끊겨 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다.
-                DowngradeNoticeStore(getApplication())
-                    .record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
+        runCatching {
+            val lostAccess = repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner)
+            var replacedCount = 0
+            // ⚠ **판정을 코루틴 밖에서 미리 하지 말 것.** 예전에는 여기 오기 전에 걸러 뒀는데,
+            // 그 사이 더 새 세대가 강등·확정되고 사용자가 새 목소리로 알람을 만들면 뒤늦게
+            // 깨어난 이 회차가 그 알람을 지웠다. 저장소가 판정·강등·확정을 함께 잠근다.
+            // ⚠ **이 경로는 세대를 확정하지 않는다**(Codex #703 P1). 확정하려면 **그 교체
+            // 이후에 받은** 매니페스트가 있어야 하는데, 여기 있는 목록은 '이번 세션 언젠가'
+            // 받은 것이라 교체 **이전** 스냅샷일 수 있다(전부 rendered=true 로 보인다).
+            // 그걸 근거로 확정하면 cron 이 재렌더를 끝낸 뒤에도 다음 회차들이 그 세대를
+            // 건너뛰어, 완료 푸시를 놓친 기기는 프리셋 알람이 회수된 목소리로 계속 운다.
+            //
+            // 그래서 **강등만 하고**(사용자가 곧바로 보는 결과) 확정은 워커에 맡긴다 —
+            // 워커는 매니페스트를 새로 받아 준비 여부를 보고, 아직이면 retry 로 다시 온다.
+            // 강등이 null 을 돌려주면 저장소가 재시도 표식을 남기므로 워커가 그대로 이어받는다.
+            var replacementObserved = false
+            for ((profileId, invalidatedAt) in markerCandidates) {
+                var degradedNow = 0
+                val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
+                    degradedNow =
+                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
+                    // **언제나 null 이다** — 이 경로는 확정하지 않는다(위 주석). 계정이 바뀐
+                    // 경우도 자연히 포함된다(옛 계정의 0을 '처리 완료' 로 적으면 그 계정은
+                    // 영영 재시도하지 않는다).
+                    null
+                }
+                if (result.changed) replacementObserved = true
+                // ⚠ **'정리 중' 표시를 여기서 올리고 내린다**(Codex #703 P1). 승격 경로만
+                // 표시를 올리면 두 가지가 어긋난다: 이 새로고침이 재시도에 **성공해도** 표시가
+                // 남아 그 목소리를 프로세스가 끝날 때까지 못 고르고, 반대로 재시작하면 표시가
+                // (메모리 전용이라) 비어 있어 **재시도 전에 잠깐 고를 수 있게** 된다 —
+                // 그때 만든 알람을 그 재시도가 벗긴다.
+                // 표시는 **디스크가 단일 출처**다 — 워커(백그라운드)도 같은 값을 쓰고,
+                // 재시작해도 남아야 재시도 전에 잠깐 고를 수 있게 되는 일이 없다.
+                if (!markers.setSettling(listOwner, profileId, !result.persisted)) {
+                    // 디스크에 못 남겼으면 메모리에서 들고 간다(다음 조회가 덮지 않게).
+                    settlingUnpersistedIds = settlingUnpersistedIds + profileId
+                } else if (result.persisted) {
+                    settlingUnpersistedIds = settlingUnpersistedIds - profileId
+                }
+                // 확정을 미뤘어도 이미 내린 것은 센다 — 안내는 여기서만 남길 수 있다.
+                replacedCount += degradedNow
             }
-            .onSuccess { count ->
-                if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
+            // 교체를 봤으면 두 워커를 곧바로 큐잉한다 — 하루 주기를 기다리지 않는다.
+            //  - 프리페치: 새 매니페스트를 **디스크에 공개**하고 낡은 프리셋 바이트를 받는다.
+            //  - 접근권 동기화: 매니페스트를 새로 받아 **준비된 세대만 확정**하고, 아직이면
+            //    retry 로 다시 온다. 여기서 미룬 확정을 그쪽이 마무리한다.
+            if (replacementObserved) {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
+                com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(getApplication())
+            }
+            settlingVoiceProfileIds = markers.settlingProfileIds(listOwner) + settlingUnpersistedIds
+            lostAccess to replacedCount
+        }
+            .onSuccess { (lostAccess, replacedCount) ->
+                // 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다. **원인별로 따로 적는다** —
+                // 대기표가 우선순위로 합치므로(안내할 액션이 있는 쪽이 이긴다) 여기서 뭉치면
+                // 공유 해제의 '이용권 보기' 안내를 잃는다.
+                val notices = DowngradeNoticeStore(getApplication())
+                notices.record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, lostAccess)
+                notices.record(listOwner, DowngradeNoticeStore.Cause.VOICE_REPLACED, replacedCount)
+                val total = lostAccess + replacedCount
+                if (total > 0) Log.i(TAG, "Degraded $total alarm(s): access=$lostAccess replaced=$replacedCount")
             }
             .onFailure { error ->
                 Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)

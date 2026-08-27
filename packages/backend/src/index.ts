@@ -315,6 +315,17 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.email_code_prune', err);
   }
 
+  // 전자상거래법 보존기간이 끝난 가명 결제 기록 파기. retain_until 을 저장만 하고
+  // 지우지 않으면 '5년 보존'이 사실상 무기한 보존이 된다.
+  try {
+    await db.execute({
+      sql: 'DELETE FROM retained_billing_records WHERE retain_until <= ?',
+      args: [now.toISOString()],
+    });
+  } catch (err) {
+    captureCron('scheduled.billing_retention_prune', err);
+  }
+
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
   // env 를 넘겨 만료 처리 전 Play 실상태 재조회(RTDN 유실 대비 reconciliation)를 켠다.
   try {

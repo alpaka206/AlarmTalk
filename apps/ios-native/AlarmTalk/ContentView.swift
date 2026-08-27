@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// 분해 매핑:
 /// - 라우팅 분기: `Views/Root/RootView.swift`
-/// - 4개 탭 라우터/시트 호스트: `Views/Root/MainTabsView.swift`
+/// - 3개 탭 라우터/보조 화면 호스트: `Views/Root/MainTabsView.swift`
 /// - 바텀 네비: `Views/Root/BottomNavBar.swift`
 /// - 알람 화면: `Views/Alarms/AlarmsListView.swift`, `AlarmRow.swift`,
 ///   `AlarmPermissionSection.swift`

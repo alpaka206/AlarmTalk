@@ -251,7 +251,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
     func promoteVoiceDraft(
         id: String,
         token: String,
-        replaceExisting: Bool = false
+        replaceExisting: Bool = false,
+        isShared: Bool = false
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
@@ -259,7 +260,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: VoiceDraftPromoteRequest(
                 isDraft: false,
-                replaceExisting: replaceExisting ? true : nil
+                replaceExisting: replaceExisting ? true : nil,
+                isShared: isShared
             )
         )
         return response.profile
@@ -729,6 +731,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 가족 멤버에게 보내는 voice alarm 생성. Android `FamilyApi.kt:87` 의
     /// `createFamilyAlarmTalk`. targetUserId 가 수신자.
+    ///
+    /// ⚠ **짝이 되는 '수정' API 를 만들지 말 것.** 보낸 알람은 서버가
+    /// `PATCH /alarm/:id` 를 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다
+    /// (`docs/spec/family-alarm.md` 의 「보낸 알람은 절대 수정할 수 없다」).
+    /// 받는 쪽이 발신자의 변경을 의도적으로 무시하므로, 수정을 받아 주면
+    /// **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
+    /// 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다.**
     func createFamilyAlarmTalk(_ requestBody: FamilyAlarmTalkRequest, token: String) async throws -> FamilyAlarmTalkResponse {
         try await request(
             "family/alarms/voice",
@@ -748,6 +757,23 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 한 번 declined 되면 API 로 되돌릴 방법이 없다(un-decline 라우트는 삭제됐다).
     func declineAlarm(id: String, token: String) async throws {
         let _: EmptyResponse = try await request("alarm/\(id)/decline", method: "POST", token: token)
+    }
+
+    /// `POST /alarm/:id/received` — 음원 확보와 켜진 알람의 OS 예약까지 끝나
+    /// **서버 행을 지워도 된다**고 알린다.
+    ///
+    /// 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
+    /// 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
+    /// 클론 음원을 TTL 이 지나도 영구 보존한다.
+    ///
+    /// 실패는 호출부가 삼킨다 — 다음 pull 이 같은 알람을 다시 보고 재시도한다.
+    func markAlarmReceived(id: String, deliveryVersion: String, token: String) async throws {
+        let _: EmptyResponse = try await request(
+            "alarm/\(id)/received",
+            method: "POST",
+            token: token,
+            body: AlarmReceiptRequest(deliveryVersion: deliveryVersion)
+        )
     }
 
     /// `GET /alarm/declined` 한 페이지. 서버가 limit 을 100 으로 클램프한다.

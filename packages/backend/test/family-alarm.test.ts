@@ -261,6 +261,9 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect(body.alarm.voice_upload_id).toBe(UPLOAD_ID);
     expect(body.message.category).toBe('family-voice');
     expect(body.message.audio_url).toBe('audio/family-voice.wav');
+    const alarmInsert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'));
+    expect(alarmInsert?.sql).toContain('delivery_version');
+    expect(alarmInsert?.args.some((arg) => /^[0-9a-f-]{36}$/.test(String(arg)))).toBe(true);
   });
 
   it('label 미지정 → 기본 라벨 사용', async () => {

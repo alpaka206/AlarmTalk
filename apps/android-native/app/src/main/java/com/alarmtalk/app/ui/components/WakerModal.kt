@@ -275,6 +275,14 @@ internal fun WakerSheetOptionRow(
     trailing: (@Composable () -> Unit)? = null,
     divider: Boolean = false,
     destructive: Boolean = false,
+    /**
+     * **지금은 고를 수 없는 행**(흐리게 그린다). 누르는 것 자체는 막지 않는다 —
+     * 이유를 말해 줘야 하기 때문이다(iOS `VoiceSelectionSheet.Option.unavailableReason`).
+     *
+     * ⚠ 목록에서 **빼는 대신** 이걸 쓴다(2026-08-25 지시). 감추면 사용자에게는 항목이
+     * 사라진 것으로 보여 고장으로 읽힌다.
+     */
+    dimmed: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val hasLeading = leading != null || icon != null
@@ -322,7 +330,11 @@ internal fun WakerSheetOptionRow(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (destructive) scheme.error else scheme.onSurface,
+                    color = when {
+                        destructive -> scheme.error
+                        dimmed -> scheme.onSurfaceVariant
+                        else -> scheme.onSurface
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

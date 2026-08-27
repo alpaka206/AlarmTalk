@@ -456,6 +456,22 @@ final class AlarmKitViewModel: ObservableObject {
         // 다음 회차부터 **조용히 안 울린다.**
         // 안전판은 `enabled` 가 아니라 **UUID 일치**다: 그 사이 새 UUID 로 다시 예약된
         // 행이라면 값이 달라 여기 걸리지 않는다.
+        applyResolvedCancellations(resolved, origins: resolvedOrigins, store: store)
+        return cleared
+        #else
+        return 0
+        #endif
+    }
+
+    /// 끝난 UUID 를 가리키던 행을 정리한다.
+    ///
+    /// `retryPendingCancellations`(전경 sweep)와 `releaseOwedHandles`(전달 정리)가 **같은
+    /// 규칙**을 쓰도록 한 곳에 둔다 — 둘로 두면 갈라지고, 갈라진 쪽은 조용히 틀린다.
+    private func applyResolvedCancellations(
+        _ resolved: Set<String>,
+        origins resolvedOrigins: [String: PendingAlarmCancellationStore.Origin],
+        store: LocalAlarmStore
+    ) {
         for record in store.alarms {
             guard let handle = record.alarmKitID, resolved.contains(handle) else { continue }
             // ⚠ **울려서 되살아난 행을 다시 끈다**(2026-08-19 감사 P3). 회수가 늦어져 그 고아가
@@ -468,18 +484,17 @@ final class AlarmKitViewModel: ObservableObject {
             //
             // 손잡이가 **이 UUID 와 같을 때만** 여기 걸리므로, 그 사이 새 UUID 로 다시 예약된
             // 행(사용자가 직접 켠 경우)은 건드리지 않는다.
-            // ⚠ **행을 끄는 것은 '떠나는 계정의 종료' 에서 온 UUID 뿐이다**(Codex #699 P1).
+            // ⚠ **행을 끄는 것은 우리가 끄기로 정한 UUID 뿐이다**(Codex #699 P1).
             // 로그인 때 정리한 **남의 계정** 예약은 행을 일부러 켜 둔 것이라(자동 401 로
             // 세션만 잃었다) 여기서 끄면 그 사람이 돌아왔을 때 알람이 사라진다.
-            if record.enabled, resolvedOrigins[handle] == .accountLeave {
+            // 판정은 출처 목록을 여기 베끼지 말고 `Origin.restoresDisabledRow` 로 한다 —
+            // 출처가 늘 때마다(같은 시각 밀어내기가 그랬다) 이 줄을 같이 고쳐야 하는
+            // 구조면 언젠가 빠뜨린다.
+            if record.enabled, resolvedOrigins[handle]?.restoresDisabledRow == true {
                 store.setEnabled(id: record.id, enabled: false)
             }
             store.clearScheduleHandle(id: record.id)
         }
-        return cleared
-        #else
-        return 0
-        #endif
     }
 
     /// **다른 계정 소유의 OS 예약을 끊는다.** 로그인 확정 직후에 부른다.
@@ -1016,13 +1031,108 @@ final class AlarmKitViewModel: ObservableObject {
             // 호출부마다 기억하게 하면 언젠가 빠뜨리고, 빠뜨린 그 예약은 **아무도 모르는
             // 고아**가 된다 — 행에도 없고 목록에도 없으니 다음 로그인도 회수 sweep 도
             // 찾지 못한다. 판정을 취소 지점 **한 곳**에 둔다.
-            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString, origin: cancellationOrigin)
+            PendingAlarmCancellationStore.add(
+                alarmKitUUID.uuidString,
+                origin: cancellationOrigin,
+                alarmID: record.id
+            )
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }
         #else
         statusMessage = Self.alarmUnavailableMessage
         return false
+        #endif
+    }
+
+    /// **그 행이 남긴 못 끊은 예약을 전부 다시 끊는다.**
+    ///
+    /// ⚠ **행의 손잡이만 봐서는 고아를 못 찾는다**(Codex #703 P1). `alarmKitID` 한 칸은
+    /// **지금 예약**을 가리키므로, 재예약이 한 번 더 돌면 못 끊은 옛 손잡이는 어느 행도
+    /// 가리키지 않는다. 그 상태에서 전달 정리는 "끊을 게 없다" 고 답하고 ACK 가 서버 행을
+    /// 지운다 — **행 없이 우는 예약**이 남아 목록에 보이지도, 끌 수도 없다.
+    /// 그래서 회수 목록에 **주인 행 id 를 함께** 적어 두고 여기서 그것으로 되짚는다.
+    ///
+    /// 전경 sweep(`retryPendingCancellations`)와 같은 판정을 쓴다 — OS 에 이미 없으면 끝난
+    /// 것으로 세고, 끝난 손잡이를 가리키던 행은 정리한다(출처가 우리 결정이면 다시 끈다).
+    ///
+    /// - Returns: 남은 것이 없는가. 하나라도 못 끊으면 `false`.
+    @discardableResult
+    func releaseOwedHandles(forAlarmID alarmID: String, store: LocalAlarmStore) async -> Bool {
+        #if canImport(AlarmKit)
+        let owed = PendingAlarmCancellationStore.owedHandles(forAlarmID: alarmID)
+        guard !owed.isEmpty else { return true }
+        // 목록을 못 읽으면(권한 회수 등) 실재를 단정하지 않고 취소만 시도한다.
+        let liveIDs = (try? AlarmManager.shared.alarms).map { Set($0.map(\.id)) }
+        var cleared = true
+        var resolved: Set<String> = []
+        // ⚠ 출처는 지우기 전에 담아 둔다 — `remove` 가 출처 기록도 함께 지운다.
+        var resolvedOrigins: [String: PendingAlarmCancellationStore.Origin] = [:]
+        for raw in owed {
+            let origin = PendingAlarmCancellationStore.origin(of: raw)
+            guard let uuid = UUID(uuidString: raw) else {
+                // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
+                resolvedOrigins[raw] = origin
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+                continue
+            }
+            if let liveIDs, !liveIDs.contains(uuid) {
+                resolvedOrigins[raw] = origin
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+                continue
+            }
+            do {
+                try AlarmManager.shared.cancel(id: uuid)
+                resolvedOrigins[raw] = origin
+                PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
+            } catch {
+                cleared = false
+            }
+        }
+        applyResolvedCancellations(resolved, origins: resolvedOrigins, store: store)
+        return cleared
+        #else
+        return true
+        #endif
+    }
+
+    /// **예약을 확실히 없앤다** — 이미 OS 에 없으면 성공으로 본다.
+    ///
+    /// `cancelScheduledAlarm` 과 다른 점이 둘이고, 둘 다 **성공을 기다리는 호출부**를 위한
+    /// 것이다(전달 정리처럼 "끝났는가" 로 다음 단계를 가르는 경로):
+    ///
+    /// 1. ⚠ **OS 에 없는 예약을 실패로 읽지 않는다**(Codex #703 P2). `AlarmManager.cancel(id:)`
+    ///    은 AlarmKit 이 **모르는 id 에 throw** 한다 — 한 번 울고 사라진 1회성 예약, 사용자가
+    ///    지운 예약이 그렇다. 끊을 것이 없는데 실패로 세면 그 호출부는 **영영 끝나지 못한다**
+    ///    (받은 알람의 ACK 가 영구히 미뤄져 서버 행과 그 음원이 남는다).
+    /// 2. ⚠ **성공하면 회수 목록에서 지운다.** 안 지우면 다음 회차가 같은 UUID 를 또 끊으려
+    ///    들고, 그 재시도는 (1) 때문에 영원히 실패로 읽힌다.
+    ///
+    /// 목록(`AlarmManager.shared.alarms`)을 못 읽으면 판단을 미루고 그냥 취소를 시도한다 —
+    /// 못 읽었다는 이유로 살아 있는 예약을 없는 셈 칠 수는 없다.
+    @discardableResult
+    func releaseScheduledAlarm(
+        record: LocalAlarmRecord,
+        cancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
+    ) async -> Bool {
+        #if canImport(AlarmKit)
+        guard let alarmKitUUID = record.alarmKitUUID else { return true }
+        if let live = try? AlarmManager.shared.alarms,
+           !live.contains(where: { $0.id == alarmKitUUID }) {
+            PendingAlarmCancellationStore.remove(alarmKitUUID.uuidString)
+            return true
+        }
+        let cancelled = await cancelScheduledAlarm(
+            record: record,
+            cancellationOrigin: cancellationOrigin
+        )
+        if cancelled { PendingAlarmCancellationStore.remove(alarmKitUUID.uuidString) }
+        return cancelled
+        #else
+        return await cancelScheduledAlarm(record: record, cancellationOrigin: cancellationOrigin)
         #endif
     }
 

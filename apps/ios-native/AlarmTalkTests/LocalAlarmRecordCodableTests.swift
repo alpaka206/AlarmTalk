@@ -40,6 +40,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: 1_699_999_000_000,
+            remoteDeliveryVersion: "version-1",
             syncState: AlarmSyncState.synced.rawValue,
             origin: AlarmOrigin.receivedRemote.rawValue,
             alarmVolumePercent: 60,

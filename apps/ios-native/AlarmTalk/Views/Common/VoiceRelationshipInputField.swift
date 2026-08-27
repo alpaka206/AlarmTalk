@@ -120,9 +120,9 @@ struct VoiceRelationshipInputField: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(minHeight: 46)
-                .background(AlarmTalkTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
+                .background(AlarmTalkTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.medium))
                 .overlay(
-                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small)
+                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.medium)
                         .stroke(isError ? AlarmTalkTheme.error : AlarmTalkTheme.outline, lineWidth: 1)
                 )
                 .contentShape(Rectangle())

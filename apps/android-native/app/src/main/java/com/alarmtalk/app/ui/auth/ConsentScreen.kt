@@ -128,35 +128,34 @@ internal fun ConsentScreen(
     // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
     val shownRequired = requiredShown.isNotEmpty()
-    // '전체 동의' 가 실제로 다루는 집합 — **선택까지 포함**한다(2026-08-18 변경).
+    // '전체 동의' 가 실제로 다루는 집합 — **선택까지 포함**한다(2026-08-18 결정).
     // 라벨이 '필수 약관 전체 동의' 라 '전체' 라고 써 놓고 일부만 켜는 화면이었다.
     // 개별 체크박스와 [필수]/[선택] 표기는 그대로라 선택을 따로 끌 수 있다(제22조제5항).
-    // setAll 과 allChecked 도 같은 집합을 본다(iOS `ConsentView.masterTypes` 와 동일 정의).
+    // 마스터 행 표시·`allChecked`·`setAll` 이 **모두 이 집합**을 본다(iOS `ConsentView.masterTypes`).
     val masterTypes = shownTypes
+
+    /** 화면의 체크 상태를 유형 이름으로 읽는다. 모르는 유형은 그리지 못했으므로 false. */
+    fun isChecked(type: String): Boolean = when (type) {
+        "age14" -> age14
+        "terms" -> terms
+        "privacy" -> privacy
+        "voice_biometric" -> voiceBiometric
+        "overseas_transfer" -> overseasTransfer
+        "marketing" -> marketing
+        else -> false
+    }
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
     // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
     // 그런 상태는 checkConsentStatus 가 consentUnsupported 로 잡아 이 화면 대신 업데이트
     // 차단 화면을 띄우므로 여기까지 오지 않는다 — 통과시키면 사용자가 본 적 없는 동의가
     // '체크됨' 으로 기록되기에 남겨 두는 이중 방어다(Codex #660).
-    val allRequiredChecked = requiredShown.all { type ->
-        when (type) {
-            "age14" -> age14
-            "terms" -> terms
-            "privacy" -> privacy
-            "voice_biometric" -> voiceBiometric
-            "overseas_transfer" -> overseasTransfer
-            "marketing" -> marketing
-            else -> false
-        }
-    }
-    // ⚠ **'전체 동의' 는 선택까지 포함한다**(docs/spec/consent.md — 제품 결정이다).
-    // 선택 동의까지 한 탭에 켜면, 명시적으로 거절했던 사람이 필수 재동의 화면에서 **한 번의
-    // 탭으로 마케팅을 켜게 되는 화면**이 된다 — 개인정보보호법 제22조의 선택 동의 구분 수령
-    // 취지에 어긋나는 다크패턴이다.
-    // setAll 과 allChecked 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의 표시가
-    // 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다).
-    val allChecked = allRequiredChecked
+    val allRequiredChecked = requiredShown.all { isChecked(it) }
+    // ⚠ **마스터 행의 체크 상태는 `setAll` 과 같은 집합을 본다.** 한쪽만 바꾸면 전체 동의
+    // 표시가 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다.
+    // ⚠ **CTA 판정(`allRequiredChecked`)과 섞지 말 것** — 그건 필수만 본다. 선택을 안 켰다고
+    // 가입을 막으면 제22조제5항(거부해도 서비스 거부 불가) 위반이다.
+    val allChecked = masterTypes.isNotEmpty() && masterTypes.all { isChecked(it) }
 
     // 화면에서 사용자가 실제로 체크한 '선택' 유형 — 제출은 이 값으로 agreed 를 정한다.
     val agreedOptional = buildSet {
@@ -164,12 +163,16 @@ internal fun ConsentScreen(
         if (showMarketing && marketing) add("marketing")
     }
 
-    // 필수 전용 — 위 allChecked 와 같은 집합이다. 선택 항목(생체정보·마케팅)은 건드리지 않는다.
+    // ⚠ **끄는 것도 전체다** — 위 `allChecked` 와 **같은 집합**(`masterTypes`)을 본다.
+    // 선택까지 한 번에 켜는 것이 「한 번 받은 동의는 다시 묻지 않는다」를 돕는다: 여기서
+    // 생체정보를 켠 사람은 첫 목소리 등록에서도 인라인 동의를 만나지 않는다.
     fun setAll(value: Boolean) {
         if (showAge14) age14 = value
         if (showTerms) terms = value
         if (showPrivacy) privacy = value
         if (showOverseas) overseasTransfer = value
+        if (showVoiceBiometric) voiceBiometric = value
+        if (showMarketing) marketing = value
     }
 
     AuthBackdrop {

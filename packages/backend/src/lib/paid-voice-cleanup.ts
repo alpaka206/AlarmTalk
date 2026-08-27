@@ -1,5 +1,6 @@
 import type { DbExecutor } from './transactions';
 import { enqueueExternalDeletion, enqueueUserVoiceArtifacts } from './audio-retention';
+import { revokeDeletedVoices, type VoiceRevocationNotifications } from './voice-revocation';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
@@ -26,6 +27,10 @@ export interface DowngradedAlarm {
    * 보내야 할 신호가 다르다. 받은 알람은 원격 pull 로 갱신되지만(family_alarm →
    * RemoteAlarmPullSyncService), **본인 소유 알람은 그 pull 대상이 아니다** — 받은 알람만
    * 훑기 때문이다. 본인 알람은 목소리 접근권을 다시 확인해 로컬에서 강등해야 한다.
+   *
+   * ⚠ **이미 전달이 끝난 가족 알람은 서버 행이 없다**(`POST /alarm/:id/received`).
+   * 그래서 `alarms` 를 훑는 것만으로는 못 찾고, `alarm_recipient_state` 의 tombstone 이
+   * 유일한 근거다 — 그 조회는 `lib/voice-revocation.ts` 가 함께 처리한다.
    */
   isReceived: boolean;
 }
@@ -281,9 +286,9 @@ export async function deleteSensitiveVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
   userLoginId?: string | null,
-): Promise<DowngradedAlarm[]> {
+): Promise<VoiceRevocationNotifications> {
   const ids = uniqueIds([userPk, userLoginId]);
-  if (ids.length === 0) return [];
+  if (ids.length === 0) return { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
   const ph = placeholders(ids);
   const downgraded = new Map<string, DowngradedAlarm>();
 
@@ -336,30 +341,27 @@ export async function deleteSensitiveVoiceDataForUser(
       await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
     }
   }
+
+  // 클론과 발신자 직접 업로드를 **지우기 전에** 한 번에 철회한다. family-voice의
+  // messages.voice_profile_id는 수신자 프로필이라 클론 목록으로는 찾을 수 없다.
+  const revocation = await revokeDeletedVoices(db, {
+    voiceProfileIds: cloneIds,
+    ownerUserIds: ids,
+    senderVoiceOwnerUserIds: ids,
+  });
+  for (const target of revocation.downgradedAlarms) downgraded.set(target.alarmId, target);
+
   for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
     downgraded.set(target.alarmId, target);
   }
 
-  // 공유 목소리를 참조하던 알람도 같은 이유로 강등 전에 대상을 골라 둔다.
+  // 클론이 사라지므로 그걸 쓰던 알람에서 목소리를 걷어낸다.
+  //
+  // ⚠ 판정은 **목소리 삭제·탈퇴와 같은 함수**로 한다(`lib/voice-revocation.ts`). 셋 다
+  // "이 클론이 이제 없다" 는 같은 사건인데 예전에는 갈래가 셋으로 갈려 있었고, 그래서
+  // 이 자리는 **이미 전달이 끝난 가족 알람을 놓쳤다** — 그 알람의 서버 행은 수신 확인 때
+  // 지워져 `WHERE voice_profile_id = ?` 로는 영영 찾지 못한다(tombstone 이 유일한 근거다).
   if (hasClones) {
-    const alarmScope = `voice_profile_id IN (${cph})
-         OR message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`;
-    const sharedVoiceTargets = await collectDowngradeTargets(
-      db,
-      `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
-              target_user_id IS NOT NULL AS is_received
-         FROM alarms
-        WHERE ${alarmScope}`,
-      [...cloneIds, ...cloneIds],
-    );
-    for (const target of sharedVoiceTargets) downgraded.set(target.alarmId, target);
-    await db.execute({
-      sql: `UPDATE alarms
-            SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-                message_id = NULL, voice_profile_id = NULL
-            WHERE ${alarmScope}`,
-      args: [...cloneIds, ...cloneIds],
-    });
     await db.execute({
       sql: `DELETE FROM generated_audio_assets WHERE voice_profile_id IN (${cph})`,
       args: cloneIds,
@@ -382,5 +384,8 @@ export async function deleteSensitiveVoiceDataForUser(
   });
   await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({ sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, args: ids });
-  return Array.from(downgraded.values());
+  return {
+    downgradedAlarms: Array.from(downgraded.values()),
+    voiceAccessRevokedUserIds: revocation.voiceAccessRevokedUserIds,
+  };
 }

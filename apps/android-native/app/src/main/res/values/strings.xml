@@ -85,7 +85,7 @@
     <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기</string>
     <string name="billing_plan_couple_feature_voice_share">서로의 목소리 공유</string>
     <string name="billing_plan_couple_name">커플</string>
-    <string name="billing_plan_family_feature_max_six">최대 5명이 함께 사용</string>
+    <string name="billing_plan_family_feature_max_five">최대 5명이 함께 사용</string>
     <string name="billing_plan_family_feature_message">가족에게 알람 보내기</string>
     <string name="billing_plan_family_feature_voice_share">가족 목소리 공유</string>
     <string name="billing_plan_feature_includes_personal">개인 이용권 기능 전부 포함</string>
@@ -94,6 +94,7 @@
     <string name="billing_plan_free_feature_stock_voice">기본 목소리 알람</string>
     <string name="billing_plan_free_name">무료</string>
     <string name="billing_plan_free_price">0원</string>
+    <string name="billing_plan_monthly_price_fallback">월 %1$,d원</string>
     <string name="billing_plan_personal_feature_daily_prompt">날씨·운세 등 매일 다른 문구</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
     <string name="billing_plan_personal_name">개인</string>
@@ -169,7 +170,22 @@
     <string name="editor_detail_settings">세부 설정</string>
     <string name="editor_error_deleted_voice_cannot_edit">삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요.</string>
     <string name="editor_error_enter_message_or_random">알람 문구를 입력하거나 랜덤 문구를 사용해 주세요.</string>
-    <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대가 준비할 수 있게 30분 여유가 필요해요.</string>
+    <string name="editor_block_recording_title">녹음이 필요해요</string>
+    <string name="editor_block_recording_message">먼저 목소리를 녹음하거나 파일을 골라 주세요.</string>
+    <string name="editor_block_voice_title">목소리를 골라주세요</string>
+    <string name="editor_block_voice_message">알람을 읽어 줄 목소리를 먼저 골라 주세요.</string>
+    <string name="editor_block_voice_unavailable_message">고른 목소리를 지금은 쓸 수 없어요. 다른 목소리를 골라 주세요.</string>
+    <string name="editor_block_weather_title">날씨 지역이 없어요</string>
+    <string name="editor_block_weather_message">날씨 문구를 쓰려면 지역이 필요해요. 문구 화면에서 지역을 골라 주세요.</string>
+    <string name="editor_block_weather_family_message">상대가 아직 날씨 지역을 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
+    <string name="editor_block_fortune_title">운세 정보가 없어요</string>
+    <string name="editor_block_fortune_message">운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.</string>
+    <string name="editor_block_fortune_family_message">상대가 아직 운세 정보를 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
+    <string name="editor_block_preparing_title">문구를 준비하고 있어요</string>
+    <string name="editor_block_preparing_message">목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.</string>
+    <string name="editor_error_family_alarm_lead_title">조금 더 뒤로 설정해 주세요</string>
+    <string name="editor_error_family_alarm_unavailable_title">받을 수 없는 시간이에요</string>
+    <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
     <string name="editor_error_family_alarm_time_unavailable">상대가 받을 수 없는 시간이에요.</string>
     <string name="editor_error_fortune_info_required">운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="editor_error_mic_permission_required">마이크 권한이 필요해요.</string>
@@ -244,6 +260,9 @@
     <string name="editor_voice_repeat_title">끌 때까지 반복</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_select_title">목소리 고르기</string>
+    <string name="editor_voice_replacement_settling">목소리 정리 중이에요</string>
+    <string name="editor_block_voice_settling_title">아직 준비 중이에요</string>
+    <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume">목소리 크기</string>
@@ -377,6 +396,8 @@
     <string name="downgrade_notice_free_title">무료 이용권으로 바뀌었어요</string>
     <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 알람음으로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
+    <string name="downgrade_notice_replaced_title">새 목소리로 바뀌었어요</string>
+    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
     <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
          무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다. -->
     <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
@@ -858,9 +879,11 @@
     <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
     <string name="voicesr_preview_action">듣기</string>
     <string name="voices_add">추가</string>
-    <string name="voices_monthly_quota">이번 달 %1$d/%2$d</string>
-    <string name="voices_limit_title">이번 달 목소리는 다 만들었어요</string>
-    <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.</string>
+    <string name="voices_monthly_quota">생성 가능 %1$d/%2$d회</string>
+    <string name="msg_voice_monthly_change_limit">목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요.</string>
+    <string name="msg_voice_replace_cleanup_failed">목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요.</string>
+    <string name="msg_voice_preview_required">문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요.</string>
+    <string name="msg_voice_consent_required">목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.</string>
     <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_shared_voices_title">공유받은 목소리</string>
     <string name="voices_system_voices_title">기본 목소리</string>

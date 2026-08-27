@@ -240,6 +240,53 @@ final class AuthViewModel: ObservableObject {
 
     /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
     @Published var pendingSensitiveConsent: SensitiveConsentRequest?
+
+    /// 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+    ///
+    /// ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+    /// 실제로 있다 — 로그인 직후 조회와 전경 복귀 조회, 그리고 **동의 제출과 경합하는**
+    /// 조회. 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면, 이미 다 받은
+    /// 상태를 덮어 **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+    private var consentStatusRevision = 0
+
+    /// 지금 날아가고 있는 동의 상태 응답을 **전부 무효화**한다. 동의를 기록해 상태가 바뀐
+    /// 직후에 부른다 — 그 전에 떠난 조회의 답은 이미 낡았다.
+    private func invalidateInFlightConsentStatus() {
+        consentStatusRevision &+= 1
+    }
+
+    /// 목소리 등록처럼 **곧 시작할 동작**이 요구하는 민감 동의를 선제적으로 받는다.
+    ///
+    /// ⚠ 이걸 두는 이유: 예전에는 `SensitiveConsentRequest` 를 만드는 곳이 403 핸들러
+    /// 하나뿐이라 `registeringVoice` 가 **항상 false** 였다. 그래서 등록 화면의 인라인
+    /// 체크박스가 덮지 않는 유형(예: 국외 이전)이 남아 있으면, 녹음을 다 올린 **뒤에야**
+    /// 403 으로 시트가 뜨고 그 시트는 TTS 카피를 보여 줬다 — 사용자는 '문구 생성 동의' 인
+    /// 줄 알고 누르는데 실제로는 목소리가 만들어진다. 안드로이드는 업로드 전에
+    /// `pendingSensitiveConsent` 를 세운다(`MainViewModelVoiceActions.createVoiceProfiles`).
+    ///
+    /// 이미 유효한 동의는 서버 `sensitive_missing` 에서 빠지므로 여기 담기지 않는다 —
+    /// **한 번 받은 동의를 다시 묻지 않는다**(`docs/spec/consent.md`).
+    /// - Returns: 호출자가 **자기 동작을 그대로 이어서 해도 되는가**. false 면 멈춰야 한다 —
+    ///   시트가 떴거나 업데이트 게이트로 보냈다는 뜻이다. 멈춘 동작을 나중에 이어받을지는
+    ///   호출자가 정한다(`pendingSensitiveConsent` 가 떠 있으면 이어받을 수 있다).
+    @discardableResult
+    func requestSensitiveConsent(types: [String], registeringVoice: Bool) -> Bool {
+        let wanted = types.filter { Self.sensitiveConsentTypes.contains($0) }
+        // ⚠ **모르는 유형을 조용히 버리지 않는다**(Codex #703 P2). 이 앱으로 받을 방법이
+        // 없는 동의를 그냥 지나가면, 호출자는 '시트를 띄웠다' 고 믿고 자기 동작을 멈추는데
+        // 화면에는 아무것도 뜨지 않는다 — 등록 버튼을 눌러도 **아무 일도 일어나지 않는다.**
+        // 받을 방법이 없다는 사실을 말해 주는 자리는 업데이트 안내다.
+        if wanted.count != types.count {
+            consentUnsupported = true
+            return false
+        }
+        // 받을 것이 없으면 막지 않는다.
+        guard !wanted.isEmpty else { return true }
+        // 이미 시트가 떠 있으면 그것이 이 유형들을 덮는다 — 겹쳐 띄우지 않는다.
+        guard pendingSensitiveConsent == nil else { return false }
+        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice)
+        return false
+    }
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
     @Published var passwordResetCodeSentTo: String?
@@ -909,6 +956,10 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -960,6 +1011,10 @@ final class AuthViewModel: ObservableObject {
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferences.clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             let cleaned = await onLeaveAccountStopAlarms(currentUserID)
@@ -1019,13 +1074,32 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.checkConsentStatus()`.
     func checkConsentStatus() async {
         guard let token else { return }
+        // 응답이 오는 사이에 계정이 바뀔 수 있다 — 남의 동의 상태를 지금 사용자에게 씌우면
+        // 받은 적 없는 동의를 받은 것으로 읽는다(안드로이드 `checkConsentStatus` 의
+        // `if (authSession?.user?.id != userId) return@launch` 미러).
+        let ownerUserID = session?.user.id
+        invalidateInFlightConsentStatus()
+        let revision = consentStatusRevision
         do {
             let status = try await api.consentStatus(token: token)
-            needsConsent = status.needsConsent
-            consentNeedsCollection = status.needsCollection
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
             // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
             // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
-            consentCollect = status.collect.filter { Self.knownConsentTypes.contains($0) }
+            let known = status.collect.filter { Self.knownConsentTypes.contains($0) }
+            // ⚠ **모르는 유형은 필수/선택으로 갈라 다르게 다룬다**(안드로이드 미러).
+            //  - 모르는 **필수** 유형: 이 앱으로는 받을 방법이 없다. 동의 화면 대신 업데이트
+            //    차단 화면으로 보낸다. 안 그러면 항목 0개짜리 화면이 뜨고, CTA 를 누르면
+            //    제출 폴백이 **본 적 없는 동의를 기록**한다.
+            //  - 모르는 **선택** 유형: 버리고 지나간다. 없어도 서비스가 성립한다.
+            consentUnsupported = status.collect.contains {
+                !Self.knownConsentTypes.contains($0) && !status.optional.contains($0)
+            }
+            needsConsent = status.needsConsent
+            // ⚠ **그릴 것이 하나도 없으면 화면을 띄우지 않는다.** 서버 플래그를 날것으로 받으면
+            // 앱이 모르는 선택 유형 하나 때문에 **빈 동의 화면이 콜드 스타트마다** 뜬다 —
+            // 이미 다 동의한 사람에게 다시 묻는 셈이다(「한 번 받은 동의는 다시 묻지 않는다」).
+            consentNeedsCollection = status.needsCollection && !known.isEmpty
+            consentCollect = known
             consentOptional = status.optional
             consentPrechecked = status.prechecked
             consentSensitiveMissing = status.sensitiveMissing
@@ -1035,17 +1109,27 @@ final class AuthViewModel: ObservableObject {
             consentStatusChecked = true
             // 더 받을 게 없으면 이 기기에 '완료' 를 적어 둔다 — 다음 콜드 스타트에서
             // 로딩 게이트를 즉시 통과시키기 위해서다. 받을 게 남았으면 적지 않는다.
-            if !status.needsConsent && !status.needsCollection {
+            //
+            // ⚠ **판정은 필터링한 뒤 값으로 한다**(Codex #703 P2). 서버 플래그를 그대로 보면,
+            // 앱이 모르는 **선택** 유형 하나 때문에 위에서 '그릴 것 없음' 으로 결론 내리고도
+            // 완료를 적지 않아 **콜드 스타트마다 로딩 게이트가 응답을 기다린다** — 느리거나
+            // 끊긴 네트워크에서는 타임아웃까지 앉아 있게 된다.
+            if !needsConsent && !consentNeedsCollection {
                 ConsentCompletionStore().markCompleted(
                     userID: session?.user.id,
                     policyVersion: Self.currentPolicyVersion
                 )
             }
         } catch {
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
-            needsConsent = false
-            consentNeedsCollection = false
-            consentCollect = []
+            // ⚠ **403 이 세워 둔 게이트까지 지우지는 않는다.** `handleConsentRequired` 가
+            // 채워 둔 `consentCollect` 를 뒤늦은 실패 응답이 비우면, 서버가 요구한 동의를
+            // 받지 못한 채 화면이 사라진다(안드로이드는 `needsConsent` 만 내린다).
+            if consentCollect.isEmpty {
+                needsConsent = false
+                consentNeedsCollection = false
+            }
             // 실패해도 true — 못 물어본 것이 등록을 막을 이유는 아니다.
             consentStatusChecked = true
         }
@@ -1145,6 +1229,8 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.recordConsents(request, token: token)
             // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
             guard session?.user.id == ownerUserID else { return }
+            // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
+            invalidateInFlightConsentStatus()
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -1194,6 +1280,8 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await api.recordConsents(request, token: token)
             guard session?.user.id == ownerUserID else { return false }
+            // 위 `submitConsents` 와 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
+            invalidateInFlightConsentStatus()
             consentSensitiveMissing.removeAll { recordable.contains($0) }
             pendingSensitiveConsent = nil
             return true
@@ -1465,6 +1553,7 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
+        // 목소리 교체 표식은 남긴다 — 위 주석 참조(로그아웃은 로컬 알람을 지우지 않는다).
         // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
         // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
         // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로

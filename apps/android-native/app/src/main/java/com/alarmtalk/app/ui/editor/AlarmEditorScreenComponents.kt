@@ -56,9 +56,30 @@ internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     )
 }
 
-internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+/**
+ * 상대 알람의 **최소 예약 여유**.
+ *
+ * ⚠ 예전 값은 30분이었는데, 그건 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을
+ * 가져오던 시절의 값이다(주기 워커 `RemoteAlarmSyncScheduler.ensurePeriodic` 15분의
+ * 두 배 = 한 번 놓쳐도 받는다). 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로
+ * (`AlarmTalkMessagingService` → `RemoteAlarmSyncScheduler.runOnce`) 그 근거가 사라졌다.
+ *
+ * ⚠ **0 으로 두지는 않는다.** 푸시는 즉시지만 보장은 아니다 — 수신 기기가 오프라인이거나
+ * Doze 면 pull 이 늦고, 그 사이 알람 시각이 지나면 **울리지 않은 채 지나간다**(보낸 사람은
+ * 보냈다고 믿는다). 전달 + 음원 바인딩에 필요한 최소 여유만 남긴다.
+ */
+internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 5 * 60 * 1_000L
+private const val FAMILY_ALARM_REQUEST_MARGIN_MILLIS = 60_000L
+private const val MILLIS_PER_MINUTE = 60_000L
 
-// 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 30분 리드타임을 요구한다.
+/** 분 단위 선택기에서 실제로 고를 수 있고, 서버 왕복 중에도 5분 하한을 지키는 첫 시각. */
+internal fun earliestSelectableFamilyAlarmMillis(nowMillis: Long = System.currentTimeMillis()): Long {
+    val threshold = nowMillis + FAMILY_ALARM_MIN_LEAD_MILLIS
+    val roundedUp = ((threshold + MILLIS_PER_MINUTE - 1) / MILLIS_PER_MINUTE) * MILLIS_PER_MINUTE
+    return roundedUp + FAMILY_ALARM_REQUEST_MARGIN_MILLIS
+}
+
+// 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 리드타임을 요구한다
 // saveEditor()와 단위 테스트가 함께 쓰는 단일 판정 출처.
 internal fun isFamilyAlarmLeadTooSoon(
     hour: Int,

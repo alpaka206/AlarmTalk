@@ -108,9 +108,13 @@ struct LocalAlarmAudioEditor: View {
 // 한 번 보내면 보낸 사람이 고칠 수 없다 — '누구에게' 는 「누구를 깨울까요?」 시트에서 한 번
 // 정하는 값이지 편집 중에 오가는 값이 아니다. 자세한 이유는 `AlarmEditorSheet` 주석 참조.
 
+// ⚠ **리드타임 판정을 여기에 다시 두지 말 것.** 2026-08-24 까지 이 타입에는 30분짜리
+// `familyAlarmMinLeadMillis` 와 `isLeadTooSoon`·`targetStatusText` 가 남아 있었는데, 부르는
+// 곳이 하나도 없었다. 살아 있는 가드는 `AlarmEditorSheet.familyAlarmMinLeadMillis`(5분)
+// 하나이고, 값은 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS`·서버
+// `FAMILY_ALARM_MIN_LEAD_MINUTES` 와 **같아야 한다**. 죽은 사본이 옛 값을 들고 있으면
+// 그걸 고치고 고쳤다고 믿게 된다(실제로 오늘 리드타임을 내릴 때 그럴 뻔했다).
 enum FamilyAlarmScheduleRules {
-    private static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
-
     static func memberLabel(_ member: FamilyGroupMember) -> String {
         if let name = member.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
             return name
@@ -125,33 +129,6 @@ enum FamilyAlarmScheduleRules {
         quietWindows(member).map { window in
             "\(HelperFormatters.quietDaysLabel(window.days)) \(window.start)-\(window.end)"
         }.joined(separator: " · ")
-    }
-
-    static func targetStatusText(leadTooSoon: Bool, quietUnavailable: Bool) -> String {
-        if leadTooSoon { return "지금부터 30분 뒤 알람부터 설정할 수 있어요." }
-        if quietUnavailable { return "상대가 이 시간에는 알람을 받지 않도록 해뒀어요." }
-        return "설정 가능"
-    }
-
-    static func isLeadTooSoon(
-        hour: Int,
-        minute: Int,
-        repeatDaysMask: Int,
-        holidayOff: Bool,
-        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
-    ) -> Bool {
-        let fireAtMillis = (try? AlarmTimeCalculator.nextFireAtMillis(
-            hour: hour,
-            minute: minute,
-            repeatDaysMask: repeatDaysMask,
-            holidayOff: holidayOff,
-            nowMillis: nowMillis
-        )) ?? LocalAlarmRecord.fallbackFireAtMillis(
-            hour: hour,
-            minute: minute,
-            referenceMillis: nowMillis
-        )
-        return fireAtMillis - nowMillis < familyAlarmMinLeadMillis
     }
 
     static func isTimeUnavailable(

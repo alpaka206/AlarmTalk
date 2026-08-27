@@ -88,13 +88,10 @@ struct LoginView: View {
             // 올라와 내용이 밀릴 때 같이 사라져, 나갈 길이 화면에서 없어진다.
             // 스크롤되는 건 폼이고 탈출구는 늘 같은 자리에 있어야 한다.
             //
-            // ⚠ **시스템 뒤로가기를 쓰지 않는다 — 두 앱이 달라진다.**
-            // 시스템 버튼은 OS 버전이 정하는 모양(iOS 26 은 유리 원형)이라
-            // 안드로이드에서 같은 것을 만들 수 없다. 두 앱을 같게 두려고 **양쪽 다
-            // 같은 스펙의 원형 버튼을 직접 그린다**(채움 12% 흰색, 테두리 1px
-            // 액센트 36%, 지름 44). 안드로이드 대응: `ui/auth/AuthScreen.kt` 의
-            // `AuthBackCircleFill`·`AuthBackCircleStroke`.
-            AuthCircleBackButton { dismiss() }
+            // ⚠ **시스템 뒤로가기를 쓰지 않는다.** OS 버전마다 컨테이너 모양이 바뀌므로
+            // 앱 공용 `WakerBackButton`이 원형 표면·크기·색을 고정한다. 글리프만 각 플랫폼의
+            // 기본 방향 아이콘을 쓴다. Android 대응: `ui/components/WakerBackButton.kt`.
+            WakerBackButton(tint: AuthSceneColors.text) { dismiss() }
                 .padding(.horizontal, 22)
                 .padding(.top, 18)
 
@@ -634,62 +631,3 @@ enum LoginValidator {
     .voiceAlarmPreviewEnvironment()
 }
 #endif
-
-
-/// 원형 뒤로가기 — **안드로이드와 같은 스펙**을 직접 그린다.
-///
-/// ⚠ 시스템 뒤로가기(`NavigationStack` 기본)를 쓰면 모양을 OS 가 정해서
-/// 안드로이드에서 같은 것을 만들 수 없다. 두 앱을 나란히 놓았을 때 화살표만 다른 게
-/// 눈에 띄어(2026-08-10) 양쪽 다 같은 값으로 고정했다.
-/// 안드로이드 대응: `ui/components/WakerBackButton.kt`.
-///
-/// ⚠ 안드로이드는 2026-08-11 에 이 버튼을 로그인 화면 밖으로 빼서 **공용 컴포넌트**로
-/// 만들었다(이용권·코드 등록 상단바도 같은 것을 쓴다). 색이 바뀌면 그쪽도 함께 고친다.
-struct AuthCircleBackButton: View {
-    var action: () -> Void
-
-    /// 안드로이드 `WakerBackCircleFill` = `Color(0x1FFFFFFF)`.
-    private static let fill = Color.white.opacity(0x1F / 255.0)
-    /// 안드로이드 `WakerBackCircleStroke` = `Color(0x5CA6D2FF)` — 액센트 36%.
-    private static let stroke = Color.hex(0xA6D2FF).opacity(0x5C / 255.0)
-
-    var body: some View {
-        Button(action: action) {
-            ChevronBackShape()
-                // ⚠ 색을 `stroke(_:style:)` 로 **직접** 준다. `.foregroundStyle` 을 뒤에
-                // 붙이면 Button 안에서 흐리게 그려져 안드로이드보다 어두워진다
-                // (실측 밝기 200 vs 250, 2026-08-10).
-                .stroke(
-                    AuthSceneColors.text,
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-                )
-                .frame(width: 24, height: 24)
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(Self.fill))
-                .overlay(Circle().stroke(Self.stroke, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("뒤로")
-    }
-}
-
-
-/// 뒤로가기 셰브론 — **안드로이드와 같은 도형**이다.
-///
-/// ⚠ SF 의 `chevron.backward` 나 Material 의 `KeyboardArrowLeft` 를 쓰지 말 것.
-/// 둘은 다른 아이콘 세트라 획 두께·꼭짓점 처리·비율이 달라, 두 앱을 나란히 놓으면
-/// 안드로이드는 각지고 아이폰은 둥글게 보인다(2026-08-10 사용자 지적).
-/// 24x24 좌표계에 같은 폴리라인을 두고 양쪽에서 같은 값으로 그린다 —
-/// 안드로이드 대응: `res/drawable/ic_chevron_back.xml` (같은 좌표·같은 획 두께 2,
-/// 둥근 캡·조인).
-struct ChevronBackShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        // 들어온 사각형에 24x24 를 맞춘다 — 정사각으로 쓰지만 안전하게 짧은 변 기준.
-        let s = min(rect.width, rect.height) / 24
-        var path = Path()
-        path.move(to: CGPoint(x: 15 * s, y: 5 * s))
-        path.addLine(to: CGPoint(x: 8 * s, y: 12 * s))
-        path.addLine(to: CGPoint(x: 15 * s, y: 19 * s))
-        return path
-    }
-}

@@ -17,6 +17,7 @@ import {
   FEATURE_CONSENT_TYPES,
   needsConsent,
 } from '../src/lib/consent';
+import { billingRetentionUntil } from '../src/lib/account-deletion';
 
 // libsql `:memory:` 는 연결마다 별도 DB라 autocommit execute 와 transaction 이 스키마를
 // 공유하지 못한다. 모든 연결이 같은 스키마를 보도록 임시 파일 DB 를 사용한다.
@@ -29,6 +30,17 @@ import userRoutes from '../src/routes/user';
 
 const SUB = 'compliance-sub';
 const PK = 'compliance-pk';
+
+describe('결제기록 달력 5년 보존', () => {
+  it('윤년을 고정 일수로 줄이지 않고 UTC 연도를 5년 전진한다', () => {
+    expect(billingRetentionUntil(new Date('2027-03-01T12:34:56.000Z')).toISOString()).toBe(
+      '2032-03-01T12:34:56.000Z',
+    );
+    expect(billingRetentionUntil(new Date('2028-02-29T12:34:56.000Z')).toISOString()).toBe(
+      '2033-03-01T12:34:56.000Z',
+    );
+  });
+});
 
 function authAs(userId = SUB, userPk = PK) {
   return async (c: Context<AppEnv>, next: Next) => {

@@ -55,7 +55,9 @@ enum AlarmSoundStaging {
 
     /// AlarmKit `AlertConfiguration.AlertSound.named(_)` 에 쓸 base 이름 (확장자 제외).
     /// 동일 파일명 prefix.
-    static let stagedNamePrefix = "voice-"
+    /// `nonisolated` — 상수라 격리할 상태가 없고, 잠금 안에서 도는
+    /// `clearStagedSoundFiles`(메인 밖)가 이 접두사를 읽는다.
+    nonisolated static let stagedNamePrefix = "voice-"
 
     /// 캐시된 오디오를 `Library/Sounds/<stagedNamePrefix><safeKey>.<ext>` 로 복사한다.
     /// 이미 존재하면 재사용. 트랜스코드가 필요한 포맷이면 `.caf` 로 변환을 시도한다.
@@ -70,6 +72,15 @@ enum AlarmSoundStaging {
     ///   **실패했을 때만** 도는 경로라 정상 상황에서는 한 번도 쓰이지 않는다.
     @discardableResult
     static func stage(url sourceURL: URL, key: String, volumePercent: Int = 100) throws -> String {
+        // ⚠ **굽는 동안 캐시가 갈아끼워지지 않게 한다**(Codex #703 P1). 이걸 열어 두면
+        // 옛 바이트를 읽어 굽는 사이에 교체가 지나가고, 그 무효화가 **굽기 전에** 끝나
+        // 옛 목소리가 구워진 채로 남는다. 잠금은 `AudioCacheStore` 의 교체 경로와 같은 것이다.
+        try AudioCacheStore.withCacheKeyLock(key) {
+            try stageLocked(url: sourceURL, key: key, volumePercent: volumePercent)
+        }
+    }
+
+    private static func stageLocked(url sourceURL: URL, key: String, volumePercent: Int) throws -> String {
         let fm = FileManager.default
         let soundsDir = try ensureSoundsDirectory()
         let safeKey = AudioCacheStore.safeCacheKey(key)
@@ -224,6 +235,16 @@ enum AlarmSoundStaging {
 
     /// 외부 호출자가 cache invalidation 시 정리하기 위한 헬퍼.
     static func clearStagedSound(forKey key: String) {
+        clearStagedSoundFiles(forKey: key)
+    }
+
+    /// `clearStagedSound` 와 같은 일을 하되 **메인 액터 밖에서** 부를 수 있다.
+    ///
+    /// 캐시 교체는 `AudioCacheStore.withCacheKeyLock` 안에서 일어나는데, 거기서 메인으로
+    /// 건너뛰면 무효화가 잠금 밖으로 새어 나가 **다음 staging 뒤에 도착**할 수 있다 —
+    /// 그러면 방금 구운 새 목소리를 지우고 옛 소리가 다시 구워진다(Codex #703 P1).
+    /// 하는 일은 파일 삭제뿐이라 격리가 필요 없다.
+    nonisolated static func clearStagedSoundFiles(forKey key: String) {
         let fm = FileManager.default
         guard let soundsDir = try? ensureSoundsDirectory() else { return }
         let safeKey = AudioCacheStore.safeCacheKey(key)
@@ -237,7 +258,7 @@ enum AlarmSoundStaging {
 
     // MARK: - Internal helpers
 
-    private static func ensureSoundsDirectory() throws -> URL {
+    private nonisolated static func ensureSoundsDirectory() throws -> URL {
         let fm = FileManager.default
         guard let libURL = fm.urls(for: .libraryDirectory, in: .userDomainMask).first else {
             throw AlarmSoundStagingError.writeFailed("Library directory not found.")

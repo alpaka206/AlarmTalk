@@ -8,7 +8,6 @@ struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var holidayStore: HolidayStore
-    @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
     @State private var weatherDialogOpen: Bool = false
@@ -194,10 +193,6 @@ struct SettingsView: View {
             // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — 여기서 `.medium` 을 주면
             // 항목 3개짜리 시트가 반 화면을 차지해 아래가 빈다.
         }
-    }
-
-    private var currentThemeMode: AlarmTalkThemeMode {
-        AlarmTalkThemeMode.normalized(themeModeRaw)
     }
 
     /// '화면' 카드의 '공휴일 달력' 값 — 국기 + 국가명. Android `holidayCountryDisplayLabel`.

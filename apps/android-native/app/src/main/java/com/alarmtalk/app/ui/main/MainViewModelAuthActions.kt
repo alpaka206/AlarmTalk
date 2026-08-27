@@ -625,13 +625,18 @@ internal fun MainViewModel.checkConsentStatus() {
         consentChecked = false
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 이 조회의 세대. 뒤에 시작한 조회나 동의 제출이 세대를 올리면 이 응답은 버린다.
+    consentStatusRevision += 1
+    val revision = consentStatusRevision
     viewModelScope.launch {
         runCatching {
             api.consentStatus(authorization)
         }.onSuccess { status ->
             // 응답을 기다리는 사이 로그아웃/계정전환이 일어났으면, 옛 사용자의 결과로
             // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
-            if (authSession?.user?.id != userId) return@launch
+            // ⚠ 계정만 보면 부족하다 — 같은 계정에서 조회가 겹치면 **앞선 응답이 나중에**
+            // 도착해 최신 상태를 덮는다(consentStatusRevision 주석).
+            if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             needsConsent = status.needsConsent
             // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
@@ -661,7 +666,7 @@ internal fun MainViewModel.checkConsentStatus() {
                 !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
             rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
         }.onFailure { error ->
-            if (authSession?.user?.id != userId) return@launch
+            if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             Log.w(TAG, "Failed to check consent status", error)
             // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
             if (!isConsentCachedDone(userId)) needsConsent = false
@@ -760,6 +765,8 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             // 화면 상태(아래)는 현재 세션이 그대로일 때만 건드린다.
             policyVersion?.let { rememberConsentDone(ownerUserId, true, it) }
             if (authSession?.user?.id != ownerUserId) return@onSuccess
+            // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
+            consentStatusRevision += 1
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -837,6 +844,8 @@ internal fun MainViewModel.submitVoiceConsents() {
                 request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
                 return@onSuccess
             }
+            // 위 동의 화면 제출과 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
+            consentStatusRevision += 1
             sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
             pendingSensitiveConsent = null
             // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔

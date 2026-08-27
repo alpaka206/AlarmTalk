@@ -51,6 +51,14 @@ function stubDowngradeTarget(
   }) as typeof mockDB.client.execute;
 }
 
+function stubDeletedClone(groupMembers: string[] = []) {
+  mockDB.pushResultFor('SELECT id FROM voice_profiles', [{ id: 'clone-1' }]);
+  mockDB.pushResultFor(
+    'FROM plan_group_members m1',
+    groupMembers.map((user_id) => ({ user_id })),
+  );
+}
+
 describe('POST /user/consents — 민감 동의 철회', () => {
   it('강등된 알람의 주인에게 알람 동기화 신호를 보낸다', async () => {
     stubDowngradeTarget({ id: 'al-1', owner_user_id: 'recipient', is_received: 1 });
@@ -79,6 +87,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
    * 한다 — 아니면 그 기기는 지워진 녹음으로 계속 울린다(Codex #654).
    */
   it('강등할 알람 행이 없어도 철회한 계정에는 접근권 상실을 알린다', async () => {
+    stubDeletedClone(['group-member-1']);
     const app = buildApp();
 
     const res = await app.request(
@@ -92,7 +101,9 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     expect(res.status).toBe(200);
     expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([]);
-    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
+    expect(new Set(notifyDowngradedAlarms.mock.calls[0]![3] as string[])).toEqual(
+      new Set(['user-1', 'group-member-1']),
+    );
   });
 
   /**
@@ -198,6 +209,7 @@ describe('POST /user/consents — 재동의 대상은 철회로 읽지 않는다
       { consent_type: 'age14', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
       { consent_type: 'overseas_transfer', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
     ]);
+    stubDeletedClone();
     const app = buildApp();
 
     const res = await app.request(

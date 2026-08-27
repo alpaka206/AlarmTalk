@@ -43,9 +43,7 @@ struct LandingView: View {
 
                             VStack(alignment: .leading, spacing: 0) {
                                 // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
-                                (Text("좋아하는 ")
-                                    + Text("목소리").foregroundColor(AuthSceneColors.accent)
-                                    + Text("로\n깨어나는 아침"))
+                                Text("좋아하는 \(Text("목소리").foregroundColor(AuthSceneColors.accent))로\n깨어나는 아침")
                                     .font(theme.typography.headlineLarge)
                                     .fontWeight(.bold)
                                     .foregroundStyle(AuthSceneColors.text)
@@ -232,7 +230,7 @@ private struct MiniWaveform: View {
 /// ⚠ **소리 없이 진행바만 채우는 '시뮬레이션' 을 되살리지 말 것.** 예전에는 번들에 mp3 가
 /// 없어서 5초짜리 가짜 진행바를 돌렸다 — 버튼을 눌러도 아무 소리가 안 나는데 화면은
 /// 재생 중처럼 보여, 이 카드가 보여줘야 할 단 하나(목소리가 어떤지)를 정반대로 전했다.
-/// 이제 `AlarmTalk/Resources/landing_voice_preview.mp3` 가 번들에 있고, 그래도 못 찾으면
+/// 이제 Android `res/raw/landing_voice_preview.mp3` 원본을 iOS 번들에도 넣고, 그래도 못 찾으면
 /// [hasAudio] 가 `false` 라 버튼이 **비활성**된다.
 private final class LandingPreviewController: ObservableObject {
     @Published private(set) var isPlaying = false

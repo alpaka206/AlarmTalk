@@ -13,7 +13,7 @@
 | 영역 | 상태 | 위치 |
 |------|------|------|
 | Billing 라이브러리 | ✅ 의존성 추가됨 (`billing-ktx:8.0.0`) | `apps/android-native/app/build.gradle.kts` |
-| `com.android.vending.BILLING` 권한 | ✅ 라이브러리 매니페스트가 **자동 병합** (수동 추가 불필요) | (Billing Library 7.x 내장) |
+| `com.android.vending.BILLING` 권한 | ✅ 라이브러리 매니페스트가 **자동 병합** (수동 추가 불필요) | (Billing Library 8.x 내장) |
 | 구매 플로우 (연결·조회·구매·재전송) | ✅ 구현 | `…/billing/PlayBillingManager.kt` |
 | 구매 → 서버 검증 호출 | ✅ 구현 | `…/ui/main/MainViewModelBillingActions.kt` (`startPlayPurchase`→`confirmGooglePurchase`) |
 | 서버 검증·acknowledge | ✅ 구현 (`POST /api/billing/google/confirm`) | `packages/backend/src/routes/billing-google.ts` |

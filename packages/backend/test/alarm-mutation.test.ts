@@ -9,6 +9,11 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
+const sendFamilyAlarmPush = vi.fn(async () => []);
+vi.mock('../src/lib/fcm', () => ({
+  sendFamilyAlarmPush: (...args: unknown[]) => sendFamilyAlarmPush(...args),
+}));
+
 import alarmMutation from '../src/routes/alarm-mutation';
 
 function buildApp(userId = 'user-1') {
@@ -24,6 +29,7 @@ function pushMessageBelongsToCaller() {
 
 beforeEach(() => {
   mockDB.reset();
+  sendFamilyAlarmPush.mockClear();
   // 타깃 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
   // 2026-07-15T00:00Z = KST 수요일 09:00 → 테스트 알람 시각들은 항상 30분 이상 남는다.
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -223,8 +229,38 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     expect(deactivate!.args).toContain('07:30');
   });
 
-  it('타깃 알람: 수신자 시간대 기준 30분 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
-    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:20 은 20분 뒤.
+  it('#104 적용 전에는 NULL 전달 버전을 만들지 않고 타깃 알람 생성을 503으로 막는다', async () => {
+    mockDB.pushResultFor("PRAGMA table_info('alarms')", []);
+    mockDB.pushResult([{
+      id: 'friend-pk-1',
+      google_id: 'friend-1',
+      allow_family_alarms: 1,
+      family_alarm_quiet_windows: '[]',
+    }]);
+    mockDB.pushResult([{ id: 'sender-pk-1' }]);
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'friend-1' }),
+    );
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('ALARM_SCHEMA_UPGRADING');
+    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'));
+    expect(insert).toBeUndefined();
+  });
+
+  it('타깃 알람: 수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
+    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:03 은 3분 뒤(리드타임 미만).
     mockDB.pushResult([
       {
         id: 'friend-pk-1',
@@ -242,7 +278,7 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', {
         ...validBody,
-        time: '09:20',
+        time: '09:03',
         target_user_id: 'friend-1',
         timezone: 'Asia/Seoul',
       }),
@@ -762,6 +798,33 @@ describe('PATCH /alarms/:id', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.alarm.time).toBe('08:00');
+  });
+
+  it('타깃 알람은 보낸 뒤 PATCH할 수 없다', async () => {
+    mockDB.pushResult([{
+      id: ID.alarm,
+      target_user_id: 'recipient-1',
+      is_active: 0,
+      message_id: null,
+      mode: 'sound-only',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      bucket_id: null,
+      user_plan: 'personal',
+    }]);
+    const tasks: Promise<unknown>[] = [];
+
+    const res = await buildApp().fetch(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { snooze_minutes: 12 }),
+      {} as AppEnv['Bindings'],
+      { waitUntil: (task: Promise<unknown>) => tasks.push(task), passThroughOnException: () => {} },
+    );
+    await Promise.all(tasks);
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('TARGETED_ALARM_IMMUTABLE');
+    expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE alarms SET'))).toBe(false);
+    expect(sendFamilyAlarmPush).not.toHaveBeenCalled();
   });
 
   it('여러 필드 동시 수정', async () => {

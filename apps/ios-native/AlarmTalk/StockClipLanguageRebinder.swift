@@ -174,11 +174,20 @@ struct StockClipLanguageRebinder {
         guard let response = try? await api.getTTSMessageAudio(id: messageID, token: token) else {
             return false
         }
-        let cached = try? await AudioCacheStore.cacheStockClipOffMain(
-            audio: response,
-            messageId: messageID,
-            cacheKey: key
-        )
-        return cached != nil
+        do {
+            _ = try await AudioCacheStore.cacheStockClipOffMain(
+                audio: response,
+                messageId: messageID,
+                cacheKey: key
+            )
+            return true
+        } catch AudioCacheError.legacyAliasFailed {
+            // 이 경로가 읽는 것은 **정본(cacheKey)** 뿐이다(아래 `cachedURL(for:)`).
+            // 옛 별칭 실패로 클립을 버리면 키 배열에서 한 자리가 빠지고, 자리 인덱스로 고르는
+            // 조건 클립(날씨 등)이 통째로 밀려 엉뚱한 문구가 울린다.
+            return true
+        } catch {
+            return false
+        }
     }
 }

@@ -9,6 +9,244 @@ import XCTest
 @MainActor
 final class RemoteAlarmPullSyncTests: XCTestCase {
 
+    func test_deliveryCompletesOnlyAfterEnabledAlarmIsScheduledAndVersioned() {
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: false,
+            conflictsCleared: true,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            conflictsCleared: true,
+            deliveryVersion: nil
+        ))
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            conflictsCleared: true,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            conflictsCleared: true,
+            deliveryVersion: "version-1"
+        ))
+    }
+
+    /// ⚠ **같은 시각 충돌 정리에 실패하면 ACK 하지 않는다**(Codex #703 P1).
+    /// 행만 꺼지고 OS 예약이 살아 있는데 서버 행을 지우면 다시 시도할 근거가 사라진다 —
+    /// 백그라운드로 받은 알람은 전경 복귀 전에 울릴 수 있고, 그러면 둘이 같이 운다.
+    func test_deliveryIncompleteWhenSameTimeConflictCancellationFails() {
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: true,
+            scheduleSucceeded: true,
+            conflictsCleared: false,
+            deliveryVersion: "version-1"
+        ))
+        // ⚠ **꺼진 알람도 정리는 요구한다**(Codex #703 P1). 서버가 받은 알람을 끄면 새로
+        // 걸 것은 없지만 **옛 예약은 지워야 한다** — 그 취소가 실패했는데 ACK 하면 꺼진 행
+        // 뒤에 살아 있는 예약이 남고, 서버 행이 없어 다시 시도할 근거도 사라진다.
+        XCTAssertFalse(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            conflictsCleared: false,
+            deliveryVersion: "version-1"
+        ))
+        // 정리가 끝났으면 꺼진 알람은 예약 성공을 요구하지 않는다.
+        XCTAssertTrue(RemoteAlarmPullSync.receivedAlarmDeliveryComplete(
+            audioSecured: true,
+            enabled: false,
+            scheduleSucceeded: false,
+            conflictsCleared: true,
+            deliveryVersion: "version-1"
+        ))
+    }
+
+    func test_editedReceivedAlarmRetriesAckOnlyForAppliedDeliveryVersion() {
+        var existing = makeReceivedRemote(remoteID: "remote-1")
+        existing.remoteDeliveryVersion = "version-1"
+
+        XCTAssertTrue(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "version-1"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "version-2"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: nil
+        ))
+
+        existing.remoteDeliveryVersion = nil
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "0123456789abcdef0123456789abcdef"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.receivedDeliveryVersionAlreadyApplied(
+            existing: existing,
+            deliveryVersion: "11111111-1111-4111-8111-111111111111"
+        ))
+        // ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다**(docs/spec/family-alarm.md).
+        // 넓히면 재전송을 삼킨다 — 첫 전달이 버전 없이 저장된 뒤 발신자가 같은 슬롯을 다시
+        // 보내면(같은 알람 id, 새 UUID 세대), 넓힌 판정이 그 행을 '복구 대상' 으로 읽어
+        // 수신자 편집을 보존한 채 그 세대를 ACK·삭제한다 — 재전송이 전달되지 않는다.
+        XCTAssertTrue(RemoteAlarmPullSync.isLegacyBackfilledDelivery(
+            existing, "0123456789abcdef0123456789abcdef"
+        ))
+        XCTAssertFalse(
+            RemoteAlarmPullSync.isLegacyBackfilledDelivery(
+                existing, "11111111-1111-4111-8111-111111111111"
+            ),
+            "새 전달 세대(UUID)는 이 복구에 들어오지 않는다"
+        )
+        var applied = existing
+        applied.remoteDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+        XCTAssertFalse(
+            RemoteAlarmPullSync.isLegacyBackfilledDelivery(
+                applied, "0123456789abcdef0123456789abcdef"
+            ),
+            "적용 세대를 아는 행은 이 복구 대상이 아니다"
+        )
+    }
+
+    /// ⚠ **재전송은 수신자 편집을 덮는다**(2026-08-26 확정, docs/spec/family-alarm.md).
+    ///
+    /// 서버는 같은 슬롯에 **같은 알람 id** 를 재사용하고 새 `delivery_version` 만 발급한다.
+    /// 편집을 보존하면 그 슬롯은 **이후 모든 전달을 영구히 거부**한다 — 실기기에서 재현됐다.
+    func test_재전송은_수신자_편집을_덮는다() {
+        var received = makeReceivedRemote(remoteID: "remote-1")
+        received.observedDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+
+        // 같은 세대가 다시 오면 덮지 않는다 — 매 pull 마다 편집이 되돌아가면 안 된다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            received, "11111111-1111-4111-8111-111111111111"
+        ))
+        // 다른 세대 = 발신자가 다시 보냈다 → 덮는다.
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            received, "22222222-2222-4222-8222-222222222222"
+        ))
+        // ⚠ 관찰 세대가 없는 **옛 행도 뚫어 준다**(실기기 재현 — 영원히 막힌 행이 남았다).
+        var legacy = received
+        legacy.observedDeliveryVersion = nil
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            legacy, "22222222-2222-4222-8222-222222222222"
+        ))
+        // 단 #104 backfill(32자리 hex)은 새로 보낸 것이 아니다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            legacy, "0123456789abcdef0123456789abcdef"
+        ))
+        // ⚠ **이미 적용한 세대는 재전송이 아니다**(Codex #703 P1). 관찰 세대 필드가 생기기
+        // 전에 정상 반영된 행은 observed 가 nil 인데 적용 세대에는 그 값이 적혀 있다 —
+        // 그걸 안 보면 같은 전달을 매 pull 마다 덮어써 수신자 편집이 계속 지워진다.
+        var appliedLegacy = legacy
+        appliedLegacy.remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222"
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            appliedLegacy, "22222222-2222-4222-8222-222222222222"
+        ))
+        // 그 행에 **다른** 세대가 오면 진짜 재전송이다 — 여전히 덮는다.
+        XCTAssertTrue(RemoteAlarmPullSync.isResendOfDifferentDelivery(
+            appliedLegacy, "33333333-3333-4333-8333-333333333333"
+        ))
+        // 서버가 세대를 주지 않으면 판단 근거가 없다.
+        XCTAssertFalse(RemoteAlarmPullSync.isResendOfDifferentDelivery(received, nil))
+    }
+
+    /// ⚠ **재전송은 편집 방패를 뚫는다**(Codex #703 P1).
+    ///
+    /// `shouldApplyRemote` 가 세대를 모르던 동안, 호출부가 재전송을 갈라 놓고도 이 함수가
+    /// 같은 행을 다시 `locallyEditedByRecipient` 로 잡아 되돌려보냈다 — 수신자가 고치거나
+    /// **끄기만 해도** 그 슬롯의 재전송이 한 번도 적용되지 않고 ACK 도 되지 않았다.
+    func test_재전송은_편집_방패를_뚫는다() {
+        var edited = makeReceivedRemote(remoteID: "remote-1")
+        edited.observedDeliveryVersion = "11111111-1111-4111-8111-111111111111"
+        // 수신자가 손댔다 = 적용 시각이 동기 시각보다 뒤다.
+        edited.lastSyncedAtMillis = 1_000
+        edited.updatedAtMillis = 2_000
+
+        var mapped = makeReceivedRemote(remoteID: "remote-1")
+        mapped.lastSyncedAtMillis = 3_000
+
+        // 같은 세대라면 편집이 이긴다 — 매 pull 마다 수신자 값이 되돌아가면 안 된다.
+        XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped))
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped, isResend: false)
+        )
+        // 재전송이면 뚫는다.
+        XCTAssertTrue(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: mapped, isResend: true)
+        )
+        // 단 dirty(로컬 우선)와 뒤처진 응답은 재전송이어도 막는다.
+        var dirty = edited
+        dirty.syncState = AlarmSyncState.dirty.rawValue
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: dirty, mapped: mapped, isResend: true)
+        )
+        var stale = mapped
+        stale.lastSyncedAtMillis = 500
+        XCTAssertFalse(
+            RemoteAlarmPullSync.shouldApplyRemote(existing: edited, mapped: stale, isResend: true)
+        )
+    }
+
+    func test_legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
+        var existing = makeReceivedRemote(remoteID: "remote-1")
+        existing.hour = 9
+        existing.minute = 17
+        existing.playMode = AlarmPlayMode.alarmOnly.rawValue
+        existing.localAudioUri = nil
+        existing.audioCacheKey = nil
+        existing.ttsMessageId = nil
+        existing.voiceProfileId = nil
+        existing.voiceText = nil
+        existing.voiceCategory = nil
+
+        var prepared = existing
+        prepared.playMode = AlarmPlayMode.voiceOnly.rawValue
+        prepared.localAudioUri = "remote-message-message-1.mp3"
+        prepared.audioCacheKey = "remote-message-message-1"
+        prepared.rawAudioUri = "r2://voice.mp3"
+        prepared.voiceSource = VoiceSource.serverTts.rawValue
+        prepared.voiceProfileId = "voice-1"
+        prepared.voiceText = "일어나세요"
+        prepared.voiceCategory = "custom"
+        prepared.ttsMessageId = "message-1"
+
+        let recovered = RemoteAlarmPullSync.linkRecoveredLegacyRemoteAudio(
+            existing: existing,
+            prepared: prepared
+        )
+
+        XCTAssertEqual(recovered.hour, 9)
+        XCTAssertEqual(recovered.minute, 17)
+        XCTAssertEqual(recovered.playModeEnum, .voiceOnly)
+        XCTAssertEqual(recovered.localAudioUri, prepared.localAudioUri)
+        XCTAssertEqual(recovered.audioCacheKey, prepared.audioCacheKey)
+        XCTAssertEqual(recovered.ttsMessageId, "message-1")
+        XCTAssertEqual(recovered.voiceProfileId, "voice-1")
+
+        var recipientVoice = existing
+        recipientVoice.playMode = AlarmPlayMode.voiceOnly.rawValue
+        recipientVoice.localAudioUri = "my-recording.m4a"
+        recipientVoice.voiceSource = VoiceSource.localAudio.rawValue
+        let preserved = RemoteAlarmPullSync.linkRecoveredLegacyRemoteAudio(
+            existing: recipientVoice,
+            prepared: prepared
+        )
+        XCTAssertEqual(preserved.localAudioUri, "my-recording.m4a")
+        XCTAssertEqual(preserved.voiceSourceEnum, .localAudio)
+    }
+
     // MARK: - shouldApplyRemote
 
     func test_shouldApplyRemote_localDirty_returnsFalse() {
@@ -302,6 +540,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             lastSyncedAtMillis: 777,
             syncState: .synced
         )
+        store.markRemoteDeliveryVersion(remoteID: "remote-new", deliveryVersion: "version-1")
 
         // 편집기가 들고 있던 **옛 스냅샷**으로 커밋한다.
         var stale = record
@@ -311,6 +550,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(committed.label, "사용자가 고친 라벨", "사용자 편집은 반영된다")
         XCTAssertEqual(committed.remoteAlarmId, "remote-new", "push 가 새긴 값이 살아남아야 한다")
         XCTAssertEqual(committed.lastSyncedAtMillis, 777)
+        XCTAssertEqual(committed.remoteDeliveryVersion, "version-1")
         // remoteAlarmId 가 있으므로 편집분은 dirty 여야 다음 push 가 update 로 간다.
         XCTAssertEqual(committed.syncState, AlarmSyncState.dirty.rawValue)
     }
@@ -427,6 +667,33 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
     /// **목소리만 걷어내고 알람은 남긴다.** 복제 목소리는 발신자의 생체정보라 파기
     /// 대상이지만, 시각·요일은 수신자가 기대고 자는 자기 정보다 — 통째로 지우면
     /// 그날 못 일어난다.
+    /// ⚠ **재예약이 실패해도 리컨사일러가 집을 수 있는 상태로 남아야 한다.**
+    ///
+    /// 철회는 로컬 행을 먼저 고치고(같은 캐시를 쓰는 다른 행까지 세어 파일을 지우려면 그
+    /// 순서여야 한다) 그다음 예약을 다시 건다. 그 재예약이 실패하면 pull 은 다시 집지
+    /// 않는다(`hasSenderVoice` 가 이제 false 다) — 그래서 **예약 수리는 리컨사일러 몫**이고,
+    /// 그러려면 판정 입력 둘(`alarmKitID`·`scheduledSoundFingerprint`)이 남아 있어야 한다.
+    /// 여기서 지우면 `needsReschedule` 이 첫 guard 에서 false 가 되어 회수된 목소리 예약이
+    /// 영영 남는다.
+    func test_withVoiceRevoked_keepsReconcilerInputs() {
+        var record = makeReceivedRemote(remoteID: "r6")
+        record.enabled = true
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
+        record.audioCacheKey = "remote-message-msg-6"
+        record.ttsMessageId = "msg-6"
+        record.alarmKitID = "alarmkit-handle-6"
+        record.scheduledSoundFingerprint = "voice:remote-message-msg-6:r-r2://old:v100"
+
+        let revoked = RemoteAlarmPullSync.withVoiceRevoked(record)
+
+        XCTAssertEqual(revoked.alarmKitID, "alarmkit-handle-6", "예약 핸들이 없으면 리컨사일러가 건너뛴다")
+        XCTAssertEqual(
+            revoked.scheduledSoundFingerprint,
+            "voice:remote-message-msg-6:r-r2://old:v100",
+            "구워 둔 지문이 남아 있어야 '지금 계획과 다르다' 를 알아챈다"
+        )
+    }
+
     func test_withVoiceRevoked_stripsVoiceButKeepsSchedule() {
         var record = makeReceivedRemote(remoteID: "r5")
         record.label = "엄마가 보낸 알람"

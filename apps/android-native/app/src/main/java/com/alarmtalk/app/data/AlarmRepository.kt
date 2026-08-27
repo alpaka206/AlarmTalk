@@ -101,8 +101,8 @@ class AlarmRepository(
      * 음성 다운로드)를 락 밖에 두므로 이 락이 오래 잡히지 않는다.
      *
      * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
-     * 추가할 것. (지금은 [degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile]
-     * 이 공통 private 인 [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
+     * 추가할 것. (지금은 공개 강등 진입점이 전부 공통 private 인
+     * [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
      * 이중 획득이 없다. [pullReceivedAlarms] 도 이 락을 잡은 채로 불리지 않는다 — 잠금 순서는
      * 항상 pullMutex → restoreMutex 한 방향이라 순환이 없다.)
      */
@@ -185,6 +185,7 @@ class AlarmRepository(
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
+            remoteDeliveryVersion = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
@@ -272,6 +273,7 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            remoteDeliveryVersion = null,
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -501,9 +503,10 @@ class AlarmRepository(
     /**
      * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
      *
-     * 지우지는 않는다 — 알람의 원본은 기기(Room)이고 서버는 백업/가족알람 전달용이라,
-     * 내 알람을 서버에서 다시 받아오는 경로가 없다. 지우면 같은 계정으로 다시 로그인해도
-     * 되살아나지 않는다.
+     * 지우지는 않는다 — **알람의 원본은 기기(Room)다.** 서버는 백업이 아니라 남에게
+     * 보내는 알람의 **전달 수단**일 뿐이고(전달이 끝나면 그 행마저 지운다 —
+     * `docs/spec/family-alarm.md` 1-2), 내 알람을 서버에서 다시 받아오는 경로는 아예
+     * 없다. 그러니 여기서 지우면 같은 계정으로 다시 로그인해도 되살아나지 않는다.
      *
      * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
      * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
@@ -791,9 +794,34 @@ class AlarmRepository(
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
+    /**
+     * **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람으로 내린다.
+     *
+     * 삭제와 다른 점이 하나 있다: **프리셋(버킷) 알람은 살린다.** 서버가 같은 message id 로
+     * 새 목소리를 다시 만들어 게시하므로(`voice_prerender_queue.refresh_existing`) 여기서
+     * 벗기면 되돌릴 수 없이 잃는다. 직접 입력은 반대로 서버가 `messages.audio_url` 을 비워
+     * **다시 받을 수도 없다** — 기기에 남은 것은 지운 사람의 목소리뿐이라 내리는 것만이 답이다.
+     *
+     * ⚠ 교체는 프로필 **id 를 그대로 재사용**한다. 그래서 접근권 대조
+     * ([degradeAlarmsWithInaccessibleVoice])로는 영원히 안 걸린다 — 목록에 그대로 있기 때문이다.
+     *
+     * @param expectedOwnerUserId 이 강등을 확정한 계정. 백그라운드 워커에서 부를 때 반드시 넘긴다
+     *   (계정 전환 중이면 남의 알람을 되돌릴 수 없게 부순다 — Codex #646/#665 규약).
+     */
+    suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
+        voiceProfileId: String,
+        expectedOwnerUserId: String?,
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
+            alarm.voiceProfileId == voiceProfileId &&
+                !isSystemVoiceId(alarm.voiceProfileId) &&
+                alarm.usesCustomMessageVoice()
+        }
+
     // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).
-    // 두 공개 진입점([degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile])이
-    // 모두 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입 불가).
+    // **모든 공개 진입점**이 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입
+    // 불가 — 진입점에서 또 잡으면 그대로 교착이다). 진입점을 새로 만들 때도 반드시 이 함수를
+    // 거칠 것.
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
         expectedOwnerUserId: String?,
         match: (AlarmEntity) -> Boolean,
@@ -1038,6 +1066,7 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            remoteDeliveryVersion = null,
             // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
             // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
             // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.

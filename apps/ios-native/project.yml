@@ -60,19 +60,27 @@ targets:
     type: application
     platform: iOS
     sources:
-      - AlarmTalk
+      - path: AlarmTalk
+        excludes:
+          - "Resources/*.mp3"
       - Shared
       # Phase 4-D1: StoreKit Configuration 파일을 build resources 에 포함시켜
       # Xcode 의 scheme 에서 시뮬레이터용 IAP 테스트 환경을 선택할 수 있게 한다.
       # 실기기/TestFlight/AppStore 빌드에서는 자동으로 무시됨 (App Store Connect 가 권위).
       - path: AlarmTalk/Configuration/StoreKitConfiguration.storekit
         buildPhase: resources
-      # 랜딩 미리듣기 오디오 — 안드로이드 `res/raw/landing_voice_preview.mp3` 와 같은 파일.
-      # 이게 없으면 재생 버튼이 소리 없이 진행바만 채운다(예전 iOS 가 그랬다).
+      # 네이티브 공용 MP3 의 단일 출처는 Android res/raw 다. iOS Resources 에 사본을 두면
+      # 전역 `*.mp3` ignore 에 가려져 이 컴퓨터에서만 빌드되고 새 체크아웃에서는 소리가
+      # 빠질 수 있다. Android 가 추적하는 원본을 iOS 번들에도 직접 넣는다.
+      - path: ../android-native/app/src/main/res/raw
+        buildPhase: resources
+        excludes:
+          - "license_*.txt"
       - path: AlarmTalk/Resources
         buildPhase: resources
         excludes:
           - "Licenses"
+          - "*.mp3"
       # 라이선스 전문은 폴더 구조 없이 번들 루트에 둔다 —
       # `Bundle.main.url(forResource:withExtension:)` 이 그렇게 찾는다.
       - path: AlarmTalk/Resources/Licenses

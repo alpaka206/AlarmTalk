@@ -92,7 +92,10 @@ RingingActivity
 
 **이 경로에는 네트워크 호출이 하나도 없다.** 출시 전 QA 는 `adb shell cmd connectivity airplane-mode enable` 로 이를 검증한다. 이 원칙을 깨는 변경은 리뷰에서 반려한다.
 
-### 수동 서버 동기화 ("지금 동기화" 탭)
+### 서버 동기화
+
+알람 탭에 들어오면 자동으로 실행하며, 같은 세션의 재진입은 60초 동안 스로틀한다.
+백그라운드 폴백은 WorkManager가 맡는다.
 
 ```
 WorkManager.enqueueOneTimeWork(RemoteAlarmSyncWorker)

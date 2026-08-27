@@ -10,6 +10,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
+    @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @State private var actionMessage: String?
     /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
@@ -26,34 +27,38 @@ struct AlarmsListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            pinnedHeader
+            // 로컬 JSON 첫 로드 전의 빈 배열은 실제 빈 목록이 아니다. 안드로이드의
+            // `alarmsLoaded` 와 같이 헤더·빈 상태를 모두 늦춰 거짓 화면 깜빡임을 막는다.
+            if store.hasLoadedFromDisk {
+                pinnedHeader
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
-                    // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
-                    // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                    if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
-                        alarmPermissionBanner
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
+                        // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
+                        // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
+                        if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
+                            alarmPermissionBanner
+                        }
+                        // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
+                        // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
+                        // Android syncNow / msg_sync_*_partial_failed parity.
+                        if let displayedMessage {
+                            Text(displayedMessage)
+                                .font(.footnote)
+                                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                                .padding(.horizontal, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { dismissDisplayedMessage() }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("탭하면 닫혀요")
+                        }
+                        localAlarmSection
                     }
-                    // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
-                    // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
-                    // Android syncNow / msg_sync_*_partial_failed parity.
-                    if let displayedMessage {
-                        Text(displayedMessage)
-                            .font(.footnote)
-                            .foregroundStyle(AlarmTalkTheme.textSecondary)
-                            .padding(.horizontal, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .onTapGesture { dismissDisplayedMessage() }
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityHint("탭하면 닫혀요")
-                    }
-                    localAlarmSection
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
             }
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
@@ -62,7 +67,15 @@ struct AlarmsListView: View {
             Task { await openCreateAlarm() }
         }
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
-        .sheet(isPresented: $wakeTargetSheetOpen) {
+        // ⚠ **`.sheet` 가 아니라 `.bottomSheet` 다**(2026-08-24). `SelectionSheet` 은
+        // "배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다" 를 전제로 만들어져 있어서,
+        // 시스템 `.sheet` 로 직접 띄우면 **배경이 안 칠해지고 좌우도 꽉 차지 않는다**
+        // (실기기 확인). 다른 선택 시트(공휴일 국가·화면 테마)는 전부 `.bottomSheet` 를 쓴다 —
+        // 이 시트만 빠져 있어서 같은 껍데기인데 혼자 다르게 보였다.
+        .bottomSheet(
+            isPresented: $wakeTargetSheetOpen,
+            onDismiss: { wakeTargetSheetOpen = false }
+        ) {
             WakeTargetSheet(
                 recipients: familyRecipients,
                 onSelectSelf: {
@@ -75,7 +88,8 @@ struct AlarmsListView: View {
                     openEditor(.createFamily(recipientUserID: recipient.userId))
                 }
             )
-            .presentationDetents([.height(260), .medium])
+            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — `presentationDetents` 는
+            // `BottomSheetHost` 경로에서 쓰지 않는다(고정 260 이면 구성원 수에 따라 남거나 잘린다).
         }
     }
 
@@ -241,13 +255,13 @@ struct AlarmsListView: View {
             let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
             return trimmed.isEmpty ? name : trimmed
         }
-        if let profile = remoteSync.voiceProfiles.first(where: { $0.id == id }) {
+        if let profile = voiceStudio.profiles.first(where: { $0.id == id }) {
             return label(profile.name, profile.relationshipLabel)
         }
         // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
         // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
         // 그 목록은 `familyVoices` 에 따로 온다.
-        if let shared = socialFeatures.familyVoices.first(where: { $0.id == id }) {
+        if let shared = voiceStudio.familyVoices.first(where: { $0.id == id }) {
             return label(shared.name, shared.relationshipLabel)
         }
         return nil

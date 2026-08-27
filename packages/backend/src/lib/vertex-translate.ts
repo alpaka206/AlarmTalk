@@ -123,6 +123,19 @@ const LOW_AROUSAL_WORDS = [
   'mumbl', 'murmur',
 ];
 
+/**
+ * 프롬프트에 그대로 실을 금지 태그 문구. `LOW_AROUSAL_WORDS` 에서 **파생**시킨다.
+ *
+ * ⚠ 손으로 적어 두면 가드와 어긋난다(실측 2026-08-21): 목록에 `[gently]` 만 있고
+ * `[gentle]` 이 없어서, 모델이 형용사형 `[gentle]` 을 붙였다가 가드에 걸려 일본어 운세
+ * '건강' 시드가 3회 전부 실패했다. 무엇이 막히는지 모델에게 정확히 알려 준다.
+ */
+const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
+  (word) => !word.endsWith('l') && word !== 'mumbl',
+)
+  .map((word) => `[${word}]`)
+  .join(', ');
+
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
 function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
@@ -369,7 +382,16 @@ function dynamicTextHardFailure(
   if (text.length > 200) return true;
   if (hasLanguageMismatch(text, context.targetLanguage)) return true;
   if (hasUnsupportedListenerAddress(text, context.listenerTitle)) return true;
-  if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
+  if (
+    hasRelationshipLabelLeak(
+      text,
+      context.relationshipLabel,
+      context.listenerTitle,
+      context.targetLanguage,
+    )
+  ) {
+    return true;
+  }
   // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
   // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
   if (hasDeliveryTagOrStageDirection(taggedText ?? text)) return true;
@@ -650,6 +672,9 @@ NEVER
 - Never describe the voice from outside ("your mom's voice", "speaking as your mom") or speak as
   if you were someone else standing in for that person ("엄마처럼", "엄마 대신"). Referring to
   yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine.
+- Never speak as a MESSENGER for that person — you are that person, not someone carrying their
+  words or running their errand: no "엄마가 깨우래", "엄마가 깨워 달래", "엄마한테 부탁받아서
+  왔어", "엄마가 시켜서", "엄마 심부름으로".
 - Never use a stiff/formal/business register (Korean 합니다체; Japanese ビジネス敬語/文語;
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
@@ -796,7 +821,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${context.relationshipLabel}가 깨우래", "${context.relationshipLabel}한테 부탁받아서", "${context.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
@@ -827,7 +852,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up, and a low-arousal delivery works against that.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
 Leave the separate "tag" field as "" — it is legacy.`;
 
   return [
@@ -883,7 +908,7 @@ function prerenderClipPrompt(params: {
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
-    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${params.relationshipLabel}가 깨우래", "${params.relationshipLabel}한테 부탁받아서", "${params.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
@@ -896,7 +921,7 @@ function prerenderClipPrompt(params: {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
 Leave the separate "tag" field as "" — it is legacy.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
@@ -991,14 +1016,20 @@ export async function generatePrerenderClipText(
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
+    // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
+    // 관계 '엄마' 가 3회 전부 `[softly]` 를 붙여 나와 저각성 가드에 걸려 **영구 실패**했다.
+    // '다르게 써 봐' 만으로는 모델이 문장만 바꾸고 태그는 그대로 둔다.
+    const retryTagHint =
+      ` The rejection may have been the delivery tags: never use sleepy or hushed ones` +
+      ` (${LOW_AROUSAL_TAG_EXAMPLES}) — this line must wake someone up.`;
     const retryHint =
       attempt === 1
         ? ''
         : attempt === 2
-          ? 'RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.'
+          ? `RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.${retryTagHint}`
           : label
-            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.`
-            : 'RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.';
+            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
+            : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
     const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
       .filter(Boolean)
       .join('\n');
@@ -1030,7 +1061,7 @@ export async function generatePrerenderClipText(
       hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
       hasDeliveryTagOrStageDirection(text) ||
       hasUnsupportedListenerAddress(spoken, params.listenerTitle) ||
-      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle)
+      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle, targetLanguage)
     ) {
       lastError = new AlarmTextPreparationInvalidError();
       continue;
@@ -1514,13 +1545,264 @@ function hasUnsupportedListenerAddress(
   return false;
 }
 
+/**
+ * 절이 끝났다고 볼 문장부호. 전각(`，`)·말줄임(`…`)까지 넣는 이유는 모델이 실제로 섞어
+ * 쓰기 때문이다(Codex #702 P2).
+ */
+const CLAUSE_END_PUNCTUATION = '[.!?~,、。，…！？]';
+
+/**
+ * `~래` 로 끝나지만 전언이 **아닌** 낱말. 적대적 검증(754문장, 2026-08-21)에서 나온 실측
+ * 충돌들이다 — 명사(`노래`·`빨래`), 접속부사 어간(`그래`), ㅎ불규칙 형용사 활용(`파래`),
+ * 부사(`오래`), 용언 활용(`바래`).
+ *
+ * ⚠ 이 목록은 **닫히지 않는다.** 한국어에 낱말 경계가 없어 `래` 한 글자로는 근본적으로
+ * 가를 수 없다는 뜻이고, 그래서 이 가드는 **백스톱**이지 유일 방어선이 아니다(프롬프트가
+ * 1차다). 목록을 늘리는 것보다 새 어미를 더 잡겠다고 넓히는 쪽이 훨씬 위험하다.
+ */
+const QUOTATIVE_LOOKALIKES = new Set([
+  '노래',
+  '빨래',
+  '미래',
+  '유래',
+  '장래',
+  '원래',
+  '이래',
+  '저래',
+  '거래',
+  '그래',
+  '파래',
+  '오래',
+  '바래',
+]);
+
+/**
+ * 화자가 **대신 하는 행동**. 대리 구문은 "라벨이 시켰다" 만으로는 성립하지 않는다 — 그
+ * 결과로 **화자가** 무언가를 하고 있어야 심부름꾼이다.
+ *
+ * 이게 없으면 "엄마가 시켜서 억지로 하지는 마"(청자에게 주는 당부)나 "엄마가 시켜서 하는 게
+ * 아니라 네가 하고 싶어서 하는 거야"(오히려 부정하는 말)까지 떨어진다 — 둘 다 실측 오탐이다.
+ */
+/**
+ * 뒤에 이게 붙으면 그 낱말은 **청자에게 시키는 것**이라 화자의 대리 행동이 아니다
+ * (Codex #702 P2). "엄마가 부탁해서 미안해, **전화해 줘**" 는 엄마 자신의 부탁이다 —
+ * 대리 행동으로 읽으면 정상 문구가 떨어진다.
+ * 화자가 하는 형태(`전화했어`, `말해 주는 거야`, `깨우러 왔어`)는 그대로 통과시킨다.
+ */
+const NOT_LISTENER_IMPERATIVE =
+  '(?!\\s*(?:해\\s*)?(?:줘|줄래|주렴|주세요|보렴|봐|세요|렴|라|자)(?![가-힣]))';
+
+const PROXY_ACTION =
+  `(?:왔|오는\\s*길|들렀|깨우|깨워|전하|전해|알려|대신|전화|말해|말하|데리러)${NOT_LISTENER_IMPERATIVE}`;
+
+/**
+ * 전언 어미 `~라…` 앞에서 **전언이 아님을 드러내는 앞글자**. 두 종류를 함께 막는다:
+ *  - 어간이 `라` 로 끝나는 용언: 바라다·자라다·놀라다("깜짝 놀라네").
+ *  - 계사: `~이라`·`~ㄹ 거라`·`아니라`("늘 네 편이란다" 는 정반대 뜻이다).
+ */
+const QUOTATIVE_STEM_GUARD = '(?<![바자놀이거])(?<!아니)';
+
+/**
+ * 트리거 뒤에 **라벨이 아닌 다른 사람**이 행위자로 나오는가. 나오면 화자는 대리인이 아니다 —
+ * "엄마를 대신해서 오늘은 **아빠가** 데리러 갈 거야" 는 엄마 본인이 하는 말이다(실측 오탐).
+ */
+const OTHER_ACTOR_RE =
+  /(할머니|할아버지|엄마|어머니|아빠|아버지|언니|오빠|누나|형|이모|고모|삼촌|동생|선생님)\s*(?:가|이|는|은|께서|께|한테|에게)/g;
+
+function hasOtherActor(segment: string, label: string): boolean {
+  for (const m of segment.matchAll(OTHER_ACTOR_RE)) {
+    // ⚠ **부분 일치를 라벨로 인정한다**(Codex #702 P2). 라벨은 자유 입력이라 "우리 엄마" 처럼
+    // 가족 토큰을 품은 복합어일 수 있다. 잡힌 토큰(`엄마`)을 라벨 전체(`우리 엄마`)와 그대로
+    // 비교하면 **자기 자신을 남으로 읽어** 대리 구문 탐지가 통째로 꺼진다.
+    if (label.includes(m[1]!)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * `pattern` 에 걸리되, **다른 행위자**가 끼어 있지 않은 자리가 하나라도 있는가.
+ *
+ * 매치 **구간 안**은 언제나 본다 — "엄마가 부탁해서 아빠가 깨우러" 는 대리 행동(`깨우`)까지가
+ * 한 매치라, 뒤만 보면 `아빠가` 를 놓친다(실측 오탐).
+ *
+ * ⚠ **뒤를 훑을지는 패턴이 대리 행동을 이미 품었는지로 갈린다**(Codex #702 P2).
+ *  - `requestFromLabel`·`orderedByLabel` 은 패턴 끝이 `PROXY_ACTION` 이라 **대리 행동까지가
+ *    매치**다. 그 뒤는 딴 이야기이므로 훑으면 안 된다 — "엄마가 시켜서 깨우러 왔어,
+ *    아빠한테도 전화해야 해" 의 `아빠한테` 를 보고 **진짜 유출을 통과시킨다.**
+ *  - `thirdPartyReference`(`엄마 대신`)는 행동이 매치 **밖**에 있으므로 뒤를 봐야 한다 —
+ *    "엄마를 대신해서 오늘은 아빠가 데리러 갈 거야" 의 `아빠가` 가 거기 있다.
+ *
+ * ⚠ 뒤를 훑을 때도 **같은 문장까지만**이다(Codex #702 P2). "엄마 대신 깨우러 왔어.
+ * 아빠한테도 전화해야 해" 의 뒷문장을 보고 대리 판정을 끄면 진짜 유출이 통과한다.
+ * 오탐을 막아 주는 `아빠가` 는 언제나 같은 문장 안에 있다.
+ */
+function matchesWithoutOtherActor(
+  text: string,
+  label: string,
+  pattern: string,
+  scanAfterMatch = false,
+): boolean {
+  for (const m of text.matchAll(new RegExp(pattern, 'gi'))) {
+    const end = m.index + m[0].length;
+    let suffix = '';
+    if (scanAfterMatch) {
+      suffix = text.slice(end, end + 40);
+      const stop = suffix.search(/[.!?。！？…]/);
+      if (stop !== -1) suffix = suffix.slice(0, stop);
+    }
+    // 매치 시작 부분의 라벨 자체는 `hasOtherActor` 가 라벨 비교로 걸러 준다.
+    if (!hasOtherActor(m[0] + suffix, label)) return true;
+  }
+  return false;
+}
+
+/**
+ * 라벨 뒤에 **현재형 전언 어미**(`~래`)가 붙었는가 — "엄마가 깨우래", "엄마가 깨우래서 왔어".
+ *
+ * ⚠ 정규식만으로는 가를 수 없어 코드로 거른다. 한국어에는 낱말 경계가 없어서 `래` 한 글자는
+ * 세 가지와 겹친다:
+ *  - **권유형 `~ㄹ래`**("입을래?", "갈래?", "들어줄래?") — 앞 글자 받침이 ㄹ 이다.
+ *  - **명사·접속부사**("노래", "빨래", "그래서") — `QUOTATIVE_LOOKALIKES` 로 걸러낸다.
+ *  - **전언형 `~래`**("깨우래", "일어나래") — 이것만 유출이다.
+ * 그래서 ①라벨이 **주격**(가/이/께서)이고 ②`래` 뒤가 **절 끝**(`요?` + 문장부호/끝)이거나
+ * **연결형 `서`** 이며 ③앞 글자가 ㄹ받침이 아니고 ④위 목록에 없을 때만 전언으로 본다.
+ *
+ * ⚠ 절 끝 조건에 **공백은 넣지 않는다.** `래` 는 용언 뒤에서는 전언이지만 체언 뒤에서는
+ * 계사 전언("휴일이래", "30도래")이라 `~대`(비 온대)와 같은 **사실 전달**이다. 부호 없이
+ * 이어지는 자리까지 열면 그 계사형이 통째로 걸려 멀쩡한 문구가 떨어진다.
+ *
+ * ⚠ `~대`(비 온대, 많대요)는 **넣지 않는다.** 날씨 전달의 표준 어미라 프롬프트 few-shot 이
+ * 직접 쓰고 있다("비가 올 수 있대요") — 넣으면 멀쩡한 날씨 문구가 통째로 떨어진다.
+ * 같은 이유로 `~ㄹ 거래`(= `~ㄹ 거라고 해`)도 뺀다: 실 Vertex 호출에서 "오늘은 흐릴 거래,
+ * 따뜻하게 입고 나가요" 가 그대로 나왔다(2026-08-21 실측). "엄마가 데리러 올 거래" 같은
+ * 전언도 같은 꼴이라 갈라낼 수 없는데, 실제로 나오는 쪽은 날씨다.
+ */
+function hasPresentReportedSpeech(text: string, escapedLabel: string): boolean {
+  const re = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|도|께서)\\s*[^.!?]{0,20}?([가-힣])래(?=서|잖|요?\\s*(?:${CLAUSE_END_PUNCTUATION}|$))`,
+    'gi',
+  );
+  for (const match of text.matchAll(re)) {
+    const prev = match[1]!;
+    if (QUOTATIVE_LOOKALIKES.has(`${prev}래`)) continue;
+    // "깨워 달래(서)" 는 `달라고 해` 의 준말이라 앞 글자 받침이 ㄹ 이지만 전언이 맞다.
+    // 어루만지는 `달래다`("엄마가 달래 줄게")는 뒤에 용언이 붙어 절 끝 조건에서 걸러진다.
+    if (prev === '달') return true;
+    const syllable = prev.charCodeAt(0) - 0xac00;
+    // 받침 ㄹ(종성 인덱스 8) = 권유형 `~ㄹ래`.
+    if (syllable >= 0 && syllable < 11172 && syllable % 28 === 8) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 관계 라벨(한국어 정규값)이 en·ja 출력에서 어떤 낱말로 나오는가.
+ *
+ * ⚠ **라벨은 앱 언어와 무관하게 한국어로 저장된다**(안드로이드 `RelationshipPreset` 의
+ * `label` 은 정규값이고 로케일 리소스는 표시용일 뿐이다). 그래서 en·ja 문구에는 `엄마` 라는
+ * 글자가 아예 없고, 한국어 조사·어미만 보는 가드는 **그 두 언어에서 통째로 무력**했다
+ * (Codex #702 P2). 프롬프트는 세 언어 모두에 걸려 있지만 백스톱이 비어 있었다.
+ *
+ * 자유 입력 라벨은 여기 없다 — 그건 한국어 갈래로만 걸러진다(알려진 한계).
+ */
+const RELATIONSHIP_LABEL_TRANSLATIONS: Record<string, { en: string[]; ja: string[] }> = {
+  엄마: { en: ['mom', 'mum', 'mother', 'mommy'], ja: ['お母さん', 'ママ', '母'] },
+  아빠: { en: ['dad', 'father', 'daddy'], ja: ['お父さん', 'パパ', '父'] },
+  할머니: { en: ['grandma', 'grandmother', 'granny'], ja: ['おばあちゃん', '祖母'] },
+  할아버지: { en: ['grandpa', 'grandfather'], ja: ['おじいちゃん', '祖父'] },
+  아들: { en: ['son'], ja: ['息子'] },
+  딸: { en: ['daughter'], ja: ['娘'] },
+  손녀: { en: ['granddaughter'], ja: ['孫娘'] },
+  손주: { en: ['grandson', 'grandchild'], ja: ['孫'] },
+  '형제·자매': { en: ['brother', 'sister', 'sibling'], ja: ['兄弟', '姉妹'] },
+  남자친구: { en: ['boyfriend'], ja: ['彼氏'] },
+  여자친구: { en: ['girlfriend'], ja: ['彼女'] },
+  남편: { en: ['husband'], ja: ['夫', '旦那'] },
+  아내: { en: ['wife'], ja: ['妻', '奥さん'] },
+  친구: { en: ['friend'], ja: ['友達'] },
+  연예인: { en: ['celebrity'], ja: ['芸能人'] },
+};
+
+/**
+ * 한국어가 아닌 출력에서 **화자가 전달자처럼 말하는가.**
+ *
+ * 한국어와 달리 en·ja 는 전달 구문이 **1인칭 대명사를 요구**해서("mom asked **me** to",
+ * "**私**が頼まれて") 훨씬 덜 모호하다. 그래서 라벨 낱말 + 전달 틀이 붙은 형태만 좁게 본다.
+ * 자기 3인칭 지칭("Mom is always on your side", "ママはいつも味方だよ")은 틀이 없으니 통과한다.
+ */
+function hasForeignLanguageProxy(
+  text: string,
+  label: string,
+  targetLanguage: string,
+): boolean {
+  const language = targetLanguage === 'en' || targetLanguage === 'ja' ? targetLanguage : null;
+  if (!language) return false;
+  const words = RELATIONSHIP_LABEL_TRANSLATIONS[label.trim()]?.[language];
+  if (!words?.length) return false;
+  const alternation = words.map(escapeRegExp).join('|');
+
+  if (language === 'en') {
+    // "your mom's voice" — 목소리를 밖에서 묘사한다.
+    if (new RegExp(`(?:${alternation})(?:'s|s')\\s+voice`, 'i').test(text)) return true;
+    // "mom asked me to wake you" / "mom wants me to" / "mom sent me" / "on behalf of your mom"
+    return (
+      new RegExp(
+        `(?:${alternation})\\b[^.!?]{0,20}?\\b(?:asked|told|wanted|wants|needs|sent|had)\\s+me\\b`,
+        'i',
+      ).test(text) ||
+      new RegExp(`\\bon\\s+behalf\\s+of\\b[^.!?]{0,15}?(?:${alternation})\\b`, 'i').test(text) ||
+      new RegExp(`\\b(?:instead\\s+of|in\\s+place\\s+of)\\s+(?:your\\s+)?(?:${alternation})\\b`, 'i').test(
+        text,
+      )
+    );
+  }
+
+  // ja: 「お母さんに頼まれて」「ママの代わりに」「お母さんの声」「お母さんが起こしてって」
+  return (
+    new RegExp(`(?:${alternation})の声`).test(text) ||
+    new RegExp(`(?:${alternation})(?:に|から)[^。！？]{0,10}?(?:頼まれ|言われ|頼まれて|命じられ)`).test(
+      text,
+    ) ||
+    new RegExp(`(?:${alternation})の代わり`).test(text) ||
+    new RegExp(`(?:${alternation})が[^。！？]{0,15}?(?:って言ってた|と言ってた|だって)`).test(text)
+  );
+}
+
+/**
+ * 문구가 **화자가 그 관계의 사람이 아닌 것처럼** 말하는가.
+ *
+ * ⚠ **이 가드는 백스톱이지 유일 방어선이 아니다.** 1차는 프롬프트다(3곳: 시스템 지시·동적·
+ * 사전렌더 모두 "너는 그 사람이지 그 사람의 말을 전하는 사람이 아니다" 를 예시와 함께 준다).
+ *
+ * 근본 한계가 있다: 한국어는 **3인칭 자기 지칭이 표준**이라("엄마는 늘 네 편이야"),
+ * 과거형 인용은 화자가 엄마든 심부름꾼이든 **글자가 같다**.
+ * "엄마가 일어나라고 했잖아" 는 엄마가 자기 잔소리를 되짚는 말로도, 남이 엄마 말을 옮기는
+ * 말로도 완벽히 읽힌다. 패턴으로는 가를 수 없다.
+ *
+ * 그래서 **현재형과 과거형을 다르게 다룬다** — 이게 이 함수의 설계 축이다:
+ *  - 현재형 전언(`~래`·`~라네`·`~라잖아`·`~라셔`)은 지금 남의 말을 옮기는 형태라 넓게 잡는다.
+ *  - 과거형(`했`·`그랬`·`랬`)은 자기 서술과 겹치므로 좁게 둔다.
+ *  - 대리 구문은 지시 낱말만으로는 부족하고 **화자가 대신 하는 행동**까지 있어야 한다.
+ *
+ * **일부러 안 잡는 것**(적대적 검증 754문장 + 실 Vertex 168콜로 확인, 2026-08-21):
+ *  - `~다더라`("엄마가 데리러 온다더라") — `~대`(비 온대)와 같은 사실 전달 어미라 날씨 문구가
+ *    통째로 떨어진다. 실제 모델 출력이 이 형태를 쓴다.
+ *  - `엄마가 시켰어`(대리 행동 없음) — "엄마가 시켰잖아"(내가 시켰잖아)와 구별되지 않는다.
+ *  - `가재`·`됐냬` 같은 한 음절 인용 — 명사와 충돌이 너무 크다.
+ * 이것들을 잡겠다고 넓히면 **과잉 거절**로 되돌아간다. 그게 이 파일에서 가장 비싼 실수다.
+ */
 function hasRelationshipLabelLeak(
   text: string,
   relationshipLabel: string | null | undefined,
   listenerTitle: string | null | undefined,
+  targetLanguage: string,
 ): boolean {
   const label = relationshipLabel?.trim();
   if (!label) return false;
+
+  if (hasForeignLanguageProxy(text, label, targetLanguage)) return true;
 
   const escapedLabel = escapeRegExp(label);
   const sourcePhrase = new RegExp(`${escapedLabel}\\s*(?:목소리|voice)`, 'i');
@@ -1535,17 +1817,93 @@ function hasRelationshipLabelLeak(
   //
   // 남겨 두는 것은 **화자가 그 사람이 아님을 드러내는** 쓰임뿐이다:
   // `엄마처럼`(엄마가 아닌 사람의 비유) / `엄마 대신` / `엄마 입장에서`.
-  const thirdPartyReference = new RegExp(`${escapedLabel}\\s*(?:처럼|입장에서|대신)`, 'i');
-  if (thirdPartyReference.test(text)) return true;
+  // 목적격 조사를 허용하는 이유는 `엄마를 대신해서` 가 `엄마 대신` 과 같은 말이기 때문이다.
+  //
+  // ⚠ `대신할`·`대신하는`(관형형)은 뺀다 — "엄마를 대신할 알람은 없으니까" 처럼 대신하는
+  // 주체가 화자가 아닌(사람도 아닌) 경우라, 화자를 사칭한다는 뜻이 되지 않는다.
+  if (
+    matchesWithoutOtherActor(
+      text,
+      label,
+      `${escapedLabel}\\s*(?:을|를)?\\s*(?:처럼|입장에서|대신(?!할|하는|한\\s))`,
+      true,
+    )
+  ) {
+    return true;
+  }
 
   // **전언(傳言) 구문도 화자가 그 사람이 아님을 드러낸다**(Codex #701 P2).
   // "엄마가 깨워 달라고 했어" 는 화자가 심부름꾼이라는 뜻이라, 자기 지칭("엄마는 늘 네
   // 편이야")과는 정반대다. 라벨 뒤 짧은 구간에 전언 어미가 오면 거절한다.
+  //
+  // ⚠ **한 음절 어미는 다른 낱말과 겹친다**(적대적 검증 실측):
+  //  - `그랬` 앞글자 `그` 를 뺐다. "엄마가 걱정돼서 그랬어" / "엄마가 늘 그랬듯이" /
+  //    "엄마가 그랬잖아" 는 전부 엄마 **자신의** 말이고, 3인칭 자기 지칭이 표준인 한국어에서
+  //    `그랬` 은 전언과 자기 서술을 가르지 못한다.
+  //  - `랬` 앞에 `바` 가 오면 `바라다/바래다`(바랬어, 바랬네)라 전언이 아니다.
+  //  - `랬`·`댔` 앞에 공백이 오면 별개 낱말이다("손을 댔어" 의 `대다`).
+  //  - `라고 했`·`라고 하셨` 도 뺐다. "엄마가 어릴 때부터 그러라고 했잖아?" 는 엄마가 **자기**
+  //    잔소리를 되짚는 말이다. 남기는 것은 자기 말로 읽히지 않는 `말했`·`전했`·`하더` 뿐이다.
   const reportedSpeech = new RegExp(
-    `${escapedLabel}\\s*(?:가|이|는|은|께서)?[^.!?]{0,20}?(?:달라고|라고\\s*(?:했|하셨|말했|전했|하더)|랬|댔|그랬)`,
+    `${escapedLabel}\\s*(?:가|이|는|은|께서)?[^.!?]{0,20}?(?:달라고|라고\\s*(?:말했|전했|하더)|(?<![\\s바그])랬|(?<!\\s)댔)`,
     'i',
   );
   if (reportedSpeech.test(text)) return true;
+  if (hasPresentReportedSpeech(text, escapedLabel)) return true;
+
+  // **현재형 전언은 과거형과 달리 모호하지 않다.** 이게 이 가드의 핵심 구분선이다:
+  //  - 과거형(`했`·`그랬`·`랬`)은 **엄마 자신이 지난 말을 되짚는 것**과 형태가 같다
+  //    ("엄마가 일어나라고 했잖아" 는 엄마가 하는 말로 완벽히 자연스럽다). 그래서 좁게 둔다.
+  //  - 현재형(`~래`·`~라네`·`~라잖아`·`~라셔`·`~라며`·`~라던데`)은 **지금 남의 말을 옮기는**
+  //    형태라, 엄마가 자기 말에 쓰지 않는다. 그래서 넓게 잡아도 안전하다.
+  // ⚠ **`라` 앞글자로 걸러야 하는 것이 두 종류 있다**(`QUOTATIVE_STEM_GUARD`):
+  //   ① 어간이 `라` 로 끝나는 용언 — `바라다`("네 행복을 바라네"), `자라다`("키가 자라며"),
+  //      `놀라다`("네 성장에 깜짝 놀라네"). 전언이 아니라 그냥 그 동사다.
+  //   ② 계사 `~이라`/`~ㄹ 거라`/`아니라` — "할머니는 늘 네 편이란다" 는 **정반대 뜻**이고
+  //      실 Vertex 출력이 실제로 이 형태를 낸다(2026-08-21 실측).
+  //   `~다더라` 는 넣지 않는다: "비가 온다더라" 는 `~대` 와 같은 사실 전달이다.
+  const presentQuotative = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|도|께서)?[^.!?]{0,20}?` +
+      `(?:${QUOTATIVE_STEM_GUARD}라(?:네|셔|셨|잖아|며|던데|는데)|` +
+      `라고\\s*(?:해|하네|하셔|하시|하더|한다|부탁)|달라(?:네|셔|잖아|는데)|` +
+      `${QUOTATIVE_STEM_GUARD}라\\s*(?:해|하|했|시켜|시키)|` +
+      `${QUOTATIVE_STEM_GUARD}(?:란다|랍니다))`,
+    'i',
+  );
+  if (presentQuotative.test(text)) return true;
+
+  // **대리(代理) 구문**(Codex #701 P2 후속). 어미가 아니라 **조사**로 화자를 심부름꾼으로
+  // 만드는 형태라 위의 전언 정규식이 통째로 비켜 간다 — "엄마한테 부탁받아서 깨우러 왔어",
+  // "엄마 부탁으로 알려 주는 거야", "엄마가 시켜서 왔어".
+  //
+  // 성립 조건이 **둘 다** 필요하다:
+  //  1. 라벨이 부탁·지시의 **출처**여야 한다. `부탁` 만으로는 안 된다 — "엄마 부탁 하나만
+  //     들어줄래?" 는 엄마 자신의 말이다. 조사가 뜻을 뒤집는 것도 여기다(Codex #702 P2):
+  //     `엄마한테 부탁받아서`(엄마가 준 쪽) ≠ `엄마가 네 부탁받아서`(엄마가 받은 쪽).
+  //     그래서 주격·주제 조사가 붙으면 이 갈래는 아예 보지 않는다.
+  //     관형형 `부탁받은`(→ "엄마한테 부탁받은 우산 챙겨 가")도 뺀다 — 받은 쪽이 청자다.
+  //  2. 그 결과로 **화자가 대신 하는 행동**(`PROXY_ACTION`)이 이어져야 한다. 없으면
+  //     "엄마의 심부름 때문에 아침이 바쁘겠다" 같은 자기 서술까지 떨어진다.
+  const requestFromLabel =
+    `${escapedLabel}(?!\\s*(?:가|이|께서|는|은|도))\\s*(?:한테서?|에게서?|의|께)?\\s*` +
+    `[^.!?]{0,6}?(?:부탁\\s*[^.!?]{0,6}?받(?:아|고)|부탁(?:으로|\\s*때문에)|` +
+    `심부름(?:으로|\\s*때문에|을?\\s*하러)|말씀(?:을|를)?\\s*전하)` +
+    `\\s*[^.!?]{0,10}?${PROXY_ACTION}`;
+  if (matchesWithoutOtherActor(text, label, requestFromLabel)) return true;
+
+  // `시키다`·`부탁하다` 는 반대로 라벨이 **주격**일 때가 유출이다 — "엄마가 시켜서 왔어".
+  // 여기도 대리 행동이 있어야 한다: "엄마가 시켜서 억지로 하지는 마" 는 청자에게 주는
+  // 당부이고, "엄마가 시켜서 하는 게 아니라" 는 오히려 그것을 부정하는 말이다(실측 오탐).
+  //
+  // ⚠ **맨 과거형(`시켰`·`시키셨`)은 넣지 않는다**(Codex #702 P2). "엄마가 시켰잖아,
+  // 전화해 줘" 는 엄마가 **자기** 지시를 되짚는 말인데, `시켰` 이 `시켰잖아` 의 앞부분에
+  // 걸리고 뒤의 `전화` 가 대리 행동 조건까지 채워 버린다. 위 「일부러 안 잡는 것」에
+  // `엄마가 시켰어` 를 적어 둔 것과도 어긋났다 — 과거형은 좁게 둔다는 규칙 그대로다.
+  const orderedByLabel =
+    `${escapedLabel}\\s*(?:가|이|께서|한테서?|에게서?|의)?\\s*` +
+    `[^.!?]{0,6}?(?:시켜서|시키셔서|시키신|시킨\\s*대로|시키는\\s*대로|보내서|보내셔서|` +
+    `부탁(?:해|하셔|하시어)서|부탁하신\\s*대로|부탁한\\s*(?:대로|일))\\s*[^.!?]{0,8}?${PROXY_ACTION}`;
+  if (matchesWithoutOtherActor(text, label, orderedByLabel)) return true;
 
   const allowedAddress =
     normalizeAddressLabel(label) !== null &&

@@ -106,7 +106,9 @@ final class StockClipPrefetcher: ObservableObject {
 
             let cache = AudioCacheStore.shared
             let missing = clips.filter {
-                cache.cachedURL(for: AudioCacheStore.stockCacheKey(messageId: $0.messageId)) == nil
+                let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
+                return cache.cachedURL(for: key) == nil
+                    || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
             }
             var done = clips.count - missing.count
             state = .running(done: done, total: clips.count)
@@ -129,6 +131,12 @@ final class StockClipPrefetcher: ObservableObject {
                                     messageId: clip.messageId,
                                     cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId)
                                 )
+                                return true
+                            } catch AudioCacheError.legacyAliasFailed {
+                                // 이 경로의 성공 기준은 **정본(cacheKey)** 하나다(`missing`
+                                // 판정도 그 키를 본다). 옛 별칭 실패로 실패라고 말하면
+                                // 실제로는 다 받아 놓고 '받기 실패' 를 띄우는데, 다시
+                                // 시도해도 받을 게 없어 그 화면에서 못 빠져나온다.
                                 return true
                             } catch {
                                 // 한 클립이 실패해도 나머지는 계속 받는다 — 회전은 남은
