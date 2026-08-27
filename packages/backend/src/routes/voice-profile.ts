@@ -2614,9 +2614,16 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
 
-  // 호출당 3클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
-  // 무료 플랜 한도(50) 안에 안전하게 들어가는 수로 잡는다. 남은 몫은 클라 재호출/cron.
-  const MAX_CLIPS_PER_CALL = 3;
+  // 호출당 2클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
+  // 한도(무료 플랜 50) 안에 **꼬리 처리 몫까지 남기고** 들어가는 수로 잡는다.
+  // 남은 몫은 클라 재호출/cron.
+  //
+  // ⚠ **3 이었다가 2 로 낮췄다**(2026-08-27, dev 워커 로그로 확인).
+  // 3 은 경계에 걸쳐 있어 제공자 재시도가 한 번만 끼어도 한도를 넘겼고, 그러면 **꼬리의
+  // DB 호출(클레임 해제·개수 세기)까지 실패**해 500 이 났다. 클레임이 풀리지 않으니 그
+  // 뒤 2분(리스) 동안 모든 호출이 "진행 없음" 만 돌려줘 재렌더가 멈춰 보였다 —
+  // 간헐 500 과 정체는 **한 원인**이었다.
+  const MAX_CLIPS_PER_CALL = 2;
   let made = 0;
   let superseded = false;
   for (const target of targets.slice(0, MAX_CLIPS_PER_CALL)) {
@@ -2638,19 +2645,35 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   }
 
   const done = !superseded && made >= targets.length;
-  if (done) {
-    await markPrerenderDone(db, id, claimToken);
-    if (refreshExisting) {
-      await schedulePostCommitFanout(
-        c,
-        notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
-      );
+  // 이 호출이 시작할 때 이미 만들어져 있던 개수 — 꼬리에서 DB 를 못 쓸 때의 답이다.
+  const generatedBeforeBatch = CLONE_PRERENDER_TOTAL - targets.length;
+  try {
+    if (done) {
+      await markPrerenderDone(db, id, claimToken);
+      if (refreshExisting) {
+        await schedulePostCommitFanout(
+          c,
+          notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+        );
+      }
+    } else {
+      // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
+      await releasePrerenderClaim(db, id, claimToken);
     }
-  } else {
-    // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
-    await releasePrerenderClaim(db, id, claimToken);
+    return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  } catch (tailErr) {
+    // ⚠ **꼬리가 실패해도 500 을 내지 않는다**(2026-08-27). 여기까지 왔다는 것은 클립을
+    // 실제로 만들었다는 뜻인데, 서브리퀘스트 한도를 넘기면 **그 뒤의 DB 한 줄도 못 쓴다** —
+    // 그때 500 을 내면 클라의 구동 루프가 진행을 잃고, 사용자에게는 재렌더가 멈춘 것으로
+    // 보인다. 개수는 메모리에 있는 값으로 답하고(정확히는 이번 회차 시작 시점 + 만든 수),
+    // 못 푼 클레임은 2분 리스가 회수한다.
+    logRouteError(c, tailErr);
+    return c.json({
+      done: false,
+      generated: Math.min(generatedBeforeBatch + made, CLONE_PRERENDER_TOTAL),
+      total: CLONE_PRERENDER_TOTAL,
+    });
   }
-  return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
 });
 
 voiceProfile.delete('/:id', async (c) => {
