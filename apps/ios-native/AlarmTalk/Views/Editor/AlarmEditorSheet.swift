@@ -20,6 +20,7 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject var alarmKit: AlarmKitViewModel
     @EnvironmentObject var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject var prefetcher: StockClipPrefetcher
     @EnvironmentObject var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject var subscriptions: SubscriptionManager
 
@@ -109,6 +110,9 @@ struct AlarmEditorSheet: View {
         ClipPreparationView(onDismiss: { preparationVoiceID = nil }, targetVoiceID: preparationVoiceID)
             .environmentObject(auth)
             .environmentObject(voiceStudio)
+            // 시트는 환경을 그대로 물려받지 못하는 자리라 여기서도 다시 꽂는다
+            // (위 둘과 같은 이유). 준비 화면이 프리페처를 깨울 수 있어야 한다.
+            .environmentObject(prefetcher)
     }
     /// 현재 활성 미리듣기 대상(단일 진실 공급원, change 4). 스톡 클립 미리듣기 id 는
     /// `.stockClip(id)` 의 연관 값이 들고 있어 previewingStockMessageID 를 대체한다.

@@ -77,6 +77,11 @@ struct AlarmTalkApp: App {
                     .environmentObject(auth)
                     .environmentObject(remoteSync)
                     .environmentObject(voiceStudio)
+                    // ⚠ **준비 화면도 프리페처를 깨울 수 있어야 한다**(Codex #703 P2).
+                    // 위 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번 세션에
+                    // 새로 소유하게 된 목소리로는 다시 돌지 않는다 — 그래서 첫 등록이
+                    // 앱을 껐다 켤 때까지 100% 미만에 갇혔다.
+                    .environmentObject(stockClipPrefetcher)
                     .environmentObject(socialFeatures)
                     .environmentObject(subscriptions)
                     .environmentObject(versionGate)

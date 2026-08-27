@@ -13,6 +13,10 @@ struct ClipPreparationView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    /// ⚠ **앱 스코프 객체를 받아 쓴다 — 화면 소유(`@StateObject`)로 만들지 말 것.**
+    /// 사용자가 '백그라운드에서 계속' 으로 이 화면을 닫으면 뷰가 사라지는데, 화면이 소유하면
+    /// 그때 다운로드 루프가 조용히 죽어 그 문구가 거짓말이 된다.
+    @EnvironmentObject private var prefetcher: StockClipPrefetcher
     @StateObject private var readiness = ClipReadinessModel()
 
     /// 닫기(백그라운드에서 계속). nil 이면 닫기 줄을 그리지 않는다.
@@ -176,6 +180,21 @@ struct ClipPreparationView: View {
             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
             selectedVoiceProfileID: targetVoiceID
         )
+        // ⚠ **세는 것만으로는 받아지지 않는다**(Codex #703 P2). `readiness.refresh` 는 서버
+        // 상태를 묻고 캐시 파일이 있는지 볼 뿐, **없는 클립을 받지 않는다.** 실제 다운로드는
+        // 앱 레벨 프리페처가 하는데 그 `.task(id:)` 는 계정·언어로만 키가 걸려 있어, 이번
+        // 세션에 새로 소유하게 된 목소리로는 다시 돌지 않는다 — 그래서 첫 등록이 앱을 껐다
+        // 켤 때까지 100% 미만에 갇혔다.
+        //
+        // `start` 는 `guard task == nil` 이라 3초 폴링마다 불려도 겹쳐 돌지 않고, 이미 받은
+        // 것은 내부에서 건너뛴다. 대상은 **소유 목록 + 관문이 막은 그 목소리 하나**다 —
+        // 공유받은 목록 전체를 넣으면 「공유받은 목소리는 선다운로드하지 않는다」 규약을
+        // 정면으로 어긴다(`docs/spec/voice-and-message.md`).
+        if !readiness.isReady {
+            var targets = voiceStudio.ownedVoiceProfileIDs
+            if let targetVoiceID, !targetVoiceID.isEmpty { targets.insert(targetVoiceID) }
+            prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets)
+        }
         if registrationStyle, readiness.isReady, !readiness.voices.isEmpty {
             onDismiss?()
         }

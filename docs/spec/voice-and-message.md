@@ -186,6 +186,16 @@
     않고**(iOS 는 목록에서 가린다) 이유를 말한다 — 올리는 순간 그 목소리로 새 알람을 만들 수
     있는데, 표식이 확정되지 않았으므로 다음 회차가 그 새 알람까지 함께 내린다. 다음 정리가
     확정되면 곧바로 풀린다.
+  - ⚠ **'끝났다' 에는 프리셋 재렌더도 들어간다**(2026-08-26 확정). 교체 트랜잭션은 세대를
+    커밋하지만 프리셋 재렌더는 **큐에만 넣는다** — 실제 굽기는 cron 이 나중에 한다. 그
+    사이에 세대를 확정하면 **iOS 는 프리셋 수리 자체를 건너뛴다**(권위 새로고침의 게이트가
+    '바뀐 것 없음' 으로 접는다) — 완료 푸시를 놓친 기기에서 기존 프리셋 알람이 회수된 옛
+    목소리로 계속 운다. 그래서 등록 기기도 **푸시 경로와 같은 매니페스트·캐시 게이트**를
+    통과한 뒤에 확정한다. 사용자는 그동안 준비 화면(진행률)에 있으므로 '정리 중' 과 겹쳐
+    어색하지 않다 — 이때는 **실패 문구를 쓰지 않는다.**
+    ⚠ **안드로이드는 이 게이트가 필요 없다** — 거기서는 프리셋 수리(`loadStockClips` 의 낡은
+    클립 재다운로드)가 **표식과 무관하게** 매번 돌기 때문이다. 확정이 일러도 수리는 계속된다.
+    한쪽만 보고 "빠졌다" 며 맞추지 말 것 — 같은 규칙을 서로 다른 자리에서 지키고 있다.
   - **교체 진행률은 '지금 목소리로 만든 클립' 만 센다.** 교체 회차는 옛 클립이 전부 음원을
     들고 있어, 개수만 세면 첫 호출부터 완료로 보이고 앱의 구동 루프가 곧바로 멈춘다 —
     프리셋 절반이 지운 목소리로 남은 채 다음 cron 을 기다리게 된다.
@@ -574,6 +584,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 교체 시 **본인** custom 철회 | `AlarmRepository.degradeCustomMessageAlarmsUsingVoiceProfile` + `VoiceAccessSyncWorker` | `VoiceStudioViewModel.degradeCustomMessageAlarms` + `PushNotificationCoordinator.onVoiceReplaced` | `voice_access_revoked` payload(`voiceProfileId`·`scope`) |
 | 확정 못 한 회차는 풀지 않는다 | — | `PendingApply.confirm()` — `commit` 이 없으면 **항상 false**(세대를 못 올렸다) | — |
 | 정리 중 표시 올리기·내리기 | 새로고침이 `Result.persisted` 로 **넣고 뺀다**(승격만으로는 프로세스 수명과 어긋난다) | 같음 — 권위 새로고침이 `unsettledProfileIDs` 로 **다시 만들고**(합치지 않는다), 아직 못 적은 표시는 `unpersistedSuppressedProfileIDs` 로 함께 싣는다. 올리는 자리는 `confirmIfReservationsSettled` 의 **실패하는 한 곳** | — |
+| 교체 확정 시점 | 워커가 `prerenderReady`(매니페스트 + 로컬 캐시)로 가른다. 등록 경로는 곧바로 확정해도 되는데, 프리셋 수리가 `loadStockClips` 에서 **표식과 무관하게** 돌기 때문 | 등록 경로(`VoicePreviewConfirmView`)도 푸시와 **같은** `loadStockClips(force:) + refreshChangedCachedStockClips().settled(forProfileID:)` 게이트를 통과한 뒤 확정 — iOS 는 수리가 표식에 매여 있다 | `replaceVoiceInPlace` 는 세대만 커밋하고 재렌더는 큐에 넣는다 |
 | 실패한 세대의 재시도 | — | `retry` 키 — 기준선과 같은 세대라도 **시도했다 실패한 것**이면 다시 집는다 | — |
 | '봤다' 와 '반영했다' | — | `seen`=처음 본 기준선(**한 번만 씀**) / `applied`=확정한 세대. 재시도 판정은 **applied 기준** | `custom_audio_invalidated_at` |
 | 남은 세대 판정 | — | **세대 값**으로 가른다(`applied` 초과만 남김) — 겹치는 알람 id 로 가르면 뒤 세대 칸을 지운다 | — |

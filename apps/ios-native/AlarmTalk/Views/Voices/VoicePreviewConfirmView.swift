@@ -430,18 +430,39 @@ struct VoicePreviewConfirmView: View {
                     alarmKit: deps.alarmKit,
                     ownerUserId: auth.session?.user.id
                 )
-                let cleaned = await deps.confirmIfReservationsSettled(
-                    pending,
-                    ownerID: auth.session?.user.id
-                )
-                if !cleaned {
-                    // ⚠ **정리가 끝나지 않았으면 이 목소리를 아직 고를 수 없게 둔다**(안드로이드
-                    // 승격 경로와 같다). 고를 수 있게 두면 그 사이 만든 새 알람을 다음 회차가
-                    // 함께 지운다 — 강등 대상은 프로필 id 로만 고르기 때문이다.
-                    // 다음 새로고침이 정리를 마치면 곧바로 풀린다.
+                // ⚠ **프리셋 재렌더가 끝나야 이 세대를 확정한다**(Codex #703 P1).
+                // 교체 트랜잭션은 세대를 커밋하고 프리셋 재렌더는 **큐에만 넣는다**
+                // (`replaceVoiceInPlace`) — 실제 굽기는 cron 이 나중에 한다. 그런데 여기서
+                // 확정해 버리면 권위 새로고침의 `guard` 가 '바뀐 것 없음' 으로 접어
+                // **프리셋 수리 자체를 건너뛴다**(`onAuthoritativeRefresh`). 완료 푸시를 놓친
+                // 기기에서는 기존 프리셋 알람이 회수된 옛 목소리로 계속 운다.
+                //
+                // 판정은 푸시 경로와 **철자까지 같다** — 한쪽만 고치면 다시 갈라진다.
+                let manifestFresh = await voice.loadStockClips(session: auth.session, force: true)
+                let presetRefresh = await voice.refreshChangedCachedStockClips(session: auth.session)
+                let presetPending = !manifestFresh
+                    || !presetRefresh.settled(forProfileID: promoted.id)
+                if presetPending {
+                    // ⚠ **확정하지 않는다.** 표식이 그대로라 아래 `voice.refresh(force:)` 의
+                    // 권위 훅이 같은 세대를 다시 집고, 재렌더가 끝난 회차에 확정·해제한다.
+                    //
+                    // ⚠ **실패 문구를 쓰지 말 것** — 이건 정상적인 대기다. 사용자는 곧바로
+                    // 준비 화면(`ClipPreparationView`)으로 넘어가고 그 화면이 진행률을 말한다.
                     voice.suppressReplacedProfile(promoted.id)
-                    voice.statusMessage =
-                        "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요."
+                } else {
+                    let cleaned = await deps.confirmIfReservationsSettled(
+                        pending,
+                        ownerID: auth.session?.user.id
+                    )
+                    if !cleaned {
+                        // ⚠ **정리가 끝나지 않았으면 이 목소리를 아직 고를 수 없게 둔다**
+                        // (안드로이드 승격 경로와 같다). 고를 수 있게 두면 그 사이 만든 새
+                        // 알람을 다음 회차가 함께 지운다 — 강등 대상은 프로필 id 로만
+                        // 고르기 때문이다. 다음 새로고침이 정리를 마치면 곧바로 풀린다.
+                        voice.suppressReplacedProfile(promoted.id)
+                        voice.statusMessage =
+                            "목소리는 바뀌었지만 기존 알람 정리를 끝내지 못했어요. 목소리 탭을 새로고침해 주세요."
+                    }
                 }
             }
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
