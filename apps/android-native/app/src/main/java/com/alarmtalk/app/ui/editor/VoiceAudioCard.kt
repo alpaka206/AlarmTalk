@@ -408,9 +408,6 @@ internal fun VoiceAudioCard(
 internal fun VoiceOutputSettingsPane(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
-    showRepeat: Boolean,
-    repeat: Boolean,
-    onRepeatChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Surface(
@@ -443,17 +440,14 @@ internal fun VoiceOutputSettingsPane(
                     border = wakerCardBorder(),
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        // ⚠ **'끌 때까지 반복' 선택지는 두지 않는다**(2026-08-27 지시).
+                        // 목소리 알람은 **항상 반복**한다 — 한 번만 나고 그치면 그것은 알림이지
+                        // 알람이 아니다. 껐다 켤 수 있는 선택지로 두면 꺼 둔 사용자가 못 일어난다.
+                        // 저장값(`voiceRepeat`)은 계속 true 로 왕복시킨다.
                         VoiceVolumeSelector(
                             volumePercent = volumePercent,
                             onVolumeChange = onVolumeChange,
                         )
-                        if (showRepeat) {
-                            AlarmSettingDivider()
-                            VoiceRepeatSelector(
-                                repeat = repeat,
-                                onRepeatChange = onRepeatChange,
-                            )
-                        }
                     }
                 }
             }
@@ -713,6 +707,15 @@ internal fun FreeBucketSettingsPane(
     manualLocked: Boolean,
     /** 직접 입력이 선택됐는가(라디오 표시용). */
     manualSelected: Boolean = false,
+    /**
+     * 이번 달 직접 입력 **남은 횟수 / 전체 한도**. 유료 pane(`MessageSettingsPane`)과 **같은
+     * 모양**으로 라벨 옆에 붙인다 — 기본 목소리로도 직접 입력을 쓸 수 있으므로(2026-08-11)
+     * 여기서도 남은 횟수를 알려 줘야 한다. 예전에는 유료 pane 에만 있어, 기본 목소리를 쓰는
+     * 사용자는 몇 번 남았는지 모른 채 한도 초과 오류로만 알게 됐다.
+     * 둘 중 하나라도 없거나 한도가 0 이면 붙이지 않는다(무료는 어차피 잠겨 있다).
+     */
+    manualRemaining: Int? = null,
+    manualLimit: Int? = null,
     /** 잠기지 않았을 때 '직접 입력' 을 고른 경우. */
     onSelectManual: () -> Unit = {},
     /**
@@ -768,14 +771,23 @@ internal fun FreeBucketSettingsPane(
                     }
                     // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
                     // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
+                    val manualBaseLabel = stringResource(R.string.editor_msg_mode_manual)
+                    // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
+                    val manualLabel = if (
+                        manualLimit != null && manualLimit > 0 && manualRemaining != null
+                    ) {
+                        "$manualBaseLabel ($manualRemaining/$manualLimit)"
+                    } else {
+                        manualBaseLabel
+                    }
                     if (manualLocked) {
                         SnoozeLockedRow(
-                            label = stringResource(R.string.editor_msg_mode_manual),
+                            label = manualBaseLabel,
                             onClick = onManualLocked,
                         )
                     } else {
                         SnoozeRadioRow(
-                            label = stringResource(R.string.editor_msg_mode_manual),
+                            label = manualLabel,
                             selected = manualSelected,
                             onClick = onSelectManual,
                         )
@@ -897,35 +909,6 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
 /// 값이 둘인 것과 **선택지가 둘인 것은 다르다** — 반복은 켜고 끄는 성질이라 스위치가
 /// 맞고, iOS 가 이미 그렇게 돼 있었다. 세그먼트는 켠 상태가 어느 쪽인지 라벨을 읽어야
 /// 알 수 있는 반면 스위치는 한눈에 보인다.
-@Composable
-private fun VoiceRepeatSelector(
-    repeat: Boolean,
-    onRepeatChange: (Boolean) -> Unit,
-) {
-    Column(
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 스위치만이 아니라 **행 전체**가 눌린다 — 라벨을 눌러도 바뀌어야 한다.
-                .clip(WakerChipShape)
-                .clickable { onRepeatChange(!repeat) }
-                .padding(vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.editor_voice_repeat_title),
-                modifier = Modifier.weight(1f),
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.width(12.dp))
-            AlarmTalkSwitch(checked = repeat, onCheckedChange = onRepeatChange)
-        }
-    }
-}
-
 @Composable
 private fun VoiceVolumeSelector(
     volumePercent: Int,

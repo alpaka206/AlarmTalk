@@ -224,7 +224,10 @@ internal class AlarmEditorState(
             } else {
                 null
             },
-            voiceRepeat = if (alarmOnly) true else voiceRepeat,
+            // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시). 선택지를 없앴으므로 저장값도
+            // 늘 true 다 — 옛 행에 false 가 남아 있어도 다음 저장에서 true 로 올라온다.
+            // 한 번만 나고 그치면 그것은 알림이지 알람이 아니다.
+            voiceRepeat = true,
             voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
             // 실제 버킷 회전 알람일 때만 저장 — 유료가 기존 버킷 알람을 일반/랜덤 TTS 로 바꾸면
@@ -540,7 +543,7 @@ internal class AlarmEditorState(
                 voiceFortuneGender = alarm?.voiceFortuneGender,
                 voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
                 voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
-                voiceRepeat = alarm?.voiceRepeat ?: true,
+                voiceRepeat = true,
                 voiceVolumePercent = alarm?.voiceVolumePercent ?: 100,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,

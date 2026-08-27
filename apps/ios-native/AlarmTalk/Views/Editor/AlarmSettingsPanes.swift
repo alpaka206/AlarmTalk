@@ -269,10 +269,12 @@ struct AlarmSoundSettingsPane: View {
 
 // MARK: - 음성 출력
 
+/// ⚠ **'끌 때까지 반복' 선택지는 두지 않는다**(2026-08-27 지시, 안드로이드와 같다).
+/// 목소리 알람은 **항상 반복**한다 — 한 번만 나고 그치면 그것은 알림이지 알람이 아니다.
+/// 저장값(`voiceRepeat`)은 계속 true 로 왕복시킨다.
 struct VoiceOutputSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Binding var volumePercent: Int
-    @Binding var repeatVoice: Bool
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
@@ -305,12 +307,6 @@ struct VoiceOutputSettingsPane: View {
                     .tint(theme.palette.primary)
                 }
                 .padding(.vertical, 12)
-
-                AlarmSettingDivider()
-
-                Toggle("끌 때까지 반복", isOn: $repeatVoice)
-                    .alarmTalkSwitch()
-                    .padding(.vertical, 12)
             }
         }
     }

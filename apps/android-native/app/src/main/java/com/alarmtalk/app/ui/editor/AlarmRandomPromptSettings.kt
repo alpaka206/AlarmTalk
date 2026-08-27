@@ -360,11 +360,14 @@ internal fun RandomPromptSettingsPane(
     }
 }
 
+/** 직접 입력 문구 상한. iOS `MessageSettingsPane.manualTextMaxLength` 와 같은 값이어야 한다. */
+internal const val ManualMessageMaxLength = 200
+
 // '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).
-@Composable
 // ⚠ `internal` 이다 — 무료 버킷 pane(`FreeBucketSettingsPane`)도 같은 다이얼로그를 쓴다.
 // 유료 사용자가 **기본 목소리**로도 직접 입력을 할 수 있게 되면서(2026-08-11 서버 개방),
 // 그 pane 에서도 이 입력창이 필요해졌다. 두 벌로 만들지 않는다.
+@Composable
 internal fun ManualMessageDialog(
     initialText: String,
     onDismiss: () -> Unit,
@@ -394,7 +397,10 @@ internal fun ManualMessageDialog(
     ) {
         IosAlertField(
             value = draft,
-            onValueChange = { draft = sanitizeUserText(it, allowNewlines = true).takeWithoutSplittingPairs(200) },
+            onValueChange = {
+                draft = sanitizeUserText(it, allowNewlines = true)
+                    .takeWithoutSplittingPairs(ManualMessageMaxLength)
+            },
             placeholder = stringResource(R.string.editor_manual_input_placeholder),
             singleLine = false,
             minHeight = 108.dp,

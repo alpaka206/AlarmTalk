@@ -1794,6 +1794,9 @@ internal fun AlarmEditorScreen(
                 onManualLocked = { voicePlanGateOpen = true },
                 // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
                 manualLocked = freeVoiceTier,
+                // 유료 pane 과 같은 값 — 기본 목소리에서도 남은 횟수를 보여 준다.
+                manualRemaining = manualQuota?.remaining,
+                manualLimit = manualQuota?.limit,
                 // ⚠ **판정식은 언제나 `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.**
                 // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
                 // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
@@ -1840,9 +1843,6 @@ internal fun AlarmEditorScreen(
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
                 onVolumeChange = { editor.voiceVolumePercent = it },
-                showRepeat = editor.playMode == AlarmPlayModes.VOICE_ONLY,
-                repeat = editor.voiceRepeat,
-                onRepeatChange = { editor.voiceRepeat = it },
                 onDismiss = { settingsDetailPanel = null },
             )
         }

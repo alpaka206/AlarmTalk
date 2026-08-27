@@ -115,7 +115,9 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             stopPlayback(deactivateSession: false)
             currentRecordID = record.id
             currentVoiceURL = url
-            currentRepeatVoice = record.voiceRepeat
+            // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
+            // 옛 행에 false 가 남아 있을 수 있으므로 값을 보지 않는다.
+            currentRepeatVoice = true
             // in-app 폴백 게인 = **목소리 음량만**. 알람 음량을 곱하지 않는 이유는
             // playIfNeeded 주석 참조(톤을 못 줄이는 경로에서 목소리만 줄이면 대비가 반대로 벌어진다).
             currentVoiceVolumePercent = max(0, min(100, record.voiceVolumePercent))
