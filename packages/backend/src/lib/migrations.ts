@@ -2312,6 +2312,32 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN custom_audio_invalidated_at TEXT`,
     ],
   },
+  {
+    id: 107,
+    name: 'targeted-alarm-slots',
+    // **재전송이 같은 알람을 덮어쓰려면 슬롯 신원이 전달보다 오래 살아야 한다.**
+    //
+    // `claimTargetedAlarmSlot` 은 (발신자·수신자·시각) 으로 **살아 있는 alarms 행**을 찾아
+    // 같은 알람 id 를 재사용한다. 그런데 수신 확인(`POST /alarm/:id/received`)이 그 행을
+    // 지우므로, 확인이 끝난 뒤의 재전송은 슬롯을 못 찾고 **새 알람 id** 를 발급받는다 —
+    // 수신자 기기에는 remoteAlarmId 가 다른 **두 번째 줄**이 생기고, 껐던 옛 줄은 영영
+    // 울리지 않는 유령으로 남는다(2026-08-27 실기기 재현).
+    //
+    // 그래서 **id 하나만** 따로 남긴다. 생체 음원·문구는 예정대로 지운다 — 여기 남는 것은
+    // 슬롯 신원뿐이라 「전달이 끝난 알람은 서버에서 지운다」와 충돌하지 않는다.
+    statements: [
+      `CREATE TABLE IF NOT EXISTS targeted_alarm_slots (
+        sender_user_id TEXT NOT NULL,
+        recipient_user_id TEXT NOT NULL,
+        time TEXT NOT NULL,
+        alarm_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (sender_user_id, recipient_user_id, time)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_targeted_alarm_slots_recipient
+         ON targeted_alarm_slots(recipient_user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

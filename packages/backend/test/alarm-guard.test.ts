@@ -79,6 +79,10 @@ beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행 잔재 정리(파일 DB 재사용). 시스템 시드 users 행은 건드리지 않는다.
   await db.execute('DELETE FROM alarms');
+  // ⚠ 슬롯 신원 표도 함께 비운다(마이그레이션 107). 이게 남으면 알람 id 가 **회차 사이에**
+  // 고정돼, 앞 실행이 남긴 `alarm_recipient_state` 행과 UNIQUE 충돌한다.
+  await db.execute('DELETE FROM targeted_alarm_slots');
+  await db.execute('DELETE FROM alarm_recipient_state');
   await db.execute("DELETE FROM plan_group_members WHERE plan_group_id = 'guard-group'");
   await db.execute("DELETE FROM plan_groups WHERE id = 'guard-group'");
   await db.execute("DELETE FROM users WHERE id LIKE 'guard-%'");
@@ -115,6 +119,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute('DELETE FROM alarms');
+  // ⚠ 슬롯 신원 표도 함께 비운다(마이그레이션 107). 이게 남으면 알람 id 가 **회차 사이에**
+  // 고정돼, 앞 실행이 남긴 `alarm_recipient_state` 행과 UNIQUE 충돌한다.
+  await db.execute('DELETE FROM targeted_alarm_slots');
+  await db.execute('DELETE FROM alarm_recipient_state');
   // 리드타임 판정이 실제 시계에 좌우되지 않도록 고정: 2026-07-15T00:00Z = KST 수요일 09:00.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
@@ -150,6 +158,46 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(String(rowA!.delivery_version)).not.toBe(versionA); // 옛 ACK가 원격 끄기를 지우지 못함
     expect(Number(rowB!.is_active)).toBe(1); // 최신 발신 알람만 활성
     expect(String(rowB!.target_user_id)).toBe(RECIPIENT.login);
+  });
+
+  // ⚠ **수신 확인으로 행이 지워진 뒤의 재전송도 같은 알람이어야 한다**(2026-08-27 실기기 재현).
+  //
+  // 수신 확인(`POST /alarm/:id/received`)은 alarms 행을 지운다. 슬롯 신원이 그 행에만
+  // 달려 있으면 그 뒤의 재전송은 **새 알람 id** 를 받고, 수신자 기기에는 remoteAlarmId 가
+  // 다른 두 번째 줄이 생긴다 — 껐던 옛 줄은 영영 울리지 않는 유령으로 남는다.
+  // `targeted_alarm_slots`(마이그레이션 107)가 id 하나를 기억해 이걸 막는다.
+  it('전달이 끝나 행이 지워진 뒤 재전송해도 같은 알람 id 를 쓴다', async () => {
+    const first = await postAlarm(SENDER_A, {
+      time: '21:30',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 5,
+    });
+    expect(first.status).toBe(201);
+    const firstId = ((await first.json()) as { alarm: { id: string } }).alarm.id;
+
+    // 수신 확인이 하는 일 — 행을 지운다.
+    await db.execute({ sql: 'DELETE FROM alarms WHERE id = ?', args: [firstId] });
+    expect(await alarmRow(firstId)).toBeNull();
+
+    const resend = await postAlarm(SENDER_A, {
+      time: '21:30',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 9,
+    });
+    expect(resend.status).toBe(201);
+    const resendId = ((await resend.json()) as { alarm: { id: string } }).alarm.id;
+
+    expect(resendId).toBe(firstId);
+    // 응답 id 로 실제 행이 찾아져야 한다 — 삽입 id 와 응답 id 가 어긋나면 201 을 받고도
+    // 그 알람을 어디서도 못 찾는다.
+    const row = await alarmRow(resendId);
+    expect(row).not.toBeNull();
+    expect(Number(row!.is_active)).toBe(1);
+    expect(Number(row!.snooze_minutes)).toBe(9);
+    // 새 전달 세대여야 수신자가 '다시 보냈다' 로 읽고 덮어쓴다.
+    expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('같은 발신자의 동일 (수신자, time) 재전송은 멱등 — 행 1개, id 유지, 내용 갱신', async () => {

@@ -434,10 +434,30 @@ export async function claimTargetedAlarmSlot(
           ORDER BY created_at DESC LIMIT 1`,
     args: [senderUserId, recipientIds[0], recipientIds[1], time],
   });
-  const reused = existing.rows.length > 0;
-  const alarmId = reused ? String(existing.rows[0]!.id) : newAlarmId;
+  const liveRow = existing.rows.length > 0;
+  // ⚠ **전달이 끝난 슬롯도 같은 id 로 이어야 한다**(2026-08-27 실기기 재현).
+  // 수신 확인은 alarms 행을 지우므로(`POST /alarm/:id/received`), 그 뒤의 재전송은 위
+  // 조회로는 아무것도 못 찾는다. 그대로 두면 **새 알람 id** 가 발급돼 수신자 기기에
+  // remoteAlarmId 가 다른 **두 번째 줄**이 생기고, 껐던 옛 줄은 영영 울리지 않는 유령으로
+  // 남는다 — 「재전송은 새 알람이다: 받은 사람이 뭘 했든 덮어쓴다」가 깨진다.
+  // 그래서 id 하나만 따로 남겨 둔다(`targeted_alarm_slots`, 마이그레이션 107).
+  const remembered = liveRow
+    ? null
+    : await executor.execute({
+        sql: `SELECT alarm_id FROM targeted_alarm_slots
+              WHERE sender_user_id = ? AND recipient_user_id IN (?, ?) AND time = ?
+              ORDER BY updated_at DESC LIMIT 1`,
+        args: [senderUserId, recipientIds[0], recipientIds[1], time],
+      });
+  const rememberedId =
+    remembered && remembered.rows.length > 0 ? String(remembered.rows[0]!.alarm_id) : null;
+  // ⚠ `reused` 는 **덮어쓸 행이 살아 있는가** 다 — 호출부가 이 값으로 UPDATE/INSERT 를
+  // 가른다. 기억해 둔 id 는 행이 아니라 **신원**이므로 여기에 섞지 않는다(섞으면 없는 행에
+  // UPDATE 를 쏴 0행이 되고, 201 을 돌려주고도 알람이 만들어지지 않는다).
+  const reused = liveRow;
+  const alarmId = liveRow ? String(existing.rows[0]!.id) : (rememberedId ?? newAlarmId);
   const previousMessageId =
-    reused && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
+    liveRow && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
   if (reused) {
     // 같은 id라도 재전송은 새 전달 세대다. 옛 철회 표식·음원 출처를 남기면 옛 목소리
     // 삭제가 새 세대까지 걷어내므로 함께 비운다(declined는 수신자 선택이라 보존).
@@ -462,6 +482,17 @@ export async function claimTargetedAlarmSlot(
       time,
       alarmId,
     ],
+  });
+  // 다음 재전송이 이 슬롯을 찾을 수 있게 신원을 남긴다. 전달이 끝나 alarms 행이 지워져도
+  // 여기 id 는 남는다 — 생체 음원·문구는 예정대로 지우므로 「전달이 끝나면 지운다」와
+  // 충돌하지 않는다. 수신자 후보 둘 중 **실제 저장에는 하나만** 쓴다(둘은 같은 사람의
+  // 로그인 식별자/PK 이고, 조회는 `IN (?, ?)` 로 양쪽을 본다).
+  await executor.execute({
+    sql: `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(sender_user_id, recipient_user_id, time)
+          DO UPDATE SET alarm_id = excluded.alarm_id, updated_at = excluded.updated_at`,
+    args: [senderUserId, recipientIds[0], time, alarmId],
   });
   return { alarmId, reused, previousMessageId };
 }

@@ -511,6 +511,11 @@ alarmMutation.post('/', async (c) => {
         ],
       });
     } else {
+      // ⚠ **삽입도 확정된 슬롯 id 로 한다.** `insertAlarm` 은 바깥 `alarmId` 를 쓰는데,
+      // 전달이 끝난 슬롯을 이어받을 때 그 값은 방금 만든 난수이고 확정 id 는 기억해 둔
+      // 옛 id 다 — 맞추지 않으면 **행은 난수 id 로 들어가고 응답만 옛 id** 를 돌려줘,
+      // 201 을 받고도 그 id 로는 알람을 찾을 수 없다.
+      alarmId = claimed.alarmId;
       await insertAlarm(executor);
     }
     return claimed.alarmId;
