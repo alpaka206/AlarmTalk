@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -1401,6 +1402,11 @@ internal fun AlarmEditorScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+            // 스크롤 컨테이너가 탭을 소비하므로 **뒤에 깐 레이어로는 닿지 않는다** —
+            // 부모에 걸어 Final 패스에서 '아무도 소비하지 않은 탭' 만 받는다
+            // (`clearFocusOnOutsideTap` 주석).
+            .clearFocusOnOutsideTap()
             .padding(contentPadding),
     ) {
         Column(

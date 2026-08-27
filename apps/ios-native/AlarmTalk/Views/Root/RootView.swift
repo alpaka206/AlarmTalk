@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 최상위 라우터. 인증 + 온보딩 상태만 게이팅한다.
 ///
@@ -111,6 +112,9 @@ struct RootView: View {
                 MainTabsView()
             }
         }
+        // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시, 안드로이드와 같다).
+        // 판정은 창에 단 UIKit 탭 인식기가 한다 — 이유는 `KeyboardDismissGesture` 주석에.
+        .onAppear { KeyboardDismissGesture.shared.install() }
         .task(id: auth.session?.user.id) {
             refreshOnboardingCompletion()
         }

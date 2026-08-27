@@ -46,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -81,6 +82,10 @@ internal fun AuthBackdrop(content: @Composable BoxScope.() -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
+            // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+            // 로그인·회원가입·비밀번호 재설정·동의 화면이 모두 이 배경을 쓴다.
+            // Final 패스에서 아무도 소비하지 않은 탭만 받는다(`clearFocusOnOutsideTap`).
+            .clearFocusOnOutsideTap()
             .background(
                 Brush.verticalGradient(
                     0f to AuthSceneTop,

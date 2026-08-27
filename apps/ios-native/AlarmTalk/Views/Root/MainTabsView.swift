@@ -182,6 +182,16 @@ struct MainTabsView: View {
             .task(id: selectedTab) {
                 await refreshForSelectedTab(selectedTab)
             }
+            // ⚠ **알람 탭에 머무는 동안 새로 들어온 것도 '봤다' 로 기록한다**(2026-08-27).
+            // 예전에는 탭을 고르는 순간과 새로고침 뒤에만 기록해서, 그 탭을 보고 있는 사이
+            // 푸시로 들어온 알람은 수위선이 올라가지 않았다 — 화면에서는 목록에 보이고
+            // 배지도 (탭이 알람이라) 숨겨지는데, 다른 탭으로 옮기면 그것이 '안 본 것' 으로
+            // 되살아나고 다음 알람이 오면 1 이 아니라 **누적된 값**이 뜬다.
+            // 안드로이드는 `LaunchedEffect(currentTab, alarms, ...)` 로 이미 이렇게 한다.
+            .onChange(of: store.alarms.count) { _, _ in
+                guard selectedTab == .alarms else { return }
+                markReceivedAlarmsSeen()
+            }
         }
     }
 

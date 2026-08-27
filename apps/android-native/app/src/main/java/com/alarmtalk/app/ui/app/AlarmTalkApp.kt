@@ -1159,7 +1159,11 @@ internal fun AlarmTalkApp(
           return@Scaffold
       }
       // 목소리 선택 후에는 홈(알람 탭)으로 바로 들어간다 — 첫 알람 에디터 자동 진입/코치마크 없앰.
-      Box(modifier = Modifier.fillMaxSize()) {
+      // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+      // 부모에 걸어 Final 패스에서 **아무도 소비하지 않은 탭**만 받는다 — 입력칸·버튼 탭은
+      // 그 자식이 소비하므로 그대로 동작한다(`clearFocusOnOutsideTap` 주석).
+      // 뒤에 레이어를 까는 방식은 안 된다 — 스크롤 컨테이너가 탭을 소비해 닿지 않는다.
+      Box(modifier = Modifier.fillMaxSize().clearFocusOnOutsideTap()) {
           NavHost(
               navController = navController,
               startDestination = NativeTab.Alarms.route,

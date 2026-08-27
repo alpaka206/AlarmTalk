@@ -77,6 +77,7 @@
 		4071709CE487DE4698DD3F00 /* SocialFeatureViewModelBillingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB34A0D05EB70E2E076F463A /* SocialFeatureViewModelBillingTests.swift */; };
 		409833801D2DF5BF148FCAC9 /* voice_greeting_soeun_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = A393C3759C6D97F12AEC2F92 /* voice_greeting_soeun_ko.mp3 */; };
 		4185273F1EDBB5EAE6D11EBD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0221058C929FB1DAA401AFD7 /* Assets.xcassets */; };
+		421E397B946BD60DACEEAC12 /* KeyboardDismissGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9D718046B0F0BECA023287 /* KeyboardDismissGesture.swift */; };
 		42B60B438C0902EDFCE4EE3E /* AlarmTalkSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */; };
 		42F0D9521755F54DDF582883 /* AlarmVoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F74ECE9BEB717AE2FAA2A3 /* AlarmVoicePlayerTests.swift */; };
 		431264746540D60C95CDBC6C /* ThemeSheetHeightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38D3E3B14EF8A55A1C28CE8D /* ThemeSheetHeightUITests.swift */; };
@@ -103,6 +104,7 @@
 		4E4BF159153E15EFFCC3364D /* AlarmRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2066E213CEFC39ADF9763B43 /* AlarmRow.swift */; };
 		4E63E387440150425DC0B71C /* VoiceImportContentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FB97FB9ECF9DE47DBCAEE83 /* VoiceImportContentTypes.swift */; };
 		4E73F36A2295D1E024EC55C5 /* voice_greeting_hajun_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = C3CBF14AECA065C3FAC2A37A /* voice_greeting_hajun_en.mp3 */; };
+		4EA9055C64BBE62F48BF1B04 /* TapOutsideEndsEditingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B39BE87C02684B952DE7645 /* TapOutsideEndsEditingUITests.swift */; };
 		4EB9F73F6B4B2F339F2A4CEB /* PromoKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 903CF0F5BED76AD923151223 /* PromoKeyboardUITests.swift */; };
 		4F17B4ED7CC3C97D426E515A /* SocialFeatureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0618736D787E420EF19C236B /* SocialFeatureViewModel.swift */; };
 		4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */; };
@@ -529,6 +531,7 @@
 		88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUserDecodingTests.swift; sourceTree = "<group>"; };
 		8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorComponents.swift; sourceTree = "<group>"; };
+		8B39BE87C02684B952DE7645 /* TapOutsideEndsEditingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapOutsideEndsEditingUITests.swift; sourceTree = "<group>"; };
 		8CC3F5280A9149E6AE3F2ACA /* AlarmTalkLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkLog.swift; sourceTree = "<group>"; };
 		8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSegmentPreviewPlayer.swift; sourceTree = "<group>"; };
 		8E339441B4151A5A86D7905D /* DowngradeNoticeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DowngradeNoticeStore.swift; sourceTree = "<group>"; };
@@ -554,6 +557,7 @@
 		9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExpiryStore.swift; sourceTree = "<group>"; };
 		9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretendardFontTests.swift; sourceTree = "<group>"; };
 		9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettle.swift; sourceTree = "<group>"; };
+		9D9D718046B0F0BECA023287 /* KeyboardDismissGesture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissGesture.swift; sourceTree = "<group>"; };
 		9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingScreenshotUITests.swift; sourceTree = "<group>"; };
 		9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreviewPlayer.swift; sourceTree = "<group>"; };
 		9F00D81D710775948D22F715 /* voice_greeting_mina_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_ja.mp3; sourceTree = "<group>"; };
@@ -758,6 +762,7 @@
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
 				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
 				F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */,
+				8B39BE87C02684B952DE7645 /* TapOutsideEndsEditingUITests.swift */,
 				38D3E3B14EF8A55A1C28CE8D /* ThemeSheetHeightUITests.swift */,
 				FF34E13AF50391900495E3FB /* TimeTypeInUITests.swift */,
 				378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */,
@@ -1165,6 +1170,7 @@
 				6E362F291A9E83445BE588E2 /* Info.plist */,
 				DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */,
 				F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */,
+				9D9D718046B0F0BECA023287 /* KeyboardDismissGesture.swift */,
 				A70196163DEB277ED30F5976 /* KeychainStore.swift */,
 				5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */,
 				02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */,
@@ -1436,6 +1442,7 @@
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,
 				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
 				2D3C0A9E656BEC6E425C4AD7 /* SystemAlertMetricsUITests.swift in Sources */,
+				4EA9055C64BBE62F48BF1B04 /* TapOutsideEndsEditingUITests.swift in Sources */,
 				431264746540D60C95CDBC6C /* ThemeSheetHeightUITests.swift in Sources */,
 				090399E0C7D0B71051595D9A /* TimeTypeInUITests.swift in Sources */,
 				AF6A6C53BDDC3906B5EBDEBD /* TimeWheelFlingUITests.swift in Sources */,
@@ -1532,6 +1539,7 @@
 				BBF0654D24C76A9D352ADD7F /* HolidayStore.swift in Sources */,
 				48884F4EE9CE03EA2B89F592 /* HolidayUpcomingList.swift in Sources */,
 				24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */,
+				421E397B946BD60DACEEAC12 /* KeyboardDismissGesture.swift in Sources */,
 				0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */,
 				68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */,
 				CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */,

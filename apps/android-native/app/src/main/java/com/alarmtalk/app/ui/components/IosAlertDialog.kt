@@ -159,7 +159,12 @@ internal fun IosAlertDialog(
             shadowElevation = 18.dp,
             border = BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.12f)),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            // ⚠ **알럿 안에서도 입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+            // 알럿은 **자기 창**이라 `AlarmTalkApp` 의 Scaffold 제스처가 닿지 않는다 —
+            // 제목·여백을 눌러도 키보드가 그대로 떠 있었다(실기기 확인).
+            //
+            // 알럿은 **자기 창**이라 `AlarmTalkApp` 의 제스처가 닿지 않아 여기 따로 건다.
+            Column(modifier = Modifier.fillMaxWidth().clearFocusOnOutsideTap()) {
                 val hasContent = !title.isNullOrBlank() || !message.isNullOrBlank()
                 if (hasContent) {
                     Column(

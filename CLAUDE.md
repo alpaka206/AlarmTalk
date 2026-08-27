@@ -163,6 +163,30 @@
   하단 버튼 라벨)만 줄이고, 본문·제목·목록 행은 커지게 둔다. 전부에 걸면 사용자가 키운
   글꼴 설정을 앱이 도로 취소하는 셈이다.
 
+### 입력 중 바깥을 누르면 입력이 끝난다 (양 앱)
+
+**입력창을 누르는 것이 아니라면 어디를 누르든 편집이 끝난다**(2026-08-27 지시). 규칙은 두
+쪽이고 **둘을 같이** 지켜야 한다 — 한쪽만 보면 반대편이 조용히 깨진다:
+- 밖을 눌렀는데 키보드가 남으면 요청한 동작이 아니고,
+- **입력칸을 눌렀는데 키보드가 내려가면 글자를 아예 못 친다.**
+
+- **Android**: `ui/components/ClearFocusOnOutsideTap.kt` 의 `Modifier.clearFocusOnOutsideTap()`.
+  ⚠ **`detectTapGestures` 로 만들지 말 것** — 그러면 입력칸 탭까지 부모가 받아 눌러도
+  초점이 곧바로 풀린다. **Final 패스**에서 *아무도 소비하지 않은 탭*만 받는다.
+  ⚠ **뒤에 레이어를 까는 방식도 안 된다** — 스크롤 컨테이너가 탭을 소비해 닿지 않는다.
+  거는 자리 넷: `AlarmTalkApp`(본체) / `AuthBackdrop`(로그인·가입·비번재설정·동의) /
+  `IosAlertDialog`(알럿은 **자기 창**이라 본체 제스처가 닿지 않는다) / `AlarmEditorScreen`.
+- **iOS**: `KeyboardDismissGesture` — 창에 단 UIKit 탭 인식기가 **터치가 입력 컨트롤 위인지**를
+  델리게이트에서 가른다(`cancelsTouchesInView = false`).
+  ⚠ **`simultaneousGesture` 로 만들지 말 것** — 모든 탭에 함께 발화해 방금 focus 된 칸을
+  도로 내려놓는다.
+  ⚠ **`resignFirstResponder` 만으로는 부족하다.** `@FocusState` 를 쓰는 화면은 그 값이
+  true 인 동안 SwiftUI 가 **곧바로 다시 focus** 한다 — `.alarmTalkEndEditing` 알림을 받아
+  상태를 직접 풀어야 하고, 인라인 입력은 **칸 자체를 걷어내야** 한다(`TimeWheelPicker`).
+- 회귀 테스트: `AlarmTalkUITests/TapOutsideEndsEditingUITests`.
+  ⚠ 그 테스트에서 **타임휠 영역을 '바깥' 으로 고르지 말 것** — 거기 숫자를 누르면 입력이
+  다시 열려서 고쳐도 실패한다(2026-08-27 에 그 좌표로 오판했다).
+
 ### 모달 = `IosAlertDialog` 하나 (Android)
 
 알럿 껍데기는 **하나뿐**이다: `ui/components/IosAlertDialog.kt`. 새 모달을 만들 때 M3
