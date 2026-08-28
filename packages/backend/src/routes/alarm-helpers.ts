@@ -451,16 +451,36 @@ export async function claimTargetedAlarmSlot(
       });
   const rememberedId =
     remembered && remembered.rows.length > 0 ? String(remembered.rows[0]!.alarm_id) : null;
+  // ⚠ **기억해 둔 id 의 행이 '비활성' 으로 살아 있을 수 있다**(2026-08-28 리뷰).
+  // 위 조회는 `is_active = 1` 만 본다. 그런데 다른 발신자가 같은 수신자·시각을 덮으면
+  // 내 행은 지워지지 않고 `is_active = 0` 으로 남는다. 그 상태에서 내가 다시 보내면
+  // '살아 있는 행 없음 → INSERT' 로 가면서 **같은 PK 로 INSERT 해 500** 이 난다.
+  // 그러니 기억한 id 는 '행이 아직 있는가' 까지 확인해 UPDATE/INSERT 를 가른다.
+  const rememberedRow =
+    rememberedId != null
+      ? await executor.execute({
+          sql: `SELECT id, message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1`,
+          args: [rememberedId, senderUserId],
+        })
+      : null;
+  const rememberedRowExists = rememberedRow != null && rememberedRow.rows.length > 0;
   // ⚠ `reused` 는 **덮어쓸 행이 살아 있는가** 다 — 호출부가 이 값으로 UPDATE/INSERT 를
-  // 가른다. 기억해 둔 id 는 행이 아니라 **신원**이므로 여기에 섞지 않는다(섞으면 없는 행에
+  // 가른다. 기억해 둔 id 는 행이 아니라 **신원**이므로 둘을 섞지 않는다(섞으면 없는 행에
   // UPDATE 를 쏴 0행이 되고, 201 을 돌려주고도 알람이 만들어지지 않는다).
-  const reused = liveRow;
+  const reused = liveRow || rememberedRowExists;
   const alarmId = liveRow ? String(existing.rows[0]!.id) : (rememberedId ?? newAlarmId);
-  const previousMessageId =
-    liveRow && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
-  if (reused) {
-    // 같은 id라도 재전송은 새 전달 세대다. 옛 철회 표식·음원 출처를 남기면 옛 목소리
-    // 삭제가 새 세대까지 걷어내므로 함께 비운다(declined는 수신자 선택이라 보존).
+  const previousMessageId = liveRow
+    ? (existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null)
+    : rememberedRowExists && rememberedRow!.rows[0]!.message_id != null
+      ? String(rememberedRow!.rows[0]!.message_id)
+      : null;
+  // ⚠ **신원을 이어받는 순간 옛 세대의 표식을 지운다 — 행이 남았는지와 무관하다**
+  // (2026-08-28 리뷰). 수신 확인은 alarms 행만 지우고 `alarm_recipient_state` 는 남긴다.
+  // 그 행에 `revoked = 1` 이나 옛 음원 출처가 남은 채 같은 id 로 다시 보내면, 받는 쪽이
+  // **새 목소리를 받자마자 철회된 것으로 다루거나**, 옛 목소리를 지우는 순간 상관없는 새
+  // 전달이 함께 철회된다. 그래서 판정은 '행이 살아 있는가'(reused)가 아니라
+  // **'이 id 를 물려받았는가'** 다. declined 는 수신자 선택이라 보존한다.
+  if (alarmId !== newAlarmId) {
     await executor.execute({
       sql: `UPDATE alarm_recipient_state
             SET revoked = 0, voice_profile_id = NULL, sender_voice_upload = 0, custom_voice = 0,

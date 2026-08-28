@@ -406,6 +406,15 @@ function ownerIds(c: {
  */
 const CLONE_PRERENDER_TOTAL = CLONE_CLIP_SEEDS.reduce((sum, group) => sum + group.seeds.length, 0);
 
+/**
+ * advance 클레임 리스 — 죽은 호출이 잡고 있던 클레임을 이만큼 지나면 회수한다.
+ * **두 곳이 같은 값을 써야 한다**: 회수 조건(SQL)과, 꼬리가 실패해 클레임을 못 푼 채
+ * 응답할 때 클라에게 주는 재시도 대기(`retry_after_ms`). 갈라지면 클라가 리스보다 일찍
+ * 다시 물어 같은 개수를 받고 '진행 없음' 으로 판단해 화면을 닫는다.
+ */
+const PRERENDER_CLAIM_LEASE_SQL = '-2 minutes';
+const PRERENDER_CLAIM_LEASE_MS = 2 * 60 * 1000;
+
 /** speech_style_status 기록. NULL=대상 아님, pending=진행중, done=완료, failed=실패(재시도 가능). */
 async function setSpeechStyleStatus(
   db: DbExecutor,
@@ -2565,10 +2574,10 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
             AND (
               claim_token IS NULL
               OR claim_token NOT LIKE 'adv-%'
-              OR claimed_at <= datetime('now', '-2 minutes')
+              OR claimed_at <= datetime('now', ?)
             )
           RETURNING language, refresh_existing`,
-    args: [claimToken, id],
+    args: [claimToken, id, PRERENDER_CLAIM_LEASE_SQL],
   });
   if (claimed.rows.length === 0) {
     const pendingRes = await db.execute({
@@ -2668,10 +2677,17 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     // 보인다. 개수는 메모리에 있는 값으로 답하고(정확히는 이번 회차 시작 시점 + 만든 수),
     // 못 푼 클레임은 2분 리스가 회수한다.
     logRouteError(c, tailErr);
+    // ⚠ **'진행 없음' 과 구분되게 답한다**(2026-08-28 리뷰). 꼬리가 실패했다는 것은
+    // 클레임을 **풀지 못했다**는 뜻이라, 클라가 곧바로 다시 불러도 리스(2분)가 끝날
+    // 때까지는 같은 개수만 돌아온다. 그걸 평범한 `done:false` 로 답하면 구동 루프가
+    // 3회 무진전으로 보고 화면을 닫아, 생성이 눈에 보이지 않는 채로 한참 남는다
+    // (cron 은 15분 리스라 더 늦다). 그래서 **얼마나 기다려야 하는지**를 함께 준다.
     return c.json({
       done: false,
       generated: Math.min(generatedBeforeBatch + made, CLONE_PRERENDER_TOTAL),
       total: CLONE_PRERENDER_TOTAL,
+      claim_stuck: true,
+      retry_after_ms: PRERENDER_CLAIM_LEASE_MS,
     });
   }
 });

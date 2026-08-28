@@ -2336,6 +2336,20 @@ export const migrations: Migration[] = [
       )`,
       `CREATE INDEX IF NOT EXISTS idx_targeted_alarm_slots_recipient
          ON targeted_alarm_slots(recipient_user_id)`,
+      // ⚠ **이미 전달 중인 알람도 신원을 남겨 둔다**(2026-08-28 리뷰).
+      // 빈 표로 시작하면, 배포 시점에 떠 있던 알람은 **수신 확인으로 지워지고 나서야**
+      // 슬롯이 없는 상태가 된다 — 그 뒤의 재전송이 새 id 를 발급해, 이 마이그레이션이
+      // 막으려던 중복 줄이 그대로 한 번 더 생긴다. 그래서 현재 발신 알람에서 슬롯을 채운다.
+      // 같은 (발신자·수신자·시각)이 여럿이면 **가장 최근 것**이 그 슬롯의 주인이다.
+      `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+        SELECT a.user_id, a.target_user_id, a.time, a.id, datetime('now')
+        FROM alarms a
+        WHERE a.target_user_id IS NOT NULL AND a.user_id IS NOT NULL
+          AND a.created_at = (
+            SELECT MAX(b.created_at) FROM alarms b
+            WHERE b.user_id = a.user_id AND b.target_user_id = a.target_user_id AND b.time = a.time
+          )
+        ON CONFLICT(sender_user_id, recipient_user_id, time) DO NOTHING`,
     ],
   },
 ];

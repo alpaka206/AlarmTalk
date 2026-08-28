@@ -96,11 +96,19 @@ data class VoicePrerenderStatusResponse(
     val attempts: Int = 0,
 )
 
-/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 3클립). */
+/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 2클립). */
 data class VoicePrerenderAdvanceResponse(
     val done: Boolean = false,
     val generated: Int = 0,
     val total: Int = 0,
+    /**
+     * 서버가 클레임을 **풀지 못한 채** 답했다 — 그 리스가 끝나기 전에는 다시 물어도 같은
+     * 개수만 돌아온다. 이걸 평범한 '진행 없음' 으로 세면 구동 루프가 3회 만에 화면을 닫아
+     * 생성이 눈에 안 보이는 채로 남는다. 옛 서버는 이 필드를 안 보내므로 기본값은 false 다.
+     */
+    @SerializedName("claim_stuck") val claimStuck: Boolean = false,
+    /** 다시 부르기 전에 기다릴 시간(ms). 서버의 클레임 리스와 같은 값이다. */
+    @SerializedName("retry_after_ms") val retryAfterMs: Long = 0L,
 )
 
 data class VoicePrerenderRetryResponse(

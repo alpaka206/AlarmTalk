@@ -215,17 +215,14 @@ class RingingService : Service() {
             // 알람은 미리 맞춰 둔 약속이므로 그 순간만큼은 기기 볼륨을 우리가 맞춘다.
             // (원복은 stopRingingOutputs 에서. 상세는 AlarmStreamVolume 주석 참조.)
             //
-            // ⚠ **이 알람이 실제로 낼 소리의 슬라이더를 쓴다**(2026-08-27 실기기 재현).
-            // 예전에는 재생 방식과 무관하게 **알람음 슬라이더**를 넘겼는데, 목소리 알람의
-            // 편집기에는 그 슬라이더가 **보이지도 않아 늘 100** 이다 — 그래서 사용자가
-            // 목소리 크기를 10% 로 낮추고 기기 알람 볼륨까지 내려 둬도, 울릴 때 기기 볼륨이
-            // **최대로 덮어써지고** 목소리 게인만 그 위에 곱해져 크게 울렸다.
-            // 「목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 = 톤 게인」(docs/spec) 을
-            // 스트림 쪽에서도 지킨다.
-            AlarmStreamVolume.applyForRinging(
-                applicationContext,
-                streamVolumePercentFor(alarm),
-            )
+            // ⚠ **여기에 슬라이더를 넘기지 말 것 — 곱셈이 된다**(2026-08-28 리뷰).
+            // 슬라이더는 이미 **플레이어 게인**으로 걸린다(`applyAlarmToneVolume`·
+            // `applyVoiceVolume`). 스트림에도 같은 퍼센트를 넘기면 두 번 곱해져, 목소리 10%
+            // 알람이 낮은 기기 볼륨 위에서 ~1% 로 떨어져 **안 들린다.**
+            // 그래서 스트림은 **중립(가득)** 으로 올리고, 크기는 게인 한 곳에서만 정한다 —
+            // 「목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 = 톤 게인」(docs/spec).
+            // (올리기만 하고 낮추지 않으며, 끝나면 원복한다 — `AlarmStreamVolume`.)
+            AlarmStreamVolume.applyForRinging(applicationContext, NEUTRAL_STREAM_PERCENT)
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -304,22 +301,6 @@ class RingingService : Service() {
      * 유실)까지 톤을 막으면 진동만 남아 **소리가 하나도 안 난다** — 위 강등 주석이 약속한
      * "알람 자체는 그대로 울린다" 를 어긴다. 옛 행에는 그 조합이 저장돼 있으므로 여기서 받는다.
      */
-    /**
-     * 기기 알람 스트림을 맞출 기준 퍼센트 — **그 알람이 실제로 낼 소리의 슬라이더**다.
-     *
-     * 목소리 알람은 목소리 크기를, 알람음 알람은 알람음 크기를 쓴다. 목소리 알람이 음원을
-     * 못 찾아 톤으로 폴백하는 경우까지 목소리 크기를 쓰는 것이 맞다 — 사용자가 그 알람에
-     * 대해 조절해 둔 값은 그것 하나뿐이고, 톤 슬라이더는 화면에 없다.
-     */
-    private fun streamVolumePercentFor(alarm: AlarmEntity?): Int =
-        if (AlarmPlayModes.normalize(alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY) ==
-            AlarmPlayModes.VOICE_ONLY
-        ) {
-            alarm?.voiceVolumePercent ?: 100
-        } else {
-            alarm?.alarmVolumePercent ?: 100
-        }
-
     private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean {
         if (alarm?.playMode == AlarmPlayModes.VOICE_ONLY) {
             return (alarm.alarmVolumePercent) > 0
@@ -819,6 +800,8 @@ class RingingService : Service() {
         // 들어온 것이고 결과도 같은 종류다: 사용자가 맞춘 음량이 첫 회만 지켜지고 그 뒤로 더
         // 크게 울린다. 공동 공간에 맞춰 작게 둔 알람이 두 번째 문장부터 커지면 그건 '작게' 가
         // 아니다. 소리는 **첫 샘플부터 끝까지 같은 크기**다.
+        /** 스트림은 중립(가득)으로 올린다 — 크기는 플레이어 게인 한 곳에서만 정한다. */
+        private const val NEUTRAL_STREAM_PERCENT = 100
         private const val VOICE_REPEAT_GAP_MS = 900L
 
         fun start(context: Context, alarmId: String) {
