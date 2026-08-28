@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -1567,6 +1568,10 @@ internal fun VoiceProfileManagementPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        // ⚠ **이 다이얼로그는 자기 창이다** — `AlarmTalkApp` 에 건 제스처가
+                        // 닿지 않으므로 여기에 따로 건다(`IosAlertDialog` 과 같은 이유).
+                        // 목소리 이름·듣는 사람 호칭 입력이 이 안에 있다.
+                        .clearFocusOnOutsideTap()
                         .imePadding(),
                 ) {
                     WakerTopBar(

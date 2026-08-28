@@ -174,8 +174,11 @@
   ⚠ **`detectTapGestures` 로 만들지 말 것** — 그러면 입력칸 탭까지 부모가 받아 눌러도
   초점이 곧바로 풀린다. **Final 패스**에서 *아무도 소비하지 않은 탭*만 받는다.
   ⚠ **뒤에 레이어를 까는 방식도 안 된다** — 스크롤 컨테이너가 탭을 소비해 닿지 않는다.
-  거는 자리 넷: `AlarmTalkApp`(본체) / `AuthBackdrop`(로그인·가입·비번재설정·동의) /
-  `IosAlertDialog`(알럿은 **자기 창**이라 본체 제스처가 닿지 않는다) / `AlarmEditorScreen`.
+  거는 자리 다섯: `AlarmTalkApp`(본체) / `AuthBackdrop`(로그인·가입·비번재설정·동의) /
+  `IosAlertDialog`(알럿은 **자기 창**이라 본체 제스처가 닿지 않는다) / `AlarmEditorScreen` /
+  `VoiceProfileManagementPanel` 의 목소리 등록 `Dialog`(같은 이유 — 자기 창이다).
+  ⚠ **새 `Dialog`·`ModalBottomSheet` 에 입력칸을 넣으면 거기에도 걸어야 한다.** 창이 다르면
+  본체 제스처가 닿지 않는다 — 판정은 "그 입력칸이 본체 창 안에 있는가" 하나다.
 - **iOS**: `KeyboardDismissGesture` — 창에 단 UIKit 탭 인식기가 **터치가 입력 컨트롤 위인지**를
   델리게이트에서 가른다(`cancelsTouchesInView = false`).
   ⚠ **`simultaneousGesture` 로 만들지 말 것** — 모든 탭에 함께 발화해 방금 focus 된 칸을
