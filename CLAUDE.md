@@ -172,7 +172,12 @@
 
 - **Android**: `ui/components/ClearFocusOnOutsideTap.kt` 의 `Modifier.clearFocusOnOutsideTap()`.
   ⚠ **`detectTapGestures` 로 만들지 말 것** — 그러면 입력칸 탭까지 부모가 받아 눌러도
-  초점이 곧바로 풀린다. **Final 패스**에서 *아무도 소비하지 않은 탭*만 받는다.
+  초점이 곧바로 풀린다. **Final 패스**에서 받는다.
+  ⚠ **소비 여부로 가르지 말 것**(2026-08-28 정정). '아무도 소비하지 않은 탭' 만 받으면
+  **버튼·슬라이더·목록 행을 눌렀을 때 키보드가 남는다** — 소비하는 건 입력칸만이 아니다.
+  판정은 **입력칸이 스스로 찍는 표시**(`Modifier.textInputTapTarget()`, Initial 패스)로 한다.
+  **새 입력칸에는 그 표시를 붙일 것** — 안 붙이면 그 칸을 눌러도 키보드가 내려간다.
+  (읽기 전용 드롭다운 트리거처럼 입력칸이 아닌 것에는 붙이지 않는다.)
   ⚠ **뒤에 레이어를 까는 방식도 안 된다** — 스크롤 컨테이너가 탭을 소비해 닿지 않는다.
   거는 자리 다섯: `AlarmTalkApp`(본체) / `AuthBackdrop`(로그인·가입·비번재설정·동의) /
   `IosAlertDialog`(알럿은 **자기 창**이라 본체 제스처가 닿지 않는다) / `AlarmEditorScreen` /

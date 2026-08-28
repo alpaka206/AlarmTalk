@@ -1768,7 +1768,7 @@ internal fun VoiceProfileManagementPanel(
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                 )
                                 // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다.
                                 RelationshipDropdownField(
@@ -1783,7 +1783,7 @@ internal fun VoiceProfileManagementPanel(
                                     singleLine = true,
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                 )
                                 // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
                                 Text(
@@ -1949,7 +1949,7 @@ internal fun VoiceProfileManagementPanel(
                                                     enabled = !confirmPreviewSaving,
                                                     shape = WakerInputShape,
                                                     colors = wakerOutlinedTextFieldColors(),
-                                                    modifier = Modifier.fillMaxWidth(),
+                                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                                 )
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),

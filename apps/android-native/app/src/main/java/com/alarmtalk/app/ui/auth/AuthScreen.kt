@@ -339,7 +339,7 @@ internal fun AuthScreen(
                             keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Next,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                     )
                 }
             }
@@ -361,7 +361,7 @@ internal fun AuthScreen(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next,
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                 )
             }
 
@@ -408,7 +408,7 @@ internal fun AuthScreen(
                                     keyboardType = KeyboardType.NumberPassword,
                                     imeAction = ImeAction.Next,
                                 ),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.textInputTapTarget().then(Modifier.weight(1f)),
                             )
                         }
                         val confirmEnabled = !busy && emailCode.length == 6
@@ -478,7 +478,7 @@ internal fun AuthScreen(
                         keyboardType = KeyboardType.Password,
                         imeAction = if (mode == AuthMode.Register) ImeAction.Next else ImeAction.Done,
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                 )
             }
 
@@ -524,7 +524,7 @@ internal fun AuthScreen(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                     )
                 }
 

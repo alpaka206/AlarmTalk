@@ -100,6 +100,8 @@ internal fun RelationshipDropdownField(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
+                // `readOnly` 드롭다운 트리거라 입력칸이 아니다 — `textInputTapTarget` 을
+                // 붙이지 않는다(누르면 편집이 끝나는 게 맞다).
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -142,7 +144,7 @@ internal fun RelationshipDropdownField(
                 singleLine = true,
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
             )
         }
     }

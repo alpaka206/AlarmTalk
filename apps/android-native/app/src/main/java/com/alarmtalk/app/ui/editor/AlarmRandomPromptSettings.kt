@@ -559,7 +559,7 @@ internal fun WeatherLocationDialog(
                     singleLine = true,
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                 )
                 Button(
                     // 공백이 있으면 **첫 낱말이 나라, 나머지가 도시**다("미국 뉴욕").

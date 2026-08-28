@@ -293,7 +293,7 @@ internal fun IosAlertField(
         keyboardOptions = keyboardOptions,
         textStyle = textStyle,
         cursorBrush = SolidColor(scheme.primary),
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.textInputTapTarget().then(modifier.fillMaxWidth()),
         decorationBox = { inner ->
             Box(
                 modifier = Modifier
