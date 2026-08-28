@@ -483,7 +483,8 @@ alarmMutation.post('/', async (c) => {
   ): Promise<string> => {
     const claimed = await claimTargetedAlarmSlot(
       executor,
-      userId,
+      // 조회용 발신자 쌍 — 저장에는 계속 `userId`(PK) 하나만 쓴다.
+      ownerIds,
       recipientIds,
       body.time,
       alarmId,

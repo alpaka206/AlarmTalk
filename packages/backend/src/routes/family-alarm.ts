@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Client } from '@libsql/client/web';
 import type { AppEnv } from '../types';
+import { callerOwnerIds } from '../lib/caller-ids';
 import { getDB } from '../lib/db';
 import { resolveUserPk, assertSameGroup } from '../lib/family-helpers';
 import {
@@ -268,7 +269,8 @@ familyAlarm.post('/alarms/voice', async (c) => {
     });
     const claimed = await claimTargetedAlarmSlot(
       tx,
-      userId,
+      // 조회용 발신자 쌍 — 저장에는 계속 `userId`(PK) 하나만 쓴다(수신자 쪽과 대칭).
+      callerOwnerIds(c),
       [recipientPk, recipientLegacyId],
       wakeAt,
       newAlarmId,

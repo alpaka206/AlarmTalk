@@ -409,7 +409,7 @@ export async function resolveEffectiveTimezone(
  * 타인 발신 알람의 (수신자, time) 슬롯을 원자적으로 점유한다. 반드시
  * withWriteTransaction 안에서 호출할 것(조회→비활성화→insert/update 가 한 트랜잭션).
  *
- * 1) 멱등: 같은 발신자(senderUserId)·같은 수신자·같은 time 의 active 알람이 이미 있으면
+ * 1) 멱등: 같은 발신자(senderIds)·같은 수신자·같은 time 의 active 알람이 이미 있으면
  *    새 행을 만들지 않고 그 id 를 재사용한다(호출부가 내용을 UPDATE). 같은 요청 재전송이
  *    중복 행을 만들지 않는다. 이때 기존 행이 가리키던 message_id(previousMessageId)를
  *    함께 돌려줘, 호출부가 교체로 고아가 된 이전 message 행을 같은 트랜잭션에서 정리할
@@ -423,16 +423,21 @@ export async function resolveEffectiveTimezone(
  */
 export async function claimTargetedAlarmSlot(
   executor: DbExecutor,
-  senderUserId: string,
+  // ⚠ **발신자도 식별자가 둘이다**(2026-08-28 리뷰). 식별자 통일 전에 만들어진 알람은
+  // `alarms.user_id` 에 로그인 식별자(구글이면 google_id)가 들어 있는데 인증은 지금
+  // `users.id` 로 정규화한다 — 하나로만 조회하면 옛 발신 행도, 그 행으로 채운 슬롯도
+  // 못 찾아 **새 알람 id 가 발급된다.** 그게 이 슬롯 표가 막으려던 중복 줄이다.
+  // 수신자(`recipientIds`)와 같은 규약이다: **조회는 둘 다, 쓰기는 첫 값(PK)만.**
+  senderIds: [string, string],
   recipientIds: [string, string],
   time: string,
   newAlarmId: string,
 ): Promise<{ alarmId: string; reused: boolean; previousMessageId: string | null }> {
   const existing = await executor.execute({
     sql: `SELECT id, message_id FROM alarms
-          WHERE user_id = ? AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
+          WHERE user_id IN (?, ?) AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
           ORDER BY created_at DESC LIMIT 1`,
-    args: [senderUserId, recipientIds[0], recipientIds[1], time],
+    args: [senderIds[0], senderIds[1], recipientIds[0], recipientIds[1], time],
   });
   const liveRow = existing.rows.length > 0;
   // ⚠ **전달이 끝난 슬롯도 같은 id 로 이어야 한다**(2026-08-27 실기기 재현).
@@ -445,9 +450,9 @@ export async function claimTargetedAlarmSlot(
     ? null
     : await executor.execute({
         sql: `SELECT alarm_id FROM targeted_alarm_slots
-              WHERE sender_user_id = ? AND recipient_user_id IN (?, ?) AND time = ?
+              WHERE sender_user_id IN (?, ?) AND recipient_user_id IN (?, ?) AND time = ?
               ORDER BY updated_at DESC LIMIT 1`,
-        args: [senderUserId, recipientIds[0], recipientIds[1], time],
+        args: [senderIds[0], senderIds[1], recipientIds[0], recipientIds[1], time],
       });
   const rememberedId =
     remembered && remembered.rows.length > 0 ? String(remembered.rows[0]!.alarm_id) : null;
@@ -459,8 +464,8 @@ export async function claimTargetedAlarmSlot(
   const rememberedRow =
     rememberedId != null
       ? await executor.execute({
-          sql: `SELECT id, message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1`,
-          args: [rememberedId, senderUserId],
+          sql: `SELECT id, message_id FROM alarms WHERE id = ? AND user_id IN (?, ?) LIMIT 1`,
+          args: [rememberedId, senderIds[0], senderIds[1]],
         })
       : null;
   const rememberedRowExists = rememberedRow != null && rememberedRow.rows.length > 0;
@@ -512,7 +517,7 @@ export async function claimTargetedAlarmSlot(
           VALUES (?, ?, ?, ?, datetime('now'))
           ON CONFLICT(sender_user_id, recipient_user_id, time)
           DO UPDATE SET alarm_id = excluded.alarm_id, updated_at = excluded.updated_at`,
-    args: [senderUserId, recipientIds[0], time, alarmId],
+    args: [senderIds[0], recipientIds[0], time, alarmId],
   });
   return { alarmId, reused, previousMessageId };
 }

@@ -165,6 +165,42 @@ final class AlarmEditDraftTests: XCTestCase {
 
     // MARK: - Validation
 
+    /// ⚠ **목소리 알람의 `voiceRepeat` 은 열 때도 저장할 때도 true 다**(2026-08-28).
+    /// 화면에서 '끌 때까지 반복' 을 없앴으므로 옛 행의 false 를 되돌릴 수단이 없다 —
+    /// 재생 강제(`AlarmVoicePlayer`)에만 기대면 저장값은 계속 불가능한 상태로 남는다.
+    /// 안드로이드 `AlarmEditorState.from`/`toDraft` 와 같은 자리다.
+    /// (위 `testAlarmOnlyClearsVoiceFieldsLikeAndroid` 는 alarmOnly 분기라 이 경로를 덮지 않는다.)
+    func testVoiceRepeatNormalizesToTrueForVoiceAlarmLikeAndroid() throws {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let legacy = LocalAlarmRecord(
+            label: "옛 음성 알람",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-key",
+            rawAudioUri: "https://example.com/voice.m4a",
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko",
+            voiceRepeat: false,
+            voiceVolumePercent: 70,
+            ttsMessageId: "msg-1",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let draft = AlarmEditDraft(from: legacy)
+        XCTAssertTrue(draft.voiceRepeat, "열자마자 true 여야 한다")
+
+        let record = draft.toRecord(existing: legacy, fireAtMillis: now + 120_000, nowMillis: now)
+        XCTAssertEqual(record.playModeEnum, .voiceOnly)
+        XCTAssertTrue(record.voiceRepeat, "목소리 모드로 저장해도 true 여야 한다")
+    }
+
     func testValidationAllowsEmptyLabelLikeAndroid() {
         var draft = AlarmEditDraft.newDefault()
         draft.label = "   "

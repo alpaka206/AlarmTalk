@@ -26,12 +26,19 @@ const SENDER_A = { pk: 'guard-a-pk', login: 'guard-a-pk' };
 const SENDER_B = { pk: 'guard-b-pk', login: 'guard-b-pk' };
 const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-r-pk' }; // quiet 창 없음
 const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-q-pk' }; // 주말 00:00-08:00 quiet
+// ⚠ **pk 와 login 이 다른 유일한 픽스처.** 식별자 통일 이전 구글 계정의 모양이라,
+// 발신자를 한 값으로만 조회하는 회귀를 이 픽스처만 잡는다.
+const SENDER_LEGACY = { pk: 'guard-legacy-pk', login: 'guard-legacy-google' };
 
 function appFor(user: { pk: string; login: string }) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
-    c.set('userId', user.login);
+    // 실제 미들웨어와 같은 모양: `userId` 는 **users.id 로 정규화된 값**이고, 토큰의 로그인
+    // 식별자는 `userLoginId` 로 따로 온다. 대부분의 픽스처는 둘이 같지만 SENDER_LEGACY 만
+    // 다르다 — 그 픽스처가 '옛 행은 로그인 식별자로 저장돼 있다' 는 갈래를 지킨다.
+    c.set('userId', user.pk);
     c.set('userIdPK', user.pk);
+    c.set('userLoginId', user.login);
     await next();
   });
   app.route('/alarms', alarmMutation);
@@ -95,6 +102,7 @@ beforeAll(async () => {
     });
   await insertUser(SENDER_A, 0, '[]');
   await insertUser(SENDER_B, 0, '[]');
+  await insertUser(SENDER_LEGACY, 0, '[]');
   await insertUser(RECIPIENT, 1, '[]');
   await insertUser(RECIPIENT_QUIET, 1, '[{"days":[0,6],"start":"00:00","end":"08:00"}]');
 
@@ -115,6 +123,7 @@ beforeAll(async () => {
   await insertMember('guard-m2', SENDER_B, 'member');
   await insertMember('guard-m3', RECIPIENT, 'member');
   await insertMember('guard-m4', RECIPIENT_QUIET, 'member');
+  await insertMember('guard-m6', SENDER_LEGACY, 'member');
 });
 
 beforeEach(async () => {
@@ -198,6 +207,45 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     expect(Number(row!.snooze_minutes)).toBe(9);
     // 새 전달 세대여야 수신자가 '다시 보냈다' 로 읽고 덮어쓴다.
     expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  // ⚠ **식별자 통일 이전에 만들어진 발신 행도 같은 슬롯이어야 한다**(2026-08-28 리뷰).
+  //
+  // 구글 로그인 계정의 옛 알람은 `alarms.user_id` 에 google_id 가 들어 있는데 인증은 지금
+  // users.id 로 정규화한다. 발신자를 한 값으로만 조회하면 그 행도, 그 행으로 채운 슬롯도
+  // 못 찾아 **새 알람 id** 가 발급된다 — 이 표가 막으려던 중복 줄이 그대로 생긴다.
+  // (다른 픽스처는 pk == login 이라 이 갈래를 통과시킨다.)
+  it('레거시 발신자 식별자로 남은 슬롯도 같은 알람 id 로 이어 쓴다', async () => {
+    const LEGACY_SENDER = SENDER_LEGACY;
+    const legacyAlarmId = crypto.randomUUID();
+    // 옛 스키마가 남긴 모양: 발신 행과 슬롯이 모두 **로그인 식별자**로 키돼 있다.
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, time, repeat_days, is_active,
+              mode, wake_mode, snooze_minutes, timezone, delivery_version, created_at, updated_at)
+            VALUES (?, ?, ?, '07:15', '[]', 1, 'sound-only', 'sound_then_voice', 5, 'Asia/Seoul', ?,
+              datetime('now'), datetime('now'))`,
+      args: [legacyAlarmId, LEGACY_SENDER.login, RECIPIENT.login, crypto.randomUUID()],
+    });
+    await db.execute({
+      sql: `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+            VALUES (?, ?, '07:15', ?, datetime('now'))`,
+      args: [LEGACY_SENDER.login, RECIPIENT.login, legacyAlarmId],
+    });
+    // 전달이 끝난 상태 — 행은 지워지고 슬롯만 남는다.
+    await db.execute({ sql: 'DELETE FROM alarms WHERE id = ?', args: [legacyAlarmId] });
+
+    const resend = await postAlarm(LEGACY_SENDER, {
+      time: '07:15',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 7,
+    });
+    expect(resend.status).toBe(201);
+    const resendId = ((await resend.json()) as { alarm: { id: string } }).alarm.id;
+    expect(resendId).toBe(legacyAlarmId);
+    const row = await alarmRow(resendId);
+    expect(row).not.toBeNull();
+    expect(Number(row!.snooze_minutes)).toBe(7);
   });
 
   it('같은 발신자의 동일 (수신자, time) 재전송은 멱등 — 행 1개, id 유지, 내용 갱신', async () => {
