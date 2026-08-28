@@ -114,7 +114,7 @@ internal fun PasswordResetScreen(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next,
                     ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                 )
             }
 
@@ -151,7 +151,7 @@ internal fun PasswordResetScreen(
                             keyboardType = KeyboardType.NumberPassword,
                             imeAction = ImeAction.Next,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                     )
                 }
 
@@ -189,7 +189,7 @@ internal fun PasswordResetScreen(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done,
                         ),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

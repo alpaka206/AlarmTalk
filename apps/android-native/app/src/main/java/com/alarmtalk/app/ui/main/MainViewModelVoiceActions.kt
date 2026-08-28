@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import kotlinx.coroutines.delay
 import java.util.Locale
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
@@ -842,6 +843,15 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
                 }
                 prerenderDrive = PrerenderDriveState(voiceId, step.generated, step.total, downloading = false)
                 if (step.done) break
+                // ⚠ **'클레임이 안 풀렸다' 는 무진전이 아니다**(2026-08-28 리뷰).
+                // 서버가 꼬리에서 DB 를 못 써 클레임을 못 푼 채 답한 경우다 — 그 리스가
+                // 끝나기 전에는 몇 번을 물어도 같은 개수가 온다. 그걸 무진전으로 세면
+                // 3회 만에 화면이 닫히고, 남은 생성은 cron(15분 리스)에 넘어가 한참 뒤에야
+                // 끝난다. 리스가 지나기를 **기다렸다가** 이어서 돈다.
+                if (step.claimStuck) {
+                    delay(step.retryAfterMs.coerceIn(1_000L, 5 * 60_000L))
+                    continue
+                }
                 stagnantRounds = if (step.generated == lastGenerated) stagnantRounds + 1 else 0
                 lastGenerated = step.generated
                 // 3회 연속 무진전이면 여기서 더 붙잡지 않는다 — cron 이 이어받는다.

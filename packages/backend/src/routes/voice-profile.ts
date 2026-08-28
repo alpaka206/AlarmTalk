@@ -406,6 +406,15 @@ function ownerIds(c: {
  */
 const CLONE_PRERENDER_TOTAL = CLONE_CLIP_SEEDS.reduce((sum, group) => sum + group.seeds.length, 0);
 
+/**
+ * advance 클레임 리스 — 죽은 호출이 잡고 있던 클레임을 이만큼 지나면 회수한다.
+ * **두 곳이 같은 값을 써야 한다**: 회수 조건(SQL)과, 꼬리가 실패해 클레임을 못 푼 채
+ * 응답할 때 클라에게 주는 재시도 대기(`retry_after_ms`). 갈라지면 클라가 리스보다 일찍
+ * 다시 물어 같은 개수를 받고 '진행 없음' 으로 판단해 화면을 닫는다.
+ */
+const PRERENDER_CLAIM_LEASE_SQL = '-2 minutes';
+const PRERENDER_CLAIM_LEASE_MS = 2 * 60 * 1000;
+
 /** speech_style_status 기록. NULL=대상 아님, pending=진행중, done=완료, failed=실패(재시도 가능). */
 async function setSpeechStyleStatus(
   db: DbExecutor,
@@ -2565,10 +2574,10 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
             AND (
               claim_token IS NULL
               OR claim_token NOT LIKE 'adv-%'
-              OR claimed_at <= datetime('now', '-2 minutes')
+              OR claimed_at <= datetime('now', ?)
             )
           RETURNING language, refresh_existing`,
-    args: [claimToken, id],
+    args: [claimToken, id, PRERENDER_CLAIM_LEASE_SQL],
   });
   if (claimed.rows.length === 0) {
     const pendingRes = await db.execute({
@@ -2614,9 +2623,16 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
 
-  // 호출당 3클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
-  // 무료 플랜 한도(50) 안에 안전하게 들어가는 수로 잡는다. 남은 몫은 클라 재호출/cron.
-  const MAX_CLIPS_PER_CALL = 3;
+  // 호출당 2클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
+  // 한도(무료 플랜 50) 안에 **꼬리 처리 몫까지 남기고** 들어가는 수로 잡는다.
+  // 남은 몫은 클라 재호출/cron.
+  //
+  // ⚠ **3 이었다가 2 로 낮췄다**(2026-08-27, dev 워커 로그로 확인).
+  // 3 은 경계에 걸쳐 있어 제공자 재시도가 한 번만 끼어도 한도를 넘겼고, 그러면 **꼬리의
+  // DB 호출(클레임 해제·개수 세기)까지 실패**해 500 이 났다. 클레임이 풀리지 않으니 그
+  // 뒤 2분(리스) 동안 모든 호출이 "진행 없음" 만 돌려줘 재렌더가 멈춰 보였다 —
+  // 간헐 500 과 정체는 **한 원인**이었다.
+  const MAX_CLIPS_PER_CALL = 2;
   let made = 0;
   let superseded = false;
   for (const target of targets.slice(0, MAX_CLIPS_PER_CALL)) {
@@ -2638,19 +2654,50 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   }
 
   const done = !superseded && made >= targets.length;
-  if (done) {
-    await markPrerenderDone(db, id, claimToken);
-    if (refreshExisting) {
-      await schedulePostCommitFanout(
-        c,
-        notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
-      );
+  // 이 호출이 시작할 때 이미 만들어져 있던 개수 — 꼬리에서 DB 를 못 쓸 때의 답이다.
+  const generatedBeforeBatch = CLONE_PRERENDER_TOTAL - targets.length;
+  // ⚠ **클레임을 실제로 놓았는지 따로 센다**(2026-08-28 리뷰). 아래 catch 는 꼬리 전체를
+  // 받는데, 그 안에는 '해제까지는 됐고 개수 세기만 실패한' 경우도 섞인다. 그때까지
+  // `claim_stuck` 으로 답하면 앱이 **이미 비어 있는 클레임을 2분 동안 기다린다** — 눈에는
+  // 사전렌더가 멎은 것으로 보인다. 대기를 시키는 것은 **정말 못 놓았을 때뿐**이다.
+  let claimReleased = false;
+  try {
+    if (done) {
+      await markPrerenderDone(db, id, claimToken);
+      claimReleased = true;
+      if (refreshExisting) {
+        await schedulePostCommitFanout(
+          c,
+          notifySharedVoicePrerenderComplete(db, c.env, id, userPk),
+        );
+      }
+    } else {
+      // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
+      await releasePrerenderClaim(db, id, claimToken);
+      claimReleased = true;
     }
-  } else {
-    // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
-    await releasePrerenderClaim(db, id, claimToken);
+    return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  } catch (tailErr) {
+    // ⚠ **꼬리가 실패해도 500 을 내지 않는다**(2026-08-27). 여기까지 왔다는 것은 클립을
+    // 실제로 만들었다는 뜻인데, 서브리퀘스트 한도를 넘기면 **그 뒤의 DB 한 줄도 못 쓴다** —
+    // 그때 500 을 내면 클라의 구동 루프가 진행을 잃고, 사용자에게는 재렌더가 멈춘 것으로
+    // 보인다. 개수는 메모리에 있는 값으로 답하고(정확히는 이번 회차 시작 시점 + 만든 수),
+    // 못 푼 클레임은 2분 리스가 회수한다.
+    logRouteError(c, tailErr);
+    // ⚠ **'진행 없음' 과 구분되게 답한다**(2026-08-28 리뷰). 꼬리가 실패했다는 것은
+    // 클레임을 **풀지 못했다**는 뜻이라, 클라가 곧바로 다시 불러도 리스(2분)가 끝날
+    // 때까지는 같은 개수만 돌아온다. 그걸 평범한 `done:false` 로 답하면 구동 루프가
+    // 3회 무진전으로 보고 화면을 닫아, 생성이 눈에 보이지 않는 채로 한참 남는다
+    // (cron 은 15분 리스라 더 늦다). 그래서 **얼마나 기다려야 하는지**를 함께 준다.
+    return c.json({
+      done: false,
+      generated: Math.min(generatedBeforeBatch + made, CLONE_PRERENDER_TOTAL),
+      total: CLONE_PRERENDER_TOTAL,
+      // 해제까지 됐다면 클레임은 비어 있다 — 곧바로 이어 부르면 된다. 대기는 못 놓았을 때만.
+      claim_stuck: !claimReleased,
+      retry_after_ms: claimReleased ? 0 : PRERENDER_CLAIM_LEASE_MS,
+    });
   }
-  return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
 });
 
 voiceProfile.delete('/:id', async (c) => {

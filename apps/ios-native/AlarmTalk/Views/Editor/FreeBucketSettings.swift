@@ -95,6 +95,13 @@ struct FreeBucketSettingsPane: View {
     /// 횟수만 차감된다(2026-08-11 확정).
     let manualLocked: Bool
 
+    /// 이번 달 직접 입력 **남은 횟수 / 전체 한도**. 유료 문구 화면(`MessageSettingsPane`)과
+    /// **같은 모양**으로 라벨 옆에 붙인다 — 기본 목소리로도 직접 입력을 쓸 수 있으므로
+    /// 여기서도 남은 횟수를 알려 줘야 한다(안드로이드 `FreeBucketSettingsPane` 과 같다).
+    /// 둘 중 하나라도 없거나 한도가 0 이면 붙이지 않는다(무료는 어차피 잠겨 있다).
+    var manualRemaining: Int?
+    var manualLimit: Int?
+
     /// 지금 '직접 입력' 이 선택돼 있는가.
     let manualSelected: Bool
 
@@ -186,13 +193,21 @@ struct FreeBucketSettingsPane: View {
             }
             .buttonStyle(.plain)
         } else {
-            RadioRow(label: "직접 입력", selected: manualChosen) {
+            RadioRow(label: manualRowLabel, selected: manualChosen) {
                 manualDraft = true
                 draft = nil
                 // 문구가 **없을 때만** 입력창이 뜬다 — 호출부가 판단한다.
                 onSelectManual()
             }
         }
+    }
+
+    /// 예: "직접 입력 (96/100)" — 이번 달 남은/총 만들기 횟수.
+    private var manualRowLabel: String {
+        guard let remaining = manualRemaining, let limit = manualLimit, limit > 0 else {
+            return "직접 입력"
+        }
+        return "직접 입력 (\(max(remaining, 0))/\(limit))"
     }
 
     /// 등록한 값과 '변경하기'. 유료 문구 화면과 **같은 컴포넌트**다.

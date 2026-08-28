@@ -182,7 +182,31 @@ struct MainTabsView: View {
             .task(id: selectedTab) {
                 await refreshForSelectedTab(selectedTab)
             }
+            // ⚠ **알람 탭에 머무는 동안 새로 들어온 것도 '봤다' 로 기록한다**(2026-08-27).
+            // 예전에는 탭을 고르는 순간과 새로고침 뒤에만 기록해서, 그 탭을 보고 있는 사이
+            // 푸시로 들어온 알람은 수위선이 올라가지 않았다 — 화면에서는 목록에 보이고
+            // 배지도 (탭이 알람이라) 숨겨지는데, 다른 탭으로 옮기면 그것이 '안 본 것' 으로
+            // 되살아나고 다음 알람이 오면 1 이 아니라 **누적된 값**이 뜬다.
+            // 안드로이드는 `LaunchedEffect(currentTab, alarms, ...)` 로 이미 이렇게 한다.
+            //
+            // ⚠ **개수로는 부족하다**(2026-08-28 리뷰). 재전송은 같은 알람 id 를 덮어쓰므로
+            // 개수가 그대로다 — 그 알람 탭을 보고 있는 동안 온 재전송은 수위선을 못 올리고,
+            // 탭을 옮기면 다시 '안 본 것' 이 된다(바로 위 사고가 재전송 경로로 되살아난다).
+            // 그래서 **받은 알람의 최신 생성 시각**을 본다. 새로 오든 덮어쓰든 이 값이 움직인다.
+            .onChange(of: latestReceivedAlarmMillis) { _, _ in
+                guard selectedTab == .alarms else { return }
+                markReceivedAlarmsSeen()
+            }
         }
+    }
+
+    /// 받은 알람 중 가장 최근 생성 시각 — 배지 수위선을 올릴 때가 되었는지 보는 값이다.
+    /// 재전송(같은 id 를 덮어씀)도 이 값을 움직이므로 개수보다 넓게 잡는다.
+    private var latestReceivedAlarmMillis: Int64 {
+        store.alarms
+            .filter { $0.originEnum == .receivedRemote }
+            .map(\.createdAtMillis)
+            .max() ?? 0
     }
 
     /// 알람 탭을 **뺀** 나머지 탭 — 위 `body` 의 공용 `ScrollView` 안에 들어간다.

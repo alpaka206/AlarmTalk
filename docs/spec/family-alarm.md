@@ -230,6 +230,15 @@ IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화
 | `== observed` | **내가 이미 받은 그 전달**이다(반영에 실패했을 수도 있다) | 수신자 편집을 **보존**한다. 음원·예약을 확보해 ack만 재시도 |
 | `!= observed` | 발신자가 **다시 보냈다**(새 전달 세대) | **덮어쓴다.** 수신자가 그 슬롯을 고쳤든 껐든 신경 쓰지 않는다 |
 
+⚠ **슬롯 신원은 전달보다 오래 산다**(2026-08-27 실기기 재현). 서버는 같은
+(발신자·수신자·시각) 슬롯에 **같은 알람 id** 를 재사용하는데, 그 신원을 `alarms` 행에서만
+찾으면 **수신 확인이 그 행을 지우는 순간 끊긴다** — 그 뒤의 재전송은 새 알람 id 를 받아
+수신자 기기에 **두 번째 줄**을 만들고, 껐던 옛 줄은 영영 울리지 않는 유령으로 남는다.
+그래서 id 하나만 `targeted_alarm_slots` 에 남긴다(마이그레이션 107). 생체 음원·문구는
+예정대로 지우므로 「전달이 끝난 알람은 서버에서 지운다」와 충돌하지 않는다.
+⚠ 그 신원을 쓸 때 **삽입도 그 id 로 해야 한다** — 응답만 바꾸면 201 을 받고도 그 id 로
+알람을 찾을 수 없다(`alarm-mutation.ts` 의 `upsertTargetedAlarm`).
+
 **재전송은 새 알람이다 — 옛 편집보다 우선한다**(2026-08-26 확정). 발신자가 같은 사람에게
 같은 시각으로 다시 보내면 서버가 **같은 알람 id를 재사용**하고 새 `delivery_version`만
 발급한다(`claimTargetedAlarmSlot`). 그때 수신자의 옛 편집을 보존하면 **보낸 알람이 영영
@@ -372,7 +381,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
-| 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` |
+| 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` — 전달이 끝나 행이 지워진 뒤에는 `targeted_alarm_slots` 로 id 를 되짚는다 |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |

@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -1401,6 +1402,11 @@ internal fun AlarmEditorScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+            // 스크롤 컨테이너가 탭을 소비하므로 **뒤에 깐 레이어로는 닿지 않는다** —
+            // 부모에 걸어 Final 패스에서 '아무도 소비하지 않은 탭' 만 받는다
+            // (`clearFocusOnOutsideTap` 주석).
+            .clearFocusOnOutsideTap()
             .padding(contentPadding),
     ) {
         Column(
@@ -1794,6 +1800,9 @@ internal fun AlarmEditorScreen(
                 onManualLocked = { voicePlanGateOpen = true },
                 // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
                 manualLocked = freeVoiceTier,
+                // 유료 pane 과 같은 값 — 기본 목소리에서도 남은 횟수를 보여 준다.
+                manualRemaining = manualQuota?.remaining,
+                manualLimit = manualQuota?.limit,
                 // ⚠ **판정식은 언제나 `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.**
                 // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
                 // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
@@ -1840,9 +1849,6 @@ internal fun AlarmEditorScreen(
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
                 onVolumeChange = { editor.voiceVolumePercent = it },
-                showRepeat = editor.playMode == AlarmPlayModes.VOICE_ONLY,
-                repeat = editor.voiceRepeat,
-                onRepeatChange = { editor.voiceRepeat = it },
                 onDismiss = { settingsDetailPanel = null },
             )
         }

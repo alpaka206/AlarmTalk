@@ -304,6 +304,16 @@ struct DraggableNumberColumn: View {
         .onChange(of: typeInFocused) { _, focused in
             if !focused { commitTypeIn() }
         }
+        // ⚠ **입력창 밖을 누르면 입력이 끝난다**(2026-08-27 지시).
+        // `@FocusState` 를 푸는 것만으로는 안 된다 — 인라인 입력칸이 **떠 있는 동안**
+        // SwiftUI 가 곧바로 다시 focus 해서 키보드가 그대로다(시뮬레이터 확인).
+        // `commitTypeIn` 이 `editingColumn` 을 닫아 입력칸 자체를 걷어내며, 그때까지 친
+        // 값도 함께 확정한다(취소 버튼이 없으므로 버리면 조용히 사라진다).
+        .onReceive(NotificationCenter.default.publisher(for: .alarmTalkEndEditing)) { _ in
+            guard isEditing else { return }
+            typeInFocused = false
+            commitTypeIn()
+        }
         // ⚠ **다른 칼럼으로 옮겨갈 때는 이 경로로 들어온다 — 포커스 변화로는 못 잡는다.**
         // 시를 치다가 분을 누르면 `editingColumn` 이 바뀌면서 이 입력창이 **뷰 트리에서
         // 사라지는데**, 그때 `onChange(of: typeInFocused)` 는 오지 않는다(바인딩이 함께

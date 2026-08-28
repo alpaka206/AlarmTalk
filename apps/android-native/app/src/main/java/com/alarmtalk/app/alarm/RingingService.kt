@@ -13,7 +13,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -91,7 +90,6 @@ class RingingService : Service() {
     private var audioSequenceActive = false
     private var voiceLoopActive = false
     private var voiceRepeatJob: Job? = null
-    private var voiceRepeatLoudness: LoudnessEnhancer? = null
     private var currentAlarm: AlarmEntity? = null
     private var ringingAlarmId: String? = null
 
@@ -139,6 +137,9 @@ class RingingService : Service() {
             }
 
             ACTION_DISMISS -> {
+                // 어느 경로로 해제됐는지 남긴다 — 알림 버튼/울림 화면 슬라이더와 '알림이
+                // 사라져서'(SILENT)를 로그만으로 구분할 수 있어야 자동 해제를 추적할 수 있다.
+                Log.i(TAG, "Dismiss requested by user action id=$alarmId")
                 if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
                 START_NOT_STICKY
             }
@@ -147,6 +148,7 @@ class RingingService : Service() {
             // 이제 ACTION_DISMISS 와 결과가 완전히 같다. 액션은 남겨 둔다 —
             // 알림 delete intent 가 이미 이 액션을 가리키고 있고, 구버전 알림이 살아 있을 수 있다.
             ACTION_DISMISS_SILENT -> {
+                Log.i(TAG, "Dismiss requested by notification removal id=$alarmId")
                 if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
                 START_NOT_STICKY
             }
@@ -212,10 +214,15 @@ class RingingService : Service() {
             // 기기 알람 볼륨이 낮거나 0 이면 앱에서 100% 로 맞춰도 작게/안 들린다.
             // 알람은 미리 맞춰 둔 약속이므로 그 순간만큼은 기기 볼륨을 우리가 맞춘다.
             // (원복은 stopRingingOutputs 에서. 상세는 AlarmStreamVolume 주석 참조.)
-            AlarmStreamVolume.applyForRinging(
-                applicationContext,
-                alarm?.alarmVolumePercent ?: 100,
-            )
+            //
+            // ⚠ **여기에 슬라이더를 넘기지 말 것 — 곱셈이 된다**(2026-08-28 리뷰).
+            // 슬라이더는 이미 **플레이어 게인**으로 걸린다(`applyAlarmToneVolume`·
+            // `applyVoiceVolume`). 스트림에도 같은 퍼센트를 넘기면 두 번 곱해져, 목소리 10%
+            // 알람이 낮은 기기 볼륨 위에서 ~1% 로 떨어져 **안 들린다.**
+            // 그래서 스트림은 **중립(가득)** 으로 올리고, 크기는 게인 한 곳에서만 정한다 —
+            // 「목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 = 톤 게인」(docs/spec).
+            // (올리기만 하고 낮추지 않으며, 끝나면 원복한다 — `AlarmStreamVolume`.)
+            AlarmStreamVolume.applyForRinging(applicationContext, NEUTRAL_STREAM_PERCENT)
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -370,9 +377,10 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = true
         cancelVoiceRepeatJob()
-        releaseVoiceRepeatLoudness()
         mediaPlayer?.release()
-        val repeatVoice = alarm?.voiceRepeat != false
+        // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
+        // 옛 행에 false 가 남아 있을 수 있으므로 여기서도 값을 보지 않는다.
+        val repeatVoice = true
         val player = createVoicePlayer(voiceUri)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
         if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
@@ -417,7 +425,6 @@ class RingingService : Service() {
             val targetVolume = VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)
             runCatching {
                 Log.i(TAG, "Repeating voice playback on existing player volume=$targetVolume")
-                enableVoiceRepeatLoudness(player)
                 player.setVolume(targetVolume, targetVolume)
                 player.seekTo(0)
                 player.start()
@@ -432,28 +439,6 @@ class RingingService : Service() {
     private fun cancelVoiceRepeatJob() {
         voiceRepeatJob?.cancel()
         voiceRepeatJob = null
-    }
-
-    private fun enableVoiceRepeatLoudness(player: MediaPlayer) {
-        if (voiceRepeatLoudness != null) return
-        runCatching {
-            LoudnessEnhancer(player.audioSessionId).apply {
-                setTargetGain(VOICE_REPEAT_LOUDNESS_GAIN_MB)
-                enabled = true
-                voiceRepeatLoudness = this
-                Log.i(TAG, "Enabled repeat voice loudness enhancer gainMb=$VOICE_REPEAT_LOUDNESS_GAIN_MB")
-            }
-        }.onFailure { error ->
-            Log.w(TAG, "Unable to enable repeat voice loudness enhancer", error)
-        }
-    }
-
-    private fun releaseVoiceRepeatLoudness() {
-        voiceRepeatLoudness?.run {
-            runCatching { enabled = false }
-            release()
-        }
-        voiceRepeatLoudness = null
     }
 
     private fun createAlarmTonePlayer(alarm: AlarmEntity?, looping: Boolean): MediaPlayer? {
@@ -688,7 +673,6 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
-        releaseVoiceRepeatLoudness()
         mediaPlayer?.run {
             runCatching {
                 if (isPlaying) stop()
@@ -811,8 +795,14 @@ class RingingService : Service() {
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001
+        // ⚠ **반복은 커지지 않는다**(2026-08-27). 예전에는 두 번째 재생부터
+        // 음량 증폭기로 +6dB 를 걸었다 — 삭제한 페이드인과 같은 커밋(ad23e67e)에서 근거 없이
+        // 들어온 것이고 결과도 같은 종류다: 사용자가 맞춘 음량이 첫 회만 지켜지고 그 뒤로 더
+        // 크게 울린다. 공동 공간에 맞춰 작게 둔 알람이 두 번째 문장부터 커지면 그건 '작게' 가
+        // 아니다. 소리는 **첫 샘플부터 끝까지 같은 크기**다.
+        /** 스트림은 중립(가득)으로 올린다 — 크기는 플레이어 게인 한 곳에서만 정한다. */
+        private const val NEUTRAL_STREAM_PERCENT = 100
         private const val VOICE_REPEAT_GAP_MS = 900L
-        private const val VOICE_REPEAT_LOUDNESS_GAIN_MB = 600
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {

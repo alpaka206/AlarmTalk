@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import com.alarmtalk.app.WakerChipShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.clip
@@ -85,6 +86,9 @@ internal fun WakerSelectionSheet(
             // 퍼지는 민짜 행(iOS 액션시트 문법)이라 리플/구분선이 가장자리까지 이어져야 한다.
             modifier = Modifier
                 .fillMaxWidth()
+                // ⚠ **시트는 자기 창이다** — 본체(`AlarmTalkApp`)에 건 제스처가 닿지 않으므로
+                // 컨테이너에서 건다. 여기 한 곳이 모든 사용처를 덮는다(날씨 도시 직접입력 등).
+                .clearFocusOnOutsideTap()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(bottom = 20.dp),
@@ -146,7 +150,14 @@ internal fun WakerFormSheet(
         scrimColor = WakerScrimColor,
         dragHandle = { WakerSheetDragHandle() },
     ) {
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+        // ⚠ **시트는 자기 창이다**(위 `WakerSelectionSheet` 주석과 같은 이유).
+        // 폼 시트는 입력칸이 본체인 모달이라 특히 필요하다(운세 정보·프로모 코드 등).
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clearFocusOnOutsideTap()
+                .navigationBarsPadding(),
+        ) {
             // 제목은 **가운데**, 액션은 양 끝. Row 로 셋을 나란히 두면 좌우 글자 길이에 따라
             // 제목이 밀려 가운데가 아니게 되므로 겹쳐 놓는다.
             Box(

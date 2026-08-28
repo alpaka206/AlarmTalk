@@ -476,6 +476,9 @@ struct AlarmEditorSheet: View {
                 // ⚠ 잠금은 **무료 플랜 단독**이다. 기본 목소리를 골랐다는 것은 이유가
                 // 되지 않는다 — 유료면 기본 목소리로도 직접 입력을 쓸 수 있다.
                 manualLocked: freeVoiceTier,
+                // 유료 문구 화면과 같은 값 — 기본 목소리에서도 남은 횟수를 보여 준다.
+                manualRemaining: manualQuota?.remaining,
+                manualLimit: manualQuota?.limit,
                 manualSelected: !voiceStudio.randomPrompt && selectedFreeBucket == nil,
                 onSave: { bucket in
                     selectFreeBucket(bucket)
@@ -592,10 +595,7 @@ struct AlarmEditorSheet: View {
                     previewingPath: previewingAlarmSoundPath
                 )
             case .voiceOutput:
-                VoiceOutputSettingsPane(
-                    volumePercent: $draft.voiceVolumePercent,
-                    repeatVoice: $draft.voiceRepeat
-                )
+                VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
             }
         }
         .homeGradientBackground()

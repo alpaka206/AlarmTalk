@@ -98,7 +98,10 @@ struct AlarmEditDraft: Equatable {
         self.voiceFortuneGender = record.voiceFortuneGender ?? ""
         self.voiceFortuneBirthDate = record.voiceFortuneBirthDate ?? ""
         self.voiceFortuneBirthTime = record.voiceFortuneBirthTime ?? ""
-        self.voiceRepeat = record.voiceRepeat
+        // ⚠ **목소리는 항상 반복한다**(2026-08-28, 안드로이드 `AlarmEditorState.from` 미러).
+        // 선택지를 없앴으므로 옛 행에 false 가 남아 있어도 **열자마자** true 로 올린다 —
+        // 화면에 컨트롤이 없어 사용자가 되돌릴 방법이 없기 때문이다.
+        self.voiceRepeat = true
         self.voiceVolumePercent = Self.normalizedVoiceVolume(record.voiceVolumePercent)
     }
 
@@ -302,7 +305,10 @@ struct AlarmEditDraft: Equatable {
             dynamicVoicePreparedForFireAtMillis: !alarmOnly && voiceRandomPrompt
                 ? existing?.dynamicVoicePreparedForFireAtMillis
                 : nil,
-            voiceRepeat: alarmOnly ? true : voiceRepeat,
+            // ⚠ 저장값도 늘 true 다(안드로이드 `AlarmEditorState.toDraft` 미러). 한 번만
+            // 나고 그치면 그것은 알림이지 알람이다 — 재생 강제(`AlarmVoicePlayer`)에만
+            // 기대면 저장값은 계속 불가능한 상태로 남아 동기화·후속 소비자에게 흘러간다.
+            voiceRepeat: true,
             voiceVolumePercent: alarmOnly ? 100 : Self.normalizedVoiceVolume(voiceVolumePercent),
             ttsMessageId: alarmOnly ? nil : existing?.ttsMessageId,
             remoteAlarmId: existing?.remoteAlarmId,

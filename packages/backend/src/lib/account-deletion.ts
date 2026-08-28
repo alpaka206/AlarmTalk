@@ -313,6 +313,14 @@ export async function purgeUserAccount(
       sql: `DELETE FROM alarm_recipient_state WHERE recipient_user_id IN (?, ?)`,
       args: userIds,
     });
+    // 재전송 슬롯도 사용자 식별자를 **양쪽 다** 담는다(보낸 사람·받는 사람). FK 가 없어
+    // 남겨 두면 떠난 계정의 id 가 그대로 남으므로 두 자리 모두에서 지운다. 슬롯이 사라지면
+    // 다음 전송은 새 id 로 시작하는데, 그 상대는 이미 없는 계정이라 이어 붙일 것도 없다.
+    await tx.execute({
+      sql: `DELETE FROM targeted_alarm_slots
+            WHERE sender_user_id IN (?, ?) OR recipient_user_id IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
     await tx.execute({
       sql: `DELETE FROM promo_code_redemptions WHERE user_id IN (?, ?)`,
       args: userIds,

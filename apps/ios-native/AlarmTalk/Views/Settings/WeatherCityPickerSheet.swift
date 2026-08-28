@@ -114,6 +114,15 @@ struct WeatherCityPickerSheet: View {
                         }
                     }
                 }
+                // ⚠ **밖을 누르면 여기 커서도 풀어야 한다**(2026-08-28 리뷰).
+                // `KeyboardDismissGesture` 의 `resignFirstResponder` 만으로는 부족하다 —
+                // `@FocusState` 가 true 로 남아 있으면 SwiftUI 가 곧바로 다시 focus 해
+                // 키보드가 도로 올라온다. 상태를 가진 뷰가 직접 풀어야 한다
+                // (`TimeWheelPicker` 와 같은 규칙).
+                .onReceive(NotificationCenter.default.publisher(for: .alarmTalkEndEditing)) { _ in
+                    guard draftFocused else { return }
+                    draftFocused = false
+                }
                 .onChange(of: customMode) { _, opened in
                     guard opened else { return }
                     // 입력칸이 붙은 **다음** 프레임에 스크롤해야 목적지가 존재한다.
