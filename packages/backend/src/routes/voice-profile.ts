@@ -2656,9 +2656,15 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const done = !superseded && made >= targets.length;
   // 이 호출이 시작할 때 이미 만들어져 있던 개수 — 꼬리에서 DB 를 못 쓸 때의 답이다.
   const generatedBeforeBatch = CLONE_PRERENDER_TOTAL - targets.length;
+  // ⚠ **클레임을 실제로 놓았는지 따로 센다**(2026-08-28 리뷰). 아래 catch 는 꼬리 전체를
+  // 받는데, 그 안에는 '해제까지는 됐고 개수 세기만 실패한' 경우도 섞인다. 그때까지
+  // `claim_stuck` 으로 답하면 앱이 **이미 비어 있는 클레임을 2분 동안 기다린다** — 눈에는
+  // 사전렌더가 멎은 것으로 보인다. 대기를 시키는 것은 **정말 못 놓았을 때뿐**이다.
+  let claimReleased = false;
   try {
     if (done) {
       await markPrerenderDone(db, id, claimToken);
+      claimReleased = true;
       if (refreshExisting) {
         await schedulePostCommitFanout(
           c,
@@ -2668,6 +2674,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     } else {
       // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
       await releasePrerenderClaim(db, id, claimToken);
+      claimReleased = true;
     }
     return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   } catch (tailErr) {
@@ -2686,8 +2693,9 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
       done: false,
       generated: Math.min(generatedBeforeBatch + made, CLONE_PRERENDER_TOTAL),
       total: CLONE_PRERENDER_TOTAL,
-      claim_stuck: true,
-      retry_after_ms: PRERENDER_CLAIM_LEASE_MS,
+      // 해제까지 됐다면 클레임은 비어 있다 — 곧바로 이어 부르면 된다. 대기는 못 놓았을 때만.
+      claim_stuck: !claimReleased,
+      retry_after_ms: claimReleased ? 0 : PRERENDER_CLAIM_LEASE_MS,
     });
   }
 });

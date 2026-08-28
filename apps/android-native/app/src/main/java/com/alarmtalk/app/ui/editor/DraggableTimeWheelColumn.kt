@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.textInputTapTarget
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
@@ -282,6 +283,9 @@ internal fun DraggableTimeWheelColumn(
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                // 이 칸을 다시 눌러 커서를 옮기는 탭까지 '바깥' 으로 읽히면
+                                // 입력이 끝나 버린다 — 다른 입력칸과 같은 표시를 붙인다.
+                                .textInputTapTarget()
                                 .focusRequester(focusRequester)
                                 // 포커스를 잃으면(다른 칼럼·바깥 탭) 그때까지 친 값을 넣는다 —
                                 // 취소 버튼이 없으므로 여기서 안 받으면 친 게 조용히 사라진다.
@@ -344,6 +348,10 @@ internal fun DraggableTimeWheelColumn(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
+                        // ⚠ **숫자를 누르면 그 자리 입력이 열린다 — 여기도 입력칸이다.**
+                        // 표시하지 않으면 시를 치다 분을 누를 때 '바깥' 으로 읽혀 키보드가
+                        // 내려가고, 다른 칼럼으로 이어 치지 못한다(2026-08-28 실기기 재현).
+                        .textInputTapTarget()
                         .height(itemHeight),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
