@@ -370,10 +370,19 @@ internal fun VoiceProfileManagementPanel(
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
-    // 공유·**삭제**까지 눌리기 때문이다. 대신 그 자리에 남은 날짜 안내를 둔다(아래).
+    // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
+    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`,
+    // `msg_gb_free_plan_voice_alarms_locked`). 여기 붙이면 무료로 지내는 내내 같은 말이
+    // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
+    // `ControlsAndPermissions.kt` 주석).
     // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).
-    val ownVoices = remember(voiceProfiles, canCreateVoice) {
-        if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    //
+    // ⚠ **만료까지 보는 판정을 쓴다**(2026-08-31 리뷰). `hasPaidVoiceAccess` 는
+    // `status == "active"` 만 보므로, 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도**
+    // true 가 되어 숨겨야 할 목소리가 미리듣기·삭제까지 가능한 채로 드러난다.
+    val paidVoiceEntitled = isPaidVoiceEntitledNow(subscriptionResponse, System.currentTimeMillis())
+    val ownVoices = remember(voiceProfiles, paidVoiceEntitled) {
+        if (paidVoiceEntitled) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }
     // 등록 확정에서 교체 대상이 되는 **이미 등록된** 목소리(초안·실패 제외).
     // 있으면 저장이 한도에 걸리므로 교체 체크를 낸다.
@@ -1365,17 +1374,6 @@ internal fun VoiceProfileManagementPanel(
 
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
-        }
-
-        // ⚠ **숨기되 말은 해 준다**(2026-08-31). 무료로 내려가면 목록에서 사라지는데,
-        // 서버에는 보관 유예 동안 살아 있고 다시 유료가 되면 그대로 돌아온다 — 아무 말도
-        // 없으면 사용자는 **이미 지워진 것으로 안다.** 남은 날짜는 서버가 준 마감 시각에서
-        // 계산한다(상수를 앱에 박으면 정책이 바뀔 때 화면이 거짓말을 한다).
-        if (ownSectionExpanded && !canCreateVoice) {
-            val daysLeft = voiceRetentionDaysLeft(subscriptionResponse, System.currentTimeMillis())
-            if (daysLeft != null) {
-                MutedText(stringResource(R.string.voices_free_locked_notice, daysLeft))
-            }
         }
 
         if (ownSectionExpanded) {

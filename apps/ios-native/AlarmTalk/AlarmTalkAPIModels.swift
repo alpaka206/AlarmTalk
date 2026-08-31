@@ -783,10 +783,6 @@ struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
     var nextPlan: BillingPlanSummary?
-    /// 무료 강등 뒤 목소리 보관 마감(ISO, `voice_retention_until`). 이 시각이 지나면 서버가
-    /// 클론 데이터를 지운다. **무료일 때만 값이 있다** — 유료면 보관 행이 없어 nil 이다.
-    /// 남은 날짜를 여기서 계산하므로 상수(3일)를 앱에 박지 않는다. 옛 서버는 안 보낸다.
-    var voiceRetentionUntil: String?
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {

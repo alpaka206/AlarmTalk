@@ -10,12 +10,6 @@ data class BillingSubscriptionResponse(
     val subscription: BillingSubscription?,
     val plan: BillingPlan?,
     @SerializedName("next_plan") val nextPlan: BillingPlanSummary? = null,
-    /**
-     * 무료 강등 뒤 목소리 보관 마감(ISO). 이 시각이 지나면 서버가 클론 데이터를 지운다.
-     * **무료일 때만 값이 있다** — 유료면 보관 행이 없어 null 이다. 남은 날짜를 여기서
-     * 계산해 쓰므로 상수(3일)를 앱에 박지 않는다. 옛 서버는 안 보내므로 기본값 null.
-     */
-    @SerializedName("voice_retention_until") val voiceRetentionUntil: String? = null,
 )
 
 data class BillingSubscription(

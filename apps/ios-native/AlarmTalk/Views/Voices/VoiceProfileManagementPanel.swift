@@ -68,26 +68,21 @@ struct VoiceProfileManagementPanel: View {
     /// 돌아올 목소리를 사용자가 모르고 지운다. 대신 그 자리에 안내 한 줄을 둔다
     /// (`freeLockedNotice`) — 아무 말 없이 사라지면 이미 지워진 것으로 읽힌다.
     private var ownVoices: [VoiceProfile] {
-        guard hasPaidVoiceAccess else { return [] }
+        guard paidVoiceEntitledNow else { return [] }
         return voice.profiles.filter { !isSystemVoice($0) }
     }
 
-    /// 안내를 띄울 조건 — **무료이고, 보관 유예가 남아 있을 때만.** 애초에 만든 적이 없는
-    /// 사용자에게는 띄우지 않는다(보관 행이 없어 nil 이다).
-    private var freeLockedNoticeDays: Int? {
-        guard !hasPaidVoiceAccess else { return nil }
-        return voiceRetentionDaysLeft
-    }
-
-    /// 보관 마감까지 남은 날짜(올림). 서버가 준 시각에서 계산한다 — 상수(3일)를 앱에 박으면
-    /// 정책이 바뀌는 순간 화면이 거짓말을 한다. 지났거나 값이 없으면 nil.
-    private var voiceRetentionDaysLeft: Int? {
-        guard let iso = socialFeatures.subscription?.voiceRetentionUntil, !iso.isEmpty,
-              let until = PaidVoiceGate.parseTimestamp(iso)
-        else { return nil }
-        let remaining = until.timeIntervalSinceNow
-        guard remaining > 0 else { return nil }
-        return max(1, Int(ceil(remaining / 86_400)))
+    /// ⚠ **만료까지 보는 판정**(2026-08-31 리뷰, 안드로이드 `isPaidVoiceEntitledNow` 미러).
+    /// `PlanTier.bestKnown` 은 구매 직후 깜빡임을 줄이려고 `status == "active"` 만 보는데,
+    /// 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도** 유료로 읽혀 숨겨야 할 목소리가
+    /// 미리듣기·이름 수정·공유·삭제까지 가능한 채로 드러난다.
+    /// 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(안드로이드와 같은 규칙).
+    private var paidVoiceEntitledNow: Bool {
+        guard hasPaidVoiceAccess else { return false }
+        guard let expiresAt = socialFeatures.subscription?.subscription?.expiresAt,
+              let expiry = PaidVoiceGate.parseTimestamp(expiresAt)
+        else { return true }
+        return expiry > Date()
     }
 
     var body: some View {
@@ -332,15 +327,8 @@ struct VoiceProfileManagementPanel: View {
         VoiceSectionCard(
             title: "내 목소리",
             trailing: AnyView(addVoiceHeaderTrailing),
-            hasContent: !ownVoices.isEmpty || freeLockedNoticeDays != nil
+            hasContent: !ownVoices.isEmpty
         ) {
-            if let days = freeLockedNoticeDays {
-                Text("이용권이 끝나 내 목소리는 잠겼어요. \(days)일 안에 다시 시작하면 그대로 돌아와요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-            }
             ForEach(Array(ownVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)

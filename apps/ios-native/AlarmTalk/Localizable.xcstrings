@@ -16752,23 +16752,6 @@
           }
         }
       }
-    },
-    "이용권이 끝나 내 목소리는 잠겼어요. %lld일 안에 다시 시작하면 그대로 돌아와요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your voices are locked now that your plan ended. Restart within %lld days and they come back as they were."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "利用券が終了し、あなたの声はロックされました。%lld日以内に再開すればそのまま戻ります。"
-          }
-        }
-      }
     }
   },
   "version": "1.0"

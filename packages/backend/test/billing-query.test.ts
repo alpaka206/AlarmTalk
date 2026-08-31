@@ -128,14 +128,10 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
     await buildApp('my-user-pk').request(jsonReq('GET', '/billing/subscription'));
 
-    // 구독 조회 + 목소리 보관 마감 조회 두 번. **둘 다** c.get(userId) 를 그대로 바인딩해야
-    // 한다(resolveUserPk 를 태우면 한쪽만 다른 식별자가 되어 무료 계정의 안내가 안 뜬다).
-    expect(mockDB.calls).toHaveLength(2);
+    expect(mockDB.calls).toHaveLength(1);
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('u.id = ?');
     expect(mockDB.calls[0]!.args[0]).toBe('my-user-pk');
-    expect(mockDB.calls[1]!.sql).toContain('paid_voice_retention');
-    expect(mockDB.calls[1]!.args[0]).toBe('my-user-pk');
   });
 
   it('활성 구독 없으면 { subscription: null, plan: null }', async () => {

@@ -205,6 +205,11 @@ class StockClipPrefetchWorker(
             }
 
             var done = clips.size - missing.size
+            // ⚠ **격리는 하되 실패를 삼키지는 않는다**(2026-08-31 리뷰). 클립별로 예외를 잡아
+            // 형제 요청을 살리는 것과, 그 회차를 '성공' 으로 보고하는 것은 다른 문제다.
+            // 성공으로 끝내면 WorkManager 가 백오프 재시도를 걸지 않아, 약전파에서 한두 개를
+            // 놓친 채 **완료로 굳는다** — 준비 화면은 100% 를 보여주는데 오프라인 음원은 없다.
+            val failures = java.util.concurrent.atomic.AtomicInteger(0)
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             missing.chunked(PARALLELISM).forEach { batch ->
@@ -230,6 +235,7 @@ class StockClipPrefetchWorker(
                                     )
                                 }
                             }.onFailure { error ->
+                                failures.incrementAndGet()
                                 AlarmTalkLog.reportError(
                                     "Stock clip download failed messageId=${clip.messageId}",
                                     error,
@@ -242,7 +248,9 @@ class StockClipPrefetchWorker(
                 publishProgress(done = done, total = clips.size)
             }
             rebind()
-            Result.success()
+            // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
+            // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
+            if (failures.get() > 0 && runAttemptCount < MAX_RUN_ATTEMPTS) Result.retry() else Result.success()
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
             AlarmTalkLog.reportError("Stock clip prefetch failed", error)

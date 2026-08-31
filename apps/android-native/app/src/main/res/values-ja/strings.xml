@@ -914,5 +914,4 @@
     <string name="clip_prefetch_notification_title">音声をダウンロードしています</string>
     <string name="voices_clip_prep_done">完了</string>
     <string name="voices_clip_prep_background">バックグラウンドで続ける</string>
-    <string name="voices_free_locked_notice">利用券が終了し、あなたの声はロックされました。%1$d日以内に再開すればそのまま戻ります。</string>
 </resources>

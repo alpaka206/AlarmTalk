@@ -1310,6 +1310,10 @@ internal fun AlarmEditorScreen(
             editor.voiceRandomPrompt = false
             editor.voiceText = nextText
             editor.voiceLanguage = appVoiceLanguage
+            // ⚠ **종류를 바꾸면 옛 버킷을 반드시 지운다**(2026-08-31). 저장 갈래가
+            // `selectedBucket` 을 '사용자가 고른 종류' 의 근거로 삼기 때문에, 남겨 두면
+            // 직접 입력을 골라도 버킷 갈래로 들어가 **방금 친 문구를 버린다.**
+            editor.selectedBucket = null
             if (!unchanged) {
                 editor.clearAudio()
                 editor.clearTtsMeta()
@@ -1341,6 +1345,9 @@ internal fun AlarmEditorScreen(
         }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        // ⚠ 위와 같은 이유 — 옛 버킷이 남으면 **새로 고른 종류 대신 옛 종류가 다시 붙는다.**
+        // 새 종류의 버킷은 저장 시 `clonePrerenderBucketCategoryFor(새 컨텍스트)` 로 붙는다.
+        editor.selectedBucket = null
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
         // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
         editor.voiceLanguage = appVoiceLanguage

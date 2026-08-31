@@ -906,5 +906,4 @@ Pass code: %1$s
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>
-    <string name="voices_free_locked_notice">Your voices are locked now that your plan ended. Restart within %1$d days and they come back as they were.</string>
 </resources>
