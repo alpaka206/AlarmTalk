@@ -224,6 +224,22 @@ final class SubscriptionManager: ObservableObject {
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
+        persistStoreEntitlement()
+    }
+
+    /// **등급이 다시 계산될 때마다** 캐시에 적는다(2026-08-31 리뷰).
+    ///
+    /// ⚠ 전경 전환에서만 적으면, 앱이 이미 떠 있는 동안 들어온 구매·갱신
+    /// (`Transaction.updates`)이 캐시에 안 남는다 — 화면은 열리는데 **같은 세션에 예약된
+    /// 알람은 옛 스냅샷을 읽어 기본 톤으로 강등**된다. 예약 시점 게이트는 StoreKit 을
+    /// 직접 못 보므로 이 캐시가 그 경로의 유일한 근거다.
+    private func persistStoreEntitlement() {
+        guard let userID = authProvider()?.user.id, !userID.isEmpty else { return }
+        let entitled = currentTier.meetsOrExceeds(.personal)
+        AccessSnapshotStore().updateStorePlanKey(
+            userID: userID,
+            planKey: entitled ? currentTier.rawValue : nil
+        )
     }
 
     /// 결제 동기화 재시도 — 백엔드가 일시적으로 다운돼 sync 가 실패한 직후,

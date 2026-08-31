@@ -564,6 +564,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var storePlanKey by mutableStateOf<String?>(null)
         internal set
 
+    /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
+    var storeEntitlementUntilMillis by mutableStateOf<Long?>(null)
+        internal set
+
+    /**
+     * **스토어에 한 번이라도 물어봤는가.** 되돌릴 수 없는 잠금은 이게 참이 되기 전에는 하지 않는다.
+     *
+     * ⚠ BillingClient 조회는 **비동기**다. 앱 시작 직후에는 `storePlanKey` 가 아직 null 인데,
+     * 그 순간을 '무료 확정' 으로 읽으면 Play 가 갱신을 알려 주기 **전에** 알람이 영구 강등된다
+     * (2026-08-31 리뷰). 그 변환은 되돌릴 수 없다.
+     */
+    var storeEntitlementChecked by mutableStateOf(false)
+        internal set
+
     /**
      * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
      * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
@@ -573,15 +587,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             subscriptionResponse = subscriptionResponse,
             familyGroup = familyGroup,
             userPlan = authSession?.user?.plan,
-            storeEntitled = storePlanKey != null,
+            storeEntitled = storePlanKey != null &&
+                (storeEntitlementUntilMillis ?: 0L) > nowMillis,
             nowMillis = nowMillis,
         )
 
     /** 모르면 잠그지 않는다 — 표시·저장·생성 게이트용. */
     internal fun isPaidVoiceEntitledOptimistic(): Boolean = paidVoiceAccess().isEntitledOptimistic()
 
-    /** 확실히 무료일 때만 참 — 되돌리기 어려운 잠금·강등용. */
-    internal fun isDefinitelyFreePlan(): Boolean = paidVoiceAccess().isDefinitelyFree()
+    /**
+     * 확실히 무료일 때만 참 — 되돌리기 어려운 잠금·강등용.
+     *
+     * ⚠ **스토어 확인 전에는 절대 참이 아니다.** 조회가 비동기라 시작 직후의 null 을
+     * '무료' 로 읽으면 갱신을 확인하기 전에 영구 변환이 걸린다.
+     */
+    internal fun isDefinitelyFreePlan(): Boolean =
+        storeEntitlementChecked && paidVoiceAccess().isDefinitelyFree()
 
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
@@ -1094,6 +1115,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?: AccessSnapshot()
         subscriptionResponse = snapshot.subscriptionResponse
         familyGroup = snapshot.familyGroup
+        // ⚠ **스토어 신호도 계정에 묶인다**(2026-08-31 리뷰). 여기서 복원하지 않으면 계정을
+        // 바꿔도 앞 사람의 값이 메모리에 남아, 무료 계정이 유료로 취급된다.
+        storePlanKey = snapshot.storePlanKey
+        storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
+        storeEntitlementChecked = false
     }
 
     internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
@@ -1150,6 +1177,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
         subscriptionResponse = null
+        // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
+        // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
+        storePlanKey = null
+        storeEntitlementUntilMillis = null
+        storeEntitlementChecked = false
         vouchers = emptyList()
         billingPlayManageUrl = null
         receivedAlarmSeenAtMillis = 0L

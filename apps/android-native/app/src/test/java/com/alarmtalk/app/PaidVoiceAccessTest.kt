@@ -107,6 +107,22 @@ class PaidVoiceAccessTest {
     }
 
     @Test
+    fun expiredStoreSignalIsIgnored() {
+        // ⚠ 스토어 신호에 **기한이 없으면 영구 통행증**이 된다 — 유료였던 기기가 앱을 다시
+        // 안 열면 만료 뒤에도 클론 목소리가 계속 울린다. 판정기는 기한이 지난 신호를
+        // '확인 못 함'(false)으로 받아 다음 단으로 내려가야 한다.
+        val storeStillValid = false // 호출부가 기한을 보고 넘기는 값
+        val access = resolvePaidVoiceAccess(
+            subscriptionResponse = sub("active", "2026-08-30T00:00:00Z"),
+            familyGroup = null,
+            userPlan = null,
+            storeEntitled = storeStillValid,
+            nowMillis = now,
+        )
+        assertEquals(PaidVoiceAccess.NotEntitled, access)
+    }
+
+    @Test
     fun optimisticAndDestructiveRulesDisagreeOnUnknown() {
         // 두 소비 규칙의 차이가 이 타입의 존재 이유다.
         assertEquals(true, PaidVoiceAccess.Unknown.isEntitledOptimistic())

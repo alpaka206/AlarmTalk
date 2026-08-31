@@ -371,6 +371,7 @@ class PlayBillingManager(
      */
     private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? =
         queryActiveSubscriptions(accountHash)
+            .orEmpty()
             .filter { productId !in it.products }
             .maxByOrNull { it.purchaseTime }
 
@@ -386,10 +387,14 @@ class PlayBillingManager(
      * 구독이 있을 수 있는데, 그걸 세면 공용 폰에서 남의 구독이 이 계정의 등급을 올린다.
      * 식별자가 없는 레거시 구매나 비로그인(accountHash == null)은 **세지 않는다** —
      * 못 세는 것은 '무료' 가 아니라 '모름' 이고, 판정기가 다음 단으로 내려간다.
+     *
+     * ⚠ **반환값 `null` 과 빈 리스트는 뜻이 다르다**(2026-08-31 리뷰).
+     * `null` = **못 물어봤다**(연결 실패·응답 오류·비로그인), `emptyList` = **스토어가 없다고
+     * 답했다**. 둘을 같게 다루면 오프라인 한 번에 결제 중인 사용자의 신호가 지워진다.
      */
-    suspend fun queryActiveSubscriptions(accountHash: String?): List<Purchase> {
-        if (accountHash == null) return emptyList()
-        if (!ensureConnected()) return emptyList()
+    suspend fun queryActiveSubscriptions(accountHash: String?): List<Purchase>? {
+        if (accountHash == null) return null
+        if (!ensureConnected()) return null
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
@@ -397,7 +402,7 @@ class PlayBillingManager(
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
-            return emptyList()
+            return null
         }
         return result.purchasesList.filter {
             it.purchaseState == Purchase.PurchaseState.PURCHASED &&

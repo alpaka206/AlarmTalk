@@ -36,8 +36,12 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
     val userId = authSession?.user?.id ?: return
     runCatching {
         val hash = playBilling.accountHashFor(userId)
-        val purchases = playBilling.queryActiveSubscriptions(hash)
-        storePlanKey = purchases
+        // ⚠ **null 은 '구독 없음' 이 아니라 '못 물어봤다' 다**(2026-08-31 리뷰).
+        // 오프라인·연결 실패에서 신호를 지우면, 서버 스냅샷이 갱신 전 만료시각을 들고 있는
+        // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
+        // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
+        val purchases = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
+        val nextKey = purchases
             .flatMap { it.products }
             .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
             .maxByOrNull { key ->
@@ -48,8 +52,11 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                     else -> 0
                 }
             }
+        val until = nextKey?.let { System.currentTimeMillis() + STORE_ENTITLEMENT_TTL_MILLIS }
+        storePlanKey = nextKey
+        storeEntitlementUntilMillis = until
         // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
-        authSession?.user?.id?.let { accessSnapshotStore.updateStorePlanKey(it, storePlanKey) }
+        accessSnapshotStore.updateStorePlanKey(userId, nextKey, until)
         if (purchases.isNotEmpty()) {
             // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
             runCatching { playBilling.restorePurchases() }
@@ -57,6 +64,7 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
     }.onFailure { error ->
         android.util.Log.w("MainViewModel", "Failed to refresh store entitlement", error)
     }
+    storeEntitlementChecked = true
 }
 
 internal fun MainViewModel.refreshBilling() {

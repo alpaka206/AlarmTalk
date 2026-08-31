@@ -18,7 +18,30 @@ internal data class AccessSnapshot(
      * 앱이 전경에서 스토어에 물을 때마다 갱신된다.
      */
     val storePlanKey: String? = null,
+    /**
+     * 위 값의 **유효기한**(epoch millis). 지나면 없는 것으로 본다.
+     *
+     * ⚠ **기한 없이 저장하면 영구 통행증이 된다**(2026-08-31 리뷰). 유료 사용자가 앱을 한 번
+     * 열고 다시 안 열면, 구독이 만료돼도 이 키가 남아 **울림 게이트가 서버 만료를 무시하고**
+     * 클론 목소리를 계속 재생한다 — 로컬 유료 게이트의 존재 이유가 사라진다.
+     *
+     * Play `Purchase` 에는 **만료 시각이 없다**(AAR 메서드 목록 확인 — `isAutoRenewing` 은
+     * 있어도 만료는 없다). 그래서 안드로이드는 **확인 시각 + 보수적 상한**으로 둔다.
+     * 상한은 자동갱신 주기(최소 월 단위)보다 훨씬 짧아야 하고, 앱을 며칠 안 열어도 결제 중인
+     * 사용자가 잠기지 않을 만큼은 길어야 한다 — 그 사이 값이 [STORE_ENTITLEMENT_TTL_MILLIS] 다.
+     * iOS 는 StoreKit 이 실제 만료를 주므로 그 값을 그대로 쓴다.
+     */
+    val storeEntitlementUntilMillis: Long? = null,
 )
+
+/**
+ * 스토어 신호의 신선도 상한 — **3일**.
+ *
+ * 근거: 유료 사용자가 앱을 사흘 안 여는 일은 흔하지만 그보다 오래 안 열면서 갱신도 되는
+ * 경우는 드물고, 그때는 다음 실행이 곧바로 다시 확인한다. 반대로 이 값이 길면 만료된
+ * 구독의 통행증이 그만큼 오래 살아 남는다.
+ */
+internal const val STORE_ENTITLEMENT_TTL_MILLIS: Long = 3L * 24 * 60 * 60 * 1000
 
 internal class AccessSnapshotStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -35,9 +58,9 @@ internal class AccessSnapshotStore(context: Context) {
             }
             ?: AccessSnapshot()
 
-    fun updateStorePlanKey(userId: String, planKey: String?) {
+    fun updateStorePlanKey(userId: String, planKey: String?, untilMillis: Long?) {
         val current = read(userId)
-        save(userId, current.copy(storePlanKey = planKey))
+        save(userId, current.copy(storePlanKey = planKey, storeEntitlementUntilMillis = untilMillis))
     }
 
     fun updateSubscription(userId: String, response: BillingSubscriptionResponse?) {

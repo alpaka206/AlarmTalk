@@ -575,6 +575,11 @@ internal fun AlarmTalkApp(
         subscriptionResponse?.subscription?.status,
         subscriptionResponse?.plan?.key,
         subscriptionResponse?.plan?.planType,
+        // ⚠ **스토어 확인 결과도 키다**(2026-08-31 리뷰). 조회는 비동기라 시작 직후에는
+        // 아직 답이 없다 — 키에 넣지 않으면 그 순간의 '모름' 으로 한 번 판정하고 끝나,
+        // 뒤늦게 온 "Play 가 갱신됨" 이 **영구 변환을 되돌리지 못한다.**
+        viewModel.storeEntitlementChecked,
+        viewModel.storePlanKey,
     ) {
         // 유료 목소리 알람을 기본 알람(사운드온리)으로 '영구' 변환하는 건 서버가 무료로 '확정'한
         // 신호에서만 한다(다시 유료가 돼도 되돌리지 않는 사용자 정책이라, 오변환이 곧 영구 피해다).

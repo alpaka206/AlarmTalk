@@ -334,12 +334,17 @@ class RingingService : Service() {
         // **스토어 신호가 하나 더 들어온다** — 앱이 전경에서 물어 캐시에 적어 둔 값이라
         // 여기서 BillingClient 를 붙이지 않고도 「스토어가 권위다」를 지킬 수 있다.
         // 울림은 잘못 잠그면 알람이 조용해지는 쪽이라 **모르면 통과**시킨다.
+        val now = System.currentTimeMillis()
+        // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
+        // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
+        val storeStillValid = snapshot.storePlanKey != null &&
+            (snapshot.storeEntitlementUntilMillis ?: 0L) > now
         resolvePaidVoiceAccess(
             subscriptionResponse = snapshot.subscriptionResponse,
             familyGroup = snapshot.familyGroup,
             userPlan = null,
-            storeEntitled = snapshot.storePlanKey != null,
-            nowMillis = System.currentTimeMillis(),
+            storeEntitled = storeStillValid,
+            nowMillis = now,
         ).isEntitledOptimistic()
     }.getOrDefault(true)
 

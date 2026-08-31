@@ -85,8 +85,17 @@ enum PaidVoiceGate {
         if snapshot.storePlanKey != nil { return .entitled }
         guard let response = snapshot.subscriptionResponse else { return .unknown }
         guard let subscription = response.subscription else {
-            return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
-                ? .entitled : .notEntitled
+            // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
+            // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
+            switch snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased() {
+            case "free":
+                return .notEntitled
+            case .some(let plan) where ["personal", "plus", "couple", "family"].contains(plan):
+                return .entitled
+            default:
+                return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
+                    ? .entitled : .unknown
+            }
         }
         return isSubscriptionActive(subscription, now: now) ? .entitled : .notEntitled
     }

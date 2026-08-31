@@ -6,8 +6,17 @@ struct AccessSnapshot: Codable, Equatable {
     /// 스토어(StoreKit)가 확인해 준 등급. nil = 무료가 아니라 **확인 못 함**.
     /// 예약 시점 게이트가 StoreKit 을 직접 못 볼 때도 「스토어가 권위다」를 지키게 한다.
     var storePlanKey: String?
+    /// 서버가 말한 `users.plan`. **그룹 접근보다 먼저 본다** — 결제 보류(Play ON_HOLD·애플
+    /// 재시도)는 **그룹을 남긴 채 이 값만 회수**하므로(`resolvePlanAfterSuspend`), 그룹만
+    /// 보면 소유자 결제가 밀린 멤버 전원이 계속 유료로 읽힌다(2026-08-31 리뷰).
+    var userPlan: String?
 
-    static let empty = AccessSnapshot(subscriptionResponse: nil, familyGroup: nil, storePlanKey: nil)
+    static let empty = AccessSnapshot(
+        subscriptionResponse: nil,
+        familyGroup: nil,
+        storePlanKey: nil,
+        userPlan: nil
+    )
 }
 
 struct AccessSnapshotStore {
@@ -35,6 +44,12 @@ struct AccessSnapshotStore {
 
     /// 스토어가 확인해 준 등급을 캐시에 적는다 — 예약 시점 게이트가 StoreKit 을 직접 못 볼 때
     /// 「스토어가 권위다」를 지키는 근거가 된다.
+    func updateUserPlan(userID: String, plan: String?) {
+        var snapshot = read(userID: userID)
+        snapshot.userPlan = plan
+        save(userID: userID, snapshot: snapshot)
+    }
+
     func updateStorePlanKey(userID: String, planKey: String?) {
         var snapshot = read(userID: userID)
         snapshot.storePlanKey = planKey

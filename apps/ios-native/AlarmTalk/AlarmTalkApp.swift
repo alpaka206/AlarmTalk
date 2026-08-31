@@ -460,15 +460,8 @@ struct AlarmTalkApp: App {
                 Task {
                     await subscriptions.refreshPurchasedProducts()
                     await subscriptions.resyncEntitlements()
-                    // 예약 시점 게이트(`PaidVoiceGate`)는 StoreKit 을 직접 못 본다 — 캐시에
-                    // 적어 둬야 그 경로에서도 「스토어가 권위다」가 지켜진다.
-                    if let userID = auth.session?.user.id {
-                        AccessSnapshotStore().updateStorePlanKey(
-                            userID: userID,
-                            planKey: subscriptions.currentTier.meetsOrExceeds(.personal)
-                                ? subscriptions.currentTier.rawValue : nil
-                        )
-                    }
+                    // 캐시 기록은 `refreshPurchasedProducts` 안에서 한다 — 등급이 다시
+                    // 계산되는 **모든** 경로(구매·Transaction.updates 포함)를 덮기 위해서다.
                 }
             case .background:
                 // 시스템이 task 를 깨울 수 있도록 다음 사이클 재예약.

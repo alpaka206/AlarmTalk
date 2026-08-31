@@ -121,6 +121,8 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
+            // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
+            accessSnapshotStore.updateUserPlan(userID: userID, plan: session?.user.plan)
             vouchers = resolvedVouchers
             subscriptionOK = true
         } catch {
