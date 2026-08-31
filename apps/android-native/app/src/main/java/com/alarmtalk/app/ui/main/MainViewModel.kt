@@ -550,6 +550,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var billingBusy by mutableStateOf(false)
 
+    /**
+     * **스토어가 확인해 준 등급**(plan key). null 이면 '무료' 가 아니라 **아직 확인 못 함**이다.
+     *
+     * 「스토어가 권위다」(`docs/spec/billing-lifecycle.md`)를 판정에 실제로 반영하는 값이다.
+     * 예전에는 앱이 보는 구독 상태가 100% 서버 응답이라, Play 가 자동갱신했는데 서버 반영이
+     * 늦으면 **돈을 내는 사용자가 잠겼다**(2026-08-31). iOS 는 `SubscriptionManager.currentTier`
+     * 로 이미 하던 일이다.
+     *
+     * ⚠ Play 에는 iOS `Transaction.updates` 같은 **푸시가 없다** — 실시간 신호는 서버로 가는
+     * RTDN 이다. 그래서 여기서는 **폴링**한다(앱 시작·전경 진입).
+     */
+    var storePlanKey by mutableStateOf<String?>(null)
+        internal set
+
+    /**
+     * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
+     * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
+     */
+    internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
+        resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = authSession?.user?.plan,
+            storeEntitled = storePlanKey != null,
+            nowMillis = nowMillis,
+        )
+
+    /** 모르면 잠그지 않는다 — 표시·저장·생성 게이트용. */
+    internal fun isPaidVoiceEntitledOptimistic(): Boolean = paidVoiceAccess().isEntitledOptimistic()
+
+    /** 확실히 무료일 때만 참 — 되돌리기 어려운 잠금·강등용. */
+    internal fun isDefinitelyFreePlan(): Boolean = paidVoiceAccess().isDefinitelyFree()
+
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
     var billingPlayManageUrl by mutableStateOf<String?>(null)
@@ -1219,6 +1252,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 runCatching { playBilling.resendUnconfirmedPurchases() }
                     .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
+                refreshStoreEntitlement()
             }
         }
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.

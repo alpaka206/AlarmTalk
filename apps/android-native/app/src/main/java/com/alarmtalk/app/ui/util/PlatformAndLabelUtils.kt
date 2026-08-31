@@ -186,6 +186,72 @@ internal fun canShareVoiceWithOthers(
     return membersExceptSelf > 0
 }
 
+/**
+ * 유료 목소리 권한 판정 결과. **'모른다' 를 '무료' 와 구분하는 것이 이 타입의 존재 이유다.**
+ *
+ * 응답 전 기본값을 답으로 읽는 사고가 이 저장소에서 반복됐다
+ * (`docs/spec/gates-and-overlays.md`). 그래서 판정기는 세 값을 돌려주고, 소비하는 쪽이
+ * **모를 때 어느 쪽으로 기울지 스스로 밝히게** 한다.
+ */
+internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
+
+/**
+ * **유료 목소리 판정의 유일한 출처**(2026-08-31). 우선순위 네 단이고 순서가 규칙이다.
+ *
+ * 1. **스토어가 유효하다고 하면 유료다 — 서버 만료로 절대 뒤집지 않는다.**
+ *    「구독 수명주기 — 스토어가 권위다」(`docs/spec/billing-lifecycle.md`). 자동갱신은
+ *    스토어에서 먼저 일어나고 서버 반영(RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛
+ *    `expiresAt` 으로 막으면 **돈을 내고 있는 사용자가 잠긴다.** 스펙이 더 나쁘다고 못박은 방향이다.
+ * 2. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
+ *    미로그인 스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
+ * 3. 서버가 '본인 구독 없음' 이라고 답했으면 `users.plan` 을 본다. **그룹보다 위다** —
+ *    보류(ON_HOLD)는 그룹을 남긴 채 `users.plan` 만 회수하므로(`resolvePlanAfterSuspend`),
+ *    그룹만 보면 결제가 밀린 가족 멤버가 계속 유료로 읽힌다.
+ * 4. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
+ *
+ * @param storeEntitled 스토어(Play/StoreKit)가 지금 유효한 구독을 확인해 줬는가. 모르면 false —
+ *   **거짓이라고 단정하는 값이 아니라 '확인 못 했다' 는 뜻**이라 2단 이하로 내려갈 뿐이다.
+ */
+internal fun resolvePaidVoiceAccess(
+    subscriptionResponse: BillingSubscriptionResponse?,
+    familyGroup: FamilyGroupCurrentResponse?,
+    userPlan: String?,
+    storeEntitled: Boolean,
+    nowMillis: Long,
+): PaidVoiceAccess {
+    if (storeEntitled) return PaidVoiceAccess.Entitled
+    val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
+    val subscription = snapshot.subscription
+    if (subscription != null) {
+        if (!hasPaidVoiceAccess(snapshot)) return PaidVoiceAccess.NotEntitled
+        // 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(기존 규칙 유지).
+        val expiryMillis =
+            runCatching { java.time.Instant.parse(subscription.expiresAt).toEpochMilli() }.getOrNull()
+                ?: return PaidVoiceAccess.Entitled
+        return if (expiryMillis > nowMillis) PaidVoiceAccess.Entitled else PaidVoiceAccess.NotEntitled
+    }
+    val plan = userPlan?.trim()?.lowercase()
+    return when {
+        plan == null || plan.isBlank() ->
+            if (hasCoupleOrFamilyAccess(snapshot, familyGroup)) PaidVoiceAccess.Entitled
+            else PaidVoiceAccess.Unknown
+        plan == "free" -> PaidVoiceAccess.NotEntitled
+        plan in setOf("personal", "plus", "couple", "family") -> PaidVoiceAccess.Entitled
+        else -> PaidVoiceAccess.NotEntitled
+    }
+}
+
+/**
+ * **모르면 잠그지 않는다.** 표시·울림·저장/생성 게이트가 쓴다 — 잘못 잠그면 사용자는 산
+ * 기능을 못 쓰고, 잘못 열어 두면 다음 동기화에서 정리된다. 후자가 회복 가능하다.
+ */
+internal fun PaidVoiceAccess.isEntitledOptimistic(): Boolean = this != PaidVoiceAccess.NotEntitled
+
+/**
+ * **확실히 무료일 때만 참.** 되돌리기 어려운 동작(무료 잠금 적용·알람 영구 강등)이 쓴다.
+ */
+internal fun PaidVoiceAccess.isDefinitelyFree(): Boolean = this == PaidVoiceAccess.NotEntitled
+
 internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionResponse?): Boolean {
     val subscription = subscriptionResponse?.subscription ?: return false
     if (subscription.status != "active") return false

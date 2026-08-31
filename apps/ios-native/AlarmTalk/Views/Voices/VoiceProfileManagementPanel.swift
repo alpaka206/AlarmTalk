@@ -85,12 +85,16 @@ struct VoiceProfileManagementPanel: View {
     ///
     /// 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(안드로이드와 같은 규칙).
     private var paidVoiceEntitledNow: Bool {
-        guard hasPaidVoiceAccess else { return false }
-        if subscriptions.currentTier.meetsOrExceeds(.personal) { return true }
-        guard let expiresAt = socialFeatures.subscription?.subscription?.expiresAt,
-              let expiry = PaidVoiceGate.parseTimestamp(expiresAt)
-        else { return true }
-        return expiry > Date()
+        // **유일 판정기**를 통과시킨다(`PaidVoiceGate.resolve`) — 안드로이드
+        // `resolvePaidVoiceAccess` 와 같은 우선순위: 스토어 → 서버 구독(만료) → 그룹 → 모름.
+        // 여기는 표시·생성 게이트라 **모르면 잠그지 않는다.**
+        let snapshot = AccessSnapshot(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            storePlanKey: subscriptions.currentTier.meetsOrExceeds(.personal)
+                ? subscriptions.currentTier.rawValue : nil
+        )
+        return PaidVoiceGate.isEntitled(snapshot: snapshot)
     }
 
     var body: some View {

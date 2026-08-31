@@ -234,6 +234,8 @@ internal fun VoiceProfileManagementPanel(
     voiceDraftQuotaExhausted: Boolean = false,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
+    /** 스토어가 확인해 준 등급(plan key). null = 무료가 아니라 **확인 못 함**. */
+    storePlanKey: String?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
@@ -370,7 +372,13 @@ internal fun VoiceProfileManagementPanel(
     // 여기를 옛 판정으로 두면, 만료된 스냅샷에서 목소리는 사라졌는데 '생성 가능 n/m회' 와
     // 등록 흐름은 그대로 열려 있다 — 게다가 교체 대상은 비어 버린 목록에서 오므로 보관된
     // 프로필을 교체할 길도 없이 확정에서 거절당한다.
-    val canCreateVoice = isPaidVoiceEntitledNow(subscriptionResponse, System.currentTimeMillis())
+    val canCreateVoice = resolvePaidVoiceAccess(
+        subscriptionResponse = subscriptionResponse,
+        familyGroup = familyGroup,
+        userPlan = authSession?.user?.plan,
+        storeEntitled = storePlanKey != null,
+        nowMillis = System.currentTimeMillis(),
+    ).isEntitledOptimistic()
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·

@@ -1,0 +1,117 @@
+package com.alarmtalk.app
+
+import com.alarmtalk.app.network.BillingPlan
+import com.alarmtalk.app.network.BillingSubscription
+import com.alarmtalk.app.network.BillingSubscriptionResponse
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.time.Instant
+
+/**
+ * **유료 목소리 판정의 유일 출처**(`resolvePaidVoiceAccess`) 회귀 테스트.
+ *
+ * 이 판정이 두 방향으로 틀릴 수 있고, 두 방향의 무게가 다르다:
+ *  - **덜 막음**: 무료가 된 사람에게 유료 기능이 잠깐 열린다 → 다음 동기화에서 정리된다.
+ *  - **더 막음**: **돈을 내는 사람이 잠긴다** → 스펙이 더 나쁘다고 못박은 방향이다
+ *    (`docs/spec/billing-lifecycle.md` 「스토어가 권위다」).
+ * 그래서 우선순위와 `Unknown` 의 존재가 규칙이다.
+ */
+class PaidVoiceAccessTest {
+
+    private val now = Instant.parse("2026-08-31T00:00:00Z").toEpochMilli()
+
+    private fun sub(status: String, expiresAt: String) = BillingSubscriptionResponse(
+        subscription = BillingSubscription(
+            id = "s1",
+            planId = "p1",
+            status = status,
+            startsAt = "2026-08-01T00:00:00Z",
+            expiresAt = expiresAt,
+        ),
+        plan = BillingPlan(
+            id = "p1",
+            key = "personal",
+            name = "개인",
+            planType = "personal",
+            periodDays = 30,
+            maxMembers = 1,
+            priceKrw = 3900,
+        ),
+    )
+
+    @Test
+    fun storeWinsOverExpiredServerSnapshot() {
+        // 스토어가 갱신을 확인해 줬는데 서버 스냅샷은 아직 옛 만료시각이다.
+        // **여기서 막으면 돈 내는 사용자가 잠긴다** — 이 테스트가 지키는 것이 그 방향이다.
+        val access = resolvePaidVoiceAccess(
+            subscriptionResponse = sub("active", "2026-08-30T00:00:00Z"),
+            familyGroup = null,
+            userPlan = "free",
+            storeEntitled = true,
+            nowMillis = now,
+        )
+        assertEquals(PaidVoiceAccess.Entitled, access)
+    }
+
+    @Test
+    fun expiredServerSnapshotWithoutStoreIsNotEntitled() {
+        val access = resolvePaidVoiceAccess(
+            subscriptionResponse = sub("active", "2026-08-30T00:00:00Z"),
+            familyGroup = null,
+            userPlan = null,
+            storeEntitled = false,
+            nowMillis = now,
+        )
+        assertEquals(PaidVoiceAccess.NotEntitled, access)
+    }
+
+    @Test
+    fun liveServerSnapshotIsEntitled() {
+        val access = resolvePaidVoiceAccess(
+            subscriptionResponse = sub("active", "2026-09-30T00:00:00Z"),
+            familyGroup = null,
+            userPlan = null,
+            storeEntitled = false,
+            nowMillis = now,
+        )
+        assertEquals(PaidVoiceAccess.Entitled, access)
+    }
+
+    @Test
+    fun missingSnapshotIsUnknownNotFree() {
+        // ⚠ 응답 전 기본값을 '무료' 로 읽는 사고가 이 저장소에서 반복됐다
+        // (`docs/spec/gates-and-overlays.md`). 모름은 무료가 아니다.
+        val access = resolvePaidVoiceAccess(
+            subscriptionResponse = null,
+            familyGroup = null,
+            userPlan = null,
+            storeEntitled = false,
+            nowMillis = now,
+        )
+        assertEquals(PaidVoiceAccess.Unknown, access)
+        assertEquals(true, access.isEntitledOptimistic())
+        assertEquals(false, access.isDefinitelyFree())
+    }
+
+    @Test
+    fun serverSaysNoSubscriptionThenUserPlanDecides() {
+        val empty = BillingSubscriptionResponse(subscription = null, plan = null)
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(empty, null, "free", false, now),
+        )
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(empty, null, "family", false, now),
+        )
+    }
+
+    @Test
+    fun optimisticAndDestructiveRulesDisagreeOnUnknown() {
+        // 두 소비 규칙의 차이가 이 타입의 존재 이유다.
+        assertEquals(true, PaidVoiceAccess.Unknown.isEntitledOptimistic())
+        assertEquals(false, PaidVoiceAccess.Unknown.isDefinitelyFree())
+        assertEquals(false, PaidVoiceAccess.NotEntitled.isEntitledOptimistic())
+        assertEquals(true, PaidVoiceAccess.NotEntitled.isDefinitelyFree())
+    }
+}

@@ -50,7 +50,8 @@ private fun MainViewModel.alarmPermissionBlockedMessage(target: PermissionTarget
  */
 private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
     if (draft.playMode == AlarmPlayModes.ALARM_ONLY) return true
-    if (hasPaidVoiceAccess(subscriptionResponse)) return true
+    // 유일 판정기 — 모르면 잠그지 않는다(저장은 되돌릴 수 있는 쪽이다).
+    if (isPaidVoiceEntitledOptimistic()) return true
     return draft.usesFreeSystemVoiceAlarm()
 }
 

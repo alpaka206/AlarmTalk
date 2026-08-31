@@ -123,6 +123,8 @@ internal fun AlarmEditorScreen(
     authSession: AuthSession?,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
+    /** 스토어가 확인해 준 등급(plan key). null = 무료가 아니라 **확인 못 함**. */
+    storePlanKey: String?,
     familyAlarmMode: Boolean,
     initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
@@ -189,12 +191,17 @@ internal fun AlarmEditorScreen(
     // 응답이 없으면 false 라, 그것만 보면 편집기를 여는 순간 유료 사용자가 잠깐 무료로
     // 판정된다 — 내 클론이 목록에서 사라지고 문구가 테마로 잠긴 채 보인다.
     // 같은 폴백을 이미 알람 잠금 판정(`AlarmTalkApp` 의 `planIsFree`)이 쓰고 있다.
-    val planSaysPaid = authSession?.user?.plan
-        ?.lowercase()
-        ?.let { it.isNotBlank() && it != "free" } == true
+    // 2026-08-31: 손으로 쓴 폴백을 **유일 판정기**로 옮겼다(`resolvePaidVoiceAccess`).
+    // 표시·저장 게이트라 **모르면 잠그지 않는다** — 잘못 잠그면 산 기능을 못 쓰고,
+    // 잘못 열어 두면 다음 동기화에서 정리된다.
     val freeVoiceTier = authSession != null &&
-        !hasPaidVoiceAccess(subscriptionResponse) &&
-        !(subscriptionResponse == null && planSaysPaid)
+        !resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = authSession.user.plan,
+            storeEntitled = storePlanKey != null,
+            nowMillis = System.currentTimeMillis(),
+        ).isEntitledOptimistic()
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.

@@ -190,6 +190,34 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 ⚠ **`DEFERRED` 는 지금 결제가 일어나지 않는다.** 그래서 구매 리스너로 새 purchase 가 즉시
 오지 않고, 화면이 "바로 바뀐다" 고 말하면 안 된다. 반영은 갱신 시점의 RTDN 으로 온다.
 
+## 유료 판정 — 우선순위 네 단 (양 앱 공통)
+
+⚠ **판정을 화면마다 손으로 쓰지 말 것.** 2026-08-31 전에는 안드로이드 3개·iOS 3개의 서로 다른
+판정이 있었고, 한쪽만 고치는 사고가 리뷰에서 연달아 났다. 이제 앱마다 **판정기 하나**다.
+
+```
+1. 스토어가 유효하다고 함            → 유료   (서버 만료로 절대 뒤집지 않는다)
+2. 서버가 내 구독을 앎               → 상태·만료로 가른다
+3. 서버가 '구독 없음' 이라 답함       → users.plan → 그룹 접근
+4. 스냅샷 자체가 없음                → 모름 (무료가 아니다)
+```
+
+**1단이 이 문서의 제목을 코드로 옮긴 것이다.** 자동갱신은 스토어에서 먼저 일어나고 서버 반영
+(RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛 `expires_at` 으로 막으면 **돈을 내고 있는
+사용자가 잠긴다.** 반대 방향(만료된 사용자에게 잠깐 열림)은 다음 동기화가 정리한다 —
+두 오류의 무게가 다르다.
+
+**소비 규칙은 둘뿐이다.**
+- `isEntitledOptimistic` — **모르면 잠그지 않는다.** 표시·울림·저장/생성 게이트.
+- `isDefinitelyFree` — **확실히 무료일 때만.** 되돌리기 어려운 동작(무료 잠금 적용, 알람 영구 강등).
+
+⚠ **'모름' 을 '무료' 로 접지 말 것.** 응답 전 기본값을 답으로 읽는 사고가 이 저장소에서
+반복됐다(`docs/spec/gates-and-overlays.md`). 그래서 판정기는 값이 **셋**이다.
+
+⚠ **울림·예약 시점에는 스토어를 직접 못 묻는다**(안드로이드는 알람 시점, iOS 는 AlarmKit 구조).
+그래서 전경에서 물어 온 등급을 `AccessSnapshot.storePlanKey` 에 적어 두고 그 경로가 읽는다 —
+한쪽만 갱신하면 화면과 울림의 답이 갈라진다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -204,7 +232,8 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
-| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | — | `SubscriptionManager.resyncEntitlements` (전경 진입) |
+| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
+| **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |

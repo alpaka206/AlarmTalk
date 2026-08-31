@@ -19,8 +19,51 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 
+/**
+ * **스토어에 지금 유효한 구독을 묻고 등급을 갱신한다** — 「스토어가 권위다」를 앱에서 실제로
+ * 지키는 자리(2026-08-31).
+ *
+ * 함께 `restorePurchases()` 를 돌려 **서버 화해까지** 시킨다. 예전에는 앱 시작 시
+ * `resendUnconfirmedPurchases()` 만 돌았는데 그건 **미승인 건만** 고른다 — 자동갱신된 구독은
+ * 이미 승인돼 있어 **영원히 걸리지 않았다.** 그래서 스토어는 갱신됐는데 서버는 옛 만료시각을
+ * 들고 있는 상태가 스스로 낫지 않았다. `restorePurchases` 는 멱등하다(서버가
+ * `/billing/google/confirm` 으로 검증해 `expires_at` 을 스토어 값으로 맞춘다).
+ *
+ * 실패해도 조용히 넘어간다 — 스토어를 못 읽은 것은 '무료' 가 아니라 '모름' 이고,
+ * 판정기(`resolvePaidVoiceAccess`)가 서버 스냅샷으로 내려간다.
+ */
+internal suspend fun MainViewModel.refreshStoreEntitlement() {
+    val userId = authSession?.user?.id ?: return
+    runCatching {
+        val hash = playBilling.accountHashFor(userId)
+        val purchases = playBilling.queryActiveSubscriptions(hash)
+        storePlanKey = purchases
+            .flatMap { it.products }
+            .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
+            .maxByOrNull { key ->
+                when (key) {
+                    "family" -> 3
+                    "couple" -> 2
+                    "personal" -> 1
+                    else -> 0
+                }
+            }
+        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
+        authSession?.user?.id?.let { accessSnapshotStore.updateStorePlanKey(it, storePlanKey) }
+        if (purchases.isNotEmpty()) {
+            // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
+            runCatching { playBilling.restorePurchases() }
+        }
+    }.onFailure { error ->
+        android.util.Log.w("MainViewModel", "Failed to refresh store entitlement", error)
+    }
+}
+
 internal fun MainViewModel.refreshBilling() {
     refreshBillingData(showMessage = true)
+    // 서버 조회와 **같이** 스토어에도 묻는다 — Play 에는 iOS `Transaction.updates` 같은 푸시가
+    // 없으므로 전경 진입마다 도는 이 자리가 폴링 지점이다(iOS `resyncEntitlements` 대응).
+    viewModelScope.launch { refreshStoreEntitlement() }
 }
 
 internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {

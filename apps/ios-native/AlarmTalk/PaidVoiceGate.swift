@@ -21,6 +21,14 @@ import Foundation
 /// 어떤 단계에서 실패하든 **강등하지 않는다.** 알람 앱에서 잘못된 강등은 "목소리가 안 나옴"
 /// 이지만, 판단 실패로 알람을 건드리는 건 사용자가 기대고 자는 것을 흔드는 일이다.
 /// 스냅샷이 아예 없으면(한 번도 조회 못 함) 판단 불가로 보고 그대로 둔다.
+/// 유료 목소리 권한 판정 결과. **'모른다' 를 '무료' 와 구분하는 것이 이 타입의 존재 이유다**
+/// (안드로이드 `PaidVoiceAccess` 와 같은 뜻).
+enum PaidVoiceAccess {
+    case entitled
+    case notEntitled
+    case unknown
+}
+
 enum PaidVoiceGate {
 
     /// 이 알람이 **유료 목소리**를 쓰는가. 안드로이드 `alarmUsesPaidVoice` 와 동일.
@@ -64,12 +72,28 @@ enum PaidVoiceGate {
     /// - 응답은 있는데 `subscription` 이 nil 이면 서버가 '본인 구독 없음' 이라고 답한 것이다.
     ///   그때는 커플/가족 그룹 접근이 있는지 본다(본인 구독 없이 그룹으로 쓰는 멤버).
     /// - 본인 구독이 있으면 만료 시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게).
-    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
-        guard let response = snapshot.subscriptionResponse else { return true }
+    /// **유료 목소리 판정 — 우선순위 네 단**(2026-08-31, 안드로이드 `resolvePaidVoiceAccess` 와 같은 규칙).
+    ///
+    /// 1. **스토어가 유효하다고 하면 유료다 — 서버 만료로 절대 뒤집지 않는다**
+    ///    (`docs/spec/billing-lifecycle.md` 「스토어가 권위다」). 자동갱신은 스토어에서 먼저
+    ///    일어나고 서버 반영이 늦을 수 있는데, 그때 옛 만료시각으로 막으면 **돈을 내는
+    ///    사용자가 잠긴다** — 스펙이 더 나쁘다고 못박은 방향이다.
+    /// 2. 서버가 내 구독을 알면 그 상태·만료로 가른다.
+    /// 3. 서버가 '구독 없음' 이라 답했으면 그룹 접근을 본다.
+    /// 4. 스냅샷이 없으면 **모른다** — 무료가 아니다.
+    static func resolve(snapshot: AccessSnapshot, now: Date = Date()) -> PaidVoiceAccess {
+        if snapshot.storePlanKey != nil { return .entitled }
+        guard let response = snapshot.subscriptionResponse else { return .unknown }
         guard let subscription = response.subscription else {
             return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
+                ? .entitled : .notEntitled
         }
-        return isSubscriptionActive(subscription, now: now)
+        return isSubscriptionActive(subscription, now: now) ? .entitled : .notEntitled
+    }
+
+    /// **모르면 잠그지 않는다.** 예약 강등 판단이 쓴다 — 이 파일 맨 위의 fail-open 원칙 그대로다.
+    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
+        resolve(snapshot: snapshot, now: now) != .notEntitled
     }
 
     /// 예약 시점에 이 알람의 유료 목소리를 기본 톤으로 강등해야 하는가.

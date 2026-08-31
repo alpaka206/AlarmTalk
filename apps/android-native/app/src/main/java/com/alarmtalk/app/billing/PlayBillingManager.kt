@@ -63,6 +63,14 @@ object PlayBillingProducts {
         return "${planKey}_monthly"
     }
 
+    /** 위의 역 — Play 상품 ID → plan key. 스토어가 준 구매를 등급으로 옮길 때 쓴다. */
+    fun planKeyFor(productId: String): String? = when (productId) {
+        PERSONAL_MONTHLY -> "personal"
+        COUPLE_MONTHLY -> "couple"
+        FAMILY_MONTHLY -> "family"
+        else -> null
+    }
+
     /**
      * 등급 순서. **업그레이드인지 다운그레이드인지 판정하는 유일 근거**다.
      *
@@ -361,26 +369,45 @@ class PlayBillingManager(
      * 남의 구독을 취소/비례정산시키게 된다. 구매에 식별자가 없거나(레거시) 불일치하면, 또는
      * accountHash 가 null 이면(비로그인) 소유 확인이 불가능하므로 교체 없이 신규 구매로 진행한다.
      */
-    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? {
-        if (accountHash == null) return null
-        if (!ensureConnected()) return null
+    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? =
+        queryActiveSubscriptions(accountHash)
+            .filter { productId !in it.products }
+            .maxByOrNull { it.purchaseTime }
+
+    /**
+     * **이 계정의 살아 있는 구독 구매** — 스토어가 답하는 권위 신호.
+     *
+     * iOS `Transaction.currentEntitlements` 의 Play 대응물이다. 예전에는 이 조회가
+     * `findActiveSubscriptionToReplace`(교체 대상 찾기) 안에만 있어 **등급 판정에 쓰이지
+     * 못했다** — 그래서 앱이 보는 구독 상태가 100% 서버 응답이었고, 스토어가 자동갱신했는데
+     * 서버 반영이 늦으면 **돈을 내는 사용자가 잠겼다**(2026-08-31).
+     *
+     * ⚠ **계정 대조를 반드시 함께 한다.** 같은 구글 계정에 **다른 AlarmTalk 계정**으로 결제된
+     * 구독이 있을 수 있는데, 그걸 세면 공용 폰에서 남의 구독이 이 계정의 등급을 올린다.
+     * 식별자가 없는 레거시 구매나 비로그인(accountHash == null)은 **세지 않는다** —
+     * 못 세는 것은 '무료' 가 아니라 '모름' 이고, 판정기가 다음 단으로 내려간다.
+     */
+    suspend fun queryActiveSubscriptions(accountHash: String?): List<Purchase> {
+        if (accountHash == null) return emptyList()
+        if (!ensureConnected()) return emptyList()
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
                 .build(),
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "queryPurchasesAsync before purchase failed code=${result.billingResult.responseCode}")
-            return null
+            Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
+            return emptyList()
         }
-        return result.purchasesList
-            .filter {
-                it.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                    productId !in it.products &&
-                    it.accountIdentifiers?.obfuscatedAccountId == accountHash
-            }
-            .maxByOrNull { it.purchaseTime }
+        return result.purchasesList.filter {
+            it.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                it.accountIdentifiers?.obfuscatedAccountId == accountHash
+        }
     }
+
+    /** 계정 식별자 해시 — 호출부가 같은 계약으로 만들 수 있게 연다(서버와 공유하는 SHA-256 hex). */
+    fun accountHashFor(userId: String?): String? =
+        userId?.takeIf { it.isNotBlank() }?.let { sha256Hex(it) }
 
     /** 계정 바인딩 계약(서버와 공유): SHA-256 hex 소문자 64자. */
     private fun sha256Hex(value: String): String =

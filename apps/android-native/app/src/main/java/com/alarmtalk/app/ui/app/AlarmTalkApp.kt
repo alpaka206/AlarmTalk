@@ -581,13 +581,18 @@ internal fun AlarmTalkApp(
         // 세 조건을 모두 만족해야 변환: (a) billing 에 유료 구독 없음, (b) 가족/커플 접근도 없음,
         // (c) 서버 users.plan 이 무료. 이래야 갱신 지연·읽기리플리카 지연으로 subscription 이 잠깐
         // null 인 유료 사용자가 영구 오변환되지 않는다. 만료~반영 전 창의 '울림'은 RingingService 게이트가 방어.
+        // ⚠ 2026-08-31: 손으로 쓴 3중조건을 **유일 판정기**로 옮겼다
+        // (`resolvePaidVoiceAccess`). 뜻은 그대로 — '확실히 무료' 일 때만 잠근다 — 이고,
+        // **스토어 신호가 하나 더 들어온다**: Play 가 유효한 구독을 확인해 주면 서버 스냅샷이
+        // 무엇이든 잠그지 않는다(「스토어가 권위다」). 자동갱신 직후 서버 반영이 늦은 사이
+        // 돈을 내는 사용자의 알람이 영구 강등되던 구멍이 이걸로 막힌다.
         val plan = authSession?.user?.plan
+        val access = viewModel.paidVoiceAccess()
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
-        val planIsFree = plan.isNullOrBlank() || plan == "free"
         when {
-            billingNotEntitled && planIsFree -> viewModel.applyFreePlanVoiceLock()
+            authSession != null && access.isDefinitelyFree() -> viewModel.applyFreePlanVoiceLock()
             // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
             // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
             // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
@@ -1271,6 +1276,7 @@ internal fun AlarmTalkApp(
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
+                          storePlanKey = viewModel.storePlanKey,
                       )
                   }
               }
@@ -1303,6 +1309,7 @@ internal fun AlarmTalkApp(
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
+                      storePlanKey = viewModel.storePlanKey,
                       familyAlarmMode = familyTargetMode,
                       initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
@@ -1359,6 +1366,7 @@ internal fun AlarmTalkApp(
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,
                           familyGroup = familyGroup,
+                      storePlanKey = viewModel.storePlanKey,
                           familyAlarmMode = false,
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,

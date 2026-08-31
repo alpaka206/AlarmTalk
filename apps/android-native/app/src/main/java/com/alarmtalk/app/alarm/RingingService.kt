@@ -43,7 +43,8 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.hasCoupleOrFamilyAccess
-import com.alarmtalk.app.isPaidVoiceEntitledNow
+import com.alarmtalk.app.isEntitledOptimistic
+import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -329,11 +330,17 @@ class RingingService : Service() {
     private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
         val userId = AuthSessionStore(applicationContext).read()?.user?.id ?: return@runCatching true
         val snapshot = AccessSnapshotStore(applicationContext).read(userId)
-        val sub = snapshot.subscriptionResponse ?: return@runCatching true
-        if (sub.subscription == null) {
-            return@runCatching hasCoupleOrFamilyAccess(sub, snapshot.familyGroup)
-        }
-        isPaidVoiceEntitledNow(sub, System.currentTimeMillis())
+        // 2026-08-31: 손으로 갈라 쓰던 것을 **유일 판정기**로 옮겼다. 뜻은 그대로이되
+        // **스토어 신호가 하나 더 들어온다** — 앱이 전경에서 물어 캐시에 적어 둔 값이라
+        // 여기서 BillingClient 를 붙이지 않고도 「스토어가 권위다」를 지킬 수 있다.
+        // 울림은 잘못 잠그면 알람이 조용해지는 쪽이라 **모르면 통과**시킨다.
+        resolvePaidVoiceAccess(
+            subscriptionResponse = snapshot.subscriptionResponse,
+            familyGroup = snapshot.familyGroup,
+            userPlan = null,
+            storeEntitled = snapshot.storePlanKey != null,
+            nowMillis = System.currentTimeMillis(),
+        ).isEntitledOptimistic()
     }.getOrDefault(true)
 
     /**
