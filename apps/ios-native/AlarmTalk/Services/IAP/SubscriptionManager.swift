@@ -214,11 +214,22 @@ final class SubscriptionManager: ObservableObject {
         // 구매 시 `appAccountToken` 을 심어 두는 것과 한 쌍이다(위 `purchase` 주석).
         // 토큰이 없는 옛 구매는 **세지 않는다** — 못 세는 것은 '무료' 가 아니라 '모름' 이고,
         // 판정기가 서버 스냅샷으로 내려간다.
-        let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        // ⚠ **계정을 모르면 아무것도 세지 않는다**(2026-08-31 리뷰). 앱은 로그아웃 상태에서도
+        // StoreKit 을 띄우는데, 그때 `currentAccount` 가 nil 이라고 필터를 건너뛰면 **App Store
+        // 계정의 모든 구독**이 전역 `currentTier` 를 올린다 — 그 뒤 무료 B 가 로그인해도
+        // 다음 전경 갱신 전까지 B 가 A 의 등급으로 편집기·목소리·예약 게이트를 통과한다.
+        // 모르는 것은 '무료' 도 '유료' 도 아니다 — 그냥 세지 않고, 로그인할 때 다시 읽는다.
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else {
+            purchasedProductIDs = []
+            currentTier = .free
+            hasLoadedEntitlements = false
+            return
+        }
         var latestExpiry: Date?
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
-            if let currentAccount, transaction.appAccountToken != currentAccount { continue }
+            if transaction.appAccountToken != currentAccount { continue }
             newSet.insert(transaction.productID)
             if let plan = SubscriptionProduct(rawValue: transaction.productID) {
                 // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는

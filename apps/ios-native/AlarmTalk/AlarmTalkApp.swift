@@ -210,6 +210,11 @@ struct AlarmTalkApp: App {
                     .task(id: auth.session?.user.id) {
                         // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
                         guard auth.session != nil else { return }
+                        // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
+                        // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
+                        // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
+                        // 남는다. 반대로 앞 계정 값이 남아 새 계정을 유료로 만들지도 않는다.
+                        await subscriptions.refreshPurchasedProducts()
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
                         // (`SocialNotificationTracker.notifyReceivedAlarm`)은 `.notDetermined`
                         // 에서 조용히 버려지므로, 한 번도 묻지 않으면 신규 설치에서 그 알림이

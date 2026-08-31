@@ -345,7 +345,12 @@ class RingingService : Service() {
             // ⚠ **null 로 두지 말 것.** 서버가 '구독 없음' 이라 답한 경우 이 값이 없으면
             // 판정이 `Unknown` 이 되고 낙관 규칙상 통과해, 강등된 사용자의 클론 목소리가
             // 계속 울린다 — 로컬 폴백의 존재 이유가 사라진다(2026-08-31 리뷰).
-            userPlan = snapshot.userPlan,
+            // ⚠ **옛 버전이 쓴 스냅샷에는 이 필드가 없다**(2026-08-31 리뷰). null 로 두면
+            // '구독 없음 + 그룹 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
+            // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
+            // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
+            userPlan = snapshot.userPlan
+                ?: AuthSessionStore(applicationContext).read()?.user?.plan,
             storeEntitled = storeStillValid,
             nowMillis = now,
         ).isEntitledOptimistic()

@@ -122,7 +122,13 @@ final class SocialFeatureViewModel: ObservableObject {
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
-            accessSnapshotStore.updateUserPlan(userID: userID, plan: session?.user.plan)
+            // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
+            // 배경 `onPlanChanged` 경로는 `refreshAll` 만 부르고 사용자를 다시 읽지 않는다 —
+            // 소유자가 결제 보류에 들어가면 구독은 nil 이 되고 그룹은 남는데, 여기에 **옛 유료
+            // plan** 이 적히면 판정기가 그룹 폴백으로 유료라고 답해 클론 오디오가 계속 예약된다.
+            // 서버에서 지금 값을 받아 적는다(실패하면 옛 값을 덮지 않는다).
+            let freshPlan = try? await AlarmTalkAPI.shared.me(token: session?.token ?? "").user.plan
+            accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan ?? session?.user.plan)
             vouchers = resolvedVouchers
             subscriptionOK = true
         } catch {

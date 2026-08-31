@@ -41,10 +41,6 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
         // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
         val purchases = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
-        // 여기 도달 = 스토어가 **답을 줬다**. 확인 완료 표시는 이 자리에서만 세운다 —
-        // 실패(위 null)에서 세우면 오프라인 시작이 곧 '무료 확정' 이 되어 되돌릴 수 없는
-        // 강등이 걸린다(2026-08-31 리뷰).
-        storeEntitlementChecked = true
         val nextKey = purchases
             .flatMap { it.products }
             .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
@@ -64,6 +60,10 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
             android.util.Log.i("MainViewModel", "Dropping stale store entitlement: account changed")
             return@runCatching
         }
+        // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
+        // 앞에서 세우면 A 의 결과를 버리면서도 **B 의 확인이 끝난 것으로 표시**되어,
+        // B 의 서버 구독이 만료돼 있고 B 자신의 조회는 아직인 사이 되돌릴 수 없는 강등이 걸린다.
+        storeEntitlementChecked = true
         storePlanKey = nextKey
         storeEntitlementUntilMillis = until
         // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
