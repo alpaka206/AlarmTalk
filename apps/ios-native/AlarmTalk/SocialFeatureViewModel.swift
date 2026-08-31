@@ -119,8 +119,6 @@ final class SocialFeatureViewModel: ObservableObject {
             let resolvedSubscription = try await nextSubscription
             let resolvedVouchers = try await nextVouchers
             guard activeUserID == userID else { return }
-            subscription = resolvedSubscription
-            accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
             // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
             // 배경 `onPlanChanged` 경로는 `refreshAll` 만 부르고 사용자를 다시 읽지 않는다 —
@@ -128,6 +126,13 @@ final class SocialFeatureViewModel: ObservableObject {
             // plan** 이 적히면 판정기가 그룹 폴백으로 유료라고 답해 클론 오디오가 계속 예약된다.
             // 서버에서 지금 값을 받아 적는다(실패하면 옛 값을 덮지 않는다).
             let freshPlan = try? await AlarmTalkAPI.shared.me(token: session?.token ?? "").user.plan
+            // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
+            // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
+            // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
+            // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
+            guard activeUserID == userID else { return }
+            subscription = resolvedSubscription
+            accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan ?? session?.user.plan)
             vouchers = resolvedVouchers
             subscriptionOK = true

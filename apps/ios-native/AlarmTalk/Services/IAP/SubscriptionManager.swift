@@ -247,6 +247,13 @@ final class SubscriptionManager: ObservableObject {
                 // 기한 지난 신호를 믿지 않게 한다(Play 는 만료가 없어 TTL 로 대신한다).
             }
         }
+        // ⚠ **반영 직전에 계정을 다시 본다**(2026-08-31 리뷰, 안드로이드
+        // `refreshStoreEntitlement` 의 계정 가드와 같은 이유). `currentEntitlements` 순회는
+        // 비동기라 그 사이 A 가 로그아웃하고 B 가 들어올 수 있다 — 걸러낸 값은 A 것인데
+        // `persistStoreEntitlement` 는 **지금 계정 B** 를 읽어 적으므로, A 의 유료 등급이
+        // B 의 스냅샷에 박혀 편집기·예약 게이트가 열린다.
+        guard authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:)) == currentAccount
+        else { return }
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
