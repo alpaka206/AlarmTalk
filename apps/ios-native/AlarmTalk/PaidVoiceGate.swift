@@ -82,7 +82,14 @@ enum PaidVoiceGate {
     /// 3. 서버가 '구독 없음' 이라 답했으면 그룹 접근을 본다.
     /// 4. 스냅샷이 없으면 **모른다** — 무료가 아니다.
     static func resolve(snapshot: AccessSnapshot, now: Date = Date()) -> PaidVoiceAccess {
-        if snapshot.storePlanKey != nil { return .entitled }
+        // ⚠ **기한이 지난 스토어 신호는 없는 것으로 본다.** 기한 없이 믿으면 한 번 유료였던
+        // 기기가 영구 통행증을 갖는다 — 전경 갱신 없이 배경 예약만 도는 사이 만료돼도
+        // 클론 오디오가 계속 예약된다(2026-08-31 리뷰).
+        if snapshot.storePlanKey != nil,
+           let untilMillis = snapshot.storeEntitlementUntilMillis,
+           Date(timeIntervalSince1970: Double(untilMillis) / 1000) > now {
+            return .entitled
+        }
         guard let response = snapshot.subscriptionResponse else { return .unknown }
         guard let subscription = response.subscription else {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만

@@ -123,8 +123,11 @@ internal fun AlarmEditorScreen(
     authSession: AuthSession?,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
-    /** 스토어가 확인해 준 등급(plan key). null = 무료가 아니라 **확인 못 함**. */
-    storePlanKey: String?,
+    /**
+     * 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값).
+     * ⚠ 원시 `storePlanKey` 를 넘기지 말 것 — 기한이 지난 키를 그대로 믿게 된다.
+     */
+    storeEntitledNow: Boolean,
     familyAlarmMode: Boolean,
     initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
@@ -199,7 +202,7 @@ internal fun AlarmEditorScreen(
             subscriptionResponse = subscriptionResponse,
             familyGroup = familyGroup,
             userPlan = authSession.user.plan,
-            storeEntitled = storePlanKey != null,
+            storeEntitled = storeEntitledNow,
             nowMillis = System.currentTimeMillis(),
         ).isEntitledOptimistic()
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만

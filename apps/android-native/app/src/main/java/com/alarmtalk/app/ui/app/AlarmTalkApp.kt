@@ -1281,7 +1281,7 @@ internal fun AlarmTalkApp(
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
-                          storePlanKey = viewModel.storePlanKey,
+                          storeEntitledNow = viewModel.isStoreEntitledNow(),
                       )
                   }
               }
@@ -1314,7 +1314,7 @@ internal fun AlarmTalkApp(
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
-                      storePlanKey = viewModel.storePlanKey,
+                      storeEntitledNow = viewModel.isStoreEntitledNow(),
                       familyAlarmMode = familyTargetMode,
                       initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
@@ -1371,7 +1371,7 @@ internal fun AlarmTalkApp(
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,
                           familyGroup = familyGroup,
-                      storePlanKey = viewModel.storePlanKey,
+                      storeEntitledNow = viewModel.isStoreEntitledNow(),
                           familyAlarmMode = false,
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,

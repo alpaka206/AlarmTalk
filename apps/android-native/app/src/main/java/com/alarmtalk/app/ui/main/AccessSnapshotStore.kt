@@ -32,6 +32,14 @@ internal data class AccessSnapshot(
      * iOS 는 StoreKit 이 실제 만료를 주므로 그 값을 그대로 쓴다.
      */
     val storeEntitlementUntilMillis: Long? = null,
+    /**
+     * 서버가 말한 `users.plan`. **그룹 접근보다 먼저 본다.**
+     *
+     * ⚠ 없으면 울림 경로가 `Unknown` 으로 떨어지고, 낙관 규칙상 **통과**한다 — 강등된
+     * 사용자의 클론 목소리가 계속 울린다(2026-08-31 리뷰). 결제 보류는 그룹을 남긴 채
+     * 이 값만 회수하므로, 그룹만 봐서도 안 된다.
+     */
+    val userPlan: String? = null,
 )
 
 /**
@@ -61,6 +69,11 @@ internal class AccessSnapshotStore(context: Context) {
     fun updateStorePlanKey(userId: String, planKey: String?, untilMillis: Long?) {
         val current = read(userId)
         save(userId, current.copy(storePlanKey = planKey, storeEntitlementUntilMillis = untilMillis))
+    }
+
+    fun updateUserPlan(userId: String, plan: String?) {
+        val current = read(userId)
+        save(userId, current.copy(userPlan = plan))
     }
 
     fun updateSubscription(userId: String, response: BillingSubscriptionResponse?) {

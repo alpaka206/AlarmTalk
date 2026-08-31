@@ -587,10 +587,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             subscriptionResponse = subscriptionResponse,
             familyGroup = familyGroup,
             userPlan = authSession?.user?.plan,
-            storeEntitled = storePlanKey != null &&
-                (storeEntitlementUntilMillis ?: 0L) > nowMillis,
+            storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
         )
+
+    /**
+     * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
+     * 원시 `storePlanKey` 를 넘기면 기한이 지난 키를 그대로 믿게 된다(2026-08-31 리뷰).
+     */
+    internal fun isStoreEntitledNow(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        storePlanKey != null && (storeEntitlementUntilMillis ?: 0L) > nowMillis
 
     /** 모르면 잠그지 않는다 — 표시·저장·생성 게이트용. */
     internal fun isPaidVoiceEntitledOptimistic(): Boolean = paidVoiceAccess().isEntitledOptimistic()
@@ -1126,6 +1132,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         accessSnapshotStore.updateSubscription(userId, response)
+        // 구독과 **같이** 적는다 — 울림 경로가 그룹보다 먼저 보는 값이라, 한쪽만 갱신하면
+        // 서버가 '구독 없음' 이라 답한 순간 판정이 Unknown 으로 떨어져 통과해 버린다.
+        accessSnapshotStore.updateUserPlan(userId, authSession?.user?.plan)
     }
 
     internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {

@@ -234,8 +234,8 @@ internal fun VoiceProfileManagementPanel(
     voiceDraftQuotaExhausted: Boolean = false,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
-    /** 스토어가 확인해 준 등급(plan key). null = 무료가 아니라 **확인 못 함**. */
-    storePlanKey: String?,
+    /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
+    storeEntitledNow: Boolean,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
@@ -376,7 +376,7 @@ internal fun VoiceProfileManagementPanel(
         subscriptionResponse = subscriptionResponse,
         familyGroup = familyGroup,
         userPlan = authSession?.user?.plan,
-        storeEntitled = storePlanKey != null,
+        storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
     ).isEntitledOptimistic()
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,

@@ -208,23 +208,38 @@ final class SubscriptionManager: ObservableObject {
     func refreshPurchasedProducts() async {
         var newSet: Set<String> = []
         var maxTier: PlanTier = .free
+        // ⚠ **이 AlarmTalk 계정의 구매만 센다**(2026-08-31 리뷰). 같은 App Store 계정에
+        // 유료 A 와 무료 B 가 번갈아 로그인하면, 거르지 않을 경우 A 의 트랜잭션이 B 의
+        // 등급을 올린다 — 서버는 토큰 불일치로 거절하지만 **로컬 게이트는 통과한다.**
+        // 구매 시 `appAccountToken` 을 심어 두는 것과 한 쌍이다(위 `purchase` 주석).
+        // 토큰이 없는 옛 구매는 **세지 않는다** — 못 세는 것은 '무료' 가 아니라 '모름' 이고,
+        // 판정기가 서버 스냅샷으로 내려간다.
+        let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        var latestExpiry: Date?
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
+            if let currentAccount, transaction.appAccountToken != currentAccount { continue }
             newSet.insert(transaction.productID)
             if let plan = SubscriptionProduct(rawValue: transaction.productID) {
                 // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는
                 // 코드라 본인 권한이 아니다. 이 가드가 없으면 선물을 산 무료 사용자가
                 // 유료로 판정돼, 자기 앱의 유료 기능이 열린다.
                 guard plan.isSubscription else { continue }
+                if let expires = transaction.expirationDate,
+                   expires > (latestExpiry ?? .distantPast) {
+                    latestExpiry = expires
+                }
                 if plan.planTier.tierOrder > maxTier.tierOrder {
                     maxTier = plan.planTier
                 }
+                // StoreKit 은 만료 시각을 준다 — 캐시에 그대로 실어 예약 시점 게이트가
+                // 기한 지난 신호를 믿지 않게 한다(Play 는 만료가 없어 TTL 로 대신한다).
             }
         }
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
-        persistStoreEntitlement()
+        persistStoreEntitlement(until: latestExpiry)
     }
 
     /// **등급이 다시 계산될 때마다** 캐시에 적는다(2026-08-31 리뷰).
@@ -233,12 +248,13 @@ final class SubscriptionManager: ObservableObject {
     /// (`Transaction.updates`)이 캐시에 안 남는다 — 화면은 열리는데 **같은 세션에 예약된
     /// 알람은 옛 스냅샷을 읽어 기본 톤으로 강등**된다. 예약 시점 게이트는 StoreKit 을
     /// 직접 못 보므로 이 캐시가 그 경로의 유일한 근거다.
-    private func persistStoreEntitlement() {
+    private func persistStoreEntitlement(until: Date?) {
         guard let userID = authProvider()?.user.id, !userID.isEmpty else { return }
         let entitled = currentTier.meetsOrExceeds(.personal)
         AccessSnapshotStore().updateStorePlanKey(
             userID: userID,
-            planKey: entitled ? currentTier.rawValue : nil
+            planKey: entitled ? currentTier.rawValue : nil,
+            untilMillis: entitled ? until.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
         )
     }
 
