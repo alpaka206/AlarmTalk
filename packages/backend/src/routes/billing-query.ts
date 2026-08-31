@@ -67,13 +67,29 @@ billingQuery.get('/subscription', async (c) => {
     args: [userId],
   });
 
+  // 무료 강등 뒤 목소리 보관 마감. **무료일 때가 정작 필요한 때**라 조기 반환보다 먼저 읽는다 —
+  // 화면이 "N일 안에 다시 시작하면 돌아와요" 를 말하려면 남은 시간을 알아야 하고, 그 값은
+  // 앱이 들고 있을 수 없다(재설치·다른 기기). 유료면 보관 행이 없어 null 이다.
+  const retentionRes = await db.execute({
+    sql: `SELECT delete_after FROM paid_voice_retention WHERE user_id = ?`,
+    args: [userId],
+  });
+  const voiceRetentionUntil =
+    retentionRes.rows.length > 0 ? String(retentionRes.rows[0]!.delete_after) : null;
+
   if (result.rows.length === 0) {
-    return c.json({ subscription: null, plan: null, next_plan: null });
+    return c.json({
+      subscription: null,
+      plan: null,
+      next_plan: null,
+      voice_retention_until: voiceRetentionUntil,
+    });
   }
 
   const r = result.rows[0]!;
   const nextPlanId = (r.next_plan_id as string | null) ?? null;
   return c.json({
+    voice_retention_until: voiceRetentionUntil,
     subscription: {
       id: String(r.sub_id),
       user_id: String(r.user_id),

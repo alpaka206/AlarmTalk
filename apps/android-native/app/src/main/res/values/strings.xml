@@ -955,4 +955,6 @@
     <string name="clip_prefetch_notification_title">목소리를 받고 있어요</string>
     <string name="voices_clip_prep_done">완료</string>
     <string name="voices_clip_prep_background">백그라운드에서 계속</string>
+    <!-- 무료로 내려가 내 목소리가 목록에서 숨겨졌을 때. %1$d 는 서버가 준 보관 마감까지 남은 날짜(상수 아님). -->
+    <string name="voices_free_locked_notice">이용권이 끝나 내 목소리는 잠겼어요. %1$d일 안에 다시 시작하면 그대로 돌아와요.</string>
 </resources>

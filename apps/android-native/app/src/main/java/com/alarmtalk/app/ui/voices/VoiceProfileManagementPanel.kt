@@ -367,8 +367,11 @@ internal fun VoiceProfileManagementPanel(
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
-    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
-    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
+    // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
+    // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
+    // 공유·**삭제**까지 눌리기 때문이다. 대신 그 자리에 남은 날짜 안내를 둔다(아래).
+    // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).
     val ownVoices = remember(voiceProfiles, canCreateVoice) {
         if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }
@@ -1362,6 +1365,17 @@ internal fun VoiceProfileManagementPanel(
 
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
+        }
+
+        // ⚠ **숨기되 말은 해 준다**(2026-08-31). 무료로 내려가면 목록에서 사라지는데,
+        // 서버에는 보관 유예 동안 살아 있고 다시 유료가 되면 그대로 돌아온다 — 아무 말도
+        // 없으면 사용자는 **이미 지워진 것으로 안다.** 남은 날짜는 서버가 준 마감 시각에서
+        // 계산한다(상수를 앱에 박으면 정책이 바뀔 때 화면이 거짓말을 한다).
+        if (ownSectionExpanded && !canCreateVoice) {
+            val daysLeft = voiceRetentionDaysLeft(subscriptionResponse, System.currentTimeMillis())
+            if (daysLeft != null) {
+                MutedText(stringResource(R.string.voices_free_locked_notice, daysLeft))
+            }
         }
 
         if (ownSectionExpanded) {

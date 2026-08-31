@@ -212,6 +212,25 @@ internal fun isPaidVoiceEntitledNow(
     return expiryMillis > nowMillis
 }
 
+/**
+ * 무료 강등 뒤 목소리 보관이 **며칠 남았는가**(올림). 서버가 준 마감 시각으로 계산한다 —
+ * 상수(3일)를 앱에 박으면 서버 정책이 바뀌는 순간 화면이 거짓말을 한다.
+ *
+ * 이미 지났거나 값이 없으면 null 이다. 남은 시간이 하루가 안 되면 **1** 로 올린다 —
+ * "0일 안에 다시 시작하면" 은 뜻이 통하지 않는다.
+ */
+internal fun voiceRetentionDaysLeft(
+    subscriptionResponse: BillingSubscriptionResponse?,
+    nowMillis: Long,
+): Int? {
+    val until = subscriptionResponse?.voiceRetentionUntil?.takeIf { it.isNotBlank() } ?: return null
+    val untilMillis = runCatching { java.time.Instant.parse(until).toEpochMilli() }.getOrNull()
+        ?: return null
+    val remaining = untilMillis - nowMillis
+    if (remaining <= 0) return null
+    return Math.ceil(remaining / (24.0 * 60 * 60 * 1000)).toInt().coerceAtLeast(1)
+}
+
 internal fun familyAlarmRecipients(
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,

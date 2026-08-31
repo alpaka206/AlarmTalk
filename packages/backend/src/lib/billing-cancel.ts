@@ -183,9 +183,17 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 
 /**
  * 만료된(delete_after 경과) 유료 음성 보관 행을 거둔다.
- * 정책 변경: 무료 전환 시 유료 음성 데이터를 더 이상 삭제하지 않는다 — 데이터는 그대로 보존하고
- * 무료인 동안 사용을 잠글 뿐이며, 다시 유료가 되면 그대로 풀린다(잠금은 users.plan 에서 파생).
- * 그래서 이 스윕은 하드삭제를 하지 않고, 유예가 지난 보관 행만 정리하는 청소부로 남는다.
+ *
+ * ⚠ **이 스윕은 하드삭제를 한다**(2026-08-31 정정 — 예전 주석은 "삭제하지 않고 잠글 뿐"
+ * 이라고 적혀 있었으나 코드와 달랐다). 유예가 지나면 `deleteSensitiveVoiceDataForUser` 가
+ * `voice_profiles`·`voice_uploads`·`generated_audio_assets`·`messages` 를 지우고 R2·
+ * ElevenLabs 오브젝트를 삭제 큐에 넣는다.
+ *
+ * 무료 전환 **시점**에는 지우지 않는다 — 그때는 제공자 클론만 반납하고(`elevenlabs_voice_id`
+ * 를 비우고 `evicted_*` 표식을 남긴다) 데이터는 유예 동안 살려 둔다. 그 사이 다시 유료가
+ * 되면 원본으로 재클론해 그대로 돌아온다(`recloneEvictedVoiceProfile`).
+ * 삭제 직전에 `hasActivePaidEntitlement` 로 한 번 더 확인하므로, 유예 중 재구독했으면
+ * 보관 행만 지우고 데이터는 남는다.
  * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
 export async function sweepPaidVoiceRetention(

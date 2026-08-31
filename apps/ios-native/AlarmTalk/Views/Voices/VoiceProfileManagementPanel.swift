@@ -62,8 +62,32 @@ struct VoiceProfileManagementPanel: View {
     private var systemVoices: [VoiceProfile] {
         voice.profiles.filter { isSystemVoice($0) }
     }
+    /// ⚠ **무료면 내 목소리를 목록에서 숨긴다**(2026-08-31, 안드로이드
+    /// `VoiceProfileManagementPanel.ownVoices` 미러). 유료여야 쓸 수 있는데 그대로 보여
+    /// 주면 미리듣기·이름 수정·공유·**삭제**까지 눌린다 — 보관 유예 안에 다시 시작하면
+    /// 돌아올 목소리를 사용자가 모르고 지운다. 대신 그 자리에 안내 한 줄을 둔다
+    /// (`freeLockedNotice`) — 아무 말 없이 사라지면 이미 지워진 것으로 읽힌다.
     private var ownVoices: [VoiceProfile] {
-        voice.profiles.filter { !isSystemVoice($0) }
+        guard hasPaidVoiceAccess else { return [] }
+        return voice.profiles.filter { !isSystemVoice($0) }
+    }
+
+    /// 안내를 띄울 조건 — **무료이고, 보관 유예가 남아 있을 때만.** 애초에 만든 적이 없는
+    /// 사용자에게는 띄우지 않는다(보관 행이 없어 nil 이다).
+    private var freeLockedNoticeDays: Int? {
+        guard !hasPaidVoiceAccess else { return nil }
+        return voiceRetentionDaysLeft
+    }
+
+    /// 보관 마감까지 남은 날짜(올림). 서버가 준 시각에서 계산한다 — 상수(3일)를 앱에 박으면
+    /// 정책이 바뀌는 순간 화면이 거짓말을 한다. 지났거나 값이 없으면 nil.
+    private var voiceRetentionDaysLeft: Int? {
+        guard let iso = socialFeatures.subscription?.voiceRetentionUntil, !iso.isEmpty,
+              let until = PaidVoiceGate.parseTimestamp(iso)
+        else { return nil }
+        let remaining = until.timeIntervalSinceNow
+        guard remaining > 0 else { return nil }
+        return max(1, Int(ceil(remaining / 86_400)))
     }
 
     var body: some View {
@@ -308,8 +332,15 @@ struct VoiceProfileManagementPanel: View {
         VoiceSectionCard(
             title: "내 목소리",
             trailing: AnyView(addVoiceHeaderTrailing),
-            hasContent: !ownVoices.isEmpty
+            hasContent: !ownVoices.isEmpty || freeLockedNoticeDays != nil
         ) {
+            if let days = freeLockedNoticeDays {
+                Text("이용권이 끝나 내 목소리는 잠겼어요. \(days)일 안에 다시 시작하면 그대로 돌아와요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
             ForEach(Array(ownVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
