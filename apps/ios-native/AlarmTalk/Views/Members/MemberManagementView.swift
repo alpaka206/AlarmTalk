@@ -255,7 +255,13 @@ struct MemberManagementView: View {
         // 서버가 교환을 막는 기준도 그것이다(`voucher-redemption.ts` 의 GROUP_FULL 은
         // member_count vs max_members). 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로
         // 리셋**되어, 정원이 찼는데도 공유 버튼이 살아난다(서버가 거절해 눌러 봐야 안다).
-        let isFull = isCapacityFull
+        // ⚠ **정원과 '코드 소진' 은 다른 상태다**(2026-08-31 리뷰). 정원이 찼다가 구성원을
+        // 내보내면 자리는 나지만 그 코드의 교환 기록은 그대로라 서버가 `CODE_ALREADY_USED`
+        // 로 계속 막는다. 정원만 보면 **먹지 않을 코드로 공유 버튼이 살아난다.**
+        // 소진된 코드는 공유를 막고 재발급으로 안내한다(그 버튼은 항상 열려 있다).
+        let codeExhausted = (voucher.maxUses ?? 1) > 0
+            && (voucher.useCount ?? 0) >= (voucher.maxUses ?? 1)
+        let isFull = isCapacityFull || codeExhausted
 
         return VStack(alignment: .leading, spacing: 8) {
             Text(voucher.code)
@@ -264,7 +270,9 @@ struct MemberManagementView: View {
                 .textSelection(.enabled)
 
             if isFull {
-                Text("정원이 가득 차서 공유할 수 없어요")
+                Text(isCapacityFull
+                     ? "정원이 가득 차서 공유할 수 없어요"
+                     : "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
@@ -287,9 +295,15 @@ struct MemberManagementView: View {
                             socialFeatures.statusMessage = "공유 코드를 다시 불러오지 못했어요."
                             return
                         }
-                        let latestFull = isCapacityFull
-                        guard !latestFull else {
+                        // 새로고침 뒤 값으로 다시 판정한다 — 정원과 코드 소진 둘 다.
+                        let latestExhausted = (latestVoucher.maxUses ?? 1) > 0
+                            && (latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1)
+                        guard !isCapacityFull else {
                             socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
+                            return
+                        }
+                        guard !latestExhausted else {
+                            socialFeatures.statusMessage = "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요."
                             return
                         }
                         // 클립보드는 **코드만** — 받은 사람이 붙여넣기로 바로 등록한다.

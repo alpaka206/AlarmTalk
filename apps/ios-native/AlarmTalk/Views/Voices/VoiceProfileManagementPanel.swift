@@ -76,9 +76,17 @@ struct VoiceProfileManagementPanel: View {
     /// `PlanTier.bestKnown` 은 구매 직후 깜빡임을 줄이려고 `status == "active"` 만 보는데,
     /// 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도** 유료로 읽혀 숨겨야 할 목소리가
     /// 미리듣기·이름 수정·공유·삭제까지 가능한 채로 드러난다.
+    ///
+    /// ⚠ **단 StoreKit 이 살아 있다고 하면 서버 만료로 뒤집지 않는다**(2026-08-31 리뷰 2차).
+    /// 「구독 수명주기 — **스토어가 권위다**」(docs/spec/billing-lifecycle.md). 갱신 직후
+    /// 백엔드 동기화가 아직 안 왔을 뿐인데 옛 만료시각으로 거부하면, **지금 돈을 내고 있는
+    /// 사용자가** 자기 목소리 목록을 통째로 잃는다 — 고치려던 것과 정반대 방향의 사고다.
+    /// 서버 만료는 StoreKit 이 확인해 주지 못할 때만 본다.
+    ///
     /// 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(안드로이드와 같은 규칙).
     private var paidVoiceEntitledNow: Bool {
         guard hasPaidVoiceAccess else { return false }
+        if subscriptions.currentTier.meetsOrExceeds(.personal) { return true }
         guard let expiresAt = socialFeatures.subscription?.subscription?.expiresAt,
               let expiry = PaidVoiceGate.parseTimestamp(expiresAt)
         else { return true }

@@ -250,7 +250,17 @@ class StockClipPrefetchWorker(
             rebind()
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
-            if (failures.get() > 0 && runAttemptCount < MAX_RUN_ATTEMPTS) Result.retry() else Result.success()
+            //
+            // ⚠ **재시도를 다 쓰면 `success` 가 아니라 `failure` 다**(2026-08-31 리뷰).
+            // `done` 은 실패한 클립까지 세므로 성공으로 끝내면 WorkManager 가 **100%
+            // SUCCEEDED** 를 내보낸다 — 준비 화면은 캐시가 하나라도 있으면 닫히고, FAILED
+            // 상태에서만 뜨는 '다시 시도' 를 영영 못 보여준다. 못 받은 클립은 다른 계기가
+            // 큐를 다시 넣을 때까지 빈 채로 남는다. 아래 catch 의 종료 규칙과 같은 결론이다.
+            when {
+                failures.get() == 0 -> Result.success()
+                runAttemptCount < MAX_RUN_ATTEMPTS -> Result.retry()
+                else -> Result.failure()
+            }
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
             AlarmTalkLog.reportError("Stock clip prefetch failed", error)

@@ -16752,6 +16752,23 @@
           }
         }
       }
+    },
+    "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This code has been used up. Regenerate it to share again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコードは使い切りました。再発行すればまた共有できます。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

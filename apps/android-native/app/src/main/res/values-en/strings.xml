@@ -906,4 +906,5 @@ Pass code: %1$s
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>
+    <string name="social_code_exhausted">This code has been used up. Regenerate it to share again.</string>
 </resources>

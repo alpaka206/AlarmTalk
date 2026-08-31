@@ -914,4 +914,5 @@
     <string name="clip_prefetch_notification_title">音声をダウンロードしています</string>
     <string name="voices_clip_prep_done">完了</string>
     <string name="voices_clip_prep_background">バックグラウンドで続ける</string>
+    <string name="social_code_exhausted">このコードは使い切りました。再発行すればまた共有できます。</string>
 </resources>

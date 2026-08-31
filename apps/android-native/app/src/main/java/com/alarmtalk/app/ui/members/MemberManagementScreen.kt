@@ -178,6 +178,14 @@ internal fun MemberManagementScreen(
                     // 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로 리셋**되어, 정원이
                     // 찼는데도 공유 버튼이 살아난다 — 서버가 거절해 눌러 봐야 알게 된다.
                     val isFull = isCapacityFull
+                    // ⚠ **정원과 '코드 소진' 은 다른 상태다**(2026-08-31 리뷰). 정원이 찼다가
+                    // 구성원을 내보내면 자리는 나지만 그 코드의 교환 기록은 그대로라,
+                    // `redeemVoucherCodeInTransaction` 이 `CODE_ALREADY_USED` 로 계속 막는다.
+                    // 정원만 보면 **먹지 않을 코드로 공유 버튼이 살아나** 받는 쪽이 실패한다.
+                    // 소진된 코드는 공유를 막고 **재발급으로 안내**한다(그 버튼은 항상 열려 있다).
+                    val codeExhausted = shareVoucher.maxUses > 0 &&
+                        shareVoucher.useCount >= shareVoucher.maxUses
+                    val shareBlocked = isFull || codeExhausted
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = WakerPanelShape,
@@ -197,9 +205,15 @@ internal fun MemberManagementScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                if (isFull) {
+                                if (shareBlocked) {
                                     Text(
-                                        text = stringResource(R.string.social_capacity_full),
+                                        text = stringResource(
+                                            if (isFull) {
+                                                R.string.social_capacity_full
+                                            } else {
+                                                R.string.social_code_exhausted
+                                            },
+                                        ),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -212,12 +226,12 @@ internal fun MemberManagementScreen(
                             ) {
                                 Button(
                                     onClick = { shareCode(shareVoucher.code) },
-                                    enabled = !billingBusy && !isFull,
+                                    enabled = !billingBusy && !shareBlocked,
                                     colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
+                                    Text(if (shareBlocked) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                                 }
                                 OutlinedButton(
                                     onClick = { showRegenerateConfirm = true },
