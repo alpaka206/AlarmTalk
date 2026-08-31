@@ -303,7 +303,8 @@ struct VoiceProfileManagementPanel: View {
     /// 화면에 숫자를 띄울 쿼터. **유료 사용자에게만** 의미가 있다 —
     /// 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
     private var monthlyQuota: VoiceDraftQuotaResponse? {
-        guard hasPaidVoiceAccess, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
+        // 만료까지 보는 판정 — 목록만 숨기고 쿼터를 옛 판정으로 두면 숫자만 남는다.
+        guard paidVoiceEntitledNow, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
         return quota
     }
 
@@ -379,7 +380,7 @@ struct VoiceProfileManagementPanel: View {
             // ⚠ **유료만 숫자를 본다.** 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면
             // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
             // 눌렀을 때 이용권 안내로 보낸다.
-            if let quota = monthlyQuota, hasPaidVoiceAccess, quota.registrationLimit > 0 {
+            if let quota = monthlyQuota, paidVoiceEntitledNow, quota.registrationLimit > 0 {
                 Text("생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -391,7 +392,7 @@ struct VoiceProfileManagementPanel: View {
                 // 사라고 말하고 있었다.
                 // 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 의 when 과 **같은 세 갈래**다:
                 //   canOpenCreateForm → 폼 / !canCreateVoice → 이용권 안내 / else → 한도 안내
-                if !hasPaidVoiceAccess {
+                if !paidVoiceEntitledNow {
                     planGateOpen = true
                 } else if monthlyExhausted {
                     // ⚠ **이용권 안내를 띄우지 말 것.** 이미 유료인 사람에게 "이용권을

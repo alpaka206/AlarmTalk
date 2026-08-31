@@ -211,8 +211,11 @@ struct MemberManagementView: View {
 
     // MARK: - Sections
 
+    /// ⚠ **인원수는 여기 두지 않는다**(2026-08-31 리뷰). 구성원 섹션 옆으로 옮겼는데
+    /// 이 행에도 남겨 두면 같은 숫자가 한 화면에 두 번 나온다. 여기는 **어떤 이용권인지**만
+    /// 말한다(안드로이드에는 이 행이 없다 — 인원은 구성원 옆 한 곳뿐이다).
     private var capacityRow: some View {
-        Text("\(planLabel) 이용권 · 현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
+        Text("\(planLabel) 이용권")
             .font(theme.typography.bodyMedium)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }

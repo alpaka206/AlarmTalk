@@ -147,13 +147,20 @@ class StockClipPrefetchWorker(
                 }
             }
             val clips = allClips.filter {
+                val isDefaultVoiceClip = it.targetsDefaultVoices(language)
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
-                it.targetsDefaultVoices(language) ||
-                    it.voiceProfileId in ownedProfileIds ||
+                val isOwnedCloneClip = it.voiceProfileId in ownedProfileIds
+                // ⚠ **무료면 스테일 갱신도 기본 목소리 것만 한다**(2026-08-31 리뷰).
+                // `ownedProfileIds` 를 비우는 것만으로는 부족하다 — 강등 전에 받아 둔 클론
+                // 클립의 `audio_url` 이 바뀌면 이 갈래가 그 클립을 **도로 끌어온다.** 서버는
+                // 무료의 클론 오디오를 403(`VOICE_LOCKED_FREE_PLAN`)으로 막으므로, 쓸 수 있는
+                // 시스템 클립을 다 받고도 그 하나 때문에 재시도를 소진하고 FAILED 로 끝난다.
+                val staleNeedsRefresh = (paidVoiceAccess || isDefaultVoiceClip) &&
                     AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
                         audioStore.isCachedAudioStale(key, it.audioUrl)
                     }
+                isDefaultVoiceClip || isOwnedCloneClip || staleNeedsRefresh
             }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.

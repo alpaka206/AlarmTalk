@@ -366,7 +366,11 @@ internal fun VoiceProfileManagementPanel(
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
+    // ⚠ 만료까지 보는 판정을 **생성·쿼터 게이트에도** 쓴다(2026-08-31 리뷰). 목록만 숨기고
+    // 여기를 옛 판정으로 두면, 만료된 스냅샷에서 목소리는 사라졌는데 '생성 가능 n/m회' 와
+    // 등록 흐름은 그대로 열려 있다 — 게다가 교체 대상은 비어 버린 목록에서 오므로 보관된
+    // 프로필을 교체할 길도 없이 확정에서 거절당한다.
+    val canCreateVoice = isPaidVoiceEntitledNow(subscriptionResponse, System.currentTimeMillis())
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
@@ -380,9 +384,8 @@ internal fun VoiceProfileManagementPanel(
     // ⚠ **만료까지 보는 판정을 쓴다**(2026-08-31 리뷰). `hasPaidVoiceAccess` 는
     // `status == "active"` 만 보므로, 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도**
     // true 가 되어 숨겨야 할 목소리가 미리듣기·삭제까지 가능한 채로 드러난다.
-    val paidVoiceEntitled = isPaidVoiceEntitledNow(subscriptionResponse, System.currentTimeMillis())
-    val ownVoices = remember(voiceProfiles, paidVoiceEntitled) {
-        if (paidVoiceEntitled) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    val ownVoices = remember(voiceProfiles, canCreateVoice) {
+        if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }
     // 등록 확정에서 교체 대상이 되는 **이미 등록된** 목소리(초안·실패 제외).
     // 있으면 저장이 한도에 걸리므로 교체 체크를 낸다.
