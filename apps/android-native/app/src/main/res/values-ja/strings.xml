@@ -530,8 +530,8 @@
 
     <string name="social_code_input_label">コード入力</string>
     <string name="social_code_input_hint">招待コード・利用券ギフトコード・プロモコードのすべてを登録できます。</string>
-    <string name="social_voucher_usage">%1$d/%2$d人が使用中</string>
-    <string name="social_voucher_usage_full">%1$d/%2$d人が使用中 · 定員がいっぱいで共有できません</string>
+    <string name="social_members_capacity">%1$d/%2$d人</string>
+    <string name="social_capacity_full">定員がいっぱいで共有できません</string>
     <string name="voices_close">閉じる</string>
     <string name="voices_create_dialog_title">声を作成</string>
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>

@@ -172,7 +172,12 @@ internal fun MemberManagementScreen(
                 }
             } else {
                 item {
-                    val isFull = isCapacityFull || shareVoucher.useCount >= shareVoucher.maxUses
+                    // ⚠ **정원은 '코드가 몇 번 쓰였는가' 가 아니라 '지금 몇 명인가' 다**
+                    // (2026-08-31). 서버가 교환을 막는 기준도 그것이다
+                    // (`voucher-redemption.ts` 의 GROUP_FULL 은 member_count vs max_members).
+                    // 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로 리셋**되어, 정원이
+                    // 찼는데도 공유 버튼이 살아난다 — 서버가 거절해 눌러 봐야 알게 된다.
+                    val isFull = isCapacityFull
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = WakerPanelShape,
@@ -192,23 +197,13 @@ internal fun MemberManagementScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                Text(
-                                    text = if (isFull) {
-                                        stringResource(
-                                            R.string.social_voucher_usage_full,
-                                            shareVoucher.useCount,
-                                            shareVoucher.maxUses,
-                                        )
-                                    } else {
-                                        stringResource(
-                                            R.string.social_voucher_usage,
-                                            shareVoucher.useCount,
-                                            shareVoucher.maxUses,
-                                        )
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (isFull) {
+                                    Text(
+                                        text = stringResource(R.string.social_capacity_full),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                             // 공유하기 + 재발급 — 한 줄에 나란히
                             Row(
@@ -263,11 +258,30 @@ internal fun MemberManagementScreen(
 
         // 3) 구성원
         item {
-            Text(
-                text = stringResource(R.string.social_members_section_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            // 정원은 **구성원 옆**에 둔다 — 공유 코드 옆에 두면 '코드 사용량' 으로 읽힌다
+            // (분모도 다르다: 코드는 소유자를 뺀 max_members - 1).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.social_members_section_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                group?.let {
+                    Text(
+                        text = stringResource(
+                            R.string.social_members_capacity,
+                            sortedMembers.size,
+                            it.maxMembers,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         items(sortedMembers, key = { it.userId }) { member ->

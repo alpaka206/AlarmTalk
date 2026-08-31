@@ -86,36 +86,36 @@
         }
       }
     },
-    "%lld/%lld명 사용": {
+    "%lld/%lld명": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld in use"
+            "value": "%lld/%lld"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld人が使用中"
+            "value": "%lld/%lld人"
           }
         }
       }
     },
-    "%lld/%lld명 사용 · 정원이 가득 차서 공유할 수 없어요": {
+    "정원이 가득 차서 공유할 수 없어요": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld in use · Full, so you can't share"
+            "value": "Full, so you can't share"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld人が使用中 · 定員がいっぱいで共有できません"
+            "value": "定員がいっぱいで共有できません"
           }
         }
       }

@@ -103,7 +103,18 @@ struct MemberManagementView: View {
                         shareCodeSection
                     }
 
-                    sectionTitle("구성원")
+                    // 정원은 **구성원 옆**에 둔다 — 공유 코드 옆에 두면 '코드 사용량' 으로
+                    // 읽힌다(분모도 다르다: 코드는 소유자를 뺀 max_members - 1).
+                    HStack {
+                        sectionTitle("구성원")
+                        Spacer()
+                        if let group {
+                            Text("\(sortedMembers.count)/\(group.maxMembers)명")
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                                .monospacedDigit()
+                        }
+                    }
                     ForEach(sortedMembers) { member in
                         MemberRow(
                             member: member,
@@ -240,8 +251,11 @@ struct MemberManagementView: View {
     }
 
     private func shareCodeCard(voucher: VoucherItem) -> some View {
+        // ⚠ **정원은 '코드가 몇 번 쓰였는가' 가 아니라 '지금 몇 명인가' 다**(2026-08-31).
+        // 서버가 교환을 막는 기준도 그것이다(`voucher-redemption.ts` 의 GROUP_FULL 은
+        // member_count vs max_members). 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로
+        // 리셋**되어, 정원이 찼는데도 공유 버튼이 살아난다(서버가 거절해 눌러 봐야 안다).
         let isFull = isCapacityFull
-            || ((voucher.useCount ?? 0) >= (voucher.maxUses ?? 1))
 
         return VStack(alignment: .leading, spacing: 8) {
             Text(voucher.code)
@@ -249,11 +263,11 @@ struct MemberManagementView: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .textSelection(.enabled)
 
-            Text(isFull
-                 ? "\(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)명 사용 · 정원이 가득 차서 공유할 수 없어요"
-                 : "\(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)명 사용")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+            if isFull {
+                Text("정원이 가득 차서 공유할 수 없어요")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
 
             HStack(spacing: 8) {
                 Button {
@@ -274,7 +288,6 @@ struct MemberManagementView: View {
                             return
                         }
                         let latestFull = isCapacityFull
-                            || ((latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1))
                         guard !latestFull else {
                             socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
                             return
