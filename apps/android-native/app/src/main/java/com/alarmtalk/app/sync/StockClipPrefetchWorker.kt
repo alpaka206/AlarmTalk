@@ -17,6 +17,7 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.StockClip
@@ -123,12 +124,27 @@ class StockClipPrefetchWorker(
             // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
             // ⚠ **공유받은 목소리는 넣지 않는다** — 그룹원 수만큼 곱해지는데 실제로 쓰는 것은
             // 보통 하나다. 그건 알람에서 고르는 순간 받는다.
-            val ownedProfileIds = withContext(Dispatchers.IO) {
-                runCatching { api.listVoiceProfiles(auth).profiles }
-                    .getOrDefault(emptyList())
-                    .filterNot { isSystemVoiceId(it.id) }
-                    .map { it.id }
-                    .toSet()
+            // ⚠ **무료면 내 클론 클립은 아예 요청하지 않는다**(2026-08-31 실기기 재현).
+            // 무료 계정에도 예전에 만든 클론의 프리셋 클립이 매니페스트에 남아 있는데, 서버는
+            // 그걸 403 으로 막는다(유료 전용). 요청해 봐야 못 받을 뿐 아니라, 그 실패가 같은
+            // 배치의 **무료 스톡 클립까지 끌고 죽었다** — 날씨·약 클립이 안 받아져 알람이
+            // 라이브 생성으로 넘어가고, 사용자는 "유료 이용권에서 사용할 수 있어요" 를 봤다.
+            // (배치 격리는 아래에서 따로 고쳤지만, 애초에 보내지 않는 게 맞다.)
+            // 플랜을 못 읽으면(네트워크 실패) **받는 쪽으로** 둔다 — 유료 사용자가 자기 클립을
+            // 못 받는 것이 더 나쁘고, 무료면 그 요청만 403 으로 조용히 걸러진다.
+            val paidVoiceAccess = withContext(Dispatchers.IO) {
+                runCatching { hasPaidVoiceAccess(api.getSubscription(auth)) }.getOrDefault(true)
+            }
+            val ownedProfileIds = if (!paidVoiceAccess) {
+                emptySet()
+            } else {
+                withContext(Dispatchers.IO) {
+                    runCatching { api.listVoiceProfiles(auth).profiles }
+                        .getOrDefault(emptyList())
+                        .filterNot { isSystemVoiceId(it.id) }
+                        .map { it.id }
+                        .toSet()
+                }
             }
             val clips = allClips.filter {
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
@@ -195,16 +211,28 @@ class StockClipPrefetchWorker(
                 coroutineScope {
                     batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
-                            val response = api.getTtsMessageAudio(auth, clip.messageId)
-                            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                            cacheKeys.forEach { key ->
-                                audioStore.cacheGeneratedAudio(
-                                    bytes = bytes,
-                                    format = response.audioFormat,
-                                    rawAudioUri = response.audioUrl,
-                                    displayName = key,
-                                    cacheKey = key,
-                                    messageId = clip.messageId,
+                            // ⚠ **한 클립의 실패가 배치를 죽이지 않게 한다**(2026-08-31).
+                            // 예전에는 여기서 던진 예외가 `coroutineScope` 를 취소해 **같은
+                            // 배치의 나머지 요청까지 Canceled** 로 끝났다. 접근 권한이 없는
+                            // 클립 하나(무료 계정에 남은 클론 프리셋 → 403) 때문에 날씨·약
+                            // 스톡 클립이 통째로 안 받아졌다. 못 받은 것은 다음 회차가 보충한다.
+                            runCatching {
+                                val response = api.getTtsMessageAudio(auth, clip.messageId)
+                                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                                cacheKeys.forEach { key ->
+                                    audioStore.cacheGeneratedAudio(
+                                        bytes = bytes,
+                                        format = response.audioFormat,
+                                        rawAudioUri = response.audioUrl,
+                                        displayName = key,
+                                        cacheKey = key,
+                                        messageId = clip.messageId,
+                                    )
+                                }
+                            }.onFailure { error ->
+                                AlarmTalkLog.reportError(
+                                    "Stock clip download failed messageId=${clip.messageId}",
+                                    error,
                                 )
                             }
                         }

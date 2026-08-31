@@ -460,6 +460,11 @@ internal class AlarmEditorState(
         rawAudioUri = audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
         selectedBucket = bucket
+        // ⚠ **문구 종류를 버킷과 맞춰 둔다**(2026-08-31). 컨텍스트가 밀린 채(목소리 재선택 등)
+        // 여기로 오면 버킷은 '날씨' 인데 종류는 'preset' 으로 남아, 저장된 행을 다시 열 때
+        // **기본 인사말**로 보인다(CLAUDE.md 「일곱 자리」가 막으려는 바로 그 어긋남).
+        // 되짚기는 `clonePrerenderBucketCategoryFor` 의 역함수 하나뿐이다 — 한쪽만 고치지 말 것.
+        randomPromptContextForBucket(bucket)?.let { voiceRandomContext = it }
         bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
         bucketClipTextsJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipTexts)
         bucketResolvedForProfileId = profileId

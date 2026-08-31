@@ -137,6 +137,56 @@ class AlarmEditorStateTest {
         assertEquals("love", draft.voiceRandomContext)
     }
 
+    /**
+     * ⚠ **바인딩이 풀린 버킷 알람도 여전히 '테마' 다**(2026-08-31 실기기 재현).
+     *
+     * `setBucketAudio` 는 버킷을 붙이면서 `voiceRandomPrompt` 를 끈다. 그래서 저장 갈래가
+     * 그 값 하나로 "테마인가" 를 가르면, 오디오 바인딩이 풀린 순간(이미 고른 목소리를 다시
+     * 누르기 · 재생 방식 왕복 · 클립 언어 변경) 그 알람은 **버킷 갈래로 돌아올 길이 없고**
+     * '직접 입력' 으로 읽혀 유료 전용 라이브 TTS 를 부른다 — 무료 사용자가 기본 목소리로
+     * 날씨를 고르고 저장만 눌렀는데 "유료 이용권" 을 본다.
+     *
+     * `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 이 판정에 **쓸 수 없다** —
+     * 둘 다 `audioCacheKey` 가 살아 있어야 true 라, 바로 그 상태에서 false 다.
+     * 남는 단서는 `selectedBucket` 하나다.
+     */
+    @Test
+    fun bucketChoiceSurvivesAudioBindingLoss() {
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
+        editor.voiceProfileId = "system-profile"
+        editor.voiceRandomPrompt = true
+        editor.voiceRandomContext = "weather"
+        editor.setBucketAudio(
+            audio = CachedAlarmAudio(
+                localAudioUri = "file://clip0.mp3",
+                rawAudioUri = "r2://clip0.mp3",
+                displayName = "clip0",
+                durationMillis = null,
+                cacheKey = "stock_clip-0",
+                messageId = "clip-0",
+            ),
+            profileId = "system-profile",
+            messageId = "clip-0",
+            text = "오늘은 맑아요",
+            bucket = "weather",
+            language = "ko",
+            clipKeys = listOf("stock_clip-0", "stock_clip-1"),
+        )
+        // 버킷을 붙이면 randomPrompt 는 꺼진다 — 이게 이 버그의 출발점이다.
+        assertFalse(editor.voiceRandomPrompt)
+        assertTrue(editor.hasBucketMessageChoice())
+
+        // 목소리를 다시 고르면 오디오가 지워진다(동일 id 가드 없음).
+        editor.clearAudio()
+
+        // 바인딩 기반 판정 둘은 false 로 떨어진다 — 저장 갈래가 이걸 보면 안 된다.
+        assertFalse(editor.hasBucketMessageChoice())
+        assertFalse(editor.isActiveBucketAlarm())
+        // 사용자가 고른 것은 여전히 '날씨' 다. 저장 갈래는 이 단서로 버킷을 다시 붙여야 한다.
+        assertEquals("weather", editor.selectedBucket)
+        assertTrue(editor.voiceRandomPrompt || editor.selectedBucket != null)
+    }
+
     @Test
     fun manualAlarmStillDropsItsMessageContextOnSave() {
         // 직접 입력은 종류가 없다 — 버킷 예외가 여기까지 새면 안 된다.

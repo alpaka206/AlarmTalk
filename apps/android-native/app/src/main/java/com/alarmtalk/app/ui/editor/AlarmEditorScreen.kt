@@ -898,8 +898,31 @@ internal fun AlarmEditorScreen(
             //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
             //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
             //    라이브 폴백뿐이었는데 그게 없어졌다.
-            val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            if (editor.voiceRandomPrompt && cloneBucketCategory != null) {
+            // ⚠ **고른 버킷이 있으면 그것이 곧 카테고리다.** 컨텍스트에서 유도하면, 목소리
+            // 재선택 등으로 컨텍스트가 기본값(`preset`)으로 밀린 순간 `preset → greeting`
+            // 매핑이 걸려 **미리듣기 샘플 버킷**이 알람에 붙는다. greeting 은 목소리 창의
+            // '들어보기' 전용이라 알람으로는 성립하지 않고, 서버가 `POST /alarm` 을 400 으로
+            // 거절한다 — 로컬에만 남는 알람이 된다(2026-08-31 실기기: bucketId=greeting,
+            // 문구 "안녕하세요! 만나서 정말 반가워요.").
+            val cloneBucketCategory = editor.selectedBucket
+                ?: clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+            // ⚠ **`voiceRandomPrompt` 하나로 가르지 말 것**(2026-08-31 실기기 재현).
+            // `setBucketAudio` 는 버킷을 붙이면서 **항상 그 값을 끈다.** 그래서 이 조건만 보면,
+            // 바인딩이 한 번이라도 풀린 버킷 알람은 **여기로 돌아올 길이 없고** 아래 '직접
+            // 입력' 갈래로 떨어져 유료 전용 라이브 TTS 를 부른다 — 무료 사용자는 기본 목소리로
+            // 날씨를 고르고 저장만 눌렀는데 "유료 이용권에서 사용할 수 있어요" 를 본다
+            // (`generateTtsAudio` 의 check 가 네트워크 전에 던진다).
+            //
+            // 바인딩을 푸는 길은 여럿이다: 이미 고른 목소리를 시트에서 **다시 누르기**
+            // (동일 id 가드가 없어 `clearAudio()`+`clearTtsMeta()`), 재생 방식 왕복, 클립
+            // 언어 ≠ 앱 언어. 어느 쪽이든 `voiceText`(클립 문구)와 `selectedBucket` 은 남는다.
+            //
+            // 그래서 판정은 **사용자가 고른 것이 테마인가**(`selectedBucket`)로 본다.
+            // `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 쓸 수 없다 — 둘 다
+            // `audioCacheKey` 가 살아 있어야 true 라, 바인딩이 풀린 바로 그 상태에서 false 다.
+            // (직접 입력을 고르면 `selectedBucket` 은 확실히 null 이 된다 — 문구 화면 두 곳.)
+            val bucketMessageChosen = editor.voiceRandomPrompt || editor.selectedBucket != null
+            if (bucketMessageChosen && cloneBucketCategory != null) {
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                 // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
                 val bound = runCatching {
