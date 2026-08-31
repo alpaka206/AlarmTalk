@@ -281,6 +281,10 @@ struct MemberManagementView: View {
             }
 
             HStack(spacing: 8) {
+                // ⚠ **복사도 공유와 같은 게이트다**(2026-08-31 리뷰). 공유 시트만 막으면
+                // 소유자가 **못 쓰는 코드를 복사해 보낼 수 있고**, 받는 쪽이 등록에서
+                // `CODE_ALREADY_USED` 로 실패한다 — 막는 뜻이 사라진다.
+                // 재발급은 계속 열어 둔다(그게 이 상태의 탈출구다).
                 Button {
                     UIPasteboard.general.string = voucher.code
                 } label: {
@@ -289,6 +293,7 @@ struct MemberManagementView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
+                .disabled(socialFeatures.isBusy || isFull)
                 .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
 
                 Button {
