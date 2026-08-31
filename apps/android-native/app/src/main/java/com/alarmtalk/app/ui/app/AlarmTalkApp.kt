@@ -597,7 +597,12 @@ internal fun AlarmTalkApp(
             !hasPaidVoiceAccess(subscriptionResponse) &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         when {
-            authSession != null && access.isDefinitelyFree() -> viewModel.applyFreePlanVoiceLock()
+            // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `access.isDefinitelyFree()` 를
+            // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
+            // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
+            // 만료돼 있으면 그 순간 영구 강등이 걸린다.
+            authSession != null && viewModel.isDefinitelyFreePlan() ->
+                viewModel.applyFreePlanVoiceLock()
             // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
             // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
             // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.

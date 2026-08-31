@@ -57,6 +57,13 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                 }
             }
         val until = nextKey?.let { System.currentTimeMillis() + STORE_ENTITLEMENT_TTL_MILLIS }
+        // ⚠ **조회 중 계정이 바뀌었으면 버린다**(2026-08-31 리뷰). 조회는 비동기라 A 가
+        // 로그아웃하고 B 가 들어온 뒤에 A 의 결과가 도착할 수 있다 — 그대로 쓰면 무료 B 가
+        // A 의 등급을 물려받아 편집기·목소리·저장 게이트를 전부 통과한다.
+        if (authSession?.user?.id != userId) {
+            android.util.Log.i("MainViewModel", "Dropping stale store entitlement: account changed")
+            return@runCatching
+        }
         storePlanKey = nextKey
         storeEntitlementUntilMillis = until
         // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.

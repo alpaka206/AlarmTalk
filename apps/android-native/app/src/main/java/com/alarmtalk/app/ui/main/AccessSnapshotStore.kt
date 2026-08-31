@@ -43,13 +43,20 @@ internal data class AccessSnapshot(
 )
 
 /**
- * 스토어 신호의 신선도 상한 — **3일**.
+ * 스토어 신호의 신선도 상한 — **40일**.
  *
- * 근거: 유료 사용자가 앱을 사흘 안 여는 일은 흔하지만 그보다 오래 안 열면서 갱신도 되는
- * 경우는 드물고, 그때는 다음 실행이 곧바로 다시 확인한다. 반대로 이 값이 길면 만료된
- * 구독의 통행증이 그만큼 오래 살아 남는다.
+ * ⚠ **짧게 잡으면 안 된다**(2026-08-31 리뷰 2차 정정). 처음엔 3일로 뒀는데, 그러면
+ * **앱을 안 여는 사이 자동갱신된 유료 사용자가 잘린다**: 스토어 신호는 3일 만에 만료되고
+ * 서버 스냅샷은 갱신 전 `expires_at` 을 그대로 들고 있다(RTDN 은 서버만 갱신한다) —
+ * 울림 게이트가 결제 중인 사용자를 무권한으로 보고 기본 톤으로 바꾼다. 알람 앱은 원래
+ * 며칠씩 안 열고 쓰는 물건이라 흔한 경로다.
+ *
+ * 그래서 상한은 **월 구독 주기보다 넉넉히 길게** 둔다. 이 값의 역할은 '만료 감지' 가 아니라
+ * **영구 통행증 방지**다 — 만료 감지는 서버 스냅샷의 `expires_at` 이 하고, 그쪽은 앱이
+ * 열릴 때마다 갱신된다. 스토어 신호는 "이 기기가 마지막으로 확인했을 때 유효했다" 는
+ * 증거이고, 그 증거가 한 결제 주기를 넘겨 살아 있으면 안 되는 정도의 의미다.
  */
-internal const val STORE_ENTITLEMENT_TTL_MILLIS: Long = 3L * 24 * 60 * 60 * 1000
+internal const val STORE_ENTITLEMENT_TTL_MILLIS: Long = 40L * 24 * 60 * 60 * 1000
 
 internal class AccessSnapshotStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

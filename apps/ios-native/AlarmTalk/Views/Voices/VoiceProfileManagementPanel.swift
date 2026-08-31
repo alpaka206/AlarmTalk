@@ -88,11 +88,21 @@ struct VoiceProfileManagementPanel: View {
         // **유일 판정기**를 통과시킨다(`PaidVoiceGate.resolve`) — 안드로이드
         // `resolvePaidVoiceAccess` 와 같은 우선순위: 스토어 → 서버 구독(만료) → 그룹 → 모름.
         // 여기는 표시·생성 게이트라 **모르면 잠그지 않는다.**
+        // ⚠ **살아 있는 StoreKit 신호에는 기한을 붙이지 않는다**(2026-08-31 리뷰).
+        // 이 스냅샷은 캐시가 아니라 **지금 방금 읽은 값**이라 신선도를 의심할 이유가 없다.
+        // 예전에는 `storeEntitlementUntilMillis` 를 비워 둔 채 넘겼는데, 판정기가 기한을
+        // 함께 요구하므로 **살아 있는 신호가 한 번도 이기지 못했다** — 자동갱신을 StoreKit 이
+        // 확인해 줬는데도 서버의 옛 만료시각으로 목소리가 통째로 숨겨졌다.
+        let storeEntitled = subscriptions.currentTier.meetsOrExceeds(.personal)
         let snapshot = AccessSnapshot(
             subscriptionResponse: socialFeatures.subscription,
             familyGroup: socialFeatures.familyGroup,
-            storePlanKey: subscriptions.currentTier.meetsOrExceeds(.personal)
-                ? subscriptions.currentTier.rawValue : nil
+            storePlanKey: storeEntitled ? subscriptions.currentTier.rawValue : nil,
+            // 살아 있는 신호에는 먼 미래를 준다 — '지금 유효' 라는 뜻이다.
+            storeEntitlementUntilMillis: storeEntitled ? Int64.max : nil,
+            // ⚠ **그룹보다 먼저 보는 값이라 여기서도 실어야 한다.** 빼면 결제 보류(그룹은
+            // 남고 plan 만 free)에서 그룹 폴백이 유료로 답한다.
+            userPlan: auth.session?.user.plan
         )
         return PaidVoiceGate.isEntitled(snapshot: snapshot)
     }
