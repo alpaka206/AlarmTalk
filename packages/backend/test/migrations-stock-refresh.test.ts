@@ -58,15 +58,31 @@ beforeAll(async () => {
 });
 
 describe('migration #70 — 스톡 클립 문구 수렴형 무효화', () => {
-  it('동결 사본이 현재 STOCK_CLIP_PRESETS 문구를 전부 포함한다 (문구 변경 시 새 마이그레이션 강제)', () => {
-    const deleteSql = migration70.statements[migration70.statements.length - 1]!;
+  // ⚠ **`#70` 이 아니라 '가장 최근 refresh' 를 본다.** 스톡 문구는 앞으로도 늘거나 바뀌고
+  //   (2026-09-02 에 운세·사랑을 더했고, en·ja 임시 문구를 교체할 날도 남아 있다), 적용된
+  //   마이그레이션 본문은 **고칠 수 없다**. 그래서 문구가 바뀔 때마다 새 refresh 를 쓰게
+  //   강제하려면 기준이 '최신' 이어야 한다 — #70 에 고정하면 그 뒤로는 영영 빨간 불이고,
+  //   빨간 불을 끄려고 이 테스트를 지우는 것이 다음 수순이 된다.
+  const latestRefresh = migrations
+    .filter((m) => m.name.startsWith('refresh-stock-clips-'))
+    .reduce((newest, m) => (m.id > newest.id ? m : newest));
+
+  it('최신 refresh 의 동결 사본이 현재 STOCK_CLIP_PRESETS 문구를 전부 포함한다 (문구 변경 시 새 마이그레이션 강제)', () => {
+    const deleteSql = latestRefresh.statements[latestRefresh.statements.length - 1]!;
+    const missing: string[] = [];
     for (const preset of STOCK_CLIP_PRESETS) {
       for (const list of Object.values(preset.texts as Record<string, readonly string[]>)) {
         for (const text of list) {
-          expect(deleteSql).toContain(text.replace(/'/g, "''"));
+          if (!deleteSql.includes(text.replace(/'/g, "''"))) missing.push(`${preset.category}: ${text}`);
         }
       }
     }
+    expect(
+      missing,
+      `문구가 바뀌었는데 '${latestRefresh.name}' 의 동결 사본이 따라오지 않았다. ` +
+        '새 refresh 마이그레이션을 추가하고 동결 사본을 현재 문구로 만들어라 — ' +
+        '적용된 마이그레이션 본문은 고칠 수 없다.',
+    ).toEqual([]);
   });
 
   it('낡은 문구 preset 만 지우고, 확정 문구 preset 과 참조 알람 처리까지 정확히 수행한다', async () => {

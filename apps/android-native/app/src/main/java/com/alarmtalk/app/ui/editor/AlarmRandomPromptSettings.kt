@@ -65,6 +65,27 @@ internal fun RandomPromptSettingsPane(
     // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
     manualRemaining: Int? = null,
     manualLimit: Int? = null,
+    /**
+     * 이 목소리로 **실제로 고를 수 있는** 문구 종류(`EditorMessageContexts` 의 부분집합, 순서 유지).
+     *
+     * 등록(클론) 목소리는 다섯 종류가 모두 사전렌더되므로 전부 들어온다. 기본(시스템) 목소리는
+     * 서버에 구워 둔 스톡 클립이 있는 카테고리만 들어온다 — 새 카테고리를 시딩하는 중이면
+     * 그 종류만 잠깐 빠져 보이고, 다 구워지면 앱 수정 없이 나타난다.
+     *
+     * ⚠ **여기서 '무료라서' 빼지 않는다.** 2026-09-02 전에는 무료·기본 목소리에 아예 다른
+     * pane(`FreeBucketSettingsPane`)을 보여 주며 목록을 날씨·약으로 잘랐는데, 그건 등급
+     * 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 갈리는 것은 아래 [manualLocked] 하나다.
+     */
+    availableContexts: List<String> = EditorMessageContexts.map { it.first },
+    /**
+     * '직접 입력' 이 잠겨 있는가. **잠그는 기준은 무료 플랜뿐이다.**
+     *
+     * ⚠ **기본 목소리라고 잠그지 말 것.** 유료 사용자는 기본 목소리로도 직접 입력을 쓸 수
+     * 있고, 비용은 직접 입력 월 한도가 센다(서버 `tts.ts` 의 manual-tts-quota).
+     */
+    manualLocked: Boolean = false,
+    /** 잠긴 '직접 입력' 을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
+    onManualLocked: () -> Unit = {},
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -220,10 +241,17 @@ internal fun RandomPromptSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 SnoozeOptionSection {
-                    EditorMessageContexts.forEachIndexed { index, (context, labelRes) ->
+                    // ⚠ **'직접 입력' 은 목록에서 빼지 않는다.** 무료에게도 이런 기능이
+                    // 있다는 걸 보여 준다 — 아예 감추면 있는지조차 모르고, 유료 전환 동기
+                    // 중 가장 강한 것을 잃는다. 잠긴 행으로 그린다.
+                    val rows = EditorMessageContexts.filter { (context, _) ->
+                        context == ManualMessageContext || context in availableContexts
+                    }
+                    rows.forEachIndexed { index, (context, labelRes) ->
                         val baseLabel = stringResource(labelRes)
+                        val locked = context == ManualMessageContext && manualLocked
                         val label = if (
-                            context == ManualMessageContext &&
+                            context == ManualMessageContext && !locked &&
                             manualLimit != null && manualLimit > 0 && manualRemaining != null
                         ) {
                             // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
@@ -231,12 +259,16 @@ internal fun RandomPromptSettingsPane(
                         } else {
                             baseLabel
                         }
-                        SnoozeRadioRow(
-                            label = label,
-                            selected = normalizedContext == context,
-                            onClick = { selectContext(context) },
-                        )
-                        if (index != EditorMessageContexts.lastIndex) SnoozeOptionDivider()
+                        if (locked) {
+                            SnoozeLockedRow(label = label, onClick = onManualLocked)
+                        } else {
+                            SnoozeRadioRow(
+                                label = label,
+                                selected = normalizedContext == context,
+                                onClick = { selectContext(context) },
+                            )
+                        }
+                        if (index != rows.lastIndex) SnoozeOptionDivider()
                     }
                 }
 

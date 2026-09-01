@@ -69,6 +69,44 @@ const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
   '[brightly] こんにちは!お会いできてうれしいです。[warmly] これから毎朝、私の声で気持ちよく起こしますね。よろしくお願いします!',
 ];
 
+/**
+ * 2026-09-02 확정 리터럴 — 위 36종에 **운세 5 · 사랑 3** 을 더한 것이다.
+ *
+ * 왜 더했나: 운세·사랑을 기본(시스템) 목소리에도 열어 **유료/무료의 문구 목록 차이를
+ * 없앴다**(`docs/spec/voice-and-message.md`). 그전에는 기본 목소리에 그 두 카테고리의
+ * 클립이 없어서 목록에서 아예 감췄다.
+ *
+ * ⚠ **en·ja 는 지금 한국어를 그대로 복사한 임시값**이라 새 문구가 언어별로 갈라지지 않는다
+ * (`STOCK_CLIP_PLACEHOLDER_LANGUAGES`). 진짜 대사로 교체하는 날에는 문구가 바뀌므로
+ * **또 하나의 refresh 마이그레이션이 필요하다** — `migrations-stock-refresh.test.ts` 가
+ * "최신 refresh 의 동결 사본 == 현재 STOCK_CLIP_PRESETS" 를 강제하므로 잊을 수 없다.
+ *
+ * 앞의 36종은 **글자 하나 바뀌지 않았다.** 그래서 아래 무효화는 dev/prod 에서 0행 no-op 다 —
+ * 승인된 실오디오를 지우지 않는다. 새 8종은 아직 시딩된 적이 없어 지울 것도 없다.
+ */
+const STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02 = [
+  ...STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19,
+  // 운세(fortune) — CLONE_FORTUNE_THEMES 순서(luck/caution/wealth/health/relationship).
+  '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+  '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+  '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+  '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+  '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+  // 사랑(love) — 응원·다정함까지만. 기본 목소리는 연인이 아니다.
+  '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+  '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+  '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+];
+
+const STALE_STOCK_PRESET_SUBQUERY_2026_09_02 = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )
+    AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
+      ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02.map(sqlLiteral).join(',\n      ')}
+    )`;
+
 // 시스템 보이스 preset 중 확정 리터럴(위 36종)과 문구가 다른 '낡은' 행의 id 집합.
 // 2026-07-19 시딩으로 이미 최신 문구가 들어간 DB(dev/prod)에서는 정확히 0행 = no-op.
 const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
@@ -2385,6 +2423,29 @@ export const migrations: Migration[] = [
       //    issuer_subscription_id / issuer_user_id 로 거른다(각각 다른 인덱스가 덮는다).
       //    게다가 3값짜리 저카디널리티라 있어도 도움이 안 된다.
       `DROP INDEX IF EXISTS idx_voucher_codes_status`,
+    ],
+  },
+  {
+    // 스톡 클립에 **운세·사랑**을 더한 데 맞춘 수렴형 무효화(#70 과 같은 패턴).
+    // 확정 리터럴과 문구가 '다른' 시스템 preset 행만 지운다.
+    //  - 앞선 36종은 글자 하나 바뀌지 않았으므로 dev/prod 에서 **0행 no-op** 다.
+    //  - 새 8종은 아직 시딩된 적이 없다. 배포 후 `POST /api/admin/seed-stock-clips` 가
+    //    (보이스 4 × 언어 3 × 새 문구 8) 을 채운다.
+    //  - R2 오브젝트는 #70 과 마찬가지로 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    id: 109,
+    name: 'refresh-stock-clips-2026-09-02-script',
+    statements: [
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM message_library
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM generated_audio_assets
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM messages
+        WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
     ],
   },
 ];

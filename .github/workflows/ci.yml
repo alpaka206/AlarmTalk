@@ -97,6 +97,13 @@ jobs:
       - name: Check entitlement snapshot writes go through the single gate
         run: python3 scripts/check-entitlement-writer.py
 
+      # 유료 플랜 목록이 백엔드·안드로이드(2벌)·iOS 에 **네 벌**로 흩어져 있었고 실제로
+      # 갈라져 있었다(안드로이드에만 도달 불가능한 `individual`·`plus`·`couple`). 지금은
+      # `@alarmtalk/shared` 의 `plan.ts` 가 원본이고, 네이티브 두 앱은 같은 값을 손으로
+      # 두므로 어긋나는 것을 여기서 막는다. 한 칸만 어긋나면 돈 낸 사용자가 잠긴다.
+      - name: Check plan constants match across shared/Android/iOS/DB
+        run: python3 scripts/check-plan-constants.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

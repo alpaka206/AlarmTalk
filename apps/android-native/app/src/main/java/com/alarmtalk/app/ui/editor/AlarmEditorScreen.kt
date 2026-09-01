@@ -228,11 +228,17 @@ internal fun AlarmEditorScreen(
             defaultManualText = lastManualText,
         )
     }
-    // 시스템(기본) 보이스가 선택되면 유료여도 문구를 무료 버킷과 동일하게 '날씨+약'으로 제한한다
-    // (운세·사랑·직접 입력 숨김). 무료 tier 와 하나의 게이트로 묶어 렌더·상태강제·저장검증에 동일 주입.
+    // 이 목소리가 **미리 구워 둔 스톡 클립**으로 우는가(무료 플랜이거나 기본 목소리).
+    //
+    // ⚠ 예전 이름은 `restrictToWeatherMedication` 이었고, 이름 그대로 문구 목록을 날씨·약으로
+    //   잘랐다. 그건 등급 정책이 아니라 **기본 목소리에 운세·사랑 클립이 없다**는 사정이었다 —
+    //   2026-09-02 에 그 클립을 채우고 목록을 하나로 합쳤다(`docs/spec/voice-and-message.md`).
+    //   지금 이 값이 가르는 것은 **오디오를 어떻게 얻는가** 하나다: 스톡 클립을 내려받아
+    //   바로 붙일지, 클론 사전렌더 버킷을 저장 시점에 붙일지.
+    //   등급으로 갈리는 것은 **직접 입력 잠금 하나뿐**이다(`freeVoiceTier`).
     val isSystemVoiceSelected = isSystemVoiceId(editor.voiceProfileId) ||
         voiceProfiles.any { it.id == editor.voiceProfileId && it.isSystem == true }
-    val restrictToWeatherMedication = freeVoiceTier || isSystemVoiceSelected
+    val usesStockClips = freeVoiceTier || isSystemVoiceSelected
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val appVoiceLanguage = remember(configuration) {
@@ -1092,29 +1098,29 @@ internal fun AlarmEditorScreen(
     // 그 자리에서 받는 대신, 보이스를 고른 순간부터 백그라운드로 받아 둔다(캐시분 스킵).
     // stockClips 를 키에 포함: 매니페스트가 아직 안 온 상태로 진입하면 프리페치가 빈손으로
     // 끝나므로, 매니페스트 도착 시 재시도한다(Codex #607).
-    LaunchedEffect(editor.voiceProfileId, restrictToWeatherMedication, stockClips) {
+    LaunchedEffect(editor.voiceProfileId, usesStockClips, stockClips) {
         val profileId = editor.voiceProfileId
-        if (restrictToWeatherMedication && !profileId.isNullOrBlank() && stockClips.isNotEmpty()) {
+        if (usesStockClips && !profileId.isNullOrBlank() && stockClips.isNotEmpty()) {
             onPrefetchRestrictedVoiceClips(profileId)
         }
     }
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
-    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline) {
-        if (restrictToWeatherMedication && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+    // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
+    //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
+    //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext) {
+        if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
             // 문구 개념이 없다.
             if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
-                // ⚠ **제한 모드는 두 축을 묶고 있다 — 여기서 갈라야 한다.**
-                // `restrictToWeatherMedication` 은 "생성 문구를 날씨+약으로 제한한다"(기본
-                // 목소리는 그 둘의 스톡 클립만 있다)와 "직접 입력을 막는다" 를 함께 뜻했다.
-                // 이제 **유료면 기본 목소리로도 직접 입력이 된다**(횟수 차감). 그런데 아래
-                // 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 유료 사용자가 방금 친
-                // 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히 사라진다.**
-                // 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을 고른 상태면
-                // 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 예전 그대로 돈다.
+                // ⚠ **직접 입력을 고른 유료 사용자는 건드리지 않는다.**
+                // 아래 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 그냥 두면 유료
+                // 사용자가 방금 친 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히
+                // 사라진다.** 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을
+                // 고른 상태면 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 그대로 돈다.
                 val manualChosen = editor.hasTypedManualText()
                 if (!freeVoiceTier && manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
@@ -1137,7 +1143,14 @@ internal fun AlarmEditorScreen(
                         alarm == null && it in buckets &&
                             (it != "weather" || savedWeatherConfigured || editor.voiceWeatherCity.isNotBlank())
                     }
-                    val target = editor.selectedBucket?.takeIf { it in buckets }
+                    // ⚠ **사용자가 방금 고른 종류가 가장 먼저다**(2026-09-02). 문구 pane 이
+                    //   `voiceRandomContext` 를 세우고 버킷은 비워 두므로(클론과 같은 규약),
+                    //   여기서 그 종류를 버킷으로 옮겨 붙이지 않으면 고른 것과 다른 버킷이
+                    //   붙는다 — '운세' 를 골랐는데 마지막에 쓰던 '약' 이 붙는 식이다.
+                    val chosen = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+                        ?.takeIf { it in buckets }
+                    val target = chosen
+                        ?: editor.selectedBucket?.takeIf { it in buckets }
                         ?: remembered
                         ?: buckets.firstOrNull()
                     if (target != null &&
@@ -1154,9 +1167,6 @@ internal fun AlarmEditorScreen(
     // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
-    // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
-    var freeWeatherDialogOpen by remember { mutableStateOf(false) }
-    var freeManualDialogOpen by remember { mutableStateOf(false) }
 
     // ⚠ **정리 중인 목소리는 '고를 수 있는 것' 에서 뺀다**(Codex #703 P1). 선택 시트의 탭만
     // 막아서는 부족하다 — 그 목소리가 **직전에 쓴 것**이거나 **이미 선택돼 있으면** 새 편집기가
@@ -1223,21 +1233,21 @@ internal fun AlarmEditorScreen(
     fun weatherLocationReady(): Boolean =
         editor.voiceWeatherCity.isNotBlank() || targetProvidesWeather
 
+    /** [weatherLocationReady] 의 사주 짝 — 판정은 여기 한 곳이다. */
+    fun fortuneInfoReady(): Boolean =
+        targetProvidesFortune || (
+            editor.voiceFortuneGender.isNotBlank() &&
+                editor.voiceFortuneBirthDate.isNotBlank() &&
+                editor.voiceFortuneBirthTime.isNotBlank()
+            )
+
     fun randomPromptSettingsComplete(): Boolean {
         if (!editor.voiceRandomPrompt) return false
         val context = normalizedRandomPromptContext(editor.voiceRandomContext)
         if (randomContextUsesWeather(context) && !weatherLocationReady()) {
             return false
         }
-        if (
-            context == "wake_fortune" &&
-            !targetProvidesFortune &&
-            (
-                editor.voiceFortuneGender.isBlank() ||
-                    editor.voiceFortuneBirthDate.isBlank() ||
-                    editor.voiceFortuneBirthTime.isBlank()
-                )
-        ) {
+        if (context == "wake_fortune" && !fortuneInfoReady()) {
             return false
         }
         return true
@@ -1247,7 +1257,7 @@ internal fun AlarmEditorScreen(
     // 한 줄씩 떴다). 이유를 말하는 자리는 **그 값이 사는 곳**이다:
     //  - 목소리 → 목소리 카드의 `NoUsableVoiceProfileCallout`("아직 사용할 목소리가 없어요."
     //    + [목소리 만들기])와 '삭제된 목소리' 배너. 둘 다 해결 액션까지 갖고 있다.
-    //  - 문구 → 문구 요약 행(`FreeThemeSummaryRow`)과 문구 화면의 상세 행.
+    //  - 문구 → 문구 요약 행(`MessageModeSummaryRow`)과 문구 화면의 상세 행.
     //
     // 바에 사유를 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 했다** — 배너는 "저장된
     // 목소리는 그대로 울리지만", 바는 "쓸 수 없어요" 였다. 그리고 목소리 자동선택·클립
@@ -1289,10 +1299,18 @@ internal fun AlarmEditorScreen(
                     } else {
                         SaveBlockReason.FORTUNE_INFO_MISSING
                     }
-                // 무료 날씨 버킷은 지역이 있어야 조건 매칭이 된다. 판정은 위
-                // `weatherLocationReady()` 하나뿐이다 — 여기에 조건을 다시 쓰지 말 것.
-                restrictToWeatherMedication && editor.selectedBucket == "weather" &&
+                // 스톡 클립 버킷은 `voiceRandomPrompt = false` 로 저장되므로 위
+                // `randomPromptSettingsComplete()` 갈래에 걸리지 않는다 — 조건으로 클립을
+                // 고르는 두 버킷은 여기서 따로 본다.
+                // 판정은 언제나 `weatherLocationReady()`·`fortuneInfoReady()` 한 곳뿐이다 —
+                // 여기에 조건을 다시 쓰지 말 것.
+                usesStockClips && editor.selectedBucket == "weather" &&
                     !weatherLocationReady() -> SaveBlockReason.WEATHER_LOCATION_MISSING
+                // ⚠ **운세도 같이 막는다**(2026-09-02). 문구 목록을 합치면서 기본 목소리도
+                //   운세를 고를 수 있게 됐는데, 사주가 없으면 클라가 테마 인덱스를 못 골라
+                //   **매번 같은 클립**이 나간다. 날씨만 막고 두면 그 조용한 오작동이 남는다.
+                usesStockClips && editor.selectedBucket == "fortune" &&
+                    !fortuneInfoReady() -> SaveBlockReason.FORTUNE_INFO_MISSING
                 // 빈 문구는 클립이 아직 안 붙은 과도기다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
                     SaveBlockReason.MESSAGE_PREPARING
@@ -1583,7 +1601,6 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 voiceProfileLoadFinished = voiceProfileLoadFinished,
                                 stockClips = stockClips,
-                                restrictToWeatherMedication = restrictToWeatherMedication,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
@@ -1609,7 +1626,6 @@ internal fun AlarmEditorScreen(
                                 },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
-                                onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
@@ -1808,78 +1824,20 @@ internal fun AlarmEditorScreen(
                 fortuneGender = editor.voiceFortuneGender,
                 fortuneBirthDate = editor.voiceFortuneBirthDate,
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
-                onSaveSettings = ::applyRandomPromptSettings,
-            )
-
-            "free_bucket" -> FreeBucketSettingsPane(
-                buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
-                selectedBucket = editor.selectedBucket,
-                onSelectBucket = { bucket ->
-                    // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
-                    // 상세 행의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
-                    // 예전에는 저장 여부를 보지 않고 무조건 띄워, 이미 등록한 사람에게
-                    // 같은 것을 매번 다시 물었다.
-                    //
-                    // ⚠ **미완성 종류는 선택되지 않는다**(2026-08-18 변경). 도시가 없으면
-                    // 먼저 묻고, **확인했을 때만** 고른다(다이얼로그 `onConfirm` 의
-                    // `selectBucket("weather")`). 취소하면 라디오는 이전 선택에 남는다 —
-                    // 목소리 관문(`onNeedsClipPreparation`)과 같은 규칙이다.
-                    // 그전에는 먼저 고르고 나중에 물어서, 취소하면 **도시 없는 날씨**가
-                    // 선택된 채로 남고 편집기 하단 바가 "…도시를 입력해 주세요" 로 막았다.
-                    if (bucket == "weather" && editor.voiceWeatherCity.isBlank() && !savedWeatherConfigured) {
-                        freeWeatherDialogOpen = true
-                    } else {
-                        selectBucket(bucket)
-                    }
+                // ⚠ **목록을 자르는 것은 '클립이 있는가' 하나다** — 등급이 아니다.
+                //   등록(클론) 목소리는 다섯 종류가 모두 사전렌더되므로 전부 나오고,
+                //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
+                //   고치지 않아도 나타난다(`freeBucketsFor` 가 매니페스트와 교차한다).
+                availableContexts = if (usesStockClips) {
+                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage)
+                        .mapNotNull { randomPromptContextForBucket(it) }
+                } else {
+                    EditorMessageContexts.map { it.first }
                 },
-                onDismiss = { settingsDetailPanel = null },
-                onManualLocked = { voicePlanGateOpen = true },
                 // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
                 manualLocked = freeVoiceTier,
-                // 유료 pane 과 같은 값 — 기본 목소리에서도 남은 횟수를 보여 준다.
-                manualRemaining = manualQuota?.remaining,
-                manualLimit = manualQuota?.limit,
-                // ⚠ **판정식은 언제나 `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.**
-                // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
-                // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
-                // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
-                manualSelected = editor.isManualForDisplay(),
-                onSelectManual = {
-                    // 문구가 **없을 때만** 입력창이 뜬다. 있으면 선택만 되고 '변경하기' 로 고친다.
-                    //
-                    // ⚠ 위 `onSelectBucket` 과 같은 규칙 — 문구가 없으면 **먼저 받고**,
-                    // 확인했을 때만 '직접 입력' 이 선택된다(다이얼로그 `onConfirm` 이
-                    // randomPrompt·selectedBucket 을 함께 푼다). 취소하면 이전 선택 그대로다.
-                    if (editor.voiceText.isBlank()) {
-                        freeManualDialogOpen = true
-                    } else {
-                        // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
-                        editor.voiceRandomPrompt = false
-                        editor.selectedBucket = null
-                    }
-                },
-                manualText = editor.voiceText,
-                onChangeManual = { freeManualDialogOpen = true },
-                // ⚠ **계정에 저장된 지역을 이어받는다**(2026-08-15 지적 "설정에는 값이 있는데
-                // 둘이 공유가 안 된다"). 유료 pane 은 처음부터 `ifBlank { saved… }` 로 이어받고
-                // 있었는데 여기만 알람 자체 값만 봐서, **설정에 서울이 있는데도** "아직 고르지
-                // 않았어요" 로 보였다. 게다가 모달을 띄울지 판정하는 쪽(`savedWeatherConfigured`)은
-                // 저장값을 보고 있어서 — 안 골랐다고 써 놓고 고르라는 모달도 안 떴다.
-                weatherRegionSummary = if (editor.selectedBucket == "weather") {
-                    val country = editor.voiceWeatherCountry
-                        .ifBlank { activeDynamicPromptPreferences.weatherCountry }
-                    val city = editor.voiceWeatherCity
-                        .ifBlank { activeDynamicPromptPreferences.weatherCity }
-                    // 나라는 국내면 비는 값이다 — 도시 하나로 판정한다(위 유료 pane 과 같다).
-                    if (city.isNotBlank()) {
-                        weatherLocationSummary(context, country, city)
-                    } else {
-                        stringResource(R.string.editorp_random_weather_region_required)
-                    }
-                } else {
-                    null
-                },
-                onChangeWeatherRegion = { freeWeatherDialogOpen = true },
+                onManualLocked = { voicePlanGateOpen = true },
+                onSaveSettings = ::applyRandomPromptSettings,
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -1889,47 +1847,6 @@ internal fun AlarmEditorScreen(
             )
         }
         }
-    }
-
-    if (freeManualDialogOpen) {
-        // 유료 pane 과 **같은 다이얼로그**를 쓴다(두 벌로 만들지 않는다).
-        ManualMessageDialog(
-            initialText = editor.voiceText,
-            onDismiss = { freeManualDialogOpen = false },
-            onConfirm = { text ->
-                // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
-                editor.voiceText = text
-                editor.voiceRandomPrompt = false
-                editor.selectedBucket = null
-                freeManualDialogOpen = false
-            },
-        )
-    }
-
-    if (freeWeatherDialogOpen) {
-        WeatherLocationDialog(
-            // 저장된 지역이 있으면 그걸 채워서 연다 — 위 요약 행과 같은 값을 보여줘야 한다.
-            country = editor.voiceWeatherCountry.ifBlank { activeDynamicPromptPreferences.weatherCountry },
-            city = editor.voiceWeatherCity.ifBlank { activeDynamicPromptPreferences.weatherCity },
-            onDismissWithoutSave = { freeWeatherDialogOpen = false },
-            onConfirm = { country, city ->
-                editor.voiceWeatherCountry = country
-                editor.voiceWeatherCity = city
-                // ⚠ **여기서 저장하지 않으면 '날씨' 를 다시는 이어받지 못한다.**
-                // 다음 새 알람의 이어받기 가드는 `it != "weather" || savedWeatherConfigured
-                // || voiceWeatherCity.isNotBlank()` 인데, 둘 다 이 store 에서 읽는다.
-                // 그래서 저장을 빼먹으면 `rememberMessageChoiceUsed` 가 "weather" 를 정직하게
-                // 적어도 읽는 쪽이 버리고, 새 알람이 **매번 '약' 으로 되돌아간다** —
-                // CLAUDE.md 가 회귀라고 못 박은 바로 그 증상이다.
-                // 유료 pane(`applyRandomPromptSettings`)·설정 화면과 같은 자리에 쓴다.
-                if (!familyAlarmMode && city.isNotBlank()) {
-                    dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
-                    dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
-                }
-                freeWeatherDialogOpen = false
-                selectBucket("weather")
-            },
-        )
     }
 
     // ⚠ **어떤 조건 블록 안에도 두지 말 것.** 처음에 `if (voicePlanGateOpen)` 안에 넣었다가
@@ -1954,10 +1871,10 @@ internal fun AlarmEditorScreen(
         // 봤다**(2026-08-07 사용자 문의로 확인). `freeVoiceTier` 는 `로그인함 && !유료` 라,
         // 그 `else` 에는 비로그인뿐 아니라 **로그인한 유료 사용자**도 들어간다.
         //
-        // 유료가 이 게이트에 닿는 길은 실재한다: 기본(시스템) 목소리를 고르면 유료여도
-        // 문구가 '날씨+약' 으로 제한되고(위 `restrictToWeatherMedication` 주석), 그 pane 의
-        // 잠긴 '직접 입력' 을 누르면 `onManualLocked` 가 이 게이트를 연다. 이용권을 이미
-        // 가진 사람에게 로그인을 요구하고 이용권을 팔려 든 셈이다.
+        // 유료가 이 게이트에 닿는 길은 실재한다 — `showVoicePlanGate()` 는 등급을 보지
+        // 않는다. 이용권을 이미 가진 사람에게 로그인을 요구하고 이용권을 팔려 든 셈이었다.
+        // (2026-09-02 부터 잠긴 '직접 입력' 은 **무료에게만** 뜬다 — 그전에는 기본 목소리를
+        // 고른 유료 사용자에게도 떠서 이 사고의 주된 경로였다.)
         //
         // 이제 셋으로 가른다. **각 상태에 맞는 액션만 붙인다** — 쿠폰·이용권 버튼은
         // '이용권이 없어서' 막힌 경우에만 뜻이 있다.

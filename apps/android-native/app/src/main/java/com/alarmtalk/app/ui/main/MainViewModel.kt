@@ -1099,11 +1099,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
             // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
             // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
-            // (love→love, wake_fortune→fortune, preset→greeting …).
-            // 이걸 테마로 저장하면 두 가지가 깨진다(Codex #660):
-            //  - greeting·love·fortune 은 FreeBucketOrder 밖이라 읽을 때 걸러지는데, 그 전에
-            //    이미 저장돼 있던 유효한 테마(weather)를 덮어써 다음 기본 목소리 알람이 '약' 으로 되돌아간다.
-            //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
+            // (love→love, wake_fortune→fortune, preset→greeting …). 그걸 테마로 저장하면
+            // 정작 문구 종류가 기록되지 않아 다음 클론 알람이 옛 문구로 열린다(Codex #660).
+            //
+            // ⚠ 2026-09-02 에 근거 하나가 사라졌다 — 그전에는 "greeting·love·fortune 은
+            //   FreeBucketOrder 밖이라 읽을 때 걸러진다" 도 이유였는데, 이제 다섯이 모두
+            //   목록 안이다. 남은 이유(종류 미기록)만으로도 이 갈래는 그대로 옳다.
             bucket != null -> rememberContext()
             draft.voiceRandomPrompt -> rememberContext()
             // 직접 입력: **문구까지** 기억한다. 종류만 기억하면 새 알람이 빈 직접입력으로 열려

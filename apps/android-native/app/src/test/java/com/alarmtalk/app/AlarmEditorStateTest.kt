@@ -44,6 +44,34 @@ class AlarmEditorStateTest {
         assertEquals("greeting", clonePrerenderBucketCategoryFor("preset"))
     }
 
+    /**
+     * **문구 목록은 하나다 — 유료·무료로 갈리지 않는다**(2026-09-02).
+     *
+     * 그전에는 `FreeBucketOrder` 가 `listOf("medication", "weather")` 로 손으로 적혀 있어,
+     * 같은 '문구 종류' 가 **유료 5종 · 무료 2종**으로 갈라져 있었다. 그 차이는 제품 결정이
+     * 아니라 *기본 목소리에 운세·사랑 클립이 없었다*는 사정이었고, 클립을 채우고 나니 남을
+     * 이유가 없었다. 다시 손으로 적기 시작하면 한쪽만 늘어나는 사고가 그대로 돌아온다.
+     *
+     * 등급으로 갈리는 것은 **직접 입력 잠금 하나뿐**이다(`manualLocked = freeVoiceTier`).
+     */
+    @Test
+    fun freeBucketOrderIsDerivedFromTheOneMessageList() {
+        val fromMessageList = EditorMessageContexts
+            .filterNot { (context, _) -> context == ManualMessageContext }
+            .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }
+        assertEquals(fromMessageList, FreeBucketOrder)
+        // ⚠ **'직접 입력' 은 걷어내고 매핑해야 한다.** 그냥 흘리면 모르는 값이 `preset` 으로
+        //   접혀 **greeting 으로 둔갑**하고, 같은 버킷이 목록에 두 번 들어온다.
+        assertEquals("greeting", clonePrerenderBucketCategoryFor(ManualMessageContext))
+        assertEquals(FreeBucketOrder.distinct(), FreeBucketOrder)
+        // 다섯 종류가 모두 버킷을 갖는다(하나라도 빠지면 그 종류는 고를 수 없게 된다).
+        assertEquals(5, FreeBucketOrder.size)
+        assertEquals(
+            listOf("greeting", "weather", "fortune", "love", "medication"),
+            FreeBucketOrder,
+        )
+    }
+
     @Test
     fun bucketCategoryMapsBackToItsMessageContext() {
         // clonePrerenderBucketCategoryFor 와 짝. 한쪽만 고치면 옛 알람 복구가 조용히 어긋난다.

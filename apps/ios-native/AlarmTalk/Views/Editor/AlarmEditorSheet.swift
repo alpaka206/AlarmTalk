@@ -56,7 +56,6 @@ struct AlarmEditorSheet: View {
     @State var messagePaneOpen = false
 
     /// 무료 테마(버킷) 선택 화면.
-    @State var freeBucketPaneOpen = false
     /// 직전에 고른 무료 테마를 이어받으려는 의도. 스톡 매니페스트가 도착하면 집는다.
     /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다.
     @State var pendingFreeBucket: FreeBucket?
@@ -154,9 +153,6 @@ struct AlarmEditorSheet: View {
     /// **편집기가 소유한다** — 사용자가 다른 문구 갈래를 고르면 비워진다.
     @State var selectedBucketDraft: FreeBucket?
     /// 무료·기본목소리 문구 화면에서 여는 지역 시트·직접 입력 알럿.
-    @State var freeWeatherSheetOpen = false
-    @State var freeManualAlertOpen = false
-    @State var freeManualAlertDraft = ""
 
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
@@ -467,91 +463,6 @@ struct AlarmEditorSheet: View {
                 onClose: { voiceSheetOpen = false }
             )
         }
-        .navigationDestination(isPresented: $freeBucketPaneOpen) {
-            FreeBucketSettingsPane(
-                available: availableFreeBuckets,
-                initialSelection: selectedFreeBucket,
-                weatherCity: voiceStudio.weatherCity,
-                manualText: voiceStudio.ttsText,
-                // ⚠ 잠금은 **무료 플랜 단독**이다. 기본 목소리를 골랐다는 것은 이유가
-                // 되지 않는다 — 유료면 기본 목소리로도 직접 입력을 쓸 수 있다.
-                manualLocked: freeVoiceTier,
-                // 유료 문구 화면과 같은 값 — 기본 목소리에서도 남은 횟수를 보여 준다.
-                manualRemaining: manualQuota?.remaining,
-                manualLimit: manualQuota?.limit,
-                manualSelected: !voiceStudio.randomPrompt && selectedFreeBucket == nil,
-                onSave: { bucket in
-                    selectFreeBucket(bucket)
-                    // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
-                    // 상세 카드의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
-                    if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil {
-                        freeWeatherSheetOpen = true
-                    }
-                },
-                onSelectManual: {
-                    voiceStudio.randomPrompt = false
-                    selectedBucketDraft = nil
-                    stockSelectedMessageID = nil
-                    voiceStudio.preparedAlarm = nil
-                    if (voiceStudio.ttsText).nilIfBlank == nil { freeManualAlertOpen = true }
-                },
-                // ⚠ **문구 화면을 닫지 말 것**(2026-08-15 지시). 예전에는 게이트를 띄우기 전에
-                // 이 화면을 먼저 닫아서, 잠긴 행을 눌렀을 뿐인데 **고르던 화면 밖으로 튕겼다.**
-                // 알럿은 편집기(스택 루트)에 붙어 있어 밀어 올린 이 화면 위에 그대로 뜬다.
-                onManualLocked: { showVoicePlanLockedAlert() },
-                onChangeWeather: { freeWeatherSheetOpen = true }
-            )
-            // ⚠ **밀어 올린 화면에도 게이트를 붙인다**(2026-08-17 실측). SwiftUI 의
-            // `.alert` 는 **지금 보이는 뷰**에 붙어 있어야 뜬다 — 편집기(스택 루트)에만
-            // 달아 두면, 문구 화면을 push 한 상태에서 '직접 입력' 을 눌러도 **아무 일도
-            // 일어나지 않는다.** UI 테스트(`FreeManualGateUITests`)가 이걸 잡는다.
-            // 상태(`voiceGateAlert`)는 하나라 두 번 뜨지 않는다.
-            .voicePlanGateAlert(
-                content: $voiceGateAlert,
-                onRedeemCode: { redeemCodeAlertOpen = true },
-                onOpenBilling: { onRequestBilling?() }
-            )
-            // ⚠ **설정 화면과 같은 컴포넌트**를 쓴다(`WeatherCityPickerSheet`).
-            // 시트는 자기만 닫고 이 목록은 남는다.
-            .bottomSheet(
-                isPresented: $freeWeatherSheetOpen,
-                onDismiss: { freeWeatherSheetOpen = false }
-            ) {
-                WeatherCityPickerSheet(
-                    currentCity: voiceStudio.weatherCity,
-                    onSelect: { country, city in
-                        voiceStudio.weatherCountry = country
-                        voiceStudio.weatherCity = city
-                        persistDynamicPromptPreferencesIfNeeded()
-                        freeWeatherSheetOpen = false
-                    }
-                )
-            }
-            // 유료 문구 화면과 **같은** 직접 입력 알럿이다 — 두 벌로 만들지 않는다.
-            .alert("직접 입력", isPresented: $freeManualAlertOpen) {
-                TextField("알람에서 읽어 줄 문구", text: $freeManualAlertDraft)
-                Button("취소", role: .cancel) { }
-                Button("저장") {
-                    voiceStudio.ttsText = InputSanitizer.clamp(
-                        InputSanitizer.sanitizeUserText(freeManualAlertDraft),
-                        max: MessageSettingsPane.manualTextMaxLength
-                    )
-                    voiceStudio.randomPrompt = false
-                }
-                .disabled(
-                    InputSanitizer.sanitizeUserText(freeManualAlertDraft)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .isEmpty
-                )
-            } message: {
-                Text("이 문구를 그대로 읽어 드려요.")
-            }
-            // 열 때만 현재 값으로 시드한다 — 알럿 안 입력이 곧바로 반영되면
-            // '취소' 가 취소가 아니게 된다.
-            .onChange(of: freeManualAlertOpen) { _, open in
-                if open { freeManualAlertDraft = voiceStudio.ttsText }
-            }
-        }
         .navigationDestination(isPresented: $messagePaneOpen) {
             MessageSettingsPane(
                 initialContext: currentMessageContext,
@@ -573,7 +484,31 @@ struct AlarmEditorSheet: View {
                 savedFortuneGender: voiceStudio.fortuneGender,
                 savedFortuneBirthDate: voiceStudio.fortuneBirthDate,
                 savedFortuneBirthTime: voiceStudio.fortuneBirthTime,
+                // ⚠ **목록을 자르는 것은 '클립이 있는가' 하나다** — 등급이 아니다.
+                //   등록(클론) 목소리는 다섯 종류가 모두 사전렌더되므로 전부 나오고,
+                //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
+                //   고치지 않아도 나타난다(`availableFreeBuckets` 가 매니페스트와 교차한다).
+                availableContexts: usesStockClips
+                    ? availableFreeBuckets.compactMap { RandomPromptContext.forBucket($0.rawValue)?.rawValue }
+                    : MessageSettingsPane.allContextIDs,
+                // ⚠ 잠금은 **무료 플랜 단독**이다. 기본 목소리를 골랐다는 것은 이유가
+                // 되지 않는다 — 유료면 기본 목소리로도 직접 입력을 쓸 수 있다.
+                manualLocked: freeVoiceTier,
+                // ⚠ **문구 화면을 닫지 말 것**(2026-08-15 지시). 잠긴 행을 눌렀을 뿐인데
+                // 고르던 화면 밖으로 튕기면 안 된다 — 알럿은 편집기(스택 루트)에 붙어
+                // 있어 밀어 올린 이 화면 위에 그대로 뜬다.
+                onManualLocked: { showVoicePlanLockedAlert() },
                 onSave: applyMessageSettings
+            )
+            // ⚠ **밀어 올린 화면에도 게이트를 붙인다**(2026-08-17 실측). SwiftUI 의
+            // `.alert` 는 **지금 보이는 뷰**에 붙어 있어야 뜬다 — 편집기(스택 루트)에만
+            // 달아 두면, 문구 화면을 push 한 상태에서 잠긴 '직접 입력' 을 눌러도 **아무 일도
+            // 일어나지 않는다.** UI 테스트(`FreeManualGateUITests`)가 이걸 잡는다.
+            // 상태(`voiceGateAlert`)는 하나라 두 번 뜨지 않는다.
+            .voicePlanGateAlert(
+                content: $voiceGateAlert,
+                onRedeemCode: { redeemCodeAlertOpen = true },
+                onOpenBilling: { onRequestBilling?() }
             )
         }
         .navigationDestination(item: $settingsPane) { pane in
@@ -727,7 +662,7 @@ struct AlarmEditorSheet: View {
         // (및 currentPlan) 변화에도 4-값 잠금을 다시 강제해 유료 컨트롤이 잠깐
         // 노출되는 일을 막는다. coerceFreeVoiceTierConstraints 는 값이 실제로
         // 달라질 때만 재할당하므로 무한 루프가 생기지 않는다.
-        .onChange(of: restrictToWeatherMedication) { _, _ in coerceFreeVoiceTierConstraints() }
+        .onChange(of: usesStockClips) { _, _ in coerceFreeVoiceTierConstraints() }
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
         // 직전에 고른 무료 테마 이어받기. 목소리·스톡 매니페스트가 준비되는 시점이
         // 제각각이라 **둘을 한 키로 묶어** 건다 — 나눠 걸면 SwiftUI 타입체크가 터진다.
@@ -1306,14 +1241,14 @@ struct AlarmEditorSheet: View {
     /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
     /// 스톡 매니페스트 도착과 제한 여부 확정이 각각 다른 때에 오므로 둘을 묶는다.
     var freeBucketReadinessKey: String {
-        "\(voiceStudio.stockClips.count)|\(restrictToWeatherMedication)|\(voiceStudio.selectedProfileID ?? "")"
+        "\(voiceStudio.stockClips.count)|\(usesStockClips)|\(voiceStudio.selectedProfileID ?? "")"
     }
 
     /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
     ///
     /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
     func applyPendingFreeBucketIfNeeded() {
-        guard restrictToWeatherMedication else { return }
+        guard usesStockClips else { return }
         // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
         guard selectedFreeBucket == nil else { pendingFreeBucket = nil; return }
         guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
@@ -1368,11 +1303,10 @@ struct AlarmEditorSheet: View {
     /// `bindStockBucketClips` 를 먼저 시도하고 라이브는 **폴백**이다. 그 순서를 맞춘다.
     func bucketCategoryForSave() -> String? {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return nil }
-        if restrictToWeatherMedication {
-            // 기본(시스템) 목소리 — 사용자가 고른 무료 테마.
-            return selectedFreeBucket?.rawValue
-        }
-        // 등록·공유받은 클론 — 고른 **문구 종류**를 사전렌더 버킷으로 매핑한다.
+        // ⚠ **갈래는 하나다**(2026-09-02). 그전에는 기본 목소리면 `selectedFreeBucket`,
+        //   클론이면 문구 종류로 갈랐는데, 그 둘은 애초에 같은 값을 다른 이름으로 담고
+        //   있었다(`RandomPromptContext.bucketCategory` ↔ `FreeBucket.rawValue`). 갈라 두면
+        //   한쪽만 고치는 사고가 나고, 실제로 문구 목록이 두 벌로 벌어진 원인이었다.
         guard voiceStudio.randomPrompt,
               let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return nil }
         let category = context.bucketCategory
@@ -1611,6 +1545,12 @@ struct AlarmEditorSheet: View {
         } else {
             voiceStudio.randomPrompt = true
             voiceStudio.randomContext = result.context
+            // 스톡 클립을 쓰는 목소리는 **고른 종류가 곧 테마**다. 여기서 같이 세우지 않으면
+            // 요약 행·저장 갈래가 `selectedFreeBucket` 을 nil 로 읽어, 고른 것과 다르게 군다.
+            if usesStockClips,
+               let bucket = RandomPromptContext(rawValue: result.context).map({ FreeBucket(rawValue: $0.bucketCategory) }) ?? nil {
+                selectedBucketDraft = bucket
+            }
         }
         voiceStudio.weatherCountry = result.weatherCountry
         voiceStudio.weatherCity = result.weatherCity
@@ -1745,19 +1685,19 @@ struct AlarmEditorSheet: View {
     /// 로그인 무료 등급 — 음성은 허용하되 시스템 보이스/preset 으로 강제하는 graduated 경로.
     var freeVoiceTier: Bool { planAccess == .free }
 
-    /// 문구를 무료 버킷('날씨+약')으로 **제한하는가.**
+    /// 이 목소리가 **미리 구워 둔 스톡 클립**으로 우는가(무료 플랜이거나 기본 목소리).
     ///
-    /// 안드로이드 `AlarmEditorScreen.kt:190` 의 `restrictToWeatherMedication` 미러 —
+    /// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `usesStockClips` 미러 —
     /// 판정식은 **OR** 다: `freeVoiceTier || 시스템 보이스 선택됨`.
     ///
-    /// ⚠ **`&&` 로 쓰지 말 것.** 기본(시스템) 목소리는 미리 만들어 둔 클립만 말할 수 있어
-    /// **유료여도** 직접 입력 문구를 읽지 못한다. iOS 는 이걸 `freeVoiceTier && 시스템보이스`
-    /// 로 잘못 써서, 유료 사용자가 기본 목소리에 직접 입력 문구를 붙일 수 있었다 —
-    /// 저장은 되는데 그 문구를 말할 방법이 없는 알람이 된다(2026-08-07 확인).
+    /// ⚠ **`&&` 로 쓰지 말 것.** iOS 는 이걸 `freeVoiceTier && 시스템보이스` 로 잘못 써서
+    /// 유료 사용자가 기본 목소리에 라이브 문구를 붙일 수 있었다(2026-08-07 확인).
     ///
-    /// 안드로이드는 이 플래그 하나를 렌더·상태강제·저장검증에서 함께 본다. 한 곳만
-    /// 고치면 화면과 저장이 어긋난다.
-    var restrictToWeatherMedication: Bool {
+    /// ⚠ 예전 이름은 `restrictToWeatherMedication` 이었고, 이름 그대로 문구 목록을 날씨·약으로
+    /// 잘랐다. 그건 등급 정책이 아니라 **기본 목소리에 운세·사랑 클립이 없다**는 사정이었고,
+    /// 2026-09-02 에 그 클립을 채우고 목록을 하나로 합쳤다. 지금 이 값이 가르는 것은
+    /// **오디오를 어떻게 얻는가** 하나이고, 등급으로 갈리는 것은 직접 입력 잠금뿐이다.
+    var usesStockClips: Bool {
         freeVoiceTier || voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
@@ -1946,9 +1886,9 @@ struct AlarmEditorSheet: View {
     /// 값이 실제로 달라질 때만 재할당하고 preparedAlarm 을 무효화한다(무한 무효화 방지).
     @discardableResult
     func coerceFreeVoiceTierConstraints() -> Bool {
-        // ⚠ `freeVoiceTier` 가 아니라 `restrictToWeatherMedication` 이다 — 유료가 기본
+        // ⚠ `freeVoiceTier` 가 아니라 `usesStockClips` 다 — 유료가 기본
         // 목소리를 골랐을 때도 preset 4-값으로 고정해야 화면과 저장이 어긋나지 않는다.
-        guard restrictToWeatherMedication, draft.playMode != .alarmOnly else { return false }
+        guard usesStockClips, draft.playMode != .alarmOnly else { return false }
         // ⚠ **직접 녹음에는 이 제한을 걸지 않는다**(안드로이드
         // `AlarmEditorScreen.kt` 의 `voiceSource != LOCAL_AUDIO` 가드 미러).
         // 녹음본은 그냥 로컬 오디오 재생이라 플랜·목소리 종류와 무관하게 허용된다.

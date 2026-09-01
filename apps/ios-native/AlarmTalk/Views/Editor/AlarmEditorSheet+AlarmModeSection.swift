@@ -142,35 +142,30 @@ extension AlarmEditorSheet {
                         // 나오는 숨은 상태가 된다. 안드로이드는 여섯 갈래(기본 인사말·
                         // 날씨·운세·사랑·약·직접 입력)를 한 목록에 같은 층위로 두고,
                         // 요약 행을 눌러 그 화면으로 들어간다.
+                        // ⚠ **행은 하나다**(2026-09-02). 유료·무료가 같은 문구 목록을 쓰므로
+                        // 요약 행도 갈리지 않는다 — 갈라 두면 같은 상태를 두 곳이 다르게
+                        // 읽는 사고가 반복된다(안드로이드 `MessageModeSummaryRow` 와 같다).
                         EditorCard(verticalPadding: 0) {
-                            if restrictToWeatherMedication {
-                                FreeThemeSummaryRow(
-                                    selectedBucket: selectedFreeBucket,
-                                    weatherCity: voiceStudio.weatherCity,
-                                    onTap: { freeBucketPaneOpen = true }
-                                )
-                            } else {
-                                MessageModeSummaryRow(
-                                    context: currentMessageContext,
-                                    onTap: { messagePaneOpen = true }
-                                )
-                            }
+                            MessageModeSummaryRow(
+                                context: currentMessageContext,
+                                weatherCity: voiceStudio.weatherCity,
+                                // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
+                                nothingChosenYet: usesStockClips
+                                    && selectedFreeBucket == nil
+                                    && (voiceStudio.ttsText).nilIfBlank == nil,
+                                onTap: { messagePaneOpen = true }
+                            )
                             AlarmSettingDivider()
                             voiceVolumeRow
                         }
 
-                        // ⚠ **무료 사용자에게는 "무료에서는 …" 안내를 두지 않는다**(2026-08-11 요청).
-                        // 무엇이 막혔는지는 잠긴 행을 눌렀을 때 게이트가 말한다 — 카드에 미리
-                        // 깔아 두면 알람을 만들 때마다 "너는 무료다" 를 읽게 된다.
+                        // ⚠ **"무료에서는 …" 안내를 두지 않는다**(2026-08-11 요청). 무엇이
+                        // 막혔는지는 잠긴 행을 눌렀을 때 게이트가 말한다 — 카드에 미리 깔아
+                        // 두면 알람을 만들 때마다 "너는 무료다" 를 읽게 된다.
                         //
-                        // 반대로 **유료인데 기본 목소리라서** 막힌 경우는 남긴다. 그건 플랜 문제가
-                        // 아니라 **선택 문제**라, 어떻게 풀 수 있는지(내 목소리를 고르면 된다)를
-                        // 그 자리에서 말해 주지 않으면 이용권을 산 사람이 이유를 알 길이 없다.
-                        if restrictToWeatherMedication, !freeVoiceTier {
-                            Text("기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력하려면 내 목소리를 골라 주세요.")
-                                .font(theme.typography.bodySmall)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                        }
+                        // ⚠ **"기본 목소리는 준비된 문구로만" 안내도 지웠다**(2026-09-02).
+                        // 유료 사용자는 기본 목소리로도 직접 입력을 쓸 수 있고(`manualLocked`
+                        // 은 무료 단독), 문구 목록도 이제 같다 — 그 안내는 사실이 아니었다.
                     } else {
                         LocalAlarmAudioEditor(
                             mode: $localAudioMode,

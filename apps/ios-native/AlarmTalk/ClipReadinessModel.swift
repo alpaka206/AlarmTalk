@@ -100,7 +100,7 @@ final class ClipReadinessModel: ObservableObject {
             isSystemVoice: { isSystemVoiceId($0) },
             categories: { voiceID in
                 guard let all = categoriesByVoice[voiceID] else { return [] }
-                // 기본 목소리는 무료 테마만 쓴다(greeting 은 미리듣기 전용이라 알람에 안 쓴다).
+                // 기본 목소리는 스톡 클립 카테고리만 쓴다(= 편집기 문구 목록과 같은 다섯).
                 return isSystemVoiceId(voiceID)
                     ? all.filter { StockClipPrefetcher.freeBucketCategories.contains($0) }
                     : all

@@ -560,15 +560,6 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "love" to R.string.editor2_cat_love,
 )
 
-/**
- * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
- * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
- * 백엔드 확정 무료 버킷(stock-clips.ts FREE_BUCKET_CATEGORIES)과 동일: 약 + 날씨.
- * 순서: 추가 설정이 필요 없는 '약'이 먼저. 다만 이건 **직전에 고른 테마가 없을 때만** 쓰는
- * 최후 폴백이다 — 마지막에 고른 테마가 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket).
- * 이 순서를 '항상 적용되는 기본값'으로 되돌리면 날씨로 저장해도 새 알람이 매번 약으로 돌아간다.
- */
-internal val FreeBucketOrder: List<String> = listOf("medication", "weather")
 
 /** 버킷 칩 라벨. 카테고리 라벨 문자열을 재사용한다(기상·약 …). */
 internal fun freeBucketLabelRes(category: String): Int = when (category) {
@@ -622,3 +613,26 @@ internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "medication" to R.string.editor2_ctx_medication,
     ManualMessageContext to R.string.editor_msg_mode_manual,
 )
+
+/**
+ * 스톡 클립을 쓰는 목소리(무료 플랜 · 기본 목소리)가 고를 수 있는 버킷 category — **노출 순서**.
+ *
+ * ⚠ **손으로 적지 않는다.** [EditorMessageContexts] 를 [clonePrerenderBucketCategoryFor] 로
+ * 옮긴 것이 전부다. 2026-09-02 전에는 여기가 `listOf("medication", "weather")` 라, 같은
+ * '문구 종류' 가 **유료는 5종 · 무료는 2종**으로 갈라져 있었다 — 그 차이는 제품 결정이 아니라
+ * *기본 목소리에 운세·사랑 클립이 없었다*는 사정이었고, 클립을 채우고 나니 남을 이유가 없었다.
+ * 목록을 두 벌로 두면 한쪽만 늘어나는 사고가 다시 난다.
+ *
+ * 실제 노출은 stockClips manifest 와 교차한다([freeBucketsFor]) — 서버에 카테고리를
+ * 추가하고 재시드하면 앱 수정 없이 칩이 늘어난다. 아직 안 구워진 카테고리는 저절로 빠진다.
+ *
+ * ⚠ 이 순서는 **직전에 고른 테마가 없을 때만** 쓰는 최후 폴백이다 — 마지막에 고른 테마가
+ * 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket). '항상 적용되는 기본값' 으로
+ * 되돌리면 날씨로 저장해도 새 알람이 매번 첫 값으로 돌아간다.
+ */
+internal val FreeBucketOrder: List<String> = EditorMessageContexts
+    // ⚠ **'직접 입력' 을 먼저 걷어내야 한다.** `clonePrerenderBucketCategoryFor` 는 모르는
+    //   값을 `preset` 으로 접으므로(`normalizedRandomPromptContext`), 그냥 흘리면 manual 이
+    //   **greeting 으로 둔갑해** 목록에 같은 버킷이 두 번 들어온다.
+    .filterNot { (context, _) -> context == ManualMessageContext }
+    .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }

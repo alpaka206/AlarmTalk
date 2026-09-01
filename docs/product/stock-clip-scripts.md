@@ -39,16 +39,25 @@ ElevenLabs 로 간다. 합성 경로가 `prepareAlarmTextWithVertex(translate:fa
 | --- | ---: | ---: | ---: |
 | 날씨 | 9 | 27 | 108 |
 | 약 | 2 | 6 | 24 |
-| 미리듣기(greeting) | 1 | 3 | 12 |
-| **현재 합** | **12** | **36** | **144** |
-| 운세(신규 제안) | 5 | 15 | 60 |
-| 사랑(신규 제안) | 3 | 9 | 36 |
+| 운세 | 5 | 15 | 60 |
+| 사랑 | 3 | 9 | 36 |
+| 기본 인사말(greeting) | 1 | 3 | 12 |
+| **현재 합** | **20** | **60** | **240** |
 | 주식·환율(신규 제안) | 7 | 21 | 84 |
 | **추가 후 합** | **27** | **81** | **324** |
 
 기본 목소리 4종: **아담 · 미나 · 하준 · 소은**.
-무료 알람 버킷은 **지금은** 날씨·약뿐이다(greeting 은 미리듣기라 제외).
-제안대로 운세·사랑·주식을 넣으면 무료도 유료 클론과 **같은 5종 + 주식**이 된다.
+
+**문구 종류는 유료·무료가 같다**(2026-09-02). 기본 목소리도 다섯 종류를 전부 고를 수
+있다 — greeting 은 목소리 미리듣기이자 '기본 인사말' 버킷을 겸한다(클론도
+`RandomPromptContext.preset.bucketCategory` 가 greeting 이다). 등급으로 갈리는 것은
+**직접 입력 잠금 하나**다. 상세는 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) §2.
+
+⚠ **운세·사랑의 en·ja 는 아직 한국어를 복사해 둔 임시값이다.** 그 언어 사용자에게는
+뜻이 통하지 않는 오디오가 나간다 — **출시 전에 교체할 것.** 표는
+`STOCK_CLIP_PLACEHOLDER_LANGUAGES`(`packages/backend/src/lib/stock-clips.ts`)에 있고,
+백엔드 테스트(`test/stock-clip-placeholders.test.ts`)가 표와 실제를 **양방향**으로
+대조한다 — 교체하고 표를 안 지워도, 표에 없이 복사해 넣어도 빨개진다.
 
 ---
 
@@ -133,7 +142,7 @@ variant 순서는 `CLONE_WEATHER_CONDITIONS` 와 **반드시 일치**한다.
 
 ---
 
-# 운세 (fortune) — 구현됨
+# 운세 (fortune) — 구현됨 (en·ja 는 임시)
 
 유료 클론과 **같은 5종**이다(`CLONE_FORTUNE_THEMES` 순서: luck / caution / wealth / health / relationship).
 variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고른 테마와 맞는다.
@@ -168,7 +177,7 @@ variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고�
 
 ---
 
-# 사랑 (love) — 구현됨
+# 사랑 (love) — 구현됨 (en·ja 는 임시)
 
 유료 클론과 **같은 3종**이다.
 

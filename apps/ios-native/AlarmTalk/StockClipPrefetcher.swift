@@ -14,13 +14,21 @@ import Foundation
 /// 받는 대상 = 기본(시스템) 목소리 × **기기 언어 하나** × 무료 버킷 카테고리.
 ///  - 언어를 하나로 좁힌다. 3개 언어를 다 받으면 3배인데 앱은 한 번에 한 언어만 쓰고,
 ///    언어를 바꾸면 다시 돌아 부족분을 채운다.
-///  - greeting 은 앱에 내장돼 있어 받지 않는다.
-///  - 운세·사랑은 유료 클론 전용이라 기본 목소리로는 쓸 수 없다.
+///  - **다섯 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 문구 종류를 다섯 다
+///    고를 수 있게 되면서(`docs/spec/voice-and-message.md` §2), 안 받는 종류가 있으면
+///    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
+///  - greeting 은 앱에도 내장돼 있지만(미리듣기용) 알람 경로는 서버 클립을 messageId 로
+///    캐시하므로 여기서도 받는다.
 @MainActor
 final class StockClipPrefetcher: ObservableObject {
 
-    /// 무료 버킷에서 실제로 회전하는 카테고리. 안드로이드 `FREE_BUCKET_CATEGORIES` 와 같다.
-    static let freeBucketCategories: Set<String> = ["weather", "medication"]
+    /// 선다운로드 대상 카테고리.
+    ///
+    /// ⚠ **손으로 적지 않는다**(2026-09-02). 여기가 `["weather","medication"]` 로 박혀
+    /// 있어서, 편집기 목록에 카테고리를 더해도 **그 클립만 안 받는** 상태가 됐다 — 고를
+    /// 수는 있는데 오프라인에서 소리가 안 나는 종류가 생긴다. 안드로이드
+    /// `StockClipPrefetchWorker.FREE_BUCKET_CATEGORIES` 도 `FreeBucketOrder` 에서 유도한다.
+    static let freeBucketCategories: Set<String> = Set(FreeBucket.order.map(\.rawValue))
 
     /// 클립당 HTTP 왕복 1회다. 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로 겹친다
     /// (서버·기기 부담을 감안해 안드로이드와 같은 4).

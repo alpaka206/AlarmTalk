@@ -19,31 +19,62 @@
 알람음 행이 없다. 안 고른 쪽 설정을 남겨 두면 만질 수는 있는데 울릴 때 아무 영향이 없는
 컨트롤이 된다.
 
-## 2. 기본(시스템) 목소리 제한 — 판정은 **OR**
+## 2. 문구 목록은 **하나다** — 등급으로 자르지 않는다
 
-기본 목소리는 **미리 만들어 둔 클립만** 말할 수 있다. 그래서 문구를 무료 버킷
-('날씨+약')으로 제한하는 조건은 플랜과 목소리 종류의 **OR** 다:
+**모든 사용자가 같은 여섯 줄을 본다**: 기본 인사말 · 날씨 · 운세 · 사랑 · 약 · 직접 입력.
+목소리를 무엇으로 골랐든, 유료든 무료든 같다.
+
+목록에서 줄이 빠지는 사유는 **하나뿐**이다 — **그 (목소리 · 언어) 로 구워 둔 클립이
+서버에 아직 없을 때.** 판정은 스톡 매니페스트(`GET /tts/stock-clips`)와의 교차이고,
+운영이 새 카테고리를 시딩하면 **앱을 고치지 않아도** 줄이 나타난다.
+
+등급으로 갈리는 것은 **직접 입력 잠금 하나**다:
 
 ```
-제한한다 = (무료 등급) || (시스템 목소리를 골랐다)
+직접 입력이 잠긴다 = 무료 등급        ← 목소리 종류는 이유가 되지 않는다
 ```
 
-⚠ **`&&` 로 쓰면 유료 사용자가 기본 목소리에 직접 입력 문구를 붙일 수 있다** — 저장은
-되는데 그 문구를 말할 방법이 없는 알람이 된다. iOS 가 실제로 `&&` 였다(2026-08-07 수정).
+⚠ **잠긴 '직접 입력' 행을 목록에서 빼지 말 것.** 빼면 유료에 무엇이 있는지 알 길이 없다.
+자물쇠를 그리고, 누르면 게이트가 이유를 말한다.
+
+### 2026-09-02 이전: 무료는 2종, 유료는 5종이었다
+
+그전에는 무료·기본 목소리에 **아예 다른 화면**(`FreeBucketSettingsPane`)을 띄우고 목록을
+'날씨+약' 으로 잘랐다. 그 차이는 제품 결정이 아니라 **기본 목소리에 운세·사랑 클립이
+없다**는 사정이었다 — 대사는 `docs/product/stock-clip-scripts.md` 에 확정돼 있었는데
+`STOCK_CLIP_PRESETS` 에 들어가지 않은 채였다. 클립을 채우고 목록을 합쳤다.
+
+⚠ **화면을 두 벌로 되돌리지 말 것.** 두 화면이 같은 상태를 다르게 읽어 계속 어긋났다 —
+한쪽만 '날씨 · 서울' 로 도시를 붙였고, 한쪽만 준비 중/오프라인을 구분했다.
+
+⚠ **en·ja 는 아직 한국어를 복사해 둔 임시 문구다**(운세·사랑). `STOCK_CLIP_PLACEHOLDER_LANGUAGES`
+에 적혀 있고, 백엔드 테스트가 표와 실제를 양방향으로 대조한다 — **출시 전에 교체할 것.**
+
+### 그래도 갈리는 축: **오디오를 어떻게 얻는가**
+
+목록은 같아도, 소리를 얻는 길은 목소리 종류에 따라 다르다. 그 판정이 `usesStockClips` 다:
+
+```
+스톡 클립으로 운다 = (무료 등급) || (시스템 목소리를 골랐다)
+```
+
+⚠ **`&&` 로 쓰지 말 것.** iOS 가 실제로 `&&` 였다(2026-08-07 수정).
 
 ⚠ **한 곳만 고치지 말 것.** 이 플래그는 세 갈래에서 함께 읽힌다:
-1. **렌더** — 문구 요약 행을 '무료 테마' 로 그릴지 '문구 선택' 으로 그릴지
-2. **상태 강제** — 목소리 소스·랜덤 여부·컨텍스트를 preset 4-값으로 고정
-3. **저장 검증** — 저장 직전 유효성
+1. **클립 바인딩** — 고른 종류의 스톡 클립을 내려받아 붙일지, 저장 시점에 클론 사전렌더
+   버킷을 붙일지
+2. **상태 강제** — 목소리 소스·랜덤 여부·컨텍스트 고정
+3. **저장 검증** — 조건형 버킷(날씨·운세)에 필요한 값(지역·사주)이 있는지
 
-렌더만 맞추면 **보이는 대로 저장되지 않는** 상태가 된다.
+⚠ **조건형 버킷은 저장에서 값을 확인한다.** 날씨는 지역, 운세는 사주가 없으면 클라가
+인덱스를 못 골라 **매번 같은 클립**이 나간다. 스톡 클립 알람은 `voiceRandomPrompt = false`
+로 저장되므로 라이브 경로의 검사에 걸리지 않는다 — 둘 다 따로 막는다.
 
-⚠ **직접 녹음에는 이 제한을 걸지 않는다.** 녹음본은 그냥 로컬 오디오 재생이라 플랜·목소리
+⚠ **직접 녹음에는 이 강제를 걸지 않는다.** 녹음본은 그냥 로컬 오디오 재생이라 플랜·목소리
 종류와 무관하게 허용된다. 상태 강제가 소스를 TTS 로 되돌리면 **녹음해 둔 것이 지워진다** —
-특히 유료 사용자가 기본 목소리를 고른 채 녹음했을 때(선택 목소리 id 는 시스템인데 소스는
-녹음) 제한이 걸려 녹음이 날아간다. 제한은 **소스가 TTS 일 때만** 적용한다.
+특히 유료 사용자가 기본 목소리를 고른 채 녹음했을 때 그렇다. **소스가 TTS 일 때만** 적용한다.
 
-⚠ **안내 문구도 상태마다 다르다.** 무료라서 막힌 것과 기본 목소리라서 막힌 것은 다른
+⚠ **안내 문구도 상태마다 다르다.** 무료라서 막힌 것과 목소리 종류 때문에 막힌 것은 다른
 사실이다 — 유료에게 "무료에서는…" 이라고 하면 거짓말이 된다.
 
 ## 3. 목소리를 바꿀 때 문구가 사라지면 **묻는다**
@@ -566,8 +597,12 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | --- | --- | --- | --- |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
-| 기본목소리 제한(OR) | `restrictToWeatherMedication` (`ui/editor/AlarmEditorScreen.kt`) | `restrictToWeatherMedication` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
-| 상태 강제 | `LaunchedEffect(restrictToWeatherMedication, …)` | `coerceFreeVoiceTierConstraints` | — |
+| 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
+| 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
+| 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
+| 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
+| 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
+| 임시 en·ja 문구 표 | — | — | `STOCK_CLIP_PLACEHOLDER_LANGUAGES` (`lib/stock-clips.ts`) |
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |

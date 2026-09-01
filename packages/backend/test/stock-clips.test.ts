@@ -61,10 +61,16 @@ function systemVoice(id: string, eleven: string): PrerenderVoice {
 }
 
 describe('findMissingStockTargets (시스템 리터럴)', () => {
-  it('보이스당 12클립 × 3언어 = 36타깃을 만들고, baseText 는 해당 언어 리터럴이다', async () => {
+  // ⚠ **개수를 손으로 적지 않는다.** 카테고리는 늘어난다(2026-09-02 에 운세·사랑을 더했다).
+  //   숫자를 박아 두면 카테고리를 추가할 때마다 이 테스트가 "기능이 깨졌다" 처럼 빨개져,
+  //   실제로 검증하려던 **(문구 × 언어) 매트릭스가 빠짐없이 나오는가**는 가려진다.
+  const KO_TEXT_COUNT = STOCK_CLIP_PRESETS.reduce((sum, p) => sum + p.texts.ko.length, 0);
+  const TARGETS_PER_VOICE = KO_TEXT_COUNT * 3; // ko·en·ja
+
+  it('보이스당 (문구 × 3언어) 타깃을 만들고, baseText 는 해당 언어 리터럴이다', async () => {
     const voice = systemVoice('vp-1', 'eleven-a');
     const targets = await findMissingStockTargets(stubDb(), [voice]);
-    expect(targets).toHaveLength(36);
+    expect(targets).toHaveLength(TARGETS_PER_VOICE);
 
     const langs = new Set(targets.map((t) => t.language));
     expect([...langs].sort()).toEqual(['en', 'ja', 'ko']);
@@ -95,7 +101,7 @@ describe('findMissingStockTargets (시스템 리터럴)', () => {
       { voice_profile_id: 'vp-1', category: 'weather', language: 'ko', variant: 0 },
     ]);
     const targets = await findMissingStockTargets(db, [voice]);
-    expect(targets).toHaveLength(35);
+    expect(targets).toHaveLength(TARGETS_PER_VOICE - 1);
     expect(
       targets.some(
         (t) => t.category === 'weather' && t.language === 'ko' && t.variantIndex === 0,
