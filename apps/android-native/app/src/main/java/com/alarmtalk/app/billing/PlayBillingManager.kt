@@ -125,12 +125,16 @@ class PlayBillingManager(
          * **사용자가 방금 산 것이 아닌** 기존 구매의 정합화(restore). 검증 경로는 같지만
          * 성공 UI 를 내지 않는다.
          *
+         * [userInitiated] 가 참이면 **사용자가 '이전 구매 복원' 을 눌러서** 온 것이다 —
+         * 결과(성공/실패)를 반드시 화면에 말해야 한다. 거짓이면 앱 시작·탭 진입마다 도는
+         * 자동 정합화라 아무 말도 하지 않는다.
+         *
          * ⚠ **[onPurchaseReady] 로 합치지 말 것**(2026-09-01 리뷰). 그 핸들러는
          * "이용권이 적용됐어요" 를 띄우고 커플/가족이면 구성원 관리로 **이동**시킨다.
          * 정합화는 앱 시작·탭 진입마다 도는데 그걸 그대로 태우면, 이미 가족 플랜을 쓰는
          * 사람이 **앱을 켤 때마다 구성원 관리로 튕긴다.**
          */
-        fun onPurchaseRestored(purchaseToken: String, productId: String)
+        fun onPurchaseRestored(purchaseToken: String, productId: String, userInitiated: Boolean)
 
         /** 결제 수단 승인 대기 등 보류(PENDING) 상태 구매. 승인되면 다시 onPurchaseReady 로 들어온다. */
         fun onPurchasePending(productId: String)
@@ -499,7 +503,7 @@ class PlayBillingManager(
      *
      * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
      */
-    suspend fun restorePurchases(): Int {
+    suspend fun restorePurchases(userInitiated: Boolean = false): Int {
         if (!ensureConnected()) return 0
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
@@ -516,7 +520,7 @@ class PlayBillingManager(
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
                 Log.i(TAG, "Restoring Play purchase productId=$productId")
-                listener.onPurchaseRestored(purchase.purchaseToken, productId)
+                listener.onPurchaseRestored(purchase.purchaseToken, productId, userInitiated)
                 sent++
             }
         return sent

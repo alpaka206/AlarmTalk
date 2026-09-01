@@ -165,7 +165,7 @@ internal fun MainViewModel.restorePurchases() {
     billingBusy = true
     message = app.getString(R.string.billing_restore_checking)
     viewModelScope.launch {
-        val restored = runCatching { playBilling.restorePurchases() }
+        val restored = runCatching { playBilling.restorePurchases(userInitiated = true) }
             .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
             .getOrDefault(0)
         // ⚠ **busy 는 이 함수가 소유한다**(2026-09-01 리뷰). 예전에는 보낸 게 있으면
@@ -174,11 +174,9 @@ internal fun MainViewModel.restorePurchases() {
         // 만들어질 때까지 잠긴 채** 남았다. 확인 요청은 이미 다 보냈고 결과는 구독 재조회로
         // 화면에 드러나므로, 여기서 풀어 주는 것이 맞다.
         billingBusy = false
-        message = if (restored == 0) {
-            app.getString(R.string.billing_restore_none)
-        } else {
-            app.getString(R.string.billing_restore_checking)
-        }
+        // 보낸 게 있으면 문구는 그대로 두고 **확인 결과가 덮어쓴다**(성공이면 '이용권이
+        // 적용됐어요', 실패면 그 사유) — 그래서 복원은 `UserRestore` 로 보낸다.
+        if (restored == 0) message = app.getString(R.string.billing_restore_none)
     }
 }
 
@@ -435,24 +433,41 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
  * Play 구매 토큰을 백엔드(/billing/google/confirm)로 보내 검증·acknowledge·구독 반영을 요청한다.
  * 성공 시 기존 구독 로드 경로를 재사용해 구독 상태를 새로고침한다.
  */
+/**
+ * 이 확인이 **어디서 왔는가**. 셋이 각각 다른 것을 낸다(2026-09-01 리뷰).
+ *
+ * | | 결과 메시지 | 공유패스 이동 | `billingBusy` |
+ * | --- | --- | --- | --- |
+ * | [UserPurchase] | O | O | 이 함수가 소유 |
+ * | [UserRestore] | O | X | **호출부가 소유** |
+ * | [AutoReconcile] | X | X | 건드리지 않음 |
+ *
+ * ⚠ **셋을 하나로 합치지 말 것.** 전부 UI 를 내면 앱 시작·탭 진입마다 도는 정합화가
+ * "이용권이 적용됐어요" 를 띄우고 커플/가족 사용자를 구성원 관리로 튕긴다. 반대로 전부
+ * 조용하게 만들면 **사용자가 누른 복원의 결과를 말해 줄 사람이 없어진다** — 스토어에 구매가
+ * 있어도 다른 계정 것이라 서버가 거절하면, 사용자는 "확인하고 있어요…" 만 보고 아무 일도
+ * 안 일어난 줄 알고 다시 결제하려 든다.
+ */
+internal enum class PurchaseConfirmOrigin { UserPurchase, UserRestore, AutoReconcile }
+
 internal fun MainViewModel.confirmGooglePurchase(
     purchaseToken: String,
     productId: String,
-    /**
-     * **정합화(restore)로 들어온 확인**. 검증·상태 갱신은 그대로 하고 성공 UI 만 뺀다.
-     *
-     * ⚠ 이 갈래가 없으면 앱 시작·탭 진입마다 도는 정합화가 "이용권이 적용됐어요" 를 띄우고
-     * 커플/가족 사용자를 **구성원 관리로 이동**시킨다(2026-09-01 리뷰). 진행 표시(`billingBusy`)
-     * 도 걸지 않는다 — 사용자가 시작한 일이 아니라 그동안 버튼이 잠기면 안 된다.
-     */
-    silent: Boolean = false,
+    origin: PurchaseConfirmOrigin = PurchaseConfirmOrigin.UserPurchase,
 ) {
+    val showsResult = origin != PurchaseConfirmOrigin.AutoReconcile
+    val ownsBusy = origin == PurchaseConfirmOrigin.UserPurchase
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_apply_plan)) ?: run {
-        if (!silent) billingBusy = false
+        if (ownsBusy) billingBusy = false
         return
     }
+    // ⚠ **시작한 계정을 잡아 둔다**(2026-09-01 리뷰). 이 확인은 비동기라 그 사이 A→B 계정
+    // 전환이 일어날 수 있는데, 아래 `refreshBillingAfterMutation` 은 **A 의 토큰으로 받아
+    // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
+    // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
-        if (!silent) billingBusy = true
+        if (ownsBusy) billingBusy = true
         runCatching {
             api.confirmGooglePurchase(
                 authorization,
@@ -463,8 +478,13 @@ internal fun MainViewModel.confirmGooglePurchase(
                 ),
             )
         }.onSuccess { response ->
+            // 응답이 늦게 온 사이 계정이 바뀌었으면 **아무것도 발행하지 않는다**(위 주석).
+            if (authSession?.user?.id != ownerUserId) {
+                android.util.Log.i("MainViewModel", "Dropping Play confirm result: account changed")
+                return@onSuccess
+            }
             if (response.success) {
-                if (!silent) {
+                if (showsResult) {
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
                 }
                 refreshBillingAfterMutation(authorization, "google play confirm")
@@ -472,16 +492,18 @@ internal fun MainViewModel.confirmGooglePurchase(
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
                 // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
-                // **정합화에서는 이동하지 않는다** — 산 적이 없는데 화면이 튄다.
-                if (!silent && response.planKey in setOf("couple", "family")) {
+                // **구매에서만 이동한다** — 복원·정합화는 산 적이 없는데 화면이 튄다.
+                if (origin == PurchaseConfirmOrigin.UserPurchase &&
+                    response.planKey in setOf("couple", "family")
+                ) {
                     navigateSharedPassTick++
                 }
-            } else if (!silent) {
+            } else if (showsResult) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
-            if (!silent) {
+            if (showsResult && authSession?.user?.id == ownerUserId) {
                 message = billingFailureMessage(
                     getApplication<android.app.Application>(),
                     apiErrorCode(error),
@@ -489,7 +511,7 @@ internal fun MainViewModel.confirmGooglePurchase(
                 )
             }
         }
-        if (!silent) billingBusy = false
+        if (ownsBusy) billingBusy = false
     }
 }
 

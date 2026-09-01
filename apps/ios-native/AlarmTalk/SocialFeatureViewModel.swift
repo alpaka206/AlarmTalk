@@ -541,6 +541,8 @@ final class SocialFeatureViewModel: ObservableObject {
                     || record.ownerUserId == expectedOwnerUserId)
         }
         for record in staleLocks {
+            // ⚠ **밀려났으면 즉시 멈춘다**(2026-09-01 리뷰 — 아래 잠금 루프의 주석과 같은 이유).
+            if Task.isCancelled { return 0 }
             var restored = record
             restored.playMode = record.preLockPlayMode ?? record.playMode
             restored.preLockPlayMode = nil
@@ -553,6 +555,12 @@ final class SocialFeatureViewModel: ObservableObject {
 
         var locked = 0
         for record in targets {
+            // ⚠ **밀려난 잠금은 여기서 멈춘다**(2026-09-01 리뷰). 이 함수는 `.task(id:)` 에서
+            // 도는데, 도는 도중 StoreKit 이 유료를 알려 오면 그 태스크가 **취소되고 복원
+            // 태스크가 시작된다.** 취소를 안 보면 옛 루프가 복원이 대상 목록을 읽은 **뒤에**
+            // 남은 알람들을 계속 잠근다 — 돈 내는 사용자의 알람이 알람음으로 남는다.
+            // `AlarmKitViewModel.schedule` 은 행을 이미 고친 **뒤에야** 취소를 알아챈다.
+            if Task.isCancelled { return locked }
             var updated = record
             // 이미 잠긴 알람을 다시 잠그면 원래 값을 잃는다 — 처음 한 번만 적는다.
             let needsLock = updated.preLockPlayMode == nil

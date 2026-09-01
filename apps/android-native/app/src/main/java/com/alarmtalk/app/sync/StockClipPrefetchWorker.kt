@@ -143,12 +143,19 @@ class StockClipPrefetchWorker(
             val paidVoiceAccess = withContext(Dispatchers.IO) {
                 runCatching {
                     val subscription = api.getSubscription(auth)
+                    // ⚠ **plan 은 캐시가 아니라 서버에서 지금 받는다**(2026-09-01 리뷰).
+                    // 회복 방향이 문제다: 보류가 풀려 구독이 살아났는데 스냅샷의 `userPlan` 은
+                    // 아직 보류 때 확인한 `free` 다. 이 워커는 콜드 스타트에서 `/auth/me`
+                    // 갱신과 경주하므로, 캐시를 읽으면 그 옛 free 가 **살아 있는 구독을 이겨**
+                    // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
+                    // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
+                    val plan = api.me(auth).user.plan
                     val snapshot = AccessSnapshotStore(applicationContext).read(session.user.id)
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(
                         subscriptionResponse = subscription,
                         familyGroup = snapshot.familyGroup,
-                        userPlan = snapshot.userPlan,
+                        userPlan = plan,
                         storeEntitled = snapshot.storeSignalStillValid(now),
                         nowMillis = now,
                     ).isEntitledOptimistic()
