@@ -726,8 +726,16 @@ final class AuthViewModel: ObservableObject {
     /// ⚠ **계정을 대조한다.** 배경 갱신은 비동기라 그 사이 로그아웃·계정 전환이 일어날 수
     /// 있는데, 그대로 쓰면 A 의 토큰이 B 의 세션에 박힌다.
     /// **프로필은 건드리지 않는다** — 전경에서 방금 바꾼 이름을 옛 값으로 되돌리지 않기 위해서다.
-    func applyRolledToken(userID: String, token rolled: String) {
-        guard let current = session, current.user.id == userID, current.token != rolled else { return }
+    func applyRolledToken(userID: String, from previous: String, to rolled: String) {
+        // ⚠ **계정 id 만 보면 안 된다**(2026-09-01 리뷰). 같은 계정으로 로그아웃→재로그인하면
+        // 토큰 세대가 바뀌는데, 그 사이 떠 있던 배경 `/auth/me` 응답은 **로그아웃 전 토큰으로
+        // 인가된 것**이다 — id 만 보고 반영하면 방금 발급된 로그인 토큰을 옛 것으로 덮어
+        // 이후 요청이 전부 401 이 된다. **굴러온 출처 토큰이 지금 것과 같을 때만** 갈아 끼운다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.token != rolled
+        else { return }
         persistSession(AuthSession(token: rolled, user: current.user))
     }
 

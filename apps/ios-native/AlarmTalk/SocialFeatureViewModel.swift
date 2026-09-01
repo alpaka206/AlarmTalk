@@ -53,9 +53,11 @@ final class SocialFeatureViewModel: ObservableObject {
      *
      * **토큰만 넘긴다.** 프로필까지 넘기면 그 사이 전경에서 바꾼 닉네임을 옛 값으로
      * 되돌린다(안드로이드 `PlanChangeSyncWorker` 가 같은 이유로 토큰만 쓴다).
-     * 계정이 바뀌었을 수 있으므로 **누구의 토큰인지** 함께 넘겨 받는 쪽이 대조한다.
+     * 계정이 바뀌었을 수 있으므로 **누구의 토큰인지**, 그리고 **어느 토큰에서 굴러왔는지**
+     * (`from`)를 함께 넘겨 받는 쪽이 대조한다. 같은 계정으로 로그아웃→재로그인하면 토큰
+     * 세대가 바뀌는데, 계정 id 만 보면 **그 사이 발급된 새 로그인 토큰을 옛 것으로 덮는다.**
      */
-    var onRolledToken: ((_ userID: String, _ token: String) -> Void)?
+    var onRolledToken: ((_ userID: String, _ from: String, _ to: String) -> Void)?
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -169,14 +171,12 @@ final class SocialFeatureViewModel: ObservableObject {
             // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
             var freshPlan: String?
             var planOK = false
+            var rolledToken: String?
             do {
                 let me = try await AlarmTalkAPI.shared.me(token: token)
                 freshPlan = me.user.plan
                 planOK = true
-                // rolling refresh — 서버가 새 토큰을 줬으면 세션 주인에게 넘긴다(위 주석).
-                if let rolled = me.token?.nilIfBlank, rolled != token {
-                    onRolledToken?(userID, rolled)
-                }
+                rolledToken = me.token?.nilIfBlank
             } catch {
                 messages.append(Self.scopedRefreshErrorMessage(
                     label: "이용권",
@@ -189,6 +189,11 @@ final class SocialFeatureViewModel: ObservableObject {
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
             guard activeUserID == userID, generation == refreshGeneration else { return }
+            // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
+            // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
+            if let rolledToken, rolledToken != token {
+                onRolledToken?(userID, token, rolledToken)
+            }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }

@@ -205,10 +205,19 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// 현재 verified 활성 entitlement 개수. 복원 결과 안내용.
+    /// 복원 결과로 보여 줄 **이 계정의** 활성 구매 수.
+    ///
+    /// ⚠ **계정 필터를 빼지 말 것**(2026-09-01 리뷰). 같은 Apple ID 에 A 계정으로 산 구독이
+    /// 있고 지금 B 로 로그인해 있으면, 안 거를 경우 "1건 복원했어요" 라고 말해 놓고 B 는
+    /// 그대로 무료다(서버가 소유권으로 거절한다). 등급 계산과 **같은 기준**으로 센다.
+    /// 계정 토큰이 없는 레거시 구매는 세지 않는다 — 그건 '모름' 이지 '내 것' 이 아니다.
     private func countActiveEntitlements() async -> Int {
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return 0 }
         var count = 0
         for await result in Transaction.currentEntitlements {
-            guard (try? checkVerified(result)) != nil else { continue }
+            guard let transaction = try? checkVerified(result) else { continue }
+            guard transaction.appAccountToken == currentAccount else { continue }
             count += 1
         }
         return count
@@ -254,8 +263,15 @@ final class SubscriptionManager: ObservableObject {
         refreshGeneration &+= 1
         let generation = refreshGeneration
         var latestExpiry: Date?
+        // 계정 토큰이 **없는** 활성 구매(그 필드를 붙이기 전에 산 것). 내 것으로도 남의
+        // 것으로도 셀 수 없다 — 아래에서 '모름' 의 근거가 된다.
+        var hasUnattributed = false
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
+            if transaction.appAccountToken == nil {
+                hasUnattributed = true
+                continue
+            }
             if transaction.appAccountToken != currentAccount { continue }
             newSet.insert(transaction.productID)
             if let plan = SubscriptionProduct(rawValue: transaction.productID) {
@@ -283,6 +299,15 @@ final class SubscriptionManager: ObservableObject {
         else { return }
         // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
         guard generation == refreshGeneration else { return }
+        // ⚠ **임자를 알 수 없는 활성 구매가 있고 내 것이 하나도 없으면 아무것도 확정하지
+        // 않는다**(2026-09-01 리뷰, 안드로이드 `ActiveSubscriptionQuery.unattributed` 와 같은
+        // 규칙). `appAccountToken` 을 붙이기 **전에** 산 구독이 그렇다 — 그걸 그냥 걸러
+        // `.free` 로 발행하고 `hasLoadedEntitlements` 까지 세우면, 서버 스냅샷이 낡아 있을 때
+        // 전경 잠금이 **돈 내는 사용자의 클론 알람을 잠근다.** 서버가 소유권을 붙일 때까지
+        // 옛 값을 그대로 두고 '아직 모른다' 로 남긴다.
+        if newSet.isEmpty && hasUnattributed {
+            return
+        }
         self.entitlementOwner = currentAccount
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier

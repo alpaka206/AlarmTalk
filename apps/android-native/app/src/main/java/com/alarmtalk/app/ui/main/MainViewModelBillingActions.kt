@@ -42,7 +42,18 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
         storeRefreshGeneration++
         val generation = storeRefreshGeneration
-        val query = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
+        // ⚠ **아무것도 발행하지 못하면 세대를 되돌린다**(2026-09-01 리뷰). 세대는 '나중에
+        // 시작한 조회가 이긴다' 를 위해 **시작할 때** 올리는데, 그 조회가 연결 실패로 빈손이면
+        // 자기는 아무것도 못 쓰면서 **먼저 시작한 성공 결과만 무효로 만든다** — 그러면 그
+        // 회차에는 아무도 발행하지 못해 확인 미완으로 남거나 옛 유료 캐시가 그대로 산다.
+        // 그 뒤에 시작한 조회가 없을 때만 되돌린다.
+        fun rollbackIfNewest() {
+            if (storeRefreshGeneration == generation) storeRefreshGeneration--
+        }
+        val query = playBilling.queryActiveSubscriptions(hash) ?: run {
+            rollbackIfNewest()
+            return@runCatching
+        }
         // ⚠ **임자를 알 수 없는 구독이 있으면 '확인했다' 고 하지 않는다**(2026-09-01 리뷰).
         // `obfuscatedAccountId` 를 붙이기 **전에** 산 구독에는 식별자가 없어 내 것으로도
         // 남의 것으로도 셀 수 없다. 그걸 그냥 걸러 내면 결과가 빈 목록 — "스토어가 없다고
@@ -55,6 +66,7 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                 "Store has unattributed subscriptions; leaving entitlement undetermined",
             )
             runCatching { playBilling.restorePurchases() }
+            rollbackIfNewest()
             return@runCatching
         }
         val purchases = query.mine
