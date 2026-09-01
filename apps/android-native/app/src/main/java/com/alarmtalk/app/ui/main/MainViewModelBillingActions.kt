@@ -64,7 +64,11 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                 "MainViewModel",
                 "Store has unattributed subscriptions; leaving entitlement undetermined",
             )
-            runCatching { playBilling.restorePurchases() }
+            // ⚠ **자동 정합화도 시작 계정을 들고 간다**(2026-09-01 리뷰). 안 넘기면
+            // `confirmGooglePurchase` 가 콜백 시점의 계정을 시작 계정으로 잡는다 —
+            // 조회 중 A→B 전환이면 A 의 구매가 B 의 인가로 제출돼 서버가 거절하고,
+            // 정작 A 를 위한 정합화는 사라진다(수동 복원에만 넣어 뒀던 가드다).
+            runCatching { playBilling.restorePurchases(ownerUserId = userId) }
             return@runCatching
         }
         val purchases = query.mine
@@ -117,7 +121,8 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         accessSnapshotStore.updateStorePlanKey(userId, nextKey, until)
         if (purchases.isNotEmpty()) {
             // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
-            runCatching { playBilling.restorePurchases() }
+            // 시작 계정을 함께 넘긴다(위 갈래와 같은 이유).
+            runCatching { playBilling.restorePurchases(ownerUserId = userId) }
         }
     }.onFailure { error ->
         android.util.Log.w("MainViewModel", "Failed to refresh store entitlement", error)
