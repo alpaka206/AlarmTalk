@@ -230,12 +230,15 @@ function todayKoreaLabel(): string {
 
 /**
  * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라는 기본값 문구를 'morning' 으로
- * 보내는데, 문구 출처인 STOCK_CLIP_PRESETS 는 greeting·weather·medication 만 갖는다.
- * 여기서만 이어 붙이고 클라는 건드리지 않는다.
+ * 보내는데 STOCK_CLIP_PRESETS 에는 그 이름이 없다. 여기서만 이어 붙이고 클라는 건드리지 않는다.
  *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
- *  - medication = 그대로
- *  - love 는 스톡 프리셋에 대응 문구가 없다(동적 생성 전용) → null 이 돌아가고
- *    호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
+ *  - 나머지는 이름이 그대로다.
+ *
+ * ⚠ **`love` 는 이제 null 이 아니다**(2026-09-02). 그전 주석은 "love 는 스톡 프리셋에 대응
+ * 문구가 없다(동적 생성 전용) → null" 이라고 적혀 있었는데, 문구 목록을 하나로 합치면서
+ * `STOCK_CLIP_PRESETS` 에 love 3문구·fortune 5문구가 들어갔다. 기본 목소리도 그 둘을 고를
+ * 수 있으므로 프리셋 문구가 정상적으로 나온다 — 그 서술을 근거로 아래 F2 게이트를 손대면
+ * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
  */
 function stockPresetCategory(category: string): string {
   return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
@@ -858,13 +861,16 @@ tts.post('/generate', async (c) => {
     }
     // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
     // morning/love 등 다른 요청 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
-    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
+    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES) 화이트리스트로 바꿔 그 외
     // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
     // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
     if (!FREE_BUCKET_CATEGORIES.includes(category)) {
       return c.json(
         {
-          error: 'This voice supports weather and medication phrases only.',
+          // ⚠ 허용 목록을 문장에 **베껴 적지 않는다.** 예전에는 "weather and medication
+          // only" 라고 못 박아 두었는데, 2026-09-02 에 fortune·love 가 들어오면서 곧바로
+          // 거짓이 됐다. 목록은 STOCK_CLIP_PRESETS 하나에서 자란다.
+          error: 'This voice only supports its prepared preset phrases.',
           error_code: presetOnlyCode,
         },
         403,

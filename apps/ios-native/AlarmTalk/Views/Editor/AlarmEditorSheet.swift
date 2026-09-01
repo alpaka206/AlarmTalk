@@ -1921,6 +1921,17 @@ struct AlarmEditorSheet: View {
         // 이다 — 그대로 두면 테마를 골라도 `randomPrompt = true`, `randomContext = "preset"`
         // 로 되돌아가 고른 테마가 저장되지 않는다.
         if selectedFreeBucket != nil { return false }
+        // ⚠ **직접 입력을 고른 유료 사용자를 건드리지 않는다**(2026-09-02, 안드로이드
+        // `AlarmEditorScreen` 의 `if (!freeVoiceTier && manualChosen) return@LaunchedEffect`
+        // 미러). `usesStockClips` 는 `freeVoiceTier || 시스템보이스` 라 **유료가 기본
+        // 목소리를 고른 경우도 포함**하는데, 직접 입력은 테마가 아니라 위 가드에 걸리지
+        // 않는다. 그대로 두면 저장 직전 이 강제가 `randomPrompt = true`·`preset` 으로
+        // 되돌려, 방금 친 문구 대신 **목소리 자기소개 클립**이 알람으로 저장된다 —
+        // 경고도 알럿도 없이. 잠긴 등급(무료)에서는 예전 그대로 돈다.
+        if !freeVoiceTier, !voiceStudio.randomPrompt,
+           (voiceStudio.ttsText).nilIfBlank != nil {
+            return false
+        }
         var changed = false
         if voiceSourceMode != .ttsProfile {
             voiceSourceMode = .ttsProfile

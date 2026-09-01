@@ -561,13 +561,6 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
 )
 
 
-/** 버킷 칩 라벨. 카테고리 라벨 문자열을 재사용한다(기상·약 …). */
-internal fun freeBucketLabelRes(category: String): Int = when (category) {
-    // 무료 날씨 버킷 — 유료 랜덤 컨텍스트와 같은 '날씨' 라벨을 재사용한다.
-    "weather" -> R.string.editor2_ctx_wake_weather
-    else -> (TtsCategories.firstOrNull { it.first == category }?.second) ?: R.string.editor2_cat_morning
-}
-
 /** stockClips manifest 에서 (해당 보이스·언어) 로 실제 존재하는 무료 버킷을 노출 순서대로. */
 internal fun freeBucketsFor(
     stockClips: List<com.alarmtalk.app.network.StockClip>,

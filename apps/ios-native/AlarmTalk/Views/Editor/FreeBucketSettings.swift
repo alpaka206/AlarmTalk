@@ -39,8 +39,8 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     ///
     /// 날씨는 그날 날씨에, 운세는 그날 운세에 맞는 클립을 골라야 한다 — 순서를 돌리면
     /// 비 오는 날 맑음 문구가 나온다. 안드로이드 `AlarmRepository.MATCHING_BUCKET_IDS`
-    /// 와 같은 집합이다(운세는 유료 클론 전용이라 이 열거형에는 없지만, 문자열로 비교하는
-    /// 자리에서 함께 걸러야 해서 여기 둔다).
+    /// 와 같은 집합이다. (2026-09-02 정정: 예전 주석은 "운세는 유료 클론 전용이라 이
+    /// 열거형에는 없다" 고 적었는데, 문구 목록을 합치면서 `fortune` 이 이 열거형에 들어왔다.)
     static let matchingBucketIDs: Set<String> = ["weather", "fortune"]
 
     /// ⚠ 라벨도 문구 종류에서 가져온다 — 같은 것을 두 이름으로 부르지 않는다.
