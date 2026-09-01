@@ -171,8 +171,8 @@ final class BackgroundDependencies {
             auth?.applyRolledToken(userID: userID, from: from, to: to)
         }
         // 코드 등록으로 서버 plan 이 올라가도 세션이 free 그대로면 게이트가 잠긴 채 남는다.
-        socialFeatures.onFreshPlan = { [weak auth] userID, plan in
-            auth?.applyFreshPlan(userID: userID, plan: plan)
+        socialFeatures.onFreshPlan = { [weak auth] userID, from, plan in
+            auth?.applyFreshPlan(userID: userID, from: from, plan: plan)
         }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()

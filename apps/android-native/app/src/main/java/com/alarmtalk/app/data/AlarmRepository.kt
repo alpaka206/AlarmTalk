@@ -1017,8 +1017,15 @@ class AlarmRepository(
      * ownerUserId 일치만 본다(null 허용 시 다른 계정이 레거시 잠금을 복원·스케줄하는 크로스계정 창).
      */
     // [lockPaidAlarmTalks] 와 같은 이유로 직렬화한다 — 여기도 행을 고치고 OS 예약을 다시 건다.
-    suspend fun unlockPaidAlarmTalks(): Int = restoreMutex.withLock {
+    /**
+     * @param expectedOwnerUserId **자격을 확인한 계정.** 넘기면 그 계정일 때만 복원한다 —
+     *   A 로 판정해 놓고 코루틴이 도는 사이 B 로 바뀌면, 그대로 두면 A 의 판정으로 **B 의
+     *   잠긴 알람을 목소리로 되살린다**(B 는 새 세션이라 무료 잠금이 아직 안 돌 수 있다).
+     *   잠금 쪽 `lockPaidAlarmTalks(expectedOwnerUserId)` 와 같은 규칙이다(2026-09-01 리뷰).
+     */
+    suspend fun unlockPaidAlarmTalks(expectedOwnerUserId: String? = null): Int = restoreMutex.withLock {
         val currentUser = currentUserIdProvider() ?: return 0
+        if (expectedOwnerUserId != null && expectedOwnerUserId != currentUser) return 0
         val targets = alarmDao.getAllAlarms().filter {
             !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }

@@ -70,7 +70,7 @@ final class SocialFeatureViewModel: ObservableObject {
      *
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
      */
-    var onFreshPlan: ((_ userID: String, _ plan: String) -> Void)?
+    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -207,7 +207,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
             }
-            if let freshPlan { onFreshPlan?(userID, freshPlan) }
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }

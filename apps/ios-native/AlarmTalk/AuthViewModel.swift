@@ -743,8 +743,15 @@ final class AuthViewModel: ObservableObject {
     ///
     /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
     /// 계정을 대조해 남의 값이 박히지 않게 한다.
-    func applyFreshPlan(userID: String, plan: String) {
-        guard let current = session, current.user.id == userID, current.user.plan != plan else { return }
+    func applyFreshPlan(userID: String, from previous: String, plan: String) {
+        // ⚠ **`applyRolledToken` 과 같은 에폭 가드가 필요하다**(2026-09-01 리뷰). 같은 계정으로
+        // 로그아웃→재로그인하면 id 는 그대로라, 로그아웃 **전** 토큰으로 인가된 응답의 plan 이
+        // 새 세션에 박힌다 — 옛 free 가 유료 게이트를 잠그거나 옛 유료가 무료 잠금을 막는다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.user.plan != plan
+        else { return }
         var user = current.user
         user.plan = plan
         persistSession(AuthSession(token: current.token, user: user))

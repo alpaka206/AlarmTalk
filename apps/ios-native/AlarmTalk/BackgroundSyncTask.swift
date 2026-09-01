@@ -308,11 +308,21 @@ final class BackgroundSyncTask {
         guard let session = KeychainStore.readSession(),
               SessionTokenRenewal.shouldRenew(token: session.token) else { return }
         do {
-            let (rolledToken, _) = try await AlarmTalkAPI.shared.me(token: session.token)
-            guard let rolledToken, !rolledToken.isEmpty else { return }
+            let (rolledToken, user) = try await AlarmTalkAPI.shared.me(token: session.token)
+            // ⚠ **plan 도 반영한다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
+            // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 예약·울림
+            // 게이트가 읽는 값이 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 예약되거나,
+            // 회복됐는데 계속 막힌다. 스펙: "`/auth/me` 로 plan 을 받아 온 경로는 전부 적는다".
+            //
+            // ⚠ **토큰 에폭을 본다.** 같은 계정으로 로그아웃→재로그인하면 id 는 그대로라,
+            // 이 응답을 인가한 토큰이 아직 그대로일 때만 반영해야 새 세션을 덮지 않는다.
+            // **plan 만** 갈아 끼운다 — 프로필 전체를 덮으면 그 사이 바꾼 이름이 되돌아간다.
             guard var current = KeychainStore.readSession(),
-                  current.user.id == session.user.id else { return }
-            current.token = rolledToken
+                  current.user.id == session.user.id,
+                  current.token == session.token else { return }
+            AccessSnapshotStore().updateUserPlan(userID: current.user.id, plan: user.plan)
+            current.user.plan = user.plan
+            if let rolledToken, !rolledToken.isEmpty { current.token = rolledToken }
             try KeychainStore.saveSession(current)
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),

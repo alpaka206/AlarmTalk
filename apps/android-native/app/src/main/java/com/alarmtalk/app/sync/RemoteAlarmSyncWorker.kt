@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -70,6 +71,16 @@ class RemoteAlarmSyncWorker(
         if (!SessionTokenRenewal.shouldRenew(token, System.currentTimeMillis())) return
         runCatching {
             val me = withContext(Dispatchers.IO) { api.me(AlarmTalkApiClient.bearer(token)) }
+            // ⚠ **plan 도 적는다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
+            // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 울림 게이트가
+            // 읽는 값은 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 계속 울리거나, 회복됐는데
+            // 계속 막힌다. 스펙: "`/auth/me` 로 plan 을 받아 온 경로는 **전부** 적는다".
+            // 계정 대조는 세션 세대가 대신한다 — 세대가 바뀌었으면 아래 CAS 가 막는다.
+            sessionStore.read()?.user?.id?.takeIf { it.isNotBlank() }?.let { userId ->
+                if (sessionStore.sessionGeneration() == startGeneration) {
+                    AccessSnapshotStore(applicationContext).updateUserPlan(userId, me.user.plan)
+                }
+            }
             val rolled = me.token?.takeIf { it.isNotBlank() } ?: return@runCatching
             if (sessionStore.saveTokenIfGeneration(startGeneration, rolled) != null) {
                 Log.i(TAG, "Session token renewed in background")

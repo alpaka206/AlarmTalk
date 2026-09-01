@@ -724,11 +724,15 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     // 다시 뜬다.
     // ⚠ **원인을 가려서 지운다**(Codex #703 P2). 예전에는 통째로 비워서, 다른 기기가 적어 둔
     // `VOICE_REPLACED`(이용권으로 복원되지 않는 안내)까지 사용자가 보기도 전에 사라졌다.
+    // ⚠ **자격을 확인한 계정을 잡아 둔다**(2026-09-01 리뷰). 코루틴이 돌기 전이나
+    // `restoreMutex` 를 기다리는 사이 계정이 바뀌면, A 의 판정으로 B 의 잠긴 알람을
+    // 목소리로 되살린다 — B 는 새 세션이라 무료 잠금이 아직 안 돌았을 수 있다.
+    val ownerUserId = authSession?.user?.id
     DowngradeNoticeStore(getApplication())
-        .clear(authSession?.user?.id, DowngradeNoticeStore.Cause.FREE_PLAN)
+        .clear(ownerUserId, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {
         runCatching {
-            repository.unlockPaidAlarmTalks()
+            repository.unlockPaidAlarmTalks(expectedOwnerUserId = ownerUserId)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to restore locked paid voice alarms", error)
         }

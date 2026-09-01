@@ -123,13 +123,21 @@ class PlanChangeSyncWorker(
             // 결제가 복구되면 살아난다. 울림·예약은 판정기 그대로 막히지만(되돌릴 수 있다),
             // 이 자리의 변환은 되돌릴 수 없으니 행이 살아 있는 동안에는 하지 않는다.
             val genuinelyFree = access.isDefinitelyFree() && !hasPaidVoiceAccess(billing)
-            // ⚠ **강등이면 캐시된 스토어 신호도 끊는다**(2026-09-01 리뷰). 그 신호는 판정
-            // **1단**이라, 자동갱신 중일 때 캐시된 40일짜리 통행증은 그 뒤 보류·환불이 와도
-            // 살아 있다 — 앱을 다시 열지 않으면 `RingingService` 가 계속 클론을 울린다.
-            // `plan_changed` 는 서버가 이미 알고 보낸 **권위 있는 신호**이므로, 여기서
-            // 끊는 것이 「스토어가 권위다」와 충돌하지 않는다(다음 전경 조회가 Play 에
-            // 다시 물어 살아 있으면 곧바로 되살린다).
-            if (access.isDefinitelyFree()) {
+            // ⚠ **캐시 무효화는 스토어 신호를 뺀 판정으로 결정한다**(2026-09-01 리뷰 2차 정정).
+            // 앞 회차에는 `access.isDefinitelyFree()` 로 걸었는데, 판정기는 유효한 스토어 신호를
+            // **1단에서** 곧바로 Entitled 로 답하므로 **그 조건은 캐시가 살아 있는 한 참이 될 수
+            // 없었다** — 지우려던 바로 그 상황에서만 안 지워지는 조건이었다.
+            // 서버가 방금 준 것(구독·plan·그룹)만으로 다시 판정해, 서버가 무료라고 하면 끊는다.
+            // `plan_changed` 는 서버가 이미 알고 보낸 **권위 있는 신호**라 「스토어가 권위다」와
+            // 충돌하지 않는다 — 다음 전경 조회가 Play 에 물어 살아 있으면 곧바로 되살린다.
+            val serverSaysFree = resolvePaidVoiceAccess(
+                subscriptionResponse = billing,
+                familyGroup = familyGroup,
+                userPlan = plan,
+                storeEntitled = false,
+                nowMillis = now,
+            ).isDefinitelyFree()
+            if (serverSaysFree) {
                 snapshotStore.updateStorePlanKey(userId, null, null)
             }
             if (genuinelyFree) {
