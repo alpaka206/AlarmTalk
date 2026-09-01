@@ -53,25 +53,16 @@ struct AccessSnapshotStore {
         return snapshot
     }
 
-    func updateSubscription(userID: String, response: BillingSubscriptionResponse?) {
-        mutate(userID: userID) { $0.subscriptionResponse = response }
-    }
-
-    /// 스토어가 확인해 준 등급을 캐시에 적는다 — 예약 시점 게이트가 StoreKit 을 직접 못 볼 때
-    /// 「스토어가 권위다」를 지키는 근거가 된다.
-    func updateUserPlan(userID: String, plan: String?) {
-        mutate(userID: userID) { $0.userPlan = plan }
-    }
-
-    func updateStorePlanKey(userID: String, planKey: String?, untilMillis: Int64?) {
-        mutate(userID: userID) {
-            $0.storePlanKey = planKey
-            $0.storeEntitlementUntilMillis = untilMillis
-        }
-    }
-
-    func updateFamilyGroup(userID: String, response: FamilyGroupCurrentResponse?) {
-        mutate(userID: userID) { $0.familyGroup = response }
+    /// ⚠ **이걸 직접 부르지 말 것 — `EntitlementWriter` 만 부른다.**
+    ///
+    /// 이 함수에는 **소유권·신선도 판단이 없다.** 지금 계정이 누구인지, 이 결과가 아직
+    /// 최신인지 모르는 채 그냥 쓴다. 그 판단은 전부 `EntitlementWriter.write` 안에 있고,
+    /// 그래서 쓰는 문이 하나여야 한다.
+    ///
+    /// 우회를 막는 장치가 둘이다: 이 이름(눈에 띄게 길다)과
+    /// `scripts/check-entitlement-writer.py`(CI lint 잡).
+    func patchWithoutOwnershipCheck(_ userID: String, _ transform: (inout AccessSnapshot) -> Void) {
+        mutate(userID: userID, transform: transform)
     }
 
     func clear(userID: String) {

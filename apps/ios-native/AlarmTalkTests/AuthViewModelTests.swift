@@ -629,8 +629,8 @@ final class AuthViewModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let snapshotStore = AccessSnapshotStore(defaults: defaults)
-        snapshotStore.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
-        snapshotStore.updateSubscription(userID: "user-2", response: subscription(planKey: "personal"))
+        snapshotStore.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
+        snapshotStore.patchWithoutOwnershipCheck("user-2") { $0.subscriptionResponse = subscription(planKey: "personal") }
 
         let api = MockAuthAPI()
         api.deleteAccountResult = .success(DeleteAccountResponse(success: true))
@@ -656,7 +656,7 @@ final class AuthViewModelTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let snapshotStore = AccessSnapshotStore(defaults: defaults)
-        snapshotStore.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
+        snapshotStore.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
 
         let api = MockAuthAPI()
         api.requestAccountDeletionResult = .success(AccountDeletionResponse(success: true))

@@ -307,13 +307,13 @@ final class SubscriptionManager: ObservableObject {
     /// 알람은 옛 스냅샷을 읽어 기본 톤으로 강등**된다. 예약 시점 게이트는 StoreKit 을
     /// 직접 못 보므로 이 캐시가 그 경로의 유일한 근거다.
     private func persistStoreEntitlement(until: Date?) {
-        guard let userID = authProvider()?.user.id, !userID.isEmpty else { return }
         let entitled = currentTier.meetsOrExceeds(.personal)
-        AccessSnapshotStore().updateStorePlanKey(
-            userID: userID,
-            planKey: entitled ? currentTier.rawValue : nil,
-            untilMillis: entitled ? until.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
-        )
+        // 문이 계정·토큰 에폭을 본다 — 여기서 계정을 다시 읽지 않는다.
+        EntitlementWriter().writeNow("storekit tier") {
+            $0.storePlanKey = entitled ? currentTier.rawValue : nil
+            $0.storeEntitlementUntilMillis =
+                entitled ? until.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
+        }
     }
 
     /// 결제 동기화 재시도 — 백엔드가 일시적으로 다운돼 sync 가 실패한 직후,
@@ -401,20 +401,24 @@ final class SubscriptionManager: ObservableObject {
     /// `SubscriptionManager` 가 없어서 훅이 nil 인데, 캐시에 남은 **원래 만료 시각**이 판정
     /// 1단이라 그대로 두면 환불·회수 뒤에도 이미 걸린 클론 예약이 그대로 울린다.
     /// 인스턴스를 만들면 `Transaction.updates` 리스너가 겹치므로 **정적으로** 처리한다.
-    static func revalidatePersistedEntitlement(userID: String) async {
-        guard let account = userID.nilIfBlank.flatMap(UUID.init(uuidString:)) else { return }
-        let ticket = nextPersistGeneration()
+    static func revalidatePersistedEntitlement() async {
+        let writer = EntitlementWriter()
+        // 표는 순회 **전에** 뜬다 — `currentEntitlements` 순회가 중단점이다.
+        guard let accessTicket = writer.ticket(),
+              let account = accessTicket.userID.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return }
+        let order = nextPersistGeneration()
         let scan = await scanEntitlements(for: account)
-        // 그 사이 더 새로운 순회가 시작·발행했으면 이 결과는 버린다(위 주석).
-        guard ticket == persistGeneration else { return }
+        // 그 사이 더 새로운 순회가 시작·발행했으면 이 결과는 버린다(캐시 쓰기 순서표).
+        guard order == persistGeneration else { return }
         // 임자 미상만 있으면 아무것도 확정하지 않는다(인스턴스 경로와 같은 규칙).
         if scan.productIDs.isEmpty && scan.hasUnattributed { return }
         let entitled = scan.tier.meetsOrExceeds(.personal)
-        AccessSnapshotStore().updateStorePlanKey(
-            userID: userID,
-            planKey: entitled ? scan.tier.rawValue : nil,
-            untilMillis: entitled ? scan.latestExpiry.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
-        )
+        writer.write(accessTicket, "storekit revalidate") {
+            $0.storePlanKey = entitled ? scan.tier.rawValue : nil
+            $0.storeEntitlementUntilMillis =
+                entitled ? scan.latestExpiry.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
+        }
     }
 
     /// 이 트랜잭션을 **서버로 보내도 되는가**(2026-09-01 리뷰).

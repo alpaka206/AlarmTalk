@@ -91,6 +91,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
     internal val accessSnapshotStore = AccessSnapshotStore(application)
+    /** 권한 스냅샷에 쓰는 **유일한 문**. 직접 스냅샷을 쓰지 말 것. */
+    internal val entitlementWriter = EntitlementWriter(application)
     private val initialAuthSession = authSessionStore.read()
     private val initialAccessSnapshot = initialAuthSession
         ?.user
@@ -1185,9 +1187,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementChecked = false
     }
 
-    internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateSubscription(userId, response)
+    /**
+     * ⚠ **표(`AccessTicket`)를 인자로 받는 이유** — 컴파일러가 강제하기 위해서다.
+     * 이 함수는 예전에 지금 계정을 스스로 읽어 키를 잡았고, 그래서 `await` 뒤에 부르면
+     * **전환된 계정의 스냅샷에 남의 구독을 적었다**(2026-09-02 감사에서 가드 없는 writer
+     * 2곳 중 하나로 발견됨). 표를 받게 하면 호출부가 **요청 전에** 뜰 수밖에 없다.
+     */
+    internal fun saveSubscriptionSnapshot(
+        ticket: AccessTicket,
+        response: BillingSubscriptionResponse?,
+    ): EntitlementWrite {
+        val result = entitlementWriter.write(ticket, "subscription snapshot") {
+            it.copy(subscriptionResponse = response)
+        }
         // ⚠ **여기서 `users.plan` 을 같이 쓰지 않는다**(2026-09-01 리뷰). 이 자리가 아는
         // plan 은 **마지막으로 `/auth/me` 를 받았을 때의 값**이라, 앱을 닫아 둔 사이 강등된
         // 계정이 `plan_changed` 를 놓치면 옛 유료 값이다. 보류에서는 `/billing/subscription`
@@ -1198,12 +1210,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 그래서 plan 은 **방금 받아 온 경로만** 적는다 — `refreshAppSession`(시작 시·
         // plan_changed 시) 과 `PlanChangeSyncWorker`. 안 적혀 있으면 판정기가 구독·그룹으로
         // 답하고(예전 동작), 그건 옛 값을 심는 것보다 낫다.
+        return result
     }
 
-    internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateFamilyGroup(userId, response)
-    }
+    internal fun saveFamilyGroupSnapshot(
+        ticket: AccessTicket,
+        response: FamilyGroupCurrentResponse?,
+    ): EntitlementWrite =
+        entitlementWriter.write(ticket, "family group snapshot") { it.copy(familyGroup = response) }
+
+    /** 권한 스냅샷을 쓰려면 **요청 전에** 이걸 뜬다(`EntitlementWriter` 참조). */
+    internal fun accessTicket(): AccessTicket? = entitlementWriter.ticket()
 
     internal fun clearCurrentAccessSnapshot() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return

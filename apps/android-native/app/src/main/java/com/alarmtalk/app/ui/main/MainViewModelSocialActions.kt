@@ -27,6 +27,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     // 강등이 A 의 목록으로 B 의 알람을 훑어 목소리를 영구히 벗긴다(Codex #665 P1).
     val requestOwner = authSession?.user?.id
     val startGeneration = authSessionStore.sessionGeneration()
+    val socialTicket = accessTicket()
     socialBusy = true
     // 새 소셜 로드 시작 — 신선-로드 플래그를 내려, 로드 완료 전 fetchVoiceProfiles 가 옛 상태로
     // 강등 판단하지 않게 한다(성공 시 snapshot.familyVoicesFresh 로 다시 설정).
@@ -55,8 +56,10 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                     Log.i(TAG, "Dropping stale social snapshot: session ended or switched")
                     return@onSuccess
                 }
-                familyGroup = snapshot.familyGroup
-                saveFamilyGroupSnapshot(snapshot.familyGroup)
+                if (socialTicket != null &&
+                    saveFamilyGroupSnapshot(socialTicket, snapshot.familyGroup) == EntitlementWrite.Applied) {
+                    familyGroup = snapshot.familyGroup
+                }
                 // 공유 목소리 목록이 실제로 바뀌면(새로 공유받음/회수) 스톡 매니페스트도 새로 받는다.
                 // 매니페스트는 세션 캐시라 안 갱신하면 새 공유 보이스의 미리듣기가 '준비 중'에 머물고
                 // 편집기의 오프라인 프리셋 버킷도 바인딩되지 않는다.

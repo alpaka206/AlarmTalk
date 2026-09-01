@@ -90,6 +90,13 @@ jobs:
       - name: Check INSERT statements cover NOT NULL columns
         run: python3 scripts/check-insert-not-null.py
 
+      # 권한 스냅샷(구독·그룹·users.plan·스토어 신호)을 쓰는 문은 `EntitlementWriter` 하나다.
+      # 그전에는 쓰는 곳이 안드로이드 9곳·iOS 8곳이었고 각자 계정·세대·에폭 가드를 손으로
+      # 들고 있었다 — 그 국소 가드끼리 어긋나면서 PR #709 리뷰가 37회·119건까지 갔다.
+      # 문을 만드는 것만으로는 다음 사람이 우회하는 걸 못 막아서, 우회를 여기서 막는다.
+      - name: Check entitlement snapshot writes go through the single gate
+        run: python3 scripts/check-entitlement-writer.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

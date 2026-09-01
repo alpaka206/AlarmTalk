@@ -19,6 +19,9 @@ import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.AccessSnapshotStore
+import com.alarmtalk.app.AccessTicket
+import com.alarmtalk.app.EntitlementWrite
+import com.alarmtalk.app.EntitlementWriter
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
@@ -101,6 +104,9 @@ class StockClipPrefetchWorker(
         // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 권한 스냅샷은 문 하나로만 쓴다(`EntitlementWriter`).
+        val entitlement = EntitlementWriter(applicationContext)
+        val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -171,12 +177,9 @@ class StockClipPrefetchWorker(
                     // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서
                     // 판정에만 쓰고 버리면, 같이 도는 세션 갱신이 실패했을 때 `RingingService`
                     // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
-                    // ⚠ **세대 락 안에서 쓴다**(2026-09-01 리뷰). 조회 중 로그아웃·재로그인이
-                    // 있었으면 이 값은 옛 회차의 것이라, 그대로 쓰면 **같은 계정의 더 새로운
-                    // 스냅샷을 덮는다** — 울림 게이트가 지나간 등급으로 판단하게 된다.
-                    sessionStore.runIfGeneration(startGeneration) {
-                        snapshotStore.updateUserPlan(session.user.id, plan)
-                    }
+                    // 문이 세대·계정을 함께 본다 — 조회 중 로그아웃·재로그인이 있었으면
+                    // 이 값은 옛 회차의 것이라 거절된다.
+                    entitlement.write(ticket, "prefetch plan") { it.copy(userPlan = plan) }
                     val snapshot = snapshotStore.read(session.user.id)
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(

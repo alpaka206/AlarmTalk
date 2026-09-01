@@ -25,6 +25,30 @@ enum KeychainStore {
      *
      * @return 실제로 저장했으면 true. 세션이 바뀌었으면 아무것도 하지 않고 false.
      */
+    /**
+     * 세션이 **아직 그 세션일 때만** [action] 을 돌린다 — 검사와 실행을 한 덩어리로.
+     *
+     * 안드로이드 `AuthSessionStore.runIfGeneration` 의 짝이다. iOS 에는 세션 세대 카운터가
+     * 없어 **토큰을 에폭으로** 쓴다 — 같은 계정으로 로그아웃→재로그인하면 토큰이 바뀌므로
+     * 계정 id 만으로는 못 거르는 그 창을 이걸로 닫는다.
+     *
+     * @return action 을 돌렸으면 true.
+     */
+    static func runIfCurrentSession(
+        userID: String,
+        token: String,
+        action: () -> Void
+    ) -> Bool {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        guard let current = readSessionUnlocked(),
+              current.user.id == userID,
+              current.token == token
+        else { return false }
+        action()
+        return true
+    }
+
     @discardableResult
     static func saveSessionIfCurrent(
         expectedUserID: String,
