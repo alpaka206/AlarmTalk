@@ -204,10 +204,14 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID, generation == refreshGeneration else { return }
             // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
             // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
+            // ⚠ **plan 을 토큰 회전보다 먼저 적용한다**(2026-09-01 리뷰). 둘 다 출처 토큰을
+            // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
+            // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
+            // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
             }
-            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }
