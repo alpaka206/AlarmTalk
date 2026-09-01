@@ -445,14 +445,17 @@ class StockClipPrefetchWorker(
         /**
          * 이력 중 '지금 화면이 봐야 할' 하나를 고른다.
          *  1) 아직 안 끝난 것(RUNNING/ENQUEUED/BLOCKED) — 재시도가 돌고 있으면 그게 현재다.
-         *  2) 없으면 성공한 것 — 한 번이라도 받아냈으면 화면을 닫아야 한다.
-         *  3) 그것도 없으면 마지막 항목(=실패). 그때만 '다시 시도'를 보여준다.
+         *  2) 없으면 **가장 최근에 끝난 것**. 성공이든 실패든 그게 지금 상태다.
+         *
+         * ⚠ **'성공이 하나라도 있으면 성공'** 으로 두지 말 것(2026-09-01 리뷰). 매니페스트가
+         * 바뀌어 영구 실패(404)가 생기면 **옛 성공이 그 실패를 영영 가린다** — 준비 화면은
+         * 닫히거나 성공으로 남고, 그 실패를 위해 만든 '다시 시도' 가 끝내 뜨지 않는다.
+         * 옛 FAILED 가 새 실행을 가리는 문제는 1)이 이미 막는다(재시도는 안 끝난 상태다).
          *
          * WorkInfo 는 유닛 테스트에서 만들기 어려워 상태 추출을 인자로 받는다.
          */
         internal fun <T> pickCurrent(items: List<T>, state: (T) -> WorkInfo.State): T? =
             items.firstOrNull { !state(it).isFinished }
-                ?: items.lastOrNull { state(it) == WorkInfo.State.SUCCEEDED }
                 ?: items.lastOrNull()
     }
 }

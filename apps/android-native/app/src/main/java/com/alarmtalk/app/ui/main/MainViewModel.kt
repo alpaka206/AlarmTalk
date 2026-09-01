@@ -592,6 +592,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var storePlanKey by mutableStateOf<String?>(initialAccessSnapshot.storePlanKey)
         internal set
 
+    /** 스냅샷에 적힌 `users.plan`(= 마지막으로 `/auth/me` 를 받은 값). [effectiveUserPlan] 참조. */
+    var storeSnapshotUserPlan by mutableStateOf<String?>(initialAccessSnapshot.userPlan)
+        internal set
+
     /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
     var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
         internal set
@@ -620,11 +624,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
      * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
      */
+    /**
+     * ⚠ **plan 은 스냅샷을 먼저 본다**(2026-09-01 리뷰). `PlanChangeSyncWorker` 는 프로세스가
+     * 죽어 있는 동안 강등을 확정하면 `AccessSnapshot.userPlan` 을 갱신하지만 세션은
+     * **토큰만** 굴린다(프로필을 덮으면 그 사이 바꾼 닉네임이 되돌아가기 때문이다) —
+     * 그래서 다음 콜드 스타트의 `authSession.user.plan` 은 낡아 있다. 오프라인이면 그
+     * 상태로 계속 판정하게 되어, 회복된 유료 사용자가 잠긴 채 남거나 정지된 사용자의
+     * 남은 구독 행이 유료로 읽힌다. 스냅샷 값은 **방금 `/auth/me` 를 받은 경로만** 쓰므로
+     * 세션 값보다 새롭거나 같다.
+     */
+    private val effectiveUserPlan: String?
+        get() = storeSnapshotUserPlan ?: authSession?.user?.plan
+
     internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
         resolvePaidVoiceAccess(
             subscriptionResponse = subscriptionResponse,
             familyGroup = familyGroup,
-            userPlan = authSession?.user?.plan,
+            userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
         )
@@ -1163,6 +1179,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 바꿔도 앞 사람의 값이 메모리에 남아, 무료 계정이 유료로 취급된다.
         storePlanKey = snapshot.storePlanKey
         storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
+        storeSnapshotUserPlan = snapshot.userPlan
         // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
         storeEntitlementChecked = false
     }

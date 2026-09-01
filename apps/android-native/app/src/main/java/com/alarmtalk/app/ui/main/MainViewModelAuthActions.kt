@@ -1273,6 +1273,8 @@ internal fun MainViewModel.refreshAppSession() {
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
                 accessSnapshotStore.updateUserPlan(id, saved.user.plan)
+                // 메모리 사본도 맞춘다 — 판정은 이 값을 먼저 본다(`effectiveUserPlan`).
+                storeSnapshotUserPlan = saved.user.plan
             }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)

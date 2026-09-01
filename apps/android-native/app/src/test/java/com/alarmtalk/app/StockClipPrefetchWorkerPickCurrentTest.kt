@@ -42,11 +42,17 @@ class StockClipPrefetchWorkerPickCurrentTest {
     }
 
     @Test
-    fun 모두_끝났고_성공이_있으면_성공을_고른다() {
-        // 한 번이라도 받아냈으면 화면을 닫아야 한다 — 뒤에 실패가 붙어 있어도 마찬가지.
+    fun 모두_끝났으면_가장_최근_결과를_고른다() {
+        // 옛 실패 뒤에 성공이 붙었으면 성공이 지금 상태다.
         assertEquals(
             "ok",
             pick(Item("old", WorkInfo.State.FAILED), Item("ok", WorkInfo.State.SUCCEEDED)),
+        )
+        // ⚠ 반대도 같다 — **옛 성공이 새 실패를 가리면 안 된다**(2026-09-01 리뷰).
+        // 매니페스트가 바뀌어 영구 실패가 생기면 준비 화면이 '다시 시도' 를 띄워야 한다.
+        assertEquals(
+            "broken",
+            pick(Item("ok", WorkInfo.State.SUCCEEDED), Item("broken", WorkInfo.State.FAILED)),
         )
     }
 

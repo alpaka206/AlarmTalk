@@ -564,6 +564,11 @@ internal fun AlarmTalkApp(
             viewModel.preloadBilling()   // 구독 state
             viewModel.preloadSocial()    // 가족 state(+ 접근 잃은 공유 목소리 알람 강등)
             viewModel.refreshAppSession() // auth/me → users.plan
+            // ⚠ **Play 에도 다시 묻는다**(2026-09-01 리뷰). 워커는 캐시(`storePlanKey`)를
+            // 끊지만 뷰모델의 메모리 사본은 그 파일을 관찰하지 않는다 — 환불·회수 뒤에도
+            // 옛 유료 신호가 **판정 1단**으로 남아 서버가 준 free 를 이긴다.
+            // 캐시를 손으로 맞추는 대신 스토어에 물어 양쪽(메모리·캐시)을 함께 갱신한다.
+            viewModel.refreshBilling()
         }
     }
 

@@ -321,19 +321,21 @@ final class BackgroundSyncTask {
             // 그 사이의 로그아웃→**같은 계정** 재로그인에서 옛 작업이 방금 발급된 토큰을
             // 덮는다 — 계정 id 만 대조해서는 못 거른다(같은 id 다). 토큰 에폭까지 보는
             // `saveSessionIfCurrent` 로 원자적으로 바꾼다.
-            let applied = try KeychainStore.saveSessionIfCurrent(
+            // 세션과 판정 스냅샷을 **같은 잠금 안에서** 함께 바꾼다(2026-09-01 리뷰).
+            // 따로 하면 그 사이의 재로그인에서 옛 작업이 새 세션의 스냅샷을 되살린다.
+            _ = try KeychainStore.saveSessionIfCurrent(
                 expectedUserID: session.user.id,
-                expectedToken: session.token
-            ) { current in
-                var next = current
-                next.user.plan = user.plan
-                if let rolledToken, !rolledToken.isEmpty { next.token = rolledToken }
-                return next
-            }
-            // 세션을 실제로 갱신했을 때만 판정 스냅샷을 적는다 — CAS 가 거절했다면 이
-            // 응답은 이미 지나간 세션의 것이라, 스냅샷도 건드리면 안 된다.
-            guard applied else { return }
-            AccessSnapshotStore().updateUserPlan(userID: session.user.id, plan: user.plan)
+                expectedToken: session.token,
+                transform: { current in
+                    var next = current
+                    next.user.plan = user.plan
+                    if let rolledToken, !rolledToken.isEmpty { next.token = rolledToken }
+                    return next
+                },
+                onSaved: { saved in
+                    AccessSnapshotStore().updateUserPlan(userID: saved.user.id, plan: user.plan)
+                }
+            )
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),
             // 다음 백그라운드 회차나 앱 오픈이 다시 시도한다.

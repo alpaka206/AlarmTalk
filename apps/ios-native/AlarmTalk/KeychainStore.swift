@@ -29,7 +29,13 @@ enum KeychainStore {
     static func saveSessionIfCurrent(
         expectedUserID: String,
         expectedToken: String,
-        transform: (AuthSession) -> AuthSession
+        transform: (AuthSession) -> AuthSession,
+        /// 저장이 성공한 **직후, 같은 잠금 안에서** 돌 부수효과(판정 스냅샷 쓰기 등).
+        ///
+        /// ⚠ 락 **밖**에서 하면 그 사이의 로그아웃→같은 계정 재로그인에서 옛 작업이 새
+        /// 세션의 스냅샷을 되살린다 — 세션만 원자적으로 바꿔 봐야 짝이 되는 스냅샷이
+        /// 어긋나면 예약·울림 게이트가 지나간 등급으로 판단한다(2026-09-01 리뷰).
+        onSaved: ((AuthSession) -> Void)? = nil
     ) throws -> Bool {
         sessionLock.lock()
         defer { sessionLock.unlock() }
@@ -37,7 +43,9 @@ enum KeychainStore {
               current.user.id == expectedUserID,
               current.token == expectedToken
         else { return false }
-        try saveSessionUnlocked(transform(current))
+        let next = transform(current)
+        try saveSessionUnlocked(next)
+        onSaved?(next)
         return true
     }
 
