@@ -165,6 +165,11 @@ final class BackgroundDependencies {
         alarmKit = AlarmKitViewModel()
         auth = AuthViewModel()
         socialFeatures = SocialFeatureViewModel()
+        // 배경 `plan_changed` 경로는 `refreshAll` 하나만 돈다 — 거기서 굴러온 토큰을
+        // 세션에 반영하지 않으면 그 기기의 토큰이 수명대로 죽는다(위 뷰모델 주석).
+        socialFeatures.onRolledToken = { [weak auth] userID, token in
+            auth?.applyRolledToken(userID: userID, token: token)
+        }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()
     }

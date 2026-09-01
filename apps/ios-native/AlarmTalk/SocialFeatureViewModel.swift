@@ -44,6 +44,18 @@ final class SocialFeatureViewModel: ObservableObject {
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
     private var activeUserID: String?
+    /**
+     * `/auth/me` 가 굴려 준 토큰을 세션 주인에게 건넨다(2026-09-01 리뷰).
+     *
+     * ⚠ 배경 `plan_changed` 경로는 `refreshAll` **하나만** 돈다. 여기서 새 토큰을 버리면
+     * 그 기기는 전경에서 `AuthViewModel.refreshUser` 를 돌 때까지 옛 토큰을 들고 있다가
+     * **수명이 다하는 날 조용히 만료된다** — 그 뒤 푸시 정합화는 401 만 받는다.
+     *
+     * **토큰만 넘긴다.** 프로필까지 넘기면 그 사이 전경에서 바꾼 닉네임을 옛 값으로
+     * 되돌린다(안드로이드 `PlanChangeSyncWorker` 가 같은 이유로 토큰만 쓴다).
+     * 계정이 바뀌었을 수 있으므로 **누구의 토큰인지** 함께 넘겨 받는 쪽이 대조한다.
+     */
+    var onRolledToken: ((_ userID: String, _ token: String) -> Void)?
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -158,8 +170,13 @@ final class SocialFeatureViewModel: ObservableObject {
             var freshPlan: String?
             var planOK = false
             do {
-                freshPlan = try await AlarmTalkAPI.shared.me(token: token).user.plan
+                let me = try await AlarmTalkAPI.shared.me(token: token)
+                freshPlan = me.user.plan
                 planOK = true
+                // rolling refresh — 서버가 새 토큰을 줬으면 세션 주인에게 넘긴다(위 주석).
+                if let rolled = me.token?.nilIfBlank, rolled != token {
+                    onRolledToken?(userID, rolled)
+                }
             } catch {
                 messages.append(Self.scopedRefreshErrorMessage(
                     label: "이용권",
@@ -614,6 +631,11 @@ final class SocialFeatureViewModel: ObservableObject {
         let locked = alarmStore.alarms.filter { $0.preLockPlayMode != nil && $0.ownerUserId == owner }
         var restored = 0
         for record in locked {
+            // ⚠ **밀려난 복원도 멈춘다**(2026-09-01 리뷰). 반대 방향(잠금 → 복원)만 막으면
+            // 반쪽이다 — 복원 도중 `users.plan` 이 free 로 돌아오면 이 태스크가 취소되고
+            // 잠금이 시작되는데, 취소를 안 보면 옛 복원 루프가 잠금이 대상 목록을 잡은
+            // **뒤에** 남은 알람을 되살려 **무료 계정에 클론 오디오가 예약된 채로 남는다.**
+            if Task.isCancelled { return restored }
             var updated = record
             updated.playMode = updated.preLockPlayMode ?? updated.playMode
             updated.preLockPlayMode = nil

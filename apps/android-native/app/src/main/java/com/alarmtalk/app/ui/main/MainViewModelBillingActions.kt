@@ -225,13 +225,26 @@ private fun MainViewModel.applyBillingSnapshot(snapshot: BillingSnapshot) {
     vouchers = snapshot.vouchers
 }
 
+/**
+ * 변경 뒤 결제 상태 재조회.
+ *
+ * ⚠ **`expectedOwnerUserId` 를 넘겨라**(2026-09-01 리뷰). 이 함수 안에 **또 하나의 중단점**
+ * 이 있다 — 호출부에서 계정을 확인했더라도 여기서 두 요청을 기다리는 사이 A→B 전환이
+ * 일어날 수 있고, 그러면 `applyBillingSnapshot` 이 A 의 바우처를 전역에 발행하고
+ * `saveSubscriptionSnapshot` 이 A 의 구독을 **지금 계정 B** 키로 저장한다.
+ */
 private suspend fun MainViewModel.refreshBillingAfterMutation(
     authorization: String,
     reason: String,
+    expectedOwnerUserId: String?,
 ) {
     runCatching {
         loadBillingSnapshot(authorization)
     }.onSuccess { snapshot ->
+        if (authSession?.user?.id != expectedOwnerUserId) {
+            Log.i(TAG, "Dropping billing snapshot after $reason: account changed")
+            return@onSuccess
+        }
         applyBillingSnapshot(snapshot)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
@@ -326,7 +339,7 @@ internal fun MainViewModel.registerCode(
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
             }
-            refreshBillingAfterMutation(authorization, "code registration")
+            refreshBillingAfterMutation(authorization, "code registration", ownerUserId)
             refreshSocial()
             refreshAppSession()
             // 서버가 판별한 type 기준: 초대(그룹 합류)거나 커플/가족 플랜이면 공유패스 갱신.
@@ -487,7 +500,7 @@ internal fun MainViewModel.confirmGooglePurchase(
                 if (showsResult) {
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
                 }
-                refreshBillingAfterMutation(authorization, "google play confirm")
+                refreshBillingAfterMutation(authorization, "google play confirm", ownerUserId)
                 refreshAppSession()
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
@@ -529,7 +542,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         }.onSuccess { voucher ->
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshBillingAfterMutation(authorization, "family share code")
+            refreshBillingAfterMutation(authorization, "family share code", authSession?.user?.id)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to ensure family share code", error)
@@ -558,7 +571,7 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshBillingAfterMutation(authorization, "regenerate family share code")
+            refreshBillingAfterMutation(authorization, "regenerate family share code", authSession?.user?.id)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to regenerate family share code", error)
@@ -598,7 +611,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_locked)
             }
-            refreshBillingAfterMutation(authorization, "subscription cancellation")
+            refreshBillingAfterMutation(authorization, "subscription cancellation", authSession?.user?.id)
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->

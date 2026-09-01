@@ -150,7 +150,13 @@ class StockClipPrefetchWorker(
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
                     val plan = api.me(auth).user.plan
-                    val snapshot = AccessSnapshotStore(applicationContext).read(session.user.id)
+                    val snapshotStore = AccessSnapshotStore(applicationContext)
+                    // ⚠ **받았으면 적는다**(2026-09-01 리뷰). 스펙이 "`/auth/me` 로 plan 을
+                    // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서
+                    // 판정에만 쓰고 버리면, 같이 도는 세션 갱신이 실패했을 때 `RingingService`
+                    // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
+                    snapshotStore.updateUserPlan(session.user.id, plan)
+                    val snapshot = snapshotStore.read(session.user.id)
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(
                         subscriptionResponse = subscription,

@@ -720,6 +720,17 @@ final class AuthViewModel: ObservableObject {
         session = nextSession
     }
 
+    /// 다른 경로(`SocialFeatureViewModel.refreshAll`)가 `/auth/me` 에서 받은 **굴러온 토큰**을
+    /// 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **계정을 대조한다.** 배경 갱신은 비동기라 그 사이 로그아웃·계정 전환이 일어날 수
+    /// 있는데, 그대로 쓰면 A 의 토큰이 B 의 세션에 박힌다.
+    /// **프로필은 건드리지 않는다** — 전경에서 방금 바꾼 이름을 옛 값으로 되돌리지 않기 위해서다.
+    func applyRolledToken(userID: String, token rolled: String) {
+        guard let current = session, current.user.id == userID, current.token != rolled else { return }
+        persistSession(AuthSession(token: rolled, user: current.user))
+    }
+
     /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {
