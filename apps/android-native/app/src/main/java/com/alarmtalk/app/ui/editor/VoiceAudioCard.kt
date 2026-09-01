@@ -114,6 +114,18 @@ internal fun VoiceAudioCard(
     // '다시 녹음' — 재생 중인 미리듣기를 멈추고 기존 녹음을 비워 대기(멈춘) 상태로 되돌린다.
     onDiscardRecording: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
+    /**
+     * 이 목소리가 **미리 구워 둔 스톡 클립**으로 우는가(무료 플랜이거나 기본 목소리).
+     *
+     * ⚠ **여기 쓰이는 곳은 요약 행의 '준비 중' 판정 하나뿐이다.** 목록을 자르는 데는
+     * 쓰지 않는다 — 문구 목록은 등급으로 갈리지 않는다(`docs/spec/voice-and-message.md` §2).
+     *
+     * 왜 필요한가: 스톡 클립 목소리는 클립을 받아 붙이기 전까지 `voiceText` 도 버킷도
+     * 비어 있어 '아직 아무것도 안 골랐다' 가 참이다. 등록(클론) 목소리는 **정상 상태가
+     * 그렇다** — 버킷이 저장 시점에 붙으므로 편집 내내 둘 다 비어 있다. 그래서 이걸
+     * 안 보고 판정하면 클론 알람의 문구 행이 **항상** "문구를 준비하고 있어요" 가 된다.
+     */
+    usesStockClips: Boolean,
     onOpenRandomPromptSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
@@ -275,7 +287,10 @@ internal fun VoiceAudioCard(
                                 weatherCity = editor.voiceWeatherCity,
                                 // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
                                 // 이 행이 이걸 `isManual` 보다 먼저 본다.
-                                nothingChosenYet = editor.voiceText.isBlank() &&
+                                // ⚠ **스톡 클립 목소리에서만 묻는다** — 클론은 버킷이
+                                // 저장 시점에 붙어 편집 내내 비어 있는 게 정상이다.
+                                nothingChosenYet = usesStockClips &&
+                                    editor.voiceText.isBlank() &&
                                     !editor.hasBucketMessageChoice(),
                                 onClick = onOpenRandomPromptSettings,
                             )

@@ -1625,6 +1625,7 @@ internal fun AlarmEditorScreen(
                                     editor.clearAudio()
                                 },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
+                                usesStockClips = usesStockClips,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )

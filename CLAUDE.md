@@ -357,7 +357,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | --- | --- |
 | [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | 울릴 때 전체화면/알림 판정, 스와이프=해제, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
-| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, 기본목소리 제한(**OR**), 직전 선택 유지, 버킷 선다운로드 |
+| [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
@@ -417,7 +417,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
     `AlarmEditorStateTest`(저장 시 종류 보존·옛 행 복구·직접 입력은 그대로 null).
 - **적용 대상은 새 알람뿐.** 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). `AlarmTalkApp` 이 `lastMessageContext`/`lastFreeBucket` 을 **신규 라우트에만** 넘기고, 버킷 이어받기는 `alarm == null` 로 한 번 더 막는다.
 - **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선**(`VoiceAudioCard`). 그룹(내 클론 → 공유받은 → 기본)을 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
-- **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 무료/기본 목소리 경로는 `FreeBucketOrder` 첫 값(약). `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니다.
+- **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 기본 목소리 경로는 `FreeBucketOrder` 첫 값 — 2026-09-02 부터 그 값은 `greeting`(= `preset` 의 버킷)이라 **두 폴백이 같은 것을 가리킨다**. `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니고, 목록 자체는 `EditorMessageContexts` 에서 유도된다(손으로 적지 않는다).
 - **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 아예 기억하지 않았다).
   - 바뀐 이유: 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이 막힌다 — 그게 예전에 '기억하지 않는다' 를 택한 실질적 근거였다. 문구를 함께 이어받으면 글자가 같아 `AlarmAudioStore` 입력 캐시에 걸려 **서버 호출도 월 한도 차감도 없이** 곧바로 저장된다(오프라인 포함). 근거가 사라졌으니 규칙도 바뀐다.
   - ⚠ **기억되는 값은 입력 원문이 아니라 서버 표시 문구다.** 알람에 저장되는 게 그 값이라서다(`setGeneratedTtsAudio` — 잠금화면 문구와 음성을 맞추려고 일부러 그렇게 한다). 번역이 켜진 기기(앱 언어 ≠ ko)에서는 둘이 갈라지므로, 생성 후 **표시 문구 키로도 `linkTtsInput` 을 남긴다**. 안 그러면 다음 새 알람이 표시 문구로 열려 입력 캐시를 빗나가고, 위의 '재생성·한도 차감 없음' 약속이 조용히 깨진다(Codex #685).

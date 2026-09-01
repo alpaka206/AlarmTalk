@@ -2411,6 +2411,10 @@ export const migrations: Migration[] = [
       //    `tts.ts` 가 `ga.mime_type` 을 고르지만 반환 객체에 넣지 않는다(직접 확인).
       //    재구성 가능: `voice-provider.ts` 가 outputFormat='mp3'/mimeType='audio/mpeg' 로
       //    하드코딩이라 audio_format→MIME 이 1:1 이다. DEFAULT 가 있어 1릴리스로 끝난다.
+      //    ⚠ **읽는 곳만 보고 지울 뻔했다.** 쓰는 곳이 셋 살아 있었다(`tts.ts` 의 직접
+      //    입력 합성, `stock-clips.ts` 의 클론 사전렌더·스톡 시딩). 같이 지웠다 —
+      //    안 지웠으면 마이그레이션이 도는 순간 그 셋이 전부 500 이 된다.
+      //    회귀 방지: `test/insert-columns-exist.test.ts`.
       `ALTER TABLE generated_audio_assets DROP COLUMN mime_type`,
       // ② `idx_voice_profiles_lru` — 주석이 광고하는 가속을 실제로는 못 한다.
       //    LRU 선정 쿼리가 `ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC`
@@ -2435,10 +2439,16 @@ export const migrations: Migration[] = [
     id: 109,
     name: 'refresh-stock-clips-2026-09-02-script',
     statements: [
+      // ⚠ #70 을 복사할 때 **이미 사라진 컬럼을 지우는 것**이 이 문장의 함정이다.
+      //   #83 이 `speaker_id` 를, #84 가 `raw_audio_url`·`raw_audio_duration_ms` 를
+      //   DROP 했다. 러너는 `no such column` 을 "이미 적용됨" 으로 삼키므로
+      //   (`isIdempotentDDLError`) 죽은 문장도 **성공으로 기록되고 다시는 재시도되지
+      //   않는다** — 배포는 초록불인데 알람 분리만 조용히 빠진다.
+      //   `test/insert-columns-exist.test.ts` 가 최신 refresh 문장을 실제 스키마에서
+      //   날것으로 돌려 이걸 잡는다.
       `UPDATE alarms
         SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-            message_id = NULL, voice_profile_id = NULL,
-            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+            message_id = NULL, voice_profile_id = NULL
         WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
       `DELETE FROM message_library
         WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,

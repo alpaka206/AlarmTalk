@@ -952,10 +952,21 @@ struct AlarmEditorSheet: View {
         // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 `selectedStockMessageID`(=음원이
         // 준비됐는가)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
         if let bucket = selectedFreeBucket {
-            // ⚠ **날씨 테마는 도시가 있어야 한다.** 없으면 서버가 조건을 못 맞춰 서울로
-            // 폴백한다 — 사용자는 자기 지역 날씨를 들을 줄 알고 저장한다.
-            // 말하는 자리: 무료 테마 pane 의 `PromptDetailCard`("아직 정하지 않았어요").
-            return bucket == .weather && (voiceStudio.weatherCity).nilIfBlank == nil
+            // ⚠ **조건으로 클립을 고르는 테마는 그 조건값이 있어야 한다.**
+            //  - 날씨: 도시가 없으면 서버가 조건을 못 맞춰 서울로 폴백한다 — 사용자는
+            //    자기 지역 날씨를 들을 줄 알고 저장한다.
+            //  - 운세: 사주가 없으면 `BucketVariantResolver.fortuneThemeIndex` 가 빈 seed 로
+            //    같은 인덱스만 돌려줘 **매일 같은 클립**이 나간다. 조용한 오작동이라
+            //    막지 않으면 아무도 눈치채지 못한다.
+            //    (2026-09-02 추가 — 그전에는 기본 목소리가 운세를 고를 수 없어 날씨만
+            //     봐도 충분했다. 문구 목록을 합치면서 이 갈래가 열렸다.
+            //     안드로이드 `AlarmEditorScreen` 의 `SaveBlockReason.FORTUNE_INFO_MISSING` 짝.)
+            // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
+            switch bucket {
+            case .weather: return (voiceStudio.weatherCity).nilIfBlank == nil
+            case .fortune: return !fortuneInfoReady
+            default: return false
+            }
         }
 
         // 말하는 자리: 목소리 행("고르기") + 목록이 비면 '목소리 탭에서 만들기'.
@@ -989,11 +1000,16 @@ struct AlarmEditorSheet: View {
         if context.usesWeather, !voiceStudio.hasWeatherInfo, !targetWeatherReady {
             return false
         }
-        if context.usesFortune, !voiceStudio.hasFortuneInfo, !targetFortuneReady {
+        if context.usesFortune, !fortuneInfoReady {
             return false
         }
         return true
     }
+
+    /// 사주가 갖춰졌는가. ⚠ **판정은 여기 한 곳이다** — 스톡 클립 '운세' 게이트
+    /// (`editorSaveBlocked`)와 라이브 경로가 같은 답을 내야 한다. 안드로이드
+    /// `AlarmEditorScreen.fortuneInfoReady()` 의 짝.
+    var fortuneInfoReady: Bool { voiceStudio.hasFortuneInfo || targetFortuneReady }
 
     /// 지금 편집기 선택이 **무료로 허용되는 기본(스톡) 목소리**인가.
     ///

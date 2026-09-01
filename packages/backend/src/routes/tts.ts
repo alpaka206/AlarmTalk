@@ -1521,8 +1521,8 @@ tts.post('/generate', async (c) => {
                 sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, audio_url,
-                   audio_object_key, audio_format, mime_type)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   audio_object_key, audio_format)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 args: [
                   crypto.randomUUID(),
                   userPk,
@@ -1537,7 +1537,6 @@ tts.post('/generate', async (c) => {
                   audioUrl,
                   audioObjectKey,
                   generated.outputFormat,
-                  generated.mimeType,
                 ],
               });
             }

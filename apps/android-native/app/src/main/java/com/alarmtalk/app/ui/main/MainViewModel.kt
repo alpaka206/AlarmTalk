@@ -1094,9 +1094,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
         when {
-            // 무료·기본 목소리 경로: 사용자가 고른 것이 '테마(버킷)' 그 자체다.
-            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) ->
+            // 기본 목소리 경로: 고른 것이 '테마(버킷)' 그 자체다.
+            //
+            // ⚠ **테마와 문구 종류를 같이 적는다**(2026-09-02). 문구 목록을 하나로 합치면서
+            //   둘은 `clonePrerenderBucketCategoryFor` 로 1:1 이 됐는데, 여기서 테마만
+            //   적으면 `last_message_context` 가 낡은 값에 고정된다. 그러면 새 알람이
+            //   그 낡은 종류로 열리고, 편집기의 버킷 해석이 그걸 먼저 보므로
+            //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
+            //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
+            //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+                randomPromptContextForBucket(bucket)
+                    ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+                Unit
+            }
             // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
             // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
             // (love→love, wake_fortune→fortune, preset→greeting …). 그걸 테마로 저장하면

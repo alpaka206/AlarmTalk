@@ -182,7 +182,7 @@ export const STOCK_CLIP_PRESETS = [
  *  2. 여기 `texts.en` / `texts.ja` 를 그 대사로 바꾸고 이 표에서 해당 줄을 **지운다**.
  *  3. `POST /api/admin/seed-stock-clips` 로 재시드한다(문구가 바뀌면 클립도 다시 합성된다).
  *
- * 회귀 방지: `scripts/check-stock-clip-placeholders.py` 가 (a) 여기 없는데 ko 와 같은
+ * 회귀 방지: `test/stock-clip-placeholders.test.ts` 가 (a) 여기 없는데 ko 와 같은
  * 문구를 쓰는 언어를 잡고, (b) 여기 있는데 실제로는 ko 와 달라진 줄(=이미 교체됐는데
  * 표만 남은 것)을 잡는다. 즉 이 표와 실제 문구는 항상 일치한다.
  */
@@ -1220,8 +1220,8 @@ export async function generateStockClip(
           sql: `INSERT OR IGNORE INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format, mime_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 audio_url, audio_object_key, audio_format)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1236,7 +1236,6 @@ export async function generateStockClip(
             audioUrl,
             audioObjectKey,
             generated.outputFormat,
-            generated.mimeType,
           ],
         });
         return {
@@ -1261,8 +1260,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format, mime_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,
@@ -1277,7 +1276,6 @@ export async function generateStockClip(
         audioUrl,
         audioObjectKey,
         generated.outputFormat,
-        generated.mimeType,
       ],
     });
     return { inserted: true as const, messageId, text: displayText, audioUrl };
