@@ -171,7 +171,12 @@ class StockClipPrefetchWorker(
                     // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서
                     // 판정에만 쓰고 버리면, 같이 도는 세션 갱신이 실패했을 때 `RingingService`
                     // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
-                    snapshotStore.updateUserPlan(session.user.id, plan)
+                    // ⚠ **세대 락 안에서 쓴다**(2026-09-01 리뷰). 조회 중 로그아웃·재로그인이
+                    // 있었으면 이 값은 옛 회차의 것이라, 그대로 쓰면 **같은 계정의 더 새로운
+                    // 스냅샷을 덮는다** — 울림 게이트가 지나간 등급으로 판단하게 된다.
+                    sessionStore.runIfGeneration(startGeneration) {
+                        snapshotStore.updateUserPlan(session.user.id, plan)
+                    }
                     val snapshot = snapshotStore.read(session.user.id)
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(

@@ -160,6 +160,8 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         var messages: [String] = []
+        // 이 갱신이 인정하는 '지금 토큰' — rolling refresh 로 굴러가면 함께 옮겨 간다.
+        var effectiveToken = token
 
         var familyGroupOK = false
         var entitlementOK = false
@@ -227,6 +229,12 @@ final class SocialFeatureViewModel: ObservableObject {
             if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
+                // ⚠ **굴린 뒤에는 기준 토큰도 갱신한다**(2026-09-01 리뷰). 이 값으로 아래
+                // 마지막 가드를 보는데, 옛 토큰 그대로 두면 **방금 내가 굴린 것 때문에**
+                // 그 가드가 항상 실패해 `entitlementSnapshotComplete` 가 서지 않는다 —
+                // 그러면 `plan_changed` 핸들러가 정합화를 건너뛰어, 필드를 다 갱신하고도
+                // 이미 예약된 클론 오디오가 그대로 남는다.
+                effectiveToken = rolledToken
             }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
@@ -242,7 +250,13 @@ final class SocialFeatureViewModel: ObservableObject {
                 serverOnly.subscriptionResponse = resolvedSubscription
                 serverOnly.familyGroup = familyGroup
                 serverOnly.userPlan = freshPlan
-                if PaidVoiceGate.resolve(snapshot: serverOnly) == .notEntitled {
+                // ⚠ **권위 있는 갱신에서만 끊는다**(2026-09-01 리뷰 2차 정정). 이 함수는
+                // 앱 시작·탭 진입에서도 도는데, 그때 서버 스냅샷이 아직 옛 free 이고 StoreKit
+                // 은 이미 갱신을 확인했을 수 있다 — 무조건 끊으면 **살아 있는 스토어 신호를
+                // 지워 돈 내는 사용자의 클론을 강등한다.** `force` 는 `plan_changed` 푸시와
+                // 사용자 쓰기(해지·그룹 나가기) 뒤에만 참이라, 서버가 방금 확정한 회차다.
+                // (안드로이드는 이 로직이 `PlanChangeSyncWorker` 안에 있어 원래 그 조건이었다.)
+                if force, PaidVoiceGate.resolve(snapshot: serverOnly) == .notEntitled {
                     accessSnapshotStore.updateStorePlanKey(userID: userID, planKey: nil, untilMillis: nil)
                 }
             }
@@ -257,7 +271,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID, generation == refreshGeneration,
-              sessionStillCurrent(userID, token) else { return }
+              sessionStillCurrent(userID, effectiveToken) else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
@@ -641,6 +655,11 @@ final class SocialFeatureViewModel: ObservableObject {
                 updated.preLockPlayMode = updated.playMode
             }
             updated.playMode = AlarmPlayMode.alarmOnly.rawValue
+            // ⚠ **쓰기 직전에 한 번 더 본다**(2026-09-01 리뷰). 위 검사와 이 쓰기 사이에
+            // StoreKit 이 유료를 알려 오면 반대 태스크가 시작돼 대상 목록을 잡는데, 그
+            // 뒤에 이 행을 고치면 `schedule` 이 취소를 알아채고 물러나도 **행은 이미 바뀐
+            // 채로 남는다** — 방금 결제한 사용자의 알람이 alarm_only 로 굳는다.
+            if Task.isCancelled { return locked }
             _ = alarmStore.upsert(updated)
             // ⚠ **새로 잠근 것만 다시 예약한다.** 이미 잠긴 알람은 재생 방식이 그대로라
             // 예약을 건드릴 이유가 없다(안드로이드 `lockPaidAlarmTalks` 도 `needsLock` 일 때만 한다).
@@ -695,6 +714,8 @@ final class SocialFeatureViewModel: ObservableObject {
             var updated = record
             updated.playMode = updated.preLockPlayMode ?? updated.playMode
             updated.preLockPlayMode = nil
+            // 위 잠금 루프와 같은 이유 — 쓰기 직전에 한 번 더 본다.
+            if Task.isCancelled { return restored }
             _ = alarmStore.upsert(updated)
             // 잠글 때 걸어 둔 톤 예약을 **취소하고** 목소리로 다시 건다. 안 그러면 둘 다
             // 남아 한 알람이 두 번 운다(잠금 경로와 같은 이유).

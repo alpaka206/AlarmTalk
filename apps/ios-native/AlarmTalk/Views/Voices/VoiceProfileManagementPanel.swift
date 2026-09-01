@@ -136,6 +136,15 @@ struct VoiceProfileManagementPanel: View {
                 systemVoicesSection
             }
         }
+        // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
+        // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로
+        // 살아 있어, 유예 동안 숨겨야 할 목소리를 그 창에서 영구 삭제할 수 있다.
+        .onChange(of: paidVoiceEntitledNow) { _, entitled in
+            guard !entitled else { return }
+            actionSheetTarget = nil
+            editTarget = nil
+            deleteTarget = nil
+        }
         .task { await voice.refresh(session: auth.session) }
         // ⚠ **이용권도 여기서 갱신한다**(안드로이드 `NativeTab.Voices → preloadSocial()` 대응).
         //
@@ -232,6 +241,10 @@ struct VoiceProfileManagementPanel: View {
             Button("삭제", role: .destructive) {
                 let target = profile
                 deleteTarget = nil
+                // ⚠ **누르는 순간에도 자격을 다시 본다**(2026-09-01 리뷰). 알럿이 떠 있는
+                // 사이 갱신이 무료로 바뀔 수 있는데, 이 삭제는 **되돌릴 수 없다** —
+                // 무료 화면이 숨기려던 보관 중 목소리를 그 창에서 지워 버린다.
+                guard paidVoiceEntitledNow else { return }
                 Task {
                     let didDelete = await voice.deleteProfile(
                         target,
