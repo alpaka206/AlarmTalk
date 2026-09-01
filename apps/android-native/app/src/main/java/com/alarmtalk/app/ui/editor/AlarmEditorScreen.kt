@@ -1134,7 +1134,7 @@ internal fun AlarmEditorScreen(
                 // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
                 val profileId = editor.voiceProfileId
                 if (!profileId.isNullOrBlank()) {
-                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
+                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage, expectedVariants)
                     // 새 알람은 마지막에 고른 테마를 이어받는다 — 이게 없으면 매번 FreeBucketOrder
                     // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
                     // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
@@ -1830,7 +1830,7 @@ internal fun AlarmEditorScreen(
                 //   기본 목소리는 서버에 구워 둔 카테고리만 나온다. 시딩이 끝나면 앱을
                 //   고치지 않아도 나타난다(`freeBucketsFor` 가 매니페스트와 교차한다).
                 availableContexts = if (usesStockClips) {
-                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage)
+                    freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage, expectedVariants)
                         .mapNotNull { randomPromptContextForBucket(it) }
                 } else {
                     EditorMessageContexts.map { it.first }

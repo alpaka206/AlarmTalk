@@ -562,18 +562,42 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
 
 
 /** stockClips manifest 에서 (해당 보이스·언어) 로 실제 존재하는 무료 버킷을 노출 순서대로. */
+/**
+ * stockClips manifest 에서 (해당 보이스·언어) 로 **완전히** 준비된 무료 버킷을 노출 순서대로.
+ *
+ * ⚠ **'하나라도 있으면' 이 아니라 '전부 있어야' 한다**(2026-09-02 리뷰). 매니페스트는
+ * 클립이 하나 구워질 때마다 그 카테고리를 곧바로 노출한다 — 시딩이 도는 중에는
+ * **부분 세트**가 보인다는 뜻이다. 그때 고르면 `bindStockBucketClips` 가 **그 순간 보이는
+ * variant 만** 알람에 박아 두고, `StockClipLanguageRebinder` 는 같은 언어의 기존 버킷을
+ * 나중에 넓혀 주지 않는다 — 시딩 중에 만든 알람이 **영구히 부분 세트**로 남는다.
+ * 조건형(날씨·운세)에서는 그게 곧 엉뚱한 조건의 클립이 나가는 것이다.
+ *
+ * 클론 쪽은 `ClipPreparationGate.hasCompleteCloneBucket` 이 같은 일을 하는데,
+ * **기본(시스템) 목소리는 그 관문을 그냥 지난다**(선다운로드 대상이라 일부러 그렇게 뒀다).
+ * 그래서 그 완전성 판정이 여기 있어야 한다.
+ *
+ * @param expectedVariants 서버가 내려준 카테고리별 세트 크기. **null 이면 막지 않는다** —
+ *   못 물어본 것이 사용자를 막는 근거가 되면 안 된다(관문들과 같은 규약).
+ */
 internal fun freeBucketsFor(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     voiceProfileId: String?,
     language: String,
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
 ): List<String> {
     if (voiceProfileId.isNullOrBlank()) return emptyList()
-    val available = stockClips
+    val variantsByCategory = stockClips
         .asSequence()
         .filter { it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language }
-        .mapNotNull { it.category }
-        .toSet()
-    return FreeBucketOrder.filter { it in available }
+        .mapNotNull { clip -> clip.category?.let { it to clip.variant } }
+        .groupBy({ it.first }, { it.second })
+    return FreeBucketOrder.filter { category ->
+        val variants = variantsByCategory[category]?.toSet() ?: return@filter false
+        val expected = expectedVariants?.countFor(category, isSystemVoice = true)
+        // 매니페스트를 못 받았거나 서버가 개수를 모르면 예전대로 '있으면 노출' 이다.
+        if (expected == null || expected <= 0) return@filter true
+        variants == (0 until expected).toSet()
+    }
 }
 
 // 문구 컨텍스트의 정규화·기본값용 정식 집합. preset 은 새 알람의 보이지 않는 기본값이자 시스템

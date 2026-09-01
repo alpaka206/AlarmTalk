@@ -78,6 +78,49 @@ class AlarmEditorStateTest {
         )
     }
 
+    /**
+     * **시딩이 도는 중에는 그 카테고리를 감춘다.**
+     *
+     * 매니페스트는 클립이 하나 구워질 때마다 카테고리를 곧바로 노출한다. 그때 고르면
+     * `bindStockBucketClips` 가 **그 순간 보이는 variant 만** 알람에 박아 두고,
+     * `StockClipLanguageRebinder` 는 같은 언어의 기존 버킷을 나중에 넓혀 주지 않는다 —
+     * 시딩 중에 만든 알람이 **영구히 부분 세트**로 남는다. 조건형(날씨·운세)에서는 그게
+     * 곧 엉뚱한 조건의 클립이 나가는 것이다(2026-09-02 리뷰).
+     */
+    @Test
+    fun partialBucketsStayHiddenUntilFullySeeded() {
+        fun clip(category: String, variant: Int) = com.alarmtalk.app.network.StockClip(
+            messageId = "m-$category-$variant",
+            voiceProfileId = "vp-1",
+            category = category,
+            language = "ko",
+            variant = variant,
+            text = "t",
+            audioUrl = "r2://x",
+        )
+        val expected = com.alarmtalk.app.network.ExpectedVariantCounts(
+            system = mapOf("medication" to 2, "love" to 3),
+            clone = emptyMap(),
+        )
+        // love 는 3개가 있어야 하는데 2개뿐 = 시딩 중 → 감춘다. medication 은 완전하다.
+        val partial = listOf(
+            clip("medication", 0), clip("medication", 1),
+            clip("love", 0), clip("love", 1),
+        )
+        assertEquals(listOf("medication"), freeBucketsFor(partial, "vp-1", "ko", expected))
+
+        // 마지막 하나가 채워지면 그때 나타난다 — 앱 수정 없이.
+        val complete = partial + clip("love", 2)
+        assertEquals(listOf("love", "medication"), freeBucketsFor(complete, "vp-1", "ko", expected).sorted())
+
+        // ⚠ **매니페스트를 못 받았으면 막지 않는다** — 못 물어본 것이 사용자를 막는 근거가
+        //   되면 안 된다(관문들과 같은 규약).
+        assertEquals(
+            listOf("love", "medication"),
+            freeBucketsFor(partial, "vp-1", "ko", null).sorted(),
+        )
+    }
+
     @Test
     fun bucketCategoryMapsBackToItsMessageContext() {
         // clonePrerenderBucketCategoryFor 와 짝. 한쪽만 고치면 옛 알람 복구가 조용히 어긋난다.

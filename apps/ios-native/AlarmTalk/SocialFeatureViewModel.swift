@@ -223,9 +223,21 @@ final class SocialFeatureViewModel: ObservableObject {
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
-                if let moved = entitlementWriter.ticket(), moved.userID == userID {
-                    accessTicket = moved
-                }
+                //
+                // ⚠ **계정 id 만 보고 받으면 안 된다**(2026-09-02 리뷰). `onRolledToken` 은
+                //   출처 토큰을 에폭으로 쓰는 CAS 라, 그 사이 **같은 계정으로 재로그인**하면
+                //   회전은 거절된다 — 그런데 id 는 같으므로 여기서 새 세션의 표를 덥석 받게
+                //   되고, 옛 요청이 그 표로 구독·plan 을 새 세션에 발행한다.
+                //   `isRefreshing` 때문에 새 세션의 갱신이 건너뛰어졌으면 그 옛 값이 그대로
+                //   남아, 무료면 되돌릴 수 없는 강등이·유료면 남은 접근이 된다.
+                //
+                //   받는 조건은 **우리가 굴린 바로 그 토큰**일 때 하나다. 아니면 회전이
+                //   우리 것이 아니었다는 뜻이므로 이 회차를 통째로 버린다.
+                guard let moved = entitlementWriter.ticket(),
+                      moved.userID == userID,
+                      moved.token == rolledToken
+                else { return }
+                accessTicket = moved
             }
             let subscriptionWrite = entitlementWriter.write(accessTicket, "subscription") {
                 $0.subscriptionResponse = resolvedSubscription

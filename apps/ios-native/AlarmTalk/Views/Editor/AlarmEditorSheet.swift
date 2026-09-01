@@ -1236,12 +1236,27 @@ struct AlarmEditorSheet: View {
     var availableFreeBuckets: [FreeBucket] {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
         let language = VoiceStudioViewModel.appVoiceLanguage()
-        let categories = Set(
-            voiceStudio.stockClips
-                .filter { $0.voiceProfileId == profileID && ($0.language ?? "ko") == language }
-                .compactMap(\.category)
-        )
-        return FreeBucket.order.filter { categories.contains($0.rawValue) }
+        var variantsByCategory: [String: Set<Int>] = [:]
+        for clip in voiceStudio.stockClips
+        where clip.voiceProfileId == profileID && (clip.language ?? "ko") == language {
+            guard let category = clip.category, let variant = clip.variant else { continue }
+            variantsByCategory[category, default: []].insert(variant)
+        }
+        // ⚠ **'하나라도 있으면' 이 아니라 '전부 있어야' 한다**(2026-09-02 리뷰, 안드로이드
+        //   `freeBucketsFor` 와 같은 규칙). 매니페스트는 클립이 하나 구워질 때마다 그
+        //   카테고리를 곧바로 노출하므로, 시딩이 도는 중에는 **부분 세트**가 보인다.
+        //   그때 고르면 그 순간의 variant 만 알람에 박히고 나중에 넓혀지지 않는다 —
+        //   조건형(날씨·운세)에서는 엉뚱한 조건의 클립이 나가는 것이다.
+        //   `expectedVariants` 가 없으면(매니페스트 미수신) 막지 않는다.
+        let isSystem = voiceStudio.isSystemVoiceProfile(id: profileID)
+        return FreeBucket.order.filter { bucket in
+            guard let variants = variantsByCategory[bucket.rawValue] else { return false }
+            guard let expected = voiceStudio.expectedVariants?.count(
+                category: bucket.rawValue,
+                isSystemVoice: isSystem
+            ), expected > 0 else { return true }
+            return variants == Set(0..<expected)
+        }
     }
 
     /// 지금 고른 테마.
@@ -1297,6 +1312,16 @@ struct AlarmEditorSheet: View {
     /// 끊기면 고른 게 화면에 아예 안 나타났다.
     func selectFreeBucket(_ bucket: FreeBucket) {
         selectedBucketDraft = bucket
+        // ⚠ **문구 종류를 테마와 맞춰 둔다**(2026-09-02 리뷰, 안드로이드 `setBucketAudio` 의
+        //   `randomPromptContextForBucket(bucket)?.let { voiceRandomContext = it }` 미러).
+        //   이걸 안 하면 이어받기(`applyPendingFreeBucketIfNeeded`)로 테마가 붙어도
+        //   `randomContext` 는 기본값 `preset` 에 남는다. 요약 행이 이제 종류를 그리므로
+        //   화면은 '기본 인사말' 이라고 말하는데 실제로는 예컨대 '약' 이 울리고, 문구 화면에는
+        //   선택된 라디오가 하나도 없다(preset 은 기본 목소리 목록에 없다).
+        //   저장까지 `voiceRandomContext = preset` 으로 남아 다시 열어도 어긋난 채다.
+        if let context = RandomPromptContext.forBucket(bucket.rawValue) {
+            voiceStudio.randomContext = context.rawValue
+        }
         // 테마를 바꾸면 앞 테마로 준비해 둔 음원은 더 이상 맞지 않는다.
         voiceStudio.preparedAlarm = nil
         stockSelectedMessageID = nil
