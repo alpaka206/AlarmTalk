@@ -52,35 +52,164 @@ RAW_WRITE = re.compile(r"\bpatchWithoutOwnershipCheck\b")
 # 옛 API 가 되살아나는 것도 막는다(문을 우회하는 가장 쉬운 길이었다).
 REVIVED_API = re.compile(r"\b(updateStorePlanKey|updateUserPlan|updateSubscription|updateFamilyGroup)\s*\(")
 
-# 문을 부르는 줄. 트레일링 람다/클로저 때문에 호출은 여러 줄에 걸치므로 **시작 줄**만 본다.
+# 문을 부르는 자리를 찾는다.
 #
-# ⚠ **수신자 이름으로 찾지 않는다**(2026-09-02 리뷰). 처음에는 `entitlementWriter\.` 리터럴만
-# 봤는데, 같은 저장소 안에 `entitlement.write(...)`(워커 둘)·`writer.write(...)`
-# (SubscriptionManager)·`EntitlementWriter().writeNow(...)` 가 이미 있어서 **넷을 통째로
-# 놓쳤다.** 이름은 호출부마다 다르고 앞으로도 달라진다.
+# ⚠ **인자 모양을 정규식으로 흉내내지 않는다**(2026-09-02 리뷰 2차 정정). 처음에는
+# 수신자 이름(`entitlementWriter.`)만 봐서 넷을 놓쳤고, 고친 뒤에도
+# `write(<맨이름>, "<리터럴>")` 한 줄짜리만 알아봐서 **생성자를 인자로 쓰거나 줄을
+# 나눈 형태**를 또 놓쳤다(`RemoteAlarmSyncWorker` 의
+# `.write(AccessTicket(...), "background session renewal")`, `renewSession(...)`).
+# 정규식으로 인자를 흉내내는 한 이 술래잡기는 끝나지 않는다.
 #
-# 대신 **호출 모양**으로 가른다 — 문의 시그니처는 `(표, "이유")` 와 `("이유")` 뿐이라,
-# 두 번째(또는 첫) 인자가 **문자열 리터럴**인 것으로 다른 write 와 구별된다.
-# (`writer.write(alarms, seq: seq)` 같은 알람 저장소 호출은 이 모양이 아니라 안 걸린다.)
-GATE_CALL = re.compile(
-    r"""(
-        \.\s*write\s*\(\s*[A-Za-z_][\w.]*\s*,\s*"   |   # .write(ticket, "이유"
-        \.\s*writeNow\s*\(\s*"                            # .writeNow("이유"
-    )""",
-    re.X,
-)
-# 결과를 실제로 쓰는 모양들. `_ =` 는 "일부러 버린다"는 명시적 표시라 허용한다.
+# 그래서 **괄호 균형으로 실제 호출을 파싱**한다. 아래 SELF_TEST 가 이 파서를 검증한다.
+GATE_METHODS = ("write", "writeNow", "renewSession")
+CALL_START = re.compile(r"\.\s*(write|writeNow|renewSession)\s*\(")
+
+# 결과를 실제로 쓰는 모양. `_ =` 는 "일부러 버린다"는 명시적 표시라 허용한다(Swift 전용 —
+# Kotlin 에는 그 문법이 없어 변수로 받아 로그·분기에 쓴다).
 RESULT_USED = re.compile(
     r"""(
-        \b(val|var|let)\s+\w+\s*(:[^=]+)?=\s*$|   # val x =  (Kotlin/Swift)
-        \b(val|var|let)\s+\w+\s*(:[^=]+)?=\s*\S|
-        ^\s*(guard|if|while)\b|                     # guard/if 안에서 바로 판정
-        ^\s*return\b|                               # 결과를 그대로 돌려준다
-        _\s*=|                                       # 일부러 버린다는 명시
-        ^\s*\)                                       # 여러 줄 호출의 이어지는 줄
+        \b(val|var|let)\s+\w+[^=]*=      |   # val x = / let x: T =
+        ^\s*(guard|if|while|return)\b     |   # 바로 판정하거나 돌려준다
+        _\s*=                              |   # 일부러 버린다는 명시(Swift)
+        =\s*$                              |   # 식 본문·여러 줄 대입 — 값이 어딘가로 간다
+        ->\s*$
     )""",
     re.X,
 )
+
+
+def _call_args(text: str, open_paren: int) -> str:
+    """여는 괄호부터 짝이 맞는 닫는 괄호까지의 인자 텍스트(여러 줄 가능)."""
+    depth = 0
+    for i in range(open_paren, len(text)):
+        ch = text[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren + 1 : i]
+    return text[open_paren + 1 :]
+
+
+def _is_gate_call(method: str, args: str, before: str) -> bool:
+    """이 `.write(`/`.writeNow(`/`.renewSession(` 가 **권한 문**인가.
+
+    같은 이름의 다른 write 가 많다(`data.write(to:)`, `output.write(buf, 0, n)`,
+    `MarketingConsentCache(...).write(userId, agreed)`, 알람 저장소의 `write(alarms, seq:)`).
+    문만 갖는 표식 셋 중 하나면 문으로 본다:
+      - `writeNow`/`renewSession` 은 문에만 있는 이름이다.
+      - 인자에 **이유 문자열**이 있다(문의 시그니처가 `(표, "이유")` 다).
+      - 수신자 쪽에 `Entitlement` 가 보인다(생성자를 바로 부르는 형태).
+    """
+    if method in ("writeNow", "renewSession"):
+        return True
+    if '"' in args:
+        return True
+    return "ntitlement" in before[-120:]
+
+
+# 앞 줄이 이렇게 끝나면 이 줄은 그 문장의 **이어지는 줄**이다.
+#
+# ⚠ `,` 와 `(` 는 **넣지 않는다.** 넣으면 여러 줄 파라미터 목록을 타고 함수 선언까지
+#   거슬러 올라가, 식 본문(`): EntitlementWrite =`)을 지나쳐 머리를 잘못 잡는다.
+#   찾는 것은 "이 값이 어디로 가는가" 이고, 그건 `=`·`->`·`return` 에서 끝난다.
+CONTINUES = ("=", "->", "return", "?:", "&&", "||")
+
+
+def _statement_head(lines: list[str], index: int) -> str:
+    """이 호출이 속한 문장의 **머리 줄**.
+
+    두 가지 이어짐을 따라 올라간다. 둘 다 실제로 있는 형태다:
+      - `Foo(ctx)` 다음 줄에 `.write(...)`  (체이닝)
+      - `): EntitlementWrite =` 다음 줄에 `entitlementWriter.write(...)`  (식 본문)
+
+    ⚠ 두 번째를 빠뜨리면 **결과를 그대로 돌려주는 함수**를 "버린다" 로 오판한다
+    (2026-09-02 에 `saveFamilyGroupSnapshot` 에서 실제로 그랬다).
+    """
+    i = index
+    while i > 0:
+        if lines[i].strip().startswith("."):
+            i -= 1
+            continue
+        if i == 0:
+            break
+        prev = lines[i - 1].strip()
+        if prev.endswith(CONTINUES):
+            i -= 1
+            continue
+        break
+    return lines[i]
+
+
+def find_unused_results(text: str) -> list[tuple[int, str]]:
+    """결과를 쓰지 않는 문 호출의 (줄번호, 줄) 목록."""
+    lines = text.splitlines()
+    # 각 문자 오프셋이 몇 번째 줄인지
+    offsets: list[int] = []
+    pos = 0
+    for line in lines:
+        offsets.append(pos)
+        pos += len(line) + 1
+
+    def line_of(offset: int) -> int:
+        lo, hi = 0, len(offsets) - 1
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if offsets[mid] <= offset:
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
+    problems: list[tuple[int, str]] = []
+    for match in CALL_START.finditer(text):
+        index = line_of(match.start())
+        line = lines[index]
+        if line.strip().startswith(("//", "*", "/*", "#")):
+            continue
+        open_paren = text.index("(", match.start())
+        if not _is_gate_call(match.group(1), _call_args(text, open_paren), text[: match.start()]):
+            continue
+        if not RESULT_USED.search(_statement_head(lines, index)):
+            problems.append((index + 1, line.strip()))
+    return problems
+
+
+# 검사 자신을 검증한다 — 이 파서는 두 번 뚫렸다(수신자 이름만 보던 판, 한 줄 리터럴만
+# 보던 판). 실제로 있었던 형태를 그대로 표본으로 둔다.
+SELF_TEST: list[tuple[str, bool]] = [
+    # (표본, 잡혀야 하는가)
+    ('entitlementWriter.write(ticket, "play entitlement") {', True),
+    ('val x = entitlementWriter.write(ticket, "play entitlement") {', False),
+    ('_ = writer.write(accessTicket, "storekit revalidate") {', False),
+    ('if (entitlement.write(ticket, "prefetch plan") { it }', False),
+    ('guard planWrite == .applied else { return }', False),
+    # 결과를 그대로 돌려주는 식 본문 — 잡히면 안 된다(오탐이 실제로 났던 형태)
+    ('): EntitlementWrite =\n    entitlementWriter.write(ticket, "family group snapshot") { it }', False),
+    # 놓쳤던 형태들
+    ('EntitlementWriter(applicationContext)\n    .write(AccessTicket(u, g), "renewal") {', True),
+    ('EntitlementWriter().renewSession(\n    AccessTicket(userID: a, token: b),\n    plan: p\n)', True),
+    ('EntitlementWriter().writeNow("storekit tier") {', True),
+    # 문이 아닌 write 들 — 잡히면 안 된다
+    ('try data.write(to: url, options: [.atomic])', False),
+    ('output.write(buffer.array(), 0, sampleSize)', False),
+    ('MarketingConsentCache(app).write(userId, agreed)', False),
+    ('return writer.write(alarms, seq: saveSeq)', False),
+]
+
+
+def run_self_test() -> list[str]:
+    failures: list[str] = []
+    for sample, should_flag in SELF_TEST:
+        flagged = bool(find_unused_results(sample))
+        if flagged != should_flag:
+            failures.append(
+                f"검사 자신이 틀렸다: {'잡아야 하는데 못 잡았다' if should_flag else '잡으면 안 되는데 잡았다'}\n"
+                f"      {sample}"
+            )
+    return failures
 
 
 def scan(root: Path, suffix: str) -> list[str]:
@@ -94,13 +223,12 @@ def scan(root: Path, suffix: str) -> list[str]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        lines = text.splitlines()
-        for lineno, line in enumerate(lines, 1):
+        rel = path.relative_to(ROOT)
+        for lineno, line in enumerate(text.splitlines(), 1):
             stripped = line.strip()
             # 주석은 규칙을 설명하려고 이름을 인용할 수 있다.
             if stripped.startswith(("//", "*", "/*", "#")):
                 continue
-            rel = path.relative_to(ROOT)
             if RAW_WRITE.search(line):
                 problems.append(
                     f"{rel}:{lineno}: 원시 쓰기를 문 밖에서 부른다 — "
@@ -111,23 +239,25 @@ def scan(root: Path, suffix: str) -> list[str]:
                     f"{rel}:{lineno}: 문을 우회하는 옛 API 가 되살아났다 — "
                     f"`EntitlementWriter.write(ticket, …)` 로 바꿀 것\n    {stripped}"
                 )
-            # ⚠ **앞 줄도 본다.** Kotlin 의 식 본문(`): EntitlementWrite =` 다음 줄에 호출)
-            #   처럼 결과를 쓰는 표시가 앞 줄에 있는 형태가 실제로 있다 — 한 줄만 보면
-            #   그걸 "결과를 버린다" 로 오판한다(2026-09-02 에 실제로 오탐이 났다).
-            prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
-            carried = prev.endswith("=") or prev.endswith("return")
-            if GATE_CALL.search(line) and not RESULT_USED.search(line) and not carried:
-                problems.append(
-                    f"{rel}:{lineno}: `write` 의 결과를 버린다 — 문이 거절해도 화면·메모리가 "
-                    f"옛 등급을 그대로 쓴다.\n"
-                    f"    결과를 받아 `Applied` 일 때만 상태를 갱신하라"
-                    f"(Swift 는 정말 버릴 때 `_ =`, Kotlin 은 `_ =` 가 없으니 "
-                    f"결과를 변수로 받아 로그·분기에 쓴다).\n    {stripped}"
-                )
+        for lineno, stripped in find_unused_results(text):
+            problems.append(
+                f"{rel}:{lineno}: 문의 결과를 버린다 — 문이 거절해도 화면·메모리가 "
+                f"옛 등급을 그대로 쓴다.\n"
+                f"    결과를 받아 `Applied` 일 때만 상태를 갱신하라"
+                f"(Swift 는 정말 버릴 때 `_ =`, Kotlin 은 그 문법이 없으니 변수로 받아 "
+                f"로그·분기에 쓴다).\n    {stripped}"
+            )
     return problems
 
 
 def main() -> int:
+    # 검사 자신부터 검증한다 — 이 파서는 두 번 뚫렸다.
+    self_test_failures = run_self_test()
+    if self_test_failures:
+        print("이 검사가 고장났다:\n", file=sys.stderr)
+        for f in self_test_failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
     problems = scan(ANDROID, ".kt") + scan(IOS, ".swift")
     if problems:
         print("권한 스냅샷을 문 밖에서 쓰는 곳이 있다:\n", file=sys.stderr)

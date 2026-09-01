@@ -89,10 +89,17 @@ class RemoteAlarmSyncWorker(
             // 토큰이 없으면 CAS 도 안 돌아 아무도 못 막는다). 세대가 그대로일 때만 쓴다.
             sessionUserId.takeIf { it.isNotBlank() }?.let { userId ->
                 // 문이 세대·계정을 함께 본다 — 그 사이 로그아웃→재로그인이 끼면 거절된다.
-                EntitlementWriter(applicationContext)
+                // ⚠ **결과를 버리지 않는다**(2026-09-02 리뷰). 아래 토큰 회전이 세대를 다시
+                //   보므로 여기서 되돌릴 것은 없지만, 이 회차가 통째로 옛 세션의 것이었다는
+                //   사실은 남겨야 추적된다. 조용히 버리면 "배경 갱신이 왜 안 먹었나" 를
+                //   나중에 알 길이 없다.
+                val renewed = EntitlementWriter(applicationContext)
                     .write(AccessTicket(userId, startGeneration), "background session renewal") {
                         it.copy(userPlan = me.user.plan)
                     }
+                if (renewed != EntitlementWrite.Applied) {
+                    Log.i(TAG, "Background plan renewal skipped: session changed mid-run")
+                }
             }
             val rolled = me.token?.takeIf { it.isNotBlank() } ?: return@runCatching
             if (sessionStore.saveTokenIfGeneration(startGeneration, rolled) != null) {
