@@ -102,6 +102,11 @@ final class SocialFeatureViewModel: ObservableObject {
         // `entitlementSnapshotComplete` 는 옛 true 로 남아 클론 오디오가 예약된 채 있는다.
         refreshGeneration &+= 1
         let generation = refreshGeneration
+        // ⚠ **새 갱신을 받아들이는 순간 '확정' 을 내린다**(2026-09-01 리뷰). 안 내리면 앞
+        // 세대가 남긴 true 가 그대로 서 있어, 밀려난 갱신을 기다리던 푸시 콜백이 그 값을
+        // 보고 **부분만 갱신된 스냅샷으로 AlarmKit 정합화를 돌린다.** 이 갱신이 끝나면
+        // 아래에서 다시 세운다.
+        entitlementSnapshotComplete = false
         if !isRefreshing { isRefreshing = true }
         // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
         // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의

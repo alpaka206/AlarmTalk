@@ -29,6 +29,14 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var currentTier: PlanTier = .free
+
+    /// StoreKit 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
+    ///
+    /// ⚠ 전경 복귀 갱신과 `Transaction.updates` 갱신이 같은 계정에서 겹칠 수 있다.
+    /// 계정 가드는 둘 다 통과시키므로, 그 사이 갱신·해지가 일어나면 **먼저 시작한 쪽이
+    /// 늦게 끝나면서 새 `currentTier` 와 캐시를 옛 값으로 덮는다** — 예약 시점 게이트가
+    /// 읽는 캐시라 되살아난 통행증이 그대로 알람에 적용된다.
+    private var refreshGeneration = 0
     @Published private(set) var hasLoadedEntitlements: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
     @Published private(set) var isPurchasing: Bool = false
@@ -226,6 +234,8 @@ final class SubscriptionManager: ObservableObject {
             hasLoadedEntitlements = false
             return
         }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         var latestExpiry: Date?
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
@@ -254,6 +264,8 @@ final class SubscriptionManager: ObservableObject {
         // B 의 스냅샷에 박혀 편집기·예약 게이트가 열린다.
         guard authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:)) == currentAccount
         else { return }
+        // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
+        guard generation == refreshGeneration else { return }
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true

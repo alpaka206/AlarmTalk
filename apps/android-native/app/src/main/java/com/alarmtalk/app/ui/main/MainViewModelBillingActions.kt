@@ -168,10 +168,16 @@ internal fun MainViewModel.restorePurchases() {
         val restored = runCatching { playBilling.restorePurchases() }
             .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
             .getOrDefault(0)
-        if (restored == 0) {
-            // 보낸 것이 없으면 `confirmGooglePurchase` 가 돌지 않는다 — 여기서 풀어 준다.
-            billingBusy = false
-            message = app.getString(R.string.billing_restore_none)
+        // ⚠ **busy 는 이 함수가 소유한다**(2026-09-01 리뷰). 예전에는 보낸 게 있으면
+        // `confirmGooglePurchase` 콜백이 풀어 줬는데, 정합화를 조용하게 만들면서 그 콜백이
+        // 더는 풀지 않는다 — 사용자가 '이전 구매 복원' 을 누르면 결제 UI 가 **뷰모델이 다시
+        // 만들어질 때까지 잠긴 채** 남았다. 확인 요청은 이미 다 보냈고 결과는 구독 재조회로
+        // 화면에 드러나므로, 여기서 풀어 주는 것이 맞다.
+        billingBusy = false
+        message = if (restored == 0) {
+            app.getString(R.string.billing_restore_none)
+        } else {
+            app.getString(R.string.billing_restore_checking)
         }
     }
 }
