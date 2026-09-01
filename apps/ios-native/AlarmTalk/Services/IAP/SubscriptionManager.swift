@@ -231,8 +231,6 @@ final class SubscriptionManager: ObservableObject {
     ///   - 따라서 별도 만료 체크 로직이 없어도 currentTier 가 자동으로 free 로
     ///     떨어진다.
     func refreshPurchasedProducts() async {
-        var newSet: Set<String> = []
-        var maxTier: PlanTier = .free
         // ⚠ **이 AlarmTalk 계정의 구매만 센다**(2026-08-31 리뷰). 같은 App Store 계정에
         // 유료 A 와 무료 B 가 번갈아 로그인하면, 거르지 않을 경우 A 의 트랜잭션이 B 의
         // 등급을 올린다 — 서버는 토큰 불일치로 거절하지만 **로컬 게이트는 통과한다.**
@@ -262,34 +260,11 @@ final class SubscriptionManager: ObservableObject {
         }
         refreshGeneration &+= 1
         let generation = refreshGeneration
-        var latestExpiry: Date?
-        // 계정 토큰이 **없는** 활성 구매(그 필드를 붙이기 전에 산 것). 내 것으로도 남의
-        // 것으로도 셀 수 없다 — 아래에서 '모름' 의 근거가 된다.
-        var hasUnattributed = false
-        for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
-            if transaction.appAccountToken == nil {
-                hasUnattributed = true
-                continue
-            }
-            if transaction.appAccountToken != currentAccount { continue }
-            newSet.insert(transaction.productID)
-            if let plan = SubscriptionProduct(rawValue: transaction.productID) {
-                // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는
-                // 코드라 본인 권한이 아니다. 이 가드가 없으면 선물을 산 무료 사용자가
-                // 유료로 판정돼, 자기 앱의 유료 기능이 열린다.
-                guard plan.isSubscription else { continue }
-                if let expires = transaction.expirationDate,
-                   expires > (latestExpiry ?? .distantPast) {
-                    latestExpiry = expires
-                }
-                if plan.planTier.tierOrder > maxTier.tierOrder {
-                    maxTier = plan.planTier
-                }
-                // StoreKit 은 만료 시각을 준다 — 캐시에 그대로 실어 예약 시점 게이트가
-                // 기한 지난 신호를 믿지 않게 한다(Play 는 만료가 없어 TTL 로 대신한다).
-            }
-        }
+        let scan = await Self.scanEntitlements(for: currentAccount)
+        let newSet = scan.productIDs
+        let maxTier = scan.tier
+        let latestExpiry = scan.latestExpiry
+        let hasUnattributed = scan.hasUnattributed
         // ⚠ **반영 직전에 계정을 다시 본다**(2026-08-31 리뷰, 안드로이드
         // `refreshStoreEntitlement` 의 계정 가드와 같은 이유). `currentEntitlements` 순회는
         // 비동기라 그 사이 A 가 로그아웃하고 B 가 들어올 수 있다 — 걸러낸 값은 A 것인데
@@ -363,6 +338,60 @@ final class SubscriptionManager: ObservableObject {
     /// 영원히 큐에 남지 않도록 한다. `purchase()` 가 직접 finish 한 트랜잭션이
     /// 다시 listener 로 들어오는 시나리오는 Apple 이 보장하지 않는다 — 그러나
     /// finish 가 중복 호출돼도 idempotent 하므로 안전.
+    /// `currentEntitlements` 순회 결과. 등급 계산의 **유일한 구현**이다.
+    struct EntitlementScan {
+        var productIDs: Set<String> = []
+        var tier: PlanTier = .free
+        var latestExpiry: Date?
+        /// 계정 토큰이 **없는** 활성 구매(그 필드를 붙이기 전에 산 것). 내 것으로도 남의
+        /// 것으로도 셀 수 없어 '모름' 의 근거가 된다.
+        var hasUnattributed = false
+    }
+
+    /// ⚠ **등급 계산을 여기 말고 다른 데 또 쓰지 말 것.** 배경 경로가 인스턴스 없이 써야 해서
+    /// 정적으로 뽑았을 뿐, 규칙(계정 필터·선물 제외·만료 수집)은 여기 하나다 —
+    /// 복제하면 두 경로가 갈라진다(이 저장소에서 반복된 사고다).
+    static func scanEntitlements(for currentAccount: UUID) async -> EntitlementScan {
+        var scan = EntitlementScan()
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            if transaction.appAccountToken == nil {
+                scan.hasUnattributed = true
+                continue
+            }
+            if transaction.appAccountToken != currentAccount { continue }
+            scan.productIDs.insert(transaction.productID)
+            guard let plan = SubscriptionProduct(rawValue: transaction.productID) else { continue }
+            // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는 코드라
+            // 본인 권한이 아니다 — 없으면 선물을 산 무료 사용자의 유료 기능이 열린다.
+            guard plan.isSubscription else { continue }
+            if let expires = transaction.expirationDate, expires > (scan.latestExpiry ?? .distantPast) {
+                scan.latestExpiry = expires
+            }
+            if plan.planTier.tierOrder > scan.tier.tierOrder { scan.tier = plan.planTier }
+        }
+        return scan
+    }
+
+    /// **화면 없이 깨어난 실행**에서 캐시된 스토어 신호를 다시 계산한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ `plan_changed` 푸시는 씬 없이 앱을 깨울 수 있다. 그때는 전경의
+    /// `SubscriptionManager` 가 없어서 훅이 nil 인데, 캐시에 남은 **원래 만료 시각**이 판정
+    /// 1단이라 그대로 두면 환불·회수 뒤에도 이미 걸린 클론 예약이 그대로 울린다.
+    /// 인스턴스를 만들면 `Transaction.updates` 리스너가 겹치므로 **정적으로** 처리한다.
+    static func revalidatePersistedEntitlement(userID: String) async {
+        guard let account = userID.nilIfBlank.flatMap(UUID.init(uuidString:)) else { return }
+        let scan = await scanEntitlements(for: account)
+        // 임자 미상만 있으면 아무것도 확정하지 않는다(인스턴스 경로와 같은 규칙).
+        if scan.productIDs.isEmpty && scan.hasUnattributed { return }
+        let entitled = scan.tier.meetsOrExceeds(.personal)
+        AccessSnapshotStore().updateStorePlanKey(
+            userID: userID,
+            planKey: entitled ? scan.tier.rawValue : nil,
+            untilMillis: entitled ? scan.latestExpiry.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
+        )
+    }
+
     /// 이 트랜잭션을 **서버로 보내도 되는가**(2026-09-01 리뷰).
     ///
     /// - 내 계정 토큰이 박힌 것: 보낸다.

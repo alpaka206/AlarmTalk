@@ -609,11 +609,15 @@ struct AlarmTalkApp: App {
             storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan
         ))
-        // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
-        // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
-        // 되돌리기 어려운 쪽(잠금)이라 **확실히 무료일 때만** 잠근다.
-        // 잠금은 되돌릴 수 없으므로 **스토어에 물어본 뒤에만** 한다.
-        guard !storeSaysPaid, access == .notEntitled, subscriptions.hasLoadedEntitlements else {
+        // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서
+        // `hasLoadedEntitlements` 를 빼면서 `guard ... else` 하나로 묶어 뒀는데, 그러면
+        // **스토어 조회가 아직 안 끝난 것만으로 복원 갈래에 들어간다** — 서버가 무료라고
+        // 확정한 계정의 잠긴 알람이 콜드 스타트마다 목소리로 되살아난다.
+        //  - 유료 **확정** → 복원(되돌릴 수 있는 방향)
+        //  - 무료 **확정** + 스토어 확인 완료 → 잠금(되돌릴 수 없으니 둘 다 요구)
+        //  - 그 밖(모름·조회 중) → 아무것도 하지 않는다
+        let entitled = storeSaysPaid || access == .entitled
+        guard !entitled else {
             // ⚠ **유료로 돌아오면 대기표를 비운다.** 두 가지를 동시에 지킨다:
             // ① 아직 확인 안 한 강등 안내가 남아 있으면, 이미 유료가 된 사람에게
             //    "무료로 바뀌었어요" 를 띄우게 된다.
@@ -630,6 +634,7 @@ struct AlarmTalkApp: App {
             )
             return
         }
+        guard access == .notEntitled, subscriptions.hasLoadedEntitlements else { return }
         let ownerID = auth.session?.user.id
         let locked = await socialFeatures.applyFreePlanVoiceLock(
             alarmStore: alarmStore,

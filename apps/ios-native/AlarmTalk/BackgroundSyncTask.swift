@@ -317,13 +317,20 @@ final class BackgroundSyncTask {
             // ⚠ **토큰 에폭을 본다.** 같은 계정으로 로그아웃→재로그인하면 id 는 그대로라,
             // 이 응답을 인가한 토큰이 아직 그대로일 때만 반영해야 새 세션을 덮지 않는다.
             // **plan 만** 갈아 끼운다 — 프로필 전체를 덮으면 그 사이 바꾼 이름이 되돌아간다.
+            // ⚠ **검사와 두 쓰기를 붙여 둔다**(2026-09-01 리뷰). 사이에 다른 작업을 끼우면
+            // 그 틈의 로그아웃→재로그인에서 **옛 세션이 새 세션의 스냅샷과 토큰을 덮는다.**
+            // 세션 저장이 먼저다 — 그게 실패하면(키체인 오류) 스냅샷도 쓰지 않아,
+            // 둘이 어긋난 상태를 남기지 않는다.
             guard var current = KeychainStore.readSession(),
                   current.user.id == session.user.id,
                   current.token == session.token else { return }
-            AccessSnapshotStore().updateUserPlan(userID: current.user.id, plan: user.plan)
             current.user.plan = user.plan
             if let rolledToken, !rolledToken.isEmpty { current.token = rolledToken }
             try KeychainStore.saveSession(current)
+            // 세션이 갱신된 **뒤**에만 판정 스냅샷을 적는다. 여기서 한 번 더 대조해,
+            // 저장과 이 쓰기 사이에 계정이 바뀌었으면 남의 스냅샷을 건드리지 않는다.
+            guard KeychainStore.readSession()?.user.id == current.user.id else { return }
+            AccessSnapshotStore().updateUserPlan(userID: current.user.id, plan: user.plan)
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),
             // 다음 백그라운드 회차나 앱 오픈이 다시 시도한다.
