@@ -96,6 +96,10 @@
   - 확신도: high
 
 - [x] **idx_voice_profiles_lru 가 ORDER BY 선행항 표현식 때문에 안 걸린다(#75 도입 목적 미달성)**
+  - ⚠ **이 체크는 2026-09-02 까지 거짓이었다.** `git log -L` 로 추적하니 체크를 바꾼 커밋
+    (`24b1d507`, #89·#90)이 **ORDER BY 도 인덱스도 건드리지 않았다** — 대장이 하지 않은
+    수정을 완료로 적고 있었다. 실제 처리는 마이그레이션 **#108**(인덱스 DROP)이다.
+    ⚠ 이 문서의 다른 체크박스도 코드로 확인하고 믿을 것.
   - 위치: `packages/backend/src/lib/voice-slots.ts:85 / 인덱스 packages/backend/src/lib/migrations.ts:1544-1545`
   - 조치: `(last_used_at IS NULL) DESC,` 를 제거해 `ORDER BY last_used_at ASC, created_at ASC` 로 변경(SQLite ASC = NULLS FIRST 라 의미 동일 + 인덱스 적중). 이 수정을 안 할 거면 인덱스를 DROP
   - 위험: NULL 정렬 순서를 SQLite 기본 동작에 의존하게 된다 — 명시성을 원하면 `ORDER BY last_used_at ASC NULLS FIRST`(인덱스 여전히 적중)

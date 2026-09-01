@@ -321,20 +321,15 @@ final class BackgroundSyncTask {
             // 그 사이의 로그아웃→**같은 계정** 재로그인에서 옛 작업이 방금 발급된 토큰을
             // 덮는다 — 계정 id 만 대조해서는 못 거른다(같은 id 다). 토큰 에폭까지 보는
             // `saveSessionIfCurrent` 로 원자적으로 바꾼다.
-            // 세션과 판정 스냅샷을 **같은 잠금 안에서** 함께 바꾼다(2026-09-01 리뷰).
-            // 따로 하면 그 사이의 재로그인에서 옛 작업이 새 세션의 스냅샷을 되살린다.
-            _ = try KeychainStore.saveSessionIfCurrent(
-                expectedUserID: session.user.id,
-                expectedToken: session.token,
-                transform: { current in
-                    var next = current
-                    next.user.plan = user.plan
-                    if let rolledToken, !rolledToken.isEmpty { next.token = rolledToken }
-                    return next
-                },
-                onSaved: { saved in
-                    AccessSnapshotStore().updateUserPlan(userID: saved.user.id, plan: user.plan)
-                }
+            // 세션과 판정 스냅샷을 **같은 잠금 안에서** 함께 바꾼다 — 문이 그 조합을 갖고 있다.
+            // 결과를 **일부러 버린다**(2026-09-02 리뷰에서 명시하기로 함). 거절은 '그 사이
+            // 로그아웃·재로그인이 있었다' 는 뜻인데, 이 함수는 여기서 끝나고 뒤따르는 상태
+            // 발행이 없다 — 그대로 두는 것이 맞다. 같은 파일의 다른 문 호출과 같은 처리다.
+            // (`AlarmTalkLog` 에는 오류 채널만 있어서, 이건 오류가 아니므로 남기지 않는다.)
+            _ = EntitlementWriter().renewSession(
+                AccessTicket(userID: session.user.id, token: session.token),
+                rolledToken: rolledToken,
+                plan: user.plan
             )
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),

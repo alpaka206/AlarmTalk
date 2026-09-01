@@ -19,6 +19,9 @@ import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.AccessSnapshotStore
+import com.alarmtalk.app.AccessTicket
+import com.alarmtalk.app.EntitlementWrite
+import com.alarmtalk.app.EntitlementWriter
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
@@ -101,6 +104,9 @@ class StockClipPrefetchWorker(
         // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 권한 스냅샷은 문 하나로만 쓴다(`EntitlementWriter`).
+        val entitlement = EntitlementWriter(applicationContext)
+        val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -171,11 +177,17 @@ class StockClipPrefetchWorker(
                     // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서
                     // 판정에만 쓰고 버리면, 같이 도는 세션 갱신이 실패했을 때 `RingingService`
                     // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
-                    // ⚠ **세대 락 안에서 쓴다**(2026-09-01 리뷰). 조회 중 로그아웃·재로그인이
-                    // 있었으면 이 값은 옛 회차의 것이라, 그대로 쓰면 **같은 계정의 더 새로운
-                    // 스냅샷을 덮는다** — 울림 게이트가 지나간 등급으로 판단하게 된다.
-                    sessionStore.runIfGeneration(startGeneration) {
-                        snapshotStore.updateUserPlan(session.user.id, plan)
+                    // 문이 세대·계정을 함께 본다 — 조회 중 로그아웃·재로그인이 있었으면
+                    // 이 값은 옛 회차의 것이라 거절된다.
+                    // ⚠ **거절되면 이 회차는 옛 세션의 것이다**(2026-09-02 리뷰). 아래
+                    //   판정이 스냅샷이 아니라 **로컬 `plan` 변수**를 그대로 쓰므로, 결과를
+                    //   안 보면 문이 버린 값이 그대로 선다운로드 여부를 정한다.
+                    //   낙관 기본값으로 물러난다 — 선다운로드는 더 받아도 손해가 없고,
+                    //   덜 받으면 오프라인에서 소리가 안 난다.
+                    if (entitlement.write(ticket, "prefetch plan") { it.copy(userPlan = plan) }
+                        != EntitlementWrite.Applied
+                    ) {
+                        return@runCatching true
                     }
                     val snapshot = snapshotStore.read(session.user.id)
                     val now = System.currentTimeMillis()
@@ -376,8 +388,10 @@ class StockClipPrefetchWorker(
      * 받을 대상: 기본 목소리 × 기기 언어 × 무료 버킷 카테고리.
      *  - 언어를 하나로 좁힌다. 3개 언어를 다 받으면 약 3배(≈30MB)인데 앱은 한 번에 한 언어만
      *    쓰고, 언어를 바꾸면 이 워커가 다시 돌아 부족분을 채운다.
-     *  - greeting 은 APK 에 내장돼 있어 받지 않는다(res/raw, 4보이스 × 3언어).
-     *  - 운세·사랑은 유료 클론 전용이라 기본 목소리로는 쓸 수 없다.
+     *  - **고를 수 있는 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 운세·사랑을
+     *    고를 수 있게 되면서(`docs/spec/voice-and-message.md` §2), 안 받는 종류가 있으면
+     *    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
+     *  - greeting 은 받지 않는다 — 알람 테마가 아니고(§2), 미리듣기용은 APK 에 내장돼 있다.
      */
     private fun StockClip.targetsDefaultVoices(language: String): Boolean =
         isSystemVoiceId(voiceProfileId) &&
@@ -399,8 +413,16 @@ class StockClipPrefetchWorker(
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
 
-        /** 무료 버킷에서 실제로 회전하는 카테고리. */
-        private val FREE_BUCKET_CATEGORIES = setOf("weather", "medication")
+        /**
+         * 선다운로드 대상 카테고리.
+         *
+         * ⚠ **손으로 적지 않는다**(2026-09-02). 여기가 `setOf("weather","medication")` 로
+         * 박혀 있어서, 편집기 목록에 카테고리를 더해도 **그 클립만 안 받는** 상태가 됐다 —
+         * 고를 수는 있는데 오프라인에서 소리가 안 나는 종류가 생긴다. 목록이 늘면 받는
+         * 것도 같이 늘어야 하므로 [FreeBucketOrder] 하나에서 유도한다.
+         */
+        private val FREE_BUCKET_CATEGORIES: Set<String> =
+            com.alarmtalk.app.FreeBucketOrder.toSet()
 
         private fun cacheKeyFor(clip: StockClip): String =
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"

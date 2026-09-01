@@ -231,7 +231,26 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 그 계정으로 산 것**만 돌려준다 — iOS 에서 결제하고 안드로이드로 로그인한 사람, 다른 구글
 계정으로 산 사람, 그리고 **본인 구매가 아예 없는 그룹 멤버**는 전부 빈 결과가 나온다.
 그래서 빈 결과는 **캐시된 스토어 신호를 지우는 것까지**이고, 판정은 서버 스냅샷으로 내려간다.
-(그 신호가 오래 살아남지 않도록 아래 기한을 둔다.)
+(그 신호가 오래 살아남지 않도록 **기한**을 둔다 — 아래 「스토어 신호의 기한」.)
+
+### 스토어 신호의 기한
+
+스토어 신호는 **확인 시각 + 상한**으로 산다. 상한 자체는 두 앱이 다르게 얻는다:
+
+| | 상한 | 근거 |
+| --- | --- | --- |
+| Android | `STORE_ENTITLEMENT_TTL_MILLIS` = **40일** | Play `Purchase` 에는 **만료가 없다** — 확인 시각 + 보수적 상한으로 대신한다 |
+| iOS | StoreKit 이 준 **실제 만료**(`expirationDate`) | 트랜잭션이 만료를 주므로 그대로 쓴다 |
+
+⚠ **상한의 역할은 '만료 감지' 가 아니라 '영구 통행증 방지' 다.** 만료 감지는 서버 스냅샷의
+`expires_at` 이 하고, 그쪽은 앱이 열릴 때마다 갱신된다. 그래서 상한은 **월 구독 주기보다
+넉넉히 길게** 둔다 — 짧게 잡으면 앱을 안 여는 사이 자동갱신된 사용자가 잘린다(3일로 뒀다가
+되돌린 이력이 있다).
+
+⚠ **단, 해지 예약(`isAutoRenewing == false`)이면 서버가 아는 기간 말로 상한을 낮춘다.**
+TTL 은 '언제 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 직전에 확인하면 그 뒤 수십 일이
+통행증이 된다. **미래인 기간 말일 때만** 낮춘다 — 지난 값으로 낮추면 방금 확인한 신호가
+태어나자마자 죽는다.
 
 ⚠ **되돌릴 수 없는 변환은 한 조건 더 본다.** 판정기는 `users.plan = free` 를 남은 구독 행보다
 위로 보지만(보류를 잡기 위한 규칙), 보류는 **회복형**이다. 울림·예약은 판정기 그대로 막아도
@@ -254,6 +273,39 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 그래서 전경에서 물어 온 등급을 `AccessSnapshot.storePlanKey` 에 적어 두고 그 경로가 읽는다 —
 한쪽만 갱신하면 화면과 울림의 답이 갈라진다.
 
+## 권한 스냅샷은 **문 하나로만** 쓴다 (양 앱 공통)
+
+판정기(`resolvePaidVoiceAccess` / `PaidVoiceGate.resolve`)는 **읽는 쪽**의 단일 출처다.
+이 절은 **쓰는 쪽**의 단일 출처를 정한다 — 2026-09-02 에 도입했다.
+
+### 왜 필요했나
+
+그전에는 권한 스냅샷(구독·그룹·`users.plan`·스토어 신호)을 쓰는 곳이 **안드로이드 9곳·iOS 8곳**
+이었고, 각자 계정·세션세대·토큰에폭·조회세대·취소 확인을 **손으로** 들고 있었다.
+PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면서 리뷰가 **37회·119건**까지 갔다.
+실제로 일어난 것들:
+
+- 에폭 가드를 넣었더니 **그 앞의 토큰 회전** 때문에 항상 거짓이 되어 plan 반영이 죽었다.
+- 세션 CAS 를 넣었는데 스냅샷 발행이 **락 밖**이라 창이 그대로 남았다.
+- 조회 세대를 넣었더니 **실패한 조회가 남의 성공까지** 무효로 만들었다.
+- 공유 순서표를 넣었더니 배경 경로가 **전경의 화면 상태까지** 버렸다.
+
+전역 불변식이 어디에도 없는 시스템에 국소 불변식을 하나씩 붙이면 이렇게 된다.
+
+### 규칙
+
+1. **네트워크·스토어 SDK 호출 전에 표를 뜬다.** `AccessTicket = 계정 + 에폭`.
+   - 에폭: 안드로이드 = 세션 세대, iOS = **토큰**(세대 카운터가 없어 같은 계정 재로그인을
+     거를 축이 토큰뿐이다).
+2. **응답이 오면 그 표로 쓴다.** `write(ticket, 이유) { ... }`.
+3. **결과가 `Applied` 일 때만 화면 상태를 갱신한다.** 스냅샷만 막고 전역 state 를 발행하면
+   A 의 데이터가 B 화면에 뜬다.
+4. **우리가 토큰을 굴렸으면 표도 옮긴다.** 안 옮기면 그 뒤 쓰기가 전부 거절된다.
+
+⚠ **문 밖에서 스냅샷을 쓰지 말 것.** `patchWithoutOwnershipCheck` 에는 소유권 판단이 없다.
+강제 장치가 셋이다: ① 옛 `update*` API 제거 ② 표를 **인자로 요구**해 컴파일러가 잡는다
+③ `scripts/check-entitlement-writer.py`(CI 필수 체크)가 우회를 막는다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -274,7 +326,9 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |
 | 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me` 응답의 `user.plan` | `MainViewModelAuthActions`(`/auth/me` 성공 경로) · `sync/PlanChangeSyncWorker` — **방금 받아 온 곳만** | `SocialFeatureViewModel.refreshAll`(받으면 적고, 못 받으면 미완 표시) |
-| 판정 스냅샷 — 갱신 직렬화 | — | `AccessSnapshotStore.mutate`(companion `LOCK`) | `AccessSnapshotStore.mutate`(static `NSLock`) |
+| 판정 스냅샷 — **쓰기 문(유일)** | — | `EntitlementWriter`(`ui/main/EntitlementWriter.kt`) | `EntitlementWriter.swift` |
+| 문의 원자성 근거 | — | `AuthSessionStore.runIfGeneration`(세션 쓰기와 같은 락) | `KeychainStore.runIfCurrentSession`(세션 쓰기와 같은 락) |
+| 우회 차단 | — | `scripts/check-entitlement-writer.py`(CI) | 같은 스크립트가 둘 다 검사 |
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |

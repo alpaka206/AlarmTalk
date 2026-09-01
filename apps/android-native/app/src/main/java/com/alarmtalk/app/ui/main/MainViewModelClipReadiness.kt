@@ -115,8 +115,15 @@ internal suspend fun MainViewModel.retryFailedClipRenders() {
     refreshClipReadiness()
 }
 
-/** 기본 목소리가 알람에 쓰는 테마. `StockClipPrefetchWorker.FREE_BUCKET_CATEGORIES` 와 같아야 한다. */
-private val FREE_BUCKET_CATEGORIES = setOf("weather", "medication")
+/**
+ * 기본 목소리가 알람에 쓰는 카테고리.
+ *
+ * ⚠ **손으로 적지 않는다**(2026-09-02). "…와 같아야 한다" 는 주석은 같음을 보장하지
+ * 못한다 — 실제로 이 목록은 **네 벌**(편집기·프리페치 워커·여기·iOS)이었고, 편집기만
+ * 늘리면 나머지 셋이 조용히 뒤처진다. 준비 판정이 뒤처지면 **다 받아 놓고도 '준비 안 됨'**
+ * 이거나 그 반대가 된다. [FreeBucketOrder] 하나에서 유도한다.
+ */
+private val FREE_BUCKET_CATEGORIES: Set<String> = com.alarmtalk.app.FreeBucketOrder.toSet()
 
 /** 화면에서 부르는 비-suspend 진입점. */
 internal fun MainViewModel.retryFailedClipRendersAsync() {

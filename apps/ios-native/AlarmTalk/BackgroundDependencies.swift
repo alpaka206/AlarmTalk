@@ -186,11 +186,6 @@ final class BackgroundDependencies {
         socialFeatures.onFreshPlan = { [weak auth] userID, from, plan in
             auth?.applyFreshPlan(userID: userID, from: from, plan: plan)
         }
-        // 스냅샷 쓰기도 같은 에폭으로 가른다 — 같은 계정 재로그인은 id·세대를 바꾸지 않는다.
-        socialFeatures.isCurrentSessionToken = { [weak auth] userID, token in
-            guard let session = auth?.session else { return false }
-            return session.user.id == userID && session.token == token
-        }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()
     }

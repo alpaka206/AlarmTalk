@@ -43,6 +43,8 @@ final class SocialFeatureViewModel: ObservableObject {
 
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
+    /// 권한 스냅샷에 쓰는 **유일한 문**.
+    private let entitlementWriter = EntitlementWriter()
     private var activeUserID: String?
     /**
      * `/auth/me` 가 굴려 준 토큰을 세션 주인에게 건넨다(2026-09-01 리뷰).
@@ -72,19 +74,7 @@ final class SocialFeatureViewModel: ObservableObject {
      */
     var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
 
-    /**
-     * **이 토큰이 아직 지금 세션의 것인가**(2026-09-01 리뷰).
-     *
-     * ⚠ 세대·계정 가드만으로는 부족하다. 같은 계정으로 로그아웃→재로그인하면 `activeUserID`
-     * 도 `refreshGeneration` 도 그대로라, 옛 갱신이 둘을 통과해 **옛 plan·구독을 새 세션의
-     * 스냅샷에 직접 쓴다** — `applyFreshPlan` 은 토큰 에폭으로 거절하는데 스냅샷 쓰기는
-     * 아무도 막지 않았다. 그 스냅샷을 예약·울림 게이트가 읽는다.
-     */
-    var isCurrentSessionToken: ((_ userID: String, _ token: String) -> Bool)?
-
-    private func sessionStillCurrent(_ userID: String, _ token: String) -> Bool {
-        isCurrentSessionToken?(userID, token) ?? true
-    }
+    // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -160,17 +150,21 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         var messages: [String] = []
-        // 이 갱신이 인정하는 '지금 토큰' — rolling refresh 로 굴러가면 함께 옮겨 간다.
-        var effectiveToken = token
+        // 권한 스냅샷은 **문 하나로만** 쓴다. 표는 요청 전에 뜨고, rolling refresh 로 토큰이
+        // 굴러가면 **우리가 굴린 것**이므로 표도 함께 옮긴다(안 옮기면 그 뒤 쓰기가 전부 거절된다 —
+        // 30차에 실제로 그렇게 `entitlementSnapshotComplete` 가 영영 안 섰다).
+        guard var accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else { return }
 
         var familyGroupOK = false
         var entitlementOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
-            guard activeUserID == userID, generation == refreshGeneration,
-                  sessionStillCurrent(userID, token) else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
+            let groupWrite = entitlementWriter.write(accessTicket, "family group") {
+                $0.familyGroup = nextFamilyGroup
+            }
+            guard groupWrite == .applied else { return }
             familyGroup = nextFamilyGroup
-            accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
             familyGroupOK = true
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
@@ -218,8 +212,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
-            guard activeUserID == userID, generation == refreshGeneration,
-                  sessionStillCurrent(userID, token) else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
             // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
             // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
             // ⚠ **plan 을 토큰 회전보다 먼저 적용한다**(2026-09-01 리뷰). 둘 다 출처 토큰을
@@ -229,17 +222,36 @@ final class SocialFeatureViewModel: ObservableObject {
             if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
-                // ⚠ **굴린 뒤에는 기준 토큰도 갱신한다**(2026-09-01 리뷰). 이 값으로 아래
-                // 마지막 가드를 보는데, 옛 토큰 그대로 두면 **방금 내가 굴린 것 때문에**
-                // 그 가드가 항상 실패해 `entitlementSnapshotComplete` 가 서지 않는다 —
-                // 그러면 `plan_changed` 핸들러가 정합화를 건너뛰어, 필드를 다 갱신하고도
-                // 이미 예약된 클론 오디오가 그대로 남는다.
-                effectiveToken = rolledToken
+                // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
+                //
+                // ⚠ **계정 id 만 보고 받으면 안 된다**(2026-09-02 리뷰). `onRolledToken` 은
+                //   출처 토큰을 에폭으로 쓰는 CAS 라, 그 사이 **같은 계정으로 재로그인**하면
+                //   회전은 거절된다 — 그런데 id 는 같으므로 여기서 새 세션의 표를 덥석 받게
+                //   되고, 옛 요청이 그 표로 구독·plan 을 새 세션에 발행한다.
+                //   `isRefreshing` 때문에 새 세션의 갱신이 건너뛰어졌으면 그 옛 값이 그대로
+                //   남아, 무료면 되돌릴 수 없는 강등이·유료면 남은 접근이 된다.
+                //
+                //   받는 조건은 **우리가 굴린 바로 그 토큰**일 때 하나다. 아니면 회전이
+                //   우리 것이 아니었다는 뜻이므로 이 회차를 통째로 버린다.
+                guard let moved = entitlementWriter.ticket(),
+                      moved.userID == userID,
+                      moved.token == rolledToken
+                else { return }
+                accessTicket = moved
             }
+            let subscriptionWrite = entitlementWriter.write(accessTicket, "subscription") {
+                $0.subscriptionResponse = resolvedSubscription
+            }
+            guard subscriptionWrite == .applied else { return }
             subscription = resolvedSubscription
-            accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan {
-                accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan)
+                // ⚠ 위 두 쓰기와 **같은 규칙**이다 — 문이 거절하면 그 뒤도 전부 옛 세션의
+                // 것이므로 반영하지 않는다(2026-09-02 리뷰). 결과를 버리면 구독은 새 값인데
+                // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
+                let planWrite = entitlementWriter.write(accessTicket, "auth/me plan") {
+                    $0.userPlan = freshPlan
+                }
+                guard planWrite == .applied else { return }
                 // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
                 // 안드로이드 `PlanChangeSyncWorker` 와 같은 규칙). 기간 중 환불·회수는
                 // `plan_changed` 로 오는데 배경 경로는 이 갱신 하나만 돈다 — 캐시에 남은
@@ -268,8 +280,7 @@ final class SocialFeatureViewModel: ObservableObject {
             ))
         }
 
-        guard activeUserID == userID, generation == refreshGeneration,
-              sessionStillCurrent(userID, effectiveToken) else { return }
+        guard activeUserID == userID, generation == refreshGeneration else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
@@ -290,13 +301,16 @@ final class SocialFeatureViewModel: ObservableObject {
         // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
         // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
         let generation = refreshGeneration
+        guard let accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else { return }
         do {
             let nextSubscription = try await api.getSubscription(token: token)
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
-            guard activeUserID == userID, generation == refreshGeneration,
-                  sessionStillCurrent(userID, token) else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
+            let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
+                $0.subscriptionResponse = nextSubscription
+            }
+            guard silentWrite == .applied else { return }
             subscription = nextSubscription
-            accessSnapshotStore.updateSubscription(userID: userID, response: nextSubscription)
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
         }

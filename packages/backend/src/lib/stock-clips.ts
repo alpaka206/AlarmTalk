@@ -95,6 +95,62 @@ export const STOCK_CLIP_PRESETS = [
       ],
     },
   },
+  // 운세 5문구 — variant 순서가 CLONE_FORTUNE_THEMES(luck/caution/wealth/health/relationship)
+  // 와 반드시 일치해야 한다. 클라가 사주+날짜로 **온디바이스** 인덱스를 고르므로 서버가
+  // 개인정보를 읽지 않고, 문구도 누구에게나 맞는 말이어야 한다(오락용임을 문장이 밝힌다).
+  {
+    category: 'fortune',
+    texts: {
+      ko: [
+        '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+        '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+        '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+        '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+        '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+      ],
+      // ⚠ 임시 — 아래 STOCK_CLIP_PLACEHOLDER_LANGUAGES 참조.
+      en: [
+        '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+        '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+        '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+        '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+        '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+      ],
+      ja: [
+        '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+        '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+        '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+        '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+        '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+      ],
+    },
+  },
+  // 사랑 3문구 — 유료 클론과 같은 3종이다.
+  // ⚠ **기본 목소리는 연인이 아니다.** 클론은 사용자가 등록한 실제 사람 목소리라 사적인
+  //   반말이 성립하지만, 기본 목소리는 앱이 주는 목소리다. 응원·다정함까지만 가고 연애
+  //   감정 표현으로 넘어가지 않는다 — 넘어가면 기본 목소리 4종이 갑자기 사귀는 사이처럼
+  //   말한다(`docs/product/stock-clip-scripts.md`).
+  {
+    category: 'love',
+    texts: {
+      ko: [
+        '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+        '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+        '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+      ],
+      // ⚠ 임시 — 아래 STOCK_CLIP_PLACEHOLDER_LANGUAGES 참조.
+      en: [
+        '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+        '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+        '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+      ],
+      ja: [
+        '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+        '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+        '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+      ],
+    },
+  },
   {
     // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 인사 샘플(미리듣기). 같은 문장을
     // 4개 목소리로 들려줘야 음색 비교가 되므로 보이스별 개별 멘트 없이 공통 문구 하나다.
@@ -112,6 +168,28 @@ export const STOCK_CLIP_PRESETS = [
     },
   },
 ] as const;
+
+/**
+ * ⚠⚠ **출시 전에 반드시 교체할 자리.** 여기 적힌 (카테고리 → 언어) 의 문구는 **한국어를
+ * 그대로 복사해 둔 임시값**이다. 그 언어 사용자에게는 **뜻이 통하지 않는 오디오**가 나간다.
+ *
+ * 왜 이렇게 뒀나(2026-09-02): 운세·사랑을 기본 목소리에도 열어 유료/무료의 문구 목록 차이를
+ * 없애기로 했는데, 확정된 대사가 한국어뿐이었다. 목록만 먼저 통일하고 en·ja 대사는 나중에
+ * 채우기로 한 결정이라, **자리를 비워 두는 대신 눈에 띄게 표시**한다.
+ *
+ * 교체 절차:
+ *  1. `docs/product/stock-clip-scripts.md` 에 en·ja 대사를 확정해 적는다.
+ *  2. 여기 `texts.en` / `texts.ja` 를 그 대사로 바꾸고 이 표에서 해당 줄을 **지운다**.
+ *  3. `POST /api/admin/seed-stock-clips` 로 재시드한다(문구가 바뀌면 클립도 다시 합성된다).
+ *
+ * 회귀 방지: `test/stock-clip-placeholders.test.ts` 가 (a) 여기 없는데 ko 와 같은
+ * 문구를 쓰는 언어를 잡고, (b) 여기 있는데 실제로는 ko 와 달라진 줄(=이미 교체됐는데
+ * 표만 남은 것)을 잡는다. 즉 이 표와 실제 문구는 항상 일치한다.
+ */
+export const STOCK_CLIP_PLACEHOLDER_LANGUAGES: Readonly<Record<string, readonly string[]>> = {
+  fortune: ['en', 'ja'],
+  love: ['en', 'ja'],
+};
 
 /**
  * 무료 플랜이 알람 버킷으로 고를 수 있는 카테고리(greeting 제외). 스톡 프리셋이 단일
@@ -1142,8 +1220,8 @@ export async function generateStockClip(
           sql: `INSERT OR IGNORE INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format, mime_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 audio_url, audio_object_key, audio_format)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1158,7 +1236,6 @@ export async function generateStockClip(
             audioUrl,
             audioObjectKey,
             generated.outputFormat,
-            generated.mimeType,
           ],
         });
         return {
@@ -1183,8 +1260,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format, mime_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,
@@ -1199,7 +1276,6 @@ export async function generateStockClip(
         audioUrl,
         audioObjectKey,
         generated.outputFormat,
-        generated.mimeType,
       ],
     });
     return { inserted: true as const, messageId, text: displayText, audioUrl };

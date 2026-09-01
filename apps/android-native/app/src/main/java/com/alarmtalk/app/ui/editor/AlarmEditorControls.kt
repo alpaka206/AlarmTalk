@@ -560,36 +560,44 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "love" to R.string.editor2_cat_love,
 )
 
-/**
- * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
- * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
- * 백엔드 확정 무료 버킷(stock-clips.ts FREE_BUCKET_CATEGORIES)과 동일: 약 + 날씨.
- * 순서: 추가 설정이 필요 없는 '약'이 먼저. 다만 이건 **직전에 고른 테마가 없을 때만** 쓰는
- * 최후 폴백이다 — 마지막에 고른 테마가 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket).
- * 이 순서를 '항상 적용되는 기본값'으로 되돌리면 날씨로 저장해도 새 알람이 매번 약으로 돌아간다.
- */
-internal val FreeBucketOrder: List<String> = listOf("medication", "weather")
-
-/** 버킷 칩 라벨. 카테고리 라벨 문자열을 재사용한다(기상·약 …). */
-internal fun freeBucketLabelRes(category: String): Int = when (category) {
-    // 무료 날씨 버킷 — 유료 랜덤 컨텍스트와 같은 '날씨' 라벨을 재사용한다.
-    "weather" -> R.string.editor2_ctx_wake_weather
-    else -> (TtsCategories.firstOrNull { it.first == category }?.second) ?: R.string.editor2_cat_morning
-}
 
 /** stockClips manifest 에서 (해당 보이스·언어) 로 실제 존재하는 무료 버킷을 노출 순서대로. */
+/**
+ * stockClips manifest 에서 (해당 보이스·언어) 로 **완전히** 준비된 무료 버킷을 노출 순서대로.
+ *
+ * ⚠ **'하나라도 있으면' 이 아니라 '전부 있어야' 한다**(2026-09-02 리뷰). 매니페스트는
+ * 클립이 하나 구워질 때마다 그 카테고리를 곧바로 노출한다 — 시딩이 도는 중에는
+ * **부분 세트**가 보인다는 뜻이다. 그때 고르면 `bindStockBucketClips` 가 **그 순간 보이는
+ * variant 만** 알람에 박아 두고, `StockClipLanguageRebinder` 는 같은 언어의 기존 버킷을
+ * 나중에 넓혀 주지 않는다 — 시딩 중에 만든 알람이 **영구히 부분 세트**로 남는다.
+ * 조건형(날씨·운세)에서는 그게 곧 엉뚱한 조건의 클립이 나가는 것이다.
+ *
+ * 클론 쪽은 `ClipPreparationGate.hasCompleteCloneBucket` 이 같은 일을 하는데,
+ * **기본(시스템) 목소리는 그 관문을 그냥 지난다**(선다운로드 대상이라 일부러 그렇게 뒀다).
+ * 그래서 그 완전성 판정이 여기 있어야 한다.
+ *
+ * @param expectedVariants 서버가 내려준 카테고리별 세트 크기. **null 이면 막지 않는다** —
+ *   못 물어본 것이 사용자를 막는 근거가 되면 안 된다(관문들과 같은 규약).
+ */
 internal fun freeBucketsFor(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     voiceProfileId: String?,
     language: String,
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
 ): List<String> {
     if (voiceProfileId.isNullOrBlank()) return emptyList()
-    val available = stockClips
+    val variantsByCategory = stockClips
         .asSequence()
         .filter { it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language }
-        .mapNotNull { it.category }
-        .toSet()
-    return FreeBucketOrder.filter { it in available }
+        .mapNotNull { clip -> clip.category?.let { it to clip.variant } }
+        .groupBy({ it.first }, { it.second })
+    return FreeBucketOrder.filter { category ->
+        val variants = variantsByCategory[category]?.toSet() ?: return@filter false
+        val expected = expectedVariants?.countFor(category, isSystemVoice = true)
+        // 매니페스트를 못 받았거나 서버가 개수를 모르면 예전대로 '있으면 노출' 이다.
+        if (expected == null || expected <= 0) return@filter true
+        variants == (0 until expected).toSet()
+    }
 }
 
 // 문구 컨텍스트의 정규화·기본값용 정식 집합. preset 은 새 알람의 보이지 않는 기본값이자 시스템
@@ -622,3 +630,37 @@ internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "medication" to R.string.editor2_ctx_medication,
     ManualMessageContext to R.string.editor_msg_mode_manual,
 )
+
+/**
+ * 스톡 클립을 쓰는 목소리(무료 플랜 · 기본 목소리)가 고를 수 있는 버킷 category — **노출 순서**.
+ *
+ * ⚠ **손으로 적지 않는다.** [EditorMessageContexts] 를 [clonePrerenderBucketCategoryFor] 로
+ * 옮긴 것이 전부다. 2026-09-02 전에는 여기가 `listOf("medication", "weather")` 라, 같은
+ * '문구 종류' 가 **유료는 5종 · 무료는 2종**으로 갈라져 있었다 — 그 차이는 제품 결정이 아니라
+ * *기본 목소리에 운세·사랑 클립이 없었다*는 사정이었고, 클립을 채우고 나니 남을 이유가 없었다.
+ * 목록을 두 벌로 두면 한쪽만 늘어나는 사고가 다시 난다.
+ *
+ * 실제 노출은 stockClips manifest 와 교차한다([freeBucketsFor]) — 서버에 카테고리를
+ * 추가하고 재시드하면 앱 수정 없이 칩이 늘어난다. 아직 안 구워진 카테고리는 저절로 빠진다.
+ *
+ * ⚠ 이 순서는 **직전에 고른 테마가 없을 때만** 쓰는 최후 폴백이다 — 마지막에 고른 테마가
+ * 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket). '항상 적용되는 기본값' 으로
+ * 되돌리면 날씨로 저장해도 새 알람이 매번 첫 값으로 돌아간다.
+ */
+internal val FreeBucketOrder: List<String> = EditorMessageContexts
+    // ⚠ **'직접 입력' 을 먼저 걷어내야 한다.** `clonePrerenderBucketCategoryFor` 는 모르는
+    //   값을 `preset` 으로 접으므로(`normalizedRandomPromptContext`), 그냥 흘리면 manual 이
+    //   **greeting 으로 둔갑해** 목록에 같은 버킷이 두 번 들어온다.
+    //
+    // ⚠ **'기본 인사말'(preset → greeting)도 뺀다**(2026-09-02 리뷰). 목록을 합칠 때
+    //   이것까지 넣었다가 되돌렸다. 이유가 둘인데 **둘 다 스스로 충분하다**:
+    //    1. **내용이 다르다.** 스톡 `greeting` 은 목소리 미리듣기용 자기소개다
+    //       ("만나서 반가워요, 앞으로 매일 깨워 드릴게요") — 매일 아침 울릴 문구가 아니다.
+    //       클론의 `preset` 은 **생성된 기상 인사**라 같은 이름의 다른 것이다.
+    //    2. **서버가 막는다.** `alarm-mutation.ts` 가 시스템 보이스 + greeting 을
+    //       `INVALID_BUCKET_ID`(400) 로 거절한다 — 미리듣기 클립을 알람으로 돌려 쓰는
+    //       우회를 막는 정책이다. 그대로 뒀으면 알람이 로컬에만 남고 서버 sync 가 영영 실패한다.
+    //   기본 목소리에도 '기본 인사말' 을 주려면 **기상 인사 스톡 클립을 따로 구워야** 한다
+    //   (미리듣기 클립을 재사용하는 것이 아니라). 그건 콘텐츠 작업이라 별도로 다룬다.
+    .filterNot { (context, _) -> context == ManualMessageContext || context == DefaultRandomPromptContext }
+    .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }

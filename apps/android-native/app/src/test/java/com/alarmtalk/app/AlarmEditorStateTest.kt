@@ -44,6 +44,83 @@ class AlarmEditorStateTest {
         assertEquals("greeting", clonePrerenderBucketCategoryFor("preset"))
     }
 
+    /**
+     * **문구 목록은 하나다 — 유료·무료로 갈리지 않는다**(2026-09-02).
+     *
+     * 그전에는 `FreeBucketOrder` 가 `listOf("medication", "weather")` 로 손으로 적혀 있어,
+     * 같은 '문구 종류' 가 **유료 5종 · 무료 2종**으로 갈라져 있었다. 그 차이는 제품 결정이
+     * 아니라 *기본 목소리에 운세·사랑 클립이 없었다*는 사정이었고, 클립을 채우고 나니 남을
+     * 이유가 없었다. 다시 손으로 적기 시작하면 한쪽만 늘어나는 사고가 그대로 돌아온다.
+     *
+     * 등급으로 갈리는 것은 **직접 입력 잠금 하나뿐**이다(`manualLocked = freeVoiceTier`).
+     */
+    @Test
+    fun freeBucketOrderIsDerivedFromTheOneMessageList() {
+        val fromMessageList = EditorMessageContexts
+            .filterNot { (context, _) ->
+                context == ManualMessageContext || context == DefaultRandomPromptContext
+            }
+            .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }
+        assertEquals(fromMessageList, FreeBucketOrder)
+        // ⚠ **'직접 입력' 은 걷어내고 매핑해야 한다.** 그냥 흘리면 모르는 값이 `preset` 으로
+        //   접혀 **greeting 으로 둔갑**하고, 같은 버킷이 목록에 두 번 들어온다.
+        assertEquals("greeting", clonePrerenderBucketCategoryFor(ManualMessageContext))
+        assertEquals(FreeBucketOrder.distinct(), FreeBucketOrder)
+        // ⚠ **'기본 인사말'(greeting)은 스톡 목소리의 알람 테마가 아니다**(2026-09-02 리뷰).
+        //   스톡 greeting 은 목소리 미리듣기용 자기소개라 매일 아침 울릴 문구가 아니고,
+        //   서버도 시스템 보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절한다
+        //   (`alarm-mutation.ts`). 넣었다가 되돌린 자리이므로 다시 넣지 말 것 —
+        //   넣으려면 **기상 인사 스톡 클립을 따로 구워야** 한다.
+        assertFalse("greeting" in FreeBucketOrder)
+        assertEquals(
+            listOf("weather", "fortune", "love", "medication"),
+            FreeBucketOrder,
+        )
+    }
+
+    /**
+     * **시딩이 도는 중에는 그 카테고리를 감춘다.**
+     *
+     * 매니페스트는 클립이 하나 구워질 때마다 카테고리를 곧바로 노출한다. 그때 고르면
+     * `bindStockBucketClips` 가 **그 순간 보이는 variant 만** 알람에 박아 두고,
+     * `StockClipLanguageRebinder` 는 같은 언어의 기존 버킷을 나중에 넓혀 주지 않는다 —
+     * 시딩 중에 만든 알람이 **영구히 부분 세트**로 남는다. 조건형(날씨·운세)에서는 그게
+     * 곧 엉뚱한 조건의 클립이 나가는 것이다(2026-09-02 리뷰).
+     */
+    @Test
+    fun partialBucketsStayHiddenUntilFullySeeded() {
+        fun clip(category: String, variant: Int) = com.alarmtalk.app.network.StockClip(
+            messageId = "m-$category-$variant",
+            voiceProfileId = "vp-1",
+            category = category,
+            language = "ko",
+            variant = variant,
+            text = "t",
+            audioUrl = "r2://x",
+        )
+        val expected = com.alarmtalk.app.network.ExpectedVariantCounts(
+            system = mapOf("medication" to 2, "love" to 3),
+            clone = emptyMap(),
+        )
+        // love 는 3개가 있어야 하는데 2개뿐 = 시딩 중 → 감춘다. medication 은 완전하다.
+        val partial = listOf(
+            clip("medication", 0), clip("medication", 1),
+            clip("love", 0), clip("love", 1),
+        )
+        assertEquals(listOf("medication"), freeBucketsFor(partial, "vp-1", "ko", expected))
+
+        // 마지막 하나가 채워지면 그때 나타난다 — 앱 수정 없이.
+        val complete = partial + clip("love", 2)
+        assertEquals(listOf("love", "medication"), freeBucketsFor(complete, "vp-1", "ko", expected).sorted())
+
+        // ⚠ **매니페스트를 못 받았으면 막지 않는다** — 못 물어본 것이 사용자를 막는 근거가
+        //   되면 안 된다(관문들과 같은 규약).
+        assertEquals(
+            listOf("love", "medication"),
+            freeBucketsFor(partial, "vp-1", "ko", null).sorted(),
+        )
+    }
+
     @Test
     fun bucketCategoryMapsBackToItsMessageContext() {
         // clonePrerenderBucketCategoryFor 와 짝. 한쪽만 고치면 옛 알람 복구가 조용히 어긋난다.

@@ -91,6 +91,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
     internal val accessSnapshotStore = AccessSnapshotStore(application)
+    /** 권한 스냅샷에 쓰는 **유일한 문**. 직접 스냅샷을 쓰지 말 것. */
+    internal val entitlementWriter = EntitlementWriter(application)
     private val initialAuthSession = authSessionStore.read()
     private val initialAccessSnapshot = initialAuthSession
         ?.user
@@ -1092,16 +1094,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
         when {
-            // 무료·기본 목소리 경로: 사용자가 고른 것이 '테마(버킷)' 그 자체다.
-            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) ->
+            // 기본 목소리 경로: 고른 것이 '테마(버킷)' 그 자체다.
+            //
+            // ⚠ **테마와 문구 종류를 같이 적는다**(2026-09-02). 문구 목록을 하나로 합치면서
+            //   둘은 `clonePrerenderBucketCategoryFor` 로 1:1 이 됐는데, 여기서 테마만
+            //   적으면 `last_message_context` 가 낡은 값에 고정된다. 그러면 새 알람이
+            //   그 낡은 종류로 열리고, 편집기의 버킷 해석이 그걸 먼저 보므로
+            //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
+            //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
+            //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+                randomPromptContextForBucket(bucket)
+                    ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+                Unit
+            }
             // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
             // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
-            // (love→love, wake_fortune→fortune, preset→greeting …).
-            // 이걸 테마로 저장하면 두 가지가 깨진다(Codex #660):
-            //  - greeting·love·fortune 은 FreeBucketOrder 밖이라 읽을 때 걸러지는데, 그 전에
-            //    이미 저장돼 있던 유효한 테마(weather)를 덮어써 다음 기본 목소리 알람이 '약' 으로 되돌아간다.
-            //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
+            // (love→love, wake_fortune→fortune, preset→greeting …). 그걸 테마로 저장하면
+            // 정작 문구 종류가 기록되지 않아 다음 클론 알람이 옛 문구로 열린다(Codex #660).
+            //
+            // ⚠ 2026-09-02 에 근거 하나가 사라졌다 — 그전에는 "greeting·love·fortune 은
+            //   FreeBucketOrder 밖이라 읽을 때 걸러진다" 도 이유였는데, 이제 다섯이 모두
+            //   목록 안이다. 남은 이유(종류 미기록)만으로도 이 갈래는 그대로 옳다.
             bucket != null -> rememberContext()
             draft.voiceRandomPrompt -> rememberContext()
             // 직접 입력: **문구까지** 기억한다. 종류만 기억하면 새 알람이 빈 직접입력으로 열려
@@ -1185,9 +1200,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementChecked = false
     }
 
-    internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateSubscription(userId, response)
+    /**
+     * ⚠ **표(`AccessTicket`)를 인자로 받는 이유** — 컴파일러가 강제하기 위해서다.
+     * 이 함수는 예전에 지금 계정을 스스로 읽어 키를 잡았고, 그래서 `await` 뒤에 부르면
+     * **전환된 계정의 스냅샷에 남의 구독을 적었다**(2026-09-02 감사에서 가드 없는 writer
+     * 2곳 중 하나로 발견됨). 표를 받게 하면 호출부가 **요청 전에** 뜰 수밖에 없다.
+     */
+    internal fun saveSubscriptionSnapshot(
+        ticket: AccessTicket,
+        response: BillingSubscriptionResponse?,
+    ): EntitlementWrite {
+        val result = entitlementWriter.write(ticket, "subscription snapshot") {
+            it.copy(subscriptionResponse = response)
+        }
         // ⚠ **여기서 `users.plan` 을 같이 쓰지 않는다**(2026-09-01 리뷰). 이 자리가 아는
         // plan 은 **마지막으로 `/auth/me` 를 받았을 때의 값**이라, 앱을 닫아 둔 사이 강등된
         // 계정이 `plan_changed` 를 놓치면 옛 유료 값이다. 보류에서는 `/billing/subscription`
@@ -1198,12 +1223,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 그래서 plan 은 **방금 받아 온 경로만** 적는다 — `refreshAppSession`(시작 시·
         // plan_changed 시) 과 `PlanChangeSyncWorker`. 안 적혀 있으면 판정기가 구독·그룹으로
         // 답하고(예전 동작), 그건 옛 값을 심는 것보다 낫다.
+        return result
     }
 
-    internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateFamilyGroup(userId, response)
-    }
+    internal fun saveFamilyGroupSnapshot(
+        ticket: AccessTicket,
+        response: FamilyGroupCurrentResponse?,
+    ): EntitlementWrite =
+        entitlementWriter.write(ticket, "family group snapshot") { it.copy(familyGroup = response) }
+
+    /** 권한 스냅샷을 쓰려면 **요청 전에** 이걸 뜬다(`EntitlementWriter` 참조). */
+    internal fun accessTicket(): AccessTicket? = entitlementWriter.ticket()
 
     internal fun clearCurrentAccessSnapshot() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return

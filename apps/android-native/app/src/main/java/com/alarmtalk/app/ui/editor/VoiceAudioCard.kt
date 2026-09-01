@@ -103,9 +103,6 @@ internal fun VoiceAudioCard(
     onVoiceUnavailable: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
     previewPreparingVoiceId: String? = null,
-    // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
-    // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
-    restrictToWeatherMedication: Boolean,
     audioMessage: String?,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
@@ -117,9 +114,19 @@ internal fun VoiceAudioCard(
     // '다시 녹음' — 재생 중인 미리듣기를 멈추고 기존 녹음을 비워 대기(멈춘) 상태로 되돌린다.
     onDiscardRecording: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
+    /**
+     * 이 목소리가 **미리 구워 둔 스톡 클립**으로 우는가(무료 플랜이거나 기본 목소리).
+     *
+     * ⚠ **여기 쓰이는 곳은 요약 행의 '준비 중' 판정 하나뿐이다.** 목록을 자르는 데는
+     * 쓰지 않는다 — 문구 목록은 등급으로 갈리지 않는다(`docs/spec/voice-and-message.md` §2).
+     *
+     * 왜 필요한가: 스톡 클립 목소리는 클립을 받아 붙이기 전까지 `voiceText` 도 버킷도
+     * 비어 있어 '아직 아무것도 안 골랐다' 가 참이다. 등록(클론) 목소리는 **정상 상태가
+     * 그렇다** — 버킷이 저장 시점에 붙으므로 편집 내내 둘 다 비어 있다. 그래서 이걸
+     * 안 보고 판정하면 클론 알람의 문구 행이 **항상** "문구를 준비하고 있어요" 가 된다.
+     */
+    usesStockClips: Boolean,
     onOpenRandomPromptSettings: () -> Unit,
-    // 무료 문구 행 — 테마(버킷) 선택 pane 을 연다(유료의 문구 pane 과 같은 자리).
-    onOpenFreeBucketSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -237,8 +244,7 @@ internal fun VoiceAudioCard(
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
                     val losesManualText = readySystemProfiles.any { it.id == option.id } &&
                         editor.voiceText.isNotBlank() &&
-                        !editor.voiceRandomPrompt &&
-                        !editor.isActiveBucketAlarm()
+                        editor.isManualForSave()
                     if (losesManualText) {
                         pendingVoiceSwitch = option
                     } else {
@@ -271,27 +277,23 @@ internal fun VoiceAudioCard(
                         border = wakerCardBorder(),
                     ) {
                         Column {
-                            if (restrictToWeatherMedication) {
-                                FreeThemeSummaryRow(
-                                    selectedBucket = editor.selectedBucket,
-                                    weatherCity = editor.voiceWeatherCity,
-                                    // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                                    manualSelected = !editor.voiceRandomPrompt &&
-                                        !editor.hasBucketMessageChoice(),
-                                    // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
-                                    // 아래 행이 이걸 `manualSelected` 보다 먼저 본다.
-                                    nothingChosenYet = editor.voiceText.isBlank() &&
-                                        !editor.hasBucketMessageChoice(),
-                                    onClick = onOpenFreeBucketSettings,
-                                )
-                            } else {
-                                MessageModeSummaryRow(
-                                    // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                                    isManual = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
-                                    randomContext = editor.voiceRandomContext,
-                                    onClick = onOpenRandomPromptSettings,
-                                )
-                            }
+                            // ⚠ **행은 하나다**(2026-09-02). 유료·무료가 같은 문구 목록을
+                            // 쓰므로 요약 행도 갈리지 않는다 — 갈라 두면 같은 상태를 두 곳이
+                            // 다르게 읽는 사고가 반복된다.
+                            MessageModeSummaryRow(
+                                // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                                isManual = editor.isManualForDisplay(),
+                                randomContext = editor.voiceRandomContext,
+                                weatherCity = editor.voiceWeatherCity,
+                                // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
+                                // 이 행이 이걸 `isManual` 보다 먼저 본다.
+                                // ⚠ **스톡 클립 목소리에서만 묻는다** — 클론은 버킷이
+                                // 저장 시점에 붙어 편집 내내 비어 있는 게 정상이다.
+                                nothingChosenYet = usesStockClips &&
+                                    editor.voiceText.isBlank() &&
+                                    !editor.hasBucketMessageChoice(),
+                                onClick = onOpenRandomPromptSettings,
+                            )
                             AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
                             VoiceVolumeSummaryRow(
                                 volumePercent = editor.voiceVolumePercent,
@@ -611,228 +613,51 @@ private fun VoicePreviewButton(
     }
 }
 
-// 무료 문구 행 — 현재 테마(기상/약 …)를 값으로 보여주고 누르면 테마 선택 pane 을 연다.
-// 유료의 문구 행(MessageModeSummaryRow)과 같은 문법(제목/값 + 셰브론)으로 UI 를 통일한다.
-@Composable
-private fun FreeThemeSummaryRow(
-    selectedBucket: String?,
-    weatherCity: String,
-    /**
-     * 직접 입력이 선택됐는가. 판정식은 CLAUDE.md 가 못 박은 일곱 자리와 **철자까지 같게**
-     * `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.
-     */
-    manualSelected: Boolean,
-    /**
-     * 아직 아무것도 정해지지 않았는가(`voiceText` 도 비고 버킷도 없음).
-     * ⚠ [manualSelected] 보다 **먼저** 본다 — 아래 주석 참조.
-     */
-    nothingChosenYet: Boolean,
-    onClick: () -> Unit,
-) {
-    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
-    val isOnline by rememberIsOnline()
-    val manualLabel = stringResource(R.string.editorp_random_manual_title)
-    val valueLabel = when {
-        // ⚠ **아직 정해진 게 없는 창을 '직접 입력' 이라고 말하지 말 것**(2026-08-18).
-        // `manualSelected` 는 `!voiceRandomPrompt && !hasBucketMessageChoice()` 라, 클립이
-        // 아직 안 붙은 이 창에서 **필연적으로 true** 가 된다. 그래서 예전에는 클립을 받는
-        // 중인데 행이 "직접 입력 문구" 라고 말했고 — 이 창의 사용자는 무료라 **직접 입력이
-        // 잠겨 있는 사람**이었다(`manualLocked = freeVoiceTier`). 아래 두 갈래가 이미
-        // 있었는데도 `manualSelected` 가 먼저 걸려 **닿지 못했다.**
-        nothingChosenYet && !isOnline -> stringResource(R.string.editor_free_bucket_offline)
-        nothingChosenYet -> stringResource(R.string.editor_free_bucket_loading)
-        // ⚠ **직접 입력을 '준비 중' 으로 말하지 말 것.** 직접 입력을 고르면 selectedBucket
-        // 이 null 이 되는데, 예전에는 버킷만 보고 판정해서 문구를 넣어 놨는데도 행이
-        // "문구를 준비하고 있어요" 라고 **거짓말**했다.
-        // 위 `MessageModeSummaryRow` 와 같은 규약 — 종류만 말하고 문장은 싣지 않는다.
-        manualSelected -> manualLabel
-        // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
-        selectedBucket == "weather" && weatherCity.isNotBlank() ->
-            "${stringResource(freeBucketLabelRes(selectedBucket))} · $weatherCity"
-        selectedBucket != null -> stringResource(freeBucketLabelRes(selectedBucket))
-        !isOnline -> stringResource(R.string.editor_free_bucket_offline)
-        else -> stringResource(R.string.editor_free_bucket_loading)
-    }
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
-                MutedText(valueLabel)
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
 /**
- * 무료 테마(버킷) 선택 pane — 진동·스누즈와 같은 드릴인 서브페이지 문법.
- * 버킷 안 개별 문구는 노출하지 않고, 선택하면 그 버킷의 N개 클립이 캐시되어
- * 매 울림마다 순차 회전한다.
+ * '문구' 단일 선택기 요약 행 — 현재 선택을 보여주고 누르면 선택 pane 을 연다.
+ *
+ * ⚠ **이 행 하나가 유료·무료 양쪽을 다 그린다**(2026-09-02 통합). 그전에는 무료·기본
+ * 목소리용 `FreeThemeSummaryRow` 가 따로 있었고, 같은 자리를 다른 규칙으로 채워 계속
+ * 어긋났다 — 한쪽만 '날씨 · 서울' 로 도시를 붙였고, 한쪽만 준비 중/오프라인을 구분했다.
+ * 규칙은 이제 여기 한 곳이다.
  */
-@Composable
-internal fun FreeBucketSettingsPane(
-    buckets: List<String>,
-    selectedBucket: String?,
-    onSelectBucket: (String) -> Unit,
-    onDismiss: () -> Unit,
-    /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
-    onManualLocked: () -> Unit,
-    /**
-     * '직접 입력' 이 잠겨 있는가. **잠그는 기준은 무료 플랜뿐이다.**
-     *
-     * ⚠ **기본 목소리라고 잠그지 말 것**(2026-08-11). 유료 사용자는 기본 목소리로도 직접
-     * 입력을 쓸 수 있고, 비용은 **직접 입력 월 한도**가 센다(서버 `tts.ts` 의
-     * `manualTextOnSystemVoice`). 예전에는 유료여도 기본 목소리면 잠겨서, 이용권을 산
-     * 사람이 **왜 안 되는지 알 수 없는 벽**을 만났다.
-     * (동적 문구 — 날씨·운세 — 는 여전히 기본 목소리에서 막는다. 이 목록에 아예 없다.)
-     */
-    manualLocked: Boolean,
-    /** 직접 입력이 선택됐는가(라디오 표시용). */
-    manualSelected: Boolean = false,
-    /**
-     * 이번 달 직접 입력 **남은 횟수 / 전체 한도**. 유료 pane(`MessageSettingsPane`)과 **같은
-     * 모양**으로 라벨 옆에 붙인다 — 기본 목소리로도 직접 입력을 쓸 수 있으므로(2026-08-11)
-     * 여기서도 남은 횟수를 알려 줘야 한다. 예전에는 유료 pane 에만 있어, 기본 목소리를 쓰는
-     * 사용자는 몇 번 남았는지 모른 채 한도 초과 오류로만 알게 됐다.
-     * 둘 중 하나라도 없거나 한도가 0 이면 붙이지 않는다(무료는 어차피 잠겨 있다).
-     */
-    manualRemaining: Int? = null,
-    manualLimit: Int? = null,
-    /** 잠기지 않았을 때 '직접 입력' 을 고른 경우. */
-    onSelectManual: () -> Unit = {},
-    /**
-     * 날씨를 골랐을 때 보여줄 지역 요약. null 이면 행을 그리지 않는다.
-     *
-     * ⚠ 유료 pane(`AlarmRandomPromptSettings`)은 고른 값을 같은 자리에서 보여주고
-     * 같은 자리에서 고치는데, 무료 pane 만 **고르고 나면 무엇을 골랐는지 볼 수 없었다**
-     * (2026-08-11 지적). 등록한 값을 확인·변경할 길이 화면에 없으면 다시 고르는 것 말고는
-     * 방법이 없다.
-     */
-    weatherRegionSummary: String? = null,
-    onChangeWeatherRegion: (() -> Unit)? = null,
-    /**
-     * 직접 입력으로 넣은 문구. 선택돼 있으면 아래 상세 행에 보여준다.
-     *
-     * ⚠ **문구를 반드시 함께 보여준다.** 예전에는 이 pane 에 직접 입력 문구를 보여주는
-     * 행이 아예 없어서, 문구를 넣고 확인해도 **무슨 문구인지 화면 어디에도 안 나왔다** —
-     * 확인·수정하는 유일한 길이 '직접 입력' 행을 다시 누르는 것이었다.
-     * 생성형은 내용이 매번 새로 만들어져 틀릴 일이 없지만 직접 입력은 글자가 그대로다.
-     */
-    manualText: String = "",
-    onChangeManual: (() -> Unit)? = null,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
-            // (알람 목록·설정·법무 문서가 모두 이걸 쓴다).
-            WakerTopBar(
-                title = stringResource(R.string.editor_msg_section),
-                onBack = onDismiss,
-                modifier = Modifier.padding(top = 24.dp),
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 유료 pane·iOS `PaneScaffold` 와 같은 여백(위 주석 참조).
-                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
-                // 선택 카드와 아래 상세 카드 사이 — iOS `FreeBucketSettingsPane` 의
-                // `VStack(spacing: 16)` 과 같은 값이다(2026-08-15 지적 "안드로이드가 너무 좁다").
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                SnoozeOptionSection {
-                    buckets.forEach { bucket ->
-                        SnoozeRadioRow(
-                            label = stringResource(freeBucketLabelRes(bucket)),
-                            selected = selectedBucket == bucket,
-                            onClick = { onSelectBucket(bucket) },
-                        )
-                        SnoozeOptionDivider()
-                    }
-                    // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
-                    // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
-                    val manualBaseLabel = stringResource(R.string.editor_msg_mode_manual)
-                    // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
-                    val manualLabel = if (
-                        manualLimit != null && manualLimit > 0 && manualRemaining != null
-                    ) {
-                        "$manualBaseLabel ($manualRemaining/$manualLimit)"
-                    } else {
-                        manualBaseLabel
-                    }
-                    if (manualLocked) {
-                        SnoozeLockedRow(
-                            label = manualBaseLabel,
-                            onClick = onManualLocked,
-                        )
-                    } else {
-                        SnoozeRadioRow(
-                            label = manualLabel,
-                            selected = manualSelected,
-                            onClick = onSelectManual,
-                        )
-                    }
-                }
-                // 고른 값을 유료 pane 과 **같은 모양**으로 보여주고 같은 자리에서 고친다.
-                if (manualSelected && !manualLocked && onChangeManual != null) {
-                    RandomPromptDetailRow(
-                        title = stringResource(R.string.editorp_random_manual_title),
-                        value = manualText.ifBlank {
-                            stringResource(R.string.editorp_random_manual_empty)
-                        },
-                        onChange = onChangeManual,
-                    )
-                } else if (weatherRegionSummary != null && onChangeWeatherRegion != null) {
-                    RandomPromptDetailRow(
-                        title = stringResource(R.string.editorp_random_weather_region_title),
-                        value = weatherRegionSummary,
-                        onChange = onChangeWeatherRegion,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// '문구' 단일 선택기 요약 행 — 현재 선택(직접 입력 / 기본 인사말 / 동적 문구)을 보여주고
-// 누르면 선택 pane 을 연다. 옛 랜덤/직접입력 토글을 대체한다.
 @Composable
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
+    /** 날씨를 골랐을 때 함께 보여줄 도시. 비면 종류 이름만 나온다. */
+    weatherCity: String = "",
+    /**
+     * 아직 아무것도 정해지지 않았는가(`voiceText` 도 비고 버킷도 없음).
+     *
+     * ⚠ [isManual] **보다 먼저** 본다. 스톡 클립을 쓰는 목소리에서 클립이 아직 안 붙은
+     * 창에는 `isManual`(= `!voiceRandomPrompt && !hasBucketMessageChoice()`)이 **필연적으로
+     * true** 라, 먼저 보지 않으면 클립을 받는 중인데 행이 "직접 입력" 이라고 말한다 —
+     * 무료 사용자에게는 **잠겨 있어 고를 수도 없는** 것을 골랐다고 말하는 셈이다.
+     */
+    nothingChosenYet: Boolean = false,
     onClick: () -> Unit,
 ) {
+    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
+    val isOnline by rememberIsOnline()
+    val normalized = normalizedRandomPromptContext(randomContext)
     val valueLabel = when {
+        // ⚠ 위 [nothingChosenYet] 주석 — 이 두 갈래가 반드시 먼저다.
+        nothingChosenYet && !isOnline -> stringResource(R.string.editor_free_bucket_offline)
+        nothingChosenYet -> stringResource(R.string.editor_free_bucket_loading)
         // ⚠ **문장을 여기 붙이지 말 것**(2026-08-15 지시 "요약 행이고, 가져오는 건
         // 가져오는 거고, 왜 화면에 띄워야 하냐"). 편집기 본문은 **무엇을 골랐는지**만
         // 말한다 — 알람이 읽어 줄 문장은 문구 화면에서 본다.
         // 예전에는 `"직접 입력 문구 · <문장>"` 으로 붙였고, 재생 방식을 바꿀 때 이 줄이
         // 사라지는 카드에 실려 잠깐 읽히는 것이 계속 지적됐다.
         isManual -> stringResource(R.string.editor_msg_mode_manual)
+        // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        normalized == "wake_weather" && weatherCity.isNotBlank() ->
+            "${stringResource(R.string.editor2_ctx_wake_weather)} · $weatherCity"
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
-        normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
+        normalized == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)
-        else -> voiceOptionLabelRes(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
+        else -> voiceOptionLabelRes(RandomPromptContexts, normalized)
             ?.let { stringResource(it) }.orEmpty()
     }
     // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).

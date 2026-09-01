@@ -32,6 +32,28 @@ struct MessageSettingsPane: View {
     let savedFortuneBirthDate: String
     let savedFortuneBirthTime: String
 
+    /// 이 목소리로 **실제로 고를 수 있는** 문구 종류(`Self.options` 의 id 부분집합).
+    ///
+    /// 등록(클론) 목소리는 다섯 종류가 모두 사전렌더되므로 전부 들어온다. 기본(시스템)
+    /// 목소리는 서버에 구워 둔 스톡 클립이 있는 카테고리만 들어온다 — 시딩 중이면 그
+    /// 종류만 잠깐 빠져 보이고, 다 구워지면 앱 수정 없이 나타난다.
+    ///
+    /// ⚠ **여기서 '무료라서' 빼지 않는다.** 2026-09-02 전에는 무료·기본 목소리에 아예 다른
+    /// 화면(`FreeBucketSettingsPane`)을 보여 주며 목록을 날씨·약으로 잘랐는데, 그건 등급
+    /// 정책이 아니라 **클립이 없다**는 사정이었다. 등급으로 갈리는 것은 [manualLocked] 하나다.
+    var availableContexts: [String] = MessageSettingsPane.allContextIDs
+
+    /// **직접 입력이 잠기는가.** ⚠ 판정은 **무료 플랜 단독**이다 — 기본(시스템) 목소리를
+    /// 골랐다는 것은 이유가 되지 않는다. 유료면 기본 목소리로도 직접 입력을 쓸 수 있고
+    /// 횟수만 차감된다(2026-08-11 확정).
+    var manualLocked: Bool = false
+
+    /// 잠긴 '직접 입력' 행을 눌렀을 때 — 호출부가 유료 안내로 보낸다.
+    ///
+    /// ⚠ **이 행을 목록에서 빼지 말 것.** 빼면 유료에 무엇이 있는지 알 길이 없다 —
+    /// 안드로이드도 잠긴 행을 남긴다("유료 전환 동기 중 가장 강한 것을 잃는다").
+    var onManualLocked: () -> Void = {}
+
     let onSave: (MessageSettingsResult) -> Void
 
     /// 화면에 들어온 순간의 값 — 나갈 때 바뀐 게 있는지 판단하는 기준.
@@ -74,15 +96,50 @@ struct MessageSettingsPane: View {
         (MessageSettingsResult.manualContext, "직접 입력"),
     ]
 
+    /// 목록에 둘 수 있는 모든 종류의 id — [availableContexts] 의 기본값.
+    static let allContextIDs: [String] = options.map(\.id)
+
+    /// 잠긴 '직접 입력' 행 — 라디오 대신 자물쇠 배지를 그린다.
+    ///
+    /// ⚠ **잠기지 않았는데 자물쇠를 그리지 말 것.** 예전에는 플랜과 무관하게 늘 자물쇠였고,
+    /// 유료 사용자가 눌러도 "기본 목소리로는 직접 입력을 쓸 수 없어요" 로 막혔다.
+    @ViewBuilder
+    private func lockedManualRow(label: String) -> some View {
+        Button(action: onManualLocked) {
+            HStack(spacing: 10) {
+                Text(label)
+                    .font(theme.typography.bodyLarge)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                Spacer()
+                // ⚠ 라디오 점보다 크게 둔다(2026-08-15 지시). 안드로이드 `SnoozeLockedRow` 와 같은 값.
+                FeatureLockBadge(size: 24, iconSize: 14)
+            }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 실제로 그릴 행. '직접 입력' 은 잠겨 있어도 **언제나 남는다**([onManualLocked] 주석).
+    private var visibleOptions: [(id: String, label: String)] {
+        Self.options.filter {
+            $0.id == MessageSettingsResult.manualContext || availableContexts.contains($0.id)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     EditorCard(verticalPadding: 0) {
-                        ForEach(Array(Self.options.enumerated()), id: \.element.id) { index, option in
+                        ForEach(Array(visibleOptions.enumerated()), id: \.element.id) { index, option in
                             if index > 0 { AlarmSettingDivider() }
-                            RadioRow(label: rowLabel(option), selected: draftContext == option.id) {
-                                select(option.id)
+                            if option.id == MessageSettingsResult.manualContext, manualLocked {
+                                lockedManualRow(label: option.label)
+                            } else {
+                                RadioRow(label: rowLabel(option), selected: draftContext == option.id) {
+                                    select(option.id)
+                                }
                             }
                         }
                     }
@@ -424,9 +481,24 @@ struct MessageSettingsResult: Equatable {
 /// 안드로이드 `VoiceAudioCard.MessageModeSummaryRow` 와 같은 규약이다.
 struct MessageModeSummaryRow: View {
     let context: String
+    /// 날씨를 골랐을 때 함께 보여줄 도시. 비면 종류 이름만 나온다.
+    var weatherCity: String = ""
+    /// 아직 아무것도 정해지지 않았는가(고른 테마도 없고 문구도 없음).
+    ///
+    /// ⚠ **[context] 보다 먼저 본다.** 스톡 클립을 쓰는 목소리에서 클립이 아직 안 붙은
+    /// 창에는 context 가 기본값으로 읽혀, 먼저 보지 않으면 아직 아무것도 못 골랐는데
+    /// 행이 '기본 인사말' 이라고 단정한다.
+    var nothingChosenYet: Bool = false
     let onTap: () -> Void
 
+    @ObservedObject private var network = NetworkMonitor.shared
+
     private var summary: String {
+        // ⚠ **오프라인이면 '준비 중' 이라고 속이지 않는다.** 비행기모드에서는 영원히 오지
+        // 않을 것을 기다린다고 말하는 셈이다(안드로이드도 두 문구를 나눠 갖는다).
+        if nothingChosenYet {
+            return network.isOnline ? "문구를 준비하고 있어요" : "오프라인이라 문구를 불러오지 못했어요"
+        }
         let label: String
         switch context {
         case "wake_weather": label = "날씨"
@@ -436,6 +508,9 @@ struct MessageModeSummaryRow: View {
         case MessageSettingsResult.manualContext: label = "직접 입력"
         default: label = "기본 인사말"
         }
+        // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        let city = weatherCity.trimmingCharacters(in: .whitespaces)
+        if context == "wake_weather", !city.isEmpty { return "\(label) · \(city)" }
         return label
     }
 

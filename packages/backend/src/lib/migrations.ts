@@ -69,6 +69,44 @@ const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
   '[brightly] こんにちは!お会いできてうれしいです。[warmly] これから毎朝、私の声で気持ちよく起こしますね。よろしくお願いします!',
 ];
 
+/**
+ * 2026-09-02 확정 리터럴 — 위 36종에 **운세 5 · 사랑 3** 을 더한 것이다.
+ *
+ * 왜 더했나: 운세·사랑을 기본(시스템) 목소리에도 열어 **유료/무료의 문구 목록 차이를
+ * 없앴다**(`docs/spec/voice-and-message.md`). 그전에는 기본 목소리에 그 두 카테고리의
+ * 클립이 없어서 목록에서 아예 감췄다.
+ *
+ * ⚠ **en·ja 는 지금 한국어를 그대로 복사한 임시값**이라 새 문구가 언어별로 갈라지지 않는다
+ * (`STOCK_CLIP_PLACEHOLDER_LANGUAGES`). 진짜 대사로 교체하는 날에는 문구가 바뀌므로
+ * **또 하나의 refresh 마이그레이션이 필요하다** — `migrations-stock-refresh.test.ts` 가
+ * "최신 refresh 의 동결 사본 == 현재 STOCK_CLIP_PRESETS" 를 강제하므로 잊을 수 없다.
+ *
+ * 앞의 36종은 **글자 하나 바뀌지 않았다.** 그래서 아래 무효화는 dev/prod 에서 0행 no-op 다 —
+ * 승인된 실오디오를 지우지 않는다. 새 8종은 아직 시딩된 적이 없어 지울 것도 없다.
+ */
+const STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02 = [
+  ...STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19,
+  // 운세(fortune) — CLONE_FORTUNE_THEMES 순서(luck/caution/wealth/health/relationship).
+  '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+  '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+  '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+  '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+  '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+  // 사랑(love) — 응원·다정함까지만. 기본 목소리는 연인이 아니다.
+  '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+  '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+  '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+];
+
+const STALE_STOCK_PRESET_SUBQUERY_2026_09_02 = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )
+    AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
+      ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02.map(sqlLiteral).join(',\n      ')}
+    )`;
+
 // 시스템 보이스 preset 중 확정 리터럴(위 36종)과 문구가 다른 '낡은' 행의 id 집합.
 // 2026-07-19 시딩으로 이미 최신 문구가 들어간 DB(dev/prod)에서는 정확히 0행 = no-op.
 const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
@@ -2350,6 +2388,74 @@ export const migrations: Migration[] = [
             WHERE b.user_id = a.user_id AND b.target_user_id = a.target_user_id AND b.time = a.time
           )
         ON CONFLICT(sender_user_id, recipient_user_id, time) DO NOTHING`,
+    ],
+  },
+  {
+    id: 108,
+    name: 'drop-unused-index-and-column',
+    // 2026-09-02 구조 감사에서 **읽는 코드가 하나도 없다**고 확인된 것만 지운다.
+    // 각 항목은 반증 단계를 거쳤다(조사 → "쓰는 곳을 찾아내려 애쓴다" → 살아남은 것만).
+    // 전문: `docs/qa/structural-audit-2026-09-02.md` §5.
+    //
+    // ⚠ **여기 없는 것은 일부러 뺐다.**
+    //  - `subscriptions` 의 apple 컬럼 3개: #82 가 뺐고 **#96 이 iOS 되살리기의 일부로
+    //    의도적으로 되살렸다**(4주 전). 지금 지우면 같은 컬럼의 **세 번째 왕복**이다.
+    //  - `users.deletion_requested_at`: 「탈퇴 신청 시각 = 처리 이력 증빙이므로 유지」가
+    //    이미 문서화된 결정이다(`cleanup-audit-2026-08-01.md`). 개인정보보호법 21조 기산점.
+    //  - `generated_audio_assets.model_id`/`language`, `voice_uploads.size_bytes`/
+    //    `duration_ms`: **NOT NULL 이라 테이블 재작성이 필요하고**, 재작성을 건너뛰고
+    //    DROP COLUMN 만 하면 `scripts/check-insert-not-null.py`(CI 필수 체크)가 빨개진다
+    //    — 그 검사는 `DROP COLUMN` 을 추적하지 않는다. 별도 릴리스로 다룬다.
+    statements: [
+      // ① `generated_audio_assets.mime_type` — 캐시 히트마다 SELECT 해 놓고 버린다.
+      //    `tts.ts` 가 `ga.mime_type` 을 고르지만 반환 객체에 넣지 않는다(직접 확인).
+      //    재구성 가능: `voice-provider.ts` 가 outputFormat='mp3'/mimeType='audio/mpeg' 로
+      //    하드코딩이라 audio_format→MIME 이 1:1 이다. DEFAULT 가 있어 1릴리스로 끝난다.
+      //    ⚠ **읽는 곳만 보고 지울 뻔했다.** 쓰는 곳이 셋 살아 있었다(`tts.ts` 의 직접
+      //    입력 합성, `stock-clips.ts` 의 클론 사전렌더·스톡 시딩). 같이 지웠다 —
+      //    안 지웠으면 마이그레이션이 도는 순간 그 셋이 전부 500 이 된다.
+      //    회귀 방지: `test/insert-columns-exist.test.ts`.
+      `ALTER TABLE generated_audio_assets DROP COLUMN mime_type`,
+      // ② `idx_voice_profiles_lru` — 주석이 광고하는 가속을 실제로는 못 한다.
+      //    LRU 선정 쿼리가 `ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC`
+      //    라 이 인덱스 순서와 맞지 않고, `last_used_at` 을 WHERE 술어로 쓰는 쿼리는 0건이며
+      //    (나머지 3곳은 전부 `SET last_used_at = ...`), SELECT 하는 컬럼도 안 담아 커버링
+      //    이득도 없다. 쓰기마다 유지 비용만 낸다.
+      `DROP INDEX IF EXISTS idx_voice_profiles_lru`,
+      // ③ `idx_voucher_codes_status` — status 가 선행 술어인 쿼리가 하나도 없다.
+      //    `voucher_codes` 접근 21곳을 전수 확인했고 전부 id / code_hash /
+      //    issuer_subscription_id / issuer_user_id 로 거른다(각각 다른 인덱스가 덮는다).
+      //    게다가 3값짜리 저카디널리티라 있어도 도움이 안 된다.
+      `DROP INDEX IF EXISTS idx_voucher_codes_status`,
+    ],
+  },
+  {
+    // 스톡 클립에 **운세·사랑**을 더한 데 맞춘 수렴형 무효화(#70 과 같은 패턴).
+    // 확정 리터럴과 문구가 '다른' 시스템 preset 행만 지운다.
+    //  - 앞선 36종은 글자 하나 바뀌지 않았으므로 dev/prod 에서 **0행 no-op** 다.
+    //  - 새 8종은 아직 시딩된 적이 없다. 배포 후 `POST /api/admin/seed-stock-clips` 가
+    //    (보이스 4 × 언어 3 × 새 문구 8) 을 채운다.
+    //  - R2 오브젝트는 #70 과 마찬가지로 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    id: 109,
+    name: 'refresh-stock-clips-2026-09-02-script',
+    statements: [
+      // ⚠ #70 을 복사할 때 **이미 사라진 컬럼을 지우는 것**이 이 문장의 함정이다.
+      //   #83 이 `speaker_id` 를, #84 가 `raw_audio_url`·`raw_audio_duration_ms` 를
+      //   DROP 했다. 러너는 `no such column` 을 "이미 적용됨" 으로 삼키므로
+      //   (`isIdempotentDDLError`) 죽은 문장도 **성공으로 기록되고 다시는 재시도되지
+      //   않는다** — 배포는 초록불인데 알람 분리만 조용히 빠진다.
+      //   `test/insert-columns-exist.test.ts` 가 최신 refresh 문장을 실제 스키마에서
+      //   날것으로 돌려 이걸 잡는다.
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM message_library
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM generated_audio_assets
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM messages
+        WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
     ],
   },
 ];

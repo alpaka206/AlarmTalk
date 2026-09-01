@@ -78,19 +78,18 @@ internal class AccessSnapshotStore(context: Context) {
             }
             ?: AccessSnapshot()
 
-    fun updateStorePlanKey(userId: String, planKey: String?, untilMillis: Long?) = mutate(userId) {
-        it.copy(storePlanKey = planKey, storeEntitlementUntilMillis = untilMillis)
-    }
-
-    fun updateUserPlan(userId: String, plan: String?) = mutate(userId) { it.copy(userPlan = plan) }
-
-    fun updateSubscription(userId: String, response: BillingSubscriptionResponse?) = mutate(userId) {
-        it.copy(subscriptionResponse = response)
-    }
-
-    fun updateFamilyGroup(userId: String, response: FamilyGroupCurrentResponse?) = mutate(userId) {
-        it.copy(familyGroup = response)
-    }
+    /**
+     * ⚠ **이걸 직접 부르지 말 것 — [EntitlementWriter] 만 부른다.**
+     *
+     * 이 함수에는 **소유권·신선도 판단이 없다.** 지금 계정이 누구인지, 이 결과가 아직
+     * 최신인지 모르는 채 그냥 쓴다. 그 판단은 전부 [EntitlementWriter.apply] 안에 있고,
+     * 그래서 쓰는 문이 하나여야 한다.
+     *
+     * 우회를 막는 장치가 둘이다: 이 이름(눈에 띄게 길다)과
+     * `scripts/check-entitlement-writer.py`(CI lint 잡). 새 경로를 만들면 그 검사가 막는다.
+     */
+    fun patchWithoutOwnershipCheck(userId: String, transform: (AccessSnapshot) -> AccessSnapshot) =
+        mutate(userId, transform)
 
     fun clear(userId: String) {
         synchronized(LOCK) { prefs.edit().remove(key(userId)).apply() }

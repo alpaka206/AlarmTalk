@@ -274,6 +274,7 @@
 		D3817E0B7FAFEE9522D0F67F /* AlarmSoundPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */; };
 		D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */; };
 		D61E2402A6A6C7569C172B7F /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */; };
+		D627C8977052E9D7CD56A916 /* EntitlementWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0175911A2374269E498617FF /* EntitlementWriter.swift */; };
 		D6D7CFDC97A0C385A3C36FB6 /* voice_greeting_mina_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 6B0CE801C40646A872577E22 /* voice_greeting_mina_en.mp3 */; };
 		D88FA641458DDF013DFBAFD7 /* PaidVoiceGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15619730ABF3EC66C8C2DC0A /* PaidVoiceGateTests.swift */; };
 		DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */; };
@@ -361,6 +362,7 @@
 		00884D032AF099AA772D95DF /* EditorStatePersistenceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorStatePersistenceUITests.swift; sourceTree = "<group>"; };
 		008B17DEDC6678A7B2596974 /* MainTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabsView.swift; sourceTree = "<group>"; };
 		0136A4F6EE6AE5B62BEDCC57 /* pretendard_bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_bold.otf; sourceTree = "<group>"; };
+		0175911A2374269E498617FF /* EntitlementWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementWriter.swift; sourceTree = "<group>"; };
 		0221058C929FB1DAA401AFD7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmRecord.swift; sourceTree = "<group>"; };
 		034A8047D121E7FF08703642 /* AppVersionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersionGate.swift; sourceTree = "<group>"; };
@@ -1166,6 +1168,7 @@
 				4916D9DCC3752098B72E30A7 /* DeliveryTags.swift */,
 				8E339441B4151A5A86D7905D /* DowngradeNoticeStore.swift */,
 				CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */,
+				0175911A2374269E498617FF /* EntitlementWriter.swift */,
 				E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */,
 				6E362F291A9E83445BE588E2 /* Info.plist */,
 				DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */,
@@ -1528,6 +1531,7 @@
 				958277D566D3D4EA2B3B7C86 /* DynamicPromptPreferenceStore.swift in Sources */,
 				A2C7111FB7DD26F428366C60 /* EditorCards.swift in Sources */,
 				307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */,
+				D627C8977052E9D7CD56A916 /* EntitlementWriter.swift in Sources */,
 				ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */,
 				0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */,
 				9F9C6F5F430DFB5B94C6984B /* FormSheet.swift in Sources */,

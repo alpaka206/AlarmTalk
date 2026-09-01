@@ -51,14 +51,13 @@ import androidx.compose.ui.window.DialogProperties
 /**
  * iOS 시스템 알럿(UIAlertController) 스타일의 공용 다이얼로그.
  *
- * 디자인 출처: Figma "Alert" 컴포넌트 세트 (양 플랫폼 모달 통일 기준), 수치는 변형
- * `2018:456`(Dark·Title·2 horizontal) 기준으로 정밀 정렬.
- *   - 컨테이너: radius 14, 화면 적응 폭(최대 300; Figma 270 ~ 큰 폰 대응 절충)
- *   - content: 가로 16 / 세로 20 패딩, 가운데 정렬, 타이틀↔설명 2dp
- *   - 타이틀 17/Semibold(라인 22, 자간 -0.4), 설명 13/Regular(라인 18, 자간 -0.08, 보조색)
- *   - 액션: 행 높이 44, 0.5dp 구분선(onSurface 20%)으로 분리된 텍스트 버튼
- *           왼쪽=Regular / 강조=Semibold, 17/라인22/자간-0.4. 2개는 가로(가운데 세로 구분선).
- *   - X 닫기·채운 알약 버튼 없음
+ * ⚠ **수치는 이 주석이 아니라 아래 상수·본문이 원본이다**(2026-09-02 정정).
+ * 예전에는 여기에 Figma `2018:456` 값을 적어 뒀는데, 그 뒤 **실기기 실측으로 여섯 항목을
+ * 고치면서 주석만 안 고쳐** 같은 파일 안에서 정반대를 말하고 있었다(radius 14 vs 34,
+ * 폭 300 vs 320, 액션 44 vs 48 …). 값이 궁금하면 `ALERT_*` 상수와 각 Composable 을 볼 것.
+ *
+ * 지금 살아 있는 규격의 근거는 **iOS 26 실측**이고, 그 이유는 각 상수 옆 주석에 있다.
+ * 규격 표는 `docs/spec/alarm-editor.md` §4-1 이 유일 출처다.
  *
  * 색은 Figma 의 iOS 블루(#007AFF) 대신 앱 브랜드 색(`primary`)을 써서 다크모드까지
  * 자동 대응한다. 폰트는 앱 표준 Pretendard(Figma 는 SF Pro) — iOS 에선 SF Pro 로 동일.

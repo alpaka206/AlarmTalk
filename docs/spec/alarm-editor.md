@@ -76,10 +76,11 @@
 
 - **목소리 크기**: 10~100%, **10단위**. 하한 10% 는 두 앱이 같아야 한다 — 한쪽이 30% 로
   막으면 다른 앱에서 맞춘 알람이 다른 크기로 울린다. 0 은 슬라이더로 만들 수 없다.
-- **끌 때까지 반복**: **스위치 하나**다. 값이 둘인 것과 **선택지가 둘인 것은 다르다** —
-  반복은 켜고 끄는 성질이라 스위치가 맞고, 세그먼트('한 번만'/'반복')는 어느 쪽이 켜졌는지
-  라벨을 읽어야 안다(2026-08-11 안드로이드를 iOS 에 맞췄다).
-- 아래에 "반복을 끄면 목소리가 한 번만 나와요." 한 줄을 둔다.
+- ⚠ **'끌 때까지 반복' 컨트롤은 두지 않는다**(2026-08-27 지시, 2026-09-02 스펙 정정).
+  목소리는 **항상 반복**한다 — 한 번 나고 그치면 그것은 알림이지 알람이 아니다.
+  저장값(`voiceRepeat`)은 계속 true 로 왕복시키되 화면에는 컨트롤이 없다(양 앱).
+  (이 문서는 없앤 스위치를 2026-09-02 까지 요구하고 있었다. 회귀 테스트
+  `AlarmEditDraftTests` 가 반대편을 고정하고 있었던 것이 근거다.)
 - iOS 에는 **알람 음량 슬라이더를 두지 않는다** — AlarmKit 이 OS 톤을 소유해 제어할 수
   없다(「의도된 차이」).
 
@@ -155,7 +156,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/AmPmWheelColumn.swift` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
-| 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector`·`VoiceRepeatSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
+| 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |
 | 폼 시트 | `ui/components/WakerModal.kt` 의 `WakerFormSheet` | `Views/Common/FormSheet.swift` |
 | 알럿 | `ui/components/IosAlertDialog.kt` | 시스템 `.alert`(직접 그리지 않는다) |

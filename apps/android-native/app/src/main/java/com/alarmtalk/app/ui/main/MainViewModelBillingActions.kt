@@ -44,7 +44,9 @@ import kotlinx.coroutines.sync.withLock
  * 도는 조회가 가장 신선하다 — 버려지는 결과가 없다.
  */
 internal suspend fun MainViewModel.refreshStoreEntitlement() {
-    val userId = authSession?.user?.id ?: return
+    // 표는 Play 조회 **전에** 뜬다 — 조회가 중단점이다.
+    val ticket = accessTicket() ?: return
+    val userId = ticket.userId
     storeRefreshMutex.withLock {
     runCatching {
         val hash = playBilling.accountHashFor(userId)
@@ -114,11 +116,23 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
         // 앞에서 세우면 A 의 결과를 버리면서도 **B 의 확인이 끝난 것으로 표시**되어,
         // B 의 서버 구독이 만료돼 있고 B 자신의 조회는 아직인 사이 되돌릴 수 없는 강등이 걸린다.
+        //
+        // ⚠ **메모리 사본도 문을 지난 뒤에만 발행한다**(2026-09-02 리뷰). 위 `userId` 가드는
+        // **계정만** 보는데 `EntitlementWriter.write` 는 **세대(epoch)** 까지 본다 — 같은
+        // 사람이 로그아웃하고 다시 들어오면 id 는 같고 세대만 바뀐다. 그때 write 는 정확히
+        // 거절하는데 여기서 먼저 발행해 버리면 **새 세션이 옛 등급을 그대로 쓴다.**
+        // `storeEntitlementChecked` 가 특히 위험하다 — 그게 서면 되돌릴 수 없는 무료 강등
+        // (`billingNotEntitled` 잠금)이 걸릴 수 있다.
+        // 판정은 캐시 쓰기와 **같은 답**이어야 하므로 문의 결과 하나로 가른다.
+        //
+        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
+        val storeWrite = entitlementWriter.write(ticket, "play entitlement") {
+            it.copy(storePlanKey = nextKey, storeEntitlementUntilMillis = until)
+        }
+        if (storeWrite != EntitlementWrite.Applied) return@runCatching
         storeEntitlementChecked = true
         storePlanKey = nextKey
         storeEntitlementUntilMillis = until
-        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
-        accessSnapshotStore.updateStorePlanKey(userId, nextKey, until)
         if (purchases.isNotEmpty()) {
             // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
             // 시작 계정을 함께 넘긴다(위 갈래와 같은 이유).
@@ -140,6 +154,9 @@ internal fun MainViewModel.refreshBilling() {
 internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_share_code_info)) ?: return vouchers
     if (billingBusy || socialBusy) return vouchers
+    // ⚠ **표는 요청 전에 뜬다**(2026-09-02). 아래 세 요청을 기다리는 사이 계정이 바뀔 수 있는데,
+    // 예전에는 응답 뒤에 지금 계정으로 키를 잡아 **A 의 구독·그룹이 B 의 스냅샷에** 들어갔다.
+    val ticket = accessTicket() ?: return vouchers
     billingBusy = true
     socialBusy = true
     return try {
@@ -156,12 +173,17 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
             val updatedSubscription = subscription.await()
             val updatedVouchers = freshVouchers.await()
             val updatedGroup = group.await()
+            // 문이 거절하면(계정 전환·재로그인) **화면 상태도 건드리지 않는다** —
+            // 스냅샷만 막고 전역 state 를 발행하면 A 의 코드가 B 화면에 뜬다.
+            if (saveSubscriptionSnapshot(ticket, updatedSubscription) != EntitlementWrite.Applied) {
+                return@coroutineScope vouchers
+            }
             subscriptionResponse = updatedSubscription
-            saveSubscriptionSnapshot(updatedSubscription)
             vouchers = updatedVouchers
             updatedGroup?.let {
-                familyGroup = it
-                saveFamilyGroupSnapshot(it)
+                if (saveFamilyGroupSnapshot(ticket, it) == EntitlementWrite.Applied) {
+                    familyGroup = it
+                }
             }
             updatedVouchers
         }
@@ -226,13 +248,16 @@ internal fun MainViewModel.preloadBilling() {
 private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
     if (billingRefreshing || billingBusy) return
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_billing_info)) ?: return
+    // ⚠ **표는 요청 전에**(2026-09-02). 예전에는 이 경로에 소유자 가드가 아예 없어,
+    // 조회 중 계정이 바뀌면 A 의 구독이 B 의 화면·스냅샷에 실렸다.
+    val ticket = accessTicket() ?: return
     billingRefreshing = true
     viewModelScope.launch {
         try {
             runCatching {
                 loadBillingSnapshot(authorization)
             }.onSuccess { snapshot ->
-                applyBillingSnapshot(snapshot)
+                applyBillingSnapshot(ticket, snapshot)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
@@ -255,9 +280,14 @@ private suspend fun MainViewModel.loadBillingSnapshot(
         )
     }
 
-private fun MainViewModel.applyBillingSnapshot(snapshot: BillingSnapshot) {
+/**
+ * ⚠ **표를 받는다**(2026-09-02). 예전에는 `await` 뒤에 지금 계정으로 키를 잡아,
+ * 조회 중 A→B 전환이면 **A 의 구독이 B 의 스냅샷과 화면에** 실렸다.
+ * 문이 거절하면 화면 상태도 건드리지 않는다.
+ */
+private fun MainViewModel.applyBillingSnapshot(ticket: AccessTicket, snapshot: BillingSnapshot) {
+    if (saveSubscriptionSnapshot(ticket, snapshot.subscription) != EntitlementWrite.Applied) return
     subscriptionResponse = snapshot.subscription
-    saveSubscriptionSnapshot(snapshot.subscription)
     vouchers = snapshot.vouchers
 }
 
@@ -272,16 +302,17 @@ private fun MainViewModel.applyBillingSnapshot(snapshot: BillingSnapshot) {
 private suspend fun MainViewModel.refreshBillingAfterMutation(
     authorization: String,
     reason: String,
-    expectedOwnerUserId: String?,
+    /** 뮤테이션을 **시작할 때** 뜬 표. 문이 계정·세대를 함께 본다. */
+    ticket: AccessTicket?,
 ) {
     runCatching {
         loadBillingSnapshot(authorization)
     }.onSuccess { snapshot ->
-        if (authSession?.user?.id != expectedOwnerUserId) {
-            Log.i(TAG, "Dropping billing snapshot after $reason: account changed")
+        if (ticket == null) {
+            Log.i(TAG, "Dropping billing snapshot after $reason: no session ticket")
             return@onSuccess
         }
-        applyBillingSnapshot(snapshot)
+        applyBillingSnapshot(ticket, snapshot)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
     }
@@ -364,6 +395,7 @@ internal fun MainViewModel.registerCode(
     }
     // 응답이 늦게 온 사이 계정이 바뀌면 그 계정 화면을 건드리지 않는다(이 PR 의 반복 지점).
     val ownerUserId = authSession?.user?.id
+    val ownerTicket = accessTicket()
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -375,7 +407,7 @@ internal fun MainViewModel.registerCode(
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
             }
-            refreshBillingAfterMutation(authorization, "code registration", ownerUserId)
+            refreshBillingAfterMutation(authorization, "code registration", ownerTicket)
             refreshSocial()
             refreshAppSession()
             // 서버가 판별한 type 기준: 초대(그룹 합류)거나 커플/가족 플랜이면 공유패스 갱신.
@@ -521,6 +553,8 @@ internal fun MainViewModel.confirmGooglePurchase(
     // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
     // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
     val ownerUserId = startedByUserId ?: authSession?.user?.id
+    // 확인이 끝난 뒤의 재조회도 같은 표로 문을 지난다.
+    val ownerTicket = accessTicket()?.takeIf { it.userId == ownerUserId }
     // ⚠ **바뀐 계정으로는 아예 보내지 않는다**(2026-09-01 리뷰). 시작 계정을 잡아 두는 것만
     // 으로는 부족하다 — 아래 `authorization` 은 **지금 계정의** 토큰이라, 그대로 보내면
     // A 의 구매가 B 의 인가로 서버에 제출된다(서버가 거절하고 A 의 정합화는 사라진다).
@@ -551,7 +585,7 @@ internal fun MainViewModel.confirmGooglePurchase(
                 if (showsResult) {
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
                 }
-                refreshBillingAfterMutation(authorization, "google play confirm", ownerUserId)
+                refreshBillingAfterMutation(authorization, "google play confirm", ownerTicket)
                 refreshAppSession()
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
@@ -587,6 +621,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
     val ownerUserId = authSession?.user?.id
+    val ownerTicket = accessTicket()
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -601,7 +636,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
             }
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshBillingAfterMutation(authorization, "family share code", ownerUserId)
+            refreshBillingAfterMutation(authorization, "family share code", ownerTicket)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to ensure family share code", error)
@@ -623,6 +658,7 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
     val ownerUserId = authSession?.user?.id
+    val ownerTicket = accessTicket()
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -638,7 +674,7 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshBillingAfterMutation(authorization, "regenerate family share code", ownerUserId)
+            refreshBillingAfterMutation(authorization, "regenerate family share code", ownerTicket)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to regenerate family share code", error)
@@ -667,6 +703,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
     val ownerUserId = authSession?.user?.id
+    val ownerTicket = accessTicket()
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -686,7 +723,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_locked)
             }
-            refreshBillingAfterMutation(authorization, "subscription cancellation", ownerUserId)
+            refreshBillingAfterMutation(authorization, "subscription cancellation", ownerTicket)
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
@@ -742,6 +779,7 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     // `restoreMutex` 를 기다리는 사이 계정이 바뀌면, A 의 판정으로 B 의 잠긴 알람을
     // 목소리로 되살린다 — B 는 새 세션이라 무료 잠금이 아직 안 돌았을 수 있다.
     val ownerUserId = authSession?.user?.id
+    val ownerTicket = accessTicket()
     DowngradeNoticeStore(getApplication())
         .clear(ownerUserId, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {

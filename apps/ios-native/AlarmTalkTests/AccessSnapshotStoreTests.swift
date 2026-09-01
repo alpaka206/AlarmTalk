@@ -23,8 +23,8 @@ final class AccessSnapshotStoreTests: XCTestCase {
     }
 
     func test_snapshotIsScopedByUserID() {
-        store.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
-        store.updateFamilyGroup(userID: "user-1", response: familyGroup(memberCount: 2))
+        store.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
+        store.patchWithoutOwnershipCheck("user-1") { $0.familyGroup = familyGroup(memberCount: 2) }
 
         let first = store.read(userID: "user-1")
         let second = store.read(userID: "user-2")
@@ -36,8 +36,8 @@ final class AccessSnapshotStoreTests: XCTestCase {
     }
 
     func test_updatePreservesOtherSnapshotSection() {
-        store.updateFamilyGroup(userID: "user-1", response: familyGroup(memberCount: 1))
-        store.updateSubscription(userID: "user-1", response: subscription(planKey: "couple"))
+        store.patchWithoutOwnershipCheck("user-1") { $0.familyGroup = familyGroup(memberCount: 1) }
+        store.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "couple") }
 
         let snapshot = store.read(userID: "user-1")
 
@@ -46,8 +46,8 @@ final class AccessSnapshotStoreTests: XCTestCase {
     }
 
     func test_clearRemovesOnlyThatUser() {
-        store.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
-        store.updateSubscription(userID: "user-2", response: subscription(planKey: "personal"))
+        store.patchWithoutOwnershipCheck("user-1") { $0.subscriptionResponse = subscription(planKey: "family") }
+        store.patchWithoutOwnershipCheck("user-2") { $0.subscriptionResponse = subscription(planKey: "personal") }
 
         store.clear(userID: "user-1")
 

@@ -9,6 +9,9 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.alarmtalk.app.AccessSnapshotStore
+import com.alarmtalk.app.AccessTicket
+import com.alarmtalk.app.EntitlementWrite
+import com.alarmtalk.app.EntitlementWriter
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.isDefinitelyFree
@@ -40,6 +43,9 @@ class PlanChangeSyncWorker(
         // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 권한 스냅샷은 **문 하나로만** 쓴다(`EntitlementWriter`). 표는 네트워크 전에 뜬다.
+        val entitlement = EntitlementWriter(applicationContext)
+        val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -71,7 +77,6 @@ class PlanChangeSyncWorker(
             }
 
             val userId = session.user.id
-            val snapshotStore = AccessSnapshotStore(applicationContext)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
             //
@@ -96,20 +101,19 @@ class PlanChangeSyncWorker(
             // — 그 뒤 CAS 가 세대 변화를 알아채고 물러나도 이미 쓴 값은 남아, 새 세션의 갱신이
             // 실패했을 때 울림 게이트가 옛 스냅샷을 읽는다(회복된 구독자의 클론이 막힌다).
             // CAS 는 '검사와 저장을 한 덩어리로' 하므로, 그걸 통과한 뒤가 유일하게 안전한 지점이다.
-            // ⚠ **발행 전체를 세대 락 안에서 한다**(2026-09-01 리뷰 2차 정정). CAS 를 한 번
-            // 통과했다고 그 뒤가 안전한 게 아니다 — 락이 풀린 사이 같은 계정이 로그아웃→
-            // 재로그인하고 **새 갱신까지 끝내면**, 이 옛 워커가 그 결과를 덮고 아래
-            // 되돌릴 수 없는 잠금까지 자기 옛 판정으로 진행한다.
-            val published = sessionStore.runIfGeneration(startGeneration) {
-                snapshotStore.updateSubscription(userId, billing)
-                snapshotStore.updateFamilyGroup(userId, familyGroup)
-                // 방금 받은 plan 도 함께 적는다 — 판정만 하고 적지 않으면 울림 게이트가 읽는
-                // 값이 강등 **전** 등급 그대로다. 보류(ON_HOLD)에서 특히 치명적이다: 서버는
-                // 구독 행을 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가
-                // 남은 행을 보고 유료라고 답한다(2단이 그래서 plan 을 먼저 본다).
-                snapshotStore.updateUserPlan(userId, freshUser.plan)
+            // 세 필드를 **한 번에** 반영한다 — 문이 세대·계정·직렬화를 함께 본다.
+            // 방금 받은 plan 도 같이 적는다: 판정만 하고 적지 않으면 울림 게이트가 읽는 값이
+            // 강등 **전** 등급 그대로다. 보류(ON_HOLD)에서 특히 치명적이다 — 서버는 구독 행을
+            // 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가 남은 행을
+            // 보고 유료라고 답한다(판정 2단이 그래서 plan 을 먼저 본다).
+            val published = entitlement.write(ticket, "plan_changed worker") {
+                it.copy(
+                    subscriptionResponse = billing,
+                    familyGroup = familyGroup,
+                    userPlan = freshUser.plan,
+                )
             }
-            if (!published) return@runCatching Result.success()
+            if (published != EntitlementWrite.Applied) return@runCatching Result.success()
 
             // '진짜 무료'만 변환한다. 판정은 **유일 판정기**로 하고(2026-09-01 리뷰),
             // 스토어 신호를 반드시 넣는다 — Play 가 갱신을 확인해 준 기기에서 서버 반영이
@@ -122,7 +126,7 @@ class PlanChangeSyncWorker(
                 subscriptionResponse = billing,
                 familyGroup = familyGroup,
                 userPlan = plan,
-                storeEntitled = snapshotStore.read(userId).storeSignalStillValid(now),
+                storeEntitled = entitlement.read(ticket).storeSignalStillValid(now),
                 nowMillis = now,
             )
             // ⚠ **남아 있는 구독 행을 한 번 더 본다.** 판정기는 `users.plan = free` 를 행보다
@@ -145,12 +149,21 @@ class PlanChangeSyncWorker(
                 nowMillis = now,
             ).isDefinitelyFree()
             if (serverSaysFree) {
-                // ⚠ **이것도 세대 락 안에서**(2026-09-01 리뷰). 앞의 발행 블록을 통과했다고
-                // 그 권한이 계속 유효한 게 아니다 — 락이 풀린 사이 같은 계정이 재로그인해
-                // **방금 확인한 유료 Play 신호를 발행**했는데, 이 옛 워커가 그걸 지우면
-                // 서버 스냅샷이 아직 갱신 전인 새 세션에서 울림 게이트가 유료 오디오를 막는다.
-                sessionStore.runIfGeneration(startGeneration) {
-                    snapshotStore.updateStorePlanKey(userId, null, null)
+                // 앞의 발행을 통과했다고 그 권한이 계속 유효한 게 아니다 — 그 사이 재로그인한
+                // 새 세션이 방금 확인한 유료 Play 신호를 발행했을 수 있다. 그래서 표를 **다시**
+                // 통과시킨다(문이 매번 세대·계정을 본다).
+                // 거절은 '그 사이 세션이 바뀌었다' 는 뜻이다. 여기서 되돌릴 것은 없고
+                // (무효화는 멱등하다) 바로 아래 `genuinelyFree` 블록이 세대를 다시 확인해
+                // 파괴적 강등을 막는다. 다만 **결과를 그냥 버리지는 않는다** — 이 회차가
+                // 통째로 옛 세션의 것이었다는 사실은 로그로 남겨야 나중에 추적된다.
+                val invalidated = entitlement.write(ticket, "plan_changed store invalidation") {
+                    it.copy(storePlanKey = null, storeEntitlementUntilMillis = null)
+                }
+                if (invalidated != EntitlementWrite.Applied) {
+                    android.util.Log.i(
+                        "PlanChangeSyncWorker",
+                        "Store invalidation skipped: session changed mid-run",
+                    )
                 }
             }
             if (genuinelyFree) {

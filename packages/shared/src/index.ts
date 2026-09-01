@@ -3,3 +3,4 @@
 export * from './schemas/voice.js';
 export * from './schemas/auth.js';
 export * from './schemas/fortune.js';
+export * from './schemas/plan.js';
