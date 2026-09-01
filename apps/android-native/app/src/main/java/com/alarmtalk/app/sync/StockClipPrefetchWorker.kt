@@ -94,7 +94,10 @@ class StockClipPrefetchWorker(
     }
 
     override suspend fun doWork(): Result {
-        val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
+        val sessionStore = AuthSessionStore(applicationContext)
+        val session = sessionStore.read() ?: return Result.success()
+        // 굴러온 토큰을 되쓸 때 대조할 세션 세대(아래 `/auth/me` 주석 참조).
+        val startGeneration = sessionStore.sessionGeneration()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -149,7 +152,17 @@ class StockClipPrefetchWorker(
                     // 갱신과 경주하므로, 캐시를 읽으면 그 옛 free 가 **살아 있는 구독을 이겨**
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
-                    val plan = api.me(auth).user.plan
+                    val me = api.me(auth)
+                    val plan = me.user.plan
+                    // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
+                    // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
+                    // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
+                    // 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
+                    // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
+                    me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
+                        sessionStore.saveTokenIfGeneration(startGeneration, rolled)
+                    }
                     val snapshotStore = AccessSnapshotStore(applicationContext)
                     // ⚠ **받았으면 적는다**(2026-09-01 리뷰). 스펙이 "`/auth/me` 로 plan 을
                     // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서

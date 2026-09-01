@@ -535,14 +535,22 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.ensureFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping share code result: account changed")
+                return@onSuccess
+            }
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshBillingAfterMutation(authorization, "family share code", authSession?.user?.id)
+            refreshBillingAfterMutation(authorization, "family share code", ownerUserId)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to ensure family share code", error)
@@ -563,15 +571,23 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
         "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.regenerateFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping regenerated share code result: account changed")
+                return@onSuccess
+            }
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshBillingAfterMutation(authorization, "regenerate family share code", authSession?.user?.id)
+            refreshBillingAfterMutation(authorization, "regenerate family share code", ownerUserId)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to regenerate family share code", error)
@@ -599,11 +615,19 @@ private val STORE_MANAGE_REQUIRED_CODES = setOf(
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
         }.onSuccess { _ ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping subscription cancellation result: account changed")
+                return@onSuccess
+            }
             // 정책 변경: 해지해도 만든 목소리는 삭제하지 않고 잠근다 — 다시 이용권을 등록하면
             // 그대로 다시 쓸 수 있다(보관 후 삭제 안내 문구 제거).
             message = if (atPeriodEnd) {
@@ -611,7 +635,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_locked)
             }
-            refreshBillingAfterMutation(authorization, "subscription cancellation", authSession?.user?.id)
+            refreshBillingAfterMutation(authorization, "subscription cancellation", ownerUserId)
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
