@@ -133,6 +133,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
             }
 
+            override fun onPurchaseRestored(purchaseToken: String, productId: String) {
+                // 사용자가 방금 산 게 아니다 — 검증만 하고 토스트·이동은 내지 않는다.
+                viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId, silent = true) }
+            }
+
             override fun onPurchasePending(productId: String) {
                 viewModelScope.launch {
                     billingBusy = false
@@ -577,6 +582,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     var storeEntitlementChecked by mutableStateOf(false)
         internal set
+
+    /**
+     * 스토어 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
+     *
+     * ⚠ 앱 시작과 탭 진입이 각각 `refreshStoreEntitlement()` 를 던지므로 같은 계정의 조회가
+     * 겹칠 수 있다. 계정 가드는 둘 다 통과시키고, 먼저 시작한 쪽이 늦게 끝나면 그 결과가
+     * 최신을 덮는다 — 옛 빈 결과가 방금 확인한 갱신을 지워 **되돌릴 수 없는 잠금**을 부르거나,
+     * 옛 유료 결과가 해지 뒤에 40일짜리 통행증을 되살린다.
+     */
+    internal var storeRefreshGeneration = 0
 
     /**
      * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는

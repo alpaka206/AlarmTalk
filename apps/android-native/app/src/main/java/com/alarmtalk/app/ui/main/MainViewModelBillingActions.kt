@@ -40,6 +40,8 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // 오프라인·연결 실패에서 신호를 지우면, 서버 스냅샷이 갱신 전 만료시각을 들고 있는
         // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
         // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
+        storeRefreshGeneration++
+        val generation = storeRefreshGeneration
         val query = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
         // ⚠ **임자를 알 수 없는 구독이 있으면 '확인했다' 고 하지 않는다**(2026-09-01 리뷰).
         // `obfuscatedAccountId` 를 붙이기 **전에** 산 구독에는 식별자가 없어 내 것으로도
@@ -73,6 +75,13 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // A 의 등급을 물려받아 편집기·목소리·저장 게이트를 전부 통과한다.
         if (authSession?.user?.id != userId) {
             android.util.Log.i("MainViewModel", "Dropping stale store entitlement: account changed")
+            return@runCatching
+        }
+        // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰). 시작 경로와 탭 진입
+        // 경로가 각각 이 함수를 던지므로 조회가 겹치는데, 계정 가드는 둘 다 통과시킨다 —
+        // 먼저 시작한 쪽이 늦게 끝나면 그 사이 바뀐 Play 상태를 옛 결과로 덮는다.
+        if (generation != storeRefreshGeneration) {
+            android.util.Log.i("MainViewModel", "Dropping superseded store entitlement refresh")
             return@runCatching
         }
         // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
@@ -420,13 +429,24 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
  * Play 구매 토큰을 백엔드(/billing/google/confirm)로 보내 검증·acknowledge·구독 반영을 요청한다.
  * 성공 시 기존 구독 로드 경로를 재사용해 구독 상태를 새로고침한다.
  */
-internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productId: String) {
+internal fun MainViewModel.confirmGooglePurchase(
+    purchaseToken: String,
+    productId: String,
+    /**
+     * **정합화(restore)로 들어온 확인**. 검증·상태 갱신은 그대로 하고 성공 UI 만 뺀다.
+     *
+     * ⚠ 이 갈래가 없으면 앱 시작·탭 진입마다 도는 정합화가 "이용권이 적용됐어요" 를 띄우고
+     * 커플/가족 사용자를 **구성원 관리로 이동**시킨다(2026-09-01 리뷰). 진행 표시(`billingBusy`)
+     * 도 걸지 않는다 — 사용자가 시작한 일이 아니라 그동안 버튼이 잠기면 안 된다.
+     */
+    silent: Boolean = false,
+) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_apply_plan)) ?: run {
-        billingBusy = false
+        if (!silent) billingBusy = false
         return
     }
     viewModelScope.launch {
-        billingBusy = true
+        if (!silent) billingBusy = true
         runCatching {
             api.confirmGooglePurchase(
                 authorization,
@@ -438,27 +458,32 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
             )
         }.onSuccess { response ->
             if (response.success) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
+                if (!silent) {
+                    message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
+                }
                 refreshBillingAfterMutation(authorization, "google play confirm")
                 refreshAppSession()
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
                 // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
-                if (response.planKey in setOf("couple", "family")) {
+                // **정합화에서는 이동하지 않는다** — 산 적이 없는데 화면이 튄다.
+                if (!silent && response.planKey in setOf("couple", "family")) {
                     navigateSharedPassTick++
                 }
-            } else {
+            } else if (!silent) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
-            message = billingFailureMessage(
-                getApplication<android.app.Application>(),
-                apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
-            )
+            if (!silent) {
+                message = billingFailureMessage(
+                    getApplication<android.app.Application>(),
+                    apiErrorCode(error),
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
+                )
+            }
         }
-        billingBusy = false
+        if (!silent) billingBusy = false
     }
 }
 

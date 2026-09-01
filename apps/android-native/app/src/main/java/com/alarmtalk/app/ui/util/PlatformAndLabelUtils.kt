@@ -225,9 +225,16 @@ internal fun resolvePaidVoiceAccess(
     nowMillis: Long,
 ): PaidVoiceAccess {
     if (storeEntitled) return PaidVoiceAccess.Entitled
-    val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
     val plan = userPlan?.trim()?.lowercase()
+    // ⚠ **아는 free 는 '모름' 보다 먼저다**(2026-09-01 리뷰). 콜드 스타트·첫 로그인에는
+    // `subscriptionResponse` 가 아직 null 인데, 그때 Unknown 으로 떨어지면 낙관 규칙에 걸려
+    // **무료 사용자에게 보관 중인 클론 목소리와 유료 전용 문구 컨트롤이 열린다** — 눌러 봐야
+    // 서버가 거절한다. `users.plan` 은 이미 서버가 준 값이라 스냅샷을 기다릴 이유가 없다.
+    // 되돌릴 수 없는 잠금은 이것만으로 걸리지 않는다 — `isDefinitelyFreePlan()` 이
+    // `storeEntitlementChecked` 를 함께 요구한다(스토어에 물어보기 전에는 안 잠근다).
     if (plan == "free") return PaidVoiceAccess.NotEntitled
+    // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
+    val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
     val subscription = snapshot.subscription
     if (subscription != null) {
         if (!hasPaidVoiceAccess(snapshot)) return PaidVoiceAccess.NotEntitled

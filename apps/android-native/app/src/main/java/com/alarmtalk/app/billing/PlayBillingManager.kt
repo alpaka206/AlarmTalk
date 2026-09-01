@@ -121,6 +121,17 @@ class PlayBillingManager(
         /** PURCHASED 상태 구매 도착. 백엔드 검증(/billing/google/confirm)은 호출자 책임. */
         fun onPurchaseReady(purchaseToken: String, productId: String)
 
+        /**
+         * **사용자가 방금 산 것이 아닌** 기존 구매의 정합화(restore). 검증 경로는 같지만
+         * 성공 UI 를 내지 않는다.
+         *
+         * ⚠ **[onPurchaseReady] 로 합치지 말 것**(2026-09-01 리뷰). 그 핸들러는
+         * "이용권이 적용됐어요" 를 띄우고 커플/가족이면 구성원 관리로 **이동**시킨다.
+         * 정합화는 앱 시작·탭 진입마다 도는데 그걸 그대로 태우면, 이미 가족 플랜을 쓰는
+         * 사람이 **앱을 켤 때마다 구성원 관리로 튕긴다.**
+         */
+        fun onPurchaseRestored(purchaseToken: String, productId: String)
+
         /** 결제 수단 승인 대기 등 보류(PENDING) 상태 구매. 승인되면 다시 onPurchaseReady 로 들어온다. */
         fun onPurchasePending(productId: String)
 
@@ -505,7 +516,7 @@ class PlayBillingManager(
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
                 Log.i(TAG, "Restoring Play purchase productId=$productId")
-                listener.onPurchaseReady(purchase.purchaseToken, productId)
+                listener.onPurchaseRestored(purchase.purchaseToken, productId)
                 sent++
             }
         return sent

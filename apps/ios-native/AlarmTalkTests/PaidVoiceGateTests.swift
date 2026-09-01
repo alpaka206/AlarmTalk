@@ -121,6 +121,16 @@ final class PaidVoiceGateTests: XCTestCase {
         }
     }
 
+    /// 콜드 스타트: 구독 스냅샷은 아직 없는데 세션의 plan 은 이미 free 다.
+    /// 여기서 `.unknown` 을 돌려주면 낙관 규칙에 걸려 클론 목소리가 그대로 열린다.
+    func test_knownFreePlan_beatsMissingSnapshot() {
+        var snap = AccessSnapshot.empty
+        snap.userPlan = "free"
+        XCTAssertEqual(PaidVoiceGate.resolve(snapshot: snap), .notEntitled)
+        // 스냅샷도 plan 도 없으면 그때가 진짜 '모름' — 잠그지 않는다.
+        XCTAssertEqual(PaidVoiceGate.resolve(snapshot: .empty), .unknown)
+    }
+
     /// 결제 보류로 서버가 `users.plan` 을 회수하면 **남아 있는 구독 행보다 그게 위다.**
     /// 서버는 회복을 위해 그룹 연동 구독 행을 취소하지 않고 남기므로(`propagateGroupMemberPlans`
     /// 는 재계산에서 제외만 한다), 행부터 보면 결제가 밀린 멤버가 계속 유료로 읽힌다.

@@ -94,6 +94,27 @@ class PaidVoiceAccessTest {
     }
 
     @Test
+    fun knownFreePlanBeatsMissingSnapshot() {
+        // 콜드 스타트·첫 로그인: 구독 스냅샷은 아직 없는데 세션의 plan 은 이미 free 다.
+        // 여기서 Unknown 을 돌려주면 낙관 규칙에 걸려 무료 사용자에게 클론 목소리와
+        // 유료 전용 컨트롤이 열린다 — 눌러 봐야 서버가 거절한다.
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(null, null, "free", false, now),
+        )
+        // 스토어가 유효하다고 하면 여전히 그게 위다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(null, null, "free", true, now),
+        )
+        // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
+        assertEquals(
+            PaidVoiceAccess.Unknown,
+            resolvePaidVoiceAccess(null, null, null, false, now),
+        )
+    }
+
+    @Test
     fun answeredNoSubscriptionAndNoGroupIsFreeNotUnknown() {
         // '모름' 은 서버에 **한 번도 못 물어본** 상태의 뜻이다(→ missingSnapshotIsUnknownNotFree).
         // 여기는 서버가 "본인 구독 없음" 이라고 **답했고** 그룹도 없다 — 근거가 다 모인 무료다.

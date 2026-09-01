@@ -90,16 +90,21 @@ enum PaidVoiceGate {
            Date(timeIntervalSince1970: Double(untilMillis) / 1000) > now {
             return .entitled
         }
-        guard let response = snapshot.subscriptionResponse else { return .unknown }
         let plan = snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased()
-        // ⚠ **서버가 free 라고 말하면 구독 행보다 그게 위다**(2026-09-01 리뷰).
-        // 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
-        // 는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
-        // `status: active` 인 채 남고 `users.plan` 만 free 로 내려간다. 행부터 보면
-        // 결제가 밀린 그룹 멤버가 계속 유료로 읽혀 아래 `users.plan` 갈래에 닿지 못한다.
+        // ⚠ **서버가 free 라고 말하면 남아 있는 구독 행보다도, '모름' 보다도 먼저다.**
+        // ① 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
+        //    는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
+        //    `status: active` 인 채 남고 `users.plan` 만 free 로 내려간다. 행부터 보면
+        //    결제가 밀린 그룹 멤버가 계속 유료로 읽힌다.
+        // ② 콜드 스타트·첫 로그인에는 `subscriptionResponse` 가 아직 nil 인데, 그때
+        //    `.unknown` 으로 떨어지면 낙관 규칙에 걸려 무료 사용자에게 보관 중인 클론
+        //    목소리와 유료 전용 컨트롤이 열린다(2026-09-01 리뷰). `users.plan` 은 서버가
+        //    이미 준 값이라 스냅샷을 기다릴 이유가 없다.
         // 신규 결제는 막지 않는다 — 서버가 행과 **같은 트랜잭션에서** plan 을 올리고,
         // 산 직후는 어차피 위의 스토어 신호가 잡는다.
         if plan == "free" { return .notEntitled }
+        // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
+        guard let response = snapshot.subscriptionResponse else { return .unknown }
         guard let subscription = response.subscription else {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
             // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.

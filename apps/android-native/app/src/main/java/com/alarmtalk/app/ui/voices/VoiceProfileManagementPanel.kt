@@ -379,20 +379,11 @@ internal fun VoiceProfileManagementPanel(
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
     )
-    // ⚠ **'모름' 을 여기서는 낙관하지 않는다 — 세션이 이미 free 라고 말했다면**
-    // (2026-09-01 리뷰). 콜드 스타트·첫 로그인에는 구독 스냅샷이 아직 없어 판정이
-    // `Unknown` 인데, 이 화면의 낙관은 보관 중인 클론 프로필을 **이름 수정·공유·삭제**
-    // 까지 열어 준다 — 그 창에서 지우면 되돌릴 수 없다. `users.plan` 은 이미 서버가 준
-    // 값이므로, 그게 free 면 스냅샷을 기다릴 이유가 없다.
-    // 스냅샷도 없고 plan 도 모르면 그때는 낙관한다(유료 사용자를 잘못 잠그지 않는다).
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
-    val sessionPlanFree = authSession?.user?.plan?.trim()?.lowercase() == "free"
-    val canCreateVoice = when (paidVoiceAccess) {
-        PaidVoiceAccess.Entitled -> true
-        PaidVoiceAccess.NotEntitled -> false
-        PaidVoiceAccess.Unknown -> !sessionPlanFree
-    }
+    // '세션이 free 면 모름을 낙관하지 않는다' 는 **판정기 안으로 옮겼다**(2026-09-01 리뷰) —
+    // 같은 규칙을 화면마다 손으로 쓰면 또 갈라진다.
+    val canCreateVoice = paidVoiceAccess.isEntitledOptimistic()
     // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·

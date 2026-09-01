@@ -104,20 +104,10 @@ struct VoiceProfileManagementPanel: View {
             // 남고 plan 만 free)에서 그룹 폴백이 유료로 답한다.
             userPlan: auth.session?.user.plan
         )
-        // ⚠ **'모름' 을 여기서는 낙관하지 않는다 — 세션이 이미 free 라고 말했다면**
-        // (2026-09-01 리뷰, 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 와 같은
-        // 규칙). 콜드 스타트에는 `subscription` 이 아직 nil 이라 판정이 `.unknown` 인데,
-        // 이 화면의 낙관은 보관 중인 클론 프로필을 이름 수정·공유·**삭제**까지 열어 준다 —
-        // 그 창에서 지우면 되돌릴 수 없다. `users.plan` 은 서버가 이미 준 값이다.
-        // 스냅샷도 없고 plan 도 모르면 그때는 낙관한다(유료 사용자를 잘못 잠그지 않는다).
-        switch PaidVoiceGate.resolve(snapshot: snapshot) {
-        case .entitled:
-            return true
-        case .notEntitled:
-            return false
-        case .unknown:
-            return auth.session?.user.plan.trimmingCharacters(in: .whitespaces).lowercased() != "free"
-        }
+        // '세션이 free 면 모름을 낙관하지 않는다' 는 **판정기 안으로 옮겼다**(2026-09-01 리뷰,
+        // 안드로이드 `ui/util/PlatformAndLabelUtils.kt` 와 같은 규칙) — 같은 규칙을 화면마다
+        // 손으로 쓰면 또 갈라진다.
+        return PaidVoiceGate.isEntitled(snapshot: snapshot)
     }
 
     var body: some View {
