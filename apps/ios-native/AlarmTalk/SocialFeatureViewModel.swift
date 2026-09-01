@@ -58,6 +58,19 @@ final class SocialFeatureViewModel: ObservableObject {
      * 세대가 바뀌는데, 계정 id 만 보면 **그 사이 발급된 새 로그인 토큰을 옛 것으로 덮는다.**
      */
     var onRolledToken: ((_ userID: String, _ from: String, _ to: String) -> Void)?
+
+    /**
+     * `/auth/me` 가 준 **지금 plan** 을 세션 주인에게 건넨다(2026-09-01 리뷰).
+     *
+     * ⚠ 이 갱신은 plan 을 `AccessSnapshotStore` 에만 적었는데, 화면 게이트들은
+     * `auth.session.user.plan` 을 본다. 그래서 무료 사용자가 `INV-`/`GIFT-` 코드를 등록해
+     * 서버가 구독을 만들고 `users.plan` 을 올려도, **세션은 free 그대로**라 판정기의
+     * '아는 free 우선' 규칙이 방금 받은 활성 구독을 덮어 목소리·편집기가 잠긴 채 남는다.
+     * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
+     *
+     * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+     */
+    var onFreshPlan: ((_ userID: String, _ plan: String) -> Void)?
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -194,6 +207,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
             }
+            if let freshPlan { onFreshPlan?(userID, freshPlan) }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }

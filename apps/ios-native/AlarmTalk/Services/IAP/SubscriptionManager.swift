@@ -339,11 +339,9 @@ final class SubscriptionManager: ObservableObject {
         // B 가 **전경 진입마다** A 의 트랜잭션을 서버로 보내고, 서버는 소유권으로 409 를
         // 돌려준다 — B 는 실패한 결제가 없는데 "결제 확인 동기화에 실패했어요" 가 계속 뜬다.
         // 계정을 모르면 아무것도 보내지 않는다(등급 계산과 같은 기준).
-        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
-        else { return }
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
-            guard transaction.appAccountToken == currentAccount else { continue }
+            guard maySyncToBackend(transaction) else { continue }
             await syncWithBackend(
                 transaction: transaction
             )
@@ -365,12 +363,33 @@ final class SubscriptionManager: ObservableObject {
     /// 영원히 큐에 남지 않도록 한다. `purchase()` 가 직접 finish 한 트랜잭션이
     /// 다시 listener 로 들어오는 시나리오는 Apple 이 보장하지 않는다 — 그러나
     /// finish 가 중복 호출돼도 idempotent 하므로 안전.
+    /// 이 트랜잭션을 **서버로 보내도 되는가**(2026-09-01 리뷰).
+    ///
+    /// - 내 계정 토큰이 박힌 것: 보낸다.
+    /// - 토큰이 **없는** 레거시 구매: 보낸다 — 서버가 소유권을 붙여 줘야 판정이 풀린다
+    ///   (안드로이드가 `unattributed` 를 복원으로 넘기는 것과 같은 이유).
+    /// - **다른 계정** 토큰이 박힌 것: 보내지 않는다. 같은 Apple ID 를 쓰는 B 가 A 의
+    ///   트랜잭션을 보내면 서버가 소유권으로 거절하고, 실패한 결제가 없는 B 에게
+    ///   "결제 확인 동기화에 실패했어요" 가 상시로 뜬다.
+    /// - 계정을 모르면(로그아웃) 아무것도 보내지 않는다.
+    private func maySyncToBackend(_ transaction: Transaction) -> Bool {
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return false }
+        guard let token = transaction.appAccountToken else { return true }
+        return token == currentAccount
+    }
+
     private func startListeningForTransactions() {
         transactionListenerTask = Task.detached { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
                 do {
                     let transaction = try await self.verifyInIsolated(result)
+                    // ⚠ **남의 계정 트랜잭션은 보내지 않는다**(위 `maySyncToBackend` 주석).
+                    guard await self.maySyncToBackend(transaction) else {
+                        await self.refreshPurchasedProducts()
+                        continue
+                    }
                     let confirmed = await self.syncWithBackend(transaction: transaction)
                     // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
                     // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.

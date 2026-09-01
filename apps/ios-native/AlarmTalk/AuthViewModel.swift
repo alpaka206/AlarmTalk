@@ -739,6 +739,17 @@ final class AuthViewModel: ObservableObject {
         persistSession(AuthSession(token: rolled, user: current.user))
     }
 
+    /// 배경 갱신이 받아 온 **지금 plan** 을 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+    /// 계정을 대조해 남의 값이 박히지 않게 한다.
+    func applyFreshPlan(userID: String, plan: String) {
+        guard let current = session, current.user.id == userID, current.user.plan != plan else { return }
+        var user = current.user
+        user.plan = plan
+        persistSession(AuthSession(token: current.token, user: user))
+    }
+
     /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {

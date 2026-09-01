@@ -70,17 +70,8 @@ class PlanChangeSyncWorker(
                 return@runCatching Result.success()
             }
 
-            // 로컬 영속 반영 — 울림 시점 게이트·다음 앱 오픈 UI 가 최신 상태를 쓰게 한다.
             val userId = session.user.id
             val snapshotStore = AccessSnapshotStore(applicationContext)
-            snapshotStore.updateSubscription(userId, billing)
-            snapshotStore.updateFamilyGroup(userId, familyGroup)
-            // ⚠ **방금 받은 plan 도 함께 적는다**(2026-09-01 리뷰). 여기까지 와서 `freshUser`
-            // 로 판정만 하고 적지 않으면, 울림 게이트가 읽는 값은 강등 **전** 등급 그대로다.
-            // 보류(ON_HOLD)에서 특히 치명적이다 — 서버는 구독 행을 남긴 채 `users.plan` 만
-            // 회수하므로, 그 값이 옛 유료로 남아 있으면 판정기가 남은 행을 보고 유료라고
-            // 답한다(`resolvePaidVoiceAccess` 2단이 그래서 plan 을 먼저 본다).
-            snapshotStore.updateUserPlan(userId, freshUser.plan)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
             //
@@ -99,6 +90,19 @@ class PlanChangeSyncWorker(
             if (sessionStore.saveTokenIfGeneration(startGeneration, rolledToken) == null) {
                 return@runCatching Result.success()
             }
+
+            // ⚠ **스냅샷은 세션 CAS 를 통과한 뒤에 쓴다**(2026-09-01 리뷰). 위 검사와 이 쓰기
+            // 사이에 로그아웃→같은 계정 재로그인이 끼면, **옛 워커가 새 세션의 스냅샷을 덮는다**
+            // — 그 뒤 CAS 가 세대 변화를 알아채고 물러나도 이미 쓴 값은 남아, 새 세션의 갱신이
+            // 실패했을 때 울림 게이트가 옛 스냅샷을 읽는다(회복된 구독자의 클론이 막힌다).
+            // CAS 는 '검사와 저장을 한 덩어리로' 하므로, 그걸 통과한 뒤가 유일하게 안전한 지점이다.
+            snapshotStore.updateSubscription(userId, billing)
+            snapshotStore.updateFamilyGroup(userId, familyGroup)
+            // 방금 받은 plan 도 함께 적는다 — 판정만 하고 적지 않으면 울림 게이트가 읽는 값이
+            // 강등 **전** 등급 그대로다. 보류(ON_HOLD)에서 특히 치명적이다: 서버는 구독 행을
+            // 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가 남은 행을
+            // 보고 유료라고 답한다(`resolvePaidVoiceAccess` 2단이 그래서 plan 을 먼저 본다).
+            snapshotStore.updateUserPlan(userId, freshUser.plan)
 
             // '진짜 무료'만 변환한다. 판정은 **유일 판정기**로 하고(2026-09-01 리뷰),
             // 스토어 신호를 반드시 넣는다 — Play 가 갱신을 확인해 준 기기에서 서버 반영이
@@ -119,6 +123,15 @@ class PlanChangeSyncWorker(
             // 결제가 복구되면 살아난다. 울림·예약은 판정기 그대로 막히지만(되돌릴 수 있다),
             // 이 자리의 변환은 되돌릴 수 없으니 행이 살아 있는 동안에는 하지 않는다.
             val genuinelyFree = access.isDefinitelyFree() && !hasPaidVoiceAccess(billing)
+            // ⚠ **강등이면 캐시된 스토어 신호도 끊는다**(2026-09-01 리뷰). 그 신호는 판정
+            // **1단**이라, 자동갱신 중일 때 캐시된 40일짜리 통행증은 그 뒤 보류·환불이 와도
+            // 살아 있다 — 앱을 다시 열지 않으면 `RingingService` 가 계속 클론을 울린다.
+            // `plan_changed` 는 서버가 이미 알고 보낸 **권위 있는 신호**이므로, 여기서
+            // 끊는 것이 「스토어가 권위다」와 충돌하지 않는다(다음 전경 조회가 Play 에
+            // 다시 물어 살아 있으면 곧바로 되살린다).
+            if (access.isDefinitelyFree()) {
+                snapshotStore.updateStorePlanKey(userId, null, null)
+            }
             if (genuinelyFree) {
                 // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이
                 // 아니다 — `lockPaidAlarmTalks` 는 알람 행을 고치고 OS 예약을 **새로 거는**
