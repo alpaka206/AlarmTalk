@@ -91,8 +91,14 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         val serverPeriodEnd = subscriptionResponse?.subscription?.expiresAt?.let { raw ->
             runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
         }
+        // ⚠ **이미 지난 기간으로 상한을 두면 신호가 태어나자마자 죽는다**(2026-09-01 리뷰).
+        // RTDN 이 갱신을 놓쳐 서버가 **지난 기간 말**을 들고 있는데 사용자가 자동갱신을 끄면,
+        // 방금 Play 로 확인한 유료 신호가 그 옛 시각으로 잘려 곧바로 만료된다 — 그리고 판정은
+        // 같은 만료 구독으로 내려가 **돈 내는 사용자를 이번 기간 내내 막는다.**
+        // 상한은 **미래인 기간 말**일 때만 쓴다.
+        val futurePeriodEnd = serverPeriodEnd?.takeIf { it > System.currentTimeMillis() }
         val until = nextKey?.let {
-            if (willNotRenew && serverPeriodEnd != null) minOf(ttlUntil, serverPeriodEnd) else ttlUntil
+            if (willNotRenew && futurePeriodEnd != null) minOf(ttlUntil, futurePeriodEnd) else ttlUntil
         }
         // ⚠ **조회 중 계정이 바뀌었으면 버린다**(2026-08-31 리뷰). 조회는 비동기라 A 가
         // 로그아웃하고 B 가 들어온 뒤에 A 의 결과가 도착할 수 있다 — 그대로 쓰면 무료 B 가
@@ -183,7 +189,14 @@ internal fun MainViewModel.restorePurchases() {
     billingBusy = true
     message = app.getString(R.string.billing_restore_checking)
     viewModelScope.launch {
-        val restored = runCatching { playBilling.restorePurchases(userInitiated = true) }
+        // ⚠ **조회 전에 잡은 계정을 콜백까지 들고 간다**(2026-09-01 리뷰).
+        // `restorePurchases` 안의 `queryPurchasesAsync` 가 중단점이라, 그 사이 A→B 전환이
+        // 일어나면 콜백에서 `confirmGooglePurchase` 가 **B 를 시작 계정으로 잡는다** — 가드가
+        // B==B 로 통과해 A 의 구매가 B 의 인가로 제출되고 결과·에러가 B 화면에 뜬다.
+        val restoreOwnerUserId = authSession?.user?.id
+        val restored = runCatching {
+            playBilling.restorePurchases(userInitiated = true, ownerUserId = restoreOwnerUserId)
+        }
             .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
             .getOrDefault(0)
         // ⚠ **busy 는 이 함수가 소유한다**(2026-09-01 리뷰). 예전에는 보낸 게 있으면
@@ -485,6 +498,12 @@ internal fun MainViewModel.confirmGooglePurchase(
     purchaseToken: String,
     productId: String,
     origin: PurchaseConfirmOrigin = PurchaseConfirmOrigin.UserPurchase,
+    /**
+     * 이 확인을 **시작한** 계정. 스토어 조회에 중단점이 있는 복원 경로가 넘긴다 —
+     * 여기서 `authSession` 을 읽으면 이미 전환된 계정이 잡힌다(2026-09-01 리뷰).
+     * null 이면 지금 계정을 쓴다(구매 콜백은 동기라 그때가 곧 시작 시점이다).
+     */
+    startedByUserId: String? = null,
 ) {
     val showsResult = origin != PurchaseConfirmOrigin.AutoReconcile
     val ownsBusy = origin == PurchaseConfirmOrigin.UserPurchase
@@ -496,7 +515,7 @@ internal fun MainViewModel.confirmGooglePurchase(
     // 전환이 일어날 수 있는데, 아래 `refreshBillingAfterMutation` 은 **A 의 토큰으로 받아
     // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
     // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
-    val ownerUserId = authSession?.user?.id
+    val ownerUserId = startedByUserId ?: authSession?.user?.id
     viewModelScope.launch {
         if (ownsBusy) billingBusy = true
         runCatching {

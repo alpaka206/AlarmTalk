@@ -335,8 +335,15 @@ final class SubscriptionManager: ObservableObject {
     /// 사용자가 BillingPanel 의 "동기화 재시도" 를 누르면 호출.
     /// `currentEntitlements` 의 모든 verified 트랜잭션을 다시 백엔드로 보낸다.
     func resyncEntitlements() async {
+        // ⚠ **여기에도 같은 계정 필터를 건다**(2026-09-01 리뷰). 안 걸면 같은 Apple ID 를 쓰는
+        // B 가 **전경 진입마다** A 의 트랜잭션을 서버로 보내고, 서버는 소유권으로 409 를
+        // 돌려준다 — B 는 실패한 결제가 없는데 "결제 확인 동기화에 실패했어요" 가 계속 뜬다.
+        // 계정을 모르면 아무것도 보내지 않는다(등급 계산과 같은 기준).
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return }
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
+            guard transaction.appAccountToken == currentAccount else { continue }
             await syncWithBackend(
                 transaction: transaction
             )

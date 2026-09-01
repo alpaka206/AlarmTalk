@@ -614,8 +614,13 @@ internal fun AlarmTalkApp(
             // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
             // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
             // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
-            authSession != null && viewModel.storeEntitlementChecked &&
-                viewModel.isPaidVoiceEntitledOptimistic() ->
+            //
+            // ⚠ **`storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
+            // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
+            // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
+            // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
+            authSession != null &&
+                viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled ->
                 viewModel.restorePaidVoiceAlarmsIfLocked()
             // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
             // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜

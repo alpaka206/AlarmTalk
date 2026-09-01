@@ -133,7 +133,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
             }
 
-            override fun onPurchaseRestored(purchaseToken: String, productId: String, userInitiated: Boolean) {
+            override fun onPurchaseRestored(
+                purchaseToken: String,
+                productId: String,
+                userInitiated: Boolean,
+                ownerUserId: String?,
+            ) {
                 // 사용자가 방금 산 게 아니다 — 이동은 어느 쪽이든 하지 않는다.
                 // 다만 **사용자가 누른 복원은 결과를 말해 줘야 한다**(2026-09-01 리뷰).
                 viewModelScope.launch {
@@ -145,6 +150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             PurchaseConfirmOrigin.AutoReconcile
                         },
+                        startedByUserId = ownerUserId,
                     )
                 }
             }

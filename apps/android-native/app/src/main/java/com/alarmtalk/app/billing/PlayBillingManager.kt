@@ -134,7 +134,13 @@ class PlayBillingManager(
          * 정합화는 앱 시작·탭 진입마다 도는데 그걸 그대로 태우면, 이미 가족 플랜을 쓰는
          * 사람이 **앱을 켤 때마다 구성원 관리로 튕긴다.**
          */
-        fun onPurchaseRestored(purchaseToken: String, productId: String, userInitiated: Boolean)
+        fun onPurchaseRestored(
+            purchaseToken: String,
+            productId: String,
+            userInitiated: Boolean,
+            /** 복원을 **시작한** 계정. 조회 중 전환됐을 수 있어 호출부가 잡아 넘긴다. */
+            ownerUserId: String?,
+        )
 
         /** 결제 수단 승인 대기 등 보류(PENDING) 상태 구매. 승인되면 다시 onPurchaseReady 로 들어온다. */
         fun onPurchasePending(productId: String)
@@ -503,7 +509,7 @@ class PlayBillingManager(
      *
      * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
      */
-    suspend fun restorePurchases(userInitiated: Boolean = false): Int {
+    suspend fun restorePurchases(userInitiated: Boolean = false, ownerUserId: String? = null): Int {
         if (!ensureConnected()) return 0
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
@@ -520,7 +526,7 @@ class PlayBillingManager(
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
                 Log.i(TAG, "Restoring Play purchase productId=$productId")
-                listener.onPurchaseRestored(purchase.purchaseToken, productId, userInitiated)
+                listener.onPurchaseRestored(purchase.purchaseToken, productId, userInitiated, ownerUserId)
                 sent++
             }
         return sent
