@@ -1560,6 +1560,21 @@ struct AlarmEditorSheet: View {
         if !voiceStudio.randomPrompt && !isActiveStockClipAlarm {
             return MessageSettingsResult.manualContext
         }
+        // ⚠ **테마가 붙어 있으면 그 테마가 답이다**(2026-09-02 리뷰). 울릴 때 무엇이
+        //   나올지 정하는 것은 `bucketId` 이고 `randomContext` 는 그것을 부르는 이름일
+        //   뿐이라, 둘이 어긋나면 **화면이 거짓말을 한다** — 저장된 종류가 `preset` 인데
+        //   테마가 `medication` 이면 요약 행은 '기본 인사말' 이라고 하면서 실제로는 약
+        //   문구가 울리고, 문구 화면에는 선택된 라디오가 하나도 없다(기본 목소리 목록에
+        //   `preset` 이 없으므로).
+        //
+        //   쓰기 쪽은 이미 둘을 함께 맞춘다(`selectFreeBucket`·`applyMessageSettings`·
+        //   안드로이드 `setBucketAudio`). 여기는 **읽을 때도** 실제로 울릴 것을 말하게
+        //   하는 이중 안전장치다 — 어긋난 행이 어디서 오든(옛 저장분·동기화) 화면은
+        //   진실을 말한다.
+        if let bucket = selectedFreeBucket,
+           let fromBucket = RandomPromptContext.forBucket(bucket.rawValue) {
+            return fromBucket.rawValue
+        }
         return voiceStudio.randomContext
     }
 
