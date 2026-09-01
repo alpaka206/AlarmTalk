@@ -33,9 +33,13 @@ class PlanChangeSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
-        val session = sessionStore.read() ?: return Result.success()
         // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
+        // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
+        // 통과해 **B 의 토큰을 A 것으로 갈아 끼운다** — 화면은 B 인데 요청은 A 로 나가는
+        // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
+        val session = sessionStore.read() ?: return Result.success()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)

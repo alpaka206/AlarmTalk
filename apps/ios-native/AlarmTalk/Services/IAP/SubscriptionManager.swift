@@ -37,6 +37,14 @@ final class SubscriptionManager: ObservableObject {
     /// 늦게 끝나면서 새 `currentTier` 와 캐시를 옛 값으로 덮는다** — 예약 시점 게이트가
     /// 읽는 캐시라 되살아난 통행증이 그대로 알람에 적용된다.
     private var refreshGeneration = 0
+
+    /// 지금 발행돼 있는 등급이 **누구 것인가**(2026-09-01 리뷰).
+    ///
+    /// ⚠ 계정 가드만으로는 부족하다. 유료 A 가 로그아웃하고 무료 B 가 들어오면 B 의 갱신은
+    /// 가드를 통과하지만, `currentEntitlements` 순회가 끝날 때까지 `currentTier` 는 **A 의
+    /// 유료 등급 그대로**다 — 그 창에서 목소리 관리 화면이 B 를 유료로 보고 보관된 프로필의
+    /// 이름 수정·공유·**삭제**를 열어 준다(삭제는 되돌릴 수 없다).
+    private var entitlementOwner: UUID?
     @Published private(set) var hasLoadedEntitlements: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
     @Published private(set) var isPurchasing: Bool = false
@@ -232,7 +240,16 @@ final class SubscriptionManager: ObservableObject {
             purchasedProductIDs = []
             currentTier = .free
             hasLoadedEntitlements = false
+            entitlementOwner = nil
             return
+        }
+        // ⚠ **주인이 바뀌었으면 순회 전에 비운다**(위 `entitlementOwner` 주석).
+        // 비우는 방향은 안전하다 — 이 계정이 실제로 유료면 아래 순회가 곧 다시 채운다.
+        if entitlementOwner != currentAccount {
+            purchasedProductIDs = []
+            currentTier = .free
+            hasLoadedEntitlements = false
+            entitlementOwner = currentAccount
         }
         refreshGeneration &+= 1
         let generation = refreshGeneration
@@ -266,6 +283,7 @@ final class SubscriptionManager: ObservableObject {
         else { return }
         // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
         guard generation == refreshGeneration else { return }
+        self.entitlementOwner = currentAccount
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
