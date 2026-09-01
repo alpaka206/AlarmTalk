@@ -270,6 +270,8 @@ class StockClipPrefetchWorker(
             // 성공으로 끝내면 WorkManager 가 백오프 재시도를 걸지 않아, 약전파에서 한두 개를
             // 놓친 채 **완료로 굳는다** — 준비 화면은 100% 를 보여주는데 오프라인 음원은 없다.
             val failures = java.util.concurrent.atomic.AtomicInteger(0)
+            // 그중 **다시 해 볼 만한** 실패 수. 0 이면 재시도가 의미 없다(위 when 참조).
+            val transientFailures = java.util.concurrent.atomic.AtomicInteger(0)
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             missing.chunked(PARALLELISM).forEach { batch ->
@@ -296,6 +298,13 @@ class StockClipPrefetchWorker(
                                 }
                             }.onFailure { error ->
                                 failures.incrementAndGet()
+                                // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
+                                // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
+                                // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
+                                // '받는 중' 으로 남고 '다시 시도' 는 끝내 안 뜬다.
+                                // (바깥 catch 는 이미 `isPermanent()` 로 가르고 있었는데,
+                                // 클립별로 삼키면서 그 분류에 닿지 못했다.)
+                                if (!error.isPermanent()) transientFailures.incrementAndGet()
                                 AlarmTalkLog.reportError(
                                     "Stock clip download failed messageId=${clip.messageId}",
                                     error,
@@ -318,6 +327,9 @@ class StockClipPrefetchWorker(
             // 큐를 다시 넣을 때까지 빈 채로 남는다. 아래 catch 의 종료 규칙과 같은 결론이다.
             when {
                 failures.get() == 0 -> Result.success()
+                // 실패가 **전부 영구**면 재시도해 봐야 같은 결과다 — 곧바로 FAILED 로 끝내
+                // 준비 화면이 '다시 시도' 를 띄우게 한다.
+                transientFailures.get() == 0 -> Result.failure()
                 runAttemptCount < MAX_RUN_ATTEMPTS -> Result.retry()
                 else -> Result.failure()
             }
