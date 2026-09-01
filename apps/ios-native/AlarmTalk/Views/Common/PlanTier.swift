@@ -81,7 +81,15 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         if serverSubscription == nil {
             candidates.append(PlanTier.from(userPlan))
         }
-        if serverSubscription?.subscription?.status == "active" {
+        // ⚠ **서버가 `users.plan = free` 라고 하면 남아 있는 구독 행으로 등급을 올리지
+        // 않는다**(2026-09-01 리뷰). 결제 보류는 회복을 위해 구독 행과 그룹을 **그대로 둔
+        // 채** plan 만 회수하므로(백엔드 `propagateGroupMemberPlans`), 행만 보면 결제가
+        // 밀린 사용자에게 계속 유료 UI 를 보여 주고 **서버가 거부할 액션을 유도한다.**
+        // 스토어(`storeTier`)는 후보에 그대로 있어 「스토어가 권위다」는 지켜진다 —
+        // 보류가 풀렸는데 서버 반영이 늦어도 잠기지 않는다.
+        // 판정기(`PaidVoiceGate.resolve`)의 2단과 같은 규칙이다.
+        let suspended = userPlan?.trimmingCharacters(in: .whitespaces).lowercased() == "free"
+        if !suspended, serverSubscription?.subscription?.status == "active" {
             candidates.append(PlanTier.from(serverSubscription?.plan?.key))
             candidates.append(PlanTier.from(serverSubscription?.plan?.planType))
         }

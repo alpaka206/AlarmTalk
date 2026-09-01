@@ -155,6 +155,18 @@ final class BackgroundDependencies {
         return true
     }
 
+    /**
+     * StoreKit 권한을 **다시 계산**한다(전경 앱이 꽂아 준다).
+     *
+     * ⚠ **여기서 `SubscriptionManager` 를 새로 만들지 말 것.** 그 타입은 init 에서
+     * `Transaction.updates` 리스너를 띄우므로, 인스턴스가 둘이면 갱신·구매가 서버로
+     * **두 번** 올라간다. 전경의 `@StateObject` 하나만 두고 이 훅으로 부른다.
+     *
+     * nil 이면(푸시만으로 깨어나 화면이 아직 없는 실행) 건너뛴다 — 다음 전경 진입의
+     * `bootstrap`/`resyncEntitlements` 가 같은 일을 한다.
+     */
+    var revalidateStoreEntitlement: (() async -> Void)?
+
     private init() {
         // 화면 확인 모드에서는 표본이 진짜 저장소에 남지 않도록 임시 파일을 쓴다
         // (`UIPreviewSeed.ephemeralAlarmStorageURL` 주석).
@@ -165,6 +177,20 @@ final class BackgroundDependencies {
         alarmKit = AlarmKitViewModel()
         auth = AuthViewModel()
         socialFeatures = SocialFeatureViewModel()
+        // 배경 `plan_changed` 경로는 `refreshAll` 하나만 돈다 — 거기서 굴러온 토큰을
+        // 세션에 반영하지 않으면 그 기기의 토큰이 수명대로 죽는다(위 뷰모델 주석).
+        socialFeatures.onRolledToken = { [weak auth] userID, from, to in
+            auth?.applyRolledToken(userID: userID, from: from, to: to)
+        }
+        // 코드 등록으로 서버 plan 이 올라가도 세션이 free 그대로면 게이트가 잠긴 채 남는다.
+        socialFeatures.onFreshPlan = { [weak auth] userID, from, plan in
+            auth?.applyFreshPlan(userID: userID, from: from, plan: plan)
+        }
+        // 스냅샷 쓰기도 같은 에폭으로 가른다 — 같은 계정 재로그인은 id·세대를 바꾸지 않는다.
+        socialFeatures.isCurrentSessionToken = { [weak auth] userID, token in
+            guard let session = auth?.session else { return false }
+            return session.user.id == userID && session.token == token
+        }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()
     }

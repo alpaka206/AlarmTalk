@@ -234,6 +234,8 @@ internal fun VoiceProfileManagementPanel(
     voiceDraftQuotaExhausted: Boolean = false,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
+    /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
+    storeEntitledNow: Boolean,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
@@ -366,9 +368,35 @@ internal fun VoiceProfileManagementPanel(
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
-    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
-    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    // ⚠ 만료까지 보는 판정을 **생성·쿼터 게이트에도** 쓴다(2026-08-31 리뷰). 목록만 숨기고
+    // 여기를 옛 판정으로 두면, 만료된 스냅샷에서 목소리는 사라졌는데 '생성 가능 n/m회' 와
+    // 등록 흐름은 그대로 열려 있다 — 게다가 교체 대상은 비어 버린 목록에서 오므로 보관된
+    // 프로필을 교체할 길도 없이 확정에서 거절당한다.
+    val paidVoiceAccess = resolvePaidVoiceAccess(
+        subscriptionResponse = subscriptionResponse,
+        familyGroup = familyGroup,
+        userPlan = authSession?.user?.plan,
+        storeEntitled = storeEntitledNow,
+        nowMillis = System.currentTimeMillis(),
+    )
+    // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
+    // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
+    // '세션이 free 면 모름을 낙관하지 않는다' 는 **판정기 안으로 옮겼다**(2026-09-01 리뷰) —
+    // 같은 규칙을 화면마다 손으로 쓰면 또 갈라진다.
+    val canCreateVoice = paidVoiceAccess.isEntitledOptimistic()
+    // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
+    // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
+    // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
+    // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
+    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`,
+    // `msg_gb_free_plan_voice_alarms_locked`). 여기 붙이면 무료로 지내는 내내 같은 말이
+    // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
+    // `ControlsAndPermissions.kt` 주석).
+    // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).
+    //
+    // ⚠ **만료까지 보는 판정을 쓴다**(2026-08-31 리뷰). `hasPaidVoiceAccess` 는
+    // `status == "active"` 만 보므로, 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도**
+    // true 가 되어 숨겨야 할 목소리가 미리듣기·삭제까지 가능한 채로 드러난다.
     val ownVoices = remember(voiceProfiles, canCreateVoice) {
         if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }

@@ -75,6 +75,8 @@ internal fun AlarmListScreen(
     familyVoices: List<FamilyVoiceProfile>,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
+    /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
+    storeEntitledNow: Boolean,
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
@@ -300,6 +302,7 @@ internal fun AlarmListScreen(
                         onReloadStockClips = onReloadStockClips,
                         prerenderDrive = prerenderDrive,
                         onStartPrerenderDrive = onStartPrerenderDrive,
+                        storeEntitledNow = storeEntitledNow,
                     )
                 }
             }

@@ -720,6 +720,43 @@ final class AuthViewModel: ObservableObject {
         session = nextSession
     }
 
+    /// 다른 경로(`SocialFeatureViewModel.refreshAll`)가 `/auth/me` 에서 받은 **굴러온 토큰**을
+    /// 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **계정을 대조한다.** 배경 갱신은 비동기라 그 사이 로그아웃·계정 전환이 일어날 수
+    /// 있는데, 그대로 쓰면 A 의 토큰이 B 의 세션에 박힌다.
+    /// **프로필은 건드리지 않는다** — 전경에서 방금 바꾼 이름을 옛 값으로 되돌리지 않기 위해서다.
+    func applyRolledToken(userID: String, from previous: String, to rolled: String) {
+        // ⚠ **계정 id 만 보면 안 된다**(2026-09-01 리뷰). 같은 계정으로 로그아웃→재로그인하면
+        // 토큰 세대가 바뀌는데, 그 사이 떠 있던 배경 `/auth/me` 응답은 **로그아웃 전 토큰으로
+        // 인가된 것**이다 — id 만 보고 반영하면 방금 발급된 로그인 토큰을 옛 것으로 덮어
+        // 이후 요청이 전부 401 이 된다. **굴러온 출처 토큰이 지금 것과 같을 때만** 갈아 끼운다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.token != rolled
+        else { return }
+        persistSession(AuthSession(token: rolled, user: current.user))
+    }
+
+    /// 배경 갱신이 받아 온 **지금 plan** 을 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+    /// 계정을 대조해 남의 값이 박히지 않게 한다.
+    func applyFreshPlan(userID: String, from previous: String, plan: String) {
+        // ⚠ **`applyRolledToken` 과 같은 에폭 가드가 필요하다**(2026-09-01 리뷰). 같은 계정으로
+        // 로그아웃→재로그인하면 id 는 그대로라, 로그아웃 **전** 토큰으로 인가된 응답의 plan 이
+        // 새 세션에 박힌다 — 옛 free 가 유료 게이트를 잠그거나 옛 유료가 무료 잠금을 막는다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.user.plan != plan
+        else { return }
+        var user = current.user
+        user.plan = plan
+        persistSession(AuthSession(token: current.token, user: user))
+    }
+
     /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {

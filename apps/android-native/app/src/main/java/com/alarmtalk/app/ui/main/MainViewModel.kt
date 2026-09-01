@@ -133,6 +133,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
             }
 
+            override fun onPurchaseRestored(
+                purchaseToken: String,
+                productId: String,
+                userInitiated: Boolean,
+                ownerUserId: String?,
+            ) {
+                // 사용자가 방금 산 게 아니다 — 이동은 어느 쪽이든 하지 않는다.
+                // 다만 **사용자가 누른 복원은 결과를 말해 줘야 한다**(2026-09-01 리뷰).
+                viewModelScope.launch {
+                    confirmGooglePurchase(
+                        purchaseToken,
+                        productId,
+                        origin = if (userInitiated) {
+                            PurchaseConfirmOrigin.UserRestore
+                        } else {
+                            PurchaseConfirmOrigin.AutoReconcile
+                        },
+                        startedByUserId = ownerUserId,
+                    )
+                }
+            }
+
             override fun onPurchasePending(productId: String) {
                 viewModelScope.launch {
                     billingBusy = false
@@ -549,6 +571,98 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var billingBusy by mutableStateOf(false)
+
+    /**
+     * **스토어가 확인해 준 등급**(plan key). null 이면 '무료' 가 아니라 **아직 확인 못 함**이다.
+     *
+     * 「스토어가 권위다」(`docs/spec/billing-lifecycle.md`)를 판정에 실제로 반영하는 값이다.
+     * 예전에는 앱이 보는 구독 상태가 100% 서버 응답이라, Play 가 자동갱신했는데 서버 반영이
+     * 늦으면 **돈을 내는 사용자가 잠겼다**(2026-08-31). iOS 는 `SubscriptionManager.currentTier`
+     * 로 이미 하던 일이다.
+     *
+     * ⚠ Play 에는 iOS `Transaction.updates` 같은 **푸시가 없다** — 실시간 신호는 서버로 가는
+     * RTDN 이다. 그래서 여기서는 **폴링**한다(앱 시작·전경 진입).
+     */
+    /**
+     * ⚠ **콜드 스타트에 캐시에서 되살린다**(2026-09-01 리뷰). null 로 시작하면, 앱을 켠
+     * 직후 BillingClient 가 연결되지 않는 동안(비행기모드·Play 서비스 문제) 전경 게이트가
+     * 전부 '스토어 신호 없음' 으로 읽는다 — `refreshStoreEntitlement` 는 못 물어봤을 때
+     * **저장된 신호를 일부러 그대로 두는데**, 정작 화면은 그 값을 못 본다.
+     */
+    var storePlanKey by mutableStateOf<String?>(initialAccessSnapshot.storePlanKey)
+        internal set
+
+    /** 스냅샷에 적힌 `users.plan`(= 마지막으로 `/auth/me` 를 받은 값). [effectiveUserPlan] 참조. */
+    var storeSnapshotUserPlan by mutableStateOf<String?>(initialAccessSnapshot.userPlan)
+        internal set
+
+    /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
+    var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
+        internal set
+
+    /**
+     * **스토어에 한 번이라도 물어봤는가.** 되돌릴 수 없는 잠금은 이게 참이 되기 전에는 하지 않는다.
+     *
+     * ⚠ BillingClient 조회는 **비동기**다. 앱 시작 직후에는 `storePlanKey` 가 아직 null 인데,
+     * 그 순간을 '무료 확정' 으로 읽으면 Play 가 갱신을 알려 주기 **전에** 알람이 영구 강등된다
+     * (2026-08-31 리뷰). 그 변환은 되돌릴 수 없다.
+     */
+    var storeEntitlementChecked by mutableStateOf(false)
+        internal set
+
+    /**
+     * 스토어 조회를 **한 번에 하나만** 돌린다(2026-09-01 리뷰).
+     *
+     * ⚠ 앱 시작과 탭 진입이 각각 `refreshStoreEntitlement()` 를 던지므로 같은 계정의 조회가
+     * 겹칠 수 있다. 계정 가드는 둘 다 통과시켜서, 겹치면 먼저 시작한 쪽이 늦게 끝나며 최신을
+     * 덮었다 — 옛 빈 결과가 방금 확인한 갱신을 지워 **되돌릴 수 없는 잠금**을 부르거나, 옛
+     * 유료 결과가 해지 뒤에 통행증을 되살린다. 직렬화하면 버려지는 결과 없이 순서가 선다.
+     */
+    internal val storeRefreshMutex = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
+     * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
+     */
+    /**
+     * ⚠ **plan 은 스냅샷을 먼저 본다**(2026-09-01 리뷰). `PlanChangeSyncWorker` 는 프로세스가
+     * 죽어 있는 동안 강등을 확정하면 `AccessSnapshot.userPlan` 을 갱신하지만 세션은
+     * **토큰만** 굴린다(프로필을 덮으면 그 사이 바꾼 닉네임이 되돌아가기 때문이다) —
+     * 그래서 다음 콜드 스타트의 `authSession.user.plan` 은 낡아 있다. 오프라인이면 그
+     * 상태로 계속 판정하게 되어, 회복된 유료 사용자가 잠긴 채 남거나 정지된 사용자의
+     * 남은 구독 행이 유료로 읽힌다. 스냅샷 값은 **방금 `/auth/me` 를 받은 경로만** 쓰므로
+     * 세션 값보다 새롭거나 같다.
+     */
+    private val effectiveUserPlan: String?
+        get() = storeSnapshotUserPlan ?: authSession?.user?.plan
+
+    internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
+        resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = effectiveUserPlan,
+            storeEntitled = isStoreEntitledNow(nowMillis),
+            nowMillis = nowMillis,
+        )
+
+    /**
+     * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
+     * 원시 `storePlanKey` 를 넘기면 기한이 지난 키를 그대로 믿게 된다(2026-08-31 리뷰).
+     */
+    internal fun isStoreEntitledNow(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        storePlanKey != null && (storeEntitlementUntilMillis ?: 0L) > nowMillis
+
+    /** 모르면 잠그지 않는다 — 표시·저장·생성 게이트용. */
+    internal fun isPaidVoiceEntitledOptimistic(): Boolean = paidVoiceAccess().isEntitledOptimistic()
+
+    /**
+     * 확실히 무료일 때만 참 — 되돌리기 어려운 잠금·강등용.
+     *
+     * ⚠ **스토어 확인 전에는 절대 참이 아니다.** 조회가 비동기라 시작 직후의 null 을
+     * '무료' 로 읽으면 갱신을 확인하기 전에 영구 변환이 걸린다.
+     */
+    internal fun isDefinitelyFreePlan(): Boolean =
+        storeEntitlementChecked && paidVoiceAccess().isDefinitelyFree()
 
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
@@ -1061,11 +1175,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?: AccessSnapshot()
         subscriptionResponse = snapshot.subscriptionResponse
         familyGroup = snapshot.familyGroup
+        // ⚠ **스토어 신호도 계정에 묶인다**(2026-08-31 리뷰). 여기서 복원하지 않으면 계정을
+        // 바꿔도 앞 사람의 값이 메모리에 남아, 무료 계정이 유료로 취급된다.
+        storePlanKey = snapshot.storePlanKey
+        storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
+        storeSnapshotUserPlan = snapshot.userPlan
+        // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
+        storeEntitlementChecked = false
     }
 
     internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         accessSnapshotStore.updateSubscription(userId, response)
+        // ⚠ **여기서 `users.plan` 을 같이 쓰지 않는다**(2026-09-01 리뷰). 이 자리가 아는
+        // plan 은 **마지막으로 `/auth/me` 를 받았을 때의 값**이라, 앱을 닫아 둔 사이 강등된
+        // 계정이 `plan_changed` 를 놓치면 옛 유료 값이다. 보류에서는 `/billing/subscription`
+        // 이 남아 있는 행을 그대로 돌려주므로 이 경로가 그대로 돌아 **판정에 옛 유료 plan 을
+        // 심고**, 잠금 이펙트의 `billingNotEntitled` 갈래도 (행이 살아 있어) 안 타서
+        // `refreshAppSession()` 이 불리지 않는다.
+        //
+        // 그래서 plan 은 **방금 받아 온 경로만** 적는다 — `refreshAppSession`(시작 시·
+        // plan_changed 시) 과 `PlanChangeSyncWorker`. 안 적혀 있으면 판정기가 구독·그룹으로
+        // 답하고(예전 동작), 그건 옛 값을 심는 것보다 낫다.
     }
 
     internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {
@@ -1117,6 +1249,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
         subscriptionResponse = null
+        // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
+        // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
+        storePlanKey = null
+        storeEntitlementUntilMillis = null
+        storeEntitlementChecked = false
         vouchers = emptyList()
         billingPlayManageUrl = null
         receivedAlarmSeenAtMillis = 0L
@@ -1219,6 +1356,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 runCatching { playBilling.resendUnconfirmedPurchases() }
                     .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
+                refreshStoreEntitlement()
             }
         }
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.

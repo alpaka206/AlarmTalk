@@ -63,6 +63,14 @@ object PlayBillingProducts {
         return "${planKey}_monthly"
     }
 
+    /** 위의 역 — Play 상품 ID → plan key. 스토어가 준 구매를 등급으로 옮길 때 쓴다. */
+    fun planKeyFor(productId: String): String? = when (productId) {
+        PERSONAL_MONTHLY -> "personal"
+        COUPLE_MONTHLY -> "couple"
+        FAMILY_MONTHLY -> "family"
+        else -> null
+    }
+
     /**
      * 등급 순서. **업그레이드인지 다운그레이드인지 판정하는 유일 근거**다.
      *
@@ -112,6 +120,27 @@ class PlayBillingManager(
     interface Listener {
         /** PURCHASED 상태 구매 도착. 백엔드 검증(/billing/google/confirm)은 호출자 책임. */
         fun onPurchaseReady(purchaseToken: String, productId: String)
+
+        /**
+         * **사용자가 방금 산 것이 아닌** 기존 구매의 정합화(restore). 검증 경로는 같지만
+         * 성공 UI 를 내지 않는다.
+         *
+         * [userInitiated] 가 참이면 **사용자가 '이전 구매 복원' 을 눌러서** 온 것이다 —
+         * 결과(성공/실패)를 반드시 화면에 말해야 한다. 거짓이면 앱 시작·탭 진입마다 도는
+         * 자동 정합화라 아무 말도 하지 않는다.
+         *
+         * ⚠ **[onPurchaseReady] 로 합치지 말 것**(2026-09-01 리뷰). 그 핸들러는
+         * "이용권이 적용됐어요" 를 띄우고 커플/가족이면 구성원 관리로 **이동**시킨다.
+         * 정합화는 앱 시작·탭 진입마다 도는데 그걸 그대로 태우면, 이미 가족 플랜을 쓰는
+         * 사람이 **앱을 켤 때마다 구성원 관리로 튕긴다.**
+         */
+        fun onPurchaseRestored(
+            purchaseToken: String,
+            productId: String,
+            userInitiated: Boolean,
+            /** 복원을 **시작한** 계정. 조회 중 전환됐을 수 있어 호출부가 잡아 넘긴다. */
+            ownerUserId: String?,
+        )
 
         /** 결제 수단 승인 대기 등 보류(PENDING) 상태 구매. 승인되면 다시 onPurchaseReady 로 들어온다. */
         fun onPurchasePending(productId: String)
@@ -361,7 +390,34 @@ class PlayBillingManager(
      * 남의 구독을 취소/비례정산시키게 된다. 구매에 식별자가 없거나(레거시) 불일치하면, 또는
      * accountHash 가 null 이면(비로그인) 소유 확인이 불가능하므로 교체 없이 신규 구매로 진행한다.
      */
-    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? {
+    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? =
+        queryActiveSubscriptions(accountHash)
+            // 교체 후보는 **내 것만**이다. 임자를 알 수 없는 레거시 구매를 교체하면 남의
+            // 구독을 취소·비례정산시킬 수 있다(위 주석).
+            ?.mine
+            .orEmpty()
+            .filter { productId !in it.products }
+            .maxByOrNull { it.purchaseTime }
+
+    /**
+     * **이 계정의 살아 있는 구독 구매** — 스토어가 답하는 권위 신호.
+     *
+     * iOS `Transaction.currentEntitlements` 의 Play 대응물이다. 예전에는 이 조회가
+     * `findActiveSubscriptionToReplace`(교체 대상 찾기) 안에만 있어 **등급 판정에 쓰이지
+     * 못했다** — 그래서 앱이 보는 구독 상태가 100% 서버 응답이었고, 스토어가 자동갱신했는데
+     * 서버 반영이 늦으면 **돈을 내는 사용자가 잠겼다**(2026-08-31).
+     *
+     * ⚠ **계정 대조를 반드시 함께 한다.** 같은 구글 계정에 **다른 AlarmTalk 계정**으로 결제된
+     * 구독이 있을 수 있는데, 그걸 세면 공용 폰에서 남의 구독이 이 계정의 등급을 올린다.
+     * 비로그인(accountHash == null)은 아예 못 묻는다(`null`).
+     * 식별자가 없는 레거시 구매는 **세지도, 버리지도 않고** [ActiveSubscriptionQuery.unattributed]
+     * 로 따로 준다 — 버리면 빈 목록이 되어 "스토어가 없다고 했다" 로 읽히기 때문이다.
+     *
+     * ⚠ **반환값 `null` 과 빈 리스트는 뜻이 다르다**(2026-08-31 리뷰).
+     * `null` = **못 물어봤다**(연결 실패·응답 오류·비로그인), `emptyList` = **스토어가 없다고
+     * 답했다**. 둘을 같게 다루면 오프라인 한 번에 결제 중인 사용자의 신호가 지워진다.
+     */
+    suspend fun queryActiveSubscriptions(accountHash: String?): ActiveSubscriptionQuery? {
         if (accountHash == null) return null
         if (!ensureConnected()) return null
         val result = billingClient.queryPurchasesAsync(
@@ -370,17 +426,34 @@ class PlayBillingManager(
                 .build(),
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "queryPurchasesAsync before purchase failed code=${result.billingResult.responseCode}")
+            Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
             return null
         }
-        return result.purchasesList
-            .filter {
-                it.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                    productId !in it.products &&
-                    it.accountIdentifiers?.obfuscatedAccountId == accountHash
-            }
-            .maxByOrNull { it.purchaseTime }
+        val purchased = result.purchasesList.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+        return ActiveSubscriptionQuery(
+            mine = purchased.filter { it.accountIdentifiers?.obfuscatedAccountId == accountHash },
+            unattributed = purchased.filter { it.accountIdentifiers?.obfuscatedAccountId == null },
+        )
     }
+
+    /**
+     * 스토어가 답한 활성 구독 — **내 것**과 **임자를 알 수 없는 것**을 나눠 준다.
+     *
+     * ⚠ **둘을 합치지도, 뒤엣것을 버리지도 말 것**(2026-09-01 리뷰). `obfuscatedAccountId`
+     * 를 붙이기 **전에** 산 구독에는 식별자가 없다. 그걸 그냥 걸러 내면 결과가 빈 목록,
+     * 즉 "스토어가 없다고 했다" 가 되어 **확인 완료로 표시하고 캐시까지 지운다** — RTDN 을
+     * 놓쳐 서버 기간이 만료돼 있으면 그 길로 되돌릴 수 없는 잠금이 걸린다. 반대로 내 것으로
+     * 세면 같은 기기의 다른 계정이 남의 구독을 물려받는다.
+     * 그래서 '모른다' 로 남기고 [Listener] 복원으로 서버에 붙여 판정을 서버에 맡긴다.
+     */
+    data class ActiveSubscriptionQuery(
+        val mine: List<Purchase>,
+        val unattributed: List<Purchase>,
+    )
+
+    /** 계정 식별자 해시 — 호출부가 같은 계약으로 만들 수 있게 연다(서버와 공유하는 SHA-256 hex). */
+    fun accountHashFor(userId: String?): String? =
+        userId?.takeIf { it.isNotBlank() }?.let { sha256Hex(it) }
 
     /** 계정 바인딩 계약(서버와 공유): SHA-256 hex 소문자 64자. */
     private fun sha256Hex(value: String): String =
@@ -436,7 +509,7 @@ class PlayBillingManager(
      *
      * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
      */
-    suspend fun restorePurchases(): Int {
+    suspend fun restorePurchases(userInitiated: Boolean = false, ownerUserId: String? = null): Int {
         if (!ensureConnected()) return 0
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
@@ -453,7 +526,7 @@ class PlayBillingManager(
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
                 Log.i(TAG, "Restoring Play purchase productId=$productId")
-                listener.onPurchaseReady(purchase.purchaseToken, productId)
+                listener.onPurchaseRestored(purchase.purchaseToken, productId, userInitiated, ownerUserId)
                 sent++
             }
         return sent

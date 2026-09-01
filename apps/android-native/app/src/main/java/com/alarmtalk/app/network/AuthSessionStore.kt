@@ -396,6 +396,27 @@ class AuthSessionStore(context: Context) {
      * 워커가 정말 필요한 건 굴러간 토큰 하나뿐이다 — 플랜 판정은 이 함수와 무관하게
      * 워커 안에서 쓰고, 권한 스냅샷은 `AccessSnapshotStore` 가 따로 들고 있다.
      */
+    /**
+     * 세대가 그대로일 때만 [action] 을 돌린다 — **검사와 실행을 한 덩어리로**(2026-09-01 리뷰).
+     *
+     * ⚠ `if (sessionGeneration() == start) { write() }` 로 쓰면 그 사이가 창이다. 로그아웃→
+     * 같은 계정 재로그인이 끼면 옛 응답이 **새 세션의 스냅샷을 되살린다** — 굴러온 토큰이
+     * 없는 회차에는 뒤이은 CAS 도 안 돌아 아무도 못 막는다. 세션 쓰기와 같은 락을 잡는다.
+     *
+     * @return action 을 돌렸으면 true.
+     */
+    fun runIfGeneration(expectedGeneration: Long, action: () -> Unit): Boolean =
+        synchronized(sessionWriteLock) {
+            val alive = sessionSurvivedForWrite(
+                expectedGeneration = expectedGeneration,
+                currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
+                currentToken = prefs.getString(KEY_TOKEN, null),
+            )
+            if (!alive) return@synchronized false
+            action()
+            true
+        }
+
     fun saveTokenIfGeneration(expectedGeneration: Long, token: String): AuthSession? =
         synchronized(sessionWriteLock) {
             val alive = sessionSurvivedForWrite(

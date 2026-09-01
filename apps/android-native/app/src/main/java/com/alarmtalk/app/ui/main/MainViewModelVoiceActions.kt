@@ -173,7 +173,7 @@ internal fun MainViewModel.createVoiceProfiles(
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
         return false
     }
-    if (!hasPaidVoiceAccess(subscriptionResponse)) {
+    if (!isPaidVoiceEntitledOptimistic()) {
         message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
         return false
     }
@@ -662,7 +662,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    check(hasPaidVoiceAccess(subscriptionResponse) || request.isFreeSystemPresetRequest()) {
+    check(isPaidVoiceEntitledOptimistic() || request.isFreeSystemPresetRequest()) {
         getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
     }
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))

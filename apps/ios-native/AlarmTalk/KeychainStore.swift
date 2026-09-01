@@ -12,9 +12,52 @@ enum KeychainStore {
     static var isIsolatedForTests: Bool { service.hasSuffix(TestIsolation.storageSuffix) && TestIsolation.isRunningUnitTests }
     private static let sessionAccount = "session"
 
+    /// 세션 쓰기·CAS 가 공유하는 잠금. 배경 작업과 전경이 같은 항목을 건드린다.
+    private static let sessionLock = NSLock()
+
+    /**
+     * **읽고-대조하고-쓰기를 한 덩어리로**(2026-09-01 리뷰).
+     *
+     * ⚠ `readSession()` 으로 확인한 뒤 `saveSession()` 을 부르면 그 사이가 창이다. 같은
+     * 계정으로 로그아웃→재로그인이 끼면 **옛 배경 작업이 방금 발급된 로그인 토큰을 덮는다**
+     * — 이후 요청이 전부 401 이 된다. 계정 id 만 대조해도 같은 계정 재로그인은 못 거르므로
+     * **토큰(에폭)까지** 본다.
+     *
+     * @return 실제로 저장했으면 true. 세션이 바뀌었으면 아무것도 하지 않고 false.
+     */
+    @discardableResult
+    static func saveSessionIfCurrent(
+        expectedUserID: String,
+        expectedToken: String,
+        transform: (AuthSession) -> AuthSession,
+        /// 저장이 성공한 **직후, 같은 잠금 안에서** 돌 부수효과(판정 스냅샷 쓰기 등).
+        ///
+        /// ⚠ 락 **밖**에서 하면 그 사이의 로그아웃→같은 계정 재로그인에서 옛 작업이 새
+        /// 세션의 스냅샷을 되살린다 — 세션만 원자적으로 바꿔 봐야 짝이 되는 스냅샷이
+        /// 어긋나면 예약·울림 게이트가 지나간 등급으로 판단한다(2026-09-01 리뷰).
+        onSaved: ((AuthSession) -> Void)? = nil
+    ) throws -> Bool {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        guard let current = readSessionUnlocked(),
+              current.user.id == expectedUserID,
+              current.token == expectedToken
+        else { return false }
+        let next = transform(current)
+        try saveSessionUnlocked(next)
+        onSaved?(next)
+        return true
+    }
+
     static func saveSession(_ session: AuthSession) throws {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        try saveSessionUnlocked(session)
+    }
+
+    private static func saveSessionUnlocked(_ session: AuthSession) throws {
         let data = try JSONEncoder().encode(session)
-        deleteSession()
+        deleteSessionUnlocked()
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -30,6 +73,12 @@ enum KeychainStore {
     }
 
     static func readSession() -> AuthSession? {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        return readSessionUnlocked()
+    }
+
+    private static func readSessionUnlocked() -> AuthSession? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -45,6 +94,13 @@ enum KeychainStore {
     }
 
     static func deleteSession() {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        deleteSessionUnlocked()
+    }
+
+    /// ⚠ `NSLock` 은 재진입이 아니다 — 잠금을 이미 쥔 경로(`saveSessionUnlocked`)는 이걸 쓴다.
+    private static func deleteSessionUnlocked() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

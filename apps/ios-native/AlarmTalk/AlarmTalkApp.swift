@@ -116,6 +116,11 @@ struct AlarmTalkApp: App {
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
                         // 백엔드 confirm 성공 시 기존 구독 fetch 경로로 서버 구독
                         // 상태를 새로고침하도록 훅을 먼저 연결한다.
+                        // 배경 `plan_changed` 경로가 StoreKit 을 다시 읽을 수 있도록 꽂아 둔다
+                        // (그 경로에는 `SubscriptionManager` 가 없다 — 새로 만들면 리스너가 겹친다).
+                        BackgroundDependencies.shared.revalidateStoreEntitlement = { [weak subscriptions] in
+                            await subscriptions?.refreshPurchasedProducts()
+                        }
                         subscriptions.onServerEntitlementUpdated = { [weak socialFeatures, weak auth] in
                             guard let socialFeatures, let auth else { return }
                             await socialFeatures.refreshSubscriptionSilently(session: auth.session)
@@ -210,6 +215,11 @@ struct AlarmTalkApp: App {
                     .task(id: auth.session?.user.id) {
                         // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
                         guard auth.session != nil else { return }
+                        // ⚠ **계정이 바뀌면 StoreKit 을 다시 읽는다**(2026-08-31 리뷰).
+                        // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
+                        // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
+                        // 남는다. 반대로 앞 계정 값이 남아 새 계정을 유료로 만들지도 않는다.
+                        await subscriptions.refreshPurchasedProducts()
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
                         // (`SocialNotificationTracker.notifyReceivedAlarm`)은 `.notDetermined`
                         // 에서 조용히 버려지므로, 한 번도 묻지 않으면 신규 설치에서 그 알림이
@@ -240,6 +250,9 @@ struct AlarmTalkApp: App {
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
+                            // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
+                            // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
+                            await subscriptions.refreshPurchasedProducts()
                         }
                         // ⚠ 푸시 해제 훅은 **launch 에서** 꽂는다(`PushAppDelegate`) —
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
@@ -460,6 +473,8 @@ struct AlarmTalkApp: App {
                 Task {
                     await subscriptions.refreshPurchasedProducts()
                     await subscriptions.resyncEntitlements()
+                    // 캐시 기록은 `refreshPurchasedProducts` 안에서 한다 — 등급이 다시
+                    // 계산되는 **모든** 경로(구매·Transaction.updates 포함)를 덮기 위해서다.
                 }
             case .background:
                 // 시스템이 task 를 깨울 수 있도록 다음 사이클 재예약.
@@ -560,26 +575,49 @@ struct AlarmTalkApp: App {
             socialFeatures.subscription?.plan?.key ?? "no-plan-key",
             socialFeatures.subscription?.plan?.planType ?? "no-plan-type",
             subscriptions.currentTier.rawValue,
-            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading"
+            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading",
+            // ⚠ **`users.plan` 도 키다**(2026-09-01 리뷰). 보류는 구독 id·status·plan 을
+            // **그대로 두고** 이 값만 free 로 바꾼다 — 키에 없으면 `/auth/me` 가 갱신해도
+            // 키가 같아 이 태스크가 **다시 돌지 않고**, 판정기에 새 입력을 넣은 의미가 없다.
+            auth.session?.user.plan ?? "no-user-plan"
         ].joined(separator: "|")
     }
 
     @MainActor
     private func applyFreePlanVoiceLockIfNeeded() async {
+        // ⚠ **`hasLoadedEntitlements` 를 입구에서 요구하지 않는다**(2026-09-01 리뷰).
+        // 임자를 알 수 없는 레거시 StoreKit 구매만 있는 계정은 그 플래그를 **일부러 세우지
+        // 않는다** — 입구에서 막으면 서버가 유료라고 확인해 줘도 **복원 갈래에 영영 닿지
+        // 못해** 잘못 잠긴 알람이 그대로 남는다(`restorePaidVoiceAlarms` 의 유일한 호출부다).
+        // 되돌릴 수 없는 **잠금** 쪽에서만 그 플래그를 요구한다(아래).
         guard auth.session != nil,
               alarmStore.hasLoadedFromDisk,
-              subscriptions.hasLoadedEntitlements,
               socialFeatures.subscription != nil else {
             return
         }
-        let currentPlan = PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
-            storeTier: subscriptions.currentTier,
+        // ⚠ **판정은 `PaidVoiceGate.resolve` 하나로 한다**(2026-09-01 리뷰).
+        // `PlanTier.bestKnown` 은 구독 응답이 **있으면** `userPlan` 을 아예 보지 않는다
+        // (`serverSubscription == nil` 일 때만 후보에 넣는다). 결제 보류에서 서버는 구독
+        // 행을 남긴 채 plan 만 회수하므로, 그 조합이면 이 자리가 유료로 읽혀 **잠그지 않을
+        // 뿐 아니라 아래 복원 갈래로 빠져 이미 잠긴 알람까지 되돌린다.**
+        // 스토어는 지금 StoreKit 이 들고 있는 값이 곧 1단이라 따로 본다(기한 불필요).
+        let storeSaysPaid = subscriptions.currentTier.meetsOrExceeds(.personal)
+        let access = PaidVoiceGate.resolve(snapshot: AccessSnapshot(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            storePlanKey: nil,
+            storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan
-        )
-        // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
-        // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
-        guard !currentPlan.meetsOrExceeds(.personal) else {
+        ))
+        // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서
+        // `hasLoadedEntitlements` 를 빼면서 `guard ... else` 하나로 묶어 뒀는데, 그러면
+        // **스토어 조회가 아직 안 끝난 것만으로 복원 갈래에 들어간다** — 서버가 무료라고
+        // 확정한 계정의 잠긴 알람이 콜드 스타트마다 목소리로 되살아난다.
+        //  - 유료 **확정** → 복원(되돌릴 수 있는 방향)
+        //  - 무료 **확정** + 스토어 확인 완료 → 잠금(되돌릴 수 없으니 둘 다 요구)
+        //  - 그 밖(모름·조회 중) → 아무것도 하지 않는다
+        let entitled = storeSaysPaid || access == .entitled
+        guard !entitled else {
             // ⚠ **유료로 돌아오면 대기표를 비운다.** 두 가지를 동시에 지킨다:
             // ① 아직 확인 안 한 강등 안내가 남아 있으면, 이미 유료가 된 사람에게
             //    "무료로 바뀌었어요" 를 띄우게 된다.
@@ -596,6 +634,7 @@ struct AlarmTalkApp: App {
             )
             return
         }
+        guard access == .notEntitled, subscriptions.hasLoadedEntitlements else { return }
         let ownerID = auth.session?.user.id
         let locked = await socialFeatures.applyFreePlanVoiceLock(
             alarmStore: alarmStore,

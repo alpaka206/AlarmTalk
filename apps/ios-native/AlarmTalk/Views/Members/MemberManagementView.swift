@@ -103,7 +103,18 @@ struct MemberManagementView: View {
                         shareCodeSection
                     }
 
-                    sectionTitle("구성원")
+                    // 정원은 **구성원 옆**에 둔다 — 공유 코드 옆에 두면 '코드 사용량' 으로
+                    // 읽힌다(분모도 다르다: 코드는 소유자를 뺀 max_members - 1).
+                    HStack {
+                        sectionTitle("구성원")
+                        Spacer()
+                        if let group {
+                            Text("\(sortedMembers.count)/\(group.maxMembers)명")
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                                .monospacedDigit()
+                        }
+                    }
                     ForEach(sortedMembers) { member in
                         MemberRow(
                             member: member,
@@ -200,8 +211,11 @@ struct MemberManagementView: View {
 
     // MARK: - Sections
 
+    /// ⚠ **인원수는 여기 두지 않는다**(2026-08-31 리뷰). 구성원 섹션 옆으로 옮겼는데
+    /// 이 행에도 남겨 두면 같은 숫자가 한 화면에 두 번 나온다. 여기는 **어떤 이용권인지**만
+    /// 말한다(안드로이드에는 이 행이 없다 — 인원은 구성원 옆 한 곳뿐이다).
     private var capacityRow: some View {
-        Text("\(planLabel) 이용권 · 현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
+        Text("\(planLabel) 이용권")
             .font(theme.typography.bodyMedium)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }
@@ -240,8 +254,17 @@ struct MemberManagementView: View {
     }
 
     private func shareCodeCard(voucher: VoucherItem) -> some View {
-        let isFull = isCapacityFull
-            || ((voucher.useCount ?? 0) >= (voucher.maxUses ?? 1))
+        // ⚠ **정원은 '코드가 몇 번 쓰였는가' 가 아니라 '지금 몇 명인가' 다**(2026-08-31).
+        // 서버가 교환을 막는 기준도 그것이다(`voucher-redemption.ts` 의 GROUP_FULL 은
+        // member_count vs max_members). 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로
+        // 리셋**되어, 정원이 찼는데도 공유 버튼이 살아난다(서버가 거절해 눌러 봐야 안다).
+        // ⚠ **정원과 '코드 소진' 은 다른 상태다**(2026-08-31 리뷰). 정원이 찼다가 구성원을
+        // 내보내면 자리는 나지만 그 코드의 교환 기록은 그대로라 서버가 `CODE_ALREADY_USED`
+        // 로 계속 막는다. 정원만 보면 **먹지 않을 코드로 공유 버튼이 살아난다.**
+        // 소진된 코드는 공유를 막고 재발급으로 안내한다(그 버튼은 항상 열려 있다).
+        let codeExhausted = (voucher.maxUses ?? 1) > 0
+            && (voucher.useCount ?? 0) >= (voucher.maxUses ?? 1)
+        let isFull = isCapacityFull || codeExhausted
 
         return VStack(alignment: .leading, spacing: 8) {
             Text(voucher.code)
@@ -249,13 +272,19 @@ struct MemberManagementView: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .textSelection(.enabled)
 
-            Text(isFull
-                 ? "\(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)명 사용 · 정원이 가득 차서 공유할 수 없어요"
-                 : "\(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)명 사용")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+            if isFull {
+                Text(isCapacityFull
+                     ? "정원이 가득 차서 공유할 수 없어요"
+                     : "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
 
             HStack(spacing: 8) {
+                // ⚠ **복사도 공유와 같은 게이트다**(2026-08-31 리뷰). 공유 시트만 막으면
+                // 소유자가 **못 쓰는 코드를 복사해 보낼 수 있고**, 받는 쪽이 등록에서
+                // `CODE_ALREADY_USED` 로 실패한다 — 막는 뜻이 사라진다.
+                // 재발급은 계속 열어 둔다(그게 이 상태의 탈출구다).
                 Button {
                     UIPasteboard.general.string = voucher.code
                 } label: {
@@ -264,6 +293,7 @@ struct MemberManagementView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
+                .disabled(socialFeatures.isBusy || isFull)
                 .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
 
                 Button {
@@ -273,10 +303,15 @@ struct MemberManagementView: View {
                             socialFeatures.statusMessage = "공유 코드를 다시 불러오지 못했어요."
                             return
                         }
-                        let latestFull = isCapacityFull
-                            || ((latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1))
-                        guard !latestFull else {
+                        // 새로고침 뒤 값으로 다시 판정한다 — 정원과 코드 소진 둘 다.
+                        let latestExhausted = (latestVoucher.maxUses ?? 1) > 0
+                            && (latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1)
+                        guard !isCapacityFull else {
                             socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
+                            return
+                        }
+                        guard !latestExhausted else {
+                            socialFeatures.statusMessage = "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요."
                             return
                         }
                         // 클립보드는 **코드만** — 받은 사람이 붙여넣기로 바로 등록한다.

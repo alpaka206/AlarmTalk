@@ -123,6 +123,11 @@ internal fun AlarmEditorScreen(
     authSession: AuthSession?,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
+    /**
+     * 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값).
+     * ⚠ 원시 `storePlanKey` 를 넘기지 말 것 — 기한이 지난 키를 그대로 믿게 된다.
+     */
+    storeEntitledNow: Boolean,
     familyAlarmMode: Boolean,
     initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
@@ -189,12 +194,17 @@ internal fun AlarmEditorScreen(
     // 응답이 없으면 false 라, 그것만 보면 편집기를 여는 순간 유료 사용자가 잠깐 무료로
     // 판정된다 — 내 클론이 목록에서 사라지고 문구가 테마로 잠긴 채 보인다.
     // 같은 폴백을 이미 알람 잠금 판정(`AlarmTalkApp` 의 `planIsFree`)이 쓰고 있다.
-    val planSaysPaid = authSession?.user?.plan
-        ?.lowercase()
-        ?.let { it.isNotBlank() && it != "free" } == true
+    // 2026-08-31: 손으로 쓴 폴백을 **유일 판정기**로 옮겼다(`resolvePaidVoiceAccess`).
+    // 표시·저장 게이트라 **모르면 잠그지 않는다** — 잘못 잠그면 산 기능을 못 쓰고,
+    // 잘못 열어 두면 다음 동기화에서 정리된다.
     val freeVoiceTier = authSession != null &&
-        !hasPaidVoiceAccess(subscriptionResponse) &&
-        !(subscriptionResponse == null && planSaysPaid)
+        !resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = authSession.user.plan,
+            storeEntitled = storeEntitledNow,
+            nowMillis = System.currentTimeMillis(),
+        ).isEntitledOptimistic()
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.
@@ -898,8 +908,31 @@ internal fun AlarmEditorScreen(
             //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
             //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
             //    라이브 폴백뿐이었는데 그게 없어졌다.
-            val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            if (editor.voiceRandomPrompt && cloneBucketCategory != null) {
+            // ⚠ **고른 버킷이 있으면 그것이 곧 카테고리다.** 컨텍스트에서 유도하면, 목소리
+            // 재선택 등으로 컨텍스트가 기본값(`preset`)으로 밀린 순간 `preset → greeting`
+            // 매핑이 걸려 **미리듣기 샘플 버킷**이 알람에 붙는다. greeting 은 목소리 창의
+            // '들어보기' 전용이라 알람으로는 성립하지 않고, 서버가 `POST /alarm` 을 400 으로
+            // 거절한다 — 로컬에만 남는 알람이 된다(2026-08-31 실기기: bucketId=greeting,
+            // 문구 "안녕하세요! 만나서 정말 반가워요.").
+            val cloneBucketCategory = editor.selectedBucket
+                ?: clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+            // ⚠ **`voiceRandomPrompt` 하나로 가르지 말 것**(2026-08-31 실기기 재현).
+            // `setBucketAudio` 는 버킷을 붙이면서 **항상 그 값을 끈다.** 그래서 이 조건만 보면,
+            // 바인딩이 한 번이라도 풀린 버킷 알람은 **여기로 돌아올 길이 없고** 아래 '직접
+            // 입력' 갈래로 떨어져 유료 전용 라이브 TTS 를 부른다 — 무료 사용자는 기본 목소리로
+            // 날씨를 고르고 저장만 눌렀는데 "유료 이용권에서 사용할 수 있어요" 를 본다
+            // (`generateTtsAudio` 의 check 가 네트워크 전에 던진다).
+            //
+            // 바인딩을 푸는 길은 여럿이다: 이미 고른 목소리를 시트에서 **다시 누르기**
+            // (동일 id 가드가 없어 `clearAudio()`+`clearTtsMeta()`), 재생 방식 왕복, 클립
+            // 언어 ≠ 앱 언어. 어느 쪽이든 `voiceText`(클립 문구)와 `selectedBucket` 은 남는다.
+            //
+            // 그래서 판정은 **사용자가 고른 것이 테마인가**(`selectedBucket`)로 본다.
+            // `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 쓸 수 없다 — 둘 다
+            // `audioCacheKey` 가 살아 있어야 true 라, 바인딩이 풀린 바로 그 상태에서 false 다.
+            // (직접 입력을 고르면 `selectedBucket` 은 확실히 null 이 된다 — 문구 화면 두 곳.)
+            val bucketMessageChosen = editor.voiceRandomPrompt || editor.selectedBucket != null
+            if (bucketMessageChosen && cloneBucketCategory != null) {
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                 // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
                 val bound = runCatching {
@@ -1287,6 +1320,10 @@ internal fun AlarmEditorScreen(
             editor.voiceRandomPrompt = false
             editor.voiceText = nextText
             editor.voiceLanguage = appVoiceLanguage
+            // ⚠ **종류를 바꾸면 옛 버킷을 반드시 지운다**(2026-08-31). 저장 갈래가
+            // `selectedBucket` 을 '사용자가 고른 종류' 의 근거로 삼기 때문에, 남겨 두면
+            // 직접 입력을 골라도 버킷 갈래로 들어가 **방금 친 문구를 버린다.**
+            editor.selectedBucket = null
             if (!unchanged) {
                 editor.clearAudio()
                 editor.clearTtsMeta()
@@ -1318,6 +1355,9 @@ internal fun AlarmEditorScreen(
         }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        // ⚠ 위와 같은 이유 — 옛 버킷이 남으면 **새로 고른 종류 대신 옛 종류가 다시 붙는다.**
+        // 새 종류의 버킷은 저장 시 `clonePrerenderBucketCategoryFor(새 컨텍스트)` 로 붙는다.
+        editor.selectedBucket = null
         // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
         // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
         editor.voiceLanguage = appVoiceLanguage

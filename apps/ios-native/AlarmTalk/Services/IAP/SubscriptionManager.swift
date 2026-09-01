@@ -29,6 +29,22 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var currentTier: PlanTier = .free
+
+    /// StoreKit 조회 세대. **나중에 시작한 조회가 이긴다**(2026-09-01 리뷰).
+    ///
+    /// ⚠ 전경 복귀 갱신과 `Transaction.updates` 갱신이 같은 계정에서 겹칠 수 있다.
+    /// 계정 가드는 둘 다 통과시키므로, 그 사이 갱신·해지가 일어나면 **먼저 시작한 쪽이
+    /// 늦게 끝나면서 새 `currentTier` 와 캐시를 옛 값으로 덮는다** — 예약 시점 게이트가
+    /// 읽는 캐시라 되살아난 통행증이 그대로 알람에 적용된다.
+    private var refreshGeneration = 0
+
+    /// 지금 발행돼 있는 등급이 **누구 것인가**(2026-09-01 리뷰).
+    ///
+    /// ⚠ 계정 가드만으로는 부족하다. 유료 A 가 로그아웃하고 무료 B 가 들어오면 B 의 갱신은
+    /// 가드를 통과하지만, `currentEntitlements` 순회가 끝날 때까지 `currentTier` 는 **A 의
+    /// 유료 등급 그대로**다 — 그 창에서 목소리 관리 화면이 B 를 유료로 보고 보관된 프로필의
+    /// 이름 수정·공유·**삭제**를 열어 준다(삭제는 되돌릴 수 없다).
+    private var entitlementOwner: UUID?
     @Published private(set) var hasLoadedEntitlements: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
     @Published private(set) var isPurchasing: Bool = false
@@ -189,10 +205,19 @@ final class SubscriptionManager: ObservableObject {
     }
 
     /// 현재 verified 활성 entitlement 개수. 복원 결과 안내용.
+    /// 복원 결과로 보여 줄 **이 계정의** 활성 구매 수.
+    ///
+    /// ⚠ **계정 필터를 빼지 말 것**(2026-09-01 리뷰). 같은 Apple ID 에 A 계정으로 산 구독이
+    /// 있고 지금 B 로 로그인해 있으면, 안 거를 경우 "1건 복원했어요" 라고 말해 놓고 B 는
+    /// 그대로 무료다(서버가 소유권으로 거절한다). 등급 계산과 **같은 기준**으로 센다.
+    /// 계정 토큰이 없는 레거시 구매는 세지 않는다 — 그건 '모름' 이지 '내 것' 이 아니다.
     private func countActiveEntitlements() async -> Int {
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return 0 }
         var count = 0
         for await result in Transaction.currentEntitlements {
-            guard (try? checkVerified(result)) != nil else { continue }
+            guard let transaction = try? checkVerified(result) else { continue }
+            guard transaction.appAccountToken == currentAccount else { continue }
             count += 1
         }
         return count
@@ -206,32 +231,102 @@ final class SubscriptionManager: ObservableObject {
     ///   - 따라서 별도 만료 체크 로직이 없어도 currentTier 가 자동으로 free 로
     ///     떨어진다.
     func refreshPurchasedProducts() async {
-        var newSet: Set<String> = []
-        var maxTier: PlanTier = .free
-        for await result in Transaction.currentEntitlements {
-            guard let transaction = try? checkVerified(result) else { continue }
-            newSet.insert(transaction.productID)
-            if let plan = SubscriptionProduct(rawValue: transaction.productID) {
-                // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는
-                // 코드라 본인 권한이 아니다. 이 가드가 없으면 선물을 산 무료 사용자가
-                // 유료로 판정돼, 자기 앱의 유료 기능이 열린다.
-                guard plan.isSubscription else { continue }
-                if plan.planTier.tierOrder > maxTier.tierOrder {
-                    maxTier = plan.planTier
-                }
-            }
+        // ⚠ **이 AlarmTalk 계정의 구매만 센다**(2026-08-31 리뷰). 같은 App Store 계정에
+        // 유료 A 와 무료 B 가 번갈아 로그인하면, 거르지 않을 경우 A 의 트랜잭션이 B 의
+        // 등급을 올린다 — 서버는 토큰 불일치로 거절하지만 **로컬 게이트는 통과한다.**
+        // 구매 시 `appAccountToken` 을 심어 두는 것과 한 쌍이다(위 `purchase` 주석).
+        // 토큰이 없는 옛 구매는 **세지 않는다** — 못 세는 것은 '무료' 가 아니라 '모름' 이고,
+        // 판정기가 서버 스냅샷으로 내려간다.
+        // ⚠ **계정을 모르면 아무것도 세지 않는다**(2026-08-31 리뷰). 앱은 로그아웃 상태에서도
+        // StoreKit 을 띄우는데, 그때 `currentAccount` 가 nil 이라고 필터를 건너뛰면 **App Store
+        // 계정의 모든 구독**이 전역 `currentTier` 를 올린다 — 그 뒤 무료 B 가 로그인해도
+        // 다음 전경 갱신 전까지 B 가 A 의 등급으로 편집기·목소리·예약 게이트를 통과한다.
+        // 모르는 것은 '무료' 도 '유료' 도 아니다 — 그냥 세지 않고, 로그인할 때 다시 읽는다.
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else {
+            purchasedProductIDs = []
+            currentTier = .free
+            hasLoadedEntitlements = false
+            entitlementOwner = nil
+            return
         }
+        // ⚠ **주인이 바뀌었으면 순회 전에 비운다**(위 `entitlementOwner` 주석).
+        // 비우는 방향은 안전하다 — 이 계정이 실제로 유료면 아래 순회가 곧 다시 채운다.
+        if entitlementOwner != currentAccount {
+            purchasedProductIDs = []
+            currentTier = .free
+            hasLoadedEntitlements = false
+            entitlementOwner = currentAccount
+        }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        // 배경 정적 경로와 **같은 순서표**를 쓴다 — 캐시를 쓰는 경로가 둘이기 때문이다.
+        let persistTicket = Self.nextPersistGeneration()
+        let scan = await Self.scanEntitlements(for: currentAccount)
+        let newSet = scan.productIDs
+        let maxTier = scan.tier
+        let latestExpiry = scan.latestExpiry
+        let hasUnattributed = scan.hasUnattributed
+        // ⚠ **반영 직전에 계정을 다시 본다**(2026-08-31 리뷰, 안드로이드
+        // `refreshStoreEntitlement` 의 계정 가드와 같은 이유). `currentEntitlements` 순회는
+        // 비동기라 그 사이 A 가 로그아웃하고 B 가 들어올 수 있다 — 걸러낸 값은 A 것인데
+        // `persistStoreEntitlement` 는 **지금 계정 B** 를 읽어 적으므로, A 의 유료 등급이
+        // B 의 스냅샷에 박혀 편집기·예약 게이트가 열린다.
+        guard authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:)) == currentAccount
+        else { return }
+        // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
+        // ⚠ **공유 티켓으로 화면 상태까지 버리지 말 것**(2026-09-01 리뷰 2차 정정).
+        // 배경 정적 경로는 **캐시만** 쓴다 — 그 티켓으로 여기까지 막으면, 콜드런치 폴백이
+        // 끼어든 것만으로 전경 순회가 `currentTier`·`purchasedProductIDs`·
+        // `hasLoadedEntitlements` 를 통째로 버려 화면이 옛 등급에 묶인다.
+        // 인스턴스 세대는 화면 상태를, 공유 티켓은 캐시 쓰기만 가른다.
+        guard generation == refreshGeneration else { return }
+        // ⚠ **임자를 알 수 없는 활성 구매가 있고 내 것이 하나도 없으면 아무것도 확정하지
+        // 않는다**(2026-09-01 리뷰, 안드로이드 `ActiveSubscriptionQuery.unattributed` 와 같은
+        // 규칙). `appAccountToken` 을 붙이기 **전에** 산 구독이 그렇다 — 그걸 그냥 걸러
+        // `.free` 로 발행하고 `hasLoadedEntitlements` 까지 세우면, 서버 스냅샷이 낡아 있을 때
+        // 전경 잠금이 **돈 내는 사용자의 클론 알람을 잠근다.** 서버가 소유권을 붙일 때까지
+        // 옛 값을 그대로 두고 '아직 모른다' 로 남긴다.
+        if newSet.isEmpty && hasUnattributed {
+            return
+        }
+        self.entitlementOwner = currentAccount
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
         self.hasLoadedEntitlements = true
+        // 캐시는 두 경로가 함께 쓰므로 여기만 공유 티켓으로 가른다(위 주석).
+        if persistTicket == Self.persistGeneration {
+            persistStoreEntitlement(until: latestExpiry)
+        }
+    }
+
+    /// **등급이 다시 계산될 때마다** 캐시에 적는다(2026-08-31 리뷰).
+    ///
+    /// ⚠ 전경 전환에서만 적으면, 앱이 이미 떠 있는 동안 들어온 구매·갱신
+    /// (`Transaction.updates`)이 캐시에 안 남는다 — 화면은 열리는데 **같은 세션에 예약된
+    /// 알람은 옛 스냅샷을 읽어 기본 톤으로 강등**된다. 예약 시점 게이트는 StoreKit 을
+    /// 직접 못 보므로 이 캐시가 그 경로의 유일한 근거다.
+    private func persistStoreEntitlement(until: Date?) {
+        guard let userID = authProvider()?.user.id, !userID.isEmpty else { return }
+        let entitled = currentTier.meetsOrExceeds(.personal)
+        AccessSnapshotStore().updateStorePlanKey(
+            userID: userID,
+            planKey: entitled ? currentTier.rawValue : nil,
+            untilMillis: entitled ? until.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
+        )
     }
 
     /// 결제 동기화 재시도 — 백엔드가 일시적으로 다운돼 sync 가 실패한 직후,
     /// 사용자가 BillingPanel 의 "동기화 재시도" 를 누르면 호출.
     /// `currentEntitlements` 의 모든 verified 트랜잭션을 다시 백엔드로 보낸다.
     func resyncEntitlements() async {
+        // ⚠ **여기에도 같은 계정 필터를 건다**(2026-09-01 리뷰). 안 걸면 같은 Apple ID 를 쓰는
+        // B 가 **전경 진입마다** A 의 트랜잭션을 서버로 보내고, 서버는 소유권으로 409 를
+        // 돌려준다 — B 는 실패한 결제가 없는데 "결제 확인 동기화에 실패했어요" 가 계속 뜬다.
+        // 계정을 모르면 아무것도 보내지 않는다(등급 계산과 같은 기준).
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
+            guard maySyncToBackend(transaction) else { continue }
             await syncWithBackend(
                 transaction: transaction
             )
@@ -253,12 +348,102 @@ final class SubscriptionManager: ObservableObject {
     /// 영원히 큐에 남지 않도록 한다. `purchase()` 가 직접 finish 한 트랜잭션이
     /// 다시 listener 로 들어오는 시나리오는 Apple 이 보장하지 않는다 — 그러나
     /// finish 가 중복 호출돼도 idempotent 하므로 안전.
+    /// `currentEntitlements` 순회 결과. 등급 계산의 **유일한 구현**이다.
+    struct EntitlementScan {
+        var productIDs: Set<String> = []
+        var tier: PlanTier = .free
+        var latestExpiry: Date?
+        /// 계정 토큰이 **없는** 활성 구매(그 필드를 붙이기 전에 산 것). 내 것으로도 남의
+        /// 것으로도 셀 수 없어 '모름' 의 근거가 된다.
+        var hasUnattributed = false
+    }
+
+    /// ⚠ **등급 계산을 여기 말고 다른 데 또 쓰지 말 것.** 배경 경로가 인스턴스 없이 써야 해서
+    /// 정적으로 뽑았을 뿐, 규칙(계정 필터·선물 제외·만료 수집)은 여기 하나다 —
+    /// 복제하면 두 경로가 갈라진다(이 저장소에서 반복된 사고다).
+    /// 스토어 신호를 **캐시에 쓰는 순서**. 전경 인스턴스 경로와 배경 정적 경로가 함께 쓴다.
+    ///
+    /// ⚠ 둘이 따로 놀면, `plan_changed` 콜드런치의 순회가 멈춰 있는 사이 씬이 붙어
+    /// 전경 순회가 **더 새로운 결과를 쓴 뒤**, 늦게 깨어난 옛 순회가 그걸 덮는다 —
+    /// 회수된 권한이 되살아나거나 방금 결제한 권한이 지워진다(2026-09-01 리뷰).
+    private static var persistGeneration = 0
+
+    private static func nextPersistGeneration() -> Int {
+        persistGeneration &+= 1
+        return persistGeneration
+    }
+
+    static func scanEntitlements(for currentAccount: UUID) async -> EntitlementScan {
+        var scan = EntitlementScan()
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            if transaction.appAccountToken == nil {
+                scan.hasUnattributed = true
+                continue
+            }
+            if transaction.appAccountToken != currentAccount { continue }
+            scan.productIDs.insert(transaction.productID)
+            guard let plan = SubscriptionProduct(rawValue: transaction.productID) else { continue }
+            // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는 코드라
+            // 본인 권한이 아니다 — 없으면 선물을 산 무료 사용자의 유료 기능이 열린다.
+            guard plan.isSubscription else { continue }
+            if let expires = transaction.expirationDate, expires > (scan.latestExpiry ?? .distantPast) {
+                scan.latestExpiry = expires
+            }
+            if plan.planTier.tierOrder > scan.tier.tierOrder { scan.tier = plan.planTier }
+        }
+        return scan
+    }
+
+    /// **화면 없이 깨어난 실행**에서 캐시된 스토어 신호를 다시 계산한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ `plan_changed` 푸시는 씬 없이 앱을 깨울 수 있다. 그때는 전경의
+    /// `SubscriptionManager` 가 없어서 훅이 nil 인데, 캐시에 남은 **원래 만료 시각**이 판정
+    /// 1단이라 그대로 두면 환불·회수 뒤에도 이미 걸린 클론 예약이 그대로 울린다.
+    /// 인스턴스를 만들면 `Transaction.updates` 리스너가 겹치므로 **정적으로** 처리한다.
+    static func revalidatePersistedEntitlement(userID: String) async {
+        guard let account = userID.nilIfBlank.flatMap(UUID.init(uuidString:)) else { return }
+        let ticket = nextPersistGeneration()
+        let scan = await scanEntitlements(for: account)
+        // 그 사이 더 새로운 순회가 시작·발행했으면 이 결과는 버린다(위 주석).
+        guard ticket == persistGeneration else { return }
+        // 임자 미상만 있으면 아무것도 확정하지 않는다(인스턴스 경로와 같은 규칙).
+        if scan.productIDs.isEmpty && scan.hasUnattributed { return }
+        let entitled = scan.tier.meetsOrExceeds(.personal)
+        AccessSnapshotStore().updateStorePlanKey(
+            userID: userID,
+            planKey: entitled ? scan.tier.rawValue : nil,
+            untilMillis: entitled ? scan.latestExpiry.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
+        )
+    }
+
+    /// 이 트랜잭션을 **서버로 보내도 되는가**(2026-09-01 리뷰).
+    ///
+    /// - 내 계정 토큰이 박힌 것: 보낸다.
+    /// - 토큰이 **없는** 레거시 구매: 보낸다 — 서버가 소유권을 붙여 줘야 판정이 풀린다
+    ///   (안드로이드가 `unattributed` 를 복원으로 넘기는 것과 같은 이유).
+    /// - **다른 계정** 토큰이 박힌 것: 보내지 않는다. 같은 Apple ID 를 쓰는 B 가 A 의
+    ///   트랜잭션을 보내면 서버가 소유권으로 거절하고, 실패한 결제가 없는 B 에게
+    ///   "결제 확인 동기화에 실패했어요" 가 상시로 뜬다.
+    /// - 계정을 모르면(로그아웃) 아무것도 보내지 않는다.
+    private func maySyncToBackend(_ transaction: Transaction) -> Bool {
+        guard let currentAccount = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+        else { return false }
+        guard let token = transaction.appAccountToken else { return true }
+        return token == currentAccount
+    }
+
     private func startListeningForTransactions() {
         transactionListenerTask = Task.detached { [weak self] in
             for await result in Transaction.updates {
                 guard let self else { return }
                 do {
                     let transaction = try await self.verifyInIsolated(result)
+                    // ⚠ **남의 계정 트랜잭션은 보내지 않는다**(위 `maySyncToBackend` 주석).
+                    guard await self.maySyncToBackend(transaction) else {
+                        await self.refreshPurchasedProducts()
+                        continue
+                    }
                     let confirmed = await self.syncWithBackend(transaction: transaction)
                     // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
                     // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.

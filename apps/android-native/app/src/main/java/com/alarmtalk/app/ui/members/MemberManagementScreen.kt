@@ -172,7 +172,20 @@ internal fun MemberManagementScreen(
                 }
             } else {
                 item {
-                    val isFull = isCapacityFull || shareVoucher.useCount >= shareVoucher.maxUses
+                    // ⚠ **정원은 '코드가 몇 번 쓰였는가' 가 아니라 '지금 몇 명인가' 다**
+                    // (2026-08-31). 서버가 교환을 막는 기준도 그것이다
+                    // (`voucher-redemption.ts` 의 GROUP_FULL 은 member_count vs max_members).
+                    // 코드 사용 횟수를 같이 보면 **재발급 한 번에 0 으로 리셋**되어, 정원이
+                    // 찼는데도 공유 버튼이 살아난다 — 서버가 거절해 눌러 봐야 알게 된다.
+                    val isFull = isCapacityFull
+                    // ⚠ **정원과 '코드 소진' 은 다른 상태다**(2026-08-31 리뷰). 정원이 찼다가
+                    // 구성원을 내보내면 자리는 나지만 그 코드의 교환 기록은 그대로라,
+                    // `redeemVoucherCodeInTransaction` 이 `CODE_ALREADY_USED` 로 계속 막는다.
+                    // 정원만 보면 **먹지 않을 코드로 공유 버튼이 살아나** 받는 쪽이 실패한다.
+                    // 소진된 코드는 공유를 막고 **재발급으로 안내**한다(그 버튼은 항상 열려 있다).
+                    val codeExhausted = shareVoucher.maxUses > 0 &&
+                        shareVoucher.useCount >= shareVoucher.maxUses
+                    val shareBlocked = isFull || codeExhausted
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = WakerPanelShape,
@@ -192,23 +205,19 @@ internal fun MemberManagementScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                                Text(
-                                    text = if (isFull) {
-                                        stringResource(
-                                            R.string.social_voucher_usage_full,
-                                            shareVoucher.useCount,
-                                            shareVoucher.maxUses,
-                                        )
-                                    } else {
-                                        stringResource(
-                                            R.string.social_voucher_usage,
-                                            shareVoucher.useCount,
-                                            shareVoucher.maxUses,
-                                        )
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (shareBlocked) {
+                                    Text(
+                                        text = stringResource(
+                                            if (isFull) {
+                                                R.string.social_capacity_full
+                                            } else {
+                                                R.string.social_code_exhausted
+                                            },
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                             // 공유하기 + 재발급 — 한 줄에 나란히
                             Row(
@@ -217,12 +226,12 @@ internal fun MemberManagementScreen(
                             ) {
                                 Button(
                                     onClick = { shareCode(shareVoucher.code) },
-                                    enabled = !billingBusy && !isFull,
+                                    enabled = !billingBusy && !shareBlocked,
                                     colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
+                                    Text(if (shareBlocked) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                                 }
                                 OutlinedButton(
                                     onClick = { showRegenerateConfirm = true },
@@ -263,11 +272,30 @@ internal fun MemberManagementScreen(
 
         // 3) 구성원
         item {
-            Text(
-                text = stringResource(R.string.social_members_section_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            // 정원은 **구성원 옆**에 둔다 — 공유 코드 옆에 두면 '코드 사용량' 으로 읽힌다
+            // (분모도 다르다: 코드는 소유자를 뺀 max_members - 1).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.social_members_section_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                group?.let {
+                    Text(
+                        text = stringResource(
+                            R.string.social_members_capacity,
+                            sortedMembers.size,
+                            it.maxMembers,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         items(sortedMembers, key = { it.userId }) { member ->

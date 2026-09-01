@@ -11,7 +11,9 @@ import androidx.work.WorkerParameters
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAppContainer
-import com.alarmtalk.app.hasCoupleOrFamilyAccess
+import com.alarmtalk.app.isDefinitelyFree
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
@@ -31,9 +33,13 @@ class PlanChangeSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
-        val session = sessionStore.read() ?: return Result.success()
         // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
+        // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
+        // 통과해 **B 의 토큰을 A 것으로 갈아 끼운다** — 화면은 B 인데 요청은 A 로 나가는
+        // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
+        val session = sessionStore.read() ?: return Result.success()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -64,11 +70,8 @@ class PlanChangeSyncWorker(
                 return@runCatching Result.success()
             }
 
-            // 로컬 영속 반영 — 울림 시점 게이트·다음 앱 오픈 UI 가 최신 상태를 쓰게 한다.
             val userId = session.user.id
             val snapshotStore = AccessSnapshotStore(applicationContext)
-            snapshotStore.updateSubscription(userId, billing)
-            snapshotStore.updateFamilyGroup(userId, familyGroup)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
             //
@@ -88,11 +91,68 @@ class PlanChangeSyncWorker(
                 return@runCatching Result.success()
             }
 
-            // '진짜 무료'만 변환: 유료 구독 없음 + 가족/커플 접근 없음 + user.plan 무료.
+            // ⚠ **스냅샷은 세션 CAS 를 통과한 뒤에 쓴다**(2026-09-01 리뷰). 위 검사와 이 쓰기
+            // 사이에 로그아웃→같은 계정 재로그인이 끼면, **옛 워커가 새 세션의 스냅샷을 덮는다**
+            // — 그 뒤 CAS 가 세대 변화를 알아채고 물러나도 이미 쓴 값은 남아, 새 세션의 갱신이
+            // 실패했을 때 울림 게이트가 옛 스냅샷을 읽는다(회복된 구독자의 클론이 막힌다).
+            // CAS 는 '검사와 저장을 한 덩어리로' 하므로, 그걸 통과한 뒤가 유일하게 안전한 지점이다.
+            // ⚠ **발행 전체를 세대 락 안에서 한다**(2026-09-01 리뷰 2차 정정). CAS 를 한 번
+            // 통과했다고 그 뒤가 안전한 게 아니다 — 락이 풀린 사이 같은 계정이 로그아웃→
+            // 재로그인하고 **새 갱신까지 끝내면**, 이 옛 워커가 그 결과를 덮고 아래
+            // 되돌릴 수 없는 잠금까지 자기 옛 판정으로 진행한다.
+            val published = sessionStore.runIfGeneration(startGeneration) {
+                snapshotStore.updateSubscription(userId, billing)
+                snapshotStore.updateFamilyGroup(userId, familyGroup)
+                // 방금 받은 plan 도 함께 적는다 — 판정만 하고 적지 않으면 울림 게이트가 읽는
+                // 값이 강등 **전** 등급 그대로다. 보류(ON_HOLD)에서 특히 치명적이다: 서버는
+                // 구독 행을 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가
+                // 남은 행을 보고 유료라고 답한다(2단이 그래서 plan 을 먼저 본다).
+                snapshotStore.updateUserPlan(userId, freshUser.plan)
+            }
+            if (!published) return@runCatching Result.success()
+
+            // '진짜 무료'만 변환한다. 판정은 **유일 판정기**로 하고(2026-09-01 리뷰),
+            // 스토어 신호를 반드시 넣는다 — Play 가 갱신을 확인해 준 기기에서 서버 반영이
+            // 잠깐 늦어 `users.plan` 이 free 로 보이는 순간에 이 워커가 돌면, 돈을 내고 있는
+            // 사용자의 클론 목소리 알람이 **영구 변환**된다(안드로이드는 되돌리지 않는다).
+            // 「스토어가 권위다」가 여기에도 걸려야 하는 이유다.
             val plan = freshUser.plan
-            val genuinelyFree = !hasPaidVoiceAccess(billing) &&
-                !hasCoupleOrFamilyAccess(billing, familyGroup) &&
-                (plan.isBlank() || plan == "free")
+            val now = System.currentTimeMillis()
+            val access = resolvePaidVoiceAccess(
+                subscriptionResponse = billing,
+                familyGroup = familyGroup,
+                userPlan = plan,
+                storeEntitled = snapshotStore.read(userId).storeSignalStillValid(now),
+                nowMillis = now,
+            )
+            // ⚠ **남아 있는 구독 행을 한 번 더 본다.** 판정기는 `users.plan = free` 를 행보다
+            // 위로 보므로(보류를 잡기 위한 규칙) 그것만으로 참이 되는데, 보류는 **회복형**이라
+            // 결제가 복구되면 살아난다. 울림·예약은 판정기 그대로 막히지만(되돌릴 수 있다),
+            // 이 자리의 변환은 되돌릴 수 없으니 행이 살아 있는 동안에는 하지 않는다.
+            val genuinelyFree = access.isDefinitelyFree() && !hasPaidVoiceAccess(billing)
+            // ⚠ **캐시 무효화는 스토어 신호를 뺀 판정으로 결정한다**(2026-09-01 리뷰 2차 정정).
+            // 앞 회차에는 `access.isDefinitelyFree()` 로 걸었는데, 판정기는 유효한 스토어 신호를
+            // **1단에서** 곧바로 Entitled 로 답하므로 **그 조건은 캐시가 살아 있는 한 참이 될 수
+            // 없었다** — 지우려던 바로 그 상황에서만 안 지워지는 조건이었다.
+            // 서버가 방금 준 것(구독·plan·그룹)만으로 다시 판정해, 서버가 무료라고 하면 끊는다.
+            // `plan_changed` 는 서버가 이미 알고 보낸 **권위 있는 신호**라 「스토어가 권위다」와
+            // 충돌하지 않는다 — 다음 전경 조회가 Play 에 물어 살아 있으면 곧바로 되살린다.
+            val serverSaysFree = resolvePaidVoiceAccess(
+                subscriptionResponse = billing,
+                familyGroup = familyGroup,
+                userPlan = plan,
+                storeEntitled = false,
+                nowMillis = now,
+            ).isDefinitelyFree()
+            if (serverSaysFree) {
+                // ⚠ **이것도 세대 락 안에서**(2026-09-01 리뷰). 앞의 발행 블록을 통과했다고
+                // 그 권한이 계속 유효한 게 아니다 — 락이 풀린 사이 같은 계정이 재로그인해
+                // **방금 확인한 유료 Play 신호를 발행**했는데, 이 옛 워커가 그걸 지우면
+                // 서버 스냅샷이 아직 갱신 전인 새 세션에서 울림 게이트가 유료 오디오를 막는다.
+                sessionStore.runIfGeneration(startGeneration) {
+                    snapshotStore.updateStorePlanKey(userId, null, null)
+                }
+            }
             if (genuinelyFree) {
                 // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이
                 // 아니다 — `lockPaidAlarmTalks` 는 알람 행을 고치고 OS 예약을 **새로 거는**

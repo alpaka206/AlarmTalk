@@ -44,6 +44,54 @@ final class SocialFeatureViewModel: ObservableObject {
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
     private var activeUserID: String?
+    /**
+     * `/auth/me` 가 굴려 준 토큰을 세션 주인에게 건넨다(2026-09-01 리뷰).
+     *
+     * ⚠ 배경 `plan_changed` 경로는 `refreshAll` **하나만** 돈다. 여기서 새 토큰을 버리면
+     * 그 기기는 전경에서 `AuthViewModel.refreshUser` 를 돌 때까지 옛 토큰을 들고 있다가
+     * **수명이 다하는 날 조용히 만료된다** — 그 뒤 푸시 정합화는 401 만 받는다.
+     *
+     * **토큰만 넘긴다.** 프로필까지 넘기면 그 사이 전경에서 바꾼 닉네임을 옛 값으로
+     * 되돌린다(안드로이드 `PlanChangeSyncWorker` 가 같은 이유로 토큰만 쓴다).
+     * 계정이 바뀌었을 수 있으므로 **누구의 토큰인지**, 그리고 **어느 토큰에서 굴러왔는지**
+     * (`from`)를 함께 넘겨 받는 쪽이 대조한다. 같은 계정으로 로그아웃→재로그인하면 토큰
+     * 세대가 바뀌는데, 계정 id 만 보면 **그 사이 발급된 새 로그인 토큰을 옛 것으로 덮는다.**
+     */
+    var onRolledToken: ((_ userID: String, _ from: String, _ to: String) -> Void)?
+
+    /**
+     * `/auth/me` 가 준 **지금 plan** 을 세션 주인에게 건넨다(2026-09-01 리뷰).
+     *
+     * ⚠ 이 갱신은 plan 을 `AccessSnapshotStore` 에만 적었는데, 화면 게이트들은
+     * `auth.session.user.plan` 을 본다. 그래서 무료 사용자가 `INV-`/`GIFT-` 코드를 등록해
+     * 서버가 구독을 만들고 `users.plan` 을 올려도, **세션은 free 그대로**라 판정기의
+     * '아는 free 우선' 규칙이 방금 받은 활성 구독을 덮어 목소리·편집기가 잠긴 채 남는다.
+     * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
+     *
+     * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+     */
+    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
+
+    /**
+     * **이 토큰이 아직 지금 세션의 것인가**(2026-09-01 리뷰).
+     *
+     * ⚠ 세대·계정 가드만으로는 부족하다. 같은 계정으로 로그아웃→재로그인하면 `activeUserID`
+     * 도 `refreshGeneration` 도 그대로라, 옛 갱신이 둘을 통과해 **옛 plan·구독을 새 세션의
+     * 스냅샷에 직접 쓴다** — `applyFreshPlan` 은 토큰 에폭으로 거절하는데 스냅샷 쓰기는
+     * 아무도 막지 않았다. 그 스냅샷을 예약·울림 게이트가 읽는다.
+     */
+    var isCurrentSessionToken: ((_ userID: String, _ token: String) -> Bool)?
+
+    private func sessionStillCurrent(_ userID: String, _ token: String) -> Bool {
+        isCurrentSessionToken?(userID, token) ?? true
+    }
+    /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
+    ///
+    /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
+    /// 돈다. 계정 가드만으로는 둘 다 통과하니, 먼저 시작해 옛 유료 plan 을 들고 있던 쪽이
+    /// 늦게 끝나면 방금 쓴 `free` 를 덮고 스냅샷을 '확정' 으로까지 표시한다 — 강등 정합화가
+    /// 그 한 번의 경합으로 무효가 된다.
+    private var refreshGeneration = 0
 
     init(
         api: AlarmTalkAPI = .shared,
@@ -89,19 +137,38 @@ final class SocialFeatureViewModel: ObservableObject {
         activeUserID = userID
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
-        let shouldSetBusy = !isRefreshing
-        if shouldSetBusy { isRefreshing = true }
+        // ⚠ **세대는 통과한 뒤에 올린다**(2026-09-01 리뷰 2차 정정). 위 가드 **앞**에서
+        // 올리면, 곧바로 돌아갈 화면 갱신이 진행 중인 `force`(plan_changed) 갱신의 세대를
+        // 무효로 만들어 놓고 **대체를 시작하지도 않는다** — 강등 정합화가 통째로 사라지고
+        // `entitlementSnapshotComplete` 는 옛 true 로 남아 클론 오디오가 예약된 채 있는다.
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        // ⚠ **새 갱신을 받아들이는 순간 '확정' 을 내린다**(2026-09-01 리뷰). 안 내리면 앞
+        // 세대가 남긴 true 가 그대로 서 있어, 밀려난 갱신을 기다리던 푸시 콜백이 그 값을
+        // 보고 **부분만 갱신된 스냅샷으로 AlarmKit 정합화를 돌린다.** 이 갱신이 끝나면
+        // 아래에서 다시 세운다.
+        entitlementSnapshotComplete = false
+        if !isRefreshing { isRefreshing = true }
+        // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
+        // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
+        // 깃발을 대신 내린다** — 그 틈에 들어온 화면 갱신이 admission 을 통과해 세대를 또
+        // 올리고 `force` 를 무효로 만든다. 반대로 '세운 사람만' 으로 두면 이번엔 아무도
+        // 못 내려 깃발이 영영 켜진 채 남는다(밀려난 쪽은 소유자인데 내리지 않으므로).
+        // 그래서 **소유권을 세대로** 본다: 마지막에 시작한 갱신이 끝날 때 내린다.
         defer {
-            if shouldSetBusy { isRefreshing = false }
+            if generation == refreshGeneration { isRefreshing = false }
         }
 
         var messages: [String] = []
+        // 이 갱신이 인정하는 '지금 토큰' — rolling refresh 로 굴러가면 함께 옮겨 간다.
+        var effectiveToken = token
 
         var familyGroupOK = false
-        var subscriptionOK = false
+        var entitlementOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
             familyGroupOK = true
@@ -118,11 +185,81 @@ final class SocialFeatureViewModel: ObservableObject {
             async let nextVouchers = api.listVouchers(token: token)
             let resolvedSubscription = try await nextSubscription
             let resolvedVouchers = try await nextVouchers
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
+            // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
+            //
+            // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
+            // 배경 `onPlanChanged` 경로는 `refreshAll` 만 부르고 사용자를 다시 읽지 않는다 —
+            // 소유자가 결제 보류에 들어가면 그룹은 남는데, 여기에 **옛 유료 plan** 이 적히면
+            // 판정기가 유료라고 답해 클론 오디오가 계속 예약된다. 서버에서 지금 값을 받아 적는다.
+            //
+            // ⚠ **그러니 실패도 `try?` 로 삼키면 안 된다**(2026-09-01 리뷰). 삼키고 옛
+            // `session.user.plan` 로 때우면 보류 직전의 **유료** 값이 스냅샷에 다시 박히는데,
+            // 아래에서 `entitlementSnapshotComplete` 까지 true 가 되어 그 값이 '확정' 으로
+            // 읽힌다 — 정합화가 하필 그 한 번의 네트워크 실패 때문에 클론 오디오를 그대로
+            // 예약된 채 남긴다. 못 받았으면 **적지 않고**(마지막으로 확인된 값을 남긴다)
+            // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
+            var freshPlan: String?
+            var planOK = false
+            var rolledToken: String?
+            do {
+                let me = try await AlarmTalkAPI.shared.me(token: token)
+                freshPlan = me.user.plan
+                planOK = true
+                rolledToken = me.token?.nilIfBlank
+            } catch {
+                messages.append(Self.scopedRefreshErrorMessage(
+                    label: "이용권",
+                    error: error,
+                    fallback: "이용권 정보를 불러오지 못했어요"
+                ))
+            }
+            // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
+            // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
+            // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
+            // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
+            // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
+            // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
+            // ⚠ **plan 을 토큰 회전보다 먼저 적용한다**(2026-09-01 리뷰). 둘 다 출처 토큰을
+            // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
+            // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
+            // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
+            if let rolledToken, rolledToken != token {
+                onRolledToken?(userID, token, rolledToken)
+                // ⚠ **굴린 뒤에는 기준 토큰도 갱신한다**(2026-09-01 리뷰). 이 값으로 아래
+                // 마지막 가드를 보는데, 옛 토큰 그대로 두면 **방금 내가 굴린 것 때문에**
+                // 그 가드가 항상 실패해 `entitlementSnapshotComplete` 가 서지 않는다 —
+                // 그러면 `plan_changed` 핸들러가 정합화를 건너뛰어, 필드를 다 갱신하고도
+                // 이미 예약된 클론 오디오가 그대로 남는다.
+                effectiveToken = rolledToken
+            }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
+            if let freshPlan {
+                accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan)
+                // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
+                // 안드로이드 `PlanChangeSyncWorker` 와 같은 규칙). 기간 중 환불·회수는
+                // `plan_changed` 로 오는데 배경 경로는 이 갱신 하나만 돈다 — 캐시에 남은
+                // **원래 만료 시각**이 판정 1단이라, 그걸 안 끊으면 그 시각까지 클론 오디오가
+                // 계속 예약된다. 판정은 **스토어 신호를 빼고**(빼지 않으면 지우려는 그
+                // 상황에서만 조건이 거짓이 된다) 서버가 준 값만으로 한다.
+                // ⚠ **여기서 스토어 캐시를 지우지 않는다**(2026-09-01 리뷰 3차 정정).
+                // 29차에는 무조건, 30차에는 `force` 일 때 지웠는데 **둘 다 틀렸다** —
+                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 이용권 시트 진입, 설정 저장,
+                // 구매 성공, 목소리 삭제, 가족 알람 생성이 전부 `force: true` 로 이 갱신을
+                // 부른다. 그때 StoreKit 은 갱신을 확인했는데 서버가 아직 옛 free 이면
+                // **살아 있는 신호를 지워 돈 내는 사용자를 강등한다.**
+                //
+                // 캐시가 낡았는지 아는 유일한 권위는 **StoreKit 자신**이다. 그래서 지우는 대신
+                // `plan_changed` 경로가 `refreshPurchasedProducts()` 를 다시 돌린다 —
+                // 환불·회수된 트랜잭션은 `currentEntitlements` 에서 빠지므로 그 재계산이
+                // 캐시를 정확히 끊고, 살아 있으면 그대로 둔다(`PushNotificationCoordinator`).
+            }
             vouchers = resolvedVouchers
-            subscriptionOK = true
+            entitlementOK = planOK
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: "이용권",
@@ -131,8 +268,9 @@ final class SocialFeatureViewModel: ObservableObject {
             ))
         }
 
-        guard activeUserID == userID else { return }
-        entitlementSnapshotComplete = familyGroupOK && subscriptionOK
+        guard activeUserID == userID, generation == refreshGeneration,
+              sessionStillCurrent(userID, effectiveToken) else { return }
+        entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
@@ -147,9 +285,16 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        // ⚠ **여기서는 세대를 올리지 않는다 — 잡아 두기만 한다.** 이 갱신은 구독 하나만
+        // 쓰는 좁은 경로라, 올리면 더 넓은 `refreshAll`(plan·그룹·확정 표시까지 쓴다)이
+        // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
+        // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
+        let generation = refreshGeneration
         do {
             let nextSubscription = try await api.getSubscription(token: token)
-            guard activeUserID == userID else { return }
+            // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
             subscription = nextSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: nextSubscription)
         } catch {
@@ -481,6 +626,8 @@ final class SocialFeatureViewModel: ObservableObject {
                     || record.ownerUserId == expectedOwnerUserId)
         }
         for record in staleLocks {
+            // ⚠ **밀려났으면 즉시 멈춘다**(2026-09-01 리뷰 — 아래 잠금 루프의 주석과 같은 이유).
+            if Task.isCancelled { return 0 }
             var restored = record
             restored.playMode = record.preLockPlayMode ?? record.playMode
             restored.preLockPlayMode = nil
@@ -493,6 +640,12 @@ final class SocialFeatureViewModel: ObservableObject {
 
         var locked = 0
         for record in targets {
+            // ⚠ **밀려난 잠금은 여기서 멈춘다**(2026-09-01 리뷰). 이 함수는 `.task(id:)` 에서
+            // 도는데, 도는 도중 StoreKit 이 유료를 알려 오면 그 태스크가 **취소되고 복원
+            // 태스크가 시작된다.** 취소를 안 보면 옛 루프가 복원이 대상 목록을 읽은 **뒤에**
+            // 남은 알람들을 계속 잠근다 — 돈 내는 사용자의 알람이 알람음으로 남는다.
+            // `AlarmKitViewModel.schedule` 은 행을 이미 고친 **뒤에야** 취소를 알아챈다.
+            if Task.isCancelled { return locked }
             var updated = record
             // 이미 잠긴 알람을 다시 잠그면 원래 값을 잃는다 — 처음 한 번만 적는다.
             let needsLock = updated.preLockPlayMode == nil
@@ -500,6 +653,11 @@ final class SocialFeatureViewModel: ObservableObject {
                 updated.preLockPlayMode = updated.playMode
             }
             updated.playMode = AlarmPlayMode.alarmOnly.rawValue
+            // ⚠ **쓰기 직전에 한 번 더 본다**(2026-09-01 리뷰). 위 검사와 이 쓰기 사이에
+            // StoreKit 이 유료를 알려 오면 반대 태스크가 시작돼 대상 목록을 잡는데, 그
+            // 뒤에 이 행을 고치면 `schedule` 이 취소를 알아채고 물러나도 **행은 이미 바뀐
+            // 채로 남는다** — 방금 결제한 사용자의 알람이 alarm_only 로 굳는다.
+            if Task.isCancelled { return locked }
             _ = alarmStore.upsert(updated)
             // ⚠ **새로 잠근 것만 다시 예약한다.** 이미 잠긴 알람은 재생 방식이 그대로라
             // 예약을 건드릴 이유가 없다(안드로이드 `lockPaidAlarmTalks` 도 `needsLock` 일 때만 한다).
@@ -546,9 +704,16 @@ final class SocialFeatureViewModel: ObservableObject {
         let locked = alarmStore.alarms.filter { $0.preLockPlayMode != nil && $0.ownerUserId == owner }
         var restored = 0
         for record in locked {
+            // ⚠ **밀려난 복원도 멈춘다**(2026-09-01 리뷰). 반대 방향(잠금 → 복원)만 막으면
+            // 반쪽이다 — 복원 도중 `users.plan` 이 free 로 돌아오면 이 태스크가 취소되고
+            // 잠금이 시작되는데, 취소를 안 보면 옛 복원 루프가 잠금이 대상 목록을 잡은
+            // **뒤에** 남은 알람을 되살려 **무료 계정에 클론 오디오가 예약된 채로 남는다.**
+            if Task.isCancelled { return restored }
             var updated = record
             updated.playMode = updated.preLockPlayMode ?? updated.playMode
             updated.preLockPlayMode = nil
+            // 위 잠금 루프와 같은 이유 — 쓰기 직전에 한 번 더 본다.
+            if Task.isCancelled { return restored }
             _ = alarmStore.upsert(updated)
             // 잠글 때 걸어 둔 톤 예약을 **취소하고** 목소리로 다시 건다. 안 그러면 둘 다
             // 남아 한 알람이 두 번 운다(잠금 경로와 같은 이유).

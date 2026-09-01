@@ -18,6 +18,10 @@ import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.AccessSnapshotStore
+import com.alarmtalk.app.isEntitledOptimistic
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
@@ -90,7 +94,13 @@ class StockClipPrefetchWorker(
     }
 
     override suspend fun doWork(): Result {
-        val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
+        val sessionStore = AuthSessionStore(applicationContext)
+        // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
+        // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
+        // 통과해 **B 의 토큰을 A 것으로 갈아 끼운다** — 화면은 B 인데 요청은 A 로 나가는
+        // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
+        val startGeneration = sessionStore.sessionGeneration()
+        val session = sessionStore.read() ?: return Result.success()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -123,21 +133,87 @@ class StockClipPrefetchWorker(
             // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
             // ⚠ **공유받은 목소리는 넣지 않는다** — 그룹원 수만큼 곱해지는데 실제로 쓰는 것은
             // 보통 하나다. 그건 알람에서 고르는 순간 받는다.
-            val ownedProfileIds = withContext(Dispatchers.IO) {
-                runCatching { api.listVoiceProfiles(auth).profiles }
-                    .getOrDefault(emptyList())
-                    .filterNot { isSystemVoiceId(it.id) }
-                    .map { it.id }
-                    .toSet()
+            // ⚠ **무료면 내 클론 클립은 아예 요청하지 않는다**(2026-08-31 실기기 재현).
+            // 무료 계정에도 예전에 만든 클론의 프리셋 클립이 매니페스트에 남아 있는데, 서버는
+            // 그걸 403 으로 막는다(유료 전용). 요청해 봐야 못 받을 뿐 아니라, 그 실패가 같은
+            // 배치의 **무료 스톡 클립까지 끌고 죽었다** — 날씨·약 클립이 안 받아져 알람이
+            // 라이브 생성으로 넘어가고, 사용자는 "유료 이용권에서 사용할 수 있어요" 를 봤다.
+            // (배치 격리는 아래에서 따로 고쳤지만, 애초에 보내지 않는 게 맞다.)
+            // 플랜을 못 읽으면(네트워크 실패) **받는 쪽으로** 둔다 — 유료 사용자가 자기 클립을
+            // 못 받는 것이 더 나쁘고, 무료면 그 요청만 403 으로 조용히 걸러진다.
+            // ⚠ **구독 행만 보면 보류를 놓친다**(2026-09-01 리뷰). 서버는 결제 보류에서
+            // 행을 남긴 채 `users.plan` 만 회수하므로, `hasPaidVoiceAccess`(status·plan key)
+            // 만 보면 권한이 없는 사용자의 클론 클립을 그대로 요청한다 — 403
+            // (`VOICE_LOCKED_FREE_PLAN`)을 받고 재시도를 소진한 끝에 FAILED 로 끝난다.
+            // 울림 게이트와 **같은 판정기**로 판단한다.
+            val paidVoiceAccess = withContext(Dispatchers.IO) {
+                runCatching {
+                    val subscription = api.getSubscription(auth)
+                    // ⚠ **plan 은 캐시가 아니라 서버에서 지금 받는다**(2026-09-01 리뷰).
+                    // 회복 방향이 문제다: 보류가 풀려 구독이 살아났는데 스냅샷의 `userPlan` 은
+                    // 아직 보류 때 확인한 `free` 다. 이 워커는 콜드 스타트에서 `/auth/me`
+                    // 갱신과 경주하므로, 캐시를 읽으면 그 옛 free 가 **살아 있는 구독을 이겨**
+                    // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
+                    // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
+                    val me = api.me(auth)
+                    val plan = me.user.plan
+                    // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
+                    // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
+                    // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
+                    // 죽고, 이후 프리페치·동기화가 그 옛 토큰으로 401 만 받는다.
+                    // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
+                    // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
+                    me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
+                        sessionStore.saveTokenIfGeneration(startGeneration, rolled)
+                    }
+                    val snapshotStore = AccessSnapshotStore(applicationContext)
+                    // ⚠ **받았으면 적는다**(2026-09-01 리뷰). 스펙이 "`/auth/me` 로 plan 을
+                    // 받아 온 경로는 **전부** 스냅샷에 적는다" 로 못 박은 자리다 — 여기서
+                    // 판정에만 쓰고 버리면, 같이 도는 세션 갱신이 실패했을 때 `RingingService`
+                    // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
+                    // ⚠ **세대 락 안에서 쓴다**(2026-09-01 리뷰). 조회 중 로그아웃·재로그인이
+                    // 있었으면 이 값은 옛 회차의 것이라, 그대로 쓰면 **같은 계정의 더 새로운
+                    // 스냅샷을 덮는다** — 울림 게이트가 지나간 등급으로 판단하게 된다.
+                    sessionStore.runIfGeneration(startGeneration) {
+                        snapshotStore.updateUserPlan(session.user.id, plan)
+                    }
+                    val snapshot = snapshotStore.read(session.user.id)
+                    val now = System.currentTimeMillis()
+                    resolvePaidVoiceAccess(
+                        subscriptionResponse = subscription,
+                        familyGroup = snapshot.familyGroup,
+                        userPlan = plan,
+                        storeEntitled = snapshot.storeSignalStillValid(now),
+                        nowMillis = now,
+                    ).isEntitledOptimistic()
+                }.getOrDefault(true)
+            }
+            val ownedProfileIds = if (!paidVoiceAccess) {
+                emptySet()
+            } else {
+                withContext(Dispatchers.IO) {
+                    runCatching { api.listVoiceProfiles(auth).profiles }
+                        .getOrDefault(emptyList())
+                        .filterNot { isSystemVoiceId(it.id) }
+                        .map { it.id }
+                        .toSet()
+                }
             }
             val clips = allClips.filter {
+                val isDefaultVoiceClip = it.targetsDefaultVoices(language)
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
                 // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
-                it.targetsDefaultVoices(language) ||
-                    it.voiceProfileId in ownedProfileIds ||
+                val isOwnedCloneClip = it.voiceProfileId in ownedProfileIds
+                // ⚠ **무료면 스테일 갱신도 기본 목소리 것만 한다**(2026-08-31 리뷰).
+                // `ownedProfileIds` 를 비우는 것만으로는 부족하다 — 강등 전에 받아 둔 클론
+                // 클립의 `audio_url` 이 바뀌면 이 갈래가 그 클립을 **도로 끌어온다.** 서버는
+                // 무료의 클론 오디오를 403(`VOICE_LOCKED_FREE_PLAN`)으로 막으므로, 쓸 수 있는
+                // 시스템 클립을 다 받고도 그 하나 때문에 재시도를 소진하고 FAILED 로 끝난다.
+                val staleNeedsRefresh = (paidVoiceAccess || isDefaultVoiceClip) &&
                     AlarmAudioStore.messageCacheKeys(it.messageId).any { key ->
                         audioStore.isCachedAudioStale(key, it.audioUrl)
                     }
+                isDefaultVoiceClip || isOwnedCloneClip || staleNeedsRefresh
             }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
@@ -189,22 +265,49 @@ class StockClipPrefetchWorker(
             }
 
             var done = clips.size - missing.size
+            // ⚠ **격리는 하되 실패를 삼키지는 않는다**(2026-08-31 리뷰). 클립별로 예외를 잡아
+            // 형제 요청을 살리는 것과, 그 회차를 '성공' 으로 보고하는 것은 다른 문제다.
+            // 성공으로 끝내면 WorkManager 가 백오프 재시도를 걸지 않아, 약전파에서 한두 개를
+            // 놓친 채 **완료로 굳는다** — 준비 화면은 100% 를 보여주는데 오프라인 음원은 없다.
+            val failures = java.util.concurrent.atomic.AtomicInteger(0)
+            // 그중 **다시 해 볼 만한** 실패 수. 0 이면 재시도가 의미 없다(위 when 참조).
+            val transientFailures = java.util.concurrent.atomic.AtomicInteger(0)
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
             missing.chunked(PARALLELISM).forEach { batch ->
                 coroutineScope {
                     batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
-                            val response = api.getTtsMessageAudio(auth, clip.messageId)
-                            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                            cacheKeys.forEach { key ->
-                                audioStore.cacheGeneratedAudio(
-                                    bytes = bytes,
-                                    format = response.audioFormat,
-                                    rawAudioUri = response.audioUrl,
-                                    displayName = key,
-                                    cacheKey = key,
-                                    messageId = clip.messageId,
+                            // ⚠ **한 클립의 실패가 배치를 죽이지 않게 한다**(2026-08-31).
+                            // 예전에는 여기서 던진 예외가 `coroutineScope` 를 취소해 **같은
+                            // 배치의 나머지 요청까지 Canceled** 로 끝났다. 접근 권한이 없는
+                            // 클립 하나(무료 계정에 남은 클론 프리셋 → 403) 때문에 날씨·약
+                            // 스톡 클립이 통째로 안 받아졌다. 못 받은 것은 다음 회차가 보충한다.
+                            runCatching {
+                                val response = api.getTtsMessageAudio(auth, clip.messageId)
+                                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                                cacheKeys.forEach { key ->
+                                    audioStore.cacheGeneratedAudio(
+                                        bytes = bytes,
+                                        format = response.audioFormat,
+                                        rawAudioUri = response.audioUrl,
+                                        displayName = key,
+                                        cacheKey = key,
+                                        messageId = clip.messageId,
+                                    )
+                                }
+                            }.onFailure { error ->
+                                failures.incrementAndGet()
+                                // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
+                                // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
+                                // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
+                                // '받는 중' 으로 남고 '다시 시도' 는 끝내 안 뜬다.
+                                // (바깥 catch 는 이미 `isPermanent()` 로 가르고 있었는데,
+                                // 클립별로 삼키면서 그 분류에 닿지 못했다.)
+                                if (!error.isPermanent()) transientFailures.incrementAndGet()
+                                AlarmTalkLog.reportError(
+                                    "Stock clip download failed messageId=${clip.messageId}",
+                                    error,
                                 )
                             }
                         }
@@ -214,7 +317,22 @@ class StockClipPrefetchWorker(
                 publishProgress(done = done, total = clips.size)
             }
             rebind()
-            Result.success()
+            // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
+            // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
+            //
+            // ⚠ **재시도를 다 쓰면 `success` 가 아니라 `failure` 다**(2026-08-31 리뷰).
+            // `done` 은 실패한 클립까지 세므로 성공으로 끝내면 WorkManager 가 **100%
+            // SUCCEEDED** 를 내보낸다 — 준비 화면은 캐시가 하나라도 있으면 닫히고, FAILED
+            // 상태에서만 뜨는 '다시 시도' 를 영영 못 보여준다. 못 받은 클립은 다른 계기가
+            // 큐를 다시 넣을 때까지 빈 채로 남는다. 아래 catch 의 종료 규칙과 같은 결론이다.
+            when {
+                failures.get() == 0 -> Result.success()
+                // 실패가 **전부 영구**면 재시도해 봐야 같은 결과다 — 곧바로 FAILED 로 끝내
+                // 준비 화면이 '다시 시도' 를 띄우게 한다.
+                transientFailures.get() == 0 -> Result.failure()
+                runAttemptCount < MAX_RUN_ATTEMPTS -> Result.retry()
+                else -> Result.failure()
+            }
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
             AlarmTalkLog.reportError("Stock clip prefetch failed", error)
@@ -327,14 +445,17 @@ class StockClipPrefetchWorker(
         /**
          * 이력 중 '지금 화면이 봐야 할' 하나를 고른다.
          *  1) 아직 안 끝난 것(RUNNING/ENQUEUED/BLOCKED) — 재시도가 돌고 있으면 그게 현재다.
-         *  2) 없으면 성공한 것 — 한 번이라도 받아냈으면 화면을 닫아야 한다.
-         *  3) 그것도 없으면 마지막 항목(=실패). 그때만 '다시 시도'를 보여준다.
+         *  2) 없으면 **가장 최근에 끝난 것**. 성공이든 실패든 그게 지금 상태다.
+         *
+         * ⚠ **'성공이 하나라도 있으면 성공'** 으로 두지 말 것(2026-09-01 리뷰). 매니페스트가
+         * 바뀌어 영구 실패(404)가 생기면 **옛 성공이 그 실패를 영영 가린다** — 준비 화면은
+         * 닫히거나 성공으로 남고, 그 실패를 위해 만든 '다시 시도' 가 끝내 뜨지 않는다.
+         * 옛 FAILED 가 새 실행을 가리는 문제는 1)이 이미 막는다(재시도는 안 끝난 상태다).
          *
          * WorkInfo 는 유닛 테스트에서 만들기 어려워 상태 추출을 인자로 받는다.
          */
         internal fun <T> pickCurrent(items: List<T>, state: (T) -> WorkInfo.State): T? =
             items.firstOrNull { !state(it).isFinished }
-                ?: items.lastOrNull { state(it) == WorkInfo.State.SUCCEEDED }
                 ?: items.lastOrNull()
     }
 }

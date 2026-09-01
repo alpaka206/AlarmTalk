@@ -522,8 +522,8 @@
 
     <string name="social_code_input_label">Enter a code</string>
     <string name="social_code_input_hint">Invite codes, gifted pass codes, and promo codes all work here.</string>
-    <string name="social_voucher_usage">%1$d/%2$d in use</string>
-    <string name="social_voucher_usage_full">%1$d/%2$d in use · Full, so you can\'t share</string>
+    <string name="social_members_capacity">%1$d/%2$d</string>
+    <string name="social_capacity_full">Full, so you can\'t share</string>
     <string name="voices_close">Close</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
@@ -906,4 +906,5 @@ Pass code: %1$s
     <string name="clip_prefetch_notification_title">Downloading voices</string>
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>
+    <string name="social_code_exhausted">This code has been used up. Regenerate it to share again.</string>
 </resources>

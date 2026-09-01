@@ -190,6 +190,70 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 ⚠ **`DEFERRED` 는 지금 결제가 일어나지 않는다.** 그래서 구매 리스너로 새 purchase 가 즉시
 오지 않고, 화면이 "바로 바뀐다" 고 말하면 안 된다. 반영은 갱신 시점의 RTDN 으로 온다.
 
+## 유료 판정 — 우선순위 다섯 단 (양 앱 공통)
+
+⚠ **판정을 화면마다 손으로 쓰지 말 것.** 2026-08-31 전에는 안드로이드 3개·iOS 3개의 서로 다른
+판정이 있었고, 한쪽만 고치는 사고가 리뷰에서 연달아 났다. 이제 앱마다 **판정기 하나**다.
+
+```
+1. 스토어가 유효하다고 함            → 유료   (서버 만료로 절대 뒤집지 않는다)
+2. 서버가 users.plan = free 라고 함  → 무료   (남아 있는 구독 행보다 위다)
+3. 서버가 내 구독을 앎               → 상태·만료로 가른다
+4. 남은 users.plan → 그룹 접근      (plan 정보가 없고 그룹도 없으면 **무료**)
+5. 스냅샷 자체가 없음                → 모름 (무료가 아니다)
+```
+
+⚠ **'모름' 은 4단이 아니라 5단에서만 나온다.** 서버가 "본인 구독 없음" 이라고 **답했고**
+그룹 접근도 없으면 근거가 다 모인 무료다 — 이걸 모름으로 접으면 낙관 규칙(`모르면 잠그지
+않는다`)에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.** 모름은 서버에 한 번도
+못 물어본 상태(스냅샷 없음)만 가리킨다.
+
+⚠ **2단이 3단보다 위인 이유: 보류는 구독 행을 지우지 않는다.** 결제 보류(구글 ON_HOLD·
+애플 결제 재시도)에서 서버는 그룹과 구독 행을 **그대로 두고** `users.plan` 만 회수한다
+(`propagateGroupMemberPlans` 는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만
+한다 — 결제가 복구되면 재초대 없이 살아나야 하기 때문이다). 그래서 행부터 보면
+`status='active'` 에 만료도 미래인 행이 그대로 있어, **결제가 밀린 그룹 멤버가 계속
+유료로 읽힌다.** 신규 결제를 잘못 막지도 않는다 — 서버가 행 삽입과 **같은 트랜잭션에서**
+`users.plan` 을 올리고(`createNewSubscriptionForPlan`), 산 직후는 어차피 1단이 잡는다.
+
+⚠ **그 값을 적어 두는 것도 같이 해야 한다.** 울림·예약 게이트는 스냅샷만 읽으므로,
+`/auth/me` 로 plan 을 받아 온 경로는 **전부** `AccessSnapshot.userPlan` 에 적는다
+(`PlanChangeSyncWorker` 포함 — 판정만 하고 안 적으면 게이트가 강등 **전** 등급을 읽는다).
+받지 못했으면 **옛 값으로 때우지 않는다**: 적지 않고 '미완' 으로 표시한다.
+
+⚠ **거꾸로, 방금 받아 오지 **않은** 경로는 적지 않는다.** 구독 응답을 저장하는 김에 손에
+들고 있던 세션의 plan 을 같이 쓰면, 앱을 닫아 둔 사이 강등됐는데 `plan_changed` 를 놓친
+계정에서 **옛 유료 값을 판정에 심는다**(보류면 `/billing/subscription` 이 남은 행을 그대로
+돌려주므로 그 경로가 그대로 돈다). 안 적혀 있는 것이 옛 값보다 낫다 — 판정기가 구독·그룹
+으로 답하면 되고, 다음 `/auth/me` 가 채운다.
+
+⚠ **스토어가 "없다" 고 답한 것은 '무료 확정' 이 아니다.** Play·StoreKit 은 **그 스토어에서
+그 계정으로 산 것**만 돌려준다 — iOS 에서 결제하고 안드로이드로 로그인한 사람, 다른 구글
+계정으로 산 사람, 그리고 **본인 구매가 아예 없는 그룹 멤버**는 전부 빈 결과가 나온다.
+그래서 빈 결과는 **캐시된 스토어 신호를 지우는 것까지**이고, 판정은 서버 스냅샷으로 내려간다.
+(그 신호가 오래 살아남지 않도록 아래 기한을 둔다.)
+
+⚠ **되돌릴 수 없는 변환은 한 조건 더 본다.** 판정기는 `users.plan = free` 를 남은 구독 행보다
+위로 보지만(보류를 잡기 위한 규칙), 보류는 **회복형**이다. 울림·예약은 판정기 그대로 막아도
+결제가 복구되면 살아나지만, `PlanChangeSyncWorker` 의 영구 변환은 되돌리지 않으므로
+**행이 살아 있는 동안에는 하지 않는다**(`isDefinitelyFree() && !hasPaidVoiceAccess(billing)`).
+
+**1단이 이 문서의 제목을 코드로 옮긴 것이다.** 자동갱신은 스토어에서 먼저 일어나고 서버 반영
+(RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛 `expires_at` 으로 막으면 **돈을 내고 있는
+사용자가 잠긴다.** 반대 방향(만료된 사용자에게 잠깐 열림)은 다음 동기화가 정리한다 —
+두 오류의 무게가 다르다.
+
+**소비 규칙은 둘뿐이다.**
+- `isEntitledOptimistic` — **모르면 잠그지 않는다.** 표시·울림·저장/생성 게이트.
+- `isDefinitelyFree` — **확실히 무료일 때만.** 되돌리기 어려운 동작(무료 잠금 적용, 알람 영구 강등).
+
+⚠ **'모름' 을 '무료' 로 접지 말 것.** 응답 전 기본값을 답으로 읽는 사고가 이 저장소에서
+반복됐다(`docs/spec/gates-and-overlays.md`). 그래서 판정기는 값이 **셋**이다.
+
+⚠ **울림·예약 시점에는 스토어를 직접 못 묻는다**(안드로이드는 알람 시점, iOS 는 AlarmKit 구조).
+그래서 전경에서 물어 온 등급을 `AccessSnapshot.storePlanKey` 에 적어 두고 그 경로가 읽는다 —
+한쪽만 갱신하면 화면과 울림의 답이 갈라진다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -204,8 +268,14 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
-| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | — | `SubscriptionManager.resyncEntitlements` (전경 진입) |
-| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |
+| 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
+| **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
+| 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(`isDefinitelyFreePlan`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
+| 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
+| 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |
+| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me` 응답의 `user.plan` | `MainViewModelAuthActions`(`/auth/me` 성공 경로) · `sync/PlanChangeSyncWorker` — **방금 받아 온 곳만** | `SocialFeatureViewModel.refreshAll`(받으면 적고, 못 받으면 미완 표시) |
+| 판정 스냅샷 — 갱신 직렬화 | — | `AccessSnapshotStore.mutate`(companion `LOCK`) | `AccessSnapshotStore.mutate`(static `NSLock`) |
+| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |

@@ -119,13 +119,16 @@ async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<strin
 /**
  * 해지/만료 후 유료 음성 데이터를 보관하는 유예 기간(일).
  *
- * 주의 — 지금 이 값은 `paid_voice_retention.delete_after` 타임스탬프를 정할 뿐,
- * **실제로 음성 데이터를 지우는 코드는 없다.** sweepPaidVoiceRetention 은 기한이 지난
- * 보관 '장부 행'만 지우고 클론·원본·생성 오디오는 그대로 둔다(정책: 무료 전환 시 삭제하지
- * 않고 잠그기만 한다). 그래서 이 상수를 줄여도 데이터가 더 빨리 사라지지는 않는다.
+ * ⚠ **이 값을 줄이면 데이터가 그만큼 빨리 영구 삭제된다.** 예전 주석은 "지우는 코드가
+ * 없다 / 스윕은 장부 행만 지운다" 고 적혀 있었으나 **코드와 달랐다**(2026-09-01 정정).
+ * `sweepPaidVoiceRetention` 은 기한이 지난 사용자마다 `deleteSensitiveVoiceDataForUser`
+ * 를 태워 `voice_profiles`·`voice_uploads`·`generated_audio_assets`·`messages` 를 지우고
+ * R2·ElevenLabs 오브젝트를 삭제 큐에 넣는다 — 되돌릴 수 없다.
  *
- * '해지 즉시 클론 삭제 + 원본·생성 오디오만 N일 보관 + 그 안에 재생성 가능' 정책을 실제로
- * 적용하려면 유예 만료 시 deleteSensitiveVoiceDataForUser 를 태우는 배관이 따로 필요하다.
+ * 무료 전환 **시점**에는 지우지 않는다. 그때는 제공자 클론만 반납하고(`evicted_*` 표식)
+ * 유예 동안 데이터를 살려 두며, 그 사이 다시 유료가 되면 원본으로 재클론해 돌아온다
+ * (`recloneEvictedVoiceProfile`). 스윕도 삭제 직전에 `hasActivePaidEntitlement` 로 한 번
+ * 더 확인한다.
  */
 export const PAID_VOICE_RETENTION_DAYS = 3;
 
@@ -183,9 +186,17 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 
 /**
  * 만료된(delete_after 경과) 유료 음성 보관 행을 거둔다.
- * 정책 변경: 무료 전환 시 유료 음성 데이터를 더 이상 삭제하지 않는다 — 데이터는 그대로 보존하고
- * 무료인 동안 사용을 잠글 뿐이며, 다시 유료가 되면 그대로 풀린다(잠금은 users.plan 에서 파생).
- * 그래서 이 스윕은 하드삭제를 하지 않고, 유예가 지난 보관 행만 정리하는 청소부로 남는다.
+ *
+ * ⚠ **이 스윕은 하드삭제를 한다**(2026-08-31 정정 — 예전 주석은 "삭제하지 않고 잠글 뿐"
+ * 이라고 적혀 있었으나 코드와 달랐다). 유예가 지나면 `deleteSensitiveVoiceDataForUser` 가
+ * `voice_profiles`·`voice_uploads`·`generated_audio_assets`·`messages` 를 지우고 R2·
+ * ElevenLabs 오브젝트를 삭제 큐에 넣는다.
+ *
+ * 무료 전환 **시점**에는 지우지 않는다 — 그때는 제공자 클론만 반납하고(`elevenlabs_voice_id`
+ * 를 비우고 `evicted_*` 표식을 남긴다) 데이터는 유예 동안 살려 둔다. 그 사이 다시 유료가
+ * 되면 원본으로 재클론해 그대로 돌아온다(`recloneEvictedVoiceProfile`).
+ * 삭제 직전에 `hasActivePaidEntitlement` 로 한 번 더 확인하므로, 유예 중 재구독했으면
+ * 보관 행만 지우고 데이터는 남는다.
  * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
 export async function sweepPaidVoiceRetention(

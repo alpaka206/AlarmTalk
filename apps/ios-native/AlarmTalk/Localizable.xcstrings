@@ -86,36 +86,36 @@
         }
       }
     },
-    "%lld/%lld명 사용": {
+    "%lld/%lld명": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld in use"
+            "value": "%lld/%lld"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld人が使用中"
+            "value": "%lld/%lld人"
           }
         }
       }
     },
-    "%lld/%lld명 사용 · 정원이 가득 차서 공유할 수 없어요": {
+    "정원이 가득 차서 공유할 수 없어요": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld in use · Full, so you can't share"
+            "value": "Full, so you can't share"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld人が使用中 · 定員がいっぱいで共有できません"
+            "value": "定員がいっぱいで共有できません"
           }
         }
       }
@@ -16749,6 +16749,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "声を新しく登録したため、自由入力の文章で作ったアラーム%lld件が標準のアラーム音に戻りました。新しい声で文章を作り直してください。"
+          }
+        }
+      }
+    },
+    "이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This code has been used up. Regenerate it to share again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコードは使い切りました。再発行すればまた共有できます。"
           }
         }
       }

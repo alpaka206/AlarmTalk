@@ -43,7 +43,9 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.hasCoupleOrFamilyAccess
-import com.alarmtalk.app.isPaidVoiceEntitledNow
+import com.alarmtalk.app.isEntitledOptimistic
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -327,13 +329,35 @@ class RingingService : Service() {
      * subscription==null 분기에만 적용 — stale 캐시의 만료된 family 소유자 오통과 방지).
      */
     private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
-        val userId = AuthSessionStore(applicationContext).read()?.user?.id ?: return@runCatching true
+        // ⚠ **세션은 한 번만 읽는다**(2026-09-01 리뷰). 두 번 읽으면 그 사이의 계정 전환에서
+        // **A 의 구독·그룹 스냅샷과 B 의 plan** 이 한 판정에 섞인다 — 울림 경로는 알람을 id
+        // 로 바로 집어오므로 그 섞인 답이 그대로 이 알람에 적용된다(A 유료→B 무료면 A 의
+        // 클론이 톤으로 죽고, 반대면 무료 계정에서 남은 클론이 울린다).
+        val session = AuthSessionStore(applicationContext).read()
+        val userId = session?.user?.id ?: return@runCatching true
         val snapshot = AccessSnapshotStore(applicationContext).read(userId)
-        val sub = snapshot.subscriptionResponse ?: return@runCatching true
-        if (sub.subscription == null) {
-            return@runCatching hasCoupleOrFamilyAccess(sub, snapshot.familyGroup)
-        }
-        isPaidVoiceEntitledNow(sub, System.currentTimeMillis())
+        // 2026-08-31: 손으로 갈라 쓰던 것을 **유일 판정기**로 옮겼다. 뜻은 그대로이되
+        // **스토어 신호가 하나 더 들어온다** — 앱이 전경에서 물어 캐시에 적어 둔 값이라
+        // 여기서 BillingClient 를 붙이지 않고도 「스토어가 권위다」를 지킬 수 있다.
+        // 울림은 잘못 잠그면 알람이 조용해지는 쪽이라 **모르면 통과**시킨다.
+        val now = System.currentTimeMillis()
+        // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
+        // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
+        val storeStillValid = snapshot.storeSignalStillValid(now)
+        resolvePaidVoiceAccess(
+            subscriptionResponse = snapshot.subscriptionResponse,
+            familyGroup = snapshot.familyGroup,
+            // ⚠ **null 로 두지 말 것.** 서버가 '구독 없음' 이라 답한 경우 이 값이 없으면
+            // 판정이 `Unknown` 이 되고 낙관 규칙상 통과해, 강등된 사용자의 클론 목소리가
+            // 계속 울린다 — 로컬 폴백의 존재 이유가 사라진다(2026-08-31 리뷰).
+            // ⚠ **옛 버전이 쓴 스냅샷에는 이 필드가 없다**(2026-08-31 리뷰). null 로 두면
+            // '구독 없음 + 그룹 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
+            // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
+            // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
+            userPlan = snapshot.userPlan ?: session.user.plan,
+            storeEntitled = storeStillValid,
+            nowMillis = now,
+        ).isEntitledOptimistic()
     }.getOrDefault(true)
 
     /**

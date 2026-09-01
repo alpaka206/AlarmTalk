@@ -289,6 +289,10 @@ private suspend fun MainViewModel.onSignedIn() {
     runCatching { repository.clearSignOutWithoutSessionClearGate(authSession?.user?.id) }
         .onFailure { error -> Log.w(TAG, "Failed to clear sign-out restore gate", error) }
     restoreAccessSnapshotForCurrentUser()
+    // 로그인 직후에도 스토어에 물어본다 — 안 물어보면 이 계정의 `storeEntitlementChecked` 가
+    // 계속 false 라 무료 확정 판정이 영영 서지 않고, 반대로 스토어가 유료를 확인해 줄
+    // 기회도 없다(2026-08-31 리뷰).
+    viewModelScope.launch { refreshStoreEntitlement() }
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
     com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
@@ -1265,6 +1269,13 @@ internal fun MainViewModel.refreshAppSession() {
                 return@onSuccess
             }
             authSession = saved
+            // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
+            // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
+            saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
+                accessSnapshotStore.updateUserPlan(id, saved.user.plan)
+                // 메모리 사본도 맞춘다 — 판정은 이 값을 먼저 본다(`effectiveUserPlan`).
+                storeSnapshotUserPlan = saved.user.plan
+            }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }

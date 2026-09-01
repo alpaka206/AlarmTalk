@@ -54,10 +54,17 @@ final class PaidVoiceGateTests: XCTestCase {
         )
     }
 
-    private func snapshot(_ sub: BillingSubscription?, plan: BillingPlan? = nil) -> AccessSnapshot {
+    private func snapshot(
+        _ sub: BillingSubscription?,
+        plan: BillingPlan? = nil,
+        userPlan: String? = nil
+    ) -> AccessSnapshot {
         AccessSnapshot(
             subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan, nextPlan: nil),
-            familyGroup: nil
+            familyGroup: nil,
+            storePlanKey: nil,
+            storeEntitlementUntilMillis: nil,
+            userPlan: userPlan
         )
     }
 
@@ -112,6 +119,65 @@ final class PaidVoiceGateTests: XCTestCase {
                 "\(status) 는 회복형이라 회수하지 않는다"
             )
         }
+    }
+
+    /// 콜드 스타트: 구독 스냅샷은 아직 없는데 세션의 plan 은 이미 free 다.
+    /// 여기서 `.unknown` 을 돌려주면 낙관 규칙에 걸려 클론 목소리가 그대로 열린다.
+    func test_knownFreePlan_beatsMissingSnapshot() {
+        var snap = AccessSnapshot.empty
+        snap.userPlan = "free"
+        XCTAssertEqual(PaidVoiceGate.resolve(snapshot: snap), .notEntitled)
+        // 스냅샷도 plan 도 없으면 그때가 진짜 '모름' — 잠그지 않는다.
+        XCTAssertEqual(PaidVoiceGate.resolve(snapshot: .empty), .unknown)
+    }
+
+    /// 결제 보류로 서버가 `users.plan` 을 회수하면 **남아 있는 구독 행보다 그게 위다.**
+    /// 서버는 회복을 위해 그룹 연동 구독 행을 취소하지 않고 남기므로(`propagateGroupMemberPlans`
+    /// 는 재계산에서 제외만 한다), 행부터 보면 결제가 밀린 멤버가 계속 유료로 읽힌다.
+    func test_suspendedUserPlan_beatsRetainedSubscriptionRow() {
+        let retained = subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z")
+        XCTAssertTrue(
+            PaidVoiceGate.shouldDowngrade(
+                record: paidVoiceAlarm(),
+                snapshot: snapshot(retained, userPlan: "free")
+            ),
+            "users.plan 이 free 면 남은 행이 살아 있어도 권한이 없다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(
+                record: paidVoiceAlarm(),
+                snapshot: snapshot(retained, userPlan: "family")
+            ),
+            "정상 구독까지 막지는 않는다"
+        )
+    }
+
+    /// 표시·게이트가 쓰는 `PlanTier.bestKnown` 도 같은 규칙이어야 한다 — 남아 있는 구독
+    /// 행으로 등급을 올리면 결제가 밀린 사용자에게 유료 UI 를 보여 주고 서버가 거부할
+    /// 액션을 유도한다. 단 스토어는 여전히 위다.
+    func test_bestKnown_ignoresRetainedRowWhenPlanSuspended() {
+        let plan = BillingPlan(
+            id: "p", key: "family", name: "가족", planType: "family",
+            periodDays: 30, maxMembers: 4, priceKrw: 5900
+        )
+        let response = BillingSubscriptionResponse(
+            subscription: subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z"),
+            plan: plan,
+            nextPlan: nil
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "free"),
+            .free
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "family"),
+            .family
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .personal, userPlan: "free"),
+            .personal,
+            "스토어가 유효하다고 하면 서버의 free 로 뒤집지 않는다"
+        )
     }
 
     /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.

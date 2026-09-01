@@ -42,13 +42,18 @@ freeVoiceTier = 로그인함 && !유료
 
 ## 3. 유료 판정이 무엇을 보는가
 
-유료 여부는 **구독 응답**으로 판정한다 — `users.plan` 컬럼만으로 판정하지 않는다.
+⚠ **판정 규칙의 유일 출처는 [`billing-lifecycle.md`](billing-lifecycle.md) 의
+「유료 판정 — 우선순위 다섯 단」이다**(2026-09-01 통합). 이 문서는 그 결과를 **게이트가
+어떻게 쓰는가**만 말한다. 아래는 예전에 여기 적혀 있던 규칙이 왜 바뀌었는지의 요약이다:
 
-- 구독 레코드가 있고 `status == "active"` 이며 플랜이 유료 등급이어야 한다.
-- **응답이 아직 없으면(로딩 중) 무료로 보인다.** 이건 의도된 fail-safe 지만,
-  그 사이에 게이트가 뜨면 유료 사용자가 잠깐 무료 안내를 본다.
-- 만료 시각도 함께 본다 — 로컬에 stale 하게 남은 `active` 가 만료를 지났으면 무권한이다.
-  오프라인이라 서버 재조회를 못 해도 만료된 유료 목소리가 계속 재생되지 않게 하는 근거다.
+- 예전: "구독 응답만 본다 / **응답이 없으면 무료로 본다**".
+- 지금: 스토어 → `users.plan = free` → 구독 응답(만료) → 남은 plan·그룹 → **모름**.
+  - **응답이 없는 것은 '무료' 가 아니라 '모름' 이다.** 무료로 접으면 로딩 중에 유료
+    사용자가 무료 안내를 보고, 되돌릴 수 없는 잠금까지 걸릴 수 있다.
+  - 대신 `users.plan` 이 이미 free 라고 말하면 그걸 따른다 — 그건 서버가 준 답이다.
+  - 만료 시각은 계속 본다(로컬에 남은 stale `active` 가 통과하지 않도록).
+- 소비는 두 규칙뿐이다: **모르면 잠그지 않는다**(표시·울림·저장) /
+  **확실히 무료일 때만**(되돌릴 수 없는 잠금·강등).
 
 ⚠ **쿠폰 종류에 따라 유료가 되는 방식이 다르다.**
 - **이용권 코드(INV-/GIFT-)** → `subscriptions` 행을 만들고 `users.plan` 도 올린다 →
@@ -61,7 +66,9 @@ freeVoiceTier = 로그인함 && !유료
 | --- | --- | --- | --- |
 | 세 상태 열거 | `VoiceGateReason` (`ui/editor/AlarmEditorScreen.kt`) | `PlanAccess` (`Views/Editor/AlarmEditorSheet.swift`) | — |
 | 게이트 표시 | `PlanGateDialog` (`ui/components/PlanGateDialog.kt`) | `showVoicePlanLockedAlert` (`AlarmEditorSheet.swift`) | — |
-| 유료 판정 | `hasPaidVoiceAccess` / `isPaidVoiceEntitledNow` (`ui/util/PlatformAndLabelUtils.kt`) | `planAccess` / `PlanTier.bestKnown` | `isPaidVoicePlan` |
+| 유료 판정 — **유일 출처** | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` | `isPaidVoicePlan` |
+| 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) | — |
+| 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` | — |
 | 쿠폰 등록 | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` / `promo-redemption.ts` |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 

@@ -554,8 +554,10 @@
 
     <string name="social_code_input_label">코드 입력</string>
     <string name="social_code_input_hint">초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요.</string>
-    <string name="social_voucher_usage">%1$d/%2$d명 사용</string>
-    <string name="social_voucher_usage_full">%1$d/%2$d명 사용 · 정원이 가득 차서 공유할 수 없어요</string>
+    <!-- 정원 표시. **코드 사용 횟수가 아니라 현재 인원/정원이다** — 재발급하면 사용
+         횟수는 0 으로 리셋되지만 자리는 그대로다(서버 GROUP_FULL 판정과 같은 기준). -->
+    <string name="social_members_capacity">%1$d/%2$d명</string>
+    <string name="social_capacity_full">정원이 가득 차서 공유할 수 없어요</string>
     <string name="voices_close">닫기</string>
     <string name="voices_create_dialog_title">목소리 만들기</string>
     <string name="voices_create_paid_title">내 목소리 만들기는 유료 기능이에요</string>
@@ -953,4 +955,5 @@
     <string name="clip_prefetch_notification_title">목소리를 받고 있어요</string>
     <string name="voices_clip_prep_done">완료</string>
     <string name="voices_clip_prep_background">백그라운드에서 계속</string>
+    <string name="social_code_exhausted">이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.</string>
 </resources>

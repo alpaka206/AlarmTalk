@@ -564,6 +564,11 @@ internal fun AlarmTalkApp(
             viewModel.preloadBilling()   // 구독 state
             viewModel.preloadSocial()    // 가족 state(+ 접근 잃은 공유 목소리 알람 강등)
             viewModel.refreshAppSession() // auth/me → users.plan
+            // ⚠ **Play 에도 다시 묻는다**(2026-09-01 리뷰). 워커는 캐시(`storePlanKey`)를
+            // 끊지만 뷰모델의 메모리 사본은 그 파일을 관찰하지 않는다 — 환불·회수 뒤에도
+            // 옛 유료 신호가 **판정 1단**으로 남아 서버가 준 free 를 이긴다.
+            // 캐시를 손으로 맞추는 대신 스토어에 물어 양쪽(메모리·캐시)을 함께 갱신한다.
+            viewModel.refreshBilling()
         }
     }
 
@@ -575,19 +580,53 @@ internal fun AlarmTalkApp(
         subscriptionResponse?.subscription?.status,
         subscriptionResponse?.plan?.key,
         subscriptionResponse?.plan?.planType,
+        // ⚠ **스토어 확인 결과도 키다**(2026-08-31 리뷰). 조회는 비동기라 시작 직후에는
+        // 아직 답이 없다 — 키에 넣지 않으면 그 순간의 '모름' 으로 한 번 판정하고 끝나,
+        // 뒤늦게 온 "Play 가 갱신됨" 이 **영구 변환을 되돌리지 못한다.**
+        viewModel.storeEntitlementChecked,
+        viewModel.storePlanKey,
     ) {
         // 유료 목소리 알람을 기본 알람(사운드온리)으로 '영구' 변환하는 건 서버가 무료로 '확정'한
         // 신호에서만 한다(다시 유료가 돼도 되돌리지 않는 사용자 정책이라, 오변환이 곧 영구 피해다).
         // 세 조건을 모두 만족해야 변환: (a) billing 에 유료 구독 없음, (b) 가족/커플 접근도 없음,
         // (c) 서버 users.plan 이 무료. 이래야 갱신 지연·읽기리플리카 지연으로 subscription 이 잠깐
         // null 인 유료 사용자가 영구 오변환되지 않는다. 만료~반영 전 창의 '울림'은 RingingService 게이트가 방어.
+        // ⚠ 2026-08-31: 손으로 쓴 3중조건을 **유일 판정기**로 옮겼다
+        // (`resolvePaidVoiceAccess`). 뜻은 그대로 — '확실히 무료' 일 때만 잠근다 — 이고,
+        // **스토어 신호가 하나 더 들어온다**: Play 가 유효한 구독을 확인해 주면 서버 스냅샷이
+        // 무엇이든 잠그지 않는다(「스토어가 권위다」). 자동갱신 직후 서버 반영이 늦은 사이
+        // 돈을 내는 사용자의 알람이 영구 강등되던 구멍이 이걸로 막힌다.
         val plan = authSession?.user?.plan
+        val access = viewModel.paidVoiceAccess()
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
-        val planIsFree = plan.isNullOrBlank() || plan == "free"
+        // ⚠ **보류(ON_HOLD/PAUSED)에서는 잠그지 않는다**(2026-09-01 리뷰).
+        // 서버는 회복을 위해 구독 행을 **남긴 채** `users.plan` 만 회수하므로, 판정기는
+        // (의도대로) '무료' 라고 답한다 — 울림·예약은 그걸로 막으면 되고 결제가 복구되면
+        // 그대로 살아난다. 하지만 이 자리의 변환은 **되돌리지 않는 파괴적 쓰기**다.
+        // `PlanChangeSyncWorker` 는 처음부터 이 조건을 함께 봤는데 전경 경로만 빠져 있었다 —
+        // 그래서 앱을 한 번 열면 회복 가능한 보류가 영구 강등으로 굳었다.
+        val subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse)
         when {
-            billingNotEntitled && planIsFree -> viewModel.applyFreePlanVoiceLock()
+            // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `access.isDefinitelyFree()` 를
+            // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
+            // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
+            // 만료돼 있으면 그 순간 영구 강등이 걸린다.
+            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive ->
+                viewModel.applyFreePlanVoiceLock()
+            // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(2026-09-01 리뷰). 이 갈래가 없어서
+            // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
+            // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
+            // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
+            //
+            // ⚠ **`storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
+            // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
+            // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
+            // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
+            authSession != null &&
+                viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled ->
+                viewModel.restorePaidVoiceAlarmsIfLocked()
             // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
             // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
             // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
@@ -1271,6 +1310,7 @@ internal fun AlarmTalkApp(
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
+                          storeEntitledNow = viewModel.isStoreEntitledNow(),
                       )
                   }
               }
@@ -1303,6 +1343,7 @@ internal fun AlarmTalkApp(
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
+                      storeEntitledNow = viewModel.isStoreEntitledNow(),
                       familyAlarmMode = familyTargetMode,
                       initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
@@ -1359,6 +1400,7 @@ internal fun AlarmTalkApp(
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,
                           familyGroup = familyGroup,
+                      storeEntitledNow = viewModel.isStoreEntitledNow(),
                           familyAlarmMode = false,
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,

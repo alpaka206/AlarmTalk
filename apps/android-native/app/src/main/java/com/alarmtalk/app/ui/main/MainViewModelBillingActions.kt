@@ -17,10 +17,124 @@ import com.alarmtalk.app.R
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 
+
+/**
+ * **스토어에 지금 유효한 구독을 묻고 등급을 갱신한다** — 「스토어가 권위다」를 앱에서 실제로
+ * 지키는 자리(2026-08-31).
+ *
+ * 함께 `restorePurchases()` 를 돌려 **서버 화해까지** 시킨다. 예전에는 앱 시작 시
+ * `resendUnconfirmedPurchases()` 만 돌았는데 그건 **미승인 건만** 고른다 — 자동갱신된 구독은
+ * 이미 승인돼 있어 **영원히 걸리지 않았다.** 그래서 스토어는 갱신됐는데 서버는 옛 만료시각을
+ * 들고 있는 상태가 스스로 낫지 않았다. `restorePurchases` 는 멱등하다(서버가
+ * `/billing/google/confirm` 으로 검증해 `expires_at` 을 스토어 값으로 맞춘다).
+ *
+ * 실패해도 조용히 넘어간다 — 스토어를 못 읽은 것은 '무료' 가 아니라 '모름' 이고,
+ * 판정기(`resolvePaidVoiceAccess`)가 서버 스냅샷으로 내려간다.
+ */
+/**
+ * Play 에 지금 구독을 물어 캐시·state 를 갱신한다.
+ *
+ * ⚠ **한 번에 하나만 돈다**(2026-09-01 리뷰). 시작 경로와 탭 진입 경로가 각각 이 함수를
+ * 던져 조회가 겹치는데, 계정 가드는 둘 다 통과시킨다. 예전에는 '세대' 로 밀려난 쪽을
+ * 버렸는데 그러면 **나중에 시작해 실패한 조회가 먼저 시작한 성공까지 버리게** 만들어,
+ * 그 회차에는 아무도 발행하지 못했다(확인 미완으로 남거나 옛 유료 캐시가 그대로 산다).
+ * 직렬화하면 각 조회가 자기 잠금 안에서 **물어본 시점의 값**을 온전히 발행하고, 마지막에
+ * 도는 조회가 가장 신선하다 — 버려지는 결과가 없다.
+ */
+internal suspend fun MainViewModel.refreshStoreEntitlement() {
+    val userId = authSession?.user?.id ?: return
+    storeRefreshMutex.withLock {
+    runCatching {
+        val hash = playBilling.accountHashFor(userId)
+        // ⚠ **null 은 '구독 없음' 이 아니라 '못 물어봤다' 다**(2026-08-31 리뷰).
+        // 오프라인·연결 실패에서 신호를 지우면, 서버 스냅샷이 갱신 전 만료시각을 들고 있는
+        // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
+        // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
+        val query = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
+        // ⚠ **임자를 알 수 없는 구독이 있으면 '확인했다' 고 하지 않는다**(2026-09-01 리뷰).
+        // `obfuscatedAccountId` 를 붙이기 **전에** 산 구독에는 식별자가 없어 내 것으로도
+        // 남의 것으로도 셀 수 없다. 그걸 그냥 걸러 내면 결과가 빈 목록 — "스토어가 없다고
+        // 했다" 가 되어 확인 완료 표시를 세우고 캐시까지 지운다. RTDN 을 놓쳐 서버 기간이
+        // 만료돼 있으면 그 길로 **되돌릴 수 없는 잠금**이 걸린다. 돈을 내고 있는 사용자에게.
+        // 그래서 여기서는 아무것도 확정하지 않고, 복원만 보내 **서버가 붙여 판정하게** 한다.
+        if (query.mine.isEmpty() && query.unattributed.isNotEmpty()) {
+            android.util.Log.i(
+                "MainViewModel",
+                "Store has unattributed subscriptions; leaving entitlement undetermined",
+            )
+            // ⚠ **자동 정합화도 시작 계정을 들고 간다**(2026-09-01 리뷰). 안 넘기면
+            // `confirmGooglePurchase` 가 콜백 시점의 계정을 시작 계정으로 잡는다 —
+            // 조회 중 A→B 전환이면 A 의 구매가 B 의 인가로 제출돼 서버가 거절하고,
+            // 정작 A 를 위한 정합화는 사라진다(수동 복원에만 넣어 뒀던 가드다).
+            runCatching { playBilling.restorePurchases(ownerUserId = userId) }
+            return@runCatching
+        }
+        val purchases = query.mine
+        val nextKey = purchases
+            .flatMap { it.products }
+            .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }
+            .maxByOrNull { key ->
+                when (key) {
+                    "family" -> 3
+                    "couple" -> 2
+                    "personal" -> 1
+                    else -> 0
+                }
+            }
+        // ⚠ **해지 예약된 구독은 TTL 로 늘리지 않는다**(2026-09-01 리뷰). TTL 은 '언제
+        // 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 하루 전에 확인하면 그 뒤 **39일**
+        // 을 로컬에서 유료로 통과시킨다 — 이 신호는 서버 만료보다 위라, 확정된 만료도
+        // `plan_changed` 도 그 통행증을 못 끊는다.
+        // `Purchase.isAutoRenewing == false` 면 이번 기간으로 끝난다는 뜻이니, 서버가 아는
+        // 기간 말로 상한을 둔다. 자동갱신 중이면 갱신이 기간을 늘리므로 TTL 그대로 둔다
+        // (그게 「스토어가 권위다」를 지키는 쪽이다).
+        val ttlUntil = System.currentTimeMillis() + STORE_ENTITLEMENT_TTL_MILLIS
+        val willNotRenew = purchases.isNotEmpty() && purchases.none { it.isAutoRenewing }
+        val serverPeriodEnd = subscriptionResponse?.subscription?.expiresAt?.let { raw ->
+            runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+        }
+        // ⚠ **이미 지난 기간으로 상한을 두면 신호가 태어나자마자 죽는다**(2026-09-01 리뷰).
+        // RTDN 이 갱신을 놓쳐 서버가 **지난 기간 말**을 들고 있는데 사용자가 자동갱신을 끄면,
+        // 방금 Play 로 확인한 유료 신호가 그 옛 시각으로 잘려 곧바로 만료된다 — 그리고 판정은
+        // 같은 만료 구독으로 내려가 **돈 내는 사용자를 이번 기간 내내 막는다.**
+        // 상한은 **미래인 기간 말**일 때만 쓴다.
+        val futurePeriodEnd = serverPeriodEnd?.takeIf { it > System.currentTimeMillis() }
+        val until = nextKey?.let {
+            if (willNotRenew && futurePeriodEnd != null) minOf(ttlUntil, futurePeriodEnd) else ttlUntil
+        }
+        // ⚠ **조회 중 계정이 바뀌었으면 버린다**(2026-08-31 리뷰). 조회는 비동기라 A 가
+        // 로그아웃하고 B 가 들어온 뒤에 A 의 결과가 도착할 수 있다 — 그대로 쓰면 무료 B 가
+        // A 의 등급을 물려받아 편집기·목소리·저장 게이트를 전부 통과한다.
+        if (authSession?.user?.id != userId) {
+            android.util.Log.i("MainViewModel", "Dropping stale store entitlement: account changed")
+            return@runCatching
+        }
+        // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
+        // 앞에서 세우면 A 의 결과를 버리면서도 **B 의 확인이 끝난 것으로 표시**되어,
+        // B 의 서버 구독이 만료돼 있고 B 자신의 조회는 아직인 사이 되돌릴 수 없는 강등이 걸린다.
+        storeEntitlementChecked = true
+        storePlanKey = nextKey
+        storeEntitlementUntilMillis = until
+        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
+        accessSnapshotStore.updateStorePlanKey(userId, nextKey, until)
+        if (purchases.isNotEmpty()) {
+            // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
+            // 시작 계정을 함께 넘긴다(위 갈래와 같은 이유).
+            runCatching { playBilling.restorePurchases(ownerUserId = userId) }
+        }
+    }.onFailure { error ->
+        android.util.Log.w("MainViewModel", "Failed to refresh store entitlement", error)
+    }
+    }
+}
 
 internal fun MainViewModel.refreshBilling() {
     refreshBillingData(showMessage = true)
+    // 서버 조회와 **같이** 스토어에도 묻는다 — Play 에는 iOS `Transaction.updates` 같은 푸시가
+    // 없으므로 전경 진입마다 도는 이 자리가 폴링 지점이다(iOS `resyncEntitlements` 대응).
+    viewModelScope.launch { refreshStoreEntitlement() }
 }
 
 internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
@@ -80,14 +194,25 @@ internal fun MainViewModel.restorePurchases() {
     billingBusy = true
     message = app.getString(R.string.billing_restore_checking)
     viewModelScope.launch {
-        val restored = runCatching { playBilling.restorePurchases() }
+        // ⚠ **조회 전에 잡은 계정을 콜백까지 들고 간다**(2026-09-01 리뷰).
+        // `restorePurchases` 안의 `queryPurchasesAsync` 가 중단점이라, 그 사이 A→B 전환이
+        // 일어나면 콜백에서 `confirmGooglePurchase` 가 **B 를 시작 계정으로 잡는다** — 가드가
+        // B==B 로 통과해 A 의 구매가 B 의 인가로 제출되고 결과·에러가 B 화면에 뜬다.
+        val restoreOwnerUserId = authSession?.user?.id
+        val restored = runCatching {
+            playBilling.restorePurchases(userInitiated = true, ownerUserId = restoreOwnerUserId)
+        }
             .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
             .getOrDefault(0)
-        if (restored == 0) {
-            // 보낸 것이 없으면 `confirmGooglePurchase` 가 돌지 않는다 — 여기서 풀어 준다.
-            billingBusy = false
-            message = app.getString(R.string.billing_restore_none)
-        }
+        // ⚠ **busy 는 이 함수가 소유한다**(2026-09-01 리뷰). 예전에는 보낸 게 있으면
+        // `confirmGooglePurchase` 콜백이 풀어 줬는데, 정합화를 조용하게 만들면서 그 콜백이
+        // 더는 풀지 않는다 — 사용자가 '이전 구매 복원' 을 누르면 결제 UI 가 **뷰모델이 다시
+        // 만들어질 때까지 잠긴 채** 남았다. 확인 요청은 이미 다 보냈고 결과는 구독 재조회로
+        // 화면에 드러나므로, 여기서 풀어 주는 것이 맞다.
+        billingBusy = false
+        // 보낸 게 있으면 문구는 그대로 두고 **확인 결과가 덮어쓴다**(성공이면 '이용권이
+        // 적용됐어요', 실패면 그 사유) — 그래서 복원은 `UserRestore` 로 보낸다.
+        if (restored == 0) message = app.getString(R.string.billing_restore_none)
     }
 }
 
@@ -136,13 +261,26 @@ private fun MainViewModel.applyBillingSnapshot(snapshot: BillingSnapshot) {
     vouchers = snapshot.vouchers
 }
 
+/**
+ * 변경 뒤 결제 상태 재조회.
+ *
+ * ⚠ **`expectedOwnerUserId` 를 넘겨라**(2026-09-01 리뷰). 이 함수 안에 **또 하나의 중단점**
+ * 이 있다 — 호출부에서 계정을 확인했더라도 여기서 두 요청을 기다리는 사이 A→B 전환이
+ * 일어날 수 있고, 그러면 `applyBillingSnapshot` 이 A 의 바우처를 전역에 발행하고
+ * `saveSubscriptionSnapshot` 이 A 의 구독을 **지금 계정 B** 키로 저장한다.
+ */
 private suspend fun MainViewModel.refreshBillingAfterMutation(
     authorization: String,
     reason: String,
+    expectedOwnerUserId: String?,
 ) {
     runCatching {
         loadBillingSnapshot(authorization)
     }.onSuccess { snapshot ->
+        if (authSession?.user?.id != expectedOwnerUserId) {
+            Log.i(TAG, "Dropping billing snapshot after $reason: account changed")
+            return@onSuccess
+        }
         applyBillingSnapshot(snapshot)
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh billing after $reason", error)
@@ -237,7 +375,7 @@ internal fun MainViewModel.registerCode(
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
             }
-            refreshBillingAfterMutation(authorization, "code registration")
+            refreshBillingAfterMutation(authorization, "code registration", ownerUserId)
             refreshSocial()
             refreshAppSession()
             // 서버가 판별한 type 기준: 초대(그룹 합류)거나 커플/가족 플랜이면 공유패스 갱신.
@@ -344,13 +482,56 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
  * Play 구매 토큰을 백엔드(/billing/google/confirm)로 보내 검증·acknowledge·구독 반영을 요청한다.
  * 성공 시 기존 구독 로드 경로를 재사용해 구독 상태를 새로고침한다.
  */
-internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productId: String) {
+/**
+ * 이 확인이 **어디서 왔는가**. 셋이 각각 다른 것을 낸다(2026-09-01 리뷰).
+ *
+ * | | 결과 메시지 | 공유패스 이동 | `billingBusy` |
+ * | --- | --- | --- | --- |
+ * | [UserPurchase] | O | O | 이 함수가 소유 |
+ * | [UserRestore] | O | X | **호출부가 소유** |
+ * | [AutoReconcile] | X | X | 건드리지 않음 |
+ *
+ * ⚠ **셋을 하나로 합치지 말 것.** 전부 UI 를 내면 앱 시작·탭 진입마다 도는 정합화가
+ * "이용권이 적용됐어요" 를 띄우고 커플/가족 사용자를 구성원 관리로 튕긴다. 반대로 전부
+ * 조용하게 만들면 **사용자가 누른 복원의 결과를 말해 줄 사람이 없어진다** — 스토어에 구매가
+ * 있어도 다른 계정 것이라 서버가 거절하면, 사용자는 "확인하고 있어요…" 만 보고 아무 일도
+ * 안 일어난 줄 알고 다시 결제하려 든다.
+ */
+internal enum class PurchaseConfirmOrigin { UserPurchase, UserRestore, AutoReconcile }
+
+internal fun MainViewModel.confirmGooglePurchase(
+    purchaseToken: String,
+    productId: String,
+    origin: PurchaseConfirmOrigin = PurchaseConfirmOrigin.UserPurchase,
+    /**
+     * 이 확인을 **시작한** 계정. 스토어 조회에 중단점이 있는 복원 경로가 넘긴다 —
+     * 여기서 `authSession` 을 읽으면 이미 전환된 계정이 잡힌다(2026-09-01 리뷰).
+     * null 이면 지금 계정을 쓴다(구매 콜백은 동기라 그때가 곧 시작 시점이다).
+     */
+    startedByUserId: String? = null,
+) {
+    val showsResult = origin != PurchaseConfirmOrigin.AutoReconcile
+    val ownsBusy = origin == PurchaseConfirmOrigin.UserPurchase
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_apply_plan)) ?: run {
-        billingBusy = false
+        if (ownsBusy) billingBusy = false
+        return
+    }
+    // ⚠ **시작한 계정을 잡아 둔다**(2026-09-01 리뷰). 이 확인은 비동기라 그 사이 A→B 계정
+    // 전환이 일어날 수 있는데, 아래 `refreshBillingAfterMutation` 은 **A 의 토큰으로 받아
+    // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
+    // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
+    val ownerUserId = startedByUserId ?: authSession?.user?.id
+    // ⚠ **바뀐 계정으로는 아예 보내지 않는다**(2026-09-01 리뷰). 시작 계정을 잡아 두는 것만
+    // 으로는 부족하다 — 아래 `authorization` 은 **지금 계정의** 토큰이라, 그대로 보내면
+    // A 의 구매가 B 의 인가로 서버에 제출된다(서버가 거절하고 A 의 정합화는 사라진다).
+    // 응답을 버리는 게 아니라 **요청을 하지 않는 것**이 맞다.
+    if (startedByUserId != null && authSession?.user?.id != startedByUserId) {
+        android.util.Log.i("MainViewModel", "Skipping Play confirm: account changed before request")
+        if (ownsBusy) billingBusy = false
         return
     }
     viewModelScope.launch {
-        billingBusy = true
+        if (ownsBusy) billingBusy = true
         runCatching {
             api.confirmGooglePurchase(
                 authorization,
@@ -361,28 +542,40 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
                 ),
             )
         }.onSuccess { response ->
+            // 응답이 늦게 온 사이 계정이 바뀌었으면 **아무것도 발행하지 않는다**(위 주석).
+            if (authSession?.user?.id != ownerUserId) {
+                android.util.Log.i("MainViewModel", "Dropping Play confirm result: account changed")
+                return@onSuccess
+            }
             if (response.success) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
-                refreshBillingAfterMutation(authorization, "google play confirm")
+                if (showsResult) {
+                    message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
+                }
+                refreshBillingAfterMutation(authorization, "google play confirm", ownerUserId)
                 refreshAppSession()
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
                 // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
-                if (response.planKey in setOf("couple", "family")) {
+                // **구매에서만 이동한다** — 복원·정합화는 산 적이 없는데 화면이 튄다.
+                if (origin == PurchaseConfirmOrigin.UserPurchase &&
+                    response.planKey in setOf("couple", "family")
+                ) {
                     navigateSharedPassTick++
                 }
-            } else {
+            } else if (showsResult) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
-            message = billingFailureMessage(
-                getApplication<android.app.Application>(),
-                apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
-            )
+            if (showsResult && authSession?.user?.id == ownerUserId) {
+                message = billingFailureMessage(
+                    getApplication<android.app.Application>(),
+                    apiErrorCode(error),
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
+                )
+            }
         }
-        billingBusy = false
+        if (ownsBusy) billingBusy = false
     }
 }
 
@@ -393,14 +586,22 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.ensureFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping share code result: account changed")
+                return@onSuccess
+            }
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshBillingAfterMutation(authorization, "family share code")
+            refreshBillingAfterMutation(authorization, "family share code", ownerUserId)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to ensure family share code", error)
@@ -421,15 +622,23 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
         "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
         else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.regenerateFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping regenerated share code result: account changed")
+                return@onSuccess
+            }
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshBillingAfterMutation(authorization, "regenerate family share code")
+            refreshBillingAfterMutation(authorization, "regenerate family share code", ownerUserId)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to regenerate family share code", error)
@@ -457,11 +666,19 @@ private val STORE_MANAGE_REQUIRED_CODES = setOf(
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
         }.onSuccess { _ ->
+            // ⚠ **시작한 계정을 잡아 두고 발행 전에 본다**(2026-09-01 리뷰). 인자 자리에서
+            // `authSession?.user?.id` 를 읽으면 **응답이 온 뒤** 평가돼 B 가 잡히고, 가드가
+            // B==B 로 통과해 버린다 — A 의 코드가 B 화면에 뜨고 A 의 결제 데이터가 B 키로 저장된다.
+            if (authSession?.user?.id != ownerUserId) {
+                Log.i(TAG, "Dropping subscription cancellation result: account changed")
+                return@onSuccess
+            }
             // 정책 변경: 해지해도 만든 목소리는 삭제하지 않고 잠근다 — 다시 이용권을 등록하면
             // 그대로 다시 쓸 수 있다(보관 후 삭제 안내 문구 제거).
             message = if (atPeriodEnd) {
@@ -469,7 +686,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_locked)
             }
-            refreshBillingAfterMutation(authorization, "subscription cancellation")
+            refreshBillingAfterMutation(authorization, "subscription cancellation", ownerUserId)
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
@@ -521,11 +738,15 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     // 다시 뜬다.
     // ⚠ **원인을 가려서 지운다**(Codex #703 P2). 예전에는 통째로 비워서, 다른 기기가 적어 둔
     // `VOICE_REPLACED`(이용권으로 복원되지 않는 안내)까지 사용자가 보기도 전에 사라졌다.
+    // ⚠ **자격을 확인한 계정을 잡아 둔다**(2026-09-01 리뷰). 코루틴이 돌기 전이나
+    // `restoreMutex` 를 기다리는 사이 계정이 바뀌면, A 의 판정으로 B 의 잠긴 알람을
+    // 목소리로 되살린다 — B 는 새 세션이라 무료 잠금이 아직 안 돌았을 수 있다.
+    val ownerUserId = authSession?.user?.id
     DowngradeNoticeStore(getApplication())
-        .clear(authSession?.user?.id, DowngradeNoticeStore.Cause.FREE_PLAN)
+        .clear(ownerUserId, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {
         runCatching {
-            repository.unlockPaidAlarmTalks()
+            repository.unlockPaidAlarmTalks(expectedOwnerUserId = ownerUserId)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to restore locked paid voice alarms", error)
         }

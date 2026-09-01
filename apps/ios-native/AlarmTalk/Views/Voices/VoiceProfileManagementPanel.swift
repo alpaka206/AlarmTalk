@@ -62,8 +62,52 @@ struct VoiceProfileManagementPanel: View {
     private var systemVoices: [VoiceProfile] {
         voice.profiles.filter { isSystemVoice($0) }
     }
+    /// ⚠ **무료면 내 목소리를 목록에서 숨긴다**(2026-08-31, 안드로이드
+    /// `VoiceProfileManagementPanel.ownVoices` 미러). 유료여야 쓸 수 있는데 그대로 보여
+    /// 주면 미리듣기·이름 수정·공유·**삭제**까지 눌린다 — 보관 유예 안에 다시 시작하면
+    /// 돌아올 목소리를 사용자가 모르고 지운다. 대신 그 자리에 안내 한 줄을 둔다
+    /// (`freeLockedNotice`) — 아무 말 없이 사라지면 이미 지워진 것으로 읽힌다.
     private var ownVoices: [VoiceProfile] {
-        voice.profiles.filter { !isSystemVoice($0) }
+        guard paidVoiceEntitledNow else { return [] }
+        return voice.profiles.filter { !isSystemVoice($0) }
+    }
+
+    /// ⚠ **만료까지 보는 판정**(2026-08-31 리뷰, 안드로이드 `isPaidVoiceEntitledNow` 미러).
+    /// `PlanTier.bestKnown` 은 구매 직후 깜빡임을 줄이려고 `status == "active"` 만 보는데,
+    /// 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도** 유료로 읽혀 숨겨야 할 목소리가
+    /// 미리듣기·이름 수정·공유·삭제까지 가능한 채로 드러난다.
+    ///
+    /// ⚠ **단 StoreKit 이 살아 있다고 하면 서버 만료로 뒤집지 않는다**(2026-08-31 리뷰 2차).
+    /// 「구독 수명주기 — **스토어가 권위다**」(docs/spec/billing-lifecycle.md). 갱신 직후
+    /// 백엔드 동기화가 아직 안 왔을 뿐인데 옛 만료시각으로 거부하면, **지금 돈을 내고 있는
+    /// 사용자가** 자기 목소리 목록을 통째로 잃는다 — 고치려던 것과 정반대 방향의 사고다.
+    /// 서버 만료는 StoreKit 이 확인해 주지 못할 때만 본다.
+    ///
+    /// 만료 시각을 못 읽으면 **막지 않는다** — 과차단이 더 나쁘다(안드로이드와 같은 규칙).
+    private var paidVoiceEntitledNow: Bool {
+        // **유일 판정기**를 통과시킨다(`PaidVoiceGate.resolve`) — 안드로이드
+        // `resolvePaidVoiceAccess` 와 같은 우선순위: 스토어 → 서버 구독(만료) → 그룹 → 모름.
+        // 여기는 표시·생성 게이트라 **모르면 잠그지 않는다.**
+        // ⚠ **살아 있는 StoreKit 신호에는 기한을 붙이지 않는다**(2026-08-31 리뷰).
+        // 이 스냅샷은 캐시가 아니라 **지금 방금 읽은 값**이라 신선도를 의심할 이유가 없다.
+        // 예전에는 `storeEntitlementUntilMillis` 를 비워 둔 채 넘겼는데, 판정기가 기한을
+        // 함께 요구하므로 **살아 있는 신호가 한 번도 이기지 못했다** — 자동갱신을 StoreKit 이
+        // 확인해 줬는데도 서버의 옛 만료시각으로 목소리가 통째로 숨겨졌다.
+        let storeEntitled = subscriptions.currentTier.meetsOrExceeds(.personal)
+        let snapshot = AccessSnapshot(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            storePlanKey: storeEntitled ? subscriptions.currentTier.rawValue : nil,
+            // 살아 있는 신호에는 먼 미래를 준다 — '지금 유효' 라는 뜻이다.
+            storeEntitlementUntilMillis: storeEntitled ? Int64.max : nil,
+            // ⚠ **그룹보다 먼저 보는 값이라 여기서도 실어야 한다.** 빼면 결제 보류(그룹은
+            // 남고 plan 만 free)에서 그룹 폴백이 유료로 답한다.
+            userPlan: auth.session?.user.plan
+        )
+        // '세션이 free 면 모름을 낙관하지 않는다' 는 **판정기 안으로 옮겼다**(2026-09-01 리뷰,
+        // 안드로이드 `ui/util/PlatformAndLabelUtils.kt` 와 같은 규칙) — 같은 규칙을 화면마다
+        // 손으로 쓰면 또 갈라진다.
+        return PaidVoiceGate.isEntitled(snapshot: snapshot)
     }
 
     var body: some View {
@@ -91,6 +135,15 @@ struct VoiceProfileManagementPanel: View {
                 // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저다.
                 systemVoicesSection
             }
+        }
+        // ⚠ **자격을 잃으면 열려 있던 액션도 닫는다**(2026-09-01 리뷰). 목록에서 걷어내는
+        // 것만으로는 부족하다 — 이미 떠 있는 액션시트·이름변경·**삭제 확인**은 그대로
+        // 살아 있어, 유예 동안 숨겨야 할 목소리를 그 창에서 영구 삭제할 수 있다.
+        .onChange(of: paidVoiceEntitledNow) { _, entitled in
+            guard !entitled else { return }
+            actionSheetTarget = nil
+            editTarget = nil
+            deleteTarget = nil
         }
         .task { await voice.refresh(session: auth.session) }
         // ⚠ **이용권도 여기서 갱신한다**(안드로이드 `NativeTab.Voices → preloadSocial()` 대응).
@@ -188,6 +241,10 @@ struct VoiceProfileManagementPanel: View {
             Button("삭제", role: .destructive) {
                 let target = profile
                 deleteTarget = nil
+                // ⚠ **누르는 순간에도 자격을 다시 본다**(2026-09-01 리뷰). 알럿이 떠 있는
+                // 사이 갱신이 무료로 바뀔 수 있는데, 이 삭제는 **되돌릴 수 없다** —
+                // 무료 화면이 숨기려던 보관 중 목소리를 그 창에서 지워 버린다.
+                guard paidVoiceEntitledNow else { return }
                 Task {
                     let didDelete = await voice.deleteProfile(
                         target,
@@ -276,7 +333,8 @@ struct VoiceProfileManagementPanel: View {
     /// 화면에 숫자를 띄울 쿼터. **유료 사용자에게만** 의미가 있다 —
     /// 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
     private var monthlyQuota: VoiceDraftQuotaResponse? {
-        guard hasPaidVoiceAccess, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
+        // 만료까지 보는 판정 — 목록만 숨기고 쿼터를 옛 판정으로 두면 숫자만 남는다.
+        guard paidVoiceEntitledNow, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
         return quota
     }
 
@@ -352,7 +410,7 @@ struct VoiceProfileManagementPanel: View {
             // ⚠ **유료만 숫자를 본다.** 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면
             // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
             // 눌렀을 때 이용권 안내로 보낸다.
-            if let quota = monthlyQuota, hasPaidVoiceAccess, quota.registrationLimit > 0 {
+            if let quota = monthlyQuota, paidVoiceEntitledNow, quota.registrationLimit > 0 {
                 Text("생성 가능 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)회")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -364,7 +422,7 @@ struct VoiceProfileManagementPanel: View {
                 // 사라고 말하고 있었다.
                 // 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 의 when 과 **같은 세 갈래**다:
                 //   canOpenCreateForm → 폼 / !canCreateVoice → 이용권 안내 / else → 한도 안내
-                if !hasPaidVoiceAccess {
+                if !paidVoiceEntitledNow {
                     planGateOpen = true
                 } else if monthlyExhausted {
                     // ⚠ **이용권 안내를 띄우지 말 것.** 이미 유료인 사람에게 "이용권을
