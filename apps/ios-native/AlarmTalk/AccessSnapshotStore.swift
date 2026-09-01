@@ -25,6 +25,18 @@ struct AccessSnapshot: Codable, Equatable {
 }
 
 struct AccessSnapshotStore {
+    /// 읽고-고치고-쓰기를 **직렬화한다**(2026-09-01 리뷰).
+    ///
+    /// ⚠ 이 스냅샷은 필드마다 다른 곳에서 갱신된다 — 전경 갱신(`refreshAll`)과
+    /// StoreKit `Transaction.updates` 배경 처리가 **다른 태스크에서 동시에** 들어온다.
+    /// 잠그지 않으면 둘이 같은 옛 값을 읽고 각자 자기 필드만 얹어 저장해, 나중 쓰기가
+    /// 상대의 필드를 **지운다**(스토어 갱신이 방금 받은 free `userPlan` 을 날리는 식).
+    /// 그 결과를 예약 시점의 `PaidVoiceGate` 가 읽는다.
+    ///
+    /// 잠금은 **타입에 둔다** — 호출부가 `AccessSnapshotStore()` 를 그때그때 새로 만들어
+    /// 인스턴스 잠금은 아무것도 막지 못한다(안드로이드도 companion 에 둔 것과 같은 이유).
+    private static let lock = NSLock()
+
     private let defaults: UserDefaults
     private let keyPrefix = "access_snapshot_"
 
@@ -42,34 +54,39 @@ struct AccessSnapshotStore {
     }
 
     func updateSubscription(userID: String, response: BillingSubscriptionResponse?) {
-        var snapshot = read(userID: userID)
-        snapshot.subscriptionResponse = response
-        save(userID: userID, snapshot: snapshot)
+        mutate(userID: userID) { $0.subscriptionResponse = response }
     }
 
     /// 스토어가 확인해 준 등급을 캐시에 적는다 — 예약 시점 게이트가 StoreKit 을 직접 못 볼 때
     /// 「스토어가 권위다」를 지키는 근거가 된다.
     func updateUserPlan(userID: String, plan: String?) {
-        var snapshot = read(userID: userID)
-        snapshot.userPlan = plan
-        save(userID: userID, snapshot: snapshot)
+        mutate(userID: userID) { $0.userPlan = plan }
     }
 
     func updateStorePlanKey(userID: String, planKey: String?, untilMillis: Int64?) {
-        var snapshot = read(userID: userID)
-        snapshot.storePlanKey = planKey
-        snapshot.storeEntitlementUntilMillis = untilMillis
-        save(userID: userID, snapshot: snapshot)
+        mutate(userID: userID) {
+            $0.storePlanKey = planKey
+            $0.storeEntitlementUntilMillis = untilMillis
+        }
     }
 
     func updateFamilyGroup(userID: String, response: FamilyGroupCurrentResponse?) {
-        var snapshot = read(userID: userID)
-        snapshot.familyGroup = response
-        save(userID: userID, snapshot: snapshot)
+        mutate(userID: userID) { $0.familyGroup = response }
     }
 
     func clear(userID: String) {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         defaults.removeObject(forKey: key(for: userID))
+    }
+
+    /// 위 `lock` 주석 참조 — 갱신은 전부 이 문을 지난다.
+    private func mutate(userID: String, transform: (inout AccessSnapshot) -> Void) {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
+        var snapshot = read(userID: userID)
+        transform(&snapshot)
+        save(userID: userID, snapshot: snapshot)
     }
 
     private func save(userID: String, snapshot: AccessSnapshot) {

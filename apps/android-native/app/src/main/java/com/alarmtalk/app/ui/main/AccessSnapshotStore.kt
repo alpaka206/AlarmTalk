@@ -73,28 +73,38 @@ internal class AccessSnapshotStore(context: Context) {
             }
             ?: AccessSnapshot()
 
-    fun updateStorePlanKey(userId: String, planKey: String?, untilMillis: Long?) {
-        val current = read(userId)
-        save(userId, current.copy(storePlanKey = planKey, storeEntitlementUntilMillis = untilMillis))
+    fun updateStorePlanKey(userId: String, planKey: String?, untilMillis: Long?) = mutate(userId) {
+        it.copy(storePlanKey = planKey, storeEntitlementUntilMillis = untilMillis)
     }
 
-    fun updateUserPlan(userId: String, plan: String?) {
-        val current = read(userId)
-        save(userId, current.copy(userPlan = plan))
+    fun updateUserPlan(userId: String, plan: String?) = mutate(userId) { it.copy(userPlan = plan) }
+
+    fun updateSubscription(userId: String, response: BillingSubscriptionResponse?) = mutate(userId) {
+        it.copy(subscriptionResponse = response)
     }
 
-    fun updateSubscription(userId: String, response: BillingSubscriptionResponse?) {
-        val current = read(userId)
-        save(userId, current.copy(subscriptionResponse = response))
-    }
-
-    fun updateFamilyGroup(userId: String, response: FamilyGroupCurrentResponse?) {
-        val current = read(userId)
-        save(userId, current.copy(familyGroup = response))
+    fun updateFamilyGroup(userId: String, response: FamilyGroupCurrentResponse?) = mutate(userId) {
+        it.copy(familyGroup = response)
     }
 
     fun clear(userId: String) {
-        prefs.edit().remove(key(userId)).apply()
+        synchronized(LOCK) { prefs.edit().remove(key(userId)).apply() }
+    }
+
+    /**
+     * 읽고-고치고-쓰기를 **직렬화한다**(2026-09-01 리뷰).
+     *
+     * ⚠ 이 스냅샷은 필드마다 다른 곳에서 갱신된다 — 전경 결제/스토어 갱신과
+     * `PlanChangeSyncWorker` 가 **다른 스레드에서 동시에** 들어온다. 잠그지 않으면 둘이 같은
+     * 옛 값을 읽고 각자 자기 필드만 얹어 저장해, 나중 쓰기가 상대의 필드를 **지운다**
+     * (워커의 구독 갱신이 방금 확인한 `storePlanKey` 를 날리거나, 스토어 갱신이 방금 받은
+     * free `userPlan` 을 날린다). 그 결과를 `RingingService` 가 울림 시점에 읽는다.
+     *
+     * 잠금은 **companion 에 둔다** — 호출부가 `AccessSnapshotStore(context)` 를 그때그때
+     * 새로 만들기 때문에 인스턴스 잠금은 아무것도 막지 못한다.
+     */
+    private fun mutate(userId: String, transform: (AccessSnapshot) -> AccessSnapshot) {
+        synchronized(LOCK) { save(userId, transform(read(userId))) }
     }
 
     private fun save(userId: String, snapshot: AccessSnapshot) {
@@ -105,5 +115,8 @@ internal class AccessSnapshotStore(context: Context) {
 
     private companion object {
         const val PREFS_NAME = "voice_alarm_access_snapshots"
+
+        /** 프로세스 전체에서 하나 — 위 [mutate] 주석 참조. */
+        val LOCK = Any()
     }
 }

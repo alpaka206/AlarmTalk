@@ -202,12 +202,17 @@ internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
  *    「구독 수명주기 — 스토어가 권위다」(`docs/spec/billing-lifecycle.md`). 자동갱신은
  *    스토어에서 먼저 일어나고 서버 반영(RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛
  *    `expiresAt` 으로 막으면 **돈을 내고 있는 사용자가 잠긴다.** 스펙이 더 나쁘다고 못박은 방향이다.
- * 2. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
+ * 2. **서버가 `users.plan = free` 라고 말하면 거기서 끝이다 — 구독 행보다 위다.**
+ *    보류(ON_HOLD·결제 재시도)는 **행을 남긴다**: `propagateGroupMemberPlans` 는 멤버의
+ *    그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은 `status='active'` 인 채
+ *    남고 `users.plan` 만 free 로 내려간다. 행부터 보면 결제가 밀린 그룹 멤버가 계속
+ *    유료로 읽혀 3단에 영영 닿지 못한다(2026-09-01 리뷰).
+ *    신규 결제를 잘못 막지 않는다 — `createNewSubscriptionForPlan` 이 행 삽입과 **같은
+ *    트랜잭션에서** `users.plan` 을 올리고, 산 직후는 어차피 1단(스토어)이 잡는다.
+ * 3. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
  *    미로그인 스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
- * 3. 서버가 '본인 구독 없음' 이라고 답했으면 `users.plan` 을 본다. **그룹보다 위다** —
- *    보류(ON_HOLD)는 그룹을 남긴 채 `users.plan` 만 회수하므로(`resolvePlanAfterSuspend`),
- *    그룹만 보면 결제가 밀린 가족 멤버가 계속 유료로 읽힌다.
- * 4. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
+ * 4. 남은 `users.plan` 으로 가른다. **그룹보다 위다** — 위 2단과 같은 이유다.
+ * 5. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
  *
  * @param storeEntitled 스토어(Play/StoreKit)가 지금 유효한 구독을 확인해 줬는가. 모르면 false —
  *   **거짓이라고 단정하는 값이 아니라 '확인 못 했다' 는 뜻**이라 2단 이하로 내려갈 뿐이다.
@@ -221,6 +226,8 @@ internal fun resolvePaidVoiceAccess(
 ): PaidVoiceAccess {
     if (storeEntitled) return PaidVoiceAccess.Entitled
     val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
+    val plan = userPlan?.trim()?.lowercase()
+    if (plan == "free") return PaidVoiceAccess.NotEntitled
     val subscription = snapshot.subscription
     if (subscription != null) {
         if (!hasPaidVoiceAccess(snapshot)) return PaidVoiceAccess.NotEntitled
@@ -230,12 +237,14 @@ internal fun resolvePaidVoiceAccess(
                 ?: return PaidVoiceAccess.Entitled
         return if (expiryMillis > nowMillis) PaidVoiceAccess.Entitled else PaidVoiceAccess.NotEntitled
     }
-    val plan = userPlan?.trim()?.lowercase()
     return when {
+        // ⚠ **여기서 Unknown 을 돌려주지 말 것.** '모름' 은 서버에 **한 번도 못 물어본**
+        // 상태(위의 `subscriptionResponse == null`)의 뜻이다. 여기는 서버가 "본인 구독
+        // 없음" 이라고 **답했고** 그룹 접근도 없는 상태라 근거가 다 모인 무료다 — 모름으로
+        // 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.**
         plan == null || plan.isBlank() ->
             if (hasCoupleOrFamilyAccess(snapshot, familyGroup)) PaidVoiceAccess.Entitled
-            else PaidVoiceAccess.Unknown
-        plan == "free" -> PaidVoiceAccess.NotEntitled
+            else PaidVoiceAccess.NotEntitled
         plan in setOf("personal", "plus", "couple", "family") -> PaidVoiceAccess.Entitled
         else -> PaidVoiceAccess.NotEntitled
     }

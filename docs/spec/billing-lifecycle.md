@@ -190,17 +190,36 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 ⚠ **`DEFERRED` 는 지금 결제가 일어나지 않는다.** 그래서 구매 리스너로 새 purchase 가 즉시
 오지 않고, 화면이 "바로 바뀐다" 고 말하면 안 된다. 반영은 갱신 시점의 RTDN 으로 온다.
 
-## 유료 판정 — 우선순위 네 단 (양 앱 공통)
+## 유료 판정 — 우선순위 다섯 단 (양 앱 공통)
 
 ⚠ **판정을 화면마다 손으로 쓰지 말 것.** 2026-08-31 전에는 안드로이드 3개·iOS 3개의 서로 다른
 판정이 있었고, 한쪽만 고치는 사고가 리뷰에서 연달아 났다. 이제 앱마다 **판정기 하나**다.
 
 ```
 1. 스토어가 유효하다고 함            → 유료   (서버 만료로 절대 뒤집지 않는다)
-2. 서버가 내 구독을 앎               → 상태·만료로 가른다
-3. 서버가 '구독 없음' 이라 답함       → users.plan → 그룹 접근
-4. 스냅샷 자체가 없음                → 모름 (무료가 아니다)
+2. 서버가 users.plan = free 라고 함  → 무료   (남아 있는 구독 행보다 위다)
+3. 서버가 내 구독을 앎               → 상태·만료로 가른다
+4. 남은 users.plan → 그룹 접근      (plan 정보가 없고 그룹도 없으면 **무료**)
+5. 스냅샷 자체가 없음                → 모름 (무료가 아니다)
 ```
+
+⚠ **'모름' 은 4단이 아니라 5단에서만 나온다.** 서버가 "본인 구독 없음" 이라고 **답했고**
+그룹 접근도 없으면 근거가 다 모인 무료다 — 이걸 모름으로 접으면 낙관 규칙(`모르면 잠그지
+않는다`)에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.** 모름은 서버에 한 번도
+못 물어본 상태(스냅샷 없음)만 가리킨다.
+
+⚠ **2단이 3단보다 위인 이유: 보류는 구독 행을 지우지 않는다.** 결제 보류(구글 ON_HOLD·
+애플 결제 재시도)에서 서버는 그룹과 구독 행을 **그대로 두고** `users.plan` 만 회수한다
+(`propagateGroupMemberPlans` 는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만
+한다 — 결제가 복구되면 재초대 없이 살아나야 하기 때문이다). 그래서 행부터 보면
+`status='active'` 에 만료도 미래인 행이 그대로 있어, **결제가 밀린 그룹 멤버가 계속
+유료로 읽힌다.** 신규 결제를 잘못 막지도 않는다 — 서버가 행 삽입과 **같은 트랜잭션에서**
+`users.plan` 을 올리고(`createNewSubscriptionForPlan`), 산 직후는 어차피 1단이 잡는다.
+
+⚠ **그 값을 적어 두는 것도 같이 해야 한다.** 울림·예약 게이트는 스냅샷만 읽으므로,
+`/auth/me` 로 plan 을 받아 온 경로는 **전부** `AccessSnapshot.userPlan` 에 적는다
+(`PlanChangeSyncWorker` 포함 — 판정만 하고 안 적으면 게이트가 강등 **전** 등급을 읽는다).
+받지 못했으면 **옛 값으로 때우지 않는다**: 적지 않고 '미완' 으로 표시한다.
 
 **1단이 이 문서의 제목을 코드로 옮긴 것이다.** 자동갱신은 스토어에서 먼저 일어나고 서버 반영
 (RTDN·복원)이 늦을 수 있는데, 그때 서버의 옛 `expires_at` 으로 막으면 **돈을 내고 있는
@@ -234,7 +253,9 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
-| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |
+| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me` 응답의 `user.plan` | `MainViewModel.saveSubscriptionSnapshot` · `MainViewModelAuthActions`(auth 갱신) · `sync/PlanChangeSyncWorker` | `SocialFeatureViewModel.refreshAll`(받으면 적고, 못 받으면 미완 표시) |
+| 판정 스냅샷 — 갱신 직렬화 | — | `AccessSnapshotStore.mutate`(companion `LOCK`) | `AccessSnapshotStore.mutate`(static `NSLock`) |
+| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |

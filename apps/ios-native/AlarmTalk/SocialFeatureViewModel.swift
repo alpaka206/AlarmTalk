@@ -98,7 +98,7 @@ final class SocialFeatureViewModel: ObservableObject {
         var messages: [String] = []
 
         var familyGroupOK = false
-        var subscriptionOK = false
+        var entitlementOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
             guard activeUserID == userID else { return }
@@ -120,12 +120,30 @@ final class SocialFeatureViewModel: ObservableObject {
             let resolvedVouchers = try await nextVouchers
             guard activeUserID == userID else { return }
             // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
+            //
             // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
             // 배경 `onPlanChanged` 경로는 `refreshAll` 만 부르고 사용자를 다시 읽지 않는다 —
-            // 소유자가 결제 보류에 들어가면 구독은 nil 이 되고 그룹은 남는데, 여기에 **옛 유료
-            // plan** 이 적히면 판정기가 그룹 폴백으로 유료라고 답해 클론 오디오가 계속 예약된다.
-            // 서버에서 지금 값을 받아 적는다(실패하면 옛 값을 덮지 않는다).
-            let freshPlan = try? await AlarmTalkAPI.shared.me(token: session?.token ?? "").user.plan
+            // 소유자가 결제 보류에 들어가면 그룹은 남는데, 여기에 **옛 유료 plan** 이 적히면
+            // 판정기가 유료라고 답해 클론 오디오가 계속 예약된다. 서버에서 지금 값을 받아 적는다.
+            //
+            // ⚠ **그러니 실패도 `try?` 로 삼키면 안 된다**(2026-09-01 리뷰). 삼키고 옛
+            // `session.user.plan` 로 때우면 보류 직전의 **유료** 값이 스냅샷에 다시 박히는데,
+            // 아래에서 `entitlementSnapshotComplete` 까지 true 가 되어 그 값이 '확정' 으로
+            // 읽힌다 — 정합화가 하필 그 한 번의 네트워크 실패 때문에 클론 오디오를 그대로
+            // 예약된 채 남긴다. 못 받았으면 **적지 않고**(마지막으로 확인된 값을 남긴다)
+            // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
+            var freshPlan: String?
+            var planOK = false
+            do {
+                freshPlan = try await AlarmTalkAPI.shared.me(token: token).user.plan
+                planOK = true
+            } catch {
+                messages.append(Self.scopedRefreshErrorMessage(
+                    label: "이용권",
+                    error: error,
+                    fallback: "이용권 정보를 불러오지 못했어요"
+                ))
+            }
             // ⚠ **await 뒤에는 다시 본다**(2026-08-31 리뷰 2차). 위 가드를 통과한 뒤 이
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
@@ -133,9 +151,9 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
-            accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan ?? session?.user.plan)
+            if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }
             vouchers = resolvedVouchers
-            subscriptionOK = true
+            entitlementOK = planOK
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: "이용권",
@@ -145,7 +163,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID else { return }
-        entitlementSnapshotComplete = familyGroupOK && subscriptionOK
+        entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
     }

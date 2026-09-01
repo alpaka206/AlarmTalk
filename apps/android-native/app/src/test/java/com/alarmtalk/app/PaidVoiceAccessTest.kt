@@ -94,6 +94,41 @@ class PaidVoiceAccessTest {
     }
 
     @Test
+    fun answeredNoSubscriptionAndNoGroupIsFreeNotUnknown() {
+        // '모름' 은 서버에 **한 번도 못 물어본** 상태의 뜻이다(→ missingSnapshotIsUnknownNotFree).
+        // 여기는 서버가 "본인 구독 없음" 이라고 **답했고** 그룹도 없다 — 근거가 다 모인 무료다.
+        // 모름으로 접으면 낙관 규칙에 걸려 무료 사용자의 유료 목소리가 영영 강등되지 않는다.
+        val empty = BillingSubscriptionResponse(subscription = null, plan = null)
+        val access = resolvePaidVoiceAccess(empty, null, null, false, now)
+        assertEquals(PaidVoiceAccess.NotEntitled, access)
+        assertEquals(true, access.isDefinitelyFree())
+    }
+
+    @Test
+    fun suspendedPlanBeatsRetainedSubscriptionRow() {
+        // 결제 보류(ON_HOLD): 서버는 구독 행을 **남긴 채**(status=active, 만료는 아직 미래)
+        // `users.plan` 만 free 로 회수한다 — `propagateGroupMemberPlans` 는 멤버의 그룹 연동
+        // 구독을 취소하지 않고 재계산에서 제외만 하기 때문이다. 행부터 보면 결제가 밀린
+        // 그룹 멤버가 계속 유료로 읽힌다.
+        val retained = sub("active", "2026-09-30T00:00:00Z")
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(retained, null, "free", false, now),
+        )
+        // 같은 행이라도 plan 이 살아 있으면 그대로 유료다(정상 구독을 막지 않는다).
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(retained, null, "personal", false, now),
+        )
+        // 그리고 **스토어는 여전히 위다** — 보류가 풀려 결제가 통과했는데 서버 반영이 늦은
+        // 경우, 서버의 free 로 막으면 돈 내는 사용자가 잠긴다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(retained, null, "free", true, now),
+        )
+    }
+
+    @Test
     fun serverSaysNoSubscriptionThenUserPlanDecides() {
         val empty = BillingSubscriptionResponse(subscription = null, plan = null)
         assertEquals(

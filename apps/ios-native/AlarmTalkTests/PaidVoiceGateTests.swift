@@ -54,10 +54,17 @@ final class PaidVoiceGateTests: XCTestCase {
         )
     }
 
-    private func snapshot(_ sub: BillingSubscription?, plan: BillingPlan? = nil) -> AccessSnapshot {
+    private func snapshot(
+        _ sub: BillingSubscription?,
+        plan: BillingPlan? = nil,
+        userPlan: String? = nil
+    ) -> AccessSnapshot {
         AccessSnapshot(
             subscriptionResponse: BillingSubscriptionResponse(subscription: sub, plan: plan, nextPlan: nil),
-            familyGroup: nil
+            familyGroup: nil,
+            storePlanKey: nil,
+            storeEntitlementUntilMillis: nil,
+            userPlan: userPlan
         )
     }
 
@@ -112,6 +119,27 @@ final class PaidVoiceGateTests: XCTestCase {
                 "\(status) 는 회복형이라 회수하지 않는다"
             )
         }
+    }
+
+    /// 결제 보류로 서버가 `users.plan` 을 회수하면 **남아 있는 구독 행보다 그게 위다.**
+    /// 서버는 회복을 위해 그룹 연동 구독 행을 취소하지 않고 남기므로(`propagateGroupMemberPlans`
+    /// 는 재계산에서 제외만 한다), 행부터 보면 결제가 밀린 멤버가 계속 유료로 읽힌다.
+    func test_suspendedUserPlan_beatsRetainedSubscriptionRow() {
+        let retained = subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z")
+        XCTAssertTrue(
+            PaidVoiceGate.shouldDowngrade(
+                record: paidVoiceAlarm(),
+                snapshot: snapshot(retained, userPlan: "free")
+            ),
+            "users.plan 이 free 면 남은 행이 살아 있어도 권한이 없다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(
+                record: paidVoiceAlarm(),
+                snapshot: snapshot(retained, userPlan: "family")
+            ),
+            "정상 구독까지 막지는 않는다"
+        )
     }
 
     /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.

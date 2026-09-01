@@ -91,17 +91,30 @@ enum PaidVoiceGate {
             return .entitled
         }
         guard let response = snapshot.subscriptionResponse else { return .unknown }
+        let plan = snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased()
+        // ⚠ **서버가 free 라고 말하면 구독 행보다 그게 위다**(2026-09-01 리뷰).
+        // 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
+        // 는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
+        // `status: active` 인 채 남고 `users.plan` 만 free 로 내려간다. 행부터 보면
+        // 결제가 밀린 그룹 멤버가 계속 유료로 읽혀 아래 `users.plan` 갈래에 닿지 못한다.
+        // 신규 결제는 막지 않는다 — 서버가 행과 **같은 트랜잭션에서** plan 을 올리고,
+        // 산 직후는 어차피 위의 스토어 신호가 잡는다.
+        if plan == "free" { return .notEntitled }
         guard let subscription = response.subscription else {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
             // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
-            switch snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased() {
-            case "free":
-                return .notEntitled
+            switch plan {
             case .some(let plan) where ["personal", "plus", "couple", "family"].contains(plan):
                 return .entitled
             default:
+                // ⚠ **여기서 `.unknown` 을 돌려주지 말 것.** '모름' 은 서버에 **한 번도 못
+                // 물어본** 상태(스냅샷 자체가 없음)의 뜻이다. 여기는 서버가 "본인 구독 없음"
+                // 이라고 **답했고** 그룹 접근도 없는 상태라 근거가 다 모인 무료다 — 모름으로
+                // 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다**
+                // (2026-09-01: 앞 회차에서 이 갈래를 `.unknown` 으로 바꿨다가
+                // `test_noSubscriptionAndNoGroup_downgrades` 등 2건이 깨져 있었다).
                 return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
-                    ? .entitled : .unknown
+                    ? .entitled : .notEntitled
             }
         }
         return isSubscriptionActive(subscription, now: now) ? .entitled : .notEntitled

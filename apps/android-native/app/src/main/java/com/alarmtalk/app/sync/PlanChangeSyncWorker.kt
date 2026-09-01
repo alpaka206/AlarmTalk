@@ -69,6 +69,12 @@ class PlanChangeSyncWorker(
             val snapshotStore = AccessSnapshotStore(applicationContext)
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
+            // ⚠ **방금 받은 plan 도 함께 적는다**(2026-09-01 리뷰). 여기까지 와서 `freshUser`
+            // 로 판정만 하고 적지 않으면, 울림 게이트가 읽는 값은 강등 **전** 등급 그대로다.
+            // 보류(ON_HOLD)에서 특히 치명적이다 — 서버는 구독 행을 남긴 채 `users.plan` 만
+            // 회수하므로, 그 값이 옛 유료로 남아 있으면 판정기가 남은 행을 보고 유료라고
+            // 답한다(`resolvePaidVoiceAccess` 2단이 그래서 plan 을 먼저 본다).
+            snapshotStore.updateUserPlan(userId, freshUser.plan)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
             //
