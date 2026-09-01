@@ -309,7 +309,9 @@ final class SubscriptionManager: ObservableObject {
     private func persistStoreEntitlement(until: Date?) {
         let entitled = currentTier.meetsOrExceeds(.personal)
         // 문이 계정·토큰 에폭을 본다 — 여기서 계정을 다시 읽지 않는다.
-        EntitlementWriter().writeNow("storekit tier") {
+        // 결과를 **일부러 버린다**: 이 함수의 마지막 문장이고 뒤따르는 상태 발행이 없다.
+        // 거절은 '그 사이 세션이 바뀌었다' 는 뜻이라 그대로 두는 것이 맞다.
+        _ = EntitlementWriter().writeNow("storekit tier") {
             $0.storePlanKey = entitled ? currentTier.rawValue : nil
             $0.storeEntitlementUntilMillis =
                 entitled ? until.map { Int64($0.timeIntervalSince1970 * 1000) } : nil
@@ -414,7 +416,8 @@ final class SubscriptionManager: ObservableObject {
         // 임자 미상만 있으면 아무것도 확정하지 않는다(인스턴스 경로와 같은 규칙).
         if scan.productIDs.isEmpty && scan.hasUnattributed { return }
         let entitled = scan.tier.meetsOrExceeds(.personal)
-        writer.write(accessTicket, "storekit revalidate") {
+        // 위와 같은 이유로 결과를 **일부러 버린다** — 함수의 마지막 문장이다.
+        _ = writer.write(accessTicket, "storekit revalidate") {
             $0.storePlanKey = entitled ? scan.tier.rawValue : nil
             $0.storeEntitlementUntilMillis =
                 entitled ? scan.latestExpiry.map { Int64($0.timeIntervalSince1970 * 1000) } : nil

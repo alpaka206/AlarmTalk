@@ -48,10 +48,13 @@ ElevenLabs 로 간다. 합성 경로가 `prepareAlarmTextWithVertex(translate:fa
 
 기본 목소리 4종: **아담 · 미나 · 하준 · 소은**.
 
-**문구 종류는 유료·무료가 같다**(2026-09-02). 기본 목소리도 다섯 종류를 전부 고를 수
-있다 — greeting 은 목소리 미리듣기이자 '기본 인사말' 버킷을 겸한다(클론도
-`RandomPromptContext.preset.bucketCategory` 가 greeting 이다). 등급으로 갈리는 것은
-**직접 입력 잠금 하나**다. 상세는 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) §2.
+**문구 종류를 등급으로 자르지 않는다**(2026-09-02). 기본 목소리도 날씨·운세·사랑·약을
+고를 수 있고, 등급으로 갈리는 것은 **직접 입력 잠금 하나**다.
+
+⚠ 다만 **'기본 인사말'(greeting)은 기본 목소리의 알람 테마가 아니다.** 여기 greeting 은
+목소리 **미리듣기용 자기소개**라 매일 아침 울릴 문구가 아니고, 서버도 시스템 보이스 +
+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 주려면 **기상 인사 대사를 따로** 확정해
+새 카테고리로 구워야 한다. 상세는 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) §2.
 
 ⚠ **운세·사랑의 en·ja 는 아직 한국어를 복사해 둔 임시값이다.** 그 언어 사용자에게는
 뜻이 통하지 않는 오디오가 나간다 — **출시 전에 교체할 것.** 표는

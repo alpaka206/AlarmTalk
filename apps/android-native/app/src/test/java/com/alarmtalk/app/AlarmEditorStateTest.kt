@@ -57,17 +57,23 @@ class AlarmEditorStateTest {
     @Test
     fun freeBucketOrderIsDerivedFromTheOneMessageList() {
         val fromMessageList = EditorMessageContexts
-            .filterNot { (context, _) -> context == ManualMessageContext }
+            .filterNot { (context, _) ->
+                context == ManualMessageContext || context == DefaultRandomPromptContext
+            }
             .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }
         assertEquals(fromMessageList, FreeBucketOrder)
         // ⚠ **'직접 입력' 은 걷어내고 매핑해야 한다.** 그냥 흘리면 모르는 값이 `preset` 으로
         //   접혀 **greeting 으로 둔갑**하고, 같은 버킷이 목록에 두 번 들어온다.
         assertEquals("greeting", clonePrerenderBucketCategoryFor(ManualMessageContext))
         assertEquals(FreeBucketOrder.distinct(), FreeBucketOrder)
-        // 다섯 종류가 모두 버킷을 갖는다(하나라도 빠지면 그 종류는 고를 수 없게 된다).
-        assertEquals(5, FreeBucketOrder.size)
+        // ⚠ **'기본 인사말'(greeting)은 스톡 목소리의 알람 테마가 아니다**(2026-09-02 리뷰).
+        //   스톡 greeting 은 목소리 미리듣기용 자기소개라 매일 아침 울릴 문구가 아니고,
+        //   서버도 시스템 보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절한다
+        //   (`alarm-mutation.ts`). 넣었다가 되돌린 자리이므로 다시 넣지 말 것 —
+        //   넣으려면 **기상 인사 스톡 클립을 따로 구워야** 한다.
+        assertFalse("greeting" in FreeBucketOrder)
         assertEquals(
-            listOf("greeting", "weather", "fortune", "love", "medication"),
+            listOf("weather", "fortune", "love", "medication"),
             FreeBucketOrder,
         )
     }

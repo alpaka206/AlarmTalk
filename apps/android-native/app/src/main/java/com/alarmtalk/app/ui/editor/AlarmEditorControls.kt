@@ -627,5 +627,16 @@ internal val FreeBucketOrder: List<String> = EditorMessageContexts
     // ⚠ **'직접 입력' 을 먼저 걷어내야 한다.** `clonePrerenderBucketCategoryFor` 는 모르는
     //   값을 `preset` 으로 접으므로(`normalizedRandomPromptContext`), 그냥 흘리면 manual 이
     //   **greeting 으로 둔갑해** 목록에 같은 버킷이 두 번 들어온다.
-    .filterNot { (context, _) -> context == ManualMessageContext }
+    //
+    // ⚠ **'기본 인사말'(preset → greeting)도 뺀다**(2026-09-02 리뷰). 목록을 합칠 때
+    //   이것까지 넣었다가 되돌렸다. 이유가 둘인데 **둘 다 스스로 충분하다**:
+    //    1. **내용이 다르다.** 스톡 `greeting` 은 목소리 미리듣기용 자기소개다
+    //       ("만나서 반가워요, 앞으로 매일 깨워 드릴게요") — 매일 아침 울릴 문구가 아니다.
+    //       클론의 `preset` 은 **생성된 기상 인사**라 같은 이름의 다른 것이다.
+    //    2. **서버가 막는다.** `alarm-mutation.ts` 가 시스템 보이스 + greeting 을
+    //       `INVALID_BUCKET_ID`(400) 로 거절한다 — 미리듣기 클립을 알람으로 돌려 쓰는
+    //       우회를 막는 정책이다. 그대로 뒀으면 알람이 로컬에만 남고 서버 sync 가 영영 실패한다.
+    //   기본 목소리에도 '기본 인사말' 을 주려면 **기상 인사 스톡 클립을 따로 구워야** 한다
+    //   (미리듣기 클립을 재사용하는 것이 아니라). 그건 콘텐츠 작업이라 별도로 다룬다.
+    .filterNot { (context, _) -> context == ManualMessageContext || context == DefaultRandomPromptContext }
     .mapNotNull { (context, _) -> clonePrerenderBucketCategoryFor(context) }

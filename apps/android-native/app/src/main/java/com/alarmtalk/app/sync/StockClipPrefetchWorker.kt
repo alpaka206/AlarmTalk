@@ -179,7 +179,16 @@ class StockClipPrefetchWorker(
                     // 가 계속 옛 free 를 읽어 **회복된 유료 사용자의 클론 오디오를 막는다.**
                     // 문이 세대·계정을 함께 본다 — 조회 중 로그아웃·재로그인이 있었으면
                     // 이 값은 옛 회차의 것이라 거절된다.
-                    entitlement.write(ticket, "prefetch plan") { it.copy(userPlan = plan) }
+                    // ⚠ **거절되면 이 회차는 옛 세션의 것이다**(2026-09-02 리뷰). 아래
+                    //   판정이 스냅샷이 아니라 **로컬 `plan` 변수**를 그대로 쓰므로, 결과를
+                    //   안 보면 문이 버린 값이 그대로 선다운로드 여부를 정한다.
+                    //   낙관 기본값으로 물러난다 — 선다운로드는 더 받아도 손해가 없고,
+                    //   덜 받으면 오프라인에서 소리가 안 난다.
+                    if (entitlement.write(ticket, "prefetch plan") { it.copy(userPlan = plan) }
+                        != EntitlementWrite.Applied
+                    ) {
+                        return@runCatching true
+                    }
                     val snapshot = snapshotStore.read(session.user.id)
                     val now = System.currentTimeMillis()
                     resolvePaidVoiceAccess(
@@ -379,11 +388,10 @@ class StockClipPrefetchWorker(
      * 받을 대상: 기본 목소리 × 기기 언어 × 무료 버킷 카테고리.
      *  - 언어를 하나로 좁힌다. 3개 언어를 다 받으면 약 3배(≈30MB)인데 앱은 한 번에 한 언어만
      *    쓰고, 언어를 바꾸면 이 워커가 다시 돌아 부족분을 채운다.
-     *  - **다섯 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 문구 종류를 다섯 다
+     *  - **고를 수 있는 카테고리를 전부 받는다**(2026-09-02). 기본 목소리도 운세·사랑을
      *    고를 수 있게 되면서(`docs/spec/voice-and-message.md` §2), 안 받는 종류가 있으면
      *    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
-     *  - greeting 은 APK 에도 내장돼 있지만(res/raw, 미리듣기용) 알람 경로는 서버 클립을
-     *    messageId 로 캐시하므로 여기서도 받는다.
+     *  - greeting 은 받지 않는다 — 알람 테마가 아니고(§2), 미리듣기용은 APK 에 내장돼 있다.
      */
     private fun StockClip.targetsDefaultVoices(language: String): Boolean =
         isSystemVoiceId(voiceProfileId) &&

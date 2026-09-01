@@ -1323,9 +1323,19 @@ struct AlarmEditorSheet: View {
         //   클론이면 문구 종류로 갈랐는데, 그 둘은 애초에 같은 값을 다른 이름으로 담고
         //   있었다(`RandomPromptContext.bucketCategory` ↔ `FreeBucket.rawValue`). 갈라 두면
         //   한쪽만 고치는 사고가 나고, 실제로 문구 목록이 두 벌로 벌어진 원인이었다.
-        guard voiceStudio.randomPrompt,
-              let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return nil }
-        let category = context.bucketCategory
+        // ⚠ **이미 붙어 있는 테마가 먼저다**(2026-09-02 리뷰). 스톡 클립 알람은
+        //   `randomPrompt = false` 로 저장되므로, 기존 알람을 다시 열면 `loadVoicePromptState`
+        //   가 테마만 복원하고 randomPrompt 는 false 로 둔다. 그때 아래 `randomPrompt` 가드에
+        //   걸려 nil 이 나가면 `prepareSelectedBucketClipIfNeeded()` 가 클립을 **다시 받지
+        //   않는다** — 캐시된 음원이 사라진 기기에서는 소리 없는 알람으로 저장된다.
+        let category: String
+        if let bucket = selectedFreeBucket {
+            category = bucket.rawValue
+        } else {
+            guard voiceStudio.randomPrompt,
+                  let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return nil }
+            category = context.bucketCategory
+        }
         // ⚠ **부분 세트면 쓰지 않는다.** 날씨·운세는 **절대 인덱스**로 조건을 고르므로
         // (variant 3 = 미세먼지) 중간이 비면 엉뚱한 문구가 나간다. 그때는 라이브로 폴백한다.
         guard hasCompleteBucket(category: category, profileID: profileID) else { return nil }

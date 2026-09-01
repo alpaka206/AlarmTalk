@@ -32,7 +32,12 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     ///
     /// ⚠ 이 순서는 "한 번도 고른 적 없을 때" 의 최후 폴백이기도 하다 — '항상 적용되는
     /// 기본값' 이 아니다(CLAUDE.md).
+    /// ⚠ **`.preset`(기본 인사말)은 뺀다**(2026-09-02 리뷰). 안드로이드 `FreeBucketOrder`
+    /// 와 같은 이유다: 스톡 `greeting` 은 목소리 미리듣기용 **자기소개**라 매일 아침 울릴
+    /// 문구가 아니고(클론의 `preset` 은 생성된 기상 인사라 같은 이름의 다른 것이다),
+    /// 서버도 시스템 보이스 + greeting 을 `INVALID_BUCKET_ID` 로 거절한다.
     static let order: [FreeBucket] = RandomPromptContext.alarmEditorCases
+        .filter { $0 != .preset }
         .compactMap { FreeBucket(rawValue: $0.bucketCategory) }
 
     /// **순서가 아니라 조건으로** 클립을 고르는 테마. 회전을 전진시키지 않는다.

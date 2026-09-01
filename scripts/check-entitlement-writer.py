@@ -53,7 +53,22 @@ RAW_WRITE = re.compile(r"\bpatchWithoutOwnershipCheck\b")
 REVIVED_API = re.compile(r"\b(updateStorePlanKey|updateUserPlan|updateSubscription|updateFamilyGroup)\s*\(")
 
 # 문을 부르는 줄. 트레일링 람다/클로저 때문에 호출은 여러 줄에 걸치므로 **시작 줄**만 본다.
-GATE_CALL = re.compile(r"\bentitlementWriter\s*\.\s*(write|writeNow)\s*\(")
+#
+# ⚠ **수신자 이름으로 찾지 않는다**(2026-09-02 리뷰). 처음에는 `entitlementWriter\.` 리터럴만
+# 봤는데, 같은 저장소 안에 `entitlement.write(...)`(워커 둘)·`writer.write(...)`
+# (SubscriptionManager)·`EntitlementWriter().writeNow(...)` 가 이미 있어서 **넷을 통째로
+# 놓쳤다.** 이름은 호출부마다 다르고 앞으로도 달라진다.
+#
+# 대신 **호출 모양**으로 가른다 — 문의 시그니처는 `(표, "이유")` 와 `("이유")` 뿐이라,
+# 두 번째(또는 첫) 인자가 **문자열 리터럴**인 것으로 다른 write 와 구별된다.
+# (`writer.write(alarms, seq: seq)` 같은 알람 저장소 호출은 이 모양이 아니라 안 걸린다.)
+GATE_CALL = re.compile(
+    r"""(
+        \.\s*write\s*\(\s*[A-Za-z_][\w.]*\s*,\s*"   |   # .write(ticket, "이유"
+        \.\s*writeNow\s*\(\s*"                            # .writeNow("이유"
+    )""",
+    re.X,
+)
 # 결과를 실제로 쓰는 모양들. `_ =` 는 "일부러 버린다"는 명시적 표시라 허용한다.
 RESULT_USED = re.compile(
     r"""(
@@ -106,7 +121,8 @@ def scan(root: Path, suffix: str) -> list[str]:
                     f"{rel}:{lineno}: `write` 의 결과를 버린다 — 문이 거절해도 화면·메모리가 "
                     f"옛 등급을 그대로 쓴다.\n"
                     f"    결과를 받아 `Applied` 일 때만 상태를 갱신하라"
-                    f"(정말 버릴 거면 `_ =` 로 명시).\n    {stripped}"
+                    f"(Swift 는 정말 버릴 때 `_ =`, Kotlin 은 `_ =` 가 없으니 "
+                    f"결과를 변수로 받아 로그·분기에 쓴다).\n    {stripped}"
                 )
     return problems
 

@@ -152,8 +152,18 @@ class PlanChangeSyncWorker(
                 // 앞의 발행을 통과했다고 그 권한이 계속 유효한 게 아니다 — 그 사이 재로그인한
                 // 새 세션이 방금 확인한 유료 Play 신호를 발행했을 수 있다. 그래서 표를 **다시**
                 // 통과시킨다(문이 매번 세대·계정을 본다).
-                entitlement.write(ticket, "plan_changed store invalidation") {
+                // 거절은 '그 사이 세션이 바뀌었다' 는 뜻이다. 여기서 되돌릴 것은 없고
+                // (무효화는 멱등하다) 바로 아래 `genuinelyFree` 블록이 세대를 다시 확인해
+                // 파괴적 강등을 막는다. 다만 **결과를 그냥 버리지는 않는다** — 이 회차가
+                // 통째로 옛 세션의 것이었다는 사실은 로그로 남겨야 나중에 추적된다.
+                val invalidated = entitlement.write(ticket, "plan_changed store invalidation") {
                     it.copy(storePlanKey = null, storeEntitlementUntilMillis = null)
+                }
+                if (invalidated != EntitlementWrite.Applied) {
+                    android.util.Log.i(
+                        "PlanChangeSyncWorker",
+                        "Store invalidation skipped: session changed mid-run",
+                    )
                 }
             }
             if (genuinelyFree) {
