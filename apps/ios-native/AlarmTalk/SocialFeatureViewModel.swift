@@ -71,6 +71,20 @@ final class SocialFeatureViewModel: ObservableObject {
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
      */
     var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
+
+    /**
+     * **이 토큰이 아직 지금 세션의 것인가**(2026-09-01 리뷰).
+     *
+     * ⚠ 세대·계정 가드만으로는 부족하다. 같은 계정으로 로그아웃→재로그인하면 `activeUserID`
+     * 도 `refreshGeneration` 도 그대로라, 옛 갱신이 둘을 통과해 **옛 plan·구독을 새 세션의
+     * 스냅샷에 직접 쓴다** — `applyFreshPlan` 은 토큰 에폭으로 거절하는데 스냅샷 쓰기는
+     * 아무도 막지 않았다. 그 스냅샷을 예약·울림 게이트가 읽는다.
+     */
+    var isCurrentSessionToken: ((_ userID: String, _ token: String) -> Bool)?
+
+    private func sessionStillCurrent(_ userID: String, _ token: String) -> Bool {
+        isCurrentSessionToken?(userID, token) ?? true
+    }
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
     /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
@@ -151,7 +165,8 @@ final class SocialFeatureViewModel: ObservableObject {
         var entitlementOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
-            guard activeUserID == userID, generation == refreshGeneration else { return }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
             familyGroupOK = true
@@ -201,7 +216,8 @@ final class SocialFeatureViewModel: ObservableObject {
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
-            guard activeUserID == userID, generation == refreshGeneration else { return }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
             // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
             // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
             // ⚠ **plan 을 토큰 회전보다 먼저 적용한다**(2026-09-01 리뷰). 둘 다 출처 토큰을
@@ -214,7 +230,22 @@ final class SocialFeatureViewModel: ObservableObject {
             }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
-            if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }
+            if let freshPlan {
+                accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan)
+                // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
+                // 안드로이드 `PlanChangeSyncWorker` 와 같은 규칙). 기간 중 환불·회수는
+                // `plan_changed` 로 오는데 배경 경로는 이 갱신 하나만 돈다 — 캐시에 남은
+                // **원래 만료 시각**이 판정 1단이라, 그걸 안 끊으면 그 시각까지 클론 오디오가
+                // 계속 예약된다. 판정은 **스토어 신호를 빼고**(빼지 않으면 지우려는 그
+                // 상황에서만 조건이 거짓이 된다) 서버가 준 값만으로 한다.
+                var serverOnly = AccessSnapshot.empty
+                serverOnly.subscriptionResponse = resolvedSubscription
+                serverOnly.familyGroup = familyGroup
+                serverOnly.userPlan = freshPlan
+                if PaidVoiceGate.resolve(snapshot: serverOnly) == .notEntitled {
+                    accessSnapshotStore.updateStorePlanKey(userID: userID, planKey: nil, untilMillis: nil)
+                }
+            }
             vouchers = resolvedVouchers
             entitlementOK = planOK
         } catch {
@@ -225,7 +256,8 @@ final class SocialFeatureViewModel: ObservableObject {
             ))
         }
 
-        guard activeUserID == userID, generation == refreshGeneration else { return }
+        guard activeUserID == userID, generation == refreshGeneration,
+              sessionStillCurrent(userID, token) else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
@@ -249,7 +281,8 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let nextSubscription = try await api.getSubscription(token: token)
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
-            guard activeUserID == userID, generation == refreshGeneration else { return }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  sessionStillCurrent(userID, token) else { return }
             subscription = nextSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: nextSubscription)
         } catch {

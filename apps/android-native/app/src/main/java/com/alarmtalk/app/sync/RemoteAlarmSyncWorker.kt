@@ -85,7 +85,10 @@ class RemoteAlarmSyncWorker(
             // 로그인한 B 의 id 가 잡혀 **A 의 plan 이 B 의 스냅샷에 박힌다**(그 뒤 굴러온
             // 토큰이 없으면 CAS 도 안 돌아 아무도 못 막는다). 세대가 그대로일 때만 쓴다.
             sessionUserId.takeIf { it.isNotBlank() }?.let { userId ->
-                if (sessionStore.sessionGeneration() == startGeneration) {
+                // 검사와 쓰기를 **한 덩어리로** — 따로 하면 그 사이 로그아웃→재로그인이 끼어
+                // 옛 응답이 새 세션의 스냅샷을 되살린다(굴러온 토큰이 없는 회차에는 뒤이은
+                // CAS 도 안 돌아 아무도 못 막는다).
+                sessionStore.runIfGeneration(startGeneration) {
                     AccessSnapshotStore(applicationContext).updateUserPlan(userId, me.user.plan)
                 }
             }

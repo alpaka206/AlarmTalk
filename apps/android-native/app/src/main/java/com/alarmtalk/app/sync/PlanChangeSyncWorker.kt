@@ -96,6 +96,7 @@ class PlanChangeSyncWorker(
             // — 그 뒤 CAS 가 세대 변화를 알아채고 물러나도 이미 쓴 값은 남아, 새 세션의 갱신이
             // 실패했을 때 울림 게이트가 옛 스냅샷을 읽는다(회복된 구독자의 클론이 막힌다).
             // CAS 는 '검사와 저장을 한 덩어리로' 하므로, 그걸 통과한 뒤가 유일하게 안전한 지점이다.
+            // 세션 CAS 를 통과한 뒤에도 **검사와 쓰기를 한 덩어리로** 한다(2026-09-01 리뷰).
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
             // 방금 받은 plan 도 함께 적는다 — 판정만 하고 적지 않으면 울림 게이트가 읽는 값이
