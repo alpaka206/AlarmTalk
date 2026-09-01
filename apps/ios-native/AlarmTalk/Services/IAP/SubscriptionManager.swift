@@ -260,6 +260,8 @@ final class SubscriptionManager: ObservableObject {
         }
         refreshGeneration &+= 1
         let generation = refreshGeneration
+        // 배경 정적 경로와 **같은 순서표**를 쓴다 — 캐시를 쓰는 경로가 둘이기 때문이다.
+        let persistTicket = Self.nextPersistGeneration()
         let scan = await Self.scanEntitlements(for: currentAccount)
         let newSet = scan.productIDs
         let maxTier = scan.tier
@@ -273,7 +275,7 @@ final class SubscriptionManager: ObservableObject {
         guard authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:)) == currentAccount
         else { return }
         // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰 — 위 세대 주석).
-        guard generation == refreshGeneration else { return }
+        guard generation == refreshGeneration, persistTicket == Self.persistGeneration else { return }
         // ⚠ **임자를 알 수 없는 활성 구매가 있고 내 것이 하나도 없으면 아무것도 확정하지
         // 않는다**(2026-09-01 리뷰, 안드로이드 `ActiveSubscriptionQuery.unattributed` 와 같은
         // 규칙). `appAccountToken` 을 붙이기 **전에** 산 구독이 그렇다 — 그걸 그냥 걸러
@@ -351,6 +353,18 @@ final class SubscriptionManager: ObservableObject {
     /// ⚠ **등급 계산을 여기 말고 다른 데 또 쓰지 말 것.** 배경 경로가 인스턴스 없이 써야 해서
     /// 정적으로 뽑았을 뿐, 규칙(계정 필터·선물 제외·만료 수집)은 여기 하나다 —
     /// 복제하면 두 경로가 갈라진다(이 저장소에서 반복된 사고다).
+    /// 스토어 신호를 **캐시에 쓰는 순서**. 전경 인스턴스 경로와 배경 정적 경로가 함께 쓴다.
+    ///
+    /// ⚠ 둘이 따로 놀면, `plan_changed` 콜드런치의 순회가 멈춰 있는 사이 씬이 붙어
+    /// 전경 순회가 **더 새로운 결과를 쓴 뒤**, 늦게 깨어난 옛 순회가 그걸 덮는다 —
+    /// 회수된 권한이 되살아나거나 방금 결제한 권한이 지워진다(2026-09-01 리뷰).
+    private static var persistGeneration = 0
+
+    private static func nextPersistGeneration() -> Int {
+        persistGeneration &+= 1
+        return persistGeneration
+    }
+
     static func scanEntitlements(for currentAccount: UUID) async -> EntitlementScan {
         var scan = EntitlementScan()
         for await result in Transaction.currentEntitlements {
@@ -381,7 +395,10 @@ final class SubscriptionManager: ObservableObject {
     /// 인스턴스를 만들면 `Transaction.updates` 리스너가 겹치므로 **정적으로** 처리한다.
     static func revalidatePersistedEntitlement(userID: String) async {
         guard let account = userID.nilIfBlank.flatMap(UUID.init(uuidString:)) else { return }
+        let ticket = nextPersistGeneration()
         let scan = await scanEntitlements(for: account)
+        // 그 사이 더 새로운 순회가 시작·발행했으면 이 결과는 버린다(위 주석).
+        guard ticket == persistGeneration else { return }
         // 임자 미상만 있으면 아무것도 확정하지 않는다(인스턴스 경로와 같은 규칙).
         if scan.productIDs.isEmpty && scan.hasUnattributed { return }
         let entitled = scan.tier.meetsOrExceeds(.personal)
