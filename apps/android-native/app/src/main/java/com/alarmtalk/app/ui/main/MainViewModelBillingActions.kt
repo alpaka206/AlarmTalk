@@ -17,6 +17,7 @@ import com.alarmtalk.app.R
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 
 
 /**
@@ -32,28 +33,26 @@ import kotlinx.coroutines.launch
  * 실패해도 조용히 넘어간다 — 스토어를 못 읽은 것은 '무료' 가 아니라 '모름' 이고,
  * 판정기(`resolvePaidVoiceAccess`)가 서버 스냅샷으로 내려간다.
  */
+/**
+ * Play 에 지금 구독을 물어 캐시·state 를 갱신한다.
+ *
+ * ⚠ **한 번에 하나만 돈다**(2026-09-01 리뷰). 시작 경로와 탭 진입 경로가 각각 이 함수를
+ * 던져 조회가 겹치는데, 계정 가드는 둘 다 통과시킨다. 예전에는 '세대' 로 밀려난 쪽을
+ * 버렸는데 그러면 **나중에 시작해 실패한 조회가 먼저 시작한 성공까지 버리게** 만들어,
+ * 그 회차에는 아무도 발행하지 못했다(확인 미완으로 남거나 옛 유료 캐시가 그대로 산다).
+ * 직렬화하면 각 조회가 자기 잠금 안에서 **물어본 시점의 값**을 온전히 발행하고, 마지막에
+ * 도는 조회가 가장 신선하다 — 버려지는 결과가 없다.
+ */
 internal suspend fun MainViewModel.refreshStoreEntitlement() {
     val userId = authSession?.user?.id ?: return
+    storeRefreshMutex.withLock {
     runCatching {
         val hash = playBilling.accountHashFor(userId)
         // ⚠ **null 은 '구독 없음' 이 아니라 '못 물어봤다' 다**(2026-08-31 리뷰).
         // 오프라인·연결 실패에서 신호를 지우면, 서버 스냅샷이 갱신 전 만료시각을 들고 있는
         // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
         // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
-        storeRefreshGeneration++
-        val generation = storeRefreshGeneration
-        // ⚠ **아무것도 발행하지 못하면 세대를 되돌린다**(2026-09-01 리뷰). 세대는 '나중에
-        // 시작한 조회가 이긴다' 를 위해 **시작할 때** 올리는데, 그 조회가 연결 실패로 빈손이면
-        // 자기는 아무것도 못 쓰면서 **먼저 시작한 성공 결과만 무효로 만든다** — 그러면 그
-        // 회차에는 아무도 발행하지 못해 확인 미완으로 남거나 옛 유료 캐시가 그대로 산다.
-        // 그 뒤에 시작한 조회가 없을 때만 되돌린다.
-        fun rollbackIfNewest() {
-            if (storeRefreshGeneration == generation) storeRefreshGeneration--
-        }
-        val query = playBilling.queryActiveSubscriptions(hash) ?: run {
-            rollbackIfNewest()
-            return@runCatching
-        }
+        val query = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
         // ⚠ **임자를 알 수 없는 구독이 있으면 '확인했다' 고 하지 않는다**(2026-09-01 리뷰).
         // `obfuscatedAccountId` 를 붙이기 **전에** 산 구독에는 식별자가 없어 내 것으로도
         // 남의 것으로도 셀 수 없다. 그걸 그냥 걸러 내면 결과가 빈 목록 — "스토어가 없다고
@@ -66,7 +65,6 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                 "Store has unattributed subscriptions; leaving entitlement undetermined",
             )
             runCatching { playBilling.restorePurchases() }
-            rollbackIfNewest()
             return@runCatching
         }
         val purchases = query.mine
@@ -81,19 +79,26 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
                     else -> 0
                 }
             }
-        val until = nextKey?.let { System.currentTimeMillis() + STORE_ENTITLEMENT_TTL_MILLIS }
+        // ⚠ **해지 예약된 구독은 TTL 로 늘리지 않는다**(2026-09-01 리뷰). TTL 은 '언제
+        // 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 하루 전에 확인하면 그 뒤 **39일**
+        // 을 로컬에서 유료로 통과시킨다 — 이 신호는 서버 만료보다 위라, 확정된 만료도
+        // `plan_changed` 도 그 통행증을 못 끊는다.
+        // `Purchase.isAutoRenewing == false` 면 이번 기간으로 끝난다는 뜻이니, 서버가 아는
+        // 기간 말로 상한을 둔다. 자동갱신 중이면 갱신이 기간을 늘리므로 TTL 그대로 둔다
+        // (그게 「스토어가 권위다」를 지키는 쪽이다).
+        val ttlUntil = System.currentTimeMillis() + STORE_ENTITLEMENT_TTL_MILLIS
+        val willNotRenew = purchases.isNotEmpty() && purchases.none { it.isAutoRenewing }
+        val serverPeriodEnd = subscriptionResponse?.subscription?.expiresAt?.let { raw ->
+            runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+        }
+        val until = nextKey?.let {
+            if (willNotRenew && serverPeriodEnd != null) minOf(ttlUntil, serverPeriodEnd) else ttlUntil
+        }
         // ⚠ **조회 중 계정이 바뀌었으면 버린다**(2026-08-31 리뷰). 조회는 비동기라 A 가
         // 로그아웃하고 B 가 들어온 뒤에 A 의 결과가 도착할 수 있다 — 그대로 쓰면 무료 B 가
         // A 의 등급을 물려받아 편집기·목소리·저장 게이트를 전부 통과한다.
         if (authSession?.user?.id != userId) {
             android.util.Log.i("MainViewModel", "Dropping stale store entitlement: account changed")
-            return@runCatching
-        }
-        // ⚠ **같은 계정 안에서도 밀려난 조회는 버린다**(2026-09-01 리뷰). 시작 경로와 탭 진입
-        // 경로가 각각 이 함수를 던지므로 조회가 겹치는데, 계정 가드는 둘 다 통과시킨다 —
-        // 먼저 시작한 쪽이 늦게 끝나면 그 사이 바뀐 Play 상태를 옛 결과로 덮는다.
-        if (generation != storeRefreshGeneration) {
-            android.util.Log.i("MainViewModel", "Dropping superseded store entitlement refresh")
             return@runCatching
         }
         // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
@@ -110,6 +115,7 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         }
     }.onFailure { error ->
         android.util.Log.w("MainViewModel", "Failed to refresh store entitlement", error)
+    }
     }
 }
 

@@ -596,13 +596,27 @@ internal fun AlarmTalkApp(
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+        // ⚠ **보류(ON_HOLD/PAUSED)에서는 잠그지 않는다**(2026-09-01 리뷰).
+        // 서버는 회복을 위해 구독 행을 **남긴 채** `users.plan` 만 회수하므로, 판정기는
+        // (의도대로) '무료' 라고 답한다 — 울림·예약은 그걸로 막으면 되고 결제가 복구되면
+        // 그대로 살아난다. 하지만 이 자리의 변환은 **되돌리지 않는 파괴적 쓰기**다.
+        // `PlanChangeSyncWorker` 는 처음부터 이 조건을 함께 봤는데 전경 경로만 빠져 있었다 —
+        // 그래서 앱을 한 번 열면 회복 가능한 보류가 영구 강등으로 굳었다.
+        val subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse)
         when {
             // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `access.isDefinitelyFree()` 를
             // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
             // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
             // 만료돼 있으면 그 순간 영구 강등이 걸린다.
-            authSession != null && viewModel.isDefinitelyFreePlan() ->
+            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive ->
                 viewModel.applyFreePlanVoiceLock()
+            // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(2026-09-01 리뷰). 이 갈래가 없어서
+            // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
+            // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
+            // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
+            authSession != null && viewModel.storeEntitlementChecked &&
+                viewModel.isPaidVoiceEntitledOptimistic() ->
+                viewModel.restorePaidVoiceAlarmsIfLocked()
             // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
             // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
             // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
