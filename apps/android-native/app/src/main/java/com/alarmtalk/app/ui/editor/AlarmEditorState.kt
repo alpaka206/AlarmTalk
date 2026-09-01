@@ -191,7 +191,7 @@ internal class AlarmEditorState(
             voiceRandomContext = if (
                 alarmOnly ||
                 voiceSource == VoiceSources.LOCAL_AUDIO ||
-                (!voiceRandomPrompt && !isActiveBucketAlarm())
+                isManualForSave()
             ) {
                 null
             } else {
@@ -297,6 +297,43 @@ internal class AlarmEditorState(
      *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
      *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
      */
+    /**
+     * **사용자가 테마 종류를 골랐는가 — 클립이 아직 안 묶였어도.**
+     *
+     * ⚠ [hasBucketMessageChoice] 와 다르다. 저쪽은 클립이 **실제로 묶였는지**(`audioCacheKey`
+     * 가 클립 목록에 있는지)까지 보므로, 방금 고르고 아직 바인딩 전이면 false 다.
+     * 저장 직전 갈래를 가를 때는 그 구분이 필요하다 — 2026-08-31 에 저 함수를 쓰다가
+     * **무료·기본 목소리 테마 알람이 유료 게이트에 걸렸다**(클립이 아직 없어 직접입력으로 읽혔다).
+     */
+    fun hasChosenBucketKind(): Boolean = selectedBucket != null
+
+    /**
+     * **저장 관점에서 직접 입력인가.** 저장·오디오 바인딩·컨텍스트 플래그가 쓴다.
+     *
+     * ⚠ [isManualForDisplay] 와 **결과가 다를 수 있다** — 재생 방식이 '알람' 이면
+     * [isActiveBucketAlarm] 이 false 라 여기서는 직접입력으로 읽힌다. 그건 저장 관점에선
+     * 맞고 **표시 관점에선 틀리다**(고른 문구는 그대로인데 재생 방식만 바뀐 것이므로).
+     */
+    fun isManualForSave(): Boolean = !voiceRandomPrompt && !isActiveBucketAlarm()
+
+    /**
+     * **표시 관점에서 직접 입력인가.** 요약 행·pane 프리셀렉트·직접입력 여부가 쓴다.
+     * 재생 방식과 **무관**하다 — 그게 [isManualForSave] 와 갈라지는 유일한 축이다.
+     */
+    fun isManualForDisplay(): Boolean = !voiceRandomPrompt && !hasBucketMessageChoice()
+
+    /**
+     * **문구 종류를 무엇이든 골랐는가**(생성형이거나 테마). 저장 갈래를 가를 때 쓴다.
+     *
+     * ⚠ 여기서 [hasBucketMessageChoice]·[isActiveBucketAlarm] 을 쓰면 안 된다 — 둘 다
+     * `audioCacheKey` 가 살아 있어야 true 라, **방금 고른 테마**를 못 본다.
+     */
+    fun hasMessageKindChoice(): Boolean = voiceRandomPrompt || hasChosenBucketKind()
+
+    /** **직접 입력을 실제로 쳐 넣었는가.** 잔재 정리가 그 문구를 지우지 않도록 가른다. */
+    fun hasTypedManualText(): Boolean =
+        !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isNotBlank()
+
     fun hasBucketMessageChoice(): Boolean {
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)

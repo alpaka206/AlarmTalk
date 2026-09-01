@@ -114,7 +114,7 @@
 - **모서리 반경**: `ui/components/WakerDesign.kt` 의 `Waker*Shape` 토큰이 유일 출처.
   - `WakerTileShape`(12, 작은 타일·아이콘박스·인라인배너) / `WakerChipShape`(14, 칩·세그먼트·작은카드/행) / `WakerInputShape`·`WakerButtonShape`·`WakerPanelShape`(18, 입력·버튼·표준 카드/패널) / `WakerCardShape`(22, 큰 카드·다이얼로그 컨테이너) / `WakerHeroShape`(24, 히어로 카드) / `WakerDialogShape`(28, 대형 다이얼로그) / `WakerPillShape`(999, 캡슐).
   - `RoundedCornerShape(n.dp)` 를 새로 박지 말 것. `MaterialTheme.shapes` 도 이 토큰에서 파생됨.
-  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `RingingActivity` 잠금화면 슬라이더/스누즈(26/21dp — 고정 팔레트 화면 전용 스케일), `IosAlertDialog` 컨테이너(14dp — iOS UIAlertController 복제 스펙, 아래 「모달」 절 참조).
+  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `RingingActivity` 잠금화면 슬라이더/스누즈(26/21dp — 고정 팔레트 화면 전용 스케일), `IosAlertDialog` 컨테이너(**34dp** — iOS 26 실측. 14 는 iOS 7~18 시절 값이라 되돌리지 말 것, 아래 「모달」 절 참조).
 - **색**: `theme/AlarmTalkTheme.kt` 의 `colorScheme` 가 유일 출처. 항상 `MaterialTheme.colorScheme.*` 로 소비, **생 `Color(0x…)` 금지**.
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
@@ -228,7 +228,7 @@
   그러면 안드로이드의 표준 탈출구가 사라진다 — 지금은 일부러 열어 둔 쪽이다.)
 - **글자 크기는 `IosAlertType` 한 곳에서만** 정한다(Title/Message/Field/Action). 개별 모달에서
   `fontSize` 를 새로 박지 말 것.
-- **액션 높이 52dp** — 44dp 는 iOS 기준이고 안드로이드 최소 터치 타깃은 48dp 다.
+- **액션 높이 48dp** — 2026-08-11 시뮬레이터 실측값이다. 44 는 옛 iOS 기준이라 되돌리지 말 것.
 - **폼(입력 여러 개 + 저장)은 알럿이 아니다.** 운세 정보·목소리 등록처럼 필드가 여러 개인
   것은 지금대로 폼 모달로 둔다 — 알럿으로 욱여넣지 말 것.
 
@@ -382,22 +382,26 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   바인딩하면서 랜덤 생성을 끄는데, 유료 클론은 문구 5종이 **전부** 버킷으로 매핑되므로
   (`clonePrerenderBucketCategoryFor`) 사실상 **모든 저장**이 이 경로다. 그래서 `!voiceRandomPrompt`
   하나만 보고 판단하면 결과가 "가끔 안 된다" 가 아니라 "라이브 생성 폴백일 때만 된다" 가 된다.
-  - 버킷/직접입력 판정식은 언제나 **`!voiceRandomPrompt && !isActiveBucketAlarm()`** 이고, 이걸 쓰는
-  - ⚠ **표시와 저장은 판정식이 다르다**(2026-08-16 분리). `isActiveBucketAlarm()` 은 첫 줄에서
+  - ⚠ **질문이 셋이고, 각각 이름이 하나다**(2026-09-02 정리). 예전에는 이 셋을 호출부마다
+    `!voiceRandomPrompt && …` 로 **손으로 조립**했고, 그래서 철자가 셋으로 갈라져 여덟 자리에
+    흩어졌다 — 같은 사고가 다섯 번 재발했다(2026-07-21·08-05·08-12·08-16·08-31).
+    이제 조립하지 말고 **이름을 부른다**(`AlarmEditorState`):
+
+    | 질문 | 이름 | 재생 방식을 보는가 | 클립 바인딩을 보는가 |
+    | --- | --- | --- | --- |
+    | 울릴 때 클립을 쓰는가 | `isActiveBucketAlarm()` | ✅ | ✅ |
+    | 지금 클립이 묶여 있는가 | `hasBucketMessageChoice()` | ❌ | ✅ |
+    | 종류를 골랐는가 | `hasChosenBucketKind()` | ❌ | ❌ |
+
+    조립본도 이름이 있다: **표시**는 `isManualForDisplay()`, **저장**은 `isManualForSave()`,
+    **저장 갈래 가르기**는 `hasMessageKindChoice()`, **직접입력을 실제로 쳤는가**는
+    `hasTypedManualText()`. 호출부에서 `!voiceRandomPrompt && …` 를 새로 쓰지 말 것.
+  - ⚠ **표시와 저장은 답이 다를 수 있다**(2026-08-16 분리). `isActiveBucketAlarm()` 은 첫 줄에서
     `playMode == ALARM_ONLY` 면 false 다 — "**울릴 때** 클립을 쓰는가" 로는 맞지만, 그걸
     **문구 종류 표시**에 쓰면 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` →
     `직접 입력` 으로 뒤집힌다(실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 false).
-    **표시**(요약 행·pane 프리셀렉트·직접입력 여부)는 `hasBucketMessageChoice()`(재생 방식 무관),
-    **저장·오디오 바인딩**(`toDraft`·버킷 필드·컨텍스트 플래그)은 `isActiveBucketAlarm()`.
-    각 갈래 안에서는 여전히 철자까지 같아야 한다. 회귀 테스트
-    `AlarmEditorStateTest.alarmModeDoesNotChangeChosenMessageKind`.
-    자리는 **일곱**이다(2026-08-12 전수 확인): 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트와
-    `randomContext`·`manualText`(`AlarmEditorScreen` 의 `random_prompt`), `applyRandomPromptSettings`
-    의 `unchanged`, 요약 행(`VoiceAudioCard` 의 `MessageModeSummaryRow`), 목소리 교체 시
-    `losesManualText`(`VoiceAudioCard`), 무료 pane 의 `manualSelected`(`AlarmEditorScreen`).
-    **한 곳만 고치지 말 것** — 2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데
-    눌러 열면 '직접 입력' 이었다. 2026-08-12 에는 `manualSelected` 만 `selectedBucket == null` 을
-    직접 봐서(철자가 달랐다) 나머지 여섯과 반대로 답했다 — **철자까지 같아야 한다.**
+    그래서 표시는 `isManualForDisplay()`, 저장은 `isManualForSave()` 다.
+    회귀 테스트 `AlarmEditorStateTest.alarmModeDoesNotChangeChosenMessageKind`.
   - **iOS 도 같은 규약이다.** 대응 판정식은 `AlarmEditorSheet.currentMessageContext` 의
     `!randomPrompt && !isActiveStockClipAlarm` 이고, 저장은 `saveFlow` 의 스톡 분기다.
     ⚠ iOS 는 2026-08-12 까지 그 저장이 `voiceRandomContext = nil` 로 **종류를 통째로 버렸다** —

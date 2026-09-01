@@ -931,7 +931,7 @@ internal fun AlarmEditorScreen(
             // `hasBucketMessageChoice()`/`isActiveBucketAlarm()` 은 쓸 수 없다 — 둘 다
             // `audioCacheKey` 가 살아 있어야 true 라, 바인딩이 풀린 바로 그 상태에서 false 다.
             // (직접 입력을 고르면 `selectedBucket` 은 확실히 null 이 된다 — 문구 화면 두 곳.)
-            val bucketMessageChosen = editor.voiceRandomPrompt || editor.selectedBucket != null
+            val bucketMessageChosen = editor.hasMessageKindChoice()
             if (bucketMessageChosen && cloneBucketCategory != null) {
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                 // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
@@ -1115,9 +1115,7 @@ internal fun AlarmEditorScreen(
                 // 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히 사라진다.**
                 // 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을 고른 상태면
                 // 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 예전 그대로 돈다.
-                val manualChosen = !editor.voiceRandomPrompt &&
-                    editor.selectedBucket == null &&
-                    editor.voiceText.isNotBlank()
+                val manualChosen = editor.hasTypedManualText()
                 if (!freeVoiceTier && manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
@@ -1314,9 +1312,7 @@ internal fun AlarmEditorScreen(
             // 문구를 실제로 바꾸지 않았으면 기존 오디오를 버리지 않는다. 프리필이 생기면서
             // '들어갔다 확인만 누르는' 흐름이 흔해졌는데, 매번 재합성하면 직접 입력 월 한도
             // (manual-tts-quota)가 아무 변경 없이 깎인다.
-            val unchanged = !editor.voiceRandomPrompt &&
-                !editor.isActiveBucketAlarm() &&
-                nextText.trim() == editor.voiceText.trim()
+            val unchanged = editor.isManualForSave() && nextText.trim() == editor.voiceText.trim()
             editor.voiceRandomPrompt = false
             editor.voiceText = nextText
             editor.voiceLanguage = appVoiceLanguage
@@ -1784,7 +1780,7 @@ internal fun AlarmEditorScreen(
                 // (아래 manualText 와 같은 이유) 이것만으로 판별하면 '사랑'으로 저장한 알람을
                 // 다시 열었을 때 pane 이 '직접 입력'에 체크된 채 열린다.
                 // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                randomContext = if (editor.voiceRandomPrompt || editor.hasBucketMessageChoice()) {
+                randomContext = if (!editor.isManualForDisplay()) {
                     editor.voiceRandomContext
                 } else {
                     ManualMessageContext
@@ -1792,7 +1788,7 @@ internal fun AlarmEditorScreen(
                 // 직접 입력으로 저장된 알람만 기존 문구를 프리필한다. 버킷 알람도 저장 시
                 // voiceRandomPrompt=false + voiceText=클립문구가 되므로 버킷 여부를 함께 본다
                 // (안 그러면 사용자가 쓴 적 없는 클립 문구가 '내가 입력한 문구'처럼 나온다).
-                manualText = if (!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice()) {
+                manualText = if (editor.isManualForDisplay()) {
                     editor.voiceText
                 } else {
                     ""
@@ -1847,7 +1843,7 @@ internal fun AlarmEditorScreen(
                 // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
                 // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
                 // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
-                manualSelected = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
+                manualSelected = editor.isManualForDisplay(),
                 onSelectManual = {
                     // 문구가 **없을 때만** 입력창이 뜬다. 있으면 선택만 되고 '변경하기' 로 고친다.
                     //

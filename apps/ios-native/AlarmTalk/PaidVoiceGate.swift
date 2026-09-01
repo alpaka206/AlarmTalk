@@ -1,5 +1,17 @@
 import Foundation
 
+/// 플랜 상수.
+///
+/// ⚠ **원본은 `packages/shared/src/schemas/plan.ts` 다.** 네이티브는 TS 를 가져다 쓸 수
+/// 없어 손으로 두되, 값이 어긋나면 `scripts/check-plan-constants.py`(CI)가 잡는다.
+/// 목록을 호출부에서 즉석으로 만들지 말 것 — 그렇게 네 벌로 갈라져 있었다.
+enum PaidPlans {
+    /// 유료로 치는 `users.plan` 값.
+    static let userPlans: Set<String> = ["personal", "plus", "couple", "family"]
+    /// 유료로 치는 `plans.plan_type`. 커플은 `key='couple'` + `plan_type='family'` 다.
+    static let planTypes: Set<String> = ["personal", "family"]
+}
+
 /// 유료 목소리 권한을 **예약 시점에** 재확인한다.
 ///
 /// ## 왜 예약 시점인가 — iOS 와 안드로이드의 결정적 차이
@@ -72,7 +84,9 @@ enum PaidVoiceGate {
     /// - 응답은 있는데 `subscription` 이 nil 이면 서버가 '본인 구독 없음' 이라고 답한 것이다.
     ///   그때는 커플/가족 그룹 접근이 있는지 본다(본인 구독 없이 그룹으로 쓰는 멤버).
     /// - 본인 구독이 있으면 만료 시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게).
-    /// **유료 목소리 판정 — 우선순위 네 단**(2026-08-31, 안드로이드 `resolvePaidVoiceAccess` 와 같은 규칙).
+    /// **유료 목소리 판정 — 우선순위 다섯 단**(2026-08-31, 안드로이드 `resolvePaidVoiceAccess`
+    /// 와 같은 규칙). 2단(`users.plan = free` 가 남은 구독 행보다 위다)이 이 목록에서
+    /// 빠져 있었다 — 2026-09-02 정정. 전문은 `docs/spec/billing-lifecycle.md`.
     ///
     /// 1. **스토어가 유효하다고 하면 유료다 — 서버 만료로 절대 뒤집지 않는다**
     ///    (`docs/spec/billing-lifecycle.md` 「스토어가 권위다」). 자동갱신은 스토어에서 먼저
@@ -109,7 +123,7 @@ enum PaidVoiceGate {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
             // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
             switch plan {
-            case .some(let plan) where ["personal", "plus", "couple", "family"].contains(plan):
+            case .some(let plan) where PaidPlans.userPlans.contains(plan):
                 return .entitled
             default:
                 // ⚠ **여기서 `.unknown` 을 돌려주지 말 것.** '모름' 은 서버에 **한 번도 못

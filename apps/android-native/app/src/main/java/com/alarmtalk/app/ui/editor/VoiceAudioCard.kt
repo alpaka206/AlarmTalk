@@ -237,8 +237,7 @@ internal fun VoiceAudioCard(
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
                     val losesManualText = readySystemProfiles.any { it.id == option.id } &&
                         editor.voiceText.isNotBlank() &&
-                        !editor.voiceRandomPrompt &&
-                        !editor.isActiveBucketAlarm()
+                        editor.isManualForSave()
                     if (losesManualText) {
                         pendingVoiceSwitch = option
                     } else {
@@ -276,8 +275,7 @@ internal fun VoiceAudioCard(
                                     selectedBucket = editor.selectedBucket,
                                     weatherCity = editor.voiceWeatherCity,
                                     // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                                    manualSelected = !editor.voiceRandomPrompt &&
-                                        !editor.hasBucketMessageChoice(),
+                                    manualSelected = editor.isManualForDisplay(),
                                     // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
                                     // 아래 행이 이걸 `manualSelected` 보다 먼저 본다.
                                     nothingChosenYet = editor.voiceText.isBlank() &&
@@ -287,7 +285,7 @@ internal fun VoiceAudioCard(
                             } else {
                                 MessageModeSummaryRow(
                                     // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                                    isManual = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
+                                    isManual = editor.isManualForDisplay(),
                                     randomContext = editor.voiceRandomContext,
                                     onClick = onOpenRandomPromptSettings,
                                 )

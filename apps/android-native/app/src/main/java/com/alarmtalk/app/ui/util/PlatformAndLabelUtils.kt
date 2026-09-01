@@ -193,10 +193,29 @@ internal fun canShareVoiceWithOthers(
  * (`docs/spec/gates-and-overlays.md`). 그래서 판정기는 세 값을 돌려주고, 소비하는 쪽이
  * **모를 때 어느 쪽으로 기울지 스스로 밝히게** 한다.
  */
+/**
+ * 유료로 치는 `users.plan` 값.
+ *
+ * ⚠ **원본은 `packages/shared/src/schemas/plan.ts` 의 `PAID_USER_PLANS` 다.**
+ * 네이티브는 TS 를 가져다 쓸 수 없어 손으로 두되, 값이 어긋나면
+ * `scripts/check-plan-constants.py`(CI)가 잡는다. 목록을 여기서 즉석으로 만들지 말 것 —
+ * 그렇게 네 벌로 갈라져 있었고, 그중 하나에는 **도달할 수 없는 값**이 섞여 있었다.
+ */
+internal val PaidUserPlans = setOf("personal", "plus", "couple", "family")
+
+/**
+ * 유료로 치는 `plans.plan_type`.
+ *
+ * ⚠ 원본은 shared 의 `PAID_PLAN_TYPES`. 예전에는 여기에 `individual`·`plus`·`couple` 이
+ * 섞여 있었는데, DB CHECK 상 `plan_type` 은 `free|personal|family` 뿐이라 **도달할 수 없는
+ * 가지**였다(`migrations.ts`). 커플은 `key='couple'` + `plan_type='family'` 다.
+ */
+internal val PaidPlanTypes = setOf("personal", "family")
+
 internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
 
 /**
- * **유료 목소리 판정의 유일한 출처**(2026-08-31). 우선순위 네 단이고 순서가 규칙이다.
+ * **유료 목소리 판정의 유일한 출처**(2026-08-31). 우선순위 **다섯 단**이고 순서가 규칙이다.
  *
  * 1. **스토어가 유효하다고 하면 유료다 — 서버 만료로 절대 뒤집지 않는다.**
  *    「구독 수명주기 — 스토어가 권위다」(`docs/spec/billing-lifecycle.md`). 자동갱신은
@@ -252,7 +271,7 @@ internal fun resolvePaidVoiceAccess(
         plan == null || plan.isBlank() ->
             if (hasCoupleOrFamilyAccess(snapshot, familyGroup)) PaidVoiceAccess.Entitled
             else PaidVoiceAccess.NotEntitled
-        plan in setOf("personal", "plus", "couple", "family") -> PaidVoiceAccess.Entitled
+        plan in PaidUserPlans -> PaidVoiceAccess.Entitled
         else -> PaidVoiceAccess.NotEntitled
     }
 }
@@ -281,8 +300,7 @@ internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionRespons
     val subscription = subscriptionResponse?.subscription ?: return false
     if (subscription.status != "active") return false
     val plan = subscriptionResponse.plan ?: return false
-    return plan.key in setOf("personal", "plus", "couple", "family") ||
-        plan.planType in setOf("personal", "individual", "plus", "couple", "family")
+    return plan.key in PaidUserPlans || plan.planType in PaidPlanTypes
 }
 
 /**

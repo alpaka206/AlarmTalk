@@ -570,7 +570,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 상태 강제 | `LaunchedEffect(restrictToWeatherMedication, …)` | `coerceFreeVoiceTierConstraints` | — |
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
-| 아직이면 확정 안 함 | `prerenderPendingVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
+| 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
