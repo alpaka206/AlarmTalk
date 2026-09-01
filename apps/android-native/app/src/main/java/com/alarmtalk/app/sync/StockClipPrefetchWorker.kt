@@ -17,8 +17,11 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
-import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.AccessSnapshotStore
+import com.alarmtalk.app.isEntitledOptimistic
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
@@ -132,8 +135,24 @@ class StockClipPrefetchWorker(
             // (배치 격리는 아래에서 따로 고쳤지만, 애초에 보내지 않는 게 맞다.)
             // 플랜을 못 읽으면(네트워크 실패) **받는 쪽으로** 둔다 — 유료 사용자가 자기 클립을
             // 못 받는 것이 더 나쁘고, 무료면 그 요청만 403 으로 조용히 걸러진다.
+            // ⚠ **구독 행만 보면 보류를 놓친다**(2026-09-01 리뷰). 서버는 결제 보류에서
+            // 행을 남긴 채 `users.plan` 만 회수하므로, `hasPaidVoiceAccess`(status·plan key)
+            // 만 보면 권한이 없는 사용자의 클론 클립을 그대로 요청한다 — 403
+            // (`VOICE_LOCKED_FREE_PLAN`)을 받고 재시도를 소진한 끝에 FAILED 로 끝난다.
+            // 울림 게이트와 **같은 판정기**로 판단한다.
             val paidVoiceAccess = withContext(Dispatchers.IO) {
-                runCatching { hasPaidVoiceAccess(api.getSubscription(auth)) }.getOrDefault(true)
+                runCatching {
+                    val subscription = api.getSubscription(auth)
+                    val snapshot = AccessSnapshotStore(applicationContext).read(session.user.id)
+                    val now = System.currentTimeMillis()
+                    resolvePaidVoiceAccess(
+                        subscriptionResponse = subscription,
+                        familyGroup = snapshot.familyGroup,
+                        userPlan = snapshot.userPlan,
+                        storeEntitled = snapshot.storeSignalStillValid(now),
+                        nowMillis = now,
+                    ).isEntitledOptimistic()
+                }.getOrDefault(true)
             }
             val ownedProfileIds = if (!paidVoiceAccess) {
                 emptySet()

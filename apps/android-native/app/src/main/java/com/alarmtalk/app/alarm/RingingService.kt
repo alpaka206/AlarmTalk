@@ -45,6 +45,7 @@ import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.hasCoupleOrFamilyAccess
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -337,8 +338,7 @@ class RingingService : Service() {
         val now = System.currentTimeMillis()
         // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
         // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
-        val storeStillValid = snapshot.storePlanKey != null &&
-            (snapshot.storeEntitlementUntilMillis ?: 0L) > now
+        val storeStillValid = snapshot.storeSignalStillValid(now)
         resolvePaidVoiceAccess(
             subscriptionResponse = snapshot.subscriptionResponse,
             familyGroup = snapshot.familyGroup,

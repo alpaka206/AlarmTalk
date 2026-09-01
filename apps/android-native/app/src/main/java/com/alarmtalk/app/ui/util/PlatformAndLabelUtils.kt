@@ -251,6 +251,15 @@ internal fun resolvePaidVoiceAccess(
 }
 
 /**
+ * 캐시 스냅샷의 스토어 신호가 **아직 유효한가**(기한이 지난 것은 없는 것으로 본다).
+ *
+ * 울림·프리페치처럼 BillingClient 를 붙일 수 없는 경로가 [resolvePaidVoiceAccess] 의
+ * `storeEntitled` 를 채울 때 쓴다 — 손으로 갈라 쓰면 경로마다 기한 판정이 어긋난다.
+ */
+internal fun AccessSnapshot.storeSignalStillValid(nowMillis: Long): Boolean =
+    storePlanKey != null && (storeEntitlementUntilMillis ?: 0L) > nowMillis
+
+/**
  * **모르면 잠그지 않는다.** 표시·울림·저장/생성 게이트가 쓴다 — 잘못 잠그면 사용자는 산
  * 기능을 못 쓰고, 잘못 열어 두면 다음 동기화에서 정리된다. 후자가 회복 가능하다.
  */

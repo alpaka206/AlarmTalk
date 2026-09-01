@@ -579,14 +579,24 @@ struct AlarmTalkApp: App {
               socialFeatures.subscription != nil else {
             return
         }
-        let currentPlan = PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
-            storeTier: subscriptions.currentTier,
+        // ⚠ **판정은 `PaidVoiceGate.resolve` 하나로 한다**(2026-09-01 리뷰).
+        // `PlanTier.bestKnown` 은 구독 응답이 **있으면** `userPlan` 을 아예 보지 않는다
+        // (`serverSubscription == nil` 일 때만 후보에 넣는다). 결제 보류에서 서버는 구독
+        // 행을 남긴 채 plan 만 회수하므로, 그 조합이면 이 자리가 유료로 읽혀 **잠그지 않을
+        // 뿐 아니라 아래 복원 갈래로 빠져 이미 잠긴 알람까지 되돌린다.**
+        // 스토어는 지금 StoreKit 이 들고 있는 값이 곧 1단이라 따로 본다(기한 불필요).
+        let storeSaysPaid = subscriptions.currentTier.meetsOrExceeds(.personal)
+        let access = PaidVoiceGate.resolve(snapshot: AccessSnapshot(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            storePlanKey: nil,
+            storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan
-        )
+        ))
         // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
         // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
-        guard !currentPlan.meetsOrExceeds(.personal) else {
+        // 되돌리기 어려운 쪽(잠금)이라 **확실히 무료일 때만** 잠근다.
+        guard !storeSaysPaid, access == .notEntitled else {
             // ⚠ **유료로 돌아오면 대기표를 비운다.** 두 가지를 동시에 지킨다:
             // ① 아직 확인 안 한 강등 안내가 남아 있으면, 이미 유료가 된 사람에게
             //    "무료로 바뀌었어요" 를 띄우게 된다.

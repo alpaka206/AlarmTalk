@@ -142,6 +142,34 @@ final class PaidVoiceGateTests: XCTestCase {
         )
     }
 
+    /// 표시·게이트가 쓰는 `PlanTier.bestKnown` 도 같은 규칙이어야 한다 — 남아 있는 구독
+    /// 행으로 등급을 올리면 결제가 밀린 사용자에게 유료 UI 를 보여 주고 서버가 거부할
+    /// 액션을 유도한다. 단 스토어는 여전히 위다.
+    func test_bestKnown_ignoresRetainedRowWhenPlanSuspended() {
+        let plan = BillingPlan(
+            id: "p", key: "family", name: "가족", planType: "family",
+            periodDays: 30, maxMembers: 4, priceKrw: 5900
+        )
+        let response = BillingSubscriptionResponse(
+            subscription: subscription(status: "active", expiresAt: "2099-01-01T00:00:00Z"),
+            plan: plan,
+            nextPlan: nil
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "free"),
+            .free
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .free, userPlan: "family"),
+            .family
+        )
+        XCTAssertEqual(
+            PlanTier.bestKnown(serverSubscription: response, storeTier: .personal, userPlan: "free"),
+            .personal,
+            "스토어가 유효하다고 하면 서버의 free 로 뒤집지 않는다"
+        )
+    }
+
     /// 본인 구독이 없어도 커플/가족 그룹 멤버면 유료 목소리를 쓴다.
     func test_groupMemberWithoutOwnSubscription_doesNotDowngrade() {
         let plan = BillingPlan(

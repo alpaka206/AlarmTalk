@@ -253,6 +253,9 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
+| 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(`isDefinitelyFreePlan`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
+| 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
+| 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |
 | 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me` 응답의 `user.plan` | `MainViewModel.saveSubscriptionSnapshot` · `MainViewModelAuthActions`(auth 갱신) · `sync/PlanChangeSyncWorker` | `SocialFeatureViewModel.refreshAll`(받으면 적고, 못 받으면 미완 표시) |
 | 판정 스냅샷 — 갱신 직렬화 | — | `AccessSnapshotStore.mutate`(companion `LOCK`) | `AccessSnapshotStore.mutate`(static `NSLock`) |
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
