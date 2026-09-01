@@ -11,7 +11,9 @@ import androidx.work.WorkerParameters
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAppContainer
-import com.alarmtalk.app.hasCoupleOrFamilyAccess
+import com.alarmtalk.app.isDefinitelyFree
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
@@ -94,11 +96,25 @@ class PlanChangeSyncWorker(
                 return@runCatching Result.success()
             }
 
-            // '진짜 무료'만 변환: 유료 구독 없음 + 가족/커플 접근 없음 + user.plan 무료.
+            // '진짜 무료'만 변환한다. 판정은 **유일 판정기**로 하고(2026-09-01 리뷰),
+            // 스토어 신호를 반드시 넣는다 — Play 가 갱신을 확인해 준 기기에서 서버 반영이
+            // 잠깐 늦어 `users.plan` 이 free 로 보이는 순간에 이 워커가 돌면, 돈을 내고 있는
+            // 사용자의 클론 목소리 알람이 **영구 변환**된다(안드로이드는 되돌리지 않는다).
+            // 「스토어가 권위다」가 여기에도 걸려야 하는 이유다.
             val plan = freshUser.plan
-            val genuinelyFree = !hasPaidVoiceAccess(billing) &&
-                !hasCoupleOrFamilyAccess(billing, familyGroup) &&
-                (plan.isBlank() || plan == "free")
+            val now = System.currentTimeMillis()
+            val access = resolvePaidVoiceAccess(
+                subscriptionResponse = billing,
+                familyGroup = familyGroup,
+                userPlan = plan,
+                storeEntitled = snapshotStore.read(userId).storeSignalStillValid(now),
+                nowMillis = now,
+            )
+            // ⚠ **남아 있는 구독 행을 한 번 더 본다.** 판정기는 `users.plan = free` 를 행보다
+            // 위로 보므로(보류를 잡기 위한 규칙) 그것만으로 참이 되는데, 보류는 **회복형**이라
+            // 결제가 복구되면 살아난다. 울림·예약은 판정기 그대로 막히지만(되돌릴 수 있다),
+            // 이 자리의 변환은 되돌릴 수 없으니 행이 살아 있는 동안에는 하지 않는다.
+            val genuinelyFree = access.isDefinitelyFree() && !hasPaidVoiceAccess(billing)
             if (genuinelyFree) {
                 // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이
                 // 아니다 — `lockPaidAlarmTalks` 는 알람 행을 고치고 OS 예약을 **새로 거는**

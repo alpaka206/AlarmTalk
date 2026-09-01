@@ -1132,9 +1132,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         accessSnapshotStore.updateSubscription(userId, response)
-        // 구독과 **같이** 적는다 — 울림 경로가 그룹보다 먼저 보는 값이라, 한쪽만 갱신하면
-        // 서버가 '구독 없음' 이라 답한 순간 판정이 Unknown 으로 떨어져 통과해 버린다.
-        accessSnapshotStore.updateUserPlan(userId, authSession?.user?.plan)
+        // ⚠ **여기서 `users.plan` 을 같이 쓰지 않는다**(2026-09-01 리뷰). 이 자리가 아는
+        // plan 은 **마지막으로 `/auth/me` 를 받았을 때의 값**이라, 앱을 닫아 둔 사이 강등된
+        // 계정이 `plan_changed` 를 놓치면 옛 유료 값이다. 보류에서는 `/billing/subscription`
+        // 이 남아 있는 행을 그대로 돌려주므로 이 경로가 그대로 돌아 **판정에 옛 유료 plan 을
+        // 심고**, 잠금 이펙트의 `billingNotEntitled` 갈래도 (행이 살아 있어) 안 타서
+        // `refreshAppSession()` 이 불리지 않는다.
+        //
+        // 그래서 plan 은 **방금 받아 온 경로만** 적는다 — `refreshAppSession`(시작 시·
+        // plan_changed 시) 과 `PlanChangeSyncWorker`. 안 적혀 있으면 판정기가 구독·그룹으로
+        // 답하고(예전 동작), 그건 옛 값을 심는 것보다 낫다.
     }
 
     internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {

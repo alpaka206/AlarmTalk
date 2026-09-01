@@ -567,7 +567,11 @@ struct AlarmTalkApp: App {
             socialFeatures.subscription?.plan?.key ?? "no-plan-key",
             socialFeatures.subscription?.plan?.planType ?? "no-plan-type",
             subscriptions.currentTier.rawValue,
-            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading"
+            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading",
+            // ⚠ **`users.plan` 도 키다**(2026-09-01 리뷰). 보류는 구독 id·status·plan 을
+            // **그대로 두고** 이 값만 free 로 바꾼다 — 키에 없으면 `/auth/me` 가 갱신해도
+            // 키가 같아 이 태스크가 **다시 돌지 않고**, 판정기에 새 입력을 넣은 의미가 없다.
+            auth.session?.user.plan ?? "no-user-plan"
         ].joined(separator: "|")
     }
 
