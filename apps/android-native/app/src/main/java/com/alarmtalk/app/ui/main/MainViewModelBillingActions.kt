@@ -116,13 +116,23 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // ⚠ **확인 완료 표시는 계정 가드를 통과한 뒤에만 세운다**(2026-08-31 리뷰).
         // 앞에서 세우면 A 의 결과를 버리면서도 **B 의 확인이 끝난 것으로 표시**되어,
         // B 의 서버 구독이 만료돼 있고 B 자신의 조회는 아직인 사이 되돌릴 수 없는 강등이 걸린다.
+        //
+        // ⚠ **메모리 사본도 문을 지난 뒤에만 발행한다**(2026-09-02 리뷰). 위 `userId` 가드는
+        // **계정만** 보는데 `EntitlementWriter.write` 는 **세대(epoch)** 까지 본다 — 같은
+        // 사람이 로그아웃하고 다시 들어오면 id 는 같고 세대만 바뀐다. 그때 write 는 정확히
+        // 거절하는데 여기서 먼저 발행해 버리면 **새 세션이 옛 등급을 그대로 쓴다.**
+        // `storeEntitlementChecked` 가 특히 위험하다 — 그게 서면 되돌릴 수 없는 무료 강등
+        // (`billingNotEntitled` 잠금)이 걸릴 수 있다.
+        // 판정은 캐시 쓰기와 **같은 답**이어야 하므로 문의 결과 하나로 가른다.
+        //
+        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
+        val storeWrite = entitlementWriter.write(ticket, "play entitlement") {
+            it.copy(storePlanKey = nextKey, storeEntitlementUntilMillis = until)
+        }
+        if (storeWrite != EntitlementWrite.Applied) return@runCatching
         storeEntitlementChecked = true
         storePlanKey = nextKey
         storeEntitlementUntilMillis = until
-        // 울림 경로는 BillingClient 를 못 붙인다 — 캐시에 적어 둬야 그때도 스토어를 존중한다.
-        entitlementWriter.write(ticket, "play entitlement") {
-            it.copy(storePlanKey = nextKey, storeEntitlementUntilMillis = until)
-        }
         if (purchases.isNotEmpty()) {
             // 서버가 아직 모를 수 있다 — 멱등이므로 매번 보내도 안전하다.
             // 시작 계정을 함께 넘긴다(위 갈래와 같은 이유).

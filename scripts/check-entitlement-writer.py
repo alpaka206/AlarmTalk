@@ -16,6 +16,15 @@
 1. 원시 쓰기(`patchWithoutOwnershipCheck` / `patchWithoutOwnershipCheck(_:_:)`)를
    문 밖에서 부르는 것.
 2. 권한 스냅샷 필드를 문을 거치지 않고 직접 저장하는 것.
+3. **`write` 의 결과를 버리는 것.**
+
+3번은 2026-09-02 Codex 리뷰가 실제로 잡아낸 것이다. 규칙은 처음부터 이 파일 끝의 안내에
+「결과가 Applied 일 때만 화면 상태를 갱신한다」로 적혀 있었지만 **강제되지 않아서**,
+`MainViewModelBillingActions` 가 결과를 무시하고 스토어 등급을 먼저 발행하고 있었다.
+호출부의 계정 가드는 **id 만** 보는데 문은 **세대(epoch)** 까지 본다 — 같은 사람이
+로그아웃하고 다시 들어오면 id 는 같고 세대만 바뀌므로, 문은 정확히 거절하는데 화면·메모리
+상태는 옛 등급을 그대로 쓴다. `storeEntitlementChecked` 가 그렇게 서면 **되돌릴 수 없는
+무료 강등**까지 이어진다. 문을 만들어도 결과를 안 보면 문이 없는 것과 같다.
 
 허용된 파일은 아래 OWNERS 뿐이다.
 """
@@ -43,6 +52,21 @@ RAW_WRITE = re.compile(r"\bpatchWithoutOwnershipCheck\b")
 # 옛 API 가 되살아나는 것도 막는다(문을 우회하는 가장 쉬운 길이었다).
 REVIVED_API = re.compile(r"\b(updateStorePlanKey|updateUserPlan|updateSubscription|updateFamilyGroup)\s*\(")
 
+# 문을 부르는 줄. 트레일링 람다/클로저 때문에 호출은 여러 줄에 걸치므로 **시작 줄**만 본다.
+GATE_CALL = re.compile(r"\bentitlementWriter\s*\.\s*(write|writeNow)\s*\(")
+# 결과를 실제로 쓰는 모양들. `_ =` 는 "일부러 버린다"는 명시적 표시라 허용한다.
+RESULT_USED = re.compile(
+    r"""(
+        \b(val|var|let)\s+\w+\s*(:[^=]+)?=\s*$|   # val x =  (Kotlin/Swift)
+        \b(val|var|let)\s+\w+\s*(:[^=]+)?=\s*\S|
+        ^\s*(guard|if|while)\b|                     # guard/if 안에서 바로 판정
+        ^\s*return\b|                               # 결과를 그대로 돌려준다
+        _\s*=|                                       # 일부러 버린다는 명시
+        ^\s*\)                                       # 여러 줄 호출의 이어지는 줄
+    )""",
+    re.X,
+)
+
 
 def scan(root: Path, suffix: str) -> list[str]:
     problems: list[str] = []
@@ -55,7 +79,8 @@ def scan(root: Path, suffix: str) -> list[str]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for lineno, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        for lineno, line in enumerate(lines, 1):
             stripped = line.strip()
             # 주석은 규칙을 설명하려고 이름을 인용할 수 있다.
             if stripped.startswith(("//", "*", "/*", "#")):
@@ -70,6 +95,18 @@ def scan(root: Path, suffix: str) -> list[str]:
                 problems.append(
                     f"{rel}:{lineno}: 문을 우회하는 옛 API 가 되살아났다 — "
                     f"`EntitlementWriter.write(ticket, …)` 로 바꿀 것\n    {stripped}"
+                )
+            # ⚠ **앞 줄도 본다.** Kotlin 의 식 본문(`): EntitlementWrite =` 다음 줄에 호출)
+            #   처럼 결과를 쓰는 표시가 앞 줄에 있는 형태가 실제로 있다 — 한 줄만 보면
+            #   그걸 "결과를 버린다" 로 오판한다(2026-09-02 에 실제로 오탐이 났다).
+            prev = lines[lineno - 2].rstrip() if lineno >= 2 else ""
+            carried = prev.endswith("=") or prev.endswith("return")
+            if GATE_CALL.search(line) and not RESULT_USED.search(line) and not carried:
+                problems.append(
+                    f"{rel}:{lineno}: `write` 의 결과를 버린다 — 문이 거절해도 화면·메모리가 "
+                    f"옛 등급을 그대로 쓴다.\n"
+                    f"    결과를 받아 `Applied` 일 때만 상태를 갱신하라"
+                    f"(정말 버릴 거면 `_ =` 로 명시).\n    {stripped}"
                 )
     return problems
 

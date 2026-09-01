@@ -233,7 +233,13 @@ final class SocialFeatureViewModel: ObservableObject {
             guard subscriptionWrite == .applied else { return }
             subscription = resolvedSubscription
             if let freshPlan {
-                entitlementWriter.write(accessTicket, "auth/me plan") { $0.userPlan = freshPlan }
+                // ⚠ 위 두 쓰기와 **같은 규칙**이다 — 문이 거절하면 그 뒤도 전부 옛 세션의
+                // 것이므로 반영하지 않는다(2026-09-02 리뷰). 결과를 버리면 구독은 새 값인데
+                // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
+                let planWrite = entitlementWriter.write(accessTicket, "auth/me plan") {
+                    $0.userPlan = freshPlan
+                }
+                guard planWrite == .applied else { return }
                 // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
                 // 안드로이드 `PlanChangeSyncWorker` 와 같은 규칙). 기간 중 환불·회수는
                 // `plan_changed` 로 오는데 배경 경로는 이 갱신 하나만 돈다 — 캐시에 남은

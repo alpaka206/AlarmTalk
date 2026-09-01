@@ -1272,11 +1272,15 @@ internal fun MainViewModel.refreshAppSession() {
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
-                entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
+                val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
                     it.copy(userPlan = saved.user.plan)
                 }
-                // 메모리 사본도 맞춘다 — 판정은 이 값을 먼저 본다(`effectiveUserPlan`).
-                storeSnapshotUserPlan = saved.user.plan
+                // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
+                // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
+                // 메모리가 갈라진다 — 그리고 갈라졌을 때 이기는 쪽이 **거절된 값**이다.
+                if (planWrite == EntitlementWrite.Applied) {
+                    storeSnapshotUserPlan = saved.user.plan
+                }
             }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
