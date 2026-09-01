@@ -2050,7 +2050,7 @@ async function findCachedGeneratedAudio(
   const result = await db.execute({
     sql: `SELECT ga.message_id, ga.provider,
                  COALESCE(ga.text, m.synthesis_text, m.text) AS synthesis_text,
-                 ga.audio_url, ga.audio_object_key, ga.audio_format, ga.mime_type
+                 ga.audio_url, ga.audio_object_key, ga.audio_format
           FROM generated_audio_assets ga
           JOIN messages m ON m.id = ga.message_id
           WHERE ${options?.anyUser ? '' : 'ga.user_id IN (?, ?) AND '}ga.request_hash = ?

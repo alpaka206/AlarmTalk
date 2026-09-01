@@ -2352,6 +2352,41 @@ export const migrations: Migration[] = [
         ON CONFLICT(sender_user_id, recipient_user_id, time) DO NOTHING`,
     ],
   },
+  {
+    id: 108,
+    name: 'drop-unused-index-and-column',
+    // 2026-09-02 구조 감사에서 **읽는 코드가 하나도 없다**고 확인된 것만 지운다.
+    // 각 항목은 반증 단계를 거쳤다(조사 → "쓰는 곳을 찾아내려 애쓴다" → 살아남은 것만).
+    // 전문: `docs/qa/structural-audit-2026-09-02.md` §5.
+    //
+    // ⚠ **여기 없는 것은 일부러 뺐다.**
+    //  - `subscriptions` 의 apple 컬럼 3개: #82 가 뺐고 **#96 이 iOS 되살리기의 일부로
+    //    의도적으로 되살렸다**(4주 전). 지금 지우면 같은 컬럼의 **세 번째 왕복**이다.
+    //  - `users.deletion_requested_at`: 「탈퇴 신청 시각 = 처리 이력 증빙이므로 유지」가
+    //    이미 문서화된 결정이다(`cleanup-audit-2026-08-01.md`). 개인정보보호법 21조 기산점.
+    //  - `generated_audio_assets.model_id`/`language`, `voice_uploads.size_bytes`/
+    //    `duration_ms`: **NOT NULL 이라 테이블 재작성이 필요하고**, 재작성을 건너뛰고
+    //    DROP COLUMN 만 하면 `scripts/check-insert-not-null.py`(CI 필수 체크)가 빨개진다
+    //    — 그 검사는 `DROP COLUMN` 을 추적하지 않는다. 별도 릴리스로 다룬다.
+    statements: [
+      // ① `generated_audio_assets.mime_type` — 캐시 히트마다 SELECT 해 놓고 버린다.
+      //    `tts.ts` 가 `ga.mime_type` 을 고르지만 반환 객체에 넣지 않는다(직접 확인).
+      //    재구성 가능: `voice-provider.ts` 가 outputFormat='mp3'/mimeType='audio/mpeg' 로
+      //    하드코딩이라 audio_format→MIME 이 1:1 이다. DEFAULT 가 있어 1릴리스로 끝난다.
+      `ALTER TABLE generated_audio_assets DROP COLUMN mime_type`,
+      // ② `idx_voice_profiles_lru` — 주석이 광고하는 가속을 실제로는 못 한다.
+      //    LRU 선정 쿼리가 `ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC`
+      //    라 이 인덱스 순서와 맞지 않고, `last_used_at` 을 WHERE 술어로 쓰는 쿼리는 0건이며
+      //    (나머지 3곳은 전부 `SET last_used_at = ...`), SELECT 하는 컬럼도 안 담아 커버링
+      //    이득도 없다. 쓰기마다 유지 비용만 낸다.
+      `DROP INDEX IF EXISTS idx_voice_profiles_lru`,
+      // ③ `idx_voucher_codes_status` — status 가 선행 술어인 쿼리가 하나도 없다.
+      //    `voucher_codes` 접근 21곳을 전수 확인했고 전부 id / code_hash /
+      //    issuer_subscription_id / issuer_user_id 로 거른다(각각 다른 인덱스가 덮는다).
+      //    게다가 3값짜리 저카디널리티라 있어도 도움이 안 된다.
+      `DROP INDEX IF EXISTS idx_voucher_codes_status`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
