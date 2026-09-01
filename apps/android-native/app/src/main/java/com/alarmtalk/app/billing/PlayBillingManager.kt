@@ -371,6 +371,9 @@ class PlayBillingManager(
      */
     private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? =
         queryActiveSubscriptions(accountHash)
+            // 교체 후보는 **내 것만**이다. 임자를 알 수 없는 레거시 구매를 교체하면 남의
+            // 구독을 취소·비례정산시킬 수 있다(위 주석).
+            ?.mine
             .orEmpty()
             .filter { productId !in it.products }
             .maxByOrNull { it.purchaseTime }
@@ -385,14 +388,15 @@ class PlayBillingManager(
      *
      * ⚠ **계정 대조를 반드시 함께 한다.** 같은 구글 계정에 **다른 AlarmTalk 계정**으로 결제된
      * 구독이 있을 수 있는데, 그걸 세면 공용 폰에서 남의 구독이 이 계정의 등급을 올린다.
-     * 식별자가 없는 레거시 구매나 비로그인(accountHash == null)은 **세지 않는다** —
-     * 못 세는 것은 '무료' 가 아니라 '모름' 이고, 판정기가 다음 단으로 내려간다.
+     * 비로그인(accountHash == null)은 아예 못 묻는다(`null`).
+     * 식별자가 없는 레거시 구매는 **세지도, 버리지도 않고** [ActiveSubscriptionQuery.unattributed]
+     * 로 따로 준다 — 버리면 빈 목록이 되어 "스토어가 없다고 했다" 로 읽히기 때문이다.
      *
      * ⚠ **반환값 `null` 과 빈 리스트는 뜻이 다르다**(2026-08-31 리뷰).
      * `null` = **못 물어봤다**(연결 실패·응답 오류·비로그인), `emptyList` = **스토어가 없다고
      * 답했다**. 둘을 같게 다루면 오프라인 한 번에 결제 중인 사용자의 신호가 지워진다.
      */
-    suspend fun queryActiveSubscriptions(accountHash: String?): List<Purchase>? {
+    suspend fun queryActiveSubscriptions(accountHash: String?): ActiveSubscriptionQuery? {
         if (accountHash == null) return null
         if (!ensureConnected()) return null
         val result = billingClient.queryPurchasesAsync(
@@ -404,11 +408,27 @@ class PlayBillingManager(
             Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
             return null
         }
-        return result.purchasesList.filter {
-            it.purchaseState == Purchase.PurchaseState.PURCHASED &&
-                it.accountIdentifiers?.obfuscatedAccountId == accountHash
-        }
+        val purchased = result.purchasesList.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+        return ActiveSubscriptionQuery(
+            mine = purchased.filter { it.accountIdentifiers?.obfuscatedAccountId == accountHash },
+            unattributed = purchased.filter { it.accountIdentifiers?.obfuscatedAccountId == null },
+        )
     }
+
+    /**
+     * 스토어가 답한 활성 구독 — **내 것**과 **임자를 알 수 없는 것**을 나눠 준다.
+     *
+     * ⚠ **둘을 합치지도, 뒤엣것을 버리지도 말 것**(2026-09-01 리뷰). `obfuscatedAccountId`
+     * 를 붙이기 **전에** 산 구독에는 식별자가 없다. 그걸 그냥 걸러 내면 결과가 빈 목록,
+     * 즉 "스토어가 없다고 했다" 가 되어 **확인 완료로 표시하고 캐시까지 지운다** — RTDN 을
+     * 놓쳐 서버 기간이 만료돼 있으면 그 길로 되돌릴 수 없는 잠금이 걸린다. 반대로 내 것으로
+     * 세면 같은 기기의 다른 계정이 남의 구독을 물려받는다.
+     * 그래서 '모른다' 로 남기고 [Listener] 복원으로 서버에 붙여 판정을 서버에 맡긴다.
+     */
+    data class ActiveSubscriptionQuery(
+        val mine: List<Purchase>,
+        val unattributed: List<Purchase>,
+    )
 
     /** 계정 식별자 해시 — 호출부가 같은 계약으로 만들 수 있게 연다(서버와 공유하는 SHA-256 hex). */
     fun accountHashFor(userId: String?): String? =

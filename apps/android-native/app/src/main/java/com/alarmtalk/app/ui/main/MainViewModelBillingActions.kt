@@ -40,7 +40,22 @@ internal suspend fun MainViewModel.refreshStoreEntitlement() {
         // 오프라인·연결 실패에서 신호를 지우면, 서버 스냅샷이 갱신 전 만료시각을 들고 있는
         // **결제 중인 사용자가 곧바로 무료로 떨어진다.** 못 물어봤으면 **이전 값을 그대로 둔다** —
         // 그 값에는 기한이 붙어 있어 오래 살아남지도 않는다(`STORE_ENTITLEMENT_TTL_MILLIS`).
-        val purchases = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
+        val query = playBilling.queryActiveSubscriptions(hash) ?: return@runCatching
+        // ⚠ **임자를 알 수 없는 구독이 있으면 '확인했다' 고 하지 않는다**(2026-09-01 리뷰).
+        // `obfuscatedAccountId` 를 붙이기 **전에** 산 구독에는 식별자가 없어 내 것으로도
+        // 남의 것으로도 셀 수 없다. 그걸 그냥 걸러 내면 결과가 빈 목록 — "스토어가 없다고
+        // 했다" 가 되어 확인 완료 표시를 세우고 캐시까지 지운다. RTDN 을 놓쳐 서버 기간이
+        // 만료돼 있으면 그 길로 **되돌릴 수 없는 잠금**이 걸린다. 돈을 내고 있는 사용자에게.
+        // 그래서 여기서는 아무것도 확정하지 않고, 복원만 보내 **서버가 붙여 판정하게** 한다.
+        if (query.mine.isEmpty() && query.unattributed.isNotEmpty()) {
+            android.util.Log.i(
+                "MainViewModel",
+                "Store has unattributed subscriptions; leaving entitlement undetermined",
+            )
+            runCatching { playBilling.restorePurchases() }
+            return@runCatching
+        }
+        val purchases = query.mine
         val nextKey = purchases
             .flatMap { it.products }
             .mapNotNull { com.alarmtalk.app.billing.PlayBillingProducts.planKeyFor(it) }

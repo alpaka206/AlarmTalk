@@ -102,10 +102,15 @@ final class SocialFeatureViewModel: ObservableObject {
         // `entitlementSnapshotComplete` 는 옛 true 로 남아 클론 오디오가 예약된 채 있는다.
         refreshGeneration &+= 1
         let generation = refreshGeneration
-        let shouldSetBusy = !isRefreshing
-        if shouldSetBusy { isRefreshing = true }
+        if !isRefreshing { isRefreshing = true }
+        // ⚠ **내린는 것은 '지금 세대' 뿐이다**(2026-09-01 리뷰 3차 정정). 세운 사람이
+        // 내리게 하면, 밀려난 갱신이 세대 가드에서 돌아가면서 **진행 중인 `force` 갱신의
+        // 깃발을 대신 내린다** — 그 틈에 들어온 화면 갱신이 admission 을 통과해 세대를 또
+        // 올리고 `force` 를 무효로 만든다. 반대로 '세운 사람만' 으로 두면 이번엔 아무도
+        // 못 내려 깃발이 영영 켜진 채 남는다(밀려난 쪽은 소유자인데 내리지 않으므로).
+        // 그래서 **소유권을 세대로** 본다: 마지막에 시작한 갱신이 끝날 때 내린다.
         defer {
-            if shouldSetBusy { isRefreshing = false }
+            if generation == refreshGeneration { isRefreshing = false }
         }
 
         var messages: [String] = []
