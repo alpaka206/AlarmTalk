@@ -94,10 +94,14 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
-        refreshGeneration &+= 1
-        let generation = refreshGeneration
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
+        // ⚠ **세대는 통과한 뒤에 올린다**(2026-09-01 리뷰 2차 정정). 위 가드 **앞**에서
+        // 올리면, 곧바로 돌아갈 화면 갱신이 진행 중인 `force`(plan_changed) 갱신의 세대를
+        // 무효로 만들어 놓고 **대체를 시작하지도 않는다** — 강등 정합화가 통째로 사라지고
+        // `entitlementSnapshotComplete` 는 옛 true 로 남아 클론 오디오가 예약된 채 있는다.
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         let shouldSetBusy = !isRefreshing
         if shouldSetBusy { isRefreshing = true }
         defer {
@@ -187,7 +191,10 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
-        refreshGeneration &+= 1
+        // ⚠ **여기서는 세대를 올리지 않는다 — 잡아 두기만 한다.** 이 갱신은 구독 하나만
+        // 쓰는 좁은 경로라, 올리면 더 넓은 `refreshAll`(plan·그룹·확정 표시까지 쓴다)이
+        // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
+        // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
         let generation = refreshGeneration
         do {
             let nextSubscription = try await api.getSubscription(token: token)
