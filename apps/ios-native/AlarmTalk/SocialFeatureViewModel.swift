@@ -44,6 +44,13 @@ final class SocialFeatureViewModel: ObservableObject {
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
     private var activeUserID: String?
+    /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
+    ///
+    /// ⚠ `force: true`(plan_changed) 는 `isRefreshing` 을 건너뛰므로 평소 갱신과 **동시에**
+    /// 돈다. 계정 가드만으로는 둘 다 통과하니, 먼저 시작해 옛 유료 plan 을 들고 있던 쪽이
+    /// 늦게 끝나면 방금 쓴 `free` 를 덮고 스냅샷을 '확정' 으로까지 표시한다 — 강등 정합화가
+    /// 그 한 번의 경합으로 무효가 된다.
+    private var refreshGeneration = 0
 
     init(
         api: AlarmTalkAPI = .shared,
@@ -87,6 +94,8 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
         let shouldSetBusy = !isRefreshing
@@ -101,7 +110,7 @@ final class SocialFeatureViewModel: ObservableObject {
         var entitlementOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
             familyGroupOK = true
@@ -118,7 +127,7 @@ final class SocialFeatureViewModel: ObservableObject {
             async let nextVouchers = api.listVouchers(token: token)
             let resolvedSubscription = try await nextSubscription
             let resolvedVouchers = try await nextVouchers
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
             // 그룹보다 먼저 보는 값이라 구독과 **같이** 적어 둔다(보류 판정의 근거).
             //
             // ⚠ **요청 전에 잡아 둔 세션의 plan 을 쓰지 말 것**(2026-08-31 리뷰).
@@ -148,7 +157,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
-            guard activeUserID == userID else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return }
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             if let freshPlan { accessSnapshotStore.updateUserPlan(userID: userID, plan: freshPlan) }
@@ -162,7 +171,7 @@ final class SocialFeatureViewModel: ObservableObject {
             ))
         }
 
-        guard activeUserID == userID else { return }
+        guard activeUserID == userID, generation == refreshGeneration else { return }
         entitlementSnapshotComplete = familyGroupOK && entitlementOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
@@ -178,9 +187,12 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         do {
             let nextSubscription = try await api.getSubscription(token: token)
-            guard activeUserID == userID else { return }
+            // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
+            guard activeUserID == userID, generation == refreshGeneration else { return }
             subscription = nextSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: nextSubscription)
         } catch {
