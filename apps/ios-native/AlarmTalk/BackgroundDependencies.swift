@@ -155,6 +155,18 @@ final class BackgroundDependencies {
         return true
     }
 
+    /**
+     * StoreKit 권한을 **다시 계산**한다(전경 앱이 꽂아 준다).
+     *
+     * ⚠ **여기서 `SubscriptionManager` 를 새로 만들지 말 것.** 그 타입은 init 에서
+     * `Transaction.updates` 리스너를 띄우므로, 인스턴스가 둘이면 갱신·구매가 서버로
+     * **두 번** 올라간다. 전경의 `@StateObject` 하나만 두고 이 훅으로 부른다.
+     *
+     * nil 이면(푸시만으로 깨어나 화면이 아직 없는 실행) 건너뛴다 — 다음 전경 진입의
+     * `bootstrap`/`resyncEntitlements` 가 같은 일을 한다.
+     */
+    var revalidateStoreEntitlement: (() async -> Void)?
+
     private init() {
         // 화면 확인 모드에서는 표본이 진짜 저장소에 남지 않도록 임시 파일을 쓴다
         // (`UIPreviewSeed.ephemeralAlarmStorageURL` 주석).

@@ -145,7 +145,13 @@ class PlanChangeSyncWorker(
                 nowMillis = now,
             ).isDefinitelyFree()
             if (serverSaysFree) {
-                snapshotStore.updateStorePlanKey(userId, null, null)
+                // ⚠ **이것도 세대 락 안에서**(2026-09-01 리뷰). 앞의 발행 블록을 통과했다고
+                // 그 권한이 계속 유효한 게 아니다 — 락이 풀린 사이 같은 계정이 재로그인해
+                // **방금 확인한 유료 Play 신호를 발행**했는데, 이 옛 워커가 그걸 지우면
+                // 서버 스냅샷이 아직 갱신 전인 새 세션에서 울림 게이트가 유료 오디오를 막는다.
+                sessionStore.runIfGeneration(startGeneration) {
+                    snapshotStore.updateStorePlanKey(userId, null, null)
+                }
             }
             if (genuinelyFree) {
                 // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이

@@ -584,6 +584,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)
+            // ⚠ **StoreKit 도 다시 읽는다**(2026-09-01 리뷰). 기간 중 환불·회수는 캐시에
+            // 남은 **원래 만료 시각**을 무효로 만드는데, 그 신호는 판정 1단이라 서버가
+            // 무엇을 말하든 이깁니다 — 다시 읽지 않으면 그 시각까지 클론이 예약된 채 남는다.
+            // 캐시를 손으로 지우는 대신 재계산하게 두는 이유: 환불된 트랜잭션은
+            // `currentEntitlements` 에서 빠지므로 정확히 끊기고, **살아 있으면 그대로 둔다**
+            // (서버가 RTDN 을 놓쳐 free 로 보일 때 결제 중인 사용자를 잠그지 않는다).
+            await deps.revalidateStoreEntitlement?()
             // ⚠ **스냅샷만 갱신하면 이미 걸린 예약은 그대로다.** 플랜 잠금을 적용하는
             // `applyFreePlanVoiceLockIfNeeded` 는 화면의 `.task` 라 여기서는 돌지 않는다.
             // 대신 리컨사일러를 돌린다 — 그 판정은 `effectiveRecordForScheduling`(유료

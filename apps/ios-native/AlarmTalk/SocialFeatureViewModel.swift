@@ -246,19 +246,17 @@ final class SocialFeatureViewModel: ObservableObject {
                 // **원래 만료 시각**이 판정 1단이라, 그걸 안 끊으면 그 시각까지 클론 오디오가
                 // 계속 예약된다. 판정은 **스토어 신호를 빼고**(빼지 않으면 지우려는 그
                 // 상황에서만 조건이 거짓이 된다) 서버가 준 값만으로 한다.
-                var serverOnly = AccessSnapshot.empty
-                serverOnly.subscriptionResponse = resolvedSubscription
-                serverOnly.familyGroup = familyGroup
-                serverOnly.userPlan = freshPlan
-                // ⚠ **권위 있는 갱신에서만 끊는다**(2026-09-01 리뷰 2차 정정). 이 함수는
-                // 앱 시작·탭 진입에서도 도는데, 그때 서버 스냅샷이 아직 옛 free 이고 StoreKit
-                // 은 이미 갱신을 확인했을 수 있다 — 무조건 끊으면 **살아 있는 스토어 신호를
-                // 지워 돈 내는 사용자의 클론을 강등한다.** `force` 는 `plan_changed` 푸시와
-                // 사용자 쓰기(해지·그룹 나가기) 뒤에만 참이라, 서버가 방금 확정한 회차다.
-                // (안드로이드는 이 로직이 `PlanChangeSyncWorker` 안에 있어 원래 그 조건이었다.)
-                if force, PaidVoiceGate.resolve(snapshot: serverOnly) == .notEntitled {
-                    accessSnapshotStore.updateStorePlanKey(userID: userID, planKey: nil, untilMillis: nil)
-                }
+                // ⚠ **여기서 스토어 캐시를 지우지 않는다**(2026-09-01 리뷰 3차 정정).
+                // 29차에는 무조건, 30차에는 `force` 일 때 지웠는데 **둘 다 틀렸다** —
+                // `force` 는 '서버가 강등을 확정했다' 가 아니다: 이용권 시트 진입, 설정 저장,
+                // 구매 성공, 목소리 삭제, 가족 알람 생성이 전부 `force: true` 로 이 갱신을
+                // 부른다. 그때 StoreKit 은 갱신을 확인했는데 서버가 아직 옛 free 이면
+                // **살아 있는 신호를 지워 돈 내는 사용자를 강등한다.**
+                //
+                // 캐시가 낡았는지 아는 유일한 권위는 **StoreKit 자신**이다. 그래서 지우는 대신
+                // `plan_changed` 경로가 `refreshPurchasedProducts()` 를 다시 돌린다 —
+                // 환불·회수된 트랜잭션은 `currentEntitlements` 에서 빠지므로 그 재계산이
+                // 캐시를 정확히 끊고, 살아 있으면 그대로 둔다(`PushNotificationCoordinator`).
             }
             vouchers = resolvedVouchers
             entitlementOK = planOK

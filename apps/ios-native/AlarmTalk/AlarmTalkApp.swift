@@ -116,6 +116,11 @@ struct AlarmTalkApp: App {
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
                         // 백엔드 confirm 성공 시 기존 구독 fetch 경로로 서버 구독
                         // 상태를 새로고침하도록 훅을 먼저 연결한다.
+                        // 배경 `plan_changed` 경로가 StoreKit 을 다시 읽을 수 있도록 꽂아 둔다
+                        // (그 경로에는 `SubscriptionManager` 가 없다 — 새로 만들면 리스너가 겹친다).
+                        BackgroundDependencies.shared.revalidateStoreEntitlement = { [weak subscriptions] in
+                            await subscriptions?.refreshPurchasedProducts()
+                        }
                         subscriptions.onServerEntitlementUpdated = { [weak socialFeatures, weak auth] in
                             guard let socialFeatures, let auth else { return }
                             await socialFeatures.refreshSubscriptionSilently(session: auth.session)
@@ -245,6 +250,9 @@ struct AlarmTalkApp: App {
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
+                            // StoreKit 도 다시 읽는다 — 환불·회수는 캐시된 만료 시각을
+                            // 무효로 만드는데 그 신호가 판정 1단이다(배경 경로와 같은 이유).
+                            await subscriptions.refreshPurchasedProducts()
                         }
                         // ⚠ 푸시 해제 훅은 **launch 에서** 꽂는다(`PushAppDelegate`) —
                         // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
@@ -577,9 +585,13 @@ struct AlarmTalkApp: App {
 
     @MainActor
     private func applyFreePlanVoiceLockIfNeeded() async {
+        // ⚠ **`hasLoadedEntitlements` 를 입구에서 요구하지 않는다**(2026-09-01 리뷰).
+        // 임자를 알 수 없는 레거시 StoreKit 구매만 있는 계정은 그 플래그를 **일부러 세우지
+        // 않는다** — 입구에서 막으면 서버가 유료라고 확인해 줘도 **복원 갈래에 영영 닿지
+        // 못해** 잘못 잠긴 알람이 그대로 남는다(`restorePaidVoiceAlarms` 의 유일한 호출부다).
+        // 되돌릴 수 없는 **잠금** 쪽에서만 그 플래그를 요구한다(아래).
         guard auth.session != nil,
               alarmStore.hasLoadedFromDisk,
-              subscriptions.hasLoadedEntitlements,
               socialFeatures.subscription != nil else {
             return
         }
@@ -600,7 +612,8 @@ struct AlarmTalkApp: App {
         // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
         // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
         // 되돌리기 어려운 쪽(잠금)이라 **확실히 무료일 때만** 잠근다.
-        guard !storeSaysPaid, access == .notEntitled else {
+        // 잠금은 되돌릴 수 없으므로 **스토어에 물어본 뒤에만** 한다.
+        guard !storeSaysPaid, access == .notEntitled, subscriptions.hasLoadedEntitlements else {
             // ⚠ **유료로 돌아오면 대기표를 비운다.** 두 가지를 동시에 지킨다:
             // ① 아직 확인 안 한 강등 안내가 남아 있으면, 이미 유료가 된 사람에게
             //    "무료로 바뀌었어요" 를 띄우게 된다.
