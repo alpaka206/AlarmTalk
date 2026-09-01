@@ -583,11 +583,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * ⚠ Play 에는 iOS `Transaction.updates` 같은 **푸시가 없다** — 실시간 신호는 서버로 가는
      * RTDN 이다. 그래서 여기서는 **폴링**한다(앱 시작·전경 진입).
      */
-    var storePlanKey by mutableStateOf<String?>(null)
+    /**
+     * ⚠ **콜드 스타트에 캐시에서 되살린다**(2026-09-01 리뷰). null 로 시작하면, 앱을 켠
+     * 직후 BillingClient 가 연결되지 않는 동안(비행기모드·Play 서비스 문제) 전경 게이트가
+     * 전부 '스토어 신호 없음' 으로 읽는다 — `refreshStoreEntitlement` 는 못 물어봤을 때
+     * **저장된 신호를 일부러 그대로 두는데**, 정작 화면은 그 값을 못 본다.
+     */
+    var storePlanKey by mutableStateOf<String?>(initialAccessSnapshot.storePlanKey)
         internal set
 
     /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
-    var storeEntitlementUntilMillis by mutableStateOf<Long?>(null)
+    var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
         internal set
 
     /**

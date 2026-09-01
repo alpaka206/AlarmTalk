@@ -521,6 +521,15 @@ internal fun MainViewModel.confirmGooglePurchase(
     // 전역 state 에 발행**하고 `saveSubscriptionSnapshot` 은 **지금 계정 B** 로 키를 잡는다 —
     // A 의 바우처·초대코드가 B 화면에 뜨고 A 의 구독이 B 의 접근 스냅샷에 박힌다.
     val ownerUserId = startedByUserId ?: authSession?.user?.id
+    // ⚠ **바뀐 계정으로는 아예 보내지 않는다**(2026-09-01 리뷰). 시작 계정을 잡아 두는 것만
+    // 으로는 부족하다 — 아래 `authorization` 은 **지금 계정의** 토큰이라, 그대로 보내면
+    // A 의 구매가 B 의 인가로 서버에 제출된다(서버가 거절하고 A 의 정합화는 사라진다).
+    // 응답을 버리는 게 아니라 **요청을 하지 않는 것**이 맞다.
+    if (startedByUserId != null && authSession?.user?.id != startedByUserId) {
+        android.util.Log.i("MainViewModel", "Skipping Play confirm: account changed before request")
+        if (ownsBusy) billingBusy = false
+        return
+    }
     viewModelScope.launch {
         if (ownsBusy) billingBusy = true
         runCatching {
