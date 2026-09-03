@@ -1135,17 +1135,12 @@ tts.post('/generate', async (c) => {
         400,
       );
     }
-    // ⚠ **태그를 뺀 길이로 잰다** — 아래 최종 검사(`Prepared text must be…`)와 **같은 규칙**이다.
-    //   200자는 「사용자에게 들리는 말」의 상한이고 태그는 낭독되지 않는다(2026-08-13 C안).
-    //   여기만 원시 길이로 재고 있어서, 같은 요청이 같은 200 을 **두 가지 방식으로** 통과해야
-    //   했다. 실제로 영어 프리셋(`[caring] … [encouraging] …`)에 호칭을 붙이면 태그 23자
-    //   때문에 202자가 되어 400 이 났다 — 들리는 말은 179자인데도.
-    if (normalizeAlarmTextWithoutTags(requestText).length > 200) {
-      return c.json(
-        { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
-        400,
-      );
-    }
+    // ⚠ **여기에 길이 검사를 다시 두지 말 것**(2026-09-03 리뷰 12차). 상한은 두 곳에서만
+    //   잰다: 위쪽의 `userTypedText`(사용자가 친 글자)와 합성 직전의 최종 안전망
+    //   (`Prepared text must be…`, 프리셋 면제). 예전에 여기 있던 세 번째 검사는
+    //   **프리셋을 면제하지 않아** `random_context=preset` 라이브 폴백이 400 으로 죽었다 —
+    //   면제를 넣은 최종 검사에 닿기도 전에 막혔다. 사용자 입력에 대해서는 위 검사가
+    //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
     // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),

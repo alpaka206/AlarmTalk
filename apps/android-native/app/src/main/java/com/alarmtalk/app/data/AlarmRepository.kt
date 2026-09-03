@@ -1775,9 +1775,19 @@ class AlarmRepository(
     private companion object {
         // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
-        val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
+        val MATCHING_BUCKET_IDS = MatchingBucketIds
     }
 }
+
+/**
+ * **조건/테마로 클립을 고르는 버킷** — 순차 회전이 아니라 절대 인덱스로 고른다.
+ *
+ * ⚠ 이 버킷들은 `contextVariantIndex`(날씨) 나 사주 입력(운세)이 있어야 제 클립을 고른다.
+ *   그 값이 없는 채로 전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로,
+ *   운세는 빈 프로필 해시로 떨어진다. 그래서 그 값을 못 채우는 경로는 이 목록을 보고
+ *   비켜 가야 한다(`StockClipLanguageRebinder`).
+ */
+val MatchingBucketIds = setOf("weather", "fortune")
 
 data class BucketClipSelection(
     val variantIndex: Int,

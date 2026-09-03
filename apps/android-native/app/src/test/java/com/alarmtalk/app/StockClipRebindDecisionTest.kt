@@ -279,6 +279,7 @@ class StockClipRebindDecisionTest {
     @Test
     fun 클립_목록이_없어도_대표_클립이_사라졌으면_다시_묶는다() {
         val received = alarmWith(
+            bucketId = "medication",  // 회전형 — 조건 인덱스가 필요 없다.
             clipKeys = emptyList(),
             ttsMessageId = "old-0",
             language = null,          // 받은 알람은 언어를 안 적는다 → ko 로 읽힌다.
@@ -288,8 +289,44 @@ class StockClipRebindDecisionTest {
 
     @Test
     fun 대표_클립이_살아_있으면_그대로_둔다() {
-        val received = alarmWith(clipKeys = emptyList(), ttsMessageId = "new-0", language = null)
+        val received = alarmWith(
+            bucketId = "medication", clipKeys = emptyList(), ttsMessageId = "new-0", language = null,
+        )
         assertFalse(StockClipLanguageRebinder.needsRebind(received, "ko", live))
+    }
+
+    /**
+     * ⚠ **날씨·운세는 대표-클립 갈래로 갈아타지 않는다**(2026-09-03 리뷰 12차).
+     *
+     * 그 둘은 조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데, 받은 알람에는
+     * 그 값이 없다 — 보낸 사람의 지역·사주를 받지 않기 때문이다. 값 없이 전체 세트를
+     * 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필 해시로 떨어진다.
+     * 옛 대사를 그대로 두는 편이 낫다.
+     */
+    @Test
+    fun 조건형_버킷은_클립_목록이_없어도_건드리지_않는다() {
+        for (bucket in listOf("weather", "fortune")) {
+            assertFalse(
+                "매칭형 버킷($bucket)을 조건 없이 갈아탔다",
+                StockClipLanguageRebinder.needsRebind(
+                    alarmWith(
+                        bucketId = bucket, clipKeys = emptyList(),
+                        ttsMessageId = "old-0", language = null,
+                    ),
+                    "ko", live,
+                ),
+            )
+        }
+        // 회전형은 조건이 필요 없으므로 그대로 갈아탄다.
+        assertTrue(
+            StockClipLanguageRebinder.needsRebind(
+                alarmWith(
+                    bucketId = "medication", clipKeys = emptyList(),
+                    ttsMessageId = "old-0", language = null,
+                ),
+                "ko", live,
+            ),
+        )
     }
 
     /** 판단할 근거가 없으면(메시지 id 조차 없음) 건드리지 않는다. */
@@ -297,7 +334,10 @@ class StockClipRebindDecisionTest {
     fun 클립_목록도_메시지_id_도_없으면_건드리지_않는다() {
         assertFalse(
             StockClipLanguageRebinder.needsRebind(
-                alarmWith(clipKeys = emptyList(), ttsMessageId = "", language = null), "ko", live,
+                alarmWith(
+                    bucketId = "medication", clipKeys = emptyList(), ttsMessageId = "", language = null,
+                ),
+                "ko", live,
             ),
         )
     }

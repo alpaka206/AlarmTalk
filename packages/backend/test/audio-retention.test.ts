@@ -107,9 +107,19 @@ describe('cleanupStaleDraftVoices', () => {
 });
 
 describe('drainExternalDeletions — R2 오브젝트', () => {
-  function envWith(deleted: string[]) {
+  /**
+   * `uploadedMinutesAgo` 가 null 이면 오브젝트가 **없는** 상태(head → null).
+   * 유예는 큐 나이가 아니라 **오브젝트 업로드 시각**에 걸린다(리뷰 12차).
+   */
+  function envWith(deleted: string[], uploadedMinutesAgo: number | null) {
     return {
-      VOICE_BUCKET: { delete: async (key: string) => { deleted.push(key); } },
+      VOICE_BUCKET: {
+        head: async () =>
+          uploadedMinutesAgo == null
+            ? null
+            : { uploaded: new Date(Date.now() - uploadedMinutesAgo * 60_000) },
+        delete: async (key: string) => { deleted.push(key); },
+      },
     } as never;
   }
 
@@ -132,12 +142,15 @@ describe('drainExternalDeletions — R2 오브젝트', () => {
    * 그 남이 행을 커밋하면 방금 게시된 알람이 없는 음원을 가리킨다 — 렌더 한 회차보다 훨씬
    * 긴 유예를 두어 시간으로 닫는다.
    */
-  it('큐에 막 들어온 것은 지우지 않고 다음 회차로 미룬다', async () => {
+  it('방금 올라온 오브젝트는 지우지 않고 다음 회차로 미룬다', async () => {
     const db = await setupDb();
     const deleted: string[] = [];
-    await queue(db, 'p1', 'voices/fresh.mp3', '-1 minutes');
+    // ⚠ **큐는 오래됐는데 오브젝트는 방금 올라온** 경우가 핵심이다. 삭제가 실패해
+    //   attempts 만 오른 행은 `created_at` 이 갱신되지 않으므로, 큐 나이로 재면 그 사이
+    //   새로 올라온 오브젝트를 지운다(리뷰 12차).
+    await queue(db, 'p1', 'voices/fresh.mp3', '-2 hours');
 
-    await drainExternalDeletions(db, envWith(deleted));
+    await drainExternalDeletions(db, envWith(deleted, 1));
 
     expect(deleted).toEqual([]);
     const left = await db.execute('SELECT attempts FROM pending_external_deletions');
@@ -150,7 +163,7 @@ describe('drainExternalDeletions — R2 오브젝트', () => {
     const deleted: string[] = [];
     await queue(db, 'p1', 'voices/orphan.mp3', '-2 hours');
 
-    await drainExternalDeletions(db, envWith(deleted));
+    await drainExternalDeletions(db, envWith(deleted, 120));
 
     expect(deleted).toEqual(['voices/orphan.mp3']);
     const left = await db.execute('SELECT id FROM pending_external_deletions');
@@ -167,8 +180,21 @@ describe('drainExternalDeletions — R2 오브젝트', () => {
       args: ['r2://voices/live.mp3'],
     });
 
-    await drainExternalDeletions(db, envWith(deleted));
+    await drainExternalDeletions(db, envWith(deleted, 120));
 
     expect(deleted, '게시된 음원을 지웠다').toEqual([]);
+  });
+
+  /** 오브젝트가 이미 없으면 지울 것도 없다 — 큐에서 내린다(무한 재시도 방지). */
+  it('오브젝트가 이미 없으면 큐에서 내린다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/gone.mp3', '-2 hours');
+
+    await drainExternalDeletions(db, envWith(deleted, null));
+
+    expect(deleted).toEqual([]);
+    const left = await db.execute('SELECT id FROM pending_external_deletions');
+    expect(left.rows.length).toBe(0);
   });
 });

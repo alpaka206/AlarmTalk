@@ -129,6 +129,15 @@ struct StockClipLanguageRebinder {
         //    `voiceLanguage` 가 nil 이라 한국어 기기에서는 ①에도 안 걸리고, 목록이 비어
         //    ②에도 안 걸린다 — 어디에도 안 걸려 옛 대사를 영원히 재생한다.
         if bound.isEmpty {
+            // ⚠ **날씨·운세는 이 갈래로 갈아타지 않는다**(2026-09-03 리뷰 12차). 그 둘은
+            //   조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데, 받은 알람에는
+            //   그 값이 **없다**(보낸 사람의 지역·사주를 받지 않는다). 값 없이 전체 세트를
+            //   묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필 해시로
+            //   떨어진다 — 옛 대사를 그대로 두는 것보다 나쁘다.
+            if let bucket = normalizedBucketId(record.bucketId),
+               MatchingBucketIds.contains(bucket) {
+                return false
+            }
             guard let messageId = (record.ttsMessageId).nilIfBlank else { return false }
             return !liveKeys.contains(AudioCacheStore.stockCacheKey(messageId: messageId))
         }

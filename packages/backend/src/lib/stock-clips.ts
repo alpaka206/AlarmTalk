@@ -1116,28 +1116,12 @@ export async function generateStockClip(
   });
   const audioUrl = `r2://${audioObjectKey}`;
   const discardStagedAudio = async () => {
-    // ⚠ **아직 누가 쓰고 있으면 지우지 않는다**(2026-09-03).
-    //   오브젝트 키는 cacheKey 에서 **결정론적으로** 나온다
-    //   (`generated-tts/<user>/<cacheKey>.mp3`) — 같은 목소리·같은 문구면 회차가 달라도
-    //   키가 같다. 그래서 늦게 끝난 중복 렌더가 이 갈래로 들어오면, 자기가 만든 줄 알고
-    //   **이미 게시된(또는 은퇴한) 행이 가리키는 오브젝트**를 지운다.
-    //   은퇴 행이 특히 위험하다 — 그 행을 물고 있는 옛 알람이 재설치 때 소리를 잃는데,
-    //   행은 멀쩡히 남아 있어 어디서도 티가 안 난다.
-    const referenced = await db.execute({
-      sql: `SELECT 1 FROM generated_audio_assets WHERE audio_object_key = ?
-             UNION ALL
-            SELECT 1 FROM messages WHERE audio_url = ?
-            LIMIT 1`,
-      args: [audioObjectKey, audioUrl],
-    });
-    if (referenced.rows.length > 0) return;
-    // ⚠ **여기서 바로 지우지 않는다 — 확인과 삭제가 원자적일 수 없다**(리뷰 10차).
-    //   위 조회와 아래 삭제 사이에, 같은 키를 올린 다른 렌더가 자기 행을 커밋할 수 있다.
-    //   그러면 방금 '아무도 안 쓴다' 고 본 오브젝트가 **막 게시된 행이 가리키는 것**이
-    //   되고, 지우는 순간 그 알람은 소리를 잃는다(행은 멀쩡해 티가 안 난다).
-    //   큐로 넘기면 실제 삭제는 다음 cron 틱(≥5분)이 하고, 그때 **참조를 다시 본다**
-    //   (`drainExternalDeletions`). 그 사이 누가 게시했으면 삭제가 취소된다.
-    //   결정론적 키라 미아가 무한정 늘지도 않는다 — 같은 내용은 같은 키를 덮어쓴다.
+    // ⚠ **여기서 판단하지 않는다 — 큐에 넣기만 한다**(2026-09-03 리뷰 12차).
+    //   예전에는 "아무도 안 쓰면" 을 여기서 확인했는데, 그 확인이 `generated_audio_assets`
+    //   까지 보는 바람에 **제자리 교체가 남긴 옛 원장 행**이 '쓰고 있다' 로 읽혀 다시 올린
+    //   옛 음원이 영영 안 지워졌다(프리셋은 TTL 스윕도 면제라 회수 경로가 없다).
+    //   판단은 실제로 지우는 자리 한 곳(`drainExternalDeletions`)에서만 한다 —
+    //   거기서 **오브젝트 업로드 시각**과 `messages.audio_url` 을 본다.
     await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
   };
 

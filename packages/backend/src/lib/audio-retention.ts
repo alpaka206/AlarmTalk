@@ -119,11 +119,12 @@ export async function enqueueUserVoiceArtifacts(
 
 /** 큐를 배치로 비운다 — cron 전용. 외부 API 호출이 있으므로 트랜잭션 밖에서 실행. */
 /**
- * R2 오브젝트 삭제 유예. 큐에 들어간 지 이만큼 지난 것만 실제로 지운다.
+ * R2 오브젝트 삭제 유예. **오브젝트가 올라온 지** 이만큼 지난 것만 실제로 지운다.
  *
  * 키가 결정론적이라 '내가 올린 것' 과 '남이 올린 같은 내용' 을 구분할 수 없다. 렌더 한
- * 회차는 길어야 수십 초이므로, 이 시간을 넘겼는데도 아무도 참조하지 않으면 미아가 맞다.
- * 파기(목소리 삭제·동의 철회)에도 같은 유예가 걸리지만 약속 단위가 일(日)이라 영향이 없다.
+ * 회차는 길어야 수십 초이므로, 마지막 업로드 이후 이 시간을 넘겼는데도 아무도 참조하지
+ * 않으면 미아가 맞다. 파기(목소리 삭제·동의 철회)에도 같은 유예가 걸리지만 약속 단위가
+ * 일(日)이라 영향이 없다.
  */
 const R2_DELETE_GRACE_MS = 30 * 60 * 1000;
 
@@ -174,39 +175,37 @@ export async function drainExternalDeletions(
         }
       } else {
         if (!bucket) throw new Error('VOICE_BUCKET unset');
-        // ⚠ **결정론적 키라 '내 것' 을 확신할 수 없다**(2026-09-03 리뷰 10·11차).
+        // ⚠ **결정론적 키라 '내 것' 을 확신할 수 없다**(2026-09-03 리뷰 10·11·12차).
         //   R2 키는 cacheKey 에서 나오므로(`generated-tts/<user>/<cacheKey>.mp3`) 같은
-        //   목소리·같은 문구를 만든 다른 렌더가 **같은 키**를 올린다. 그 렌더가 아직
-        //   행을 커밋하지 않은 사이에 지우면, 곧 게시될 알람이 없는 음원을 가리킨다.
+        //   목소리·같은 문구를 만든 다른 렌더가 **같은 키**를 올린다. 그 렌더가 아직 행을
+        //   커밋하지 않은 사이에 지우면, 곧 게시될 알람이 없는 음원을 가리킨다.
         //
-        //   그래서 두 겹으로 막는다:
-        //   ① **유예** — 큐에 들어간 지 얼마 안 된 것은 건드리지 않는다. 렌더 한 회차는
-        //      길어야 수십 초이므로, 유예를 넘겼는데도 아무도 참조하지 않으면 그건
-        //      **정말로 미아**다. 조회와 삭제 사이의 창을 확인이 아니라 시간으로 닫는다.
-        //   ② **참조 확인** — 그러고도 누가 쓰고 있으면 지우지 않는다.
-        //
-        //   ⚠ 판정은 **`messages.audio_url` 만** 본다(리뷰 11차). `generated_audio_assets`
-        //   까지 보면, 제자리 교체가 남긴 **옛 원장 행**이 '살아 있다' 로 읽혀 교체된 옛
-        //   음원을 영영 못 지운다 — 프리셋은 TTL 스윕에서도 면제라 회수 경로가 사라진다.
-        //   실제로 재생에 쓰이는 주소는 `messages.audio_url` 하나다.
-        //
-        //   목소리 파기·동의 철회는 `messages` 행까지 같은 트랜잭션에서 지우므로
-        //   (`paid-voice-cleanup`·`account-deletion`) 이 확인에 걸리지 않는다.
-        // `datetime('now')` 는 `YYYY-MM-DD HH:MM:SS`(UTC, 구분자가 공백)로 적는다.
-        // 'T' 로 바꾸고 'Z' 를 붙여야 어느 엔진에서도 같은 값으로 읽힌다.
-        const createdAt = row.created_at
-          ? Date.parse(`${String(row.created_at).trim().replace(' ', 'T')}Z`)
-          : NaN;
-        if (Number.isFinite(createdAt) && now.getTime() - createdAt < R2_DELETE_GRACE_MS) {
-          continue; // 아직 유예 중 — attempts 를 태우지 않고 다음 회차로 넘긴다.
+        //   ⚠ **유예는 큐 나이가 아니라 오브젝트의 업로드 시각에 건다**(리뷰 12차).
+        //   큐 행의 `created_at` 은 **처음 정리를 시도한 때**를 말할 뿐이다 — 삭제가 실패해
+        //   `attempts` 만 오르고 `created_at` 은 그대로인 행이 30분을 넘긴 뒤, **그때 새
+        //   렌더가 같은 키를 올리면** 그 회차가 유예를 통과해 방금 올라온 오브젝트를 지운다.
+        //   R2 오브젝트의 업로드 시각은 다시 올릴 때마다 갱신되므로, 그걸 보면 유예가
+        //   **경쟁 업로드에 정확히 연동**된다.
+        const head = typeof bucket.head === 'function' ? await bucket.head(ref) : null;
+        if (head) {
+          const uploadedAt = head.uploaded instanceof Date ? head.uploaded.getTime() : NaN;
+          if (Number.isFinite(uploadedAt) && now.getTime() - uploadedAt < R2_DELETE_GRACE_MS) {
+            continue; // 방금 올라왔다 — attempts 를 태우지 않고 다음 회차로 넘긴다.
+          }
+          // ⚠ 판정은 **`messages.audio_url` 만** 본다. `generated_audio_assets` 까지 보면
+          //   제자리 교체가 남긴 **옛 원장 행**이 '살아 있다' 로 읽혀 교체된 옛 음원을
+          //   영영 못 지운다 — 프리셋은 TTL 스윕에서도 면제라 회수 경로가 사라진다.
+          //   목소리 파기·동의 철회는 `messages` 행까지 같은 트랜잭션에서 지우므로
+          //   (`paid-voice-cleanup`·`account-deletion`) 이 확인에 걸리지 않는다.
+          const stillReferenced = await db.execute({
+            sql: 'SELECT 1 FROM messages WHERE audio_url = ? LIMIT 1',
+            args: [`r2://${ref}`],
+          });
+          if (stillReferenced.rows.length === 0) {
+            await bucket.delete(ref);
+          }
         }
-        const stillReferenced = await db.execute({
-          sql: 'SELECT 1 FROM messages WHERE audio_url = ? LIMIT 1',
-          args: [`r2://${ref}`],
-        });
-        if (stillReferenced.rows.length === 0) {
-          await bucket.delete(ref);
-        }
+        // head 가 null 이면 오브젝트가 이미 없다 — 지울 것이 없으니 큐에서 내린다.
       }
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',
