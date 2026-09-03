@@ -110,6 +110,7 @@ object StockClipLanguageRebinder {
         auth: String,
         clips: List<StockClip>,
         language: String,
+        expectedVariants: ExpectedVariantCounts? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -129,6 +130,17 @@ object StockClipLanguageRebinder {
         var rebound = 0
         legacy.forEach { alarm ->
             val bucket = clonePrerenderBucketCategoryFor(alarm.voiceRandomContext) ?: return@forEach
+            // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 지난 회차에
+            //   완전성 검사를 `rebindIfLanguageChanged` 에만 넣었는데, 이 경로는 옛
+            //   라이브 행을 테마로 **바꾸면서 `voiceRandomPrompt` 를 내린다** — 한 번
+            //   옮겨지면 위 술어(`voiceRandomPrompt && bucketId 비어 있음`)에 다시
+            //   안 걸려 **영원히 그 부분 세트로 남는다.** 되돌릴 길이 더 좁다.
+            if (!replacementIsComplete(
+                    alarm.copy(bucketId = bucket), clips, language, expectedVariants,
+                )
+            ) {
+                return@forEach
+            }
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
             alarmDao.upsertPreservingServerSyncFields(
@@ -200,13 +212,32 @@ object StockClipLanguageRebinder {
      * 0..N-1 이 다 있는지 본다. 매니페스트가 개수를 모르면(옛 서버) 막지 않는다 —
      * 못 물어본 것이 사용자를 막는 근거가 되면 안 된다.
      */
+
+    /**
+     * 저장된 버킷 id 를 **현재 이름**으로 접는다.
+     *
+     * ⚠ 기기에 저장된 알람은 이름이 바뀌기 전 값(`love`)을 그대로 들고 있다. 매니페스트는
+     * 새 이름(`cheer`)만 담으므로, 접지 않고 맞추면 **아무것도 안 걸린다.**
+     * 접기의 단일 출처는 `randomPromptContextForBucket` ↔ `clonePrerenderBucketCategoryFor`
+     * 한 쌍이다 — 여기에 표를 새로 만들지 말 것.
+     */
+    internal fun normalizedBucketId(bucketId: String?): String? {
+        val raw = bucketId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val context = com.alarmtalk.app.randomPromptContextForBucket(raw) ?: return raw
+        return com.alarmtalk.app.clonePrerenderBucketCategoryFor(context) ?: raw
+    }
+
     internal fun replacementIsComplete(
         alarm: AlarmEntity,
         clips: List<StockClip>,
         language: String,
         expectedVariants: ExpectedVariantCounts?,
     ): Boolean {
-        val bucket = alarm.bucketId ?: return false
+        // ⚠ **저장된 옛 이름을 접고 나서 맞춘다**(2026-09-03 리뷰 4차). 기기에 `love` 로
+        //   저장된 알람은 새 매니페스트(`cheer`)와 이름이 달라 **variant 가 0개로 잡히고**,
+        //   그러면 이 함수가 영원히 false 라 언어 재바인딩까지 통째로 막힌다 —
+        //   그 알람은 갈아탈 방법이 사라진다.
+        val bucket = normalizedBucketId(alarm.bucketId) ?: return false
         val variants = clips
             .filter {
                 it.voiceProfileId == alarm.voiceProfileId &&
@@ -259,7 +290,14 @@ object StockClipLanguageRebinder {
                     cacheKey = cacheKey,
                     messageId = clip.messageId,
                 )
-            }.getOrNull() ?: return@forEach
+            }.getOrNull()
+            // ⚠ **하나라도 못 받으면 통째로 포기한다**(2026-09-03 리뷰 4차).
+            //   예전에는 실패한 클립만 건너뛰고 나머지로 묶었는데, 그렇게 저장하면 그
+            //   키들이 `liveKeys` 에 들어가 **다음 회차부터 stale 로 안 잡힌다** —
+            //   일시적인 네트워크 실패 하나가 그 알람을 **영구히 부분 세트**로 만든다.
+            //   지금 포기하면 다음 회차가 처음부터 다시 시도한다(알람은 옛 클립을 그대로
+            //   들고 있으므로 그동안에도 소리는 난다).
+                ?: return null
             keys.add(cached.cacheKey ?: cacheKey)
             texts.add(clip.text)
         }

@@ -254,6 +254,7 @@ class StockClipPrefetchWorker(
                         auth = auth,
                         clips = allClips,
                         language = language,
+                        expectedVariants = manifest.expectedVariants
                     )
                 }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
             }

@@ -793,7 +793,11 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
   ],
   en: [
     { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
-    { context: 'love, romantic, babe', text: "[playfully] Morning, babe. [warmly] Take your time getting up — I've got you today, okay?" },
+    // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
+    //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
+    //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
+    //   예시도 함께 바꾼다.
+    { context: 'cheer, neutral', text: "[warmly] Morning. [caring] Big day ahead — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 

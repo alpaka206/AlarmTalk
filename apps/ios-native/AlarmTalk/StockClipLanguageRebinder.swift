@@ -110,13 +110,24 @@ struct StockClipLanguageRebinder {
 
     /// 갈아탈 세트가 완전한가 — 안드로이드 `replacementIsComplete` 미러.
     /// `expectedVariants` 가 없으면(옛 서버) 막지 않는다.
+
+    /// 저장된 버킷 id 를 **현재 이름**으로 접는다. 접기의 단일 출처는
+    /// `RandomPromptContext.forBucket` ↔ `bucketCategory` 한 쌍이다.
+    static func normalizedBucketId(_ bucketId: String?) -> String? {
+        guard let raw = (bucketId).nilIfBlank else { return nil }
+        return RandomPromptContext.forBucket(raw)?.bucketCategory ?? raw
+    }
+
     static func replacementIsComplete(
         record: LocalAlarmRecord,
         clips: [StockClip],
         language: String,
         expectedVariants: ExpectedVariantCounts?
     ) -> Bool {
-        guard let bucket = (record.bucketId).nilIfBlank else { return false }
+        // ⚠ **저장된 옛 이름을 접고 나서 맞춘다**(2026-09-03 리뷰 4차). 기기에 `love` 로
+        //   저장된 알람은 새 매니페스트(`cheer`)와 이름이 달라 variant 가 0개로 잡히고,
+        //   그러면 이 함수가 영원히 false 라 재바인딩이 통째로 막힌다.
+        guard let bucket = normalizedBucketId(record.bucketId) else { return false }
         let variants = Set(
             clips
                 .filter {
@@ -137,7 +148,8 @@ struct StockClipLanguageRebinder {
     func rebindLiveGenerationRows(
         session: AuthSession?,
         clips: [StockClip],
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
@@ -159,6 +171,14 @@ struct StockClipLanguageRebinder {
             //   옛 표현에 남아 매번 같은 문구를 되풀이한다. `normalized` 가 `cheer` 로 접는다.
             guard let raw = record.voiceRandomContext, !raw.isEmpty else { continue }
             let context = RandomPromptContext.normalized(raw)
+            // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 이 경로는 옛
+            //   라이브 행을 테마로 바꾸면서 `voiceRandomPrompt` 를 내린다 — 한 번 옮겨지면
+            //   위 술어에 다시 안 걸려 **영원히 그 부분 세트로 남는다.**
+            var probe = record
+            probe.bucketId = context.bucketCategory
+            guard Self.replacementIsComplete(
+                record: probe, clips: clips, language: language, expectedVariants: expectedVariants,
+            ) else { continue }
             guard var bound = await bindBucket(
                 record: record, bucket: context.bucketCategory,
                 clips: clips, language: language, token: token
@@ -208,7 +228,13 @@ struct StockClipLanguageRebinder {
         for clip in target {
             let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
             if cache.cachedURL(for: key) == nil {
-                guard await download(messageID: clip.messageId, key: key, token: token) else { continue }
+                // ⚠ **하나라도 못 받으면 통째로 포기한다**(2026-09-03 리뷰 4차, 안드로이드와
+                //   같은 규칙). 실패한 것만 건너뛰고 저장하면 그 키들이 `liveKeys` 에
+                //   들어가 다음 회차부터 stale 로 안 잡힌다 — 일시적인 네트워크 실패
+                //   하나가 그 알람을 **영구히 부분 세트**로 만든다.
+                guard await download(messageID: clip.messageId, key: key, token: token) else {
+                    return nil
+                }
             }
             keys.append(key)
         }

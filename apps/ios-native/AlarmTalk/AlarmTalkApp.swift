@@ -293,7 +293,8 @@ struct AlarmTalkApp: App {
                         // 도므로 바뀐 클립이 그 자리에서 예약에 반영된다.
                         await rebinder.rebindLiveGenerationRows(
                             session: auth.session,
-                            clips: voiceStudio.stockClips
+                            clips: voiceStudio.stockClips,
+                            expectedVariants: voiceStudio.expectedVariants
                         )
                         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를
                         // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
