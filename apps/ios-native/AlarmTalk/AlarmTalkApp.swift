@@ -488,6 +488,11 @@ struct AlarmTalkApp: App {
     @MainActor
     private func rebindStockClipsIfNeeded() async {
         guard auth.session != nil else { return }
+        // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
+        //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
+        //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**
+        await alarmStore.waitUntilLoadedFromDisk()
+        guard alarmStore.hasLoadedFromDisk else { return }
         // ⚠ **매니페스트를 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의 시딩은 cron 이
         //   틱당 조금씩 채우므로, 다른 화면이 먼저 받아 둔 **부분 매니페스트**가 세션
         //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성

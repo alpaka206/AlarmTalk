@@ -166,6 +166,15 @@ struct StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = nil
     ) -> Int {
         guard !clips.isEmpty else { return 0 }
+        // ⚠⚠ **알람이 디스크에서 다 올라오기 전에는 절대 지우지 않는다**(2026-09-03 리뷰 10차).
+        //   `LocalAlarmStore` 는 콜드 스타트에 `alarms = []` 로 시작해 **비동기로** 채운다.
+        //   그 창에서 이 함수가 돌면 참조 집합이 비어 **받아 둔 클립 전부가 '아무도 안 쓰는
+        //   것'** 으로 보이고, 특히 재바인딩이 불가능한 **버킷 없는 옛 행**은 하나뿐인
+        //   로컬 클립을 잃어 다시 받을 방법도 없다(그 행은 어떤 테마인지 알 수 없다).
+        //   호출부에서도 막지만(`rebindStockClipsIfNeeded`), **지우는 자리에도 둔다** —
+        //   이 함수를 다른 데서 부르는 순간 그 방어가 사라진다.
+        //   (안드로이드는 Room 을 동기로 읽으므로 이 창이 없다.)
+        guard store.hasLoadedFromDisk else { return 0 }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
         let alarms = store.alarms
 
@@ -184,11 +193,20 @@ struct StockClipLanguageRebinder {
 
         // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
         var referenced = Set<String>()
+        var referencedFileNames = Set<String>()
         for alarm in alarms {
             referenced.formUnion(alarm.bucketClipKeys ?? [])
             if let key = alarm.audioCacheKey, !key.isEmpty { referenced.insert(key) }
+            // 옛 별칭 디렉터리는 파일 **이름**으로 참조된다(`<messageId>.<ext>`).
+            if let uri = alarm.localAudioUri, !uri.isEmpty {
+                referencedFileNames.insert((uri as NSString).lastPathComponent)
+            }
         }
-        return cache.pruneReplacedStockAudio(referencedKeys: referenced, liveKeys: liveKeys)
+        return cache.pruneReplacedStockAudio(
+            referencedKeys: referenced,
+            liveKeys: liveKeys,
+            referencedFileNames: referencedFileNames
+        )
     }
 
     /// 저장된 버킷 id 를 **현재 이름**으로 접는다. 접기의 단일 출처는

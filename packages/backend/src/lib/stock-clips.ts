@@ -1131,11 +1131,14 @@ export async function generateStockClip(
       args: [audioObjectKey, audioUrl],
     });
     if (referenced.rows.length > 0) return;
-    try {
-      await storage.delete(audioObjectKey);
-    } catch {
-      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
-    }
+    // ⚠ **여기서 바로 지우지 않는다 — 확인과 삭제가 원자적일 수 없다**(리뷰 10차).
+    //   위 조회와 아래 삭제 사이에, 같은 키를 올린 다른 렌더가 자기 행을 커밋할 수 있다.
+    //   그러면 방금 '아무도 안 쓴다' 고 본 오브젝트가 **막 게시된 행이 가리키는 것**이
+    //   되고, 지우는 순간 그 알람은 소리를 잃는다(행은 멀쩡해 티가 안 난다).
+    //   큐로 넘기면 실제 삭제는 다음 cron 틱(≥5분)이 하고, 그때 **참조를 다시 본다**
+    //   (`drainExternalDeletions`). 그 사이 누가 게시했으면 삭제가 취소된다.
+    //   결정론적 키라 미아가 무한정 늘지도 않는다 — 같은 내용은 같은 키를 덮어쓴다.
+    await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
   };
 
   const messageId = crypto.randomUUID();

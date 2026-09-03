@@ -59,8 +59,8 @@
   "language": {
     "headline": "Don’t feel like writing it\nevery night?",
     "description": "Pick a topic instead of writing it, and the greeting changes daily.\nToday’s weather, a reminder to take your medication, or a line of fortune.",
-    "bullet1": "Weather and medication reminders are free",
-    "bullet2": "Fortune and words of love come with a voice of your own",
+    "bullet1": "Weather, fortune, medication and encouragement — every topic is free",
+    "bullet2": "Writing your own line comes with a voice of your own",
     "bullet3": "Choose Korean, English or Japanese"
   },
   "scenarios": {
@@ -311,7 +311,7 @@
       "personal": {
         "name": "Personal",
         "price": "$3.90/mo",
-        "includes": "Add a voice of your own (one a month) - write your own lines - fortune and words of love"
+        "includes": "Add a voice of your own (one a month) - write your own lines"
       },
       "couple": {
         "name": "Couple",
@@ -337,7 +337,7 @@
   "crop": {
     "alarm-row": "Alarm list showing time left until the next alarm",
     "record": "Create a voice — record or upload a file",
-    "pick-message": "Choosing what it says — greeting, weather, fortune, love, medication, or your own",
+    "pick-message": "Choosing what it says — greeting, weather, fortune, encouragement, medication, or your own",
     "voice-groups": "Voice list — your voice and voices shared with you",
     "who-to-wake": "Choosing who to wake"
   }

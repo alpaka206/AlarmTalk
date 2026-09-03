@@ -161,7 +161,22 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
         }
       } else {
         if (!bucket) throw new Error('VOICE_BUCKET unset');
-        await bucket.delete(ref);
+        // ⚠ **아직 누가 쓰고 있으면 지우지 않는다**(2026-09-03 리뷰 10차).
+        //   R2 키는 cacheKey 에서 결정론적으로 나오므로, 큐에 들어간 뒤에 **다른 렌더가
+        //   같은 키를 게시**할 수 있다. 그대로 지우면 그 알람이 소리를 잃는데 행은
+        //   멀쩡히 남아 어디서도 티가 안 난다.
+        //   정당한 삭제(목소리 파기·동의 철회)는 `enqueueUserVoiceArtifacts` 가 같은
+        //   트랜잭션에서 원장 행을 지우고 큐에 넣으므로 여기 걸리지 않는다.
+        const stillReferenced = await db.execute({
+          sql: `SELECT 1 FROM generated_audio_assets WHERE audio_object_key = ?
+                 UNION ALL
+                SELECT 1 FROM messages WHERE audio_url = ?
+                LIMIT 1`,
+          args: [ref, `r2://${ref}`],
+        });
+        if (stillReferenced.rows.length === 0) {
+          await bucket.delete(ref);
+        }
       }
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',
