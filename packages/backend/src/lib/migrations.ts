@@ -2480,6 +2480,13 @@ export const migrations: Migration[] = [
     //  - 새 8종은 아직 시딩된 적이 없다. 배포 후 `POST /api/admin/seed-stock-clips` 가
     //    (보이스 4 × 언어 3 × 새 문구 8) 을 채운다.
     //  - R2 오브젝트는 #70 과 마찬가지로 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    //
+    // ⚠ **여기는 고치지 않는다 — 이미 dev 에 적용됐다**(2026-09-03 리뷰 7차).
+    //   #110 은 같은 지적을 받아 「지우지 말고 은퇴」로 바꿨지만, 이 마이그레이션은
+    //   `develop` 에 이미 올라가 dev DB 가 **옛 문장으로** 실행을 마쳤다. 본문을 고치면
+    //   러너가 id 로만 기록하므로 **새 DB 와 dev 의 스키마가 갈라진다.**
+    //   위 설계대로 이 회차는 **0행 no-op** 이라(문구가 바뀌지 않은 36종 + 아직 시딩된 적
+    //   없는 8종) 실제로 지워지는 알람이 없고, 뒤이어 #110 이 전부 은퇴시킨다.
     id: 109,
     name: 'refresh-stock-clips-2026-09-02-script',
     statements: [
@@ -2506,16 +2513,34 @@ export const migrations: Migration[] = [
     // 대사 전면 교체 + 카테고리 이름 변경(2026-09-02 사용자 확정본).
     //
     // ⚠ **이번엔 수렴형(텍스트 비교)이 아니라 전면 교체다.** #70·#109 는 "확정 문구와
-    //   다른 것만" 지우는 방식이었는데, 이번에는 **한국어 대사를 전부 새로 썼으므로**
-    //   어차피 전부가 대상이다. 텍스트 목록을 또 동결해 두느니 시스템 프리셋을 통째로
-    //   지우는 쪽이 단순하고, 무엇이 남는지 헷갈릴 여지가 없다.
+    //   다른 것만" 고르는 방식이었는데, 이번에는 **대사를 전부 새로 썼으므로** 어차피
+    //   전부가 대상이다(시스템·클론 양쪽).
     //
-    // ⚠ **지우는 것은 시스템(스톡) 프리셋뿐이다.** 사용자가 등록한 클론의 사전렌더 클립은
-    //   지우지 않는다 — 대신 카테고리 이름만 바꾸고 큐를 되돌려 cron 이 새 시드로 다시
-    //   굽게 한다(#63 과 같은 패턴).
+    // ⚠⚠ **지우지 말고 은퇴시킨다 — `is_preset = 0`**(2026-09-03 리뷰 7차).
+    //   #70·#109 를 베껴 `DELETE FROM messages` + `UPDATE alarms SET message_id = NULL`
+    //   로 썼다가 되돌렸다. 그 방식은 **세 가지를 한꺼번에 부순다**:
     //
-    // 배포 후 `POST /api/admin/seed-stock-clips` 로 새 문구를 다시 구워야 한다.
-    // R2 오브젝트는 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    //   1. **되살릴 수 없는 알람이 생긴다.** 버킷 없이 스톡 클립 하나만 물린 **옛 행**
+    //      (`bucketId` 를 행에 적기 전에 만들어진 알람 — `usesCustomMessageVoice` 가
+    //      일부러 갈라내는 그 형태)은 재바인더 두 갈래 **어디에도** 안 걸린다
+    //      (하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구한다).
+    //      그 알람은 서버에서 sound-only 로 깎인 채 영영 복구되지 않는다.
+    //   2. **R2 오브젝트가 미아가 된다.** `sweepAudioRetention`·`enqueueUserVoiceArtifacts`
+    //      는 R2 키를 **오직 `generated_audio_assets` 행으로만** 찾는다. 행을 지우면
+    //      사용자가 나중에 목소리를 지우거나 **생체정보 동의를 철회해도** 그 오디오를
+    //      찾아 지울 수 없다 — 파기 약속을 지킬 수 없게 된다.
+    //   3. **배포 직후 기본 목소리에 클립이 0개가 된다.** 아래 「시딩」 참조.
+    //
+    //   은퇴는 셋을 한 번에 없앤다. 매니페스트와 `findMissingStockTargets` 는 둘 다
+    //   `is_preset = 1` 만 보므로 **새 클립이 새 id 로 생기고**, 옛 행은 남아 있어
+    //   `alarms.message_id` 가 계속 유효하다. 오디오 라우트에는 「그 알람이 참조하면
+    //   허용」 갈래가 있어(`tts.ts` 의 `EXISTS (SELECT 1 FROM alarms ...)`) 재설치해도
+    //   옛 클립을 그대로 받는다. 버킷 알람은 키가 매니페스트에서 사라지므로 재바인더가
+    //   새 세트로 갈아탄다 — **그게 원래 설계다.**
+    //
+    // 시딩: cron 이 틱마다 빠진 **시스템** 스톡을 채운다(`index.ts` 의
+    // `scheduled.stock_seed`). 클론은 아래 큐 되돌리기로 기존 드레인이 맡는다.
+    // 손으로 `POST /api/admin/seed-stock-clips` 를 20번 부르지 않아도 된다.
     id: 110,
     name: 'replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096',
     statements: [
@@ -2525,35 +2550,24 @@ export const migrations: Migration[] = [
       `UPDATE messages SET category = 'cheer' WHERE category = 'love'`,
       `UPDATE alarms SET bucket_id = 'cheer' WHERE bucket_id = 'love'`,
 
-      // ── ② 시스템 스톡 프리셋 전면 삭제 ────────────────────────────────
-      // ⚠ #84 가 지운 `raw_audio_url`·`raw_audio_duration_ms` 를 넣지 말 것 — 러너가
-      //   `no such column` 을 삼켜 이 문장만 조용히 죽는다(#109 주석 참조).
-      `UPDATE alarms
-        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-            message_id = NULL, voice_profile_id = NULL
-        WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      // ── ② 시스템 스톡 프리셋 전면 은퇴 ────────────────────────────────
+      // ⚠ **순서가 뜻을 가진다** — 서브쿼리가 `is_preset = 1` 로 거르므로 은퇴가 먼저면
+      //   그 뒤 문장은 0행에 걸린다(조용히 성공으로 기록된다).
       `DELETE FROM message_library WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
-      `DELETE FROM generated_audio_assets WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
-      `DELETE FROM messages WHERE id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `UPDATE messages SET is_preset = 0 WHERE id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
 
       // ── ③ 클론 사전렌더도 전부 다시 굽는다 ───────────────────────────
       // ⚠ **응원만이 아니라 전부다.** `CLONE_CLIP_SEEDS` 의 시드를 다섯 카테고리 모두
       //   새 대사 결(공감 → 깨우기)로 다시 썼으므로, 옛 시드로 구운 클립은 라벨과 다른
-      //   말을 한다. 지우지 않으면 `findMissingStockTargets` 가 '있다' 로 보고 건너뛴다.
-      //   비용은 cron 이 나눠 치른다(틱당 6클립).
-      `DELETE FROM generated_audio_assets
-        WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
+      //   말을 한다. 은퇴시키지 않으면 `findMissingStockTargets` 가 '있다' 로 보고
+      //   건너뛴다. 비용은 cron 이 나눠 치른다.
       `DELETE FROM message_library WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
-      `UPDATE alarms
-        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-            message_id = NULL, voice_profile_id = NULL
-        WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
-      `DELETE FROM messages WHERE id IN (${CLONE_PRESET_SUBQUERY})`,
+      `UPDATE messages SET is_preset = 0 WHERE id IN (${CLONE_PRESET_SUBQUERY})`,
       // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰 2차). 바로 위에서 그 목소리의
-      //   클립을 **전부 지웠는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만
+      //   클립을 **전부 은퇴시켰는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만
       //   집으므로(`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영
       //   복구되지 않는다** — 소유자가 '다시 시도' 를 직접 누르기 전까지.
-      //   **지우는 범위와 되살리는 범위는 같아야 한다.**
+      //   **은퇴시키는 범위와 되살리는 범위는 같아야 한다.**
       //
       // ⚠ 1차 반영 때 이 조건을 **이미 적용된 #64 에** 넣었다. dev/prod 는 #64 를 이미
       //   실행했으므로(원장이 id 로 기록한다) 그 수정은 **영영 돌지 않는다** — 고쳐야 할

@@ -412,6 +412,45 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
 
+  // **기본(시스템) 목소리 스톡 클립 드레인.** 빠진 (목소리|카테고리|언어|variant) 를
+  // 틱당 소량씩 채운다.
+  //
+  // ⚠ **이게 없으면 문구·목소리 교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다**
+  //   (2026-09-03 리뷰 7차). 시스템 스톡을 굽는 경로가 `POST /api/admin/seed-stock-clips`
+  //   **하나뿐**이었고, 그건 배포 워크플로가 부르지 않는다 — 게다가 호출당 12개 상한이라
+  //   (목소리 4 × 언어 3 × 문구 20 = 240) 사람이 인증해서 **20번 넘게** 눌러야 했다.
+  //   그때까지 새로 만드는 알람은 고를 클립이 없다.
+  //   그 엔드포인트는 **특정 목소리만 다시 굽는** 수동 도구로 남는다(`?voice=`·`?reset=`).
+  //
+  // 클론 드레인(아래)과 나란히 두되 **앞에** 둔다 — 기본 목소리는 모든 사용자가 쓰고,
+  // 클론은 그 목소리를 등록한 사람만 기다린다.
+  try {
+    const { findMissingStockTargets, generateStockClip } = await import('./lib/stock-clips');
+    // 인자 없이 부르면 **시스템 목소리만** 본다(클론은 큐가 지목한 것만 굽는다).
+    const missing = await findMissingStockTargets(db);
+    if (missing.length > 0) {
+      // 틱(5분)당 상한. 클립 1개 = Vertex 문구/번역 + ElevenLabs 합성 + R2 업로드다.
+      // 클론 드레인(10)보다 낮게 잡는다 — 같은 틱에서 둘이 서브리퀘스트를 나눠 쓴다.
+      let rendered = 0;
+      for (const target of missing.slice(0, 6)) {
+        try {
+          await generateStockClip(db, env, target);
+          rendered += 1;
+        } catch (genErr) {
+          // 한 건 실패가 나머지를 막지 않는다 — 다음 틱이 그것만 다시 집는다(멱등).
+          captureCron('scheduled.stock_seed.generate', genErr);
+        }
+      }
+      logStructured('info', {
+        at: 'scheduled.stock_seed',
+        rendered,
+        remaining: missing.length - rendered,
+      });
+    }
+  } catch (err) {
+    captureCron('scheduled.stock_seed', err);
+  }
+
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
   // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
