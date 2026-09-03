@@ -559,14 +559,17 @@ struct AlarmTalkApp: App {
         // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
         //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
         //   없는 사용자를 이유 없이 가둔다.
+        // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
+        //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         StockReplacementStatus.shared.report(
             pending: rebinder.hasPendingReplacement(
                 clips: voiceStudio.stockClips,
-                // 위에서 `loadStockClips(force: true)` 로 받아 온 뒤다 — 비어 있어도 그건
-                // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후
+                // 게시 전)라 미완료다.
                 manifestFetched: manifestFetched,
                 legacyHints: voiceStudio.legacyBucketHints
-            )
+            ),
+            manifestFetched: manifestFetched
         )
         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
         //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던

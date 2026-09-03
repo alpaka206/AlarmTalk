@@ -31,13 +31,16 @@ object StockReplacementStatus {
     val working: StateFlow<Boolean> = _working.asStateFlow()
 
     /**
-     * 워커가 매니페스트를 받아 판정한 결과를 적는다.
+     * 판정을 기록한다. **매니페스트를 못 받았으면 아무것도 하지 않는다.**
      *
-     * ⚠ **매니페스트를 못 받은 회차에는 부르지 말 것.** 클립 목록이 비면 재바인더가 "갈아탈
-     *   것이 없다" 로 읽으므로, 그 값을 그대로 적으면 **네트워크가 죽은 것을 '교체 완료' 로**
-     *   기록한다.
+     * ⚠ **판단 근거가 없을 때 `false` 를 적으면 안 된다**(2026-09-03 리뷰 16차).
+     *   앞 회차가 '미완료' 로 세워 둔 문을, 오프라인 재시도 한 번이 **열어 버린다** —
+     *   옛 목소리를 물고 있는 알람은 그대로인데 앱이 쓸 수 있게 된다.
+     *   그래서 그 판정을 호출부에 맡기지 않고 **여기서** 막는다. 호출부마다 가드를
+     *   적게 하면 언젠가 한 곳이 빠진다. iOS 짝(`StockReplacementStatus.swift`)도 같다.
      */
-    fun report(pending: Boolean) {
+    fun report(pending: Boolean, manifestFetched: Boolean) {
+        if (!manifestFetched) return
         _pending.value = pending
     }
 

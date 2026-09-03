@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
@@ -159,6 +160,11 @@ class StockClipPrefetchWorker(
             // 만 보면 권한이 없는 사용자의 클론 클립을 그대로 요청한다 — 403
             // (`VOICE_LOCKED_FREE_PLAN`)을 받고 재시도를 소진한 끝에 FAILED 로 끝난다.
             // 울림 게이트와 **같은 판정기**로 판단한다.
+            // ⚠ **서버 프로필의 조건 설정을 들고 나온다**(2026-09-03 리뷰 16차).
+            //   새로 깐 기기·두 번째 기기에서는 이 값이 서버에만 있고 로컬 저장소는 비어
+            //   있다. 바로 아래에서 `/auth/me` 를 받으면서 그걸 버리면, 받은 날씨 알람은
+            //   여전히 서버 기본값(서울)으로, 운세는 빈 프로필 해시로 떨어진다.
+            var serverPromptSettings: com.alarmtalk.app.network.DynamicPromptSettings? = null
             val paidVoiceAccess = withContext(Dispatchers.IO) {
                 runCatching {
                     val subscription = api.getSubscription(auth)
@@ -170,6 +176,7 @@ class StockClipPrefetchWorker(
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
                     val me = api.me(auth)
                     val plan = me.user.plan
+                    serverPromptSettings = me.user.dynamicPromptSettings
                     // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
                     // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
                     // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가
@@ -246,8 +253,18 @@ class StockClipPrefetchWorker(
             // 받는 사람의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
             // 받은 알람은 그 값이 전부 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
             // 운세는 빈 프로필 해시로 떨어진다.
-            val conditionInputs = com.alarmtalk.app.data.DynamicPromptPreferenceStore(applicationContext)
+            //
+            // ⚠ **서버가 먼저, 로컬은 폴백이다**(리뷰 16차). 새로 깐 기기·두 번째 기기는
+            //   로컬 저장소가 비어 있고 값이 서버에만 있다. 편집기의 `savedPromptPreferences`
+            //   (iOS)와 **같은 순서**다 — 한쪽만 서버를 보면 기기마다 답이 달라진다.
+            val localPrompts = com.alarmtalk.app.data.DynamicPromptPreferenceStore(applicationContext)
                 .read(session.user.id)
+            val serverPrompts = serverPromptSettings?.toPromptPreferences()
+            val conditionInputs = when {
+                serverPrompts == null -> localPrompts
+                serverPrompts == com.alarmtalk.app.data.DynamicPromptPreferences() -> localPrompts
+                else -> serverPrompts
+            }
 
             suspend fun rebind() {
                 runCatching {
@@ -307,6 +324,8 @@ class StockClipPrefetchWorker(
                             manifestFetched = true,
                             legacyHints = legacyHints,
                         ),
+                        // 못 받았으면 앞 판정을 지킨다 — `report` 가 스스로 막는다.
+                        manifestFetched = true,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock replacement status probe failed", it) }
             }
