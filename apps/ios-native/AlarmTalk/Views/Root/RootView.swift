@@ -251,7 +251,7 @@ struct RootView: View {
             || auth.showConsentScreen
             // ⚠ **판정 전에는 '아니오' 가 아니라 '모른다' 다**(리뷰 21차). 아직 모르는
             //   동안 프로모가 뜨면 소진 플래그를 태우고 뒤늦게 온 차단 화면이 덮는다.
-            || !stockReplacement.checked
+            || !stockReplacement.isChecked(for: auth.session?.user.id)
             || stockReplacement.isPending(for: auth.session?.user.id)
             || voiceSetupDone != true
     }

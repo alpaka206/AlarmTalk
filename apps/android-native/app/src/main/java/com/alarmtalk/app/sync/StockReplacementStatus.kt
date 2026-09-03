@@ -40,9 +40,17 @@ object StockReplacementStatus {
      *   태우고** 뒤늦게 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이 잃는다.
      *   CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」가 못 박은 자리이고,
      *   같은 사고가 이 저장소에서 다섯 번째다.
+     *
+     * ⚠ **계정별이다**(2026-09-03 리뷰 22차). 프로세스 전역 Boolean 이면 계정 A 가 한 번
+     *   확인한 뒤 B 가 로그인해도 true 로 남아, **B 의 판정이 오기 전에** B 의 오버레이가
+     *   소진된다. `pendingUserId` 와 같은 축으로 맞춘다.
+     * ⚠ **실패한 시도도 '끝났다' 로 센다**(같은 회차). 매니페스트를 못 받았다고 이 값을
+     *   false 로 두면 오프라인·서버 오류에서 **오버레이가 영영 안 뜬다** — 판정을 못 한
+     *   것과 시도가 안 끝난 것은 다르다. 앞 판정은 그대로 지키고(그건 `report` 가 막는다)
+     *   준비 신호만 세운다.
      */
-    private val _checked = MutableStateFlow(false)
-    val checked: StateFlow<Boolean> = _checked.asStateFlow()
+    private val _checkedUserId = MutableStateFlow<String?>(null)
+    val checkedUserId: StateFlow<String?> = _checkedUserId.asStateFlow()
 
     /** true 면 지금 워커가 돌고 있다(재시도 버튼을 잠근다). */
     private val _working = MutableStateFlow(false)
@@ -58,9 +66,12 @@ object StockReplacementStatus {
      *   iOS 짝(`StockReplacementStatus.swift`)도 같다.
      */
     fun report(userId: String?, pending: Boolean, manifestFetched: Boolean) {
-        if (!manifestFetched) return
-        _pendingUserId.value = if (pending) userId else null
-        _checked.value = true
+        // 판정은 근거가 있을 때만 갱신한다 — 못 받았으면 앞 판정을 그대로 지킨다.
+        if (manifestFetched) {
+            _pendingUserId.value = if (pending) userId else null
+        }
+        // 준비 신호는 **시도가 끝났으면** 세운다(성공·실패 모두).
+        _checkedUserId.value = userId
     }
 
     fun setWorking(working: Boolean) {

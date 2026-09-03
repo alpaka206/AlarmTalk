@@ -153,8 +153,10 @@ internal fun AlarmTalkApp(
         .collectAsStateWithLifecycle()
     // ⚠ **준비 신호.** 응답 전 기본값(미완료 아님)은 '아니오' 가 아니라 '아직 모른다' 다 —
     //   그 틈에 1회성 오버레이가 뜨면 소진 플래그를 태우고 뒤늦게 온 차단 화면이 덮는다.
-    val stockReplacementChecked by com.alarmtalk.app.sync.StockReplacementStatus.checked
-        .collectAsStateWithLifecycle()
+    val stockReplacementCheckedUserId by com.alarmtalk.app.sync.StockReplacementStatus
+        .checkedUserId.collectAsStateWithLifecycle()
+    val stockReplacementChecked = stockReplacementCheckedUserId != null &&
+        stockReplacementCheckedUserId == authSession?.user?.id
 
     val sessionRouteKey = authSession?.user?.id
     val hasSharedPass = familyGroup?.group != null
@@ -483,6 +485,9 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+        stockReplacementChecked,
+        stockReplacementPending,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
@@ -492,6 +497,10 @@ internal fun AlarmTalkApp(
         // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
         // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        // ⚠ **프로모는 1회성이다.** 교체 판정이 오기 전에 띄우면 소진 플래그를 태우고, 뒤늦게
+        //   온 차단 화면이 그 위를 덮어 사용자는 본 적도 없이 잃는다(2026-09-03 리뷰 22차 —
+        //   21차에 권한 효과에만 넣고 여기를 빠뜨렸다).
+        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         viewModel.maybeShowWelcomePromo()

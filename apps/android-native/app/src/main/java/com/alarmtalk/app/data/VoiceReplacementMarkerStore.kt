@@ -210,6 +210,21 @@ class VoiceReplacementMarkerStore(context: Context) {
             if (prefs.getString(retryKey(userId, profileId), null) != null) {
                 return Seen(changed = true, persisted = true)
             }
+            // ⚠ **기본(시스템) 목소리는 첫 조회라도 집는다**(2026-09-03 리뷰 22차).
+            //
+            //   마이그레이션 `#111` 은 DB 만 고치고 **푸시를 보내지 않는다.** 그 뒤에 앱을
+            //   처음 연 기기는 그때의 표식을 **기준선으로 삼고 넘어가**, 그 목소리로 만든
+            //   직접 입력 알람이 **영영 옛 목소리로 운다** — 이름과 미리듣기만 새 목소리다.
+            //
+            //   시스템 목소리에서는 이 값이 **제자리 교체로만** 채워진다(등록·재등록 같은
+            //   일반 경로가 없다). 그래서 "서버에 표식이 있는데 내가 적어 둔 적이 없다" 는
+            //   **아직 반영하지 않았다**는 뜻으로 읽어도 모호하지 않다.
+            //   클론은 그대로 기준선 의미를 유지한다 — 거기서 열면 재등록 때마다 없던
+            //   강등이 생긴다.
+            //   ⚠ 새로 깐 기기에서는 대상 알람이 0개라 아무 일도 일어나지 않는다.
+            if (incoming.isNotEmpty() && isSystemVoiceId(profileId)) {
+                return Seen(changed = true, persisted = true)
+            }
             return Seen(changed = false, persisted = true)
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.

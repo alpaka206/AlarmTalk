@@ -129,7 +129,18 @@ class StockClipPrefetchWorker(
             // 그대로 남는 것이다.
             // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
             val manifestTicket = StockClipManifestStore.beginFetch()
-            val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            val manifest = try {
+                withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            } catch (error: Throwable) {
+                // ⚠ **판정은 못 해도 '시도는 끝났다' 는 남긴다**(2026-09-03 리뷰 22차).
+                //   준비 신호를 안 세우면 오프라인·서버 오류에서 웰컴 프로모·첫 권한 안내가
+                //   **영영 안 뜬다** — 판정을 못 한 것과 시도가 안 끝난 것은 다르다.
+                //   `manifestFetched = false` 라 앞 판정은 그대로 지켜진다.
+                StockReplacementStatus.report(
+                    userId = session.user.id, pending = false, manifestFetched = false,
+                )
+                throw error
+            }
             when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket, session.user.id)) {
                 // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
                 // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.

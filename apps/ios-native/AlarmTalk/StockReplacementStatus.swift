@@ -27,7 +27,13 @@ final class StockReplacementStatus: ObservableObject {
     ///   미완료 여부를 아직 모르는데, 그 틈에 웰컴 프로모가 뜨면 **소진 플래그를 태우고**
     ///   뒤늦게 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이 잃는다.
     ///   CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」가 못 박은 자리다.
-    @Published private(set) var checked = false
+    ///
+    /// ⚠ **계정별이다**(2026-09-03 리뷰 22차). 전역 Bool 이면 계정 A 가 한 번 확인한 뒤
+    ///   B 가 로그인해도 true 로 남아, **B 의 판정이 오기 전에** B 의 오버레이가 소진된다.
+    /// ⚠ **실패한 시도도 '끝났다' 로 센다**(같은 회차). 못 받았다고 false 로 두면
+    ///   오프라인·서버 오류에서 오버레이가 **영영 안 뜬다** — 판정을 못 한 것과 시도가
+    ///   안 끝난 것은 다르다.
+    @Published private(set) var checkedUserId: String?
 
     /// true 면 지금 재바인딩이 돌고 있다(재시도 버튼을 잠근다).
     @Published private(set) var working = false
@@ -88,9 +94,18 @@ final class StockReplacementStatus: ObservableObject {
     ///   그래서 그 판정을 호출부에 맡기지 않고 **여기서** 막는다. 호출부마다 `guard` 를
     ///   적게 하면 언젠가 한 곳이 빠진다.
     func report(userId: String?, pending: Bool, manifestFetched: Bool) {
-        guard manifestFetched else { return }
-        pendingUserId = pending ? userId : nil
-        checked = true
+        // 판정은 근거가 있을 때만 갱신한다 — 못 받았으면 앞 판정을 그대로 지킨다.
+        if manifestFetched {
+            pendingUserId = pending ? userId : nil
+        }
+        // 준비 신호는 **시도가 끝났으면** 세운다(성공·실패 모두).
+        checkedUserId = userId
+    }
+
+    /// 지금 계정의 판정이 한 번이라도 끝났는가.
+    func isChecked(for userId: String?) -> Bool {
+        guard let checkedUserId, let userId else { return false }
+        return checkedUserId == userId
     }
 
     /// 지금 계정이 막혀 있는가.
