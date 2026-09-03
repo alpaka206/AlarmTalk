@@ -145,10 +145,51 @@ struct StockClipLanguageRebinder {
     /// **한쪽만 고치지 말 것.**
     ///
     /// - Returns: 다시 묶은 알람 수.
+    /// **교체가 끝났으면 옛 스톡 클립 파일을 지운다.**
+    ///
+    /// 순서가 안전장치다: **다 받고 → 다 묶고 → 그 다음에 지운다.** 아직 갈아탈 알람이
+    /// 남아 있으면(시딩이 도는 중이라 세트가 모자란 경우) **아무것도 지우지 않고** 다음
+    /// 실행으로 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다(멱등).
+    ///
+    /// ⚠ **판정은 `needsRebind` 하나로 한다.** "죽은 키를 물고 있는 알람이 하나라도 있으면
+    ///   미룬다" 로 하면 **영영 안 지운다** — 버킷 없이 클립 하나만 물린 옛 행은 재바인더가
+    ///   손댈 수 없어 죽은 키를 계속 들고 있다. `needsRebind` 는 그 행을 false 로 돌려주므로
+    ///   막지 않고, 그 행이 물고 있는 키는 참조 집합에 들어가 **파일도 지워지지 않는다.**
+    ///
+    /// 안드로이드 짝은 `StockClipLanguageRebinder.pruneReplacedStockAudio` 다.
+    ///
+    /// - Returns: 지운 파일 수. 아직 때가 아니면 0.
     @discardableResult
+    func pruneReplacedStockAudio(
+        clips: [StockClip],
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil
+    ) -> Int {
+        guard !clips.isEmpty else { return 0 }
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+        let alarms = store.alarms
 
-    /// 갈아탈 세트가 완전한가 — 안드로이드 `replacementIsComplete` 미러.
-    /// `expectedVariants` 가 없으면(옛 서버) 막지 않는다.
+        // ① 아직 갈아탈 것이 남았으면 미룬다. ② 세트가 모자라 못 갈아탄 것이 있어도 미룬다.
+        let pending = alarms.contains {
+            Self.shouldRebind(
+                record: $0, language: language, liveKeys: liveKeys,
+                clips: clips, expectedVariants: expectedVariants,
+            )
+        }
+        guard !pending else { return 0 }
+        let waitingForSeed = alarms.contains {
+            Self.needsRebind(record: $0, language: language, liveKeys: liveKeys)
+        }
+        guard !waitingForSeed else { return 0 }
+
+        // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
+        var referenced = Set<String>()
+        for alarm in alarms {
+            referenced.formUnion(alarm.bucketClipKeys ?? [])
+            if let key = alarm.audioCacheKey, !key.isEmpty { referenced.insert(key) }
+        }
+        return cache.pruneReplacedStockAudio(referencedKeys: referenced, liveKeys: liveKeys)
+    }
 
     /// 저장된 버킷 id 를 **현재 이름**으로 접는다. 접기의 단일 출처는
     /// `RandomPromptContext.forBucket` ↔ `bucketCategory` 한 쌍이다.
@@ -157,6 +198,8 @@ struct StockClipLanguageRebinder {
         return RandomPromptContext.forBucket(raw)?.bucketCategory ?? raw
     }
 
+    /// 갈아탈 세트가 완전한가 — 안드로이드 `replacementIsComplete` 미러.
+    /// `expectedVariants` 가 없으면(옛 서버) 막지 않는다.
     static func replacementIsComplete(
         record: LocalAlarmRecord,
         clips: [StockClip],
@@ -184,6 +227,7 @@ struct StockClipLanguageRebinder {
         return variants == Set(0..<expected)
     }
 
+    @discardableResult
     func rebindLiveGenerationRows(
         session: AuthSession?,
         clips: [StockClip],
@@ -248,15 +292,31 @@ struct StockClipLanguageRebinder {
     /// ⚠ 다시 읽은 행이 더 이상 이 테마/목소리가 아니면 포기한다 — 그 사이 사용자가 바꾼
     ///   것이라, 받아 둔 클립은 이미 남의 것이다. 다음 실행이 다시 판단한다(멱등).
     ///
+    /// ⚠ **문구 갈래(`voiceRandomPrompt`·`voiceRandomContext`)도 함께 본다**(2026-09-03
+    ///   리뷰 9차). 목소리·테마·소스만 보면 **옛 라이브 행 → 직접 입력** 전환을 못 잡는다 —
+    ///   그 편집은 같은 목소리·같은 소스에 `bucketId` 도 여전히 nil 이라 가드를 통과하고,
+    ///   사용자가 방금 친 문구를 덮어쓴 뒤 테마 알람으로 되돌린다.
+    ///
     /// 안드로이드 짝은 `StockClipLanguageRebinder.applyClipFields` 다 — **한쪽만 고치지 말 것.**
+    /// **받아 둔 클립을 이 행에 얹어도 되는가** — 안드로이드 `canApplyClipFields` 미러.
+    ///
+    /// ⚠ 판정 축은 「이 알람이 어떤 종류의 문구를 쓰는가」 전부다. 목소리·테마·소스만 보면
+    ///   **옛 라이브 행 → 직접 입력** 전환을 못 잡는다(같은 목소리·같은 소스에 `bucketId`
+    ///   도 여전히 nil 이라 통과한다) — 사용자가 방금 친 문구를 덮어쓰게 된다.
+    static func canApplyClipFields(snapshot: LocalAlarmRecord, fresh: LocalAlarmRecord) -> Bool {
+        fresh.voiceProfileId == snapshot.voiceProfileId
+            && fresh.bucketId == snapshot.bucketId
+            && fresh.voiceSource == snapshot.voiceSource
+            && fresh.voiceRandomPrompt == snapshot.voiceRandomPrompt
+            && fresh.voiceRandomContext == snapshot.voiceRandomContext
+    }
+
     private func applyClipFields(
         snapshot: LocalAlarmRecord,
         bound: LocalAlarmRecord
     ) -> LocalAlarmRecord? {
         guard var fresh = store.alarms.first(where: { $0.id == snapshot.id }) else { return nil }
-        guard fresh.voiceProfileId == snapshot.voiceProfileId,
-              fresh.bucketId == snapshot.bucketId,
-              fresh.voiceSource == snapshot.voiceSource else { return nil }
+        guard Self.canApplyClipFields(snapshot: snapshot, fresh: fresh) else { return nil }
         // ⚠ **`bindBucket` 이 세우는 값과 정확히 같은 목록이어야 한다** — 하나 빠지면
         //   그 필드만 옛 값으로 남아 클립과 어긋난다.
         fresh.bucketClipKeys = bound.bucketClipKeys

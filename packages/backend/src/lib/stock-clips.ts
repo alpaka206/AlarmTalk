@@ -1116,6 +1116,21 @@ export async function generateStockClip(
   });
   const audioUrl = `r2://${audioObjectKey}`;
   const discardStagedAudio = async () => {
+    // ⚠ **아직 누가 쓰고 있으면 지우지 않는다**(2026-09-03).
+    //   오브젝트 키는 cacheKey 에서 **결정론적으로** 나온다
+    //   (`generated-tts/<user>/<cacheKey>.mp3`) — 같은 목소리·같은 문구면 회차가 달라도
+    //   키가 같다. 그래서 늦게 끝난 중복 렌더가 이 갈래로 들어오면, 자기가 만든 줄 알고
+    //   **이미 게시된(또는 은퇴한) 행이 가리키는 오브젝트**를 지운다.
+    //   은퇴 행이 특히 위험하다 — 그 행을 물고 있는 옛 알람이 재설치 때 소리를 잃는데,
+    //   행은 멀쩡히 남아 있어 어디서도 티가 안 난다.
+    const referenced = await db.execute({
+      sql: `SELECT 1 FROM generated_audio_assets WHERE audio_object_key = ?
+             UNION ALL
+            SELECT 1 FROM messages WHERE audio_url = ?
+            LIMIT 1`,
+      args: [audioObjectKey, audioUrl],
+    });
+    if (referenced.rows.length > 0) return;
     try {
       await storage.delete(audioObjectKey);
     } catch {
@@ -1156,6 +1171,18 @@ export async function generateStockClip(
                 AND vp.elevenlabs_voice_id = ?
                 AND q.owner_user_id = ?
                 AND q.status = 'pending' AND q.claim_token = ?
+            ))
+            -- ⚠ **시스템 스톡도 게시 직전에 provider 를 다시 확인한다**(2026-09-03 리뷰 9차).
+            --   위 클론 갈래와 같은 이유인데, 시스템 쪽에는 없었다. 목소리 교체 회차에는
+            --   #110(은퇴)과 #111(provider 교체)이 **따로 실행**되고 그 사이에도 cron 은
+            --   계속 돈다 — 그 틈에 시작한 합성은 **옛 목소리**로 구워지고, 게시되고 나면
+            --   findMissingStockTargets 가 '있다' 로 세어 **그 variant 만 영영 옛
+            --   목소리로 남는다.** 합성에 쓴 id 와 지금 프로필의 id 가 다르면 게시하지
+            --   않는다(그 회차는 superseded 로 접히고 다음 틱이 새 목소리로 다시 굽는다).
+            AND (? = 1 OR EXISTS (
+              SELECT 1 FROM voice_profiles vp
+              WHERE vp.id = ? AND vp.deleted_at IS NULL
+                AND vp.elevenlabs_voice_id = ?
             ))`,
       args: [
         messageId,
@@ -1179,6 +1206,10 @@ export async function generateStockClip(
         target.elevenlabsVoiceId,
         target.ownerUserId,
         target.claimToken ?? '',
+        // 시스템 갈래 전용 provider 확인(클론은 위 갈래가 이미 본다).
+        target.toneAdapt ? 1 : 0,
+        target.voiceProfileId,
+        target.elevenlabsVoiceId,
       ],
     });
 

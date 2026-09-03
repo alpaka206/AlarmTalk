@@ -257,6 +257,19 @@ class StockClipPrefetchWorker(
                         expectedVariants = manifest.expectedVariants
                     )
                 }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
+                // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시).
+                //   위 두 재바인딩이 끝난 **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직
+                //   갈아탈 알람이 남아 있으면 함수가 스스로 0을 돌려주고 미룬다 —
+                //   중간에 멈추면 지운 것이 없으므로 잃는 것도 없고, 다음 회차가 처음부터
+                //   다시 판단한다(멱등).
+                runCatching {
+                    StockClipLanguageRebinder.pruneReplacedStockAudio(
+                        context = applicationContext,
+                        clips = allClips,
+                        language = language,
+                        expectedVariants = manifest.expectedVariants,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Replaced stock audio prune failed", it) }
             }
 
             if (clips.isEmpty()) {

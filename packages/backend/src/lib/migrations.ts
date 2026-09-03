@@ -2658,6 +2658,30 @@ export const migrations: Migration[] = [
       `UPDATE voice_profiles
          SET name = '애니', elevenlabs_voice_id = 'OSwaPSNdfituxkWcjlkR'
        WHERE id = '70000000-0000-4000-9000-000000000104'`,
+
+      // ⚠ **provider 가 어긋난 살아 있는 시스템 클립을 회수한다**(2026-09-03 리뷰 9차).
+      //   #110(은퇴)과 이 마이그레이션은 **따로 실행**되고(러너가 id 별로 호출한다) 그
+      //   사이에도 5분 cron 은 계속 돈다. 그 틈에 시작한 합성은 **위 UPDATE 전의 목소리**
+      //   로 구워지고, 게시되고 나면 `findMissingStockTargets` 가 '있다' 로 세어 그
+      //   variant 만 영영 옛 목소리로 남는다.
+      //   게시 직전 검사는 `generateStockClip` 에 넣었지만(같은 회차), 그 검사가 없던
+      //   시절에 이미 구워졌거나 어떤 이유로든 어긋난 행이 있으면 여기서 되돌린다.
+      //   은퇴시키기만 하면 된다 — 다음 cron 틱이 새 목소리로 다시 굽는다.
+      `UPDATE messages
+          SET retired_at = datetime('now')
+        WHERE retired_at IS NULL
+          AND COALESCE(is_preset, 0) = 1
+          AND voice_profile_id IN (
+            SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM generated_audio_assets ga
+              JOIN voice_profiles vp ON vp.id = messages.voice_profile_id
+             WHERE ga.message_id = messages.id
+               AND ga.audio_url = messages.audio_url
+               AND ga.provider_voice_id <> vp.elevenlabs_voice_id
+          )`,
     ],
   },
 ];

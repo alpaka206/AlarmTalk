@@ -269,6 +269,48 @@ object StockClipLanguageRebinder {
      */
 
     /**
+     * **교체가 끝났으면 옛 스톡 클립 파일을 지운다.**
+     *
+     * 순서가 안전장치다: **다 받고 → 다 묶고 → 그 다음에 지운다.** 아직 갈아탈 알람이
+     * 남아 있으면(시딩이 도는 중이라 세트가 모자란 경우) **아무것도 지우지 않고** 다음
+     * 회차로 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다(멱등).
+     *
+     * ⚠ **판정은 [needsRebind] 하나로 한다.** "죽은 키를 물고 있는 알람이 하나라도 있으면
+     *   미룬다" 로 하면 **영영 안 지운다** — 버킷 없이 클립 하나만 물린 옛 행은 재바인더가
+     *   손댈 수 없어 죽은 키를 계속 들고 있기 때문이다. [needsRebind] 는 그 행을 false 로
+     *   돌려주므로(버킷이 없다) 막지 않고, 그 행이 물고 있는 키는 아래 참조 집합에 들어가
+     *   **파일이 지워지지도 않는다.**
+     *
+     * @return 지운 파일 수. 아직 때가 아니면 0.
+     */
+    suspend fun pruneReplacedStockAudio(
+        context: Context,
+        clips: List<StockClip>,
+        language: String,
+        expectedVariants: ExpectedVariantCounts? = null,
+    ): Int = withContext(Dispatchers.IO) {
+        if (clips.isEmpty()) return@withContext 0
+        val alarmDao = AlarmDatabase.getInstance(context).alarmDao()
+        val alarms = alarmDao.getAllAlarms()
+        val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
+
+        // ① 아직 갈아탈 것이 남았으면 미룬다.
+        val pending = alarms.any { shouldRebind(it, language, liveKeys, clips, expectedVariants) }
+        if (pending) return@withContext 0
+        // ② 세트가 모자라 못 갈아탄 알람이 있어도 미룬다 — 그 알람의 옛 클립은 아직 쓰인다.
+        val waitingForSeed = alarms.any { needsRebind(it, language, liveKeys) }
+        if (waitingForSeed) return@withContext 0
+
+        // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
+        val referenced = mutableSetOf<String>()
+        alarms.forEach { alarm ->
+            referenced += decodeBucketClipKeys(alarm.bucketClipKeysJson)
+            alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let { referenced += it }
+        }
+        AlarmAudioStore(context).pruneReplacedStockAudio(referenced, liveKeys)
+    }
+
+    /**
      * 저장된 버킷 id 를 **현재 이름**으로 접는다.
      *
      * ⚠ 기기에 저장된 알람은 이름이 바뀌기 전 값(`love`)을 그대로 들고 있다. 매니페스트는
@@ -325,17 +367,39 @@ object StockClipLanguageRebinder {
      *   목소리나 테마를 바꾼 것이라, 우리가 받아 둔 클립은 이미 남의 것이다.
      *   행이 아예 사라졌으면(삭제) 역시 포기한다. 다음 회차가 다시 판단한다.
      *
+     * ⚠ **문구 갈래(`voiceRandomPrompt`·`voiceRandomContext`)도 함께 본다**(2026-09-03
+     *   리뷰 9차). 목소리·테마·소스만 보면 **옛 라이브 행 → 직접 입력** 전환을 못 잡는다:
+     *   그 편집은 같은 목소리·같은 소스에 `bucketId` 도 여전히 null 이라 가드를 그대로
+     *   통과하고, 우리가 사용자가 방금 친 문구를 **덮어쓴 뒤 테마 알람으로 되돌린다.**
+     *   판정 축은 「이 알람이 어떤 종류의 문구를 쓰는가」 전부여야 한다.
+     *
      * iOS 짝은 `StockClipLanguageRebinder.applyClipFields` 다 — **한쪽만 고치지 말 것.**
      */
+    /**
+     * **받아 둔 클립을 이 행에 얹어도 되는가** — 스냅샷과 갓 읽은 행이 같은 알람인가.
+     *
+     * ⚠ **판정 축은 「이 알람이 어떤 종류의 문구를 쓰는가」 전부다**(2026-09-03 리뷰 9차).
+     *   목소리·테마·소스만 보면 **옛 라이브 행 → 직접 입력** 전환을 못 잡는다: 그 편집은
+     *   같은 목소리·같은 소스에 `bucketId` 도 여전히 null 이라 통과해 버리고, 우리가
+     *   사용자가 방금 친 문구를 덮어쓴 뒤 테마 알람으로 되돌린다.
+     *
+     * 조건을 호출부에서 손으로 조립하지 말 것 — 이름이 하나여야 iOS 와 대조할 수 있다.
+     */
+    @JvmStatic
+    internal fun canApplyClipFields(snapshot: AlarmEntity, fresh: AlarmEntity): Boolean =
+        fresh.voiceProfileId == snapshot.voiceProfileId &&
+            fresh.bucketId == snapshot.bucketId &&
+            fresh.voiceSource == snapshot.voiceSource &&
+            fresh.voiceRandomPrompt == snapshot.voiceRandomPrompt &&
+            fresh.voiceRandomContext == snapshot.voiceRandomContext
+
     private suspend fun applyClipFields(
         alarmDao: com.alarmtalk.app.data.AlarmDao,
         snapshot: AlarmEntity,
         bound: AlarmEntity,
     ): AlarmEntity? {
         val fresh = alarmDao.getById(snapshot.id) ?: return null
-        if (fresh.voiceProfileId != snapshot.voiceProfileId) return null
-        if (fresh.bucketId != snapshot.bucketId) return null
-        if (fresh.voiceSource != snapshot.voiceSource) return null
+        if (!canApplyClipFields(snapshot, fresh)) return null
         return fresh.copy(
             bucketClipKeysJson = bound.bucketClipKeysJson,
             bucketClipTextsJson = bound.bucketClipTextsJson,

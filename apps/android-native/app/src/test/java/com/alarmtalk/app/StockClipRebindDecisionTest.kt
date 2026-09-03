@@ -210,6 +210,64 @@ class StockClipRebindDecisionTest {
         )
     }
 
+    /**
+     * ⚠ **다운로드가 도는 동안 사용자가 문구를 직접 쳐 넣으면 덮지 않는다**(2026-09-03 리뷰 9차).
+     *
+     * 이 워커는 알람을 스냅샷으로 읽고 **여러 번 중단되며** 돌아온다. 그 사이의 편집을
+     * 덮지 않으려고 8차에서 가드를 넣었는데, **목소리·테마·소스만** 비교해서 정작 가장
+     * 파괴적인 편집을 통과시켰다: 옛 라이브 행을 직접 입력으로 바꾸면 그 셋이 전부
+     * 같고(`bucketId` 도 여전히 null) 통과해, 방금 친 문구를 덮어쓴 뒤 테마 알람으로
+     * 되돌린다.
+     *
+     * 판정 축은 「이 알람이 **어떤 종류의 문구**를 쓰는가」 전부여야 한다.
+     */
+    @Test
+    fun 다운로드_중_직접입력으로_바꾼_알람은_덮지_않는다() {
+        // 옛 라이브 생성 행(랜덤 켜짐·버킷 없음)을 스냅샷으로 잡았다.
+        val snapshot = alarmWith(bucketId = null, randomPrompt = true, randomContext = "wake_weather")
+        // 그 사이 사용자가 **같은 목소리로** 직접 입력을 골라 문구를 쳤다.
+        val edited = snapshot.copy(voiceRandomPrompt = false, voiceRandomContext = null)
+        assertFalse(StockClipLanguageRebinder.canApplyClipFields(snapshot, edited))
+    }
+
+    @Test
+    fun 문구_종류만_바뀌어도_덮지_않는다() {
+        val snapshot = alarmWith(bucketId = null, randomPrompt = true, randomContext = "wake_weather")
+        assertFalse(
+            StockClipLanguageRebinder.canApplyClipFields(
+                snapshot, snapshot.copy(voiceRandomContext = "wake_medication"),
+            ),
+        )
+    }
+
+    /** 시각·on/off 만 바뀐 것은 **얹어도 된다** — 그 값들은 갓 읽은 행의 것이 그대로 남는다. */
+    @Test
+    fun 시각만_바뀐_알람에는_클립을_얹는다() {
+        val snapshot = alarmWith()
+        val edited = snapshot.copy(hour = 9, enabled = false, updatedAtMillis = 999L)
+        assertTrue(StockClipLanguageRebinder.canApplyClipFields(snapshot, edited))
+    }
+
+    @Test
+    fun 목소리나_테마가_바뀌면_덮지_않는다() {
+        val snapshot = alarmWith()
+        assertFalse(
+            StockClipLanguageRebinder.canApplyClipFields(
+                snapshot, snapshot.copy(voiceProfileId = "other-voice"),
+            ),
+        )
+        assertFalse(
+            StockClipLanguageRebinder.canApplyClipFields(
+                snapshot, snapshot.copy(bucketId = "fortune"),
+            ),
+        )
+        assertFalse(
+            StockClipLanguageRebinder.canApplyClipFields(
+                snapshot, snapshot.copy(voiceSource = VoiceSources.LOCAL_AUDIO),
+            ),
+        )
+    }
+
     private fun clip(category: String, variant: Int) = StockClip(
         messageId = "new-$variant",
         voiceProfileId = "clone-profile",
@@ -226,6 +284,8 @@ class StockClipRebindDecisionTest {
         playMode: String = AlarmPlayModes.VOICE_ONLY,
         voiceSource: String = VoiceSources.TTS_PROFILE,
         bucketId: String? = "weather",
+        randomPrompt: Boolean = false,
+        randomContext: String? = "wake_weather",
         origin: String = AlarmOrigins.LOCAL_OWNED,
         remoteAlarmId: String? = null,
         syncState: String = AlarmSyncStates.LOCAL_ONLY,
@@ -254,8 +314,8 @@ class StockClipRebindDecisionTest {
         voiceCategory = "custom",
         voiceLanguage = language,
         // 버킷 알람의 특징 — 랜덤 생성은 꺼진 채 버킷 메타만 남는다.
-        voiceRandomPrompt = false,
-        voiceRandomContext = "wake_weather",
+        voiceRandomPrompt = randomPrompt,
+        voiceRandomContext = randomContext,
         voiceWeatherCountry = null,
         voiceWeatherCity = null,
         voiceFortuneGender = null,

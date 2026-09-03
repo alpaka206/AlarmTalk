@@ -1035,6 +1035,48 @@ class AlarmAudioStore(
                 file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)
         } ?: 0
 
+    /**
+     * **교체가 끝난 뒤 남은 옛 스톡 클립 파일을 지운다.**
+     *
+     * [sweepStaleCache] 는 `stock_` 파일을 **일부러 건너뛴다** — 미리 받아 둔 클립은 어떤
+     * 알람도 참조하지 않아 TTL 로 지우면 오프라인 재생이 깨지기 때문이다. 그 결과 문구·
+     * 목소리를 갈아도 옛 클립 파일은 기기에 **영원히 쌓인다.** 이 함수가 그 갈래만 맡는다.
+     *
+     * ⚠ **순서가 안전장치다: 다 받고 → 다 묶고 → 그 다음에 지운다.** 호출자가 재바인딩이
+     *   끝났음을 확인한 뒤에만 부른다. 중간에 멈추면 아무것도 안 지운 상태로 남고, 다음
+     *   회차가 처음부터 다시 판단한다(멱등).
+     *
+     * @param referencedKeys 지금 알람들이 물고 있는 캐시 키 전부. **여러 알람이 같은 클립을
+     *   공유**하므로 하나라도 참조하면 남긴다.
+     * @param liveKeys 지금 매니페스트에 있는 클립 키. 알람이 아직 안 물었어도 편집기에서
+     *   고를 수 있어야 하므로 남긴다.
+     * @return 지운 파일 수(메타 사이드카 포함).
+     */
+    fun pruneReplacedStockAudio(referencedKeys: Set<String>, liveKeys: Set<String>): Int {
+        if (liveKeys.isEmpty()) return 0 // 매니페스트를 못 받았으면 판단 근거가 없다.
+        val keep = referencedKeys + liveKeys
+        var deleted = 0
+        audioDir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            if (file.extension == PARTIAL_EXTENSION) return@forEach
+            val key = file.nameWithoutExtension
+            if (!key.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
+            // 안드로이드의 다른 네임스페이스(`remote-message-`·`greeting_`)는 접두가
+            // 달라 여기 안 걸린다([messageCacheKeys]). iOS 의 `stock_preview_` 에 해당하는
+            // 갈래는 안드로이드에 없다.
+            if (key in keep) return@forEach
+            if (file.delete()) {
+                deleted += 1
+            } else {
+                Log.w(TAG, "Failed to prune replaced stock audio path=${file.absolutePath}")
+            }
+        }
+        if (deleted > 0) {
+            Log.i(TAG, "Pruned replaced stock audio deleted=$deleted kept=${keep.size}")
+        }
+        return deleted
+    }
+
     private fun findCachedFile(cacheKey: String): File? {
         val safeKey = safeCacheKey(cacheKey)
         return audioDir.listFiles()?.firstOrNull { file ->

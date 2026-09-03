@@ -279,49 +279,7 @@ struct AlarmTalkApp: App {
                         // 돌아 즉시 0건 반환**했다 — 언어를 바꿔도 아무 일도 일어나지 않았다.
                         // 게다가 매니페스트를 채우는 곳이 알람 편집기 진입 한 곳뿐이라,
                         // 거기서 실패하면 테마 목록이 통째로 비었다.
-                        // ⚠ **여기서는 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의
-                        //   시딩은 cron 이 틱당 조금씩 채우므로, 그 사이에 다른 화면이
-                        //   먼저 받아 둔 **부분 매니페스트**가 세션 캐시에 남아 있을 수
-                        //   있다(`manifestFetchedThisSession`). 그걸로 재바인딩을 돌리면
-                        //   완전성 검사에 걸려 **아무 일도 안 하고**, 이 세션 동안 다시
-                        //   시도하지 않는다 — 그 세션 내내 옛 대사가 울린다.
-                        //   (안드로이드는 선다운로드 워커가 매 실행마다 새로 받는다.)
-                        await voiceStudio.loadStockClips(session: auth.session, force: true)
-                        let rebinder = StockClipLanguageRebinder(store: alarmStore)
-                        await rebinder.rebindIfLanguageChanged(
-                            session: auth.session,
-                            clips: voiceStudio.stockClips,
-                            // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
-                            expectedVariants: voiceStudio.expectedVariants
-                        )
-                        // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
-                        // 멱등이라 매 실행 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
-                        // 하지 않고 다음 실행에 다시 시도한다. 아래 예약 재조정이 이어서
-                        // 도므로 바뀐 클립이 그 자리에서 예약에 반영된다.
-                        let converted = await rebinder.rebindLiveGenerationRows(
-                            session: auth.session,
-                            clips: voiceStudio.stockClips,
-                            expectedVariants: voiceStudio.expectedVariants
-                        )
-                        // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차).
-                        //   방금 만든 행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그
-                        //   값이 없으면 발사 때 **마지막 클립("인터넷이 안 돼 날씨를 못
-                        //   알아봤어요")** 으로 폴백한다(`BucketVariantResolver`). 지역도
-                        //   저장돼 있고 인터넷도 되는데 그 안내가 나가는 것이다. 아래 예약
-                        //   재조정보다 **먼저** 해야 그 자리에서 예약에 반영된다.
-                        //   안드로이드 짝은 `StockClipLanguageRebinder` 의
-                        //   `DynamicVoiceRefreshScheduler` 호출이다.
-                        if converted > 0, let token = auth.session?.token {
-                            let weather = WeatherVariantRefreshService(
-                                store: alarmStore, alarmKit: alarmKit
-                            )
-                            _ = await weather.refreshDue(token: token)
-                        }
-                        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를
-                        // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
-                        // 옛 언어 파일을 그대로 재생한다 — 이 클래스가 고치려던 증상이
-                        // ("앱은 영어인데 알람만 한국어") 예약 쪽에 그대로 남아 있었다.
-                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
+                        await rebindStockClipsIfNeeded()
                     }
                     .task(id: auth.session?.user.id) {
                         remoteSync.clearUserScopedRemoteState()
@@ -462,11 +420,19 @@ struct AlarmTalkApp: App {
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
                     guard auth.session != nil else { return }
-                    await voiceStudio.loadStockClips(session: auth.session)
                     stockClipPrefetcher.start(
                             session: auth.session,
                             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
                         )
+                    // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
+                    //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
+                    //   **하나뿐**이었다. 그런데 프리셋 교체는 서버가 틱마다 조금씩 굽는
+                    //   일이라, 그 세션 시작 시점에는 세트가 모자라 재바인딩이
+                    //   `replacementIsComplete` 에 걸려 **아무 일도 안 하고 끝난다.**
+                    //   앱을 며칠 켜 두는 사용자는 그 세션 내내 지워진 대사를 재생했다.
+                    //   안드로이드는 WorkManager 재큐잉·백오프로 여러 번 시도한다 —
+                    //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
+                    await rebindStockClipsIfNeeded()
                 }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
@@ -507,6 +473,65 @@ struct AlarmTalkApp: App {
                 break
             }
         }
+    }
+
+    /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**
+    ///
+    /// ⚠ **부르는 곳이 둘이다 — 콜드 스타트와 전경 복귀.** 예전에는 콜드 스타트 하나뿐이라,
+    ///   교체 시딩이 도는 중에 앱을 켠 사용자는 세트가 모자라 재바인딩이 그냥 넘어가고
+    ///   **그 세션 내내 지워진 대사를 재생**했다(안드로이드는 WorkManager 가 여러 번
+    ///   시도한다). 전부 멱등이라 여러 번 돌아도 안전하다.
+    ///
+    /// ⚠ **두 곳에 베껴 두지 말 것** — 한쪽만 고치는 사고가 이 저장소의 단골이다.
+    ///
+    /// 순서에 뜻이 있다: 매니페스트 → 재바인딩 2종 → 날씨 조건 → **정리** → 예약 재조정.
+    @MainActor
+    private func rebindStockClipsIfNeeded() async {
+        guard auth.session != nil else { return }
+        // ⚠ **매니페스트를 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의 시딩은 cron 이
+        //   틱당 조금씩 채우므로, 다른 화면이 먼저 받아 둔 **부분 매니페스트**가 세션
+        //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성
+        //   검사에 걸려 **아무 일도 안 하고** 끝난다.
+        await voiceStudio.loadStockClips(session: auth.session, force: true)
+
+        let rebinder = StockClipLanguageRebinder(store: alarmStore)
+        // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
+        await rebinder.rebindIfLanguageChanged(
+            session: auth.session,
+            clips: voiceStudio.stockClips,
+            // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
+            expectedVariants: voiceStudio.expectedVariants
+        )
+        // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
+        // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
+        let converted = await rebinder.rebindLiveGenerationRows(
+            session: auth.session,
+            clips: voiceStudio.stockClips,
+            expectedVariants: voiceStudio.expectedVariants
+        )
+        // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차). 방금 만든
+        //   행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그 값이 없으면 발사 때
+        //   **마지막 클립("인터넷이 안 돼 날씨를 못 알아봤어요")** 으로 폴백한다
+        //   (`BucketVariantResolver`). 지역도 저장돼 있고 인터넷도 되는데 그 안내가 나간다.
+        //   아래 예약 재조정보다 **먼저** 해야 그 자리에서 예약에 반영된다.
+        //   안드로이드 짝은 `StockClipLanguageRebinder` 의 `DynamicVoiceRefreshScheduler`.
+        if converted > 0, let token = auth.session?.token {
+            let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
+            _ = await weather.refreshDue(token: token)
+        }
+        // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시). 위 두 재바인딩이 끝난
+        //   **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직 갈아탈 알람이 남아 있으면 함수가
+        //   스스로 0을 돌려주고 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다.
+        rebinder.pruneReplacedStockAudio(
+            clips: voiceStudio.stockClips,
+            expectedVariants: voiceStudio.expectedVariants
+        )
+        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
+        //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
+        //   증상("앱은 영어인데 알람만 한국어")이 예약 쪽에 그대로 남아 있었다.
+        await AlarmScheduleReconciler.reconcile(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
+        )
     }
 
     /// 곧 울릴 날씨 알람의 조건을 받아 두고, 어긋난 예약을 맞춘다.

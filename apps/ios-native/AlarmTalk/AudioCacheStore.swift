@@ -703,6 +703,55 @@ final class AudioCacheStore {
     ///
     /// actor state 를 건드리지 않고 파일 I/O 만 수행하므로 `nonisolated` —
     /// `Task.detached` 등 백그라운드 컨텍스트에서 실행해도 안전하다.
+    /// **교체가 끝난 뒤 남은 옛 스톡 클립 파일을 지운다.**
+    ///
+    /// `sweepStaleCache` 는 `stock_` 파일을 **일부러 건너뛴다** — 알람이 지금 참조하지
+    /// 않아도 다음에 고를 때 필요하고, iOS 는 한 번 지우면 다시 받을 길이 좁기 때문이다.
+    /// 그 결과 문구·목소리를 갈아도 옛 클립 파일이 기기에 **영원히 쌓인다.** 이 함수가
+    /// 그 갈래만 맡는다.
+    ///
+    /// ⚠ **순서가 안전장치다: 다 받고 → 다 묶고 → 그 다음에 지운다.** 호출자가 재바인딩
+    ///   완료를 확인한 뒤에만 부른다. 중간에 멈추면 아무것도 안 지운 상태로 남고 다음
+    ///   실행이 처음부터 다시 판단한다(멱등).
+    ///
+    /// - Parameters:
+    ///   - referencedKeys: 지금 알람들이 물고 있는 키 전부. **여러 알람이 같은 클립을
+    ///     공유**하므로 하나라도 참조하면 남긴다.
+    ///   - liveKeys: 지금 매니페스트에 있는 키. 아직 안 물었어도 편집기에서 고를 수 있어야
+    ///     하므로 남긴다. 비어 있으면(매니페스트 못 받음) 아무것도 지우지 않는다.
+    /// - Returns: 지운 파일 수.
+    @discardableResult
+    nonisolated func pruneReplacedStockAudio(
+        referencedKeys: Set<String>,
+        liveKeys: Set<String>
+    ) -> Int {
+        guard !liveKeys.isEmpty else { return 0 }
+        guard let directory = try? Self.audioDirectory() else { return 0 }
+        let fileManager = FileManager.default
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        guard !names.isEmpty else { return 0 }
+
+        let keep = Set(referencedKeys.union(liveKeys).map { Self.safeCacheKey($0) })
+        var namesByBase: [String: [String]] = [:]
+        for name in names {
+            namesByBase[Self.splitName(name).base, default: []].append(name)
+        }
+
+        var deleted = 0
+        for (base, grouped) in namesByBase {
+            guard base.hasPrefix(Self.stockCacheKeyPrefix) else { continue }
+            // 미리듣기 캐시는 알람이 참조하지 않는 별개 갈래다 — 건드리지 않는다.
+            guard !base.hasPrefix(Self.safeCacheKey("stock_preview_")) else { continue }
+            guard !keep.contains(base) else { continue }
+            for name in grouped {
+                if (try? fileManager.removeItem(at: directory.appendingPathComponent(name))) != nil {
+                    deleted += 1
+                }
+            }
+        }
+        return deleted
+    }
+
     nonisolated func sweepStaleCache(
         activeCacheKeys: Set<String>,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
