@@ -43,7 +43,9 @@ struct StockClipLanguageRebinder {
         session: AuthSession?,
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        expectedVariants: ExpectedVariantCounts? = nil
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마.
+        legacyHints: [String: String] = [:]
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
@@ -54,19 +56,21 @@ struct StockClipLanguageRebinder {
         let stale: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
             Self.shouldRebind(
                 record: record, language: language, liveKeys: liveKeys,
-                clips: clips, expectedVariants: expectedVariants,
+                clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
             )
         }
         guard !stale.isEmpty else { return 0 }
 
         var rebound = 0
+        var conditionBucketRebound = false
         for record in stale {
             // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
             //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
             //   `bindBucket` 이 여전히 옛 이름(`love`)으로 매니페스트를 뒤져 아무것도
             //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
             //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
-            guard let bucket = Self.normalizedBucketId(record.bucketId) else { continue }
+            guard let bucket = Self.resolvedBucketId(record, legacyHints: legacyHints)
+            else { continue }
             guard let clipFields = await bindBucket(
                 record: record, bucket: bucket, clips: clips, language: language, token: token
             ) else { continue }
@@ -75,8 +79,15 @@ struct StockClipLanguageRebinder {
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
             bound.bucketId = bucket
             _ = store.upsertPreservingServerSyncFields(bound)
+            if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
             rebound += 1
         }
+        // ⚠ **조건형 버킷은 묶는 것만으로 끝나지 않는다** — 날씨는 조건 인덱스가 없으면
+        //   발사 때 마지막 '못 알아봤어요' 클립으로 떨어진다. 해석은 **호출부**가 한다:
+        //   조건이 바뀌면 AlarmKit 예약도 다시 잡아야 하는데 그 핸들은 호출부에 있다
+        //   (`AlarmTalkApp.rebindStockClipsIfNeeded`). 안드로이드는 워커가 스케줄러를
+        //   직접 부른다 — 플랫폼 사정이라 모양이 다르다.
+        _ = conditionBucketRebound
         return rebound
     }
 
@@ -94,11 +105,13 @@ struct StockClipLanguageRebinder {
         language: String,
         liveKeys: Set<String>,
         clips: [StockClip],
-        expectedVariants: ExpectedVariantCounts?
+        expectedVariants: ExpectedVariantCounts?,
+        legacyHints: [String: String] = [:]
     ) -> Bool {
-        needsRebind(record: record, language: language, liveKeys: liveKeys)
+        needsRebind(record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints)
             && replacementIsComplete(
                 record: record, clips: clips, language: language, expectedVariants: expectedVariants,
+                legacyHints: legacyHints,
             )
     }
 
@@ -112,26 +125,42 @@ struct StockClipLanguageRebinder {
     ///
     /// ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
     ///   시딩 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다.
+    /// **이 알람의 테마가 무엇인가** — 저장된 값이 먼저, 없으면 서버가 준 힌트.
+    ///
+    /// `bucketId` 를 행에 적기 전에 만들어진 옛 알람은 저장된 값이 없어서, 재바인더 두 갈래
+    /// 어디에도 안 걸려 **영원히 옛 대사·옛 목소리**로 울었다(이름만 새 이름). 무엇으로
+    /// 갈아탈지는 서버가 안다 — `GET /tts/stock-clips` 의 `legacy_bucket_hints`.
+    ///
+    /// ⚠ **힌트를 레코드에 미리 써넣지 말 것.** `canApplyClipFields` 가 `bucketId` 를
+    ///   비교하므로, 스냅샷만 채우면 디스크의 nil 과 달라져 **모든 적용이 거부된다.**
+    ///   해석한 값은 따로 들고 다니다가 쓰기 시점에 한 번만 적는다. 안드로이드 짝은
+    ///   `StockClipLanguageRebinder.resolvedBucketId`.
+    static func resolvedBucketId(
+        _ record: LocalAlarmRecord,
+        legacyHints: [String: String] = [:]
+    ) -> String? {
+        if let stored = normalizedBucketId(record.bucketId) { return stored }
+        guard let messageId = (record.ttsMessageId).nilIfBlank else { return nil }
+        guard let hinted = legacyHints[messageId] else { return nil }
+        return normalizedBucketId(hinted)
+    }
+
     static func needsRebind(
         record: LocalAlarmRecord,
         language: String,
-        liveKeys: Set<String>
+        liveKeys: Set<String>,
+        legacyHints: [String: String] = [:]
     ) -> Bool {
-        guard (record.bucketId).nilIfBlank != nil else { return false }
+        guard resolvedBucketId(record, legacyHints: legacyHints) != nil else { return false }
         guard record.playModeEnum != .alarmOnly else { return false }
         // 녹음 알람에는 문구 개념이 없다.
         guard record.voiceSourceEnum != .localAudio else { return false }
         let bound = record.bucketClipKeys ?? []
-        // ⚠ **이 판정이 언어 검사보다 앞에 있어야 한다**(2026-09-03 리뷰 13차). 날씨·운세는
-        //   조건이나 사주 입력으로 클립을 고르는데 받은 알람에는 그 값이 없다. 값 없이 전체
-        //   세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로 떨어진다.
-        //   받은 알람은 `voiceLanguage` 도 nil 이라, 영어·일본어 기기에서는 언어 검사가
-        //   먼저 true 를 돌려주며 이 면제를 건너뛴다.
-        if bound.isEmpty,
-           let bucket = normalizedBucketId(record.bucketId),
-           MatchingBucketIds.contains(bucket) {
-            return false
-        }
+        // ⚠ **조건형 버킷(날씨·운세)을 비켜 가지 않는다**(2026-09-03 사용자 지시).
+        //   12·13차에는 여기서 그냥 건너뛰었다 — 받은 알람에 조건도 사주도 없어서 값 없이
+        //   묶으면 날씨가 마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다. 그런데 그러면
+        //   그 알람은 **영원히 옛 대사**로 남는다. 조건은 **받는 사람 자신의 설정**으로
+        //   채울 수 있으므로, 갈아탄 뒤 `WeatherVariantRefreshService` 로 즉시 해석한다.
         // ① 앱 언어가 바뀌었다 — 원래 목적.
         let current: String = record.voiceLanguage ?? "ko"
         if current != language { return true }
@@ -185,7 +214,10 @@ struct StockClipLanguageRebinder {
     func pruneReplacedStockAudio(
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        expectedVariants: ExpectedVariantCounts? = nil
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// ⚠ **재바인딩과 같은 힌트를 넘길 것.** 여기만 힌트 없이 물으면 [needsRebind] 가
+        /// 버킷 없는 옛 행을 false 로 돌려줘, **아직 갈아타지 않은 알람을 두고 파일을 지운다.**
+        legacyHints: [String: String] = [:]
     ) async -> Int {
         guard !clips.isEmpty else { return 0 }
         // ⚠⚠ **알람이 디스크에서 다 올라오기 전에는 절대 지우지 않는다**(2026-09-03 리뷰 10차).
@@ -204,12 +236,14 @@ struct StockClipLanguageRebinder {
         let pending = alarms.contains {
             Self.shouldRebind(
                 record: $0, language: language, liveKeys: liveKeys,
-                clips: clips, expectedVariants: expectedVariants,
+                clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
             )
         }
         guard !pending else { return 0 }
         let waitingForSeed = alarms.contains {
-            Self.needsRebind(record: $0, language: language, liveKeys: liveKeys)
+            Self.needsRebind(
+                record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            )
         }
         guard !waitingForSeed else { return 0 }
 
@@ -247,12 +281,14 @@ struct StockClipLanguageRebinder {
         record: LocalAlarmRecord,
         clips: [StockClip],
         language: String,
-        expectedVariants: ExpectedVariantCounts?
+        expectedVariants: ExpectedVariantCounts?,
+        legacyHints: [String: String] = [:]
     ) -> Bool {
         // ⚠ **저장된 옛 이름을 접고 나서 맞춘다**(2026-09-03 리뷰 4차). 기기에 `love` 로
         //   저장된 알람은 새 매니페스트(`cheer`)와 이름이 달라 variant 가 0개로 잡히고,
         //   그러면 이 함수가 영원히 false 라 재바인딩이 통째로 막힌다.
-        guard let bucket = normalizedBucketId(record.bucketId) else { return false }
+        // 저장된 값이 없는 옛 알람은 서버 힌트로 해석한다(`resolvedBucketId`).
+        guard let bucket = resolvedBucketId(record, legacyHints: legacyHints) else { return false }
         let variants = Set(
             clips
                 .filter {

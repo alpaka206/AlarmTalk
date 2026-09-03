@@ -994,7 +994,15 @@ export class PrerenderSupersededError extends Error {
  *
  * ⚠ 이미 말줄임으로 끝나면 덧붙이지 않는다(모델이 길게 늘어뜨린다).
  */
-function withClosingBreath(text: string): string {
+/**
+ * v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 제공자에게 보내는 문장 끝에 ` ...` 를 붙여
+ * 말끝을 흐리게 한다. mp3 뒤에 붙이는 무음(`appendMp3TrailingSilence`)과 **다른 장치**이고
+ * 둘 다 필요하다: 이건 **말소리**를, 저건 **파일 길이**를 늘린다.
+ *
+ * 시청본 생성기(`scripts/prerender-stock-preview.ts`)가 같은 함수를 써야 한다 — 안 그러면
+ * 사람이 들어 본 소리와 서버가 굽는 소리가 갈린다.
+ */
+export function withClosingBreath(text: string): string {
   const base = text.trimEnd();
   if (!base || /(\.\.\.|…)$/.test(base)) return base;
   return `${base} ...`;
@@ -1108,15 +1116,16 @@ export async function generateStockClip(
     cacheKey,
     generated.outputFormat,
   );
-  // ⚠ **올리기 전에 이 키의 삭제 예약을 취소한다**(2026-09-03 리뷰 13차).
-  //   오브젝트 키는 cacheKey 에서 결정론적으로 나오므로, 낡은 회차가 남긴 삭제 예약이
-  //   **내가 지금 올리는 바로 그 키**를 가리킬 수 있다. 취소하지 않으면 다음 cron 틱이
-  //   방금 올린 음원을 지우고, 그걸 가리키는 알람은 소리를 잃는다.
-  //   드레인도 지우기 직전에 예약이 아직 있는지 다시 본다 — 둘이 한 쌍이다.
-  await db.execute({
-    sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
-    args: [audioObjectKey],
-  });
+  // ⚠ **삭제 예약은 여기서 취소하지 않는다 — 게시 트랜잭션 안에서 한다**(리뷰 14차).
+  //   13차에 이 자리에서 `DELETE FROM pending_external_deletions` 를 했는데, 그 예약이
+  //   **내 것이 아닐 수 있다**: 계정 삭제·동의 철회가 같은 키를 넣어 둔 것일 수 있다.
+  //   그걸 지운 뒤 아래 업로드가 던지거나 워커가 죽으면 **되살리는 곳이 없어** 파기하기로
+  //   약속한 음원이 영구히 남는다(프리셋은 TTL 스윕도 면제라 회수 경로가 통째로 사라진다).
+  //
+  //   그 사이 드레인이 방금 올린 것을 지우지 않는 이유는 따로 있다 — 드레인은
+  //   **오브젝트의 업로드 시각**으로 30분 유예를 걸고(`bucket.head`), 아래 `storeAtKey` 가
+  //   그 시각을 지금으로 갱신한다. 게시는 몇 초 안에 끝나므로 유예 안에서 끝난다.
+  //   그리고 게시가 성공한 그 트랜잭션에서 예약을 지운다(`claimKeyFromDeletionQueue`).
   await storage.storeAtKey(audioObjectKey, {
     bytes,
     userId: target.ownerUserId,
@@ -1138,6 +1147,18 @@ export async function generateStockClip(
   // 조건부 INSERT: 같은 (voice·category·language·variant) preset 이 이미 있으면 no-op. cron 이 겹쳐
   // 두 호출이 같은 target 을 동시에 렌더해도(findMissingStockTargets 는 순차 멱등만 보장) 중복 행이
   // 생기지 않는다. SQLite 단일 writer 라 INSERT…SELECT WHERE NOT EXISTS 가 원자적으로 직렬화된다.
+  /**
+   * **게시에 성공한 그 트랜잭션에서만** 이 키의 삭제 예약을 지운다.
+   *
+   * 결정론적 키라 낡은 회차가 남긴 예약이 방금 게시한 오브젝트를 가리킬 수 있다.
+   * 게시와 원자적으로 묶으므로, 게시가 실패하면 예약은 그대로 남아 정상적으로 회수된다.
+   */
+  const claimKeyFromDeletionQueue = (tx: DbExecutor) =>
+    tx.execute({
+      sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
+      args: [audioObjectKey],
+    });
+
   const publish = () =>
     withWriteTransaction(db, async (tx) => {
       if (
@@ -1306,6 +1327,7 @@ export async function generateStockClip(
             generated.outputFormat,
           ],
         });
+        await claimKeyFromDeletionQueue(tx);
         return {
           inserted: false as const,
           messageId: existingMessageId,
@@ -1346,6 +1368,7 @@ export async function generateStockClip(
         generated.outputFormat,
       ],
     });
+    await claimKeyFromDeletionQueue(tx);
     return { inserted: true as const, messageId, text: displayText, audioUrl };
     });
   let publication: Awaited<ReturnType<typeof publish>>;

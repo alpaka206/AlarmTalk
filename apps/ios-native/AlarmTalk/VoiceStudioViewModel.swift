@@ -62,6 +62,11 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
     /// 그리고 **기본 목소리와 등록 목소리는 개수가 다르다** — `ExpectedVariantCounts` 참조.
     @Published var expectedVariants: ExpectedVariantCounts?
+    /// **버킷 없이 클립 하나만 물린 옛 알람**의 테마 힌트(messageId → 카테고리).
+    ///
+    /// 재바인더가 그 알람을 갈아 끼울 때 쓴다 — 없으면 그 알람은 두 갈래 어디에도 안 걸려
+    /// 영원히 옛 대사·옛 목소리로 운다. 서버가 `GET /tts/stock-clips` 에 실어 준다.
+    @Published var legacyBucketHints: [String: String] = [:]
     @Published var selectedProfileID: String?
     /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
     /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
@@ -572,6 +577,10 @@ final class VoiceStudioViewModel: ObservableObject {
         if stockClips.isEmpty, let cached = StockClipManifestStore.load() {
             stockClips = cached.clips
             expectedVariants = cached.expectedVariants
+            legacyBucketHints = Dictionary(
+                (cached.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+                uniquingKeysWith: { first, _ in first },
+            )
         }
         // ⚠ **반환값은 '이번에 서버에서 새로 받았는가' 다**(Codex #703 P1). 예전에는
         // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
@@ -594,6 +603,10 @@ final class VoiceStudioViewModel: ObservableObject {
             guard revision == manifestRevision else { return false }
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
+            legacyBucketHints = Dictionary(
+                (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+                uniquingKeysWith: { first, _ in first },
+            )
             manifestFetchedThisSession = true
             StockClipManifestStore.save(manifest)
             return true

@@ -501,11 +501,14 @@ struct AlarmTalkApp: App {
 
         let rebinder = StockClipLanguageRebinder(store: alarmStore)
         // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
-        await rebinder.rebindIfLanguageChanged(
+        let rebound = await rebinder.rebindIfLanguageChanged(
             session: auth.session,
             clips: voiceStudio.stockClips,
             // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
-            expectedVariants: voiceStudio.expectedVariants
+            expectedVariants: voiceStudio.expectedVariants,
+            // 버킷 없이 클립 하나만 물린 옛 알람이 어떤 테마였는지(서버가 안다).
+            // 없으면 그 알람은 재바인더 두 갈래 어디에도 안 걸려 영영 옛 소리다.
+            legacyHints: voiceStudio.legacyBucketHints
         )
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
@@ -520,7 +523,9 @@ struct AlarmTalkApp: App {
         //   (`BucketVariantResolver`). 지역도 저장돼 있고 인터넷도 되는데 그 안내가 나간다.
         //   아래 예약 재조정보다 **먼저** 해야 그 자리에서 예약에 반영된다.
         //   안드로이드 짝은 `StockClipLanguageRebinder` 의 `DynamicVoiceRefreshScheduler`.
-        if converted > 0, let token = auth.session?.token {
+        //   ⚠ **언어 재바인딩(`rebound`)도 함께 본다**(2026-09-03). 조건형 버킷(날씨·운세)을
+        //   비켜 가던 우회를 걷어냈으므로, 이제 그 갈래도 조건 없는 행을 만들어 낸다.
+        if converted > 0 || rebound > 0, let token = auth.session?.token {
             let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
             _ = await weather.refreshDue(token: token)
         }
@@ -529,7 +534,10 @@ struct AlarmTalkApp: App {
         //   스스로 0을 돌려주고 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다.
         await rebinder.pruneReplacedStockAudio(
             clips: voiceStudio.stockClips,
-            expectedVariants: voiceStudio.expectedVariants
+            expectedVariants: voiceStudio.expectedVariants,
+            // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
+            //   않은 알람을 두고 파일을 지운다 — 그 알람은 무음이 된다.
+            legacyHints: voiceStudio.legacyBucketHints
         )
         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
         //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던

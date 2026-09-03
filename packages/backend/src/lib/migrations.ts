@@ -152,15 +152,9 @@ const SYSTEM_STOCK_PRESET_SUBQUERY = `SELECT m.id FROM messages m
       SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
     )`;
 
-/**
- * **등록(클론) 보이스의 사전렌더 프리셋 행 전부.** 위 시스템 서브쿼리의 짝이다.
- * 시드 문구가 바뀌면 옛 클립은 라벨과 다른 말을 하므로 통째로 지우고 cron 이 다시 굽는다.
- */
-const CLONE_PRESET_SUBQUERY = `SELECT m.id FROM messages m
-  WHERE COALESCE(m.is_preset, 0) = 1
-    AND m.voice_profile_id IN (
-      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 0
-    )`;
+// 등록(클론) 보이스 프리셋을 통째로 고르는 짝 서브쿼리가 여기 있었는데 지웠다
+// (2026-09-03). 마이그레이션이 남의 클론을 대신 다시 굽지 않기로 했기 때문이다 —
+// 이유는 #110 의 ③ 자리에 적어 두었다. 다시 필요해지면 그 주석부터 읽을 것.
 
 export const migrations: Migration[] = [
   {
@@ -2570,27 +2564,22 @@ export const migrations: Migration[] = [
       `UPDATE messages SET retired_at = datetime('now')
         WHERE retired_at IS NULL AND id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
 
-      // ── ③ 클론 사전렌더도 전부 다시 굽는다 ───────────────────────────
-      // ⚠ **응원만이 아니라 전부다.** `CLONE_CLIP_SEEDS` 의 시드를 다섯 카테고리 모두
-      //   새 대사 결(공감 → 깨우기)로 다시 썼으므로, 옛 시드로 구운 클립은 라벨과 다른
-      //   말을 한다. 은퇴시키지 않으면 `findMissingStockTargets` 가 '있다' 로 보고
-      //   건너뛴다. 비용은 cron 이 나눠 치른다.
-      `DELETE FROM message_library WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
-      `UPDATE messages SET retired_at = datetime('now')
-        WHERE retired_at IS NULL AND id IN (${CLONE_PRESET_SUBQUERY})`,
-      // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰 2차). 바로 위에서 그 목소리의
-      //   클립을 **전부 은퇴시켰는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만
-      //   집으므로(`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영
-      //   복구되지 않는다** — 소유자가 '다시 시도' 를 직접 누르기 전까지.
-      //   **은퇴시키는 범위와 되살리는 범위는 같아야 한다.**
+      // ── ③ 클론 사전렌더는 **건드리지 않는다**(2026-09-03 사용자 확정) ──────
       //
-      // ⚠ 1차 반영 때 이 조건을 **이미 적용된 #64 에** 넣었다. dev/prod 는 #64 를 이미
-      //   실행했으므로(원장이 id 로 기록한다) 그 수정은 **영영 돌지 않는다** — 고쳐야 할
-      //   곳은 지금 나가는 이 마이그레이션이다.
-      `UPDATE voice_prerender_queue
-         SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
-             updated_at = datetime('now')
-       WHERE status IN ('done', 'failed')`,
+      // 여기서 유료 클론 클립까지 은퇴시키던 문장이 있었는데 뺐다. 이유는 비용이 아니라
+      // **누가 언제 다시 굽는가**다: 클론은 그 목소리를 등록한 사람의 것이고, 다시 굽는
+      // 자연스러운 시점은 **그 사람이 목소리를 다시 등록할 때**다. 마이그레이션이 남의
+      // 목소리를 대신 다시 굽기 시작하면 따라오는 것이 많았다 —
+      //   · 큐를 되살려야 하고(안 그러면 클립 0개로 남는다),
+      //   · 진행 중인 클레임을 무효화해야 하고(옛 스냅샷이 나머지만 게시하고 닫는다),
+      //   · 공유받은 기기에 바뀌었다고 알려야 하고(`refresh_existing`),
+      //   · 그 셋이 전부 배포 직후 cron 과 겹쳐 경합을 만든다.
+      // 리뷰 1·2·3차에서 지적된 넷이 전부 이 문장 하나에서 파생됐다.
+      //
+      // ⚠ **대가를 알고 택했다.** 옛 시드로 구운 클론 클립은 남는다. 특히 `love` 는
+      //   위 ①에서 `cheer` 로 이름만 바뀌므로, 유료 사용자의 「응원」 테마가 한동안
+      //   **연애 문구를 말한다**(사용자 확인함 — 재등록 때 갱신되면 된다).
+      //   여기 문장을 되살릴 거라면 위 네 가지를 **같이** 되살려야 한다.
     ],
   },
   {

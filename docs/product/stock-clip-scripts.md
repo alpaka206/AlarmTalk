@@ -82,9 +82,22 @@ greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 주려면 **기상 인사 대
 ElevenLabs 로 간다.
 
 ⚠ **문구를 고치면 옛 클립을 무효화하는 마이그레이션을 반드시 함께 넣는다.**
-`findMissingStockTargets` 는 존재 여부만 보므로, 안 지우면 재시드해도 옛 문구가 남는다.
-`STOCK_PRESET_TEXTS_FINGERPRINT`(`lib/migrations.ts`)가 그걸 강제한다 — 문구가 바뀌면
-테스트가 그 상수로 사람을 데려온다.
+`findMissingStockTargets` 는 **존재 여부만** 보므로, 옛 행을 은퇴시키지 않으면 재시드해도
+옛 문구가 그대로 남는다.
+
+강제하는 장치는 **마이그레이션 이름에 박힌 지문**이다(상수가 아니다):
+- `STOCK_INVALIDATION_NAME`(`lib/migrations.ts`) — 무효화 마이그레이션의 이름 규칙
+  (`refresh-stock-clips…` / `replace-stock-clips…`).
+- `STOCK_FINGERPRINT_IN_NAME` — 그 이름 **끝의 16자리 해시**. 지금 값은
+  `replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096` 이다.
+- `test/migrations-stock-refresh.test.ts` 가 현재 카탈로그의 지문을 다시 계산해
+  **가장 최근 무효화 마이그레이션의 이름과 대조**한다. 문구를 고치면 지문이 달라져
+  테스트가 깨지고, 통과시키려면 **새 마이그레이션을 추가하는 수밖에 없다** —
+  적용된 마이그레이션은 `migrations.lock.json` 이 잠가서 이름조차 못 고친다.
+
+⚠ 예전에는 `STOCK_PRESET_TEXTS_FINGERPRINT` 라는 **상수 하나**였는데, 그 상수만 고쳐도
+테스트가 통과해 무효화 없이 넘어갈 수 있었다(리뷰 1차). 그래서 지문을 이름 안으로 옮겼다 —
+**그 상수는 이제 없다.**
 
 ---
 
@@ -191,11 +204,17 @@ variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고�
 ```
 ---
 
-# 응원 (love)
+# 응원 (cheer)
 
-⚠ **표시 이름은 「응원」인데 카테고리 id 는 `love` 다**(2026-09-02). 대사가 응원 문구로
-확정되면서 이름만 바꿨다 — id 는 `messages.category`·`alarms.bucket_id`·서버
-`TTS_CATEGORIES` 에 **이미 저장된 행으로 존재**하므로 바꾸지 않는다.
+⚠ **정본 id 는 `cheer` 다. `love` 는 옛 이름이고 읽을 때만 접어 받는다**(2026-09-03).
+처음에는 "표시 이름만 바꾸고 id 는 `love` 로 둔다" 로 계획했다가 작업 중에 뒤집었는데
+이 문단만 옛 계획으로 남아 있었다(리뷰 14차). 지금 코드는 전부 `cheer` 다 —
+`STOCK_CLIP_PRESETS`·`CLONE_CLIP_SEEDS`·양 앱·`validateAlarmFields`, 그리고 마이그레이션
+`#110` 이 `messages.category` 와 `alarms.bucket_id` 를 `cheer` 로 옮긴다.
+
+`love` 는 **지우지 않는다** — 스토어에 올라간 구버전 앱과 기기 로컬 DB 는 우리가 고칠 수
+없어서 계속 그 값을 보내온다. 받는 쪽에서 `normalizeStockCategory`(`lib/stock-clips.ts`)로
+접어 준다. 새로 쓰는 코드에서는 `love` 를 쓰지 말 것.
 
 ⚠ **연애 문구가 아니다.** 기본 목소리는 앱이 주는 목소리다. 예전 대사는 "사랑하는 마음을
 담아" 였는데, 그러면 기본 목소리 4종이 갑자기 사귀는 사이처럼 말한다. 지금 대사는

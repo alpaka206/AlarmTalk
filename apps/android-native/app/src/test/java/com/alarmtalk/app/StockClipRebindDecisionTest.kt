@@ -296,18 +296,20 @@ class StockClipRebindDecisionTest {
     }
 
     /**
-     * ⚠ **날씨·운세는 대표-클립 갈래로 갈아타지 않는다**(2026-09-03 리뷰 12차).
+     * ⚠ **조건형 버킷(날씨·운세)도 갈아탄다 — 조건은 받는 사람 것으로 채운다**
+     * (2026-09-03 사용자 지시로 12·13차 결정을 뒤집었다).
      *
-     * 그 둘은 조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데, 받은 알람에는
-     * 그 값이 없다 — 보낸 사람의 지역·사주를 받지 않기 때문이다. 값 없이 전체 세트를
-     * 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필 해시로 떨어진다.
-     * 옛 대사를 그대로 두는 편이 낫다.
+     * 12차에는 여기서 비켜 갔다. 받은 알람에 `contextVariantIndex` 도 사주도 없어서, 값 없이
+     * 전체 세트를 묶으면 날씨가 마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다.
+     * 그런데 그러면 그 알람은 **영원히 옛 대사·옛 목소리**로 남는다(이름만 새 이름).
+     * 조건은 이 기기에 있는 **받는 사람 자신의 지역·사주**로 채울 수 있으므로, 갈아탄 뒤
+     * `DynamicVoiceRefreshScheduler` 로 즉시 해석한다(편집기 저장 경로와 같다).
      */
     @Test
-    fun 조건형_버킷은_클립_목록이_없어도_건드리지_않는다() {
-        for (bucket in listOf("weather", "fortune")) {
-            assertFalse(
-                "매칭형 버킷($bucket)을 조건 없이 갈아탔다",
+    fun 조건형_버킷도_대표_클립이_죽었으면_갈아탄다() {
+        for (bucket in listOf("weather", "fortune", "medication")) {
+            assertTrue(
+                "$bucket 을 갈아타지 않았다",
                 StockClipLanguageRebinder.needsRebind(
                     alarmWith(
                         bucketId = bucket, clipKeys = emptyList(),
@@ -316,14 +318,10 @@ class StockClipRebindDecisionTest {
                     "ko", live,
                 ),
             )
-        }
-        // ⚠ **언어가 어긋난 기기에서도 마찬가지다**(2026-09-03 리뷰 13차). 받은 알람은
-        //   `voiceLanguage` 가 null 이라 영어·일본어 기기에서는 **언어 검사가 먼저 true 를
-        //   돌려주며 이 면제를 건너뛰었다** — 12차에 면제를 넣고도 자리를 잘못 잡아
-        //   한국어 기기에서만 듣던 셈이다.
-        for (bucket in listOf("weather", "fortune")) {
-            assertFalse(
-                "영어 기기에서 매칭형 버킷($bucket)을 조건 없이 갈아탔다",
+            // 언어가 어긋난 기기에서도 같다 — 받은 알람은 `voiceLanguage` 가 null 이라
+            // 영어 기기에서는 언어 검사가 먼저 true 를 돌려준다.
+            assertTrue(
+                "영어 기기에서 $bucket 을 갈아타지 않았다",
                 StockClipLanguageRebinder.needsRebind(
                     alarmWith(
                         bucketId = bucket, clipKeys = emptyList(),
@@ -333,14 +331,34 @@ class StockClipRebindDecisionTest {
                 ),
             )
         }
-        // 회전형은 조건이 필요 없으므로 그대로 갈아탄다.
+    }
+
+    /**
+     * **버킷 없이 클립 하나만 물린 옛 알람**은 서버 힌트로 테마를 알아낸다.
+     *
+     * `bucket_id` 를 행에 적기 전에 만들어진 알람이다. 힌트가 없으면 재바인더 두 갈래
+     * 어디에도 안 걸려 영원히 옛 소리로 운다 — 힌트가 오면 평소대로 갈아탄다.
+     */
+    @Test
+    fun 버킷_없는_옛_알람은_서버_힌트로_갈아탄다() {
+        val legacy = alarmWith(
+            bucketId = null, clipKeys = emptyList(), ttsMessageId = "old-0", language = null,
+        )
+        assertFalse(
+            "힌트가 없는데 갈아탔다",
+            StockClipLanguageRebinder.needsRebind(legacy, "ko", live),
+        )
         assertTrue(
+            "힌트가 있는데 안 갈아탔다",
             StockClipLanguageRebinder.needsRebind(
-                alarmWith(
-                    bucketId = "medication", clipKeys = emptyList(),
-                    ttsMessageId = "old-0", language = null,
-                ),
-                "ko", live,
+                legacy, "ko", live, mapOf("old-0" to "medication"),
+            ),
+        )
+        // 힌트는 **다른 message** 의 것이면 쓰지 않는다.
+        assertFalse(
+            "남의 힌트로 갈아탔다",
+            StockClipLanguageRebinder.needsRebind(
+                legacy, "ko", live, mapOf("other" to "medication"),
             ),
         )
     }

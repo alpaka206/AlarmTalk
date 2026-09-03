@@ -108,9 +108,13 @@ describe('migration #110 — 프리셋은 지우지 않고 은퇴시킨다', () 
       ['clone-preset', 1],
       ['sys-preset', 1],
     ]);
-    for (const row of rows.rows) {
-      expect(row.retired_at, `${row.id} 의 retired_at`).toBeTruthy();
-    }
+    const byId = new Map(rows.rows.map((r) => [String(r.id), r.retired_at]));
+    expect(byId.get('sys-preset'), 'sys-preset 의 retired_at').toBeTruthy();
+    // ⚠ **클론은 은퇴시키지 않는다**(2026-09-03 사용자 확정). 마이그레이션이 남의
+    //   목소리를 대신 다시 굽지 않는다 — 다시 굽는 시점은 소유자가 재등록할 때다.
+    //   되살리려면 큐 재활성·진행 중 클레임 무효화·공유 알림이 **같이** 와야 한다
+    //   (#110 의 ③ 주석 참조). 그 넷이 리뷰 1·2·3차 지적의 출처였다.
+    expect(byId.get('clone-preset'), 'clone-preset 의 retired_at').toBeNull();
   });
 
   it('은퇴 행은 같은 자리의 재생성을 막지 않는다', async () => {
@@ -139,18 +143,22 @@ describe('migration #110 — 프리셋은 지우지 않고 은퇴시킨다', () 
   });
 
   it('문구 보관함에서는 내린다', async () => {
-    // ⚠ 이 문장은 은퇴(`is_preset = 0`)보다 **먼저** 돌아야 한다 — 서브쿼리가
-    //   `is_preset = 1` 로 거르므로, 순서를 뒤집으면 0행에 걸려 조용히 남는다.
-    const rows = await db.execute('SELECT id FROM message_library');
-    expect(rows.rows).toHaveLength(0);
+    // ⚠ 이 문장은 은퇴 표식(`retired_at`)을 찍기 **전에** 돌아야 한다 — 서브쿼리가
+    //   `is_preset = 1` 로만 거르니 지금은 순서가 결과를 바꾸지 않지만, 서브쿼리에
+    //   `retired_at IS NULL` 을 더하는 순간 뒤집힌 순서는 **0행에 걸려 조용히 남는다.**
+    // 시스템 스톡만 내린다 — 클론 프리셋은 손대지 않으므로 보관함에도 그대로 남는다.
+    const rows = await db.execute('SELECT id FROM message_library ORDER BY id');
+    expect(rows.rows.map((r) => String(r.id))).toEqual(['lib-clone-preset']);
   });
 
   it('은퇴한 행은 매니페스트·재시딩 대상에서 빠진다', async () => {
     // 목록을 만드는 두 곳(`GET /tts/stock-clips`·`findMissingStockTargets`)이 쓰는 술어.
     const rows = await db.execute(
-      `SELECT COUNT(*) AS n FROM messages
-        WHERE COALESCE(is_preset, 0) = 1 AND retired_at IS NULL`,
+      `SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND retired_at IS NULL ORDER BY id`,
     );
-    expect(Number(rows.rows[0]!.n)).toBe(0);
+    // 시스템 스톡만 빠진다. 클론은 은퇴 대상이 아니므로 계속 살아 있는 프리셋이다 —
+    // 그래서 `findMissingStockTargets` 도 그 자리를 '있다' 로 세고 다시 굽지 않는다.
+    expect(rows.rows.map((r) => String(r.id))).toEqual(['clone-preset']);
   });
 });

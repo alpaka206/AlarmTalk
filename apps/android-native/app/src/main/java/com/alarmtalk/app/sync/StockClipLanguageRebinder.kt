@@ -52,6 +52,8 @@ object StockClipLanguageRebinder {
         clips: List<StockClip>,
         language: String,
         expectedVariants: ExpectedVariantCounts? = null,
+        /** `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마. */
+        legacyHints: Map<String, String> = emptyMap(),
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -64,18 +66,19 @@ object StockClipLanguageRebinder {
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
         val stale = alarmDao.getAllAlarms().filter {
-            shouldRebind(it, language, liveKeys, clips, expectedVariants)
+            shouldRebind(it, language, liveKeys, clips, expectedVariants, legacyHints)
         }
         if (stale.isEmpty()) return@withContext 0
 
         var rebound = 0
+        var conditionBucketRebound = false
         stale.forEach { alarm ->
             // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
             //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
             //   `bindBucket` 이 여전히 옛 이름(`love`)으로 매니페스트를 뒤져 아무것도
             //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
             //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
-            val bucket = normalizedBucketId(alarm.bucketId) ?: return@forEach
+            val bucket = resolvedBucketId(alarm, legacyHints) ?: return@forEach
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
@@ -91,7 +94,17 @@ object StockClipLanguageRebinder {
             alarmDao.upsertPreservingServerSyncFields(
                 next.copy(syncState = next.nextLocalSyncState()),
             )
+            if (bucket in com.alarmtalk.app.data.MatchingBucketIds) conditionBucketRebound = true
             rebound++
+        }
+        // ⚠ **조건형 버킷은 묶는 것만으로 끝나지 않는다**(2026-09-03 리뷰 6차와 같은 이유).
+        //   날씨는 `contextVariantIndex` 가 없으면 발사 때 **마지막 '못 알아봤어요' 클립**으로
+        //   떨어진다 — 지역이 저장돼 있고 인터넷도 되는데 그 안내가 나간다. 편집기 저장
+        //   경로는 `ensureDynamicVoiceRefreshScheduled` 가 조건을 즉시 resolve 하는데,
+        //   이 경로만 빠져 있었다. (운세는 발사 때 사주+날짜로 로컬에서 고르므로 무관하다.)
+        if (conditionBucketRebound) {
+            DynamicVoiceRefreshScheduler.ensurePeriodic(context)
+            DynamicVoiceRefreshScheduler.runOnce(context)
         }
         rebound
     }
@@ -233,33 +246,53 @@ object StockClipLanguageRebinder {
         liveKeys: Set<String>,
         clips: List<StockClip>,
         expectedVariants: ExpectedVariantCounts?,
+        legacyHints: Map<String, String> = emptyMap(),
     ): Boolean =
-        needsRebind(alarm, language, liveKeys) &&
-            replacementIsComplete(alarm, clips, language, expectedVariants)
+        needsRebind(alarm, language, liveKeys, legacyHints) &&
+            replacementIsComplete(alarm, clips, language, expectedVariants, legacyHints)
+
+    /**
+     * **이 알람의 테마가 무엇인가** — 저장된 값이 먼저, 없으면 서버가 준 힌트.
+     *
+     * `bucket_id` 를 행에 적기 전에 만들어진 옛 알람은 저장된 값이 없다. 그 알람은 재바인더
+     * 두 갈래 어디에도 안 걸려 **영원히 옛 대사·옛 목소리**로 울었다(이름만 새 이름).
+     * 무엇으로 갈아탈지는 서버가 안다 — 그 알람이 문 message 의 `category` 다
+     * (`GET /tts/stock-clips` 의 `legacy_bucket_hints`).
+     *
+     * ⚠ **힌트를 알람 스냅샷에 미리 써넣지 말 것.** `canApplyClipFields` 가
+     *   `fresh.bucketId == snapshot.bucketId` 를 비교하는데, 스냅샷만 채워 두면 DB 의
+     *   null 과 달라져 **모든 적용이 거부된다.** 해석한 값은 따로 들고 다니다가
+     *   쓰기 시점에 `copy(bucketId = …)` 로 한 번만 적는다.
+     */
+    @JvmStatic
+    internal fun resolvedBucketId(
+        alarm: AlarmEntity,
+        legacyHints: Map<String, String> = emptyMap(),
+    ): String? {
+        normalizedBucketId(alarm.bucketId)?.let { return it }
+        val messageId = alarm.ttsMessageId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return legacyHints[messageId]?.let { normalizedBucketId(it) }
+    }
 
     @JvmStatic
     internal fun needsRebind(
         alarm: AlarmEntity,
         language: String,
         liveKeys: Set<String>,
+        legacyHints: Map<String, String> = emptyMap(),
     ): Boolean {
-        if (alarm.bucketId.isNullOrBlank()) return false
+        if (resolvedBucketId(alarm, legacyHints) == null) return false
         if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
-        // ⚠ **이 판정이 언어 검사보다 앞에 있어야 한다**(2026-09-03 리뷰 13차).
-        //   날씨·운세는 조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데,
-        //   받은 알람에는 그 값이 **없다**(보낸 사람의 지역·사주를 받지 않는다). 값 없이
-        //   전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필
-        //   해시로 떨어진다 — 옛 대사를 그대로 두는 것보다 나쁘다.
-        //   그런데 받은 알람은 `voiceLanguage` 도 null 이라, 영어·일본어 기기에서는
-        //   **언어 검사가 먼저 true 를 돌려주며 이 면제를 건너뛴다.** 12차에 면제를 넣고도
-        //   자리를 잘못 잡아 한국어 기기에서만 듣던 셈이다.
-        if (bound.isEmpty() &&
-            normalizedBucketId(alarm.bucketId) in com.alarmtalk.app.data.MatchingBucketIds
-        ) {
-            return false
-        }
+        // ⚠ **조건형 버킷(날씨·운세)을 비켜 가지 않는다**(2026-09-03 사용자 지시).
+        //   12·13차에는 여기서 그냥 건너뛰었다 — 받은 알람에는 `contextVariantIndex` 도
+        //   사주도 없어서, 값 없이 전체 세트를 묶으면 날씨가 마지막 '못 알아봤어요' 클립으로
+        //   떨어졌기 때문이다. 그런데 그러면 그 알람은 **영원히 옛 대사**로 남는다.
+        //   조건은 **받는 사람 자신의 설정으로 채울 수 있다** — 지역도 사주도 이 기기에
+        //   있다. 그래서 갈아탄 뒤 `DynamicVoiceRefreshScheduler` 로 조건을 즉시 해석한다
+        //   (편집기 저장 경로가 하는 것과 같다). 운세는 발사 때 사주+날짜로 로컬에서 고르므로
+        //   따로 할 일이 없다.
         // ① 앱 언어가 바뀌었다 — 이 함수의 원래 목적.
         if ((alarm.voiceLanguage ?: "ko") != language) return true
         // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
@@ -298,10 +331,14 @@ object StockClipLanguageRebinder {
      * 회차로 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다(멱등).
      *
      * ⚠ **판정은 [needsRebind] 하나로 한다.** "죽은 키를 물고 있는 알람이 하나라도 있으면
-     *   미룬다" 로 하면 **영영 안 지운다** — 버킷 없이 클립 하나만 물린 옛 행은 재바인더가
-     *   손댈 수 없어 죽은 키를 계속 들고 있기 때문이다. [needsRebind] 는 그 행을 false 로
-     *   돌려주므로(버킷이 없다) 막지 않고, 그 행이 물고 있는 키는 아래 참조 집합에 들어가
-     *   **파일이 지워지지도 않는다.**
+     *   미룬다" 로 하면 **영영 안 지운다** — 어떤 알람은 갈아탈 방법이 없는데도 죽은 키를
+     *   계속 들고 있기 때문이다. [needsRebind] 가 그런 행을 false 로 돌려주므로 막지 않고,
+     *   그 행이 물고 있는 키는 아래 참조 집합에 들어가 **파일이 지워지지도 않는다.**
+     *
+     * ⚠ **[legacyHints] 를 여기에도 넘겨야 한다**(2026-09-03). 힌트가 있으면 버킷 없는 옛
+     *   행도 갈아탈 수 있게 됐는데, 여기만 힌트 없이 물으면 [needsRebind] 가 그 행을 false
+     *   로 돌려줘 **아직 갈아타지 않은 알람을 두고 파일을 지운다.** 같은 규칙을 두 곳에서
+     *   서로 다르게 묻는 그 실수다.
      *
      * @return 지운 파일 수. 아직 때가 아니면 0.
      */
@@ -310,6 +347,7 @@ object StockClipLanguageRebinder {
         clips: List<StockClip>,
         language: String,
         expectedVariants: ExpectedVariantCounts? = null,
+        legacyHints: Map<String, String> = emptyMap(),
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
         val alarmDao = AlarmDatabase.getInstance(context).alarmDao()
@@ -317,10 +355,12 @@ object StockClipLanguageRebinder {
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
         // ① 아직 갈아탈 것이 남았으면 미룬다.
-        val pending = alarms.any { shouldRebind(it, language, liveKeys, clips, expectedVariants) }
+        val pending = alarms.any {
+            shouldRebind(it, language, liveKeys, clips, expectedVariants, legacyHints)
+        }
         if (pending) return@withContext 0
         // ② 세트가 모자라 못 갈아탄 알람이 있어도 미룬다 — 그 알람의 옛 클립은 아직 쓰인다.
-        val waitingForSeed = alarms.any { needsRebind(it, language, liveKeys) }
+        val waitingForSeed = alarms.any { needsRebind(it, language, liveKeys, legacyHints) }
         if (waitingForSeed) return@withContext 0
 
         // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
@@ -351,12 +391,14 @@ object StockClipLanguageRebinder {
         clips: List<StockClip>,
         language: String,
         expectedVariants: ExpectedVariantCounts?,
+        legacyHints: Map<String, String> = emptyMap(),
     ): Boolean {
         // ⚠ **저장된 옛 이름을 접고 나서 맞춘다**(2026-09-03 리뷰 4차). 기기에 `love` 로
         //   저장된 알람은 새 매니페스트(`cheer`)와 이름이 달라 **variant 가 0개로 잡히고**,
         //   그러면 이 함수가 영원히 false 라 언어 재바인딩까지 통째로 막힌다 —
         //   그 알람은 갈아탈 방법이 사라진다.
-        val bucket = normalizedBucketId(alarm.bucketId) ?: return false
+        // 저장된 값이 없는 옛 알람은 서버 힌트로 해석한다(`resolvedBucketId`).
+        val bucket = resolvedBucketId(alarm, legacyHints) ?: return false
         val variants = clips
             .filter {
                 it.voiceProfileId == alarm.voiceProfileId &&

@@ -231,6 +231,12 @@ class StockClipPrefetchWorker(
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
             // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를
             // 바꾼 다음 실행)에도 재바인딩은 남아 있을 수 있다.
+            // ⚠ **한 번만 만들어 아래 두 곳이 같은 답을 보게 한다.** 재바인딩과 정리가
+            //   서로 다른 힌트로 판정하면, 정리가 "갈아탈 것이 없다" 로 읽고 아직 옛 클립을
+            //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
+            val legacyHints = manifest.legacyBucketHints
+                .associate { hint -> hint.messageId to hint.category }
+
             suspend fun rebind() {
                 runCatching {
                     StockClipLanguageRebinder.rebindIfLanguageChanged(
@@ -241,6 +247,7 @@ class StockClipPrefetchWorker(
                         language = language,
                         // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
                         expectedVariants = manifest.expectedVariants,
+                        legacyHints = legacyHints,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
@@ -268,6 +275,9 @@ class StockClipPrefetchWorker(
                         clips = allClips,
                         language = language,
                         expectedVariants = manifest.expectedVariants,
+                        // ⚠ **재바인딩과 같은 힌트를 넘긴다.** 여기만 힌트 없이 물으면
+                        //   아직 갈아타지 않은 알람을 두고 파일을 지운다.
+                        legacyHints = legacyHints,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Replaced stock audio prune failed", it) }
             }
