@@ -12,7 +12,7 @@ import { rmSync } from 'node:fs';
 import { migrations, runMigrationsRange } from '../src/lib/migrations';
 import { createHash } from 'node:crypto';
 import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips';
-import { STOCK_PRESET_TEXTS_FINGERPRINT } from '../src/lib/migrations';
+import { STOCK_FINGERPRINT_IN_NAME, STOCK_INVALIDATION_NAME } from '../src/lib/migrations';
 
 const DB_PATH = join(tmpdir(), 'alarmtalk-migration-stock-refresh.db');
 // 파일 DB 는 실행 간 남는다. 이전 실행이 더 뒤의 마이그레이션까지 적용해 뒀으면 원장
@@ -77,19 +77,42 @@ describe('migration #70 — 스톡 클립 문구 수렴형 무효화', () => {
    *   테스트가 빨개지고, 값을 갱신하려면 `migrations.ts` 를 열게 된다 — 바로 그 자리에
    *   "새 무효화 마이그레이션도 함께 넣어라" 가 적혀 있다.
    */
-  it('문구 지문이 마이그레이션이 아는 값과 같다 (문구 변경 시 새 마이그레이션 강제)', () => {
+  /**
+   * **문구를 고치면 무효화 마이그레이션을 만들 수밖에 없게 한다.**
+   *
+   * ⚠ 지문을 **별도 상수**로 두었더니 우회가 됐다(2026-09-03 리뷰): 문구를 고친 사람이
+   *   그 상수만 새로 계산해 넣으면 초록이 되고, 무효화 없이 배포된다 — 그러면
+   *   `findMissingStockTargets` 가 옛 행을 '있다' 로 보고 건너뛰어 **프로덕션은 계속 옛
+   *   문구를 재생한다.**
+   *
+   *   그래서 지문을 **마이그레이션 이름 안**으로 옮겼다. 적용된 마이그레이션은 고칠 수
+   *   없으니, 지문을 바꾸려면 새 마이그레이션을 만드는 수밖에 없다 — 그게 곧 무효화다.
+   */
+  it('최신 무효화 마이그레이션의 이름에 박힌 지문이 현재 문구와 같다', () => {
+    const invalidations = migrations.filter((m) => STOCK_INVALIDATION_NAME.test(m.name));
+    expect(invalidations.length, '스톡 무효화 마이그레이션이 하나도 없다').toBeGreaterThan(0);
+    const latest = invalidations.reduce((newest, m) => (m.id > newest.id ? m : newest));
+
+    const stamped = latest.name.match(STOCK_FINGERPRINT_IN_NAME)?.[1];
+    expect(
+      stamped,
+      `최신 무효화 #${latest.id}(${latest.name}) 의 이름에 지문이 없다. ` +
+        '이름을 `...-script-<지문16자>` 로 끝내라.',
+    ).toBeDefined();
+
     const canonical = STOCK_CLIP_PRESETS.flatMap((preset) =>
       Object.entries(preset.texts as Record<string, readonly string[]>)
         .sort(([a], [b]) => a.localeCompare(b))
         .flatMap(([language, list]) => list.map((text) => `${preset.category}|${language}|${text}`)),
     ).join('\n');
     const fingerprint = createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+
     expect(
-      fingerprint,
-      '스톡 문구가 바뀌었다. `migrations.ts` 의 STOCK_PRESET_TEXTS_FINGERPRINT 를 이 값으로 ' +
-        '갱신하고, **옛 클립을 무효화하는 마이그레이션을 함께 넣어라** — 그러지 않으면 ' +
-        '재시드해도 옛 문구가 그대로 남는다(findMissingStockTargets 는 존재 여부만 본다).',
-    ).toBe(STOCK_PRESET_TEXTS_FINGERPRINT);
+      stamped,
+      `스톡 문구가 바뀌었다(현재 지문 ${fingerprint}). **새 무효화 마이그레이션을 추가하고** ` +
+        `그 이름을 \`...-script-${fingerprint}\` 로 끝내라 — 적용된 마이그레이션은 고칠 수 ` +
+        '없으므로 이름만 바꿔서는 통과하지 않는다. 옛 행을 안 지우면 재시드해도 옛 문구가 남는다.',
+    ).toBe(fingerprint);
   });
 
   it('낡은 문구 preset 만 지우고, 확정 문구 preset 과 참조 알람 처리까지 정확히 수행한다', async () => {

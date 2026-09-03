@@ -1,5 +1,9 @@
 import { UUID_RE } from '../lib/validate';
-import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
+import {
+  FREE_BUCKET_CATEGORIES,
+  CLONE_PRERENDER_CATEGORIES,
+  normalizeStockCategory,
+} from '../lib/stock-clips';
 import {
   isBlockedByFamilyAlarmQuietTime,
   type FamilyAlarmSettings,
@@ -130,14 +134,22 @@ export function validateAlarmFields(body: {
   // greeting(기상 인사) 도 실어 동기화한다(AlarmEditorState.clonePrerenderBucketCategoryFor: preset→greeting).
   // CLONE_PRERENDER_CATEGORIES(=유료 버킷+greeting) 로 허용하지 않으면 기본 클론 알람이 INVALID_BUCKET_ID
   // 로 거부돼 영구 미동기화된다.
-  if (
-    body.bucket_id !== undefined &&
-    body.bucket_id !== null &&
-    (typeof body.bucket_id !== 'string' ||
-      (!FREE_BUCKET_CATEGORIES.includes(body.bucket_id) &&
-        !CLONE_PRERENDER_CATEGORIES.includes(body.bucket_id)))
-  ) {
-    return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+  if (body.bucket_id !== undefined && body.bucket_id !== null) {
+    if (typeof body.bucket_id !== 'string') {
+      return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+    }
+    // ⚠ **옛 이름을 여기서 접는다**(2026-09-03). 두 허용 집합은 카탈로그에서 파생되므로
+    //   이름을 바꾸는 순간 옛 값이 목록에서 사라진다 — 구버전 앱이 보내는 `love` 가
+    //   **INVALID_BUCKET_ID(400)** 이 되어 그 앱의 알람 저장·수정·전송이 전부 막힌다.
+    //   스토어에 올라간 앱은 우리가 고칠 수 없으니, 경계에서 새 이름으로 바꿔 받는다.
+    //   ⚠ 검증 **전에** 접어야 한다 — 접고 나서 검사해야 통과한다.
+    body.bucket_id = normalizeStockCategory(body.bucket_id);
+    if (
+      !FREE_BUCKET_CATEGORIES.includes(body.bucket_id) &&
+      !CLONE_PRERENDER_CATEGORIES.includes(body.bucket_id)
+    ) {
+      return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+    }
   }
 
   if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {

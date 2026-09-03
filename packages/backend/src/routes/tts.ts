@@ -33,6 +33,7 @@ import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
+  normalizeStockCategory,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
@@ -259,15 +260,10 @@ function todayKoreaLabel(): string {
  * 수 있으므로 프리셋 문구가 정상적으로 나온다 — 그 서술을 근거로 아래 F2 게이트를 손대면
  * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
  */
-/** 이름이 바뀐 **카테고리**의 옛 이름 → 새 이름. 위 `RENAMED_RANDOM_CONTEXTS` 의 짝이다. */
-const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
-  love: 'cheer',
-};
-
 function stockPresetCategory(category: string): string {
   if (category === 'morning') return STOCK_GREETING_CATEGORY;
   // 이름이 바뀐 카테고리도 여기서 접는다 — 구버전 앱은 `love` 를 보낸다.
-  return RENAMED_STOCK_CATEGORIES[category] ?? category;
+  return normalizeStockCategory(category);
 }
 
 

@@ -104,7 +104,11 @@ struct StockClipLanguageRebinder {
 
         var rebound = 0
         for record in legacy {
-            guard let context = RandomPromptContext(rawValue: record.voiceRandomContext ?? "") else { continue }
+            // ⚠ **저장된 값은 `normalized` 로 읽는다**(2026-09-03 리뷰). 생성자를 직접
+            //   쓰면 이름이 바뀐 옛 값(`love`)에 nil 이 나와 그 행이 **통째로 건너뛰어진다** —
+            //   옛 표현에 남아 매번 같은 문구를 되풀이한다. `normalized` 가 `cheer` 로 접는다.
+            guard let raw = record.voiceRandomContext, !raw.isEmpty else { continue }
+            let context = RandomPromptContext.normalized(raw)
             guard var bound = await bindBucket(
                 record: record, bucket: context.bucketCategory,
                 clips: clips, language: language, token: token

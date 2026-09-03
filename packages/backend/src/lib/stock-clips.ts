@@ -169,6 +169,24 @@ export const STOCK_CLIP_PRESETS = [
 
 
 /**
+ * **이름이 바뀐 카테고리의 옛 이름 → 새 이름.**
+ *
+ * ⚠ **옛 이름을 지우지 말 것.** 스토어에 올라간 앱과 사용자 기기의 로컬 DB 는 우리가
+ * 고칠 수 없다 — 구버전 앱은 계속 옛 값을 보내오고, 이미 저장된 알람 행도 그 값을 들고
+ * 있다. 받아 주지 않으면 그 앱의 알람 저장·수정·전송이 **전부 400** 이 된다.
+ *
+ * 2026-09-03: 대사가 응원·자기돌봄으로 확정되면서 `love` → `cheer` 로 개념을 바꿨다.
+ */
+export const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
+  love: 'cheer',
+};
+
+/** 옛 카테고리 이름을 현재 이름으로 접는다. 모르는 값은 그대로 돌려준다(검증은 호출부 몫). */
+export function normalizeStockCategory(category: string): string {
+  return RENAMED_STOCK_CATEGORIES[category] ?? category;
+}
+
+/**
  * 무료 플랜이 알람 버킷으로 고를 수 있는 카테고리(greeting 제외). 스톡 프리셋이 단일
  * 출처이므로, STOCK_CLIP_PRESETS 에 카테고리를 추가하면 자동으로 버킷 후보가 된다.
  */
@@ -1043,10 +1061,18 @@ export async function generateStockClip(
     deliveryTagsJson = JSON.stringify(prepared.tags);
   }
 
+  // ⚠ **제공자에게 보내는 바로 그 글자로 캐시 키를 만든다**(2026-09-03 리뷰).
+  //   합성은 여운 꼬리를 붙여 하는데 키를 원본으로 계산하면, **같은 키에 다른 오디오**가
+  //   매달린다 — 일반 TTS 경로(`tts.ts`)는 꼬리 없이 같은 문장을 합성하므로 둘이 같은
+  //   `request_hash`·R2 오브젝트를 놓고 다툰다. 먼저 쓴 쪽이 이기고, 나중 쪽은 자기가
+  //   요청한 것과 다른 소리를 서빙받는다(꼬리가 사라지거나, 반대로 남의 클립을 덮어쓴다).
+  //   저장되는 `synthesis_text`·표시 문구는 **꼬리 없는 원본** 그대로다 — 잠금화면 문구와
+  //   문구 대조가 그 값을 쓴다.
+  const providerText = withClosingBreath(synthesisText);
   const attempts = createSynthesisAttempts({
     env,
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
-    text: withClosingBreath(synthesisText),
+    text: providerText,
     language,
   });
   if (attempts.length === 0) {
@@ -1061,7 +1087,7 @@ export async function generateStockClip(
     modelId: attempt.modelId,
     language,
     languageCode: language,
-    text: synthesisText,
+    text: providerText,
     outputFormat: attempt.outputFormat,
   });
 

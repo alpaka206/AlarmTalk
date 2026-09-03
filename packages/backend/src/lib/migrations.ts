@@ -117,20 +117,27 @@ const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
     )`;
 
 /**
- * **지금 마이그레이션이 아는 스톡 문구의 지문.**
+ * **문구 지문은 무효화 마이그레이션의 `name` 안에 산다.**
  *
- * ⚠ **이 값을 갱신할 때는 반드시 무효화 마이그레이션도 함께 넣는다.**
- * `findMissingStockTargets` 는 (voice|category|language|variant) **존재 여부만** 보므로,
- * 옛 행을 지우지 않으면 재시드해도 **옛 문구가 그대로 남는다.** 문구만 고치고 배포하면
- * 코드와 실제 울리는 소리가 갈라지고, 그 사실은 아무 데서도 드러나지 않는다.
+ * ⚠ `findMissingStockTargets` 는 (voice|category|language|variant) **존재 여부만** 본다.
+ * 옛 행을 지우지 않으면 재시드해도 **옛 문구가 그대로 남고**, 코드와 실제 울리는 소리가
+ * 갈라진 채 아무 데서도 드러나지 않는다.
  *
- * 값이 안 맞으면 `test/migrations-stock-refresh.test.ts` 가 빨개진다. 그 테스트가 여기로
- * 사람을 데려오는 것이 목적이다 — 예전에는 문구 52개를 마이그레이션에 한 벌 더 적어
- * 두는 방식이었는데, 대사를 통째로 새로 쓰면 그 사본이 순수한 중복이 됐다.
+ * 그래서 지문을 **별도 상수로 두지 않는다.** 별도 상수는 문구를 고친 사람이 그 값만 새로
+ * 계산해 넣으면 테스트가 초록이 되어, 무효화 없이 넘어갈 수 있다(2026-09-03 리뷰 지적 —
+ * 실제로 그 우회가 통과했다).
  *
- * 마지막 갱신: 2026-09-02, 마이그레이션 #110(대사 3개 언어 전면 교체 + love → cheer).
+ * 지금은 **마이그레이션 이름 끝에 지문을 박는다**: `...-script-<지문>`.
+ * 적용된 마이그레이션의 본문·이름은 고칠 수 없으므로(원장이 id 로 기록한다), 지문을
+ * 바꾸려면 **새 마이그레이션을 만드는 수밖에 없다.** 그게 곧 무효화다.
+ *
+ * 테스트(`test/migrations-stock-refresh.test.ts`)가 최신 무효화 마이그레이션 이름에서
+ * 지문을 뽑아 현재 문구와 대조한다.
  */
-export const STOCK_PRESET_TEXTS_FINGERPRINT = 'fe68a6ede87ad096';
+export const STOCK_FINGERPRINT_IN_NAME = /-([0-9a-f]{16})$/;
+
+/** 스톡 문구를 무효화하는 마이그레이션의 이름 규칙. 테스트가 '최신' 을 이걸로 찾는다. */
+export const STOCK_INVALIDATION_NAME = /^(refresh|replace)-stock-clips/;
 
 /**
  * **시스템(스톡) 보이스의 프리셋 행 전부.** 문구를 가리지 않는다.
@@ -1434,10 +1441,15 @@ export const migrations: Migration[] = [
       // 스케줄 cron 은 voice_prerender_queue 의 'pending' 만 처리하므로(완료 목소리는 재스캔 안 함), 완료
       // 클론 목소리를 requeue 해 다음 cron 이 findMissingStockTargets 로 '빠진 variant 8 만' 채우게 한다
       // (기존 8개는 messages 에 있어 'seen' 이라 스킵). 신규 launch DB 는 done 행이 없어 무해(no-op).
+      // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰). 위에서 그 목소리의 클립을
+      //   **이미 다 지웠는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만 집으므로
+      //   (`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영 복구되지 않는다** —
+      //   소유자가 '다시 시도' 를 직접 누르기 전까지. 지우는 것과 되살리는 것의 범위는
+      //   같아야 한다.
       `UPDATE voice_prerender_queue
          SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
              updated_at = datetime('now')
-       WHERE status = 'done'`,
+       WHERE status IN ('done', 'failed')`,
     ],
   },
   {
@@ -2510,7 +2522,7 @@ export const migrations: Migration[] = [
     // 배포 후 `POST /api/admin/seed-stock-clips` 로 새 문구를 다시 구워야 한다.
     // R2 오브젝트는 여기서 지우지 않는다(마이그레이션은 DB 전용).
     id: 110,
-    name: 'replace-stock-clips-and-rename-love-to-cheer',
+    name: 'replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096',
     statements: [
       // ── ① 카테고리 이름: love → cheer ─────────────────────────────────
       // 옛 이름은 코드에서 **읽을 때 접어** 계속 받는다(구버전 앱·기기 로컬 DB 는 우리가
@@ -2581,6 +2593,25 @@ export const migrations: Migration[] = [
     // ⚠ 목소리가 바뀌면 그 목소리로 구운 클립은 **전부 남의 목소리**다. #110 이 이미
     //   시스템 프리셋을 통째로 지우므로 여기서 또 지우지 않는다 — 순서상 #110 이
     //   먼저 돌고, 재시드가 새 목소리로 굽는다.
+    //
+    // ⚠⚠ **배포 순서를 지켜야 한다 — 코드로는 못 막는다.**
+    //
+    // 프로필 **id 는 그대로 두고 목소리만** 바꾼다(101=시우, 103=도현, 104=애니).
+    // 그런데 앱은 그 id 에 **내장 인사말 mp3** 를 매핑해 두고 미리듣기에서 서버 클립보다
+    // **우선**한다(`VoiceProfileManagementPanel.playGreeting` → `bundledSystemGreetingRes`).
+    // 그래서 이 마이그레이션이 구버전 APK 가 깔린 상태에서 배포되면:
+    //   - 목록의 이름은 서버가 준 '시우'
+    //   - 미리듣기는 APK 에 박힌 **Adam** 목소리
+    //   - 실제 알람은 서버가 새로 구운 **Krys** 목소리
+    // 즉 **들어 보고 고른 목소리와 울리는 목소리가 다르다.**
+    //
+    // id 를 새로 파는 방법도 있지만 그러면 기존 알람의 `voice_profile_id` 가 전부
+    // 고아가 되어 더 나쁘다(그 알람들이 목소리를 잃는다).
+    //
+    // 그래서 **새 목소리를 담은 앱을 스토어에 먼저 올리고**, `app-version.ts` 의
+    // `minSupported` 를 그 versionCode 로 올린 뒤 이 마이그레이션을 prod 에 낸다.
+    // dev 는 테스트 기기의 APK 를 함께 갈아 끼우면 되므로 무관하다.
+    // (`CURRENT_POLICY_VERSION`·`minSupported` 가 같은 이유로 순서를 타는 것과 같다.)
     id: 111,
     name: 'replace-system-voices-2026-09-03',
     statements: [
