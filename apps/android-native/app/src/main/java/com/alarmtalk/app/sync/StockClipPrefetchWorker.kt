@@ -239,6 +239,8 @@ class StockClipPrefetchWorker(
                         auth = auth,
                         clips = allClips,
                         language = language,
+                        // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
+                        expectedVariants = manifest.expectedVariants,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.

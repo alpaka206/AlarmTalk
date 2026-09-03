@@ -42,7 +42,8 @@ struct StockClipLanguageRebinder {
     func rebindIfLanguageChanged(
         session: AuthSession?,
         clips: [StockClip],
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
@@ -63,7 +64,15 @@ struct StockClipLanguageRebinder {
             //    않으므로(비행기모드 재생), 문구·목소리를 통째로 갈면 그 알람은 **지워진
             //    대사를 옛 목소리로 영원히 재생한다** — 언어가 안 바뀌어 여기에도 안 걸린다.
             let bound = record.bucketClipKeys ?? []
-            return !bound.isEmpty && bound.allSatisfy { !liveKeys.contains($0) }
+            guard !bound.isEmpty, bound.allSatisfy({ !liveKeys.contains($0) }) else { return false }
+            // ⚠ **갈아탈 세트가 완전할 때만 갈아탄다**(2026-09-03 리뷰 3차, 안드로이드와
+            //   같은 규칙). 옛 키가 다 죽은 직후 시딩이 **첫 variant 만** 올린 순간에
+            //   갈아타면, 그 하나짜리 세트가 알람에 박히고 **그 키는 살아 있으므로 다음
+            //   회차부터 stale 로도 안 잡힌다** — 시딩이 끝나도 영원히 첫 클립만 갖는다.
+            //   날씨·운세는 절대 인덱스로 조건을 고르니 그게 곧 엉뚱한 조건이다.
+            return Self.replacementIsComplete(
+                record: record, clips: clips, language: language, expectedVariants: expectedVariants,
+            )
         }
         guard !stale.isEmpty else { return 0 }
 
@@ -98,6 +107,33 @@ struct StockClipLanguageRebinder {
     ///
     /// - Returns: 다시 묶은 알람 수.
     @discardableResult
+
+    /// 갈아탈 세트가 완전한가 — 안드로이드 `replacementIsComplete` 미러.
+    /// `expectedVariants` 가 없으면(옛 서버) 막지 않는다.
+    static func replacementIsComplete(
+        record: LocalAlarmRecord,
+        clips: [StockClip],
+        language: String,
+        expectedVariants: ExpectedVariantCounts?
+    ) -> Bool {
+        guard let bucket = (record.bucketId).nilIfBlank else { return false }
+        let variants = Set(
+            clips
+                .filter {
+                    $0.voiceProfileId == record.voiceProfileId
+                        && $0.category == bucket
+                        && ($0.language ?? "ko") == language
+                }
+                .compactMap(\.variant)
+        )
+        guard !variants.isEmpty else { return false }
+        guard let expected = expectedVariants?.count(
+            category: bucket,
+            isSystemVoice: isSystemVoiceId(record.voiceProfileId)
+        ), expected > 0 else { return true }
+        return variants == Set(0..<expected)
+    }
+
     func rebindLiveGenerationRows(
         session: AuthSession?,
         clips: [StockClip],

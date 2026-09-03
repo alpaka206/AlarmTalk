@@ -10,6 +10,8 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.encodeBucketClipKeys
+import com.alarmtalk.app.network.ExpectedVariantCounts
+import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -70,6 +72,40 @@ class StockClipRebindDecisionTest {
         )
     }
 
+    /**
+     * ⚠ **갈아탈 세트가 완전할 때만 갈아탄다**(2026-09-03 리뷰 3차).
+     *
+     * `needsRebind` 만으로는 **스스로 함정을 판다.** 옛 클립이 다 지워진 직후, 시딩이
+     * **첫 variant 만** 올린 순간에 갈아타면 그 하나짜리 세트가 알람에 박히고 — **그 키는
+     * 살아 있으므로 다음 회차부터 stale 로도 안 잡힌다.** 시딩이 끝나도 그 알람은 영원히
+     * 첫 클립만 갖는다. 날씨·운세는 절대 인덱스로 조건을 고르니 그게 곧 엉뚱한 조건이다.
+     */
+    @Test
+    fun 시딩이_도는_중이면_갈아타지_않는다() {
+        // ⚠ 이 알람의 목소리는 클론이므로 `clone` 쪽을 본다 — 기본 목소리와 클론은
+        //   개수가 다르다(`countFor(isSystemVoice)`).
+        val expected = ExpectedVariantCounts(system = emptyMap(), clone = mapOf("weather" to 9))
+        val alarm = alarmWith(bucketId = "weather")
+        // 첫 variant 만 올라온 상태 — 갈아타면 그 하나가 영구히 박힌다.
+        val partial = (0..2).map { clip("weather", it) }
+        assertFalse(
+            StockClipLanguageRebinder.replacementIsComplete(alarm, partial, "ko", expected),
+        )
+        // 9개가 다 차면 그때 갈아탄다.
+        val complete = (0..8).map { clip("weather", it) }
+        assertTrue(
+            StockClipLanguageRebinder.replacementIsComplete(alarm, complete, "ko", expected),
+        )
+    }
+
+    /** 매니페스트가 개수를 모르면(옛 서버) 막지 않는다 — 못 물어본 것이 근거가 되면 안 된다. */
+    @Test
+    fun 개수를_모르면_막지_않는다() {
+        val alarm = alarmWith(bucketId = "weather")
+        val partial = listOf(clip("weather", 0))
+        assertTrue(StockClipLanguageRebinder.replacementIsComplete(alarm, partial, "ko", null))
+    }
+
     @Test
     fun 버킷_알람이_아니면_건드리지_않는다() {
         assertFalse(StockClipLanguageRebinder.needsRebind(alarmWith(bucketId = null), "ko", live))
@@ -85,6 +121,16 @@ class StockClipRebindDecisionTest {
             ),
         )
     }
+
+    private fun clip(category: String, variant: Int) = StockClip(
+        messageId = "new-$variant",
+        voiceProfileId = "clone-profile",
+        category = category,
+        language = "ko",
+        variant = variant,
+        text = "t",
+        audioUrl = "r2://x",
+    )
 
     private fun alarmWith(
         language: String = "ko",

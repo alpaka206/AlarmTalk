@@ -1854,7 +1854,7 @@ struct AlarmEditorSheet: View {
         stockSelectedMessageID = nil
         // 저장된 테마를 편집기 상태로 **한 번** 옮긴다. 이 뒤로는 편집기가 소유한다 —
         // 저장값을 계속 읽으면 사용자가 문구 갈래를 바꿔도 테마가 안 풀린다.
-        selectedBucketDraft = (alarm?.bucketId).nilIfBlank.flatMap(FreeBucket.init(rawValue:))
+        selectedBucketDraft = FreeBucket.stored(alarm?.bucketId)
         stopAllEditorPreviews()
         voiceStudio.ttsText = alarm?.voiceText ?? ""
         voiceStudio.ttsCategory = alarm?.voiceCategory ?? "morning"
@@ -1890,7 +1890,7 @@ struct AlarmEditorSheet: View {
             // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
             // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
             // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
-            pendingFreeBucket = store.lastFreeBucket(userID: userID).flatMap(FreeBucket.init(rawValue:))
+            pendingFreeBucket = FreeBucket.stored(store.lastFreeBucket(userID: userID))
             // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
         }
 

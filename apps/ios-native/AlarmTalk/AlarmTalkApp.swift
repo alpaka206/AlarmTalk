@@ -283,7 +283,9 @@ struct AlarmTalkApp: App {
                         let rebinder = StockClipLanguageRebinder(store: alarmStore)
                         await rebinder.rebindIfLanguageChanged(
                             session: auth.session,
-                            clips: voiceStudio.stockClips
+                            clips: voiceStudio.stockClips,
+                            // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
+                            expectedVariants: voiceStudio.expectedVariants
                         )
                         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
                         // 멱등이라 매 실행 돌아도 안전하고, 묶을 클립이 없으면 아무 일도

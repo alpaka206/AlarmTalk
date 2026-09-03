@@ -49,6 +49,24 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     /// 열거형에는 없다" 고 적었는데, 문구 목록을 합치면서 `fortune` 이 이 열거형에 들어왔다.)
     static let matchingBucketIDs: Set<String> = ["weather", "fortune"]
 
+    /// **저장된 값에서 읽는다** — 옛 이름을 접는 유일한 통로.
+    ///
+    /// ⚠ **`FreeBucket(rawValue:)` 를 직접 쓰지 말 것**(2026-09-03 리뷰 3차).
+    ///   2026-09-03 에 `love` → `cheer` 로 이름을 바꿨는데, 기기에 저장된 알람 행과
+    ///   `last_free_bucket` 은 여전히 옛 값을 들고 있다. 생성자를 직접 쓰면 그 값에
+    ///   **nil** 이 나와 **테마를 고른 적 없는 알람처럼 보인다** — 클론 알람은 '직접
+    ///   입력' 으로 읽히고, 기본 목소리 알람은 강제가 `preset` 으로 되돌려 **저장할 때
+    ///   원래 고른 테마를 잃는다.**
+    static func stored(_ rawValue: String?) -> FreeBucket? {
+        guard let raw = rawValue?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else {
+            return nil
+        }
+        if let direct = FreeBucket(rawValue: raw) { return direct }
+        // 옛 이름 → 새 이름 접기는 `RandomPromptContext` 가 단일 출처다.
+        guard let context = RandomPromptContext.forBucket(raw) else { return nil }
+        return FreeBucket(rawValue: context.bucketCategory)
+    }
+
     /// ⚠ 라벨도 문구 종류에서 가져온다 — 같은 것을 두 이름으로 부르지 않는다.
     var label: String {
         RandomPromptContext.forBucket(rawValue)?.label ?? rawValue

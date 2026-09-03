@@ -11,6 +11,7 @@ import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.encodeBucketClipKeys
 import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,6 +50,7 @@ object StockClipLanguageRebinder {
         auth: String,
         clips: List<StockClip>,
         language: String,
+        expectedVariants: ExpectedVariantCounts? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -60,7 +62,12 @@ object StockClipLanguageRebinder {
         // message id 가 새로 난다).
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
-        val stale = alarmDao.getAllAlarms().filter { needsRebind(it, language, liveKeys) }
+        val stale = alarmDao.getAllAlarms().filter {
+            needsRebind(it, language, liveKeys) &&
+                // ⚠ **갈아탈 세트가 완전할 때만 갈아탄다**(2026-09-03 리뷰 3차).
+                //   아래 주석 참조 — 부분 세트를 박으면 영구히 굳는다.
+                replacementIsComplete(it, clips, language, expectedVariants)
+        }
         if (stale.isEmpty()) return@withContext 0
 
         var rebound = 0
@@ -175,6 +182,46 @@ object StockClipLanguageRebinder {
         if ((alarm.voiceLanguage ?: "ko") != language) return true
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
         return bound.isNotEmpty() && bound.none { it in liveKeys }
+    }
+
+
+    /**
+     * **갈아탈 세트가 완전한가.**
+     *
+     * ⚠ 이게 없으면 [needsRebind] 가 **스스로 함정을 판다**(2026-09-03 리뷰 3차).
+     *   #110·#111 이 옛 클립을 다 지운 직후, 시딩이 **첫 variant 만** 올린 순간을 생각해
+     *   보자. 옛 키는 전부 죽었으니 `needsRebind` 는 true 를 돌려주고, `bindBucket` 은
+     *   `firstOrNull()` 만 보므로 **그 하나짜리 세트를 알람에 박는다.** 그 키는 살아
+     *   있으니 다음 회차부터는 stale 로도 안 잡힌다 — 시딩이 끝나도 그 알람은
+     *   **영원히 첫 variant 만** 갖는다. 날씨·운세는 절대 인덱스로 조건을 고르므로
+     *   그게 곧 **엉뚱한 조건의 클립**이다.
+     *
+     * 그래서 편집기 `freeBucketsFor` 와 **같은 규칙**을 쓴다: `expected_variants` 로
+     * 0..N-1 이 다 있는지 본다. 매니페스트가 개수를 모르면(옛 서버) 막지 않는다 —
+     * 못 물어본 것이 사용자를 막는 근거가 되면 안 된다.
+     */
+    internal fun replacementIsComplete(
+        alarm: AlarmEntity,
+        clips: List<StockClip>,
+        language: String,
+        expectedVariants: ExpectedVariantCounts?,
+    ): Boolean {
+        val bucket = alarm.bucketId ?: return false
+        val variants = clips
+            .filter {
+                it.voiceProfileId == alarm.voiceProfileId &&
+                    it.category == bucket &&
+                    (it.language ?: "ko") == language
+            }
+            .map { it.variant }
+            .toSet()
+        if (variants.isEmpty()) return false
+        val expected = expectedVariants?.countFor(
+            bucket,
+            isSystemVoice = com.alarmtalk.app.data.isSystemVoiceId(alarm.voiceProfileId),
+        ) ?: return true
+        if (expected <= 0) return true
+        return variants == (0 until expected).toSet()
     }
 
     private suspend fun bindBucket(
