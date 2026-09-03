@@ -13,10 +13,10 @@ let systemVoiceIDPrefix = "70000000-0000-4000-9000-"
 /// 백엔드 system-stock-voices 시드를 바꾸면 이 목록도 함께 맞춘다.
 func bundledSystemVoiceProfiles() -> [VoiceProfile] {
     [
-        VoiceProfile(id: systemVoiceIDPrefix + "000000000101", name: "아담", status: "ready", isSystem: true),
+        VoiceProfile(id: systemVoiceIDPrefix + "000000000101", name: "시우", status: "ready", isSystem: true),
         VoiceProfile(id: systemVoiceIDPrefix + "000000000102", name: "미나", status: "ready", isSystem: true),
-        VoiceProfile(id: systemVoiceIDPrefix + "000000000103", name: "하준", status: "ready", isSystem: true),
-        VoiceProfile(id: systemVoiceIDPrefix + "000000000104", name: "소은", status: "ready", isSystem: true),
+        VoiceProfile(id: systemVoiceIDPrefix + "000000000103", name: "도현", status: "ready", isSystem: true),
+        VoiceProfile(id: systemVoiceIDPrefix + "000000000104", name: "애니", status: "ready", isSystem: true),
     ]
 }
 
@@ -39,10 +39,10 @@ func isSystemVoice(_ profile: VoiceProfile) -> Bool {
 func bundledSystemGreetingResource(voiceProfileId: String?, appLanguage: String) -> String? {
     let voice: String
     switch voiceProfileId {
-    case systemVoiceIDPrefix + "000000000101": voice = "adam"
+    case systemVoiceIDPrefix + "000000000101": voice = "siwoo"
     case systemVoiceIDPrefix + "000000000102": voice = "mina"
-    case systemVoiceIDPrefix + "000000000103": voice = "hajun"
-    case systemVoiceIDPrefix + "000000000104": voice = "soeun"
+    case systemVoiceIDPrefix + "000000000103": voice = "dohyun"
+    case systemVoiceIDPrefix + "000000000104": voice = "narin"
     default: return nil
     }
     let language: String

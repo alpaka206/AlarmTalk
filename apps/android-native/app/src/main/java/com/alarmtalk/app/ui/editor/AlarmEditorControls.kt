@@ -557,7 +557,7 @@ internal fun PlayModeChip(
 internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "morning" to R.string.editor2_cat_morning,
     "medication" to R.string.editor2_cat_medication,
-    "love" to R.string.editor2_cat_love,
+    "cheer" to R.string.editor2_cat_love,
 )
 
 
@@ -609,7 +609,7 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "love" to R.string.editor2_ctx_love,
+    "cheer" to R.string.editor2_ctx_love,
     // 약(medication): 동적 생성 모드가 아니라 고정 프리셋. randomContext='medication' 는
     // 백엔드에서 'preset' 으로 정규화되고 category='medication' 프리셋 문구를 뽑는다.
     "medication" to R.string.editor2_ctx_medication,
@@ -626,7 +626,7 @@ internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "love" to R.string.editor2_ctx_love,
+    "cheer" to R.string.editor2_ctx_love,
     "medication" to R.string.editor2_ctx_medication,
     ManualMessageContext to R.string.editor_msg_mode_manual,
 )

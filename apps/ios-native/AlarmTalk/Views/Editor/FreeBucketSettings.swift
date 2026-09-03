@@ -20,7 +20,8 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     case medication
     case weather
     case fortune
-    case love
+    /// 응원(옛 이름 `love`). 저장된 행의 옛 값은 `RandomPromptContext.forBucket` 이 접는다.
+    case cheer
 
     var id: String { rawValue }
 

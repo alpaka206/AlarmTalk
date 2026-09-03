@@ -21,7 +21,7 @@
 
 ## 2. 문구 목록은 **하나다** — 등급으로 자르지 않는다
 
-**목록은 하나이고, 등급으로 자르지 않는다**: 기본 인사말 · 날씨 · 운세 · 사랑 · 약 ·
+**목록은 하나이고, 등급으로 자르지 않는다**: 기본 인사말 · 날씨 · 운세 · 응원 · 약 ·
 직접 입력. 유료든 무료든 같은 목록을 본다.
 
 줄이 빠지는 사유는 **둘뿐**이고 **둘 다 등급이 아니다**:
@@ -49,15 +49,20 @@
 ### 2026-09-02 이전: 무료는 2종, 유료는 5종이었다
 
 그전에는 무료·기본 목소리에 **아예 다른 화면**(`FreeBucketSettingsPane`)을 띄우고 목록을
-'날씨+약' 으로 잘랐다. 그 차이는 제품 결정이 아니라 **기본 목소리에 운세·사랑 클립이
+'날씨+약' 으로 잘랐다. 그 차이는 제품 결정이 아니라 **기본 목소리에 운세·응원 클립이
 없다**는 사정이었다 — 대사는 `docs/product/stock-clip-scripts.md` 에 확정돼 있었는데
 `STOCK_CLIP_PRESETS` 에 들어가지 않은 채였다. 클립을 채우고 목록을 합쳤다.
 
 ⚠ **화면을 두 벌로 되돌리지 말 것.** 두 화면이 같은 상태를 다르게 읽어 계속 어긋났다 —
 한쪽만 '날씨 · 서울' 로 도시를 붙였고, 한쪽만 준비 중/오프라인을 구분했다.
 
-⚠ **en·ja 는 아직 한국어를 복사해 둔 임시 문구다**(운세·사랑). `STOCK_CLIP_PLACEHOLDER_LANGUAGES`
-에 적혀 있고, 백엔드 테스트가 표와 실제를 양방향으로 대조한다 — **출시 전에 교체할 것.**
+⚠ **카테고리 id 는 `cheer` 이고 옛 이름은 `love` 였다**(2026-09-02). 대사가 응원·자기돌봄으로
+확정되면서 개념을 바꿨다 — 연애 문구가 아니다. **옛 값을 읽는 접기는 지우지 말 것**:
+이미 저장된 알람 행과 스토어에 올라간 구버전 앱이 `love` 를 들고 있고, 접지 않으면
+모르는 값으로 보여 `preset` 으로 떨어진다(응원을 골랐는데 기본 인사말이 울린다).
+자리는 넷이다 — 서버 `normalizeRandomContext`·`stockPresetCategory`, 안드로이드
+`normalizedRandomPromptContext`·`randomPromptContextForBucket`, iOS
+`RandomPromptContext.normalized`·`forBucket`.
 
 ### 그래도 갈리는 축: **오디오를 어떻게 얻는가**
 
@@ -447,7 +452,7 @@ AlarmKit 예약을 다시 만들 수 있다.
 - 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부** × **기기 언어 하나** × 알람에
   쓰는 카테고리 **넷**(weather 9 · fortune 5 · love 3 · medication 2) = 4 × 19 = **76개**
 - 언어를 하나로 좁힌다 — 앱은 한 번에 한 언어만 쓰고, 언어를 바꾸면 다시 돌아 채운다
-- ⚠ **고를 수 있는 것은 전부 받는다**(2026-09-02). §2 대로 기본 목소리도 운세·사랑을
+- ⚠ **고를 수 있는 것은 전부 받는다**(2026-09-02). §2 대로 기본 목소리도 운세·응원을
   고를 수 있게 됐으므로, 안 받는 종류가 있으면 **고를 수는 있는데 오프라인에서 소리가 안
   나는** 알람이 생긴다. 목록이 늘면 받는 것도 같이 늘어야 해서 두 집합을 한 곳에서
   유도한다(`FreeBucketOrder` / `FreeBucket.order`) — 손으로 적지 않는다.
@@ -478,7 +483,7 @@ AlarmKit 예약을 다시 만들 수 있다.
 | 시점 | 무엇을 하나 |
 | --- | --- |
 | **테마를 고를 때** | **값만 바꾼다.** 안드로이드 `bindStockBucketClips` 는 `getCachedAudio(cacheKey) ?: 다운로드` 로 **캐시 우선**이고, iOS `prepareStockClip` 도 같다. 선다운로드가 제 일을 했으면 네트워크가 없다 |
-| **저장할 때** | 그 (목소리·테마·언어)의 클립 목록을 **묶기만** 한다. 조건형(날씨·운세)은 조건에, 회전형(약·사랑)은 순번에 맞춰 고른다 |
+| **저장할 때** | 그 (목소리·테마·언어)의 클립 목록을 **묶기만** 한다. 조건형(날씨·운세)은 조건에, 회전형(약·응원)은 순번에 맞춰 고른다 |
 | 캐시가 비어 있으면 | 그때만 받는다 — 선다운로드 실패에 대한 **폴백**이지 정상 경로가 아니다 |
 
 ⚠ **테마 선택을 준비된 음원에서 파생시키지 말 것.** iOS 는 2026-08-12 전까지 "어떤 테마를
@@ -614,7 +619,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
-| 임시 en·ja 문구 표 | — | — | `STOCK_CLIP_PLACEHOLDER_LANGUAGES` (`lib/stock-clips.ts`) |
+| 문구 변경 강제 | — | — | `STOCK_PRESET_TEXTS_FINGERPRINT` (`lib/migrations.ts`) |
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |

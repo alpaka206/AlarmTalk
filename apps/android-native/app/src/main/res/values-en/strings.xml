@@ -634,7 +634,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_cat_medication">Medication</string>
     <string name="editor2_ctx_wake_weather">Weather</string>
     <string name="editor2_ctx_wake_fortune">Fortune</string>
-    <string name="editor2_ctx_love">Love</string>
+    <string name="editor2_ctx_love">Encouragement</string>
     <string name="editor2_ctx_medication">Meds</string>
     <string name="editor2_repeat_every_day">Every day</string>
     <string name="editor2_repeat_weekly">Every %1$s</string>

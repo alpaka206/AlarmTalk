@@ -33,8 +33,8 @@ final class DynamicPromptPreferenceStoreTests: XCTestCase {
     }
 
     func test_keysMatchAndroid() {
-        store.saveLastMessageContext(userID: userID, context: "love")
-        XCTAssertEqual(defaults.string(forKey: "last_message_context_user-1"), "love")
+        store.saveLastMessageContext(userID: userID, context: "cheer")
+        XCTAssertEqual(defaults.string(forKey: "last_message_context_user-1"), "cheer")
 
         store.saveLastManualText(userID: userID, text: "일어나")
         XCTAssertEqual(defaults.string(forKey: "last_manual_text_user-1"), "일어나")
@@ -69,7 +69,7 @@ final class DynamicPromptPreferenceStoreTests: XCTestCase {
     // MARK: - 빈 값
 
     func test_blankValuesClearInsteadOfStoring() {
-        store.saveLastMessageContext(userID: userID, context: "love")
+        store.saveLastMessageContext(userID: userID, context: "cheer")
         store.saveLastMessageContext(userID: userID, context: "   ")
         XCTAssertNil(store.lastMessageContext(userID: userID))
 
@@ -89,16 +89,16 @@ final class DynamicPromptPreferenceStoreTests: XCTestCase {
     // MARK: - 계정 분리
 
     func test_perUserIsolation() {
-        store.saveLastMessageContext(userID: "a", context: "love")
+        store.saveLastMessageContext(userID: "a", context: "cheer")
         store.saveLastMessageContext(userID: "b", context: "weather")
 
-        XCTAssertEqual(store.lastMessageContext(userID: "a"), "love")
+        XCTAssertEqual(store.lastMessageContext(userID: "a"), "cheer")
         XCTAssertEqual(store.lastMessageContext(userID: "b"), "weather")
     }
 
     func test_nilOrBlankUserID_isNoOp() {
-        store.saveLastMessageContext(userID: nil, context: "love")
-        store.saveLastMessageContext(userID: "   ", context: "love")
+        store.saveLastMessageContext(userID: nil, context: "cheer")
+        store.saveLastMessageContext(userID: "   ", context: "cheer")
         XCTAssertNil(store.lastMessageContext(userID: nil))
         XCTAssertNil(store.lastMessageContext(userID: "   "))
     }
@@ -108,7 +108,7 @@ final class DynamicPromptPreferenceStoreTests: XCTestCase {
     /// 명시적 로그아웃·탈퇴에서만 지운다. 자동 401 에서 지우면 같은 사람이 다시
     /// 로그인할 때 취향을 잃는다(안드로이드에서 실제로 회귀했던 지점).
     func test_clear_removesBothKeysForThatUserOnly() {
-        store.saveLastMessageContext(userID: "a", context: "love")
+        store.saveLastMessageContext(userID: "a", context: "cheer")
         store.saveLastManualText(userID: "b", text: "일어나")
 
         store.clear(userID: "a")

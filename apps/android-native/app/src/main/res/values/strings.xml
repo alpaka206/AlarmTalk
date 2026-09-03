@@ -686,7 +686,7 @@
     <string name="editor2_cat_medication">약</string>
     <string name="editor2_ctx_wake_weather">날씨</string>
     <string name="editor2_ctx_wake_fortune">운세</string>
-    <string name="editor2_ctx_love">사랑</string>
+    <string name="editor2_ctx_love">응원</string>
     <string name="editor2_ctx_medication">약</string>
     <string name="editor2_repeat_every_day">매일</string>
     <string name="editor2_repeat_weekly">매주 %1$s</string>

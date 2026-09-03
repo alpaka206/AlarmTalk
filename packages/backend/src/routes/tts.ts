@@ -57,11 +57,13 @@ const tts = new Hono<AppEnv>();
 //  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
 //  - medication / love: 그 문구를 고른 알람
 //  - custom: 직접 입력
-const TTS_CATEGORIES = ['morning', 'medication', 'love', 'custom'] as const;
+// ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경). 구버전 앱과 이미 저장된 행이
+// 여전히 `love` 를 보내오므로 **둘 다 받고** 아래 normalize 가 `cheer` 로 접는다.
+const TTS_CATEGORIES = ['morning', 'medication', 'cheer', 'love', 'custom'] as const;
 
 // 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
 // normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
-const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'love'] as const;
+const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'cheer'] as const;
 type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
 
@@ -130,8 +132,25 @@ function randomIndex(length: number): number {
   return values[0]! % length;
 }
 
+/**
+ * 이름이 바뀐 값의 **옛 이름 → 새 이름** 표.
+ *
+ * ⚠ **이 표가 없으면 조용히 뜻이 바뀐다.** 아래 normalize 는 모르는 값을 `preset` 으로
+ * 접으므로, 구버전 앱이 보낸 `love` 가 **'기본 인사말' 로 둔갑**한다 — 사용자는 응원을
+ * 골랐는데 인사말이 울린다. 이미 저장된 행도 같은 값을 들고 있다.
+ *
+ * 옛 이름은 **지우지 않는다.** 스토어에 올라간 앱과 사용자 기기의 로컬 DB 는 우리가
+ * 고칠 수 없다(`meal`/`sleep`/`exercise` 를 접어 두는 것과 같은 이유).
+ */
+const RENAMED_RANDOM_CONTEXTS: Readonly<Record<string, RandomContext>> = {
+  // 2026-09-02: '사랑' 을 '응원' 으로 바꿨다(연애 문구가 아니라 응원·자기돌봄).
+  love: 'cheer',
+};
+
 function normalizeRandomContext(value: unknown): RandomContext {
   const raw = typeof value === 'string' ? value.trim() : '';
+  const renamed = RENAMED_RANDOM_CONTEXTS[raw];
+  if (renamed) return renamed;
   return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
 }
 
@@ -240,9 +259,17 @@ function todayKoreaLabel(): string {
  * 수 있으므로 프리셋 문구가 정상적으로 나온다 — 그 서술을 근거로 아래 F2 게이트를 손대면
  * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
  */
+/** 이름이 바뀐 **카테고리**의 옛 이름 → 새 이름. 위 `RENAMED_RANDOM_CONTEXTS` 의 짝이다. */
+const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
+  love: 'cheer',
+};
+
 function stockPresetCategory(category: string): string {
-  return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
+  if (category === 'morning') return STOCK_GREETING_CATEGORY;
+  // 이름이 바뀐 카테고리도 여기서 접는다 — 구버전 앱은 `love` 를 보낸다.
+  return RENAMED_STOCK_CATEGORIES[category] ?? category;
 }
+
 
 /**
  * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
@@ -269,8 +296,14 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
   const spoken = base.slice(lead.length);
   if (!spoken || spoken.startsWith(title)) return base;
-  const withTitle = `${lead}${title}, ${spoken}`;
-  return withTitle.length <= 200 ? withTitle : base;
+  // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
+  //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
+  //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
+  //   20개 중 17개가 **7자짜리 호칭을 붙이는 것만** 거부당했다 — 프리셋 본문은 그대로
+  //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
+  //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
+  //   길이는 최대 32자로 묶여 있다.
+  return `${lead}${title}, ${spoken}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -1094,7 +1127,12 @@ tts.post('/generate', async (c) => {
         400,
       );
     }
-    if (requestText.length > 200) {
+    // ⚠ **태그를 뺀 길이로 잰다** — 아래 최종 검사(`Prepared text must be…`)와 **같은 규칙**이다.
+    //   200자는 「사용자에게 들리는 말」의 상한이고 태그는 낭독되지 않는다(2026-08-13 C안).
+    //   여기만 원시 길이로 재고 있어서, 같은 요청이 같은 200 을 **두 가지 방식으로** 통과해야
+    //   했다. 실제로 영어 프리셋(`[caring] … [encouraging] …`)에 호칭을 붙이면 태그 23자
+    //   때문에 202자가 되어 400 이 났다 — 들리는 말은 179자인데도.
+    if (normalizeAlarmTextWithoutTags(requestText).length > 200) {
       return c.json(
         { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,

@@ -13,14 +13,21 @@ const val SYSTEM_VOICE_ID_PREFIX = "70000000-0000-4000-9000-"
 /**
  * 첫 서버 응답 전에도 즉시 그릴 수 있는 기본 목소리 카탈로그.
  *
+
+ * ⚠ **표시 이름 '애니' 와 파일명 `narin` 이 다르다**(2026-09-03). 파일명·내부 식별자는
+ *   일부러 바꾸지 않았다 — '애니' 를 그대로 쓰면 `voice_greeting_애니_ko` 처럼 한글
+ *   리소스명이 되거나 `ani` 로 줄여야 하는데, 그 낱말은 코드 곳곳의 '애니메이션'
+ *   (`애니메이션이 끝난 뒤`, `TimeWheelSettle` 등)과 검색에서 뒤섞인다.
+ *   표시 이름은 제품이 정하고 식별자는 안정적으로 둔다.
+ *
  * 개인·공유 목소리는 절대 넣지 않는다. 서버 `GET /voice` 성공 응답이 오면 이 목록은
  * 전체 응답으로 교체된다. 백엔드 system-stock-voices 시드를 바꾸면 이 목록도 함께 맞춘다.
  */
 fun bundledSystemVoiceProfiles(): List<VoiceProfile> = listOf(
-    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000101", name = "아담", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000101", name = "시우", status = "ready", isSystem = true),
     VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000102", name = "미나", status = "ready", isSystem = true),
-    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000103", name = "하준", status = "ready", isSystem = true),
-    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000104", name = "소은", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000103", name = "도현", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000104", name = "애니", status = "ready", isSystem = true),
 )
 
 /** 시스템 제공(스톡) 보이스 id 인지 — 무료 플랜에서도 사용할 수 있다. */
@@ -120,33 +127,33 @@ const val STOCK_GREETING_CATEGORY = "greeting"
  */
 fun bundledSystemGreetingRes(voiceProfileId: String?, appLanguage: String): Int? {
     val voice = when (voiceProfileId) {
-        SYSTEM_VOICE_ID_PREFIX + "000000000101" -> "adam"
+        SYSTEM_VOICE_ID_PREFIX + "000000000101" -> "siwoo"
         SYSTEM_VOICE_ID_PREFIX + "000000000102" -> "mina"
-        SYSTEM_VOICE_ID_PREFIX + "000000000103" -> "hajun"
-        SYSTEM_VOICE_ID_PREFIX + "000000000104" -> "soeun"
+        SYSTEM_VOICE_ID_PREFIX + "000000000103" -> "dohyun"
+        SYSTEM_VOICE_ID_PREFIX + "000000000104" -> "narin"
         else -> return null
     }
     val language = appVoiceLanguageOf(appLanguage)
     return when (voice) {
-        "adam" -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_adam_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_adam_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_adam_ko
+        "siwoo" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_ko
         }
         "mina" -> when (language) {
             "en" -> com.alarmtalk.app.R.raw.voice_greeting_mina_en
             "ja" -> com.alarmtalk.app.R.raw.voice_greeting_mina_ja
             else -> com.alarmtalk.app.R.raw.voice_greeting_mina_ko
         }
-        "hajun" -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ko
+        "dohyun" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_ko
         }
         else -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ko
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_narin_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_narin_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_narin_ko
         }
     }
 }

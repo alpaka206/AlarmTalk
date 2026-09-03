@@ -91,7 +91,7 @@ struct MessageSettingsPane: View {
         ("preset", "기본 인사말"),
         ("wake_weather", "날씨"),
         ("wake_fortune", "운세"),
-        ("love", "사랑"),
+        ("cheer", "응원"),
         ("medication", "약"),
         (MessageSettingsResult.manualContext, "직접 입력"),
     ]
@@ -503,7 +503,7 @@ struct MessageModeSummaryRow: View {
         switch context {
         case "wake_weather": label = "날씨"
         case "wake_fortune": label = "운세"
-        case "love": label = "사랑"
+        case "cheer", "love": label = "응원"
         case "medication": label = "약"
         case MessageSettingsResult.manualContext: label = "직접 입력"
         default: label = "기본 인사말"

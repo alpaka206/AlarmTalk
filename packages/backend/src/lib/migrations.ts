@@ -76,10 +76,8 @@ const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
  * 없앴다**(`docs/spec/voice-and-message.md`). 그전에는 기본 목소리에 그 두 카테고리의
  * 클립이 없어서 목록에서 아예 감췄다.
  *
- * ⚠ **en·ja 는 지금 한국어를 그대로 복사한 임시값**이라 새 문구가 언어별로 갈라지지 않는다
- * (`STOCK_CLIP_PLACEHOLDER_LANGUAGES`). 진짜 대사로 교체하는 날에는 문구가 바뀌므로
- * **또 하나의 refresh 마이그레이션이 필요하다** — `migrations-stock-refresh.test.ts` 가
- * "최신 refresh 의 동결 사본 == 현재 STOCK_CLIP_PRESETS" 를 강제하므로 잊을 수 없다.
+ * ⚠ 이 사본은 **그때의** 문구다. 그 뒤 2026-09-02 에 세 언어 대사를 전부 새로 썼고,
+ * #110 이 시스템 프리셋을 통째로 지운다 — 이 목록과 현재 문구는 더 이상 같지 않다.
  *
  * 앞의 36종은 **글자 하나 바뀌지 않았다.** 그래서 아래 무효화는 dev/prod 에서 0행 no-op 다 —
  * 승인된 실오디오를 지우지 않는다. 새 8종은 아직 시딩된 적이 없어 지울 것도 없다.
@@ -116,6 +114,45 @@ const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
     )
     AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
       ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19.map(sqlLiteral).join(',\n      ')}
+    )`;
+
+/**
+ * **지금 마이그레이션이 아는 스톡 문구의 지문.**
+ *
+ * ⚠ **이 값을 갱신할 때는 반드시 무효화 마이그레이션도 함께 넣는다.**
+ * `findMissingStockTargets` 는 (voice|category|language|variant) **존재 여부만** 보므로,
+ * 옛 행을 지우지 않으면 재시드해도 **옛 문구가 그대로 남는다.** 문구만 고치고 배포하면
+ * 코드와 실제 울리는 소리가 갈라지고, 그 사실은 아무 데서도 드러나지 않는다.
+ *
+ * 값이 안 맞으면 `test/migrations-stock-refresh.test.ts` 가 빨개진다. 그 테스트가 여기로
+ * 사람을 데려오는 것이 목적이다 — 예전에는 문구 52개를 마이그레이션에 한 벌 더 적어
+ * 두는 방식이었는데, 대사를 통째로 새로 쓰면 그 사본이 순수한 중복이 됐다.
+ *
+ * 마지막 갱신: 2026-09-02, 마이그레이션 #110(대사 3개 언어 전면 교체 + love → cheer).
+ */
+export const STOCK_PRESET_TEXTS_FINGERPRINT = 'fe68a6ede87ad096';
+
+/**
+ * **시스템(스톡) 보이스의 프리셋 행 전부.** 문구를 가리지 않는다.
+ *
+ * #70·#109 의 "확정 문구와 다른 것만" 서브쿼리와 다르다 — 대사를 통째로 새로 썼을 때는
+ * 전부가 대상이라, 텍스트 목록을 동결해 두는 것이 오히려 헷갈린다. 클론(사용자 등록)
+ * 클립은 `is_system = 0` 이라 여기 걸리지 않는다.
+ */
+const SYSTEM_STOCK_PRESET_SUBQUERY = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )`;
+
+/**
+ * **등록(클론) 보이스의 사전렌더 프리셋 행 전부.** 위 시스템 서브쿼리의 짝이다.
+ * 시드 문구가 바뀌면 옛 클립은 라벨과 다른 말을 하므로 통째로 지우고 cron 이 다시 굽는다.
+ */
+const CLONE_PRESET_SUBQUERY = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 0
     )`;
 
 export const migrations: Migration[] = [
@@ -2458,8 +2495,108 @@ export const migrations: Migration[] = [
         WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
     ],
   },
-];
+  {
+    // 대사 전면 교체 + 카테고리 이름 변경(2026-09-02 사용자 확정본).
+    //
+    // ⚠ **이번엔 수렴형(텍스트 비교)이 아니라 전면 교체다.** #70·#109 는 "확정 문구와
+    //   다른 것만" 지우는 방식이었는데, 이번에는 **한국어 대사를 전부 새로 썼으므로**
+    //   어차피 전부가 대상이다. 텍스트 목록을 또 동결해 두느니 시스템 프리셋을 통째로
+    //   지우는 쪽이 단순하고, 무엇이 남는지 헷갈릴 여지가 없다.
+    //
+    // ⚠ **지우는 것은 시스템(스톡) 프리셋뿐이다.** 사용자가 등록한 클론의 사전렌더 클립은
+    //   지우지 않는다 — 대신 카테고리 이름만 바꾸고 큐를 되돌려 cron 이 새 시드로 다시
+    //   굽게 한다(#63 과 같은 패턴).
+    //
+    // 배포 후 `POST /api/admin/seed-stock-clips` 로 새 문구를 다시 구워야 한다.
+    // R2 오브젝트는 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    id: 110,
+    name: 'replace-stock-clips-and-rename-love-to-cheer',
+    statements: [
+      // ── ① 카테고리 이름: love → cheer ─────────────────────────────────
+      // 옛 이름은 코드에서 **읽을 때 접어** 계속 받는다(구버전 앱·기기 로컬 DB 는 우리가
+      // 고칠 수 없다). 여기서는 서버가 들고 있는 행만 새 이름으로 옮긴다.
+      `UPDATE messages SET category = 'cheer' WHERE category = 'love'`,
+      `UPDATE alarms SET bucket_id = 'cheer' WHERE bucket_id = 'love'`,
 
+      // ── ② 시스템 스톡 프리셋 전면 삭제 ────────────────────────────────
+      // ⚠ #84 가 지운 `raw_audio_url`·`raw_audio_duration_ms` 를 넣지 말 것 — 러너가
+      //   `no such column` 을 삼켜 이 문장만 조용히 죽는다(#109 주석 참조).
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL
+        WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `DELETE FROM message_library WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `DELETE FROM generated_audio_assets WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `DELETE FROM messages WHERE id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+
+      // ── ③ 클론 사전렌더도 전부 다시 굽는다 ───────────────────────────
+      // ⚠ **응원만이 아니라 전부다.** `CLONE_CLIP_SEEDS` 의 시드를 다섯 카테고리 모두
+      //   새 대사 결(공감 → 깨우기)로 다시 썼으므로, 옛 시드로 구운 클립은 라벨과 다른
+      //   말을 한다. 지우지 않으면 `findMissingStockTargets` 가 '있다' 로 보고 건너뛴다.
+      //   비용은 cron 이 나눠 치른다(틱당 6클립).
+      `DELETE FROM generated_audio_assets
+        WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
+      `DELETE FROM message_library WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL
+        WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
+      `DELETE FROM messages WHERE id IN (${CLONE_PRESET_SUBQUERY})`,
+      `UPDATE voice_prerender_queue
+         SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
+             updated_at = datetime('now')
+       WHERE status = 'done'`,
+    ],
+  },
+  {
+    // 기본(시스템) 목소리 4종 전면 교체(2026-09-03 사용자 확정).
+    //
+    // ## 왜 바꾸나
+    //
+    // 4종 중 **둘이 영어권 premade 목소리로 한국어를 읽고 있었다.**
+    //  - `아담` = ElevenLabs `Adam` — 최초 시드 그대로. 가장 널리 쓰인 기본 목소리라
+    //    아는 사람에게는 'AI 목소리' 그 자체로 읽힌다.
+    //  - `소은` = ElevenLabs `Jessica` — **이름만** 한국어로 바꿨다(#44 가
+    //    `SET name = '소은'` 만 했고 voice id 는 그대로다).
+    // 그리고 `하준`(Mr. K)은 실제 재생에서 음이 깨지는 구간이 있었다.
+    //
+    // 2026-09-02 에 대사를 전면 교체하면서 기준이 올라간 것도 이유다. 예전 문구는
+    // 정보 전달("비가 온대요, 우산 챙겨요")이라 억양이 어긋나도 넘어갔는데, 지금은
+    // "빗소리 들으면서 조금만 더 누워 있고 싶어지죠..." 처럼 **곁에서 말 거는 말투**라
+    // 어색함이 그대로 드러난다.
+    //
+    // ## 무엇으로 바꾸나 — 네 칸이 서로 다른 사람이 되게
+    //
+    // | 이름 | 결 | 출처 |
+    // | --- | --- | --- |
+    // | 미나 | 차분·따뜻한 여성 | 그대로 둔다(한국어 원어, 검증된 품질) |
+    // | 애니 | 발랄한 애니 캐릭터 여성 | Kano |
+    // | 시우 | 밝은 소년미 남성 | Krys (한국어 원어, 라이브러리 최다 사용) |
+    // | 도현 | 따뜻하고 단단한 어른 남성 | Jon (한국어 verified) |
+    //
+    // ⚠ **이름은 목소리를 따라간다.** '아담' 은 Adam 이라서 붙은 이름이라 목소리가
+    //   바뀌면 유지할 이유가 없고, '소은' 은 차분한 이름이라 발랄한 캐릭터 목소리와
+    //   결이 어긋난다. 네 이름을 한국 이름으로 맞춰 한 벌로 보이게 한다.
+    //
+    // ⚠ 목소리가 바뀌면 그 목소리로 구운 클립은 **전부 남의 목소리**다. #110 이 이미
+    //   시스템 프리셋을 통째로 지우므로 여기서 또 지우지 않는다 — 순서상 #110 이
+    //   먼저 돌고, 재시드가 새 목소리로 굽는다.
+    id: 111,
+    name: 'replace-system-voices-2026-09-03',
+    statements: [
+      // 미나(102)는 그대로 둔다.
+      `UPDATE voice_profiles
+         SET name = '시우', elevenlabs_voice_id = '1W00IGEmNmwmsDeYy7ag'
+       WHERE id = '70000000-0000-4000-9000-000000000101'`,
+      `UPDATE voice_profiles
+         SET name = '도현', elevenlabs_voice_id = 'MFZUKuGQUsGJPQjTS4wC'
+       WHERE id = '70000000-0000-4000-9000-000000000103'`,
+      `UPDATE voice_profiles
+         SET name = '애니', elevenlabs_voice_id = 'OSwaPSNdfituxkWcjlkR'
+       WHERE id = '70000000-0000-4000-9000-000000000104'`,
+    ],
+  },
+];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
 // reality (e.g. partial historical migration runs before the ledger existed).
