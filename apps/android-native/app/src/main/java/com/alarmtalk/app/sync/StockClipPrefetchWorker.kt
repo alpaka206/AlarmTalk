@@ -278,6 +278,7 @@ class StockClipPrefetchWorker(
                         expectedVariants = manifest.expectedVariants,
                         legacyHints = legacyHints,
                         conditionInputs = conditionInputs,
+                        callerUserId = session.user.id,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
@@ -291,7 +292,8 @@ class StockClipPrefetchWorker(
                         auth = auth,
                         clips = allClips,
                         language = language,
-                        expectedVariants = manifest.expectedVariants
+                        expectedVariants = manifest.expectedVariants,
+                        callerUserId = session.user.id,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
                 // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시).
@@ -308,6 +310,7 @@ class StockClipPrefetchWorker(
                         // ⚠ **재바인딩과 같은 힌트를 넘긴다.** 여기만 힌트 없이 물으면
                         //   아직 갈아타지 않은 알람을 두고 파일을 지운다.
                         legacyHints = legacyHints,
+                        callerUserId = session.user.id,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Replaced stock audio prune failed", it) }
                 // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와
@@ -323,6 +326,7 @@ class StockClipPrefetchWorker(
                             // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
                             manifestFetched = true,
                             legacyHints = legacyHints,
+                            callerUserId = session.user.id,
                         ),
                         // 못 받았으면 앞 판정을 지킨다 — `report` 가 스스로 막는다.
                         manifestFetched = true,

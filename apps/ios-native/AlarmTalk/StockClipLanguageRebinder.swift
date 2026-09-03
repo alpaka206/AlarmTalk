@@ -47,7 +47,9 @@ struct StockClipLanguageRebinder {
         /// `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마.
         legacyHints: [String: String] = [:],
         /// 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다.
-        conditionInputs: DynamicPromptPreferences? = nil
+        conditionInputs: DynamicPromptPreferences? = nil,
+        /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
+        callerUserId: String? = nil
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
@@ -55,7 +57,11 @@ struct StockClipLanguageRebinder {
         // 클립은 **서버에서 사라진 것**이다(문구·목소리를 갈면 message id 가 새로 난다).
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
 
-        let stale: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
+        // ⚠ **남의 알람을 건드리지 않는다**(2026-09-03 리뷰 17차). 로컬 알람은 로그아웃해도
+        //   남으므로, 전체를 훑으면 계정 B 가 계정 A 의 숨은 알람에 **B 의 지역·생년월일을
+        //   써 넣고** DIRTY 로 표시한다 — A 가 다시 로그인하면 그 값이 서버로 올라간다.
+        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let stale: [LocalAlarmRecord] = visible.filter { (record: LocalAlarmRecord) -> Bool in
             Self.shouldRebind(
                 record: record, language: language, liveKeys: liveKeys,
                 clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
@@ -93,6 +99,18 @@ struct StockClipLanguageRebinder {
         //   (`AlarmTalkApp.rebindStockClipsIfNeeded`). 안드로이드는 워커가 스케줄러를
         //   직접 부른다 — 플랫폼 사정이라 모양이 다르다.
         _ = conditionBucketRebound
+
+        // ⚠⚠ **디스크에 앉히고 나서 돌아간다**(2026-09-03 리뷰 17차).
+        //   `upsert` 는 저장을 **비동기로 걸어 둘 뿐**이라, 그대로 돌려주면 호출부가
+        //   메모리 위의 행만 보고 **옛 오디오 파일을 지우고** '교체 완료' 로 문을 연다.
+        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **옛 행을 다시 읽는데 그 행이
+        //   가리키는 파일은 이미 없다** — 내 알람은 서버에서 되받는 경로가 없어
+        //   오프라인 복구가 불가능하다.
+        //   쓰기가 실패하면 **0을 돌려준다** — 호출부는 그걸 '아직 안 끝났다' 로 읽어
+        //   정리를 미루고 문을 닫아 둔다(다음 회차가 처음부터 다시 한다, 멱등).
+        if rebound > 0, !store.saveNow() {
+            return 0
+        }
         return rebound
     }
 
@@ -215,7 +233,6 @@ struct StockClipLanguageRebinder {
     ///   앱 시작 직후에 도는 경로라, 그동안 화면이 굳어 탭이 먹지 않았다(UI 테스트가
     ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
     ///   떼어 낸다.
-    @discardableResult
     /// **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
     ///
     /// 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
@@ -267,24 +284,30 @@ struct StockClipLanguageRebinder {
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         manifestFetched: Bool,
-        legacyHints: [String: String] = [:]
+        legacyHints: [String: String] = [:],
+        /// 지금 로그인한 계정. 남의 알람 때문에 이 계정을 가두지 않는다.
+        callerUserId: String? = nil
     ) -> Bool {
         guard manifestFetched, store.hasLoadedFromDisk else { return false }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
-        return store.alarms.contains {
+        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        return visible.contains {
             Self.needsRebind(
                 record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
             )
         }
     }
 
+    @discardableResult
     func pruneReplacedStockAudio(
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         expectedVariants: ExpectedVariantCounts? = nil,
         /// ⚠ **재바인딩과 같은 힌트를 넘길 것.** 여기만 힌트 없이 물으면 [needsRebind] 가
         /// 버킷 없는 옛 행을 false 로 돌려줘, **아직 갈아타지 않은 알람을 두고 파일을 지운다.**
-        legacyHints: [String: String] = [:]
+        legacyHints: [String: String] = [:],
+        /// 지금 로그인한 계정. **판정에만** 쓴다 — 남길 것은 전 계정이다.
+        callerUserId: String? = nil
     ) async -> Int {
         guard !clips.isEmpty else { return 0 }
         // ⚠⚠ **알람이 디스크에서 다 올라오기 전에는 절대 지우지 않는다**(2026-09-03 리뷰 10차).
@@ -298,16 +321,20 @@ struct StockClipLanguageRebinder {
         guard store.hasLoadedFromDisk else { return 0 }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
         let alarms = store.alarms
+        // ⚠ **판정은 이 계정 것만, 남길 것은 전부.** 남의 알람 때문에 정리를 영영 미루면
+        //   안 되고(그 계정은 로그인하지 않는다), 반대로 남의 알람이 물고 있는 클립을
+        //   지우면 그 사람이 다시 로그인했을 때 **소리를 잃는다.**
+        let mine = callerUserId == nil ? alarms : store.alarms(visibleTo: callerUserId)
 
         // ① 아직 갈아탈 것이 남았으면 미룬다. ② 세트가 모자라 못 갈아탄 것이 있어도 미룬다.
-        let pending = alarms.contains {
+        let pending = mine.contains {
             Self.shouldRebind(
                 record: $0, language: language, liveKeys: liveKeys,
                 clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
             )
         }
         guard !pending else { return 0 }
-        let waitingForSeed = alarms.contains {
+        let waitingForSeed = mine.contains {
             Self.needsRebind(
                 record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
             )
@@ -378,11 +405,15 @@ struct StockClipLanguageRebinder {
         session: AuthSession?,
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
-        expectedVariants: ExpectedVariantCounts? = nil
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
+        callerUserId: String? = nil
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
-        let legacy: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
+        // 남의 알람은 건드리지 않는다 — `rebindIfLanguageChanged` 와 같은 이유.
+        let visibleLegacy = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let legacy: [LocalAlarmRecord] = visibleLegacy.filter { (record: LocalAlarmRecord) -> Bool in
             // ⚠ `bucketId` 가 **비어 있는** 것이 '옛 라이브 행' 의 표식이다. 테마 알람은
             // 저장할 때 `randomPrompt` 를 내리고 `bucketId` 를 적으므로 여기 안 걸린다.
             guard record.voiceRandomPrompt else { return false }
@@ -421,6 +452,12 @@ struct StockClipLanguageRebinder {
             bound.voiceRandomPrompt = false
             _ = store.upsertPreservingServerSyncFields(bound)
             rebound += 1
+        }
+        // ⚠ **디스크에 앉히고 나서 돌아간다**(리뷰 17차) — `rebindIfLanguageChanged` 와
+        //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
+        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
+        if rebound > 0, !store.saveNow() {
+            return 0
         }
         return rebound
     }

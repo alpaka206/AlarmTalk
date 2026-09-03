@@ -525,14 +525,16 @@ struct AlarmTalkApp: App {
                 return server == DynamicPromptPreferences()
                     ? .load(userID: auth.session?.user.id)
                     : server
-            }()
+            }(),
+            callerUserId: auth.session?.user.id
         )
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
         let converted = await rebinder.rebindLiveGenerationRows(
             session: auth.session,
             clips: voiceStudio.stockClips,
-            expectedVariants: voiceStudio.expectedVariants
+            expectedVariants: voiceStudio.expectedVariants,
+            callerUserId: auth.session?.user.id
         )
         // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차). 방금 만든
         //   행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그 값이 없으면 발사 때
@@ -554,7 +556,8 @@ struct AlarmTalkApp: App {
             expectedVariants: voiceStudio.expectedVariants,
             // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
             //   않은 알람을 두고 파일을 지운다 — 그 알람은 무음이 된다.
-            legacyHints: voiceStudio.legacyBucketHints
+            legacyHints: voiceStudio.legacyBucketHints,
+            callerUserId: auth.session?.user.id
         )
         // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
         //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
@@ -567,7 +570,8 @@ struct AlarmTalkApp: App {
                 // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후
                 // 게시 전)라 미완료다.
                 manifestFetched: manifestFetched,
-                legacyHints: voiceStudio.legacyBucketHints
+                legacyHints: voiceStudio.legacyBucketHints,
+                callerUserId: auth.session?.user.id
             ),
             manifestFetched: manifestFetched
         )

@@ -52,16 +52,6 @@ struct RootView: View {
                 // (`AlarmTalkApp.kt` 의 `updateRequired || consentUnsupported`).
                 // 예전 iOS 는 이 값을 세우기만 하고 **읽는 뷰가 하나도 없었다**(2026-08-07 수정).
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
-            } else if auth.isAuthenticated && stockReplacement.pending {
-                // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
-                // 이름인데 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시).
-                // ⚠ **업데이트 게이트보다 뒤, 로그인 검사보다 앞.** 구버전이면 받을 것 자체가
-                //   다르므로 업데이트가 먼저고, 로그인 전에는 받을 알람도 목소리도 없다.
-                // 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
-                StockReplacementView(
-                    working: stockReplacement.working,
-                    onRetry: { stockReplacement.retry() }
-                )
             } else if !auth.isAuthenticated {
                 AuthGateView()
             } else if auth.pendingDeletion {
@@ -104,6 +94,21 @@ struct RootView: View {
                     // 나가면 앱으로 못 돌아오고 체크해 둔 값도 사라진다.
                     onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
                     onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
+                )
+            } else if stockReplacement.pending {
+                // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
+                // 이름인데 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시).
+                //
+                // ⚠⚠ **계정 선행 게이트보다 뒤에 둔다**(2026-09-03 리뷰 17차).
+                //   앞에 두면 재동의·탈퇴 유예 화면을 **가려 버린다.** 그 상태에서는
+                //   재시도를 눌러도 서버가 `/tts/stock-clips` 를 `CONSENT_REQUIRED`·
+                //   `ACCOUNT_PENDING_DELETION` 으로 막으므로 **영영 못 빠져나온다** —
+                //   앱을 껐다 켜는 것 말고는 길이 없다.
+                //   순서: 업데이트 → 로그인 → 탈퇴 유예 → 동의 → **여기**.
+                // 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
+                StockReplacementView(
+                    working: stockReplacement.working,
+                    onRetry: { stockReplacement.retry() }
                 )
             } else if voiceSetupDone == nil {
                 ProgressView()

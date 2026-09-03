@@ -56,6 +56,8 @@ object StockClipLanguageRebinder {
         legacyHints: Map<String, String> = emptyMap(),
         /** 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다. */
         conditionInputs: com.alarmtalk.app.data.DynamicPromptPreferences? = null,
+        /** 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다. */
+        callerUserId: String? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -68,7 +70,8 @@ object StockClipLanguageRebinder {
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
         val stale = alarmDao.getAllAlarms().filter {
-            shouldRebind(it, language, liveKeys, clips, expectedVariants, legacyHints)
+            ownedBy(it, callerUserId) &&
+                shouldRebind(it, language, liveKeys, clips, expectedVariants, legacyHints)
         }
         if (stale.isEmpty()) return@withContext 0
 
@@ -144,6 +147,8 @@ object StockClipLanguageRebinder {
         clips: List<StockClip>,
         language: String,
         expectedVariants: ExpectedVariantCounts? = null,
+        /** 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다. */
+        callerUserId: String? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -151,6 +156,7 @@ object StockClipLanguageRebinder {
         val audioStore = AlarmAudioStore(context)
 
         val legacy = alarmDao.getAllAlarms().filter { alarm ->
+            ownedBy(alarm, callerUserId) &&
             // ⚠ `bucketId` 가 **비어 있는** 것이 '옛 라이브 행' 의 표식이다. 테마 알람은
             // 저장할 때 `voiceRandomPrompt` 를 내리고 `bucketId` 를 적으므로 여기 안 걸린다.
             alarm.voiceRandomPrompt &&
@@ -255,6 +261,25 @@ object StockClipLanguageRebinder {
     ): Boolean =
         needsRebind(alarm, language, liveKeys, legacyHints) &&
             replacementIsComplete(alarm, clips, language, expectedVariants, legacyHints)
+
+    /**
+     * **이 알람이 지금 로그인한 계정의 것인가**(2026-09-03 리뷰 17차).
+     *
+     * ⚠ 로컬 알람은 **로그아웃해도 남는다.** 그래서 `getAllAlarms()` 를 그대로 훑으면
+     *   계정 B 가 계정 A 의 숨은 알람을 건드린다 — 이번 회차에는 그게 특히 나쁘다.
+     *   조건 채우기가 **B 의 지역·생년월일을 A 의 알람에 써 넣고** DIRTY 로 표시하므로,
+     *   A 가 다시 로그인하면 그 값이 서버로 올라가 A 의 알람이 남의 사주로 운세를 읽는다.
+     *   `AlarmDao.countAtTime` 이 쓰는 규약과 같다 — 소유자가 없는 옛 행은 통과시킨다
+     *   (기록하기 전에 만들어진 행이라 누구 것인지 알 수 없고, 막으면 영영 못 고친다).
+     *
+     * ⚠ **'무엇을 남길까' 에는 쓰지 말 것.** 정리(prune)의 참조 집합은 **전 계정**이어야
+     *   한다 — 남의 알람이 물고 있는 클립을 지우면 그 사람이 소리를 잃는다.
+     */
+    @JvmStatic
+    internal fun ownedBy(alarm: AlarmEntity, callerUserId: String?): Boolean {
+        val owner = alarm.ownerUserId?.trim()?.takeIf { it.isNotEmpty() } ?: return true
+        return owner == callerUserId
+    }
 
     /**
      * **이 알람의 테마가 무엇인가** — 저장된 값이 먼저, 없으면 서버가 준 힌트.
@@ -382,11 +407,13 @@ object StockClipLanguageRebinder {
         /** 이번 회차에 매니페스트를 **실제로 받았는가.** 못 받았으면 판정하지 않는다. */
         manifestFetched: Boolean,
         legacyHints: Map<String, String> = emptyMap(),
+        /** 지금 로그인한 계정. 남의 알람 때문에 이 계정을 가두지 않는다. */
+        callerUserId: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         if (!manifestFetched) return@withContext false
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
         AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
-            needsRebind(it, language, liveKeys, legacyHints)
+            ownedBy(it, callerUserId) && needsRebind(it, language, liveKeys, legacyHints)
         }
     }
 
@@ -415,19 +442,25 @@ object StockClipLanguageRebinder {
         language: String,
         expectedVariants: ExpectedVariantCounts? = null,
         legacyHints: Map<String, String> = emptyMap(),
+        /** 지금 로그인한 계정. **판정에만** 쓴다 — 참조 집합은 전 계정이다. */
+        callerUserId: String? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
         val alarmDao = AlarmDatabase.getInstance(context).alarmDao()
         val alarms = alarmDao.getAllAlarms()
+        // ⚠ **판정은 이 계정 것만, 남길 것은 전부.** 남의 알람 때문에 정리를 영영 미루면
+        //   안 되고(그 계정은 로그인하지 않는다), 반대로 남의 알람이 물고 있는 클립을
+        //   지우면 그 사람이 다시 로그인했을 때 **소리를 잃는다.**
+        val mine = alarms.filter { ownedBy(it, callerUserId) }
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
         // ① 아직 갈아탈 것이 남았으면 미룬다.
-        val pending = alarms.any {
+        val pending = mine.any {
             shouldRebind(it, language, liveKeys, clips, expectedVariants, legacyHints)
         }
         if (pending) return@withContext 0
         // ② 세트가 모자라 못 갈아탄 알람이 있어도 미룬다 — 그 알람의 옛 클립은 아직 쓰인다.
-        val waitingForSeed = alarms.any { needsRebind(it, language, liveKeys, legacyHints) }
+        val waitingForSeed = mine.any { needsRebind(it, language, liveKeys, legacyHints) }
         if (waitingForSeed) return@withContext 0
 
         // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).

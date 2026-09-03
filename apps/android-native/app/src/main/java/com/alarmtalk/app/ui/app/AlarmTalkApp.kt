@@ -1069,17 +1069,6 @@ internal fun AlarmTalkApp(
           )
           return@Scaffold
       }
-      // ⚠ **로그인한 뒤에만 막는다.** 로그인 전에는 받을 알람도 목소리도 없으므로 막을
-      //   이유가 없고, 막으면 가입 자체가 안 된다.
-      if (authSession != null && stockReplacementPending) {
-          GateBackGuard()
-          StockReplacementScreen(
-              contentPadding = padding,
-              working = stockReplacementWorking,
-              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
-          )
-          return@Scaffold
-      }
       if (authSession == null) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
@@ -1172,6 +1161,24 @@ internal fun AlarmTalkApp(
               optional = viewModel.consentOptional,
               prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
+          )
+          return@Scaffold
+      }
+      // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새 이름인데
+      // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
+      //
+      // ⚠⚠ **계정 선행 게이트보다 뒤에 둔다**(2026-09-03 리뷰 17차). 앞에 두면 재동의·
+      //   탈퇴 유예 화면을 **가려 버린다.** 그 상태에서는 재시도를 눌러도 서버가
+      //   `/tts/stock-clips` 를 `CONSENT_REQUIRED`·`ACCOUNT_PENDING_DELETION` 으로 막으므로
+      //   **영영 못 빠져나온다** — 앱을 껐다 켜는 것 말고는 길이 없다.
+      //   순서: 업데이트 → 로그인 → 탈퇴 유예 → 동의 → **여기**.
+      // 판정 기본값은 '막지 않음' 이다(`sync/StockReplacementStatus` 주석).
+      if (stockReplacementPending) {
+          GateBackGuard()
+          StockReplacementScreen(
+              contentPadding = padding,
+              working = stockReplacementWorking,
+              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
           )
           return@Scaffold
       }
