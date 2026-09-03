@@ -946,7 +946,11 @@ export async function deleteAllStockClips(db: Client, env: Env): Promise<number>
 }
 
 /** 표시용 텍스트에서 [tag] 마커 제거 (앱에는 태그 없이 보여준다). */
-function stripDeliveryTags(text: string): string {
+/**
+ * 표시 문구용 — delivery 태그를 벗긴다. `scripts/publish-stock-clips.ts` 가 **같은 함수를
+ * 써야** 미리 게시한 문구와 서버가 굽는 문구가 갈라지지 않는다(그래서 export 다).
+ */
+export function stripDeliveryTags(text: string): string {
   return text
     // ⚠ 문자셋을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN`(vertex-translate)에서 파생한다.
     // 넷이 따로 놀던 시절에는 하나만 넓히면 "태그로 인식은 되는데 안 벗겨지는" 상태가 됐다.
