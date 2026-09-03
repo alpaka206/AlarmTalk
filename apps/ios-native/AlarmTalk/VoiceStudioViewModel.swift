@@ -1421,7 +1421,15 @@ final class VoiceStudioViewModel: ObservableObject {
         alarmStore: LocalAlarmStore,
         audioCache: AudioCacheStore?,
         ownerUserId: String?,
-        allowSystemVoice: Bool = false
+        allowSystemVoice: Bool = false,
+        /// **이 시각보다 뒤에 만든 오디오는 건드리지 않는다.**
+        ///
+        /// ⚠ 표식은 "이 시각 **이전에** 만든 오디오가 낡았다" 는 뜻이다(2026-09-03 리뷰 23차).
+        ///   시각을 안 보면 교체가 **이미 배포된 뒤에** 새 목소리로 제대로 만든 알람까지
+        ///   톤으로 깎는다 — 서버가 먼저 나가고 기기가 늦게 표식을 읽는 이번 롤아웃에서
+        ///   실제로 생기는 창이다. nil 이면 예전처럼 시각을 보지 않는다.
+        ///   안드로이드 `invalidatedBeforeMillis` 와 짝이다.
+        invalidatedBefore: Date? = nil
     ) -> [String] {
         guard let owner = ownerUserId?.nilIfBlank else { return [] }
         guard allowSystemVoice || !isSystemVoiceId(profileID) else { return [] }
@@ -1431,6 +1439,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
             guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
             guard record.voiceProfileId == profileID else { return false }
+            // 표식보다 나중에 갱신된 행은 그 오디오가 이미 새것이다.
+            if let invalidatedBefore {
+                let updated = Date(timeIntervalSince1970: Double(record.updatedAtMillis) / 1000)
+                guard updated < invalidatedBefore else { return false }
+            }
             return record.usesCustomMessageVoice
         }
         guard !targets.isEmpty else { return [] }

@@ -30,6 +30,23 @@ import Foundation
 /// ⚠ **로그아웃에서 지우지 말 것.** 로그아웃은 로컬 알람을 지우지 않고 끄기만 한다 — 그 사이
 /// 다른 기기에서 교체가 일어나고 같은 계정이 다시 들어오면, 표식이 없는 기기는 첫 조회를
 /// '처음 봤다' 로 읽어 **영영 강등하지 않는다.** 그 알람을 다시 켜면 지운 목소리로 운다.
+/// 서버 표식(`datetime('now')` → `"2026-09-03 12:34:56"`, **UTC**)을 `Date` 로.
+///
+/// 강등이 "이 시각 **이전에** 만든 오디오만" 을 지킬 때 쓴다(2026-09-03 리뷰 23차) —
+/// 시각을 안 보면 교체가 배포된 뒤에 새 목소리로 제대로 만든 알람까지 톤으로 깎는다.
+/// 못 읽으면 nil 이고, 그때는 예전처럼 시각을 보지 않는다.
+/// 안드로이드 `parseVoiceMarkerMillis` 와 같은 규칙이다.
+func parseVoiceMarkerDate(_ marker: String?) -> Date? {
+    guard let raw = marker?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+        return nil
+    }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    return formatter.date(from: raw)
+}
+
 struct VoiceReplacementMarkerStore {
     private let defaults: UserDefaults
 

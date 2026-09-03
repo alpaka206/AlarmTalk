@@ -39,6 +39,23 @@ import kotlinx.coroutines.sync.withLock
  *
  * 계정별이다. 앞 사람의 표식이 새 계정 판정에 쓰이면 안 된다.
  */
+/**
+ * 서버 표식(`datetime('now')` → `"2026-09-03 12:34:56"`, **UTC**)을 epoch millis 로.
+ *
+ * 강등이 "이 시각 **이전에** 만든 오디오만" 을 지킬 때 쓴다(2026-09-03 리뷰 23차) —
+ * 시각을 안 보면 교체가 배포된 뒤에 새 목소리로 제대로 만든 알람까지 톤으로 깎는다.
+ * 못 읽으면 null 이고, 그때는 예전처럼 시각을 보지 않는다(무엇을 봤는지 모르므로).
+ */
+internal fun parseVoiceMarkerMillis(marker: String?): Long? {
+    val raw = marker?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching {
+        java.time.LocalDateTime
+            .parse(raw.replace(' ', 'T'))
+            .toInstant(java.time.ZoneOffset.UTC)
+            .toEpochMilli()
+    }.getOrNull()
+}
+
 class VoiceReplacementMarkerStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("voice_replacement_marker", Context.MODE_PRIVATE)

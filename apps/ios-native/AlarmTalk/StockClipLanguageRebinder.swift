@@ -134,6 +134,12 @@ struct StockClipLanguageRebinder {
         //   ⚠ **개수 0 으로는 못 막는다**(리뷰 18차). `upsert` 가 이미 `store.alarms` 를
         //     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
         //     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
+        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
+        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
+        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
+        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
+        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
         if rebound > 0, !store.saveNow() {
             return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }
@@ -529,6 +535,12 @@ struct StockClipLanguageRebinder {
         // ⚠ **디스크에 앉히고 나서 돌아간다**(리뷰 17차) — `rebindIfLanguageChanged` 와
         //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
         //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
+        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
+        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
+        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
+        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
+        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
         if rebound > 0, !store.saveNow() {
             return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }

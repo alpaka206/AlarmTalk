@@ -182,6 +182,9 @@ class VoiceAccessSyncWorker(
                         session.user.id,
                         // 아래 목록 경로와 같은 이유 — 제자리 교체는 기본 목소리도 대상이다.
                         allowSystemVoice = true,
+                        // 표식보다 나중에 만든 오디오는 이미 새 목소리다 — 깎지 않는다.
+                        invalidatedBeforeMillis = com.alarmtalk.app.data
+                            .parseVoiceMarkerMillis(replacedGeneration),
                     )
                     // 프리셋이 아직 안 구워졌거나 물어보지 못했으면 강등만 하고 **확정하지 않는다**.
                     // ⚠ **서버가 다 구웠다고 해도 이 기기의 캐시는 아직 옛 바이트다**
@@ -225,6 +228,9 @@ class VoiceAccessSyncWorker(
                         //   그 목소리로 만든 직접 입력 알람은 **이름만 새 목소리**이고 소리는
                         //   옛것이다. 재바인더 두 갈래 어디에도 안 걸리는 형태라 여기서만 잡힌다.
                         allowSystemVoice = true,
+                        // 표식보다 나중에 만든 오디오는 이미 새 목소리다 — 깎지 않는다.
+                        invalidatedBeforeMillis = com.alarmtalk.app.data
+                            .parseVoiceMarkerMillis(invalidatedAt),
                     )
                     // 위와 같은 이유 — 프리셋 재렌더가 끝나고 **이 기기 캐시까지 갈아 끼운 뒤**
                     // 확정한다(그 확정은 프리페치가 끝난 다음 회차가 한다).

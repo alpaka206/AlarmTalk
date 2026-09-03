@@ -820,15 +820,27 @@ class AlarmRepository(
      *   꺼져 있다). 그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차).
      *   회수 경로(`false`)는 그대로 둔다 — 거기서 열면 없던 강등이 생긴다.
      */
+    /**
+     * @param invalidatedBeforeMillis **이 시각보다 뒤에 만든 오디오는 건드리지 않는다.**
+     *
+     * ⚠ 표식(`custom_audio_invalidated_at`)은 "이 시각 이전에 만든 오디오가 낡았다" 는
+     *   뜻이다(2026-09-03 리뷰 23차). 그런데 시각을 안 보면, 교체가 **이미 배포된 뒤에**
+     *   만든 알람 — 즉 새 목소리로 제대로 합성된 것 — 까지 톤으로 깎는다. 서버가 먼저
+     *   나가고 기기가 늦게 표식을 읽는 이번 롤아웃에서 실제로 생기는 창이다.
+     *   `null` 이면 예전처럼 시각을 보지 않는다(세대를 모르는 옛 신호).
+     */
     suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
         voiceProfileId: String,
         expectedOwnerUserId: String?,
         allowSystemVoice: Boolean = false,
+        invalidatedBeforeMillis: Long? = null,
     ): Int =
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             alarm.voiceProfileId == voiceProfileId &&
                 (allowSystemVoice || !isSystemVoiceId(alarm.voiceProfileId)) &&
-                alarm.usesCustomMessageVoice()
+                alarm.usesCustomMessageVoice() &&
+                // 표식보다 나중에 갱신된 행은 그 오디오가 이미 새것이다.
+                (invalidatedBeforeMillis == null || alarm.updatedAtMillis < invalidatedBeforeMillis)
         }
 
     // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).

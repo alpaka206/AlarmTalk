@@ -178,6 +178,13 @@ class StockClipPrefetchWorker(
             var serverPromptSettings: com.alarmtalk.app.network.DynamicPromptSettings? = null
             val paidVoiceAccess = withContext(Dispatchers.IO) {
                 runCatching {
+                    // ⚠ **`/auth/me` 를 구독 조회보다 **먼저** 부른다**(2026-09-03 리뷰 23차).
+                    //   예전에는 `getSubscription` 뒤에 있어서, 그 선택적 조회가 실패하면
+                    //   같은 `runCatching` 이 통째로 빠져나가며 **프로필 설정도 못 받았다** —
+                    //   /auth/me 는 멀쩡한데도 새로 깐 기기의 받은 날씨 알람이 서울로,
+                    //   운세가 빈 프로필로 떨어졌다. 조건 설정은 구독과 무관한 값이다.
+                    val me = api.me(auth)
+                    serverPromptSettings = me.user.dynamicPromptSettings
                     val subscription = api.getSubscription(auth)
                     // ⚠ **plan 은 캐시가 아니라 서버에서 지금 받는다**(2026-09-01 리뷰).
                     // 회복 방향이 문제다: 보류가 풀려 구독이 살아났는데 스냅샷의 `userPlan` 은
@@ -185,9 +192,7 @@ class StockClipPrefetchWorker(
                     // 갱신과 경주하므로, 캐시를 읽으면 그 옛 free 가 **살아 있는 구독을 이겨**
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
-                    val me = api.me(auth)
                     val plan = me.user.plan
-                    serverPromptSettings = me.user.dynamicPromptSettings
                     // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
                     // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
                     // 유일한 세션 갱신**이다. 버리면 앱이 전경으로 오기 전에 저장된 JWT 가

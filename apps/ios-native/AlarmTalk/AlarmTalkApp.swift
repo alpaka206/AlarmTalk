@@ -489,7 +489,12 @@ struct AlarmTalkApp: App {
     /// 순서에 뜻이 있다: 매니페스트 → 재바인딩 2종 → 날씨 조건 → **정리** → 예약 재조정.
     @MainActor
     private func rebindStockClipsIfNeeded() async {
-        guard auth.session != nil else { return }
+        // ⚠⚠ **시작 계정을 잡아 둔다**(2026-09-03 리뷰 23차). A→B 로 바뀌면 A 의
+        //   `.task` 는 취소되지만 `loadStockClips` 가 취소를 일반 `catch` 로 삼키고 false 를
+        //   돌려주므로 **이 함수는 계속 흐른다.** 그동안 `auth.session` 은 이미 B 라,
+        //   A 의 회차가 **B 를 `checkedUserId` 에 적어** B 의 판정이 오기도 전에 B 의
+        //   1회성 오버레이를 소진시킨다. 아래 보고 직전에 다시 대조한다.
+        guard let startAccount = auth.session?.user.id else { return }
         StockReplacementStatus.shared.setWorking(true)
         defer { StockReplacementStatus.shared.setWorking(false) }
         // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
@@ -510,8 +515,8 @@ struct AlarmTalkApp: App {
         //   문이 열린다. 여기서 다시 앉히지 못하면 이 회차도 미완료로 두고 물러난다.
         if StockReplacementStatus.shared.hasUnsavedRebind {
             guard alarmStore.saveNow() else {
-                StockReplacementStatus.shared.report(
-                    userId: auth.session?.user.id, pending: true, manifestFetched: manifestFetched
+                reportReplacement(
+                    startAccount: startAccount, pending: true, manifestFetched: manifestFetched
                 )
                 return
             }
@@ -567,8 +572,8 @@ struct AlarmTalkApp: App {
         guard languageOutcome.persisted, legacyOutcome.persisted else {
             // 메모리는 이미 바뀌었다 — 그 사실을 남겨 **다음 회차가 정리 전에 먼저 앉히게** 한다.
             StockReplacementStatus.shared.markUnsavedRebind()
-            StockReplacementStatus.shared.report(
-                userId: auth.session?.user.id, pending: true, manifestFetched: manifestFetched
+            reportReplacement(
+                startAccount: startAccount, pending: true, manifestFetched: manifestFetched
             )
             return
         }
@@ -622,8 +627,8 @@ struct AlarmTalkApp: App {
         if !staleSchedules { StockReplacementStatus.shared.clearRearmIds() }
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
-        StockReplacementStatus.shared.report(
-            userId: auth.session?.user.id,
+        reportReplacement(
+            startAccount: startAccount,
             pending: staleSchedules || rebinder.hasPendingReplacement(
                 clips: voiceStudio.stockClips,
                 // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후
@@ -633,6 +638,19 @@ struct AlarmTalkApp: App {
                 callerUserId: auth.session?.user.id
             ),
             manifestFetched: manifestFetched
+        )
+    }
+
+    /// 교체 판정을 적는다 — **시작한 계정이 아직 그 계정일 때만.**
+    ///
+    /// ⚠ 취소된 회차가 다음 계정에 적으면, 그 계정의 판정이 오기도 전에 1회성 오버레이가
+    ///   소진된다(2026-09-03 리뷰 23차).
+    @MainActor
+    private func reportReplacement(startAccount: String, pending: Bool, manifestFetched: Bool) {
+        guard !Task.isCancelled else { return }
+        guard auth.session?.user.id == startAccount else { return }
+        StockReplacementStatus.shared.report(
+            userId: startAccount, pending: pending, manifestFetched: manifestFetched
         )
     }
 
