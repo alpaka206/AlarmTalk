@@ -81,7 +81,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, voice_profile_id TEXT NOT NULL,
       text TEXT, synthesis_text TEXT, delivery_tags_json TEXT, category TEXT, language TEXT,
-      variant INTEGER DEFAULT 0, is_preset INTEGER DEFAULT 0, audio_url TEXT
+      variant INTEGER DEFAULT 0, is_preset INTEGER DEFAULT 0, audio_url TEXT,
+      retired_at TEXT
     );
     CREATE TABLE voice_prerender_queue (
       voice_profile_id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, language TEXT DEFAULT 'ko',

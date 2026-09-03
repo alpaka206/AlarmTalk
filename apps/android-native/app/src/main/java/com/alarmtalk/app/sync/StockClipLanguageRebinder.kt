@@ -80,7 +80,8 @@ object StockClipLanguageRebinder {
                 ?: return@forEach
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
-            val next = bound.copy(bucketId = bucket)
+            val next = applyClipFields(alarmDao, alarm, bound)?.copy(bucketId = bucket)
+                ?: return@forEach
             // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차). #110 은 지운 프리셋을
             //   가리키던 서버 알람을 `mode='sound-only'`, `message_id=NULL` 로 깎는다.
             //   여기서 로컬만 되살리고 `SYNCED` 를 그대로 두면 업로드 대상
@@ -158,7 +159,7 @@ object StockClipLanguageRebinder {
             }
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
-            val converted = bound.copy(
+            val converted = (applyClipFields(alarmDao, alarm, bound) ?: return@forEach).copy(
                 bucketId = bucket,
                 // ⚠ **랜덤을 내린다.** 안 내리면 다음 회차가 이 행을 또 옛 행으로 보고
                 // (위 술어) 매번 다시 묶으며, 편집기도 계속 '생성형' 으로 읽는다.
@@ -307,6 +308,44 @@ object StockClipLanguageRebinder {
         ) ?: return true
         if (expected <= 0) return true
         return variants == (0 until expected).toSet()
+    }
+
+    /**
+     * **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).
+     *
+     * 이 워커는 알람을 스냅샷으로 읽고 나서 **여러 번 중단되며**(클립 N개 다운로드) 돌아온다.
+     * 그 사이 사용자가 시각을 바꾸거나 알람을 끄면, 스냅샷을 통째로 쓰는 순간 그 편집이
+     * 사라진다 — `upsertPreservingServerSyncFields` 는 **서버 발급 필드와 날씨 인덱스만**
+     * 보존하므로 시각·요일·on/off 는 지켜 주지 않는다.
+     *
+     * 그래서 쓰기 직전에 **행을 다시 읽고, 클립에 관한 값만** 얹는다. 사용자 편집(시각·
+     * 요일·스누즈·on/off)은 갓 읽은 행의 것이 그대로 남는다.
+     *
+     * ⚠ 다시 읽은 행이 **더 이상 이 버킷/목소리가 아니면 포기한다** — 그 사이 사용자가
+     *   목소리나 테마를 바꾼 것이라, 우리가 받아 둔 클립은 이미 남의 것이다.
+     *   행이 아예 사라졌으면(삭제) 역시 포기한다. 다음 회차가 다시 판단한다.
+     *
+     * iOS 짝은 `StockClipLanguageRebinder.applyClipFields` 다 — **한쪽만 고치지 말 것.**
+     */
+    private suspend fun applyClipFields(
+        alarmDao: com.alarmtalk.app.data.AlarmDao,
+        snapshot: AlarmEntity,
+        bound: AlarmEntity,
+    ): AlarmEntity? {
+        val fresh = alarmDao.getById(snapshot.id) ?: return null
+        if (fresh.voiceProfileId != snapshot.voiceProfileId) return null
+        if (fresh.bucketId != snapshot.bucketId) return null
+        if (fresh.voiceSource != snapshot.voiceSource) return null
+        return fresh.copy(
+            bucketClipKeysJson = bound.bucketClipKeysJson,
+            bucketClipTextsJson = bound.bucketClipTextsJson,
+            audioCacheKey = bound.audioCacheKey,
+            localAudioUri = bound.localAudioUri,
+            voiceLanguage = bound.voiceLanguage,
+            voiceText = bound.voiceText,
+            ttsMessageId = bound.ttsMessageId,
+            updatedAtMillis = System.currentTimeMillis(),
+        )
     }
 
     private suspend fun bindBucket(

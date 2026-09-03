@@ -279,7 +279,14 @@ struct AlarmTalkApp: App {
                         // 돌아 즉시 0건 반환**했다 — 언어를 바꿔도 아무 일도 일어나지 않았다.
                         // 게다가 매니페스트를 채우는 곳이 알람 편집기 진입 한 곳뿐이라,
                         // 거기서 실패하면 테마 목록이 통째로 비었다.
-                        await voiceStudio.loadStockClips(session: auth.session)
+                        // ⚠ **여기서는 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의
+                        //   시딩은 cron 이 틱당 조금씩 채우므로, 그 사이에 다른 화면이
+                        //   먼저 받아 둔 **부분 매니페스트**가 세션 캐시에 남아 있을 수
+                        //   있다(`manifestFetchedThisSession`). 그걸로 재바인딩을 돌리면
+                        //   완전성 검사에 걸려 **아무 일도 안 하고**, 이 세션 동안 다시
+                        //   시도하지 않는다 — 그 세션 내내 옛 대사가 울린다.
+                        //   (안드로이드는 선다운로드 워커가 매 실행마다 새로 받는다.)
+                        await voiceStudio.loadStockClips(session: auth.session, force: true)
                         let rebinder = StockClipLanguageRebinder(store: alarmStore)
                         await rebinder.rebindIfLanguageChanged(
                             session: auth.session,

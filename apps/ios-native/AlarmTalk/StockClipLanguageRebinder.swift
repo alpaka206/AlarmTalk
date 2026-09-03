@@ -67,9 +67,10 @@ struct StockClipLanguageRebinder {
             //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
             //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
             guard let bucket = Self.normalizedBucketId(record.bucketId) else { continue }
-            guard var bound = await bindBucket(
+            guard let clipFields = await bindBucket(
                 record: record, bucket: bucket, clips: clips, language: language, token: token
             ) else { continue }
+            guard var bound = applyClipFields(snapshot: record, bound: clipFields) else { continue }
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
             bound.bucketId = bucket
@@ -217,10 +218,11 @@ struct StockClipLanguageRebinder {
             guard Self.replacementIsComplete(
                 record: probe, clips: clips, language: language, expectedVariants: expectedVariants,
             ) else { continue }
-            guard var bound = await bindBucket(
+            guard let clipFields = await bindBucket(
                 record: record, bucket: context.bucketCategory,
                 clips: clips, language: language, token: token
             ) else { continue }
+            guard var bound = applyClipFields(snapshot: record, bound: clipFields) else { continue }
             bound.bucketId = context.bucketCategory
             // ⚠ **랜덤을 내린다.** 안 내리면 다음 실행이 이 행을 또 옛 행으로 보고 매번 다시
             // 묶으며, 편집기도 계속 '생성형' 으로 읽는다. 문구 **종류**
@@ -231,6 +233,39 @@ struct StockClipLanguageRebinder {
             rebound += 1
         }
         return rebound
+    }
+
+    /// **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).
+    ///
+    /// 이 경로는 알람을 스냅샷으로 읽고 나서 **여러 번 await 하며**(클립 N개 다운로드)
+    /// 돌아온다. 그 사이 사용자가 시각을 바꾸거나 알람을 끄면, 스냅샷을 통째로 쓰는 순간
+    /// 그 편집이 사라진다 — `upsertPreservingServerSyncFields` 는 **서버 발급 필드만**
+    /// 보존하므로 시각·요일·on/off 는 지켜 주지 않는다. iOS 는 그 뒤 곧바로 AlarmKit 예약을
+    /// 재조정하므로, 덮어쓴 옛 시각이 **그 자리에서 OS 예약에까지 반영된다.**
+    ///
+    /// 그래서 쓰기 직전에 **행을 다시 읽고, 클립에 관한 값만** 얹는다.
+    ///
+    /// ⚠ 다시 읽은 행이 더 이상 이 테마/목소리가 아니면 포기한다 — 그 사이 사용자가 바꾼
+    ///   것이라, 받아 둔 클립은 이미 남의 것이다. 다음 실행이 다시 판단한다(멱등).
+    ///
+    /// 안드로이드 짝은 `StockClipLanguageRebinder.applyClipFields` 다 — **한쪽만 고치지 말 것.**
+    private func applyClipFields(
+        snapshot: LocalAlarmRecord,
+        bound: LocalAlarmRecord
+    ) -> LocalAlarmRecord? {
+        guard var fresh = store.alarms.first(where: { $0.id == snapshot.id }) else { return nil }
+        guard fresh.voiceProfileId == snapshot.voiceProfileId,
+              fresh.bucketId == snapshot.bucketId,
+              fresh.voiceSource == snapshot.voiceSource else { return nil }
+        // ⚠ **`bindBucket` 이 세우는 값과 정확히 같은 목록이어야 한다** — 하나 빠지면
+        //   그 필드만 옛 값으로 남아 클립과 어긋난다.
+        fresh.bucketClipKeys = bound.bucketClipKeys
+        fresh.audioCacheKey = bound.audioCacheKey
+        fresh.localAudioUri = bound.localAudioUri
+        fresh.voiceLanguage = bound.voiceLanguage
+        fresh.voiceText = bound.voiceText
+        fresh.ttsMessageId = bound.ttsMessageId
+        return fresh
     }
 
     /// (알람·테마·언어)로 클립 세트를 받아 행에 묶을 값을 만든다. 묶을 수 없으면 nil.

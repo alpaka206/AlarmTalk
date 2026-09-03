@@ -1993,6 +1993,9 @@ tts.get('/stock-clips', async (c) => {
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
+            -- 은퇴한 행은 매니페스트에서 뺀다(#110). 행 자체는 남으므로 그 클립을 물고
+            -- 있는 알람은 계속 저장되고 오디오도 그대로 받는다 — 목록에만 안 뜬다.
+            AND m.retired_at IS NULL
             AND (
               COALESCE(vp.is_system, 0) = 1
               OR m.user_id IN (?, ?)

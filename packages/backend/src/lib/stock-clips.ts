@@ -510,6 +510,8 @@ export async function findMissingStockTargets(
           LEFT JOIN generated_audio_assets ga
             ON ga.message_id = m.id AND ga.audio_url = m.audio_url
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
+            -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.
+            AND m.retired_at IS NULL
             AND m.voice_profile_id IN (${ph})`,
     args: voiceIds,
   });
@@ -880,6 +882,9 @@ export async function deleteStockClips(
 ): Promise<number> {
   const conditions = [
     'COALESCE(m.is_preset, 0) = 1',
+    // 은퇴 행은 **일부러 남겨 둔 것**이다(옛 알람의 인가·오디오). 재시드 도구가 지우면
+    // 그 알람들이 재설치 때 소리를 잃는다.
+    'm.retired_at IS NULL',
     `m.voice_profile_id IN (
        SELECT id FROM voice_profiles
        WHERE COALESCE(is_system, 0) = 1
@@ -1139,6 +1144,9 @@ export async function generateStockClip(
             SELECT 1 FROM messages
             WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
               AND COALESCE(is_preset, 0) = 1
+              -- 은퇴 행은 '이미 있다' 로 세지 않는다. 빠뜨리면 교체가 **조용히 아무 일도
+              -- 안 한다** — INSERT 가 0행이 되고 아래 갈래가 옛 행을 게시본으로 돌려준다.
+              AND retired_at IS NULL
           )
             AND (? = 0 OR EXISTS (
               SELECT 1 FROM voice_profiles vp
@@ -1179,6 +1187,7 @@ export async function generateStockClip(
         sql: `SELECT id, text, audio_url FROM messages
               WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
                 AND COALESCE(is_preset, 0) = 1
+                AND retired_at IS NULL
               LIMIT 1`,
         args: [target.voiceProfileId, target.category, language, target.variantIndex],
       });

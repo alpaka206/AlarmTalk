@@ -524,6 +524,39 @@ iOS `selectedBucketDraft`).
   알람이 **함께** 쓰는 경우가 흔하다 — 커스텀 쪽 성공으로 확정하면 프리셋 쪽이 영영 남는다.
 - **옛 서버는 이 필드를 주지 않는다** — 그때는 `true`(준비됨)로 읽어 예전처럼 동작한다.
 
+## 5-3. 대사를 통째로 갈 때는 — **지우지 말고 은퇴시킨다**
+
+> 2026-09-03 신설. 「지우고 다시 굽는다」로 만들었다가 리뷰 두 회차에 걸쳐 되돌린 자리다.
+
+스톡 문구·목소리를 전면 교체할 때, 옛 프리셋 행을 **지우지 않는다.** `messages.retired_at`
+에 시각을 찍어 **목록에서만** 뺀다.
+
+**왜 지우면 안 되는가.** 옛 행을 지우고 참조 알람을 `message_id = NULL` 로 떼면 셋이 깨진다:
+
+| 깨지는 것 | 결과 |
+| --- | --- |
+| 되살릴 수 없는 알람 | 버킷 없이 클립 하나만 물린 **옛 행**은 재바인더 두 갈래 **어디에도** 안 걸린다(하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 그 행은 둘 다 없다) → 영구 sound-only |
+| R2 미아 | `generated_audio_assets` 행이 R2 키의 **유일한 원장**이다. 지우면 목소리 삭제·**생체정보 동의 철회**에도 그 오디오를 찾아 지울 수 없다 |
+| 배포 직후 공백 | 기본 목소리 클립이 0개가 된다(시딩은 뒤에 온다) |
+
+⚠ **은퇴 수단으로 `is_preset` 을 내리지 말 것.** 그 값은 '목록에 뜨는가' 가 아니라 **세 가지를
+동시에** 뜻한다:
+1. **쓰기 인가** — `messageBelongsToCaller` 의 시스템·공유 프리셋 갈래,
+2. **읽기 인가** — `GET /tts/messages/:id/audio` 의 같은 갈래. 그 라우트의 「알람이 참조하면
+   허용」 갈래는 `target_user_id` 만 보므로 **가족 알람만** 커버한다 — 본인 알람은 안 걸린다,
+3. **TTL 면제** — `audio-retention.ts` 가 프리셋을 보존 스윕에서 제외한다.
+
+내리면 그 알람은 **저장도 안 되고, 재다운로드도 안 되고, 30일 뒤 오디오까지 지워진다** —
+지키려던 호환성이 정확히 반대로 깨진다. 그래서 표식을 따로 둔다.
+
+**`retired_at` 을 봐야 하는 곳은 「살아 있는 프리셋이 있는가」를 묻는 전부다.** 하나라도
+빠지면 조용히 깨진다 — 특히 `generateStockClip` 의 INSERT 가드를 빠뜨리면 **교체가 아무 일도
+안 한다**(INSERT 0행 → 옛 행을 게시본으로 돌려준다). 목록은 「구현 지도」에 있다.
+
+**시딩은 cron 이 한다.** 틱당 소량씩 빠진 시스템 스톡을 채운다(`scheduled.stock_seed`).
+`POST /api/admin/seed-stock-clips` 는 특정 목소리만 다시 굽는 **수동 도구**로 남는다 —
+배포 절차에 사람이 20번 호출하는 단계를 두지 않는다.
+
 ## 6. 무료로 내려가면 — **알람은 잠그고, 목소리는 3일 뒤 지운다**
 
 축이 **둘**이다. 섞어 읽으면 반드시 사고가 난다.
@@ -625,6 +658,12 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
+| 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips` · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 진행률/게시 개수 (**여섯 곳**) |
+| 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |
+| 스톡 시딩 | — | — | cron `scheduled.stock_seed` (`index.ts`). admin 엔드포인트는 수동 도구 |
+| 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
+| 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |

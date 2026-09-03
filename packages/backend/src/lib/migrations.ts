@@ -2516,7 +2516,7 @@ export const migrations: Migration[] = [
     //   다른 것만" 고르는 방식이었는데, 이번에는 **대사를 전부 새로 썼으므로** 어차피
     //   전부가 대상이다(시스템·클론 양쪽).
     //
-    // ⚠⚠ **지우지 말고 은퇴시킨다 — `is_preset = 0`**(2026-09-03 리뷰 7차).
+    // ⚠⚠ **지우지 말고 은퇴시킨다 — `retired_at`**(2026-09-03 리뷰 7차·8차).
     //   #70·#109 를 베껴 `DELETE FROM messages` + `UPDATE alarms SET message_id = NULL`
     //   로 썼다가 되돌렸다. 그 방식은 **세 가지를 한꺼번에 부순다**:
     //
@@ -2531,12 +2531,12 @@ export const migrations: Migration[] = [
     //      찾아 지울 수 없다 — 파기 약속을 지킬 수 없게 된다.
     //   3. **배포 직후 기본 목소리에 클립이 0개가 된다.** 아래 「시딩」 참조.
     //
-    //   은퇴는 셋을 한 번에 없앤다. 매니페스트와 `findMissingStockTargets` 는 둘 다
-    //   `is_preset = 1` 만 보므로 **새 클립이 새 id 로 생기고**, 옛 행은 남아 있어
-    //   `alarms.message_id` 가 계속 유효하다. 오디오 라우트에는 「그 알람이 참조하면
-    //   허용」 갈래가 있어(`tts.ts` 의 `EXISTS (SELECT 1 FROM alarms ...)`) 재설치해도
-    //   옛 클립을 그대로 받는다. 버킷 알람은 키가 매니페스트에서 사라지므로 재바인더가
-    //   새 세트로 갈아탄다 — **그게 원래 설계다.**
+    //   은퇴는 셋을 한 번에 없앤다. 목록을 만드는 두 곳(`findMissingStockTargets` 와
+    //   `GET /tts/stock-clips`)만 `retired_at IS NULL` 을 보므로 **새 클립이 새 id 로
+    //   생기고**, 옛 행은 `is_preset = 1` 그대로 남아 인가·TTL 면제가 유지된다 —
+    //   옛 클립을 물고 있는 알람은 계속 저장되고, 재설치해도 그 오디오를 받는다.
+    //   버킷 알람은 키가 매니페스트에서 사라지므로 재바인더가 새 세트로 갈아탄다 —
+    //   **그게 원래 설계다.**
     //
     // 시딩: cron 이 틱마다 빠진 **시스템** 스톡을 채운다(`index.ts` 의
     // `scheduled.stock_seed`). 클론은 아래 큐 되돌리기로 기존 드레인이 맡는다.
@@ -2544,6 +2544,21 @@ export const migrations: Migration[] = [
     id: 110,
     name: 'replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096',
     statements: [
+      // ── ⓪ 은퇴 표식 컬럼 ─────────────────────────────────────────────
+      // ⚠ **`is_preset` 을 내려서 은퇴시키지 말 것**(2026-09-03 리뷰 8차). 그 값은 단순한
+      //   '목록에 뜨는가' 가 아니라 **세 가지를 동시에 뜻한다**:
+      //     1. 쓰기 인가 — `messageBelongsToCaller` 의 시스템/공유 프리셋 갈래,
+      //     2. 읽기 인가 — `GET /tts/messages/:id/audio` 의 같은 갈래.
+      //        (그 라우트의 「알람이 참조하면 허용」 갈래는 `target_user_id` 만 보므로
+      //         **가족 알람만** 커버한다 — 본인 알람은 여기에 안 걸린다.)
+      //     3. TTL 면제 — `audio-retention.ts` 가 프리셋을 스윕에서 제외한다.
+      //   그래서 `is_preset = 0` 은 옛 클립을 물고 있는 알람의 **저장을 막고, 재다운로드를
+      //   막고, 30일 뒤 오디오까지 지운다** — 지키려던 호환성이 정확히 반대로 깨진다.
+      //
+      // 별도 표식이면 그 셋을 한 글자도 건드리지 않는다. 목록에서 빼는 곳만 이 값을 본다
+      // (`findMissingStockTargets` 와 `GET /tts/stock-clips`).
+      `ALTER TABLE messages ADD COLUMN retired_at TEXT`,
+
       // ── ① 카테고리 이름: love → cheer ─────────────────────────────────
       // 옛 이름은 코드에서 **읽을 때 접어** 계속 받는다(구버전 앱·기기 로컬 DB 는 우리가
       // 고칠 수 없다). 여기서는 서버가 들고 있는 행만 새 이름으로 옮긴다.
@@ -2551,10 +2566,9 @@ export const migrations: Migration[] = [
       `UPDATE alarms SET bucket_id = 'cheer' WHERE bucket_id = 'love'`,
 
       // ── ② 시스템 스톡 프리셋 전면 은퇴 ────────────────────────────────
-      // ⚠ **순서가 뜻을 가진다** — 서브쿼리가 `is_preset = 1` 로 거르므로 은퇴가 먼저면
-      //   그 뒤 문장은 0행에 걸린다(조용히 성공으로 기록된다).
       `DELETE FROM message_library WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
-      `UPDATE messages SET is_preset = 0 WHERE id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `UPDATE messages SET retired_at = datetime('now')
+        WHERE retired_at IS NULL AND id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
 
       // ── ③ 클론 사전렌더도 전부 다시 굽는다 ───────────────────────────
       // ⚠ **응원만이 아니라 전부다.** `CLONE_CLIP_SEEDS` 의 시드를 다섯 카테고리 모두
@@ -2562,7 +2576,8 @@ export const migrations: Migration[] = [
       //   말을 한다. 은퇴시키지 않으면 `findMissingStockTargets` 가 '있다' 로 보고
       //   건너뛴다. 비용은 cron 이 나눠 치른다.
       `DELETE FROM message_library WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
-      `UPDATE messages SET is_preset = 0 WHERE id IN (${CLONE_PRESET_SUBQUERY})`,
+      `UPDATE messages SET retired_at = datetime('now')
+        WHERE retired_at IS NULL AND id IN (${CLONE_PRESET_SUBQUERY})`,
       // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰 2차). 바로 위에서 그 목소리의
       //   클립을 **전부 은퇴시켰는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만
       //   집으므로(`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영

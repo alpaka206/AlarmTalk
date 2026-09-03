@@ -43,6 +43,7 @@ async function setupDb() {
       language TEXT,
       variant INTEGER DEFAULT 0,
       is_preset INTEGER DEFAULT 0,
+      retired_at TEXT,
       audio_url TEXT
     );
     CREATE TABLE voice_prerender_queue (

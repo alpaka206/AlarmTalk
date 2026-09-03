@@ -8,7 +8,9 @@
 //     원장이다) 동의 철회·목소리 삭제에도 오디오를 파기하지 못한다,
 //  3) 배포 직후 기본 목소리 클립이 0개가 된다.
 //
-// 은퇴(`is_preset = 0`)는 셋을 한 번에 없앤다. 이 테스트가 그 의미론을 고정한다.
+// 은퇴는 **별도 표식(`retired_at`)** 으로 한다. `is_preset` 을 내리면 그 값이 뜻하는
+// 세 가지가 함께 무너진다(쓰기 인가·읽기 인가·TTL 면제) — 8차 리뷰가 잡았다.
+// 이 테스트가 그 의미론을 고정한다.
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { tmpdir } from 'node:os';
@@ -93,14 +95,36 @@ describe('migration #110 — 프리셋은 지우지 않고 은퇴시킨다', () 
     expect(rows.rows.map((r) => String(r.id))).toEqual(['bucket-alarm', 'legacy-alarm']);
   });
 
-  it('messages 행은 남고 is_preset 만 내려간다', async () => {
+  it('messages 행은 남고 is_preset 도 그대로다 — 표식만 찍힌다', async () => {
     const rows = await db.execute(
-      "SELECT id, is_preset FROM messages WHERE id IN ('sys-preset','clone-preset') ORDER BY id",
+      `SELECT id, is_preset, retired_at FROM messages
+        WHERE id IN ('sys-preset','clone-preset') ORDER BY id`,
     );
+    // ⚠ **`is_preset` 은 1로 남아야 한다.** 그 값은 '목록에 뜨는가' 가 아니라
+    //   쓰기 인가(`messageBelongsToCaller`)·읽기 인가(`/tts/messages/:id/audio`)·
+    //   TTL 면제(`audio-retention`)를 **동시에** 뜻한다. 내리면 옛 클립을 물고 있는
+    //   알람이 저장도 안 되고, 재다운로드도 안 되고, 30일 뒤 오디오까지 지워진다.
     expect(rows.rows.map((r) => [String(r.id), Number(r.is_preset)])).toEqual([
-      ['clone-preset', 0],
-      ['sys-preset', 0],
+      ['clone-preset', 1],
+      ['sys-preset', 1],
     ]);
+    for (const row of rows.rows) {
+      expect(row.retired_at, `${row.id} 의 retired_at`).toBeTruthy();
+    }
+  });
+
+  it('은퇴 행은 같은 자리의 재생성을 막지 않는다', async () => {
+    // ⚠ `generateStockClip` 의 INSERT 가드가 (voice|category|language|variant) 로 '이미
+    //   있나' 를 보는데, 그게 `is_preset = 1` 만 봤다면 은퇴 행이 그대로 걸려 **교체가
+    //   조용히 아무 일도 안 한다**(INSERT 0행 → 옛 행을 게시본으로 돌려준다).
+    //   그래서 그 가드도 `retired_at IS NULL` 을 함께 본다.
+    const blocked = await db.execute({
+      sql: `SELECT COUNT(*) AS n FROM messages
+             WHERE voice_profile_id = ? AND category = 'weather' AND language = 'ko'
+               AND variant = 0 AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL`,
+      args: [SYSTEM_VOICE],
+    });
+    expect(Number(blocked.rows[0]!.n)).toBe(0);
   });
 
   it('R2 원장(generated_audio_assets)을 지우지 않는다', async () => {
@@ -122,9 +146,10 @@ describe('migration #110 — 프리셋은 지우지 않고 은퇴시킨다', () 
   });
 
   it('은퇴한 행은 매니페스트·재시딩 대상에서 빠진다', async () => {
-    // 매니페스트(`GET /tts/stock-clips`)와 findMissingStockTargets 둘 다 is_preset = 1 만 본다.
+    // 목록을 만드는 두 곳(`GET /tts/stock-clips`·`findMissingStockTargets`)이 쓰는 술어.
     const rows = await db.execute(
-      'SELECT COUNT(*) AS n FROM messages WHERE COALESCE(is_preset, 0) = 1',
+      `SELECT COUNT(*) AS n FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND retired_at IS NULL`,
     );
     expect(Number(rows.rows[0]!.n)).toBe(0);
   });
