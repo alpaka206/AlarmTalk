@@ -15,6 +15,7 @@ import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -360,6 +361,65 @@ class StockClipRebindDecisionTest {
             StockClipLanguageRebinder.needsRebind(
                 legacy, "ko", live, mapOf("other" to "medication"),
             ),
+        )
+    }
+
+    /**
+     * **받은 알람에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+     *
+     * 스케줄러를 부르는 것만으로는 안 된다 — 그 워커가 읽는 것이 바로 이 필드들이고,
+     * 받은 알람은 전부 비어 있다. 안 채우면 날씨는 서버 기본값(서울)으로, 운세는 빈
+     * 프로필 해시로 떨어진다.
+     */
+    @Test
+    fun 조건형_버킷에_받는_사람의_조건을_채운다() {
+        val prefs = com.alarmtalk.app.data.DynamicPromptPreferences(
+            weatherCountry = "KR", weatherCity = "부산",
+            fortuneGender = "female", fortuneBirthDate = "1994-03-02", fortuneBirthTime = "07:30",
+        )
+        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+
+        val weather = StockClipLanguageRebinder.withRecipientConditions(received, "weather", prefs)
+        assertEquals("KR", weather.voiceWeatherCountry)
+        assertEquals("부산", weather.voiceWeatherCity)
+        // ⚠ **그 버킷에 필요한 것만 채운다** — 날씨 알람에 사주를 적어 둘 이유가 없다.
+        assertNull(weather.voiceFortuneBirthDate)
+
+        val fortune = StockClipLanguageRebinder.withRecipientConditions(received, "fortune", prefs)
+        assertEquals("1994-03-02", fortune.voiceFortuneBirthDate)
+        assertEquals("07:30", fortune.voiceFortuneBirthTime)
+        assertNull(fortune.voiceWeatherCity)
+
+        // 회전형은 조건이 없으므로 아무것도 안 건드린다.
+        val medication = StockClipLanguageRebinder.withRecipientConditions(received, "medication", prefs)
+        assertNull(medication.voiceWeatherCity)
+        assertNull(medication.voiceFortuneBirthDate)
+    }
+
+    /** ⚠ **사용자가 그 알람에 넣어 둔 값이 이긴다** — 덮어쓰면 남의 도시로 바뀐다. */
+    @Test
+    fun 이미_들어_있는_조건은_덮어쓰지_않는다() {
+        val prefs = com.alarmtalk.app.data.DynamicPromptPreferences(
+            weatherCountry = "KR", weatherCity = "부산",
+        )
+        val mine = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+            .copy(voiceWeatherCountry = "JP", voiceWeatherCity = "도쿄")
+        val filled = StockClipLanguageRebinder.withRecipientConditions(mine, "weather", prefs)
+        assertEquals("JP", filled.voiceWeatherCountry)
+        assertEquals("도쿄", filled.voiceWeatherCity)
+    }
+
+    /** 저장된 취향이 없으면 아무것도 채우지 않는다(빈 문자열을 값으로 쓰지 않는다). */
+    @Test
+    fun 저장된_조건이_없으면_비워_둔다() {
+        val received = alarmWith(bucketId = "weather", clipKeys = emptyList(), ttsMessageId = "old-0")
+        assertNull(
+            StockClipLanguageRebinder.withRecipientConditions(
+                received, "weather", com.alarmtalk.app.data.DynamicPromptPreferences(),
+            ).voiceWeatherCity,
+        )
+        assertNull(
+            StockClipLanguageRebinder.withRecipientConditions(received, "weather", null).voiceWeatherCity,
         )
     }
 

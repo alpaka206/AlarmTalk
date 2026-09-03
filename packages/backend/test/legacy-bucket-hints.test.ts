@@ -72,6 +72,47 @@ beforeAll(async () => {
   await addAlarm('someone-else', OTHER, 'msg-weather', null);  // 남의 알람
 });
 
+describe('findLegacyBucketHints — 은퇴한 시스템 스톡도 함께 준다', () => {
+  // ⚠ 서버 알람 행만 보면 **아직 서버에 안 올라간 알람**(LOCAL_ONLY·FAILED)이 힌트를
+  //   못 받아 영영 옛 목소리로 운다(리뷰 15차). 그 알람이 가리키는 집합이 정확히
+  //   '은퇴한 시스템 스톡' 이라 그걸 통째로 준다.
+  beforeAll(async () => {
+    await addMessage('msg-retired-cheer', SYSTEM_VOICE, 'cheer');
+    await addMessage('msg-retired-greeting', SYSTEM_VOICE, 'greeting');
+    await addMessage('msg-retired-clone', CLONE_VOICE, 'weather');
+    for (const id of ['msg-retired-cheer', 'msg-retired-greeting', 'msg-retired-clone']) {
+      await db.execute({
+        sql: `UPDATE messages SET retired_at = datetime('now') WHERE id = ?`,
+        args: [id],
+      });
+    }
+  });
+
+  it('알람이 하나도 안 가리켜도 은퇴한 시스템 버킷 클립은 힌트로 나온다', async () => {
+    const ids = (await findLegacyBucketHints(db, ME)).map((h) => h.messageId);
+    expect(ids).toContain('msg-retired-cheer');
+  });
+
+  it('은퇴했어도 `greeting` 과 클론은 주지 않는다', async () => {
+    const ids = (await findLegacyBucketHints(db, ME)).map((h) => h.messageId);
+    // greeting 은 버킷이 아니다 — 주면 앱이 `bucketId` 에 적어 저장이 400 이 된다.
+    expect(ids).not.toContain('msg-retired-greeting');
+    // 이번 교체는 기본 목소리만 건드린다.
+    expect(ids).not.toContain('msg-retired-clone');
+  });
+
+  it('은퇴 갈래는 사용자를 가리지 않는다 — 시스템 카탈로그라 누구에게나 같다', async () => {
+    // 개인정보가 아니다(소유자가 시스템 라이브러리 계정). 대신 ① 갈래는 여전히 본인
+    // 알람으로만 스코프된다 — 아래 IDOR 테스트가 그걸 지킨다.
+    const mine = (await findLegacyBucketHints(db, ME)).map((h) => h.messageId);
+    const theirs = (await findLegacyBucketHints(db, OTHER)).map((h) => h.messageId);
+    expect(theirs).toContain('msg-retired-cheer');
+    expect(mine).toContain('msg-retired-cheer');
+    // 그래도 남의 **알람**에서 온 것은 안 섞인다.
+    expect(theirs).not.toContain('msg-med-ja');
+  });
+});
+
 describe('findLegacyBucketHints', () => {
   it('버킷 없는 내 알람의 테마만 돌려준다', async () => {
     const hints = await findLegacyBucketHints(db, ME);
@@ -88,7 +129,11 @@ describe('findLegacyBucketHints', () => {
       category: 'medication',
       language: 'ja',
     });
-    expect(hints).toHaveLength(2);
+    // ⚠ 정확한 개수로 고정하지 않는다 — 은퇴 갈래(위 describe)가 같은 응답에 섞이므로
+    //   총량은 이 테스트가 지키려는 것이 아니다. 지키는 것은 **무엇이 들어오고 무엇이
+    //   안 들어오는가** 다.
+    expect(byMessage['msg-clone']).toBeUndefined();
+    expect(byMessage['msg-greeting']).toBeUndefined();
   });
 
   it('`greeting` 은 힌트로 주지 않는다 — 버킷이 아니다', async () => {
@@ -107,14 +152,16 @@ describe('findLegacyBucketHints', () => {
 
   it('남의 알람은 절대 새지 않는다', async () => {
     // ⚠ IDOR. 이 함수는 id 를 받지 않고 호출자 본인으로만 스코프한다.
-    const mine = await findLegacyBucketHints(db, ME);
-    const theirs = await findLegacyBucketHints(db, OTHER);
-    // 같은 message 를 물고 있어도 각자 자기 알람으로만 답한다.
-    expect(theirs).toHaveLength(1);
-    expect(theirs[0]!.messageId).toBe('msg-weather');
-    expect(mine.length).toBeGreaterThan(0);
+    const mine = (await findLegacyBucketHints(db, ME)).map((h) => h.messageId);
+    const theirs = (await findLegacyBucketHints(db, OTHER)).map((h) => h.messageId);
+    // 같은 message 를 물고 있어도 **알람 갈래**는 각자 자기 것으로만 답한다.
+    expect(theirs).toContain('msg-weather');   // 남의 알람이 가리키는 것
+    expect(theirs).not.toContain('msg-med-ja'); // 내 알람만 가리키는 것 — 새면 안 된다
+    expect(mine).toContain('msg-med-ja');
 
-    const nobody = await findLegacyBucketHints(db, 'no-such-user');
-    expect(nobody).toEqual([]);
+    // 알람이 하나도 없는 계정에는 알람 갈래가 아무것도 안 붙는다(은퇴 갈래만 남는다).
+    const nobody = (await findLegacyBucketHints(db, 'no-such-user')).map((h) => h.messageId);
+    expect(nobody).not.toContain('msg-med-ja');
+    expect(nobody).not.toContain('msg-weather');
   });
 });

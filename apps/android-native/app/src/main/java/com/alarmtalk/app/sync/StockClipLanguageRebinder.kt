@@ -54,6 +54,8 @@ object StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = null,
         /** `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마. */
         legacyHints: Map<String, String> = emptyMap(),
+        /** 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다. */
+        conditionInputs: com.alarmtalk.app.data.DynamicPromptPreferences? = null,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -83,8 +85,11 @@ object StockClipLanguageRebinder {
                 ?: return@forEach
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
-            val next = applyClipFields(alarmDao, alarm, bound)?.copy(bucketId = bucket)
-                ?: return@forEach
+            val applied = applyClipFields(alarmDao, alarm, bound) ?: return@forEach
+            // ⚠ **조건을 여기서 채운다.** 스케줄러를 부르는 것만으로는 안 된다 —
+            //   그 워커가 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
+            val next = withRecipientConditions(applied, bucket, conditionInputs)
+                .copy(bucketId = bucket)
             // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차). #110 은 지운 프리셋을
             //   가리키던 서버 알람을 `mode='sound-only'`, `message_id=NULL` 로 깎는다.
             //   여기서 로컬만 되살리고 `SYNCED` 를 그대로 두면 업로드 대상
@@ -324,21 +329,61 @@ object StockClipLanguageRebinder {
      */
 
     /**
+     * **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+     *
+     * 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
+     * 비어 있다** — 보낸 사람의 지역·사주를 받지 않기 때문이다. 그 상태로 세트만 묶으면
+     * 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
+     * 스케줄러를 부르는 것만으로는 안 된다 — 그 워커가 읽는 것이 바로 이 필드들이다.
+     *
+     * ⚠ **비어 있을 때만 채운다.** 사용자가 그 알람에 직접 넣어 둔 값이 있으면 그게 이긴다.
+     * ⚠ **그 버킷에 필요한 것만 채운다.** 날씨 알람에 사주를 적어 둘 이유가 없다.
+     */
+    internal fun withRecipientConditions(
+        alarm: AlarmEntity,
+        bucket: String,
+        prefs: com.alarmtalk.app.data.DynamicPromptPreferences?,
+    ): AlarmEntity {
+        if (prefs == null) return alarm
+        fun keep(current: String?, fallback: String): String? =
+            current?.trim()?.takeIf { it.isNotEmpty() } ?: fallback.trim().takeIf { it.isNotEmpty() }
+        return when (bucket) {
+            "weather" -> alarm.copy(
+                voiceWeatherCountry = keep(alarm.voiceWeatherCountry, prefs.weatherCountry),
+                voiceWeatherCity = keep(alarm.voiceWeatherCity, prefs.weatherCity),
+            )
+            "fortune" -> alarm.copy(
+                voiceFortuneGender = keep(alarm.voiceFortuneGender, prefs.fortuneGender),
+                voiceFortuneBirthDate = keep(alarm.voiceFortuneBirthDate, prefs.fortuneBirthDate),
+                voiceFortuneBirthTime = keep(alarm.voiceFortuneBirthTime, prefs.fortuneBirthTime),
+            )
+            else -> alarm
+        }
+    }
+
+    /**
      * **아직 갈아탈 알람이 남았는가** — 교체 미완료 차단 화면의 판정.
      *
      * [needsRebind] 로 묻는다([shouldRebind] 가 아니다). 세트가 아직 다 안 구워져서 못
      * 갈아탄 것도 **미완료**이기 때문이다 — 그 알람은 지금 옛 목소리로 운다.
      *
-     * ⚠ **클립 목록이 비면 판정하지 않는다.** 매니페스트를 못 받은 회차를 '갈아탈 것이
-     *   없다' 로 읽으면 네트워크가 죽은 것이 **교체 완료**로 기록된다.
+     * ⚠ **'못 받았다' 와 '받았는데 비었다' 를 가른다**(2026-09-03 리뷰 15차).
+     *   예전에는 `clips` 가 비면 무조건 false 였는데, 그 둘이 같은 모양이라 섞였다.
+     *   `#110` 이 프리셋을 은퇴시킨 뒤 아직 게시(`publish:stock`)하지 않은 구간에서는
+     *   매니페스트가 **성공적으로 비어 있다** — 그때 false 를 돌려주면 옛 목소리를 물고
+     *   있는 알람이 그대로인데도 차단 화면이 안 뜬다.
+     *   그래서 판정 근거를 [manifestFetched] 로 **호출부가 명시**한다. 못 받았으면
+     *   판정하지 않는다(네트워크가 죽은 것을 '교체 완료' 로 쓰면 안 된다).
      */
     suspend fun hasPendingReplacement(
         context: Context,
         clips: List<StockClip>,
         language: String,
+        /** 이번 회차에 매니페스트를 **실제로 받았는가.** 못 받았으면 판정하지 않는다. */
+        manifestFetched: Boolean,
         legacyHints: Map<String, String> = emptyMap(),
     ): Boolean = withContext(Dispatchers.IO) {
-        if (clips.isEmpty()) return@withContext false
+        if (!manifestFetched) return@withContext false
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
         AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
             needsRebind(it, language, liveKeys, legacyHints)

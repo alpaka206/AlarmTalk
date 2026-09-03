@@ -1029,8 +1029,14 @@ export interface LegacyBucketHint {
  * 무엇으로 갈아탈지는 **서버가 이미 안다** — 그 알람이 문 message 의 `category` 다.
  * 앱에 다시 물을 필요가 없어서 매니페스트에 실어 보낸다.
  *
- * ⚠ **호출자 본인 알람으로만 스코프한다**(IDOR). id 를 받지 않으므로 남의 알람을 지목할
- *   방법 자체가 없다.
+ * ⚠ **서버 알람 행만 보면 부족하다**(2026-09-03 리뷰 15차). 아직 서버에 올라가지 않은
+ *   알람(`LOCAL_ONLY`·`FAILED`)은 조인에 걸리지 않아 힌트를 못 받고, 그 알람은 **영영**
+ *   옛 목소리로 운다. 그래서 **은퇴한 시스템 스톡 프리셋**도 함께 준다 — 힌트가 필요한
+ *   알람이 가리키는 것이 정확히 그 집합이다.
+ *   시스템 스톡은 전역 카탈로그(소유자가 `SYSTEM_VOICE_LIBRARY_USER_ID`)라 남의 개인정보가
+ *   아니고, 은퇴한 것만 담으므로 무한정 늘지 않는다(상한도 둔다).
+ * ⚠ **호출자 알람 갈래는 그대로 본인 것만**이다(IDOR). id 를 받지 않으므로 남의 알람을
+ *   지목할 방법 자체가 없다.
  * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없고,
  *   서버도 시스템 보이스+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 힌트로 주면 앱이
  *   그 값을 `bucketId` 에 적고, 그 알람은 저장할 때마다 400 을 맞는다.
@@ -1042,18 +1048,37 @@ export async function findLegacyBucketHints(
   userPk: string,
 ): Promise<LegacyBucketHint[]> {
   const categories = [...FREE_BUCKET_CATEGORIES];
+  const placeholders = categories.map(() => '?').join(', ');
+  // 은퇴 프리셋 갈래의 상한. 교체 회차 하나가 (버킷 4종 × 목소리 4 × 언어 3) ≈ 228개다.
+  // 회차가 쌓여도 응답이 무한정 커지지 않게 최근 것부터 자른다 — 옛 회차의 클립을 아직
+  // 물고 있는 기기는 그 사이 강제 업데이트로 이미 갈아탔다.
+  const RETIRED_HINT_LIMIT = 400;
   const result = await db.execute({
-    sql: `SELECT a.message_id AS message_id, m.category AS category, m.language AS language
-            FROM alarms a
-            JOIN messages m ON m.id = a.message_id
-            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-           WHERE a.user_id = ?
-             AND (a.bucket_id IS NULL OR TRIM(a.bucket_id) = '')
-             AND COALESCE(m.is_preset, 0) = 1
-             AND COALESCE(vp.is_system, 0) = 1
-             AND m.category IN (${categories.map(() => '?').join(', ')})
-           GROUP BY a.message_id, m.category, m.language`,
-    args: [userPk, ...categories],
+    sql: `SELECT message_id, category, language FROM (
+            -- ① 이 사용자의 서버 알람이 가리키는 것(버킷이 비어 있는 옛 행)
+            SELECT a.message_id AS message_id, m.category AS category, m.language AS language,
+                   0 AS ord, NULL AS retired_at
+              FROM alarms a
+              JOIN messages m ON m.id = a.message_id
+              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+             WHERE a.user_id = ?
+               AND (a.bucket_id IS NULL OR TRIM(a.bucket_id) = '')
+               AND COALESCE(m.is_preset, 0) = 1
+               AND COALESCE(vp.is_system, 0) = 1
+               AND m.category IN (${placeholders})
+            UNION
+            -- ② 은퇴한 시스템 스톡 전부(아직 서버에 안 올라간 로컬 알람이 이걸 가리킨다)
+            SELECT m.id, m.category, m.language, 1 AS ord, m.retired_at
+              FROM messages m
+              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+             WHERE m.retired_at IS NOT NULL
+               AND COALESCE(m.is_preset, 0) = 1
+               AND COALESCE(vp.is_system, 0) = 1
+               AND m.category IN (${placeholders})
+          )
+          ORDER BY ord ASC, retired_at DESC
+          LIMIT ?`,
+    args: [userPk, ...categories, ...categories, RETIRED_HINT_LIMIT],
   });
   return result.rows.map((row) => ({
     messageId: String(row.message_id),

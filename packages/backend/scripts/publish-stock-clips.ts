@@ -44,11 +44,29 @@ import {
 } from '../src/lib/stock-clips.ts';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../src/lib/audio-cache.ts';
 import { prepareAlarmTextWithVertex } from '../src/lib/vertex-translate.ts';
+import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import {
+  computeFingerprint,
+  fingerprintKey,
+  loadFingerprints,
+} from './stock-preview-fingerprint.ts';
 
 /** `voice-provider.ts` 의 elevenlabs 갈래와 같은 값. 바뀌면 캐시 키가 갈라진다. */
 const PROVIDER = 'elevenlabs';
 const MODEL_ID = 'eleven_v3';
 const OUTPUT_FORMAT = 'mp3';
+
+/**
+ * ⚠ `prerender-stock-preview.ts` 의 `VOICE_SETTINGS` 와 **같은 값**이어야 한다 —
+ * 지문 계산에 들어가므로 다르면 멀쩡한 시청본이 전부 '낡음' 으로 읽힌다.
+ */
+const PREVIEW_VOICE_SETTINGS = {
+  stability: 0.5,
+  similarity_boost: 0.8,
+  style: 0.4,
+  speed: 0.9,
+  use_speaker_boost: true,
+} as const;
 
 /** 교체 후의 시스템 목소리. `migrations.ts` #111 · 시청본 생성기와 **같은 값**이어야 한다. */
 const VOICES = [
@@ -187,15 +205,55 @@ async function deriveTexts(baseText: string, language: Language) {
   };
 }
 
-async function alreadyPublished(db: Client, target: Target): Promise<boolean> {
+/** 이 자리에 이미 살아 있는 프리셋이 있으면 그 id, 없으면 null. */
+async function publishedMessageId(db: Client, target: Target): Promise<string | null> {
   const rows = await db.execute({
-    sql: `SELECT 1 FROM messages
+    sql: `SELECT id FROM messages
            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
              AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL
            LIMIT 1`,
     args: [target.profileId, target.category, target.language, target.variant],
   });
-  return rows.rows.length > 0;
+  return rows.rows[0] ? String(rows.rows[0].id) : null;
+}
+
+/**
+ * **원장 행이 빠졌으면 채운다.**
+ *
+ * ⚠ 건너뛰는 길에도 이 검사가 있어야 한다(리뷰 15차). 예전에는 message 만 있으면 무조건
+ *   건너뛰었는데, message INSERT 는 성공하고 원장 INSERT 전에 끊긴 상태가 그대로 남는다 —
+ *   다시 돌려도 "이미 있음" 으로 세고 **아무도 그 구멍을 못 고친다.**
+ *   `generated_audio_assets` 는 R2 키의 **유일한 출처**라, 없으면 동의 철회·계정 삭제에도
+ *   그 오디오를 찾아 지울 수 없다.
+ *
+ * @returns 실제로 채웠으면 true.
+ */
+async function repairLedgerIfMissing(
+  db: Client,
+  target: Target,
+  messageId: string,
+  cacheKey: string,
+  objectKey: string,
+  synthesisText: string,
+): Promise<boolean> {
+  const existing = await db.execute({
+    sql: 'SELECT 1 FROM generated_audio_assets WHERE message_id = ? LIMIT 1',
+    args: [messageId],
+  });
+  if (existing.rows.length > 0) return false;
+  const result = await db.execute({
+    sql: `INSERT OR IGNORE INTO generated_audio_assets
+            (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+             model_id, language, request_hash, text,
+             audio_url, audio_object_key, audio_format)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
+      PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+      cacheKey, synthesisText, `r2://${objectKey}`, objectKey, OUTPUT_FORMAT,
+    ],
+  });
+  return (result.rowsAffected ?? 0) > 0;
 }
 
 function uploadToR2(bucket: string, key: string, filePath: string, env: Record<string, string>): void {
@@ -223,6 +281,34 @@ async function main(): Promise<void> {
 
   const env = loadEnvFile(resolve(BACKEND_DIR, envFile));
   const targets = collectTargets();
+
+  // ⚠ **지문을 먼저 본다**(리뷰 15차). 파일이 있다는 것만으로 올리면, 옛 대사·옛 설정으로
+  //   구운 바이트가 **새 카탈로그로 계산한 키와 문구를 달고** 프로덕션에 올라간다.
+  //   실제로 이 작업 중에 그 상태를 만들었다(`withClosingBreath` 누락본 80개).
+  const fingerprints = loadFingerprints(PREVIEW_ROOT);
+  const staleFiles: string[] = [];
+  for (const t of targets) {
+    if (!existsSync(t.filePath)) continue;
+    const expected = computeFingerprint({
+      providerVoiceId: t.providerVoiceId,
+      modelId: MODEL_ID,
+      outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
+      voiceSettings: PREVIEW_VOICE_SETTINGS,
+      providerText: withClosingBreath((await deriveTexts(t.baseText, t.language)).synthesisText),
+    });
+    if (fingerprints[fingerprintKey(t.language, t.voiceName, `${t.category}_${String(t.variant).padStart(2, '0')}.mp3`)] !== expected) {
+      staleFiles.push(`${t.language}/${t.voiceName}/${t.category}_${t.variant}`);
+    }
+  }
+  if (staleFiles.length > 0) {
+    console.error(
+      `⚠ 지금 카탈로그로 구워지지 않은 시청본 ${staleFiles.length}개 — 먼저 \`npm run preview:stock\` 을 돌릴 것.`,
+    );
+    for (const label of staleFiles.slice(0, 5)) console.error(`  ${label}`);
+    if (staleFiles.length > 5) console.error(`  … 외 ${staleFiles.length - 5}개`);
+    process.exitCode = 1;
+    return;
+  }
 
   const missingFiles = targets.filter((t) => !existsSync(t.filePath));
   if (missingFiles.length > 0) {
@@ -257,10 +343,6 @@ async function main(): Promise<void> {
   for (const target of targets) {
     const label = `${target.language}/${target.voiceName}/${target.category}_${String(target.variant).padStart(2, '0')}`;
     try {
-      if (await alreadyPublished(db, target)) {
-        skipped += 1;
-        continue;
-      }
       const { synthesisText, displayText, deliveryTagsJson } = await deriveTexts(
         target.baseText,
         target.language,
@@ -280,6 +362,22 @@ async function main(): Promise<void> {
       const audioUrl = `r2://${objectKey}`;
       const size = statSync(target.filePath).size;
 
+      // ⚠ **건너뛰기 전에 원장부터 본다**(리뷰 15차). message 는 들어갔는데 원장 INSERT
+      //   전에 끊긴 상태가 남을 수 있고, 그냥 건너뛰면 그 구멍을 **아무도 못 고친다.**
+      const existingId = await publishedMessageId(db, target);
+      if (existingId) {
+        if (dryRun) {
+          skipped += 1;
+          continue;
+        }
+        const repaired = await repairLedgerIfMissing(
+          db, target, existingId, cacheKey, objectKey, synthesisText,
+        );
+        if (repaired) console.log(`[원장 복구] ${label}`);
+        skipped += 1;
+        continue;
+      }
+
       if (dryRun) {
         console.log(`[예정] ${label}  ${(size / 1024).toFixed(0)}KB  ${objectKey}`);
         published += 1;
@@ -289,43 +387,57 @@ async function main(): Promise<void> {
       uploadToR2(bucket, objectKey, target.filePath, env);
 
       const messageId = crypto.randomUUID();
-      // 조건부 INSERT — 두 번 돌려도 중복 행이 생기지 않는다(서버의 게시 가드와 같은 술어).
-      const inserted = await db.execute({
-        sql: `INSERT INTO messages
-                (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
-                 category, language, variant, is_preset, audio_url)
-              SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?
-               WHERE NOT EXISTS (
-                 SELECT 1 FROM messages
-                  WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
-                    AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL
-               )`,
-        args: [
-          messageId, SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId,
-          displayText, synthesisText, deliveryTagsJson,
-          target.category, target.language, target.variant, audioUrl,
-          target.profileId, target.category, target.language, target.variant,
-        ],
-      });
-      if ((inserted.rowsAffected ?? 0) === 0) {
+      // ⚠ **두 행을 한 트랜잭션에 넣는다**(리뷰 15차). 나눠 쓰면 message 만 남고 원장이
+      //   빠진 상태가 생기는데, `generated_audio_assets` 는 R2 키의 **유일한 출처**라
+      //   그러면 동의 철회·계정 삭제에도 그 오디오를 찾아 지울 수 없다.
+      const tx = await db.transaction('write');
+      let insertedRows = 0;
+      try {
+        // 조건부 INSERT — 두 번 돌려도 중복 행이 생기지 않는다(서버의 게시 가드와 같은 술어).
+        const inserted = await tx.execute({
+          sql: `INSERT INTO messages
+                  (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
+                   category, language, variant, is_preset, audio_url)
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM messages
+                    WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
+                      AND COALESCE(is_preset, 0) = 1 AND retired_at IS NULL
+                 )`,
+          args: [
+            messageId, SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId,
+            displayText, synthesisText, deliveryTagsJson,
+            target.category, target.language, target.variant, audioUrl,
+            target.profileId, target.category, target.language, target.variant,
+          ],
+        });
+        insertedRows = inserted.rowsAffected ?? 0;
+        if (insertedRows > 0) {
+          await tx.execute({
+            sql: `INSERT OR IGNORE INTO generated_audio_assets
+                    (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+                     model_id, language, request_hash, text,
+                     audio_url, audio_object_key, audio_format)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
+              PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
+              cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
+            ],
+          });
+        }
+        await tx.commit();
+      } catch (txError) {
+        await tx.rollback().catch(() => {});
+        throw txError;
+      }
+
+      if (insertedRows === 0) {
         // 그 사이 누군가 같은 자리를 채웠다. 오브젝트는 남지만 아무도 안 가리키므로
         // 보관 스윕이 회수한다 — 여기서 지우면 **이긴 쪽의 오브젝트**를 지울 수 있다.
         skipped += 1;
         continue;
       }
-      // R2 키의 **유일한 원장**이다 — 이 행이 없으면 동의 철회에도 오디오를 못 지운다.
-      await db.execute({
-        sql: `INSERT OR IGNORE INTO generated_audio_assets
-                (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
-                 model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          crypto.randomUUID(), SYSTEM_VOICE_LIBRARY_USER_ID, target.profileId, messageId,
-          PROVIDER, target.providerVoiceId, MODEL_ID, target.language,
-          cacheKey, synthesisText, audioUrl, objectKey, OUTPUT_FORMAT,
-        ],
-      });
       published += 1;
       console.log(`[${published}] ${label}  ${(size / 1024).toFixed(0)}KB`);
     } catch (error) {

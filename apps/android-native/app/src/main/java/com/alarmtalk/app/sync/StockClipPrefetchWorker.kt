@@ -243,6 +243,11 @@ class StockClipPrefetchWorker(
             //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
             val legacyHints = manifest.legacyBucketHints
                 .associate { hint -> hint.messageId to hint.category }
+            // 받는 사람의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
+            // 받은 알람은 그 값이 전부 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
+            // 운세는 빈 프로필 해시로 떨어진다.
+            val conditionInputs = com.alarmtalk.app.data.DynamicPromptPreferenceStore(applicationContext)
+                .read(session.user.id)
 
             suspend fun rebind() {
                 runCatching {
@@ -255,6 +260,7 @@ class StockClipPrefetchWorker(
                         // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
                         expectedVariants = manifest.expectedVariants,
                         legacyHints = legacyHints,
+                        conditionInputs = conditionInputs,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
@@ -296,6 +302,9 @@ class StockClipPrefetchWorker(
                             context = applicationContext,
                             clips = allClips,
                             language = language,
+                            // 이 자리는 매니페스트를 **받은 뒤**다 — 비어 있어도 그건
+                            // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                            manifestFetched = true,
                             legacyHints = legacyHints,
                         ),
                     )

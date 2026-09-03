@@ -45,7 +45,9 @@ struct StockClipLanguageRebinder {
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         expectedVariants: ExpectedVariantCounts? = nil,
         /// `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마.
-        legacyHints: [String: String] = [:]
+        legacyHints: [String: String] = [:],
+        /// 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다.
+        conditionInputs: DynamicPromptPreferences? = nil
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
@@ -78,6 +80,9 @@ struct StockClipLanguageRebinder {
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
             bound.bucketId = bucket
+            // ⚠ **조건을 여기서 채운다.** 새로고침 서비스를 부르는 것만으로는 안 된다 —
+            //   그게 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
+            bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
             if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
             rebound += 1
@@ -211,20 +216,60 @@ struct StockClipLanguageRebinder {
     ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
     ///   떼어 낸다.
     @discardableResult
+    /// **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+    ///
+    /// 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
+    /// 비어 있다** — 보낸 사람의 지역·사주를 받지 않기 때문이다. 그 상태로 세트만 묶으면
+    /// 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
+    /// `WeatherVariantRefreshService` 를 부르는 것만으로는 안 된다 — 그게 읽는 것이
+    /// 바로 이 필드들이다.
+    ///
+    /// ⚠ **비어 있을 때만 채운다.** 사용자가 그 알람에 직접 넣어 둔 값이 이긴다.
+    /// ⚠ **그 버킷에 필요한 것만 채운다.** 안드로이드 `withRecipientConditions` 미러.
+    static func withRecipientConditions(
+        _ record: LocalAlarmRecord,
+        bucket: String,
+        prefs: DynamicPromptPreferences?
+    ) -> LocalAlarmRecord {
+        guard let prefs else { return record }
+        func keep(_ current: String?, _ fallback: String) -> String? {
+            if let value = (current).nilIfBlank { return value }
+            let trimmed = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        var next = record
+        switch bucket {
+        case "weather":
+            next.voiceWeatherCountry = keep(record.voiceWeatherCountry, prefs.weatherCountry)
+            next.voiceWeatherCity = keep(record.voiceWeatherCity, prefs.weatherCity)
+        case "fortune":
+            next.voiceFortuneGender = keep(record.voiceFortuneGender, prefs.fortuneGender)
+            next.voiceFortuneBirthDate = keep(record.voiceFortuneBirthDate, prefs.fortuneBirthDate)
+            next.voiceFortuneBirthTime = keep(record.voiceFortuneBirthTime, prefs.fortuneBirthTime)
+        default:
+            break
+        }
+        return next
+    }
+
     /// **아직 갈아탈 알람이 남았는가** — 교체 미완료 차단 화면의 판정.
     /// 안드로이드 `StockClipLanguageRebinder.hasPendingReplacement` 미러.
     ///
     /// `needsRebind` 로 묻는다(`shouldRebind` 가 아니다). 세트가 아직 다 안 구워져서 못
     /// 갈아탄 것도 **미완료**이기 때문이다 — 그 알람은 지금 옛 목소리로 운다.
     ///
-    /// ⚠ **클립 목록이 비면 판정하지 않는다.** 매니페스트를 못 받은 회차를 '갈아탈 것이
-    ///   없다' 로 읽으면 네트워크가 죽은 것이 **교체 완료**로 기록된다.
+    /// ⚠ **'못 받았다' 와 '받았는데 비었다' 를 가른다**(2026-09-03 리뷰 15차).
+    ///   `#110` 이 프리셋을 은퇴시킨 뒤 아직 게시하지 않은 구간에서는 매니페스트가
+    ///   **성공적으로 비어 있다** — 그때 false 를 돌려주면 옛 목소리를 물고 있는 알람이
+    ///   그대로인데도 차단 화면이 안 뜬다. 판정 근거는 호출부가 `manifestFetched` 로
+    ///   명시한다. 안드로이드 짝과 같은 이름이다.
     func hasPendingReplacement(
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifestFetched: Bool,
         legacyHints: [String: String] = [:]
     ) -> Bool {
-        guard !clips.isEmpty, store.hasLoadedFromDisk else { return false }
+        guard manifestFetched, store.hasLoadedFromDisk else { return false }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
         return store.alarms.contains {
             Self.needsRebind(

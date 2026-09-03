@@ -30,6 +30,12 @@ import { resolve, dirname } from 'node:path';
 import { STOCK_CLIP_PRESETS, withClosingBreath } from '../src/lib/stock-clips.ts';
 import { appendMp3TrailingSilence } from '../src/lib/mp3-silence.ts';
 import { ELEVENLABS_TTS_OUTPUT_FORMAT } from '../src/lib/elevenlabs.ts';
+import {
+  computeFingerprint,
+  fingerprintKey,
+  loadFingerprints,
+  saveFingerprints,
+} from './stock-preview-fingerprint.ts';
 
 /**
  * ⚠ `import.meta.url` 로 저장소 뿌리를 잡지 않는다. 이 스크립트는 extensionless import 를
@@ -78,6 +84,14 @@ const VOICE_SETTINGS = {
   speed: 0.9,
   use_speaker_boost: true,
 } as const;
+
+/**
+ * 제공자에게 실제로 보내는 글자. 서버(`generateStockClip`)와 **같은 순서**여야 한다 —
+ * `prepareAlarmTextWithVertex` 가 trim 한 글자에 `withClosingBreath` 를 붙인다.
+ */
+function providerTextFor(text: string): string {
+  return withClosingBreath(text.trim());
+}
 
 function argValue(name: string): string | undefined {
   const argv = process.argv.slice(2);
@@ -136,6 +150,9 @@ interface Target {
   text: string;
   fileName: string;
   filePath: string;
+  /** 합성 입력의 지문. 파일이 있어도 이게 다르면 **낡은 소리**라 다시 굽는다. */
+  fingerprint: string;
+  fingerprintKey: string;
 }
 
 function collectTargets(): Target[] {
@@ -161,6 +178,14 @@ function collectTargets(): Target[] {
             text,
             fileName,
             filePath: resolve(dir, fileName),
+            fingerprint: computeFingerprint({
+              providerVoiceId: voice.providerVoiceId,
+              modelId: MODEL_ID,
+              outputFormat: ELEVENLABS_TTS_OUTPUT_FORMAT,
+              voiceSettings: { ...VOICE_SETTINGS },
+              providerText: providerTextFor(text),
+            }),
+            fingerprintKey: fingerprintKey(language, voice.name, fileName),
           });
         });
       }
@@ -178,7 +203,10 @@ async function synthesize(apiKey: string, target: Target): Promise<Uint8Array> {
       // ⚠ **서버가 제공자에게 보내는 그 글자여야 한다.** `generateStockClip` 은
       //   `withClosingBreath(synthesisText)` 를 보낸다 — 문장 끝 ` ...` 가 v3 의
       //   급마감을 막는다. 여기서 빼면 시청본과 실제 알람의 **말끝이 달라진다.**
-      text: withClosingBreath(target.text),
+      //   ⚠ `trim()` 도 서버를 따른다 — `prepareAlarmTextWithVertex` 가 trim 한 글자로
+      //     합성하고 캐시 키를 만든다. 여기서 안 다듬으면 앞뒤 공백이 있는 프리셋에서
+      //     **소리와 키가 어긋난다.**
+      text: providerTextFor(target.text),
       model_id: MODEL_ID,
       voice_settings: VOICE_SETTINGS,
     };
@@ -216,7 +244,16 @@ async function main(): Promise<void> {
   const force = hasFlag('--force');
   const dryRun = hasFlag('--dry-run');
   const targets = collectTargets();
-  const pending = force ? targets : targets.filter((t) => !existsSync(t.filePath));
+  const fingerprints = loadFingerprints(OUT_ROOT);
+  // ⚠ **파일이 있다는 것만으로 최신이라고 보지 않는다**(리뷰 15차). 파일 이름은 대사가
+  //   바뀌어도, 목소리를 갈아도 그대로다 — 지문이 달라야 다시 굽는다.
+  const isFresh = (t: Target) =>
+    existsSync(t.filePath) && fingerprints[t.fingerprintKey] === t.fingerprint;
+  const stale = targets.filter((t) => existsSync(t.filePath) && !isFresh(t));
+  const pending = force ? targets : targets.filter((t) => !isFresh(t));
+  if (stale.length > 0) {
+    console.log(`⚠ 낡은 시청본 ${stale.length}개 — 합성 입력이 바뀌었다(대사·목소리·설정). 다시 굽는다.`);
+  }
 
   const bySet = new Map<string, number>();
   for (const t of pending) {
@@ -242,10 +279,17 @@ async function main(): Promise<void> {
     try {
       const bytes = await synthesize(apiKey, target);
       writeFileSync(target.filePath, bytes);
+      // ⚠ **쓰고 나서 남긴다.** 미리 적으면 실패한 자리가 '최신' 으로 굳는다.
+      fingerprints[target.fingerprintKey] = target.fingerprint;
+      saveFingerprints(OUT_ROOT, fingerprints);
       done += 1;
       console.log(`[${done}/${pending.length}] ${label}  ${(bytes.length / 1024).toFixed(0)}KB`);
     } catch (error) {
       failed += 1;
+      // 실패했으면 그 자리의 옛 지문을 **지운다** — 남겨 두면 디스크의 낡은 파일이
+      // 다음 실행에서 '최신' 으로 읽힌다.
+      delete fingerprints[target.fingerprintKey];
+      saveFingerprints(OUT_ROOT, fingerprints);
       console.error(`[실패] ${label}  ${(error as Error).message}`);
     }
   }

@@ -255,6 +255,7 @@
 		BD5422633682177ACF3BD5D2 /* StockReplacementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C66942965BBCE696F03167A /* StockReplacementView.swift */; };
 		BF63F06A6574FF0FBF9E4377 /* PromoPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */; };
 		BF8DACEBEA118AA299940BE0 /* AlarmEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */; };
+		C0B29A74768E8C83C680E74E /* RecipientConditionHydrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */; };
 		C1CDA686E18BCAC6D1AE147F /* LeaveAccountDeviceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76D2AD743E97CECC91C501F2 /* LeaveAccountDeviceUITests.swift */; };
 		C30F8BAE2A9D81D92D2BC65B /* VoiceRelationshipInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */; };
 		C3D6BD92355A2E98E6D23762 /* AlarmSoundStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */; };
@@ -625,6 +626,7 @@
 		D7F9E4D2319711428E8D5B87 /* AlarmTalkWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkWidgetBundle.swift; sourceTree = "<group>"; };
 		D9A1058713E81FFD99D5A552 /* LoginErrorMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginErrorMessageTests.swift; sourceTree = "<group>"; };
 		DA991BC0E37E0A9D0C4A1487 /* AlarmTalkWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AlarmTalkWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipientConditionHydrationTests.swift; sourceTree = "<group>"; };
 		DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		DAFEFFCE341357461A47A64B /* AlarmAppContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmAppContext.swift; sourceTree = "<group>"; };
 		DB34A0D05EB70E2E076F463A /* SocialFeatureViewModelBillingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeatureViewModelBillingTests.swift; sourceTree = "<group>"; };
@@ -1054,6 +1056,7 @@
 				9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */,
 				CAF9AD1708532E9CF22B407D /* PreviewSeedLeakTests.swift */,
 				E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */,
+				DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */,
 				63ECE84B7EBA31BE96BF3065 /* RedeemCodeSanitizerTests.swift */,
 				431B4F1B68A4F2AD65B924D9 /* RememberChoicesGuardTests.swift */,
 				783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */,
@@ -1703,6 +1706,7 @@
 				DF782938329EEED696B72943 /* PretendardFontTests.swift in Sources */,
 				49B32F22AC1AE75B1F8C3009 /* PreviewSeedLeakTests.swift in Sources */,
 				E280AE375CB9149F23F1BAA8 /* ReceivedAlarmBadgeStoreTests.swift in Sources */,
+				C0B29A74768E8C83C680E74E /* RecipientConditionHydrationTests.swift in Sources */,
 				BC9BEFB1E97D786A9D365AFA /* RedeemCodeSanitizerTests.swift in Sources */,
 				44A6C48873FB045F7E545806 /* RememberChoicesGuardTests.swift in Sources */,
 				3AFA4D274320C0606804500B /* RemoteAlarmMapperTests.swift in Sources */,
@@ -1849,7 +1853,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = NO;
@@ -2005,7 +2009,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.2.4;
+				MARKETING_VERSION = 1.2.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

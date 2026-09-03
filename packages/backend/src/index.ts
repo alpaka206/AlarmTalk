@@ -412,56 +412,24 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
 
-  // **기본(시스템) 목소리 스톡 클립 드레인.** 빠진 (목소리|카테고리|언어|variant) 를
-  // 틱당 소량씩 채운다.
+  // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
   //
-  // ⚠ **이게 없으면 문구·목소리 교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다**
-  //   (2026-09-03 리뷰 7차). 시스템 스톡을 굽는 경로가 `POST /api/admin/seed-stock-clips`
-  //   **하나뿐**이었고, 그건 배포 워크플로가 부르지 않는다 — 게다가 호출당 12개 상한이라
-  //   (목소리 4 × 언어 3 × 문구 20 = 240) 사람이 인증해서 **20번 넘게** 눌러야 했다.
-  //   그때까지 새로 만드는 알람은 고를 클립이 없다.
-  //   그 엔드포인트는 **특정 목소리만 다시 굽는** 수동 도구로 남는다(`?voice=`·`?reset=`).
+  // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.
+  // 그 문제는 이제 **미리 구워 올리는 것**으로 푼다(`scripts/publish-stock-clips.ts`) —
+  // 배포 전에 R2 에 바이트를 올려 두고, 마이그레이션 직후 행만 넣으면 공백이 거의 없다.
   //
-  // 클론 드레인(아래)과 나란히 두되 **앞에** 둔다 — 기본 목소리는 모든 사용자가 쓰고,
-  // 클론은 그 목소리를 등록한 사람만 기다린다.
-  try {
-    const { findMissingStockTargets, generateStockClip } = await import('./lib/stock-clips');
-    // 인자 없이 부르면 **시스템 목소리만** 본다(클론은 큐가 지목한 것만 굽는다).
-    const missing = await findMissingStockTargets(db);
-    if (missing.length > 0) {
-      // 틱(5분)당 상한. 클립 1개 = Vertex 문구/번역 + ElevenLabs 합성 + R2 업로드다.
-      // 클론 드레인(10)보다 낮게 잡는다 — 같은 틱에서 둘이 서브리퀘스트를 나눠 쓴다.
-      let rendered = 0;
-      // ⚠ **머리에서만 자르면 실패가 배치를 독점한다**(2026-09-03 리뷰 11차).
-      //   목록 순서는 결정론적이라, 한 목소리의 provider 가 죽어 그 타깃 6개가 계속
-      //   실패하면 성공한 것만 목록에서 빠져 결국 **그 6개가 머리를 영구히 차지한다** —
-      //   뒤쪽의 멀쩡한 타깃은 영영 시도조차 안 된다.
-      //   틱마다 시작점을 굴려 모든 타깃이 차례를 받게 한다(5분 틱 기준).
-      const offset = missing.length > 0
-        ? Math.floor(now.getTime() / 300_000) * 6 % missing.length
-        : 0;
-      const batch = Array.from(
-        { length: Math.min(6, missing.length) },
-        (_, i) => missing[(offset + i) % missing.length]!,
-      );
-      for (const target of batch) {
-        try {
-          await generateStockClip(db, env, target);
-          rendered += 1;
-        } catch (genErr) {
-          // 한 건 실패가 나머지를 막지 않는다 — 다음 틱이 그것만 다시 집는다(멱등).
-          captureCron('scheduled.stock_seed.generate', genErr);
-        }
-      }
-      logStructured('info', {
-        at: 'scheduled.stock_seed',
-        rendered,
-        remaining: missing.length - rendered,
-      });
-    }
-  } catch (err) {
-    captureCron('scheduled.stock_seed', err);
-  }
+  // 그런데 **둘을 같이 두면 서로 싸운다.** 롤아웃은 `#110` 이 전부 은퇴시킨 뒤 사람이
+  // `publish:stock` 을 돌리는 순서인데, 그 사이의 5분 틱이 **같은 타깃을 합성하기
+  // 시작한다.** cron 이 한 자리를 먼저 커밋하면 `publish:stock` 은 그 자리를
+  // '이미 있음' 으로 보고 건너뛰어, **사람이 들어 보고 확정한 바이트가 영영 안 올라간다.**
+  // 그리고 그때부터 결정론적 키를 놓고 두 렌더가 겹치는 옛 경합이 되살아난다.
+  //
+  // 되살릴 거라면 **게시가 렌더 산출물을 덮어쓰도록** 먼저 고쳐야 한다(지금은 건너뛴다).
+  // 클론 드레인(아래)은 그대로다 — 그건 큐가 지목한 목소리만 굽고, 미리 구울 수 없다
+  // (등록한 사람의 목소리라서 우리가 미리 갖고 있지 않다).
+  //
+  // 특정 목소리만 다시 굽는 수동 도구는 남아 있다: `POST /api/admin/seed-stock-clips`
+  // (`?voice=`·`?reset=`). 새 프리셋을 추가했는데 미리 굽지 않았다면 그걸로 채운다.
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만

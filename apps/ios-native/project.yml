@@ -32,7 +32,7 @@ settings:
     # ⚠ 반대로 **빌드 번호(CURRENT_PROJECT_VERSION)는 맞추지 말 것** — 스토어마다 단조
     # 증가해야 하는 별개 수열이고, 서버 강제 업데이트 게이트가 보는 값도 그쪽이다
     # (`packages/backend/src/lib/app-version.ts` 의 IOS.minSupported = 1).
-    MARKETING_VERSION: "1.2.4"
+    MARKETING_VERSION: "1.2.5"
     CURRENT_PROJECT_VERSION: "1"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
     # Leaving empty here so xcodegen does not hard-bake a team ID into the project.

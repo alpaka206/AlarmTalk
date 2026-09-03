@@ -501,7 +501,8 @@ struct AlarmTalkApp: App {
         //   틱당 조금씩 채우므로, 다른 화면이 먼저 받아 둔 **부분 매니페스트**가 세션
         //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성
         //   검사에 걸려 **아무 일도 안 하고** 끝난다.
-        await voiceStudio.loadStockClips(session: auth.session, force: true)
+        // 반환값은 '이번에 서버에서 새로 받았는가' 다 — 교체 미완료 판정의 근거다.
+        let manifestFetched = await voiceStudio.loadStockClips(session: auth.session, force: true)
 
         let rebinder = StockClipLanguageRebinder(store: alarmStore)
         // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
@@ -512,7 +513,19 @@ struct AlarmTalkApp: App {
             expectedVariants: voiceStudio.expectedVariants,
             // 버킷 없이 클립 하나만 물린 옛 알람이 어떤 테마였는지(서버가 안다).
             // 없으면 그 알람은 재바인더 두 갈래 어디에도 안 걸려 영영 옛 소리다.
-            legacyHints: voiceStudio.legacyBucketHints
+            legacyHints: voiceStudio.legacyBucketHints,
+            // 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 빈 자리에만 채운다 — 받은
+            // 알람은 그 값이 비어 있어서, 안 채우면 날씨는 서버 기본값(서울), 운세는
+            // 빈 프로필 해시로 떨어진다. 서버 설정이 먼저, 없으면 로컬 저장분이다
+            // (편집기 `savedPromptPreferences` 와 같은 순서).
+            conditionInputs: {
+                let server = DynamicPromptPreferences.from(
+                    settings: auth.session?.user.dynamicPromptSettings
+                )
+                return server == DynamicPromptPreferences()
+                    ? .load(userID: auth.session?.user.id)
+                    : server
+            }()
         )
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
@@ -536,7 +549,7 @@ struct AlarmTalkApp: App {
         // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시). 위 두 재바인딩이 끝난
         //   **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직 갈아탈 알람이 남아 있으면 함수가
         //   스스로 0을 돌려주고 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다.
-        await rebinder.pruneReplacedStockAudio(
+        _ = await rebinder.pruneReplacedStockAudio(
             clips: voiceStudio.stockClips,
             expectedVariants: voiceStudio.expectedVariants,
             // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
@@ -549,6 +562,9 @@ struct AlarmTalkApp: App {
         StockReplacementStatus.shared.report(
             pending: rebinder.hasPendingReplacement(
                 clips: voiceStudio.stockClips,
+                // 위에서 `loadStockClips(force: true)` 로 받아 온 뒤다 — 비어 있어도 그건
+                // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                manifestFetched: manifestFetched,
                 legacyHints: voiceStudio.legacyBucketHints
             )
         )
