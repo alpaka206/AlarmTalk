@@ -353,7 +353,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                     forProfileID: profileID,
                     alarmStore: deps.alarmStore,
                     audioCache: .shared,
-                    ownerUserId: ownerID
+                    ownerUserId: ownerID,
+                    // ⚠ **표식 경로에서는 기본 목소리도 대상이다**(2026-09-03 리뷰 21차).
+                    //   제자리 교체는 프로필 id 를 그대로 두고 provider 만 바꾸므로, 그
+                    //   목소리로 만든 직접 입력 알람은 이름만 새 목소리이고 소리는 옛것이다.
+                    allowSystemVoice: true
                 )
                 // ⚠ **디스크에 남은 뒤에만 확정 후보가 된다.** 백그라운드 실행은 비동기 쓰기
                 // 전에 끝날 수 있고, 그러면 다음 실행이 옛 알람을 다시 읽는데 표식만 앞서 나간다.
@@ -498,7 +502,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                         forProfileID: candidate.id,
                         alarmStore: deps.alarmStore,
                         audioCache: .shared,
-                        ownerUserId: ownerID
+                        ownerUserId: ownerID,
+                        // 위 푸시 경로와 같은 이유 — 제자리 교체는 기본 목소리도 대상이다.
+                        allowSystemVoice: true
                     )
                     // 디스크에 남은 뒤에만 확정 후보가 된다(위 푸시 경로와 같은 이유).
                     guard deps.alarmStore.saveNow() else { return nil }

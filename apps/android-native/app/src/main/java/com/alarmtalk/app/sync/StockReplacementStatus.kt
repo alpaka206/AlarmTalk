@@ -32,6 +32,18 @@ object StockReplacementStatus {
     private val _pendingUserId = MutableStateFlow<String?>(null)
     val pendingUserId: StateFlow<String?> = _pendingUserId.asStateFlow()
 
+    /**
+     * **판정이 한 번이라도 끝났는가**(준비 신호).
+     *
+     * ⚠ **1회성 오버레이는 이 값을 기다려야 한다**(2026-09-03 리뷰 21차). 콜드 스타트에는
+     *   미완료 여부를 아직 모르는데, 그 틈에 웰컴 프로모·첫 권한 안내가 뜨면 **소진 플래그를
+     *   태우고** 뒤늦게 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이 잃는다.
+     *   CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」가 못 박은 자리이고,
+     *   같은 사고가 이 저장소에서 다섯 번째다.
+     */
+    private val _checked = MutableStateFlow(false)
+    val checked: StateFlow<Boolean> = _checked.asStateFlow()
+
     /** true 면 지금 워커가 돌고 있다(재시도 버튼을 잠근다). */
     private val _working = MutableStateFlow(false)
     val working: StateFlow<Boolean> = _working.asStateFlow()
@@ -48,6 +60,7 @@ object StockReplacementStatus {
     fun report(userId: String?, pending: Boolean, manifestFetched: Boolean) {
         if (!manifestFetched) return
         _pendingUserId.value = if (pending) userId else null
+        _checked.value = true
     }
 
     fun setWorking(working: Boolean) {

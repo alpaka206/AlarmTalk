@@ -21,6 +21,14 @@ final class StockReplacementStatus: ObservableObject {
     ///   한 기기에서 계정이 바뀔 수 있다 — 계정을 함께 들고 있어야 **A 의 미완료로 B 를
     ///   가두는** 일이 없다. 화면은 "지금 계정과 같은가" 로만 판단한다.
     @Published private(set) var pendingUserId: String?
+    /// **판정이 한 번이라도 끝났는가**(준비 신호).
+    ///
+    /// ⚠ **1회성 오버레이는 이 값을 기다려야 한다**(2026-09-03 리뷰 21차). 콜드 스타트에는
+    ///   미완료 여부를 아직 모르는데, 그 틈에 웰컴 프로모가 뜨면 **소진 플래그를 태우고**
+    ///   뒤늦게 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이 잃는다.
+    ///   CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」가 못 박은 자리다.
+    @Published private(set) var checked = false
+
     /// true 면 지금 재바인딩이 돌고 있다(재시도 버튼을 잠근다).
     @Published private(set) var working = false
     /// 차단 화면의 '다시 시도'. 값이 바뀌면 `AlarmTalkApp` 이 교체 절차를 다시 돈다.
@@ -38,7 +46,39 @@ final class StockReplacementStatus: ObservableObject {
     func markUnsavedRebind() { hasUnsavedRebind = true }
     func clearUnsavedRebind() { hasUnsavedRebind = false }
 
-    private init() {}
+    /// **아직 예약을 확인하지 못한, 이번 교체가 바꾼 알람 id.**
+    ///
+    /// ⚠ **회차마다 다시 계산하면 안 된다**(2026-09-03 리뷰 21차). 첫 `schedule` 이 실패한
+    ///   뒤 재시도하면 행은 이미 최신이라 재바인더가 `.none` 을 돌려주고 이 집합이 **비어
+    ///   버린다** — 그러면 `reconcile` 이 그 알람을 건너뛰고 `hasStaleSchedules` 도 false 라,
+    ///   AlarmKit 이 은퇴한 목소리를 쥔 채로 문이 열린다. 지문이 없는 옛 예약은 그대로
+    ///   영영 낡은 채 남는다.
+    ///   **예약이 최신임을 확인할 때까지** 들고 있고, 재시작도 견디게 디스크에 남긴다.
+    private(set) var pendingRearmIds: Set<String> = []
+
+    private static let rearmKey = "stock_replacement_pending_rearm_ids"
+
+    private init() {
+        pendingRearmIds = Set(UserDefaults.standard.stringArray(forKey: Self.rearmKey) ?? [])
+    }
+
+    /// 이번 회차가 바꾼 id 를 더한다(앞 회차 것과 합친다).
+    func noteReplaced(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        pendingRearmIds.formUnion(ids)
+        persistRearmIds()
+    }
+
+    /// 예약이 최신임을 확인했다 — 더 들고 있을 이유가 없다.
+    func clearRearmIds() {
+        guard !pendingRearmIds.isEmpty else { return }
+        pendingRearmIds.removeAll()
+        persistRearmIds()
+    }
+
+    private func persistRearmIds() {
+        UserDefaults.standard.set(Array(pendingRearmIds), forKey: Self.rearmKey)
+    }
 
     /// 판정을 기록한다. **매니페스트를 못 받았으면 아무것도 하지 않는다.**
     ///
@@ -50,6 +90,7 @@ final class StockReplacementStatus: ObservableObject {
     func report(userId: String?, pending: Bool, manifestFetched: Bool) {
         guard manifestFetched else { return }
         pendingUserId = pending ? userId : nil
+        checked = true
     }
 
     /// 지금 계정이 막혀 있는가.

@@ -140,6 +140,22 @@ internal fun AlarmTalkApp(
     }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
+    // **기본 목소리 교체가 아직 안 끝났는가.**
+    // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
+    //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
+    // ⚠ **선언이 `blockingGateActive` 보다 위에 있어야 한다**(리뷰 20차) — 그 술어가 이
+    //   값을 쓰므로, 아래에 두면 하단바와 1회성 오버레이가 차단 화면 위로 새어 나온다.
+    val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
+        .pendingUserId.collectAsStateWithLifecycle()
+    val stockReplacementPending = stockReplacementPendingUserId != null &&
+        stockReplacementPendingUserId == authSession?.user?.id
+    val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
+        .collectAsStateWithLifecycle()
+    // ⚠ **준비 신호.** 응답 전 기본값(미완료 아님)은 '아니오' 가 아니라 '아직 모른다' 다 —
+    //   그 틈에 1회성 오버레이가 뜨면 소진 플래그를 태우고 뒤늦게 온 차단 화면이 덮는다.
+    val stockReplacementChecked by com.alarmtalk.app.sync.StockReplacementStatus.checked
+        .collectAsStateWithLifecycle()
+
     val sessionRouteKey = authSession?.user?.id
     val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
@@ -417,9 +433,15 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+        stockReplacementChecked,
+        stockReplacementPending,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
+        // 교체 판정이 오기 전에는 띄우지 않는다 — 뒤늦게 차단 화면이 덮으면 본 적도 없이
+        // 소진된다(리뷰 21차).
+        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
         // pendingDeletion 만 보면 안 된다 — 조회 응답 전에는 기본값 false 라 '유예 아님' 과
         // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
@@ -860,18 +882,6 @@ internal fun AlarmTalkApp(
             onConfirm = ::deleteAccount,
         )
     }
-
-    // **기본 목소리 교체가 아직 안 끝났는가.**
-    // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
-    //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
-    // ⚠ **선언이 `blockingGateActive` 보다 위에 있어야 한다**(리뷰 20차) — 그 술어가 이
-    //   값을 쓰므로, 아래에 두면 하단바와 1회성 오버레이가 차단 화면 위로 새어 나온다.
-    val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
-        .pendingUserId.collectAsStateWithLifecycle()
-    val stockReplacementPending = stockReplacementPendingUserId != null &&
-        stockReplacementPendingUserId == authSession?.user?.id
-    val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
-        .collectAsStateWithLifecycle()
 
     // 화면을 통째로 차지하는 차단 게이트. 이 게이트들은 Scaffold **본문만** 대체하므로,
     // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는

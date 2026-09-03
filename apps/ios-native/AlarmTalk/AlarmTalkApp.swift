@@ -598,7 +598,13 @@ struct AlarmTalkApp: App {
         // 이번 회차가 실제로 소리를 갈아 끼운 행. 재조정도 '남은 것' 판정도 여기로 좁힌다 —
         // 전체를 보면 교체와 무관한 알람 하나의 재예약 실패가 사용자를 전체 화면 차단에
         // 가둔다(리뷰 20차).
-        let replacedIds = languageOutcome.changedIds.union(legacyOutcome.changedIds)
+        // ⚠ **앞 회차가 남긴 것과 합친다**(리뷰 21차). 첫 예약이 실패한 뒤 재시도하면 행은
+        //   이미 최신이라 재바인더가 `.none` 을 돌려주고 이 집합이 비어 버린다 — 그러면
+        //   재조정도 판정도 그 알람을 건너뛰고, AlarmKit 이 옛 소리를 쥔 채 문이 열린다.
+        StockReplacementStatus.shared.noteReplaced(
+            ids: languageOutcome.changedIds.union(legacyOutcome.changedIds)
+        )
+        let replacedIds = StockReplacementStatus.shared.pendingRearmIds
         await AlarmScheduleReconciler.reconcile(
             store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
             // 지문이 없는 옛 예약(지문 도입 이전 앱이 건 것)도 이번에 바뀐 행이면 다시 건다.
@@ -612,6 +618,8 @@ struct AlarmTalkApp: App {
             store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
             limitedTo: replacedIds
         )
+        // 예약이 최신임을 확인했으면 더 들고 있지 않는다.
+        if !staleSchedules { StockReplacementStatus.shared.clearRearmIds() }
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         StockReplacementStatus.shared.report(

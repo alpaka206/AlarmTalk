@@ -1407,13 +1407,24 @@ final class VoiceStudioViewModel: ObservableObject {
     /// - Returns: 강등한 알람 **id 들**. 호출자가 그 행들의 예약이 실제로 다시 깔렸는지
     ///   확인한 뒤에야 교체 표식을 확정할 수 있다(개수만으로는 어느 행인지 알 수 없다).
     @discardableResult
+    /// - Parameter allowSystemVoice: **기본(시스템) 목소리도 대상으로 삼는다.**
+    ///
+    ///   ⚠ 평소에는 시스템 목소리를 **일부러 건너뛴다** — 앱이 주는 목소리라 접근권을 잃는
+    ///   일이 없고, 회수 경로가 건드리면 멀쩡한 알람을 깎는다. 그런데 **제자리 교체**
+    ///   (2026-09-03 `#111`)는 프로필 id 를 그대로 두고 provider 만 바꾸므로, 그 목소리로
+    ///   만든 **직접 입력 알람의 오디오는 옛 목소리 그대로**다 — 이름과 미리듣기는 새
+    ///   목소리인데 울리는 소리만 옛것이고, 그 알람은 재바인더 두 갈래 어디에도 안 걸린다.
+    ///   그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차). 회수 경로는 그대로다.
+    ///   안드로이드 `degradeCustomMessageAlarmsUsingVoiceProfile` 의 같은 파라미터와 짝이다.
     func degradeCustomMessageAlarms(
         forProfileID profileID: String,
         alarmStore: LocalAlarmStore,
         audioCache: AudioCacheStore?,
-        ownerUserId: String?
+        ownerUserId: String?,
+        allowSystemVoice: Bool = false
     ) -> [String] {
-        guard let owner = ownerUserId?.nilIfBlank, !isSystemVoiceId(profileID) else { return [] }
+        guard let owner = ownerUserId?.nilIfBlank else { return [] }
+        guard allowSystemVoice || !isSystemVoiceId(profileID) else { return [] }
         let targets = alarmStore.alarms.filter { record in
             // 받은 알람은 보낸 사람의 목소리로 성립한다 — 내 교체로 판단하지 않는다.
             guard record.originEnum == .localOwned else { return false }

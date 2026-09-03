@@ -808,13 +808,26 @@ class AlarmRepository(
      * @param expectedOwnerUserId 이 강등을 확정한 계정. 백그라운드 워커에서 부를 때 반드시 넘긴다
      *   (계정 전환 중이면 남의 알람을 되돌릴 수 없게 부순다 — Codex #646/#665 규약).
      */
+    /**
+     * @param allowSystemVoice **기본(시스템) 목소리도 대상으로 삼는다.**
+     *
+     * ⚠ 평소에는 시스템 목소리를 **일부러 건너뛴다** — 그건 앱이 주는 목소리라 접근권을
+     *   잃는 일이 없고, 회수 경로가 건드리면 멀쩡한 알람을 깎는다.
+     *   그런데 **제자리 교체**(2026-09-03 `#111`)는 다르다: 프로필 id 는 그대로 두고
+     *   provider 보이스만 바꾸므로, 그 목소리로 만들어 둔 **직접 입력 알람의 오디오는
+     *   낡은 목소리 그대로**다 — 이름과 미리듣기는 새 목소리인데 울리는 소리만 옛것이다.
+     *   그 알람은 재바인더 두 갈래 어디에도 안 걸린다(테마도 없고 `voiceRandomPrompt` 도
+     *   꺼져 있다). 그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차).
+     *   회수 경로(`false`)는 그대로 둔다 — 거기서 열면 없던 강등이 생긴다.
+     */
     suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
         voiceProfileId: String,
         expectedOwnerUserId: String?,
+        allowSystemVoice: Boolean = false,
     ): Int =
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             alarm.voiceProfileId == voiceProfileId &&
-                !isSystemVoiceId(alarm.voiceProfileId) &&
+                (allowSystemVoice || !isSystemVoiceId(alarm.voiceProfileId)) &&
                 alarm.usesCustomMessageVoice()
         }
 

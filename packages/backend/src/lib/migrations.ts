@@ -2648,6 +2648,27 @@ export const migrations: Migration[] = [
          SET name = '애니', elevenlabs_voice_id = 'OSwaPSNdfituxkWcjlkR'
        WHERE id = '70000000-0000-4000-9000-000000000104'`,
 
+      // ⚠ **직접 입력 알람의 오디오도 무효가 된다**(2026-09-03 리뷰 21차).
+      //   프로필 id 를 그대로 두고 provider 만 바꾸므로, 이 목소리로 만들어 둔 **직접 입력
+      //   알람**의 로컬 오디오는 **옛 목소리 그대로**다 — 목록의 이름과 미리듣기는 새
+      //   목소리인데 울리는 소리만 옛것이다. 그 알람은 프리셋이 아니라 재바인더 두 갈래
+      //   어디에도 안 걸리고(테마도 없고 `voiceRandomPrompt` 도 꺼져 있다), 서버가 주는
+      //   `legacy_bucket_hints` 도 프리셋만 담으므로 **아무도 못 잡는다.**
+      //
+      //   이미 있는 장치를 쓴다: `custom_audio_invalidated_at` 을 찍으면 클라의 표식 경로가
+      //   그 목소리로 만든 직접 입력 알람을 **강등하고 사용자에게 알린다**
+      //   (`VoiceAccessSyncWorker` → `degradeCustomMessageAlarmsUsingVoiceProfile`).
+      //   ⚠ 그 강등은 원래 시스템 목소리를 건너뛰었다 — 접근권을 잃을 일이 없어서다.
+      //   제자리 교체는 그 가정이 깨지는 유일한 경우라, **표식 경로에서만** 문을 열었다
+      //   (`allowSystemVoice`). 회수 경로는 그대로다.
+      //   ⚠ **미나(102)는 찍지 않는다** — provider 가 안 바뀌어 그 오디오는 여전히 맞다.
+      `UPDATE voice_profiles SET custom_audio_invalidated_at = datetime('now')
+        WHERE id IN (
+          '70000000-0000-4000-9000-000000000101',
+          '70000000-0000-4000-9000-000000000103',
+          '70000000-0000-4000-9000-000000000104'
+        )`,
+
       // ⚠ **provider 가 어긋난 살아 있는 시스템 클립을 회수한다**(2026-09-03 리뷰 9차).
       //   #110(은퇴)과 이 마이그레이션은 **따로 실행**되고(러너가 id 별로 호출한다) 그
       //   사이에도 5분 cron 은 계속 돈다. 그 틈에 시작한 합성은 **위 UPDATE 전의 목소리**
