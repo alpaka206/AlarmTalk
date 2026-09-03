@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.encodeBucketClipKeys
+import com.alarmtalk.app.data.nextLocalSyncState
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
@@ -79,7 +80,16 @@ object StockClipLanguageRebinder {
                 ?: return@forEach
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
-            alarmDao.upsertPreservingServerSyncFields(bound.copy(bucketId = bucket))
+            val next = bound.copy(bucketId = bucket)
+            // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차). #110 은 지운 프리셋을
+            //   가리키던 서버 알람을 `mode='sound-only'`, `message_id=NULL` 로 깎는다.
+            //   여기서 로컬만 되살리고 `SYNCED` 를 그대로 두면 업로드 대상
+            //   (`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·FAILED)에 안 들어가 **영영 안
+            //   올라간다** — 다른 기기나 재설치는 사용자가 직접 알람을 고칠 때까지 그
+            //   깎인 알람을 계속 받는다. iOS 는 upsert 헬퍼가 이미 이걸 한다.
+            alarmDao.upsertPreservingServerSyncFields(
+                next.copy(syncState = next.nextLocalSyncState()),
+            )
             rebound++
         }
         rebound
@@ -132,6 +142,7 @@ object StockClipLanguageRebinder {
         if (legacy.isEmpty()) return@withContext 0
 
         var rebound = 0
+        var convertedWeather = false
         legacy.forEach { alarm ->
             val bucket = clonePrerenderBucketCategoryFor(alarm.voiceRandomContext) ?: return@forEach
             // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 지난 회차에
@@ -147,17 +158,33 @@ object StockClipLanguageRebinder {
             }
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
-            alarmDao.upsertPreservingServerSyncFields(
-                bound.copy(
-                    bucketId = bucket,
-                    // ⚠ **랜덤을 내린다.** 안 내리면 다음 회차가 이 행을 또 옛 행으로 보고
-                    // (위 술어) 매번 다시 묶으며, 편집기도 계속 '생성형' 으로 읽는다.
-                    // 문구 **종류**(`voiceRandomContext`)는 그대로 둔다 — 편집기가 열 때
-                    // 무엇을 골랐었는지 되짚는 값이다(CLAUDE.md 「일곱 자리」).
-                    voiceRandomPrompt = false,
-                ),
+            val converted = bound.copy(
+                bucketId = bucket,
+                // ⚠ **랜덤을 내린다.** 안 내리면 다음 회차가 이 행을 또 옛 행으로 보고
+                // (위 술어) 매번 다시 묶으며, 편집기도 계속 '생성형' 으로 읽는다.
+                // 문구 **종류**(`voiceRandomContext`)는 그대로 둔다 — 편집기가 열 때
+                // 무엇을 골랐었는지 되짚는 값이다(CLAUDE.md 「일곱 자리」).
+                voiceRandomPrompt = false,
             )
+            // ⚠ 위 갈래와 같은 이유로 **서버에도 올린다**(2026-09-03 리뷰 6차).
+            alarmDao.upsertPreservingServerSyncFields(
+                converted.copy(syncState = converted.nextLocalSyncState()),
+            )
+            if (bucket == "weather") convertedWeather = true
             rebound++
+        }
+        // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차).
+        //   방금 만든 행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그 값이 없으면
+        //   발사 때 **마지막 클립("인터넷이 안 돼 날씨를 못 알아봤어요")** 으로 폴백한다
+        //   (`AlarmEntity.bucketVariantIndex`). 지역도 저장돼 있고 인터넷도 되는데 그
+        //   안내가 나가는 것이다. 편집기에서 저장할 때는
+        //   `AlarmRepository.ensureDynamicVoiceRefreshScheduled` 가 같은 일을 한다 —
+        //   이 경로만 빠져 있었다.
+        if (convertedWeather) {
+            runCatching {
+                DynamicVoiceRefreshScheduler.ensurePeriodic(context)
+                DynamicVoiceRefreshScheduler.runOnce(context)
+            }
         }
         rebound
     }

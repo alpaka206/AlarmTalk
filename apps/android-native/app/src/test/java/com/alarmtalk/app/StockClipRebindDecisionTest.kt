@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.encodeBucketClipKeys
+import com.alarmtalk.app.data.nextLocalSyncState
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
@@ -164,6 +165,51 @@ class StockClipRebindDecisionTest {
         assertTrue(StockClipLanguageRebinder.shouldRebind(alarm, "ko", live, clips, expected))
     }
 
+    /**
+     * ⚠ **로컬만 되살리면 절반만 고친 것이다**(2026-09-03 리뷰 6차).
+     *
+     * #110 은 지운 프리셋을 가리키던 **서버** 알람을 `mode='sound-only'`,
+     * `message_id=NULL` 로 깎는다. 재바인딩이 Room 만 고치고 `SYNCED` 를 그대로 두면
+     * 업로드 대상(`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·FAILED)에 안 들어가 **영영 안
+     * 올라간다** — 다른 기기·재설치는 깎인 알람을 계속 받는다.
+     *
+     * 규칙은 `AlarmRepository` 에만 private 로 있었고 재바인더는 **아예 하지 않았다.**
+     * 그래서 규칙을 [nextLocalSyncState] 하나로 옮기고 이 테스트로 고정한다.
+     */
+    @Test
+    fun 재바인딩한_원격_알람은_다시_올라간다() {
+        val synced = alarmWith(
+            remoteAlarmId = "remote-1",
+            syncState = AlarmSyncStates.SYNCED,
+        )
+        assertEquals(AlarmSyncStates.DIRTY, synced.nextLocalSyncState())
+    }
+
+    /** 서버에 없던 알람은 새로 올린다. */
+    @Test
+    fun 서버에_없는_알람은_LOCAL_ONLY() {
+        assertEquals(
+            AlarmSyncStates.LOCAL_ONLY,
+            alarmWith(remoteAlarmId = null, syncState = AlarmSyncStates.SYNCED).nextLocalSyncState(),
+        )
+    }
+
+    /**
+     * **받은 알람은 올리지 않는다.** 서버 행은 전달 수단일 뿐이고, 수신자가 고친 것을
+     * 되올리면 보낸 사람의 행을 덮는다(`docs/spec/family-alarm.md`).
+     */
+    @Test
+    fun 받은_알람은_그대로_둔다() {
+        assertEquals(
+            AlarmSyncStates.SYNCED,
+            alarmWith(
+                origin = AlarmOrigins.RECEIVED_REMOTE,
+                remoteAlarmId = "remote-1",
+                syncState = AlarmSyncStates.SYNCED,
+            ).nextLocalSyncState(),
+        )
+    }
+
     private fun clip(category: String, variant: Int) = StockClip(
         messageId = "new-$variant",
         voiceProfileId = "clone-profile",
@@ -180,6 +226,9 @@ class StockClipRebindDecisionTest {
         playMode: String = AlarmPlayModes.VOICE_ONLY,
         voiceSource: String = VoiceSources.TTS_PROFILE,
         bucketId: String? = "weather",
+        origin: String = AlarmOrigins.LOCAL_OWNED,
+        remoteAlarmId: String? = null,
+        syncState: String = AlarmSyncStates.LOCAL_ONLY,
     ) = AlarmEntity(
         id = "a",
         label = "bucket",
@@ -218,10 +267,10 @@ class StockClipRebindDecisionTest {
         ttsMessageId = "clip-0",
         bucketId = bucketId,
         bucketClipKeysJson = encodeBucketClipKeys(clipKeys),
-        remoteAlarmId = null,
+        remoteAlarmId = remoteAlarmId,
         lastSyncedAtMillis = null,
-        syncState = AlarmSyncStates.LOCAL_ONLY,
-        origin = AlarmOrigins.LOCAL_OWNED,
+        syncState = syncState,
+        origin = origin,
         alarmVolumePercent = 100,
         alarmSoundUri = null,
         alarmSoundLabel = null,

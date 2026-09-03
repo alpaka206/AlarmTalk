@@ -291,11 +291,25 @@ struct AlarmTalkApp: App {
                         // 멱등이라 매 실행 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
                         // 하지 않고 다음 실행에 다시 시도한다. 아래 예약 재조정이 이어서
                         // 도므로 바뀐 클립이 그 자리에서 예약에 반영된다.
-                        await rebinder.rebindLiveGenerationRows(
+                        let converted = await rebinder.rebindLiveGenerationRows(
                             session: auth.session,
                             clips: voiceStudio.stockClips,
                             expectedVariants: voiceStudio.expectedVariants
                         )
+                        // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차).
+                        //   방금 만든 행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그
+                        //   값이 없으면 발사 때 **마지막 클립("인터넷이 안 돼 날씨를 못
+                        //   알아봤어요")** 으로 폴백한다(`BucketVariantResolver`). 지역도
+                        //   저장돼 있고 인터넷도 되는데 그 안내가 나가는 것이다. 아래 예약
+                        //   재조정보다 **먼저** 해야 그 자리에서 예약에 반영된다.
+                        //   안드로이드 짝은 `StockClipLanguageRebinder` 의
+                        //   `DynamicVoiceRefreshScheduler` 호출이다.
+                        if converted > 0, let token = auth.session?.token {
+                            let weather = WeatherVariantRefreshService(
+                                store: alarmStore, alarmKit: alarmKit
+                            )
+                            _ = await weather.refreshDue(token: token)
+                        }
                         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를
                         // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
                         // 옛 언어 파일을 그대로 재생한다 — 이 클래스가 고치려던 증상이

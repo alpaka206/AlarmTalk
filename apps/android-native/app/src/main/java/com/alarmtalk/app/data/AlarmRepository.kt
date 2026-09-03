@@ -1772,13 +1772,6 @@ class AlarmRepository(
         }
     }
 
-    private fun AlarmEntity.nextLocalSyncState(): String =
-        when {
-            origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
-            remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
-            else -> AlarmSyncStates.DIRTY
-        }
-
     private companion object {
         // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').

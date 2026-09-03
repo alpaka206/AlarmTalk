@@ -207,6 +207,26 @@ const val WEATHER_CLONE_CLIP_COUNT = 9
  * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
  * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
  */
+/**
+ * **이 행을 로컬에서 고쳤을 때 가져야 할 동기 상태.**
+ *
+ * ⚠ **규칙의 유일 출처다 — 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 6차).
+ *   예전에는 `AlarmRepository` 에만 private 로 있어서, 같은 판단이 필요한
+ *   `StockClipLanguageRebinder` 는 **아예 하지 않았다.** 그래서 재바인딩이 Room 만
+ *   고치고 `SYNCED` 를 그대로 둬, 업로드 대상(`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·
+ *   FAILED)에 안 들어가 **서버에 영영 안 올라갔다** — 다른 기기·재설치는 #110 이
+ *   깎아 둔 sound-only 알람을 계속 받는다.
+ *
+ * 받은 알람(`RECEIVED_REMOTE`)은 올리지 않는다 — 서버 행은 전달 수단일 뿐이다.
+ * iOS 짝은 `LocalAlarmStore.nextLocalSyncState(for:)` 다 — **한쪽만 고치지 말 것.**
+ */
+fun AlarmEntity.nextLocalSyncState(): String =
+    when {
+        origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
+        remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
+        else -> AlarmSyncStates.DIRTY
+    }
+
 fun AlarmEntity.bucketVariantIndex(): Int? {
     val size = bucketClipKeys().size
     if (size <= 0) return null
