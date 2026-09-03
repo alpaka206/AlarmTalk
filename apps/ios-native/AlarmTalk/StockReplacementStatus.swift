@@ -15,8 +15,12 @@ import Foundation
 final class StockReplacementStatus: ObservableObject {
     static let shared = StockReplacementStatus()
 
-    /// true 면 아직 갈아탈 알람이 남아 있다.
-    @Published private(set) var pending = false
+    /// **교체가 미완료인 계정 id.** 없으면 nil.
+    ///
+    /// ⚠ **`Bool` 하나로 두지 말 것**(2026-09-03 리뷰 18차). 이 값은 프로세스 전역인데
+    ///   한 기기에서 계정이 바뀔 수 있다 — 계정을 함께 들고 있어야 **A 의 미완료로 B 를
+    ///   가두는** 일이 없다. 화면은 "지금 계정과 같은가" 로만 판단한다.
+    @Published private(set) var pendingUserId: String?
     /// true 면 지금 재바인딩이 돌고 있다(재시도 버튼을 잠근다).
     @Published private(set) var working = false
     /// 차단 화면의 '다시 시도'. 값이 바뀌면 `AlarmTalkApp` 이 교체 절차를 다시 돈다.
@@ -31,9 +35,15 @@ final class StockReplacementStatus: ObservableObject {
     ///   옛 목소리를 물고 있는 알람은 그대로인데 앱이 쓸 수 있게 된다.
     ///   그래서 그 판정을 호출부에 맡기지 않고 **여기서** 막는다. 호출부마다 `guard` 를
     ///   적게 하면 언젠가 한 곳이 빠진다.
-    func report(pending: Bool, manifestFetched: Bool) {
+    func report(userId: String?, pending: Bool, manifestFetched: Bool) {
         guard manifestFetched else { return }
-        self.pending = pending
+        pendingUserId = pending ? userId : nil
+    }
+
+    /// 지금 계정이 막혀 있는가.
+    func isPending(for userId: String?) -> Bool {
+        guard let pendingUserId, let userId else { return false }
+        return pendingUserId == userId
     }
 
     func setWorking(_ working: Bool) {

@@ -506,7 +506,7 @@ struct AlarmTalkApp: App {
 
         let rebinder = StockClipLanguageRebinder(store: alarmStore)
         // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
-        let rebound = await rebinder.rebindIfLanguageChanged(
+        let languageOutcome = await rebinder.rebindIfLanguageChanged(
             session: auth.session,
             clips: voiceStudio.stockClips,
             // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
@@ -530,7 +530,7 @@ struct AlarmTalkApp: App {
         )
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
-        let converted = await rebinder.rebindLiveGenerationRows(
+        let legacyOutcome = await rebinder.rebindLiveGenerationRows(
             session: auth.session,
             clips: voiceStudio.stockClips,
             expectedVariants: voiceStudio.expectedVariants,
@@ -544,6 +544,20 @@ struct AlarmTalkApp: App {
         //   안드로이드 짝은 `StockClipLanguageRebinder` 의 `DynamicVoiceRefreshScheduler`.
         //   ⚠ **언어 재바인딩(`rebound`)도 함께 본다**(2026-09-03). 조건형 버킷(날씨·운세)을
         //   비켜 가던 우회를 걷어냈으므로, 이제 그 갈래도 조건 없는 행을 만들어 낸다.
+        // ⚠⚠ **디스크에 못 앉혔으면 여기서 멈춘다**(2026-09-03 리뷰 18차).
+        //   `upsert` 는 저장을 비동기로 걸어 둘 뿐이라, 쓰기가 실패해도 `store.alarms` 는
+        //   이미 바뀌어 있다. 그대로 진행하면 아래 정리가 **메모리 위의 행**을 보고 옛
+        //   오디오를 지우고, 상태 보고가 문을 연다 — 그 뒤 앱이 종료되면 다음 콜드 스타트가
+        //   **없는 파일을 가리키는 옛 행**을 읽는다(내 알람은 서버에서 되받는 경로가 없다).
+        //   그래서 정리도 보고도 하지 않고, 교체를 **미완료로 남긴다**(멱등).
+        guard languageOutcome.persisted, legacyOutcome.persisted else {
+            StockReplacementStatus.shared.report(
+                userId: auth.session?.user.id, pending: true, manifestFetched: manifestFetched
+            )
+            return
+        }
+        let rebound = languageOutcome.rebound
+        let converted = legacyOutcome.rebound
         if converted > 0 || rebound > 0, let token = auth.session?.token {
             let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
             _ = await weather.refreshDue(token: token)
@@ -565,6 +579,7 @@ struct AlarmTalkApp: App {
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         StockReplacementStatus.shared.report(
+            userId: auth.session?.user.id,
             pending: rebinder.hasPendingReplacement(
                 clips: voiceStudio.stockClips,
                 // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후

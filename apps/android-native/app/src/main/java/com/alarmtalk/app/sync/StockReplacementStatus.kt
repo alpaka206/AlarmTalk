@@ -21,10 +21,16 @@ import kotlinx.coroutines.flow.asStateFlow
  * 돌아가고, 다음 워커 실행이 곧바로 다시 판정한다 — 굳은 채로 남지 않는다.
  */
 object StockReplacementStatus {
-    private val _pending = MutableStateFlow(false)
-
-    /** true 면 아직 갈아탈 알람이 남아 있다. */
-    val pending: StateFlow<Boolean> = _pending.asStateFlow()
+    /**
+     * **교체가 미완료인 계정 id.** 없으면 null.
+     *
+     * ⚠ **`Boolean` 하나로 두지 말 것**(2026-09-03 리뷰 18차). 이 값은 **프로세스 전역**인데
+     *   작업은 `WORK_NAME` 하나에 `KEEP` 이라, A 의 실행 중에 B 가 로그인하면 B 의 enqueue 가
+     *   버려지고 A 의 결과만 남는다. 계정을 함께 들고 있어야 **A 의 미완료로 B 를 가두는**
+     *   일이 없다 — 화면은 "지금 계정과 같은가" 로만 판단한다.
+     */
+    private val _pendingUserId = MutableStateFlow<String?>(null)
+    val pendingUserId: StateFlow<String?> = _pendingUserId.asStateFlow()
 
     /** true 면 지금 워커가 돌고 있다(재시도 버튼을 잠근다). */
     private val _working = MutableStateFlow(false)
@@ -33,15 +39,15 @@ object StockReplacementStatus {
     /**
      * 판정을 기록한다. **매니페스트를 못 받았으면 아무것도 하지 않는다.**
      *
-     * ⚠ **판단 근거가 없을 때 `false` 를 적으면 안 된다**(2026-09-03 리뷰 16차).
-     *   앞 회차가 '미완료' 로 세워 둔 문을, 오프라인 재시도 한 번이 **열어 버린다** —
-     *   옛 목소리를 물고 있는 알람은 그대로인데 앱이 쓸 수 있게 된다.
-     *   그래서 그 판정을 호출부에 맡기지 않고 **여기서** 막는다. 호출부마다 가드를
-     *   적게 하면 언젠가 한 곳이 빠진다. iOS 짝(`StockReplacementStatus.swift`)도 같다.
+     * ⚠ **판단 근거가 없을 때 '완료' 를 적으면 안 된다**(2026-09-03 리뷰 16차).
+     *   앞 회차가 세워 둔 문을 오프라인 재시도 한 번이 **열어 버린다** — 옛 목소리를 물고
+     *   있는 알람은 그대로인데 앱이 쓸 수 있게 된다. 그래서 그 판정을 호출부에 맡기지 않고
+     *   **여기서** 막는다. 호출부마다 가드를 적게 하면 언젠가 한 곳이 빠진다.
+     *   iOS 짝(`StockReplacementStatus.swift`)도 같다.
      */
-    fun report(pending: Boolean, manifestFetched: Boolean) {
+    fun report(userId: String?, pending: Boolean, manifestFetched: Boolean) {
         if (!manifestFetched) return
-        _pending.value = pending
+        _pendingUserId.value = if (pending) userId else null
     }
 
     fun setWorking(working: Boolean) {

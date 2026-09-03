@@ -119,12 +119,25 @@ type WeatherGeocodingResponse = {
   }>;
 };
 
+/**
+ * 클라가 보낸 카테고리를 **저장할 값**으로 접는다.
+ *
+ * ⚠ **받는 것과 저장하는 것을 같게 두지 말 것**(2026-09-03 리뷰 18차). 옛 이름(`love`)은
+ *   구버전 앱과 기기 로컬 DB 가 계속 보내오므로 **받아 주어야** 하지만, 그대로 저장하면
+ *   `#110` 이 한 번 옮겨 놓은 것을 **새 생성이 되살린다** — 유료 클론이 문구를 하나 만들
+ *   때마다 `messages.category = 'love'` 가 다시 생기고, `cheer` 로 거르는 목록·매니페스트가
+ *   그 행을 못 본다. 접기는 **요청 경계에서 한 번**, 그게 곧 저장값이다.
+ *   (`normalizeStockCategory` 는 `stockPresetCategory` 에서 프리셋을 **찾을 때만** 쓰였고,
+ *    저장되는 `category` 는 건드리지 않았다.)
+ */
 function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
   const raw = category.trim();
-  if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
-    return raw as (typeof TTS_CATEGORIES)[number];
-  }
-  return null;
+  if (!(TTS_CATEGORIES as readonly string[]).includes(raw)) return null;
+  // 옛 이름 → 정본. 단일 출처는 `lib/stock-clips.ts` 의 별칭 표다.
+  const folded = normalizeStockCategory(raw);
+  return ((TTS_CATEGORIES as readonly string[]).includes(folded)
+    ? folded
+    : raw) as (typeof TTS_CATEGORIES)[number];
 }
 
 function randomIndex(length: number): number {

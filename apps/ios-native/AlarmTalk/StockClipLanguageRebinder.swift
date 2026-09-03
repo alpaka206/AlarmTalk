@@ -17,6 +17,23 @@ import Foundation
 /// 있는 것)만 고친다 — 사용자가 직접 친 문구를 언어가 바뀌었다고 갈아치우면 안 된다.
 ///
 /// 안드로이드 짝은 `sync/StockClipLanguageRebinder.kt` 다 — **한쪽만 고치지 말 것.**
+/// 재바인딩 결과. **개수만으로는 부족하다**(2026-09-03 리뷰 18차).
+///
+/// `upsert` 는 저장을 비동기로 걸어 둘 뿐이라, 쓰기가 실패해도 `store.alarms` 는 이미
+/// 바뀌어 있다. 그래서 개수 0 을 돌려주는 것만으로는 호출부를 못 막는다 — 호출부는
+/// **메모리 위의 행**을 보고 옛 오디오를 지우고 차단 화면을 연다. 앱이 그 사이 종료되면
+/// 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽고, 내 알람은 서버에서 되받는
+/// 경로가 없어 오프라인 복구가 불가능하다.
+///
+/// 그래서 실패를 **값으로** 들고 나간다. `persisted == false` 면 호출부는 정리도 상태
+/// 보고도 하지 않고, 교체를 **미완료로 남긴다**(다음 회차가 처음부터 다시 한다, 멱등).
+struct StockRebindOutcome {
+    let rebound: Int
+    let persisted: Bool
+
+    static let none = StockRebindOutcome(rebound: 0, persisted: true)
+}
+
 @MainActor
 struct StockClipLanguageRebinder {
 
@@ -50,8 +67,8 @@ struct StockClipLanguageRebinder {
         conditionInputs: DynamicPromptPreferences? = nil,
         /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
         callerUserId: String? = nil
-    ) async -> Int {
-        guard let token = session?.token, !clips.isEmpty else { return 0 }
+    ) async -> StockRebindOutcome {
+        guard let token = session?.token, !clips.isEmpty else { return .none }
 
         // 지금 매니페스트에 살아 있는 클립 키. 알람이 들고 있는 키가 여기 없으면 그
         // 클립은 **서버에서 사라진 것**이다(문구·목소리를 갈면 message id 가 새로 난다).
@@ -67,7 +84,7 @@ struct StockClipLanguageRebinder {
                 clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
             )
         }
-        guard !stale.isEmpty else { return 0 }
+        guard !stale.isEmpty else { return .none }
 
         var rebound = 0
         var conditionBucketRebound = false
@@ -106,12 +123,13 @@ struct StockClipLanguageRebinder {
         //   그 사이 앱이 종료되면 다음 콜드 스타트가 **옛 행을 다시 읽는데 그 행이
         //   가리키는 파일은 이미 없다** — 내 알람은 서버에서 되받는 경로가 없어
         //   오프라인 복구가 불가능하다.
-        //   쓰기가 실패하면 **0을 돌려준다** — 호출부는 그걸 '아직 안 끝났다' 로 읽어
-        //   정리를 미루고 문을 닫아 둔다(다음 회차가 처음부터 다시 한다, 멱등).
+        //   ⚠ **개수 0 으로는 못 막는다**(리뷰 18차). `upsert` 가 이미 `store.alarms` 를
+        //     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
+        //     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
         if rebound > 0, !store.saveNow() {
-            return 0
+            return StockRebindOutcome(rebound: rebound, persisted: false)
         }
-        return rebound
+        return StockRebindOutcome(rebound: rebound, persisted: true)
     }
 
     /// **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
@@ -408,8 +426,8 @@ struct StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = nil,
         /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
         callerUserId: String? = nil
-    ) async -> Int {
-        guard let token = session?.token, !clips.isEmpty else { return 0 }
+    ) async -> StockRebindOutcome {
+        guard let token = session?.token, !clips.isEmpty else { return .none }
 
         // 남의 알람은 건드리지 않는다 — `rebindIfLanguageChanged` 와 같은 이유.
         let visibleLegacy = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
@@ -422,7 +440,7 @@ struct StockClipLanguageRebinder {
             guard record.voiceSourceEnum != .localAudio else { return false }
             return true
         }
-        guard !legacy.isEmpty else { return 0 }
+        guard !legacy.isEmpty else { return .none }
 
         var rebound = 0
         for record in legacy {
@@ -457,9 +475,9 @@ struct StockClipLanguageRebinder {
         //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
         //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
         if rebound > 0, !store.saveNow() {
-            return 0
+            return StockRebindOutcome(rebound: rebound, persisted: false)
         }
-        return rebound
+        return StockRebindOutcome(rebound: rebound, persisted: true)
     }
 
     /// **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).

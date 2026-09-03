@@ -317,20 +317,37 @@ class StockClipPrefetchWorker(
                 //   묶기는 끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을
                 //   막으면 지울 것이 없는 사용자를 이유 없이 가둔다.
                 runCatching {
-                    StockReplacementStatus.report(
-                        StockClipLanguageRebinder.hasPendingReplacement(
-                            context = applicationContext,
-                            clips = allClips,
-                            language = language,
-                            // 이 자리는 매니페스트를 **받은 뒤**다 — 비어 있어도 그건
-                            // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                    // ⚠⚠ **이 회차가 아직 '지금 계정' 의 것인지 확인하고 적는다**
+                    //   (2026-09-03 리뷰 18차). 이 작업은 `WORK_NAME` 하나에 `KEEP` 이라,
+                    //   A 의 실행 중에 B 가 로그인하면 **B 의 enqueue 가 버려진다.** 그런데
+                    //   이 실행은 계속 A 로 스코프돼 있고 상태는 **프로세스 전역**이다 —
+                    //   A 의 결과로 B 를 가두거나(true), B 의 옛 알람을 갈아타지도 못한 채
+                    //   문을 열어 준다(false).
+                    //   계정이 바뀌었으면 **적지 않고**, B 를 위해 다시 큐에 넣는다.
+                    val current = AuthSessionStore(applicationContext).read()
+                    val stillSameAccount = current?.user?.id == session.user.id &&
+                        sessionStore.sessionGeneration() == startGeneration
+                    if (stillSameAccount) {
+                        StockReplacementStatus.report(
+                            userId = session.user.id,
+                            pending = StockClipLanguageRebinder.hasPendingReplacement(
+                                context = applicationContext,
+                                clips = allClips,
+                                language = language,
+                                // 이 자리는 매니페스트를 **받은 뒤**다 — 비어 있어도 그건
+                                // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                                manifestFetched = true,
+                                legacyHints = legacyHints,
+                                callerUserId = session.user.id,
+                            ),
+                            // 못 받았으면 앞 판정을 지킨다 — `report` 가 스스로 막는다.
                             manifestFetched = true,
-                            legacyHints = legacyHints,
-                            callerUserId = session.user.id,
-                        ),
-                        // 못 받았으면 앞 판정을 지킨다 — `report` 가 스스로 막는다.
-                        manifestFetched = true,
-                    )
+                        )
+                    } else {
+                        // 이 실행이 끝나야 유니크 작업 자리가 비므로, 여기서 넣으면
+                        // 새 계정의 회차가 확실히 잡힌다.
+                        enqueue(applicationContext)
+                    }
                 }.onFailure { AlarmTalkLog.reportError("Stock replacement status probe failed", it) }
             }
 

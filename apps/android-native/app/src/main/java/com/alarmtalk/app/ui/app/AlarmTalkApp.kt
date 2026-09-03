@@ -1049,8 +1049,12 @@ internal fun AlarmTalkApp(
       // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
       // ⚠ **업데이트 게이트보다 뒤에 둔다** — 구버전이면 받을 것 자체가 다르므로 업데이트가
       //   먼저다. 그리고 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
-      val stockReplacementPending by com.alarmtalk.app.sync.StockReplacementStatus.pending
-          .collectAsStateWithLifecycle()
+      // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
+      //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
+      val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
+          .pendingUserId.collectAsStateWithLifecycle()
+      val stockReplacementPending = stockReplacementPendingUserId != null &&
+          stockReplacementPendingUserId == authSession?.user?.id
       val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
           .collectAsStateWithLifecycle()
 

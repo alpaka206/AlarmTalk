@@ -95,7 +95,7 @@ struct RootView: View {
                     onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
                     onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
                 )
-            } else if stockReplacement.pending {
+            } else if stockReplacement.isPending(for: auth.session?.user.id) {
                 // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
                 // 이름인데 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시).
                 //
