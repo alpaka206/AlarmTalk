@@ -1108,6 +1108,15 @@ export async function generateStockClip(
     cacheKey,
     generated.outputFormat,
   );
+  // ⚠ **올리기 전에 이 키의 삭제 예약을 취소한다**(2026-09-03 리뷰 13차).
+  //   오브젝트 키는 cacheKey 에서 결정론적으로 나오므로, 낡은 회차가 남긴 삭제 예약이
+  //   **내가 지금 올리는 바로 그 키**를 가리킬 수 있다. 취소하지 않으면 다음 cron 틱이
+  //   방금 올린 음원을 지우고, 그걸 가리키는 알람은 소리를 잃는다.
+  //   드레인도 지우기 직전에 예약이 아직 있는지 다시 본다 — 둘이 한 쌍이다.
+  await db.execute({
+    sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
+    args: [audioObjectKey],
+  });
   await storage.storeAtKey(audioObjectKey, {
     bytes,
     userId: target.ownerUserId,

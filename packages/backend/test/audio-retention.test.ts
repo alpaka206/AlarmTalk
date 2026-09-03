@@ -185,6 +185,29 @@ describe('drainExternalDeletions — R2 오브젝트', () => {
     expect(deleted, '게시된 음원을 지웠다').toEqual([]);
   });
 
+  /**
+   * ⚠ **업로더가 예약을 취소했으면 지우지 않는다**(2026-09-03 리뷰 13차).
+   *
+   * 렌더는 올리기 전에 자기 키의 삭제 예약을 지운다(`generateStockClip`). 예약이
+   * 사라졌다는 것은 **누군가 이 키를 지금 쓰고 있다**는 뜻이므로 물러선다.
+   */
+  it('삭제 직전에 예약이 사라졌으면 지우지 않는다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/contended.mp3', '-2 hours');
+    // 드레인이 목록을 읽은 뒤, 삭제 직전 사이에 렌더가 예약을 취소한 상황을 만든다.
+    const bucket = {
+      head: async () => {
+        await db.execute("DELETE FROM pending_external_deletions WHERE id = 'p1'");
+        return { uploaded: new Date(Date.now() - 120 * 60_000) };
+      },
+      delete: async (key: string) => { deleted.push(key); },
+    };
+    await drainExternalDeletions(db, { VOICE_BUCKET: bucket } as never);
+
+    expect(deleted, '업로더가 쓰고 있는 키를 지웠다').toEqual([]);
+  });
+
   /** 오브젝트가 이미 없으면 지울 것도 없다 — 큐에서 내린다(무한 재시도 방지). */
   it('오브젝트가 이미 없으면 큐에서 내린다', async () => {
     const db = await setupDb();

@@ -317,6 +317,22 @@ class StockClipRebindDecisionTest {
                 ),
             )
         }
+        // ⚠ **언어가 어긋난 기기에서도 마찬가지다**(2026-09-03 리뷰 13차). 받은 알람은
+        //   `voiceLanguage` 가 null 이라 영어·일본어 기기에서는 **언어 검사가 먼저 true 를
+        //   돌려주며 이 면제를 건너뛰었다** — 12차에 면제를 넣고도 자리를 잘못 잡아
+        //   한국어 기기에서만 듣던 셈이다.
+        for (bucket in listOf("weather", "fortune")) {
+            assertFalse(
+                "영어 기기에서 매칭형 버킷($bucket)을 조건 없이 갈아탔다",
+                StockClipLanguageRebinder.needsRebind(
+                    alarmWith(
+                        bucketId = bucket, clipKeys = emptyList(),
+                        ttsMessageId = "old-0", language = null,
+                    ),
+                    "en", live,
+                ),
+            )
+        }
         // 회전형은 조건이 필요 없으므로 그대로 갈아탄다.
         assertTrue(
             StockClipLanguageRebinder.needsRebind(

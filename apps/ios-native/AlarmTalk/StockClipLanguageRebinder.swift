@@ -121,23 +121,22 @@ struct StockClipLanguageRebinder {
         guard record.playModeEnum != .alarmOnly else { return false }
         // 녹음 알람에는 문구 개념이 없다.
         guard record.voiceSourceEnum != .localAudio else { return false }
+        let bound = record.bucketClipKeys ?? []
+        // ⚠ **이 판정이 언어 검사보다 앞에 있어야 한다**(2026-09-03 리뷰 13차). 날씨·운세는
+        //   조건이나 사주 입력으로 클립을 고르는데 받은 알람에는 그 값이 없다. 값 없이 전체
+        //   세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로 떨어진다.
+        //   받은 알람은 `voiceLanguage` 도 nil 이라, 영어·일본어 기기에서는 언어 검사가
+        //   먼저 true 를 돌려주며 이 면제를 건너뛴다.
+        if bound.isEmpty,
+           let bucket = normalizedBucketId(record.bucketId),
+           MatchingBucketIds.contains(bucket) {
+            return false
+        }
+        // ① 앱 언어가 바뀌었다 — 원래 목적.
         let current: String = record.voiceLanguage ?? "ko"
         if current != language { return true }
-        let bound = record.bucketClipKeys ?? []
-        // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차). 받은 가족 알람이
-        //    그렇다 — 동기가 `bucketId` 와 대표 클립 하나만 적고 목록은 비운다. 게다가
-        //    `voiceLanguage` 가 nil 이라 한국어 기기에서는 ①에도 안 걸리고, 목록이 비어
-        //    ②에도 안 걸린다 — 어디에도 안 걸려 옛 대사를 영원히 재생한다.
+        // ③ 테마는 아는데 클립 목록이 없는 알람(받은 가족 알람) — 대표 클립으로 판정한다.
         if bound.isEmpty {
-            // ⚠ **날씨·운세는 이 갈래로 갈아타지 않는다**(2026-09-03 리뷰 12차). 그 둘은
-            //   조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데, 받은 알람에는
-            //   그 값이 **없다**(보낸 사람의 지역·사주를 받지 않는다). 값 없이 전체 세트를
-            //   묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필 해시로
-            //   떨어진다 — 옛 대사를 그대로 두는 것보다 나쁘다.
-            if let bucket = normalizedBucketId(record.bucketId),
-               MatchingBucketIds.contains(bucket) {
-                return false
-            }
             guard let messageId = (record.ttsMessageId).nilIfBlank else { return false }
             return !liveKeys.contains(AudioCacheStore.stockCacheKey(messageId: messageId))
         }
@@ -176,12 +175,18 @@ struct StockClipLanguageRebinder {
     /// 안드로이드 짝은 `StockClipLanguageRebinder.pruneReplacedStockAudio` 다.
     ///
     /// - Returns: 지운 파일 수. 아직 때가 아니면 0.
+    ///
+    /// ⚠ **파일 훑기·삭제는 메인 액터에서 하지 않는다**(2026-09-03). 이 클래스는
+    ///   `@MainActor` 라 그냥 부르면 디렉터리 열거와 `removeItem` 이 **UI 스레드에서** 돈다.
+    ///   앱 시작 직후에 도는 경로라, 그동안 화면이 굳어 탭이 먹지 않았다(UI 테스트가
+    ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
+    ///   떼어 낸다.
     @discardableResult
     func pruneReplacedStockAudio(
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         expectedVariants: ExpectedVariantCounts? = nil
-    ) -> Int {
+    ) async -> Int {
         guard !clips.isEmpty else { return 0 }
         // ⚠⚠ **알람이 디스크에서 다 올라오기 전에는 절대 지우지 않는다**(2026-09-03 리뷰 10차).
         //   `LocalAlarmStore` 는 콜드 스타트에 `alarms = []` 로 시작해 **비동기로** 채운다.
@@ -219,11 +224,14 @@ struct StockClipLanguageRebinder {
                 referencedFileNames.insert((uri as NSString).lastPathComponent)
             }
         }
-        return cache.pruneReplacedStockAudio(
-            referencedKeys: referenced,
-            liveKeys: liveKeys,
-            referencedFileNames: referencedFileNames
-        )
+        let store = cache
+        return await Task.detached(priority: .utility) {
+            store.pruneReplacedStockAudio(
+                referencedKeys: referenced,
+                liveKeys: liveKeys,
+                referencedFileNames: referencedFileNames
+            )
+        }.value
     }
 
     /// 저장된 버킷 id 를 **현재 이름**으로 접는다. 접기의 단일 출처는

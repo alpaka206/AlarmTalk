@@ -202,6 +202,23 @@ export async function drainExternalDeletions(
             args: [`r2://${ref}`],
           });
           if (stillReferenced.rows.length === 0) {
+            // ⚠ **지우기 직전에 예약이 아직 있는지 다시 본다**(2026-09-03 리뷰 13차).
+            //   렌더는 올리기 전에 자기 키의 예약을 지운다(`generateStockClip`). 그래서
+            //   예약이 사라졌다는 것은 **누군가 이 키를 지금 쓰고 있다**는 뜻이다.
+            //
+            //   ⚠ **이것으로도 완전히 닫히지는 않는다.** 이 확인과 R2 삭제 사이는 DB 밖이라
+            //   원자적일 수 없다 — 그 찰나에 올라온 오브젝트는 여전히 지워질 수 있다.
+            //   완전한 해법은 회차마다 다른 키에 올리고 게시할 때 승격하는 것인데,
+            //   `generated_audio_assets.request_hash` 가 UNIQUE 라 그러면 같은 내용의
+            //   두 번째 행이 `INSERT OR IGNORE` 로 무시되고, 그때 `messages.audio_url` 과
+            //   `ga.audio_object_key` 가 어긋나 `findMissingStockTargets` 가 그 클립을
+            //   **영영 미완성으로 읽는다.** 키 체계를 바꾸려면 그 제약부터 손봐야 한다.
+            //   남은 창은 렌더 한 회차(수 초)가 아니라 **DB 왕복 한 번**이다.
+            const stillQueued = await db.execute({
+              sql: 'SELECT 1 FROM pending_external_deletions WHERE id = ? LIMIT 1',
+              args: [id],
+            });
+            if (stillQueued.rows.length === 0) continue;
             await bucket.delete(ref);
           }
         }

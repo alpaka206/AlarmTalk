@@ -246,23 +246,27 @@ object StockClipLanguageRebinder {
         if (alarm.bucketId.isNullOrBlank()) return false
         if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
-        if ((alarm.voiceLanguage ?: "ko") != language) return true
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
+        // ⚠ **이 판정이 언어 검사보다 앞에 있어야 한다**(2026-09-03 리뷰 13차).
+        //   날씨·운세는 조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데,
+        //   받은 알람에는 그 값이 **없다**(보낸 사람의 지역·사주를 받지 않는다). 값 없이
+        //   전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로, 운세는 빈 프로필
+        //   해시로 떨어진다 — 옛 대사를 그대로 두는 것보다 나쁘다.
+        //   그런데 받은 알람은 `voiceLanguage` 도 null 이라, 영어·일본어 기기에서는
+        //   **언어 검사가 먼저 true 를 돌려주며 이 면제를 건너뛴다.** 12차에 면제를 넣고도
+        //   자리를 잘못 잡아 한국어 기기에서만 듣던 셈이다.
+        if (bound.isEmpty() &&
+            normalizedBucketId(alarm.bucketId) in com.alarmtalk.app.data.MatchingBucketIds
+        ) {
+            return false
+        }
+        // ① 앱 언어가 바뀌었다 — 이 함수의 원래 목적.
+        if ((alarm.voiceLanguage ?: "ko") != language) return true
         // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
         //    받은 가족 알람이 그렇다 — 동기가 `bucketId` 와 대표 클립 하나만 적고
-        //    `bucketClipKeysJson` 은 비운다(`RemoteAlarmPullSyncService`). 게다가
-        //    `voiceLanguage` 가 null 이라 한국어 기기에서는 ①에도 안 걸리고, 목록이
-        //    비어 있어 ②에도 안 걸린다 — **어디에도 안 걸려 옛 대사를 영원히 재생한다.**
-        //    그 대표 클립이 매니페스트에서 사라졌으면 갈아탈 때다.
+        //    `bucketClipKeysJson` 은 비운다(`RemoteAlarmPullSyncService`). 목록이 비어
+        //    있어 ②에도 안 걸리므로, 그 대표 클립이 매니페스트에서 사라졌는지로 판정한다.
         if (bound.isEmpty()) {
-            // ⚠ **날씨·운세는 이 갈래로 갈아타지 않는다**(2026-09-03 리뷰 12차).
-            //   그 둘은 조건(`contextVariantIndex`)이나 사주 입력으로 클립을 고르는데,
-            //   받은 알람에는 그 값이 **없다**(보낸 사람의 지역·사주를 받지 않는다).
-            //   값 없이 전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로,
-            //   운세는 빈 프로필 해시로 떨어진다 — 옛 대사를 그대로 두는 것보다 나쁘다.
-            if (normalizedBucketId(alarm.bucketId) in com.alarmtalk.app.data.MatchingBucketIds) {
-                return false
-            }
             val messageId = alarm.ttsMessageId?.trim()?.takeIf { it.isNotEmpty() } ?: return false
             return "stock_$messageId" !in liveKeys
         }
