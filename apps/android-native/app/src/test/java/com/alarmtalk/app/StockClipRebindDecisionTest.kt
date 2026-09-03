@@ -13,6 +13,7 @@ import com.alarmtalk.app.data.encodeBucketClipKeys
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.sync.StockClipLanguageRebinder
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -120,6 +121,47 @@ class StockClipRebindDecisionTest {
                 alarmWith(voiceSource = VoiceSources.LOCAL_AUDIO, language = "en"), "ko", live,
             ),
         )
+    }
+
+    /**
+     * ⚠ **언어가 바뀐 갈래에도 완전성이 필요하다**(2026-09-03 리뷰 5차).
+     *
+     * iOS 가 이 지점을 놓쳤다 — 언어 불일치에서 먼저 true 를 돌려주고 완전성 검사를
+     * 건너뛰었다. 시딩이 도는 중에 언어를 바꾸면 **부분 세트가 박히고, 그 키는 살아
+     * 있으니 다시는 stale 로 안 잡힌다.** 두 술어를 손으로 조립하던 것을
+     * [StockClipLanguageRebinder.shouldRebind] 한 이름으로 묶은 이유다.
+     */
+    @Test
+    fun 언어가_바뀌어도_세트가_모자라면_갈아타지_않는다() {
+        val expected = ExpectedVariantCounts(system = emptyMap(), clone = mapOf("weather" to 9))
+        val alarm = alarmWith(language = "en", bucketId = "weather")
+        val partial = (0..2).map { clip("weather", it) }
+        // 다시 묶어야 하는 것은 맞다 — 언어가 어긋났다.
+        assertTrue(StockClipLanguageRebinder.needsRebind(alarm, "ko", live))
+        // 그래도 세트가 모자라면 갈아타지 않는다.
+        assertFalse(StockClipLanguageRebinder.shouldRebind(alarm, "ko", live, partial, expected))
+        val complete = (0..8).map { clip("weather", it) }
+        assertTrue(StockClipLanguageRebinder.shouldRebind(alarm, "ko", live, complete, expected))
+    }
+
+    /**
+     * ⚠ **저장된 옛 이름(`love`)은 접어서 새 매니페스트(`cheer`)와 맞춘다.**
+     *
+     * 접지 않으면 variant 가 0개로 잡혀 [StockClipLanguageRebinder.replacementIsComplete]
+     * 가 **영원히 false** 라 그 알람은 갈아탈 방법이 사라진다(리뷰 4차). 그리고 접기를
+     * 판정에만 쓰면 `bindBucket` 이 옛 이름으로 매니페스트를 뒤져 역시 영원히 건너뛴다
+     * (리뷰 5차) — 그래서 **묶는 자리도 같은 값을 쓴다.**
+     */
+    @Test
+    fun 옛_이름으로_저장된_알람도_새_이름_클립으로_갈아탄다() {
+        assertEquals("cheer", StockClipLanguageRebinder.normalizedBucketId("love"))
+        // 접지 않는 이름은 그대로 둔다.
+        assertEquals("weather", StockClipLanguageRebinder.normalizedBucketId("weather"))
+
+        val expected = ExpectedVariantCounts(system = emptyMap(), clone = mapOf("cheer" to 3))
+        val alarm = alarmWith(bucketId = "love")
+        val clips = (0..2).map { clip("cheer", it) }
+        assertTrue(StockClipLanguageRebinder.shouldRebind(alarm, "ko", live, clips, expected))
     }
 
     private fun clip(category: String, variant: Int) = StockClip(

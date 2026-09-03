@@ -63,19 +63,23 @@ object StockClipLanguageRebinder {
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
 
         val stale = alarmDao.getAllAlarms().filter {
-            needsRebind(it, language, liveKeys) &&
-                // ⚠ **갈아탈 세트가 완전할 때만 갈아탄다**(2026-09-03 리뷰 3차).
-                //   아래 주석 참조 — 부분 세트를 박으면 영구히 굳는다.
-                replacementIsComplete(it, clips, language, expectedVariants)
+            shouldRebind(it, language, liveKeys, clips, expectedVariants)
         }
         if (stale.isEmpty()) return@withContext 0
 
         var rebound = 0
         stale.forEach { alarm ->
-            val bucket = alarm.bucketId ?: return@forEach
+            // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
+            //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
+            //   `bindBucket` 이 여전히 옛 이름(`love`)으로 매니페스트를 뒤져 아무것도
+            //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
+            //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
+            val bucket = normalizedBucketId(alarm.bucketId) ?: return@forEach
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
-            alarmDao.upsertPreservingServerSyncFields(bound)
+            // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
+            // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
+            alarmDao.upsertPreservingServerSyncFields(bound.copy(bucketId = bucket))
             rebound++
         }
         rebound
@@ -182,6 +186,29 @@ object StockClipLanguageRebinder {
      *   다시 묶으면 매 회차 재바인딩이 돌아 네트워크를 낭비하고, 조건형(날씨·운세)은
      *   **아직 안 구워진 자리로 인덱스가 밀린다.** 전부 죽었을 때만 갈아탄다.
      */
+    /**
+     * **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
+     *
+     * ⚠ **두 술어를 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 5차). 예전에는
+     *   안드로이드가 `needsRebind(...) && replacementIsComplete(...)` 로 조립하고 iOS 는
+     *   필터 안에서 인라인으로 썼는데, iOS 쪽이 **언어 불일치에서 먼저 return 해**
+     *   완전성 검사를 건너뛰었다. 같은 규칙이 두 모양으로 적혀 있으면 한쪽만 어긋난 것을
+     *   아무도 못 본다. 이제 **이름이 하나**고 iOS 짝도 같은 이름이다.
+     *
+     * 언어가 바뀐 갈래에도 완전성이 필요하다 — 시딩이 도는 중에 언어를 바꾸면
+     * 부분 세트가 박히고, 그 키는 살아 있으니 **다시는 stale 로 안 잡힌다.**
+     */
+    @JvmStatic
+    internal fun shouldRebind(
+        alarm: AlarmEntity,
+        language: String,
+        liveKeys: Set<String>,
+        clips: List<StockClip>,
+        expectedVariants: ExpectedVariantCounts?,
+    ): Boolean =
+        needsRebind(alarm, language, liveKeys) &&
+            replacementIsComplete(alarm, clips, language, expectedVariants)
+
     @JvmStatic
     internal fun needsRebind(
         alarm: AlarmEntity,

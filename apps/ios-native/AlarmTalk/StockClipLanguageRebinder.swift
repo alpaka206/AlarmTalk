@@ -52,40 +52,78 @@ struct StockClipLanguageRebinder {
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
 
         let stale: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
-            guard (record.bucketId).nilIfBlank != nil else { return false }
-            guard record.playModeEnum != .alarmOnly else { return false }
-            // 녹음 알람에는 문구 개념이 없다.
-            guard record.voiceSourceEnum != .localAudio else { return false }
-            // ① 앱 언어가 바뀌었다 — 원래 이 함수의 목적.
-            let current: String = record.voiceLanguage ?? "ko"
-            if current != language { return true }
-            // ② **같은 언어인데 묶여 있는 클립이 서버에서 사라졌다**(2026-09-03 리뷰,
-            //    안드로이드와 같은 규칙). 발사는 저장된 키와 로컬 파일만 보고 서버를 묻지
-            //    않으므로(비행기모드 재생), 문구·목소리를 통째로 갈면 그 알람은 **지워진
-            //    대사를 옛 목소리로 영원히 재생한다** — 언어가 안 바뀌어 여기에도 안 걸린다.
-            let bound = record.bucketClipKeys ?? []
-            guard !bound.isEmpty, bound.allSatisfy({ !liveKeys.contains($0) }) else { return false }
-            // ⚠ **갈아탈 세트가 완전할 때만 갈아탄다**(2026-09-03 리뷰 3차, 안드로이드와
-            //   같은 규칙). 옛 키가 다 죽은 직후 시딩이 **첫 variant 만** 올린 순간에
-            //   갈아타면, 그 하나짜리 세트가 알람에 박히고 **그 키는 살아 있으므로 다음
-            //   회차부터 stale 로도 안 잡힌다** — 시딩이 끝나도 영원히 첫 클립만 갖는다.
-            //   날씨·운세는 절대 인덱스로 조건을 고르니 그게 곧 엉뚱한 조건이다.
-            return Self.replacementIsComplete(
-                record: record, clips: clips, language: language, expectedVariants: expectedVariants,
+            Self.shouldRebind(
+                record: record, language: language, liveKeys: liveKeys,
+                clips: clips, expectedVariants: expectedVariants,
             )
         }
         guard !stale.isEmpty else { return 0 }
 
         var rebound = 0
         for record in stale {
-            guard let bucket = (record.bucketId).nilIfBlank else { continue }
-            guard let bound = await bindBucket(
+            // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
+            //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
+            //   `bindBucket` 이 여전히 옛 이름(`love`)으로 매니페스트를 뒤져 아무것도
+            //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
+            //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
+            guard let bucket = Self.normalizedBucketId(record.bucketId) else { continue }
+            guard var bound = await bindBucket(
                 record: record, bucket: bucket, clips: clips, language: language, token: token
             ) else { continue }
+            // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
+            // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
+            bound.bucketId = bucket
             _ = store.upsertPreservingServerSyncFields(bound)
             rebound += 1
         }
         return rebound
+    }
+
+    /// **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
+    ///
+    /// ⚠ **두 술어를 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 5차). 예전에는
+    ///   안드로이드가 `needsRebind(...) && replacementIsComplete(...)` 로 조립하고 iOS 는
+    ///   필터 안에서 인라인으로 썼는데, iOS 쪽이 **언어 불일치에서 먼저 return 해**
+    ///   완전성 검사를 건너뛰었다. 시딩이 도는 중에 언어를 바꾸면 부분 세트가 박히고,
+    ///   그 키는 살아 있으니 **다시는 stale 로 안 잡힌다.**
+    ///
+    /// 안드로이드 짝은 `sync/StockClipLanguageRebinder.kt` 의 같은 이름이다.
+    static func shouldRebind(
+        record: LocalAlarmRecord,
+        language: String,
+        liveKeys: Set<String>,
+        clips: [StockClip],
+        expectedVariants: ExpectedVariantCounts?
+    ) -> Bool {
+        needsRebind(record: record, language: language, liveKeys: liveKeys)
+            && replacementIsComplete(
+                record: record, clips: clips, language: language, expectedVariants: expectedVariants,
+            )
+    }
+
+    /// **이 알람을 다시 묶어야 하는가** — 안드로이드 `needsRebind` 미러.
+    ///
+    /// 판정이 둘이고 어느 쪽이든 하나면 true 다:
+    ///  1. **앱 언어가 바뀌었다** — 원래 이 함수의 목적.
+    ///  2. **묶인 클립이 서버에서 사라졌다.** 발사는 저장된 키와 로컬 파일만 보고 서버를
+    ///     묻지 않으므로(비행기모드 재생), 문구·목소리를 통째로 갈면 그 알람은 **지워진
+    ///     대사를 옛 목소리로 영원히 재생한다** — 언어가 안 바뀌어 1번에도 안 걸린다.
+    ///
+    /// ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
+    ///   시딩 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다.
+    static func needsRebind(
+        record: LocalAlarmRecord,
+        language: String,
+        liveKeys: Set<String>
+    ) -> Bool {
+        guard (record.bucketId).nilIfBlank != nil else { return false }
+        guard record.playModeEnum != .alarmOnly else { return false }
+        // 녹음 알람에는 문구 개념이 없다.
+        guard record.voiceSourceEnum != .localAudio else { return false }
+        let current: String = record.voiceLanguage ?? "ko"
+        if current != language { return true }
+        let bound = record.bucketClipKeys ?? []
+        return !bound.isEmpty && bound.allSatisfy { !liveKeys.contains($0) }
     }
 
     /// **라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립에 다시 묶는다.**
