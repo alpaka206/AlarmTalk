@@ -324,6 +324,28 @@ object StockClipLanguageRebinder {
      */
 
     /**
+     * **아직 갈아탈 알람이 남았는가** — 교체 미완료 차단 화면의 판정.
+     *
+     * [needsRebind] 로 묻는다([shouldRebind] 가 아니다). 세트가 아직 다 안 구워져서 못
+     * 갈아탄 것도 **미완료**이기 때문이다 — 그 알람은 지금 옛 목소리로 운다.
+     *
+     * ⚠ **클립 목록이 비면 판정하지 않는다.** 매니페스트를 못 받은 회차를 '갈아탈 것이
+     *   없다' 로 읽으면 네트워크가 죽은 것이 **교체 완료**로 기록된다.
+     */
+    suspend fun hasPendingReplacement(
+        context: Context,
+        clips: List<StockClip>,
+        language: String,
+        legacyHints: Map<String, String> = emptyMap(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (clips.isEmpty()) return@withContext false
+        val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
+        AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
+            needsRebind(it, language, liveKeys, legacyHints)
+        }
+    }
+
+    /**
      * **교체가 끝났으면 옛 스톡 클립 파일을 지운다.**
      *
      * 순서가 안전장치다: **다 받고 → 다 묶고 → 그 다음에 지운다.** 아직 갈아탈 알람이

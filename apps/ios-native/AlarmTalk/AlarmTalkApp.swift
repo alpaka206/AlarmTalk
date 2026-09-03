@@ -32,6 +32,8 @@ struct AlarmTalkApp: App {
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = BackgroundDependencies.shared.voiceStudio
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
+    /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면과 재시도 축(`stockClipLanguageKey`).
+    @StateObject private var stockReplacement = StockReplacementStatus.shared
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
@@ -488,6 +490,8 @@ struct AlarmTalkApp: App {
     @MainActor
     private func rebindStockClipsIfNeeded() async {
         guard auth.session != nil else { return }
+        StockReplacementStatus.shared.setWorking(true)
+        defer { StockReplacementStatus.shared.setWorking(false) }
         // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
         //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
         //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**
@@ -538,6 +542,15 @@ struct AlarmTalkApp: App {
             // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
             //   않은 알람을 두고 파일을 지운다 — 그 알람은 무음이 된다.
             legacyHints: voiceStudio.legacyBucketHints
+        )
+        // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
+        //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
+        //   없는 사용자를 이유 없이 가둔다.
+        StockReplacementStatus.shared.report(
+            pending: rebinder.hasPendingReplacement(
+                clips: voiceStudio.stockClips,
+                legacyHints: voiceStudio.legacyBucketHints
+            )
         )
         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
         //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
@@ -625,7 +638,13 @@ struct AlarmTalkApp: App {
 
     /// 선다운로드·재바인딩을 다시 돌려야 하는 시점. 계정과 **기기 언어**가 축이다.
     private var stockClipLanguageKey: String {
-        "\(auth.session?.user.id ?? "anonymous")|\(VoiceStudioViewModel.appVoiceLanguage())"
+        // 재시도 토큰이 축에 있어야 차단 화면의 '다시 시도' 가 이 절차를 다시 돌린다
+        // (`StockReplacementStatus.retry`). 계정·언어와 같은 자격이다.
+        [
+            auth.session?.user.id ?? "anonymous",
+            VoiceStudioViewModel.appVoiceLanguage(),
+            String(stockReplacement.retryToken),
+        ].joined(separator: "|")
     }
 
     private var freePlanVoiceLockKey: String {

@@ -956,4 +956,8 @@
     <string name="voices_clip_prep_done">완료</string>
     <string name="voices_clip_prep_background">백그라운드에서 계속</string>
     <string name="social_code_exhausted">이 코드는 다 썼어요. 재발급하면 다시 공유할 수 있어요.</string>
+    <string name="r3app_stock_replacement_title">목소리를 새로 받고 있어요</string>
+    <string name="r3app_stock_replacement_body">기본 목소리가 바뀌어서 알람에 쓸 음성을 다시 받는 중이에요. 다 받아야 알람이 새 목소리로 울려요.\n\n네트워크가 불안정하면 멈출 수 있어요. 그럴 때는 아래 버튼을 눌러 주세요.</string>
+    <string name="r3app_stock_replacement_button">다시 시도</string>
+    <string name="r3app_stock_replacement_working">받는 중…</string>
 </resources>

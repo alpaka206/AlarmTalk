@@ -915,4 +915,8 @@
     <string name="voices_clip_prep_done">完了</string>
     <string name="voices_clip_prep_background">バックグラウンドで続ける</string>
     <string name="social_code_exhausted">このコードは使い切りました。再発行すればまた共有できます。</string>
+    <string name="r3app_stock_replacement_title">新しい声をダウンロードしています</string>
+    <string name="r3app_stock_replacement_body">基本の声が変わったため、アラームで使う音声を再取得しています。すべて取得できると、新しい声で鳴ります。\n\n通信が不安定だと途中で止まることがあります。そのときは下のボタンを押してください。</string>
+    <string name="r3app_stock_replacement_button">もう一度試す</string>
+    <string name="r3app_stock_replacement_working">ダウンロード中…</string>
 </resources>

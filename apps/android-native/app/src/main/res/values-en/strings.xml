@@ -907,4 +907,8 @@ Pass code: %1$s
     <string name="voices_clip_prep_done">Done</string>
     <string name="voices_clip_prep_background">Continue in the background</string>
     <string name="social_code_exhausted">This code has been used up. Regenerate it to share again.</string>
+    <string name="r3app_stock_replacement_title">Downloading the new voices</string>
+    <string name="r3app_stock_replacement_body">The built-in voices have changed, so we\'re downloading the audio your alarms use. Alarms ring in the new voice once this finishes.\n\nA weak connection can stop it partway. If that happens, tap the button below.</string>
+    <string name="r3app_stock_replacement_button">Try again</string>
+    <string name="r3app_stock_replacement_working">Downloading…</string>
 </resources>

@@ -211,6 +211,28 @@ struct StockClipLanguageRebinder {
     ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
     ///   떼어 낸다.
     @discardableResult
+    /// **아직 갈아탈 알람이 남았는가** — 교체 미완료 차단 화면의 판정.
+    /// 안드로이드 `StockClipLanguageRebinder.hasPendingReplacement` 미러.
+    ///
+    /// `needsRebind` 로 묻는다(`shouldRebind` 가 아니다). 세트가 아직 다 안 구워져서 못
+    /// 갈아탄 것도 **미완료**이기 때문이다 — 그 알람은 지금 옛 목소리로 운다.
+    ///
+    /// ⚠ **클립 목록이 비면 판정하지 않는다.** 매니페스트를 못 받은 회차를 '갈아탈 것이
+    ///   없다' 로 읽으면 네트워크가 죽은 것이 **교체 완료**로 기록된다.
+    func hasPendingReplacement(
+        clips: [StockClip],
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        legacyHints: [String: String] = [:]
+    ) -> Bool {
+        guard !clips.isEmpty, store.hasLoadedFromDisk else { return false }
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+        return store.alarms.contains {
+            Self.needsRebind(
+                record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            )
+        }
+    }
+
     func pruneReplacedStockAudio(
         clips: [StockClip],
         language: String = VoiceStudioViewModel.appVoiceLanguage(),

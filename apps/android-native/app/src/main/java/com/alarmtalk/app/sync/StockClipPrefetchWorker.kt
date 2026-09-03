@@ -96,7 +96,14 @@ class StockClipPrefetchWorker(
         runCatching { setForeground(foregroundInfo(done, total)) }
     }
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
+        StockReplacementStatus.setWorking(true)
+        runWork()
+    } finally {
+        StockReplacementStatus.setWorking(false)
+    }
+
+    private suspend fun runWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
         // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
         // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
@@ -280,6 +287,19 @@ class StockClipPrefetchWorker(
                         legacyHints = legacyHints,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Replaced stock audio prune failed", it) }
+                // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와
+                //   묶기는 끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을
+                //   막으면 지울 것이 없는 사용자를 이유 없이 가둔다.
+                runCatching {
+                    StockReplacementStatus.report(
+                        StockClipLanguageRebinder.hasPendingReplacement(
+                            context = applicationContext,
+                            clips = allClips,
+                            language = language,
+                            legacyHints = legacyHints,
+                        ),
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Stock replacement status probe failed", it) }
             }
 
             if (clips.isEmpty()) {

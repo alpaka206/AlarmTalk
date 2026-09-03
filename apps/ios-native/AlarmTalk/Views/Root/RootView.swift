@@ -12,6 +12,8 @@ import UIKit
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var versionGate: AppVersionGate
+    /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면 게이트.
+    @ObservedObject private var stockReplacement = StockReplacementStatus.shared
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     /// 강등 안내가 **가리킬 알람이 아직 있는지** 확인하는 데만 쓴다(`evaluateDowngradeNotice`).
@@ -50,6 +52,16 @@ struct RootView: View {
                 // (`AlarmTalkApp.kt` 의 `updateRequired || consentUnsupported`).
                 // 예전 iOS 는 이 값을 세우기만 하고 **읽는 뷰가 하나도 없었다**(2026-08-07 수정).
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
+            } else if auth.isAuthenticated && stockReplacement.pending {
+                // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
+                // 이름인데 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시).
+                // ⚠ **업데이트 게이트보다 뒤, 로그인 검사보다 앞.** 구버전이면 받을 것 자체가
+                //   다르므로 업데이트가 먼저고, 로그인 전에는 받을 알람도 목소리도 없다.
+                // 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
+                StockReplacementView(
+                    working: stockReplacement.working,
+                    onRetry: { stockReplacement.retry() }
+                )
             } else if !auth.isAuthenticated {
                 AuthGateView()
             } else if auth.pendingDeletion {

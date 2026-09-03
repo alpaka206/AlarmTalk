@@ -1045,6 +1045,15 @@ internal fun AlarmTalkApp(
             }
         },
     ) { padding ->
+      // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새 이름인데
+      // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
+      // ⚠ **업데이트 게이트보다 뒤에 둔다** — 구버전이면 받을 것 자체가 다르므로 업데이트가
+      //   먼저다. 그리고 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
+      val stockReplacementPending by com.alarmtalk.app.sync.StockReplacementStatus.pending
+          .collectAsStateWithLifecycle()
+      val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
+          .collectAsStateWithLifecycle()
+
       // 최소지원버전 미달과, 서버가 모르는 필수 동의를 요구하는 경우. 둘 다 사용자가 할 수
       // 있는 일이 업데이트뿐이라 같은 화면으로 보낸다.
       if (viewModel.updateRequired || viewModel.consentUnsupported) {
@@ -1057,6 +1066,17 @@ internal fun AlarmTalkApp(
                   }
                   context.openWebUrl(url)
               },
+          )
+          return@Scaffold
+      }
+      // ⚠ **로그인한 뒤에만 막는다.** 로그인 전에는 받을 알람도 목소리도 없으므로 막을
+      //   이유가 없고, 막으면 가입 자체가 안 된다.
+      if (authSession != null && stockReplacementPending) {
+          GateBackGuard()
+          StockReplacementScreen(
+              contentPadding = padding,
+              working = stockReplacementWorking,
+              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
           )
           return@Scaffold
       }

@@ -1,0 +1,47 @@
+package com.alarmtalk.app.sync
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * **기본 목소리 교체가 아직 안 끝났는가.**
+ *
+ * 목소리 4종을 갈아 끼우는 회차에는 순서가 있다 — **다 받고 → 다 묶고 → 그 다음에 지운다**
+ * (`StockClipPrefetchWorker`). 그 중간에 앱을 쓰면 알람이 **이름은 새 이름인데 소리는 옛
+ * 목소리**인 상태로 울 수 있다. 그래서 남은 것이 있으면 화면을 막고 다시 시도하게 한다
+ * (2026-09-03 지시). 삭제는 실패해도 막지 않는다 — 교체는 이미 끝난 상태라서다.
+ *
+ * ⚠ **기본값 `false` 는 '아니오' 가 아니라 '아직 모른다' 다.** 그래서 기본값을 **막지 않는
+ *   쪽**으로 뒀다. 반대로 두면 매니페스트를 받기 전(콜드 스타트·비행기모드)에 **아무 일도
+ *   없는 사용자까지 차단 화면에 가둔다** — 그 화면의 탈출구는 재시도뿐인데 네트워크가 없으면
+ *   영영 못 나온다. 판정은 워커가 실제로 매니페스트를 받아 본 뒤에만 갱신한다.
+ *
+ * 프로세스 안에서만 산다(워커와 UI 가 같은 프로세스다). 프로세스가 죽으면 다시 '모른다' 로
+ * 돌아가고, 다음 워커 실행이 곧바로 다시 판정한다 — 굳은 채로 남지 않는다.
+ */
+object StockReplacementStatus {
+    private val _pending = MutableStateFlow(false)
+
+    /** true 면 아직 갈아탈 알람이 남아 있다. */
+    val pending: StateFlow<Boolean> = _pending.asStateFlow()
+
+    /** true 면 지금 워커가 돌고 있다(재시도 버튼을 잠근다). */
+    private val _working = MutableStateFlow(false)
+    val working: StateFlow<Boolean> = _working.asStateFlow()
+
+    /**
+     * 워커가 매니페스트를 받아 판정한 결과를 적는다.
+     *
+     * ⚠ **매니페스트를 못 받은 회차에는 부르지 말 것.** 클립 목록이 비면 재바인더가 "갈아탈
+     *   것이 없다" 로 읽으므로, 그 값을 그대로 적으면 **네트워크가 죽은 것을 '교체 완료' 로**
+     *   기록한다.
+     */
+    fun report(pending: Boolean) {
+        _pending.value = pending
+    }
+
+    fun setWorking(working: Boolean) {
+        _working.value = working
+    }
+}
