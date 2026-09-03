@@ -1012,6 +1012,56 @@ export function withClosingBreath(text: string): string {
   return `${base} ...`;
 }
 
+export interface LegacyBucketHint {
+  messageId: string;
+  category: string;
+  language: string;
+}
+
+/**
+ * **버킷 없이 클립 하나만 물린 옛 알람**이 어떤 테마였는지.
+ *
+ * `bucket_id` 를 행에 적기 전에 만들어진 알람은 클라 재바인더 두 갈래 **어디에도** 안
+ * 걸린다 — 하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 그 행은
+ * 둘 다 없다. 그래서 목소리를 갈아도 그 알람만 **이름은 새 이름인데 소리는 옛 목소리**로
+ * 영원히 운다.
+ *
+ * 무엇으로 갈아탈지는 **서버가 이미 안다** — 그 알람이 문 message 의 `category` 다.
+ * 앱에 다시 물을 필요가 없어서 매니페스트에 실어 보낸다.
+ *
+ * ⚠ **호출자 본인 알람으로만 스코프한다**(IDOR). id 를 받지 않으므로 남의 알람을 지목할
+ *   방법 자체가 없다.
+ * ⚠ **`greeting` 은 버킷이 아니다** — 목소리 미리듣기용 자기소개라 알람 테마가 될 수 없고,
+ *   서버도 시스템 보이스+greeting 을 `INVALID_BUCKET_ID` 로 거절한다. 힌트로 주면 앱이
+ *   그 값을 `bucketId` 에 적고, 그 알람은 저장할 때마다 400 을 맞는다.
+ * ⚠ **은퇴 여부를 보지 않는다.** 힌트가 필요한 알람은 정확히 '은퇴한 클립을 물고 있는'
+ *   알람이므로, 여기서 `retired_at IS NULL` 을 걸면 아무것도 안 나온다.
+ */
+export async function findLegacyBucketHints(
+  db: Client,
+  userPk: string,
+): Promise<LegacyBucketHint[]> {
+  const categories = [...FREE_BUCKET_CATEGORIES];
+  const result = await db.execute({
+    sql: `SELECT a.message_id AS message_id, m.category AS category, m.language AS language
+            FROM alarms a
+            JOIN messages m ON m.id = a.message_id
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+           WHERE a.user_id = ?
+             AND (a.bucket_id IS NULL OR TRIM(a.bucket_id) = '')
+             AND COALESCE(m.is_preset, 0) = 1
+             AND COALESCE(vp.is_system, 0) = 1
+             AND m.category IN (${categories.map(() => '?').join(', ')})
+           GROUP BY a.message_id, m.category, m.language`,
+    args: [userPk, ...categories],
+  });
+  return result.rows.map((row) => ({
+    messageId: String(row.message_id),
+    category: String(row.category),
+    language: String(row.language ?? 'ko'),
+  }));
+}
+
 export async function generateStockClip(
   db: Client,
   env: Env,
