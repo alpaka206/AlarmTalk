@@ -264,6 +264,24 @@ object StockClipLanguageRebinder {
             replacementIsComplete(alarm, clips, language, expectedVariants, legacyHints)
 
     /**
+     * **이 교체 회차가 책임지는 알람인가**(2026-09-03 리뷰 20차).
+     *
+     * 이번 롤아웃이 바꾸는 것은 **기본(시스템) 목소리 4종**뿐이다. 클론은 소유자가 재등록할
+     * 때 갱신하기로 했다(#110 의 ③ 주석).
+     *
+     * ⚠ **차단 화면 판정에 클론을 넣으면 영영 안 열리는 문이 된다.** 한 언어로 등록한 클론은
+     *   그 언어 클립만 갖는데(선다운로드가 일부러 기기 언어로 거르지 않는다), 기기 언어를
+     *   바꾸면 `needsRebind` 가 언어 불일치로 true 를 내고 `replacementIsComplete` 는 그
+     *   목소리의 현재 기기 언어 세트를 **영원히 못 찾는다.** 재시도해도 결과가 같아
+     *   사용자가 전체 화면 차단에 갇힌다.
+     *   재바인딩 자체는 그대로 둔다 — 못 갈아탈 뿐 해가 없고, 언어 재바인딩은 이 PR 이전부터
+     *   있던 동작이다. 여기서 좁히는 것은 **'기다릴 가치가 있는가'** 하나다.
+     */
+    @JvmStatic
+    internal fun isReplacementScoped(alarm: AlarmEntity): Boolean =
+        com.alarmtalk.app.data.isSystemVoiceId(alarm.voiceProfileId)
+
+    /**
      * **아직 테마로 옮기지 못한 옛 라이브 행인가**(2026-09-03 리뷰 19차).
      *
      * `voiceRandomPrompt` 가 켜져 있고 `bucketId` 가 비어 있는 행이 그 표식이다. 이런 행은
@@ -440,6 +458,9 @@ object StockClipLanguageRebinder {
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
         AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
             ownedBy(it, callerUserId) &&
+                // ⚠ **이번 교체가 책임지는 알람만 센다**(리뷰 20차) — 클론까지 세면
+                //   기기 언어를 바꾼 단일 언어 클론이 문을 영영 못 열게 한다.
+                isReplacementScoped(it) &&
                 // ⚠ **두 갈래를 다 본다**(리뷰 19차). 테마 재바인딩만 보면, 아직 테마로
                 //   못 옮긴 옛 라이브 행이 **은퇴한 목소리로 우는데** 문이 열린다.
                 (needsRebind(it, language, liveKeys, legacyHints) || needsLegacyConversion(it))
@@ -489,8 +510,12 @@ object StockClipLanguageRebinder {
         }
         if (pending) return@withContext 0
         // ② 세트가 모자라 못 갈아탄 알람이 있어도 미룬다 — 그 알람의 옛 클립은 아직 쓰인다.
+        // 같은 이유로 여기서도 이번 교체가 책임지는 알람만 본다 — 갈아탈 수 없는 클론
+        // 하나 때문에 옛 파일 정리를 **영영 미루지** 않는다. 남의 알람이 물고 있는 클립은
+        // 아래 참조 집합이 지킨다.
         val waitingForSeed = mine.any {
-            needsRebind(it, language, liveKeys, legacyHints) || needsLegacyConversion(it)
+            isReplacementScoped(it) &&
+                (needsRebind(it, language, liveKeys, legacyHints) || needsLegacyConversion(it))
         }
         if (waitingForSeed) return@withContext 0
 

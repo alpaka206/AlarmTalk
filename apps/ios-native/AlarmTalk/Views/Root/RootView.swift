@@ -240,12 +240,16 @@ struct RootView: View {
     /// 스크림이 다운로드 화면의 '다시 시도'·6초 뒤 탈출구를 가린다(레이스가 아니라
     /// 결정적 재현). 안드로이드도 `showVoiceSetup` 을 게이트에 넣어 두었다가 끝난
     /// **뒤에** 프로모를 띄운다.
+    /// ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
+    ///   웰컴 프로모·민감 동의 시트가 겹쳐 뜬다 — 프로모는 **1회성이라 소진 플래그까지
+    ///   태우고** 사용자는 본 적도 없이 잃는다. 안드로이드 `blockingGateActive` 와 같다.
     private var blockingGateActive: Bool {
         versionGate.updateRequired
             || auth.consentUnsupported
             || !auth.isAuthenticated
             || auth.pendingDeletion
             || auth.showConsentScreen
+            || stockReplacement.isPending(for: auth.session?.user.id)
             || voiceSetupDone != true
     }
 

@@ -30,8 +30,14 @@ import Foundation
 struct StockRebindOutcome {
     let rebound: Int
     let persisted: Bool
+    /// **이번 회차가 실제로 소리를 갈아 끼운 알람 id.**
+    ///
+    /// 예약 재조정과 '남은 것' 판정을 **여기로 좁힌다**(2026-09-03 리뷰 20차). 전체를 보면
+    /// 교체와 무관한 알람 하나가 재예약에 실패하는 것만으로 사용자가 전체 화면 차단에
+    /// 갇힌다 — 그 화면에서는 문제의 알람을 고치거나 끌 수조차 없다.
+    let changedIds: Set<String>
 
-    static let none = StockRebindOutcome(rebound: 0, persisted: true)
+    static let none = StockRebindOutcome(rebound: 0, persisted: true, changedIds: [])
 }
 
 @MainActor
@@ -87,6 +93,7 @@ struct StockClipLanguageRebinder {
         guard !stale.isEmpty else { return .none }
 
         var rebound = 0
+        var changedIds: Set<String> = []
         var conditionBucketRebound = false
         for record in stale {
             // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
@@ -108,6 +115,7 @@ struct StockClipLanguageRebinder {
             bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
             if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
+            changedIds.insert(bound.id)
             rebound += 1
         }
         // ⚠ **조건형 버킷은 묶는 것만으로 끝나지 않는다** — 날씨는 조건 인덱스가 없으면
@@ -127,9 +135,9 @@ struct StockClipLanguageRebinder {
         //     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
         //     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
         if rebound > 0, !store.saveNow() {
-            return StockRebindOutcome(rebound: rebound, persisted: false)
+            return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }
-        return StockRebindOutcome(rebound: rebound, persisted: true)
+        return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
     }
 
     /// **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
@@ -166,6 +174,21 @@ struct StockClipLanguageRebinder {
     ///
     /// ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
     ///   시딩 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다.
+    /// **이 교체 회차가 책임지는 알람인가**(2026-09-03 리뷰 20차).
+    ///
+    /// 이번 롤아웃이 바꾸는 것은 **기본(시스템) 목소리 4종**뿐이다. 클론은 소유자가 재등록할
+    /// 때 갱신한다.
+    ///
+    /// ⚠ **차단 화면 판정에 클론을 넣으면 영영 안 열리는 문이 된다.** 한 언어로 등록한 클론은
+    ///   그 언어 클립만 갖는데(선다운로드가 일부러 기기 언어로 거르지 않는다), 기기 언어를
+    ///   바꾸면 `needsRebind` 가 언어 불일치로 true 를 내고 `replacementIsComplete` 는 그
+    ///   목소리의 현재 기기 언어 세트를 **영원히 못 찾는다.** 재시도해도 같아서 사용자가
+    ///   전체 화면 차단에 갇힌다. 안드로이드 `isReplacementScoped` 미러.
+    static func isReplacementScoped(_ record: LocalAlarmRecord) -> Bool {
+        guard let voiceID = (record.voiceProfileId).nilIfBlank else { return false }
+        return isSystemVoiceId(voiceID)
+    }
+
     /// **아직 테마로 옮기지 못한 옛 라이브 행인가**(2026-09-03 리뷰 19차).
     ///
     /// `voiceRandomPrompt` 가 켜져 있고 `bucketId` 가 비어 있는 행이 그 표식이다. 이런 행은
@@ -334,9 +357,12 @@ struct StockClipLanguageRebinder {
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
         let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
         return visible.contains { record in
+            // ⚠ **이번 교체가 책임지는 알람만 센다**(리뷰 20차) — 클론까지 세면 기기 언어를
+            //   바꾼 단일 언어 클론이 문을 영영 못 열게 한다.
+            guard Self.isReplacementScoped(record) else { return false }
             // ⚠ **두 갈래를 다 본다**(리뷰 19차). 테마 재바인딩만 보면, 아직 테마로 못 옮긴
             //   옛 라이브 행이 **은퇴한 목소리로 우는데** 문이 열린다.
-            Self.needsRebind(
+            return Self.needsRebind(
                 record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
             ) || Self.needsLegacyConversion(record)
         }
@@ -378,8 +404,11 @@ struct StockClipLanguageRebinder {
             )
         }
         guard !pending else { return 0 }
+        // 같은 이유로 여기서도 이번 교체가 책임지는 알람만 본다 — 갈아탈 수 없는 클론
+        // 하나 때문에 옛 파일 정리를 **영영 미루지** 않는다.
         let waitingForSeed = mine.contains { record in
-            Self.needsRebind(
+            guard Self.isReplacementScoped(record) else { return false }
+            return Self.needsRebind(
                 record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
             ) || Self.needsLegacyConversion(record)
         }
@@ -463,6 +492,7 @@ struct StockClipLanguageRebinder {
         guard !legacy.isEmpty else { return .none }
 
         var rebound = 0
+        var changedIds: Set<String> = []
         for record in legacy {
             // ⚠ **저장된 값은 `normalized` 로 읽는다**(2026-09-03 리뷰). 생성자를 직접
             //   쓰면 이름이 바뀐 옛 값(`love`)에 nil 이 나와 그 행이 **통째로 건너뛰어진다** —
@@ -493,15 +523,16 @@ struct StockClipLanguageRebinder {
             // 되짚는 값이다(CLAUDE.md 「일곱 자리」).
             bound.voiceRandomPrompt = false
             _ = store.upsertPreservingServerSyncFields(bound)
+            changedIds.insert(bound.id)
             rebound += 1
         }
         // ⚠ **디스크에 앉히고 나서 돌아간다**(리뷰 17차) — `rebindIfLanguageChanged` 와
         //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
         //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
         if rebound > 0, !store.saveNow() {
-            return StockRebindOutcome(rebound: rebound, persisted: false)
+            return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }
-        return StockRebindOutcome(rebound: rebound, persisted: true)
+        return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
     }
 
     /// **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).

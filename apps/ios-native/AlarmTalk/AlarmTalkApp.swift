@@ -595,15 +595,22 @@ struct AlarmTalkApp: App {
         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
         //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
         //   증상("앱은 영어인데 알람만 한국어")이 예약 쪽에 그대로 남아 있었다.
+        // 이번 회차가 실제로 소리를 갈아 끼운 행. 재조정도 '남은 것' 판정도 여기로 좁힌다 —
+        // 전체를 보면 교체와 무관한 알람 하나의 재예약 실패가 사용자를 전체 화면 차단에
+        // 가둔다(리뷰 20차).
+        let replacedIds = languageOutcome.changedIds.union(legacyOutcome.changedIds)
         await AlarmScheduleReconciler.reconcile(
-            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            // 지문이 없는 옛 예약(지문 도입 이전 앱이 건 것)도 이번에 바뀐 행이면 다시 건다.
+            forceRearmIds: replacedIds
         )
         // ⚠⚠ **보고는 예약 재조정 뒤에**(2026-09-03 리뷰 19차). AlarmKit 은 예약할 때 넘긴
         //   사운드를 그대로 울리므로, `schedule` 이 실패하면 행을 갈아 끼웠어도 다음 알람은
         //   **은퇴한 목소리**로 운다. 재조정 전에 문을 열면 그 알람을 두고 앱이 열린다.
         //   재조정이 실패를 조용히 넘기므로(무예약보다 낫다) 남은 것을 다시 읽어 확인한다.
         let staleSchedules = AlarmScheduleReconciler.hasStaleSchedules(
-            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            limitedTo: replacedIds
         )
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).

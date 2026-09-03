@@ -70,7 +70,9 @@ enum AlarmScheduleReconciler {
         store: LocalAlarmStore,
         alarmKit: AlarmKitViewModel,
         audioCache: AudioCacheStore = .shared,
-        ownerUserId: String?
+        ownerUserId: String?,
+        /// 지문이 없어도 반드시 다시 걸 행(교체가 소리를 갈아 끼운 것들).
+        forceRearmIds: Set<String> = []
     ) async -> Int {
         guard !isRunning else { return 0 }
         isRunning = true
@@ -94,7 +96,9 @@ enum AlarmScheduleReconciler {
             // 같은 위험을 아는 다른 경로들(recoverScheduledAlarms·WeatherVariantRefreshService·
             // RemoteAlarmPullSync)은 전부 이렇게 다시 읽는다.
             guard let current = store.record(id: snapshot.id) else { continue }
-            guard needsReschedule(current, alarmKit: alarmKit, audioCache: audioCache) else { continue }
+            guard needsReschedule(
+                current, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: forceRearmIds,
+            ) else { continue }
             // 울리는 중·스누즈 중에는 건드리지 않는다 — 재예약이 지금 울리는 알람을
             // 취소하거나 카운트다운을 날린다.
             guard !isInFlight(current) else { continue }
@@ -133,28 +137,45 @@ enum AlarmScheduleReconciler {
     /// 그대로면 다음 알람은 여전히 **은퇴한 목소리**로 운다. `reconcile` 이 `schedule` 에
     /// 실패해도 조용히 넘어가므로(무예약보다 낫다), 그 실패를 여기서 다시 읽어
     /// **교체 미완료를 유지**한다. 안 그러면 옛 소리로 울 알람을 두고 차단 화면이 열린다.
+    /// ⚠ **이번 회차가 바꾼 행만 본다**(2026-09-03 리뷰 20차). 전체를 보면 교체와 무관한
+    ///   알람 하나가 재예약에 실패하는 것만으로(예: AlarmKit 권한 회수) 사용자가 **전체
+    ///   화면 차단에 갇힌다** — 그 화면에서는 문제의 알람을 고치거나 끌 수조차 없다.
     static func hasStaleSchedules(
         store: LocalAlarmStore,
         alarmKit: AlarmKitViewModel,
         audioCache: AudioCacheStore = .shared,
-        ownerUserId: String?
+        ownerUserId: String?,
+        limitedTo ids: Set<String>
     ) -> Bool {
+        guard !ids.isEmpty else { return false }
         let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
         return store.alarms(visibleTo: owner).contains { record in
+            guard ids.contains(record.id) else { return false }
             // 울리는 중·재예약 중인 것은 '남았다' 로 보지 않는다 — `reconcile` 도 비켜 간다.
             guard !isInFlight(record), !alarmKit.isRearmInFlight(record.id) else { return false }
-            return needsReschedule(record, alarmKit: alarmKit, audioCache: audioCache)
+            return needsReschedule(
+                record, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: ids,
+            )
         }
     }
 
     static func needsReschedule(
         _ record: LocalAlarmRecord,
         alarmKit: AlarmKitViewModel,
-        audioCache: AudioCacheStore
+        audioCache: AudioCacheStore,
+        /// **지문이 없어도 반드시 다시 걸어야 하는 행.**
+        ///
+        /// ⚠ 지문(`scheduledSoundFingerprint`)은 나중에 도입된 값이라, **그 이전 앱이
+        ///   예약한 알람은 nil** 이다. 평소에는 그걸 '비교할 근거가 없다' 로 보고 건드리지
+        ///   않는 게 맞지만(멀쩡한 예약을 흔들지 않는다), **이번 교체가 소리를 갈아 끼운
+        ///   행**은 다르다 — AlarmKit 은 예약 시점 사운드를 그대로 울리므로 다시 걸지
+        ///   않으면 **은퇴한 목소리로 운다**(2026-09-03 리뷰 20차).
+        forceRearmIds: Set<String> = []
     ) -> Bool {
-        guard record.enabled,
-              record.alarmKitID != nil,
-              let scheduled = record.scheduledSoundFingerprint else { return false }
+        guard record.enabled, record.alarmKitID != nil else { return false }
+        guard let scheduled = record.scheduledSoundFingerprint else {
+            return forceRearmIds.contains(record.id)
+        }
         let effective = alarmKit.effectiveRecordForScheduling(record)
         return AlarmSoundResolver.plan(for: effective, audioCache: audioCache).fingerprint != scheduled
     }

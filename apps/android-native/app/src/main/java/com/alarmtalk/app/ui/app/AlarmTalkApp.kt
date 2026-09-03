@@ -861,11 +861,27 @@ internal fun AlarmTalkApp(
         )
     }
 
+    // **기본 목소리 교체가 아직 안 끝났는가.**
+    // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
+    //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
+    // ⚠ **선언이 `blockingGateActive` 보다 위에 있어야 한다**(리뷰 20차) — 그 술어가 이
+    //   값을 쓰므로, 아래에 두면 하단바와 1회성 오버레이가 차단 화면 위로 새어 나온다.
+    val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
+        .pendingUserId.collectAsStateWithLifecycle()
+    val stockReplacementPending = stockReplacementPendingUserId != null &&
+        stockReplacementPendingUserId == authSession?.user?.id
+    val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
+        .collectAsStateWithLifecycle()
+
     // 화면을 통째로 차지하는 차단 게이트. 이 게이트들은 Scaffold **본문만** 대체하므로,
     // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
     // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
+    // ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
+    //   권한 모달·웰컴 프로모·민감 동의 시트가 그대로 겹쳐 뜬다 — 특히 프로모는 **1회성이라
+    //   소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
     val blockingGateActive =
-        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion
+        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion ||
+            stockReplacementPending
 
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
@@ -994,8 +1010,11 @@ internal fun AlarmTalkApp(
     val isRootTab = currentTab == NativeTab.Alarms ||
         currentTab == NativeTab.Voices ||
         currentTab == NativeTab.Menu
+    // 교체 게이트가 떠 있으면 하단바·＋FAB 도 그리지 않는다 — 남겨 두면 차단 화면 위에서
+    // 탭을 옮기고 알람을 만들 수 있어 '막았다' 가 거짓말이 된다.
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
-        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && isRootTab
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion &&
+        !stockReplacementPending && !viewModel.showVoiceSetup && isRootTab
 
     Scaffold(
         bottomBar = {
@@ -1049,15 +1068,6 @@ internal fun AlarmTalkApp(
       // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
       // ⚠ **업데이트 게이트보다 뒤에 둔다** — 구버전이면 받을 것 자체가 다르므로 업데이트가
       //   먼저다. 그리고 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
-      // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
-      //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
-      val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
-          .pendingUserId.collectAsStateWithLifecycle()
-      val stockReplacementPending = stockReplacementPendingUserId != null &&
-          stockReplacementPendingUserId == authSession?.user?.id
-      val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
-          .collectAsStateWithLifecycle()
-
       // 최소지원버전 미달과, 서버가 모르는 필수 동의를 요구하는 경우. 둘 다 사용자가 할 수
       // 있는 일이 업데이트뿐이라 같은 화면으로 보낸다.
       if (viewModel.updateRequired || viewModel.consentUnsupported) {
