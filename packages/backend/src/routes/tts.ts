@@ -764,7 +764,19 @@ tts.post('/generate', async (c) => {
     }
   }
 
-  if (requestText && requestText.length > 200) {
+  // ⚠ **상한은 '사용자가 친 글자' 에만 건다**(2026-09-03 리뷰 2차).
+  //
+  //   `requestText` 는 이 지점에서 이미 **우리 프리셋 문구**일 수 있다(위 751행 —
+  //   `random_context=preset` 이면 `pickRandomPresetText` 가 채운다). 그때 이 검사는
+  //   우리가 확정한 대사를 사용자 입력 규칙으로 재는 셈이라, 영어 프리셋 20개 중 12개가
+  //   **TEXT_TOO_LONG(400)** 이 된다 — 들리는 말은 181자인데 태그까지 세어 213자로 읽는다.
+  //
+  //   200자는 **사용자에게 들리는 말**의 상한이고(2026-08-13 C안), 프리셋은 우리가 길이를
+  //   보고 확정한 신뢰 입력이다. 그래서 여기서는 **body.text 로 들어온 것만** 재고,
+  //   프리셋·초안 미리듣기는 지나게 둔다. 최종 안전망은 아래 합성 직전의
+  //   `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
+  const userTypedText = draftPreviewRequested || presetTextUsed ? '' : requestText;
+  if (userTypedText && userTypedText.length > 200) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
@@ -1216,7 +1228,12 @@ tts.post('/generate', async (c) => {
     // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
     // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
     // 문구가 뒤늦게 400 으로 거절됐다.
-    if (normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
+    // ⚠ **프리셋은 이 상한에서 면제한다**(2026-09-03 리뷰 2차). 200자는 사용자가 친 글자를
+    //   재는 규칙이고, 스톡 프리셋은 우리가 길이를 보고 확정한 대사다 — 실제로 영어
+    //   프리셋 20개 중 12개가 낭독 기준으로도 200자를 넘는다(최장 283자). 여기서 막으면
+    //   그 문구를 고른 알람이 **라이브 폴백 경로에서만 400** 이 나 원인을 찾기 어렵다.
+    //   (평소에는 사전렌더 클립을 쓰므로 이 경로에 오지 않는다.)
+    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,

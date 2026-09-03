@@ -836,9 +836,16 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee. For Korean, make the fortune feel like a soft, playful reading rather than something the speaker personally knows for certain; endings like "~래", "~라네요", "~것 같아", or "~면 좋겠다" are good when they sound natural. If the speaker is a romantic partner or spouse, do not mention new relationships, romantic opportunities, attraction from others, flirting, jealousy, or dating luck; keep the fortune about mood, small luck, confidence, health, work, study, or daily energy.`;
     }
+    // `cheer` — ⚠ **연애 문구가 아니다**(2026-09-03). 옛 이름이 `love` 라 이 갈래는
+    //   "romantic partner wake-up line" 을 요구했는데, 대사가 응원·자기돌봄으로 확정되면서
+    //   개념 자체가 바뀌었다. 그대로 두면 `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true` 인
+    //   순간 **없앤 연애 카테고리가 되살아난다** — 로컬 폴백은 이미 응원인데 이 경로만
+    //   반대로 간다(`docs/spec/voice-and-message.md` §2).
+    //   목소리가 연인이어도 마찬가지다. 응원의 **말투**만 그 관계에 맞추고, 다루는 것은
+    //   여전히 오늘을 버틸 힘이다.
     return isRomanticRelationship(context.relationshipLabel)
-      ? 'Create a romantic partner wake-up line that feels private, affectionate, and gently exciting to hear, while still short enough for a practical alarm. Avoid generic "좋은 하루 보내" unless paired with a more personal caring phrase.'
-      : 'Create a warm love/relationship message that feels personal, caring, and suitable for a voice alarm without being overly dramatic.';
+      ? 'Create an encouraging wake-up line in the private, affectionate voice of a partner: acknowledge that the day ahead may feel heavy, then offer steady support — doing one thing at a time, eating properly, resting when tired, not carrying everything alone. Keep it short enough for a practical alarm. Do NOT make it a romantic/flirtatious message; the warmth comes from how it is said, not from romance as the topic.'
+      : 'Create an encouraging wake-up message about getting through the day: acknowledge how the listener might feel, then offer steady support — starting with one small thing, eating properly, resting when tired, or leaning on someone they trust. Personal and caring, never dramatic, and never a romantic/relationship message.';
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);

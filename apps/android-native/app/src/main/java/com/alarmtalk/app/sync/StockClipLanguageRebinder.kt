@@ -8,6 +8,7 @@ import com.alarmtalk.app.data.AlarmDatabase
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.encodeBucketClipKeys
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.StockClip
@@ -39,6 +40,9 @@ import kotlinx.coroutines.withContext
 object StockClipLanguageRebinder {
 
     /** 다시 묶은 알람 수. */
+    // ⚠ **이름보다 하는 일이 넓다**(2026-09-03). 언어가 바뀐 알람뿐 아니라,
+    //   같은 언어인데 **묶인 클립이 서버에서 사라진** 알람도 다시 묶는다.
+    //   이름은 호출부 호환으로 남겨 두었다 — 조건을 언어 하나로 되돌리지 말 것.
     suspend fun rebindIfLanguageChanged(
         context: Context,
         api: AlarmTalkApi,
@@ -51,12 +55,12 @@ object StockClipLanguageRebinder {
         val alarmDao = AlarmDatabase.getInstance(context).alarmDao()
         val audioStore = AlarmAudioStore(context)
 
-        val stale = alarmDao.getAllAlarms().filter { alarm ->
-            !alarm.bucketId.isNullOrBlank() &&
-                alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
-                alarm.voiceSource != VoiceSources.LOCAL_AUDIO &&
-                (alarm.voiceLanguage ?: "ko") != language
-        }
+        // 지금 매니페스트에 살아 있는 클립 키. 알람이 들고 있는 키가 여기 없으면 그
+        // 클립은 **서버에서 사라진 것**이다(문구 교체·목소리 교체로 프리셋을 새로 구우면
+        // message id 가 새로 난다).
+        val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
+
+        val stale = alarmDao.getAllAlarms().filter { needsRebind(it, language, liveKeys) }
         if (stale.isEmpty()) return@withContext 0
 
         var rebound = 0
@@ -142,6 +146,37 @@ object StockClipLanguageRebinder {
      * 재바인딩이 같은 일을 하므로 베끼지 않고 끌어냈다 — 베껴 두면 한쪽만 고치는 사고가 난다.
      * `bucketId`·`voiceRandomPrompt` 처럼 **갈래마다 다른 값은 호출자가** 얹는다.
      */
+
+    /**
+     * **이 알람을 다시 묶어야 하는가.**
+     *
+     * 판정이 둘이다. 어느 쪽이든 하나면 다시 묶는다:
+     *  1. **앱 언어가 바뀌었다** — 이 함수의 원래 목적.
+     *  2. **묶인 클립이 서버에서 사라졌다**(2026-09-03 리뷰). 발사는 저장된
+     *     `stock_<id>` 키와 로컬 파일만 보고 **서버를 묻지 않는다** — 그래야 비행기모드
+     *     에서도 울린다. 그래서 문구·목소리를 통째로 갈아 프리셋을 새로 구우면
+     *     (message id 가 새로 난다) 그 알람은 **지워진 대사를 옛 목소리로 영원히
+     *     재생한다.** 언어가 안 바뀌었으니 1번에도 안 걸린다.
+     *
+     * ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
+     *   시딩이 도는 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다. 그때
+     *   다시 묶으면 매 회차 재바인딩이 돌아 네트워크를 낭비하고, 조건형(날씨·운세)은
+     *   **아직 안 구워진 자리로 인덱스가 밀린다.** 전부 죽었을 때만 갈아탄다.
+     */
+    @JvmStatic
+    internal fun needsRebind(
+        alarm: AlarmEntity,
+        language: String,
+        liveKeys: Set<String>,
+    ): Boolean {
+        if (alarm.bucketId.isNullOrBlank()) return false
+        if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
+        if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        if ((alarm.voiceLanguage ?: "ko") != language) return true
+        val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
+        return bound.isNotEmpty() && bound.none { it in liveKeys }
+    }
+
     private suspend fun bindBucket(
         api: AlarmTalkApi,
         auth: String,

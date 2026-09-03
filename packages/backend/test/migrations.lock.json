@@ -3,9 +3,377 @@
     "name": "initial-schema",
     "sha": "3a52369167f93203"
   },
+  "2": {
+    "name": "email-password-auth",
+    "sha": "ed79619335eae692"
+  },
+  "3": {
+    "name": "voice-uploads",
+    "sha": "566d2e987f2b1994"
+  },
+  "4": {
+    "name": "voice-speakers",
+    "sha": "26698cc7de4c1e39"
+  },
+  "5": {
+    "name": "alarm-mode-voice-speaker",
+    "sha": "bd96d74faf72a09c"
+  },
+  "6": {
+    "name": "plans-and-subscriptions",
+    "sha": "1d7d06628e6af4c5"
+  },
+  "7": {
+    "name": "voucher-codes",
+    "sha": "bb92c70875e203db"
+  },
+  "8": {
+    "name": "plan-groups",
+    "sha": "608a4b4463563cc8"
+  },
+  "9": {
+    "name": "plan-group-invites",
+    "sha": "e8c5f10311257695"
+  },
   "10": {
     "name": "user-allow-family-alarms",
     "sha": "0e11002c7d709c2f"
+  },
+  "14": {
+    "name": "push-tokens",
+    "sha": "759a2ab6af72b559"
+  },
+  "15": {
+    "name": "alarm-vibration-pattern",
+    "sha": "a26bf390714660c9"
+  },
+  "16": {
+    "name": "user-last-active",
+    "sha": "dde3b30a564936a1"
+  },
+  "17": {
+    "name": "alarm-wake-mode",
+    "sha": "a1084f7fd3dfecb9"
+  },
+  "18": {
+    "name": "notes-table",
+    "sha": "cc3ba283828a6f8c"
+  },
+  "19": {
+    "name": "composite-indices",
+    "sha": "739df130b31e71a4"
+  },
+  "20": {
+    "name": "alarm-raw-audio-cleanup",
+    "sha": "20bbb5228e2af335"
+  },
+  "21": {
+    "name": "alarm-raw-audio-columns",
+    "sha": "2ed64015bf471fc1"
+  },
+  "22": {
+    "name": "alarms-message-id-nullable",
+    "sha": "085798dc642aeb7f"
+  },
+  "23": {
+    "name": "alarms-drop-fks",
+    "sha": "8a792c4f77667b27"
+  },
+  "24": {
+    "name": "generated-audio-assets-cache",
+    "sha": "b47a23ff05a2a3ae"
+  },
+  "25": {
+    "name": "voice-profile-sharing",
+    "sha": "e1b9376815284acd"
+  },
+  "26": {
+    "name": "couple-plan-seed",
+    "sha": "6b34f536b7ca9b54"
+  },
+  "27": {
+    "name": "subscription-cancel-fields",
+    "sha": "29c1a30199106b76"
+  },
+  "28": {
+    "name": "voucher-multi-use",
+    "sha": "1f7103f4fb1c95df"
+  },
+  "29": {
+    "name": "family-alarm-quiet-time",
+    "sha": "05e37e47c5192ce9"
+  },
+  "30": {
+    "name": "family-alarm-quiet-windows",
+    "sha": "0450d79500f6bd81"
+  },
+  "31": {
+    "name": "email-verification-codes",
+    "sha": "87e4b5820bbece74"
+  },
+  "32": {
+    "name": "voice-profile-soft-delete",
+    "sha": "152ee3ee64dd4db1"
+  },
+  "34": {
+    "name": "tts-prepared-text-fields",
+    "sha": "2b16b94792e7aa09"
+  },
+  "35": {
+    "name": "apple-login-users",
+    "sha": "57966a50992ae38b"
+  },
+  "36": {
+    "name": "subscriptions-apple-fields",
+    "sha": "852fc099c2c8b193"
+  },
+  "37": {
+    "name": "voice-profile-relationship-labels",
+    "sha": "9d84cb384c5a33d9"
+  },
+  "38": {
+    "name": "voice-profile-listener-title",
+    "sha": "ebf26eb446956dad"
+  },
+  "39": {
+    "name": "voice-profile-draft-flag",
+    "sha": "ff6f2e7da2ef6c18"
+  },
+  "40": {
+    "name": "user-dynamic-prompt-settings",
+    "sha": "6b33ea279878e45b"
+  },
+  "41": {
+    "name": "privacy-consents-and-withdrawal",
+    "sha": "cd06761c0f2ccb5d"
+  },
+  "42": {
+    "name": "voice-lifecycle-and-store-billing",
+    "sha": "e73f28feb80500d6"
+  },
+  "43": {
+    "name": "system-stock-voices",
+    "sha": "dbf6db0ef8e9e93b"
+  },
+  "44": {
+    "name": "messages-language-for-stock-clips",
+    "sha": "6afa325f61d798d3"
+  },
+  "45": {
+    "name": "rename-reassign-stock-voices",
+    "sha": "e904e9e054104099"
+  },
+  "46": {
+    "name": "kst-readonly-views",
+    "sha": "b6504dcea8bf5245"
+  },
+  "47": {
+    "name": "refresh-adam-greeting-clip",
+    "sha": "04b7db5f8dfdc232"
+  },
+  "48": {
+    "name": "track-raw-alarm-uploads",
+    "sha": "a2c694e6300f1cf0"
+  },
+  "50": {
+    "name": "drop-daily-tts-limit-columns",
+    "sha": "3c51b1cdb251177d"
+  },
+  "51": {
+    "name": "user-token-epoch",
+    "sha": "b54c1e207a941f16"
+  },
+  "52": {
+    "name": "plan-prices-and-family-5",
+    "sha": "561f90509bf4221d"
+  },
+  "53": {
+    "name": "voice-profile-gender-and-formality",
+    "sha": "6806f021b58d0e5c"
+  },
+  "54": {
+    "name": "stock-clip-variants-and-alarm-bucket",
+    "sha": "088de86cbd911657"
+  },
+  "55": {
+    "name": "promo-codes",
+    "sha": "8912172c2d0019ce"
+  },
+  "56": {
+    "name": "alarm-recipient-state",
+    "sha": "801b2b9e7a62b229"
+  },
+  "57": {
+    "name": "voice-profile-monthly-change-ledger",
+    "sha": "bf6efaca82c76d38"
+  },
+  "58": {
+    "name": "manual-tts-monthly-usage",
+    "sha": "6fd4109b1e1e04e6"
+  },
+  "59": {
+    "name": "voice-prerender-queue",
+    "sha": "d6ebf5c0a1053142"
+  },
+  "60": {
+    "name": "voice-prerender-claim-lease",
+    "sha": "6215a10181583b18"
+  },
+  "61": {
+    "name": "voice-prerender-claim-token",
+    "sha": "a27e139e8c693eed"
+  },
+  "62": {
+    "name": "voice-draft-attempt-and-preview",
+    "sha": "2fed61a8d8f739e8"
+  },
+  "63": {
+    "name": "push-tokens-token-index",
+    "sha": "bfc7ee70e204c5f1"
+  },
+  "64": {
+    "name": "requeue-clone-prerender-for-weather-unknown-clip",
+    "sha": "3230bac449e0de54"
+  },
+  "65": {
+    "name": "voice-draft-preview-text",
+    "sha": "3f9c7feea7545379"
+  },
+  "66": {
+    "name": "voice-speech-style",
+    "sha": "890e292e5539e951"
+  },
+  "67": {
+    "name": "paid-voice-retention",
+    "sha": "a657f429e4e46869"
+  },
+  "68": {
+    "name": "voice-speech-style-status",
+    "sha": "9502d13c5508ce30"
+  },
+  "69": {
+    "name": "voice-uploads-profile-link",
+    "sha": "81fc75ad438484a4"
+  },
+  "70": {
+    "name": "refresh-stock-clips-2026-07-19-script",
+    "sha": "a0f8d6955178721a"
+  },
+  "71": {
+    "name": "push-tokens-global-unique-token",
+    "sha": "21feb74f84544ef4"
+  },
+  "72": {
+    "name": "promo-welcome-codes-redemption-group",
+    "sha": "f09258c3a540246b"
+  },
+  "73": {
+    "name": "promo-welcome-group-backfill",
+    "sha": "392e766268db59c0"
+  },
+  "74": {
+    "name": "promo-welcome-deadline-2026-08-31",
+    "sha": "13f89bb2bb56685f"
+  },
+  "75": {
+    "name": "voice-profiles-lru-eviction",
+    "sha": "e68510ef3bd5b971"
+  },
+  "76": {
+    "name": "voice-profiles-evicted-provider-voice-id",
+    "sha": "1a5412da2a16af52"
+  },
+  "77": {
+    "name": "drop-removed-character-tables",
+    "sha": "a6ccd38a2cd6b941"
+  },
+  "78": {
+    "name": "promo-welcome-retire-seeded-codes",
+    "sha": "f9f23e38d50e2c79"
+  },
+  "79": {
+    "name": "drop-dead-social-tables-and-user-columns",
+    "sha": "9c5cbc3c8baf8d0f"
+  },
+  "80": {
+    "name": "restore-alarms-indexes",
+    "sha": "b944d035a9734554"
+  },
+  "81": {
+    "name": "drop-kst-convenience-views",
+    "sha": "4e9b33fadfa0c99c"
+  },
+  "82": {
+    "name": "drop-apple-identity-and-billing-columns",
+    "sha": "c396f61f5f32ed84"
+  },
+  "83": {
+    "name": "drop-dead-alarm-user-and-voice-columns",
+    "sha": "7aae9861bbba2b10"
+  },
+  "84": {
+    "name": "drop-raw-alarm-audio-upload-path",
+    "sha": "49ac1aa3722f4258"
+  },
+  "85": {
+    "name": "redrop-users-picture-and-last-active-at",
+    "sha": "94c3d7453d674a31"
+  },
+  "86": {
+    "name": "backfill-evicted-at-for-released-clones",
+    "sha": "ddd6b9694c0b823e"
+  },
+  "87": {
+    "name": "drop-tts-presets",
+    "sha": "18ff71b34b8661e4"
+  },
+  "88": {
+    "name": "narrow-push-platform-and-store-provider-checks",
+    "sha": "2cbfcf9a157b1194"
+  },
+  "89": {
+    "name": "drop-redundant-indexes",
+    "sha": "11e2330992364609"
+  },
+  "90": {
+    "name": "drop-dead-columns",
+    "sha": "344f85a9cfdf96d1"
+  },
+  "91": {
+    "name": "quarantine-future-policy-version-consents",
+    "sha": "61e3ccf5fa1c1616"
+  },
+  "92": {
+    "name": "alarm-recipient-state-revoked",
+    "sha": "f542a4fbe76aae85"
+  },
+  "93": {
+    "name": "alarm-recipient-state-sender",
+    "sha": "3edb6180109255ae"
+  },
+  "94": {
+    "name": "restore-ios-push-platform",
+    "sha": "47a62071585b8ee2"
+  },
+  "95": {
+    "name": "restore-apple-identity",
+    "sha": "57966a50992ae38b"
+  },
+  "96": {
+    "name": "restore-apple-billing",
+    "sha": "fc18a35729372897"
+  },
+  "97": {
+    "name": "apple-refresh-token-for-revocation",
+    "sha": "41ffba38433a8cc5"
+  },
+  "98": {
+    "name": "clear-auto-added-family-quiet-windows",
+    "sha": "7105f76527492c17"
+  },
+  "99": {
+    "name": "index-audio-retention-sweep",
+    "sha": "8ca7af40e194c56a"
   },
   "100": {
     "name": "index-missing-lookup-columns",
@@ -49,378 +417,10 @@
   },
   "110": {
     "name": "replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096",
-    "sha": "05fa55179af5ca43"
+    "sha": "52fceb9cff6e8146"
   },
   "111": {
     "name": "replace-system-voices-2026-09-03",
     "sha": "ad05af8ec830758e"
-  },
-  "14": {
-    "name": "push-tokens",
-    "sha": "759a2ab6af72b559"
-  },
-  "15": {
-    "name": "alarm-vibration-pattern",
-    "sha": "a26bf390714660c9"
-  },
-  "16": {
-    "name": "user-last-active",
-    "sha": "dde3b30a564936a1"
-  },
-  "17": {
-    "name": "alarm-wake-mode",
-    "sha": "a1084f7fd3dfecb9"
-  },
-  "18": {
-    "name": "notes-table",
-    "sha": "cc3ba283828a6f8c"
-  },
-  "19": {
-    "name": "composite-indices",
-    "sha": "739df130b31e71a4"
-  },
-  "2": {
-    "name": "email-password-auth",
-    "sha": "ed79619335eae692"
-  },
-  "20": {
-    "name": "alarm-raw-audio-cleanup",
-    "sha": "20bbb5228e2af335"
-  },
-  "21": {
-    "name": "alarm-raw-audio-columns",
-    "sha": "2ed64015bf471fc1"
-  },
-  "22": {
-    "name": "alarms-message-id-nullable",
-    "sha": "085798dc642aeb7f"
-  },
-  "23": {
-    "name": "alarms-drop-fks",
-    "sha": "8a792c4f77667b27"
-  },
-  "24": {
-    "name": "generated-audio-assets-cache",
-    "sha": "b47a23ff05a2a3ae"
-  },
-  "25": {
-    "name": "voice-profile-sharing",
-    "sha": "e1b9376815284acd"
-  },
-  "26": {
-    "name": "couple-plan-seed",
-    "sha": "6b34f536b7ca9b54"
-  },
-  "27": {
-    "name": "subscription-cancel-fields",
-    "sha": "29c1a30199106b76"
-  },
-  "28": {
-    "name": "voucher-multi-use",
-    "sha": "1f7103f4fb1c95df"
-  },
-  "29": {
-    "name": "family-alarm-quiet-time",
-    "sha": "05e37e47c5192ce9"
-  },
-  "3": {
-    "name": "voice-uploads",
-    "sha": "566d2e987f2b1994"
-  },
-  "30": {
-    "name": "family-alarm-quiet-windows",
-    "sha": "0450d79500f6bd81"
-  },
-  "31": {
-    "name": "email-verification-codes",
-    "sha": "87e4b5820bbece74"
-  },
-  "32": {
-    "name": "voice-profile-soft-delete",
-    "sha": "152ee3ee64dd4db1"
-  },
-  "34": {
-    "name": "tts-prepared-text-fields",
-    "sha": "2b16b94792e7aa09"
-  },
-  "35": {
-    "name": "apple-login-users",
-    "sha": "57966a50992ae38b"
-  },
-  "36": {
-    "name": "subscriptions-apple-fields",
-    "sha": "852fc099c2c8b193"
-  },
-  "37": {
-    "name": "voice-profile-relationship-labels",
-    "sha": "9d84cb384c5a33d9"
-  },
-  "38": {
-    "name": "voice-profile-listener-title",
-    "sha": "ebf26eb446956dad"
-  },
-  "39": {
-    "name": "voice-profile-draft-flag",
-    "sha": "ff6f2e7da2ef6c18"
-  },
-  "4": {
-    "name": "voice-speakers",
-    "sha": "26698cc7de4c1e39"
-  },
-  "40": {
-    "name": "user-dynamic-prompt-settings",
-    "sha": "6b33ea279878e45b"
-  },
-  "41": {
-    "name": "privacy-consents-and-withdrawal",
-    "sha": "cd06761c0f2ccb5d"
-  },
-  "42": {
-    "name": "voice-lifecycle-and-store-billing",
-    "sha": "e73f28feb80500d6"
-  },
-  "43": {
-    "name": "system-stock-voices",
-    "sha": "dbf6db0ef8e9e93b"
-  },
-  "44": {
-    "name": "messages-language-for-stock-clips",
-    "sha": "6afa325f61d798d3"
-  },
-  "45": {
-    "name": "rename-reassign-stock-voices",
-    "sha": "e904e9e054104099"
-  },
-  "46": {
-    "name": "kst-readonly-views",
-    "sha": "b6504dcea8bf5245"
-  },
-  "47": {
-    "name": "refresh-adam-greeting-clip",
-    "sha": "04b7db5f8dfdc232"
-  },
-  "48": {
-    "name": "track-raw-alarm-uploads",
-    "sha": "a2c694e6300f1cf0"
-  },
-  "5": {
-    "name": "alarm-mode-voice-speaker",
-    "sha": "bd96d74faf72a09c"
-  },
-  "50": {
-    "name": "drop-daily-tts-limit-columns",
-    "sha": "3c51b1cdb251177d"
-  },
-  "51": {
-    "name": "user-token-epoch",
-    "sha": "b54c1e207a941f16"
-  },
-  "52": {
-    "name": "plan-prices-and-family-5",
-    "sha": "561f90509bf4221d"
-  },
-  "53": {
-    "name": "voice-profile-gender-and-formality",
-    "sha": "6806f021b58d0e5c"
-  },
-  "54": {
-    "name": "stock-clip-variants-and-alarm-bucket",
-    "sha": "088de86cbd911657"
-  },
-  "55": {
-    "name": "promo-codes",
-    "sha": "8912172c2d0019ce"
-  },
-  "56": {
-    "name": "alarm-recipient-state",
-    "sha": "801b2b9e7a62b229"
-  },
-  "57": {
-    "name": "voice-profile-monthly-change-ledger",
-    "sha": "bf6efaca82c76d38"
-  },
-  "58": {
-    "name": "manual-tts-monthly-usage",
-    "sha": "6fd4109b1e1e04e6"
-  },
-  "59": {
-    "name": "voice-prerender-queue",
-    "sha": "d6ebf5c0a1053142"
-  },
-  "6": {
-    "name": "plans-and-subscriptions",
-    "sha": "1d7d06628e6af4c5"
-  },
-  "60": {
-    "name": "voice-prerender-claim-lease",
-    "sha": "6215a10181583b18"
-  },
-  "61": {
-    "name": "voice-prerender-claim-token",
-    "sha": "a27e139e8c693eed"
-  },
-  "62": {
-    "name": "voice-draft-attempt-and-preview",
-    "sha": "2fed61a8d8f739e8"
-  },
-  "63": {
-    "name": "push-tokens-token-index",
-    "sha": "bfc7ee70e204c5f1"
-  },
-  "64": {
-    "name": "requeue-clone-prerender-for-weather-unknown-clip",
-    "sha": "b9ecb741e356fe3c"
-  },
-  "65": {
-    "name": "voice-draft-preview-text",
-    "sha": "3f9c7feea7545379"
-  },
-  "66": {
-    "name": "voice-speech-style",
-    "sha": "890e292e5539e951"
-  },
-  "67": {
-    "name": "paid-voice-retention",
-    "sha": "a657f429e4e46869"
-  },
-  "68": {
-    "name": "voice-speech-style-status",
-    "sha": "9502d13c5508ce30"
-  },
-  "69": {
-    "name": "voice-uploads-profile-link",
-    "sha": "81fc75ad438484a4"
-  },
-  "7": {
-    "name": "voucher-codes",
-    "sha": "bb92c70875e203db"
-  },
-  "70": {
-    "name": "refresh-stock-clips-2026-07-19-script",
-    "sha": "a0f8d6955178721a"
-  },
-  "71": {
-    "name": "push-tokens-global-unique-token",
-    "sha": "21feb74f84544ef4"
-  },
-  "72": {
-    "name": "promo-welcome-codes-redemption-group",
-    "sha": "f09258c3a540246b"
-  },
-  "73": {
-    "name": "promo-welcome-group-backfill",
-    "sha": "392e766268db59c0"
-  },
-  "74": {
-    "name": "promo-welcome-deadline-2026-08-31",
-    "sha": "13f89bb2bb56685f"
-  },
-  "75": {
-    "name": "voice-profiles-lru-eviction",
-    "sha": "e68510ef3bd5b971"
-  },
-  "76": {
-    "name": "voice-profiles-evicted-provider-voice-id",
-    "sha": "1a5412da2a16af52"
-  },
-  "77": {
-    "name": "drop-removed-character-tables",
-    "sha": "a6ccd38a2cd6b941"
-  },
-  "78": {
-    "name": "promo-welcome-retire-seeded-codes",
-    "sha": "f9f23e38d50e2c79"
-  },
-  "79": {
-    "name": "drop-dead-social-tables-and-user-columns",
-    "sha": "9c5cbc3c8baf8d0f"
-  },
-  "8": {
-    "name": "plan-groups",
-    "sha": "608a4b4463563cc8"
-  },
-  "80": {
-    "name": "restore-alarms-indexes",
-    "sha": "b944d035a9734554"
-  },
-  "81": {
-    "name": "drop-kst-convenience-views",
-    "sha": "4e9b33fadfa0c99c"
-  },
-  "82": {
-    "name": "drop-apple-identity-and-billing-columns",
-    "sha": "c396f61f5f32ed84"
-  },
-  "83": {
-    "name": "drop-dead-alarm-user-and-voice-columns",
-    "sha": "7aae9861bbba2b10"
-  },
-  "84": {
-    "name": "drop-raw-alarm-audio-upload-path",
-    "sha": "49ac1aa3722f4258"
-  },
-  "85": {
-    "name": "redrop-users-picture-and-last-active-at",
-    "sha": "94c3d7453d674a31"
-  },
-  "86": {
-    "name": "backfill-evicted-at-for-released-clones",
-    "sha": "ddd6b9694c0b823e"
-  },
-  "87": {
-    "name": "drop-tts-presets",
-    "sha": "18ff71b34b8661e4"
-  },
-  "88": {
-    "name": "narrow-push-platform-and-store-provider-checks",
-    "sha": "2cbfcf9a157b1194"
-  },
-  "89": {
-    "name": "drop-redundant-indexes",
-    "sha": "11e2330992364609"
-  },
-  "9": {
-    "name": "plan-group-invites",
-    "sha": "e8c5f10311257695"
-  },
-  "90": {
-    "name": "drop-dead-columns",
-    "sha": "344f85a9cfdf96d1"
-  },
-  "91": {
-    "name": "quarantine-future-policy-version-consents",
-    "sha": "61e3ccf5fa1c1616"
-  },
-  "92": {
-    "name": "alarm-recipient-state-revoked",
-    "sha": "f542a4fbe76aae85"
-  },
-  "93": {
-    "name": "alarm-recipient-state-sender",
-    "sha": "3edb6180109255ae"
-  },
-  "94": {
-    "name": "restore-ios-push-platform",
-    "sha": "47a62071585b8ee2"
-  },
-  "95": {
-    "name": "restore-apple-identity",
-    "sha": "57966a50992ae38b"
-  },
-  "96": {
-    "name": "restore-apple-billing",
-    "sha": "fc18a35729372897"
-  },
-  "97": {
-    "name": "apple-refresh-token-for-revocation",
-    "sha": "41ffba38433a8cc5"
-  },
-  "98": {
-    "name": "clear-auto-added-family-quiet-windows",
-    "sha": "7105f76527492c17"
-  },
-  "99": {
-    "name": "index-audio-retention-sweep",
-    "sha": "8ca7af40e194c56a"
   }
 }

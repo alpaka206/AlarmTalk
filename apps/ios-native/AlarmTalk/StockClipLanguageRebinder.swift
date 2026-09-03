@@ -36,6 +36,9 @@ struct StockClipLanguageRebinder {
 
     /// 다시 묶은 알람 수.
     @discardableResult
+    // ⚠ **이름보다 하는 일이 넓다**(2026-09-03). 언어가 바뀐 알람뿐 아니라,
+    //   같은 언어인데 **묶인 클립이 서버에서 사라진** 알람도 다시 묶는다.
+    //   이름은 호출부 호환으로 남겨 두었다 — 조건을 언어 하나로 되돌리지 말 것.
     func rebindIfLanguageChanged(
         session: AuthSession?,
         clips: [StockClip],
@@ -43,13 +46,24 @@ struct StockClipLanguageRebinder {
     ) async -> Int {
         guard let token = session?.token, !clips.isEmpty else { return 0 }
 
+        // 지금 매니페스트에 살아 있는 클립 키. 알람이 들고 있는 키가 여기 없으면 그
+        // 클립은 **서버에서 사라진 것**이다(문구·목소리를 갈면 message id 가 새로 난다).
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+
         let stale: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
             guard (record.bucketId).nilIfBlank != nil else { return false }
             guard record.playModeEnum != .alarmOnly else { return false }
             // 녹음 알람에는 문구 개념이 없다.
             guard record.voiceSourceEnum != .localAudio else { return false }
+            // ① 앱 언어가 바뀌었다 — 원래 이 함수의 목적.
             let current: String = record.voiceLanguage ?? "ko"
-            return current != language
+            if current != language { return true }
+            // ② **같은 언어인데 묶여 있는 클립이 서버에서 사라졌다**(2026-09-03 리뷰,
+            //    안드로이드와 같은 규칙). 발사는 저장된 키와 로컬 파일만 보고 서버를 묻지
+            //    않으므로(비행기모드 재생), 문구·목소리를 통째로 갈면 그 알람은 **지워진
+            //    대사를 옛 목소리로 영원히 재생한다** — 언어가 안 바뀌어 여기에도 안 걸린다.
+            let bound = record.bucketClipKeys ?? []
+            return !bound.isEmpty && bound.allSatisfy { !liveKeys.contains($0) }
         }
         guard !stale.isEmpty else { return 0 }
 

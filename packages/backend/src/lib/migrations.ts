@@ -1441,15 +1441,10 @@ export const migrations: Migration[] = [
       // 스케줄 cron 은 voice_prerender_queue 의 'pending' 만 처리하므로(완료 목소리는 재스캔 안 함), 완료
       // 클론 목소리를 requeue 해 다음 cron 이 findMissingStockTargets 로 '빠진 variant 8 만' 채우게 한다
       // (기존 8개는 messages 에 있어 'seen' 이라 스킵). 신규 launch DB 는 done 행이 없어 무해(no-op).
-      // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰). 위에서 그 목소리의 클립을
-      //   **이미 다 지웠는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만 집으므로
-      //   (`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영 복구되지 않는다** —
-      //   소유자가 '다시 시도' 를 직접 누르기 전까지. 지우는 것과 되살리는 것의 범위는
-      //   같아야 한다.
       `UPDATE voice_prerender_queue
          SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
              updated_at = datetime('now')
-       WHERE status IN ('done', 'failed')`,
+       WHERE status = 'done'`,
     ],
   },
   {
@@ -2554,10 +2549,19 @@ export const migrations: Migration[] = [
             message_id = NULL, voice_profile_id = NULL
         WHERE message_id IN (${CLONE_PRESET_SUBQUERY})`,
       `DELETE FROM messages WHERE id IN (${CLONE_PRESET_SUBQUERY})`,
+      // ⚠ **`failed` 도 함께 되살린다**(2026-09-03 리뷰 2차). 바로 위에서 그 목소리의
+      //   클립을 **전부 지웠는데** 큐가 `failed` 로 남아 있으면, cron 은 `pending` 만
+      //   집으므로(`claimPendingPrerenderVoices`) 그 목소리는 **클립 0개인 채 영영
+      //   복구되지 않는다** — 소유자가 '다시 시도' 를 직접 누르기 전까지.
+      //   **지우는 범위와 되살리는 범위는 같아야 한다.**
+      //
+      // ⚠ 1차 반영 때 이 조건을 **이미 적용된 #64 에** 넣었다. dev/prod 는 #64 를 이미
+      //   실행했으므로(원장이 id 로 기록한다) 그 수정은 **영영 돌지 않는다** — 고쳐야 할
+      //   곳은 지금 나가는 이 마이그레이션이다.
       `UPDATE voice_prerender_queue
          SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
              updated_at = datetime('now')
-       WHERE status = 'done'`,
+       WHERE status IN ('done', 'failed')`,
     ],
   },
   {
