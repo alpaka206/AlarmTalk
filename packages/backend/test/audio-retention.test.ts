@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createClient } from '@libsql/client';
-import { cleanupStaleDraftVoices } from '../src/lib/audio-retention';
+import { cleanupStaleDraftVoices, drainExternalDeletions } from '../src/lib/audio-retention';
 
 // 실제 libSQL(인메모리)로 검증한다 — created_at 은 datetime('now')(공백 구분) 포맷이고
 // cutoff 는 ISO(T 구분)라, 원시 텍스트 비교로 회귀하면 같은 날짜의 방금 만든 draft 까지
@@ -29,6 +29,10 @@ async function setupDb() {
     );
     CREATE UNIQUE INDEX idx_pending_external_deletions_ref
       ON pending_external_deletions(kind, ref);
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      audio_url TEXT
+    );
   `);
   return db;
 }
@@ -99,5 +103,72 @@ describe('cleanupStaleDraftVoices', () => {
 
     const queued = await db.execute(`SELECT COUNT(*) AS c FROM pending_external_deletions`);
     expect(Number(queued.rows[0]!.c)).toBe(1);
+  });
+});
+
+describe('drainExternalDeletions — R2 오브젝트', () => {
+  function envWith(deleted: string[]) {
+    return {
+      VOICE_BUCKET: { delete: async (key: string) => { deleted.push(key); } },
+    } as never;
+  }
+
+  async function queue(
+    db: Awaited<ReturnType<typeof setupDb>>,
+    id: string,
+    ref: string,
+    ageModifier: string,
+  ) {
+    await db.execute({
+      sql: `INSERT INTO pending_external_deletions (id, kind, ref, created_at)
+            VALUES (?, 'r2_object', ?, datetime('now', ?))`,
+      args: [id, ref, ageModifier],
+    });
+  }
+
+  /**
+   * ⚠ **유예가 경합을 닫는다**(2026-09-03 리뷰 11차). R2 키는 cacheKey 에서 결정론적으로
+   * 나오므로 '내가 올린 것' 과 '남이 올린 같은 내용' 을 구분할 수 없다. 조회와 삭제 사이에
+   * 그 남이 행을 커밋하면 방금 게시된 알람이 없는 음원을 가리킨다 — 렌더 한 회차보다 훨씬
+   * 긴 유예를 두어 시간으로 닫는다.
+   */
+  it('큐에 막 들어온 것은 지우지 않고 다음 회차로 미룬다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/fresh.mp3', '-1 minutes');
+
+    await drainExternalDeletions(db, envWith(deleted));
+
+    expect(deleted).toEqual([]);
+    const left = await db.execute('SELECT attempts FROM pending_external_deletions');
+    expect(left.rows.length, '큐에 그대로 남는다').toBe(1);
+    expect(Number(left.rows[0]!.attempts), '유예는 실패가 아니다 — attempts 를 태우지 않는다').toBe(0);
+  });
+
+  it('유예를 넘겼고 아무도 안 쓰면 지운다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/orphan.mp3', '-2 hours');
+
+    await drainExternalDeletions(db, envWith(deleted));
+
+    expect(deleted).toEqual(['voices/orphan.mp3']);
+    const left = await db.execute('SELECT id FROM pending_external_deletions');
+    expect(left.rows.length).toBe(0);
+  });
+
+  /** 그 사이 누가 게시했으면 지우지 않는다 — 지우면 그 알람이 소리를 잃는다. */
+  it('메시지가 가리키고 있으면 지우지 않는다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/live.mp3', '-2 hours');
+    await db.execute({
+      sql: "INSERT INTO messages (id, audio_url) VALUES ('m1', ?)",
+      args: ['r2://voices/live.mp3'],
+    });
+
+    await drainExternalDeletions(db, envWith(deleted));
+
+    expect(deleted, '게시된 음원을 지웠다').toEqual([]);
   });
 });

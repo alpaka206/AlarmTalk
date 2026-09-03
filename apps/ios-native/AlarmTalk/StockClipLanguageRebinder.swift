@@ -124,7 +124,15 @@ struct StockClipLanguageRebinder {
         let current: String = record.voiceLanguage ?? "ko"
         if current != language { return true }
         let bound = record.bucketClipKeys ?? []
-        return !bound.isEmpty && bound.allSatisfy { !liveKeys.contains($0) }
+        // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차). 받은 가족 알람이
+        //    그렇다 — 동기가 `bucketId` 와 대표 클립 하나만 적고 목록은 비운다. 게다가
+        //    `voiceLanguage` 가 nil 이라 한국어 기기에서는 ①에도 안 걸리고, 목록이 비어
+        //    ②에도 안 걸린다 — 어디에도 안 걸려 옛 대사를 영원히 재생한다.
+        if bound.isEmpty {
+            guard let messageId = (record.ttsMessageId).nilIfBlank else { return false }
+            return !liveKeys.contains(AudioCacheStore.stockCacheKey(messageId: messageId))
+        }
+        return bound.allSatisfy { !liveKeys.contains($0) }
     }
 
     /// **라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립에 다시 묶는다.**

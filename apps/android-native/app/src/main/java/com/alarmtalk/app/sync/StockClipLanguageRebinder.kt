@@ -248,7 +248,17 @@ object StockClipLanguageRebinder {
         if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
         if ((alarm.voiceLanguage ?: "ko") != language) return true
         val bound = decodeBucketClipKeys(alarm.bucketClipKeysJson)
-        return bound.isNotEmpty() && bound.none { it in liveKeys }
+        // ③ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
+        //    받은 가족 알람이 그렇다 — 동기가 `bucketId` 와 대표 클립 하나만 적고
+        //    `bucketClipKeysJson` 은 비운다(`RemoteAlarmPullSyncService`). 게다가
+        //    `voiceLanguage` 가 null 이라 한국어 기기에서는 ①에도 안 걸리고, 목록이
+        //    비어 있어 ②에도 안 걸린다 — **어디에도 안 걸려 옛 대사를 영원히 재생한다.**
+        //    그 대표 클립이 매니페스트에서 사라졌으면 갈아탈 때다.
+        if (bound.isEmpty()) {
+            val messageId = alarm.ttsMessageId?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+            return "stock_$messageId" !in liveKeys
+        }
+        return bound.none { it in liveKeys }
     }
 
 

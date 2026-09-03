@@ -268,6 +268,40 @@ class StockClipRebindDecisionTest {
         )
     }
 
+    /**
+     * ⚠ **테마는 아는데 클립 목록이 없는 알람**(2026-09-03 리뷰 11차).
+     *
+     * 받은 가족 알람이 그 모양이다 — 동기가 `bucketId` 와 대표 클립 하나만 적고
+     * `bucketClipKeysJson` 은 비운다. `voiceLanguage` 도 null 이라 한국어 기기에서는
+     * 언어 판정에도 안 걸리고, 목록이 비어 사망 판정에도 안 걸린다. 그래서 프리셋을
+     * 갈아도 **어디에도 안 걸려 옛 대사를 영원히 재생**했다.
+     */
+    @Test
+    fun 클립_목록이_없어도_대표_클립이_사라졌으면_다시_묶는다() {
+        val received = alarmWith(
+            clipKeys = emptyList(),
+            ttsMessageId = "old-0",
+            language = null,          // 받은 알람은 언어를 안 적는다 → ko 로 읽힌다.
+        )
+        assertTrue(StockClipLanguageRebinder.needsRebind(received, "ko", live))
+    }
+
+    @Test
+    fun 대표_클립이_살아_있으면_그대로_둔다() {
+        val received = alarmWith(clipKeys = emptyList(), ttsMessageId = "new-0", language = null)
+        assertFalse(StockClipLanguageRebinder.needsRebind(received, "ko", live))
+    }
+
+    /** 판단할 근거가 없으면(메시지 id 조차 없음) 건드리지 않는다. */
+    @Test
+    fun 클립_목록도_메시지_id_도_없으면_건드리지_않는다() {
+        assertFalse(
+            StockClipLanguageRebinder.needsRebind(
+                alarmWith(clipKeys = emptyList(), ttsMessageId = "", language = null), "ko", live,
+            ),
+        )
+    }
+
     private fun clip(category: String, variant: Int) = StockClip(
         messageId = "new-$variant",
         voiceProfileId = "clone-profile",
@@ -279,8 +313,9 @@ class StockClipRebindDecisionTest {
     )
 
     private fun alarmWith(
-        language: String = "ko",
+        language: String? = "ko",
         clipKeys: List<String> = listOf("stock_old-0", "stock_old-1"),
+        ttsMessageId: String = "clip-0",
         playMode: String = AlarmPlayModes.VOICE_ONLY,
         voiceSource: String = VoiceSources.TTS_PROFILE,
         bucketId: String? = "weather",
@@ -324,7 +359,7 @@ class StockClipRebindDecisionTest {
         dynamicVoicePreparedForFireAtMillis = null,
         voiceRepeat = true,
         voiceVolumePercent = 100,
-        ttsMessageId = "clip-0",
+        ttsMessageId = ttsMessageId,
         bucketId = bucketId,
         bucketClipKeysJson = encodeBucketClipKeys(clipKeys),
         remoteAlarmId = remoteAlarmId,

@@ -298,7 +298,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
     // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
     await cleanupStaleDraftVoices(db, now);
-    await drainExternalDeletions(db, env);
+    await drainExternalDeletions(db, env, now);
   } catch (err) {
     captureCron('scheduled.audio_retention', err);
   }
@@ -432,7 +432,19 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       // 틱(5분)당 상한. 클립 1개 = Vertex 문구/번역 + ElevenLabs 합성 + R2 업로드다.
       // 클론 드레인(10)보다 낮게 잡는다 — 같은 틱에서 둘이 서브리퀘스트를 나눠 쓴다.
       let rendered = 0;
-      for (const target of missing.slice(0, 6)) {
+      // ⚠ **머리에서만 자르면 실패가 배치를 독점한다**(2026-09-03 리뷰 11차).
+      //   목록 순서는 결정론적이라, 한 목소리의 provider 가 죽어 그 타깃 6개가 계속
+      //   실패하면 성공한 것만 목록에서 빠져 결국 **그 6개가 머리를 영구히 차지한다** —
+      //   뒤쪽의 멀쩡한 타깃은 영영 시도조차 안 된다.
+      //   틱마다 시작점을 굴려 모든 타깃이 차례를 받게 한다(5분 틱 기준).
+      const offset = missing.length > 0
+        ? Math.floor(now.getTime() / 300_000) * 6 % missing.length
+        : 0;
+      const batch = Array.from(
+        { length: Math.min(6, missing.length) },
+        (_, i) => missing[(offset + i) % missing.length]!,
+      );
+      for (const target of batch) {
         try {
           await generateStockClip(db, env, target);
           rendered += 1;
