@@ -423,6 +423,44 @@ class StockClipRebindDecisionTest {
         )
     }
 
+    /**
+     * **아직 테마로 못 옮긴 옛 라이브 행도 '미완료' 다**(2026-09-03 리뷰 19차).
+     *
+     * 그 행은 `needsRebind` 에 안 걸린다(테마가 없고 서버 힌트도 없다) — 그래서 미완료
+     * 판정에서 통째로 빠졌고, 그 알람이 **은퇴한 목소리로 우는데** 차단 화면이 열렸다.
+     */
+    @Test
+    fun 옛_라이브_행은_옮길_수_있을_때만_미완료로_센다() {
+        val convertible = alarmWith(bucketId = null, clipKeys = emptyList(), ttsMessageId = "old-0")
+            .copy(voiceRandomPrompt = true, voiceRandomContext = "wake_weather")
+        assertTrue(
+            "옮길 수 있는 옛 라이브 행을 안 셌다",
+            StockClipLanguageRebinder.needsLegacyConversion(convertible),
+        )
+        // 테마 재바인딩 쪽은 여전히 이 행을 모른다 — 그래서 둘을 함께 봐야 한다.
+        assertFalse(StockClipLanguageRebinder.needsRebind(convertible, "ko", live))
+
+        // ⚠ **옮길 수 없는 것은 세지 않는다** — 세면 영영 안 열리는 문이 된다.
+        assertFalse(
+            "문구 종류가 없는 행을 셌다",
+            StockClipLanguageRebinder.needsLegacyConversion(
+                convertible.copy(voiceRandomContext = null),
+            ),
+        )
+        // 이미 테마로 옮겨진 행은 대상이 아니다(옮기면서 randomPrompt 를 내린다).
+        assertFalse(
+            StockClipLanguageRebinder.needsLegacyConversion(
+                convertible.copy(voiceRandomPrompt = false, bucketId = "weather"),
+            ),
+        )
+        // 알람음 전용·녹음 알람에는 문구 개념이 없다.
+        assertFalse(
+            StockClipLanguageRebinder.needsLegacyConversion(
+                convertible.copy(playMode = AlarmPlayModes.ALARM_ONLY),
+            ),
+        )
+    }
+
     /** 판단할 근거가 없으면(메시지 id 조차 없음) 건드리지 않는다. */
     @Test
     fun 클립_목록도_메시지_id_도_없으면_건드리지_않는다() {

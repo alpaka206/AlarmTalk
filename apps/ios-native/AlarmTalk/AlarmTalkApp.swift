@@ -504,6 +504,20 @@ struct AlarmTalkApp: App {
         // 반환값은 '이번에 서버에서 새로 받았는가' 다 — 교체 미완료 판정의 근거다.
         let manifestFetched = await voiceStudio.loadStockClips(session: auth.session, force: true)
 
+        // ⚠ **앞 회차가 못 앉힌 것이 있으면 먼저 앉힌다**(2026-09-03 리뷰 19차).
+        //   `upsert` 는 메모리를 이미 바꿔 놨으므로, 그대로 다시 돌리면 재바인더가 그 행들을
+        //   '이미 최신' 으로 보고 아무것도 안 한다 — **못 앉힌 상태 그대로** 정리가 돌고
+        //   문이 열린다. 여기서 다시 앉히지 못하면 이 회차도 미완료로 두고 물러난다.
+        if StockReplacementStatus.shared.hasUnsavedRebind {
+            guard alarmStore.saveNow() else {
+                StockReplacementStatus.shared.report(
+                    userId: auth.session?.user.id, pending: true, manifestFetched: manifestFetched
+                )
+                return
+            }
+            StockReplacementStatus.shared.clearUnsavedRebind()
+        }
+
         let rebinder = StockClipLanguageRebinder(store: alarmStore)
         // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
         let languageOutcome = await rebinder.rebindIfLanguageChanged(
@@ -551,6 +565,8 @@ struct AlarmTalkApp: App {
         //   **없는 파일을 가리키는 옛 행**을 읽는다(내 알람은 서버에서 되받는 경로가 없다).
         //   그래서 정리도 보고도 하지 않고, 교체를 **미완료로 남긴다**(멱등).
         guard languageOutcome.persisted, legacyOutcome.persisted else {
+            // 메모리는 이미 바뀌었다 — 그 사실을 남겨 **다음 회차가 정리 전에 먼저 앉히게** 한다.
+            StockReplacementStatus.shared.markUnsavedRebind()
             StockReplacementStatus.shared.report(
                 userId: auth.session?.user.id, pending: true, manifestFetched: manifestFetched
             )
@@ -576,11 +592,24 @@ struct AlarmTalkApp: App {
         // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
         //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
         //   없는 사용자를 이유 없이 가둔다.
+        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
+        //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
+        //   증상("앱은 영어인데 알람만 한국어")이 예약 쪽에 그대로 남아 있었다.
+        await AlarmScheduleReconciler.reconcile(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
+        )
+        // ⚠⚠ **보고는 예약 재조정 뒤에**(2026-09-03 리뷰 19차). AlarmKit 은 예약할 때 넘긴
+        //   사운드를 그대로 울리므로, `schedule` 이 실패하면 행을 갈아 끼웠어도 다음 알람은
+        //   **은퇴한 목소리**로 운다. 재조정 전에 문을 열면 그 알람을 두고 앱이 열린다.
+        //   재조정이 실패를 조용히 넘기므로(무예약보다 낫다) 남은 것을 다시 읽어 확인한다.
+        let staleSchedules = AlarmScheduleReconciler.hasStaleSchedules(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
+        )
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         StockReplacementStatus.shared.report(
             userId: auth.session?.user.id,
-            pending: rebinder.hasPendingReplacement(
+            pending: staleSchedules || rebinder.hasPendingReplacement(
                 clips: voiceStudio.stockClips,
                 // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후
                 // 게시 전)라 미완료다.
@@ -589,12 +618,6 @@ struct AlarmTalkApp: App {
                 callerUserId: auth.session?.user.id
             ),
             manifestFetched: manifestFetched
-        )
-        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
-        //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
-        //   증상("앱은 영어인데 알람만 한국어")이 예약 쪽에 그대로 남아 있었다.
-        await AlarmScheduleReconciler.reconcile(
-            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id
         )
     }
 

@@ -2,6 +2,7 @@ package com.alarmtalk.app.sync
 
 import android.content.Context
 import android.util.Base64
+import com.alarmtalk.app.FreeBucketOrder
 import com.alarmtalk.app.clonePrerenderBucketCategoryFor
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDatabase
@@ -155,21 +156,21 @@ object StockClipLanguageRebinder {
         val alarmDao = AlarmDatabase.getInstance(context).alarmDao()
         val audioStore = AlarmAudioStore(context)
 
+        // ⚠ 술어를 여기서 다시 조립하지 않는다 — 미완료 판정과 **같은 이름**을 쓴다.
+        //   두 벌로 갈라지면 "변환은 남았는데 완료라고 보고" 하는 상태가 다시 생긴다.
         val legacy = alarmDao.getAllAlarms().filter { alarm ->
-            ownedBy(alarm, callerUserId) &&
-            // ⚠ `bucketId` 가 **비어 있는** 것이 '옛 라이브 행' 의 표식이다. 테마 알람은
-            // 저장할 때 `voiceRandomPrompt` 를 내리고 `bucketId` 를 적으므로 여기 안 걸린다.
-            alarm.voiceRandomPrompt &&
-                alarm.bucketId.isNullOrBlank() &&
-                alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
-                alarm.voiceSource != VoiceSources.LOCAL_AUDIO
+            ownedBy(alarm, callerUserId) && needsLegacyConversion(alarm)
         }
         if (legacy.isEmpty()) return@withContext 0
 
         var rebound = 0
         var convertedWeather = false
         legacy.forEach { alarm ->
-            val bucket = clonePrerenderBucketCategoryFor(alarm.voiceRandomContext) ?: return@forEach
+            // 술어(`needsLegacyConversion`)가 이미 걸렀지만, 이 값이 실제로 묶이는 자리라
+            // 한 번 더 본다 — `greeting` 으로 묶인 알람은 저장할 때마다 400 을 맞는다.
+            val bucket = clonePrerenderBucketCategoryFor(alarm.voiceRandomContext)
+                ?.takeIf { it in FreeBucketOrder }
+                ?: return@forEach
             // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 지난 회차에
             //   완전성 검사를 `rebindIfLanguageChanged` 에만 넣었는데, 이 경로는 옛
             //   라이브 행을 테마로 **바꾸면서 `voiceRandomPrompt` 를 내린다** — 한 번
@@ -261,6 +262,31 @@ object StockClipLanguageRebinder {
     ): Boolean =
         needsRebind(alarm, language, liveKeys, legacyHints) &&
             replacementIsComplete(alarm, clips, language, expectedVariants, legacyHints)
+
+    /**
+     * **아직 테마로 옮기지 못한 옛 라이브 행인가**(2026-09-03 리뷰 19차).
+     *
+     * `voiceRandomPrompt` 가 켜져 있고 `bucketId` 가 비어 있는 행이 그 표식이다. 이런 행은
+     * [needsRebind] 에 **안 걸린다** — 그 함수는 테마가 있어야 판정하고, 이 행이 문 message
+     * 는 프리셋이 아니라 서버 힌트도 없다. 그래서 미완료 판정에서 통째로 빠졌고, 그 알람이
+     * **아직 은퇴한 목소리로 우는데** 차단 화면이 열렸다.
+     *
+     * ⚠ **옮길 수 있는 것만 센다.** 테마를 못 내는 행은 변환기도 건너뛰므로, 그것까지 세면
+     *   **영영 안 열리는 문**이 된다.
+     * ⚠ **`greeting` 은 알람 버킷이 아니다.** 문구 종류가 비면 `normalizedRandomPromptContext`
+     *   가 모르는 값을 `preset` 으로 접고 그게 `greeting` 으로 매핑되는데, 그건 목소리
+     *   미리듣기용 자기소개라 알람 테마가 될 수 없다(서버가 `INVALID_BUCKET_ID` 로 거절한다).
+     *   그런 행으로 옮기면 저장할 때마다 400 을 맞으므로 **변환 대상이 아니다.**
+     */
+    @JvmStatic
+    internal fun needsLegacyConversion(alarm: AlarmEntity): Boolean {
+        if (!alarm.voiceRandomPrompt) return false
+        if (!alarm.bucketId.isNullOrBlank()) return false
+        if (alarm.playMode == AlarmPlayModes.ALARM_ONLY) return false
+        if (alarm.voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        val bucket = clonePrerenderBucketCategoryFor(alarm.voiceRandomContext) ?: return false
+        return bucket in FreeBucketOrder
+    }
 
     /**
      * **이 알람이 지금 로그인한 계정의 것인가**(2026-09-03 리뷰 17차).
@@ -413,7 +439,10 @@ object StockClipLanguageRebinder {
         if (!manifestFetched) return@withContext false
         val liveKeys = clips.map { "stock_${it.messageId}" }.toSet()
         AlarmDatabase.getInstance(context).alarmDao().getAllAlarms().any {
-            ownedBy(it, callerUserId) && needsRebind(it, language, liveKeys, legacyHints)
+            ownedBy(it, callerUserId) &&
+                // ⚠ **두 갈래를 다 본다**(리뷰 19차). 테마 재바인딩만 보면, 아직 테마로
+                //   못 옮긴 옛 라이브 행이 **은퇴한 목소리로 우는데** 문이 열린다.
+                (needsRebind(it, language, liveKeys, legacyHints) || needsLegacyConversion(it))
         }
     }
 
@@ -460,7 +489,9 @@ object StockClipLanguageRebinder {
         }
         if (pending) return@withContext 0
         // ② 세트가 모자라 못 갈아탄 알람이 있어도 미룬다 — 그 알람의 옛 클립은 아직 쓰인다.
-        val waitingForSeed = mine.any { needsRebind(it, language, liveKeys, legacyHints) }
+        val waitingForSeed = mine.any {
+            needsRebind(it, language, liveKeys, legacyHints) || needsLegacyConversion(it)
+        }
         if (waitingForSeed) return@withContext 0
 
         // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).

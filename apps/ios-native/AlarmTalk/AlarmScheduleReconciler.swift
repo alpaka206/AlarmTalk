@@ -127,6 +127,26 @@ enum AlarmScheduleReconciler {
     /// `nil` 지문은 **옛 버전이 만든 행**이다(이 기능 이전에 예약된 것). 그건 어긋났다고
     /// 보지 않는다 — 앱을 올리자마자 전 알람을 재예약하면 첫 전경 진입이 뻣뻣해지고,
     /// 어차피 다음 저장·회전·갱신에서 지문이 새겨진다.
+    /// **아직 옛 소리로 예약된 알람이 남아 있는가**(2026-09-03 리뷰 19차).
+    ///
+    /// AlarmKit 은 **예약할 때 넘긴 사운드**를 그대로 울린다 — 행을 갈아 끼워도 예약이
+    /// 그대로면 다음 알람은 여전히 **은퇴한 목소리**로 운다. `reconcile` 이 `schedule` 에
+    /// 실패해도 조용히 넘어가므로(무예약보다 낫다), 그 실패를 여기서 다시 읽어
+    /// **교체 미완료를 유지**한다. 안 그러면 옛 소리로 울 알람을 두고 차단 화면이 열린다.
+    static func hasStaleSchedules(
+        store: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel,
+        audioCache: AudioCacheStore = .shared,
+        ownerUserId: String?
+    ) -> Bool {
+        let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
+        return store.alarms(visibleTo: owner).contains { record in
+            // 울리는 중·재예약 중인 것은 '남았다' 로 보지 않는다 — `reconcile` 도 비켜 간다.
+            guard !isInFlight(record), !alarmKit.isRearmInFlight(record.id) else { return false }
+            return needsReschedule(record, alarmKit: alarmKit, audioCache: audioCache)
+        }
+    }
+
     static func needsReschedule(
         _ record: LocalAlarmRecord,
         alarmKit: AlarmKitViewModel,

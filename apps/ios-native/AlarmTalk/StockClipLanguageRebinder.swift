@@ -166,6 +166,30 @@ struct StockClipLanguageRebinder {
     ///
     /// ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
     ///   시딩 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다.
+    /// **아직 테마로 옮기지 못한 옛 라이브 행인가**(2026-09-03 리뷰 19차).
+    ///
+    /// `voiceRandomPrompt` 가 켜져 있고 `bucketId` 가 비어 있는 행이 그 표식이다. 이런 행은
+    /// `needsRebind` 에 **안 걸린다** — 그 함수는 테마가 있어야 판정하고, 이 행이 문 message
+    /// 는 프리셋이 아니라 서버 힌트도 없다. 그래서 미완료 판정에서 통째로 빠졌고, 그 알람이
+    /// **아직 은퇴한 목소리로 우는데** 차단 화면이 열렸다.
+    ///
+    /// ⚠ **옮길 수 있는 것만 센다.** 테마를 못 내는 행은 변환기도 건너뛰므로, 그것까지 세면
+    ///   **영영 안 열리는 문**이 된다.
+    /// ⚠ **`greeting` 은 알람 버킷이 아니다.** 문구 종류가 비면 `normalized` 가 모르는 값을
+    ///   `.preset` 으로 접고 그게 `greeting` 으로 매핑되는데, 그건 목소리 미리듣기용
+    ///   자기소개라 알람 테마가 될 수 없다(서버가 `INVALID_BUCKET_ID` 로 거절한다).
+    ///   `FreeBucket.order` 가 같은 이유로 `.preset` 을 빼는 그 집합이다.
+    ///   안드로이드 `needsLegacyConversion` 미러.
+    static func needsLegacyConversion(_ record: LocalAlarmRecord) -> Bool {
+        guard record.voiceRandomPrompt else { return false }
+        guard (record.bucketId).nilIfBlank == nil else { return false }
+        guard record.playModeEnum != .alarmOnly else { return false }
+        guard record.voiceSourceEnum != .localAudio else { return false }
+        guard let raw = record.voiceRandomContext, !raw.isEmpty else { return false }
+        let bucket = RandomPromptContext.normalized(raw).bucketCategory
+        return FreeBucket(rawValue: bucket).map(FreeBucket.order.contains) ?? false
+    }
+
     /// **이 알람의 테마가 무엇인가** — 저장된 값이 먼저, 없으면 서버가 준 힌트.
     ///
     /// `bucketId` 를 행에 적기 전에 만들어진 옛 알람은 저장된 값이 없어서, 재바인더 두 갈래
@@ -309,10 +333,12 @@ struct StockClipLanguageRebinder {
         guard manifestFetched, store.hasLoadedFromDisk else { return false }
         let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
         let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
-        return visible.contains {
+        return visible.contains { record in
+            // ⚠ **두 갈래를 다 본다**(리뷰 19차). 테마 재바인딩만 보면, 아직 테마로 못 옮긴
+            //   옛 라이브 행이 **은퇴한 목소리로 우는데** 문이 열린다.
             Self.needsRebind(
-                record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
-            )
+                record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            ) || Self.needsLegacyConversion(record)
         }
     }
 
@@ -352,10 +378,10 @@ struct StockClipLanguageRebinder {
             )
         }
         guard !pending else { return 0 }
-        let waitingForSeed = mine.contains {
+        let waitingForSeed = mine.contains { record in
             Self.needsRebind(
-                record: $0, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
-            )
+                record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            ) || Self.needsLegacyConversion(record)
         }
         guard !waitingForSeed else { return 0 }
 
@@ -431,15 +457,9 @@ struct StockClipLanguageRebinder {
 
         // 남의 알람은 건드리지 않는다 — `rebindIfLanguageChanged` 와 같은 이유.
         let visibleLegacy = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
-        let legacy: [LocalAlarmRecord] = visibleLegacy.filter { (record: LocalAlarmRecord) -> Bool in
-            // ⚠ `bucketId` 가 **비어 있는** 것이 '옛 라이브 행' 의 표식이다. 테마 알람은
-            // 저장할 때 `randomPrompt` 를 내리고 `bucketId` 를 적으므로 여기 안 걸린다.
-            guard record.voiceRandomPrompt else { return false }
-            guard (record.bucketId).nilIfBlank == nil else { return false }
-            guard record.playModeEnum != .alarmOnly else { return false }
-            guard record.voiceSourceEnum != .localAudio else { return false }
-            return true
-        }
+        // ⚠ 술어를 여기서 다시 조립하지 않는다 — 미완료 판정과 **같은 이름**을 쓴다.
+        //   두 벌로 갈라지면 "변환은 남았는데 완료라고 보고" 하는 상태가 다시 생긴다.
+        let legacy: [LocalAlarmRecord] = visibleLegacy.filter(Self.needsLegacyConversion)
         guard !legacy.isEmpty else { return .none }
 
         var rebound = 0
@@ -449,6 +469,10 @@ struct StockClipLanguageRebinder {
             //   옛 표현에 남아 매번 같은 문구를 되풀이한다. `normalized` 가 `cheer` 로 접는다.
             guard let raw = record.voiceRandomContext, !raw.isEmpty else { continue }
             let context = RandomPromptContext.normalized(raw)
+            // 술어가 이미 걸렀지만, 이 값이 실제로 묶이는 자리라 한 번 더 본다 —
+            // `greeting` 으로 묶인 알람은 저장할 때마다 400 을 맞는다.
+            guard FreeBucket(rawValue: context.bucketCategory).map(FreeBucket.order.contains) ?? false
+            else { continue }
             // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 이 경로는 옛
             //   라이브 행을 테마로 바꾸면서 `voiceRandomPrompt` 를 내린다 — 한 번 옮겨지면
             //   위 술어에 다시 안 걸려 **영원히 그 부분 세트로 남는다.**

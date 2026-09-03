@@ -26,6 +26,18 @@ final class StockReplacementStatus: ObservableObject {
     /// 차단 화면의 '다시 시도'. 값이 바뀌면 `AlarmTalkApp` 이 교체 절차를 다시 돈다.
     @Published private(set) var retryToken = 0
 
+    /// **앞 회차가 디스크에 못 앉힌 채 끝났다.**
+    ///
+    /// ⚠ 실패를 값으로 돌려주는 것만으로는 부족하다(2026-09-03 리뷰 19차). `upsert` 가
+    ///   이미 메모리를 바꿔 놨으므로, 재시작 없이 다시 시도하면 재바인더가 그 행들을
+    ///   **'이미 최신'** 으로 보고 아무것도 안 하며 `persisted: true` 를 돌려준다 —
+    ///   그러면 호출부가 **못 앉힌 상태 그대로** 옛 오디오를 지우고 문을 연다.
+    ///   그래서 그 사실을 남겨 두고, 다음 회차가 **정리 전에 먼저 저장**하게 한다.
+    private(set) var hasUnsavedRebind = false
+
+    func markUnsavedRebind() { hasUnsavedRebind = true }
+    func clearUnsavedRebind() { hasUnsavedRebind = false }
+
     private init() {}
 
     /// 판정을 기록한다. **매니페스트를 못 받았으면 아무것도 하지 않는다.**

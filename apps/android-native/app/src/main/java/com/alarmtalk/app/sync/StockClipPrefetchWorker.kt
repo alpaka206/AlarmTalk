@@ -245,6 +245,8 @@ class StockClipPrefetchWorker(
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
             // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를
             // 바꾼 다음 실행)에도 재바인딩은 남아 있을 수 있다.
+            // 계정이 바뀐 채로 이 회차가 끝나면 재시도로 넘긴다(아래 주석 참조).
+            var accountChangedDuringRun = false
             // ⚠ **한 번만 만들어 아래 두 곳이 같은 답을 보게 한다.** 재바인딩과 정리가
             //   서로 다른 힌트로 판정하면, 정리가 "갈아탈 것이 없다" 로 읽고 아직 옛 클립을
             //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
@@ -344,15 +346,23 @@ class StockClipPrefetchWorker(
                             manifestFetched = true,
                         )
                     } else {
-                        // 이 실행이 끝나야 유니크 작업 자리가 비므로, 여기서 넣으면
-                        // 새 계정의 회차가 확실히 잡힌다.
-                        enqueue(applicationContext)
+                        // ⚠ **여기서 `enqueue` 하면 버려진다**(2026-09-03 리뷰 19차).
+                        //   `enqueueUniqueWork(WORK_NAME, KEEP)` 인데 **이 실행이 아직
+                        //   끝나지 않았으므로**, B 의 원래 enqueue 가 버려진 것과 똑같이
+                        //   이것도 버려진다. 그러면 B 는 다른 계기가 올 때까지 교체를
+                        //   못 받는다.
+                        //   대신 **이 회차를 재시도로 넘긴다** — WorkManager 가 같은 유니크
+                        //   작업을 다시 돌리고, 그 실행은 **지금 세션(B)** 을 읽는다.
+                        accountChangedDuringRun = true
                     }
                 }.onFailure { AlarmTalkLog.reportError("Stock replacement status probe failed", it) }
             }
 
             if (clips.isEmpty()) {
                 rebind()
+                // 도중에 계정이 바뀌었으면 이 회차는 **앞 계정의 것**이다 — 재시도로 넘겨
+                // 다음 실행이 지금 세션을 읽게 한다(유니크 작업이라 enqueue 는 버려진다).
+                if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
 
@@ -368,6 +378,7 @@ class StockClipPrefetchWorker(
             publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
                 rebind()
+                if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
 
@@ -424,6 +435,7 @@ class StockClipPrefetchWorker(
                 publishProgress(done = done, total = clips.size)
             }
             rebind()
+            if (accountChangedDuringRun) return@runCatching Result.retry()
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
             //
