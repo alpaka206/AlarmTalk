@@ -23,7 +23,7 @@ export function SiteFooter() {
               aria-label="AlarmTalk"
               className="flex items-center gap-2.5 whitespace-nowrap"
             >
-              <BrandMark size={32} className="rounded-sm" />
+              <BrandMark size={32} />
               <span className="text-[16px] font-bold tracking-tight text-text">
                 AlarmTalk
               </span>
@@ -64,6 +64,14 @@ export function SiteFooter() {
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkFaq")}
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/cheer"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkCheer")}
                   </Link>
                 </li>
               </ul>

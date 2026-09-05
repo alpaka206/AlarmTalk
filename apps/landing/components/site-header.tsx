@@ -45,7 +45,7 @@ export function SiteHeader() {
           aria-label="AlarmTalk"
           className="flex items-center gap-2.5 whitespace-nowrap"
         >
-          <BrandMark size={32} className="rounded-sm" />
+          <BrandMark size={32} />
           <span className="text-[17px] font-bold tracking-tight text-text">
             AlarmTalk
           </span>
@@ -64,6 +64,12 @@ export function SiteHeader() {
             className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("pricing")}
+          </Link>
+          <Link
+            href="/cheer"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
+          >
+            {t("cheer")}
           </Link>
           <Link
             href="/#faq"

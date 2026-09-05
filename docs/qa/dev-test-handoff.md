@@ -58,6 +58,50 @@
 - [ ] `npm run publish:stock -- --env prod`
 - [ ] 다음 릴리스에서 은퇴한 프리셋과 R2 오브젝트를 **삭제**한다(이번엔 은퇴까지만)
 
+## 0-B. 랜딩 재작성 (2026-09-06) — 코드는 끝, 게재 뒤 스위치 하나
+
+레퍼런스 11곳(알라미·Sleep Cycle·Calm·Headspace·Duolingo·Oura·토스 등)을 실측해 카피 결을
+정했다: **히어로는 아침에 일어나는 일**, 방법은 본문 둘째 줄과 FAQ. AI·합성·클론 같은 낱말은
+페이지에 쓰지 않고, 숫자는 측정된 사실만(사양 숫자 타일은 뺐다).
+
+### 바뀐 것
+- **홈**: 헤드라인 `알람이 아니라, {누구} 목소리가 깨워요` — 돌아가는 자리는 '누구' 뿐이다
+  (`components/motion/cycling-word.tsx`). 서브 아래에 **미리 들어보기**(`voice-preview.tsx`):
+  버튼 하나로 시우 → 미나 → 도현 → 애니 인사말을 차례로 듣는다. 고르는 UI 는 두지 않는다.
+  파형은 장식이 아니라 재생 중 실제 음량이다(AnalyserNode). 숫자 타일 자리는 '누구 목소리'
+  챕터(`sections/whose-voice.tsx`)로, 문구 예시 카드는 앱 대본(`voice-preview/*/문구.txt`)을
+  줄인 문장으로 바꿨다 — **없는 문장을 광고하지 않는다.** ko/en/ja 세 벌 모두.
+- **미리듣기 클립**은 안드로이드가 목소리를 눌렀을 때 트는 그 파일이다
+  (`res/raw/voice_greeting_<voice>_<lang>.mp3` → `apps/landing/public/audio/<voice>-greeting.<lang>.mp3`,
+  `.gitignore` 에 예외). **앱의 인사말을 바꾸면 이 복사본도 같이 바꾼다.**
+- **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
+  대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
+  (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
+- **응원 메시지 `/cheer/`**: 이름 입력 + 카드별 재생. 재생 경로는 `cheer-playback.ts` 의
+  `resolveCheerPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
+  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `cheer-voices.ts`,
+  이름·역할·문장은 `messages/*.json` 의 `cheer.voices`. 이름 정리는 앱 `sanitizeDisplayName`
+  과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
+- **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
+  바닥 색을 앱 다크 스킴(`AlarmTalkTheme.kt`)에서 가져온다(`globals.css`). 브랜드 마크는
+  `BrandMark` 안에서 아이콘 마스크 비율(22%)로 **한 번만** 깎는다 — 호출부에 `rounded-*`
+  를 덧대지 말 것.
+
+### 확인한 것 (정적 export 를 헤드리스 크로미움으로)
+- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/cheer/` 등 404 는 Vercel rewrite 가 맡는 접두사
+  없는 경로 프리페치 — 로컬 서빙에서만 난다).
+- 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
+- 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
+
+### 사람이 확인할 것
+- **iOS 사파리 실기기**에서 미리듣기 첫 탭에 소리가 나는가(AudioContext 는 제스처 안에서
+  `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).
+- 응원 페이지의 브라우저 목소리 품질은 기기마다 다르다 — 전용 생성 경로가 붙기 전까지의
+  임시 소리다. 카드 이름·문장은 자리 표시용이라 실제 목록이 오면 JSON 만 바꾼다.
+- App Store 게재 당일: Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=1` 추가 후 재배포.
+- `apps/landing/skills-lock.json` 은 apple-design 스킬 설치가 남긴 파일이라 커밋하지 않았다
+  (스킬 본체는 `.claude/` 로 무시된다).
+
 ## 0. 진행 중 — 클립 선다운로드 후속
 
 클립 선다운로드 1~5단계는 양 앱과 백엔드에서 모두 완료됐다. 라이브 랜덤 생성은

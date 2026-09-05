@@ -114,3 +114,6 @@ apps/ios-native/Local.xcconfig
 
 # 실기기 QA 캡처(로컬 전용)
 qa-shots/
+
+# 랜딩 「미리 들어보기」 — 기본 목소리 인사말 4개(제품 그 자체의 소리라 저장소에 둔다, 총 ~550KB)
+!apps/landing/public/audio/*.mp3
