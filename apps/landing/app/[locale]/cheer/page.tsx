@@ -60,7 +60,7 @@ export default async function CheerPage({
   return (
     <>
       <SiteHeader />
-      <main className="relative">
+      <main id="main" className="relative">
         <CheerHero />
         <CheerStudio />
         <CheerSteps />
@@ -92,9 +92,8 @@ function CheerHero() {
           </RevealItem>
           <RevealItem
             as="p"
-            className="mt-7 inline-flex items-center gap-2 rounded-[var(--radius-pill)] border border-line bg-bg-alt px-4 py-2 text-[13px] font-semibold text-text-strong"
+            className="mt-7 inline-flex items-center rounded-[var(--radius-pill)] border border-line bg-bg-alt px-4 py-2 text-[13px] font-semibold text-text-strong"
           >
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent" />
             {t("disclaimer")}
           </RevealItem>
         </RevealGroup>

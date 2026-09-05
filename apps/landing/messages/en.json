@@ -9,7 +9,8 @@
     "faq": "FAQ",
     "company": "Company",
     "contact": "Contact",
-    "cheer": "Cheer messages"
+    "cheer": "Cheer messages",
+    "skipToContent": "Skip to content"
   },
   "hero": {
     "headline": "Not an alarm.\n<who></who> voice wakes you.",
@@ -21,7 +22,8 @@
       "alarmMeta": "Wed, Aug 5 - Mom’s voice",
       "tabAlarms": "Alarms",
       "tabVoice": "Voices",
-      "tabMore": "More"
+      "tabMore": "More",
+      "alt": "The app’s home screen. Tomorrow’s 6:00 alarm is on, in Mom’s voice"
     },
     "who": [
       "Mom’s",
@@ -42,7 +44,7 @@
     "description": "Do you call a parent every day to check they took their medicine?\nOn a couple or family plan you share voices and can set their alarm for them.",
     "bullet1": "Couple: 2 people · Family: 5 including you",
     "bullet2": "Use a shared voice in any of your alarms",
-    "bullet3": "Set their alarm — once it arrives, it’s theirs"
+    "bullet3": "Set their alarm. Once it arrives, it’s theirs"
   },
   "language": {
     "headline": "Tired of writing lines?\nLet it pick one each day.",
@@ -58,7 +60,7 @@
       {
         "tag": "Weather",
         "title": "“It might rain today. Don’t forget your umbrella when you head out.”",
-        "body": "Clear, rain, snow, fine dust, heat or cold — the greeting matches the day."
+        "body": "Clear, rain, snow, fine dust, heat or cold: the greeting matches the day."
       },
       {
         "tag": "Medicine",
@@ -98,11 +100,11 @@
       },
       {
         "q": "What happens to my voice if I delete my account?",
-        "a": "It is destroyed on our servers. If someone else has an alarm built from it, the voice is removed there too and the alarm falls back to an alarm sound. The alarm itself stays — the time is theirs."
+        "a": "It is destroyed on our servers. If someone else has an alarm built from it, the voice is removed there too and the alarm falls back to an alarm sound. The alarm itself stays. The time is theirs."
       },
       {
         "q": "Can I redo a voice I’m not happy with?",
-        "a": "You can re-record as many times as you like before you confirm it. After that, you can register one voice per month — deleting the one you made won’t give you another that month."
+        "a": "You can re-record as many times as you like before you confirm it. After that, you can register one voice per month, and deleting the one you made won’t give you another that month."
       },
       {
         "q": "If I cancel, do I lose access right away?",
@@ -114,11 +116,11 @@
       },
       {
         "q": "Who actually uses this?",
-        "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character — and seniors and long-distance families who want their child, grandchild, or partner's voice every morning. Both share one thing: a specific voice they want to hear daily."
+        "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character, and seniors and long-distance families who want their child, grandchild, or partner’s voice every morning. Both share one thing: a specific voice they want to hear daily."
       },
       {
         "q": "Which devices are supported?",
-        "a": "Android is on Google Play now. The iOS app is being prepared for the App Store, and the App Store button on this page will open as soon as it’s live."
+        "a": "Android is on Google Play now. The iOS app is being prepared for the App Store, and the App Store button on this page will open as soon as it’s live."
       }
     ]
   },
@@ -166,7 +168,7 @@
   "contact": {
     "meta": {
       "title": "Contact",
-      "description": "Four ways to talk to AlarmTalk — support, business, careers, and press."
+      "description": "Four ways to talk to AlarmTalk: support, business, careers, and press."
     },
     "hero": {
       "eyebrow": "Contact",
@@ -188,21 +190,21 @@
         {
           "tag": "Business",
           "title": "Partnerships · B2B",
-          "body": "Team or company rollouts, licensing, integration proposals — write to business.",
+          "body": "Team or company rollouts, licensing, integration proposals: write to business.",
           "email": "business@alarm-talk.com",
           "cta": "Send email"
         },
         {
           "tag": "Careers · General",
           "title": "Join us · general inquiries",
-          "body": "Interested in joining the team, or have something that doesn't fit the other channels?",
+          "body": "Interested in joining the team, or have something that doesn’t fit the other channels?",
           "email": "hello@alarm-talk.com",
           "cta": "Send email"
         },
         {
           "tag": "Press",
           "title": "Press & media",
-          "body": "Coverage, interviews, press kits — the media line gets the fastest reply.",
+          "body": "Coverage, interviews, press kits: the media line gets the fastest reply.",
           "email": "press@alarm-talk.com",
           "cta": "Send email"
         }
@@ -210,23 +212,23 @@
     },
     "note": {
       "headline": "Response policy",
-      "body": "We usually reply within 1–3 business days. Longer answers can take a little more. If you don't hear back, please check your spam folder too."
+      "body": "We usually reply within 1-3 business days. Longer answers can take a little more. If you don’t hear back, please check your spam folder too."
     }
   },
   "company": {
     "meta": {
       "title": "Company",
-      "description": "AlarmTalk redefines an alarm not as a sound, but as a relationship. Our mission, our principles, and what we're building."
+      "description": "AlarmTalk redefines an alarm not as a sound, but as a relationship. Our mission, our principles, and what we’re building."
     },
     "hero": {
       "eyebrow": "Our mission",
       "headline1": "Instead of a louder alarm,",
       "headline2": "one you want to hear.",
-      "description": "AlarmTalk redefines an alarm as a relationship instead of a sound. Starting every morning's first second with a fresh line in a voice you love — that's our single job."
+      "description": "AlarmTalk redefines an alarm as a relationship instead of a sound. Starting every morning’s first second with a fresh line in a voice you love. That’s our single job."
     },
     "principles": {
       "headline": "Five principles we work by",
-      "description": "We are early — going from zero to one. That's exactly why clear principles matter more, not less.",
+      "description": "We are early, going from zero to one. That’s exactly why clear principles matter more, not less.",
       "items": [
         {
           "title": "Build something people want every day",
@@ -238,11 +240,11 @@
         },
         {
           "title": "Emotion over force",
-          "body": "Not a louder alarm — one you actually want to hear. We wake the mind, not just the body."
+          "body": "Not a louder alarm. One you actually want to hear. We wake the mind, not just the body."
         },
         {
           "title": "Ask for a 10× answer",
-          "body": "We don't chase 10% gains. We look for an answer that is 10× different — a third path beyond beeps and missions."
+          "body": "We don’t chase 10% gains. We look for an answer that is 10× different: a third path beyond beeps and missions."
         },
         {
           "title": "Build globally from day one",
@@ -251,7 +253,7 @@
       ]
     },
     "products": {
-      "headline": "What we're building",
+      "headline": "What we’re building",
       "description": "One product. Every decision is made in the name of AlarmTalk.",
       "alarmtalk": {
         "tag": "AlarmTalk",
@@ -262,7 +264,7 @@
     },
     "future": {
       "headline": "Coming soon to this page",
-      "description": "Press, awards, and the team's story will land here at launch.",
+      "description": "Press, awards, and the team’s story will land here at launch.",
       "items": [
         {
           "tag": "Press",
@@ -272,7 +274,7 @@
         {
           "tag": "Team",
           "title": "Team & culture",
-          "body": "Stories about the people building this — published at launch."
+          "body": "Stories about the people building this, published at launch."
         },
         {
           "tag": "Careers",
@@ -299,22 +301,22 @@
       "free": {
         "name": "Free",
         "price": "Free",
-        "includes": "Unlimited alarms · 4 built-in voices · weather, horoscope, medicine and encouragement lines"
+        "includes": "Unlimited alarms, 4 built-in voices, and weather, horoscope, medicine and encouragement lines"
       },
       "personal": {
         "name": "Personal",
         "price": "$3.90/mo",
-        "includes": "Add your own voice (one a month) · write your own lines"
+        "includes": "Add your own voice (one a month) and write your own lines"
       },
       "couple": {
         "name": "Couple",
         "price": "$6.90/mo · 2 people",
-        "includes": "Everything in Personal · share voices with each other · set their alarm"
+        "includes": "Everything in Personal, plus sharing voices with each other and setting their alarm"
       },
       "family": {
         "name": "Family",
         "price": "$14.90/mo · 5 including you",
-        "includes": "Everything in Couple · five people sharing voices"
+        "includes": "Everything in Couple, for five people sharing voices"
       }
     },
     "note": "Monthly plans only. The exact amount in your currency is shown in the store you downloaded from, where billing and cancellation happen. Cancelling leaves the time you already paid for intact."
@@ -329,21 +331,20 @@
   },
   "crop": {
     "alarm-row": "Alarm list showing time left until the next alarm",
-    "record": "Create a voice — record or upload a file",
-    "pick-message": "Choosing what it says — greeting, weather, fortune, encouragement, medication, or your own",
-    "voice-groups": "Voice list — your voice and voices shared with you",
+    "record": "Create a voice: record or upload a file",
+    "pick-message": "Choosing what it says: greeting, weather, fortune, encouragement, medication, or your own",
+    "voice-groups": "Voice list: your voice and voices shared with you",
     "who-to-wake": "Choosing who to wake"
   },
   "voicePreview": {
     "idleTitle": "Hear a voice",
     "idleCaption": "Give it a listen",
-    "loading": "One moment",
+    "loading": "One moment…",
     "speaking": "Speaking",
     "tapForNext": "Tap again for the next one",
-    "failed": "Can’t play right now",
+    "failed": "Can’t play right now. Tap to try again",
     "playAria": "Play a built-in voice",
     "stopAria": "Stop {name}",
-    "footnote": "The app’s built-in voices, exactly as they sound in the app. Each tap moves to the next one.",
     "voices": {
       "siwoo": "Siwoo",
       "mina": "Mina",
@@ -355,19 +356,16 @@
     "headline": "Whose voice\nwill wake you?",
     "items": [
       {
-        "label": "Yours, or one you love",
         "title": "A voice you recorded",
         "body": "Read a few lines into your phone once.\nAfter that, you only choose what it says."
       },
       {
-        "label": "Couple · Family",
         "title": "A voice someone shared",
         "body": "People on the same plan share voices.\nFar away, still there in the morning."
       },
       {
-        "label": "No setup, free",
         "title": "Four built-in voices",
-        "body": "Siwoo, Mina, Dohyun and Aeni.\nUse them in an alarm today."
+        "body": "Siwoo, Mina, Dohyun and Aeni.\nNo setup, free, in an alarm today."
       }
     ]
   },
@@ -384,9 +382,9 @@
     },
     "studio": {
       "nameLabel": "Who needs cheering up?",
-      "namePlaceholder": "Type a name",
+      "namePlaceholder": "e.g. Jamie…",
       "namePlaceholderInline": "you",
-      "nameHint": "Up to 12 characters. A friend’s name works too.",
+      "nameHint": "Up to {max} characters. A friend’s name works too.",
       "playAria": "Play in the {voice} voice",
       "stopAria": "Stop the {voice} voice",
       "playing": "Speaking",

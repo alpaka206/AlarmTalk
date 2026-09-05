@@ -55,35 +55,38 @@ export function CheerStudio() {
     <section className="relative" aria-labelledby={`${inputId}-heading`}>
       <div className="mx-auto max-w-6xl px-5 pb-24 md:px-8 lg:pb-32">
         <div className="mx-auto max-w-[560px]">
-          <label
-            id={`${inputId}-heading`}
-            htmlFor={inputId}
-            className="t-h3 block text-text"
-          >
-            {t("studio.nameLabel")}
-          </label>
+          <h2 id={`${inputId}-heading`} className="t-h3 text-text">
+            <label htmlFor={inputId}>{t("studio.nameLabel")}</label>
+          </h2>
           <div className="relative mt-3">
             <input
               id={inputId}
               type="text"
+              name="cheerName"
               inputMode="text"
               autoComplete="given-name"
+              autoCapitalize="words"
+              spellCheck={false}
               enterKeyHint="done"
+              aria-describedby={`${inputId}-hint ${inputId}-count`}
               value={name}
               onChange={(e) => setName(sanitizeCheerName(e.target.value))}
               placeholder={t("studio.namePlaceholder")}
-              className="h-14 w-full rounded-[var(--radius-lg)] border border-line bg-surface px-5 pr-16 text-[18px] font-semibold text-text placeholder:font-medium placeholder:text-text-dim focus:border-accent focus:outline-none"
+              className="h-14 w-full rounded-[var(--radius-lg)] border border-line bg-surface px-5 pr-16 text-[18px] font-semibold text-text placeholder:font-medium placeholder:text-text-muted focus-visible:border-accent"
             />
             <span
-              aria-hidden="true"
+              id={`${inputId}-count`}
+              aria-live="polite"
               className={`pointer-events-none absolute inset-y-0 right-5 grid place-items-center text-[12px] tabular-nums ${
-                nameLength >= CHEER_NAME_MAX_LENGTH ? "text-rose" : "text-text-dim"
+                nameLength >= CHEER_NAME_MAX_LENGTH ? "text-rose" : "text-text-muted"
               }`}
             >
               {nameLength}/{CHEER_NAME_MAX_LENGTH}
             </span>
           </div>
-          <p className="t-caption mt-3 text-text-muted">{t("studio.nameHint")}</p>
+          <p id={`${inputId}-hint`} className="t-caption mt-3 text-text-muted">
+            {t("studio.nameHint", { max: CHEER_NAME_MAX_LENGTH })}
+          </p>
         </div>
 
         <RevealGroup
@@ -112,7 +115,6 @@ export function CheerStudio() {
                   <motion.button
                     type="button"
                     onClick={() => onPress(voice)}
-                    aria-pressed={playing}
                     aria-label={
                       playing
                         ? t("studio.stopAria", { voice: voiceName })

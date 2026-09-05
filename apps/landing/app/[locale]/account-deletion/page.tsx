@@ -179,7 +179,7 @@ export default async function AccountDeletionPage({
   return (
     <>
       <SiteHeader />
-      <main>
+      <main id="main">
         <section className="mx-auto max-w-6xl px-5 pb-14 pt-16 md:px-8 lg:pb-20 lg:pt-24">
           <div className="max-w-3xl">
             <span className="eyebrow">{copy.eyebrow}</span>
@@ -208,7 +208,7 @@ export default async function AccountDeletionPage({
               <a href={mailHref} className="btn btn-primary mt-6">
                 {copy.mailCta}
               </a>
-              <p className="mt-4 text-[13px] text-text-faint">
+              <p className="mt-4 text-[13px] text-text-muted">
                 {PRIVACY_EMAIL}
               </p>
             </InfoPanel>
@@ -220,7 +220,7 @@ export default async function AccountDeletionPage({
           <div className="mx-auto max-w-6xl px-5 py-14 md:px-8 lg:py-20">
             <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
               <div>
-                <span className="inline-flex rounded-full border border-line bg-raised px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-text-faint">
+                <span className="inline-flex rounded-full border border-line bg-raised px-3 py-1 text-[11.5px] font-semibold uppercase tracking-wider text-text-muted">
                   Data scope
                 </span>
                 <h2 className="mt-5 text-[28px] font-bold leading-[1.2] text-text sm:text-[36px]">

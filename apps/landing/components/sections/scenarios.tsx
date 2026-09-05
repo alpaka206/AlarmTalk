@@ -33,21 +33,18 @@ export function Scenarios() {
             <RevealItem
               as="article"
               key={i}
-              className="card card-interactive group relative p-7"
+              className="card relative p-7"
             >
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full border border-line bg-raised px-2.5 text-[11.5px] font-semibold text-text-muted">
                   {t(`items.${i}.tag`)}
                 </span>
-                {/* divider that wipes coral on hover */}
-                <span className="relative h-px flex-1 overflow-hidden bg-line-soft">
-                  <span className="absolute inset-0 origin-left scale-x-0 bg-accent transition-transform duration-300 ease-out group-hover:scale-x-100" />
-                </span>
+                <span aria-hidden="true" className="h-px flex-1 bg-line-soft" />
               </div>
-              <h3 className="mt-5 text-[20px] font-bold leading-snug tracking-[-0.015em] text-text">
+              <h3 className="mt-5 text-pretty text-[20px] font-bold leading-snug tracking-[-0.015em] text-text [overflow-wrap:anywhere]">
                 {t(`items.${i}.title`)}
               </h3>
-              <p className="mt-3 text-[15px] leading-[1.65] text-text-muted">
+              <p className="mt-3 text-[15px] leading-[1.65] text-text-muted [overflow-wrap:anywhere]">
                 {t(`items.${i}.body`)}
               </p>
             </RevealItem>

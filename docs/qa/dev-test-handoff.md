@@ -93,6 +93,29 @@
 - 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
 - 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
 
+### 2차 — 스킬 검수 (같은 날)
+`design-taste-frontend`(Leonxlnx/taste-skill)·`web-design-guidelines`(vercel-labs)를
+`apps/landing/.claude/skills` 에 깔고(`skills-lock.json`) 적용했다.
+- **taste**: 스크롤 큐·장식 점·칸별 아이브로·히어로 꼬리표를 걷어냈고, 세 언어 카피의
+  대시(— –)를 전부 없앴다(문장부호로 대체). 안 쓰는 모션 파일 셋(count-up·living-waveform·
+  scroll-cue)도 지웠다. 라이트 단일 테마는 **일부러** 그대로다(흰 바닥 설계, `globals.css` 주석).
+- **WIG**(파일 묶음 4개 병렬 검수 → 지적마다 반박 검증, 확정 9건): 일본어가 `keep-all`
+  때문에 한 문장이 한 단어가 돼 칸을 넘치던 것(FAQ·시나리오·누구 목소리 3열 — 375/768px
+  실측) → `html:lang(ja) body { word-break: normal }`; 본문 건너뛰기 링크 + 모든 `<main id="main">`;
+  모바일 메뉴를 네이티브 `<dialog>` 로(포커스 트랩·Escape·초점 복귀·세로 스크롤); 언어 전환을
+  버튼에서 **링크**로(`hreflang`·`lang`·`aria-current`); 스크린샷 드리프트에 `data-reveal`.
+  덤으로 저위험 지적: 제목 `text-wrap: balance` 전역, `touch-action: manipulation`, 장식 전용
+  색(`text-faint`)을 읽히는 글자에서 제거, FAQ 질문 `h3`+`id`, 요금·챕터 목록 구조, 브랜드명
+  `translate="no"`, 폰 목업 `role="img"`, 응원 입력의 `name`/`aria-describedby`/초점 링 복원.
+- 검수가 반박으로 **기각**한 것: 앵커 `scroll-padding-top`(증상 재현 안 됨), 헤더 backdrop
+  블러 성능, 미리듣기 글자 칸 폭. 근거는 워크플로 저널에 있다.
+- 실측으로 새로 잡은 것: 일본어 헤더 메뉴가 768px 에 한 줄로 안 들어가(840px) 데스크톱 내비를
+  **lg(1024) 부터**로 올렸고, 미리듣기 알약은 막대를 `flex-1 max-w-[3px]` 로 바꿔 320px 까지
+  들어간다. 1024px 에서 기능 섹션 스크린샷이 32px 밖으로 흘러 `scrollWidth` 가 커지는 것은
+  의도한 설계(`lg:-mr-16`, body `overflow-x: hidden`)라 두었다.
+- `apps/landing/AGENTS.md`·`CLAUDE.md` 는 검수 에이전트가 `next dev` 를 돌리며 Next 가 생성한
+  파일이다. 지워도 다시 생기므로 그대로 커밋했다.
+
 ### 사람이 확인할 것
 - **iOS 사파리 실기기**에서 미리듣기 첫 탭에 소리가 나는가(AudioContext 는 제스처 안에서
   `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).

@@ -255,12 +255,13 @@ export function VoicePreview({ className }: { className?: string }) {
           : t("idleCaption");
 
   return (
-    <div className={`flex w-full max-w-[460px] flex-col items-center gap-3 ${className ?? ""}`}>
-      <div className="flex w-full items-center gap-3 rounded-[var(--radius-pill)] border border-line bg-surface py-2 pl-2 pr-5 shadow-[var(--shadow-card)] sm:gap-4">
+    <div className={`flex w-full max-w-[460px] flex-col items-center ${className ?? ""}`}>
+      {/* 폭 예산(375px 기준 335): 버튼 56 + 막대(줄어듦) + 글자 칸(최대 120) + 여백. 막대는
+          `flex-1 max-w-[3px] min-w-px` 라 좁으면 가늘어지지, 알약이 페이지를 넘지 않는다. */}
+      <div className="flex w-full items-center gap-3 rounded-[var(--radius-pill)] border border-line bg-surface py-2 pl-2 pr-4 shadow-[var(--shadow-card)] sm:gap-4 sm:pr-5">
         <motion.button
           type="button"
           onClick={onPress}
-          aria-pressed={busy}
           aria-label={busy ? t("stopAria", { name: name ?? "" }) : t("playAria")}
           whileTap={reduced ? undefined : { scale: 0.94 }}
           transition={{ type: "spring", duration: 0.3, bounce: 0 }}
@@ -282,7 +283,7 @@ export function VoicePreview({ className }: { className?: string }) {
         {/* 파형 — 높이는 rAF 가 ref 로 직접 만지고, 색만 React 가 정한다. */}
         <div
           aria-hidden="true"
-          className="flex h-10 flex-1 items-center justify-between gap-[3px]"
+          className="flex h-10 min-w-0 flex-1 items-center justify-between gap-[2px] sm:gap-[3px]"
         >
           {REST_LEVELS.map((level, i) => (
             <span
@@ -290,7 +291,7 @@ export function VoicePreview({ className }: { className?: string }) {
               ref={(el) => {
                 barRefs.current[i] = el;
               }}
-              className={`block h-full w-[3px] origin-center rounded-full ${
+              className={`block h-full min-w-px max-w-[3px] flex-1 origin-center rounded-full ${
                 i < playedTo ? "bg-accent" : "bg-gray-300"
               } ${reduced ? "" : "transition-[background-color] duration-200 ease-[var(--ease-ui)]"}`}
               style={{ transform: `scaleY(${level})` }}
@@ -298,8 +299,8 @@ export function VoicePreview({ className }: { className?: string }) {
           ))}
         </div>
 
-        <div className="min-w-[5.5rem] text-left" aria-live="polite">
-          <p className="truncate text-[15px] font-semibold leading-tight text-text">
+        <div className="min-w-[5.5rem] max-w-[7.5rem] text-left sm:max-w-none" aria-live="polite">
+          <p className="truncate text-[14px] font-semibold leading-tight text-text sm:text-[15px]">
             {primaryLine}
           </p>
           <p className={`mt-0.5 truncate text-[12px] leading-tight ${failed ? "text-rose" : "text-text-muted"}`}>
@@ -307,7 +308,6 @@ export function VoicePreview({ className }: { className?: string }) {
           </p>
         </div>
       </div>
-      <p className="t-caption text-center text-text-muted">{t("footnote")}</p>
     </div>
   );
 }

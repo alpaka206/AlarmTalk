@@ -2,7 +2,6 @@ import { useTranslations } from "next-intl";
 import { StoreBadges } from "../store-badges";
 import { VoicePreview } from "../voice-preview";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
-import { ScrollCue } from "../motion/scroll-cue";
 import { CyclingWord } from "../motion/cycling-word";
 
 /**
@@ -26,7 +25,7 @@ export function Hero() {
           delay={0.05}
           trigger="mount"
         >
-          <RevealItem as="h1" className="t-display max-w-4xl text-text">
+          <RevealItem as="h1" className="t-display max-w-4xl text-pretty text-text">
             {t.rich("headline", {
               who: () => <CyclingWord words={who} className="text-accent" />,
             })}
@@ -48,7 +47,6 @@ export function Hero() {
           </RevealItem>
         </RevealGroup>
 
-        <ScrollCue className="mt-20 hidden lg:block" />
       </div>
     </section>
   );

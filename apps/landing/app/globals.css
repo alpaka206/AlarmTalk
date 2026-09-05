@@ -105,12 +105,22 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* 일본어는 띄어쓰기가 없다 — keep-all 이면 문장 하나가 한 단어가 돼 칸을 넘치고 옆 칸
+     위에 그려진다(2026-09-06 검수, 375·768px 실측). 한글용 규칙을 ja 에서만 푼다.
+     lang 은 postbuild-lang(정적 HTML)과 HtmlLangSync(클라)가 함께 맞춘다. */
+  html:lang(ja) body {
+    word-break: normal;
+    line-break: strict;
+  }
+
   /* 제목도 본문과 같은 산세리프다. 무게로만 가른다 — 800 은 한글에서 획이 뭉치지
      않으면서 확실히 굵게 읽히는 상한이다. 자간은 크기별 유틸(.t-*)이 정한다. */
   h1,
   h2,
   h3 {
     font-weight: 800;
+    /* 강제 개행(`\n`) 안에서도 마지막 줄에 낱말 하나만 남지 않게 한다. */
+    text-wrap: balance;
   }
 
   /* 카피 요소만 JSON 의 `\n` 을 줄바꿈으로 살린다.
@@ -142,8 +152,11 @@
 
   /* button & link defaults — never break across lines */
   button,
-  a {
+  a,
+  summary {
     -webkit-tap-highlight-color: transparent;
+    /* 연타하는 버튼(미리듣기·재생)이 iOS 의 더블탭 줌 대기에 먹히지 않게. */
+    touch-action: manipulation;
   }
 }
 
@@ -279,6 +292,7 @@
     top: 0;
     display: flex;
     height: 100vh;
+    height: 100svh; /* iOS 사파리 툴바가 보일 때 폰 하단이 잘리지 않게 */
     flex-direction: column;
     align-items: center;
     justify-content: center;

@@ -73,7 +73,7 @@ export async function HomeContent({ locale }: { locale: string }) {
           사양표로 읽힌다(2026-09-06 레퍼런스 11곳 실측). 그 자리는 '누구 목소리' 챕터다.
           '목소리 나누기' 를 뒤로 내린 이유: 그건 인원이 둘 이상일 때만 성립하는데,
           앞에 보여주면 혼자 쓰는 사람이 "내 얘기 아니네" 로 떠난다. */}
-      <main className="relative">
+      <main id="main" className="relative">
         <Hero />
         {/* 제품이 처음 나오는 자리. 히어로에서 폰을 뺀 대신 여기서 스크롤과 함께 켠다. */}
         <ProductScroll />

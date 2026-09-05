@@ -1,6 +1,8 @@
 type Props = {
   size?: number;
   className?: string;
+  /** 옆에 워드마크가 있으면 "" 로 넘긴다 — 이름을 두 번 읽지 않게. */
+  alt?: string;
 };
 
 /**
@@ -11,11 +13,11 @@ type Props = {
  * `rounded-*` 를 덧대지 말 것(두 번 깎이면 비율이 어긋난다). 이 반경은 앱 `Waker*Shape`
  * 토큰이 아니라 아이콘 마스크 비율이다 — 원형 아바타(`CircleShape`)와 같은 예외다.
  */
-export function BrandMark({ size = 36, className }: Props) {
+export function BrandMark({ size = 36, className, alt = "AlarmTalk" }: Props) {
   return (
     <img
       src="/brand-icon.png"
-      alt="AlarmTalk"
+      alt={alt}
       width={size}
       height={size}
       className={className}

@@ -52,7 +52,7 @@ type BadgeProps = {
  */
 function Badge({ href, live, glyph, eyebrow, label, ariaLive, ariaSoon }: BadgeProps) {
   const inner = (
-    <span aria-hidden="true" className="flex items-center gap-3">
+    <span aria-hidden="true" translate="no" className="flex items-center gap-3">
       {glyph}
       <span className="flex flex-col leading-tight">
         <span className="text-[10px] uppercase tracking-wider text-white/70">
