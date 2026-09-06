@@ -56,7 +56,7 @@
     <string name="auth_password_rule_min">8文字以上</string>
     <string name="auth_password_show">パスワードを表示</string>
     <string name="auth_processing">処理中</string>
-    <string name="auth_subtitle_login">お気に入りの声のアラームをもう一度お呼びします。</string>
+    <string name="auth_subtitle_login">お気に入りの声のアラームを、もう一度読み込みます。</string>
     <string name="auth_subtitle_register">声のアラームを作るアカウントを準備しましょう。</string>    <string name="auth_title_login">ログイン</string>
     <string name="auth_title_register">会員登録</string>
     <string name="auth_verification_code_hint">メールに届いた6桁のコードを入力してください。</string>
@@ -67,17 +67,16 @@
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
     <string name="billing_gift_personal_action">ギフト</string>
     <string name="billing_gift_failed">ギフトコードを作れませんでした。しばらくしてからもう一度お試しください。</string>
-    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、プランはすぐに終了します。声は3日間保管されます — その間に再登録すればそのまま使え、過ぎると完全に削除されます。</string>
+    <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、利用券はすぐに終了します。声は3日間保管され、その間に利用券を登録し直せばそのまま使えます。過ぎると完全に削除されます。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
     <string name="billing_cancel_now">今すぐ解約</string>
     <string name="billing_cancel_pass">利用券を解約</string>
     <string name="billing_change_pass">利用券を変更</string>
-    <string name="billing_close">閉じる</string>
     <string name="billing_current_pass_label">現在の利用券</string>
     <string name="billing_leave_button">抜ける</string>
     <string name="billing_leave_shared_pass">共有利用券から抜ける</string>
     <string name="billing_leave_shared_pass_description">抜けると無料利用券に切り替わります。再び参加するには新しい招待コードが必要です。</string>
-    <string name="billing_monthly_subscription">購読する</string>
+    <string name="billing_monthly_subscription">決済する</string>
     <string name="billing_plan_couple_feature_max_two">2人で一緒に利用</string>
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
     <string name="billing_plan_couple_feature_voice_share">お互いの声を共有</string>
@@ -98,7 +97,7 @@
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
     <string name="billing_play_manage_open">Google Playを開く</string>
     <string name="billing_play_manage_title">Google Playでの管理が必要です</string>
-    <string name="billing_play_purchase_description_no_price">%1$s は Google Play で安全にお支払いいただけます。価格は決済画面で確認でき、いつでも解約できます。解約しても残りの期間はそのままご利用いただけます。</string>
+    <string name="billing_play_purchase_description_no_price">%1$sはGoogle Playで安全にお支払いいただけます。価格は決済画面で確認でき、いつでも解約できます。解約しても残りの期間はそのままご利用いただけます。</string>
     <string name="billing_play_purchase_description">%1$s利用券は%2$sです。Google Playで安全に決済され、いつでも解約できます。解約しても残りの期間はそのまま利用できます。</string>
     <string name="billing_play_purchase_title">%1$s利用券を始めますか？</string>
     <string name="billing_play_change_seats_warning">一緒に使える人数が減るため、定員を超えるメンバーはグループから外れます。</string>
@@ -147,18 +146,11 @@
     <string name="common_tab_code_register">コード登録</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
-    <string name="common_voice_record_again_hint">マイクをタップすると録音し直せます</string>
     <string name="common_voice_record_start">録音</string>
     <string name="common_voice_record_status_idle">録音する</string>
     <string name="common_voice_record_status_recording">録音中</string>
     <string name="common_voice_record_stop">録音を終了</string>
     <string name="editor_alarm_sound_title">アラーム音</string>
-    <string name="editor_apply">適用</string>
-    <string name="editor_audio_preview_play">プレビュー</string>
-    <string name="editor_recorded_done">録音完了</string>
-    <string name="editor_record_again">録り直す</string>
-    <string name="editor_audio_preview_stop">停止</string>
-    <string name="editor_back">戻る</string>
     <string name="editor_create_voice">声を作る</string>
     <string name="editor_detail_settings">詳細設定</string>
     <string name="editor_error_deleted_voice_cannot_edit">削除された声のため、文を編集できません。別の声を選択してください。</string>
@@ -190,14 +182,12 @@
     <string name="editor_error_stock_clip_select_failed">標準提供の音声を選択できませんでした。</string>
     <string name="editor_error_voice_alarm_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
-    <string name="editor_error_manual_tts_quota">今月の手動メッセージ作成回数を使い切りました。来月また補充されます。</string>
+    <string name="editor_error_manual_tts_quota">今月の直接入力の文の作成回数を使い切りました。来月にまた補充されます。</string>
     <string name="editor_error_voice_message_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
-    <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
-    <string name="editor_holiday_country_label">祝日カレンダー: %1$s</string>
     <string name="editor_holiday_show_title">今後の祝日</string>
     <string name="editor_holiday_cold_cache">読み込み中…</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
@@ -219,7 +209,6 @@
     <string name="editor_msg_mode_preset">基本のあいさつ</string>
     <string name="editor_ringtone_picker_title">アラーム音の選択</string>
     <string name="editor_save">保存</string>
-    <string name="editor_save_for">保存 · %1$s</string>
     <string name="editor_cancel">キャンセル</string>
     <string name="editor_saving">保存中</string>
     <string name="editor_selected_ringtone">選択したアラーム</string>
@@ -236,8 +225,8 @@
     <string name="editor_snooze_repeat_three">3回</string>
     <string name="editor_snooze_summary">%1$d分 · %2$s</string>
     <string name="editor_snooze_title">再通知</string>
-    <string name="editor_free_bucket_loading">メッセージを準備しています</string>
-    <string name="editor_free_bucket_offline">オフラインのためフレーズを読み込めませんでした</string>
+    <string name="editor_free_bucket_loading">文章を準備しています</string>
+    <string name="editor_free_bucket_offline">オフラインのため文章を読み込めませんでした</string>
     <string name="editor_vibration_pattern">パターン</string>
     <string name="editor_vibration_use">バイブレーションを使う</string>
     <string name="editor_vibration_title">バイブレーション</string>
@@ -247,7 +236,6 @@
     <string name="editor_voice_loading">声を読み込んでいます。</string>
     <string name="editor_voice_output_title">声の大きさ</string>
     <string name="editor_voice_row_title">声</string>
-    <string name="editor_voice_repeat_title">停止するまで繰り返す</string>
     <string name="editor_voice_select">声を選択</string>
     <string name="editor_voice_select_title">声を選ぶ</string>
     <string name="editor_voice_replacement_settling">音声を整理中です</string>
@@ -272,12 +260,10 @@
     <string name="editorp_fortune_gender_section">性別</string>
     <string name="editorp_fortune_required_suffix">%1$s · 必須入力</string>
     <string name="editorp_fortune_save_button">保存</string>
-    <string name="editorp_random_back">戻る</string>
     <string name="editorp_random_fortune_required">まだ入力していません</string>
     <string name="editorp_random_fortune_saved">相手が保存した占い情報を使います。</string>
     <string name="editorp_random_detail_change">変更</string>
     <string name="editorp_random_manual_title">入力した文面</string>
-    <string name="editorp_random_manual_empty">まだ入力していません</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
@@ -308,7 +294,6 @@
     <string name="hs_quiet_window_index">時間帯 %1$d</string>
     <string name="hs_create_alarm_button">最初のアラームを作成</string>
     <string name="hs_save">保存</string>
-    <string name="hs_settings_back">戻る</string>
     <string name="hs_settings_delete_account">退会</string>
     <string name="hs_settings_fortune_info">占い情報</string>
     <string name="hs_settings_logout">ログアウト</string>
@@ -374,12 +359,10 @@
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
     <string name="msg_gb_code_registered">コードを登録しました</string>
     <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
-    <string name="msg_gb_promo_redeem_failed">プロモコードを適用できませんでした。</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">無料利用券に切り替わり、声のアラームがロックされました。3日以内に登録し直すと復元され、過ぎると声は完全に削除されます。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
-    <string name="msg_gb_login_required_change_plan">プランを変更するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_create_share_code">共有コードを作成するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_generic">ログインするとご利用いただけます。</string>
     <string name="msg_gb_login_required_billing_info">プラン情報を読み込むには、まずログインしてください</string>
@@ -391,8 +374,6 @@
     <string name="msg_gb_payment_confirm_failed">決済の確認に失敗しました。</string>
     <string name="msg_gb_payment_confirm_failed_retry">決済の確認に失敗しました。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_plan_applied">プランを適用しました。</string>
-    <string name="msg_gb_plan_applied_named">%1$sプランを適用しました。</string>
-    <string name="msg_gb_plan_apply_failed">プランの適用に失敗しました。</string>
     <string name="msg_gb_plan_label_couple">カップル</string>
     <string name="msg_gb_plan_label_family">ファミリー</string>
     <string name="msg_gb_plan_label_shared">共有</string>
@@ -403,7 +384,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました。声は3日間保管されます — その間に登録し直せばそのまま使え、過ぎると完全に削除されます</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました。声は3日間保管され、その間に登録し直せばそのまま使えます。過ぎると完全に削除されます</string>
 
 
 
@@ -412,7 +393,6 @@
     <string name="msg_google_login_not_confirmed">Googleログインを確認できませんでした。もう一度お試しください。</string>
     <string name="msg_leave_group_failed">プランから退出できませんでした。</string>
     <string name="msg_leave_group_login_required">プランから退出するには、まずログインしてください。</string>
-    <string name="msg_left_group">プランから退出しました。無料プランに切り替わりました。</string>
     <string name="msg_login_email_password_required">メールアドレスとパスワードを入力してください。</string>
     <string name="msg_login_failed">ログインに失敗しました。</string>
     <string name="msg_login_required_to_use">ログインするとご利用いただけます。</string>
@@ -425,7 +405,7 @@
     <string name="msg_permission_record_audio_required">音声を録音するには、マイクの許可が必要です。</string>
     <string name="msg_register_all_fields_required">会員登録の情報をすべて入力してください。</string>
     <string name="msg_register_email_taken">既に登録済みのメールです。ログインしてください。</string>
-    <string name="msg_register_email_social_google">Googleで登録済みのメールです。「Googleで続行」でログインしてください。</string>
+    <string name="msg_register_email_social_google">Googleで登録済みのメールです。「Googleで続ける」でログインしてください。</string>
     <string name="msg_register_failed">会員登録に失敗しました。</string>
     <string name="msg_register_success">%1$sアカウントを作成しました。</string>
     <string name="msg_register_verify_email_first">先にメールアドレスの認証を完了してください。</string>
@@ -457,7 +437,6 @@
     <string name="msg_voice_info_update_failed">情報の更新に失敗しました。</string>
     <string name="msg_voice_invalid_audio_format">対応していない音声形式です。別のファイルでもう一度お試しください。</string>
     <string name="msg_voice_invalid_duration">音声の長さを確認できませんでした。ファイルをもう一度選んでください。</string>
-    <string name="msg_voice_max_profiles_reached">声は最大%1$d個まで作成できます。</string>
     <string name="msg_voice_name_required">声の名前を入力してください。</string>
     <string name="msg_voice_share_couple_family_required">音声の共有はカップル・ファミリープランでご利用いただけます。</string>
     <string name="msg_voice_share_login_required">声を共有するには、まずログインしてください。</string>
@@ -535,9 +514,8 @@
     <string name="social_code_input_hint">招待コード・利用券ギフトコード・プロモコードのすべてを登録できます。</string>
     <string name="social_members_capacity">%1$d/%2$d人</string>
     <string name="social_capacity_full">定員がいっぱいで共有できません</string>
-    <string name="voices_close">閉じる</string>
     <string name="voices_create_dialog_title">声を作成</string>
-    <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
+    <string name="voices_create_paid_title">自分の声の作成は有料機能です</string>
     <string name="voices_crop_duration_notice">12秒以上2分以内の区間を選んでください。</string>
     <string name="voices_crop_section_title">区間の切り取り</string>
     <string name="voices_draft_exit_body">今離れると、作成中の声（下書き）が削除され、最初からやり直しになります。</string>
@@ -581,8 +559,6 @@
     <string name="voices_preview_edit_cancel">キャンセル</string>
     <string name="voices_preview_edit_empty">フレーズを入力してください。</string>
     <string name="voices_preview_edit_failed">フレーズを更新できませんでした。</string>
-    <string name="voices_previous">戻る</string>
-    <string name="voices_record_done_duration">録音完了 · %1$s</string>
     <string name="voices_record_done">録音を保存しました</string>
     <string name="common_voice_record_preview">録音を再生</string>
     <string name="common_voice_record_again">録り直す</string>
@@ -601,9 +577,8 @@
     <string name="voices_sharing_shared_desc_enabled">登録した声を家族・恋人も一緒に使えます。</string>
     <string name="voices_sharing_shared_title">家族・恋人への共有を許可</string>
     <string name="voices_step_sharing">共有設定</string>
-    <string name="voices_single_speaker_hint">一人の声だけが入った音声を入れてください。\n複数人が混ざると、声が正確に再現されません。</string>
+    <string name="voices_single_speaker_hint">一人の声だけが入った音声を入れてください。\n複数人の声が混ざると、声が変わってしまうことがあります。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
-    <string name="voices_upload_zone_subtitle">12秒以上2分以内の音声か動画であれば大丈夫です</string>
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
     <string name="voices_delete_quota_title">削除しますか？</string>
@@ -636,7 +611,7 @@
     <string name="label_audio_file">音声ファイル</string>
     <string name="label_snooze_repeat_three">3回</string>
     <string name="label_snooze_repeat_five">5回</string>
-    <string name="label_snooze_repeat_forever">繰り返し</string>
+    <string name="label_snooze_repeat_forever">ずっと繰り返し</string>
     <string name="label_snooze_repeat_count">%1$d回</string>
     <string name="label_vibration_off">オフ</string>
     <string name="label_vibration_basic_call">ベーシック</string>
@@ -722,7 +697,6 @@
     <string name="msg2_promo_fail_group_already_redeemed">同じキャンペーンのプロモコードをすでに使用しています。この特典はアカウントごとに1回のみです</string>
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
     <string name="msg2_promo_fail_active_subscription">利用中のプランがあります。解約後にクーポンを登録できます</string>
-    <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">アラームで使う声を受け取っています</string>
     <string name="onb_voice_loading">声をダウンロード中です…</string>
     <string name="misc2_theme_mode_system">システム設定に合わせる</string>
@@ -772,7 +746,7 @@
     <string name="consent_load_failed">同意内容を読み込めませんでした。タップして再試行してください。</string>
     <string name="r3app_bottom_create_alarm_desc">アラームを作成</string>
     <string name="r3app_update_required_title">アップデートが必要です</string>
-    <string name="r3app_update_required_body">快適で安全にご利用いただくため
+    <string name="r3app_update_required_body">このバージョンはご利用いただけなくなりました。
 最新バージョンにアップデートしてください。</string>
     <string name="r3app_update_required_button">アップデートする</string>
     <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
@@ -843,7 +817,7 @@
     <string name="voices_my_voices_title">自分の声</string>
     <string name="voices_shared_voices_title">共有された声</string>
     <string name="voices_system_voices_title">標準の声</string>
-    <string name="plan_gate_redeem_action">クーポンがあります</string>
+    <string name="plan_gate_redeem_action">クーポンをお持ちの方</string>
     <string name="plan_gate_redeem_title">コードを入力</string>
     <string name="plan_gate_redeem_desc">プロモーション・ギフトコードを入力してください。招待コードも使えます。</string>
     <string name="voicesr_preview_stop">停止</string>
@@ -857,7 +831,7 @@
     <string name="voice_consent_cancel">キャンセル</string>
     <string name="auth_consent_expand">項目を開く</string>
     <string name="auth_consent_collapse">項目を閉じる</string>
-    <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時~午後9時のみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
+    <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時から午後9時までのみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
     <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!
 
 招待コード: %1$s
@@ -877,7 +851,6 @@
     <string name="welcome_promo_body_later">あとから「その他」の「コードを登録」でいつでも入力できます。</string>
     <string name="welcome_promo_highlight_free">無料</string>
     <string name="welcome_promo_highlight_where">「その他」の「コードを登録」</string>
-    <string name="welcome_promo_where">コードをもらう</string>
     <string name="welcome_promo_where_short">コードを取得</string>
     <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
@@ -895,7 +868,7 @@
     <string name="consent_withdraw_voice_title">撤回すると登録した声がすべて削除されます</string>
     <string name="consent_withdraw_voice_body">これまでに作成した声と録音した元の音声、生成された音声ファイル、保存したアラーム文がすぐに削除され、元に戻せません。この声で鳴っていたアラームは、家族に共有したものも含めて標準のアラーム音に変わります。もう一度使うには、最初から録音し直す必要があります。</string>
     <string name="consent_withdraw_voice_confirm">撤回して削除</string>
-    <string name="consent_overseas_withdraw_notice">国外移転への同意はサービスの利用に必須です。撤回するには「もっと見る」から退会してください。</string>
+    <string name="consent_overseas_withdraw_notice">国外移転への同意はサービスの利用に必須です。撤回するには「その他」から退会してください。</string>
     <string name="msg_voice_consent_withdrawn">音声生体情報の同意を撤回しました。登録した声は削除されました。</string>
     <string name="msg_voice_consent_withdraw_failed">同意の撤回に失敗しました。もう一度お試しください。</string>
     <string name="voices_replace_existing_title">「%1$s」をこの声に置き換えます</string>
@@ -903,7 +876,6 @@
     <string name="misc2_theme_mode_system_short">システム</string>
     <string name="misc2_theme_mode_light_short">ライト</string>
     <string name="misc2_theme_mode_dark_short">ダーク</string>
-    <string name="common_back">戻る</string>
     <string name="downgrade_notice_free_title">無料利用券に変わりました</string>
     <string name="downgrade_notice_free_message">声のアラーム%1$d件が基本アラーム音に変わりました。3日以内に利用券を登録し直すと声が戻り、過ぎると完全に削除されます。</string>
     <string name="downgrade_notice_shared_title">共有利用券から外れました</string>

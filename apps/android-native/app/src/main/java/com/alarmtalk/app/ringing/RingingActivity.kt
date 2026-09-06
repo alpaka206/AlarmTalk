@@ -276,7 +276,10 @@ private fun RingingRoute(
                 Spacer(Modifier.height(6.dp))
                 RingingClock(ampm = uiState.ampm, time = uiState.timeText, spokenTime = uiState.spokenTime)
 
-                Spacer(Modifier.height(34.dp))
+                // 문구는 시계와 컨트롤 사이의 빈 공간에서 **위쪽 1/3 지점**에 앉는다(실기 S23 Ultra 에서
+                // 시계 바로 아래 붙이니 화면 가운데가 통째로 비어 보였다). 위 0.5 : 아래 1 비율.
+                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.weight(0.5f))
                 val voice = uiState.voiceText
                 if (voice != null) {
                     RingingMessage(voice)

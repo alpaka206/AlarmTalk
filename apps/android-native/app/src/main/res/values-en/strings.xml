@@ -44,7 +44,7 @@
     <string name="auth_landing_headline_pre">"Wake up to\na "</string>
     <string name="auth_landing_headline_keyword">voice</string>
     <string name="auth_landing_headline_post">" you love"</string>
-    <string name="auth_landing_subcopy">Every morning, that voice wakes you with a brand-new message.</string>
+    <string name="auth_landing_subcopy">Every morning, that voice wakes you with a new message.</string>
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
     <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
@@ -67,12 +67,11 @@
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
     <string name="billing_gift_personal_action">Gift</string>
     <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
-    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
+    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days. Resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
     <string name="billing_cancel_pass">Cancel pass</string>
     <string name="billing_change_pass">Change pass</string>
-    <string name="billing_close">Close</string>
     <string name="billing_current_pass_label">Current pass</string>
     <string name="billing_leave_button">Leave</string>
     <string name="billing_leave_shared_pass">Leave shared pass</string>
@@ -98,7 +97,7 @@
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>
-    <string name="billing_play_purchase_description_no_price">%1$s is purchased securely through Google Play. You can check the price on the payment screen and cancel anytime — you keep access for the rest of the period.</string>
+    <string name="billing_play_purchase_description_no_price">%1$s is purchased securely through Google Play. You can check the price on the payment screen and cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
     <string name="billing_play_purchase_description">The %1$s pass is %2$s. Payment is handled securely by Google Play, and you can cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
     <string name="billing_play_purchase_title">Start the %1$s pass?</string>
     <string name="billing_play_change_seats_warning">Fewer people can share this pass, so members over the limit will leave the group.</string>
@@ -147,18 +146,11 @@
     <string name="common_tab_code_register">Register code</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
-    <string name="common_voice_record_again_hint">Tap the mic to record again</string>
     <string name="common_voice_record_start">Record</string>
     <string name="common_voice_record_status_idle">Record</string>
     <string name="common_voice_record_status_recording">Recording</string>
     <string name="common_voice_record_stop">Stop recording</string>
     <string name="editor_alarm_sound_title">Alarm sound</string>
-    <string name="editor_apply">Apply</string>
-    <string name="editor_audio_preview_play">Preview</string>
-    <string name="editor_recorded_done">Recorded</string>
-    <string name="editor_record_again">Record again</string>
-    <string name="editor_audio_preview_stop">Stop</string>
-    <string name="editor_back">Back</string>
     <string name="editor_create_voice">Create a voice</string>
     <string name="editor_detail_settings">Detailed settings</string>
     <string name="editor_error_deleted_voice_cannot_edit">This voice was deleted, so the phrase can\'t be edited. Please choose another voice.</string>
@@ -178,7 +170,7 @@
     <string name="editor_block_preparing_message">The voice file is still downloading. Try saving again in a moment.</string>
     <string name="editor_error_family_alarm_lead_title">Please pick a later time</string>
     <string name="editor_error_family_alarm_unavailable_title">They can\'t receive alarms then</string>
-    <string name="editor_error_family_alarm_lead_too_soon">Set alarms for others to %1$s or later — it takes a moment to reach their phone.</string>
+    <string name="editor_error_family_alarm_lead_too_soon">Set alarms for others to %1$s or later. It takes a moment to reach their phone.</string>
     <string name="editor_error_family_alarm_time_unavailable">The other person can\'t receive alarms at this time.</string>
     <string name="editor_error_fortune_info_required">For phrases with fortune, please enter gender, date of birth, and time of birth.</string>
     <string name="editor_error_mic_permission_required">Microphone permission is required.</string>
@@ -194,10 +186,8 @@
     <string name="editor_error_voice_message_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_weather_location_required">For phrases with weather, please enter a city.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
-    <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
-    <string name="editor_holiday_country_label">Holiday calendar: %1$s</string>
     <string name="editor_holiday_show_title">Upcoming holidays</string>
     <string name="editor_holiday_cold_cache">Loading…</string>
     <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
@@ -219,7 +209,6 @@
     <string name="editor_msg_mode_preset">Default greeting</string>
     <string name="editor_ringtone_picker_title">Choose alarm sound</string>
     <string name="editor_save">Save</string>
-    <string name="editor_save_for">Save · %1$s</string>
     <string name="editor_cancel">Cancel</string>
     <string name="editor_saving">Saving</string>
     <string name="editor_selected_ringtone">Selected alarm</string>
@@ -237,7 +226,7 @@
     <string name="editor_snooze_summary">%1$d min · %2$s</string>
     <string name="editor_snooze_title">Snooze</string>
     <string name="editor_free_bucket_loading">Preparing your messages</string>
-    <string name="editor_free_bucket_offline">Offline — couldn\'t load the lines</string>
+    <string name="editor_free_bucket_offline">You\'re offline, so the lines couldn\'t load</string>
     <string name="editor_vibration_pattern">Pattern</string>
     <string name="editor_vibration_use">Use vibration</string>
     <string name="editor_vibration_title">Vibration</string>
@@ -247,7 +236,6 @@
     <string name="editor_voice_loading">Loading voices.</string>
     <string name="editor_voice_output_title">Voice volume</string>
     <string name="editor_voice_row_title">Voice</string>
-    <string name="editor_voice_repeat_title">Repeat until dismissed</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_select_title">Choose a voice</string>
     <string name="editor_voice_replacement_settling">Finishing up this voice</string>
@@ -272,12 +260,10 @@
     <string name="editorp_fortune_gender_section">Gender</string>
     <string name="editorp_fortune_required_suffix">%1$s · Required</string>
     <string name="editorp_fortune_save_button">Save</string>
-    <string name="editorp_random_back">Back</string>
     <string name="editorp_random_fortune_required">Not entered yet</string>
     <string name="editorp_random_fortune_saved">Using the fortune info your partner saved.</string>
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
-    <string name="editorp_random_manual_empty">Not entered yet</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
@@ -308,7 +294,6 @@
     <string name="hs_quiet_window_index">Time slot %1$d</string>
     <string name="hs_create_alarm_button">Create first alarm</string>
     <string name="hs_save">Save</string>
-    <string name="hs_settings_back">Back</string>
     <string name="hs_settings_delete_account">Delete account</string>
     <string name="hs_settings_fortune_info">Fortune info</string>
     <string name="hs_settings_logout">Log out</string>
@@ -365,12 +350,10 @@
     <string name="msg_gb_code_register_failed">Couldn\'t register the code.</string>
     <string name="msg_gb_code_registered">Code registered</string>
     <string name="msg_gb_promo_redeemed">Promo code applied</string>
-    <string name="msg_gb_promo_redeem_failed">Couldn\'t apply the promo code.</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">Your voice alarms are locked on the free pass. Subscribe again within 3 days to restore them — after that the voices are deleted permanently.</string>
+    <string name="msg_gb_free_plan_voice_alarms_locked">Your voice alarms are locked on the free pass. Subscribe again within 3 days to restore them; after that the voices are deleted permanently.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
-    <string name="msg_gb_login_required_change_plan">Please log in first to change your plan.</string>
     <string name="msg_gb_login_required_create_share_code">Please log in first to create a share code.</string>
     <string name="msg_gb_login_required_generic">Please log in to use this.</string>
     <string name="msg_gb_login_required_billing_info">Please log in first to load your plan info</string>
@@ -382,8 +365,6 @@
     <string name="msg_gb_payment_confirm_failed">Couldn\'t confirm your payment.</string>
     <string name="msg_gb_payment_confirm_failed_retry">Couldn\'t confirm your payment. Please try again in a moment.</string>
     <string name="msg_gb_plan_applied">Your plan has been applied.</string>
-    <string name="msg_gb_plan_applied_named">The %1$s plan has been applied.</string>
-    <string name="msg_gb_plan_apply_failed">Couldn\'t apply the plan.</string>
     <string name="msg_gb_plan_label_couple">Couple</string>
     <string name="msg_gb_plan_label_family">Family</string>
     <string name="msg_gb_plan_label_shared">Shared</string>
@@ -394,7 +375,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your pass until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your pass is cancelled. Voices are kept for 3 days — subscribe again within that time to keep them, after that they are deleted permanently</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your pass is cancelled. Voices are kept for 3 days. Subscribe again within that time to keep them; after that they are deleted permanently</string>
 
 
 
@@ -403,13 +384,12 @@
     <string name="msg_google_login_not_confirmed">Couldn\'t confirm your Google login. Please try again.</string>
     <string name="msg_leave_group_failed">Couldn\'t leave the plan.</string>
     <string name="msg_leave_group_login_required">Please log in first to leave the plan.</string>
-    <string name="msg_left_group">You\'ve left the plan. You\'re now on the free plan.</string>
     <string name="msg_login_email_password_required">Please enter your email and password.</string>
     <string name="msg_login_failed">Couldn\'t log you in.</string>
     <string name="msg_login_required_to_use">Please log in to use this.</string>
     <string name="msg_member_removed">The member has been removed.</string>
     <string name="msg_nickname_change_failed">Couldn\'t change your nickname.</string>
-    <string name="msg_nickname_length_invalid">Your nickname must be 1–30 characters.</string>
+    <string name="msg_nickname_length_invalid">Your nickname must be 1 to 30 characters.</string>
     <string name="msg_permission_exact_alarms_required">The exact alarm permission is needed to ring at the set time.</string>
     <string name="msg_permission_full_screen_intent_required">Please turn on the full-screen alarm permission to show the alarm screen over your lock screen.</string>
     <string name="msg_permission_notifications_required">Notification permission is needed to show the alarm screen and stop button.</string>
@@ -449,7 +429,6 @@
     <string name="msg_voice_info_update_failed">Couldn\'t update your info.</string>
     <string name="msg_voice_invalid_audio_format">That audio format isn\'t supported. Please try another file.</string>
     <string name="msg_voice_invalid_duration">Couldn\'t check the audio length. Please select the file again.</string>
-    <string name="msg_voice_max_profiles_reached">You can create up to %1$d voices.</string>
     <string name="msg_voice_name_required">Please enter a name for the voice.</string>
     <string name="msg_voice_share_couple_family_required">Voice sharing is available on the Couple or Family plan.</string>
     <string name="msg_voice_share_login_required">Please log in first to share the voice.</string>
@@ -527,7 +506,6 @@
     <string name="social_code_input_hint">Invite codes, gifted pass codes, and promo codes all work here.</string>
     <string name="social_members_capacity">%1$d/%2$d</string>
     <string name="social_capacity_full">Full, so you can\'t share</string>
-    <string name="voices_close">Close</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
     <string name="voices_crop_duration_notice">Please select a segment between 12 seconds and 2 minutes.</string>
@@ -545,7 +523,7 @@
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_name_label">Voice name</string>
     <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
-    <string name="voices_prerender_ready_body">You can close this — it keeps going.
+    <string name="voices_prerender_ready_body">You can close this. It keeps going.
 They become available as they finish.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
@@ -562,7 +540,7 @@ They become available as they finish.</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
     <string name="voices_confirm_new_delete">Make another</string>
     <string name="voices_creating_title">Creating your voice</string>
-    <string name="voices_creating_body">Hang tight.
+    <string name="voices_creating_body">Just a moment.
 We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
@@ -573,8 +551,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_edit_cancel">Cancel</string>
     <string name="voices_preview_edit_empty">Please enter a line.</string>
     <string name="voices_preview_edit_failed">Couldn\'t update the line.</string>
-    <string name="voices_previous">Back</string>
-    <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_done">Recording saved</string>
     <string name="common_voice_record_preview">Play recording</string>
     <string name="common_voice_record_again">Record again</string>
@@ -595,7 +571,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_step_sharing">Sharing settings</string>
     <string name="voices_single_speaker_hint">Use audio with only one person\'s voice.\nIf several voices are mixed, the cloned voice won\'t be accurate.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
-    <string name="voices_upload_zone_subtitle">Any audio or video from 12 seconds to 2 minutes works</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
     <string name="voices_delete_quota_title">Delete this voice?</string>
@@ -671,7 +646,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices2_record_min_duration">Please record for at least 12 seconds.</string>
     <string name="voices2_register_under_two_minutes">You can register voice that is 2 minutes or less.</string>
     <string name="voices2_select_file_min_duration">Choose a file at least 12 seconds long</string>
-    <string name="voices2_record_script">Hello! Let\'s create your voice for AlarmTalk together.\nEvery morning, this voice will wake someone you love — doesn\'t that sound exciting?\n\nThe sky is clear and the breeze is soft today. A perfect day for a walk, isn\'t it?\nOn days like this, don\'t you feel like wandering around with a warm cup of coffee?\n\nNow, shall we read some numbers together?\nOne, two, three, four, five, six, seven, eight, nine, ten.\n\nOn happy days, laugh as much as you want. On tiring days, tell yourself, \"You did well today.\"\nAnd in the morning, open the window and take a deep breath — the day feels so much lighter.\n\nThis is the last part already. Thank you for reading clearly all the way.\nTomorrow morning, this voice will be the warmest alarm of all.</string>
+    <string name="voices2_record_script">Hello! Let\'s create your voice for AlarmTalk together.\nEvery morning, this voice will wake someone you love. Doesn\'t that sound exciting?\n\nThe sky is clear and the breeze is soft today. A perfect day for a walk, isn\'t it?\nOn days like this, don\'t you feel like wandering around with a warm cup of coffee?\n\nNow, shall we read some numbers together?\nOne, two, three, four, five, six, seven, eight, nine, ten.\n\nOn happy days, laugh as much as you want. On tiring days, tell yourself, \"You did well today.\"\nAnd in the morning, open the window and take a deep breath. The day feels so much lighter.\n\nThis is the last part already. Thank you for reading clearly all the way.\nTomorrow morning, this voice will be the warmest alarm of all.</string>
     <string name="voices2_relationship_mom">Mom</string>
     <string name="voices2_relationship_dad">Dad</string>
     <string name="voices2_relationship_grandma">Grandma</string>
@@ -714,7 +689,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
     <string name="msg2_promo_fail_active_subscription">You already have an active pass. Cancel it before redeeming a coupon</string>
-    <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
     <string name="onb_voice_title">Getting the voices your alarms will use</string>
     <string name="onb_voice_loading">Downloading voices…</string>
     <string name="misc2_theme_mode_system">Match system</string>
@@ -764,8 +738,8 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="consent_load_failed">Couldn\'t load your consents. Tap to retry.</string>
     <string name="r3app_bottom_create_alarm_desc">Create alarm</string>
     <string name="r3app_update_required_title">An update is needed</string>
-    <string name="r3app_update_required_body">Please update to the latest version
-for a smooth and secure experience.</string>
+    <string name="r3app_update_required_body">This version is no longer supported.
+Please update to the latest version.</string>
     <string name="r3app_update_required_button">Update</string>
     <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
     <string name="r3app_update_restart">Restart</string>
@@ -869,7 +843,6 @@ Pass code: %1$s
     <string name="welcome_promo_body_later">You can enter one later from Register code in More.</string>
     <string name="welcome_promo_highlight_free">free</string>
     <string name="welcome_promo_highlight_where">Register code in More</string>
-    <string name="welcome_promo_where">Get a code</string>
     <string name="welcome_promo_where_short">Get a code</string>
     <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
@@ -885,7 +858,7 @@ Pass code: %1$s
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
     <string name="consent_withdraw_action">Withdraw consent</string>
     <string name="consent_withdraw_voice_title">Withdrawing deletes every voice you made</string>
-    <string name="consent_withdraw_voice_body">Your voices, original recordings, generated audio, and saved alarm messages are deleted right away and can’t be restored. Alarms that used this voice — including ones you shared with family — switch to the default alarm sound. To use it again you’ll have to record from scratch.</string>
+    <string name="consent_withdraw_voice_body">Your voices, original recordings, generated audio, and saved alarm messages are deleted right away and can’t be restored. Alarms that used this voice, including ones you shared with family, switch to the default alarm sound. To use it again you’ll have to record from scratch.</string>
     <string name="consent_withdraw_voice_confirm">Withdraw and delete</string>
     <string name="consent_overseas_withdraw_notice">Consent to overseas transfer is required to use AlarmTalk. To withdraw it, delete your account from More.</string>
     <string name="msg_voice_consent_withdrawn">Voice biometric consent withdrawn. Your registered voices were deleted.</string>
@@ -895,9 +868,8 @@ Pass code: %1$s
     <string name="misc2_theme_mode_system_short">System</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
-    <string name="common_back">Back</string>
     <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
-    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back — after that they are deleted permanently.</string>
+    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back; after that they are deleted permanently.</string>
     <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
     <string name="downgrade_notice_replaced_title">Your voice was replaced</string>
     <string name="downgrade_notice_replaced_message">Registering a new voice turned %1$d alarm(s) with custom text back into the default alarm sound. Create those messages again with the new voice.</string>

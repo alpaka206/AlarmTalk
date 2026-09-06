@@ -19,7 +19,7 @@
       "countdown": "Rings in 9 hours 21 minutes.",
       "meridiem": "AM",
       "alarmTime": "6:00",
-      "alarmMeta": "Wed, Aug 5 - Mom’s voice",
+      "alarmMeta": "Wed, Aug 5 · Mom’s voice",
       "tabAlarms": "Alarms",
       "tabVoice": "Voices",
       "tabMore": "More",
@@ -88,7 +88,7 @@
       },
       {
         "q": "Does it ring in airplane mode or without internet?",
-        "a": "Yes. Alarms use your phone’s own alarm scheduler and audio that was downloaded ahead of time. Nothing is asked of a server at ring time, so it works in airplane mode, underground, or with no data."
+        "a": "Yes. Alarms use your phone’s own alarm scheduler and audio that was downloaded ahead of time. It doesn’t check with a server when it rings, so it works in airplane mode, underground, or with no data."
       },
       {
         "q": "Do I still get snooze and weekday repeats?",
@@ -112,7 +112,7 @@
       },
       {
         "q": "Are there forced missions, like math or photo challenges?",
-        "a": "No. AlarmTalk is built around emotional waking, not forced waking. The goal is to wake up to a voice you genuinely want to hear."
+        "a": "No. AlarmTalk would rather you opened your eyes because you wanted to hear the voice, not because something forced you."
       },
       {
         "q": "Who actually uses this?",
@@ -174,7 +174,7 @@
       "eyebrow": "Contact",
       "headline1": "How can",
       "headline2": "we help?",
-      "description": "Pick the channel that fits and email us. We usually reply within Korean business hours."
+      "description": "Pick the channel that fits and email us. Replies go out during Korean business hours."
     },
     "channels": {
       "headline": "Four contact channels",
@@ -190,7 +190,7 @@
         {
           "tag": "Business",
           "title": "Partnerships · B2B",
-          "body": "Team or company rollouts, licensing, integration proposals: write to business.",
+          "body": "Team or company rollouts, licensing and integration proposals go to the business address.",
           "email": "business@alarm-talk.com",
           "cta": "Send email"
         },
@@ -204,39 +204,39 @@
         {
           "tag": "Press",
           "title": "Press & media",
-          "body": "Coverage, interviews, press kits: the media line gets the fastest reply.",
+          "body": "Coverage, interviews and press kits go to the press address.",
           "email": "press@alarm-talk.com",
           "cta": "Send email"
         }
       ]
     },
     "note": {
-      "headline": "Response policy",
+      "headline": "Reply times",
       "body": "We usually reply within 1-3 business days. Longer answers can take a little more. If you don’t hear back, please check your spam folder too."
     }
   },
   "company": {
     "meta": {
       "title": "Company",
-      "description": "AlarmTalk redefines an alarm not as a sound, but as a relationship. Our mission, our principles, and what we’re building."
+      "description": "At AlarmTalk an alarm is a relationship, not a sound. Our mission, our principles, and what we’re building."
     },
     "hero": {
       "eyebrow": "Our mission",
       "headline1": "Instead of a louder alarm,",
       "headline2": "one you want to hear.",
-      "description": "AlarmTalk redefines an alarm as a relationship instead of a sound. Starting every morning’s first second with a fresh line in a voice you love. That’s our single job."
+      "description": "At AlarmTalk an alarm is a relationship, not a sound. Opening the first second of every morning with a line in a voice you love. That’s the one thing we do."
     },
     "principles": {
       "headline": "Five principles we work by",
-      "description": "We are early, going from zero to one. That’s exactly why clear principles matter more, not less.",
+      "description": "We’re still going from zero to one. That’s when clear principles matter most.",
       "items": [
         {
           "title": "Build something people want every day",
           "body": "Not a one-time trick. The first thing people meet every morning."
         },
         {
-          "title": "Treat trust as the heaviest constraint",
-          "body": "Voice cloning shares roots with voice phishing. Closed sharing and no-export are non-negotiable."
+          "title": "Weigh trust heaviest",
+          "body": "A voice is sensitive data. It never leaves the group, and it can never be exported as a file. We don’t compromise on either."
         },
         {
           "title": "Emotion over force",
@@ -244,17 +244,17 @@
         },
         {
           "title": "Ask for a 10× answer",
-          "body": "We don’t chase 10% gains. We look for an answer that is 10× different: a third path beyond beeps and missions."
+          "body": "We don’t chase 10% gains. We look for an answer that is 10× different: what comes after loud alarms and mission alarms."
         },
         {
           "title": "Build globally from day one",
-          "body": "Not a Korea-only product. We assume a multilingual, multicultural user from the first commit."
+          "body": "Not a Korea-only product. We’ve had users in other languages and cultures in mind from the start."
         }
       ]
     },
     "products": {
       "headline": "What we’re building",
-      "description": "One product. Every decision is made in the name of AlarmTalk.",
+      "description": "One product. Every decision the company makes is for this app.",
       "alarmtalk": {
         "tag": "AlarmTalk",
         "title": "A voice alarm app",
@@ -264,7 +264,7 @@
     },
     "future": {
       "headline": "Coming soon to this page",
-      "description": "Press, awards, and the team’s story will land here at launch.",
+      "description": "Press coverage and the team’s story will go here once we launch.",
       "items": [
         {
           "tag": "Press",
@@ -284,8 +284,8 @@
       ]
     },
     "cta": {
-      "headline": "Want to make this dawn with us?",
-      "body": "Get notified when the app launches, or reach out via contact.",
+      "headline": "Want to build this with us?",
+      "body": "Get notified when the app launches, or write to us.",
       "secondary": "Contact us"
     }
   },
@@ -295,7 +295,7 @@
   },
   "pricing": {
     "tag": "Pricing",
-    "headline": "Start free.",
+    "headline": "Try it free first.",
     "description": "Alarms, the four built-in voices and every topic are free.\nYou need a plan when you write your own lines or add your own voice.",
     "plans": {
       "free": {
@@ -423,7 +423,7 @@
         "line": "<b>{name}</b>, rest for a moment if it’s hard. You’re already doing enough."
       },
       "athlete": {
-        "name": "Big fighting spirit",
+        "name": "Loud and rallying",
         "role": "Athlete",
         "style": "Strong and steady",
         "line": "<b>{name}</b>, let’s go all the way. One more today."
