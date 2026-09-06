@@ -2610,9 +2610,39 @@ struct AlarmEditorSheet: View {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
         rememberChoicesUsed(merged)
+        recordSaveUsageEvent(record: merged, isNew: existing == nil)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
         return true
+    }
+
+    /// 저장 사건을 **로컬 큐에만** 남긴다 — 전송은 `UsageEventUploader` 가 나중에 한다.
+    ///
+    /// 직접 입력 문구가 붙었으면 그 문구가 이 기기에서 **사용중**이 됐다고도 남긴다.
+    /// 판정은 저장 갈래와 같은 모양이다(랜덤도 테마 클립도 아닌데 문구 id 가 있으면 직접 입력).
+    /// 안드로이드 `AlarmRepository.recordAlarmEvent` 와 같은 규칙이다.
+    private func recordSaveUsageEvent(record: LocalAlarmRecord, isNew: Bool) {
+        let userID = auth.session?.user.id
+        let queue = UsageEventQueue.shared
+        queue.record(
+            isNew ? .alarmCreated : .alarmUpdated,
+            alarmID: record.id,
+            voiceProfileID: record.voiceProfileId,
+            messageID: record.ttsMessageId,
+            userID: userID
+        )
+        let isManualMessage = !record.voiceRandomPrompt
+            && (record.bucketId?.nilIfBlank == nil)
+            && (record.ttsMessageId?.nilIfBlank != nil)
+        if isManualMessage {
+            queue.record(
+                .manualMessageAttached,
+                alarmID: record.id,
+                voiceProfileID: record.voiceProfileId,
+                messageID: record.ttsMessageId,
+                userID: userID
+            )
+        }
     }
 
     /// **저장 성공 시에만** 직전 선택을 기록한다. 편집기에서 눌러만 보고 취소한 것은

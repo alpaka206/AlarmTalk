@@ -417,6 +417,9 @@ struct AlarmTalkApp: App {
                     await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                 }
+                // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
+                // (울림 경로에서는 네트워크를 부르지 않으므로).
+                Task { await UsageEventUploader.shared.flush(session: auth.session) }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.

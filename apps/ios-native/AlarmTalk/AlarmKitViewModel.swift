@@ -333,6 +333,14 @@ final class AlarmKitViewModel: ObservableObject {
             if didEnterAlerting {
                 if let record = store.recordByAlarmKitID(kitID) {
                     store.markRinging(id: record.id)
+                    // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」).
+                    // 로컬 큐에 적기만 하고, 전송은 `UsageEventUploader` 가 나중에 한다.
+                    UsageEventQueue.shared.record(
+                        .alarmRang,
+                        alarmID: record.id,
+                        voiceProfileID: record.voiceProfileId,
+                        messageID: record.ttsMessageId
+                    )
                     // GROUP 3 (6): 포그라운드 ring-time 1회성 햅틱. didEnterAlerting 의
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이
                     // 활성(.active)일 때만 발화 — 백그라운드/락스크린에선 AlarmKit/시스템이
@@ -1192,8 +1200,26 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
-        if let releasedAudioCacheKey = store.delete(record) {
+        let releasedAudioCacheKey = store.delete(record)
+        if let releasedAudioCacheKey {
             try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
+        }
+        UsageEventQueue.shared.record(
+            .alarmDeleted,
+            alarmID: record.id,
+            voiceProfileID: record.voiceProfileId,
+            messageID: record.ttsMessageId
+        )
+        // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. `store.delete` 는
+        // 같은 캐시 키를 쓰는 알람이 남아 있으면 nil 을 돌려준다 — 그때 파일은 그대로이고
+        // 여전히 '사용중' 이다. 이 참조 카운트 판정은 폰만 할 수 있고, 서버는 받아 적는다.
+        if releasedAudioCacheKey != nil, let messageID = record.ttsMessageId?.nilIfBlank {
+            UsageEventQueue.shared.record(
+                .manualMessageReleased,
+                alarmID: record.id,
+                voiceProfileID: record.voiceProfileId,
+                messageID: messageID
+            )
         }
     }
 
