@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.WakerChipShape
@@ -460,7 +461,10 @@ internal fun EditorSegmentedSelector(
                         modifier = Modifier
                             .width(slotWidth)
                             .fillMaxHeight()
-                            .offset(x = slotWidth * thumbFraction)
+                            // 람다 오버로드: 애니메이션 값을 **배치**에서 읽어 프레임마다 재구성하지 않는다.
+                            // `graphicsLayer.translationX` 로 바꾸지 말 것 — RTL 에서 썸이 트랙 밖으로
+                            // 나간다(2026-08-10 사고).
+                            .offset { IntOffset((slotWidth * thumbFraction).roundToPx(), 0) }
                             .clip(WakerChipShape)
                             .background(MaterialTheme.colorScheme.primaryContainer)
                             .border(

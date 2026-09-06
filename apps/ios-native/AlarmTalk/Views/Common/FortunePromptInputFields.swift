@@ -353,11 +353,11 @@ struct FortunePromptInputFields: View {
             .padding(.trailing, 8)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
                     .fill(AlarmTalkTheme.surfaceVariant.opacity(0.46))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
                     .stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
             .contentShape(Rectangle())

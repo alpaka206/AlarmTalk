@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -345,7 +344,7 @@ internal fun DraggableTimeWheelColumn(
                         }
                     },
                     color = Color.Transparent,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = WakerTileShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         // ⚠ **숫자를 누르면 그 자리 입력이 열린다 — 여기도 입력칸이다.**

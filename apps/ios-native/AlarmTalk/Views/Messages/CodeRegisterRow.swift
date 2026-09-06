@@ -111,7 +111,7 @@ struct CodeRegisterRow: View {
                             .background(
                                 // 모서리도 안드로이드 버튼(`WakerButtonShape` = 18)과 같은 값이다 —
                                 // 기본 캡슐이면 같은 크기여도 다른 물건으로 보인다.
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                                     // ⚠ **비활성을 `.opacity` 로 만들지 말 것**(2026-08-17
                                     // "등록 버튼 글씨가 안 보인다"). 통째로 흐리게 하면 글자와
                                     // 배경이 **같이** 옅어져 대비가 1.8:1 까지 떨어진다(실측).

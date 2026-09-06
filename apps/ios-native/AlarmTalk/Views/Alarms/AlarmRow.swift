@@ -223,6 +223,9 @@ struct AlarmRow: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
     }
 
+    /// 안드로이드 `AlarmRow`(ui/components/ControlsAndPermissions.kt) 의 `flingVelocityPx = 420.dp` 짝.
+    private static let flingVelocity: CGFloat = 420
+
     private var swipeGesture: some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { value in
@@ -231,9 +234,22 @@ struct AlarmRow: View {
                 dragOffset = min(0, max(-deleteRevealWidth, base + value.translation.width))
             }
             .onEnded { value in
+                // 안드로이드와 같은 판정: **튕김의 부호가 먼저**다. 짧고 빠른 왼쪽 플릭은 이동량이
+                // 모자라도 열리고, 임계를 넘긴 뒤 오른쪽으로 되튕긴 손은 취소로 읽힌다.
+                // 느리면 위치로 — 삭제 버튼 폭의 0.42(안드로이드와 같은 값. 전에는 0.5 였다).
+                // ⚠ 애니메이션은 그대로 둔다(0.2s snappy) — 속도를 넘기면 원본과 갈라진다.
+                let velocity = value.velocity.width
                 let projected = (deleteRevealed ? -deleteRevealWidth : 0) + value.translation.width
+                let open: Bool
+                if velocity < -Self.flingVelocity {
+                    open = true
+                } else if velocity > Self.flingVelocity {
+                    open = false
+                } else {
+                    open = projected <= -deleteRevealWidth * 0.42
+                }
                 withAnimation(.snappy(duration: 0.2)) {
-                    if projected <= -deleteRevealWidth * 0.5 {
+                    if open {
                         deleteRevealed = true
                         dragOffset = -deleteRevealWidth
                     } else {

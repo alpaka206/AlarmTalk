@@ -13,8 +13,10 @@ import QuartzCore
 /// 검증하기 위해서다(`TimeWheelSettleTests`).
 enum TimeWheelSettle {
 
-    /// 안드로이드 `TimeWheelEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)` 와 같은 곡선.
-    /// 초반이 빠르고 끝에서 길게 늘어지는 감속이라, 굴러와 멎는 느낌이 난다.
+    /// 스펙 §1-1 의 `cubic-bezier(0.16, 1, 0.3, 1)` — 초반이 빠르고 끝에서 길게 늘어지는
+    /// 감속이라, 굴러와 멎는 느낌이 난다.
+    /// ⚠ 안드로이드 `TimeWheelEasing` 은 지금 `(0.3, 0.6, 0.3, 1)` 이다 — A32 프레임 예산에
+    /// 맞춰 2026-08-15 에 손본 값이고, 그 차이는 스펙 「의도된 차이」에 적혀 있다. iOS 는 원값을 쓴다.
     static func ease(_ progress: Double) -> Double {
         let x = min(max(progress, 0), 1)
         let x1 = 0.16, y1 = 1.0, x2 = 0.3, y2 = 1.0

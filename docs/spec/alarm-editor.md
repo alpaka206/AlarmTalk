@@ -145,6 +145,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | iOS 에 알람 음량 슬라이더 없음 | AlarmKit 이 OS 톤을 소유한다. 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고 확인하기를 반복하게 된다 |
 | 확인 알럿의 껍데기 | iOS 는 시스템 `.alert`, 안드로이드는 그걸 흉내 낸 `IosAlertDialog`. iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다 |
 | 숫자 입력 확정 키 | iOS 숫자 키패드에는 완료 키가 없어 **키보드 툴바**로, 안드로이드는 IME 의 **Done** 으로 |
+| 타임휠 **정착 곡선·튕김 계수** | 안드로이드는 `TimeWheelEasing = (0.3, 0.6, 0.3, 1)`·`FlingStepsPerItemVelocity = 0.09` — 저사양 실기(SM-A325N) 프레임 예산에 맞춰 2026-08-15 에 실측으로 낮춘 값이다. iOS 는 §1-1 원값 `(0.16, 1, 0.3, 1)` 을 쓴다. 같은 기기 조건이 아니라 **맞추지 않는다** |
 | 알럿을 **바깥 탭으로 닫기** | iOS 는 **안 된다** — 시스템 알럿은 명시적 선택을 요구하고 그 동작을 바꾸는 공개 API 가 없다. 안드로이드는 닫힌다(플랫폼 관례). 2026-08-11 에 확인하고 **각자 표준을 따르기로 정했다** — 맞추려면 iOS 시스템 알럿을 버리고 직접 그려야 하는데, 그건 우리가 맞춰 온 원본을 버리는 것이다 |
 
 ## 구현 지도
@@ -154,7 +155,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
-| 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/AmPmWheelColumn.swift` |
+| 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |

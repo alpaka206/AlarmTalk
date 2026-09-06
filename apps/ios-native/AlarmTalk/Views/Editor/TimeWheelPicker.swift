@@ -476,12 +476,29 @@ struct DraggableNumberColumn: View {
 
 struct AmPmWheelColumn: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var isPM: Bool
     /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
     var scale: CGFloat = 1
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
+    /// 끄는 동안의 오프셋(1:1). 안드로이드 `AmPmWheelColumn.kt` 의 `dragOffsetPx` 와 같은 축(아래가 +).
+    ///
+    /// ⚠ 2026-09-06 전에는 `onEnded` 만 있어 **손을 뗄 때까지 아무것도 안 움직였다** — 숫자 칼럼과
+    /// 안드로이드 원본은 손가락을 따라오는데 이 칸만 달랐다. 값(밴드·임계·속도)은 전부 안드로이드
+    /// 것을 베낀 것이고, 정착은 숫자 칼럼과 같은 `WheelSettleDriver` 다.
+    @State private var dragOffset: CGFloat = 0
+    @State private var isDragging = false
+    /// 정착 구동부가 `isPM` 을 넘기는 순간에는 기본 자리 이동을 애니메이션하지 않는다 —
+    /// 오프셋이 이어받아 이미 연속이다(안드로이드 `suppressNextAutoAnimation` 과 같은 역할).
+    @State private var animateBase = true
+    @State private var settleDriver = WheelSettleDriver()
 
     private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
+    /// 선택된 항목을 가운데에 두는 기본 자리.
+    private var baseOffset: CGFloat { isPM ? -itemHeight / 2 : itemHeight / 2 }
+    /// 끌 수 있는 범위 — 바꾸는 쪽으로 0.72칸, 반대쪽으로 0.22칸(안드로이드와 같은 값).
+    private var minOffset: CGFloat { isPM ? -itemHeight * 0.22 : -itemHeight * 0.72 }
+    private var maxOffset: CGFloat { isPM ? itemHeight * 0.72 : itemHeight * 0.22 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -489,17 +506,18 @@ struct AmPmWheelColumn: View {
                 .frame(height: itemHeight)
                 // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                 .contentShape(Rectangle())
-                .onTapGesture { setIsPM(false) }
+                .onTapGesture { select(pm: false) }
 
             label(title: "오후", selected: isPM)
                 .frame(height: itemHeight)
                 .contentShape(Rectangle())
-                .onTapGesture { setIsPM(true) }
+                .onTapGesture { select(pm: true) }
         }
         .frame(height: itemHeight * 3)
-        // 중앙 정렬: 선택된 항목이 가운데에 오도록 offset.
-        .offset(y: isPM ? -itemHeight / 2 : itemHeight / 2)
-        .animation(.snappy(duration: 0.25), value: isPM)
+        // 중앙 정렬(기본 자리) + 끌고 있는 만큼.
+        .offset(y: baseOffset + dragOffset)
+        // 시 칼럼이 11↔12 를 넘겨 밖에서 바뀔 때만 기본 자리를 애니메이션한다.
+        .animation(animateBase ? .snappy(duration: 0.25) : nil, value: isPM)
         .accessibilityElement()
         .accessibilityLabel(Text(isPM ? "오후 선택됨" : "오전 선택됨"))
         .accessibilityAdjustableAction { direction in
@@ -511,18 +529,63 @@ struct AmPmWheelColumn: View {
             }
         }
         .gesture(swipeGesture)
+        .onDisappear { settleDriver.cancel() }
     }
 
     private var swipeGesture: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onEnded { gesture in
-                let delta = gesture.translation.height
-                if delta < -itemHeight * 0.35 {
-                    setIsPM(true)
-                } else if delta > itemHeight * 0.35 {
-                    setIsPM(false)
+            .onChanged { gesture in
+                if !isDragging {
+                    isDragging = true
+                    // 굴러가는 중에 손을 대면 **그 자리에서 잡힌다**(안드로이드 `settleJob?.cancel()`).
+                    settleDriver.cancel()
                 }
+                dragOffset = min(max(gesture.translation.height, minOffset), maxOffset)
             }
+            .onEnded { gesture in
+                isDragging = false
+                // 안드로이드 `onDragStopped` 와 같은 판정: 0.38칸 넘게 끌었거나, 3.5칸/초보다 빠르게 튕겼으면 넘긴다.
+                let velocity = gesture.velocity.height
+                let minFling = itemHeight * 3.5
+                let steps: Int
+                if !isPM, dragOffset <= -itemHeight * 0.38 || velocity < -minFling {
+                    steps = 1
+                } else if isPM, dragOffset >= itemHeight * 0.38 || velocity > minFling {
+                    steps = -1
+                } else {
+                    steps = 0
+                }
+                settle(steps: steps)
+            }
+    }
+
+    /// 탭으로 고르기 — 굴러가던 중이면 그 자리에서 이어 굴린다.
+    private func select(pm: Bool) {
+        guard pm != isPM else { return }
+        settle(steps: pm ? 1 : -1)
+    }
+
+    /// 손을 뗀 자리에서 굴려 멎는다. `steps` 가 0 이면 제자리로 되돌아간다.
+    private func settle(steps: Int) {
+        if reduceMotion {
+            settleDriver.cancel()
+            dragOffset = 0
+            if steps != 0 { setIsPM(steps > 0) }
+            return
+        }
+        settleDriver.start(
+            from: dragOffset,
+            steps: steps,
+            itemHeight: itemHeight,
+            onStep: { step in
+                // 칸 경계를 지나는 순간 값을 넘긴다. 기본 자리가 한 칸 옮겨 가는 만큼 잔여 오프셋이
+                // 반대로 움직여 화면은 끊기지 않는다 — 그래서 여기서는 애니메이션을 끈다.
+                animateBase = false
+                setIsPM(step > 0)
+                DispatchQueue.main.async { animateBase = true }
+            },
+            onOffset: { dragOffset = $0 }
+        )
     }
 
     private func setIsPM(_ newValue: Bool) {
