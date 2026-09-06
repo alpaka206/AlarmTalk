@@ -161,7 +161,7 @@
     <string name="editor_create_voice">목소리 만들기</string>
     <string name="editor_detail_settings">세부 설정</string>
     <string name="editor_error_deleted_voice_cannot_edit">삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요.</string>
-    <string name="editor_error_enter_message_or_random">알람 문구를 입력하거나 랜덤 문구를 사용해 주세요.</string>
+    <string name="editor_error_enter_message_or_random">알람 문구를 입력하거나 문구 종류를 골라 주세요.</string>
     <string name="editor_block_recording_title">녹음이 필요해요</string>
     <string name="editor_block_recording_message">먼저 목소리를 녹음하거나 파일을 골라 주세요.</string>
     <string name="editor_block_voice_title">목소리를 골라주세요</string>
@@ -291,7 +291,6 @@
     <string name="hs_nickname_save">저장</string>
     <string name="hs_nickname_saving">저장 중</string>
     <string name="hs_profile_content_desc">프로필</string>
-    <string name="hs_profile_menu_invite_code">초대 코드 등록</string>
     <string name="hs_profile_menu_pass">이용권</string>
     <string name="hs_profile_menu_shared_pass">초대 및 구성원 관리</string>
     <string name="hs_quiet_time_add">+ 시간 추가</string>
@@ -312,7 +311,7 @@
     <string name="hs_settings_privacy_policy">개인정보 처리방침</string>
     <string name="hs_settings_section_account">계정</string>
     <string name="hs_settings_section_display">화면</string>
-    <string name="hs_settings_section_random_phrase">랜덤 문구 정보</string>
+    <string name="hs_settings_section_random_phrase">문구 정보</string>
     <string name="hs_settings_terms_of_service">서비스 이용약관</string>
     <string name="hs_settings_theme">화면 테마</string>
     <string name="hs_settings_title">설정</string>
@@ -641,22 +640,22 @@
     <string name="label_snooze_repeat_five">5회</string>
     <string name="label_snooze_repeat_forever">계속 반복</string>
     <string name="label_snooze_repeat_count">%1$d회</string>
-    <string name="label_vibration_strong" translatable="false">Strong</string>
-    <string name="label_vibration_short" translatable="false">Short</string>
-    <string name="label_vibration_medium" translatable="false">Medium</string>
-    <string name="label_vibration_heartbeat" translatable="false">Heartbeat</string>
-    <string name="label_vibration_ticktock" translatable="false">Ticktock</string>
-    <string name="label_vibration_waltz" translatable="false">Waltz</string>
-    <string name="label_vibration_zigzag" translatable="false">Zigzag</string>
-    <string name="label_vibration_off_beat" translatable="false">Offbeat</string>
-    <string name="label_vibration_ripple" translatable="false">Ripple</string>
-    <string name="label_vibration_siren" translatable="false">Siren</string>
-    <string name="label_vibration_rise" translatable="false">Rise</string>
-    <string name="label_vibration_pulse" translatable="false">Pulse</string>
-    <string name="label_vibration_bounce" translatable="false">Bounce</string>
-    <string name="label_vibration_drumroll" translatable="false">Drumroll</string>
-    <string name="label_vibration_soft" translatable="false">Soft</string>
-    <string name="label_vibration_sos" translatable="false">SOS</string>
+    <string name="label_vibration_strong">강하게</string>
+    <string name="label_vibration_short">짧게</string>
+    <string name="label_vibration_medium">보통</string>
+    <string name="label_vibration_heartbeat">심장 박동</string>
+    <string name="label_vibration_ticktock">똑딱</string>
+    <string name="label_vibration_waltz">왈츠</string>
+    <string name="label_vibration_zigzag">지그재그</string>
+    <string name="label_vibration_off_beat">엇박자</string>
+    <string name="label_vibration_ripple">잔물결</string>
+    <string name="label_vibration_siren">사이렌</string>
+    <string name="label_vibration_rise">점점 세게</string>
+    <string name="label_vibration_pulse">강약 반복</string>
+    <string name="label_vibration_bounce">통통</string>
+    <string name="label_vibration_drumroll">드럼롤</string>
+    <string name="label_vibration_soft">부드럽게</string>
+    <string name="label_vibration_sos">SOS</string>
     <string name="label_vibration_off">꺼짐</string>
     <string name="label_vibration_basic_call">기본</string>
     <string name="editor2_cat_morning">기상</string>

@@ -1043,7 +1043,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = "깨워줄 말을 입력하거나 '랜덤 문구 사용'을 켜 주세요."
+            statusMessage = "깨워줄 말을 입력하거나 문구 종류를 골라 주세요."
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)

@@ -44,23 +44,6 @@
     "‘%@’ 대신 이 목소리를 써요" : {
 
     },
-    "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose 'Alarm + Voice' and the voice you registered will play along. Turn on random messages to be woken with a fresh message each morning."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "'アラーム + 音声'を選ぶと、登録した声も一緒に鳴ります。ランダムメッセージをオンにすると、毎朝新しいメッセージで起こしてくれます。"
-          }
-        }
-      }
-    },
     "\"%@, 일어날 시간이에요\"" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2299,19 +2282,19 @@
         }
       }
     },
-    "깨워줄 말을 입력하거나 '랜덤 문구 사용'을 켜 주세요." : {
+    "깨워줄 말을 입력하거나 문구 종류를 골라 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enter a wake-up message or turn on 'Use random phrase'."
+            "value" : "Enter a wake-up message or choose a message type."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "起こす言葉を入力するか、「ランダム文を使う」をオンにしてください。"
+            "value" : "起こす言葉を入力するか、文言の種類を選んでください。"
           }
         }
       }
@@ -3688,19 +3671,19 @@
         }
       }
     },
-    "랜덤 문구 정보" : {
+    "문구 정보" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Random phrase info"
+            "value" : "Message info"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ランダム文言の情報"
+            "value" : "文言の情報"
           }
         }
       }
@@ -11087,23 +11070,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "招待コード"
-          }
-        }
-      }
-    },
-    "초대 코드 등록" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter invite code"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "招待コードを登録"
           }
         }
       }

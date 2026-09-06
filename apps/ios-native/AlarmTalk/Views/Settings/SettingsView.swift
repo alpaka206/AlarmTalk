@@ -84,7 +84,7 @@ struct SettingsView: View {
                         }
                     )
                 }
-                .settingsCard(title: "랜덤 문구 정보")
+                .settingsCard(title: "문구 정보")
 
                 if let user = auth.session?.user {
                     AccountPanel(
