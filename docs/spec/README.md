@@ -64,6 +64,7 @@
 | [session-and-auth.md](session-and-auth.md) | 로그인 유지 — 한 번 하면 다시 안 한다, 백그라운드 갱신 |
 | [billing-lifecycle.md](billing-lifecycle.md) | 구독 해지·만료 — 스토어가 권위, 못 물으면 안 바꾼다 |
 | [alarm-lifecycle.md](alarm-lifecycle.md) | 알람의 생애 — 행과 예약은 다른 겹, 계정을 떠날 때 |
+| [usage-events.md](usage-events.md) | 사용 기록 — 오프라인에 쌓고 모아 보내기, 울릴 때 네트워크 금지, 보관 1년 |
 
 ## 여기 넣지 않는 것
 

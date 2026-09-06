@@ -36,6 +36,14 @@ import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
 
+/**
+ * 사용 기록 보관 기간. **처리방침(개인정보 처리방침 3장)에 적은 값과 같아야 한다** —
+ * 문서와 코드가 갈라지면 어느 쪽이 진실인지 아무도 모른다.
+ */
+const USAGE_EVENT_RETENTION_DAYS = 365;
+/** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
+const USAGE_EVENT_PRUNE_BATCH = 500;
+
 const app = new Hono<AppEnv>();
 
 // Security response headers (OWASP best practices)
@@ -304,6 +312,22 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     await drainExternalDeletions(db, env, now);
   } catch (err) {
     captureCron('scheduled.audio_retention', err);
+  }
+
+  // 사용 기록(이벤트) 보관 기간 정리 — **처리방침에 적은 1년**을 코드로 지킨다
+  // (`docs/legal/privacy-policy.ko.md` 3장 표). append-only 테이블이라 아무도 지우지 않으면
+  // 무한히 는다. 한 번에 지우는 양을 묶어 cron 한 회차가 길어지지 않게 한다.
+  try {
+    const cutoff = new Date(now.getTime() - USAGE_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString();
+    await db.execute({
+      sql: `DELETE FROM usage_events WHERE id IN (
+              SELECT id FROM usage_events WHERE occurred_at < ? LIMIT ?
+            )`,
+      args: [cutoff, USAGE_EVENT_PRUNE_BATCH],
+    });
+  } catch (err) {
+    captureCron('scheduled.usage_event_prune', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
