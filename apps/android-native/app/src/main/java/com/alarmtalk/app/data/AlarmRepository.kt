@@ -63,6 +63,9 @@ class AlarmRepository(
     // [RingingService.ringingOrHandingOffAlarmIds] 주석 참고 — 울리는 알람과 인계 중인 알람이
     // 서로 다를 수 있고, 하나만 보면 뒤엣것이 무방비가 된다.
     private val ringingAlarmIdsProvider: () -> Set<String> = { RingingService.ringingOrHandingOffAlarmIds() },
+    // 사용 기록. **없어도 돌아야 한다** — 기록은 곁다리라, 테스트나 옛 호출부가 안 넘겨도
+    // 알람 동작은 그대로다(기본값 no-op).
+    private val usageEvents: UsageEventRecorder? = null,
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -291,6 +294,7 @@ class AlarmRepository(
         // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_CREATED, alarm)
         alarm
     }
 
@@ -406,6 +410,7 @@ class AlarmRepository(
         // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
         ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_UPDATED, updated)
         updated
     }
 
@@ -497,6 +502,48 @@ class AlarmRepository(
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+        recordAlarmEvent(UsageEvents.ALARM_DELETED, current)
+        // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
+        // 다른 알람이 남아 있으면 파일은 그대로이므로 여전히 '사용중' 이다 — 그 판정은
+        // 폰만 할 수 있고(참조 카운트), 서버는 이 기록을 받아 적을 뿐이다.
+        if (cacheKey != null && current.ttsMessageId != null &&
+            alarmDao.countByAudioCacheKey(cacheKey) == 0
+        ) {
+            usageEvents?.record(
+                type = UsageEvents.MANUAL_MESSAGE_RELEASED,
+                alarmId = current.id,
+                voiceProfileId = current.voiceProfileId,
+                messageId = current.ttsMessageId,
+            )
+        }
+    }
+
+    /**
+     * 알람 사건 하나를 남긴다. **식별자만** 담는다 — 문구 원문은 이미 알람 행에 있고,
+     * 기록에 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이 하나 더 늘어난다.
+     */
+    private fun recordAlarmEvent(type: String, alarm: AlarmEntity) {
+        val recorder = usageEvents ?: return
+        recorder.record(
+            type = type,
+            alarmId = alarm.id,
+            voiceProfileId = alarm.voiceProfileId,
+            messageId = alarm.ttsMessageId,
+        )
+        // 직접 입력 문구가 붙은 알람이면 그 문구가 이 기기에서 **사용중**이 됐다고 남긴다.
+        // 판정은 저장 갈래와 같은 모양이다 — 랜덤도 아니고 테마 클립도 아닌데 문구 id 가
+        // 있으면 직접 입력이다(`AlarmEditorState` 의 `isManualForSave` 와 같은 선).
+        val isManualMessage = !alarm.voiceRandomPrompt &&
+            alarm.bucketId.isNullOrBlank() &&
+            !alarm.ttsMessageId.isNullOrBlank()
+        if (isManualMessage && (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED)) {
+            recorder.record(
+                type = UsageEvents.MANUAL_MESSAGE_ATTACHED,
+                alarmId = alarm.id,
+                voiceProfileId = alarm.voiceProfileId,
+                messageId = alarm.ttsMessageId,
+            )
+        }
     }
 
     /**
