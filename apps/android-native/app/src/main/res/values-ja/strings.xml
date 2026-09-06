@@ -243,7 +243,6 @@
     <string name="msg_voice_replacement_settling">変更した音声を整理しています。しばらくしてからもう一度選んでください。</string>
     <string name="editor_voice_source_local">自分で録音</string>
     <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
-    <string name="editor_voice_volume_preview">この大きさで聞いてみる</string>
     <string name="editor_voice_volume_preview_hint">実際のアラーム文言ではなく、あいさつのサンプルを再生します。</string>
     <string name="editor_voice_volume">声の大きさ</string>
     <string name="editor_volume">音量</string>

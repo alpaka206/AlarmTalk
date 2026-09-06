@@ -253,7 +253,6 @@
     <string name="msg_voice_replacement_settling">바꾼 목소리를 정리하고 있어요. 잠시 후 다시 골라 주세요.</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
-    <string name="editor_voice_volume_preview">이 크기로 들어보기</string>
     <string name="editor_voice_volume_preview_hint">실제 알람 문구가 아니라 인사말로 들려드려요.</string>
     <string name="editor_voice_volume">목소리 크기</string>
     <string name="editor_volume">볼륨</string>

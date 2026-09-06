@@ -802,10 +802,8 @@ struct AlarmEditorSheet: View {
         if let voiceId = voiceStudio.selectedProfileID?.nilIfBlank {
             VoiceOutputSettingsPane(
                 volumePercent: $draft.voiceVolumePercent,
-                onPreview: { previewVoiceAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
                 onVolumeSettled: { ensureVoicePreviewAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
-                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) },
-                previewPlaying: voiceStudio.previewingGreetingVoiceId == voiceId
+                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) }
             )
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
@@ -816,19 +814,6 @@ struct AlarmEditorSheet: View {
     func ensureVoicePreviewAtVolume(voiceId: String, volumePercent: Int) {
         Task {
             await voiceStudio.ensureGreetingPreview(
-                voiceId: voiceId,
-                session: auth.session,
-                volumePercent: volumePercent
-            )
-        }
-    }
-
-    /// 목소리 크기 화면의 '이 크기로 들어보기' — 지금 게인으로 인사말 샘플을 튼다.
-    /// (뷰 본문에서 바로 `Task { await … }` 를 쓰면 타입 검사기가 그 표현식을 시간 안에
-    ///  못 푼다 — 빌드가 "unable to type-check this expression" 으로 죽는다.)
-    func previewVoiceAtVolume(voiceId: String, volumePercent: Int) {
-        Task {
-            await voiceStudio.previewGreeting(
                 voiceId: voiceId,
                 session: auth.session,
                 volumePercent: volumePercent

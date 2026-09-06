@@ -280,12 +280,13 @@ struct VoiceOutputSettingsPane: View {
     /// `VoiceOutputSettingsPane` 의 `onPreview` 주석과 같은 이유). 날씨·운세처럼 조건으로
     /// 고르는 문구는 울릴 때에야 정해지므로 여기서 기다릴 것이 아니고, 크기를 재는 데
     /// 필요한 것은 '이 목소리가 이 크기로 얼마나 큰가' 뿐이다.
-    var onPreview: (() -> Void)?
     /// 슬라이더에서 손을 뗀 순간 — **여기서 자동으로 들려준다**(안드로이드와 같은 결).
+    ///
+    /// ⚠ **재생 버튼을 다시 두지 말 것**(2026-09-06 지시). 슬라이더가 곧 컨트롤이라
+    /// 버튼은 같은 일을 하는 두 번째 컨트롤이 된다. 무엇이 들리는지는 아래 한 줄이 말한다.
     var onVolumeSettled: (() -> Void)?
     /// 끄는 동안 매 값마다. 재생 중이면 다시 틀지 않고 크기만 바꾼다.
     var onVolumeLive: ((Int) -> Void)?
-    var previewPlaying: Bool = false
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
@@ -326,30 +327,14 @@ struct VoiceOutputSettingsPane: View {
                 }
                 .padding(.vertical, 12)
 
-                if let onPreview {
-                    Divider().overlay(theme.palette.outlineVariant)
-                    Button(action: onPreview) {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("이 크기로 들어보기")
-                                    .font(theme.typography.bodyLarge)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(theme.palette.onSurface)
-                                // 눌러 보고 "내가 쓴 문구가 아니네" 로 알게 되면 고장으로
-                                // 읽힌다 — 무엇이 들릴지 **미리** 말한다.
-                                Text("실제 알람 문구가 아니라 인사말로 들려드려요.")
-                                    .font(theme.typography.bodySmall)
-                                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                            }
-                            Spacer(minLength: 8)
-                            Image(systemName: previewPlaying ? "stop.fill" : "play.fill")
-                                .foregroundStyle(theme.palette.primary)
-                        }
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                }
+                // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데
+                // 자기가 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는
+                // 문구는 울릴 때에야 정해지므로 여기서 들려줄 수 없다.
+                Text("실제 알람 문구가 아니라 인사말로 들려드려요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 12)
             }
         }
     }
