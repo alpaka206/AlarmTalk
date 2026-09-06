@@ -192,6 +192,15 @@
 - **접근성**: 슬라이더에 커스텀 액션 "끄기"(`rd_dismiss_action`) — 밀기만 있던 탈출구에 TalkBack 경로.
 - 대비 실측(WCAG): 글자 쌍 전부 5.2:1 이상(가장 낮은 것이 힌트 셰브론), 손잡이/트랙 8.4:1,
   다시 알림 테두리 3.7:1.
+- **2차 검수**(움직임·타이포·접근성 세 렌즈 → 반박 검증, 확정 6건 + 저위험 9건 반영):
+  글꼴을 넘기지 않아 이 화면만 시스템 글꼴이던 것(`typography = AlarmTalkTypography`, 그래서
+  시계 기준 폭 320→340dp), **놓는 순간 끄기**(채움 애니메이션이 끝나기를 기다리는 동안 소리가
+  계속 나고 다시 잡으면 확정이 무효가 됐다), 잡는 순간 정착 정지 + 표시값에서 드래그 시작,
+  다시 알림 리플이 안 보이던 것(`LocalContentColor`), 칩·캡슐·트랙 테두리 규칙 하나로
+  (`ringingEdge` 3.7:1), 시계를 TalkBack 한 노드 + 말로 읽는 시각(`rd_clock_spoken`),
+  문턱 통과 시 트랙 색(햅틱 끈 기기의 짝), 셰브론 위상 시차·머티리얼 아이콘, 영어 '6:30 AM'
+  순서, 창 제목(`paneTitle`), 다시 알림 role=Button, 라벨 16sp 통일, 한글 문구 자간 0.
+  기각 4건(시계 lineHeight 상속, 트랙 노드 병합, 5줄 문구, 트랙 대비)은 워크플로 저널에.
 - 검증: 컴파일·단위 테스트 373·assembleDevDebug 통과. **화면은 실기로 못 봤다**(이 세션에 폰이
   안 붙어 있었다) — 다음에 폰이 붙으면 `adb shell am start -n com.alarmtalk.app.dev/com.alarmtalk.app.ringing.RingingActivity`
   로 기본 상태를 띄워 확인할 것(알람 id 없이 열면 `defaultRingingUiState`, 소리는 안 난다).

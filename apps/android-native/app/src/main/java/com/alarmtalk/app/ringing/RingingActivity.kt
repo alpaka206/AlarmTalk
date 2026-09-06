@@ -15,7 +15,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -48,7 +47,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -100,6 +98,17 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import com.alarmtalk.app.HomeGradientDark
 import com.alarmtalk.app.WakerPillShape
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
+import com.alarmtalk.app.AlarmTalkTypography
 
 class RingingActivity : ComponentActivity() {
     private var alarmId by mutableStateOf<String?>(null)
@@ -235,54 +244,70 @@ private fun RingingRoute(
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
-    // 잠금화면 위에서는 항상 다크로 떠야 하므로 앱 테마를 상속하지 않는다. 값은 단일 출처 그대로.
-    MaterialTheme(colorScheme = AlarmTalkDarkColorScheme) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(HomeGradientDark)
-                .systemBarsPadding()
-                .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(54.dp))
-            // 날짜 줄에 알람 이름을 합친다 — 카드 한 장을 줄인다.
-            Text(
-                text = listOfNotNull(uiState.dateText.takeIf { it.isNotBlank() }, uiState.label)
-                    .joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(6.dp))
-            RingingClock(ampm = uiState.ampm, time = uiState.timeText)
-
-            Spacer(Modifier.height(34.dp))
-            val voice = uiState.voiceText
-            if (voice != null) {
-                RingingMessage(voice)
-            } else {
-                // 문구가 없는 알람은 빈 카드를 그리지 않는다 — 무엇이 울리는지 칩 하나로 말한다.
-                RingingToneChip()
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            if (uiState.snoozeEnabled) {
-                RingingSnoozeButton(
-                    minutes = uiState.snoozeMinutes,
-                    onSnooze = onSnooze,
+    val paneTitle = stringResource(R.string.ringing_notification_title)
+    // 잠금화면 위에서는 항상 다크로 떠야 하므로 앱 테마를 상속하지 않는다. 값은 단일 출처 그대로 —
+    // 글꼴(Pretendard·자간 0)도 같이 넘긴다. 색만 넘기면 이 화면만 시스템 글꼴로 뜬다.
+    MaterialTheme(colorScheme = AlarmTalkDarkColorScheme, typography = AlarmTalkTypography) {
+        // 리플·아이콘 기본색은 LocalContentColor 에서 온다 — 테마만 바꾸면 검정으로 남아 리플이 안 보인다.
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(HomeGradientDark)
+                    .systemBarsPadding()
+                    .padding(horizontal = 28.dp)
+                    // TalkBack 이 창을 만나는 순간 '알람이 울리고 있다' 를 먼저 듣게 한다.
+                    .semantics { this.paneTitle = paneTitle },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(54.dp))
+                // 날짜 줄에 알람 이름을 합친다 — 카드 한 장을 줄인다.
+                Text(
+                    text = listOfNotNull(uiState.dateText.takeIf { it.isNotBlank() }, uiState.label)
+                        .joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(6.dp))
+                RingingClock(ampm = uiState.ampm, time = uiState.timeText, spokenTime = uiState.spokenTime)
+
+                Spacer(Modifier.height(34.dp))
+                val voice = uiState.voiceText
+                if (voice != null) {
+                    RingingMessage(voice)
+                } else {
+                    // 문구가 없는 알람은 빈 카드를 그리지 않는다 — 무엇이 울리는지 칩 하나로 말한다.
+                    RingingToneChip()
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                if (uiState.snoozeEnabled) {
+                    RingingSnoozeButton(
+                        minutes = uiState.snoozeMinutes,
+                        onSnooze = onSnooze,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+                RingingSlideToDismiss(onDismiss = onDismiss)
+                Spacer(Modifier.height(24.dp))
             }
-            RingingSlideToDismiss(onDismiss = onDismiss)
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
+
+/**
+ * 이 화면의 캡슐·칩·트랙 테두리 규칙. 바닥(그라데이션)이 어두워 `outline`(#4C587E)은 2.4:1 로
+ * 비텍스트 기준(3:1)에 못 미친다 — `onSurfaceVariant` 60% 면 3.7:1. 세 곳이 같은 이유를 가리킨다.
+ */
+@Composable
+private fun ringingEdge(): BorderStroke =
+    BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
 
 /**
  * 울림 화면의 시계.
@@ -294,38 +319,54 @@ private fun RingingRoute(
  * 배율은 [가용 폭] ÷ ([기준 폭] × [글꼴 배율]) 이다 — 글꼴 배율을 나누는 이유는, 폭은
  * dp 라 사용자가 글꼴을 키워도 그대로지만 글자만 커져 넘치기 때문이다. 알람 편집기의
  * `AlarmTimePicker` 도 같은 방식으로 줄인다.
+ *
+ * TalkBack 에는 한 노드로, 말로 읽는 시각(`spokenTime`)을 준다 — '오전' 과 '6:00' 을 두 조각으로
+ * 읽히게 두면 자다 깬 사람이 첫 정보를 두 번에 나눠 듣고, '6:00' 은 TTS 마다 발음이 다르다.
  */
 @Composable
-private fun RingingClock(ampm: String, time: String) {
-    // '오전' + 104sp 시각이 여유롭게 들어가는 폭. 이보다 넓으면 줄이지 않는다.
-    val referenceWidth = 320.dp
+private fun RingingClock(ampm: String, time: String, spokenTime: String) {
+    // '오전' + 104sp 시각이 여유롭게 들어가는 폭. Pretendard 숫자는 시스템 글꼴보다 넓어
+    // "10:00" 기준 324dp 가 필요하다(실측) — 여유를 두고 340. 이보다 넓으면 줄이지 않는다.
+    val referenceWidth = 340.dp
+    // 영어는 '6:30 AM' 이다 — 로케일의 시각 패턴에서 오전/오후 자리를 읽는다.
+    val ampmFirst = remember {
+        val pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "hma")
+        pattern.indexOf('a') < pattern.indexOf('h')
+    }
     BoxWithConstraints {
         val scale = fitToWidthScale(maxWidth, referenceWidth)
         Row(
+            modifier = Modifier.clearAndSetSemantics { contentDescription = spokenTime },
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(10.dp * scale),
         ) {
-            if (ampm.isNotBlank()) {
-                Text(
-                    text = ampm,
-                    modifier = Modifier.padding(bottom = 18.dp * scale),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 26.sp * scale,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    softWrap = false,
-                )
+            val ampmText: @Composable () -> Unit = {
+                if (ampm.isNotBlank()) {
+                    Text(
+                        text = ampm,
+                        modifier = Modifier.padding(bottom = 18.dp * scale),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 26.sp * scale,
+                        lineHeight = 30.sp * scale,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
+            if (ampmFirst) ampmText()
             Text(
                 text = time,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 104.sp * scale,
+                lineHeight = 110.sp * scale,
                 fontWeight = FontWeight.Bold,
                 // 큰 숫자는 자간을 조인다(-0.03em) — 기본 자간이면 흩어져 보인다.
                 letterSpacing = (-3).sp * scale,
                 maxLines = 1,
                 softWrap = false,
             )
+            if (!ampmFirst) ampmText()
         }
     }
 }
@@ -333,6 +374,7 @@ private fun RingingClock(ampm: String, time: String) {
 /**
  * 울리는 문구. 카드 없이 시계 아래에 바로 — 카드는 시계와 겨루는 두 번째 상자였다.
  * 긴 문구가 컨트롤을 화면 밖으로 밀지 않도록 세 줄에서 자른다(전문은 목소리가 읽는다).
+ * 한글 본문이라 자간은 0(앱 규칙). 시계의 음수 자간은 라틴 숫자라서다.
  */
 @Composable
 private fun RingingMessage(text: String) {
@@ -345,7 +387,6 @@ private fun RingingMessage(text: String) {
         fontSize = 23.sp,
         lineHeight = 33.sp,
         fontWeight = FontWeight.Medium,
-        letterSpacing = (-0.3).sp,
         textAlign = TextAlign.Center,
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,
@@ -354,10 +395,11 @@ private fun RingingMessage(text: String) {
 
 @Composable
 private fun RingingToneChip() {
+    // 채움은 두지 않는다 — surface(#1B2542)는 그 자리 바닥과 1.03:1 이라 있어도 안 보인다.
     Surface(
         shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+        color = Color.Transparent,
+        border = ringingEdge(),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -374,25 +416,31 @@ private fun RingingToneChip() {
                 text = stringResource(R.string.rd_tone_only),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
+                lineHeight = 20.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
     }
 }
 
-/** 다시 알림 — 가벼운 캡슐. 끄기 슬라이더보다 눈에 띄지 않아야 어느 쪽이 되돌릴 수 없는지 보인다. */
+/**
+ * 다시 알림 — 가벼운 캡슐. 끄기 슬라이더보다 눈에 띄지 않아야 어느 쪽이 되돌릴 수 없는지 보인다.
+ * 액션 라벨 둘(다시 알림·끄기)은 같은 16sp 다 — 무게 차이는 컨테이너와 굵기가 낸다.
+ */
 @Composable
 private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
     Surface(
         onClick = onSnooze,
         modifier = Modifier
             .height(52.dp)
-            .widthIn(min = 160.dp),
+            .widthIn(min = 160.dp)
+            // Surface(onClick) 은 role 을 안 붙인다 — TalkBack 이 '버튼' 을 읽게 한다.
+            .semantics { role = Role.Button },
         shape = WakerPillShape,
         color = Color.Transparent,
-        // 테두리가 이 버튼의 유일한 경계다 — outline(#4C587E)은 바닥 위 2.4:1 이라 비텍스트 기준(3:1)에
-        // 못 미친다. onSurfaceVariant 60% 면 3.7:1.
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)),
+        // 리플이 이 색을 읽는다.
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = ringingEdge(),
     ) {
         Box(
             modifier = Modifier
@@ -402,19 +450,25 @@ private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
         ) {
             Text(
                 text = stringResource(R.string.rd_snooze_button_minutes, minutes),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
-                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
     }
 }
 
+private const val DISMISS_THRESHOLD_FRACTION = 0.7f
+
 /**
  * 밀어서 끄기.
  *
  * - 손잡이는 **누르는 순간** 눌린다(0.94, 튕기지 않는 스프링) — 놓을 때가 아니라.
- * - 70% 문턱을 **넘는 순간** 햅틱 한 번 — 손을 떼면 끝난다는 신호. 되돌아오면 다시 무장한다.
+ * - 잡는 순간 정착 애니메이션을 멈춘다 — 손 밑에서 흘러가지 않고, 드래그는 **표시값**에서 시작한다.
+ * - 70% 문턱을 **넘는 순간** 햅틱 한 번 + 트랙 색이 바뀐다(햅틱을 끈 기기의 짝). 되돌아오면 다시 무장한다.
+ * - **놓는 순간 끈다.** 채움 애니메이션이 끝나기를 기다리지 않는다 — 그 사이 소리가 계속 나고,
+ *   다시 잡으면 애니메이션이 취소되며 확정한 끄기가 조용히 무효가 됐다.
  * - 밀기밖에 없는 탈출구는 TalkBack·스위치 사용자에게 없는 것과 같다 — 접근성 커스텀 액션
  *   '끄기' 를 붙인다. 길게 누르기는 일부러 두지 않는다(잠결에 손을 얹기만 해도 꺼진다).
  * - 관성·플릭 판정은 없다. 끝까지 밀어야 한다.
@@ -430,20 +484,29 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
     var trackWidthPx by remember { mutableStateOf(0) }
     val offsetX = remember { Animatable(0f) }
     val maxOffset = (trackWidthPx - knobSizePx - edgePadPx * 2).coerceAtLeast(0f)
-    val threshold = maxOffset * 0.7f
+    val threshold = maxOffset * DISMISS_THRESHOLD_FRACTION
 
     var pressed by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf(false) }
     val knobScale by animateFloatAsState(
         targetValue = if (pressed) 0.94f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
         label = "knobPress",
     )
+    val trackColor by animateColorAsState(
+        targetValue = if (armed) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        label = "trackArmed",
+    )
 
-    // 라벨은 노브가 이동할수록 서서히 사라진다.
-    val labelAlpha = if (maxOffset <= 0f) 1f else (1f - offsetX.value / maxOffset).coerceIn(0f, 1f)
     val dismissLabel = stringResource(R.string.rd_slide_to_dismiss)
     val dismissAction = stringResource(R.string.rd_dismiss_action)
     val hintColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val edge = ringingEdge()
 
     Box(
         modifier = Modifier
@@ -451,8 +514,8 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             .height(72.dp)
             .onSizeChanged { trackWidthPx = it.width }
             .clip(WakerPillShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), WakerPillShape)
+            .background(trackColor)
+            .border(edge, WakerPillShape)
             .semantics {
                 customActions = listOf(
                     CustomAccessibilityAction(dismissAction) {
@@ -463,14 +526,20 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             },
         contentAlignment = Alignment.CenterStart,
     ) {
+        // 라벨은 손잡이가 이동할수록 서서히 사라진다. 값은 그리기 단계에서 읽는다(포인터마다 재구성하지 않게).
+        val fadeWithKnob: androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit = {
+            alpha = if (maxOffset <= 0f) 1f else (1f - offsetX.value / maxOffset).coerceIn(0f, 1f)
+        }
         Text(
             text = dismissLabel,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 60.dp, end = 24.dp)
-                .graphicsLayer { alpha = labelAlpha },
+                // 손잡이(6+60)와 셰브론 묶음(22+37)이 차지하는 폭만큼 비워 남는 구간의 정중앙에 앉힌다.
+                .padding(start = 66.dp, end = 59.dp)
+                .graphicsLayer(fadeWithKnob),
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 16.sp,
+            lineHeight = 22.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
@@ -480,7 +549,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 22.dp)
-                .graphicsLayer { alpha = labelAlpha },
+                .graphicsLayer(fadeWithKnob),
         )
 
         Box(
@@ -498,6 +567,8 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         pressed = true
+                        // 잡는 순간 정착을 멈춘다 — 손 밑에서 흘러가지 않게.
+                        scope.launch { offsetX.stop() }
                         var latest = offsetX.value
                         var crossed = false
                         fun moveBy(delta: Float) {
@@ -507,14 +578,18 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
                             if (maxOffset > 0f) {
                                 if (!crossed && latest >= threshold) {
                                     crossed = true
+                                    armed = true
                                     view.performThresholdHaptic()
                                 } else if (crossed && latest < threshold) {
                                     crossed = false
+                                    armed = false
                                 }
                             }
                         }
                         val dragStart = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
                             change.consume()
+                            // stop 이 한 프레임 늦어도 표시값에서 시작한다.
+                            latest = offsetX.value
                             moveBy(overSlop)
                         }
                         if (dragStart != null) {
@@ -526,11 +601,11 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
                         }
                         pressed = false
                         if (maxOffset > 0f && latest >= threshold) {
-                            scope.launch {
-                                offsetX.animateTo(maxOffset)
-                                onDismiss()
-                            }
+                            // 놓는 순간이 원인 — 소리·진동은 여기서 끈다. 채움은 장식이라 종료 전환에 잘려도 된다.
+                            onDismiss()
+                            scope.launch { offsetX.animateTo(maxOffset) }
                         } else {
+                            armed = false
                             scope.launch { offsetX.animateTo(0f) }
                         }
                     }
@@ -557,31 +632,33 @@ private fun View.performThresholdHaptic() {
     performHapticFeedback(constant)
 }
 
+/** 밀기 방향 힌트 — 같은 화면의 다른 글리프처럼 머티리얼 셰브론이다(손으로 그린 선을 쓰지 않는다). */
 @Composable
 private fun SlideHintArrows(color: Color, modifier: Modifier = Modifier) {
     // 시스템 애니메이터 배율(축소 동작)은 Compose 가 MotionDurationScale 로 그대로 먹는다.
     val transition = rememberInfiniteTransition(label = "slideHint")
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy((-4).dp),
     ) {
         repeat(3) { index ->
             val alpha by transition.animateFloat(
                 initialValue = 0.25f,
                 targetValue = 0.9f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 750, delayMillis = index * 180, easing = LinearEasing),
+                    animation = tween(durationMillis = 750, easing = LinearEasing),
                     repeatMode = RepeatMode.Reverse,
+                    // 시차는 위상으로 준다 — delayMillis 는 회차마다 길이에 더해져 시차가 유지되지 않는다.
+                    initialStartOffset = StartOffset(index * 180),
                 ),
                 label = "arrow$index",
             )
-            Canvas(modifier = Modifier.size(11.dp)) {
-                val w = 2.4.dp.toPx()
-                val c = color.copy(alpha = alpha)
-                // 오른쪽을 가리키는 셰브론.
-                drawLine(c, Offset(size.width * 0.3f, size.height * 0.2f), Offset(size.width * 0.75f, size.height * 0.5f), strokeWidth = w)
-                drawLine(c, Offset(size.width * 0.75f, size.height * 0.5f), Offset(size.width * 0.3f, size.height * 0.8f), strokeWidth = w)
-            }
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = color.copy(alpha = alpha),
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
@@ -595,19 +672,19 @@ private data class RingingUiState(
     val dateText: String = "",
     val ampm: String = "",
     val timeText: String = "",
+    /** TalkBack 이 읽는 시각("오전 6시 0분"). 화면의 "6:00" 은 눈으로 보는 용도라 이름으로 쓰지 않는다. */
+    val spokenTime: String = "",
 )
 
 /** 알람을 아직 불러오지 못했을 때(빈 상태) 표시할 기본 UI 상태. */
 private fun defaultRingingUiState(context: android.content.Context): RingingUiState {
     val now = java.time.LocalTime.now()
+    val ampm = context.getString(if (now.hour < 12) R.string.rd2_am else R.string.rd2_pm)
     return RingingUiState(
         dateText = todayDateLabel(context),
-        ampm = if (now.hour < 12) {
-            context.getString(R.string.rd2_am)
-        } else {
-            context.getString(R.string.rd2_pm)
-        },
+        ampm = ampm,
         timeText = alarmClockLabel(now.hour, now.minute),
+        spokenTime = spokenClockLabel(context, ampm, now.hour, now.minute),
     )
 }
 
@@ -640,18 +717,16 @@ private fun AlarmEntity.toRingingUiState(
                 snoozeCount < snoozeRepeatLimit
             )
 
+    val ampm = context.getString(if (hour < 12) R.string.rd2_am else R.string.rd2_pm)
     return RingingUiState(
         label = customTitle,
         voiceText = voiceMessage,
         snoozeEnabled = snoozeAvailable,
         snoozeMinutes = snoozeMinutes,
         dateText = todayDateLabel(context),
-        ampm = if (hour < 12) {
-            context.getString(R.string.rd2_am)
-        } else {
-            context.getString(R.string.rd2_pm)
-        },
+        ampm = ampm,
         timeText = alarmClockLabel(hour, minute),
+        spokenTime = spokenClockLabel(context, ampm, hour, minute),
     )
 }
 
@@ -668,8 +743,16 @@ private fun todayDateLabel(context: android.content.Context): String {
 
 /** "6:30" 형태(12시간제, 분 0패딩) — 큰 시계 표시용. */
 private fun alarmClockLabel(hour: Int, minute: Int): String {
+    return "${hour12Of(hour)}:${"%02d".format(minute)}"
+}
+
+/** 말로 읽는 시각("오전 6시 30분" / "6:30 AM") — TalkBack 용. */
+private fun spokenClockLabel(context: android.content.Context, ampm: String, hour: Int, minute: Int): String {
+    return context.getString(R.string.rd_clock_spoken, ampm, hour12Of(hour), minute)
+}
+
+private fun hour12Of(hour: Int): Int {
     val hour12 = hour % 12
-    val displayHour = if (hour12 == 0) 12 else hour12
-    return "$displayHour:${"%02d".format(minute)}"
+    return if (hour12 == 0) 12 else hour12
 }
 

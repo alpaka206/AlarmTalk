@@ -479,6 +479,7 @@
     <string name="rd_snooze_button_minutes">%1$d分後にもう一度</string>
     <string name="rd_tone_only">アラーム音</string>
     <string name="rd_dismiss_action">停止</string>
+    <string name="rd_clock_spoken">%1$s%2$d時%3$d分</string>
     <string name="rd_test_alarm_label">テストアラーム</string>
     <string name="ringing_notification_text">起きる時間ですよ</string>
     <string name="ringing_notification_title">アラームが鳴っています</string>

@@ -471,6 +471,7 @@
     <string name="rd_snooze_button_minutes">Again in %1$d min</string>
     <string name="rd_tone_only">Alarm sound</string>
     <string name="rd_dismiss_action">Dismiss</string>
+    <string name="rd_clock_spoken">%2$d:%3$02d %1$s</string>
     <string name="rd_test_alarm_label">Test alarm</string>
     <string name="ringing_notification_text">Time to wake up</string>
     <string name="ringing_notification_title">Your alarm is going off</string>
