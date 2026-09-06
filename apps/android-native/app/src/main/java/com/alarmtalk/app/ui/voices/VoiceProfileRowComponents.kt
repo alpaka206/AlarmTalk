@@ -2,13 +2,17 @@ package com.alarmtalk.app
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -360,13 +365,27 @@ internal fun VoiceCatalogRow(
 ) {
     // 관리할 게 있는 행(내 목소리)은 행 전체가 그 입구, 나머지는 행 전체가 재생.
     val rowAction = onOpenActions ?: onPreview
+    // ⚠ **리플 대신 축소로 알린다**(2026-09-06, 알람 행과 같은 규칙 —
+    // `ui/components/ControlsAndPermissions.kt` 의 `pressScale`). 리플을 끄면서 아무 반응도
+    // 없어져, 목소리를 눌러도 미리듣기가 시작되기 전까지는 눌렸는지 알 수 없었다.
+    val rowInteractionSource = remember { MutableInteractionSource() }
+    val rowPressed by rowInteractionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (rowPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        label = "voiceRowPressScale",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             // 눌림 리플은 끈다 — 행 전체를 덮는 사각 하이라이트가 그룹 카드 모서리와 어긋난다.
             .clickable(
                 enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = rowInteractionSource,
                 indication = null,
                 onClick = rowAction,
             )

@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +65,14 @@ internal fun AmPmWheelColumn(
     val isPm = amPmIndex == 1
     val scope = rememberCoroutineScope()
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    // ⚠ **시·분 휠과 같은 톡**(`DraggableTimeWheelColumn` 의 `stepWithTick` 주석).
+    // 오전/오후는 한 칸뿐이라 더 잘 느껴진다 — 여기만 무감각하면 같은 컨트롤인데
+    // 위아래로 손을 옮길 때 감각이 끊긴다.
+    val view = LocalView.current
+    fun stepWithTick(step: Int) {
+        view.performWheelTick()
+        onStep(step)
+    }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     var previousAmPmIndex by remember { mutableIntStateOf(amPmIndex) }
     var suppressNextAutoAnimation by remember { mutableStateOf(false) }
@@ -128,7 +137,7 @@ internal fun AmPmWheelColumn(
                             itemHeightPx = itemHeightPx,
                             onStep = { step ->
                                 suppressNextAutoAnimation = true
-                                onStep(step)
+                                stepWithTick(step)
                             },
                             onOffsetChange = { dragOffsetPx = it },
                         )
@@ -163,7 +172,7 @@ internal fun AmPmWheelColumn(
                                         itemHeightPx = itemHeightPx,
                                         onStep = { selectedStep ->
                                             suppressNextAutoAnimation = true
-                                            onStep(selectedStep)
+                                            stepWithTick(selectedStep)
                                         },
                                         onOffsetChange = { dragOffsetPx = it },
                                     )

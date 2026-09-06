@@ -631,8 +631,8 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_ctx_medication">Meds</string>
     <string name="editor2_repeat_every_day">Every day</string>
     <string name="editor2_repeat_weekly">Every %1$s</string>
-    <string name="editor2_repeat_today">Today - %1$s</string>
-    <string name="editor2_repeat_tomorrow">Tomorrow - %1$s</string>
+    <string name="editor2_repeat_today">Today · %1$s</string>
+    <string name="editor2_repeat_tomorrow">Tomorrow · %1$s</string>
     <string name="editor2_date_label">%1$d/%2$d (%3$s)</string>
     <string name="editor2_weekday_sun">Sun</string>
     <string name="editor2_weekday_mon">Mon</string>

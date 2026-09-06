@@ -58,6 +58,7 @@
 		2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */; };
 		305BF4D6DC819972454207B9 /* pretendard_semibold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */; };
 		307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */; };
+		311402E0D376E16DCA8CCA41 /* PressFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DA90B763DD02D72DFDB6531 /* PressFeedback.swift */; };
 		325F179DCA00F9EF7DBE04B6 /* AudioPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */; };
 		33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */; };
 		3634FE2ABCB1FA2CD1D056FF /* AlarmSoundUriParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDCF80B5CA97C17310DA02B5 /* AlarmSoundUriParsingTests.swift */; };
@@ -434,6 +435,7 @@
 		3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
 		3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeBucketSettings.swift; sourceTree = "<group>"; };
 		3D2C0233F3C173D928B67AAD /* AlarmSoundAcousticProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundAcousticProbe.swift; sourceTree = "<group>"; };
+		3DA90B763DD02D72DFDB6531 /* PressFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressFeedback.swift; sourceTree = "<group>"; };
 		3E8BB6661FCBCBE21C888ACE /* HolidayOffToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayOffToggle.swift; sourceTree = "<group>"; };
 		3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_semibold.otf; sourceTree = "<group>"; };
 		3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRelationshipInputField.swift; sourceTree = "<group>"; };
@@ -889,6 +891,7 @@
 			isa = PBXGroup;
 			children = (
 				E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */,
+				3DA90B763DD02D72DFDB6531 /* PressFeedback.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -1565,6 +1568,7 @@
 				1CE6FA5913366B7357CD2C70 /* PendingSignOutStore.swift in Sources */,
 				33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */,
 				A2CA2AEBEAE902FB976735CA /* PlanTier.swift in Sources */,
+				311402E0D376E16DCA8CCA41 /* PressFeedback.swift in Sources */,
 				F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */,
 				BF63F06A6574FF0FBF9E4377 /* PromoPromptStore.swift in Sources */,
 				1DF582024EBC322A9E3996A5 /* PromptDetailCard.swift in Sources */,

@@ -27,6 +27,10 @@
 | 튕김 판정 | 최소 속도 `칸높이 × 4.2/s`, 칸수 `(속도/칸높이) × 0.12` |
 | 붙기 판정 | 반 칸(**0.45**)을 넘긴 쪽으로 |
 
+⚠ **한 칸 굴러갈 때마다 톡 하고 알린다(햅틱).** 끌 때도, 놓고 굴러갈 때도, 숫자를
+눌러 이동할 때도 같다 — 눈으로만 세지 않게 하는 것이 이 컨트롤의 절반이다. 사용자가
+시스템에서 촉각 반응을 꺼 두었으면 아무 일도 일어나지 않는다(OS 가 판단한다).
+
 ⚠ **굴러가는 중에 손을 대면 그 자리에서 잡힌다.** 남은 칸은 넘기지 않는다.
 
 ⚠ **끌 때와 놓을 때의 방향이 같아야 한다.** 한때 놓을 때만 부호가 뒤집혀 있어, 반 칸
@@ -155,6 +159,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
+| 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
 | 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |

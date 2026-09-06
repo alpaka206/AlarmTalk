@@ -73,7 +73,7 @@ struct AlarmSettingRow<Trailing: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressScaleButtonStyle())
 
             trailing()
 

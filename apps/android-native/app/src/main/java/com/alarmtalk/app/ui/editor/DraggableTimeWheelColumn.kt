@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import com.alarmtalk.app.textInputTapTarget
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -43,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -134,6 +138,15 @@ internal fun DraggableTimeWheelColumn(
         if (isEditing) focusRequester.requestFocus()
     }
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    // ⚠ **숫자가 한 칸 굴러갈 때마다 톡 하고 알린다**(2026-09-06). 아이폰은 처음부터
+    // `UISelectionFeedbackGenerator` 로 같은 감각을 줬는데(`TimeWheelPicker.swift`)
+    // 안드로이드만 무감각해서, 손가락을 떼기 전에는 몇 칸을 지났는지 눈으로만 알 수 있었다.
+    // 어떤 상수를 쓰는지는 [performWheelTick] 한 곳에서 정한다.
+    val view = LocalView.current
+    fun stepWithTick(step: Int) {
+        view.performWheelTick()
+        onStep(step)
+    }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     var gestureSteps by remember { mutableIntStateOf(0) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
@@ -179,12 +192,12 @@ internal fun DraggableTimeWheelColumn(
         while (dragOffsetPx <= -itemHeightPx && gestureSteps < maxStepsPerGesture) {
             dragOffsetPx += itemHeightPx
             gestureSteps += 1
-            onStep(1)
+            stepWithTick(1)
         }
         while (dragOffsetPx >= itemHeightPx && gestureSteps > -maxStepsPerGesture) {
             dragOffsetPx -= itemHeightPx
             gestureSteps -= 1
-            onStep(-1)
+            stepWithTick(-1)
         }
         if (gestureSteps >= maxStepsPerGesture && dragOffsetPx < -itemHeightPx * 0.6f) {
             dragOffsetPx = -itemHeightPx * 0.6f
@@ -226,7 +239,7 @@ internal fun DraggableTimeWheelColumn(
                             startOffsetPx = startOffset,
                             steps = stepsToSettle,
                             itemHeightPx = itemHeightPx,
-                            onStep = onStep,
+                            onStep = { step -> stepWithTick(step) },
                             onOffsetChange = { dragOffsetPx = it },
                         )
                         gestureSteps = 0
@@ -334,7 +347,7 @@ internal fun DraggableTimeWheelColumn(
                                     startOffsetPx = 0f,
                                     steps = tapSteps,
                                     itemHeightPx = itemHeightPx,
-                                    onStep = onStep,
+                                    onStep = { step -> stepWithTick(step) },
                                     onOffsetChange = { dragOffsetPx = it },
                                 )
                             }
@@ -424,3 +437,27 @@ internal suspend fun animateWheelSettle(
 }
 
 internal fun floorMod(value: Int, divisor: Int): Int = ((value % divisor) + divisor) % divisor
+
+/**
+ * 휠이 한 칸 굴러갈 때의 **톡**. 시·분 칼럼과 오전/오후 칼럼이 같이 쓴다.
+ *
+ * 안드로이드 14+ 에는 정확히 이 용도의 상수(`SEGMENT_FREQUENT_TICK`)가 있고, 그 아래는
+ * `KEYBOARD_TAP` 으로 떨어진다.
+ *
+ * ⚠ **`CLOCK_TICK` 으로 바꾸기 전에 실기기에서 손으로 느껴 볼 것**(2026-09-06). 이름만
+ * 보면 시계 픽커용이라 그게 맞아 보이지만, 그 상수를 **소리에만** 매핑하고 진동은 주지
+ * 않는 기기가 있다. SM-A325N(API 33)에서 재 보니 `performHapticFeedback` 은 둘 다
+ * `true` 를 돌려주므로 **반환값으로는 가릴 수 없다** — 실제로 느껴 보는 수밖에 없다.
+ * `dumpsys vibrator_manager` 의 TOUCH 목록에도 둘 다 안 남는다(그 경로는 기록되지 않는다).
+ *
+ * 사용자가 시스템에서 촉각 반응을 꺼 두면 `performHapticFeedback` 이 알아서 무시한다 —
+ * 여기서 설정을 직접 읽지 말 것.
+ */
+internal fun View.performWheelTick() {
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+    } else {
+        HapticFeedbackConstants.KEYBOARD_TAP
+    }
+    performHapticFeedback(constant)
+}

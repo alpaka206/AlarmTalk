@@ -639,8 +639,8 @@
     <string name="editor2_ctx_medication">薬</string>
     <string name="editor2_repeat_every_day">毎日</string>
     <string name="editor2_repeat_weekly">毎週 %1$s</string>
-    <string name="editor2_repeat_today">今日 - %1$s</string>
-    <string name="editor2_repeat_tomorrow">明日 - %1$s</string>
+    <string name="editor2_repeat_today">今日 · %1$s</string>
+    <string name="editor2_repeat_tomorrow">明日 · %1$s</string>
     <string name="editor2_date_label">%1$d月%2$d日(%3$s)</string>
     <string name="editor2_weekday_sun">日</string>
     <string name="editor2_weekday_mon">月</string>

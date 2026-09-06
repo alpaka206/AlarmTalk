@@ -850,8 +850,8 @@ struct AlarmEditorSheet: View {
         let label = Self.repeatSummaryDateFormatter.string(from: fireDate)
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = .autoupdatingCurrent
-        if calendar.isDateInToday(fireDate) { return String(localized: "오늘 - \(label)") }
-        if calendar.isDateInTomorrow(fireDate) { return String(localized: "내일 - \(label)") }
+        if calendar.isDateInToday(fireDate) { return String(localized: "오늘 · \(label)") }
+        if calendar.isDateInTomorrow(fireDate) { return String(localized: "내일 · \(label)") }
         return label
     }
 

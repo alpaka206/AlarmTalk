@@ -2764,19 +2764,19 @@
         }
       }
     },
-    "내일 - %@" : {
+    "내일 · %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tomorrow - %@"
+            "value" : "Tomorrow · %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "明日 - %@"
+            "value" : "明日 · %@"
           }
         }
       }
@@ -8245,19 +8245,19 @@
         }
       }
     },
-    "오늘 - %@" : {
+    "오늘 · %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Today - %@"
+            "value" : "Today · %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "今日 - %@"
+            "value" : "今日 · %@"
           }
         }
       }

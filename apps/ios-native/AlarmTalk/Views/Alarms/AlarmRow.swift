@@ -29,6 +29,9 @@ struct AlarmRow: View {
     /// 스와이프로 삭제 버튼이 고정 노출된 상태.
     @State private var deleteRevealed = false
 
+    /// 지금 이 행에 손가락이 닿아 있는가(축소 표시용). 아래 `.pressScale` 주석 참조.
+    @State private var isRowPressed = false
+
     /// 드러나는 삭제 버튼 폭. 이 값을 넘겨 밀면 버튼이 고정 노출된다.
     private let deleteRevealWidth: CGFloat = 88
 
@@ -54,6 +57,12 @@ struct AlarmRow: View {
                 // 넣는다. 토글 스위치는 자식이라 제 탭을 먼저 가져가므로, 스위치를 눌러
                 // 알람을 켜고 끄는 것과 충돌하지 않는다.
                 .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
+                // ⚠ **누름은 축소로만 알린다**(2026-09-06, 안드로이드 `AlarmRow` 의
+                // `pressScale` 미러). 이 행은 `Button` 이 아니라 탭 제스처로 만들어져
+                // 버튼 스타일이 닿지 않으므로, 누름 상태만 따로 받아 같은 축소를 건다.
+                // 스와이프로 삭제가 드러난 동안에는 걸지 않는다 — 카드가 줄면 뒤의 삭제
+                // 버튼과 사이가 벌어져 두 조각으로 보인다.
+                .pressScale(isRowPressed && dragOffset == 0)
                 .onTapGesture {
                     guard !deleteRevealed else { return }
                     if selectionMode { onToggleSelected() } else { onTap() }
@@ -67,10 +76,22 @@ struct AlarmRow: View {
                 // 안 움직이면 탭. 토글 스위치는 여전히 제 탭을 먼저 가져간다.
                 .simultaneousGesture(swipeGesture)
                 // 길게 눌러 선택 모드로. 선택 모드에서는 이미 탭이 '고르기' 라 필요 없다.
-                .onLongPressGesture {
-                    guard !selectionMode else { return }
-                    onEnterSelection()
-                }
+                //
+                // ⚠ **누름 표시를 위해 제스처를 새로 달지 말 것**(2026-09-06). 처음에는
+                // `simultaneousGesture(DragGesture(minimumDistance: 0))` 로 누름 상태를
+                // 받았는데, 그러면 **행의 빈 자리를 눌러도 편집기가 열리지 않는다**
+                // (`AlarmRowHitAreaUITests.test_행의_빈_자리를_눌러도_편집기가_열린다` 실패).
+                // 이미 달려 있는 길게 누르기의 `pressing:` 이 같은 신호를 공짜로 준다 —
+                // 제스처가 하나도 늘지 않으므로 위 탭·스와이프 조합을 건드리지 않는다.
+                // 스위치는 자식이 터치를 먼저 가져가 여기가 불리지 않는다(안드로이드와 같다).
+                .onLongPressGesture(
+                    minimumDuration: 0.5,
+                    pressing: { pressing in isRowPressed = pressing },
+                    perform: {
+                        guard !selectionMode else { return }
+                        onEnterSelection()
+                    }
+                )
                 // ⚠ **히트테스트는 제스처 체인 *끝*에서 끈다**(2026-08-16).
                 // 예전에는 `rowContent` 안쪽에 걸어 뒀는데, 그러면 바깥쪽 `.contentShape` +
                 // `.onTapGesture` 는 살아 있다. 그 히트 영역은 `.offset` 뒤에 붙어 있어
