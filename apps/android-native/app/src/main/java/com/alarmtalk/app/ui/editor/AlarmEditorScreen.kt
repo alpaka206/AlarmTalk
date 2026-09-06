@@ -1108,10 +1108,17 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
+    // ⚠ **문구 pane 이 돌려준 값에는 종류가 안 바뀐 경우도 있다**(2026-09-06 실기기 재현).
+    //   `applyRandomPromptSettings` 는 버킷·문구·오디오를 **비우고** 다시 붙이는 일을 아래
+    //   효과에 맡기는데, 아래 키는 전부 그때 그대로일 수 있다 — 같은 종류를 다시 확인하고
+    //   나오거나(들어갔다 뒤로만 눌러도 그렇다) 도시만 채워 넣은 경우다. 그러면 효과가 다시
+    //   돌지 않아 편집기가 "문구를 준비하고 있어요" 에 갇힌다. 그래서 **비운 쪽이 직접**
+    //   이 값을 올려 재바인딩을 부른다 — 키에 값 하나를 더 얹는 것보다 인과가 분명하다.
+    var stockClipRebindTick by remember { mutableStateOf(0) }
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1346,6 +1353,22 @@ internal fun AlarmEditorScreen(
             settingsDetailPanel = null
             return
         }
+        // 고른 것이 하나도 안 바뀌었으면 **아무것도 건드리지 않는다.** 직접 입력 갈래의
+        // `unchanged` 가드와 같은 이유다 — 들여다보고 그냥 뒤로 나오는 흐름이 흔한데,
+        // 그때마다 붙어 있던 클립과 오디오를 버리면 다시 붙을 때까지 요약 행이 '준비 중'
+        // 으로 돌아가고, 관문 판정도 한 번 더 돈다.
+        val nextRandomContext = normalizedRandomPromptContext(result.randomContext)
+        val randomChoiceUnchanged = !editor.isManualForDisplay() &&
+            normalizedRandomPromptContext(editor.voiceRandomContext) == nextRandomContext &&
+            editor.voiceWeatherCountry.trim() == result.weatherCountry &&
+            editor.voiceWeatherCity.trim() == result.weatherCity &&
+            editor.voiceFortuneGender.trim() == result.fortuneGender &&
+            editor.voiceFortuneBirthDate.trim() == result.fortuneBirthDate &&
+            editor.voiceFortuneBirthTime.trim() == result.fortuneBirthTime
+        if (randomChoiceUnchanged) {
+            settingsDetailPanel = null
+            return
+        }
         // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
         //
         // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`clonePrerenderBucketCategoryFor`).
@@ -1369,7 +1392,7 @@ internal fun AlarmEditorScreen(
             return
         }
         editor.voiceRandomPrompt = true
-        editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        editor.voiceRandomContext = nextRandomContext
         // ⚠ 위와 같은 이유 — 옛 버킷이 남으면 **새로 고른 종류 대신 옛 종류가 다시 붙는다.**
         // 새 종류의 버킷은 저장 시 `clonePrerenderBucketCategoryFor(새 컨텍스트)` 로 붙는다.
         editor.selectedBucket = null
@@ -1413,6 +1436,8 @@ internal fun AlarmEditorScreen(
         if (shouldSyncOwnDynamicPromptSettings) {
             onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
         }
+        // 방금 비운 버킷을 다시 붙이라고 스톡 클립 효과를 깨운다(위 `stockClipRebindTick` 주석).
+        stockClipRebindTick++
         settingsDetailPanel = null
     }
 

@@ -208,7 +208,11 @@ internal fun ConsentScreen(
                 Spacer(Modifier.height(24.dp))
                 ConsentRow(
                     checked = allChecked,
-                    onCheckedChange = ::setAll,
+                    // ⚠ **`::setAll` 로 넘기지 말 것**(CLAUDE.md 「Compose 콜백에 지역 함수
+                    // 참조를 넘기지 않는다」). 이 함수는 콤포지션 지역 `val`(`show*`)을
+                    // 캡처하는데, 함수 참조는 캡처가 달라도 서로 `equals` 라 행이 통째로
+                    // 건너뛰어지면 **옛 목록을 켜는 람다가 남는다.**
+                    onCheckedChange = { setAll(it) },
                     label = stringResource(R.string.auth_consent_agree_all),
                     emphasized = true,
                 )
