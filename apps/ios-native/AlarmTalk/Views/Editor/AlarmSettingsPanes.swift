@@ -281,6 +281,10 @@ struct VoiceOutputSettingsPane: View {
     /// 고르는 문구는 울릴 때에야 정해지므로 여기서 기다릴 것이 아니고, 크기를 재는 데
     /// 필요한 것은 '이 목소리가 이 크기로 얼마나 큰가' 뿐이다.
     var onPreview: (() -> Void)?
+    /// 슬라이더에서 손을 뗀 순간 — **여기서 자동으로 들려준다**(안드로이드와 같은 결).
+    var onVolumeSettled: (() -> Void)?
+    /// 끄는 동안 매 값마다. 재생 중이면 다시 틀지 않고 크기만 바꾼다.
+    var onVolumeLive: ((Int) -> Void)?
     var previewPlaying: Bool = false
 
     var body: some View {
@@ -306,10 +310,17 @@ struct VoiceOutputSettingsPane: View {
                     Slider(
                         value: Binding(
                             get: { Double(volumePercent) },
-                            set: { volumePercent = Int($0.rounded()) }
+                            set: {
+                                let next = Int($0.rounded())
+                                volumePercent = next
+                                onVolumeLive?(next)
+                            }
                         ),
                         in: 10...100,
-                        step: 10
+                        step: 10,
+                        onEditingChanged: { editing in
+                            if !editing { onVolumeSettled?() }
+                        }
                     )
                     .tint(theme.palette.primary)
                 }

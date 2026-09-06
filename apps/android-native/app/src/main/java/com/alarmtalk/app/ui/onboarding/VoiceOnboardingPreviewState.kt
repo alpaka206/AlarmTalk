@@ -35,10 +35,46 @@ internal class VoiceOnboardingPreviewController(
         private set
 
     private var mediaPlayer: MediaPlayer? = null
+
+    /**
+     * 지금 재생 중인 것이 **알람 크기 미리듣기**인가. 목소리를 고르는 자리의 미리듣기는
+     * 크기를 건드리지 않으므로, 슬라이더가 움직여도 그쪽 게인까지 바꾸면 안 된다.
+     */
+    private var alarmVolumePreview = false
     private var previewRequestId by mutableIntStateOf(0)
+
+    /**
+     * 재생 중인 알람 크기 미리듣기의 **게인만** 바꾼다(다시 틀지 않는다).
+     * 슬라이더를 끄는 동안 소리가 그 자리에서 커지고 작아진다.
+     */
+    fun updateAlarmVolume(volumePercent: Int) {
+        if (!alarmVolumePreview) return
+        val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(volumePercent)
+        runCatching { mediaPlayer?.setVolume(gain, gain) }
+    }
+
+    /**
+     * 슬라이더에서 손을 뗐을 때 — **토글이 아니다.**
+     *
+     * 이미 그 목소리를 그 모드로 듣고 있으면 크기만 맞추고 끝낸다(말 중간에 다시 트는 것이
+     * 더 거슬린다). 안 듣고 있으면(대개 2~3초짜리 샘플이 이미 끝났다) 그때 튼다.
+     * 행의 재생 버튼은 예전대로 [previewVoice] 의 토글을 쓴다 — 누르면 멈춰야 하니까.
+     */
+    fun ensureAlarmVolumePreview(
+        voiceProfileId: String,
+        stockClips: List<StockClip>,
+        volumePercent: Int,
+    ) {
+        if (alarmVolumePreview && playingVoiceId == voiceProfileId) {
+            updateAlarmVolume(volumePercent)
+            return
+        }
+        previewVoice(voiceProfileId, stockClips, alarmVolumePercent = volumePercent)
+    }
 
     fun stopPreview(invalidateRequest: Boolean = true) {
         if (invalidateRequest) previewRequestId += 1
+        alarmVolumePreview = false
         mediaPlayer?.release()
         mediaPlayer = null
         playingVoiceId = null
@@ -67,6 +103,7 @@ internal class VoiceOnboardingPreviewController(
          */
         alarmVolumePercent: Int? = null,
     ) {
+        alarmVolumePreview = alarmVolumePercent != null
         if (playingVoiceId == voiceProfileId) {
             stopPreview()
             return

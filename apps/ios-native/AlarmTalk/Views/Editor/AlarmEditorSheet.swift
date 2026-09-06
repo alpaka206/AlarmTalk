@@ -803,10 +803,23 @@ struct AlarmEditorSheet: View {
             VoiceOutputSettingsPane(
                 volumePercent: $draft.voiceVolumePercent,
                 onPreview: { previewVoiceAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
+                onVolumeSettled: { ensureVoicePreviewAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
+                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) },
                 previewPlaying: voiceStudio.previewingGreetingVoiceId == voiceId
             )
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
+        }
+    }
+
+    /// 슬라이더에서 손을 뗐을 때 — 듣고 있으면 크기만 맞추고, 아니면 튼다.
+    func ensureVoicePreviewAtVolume(voiceId: String, volumePercent: Int) {
+        Task {
+            await voiceStudio.ensureGreetingPreview(
+                voiceId: voiceId,
+                session: auth.session,
+                volumePercent: volumePercent
+            )
         }
     }
 

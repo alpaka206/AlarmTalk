@@ -1869,7 +1869,20 @@ internal fun AlarmEditorScreen(
 
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
-                onVolumeChange = { editor.voiceVolumePercent = it },
+                onVolumeChange = {
+                    editor.voiceVolumePercent = it
+                    // 듣고 있는 중이면 그 자리에서 크기만 바꾼다(다시 틀지 않는다).
+                    voicePreview.updateAlarmVolume(it)
+                },
+                onVolumeSettled = {
+                    editor.voiceProfileId?.takeIf { it.isNotBlank() }?.let { profileId ->
+                        voicePreview.ensureAlarmVolumePreview(
+                            voiceProfileId = profileId,
+                            stockClips = stockClips,
+                            volumePercent = editor.voiceVolumePercent,
+                        )
+                    }
+                },
                 // 목소리를 아직 안 골랐으면 들려줄 것이 없다 — 그때는 행을 그리지 않는다
                 // (아래 `previewVoiceId != null`). 알람음만 쓰는 모드에서는 이 화면 자체가
                 // 없으므로 여기서 더 가르지 않는다.

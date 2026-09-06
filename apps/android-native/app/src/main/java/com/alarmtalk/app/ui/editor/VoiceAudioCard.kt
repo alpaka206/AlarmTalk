@@ -420,6 +420,13 @@ internal fun VoiceOutputSettingsPane(
      * (기본 목소리는 APK 에 번들, 클론은 사전렌더 클립).
      */
     onPreview: () -> Unit = {},
+    /**
+     * 슬라이더에서 손을 뗀 순간. **여기서 자동으로 들려준다** — 크기를 바꾸는 사람은
+     * 그 크기를 들으려는 사람이고, 버튼을 한 번 더 누르게 할 이유가 없다(아이폰 설정의
+     * 벨소리 슬라이더와 같은 결). 끄는 동안에는 다시 틀지 않고 [onVolumeChange] 가
+     * 재생 중인 소리의 크기만 그 자리에서 바꾼다.
+     */
+    onVolumeSettled: () -> Unit = {},
     previewPlaying: Boolean = false,
     previewPreparing: Boolean = false,
     /** 목소리를 골랐는가. 안 골랐으면 들려줄 것이 없어 행을 아예 그리지 않는다. */
@@ -463,6 +470,7 @@ internal fun VoiceOutputSettingsPane(
                         VoiceVolumeSelector(
                             volumePercent = volumePercent,
                             onVolumeChange = onVolumeChange,
+                            onVolumeSettled = onVolumeSettled,
                         )
                         if (showPreview) {
                             AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
@@ -802,6 +810,7 @@ private fun VoiceVolumePreviewRow(
 private fun VoiceVolumeSelector(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
+    onVolumeSettled: () -> Unit = {},
 ) {
     // 카드 안 여백 — 다른 카드 행과 같은 값(가로 14 · 세로 12).
     Column(
@@ -828,6 +837,7 @@ private fun VoiceVolumeSelector(
         WakerVolumeSlider(
             value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
             onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
+            onValueChangeFinished = onVolumeSettled,
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
             stepSize = 10,
         )

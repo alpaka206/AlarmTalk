@@ -237,6 +237,24 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
     /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
+    /// 슬라이더에서 손을 뗐을 때 — **토글이 아니다.**
+    ///
+    /// 이미 그 목소리를 듣고 있으면 크기만 맞추고 끝낸다(말 중간에 다시 트는 것이 더
+    /// 거슬린다). 안 듣고 있으면 그때 튼다. 행의 재생 버튼은 예전대로 토글
+    /// ([previewGreeting])을 쓴다 — 누르면 멈춰야 하니까.
+    /// 안드로이드 `ensureAlarmVolumePreview` 미러.
+    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int) async {
+        if previewingGreetingVoiceId == voiceId {
+            if previewPlayer.isPlaying {
+                previewPlayer.setVolume(percent: volumePercent)
+                return
+            }
+            // 끝까지 재생돼 멎었는데 표식만 남은 경우 — 그대로 부르면 토글이 '정지'로 읽힌다.
+            previewingGreetingVoiceId = nil
+        }
+        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent)
+    }
+
     /// - Parameter volumePercent: 목소리 크기 화면에서 부를 때의 게인(0~100). `nil` 이면
     ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
     ///   크기를 건드리지 않는다.
