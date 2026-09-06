@@ -658,6 +658,33 @@ ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 잠금화면·앱 종료 상태에서 목소리가 아예 안 울린다. `AVAssetReader`→`AVAssetWriter` 로
 CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파일은 생기는데 열리지 않는다).
 
+## 8. 직접 입력 월 한도 — **폰에 없어서 서버를 부를 때만** 깎인다
+
+기준은 하나다: **저장하는 순간 그 음성이 이 폰에 있는가.**
+
+| 상황 | 차감 |
+| --- | --- |
+| 폰에 있다(그 음성을 쓰는 알람이 하나라도 남아 있다) — 몇 번을 쓰든 | **없음** |
+| 폰에 없어 서버를 부른다 | **1회** — 서버 캐시 히트여도 센다 |
+| 오프라인인데 폰에 없다 | 저장을 막는다(요청도 보내지 않는다) |
+
+- **서버 캐시 히트도 세는 이유**: "우리 서버에 남아 있었는가" 는 사용자에게 보이지 않는
+  사정이다. 합성을 건너뛰어 **우리 비용은 0**이고 사용자는 **같은 소리**를 즉시 받는다 —
+  그 이득은 속도와 소리의 동일성으로 돌려주고, 횟수는 '새로 만든 것' 으로 센다.
+- **로컬 오디오는 참조 카운트로 지운다.** 그 알람을 지웠고 다른 알람도 안 쓰면 파일이
+  사라지고, 그때부터 그 문구는 이 폰에 '없는' 것이다.
+- **새 기기·재설치는 빈 상태다** — 내 알람은 새 기기로 따라오지 않는다(받은 알람만 pull).
+  그래서 새 기기에서 예전 문구를 다시 쓰면 차감된다.
+
+### 저장할 때의 순서
+
+**① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청.** 앱은 폰에 있으면 서버를 아예 부르지
+않고, 없으면 **보내기 전에** 남은 횟수를 그 자리에서 조회해 0이면 알럿으로 막는다.
+
+⚠ **강제는 서버 하나다.** 앱의 사전 확인은 불필요한 왕복을 줄이는 것뿐이라, 조회가
+실패하면 그냥 진행하고 서버가 429(`MANUAL_TTS_QUOTA_EXCEEDED`)로 막는다 — 다른 기기가 그
+사이 다 썼을 수 있다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -724,6 +751,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 고를 때는 **캐시 우선**(네트워크 폴백) | `ui/editor/AlarmEditorScreen.kt` 의 `bindStockBucketClips` | `VoiceStudioViewModel.prepareStockClip` | — |
 | 테마 선택은 **독립 상태**(음원 파생 금지) | `AlarmEditorState.selectedBucket` | `AlarmEditorSheet.selectedBucketDraft` | — |
 | 저장된 알람이 기기 언어를 따라감 | `sync/StockClipLanguageRebinder.kt` | `StockClipLanguageRebinder.swift` | — |
+| 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
 
 ## 검증 방법
 

@@ -1390,6 +1390,36 @@ tts.post('/generate', async (c) => {
         ) {
           throw new VoiceAuthorizationChangedDuringTtsError();
         }
+        // ⚠ **직접 입력은 캐시 히트도 한 번으로 센다**(2026-09-07 결정).
+        //
+        // 한도의 뜻이 "우리가 합성했는가" 가 아니라 **"이 폰에 없어서 서버에 달라고 했는가"**
+        // 로 바뀌었다. 앱은 그 음성이 폰에 있으면 서버를 아예 부르지 않으므로
+        // (`AlarmEditorScreen` 의 `resolveTtsInput` → `getCachedAudio`), **여기까지 왔다는
+        // 것은 폰에 없다는 뜻**이다. 우리 서버에 남아 있었는지는 사용자에게 보이지 않는
+        // 사정이라 계산에 넣지 않는다 — 합성을 건너뛰어 비용은 그대로 0이고, 사용자는
+        // 같은 소리를 즉시 받는다.
+        //
+        // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
+        // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
+        if (isManualGeneration) {
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+          const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+          if (!reservation.ok) {
+            return c.json(
+              {
+                error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+                error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
+                manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
+              },
+              429,
+            );
+          }
+          manualQuotaResult = {
+            used: reservation.used,
+            limit: reservation.limit,
+            remaining: reservation.remaining,
+          };
+        }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
         await db.execute({
@@ -1433,6 +1463,8 @@ tts.post('/generate', async (c) => {
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
+            // 히트도 한 번으로 세므로 남은 횟수가 줄어든다 — 앱이 화면 숫자를 갱신한다.
+            manual_quota: manualQuotaResult,
             random_context: randomRequested ? randomContext : null,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: Boolean(vp.previewed_at),

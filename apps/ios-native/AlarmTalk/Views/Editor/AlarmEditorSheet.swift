@@ -810,6 +810,21 @@ struct AlarmEditorSheet: View {
         }
     }
 
+    /// 이번 달 직접 입력 횟수를 다 썼으면 그 사실을 알리는 알럿을 만든다(아니면 nil).
+    ///
+    /// 화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그 사이 다
+    /// 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다. 조회가 실패하면 막지 않는다.
+    func manualQuotaBlockIfExhausted() async -> ValidationAlertContent? {
+        guard !target.familyAlarmMode, let token = auth.session?.token else { return nil }
+        guard let quota = try? await AlarmTalkAPI.shared.manualQuota(token: token) else { return nil }
+        manualQuota = quota
+        guard quota.limit > 0, quota.remaining <= 0 else { return nil }
+        return ValidationAlertContent(
+            title: "이번 달 만들기 횟수를 다 썼어요",
+            message: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
+        )
+    }
+
     /// 슬라이더에서 손을 뗐을 때 — 듣고 있으면 크기만 맞추고, 아니면 튼다.
     func ensureVoicePreviewAtVolume(voiceId: String, volumePercent: Int) {
         Task {
@@ -2338,6 +2353,15 @@ struct AlarmEditorSheet: View {
             if let alias = reusableTtsInputAlias(listenerTitle: currentListenerTitle),
                applyReusedTtsAudio(alias) {
                 // 재사용 성공 — 서버 호출을 건너뛴다.
+            } else if let quotaBlock = await manualQuotaBlockIfExhausted() {
+                // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시).
+                //    순서는 **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다.
+                //    바로 위 재사용이 실패했다 = 이 폰에 없다 = 서버를 불러야 한다 =
+                //    차감 대상이다. 한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
+                //    강제는 서버 예약이 하고(안드로이드와 같다), 이건 왕복을 줄이는 것뿐이라
+                //    조회에 실패하면 그냥 진행한다.
+                validationAlert = quotaBlock
+                return
             } else if !NetworkMonitor.shared.isOnline {
                 // ⚠ **오프라인이면 요청을 보내 보지 않는다**(2026-09-06 지시).
                 // 바로 위 재사용이 실패했다 = 이 문구의 오디오가 **이 기기에 없다**.

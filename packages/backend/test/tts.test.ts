@@ -908,6 +908,9 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    // ⚠ **캐시 히트도 직접 입력이면 한 번으로 센다**(2026-09-07 규칙 변경).
+    //   한도의 뜻이 "합성했는가" 가 아니라 "폰에 없어서 서버에 달라고 했는가" 로 바뀌었다.
+    pushManualQuotaFlow();
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -922,6 +925,11 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.audio_base64).toBe('Q0g=');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
+    // 합성은 건너뛰되 **횟수는 줄어든다** — 앱이 화면 숫자를 갱신할 수 있게 응답에 싣는다.
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage')),
+    ).toBe(true);
+    expect(body.manual_quota).toEqual({ used: 1, limit: 30, remaining: 29 });
   });
 
   it('checks the provider cache key before synthesizing', async () => {
@@ -948,6 +956,8 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    // 캐시 히트도 직접 입력이면 한 번으로 센다(2026-09-07) — 그 예약분.
+    pushManualQuotaFlow();
 
     const app = buildApp();
     const res = await app.request(

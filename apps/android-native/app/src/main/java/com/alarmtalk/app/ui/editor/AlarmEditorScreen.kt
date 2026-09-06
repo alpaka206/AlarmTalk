@@ -969,6 +969,26 @@ internal fun AlarmEditorScreen(
             }
             // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
             //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
+            //
+            // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시). 순서는
+            //    **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다. 위에서 로컬 재사용이
+            //    실패했다 = 이 폰에 없다 = 서버를 불러야 한다 = **차감 대상**이다. 그러니
+            //    한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
+            //    화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그
+            //    사이 다 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다.
+            //    ⚠ **강제는 여기가 아니다.** 서버가 예약에서 다시 막는다(429) — 이건 불필요한
+            //    왕복을 줄이는 것뿐이라, 조회에 실패하면 그냥 진행한다.
+            if (!familyAlarmMode && onLoadManualQuota != null) {
+                val quota = runCatching { onLoadManualQuota() }.getOrNull()
+                if (quota != null && quota.limit > 0 && quota.remaining <= 0) {
+                    generating = false
+                    manualQuota = quota
+                    familyBlockAlert = context.getString(R.string.editor_block_manual_quota_title) to
+                        context.getString(R.string.editor_block_manual_quota_message, quota.limit)
+                    return@launch
+                }
+                if (quota != null) manualQuota = quota
+            }
             // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
             // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
             // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
