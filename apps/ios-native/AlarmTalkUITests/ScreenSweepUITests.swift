@@ -107,15 +107,18 @@ final class ScreenSweepUITests: XCTestCase {
     /// 시트로 남아 있었는데, 최상위 탭만 찍고 있어서 **스크린샷에 한 번도 잡히지 않았다.**
     func test_sweep_menuSubscreens() {
         launch(["-UIPreviewSeed", "-UIPreviewTab", "menu"])
-        // 공유 이용권이 없으면 '초대 코드 등록', 있으면 '초대 및 구성원 관리' 로 갈린다.
+        // 공유 이용권이 없으면 '코드 등록', 있으면 '초대 및 구성원 관리' 로 갈린다.
         // ⚠ `app.buttons` 로만 찾지 말 것 — 이 행은 접근성 트리에 버튼으로 안 잡힌다.
         // staticTexts 까지 훑고, 그래도 없으면 좌표로 눌러 본다.
-        var target = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] '초대'")).firstMatch
+        // ⚠ 술어를 지역 변수로 빼지 말 것 — `NSPredicate` 는 Sendable 이 아니라
+        // Swift 6 동시성 검사가 "sending 'rowMatch' risks causing data races" 로 막는다.
+        let rowMatch = "label CONTAINS[c] '코드 등록' OR label CONTAINS[c] '초대'"
+        var target = app.buttons.matching(NSPredicate(format: rowMatch)).firstMatch
         if !target.waitForExistence(timeout: 5) {
-            target = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '초대'")).firstMatch
+            target = app.staticTexts.matching(NSPredicate(format: rowMatch)).firstMatch
         }
         guard target.waitForExistence(timeout: 5) else {
-            shot("menu-초대행-notFound")
+            shot("menu-코드등록행-notFound")
             return
         }
         // 텍스트 자체는 hittable 이 아닐 수 있으니 좌표로 누른다.

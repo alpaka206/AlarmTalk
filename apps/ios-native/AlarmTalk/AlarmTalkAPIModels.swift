@@ -637,6 +637,21 @@ struct StockClipListResponse: Codable {
     var clips: [StockClip]
     /// 카테고리별 **완전한 세트의 클립 수**. 없으면(옛 서버) nil.
     var expectedVariants: ExpectedVariantCounts?
+    /// **버킷 없이 클립 하나만 물린 옛 알람**이 어떤 테마였는지(서버가 알려 준다).
+    ///
+    /// `bucketId` 를 행에 적기 전에 만들어진 알람은 재바인더 두 갈래 어디에도 안 걸린다 —
+    /// 하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 둘 다 없다.
+    /// 그래서 목소리를 갈아도 그 알람만 **영원히 옛 대사·옛 목소리**로 운다(이름은 새 이름).
+    /// 옛 서버면 빈 배열이고, 그러면 예전대로 그 알람은 건너뛴다.
+    var legacyBucketHints: [LegacyBucketHint]?
+}
+
+/// `StockClipListResponse.legacyBucketHints` 한 줄 — 이 message 를 문 알람의 테마.
+/// Android `TtsApi.kt` 의 `LegacyBucketHint` 미러.
+struct LegacyBucketHint: Codable, Equatable {
+    var messageId: String
+    var category: String
+    var language: String?
 }
 
 /// ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다**(지금도 `medication` 이 2 vs 3).
@@ -834,15 +849,8 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).
 // iOS 결제는 **StoreKit** 을 거친다 — 서버 `/billing/checkout` 은 안드로이드(구글 결제)
 // 전용이고, iOS 에는 그 라우트를 부르는 코드가 없어 모델만 남아 있었다.
-// (`CheckoutVoucher` 는 다른 응답이 쓰므로 남긴다.)
-
-struct CheckoutVoucher: Decodable, Identifiable, Equatable {
-    var id: String
-    var code: String
-    var expiresAt: String
-    var maxUses: Int?
-    var useCount: Int?
-}
+// (`CheckoutVoucher` 도 같은 묶음이다 — 그걸 물던 마지막 응답 필드가 8c15bd81 에서
+// 사라진 뒤 어떤 응답도 쓰지 않아 2026-09-06 에 지웠다. 바우처는 `VoucherItem` 이다.)
 
 struct EnsureFamilyShareCodeResponse: Decodable, Equatable {
     var success: Bool
@@ -1113,12 +1121,6 @@ struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
         success = (try? container.decodeIfPresent(Bool.self, forKey: .success)) ?? false
         planKey = try? container.decodeIfPresent(String.self, forKey: .planKey)
         subscription = try? container.decodeIfPresent(BillingSubscription.self, forKey: .subscription)
-    }
-
-    init(success: Bool, planKey: String? = nil, subscription: BillingSubscription? = nil) {
-        self.success = success
-        self.planKey = planKey
-        self.subscription = subscription
     }
 }
 

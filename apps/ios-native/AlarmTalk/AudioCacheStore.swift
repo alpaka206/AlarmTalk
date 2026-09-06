@@ -703,6 +703,108 @@ final class AudioCacheStore {
     ///
     /// actor state 를 건드리지 않고 파일 I/O 만 수행하므로 `nonisolated` —
     /// `Task.detached` 등 백그라운드 컨텍스트에서 실행해도 안전하다.
+    /// **교체가 끝난 뒤 남은 옛 스톡 클립 파일을 지운다.**
+    ///
+    /// `sweepStaleCache` 는 `stock_` 파일을 **일부러 건너뛴다** — 알람이 지금 참조하지
+    /// 않아도 다음에 고를 때 필요하고, iOS 는 한 번 지우면 다시 받을 길이 좁기 때문이다.
+    /// 그 결과 문구·목소리를 갈아도 옛 클립 파일이 기기에 **영원히 쌓인다.** 이 함수가
+    /// 그 갈래만 맡는다.
+    ///
+    /// ⚠ **순서가 안전장치다: 다 받고 → 다 묶고 → 그 다음에 지운다.** 호출자가 재바인딩
+    ///   완료를 확인한 뒤에만 부른다. 중간에 멈추면 아무것도 안 지운 상태로 남고 다음
+    ///   실행이 처음부터 다시 판단한다(멱등).
+    ///
+    /// - Parameters:
+    ///   - referencedKeys: 지금 알람들이 물고 있는 키 전부. **여러 알람이 같은 클립을
+    ///     공유**하므로 하나라도 참조하면 남긴다.
+    ///   - liveKeys: 지금 매니페스트에 있는 키. 아직 안 물었어도 편집기에서 고를 수 있어야
+    ///     하므로 남긴다. 비어 있으면(매니페스트 못 받음) 아무것도 지우지 않는다.
+    /// - Returns: 지운 파일 수.
+    @discardableResult
+    ///   - referencedFileNames: 알람이 `localAudioUri` 로 가리키는 **파일 이름**. 옛 별칭
+    ///     디렉터리(`AlarmTalkAudio`)는 캐시 키가 아니라 `<messageId>.<ext>` 로 저장되므로
+    ///     키 집합으로는 못 맞춘다.
+    nonisolated func pruneReplacedStockAudio(
+        referencedKeys: Set<String>,
+        liveKeys: Set<String>,
+        referencedFileNames: Set<String> = []
+    ) -> Int {
+        guard !liveKeys.isEmpty else { return 0 }
+
+        // ⚠ **옛 별칭 디렉터리를 먼저 치운다**(2026-09-03 리뷰 10차). `cacheStockClip` 은
+        //   같은 오디오를 **두 벌** 쓴다 — 정본(`stock_<id>`)과 옛 별칭(`<id>.<ext>`,
+        //   `AlarmTalkAudio`). 정본만 지우면 별칭 사본이 교체 회차마다 그대로 쌓인다.
+        //   별칭은 `localAudioUri` 로 참조되므로 **파일 이름**으로 남길 것을 가른다.
+        //   ⚠ **정본 디렉터리 검사보다 앞에 둔다** — 뒤에 두면 정본 쪽이 비었을 때
+        //   (그 회차에 받을 게 없었거나 이미 정리된 뒤) 조기 반환에 걸려 **별칭 정리가
+        //   통째로 건너뛰어진다.** 회귀 테스트가 이걸 잡았다.
+        var deleted = pruneLegacyStockAliases(
+            liveMessageIds: Set(liveKeys.compactMap { key in
+                key.hasPrefix(Self.stockCacheKeyPrefix)
+                    ? String(key.dropFirst(Self.stockCacheKeyPrefix.count))
+                    : nil
+            }),
+            referencedFileNames: referencedFileNames
+        )
+
+        guard let directory = try? Self.audioDirectory() else { return deleted }
+        let fileManager = FileManager.default
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        guard !names.isEmpty else { return deleted }
+
+        let keep = Set(referencedKeys.union(liveKeys).map { Self.safeCacheKey($0) })
+        var namesByBase: [String: [String]] = [:]
+        for name in names {
+            namesByBase[Self.splitName(name).base, default: []].append(name)
+        }
+
+        for (base, grouped) in namesByBase {
+            guard base.hasPrefix(Self.stockCacheKeyPrefix) else { continue }
+            // 미리듣기 캐시는 알람이 참조하지 않는 별개 갈래다 — 건드리지 않는다.
+            guard !base.hasPrefix(Self.safeCacheKey("stock_preview_")) else { continue }
+            guard !keep.contains(base) else { continue }
+            for name in grouped {
+                if (try? fileManager.removeItem(at: directory.appendingPathComponent(name))) != nil {
+                    deleted += 1
+                }
+            }
+        }
+        return deleted
+    }
+
+    /// 옛 별칭 디렉터리(`AlarmTalkAudio`)의 스톡 사본을 정리한다.
+    ///
+    /// 그 디렉터리 파일명은 `<messageId>.<ext>` 라 캐시 키와 모양이 다르다. 그래서
+    /// **살아 있는 message id** 와 **알람이 가리키는 파일 이름** 둘로 남길 것을 가른다.
+    /// 스톡이 아닌 파일(직접 입력·녹음 사본)은 message id 목록에 없지만 `localAudioUri`
+    /// 로 참조되므로 이름 집합이 지켜 준다 — ⚠ **참조 목록이 비어 있으면 아무것도 지우지
+    /// 않는다**(호출자가 알람을 못 읽은 상태일 수 있다).
+    private nonisolated func pruneLegacyStockAliases(
+        liveMessageIds: Set<String>,
+        referencedFileNames: Set<String>
+    ) -> Int {
+        guard !liveMessageIds.isEmpty else { return 0 }
+        guard let directory = try? Self.legacyAudioDirectory() else { return 0 }
+        let fileManager = FileManager.default
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        var deleted = 0
+        for name in names {
+            if referencedFileNames.contains(name) { continue }
+            let base = (name as NSString).deletingPathExtension
+            // 지금 매니페스트에 있는 클립의 별칭은 남긴다.
+            if liveMessageIds.contains(base) { continue }
+            // ⚠ **스톡이 아닌 사본은 건드리지 않는다.** 이 디렉터리에는 직접 입력·녹음
+            //   음원의 별칭도 산다. 그것들은 `localAudioUri` 로만 참조되므로, 참조 목록에
+            //   없다고 지우면 사용자가 만든 알람이 소리를 잃는다. UUID 모양(= 서버
+            //   message id)만 대상으로 삼는다.
+            guard base.count == 36, base.contains("-") else { continue }
+            if (try? fileManager.removeItem(at: directory.appendingPathComponent(name))) != nil {
+                deleted += 1
+            }
+        }
+        return deleted
+    }
+
     nonisolated func sweepStaleCache(
         activeCacheKeys: Set<String>,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)

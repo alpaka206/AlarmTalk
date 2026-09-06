@@ -33,16 +33,16 @@ class ClipPreparationGateTest {
 
     /** 사랑은 3개 다 있고, 약은 3개 중 2개만 있다 — 서버가 아직 만드는 중인 흔한 상태. */
     private val partiallyRenderedClone = listOf(
-        clip(cloneVoiceId, "love", 0),
-        clip(cloneVoiceId, "love", 1),
-        clip(cloneVoiceId, "love", 2),
+        clip(cloneVoiceId, "cheer", 0),
+        clip(cloneVoiceId, "cheer", 1),
+        clip(cloneVoiceId, "cheer", 2),
         clip(cloneVoiceId, "medication", 0),
         clip(cloneVoiceId, "medication", 1),
     )
 
     private val expected = ExpectedVariantCounts(
         system = mapOf("weather" to 3, "medication" to 2),
-        clone = mapOf("love" to 3, "medication" to 3, "greeting" to 3, "weather" to 3, "fortune" to 3),
+        clone = mapOf("cheer" to 3, "medication" to 3, "greeting" to 3, "weather" to 3, "fortune" to 3),
     )
 
     private fun gate(
@@ -54,8 +54,8 @@ class ClipPreparationGateTest {
     fun `같은 목소리라도 문구 종류에 따라 관문 답이 갈린다`() {
         // 이 한 줄이 문구 종류 선택 자리에 관문이 필요한 이유 전부다.
         assertFalse(
-            "사랑은 3개가 다 있으니 통과해야 한다",
-            gate().needsClipPreparation(cloneVoiceId, randomPrompt = true, randomContext = "love"),
+            "응원은 3개가 다 있으니 통과해야 한다",
+            gate().needsClipPreparation(cloneVoiceId, randomPrompt = true, randomContext = "cheer"),
         )
         assertTrue(
             "약은 3개 중 2개뿐이라 막아야 한다 — 목소리는 같다",
@@ -68,7 +68,7 @@ class ClipPreparationGateTest {
         // variant 0..N-1 이 전부 있어야 한다. 서버가 '절대 인덱스'로 클립을 고르므로
         // 구멍이 있으면 엉뚱한 조건이 재생된다.
         assertFalse(gate().hasCompleteCloneBucket("medication", cloneVoiceId))
-        assertTrue(gate().hasCompleteCloneBucket("love", cloneVoiceId))
+        assertTrue(gate().hasCompleteCloneBucket("cheer", cloneVoiceId))
     }
 
     @Test
@@ -100,7 +100,7 @@ class ClipPreparationGateTest {
         // 소유자 쪽 렌더가 아직 안 끝난 경우. 여기서 통과시키면 라이브 생성이 사라진 뒤
         // 울릴 오디오가 없는 알람이 저장된다.
         assertTrue(
-            gate().needsClipPreparation(sharedVoiceId, randomPrompt = true, randomContext = "love"),
+            gate().needsClipPreparation(sharedVoiceId, randomPrompt = true, randomContext = "cheer"),
         )
     }
 

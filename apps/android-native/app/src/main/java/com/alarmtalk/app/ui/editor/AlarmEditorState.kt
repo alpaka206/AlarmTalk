@@ -21,21 +21,6 @@ internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     else -> value
 }
 
-internal fun timeUntilAlarmLabel(context: android.content.Context, fireAtMillis: Long): String {
-    val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
-    val duration = java.time.Duration.ofMillis(millisUntilFire)
-    val days = duration.toDays()
-    val hours = duration.minusDays(days).toHours()
-    val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
-    return when {
-        days > 0L && hours == 0L -> context.getString(R.string.r3ed_time_until_days, days)
-        days > 0L -> context.getString(R.string.r3ed_time_until_days_hours, days, hours)
-        hours == 0L -> context.getString(R.string.r3ed_time_until_minutes, minutes.coerceAtLeast(1))
-        minutes == 0L -> context.getString(R.string.r3ed_time_until_hours, hours)
-        else -> context.getString(R.string.r3ed_time_until_hours_minutes, hours, minutes)
-    }
-}
-
 internal fun googleSignInErrorMessage(context: android.content.Context, statusCode: Int): String = when (statusCode) {
     10 -> context.getString(R.string.r3ed_google_signin_error_config)
     7 -> context.getString(R.string.r3ed_google_signin_error_network)
@@ -617,12 +602,17 @@ internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
         "daily", "weather" -> "wake_weather"
         "fortune" -> "wake_fortune"
+        // ⚠ **옛 이름을 지우지 말 것.** 2026-09-02 에 '사랑'(`love`)을 '응원'(`cheer`)으로
+        //   바꿨는데, 이미 저장된 알람 행과 스토어에 올라간 구버전 앱이 여전히 `love` 를
+        //   들고 있다. 이 줄이 없으면 아래 `else` 가 모르는 값으로 보고 **`preset` 으로
+        //   접는다** — 사용자는 응원을 골랐는데 기본 인사말이 울린다.
+        "love" -> "cheer"
         else -> if (RandomPromptContexts.any { (key, _) -> key == context }) context else DefaultRandomPromptContext
     }
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "love" -> "love"
+        "cheer" -> "cheer"
         "medication" -> "medication"
         // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버가 preset 경로에서
         // greeting 문구로 이어 붙이고(stockPresetCategory), 날씨·운세는 동적 생성이라
@@ -647,7 +637,7 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
 internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
         "preset" -> "greeting"
-        "love" -> "love"
+        "cheer" -> "cheer"
         "medication" -> "medication"
         // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
         "wake_fortune" -> "fortune"
@@ -672,7 +662,9 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
 internal fun randomPromptContextForBucket(bucket: String?): String? =
     when (bucket?.trim()) {
         "greeting" -> "preset"
-        "love" -> "love"
+        "cheer" -> "cheer"
+        // 옛 버킷 이름 — 이미 저장된 알람 행이 들고 있다(위 normalize 와 같은 이유).
+        "love" -> "cheer"
         "medication" -> "medication"
         "fortune" -> "wake_fortune"
         "weather" -> "wake_weather"

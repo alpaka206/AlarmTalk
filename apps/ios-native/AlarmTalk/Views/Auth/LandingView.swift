@@ -112,31 +112,6 @@ struct LandingView: View {
     }
 }
 
-/// 상단 좌측 브랜드 표식 — 단일 로고 마크. Android `WakerBrandHeader:156-166` 의
-/// 48dp 로고 이미지(WakerTileShape clip)에 대응한다. iOS 에는 별도 로고 에셋이 없어
-/// 그라데이션 브랜드 박스 + 파형 심볼로 동일한 단일 마크를 그린다.
-private struct WakerBrandHeader: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [theme.palette.primary, theme.palette.secondary],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                Image(systemName: "waveform")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(theme.palette.onPrimary)
-            )
-            .frame(width: 48, height: 48)
-            .accessibilityLabel("AlarmTalk")
-    }
-}
-
 /// 목소리 미리듣기 카드 — 안드로이드 `LandingScreen.kt:454-537` `VoicePreviewCard`.
 ///
 /// ⚠ **씬 위에 얹히는 글라스 카드다.** 테마 `surface` 로 칠하면 라이트 기기에서 흰 카드가

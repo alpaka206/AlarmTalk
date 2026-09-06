@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.WakerChipShape
@@ -299,19 +300,16 @@ private val WeekdayLabels: List<Int> = listOf(
     R.string.editor2_weekday_sat,
 )
 
-/**
- * 재생 방식('목소리' ↔ '알람')을 바꿀 때 아래 요소가 나타나고 사라지는 전환.
- *
- * 2026-08-15 지적: "왔다갔다하면 아래 요소들이 탁탁 바뀐다." iOS 는 세그먼트를 누를 때
- * `withAnimation(.snappy(duration: 0.28))` 으로 상태를 바꿔서, 그에 딸린 카드들이 함께
- * 늘었다 줄었다 한다(`VoicePlayModePicker.commit`). 컴포즈는 조건부 컴포저블이
- * 그냥 사라지므로 같은 시간값으로 맞춰 준다.
- *
- * 시스템에서 애니메이션을 꺼 둔 사용자에겐 자동으로 즉시 전환된다 — 컴포즈 기본
- * `MotionDurationScale` 이 `Settings.Global.ANIMATOR_DURATION_SCALE` 을 읽는다.
- * (iOS 는 `reduceMotion` 을 직접 본다 — 같은 뜻이다.)
- */
-internal const val PlayModeSwitchDurationMillis = 280
+// 재생 방식('목소리' ↔ '알람')을 바꿀 때 아래 요소가 나타나고 사라지는 전환.
+//
+// 2026-08-15 지적: "왔다갔다하면 아래 요소들이 탁탁 바뀐다." iOS 는 세그먼트를 누를 때
+// `withAnimation(.snappy(duration: 0.28))` 으로 상태를 바꿔서, 그에 딸린 카드들이 함께
+// 늘었다 줄었다 한다(`VoicePlayModePicker.commit`). 컴포즈는 조건부 컴포저블이
+// 그냥 사라지므로 같은 움직임으로 맞춰 준다(아래 `playModeSizeSpec`).
+//
+// 시스템에서 애니메이션을 꺼 둔 사용자에겐 자동으로 즉시 전환된다 — 컴포즈 기본
+// `MotionDurationScale` 이 `Settings.Global.ANIMATOR_DURATION_SCALE` 을 읽는다.
+// (iOS 는 `reduceMotion` 을 직접 본다 — 같은 뜻이다.)
 
 /**
  * ⚠ **사라질 때 페이드를 '시간을 들여' 주지 말 것**(2026-08-15 세 번째 지적).
@@ -460,7 +458,10 @@ internal fun EditorSegmentedSelector(
                         modifier = Modifier
                             .width(slotWidth)
                             .fillMaxHeight()
-                            .offset(x = slotWidth * thumbFraction)
+                            // 람다 오버로드: 애니메이션 값을 **배치**에서 읽어 프레임마다 재구성하지 않는다.
+                            // `graphicsLayer.translationX` 로 바꾸지 말 것 — RTL 에서 썸이 트랙 밖으로
+                            // 나간다(2026-08-10 사고).
+                            .offset { IntOffset((slotWidth * thumbFraction).roundToPx(), 0) }
                             .clip(WakerChipShape)
                             .background(MaterialTheme.colorScheme.primaryContainer)
                             .border(
@@ -557,7 +558,7 @@ internal fun PlayModeChip(
 internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "morning" to R.string.editor2_cat_morning,
     "medication" to R.string.editor2_cat_medication,
-    "love" to R.string.editor2_cat_love,
+    "cheer" to R.string.editor2_cat_love,
 )
 
 
@@ -609,7 +610,7 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "love" to R.string.editor2_ctx_love,
+    "cheer" to R.string.editor2_ctx_love,
     // 약(medication): 동적 생성 모드가 아니라 고정 프리셋. randomContext='medication' 는
     // 백엔드에서 'preset' 으로 정규화되고 category='medication' 프리셋 문구를 뽑는다.
     "medication" to R.string.editor2_ctx_medication,
@@ -626,7 +627,7 @@ internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "love" to R.string.editor2_ctx_love,
+    "cheer" to R.string.editor2_ctx_love,
     "medication" to R.string.editor2_ctx_medication,
     ManualMessageContext to R.string.editor_msg_mode_manual,
 )

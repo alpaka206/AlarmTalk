@@ -32,7 +32,7 @@ class AlarmEditorStateTest {
         // `test/expected-variants.test.ts` 가 맡는다.
         val counts = com.alarmtalk.app.network.ExpectedVariantCounts(
             system = mapOf("weather" to 9, "medication" to 2, "greeting" to 1),
-            clone = mapOf("weather" to 9, "fortune" to 5, "love" to 3, "medication" to 3, "greeting" to 1),
+            clone = mapOf("weather" to 9, "fortune" to 5, "cheer" to 3, "medication" to 3, "greeting" to 1),
         )
         assertEquals(2, counts.countFor("medication", isSystemVoice = true))
         assertEquals(3, counts.countFor("medication", isSystemVoice = false))
@@ -73,7 +73,7 @@ class AlarmEditorStateTest {
         //   넣으려면 **기상 인사 스톡 클립을 따로 구워야** 한다.
         assertFalse("greeting" in FreeBucketOrder)
         assertEquals(
-            listOf("weather", "fortune", "love", "medication"),
+            listOf("weather", "fortune", "cheer", "medication"),
             FreeBucketOrder,
         )
     }
@@ -99,32 +99,54 @@ class AlarmEditorStateTest {
             audioUrl = "r2://x",
         )
         val expected = com.alarmtalk.app.network.ExpectedVariantCounts(
-            system = mapOf("medication" to 2, "love" to 3),
+            system = mapOf("medication" to 2, "cheer" to 3),
             clone = emptyMap(),
         )
         // love 는 3개가 있어야 하는데 2개뿐 = 시딩 중 → 감춘다. medication 은 완전하다.
         val partial = listOf(
             clip("medication", 0), clip("medication", 1),
-            clip("love", 0), clip("love", 1),
+            clip("cheer", 0), clip("cheer", 1),
         )
         assertEquals(listOf("medication"), freeBucketsFor(partial, "vp-1", "ko", expected))
 
         // 마지막 하나가 채워지면 그때 나타난다 — 앱 수정 없이.
-        val complete = partial + clip("love", 2)
-        assertEquals(listOf("love", "medication"), freeBucketsFor(complete, "vp-1", "ko", expected).sorted())
+        val complete = partial + clip("cheer", 2)
+        assertEquals(listOf("cheer", "medication"), freeBucketsFor(complete, "vp-1", "ko", expected).sorted())
 
         // ⚠ **매니페스트를 못 받았으면 막지 않는다** — 못 물어본 것이 사용자를 막는 근거가
         //   되면 안 된다(관문들과 같은 규약).
         assertEquals(
-            listOf("love", "medication"),
+            listOf("cheer", "medication"),
             freeBucketsFor(partial, "vp-1", "ko", null).sorted(),
         )
+    }
+
+    /**
+     * **옛 이름 `love` 는 영원히 받아 준다.**
+     *
+     * 2026-09-02 에 '사랑'을 '응원'(`cheer`)으로 바꿨는데, 이미 저장된 알람 행과 스토어에
+     * 올라간 구버전 앱은 여전히 `love` 를 들고 있다. 우리가 고칠 수 없는 것들이다.
+     *
+     * ⚠ 접기를 지우면 `normalizedRandomPromptContext` 의 `else` 가 모르는 값으로 보고
+     * **`preset` 으로 떨어뜨린다** — 사용자는 응원을 골랐는데 기본 인사말이 울린다.
+     * 조용히 뜻이 바뀌는 종류라 화면에도 로그에도 흔적이 남지 않는다.
+     */
+    @Test
+    fun legacyLoveNameStillFoldsToCheer() {
+        assertEquals("cheer", normalizedRandomPromptContext("love"))
+        // 저장된 알람 행의 옛 버킷 id 도 같이 접힌다.
+        assertEquals("cheer", randomPromptContextForBucket("love"))
+        // 옛 컨텍스트로 저장된 행을 열어도 종류를 잃지 않는다.
+        val editor = AlarmEditorState.from(
+            alarm = bucketAlarmEntity(voiceRandomContext = "love", bucketId = "love"),
+        )
+        assertEquals("cheer", editor.voiceRandomContext)
     }
 
     @Test
     fun bucketCategoryMapsBackToItsMessageContext() {
         // clonePrerenderBucketCategoryFor 와 짝. 한쪽만 고치면 옛 알람 복구가 조용히 어긋난다.
-        listOf("preset", "love", "medication", "wake_fortune", "wake_weather").forEach { context ->
+        listOf("preset", "cheer", "medication", "wake_fortune", "wake_weather").forEach { context ->
             assertEquals(context, randomPromptContextForBucket(clonePrerenderBucketCategoryFor(context)))
         }
         assertNull(randomPromptContextForBucket(null))
@@ -188,7 +210,7 @@ class AlarmEditorStateTest {
         val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
         editor.voiceRandomPrompt = true
-        editor.voiceRandomContext = "love"
+        editor.voiceRandomContext = "cheer"
 
         editor.setBucketAudio(
             audio = CachedAlarmAudio(
@@ -202,7 +224,7 @@ class AlarmEditorStateTest {
             profileId = "clone-profile",
             messageId = "clip-0",
             text = "사랑해",
-            bucket = "love",
+            bucket = "cheer",
             language = "ko",
             clipKeys = listOf("stock_clip-0", "stock_clip-1"),
         )
@@ -210,8 +232,8 @@ class AlarmEditorStateTest {
         val draft = editor.toDraft()
 
         assertFalse(draft.voiceRandomPrompt)
-        assertEquals("love", draft.bucketId)
-        assertEquals("love", draft.voiceRandomContext)
+        assertEquals("cheer", draft.bucketId)
+        assertEquals("cheer", draft.voiceRandomContext)
     }
 
     /**
@@ -269,7 +291,7 @@ class AlarmEditorStateTest {
         // 직접 입력은 종류가 없다 — 버킷 예외가 여기까지 새면 안 된다.
         val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
-        editor.voiceRandomContext = "love"
+        editor.voiceRandomContext = "cheer"
         editor.voiceRandomPrompt = false
         editor.voiceText = "일어나"
 
@@ -293,7 +315,7 @@ class AlarmEditorStateTest {
     fun existingAlarmIgnoresTheLastManualText() {
         // 기존 알람을 열기만 해도 문구가 바뀌면 안 된다.
         val editor = AlarmEditorState.from(
-            alarm = bucketAlarmEntity(voiceRandomContext = "love", bucketId = "love"),
+            alarm = bucketAlarmEntity(voiceRandomContext = "cheer", bucketId = "cheer"),
             defaultManualText = "회의 자료 챙겨",
         )
 
@@ -305,12 +327,12 @@ class AlarmEditorStateTest {
         val editor = AlarmEditorState.from(
             alarm = null,
             defaultPlayMode = AlarmPlayModes.VOICE_ONLY,
-            defaultRandomContext = "love",
+            defaultRandomContext = "cheer",
             defaultManualText = "   ",
         )
 
         assertTrue(editor.voiceRandomPrompt)
-        assertEquals("love", editor.voiceRandomContext)
+        assertEquals("cheer", editor.voiceRandomContext)
     }
 
     @Test
@@ -326,10 +348,10 @@ class AlarmEditorStateTest {
     @Test
     fun savedMessageContextWinsOverBucketDerivedOne() {
         val editor = AlarmEditorState.from(
-            alarm = bucketAlarmEntity(voiceRandomContext = "love", bucketId = "fortune"),
+            alarm = bucketAlarmEntity(voiceRandomContext = "cheer", bucketId = "fortune"),
         )
 
-        assertEquals("love", editor.voiceRandomContext)
+        assertEquals("cheer", editor.voiceRandomContext)
     }
 
     @Test

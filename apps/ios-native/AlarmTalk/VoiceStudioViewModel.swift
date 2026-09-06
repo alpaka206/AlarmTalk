@@ -62,6 +62,11 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
     /// 그리고 **기본 목소리와 등록 목소리는 개수가 다르다** — `ExpectedVariantCounts` 참조.
     @Published var expectedVariants: ExpectedVariantCounts?
+    /// **버킷 없이 클립 하나만 물린 옛 알람**의 테마 힌트(messageId → 카테고리).
+    ///
+    /// 재바인더가 그 알람을 갈아 끼울 때 쓴다 — 없으면 그 알람은 두 갈래 어디에도 안 걸려
+    /// 영원히 옛 대사·옛 목소리로 운다. 서버가 `GET /tts/stock-clips` 에 실어 준다.
+    @Published var legacyBucketHints: [String: String] = [:]
     @Published var selectedProfileID: String?
     /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
     /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
@@ -196,19 +201,7 @@ final class VoiceStudioViewModel: ObservableObject {
         preparedAlarm = nil
     }
 
-    // MARK: - 기본 목소리 + 호칭 (Android MainViewModel.setDefaultVoice / setDefaultListenerTitle / completeVoiceSetup 미러)
-
-    /// 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신.
-    func setDefaultVoice(_ voiceId: String?) {
-        defaultVoiceStore.setDefaultVoiceId(userID: activeUserID, voiceId: voiceId)
-        defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: activeUserID)
-    }
-
-    /// 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용).
-    func setDefaultListenerTitle(_ title: String?) {
-        defaultVoiceStore.setListenerTitle(userID: activeUserID, title: title)
-        defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: activeUserID)
-    }
+    // MARK: - 마지막에 쓴 목소리
 
     /// 이 계정이 **마지막으로 알람 저장에 성공하며 쓴** 목소리 id.
     ///
@@ -217,16 +210,6 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 온보딩 기본 목소리로 되돌아간다(CLAUDE.md 「마지막에 쓴 것이 그룹보다 우선」 위반).
     var lastUsedVoiceId: String? {
         defaultVoiceStore.lastUsedVoiceId(userID: activeUserID)
-    }
-
-    /// 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때.
-    func completeVoiceSetup(voiceId: String, listenerTitle: String?) {
-        setDefaultVoice(voiceId)
-        setDefaultListenerTitle(listenerTitle)
-    }
-
-    func skipVoiceSetup() {
-        defaultVoiceStore.markSkipped(userID: activeUserID)
     }
 
     /// 앱 언어 → 스톡 클립 언어(en/ja 외엔 ko). Android `data.appVoiceLanguageOf` 미러.
@@ -254,7 +237,28 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
     /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
-    func previewGreeting(voiceId: String, session: AuthSession?) async {
+    /// 슬라이더에서 손을 뗐을 때 — **토글이 아니다.**
+    ///
+    /// 이미 그 목소리를 듣고 있으면 크기만 맞추고 끝낸다(말 중간에 다시 트는 것이 더
+    /// 거슬린다). 안 듣고 있으면 그때 튼다. 행의 재생 버튼은 예전대로 토글
+    /// ([previewGreeting])을 쓴다 — 누르면 멈춰야 하니까.
+    /// 안드로이드 `ensureAlarmVolumePreview` 미러.
+    func ensureGreetingPreview(voiceId: String, session: AuthSession?, volumePercent: Int) async {
+        if previewingGreetingVoiceId == voiceId {
+            if previewPlayer.isPlaying {
+                previewPlayer.setVolume(percent: volumePercent)
+                return
+            }
+            // 끝까지 재생돼 멎었는데 표식만 남은 경우 — 그대로 부르면 토글이 '정지'로 읽힌다.
+            previewingGreetingVoiceId = nil
+        }
+        await previewGreeting(voiceId: voiceId, session: session, volumePercent: volumePercent)
+    }
+
+    /// - Parameter volumePercent: 목소리 크기 화면에서 부를 때의 게인(0~100). `nil` 이면
+    ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
+    ///   크기를 건드리지 않는다.
+    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
@@ -274,7 +278,13 @@ final class VoiceStudioViewModel: ObservableObject {
                     if self?.previewingGreetingVoiceId == voiceId { self?.previewingGreetingVoiceId = nil }
                 }
             }
-            guard (try? previewPlayer.play(url: url)) != nil else {
+            let started: Bool = {
+                if let volumePercent {
+                    return (try? previewPlayer.play(url: url, volumePercent: volumePercent)) != nil
+                }
+                return (try? previewPlayer.play(url: url)) != nil
+            }()
+            guard started else {
                 statusMessage = "미리듣기를 재생하지 못했어요."
                 return
             }
@@ -293,7 +303,7 @@ final class VoiceStudioViewModel: ObservableObject {
         previewingGreetingVoiceId = voiceId
         if await prepareStockClip(clip, session: session) != nil {
             guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
-            playPreparedAudio()
+            playPreparedAudio(volumePercent: volumePercent)
         } else {
             if requestId == greetingPreviewRequestId {
                 previewingGreetingVoiceId = nil
@@ -357,14 +367,6 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             return .failed(mapVoiceError(error))
         }
-    }
-
-    /// 인사말 미리듣기만 정지한다 — 기본 목소리 선택 시트가 닫힐 때 호출.
-    /// Android VoiceProfileManagementPanel.stopMediaPreview 의 greeting 부분 미러.
-    func stopGreetingPreview() {
-        greetingPreviewRequestId += 1
-        previewPlayer.stop()
-        previewingGreetingVoiceId = nil
     }
 
     var selectedListenerTitle: String? {
@@ -572,6 +574,10 @@ final class VoiceStudioViewModel: ObservableObject {
         if stockClips.isEmpty, let cached = StockClipManifestStore.load() {
             stockClips = cached.clips
             expectedVariants = cached.expectedVariants
+            legacyBucketHints = Dictionary(
+                (cached.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+                uniquingKeysWith: { first, _ in first },
+            )
         }
         // ⚠ **반환값은 '이번에 서버에서 새로 받았는가' 다**(Codex #703 P1). 예전에는
         // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
@@ -594,6 +600,10 @@ final class VoiceStudioViewModel: ObservableObject {
             guard revision == manifestRevision else { return false }
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
+            legacyBucketHints = Dictionary(
+                (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+                uniquingKeysWith: { first, _ in first },
+            )
             manifestFetchedThisSession = true
             StockClipManifestStore.save(manifest)
             return true
@@ -1060,7 +1070,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = "깨워줄 말을 입력하거나 '랜덤 문구 사용'을 켜 주세요."
+            statusMessage = "깨워줄 말을 입력하거나 문구 종류를 골라 주세요."
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
@@ -1151,14 +1161,19 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 에디터의 단일 미리듣기 플레이어로 라우팅하기 위해 `player` 를 파라미터화했다 —
     /// 기본값은 VM 소유 previewPlayer (음성 탭/관리 패널 경로 호환). 에디터의 chip 은
     /// editorPreviewPlayer 를 넘긴다(change 1, 절대 generateTTS 를 부르지 않음).
-    func playPreparedAudio(using player: AudioPreviewPlayer? = nil) {
+    func playPreparedAudio(using player: AudioPreviewPlayer? = nil, volumePercent: Int? = nil) {
         guard let preparedAlarm else {
             statusMessage = "먼저 음성을 생성해 주세요."
             return
         }
         let target = player ?? previewPlayer
         do {
-            try target.play(url: AudioCacheStore.url(for: preparedAlarm.localAudioFileName))
+            let url = try AudioCacheStore.url(for: preparedAlarm.localAudioFileName)
+            if let volumePercent {
+                try target.play(url: url, volumePercent: volumePercent)
+            } else {
+                try target.play(url: url)
+            }
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -1394,19 +1409,43 @@ final class VoiceStudioViewModel: ObservableObject {
     /// - Returns: 강등한 알람 **id 들**. 호출자가 그 행들의 예약이 실제로 다시 깔렸는지
     ///   확인한 뒤에야 교체 표식을 확정할 수 있다(개수만으로는 어느 행인지 알 수 없다).
     @discardableResult
+    /// - Parameter allowSystemVoice: **기본(시스템) 목소리도 대상으로 삼는다.**
+    ///
+    ///   ⚠ 평소에는 시스템 목소리를 **일부러 건너뛴다** — 앱이 주는 목소리라 접근권을 잃는
+    ///   일이 없고, 회수 경로가 건드리면 멀쩡한 알람을 깎는다. 그런데 **제자리 교체**
+    ///   (2026-09-03 `#111`)는 프로필 id 를 그대로 두고 provider 만 바꾸므로, 그 목소리로
+    ///   만든 **직접 입력 알람의 오디오는 옛 목소리 그대로**다 — 이름과 미리듣기는 새
+    ///   목소리인데 울리는 소리만 옛것이고, 그 알람은 재바인더 두 갈래 어디에도 안 걸린다.
+    ///   그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차). 회수 경로는 그대로다.
+    ///   안드로이드 `degradeCustomMessageAlarmsUsingVoiceProfile` 의 같은 파라미터와 짝이다.
     func degradeCustomMessageAlarms(
         forProfileID profileID: String,
         alarmStore: LocalAlarmStore,
         audioCache: AudioCacheStore?,
-        ownerUserId: String?
+        ownerUserId: String?,
+        allowSystemVoice: Bool = false,
+        /// **이 시각보다 뒤에 만든 오디오는 건드리지 않는다.**
+        ///
+        /// ⚠ 표식은 "이 시각 **이전에** 만든 오디오가 낡았다" 는 뜻이다(2026-09-03 리뷰 23차).
+        ///   시각을 안 보면 교체가 **이미 배포된 뒤에** 새 목소리로 제대로 만든 알람까지
+        ///   톤으로 깎는다 — 서버가 먼저 나가고 기기가 늦게 표식을 읽는 이번 롤아웃에서
+        ///   실제로 생기는 창이다. nil 이면 예전처럼 시각을 보지 않는다.
+        ///   안드로이드 `invalidatedBeforeMillis` 와 짝이다.
+        invalidatedBefore: Date? = nil
     ) -> [String] {
-        guard let owner = ownerUserId?.nilIfBlank, !isSystemVoiceId(profileID) else { return [] }
+        guard let owner = ownerUserId?.nilIfBlank else { return [] }
+        guard allowSystemVoice || !isSystemVoiceId(profileID) else { return [] }
         let targets = alarmStore.alarms.filter { record in
             // 받은 알람은 보낸 사람의 목소리로 성립한다 — 내 교체로 판단하지 않는다.
             guard record.originEnum == .localOwned else { return false }
             // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
             guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
             guard record.voiceProfileId == profileID else { return false }
+            // 표식보다 나중에 갱신된 행은 그 오디오가 이미 새것이다.
+            if let invalidatedBefore {
+                let updated = Date(timeIntervalSince1970: Double(record.updatedAtMillis) / 1000)
+                guard updated < invalidatedBefore else { return false }
+            }
             return record.usesCustomMessageVoice
         }
         guard !targets.isEmpty else { return [] }
@@ -1580,10 +1619,5 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             statusMessage = mapVoiceError(error)
         }
-    }
-
-    var recordingDurationLabel: String {
-        let seconds = Int((recorder.latestDurationMs ?? Int(recorder.elapsedSeconds * 1000)) / 1000)
-        return "\(seconds)초"
     }
 }

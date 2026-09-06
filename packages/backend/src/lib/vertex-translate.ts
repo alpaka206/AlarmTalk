@@ -40,12 +40,14 @@ export type AlarmTextPreparation = {
 };
 
 // 편집기가 고를 수 있는 동적 생성 모드.
-export type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'love';
+// ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경 — 연애가 아니라 응원).
+// 들어오는 값은 `normalizeRandomContext` 가 이미 접어서 준다.
+type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'cheer';
 
 // 구조화 날씨 시그널(설계 #7). 한국어 문자열 대신 언어무관 토큰으로 전달해, 동적 프롬프트가
 // 타깃 언어로 네이티브 재표현하고 폴백도 언어별 표면을 만든다(한국어 누출 0).
-export type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
-export type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
+type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
+type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
 export type WeatherCondition = { kind: WeatherConditionKind; action: WeatherAction };
 export type WeatherSignal = { conditions: WeatherCondition[] };
 
@@ -160,7 +162,7 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
       return 'cheerfully';
     case 'wake_fortune':
       return 'playfully';
-    case 'love':
+    case 'cheer':
       return 'happy';
   }
 }
@@ -791,7 +793,11 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
   ],
   en: [
     { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
-    { context: 'love, romantic, babe', text: "[playfully] Morning, babe. [warmly] Take your time getting up — I've got you today, okay?" },
+    // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
+    //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
+    //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
+    //   예시도 함께 바꾼다.
+    { context: 'cheer, neutral', text: "[warmly] Morning. [caring] Big day ahead — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 
@@ -834,9 +840,16 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee. For Korean, make the fortune feel like a soft, playful reading rather than something the speaker personally knows for certain; endings like "~래", "~라네요", "~것 같아", or "~면 좋겠다" are good when they sound natural. If the speaker is a romantic partner or spouse, do not mention new relationships, romantic opportunities, attraction from others, flirting, jealousy, or dating luck; keep the fortune about mood, small luck, confidence, health, work, study, or daily energy.`;
     }
+    // `cheer` — ⚠ **연애 문구가 아니다**(2026-09-03). 옛 이름이 `love` 라 이 갈래는
+    //   "romantic partner wake-up line" 을 요구했는데, 대사가 응원·자기돌봄으로 확정되면서
+    //   개념 자체가 바뀌었다. 그대로 두면 `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true` 인
+    //   순간 **없앤 연애 카테고리가 되살아난다** — 로컬 폴백은 이미 응원인데 이 경로만
+    //   반대로 간다(`docs/spec/voice-and-message.md` §2).
+    //   목소리가 연인이어도 마찬가지다. 응원의 **말투**만 그 관계에 맞추고, 다루는 것은
+    //   여전히 오늘을 버틸 힘이다.
     return isRomanticRelationship(context.relationshipLabel)
-      ? 'Create a romantic partner wake-up line that feels private, affectionate, and gently exciting to hear, while still short enough for a practical alarm. Avoid generic "좋은 하루 보내" unless paired with a more personal caring phrase.'
-      : 'Create a warm love/relationship message that feels personal, caring, and suitable for a voice alarm without being overly dramatic.';
+      ? 'Create an encouraging wake-up line in the private, affectionate voice of a partner: acknowledge that the day ahead may feel heavy, then offer steady support — doing one thing at a time, eating properly, resting when tired, not carrying everything alone. Keep it short enough for a practical alarm. Do NOT make it a romantic/flirtatious message; the warmth comes from how it is said, not from romance as the topic.'
+      : 'Create an encouraging wake-up message about getting through the day: acknowledge how the listener might feel, then offer steady support — starting with one small thing, eating properly, resting when tired, or leaning on someone they trust. Personal and caring, never dramatic, and never a romantic/relationship message.';
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);
@@ -852,6 +865,9 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
+Use an ellipsis ("...") where the speaker would naturally pause or trail off before turning to the point ("그래도 이제... 슬슬 일어나 볼까?"). One or two per line at most — it is a breath, not a mannerism.
+SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge.
+⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause, a tag, or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.
 NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
 Leave the separate "tag" field as "" — it is legacy.`;
 
@@ -1332,7 +1348,7 @@ function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): str
     );
     return `${wakeOpener} ${body}`.slice(0, 200).trim();
   }
-  if (context.mode === 'love') {
+  if (context.mode === 'cheer') {
     if (romantic) {
       const body = pickFallbackRotation(
         ['좋은 아침이야. 오늘도 네 편이니까 천천히 일어나자.', '좋은 아침이야. 오늘도 내가 응원할게, 천천히 일어나자.'],

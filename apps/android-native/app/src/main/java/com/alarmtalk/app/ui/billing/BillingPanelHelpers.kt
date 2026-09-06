@@ -37,8 +37,6 @@ internal fun formatPass(value: String?, formatter: DateTimeFormatter): String? =
         }.getOrNull()
     }
 
-internal fun Int.formatKrw(): String = "%,d".format(this)
-
 internal val PassDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy.MM.dd")
 

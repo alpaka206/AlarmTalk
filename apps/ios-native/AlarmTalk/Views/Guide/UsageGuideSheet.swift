@@ -11,8 +11,8 @@ struct UsageGuideStep {
 ///
 /// handoff 프로토타입의 코치마크("가이드 n/N" 스텝 표시 + 건너뛰기/다음/시작하기)를
 /// 시트 형태로 옮긴 것. 알람 만들기·목소리 만들기처럼 폼이 긴 화면은 특정 요소
-/// 스포트라이트 대신 단계 카드로 흐름을 안내한다. 노출 이력은 호출자가
-/// `UsageGuideStore` 로 관리한다 (시트 onDismiss 에서 markSeen).
+/// 스포트라이트 대신 단계 카드로 흐름을 안내한다. 노출 이력은 호출자가 관리한다
+/// (시트 onDismiss 에서 기록).
 struct UsageGuideSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -106,7 +106,7 @@ struct UsageGuideSheet: View {
                 UsageGuideStep(
                     systemImage: "waveform",
                     title: "재생 방식을 골라요",
-                    body: "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요."
+                    body: "'목소리'를 고르면 등록한 목소리가 울리고, '알람'을 고르면 알람음이 울려요."
                 ),
             ],
             onFinish: {}

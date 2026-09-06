@@ -1,4 +1,6 @@
 import { Hono, type Context } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
+import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { callerOwnerIds } from '../lib/caller-ids';
@@ -33,6 +35,8 @@ import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
+  findLegacyBucketHints,
+  normalizeStockCategory,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
@@ -57,11 +61,13 @@ const tts = new Hono<AppEnv>();
 //  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
 //  - medication / love: 그 문구를 고른 알람
 //  - custom: 직접 입력
-const TTS_CATEGORIES = ['morning', 'medication', 'love', 'custom'] as const;
+// ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경). 구버전 앱과 이미 저장된 행이
+// 여전히 `love` 를 보내오므로 **둘 다 받고** 아래 normalize 가 `cheer` 로 접는다.
+const TTS_CATEGORIES = ['morning', 'medication', 'cheer', 'love', 'custom'] as const;
 
 // 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
 // normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
-const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'love'] as const;
+const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'cheer'] as const;
 type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
 
@@ -115,12 +121,25 @@ type WeatherGeocodingResponse = {
   }>;
 };
 
+/**
+ * 클라가 보낸 카테고리를 **저장할 값**으로 접는다.
+ *
+ * ⚠ **받는 것과 저장하는 것을 같게 두지 말 것**(2026-09-03 리뷰 18차). 옛 이름(`love`)은
+ *   구버전 앱과 기기 로컬 DB 가 계속 보내오므로 **받아 주어야** 하지만, 그대로 저장하면
+ *   `#110` 이 한 번 옮겨 놓은 것을 **새 생성이 되살린다** — 유료 클론이 문구를 하나 만들
+ *   때마다 `messages.category = 'love'` 가 다시 생기고, `cheer` 로 거르는 목록·매니페스트가
+ *   그 행을 못 본다. 접기는 **요청 경계에서 한 번**, 그게 곧 저장값이다.
+ *   (`normalizeStockCategory` 는 `stockPresetCategory` 에서 프리셋을 **찾을 때만** 쓰였고,
+ *    저장되는 `category` 는 건드리지 않았다.)
+ */
 function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
   const raw = category.trim();
-  if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
-    return raw as (typeof TTS_CATEGORIES)[number];
-  }
-  return null;
+  if (!(TTS_CATEGORIES as readonly string[]).includes(raw)) return null;
+  // 옛 이름 → 정본. 단일 출처는 `lib/stock-clips.ts` 의 별칭 표다.
+  const folded = normalizeStockCategory(raw);
+  return ((TTS_CATEGORIES as readonly string[]).includes(folded)
+    ? folded
+    : raw) as (typeof TTS_CATEGORIES)[number];
 }
 
 function randomIndex(length: number): number {
@@ -130,8 +149,25 @@ function randomIndex(length: number): number {
   return values[0]! % length;
 }
 
+/**
+ * 이름이 바뀐 값의 **옛 이름 → 새 이름** 표.
+ *
+ * ⚠ **이 표가 없으면 조용히 뜻이 바뀐다.** 아래 normalize 는 모르는 값을 `preset` 으로
+ * 접으므로, 구버전 앱이 보낸 `love` 가 **'기본 인사말' 로 둔갑**한다 — 사용자는 응원을
+ * 골랐는데 인사말이 울린다. 이미 저장된 행도 같은 값을 들고 있다.
+ *
+ * 옛 이름은 **지우지 않는다.** 스토어에 올라간 앱과 사용자 기기의 로컬 DB 는 우리가
+ * 고칠 수 없다(`meal`/`sleep`/`exercise` 를 접어 두는 것과 같은 이유).
+ */
+const RENAMED_RANDOM_CONTEXTS: Readonly<Record<string, RandomContext>> = {
+  // 2026-09-02: '사랑' 을 '응원' 으로 바꿨다(연애 문구가 아니라 응원·자기돌봄).
+  love: 'cheer',
+};
+
 function normalizeRandomContext(value: unknown): RandomContext {
   const raw = typeof value === 'string' ? value.trim() : '';
+  const renamed = RENAMED_RANDOM_CONTEXTS[raw];
+  if (renamed) return renamed;
   return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
 }
 
@@ -241,8 +277,11 @@ function todayKoreaLabel(): string {
  * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
  */
 function stockPresetCategory(category: string): string {
-  return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
+  if (category === 'morning') return STOCK_GREETING_CATEGORY;
+  // 이름이 바뀐 카테고리도 여기서 접는다 — 구버전 앱은 `love` 를 보낸다.
+  return normalizeStockCategory(category);
 }
+
 
 /**
  * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
@@ -269,8 +308,14 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
   const spoken = base.slice(lead.length);
   if (!spoken || spoken.startsWith(title)) return base;
-  const withTitle = `${lead}${title}, ${spoken}`;
-  return withTitle.length <= 200 ? withTitle : base;
+  // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
+  //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
+  //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
+  //   20개 중 17개가 **7자짜리 호칭을 붙이는 것만** 거부당했다 — 프리셋 본문은 그대로
+  //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
+  //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
+  //   길이는 최대 32자로 묶여 있다.
+  return `${lead}${title}, ${spoken}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -735,7 +780,19 @@ tts.post('/generate', async (c) => {
     }
   }
 
-  if (requestText && requestText.length > 200) {
+  // ⚠ **상한은 '사용자가 친 글자' 에만 건다**(2026-09-03 리뷰 2차).
+  //
+  //   `requestText` 는 이 지점에서 이미 **우리 프리셋 문구**일 수 있다(위 751행 —
+  //   `random_context=preset` 이면 `pickRandomPresetText` 가 채운다). 그때 이 검사는
+  //   우리가 확정한 대사를 사용자 입력 규칙으로 재는 셈이라, 영어 프리셋 20개 중 12개가
+  //   **TEXT_TOO_LONG(400)** 이 된다 — 들리는 말은 181자인데 태그까지 세어 213자로 읽는다.
+  //
+  //   200자는 **사용자에게 들리는 말**의 상한이고(2026-08-13 C안), 프리셋은 우리가 길이를
+  //   보고 확정한 신뢰 입력이다. 그래서 여기서는 **body.text 로 들어온 것만** 재고,
+  //   프리셋·초안 미리듣기는 지나게 둔다. 최종 안전망은 아래 합성 직전의
+  //   `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
+  const userTypedText = draftPreviewRequested || presetTextUsed ? '' : requestText;
+  if (userTypedText && userTypedText.length > 200) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
@@ -848,7 +905,9 @@ tts.post('/generate', async (c) => {
   }
   if (presetOnlyRestricted) {
     // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
-    const presetOnlyCode = freePlanRestricted ? 'FREE_PLAN_PRESET_ONLY' : 'BASIC_VOICE_PRESET_ONLY';
+    const presetOnlyCode: ErrorCode = freePlanRestricted
+      ? 'FREE_PLAN_PRESET_ONLY'
+      : 'BASIC_VOICE_PRESET_ONLY';
     // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
     if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
       return c.json(
@@ -1094,12 +1153,12 @@ tts.post('/generate', async (c) => {
         400,
       );
     }
-    if (requestText.length > 200) {
-      return c.json(
-        { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
-        400,
-      );
-    }
+    // ⚠ **여기에 길이 검사를 다시 두지 말 것**(2026-09-03 리뷰 12차). 상한은 두 곳에서만
+    //   잰다: 위쪽의 `userTypedText`(사용자가 친 글자)와 합성 직전의 최종 안전망
+    //   (`Prepared text must be…`, 프리셋 면제). 예전에 여기 있던 세 번째 검사는
+    //   **프리셋을 면제하지 않아** `random_context=preset` 라이브 폴백이 400 으로 죽었다 —
+    //   면제를 넣은 최종 검사에 닿기도 전에 막혔다. 사용자 입력에 대해서는 위 검사가
+    //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
     // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),
@@ -1182,7 +1241,12 @@ tts.post('/generate', async (c) => {
     // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
     // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
     // 문구가 뒤늦게 400 으로 거절됐다.
-    if (normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
+    // ⚠ **프리셋은 이 상한에서 면제한다**(2026-09-03 리뷰 2차). 200자는 사용자가 친 글자를
+    //   재는 규칙이고, 스톡 프리셋은 우리가 길이를 보고 확정한 대사다 — 실제로 영어
+    //   프리셋 20개 중 12개가 낭독 기준으로도 200자를 넘는다(최장 283자). 여기서 막으면
+    //   그 문구를 고른 알람이 **라이브 폴백 경로에서만 400** 이 나 원인을 찾기 어렵다.
+    //   (평소에는 사전렌더 클립을 쓰므로 이 경로에 오지 않는다.)
+    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
@@ -1330,6 +1394,35 @@ tts.post('/generate', async (c) => {
         ) {
           throw new VoiceAuthorizationChangedDuringTtsError();
         }
+        // ⚠ **직접 입력은 캐시 히트도 한 번으로 센다**(2026-09-07 결정).
+        //
+        // 한도의 뜻이 "우리가 합성했는가" 가 아니라 **"이 폰에 없어서 서버에 달라고 했는가"**
+        // 로 바뀌었다. 앱은 그 음성이 폰에 있으면 서버를 아예 부르지 않으므로
+        // (`AlarmEditorScreen` 의 `resolveTtsInput` → `getCachedAudio`), **여기까지 왔다는
+        // 것은 폰에 없다는 뜻**이다. 우리 서버에 남아 있었는지는 사용자에게 보이지 않는
+        // 사정이라 계산에 넣지 않는다 — 합성을 건너뛰어 비용은 그대로 0이고, 사용자는
+        // 같은 소리를 즉시 받는다.
+        //
+        // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
+        // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
+        if (isManualGeneration) {
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+          const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+          if (!reservation.ok) {
+            return jsonError(
+              c,
+              429,
+              'MANUAL_TTS_QUOTA_EXCEEDED',
+              '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+              { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
+            );
+          }
+          manualQuotaResult = {
+            used: reservation.used,
+            limit: reservation.limit,
+            remaining: reservation.remaining,
+          };
+        }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
         await db.execute({
@@ -1373,6 +1466,8 @@ tts.post('/generate', async (c) => {
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
+            // 히트도 한 번으로 세므로 남은 횟수가 줄어든다 — 앱이 화면 숫자를 갱신한다.
+            manual_quota: manualQuotaResult,
             random_context: randomRequested ? randomContext : null,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: Boolean(vp.previewed_at),
@@ -1419,13 +1514,12 @@ tts.post('/generate', async (c) => {
       const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
-        return c.json(
-          {
-            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
-            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-          },
+        return jsonError(
+          c,
           429,
+          'MANUAL_TTS_QUOTA_EXCEEDED',
+          '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+          { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
         );
       }
       manualQuotaPoolKey = pool.poolKey;
@@ -1942,6 +2036,9 @@ tts.get('/stock-clips', async (c) => {
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
+            -- 은퇴한 행은 매니페스트에서 뺀다(#110). 행 자체는 남으므로 그 클립을 물고
+            -- 있는 알람은 계속 저장되고 오디오도 그대로 받는다 — 목록에만 안 뜬다.
+            AND m.retired_at IS NULL
             AND (
               COALESCE(vp.is_system, 0) = 1
               OR m.user_id IN (?, ?)
@@ -1964,6 +2061,9 @@ tts.get('/stock-clips', async (c) => {
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
     args: [userPk, userLoginId, userPk],
   });
+  // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
+  const legacyHints = await findLegacyBucketHints(db, userPk);
+
   return c.json({
     clips: result.rows.map((row) => ({
       message_id: row.message_id,
@@ -1988,6 +2088,13 @@ tts.get('/stock-clips', async (c) => {
     // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
     // 이 판정이 특히 중요하다.
     expected_variants: expectedVariantCounts(),
+    // 버킷 없는 옛 알람이 어떤 테마였는지. 앱은 이 값을 `bucketId` 에 적고 나서
+    // 평소의 재바인딩을 태운다 — 없으면 그 알람은 갈아탈 방법이 없다.
+    legacy_bucket_hints: legacyHints.map((hint) => ({
+      message_id: hint.messageId,
+      category: hint.category,
+      language: hint.language,
+    })),
   });
 });
 

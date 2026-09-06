@@ -17,7 +17,6 @@ import com.alarmtalk.app.network.toPublicHolidayDates
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -64,6 +63,9 @@ class AlarmRepository(
     // [RingingService.ringingOrHandingOffAlarmIds] 주석 참고 — 울리는 알람과 인계 중인 알람이
     // 서로 다를 수 있고, 하나만 보면 뒤엣것이 무방비가 된다.
     private val ringingAlarmIdsProvider: () -> Set<String> = { RingingService.ringingOrHandingOffAlarmIds() },
+    // 사용 기록. **없어도 돌아야 한다** — 기록은 곁다리라, 테스트나 옛 호출부가 안 넘겨도
+    // 알람 동작은 그대로다(기본값 no-op).
+    private val usageEvents: UsageEventRecorder? = null,
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -292,6 +294,7 @@ class AlarmRepository(
         // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_CREATED, alarm)
         alarm
     }
 
@@ -407,6 +410,7 @@ class AlarmRepository(
         // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
         ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_UPDATED, updated)
         updated
     }
 
@@ -498,6 +502,48 @@ class AlarmRepository(
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+        recordAlarmEvent(UsageEvents.ALARM_DELETED, current)
+        // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
+        // 다른 알람이 남아 있으면 파일은 그대로이므로 여전히 '사용중' 이다 — 그 판정은
+        // 폰만 할 수 있고(참조 카운트), 서버는 이 기록을 받아 적을 뿐이다.
+        if (cacheKey != null && current.ttsMessageId != null &&
+            alarmDao.countByAudioCacheKey(cacheKey) == 0
+        ) {
+            usageEvents?.record(
+                type = UsageEvents.MANUAL_MESSAGE_RELEASED,
+                alarmId = current.id,
+                voiceProfileId = current.voiceProfileId,
+                messageId = current.ttsMessageId,
+            )
+        }
+    }
+
+    /**
+     * 알람 사건 하나를 남긴다. **식별자만** 담는다 — 문구 원문은 이미 알람 행에 있고,
+     * 기록에 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이 하나 더 늘어난다.
+     */
+    private fun recordAlarmEvent(type: String, alarm: AlarmEntity) {
+        val recorder = usageEvents ?: return
+        recorder.record(
+            type = type,
+            alarmId = alarm.id,
+            voiceProfileId = alarm.voiceProfileId,
+            messageId = alarm.ttsMessageId,
+        )
+        // 직접 입력 문구가 붙은 알람이면 그 문구가 이 기기에서 **사용중**이 됐다고 남긴다.
+        // 판정은 저장 갈래와 같은 모양이다 — 랜덤도 아니고 테마 클립도 아닌데 문구 id 가
+        // 있으면 직접 입력이다(`AlarmEditorState` 의 `isManualForSave` 와 같은 선).
+        val isManualMessage = !alarm.voiceRandomPrompt &&
+            alarm.bucketId.isNullOrBlank() &&
+            !alarm.ttsMessageId.isNullOrBlank()
+        if (isManualMessage && (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED)) {
+            recorder.record(
+                type = UsageEvents.MANUAL_MESSAGE_ATTACHED,
+                alarmId = alarm.id,
+                voiceProfileId = alarm.voiceProfileId,
+                messageId = alarm.ttsMessageId,
+            )
+        }
     }
 
     /**
@@ -808,14 +854,39 @@ class AlarmRepository(
      * @param expectedOwnerUserId 이 강등을 확정한 계정. 백그라운드 워커에서 부를 때 반드시 넘긴다
      *   (계정 전환 중이면 남의 알람을 되돌릴 수 없게 부순다 — Codex #646/#665 규약).
      */
+    /**
+     * @param allowSystemVoice **기본(시스템) 목소리도 대상으로 삼는다.**
+     *
+     * ⚠ 평소에는 시스템 목소리를 **일부러 건너뛴다** — 그건 앱이 주는 목소리라 접근권을
+     *   잃는 일이 없고, 회수 경로가 건드리면 멀쩡한 알람을 깎는다.
+     *   그런데 **제자리 교체**(2026-09-03 `#111`)는 다르다: 프로필 id 는 그대로 두고
+     *   provider 보이스만 바꾸므로, 그 목소리로 만들어 둔 **직접 입력 알람의 오디오는
+     *   낡은 목소리 그대로**다 — 이름과 미리듣기는 새 목소리인데 울리는 소리만 옛것이다.
+     *   그 알람은 재바인더 두 갈래 어디에도 안 걸린다(테마도 없고 `voiceRandomPrompt` 도
+     *   꺼져 있다). 그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차).
+     *   회수 경로(`false`)는 그대로 둔다 — 거기서 열면 없던 강등이 생긴다.
+     */
+    /**
+     * @param invalidatedBeforeMillis **이 시각보다 뒤에 만든 오디오는 건드리지 않는다.**
+     *
+     * ⚠ 표식(`custom_audio_invalidated_at`)은 "이 시각 이전에 만든 오디오가 낡았다" 는
+     *   뜻이다(2026-09-03 리뷰 23차). 그런데 시각을 안 보면, 교체가 **이미 배포된 뒤에**
+     *   만든 알람 — 즉 새 목소리로 제대로 합성된 것 — 까지 톤으로 깎는다. 서버가 먼저
+     *   나가고 기기가 늦게 표식을 읽는 이번 롤아웃에서 실제로 생기는 창이다.
+     *   `null` 이면 예전처럼 시각을 보지 않는다(세대를 모르는 옛 신호).
+     */
     suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
         voiceProfileId: String,
         expectedOwnerUserId: String?,
+        allowSystemVoice: Boolean = false,
+        invalidatedBeforeMillis: Long? = null,
     ): Int =
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             alarm.voiceProfileId == voiceProfileId &&
-                !isSystemVoiceId(alarm.voiceProfileId) &&
-                alarm.usesCustomMessageVoice()
+                (allowSystemVoice || !isSystemVoiceId(alarm.voiceProfileId)) &&
+                alarm.usesCustomMessageVoice() &&
+                // 표식보다 나중에 갱신된 행은 그 오디오가 이미 새것이다.
+                (invalidatedBeforeMillis == null || alarm.updatedAtMillis < invalidatedBeforeMillis)
         }
 
     // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).
@@ -1042,51 +1113,6 @@ class AlarmRepository(
             Log.i(TAG, "Restored paid voice alarms after re-subscription count=${targets.size}")
         }
         return targets.size
-    }
-
-    suspend fun copyAlarm(alarmId: String): AlarmEntity {
-        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        val now = System.currentTimeMillis()
-        val copiedTime = copyTargetTime(current.hour, current.minute)
-        requireUniqueTime(copiedTime.hour, copiedTime.minute)
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(
-            countryCode = currentHolidayCountry(),
-            startDate = currentLocalDate(now),
-        )
-        val copied = current.copy(
-            id = UUID.randomUUID().toString(),
-            label = current.label.takeIf { it.isNotBlank() }
-                ?.let { context.getString(R.string.rd_copied_alarm_label_suffix, it) }
-                ?: context.getString(R.string.rd_copied_alarm_label),
-            hour = copiedTime.hour,
-            minute = copiedTime.minute,
-            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = copiedTime.hour,
-                minute = copiedTime.minute,
-                repeatDaysMask = current.repeatDaysMask,
-                holidayOff = current.holidayOff,
-                nowMillis = now,
-                isHoliday = holidayPredicate,
-            ),
-            remoteAlarmId = null,
-            lastSyncedAtMillis = null,
-            syncState = AlarmSyncStates.LOCAL_ONLY,
-            origin = AlarmOrigins.LOCAL_OWNED,
-            ownerUserId = currentUserIdProvider(),
-            remoteDeliveryVersion = null,
-            // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
-            // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
-            // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
-            preLockPlayMode = null,
-            enabled = true,
-            state = AlarmStates.SCHEDULED,
-            createdAtMillis = now,
-            updatedAtMillis = now,
-        )
-        alarmScheduler.schedule(copied)
-        alarmDao.upsert(copied)
-        Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
-        return copied
     }
 
     suspend fun markRinging(alarmId: String) {
@@ -1691,9 +1717,6 @@ class AlarmRepository(
         return existing
     }
 
-    private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
-        java.time.LocalTime.of(hour, minute).plusMinutes(10)
-
     private fun currentLocalDate(nowMillis: Long): java.time.LocalDate =
         Instant.ofEpochMilli(nowMillis)
             .atZone(ZoneId.systemDefault())
@@ -1772,19 +1795,22 @@ class AlarmRepository(
         }
     }
 
-    private fun AlarmEntity.nextLocalSyncState(): String =
-        when {
-            origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
-            remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
-            else -> AlarmSyncStates.DIRTY
-        }
-
     private companion object {
         // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
-        val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
+        val MATCHING_BUCKET_IDS = MatchingBucketIds
     }
 }
+
+/**
+ * **조건/테마로 클립을 고르는 버킷** — 순차 회전이 아니라 절대 인덱스로 고른다.
+ *
+ * ⚠ 이 버킷들은 `contextVariantIndex`(날씨) 나 사주 입력(운세)이 있어야 제 클립을 고른다.
+ *   그 값이 없는 채로 전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로,
+ *   운세는 빈 프로필 해시로 떨어진다. 그래서 그 값을 못 채우는 경로는 이 목록을 보고
+ *   비켜 가야 한다(`StockClipLanguageRebinder`).
+ */
+val MatchingBucketIds = setOf("weather", "fortune")
 
 data class BucketClipSelection(
     val variantIndex: Int,

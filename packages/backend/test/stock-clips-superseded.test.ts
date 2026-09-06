@@ -81,7 +81,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, voice_profile_id TEXT NOT NULL,
       text TEXT, synthesis_text TEXT, delivery_tags_json TEXT, category TEXT, language TEXT,
-      variant INTEGER DEFAULT 0, is_preset INTEGER DEFAULT 0, audio_url TEXT
+      variant INTEGER DEFAULT 0, is_preset INTEGER DEFAULT 0, audio_url TEXT,
+      retired_at TEXT
     );
     CREATE TABLE voice_prerender_queue (
       voice_profile_id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, language TEXT DEFAULT 'ko',
@@ -168,7 +169,20 @@ describe('사전렌더 — 렌더 중에 교체가 한 번 더 일어나면', ()
         deletedKeys.some((key) => key.includes('new-object')),
         '낡은 렌더가 **새 렌더의** R2 오브젝트를 지웠다',
       ).toBe(false);
-      expect(deletedKeys.length, '자기가 올린 오브젝트는 치워야 한다').toBe(1);
+      // ⚠ **여기서 바로 지우지 않는다**(2026-09-03 리뷰 10차). R2 키는 cacheKey 에서
+      //   결정론적으로 나오므로 '참조 확인 → 삭제' 가 원자적일 수 없다 — 그 사이에 같은
+      //   키를 올린 다른 렌더가 자기 행을 커밋하면, 방금 '아무도 안 쓴다' 고 본 오브젝트가
+      //   **막 게시된 행이 가리키는 것**이 된다. 큐로 넘기면 실제 삭제는 다음 cron 틱이
+      //   하고 그때 참조를 다시 본다(`drainExternalDeletions`).
+      expect(deletedKeys.length, '확인과 삭제가 원자적이지 않으므로 즉시 지우지 않는다').toBe(0);
+      const queued = await db.execute(
+        "SELECT ref FROM pending_external_deletions WHERE kind = 'r2_object'",
+      );
+      expect(queued.rows.length, '자기가 올린 오브젝트는 치우도록 큐에 넣는다').toBe(1);
+      expect(
+        String(queued.rows[0]!.ref).includes('new-object'),
+        '낡은 렌더가 **새 렌더의** 오브젝트를 삭제 큐에 넣었다',
+      ).toBe(false);
 
       const queue = await db.execute(
         "SELECT status, claim_token FROM voice_prerender_queue WHERE voice_profile_id = 'vp1'",

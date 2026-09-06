@@ -12,6 +12,8 @@ import UIKit
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var versionGate: AppVersionGate
+    /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면 게이트.
+    @ObservedObject private var stockReplacement = StockReplacementStatus.shared
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     /// 강등 안내가 **가리킬 알람이 아직 있는지** 확인하는 데만 쓴다(`evaluateDowngradeNotice`).
@@ -92,6 +94,21 @@ struct RootView: View {
                     // 나가면 앱으로 못 돌아오고 체크해 둔 값도 사라진다.
                     onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
                     onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
+                )
+            } else if stockReplacement.isPending(for: auth.session?.user.id) {
+                // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
+                // 이름인데 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시).
+                //
+                // ⚠⚠ **계정 선행 게이트보다 뒤에 둔다**(2026-09-03 리뷰 17차).
+                //   앞에 두면 재동의·탈퇴 유예 화면을 **가려 버린다.** 그 상태에서는
+                //   재시도를 눌러도 서버가 `/tts/stock-clips` 를 `CONSENT_REQUIRED`·
+                //   `ACCOUNT_PENDING_DELETION` 으로 막으므로 **영영 못 빠져나온다** —
+                //   앱을 껐다 켜는 것 말고는 길이 없다.
+                //   순서: 업데이트 → 로그인 → 탈퇴 유예 → 동의 → **여기**.
+                // 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
+                StockReplacementView(
+                    working: stockReplacement.working,
+                    onRetry: { stockReplacement.retry() }
                 )
             } else if voiceSetupDone == nil {
                 ProgressView()
@@ -223,12 +240,19 @@ struct RootView: View {
     /// 스크림이 다운로드 화면의 '다시 시도'·6초 뒤 탈출구를 가린다(레이스가 아니라
     /// 결정적 재현). 안드로이드도 `showVoiceSetup` 을 게이트에 넣어 두었다가 끝난
     /// **뒤에** 프로모를 띄운다.
+    /// ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
+    ///   웰컴 프로모·민감 동의 시트가 겹쳐 뜬다 — 프로모는 **1회성이라 소진 플래그까지
+    ///   태우고** 사용자는 본 적도 없이 잃는다. 안드로이드 `blockingGateActive` 와 같다.
     private var blockingGateActive: Bool {
         versionGate.updateRequired
             || auth.consentUnsupported
             || !auth.isAuthenticated
             || auth.pendingDeletion
             || auth.showConsentScreen
+            // ⚠ **판정 전에는 '아니오' 가 아니라 '모른다' 다**(리뷰 21차). 아직 모르는
+            //   동안 프로모가 뜨면 소진 플래그를 태우고 뒤늦게 온 차단 화면이 덮는다.
+            || !stockReplacement.isChecked(for: auth.session?.user.id)
+            || stockReplacement.isPending(for: auth.session?.user.id)
             || voiceSetupDone != true
     }
 

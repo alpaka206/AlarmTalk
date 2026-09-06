@@ -23,8 +23,8 @@ export function SiteFooter() {
               aria-label="AlarmTalk"
               className="flex items-center gap-2.5 whitespace-nowrap"
             >
-              <BrandMark size={32} className="rounded-sm" />
-              <span className="text-[16px] font-bold tracking-tight text-text">
+              <BrandMark size={32} alt="" />
+              <span translate="no" className="text-[16px] font-bold tracking-tight text-text">
                 AlarmTalk
               </span>
             </Link>
@@ -38,9 +38,9 @@ export function SiteFooter() {
 
           <RevealItem as="div" className="grid grid-cols-2 gap-10 sm:grid-cols-3">
             <div>
-              <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-faint">
+              <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
                 {t("product")}
-              </p>
+              </h2>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
                   <Link
@@ -66,12 +66,20 @@ export function SiteFooter() {
                     {t("linkFaq")}
                   </Link>
                 </li>
+                <li>
+                  <Link
+                    href="/cheer"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkCheer")}
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>
-              <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-faint">
+              <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
                 {t("company")}
-              </p>
+              </h2>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
                   <Link
@@ -92,9 +100,9 @@ export function SiteFooter() {
               </ul>
             </div>
             <div>
-              <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-faint">
+              <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
                 {t("legal")}
-              </p>
+              </h2>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
                   <Link
@@ -126,10 +134,10 @@ export function SiteFooter() {
         </RevealGroup>
 
         <div className="mt-14 flex flex-col gap-3 border-t border-line pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="whitespace-nowrap text-[12.5px] text-text-faint">
-            © {year} AlarmTalk · {t("rights")}
+          <p className="whitespace-nowrap text-[12.5px] text-text-muted">
+            © {year} <span translate="no">AlarmTalk</span> · {t("rights")}
           </p>
-          <p className="whitespace-nowrap text-[12.5px] text-text-faint">
+          <p className="whitespace-nowrap text-[12.5px] text-text-muted">
             {t("made")}
           </p>
         </div>

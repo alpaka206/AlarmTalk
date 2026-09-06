@@ -52,6 +52,11 @@ internal fun WakerVolumeSlider(
     stepSize: Int,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /**
+     * 손을 뗀 순간(또는 트랙을 눌러 값이 정해진 순간). 목소리 크기 화면이 이때 샘플을
+     * 들려준다 — 끄는 동안 매 눈금마다 다시 트는 것은 시끄럽기만 하다.
+     */
+    onValueChangeFinished: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val span = valueRange.endInclusive - valueRange.start
@@ -69,6 +74,7 @@ internal fun WakerVolumeSlider(
                 (((raw - valueRange.start) / stepSize).let { Math.round(it) } * stepSize)
             onValueChange(snapped.coerceIn(valueRange.start, valueRange.endInclusive))
         },
+        onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         steps = steps,
         enabled = enabled,

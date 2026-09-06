@@ -68,7 +68,7 @@ export class PlayBillingUnconfiguredError extends Error {
 }
 
 /** Play API non-2xx — 호출자가 502 매핑 등으로 구분 처리한다. */
-export class PlayApiError extends Error {
+class PlayApiError extends Error {
   readonly status: number;
   readonly detail: string;
   constructor(operation: string, status: number, detail: string) {

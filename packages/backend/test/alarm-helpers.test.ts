@@ -17,6 +17,35 @@ import {
   STOCK_GREETING_CATEGORY,
 } from '../src/lib/stock-clips';
 
+/**
+ * **구버전 앱이 보내는 옛 카테고리 이름을 계속 받아야 한다.**
+ *
+ * 2026-09-03 에 `love` → `cheer` 로 이름을 바꿨는데, 허용 집합은 카탈로그에서 파생되므로
+ * 그 순간 옛 값이 목록에서 사라진다. 스토어에 올라간 앱과 이미 저장된 알람 행은 우리가
+ * 고칠 수 없으니, **요청 경계에서 접어** 받는다. 접기를 지우면 그 앱의 알람 저장·수정·
+ * 전송이 전부 `INVALID_BUCKET_ID`(400) 가 된다.
+ */
+describe('옛 버킷 이름 접기', () => {
+  it('구버전 앱의 bucket_id=love 를 cheer 로 받아 준다', () => {
+    const body: Record<string, unknown> = { time: '07:00', bucket_id: 'love' };
+    expect(validateAlarmFields(body as never)).toBeNull();
+    expect(body.bucket_id).toBe('cheer');
+  });
+
+  it('현재 이름은 그대로 통과한다', () => {
+    for (const bucket of ['cheer', 'weather', 'fortune', 'medication', 'greeting']) {
+      const body: Record<string, unknown> = { time: '07:00', bucket_id: bucket };
+      expect(validateAlarmFields(body as never), bucket).toBeNull();
+      expect(body.bucket_id).toBe(bucket);
+    }
+  });
+
+  it('모르는 값은 여전히 거절한다', () => {
+    const body: Record<string, unknown> = { time: '07:00', bucket_id: 'nope' };
+    expect(validateAlarmFields(body as never)?.error_code).toBe('INVALID_BUCKET_ID');
+  });
+});
+
 describe('normalizeAlarmRow', () => {
   const base = { id: 'a1', user_id: 'u1' };
 

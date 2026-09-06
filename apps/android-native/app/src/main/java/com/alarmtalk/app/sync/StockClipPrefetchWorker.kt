@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.StockClipManifestStore
 import com.alarmtalk.app.data.appVoiceLanguageOf
 import com.alarmtalk.app.data.isSystemVoiceId
@@ -96,7 +97,14 @@ class StockClipPrefetchWorker(
         runCatching { setForeground(foregroundInfo(done, total)) }
     }
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
+        StockReplacementStatus.setWorking(true)
+        runWork()
+    } finally {
+        StockReplacementStatus.setWorking(false)
+    }
+
+    private suspend fun runWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
         // ⚠ **세대를 세션보다 먼저 읽는다**(2026-09-01 리뷰). 순서가 반대면 두 줄 사이의
         // A→B 전환에서 **세션은 A, 세대는 B** 가 잡혀, 나중의 `saveTokenIfGeneration` 이
@@ -121,7 +129,18 @@ class StockClipPrefetchWorker(
             // 그대로 남는 것이다.
             // 표를 **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다.
             val manifestTicket = StockClipManifestStore.beginFetch()
-            val manifest = withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            val manifest = try {
+                withContext(Dispatchers.IO) { api.getStockClips(auth) }
+            } catch (error: Throwable) {
+                // ⚠ **판정은 못 해도 '시도는 끝났다' 는 남긴다**(2026-09-03 리뷰 22차).
+                //   준비 신호를 안 세우면 오프라인·서버 오류에서 웰컴 프로모·첫 권한 안내가
+                //   **영영 안 뜬다** — 판정을 못 한 것과 시도가 안 끝난 것은 다르다.
+                //   `manifestFetched = false` 라 앞 판정은 그대로 지켜진다.
+                StockReplacementStatus.report(
+                    userId = session.user.id, pending = false, manifestFetched = false,
+                )
+                throw error
+            }
             when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket, session.user.id)) {
                 // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
                 // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.
@@ -152,8 +171,20 @@ class StockClipPrefetchWorker(
             // 만 보면 권한이 없는 사용자의 클론 클립을 그대로 요청한다 — 403
             // (`VOICE_LOCKED_FREE_PLAN`)을 받고 재시도를 소진한 끝에 FAILED 로 끝난다.
             // 울림 게이트와 **같은 판정기**로 판단한다.
+            // ⚠ **서버 프로필의 조건 설정을 들고 나온다**(2026-09-03 리뷰 16차).
+            //   새로 깐 기기·두 번째 기기에서는 이 값이 서버에만 있고 로컬 저장소는 비어
+            //   있다. 바로 아래에서 `/auth/me` 를 받으면서 그걸 버리면, 받은 날씨 알람은
+            //   여전히 서버 기본값(서울)으로, 운세는 빈 프로필 해시로 떨어진다.
+            var serverPromptSettings: com.alarmtalk.app.network.DynamicPromptSettings? = null
             val paidVoiceAccess = withContext(Dispatchers.IO) {
                 runCatching {
+                    // ⚠ **`/auth/me` 를 구독 조회보다 **먼저** 부른다**(2026-09-03 리뷰 23차).
+                    //   예전에는 `getSubscription` 뒤에 있어서, 그 선택적 조회가 실패하면
+                    //   같은 `runCatching` 이 통째로 빠져나가며 **프로필 설정도 못 받았다** —
+                    //   /auth/me 는 멀쩡한데도 새로 깐 기기의 받은 날씨 알람이 서울로,
+                    //   운세가 빈 프로필로 떨어졌다. 조건 설정은 구독과 무관한 값이다.
+                    val me = api.me(auth)
+                    serverPromptSettings = me.user.dynamicPromptSettings
                     val subscription = api.getSubscription(auth)
                     // ⚠ **plan 은 캐시가 아니라 서버에서 지금 받는다**(2026-09-01 리뷰).
                     // 회복 방향이 문제다: 보류가 풀려 구독이 살아났는데 스냅샷의 `userPlan` 은
@@ -161,7 +192,6 @@ class StockClipPrefetchWorker(
                     // 갱신과 경주하므로, 캐시를 읽으면 그 옛 free 가 **살아 있는 구독을 이겨**
                     // 돈 내는 사용자의 클론 클립을 하나도 안 받는다. 게다가 이 작업은
                     // `ExistingWorkPolicy.KEEP` 이라 뒤이은 재큐잉이 버려져 그 회차가 그대로 굳는다.
-                    val me = api.me(auth)
                     val plan = me.user.plan
                     // ⚠ **굴러온 토큰을 버리지 않는다**(2026-09-01 리뷰). 이 워커는 배경에서
                     // 도는 일이 있어(예: `voice_changed` FCM) 그때는 이 요청이 **그 실행의
@@ -231,6 +261,29 @@ class StockClipPrefetchWorker(
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
             // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를
             // 바꾼 다음 실행)에도 재바인딩은 남아 있을 수 있다.
+            // 계정이 바뀐 채로 이 회차가 끝나면 재시도로 넘긴다(아래 주석 참조).
+            var accountChangedDuringRun = false
+            // ⚠ **한 번만 만들어 아래 두 곳이 같은 답을 보게 한다.** 재바인딩과 정리가
+            //   서로 다른 힌트로 판정하면, 정리가 "갈아탈 것이 없다" 로 읽고 아직 옛 클립을
+            //   문 알람의 파일을 지운다 — 그 알람은 무음이 된다.
+            val legacyHints = manifest.legacyBucketHints
+                .associate { hint -> hint.messageId to hint.category }
+            // 받는 사람의 지역·사주. 조건형 버킷(날씨·운세)을 묶을 때 빈 자리에만 채운다 —
+            // 받은 알람은 그 값이 전부 비어 있어서, 안 채우면 날씨는 서버 기본값(서울),
+            // 운세는 빈 프로필 해시로 떨어진다.
+            //
+            // ⚠ **서버가 먼저, 로컬은 폴백이다**(리뷰 16차). 새로 깐 기기·두 번째 기기는
+            //   로컬 저장소가 비어 있고 값이 서버에만 있다. 편집기의 `savedPromptPreferences`
+            //   (iOS)와 **같은 순서**다 — 한쪽만 서버를 보면 기기마다 답이 달라진다.
+            val localPrompts = com.alarmtalk.app.data.DynamicPromptPreferenceStore(applicationContext)
+                .read(session.user.id)
+            val serverPrompts = serverPromptSettings?.toPromptPreferences()
+            val conditionInputs = when {
+                serverPrompts == null -> localPrompts
+                serverPrompts == com.alarmtalk.app.data.DynamicPromptPreferences() -> localPrompts
+                else -> serverPrompts
+            }
+
             suspend fun rebind() {
                 runCatching {
                     StockClipLanguageRebinder.rebindIfLanguageChanged(
@@ -239,6 +292,11 @@ class StockClipPrefetchWorker(
                         auth = auth,
                         clips = allClips,
                         language = language,
+                        // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
+                        expectedVariants = manifest.expectedVariants,
+                        legacyHints = legacyHints,
+                        conditionInputs = conditionInputs,
+                        callerUserId = session.user.id,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
@@ -252,12 +310,75 @@ class StockClipPrefetchWorker(
                         auth = auth,
                         clips = allClips,
                         language = language,
+                        expectedVariants = manifest.expectedVariants,
+                        callerUserId = session.user.id,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
+                // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시).
+                //   위 두 재바인딩이 끝난 **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직
+                //   갈아탈 알람이 남아 있으면 함수가 스스로 0을 돌려주고 미룬다 —
+                //   중간에 멈추면 지운 것이 없으므로 잃는 것도 없고, 다음 회차가 처음부터
+                //   다시 판단한다(멱등).
+                runCatching {
+                    StockClipLanguageRebinder.pruneReplacedStockAudio(
+                        context = applicationContext,
+                        clips = allClips,
+                        language = language,
+                        expectedVariants = manifest.expectedVariants,
+                        // ⚠ **재바인딩과 같은 힌트를 넘긴다.** 여기만 힌트 없이 물으면
+                        //   아직 갈아타지 않은 알람을 두고 파일을 지운다.
+                        legacyHints = legacyHints,
+                        callerUserId = session.user.id,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Replaced stock audio prune failed", it) }
+                // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와
+                //   묶기는 끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을
+                //   막으면 지울 것이 없는 사용자를 이유 없이 가둔다.
+                runCatching {
+                    // ⚠⚠ **이 회차가 아직 '지금 계정' 의 것인지 확인하고 적는다**
+                    //   (2026-09-03 리뷰 18차). 이 작업은 `WORK_NAME` 하나에 `KEEP` 이라,
+                    //   A 의 실행 중에 B 가 로그인하면 **B 의 enqueue 가 버려진다.** 그런데
+                    //   이 실행은 계속 A 로 스코프돼 있고 상태는 **프로세스 전역**이다 —
+                    //   A 의 결과로 B 를 가두거나(true), B 의 옛 알람을 갈아타지도 못한 채
+                    //   문을 열어 준다(false).
+                    //   계정이 바뀌었으면 **적지 않고**, B 를 위해 다시 큐에 넣는다.
+                    val current = AuthSessionStore(applicationContext).read()
+                    val stillSameAccount = current?.user?.id == session.user.id &&
+                        sessionStore.sessionGeneration() == startGeneration
+                    if (stillSameAccount) {
+                        StockReplacementStatus.report(
+                            userId = session.user.id,
+                            pending = StockClipLanguageRebinder.hasPendingReplacement(
+                                context = applicationContext,
+                                clips = allClips,
+                                language = language,
+                                // 이 자리는 매니페스트를 **받은 뒤**다 — 비어 있어도 그건
+                                // '성공적으로 빈 카탈로그'(은퇴 직후 게시 전)라 미완료다.
+                                manifestFetched = true,
+                                legacyHints = legacyHints,
+                                callerUserId = session.user.id,
+                            ),
+                            // 못 받았으면 앞 판정을 지킨다 — `report` 가 스스로 막는다.
+                            manifestFetched = true,
+                        )
+                    } else {
+                        // ⚠ **여기서 `enqueue` 하면 버려진다**(2026-09-03 리뷰 19차).
+                        //   `enqueueUniqueWork(WORK_NAME, KEEP)` 인데 **이 실행이 아직
+                        //   끝나지 않았으므로**, B 의 원래 enqueue 가 버려진 것과 똑같이
+                        //   이것도 버려진다. 그러면 B 는 다른 계기가 올 때까지 교체를
+                        //   못 받는다.
+                        //   대신 **이 회차를 재시도로 넘긴다** — WorkManager 가 같은 유니크
+                        //   작업을 다시 돌리고, 그 실행은 **지금 세션(B)** 을 읽는다.
+                        accountChangedDuringRun = true
+                    }
+                }.onFailure { AlarmTalkLog.reportError("Stock replacement status probe failed", it) }
             }
 
             if (clips.isEmpty()) {
                 rebind()
+                // 도중에 계정이 바뀌었으면 이 회차는 **앞 계정의 것**이다 — 재시도로 넘겨
+                // 다음 실행이 지금 세션을 읽게 한다(유니크 작업이라 enqueue 는 버려진다).
+                if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
 
@@ -273,6 +394,7 @@ class StockClipPrefetchWorker(
             publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
                 rebind()
+                if (accountChangedDuringRun) return@runCatching Result.retry()
                 return@runCatching Result.success()
             }
 
@@ -329,6 +451,7 @@ class StockClipPrefetchWorker(
                 publishProgress(done = done, total = clips.size)
             }
             rebind()
+            if (accountChangedDuringRun) return@runCatching Result.retry()
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
             //

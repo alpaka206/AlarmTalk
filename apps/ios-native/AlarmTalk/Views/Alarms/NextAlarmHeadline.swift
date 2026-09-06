@@ -57,7 +57,7 @@ struct NextAlarmHeadline: View {
             // 올림이라 1분 미만은 "1분 후에 울려요" 가 된다 — 틀린 말도 아니다.
             return "\(Self.remainingLabel(seconds: remaining)) 후에 울려요."
         }
-        return hasAnyAlarm ? "모든 알람이 꺼진 상태입니다." : "알람이 없습니다."
+        return hasAnyAlarm ? "알람이 모두 꺼져 있어요." : "아직 알람이 없어요."
     }
 
     /// "13시간 40분" / "2일 5시간" — 분 단위 올림, **상위 두 단위만** 노출.

@@ -33,15 +33,6 @@ internal fun resolveListenerTitle(
     return shared?.takeIf { it.isNotBlank() }
 }
 
-internal fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
-    DynamicPromptPreferences(
-        weatherCountry = weather.country?.trim().orEmpty(),
-        weatherCity = weather.city?.trim().orEmpty(),
-        fortuneGender = fortune.gender?.trim().orEmpty(),
-        fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
-        fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
-    )
-
 // 편집기 섹션 헤더 단일 출처. 예전 titleMedium/Bold 는 카드 안 행 제목(titleMedium/SemiBold)과
 // 크기가 같아 섹션 경계가 안 읽혔다 — 그룹 리스트 헤더 관례대로 한 단계 조용하게
 // (titleSmall + onSurfaceVariant) 낮춰 행 제목과 위계를 분리한다.

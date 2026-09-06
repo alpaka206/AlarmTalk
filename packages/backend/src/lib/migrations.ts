@@ -76,10 +76,8 @@ const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
  * 없앴다**(`docs/spec/voice-and-message.md`). 그전에는 기본 목소리에 그 두 카테고리의
  * 클립이 없어서 목록에서 아예 감췄다.
  *
- * ⚠ **en·ja 는 지금 한국어를 그대로 복사한 임시값**이라 새 문구가 언어별로 갈라지지 않는다
- * (`STOCK_CLIP_PLACEHOLDER_LANGUAGES`). 진짜 대사로 교체하는 날에는 문구가 바뀌므로
- * **또 하나의 refresh 마이그레이션이 필요하다** — `migrations-stock-refresh.test.ts` 가
- * "최신 refresh 의 동결 사본 == 현재 STOCK_CLIP_PRESETS" 를 강제하므로 잊을 수 없다.
+ * ⚠ 이 사본은 **그때의** 문구다. 그 뒤 2026-09-02 에 세 언어 대사를 전부 새로 썼고,
+ * #110 이 시스템 프리셋을 통째로 지운다 — 이 목록과 현재 문구는 더 이상 같지 않다.
  *
  * 앞의 36종은 **글자 하나 바뀌지 않았다.** 그래서 아래 무효화는 dev/prod 에서 0행 no-op 다 —
  * 승인된 실오디오를 지우지 않는다. 새 8종은 아직 시딩된 적이 없어 지울 것도 없다.
@@ -117,6 +115,46 @@ const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
     AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
       ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19.map(sqlLiteral).join(',\n      ')}
     )`;
+
+/**
+ * **문구 지문은 무효화 마이그레이션의 `name` 안에 산다.**
+ *
+ * ⚠ `findMissingStockTargets` 는 (voice|category|language|variant) **존재 여부만** 본다.
+ * 옛 행을 지우지 않으면 재시드해도 **옛 문구가 그대로 남고**, 코드와 실제 울리는 소리가
+ * 갈라진 채 아무 데서도 드러나지 않는다.
+ *
+ * 그래서 지문을 **별도 상수로 두지 않는다.** 별도 상수는 문구를 고친 사람이 그 값만 새로
+ * 계산해 넣으면 테스트가 초록이 되어, 무효화 없이 넘어갈 수 있다(2026-09-03 리뷰 지적 —
+ * 실제로 그 우회가 통과했다).
+ *
+ * 지금은 **마이그레이션 이름 끝에 지문을 박는다**: `...-script-<지문>`.
+ * 적용된 마이그레이션의 본문·이름은 고칠 수 없으므로(원장이 id 로 기록한다), 지문을
+ * 바꾸려면 **새 마이그레이션을 만드는 수밖에 없다.** 그게 곧 무효화다.
+ *
+ * 테스트(`test/migrations-stock-refresh.test.ts`)가 최신 무효화 마이그레이션 이름에서
+ * 지문을 뽑아 현재 문구와 대조한다.
+ */
+export const STOCK_FINGERPRINT_IN_NAME = /-([0-9a-f]{16})$/;
+
+/** 스톡 문구를 무효화하는 마이그레이션의 이름 규칙. 테스트가 '최신' 을 이걸로 찾는다. */
+export const STOCK_INVALIDATION_NAME = /^(refresh|replace)-stock-clips/;
+
+/**
+ * **시스템(스톡) 보이스의 프리셋 행 전부.** 문구를 가리지 않는다.
+ *
+ * #70·#109 의 "확정 문구와 다른 것만" 서브쿼리와 다르다 — 대사를 통째로 새로 썼을 때는
+ * 전부가 대상이라, 텍스트 목록을 동결해 두는 것이 오히려 헷갈린다. 클론(사용자 등록)
+ * 클립은 `is_system = 0` 이라 여기 걸리지 않는다.
+ */
+const SYSTEM_STOCK_PRESET_SUBQUERY = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )`;
+
+// 등록(클론) 보이스 프리셋을 통째로 고르는 짝 서브쿼리가 여기 있었는데 지웠다
+// (2026-09-03). 마이그레이션이 남의 클론을 대신 다시 굽지 않기로 했기 때문이다 —
+// 이유는 #110 의 ③ 자리에 적어 두었다. 다시 필요해지면 그 주석부터 읽을 것.
 
 export const migrations: Migration[] = [
   {
@@ -2436,6 +2474,13 @@ export const migrations: Migration[] = [
     //  - 새 8종은 아직 시딩된 적이 없다. 배포 후 `POST /api/admin/seed-stock-clips` 가
     //    (보이스 4 × 언어 3 × 새 문구 8) 을 채운다.
     //  - R2 오브젝트는 #70 과 마찬가지로 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    //
+    // ⚠ **여기는 고치지 않는다 — 이미 dev 에 적용됐다**(2026-09-03 리뷰 7차).
+    //   #110 은 같은 지적을 받아 「지우지 말고 은퇴」로 바꿨지만, 이 마이그레이션은
+    //   `develop` 에 이미 올라가 dev DB 가 **옛 문장으로** 실행을 마쳤다. 본문을 고치면
+    //   러너가 id 로만 기록하므로 **새 DB 와 dev 의 스키마가 갈라진다.**
+    //   위 설계대로 이 회차는 **0행 no-op** 이라(문구가 바뀌지 않은 36종 + 아직 시딩된 적
+    //   없는 8종) 실제로 지워지는 알람이 없고, 뒤이어 #110 이 전부 은퇴시킨다.
     id: 109,
     name: 'refresh-stock-clips-2026-09-02-script',
     statements: [
@@ -2458,8 +2503,236 @@ export const migrations: Migration[] = [
         WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
     ],
   },
-];
+  {
+    // 대사 전면 교체 + 카테고리 이름 변경(2026-09-02 사용자 확정본).
+    //
+    // ⚠ **이번엔 수렴형(텍스트 비교)이 아니라 전면 교체다.** #70·#109 는 "확정 문구와
+    //   다른 것만" 고르는 방식이었는데, 이번에는 **대사를 전부 새로 썼으므로** 어차피
+    //   전부가 대상이다(시스템·클론 양쪽).
+    //
+    // ⚠⚠ **지우지 말고 은퇴시킨다 — `retired_at`**(2026-09-03 리뷰 7차·8차).
+    //   #70·#109 를 베껴 `DELETE FROM messages` + `UPDATE alarms SET message_id = NULL`
+    //   로 썼다가 되돌렸다. 그 방식은 **세 가지를 한꺼번에 부순다**:
+    //
+    //   1. **되살릴 수 없는 알람이 생긴다.** 버킷 없이 스톡 클립 하나만 물린 **옛 행**
+    //      (`bucketId` 를 행에 적기 전에 만들어진 알람 — `usesCustomMessageVoice` 가
+    //      일부러 갈라내는 그 형태)은 재바인더 두 갈래 **어디에도** 안 걸린다
+    //      (하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구한다).
+    //      그 알람은 서버에서 sound-only 로 깎인 채 영영 복구되지 않는다.
+    //   2. **R2 오브젝트가 미아가 된다.** `sweepAudioRetention`·`enqueueUserVoiceArtifacts`
+    //      는 R2 키를 **오직 `generated_audio_assets` 행으로만** 찾는다. 행을 지우면
+    //      사용자가 나중에 목소리를 지우거나 **생체정보 동의를 철회해도** 그 오디오를
+    //      찾아 지울 수 없다 — 파기 약속을 지킬 수 없게 된다.
+    //   3. **배포 직후 기본 목소리에 클립이 0개가 된다.** 아래 「시딩」 참조.
+    //
+    //   은퇴는 셋을 한 번에 없앤다. 목록을 만드는 두 곳(`findMissingStockTargets` 와
+    //   `GET /tts/stock-clips`)만 `retired_at IS NULL` 을 보므로 **새 클립이 새 id 로
+    //   생기고**, 옛 행은 `is_preset = 1` 그대로 남아 인가·TTL 면제가 유지된다 —
+    //   옛 클립을 물고 있는 알람은 계속 저장되고, 재설치해도 그 오디오를 받는다.
+    //   버킷 알람은 키가 매니페스트에서 사라지므로 재바인더가 새 세트로 갈아탄다 —
+    //   **그게 원래 설계다.**
+    //
+    // 시딩: cron 이 틱마다 빠진 **시스템** 스톡을 채운다(`index.ts` 의
+    // `scheduled.stock_seed`). 클론은 아래 큐 되돌리기로 기존 드레인이 맡는다.
+    // 손으로 `POST /api/admin/seed-stock-clips` 를 20번 부르지 않아도 된다.
+    id: 110,
+    name: 'replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096',
+    statements: [
+      // ── ⓪ 은퇴 표식 컬럼 ─────────────────────────────────────────────
+      // ⚠ **`is_preset` 을 내려서 은퇴시키지 말 것**(2026-09-03 리뷰 8차). 그 값은 단순한
+      //   '목록에 뜨는가' 가 아니라 **세 가지를 동시에 뜻한다**:
+      //     1. 쓰기 인가 — `messageBelongsToCaller` 의 시스템/공유 프리셋 갈래,
+      //     2. 읽기 인가 — `GET /tts/messages/:id/audio` 의 같은 갈래.
+      //        (그 라우트의 「알람이 참조하면 허용」 갈래는 `target_user_id` 만 보므로
+      //         **가족 알람만** 커버한다 — 본인 알람은 여기에 안 걸린다.)
+      //     3. TTL 면제 — `audio-retention.ts` 가 프리셋을 스윕에서 제외한다.
+      //   그래서 `is_preset = 0` 은 옛 클립을 물고 있는 알람의 **저장을 막고, 재다운로드를
+      //   막고, 30일 뒤 오디오까지 지운다** — 지키려던 호환성이 정확히 반대로 깨진다.
+      //
+      // 별도 표식이면 그 셋을 한 글자도 건드리지 않는다. 목록에서 빼는 곳만 이 값을 본다
+      // (`findMissingStockTargets` 와 `GET /tts/stock-clips`).
+      `ALTER TABLE messages ADD COLUMN retired_at TEXT`,
 
+      // ── ① 카테고리 이름: love → cheer ─────────────────────────────────
+      // 옛 이름은 코드에서 **읽을 때 접어** 계속 받는다(구버전 앱·기기 로컬 DB 는 우리가
+      // 고칠 수 없다). 여기서는 서버가 들고 있는 행만 새 이름으로 옮긴다.
+      `UPDATE messages SET category = 'cheer' WHERE category = 'love'`,
+      `UPDATE alarms SET bucket_id = 'cheer' WHERE bucket_id = 'love'`,
+
+      // ── ② 시스템 스톡 프리셋 전면 은퇴 ────────────────────────────────
+      `DELETE FROM message_library WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `UPDATE messages SET retired_at = datetime('now')
+        WHERE retired_at IS NULL AND id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+
+      // ── ③ 클론 사전렌더는 **건드리지 않는다**(2026-09-03 사용자 확정) ──────
+      //
+      // 여기서 유료 클론 클립까지 은퇴시키던 문장이 있었는데 뺐다. 이유는 비용이 아니라
+      // **누가 언제 다시 굽는가**다: 클론은 그 목소리를 등록한 사람의 것이고, 다시 굽는
+      // 자연스러운 시점은 **그 사람이 목소리를 다시 등록할 때**다. 마이그레이션이 남의
+      // 목소리를 대신 다시 굽기 시작하면 따라오는 것이 많았다 —
+      //   · 큐를 되살려야 하고(안 그러면 클립 0개로 남는다),
+      //   · 진행 중인 클레임을 무효화해야 하고(옛 스냅샷이 나머지만 게시하고 닫는다),
+      //   · 공유받은 기기에 바뀌었다고 알려야 하고(`refresh_existing`),
+      //   · 그 셋이 전부 배포 직후 cron 과 겹쳐 경합을 만든다.
+      // 리뷰 1·2·3차에서 지적된 넷이 전부 이 문장 하나에서 파생됐다.
+      //
+      // ⚠ **대가를 알고 택했다.** 옛 시드로 구운 클론 클립은 남는다. 특히 `love` 는
+      //   위 ①에서 `cheer` 로 이름만 바뀌므로, 유료 사용자의 「응원」 테마가 한동안
+      //   **연애 문구를 말한다**(사용자 확인함 — 재등록 때 갱신되면 된다).
+      //   여기 문장을 되살릴 거라면 위 네 가지를 **같이** 되살려야 한다.
+    ],
+  },
+  {
+    // 기본(시스템) 목소리 4종 전면 교체(2026-09-03 사용자 확정).
+    //
+    // ## 왜 바꾸나
+    //
+    // 4종 중 **둘이 영어권 premade 목소리로 한국어를 읽고 있었다.**
+    //  - `아담` = ElevenLabs `Adam` — 최초 시드 그대로. 가장 널리 쓰인 기본 목소리라
+    //    아는 사람에게는 'AI 목소리' 그 자체로 읽힌다.
+    //  - `소은` = ElevenLabs `Jessica` — **이름만** 한국어로 바꿨다(#44 가
+    //    `SET name = '소은'` 만 했고 voice id 는 그대로다).
+    // 그리고 `하준`(Mr. K)은 실제 재생에서 음이 깨지는 구간이 있었다.
+    //
+    // 2026-09-02 에 대사를 전면 교체하면서 기준이 올라간 것도 이유다. 예전 문구는
+    // 정보 전달("비가 온대요, 우산 챙겨요")이라 억양이 어긋나도 넘어갔는데, 지금은
+    // "빗소리 들으면서 조금만 더 누워 있고 싶어지죠..." 처럼 **곁에서 말 거는 말투**라
+    // 어색함이 그대로 드러난다.
+    //
+    // ## 무엇으로 바꾸나 — 네 칸이 서로 다른 사람이 되게
+    //
+    // | 이름 | 결 | 출처 |
+    // | --- | --- | --- |
+    // | 미나 | 차분·따뜻한 여성 | 그대로 둔다(한국어 원어, 검증된 품질) |
+    // | 애니 | 발랄한 애니 캐릭터 여성 | Kano |
+    // | 시우 | 밝은 소년미 남성 | Krys (한국어 원어, 라이브러리 최다 사용) |
+    // | 도현 | 따뜻하고 단단한 어른 남성 | Jon (한국어 verified) |
+    //
+    // ⚠ **이름은 목소리를 따라간다.** '아담' 은 Adam 이라서 붙은 이름이라 목소리가
+    //   바뀌면 유지할 이유가 없고, '소은' 은 차분한 이름이라 발랄한 캐릭터 목소리와
+    //   결이 어긋난다. 네 이름을 한국 이름으로 맞춰 한 벌로 보이게 한다.
+    //
+    // ⚠ 목소리가 바뀌면 그 목소리로 구운 클립은 **전부 남의 목소리**다. #110 이 이미
+    //   시스템 프리셋을 통째로 지우므로 여기서 또 지우지 않는다 — 순서상 #110 이
+    //   먼저 돌고, 재시드가 새 목소리로 굽는다.
+    //
+    // ⚠⚠ **배포 순서를 지켜야 한다 — 코드로는 못 막는다.**
+    //
+    // 프로필 **id 는 그대로 두고 목소리만** 바꾼다(101=시우, 103=도현, 104=애니).
+    // 그런데 앱은 그 id 에 **내장 인사말 mp3** 를 매핑해 두고 미리듣기에서 서버 클립보다
+    // **우선**한다(`VoiceProfileManagementPanel.playGreeting` → `bundledSystemGreetingRes`).
+    // 그래서 이 마이그레이션이 구버전 APK 가 깔린 상태에서 배포되면:
+    //   - 목록의 이름은 서버가 준 '시우'
+    //   - 미리듣기는 APK 에 박힌 **Adam** 목소리
+    //   - 실제 알람은 서버가 새로 구운 **Krys** 목소리
+    // 즉 **들어 보고 고른 목소리와 울리는 목소리가 다르다.**
+    //
+    // id 를 새로 파는 방법도 있지만 그러면 기존 알람의 `voice_profile_id` 가 전부
+    // 고아가 되어 더 나쁘다(그 알람들이 목소리를 잃는다).
+    //
+    // 그래서 **새 목소리를 담은 앱을 스토어에 먼저 올리고**, `app-version.ts` 의
+    // `minSupported` 를 그 versionCode 로 올린 뒤 이 마이그레이션을 prod 에 낸다.
+    // dev 는 테스트 기기의 APK 를 함께 갈아 끼우면 되므로 무관하다.
+    // (`CURRENT_POLICY_VERSION`·`minSupported` 가 같은 이유로 순서를 타는 것과 같다.)
+    id: 111,
+    name: 'replace-system-voices-2026-09-03',
+    statements: [
+      // 미나(102)는 그대로 둔다.
+      `UPDATE voice_profiles
+         SET name = '시우', elevenlabs_voice_id = '1W00IGEmNmwmsDeYy7ag'
+       WHERE id = '70000000-0000-4000-9000-000000000101'`,
+      `UPDATE voice_profiles
+         SET name = '도현', elevenlabs_voice_id = 'MFZUKuGQUsGJPQjTS4wC'
+       WHERE id = '70000000-0000-4000-9000-000000000103'`,
+      `UPDATE voice_profiles
+         SET name = '애니', elevenlabs_voice_id = 'OSwaPSNdfituxkWcjlkR'
+       WHERE id = '70000000-0000-4000-9000-000000000104'`,
+
+      // ⚠ **직접 입력 알람의 오디오도 무효가 된다**(2026-09-03 리뷰 21차).
+      //   프로필 id 를 그대로 두고 provider 만 바꾸므로, 이 목소리로 만들어 둔 **직접 입력
+      //   알람**의 로컬 오디오는 **옛 목소리 그대로**다 — 목록의 이름과 미리듣기는 새
+      //   목소리인데 울리는 소리만 옛것이다. 그 알람은 프리셋이 아니라 재바인더 두 갈래
+      //   어디에도 안 걸리고(테마도 없고 `voiceRandomPrompt` 도 꺼져 있다), 서버가 주는
+      //   `legacy_bucket_hints` 도 프리셋만 담으므로 **아무도 못 잡는다.**
+      //
+      //   이미 있는 장치를 쓴다: `custom_audio_invalidated_at` 을 찍으면 클라의 표식 경로가
+      //   그 목소리로 만든 직접 입력 알람을 **강등하고 사용자에게 알린다**
+      //   (`VoiceAccessSyncWorker` → `degradeCustomMessageAlarmsUsingVoiceProfile`).
+      //   ⚠ 그 강등은 원래 시스템 목소리를 건너뛰었다 — 접근권을 잃을 일이 없어서다.
+      //   제자리 교체는 그 가정이 깨지는 유일한 경우라, **표식 경로에서만** 문을 열었다
+      //   (`allowSystemVoice`). 회수 경로는 그대로다.
+      //   ⚠ **미나(102)는 찍지 않는다** — provider 가 안 바뀌어 그 오디오는 여전히 맞다.
+      `UPDATE voice_profiles SET custom_audio_invalidated_at = datetime('now')
+        WHERE id IN (
+          '70000000-0000-4000-9000-000000000101',
+          '70000000-0000-4000-9000-000000000103',
+          '70000000-0000-4000-9000-000000000104'
+        )`,
+
+      // ⚠ **provider 가 어긋난 살아 있는 시스템 클립을 회수한다**(2026-09-03 리뷰 9차).
+      //   #110(은퇴)과 이 마이그레이션은 **따로 실행**되고(러너가 id 별로 호출한다) 그
+      //   사이에도 5분 cron 은 계속 돈다. 그 틈에 시작한 합성은 **위 UPDATE 전의 목소리**
+      //   로 구워지고, 게시되고 나면 `findMissingStockTargets` 가 '있다' 로 세어 그
+      //   variant 만 영영 옛 목소리로 남는다.
+      //   게시 직전 검사는 `generateStockClip` 에 넣었지만(같은 회차), 그 검사가 없던
+      //   시절에 이미 구워졌거나 어떤 이유로든 어긋난 행이 있으면 여기서 되돌린다.
+      //   은퇴시키기만 하면 된다 — 다음 cron 틱이 새 목소리로 다시 굽는다.
+      `UPDATE messages
+          SET retired_at = datetime('now')
+        WHERE retired_at IS NULL
+          AND COALESCE(is_preset, 0) = 1
+          AND voice_profile_id IN (
+            SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM generated_audio_assets ga
+              JOIN voice_profiles vp ON vp.id = messages.voice_profile_id
+             WHERE ga.message_id = messages.id
+               AND ga.audio_url = messages.audio_url
+               AND ga.provider_voice_id <> vp.elevenlabs_voice_id
+          )`,
+    ],
+  },
+  {
+    // 사용 기록(이벤트) — 앱이 오프라인이면 쌓아 두었다가 연결될 때 모아 보낸다.
+    //
+    // ⚠ **식별자만 담는다.** 문구 원문 같은 개인 텍스트는 넣지 않는다 — 문구는 이미
+    //   `messages` 에 있고, 여기 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이
+    //   하나 더 늘어난다. 자유 문자열은 `detail` 하나뿐이고 앱·서버 양쪽에서 짧게 자른다.
+    //
+    // ⚠ **`id` 는 클라가 만든 UUID 를 그대로 PK 로 쓴다** — `INSERT OR IGNORE` 와 짝이 되어
+    //   재전송을 멱등으로 만든다. 서버가 새 id 를 발급하면 "받았는지 확신 못 한 배치" 를
+    //   다시 보낼 때마다 같은 사건이 여러 줄이 된다.
+    //
+    // `message_library` 의 두 컬럼은 **폰에 그 오디오가 남아 있는가**(사용중/비사용중)를
+    // 기록한다. 판정은 폰이 하고(참조 카운트), 서버는 그 결과를 받아 적을 뿐이다 —
+    // 서버가 추측하면 기기마다 다른 사실을 서로 덮어쓴다.
+    id: 112,
+    name: 'usage-events-and-message-in-use',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS usage_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        received_at TEXT DEFAULT (datetime('now')),
+        alarm_id TEXT,
+        voice_profile_id TEXT,
+        message_id TEXT,
+        detail TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_time
+         ON usage_events(user_id, occurred_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_type
+         ON usage_events(type, occurred_at)`,
+      // 기존 행은 '사용중' 으로 시작한다 — 지금까지는 알람이 쓰는 것만 남아 있었다.
+      `ALTER TABLE message_library ADD COLUMN in_use INTEGER DEFAULT 1`,
+      `ALTER TABLE message_library ADD COLUMN in_use_updated_at TEXT`,
+      `ALTER TABLE message_library ADD COLUMN last_used_at TEXT`,
+    ],
+  },
+];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
 // reality (e.g. partial historical migration runs before the ledger existed).

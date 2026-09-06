@@ -35,6 +35,7 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.UsageEvents
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -232,6 +233,12 @@ class RingingService : Service() {
         }
         openRingingActivity(alarmId)
         Log.i(TAG, "Ringing started id=$alarmId")
+        // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」). 로컬 큐에 적기만
+        // 하고, 전송은 `UsageEventUploadWorker` 가 나중에 한다.
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_RANG,
+            alarmId = alarmId,
+        )
     }
 
     private fun startRingingAudio(alarm: AlarmEntity?, voiceUriOverride: String? = null) {
@@ -617,6 +624,10 @@ class RingingService : Service() {
     }
 
     private fun dismiss(alarmId: String, startId: Int) {
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_DISMISSED,
+            alarmId = alarmId,
+        )
         serviceScope.launch {
             // ⚠ 예전에는 '알람 + 목소리' 모드에서 여기서 끝맺음 목소리를 한 번 재생했다.
             // 그 모드가 사라졌으므로(AlarmPlayModes 주석 참조) 해제는 그냥 멈추는 것이다 —
@@ -632,6 +643,10 @@ class RingingService : Service() {
     }
 
     private fun snooze(alarmId: String, startId: Int) {
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_SNOOZED,
+            alarmId = alarmId,
+        )
         stopRingingOutputs(alarmId)
         serviceScope.launch {
             runCatching {

@@ -32,6 +32,8 @@ struct AlarmTalkApp: App {
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = BackgroundDependencies.shared.voiceStudio
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
+    /// 기본 목소리 교체가 아직 안 끝났는가 — 차단 화면과 재시도 축(`stockClipLanguageKey`).
+    @StateObject private var stockReplacement = StockReplacementStatus.shared
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
@@ -279,25 +281,7 @@ struct AlarmTalkApp: App {
                         // 돌아 즉시 0건 반환**했다 — 언어를 바꿔도 아무 일도 일어나지 않았다.
                         // 게다가 매니페스트를 채우는 곳이 알람 편집기 진입 한 곳뿐이라,
                         // 거기서 실패하면 테마 목록이 통째로 비었다.
-                        await voiceStudio.loadStockClips(session: auth.session)
-                        let rebinder = StockClipLanguageRebinder(store: alarmStore)
-                        await rebinder.rebindIfLanguageChanged(
-                            session: auth.session,
-                            clips: voiceStudio.stockClips
-                        )
-                        // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
-                        // 멱등이라 매 실행 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
-                        // 하지 않고 다음 실행에 다시 시도한다. 아래 예약 재조정이 이어서
-                        // 도므로 바뀐 클립이 그 자리에서 예약에 반영된다.
-                        await rebinder.rebindLiveGenerationRows(
-                            session: auth.session,
-                            clips: voiceStudio.stockClips
-                        )
-                        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를
-                        // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
-                        // 옛 언어 파일을 그대로 재생한다 — 이 클래스가 고치려던 증상이
-                        // ("앱은 영어인데 알람만 한국어") 예약 쪽에 그대로 남아 있었다.
-                        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
+                        await rebindStockClipsIfNeeded()
                     }
                     .task(id: auth.session?.user.id) {
                         remoteSync.clearUserScopedRemoteState()
@@ -433,16 +417,27 @@ struct AlarmTalkApp: App {
                     await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                 }
+                // 밀린 사용 기록을 올려 본다 — 앱을 열 때가 유일하게 확실한 기회다
+                // (울림 경로에서는 네트워크를 부르지 않으므로).
+                Task { await UsageEventUploader.shared.flush(session: auth.session) }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
                 // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
                 Task {
                     guard auth.session != nil else { return }
-                    await voiceStudio.loadStockClips(session: auth.session)
                     stockClipPrefetcher.start(
                             session: auth.session,
                             ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
                         )
+                    // ⚠ **재바인딩도 여기서 한 번 더 돈다**(2026-09-03).
+                    //   예전에는 트리거가 콜드 스타트(`.task(id: stockClipLanguageKey)`)
+                    //   **하나뿐**이었다. 그런데 프리셋 교체는 서버가 틱마다 조금씩 굽는
+                    //   일이라, 그 세션 시작 시점에는 세트가 모자라 재바인딩이
+                    //   `replacementIsComplete` 에 걸려 **아무 일도 안 하고 끝난다.**
+                    //   앱을 며칠 켜 두는 사용자는 그 세션 내내 지워진 대사를 재생했다.
+                    //   안드로이드는 WorkManager 재큐잉·백오프로 여러 번 시도한다 —
+                    //   iOS 만 한 번이었다. 전부 멱등이라 여기서 또 돌아도 안전하다.
+                    await rebindStockClipsIfNeeded()
                 }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
@@ -483,6 +478,183 @@ struct AlarmTalkApp: App {
                 break
             }
         }
+    }
+
+    /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**
+    ///
+    /// ⚠ **부르는 곳이 둘이다 — 콜드 스타트와 전경 복귀.** 예전에는 콜드 스타트 하나뿐이라,
+    ///   교체 시딩이 도는 중에 앱을 켠 사용자는 세트가 모자라 재바인딩이 그냥 넘어가고
+    ///   **그 세션 내내 지워진 대사를 재생**했다(안드로이드는 WorkManager 가 여러 번
+    ///   시도한다). 전부 멱등이라 여러 번 돌아도 안전하다.
+    ///
+    /// ⚠ **두 곳에 베껴 두지 말 것** — 한쪽만 고치는 사고가 이 저장소의 단골이다.
+    ///
+    /// 순서에 뜻이 있다: 매니페스트 → 재바인딩 2종 → 날씨 조건 → **정리** → 예약 재조정.
+    @MainActor
+    private func rebindStockClipsIfNeeded() async {
+        // ⚠⚠ **시작 계정을 잡아 둔다**(2026-09-03 리뷰 23차). A→B 로 바뀌면 A 의
+        //   `.task` 는 취소되지만 `loadStockClips` 가 취소를 일반 `catch` 로 삼키고 false 를
+        //   돌려주므로 **이 함수는 계속 흐른다.** 그동안 `auth.session` 은 이미 B 라,
+        //   A 의 회차가 **B 를 `checkedUserId` 에 적어** B 의 판정이 오기도 전에 B 의
+        //   1회성 오버레이를 소진시킨다. 아래 보고 직전에 다시 대조한다.
+        guard let startAccount = auth.session?.user.id else { return }
+        StockReplacementStatus.shared.setWorking(true)
+        defer { StockReplacementStatus.shared.setWorking(false) }
+        // ⚠ **알람이 다 올라온 뒤에 시작한다**(2026-09-03 리뷰 10차). 저장소는 콜드 스타트에
+        //   빈 배열로 시작해 비동기로 채우는데, 이 경로는 세션 복원만 끝나면 곧바로 들어올
+        //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**
+        await alarmStore.waitUntilLoadedFromDisk()
+        guard alarmStore.hasLoadedFromDisk else { return }
+        // ⚠ **매니페스트를 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의 시딩은 cron 이
+        //   틱당 조금씩 채우므로, 다른 화면이 먼저 받아 둔 **부분 매니페스트**가 세션
+        //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성
+        //   검사에 걸려 **아무 일도 안 하고** 끝난다.
+        // 반환값은 '이번에 서버에서 새로 받았는가' 다 — 교체 미완료 판정의 근거다.
+        let manifestFetched = await voiceStudio.loadStockClips(session: auth.session, force: true)
+
+        // ⚠ **앞 회차가 못 앉힌 것이 있으면 먼저 앉힌다**(2026-09-03 리뷰 19차).
+        //   `upsert` 는 메모리를 이미 바꿔 놨으므로, 그대로 다시 돌리면 재바인더가 그 행들을
+        //   '이미 최신' 으로 보고 아무것도 안 한다 — **못 앉힌 상태 그대로** 정리가 돌고
+        //   문이 열린다. 여기서 다시 앉히지 못하면 이 회차도 미완료로 두고 물러난다.
+        if StockReplacementStatus.shared.hasUnsavedRebind {
+            guard alarmStore.saveNow() else {
+                reportReplacement(
+                    startAccount: startAccount, pending: true, manifestFetched: manifestFetched
+                )
+                return
+            }
+            StockReplacementStatus.shared.clearUnsavedRebind()
+        }
+
+        let rebinder = StockClipLanguageRebinder(store: alarmStore)
+        // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
+        let languageOutcome = await rebinder.rebindIfLanguageChanged(
+            session: auth.session,
+            clips: voiceStudio.stockClips,
+            // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
+            expectedVariants: voiceStudio.expectedVariants,
+            // 버킷 없이 클립 하나만 물린 옛 알람이 어떤 테마였는지(서버가 안다).
+            // 없으면 그 알람은 재바인더 두 갈래 어디에도 안 걸려 영영 옛 소리다.
+            legacyHints: voiceStudio.legacyBucketHints,
+            // 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 빈 자리에만 채운다 — 받은
+            // 알람은 그 값이 비어 있어서, 안 채우면 날씨는 서버 기본값(서울), 운세는
+            // 빈 프로필 해시로 떨어진다. 서버 설정이 먼저, 없으면 로컬 저장분이다
+            // (편집기 `savedPromptPreferences` 와 같은 순서).
+            conditionInputs: {
+                let server = DynamicPromptPreferences.from(
+                    settings: auth.session?.user.dynamicPromptSettings
+                )
+                return server == DynamicPromptPreferences()
+                    ? .load(userID: auth.session?.user.id)
+                    : server
+            }(),
+            callerUserId: auth.session?.user.id
+        )
+        // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
+        // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
+        let legacyOutcome = await rebinder.rebindLiveGenerationRows(
+            session: auth.session,
+            clips: voiceStudio.stockClips,
+            expectedVariants: voiceStudio.expectedVariants,
+            callerUserId: auth.session?.user.id
+        )
+        // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차). 방금 만든
+        //   행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그 값이 없으면 발사 때
+        //   **마지막 클립("인터넷이 안 돼 날씨를 못 알아봤어요")** 으로 폴백한다
+        //   (`BucketVariantResolver`). 지역도 저장돼 있고 인터넷도 되는데 그 안내가 나간다.
+        //   아래 예약 재조정보다 **먼저** 해야 그 자리에서 예약에 반영된다.
+        //   안드로이드 짝은 `StockClipLanguageRebinder` 의 `DynamicVoiceRefreshScheduler`.
+        //   ⚠ **언어 재바인딩(`rebound`)도 함께 본다**(2026-09-03). 조건형 버킷(날씨·운세)을
+        //   비켜 가던 우회를 걷어냈으므로, 이제 그 갈래도 조건 없는 행을 만들어 낸다.
+        // ⚠⚠ **디스크에 못 앉혔으면 여기서 멈춘다**(2026-09-03 리뷰 18차).
+        //   `upsert` 는 저장을 비동기로 걸어 둘 뿐이라, 쓰기가 실패해도 `store.alarms` 는
+        //   이미 바뀌어 있다. 그대로 진행하면 아래 정리가 **메모리 위의 행**을 보고 옛
+        //   오디오를 지우고, 상태 보고가 문을 연다 — 그 뒤 앱이 종료되면 다음 콜드 스타트가
+        //   **없는 파일을 가리키는 옛 행**을 읽는다(내 알람은 서버에서 되받는 경로가 없다).
+        //   그래서 정리도 보고도 하지 않고, 교체를 **미완료로 남긴다**(멱등).
+        guard languageOutcome.persisted, legacyOutcome.persisted else {
+            // 메모리는 이미 바뀌었다 — 그 사실을 남겨 **다음 회차가 정리 전에 먼저 앉히게** 한다.
+            StockReplacementStatus.shared.markUnsavedRebind()
+            reportReplacement(
+                startAccount: startAccount, pending: true, manifestFetched: manifestFetched
+            )
+            return
+        }
+        let rebound = languageOutcome.rebound
+        let converted = legacyOutcome.rebound
+        if converted > 0 || rebound > 0, let token = auth.session?.token {
+            let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
+            _ = await weather.refreshDue(token: token)
+        }
+        // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시). 위 두 재바인딩이 끝난
+        //   **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직 갈아탈 알람이 남아 있으면 함수가
+        //   스스로 0을 돌려주고 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다.
+        _ = await rebinder.pruneReplacedStockAudio(
+            clips: voiceStudio.stockClips,
+            expectedVariants: voiceStudio.expectedVariants,
+            // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
+            //   않은 알람을 두고 파일을 지운다 — 그 알람은 무음이 된다.
+            legacyHints: voiceStudio.legacyBucketHints,
+            callerUserId: auth.session?.user.id
+        )
+        // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
+        //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
+        //   없는 사용자를 이유 없이 가둔다.
+        // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를 갈아 끼우지만, 이미
+        //   예약된 알람은 예약 시점에 넘긴 옛 파일을 그대로 재생한다 — 이 클래스가 고치려던
+        //   증상("앱은 영어인데 알람만 한국어")이 예약 쪽에 그대로 남아 있었다.
+        // 이번 회차가 실제로 소리를 갈아 끼운 행. 재조정도 '남은 것' 판정도 여기로 좁힌다 —
+        // 전체를 보면 교체와 무관한 알람 하나의 재예약 실패가 사용자를 전체 화면 차단에
+        // 가둔다(리뷰 20차).
+        // ⚠ **앞 회차가 남긴 것과 합친다**(리뷰 21차). 첫 예약이 실패한 뒤 재시도하면 행은
+        //   이미 최신이라 재바인더가 `.none` 을 돌려주고 이 집합이 비어 버린다 — 그러면
+        //   재조정도 판정도 그 알람을 건너뛰고, AlarmKit 이 옛 소리를 쥔 채 문이 열린다.
+        StockReplacementStatus.shared.noteReplaced(
+            ids: languageOutcome.changedIds.union(legacyOutcome.changedIds)
+        )
+        let replacedIds = StockReplacementStatus.shared.pendingRearmIds
+        await AlarmScheduleReconciler.reconcile(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            // 지문이 없는 옛 예약(지문 도입 이전 앱이 건 것)도 이번에 바뀐 행이면 다시 건다.
+            forceRearmIds: replacedIds
+        )
+        // ⚠⚠ **보고는 예약 재조정 뒤에**(2026-09-03 리뷰 19차). AlarmKit 은 예약할 때 넘긴
+        //   사운드를 그대로 울리므로, `schedule` 이 실패하면 행을 갈아 끼웠어도 다음 알람은
+        //   **은퇴한 목소리**로 운다. 재조정 전에 문을 열면 그 알람을 두고 앱이 열린다.
+        //   재조정이 실패를 조용히 넘기므로(무예약보다 낫다) 남은 것을 다시 읽어 확인한다.
+        let staleSchedules = AlarmScheduleReconciler.hasStaleSchedules(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            limitedTo: replacedIds
+        )
+        // 예약이 최신임을 확인했으면 더 들고 있지 않는다.
+        if !staleSchedules { StockReplacementStatus.shared.clearRearmIds() }
+        // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
+        //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
+        reportReplacement(
+            startAccount: startAccount,
+            pending: staleSchedules || rebinder.hasPendingReplacement(
+                clips: voiceStudio.stockClips,
+                // 받아 온 뒤라면 비어 있어도 그건 '성공적으로 빈 카탈로그'(은퇴 직후
+                // 게시 전)라 미완료다.
+                manifestFetched: manifestFetched,
+                legacyHints: voiceStudio.legacyBucketHints,
+                callerUserId: auth.session?.user.id
+            ),
+            manifestFetched: manifestFetched
+        )
+    }
+
+    /// 교체 판정을 적는다 — **시작한 계정이 아직 그 계정일 때만.**
+    ///
+    /// ⚠ 취소된 회차가 다음 계정에 적으면, 그 계정의 판정이 오기도 전에 1회성 오버레이가
+    ///   소진된다(2026-09-03 리뷰 23차).
+    @MainActor
+    private func reportReplacement(startAccount: String, pending: Bool, manifestFetched: Bool) {
+        guard !Task.isCancelled else { return }
+        guard auth.session?.user.id == startAccount else { return }
+        StockReplacementStatus.shared.report(
+            userId: startAccount, pending: pending, manifestFetched: manifestFetched
+        )
     }
 
     /// 곧 울릴 날씨 알람의 조건을 받아 두고, 어긋난 예약을 맞춘다.
@@ -563,7 +735,13 @@ struct AlarmTalkApp: App {
 
     /// 선다운로드·재바인딩을 다시 돌려야 하는 시점. 계정과 **기기 언어**가 축이다.
     private var stockClipLanguageKey: String {
-        "\(auth.session?.user.id ?? "anonymous")|\(VoiceStudioViewModel.appVoiceLanguage())"
+        // 재시도 토큰이 축에 있어야 차단 화면의 '다시 시도' 가 이 절차를 다시 돌린다
+        // (`StockReplacementStatus.retry`). 계정·언어와 같은 자격이다.
+        [
+            auth.session?.user.id ?? "anonymous",
+            VoiceStudioViewModel.appVoiceLanguage(),
+            String(stockReplacement.retryToken),
+        ].joined(separator: "|")
     }
 
     private var freePlanVoiceLockKey: String {

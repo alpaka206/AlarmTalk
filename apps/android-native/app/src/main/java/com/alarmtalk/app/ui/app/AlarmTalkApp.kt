@@ -140,6 +140,24 @@ internal fun AlarmTalkApp(
     }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
+    // **기본 목소리 교체가 아직 안 끝났는가.**
+    // ⚠ **지금 계정의 미완료일 때만 막는다**(2026-09-03 리뷰 18차). 상태는 프로세스
+    //   전역인데 작업은 유니크·KEEP 이라, 계정 A 의 실행 결과가 남아 B 를 가둘 수 있다.
+    // ⚠ **선언이 `blockingGateActive` 보다 위에 있어야 한다**(리뷰 20차) — 그 술어가 이
+    //   값을 쓰므로, 아래에 두면 하단바와 1회성 오버레이가 차단 화면 위로 새어 나온다.
+    val stockReplacementPendingUserId by com.alarmtalk.app.sync.StockReplacementStatus
+        .pendingUserId.collectAsStateWithLifecycle()
+    val stockReplacementPending = stockReplacementPendingUserId != null &&
+        stockReplacementPendingUserId == authSession?.user?.id
+    val stockReplacementWorking by com.alarmtalk.app.sync.StockReplacementStatus.working
+        .collectAsStateWithLifecycle()
+    // ⚠ **준비 신호.** 응답 전 기본값(미완료 아님)은 '아니오' 가 아니라 '아직 모른다' 다 —
+    //   그 틈에 1회성 오버레이가 뜨면 소진 플래그를 태우고 뒤늦게 온 차단 화면이 덮는다.
+    val stockReplacementCheckedUserId by com.alarmtalk.app.sync.StockReplacementStatus
+        .checkedUserId.collectAsStateWithLifecycle()
+    val stockReplacementChecked = stockReplacementCheckedUserId != null &&
+        stockReplacementCheckedUserId == authSession?.user?.id
+
     val sessionRouteKey = authSession?.user?.id
     val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
@@ -151,9 +169,6 @@ internal fun AlarmTalkApp(
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
     val initialPermissionPromptStore = remember(context) { InitialPermissionPromptStore(context) }
-    var bulkPermissionFlowActive by remember { mutableStateOf(false) }
-    var bulkRuntimeRequested by remember { mutableStateOf(false) }
-    var bulkOpenedSettingsTargets by remember { mutableStateOf<Set<PermissionTarget>>(emptySet()) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
@@ -162,48 +177,17 @@ internal fun AlarmTalkApp(
         // 이 경우 launch() 는 다이얼로그 없이 즉시 거부로 돌아온다 → 모달의 '허용하기' 만으론
         // 권한을 켤 수 없으므로 앱 설정으로 유도한다. shouldShowRequestPermissionRationale 가
         // false + 미허용이면(다이얼로그를 거친 콜백 시점 기준) 영구 거부로 판정한다.
-        // 일괄 권한 플로우는 자체 설정 라우팅(아래 LaunchedEffect)이 있으므로 단일 요청일 때만.
-        if (!bulkPermissionFlowActive) {
-            val activity = context.findHostActivity()
-            val permanentlyDeniedPerm = if (activity == null) {
-                null
-            } else {
-                results.entries.firstOrNull { (perm, granted) ->
-                    !granted && !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
-                }?.key
-            }
-            when (permanentlyDeniedPerm) {
-                Manifest.permission.POST_NOTIFICATIONS -> context.openNotificationSettings()
-                Manifest.permission.RECORD_AUDIO -> context.openAppDetailsSettings()
-            }
+        val activity = context.findHostActivity()
+        val permanentlyDeniedPerm = if (activity == null) {
+            null
+        } else {
+            results.entries.firstOrNull { (perm, granted) ->
+                !granted && !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+            }?.key
         }
-    }
-
-    fun missingRuntimePermissions(snapshot: PermissionSnapshot): List<String> = buildList {
-        if (context.shouldRequestNotificationRuntimePermission()) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (!snapshot.recordAudio) {
-            add(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    fun nextSettingsPermissionTarget(
-        snapshot: PermissionSnapshot,
-        openedTargets: Set<PermissionTarget>,
-    ): PermissionTarget? = listOfNotNull(
-        PermissionTarget.Notifications.takeIf { !snapshot.notifications },
-        PermissionTarget.ExactAlarms.takeIf { !snapshot.exactAlarms },
-        PermissionTarget.FullScreenIntent.takeIf { !snapshot.fullScreenIntent },
-        PermissionTarget.RecordAudio.takeIf { !snapshot.recordAudio },
-    ).firstOrNull { it !in openedTargets }
-
-    fun openPermissionSettings(target: PermissionTarget) {
-        when (target) {
-            PermissionTarget.Notifications -> context.openNotificationSettings()
-            PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
-            PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
-            PermissionTarget.RecordAudio -> context.openAppDetailsSettings()
+        when (permanentlyDeniedPerm) {
+            Manifest.permission.POST_NOTIFICATIONS -> context.openNotificationSettings()
+            Manifest.permission.RECORD_AUDIO -> context.openAppDetailsSettings()
         }
     }
 
@@ -222,13 +206,6 @@ internal fun AlarmTalkApp(
                 runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
             }
         }
-        permissionState.refresh()
-    }
-
-    fun requestAllMissingPermissions() {
-        bulkPermissionFlowActive = true
-        bulkRuntimeRequested = false
-        bulkOpenedSettingsTargets = emptySet()
         permissionState.refresh()
     }
 
@@ -277,32 +254,6 @@ internal fun AlarmTalkApp(
         // 그 외에는 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
         // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         viewModel.requestPermissionGate(target)
-    }
-
-    LaunchedEffect(permissionState.refreshTick, bulkPermissionFlowActive) {
-        if (!bulkPermissionFlowActive) return@LaunchedEffect
-
-        val current = PermissionSnapshot.read(context)
-        if (!bulkRuntimeRequested) {
-            val runtimePermissions = missingRuntimePermissions(current)
-            if (runtimePermissions.isNotEmpty()) {
-                bulkRuntimeRequested = true
-                runtimePermissionLauncher.launch(runtimePermissions.toTypedArray())
-                return@LaunchedEffect
-            }
-            bulkRuntimeRequested = true
-        }
-
-        val settingsTarget = nextSettingsPermissionTarget(current, bulkOpenedSettingsTargets)
-        if (settingsTarget != null) {
-            bulkOpenedSettingsTargets = bulkOpenedSettingsTargets + settingsTarget
-            openPermissionSettings(settingsTarget)
-            return@LaunchedEffect
-        }
-
-        bulkPermissionFlowActive = false
-        bulkRuntimeRequested = false
-        bulkOpenedSettingsTargets = emptySet()
     }
 
     // '알람 추가' 흐름에서 권한 게이트로 넘어온 요청. 권한을 모두 허용하면 이어서 알람 편집
@@ -417,9 +368,15 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+        stockReplacementChecked,
+        stockReplacementPending,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
+        // 교체 판정이 오기 전에는 띄우지 않는다 — 뒤늦게 차단 화면이 덮으면 본 적도 없이
+        // 소진된다(리뷰 21차).
+        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
         // pendingDeletion 만 보면 안 된다 — 조회 응답 전에는 기본값 false 라 '유예 아님' 과
         // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
@@ -461,6 +418,9 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+        stockReplacementChecked,
+        stockReplacementPending,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
@@ -470,6 +430,10 @@ internal fun AlarmTalkApp(
         // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
         // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        // ⚠ **프로모는 1회성이다.** 교체 판정이 오기 전에 띄우면 소진 플래그를 태우고, 뒤늦게
+        //   온 차단 화면이 그 위를 덮어 사용자는 본 적도 없이 잃는다(2026-09-03 리뷰 22차 —
+        //   21차에 권한 효과에만 넣고 여기를 빠뜨렸다).
+        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         viewModel.maybeShowWelcomePromo()
@@ -864,8 +828,12 @@ internal fun AlarmTalkApp(
     // 화면을 통째로 차지하는 차단 게이트. 이 게이트들은 Scaffold **본문만** 대체하므로,
     // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
     // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
+    // ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
+    //   권한 모달·웰컴 프로모·민감 동의 시트가 그대로 겹쳐 뜬다 — 특히 프로모는 **1회성이라
+    //   소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
     val blockingGateActive =
-        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion
+        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion ||
+            stockReplacementPending
 
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
@@ -994,8 +962,11 @@ internal fun AlarmTalkApp(
     val isRootTab = currentTab == NativeTab.Alarms ||
         currentTab == NativeTab.Voices ||
         currentTab == NativeTab.Menu
+    // 교체 게이트가 떠 있으면 하단바·＋FAB 도 그리지 않는다 — 남겨 두면 차단 화면 위에서
+    // 탭을 옮기고 알람을 만들 수 있어 '막았다' 가 거짓말이 된다.
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
-        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && isRootTab
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion &&
+        !stockReplacementPending && !viewModel.showVoiceSetup && isRootTab
 
     Scaffold(
         bottomBar = {
@@ -1045,6 +1016,10 @@ internal fun AlarmTalkApp(
             }
         },
     ) { padding ->
+      // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새 이름인데
+      // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
+      // ⚠ **업데이트 게이트보다 뒤에 둔다** — 구버전이면 받을 것 자체가 다르므로 업데이트가
+      //   먼저다. 그리고 판정 기본값은 '막지 않음' 이다(`StockReplacementStatus` 주석).
       // 최소지원버전 미달과, 서버가 모르는 필수 동의를 요구하는 경우. 둘 다 사용자가 할 수
       // 있는 일이 업데이트뿐이라 같은 화면으로 보낸다.
       if (viewModel.updateRequired || viewModel.consentUnsupported) {
@@ -1152,6 +1127,24 @@ internal fun AlarmTalkApp(
               optional = viewModel.consentOptional,
               prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
+          )
+          return@Scaffold
+      }
+      // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새 이름인데
+      // 소리는 옛 목소리로 울 수 있어 막는다(2026-09-03 지시). 삭제 실패는 막지 않는다.
+      //
+      // ⚠⚠ **계정 선행 게이트보다 뒤에 둔다**(2026-09-03 리뷰 17차). 앞에 두면 재동의·
+      //   탈퇴 유예 화면을 **가려 버린다.** 그 상태에서는 재시도를 눌러도 서버가
+      //   `/tts/stock-clips` 를 `CONSENT_REQUIRED`·`ACCOUNT_PENDING_DELETION` 으로 막으므로
+      //   **영영 못 빠져나온다** — 앱을 껐다 켜는 것 말고는 길이 없다.
+      //   순서: 업데이트 → 로그인 → 탈퇴 유예 → 동의 → **여기**.
+      // 판정 기본값은 '막지 않음' 이다(`sync/StockReplacementStatus` 주석).
+      if (stockReplacementPending) {
+          GateBackGuard()
+          StockReplacementScreen(
+              contentPadding = padding,
+              working = stockReplacementWorking,
+              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
           )
           return@Scaffold
       }

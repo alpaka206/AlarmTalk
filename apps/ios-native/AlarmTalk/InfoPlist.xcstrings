@@ -1,15 +1,33 @@
 {
   "sourceLanguage" : "ko",
   "strings" : {
-    "NSAlarmKitUsageDescription" : {
-      "extractionState" : "manual",
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "ko" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "잠금 화면에서도 정확한 시간에 알람을 울리기 위해 알람 권한이 필요해요."
+            "state" : "new",
+            "value" : "AlarmTalk"
           }
-        },
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "AlarmTalk"
+          }
+        }
+      }
+    },
+    "NSAlarmKitUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21,18 +39,18 @@
             "state" : "translated",
             "value" : "ロック画面でも正確な時間にアラームを鳴らすため、アラームの権限が必要です。"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠금 화면에서도 정확한 시간에 알람을 울리기 위해 알람 권한이 필요해요."
+          }
         }
       }
     },
     "NSLocationWhenInUseUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "날씨가 들어간 깨움말의 지역을 채울 때만 현재 위치를 사용해요."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -44,18 +62,18 @@
             "state" : "translated",
             "value" : "天気を含む起こし文の地域を補完するときのみ、現在地を使用します。"
           }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날씨가 들어간 깨움말의 지역을 채울 때만 현재 위치를 사용해요."
+          }
         }
       }
     },
     "NSMicrophoneUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "목소리 알람에 사용할 음성을 녹음하기 위해 마이크 권한이 필요해요."
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -66,6 +84,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ボイスアラームに使う音声を録音するため、マイクの権限が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리 알람에 사용할 음성을 녹음하기 위해 마이크 권한이 필요해요."
           }
         }
       }

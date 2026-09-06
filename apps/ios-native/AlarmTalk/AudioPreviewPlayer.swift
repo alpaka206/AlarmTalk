@@ -29,6 +29,20 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         try play(url: url, startMs: 0, stopAfterMs: nil)
     }
 
+    /// 재생 중인 소리의 **크기만** 바꾼다(다시 틀지 않는다). 슬라이더를 끄는 동안
+    /// 소리가 그 자리에서 커지고 작아진다.
+    func setVolume(percent: Int) {
+        player?.volume = Float(min(100, max(0, percent))) / 100
+    }
+
+    /// 목소리 크기 화면의 '이 크기로 들어보기' — 저장될 게인 그대로 들려준다.
+    /// (iOS 에는 안드로이드의 알람 스트림 같은 구분이 없어 카테고리는 그대로 두고
+    ///  플레이어 게인만 맞춘다. 값 매핑은 안드로이드 `VoiceVolumeRamp` 와 같은 선형이다.)
+    func play(url: URL, volumePercent: Int) throws {
+        try play(url: url, startMs: 0, stopAfterMs: nil)
+        player?.volume = Float(min(100, max(0, volumePercent))) / 100
+    }
+
     /// 크롭 윈도우 미리듣기. `startMs` 로 시작 위치를 맞추고, `stopAfterMs` 가 주어지면
     /// 그 길이만큼 재생 후 자동 정지한다(알람 구간만 들려주기 위함).
     /// Android `startPreparedPreview(startMillis, stopAfterMillis)` 미러.

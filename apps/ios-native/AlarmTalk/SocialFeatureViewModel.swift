@@ -91,10 +91,6 @@ final class SocialFeatureViewModel: ObservableObject {
         self.accessSnapshotStore = accessSnapshotStore
     }
 
-    var selectableMembers: [FamilyGroupMember] {
-        familyGroup?.members ?? []
-    }
-
     func restoreAccessSnapshot(session: AuthSession?) {
         guard let userID = normalizedUserID(session?.user.id) else {
             clearUserScopedRemoteState()

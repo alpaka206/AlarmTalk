@@ -43,6 +43,7 @@ async function setupDb() {
       language TEXT,
       variant INTEGER DEFAULT 0,
       is_preset INTEGER DEFAULT 0,
+      retired_at TEXT,
       audio_url TEXT
     );
     CREATE TABLE voice_prerender_queue (
@@ -154,7 +155,7 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
 
     expect(targets).toHaveLength(CLONE_TOTAL_SEEDS);
     expect(new Set(targets.map((t) => t.category))).toEqual(
-      new Set(['greeting', 'weather', 'fortune', 'love', 'medication']),
+      new Set(['greeting', 'weather', 'fortune', 'cheer', 'medication']),
     );
     // languageOverride='ko' → 앱 언어 1개만(비용 곱연산 회피).
     expect(new Set(targets.map((t) => t.language))).toEqual(new Set(['ko']));
@@ -166,8 +167,16 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(targets.every((t) => t.ownerUserId === 'owner-1')).toBe(true);
     expect(targets.every((t) => t.voiceProfileId === 'clone-ready')).toBe(true);
     expect(targets.every((t) => t.claimToken === 'claim-current')).toBe(true);
-    // baseText 는 최종 문구가 아니라 생성 seed(지시문).
-    expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
+    // baseText 는 최종 문구가 아니라 **생성 seed(지시문)** 이다 — 그 성질만 고정한다.
+    // ⚠ 낱말이나 어미에 묶지 말 것. 예전에는 `'알리'` 를 찾았는데, 시드를 다듬으며
+    //   '알린 뒤' 가 되자 실패했다 — '알린' 은 '알리'+'ㄴ' 이 아니라 별개 음절이라
+    //   부분문자열이 아니다. 고정할 것은 "완성 문구가 아니라 **지시문**" 이라는 계약이다.
+    const weatherSeed = targets.find((t) => t.category === 'weather')?.baseText ?? '';
+    expect(weatherSeed.length).toBeGreaterThan(20);
+    // 지시문은 '~한다/~준다/~권한다' 로 끝난다(완성 대사는 그렇게 끝나지 않는다).
+    expect(weatherSeed).toMatch(/(한다|준다|챙긴다)\.?$/);
+    // 완성 대사와 달리 delivery 태그가 없다 — 태그는 생성 결과에 붙는다.
+    expect(weatherSeed).not.toMatch(/\[[a-z]/i);
   });
 
   // ⚠ **먼저 쓸 것부터 만든다**(2026-08-20). 사전렌더는 5분 주기 배치라 풀셋이 채워지기까지

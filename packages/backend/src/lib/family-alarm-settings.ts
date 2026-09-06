@@ -1,5 +1,4 @@
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DEFAULT_QUIET_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_QUIET_START = '09:00';
 const DEFAULT_QUIET_END = '18:30';
 // 방해금지 요일은 평일/주말/매일 프리셋만 허용하고, 창은 최대 2개(평일 근무 + 주말 정도)로 제한한다.
@@ -43,22 +42,6 @@ export interface FamilyAlarmSettings {
   quietStart: string;
   quietEnd: string;
   quietWindows: FamilyAlarmQuietWindow[];
-}
-
-export function normalizeQuietDays(raw: unknown): number[] {
-  if (Array.isArray(raw)) {
-    return Array.from(
-      new Set(raw.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)),
-    ).sort((a, b) => a - b);
-  }
-  if (typeof raw === 'string' && raw.trim()) {
-    try {
-      return normalizeQuietDays(JSON.parse(raw));
-    } catch {
-      return DEFAULT_QUIET_DAYS;
-    }
-  }
-  return DEFAULT_QUIET_DAYS;
 }
 
 export function validateQuietDays(raw: unknown): number[] | null {

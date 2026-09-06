@@ -43,7 +43,7 @@ export function ScrollDrift({
   }
 
   return (
-    <motion.div ref={ref} className={className} style={{ y, opacity }}>
+    <motion.div ref={ref} data-reveal className={className} style={{ y, opacity }}>
       {children}
     </motion.div>
   );

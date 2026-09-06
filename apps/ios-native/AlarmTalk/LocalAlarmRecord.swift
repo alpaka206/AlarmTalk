@@ -246,7 +246,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 안드로이드는 `DateUtils.formatDateTime(SHOW_DATE|ABBREV_MONTH|SHOW_WEEKDAY|
     /// ABBREV_WEEKDAY|NO_YEAR)` 로 만든다. 라벨(알람 이름) 대신 이걸 두는 게 의도다 —
     /// 기본 시계 앱의 라벨보다 '언제 울리나' 가 실용적이라서.
-    func nextFireDateLabel(now: Date = Date()) -> String {
+    func nextFireDateLabel() -> String {
         // ⚠ **로케일을 고정하지 말 것.** 사용자에게 보여 주는 날짜라 기기 언어를 따라야 한다
         // (안드로이드는 어디에서도 로케일을 고정하지 않는다). 기계 파싱용 포맷터만
         // `en_US_POSIX` 를 쓴다.
@@ -254,12 +254,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMEd")
         return formatter.string(from: nextFireDate)
-    }
-
-    /// 호환 헬퍼: 기존 `repeatWeekdays` (1..7 Calendar weekday) 형식.
-    /// Android mask 의 bit 0=Sun..bit 6=Sat 을 Calendar 1=Sun..7=Sat 으로 변환.
-    var repeatWeekdays: [Int] {
-        repeatDaysMask.repeatDays.map(\.localeWeekdayInt)
     }
 
     /// AlarmKit UUID 호환 헬퍼.

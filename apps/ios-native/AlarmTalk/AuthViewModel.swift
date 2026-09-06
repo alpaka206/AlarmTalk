@@ -95,12 +95,6 @@ final class AuthViewModel: ObservableObject {
         await current.value
     }
 
-    /// 로그인 직전에 부른다 — 진행 중인 로그아웃 뒷정리가 끝나기를 기다린다.
-    func awaitPendingServerSignOut() async {
-        await authServerMutation?.value
-    }
-
-
     // MARK: - 로그인 (서버 뒷정리와 한 줄로)
 
     /// ⚠ **줄에 서기 **전에** busy 를 세운다**(Codex #699 P2). 앞선 뒷정리가 느리면 줄에서

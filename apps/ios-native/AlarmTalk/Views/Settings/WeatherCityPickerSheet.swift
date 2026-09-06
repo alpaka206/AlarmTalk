@@ -49,7 +49,7 @@ struct WeatherCityPickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
-            BottomSheetTitle(text: "원하는 지역")
+            BottomSheetTitle(text: "날씨 지역")
 
             // ⚠ **`ScrollViewReader` 를 걷어내지 말 것.** 도시 목록(9개)만으로 이미 시트
             // 상한(화면 절반)을 넘겨서 스크롤 상태다. '직접 입력' 은 **맨 아래 행**이라,

@@ -147,8 +147,25 @@ internal fun RandomPromptSettingsPane(
     // null = 되돌릴 것이 없다. 상세 카드 '변경하기' 로 연 경우가 그렇다(선택은 이미
     // 완성돼 있고 값만 고치는 중이므로, 취소해도 종류는 그대로여야 한다).
     var contextBeforeDialog by remember { mutableStateOf<String?>(null) }
+    /**
+     * 지금 고른 종류를 정규화한다.
+     *
+     * ⚠ **콜백 안에서는 이 함수를 부르고, 바깥에서 계산해 둔 값을 캡처하지 말 것**
+     * (2026-09-06 실기기 재현). 콤포지션 지역 `val` 을 `::saveResolvedSettings` 같은 참조가
+     * 캡처하면 **그 콤포지션의 값이 그대로 굳는다** — 함수 참조는 캡처가 달라도 서로
+     * `equals` 라, Compose 가 `BackHandler`/`WakerTopBar` 를 "인자가 그대로" 로 보고
+     * 건너뛰어 **첫 콤포지션의 람다가 계속 남기** 때문이다. 그래서 '약' 을 골라도 뒤로가기가
+     * 옛 종류(날씨)를 돌려주었고, 고른 것이 **조용히 사라졌다**. `draft*` 들은 상태 델리게이트라
+     * 늘 최신인데 이 값만 굳어 있었던 것이라 증상이 종류 하나에만 나타났다.
+     */
+    fun resolvedContext(): String =
+        if (draftContext == ManualMessageContext) {
+            ManualMessageContext
+        } else {
+            normalizedRandomPromptContext(draftContext)
+        }
     val isManual = draftContext == ManualMessageContext
-    val normalizedContext = if (isManual) ManualMessageContext else normalizedRandomPromptContext(draftContext)
+    val normalizedContext = resolvedContext()
     fun hasWeatherInfo(): Boolean =
         draftWeatherCity.isNotBlank() || savedWeatherConfigured
     fun hasFortuneInfo(): Boolean =
@@ -161,7 +178,8 @@ internal fun RandomPromptSettingsPane(
     fun saveResolvedSettings() {
         onSaveSettings(
             RandomPromptSettingsResult(
-                randomContext = normalizedContext,
+                // ⚠ 위 [resolvedContext] 주석 — 여기서 **다시 계산한다.**
+                randomContext = resolvedContext(),
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
                 fortuneGender = draftFortuneGender.trim(),
@@ -539,7 +557,7 @@ internal fun WeatherLocationDialog(
     val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
     val context = androidx.compose.ui.platform.LocalContext.current
     // 직접 입력 필드는 항상 빈칸으로 시작 — 이전 도시명을 프리필하지 않는다(기본값 없음 규칙).
-    // 현재 저장된 지역은 뒤 화면의 '원하는 지역' 행에 이미 보인다.
+    // 현재 저장된 지역은 뒤 화면의 '날씨 지역' 행에 이미 보인다.
     var draftCity by remember(city) { mutableStateOf("") }
     var customMode by remember(city) {
         mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city !in presetCities))

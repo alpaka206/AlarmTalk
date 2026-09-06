@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,12 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -64,9 +65,22 @@ internal fun AmPmWheelColumn(
     val isPm = amPmIndex == 1
     val scope = rememberCoroutineScope()
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    // ⚠ **시·분 휠과 같은 톡**(`DraggableTimeWheelColumn` 의 `stepWithTick` 주석).
+    // 오전/오후는 한 칸뿐이라 더 잘 느껴진다 — 여기만 무감각하면 같은 컨트롤인데
+    // 위아래로 손을 옮길 때 감각이 끊긴다.
+    val view = LocalView.current
+    fun stepWithTick(step: Int) {
+        view.performWheelTick()
+        onStep(step)
+    }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     var previousAmPmIndex by remember { mutableIntStateOf(amPmIndex) }
     var suppressNextAutoAnimation by remember { mutableStateOf(false) }
+    // 정착(굴러가서 멎기) 잡. **손을 다시 대거나 탭하면 취소한다** — 숫자 칼럼
+    // (`DraggableTimeWheelColumn`)과 같은 패턴이다. 없으면 정착 두 개가 `dragOffsetPx` 를
+    // 놓고 싸워 떨리고, 부모 `onStep` 이 홀짝 토글이라 **두 번 넘겨 제자리**로 돌아온다
+    // (탭을 빠르게 두 번 눌러도 같았다). 스펙 §1-1 「굴러가는 중에 손을 대면 그 자리에서 잡힌다」.
+    var settleJob by remember { mutableStateOf<Job?>(null) }
     val minOffset = if (isPm) -itemHeightPx * 0.22f else -itemHeightPx * 0.72f
     val maxOffset = if (isPm) itemHeightPx * 0.72f else itemHeightPx * 0.22f
     val amLabel = stringResource(R.string.r3ed_ampm_wheel_am)
@@ -106,6 +120,7 @@ internal fun AmPmWheelColumn(
             .draggable(
                 state = draggableState,
                 orientation = Orientation.Vertical,
+                onDragStarted = { settleJob?.cancel() },
                 onDragStopped = { velocity ->
                     val minFlingVelocity = itemHeightPx * 3.5f
                     val requestedStep = when {
@@ -114,14 +129,15 @@ internal fun AmPmWheelColumn(
                         else -> 0
                     }
                     val startOffset = dragOffsetPx
-                    scope.launch {
+                    settleJob?.cancel()
+                    settleJob = scope.launch {
                         animateWheelSettle(
                             startOffsetPx = startOffset,
                             steps = requestedStep,
                             itemHeightPx = itemHeightPx,
                             onStep = { step ->
                                 suppressNextAutoAnimation = true
-                                onStep(step)
+                                stepWithTick(step)
                             },
                             onOffsetChange = { dragOffsetPx = it },
                         )
@@ -138,7 +154,7 @@ internal fun AmPmWheelColumn(
                 val selected = step == 0
                 Surface(
                     color = Color.Transparent,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = WakerTileShape,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(itemHeight)
@@ -147,14 +163,16 @@ internal fun AmPmWheelColumn(
                             indication = null,
                         ) {
                             if (step != null && step != 0) {
-                                scope.launch {
+                                settleJob?.cancel()
+                                settleJob = scope.launch {
                                     animateWheelSettle(
-                                        startOffsetPx = 0f,
+                                        // 굴러가던 중이면 그 자리에서 이어 간다 — 0 으로 되감지 않는다.
+                                        startOffsetPx = dragOffsetPx,
                                         steps = step,
                                         itemHeightPx = itemHeightPx,
                                         onStep = { selectedStep ->
                                             suppressNextAutoAnimation = true
-                                            onStep(selectedStep)
+                                            stepWithTick(selectedStep)
                                         },
                                         onOffsetChange = { dragOffsetPx = it },
                                     )

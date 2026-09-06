@@ -10,6 +10,8 @@ object AlarmAppContainer {
     private var repository: AlarmRepository? = null
     @Volatile
     private var authSessionStore: AuthSessionStore? = null
+    @Volatile
+    private var usageEventRecorder: UsageEventRecorder? = null
 
     private fun authSessionStore(context: Context): AuthSessionStore =
         authSessionStore ?: synchronized(this) {
@@ -40,7 +42,26 @@ object AlarmAppContainer {
                 pendingDisableAlarmIdsProvider = { authSessionStore(context).pendingDisableAlarmIds() },
                 onPendingDisableAdded = { ids -> authSessionStore(context).addPendingDisableAlarmIds(ids) },
                 onPendingDisableCleared = { ids -> authSessionStore(context).clearPendingDisableAlarmIds(ids) },
+                // 사용 기록 — 만들고 고치고 지운 사건을 로컬 큐에 적는다(전송은 워커가).
+                usageEvents = usageEventRecorder(context),
             ).also { repository = it }
+        }
+
+    /** Room 인스턴스 — 사용 기록 큐처럼 저장소를 직접 쓰는 곳이 쓴다. */
+    fun database(context: Context): AlarmDatabase = AlarmDatabase.getInstance(context)
+
+    /**
+     * 사용 기록 기록기. **전역 하나**다 — 여러 개면 큐 상한 정리가 서로를 덮어쓴다.
+     *
+     * ⚠ 여기서 만들 때 `currentUserId` 를 넘기는 이유: 이벤트는 **그때의 계정**에 속한다.
+     * 계정이 바뀌면 남은 큐를 새 주인 이름으로 보내면 안 된다(업로드 워커가 그걸 본다).
+     */
+    fun usageEventRecorder(context: Context): UsageEventRecorder =
+        usageEventRecorder ?: synchronized(this) {
+            usageEventRecorder ?: UsageEventRecorder(
+                dao = database(context).usageEventDao(),
+                currentUserId = { authSessionStore(context).read()?.user?.id },
+            ).also { usageEventRecorder = it }
         }
 
     /** 앱 전역 공휴일 국가 설정 — 설정 화면과 알람 편집기가 공유한다. */

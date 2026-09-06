@@ -230,9 +230,6 @@ private fun daysInMonth(year: Int?, month: Int?): Int {
 /** 드롭다운이 화면을 다 덮지 않게 하는 상한. 이 아래는 메뉴 안에서 스크롤한다. */
 private val MenuMaxHeight = 288.dp
 
-/** DropdownMenuItem 기본 높이(M3). 스크롤 위치 계산에 쓴다. */
-private val MenuItemHeight = 48.dp
-
 /** 고른 값을 눈에 띄게 — 목록에서 지금 뭐가 선택돼 있는지 보이지 않으면 매번 다시 읽어야 한다. */
 @Composable
 private fun MenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {

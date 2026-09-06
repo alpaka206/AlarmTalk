@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createClient } from '@libsql/client';
-import { cleanupStaleDraftVoices } from '../src/lib/audio-retention';
+import { cleanupStaleDraftVoices, drainExternalDeletions } from '../src/lib/audio-retention';
 
 // 실제 libSQL(인메모리)로 검증한다 — created_at 은 datetime('now')(공백 구분) 포맷이고
 // cutoff 는 ISO(T 구분)라, 원시 텍스트 비교로 회귀하면 같은 날짜의 방금 만든 draft 까지
@@ -29,6 +29,10 @@ async function setupDb() {
     );
     CREATE UNIQUE INDEX idx_pending_external_deletions_ref
       ON pending_external_deletions(kind, ref);
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      audio_url TEXT
+    );
   `);
   return db;
 }
@@ -99,5 +103,121 @@ describe('cleanupStaleDraftVoices', () => {
 
     const queued = await db.execute(`SELECT COUNT(*) AS c FROM pending_external_deletions`);
     expect(Number(queued.rows[0]!.c)).toBe(1);
+  });
+});
+
+describe('drainExternalDeletions — R2 오브젝트', () => {
+  /**
+   * `uploadedMinutesAgo` 가 null 이면 오브젝트가 **없는** 상태(head → null).
+   * 유예는 큐 나이가 아니라 **오브젝트 업로드 시각**에 걸린다(리뷰 12차).
+   */
+  function envWith(deleted: string[], uploadedMinutesAgo: number | null) {
+    return {
+      VOICE_BUCKET: {
+        head: async () =>
+          uploadedMinutesAgo == null
+            ? null
+            : { uploaded: new Date(Date.now() - uploadedMinutesAgo * 60_000) },
+        delete: async (key: string) => { deleted.push(key); },
+      },
+    } as never;
+  }
+
+  async function queue(
+    db: Awaited<ReturnType<typeof setupDb>>,
+    id: string,
+    ref: string,
+    ageModifier: string,
+  ) {
+    await db.execute({
+      sql: `INSERT INTO pending_external_deletions (id, kind, ref, created_at)
+            VALUES (?, 'r2_object', ?, datetime('now', ?))`,
+      args: [id, ref, ageModifier],
+    });
+  }
+
+  /**
+   * ⚠ **유예가 경합을 닫는다**(2026-09-03 리뷰 11차). R2 키는 cacheKey 에서 결정론적으로
+   * 나오므로 '내가 올린 것' 과 '남이 올린 같은 내용' 을 구분할 수 없다. 조회와 삭제 사이에
+   * 그 남이 행을 커밋하면 방금 게시된 알람이 없는 음원을 가리킨다 — 렌더 한 회차보다 훨씬
+   * 긴 유예를 두어 시간으로 닫는다.
+   */
+  it('방금 올라온 오브젝트는 지우지 않고 다음 회차로 미룬다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    // ⚠ **큐는 오래됐는데 오브젝트는 방금 올라온** 경우가 핵심이다. 삭제가 실패해
+    //   attempts 만 오른 행은 `created_at` 이 갱신되지 않으므로, 큐 나이로 재면 그 사이
+    //   새로 올라온 오브젝트를 지운다(리뷰 12차).
+    await queue(db, 'p1', 'voices/fresh.mp3', '-2 hours');
+
+    await drainExternalDeletions(db, envWith(deleted, 1));
+
+    expect(deleted).toEqual([]);
+    const left = await db.execute('SELECT attempts FROM pending_external_deletions');
+    expect(left.rows.length, '큐에 그대로 남는다').toBe(1);
+    expect(Number(left.rows[0]!.attempts), '유예는 실패가 아니다 — attempts 를 태우지 않는다').toBe(0);
+  });
+
+  it('유예를 넘겼고 아무도 안 쓰면 지운다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/orphan.mp3', '-2 hours');
+
+    await drainExternalDeletions(db, envWith(deleted, 120));
+
+    expect(deleted).toEqual(['voices/orphan.mp3']);
+    const left = await db.execute('SELECT id FROM pending_external_deletions');
+    expect(left.rows.length).toBe(0);
+  });
+
+  /** 그 사이 누가 게시했으면 지우지 않는다 — 지우면 그 알람이 소리를 잃는다. */
+  it('메시지가 가리키고 있으면 지우지 않는다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/live.mp3', '-2 hours');
+    await db.execute({
+      sql: "INSERT INTO messages (id, audio_url) VALUES ('m1', ?)",
+      args: ['r2://voices/live.mp3'],
+    });
+
+    await drainExternalDeletions(db, envWith(deleted, 120));
+
+    expect(deleted, '게시된 음원을 지웠다').toEqual([]);
+  });
+
+  /**
+   * ⚠ **업로더가 예약을 취소했으면 지우지 않는다**(2026-09-03 리뷰 13차).
+   *
+   * 렌더는 올리기 전에 자기 키의 삭제 예약을 지운다(`generateStockClip`). 예약이
+   * 사라졌다는 것은 **누군가 이 키를 지금 쓰고 있다**는 뜻이므로 물러선다.
+   */
+  it('삭제 직전에 예약이 사라졌으면 지우지 않는다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/contended.mp3', '-2 hours');
+    // 드레인이 목록을 읽은 뒤, 삭제 직전 사이에 렌더가 예약을 취소한 상황을 만든다.
+    const bucket = {
+      head: async () => {
+        await db.execute("DELETE FROM pending_external_deletions WHERE id = 'p1'");
+        return { uploaded: new Date(Date.now() - 120 * 60_000) };
+      },
+      delete: async (key: string) => { deleted.push(key); },
+    };
+    await drainExternalDeletions(db, { VOICE_BUCKET: bucket } as never);
+
+    expect(deleted, '업로더가 쓰고 있는 키를 지웠다').toEqual([]);
+  });
+
+  /** 오브젝트가 이미 없으면 지울 것도 없다 — 큐에서 내린다(무한 재시도 방지). */
+  it('오브젝트가 이미 없으면 큐에서 내린다', async () => {
+    const db = await setupDb();
+    const deleted: string[] = [];
+    await queue(db, 'p1', 'voices/gone.mp3', '-2 hours');
+
+    await drainExternalDeletions(db, envWith(deleted, null));
+
+    expect(deleted).toEqual([]);
+    const left = await db.execute('SELECT id FROM pending_external_deletions');
+    expect(left.rows.length).toBe(0);
   });
 });

@@ -250,10 +250,4 @@ enum RemoteAlarmMapper {
         let displayName = sender.hasSuffix("님") ? sender : "\(sender)님"
         return "\(displayName)이 보낸 알람"
     }
-
-    /// Android `RemoteAlarmMapper.isRemoteAudioUrl` 동일.
-    static func isRemoteAudioUrl(_ value: String) -> Bool {
-        let lower = value.lowercased()
-        return lower.hasPrefix("https://") || lower.hasPrefix("r2://")
-    }
 }

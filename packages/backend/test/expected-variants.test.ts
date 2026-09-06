@@ -23,7 +23,7 @@ describe('expected_variants', () => {
   });
 
   it('클론 세트는 클론 시드에서 파생된다', () => {
-    expect(clone).toMatchObject({ weather: 9, fortune: 5, love: 3, medication: 3, greeting: 1 });
+    expect(clone).toMatchObject({ weather: 9, fortune: 5, cheer: 3, medication: 3, greeting: 1 });
   });
 
   it('날씨는 조건 8 + 미해결 안내 1 이라 양쪽 다 9 다', () => {

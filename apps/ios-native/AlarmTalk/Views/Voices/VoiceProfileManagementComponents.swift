@@ -94,7 +94,7 @@ struct SharedVoiceViewerInfoDialog: View {
                     }
                     .alarmTalkFieldStyle()
                 if listenerError {
-                    Text("필수 입력 값입니다.")
+                    Text("꼭 입력해 주세요.")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AlarmTalkTheme.error)
                 }

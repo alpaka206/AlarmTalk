@@ -9,7 +9,7 @@ export interface TtsCacheInput {
   outputFormat: string;
 }
 
-export function normalizeTtsText(text: string): string {
+function normalizeTtsText(text: string): string {
   return text.trim().replace(/\s+/g, ' ');
 }
 
@@ -32,7 +32,7 @@ export function generatedTtsObjectKey(userId: string, cacheKey: string, format =
   return `generated-tts/${encodeURIComponent(userId)}/${cacheKey}.${safeFormat}`;
 }
 
-export async function sha256Hex(input: string | Uint8Array): Promise<string> {
+async function sha256Hex(input: string | Uint8Array): Promise<string> {
   const data = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   const digest = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(digest))

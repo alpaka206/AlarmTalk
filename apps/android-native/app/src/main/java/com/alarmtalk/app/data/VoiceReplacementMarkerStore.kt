@@ -39,6 +39,23 @@ import kotlinx.coroutines.sync.withLock
  *
  * 계정별이다. 앞 사람의 표식이 새 계정 판정에 쓰이면 안 된다.
  */
+/**
+ * 서버 표식(`datetime('now')` → `"2026-09-03 12:34:56"`, **UTC**)을 epoch millis 로.
+ *
+ * 강등이 "이 시각 **이전에** 만든 오디오만" 을 지킬 때 쓴다(2026-09-03 리뷰 23차) —
+ * 시각을 안 보면 교체가 배포된 뒤에 새 목소리로 제대로 만든 알람까지 톤으로 깎는다.
+ * 못 읽으면 null 이고, 그때는 예전처럼 시각을 보지 않는다(무엇을 봤는지 모르므로).
+ */
+internal fun parseVoiceMarkerMillis(marker: String?): Long? {
+    val raw = marker?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching {
+        java.time.LocalDateTime
+            .parse(raw.replace(' ', 'T'))
+            .toInstant(java.time.ZoneOffset.UTC)
+            .toEpochMilli()
+    }.getOrNull()
+}
+
 class VoiceReplacementMarkerStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("voice_replacement_marker", Context.MODE_PRIVATE)
@@ -208,6 +225,21 @@ class VoiceReplacementMarkerStore(context: Context) {
             // '바뀐 것 없음' 으로 끝나 정리 중 표시가 풀린다. 업데이트 직후 모든 설치가
             // 강등되는 일은 없다: sentinel 은 **실제로 실패한 기기에만** 있다.
             if (prefs.getString(retryKey(userId, profileId), null) != null) {
+                return Seen(changed = true, persisted = true)
+            }
+            // ⚠ **기본(시스템) 목소리는 첫 조회라도 집는다**(2026-09-03 리뷰 22차).
+            //
+            //   마이그레이션 `#111` 은 DB 만 고치고 **푸시를 보내지 않는다.** 그 뒤에 앱을
+            //   처음 연 기기는 그때의 표식을 **기준선으로 삼고 넘어가**, 그 목소리로 만든
+            //   직접 입력 알람이 **영영 옛 목소리로 운다** — 이름과 미리듣기만 새 목소리다.
+            //
+            //   시스템 목소리에서는 이 값이 **제자리 교체로만** 채워진다(등록·재등록 같은
+            //   일반 경로가 없다). 그래서 "서버에 표식이 있는데 내가 적어 둔 적이 없다" 는
+            //   **아직 반영하지 않았다**는 뜻으로 읽어도 모호하지 않다.
+            //   클론은 그대로 기준선 의미를 유지한다 — 거기서 열면 재등록 때마다 없던
+            //   강등이 생긴다.
+            //   ⚠ 새로 깐 기기에서는 대상 알람이 0개라 아무 일도 일어나지 않는다.
+            if (incoming.isNotEmpty() && isSystemVoiceId(profileId)) {
                 return Seen(changed = true, persisted = true)
             }
             return Seen(changed = false, persisted = true)

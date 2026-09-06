@@ -1,4 +1,5 @@
 import { clearPaidVoiceRetention } from './billing-cancel';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { Client } from '@libsql/client';
 import { hashVoucherCode, isValidVoucherCodeFormat } from './vouchers';
 import type { DbExecutor } from './transactions';
@@ -15,7 +16,7 @@ import { planTypeToUserPlan } from '../routes/billing-helpers';
 export class VoucherRedemptionError extends Error {
   constructor(
     readonly status: number,
-    readonly errorCode: string,
+    readonly errorCode: ErrorCode,
     message: string,
   ) {
     super(message);

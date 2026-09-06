@@ -145,8 +145,11 @@ android {
         // document_version 을 보내기 시작한 건 그 다음날(7/30)이다. 즉 "versionCode 20" 이
         // 두 가지 앱을 가리켜서 강제 업데이트 하한으로 쓸 수 없다 — app-version.ts 의
         // minSupported 도 21 로 맞춰 두었다.
-        versionCode = 24
-        versionName = "1.2.4"
+        // 25 = 1.2.5. 기본 목소리 4종 교체 릴리스다. ⚠ 이 빌드는 **강제 업데이트 하한**이
+        // 되므로(`app-version.ts` 의 `minSupported: 25`) 스토어 게재 전에 서버를 올리면
+        // 안 된다 — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.
+        versionCode = 25
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

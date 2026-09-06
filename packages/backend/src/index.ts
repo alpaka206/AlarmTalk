@@ -16,6 +16,7 @@ import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
+import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { retryTransientTurso } from './lib/turso-retry';
@@ -32,8 +33,17 @@ import billingApple from './routes/billing-apple';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
+import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
+
+/**
+ * 사용 기록 보관 기간. **처리방침(개인정보 처리방침 3장)에 적은 값과 같아야 한다** —
+ * 문서와 코드가 갈라지면 어느 쪽이 진실인지 아무도 모른다.
+ */
+const USAGE_EVENT_RETENTION_DAYS = 365;
+/** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
+const USAGE_EVENT_PRUNE_BATCH = 500;
 
 const app = new Hono<AppEnv>();
 
@@ -42,6 +52,10 @@ app.use('*', securityHeadersMiddleware);
 
 // Sentry error tracking (no-op if SENTRY_DSN is not set)
 app.use('*', sentryMiddleware);
+
+// 나가는 4xx/5xx 를 하나도 빠짐없이 기록한다(에러 코드별 집계 + 선별 경보).
+// ⚠ rateLimit·bodyLimit **위**에 둔다 — 그들이 내는 429/413 도 기록 대상이다.
+app.use('*', errorCodeMiddleware);
 
 // Structured request logging
 app.use('*', loggerMiddleware);
@@ -112,7 +126,7 @@ function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | u
 //   POST /api/init-db?fromId=1&toId=10   → run migrations 1..10 inclusive
 app.post('/api/init-db', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const fromId = c.req.query('fromId');
@@ -134,7 +148,7 @@ app.post('/api/init-db', async (c) => {
   } catch (err) {
     // SQL/Turso 내부 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'DB init failed' }, 500);
+    return c.json({ error: 'DB init failed', error_code: 'DB_INIT_FAILED' }, 500);
   }
 });
 
@@ -143,7 +157,7 @@ app.post('/api/init-db', async (c) => {
 // 돌려준다. 호출자가 remaining 이 0 이 될 때까지 반복 호출한다 (멱등).
 app.post('/api/admin/seed-stock-clips', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
@@ -180,7 +194,7 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   } catch (err) {
     // 합성/스토리지 내부 오류 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'Stock clip seed failed' }, 500);
+    return c.json({ error: 'Stock clip seed failed', error_code: 'STOCK_CLIP_SEED_FAILED' }, 500);
   }
 });
 
@@ -234,6 +248,8 @@ api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
 api.route('/push', pushRoutes);
+// 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
+api.route('/events', eventsRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
 // (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
@@ -242,10 +258,10 @@ app.route('/admin', adminRoutes);
 app.route('/api', api);
 
 app.onError((err, c) => {
-  const sentry = c.get('sentry');
-  if (sentry) sentry.captureException(err);
+  // ⚠ 여기서 sentry.captureException 을 직접 부르지 말 것 — logRouteError 가 이미 보낸다.
+  //    예전에는 둘 다 불러 같은 사고가 Sentry 에 **두 번** 올라왔다(스택 없는 사본이 하나 더).
   logRouteError(c, err);
-  return c.json({ error: 'Internal server error' }, 500);
+  return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
@@ -298,9 +314,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
     // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
     await cleanupStaleDraftVoices(db, now);
-    await drainExternalDeletions(db, env);
+    await drainExternalDeletions(db, env, now);
   } catch (err) {
     captureCron('scheduled.audio_retention', err);
+  }
+
+  // 사용 기록(이벤트) 보관 기간 정리 — **처리방침에 적은 1년**을 코드로 지킨다
+  // (`docs/legal/privacy-policy.ko.md` 3장 표). append-only 테이블이라 아무도 지우지 않으면
+  // 무한히 는다. 한 번에 지우는 양을 묶어 cron 한 회차가 길어지지 않게 한다.
+  try {
+    const cutoff = new Date(now.getTime() - USAGE_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString();
+    await db.execute({
+      sql: `DELETE FROM usage_events WHERE id IN (
+              SELECT id FROM usage_events WHERE occurred_at < ? LIMIT ?
+            )`,
+      args: [cutoff, USAGE_EVENT_PRUNE_BATCH],
+    });
+  } catch (err) {
+    captureCron('scheduled.usage_event_prune', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
@@ -411,6 +443,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
+
+  // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
+  //
+  // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.
+  // 그 문제는 이제 **미리 구워 올리는 것**으로 푼다(`scripts/publish-stock-clips.ts`) —
+  // 배포 전에 R2 에 바이트를 올려 두고, 마이그레이션 직후 행만 넣으면 공백이 거의 없다.
+  //
+  // 그런데 **둘을 같이 두면 서로 싸운다.** 롤아웃은 `#110` 이 전부 은퇴시킨 뒤 사람이
+  // `publish:stock` 을 돌리는 순서인데, 그 사이의 5분 틱이 **같은 타깃을 합성하기
+  // 시작한다.** cron 이 한 자리를 먼저 커밋하면 `publish:stock` 은 그 자리를
+  // '이미 있음' 으로 보고 건너뛰어, **사람이 들어 보고 확정한 바이트가 영영 안 올라간다.**
+  // 그리고 그때부터 결정론적 키를 놓고 두 렌더가 겹치는 옛 경합이 되살아난다.
+  //
+  // 되살릴 거라면 **게시가 렌더 산출물을 덮어쓰도록** 먼저 고쳐야 한다(지금은 건너뛴다).
+  // 클론 드레인(아래)은 그대로다 — 그건 큐가 지목한 목소리만 굽고, 미리 구울 수 없다
+  // (등록한 사람의 목소리라서 우리가 미리 갖고 있지 않다).
+  //
+  // 특정 목소리만 다시 굽는 수동 도구는 남아 있다: `POST /api/admin/seed-stock-clips`
+  // (`?voice=`·`?reset=`). 새 프리셋을 추가했는데 미리 굽지 않았다면 그걸로 채운다.
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만

@@ -244,8 +244,12 @@ internal fun MenuTabPanel(
                         onClick = onOpenMemberManagement,
                     )
                 } else {
+                    // ⚠ **진입 라벨은 도착 화면의 제목과 같은 문자열이다**(2026-09-06).
+                    // 예전에는 '초대 코드 등록' 이라 눌러서 도착한 '코드 등록' 화면이 초대·선물·
+                    // 프로모션 셋을 다 받는다는 걸 라벨이 가리고 있었다 — 선물 코드를 받은
+                    // 사람은 넣을 자리가 없다고 읽는다.
                     MenuTabRow(
-                        label = stringResource(R.string.hs_profile_menu_invite_code),
+                        label = stringResource(R.string.common_tab_code_register),
                         onClick = onOpenPeople,
                     )
                 }

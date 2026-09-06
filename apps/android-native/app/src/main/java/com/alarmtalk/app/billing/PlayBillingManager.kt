@@ -52,11 +52,6 @@ object PlayBillingProducts {
         FAMILY_MONTHLY,
     )
 
-    /** 1회성 상품 목록. SUBS 조회에 섞으면 안 된다. */
-    val oneTime: List<String> = listOf(PERSONAL_GIFT_1M)
-
-    fun isOneTime(productId: String): Boolean = productId in oneTime
-
     /** 이용권 plan key("personal"/"couple"/"family") → Play 상품 ID. */
     fun productIdFor(planKey: String): String? {
         if (planKey !in setOf("personal", "couple", "family")) return null

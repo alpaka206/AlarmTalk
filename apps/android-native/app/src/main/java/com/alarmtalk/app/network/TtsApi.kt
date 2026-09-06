@@ -52,13 +52,6 @@ data class ManualQuotaResponse(
     val remaining: Int = 0,
 )
 
-data class TtsMessageListResponse(
-    val messages: List<TtsMessage>,
-    val total: Int? = null,
-    val limit: Int? = null,
-    val offset: Int? = null,
-)
-
 data class TtsMessage(
     val id: String,
     val text: String = "",
@@ -83,6 +76,24 @@ data class StockClipListResponse(
     val clips: List<StockClip> = emptyList(),
     /** 카테고리별 **완전한 세트의 클립 수**. 옛 서버면 null. */
     @SerializedName("expected_variants") val expectedVariants: ExpectedVariantCounts? = null,
+    /**
+     * **버킷 없이 클립 하나만 물린 옛 알람**이 어떤 테마였는지(서버가 알려 준다).
+     *
+     * `bucket_id` 를 행에 적기 전에 만들어진 알람은 재바인더 두 갈래 어디에도 안 걸린다 —
+     * 하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 둘 다 없다.
+     * 그래서 목소리를 갈아도 그 알람만 **영원히 옛 대사·옛 목소리**로 운다(이름은 새 이름).
+     * 서버는 그 알람이 가리키는 message 의 `category` 를 알고 있으므로 실어 보낸다.
+     *
+     * 옛 서버면 빈 목록이고, 그러면 예전대로 그 알람은 건너뛴다.
+     */
+    @SerializedName("legacy_bucket_hints") val legacyBucketHints: List<LegacyBucketHint> = emptyList(),
+)
+
+/** [StockClipListResponse.legacyBucketHints] 한 줄 — 이 message 를 문 알람의 테마. */
+data class LegacyBucketHint(
+    @SerializedName("message_id") val messageId: String,
+    val category: String,
+    val language: String = "ko",
 )
 
 /**
@@ -143,9 +154,6 @@ interface TtsApi {
         @Header("Authorization") authorization: String,
         @Body request: TtsGenerateRequest,
     ): TtsGenerateResponse
-
-    @GET("tts/messages")
-    suspend fun listTtsMessages(@Header("Authorization") authorization: String): TtsMessageListResponse
 
     @GET("tts/stock-clips")
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse

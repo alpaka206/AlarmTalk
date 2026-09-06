@@ -196,7 +196,7 @@ enum AlarmAudioLimits {
 /// 문구 종류. **서버가 받는 값과 정확히 같아야 한다.**
 ///
 /// 서버 화이트리스트는 `tts.ts` 의 `RANDOM_CONTEXTS = ['preset','wake_weather',
-/// 'wake_fortune','love']` 이고, `medication` 은 일부러 그 밖에 두어 `preset` 으로
+/// 'wake_fortune','cheer']` 이고, `medication` 은 일부러 그 밖에 두어 `preset` 으로
 /// 정규화된다(고정 프리셋 문구 경로를 탄다). 안드로이드 `RandomPromptContexts` 도 같은
 /// 다섯이다.
 ///
@@ -208,7 +208,10 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     case preset
     case wakeWeather = "wake_weather"
     case wakeFortune = "wake_fortune"
-    case love
+    /// 응원. ⚠ **옛 이름은 `love` 였다**(2026-09-02, 연애가 아니라 응원·자기돌봄으로
+    /// 개념을 바꿨다). 옛 값은 `normalized`·`forBucket` 이 접어 준다 — 이미 저장된 행과
+    /// 구버전 앱이 그 값을 들고 있으므로 **그 접기를 지우지 말 것.**
+    case cheer
     /// 동적 생성이 아니라 **고정 프리셋**이다. 서버가 `preset` 으로 정규화하고
     /// `category='medication'` 문구를 뽑는다.
     case medication
@@ -220,7 +223,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         .preset,
         .wakeWeather,
         .wakeFortune,
-        .love,
+        .cheer,
         .medication
     ]
 
@@ -230,6 +233,11 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
             return .wakeWeather
         case "fortune":
             return .wakeFortune
+        // ⚠ **옛 이름을 지우지 말 것** — 저장된 행·구버전 앱이 `love` 를 보낸다.
+        //   접지 않으면 아래 `default` 가 `preset` 으로 떨어뜨려, 응원을 골랐는데
+        //   기본 인사말이 울린다.
+        case "love":
+            return .cheer
         // 사라진 값으로 저장된 옛 행은 기본으로 접는다 — 그대로 두면 서버가 400 을 준다.
         case "meal", "sleep", "exercise":
             return .preset
@@ -252,7 +260,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     static func forBucket(_ bucket: String?) -> RandomPromptContext? {
         switch bucket?.trimmingCharacters(in: .whitespacesAndNewlines) {
         case "greeting": return .preset
-        case "love": return .love
+        case "cheer", "love": return .cheer
         case "medication": return .medication
         case "fortune": return .wakeFortune
         case "weather": return .wakeWeather
@@ -264,28 +272,18 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
     var bucketCategory: String {
         switch self {
         case .preset: return "greeting"
-        case .love: return "love"
+        case .cheer: return "cheer"
         case .medication: return "medication"
         case .wakeFortune: return "fortune"
         case .wakeWeather: return "weather"
         }
     }
 
-    /// 안드로이드 문자열과 같은 라벨(strings.xml 의 editor_msg_mode_preset·editor2_ctx_*).
-    var label: String {
-        switch self {
-        case .preset: return "기본 인사말"
-        case .wakeWeather: return "날씨"
-        case .wakeFortune: return "운세"
-        case .love: return "사랑"
-        case .medication: return "약"
-        }
-    }
-
-    /// 서버 `TTS_CATEGORIES = ['morning','medication','love','custom']` 안의 값이어야 한다.
+    /// 서버 `TTS_CATEGORIES = ['morning','medication','cheer','custom']` 안의 값이어야 한다
+    /// (서버는 옛 `love` 도 받아 접는다).
     var ttsCategory: String {
         switch self {
-        case .love: return "love"
+        case .cheer: return "cheer"
         case .medication: return "medication"
         // preset·날씨·운세는 공통 라벨 morning 을 쓴다(문구는 preset/동적 경로가 따로 정한다).
         case .preset, .wakeWeather, .wakeFortune: return "morning"

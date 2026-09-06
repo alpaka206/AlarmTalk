@@ -1,4 +1,5 @@
 import type { Client } from '@libsql/client';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { DbExecutor } from './transactions';
 import { withWriteTransaction } from './transactions';
 import { cancelActiveSubscriptionsForUser, createNewSubscriptionForPlan } from './billing-cancel';
@@ -16,7 +17,7 @@ import { cancelActiveSubscriptionsForUser, createNewSubscriptionForPlan } from '
 export class PromoRedemptionError extends Error {
   constructor(
     readonly status: number,
-    readonly errorCode: string,
+    readonly errorCode: ErrorCode,
     message: string,
   ) {
     super(message);
@@ -47,7 +48,7 @@ export interface RedeemedPromoResult {
   };
 }
 
-export function normalizePromoCode(raw: string): string {
+function normalizePromoCode(raw: string): string {
   return raw.trim();
 }
 

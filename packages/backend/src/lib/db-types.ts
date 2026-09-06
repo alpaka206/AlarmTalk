@@ -1,7 +1,5 @@
 import type { Row } from '@libsql/client/web';
 
-export type Value = null | string | number | bigint | ArrayBuffer;
-
 /**
  * Turso Row → typed object. Centralises the double-assertion that Row's
  * index-signature (`[name: string]: Value`) otherwise requires.

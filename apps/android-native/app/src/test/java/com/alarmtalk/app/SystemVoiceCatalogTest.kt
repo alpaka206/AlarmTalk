@@ -11,7 +11,7 @@ class SystemVoiceCatalogTest {
         val voices = bundledSystemVoiceProfiles()
 
         assertEquals(listOf("101", "102", "103", "104"), voices.map { it.id.takeLast(3) })
-        assertEquals(listOf("아담", "미나", "하준", "소은"), voices.map { it.name })
+        assertEquals(listOf("시우", "미나", "도현", "애니"), voices.map { it.name })
         assertTrue(voices.all { it.status == "ready" && it.isSystem == true })
     }
 

@@ -1,35 +1,224 @@
-# Dev 테스트 핸드오프 (갱신 2026-09-02)
+# Dev 테스트 핸드오프 (갱신 2026-09-03)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
-## 0-A. ⛔ 출시 전 차단 — 스톡 클립 en·ja 임시 문구
+## 0-A. 기본 목소리·대사 교체 — **미리 구워 두었다. 게시만 남았다**
 
-2026-09-02 에 유료·무료의 문구 목록 차이를 없애면서(`docs/spec/voice-and-message.md` §2)
-**운세 5문구 · 사랑 3문구**를 기본(시스템) 목소리에도 열었다. 확정 대사가 한국어뿐이라
-`texts.en` / `texts.ja` 에 **한국어를 그대로 복사해** 두었다.
+세 언어 대사가 확정됐고(2026-09-02), `love` → `cheer`(응원)로 개념도 바뀌었다.
+2026-09-03 에 **기본 목소리 4종도 교체**됐다: 시우 · 미나 · 도현 · 애니(#111).
+교체 전에는 넷 중 둘이 영어권 premade 였다(`아담`=Adam, `소은`=Jessica).
 
-**그대로 출시하면 en·ja 사용자가 한국어 오디오를 듣는다.** 스톡 클립은 번역도 검증도
-거치지 않는 순수 패스스루라 합성 경로가 이걸 걸러 주지 않는다.
+### 무엇이 바뀌었나 — 배포 때 **재합성하지 않는다**
 
-- [ ] en·ja 대사를 `docs/product/stock-clip-scripts.md` 에 확정해 적는다.
-- [ ] `packages/backend/src/lib/stock-clips.ts` 의 `texts.en`/`texts.ja` 를 그 대사로 바꾸고
-      `STOCK_CLIP_PLACEHOLDER_LANGUAGES` 에서 해당 줄을 **지운다**.
-- [ ] 문구가 바뀌므로 **새 refresh 마이그레이션**을 쓴다(#109 와 같은 패턴 — 동결 사본을
-      현재 문구로). `test/migrations-stock-refresh.test.ts` 가 잊으면 빨개진다.
-- [ ] `POST /api/admin/seed-stock-clips` 로 재시드.
+예전에는 배포 직후 cron 이 240개를 5분에 6개씩 다시 구웠다. 그 **3시간 20분** 동안
+기본 목소리로 테마를 하나도 못 골랐고(`freeBucketsFor` 는 완전한 세트만 노출한다),
+그 창이 리뷰 지적의 상당수를 만들었다. 지금은 **미리 구워 올린다** —
+`scheduled.stock_seed` 의 시스템 드레인은 **껐다**(둘을 같이 두면 서로 싸운다).
 
-회귀 방지: `packages/backend/test/stock-clip-placeholders.test.ts` 가 표와 실제를
-**양방향**으로 대조한다 — 교체하고 표를 안 지워도, 표에 없이 복사해 넣어도 빨개진다.
+    npm run preview:stock -- --dry-run      # 무엇이 낡았는지/빠졌는지
+    npm run preview:stock                   # 240개를 굽는다(멱등)
+    npm run publish:stock -- --env dev      # R2 업로드 + 행 INSERT(멱등)
+    npm run publish:stock -- --env prod
 
-### 함께 남은 것 — 운세·사랑 클립 시딩(ko 는 지금 바로 가능)
+⚠ **R2 버킷과 DB 는 환경별로 따로다**(dev `voice-alarm-voices` / prod `…-prod`).
+합성은 한 번이지만 **게시는 두 번**이다.
+⚠ **게시는 마이그레이션 뒤에.** `messages.retired_at` 이 없으면 스크립트가 먼저 말하고
+멈춘다(은퇴 전에는 옛 행이 같은 자리에 살아 있어 전부 건너뛴다).
+⚠ **파일이 있다는 것만으로 최신이 아니다.** 지문(`voice-preview/_fingerprints.json`)이
+합성 입력과 맞아야 한다. 안 맞으면 `preview:stock` 이 다시 굽고, `publish:stock` 은
+올리기를 거부한다.
 
-목록은 매니페스트와 교차하므로, 시딩 전에는 기본 목소리 목록이
-**기본 인사말·날씨·약 + 직접 입력** 4줄이고 시딩이 끝나면 6줄이 된다(앱 수정 불필요).
-- [ ] dev 에 `POST /api/admin/seed-stock-clips` → 보이스 4 × 언어 3 × 새 문구 8 = 96클립.
-- [ ] 실기기에서 기본 목소리로 **운세** 선택 → 사주 미등록이면 저장이 막히고 그 자리에서
-      입력창이 뜨는지(날씨 지역과 같은 규칙).
-- [ ] 선다운로드가 다섯 카테고리를 전부 받는지(그전에는 날씨·약만 받았다).
+### dev 체크리스트
+
+- [ ] 배포 확인 → `npm run publish:stock -- --env dev` (240개, 몇 분)
+- [ ] 실기기: 기본 목소리 편집기의 문구 목록이 **날씨·운세·응원·약 + 직접 입력** 인지
+- [ ] 운세를 고르면 사주를 묻는지(없으면 저장이 막힌다)
+- [ ] 비행기모드 발사 — 선다운로드가 네 카테고리를 다 받았는지
+- [ ] **교체 미완료 차단 화면**: 게시 전에 앱을 켜면 "목소리를 새로 받고 있어요" 가
+      뜨고, 게시 뒤 재시도를 누르면 풀리는지
+- [ ] **버킷 없는 옛 알람**이 갈아타는지(서버가 `legacy_bucket_hints` 로 테마를 준다)
+- [ ] **받은 가족 알람(날씨·운세)**: 갈아탄 뒤 내 지역·사주가 채워지는지
+      (안 채우면 날씨는 서울, 운세는 빈 프로필로 떨어진다)
+
+⚠ **유료 클론은 이번에 안 건드린다**(사용자 확정). 재등록할 때 갱신된다. 그래서 유료
+사용자의 「응원」 테마가 한동안 **옛 연애 문구**를 말한다 — 의도된 상태다.
+
+### ⚠⚠ prod 배포 순서 — 코드로 못 막는다
+
+`#111` 은 프로필 id 를 그대로 두고 목소리만 바꾸는데, 앱은 그 id 에 **내장 인사말 mp3**
+를 매핑해 미리듣기에서 서버 클립보다 **우선**한다. 구버전이 남으면 목록 이름은 시우,
+미리듣기는 Adam, 실제 알람은 Krys 가 된다.
+
+`minSupported` 는 이미 **25** 로 올려 두었다(`latest` 도 25 — 배너가 아니라 **차단
+화면**이다). 그래서 순서를 어기면 **받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.**
+
+- [ ] 1.2.5(versionCode 25) 를 **스토어에 먼저** 올린다
+- [ ] 게재 확인 뒤 `main` 에 머지한다(= 배포 + 마이그레이션)
+- [ ] `npm run publish:stock -- --env prod`
+- [ ] 다음 릴리스에서 은퇴한 프리셋과 R2 오브젝트를 **삭제**한다(이번엔 은퇴까지만)
+
+## 0-B. 랜딩 재작성 (2026-09-06) — 코드는 끝, 게재 뒤 스위치 하나
+
+레퍼런스 11곳(알라미·Sleep Cycle·Calm·Headspace·Duolingo·Oura·토스 등)을 실측해 카피 결을
+정했다: **히어로는 아침에 일어나는 일**, 방법은 본문 둘째 줄과 FAQ. AI·합성·클론 같은 낱말은
+페이지에 쓰지 않고, 숫자는 측정된 사실만(사양 숫자 타일은 뺐다).
+
+### 바뀐 것
+- **홈**: 헤드라인 `알람이 아니라, {누구} 목소리가 깨워요` — 돌아가는 자리는 '누구' 뿐이다
+  (`components/motion/cycling-word.tsx`). 서브 아래에 **미리 들어보기**(`voice-preview.tsx`):
+  버튼 하나로 시우 → 미나 → 도현 → 애니 인사말을 차례로 듣는다. 고르는 UI 는 두지 않는다.
+  파형은 장식이 아니라 재생 중 실제 음량이다(AnalyserNode). 숫자 타일 자리는 '누구 목소리'
+  챕터(`sections/whose-voice.tsx`)로, 문구 예시 카드는 앱 대본(`voice-preview/*/문구.txt`)을
+  줄인 문장으로 바꿨다 — **없는 문장을 광고하지 않는다.** ko/en/ja 세 벌 모두.
+- **미리듣기 클립**은 안드로이드가 목소리를 눌렀을 때 트는 그 파일이다
+  (`res/raw/voice_greeting_<voice>_<lang>.mp3` → `apps/landing/public/audio/<voice>-greeting.<lang>.mp3`,
+  `.gitignore` 에 예외). **앱의 인사말을 바꾸면 이 복사본도 같이 바꾼다.**
+- **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
+  대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
+  (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
+- **응원 메시지 `/cheer/`**: 이름 입력 + 카드별 재생. 재생 경로는 `cheer-playback.ts` 의
+  `resolveCheerPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
+  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `cheer-voices.ts`,
+  이름·역할·문장은 `messages/*.json` 의 `cheer.voices`. 이름 정리는 앱 `sanitizeDisplayName`
+  과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
+- **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
+  바닥 색을 앱 다크 스킴(`AlarmTalkTheme.kt`)에서 가져온다(`globals.css`). 브랜드 마크는
+  `BrandMark` 안에서 아이콘 마스크 비율(22%)로 **한 번만** 깎는다 — 호출부에 `rounded-*`
+  를 덧대지 말 것.
+
+### 확인한 것 (정적 export 를 헤드리스 크로미움으로)
+- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/cheer/` 등 404 는 Vercel rewrite 가 맡는 접두사
+  없는 경로 프리페치 — 로컬 서빙에서만 난다).
+- 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
+- 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
+
+### 2차 — 스킬 검수 (같은 날)
+`design-taste-frontend`(Leonxlnx/taste-skill)·`web-design-guidelines`(vercel-labs)를
+`apps/landing/.claude/skills` 에 깔고(`skills-lock.json`) 적용했다.
+- **taste**: 스크롤 큐·장식 점·칸별 아이브로·히어로 꼬리표를 걷어냈고, 세 언어 카피의
+  대시(— –)를 전부 없앴다(문장부호로 대체). 안 쓰는 모션 파일 셋(count-up·living-waveform·
+  scroll-cue)도 지웠다. 라이트 단일 테마는 **일부러** 그대로다(흰 바닥 설계, `globals.css` 주석).
+- **WIG**(파일 묶음 4개 병렬 검수 → 지적마다 반박 검증, 확정 9건): 일본어가 `keep-all`
+  때문에 한 문장이 한 단어가 돼 칸을 넘치던 것(FAQ·시나리오·누구 목소리 3열 — 375/768px
+  실측) → `html:lang(ja) body { word-break: normal }`; 본문 건너뛰기 링크 + 모든 `<main id="main">`;
+  모바일 메뉴를 네이티브 `<dialog>` 로(포커스 트랩·Escape·초점 복귀·세로 스크롤); 언어 전환을
+  버튼에서 **링크**로(`hreflang`·`lang`·`aria-current`); 스크린샷 드리프트에 `data-reveal`.
+  덤으로 저위험 지적: 제목 `text-wrap: balance` 전역, `touch-action: manipulation`, 장식 전용
+  색(`text-faint`)을 읽히는 글자에서 제거, FAQ 질문 `h3`+`id`, 요금·챕터 목록 구조, 브랜드명
+  `translate="no"`, 폰 목업 `role="img"`, 응원 입력의 `name`/`aria-describedby`/초점 링 복원.
+- 검수가 반박으로 **기각**한 것: 앵커 `scroll-padding-top`(증상 재현 안 됨), 헤더 backdrop
+  블러 성능, 미리듣기 글자 칸 폭. 근거는 워크플로 저널에 있다.
+- 실측으로 새로 잡은 것: 일본어 헤더 메뉴가 768px 에 한 줄로 안 들어가(840px) 데스크톱 내비를
+  **lg(1024) 부터**로 올렸고, 미리듣기 알약은 막대를 `flex-1 max-w-[3px]` 로 바꿔 320px 까지
+  들어간다. 1024px 에서 기능 섹션 스크린샷이 32px 밖으로 흘러 `scrollWidth` 가 커지는 것은
+  의도한 설계(`lg:-mr-16`, body `overflow-x: hidden`)라 두었다.
+- `apps/landing/AGENTS.md`·`CLAUDE.md` 는 검수 에이전트가 `next dev` 를 돌리며 Next 가 생성한
+  파일이다. 지워도 다시 생기므로 그대로 커밋했다.
+
+### 사람이 확인할 것
+- **iOS 사파리 실기기**에서 미리듣기 첫 탭에 소리가 나는가(AudioContext 는 제스처 안에서
+  `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).
+- 응원 페이지의 브라우저 목소리 품질은 기기마다 다르다 — 전용 생성 경로가 붙기 전까지의
+  임시 소리다. 카드 이름·문장은 자리 표시용이라 실제 목록이 오면 JSON 만 바꾼다.
+- App Store 게재 당일: Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=1` 추가 후 재배포.
+- `apps/landing/skills-lock.json` 은 apple-design 스킬 설치가 남긴 파일이라 커밋하지 않았다
+  (스킬 본체는 `.claude/` 로 무시된다).
+
+## 0-C. 앱 움직임 — apple-design 원칙 대조 판정 (2026-09-06)
+
+랜딩에 쓴 apple-design 스킬(움직임 원칙)을 앱에도 적용할지 **코드 인벤토리 → 원칙별 판정 →
+갭마다 반박 → 종합**으로 판정했다(워크플로 저널: `subagents/workflows/wf_c21873b0-14f`).
+
+**결론: 안드로이드는 지금대로, iOS 는 두 곳만 고친다.** 살아남은 갭은 전부 "iOS 가 안드로이드
+원본과 이유 없이 다른 곳" 이라 스킬 적용이 아니라 **원본 맞추기**다(CLAUDE.md 「다르면 iOS 가
+틀린 것」). 반박당한 갭은 전부 오너 지시로 일부러 정한 동작(리플 제거·스와이프 바운드), 저사양
+실기 프레임 예산으로 비워 둔 자리(타임휠 콜백), 되돌릴 수 없는 해제 슬라이더에 관성을 얹는 것
+처럼 **적용하면 곧 회귀**가 되는 자리였다. 이미 지키는 것이 대부분이었다 — Compose·SwiftUI 기본값
+(리플·additive 애니메이션·인터럽트 가능 push)과 코드가 한 것(스프링 damping 1.0, 속도 이어받기
+`initialVelocity`, 전환 토큰 한 짝, `sp`/`relativeTo:` 글자 크기).
+
+### 고친 것 (셋)
+1. **Android `AmPmWheelColumn` 정착 취소** — 숫자 칼럼과 같은 `settleJob` 패턴. 정착 중 다시 잡거나
+   탭을 빠르게 두 번 누르면 정착 두 개가 겹쳐 `onStep` 홀짝 토글이 **두 번 넘겨 제자리**로 돌아오던
+   결함이 같이 사라진다. 탭 정착도 0 이 아니라 현재 오프셋에서 이어 간다.
+2. **iOS `AmPmWheelColumn` 1:1 추종** — 전에는 `onEnded` 만 있어 손을 뗄 때까지 아무것도 안
+   움직였다. 밴드(±0.22/0.72칸)·위치 임계(0.38칸)·속도 임계(3.5칸/s)를 안드로이드 값 그대로 쓰고,
+   정착은 숫자 칼럼과 같은 `WheelSettleDriver`. 기본 자리 애니메이션은 시 칼럼이 11↔12 를 넘겨
+   밖에서 바뀔 때만 돈다(`animateBase`).
+3. **iOS 플릭 판정을 속도 부호 우선으로** — `AlarmRow` 스와이프(420pt/s, 위치 임계 0.42 로
+   안드로이드와 통일), `BottomSheetHost` 닫기(위로 튕기면 되돌림). **판정만** 바꾸고 애니메이션은
+   그대로다(속도를 넘기면 원본 M3 tween 과 갈라진다).
+
+같이 처리한 무해 조각: 타임휠 탭 `Surface` 10dp → `WakerTileShape`, iOS 생 반경 18 → 토큰
+(`CodeRegisterRow`·`FortunePromptInputFields`), 재생 방식 세그먼트 썸 `.offset { }` 람다,
+스펙 「의도된 차이」에 안드로이드 정착 곡선 `(0.3,0.6,0.3,1)`·계수 0.09 행 추가 + 구현 지도의
+없는 파일 경로 정정 + iOS `TimeWheelSettle` 낡은 주석 정정.
+
+### 하지 않은 것 (요지)
+- 울림 '밀어서 끄기' 슬라이더에 속도·관성·스프링 이어받기 — 확인 슬라이더의 마찰이 존재 이유.
+  A32 실측 튕김 속도가 관성 임계의 2배라 제자리에서 한 번 튕기면 알람이 영구 종료된다.
+- 알람 행 고무줄·오버슈트(양 앱) — 726a9fe0 이 바로 그 오버슈트 때문에 바운드를 넣었다.
+- 리플/눌림 틴트 복원(오너 지시로 뺀 것), 안드로이드 햅틱, 미리듣기 실시간 게인.
+- iOS 크롭 슬라이더 grab offset(원본 M3 `RangeSlider` 도 같음), 0초 Reduce Motion 헬퍼,
+  시스템 텍스트 스타일 135곳 치환, 루트 스왑 페이드.
+
+### 선택 후속(규약에는 맞음, 이번엔 안 함)
+- iOS 시스템 `.sheet` 셋(사주 입력·설정 불가 시간·이용권 공유 선택)을 스펙 §4 형태
+  (`WakerFormSheet`/`WakerSelectionSheet` 짝)로. `.sheet(item:)` 은 바꿔 써야 한다.
+- iOS FAB 표시 조건을 `fabVisible` 하나로 묶어 `.animation(value:)`.
+- iOS AlarmRow 에 한해 무진동 스프링 + 클램프 `GeometryEffect` 로 속도 이어받기.
+
+### 사람이 확인할 것
+- **iOS AlarmRow 스와이프** — 제스처 스택에 회귀 이력이 셋(`highPriorityGesture` 로 탭 사망 등).
+  `onEnded` 판정식만 건드렸지만 실기에서 왼쪽 짧은 플릭 → 열림, 열린 뒤 오른쪽 플릭 → 닫힘,
+  느린 드래그 → 0.42 위치 판정을 눌러 볼 것.
+- **오전/오후 칸** 양 앱 — 끌면 따라오고, 굴러가는 중에 잡으면 그 자리에서 잡히고, 빠르게 두 번
+  탭해도 한 번만 넘어가는지.
+
+## 0-D. 울림 화면 다시 그림 (2026-09-06, Android `RingingActivity`)
+
+목업과 대응표: https://claude.ai/code/artifact/16b023c4-a80f-420d-aeb4-af0664dc92d8
+
+- **색은 앱에서**: 이 파일에만 있던 고정색 8종을 지우고 `AlarmTalkDarkColorScheme` + 홈 탭
+  그라데이션(`HomeGradientDark`)만 쓴다. 잠금화면 예외(항상 다크)는 그대로.
+- **문구는 카드 없이** 시계 아래 23sp/33sp 세 줄. 날짜 줄에 알람 이름을 합쳤다("9월 7일 월요일 · 출근").
+  목소리 이름·"말하고 있어요" 표시는 **두지 않기로 했다**(2026-09-06 결정).
+- **문구 없는 알람**(알람음만)은 빈 카드 대신 "알람음" 칩 하나.
+- **끄기·다시 알림 비대칭을 시각으로**: 다시 알림 52dp 투명 캡슐, 끄기 72dp 슬라이더 + primary 손잡이.
+  손잡이는 누르는 순간 0.94 로 눌리고(튕기지 않는 스프링), 70% 문턱을 넘는 순간 햅틱 한 번
+  (`CONFIRM`, API 30 미만은 `KEYBOARD_TAP`). 관성·플릭·길게 누르기는 **일부러 없다** — 잠결에
+  꺼진다.
+- **접근성**: 슬라이더에 커스텀 액션 "끄기"(`rd_dismiss_action`) — 밀기만 있던 탈출구에 TalkBack 경로.
+- 대비 실측(WCAG): 글자 쌍 전부 5.2:1 이상(가장 낮은 것이 힌트 셰브론), 손잡이/트랙 8.4:1,
+  다시 알림 테두리 3.7:1.
+- **2차 검수**(움직임·타이포·접근성 세 렌즈 → 반박 검증, 확정 6건 + 저위험 9건 반영):
+  글꼴을 넘기지 않아 이 화면만 시스템 글꼴이던 것(`typography = AlarmTalkTypography`, 그래서
+  시계 기준 폭 320→340dp), **놓는 순간 끄기**(채움 애니메이션이 끝나기를 기다리는 동안 소리가
+  계속 나고 다시 잡으면 확정이 무효가 됐다), 잡는 순간 정착 정지 + 표시값에서 드래그 시작,
+  다시 알림 리플이 안 보이던 것(`LocalContentColor`), 칩·캡슐·트랙 테두리 규칙 하나로
+  (`ringingEdge` 3.7:1), 시계를 TalkBack 한 노드 + 말로 읽는 시각(`rd_clock_spoken`),
+  문턱 통과 시 트랙 색(햅틱 끈 기기의 짝), 셰브론 위상 시차·머티리얼 아이콘, 영어 '6:30 AM'
+  순서, 창 제목(`paneTitle`), 다시 알림 role=Button, 라벨 16sp 통일, 한글 문구 자간 0.
+  기각 4건(시계 lineHeight 상속, 트랙 노드 병합, 5줄 문구, 트랙 대비)은 워크플로 저널에.
+- 검증: 컴파일·단위 테스트 373·assembleDevDebug 통과. **화면은 실기로 못 봤다**(이 세션에 폰이
+  안 붙어 있었다) — 다음에 폰이 붙으면 `adb shell am start -n com.alarmtalk.app.dev/com.alarmtalk.app.ringing.RingingActivity`
+  로 기본 상태를 띄워 확인할 것(알람 id 없이 열면 `defaultRingingUiState`, 소리는 안 난다).
+
+## 0-E. 문구 정리 + 미사용 코드 정리 (2026-09-06)
+
+- **문구**: 앱 ko/en/ja·iOS 카탈로그·랜딩에서 AI 티(대시 — –, 필러 '원활한/smooth/快適', 번역투·오역,
+  한 화면 안 해요체/합니다체 혼용)를 걷어냈다. 대시는 네 벌 모두 0개. 동의·약관 문구는 구두점·사실
+  오류(일본어 탭 이름)만 고치고 말투는 뜻이 안 바뀌는 범위에서만 맞췄다. 일부러 남긴 것: 앱 랜딩 CTA
+  "시작하기", 응원 페이지 헤드라인 느낌표(지시 문장 그대로), 초대 메시지 느낌표.
+- **미사용 코드**: Periphery(iOS)·knip(TS)·Lint UnusedResources(Android)·grep 휴리스틱(Kotlin) 후보를
+  에이전트가 코드로 검증한 뒤 지웠다 — Swift 75건, Kotlin 27건, TS export 8건, Android 문자열 29개
+  (3개 언어), iOS 카탈로그 미사용 키 260개. 남긴 것의 이유는 워크플로 저널(`wf_8dd0eab8-fdc`)에.
+  Periphery 의 `assignOnlyProperty`(Codable 필드 213건)는 서버 계약이라 손대지 않았다.
+- **백엔드 스크립트 타입체크**가 HEAD 에서부터 깨져 있었다(스톡 스크립트가 `.ts` 확장자 import 와
+  Workers 타입을 쓰는데 `scripts/tsconfig.json` 이 NodeNext·node 타입이었다). bundler 해석 +
+  `allowImportingTsExtensions` + workers-types 로 고쳤다. `npm run typecheck` 전 워크스페이스 통과.
+- 검증: Android 373 / iOS 677 / 백엔드 1539 / shared 16 / voice 11 테스트, 랜딩 빌드.
 
 ## 0. 진행 중 — 클립 선다운로드 후속
 

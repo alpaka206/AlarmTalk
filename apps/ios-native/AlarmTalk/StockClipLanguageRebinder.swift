@@ -17,6 +17,29 @@ import Foundation
 /// 있는 것)만 고친다 — 사용자가 직접 친 문구를 언어가 바뀌었다고 갈아치우면 안 된다.
 ///
 /// 안드로이드 짝은 `sync/StockClipLanguageRebinder.kt` 다 — **한쪽만 고치지 말 것.**
+/// 재바인딩 결과. **개수만으로는 부족하다**(2026-09-03 리뷰 18차).
+///
+/// `upsert` 는 저장을 비동기로 걸어 둘 뿐이라, 쓰기가 실패해도 `store.alarms` 는 이미
+/// 바뀌어 있다. 그래서 개수 0 을 돌려주는 것만으로는 호출부를 못 막는다 — 호출부는
+/// **메모리 위의 행**을 보고 옛 오디오를 지우고 차단 화면을 연다. 앱이 그 사이 종료되면
+/// 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽고, 내 알람은 서버에서 되받는
+/// 경로가 없어 오프라인 복구가 불가능하다.
+///
+/// 그래서 실패를 **값으로** 들고 나간다. `persisted == false` 면 호출부는 정리도 상태
+/// 보고도 하지 않고, 교체를 **미완료로 남긴다**(다음 회차가 처음부터 다시 한다, 멱등).
+struct StockRebindOutcome {
+    let rebound: Int
+    let persisted: Bool
+    /// **이번 회차가 실제로 소리를 갈아 끼운 알람 id.**
+    ///
+    /// 예약 재조정과 '남은 것' 판정을 **여기로 좁힌다**(2026-09-03 리뷰 20차). 전체를 보면
+    /// 교체와 무관한 알람 하나가 재예약에 실패하는 것만으로 사용자가 전체 화면 차단에
+    /// 갇힌다 — 그 화면에서는 문제의 알람을 고치거나 끌 수조차 없다.
+    let changedIds: Set<String>
+
+    static let none = StockRebindOutcome(rebound: 0, persisted: true, changedIds: [])
+}
+
 @MainActor
 struct StockClipLanguageRebinder {
 
@@ -36,33 +59,211 @@ struct StockClipLanguageRebinder {
 
     /// 다시 묶은 알람 수.
     @discardableResult
+    // ⚠ **이름보다 하는 일이 넓다**(2026-09-03). 언어가 바뀐 알람뿐 아니라,
+    //   같은 언어인데 **묶인 클립이 서버에서 사라진** 알람도 다시 묶는다.
+    //   이름은 호출부 호환으로 남겨 두었다 — 조건을 언어 하나로 되돌리지 말 것.
     func rebindIfLanguageChanged(
         session: AuthSession?,
         clips: [StockClip],
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
-    ) async -> Int {
-        guard let token = session?.token, !clips.isEmpty else { return 0 }
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// `GET /tts/stock-clips` 의 `legacy_bucket_hints` — messageId → 테마.
+        legacyHints: [String: String] = [:],
+        /// 받는 사람의 지역·사주. 조건형 버킷을 묶을 때 **빈 자리에만** 채운다.
+        conditionInputs: DynamicPromptPreferences? = nil,
+        /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
+        callerUserId: String? = nil
+    ) async -> StockRebindOutcome {
+        guard let token = session?.token, !clips.isEmpty else { return .none }
 
-        let stale: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
-            guard (record.bucketId).nilIfBlank != nil else { return false }
-            guard record.playModeEnum != .alarmOnly else { return false }
-            // 녹음 알람에는 문구 개념이 없다.
-            guard record.voiceSourceEnum != .localAudio else { return false }
-            let current: String = record.voiceLanguage ?? "ko"
-            return current != language
+        // 지금 매니페스트에 살아 있는 클립 키. 알람이 들고 있는 키가 여기 없으면 그
+        // 클립은 **서버에서 사라진 것**이다(문구·목소리를 갈면 message id 가 새로 난다).
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+
+        // ⚠ **남의 알람을 건드리지 않는다**(2026-09-03 리뷰 17차). 로컬 알람은 로그아웃해도
+        //   남으므로, 전체를 훑으면 계정 B 가 계정 A 의 숨은 알람에 **B 의 지역·생년월일을
+        //   써 넣고** DIRTY 로 표시한다 — A 가 다시 로그인하면 그 값이 서버로 올라간다.
+        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        let stale: [LocalAlarmRecord] = visible.filter { (record: LocalAlarmRecord) -> Bool in
+            Self.shouldRebind(
+                record: record, language: language, liveKeys: liveKeys,
+                clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
+            )
         }
-        guard !stale.isEmpty else { return 0 }
+        guard !stale.isEmpty else { return .none }
 
         var rebound = 0
+        var changedIds: Set<String> = []
+        var conditionBucketRebound = false
         for record in stale {
-            guard let bucket = (record.bucketId).nilIfBlank else { continue }
-            guard let bound = await bindBucket(
+            // ⚠ **묶을 때도 접은 이름을 쓴다**(2026-09-03 리뷰 5차). 지난 회차에
+            //   `normalizedBucketId` 를 **완전성 검사에만** 넣었더니, 검사는 통과하는데
+            //   `bindBucket` 이 여전히 옛 이름(`love`)으로 매니페스트를 뒤져 아무것도
+            //   못 찾고 그 알람이 **영원히 건너뛰어졌다.** 이름을 접는 자리는 '판정' 이
+            //   아니라 **'저장된 값을 읽는 모든 곳'** 이다.
+            guard let bucket = Self.resolvedBucketId(record, legacyHints: legacyHints)
+            else { continue }
+            guard let clipFields = await bindBucket(
                 record: record, bucket: bucket, clips: clips, language: language, token: token
             ) else { continue }
+            guard var bound = applyClipFields(snapshot: record, bound: clipFields) else { continue }
+            // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
+            // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
+            bound.bucketId = bucket
+            // ⚠ **조건을 여기서 채운다.** 새로고침 서비스를 부르는 것만으로는 안 된다 —
+            //   그게 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
+            bound = Self.withRecipientConditions(bound, bucket: bucket, prefs: conditionInputs)
             _ = store.upsertPreservingServerSyncFields(bound)
+            if MatchingBucketIds.contains(bucket) { conditionBucketRebound = true }
+            changedIds.insert(bound.id)
             rebound += 1
         }
-        return rebound
+        // ⚠ **조건형 버킷은 묶는 것만으로 끝나지 않는다** — 날씨는 조건 인덱스가 없으면
+        //   발사 때 마지막 '못 알아봤어요' 클립으로 떨어진다. 해석은 **호출부**가 한다:
+        //   조건이 바뀌면 AlarmKit 예약도 다시 잡아야 하는데 그 핸들은 호출부에 있다
+        //   (`AlarmTalkApp.rebindStockClipsIfNeeded`). 안드로이드는 워커가 스케줄러를
+        //   직접 부른다 — 플랫폼 사정이라 모양이 다르다.
+        _ = conditionBucketRebound
+
+        // ⚠⚠ **디스크에 앉히고 나서 돌아간다**(2026-09-03 리뷰 17차).
+        //   `upsert` 는 저장을 **비동기로 걸어 둘 뿐**이라, 그대로 돌려주면 호출부가
+        //   메모리 위의 행만 보고 **옛 오디오 파일을 지우고** '교체 완료' 로 문을 연다.
+        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **옛 행을 다시 읽는데 그 행이
+        //   가리키는 파일은 이미 없다** — 내 알람은 서버에서 되받는 경로가 없어
+        //   오프라인 복구가 불가능하다.
+        //   ⚠ **개수 0 으로는 못 막는다**(리뷰 18차). `upsert` 가 이미 `store.alarms` 를
+        //     바꿔 놨으므로, 호출부는 메모리 위의 행을 보고 그대로 지우고 문을 연다.
+        //     실패를 **값으로** 들고 나가야 한다(`StockRebindOutcome.persisted`).
+        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
+        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
+        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
+        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
+        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
+        if rebound > 0, !store.saveNow() {
+            return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
+        }
+        return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
+    }
+
+    /// **다시 묶어야 하고, 갈아탈 세트도 완전한가.**
+    ///
+    /// ⚠ **두 술어를 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 5차). 예전에는
+    ///   안드로이드가 `needsRebind(...) && replacementIsComplete(...)` 로 조립하고 iOS 는
+    ///   필터 안에서 인라인으로 썼는데, iOS 쪽이 **언어 불일치에서 먼저 return 해**
+    ///   완전성 검사를 건너뛰었다. 시딩이 도는 중에 언어를 바꾸면 부분 세트가 박히고,
+    ///   그 키는 살아 있으니 **다시는 stale 로 안 잡힌다.**
+    ///
+    /// 안드로이드 짝은 `sync/StockClipLanguageRebinder.kt` 의 같은 이름이다.
+    static func shouldRebind(
+        record: LocalAlarmRecord,
+        language: String,
+        liveKeys: Set<String>,
+        clips: [StockClip],
+        expectedVariants: ExpectedVariantCounts?,
+        legacyHints: [String: String] = [:]
+    ) -> Bool {
+        needsRebind(record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints)
+            && replacementIsComplete(
+                record: record, clips: clips, language: language, expectedVariants: expectedVariants,
+                legacyHints: legacyHints,
+            )
+    }
+
+    /// **이 알람을 다시 묶어야 하는가** — 안드로이드 `needsRebind` 미러.
+    ///
+    /// 판정이 둘이고 어느 쪽이든 하나면 true 다:
+    ///  1. **앱 언어가 바뀌었다** — 원래 이 함수의 목적.
+    ///  2. **묶인 클립이 서버에서 사라졌다.** 발사는 저장된 키와 로컬 파일만 보고 서버를
+    ///     묻지 않으므로(비행기모드 재생), 문구·목소리를 통째로 갈면 그 알람은 **지워진
+    ///     대사를 옛 목소리로 영원히 재생한다** — 언어가 안 바뀌어 1번에도 안 걸린다.
+    ///
+    /// ⚠ **2번을 「하나라도 죽었으면」으로 넓히지 말 것.** 부분 세트는 정상 상태다 —
+    ///   시딩 중이거나 클립이 늘어난 직후에는 일부만 매니페스트에 있다.
+    /// **이 교체 회차가 책임지는 알람인가**(2026-09-03 리뷰 20차).
+    ///
+    /// 이번 롤아웃이 바꾸는 것은 **기본(시스템) 목소리 4종**뿐이다. 클론은 소유자가 재등록할
+    /// 때 갱신한다.
+    ///
+    /// ⚠ **차단 화면 판정에 클론을 넣으면 영영 안 열리는 문이 된다.** 한 언어로 등록한 클론은
+    ///   그 언어 클립만 갖는데(선다운로드가 일부러 기기 언어로 거르지 않는다), 기기 언어를
+    ///   바꾸면 `needsRebind` 가 언어 불일치로 true 를 내고 `replacementIsComplete` 는 그
+    ///   목소리의 현재 기기 언어 세트를 **영원히 못 찾는다.** 재시도해도 같아서 사용자가
+    ///   전체 화면 차단에 갇힌다. 안드로이드 `isReplacementScoped` 미러.
+    static func isReplacementScoped(_ record: LocalAlarmRecord) -> Bool {
+        guard let voiceID = (record.voiceProfileId).nilIfBlank else { return false }
+        return isSystemVoiceId(voiceID)
+    }
+
+    /// **아직 테마로 옮기지 못한 옛 라이브 행인가**(2026-09-03 리뷰 19차).
+    ///
+    /// `voiceRandomPrompt` 가 켜져 있고 `bucketId` 가 비어 있는 행이 그 표식이다. 이런 행은
+    /// `needsRebind` 에 **안 걸린다** — 그 함수는 테마가 있어야 판정하고, 이 행이 문 message
+    /// 는 프리셋이 아니라 서버 힌트도 없다. 그래서 미완료 판정에서 통째로 빠졌고, 그 알람이
+    /// **아직 은퇴한 목소리로 우는데** 차단 화면이 열렸다.
+    ///
+    /// ⚠ **옮길 수 있는 것만 센다.** 테마를 못 내는 행은 변환기도 건너뛰므로, 그것까지 세면
+    ///   **영영 안 열리는 문**이 된다.
+    /// ⚠ **`greeting` 은 알람 버킷이 아니다.** 문구 종류가 비면 `normalized` 가 모르는 값을
+    ///   `.preset` 으로 접고 그게 `greeting` 으로 매핑되는데, 그건 목소리 미리듣기용
+    ///   자기소개라 알람 테마가 될 수 없다(서버가 `INVALID_BUCKET_ID` 로 거절한다).
+    ///   `FreeBucket.order` 가 같은 이유로 `.preset` 을 빼는 그 집합이다.
+    ///   안드로이드 `needsLegacyConversion` 미러.
+    static func needsLegacyConversion(_ record: LocalAlarmRecord) -> Bool {
+        guard record.voiceRandomPrompt else { return false }
+        guard (record.bucketId).nilIfBlank == nil else { return false }
+        guard record.playModeEnum != .alarmOnly else { return false }
+        guard record.voiceSourceEnum != .localAudio else { return false }
+        guard let raw = record.voiceRandomContext, !raw.isEmpty else { return false }
+        let bucket = RandomPromptContext.normalized(raw).bucketCategory
+        return FreeBucket(rawValue: bucket).map(FreeBucket.order.contains) ?? false
+    }
+
+    /// **이 알람의 테마가 무엇인가** — 저장된 값이 먼저, 없으면 서버가 준 힌트.
+    ///
+    /// `bucketId` 를 행에 적기 전에 만들어진 옛 알람은 저장된 값이 없어서, 재바인더 두 갈래
+    /// 어디에도 안 걸려 **영원히 옛 대사·옛 목소리**로 울었다(이름만 새 이름). 무엇으로
+    /// 갈아탈지는 서버가 안다 — `GET /tts/stock-clips` 의 `legacy_bucket_hints`.
+    ///
+    /// ⚠ **힌트를 레코드에 미리 써넣지 말 것.** `canApplyClipFields` 가 `bucketId` 를
+    ///   비교하므로, 스냅샷만 채우면 디스크의 nil 과 달라져 **모든 적용이 거부된다.**
+    ///   해석한 값은 따로 들고 다니다가 쓰기 시점에 한 번만 적는다. 안드로이드 짝은
+    ///   `StockClipLanguageRebinder.resolvedBucketId`.
+    static func resolvedBucketId(
+        _ record: LocalAlarmRecord,
+        legacyHints: [String: String] = [:]
+    ) -> String? {
+        if let stored = normalizedBucketId(record.bucketId) { return stored }
+        guard let messageId = (record.ttsMessageId).nilIfBlank else { return nil }
+        guard let hinted = legacyHints[messageId] else { return nil }
+        return normalizedBucketId(hinted)
+    }
+
+    static func needsRebind(
+        record: LocalAlarmRecord,
+        language: String,
+        liveKeys: Set<String>,
+        legacyHints: [String: String] = [:]
+    ) -> Bool {
+        guard resolvedBucketId(record, legacyHints: legacyHints) != nil else { return false }
+        guard record.playModeEnum != .alarmOnly else { return false }
+        // 녹음 알람에는 문구 개념이 없다.
+        guard record.voiceSourceEnum != .localAudio else { return false }
+        let bound = record.bucketClipKeys ?? []
+        // ⚠ **조건형 버킷(날씨·운세)을 비켜 가지 않는다**(2026-09-03 사용자 지시).
+        //   12·13차에는 여기서 그냥 건너뛰었다 — 받은 알람에 조건도 사주도 없어서 값 없이
+        //   묶으면 날씨가 마지막 '못 알아봤어요' 클립으로 떨어졌기 때문이다. 그런데 그러면
+        //   그 알람은 **영원히 옛 대사**로 남는다. 조건은 **받는 사람 자신의 설정**으로
+        //   채울 수 있으므로, 갈아탄 뒤 `WeatherVariantRefreshService` 로 즉시 해석한다.
+        // ① 앱 언어가 바뀌었다 — 원래 목적.
+        let current: String = record.voiceLanguage ?? "ko"
+        if current != language { return true }
+        // ③ 테마는 아는데 클립 목록이 없는 알람(받은 가족 알람) — 대표 클립으로 판정한다.
+        if bound.isEmpty {
+            guard let messageId = (record.ttsMessageId).nilIfBlank else { return false }
+            return !liveKeys.contains(AudioCacheStore.stockCacheKey(messageId: messageId))
+        }
+        return bound.allSatisfy { !liveKeys.contains($0) }
     }
 
     /// **라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립에 다시 묶는다.**
@@ -83,32 +284,244 @@ struct StockClipLanguageRebinder {
     /// **한쪽만 고치지 말 것.**
     ///
     /// - Returns: 다시 묶은 알람 수.
+    /// **교체가 끝났으면 옛 스톡 클립 파일을 지운다.**
+    ///
+    /// 순서가 안전장치다: **다 받고 → 다 묶고 → 그 다음에 지운다.** 아직 갈아탈 알람이
+    /// 남아 있으면(시딩이 도는 중이라 세트가 모자란 경우) **아무것도 지우지 않고** 다음
+    /// 실행으로 미룬다 — 중간에 멈추면 지운 것이 없으므로 잃는 것도 없다(멱등).
+    ///
+    /// ⚠ **판정은 `needsRebind` 하나로 한다.** "죽은 키를 물고 있는 알람이 하나라도 있으면
+    ///   미룬다" 로 하면 **영영 안 지운다** — 버킷 없이 클립 하나만 물린 옛 행은 재바인더가
+    ///   손댈 수 없어 죽은 키를 계속 들고 있다. `needsRebind` 는 그 행을 false 로 돌려주므로
+    ///   막지 않고, 그 행이 물고 있는 키는 참조 집합에 들어가 **파일도 지워지지 않는다.**
+    ///
+    /// 안드로이드 짝은 `StockClipLanguageRebinder.pruneReplacedStockAudio` 다.
+    ///
+    /// - Returns: 지운 파일 수. 아직 때가 아니면 0.
+    ///
+    /// ⚠ **파일 훑기·삭제는 메인 액터에서 하지 않는다**(2026-09-03). 이 클래스는
+    ///   `@MainActor` 라 그냥 부르면 디렉터리 열거와 `removeItem` 이 **UI 스레드에서** 돈다.
+    ///   앱 시작 직후에 도는 경로라, 그동안 화면이 굳어 탭이 먹지 않았다(UI 테스트가
+    ///   `Failed to not hittable` 로 잡았다). 판정에 쓰는 값만 메인에서 모으고, 파일 작업은
+    ///   떼어 낸다.
+    /// **조건형 버킷에 받는 사람의 조건을 채운다**(2026-09-03 리뷰 15차).
+    ///
+    /// 받은 가족 알람은 `voiceWeatherCountry`·`voiceWeatherCity` 와 사주 필드가 **전부
+    /// 비어 있다** — 보낸 사람의 지역·사주를 받지 않기 때문이다. 그 상태로 세트만 묶으면
+    /// 날씨 조회가 서버 기본값(서울)으로 떨어지고 운세는 **빈 프로필을 해시**한다.
+    /// `WeatherVariantRefreshService` 를 부르는 것만으로는 안 된다 — 그게 읽는 것이
+    /// 바로 이 필드들이다.
+    ///
+    /// ⚠ **비어 있을 때만 채운다.** 사용자가 그 알람에 직접 넣어 둔 값이 이긴다.
+    /// ⚠ **그 버킷에 필요한 것만 채운다.** 안드로이드 `withRecipientConditions` 미러.
+    static func withRecipientConditions(
+        _ record: LocalAlarmRecord,
+        bucket: String,
+        prefs: DynamicPromptPreferences?
+    ) -> LocalAlarmRecord {
+        guard let prefs else { return record }
+        func keep(_ current: String?, _ fallback: String) -> String? {
+            if let value = (current).nilIfBlank { return value }
+            let trimmed = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        var next = record
+        switch bucket {
+        case "weather":
+            next.voiceWeatherCountry = keep(record.voiceWeatherCountry, prefs.weatherCountry)
+            next.voiceWeatherCity = keep(record.voiceWeatherCity, prefs.weatherCity)
+        case "fortune":
+            next.voiceFortuneGender = keep(record.voiceFortuneGender, prefs.fortuneGender)
+            next.voiceFortuneBirthDate = keep(record.voiceFortuneBirthDate, prefs.fortuneBirthDate)
+            next.voiceFortuneBirthTime = keep(record.voiceFortuneBirthTime, prefs.fortuneBirthTime)
+        default:
+            break
+        }
+        return next
+    }
+
+    /// **아직 갈아탈 알람이 남았는가** — 교체 미완료 차단 화면의 판정.
+    /// 안드로이드 `StockClipLanguageRebinder.hasPendingReplacement` 미러.
+    ///
+    /// `needsRebind` 로 묻는다(`shouldRebind` 가 아니다). 세트가 아직 다 안 구워져서 못
+    /// 갈아탄 것도 **미완료**이기 때문이다 — 그 알람은 지금 옛 목소리로 운다.
+    ///
+    /// ⚠ **'못 받았다' 와 '받았는데 비었다' 를 가른다**(2026-09-03 리뷰 15차).
+    ///   `#110` 이 프리셋을 은퇴시킨 뒤 아직 게시하지 않은 구간에서는 매니페스트가
+    ///   **성공적으로 비어 있다** — 그때 false 를 돌려주면 옛 목소리를 물고 있는 알람이
+    ///   그대로인데도 차단 화면이 안 뜬다. 판정 근거는 호출부가 `manifestFetched` 로
+    ///   명시한다. 안드로이드 짝과 같은 이름이다.
+    func hasPendingReplacement(
+        clips: [StockClip],
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifestFetched: Bool,
+        legacyHints: [String: String] = [:],
+        /// 지금 로그인한 계정. 남의 알람 때문에 이 계정을 가두지 않는다.
+        callerUserId: String? = nil
+    ) -> Bool {
+        guard manifestFetched, store.hasLoadedFromDisk else { return false }
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+        let visible = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        return visible.contains { record in
+            // ⚠ **이번 교체가 책임지는 알람만 센다**(리뷰 20차) — 클론까지 세면 기기 언어를
+            //   바꾼 단일 언어 클론이 문을 영영 못 열게 한다.
+            guard Self.isReplacementScoped(record) else { return false }
+            // ⚠ **두 갈래를 다 본다**(리뷰 19차). 테마 재바인딩만 보면, 아직 테마로 못 옮긴
+            //   옛 라이브 행이 **은퇴한 목소리로 우는데** 문이 열린다.
+            return Self.needsRebind(
+                record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            ) || Self.needsLegacyConversion(record)
+        }
+    }
+
+    @discardableResult
+    func pruneReplacedStockAudio(
+        clips: [StockClip],
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// ⚠ **재바인딩과 같은 힌트를 넘길 것.** 여기만 힌트 없이 물으면 [needsRebind] 가
+        /// 버킷 없는 옛 행을 false 로 돌려줘, **아직 갈아타지 않은 알람을 두고 파일을 지운다.**
+        legacyHints: [String: String] = [:],
+        /// 지금 로그인한 계정. **판정에만** 쓴다 — 남길 것은 전 계정이다.
+        callerUserId: String? = nil
+    ) async -> Int {
+        guard !clips.isEmpty else { return 0 }
+        // ⚠⚠ **알람이 디스크에서 다 올라오기 전에는 절대 지우지 않는다**(2026-09-03 리뷰 10차).
+        //   `LocalAlarmStore` 는 콜드 스타트에 `alarms = []` 로 시작해 **비동기로** 채운다.
+        //   그 창에서 이 함수가 돌면 참조 집합이 비어 **받아 둔 클립 전부가 '아무도 안 쓰는
+        //   것'** 으로 보이고, 특히 재바인딩이 불가능한 **버킷 없는 옛 행**은 하나뿐인
+        //   로컬 클립을 잃어 다시 받을 방법도 없다(그 행은 어떤 테마인지 알 수 없다).
+        //   호출부에서도 막지만(`rebindStockClipsIfNeeded`), **지우는 자리에도 둔다** —
+        //   이 함수를 다른 데서 부르는 순간 그 방어가 사라진다.
+        //   (안드로이드는 Room 을 동기로 읽으므로 이 창이 없다.)
+        guard store.hasLoadedFromDisk else { return 0 }
+        let liveKeys = Set(clips.map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) })
+        let alarms = store.alarms
+        // ⚠ **판정은 이 계정 것만, 남길 것은 전부.** 남의 알람 때문에 정리를 영영 미루면
+        //   안 되고(그 계정은 로그인하지 않는다), 반대로 남의 알람이 물고 있는 클립을
+        //   지우면 그 사람이 다시 로그인했을 때 **소리를 잃는다.**
+        let mine = callerUserId == nil ? alarms : store.alarms(visibleTo: callerUserId)
+
+        // ① 아직 갈아탈 것이 남았으면 미룬다. ② 세트가 모자라 못 갈아탄 것이 있어도 미룬다.
+        let pending = mine.contains {
+            Self.shouldRebind(
+                record: $0, language: language, liveKeys: liveKeys,
+                clips: clips, expectedVariants: expectedVariants, legacyHints: legacyHints,
+            )
+        }
+        guard !pending else { return 0 }
+        // 같은 이유로 여기서도 이번 교체가 책임지는 알람만 본다 — 갈아탈 수 없는 클론
+        // 하나 때문에 옛 파일 정리를 **영영 미루지** 않는다.
+        let waitingForSeed = mine.contains { record in
+            guard Self.isReplacementScoped(record) else { return false }
+            return Self.needsRebind(
+                record: record, language: language, liveKeys: liveKeys, legacyHints: legacyHints,
+            ) || Self.needsLegacyConversion(record)
+        }
+        guard !waitingForSeed else { return 0 }
+
+        // ③ 지금 알람들이 물고 있는 키는 전부 남긴다(여러 알람이 같은 클립을 공유한다).
+        var referenced = Set<String>()
+        var referencedFileNames = Set<String>()
+        for alarm in alarms {
+            referenced.formUnion(alarm.bucketClipKeys ?? [])
+            if let key = alarm.audioCacheKey, !key.isEmpty { referenced.insert(key) }
+            // 옛 별칭 디렉터리는 파일 **이름**으로 참조된다(`<messageId>.<ext>`).
+            if let uri = alarm.localAudioUri, !uri.isEmpty {
+                referencedFileNames.insert((uri as NSString).lastPathComponent)
+            }
+        }
+        let store = cache
+        return await Task.detached(priority: .utility) {
+            store.pruneReplacedStockAudio(
+                referencedKeys: referenced,
+                liveKeys: liveKeys,
+                referencedFileNames: referencedFileNames
+            )
+        }.value
+    }
+
+    /// 저장된 버킷 id 를 **현재 이름**으로 접는다. 접기의 단일 출처는
+    /// `RandomPromptContext.forBucket` ↔ `bucketCategory` 한 쌍이다.
+    static func normalizedBucketId(_ bucketId: String?) -> String? {
+        guard let raw = (bucketId).nilIfBlank else { return nil }
+        return RandomPromptContext.forBucket(raw)?.bucketCategory ?? raw
+    }
+
+    /// 갈아탈 세트가 완전한가 — 안드로이드 `replacementIsComplete` 미러.
+    /// `expectedVariants` 가 없으면(옛 서버) 막지 않는다.
+    static func replacementIsComplete(
+        record: LocalAlarmRecord,
+        clips: [StockClip],
+        language: String,
+        expectedVariants: ExpectedVariantCounts?,
+        legacyHints: [String: String] = [:]
+    ) -> Bool {
+        // ⚠ **저장된 옛 이름을 접고 나서 맞춘다**(2026-09-03 리뷰 4차). 기기에 `love` 로
+        //   저장된 알람은 새 매니페스트(`cheer`)와 이름이 달라 variant 가 0개로 잡히고,
+        //   그러면 이 함수가 영원히 false 라 재바인딩이 통째로 막힌다.
+        // 저장된 값이 없는 옛 알람은 서버 힌트로 해석한다(`resolvedBucketId`).
+        guard let bucket = resolvedBucketId(record, legacyHints: legacyHints) else { return false }
+        let variants = Set(
+            clips
+                .filter {
+                    $0.voiceProfileId == record.voiceProfileId
+                        && $0.category == bucket
+                        && ($0.language ?? "ko") == language
+                }
+                .compactMap(\.variant)
+        )
+        guard !variants.isEmpty else { return false }
+        guard let expected = expectedVariants?.count(
+            category: bucket,
+            isSystemVoice: isSystemVoiceId(record.voiceProfileId)
+        ), expected > 0 else { return true }
+        return variants == Set(0..<expected)
+    }
+
     @discardableResult
     func rebindLiveGenerationRows(
         session: AuthSession?,
         clips: [StockClip],
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
-    ) async -> Int {
-        guard let token = session?.token, !clips.isEmpty else { return 0 }
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        expectedVariants: ExpectedVariantCounts? = nil,
+        /// 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다.
+        callerUserId: String? = nil
+    ) async -> StockRebindOutcome {
+        guard let token = session?.token, !clips.isEmpty else { return .none }
 
-        let legacy: [LocalAlarmRecord] = store.alarms.filter { (record: LocalAlarmRecord) -> Bool in
-            // ⚠ `bucketId` 가 **비어 있는** 것이 '옛 라이브 행' 의 표식이다. 테마 알람은
-            // 저장할 때 `randomPrompt` 를 내리고 `bucketId` 를 적으므로 여기 안 걸린다.
-            guard record.voiceRandomPrompt else { return false }
-            guard (record.bucketId).nilIfBlank == nil else { return false }
-            guard record.playModeEnum != .alarmOnly else { return false }
-            guard record.voiceSourceEnum != .localAudio else { return false }
-            return true
-        }
-        guard !legacy.isEmpty else { return 0 }
+        // 남의 알람은 건드리지 않는다 — `rebindIfLanguageChanged` 와 같은 이유.
+        let visibleLegacy = callerUserId == nil ? store.alarms : store.alarms(visibleTo: callerUserId)
+        // ⚠ 술어를 여기서 다시 조립하지 않는다 — 미완료 판정과 **같은 이름**을 쓴다.
+        //   두 벌로 갈라지면 "변환은 남았는데 완료라고 보고" 하는 상태가 다시 생긴다.
+        let legacy: [LocalAlarmRecord] = visibleLegacy.filter(Self.needsLegacyConversion)
+        guard !legacy.isEmpty else { return .none }
 
         var rebound = 0
+        var changedIds: Set<String> = []
         for record in legacy {
-            guard let context = RandomPromptContext(rawValue: record.voiceRandomContext ?? "") else { continue }
-            guard var bound = await bindBucket(
+            // ⚠ **저장된 값은 `normalized` 로 읽는다**(2026-09-03 리뷰). 생성자를 직접
+            //   쓰면 이름이 바뀐 옛 값(`love`)에 nil 이 나와 그 행이 **통째로 건너뛰어진다** —
+            //   옛 표현에 남아 매번 같은 문구를 되풀이한다. `normalized` 가 `cheer` 로 접는다.
+            guard let raw = record.voiceRandomContext, !raw.isEmpty else { continue }
+            let context = RandomPromptContext.normalized(raw)
+            // 술어가 이미 걸렀지만, 이 값이 실제로 묶이는 자리라 한 번 더 본다 —
+            // `greeting` 으로 묶인 알람은 저장할 때마다 400 을 맞는다.
+            guard FreeBucket(rawValue: context.bucketCategory).map(FreeBucket.order.contains) ?? false
+            else { continue }
+            // ⚠ **여기도 완전한 세트일 때만 옮긴다**(2026-09-03 리뷰 4차). 이 경로는 옛
+            //   라이브 행을 테마로 바꾸면서 `voiceRandomPrompt` 를 내린다 — 한 번 옮겨지면
+            //   위 술어에 다시 안 걸려 **영원히 그 부분 세트로 남는다.**
+            var probe = record
+            probe.bucketId = context.bucketCategory
+            guard Self.replacementIsComplete(
+                record: probe, clips: clips, language: language, expectedVariants: expectedVariants,
+            ) else { continue }
+            guard let clipFields = await bindBucket(
                 record: record, bucket: context.bucketCategory,
                 clips: clips, language: language, token: token
             ) else { continue }
+            guard var bound = applyClipFields(snapshot: record, bound: clipFields) else { continue }
             bound.bucketId = context.bucketCategory
             // ⚠ **랜덤을 내린다.** 안 내리면 다음 실행이 이 행을 또 옛 행으로 보고 매번 다시
             // 묶으며, 편집기도 계속 '생성형' 으로 읽는다. 문구 **종류**
@@ -116,9 +529,71 @@ struct StockClipLanguageRebinder {
             // 되짚는 값이다(CLAUDE.md 「일곱 자리」).
             bound.voiceRandomPrompt = false
             _ = store.upsertPreservingServerSyncFields(bound)
+            changedIds.insert(bound.id)
             rebound += 1
         }
-        return rebound
+        // ⚠ **디스크에 앉히고 나서 돌아간다**(리뷰 17차) — `rebindIfLanguageChanged` 와
+        //   같은 이유다. 메모리만 바뀐 채로 '끝났다' 고 하면 호출부가 옛 파일을 지우고,
+        //   그 사이 앱이 종료되면 다음 콜드 스타트가 **없는 파일을 가리키는 옛 행**을 읽는다.
+        // ⚠⚠ **디스크에 앉히기 *전에* id 를 남긴다**(2026-09-03 리뷰 23차).
+        //   호출부에서 남기면 그 사이(날씨 갱신·파일 정리)에 앱이 종료됐을 때 **행은 이미
+        //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
+        //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
+        //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
+        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
+        if rebound > 0, !store.saveNow() {
+            return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
+        }
+        return StockRebindOutcome(rebound: rebound, persisted: true, changedIds: changedIds)
+    }
+
+    /// **다운로드 도중 사용자가 고친 것을 덮지 않는다**(2026-09-03 리뷰 8차).
+    ///
+    /// 이 경로는 알람을 스냅샷으로 읽고 나서 **여러 번 await 하며**(클립 N개 다운로드)
+    /// 돌아온다. 그 사이 사용자가 시각을 바꾸거나 알람을 끄면, 스냅샷을 통째로 쓰는 순간
+    /// 그 편집이 사라진다 — `upsertPreservingServerSyncFields` 는 **서버 발급 필드만**
+    /// 보존하므로 시각·요일·on/off 는 지켜 주지 않는다. iOS 는 그 뒤 곧바로 AlarmKit 예약을
+    /// 재조정하므로, 덮어쓴 옛 시각이 **그 자리에서 OS 예약에까지 반영된다.**
+    ///
+    /// 그래서 쓰기 직전에 **행을 다시 읽고, 클립에 관한 값만** 얹는다.
+    ///
+    /// ⚠ 다시 읽은 행이 더 이상 이 테마/목소리가 아니면 포기한다 — 그 사이 사용자가 바꾼
+    ///   것이라, 받아 둔 클립은 이미 남의 것이다. 다음 실행이 다시 판단한다(멱등).
+    ///
+    /// ⚠ **문구 갈래(`voiceRandomPrompt`·`voiceRandomContext`)도 함께 본다**(2026-09-03
+    ///   리뷰 9차). 목소리·테마·소스만 보면 **옛 라이브 행 → 직접 입력** 전환을 못 잡는다 —
+    ///   그 편집은 같은 목소리·같은 소스에 `bucketId` 도 여전히 nil 이라 가드를 통과하고,
+    ///   사용자가 방금 친 문구를 덮어쓴 뒤 테마 알람으로 되돌린다.
+    ///
+    /// 안드로이드 짝은 `StockClipLanguageRebinder.applyClipFields` 다 — **한쪽만 고치지 말 것.**
+    /// **받아 둔 클립을 이 행에 얹어도 되는가** — 안드로이드 `canApplyClipFields` 미러.
+    ///
+    /// ⚠ 판정 축은 「이 알람이 어떤 종류의 문구를 쓰는가」 전부다. 목소리·테마·소스만 보면
+    ///   **옛 라이브 행 → 직접 입력** 전환을 못 잡는다(같은 목소리·같은 소스에 `bucketId`
+    ///   도 여전히 nil 이라 통과한다) — 사용자가 방금 친 문구를 덮어쓰게 된다.
+    static func canApplyClipFields(snapshot: LocalAlarmRecord, fresh: LocalAlarmRecord) -> Bool {
+        fresh.voiceProfileId == snapshot.voiceProfileId
+            && fresh.bucketId == snapshot.bucketId
+            && fresh.voiceSource == snapshot.voiceSource
+            && fresh.voiceRandomPrompt == snapshot.voiceRandomPrompt
+            && fresh.voiceRandomContext == snapshot.voiceRandomContext
+    }
+
+    private func applyClipFields(
+        snapshot: LocalAlarmRecord,
+        bound: LocalAlarmRecord
+    ) -> LocalAlarmRecord? {
+        guard var fresh = store.alarms.first(where: { $0.id == snapshot.id }) else { return nil }
+        guard Self.canApplyClipFields(snapshot: snapshot, fresh: fresh) else { return nil }
+        // ⚠ **`bindBucket` 이 세우는 값과 정확히 같은 목록이어야 한다** — 하나 빠지면
+        //   그 필드만 옛 값으로 남아 클립과 어긋난다.
+        fresh.bucketClipKeys = bound.bucketClipKeys
+        fresh.audioCacheKey = bound.audioCacheKey
+        fresh.localAudioUri = bound.localAudioUri
+        fresh.voiceLanguage = bound.voiceLanguage
+        fresh.voiceText = bound.voiceText
+        fresh.ttsMessageId = bound.ttsMessageId
+        return fresh
     }
 
     /// (알람·테마·언어)로 클립 세트를 받아 행에 묶을 값을 만든다. 묶을 수 없으면 nil.
@@ -154,7 +629,13 @@ struct StockClipLanguageRebinder {
         for clip in target {
             let key = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
             if cache.cachedURL(for: key) == nil {
-                guard await download(messageID: clip.messageId, key: key, token: token) else { continue }
+                // ⚠ **하나라도 못 받으면 통째로 포기한다**(2026-09-03 리뷰 4차, 안드로이드와
+                //   같은 규칙). 실패한 것만 건너뛰고 저장하면 그 키들이 `liveKeys` 에
+                //   들어가 다음 회차부터 stale 로 안 잡힌다 — 일시적인 네트워크 실패
+                //   하나가 그 알람을 **영구히 부분 세트**로 만든다.
+                guard await download(messageID: clip.messageId, key: key, token: token) else {
+                    return nil
+                }
             }
             keys.append(key)
         }

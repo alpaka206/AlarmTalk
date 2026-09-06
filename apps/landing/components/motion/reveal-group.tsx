@@ -81,6 +81,7 @@ export function RevealGroup({
 type ItemProps = {
   as?: ElementType;
   variant?: RevealVariant;
+  id?: string;
   className?: string;
   style?: CSSProperties;
   children: ReactNode;
@@ -89,6 +90,7 @@ type ItemProps = {
 export function RevealItem({
   as = "div",
   variant = "rise",
+  id,
   className,
   style,
   children,
@@ -98,7 +100,7 @@ export function RevealItem({
   if (reduced) {
     const Plain = as;
     return (
-      <Plain className={className} style={style}>
+      <Plain id={id} className={className} style={style}>
         {children}
       </Plain>
     );
@@ -110,6 +112,7 @@ export function RevealItem({
 
   return (
     <MotionTag
+      id={id}
       className={className}
       style={style}
       data-reveal

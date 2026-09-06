@@ -15,6 +15,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
         return (
           <code
             key={key}
+            translate="no"
             className="rounded bg-accent-soft px-1.5 py-0.5 text-[0.92em] text-accent"
           >
             {part.slice(1, -1)}

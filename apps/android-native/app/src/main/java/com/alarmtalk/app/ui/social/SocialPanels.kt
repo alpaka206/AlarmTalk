@@ -41,20 +41,6 @@ internal fun FamilyConnectionPanel(
     val currentGroup = familyGroup?.group
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val activePlanKey = subscriptionResponse?.plan?.key
-    val sharedPlanLabel = when (activePlanKey) {
-        "couple" -> stringResource(R.string.social_plan_label_couple)
-        "family" -> stringResource(R.string.social_plan_label_family)
-        else -> stringResource(R.string.social_plan_label_shared)
-    }
-    val familyShareCodes = remember(vouchers, activePlanKey) {
-        vouchers.filter { voucher ->
-            voucher.code.startsWith("INV-") &&
-                voucher.planType == "family" &&
-                (activePlanKey == null || voucher.planKey == activePlanKey) &&
-                voucher.status !in listOf("expired", "revoked", "cancelled")
-        }
-    }
     val canManageShareCode = currentGroup != null &&
         familyGroup?.role == "owner" &&
         subscriptionResponse?.plan?.planType == "family"
