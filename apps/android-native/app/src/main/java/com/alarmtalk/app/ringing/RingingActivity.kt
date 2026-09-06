@@ -18,7 +18,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,7 +32,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
@@ -51,9 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -68,7 +64,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
 import com.alarmtalk.app.stripDeliveryTags
-import com.alarmtalk.app.WakerDialogShape
 import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
@@ -84,6 +79,27 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
+import android.view.HapticFeedbackConstants
+import android.view.View
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import com.alarmtalk.app.HomeGradientDark
+import com.alarmtalk.app.WakerPillShape
 
 class RingingActivity : ComponentActivity() {
     private var alarmId by mutableStateOf<String?>(null)
@@ -199,55 +215,58 @@ class RingingActivity : ComponentActivity() {
     }
 }
 
-// 가이드 .ring 디자인의 다크 블루→블랙 그라데이션 배경.
-private val RingingBackground = Brush.verticalGradient(
-    listOf(Color(0xFF11355A), Color(0xFF0A1726), Color(0xFF06080E)),
-)
-
+/**
+ * 울림 화면 (2026-09-06 다시 그림).
+ *
+ * 자다 깬 사람이 3초 안에 알아야 할 것은 **몇 시인가**와 **무엇이 울리는가** 둘이다. 그래서
+ * 시계가 가장 크고, 문구는 카드 없이 시계 아래에 바로 놓는다. 색은 여기서 새로 짓지 않는다 —
+ * 잠금화면 위라 앱 테마를 상속하지는 않지만 값은 전부 `AlarmTalkDarkColorScheme` 과 홈 탭
+ * 그라데이션(`HomeGradientDark`)에서 온다. 예전에는 이 파일에만 있는 고정색 8종이었고, 잠금화면에서
+ * 앱으로 넘어가면 다른 앱처럼 보였다.
+ *
+ * 끄기와 다시 알림은 **비대칭**이다(탭 = 다시 알림, 밀기 = 끄기). 다시 알림은 가벼운 캡슐로,
+ * 끄기는 채운 손잡이의 슬라이더로 그려 어느 쪽이 되돌릴 수 없는지 보이게 한다.
+ * ⚠ 슬라이더에 관성·플릭 판정을 넣지 말 것 — 잠결에 한 번 튕기면 알람이 영구 종료된다
+ *   (`docs/spec/alarm-ringing.md`). 마찰이 이 컨트롤의 존재 이유다.
+ */
 @Composable
 private fun RingingRoute(
     uiState: RingingUiState,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
-    // 잠금화면 위에서는 항상 다크로 떠야 하므로 앱 테마를 상속하지 않고
-    // 단일 출처인 AlarmTalkDarkColorScheme(브랜드 블루 primary 계열)에서 시작한다.
-    // 의도적으로 다른 부분만 override: 살몬 secondary(따뜻한 대비 강조)와 표면 톤.
-    MaterialTheme(
-        colorScheme = AlarmTalkDarkColorScheme.copy(
-            secondary = Color(0xFFF0B8AF),
-            onSecondary = Color(0xFF351210),
-            secondaryContainer = Color(0xFF4F2824),
-            onSecondaryContainer = Color(0xFFFFDED9),
-            surface = Color(0xFF131821),
-            surfaceVariant = Color(0xFF202833),
-            onSurfaceVariant = Color(0xFFB6BEC9),
-            outlineVariant = Color(0xFF303A46),
-        ),
-    ) {
+    // 잠금화면 위에서는 항상 다크로 떠야 하므로 앱 테마를 상속하지 않는다. 값은 단일 출처 그대로.
+    MaterialTheme(colorScheme = AlarmTalkDarkColorScheme) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(RingingBackground)
+                .background(HomeGradientDark)
                 .systemBarsPadding()
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(54.dp))
+            // 날짜 줄에 알람 이름을 합친다 — 카드 한 장을 줄인다.
             Text(
-                text = uiState.dateText,
-                color = Color(0xFFA6BDDA),
-                style = MaterialTheme.typography.titleMedium,
+                text = listOfNotNull(uiState.dateText.takeIf { it.isNotBlank() }, uiState.label)
+                    .joinToString(" · "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
             RingingClock(ampm = uiState.ampm, time = uiState.timeText)
 
-            // 라벨(알람 이름)과 음성으로 재생되는 멘트 문구를 카드로 보여준다(전달 태그는 제거된 상태).
-            if (uiState.label != null || uiState.voiceText != null) {
-                Spacer(Modifier.height(30.dp))
-                RingingVoiceCard(uiState)
+            Spacer(Modifier.height(34.dp))
+            val voice = uiState.voiceText
+            if (voice != null) {
+                RingingMessage(voice)
+            } else {
+                // 문구가 없는 알람은 빈 카드를 그리지 않는다 — 무엇이 울리는지 칩 하나로 말한다.
+                RingingToneChip()
             }
 
             Spacer(Modifier.weight(1f))
@@ -257,10 +276,10 @@ private fun RingingRoute(
                     minutes = uiState.snoozeMinutes,
                     onSnooze = onSnooze,
                 )
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(16.dp))
             }
             RingingSlideToDismiss(onDismiss = onDismiss)
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -290,7 +309,7 @@ private fun RingingClock(ampm: String, time: String) {
                 Text(
                     text = ampm,
                     modifier = Modifier.padding(bottom = 18.dp * scale),
-                    color = Color(0xFFA6BDDA),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 26.sp * scale,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -302,6 +321,7 @@ private fun RingingClock(ampm: String, time: String) {
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 104.sp * scale,
                 fontWeight = FontWeight.Bold,
+                // 큰 숫자는 자간을 조인다(-0.03em) — 기본 자간이면 흩어져 보인다.
                 letterSpacing = (-3).sp * scale,
                 maxLines = 1,
                 softWrap = false,
@@ -310,136 +330,153 @@ private fun RingingClock(ampm: String, time: String) {
     }
 }
 
+/**
+ * 울리는 문구. 카드 없이 시계 아래에 바로 — 카드는 시계와 겨루는 두 번째 상자였다.
+ * 긴 문구가 컨트롤을 화면 밖으로 밀지 않도록 세 줄에서 자른다(전문은 목소리가 읽는다).
+ */
 @Composable
-private fun RingingVoiceCard(uiState: RingingUiState) {
-    Surface(
+private fun RingingMessage(text: String) {
+    Text(
+        text = text,
         modifier = Modifier
             .fillMaxWidth()
             .widthIn(max = 440.dp),
-        shape = WakerDialogShape,
-        color = Color(0xFF122034).copy(alpha = 0.66f),
-        border = BorderStroke(1.dp, Color(0x24FFFFFF)),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            uiState.label?.let { label ->
-                Text(
-                    text = label,
-                    color = Color(0xFFA6BDDA),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            // 파형 시각화 대신, 음성으로 재생되는 실제 멘트 문구를 그대로 보여준다(전달 태그 제거된 상태).
-            uiState.voiceText?.let { voice ->
-                if (uiState.label != null) Spacer(Modifier.height(12.dp))
-                Text(
-                    text = voice,
-                    color = Color(0xFFEAF1FB),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 30.sp,
-                    textAlign = TextAlign.Center,
-                    // 긴 문구가 스누즈/해제 컨트롤을 화면 밖으로 밀지 않도록 줄 수를 제한한다(전문은 음성으로 재생).
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
+        color = MaterialTheme.colorScheme.onSurface,
+        fontSize = 23.sp,
+        lineHeight = 33.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = (-0.3).sp,
+        textAlign = TextAlign.Center,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
-private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
-    // 끄기 슬라이더(76dp)와 높이·라운딩을 맞춰 두 컨트롤이 한 쌍으로 읽히게 한다.
+private fun RingingToneChip() {
     Surface(
-        onClick = onSnooze,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(76.dp),
-        shape = RoundedCornerShape(26.dp),
-        color = Color.White.copy(alpha = 0.07f),
-        border = BorderStroke(1.dp, Color(0x24FFFFFF)),
+        shape = WakerPillShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
             Text(
-                text = stringResource(R.string.rd_snooze_button_minutes, minutes),
-                color = Color(0xFFCFDDEE),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                text = stringResource(R.string.rd_tone_only),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }
 }
 
-private val SlideTrackBrush = Brush.verticalGradient(
-    listOf(Color(0x2E8FC4FF), Color(0x0F8FC4FF)),
-)
-private val SlideKnobBrush = Brush.verticalGradient(
-    listOf(Color(0xFFBFE0FF), Color(0xFF8FC4FF)),
-)
+/** 다시 알림 — 가벼운 캡슐. 끄기 슬라이더보다 눈에 띄지 않아야 어느 쪽이 되돌릴 수 없는지 보인다. */
+@Composable
+private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
+    Surface(
+        onClick = onSnooze,
+        modifier = Modifier
+            .height(52.dp)
+            .widthIn(min = 160.dp),
+        shape = WakerPillShape,
+        color = Color.Transparent,
+        // 테두리가 이 버튼의 유일한 경계다 — outline(#4C587E)은 바닥 위 2.4:1 이라 비텍스트 기준(3:1)에
+        // 못 미친다. onSurfaceVariant 60% 면 3.7:1.
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = 26.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.rd_snooze_button_minutes, minutes),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
 
+/**
+ * 밀어서 끄기.
+ *
+ * - 손잡이는 **누르는 순간** 눌린다(0.94, 튕기지 않는 스프링) — 놓을 때가 아니라.
+ * - 70% 문턱을 **넘는 순간** 햅틱 한 번 — 손을 떼면 끝난다는 신호. 되돌아오면 다시 무장한다.
+ * - 밀기밖에 없는 탈출구는 TalkBack·스위치 사용자에게 없는 것과 같다 — 접근성 커스텀 액션
+ *   '끄기' 를 붙인다. 길게 누르기는 일부러 두지 않는다(잠결에 손을 얹기만 해도 꺼진다).
+ * - 관성·플릭 판정은 없다. 끝까지 밀어야 한다.
+ */
 @Composable
 private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val knobSizePx = with(density) { 64.dp.toPx() }
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val knobSizePx = with(density) { 60.dp.toPx() }
     val edgePadPx = with(density) { 6.dp.toPx() }
 
     var trackWidthPx by remember { mutableStateOf(0) }
     val offsetX = remember { Animatable(0f) }
     val maxOffset = (trackWidthPx - knobSizePx - edgePadPx * 2).coerceAtLeast(0f)
+    val threshold = maxOffset * 0.7f
+
+    var pressed by remember { mutableStateOf(false) }
+    val knobScale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        label = "knobPress",
+    )
 
     // 라벨은 노브가 이동할수록 서서히 사라진다.
     val labelAlpha = if (maxOffset <= 0f) 1f else (1f - offsetX.value / maxOffset).coerceIn(0f, 1f)
+    val dismissLabel = stringResource(R.string.rd_slide_to_dismiss)
+    val dismissAction = stringResource(R.string.rd_dismiss_action)
+    val hintColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(76.dp)
+            .height(72.dp)
             .onSizeChanged { trackWidthPx = it.width }
-            .clip(RoundedCornerShape(26.dp))
-            .background(SlideTrackBrush)
-            .background(Color.Transparent),
+            .clip(WakerPillShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), WakerPillShape)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(dismissAction) {
+                        onDismiss()
+                        true
+                    },
+                )
+            },
         contentAlignment = Alignment.CenterStart,
     ) {
-        // 1dp 라이트블루 보더.
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = 1.dp.toPx()
-            drawRoundRect(
-                color = Color(0x4D8FC4FF),
-                topLeft = Offset(stroke / 2f, stroke / 2f),
-                size = androidx.compose.ui.geometry.Size(
-                    size.width - stroke,
-                    size.height - stroke,
-                ),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(26.dp.toPx()),
-                style = Stroke(width = stroke),
-            )
-        }
-
         Text(
-            text = stringResource(R.string.rd_slide_to_dismiss),
+            text = dismissLabel,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 60.dp, end = 24.dp)
                 .graphicsLayer { alpha = labelAlpha },
-            color = Color(0xFFDCECFF),
-            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
 
         SlideHintArrows(
+            color = hintColor,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 22.dp)
@@ -450,26 +487,51 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             modifier = Modifier
                 .padding(start = 6.dp)
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .size(64.dp)
-                .clip(RoundedCornerShape(21.dp))
-                .background(SlideKnobBrush)
+                .size(60.dp)
+                .graphicsLayer {
+                    scaleX = knobScale
+                    scaleY = knobScale
+                }
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
                 .pointerInput(maxOffset) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (maxOffset > 0f && offsetX.value >= maxOffset * 0.7f) {
-                                scope.launch {
-                                    offsetX.animateTo(maxOffset)
-                                    onDismiss()
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        pressed = true
+                        var latest = offsetX.value
+                        var crossed = false
+                        fun moveBy(delta: Float) {
+                            latest = (latest + delta).coerceIn(0f, maxOffset)
+                            val target = latest
+                            scope.launch { offsetX.snapTo(target) }
+                            if (maxOffset > 0f) {
+                                if (!crossed && latest >= threshold) {
+                                    crossed = true
+                                    view.performThresholdHaptic()
+                                } else if (crossed && latest < threshold) {
+                                    crossed = false
                                 }
-                            } else {
-                                scope.launch { offsetX.animateTo(0f) }
                             }
-                        },
-                    ) { change, dragAmount ->
-                        change.consume()
-                        scope.launch {
-                            val next = (offsetX.value + dragAmount).coerceIn(0f, maxOffset)
-                            offsetX.snapTo(next)
+                        }
+                        val dragStart = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+                            change.consume()
+                            moveBy(overSlop)
+                        }
+                        if (dragStart != null) {
+                            horizontalDrag(dragStart.id) { change ->
+                                val delta = change.positionChange().x
+                                change.consume()
+                                moveBy(delta)
+                            }
+                        }
+                        pressed = false
+                        if (maxOffset > 0f && latest >= threshold) {
+                            scope.launch {
+                                offsetX.animateTo(maxOffset)
+                                onDismiss()
+                            }
+                        } else {
+                            scope.launch { offsetX.animateTo(0f) }
                         }
                     }
                 },
@@ -477,16 +539,27 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                contentDescription = stringResource(R.string.rd_slide_to_dismiss),
-                tint = Color(0xFF06243E),
+                contentDescription = dismissLabel,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(24.dp),
             )
         }
     }
 }
 
+/** 문턱을 넘는 순간의 햅틱. CONFIRM 은 API 30 부터라 그 아래는 키 탭으로 대신한다. */
+private fun View.performThresholdHaptic() {
+    val constant = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        HapticFeedbackConstants.CONFIRM
+    } else {
+        HapticFeedbackConstants.KEYBOARD_TAP
+    }
+    performHapticFeedback(constant)
+}
+
 @Composable
-private fun SlideHintArrows(modifier: Modifier = Modifier) {
+private fun SlideHintArrows(color: Color, modifier: Modifier = Modifier) {
+    // 시스템 애니메이터 배율(축소 동작)은 Compose 가 MotionDurationScale 로 그대로 먹는다.
     val transition = rememberInfiniteTransition(label = "slideHint")
     Row(
         modifier = modifier,
@@ -504,10 +577,10 @@ private fun SlideHintArrows(modifier: Modifier = Modifier) {
             )
             Canvas(modifier = Modifier.size(11.dp)) {
                 val w = 2.4.dp.toPx()
-                val color = Color(0xFFDCECFF).copy(alpha = alpha)
+                val c = color.copy(alpha = alpha)
                 // 오른쪽을 가리키는 셰브론.
-                drawLine(color, Offset(size.width * 0.3f, size.height * 0.2f), Offset(size.width * 0.75f, size.height * 0.5f), strokeWidth = w)
-                drawLine(color, Offset(size.width * 0.75f, size.height * 0.5f), Offset(size.width * 0.3f, size.height * 0.8f), strokeWidth = w)
+                drawLine(c, Offset(size.width * 0.3f, size.height * 0.2f), Offset(size.width * 0.75f, size.height * 0.5f), strokeWidth = w)
+                drawLine(c, Offset(size.width * 0.75f, size.height * 0.5f), Offset(size.width * 0.3f, size.height * 0.8f), strokeWidth = w)
             }
         }
     }

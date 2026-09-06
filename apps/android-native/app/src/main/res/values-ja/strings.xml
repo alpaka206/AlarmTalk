@@ -476,7 +476,9 @@
     <string name="rd_default_alarm_label">アラーム</string>
     <string name="rd_duplicate_alarm_time_message">すでに同じ時間にアラームがあります。別の時間を選んでください。</string>
     <string name="rd_slide_to_dismiss">スライドして停止</string>
-    <string name="rd_snooze_button_minutes">%1$d分後に再び鳴らす</string>
+    <string name="rd_snooze_button_minutes">%1$d分後にもう一度</string>
+    <string name="rd_tone_only">アラーム音</string>
+    <string name="rd_dismiss_action">停止</string>
     <string name="rd_test_alarm_label">テストアラーム</string>
     <string name="ringing_notification_text">起きる時間ですよ</string>
     <string name="ringing_notification_title">アラームが鳴っています</string>

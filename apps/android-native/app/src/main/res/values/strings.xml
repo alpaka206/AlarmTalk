@@ -502,7 +502,9 @@
     <string name="rd_default_alarm_label">알람</string>
     <string name="rd_duplicate_alarm_time_message">이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.</string>
     <string name="rd_slide_to_dismiss">밀어서 끄기</string>
-    <string name="rd_snooze_button_minutes">%1$d분 뒤 다시 울림</string>
+    <string name="rd_snooze_button_minutes">%1$d분 뒤 다시</string>
+    <string name="rd_tone_only">알람음</string>
+    <string name="rd_dismiss_action">끄기</string>
     <string name="rd_test_alarm_label">테스트 알람</string>
     <string name="social_active_plan_in_use">%1$s 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.</string>
     <string name="social_allow_partner_alarm">가족이 내 알람 맞추기 허용</string>
