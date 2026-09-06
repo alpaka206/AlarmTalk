@@ -93,18 +93,6 @@ final class AlarmKitViewModel: ObservableObject {
 
     private var leavingAccountDepth = 0
 
-    #if DEBUG
-    /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
-    ///
-    /// ⚠ 왜 이런 것이 필요한가: `stopAllScheduledAlarms` 안에는 **진짜 suspension 이 없어서**
-    /// (AlarmKit 취소가 동기다) MainActor 에서 원자적으로 끝난다 — 밖에서 "도는 동안 닫혀
-    /// 있는지" 를 관찰할 창이 없다. 그래서 게이트가 **열리고 닫히는 규칙**을 여기서 잰다.
-    /// 이걸 안 두면 테스트가 `false` 만 두 번 확인하게 되고, 그건 게이트를 통째로 지워도
-    /// 통과한다(2026-08-19 감사에서 실제로 그랬다).
-    func __beginLeavingAccountForTests() { leavingAccountDepth += 1 }
-    func __endLeavingAccountForTests() { leavingAccountDepth -= 1 }
-    #endif
-
     /// **진행 중인 예약을 그 자리에서 무효화한다.**
     ///
     /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
@@ -553,7 +541,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
     ///
     /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
-    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
+    /// `NextAlarmHeadline` 이 "알람이 모두 꺼져 있어요." 를 headline 으로 띄운다.
     /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
     ///
     /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게

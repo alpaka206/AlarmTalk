@@ -52,13 +52,6 @@ data class ManualQuotaResponse(
     val remaining: Int = 0,
 )
 
-data class TtsMessageListResponse(
-    val messages: List<TtsMessage>,
-    val total: Int? = null,
-    val limit: Int? = null,
-    val offset: Int? = null,
-)
-
 data class TtsMessage(
     val id: String,
     val text: String = "",
@@ -161,9 +154,6 @@ interface TtsApi {
         @Header("Authorization") authorization: String,
         @Body request: TtsGenerateRequest,
     ): TtsGenerateResponse
-
-    @GET("tts/messages")
-    suspend fun listTtsMessages(@Header("Authorization") authorization: String): TtsMessageListResponse
 
     @GET("tts/stock-clips")
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse

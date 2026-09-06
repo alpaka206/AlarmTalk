@@ -169,9 +169,6 @@ internal fun AlarmTalkApp(
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
     val initialPermissionPromptStore = remember(context) { InitialPermissionPromptStore(context) }
-    var bulkPermissionFlowActive by remember { mutableStateOf(false) }
-    var bulkRuntimeRequested by remember { mutableStateOf(false) }
-    var bulkOpenedSettingsTargets by remember { mutableStateOf<Set<PermissionTarget>>(emptySet()) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
@@ -180,48 +177,17 @@ internal fun AlarmTalkApp(
         // 이 경우 launch() 는 다이얼로그 없이 즉시 거부로 돌아온다 → 모달의 '허용하기' 만으론
         // 권한을 켤 수 없으므로 앱 설정으로 유도한다. shouldShowRequestPermissionRationale 가
         // false + 미허용이면(다이얼로그를 거친 콜백 시점 기준) 영구 거부로 판정한다.
-        // 일괄 권한 플로우는 자체 설정 라우팅(아래 LaunchedEffect)이 있으므로 단일 요청일 때만.
-        if (!bulkPermissionFlowActive) {
-            val activity = context.findHostActivity()
-            val permanentlyDeniedPerm = if (activity == null) {
-                null
-            } else {
-                results.entries.firstOrNull { (perm, granted) ->
-                    !granted && !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
-                }?.key
-            }
-            when (permanentlyDeniedPerm) {
-                Manifest.permission.POST_NOTIFICATIONS -> context.openNotificationSettings()
-                Manifest.permission.RECORD_AUDIO -> context.openAppDetailsSettings()
-            }
+        val activity = context.findHostActivity()
+        val permanentlyDeniedPerm = if (activity == null) {
+            null
+        } else {
+            results.entries.firstOrNull { (perm, granted) ->
+                !granted && !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+            }?.key
         }
-    }
-
-    fun missingRuntimePermissions(snapshot: PermissionSnapshot): List<String> = buildList {
-        if (context.shouldRequestNotificationRuntimePermission()) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (!snapshot.recordAudio) {
-            add(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    fun nextSettingsPermissionTarget(
-        snapshot: PermissionSnapshot,
-        openedTargets: Set<PermissionTarget>,
-    ): PermissionTarget? = listOfNotNull(
-        PermissionTarget.Notifications.takeIf { !snapshot.notifications },
-        PermissionTarget.ExactAlarms.takeIf { !snapshot.exactAlarms },
-        PermissionTarget.FullScreenIntent.takeIf { !snapshot.fullScreenIntent },
-        PermissionTarget.RecordAudio.takeIf { !snapshot.recordAudio },
-    ).firstOrNull { it !in openedTargets }
-
-    fun openPermissionSettings(target: PermissionTarget) {
-        when (target) {
-            PermissionTarget.Notifications -> context.openNotificationSettings()
-            PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
-            PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
-            PermissionTarget.RecordAudio -> context.openAppDetailsSettings()
+        when (permanentlyDeniedPerm) {
+            Manifest.permission.POST_NOTIFICATIONS -> context.openNotificationSettings()
+            Manifest.permission.RECORD_AUDIO -> context.openAppDetailsSettings()
         }
     }
 
@@ -240,13 +206,6 @@ internal fun AlarmTalkApp(
                 runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
             }
         }
-        permissionState.refresh()
-    }
-
-    fun requestAllMissingPermissions() {
-        bulkPermissionFlowActive = true
-        bulkRuntimeRequested = false
-        bulkOpenedSettingsTargets = emptySet()
         permissionState.refresh()
     }
 
@@ -295,32 +254,6 @@ internal fun AlarmTalkApp(
         // 그 외에는 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
         // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         viewModel.requestPermissionGate(target)
-    }
-
-    LaunchedEffect(permissionState.refreshTick, bulkPermissionFlowActive) {
-        if (!bulkPermissionFlowActive) return@LaunchedEffect
-
-        val current = PermissionSnapshot.read(context)
-        if (!bulkRuntimeRequested) {
-            val runtimePermissions = missingRuntimePermissions(current)
-            if (runtimePermissions.isNotEmpty()) {
-                bulkRuntimeRequested = true
-                runtimePermissionLauncher.launch(runtimePermissions.toTypedArray())
-                return@LaunchedEffect
-            }
-            bulkRuntimeRequested = true
-        }
-
-        val settingsTarget = nextSettingsPermissionTarget(current, bulkOpenedSettingsTargets)
-        if (settingsTarget != null) {
-            bulkOpenedSettingsTargets = bulkOpenedSettingsTargets + settingsTarget
-            openPermissionSettings(settingsTarget)
-            return@LaunchedEffect
-        }
-
-        bulkPermissionFlowActive = false
-        bulkRuntimeRequested = false
-        bulkOpenedSettingsTargets = emptySet()
     }
 
     // '알람 추가' 흐름에서 권한 게이트로 넘어온 요청. 권한을 모두 허용하면 이어서 알람 편집

@@ -201,19 +201,7 @@ final class VoiceStudioViewModel: ObservableObject {
         preparedAlarm = nil
     }
 
-    // MARK: - 기본 목소리 + 호칭 (Android MainViewModel.setDefaultVoice / setDefaultListenerTitle / completeVoiceSetup 미러)
-
-    /// 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신.
-    func setDefaultVoice(_ voiceId: String?) {
-        defaultVoiceStore.setDefaultVoiceId(userID: activeUserID, voiceId: voiceId)
-        defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: activeUserID)
-    }
-
-    /// 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용).
-    func setDefaultListenerTitle(_ title: String?) {
-        defaultVoiceStore.setListenerTitle(userID: activeUserID, title: title)
-        defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: activeUserID)
-    }
+    // MARK: - 마지막에 쓴 목소리
 
     /// 이 계정이 **마지막으로 알람 저장에 성공하며 쓴** 목소리 id.
     ///
@@ -222,16 +210,6 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 온보딩 기본 목소리로 되돌아간다(CLAUDE.md 「마지막에 쓴 것이 그룹보다 우선」 위반).
     var lastUsedVoiceId: String? {
         defaultVoiceStore.lastUsedVoiceId(userID: activeUserID)
-    }
-
-    /// 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때.
-    func completeVoiceSetup(voiceId: String, listenerTitle: String?) {
-        setDefaultVoice(voiceId)
-        setDefaultListenerTitle(listenerTitle)
-    }
-
-    func skipVoiceSetup() {
-        defaultVoiceStore.markSkipped(userID: activeUserID)
     }
 
     /// 앱 언어 → 스톡 클립 언어(en/ja 외엔 ko). Android `data.appVoiceLanguageOf` 미러.
@@ -362,14 +340,6 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             return .failed(mapVoiceError(error))
         }
-    }
-
-    /// 인사말 미리듣기만 정지한다 — 기본 목소리 선택 시트가 닫힐 때 호출.
-    /// Android VoiceProfileManagementPanel.stopMediaPreview 의 greeting 부분 미러.
-    func stopGreetingPreview() {
-        greetingPreviewRequestId += 1
-        previewPlayer.stop()
-        previewingGreetingVoiceId = nil
     }
 
     var selectedListenerTitle: String? {
@@ -1617,10 +1587,5 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             statusMessage = mapVoiceError(error)
         }
-    }
-
-    var recordingDurationLabel: String {
-        let seconds = Int((recorder.latestDurationMs ?? Int(recorder.elapsedSeconds * 1000)) / 1000)
-        return "\(seconds)초"
     }
 }

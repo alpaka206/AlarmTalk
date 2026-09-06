@@ -11,7 +11,7 @@ import {
 import type { DbExecutor } from '../lib/transactions';
 
 /** 알람 시각 판정의 폴백 시간대. 클라가 IANA tz 를 안 보냈거나 값이 부정확할 때 쓴다. */
-export const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
+const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];

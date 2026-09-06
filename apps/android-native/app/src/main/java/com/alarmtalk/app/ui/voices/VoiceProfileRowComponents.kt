@@ -224,9 +224,6 @@ internal data class RelationshipSelection(
             RelationshipPreset.Custom -> customLabel.trim()
             else -> preset.label
         }
-
-    val isComplete: Boolean
-        get() = resolved.isNotBlank()
 }
 
 internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {

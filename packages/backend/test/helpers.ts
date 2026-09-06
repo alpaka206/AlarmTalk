@@ -14,7 +14,7 @@ export interface MockExecuteResult {
 /** 결과 큐 항목 — 성공 결과이거나, 그 자리에서 던질 오류(pushError). */
 type MockQueueEntry = MockExecuteResult | { error: Error };
 
-export type ExecuteCall = { sql: string; args: (string | number | null)[] };
+type ExecuteCall = { sql: string; args: (string | number | null)[] };
 
 /**
  * `?` 개수와 args 길이가 어긋난 쿼리를 테스트에서 즉시 잡는다.

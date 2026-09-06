@@ -26,7 +26,7 @@ import { resolve } from 'node:path';
  */
 const PIPELINE_VERSION = 'closing-breath+mp3-silence@1';
 
-export const FINGERPRINT_FILE = '_fingerprints.json';
+const FINGERPRINT_FILE = '_fingerprints.json';
 
 export interface FingerprintInput {
   providerVoiceId: string;

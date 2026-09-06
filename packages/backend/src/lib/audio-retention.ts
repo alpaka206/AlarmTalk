@@ -23,12 +23,12 @@ import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
 import { logStructured } from './logger';
 
-export const VOICE_UPLOAD_TTL_DAYS = 7;
-export const GENERATED_TTS_TTL_DAYS = 30;
+const VOICE_UPLOAD_TTL_DAYS = 7;
+const GENERATED_TTS_TTL_DAYS = 30;
 // 화자 분리 후보(draft) 보이스의 유예 시간. 다이얼로그 안에서 몇 분 내 선택/정리되는
 // 임시물이라 1시간이면 충분히 넉넉하다 — 앱 강제종료 등으로 클라이언트 정리를 못 거친
 // 고아만 걸린다.
-export const DRAFT_VOICE_TTL_HOURS = 1;
+const DRAFT_VOICE_TTL_HOURS = 1;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;

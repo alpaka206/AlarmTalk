@@ -177,7 +177,7 @@ export const STOCK_CLIP_PRESETS = [
  *
  * 2026-09-03: 대사가 응원·자기돌봄으로 확정되면서 `love` → `cheer` 로 개념을 바꿨다.
  */
-export const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
+const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
   love: 'cheer',
 };
 
@@ -199,7 +199,7 @@ export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS.map(
  * 날씨/운세는 '조건·테마'를 variant 인덱스로 담는다(category 는 하나, variant 순서가 조건/테마).
  * 재생 시 클라가 (날씨=지역 신호 / 운세=사주+날짜)로 로컬에서 조건·테마 인덱스를 골라 매칭한다.
  */
-export const PAID_BUCKET_CATEGORIES: readonly string[] = [
+const PAID_BUCKET_CATEGORIES: readonly string[] = [
   'weather',
   'fortune',
   // 옛 이름은 `love` — 2026-09-02 에 개념을 응원으로 바꿨다. 읽는 쪽이 옛 값을 접는다.
@@ -307,7 +307,7 @@ export const CLONE_CLIP_SEEDS: {
   },
 ];
 
-export interface SystemVoiceRow {
+interface SystemVoiceRow {
   id: string;
   name: string;
   elevenlabsVoiceId: string;
@@ -392,7 +392,7 @@ export interface GeneratedStockClip {
 }
 
 /** 합성 준비된(ready) 시스템 보이스 목록. */
-export async function listSystemVoices(db: Client): Promise<SystemVoiceRow[]> {
+async function listSystemVoices(db: Client): Promise<SystemVoiceRow[]> {
   const res = await db.execute({
     sql: `SELECT id, name, elevenlabs_voice_id
           FROM voice_profiles
@@ -413,7 +413,7 @@ export async function listSystemVoices(db: Client): Promise<SystemVoiceRow[]> {
 }
 
 /** 시스템 보이스를 사전렌더 대상(전 카테고리·preset 언어 그대로)으로 변환. */
-export function systemPrerenderVoices(voices: SystemVoiceRow[]): PrerenderVoice[] {
+function systemPrerenderVoices(voices: SystemVoiceRow[]): PrerenderVoice[] {
   const allCategories = STOCK_CLIP_PRESETS.map((preset) => preset.category);
   return voices.map((voice) => ({
     id: voice.id,

@@ -66,9 +66,4 @@ enum FreeBucket: String, CaseIterable, Identifiable {
         guard let context = RandomPromptContext.forBucket(raw) else { return nil }
         return FreeBucket(rawValue: context.bucketCategory)
     }
-
-    /// ⚠ 라벨도 문구 종류에서 가져온다 — 같은 것을 두 이름으로 부르지 않는다.
-    var label: String {
-        RandomPromptContext.forBucket(rawValue)?.label ?? rawValue
-    }
 }

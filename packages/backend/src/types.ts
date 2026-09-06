@@ -105,7 +105,7 @@ export interface SentryClient {
   setTags?(tags: Record<string, string | number | boolean | null | undefined>): void;
 }
 
-export type AuthVariables = {
+type AuthVariables = {
   /**
    * users.id (PK). 미들웨어가 JWT sub 을 DB 에서 해석해 항상 이 값으로 정규화한다.
    * 배포 전에 발급돼 sub 이 google_id 인 구(舊) 토큰도 여기서는 users.id 가 된다.

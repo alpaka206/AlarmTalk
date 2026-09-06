@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 
-export function cacheControl(directive: string, vary?: string): MiddlewareHandler {
+function cacheControl(directive: string, vary?: string): MiddlewareHandler {
   return async (c, next) => {
     await next();
     if (c.res.status < 300) {

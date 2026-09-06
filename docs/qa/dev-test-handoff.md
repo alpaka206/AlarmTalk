@@ -205,6 +205,21 @@
   안 붙어 있었다) — 다음에 폰이 붙으면 `adb shell am start -n com.alarmtalk.app.dev/com.alarmtalk.app.ringing.RingingActivity`
   로 기본 상태를 띄워 확인할 것(알람 id 없이 열면 `defaultRingingUiState`, 소리는 안 난다).
 
+## 0-E. 문구 정리 + 미사용 코드 정리 (2026-09-06)
+
+- **문구**: 앱 ko/en/ja·iOS 카탈로그·랜딩에서 AI 티(대시 — –, 필러 '원활한/smooth/快適', 번역투·오역,
+  한 화면 안 해요체/합니다체 혼용)를 걷어냈다. 대시는 네 벌 모두 0개. 동의·약관 문구는 구두점·사실
+  오류(일본어 탭 이름)만 고치고 말투는 뜻이 안 바뀌는 범위에서만 맞췄다. 일부러 남긴 것: 앱 랜딩 CTA
+  "시작하기", 응원 페이지 헤드라인 느낌표(지시 문장 그대로), 초대 메시지 느낌표.
+- **미사용 코드**: Periphery(iOS)·knip(TS)·Lint UnusedResources(Android)·grep 휴리스틱(Kotlin) 후보를
+  에이전트가 코드로 검증한 뒤 지웠다 — Swift 75건, Kotlin 27건, TS export 8건, Android 문자열 29개
+  (3개 언어), iOS 카탈로그 미사용 키 260개. 남긴 것의 이유는 워크플로 저널(`wf_8dd0eab8-fdc`)에.
+  Periphery 의 `assignOnlyProperty`(Codable 필드 213건)는 서버 계약이라 손대지 않았다.
+- **백엔드 스크립트 타입체크**가 HEAD 에서부터 깨져 있었다(스톡 스크립트가 `.ts` 확장자 import 와
+  Workers 타입을 쓰는데 `scripts/tsconfig.json` 이 NodeNext·node 타입이었다). bundler 해석 +
+  `allowImportingTsExtensions` + workers-types 로 고쳤다. `npm run typecheck` 전 워크스페이스 통과.
+- 검증: Android 373 / iOS 677 / 백엔드 1539 / shared 16 / voice 11 테스트, 랜딩 빌드.
+
 ## 0. 진행 중 — 클립 선다운로드 후속
 
 클립 선다운로드 1~5단계는 양 앱과 백엔드에서 모두 완료됐다. 라이브 랜덤 생성은

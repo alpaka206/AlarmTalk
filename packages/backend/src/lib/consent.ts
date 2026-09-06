@@ -18,7 +18,7 @@
  */
 import type { DbExecutor } from './transactions';
 
-export const CONSENT_TYPES = [
+const CONSENT_TYPES = [
   'terms',
   'privacy',
   'age14',
@@ -151,7 +151,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
  */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
-export type LatestConsent = { agreed: boolean; version: number };
+type LatestConsent = { agreed: boolean; version: number };
 export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
 
 /** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */

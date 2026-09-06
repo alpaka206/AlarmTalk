@@ -45,8 +45,6 @@ enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
     case record
 
     var id: String { rawValue }
-
-    var label: String { "녹음" }
 }
 
 struct LocalAlarmAudioEditor: View {
@@ -66,11 +64,7 @@ struct LocalAlarmAudioEditor: View {
     let onPreview: () -> Void
     let onClear: () -> Void
 
-    @Environment(\.voiceAlarmTheme) private var theme
-
     private var sourceReady: Bool { hasRecording || existingAudioLabel != nil }
-
-    private var durationLabel: String { HelperFormatters.audioTimeLabel(elapsedMs) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -115,16 +109,6 @@ struct LocalAlarmAudioEditor: View {
 // `FAMILY_ALARM_MIN_LEAD_MINUTES` 와 **같아야 한다**. 죽은 사본이 옛 값을 들고 있으면
 // 그걸 고치고 고쳤다고 믿게 된다(실제로 오늘 리드타임을 내릴 때 그럴 뻔했다).
 enum FamilyAlarmScheduleRules {
-    static func memberLabel(_ member: FamilyGroupMember) -> String {
-        if let name = member.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
-            return name
-        }
-        if let email = member.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
-            return email
-        }
-        return "멤버"
-    }
-
     static func quietScheduleLabel(_ member: FamilyGroupMember) -> String {
         quietWindows(member).map { window in
             "\(HelperFormatters.quietDaysLabel(window.days)) \(window.start)-\(window.end)"

@@ -15,9 +15,6 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AlarmEntity?
 
-    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
-    suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
-
     /** 같은 서버 알람을 가리키는 모든 로컬 행 — 과거 동시 pull 레이스로 생긴 중복 임포트 정리용. */
     @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId ORDER BY createdAtMillis")
     suspend fun getAllByRemoteAlarmId(remoteAlarmId: String): List<AlarmEntity>
@@ -257,24 +254,6 @@ interface AlarmDao {
     @Query(
         """
         UPDATE alarms
-        SET fireAtMillis = :fireAtMillis,
-            state = :state,
-            enabled = :enabled,
-            updatedAtMillis = :updatedAtMillis
-        WHERE id = :id
-        """,
-    )
-    suspend fun setScheduleState(
-        id: String,
-        fireAtMillis: Long,
-        state: String,
-        enabled: Boolean,
-        updatedAtMillis: Long,
-    )
-
-    @Query(
-        """
-        UPDATE alarms
         SET remoteAlarmId = :remoteAlarmId,
             lastSyncedAtMillis = :lastSyncedAtMillis,
             syncState = :syncState,
@@ -339,14 +318,4 @@ interface AlarmDao {
     // updateDynamicVoiceAudio 는 지웠다 — 호출부가 없었고, 시그니처가 localAudioUri(non-null)에
     // audioCacheKey(nullable)를 짝지어 **참조 카운트로 지울 수 없는 음성 파일**을 만들 수 있는
     // 레포 유일의 API 였다(Codex #677 P1). 다시 필요해지면 두 값을 함께 non-null 로 둘 것.
-
-    /** 무료 버킷 회전 인덱스를 다음 값으로 영속화한다(알람이 울린 직후 호출). */
-    @Query(
-        """
-        UPDATE alarms
-        SET bucketRotationIndex = :index, updatedAtMillis = :updatedAtMillis
-        WHERE id = :id
-        """,
-    )
-    suspend fun updateBucketRotationIndex(id: String, index: Int, updatedAtMillis: Long)
 }

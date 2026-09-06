@@ -279,17 +279,6 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 안드로이드 문자열과 같은 라벨(strings.xml 의 editor_msg_mode_preset·editor2_ctx_*).
-    var label: String {
-        switch self {
-        case .preset: return "기본 인사말"
-        case .wakeWeather: return "날씨"
-        case .wakeFortune: return "운세"
-        case .cheer: return "응원"
-        case .medication: return "약"
-        }
-    }
-
     /// 서버 `TTS_CATEGORIES = ['morning','medication','cheer','custom']` 안의 값이어야 한다
     /// (서버는 옛 `love` 도 받아 접는다).
     var ttsCategory: String {

@@ -148,7 +148,6 @@
 		708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */; };
 		709B957CE1750DFA66018C4E /* pretendard_regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 566AA8670AC11EF2C70548C8 /* pretendard_regular.otf */; };
 		70E8E559B5D63F2ADFBB9453 /* LocalRecordingIsFreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43A7ED49715CC421E29F85D /* LocalRecordingIsFreeTests.swift */; };
-		7121504B116A33DBADD30E76 /* UsageGuideStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D6BB8C057A15658E4C0837 /* UsageGuideStore.swift */; };
 		71252028579C48FC970B8DF4 /* LocalAlarmStoreRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08347BEE6A41D76AC9CD1CFC /* LocalAlarmStoreRecoveryTests.swift */; };
 		749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */; };
 		75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */; };
@@ -229,7 +228,6 @@
 		A8DA56D284DCBD52901B903C /* VoicePlanGateAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */; };
 		A92C953C7E0D5CD86865F0E9 /* GiftTransactionFinishTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D2BE8C9ABC30FA8CDF839E7 /* GiftTransactionFinishTests.swift */; };
 		A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */; };
-		AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */; };
 		AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6B972EFA8543A20D363BEE /* SectionCard.swift */; };
 		AB1FC3889B08059140C23BBE /* WakeTargetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8315D2F1C50CA0F66E9458 /* WakeTargetSheet.swift */; };
 		AB6952C6C2E757ECEF15B909 /* VoiceSegmentPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */; };
@@ -648,7 +646,6 @@
 		E6CE8AAF8C07B7F35CAF6FC0 /* AudioCacheRoundTripTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheRoundTripTests.swift; sourceTree = "<group>"; };
 		E83EE33037EEA219CF54843B /* AuxiliaryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryScreen.swift; sourceTree = "<group>"; };
 		E9A469587D42C8A73EF335B5 /* CodeShareText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeShareText.swift; sourceTree = "<group>"; };
-		EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginPermissionGateView.swift; sourceTree = "<group>"; };
 		EC6B972EFA8543A20D363BEE /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
 		ECCD419D20318FDD0B2DAF13 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		ECE7B9F6578FB639A08A5C77 /* HolidaySheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidaySheetScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -669,7 +666,6 @@
 		F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAlertMetricsUITests.swift; sourceTree = "<group>"; };
 		F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipStyle.swift; sourceTree = "<group>"; };
 		F6CD38FF3D3609DABDD69394 /* HelperFormattersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperFormattersTests.swift; sourceTree = "<group>"; };
-		F6D6BB8C057A15658E4C0837 /* UsageGuideStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageGuideStore.swift; sourceTree = "<group>"; };
 		F702C79A431AE0668621A1F1 /* VoiceCloneUploadFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCloneUploadFlow.swift; sourceTree = "<group>"; };
 		FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoicePreferenceStore.swift; sourceTree = "<group>"; };
 		FA51DB6D40069D4B62BFF572 /* SubscriptionProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionProduct.swift; sourceTree = "<group>"; };
@@ -879,14 +875,6 @@
 			path = Root;
 			sourceTree = "<group>";
 		};
-		6A0D8AAB73769C85707C1E1E /* Permission */ = {
-			isa = PBXGroup;
-			children = (
-				EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */,
-			);
-			path = Permission;
-			sourceTree = "<group>";
-		};
 		6BB66C9723C4F59D7AFF7179 /* Auxiliary */ = {
 			isa = PBXGroup;
 			children = (
@@ -965,7 +953,6 @@
 				5AD2ACAAC8F5C434B4E49AE1 /* Guide */,
 				88B1CF1D5E49504119FDE418 /* Members */,
 				477D41C3D7E44E2BB1E00CAF /* Messages */,
-				6A0D8AAB73769C85707C1E1E /* Permission */,
 				61B25D3786254C33BCD4762C /* Root */,
 				41C38E3F0B5B208556ADA205 /* Settings */,
 				F97044FEC3307E3D9055DD31 /* Voices */,
@@ -1216,7 +1203,6 @@
 				3890B7AAB136F133DBB4D5F3 /* TestIsolation.swift */,
 				21CBB976863F3883B2FCE2A2 /* Theme.swift */,
 				529F45FCEA815E7AD154E399 /* UIPreviewSeed.swift */,
-				F6D6BB8C057A15658E4C0837 /* UsageGuideStore.swift */,
 				93D3185391F74B11FC854CB5 /* UserFacingError.swift */,
 				815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */,
 				81F4AE8A61FD93623981C2F2 /* VoiceReplacementMarkerStore.swift */,
@@ -1563,7 +1549,6 @@
 				45952503DEBA249D459D13A7 /* LegalPolicyVersion.swift in Sources */,
 				27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */,
 				9A94D143FF4D06179D7213A2 /* LocalAlarmStore.swift in Sources */,
-				AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */,
 				FFAF31FF0FA277F18B9E49B0 /* LoginView.swift in Sources */,
 				8794990DE399EA8A9361484B /* MainTabsView.swift in Sources */,
 				8E2489F41D6DD0F0B2D6B35C /* MemberManagementView.swift in Sources */,
@@ -1619,7 +1604,6 @@
 				17F0A605705BECE8DBE9DEBB /* UIPreviewSeed.swift in Sources */,
 				62E206ED87D9144797933483 /* UpdateRequiredView.swift in Sources */,
 				703F018B82D32AB6B45C4DBA /* UsageGuideSheet.swift in Sources */,
-				7121504B116A33DBADD30E76 /* UsageGuideStore.swift in Sources */,
 				8FCE05C6FF63445465A31229 /* UserFacingError.swift in Sources */,
 				8A730E049045318613356E6D /* VoiceCatalogRow.swift in Sources */,
 				923B167E7FF2406C9C789716 /* VoiceCloneUploadFlow.swift in Sources */,

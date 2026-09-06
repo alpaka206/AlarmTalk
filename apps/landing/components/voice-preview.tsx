@@ -29,7 +29,7 @@ import { usePrefersReducedMotion } from "./motion/use-prefers-reduced-motion";
  */
 
 /** 기본 목소리 4명 — 앱이 보여 주는 순서 그대로(애니의 파일명은 앱과 같은 이력상 이름이 아니라 표시 이름을 따른다). */
-export const PREVIEW_VOICES = ["siwoo", "mina", "dohyun", "aeni"] as const;
+const PREVIEW_VOICES = ["siwoo", "mina", "dohyun", "aeni"] as const;
 
 type VoiceId = (typeof PREVIEW_VOICES)[number];
 

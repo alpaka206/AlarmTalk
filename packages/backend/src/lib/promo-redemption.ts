@@ -47,7 +47,7 @@ export interface RedeemedPromoResult {
   };
 }
 
-export function normalizePromoCode(raw: string): string {
+function normalizePromoCode(raw: string): string {
   return raw.trim();
 }
 

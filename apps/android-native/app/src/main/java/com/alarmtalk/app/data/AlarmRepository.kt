@@ -17,7 +17,6 @@ import com.alarmtalk.app.network.toPublicHolidayDates
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -1069,51 +1068,6 @@ class AlarmRepository(
         return targets.size
     }
 
-    suspend fun copyAlarm(alarmId: String): AlarmEntity {
-        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        val now = System.currentTimeMillis()
-        val copiedTime = copyTargetTime(current.hour, current.minute)
-        requireUniqueTime(copiedTime.hour, copiedTime.minute)
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(
-            countryCode = currentHolidayCountry(),
-            startDate = currentLocalDate(now),
-        )
-        val copied = current.copy(
-            id = UUID.randomUUID().toString(),
-            label = current.label.takeIf { it.isNotBlank() }
-                ?.let { context.getString(R.string.rd_copied_alarm_label_suffix, it) }
-                ?: context.getString(R.string.rd_copied_alarm_label),
-            hour = copiedTime.hour,
-            minute = copiedTime.minute,
-            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = copiedTime.hour,
-                minute = copiedTime.minute,
-                repeatDaysMask = current.repeatDaysMask,
-                holidayOff = current.holidayOff,
-                nowMillis = now,
-                isHoliday = holidayPredicate,
-            ),
-            remoteAlarmId = null,
-            lastSyncedAtMillis = null,
-            syncState = AlarmSyncStates.LOCAL_ONLY,
-            origin = AlarmOrigins.LOCAL_OWNED,
-            ownerUserId = currentUserIdProvider(),
-            remoteDeliveryVersion = null,
-            // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
-            // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
-            // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
-            preLockPlayMode = null,
-            enabled = true,
-            state = AlarmStates.SCHEDULED,
-            createdAtMillis = now,
-            updatedAtMillis = now,
-        )
-        alarmScheduler.schedule(copied)
-        alarmDao.upsert(copied)
-        Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
-        return copied
-    }
-
     suspend fun markRinging(alarmId: String) {
         alarmDao.setState(
             id = alarmId,
@@ -1715,9 +1669,6 @@ class AlarmRepository(
         }
         return existing
     }
-
-    private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
-        java.time.LocalTime.of(hour, minute).plusMinutes(10)
 
     private fun currentLocalDate(nowMillis: Long): java.time.LocalDate =
         Instant.ofEpochMilli(nowMillis)

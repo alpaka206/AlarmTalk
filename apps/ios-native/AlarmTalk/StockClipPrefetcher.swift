@@ -42,9 +42,6 @@ final class StockClipPrefetcher: ObservableObject {
 
     @Published private(set) var state: State = .idle
 
-    /// 진행 중인가 — 화면의 '백그라운드에서 계속' / '나중에 받기' 문구를 가른다.
-    var isRunning: Bool { if case .running = state { return true }; return false }
-
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
 

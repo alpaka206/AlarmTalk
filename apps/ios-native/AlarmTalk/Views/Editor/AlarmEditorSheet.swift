@@ -1,7 +1,5 @@
-import AVFoundation
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 /// 알람 만들기/수정 시트 (Phase 3-C2).
 ///
@@ -117,12 +115,6 @@ struct AlarmEditorSheet: View {
     /// `.stockClip(id)` 의 연관 값이 들고 있어 previewingStockMessageID 를 대체한다.
     @State var previewTarget: AudioPreviewTarget?
 
-    /// StockClipPicker 에 넘길 "실제 선택된" 스톡 클립 id. 여러 onChange 훅이
-    /// `voiceStudio.preparedAlarm = nil` 만 호출하고 stockSelectedMessageID 를 비우지
-    /// 않으면 준비된 음원 없이 체크표시만 남는다. 선택 표시를 prepared 음원에 종속시켜
-    /// (stock_ prefix 로 스톡 여부 확인) preparedAlarm 이 무효화되면 체크가 자동으로
-    /// 사라지게 한다. 매 call site 에서 stockSelectedMessageID 를 비우는 것을 잊는
-    /// 실수를 원천 차단한다.
     @State var suppressProfileChangeInvalidation = false
     @State var ttsProfileChangedDuringEdit = false
     /// 지금 편집 중인 것이 **스톡 클립 알람**인가.
@@ -153,21 +145,6 @@ struct AlarmEditorSheet: View {
     /// **편집기가 소유한다** — 사용자가 다른 문구 갈래를 고르면 비워진다.
     @State var selectedBucketDraft: FreeBucket?
     /// 무료·기본목소리 문구 화면에서 여는 지역 시트·직접 입력 알럿.
-
-    var selectedStockMessageID: String? {
-        guard let prepared = voiceStudio.preparedAlarm,
-              prepared.audioCacheKey.hasPrefix("stock_") else {
-            return nil
-        }
-        return prepared.messageID
-    }
-
-    /// 현재 미리듣기/준비 중인 스톡 클립의 messageId(이전 previewingStockMessageID 대체).
-    /// previewTarget 이 `.stockClip(id)` 일 때만 값이 있다.
-    var previewingStockClipID: String? {
-        if case let .stockClip(id) = previewTarget { return id }
-        return nil
-    }
 
     /// 상대 알람의 **최소 예약 여유**. 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS` 와 같은 값이다.
     ///
@@ -809,15 +786,6 @@ struct AlarmEditorSheet: View {
         return String(localized: "저장")
     }
 
-    /// 알람음 on/off 바인딩 (Android `AlarmSettingsCard.kt:162-165`). 켜면 100%, 끄면 0%
-    /// (무음) 로 alarmVolumePercent 를 토글한다.
-    var alarmSoundEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { draft.alarmVolumePercent > 0 },
-            set: { draft.alarmVolumePercent = $0 ? 100 : 0 }
-        )
-    }
-
     /// 알람음 종류 라벨. 고른 것이 있으면 그 이름, 없으면 '기본 알람음'.
     /// (Android `editor2_default_alarm_sound` 미러.)
     var alarmSoundDisplayLabel: String {
@@ -847,16 +815,6 @@ struct AlarmEditorSheet: View {
             // (실제 울림은 `AlarmSoundStaging` 이 CAF 로 변환해 AlarmKit 에 넘긴다.)
             previewingAlarmSoundPath = nil
         }
-    }
-
-    /// 알람 음량 슬라이더를 Android 와 동일하게 10단위(0/10/…/100, 11개 stop)로 스냅시킨다.
-    /// 슬라이더 자체는 step 1 이므로, 호출부 바인딩 setter 가 가장 가까운 10의
-    /// 배수로 반올림해 deciles 로 제한한다 (Android `AlarmSettingsCard.kt:376` Slider steps=9 미러).
-    var alarmVolumeDecileBinding: Binding<Int> {
-        Binding(
-            get: { draft.alarmVolumePercent },
-            set: { draft.alarmVolumePercent = Int((Double($0) / 10.0).rounded()) * 10 }
-        )
     }
 
     /// 요일 칩 위에 보여줄 반복 요약(PR6). 0x7f=매일, 일부 요일=매주 목록, 0=다음 울릴 날짜.
@@ -949,8 +907,8 @@ struct AlarmEditorSheet: View {
         }
 
         // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
-        // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 `selectedStockMessageID`(=음원이
-        // 준비됐는가)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
+        // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 음원이 준비됐는가
+        // (`preparedAlarm` 의 `stock_` 키)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
         if let bucket = selectedFreeBucket {
             // ⚠ **조건으로 클립을 고르는 테마는 그 조건값이 있어야 한다.**
             //  - 날씨: 도시가 없으면 서버가 조건을 못 맞춰 서울로 폴백한다 — 사용자는
@@ -1916,11 +1874,10 @@ struct AlarmEditorSheet: View {
     /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
     /// P1 과 동일한 신호(`audioCacheKey` 의 `stock_` prefix + 시스템 voiceProfileId)로
     /// 스톡 알람을 식별하고, 스테이징됐던 캐시 파일이 디스크에 그대로 있을 때만
-    /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면
-    /// `selectedStockMessageID`(prepared.audioCacheKey 의 stock_ prefix 접근자)가
-    /// 선택을 보고해 editorSaveBlocked 가 false 를 반환하고, saveFlow 가 스톡 분기
-    /// (1121-1143)로 동일 audioCacheKey 를 재사용한다. 캐시가 sweep 됐으면 복원하지
-    /// 않아 saveFlow 가 정상 재생성 경로를 타게 둔다(dangling 파일 재사용 방지, risk 1).
+    /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면 saveFlow 의
+    /// 스톡 분기(`prepared.audioCacheKey` 의 `stock_` prefix 판정)가 동일 audioCacheKey 를
+    /// 재사용한다. 캐시가 sweep 됐으면 복원하지 않아 saveFlow 가 정상 재생성 경로를
+    /// 타게 둔다(dangling 파일 재사용 방지, risk 1).
     private func restoreStockClipSelectionIfNeeded(from alarm: LocalAlarmRecord?) {
         guard let alarm, alarm.isStockVoiceClip,
               let cacheKey = alarm.audioCacheKey,
@@ -2698,54 +2655,6 @@ struct AlarmEditorSheet: View {
         return "\(content.timeLabel)에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
     }
 
-    // MARK: - Stock clips (free tier + system voice)
-
-    /// 스톡 클립 미리듣기. 같은 클립을 다시 누르면 정지, 아니면 음원을 받아
-    /// `stock_preview_<messageId>` 키로 캐싱한 뒤 재생한다. Android `previewStockClip` 미러.
-    func previewStockClip(_ clip: StockClip) async {
-        // 같은 클립을 다시 누르면 정지.
-        if previewTarget == .stockClip(clip.id), editorPreviewPlayer.isPlaying {
-            stopAllEditorPreviews()
-            return
-        }
-        guard let token = auth.session?.token else {
-            voiceStudio.statusMessage = "로그인이 필요해요."
-            return
-        }
-        // 다운로드 동안 스피너를 띄운다(change 2) — target 설정 + isPreparing=true.
-        stopAllEditorPreviews()
-        previewTarget = .stockClip(clip.id)
-        editorPreviewPlayer.setPreparing(true)
-        do {
-            let response = try await AlarmTalkAPI.shared.getTTSMessageAudio(id: clip.messageId, token: token)
-            // 사용자가 그새 다른 미리듣기로 옮겨갔으면 폐기.
-            guard previewTarget == .stockClip(clip.id) else { return }
-            let cached = try await AudioCacheStore.cacheStockClipOffMain(
-                audio: response,
-                messageId: clip.messageId,
-                cacheKey: AudioCacheStore.stockPreviewCacheKey(messageId: clip.messageId)
-            )
-            guard previewTarget == .stockClip(clip.id) else { return }
-            // play(...) 가 isPreparing 을 false 로 내린다.
-            try editorPreviewPlayer.play(url: cached.url)
-        } catch {
-            if previewTarget == .stockClip(clip.id) {
-                stopAllEditorPreviews()
-            }
-            voiceStudio.statusMessage = AudioUserFacingError.message(for: error, fallback: "미리듣기를 재생하지 못했어요.")
-        }
-    }
-
-    /// 스톡 클립 선택. 음원을 받아 캐싱하고 `voiceStudio.preparedAlarm` 을 채운다.
-    /// 이후 저장은 생성 TTS 와 동일한 경로(server_tts 병합)를 탄다. Android `selectStockClip` 미러.
-    func selectStockClip(_ clip: StockClip) async {
-        guard !isWorking, !voiceStudio.isBusy else { return }
-        let prepared = await voiceStudio.prepareStockClip(clip, session: auth.session)
-        guard prepared != nil else { return }
-        stockSelectedMessageID = clip.id
-        voiceStudio.statusMessage = "기본 제공 음성을 선택했어요."
-    }
-
     func validateFamilyAlarmTarget() -> FamilyGroupMember? {
         guard let recipient = selectedFamilyRecipient else {
             validationAlert = ValidationAlertContent(
@@ -2901,24 +2810,6 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    func importLocalAlarmAudio(_ source: URL) async {
-        do {
-            let importedURL = try copyImportedAudio(source)
-            let durationMs = try await readAudioDurationMs(importedURL)
-            selectedLocalAudioURL = importedURL
-            selectedLocalAudioName = source.lastPathComponent
-            selectedLocalAudioDurationMs = durationMs
-            clearExistingLocalAudio = false
-            localAudioCropStartMs = 0
-            localAudioCropEndMs = min(durationMs, Int(AlarmAudioLimits.maxDurationMillis))
-            localAudioMessage = durationMs < 1_000
-                ? "1초 이상 들리는 파일을 선택해 주세요."
-                : "파일을 선택했어요."
-        } catch {
-            localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
-        }
-    }
-
     func previewLocalAlarmAudio() {
         if editorPreviewPlayer.isPlaying,
            previewTarget == .selectedCrop || previewTarget == .cachedLocalAudio {
@@ -3030,33 +2921,6 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    func copyImportedAudio(_ source: URL) throws -> URL {
-        let scoped = source.startAccessingSecurityScopedResource()
-        defer {
-            if scoped {
-                source.stopAccessingSecurityScopedResource()
-            }
-        }
-        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AlarmAudioImports", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
-        let destination = directory.appendingPathComponent("alarm-import-\(UUID().uuidString).\(ext)")
-        try FileManager.default.copyItem(at: source, to: destination)
-        return destination
-    }
-
-    func readAudioDurationMs(_ url: URL) async throws -> Int {
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let duration = try await asset.load(.duration)
-        let seconds = CMTimeGetSeconds(duration)
-        guard seconds.isFinite, seconds > 0 else {
-            throw LocalAlarmAudioError.invalidDuration
-        }
-        return Int((seconds * 1000).rounded())
-    }
-
-
     func localAudioUploadDisplayName(for url: URL) -> String {
         // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
         _ = url
@@ -3068,17 +2932,17 @@ struct AlarmEditorSheet: View {
     func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
         switch error {
         case .invalidHour:
-            return "시간(0–23) 값이 올바르지 않아요."
+            return "시간 값이 올바르지 않아요. 0~23 사이여야 해요."
         case .invalidMinute:
-            return "분(0–59) 값이 올바르지 않아요."
+            return "분 값이 올바르지 않아요. 0~59 사이여야 해요."
         case .invalidRepeatDaysMask:
             return "반복 요일 값이 올바르지 않아요."
         case .invalidSnoozeMinutes:
-            return "스누즈 간격은 1–30분 사이여야 해요."
+            return "스누즈 간격은 1~30분 사이여야 해요."
         case .invalidAlarmVolume:
-            return "알람 볼륨은 0–100% 사이여야 해요."
+            return "알람 볼륨은 0~100% 사이여야 해요."
         case .invalidVoiceVolume:
-            return "목소리 크기는 30–100% 사이여야 해요."
+            return "목소리 크기는 30~100% 사이여야 해요."
         }
     }
 }

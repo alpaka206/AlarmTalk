@@ -88,10 +88,6 @@ final class LocalAlarmStore: ObservableObject {
         alarms.first { $0.alarmKitID == alarmKitID }
     }
 
-    func recordsBy(syncState: AlarmSyncState) -> [LocalAlarmRecord] {
-        alarms.filter { $0.syncStateEnum == syncState }
-    }
-
     func recordsBy(origin: AlarmOrigin) -> [LocalAlarmRecord] {
         alarms.filter { $0.originEnum == origin }
     }
@@ -633,27 +629,6 @@ final class LocalAlarmStore: ObservableObject {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        persist()
-    }
-
-    func updateDynamicVoiceAudio(
-        id: String,
-        localAudioUri: String,
-        audioCacheKey: String?,
-        rawAudioUri: String?,
-        voiceText: String,
-        ttsMessageId: String?,
-        preparedForFireAtMillis: Int64,
-        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
-    ) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].localAudioUri = localAudioUri
-        alarms[index].audioCacheKey = audioCacheKey
-        alarms[index].rawAudioUri = rawAudioUri
-        alarms[index].voiceText = voiceText
-        alarms[index].ttsMessageId = ttsMessageId
-        alarms[index].dynamicVoicePreparedForFireAtMillis = preparedForFireAtMillis
-        alarms[index].updatedAtMillis = nowMillis
         persist()
     }
 

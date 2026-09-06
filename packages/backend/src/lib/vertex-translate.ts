@@ -42,12 +42,12 @@ export type AlarmTextPreparation = {
 // 편집기가 고를 수 있는 동적 생성 모드.
 // ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경 — 연애가 아니라 응원).
 // 들어오는 값은 `normalizeRandomContext` 가 이미 접어서 준다.
-export type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'cheer';
+type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'cheer';
 
 // 구조화 날씨 시그널(설계 #7). 한국어 문자열 대신 언어무관 토큰으로 전달해, 동적 프롬프트가
 // 타깃 언어로 네이티브 재표현하고 폴백도 언어별 표면을 만든다(한국어 누출 0).
-export type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
-export type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
+type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
+type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
 export type WeatherCondition = { kind: WeatherConditionKind; action: WeatherAction };
 export type WeatherSignal = { conditions: WeatherCondition[] };
 

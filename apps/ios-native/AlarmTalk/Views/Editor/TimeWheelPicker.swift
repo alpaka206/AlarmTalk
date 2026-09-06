@@ -24,7 +24,6 @@ private struct TimeWheelWidthKey: PreferenceKey {
 /// - 상하단 fade gradient mask 로 wheel-edge 효과.
 /// - `snappy(duration: 0.25)` 스프링 애니메이션.
 struct TimeWheelPicker: View {
-    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var hour: Int
     @Binding var minute: Int
 

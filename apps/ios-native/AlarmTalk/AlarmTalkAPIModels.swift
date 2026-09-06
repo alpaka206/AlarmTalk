@@ -849,15 +849,8 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
 // ⚠ **`/checkout` 요청·응답 모델을 되살리지 말 것**(2026-08-07 삭제).
 // iOS 결제는 **StoreKit** 을 거친다 — 서버 `/billing/checkout` 은 안드로이드(구글 결제)
 // 전용이고, iOS 에는 그 라우트를 부르는 코드가 없어 모델만 남아 있었다.
-// (`CheckoutVoucher` 는 다른 응답이 쓰므로 남긴다.)
-
-struct CheckoutVoucher: Decodable, Identifiable, Equatable {
-    var id: String
-    var code: String
-    var expiresAt: String
-    var maxUses: Int?
-    var useCount: Int?
-}
+// (`CheckoutVoucher` 도 같은 묶음이다 — 그걸 물던 마지막 응답 필드가 8c15bd81 에서
+// 사라진 뒤 어떤 응답도 쓰지 않아 2026-09-06 에 지웠다. 바우처는 `VoucherItem` 이다.)
 
 struct EnsureFamilyShareCodeResponse: Decodable, Equatable {
     var success: Bool
@@ -1128,12 +1121,6 @@ struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
         success = (try? container.decodeIfPresent(Bool.self, forKey: .success)) ?? false
         planKey = try? container.decodeIfPresent(String.self, forKey: .planKey)
         subscription = try? container.decodeIfPresent(BillingSubscription.self, forKey: .subscription)
-    }
-
-    init(success: Bool, planKey: String? = nil, subscription: BillingSubscription? = nil) {
-        self.success = success
-        self.planKey = planKey
-        self.subscription = subscription
     }
 }
 

@@ -17,7 +17,6 @@ import SwiftUI
 /// 3. **최종 반영은 이 화면의 저장 버튼 한 곳.**
 struct MessageSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
 
     /// 현재 값(직접 입력이면 `manual`).
     let initialContext: String

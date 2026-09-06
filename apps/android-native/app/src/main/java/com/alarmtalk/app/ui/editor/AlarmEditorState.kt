@@ -21,21 +21,6 @@ internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     else -> value
 }
 
-internal fun timeUntilAlarmLabel(context: android.content.Context, fireAtMillis: Long): String {
-    val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
-    val duration = java.time.Duration.ofMillis(millisUntilFire)
-    val days = duration.toDays()
-    val hours = duration.minusDays(days).toHours()
-    val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
-    return when {
-        days > 0L && hours == 0L -> context.getString(R.string.r3ed_time_until_days, days)
-        days > 0L -> context.getString(R.string.r3ed_time_until_days_hours, days, hours)
-        hours == 0L -> context.getString(R.string.r3ed_time_until_minutes, minutes.coerceAtLeast(1))
-        minutes == 0L -> context.getString(R.string.r3ed_time_until_hours, hours)
-        else -> context.getString(R.string.r3ed_time_until_hours_minutes, hours, minutes)
-    }
-}
-
 internal fun googleSignInErrorMessage(context: android.content.Context, statusCode: Int): String = when (statusCode) {
     10 -> context.getString(R.string.r3ed_google_signin_error_config)
     7 -> context.getString(R.string.r3ed_google_signin_error_network)

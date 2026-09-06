@@ -352,36 +352,6 @@ struct ThemeModePickerSheet: View {
     }
 }
 
-private struct SettingsSheetHeader: View {
-    let title: LocalizedStringKey
-    var subtitle: LocalizedStringKey? = nil
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-            Spacer()
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.headline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(AlarmTalkTheme.surfaceVariant, in: Circle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-}
-
 #if DEBUG
 #Preview("SettingsView (light)") {
     NavigationStack {

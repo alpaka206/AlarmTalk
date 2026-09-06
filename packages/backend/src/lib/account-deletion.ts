@@ -15,7 +15,7 @@ export function billingRetentionUntil(now: Date): Date {
  * user_id 를 비가역 가명 키로 변환한다 (개인정보보호법 제2조 가명처리).
  * pseudonym = SHA-256(user_id + salt). salt(=PASSWORD_PEPPER) 없이는 원본을 복원할 수 없다.
  */
-export async function pseudonymizeUserId(userId: string, salt: string): Promise<string> {
+async function pseudonymizeUserId(userId: string, salt: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',
     TEXT_ENCODER.encode(`${userId}:${salt ?? ''}`),

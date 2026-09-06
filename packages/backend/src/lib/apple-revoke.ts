@@ -83,7 +83,7 @@ function pemToPkcs8(pem: string): Uint8Array {
  * 수명을 **10분**으로 짧게 둔다 — 요청마다 새로 만들면 되고, 긴 수명은 유출됐을 때
  * 그만큼 오래 쓰인다.
  */
-export async function signAppleClientSecret(
+async function signAppleClientSecret(
   config: AppleSignInSecretConfig,
   nowMs: number = Date.now(),
 ): Promise<string> {

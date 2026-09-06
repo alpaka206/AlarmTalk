@@ -66,7 +66,6 @@ private struct PaneScaffold<Content: View>: View {
 // MARK: - 다시 울림
 
 struct SnoozeSettingsPane: View {
-    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var enabled: Bool
     @Binding var minutes: Int
     @Binding var repeatLimit: Int
