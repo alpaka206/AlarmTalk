@@ -4,6 +4,8 @@ import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
+import { errorBody } from '../lib/api-error';
+import type { ErrorCode } from '@alarmtalk/shared';
 import { typedRow } from '../lib/db-types';
 import { DUMMY_BCRYPT_HASH, hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
@@ -44,9 +46,6 @@ const auth = new Hono<{ Bindings: Env }>();
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 const EMAIL_VERIFICATION_PURPOSE_RESET = 'reset';
 
-function jsonError(code: string, message: string) {
-  return { error: message, error_code: code };
-}
 
 type EmailVerificationRow = {
   id: string;
@@ -57,7 +56,8 @@ type EmailVerificationRow = {
 
 type EmailVerificationCheck =
   | { ok: true; id: string }
-  | { ok: false; status: 400 | 429; code: string; message: string };
+  // code 는 **목록에 있는 코드**여야 한다 — 그대로 응답에 실려 앱이 분기하는 값이다.
+  | { ok: false; status: 400 | 429; code: ErrorCode; message: string };
 
 async function checkEmailVerificationCode(
   db: Client,
@@ -157,11 +157,11 @@ async function classifyExistingAccount(db: Client, email: string): Promise<Exist
 
 function existingAccountConflict(account: ExistingAccount) {
   if (account.kind === 'password') {
-    return { body: jsonError('AUTH_EMAIL_TAKEN', 'Email already registered'), status: 409 as const };
+    return { body: errorBody('AUTH_EMAIL_TAKEN', 'Email already registered'), status: 409 as const };
   }
   return {
     body: {
-      ...jsonError('AUTH_EMAIL_SOCIAL', 'Email registered via social login'),
+      ...errorBody('AUTH_EMAIL_SOCIAL', 'Email registered via social login'),
       provider: account.provider,
     },
     status: 409 as const,
@@ -173,12 +173,12 @@ auth.post('/email-code', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = EmailVerificationRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -246,7 +246,7 @@ auth.post('/email-code', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status = detail.includes('Email delivery') ? 503 : 500;
-    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+    return c.json(errorBody('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
   }
 });
 
@@ -255,12 +255,12 @@ auth.post('/email-code/verify', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = EmailVerificationConfirmRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -269,12 +269,12 @@ auth.post('/email-code/verify', async (c) => {
   try {
     const check = await checkEmailVerificationCode(db, c.env, email, parsed.data.code);
     if (!check.ok) {
-      return c.json(jsonError(check.code, check.message), check.status);
+      return c.json(errorBody(check.code, check.message), check.status);
     }
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+    return c.json(errorBody('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
   }
 });
 
@@ -285,12 +285,12 @@ auth.post('/password-reset', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = PasswordResetRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -353,7 +353,7 @@ auth.post('/password-reset', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status = detail.includes('Email delivery') ? 503 : 500;
-    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+    return c.json(errorBody('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
   }
 });
 
@@ -364,13 +364,13 @@ auth.post('/password-reset/confirm', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = PasswordResetConfirmRequestSchema.safeParse(body);
   if (!parsed.success) {
     return c.json(
-      { ...jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      { ...errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
       400,
     );
   }
@@ -387,13 +387,13 @@ auth.post('/password-reset/confirm', async (c) => {
       EMAIL_VERIFICATION_PURPOSE_RESET,
     );
     if (!check.ok) {
-      return c.json(jsonError(check.code, check.message), check.status);
+      return c.json(errorBody(check.code, check.message), check.status);
     }
 
     // 코드가 유효해도 비밀번호 계정이 아니면(소셜/미가입) 재설정하지 않는다.
     const account = await classifyExistingAccount(db, email);
     if (!account || account.kind !== 'password') {
-      return c.json(jsonError('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
+      return c.json(errorBody('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
     }
 
     const passwordHash = await hashPassword(parsed.data.password, c.env.PASSWORD_PEPPER);
@@ -409,7 +409,7 @@ auth.post('/password-reset/confirm', async (c) => {
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_PASSWORD_RESET_FAILED', 'Failed to reset password'), 500);
+    return c.json(errorBody('AUTH_PASSWORD_RESET_FAILED', 'Failed to reset password'), 500);
   }
 });
 
@@ -418,13 +418,13 @@ auth.post('/register', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = RegisterRequestSchema.safeParse(body);
   if (!parsed.success) {
     return c.json(
-      { ...jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      { ...errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
       400,
     );
   }
@@ -443,7 +443,7 @@ auth.post('/register', async (c) => {
       email_verification_code,
     );
     if (!verification.ok) {
-      return c.json(jsonError(verification.code, verification.message), verification.status);
+      return c.json(errorBody(verification.code, verification.message), verification.status);
     }
 
     // 인증 코드를 통과했더라도(이론상 경쟁 상태) 이미 존재하는 이메일이면 가입 방식에 맞는
@@ -502,7 +502,7 @@ auth.post('/register', async (c) => {
     );
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
+    return c.json(errorBody('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
   }
 });
 
@@ -511,12 +511,12 @@ auth.post('/login', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = LoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const { email, password } = parsed.data;
@@ -538,7 +538,7 @@ auth.post('/login', async (c) => {
     // 응답 시간(타이밍 오라클)으로 새지 않게 한다.
     if (result.rows.length === 0) {
       await verifyPassword(password, DUMMY_BCRYPT_HASH, c.env.PASSWORD_PEPPER);
-      return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+      return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
     const row = typedRow<{
@@ -556,7 +556,7 @@ auth.post('/login', async (c) => {
     const passwordHash = row.password_hash ?? DUMMY_BCRYPT_HASH;
     const ok = await verifyPassword(password, passwordHash, c.env.PASSWORD_PEPPER);
     if (!row.password_hash || !ok) {
-      return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+      return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
     if (!row.google_id) {
@@ -599,7 +599,7 @@ auth.post('/login', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_LOGIN_FAILED', 'Login failed'), 500);
+    return c.json(errorBody('AUTH_LOGIN_FAILED', 'Login failed'), 500);
   }
 });
 
@@ -608,12 +608,12 @@ auth.post('/google', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = GoogleLoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const db = getDB(c.env);
@@ -622,7 +622,7 @@ auth.post('/google', async (c) => {
     // 구성 가드. GOOGLE_CLIENT_ID 미설정 시 aud 검증이 무력화되면
     // 안 되므로(oauth.ts 는 fail-closed) 명시적으로 500 을 반환한다.
     if (!c.env.GOOGLE_CLIENT_ID) {
-      return c.json(jsonError('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
+      return c.json(errorBody('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
     }
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
@@ -755,7 +755,7 @@ auth.post('/google', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
-    return c.json(jsonError('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
+    return c.json(errorBody('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
   }
 });
 
@@ -773,12 +773,12 @@ auth.post('/apple', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = AppleLoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const db = getDB(c.env);
@@ -788,7 +788,7 @@ auth.post('/apple', async (c) => {
     // 발급된 유효한 애플 토큰**도 통과해 그 앱 사용자가 우리 계정을 차지할 수 있다.
     if (!c.env.APPLE_BUNDLE_ID) {
       return c.json(
-        jsonError('AUTH_APPLE_CONFIG_MISSING', 'Apple bundle ID is not configured'),
+        errorBody('AUTH_APPLE_CONFIG_MISSING', 'Apple bundle ID is not configured'),
         500,
       );
     }
@@ -943,14 +943,14 @@ auth.post('/apple', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
-    return c.json(jsonError('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
+    return c.json(errorBody('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
 
 auth.get('/me', async (c) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
-    return c.json(jsonError('AUTH_MISSING', 'Authorization header required'), 401);
+    return c.json(errorBody('AUTH_MISSING', 'Authorization header required'), 401);
   }
   const token = authHeader.slice(7);
   // **검증 실패와 그 뒤의 장애를 구조로 가른다.** 하나의 try 로 묶으면 DB 오류까지 401 로
@@ -963,7 +963,7 @@ auth.get('/me', async (c) => {
     payload = await verifyAppJwt(token, c.env.JWT_SECRET);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+    return c.json(errorBody('AUTH_INVALID_TOKEN', detail), 401);
   }
   try {
     const db = getDB(c.env);
@@ -975,7 +975,7 @@ auth.get('/me', async (c) => {
       args: [payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
-      return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
+      return c.json(errorBody('AUTH_USER_NOT_FOUND', 'User not found'), 404);
     }
     const row = typedRow<
       {
@@ -991,7 +991,7 @@ auth.get('/me', async (c) => {
     // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
     // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
     if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
-      return c.json(jsonError('TOKEN_REVOKED', 'Token has been revoked'), 401);
+      return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
@@ -1040,7 +1040,7 @@ auth.get('/me', async (c) => {
     const { logStructured } = await import('../lib/logger');
     logStructured('error', { at: 'auth.me', error: detail });
     return c.json(
-      jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+      errorBody('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
       503,
     );
   }
@@ -1068,7 +1068,7 @@ logout.post('/', async (c) => {
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_LOGOUT_FAILED', 'Logout failed'), 500);
+    return c.json(errorBody('AUTH_LOGOUT_FAILED', 'Logout failed'), 500);
   }
 });
 auth.route('/logout', logout);

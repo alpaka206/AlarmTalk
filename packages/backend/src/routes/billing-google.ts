@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
@@ -250,11 +251,10 @@ billingGoogle.post('/google/confirm', async (c) => {
       const detail = (await giftRes.text()).slice(0, 300);
       logStructured('warn', { at: 'billing.google.gift', status: giftRes.status, detail });
       const status = giftRes.status === 404 || giftRes.status === 400 ? 404 : 502;
+      const code: ErrorCode =
+        status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED';
       return c.json(
-        {
-          error: 'Google purchase not found or verification failed',
-          error_code: status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
-        },
+        { error: 'Google purchase not found or verification failed', error_code: code },
         status,
       );
     }

@@ -303,6 +303,25 @@
 - **보관 1년.** 이 숫자는 개인정보 처리방침 3장 표와 `USAGE_EVENT_RETENTION_DAYS` 두 곳에
   있고 **반드시 같아야 한다**(회귀 테스트가 고정한다).
 
+### 에러 코드는 **계약**이다 → [`docs/spec/error-codes.md`](docs/spec/error-codes.md)
+
+서버는 모든 4xx/5xx 에 `error_code` 를 싣고, 앱은 **그 코드로** 문구를 고른다. 목록의 단일
+출처는 `packages/shared/src/schemas/error-codes.ts` 이고, 백엔드는 `jsonError`·`errorBody`
+(`lib/api-error.ts`)로만 코드를 내보낸다 — `code` 가 `ErrorCode` 타입이라 목록에 없는 값은
+컴파일이 막는다.
+
+- ⚠ **이미 나간 코드의 이름을 바꾸지 말 것.** 스토어의 구버전 앱이 그 문자열로 분기한다 —
+  이름을 고치면 그 분기가 통째로 죽는다. 새 코드를 **추가**하고 옛 코드를 한동안 함께
+  내려보낸 뒤, 강제 업데이트가 끝난 회차에서 지운다.
+- **기록은 전부, 경보는 골라서.** 나가는 모든 4xx/5xx 는 `middleware/errorCode.ts` 가 한 줄로
+  남기고(`at: "api_error"`), Sentry 로는 `ALERTING_ERROR_CODES` + 5xx 만 올린다. 오타·형식
+  오류까지 보내면 진짜 사고가 그 사이에 묻힌다.
+- ⚠ **기록 지점은 응답 쪽 한 곳이다.** 라우트마다 손으로 심으면 새 라우트가 빠지고, 빠진
+  줄도 모른다. 예전에는 **의도한 4xx 에 아무 흔적이 없어서**("한도로 막았다") 한도를
+  조정할 근거조차 없었다.
+- **앱의 문구 표는 두 앱이 짝이다**(`network/ApiErrorMessages.kt` / `APIErrorMessages.swift`).
+  한쪽에만 코드를 더하면 같은 실패가 두 앱에서 다르게 읽힌다.
+
 ### Compose 콜백에 **지역 함수 참조**를 넘기지 않는다 (Android, 회귀 방지)
 
 `onBack = ::saveResolvedSettings` 처럼 지역 `fun` 의 **참조**를 컴포저블 인자로 넘기면,
@@ -394,6 +413,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
 | [`docs/spec/alarm-lifecycle.md`](docs/spec/alarm-lifecycle.md) | 알람의 **행 vs 예약** 두 겹, 계정을 떠날 때 끄기, `.failed` 낙인 규칙 |
 | [`docs/spec/usage-events.md`](docs/spec/usage-events.md) | 사용 기록 — **울릴 때 네트워크 금지**(로컬에 적고 나중에 전송), 재전송 멱등, 보관 1년 |
+| [`docs/spec/error-codes.md`](docs/spec/error-codes.md) | 에러 코드 — **목록은 하나**(shared), 나간 코드는 **바꾸지 않는다**, 기록은 전부·경보는 골라서 |
 
 각 스펙 문서 끝에 **「구현 지도」** 표가 있다 — 규칙 한 줄이 세 구현의 어디에 사는지
 적어 둔 것이라, **한 곳만 고치는 사고**를 막는다. 동작을 바꾸면 스펙을 먼저 고친다.

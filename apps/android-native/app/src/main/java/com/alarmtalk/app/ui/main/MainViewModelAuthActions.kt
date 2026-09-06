@@ -45,9 +45,11 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 스낵바(전역 message) 대신 로그인 화면 인라인 에러로 — 키보드가 열려 있어도 보인다.
             // 서버는 미가입/비밀번호 불일치를 구분하지 않고 AUTH_INVALID_CREDENTIALS 401 하나로
             // 응답한다(계정 존재 여부 노출 방지) — 안내 문구도 이메일·비밀번호를 함께 확인하게 쓴다.
-            loginError = when (com.alarmtalk.app.network.apiError(error).code) {
+            val loginErrorCode = com.alarmtalk.app.network.apiError(error).code
+            loginError = when (loginErrorCode) {
                 "AUTH_INVALID_CREDENTIALS" -> app.getString(R.string.auth_error_invalid_credentials)
-                else -> userFacingError(error, app.getString(R.string.msg_login_failed))
+                else -> com.alarmtalk.app.network.apiErrorMessage(app, loginErrorCode)
+                    ?: userFacingError(error, app.getString(R.string.msg_login_failed))
             }
         }
         authBusy = false

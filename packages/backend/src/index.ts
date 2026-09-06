@@ -16,6 +16,7 @@ import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
+import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { retryTransientTurso } from './lib/turso-retry';
@@ -51,6 +52,10 @@ app.use('*', securityHeadersMiddleware);
 
 // Sentry error tracking (no-op if SENTRY_DSN is not set)
 app.use('*', sentryMiddleware);
+
+// 나가는 4xx/5xx 를 하나도 빠짐없이 기록한다(에러 코드별 집계 + 선별 경보).
+// ⚠ rateLimit·bodyLimit **위**에 둔다 — 그들이 내는 429/413 도 기록 대상이다.
+app.use('*', errorCodeMiddleware);
 
 // Structured request logging
 app.use('*', loggerMiddleware);
@@ -121,7 +126,7 @@ function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | u
 //   POST /api/init-db?fromId=1&toId=10   → run migrations 1..10 inclusive
 app.post('/api/init-db', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const fromId = c.req.query('fromId');
@@ -143,7 +148,7 @@ app.post('/api/init-db', async (c) => {
   } catch (err) {
     // SQL/Turso 내부 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'DB init failed' }, 500);
+    return c.json({ error: 'DB init failed', error_code: 'DB_INIT_FAILED' }, 500);
   }
 });
 
@@ -152,7 +157,7 @@ app.post('/api/init-db', async (c) => {
 // 돌려준다. 호출자가 remaining 이 0 이 될 때까지 반복 호출한다 (멱등).
 app.post('/api/admin/seed-stock-clips', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
@@ -189,7 +194,7 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   } catch (err) {
     // 합성/스토리지 내부 오류 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'Stock clip seed failed' }, 500);
+    return c.json({ error: 'Stock clip seed failed', error_code: 'STOCK_CLIP_SEED_FAILED' }, 500);
   }
 });
 
@@ -253,10 +258,10 @@ app.route('/admin', adminRoutes);
 app.route('/api', api);
 
 app.onError((err, c) => {
-  const sentry = c.get('sentry');
-  if (sentry) sentry.captureException(err);
+  // ⚠ 여기서 sentry.captureException 을 직접 부르지 말 것 — logRouteError 가 이미 보낸다.
+  //    예전에는 둘 다 불러 같은 사고가 Sentry 에 **두 번** 올라왔다(스택 없는 사본이 하나 더).
   logRouteError(c, err);
-  return c.json({ error: 'Internal server error' }, 500);
+  return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).

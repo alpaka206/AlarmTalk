@@ -78,7 +78,7 @@ function createRateLimitMiddleware(options?: {
     if (entry.count > maxRequests) {
       const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
       c.header('Retry-After', String(retryAfter));
-      return c.json({ error: 'Too many requests', retryAfter }, 429);
+      return c.json({ error: 'Too many requests', error_code: 'RATE_LIMITED', retryAfter }, 429);
     }
 
     await next();

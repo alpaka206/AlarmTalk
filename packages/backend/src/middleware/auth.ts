@@ -13,6 +13,7 @@
  * API 를 막는다.
  */
 import type { Context, Next } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { verifyAppJwt } from '../lib/jwt';
 
@@ -157,7 +158,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     await next();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    const code = message.includes('expired')
+    const code: ErrorCode = message.includes('expired')
       ? 'AUTH_TOKEN_EXPIRED'
       : message.includes('audience')
         ? 'AUTH_AUDIENCE_MISMATCH'

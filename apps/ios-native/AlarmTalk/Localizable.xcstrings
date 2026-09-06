@@ -12527,6 +12527,363 @@
     },
     "日本語" : {
 
+    },
+    "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used all your voice slots. Delete a voice you no longer need."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登録できる声をすべて使いました。使わない声を削除してください。"
+          }
+        }
+      }
+    },
+    "로그인이 만료됐어요. 다시 로그인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your session has expired. Please sign in again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログインの有効期限が切れました。もう一度ログインしてください。"
+          }
+        }
+      }
+    },
+    "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can change your voice only once a month. Please try again next month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声の変更は月に1回だけです。来月もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creating a voice requires your consent to voice data use. Go to More → Terms & Consent to agree again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を作成するには音声情報の利用に同意が必要です。「その他」→「規約と同意」から再度同意してください。"
+          }
+        }
+      }
+    },
+    "목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We could not create that voice. Please record again somewhere quiet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声を作成できませんでした。静かな場所でもう一度録音してください。"
+          }
+        }
+      }
+    },
+    "목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This voice is still being created. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声をまだ作成しています。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're on the free plan, so this voice is locked. Register a plan again to restore it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無料プランに変わったため、この声は使えません。プランを再登録すると戻ります。"
+          }
+        }
+      }
+    },
+    "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The phrase changed. Listen to the new one all the way through, then save."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フレーズが変わりました。新しいフレーズを最後まで聞いてから保存してください。"
+          }
+        }
+      }
+    },
+    "보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That file is too large. Try a shorter recording."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルが大きすぎます。もっと短く録音してください。"
+          }
+        }
+      }
+    },
+    "서버를 업데이트하고 있어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is updating. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバーを更新しています。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "요청이 너무 많아요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many requests. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リクエストが多すぎます。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We could not create the audio. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声を作成できませんでした。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "이메일 또는 비밀번호를 확인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please check your email and password."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールアドレスまたはパスワードをご確認ください。"
+          }
+        }
+      }
+    },
+    "이미 사라진 알람이에요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This alarm no longer exists."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアラームはすでに削除されています。"
+          }
+        }
+      }
+    },
+    "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've used all your custom phrase creations this month. They refill next month."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今月の自由入力フレーズの作成回数を使い切りました。来月に回復します。"
+          }
+        }
+      }
+    },
+    "인증 코드가 만료됐어요. 다시 받아 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That verification code has expired. Please request a new one."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証コードの有効期限が切れました。もう一度受け取ってください。"
+          }
+        }
+      }
+    },
+    "인증 코드가 맞지 않아요. 다시 확인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That verification code doesn't match. Please check it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証コードが一致しません。もう一度ご確認ください。"
+          }
+        }
+      }
+    },
+    "인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many incorrect codes. Please request a new one."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認証コードの入力を間違えすぎました。もう一度受け取ってください。"
+          }
+        }
+      }
+    },
+    "잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "問題が発生しました。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
+    "지원하지 않는 오디오 형식이에요. 다시 녹음해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That audio format isn't supported. Please record again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "対応していない音声形式です。もう一度録音してください。"
+          }
+        }
+      }
+    },
+    "탈퇴 신청 중인 계정이에요. 탈퇴를 취소하면 다시 쓸 수 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is scheduled for deletion. Cancel the deletion to use it again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退会申請中のアカウントです。退会を取り消すと再び利用できます。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

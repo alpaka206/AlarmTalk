@@ -1,4 +1,6 @@
 import { Hono, type Context } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
+import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { callerOwnerIds } from '../lib/caller-ids';
@@ -903,7 +905,9 @@ tts.post('/generate', async (c) => {
   }
   if (presetOnlyRestricted) {
     // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
-    const presetOnlyCode = freePlanRestricted ? 'FREE_PLAN_PRESET_ONLY' : 'BASIC_VOICE_PRESET_ONLY';
+    const presetOnlyCode: ErrorCode = freePlanRestricted
+      ? 'FREE_PLAN_PRESET_ONLY'
+      : 'BASIC_VOICE_PRESET_ONLY';
     // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
     if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
       return c.json(
@@ -1405,13 +1409,12 @@ tts.post('/generate', async (c) => {
           const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
           const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
           if (!reservation.ok) {
-            return c.json(
-              {
-                error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-                error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
-                manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-              },
+            return jsonError(
+              c,
               429,
+              'MANUAL_TTS_QUOTA_EXCEEDED',
+              '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+              { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
             );
           }
           manualQuotaResult = {
@@ -1511,13 +1514,12 @@ tts.post('/generate', async (c) => {
       const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
-        return c.json(
-          {
-            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
-            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-          },
+        return jsonError(
+          c,
           429,
+          'MANUAL_TTS_QUOTA_EXCEEDED',
+          '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+          { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
         );
       }
       manualQuotaPoolKey = pool.poolKey;

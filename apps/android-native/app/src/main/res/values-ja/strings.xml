@@ -914,4 +914,19 @@
     <string name="r3app_stock_replacement_body">基本の声が変わったため、アラームで使う音声を再取得しています。すべて取得できると、新しい声で鳴ります。\n\n通信が不安定だと途中で止まることがあります。そのときは下のボタンを押してください。</string>
     <string name="r3app_stock_replacement_button">もう一度試す</string>
     <string name="r3app_stock_replacement_working">ダウンロード中…</string>
+    <!-- 에러 코드별 안내 문구 — network/ApiErrorMessages.kt 의 표가 소비한다. -->
+    <string name="api_error_rate_limited">リクエストが多すぎます。しばらくしてからもう一度お試しください。</string>
+    <string name="api_error_request_too_large">ファイルが大きすぎます。もっと短く録音してください。</string>
+    <string name="api_error_server">問題が発生しました。しばらくしてからもう一度お試しください。</string>
+    <string name="api_error_schema_upgrading">サーバーを更新しています。しばらくしてからもう一度お試しください。</string>
+    <string name="api_error_email_code_invalid">認証コードが一致しません。もう一度ご確認ください。</string>
+    <string name="api_error_email_code_expired">認証コードの有効期限が切れました。もう一度受け取ってください。</string>
+    <string name="api_error_email_code_attempts">認証コードの入力を間違えすぎました。もう一度受け取ってください。</string>
+    <string name="api_error_account_pending_deletion">退会申請中のアカウントです。退会を取り消すと再び利用できます。</string>
+    <string name="api_error_session_expired">ログインの有効期限が切れました。もう一度ログインしてください。</string>
+    <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
+    <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
+    <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
+    <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
+    <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
 </resources>

@@ -275,6 +275,7 @@
 		D30265AE4597A222A6867E0F /* MessageContextMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B974CF425547C72D086DCFE /* MessageContextMemoryTests.swift */; };
 		D3817E0B7FAFEE9522D0F67F /* AlarmSoundPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4061A001D00A305855EE9206 /* AlarmSoundPlanTests.swift */; };
 		D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */; };
+		D4BC7CAADCECBC3A7610C2FA /* APIErrorMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */; };
 		D61E2402A6A6C7569C172B7F /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */; };
 		D627C8977052E9D7CD56A916 /* EntitlementWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0175911A2374269E498617FF /* EntitlementWriter.swift */; };
 		D6D5DBCA6195DFE9C5F59808 /* StockAudioPruneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA7685CDB27DBE9008CD52CA /* StockAudioPruneTests.swift */; };
@@ -595,6 +596,7 @@
 		AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTypography.swift; sourceTree = "<group>"; };
 		AC8E6B3DC78145608078758B /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		ACD1A5C25E56DD57B17BE473 /* UpdateRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateRequiredView.swift; sourceTree = "<group>"; };
+		AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIErrorMessages.swift; sourceTree = "<group>"; };
 		AFDD372A3465266C2A553883 /* HelperFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperFormatters.swift; sourceTree = "<group>"; };
 		B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketVariantResolver.swift; sourceTree = "<group>"; };
 		B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingAlarmCancellationStore.swift; sourceTree = "<group>"; };
@@ -1155,6 +1157,7 @@
 				AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */,
 				F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */,
 				0CE60628CC826194C627674A /* AlarmVoicePlayer.swift */,
+				AF3E03716A45AD4CC387DBEE /* APIErrorMessages.swift */,
 				034A8047D121E7FF08703642 /* AppVersionGate.swift */,
 				0221058C929FB1DAA401AFD7 /* Assets.xcassets */,
 				F346F83B654542F502B5CBE1 /* AudioCacheStore.swift */,
@@ -1469,6 +1472,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4BC7CAADCECBC3A7610C2FA /* APIErrorMessages.swift in Sources */,
 				FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */,
 				8841D7970A97CC0AF150153C /* AccountPanel.swift in Sources */,
 				C9EE7704D02B0E865DAED8BC /* AccountPendingDeletionView.swift in Sources */,

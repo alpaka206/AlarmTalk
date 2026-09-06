@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { UsageEventBatchSchema, type UsageEvent } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { jsonError } from '../lib/api-error';
 import { withWriteTransaction } from '../lib/transactions';
 
 const events = new Hono<AppEnv>();
@@ -33,17 +34,16 @@ events.post('/', async (c) => {
   try {
     raw = await c.req.json();
   } catch {
-    return c.json({ error: 'Invalid JSON body', error_code: 'INVALID_JSON' }, 400);
+    return jsonError(c, 400, 'INVALID_JSON', 'Invalid JSON body');
   }
 
   const parsed = UsageEventBatchSchema.safeParse(raw);
   if (!parsed.success) {
-    return c.json(
-      {
-        error: parsed.error.issues[0]?.message ?? 'Invalid events payload',
-        error_code: 'INVALID_USAGE_EVENTS',
-      },
+    return jsonError(
+      c,
       400,
+      'INVALID_USAGE_EVENTS',
+      parsed.error.issues[0]?.message ?? 'Invalid events payload',
     );
   }
 

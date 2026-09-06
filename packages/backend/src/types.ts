@@ -122,6 +122,11 @@ type AuthVariables = {
   userEmail: string;
   userName: string;
   sentry: SentryClient;
+  /**
+   * 이 요청의 에러를 `logRouteError` 가 이미 Sentry 로 보냈는가.
+   * `errorCodeMiddleware` 가 나가는 5xx 를 중복 보고하지 않으려고 본다.
+   */
+  errorReported?: boolean;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AuthVariables };

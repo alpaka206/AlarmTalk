@@ -939,4 +939,19 @@
     <string name="r3app_stock_replacement_body">기본 목소리가 바뀌어서 알람에 쓸 음성을 다시 받는 중이에요. 다 받아야 알람이 새 목소리로 울려요.\n\n네트워크가 불안정하면 멈출 수 있어요. 그럴 때는 아래 버튼을 눌러 주세요.</string>
     <string name="r3app_stock_replacement_button">다시 시도</string>
     <string name="r3app_stock_replacement_working">받는 중…</string>
+    <!-- 에러 코드별 안내 문구 — network/ApiErrorMessages.kt 의 표가 소비한다. -->
+    <string name="api_error_rate_limited">요청이 너무 많아요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="api_error_request_too_large">보내려는 파일이 너무 커요. 더 짧게 녹음해 주세요.</string>
+    <string name="api_error_server">잠시 문제가 생겼어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="api_error_schema_upgrading">서버를 업데이트하고 있어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="api_error_email_code_invalid">인증 코드가 맞지 않아요. 다시 확인해 주세요.</string>
+    <string name="api_error_email_code_expired">인증 코드가 만료됐어요. 다시 받아 주세요.</string>
+    <string name="api_error_email_code_attempts">인증 코드를 너무 많이 틀렸어요. 다시 받아 주세요.</string>
+    <string name="api_error_account_pending_deletion">탈퇴 신청 중인 계정이에요. 탈퇴를 취소하면 다시 쓸 수 있어요.</string>
+    <string name="api_error_session_expired">로그인이 만료됐어요. 다시 로그인해 주세요.</string>
+    <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
+    <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
+    <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
+    <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
 </resources>

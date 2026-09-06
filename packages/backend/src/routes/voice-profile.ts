@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
@@ -800,7 +801,7 @@ type ReplaceResult =
   | {
       ok: false;
       error: string;
-      errorCode: string;
+      errorCode: ErrorCode;
       status: 403 | 404 | 409 | 429;
       /** CONSENT_REQUIRED 일 때만 — 승격 경로와 같은 필드로 어떤 동의가 빠졌는지 싣는다. */
       consent?: string;
@@ -2218,7 +2219,7 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
 
 function validateCloneDuration(value: unknown): {
   status: 400;
-  body: { error: string; error_code: string };
+  body: { error: string; error_code: ErrorCode };
 } | null {
   if (value == null || value === '') {
     return {

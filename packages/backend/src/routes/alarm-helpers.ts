@@ -1,4 +1,5 @@
 import { UUID_RE } from '../lib/validate';
+import type { ErrorCode } from '@alarmtalk/shared';
 import {
   FREE_BUCKET_CATEGORIES,
   CLONE_PRERENDER_CATEGORIES,
@@ -110,7 +111,8 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
   };
 }
 
-type FieldError = { error: string; error_code: string };
+// error_code 는 **목록에 있는 코드**여야 한다 — 이 객체가 그대로 400 본문이 된다.
+type FieldError = { error: string; error_code: ErrorCode };
 
 export function validateAlarmFields(body: {
   mode?: string;
@@ -537,7 +539,7 @@ export async function claimTargetedAlarmSlot(
 /** 타인 발신 알람 시각 가드 결과 — 통과(효과 시간대 반환) 또는 거부(에러 응답 필드). */
 export type FamilyAlarmTimingGuardResult =
   | { ok: true; effectiveTimezone: string; nextFire: NextAlarmFire | null }
-  | { ok: false; error: string; error_code: string; status: 400 | 403 };
+  | { ok: false; error: string; error_code: ErrorCode; status: 400 | 403 };
 
 /**
  * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성) 전용.

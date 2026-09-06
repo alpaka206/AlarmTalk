@@ -906,4 +906,19 @@ Pass code: %1$s
     <string name="r3app_stock_replacement_body">The built-in voices have changed, so we\'re downloading the audio your alarms use. Alarms ring in the new voice once this finishes.\n\nA weak connection can stop it partway. If that happens, tap the button below.</string>
     <string name="r3app_stock_replacement_button">Try again</string>
     <string name="r3app_stock_replacement_working">Downloading…</string>
+    <!-- 에러 코드별 안내 문구 — network/ApiErrorMessages.kt 의 표가 소비한다. -->
+    <string name="api_error_rate_limited">Too many requests. Please try again in a moment.</string>
+    <string name="api_error_request_too_large">That file is too large. Try a shorter recording.</string>
+    <string name="api_error_server">Something went wrong. Please try again in a moment.</string>
+    <string name="api_error_schema_upgrading">The server is updating. Please try again in a moment.</string>
+    <string name="api_error_email_code_invalid">That verification code doesn\'t match. Please check it again.</string>
+    <string name="api_error_email_code_expired">That verification code has expired. Please request a new one.</string>
+    <string name="api_error_email_code_attempts">Too many incorrect codes. Please request a new one.</string>
+    <string name="api_error_account_pending_deletion">This account is scheduled for deletion. Cancel the deletion to use it again.</string>
+    <string name="api_error_session_expired">Your session has expired. Please sign in again.</string>
+    <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
+    <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
+    <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
+    <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
+    <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
 </resources>

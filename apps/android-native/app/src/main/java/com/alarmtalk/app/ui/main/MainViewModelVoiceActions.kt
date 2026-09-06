@@ -302,7 +302,8 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
-            message = when (apiErrorCode(error)) {
+            val createErrorCode = apiErrorCode(error)
+            message = when (createErrorCode) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
@@ -316,7 +317,10 @@ internal fun MainViewModel.createVoiceProfiles(
         "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY" ->
             app.getString(R.string.msg_voice_preset_only)
         "VOICE_LOCKED_FREE_PLAN" -> app.getString(R.string.msg_voice_locked_free_plan)
-                else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
+                // 화면이 맡지 않은 코드는 공용 표(ApiErrorMessages)가 받고, 그것도 없으면
+                // 서버 문장/기본 문장으로 떨어진다.
+                else -> com.alarmtalk.app.network.apiErrorMessage(app, createErrorCode)
+                    ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
         // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
@@ -431,14 +435,16 @@ internal fun MainViewModel.promoteVoiceDraft(
             val app = getApplication<android.app.Application>()
             // 확정(승격·제자리 교체)은 유료·동의·월 1회 게이트를 다시 통과해야 한다. 매핑이
             // 없으면 영어 본문이 일반 실패 문구로 뭉개져 **왜 막혔는지**가 사라진다.
-            message = when (apiErrorCode(error)) {
+            val promoteErrorCode = apiErrorCode(error)
+            message = when (promoteErrorCode) {
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
                 "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_change_limit)
                 "CONSENT_REQUIRED" -> app.getString(R.string.msg_voice_consent_required)
                 // 다른 기기가 미리듣기 문구를 고쳐 previewed_at 이 지워진 경우. 다시 시도해도
                 // 안 되는 종류라 '잠시 후 다시' 로 뭉개면 영영 눌러 보게 된다.
                 "VOICE_PREVIEW_REQUIRED" -> app.getString(R.string.msg_voice_preview_required)
-                else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
+                else -> com.alarmtalk.app.network.apiErrorMessage(app, promoteErrorCode)
+                    ?: userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
         voiceProfileBusy = false

@@ -1068,11 +1068,14 @@ internal fun AlarmEditorScreen(
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
-                audioMessage = when (apiErrorCode(error)) {
+                val ttsErrorCode = apiErrorCode(error)
+                audioMessage = when (ttsErrorCode) {
                     "MANUAL_TTS_QUOTA_EXCEEDED" ->
                         context.getString(R.string.editor_error_manual_tts_quota)
-                    else ->
-                        userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                    // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
+                    // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
+                    else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
+                        ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
                 }
             }
             generating = false
