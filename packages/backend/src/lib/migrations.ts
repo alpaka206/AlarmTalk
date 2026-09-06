@@ -2694,6 +2694,44 @@ export const migrations: Migration[] = [
           )`,
     ],
   },
+  {
+    // 사용 기록(이벤트) — 앱이 오프라인이면 쌓아 두었다가 연결될 때 모아 보낸다.
+    //
+    // ⚠ **식별자만 담는다.** 문구 원문 같은 개인 텍스트는 넣지 않는다 — 문구는 이미
+    //   `messages` 에 있고, 여기 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이
+    //   하나 더 늘어난다. 자유 문자열은 `detail` 하나뿐이고 앱·서버 양쪽에서 짧게 자른다.
+    //
+    // ⚠ **`id` 는 클라가 만든 UUID 를 그대로 PK 로 쓴다** — `INSERT OR IGNORE` 와 짝이 되어
+    //   재전송을 멱등으로 만든다. 서버가 새 id 를 발급하면 "받았는지 확신 못 한 배치" 를
+    //   다시 보낼 때마다 같은 사건이 여러 줄이 된다.
+    //
+    // `message_library` 의 두 컬럼은 **폰에 그 오디오가 남아 있는가**(사용중/비사용중)를
+    // 기록한다. 판정은 폰이 하고(참조 카운트), 서버는 그 결과를 받아 적을 뿐이다 —
+    // 서버가 추측하면 기기마다 다른 사실을 서로 덮어쓴다.
+    id: 112,
+    name: 'usage-events-and-message-in-use',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS usage_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        received_at TEXT DEFAULT (datetime('now')),
+        alarm_id TEXT,
+        voice_profile_id TEXT,
+        message_id TEXT,
+        detail TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_time
+         ON usage_events(user_id, occurred_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_type
+         ON usage_events(type, occurred_at)`,
+      // 기존 행은 '사용중' 으로 시작한다 — 지금까지는 알람이 쓰는 것만 남아 있었다.
+      `ALTER TABLE message_library ADD COLUMN in_use INTEGER DEFAULT 1`,
+      `ALTER TABLE message_library ADD COLUMN in_use_updated_at TEXT`,
+      `ALTER TABLE message_library ADD COLUMN last_used_at TEXT`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

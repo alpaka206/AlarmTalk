@@ -32,6 +32,7 @@ import billingApple from './routes/billing-apple';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
+import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
 
@@ -234,6 +235,8 @@ api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
 api.route('/push', pushRoutes);
+// 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
+api.route('/events', eventsRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
 // (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
