@@ -173,6 +173,8 @@
     <string name="editor_block_fortune_title">운세 정보가 없어요</string>
     <string name="editor_block_fortune_message">운세 문구를 쓰려면 성별과 생년월일, 태어난 시간이 필요해요. 문구 화면에서 입력해 주세요.</string>
     <string name="editor_block_fortune_family_message">상대가 아직 운세 정보를 설정하지 않았어요. 다른 문구를 골라 주세요.</string>
+    <string name="editor_block_offline_title">연결이 필요해요</string>
+    <string name="editor_block_offline_message">이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.</string>
     <string name="editor_block_preparing_title">문구를 준비하고 있어요</string>
     <string name="editor_block_preparing_message">목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.</string>
     <string name="editor_error_family_alarm_lead_title">조금 더 뒤로 설정해 주세요</string>

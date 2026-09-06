@@ -166,6 +166,8 @@
     <string name="editor_block_fortune_title">No fortune details</string>
     <string name="editor_block_fortune_message">Fortune messages need your gender, birth date and birth time. Add them on the message screen.</string>
     <string name="editor_block_fortune_family_message">They haven\'t set their fortune details yet. Please pick a different message.</string>
+    <string name="editor_block_offline_title">You\'re offline</string>
+    <string name="editor_block_offline_message">This message\'s audio isn\'t on this device yet. Save again once you\'re back online.</string>
     <string name="editor_block_preparing_title">Preparing the message</string>
     <string name="editor_block_preparing_message">The voice file is still downloading. Try saving again in a moment.</string>
     <string name="editor_error_family_alarm_lead_title">Please pick a later time</string>

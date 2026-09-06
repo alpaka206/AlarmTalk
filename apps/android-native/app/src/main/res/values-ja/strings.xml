@@ -166,6 +166,8 @@
     <string name="editor_block_fortune_title">占いの情報がありません</string>
     <string name="editor_block_fortune_message">占いの文章には性別・生年月日・生まれた時間が必要です。文章の画面で入力してください。</string>
     <string name="editor_block_fortune_family_message">相手はまだ占いの情報を設定していません。別の文章を選んでください。</string>
+    <string name="editor_block_offline_title">接続が必要です</string>
+    <string name="editor_block_offline_message">この文言の音声はまだこの端末にありません。接続できたら、もう一度保存してください。</string>
     <string name="editor_block_preparing_title">文章を準備しています</string>
     <string name="editor_block_preparing_message">音声ファイルをまだ受信中です。少し経ってからもう一度保存してください。</string>
     <string name="editor_error_family_alarm_lead_title">もう少し後に設定してください</string>

@@ -2338,6 +2338,17 @@ struct AlarmEditorSheet: View {
             if let alias = reusableTtsInputAlias(listenerTitle: currentListenerTitle),
                applyReusedTtsAudio(alias) {
                 // 재사용 성공 — 서버 호출을 건너뛴다.
+            } else if !NetworkMonitor.shared.isOnline {
+                // ⚠ **오프라인이면 요청을 보내 보지 않는다**(2026-09-06 지시).
+                // 바로 위 재사용이 실패했다 = 이 문구의 오디오가 **이 기기에 없다**.
+                // 서버에 있든 없든 지금은 가져올 수 없으므로, 왕복을 기다렸다 실패를
+                // 보여 주는 대신 그 자리에서 이유를 말한다(안드로이드
+                // `SaveBlockReason.OFFLINE_NEW_MESSAGE` 와 같은 판정·같은 문구).
+                validationAlert = ValidationAlertContent(
+                    title: "연결이 필요해요",
+                    message: "이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요."
+                )
+                return
             } else {
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,

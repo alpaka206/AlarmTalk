@@ -115,6 +115,14 @@ internal enum class SaveBlockReason {
     WEATHER_LOCATION_MISSING,
     FORTUNE_INFO_MISSING,
     MESSAGE_PREPARING,
+
+    /**
+     * 오프라인인데 그 직접 입력 문구의 오디오가 **폰에 없다.**
+     *
+     * 서버에 있든 없든 지금은 가져올 수 없으므로 **요청을 보내 보지 않고** 막는다 —
+     * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
+     */
+    OFFLINE_NEW_MESSAGE,
 }
 
 @Composable
@@ -702,6 +710,25 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    /**
+     * 이 목소리로 말할 때 붙는 호칭. **저장 경로와 오프라인 판정이 같이 쓴다** —
+     * 호칭은 문구 **안에** 병합되므로 캐시 키가 달라진다. 둘이 다른 값을 쓰면 "있는데
+     * 없다고" 하거나 그 반대가 된다.
+     */
+    fun resolvedVoiceListenerTitle(profileId: String, text: String): String? {
+        val isSelectedSystemVoice = isSystemVoiceId(profileId) ||
+            voiceProfiles.any { it.id == profileId && it.isSystem == true }
+        if (editor.hasSelectedStockClipAudio(profileId, text)) return null
+        return editor.voiceListenerTitleOverride.trimmedOrNull()
+            ?: resolveListenerTitle(
+                profileId = profileId,
+                voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
+            ).trimmedOrNull()
+            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
+            ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+    }
+
     fun saveEditor() {
         if (busy) return
         // **권한이 가장 먼저다.** 아래 어느 갈래든 결국 알람을 만들거나 고치는데, 음성 생성은
@@ -803,20 +830,7 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_fortune_info_required)
             return
         }
-        fun resolvedVoiceListenerTitle(): String? {
-            val isSelectedSystemVoice = isSystemVoiceId(profileId) ||
-                voiceProfiles.any { it.id == profileId && it.isSystem == true }
-            if (editor.hasSelectedStockClipAudio(profileId, text)) return null
-            return editor.voiceListenerTitleOverride.trimmedOrNull()
-                ?: resolveListenerTitle(
-                    profileId = profileId,
-                    voiceProfiles = voiceProfiles,
-                    familyVoices = familyVoices,
-                ).trimmedOrNull()
-                // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
-                ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
-        }
-        val listenerTitleForSave = resolvedVoiceListenerTitle()
+        val listenerTitleForSave = resolvedVoiceListenerTitle(profileId, text)
         val usableProfileIds = (
             visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter {
@@ -1288,6 +1302,33 @@ internal fun AlarmEditorScreen(
      * 그래서 **누르게 두고, 왜 안 되는지 알럿으로 말한다** — 가족 알람 차단 알럿과 같은
      * 껍데기(`IosAlertDialog`)를 쓴다.
      */
+    /**
+     * 이 직접 입력 문구의 오디오를 **폰이 이미 갖고 있는가.**
+     *
+     * 판정은 저장 경로와 **같은 두 단계**다(`saveEditor` 의 `resolveTtsInput` → `getCachedAudio`):
+     * 입력 별칭이 있어도 **파일이 없으면 없는 것**이다. 별칭 파일은 오디오와 이름이 달라
+     * 함께 지워지지 않으므로, 별칭만 보고 판단하면 "있다" 고 착각한다.
+     *
+     * 가족 알람은 제외한다 — 서버가 수신자별로 만들어야 해서 내 캐시로는 대신할 수 없다.
+     */
+    fun manualAudioReadyLocally(profileId: String, text: String): Boolean {
+        if (editor.hasFreshTtsAudio(profileId, text) && !editor.localAudioUri.isNullOrBlank()) return true
+        if (familyAlarmMode) return false
+        val reuseUserId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return false
+        val alias = audioStore.resolveTtsInput(
+            AlarmAudioStore.ttsInputKey(
+                userId = reuseUserId,
+                profileId = profileId,
+                text = text,
+                category = editor.activeVoiceCategory(),
+                language = editor.activeVoiceLanguage(),
+                // 저장 시점과 같은 호칭을 쓴다 — 호칭이 문구 안에 병합되므로 키가 달라진다.
+                listenerTitle = resolvedVoiceListenerTitle(profileId, text),
+            ),
+        ) ?: return false
+        return audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri) != null
+    }
+
     val editorSaveBlockReason: SaveBlockReason? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
         editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
@@ -1319,6 +1360,11 @@ internal fun AlarmEditorScreen(
                 //   **매번 같은 클립**이 나간다. 날씨만 막고 두면 그 조용한 오작동이 남는다.
                 usesStockClips && editor.selectedBucket == "fortune" &&
                     !fortuneInfoReady() -> SaveBlockReason.FORTUNE_INFO_MISSING
+                // 오프라인 + 폰에 그 문구의 오디오가 없다 → 만들 길이 없다.
+                // ⚠ **요청을 보내 보고 실패를 보여 주지 않는다.** 로컬에서 답이 나오는
+                // 질문이라, 누른 즉시 이유를 말하는 편이 낫다(그리고 서버도 안 부른다).
+                editor.isManualForSave() && text.isNotBlank() && !isOnline &&
+                    !manualAudioReadyLocally(profileId, text) -> SaveBlockReason.OFFLINE_NEW_MESSAGE
                 // 빈 문구는 클립이 아직 안 붙은 과도기다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
                     SaveBlockReason.MESSAGE_PREPARING
@@ -1732,6 +1778,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.VOICE_SETTLING -> R.string.editor_block_voice_settling_title
                                         SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
                                         SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
+                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
                                     }
                                     val messageRes = when (reason) {
@@ -1745,6 +1792,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.FORTUNE_INFO_MISSING ->
                                             if (familyAlarmMode) R.string.editor_block_fortune_family_message
                                             else R.string.editor_block_fortune_message
+                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
                                     }
                                     familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
