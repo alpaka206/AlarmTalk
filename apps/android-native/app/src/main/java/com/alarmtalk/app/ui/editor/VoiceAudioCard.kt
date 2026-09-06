@@ -410,6 +410,20 @@ internal fun VoiceAudioCard(
 internal fun VoiceOutputSettingsPane(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
+    /**
+     * 지금 크기로 **인사말 샘플**을 들려준다. 재생 중이면 정지.
+     *
+     * ⚠ **알람에 들어갈 문구를 들려주지 않는다**(2026-09-06 결정). 날씨·운세처럼 조건으로
+     * 고르는 문구는 **울릴 때에야** 어느 클립인지 정해지므로, 그걸 들려주려면 여기서
+     * 서버를 기다려야 하고 그래도 실제와 같다는 보장이 없다. 크기를 재는 데 필요한 건
+     * '이 목소리가 이 크기로 얼마나 큰가' 뿐이라, 이미 기기에 있는 인사말로 답한다
+     * (기본 목소리는 APK 에 번들, 클론은 사전렌더 클립).
+     */
+    onPreview: () -> Unit = {},
+    previewPlaying: Boolean = false,
+    previewPreparing: Boolean = false,
+    /** 목소리를 골랐는가. 안 골랐으면 들려줄 것이 없어 행을 아예 그리지 않는다. */
+    showPreview: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     Surface(
@@ -450,6 +464,14 @@ internal fun VoiceOutputSettingsPane(
                             volumePercent = volumePercent,
                             onVolumeChange = onVolumeChange,
                         )
+                        if (showPreview) {
+                            AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                            VoiceVolumePreviewRow(
+                                playing = previewPlaying,
+                                preparing = previewPreparing,
+                                onClick = onPreview,
+                            )
+                        }
                     }
                 }
             }
@@ -734,6 +756,48 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
 /// 값이 둘인 것과 **선택지가 둘인 것은 다르다** — 반복은 켜고 끄는 성질이라 스위치가
 /// 맞고, iOS 가 이미 그렇게 돼 있었다. 세그먼트는 켠 상태가 어느 쪽인지 라벨을 읽어야
 /// 알 수 있는 반면 스위치는 한눈에 보인다.
+/**
+ * '이 크기로 들어보기' 행. 슬라이더 바로 아래에 두어 값을 바꾸고 그 자리에서 확인한다.
+ *
+ * 문구가 아니라 인사말 샘플이라는 사실을 아래 한 줄로 **미리** 말한다 — 눌러 보고
+ * "내가 쓴 문구가 아니네" 로 알게 되면 고장으로 읽힌다.
+ */
+@Composable
+private fun VoiceVolumePreviewRow(
+    playing: Boolean,
+    preparing: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.editor_voice_volume_preview),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.editor_voice_volume_preview_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            VoicePreviewButtonIcon(active = playing, preparing = preparing)
+        }
+    }
+}
+
 @Composable
 private fun VoiceVolumeSelector(
     volumePercent: Int,

@@ -243,6 +243,8 @@
     <string name="msg_voice_replacement_settling">We’re finishing up your replaced voice. Please pick it again in a moment.</string>
     <string name="editor_voice_source_local">Record it</string>
     <string name="editor_voice_local_detail">Record a sound just for this alarm</string>
+    <string name="editor_voice_volume_preview">Hear it at this level</string>
+    <string name="editor_voice_volume_preview_hint">Plays the greeting sample, not your alarm message.</string>
     <string name="editor_voice_volume">Voice volume</string>
     <string name="editor_volume">Volume</string>
     <string name="editorp_fortune_birthdate_section">Date of birth</string>

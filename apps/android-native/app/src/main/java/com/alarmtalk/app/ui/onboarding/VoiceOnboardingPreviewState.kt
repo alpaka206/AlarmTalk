@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
@@ -51,7 +53,20 @@ internal class VoiceOnboardingPreviewController(
      *
      * 모르는 id 면 인사말 클립을 못 찾아 조용히 아무것도 하지 않는다.
      */
-    fun previewVoice(voiceProfileId: String, stockClips: List<StockClip>) {
+    fun previewVoice(
+        voiceProfileId: String,
+        stockClips: List<StockClip>,
+        /**
+         * 목소리 크기 화면에서 부를 때의 **알람 음량**(0~100). 주면 울릴 때와 같은
+         * 스트림(USAGE_ALARM)으로, 그 크기 그대로 들려준다.
+         *
+         * ⚠ **`null` 로 두는 자리(목소리 고르기·온보딩)와 뜻이 다르다.** 거기서는
+         * "이 사람 목소리가 어떤가" 를 듣는 것이라 미디어 볼륨이 맞고, 여기서는
+         * "이 설정이 얼마나 큰가" 를 재는 것이라 알람 볼륨이 아니면 잴 수가 없다
+         * (CLAUDE.md 「미리듣기는 울림과 같은 스트림이어야 한다」).
+         */
+        alarmVolumePercent: Int? = null,
+    ) {
         if (playingVoiceId == voiceProfileId) {
             stopPreview()
             return
@@ -67,7 +82,8 @@ internal class VoiceOnboardingPreviewController(
         if (bundledRes != null) {
             previewRequestId += 1
             stopPreview(invalidateRequest = false)
-            val player = MediaPlayer.create(context, bundledRes) ?: return
+            val player = createPlayer(resId = bundledRes, uri = null, alarmVolumePercent = alarmVolumePercent)
+                ?: return
             playingVoiceId = voiceProfileId
             mediaPlayer = player.apply {
                 setOnCompletionListener {
@@ -94,8 +110,11 @@ internal class VoiceOnboardingPreviewController(
                     val ext = response.audioFormat.ifBlank { "mp3" }
                     File(context.cacheDir, "voice_onboarding_preview.$ext").apply { writeBytes(bytes) }
                 }
-                val player = MediaPlayer.create(context, Uri.fromFile(file))
-                    ?: error("Failed to create greeting preview player.")
+                val player = createPlayer(
+                    resId = null,
+                    uri = Uri.fromFile(file),
+                    alarmVolumePercent = alarmVolumePercent,
+                ) ?: error("Failed to create greeting preview player.")
                 if (previewRequestId != requestId) {
                     player.release()
                     return@runCatching
@@ -117,6 +136,34 @@ internal class VoiceOnboardingPreviewController(
                 }
             }
         }
+    }
+
+    /**
+     * 미리듣기 플레이어를 만든다. [alarmVolumePercent] 가 있으면 알람 스트림·그 게인으로,
+     * 없으면 예전처럼 기본(미디어) 스트림으로 만든다.
+     */
+    private fun createPlayer(resId: Int?, uri: Uri?, alarmVolumePercent: Int?): MediaPlayer? {
+        val attributes = alarmVolumePercent?.let {
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        }
+        val player = when {
+            resId != null && attributes != null ->
+                MediaPlayer.create(context, resId, attributes, AudioManager.AUDIO_SESSION_ID_GENERATE)
+            resId != null -> MediaPlayer.create(context, resId)
+            uri != null && attributes != null ->
+                MediaPlayer.create(context, uri, null, attributes, AudioManager.AUDIO_SESSION_ID_GENERATE)
+            uri != null -> MediaPlayer.create(context, uri)
+            else -> null
+        } ?: return null
+        alarmVolumePercent?.let {
+            // 울릴 때와 같은 매핑을 쓴다 — 여기만 다른 식으로 계산하면 미리듣기와 알람이 어긋난다.
+            val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(it)
+            player.setVolume(gain, gain)
+        }
+        return player
     }
 
     fun dispose() {

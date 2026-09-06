@@ -274,6 +274,14 @@ struct AlarmSoundSettingsPane: View {
 struct VoiceOutputSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Binding var volumePercent: Int
+    /// 지금 크기로 **인사말 샘플**을 들려준다. 재생 중이면 정지.
+    ///
+    /// ⚠ **알람에 들어갈 문구를 들려주지 않는다**(2026-09-06 결정, 안드로이드
+    /// `VoiceOutputSettingsPane` 의 `onPreview` 주석과 같은 이유). 날씨·운세처럼 조건으로
+    /// 고르는 문구는 울릴 때에야 정해지므로 여기서 기다릴 것이 아니고, 크기를 재는 데
+    /// 필요한 것은 '이 목소리가 이 크기로 얼마나 큰가' 뿐이다.
+    var onPreview: (() -> Void)?
+    var previewPlaying: Bool = false
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
@@ -306,6 +314,31 @@ struct VoiceOutputSettingsPane: View {
                     .tint(theme.palette.primary)
                 }
                 .padding(.vertical, 12)
+
+                if let onPreview {
+                    Divider().overlay(theme.palette.outlineVariant)
+                    Button(action: onPreview) {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("이 크기로 들어보기")
+                                    .font(theme.typography.bodyLarge)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(theme.palette.onSurface)
+                                // 눌러 보고 "내가 쓴 문구가 아니네" 로 알게 되면 고장으로
+                                // 읽힌다 — 무엇이 들릴지 **미리** 말한다.
+                                Text("실제 알람 문구가 아니라 인사말로 들려드려요.")
+                                    .font(theme.typography.bodySmall)
+                                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: previewPlaying ? "stop.fill" : "play.fill")
+                                .foregroundStyle(theme.palette.primary)
+                        }
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
+                }
             }
         }
     }

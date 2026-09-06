@@ -237,7 +237,10 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
     /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
-    func previewGreeting(voiceId: String, session: AuthSession?) async {
+    /// - Parameter volumePercent: 목소리 크기 화면에서 부를 때의 게인(0~100). `nil` 이면
+    ///   원래대로 기본 크기 — 목소리를 고르는 자리에서는 '어떤 목소리인가' 를 듣는 것이라
+    ///   크기를 건드리지 않는다.
+    func previewGreeting(voiceId: String, session: AuthSession?, volumePercent: Int? = nil) async {
         if previewingGreetingVoiceId == voiceId {
             greetingPreviewRequestId += 1
             previewPlayer.stop()
@@ -257,7 +260,13 @@ final class VoiceStudioViewModel: ObservableObject {
                     if self?.previewingGreetingVoiceId == voiceId { self?.previewingGreetingVoiceId = nil }
                 }
             }
-            guard (try? previewPlayer.play(url: url)) != nil else {
+            let started: Bool = {
+                if let volumePercent {
+                    return (try? previewPlayer.play(url: url, volumePercent: volumePercent)) != nil
+                }
+                return (try? previewPlayer.play(url: url)) != nil
+            }()
+            guard started else {
                 statusMessage = "미리듣기를 재생하지 못했어요."
                 return
             }
@@ -276,7 +285,7 @@ final class VoiceStudioViewModel: ObservableObject {
         previewingGreetingVoiceId = voiceId
         if await prepareStockClip(clip, session: session) != nil {
             guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
-            playPreparedAudio()
+            playPreparedAudio(volumePercent: volumePercent)
         } else {
             if requestId == greetingPreviewRequestId {
                 previewingGreetingVoiceId = nil
@@ -1134,14 +1143,19 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 에디터의 단일 미리듣기 플레이어로 라우팅하기 위해 `player` 를 파라미터화했다 —
     /// 기본값은 VM 소유 previewPlayer (음성 탭/관리 패널 경로 호환). 에디터의 chip 은
     /// editorPreviewPlayer 를 넘긴다(change 1, 절대 generateTTS 를 부르지 않음).
-    func playPreparedAudio(using player: AudioPreviewPlayer? = nil) {
+    func playPreparedAudio(using player: AudioPreviewPlayer? = nil, volumePercent: Int? = nil) {
         guard let preparedAlarm else {
             statusMessage = "먼저 음성을 생성해 주세요."
             return
         }
         let target = player ?? previewPlayer
         do {
-            try target.play(url: AudioCacheStore.url(for: preparedAlarm.localAudioFileName))
+            let url = try AudioCacheStore.url(for: preparedAlarm.localAudioFileName)
+            if let volumePercent {
+                try target.play(url: url, volumePercent: volumePercent)
+            } else {
+                try target.play(url: url)
+            }
         } catch {
             statusMessage = mapVoiceError(error)
         }

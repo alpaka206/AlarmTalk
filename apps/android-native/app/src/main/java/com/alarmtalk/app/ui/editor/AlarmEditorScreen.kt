@@ -1870,6 +1870,25 @@ internal fun AlarmEditorScreen(
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
                 onVolumeChange = { editor.voiceVolumePercent = it },
+                // 목소리를 아직 안 골랐으면 들려줄 것이 없다 — 그때는 행을 그리지 않는다
+                // (아래 `previewVoiceId != null`). 알람음만 쓰는 모드에서는 이 화면 자체가
+                // 없으므로 여기서 더 가르지 않는다.
+                onPreview = {
+                    editor.voiceProfileId?.takeIf { it.isNotBlank() }?.let { profileId ->
+                        voicePreview.previewVoice(
+                            voiceProfileId = profileId,
+                            stockClips = stockClips,
+                            // 울릴 때와 같은 스트림·같은 게인으로 — 그래야 여기서 맞춘 크기가
+                            // 실제 알람의 크기다(`previewVoice` 의 alarmVolumePercent 주석).
+                            alarmVolumePercent = editor.voiceVolumePercent,
+                        )
+                    }
+                },
+                previewPlaying = voicePreview.playingVoiceId != null &&
+                    voicePreview.playingVoiceId == editor.voiceProfileId,
+                previewPreparing = voicePreview.preparingVoiceId != null &&
+                    voicePreview.preparingVoiceId == editor.voiceProfileId,
+                showPreview = !editor.voiceProfileId.isNullOrBlank(),
                 onDismiss = { settingsDetailPanel = null },
             )
         }

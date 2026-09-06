@@ -507,7 +507,7 @@ struct AlarmEditorSheet: View {
                     previewingPath: previewingAlarmSoundPath
                 )
             case .voiceOutput:
-                VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
+                voiceOutputPane
             }
         }
         .homeGradientBackground()
@@ -794,6 +794,35 @@ struct AlarmEditorSheet: View {
 
     /// 알람음 미리듣기 — 편집기의 단일 플레이어로 튼다(목소리 미리듣기와 같은 자리).
     /// 같은 것을 다시 누르면 멈춘다.
+    /// 목소리 크기 화면. 스위치 본문에서 바로 조립하면 타입 검사기가 그 표현식을 시간 안에
+    /// 못 풀어 빌드가 죽는다("unable to type-check this expression") — 프로퍼티로 뺀다.
+    @ViewBuilder
+    private var voiceOutputPane: some View {
+        // 목소리를 아직 안 골랐으면 들려줄 것이 없어 행을 그리지 않는다.
+        if let voiceId = voiceStudio.selectedProfileID?.nilIfBlank {
+            VoiceOutputSettingsPane(
+                volumePercent: $draft.voiceVolumePercent,
+                onPreview: { previewVoiceAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
+                previewPlaying: voiceStudio.previewingGreetingVoiceId == voiceId
+            )
+        } else {
+            VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
+        }
+    }
+
+    /// 목소리 크기 화면의 '이 크기로 들어보기' — 지금 게인으로 인사말 샘플을 튼다.
+    /// (뷰 본문에서 바로 `Task { await … }` 를 쓰면 타입 검사기가 그 표현식을 시간 안에
+    ///  못 푼다 — 빌드가 "unable to type-check this expression" 으로 죽는다.)
+    func previewVoiceAtVolume(voiceId: String, volumePercent: Int) {
+        Task {
+            await voiceStudio.previewGreeting(
+                voiceId: voiceId,
+                session: auth.session,
+                volumePercent: volumePercent
+            )
+        }
+    }
+
     func previewAlarmSound(_ url: URL?, restart: Bool = false) {
         guard let url else {
             editorPreviewPlayer.stop()
