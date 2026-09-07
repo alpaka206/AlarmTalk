@@ -65,9 +65,19 @@ internal class VoiceOnboardingPreviewController(
         stockClips: List<StockClip>,
         volumePercent: Int,
     ) {
-        if (alarmVolumePreview && playingVoiceId == voiceProfileId) {
-            updateAlarmVolume(volumePercent)
-            return
+        if (playingVoiceId == voiceProfileId) {
+            if (alarmVolumePreview) {
+                updateAlarmVolume(volumePercent)
+                return
+            }
+            // ⚠ **다른 모드로 듣던 중이면 토글로 흘려보내지 않는다**(2026-09-07 리뷰 33차).
+            //   목소리 시트의 미리듣기(USAGE_MEDIA)가 아직 울리는 채로 손을 떼면
+            //   [previewVoice] 의 같은-id 토글에 걸려 **틀던 샘플만 꺼지고 아무 소리도 안
+            //   난다** — 손을 뗀 순간은 토글이 아니다. 스트림은 바꿔 끼울 수 없으므로
+            //   (`AudioAttributes` 는 prepare 전에만 정해진다) 멈추고 알람 스트림으로 다시
+            //   튼다. iOS 는 스트림 구분이 없어 게인만 바꾸면 된다
+            //   (`VoiceStudioViewModel.ensureGreetingPreview`).
+            stopPreview()
         }
         previewVoice(voiceProfileId, stockClips, alarmVolumePercent = volumePercent)
     }

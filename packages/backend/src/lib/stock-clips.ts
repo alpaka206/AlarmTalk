@@ -1072,7 +1072,12 @@ export async function findLegacyBucketHints(
   const RETIRED_HINT_LIMIT = 400;
   // ⚠ **배포 창에는 `retired_at` 이 없다**(#110, CLAUDE.md 「배포가 마이그레이션보다 먼저」).
   //   그냥 참조하면 매니페스트 응답이 통째로 500 이 된다 — 읽기 경로라 그럴 이유가 없다.
-  //   컬럼이 없다 = 은퇴한 행이 없다 이므로, 그때는 ② 갈래를 통째로 빼도 결과가 같다.
+  //   컬럼이 없으면 ② 갈래를 통째로 뺀다.
+  //   ⚠ 프로브와 아래 조회는 **각각 왕복**이라, 그 사이에 마이그레이션이 끝나면 이미
+  //   은퇴한 클립이 한 번 더 목록에 실릴 수 있다. 받아들이는 이유는 그 응답이 같은 창에서
+  //   조금 전에 보낸 것과 **글자 그대로 같기** 때문이다(#110 은 행을 표시만 하고 새로 만들지
+  //   않는다). 재바인더가 다음 회차의 `liveKeys` 로 갈아탄다 — 그게 원래 설계다.
+  //   이 동등성을 **쓰기 경로나 과다 목록에 안전하지 않은 소비자에 기대지 말 것.**
   const retiredReady = await messagesRetiredColumnReady(db);
   const retiredArm = retiredReady
     ? `UNION

@@ -2001,8 +2001,11 @@ tts.get('/messages/:id/audio', async (c) => {
  *
  * ⚠ `renderedForCurrentVoiceSelect` 와 **완전히 같은 이유**다 — 배포는 마이그레이션보다
  * 먼저 도니까(CLAUDE.md), `messages.retired_at`(#110)을 그냥 참조하면 그 창(~1분) 동안
- * **매니페스트 요청이 통째로 500** 이 된다. 읽기 경로라 fail-closed 로 둘 이유가 없고,
- * 컬럼이 없다는 것은 **은퇴한 행이 하나도 없다**는 뜻이라 조건을 빼도 결과가 같다.
+ * **매니페스트 요청이 통째로 500** 이 된다. 읽기 경로라 fail-closed 로 둘 이유가 없다.
+ *
+ * 프로브와 조회는 각각 왕복이라 그 사이에 마이그레이션이 끝날 수 있다 — 그러면 이미 은퇴한
+ * 클립이 한 번 더 실린다. 받아들이는 이유와 한계는 `lib/stock-clips.ts` 의
+ * `messagesRetiredColumnReady` 옆에 적어 두었다.
  *
  * ⚠ **쓰기 경로에는 쓰지 말 것**(`lib/stock-clips.ts` 의 게시 트랜잭션). 거기서 조건을
  * 빼면 그 한 번의 요청이 영구히 잘못된 행을 남긴다 — 그쪽은 fail-closed 가 맞다.

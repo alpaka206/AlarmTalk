@@ -92,6 +92,13 @@ export function VoicePreview({ className }: { className?: string }) {
    * (`resume()` 대기 중)에도 같은 회차 검사가 재생이 뒤늦게 시작되는 것을 막는다.
    */
   const playGenRef = useRef(0);
+  /**
+   * 실패를 **화면에 말해도 되는** 회차. `stop()` 이 회차를 올리는 순간 아무도 그 로드를
+   * 기다리지 않는다 — `pause()` 는 받는 중인 파일을 취소하지 않으므로 뒤늦게 `error` 가
+   * 온다. 그걸 그대로 띄우면 멈춘 위젯에 빨간 글씨가 남는다.
+   * ⚠ `audio.src` 를 이 함수 밖에서 새로 넣는 코드가 생기면 여기도 같이 올려야 한다.
+   */
+  const reportingGenRef = useRef(0);
 
   const setBarHeight = useCallback((i: number, level: number) => {
     const el = barRefs.current[i];
@@ -182,6 +189,7 @@ export function VoicePreview({ className }: { className?: string }) {
 
   const play = useCallback(async () => {
     const generation = (playGenRef.current += 1);
+    reportingGenRef.current = generation;
     const voice = PREVIEW_VOICES[nextIndex];
     const audio = ensureAudio();
     setFailed(false);
@@ -237,6 +245,8 @@ export function VoicePreview({ className }: { className?: string }) {
       setNextIndex((i) => (i + 1) % PREVIEW_VOICES.length);
     };
     const onError = () => {
+      // 사용자가 멈춘 뒤 뒤늦게 온 실패는 말하지 않는다(위 `reportingGenRef`).
+      if (playGenRef.current !== reportingGenRef.current) return;
       stopLoop();
       setStatus("idle");
       setFailed(true);
