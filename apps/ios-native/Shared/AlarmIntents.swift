@@ -77,7 +77,7 @@ struct StopAlarmIntent: LiveActivityIntent {
         //   '울림' 이 없는 기록이 남아, 통계가 **앱이 켜져 있던 알람 쪽으로 기운다.**
         //   중복은 상태로 가른다: 관찰자가 봤으면 `markRinging` 이 행을 ringing 으로 적어
         //   두었다. 행을 못 찾으면(콜드 부팅) 관찰자가 있었을 리 없으니 적는다.
-        recordRingIfObserverMissedIt(stoppedRecord)
+        recordRingIfObserverMissedIt(stoppedRecord, alarmKitID: uuid.uuidString)
         AlarmAppContext.recordUsageEvent(.alarmDismissed, stoppedRecord)
         if let ctx = AlarmAppContext.shared {
             await ctx.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
@@ -148,7 +148,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         //   한쪽은 못 믿고 한쪽은 믿을 수는 없다.
         let snoozedRecord = ctx?.store?.recordByAlarmKitID(uuid.uuidString)
         // 위 해제 갈래와 같은 이유 — 다시 울림을 눌렀다는 것은 **울렸다는 뜻**이다.
-        recordRingIfObserverMissedIt(snoozedRecord)
+        recordRingIfObserverMissedIt(snoozedRecord, alarmKitID: uuid.uuidString)
         AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
         let decision = ctx?.snoozeDecision(alarmKitIDString: uuid.uuidString) ?? .unknown
         if decision == .deny {
@@ -194,15 +194,21 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
 /// `.alerting` 전환을 본 사람이 없다. 그때도 사용자가 끄거나 미루면 이 인텐트는 돌므로,
 /// 여기서 울림을 채워 넣지 않으면 **해제만 있고 울림이 없는** 기록이 남는다.
 ///
-/// 판정은 행의 상태 하나다 — 관찰자가 봤으면 `LocalAlarmStore.markRinging` 이 그 행을
-/// ringing 으로 적고 디스크에 남긴다. 행을 못 찾는 경우(콜드 부팅으로 저장소가 아직 안
-/// 올라왔다)는 그 순간 관찰자도 없었다는 뜻이라 적는다.
+/// 판정은 **회차마다 남기는 표시**다(`ObservedRingMarkerStore`) — 관찰자가 적었으면 표시가
+/// 있고, 인텐트가 그걸 소비한다.
+///
+/// ⚠ **행의 상태(`ringing`)로 가르지 않는다**(2026-09-07 리뷰 35차). 두 방향으로 틀렸다:
+/// 관찰자가 적은 뒤 프로세스가 죽고 인텐트가 콜드로 깨어나면 **행을 못 읽어** 한 번 더
+/// 적었고(id 가 달라 서버 멱등으로도 안 걸린다), 반대로 콜드 인텐트는 `markStopped` 를 못
+/// 돌려 행에 `ringing` 이 남아 **다음 회차의 정당한 울림을 삼켰다.** 삼키는 쪽이 더 나쁘다.
+/// 표시가 없어서 한 번 더 적는 것(중복 1건)이 남는 실패 방향이고, 그게 옳은 방향이다.
 ///
 /// ⚠ **끝내 아무도 안 누른 울림은 iOS 에서 적을 방법이 없다** — 발사 때 우리 코드가 돌지
 /// 않고, 반복 알람은 목록에서 사라지지도 않는다(`docs/spec/usage-events.md` §2).
 @MainActor
-func recordRingIfObserverMissedIt(_ record: LocalAlarmRecord?) {
-    if record?.state == AlarmRuntimeState.ringing.rawValue { return }
+func recordRingIfObserverMissedIt(_ record: LocalAlarmRecord?, alarmKitID: String) {
+    // 소비는 언제나 한다 — 낡은 표시를 남겨 두면 다음 회차를 삼킨다.
+    if ObservedRingMarkerStore.consume(alarmKitID: alarmKitID) { return }
     AlarmAppContext.recordUsageEvent(.alarmRang, record)
 }
 #endif

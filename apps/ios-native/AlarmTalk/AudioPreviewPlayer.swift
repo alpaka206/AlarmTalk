@@ -47,7 +47,8 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     /// Android `startPreparedPreview(startMillis, stopAfterMillis)` 미러.
     /// - Parameter volumePercent: `nil` 이면 게인을 건드리지 않는다(목소리 고르는 자리의
     ///   미리듣기는 기본 크기다). 값이 있으면 **`play()` 전에** 걸어 첫 샘플부터 그 크기로
-    ///   나가게 한다 — 울림 경로(`AlarmVoicePlayer`)와 안드로이드 미리듣기가 이미 그렇다.
+    ///   나가게 한다. 울림 경로(AlarmVoicePlayer.swift)가 이미 그렇게 하고,
+    ///   안드로이드 미리듣기도 `createPlayer` 에서 `setVolume` 을 먼저 건다.
     ///   ⚠ **뒤에 걸지 말 것**(2026-09-07 리뷰 34차). 「소리는 첫 샘플부터 제 크기다」는
     ///   이 앱의 규약이고(CLAUDE.md), 크기를 재려고 만든 화면이 100%로 시작하면 안 된다.
     func play(url: URL, startMs: Int, stopAfterMs: Int?, volumePercent: Int? = nil) throws {

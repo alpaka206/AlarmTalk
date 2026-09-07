@@ -741,7 +741,11 @@ extension LocalAlarmRecord {
     /// 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
     /// (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고
     /// 있어 그 둘만 보면 갈리지 않는다. 안드로이드 `AlarmEntity.isManualMessageAlarm` 의 짝.
+    ///
+    /// ⚠ **`usesCustomMessageVoice` 에서 유도한다 — 항을 다시 적지 말 것**(리뷰 35차).
+    /// 손으로 적었더니 거기 있는 두 항(`stock_` 캐시 키 제외, `voiceCategory`)이 빠져,
+    /// 버킷 없이 프리셋 클립 하나만 문 **옛 행**이 직접 입력으로 통과했다.
     var isManualMessageAlarm: Bool {
-        !voiceRandomPrompt && bucketId?.nilIfBlank == nil && ttsMessageId?.nilIfBlank != nil
+        usesCustomMessageVoice && ttsMessageId?.nilIfBlank != nil
     }
 }

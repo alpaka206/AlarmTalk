@@ -91,6 +91,7 @@
 		46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */; };
 		46C1C613B52586A9E527A86D /* AlarmAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFEFFCE341357461A47A64B /* AlarmAppContext.swift */; };
 		4782087541F062C7FB42F907 /* BottomSheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */; };
+		4805F65EA1223D7E24417D22 /* ObservedRingMarkerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 602993500E518F7B23A028BA /* ObservedRingMarkerStore.swift */; };
 		48884F4EE9CE03EA2B89F592 /* HolidayUpcomingList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2045E291994B947F86212FC /* HolidayUpcomingList.swift */; };
 		48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1E4779B9B3184263A018270C /* license_ofl_1_1.txt */; };
 		496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */; };
@@ -497,6 +498,7 @@
 		5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetE2EUITests.swift; sourceTree = "<group>"; };
 		5ECFEF72F91CB168058ADDDA /* ConsentCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentCompletionStore.swift; sourceTree = "<group>"; };
 		601CCC6270DF54E411B83B10 /* AlarmSoundResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundResolver.swift; sourceTree = "<group>"; };
+		602993500E518F7B23A028BA /* ObservedRingMarkerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObservedRingMarkerStore.swift; sourceTree = "<group>"; };
 		60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeoplePanel.swift; sourceTree = "<group>"; };
 		611C695982CD4E6257BAEAFB /* FamilyAlarmQuietTimeDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyAlarmQuietTimeDialog.swift; sourceTree = "<group>"; };
 		63ECE84B7EBA31BE96BF3065 /* RedeemCodeSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RedeemCodeSanitizerTests.swift; sourceTree = "<group>"; };
@@ -1191,6 +1193,7 @@
 				1627BDE1D5B3BE0F482BC71B /* LocalAlarmStore.swift */,
 				26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */,
 				53224031E3CB9F18979BB95B /* NonceGenerator.swift */,
+				602993500E518F7B23A028BA /* ObservedRingMarkerStore.swift */,
 				ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */,
 				B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */,
 				990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */,
@@ -1572,6 +1575,7 @@
 				025B6F51C2D5595312339A33 /* MessageSettingsPane.swift in Sources */,
 				4FFC3CC8A76CE52455FCA840 /* NextAlarmHeadline.swift in Sources */,
 				79714047645222078079375D /* NonceGenerator.swift in Sources */,
+				4805F65EA1223D7E24417D22 /* ObservedRingMarkerStore.swift in Sources */,
 				814E84365280A011DC135BC1 /* OssLicensesView.swift in Sources */,
 				6952BAD905EFB40D45C4EEF4 /* PaidGateCopy.swift in Sources */,
 				E94CC690A94BFFFF3999081A /* PaidVoiceGate.swift in Sources */,

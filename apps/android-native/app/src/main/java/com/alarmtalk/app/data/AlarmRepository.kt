@@ -1974,10 +1974,16 @@ internal fun nextWeatherVariantState(
  * ⚠ **호출부마다 손으로 조립하지 말 것.** 붙임 쪽에만 이 판정이 있고 놓음 쪽에는 없어서,
  * 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
  * (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고 있어
- * 그 둘만 보면 갈리지 않는다. `AlarmEditorState.isManualForSave` 와 같은 선이다.
+ * 그 둘만 보면 갈리지 않는다.
+ *
+ * ⚠ **[usesCustomMessageVoice] 에서 **유도**한다 — 항을 다시 적지 말 것**(리뷰 35차).
+ * 손으로 적었더니 거기 있는 두 항(`stock_` 캐시 키 제외, `voiceCategory`)이 빠져,
+ * **버킷 없이 프리셋 클립 하나만 문 옛 행**이 직접 입력으로 통과했다 — 규칙을 하나로
+ * 모으겠다면서 세 번째 철자를 만든 셈이다. 여기서 더하는 것은 문구 id 하나뿐이다
+ * (기록에 실을 id 가 없으면 적을 것도 없다).
  */
 internal fun AlarmEntity.isManualMessageAlarm(): Boolean =
-    !voiceRandomPrompt && bucketId.isNullOrBlank() && !ttsMessageId.isNullOrBlank()
+    usesCustomMessageVoice() && !ttsMessageId.isNullOrBlank()
 
 /**
  * 편집으로 **놓여난** 직접 입력 문구 id. 참조 카운트를 세기 전 단계다.

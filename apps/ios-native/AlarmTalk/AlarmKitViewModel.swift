@@ -341,6 +341,9 @@ final class AlarmKitViewModel: ObservableObject {
                         voiceProfileID: record.voiceProfileId,
                         messageID: record.ttsMessageId
                     )
+                    // ⚠ **적은 뒤에** 남긴다 — 순서를 뒤집으면 그 사이에 죽었을 때 적히지
+                    //   않은 울림을 적힌 것으로 오인해 인텐트가 삼킨다.
+                    ObservedRingMarkerStore.mark(alarmKitID: kitID)
                     // GROUP 3 (6): 포그라운드 ring-time 1회성 햅틱. didEnterAlerting 의
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이
                     // 활성(.active)일 때만 발화 — 백그라운드/락스크린에선 AlarmKit/시스템이

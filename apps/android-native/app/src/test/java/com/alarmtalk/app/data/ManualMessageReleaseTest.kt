@@ -135,5 +135,20 @@ class ManualMessageReleaseTest {
         assertEquals(false, alarm(messageId = "stock-a", bucketId = "weather").isManualMessageAlarm())
         assertEquals(false, alarm(messageId = "m-1", randomPrompt = true).isManualMessageAlarm())
         assertEquals(false, alarm(messageId = null).isManualMessageAlarm())
+        // ⚠ **버킷 없이 프리셋 클립 하나만 문 옛 행.** 세 값이 직접 입력과 똑같아 보이고,
+        // 갈리는 것은 캐시 키의 `stock_` 접두 하나뿐이다 — 그 항이 빠져 있었다(리뷰 35차).
+        assertEquals(
+            false,
+            alarm(messageId = "m-legacy", cacheKey = "stock_m-legacy").isManualMessageAlarm(),
+        )
+    }
+
+    @Test
+    fun `프리셋 클립을 문 옛 행은 편집해도 놓아 줄 문구가 없다`() {
+        val released = manualMessageReleasedByEdit(
+            alarm(messageId = "m-legacy", cacheKey = "stock_m-legacy"),
+            alarm(messageId = "m-new"),
+        )
+        assertNull(released)
     }
 }

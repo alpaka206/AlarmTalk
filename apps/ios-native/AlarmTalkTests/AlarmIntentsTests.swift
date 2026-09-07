@@ -18,6 +18,7 @@ final class AlarmIntentsTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 50_000_000)
         for r in store.alarms { store.delete(r) }
         ctx = AlarmAppContext(store: store)
+        ObservedRingMarkerStore.reset()
         recorded = []
         originalRecordUsageEvent = AlarmAppContext.recordUsageEvent
         AlarmAppContext.recordUsageEvent = { [weak self] type, record in
@@ -26,6 +27,7 @@ final class AlarmIntentsTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        ObservedRingMarkerStore.reset()
         AlarmAppContext.recordUsageEvent = originalRecordUsageEvent
         AlarmAppContext.shared = nil
         ctx = nil
@@ -105,9 +107,10 @@ final class AlarmIntentsTests: XCTestCase {
 
     func test_stopIntent_recordsAlarmDismissed() async throws {
         let kitID = UUID().uuidString
-        // 관찰자가 이미 울림을 봤다(= 행이 ringing) — 울림을 또 적지 않는다.
+        // 관찰자가 이미 울림을 적었다(표시가 남아 있다) — 울림을 또 적지 않는다.
         let record = armedRecord(alarmKitID: kitID, state: .ringing)
         store.upsert(record)
+        ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
         _ = try await StopAlarmIntent(alarmID: kitID).perform()
 
@@ -133,6 +136,7 @@ final class AlarmIntentsTests: XCTestCase {
         let kitID = UUID().uuidString
         let record = armedRecord(alarmKitID: kitID, state: .ringing)
         store.upsert(record)
+        ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
 
@@ -145,6 +149,7 @@ final class AlarmIntentsTests: XCTestCase {
         // 하나다(안드로이드도 이때 해제를 따로 적지 않는다).
         let kitID = UUID().uuidString
         store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false, state: .ringing))
+        ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
 
@@ -170,6 +175,29 @@ final class AlarmIntentsTests: XCTestCase {
 
         XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmSnoozed])
         XCTAssertNil(recorded.first?.1)
+    }
+
+    func test_stopIntent_coldRelaunch_doesNotDuplicateObservedRing() async throws {
+        // 관찰자가 적은 **직후 프로세스가 죽고** 인텐트가 콜드로 깨어난 상황 — 행을 못 읽는다.
+        // 행 상태로 가르던 시절에는 여기서 울림을 한 번 더 적었다(id 가 달라 서버도 못 지운다).
+        let kitID = UUID().uuidString
+        ObservedRingMarkerStore.mark(alarmKitID: kitID)
+        AlarmAppContext.shared = nil
+
+        _ = try await StopAlarmIntent(alarmID: kitID).perform()
+
+        XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
+    }
+
+    func test_stopIntent_staleRingingRow_stillRecordsRing() async throws {
+        // 앞 회차의 콜드 해제로 행에 `ringing` 이 남아 있는 상태. 그 낡은 상태로 가르면
+        // 이번 회차의 **정당한 울림을 삼킨다** — 삼키는 쪽이 중복보다 나쁘다.
+        let kitID = UUID().uuidString
+        store.upsert(armedRecord(alarmKitID: kitID, state: .ringing))
+
+        _ = try await StopAlarmIntent(alarmID: kitID).perform()
+
+        XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmDismissed])
     }
 
     func test_handleAlarmStopped_alone_recordsNothing() async throws {
