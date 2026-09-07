@@ -139,7 +139,9 @@ struct StockClipLanguageRebinder {
         //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
         //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
         //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
-        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
+        if !changedIds.isEmpty {
+            StockReplacementStatus.shared.noteReplaced(ids: changedIds, for: callerUserId)
+        }
         if rebound > 0, !store.saveNow() {
             return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }
@@ -540,7 +542,9 @@ struct StockClipLanguageRebinder {
         //   새것인데 id 는 없다** — 다음 실행은 재바인더가 `.none` 을 돌려주고 강제 재예약
         //   목록도 비어, AlarmKit 이 옛 소리를 쥔 채 영영 남는다.
         //   먼저 남기면 최악이 '이미 최신인 예약을 한 번 더 확인' 이라 해가 없다.
-        if !changedIds.isEmpty { StockReplacementStatus.shared.noteReplaced(ids: changedIds) }
+        if !changedIds.isEmpty {
+            StockReplacementStatus.shared.noteReplaced(ids: changedIds, for: callerUserId)
+        }
         if rebound > 0, !store.saveNow() {
             return StockRebindOutcome(rebound: rebound, persisted: false, changedIds: changedIds)
         }

@@ -32,7 +32,11 @@ final class AlarmIntentsTests: XCTestCase {
         store = nil
     }
 
-    private func armedRecord(alarmKitID: String, canSnooze: Bool = true) -> LocalAlarmRecord {
+    private func armedRecord(
+        alarmKitID: String,
+        canSnooze: Bool = true,
+        state: AlarmRuntimeState = .armed
+    ) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         return LocalAlarmRecord(
             label: "test",
@@ -42,7 +46,7 @@ final class AlarmIntentsTests: XCTestCase {
             snoozeEnabled: canSnooze,
             playMode: AlarmPlayMode.voiceOnly.rawValue,
             voiceProfileId: "profile-1",
-            state: AlarmRuntimeState.armed.rawValue,
+            state: state.rawValue,
             createdAtMillis: now,
             updatedAtMillis: now,
             alarmKitID: alarmKitID
@@ -101,7 +105,8 @@ final class AlarmIntentsTests: XCTestCase {
 
     func test_stopIntent_recordsAlarmDismissed() async throws {
         let kitID = UUID().uuidString
-        let record = armedRecord(alarmKitID: kitID)
+        // 관찰자가 이미 울림을 봤다(= 행이 ringing) — 울림을 또 적지 않는다.
+        let record = armedRecord(alarmKitID: kitID, state: .ringing)
         store.upsert(record)
 
         _ = try await StopAlarmIntent(alarmID: kitID).perform()
@@ -111,9 +116,22 @@ final class AlarmIntentsTests: XCTestCase {
         XCTAssertEqual(recorded.first?.1, record.id)
     }
 
-    func test_snoozeIntent_recordsAlarmSnoozed() async throws {
+    func test_stopIntent_recordsRingWhenObserverMissedIt() async throws {
+        // 밤새 앱이 죽어 있었으면 `.alerting` 을 본 사람이 없다 — 행이 ringing 이 아니다.
+        // 그때 해제만 적으면 **울림 없는 해제**가 남아 통계가 기운다.
         let kitID = UUID().uuidString
         let record = armedRecord(alarmKitID: kitID)
+        store.upsert(record)
+
+        _ = try await StopAlarmIntent(alarmID: kitID).perform()
+
+        XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmDismissed])
+        XCTAssertEqual(recorded.first?.1, record.id)
+    }
+
+    func test_snoozeIntent_recordsAlarmSnoozed() async throws {
+        let kitID = UUID().uuidString
+        let record = armedRecord(alarmKitID: kitID, state: .ringing)
         store.upsert(record)
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
@@ -126,7 +144,7 @@ final class AlarmIntentsTests: XCTestCase {
         // 다시 울림이 꺼진 알람 — 인텐트는 알람을 끝내지만, 사건은 '다시 울림을 눌렀다'
         // 하나다(안드로이드도 이때 해제를 따로 적지 않는다).
         let kitID = UUID().uuidString
-        store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false))
+        store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false, state: .ringing))
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
 
@@ -140,7 +158,8 @@ final class AlarmIntentsTests: XCTestCase {
 
         _ = try await StopAlarmIntent(alarmID: UUID().uuidString).perform()
 
-        XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
+        // 행을 못 찾으면 관찰자도 없었다는 뜻이라 울림도 함께 적는다(식별자는 못 붙인다).
+        XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmDismissed])
         XCTAssertNil(recorded.first?.1)
     }
 
@@ -149,7 +168,7 @@ final class AlarmIntentsTests: XCTestCase {
         // 이미 이 창을 인정하고 있으므로, 기록도 같은 태도여야 한다.
         _ = try await SnoozeAlarmIntent(alarmID: UUID().uuidString, snoozeMinutes: 5).perform()
 
-        XCTAssertEqual(recorded.map(\.0), [.alarmSnoozed])
+        XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmSnoozed])
         XCTAssertNil(recorded.first?.1)
     }
 

@@ -356,7 +356,12 @@ struct DraggableNumberColumn: View {
             .onChanged { gesture in
                 // 굴러가는 중에 손을 대면 **그 자리에서 잡힌다**(안드로이드 `settleJob?.cancel()`).
                 settleDriver.cancel()
-                let delta = gesture.translation.height
+                // ⚠ **잡은 자리를 이동량에 더한다.** `cancel()` 은 굴러가던 것을 멈출 뿐
+                //   `dragOffset` 을 되돌리지 않아서, 새 제스처의 이동량(0에서 시작)만 보면
+                //   그 남은 오프셋만큼 휠이 튄다(2026-09-07 리뷰 31차, AM/PM 휠과 같은 결함).
+                let grabbed = grabbedOffset ?? dragOffset
+                if grabbedOffset == nil { grabbedOffset = grabbed }
+                let delta = grabbed + gesture.translation.height
                 let stepsConsumed = (delta / itemHeight).rounded(.towardZero)
                 let residual = delta - stepsConsumed * itemHeight
 
@@ -395,6 +400,7 @@ struct DraggableNumberColumn: View {
                     onOffset: { dragOffset = $0 }
                 )
                 lastEmittedSteps = 0
+                grabbedOffset = nil
             }
 
     }
@@ -435,6 +441,8 @@ struct DraggableNumberColumn: View {
 
     // SwiftUI @State 가 closure 외부에서 mutate 안 되므로 보조 wrapper 필요.
     @State private var lastEmittedSteps: Int = 0
+    /// 굴러가는 중에 손을 댄 순간의 오프셋(제스처가 끝나면 nil). AM/PM 휠과 같은 이유다.
+    @State private var grabbedOffset: CGFloat?
 
     private func applyStep(_ delta: Int) {
         guard delta != 0 else { return }
@@ -486,6 +494,8 @@ struct AmPmWheelColumn: View {
     /// 안드로이드 원본은 손가락을 따라오는데 이 칸만 달랐다. 값(밴드·임계·속도)은 전부 안드로이드
     /// 것을 베낀 것이고, 정착은 숫자 칼럼과 같은 `WheelSettleDriver` 다.
     @State private var dragOffset: CGFloat = 0
+    /// 굴러가는 중에 손을 댄 순간의 오프셋. 새 제스처의 이동량은 여기에 **더한다**.
+    @State private var grabbedOffset: CGFloat = 0
     @State private var isDragging = false
     /// 정착 구동부가 `isPM` 을 넘기는 순간에는 기본 자리 이동을 애니메이션하지 않는다 —
     /// 오프셋이 이어받아 이미 연속이다(안드로이드 `suppressNextAutoAnimation` 과 같은 역할).
@@ -538,11 +548,19 @@ struct AmPmWheelColumn: View {
                     isDragging = true
                     // 굴러가는 중에 손을 대면 **그 자리에서 잡힌다**(안드로이드 `settleJob?.cancel()`).
                     settleDriver.cancel()
+                    // ⚠ **잡은 자리를 기억해 둔다.** `cancel()` 은 굴러가던 것을 멈출 뿐
+                    //   `dragOffset` 을 되돌리지 않는데, 아래에서 새 제스처의 이동량(0에서
+                    //   시작한다)으로 **덮어쓰면** 그 남은 오프셋만큼 휠이 튄다 —
+                    //   '그 자리에서 잡힌다' 가 아니라 '그 자리에서 뛴다' 가 된다
+                    //   (2026-09-07 리뷰 31차). 게다가 이 콜백은 12pt 를 지나야 오므로
+                    //   손을 댄 순간이 아니라 **움직이기 시작한 순간** 튄다.
+                    grabbedOffset = dragOffset
                 }
-                dragOffset = min(max(gesture.translation.height, minOffset), maxOffset)
+                dragOffset = min(max(grabbedOffset + gesture.translation.height, minOffset), maxOffset)
             }
             .onEnded { gesture in
                 isDragging = false
+                grabbedOffset = 0
                 // 안드로이드 `onDragStopped` 와 같은 판정: 0.38칸 넘게 끌었거나, 3.5칸/초보다 빠르게 튕겼으면 넘긴다.
                 let velocity = gesture.velocity.height
                 let minFling = itemHeight * 3.5

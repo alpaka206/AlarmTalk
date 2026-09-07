@@ -60,30 +60,54 @@ final class StockReplacementStatus: ObservableObject {
     ///   AlarmKit 이 은퇴한 목소리를 쥔 채로 문이 열린다. 지문이 없는 옛 예약은 그대로
     ///   영영 낡은 채 남는다.
     ///   **예약이 최신임을 확인할 때까지** 들고 있고, 재시작도 견디게 디스크에 남긴다.
+    ///   ⚠ **계정별이다**(2026-09-07 리뷰 31차). 예전에는 기기 전역 키 하나였는데, 이
+    ///   목록을 비우는 판정(`hasStaleSchedules`)은 **로그인한 계정의 알람만** 본다 — A 가
+    ///   재예약에 실패한 채로 B 가 로그인하면 B 의 회차는 A 의 알람을 보지 못해 '남은 것
+    ///   없음' 으로 읽고 **A 의 목록까지 지운다.** 이 클래스의 다른 값들이 이미 계정별인
+    ///   이유와 같다(위 `pendingUserId` 주석).
     private(set) var pendingRearmIds: Set<String> = []
+    /// [pendingRearmIds] 가 어느 계정 것인가. 다른 계정을 물으면 디스크에서 다시 읽는다.
+    private var rearmIdsUserId: String?
 
-    private static let rearmKey = "stock_replacement_pending_rearm_ids"
+    private static func rearmKey(_ userId: String) -> String {
+        "stock_replacement_pending_rearm_ids_\(userId)"
+    }
 
-    private init() {
-        pendingRearmIds = Set(UserDefaults.standard.stringArray(forKey: Self.rearmKey) ?? [])
+    private init() {}
+
+    /// 그 계정의 목록을 메모리에 올린다(이미 그 계정이면 그대로 쓴다).
+    private func loadRearmIds(for userId: String) {
+        guard rearmIdsUserId != userId else { return }
+        rearmIdsUserId = userId
+        pendingRearmIds = Set(UserDefaults.standard.stringArray(forKey: Self.rearmKey(userId)) ?? [])
+    }
+
+    /// 그 계정이 아직 확인하지 못한 id 들.
+    func pendingRearmIds(for userId: String?) -> Set<String> {
+        guard let userId, !userId.isEmpty else { return [] }
+        loadRearmIds(for: userId)
+        return pendingRearmIds
     }
 
     /// 이번 회차가 바꾼 id 를 더한다(앞 회차 것과 합친다).
-    func noteReplaced(ids: Set<String>) {
-        guard !ids.isEmpty else { return }
+    func noteReplaced(ids: Set<String>, for userId: String?) {
+        guard !ids.isEmpty, let userId, !userId.isEmpty else { return }
+        loadRearmIds(for: userId)
         pendingRearmIds.formUnion(ids)
-        persistRearmIds()
+        persistRearmIds(for: userId)
     }
 
     /// 예약이 최신임을 확인했다 — 더 들고 있을 이유가 없다.
-    func clearRearmIds() {
+    func clearRearmIds(for userId: String?) {
+        guard let userId, !userId.isEmpty else { return }
+        loadRearmIds(for: userId)
         guard !pendingRearmIds.isEmpty else { return }
         pendingRearmIds.removeAll()
-        persistRearmIds()
+        persistRearmIds(for: userId)
     }
 
-    private func persistRearmIds() {
-        UserDefaults.standard.set(Array(pendingRearmIds), forKey: Self.rearmKey)
+    private func persistRearmIds(for userId: String) {
+        UserDefaults.standard.set(Array(pendingRearmIds), forKey: Self.rearmKey(userId))
     }
 
     /// 판정을 기록한다. **매니페스트를 못 받았으면 아무것도 하지 않는다.**

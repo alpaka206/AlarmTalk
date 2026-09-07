@@ -609,12 +609,18 @@ struct AlarmTalkApp: App {
         // ⚠ **앞 회차가 남긴 것과 합친다**(리뷰 21차). 첫 예약이 실패한 뒤 재시도하면 행은
         //   이미 최신이라 재바인더가 `.none` 을 돌려주고 이 집합이 비어 버린다 — 그러면
         //   재조정도 판정도 그 알람을 건너뛰고, AlarmKit 이 옛 소리를 쥔 채 문이 열린다.
+        // ⚠ **계정은 시작할 때 잡은 것을 쓴다**(`startAccount`). 중간에 계정이 바뀌면
+        //   지금 세션으로 적을 때 남의 목록에 섞인다.
         StockReplacementStatus.shared.noteReplaced(
-            ids: languageOutcome.changedIds.union(legacyOutcome.changedIds)
+            ids: languageOutcome.changedIds.union(legacyOutcome.changedIds),
+            for: startAccount
         )
-        let replacedIds = StockReplacementStatus.shared.pendingRearmIds
+        let replacedIds = StockReplacementStatus.shared.pendingRearmIds(for: startAccount)
+        // ⚠ **소유자도 `startAccount` 로 본다.** 지금 세션으로 보면, 중간에 계정이 바뀌었을 때
+        //   새 계정의 알람으로 '남은 것 없음' 을 판정하고 **앞 계정의 목록을 지운다**
+        //   (아래 `clearRearmIds`). 판정과 목록의 주인이 어긋나면 안 된다.
         await AlarmScheduleReconciler.reconcile(
-            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: startAccount,
             // 지문이 없는 옛 예약(지문 도입 이전 앱이 건 것)도 이번에 바뀐 행이면 다시 건다.
             forceRearmIds: replacedIds
         )
@@ -623,11 +629,11 @@ struct AlarmTalkApp: App {
         //   **은퇴한 목소리**로 운다. 재조정 전에 문을 열면 그 알람을 두고 앱이 열린다.
         //   재조정이 실패를 조용히 넘기므로(무예약보다 낫다) 남은 것을 다시 읽어 확인한다.
         let staleSchedules = AlarmScheduleReconciler.hasStaleSchedules(
-            store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id,
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: startAccount,
             limitedTo: replacedIds
         )
         // 예약이 최신임을 확인했으면 더 들고 있지 않는다.
-        if !staleSchedules { StockReplacementStatus.shared.clearRearmIds() }
+        if !staleSchedules { StockReplacementStatus.shared.clearRearmIds(for: startAccount) }
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         reportReplacement(

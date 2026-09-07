@@ -595,15 +595,20 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
                             latest = offsetX.value
                             moveBy(overSlop)
                         }
-                        if (dragStart != null) {
-                            horizontalDrag(dragStart.id) { change ->
-                                val delta = change.positionChange().x
-                                change.consume()
-                                moveBy(delta)
-                            }
+                        // ⚠ **놓아야 끈다 — 취소는 놓은 것이 아니다.** `horizontalDrag` 는
+                        //   제스처가 취소되면 false 를 돌려준다(다른 창이 터치를 가져가거나
+                        //   시스템이 끊을 때). 그 값을 버리면 임계값만 넘겨 둔 채 취소된
+                        //   드래그가 **알람을 꺼 버린다** — 되돌릴 수 없는 쪽이다.
+                        //   예전에 쓰던 `detectHorizontalDragGestures` 는 이 갈래를
+                        //   `onDragEnd`/`onDragCancel` 로 나눠 줬는데, 손으로 다시 쓰면서
+                        //   그 구분이 사라졌다(2026-09-07 리뷰 31차).
+                        val completed = dragStart != null && horizontalDrag(dragStart.id) { change ->
+                            val delta = change.positionChange().x
+                            change.consume()
+                            moveBy(delta)
                         }
                         pressed = false
-                        if (maxOffset > 0f && latest >= threshold) {
+                        if (completed && maxOffset > 0f && latest >= threshold) {
                             // 놓는 순간이 원인 — 소리·진동은 여기서 끈다. 채움은 장식이라 종료 전환에 잘려도 된다.
                             onDismiss()
                             scope.launch { offsetX.animateTo(maxOffset) }

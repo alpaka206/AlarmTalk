@@ -36,6 +36,13 @@
   알람이 본업이고 기록은 곁다리라, 모든 경로가 실패를 삼키고 로그만 남긴다.
 - 전송: 앱이 열릴 때·주기 워커가 배치로 보낸다.
 
+⚠ **iOS 는 울린 순간에 우리 코드가 돌지 않는다.** 안드로이드는 울림 서비스가 직접 울리므로
+그 자리에서 적지만, iOS 는 AlarmKit 이 울리고 우리는 **해제·다시 울림을 누를 때** 불린다.
+그래서 iOS 는 울림을 두 자리에서 적는다 — 앱이 살아 있으면 `.alerting` 진입에서, 아니면
+그 인텐트에서(관찰자가 봤는지는 행의 상태로 가른다). **끝내 아무도 안 누른 울림은 적을
+방법이 없다** — 그때는 우리 코드가 한 번도 돌지 않고, 반복 알람은 목록에서 사라지지도
+않는다. 이건 플랫폼 한계이고, 그래서 iOS 의 울림 수는 **아래로 치우친다.**
+
 ## 3. 재전송은 안전해야 한다
 
 - `id` 는 **기기가 만든 UUID** 이고 서버에서 그대로 PK 다. 서버는 `INSERT OR IGNORE` 로
@@ -119,7 +126,7 @@
 | 종류 목록 | `data/UsageEventRecorder.kt` 의 `UsageEvents` | `UsageEventQueue.swift` 의 `UsageEventType` | `packages/shared/src/schemas/usage-event.ts` |
 | 로컬 큐 | `data/UsageEventEntity.kt`(Room) | `UsageEventQueue.swift`(파일) | — |
 | 전송 | `sync/UsageEventUploadWorker.kt` | `UsageEventUploader.swift` | `routes/events.ts` |
-| 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` | `AlarmKitViewModel.swift` 의 `.alerting` 진입 | — |
+| 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입, 그리고 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
 | 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
 | 해제·다시 울림 | `alarm/RingingService.kt` 의 `dismiss`/`snooze` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent`/`SnoozeAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |

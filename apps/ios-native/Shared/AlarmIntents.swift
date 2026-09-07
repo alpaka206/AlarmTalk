@@ -69,10 +69,16 @@ struct StopAlarmIntent: LiveActivityIntent {
         // ⚠ **ctx·기록이 없어도 적는다.** 락스크린 콜드 부팅에서는 `shared` 가 nil 이거나
         //   저장소의 디스크 로드가 아직 안 끝나 못 찾는다 — 그건 안 누른 것이 아니다.
         //   안드로이드는 Intent 의 알람 id 로 무조건 적어서 이 창이 아예 없다.
-        AlarmAppContext.recordUsageEvent(
-            .alarmDismissed,
-            AlarmAppContext.shared?.store?.recordByAlarmKitID(uuid.uuidString)
-        )
+        let stoppedRecord = AlarmAppContext.shared?.store?.recordByAlarmKitID(uuid.uuidString)
+        // ⚠ **울린 사실도 여기서 적는다**(2026-09-07 리뷰 31차). 이 앱은 **발사 시점에
+        //   우리 코드가 돌지 않는다**(AlarmKit 이 울리고, 우리는 해제할 때 불린다).
+        //   관찰자(`AlarmKitViewModel` 의 `.alerting` 진입)는 그 순간 앱이 살아 있을 때만
+        //   본다 — 밤새 잠든 폰에서 울린 알람은 아무도 못 본다. 그러면 '해제' 는 있는데
+        //   '울림' 이 없는 기록이 남아, 통계가 **앱이 켜져 있던 알람 쪽으로 기운다.**
+        //   중복은 상태로 가른다: 관찰자가 봤으면 `markRinging` 이 행을 ringing 으로 적어
+        //   두었다. 행을 못 찾으면(콜드 부팅) 관찰자가 있었을 리 없으니 적는다.
+        recordRingIfObserverMissedIt(stoppedRecord)
+        AlarmAppContext.recordUsageEvent(.alarmDismissed, stoppedRecord)
         if let ctx = AlarmAppContext.shared {
             await ctx.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         }
@@ -140,10 +146,10 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         // ⚠ 여기도 **기록을 못 찾아도 적는다** — 바로 아래 `.unknown` 갈래가 그 창을
         //   이미 인정하고 있다(콜드 부팅이면 판단 근거가 없다). 같은 요청 안에서 저장소를
         //   한쪽은 못 믿고 한쪽은 믿을 수는 없다.
-        AlarmAppContext.recordUsageEvent(
-            .alarmSnoozed,
-            ctx?.store?.recordByAlarmKitID(uuid.uuidString)
-        )
+        let snoozedRecord = ctx?.store?.recordByAlarmKitID(uuid.uuidString)
+        // 위 해제 갈래와 같은 이유 — 다시 울림을 눌렀다는 것은 **울렸다는 뜻**이다.
+        recordRingIfObserverMissedIt(snoozedRecord)
+        AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
         let decision = ctx?.snoozeDecision(alarmKitIDString: uuid.uuidString) ?? .unknown
         if decision == .deny {
             // 한도 도달 / 다시 울림 비활성 — Android 처럼 알람을 끝낸다.
@@ -180,3 +186,23 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         #endif
     }
 }
+
+#if ALARMTALK_APP
+/// 관찰자가 이번 울림을 못 봤으면 여기서 적는다.
+///
+/// AlarmKit 은 **발사 시점에 우리 코드를 돌리지 않는다** — 알람이 울릴 때 앱이 죽어 있었다면
+/// `.alerting` 전환을 본 사람이 없다. 그때도 사용자가 끄거나 미루면 이 인텐트는 돌므로,
+/// 여기서 울림을 채워 넣지 않으면 **해제만 있고 울림이 없는** 기록이 남는다.
+///
+/// 판정은 행의 상태 하나다 — 관찰자가 봤으면 `LocalAlarmStore.markRinging` 이 그 행을
+/// ringing 으로 적고 디스크에 남긴다. 행을 못 찾는 경우(콜드 부팅으로 저장소가 아직 안
+/// 올라왔다)는 그 순간 관찰자도 없었다는 뜻이라 적는다.
+///
+/// ⚠ **끝내 아무도 안 누른 울림은 iOS 에서 적을 방법이 없다** — 발사 때 우리 코드가 돌지
+/// 않고, 반복 알람은 목록에서 사라지지도 않는다(`docs/spec/usage-events.md` §2).
+@MainActor
+func recordRingIfObserverMissedIt(_ record: LocalAlarmRecord?) {
+    if record?.state == AlarmRuntimeState.ringing.rawValue { return }
+    AlarmAppContext.recordUsageEvent(.alarmRang, record)
+}
+#endif
