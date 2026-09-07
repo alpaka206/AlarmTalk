@@ -29,7 +29,7 @@
   "dependencies": {
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
     "date-holidays": "^3.36.0",
     "hono": "^4.13.5",
