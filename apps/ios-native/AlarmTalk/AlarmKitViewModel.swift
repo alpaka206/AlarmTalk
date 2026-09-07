@@ -335,15 +335,24 @@ final class AlarmKitViewModel: ObservableObject {
                     store.markRinging(id: record.id)
                     // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」).
                     // 로컬 큐에 적기만 하고, 전송은 `UsageEventUploader` 가 나중에 한다.
+                    // ⚠ **표시는 실제로 적힌 뒤에 남긴다**(2026-09-07 리뷰 36차). `record` 는
+                    //   파일 쓰기를 큐에 걸고 곧바로 돌아오므로, 부른 직후에 남기면 쓰기가
+                    //   실패하거나 그 사이에 프로세스가 죽었을 때 **적히지 않은 울림을
+                    //   적힌 것으로 오인해** 인텐트가 삼킨다. 삼키는 쪽이 더 나쁘다.
+                    //   ⚠ 표시 저장소는 사전 전체를 읽고-고쳐-쓰므로 **메인에서만** 만진다
+                    //   (인텐트의 소비도 메인이다) — 큐 스레드에서 바로 쓰면 소비된 표시를
+                    //   되살려 다음 회차를 삼킬 수 있다.
                     UsageEventQueue.shared.record(
                         .alarmRang,
                         alarmID: record.id,
                         voiceProfileID: record.voiceProfileId,
-                        messageID: record.ttsMessageId
+                        messageID: record.ttsMessageId,
+                        onPersisted: {
+                            DispatchQueue.main.async {
+                                ObservedRingMarkerStore.mark(alarmKitID: kitID)
+                            }
+                        }
                     )
-                    // ⚠ **적은 뒤에** 남긴다 — 순서를 뒤집으면 그 사이에 죽었을 때 적히지
-                    //   않은 울림을 적힌 것으로 오인해 인텐트가 삼킨다.
-                    ObservedRingMarkerStore.mark(alarmKitID: kitID)
                     // GROUP 3 (6): 포그라운드 ring-time 1회성 햅틱. didEnterAlerting 의
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이
                     // 활성(.active)일 때만 발화 — 백그라운드/락스크린에선 AlarmKit/시스템이

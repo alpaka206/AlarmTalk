@@ -38,10 +38,27 @@
 
 ⚠ **iOS 는 울린 순간에 우리 코드가 돌지 않는다.** 안드로이드는 울림 서비스가 직접 울리므로
 그 자리에서 적지만, iOS 는 AlarmKit 이 울리고 우리는 **해제·다시 울림을 누를 때** 불린다.
-그래서 iOS 는 울림을 두 자리에서 적는다 — 앱이 살아 있으면 `.alerting` 진입에서, 아니면
-그 인텐트에서(관찰자가 봤는지는 행의 상태로 가른다). **끝내 아무도 안 누른 울림은 적을
-방법이 없다** — 그때는 우리 코드가 한 번도 돌지 않고, 반복 알람은 목록에서 사라지지도
-않는다. 이건 플랫폼 한계이고, 그래서 iOS 의 울림 수는 **아래로 치우친다.**
+그래서 iOS 는 울림을 두 자리에서 적는다 — 앱이 살아 있으면 관찰자가(`AlarmKitViewModel`
+의 `.alerting` 진입), 아무도 못 봤으면 그 인텐트가(`Shared/AlarmIntents.swift` 의
+`recordRingIfObserverMissedIt`).
+
+- **중복은 회차마다 남기는 표시로 가른다**(`ObservedRingMarkerStore`). 관찰자는 울림이
+  **실제로 적힌 뒤에** 표시를 남기고, 인텐트는 그 표시를 **소비**한다 — 있으면 관찰자가
+  적은 것이니 넘어가고, 없으면 적는다. ⚠ 순서를 뒤집지 말 것: 표시를 먼저 남기면 쓰기가
+  실패하거나 그 사이에 프로세스가 죽었을 때 **적히지 않은 울림**을 적힌 것으로 오인해
+  삼킨다. 소비는 이번 회차 것이든 아니든 **언제나** 한다 — 낡은 표시를 남겨 두면 다음
+  회차를 삼킨다.
+- ⚠ **행의 상태(`ringing`)로 가르지 않는다**(2026-09-07 리뷰 35차). 두 방향으로 틀렸다:
+  관찰자가 적은 직후 프로세스가 죽고 인텐트가 콜드로 깨어나면 **행을 못 읽어** 한 번 더
+  적었고(사건 `id` 가 달라 §3 의 서버 멱등으로도 안 걸린다), 반대로 콜드 인텐트는
+  `markStopped` 를 못 돌려 행에 `ringing` 이 남아 **다음 회차의 정당한 울림을 삼켰다.**
+- **남겨 둔 실패 방향은 '중복 1건' 이다.** 표시를 잃으면 울림이 한 번 더 적히지만 그건
+  나중에 지울 수 있고, 삼킨 회차는 되짚을 방법이 없다. 아무도 안 누른 울림이 남긴 표시는
+  `staleAfter`(6시간)로 만료된다 — 반복 알람의 가장 짧은 주기보다 넉넉히 짧게 잡아,
+  어제 표시가 오늘 울림을 삼키지 못하게 한다.
+- ⚠ **끝내 아무도 안 누른 울림은 적을 방법이 없다** — 그때는 우리 코드가 한 번도 돌지
+  않고, 반복 알람은 목록에서 사라지지도 않는다. 플랫폼 한계이고, 그래서 iOS 의 울림 수는
+  **아래로 치우친다.**
 
 ## 3. 재전송은 안전해야 한다
 
@@ -86,8 +103,10 @@
 서버는 그 결과를 받아 적을 뿐이고, 추측하지 않는다. 추측하면 기기마다 다른 사실이 서로를
 덮어쓴다.
 
-- ⚠ **놓음도 붙임과 같은 선으로 가른다** — 랜덤도 아니고 테마도 아닌데 문구 id 가 있으면
-  직접 입력이다(`isManualMessageAlarm`). 테마 알람도 `ttsMessageId`·캐시 키를 **둘 다**
+- ⚠ **놓음도 붙임과 같은 선으로 가른다** — 판정은 `isManualMessageAlarm` 하나이고, 그것은
+  기존 `usesCustomMessageVoice` 에서 **유도한다**(거기에 `stock_` 캐시 키 제외와
+  `voiceCategory` 항이 있다). 항을 호출부에서 다시 적지 말 것 — 그렇게 적었다가 두 항이
+  빠져 **버킷 없이 프리셋 클립 하나만 문 옛 행**이 직접 입력으로 통과했다(리뷰 35차). 테마 알람도 `ttsMessageId`·캐시 키를 **둘 다**
   들고 있어서, 그 둘만 보면 갈리지 않는다 — 실제로 붙임 쪽에만 이 판정이 있어서 테마
   알람을 지우거나 테마를 바꾸기만 해도 '문구를 놓았다' 고 적고 있었다(2026-09-07 리뷰 34차).
   판정은 **놓는 쪽 행**(지우기 전 / 고치기 전)으로 한다 — 바뀐 뒤로 하면 직접 입력 →
@@ -132,7 +151,8 @@
 | 종류 목록 | `data/UsageEventRecorder.kt` 의 `UsageEvents` | `UsageEventQueue.swift` 의 `UsageEventType` | `packages/shared/src/schemas/usage-event.ts` |
 | 로컬 큐 | `data/UsageEventEntity.kt`(Room) | `UsageEventQueue.swift`(파일) | — |
 | 전송 | `sync/UsageEventUploadWorker.kt` | `UsageEventUploader.swift` | `routes/events.ts` |
-| 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입, 그리고 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
+| 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입(적힌 **뒤** `ObservedRingMarkerStore.mark`), 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
+| 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `mark`·`consume`·`staleAfter` | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
 | 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
 | 해제·다시 울림 | `alarm/RingingService.kt` 의 `dismiss`/`snooze` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent`/`SnoozeAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |

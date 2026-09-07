@@ -95,6 +95,40 @@ struct UsageEventQueueTests {
         #expect(queue.count == 0)
     }
 
+    @Test("적힌 뒤에 알린다 — 표시를 먼저 남기면 적히지 않은 울림을 삼킨다")
+    func notifiesOnlyAfterTheEventIsOnDisk() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("usage-events-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let queue = UsageEventQueue(fileURL: url, currentUserID: { "u1" })
+        let seen = AccountBox(nil)
+
+        queue.record(.alarmRang, alarmID: "a", onPersisted: {
+            // 콜백이 온 시점에 파일에 이미 있어야 한다.
+            let data = (try? Data(contentsOf: url)) ?? Data()
+            seen.set(String(data: data, encoding: .utf8) ?? "")
+        })
+
+        try waitUntil { seen.read() != nil }
+        #expect(seen.read()?.contains("alarm_rang") == true)
+    }
+
+    @Test("적지 못했으면 알리지 않는다 — 못 적은 것을 적힌 것으로 알리면 삼킨다")
+    func doesNotNotifyWhenTheWriteFails() throws {
+        // 없는 디렉터리 아래로 쓰게 해서 파일 쓰기를 실패시킨다.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("no-such-dir-\(UUID().uuidString)")
+            .appendingPathComponent("usage-events.json")
+        let queue = UsageEventQueue(fileURL: url, currentUserID: { "u1" })
+        let notified = AccountBox(nil)
+
+        queue.record(.alarmRang, alarmID: "a", onPersisted: { notified.set("yes") })
+
+        // 같은 직렬 큐를 타는 `count` 로 배리어를 건다.
+        _ = queue.count
+        #expect(notified.read() == nil)
+    }
+
     /// 기록 도중 계정이 바뀌는 상황을 만든다. 큐가 다른 스레드에서 읽을 수 있어 잠근다.
     private final class AccountBox: @unchecked Sendable {
         private let lock = NSLock()

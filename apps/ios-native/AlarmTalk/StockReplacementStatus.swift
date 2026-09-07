@@ -97,12 +97,17 @@ final class StockReplacementStatus: ObservableObject {
         persistRearmIds(for: userId)
     }
 
-    /// 예약이 최신임을 확인했다 — 더 들고 있을 이유가 없다.
-    func clearRearmIds(for userId: String?) {
-        guard let userId, !userId.isEmpty else { return }
+    /// **확인한 것만** 뺀다.
+    ///
+    /// ⚠ 통째로 비우지 말 것(2026-09-07 리뷰 36차). 울리는 중·스누즈 중이라 이번 회차가
+    /// 비켜 간 알람이 하나라도 있으면, 그것까지 '확인했다' 로 지워져 **다음 회차가 다시
+    /// 잡을 길이 없어진다** — 지문 없는 옛 예약은 이 목록이 유일한 단서라, 스누즈로 다시
+    /// 울릴 때 은퇴한 목소리로 운다.
+    func clearRearmIds(_ verified: Set<String>, for userId: String?) {
+        guard let userId, !userId.isEmpty, !verified.isEmpty else { return }
         loadRearmIds(for: userId)
         guard !pendingRearmIds.isEmpty else { return }
-        pendingRearmIds.removeAll()
+        pendingRearmIds.subtract(verified)
         persistRearmIds(for: userId)
     }
 

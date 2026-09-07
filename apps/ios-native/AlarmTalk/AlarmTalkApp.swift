@@ -505,12 +505,21 @@ struct AlarmTalkApp: App {
         //   수 있다. 빈 목록으로 돌면 재바인딩은 그냥 0건이지만 **정리는 전부를 지운다.**
         await alarmStore.waitUntilLoadedFromDisk()
         guard alarmStore.hasLoadedFromDisk else { return }
+        // ⚠ **한 회차는 한 계정 것이다**(2026-09-07 리뷰 36차). 기다리는 사이에 계정이
+        //   바뀌면 아래는 **지금 계정의 행**을 고치면서 결과는 `startAccount` 앞으로 적는다 —
+        //   B 의 행을 A 이름으로 처리하고, A 기준 판정이 B 의 행을 못 봐서 '남은 것 없음' 으로
+        //   읽고 목록을 지운다. 그러면 B 의 지문 없는 예약이 은퇴한 소리를 문 채 남는다.
+        //   여기서 접는 것은 잃는 게 없다 — 이 절차는 멱등이고, 새 계정의 회차가 곧 돈다.
+        guard auth.session?.user.id == startAccount else { return }
         // ⚠ **매니페스트를 강제로 받는다**(2026-09-03 리뷰 8차). 교체 회차의 시딩은 cron 이
         //   틱당 조금씩 채우므로, 다른 화면이 먼저 받아 둔 **부분 매니페스트**가 세션
         //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성
         //   검사에 걸려 **아무 일도 안 하고** 끝난다.
         // 반환값은 '이번에 서버에서 새로 받았는가' 다 — 교체 미완료 판정의 근거다.
         let manifestFetched = await voiceStudio.loadStockClips(session: auth.session, force: true)
+        // 위와 같은 이유 — 매니페스트를 기다리는 사이에도 계정은 바뀔 수 있다.
+        // (`loadStockClips` 는 취소를 삼키고 false 를 돌려주므로 여기서 걸러야 한다.)
+        guard auth.session?.user.id == startAccount else { return }
 
         // ⚠ **앞 회차가 못 앉힌 것이 있으면 먼저 앉힌다**(2026-09-03 리뷰 19차).
         //   `upsert` 는 메모리를 이미 바꿔 놨으므로, 그대로 다시 돌리면 재바인더가 그 행들을
@@ -632,8 +641,17 @@ struct AlarmTalkApp: App {
             store: alarmStore, alarmKit: alarmKit, ownerUserId: startAccount,
             limitedTo: replacedIds
         )
-        // 예약이 최신임을 확인했으면 더 들고 있지 않는다.
-        if !staleSchedules { StockReplacementStatus.shared.clearRearmIds(for: startAccount) }
+        // 확인한 것만 목록에서 뺀다. 울리는 중·스누즈 중이라 이번에 못 고친 것은 **남긴다** —
+        // `hasStaleSchedules` 가 그런 알람을 '남았다' 로 세지 않는 것은 **문을 여는 판정**일
+        // 뿐이고(지금 울리는 사람을 차단 화면에 가두지 않으려는 것), '고쳤다' 는 뜻이
+        // 아니다. 통째로 비우면 지문 없는 옛 예약이 다시 잡힐 길을 잃는다(리뷰 36차).
+        let unverified = AlarmScheduleReconciler.unverifiedRearmIds(
+            store: alarmStore, alarmKit: alarmKit, ownerUserId: startAccount,
+            limitedTo: replacedIds
+        )
+        StockReplacementStatus.shared.clearRearmIds(
+            replacedIds.subtracting(unverified), for: startAccount
+        )
         // ⚠ **못 받았으면 앞 판정을 지킨다.** 오프라인 재시도가 문을 열면 안 된다
         //   (`report` 가 `manifestFetched` 를 보고 스스로 막는다).
         reportReplacement(

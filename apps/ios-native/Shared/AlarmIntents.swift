@@ -75,8 +75,8 @@ struct StopAlarmIntent: LiveActivityIntent {
         //   관찰자(`AlarmKitViewModel` 의 `.alerting` 진입)는 그 순간 앱이 살아 있을 때만
         //   본다 — 밤새 잠든 폰에서 울린 알람은 아무도 못 본다. 그러면 '해제' 는 있는데
         //   '울림' 이 없는 기록이 남아, 통계가 **앱이 켜져 있던 알람 쪽으로 기운다.**
-        //   중복은 상태로 가른다: 관찰자가 봤으면 `markRinging` 이 행을 ringing 으로 적어
-        //   두었다. 행을 못 찾으면(콜드 부팅) 관찰자가 있었을 리 없으니 적는다.
+        //   중복은 **회차 표시**로 가른다(`ObservedRingMarkerStore`) — 규칙과 그 이유는
+        //   `recordRingIfObserverMissedIt` 주석과 `docs/spec/usage-events.md` §2 에 있다.
         recordRingIfObserverMissedIt(stoppedRecord, alarmKitID: uuid.uuidString)
         AlarmAppContext.recordUsageEvent(.alarmDismissed, stoppedRecord)
         if let ctx = AlarmAppContext.shared {

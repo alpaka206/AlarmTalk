@@ -13,6 +13,10 @@ import Foundation
 ///   회차의 **정당한 울림을 삼킨다.** 삼키는 쪽이 더 나쁘다(잃은 회차는 되짚을 수 없다).
 ///
 /// 그래서 회차마다 표시를 남기고, 인텐트가 **소비**한다. 표시가 있으면 관찰자가 적은 것이다.
+/// ⚠ **메인에서만 만진다.** `mark`·`consume` 이 사전 전체를 읽고-고쳐-쓰므로, 다른 스레드가
+/// 끼어들면 소비된 표시를 되살려 **다음 회차를 삼킨다.** 인텐트의 소비가 `@MainActor` 라
+/// 남기는 쪽도 메인으로 맞춘다(`AlarmKitViewModel` 이 큐 콜백에서 메인으로 되돌아온다).
+@MainActor
 enum ObservedRingMarkerStore {
     private static let key = "observed_ring_markers"
 

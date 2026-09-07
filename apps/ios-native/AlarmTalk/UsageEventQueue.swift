@@ -82,7 +82,12 @@ final class UsageEventQueue: @unchecked Sendable {
         messageID: String? = nil,
         detail: String? = nil,
         userID: String? = nil,
-        occurredAt: Date = Date()
+        occurredAt: Date = Date(),
+        /// **파일에 적힌 뒤**에 부른다(실패하면 부르지 않는다). 큐 스레드에서 온다.
+        ///
+        /// 이 큐는 무엇을 위한 신호인지 모른다 — "이 배치가 디스크에 남았다" 만 알린다.
+        /// 부르는 쪽이 그 사실에 무엇을 매다는지는 그쪽 사정이다(iOS 울림 표시 등).
+        onPersisted: (@Sendable () -> Void)? = nil
     ) {
         let trimmedDetail = detail.map { String($0.prefix(120)) }
         // 계정은 **적는 순간**에 정한다 — 파일 쓰기가 실제로 도는 시점이 아니라.
@@ -114,7 +119,8 @@ final class UsageEventQueue: @unchecked Sendable {
             if events.count > self.limit {
                 events.removeFirst(events.count - self.limit)
             }
-            self.saveLocked(events)
+            guard self.saveLocked(events) else { return }
+            onPersisted?()
         }
     }
 
@@ -150,10 +156,18 @@ final class UsageEventQueue: @unchecked Sendable {
         return (try? decoder.decode([QueuedUsageEvent].self, from: data)) ?? []
     }
 
-    private func saveLocked(_ events: [QueuedUsageEvent]) {
+    /// @return 실제로 파일에 남았으면 true. **실패를 삼키지 않는다** — 못 남긴 것을 남긴
+    /// 것으로 알리면(위 `onPersisted`) 적히지 않은 울림을 적힌 것으로 오인해 삼킨다.
+    @discardableResult
+    private func saveLocked(_ events: [QueuedUsageEvent]) -> Bool {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(events) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        guard let data = try? encoder.encode(events) else { return false }
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 }

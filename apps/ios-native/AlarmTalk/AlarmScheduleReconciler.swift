@@ -151,12 +151,45 @@ enum AlarmScheduleReconciler {
         let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
         return store.alarms(visibleTo: owner).contains { record in
             guard ids.contains(record.id) else { return false }
-            // 울리는 중·재예약 중인 것은 '남았다' 로 보지 않는다 — `reconcile` 도 비켜 간다.
+            // ⚠ 울리는 중·재예약 중인 것은 '남았다' 로 보지 않는다 — `reconcile` 도 비켜
+            //   가고, 여기서 true 를 돌리면 지금 울리는 사람을 전체화면 차단에 가둔다.
+            //   **이건 문을 여는 판정일 뿐, '고쳤다' 는 뜻이 아니다** — 아직 못 고친 id 는
+            //   [unverifiedRearmIds] 가 따로 돌려주고, 호출부는 그것만 남겨 둔다
+            //   (2026-09-07 리뷰 36차).
             guard !isInFlight(record), !alarmKit.isRearmInFlight(record.id) else { return false }
             return needsReschedule(
                 record, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: ids,
             )
         }
+    }
+
+    /// **이번 회차에 확인하지 못한 id** — 다음 회차까지 들고 있어야 하는 것들.
+    ///
+    /// [hasStaleSchedules] 와 다른 질문이다. 그쪽은 "사용자를 막을까" 이고 이쪽은
+    /// "고쳤다고 지워도 되나" 다 — 울리는 중·스누즈 중이라 [reconcile] 이 비켜 간 알람은
+    /// **막지는 않되 지워서도 안 된다.** 지우면 지문 없는 옛 예약은 다시 잡힐 길이 없어
+    /// (`needsReschedule` 의 마지막 갈래가 강제 목록 하나에만 기대고 있다) 스누즈로
+    /// 다시 울릴 때 **은퇴한 목소리로 운다** — 이 장치가 막으려던 바로 그것이다.
+    ///
+    /// 행이 사라진 id 는 돌려주지 않는다(고칠 것이 없다).
+    static func unverifiedRearmIds(
+        store: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel,
+        audioCache: AudioCacheStore = .shared,
+        ownerUserId: String?,
+        limitedTo ids: Set<String>
+    ) -> Set<String> {
+        guard !ids.isEmpty else { return [] }
+        let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
+        var unverified: Set<String> = []
+        for record in store.alarms(visibleTo: owner) where ids.contains(record.id) {
+            if needsReschedule(
+                record, alarmKit: alarmKit, audioCache: audioCache, forceRearmIds: ids,
+            ) {
+                unverified.insert(record.id)
+            }
+        }
+        return unverified
     }
 
     static func needsReschedule(
