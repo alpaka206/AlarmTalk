@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.StockClipManifestStore
@@ -297,6 +298,10 @@ class StockClipPrefetchWorker(
                         legacyHints = legacyHints,
                         conditionInputs = conditionInputs,
                         callerUserId = session.user.id,
+                        // 사용자의 저장과 같은 락으로 묶는다 — 컨테이너가 저장소를 하나만
+                        // 들고 있으므로 편집기가 쓰는 그 Mutex 다.
+                        alarmMutationLock = AlarmAppContainer.repository(applicationContext)
+                            .alarmMutationLock,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
                 // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
@@ -312,6 +317,8 @@ class StockClipPrefetchWorker(
                         language = language,
                         expectedVariants = manifest.expectedVariants,
                         callerUserId = session.user.id,
+                        alarmMutationLock = AlarmAppContainer.repository(applicationContext)
+                            .alarmMutationLock,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
                 // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시).

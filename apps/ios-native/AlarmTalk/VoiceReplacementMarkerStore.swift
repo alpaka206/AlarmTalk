@@ -371,14 +371,29 @@ struct VoiceReplacementMarkerStore {
         let key = seenKey(userID, profileID)
         let incoming = invalidatedAt ?? ""
         guard let baseline = defaults.string(forKey: key) else {
+            // 집을지부터 정한다 — **시드는 그 뒤다.**
+            //
+            // ⚠ **집을 것이면 재시도 표식을 시드보다 먼저 남긴다**(2026-09-07 리뷰 30차).
+            //   시드가 먼저 남으면, 강등·확정이 끝나기 전에 앱이 내려갔을 때 다음 실행이
+            //   `baseline != nil` 로 들어와 아래 첫 조회 특례를 **못 보고**, `applied` 도
+            //   `retry` 도 없어 `incoming > applied` 뒤의 비교가 전부 false 다 —
+            //   **그 세대를 영영 건너뛴다.** iOS 는 확정이 프리셋 새로고침(네트워크) 뒤라
+            //   이 창이 안드로이드보다 넓다. 안드로이드 `seenLocked` 와 같은 규칙이다.
+            let firstSightChanges =
+                defaults.string(forKey: retryKey(userID, profileID)) != nil
+                    || (!incoming.isEmpty && isSystemVoiceId(profileID))
+            if firstSightChanges {
+                markRetryLocked(userID, profileID, invalidatedAt)
+            }
             defaults.set(incoming, forKey: key)
+            // 위 두 갈래의 근거는 아래와 같다.
+            //
             // ⚠ **이 기기가 반영에 실패한 적이 있으면 첫 조회라도 집는다**(Codex #703 P1).
             // 목록에 한 번도 오르지 않은 프로필에 옛 푸시가 와서 실패하면 세대도 기준선도
             // 없어 sentinel 만 남는다 — 그걸 안 보면 이 시드가 '바뀐 것 없음' 으로 끝나
             // 정리 중 표시가 풀리고, 그 틈에 만든 알람을 뒤늦은 재시도가 벗긴다.
             // 업데이트 직후 모든 설치가 강등되는 일은 없다 — sentinel 은 **실제로 실패한
             // 기기에만** 있다.
-            if defaults.string(forKey: retryKey(userID, profileID)) != nil { return true }
             // ⚠ **기본(시스템) 목소리는 첫 조회라도 집는다**(2026-09-03 리뷰 22차).
             //
             //   마이그레이션 `#111` 은 DB 만 고치고 **푸시를 보내지 않는다.** 그 뒤에 앱을
@@ -391,7 +406,7 @@ struct VoiceReplacementMarkerStore {
             //   그대로 유지한다 — 거기서 열면 재등록 때마다 없던 강등이 생긴다.
             //   ⚠ 새로 깐 기기에서는 대상 알람이 0개라 아무 일도 일어나지 않는다.
             //   안드로이드 `VoiceReplacementMarkerStore.seenLocked` 와 같은 규칙이다.
-            return !incoming.isEmpty && isSystemVoiceId(profileID)
+            return firstSightChanges
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다.
         let applied = defaults.string(forKey: appliedKey(userID, profileID)) ?? ""

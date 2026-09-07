@@ -16,6 +16,8 @@ import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.ExpectedVariantCounts
 import com.alarmtalk.app.network.StockClip
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -59,6 +61,8 @@ object StockClipLanguageRebinder {
         conditionInputs: com.alarmtalk.app.data.DynamicPromptPreferences? = null,
         /** 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다. */
         callerUserId: String? = null,
+        /** 사용자의 저장과 직렬화하는 락([AlarmRepository.alarmMutationLock]). */
+        alarmMutationLock: Mutex,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -89,7 +93,14 @@ object StockClipLanguageRebinder {
                 ?: return@forEach
             // 접은 이름을 **행에도 적는다.** 안 적으면 다음 회차도, 편집기도, 서버 동기도
             // 계속 옛 이름을 읽는다 — 접기를 매번 다시 해야 하는 상태로 남는다.
-            val applied = applyClipFields(alarmDao, alarm, bound) ?: return@forEach
+            // ⚠ **재조회(판정)와 쓰기를 같은 락 안에서 한다**(2026-09-07 리뷰 30차).
+            //   `applyClipFields` 가 행을 다시 읽지만, 그것만으로는 창을 **좁힐 뿐 닫지
+            //   못한다** — 읽은 뒤 쓰기 전에 사용자가 저장하면 그 편집이 통째로 되돌아간다
+            //   (`upsertPreservingServerSyncFields` 는 서버 필드만 지킨다). 최악은 방금
+            //   끈 알람이 다시 켜져 우는 것이다. 네트워크(`bindBucket`)는 **락 밖**에 둔다 —
+            //   다운로드를 쥔 채로 잠그면 사용자의 저장이 그동안 막힌다.
+            val wrote = alarmMutationLock.withLock {
+            val applied = applyClipFields(alarmDao, alarm, bound) ?: return@withLock false
             // ⚠ **조건을 여기서 채운다.** 스케줄러를 부르는 것만으로는 안 된다 —
             //   그 워커가 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
             val next = withRecipientConditions(applied, bucket, conditionInputs)
@@ -103,6 +114,9 @@ object StockClipLanguageRebinder {
             alarmDao.upsertPreservingServerSyncFields(
                 next.copy(syncState = next.nextLocalSyncState()),
             )
+            true
+            }
+            if (!wrote) return@forEach
             if (bucket in com.alarmtalk.app.data.MatchingBucketIds) conditionBucketRebound = true
             rebound++
         }
@@ -150,6 +164,8 @@ object StockClipLanguageRebinder {
         expectedVariants: ExpectedVariantCounts? = null,
         /** 지금 로그인한 계정. 남의 알람을 건드리지 않기 위해 반드시 넘긴다. */
         callerUserId: String? = null,
+        /** 사용자의 저장과 직렬화하는 락(위 갈래와 같은 이유). */
+        alarmMutationLock: Mutex,
     ): Int = withContext(Dispatchers.IO) {
         if (clips.isEmpty()) return@withContext 0
 
@@ -184,7 +200,9 @@ object StockClipLanguageRebinder {
             }
             val bound = bindBucket(api, auth, audioStore, clips, alarm, bucket, language)
                 ?: return@forEach
-            val converted = (applyClipFields(alarmDao, alarm, bound) ?: return@forEach).copy(
+            // 위 갈래와 같은 이유로 판정과 쓰기를 같은 락 안에서 한다.
+            val wrote = alarmMutationLock.withLock {
+            val converted = (applyClipFields(alarmDao, alarm, bound) ?: return@withLock false).copy(
                 bucketId = bucket,
                 // ⚠ **랜덤을 내린다.** 안 내리면 다음 회차가 이 행을 또 옛 행으로 보고
                 // (위 술어) 매번 다시 묶으며, 편집기도 계속 '생성형' 으로 읽는다.
@@ -196,6 +214,9 @@ object StockClipLanguageRebinder {
             alarmDao.upsertPreservingServerSyncFields(
                 converted.copy(syncState = converted.nextLocalSyncState()),
             )
+            true
+            }
+            if (!wrote) return@forEach
             if (bucket == "weather") convertedWeather = true
             rebound++
         }

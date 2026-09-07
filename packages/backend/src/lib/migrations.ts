@@ -2636,6 +2636,15 @@ export const migrations: Migration[] = [
     // (`CURRENT_POLICY_VERSION`·`minSupported` 가 같은 이유로 순서를 타는 것과 같다.)
     id: 111,
     name: 'replace-system-voices-2026-09-03',
+    // ⚠ **atomic 필수**: provider 교체(`elevenlabs_voice_id`)와 무효화 표식
+    // (`custom_audio_invalidated_at`)은 **한 덩어리**다 — 런타임의 제자리 교체
+    // (`replaceVoiceInPlace`)도 한 트랜잭션에서 둘을 함께 한다(스펙 §5-2). 쪼개지면 그
+    // 사이에 합성된 오디오가 **새 목소리인데 표식보다 이르고**, 재시도가 찍는 더 늦은
+    // 표식이 그걸 낡은 것으로 보고 **되돌릴 수 없이 강등**한다.
+    // 표식은 `datetime('now')` 라 재실행이 등가가 아니다(#110 의 문장들과 다른 점).
+    // 전부 DML 이라 'no such column' 관용도 필요 없다 — 오히려 삼키면 표식 없이 provider 만
+    // 바뀐 상태가 성공으로 기록돼 다시는 안 돈다(fail-open).
+    atomic: true,
     statements: [
       // 미나(102)는 그대로 둔다.
       `UPDATE voice_profiles

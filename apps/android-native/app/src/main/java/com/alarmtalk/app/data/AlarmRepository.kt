@@ -110,6 +110,16 @@ class AlarmRepository(
      */
     private val restoreMutex = Mutex()
 
+    /**
+     * 알람 행을 고치는 **백그라운드 작업이 함께 잡아야 하는 락**.
+     *
+     * 워커가 "읽고 → 고치고 → 통째로 되쓰기" 를 하는 동안 사용자가 저장하면, 워커의
+     * 재조회는 그 창을 **좁힐 뿐 닫지 못한다**(같은 이유가 [setEnabled] 주석에 있다).
+     * `RemoteAlarmPullSyncService` 가 이미 이 락을 받아 쓴다 — 저장소 밖의 쓰기 경로는
+     * 전부 이 락을 지나야 한다.
+     */
+    internal val alarmMutationLock: Mutex get() = restoreMutex
+
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
         alarmDao = alarmDao,
