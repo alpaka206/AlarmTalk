@@ -559,6 +559,18 @@ struct AlarmTalkApp: App {
             }(),
             callerUserId: auth.session?.user.id
         )
+        // ⚠ **여기서도 계정을 다시 본다**(2026-09-07 리뷰 37차). 위 재바인딩은 클립을 받느라
+        //   **스스로 대기한다** — 그 사이에 계정이 바뀌면 아래 호출은 지금 계정(B)의 행을
+        //   고치는데 뒤따르는 판정·정리는 전부 `startAccount`(A) 기준이라, B 의 행이 A 의
+        //   회차에 섞인 채 A 눈에는 보이지도 않는다. 「한 회차는 한 계정 것이다」가 한 번의
+        //   대기 뒤에서 깨져 있었다.
+        //   ⚠ 접기 전에 **못 앉힌 것을 표시한다** — 위 재바인딩이 메모리만 고치고 디스크에
+        //   못 앉혔으면(리뷰 19차) 다음 회차의 재바인더는 그 행을 '이미 최신' 으로 보고
+        //   비켜 가므로, 그 사실을 여기서 남겨야 한다.
+        if auth.session?.user.id != startAccount {
+            if !languageOutcome.persisted { StockReplacementStatus.shared.markUnsavedRebind() }
+            return
+        }
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
         let legacyOutcome = await rebinder.rebindLiveGenerationRows(

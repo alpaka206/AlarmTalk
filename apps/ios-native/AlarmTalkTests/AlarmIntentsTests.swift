@@ -7,9 +7,9 @@ final class AlarmIntentsTests: XCTestCase {
     private var store: LocalAlarmStore!
     private var ctx: AlarmAppContext!
     /// 인텐트가 적은 사용 기록. 실제 큐 대신 여기로 받는다(디스크·키체인을 타지 않는다).
-    private var recorded: [(UsageEventType, String?)] = []
+    private var recorded: [(UsageEventType, String?, String?)] = []
     /// 전역 훅을 갈아 끼우므로 원래대로 되돌려 놓는다 — 안 그러면 다른 테스트로 샌다.
-    private var originalRecordUsageEvent: ((UsageEventType, LocalAlarmRecord?) -> Void)!
+    private var originalRecordUsageEvent: ((UsageEventType, LocalAlarmRecord?, String?) -> Void)!
 
     override func setUp() async throws {
         // 경로는 저장소에게 묻는다 — 손으로 조립하면 기기의 진짜 알람 파일을 지운다.
@@ -21,8 +21,8 @@ final class AlarmIntentsTests: XCTestCase {
         ObservedRingMarkerStore.reset()
         recorded = []
         originalRecordUsageEvent = AlarmAppContext.recordUsageEvent
-        AlarmAppContext.recordUsageEvent = { [weak self] type, record in
-            self?.recorded.append((type, record?.id))
+        AlarmAppContext.recordUsageEvent = { [weak self] type, record, detail in
+            self?.recorded.append((type, record?.id, detail))
         }
     }
 
@@ -144,16 +144,17 @@ final class AlarmIntentsTests: XCTestCase {
         XCTAssertEqual(recorded.first?.1, record.id)
     }
 
-    func test_snoozeIntent_limitReached_recordsSnoozedOnly() async throws {
-        // 다시 울림이 꺼진 알람 — 인텐트는 알람을 끝내지만, 사건은 '다시 울림을 눌렀다'
-        // 하나다(안드로이드도 이때 해제를 따로 적지 않는다).
+    func test_snoozeIntent_limitReached_recordsDismissedWithReason() async throws {
+        // 다시 울림이 꺼진 알람 — **미뤄지지 않는다.** 그때는 미룸이 아니라 종료를 적고,
+        // 누른 사실은 `detail` 이 나른다(2026-09-07 리뷰 37차).
         let kitID = UUID().uuidString
         store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false, state: .ringing))
         ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
 
-        XCTAssertEqual(recorded.map(\.0), [.alarmSnoozed])
+        XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
+        XCTAssertEqual(recorded.first?.2, "snooze_denied")
     }
 
     func test_stopIntent_noContext_stillRecordsDismissed() async throws {

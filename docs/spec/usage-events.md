@@ -9,7 +9,7 @@
 | --- | --- |
 | `alarm_created` / `alarm_updated` / `alarm_deleted` | 알람을 만들·고칠·지울 때 |
 | `alarm_rang` | 실제로 울린 순간 |
-| `alarm_dismissed` / `alarm_snoozed` | 껐을 때 / 다시 알림으로 미뤘을 때 |
+| `alarm_dismissed` / `alarm_snoozed` | 알람이 **실제로 끝났을 때** / **실제로 미뤄졌을 때**. ⚠ '다시 알림' 을 눌러도 한도 도달·비활성이면 미뤄지지 않는다 — 그때는 `alarm_snoozed` 가 아니라 `alarm_dismissed`(`detail = "snooze_denied"`)다. **누른 사실은 그 `detail` 이 나른다** — 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다 |
 | `manual_message_attached` | 직접 입력 문구가 알람에 붙었다 = 그 오디오가 이 기기에서 **사용중** |
 | `manual_message_released` | 그 문구를 쓰는 알람이 이 기기에서 모두 사라져 오디오를 지웠다 = **비사용중** |
 | `voice_created` / `voice_deleted` | 목소리를 등록·삭제할 때(자리만 열어 둠) |
@@ -56,9 +56,23 @@
   나중에 지울 수 있고, 삼킨 회차는 되짚을 방법이 없다. 아무도 안 누른 울림이 남긴 표시는
   `staleAfter`(6시간)로 만료된다 — 반복 알람의 가장 짧은 주기보다 넉넉히 짧게 잡아,
   어제 표시가 오늘 울림을 삼키지 못하게 한다.
+- ⚠ **소비가 지나간 뒤에 도착한 표시는 남기지 않는다.** 표시는 울림이 적힌 **뒤에**
+  남으므로, 쓰기가 끝나기 전에 누른 회차는 **소비가 먼저** 지나간다 — 그때 뒤늦게 남은
+  표시는 아무도 소비하지 않아 다음 회차를 삼킨다. 소비한 자리를 짧게 기억해
+  (`lateMarkWindow`) 그 안에 오는 표시는 버린다. ⚠ 이 창은 **길어도 잃는 것이 없다** —
+  표시를 *안 남기는* 쪽이라 최악이 중복 1건이고 `staleAfter` 와 방향이 반대다.
 - ⚠ **끝내 아무도 안 누른 울림은 적을 방법이 없다** — 그때는 우리 코드가 한 번도 돌지
   않고, 반복 알람은 목록에서 사라지지도 않는다. 플랫폼 한계이고, 그래서 iOS 의 울림 수는
   **아래로 치우친다.**
+
+⚠ **다시 울림은 결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과 미뤄진 것은
+다르다 — 한도 도달·비활성이면 그 누름은 알람을 **끝낸다.** 예전에는 누른 자리에서 먼저
+적어서, 일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도 남지 않았다.**
+판정은 안드로이드가 `repository.snooze` 의 반환, iOS 가 `snoozeDecision` 이다.
+해제는 지금대로 **누른 자리**에서 적는다 — 그 경로는 누름과 결과가 언제나 같고,
+`handleAlarmStopped` 로 옮기면 알람을 지우거나 끄기만 해도 해제로 적힌다.
+iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 `alarm_snoozed` 다 — 기본 동작과 기록이
+같은 방향이어야 한다.
 
 ## 3. 재전송은 안전해야 한다
 
@@ -152,10 +166,11 @@
 | 로컬 큐 | `data/UsageEventEntity.kt`(Room) | `UsageEventQueue.swift`(파일) | — |
 | 전송 | `sync/UsageEventUploadWorker.kt` | `UsageEventUploader.swift` | `routes/events.ts` |
 | 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입(적힌 **뒤** `ObservedRingMarkerStore.mark`), 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
-| 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `mark`·`consume`·`staleAfter` | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
+| 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `mark`·`consume`·`staleAfter`·`lateMarkWindow` | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
 | 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
-| 해제·다시 울림 | `alarm/RingingService.kt` 의 `dismiss`/`snooze` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent`/`SnoozeAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |
+| 해제 | `alarm/RingingService.kt` 의 `dismiss` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |
+| 다시 울림 | `alarm/RingingService.kt` 의 `snooze` — `repository.snooze` 의 **결과를 보고** 적는다(막혔으면 해제 + `detail`) | `Shared/AlarmIntents.swift` 의 `SnoozeAlarmIntent` — `snoozeDecision` **뒤에** 적는다(같은 규칙) | — |
 | 계정이 바뀌면 멈춤 | `sync/UsageEventUploadWorker.kt` 의 `startGeneration` 비교 | `UsageEventUploader.swift` 의 `runIfCurrentSession`(세대 카운터가 없어 **토큰을 에폭으로** 쓴다) | — |
 | 남긴 계정 | `data/UsageEventRecorder.kt` 의 `currentUserId` | `UsageEventQueue.swift` 의 `currentUserID` | — |
 | 미래 시각 자르기 | — | — | `routes/events.ts` 의 `boundOccurredAt` |

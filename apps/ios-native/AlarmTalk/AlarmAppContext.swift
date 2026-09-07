@@ -52,13 +52,20 @@ final class AlarmAppContext {
     ///
     /// 클로저로 둔 이유는 나머지 훅과 같다: 테스트가 갈아 끼울 수 있게. 갈아 끼웠으면
     /// **되돌려 놓을 것** — 전역 상태라 다른 테스트로 샌다.
-    static var recordUsageEvent: (UsageEventType, LocalAlarmRecord?) -> Void = { type, record in
+    static var recordUsageEvent: (UsageEventType, LocalAlarmRecord?, String?) -> Void = {
+        type, record, detail in
         UsageEventQueue.shared.record(
             type,
             alarmID: record?.id,
             voiceProfileID: record?.voiceProfileId,
-            messageID: record?.ttsMessageId
+            messageID: record?.ttsMessageId,
+            detail: detail
         )
+    }
+
+    /// 부가 값 없이 적는 자리(대부분).
+    static func recordUsageEvent(_ type: UsageEventType, _ record: LocalAlarmRecord?) {
+        recordUsageEvent(type, record, nil)
     }
 
     init(store: LocalAlarmStore) {

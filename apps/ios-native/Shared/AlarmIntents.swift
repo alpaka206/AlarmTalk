@@ -140,19 +140,21 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         // 명확한 .deny 일 때만 수행한다. (잘못 종료하면 사용자가 의도한 다시 울림이
         // 사라지는 회귀가 되므로.)
         let ctx = AlarmAppContext.shared
-        // 안드로이드 `RingingService.snooze` 와 같은 자리 — **누른 사실**을 먼저 적는다.
-        // 한도에 걸려 아래 `.deny` 로 종료되더라도 사건은 '다시 울림을 눌렀다' 하나다
-        // (안드로이드도 그때 해제를 따로 적지 않는다).
-        // ⚠ 여기도 **기록을 못 찾아도 적는다** — 바로 아래 `.unknown` 갈래가 그 창을
-        //   이미 인정하고 있다(콜드 부팅이면 판단 근거가 없다). 같은 요청 안에서 저장소를
-        //   한쪽은 못 믿고 한쪽은 믿을 수는 없다.
+        // ⚠ **기록을 못 찾아도 적는다** — 바로 아래 `.unknown` 갈래가 그 창을 이미 인정하고
+        //   있다(콜드 부팅이면 판단 근거가 없다). 같은 요청 안에서 저장소를 한쪽은 못 믿고
+        //   한쪽은 믿을 수는 없다.
         let snoozedRecord = ctx?.store?.recordByAlarmKitID(uuid.uuidString)
         // 위 해제 갈래와 같은 이유 — 다시 울림을 눌렀다는 것은 **울렸다는 뜻**이다.
         recordRingIfObserverMissedIt(snoozedRecord, alarmKitID: uuid.uuidString)
-        AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
+        // ⚠ **다시 울림은 결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과
+        //   미뤄진 것은 다르다 — 한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는
+        //   여기서 먼저 적어 일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도
+        //   안 남았다.** 안드로이드 `RingingService.snooze` 도 같은 규칙이다.
         let decision = ctx?.snoozeDecision(alarmKitIDString: uuid.uuidString) ?? .unknown
         if decision == .deny {
             // 한도 도달 / 다시 울림 비활성 — Android 처럼 알람을 끝낸다.
+            // 누른 사실은 `detail` 이 나른다 — 눌렀는데 막힌 횟수는 한도를 조정할 근거다.
+            AlarmAppContext.recordUsageEvent(.alarmDismissed, snoozedRecord, "snooze_denied")
             do {
                 try AlarmManager.shared.stop(id: uuid)
             } catch {
@@ -160,6 +162,8 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
             }
             await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         } else {
+            // `.unknown`(콜드 부팅)은 다시 울림 쪽이다 — 기본 동작과 기록이 같은 방향이어야 한다.
+            AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
             do {
                 try AlarmManager.shared.countdown(id: uuid)
             } catch {

@@ -27,10 +27,31 @@ enum ObservedRingMarkerStore {
     /// 더 나쁘다. 반복 알람의 가장 짧은 주기(하루)보다 넉넉히 짧게 잡는다.
     static let staleAfter: TimeInterval = 6 * 60 * 60
 
+    /// **소비 직후에 도착한 표시를 무시하는 창**(2026-09-07 리뷰 37차).
+    ///
+    /// 표시는 울림이 **파일에 적힌 뒤에** 남는다(`UsageEventQueue.record` 의 `onPersisted`).
+    /// 그 사이에 사용자가 누르면 인텐트는 표시 없는 회차로 보고 울림을 적고(중복 — 옳은
+    /// 방향), **그 뒤에** 도착한 콜백이 이미 소비된 회차의 표시를 남긴다. 그 표시는 아무도
+    /// 소비하지 않아 `staleAfter` 동안 살아 **다음 회차의 정당한 울림을 삼킨다.**
+    ///
+    /// ⚠ **이 값이 길어도 잃는 것은 없다** — 표시를 *안 남기는* 쪽이라 최악이 중복 1건이다
+    /// (`staleAfter` 와 방향이 반대다). 그래도 가장 짧은 다시 울림(1분)보다는 훨씬 짧게 둔다.
+    private static let lateMarkWindow: TimeInterval = 10
+
+    /// 이 프로세스가 마지막으로 소비한 시각. **디스크에 두지 않는다** — 뒤늦은 표시는 그것을
+    /// 큐에 건 프로세스 안에서만 도착하므로, 프로세스와 함께 사라지는 것이 맞다.
+    private static var lastConsumedAt: [String: TimeInterval] = [:]
+
     /// 관찰자가 이번 회차를 적었다고 남긴다. **적은 뒤에** 부른다 — 순서를 뒤집으면
     /// 그 사이에 죽었을 때 적히지 않은 울림을 적힌 것으로 오인해 삼킨다.
     static func mark(alarmKitID: String, now: Date = Date()) {
         guard !alarmKitID.isEmpty else { return }
+        // 방금 소비가 지나갔으면 이 표시는 **이미 끝난 회차**의 것이다 — 남기면 다음 회차를
+        // 삼킨다. 버리는 쪽의 최악은 중복 1건이다.
+        if let consumed = lastConsumedAt[alarmKitID],
+           now.timeIntervalSince1970 - consumed < lateMarkWindow {
+            return
+        }
         var markers = load()
         markers[alarmKitID] = now.timeIntervalSince1970
         prune(&markers, now: now)
@@ -42,6 +63,7 @@ enum ObservedRingMarkerStore {
     /// 지우는 것은 언제나다 — 낡은 표시를 남겨 두면 다음 회차를 삼킨다.
     static func consume(alarmKitID: String, now: Date = Date()) -> Bool {
         guard !alarmKitID.isEmpty else { return false }
+        lastConsumedAt[alarmKitID] = now.timeIntervalSince1970
         var markers = load()
         let stamp = markers.removeValue(forKey: alarmKitID)
         prune(&markers, now: now)
@@ -52,6 +74,7 @@ enum ObservedRingMarkerStore {
 
     /// 테스트용 — 남은 표시를 전부 지운다.
     static func reset() {
+        lastConsumedAt = [:]
         UserDefaults.standard.removeObject(forKey: key)
     }
 
