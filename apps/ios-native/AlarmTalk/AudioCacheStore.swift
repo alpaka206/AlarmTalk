@@ -539,7 +539,7 @@ final class AudioCacheStore {
     /// 안드로이드 `AlarmAudioStore.cachedAudioCreatedAtMillis` 와 짝이다.
     ///
     /// ⚠ **이건 기기 시계다**(`Date()`). 비교 상대인 표식은 서버 UTC 라 도메인이 다르다 —
-    /// 시계가 크게 어긋난 기기에서는 판정이 뒤집힌다(`docs/spec/voice-and-message.md` §5-1).
+    /// 시계가 크게 어긋난 기기에서는 판정이 뒤집힌다(`docs/spec/voice-and-message.md` §4-1).
     nonisolated func cachedAudioCreatedAtMillis(cacheKey: String) -> Int64? {
         if let created = readMetadata(cacheKey: cacheKey)?.createdAtMillis { return created }
         guard let url = cachedURL(for: cacheKey),

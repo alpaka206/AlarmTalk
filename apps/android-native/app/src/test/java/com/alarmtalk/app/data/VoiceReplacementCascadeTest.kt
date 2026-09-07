@@ -154,6 +154,40 @@ class VoiceReplacementCascadeTest {
         assertNull(dao.getById("fresh")?.voiceProfileId)
     }
 
+    /**
+     * ⚠ **표식 경로는 기본(시스템) 목소리도 대상이다** — 제자리 교체는 프로필 id 를 그대로
+     * 두고 provider 보이스만 바꾸므로, 기본 목소리로 만든 직접 입력 알람도 옛 소리를 문다
+     * (마이그레이션 #111 이 딱 그 경우다). 회수 경로는 그대로 두어야 하므로 **기본값은
+     * 끈 채**이고, 문을 여는 것은 표식 경로의 호출자다.
+     */
+    @Test
+    fun replacementReachesSystemVoiceAlarmsOnlyWhenAllowed() = runBlocking {
+        val systemVoice = SYSTEM_VOICE_ID_PREFIX + "000000000101"
+        dao.upsert(alarm(id = "manual", voiceProfileId = systemVoice))
+        dao.upsert(alarm(id = "bucket", voiceProfileId = systemVoice, bucketId = "medication"))
+        dao.upsert(alarm(id = "legacy-clip", voiceProfileId = systemVoice, cacheKey = "stock_m-legacy"))
+
+        // 기본값(회수 경로)에서는 기본 목소리를 건드리지 않는다.
+        assertEquals(0, repository.degradeCustomMessageAlarmsUsingVoiceProfile(systemVoice, "user-a"))
+        assertEquals(systemVoice, dao.getById("manual")?.voiceProfileId)
+
+        // 표식 경로에서는 **직접 입력 알람 하나만** 내린다.
+        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = systemVoice,
+            expectedOwnerUserId = "user-a",
+            allowSystemVoice = true,
+        )
+
+        assertEquals(1, degraded)
+        assertNull(dao.getById("manual")?.voiceProfileId)
+        assertEquals(
+            "프리셋(버킷) 알람은 서버가 새 목소리로 다시 만든다 — 벗기면 되돌릴 수 없다",
+            systemVoice,
+            dao.getById("bucket")?.voiceProfileId,
+        )
+        assertEquals(systemVoice, dao.getById("legacy-clip")?.voiceProfileId)
+    }
+
     private fun writeCachedAudio(cacheKey: String, createdAtMillis: Long) {
         val dir = java.io.File(context.filesDir, "alarm-audio").also { it.mkdirs() }
         val file = java.io.File(dir, "${AlarmAudioStore.safeCacheKey(cacheKey)}.mp3")

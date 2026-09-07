@@ -872,7 +872,7 @@ class AlarmAudioStore(
      * 파일 mtime 을 쓴다 — `sweepStaleCache` 가 이미 같은 신호로 나이를 잰다.
      *
      * ⚠ **이건 기기 시계다.** 비교 상대인 표식은 서버 UTC 라 도메인이 다르다 — 시계가
-     * 크게 어긋난 기기에서는 판정이 뒤집힌다(`docs/spec/voice-and-message.md` §5-1).
+     * 크게 어긋난 기기에서는 판정이 뒤집힌다(`docs/spec/voice-and-message.md` §4-1).
      */
     fun cachedAudioCreatedAtMillis(cacheKey: String): Long? =
         findCachedFile(cacheKey)?.lastModified()?.takeIf { it > 0L }

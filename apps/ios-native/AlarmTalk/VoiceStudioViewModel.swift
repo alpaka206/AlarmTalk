@@ -1434,7 +1434,7 @@ final class VoiceStudioViewModel: ObservableObject {
         ///
         /// ⚠ **표식은 서버 시계(UTC), 오디오 나이는 기기 시계다** — 알고 두는 창이다.
         ///   상세와 없애는 법(서버 세대 문자열을 오디오와 함께 적어 **순서 비교**)은
-        ///   `docs/spec/voice-and-message.md` §5-1.
+        ///   `docs/spec/voice-and-message.md` §4-1(제자리 교체).
         invalidatedBefore: Date? = nil
     ) -> [String] {
         guard let owner = ownerUserId?.nilIfBlank else { return [] }

@@ -904,7 +904,7 @@ class AlarmRepository(
      *   기기 시계가 그 오디오의 나이보다 더 앞서 있으면 낡은 오디오가 빠져나가고,
      *   뒤처져 있으면 표식 뒤에 만든 오디오를 깎는다. 없애려면 서버가 준 세대 문자열을
      *   오디오와 함께 적어 **순서 비교**해야 한다(동등 비교가 아니다 — 표식은 낡은 채
-     *   들어올 수 있다). 상세는 `docs/spec/voice-and-message.md` §5-1.
+     *   들어올 수 있다). 상세는 `docs/spec/voice-and-message.md` §4-1(제자리 교체).
      */
     suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
         voiceProfileId: String,
