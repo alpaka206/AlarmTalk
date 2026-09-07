@@ -11,8 +11,18 @@ export function useCheerPlayer() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  /**
+   * 재생 회차. **id 로는 못 가른다** — 같은 카드를 멈췄다 다시 누르면 id 가 같다.
+   *
+   * `speechSynthesis.cancel()` 은 큐만 비우고, 플랫폼이 이미 들고 있던 발화의
+   * `onend`/`onerror` 는 **그 뒤에** 온다(Blink 는 주석에 그렇게 적어 두었다). 그 콜백이
+   * 새 재생의 상태를 지우면 **소리는 나는데 버튼은 재생 모양**이 되고, 눌러도 멈추지 않고
+   * 처음부터 다시 시작한다. 회차가 다르면 그건 지난 재생의 것이므로 무시한다.
+   */
+  const generationRef = useRef(0);
 
   const stop = useCallback(() => {
+    generationRef.current += 1;
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -27,7 +37,11 @@ export function useCheerPlayer() {
   const play = useCallback(
     (id: string, playback: CheerPlayback) => {
       stop();
-      const release = () => setActiveId((cur) => (cur === id ? null : cur));
+      const generation = generationRef.current;
+      const release = () => {
+        if (generationRef.current !== generation) return;
+        setActiveId((cur) => (cur === id ? null : cur));
+      };
 
       if (playback.kind === "url") {
         const audio = audioRef.current ?? (audioRef.current = new Audio());

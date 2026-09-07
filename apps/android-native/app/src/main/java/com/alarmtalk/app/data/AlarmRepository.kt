@@ -534,7 +534,7 @@ class AlarmRepository(
         // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
         // 다른 알람이 남아 있으면 파일은 그대로이므로 여전히 '사용중' 이다 — 그 판정은
         // 폰만 할 수 있고(참조 카운트), 서버는 이 기록을 받아 적을 뿐이다.
-        if (cacheKey != null && current.ttsMessageId != null &&
+        if (cacheKey != null && current.isManualMessageAlarm() &&
             alarmDao.countByAudioCacheKey(cacheKey) == 0
         ) {
             usageEvents?.record(
@@ -561,10 +561,9 @@ class AlarmRepository(
         // 직접 입력 문구가 붙은 알람이면 그 문구가 이 기기에서 **사용중**이 됐다고 남긴다.
         // 판정은 저장 갈래와 같은 모양이다 — 랜덤도 아니고 테마 클립도 아닌데 문구 id 가
         // 있으면 직접 입력이다(`AlarmEditorState` 의 `isManualForSave` 와 같은 선).
-        val isManualMessage = !alarm.voiceRandomPrompt &&
-            alarm.bucketId.isNullOrBlank() &&
-            !alarm.ttsMessageId.isNullOrBlank()
-        if (isManualMessage && (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED)) {
+        if (alarm.isManualMessageAlarm() &&
+            (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED)
+        ) {
             recorder.record(
                 type = UsageEvents.MANUAL_MESSAGE_ATTACHED,
                 alarmId = alarm.id,
@@ -1970,6 +1969,17 @@ internal fun nextWeatherVariantState(
 }
 
 /**
+ * 이 알람이 **직접 입력 문구**를 물고 있는가 — 붙임·놓음이 같은 선을 쓰게 하는 이름.
+ *
+ * ⚠ **호출부마다 손으로 조립하지 말 것.** 붙임 쪽에만 이 판정이 있고 놓음 쪽에는 없어서,
+ * 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
+ * (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고 있어
+ * 그 둘만 보면 갈리지 않는다. `AlarmEditorState.isManualForSave` 와 같은 선이다.
+ */
+internal fun AlarmEntity.isManualMessageAlarm(): Boolean =
+    !voiceRandomPrompt && bucketId.isNullOrBlank() && !ttsMessageId.isNullOrBlank()
+
+/**
  * 편집으로 **놓여난** 직접 입력 문구 id. 참조 카운트를 세기 전 단계다.
  *
  * ⚠ **같은 문구가 그대로 붙어 있으면 null 이다.** 문구는 그대로인데 오디오만 다시 만든
@@ -1978,6 +1988,9 @@ internal fun nextWeatherVariantState(
  * 늦게 온 해제를 이기게 해서, **붙어 있는 문구가 비사용중으로** 뒤집힌다.
  */
 internal fun manualMessageReleasedByEdit(current: AlarmEntity, updated: AlarmEntity): String? {
+    // ⚠ **판정은 `current`(놓는 쪽) 로 한다.** `updated` 로 하면 직접 입력 → 테마 편집에서
+    //   앞 문구를 영영 안 놓아 준다 — 고치려던 것보다 나쁜 상태다.
+    if (!current.isManualMessageAlarm()) return null
     val previousMessageId = current.ttsMessageId?.takeIf { it.isNotBlank() } ?: return null
     if (previousMessageId == updated.ttsMessageId) return null
     return previousMessageId

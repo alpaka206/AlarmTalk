@@ -733,3 +733,15 @@ actor LocalAlarmPersistence {
         writer.write(alarms, seq: seq)
     }
 }
+
+extension LocalAlarmRecord {
+    /// 이 알람이 **직접 입력 문구**를 물고 있는가 — 붙임·놓음이 같은 선을 쓰게 하는 이름.
+    ///
+    /// ⚠ **호출부마다 손으로 조립하지 말 것.** 붙임 쪽에만 이 판정이 있고 놓음 쪽에는 없어서,
+    /// 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
+    /// (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고
+    /// 있어 그 둘만 보면 갈리지 않는다. 안드로이드 `AlarmEntity.isManualMessageAlarm` 의 짝.
+    var isManualMessageAlarm: Bool {
+        !voiceRandomPrompt && bucketId?.nilIfBlank == nil && ttsMessageId?.nilIfBlank != nil
+    }
+}

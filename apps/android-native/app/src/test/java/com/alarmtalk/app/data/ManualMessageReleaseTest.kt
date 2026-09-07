@@ -46,6 +46,8 @@ class ManualMessageReleaseTest {
     private fun alarm(
         messageId: String?,
         cacheKey: String? = "cache-key",
+        bucketId: String? = null,
+        randomPrompt: Boolean = false,
     ) = AlarmEntity(
         id = "alarm-1",
         label = "voice alarm",
@@ -70,7 +72,7 @@ class ManualMessageReleaseTest {
         voiceText = "좋은 아침",
         voiceCategory = "custom",
         voiceLanguage = null,
-        voiceRandomPrompt = false,
+        voiceRandomPrompt = randomPrompt,
         voiceRandomContext = null,
         voiceWeatherCountry = null,
         voiceWeatherCity = null,
@@ -93,5 +95,45 @@ class ManualMessageReleaseTest {
         createdAtMillis = 1_000L,
         updatedAtMillis = 1_000L,
         ownerUserId = "user-a",
+        bucketId = bucketId,
     )
+
+    @Test
+    fun `테마 알람은 놓아 줄 직접 입력 문구가 없다`() {
+        // ⚠ 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 **둘 다** 들고 있다 — 그 둘만
+        // 보면 갈리지 않아서, 테마를 바꾸기만 해도 '문구를 놓았다' 고 적고 있었다.
+        val released = manualMessageReleasedByEdit(
+            alarm(messageId = "stock-a", bucketId = "weather"),
+            alarm(messageId = "stock-b", bucketId = "medication"),
+        )
+        assertNull(released)
+    }
+
+    @Test
+    fun `생성형 알람도 놓지 않는다`() {
+        val released = manualMessageReleasedByEdit(
+            alarm(messageId = "m-old", randomPrompt = true),
+            alarm(messageId = null, randomPrompt = true),
+        )
+        assertNull(released)
+    }
+
+    @Test
+    fun `직접 입력에서 테마로 바꾸면 앞 문구를 놓아 준다`() {
+        // ⚠ 판정을 **바뀐 뒤**(updated)로 하면 이 갈래가 죽는다 — 앞 문구가 영영
+        // '사용중' 으로 남는다. 놓는 쪽(current)으로 판정해야 한다.
+        val released = manualMessageReleasedByEdit(
+            alarm(messageId = "m-old"),
+            alarm(messageId = "stock-a", bucketId = "weather"),
+        )
+        assertEquals("m-old", released)
+    }
+
+    @Test
+    fun `직접 입력 판정은 붙임과 놓음이 같은 선이다`() {
+        assertEquals(true, alarm(messageId = "m-1").isManualMessageAlarm())
+        assertEquals(false, alarm(messageId = "stock-a", bucketId = "weather").isManualMessageAlarm())
+        assertEquals(false, alarm(messageId = "m-1", randomPrompt = true).isManualMessageAlarm())
+        assertEquals(false, alarm(messageId = null).isManualMessageAlarm())
+    }
 }

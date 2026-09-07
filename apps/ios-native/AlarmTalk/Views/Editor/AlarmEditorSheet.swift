@@ -2660,10 +2660,7 @@ struct AlarmEditorSheet: View {
             messageID: record.ttsMessageId,
             userID: userID
         )
-        let isManualMessage = !record.voiceRandomPrompt
-            && (record.bucketId?.nilIfBlank == nil)
-            && (record.ttsMessageId?.nilIfBlank != nil)
-        if isManualMessage {
+        if record.isManualMessageAlarm {
             queue.record(
                 .manualMessageAttached,
                 alarmID: record.id,
@@ -2680,7 +2677,10 @@ struct AlarmEditorSheet: View {
         //   붙임이 같은 시각에 찍혀 순서가 뒤집히고, 붙어 있는 문구가 비사용중이 된다.
         // ⚠ **파일은 지우지 않는다** — 30일 sweep 이 회수하고, 그 사이 같은 문구를 다시
         //   고르면 서버 호출도 월 한도 차감도 없이 재사용된다.
+        // ⚠ 판정은 **놓는 쪽**(`previous`)으로 한다 — `record` 로 하면 직접 입력 → 테마
+        //   편집에서 앞 문구를 영영 안 놓아 준다.
         if let previous,
+           previous.isManualMessageAlarm,
            let releasedMessageID = previous.ttsMessageId?.nilIfBlank,
            releasedMessageID != record.ttsMessageId?.nilIfBlank {
             let previousKey = previous.audioCacheKey?.nilIfBlank

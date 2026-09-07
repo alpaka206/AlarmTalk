@@ -1213,7 +1213,10 @@ final class AlarmKitViewModel: ObservableObject {
         // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. `store.delete` 는
         // 같은 캐시 키를 쓰는 알람이 남아 있으면 nil 을 돌려준다 — 그때 파일은 그대로이고
         // 여전히 '사용중' 이다. 이 참조 카운트 판정은 폰만 할 수 있고, 서버는 받아 적는다.
-        if releasedAudioCacheKey != nil, let messageID = record.ttsMessageId?.nilIfBlank {
+        // 붙임 쪽과 **같은 선**으로 가른다 — 테마 알람도 문구 id·캐시 키를 둘 다 들고 있다.
+        if releasedAudioCacheKey != nil,
+           record.isManualMessageAlarm,
+           let messageID = record.ttsMessageId?.nilIfBlank {
             UsageEventQueue.shared.record(
                 .manualMessageReleased,
                 alarmID: record.id,

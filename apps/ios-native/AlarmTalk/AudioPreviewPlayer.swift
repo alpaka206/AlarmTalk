@@ -39,14 +39,18 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     /// (iOS 에는 안드로이드의 알람 스트림 같은 구분이 없어 카테고리는 그대로 두고
     ///  플레이어 게인만 맞춘다. 값 매핑은 안드로이드 `VoiceVolumeRamp` 와 같은 선형이다.)
     func play(url: URL, volumePercent: Int) throws {
-        try play(url: url, startMs: 0, stopAfterMs: nil)
-        player?.volume = Float(min(100, max(0, volumePercent))) / 100
+        try play(url: url, startMs: 0, stopAfterMs: nil, volumePercent: volumePercent)
     }
 
     /// 크롭 윈도우 미리듣기. `startMs` 로 시작 위치를 맞추고, `stopAfterMs` 가 주어지면
     /// 그 길이만큼 재생 후 자동 정지한다(알람 구간만 들려주기 위함).
     /// Android `startPreparedPreview(startMillis, stopAfterMillis)` 미러.
-    func play(url: URL, startMs: Int, stopAfterMs: Int?) throws {
+    /// - Parameter volumePercent: `nil` 이면 게인을 건드리지 않는다(목소리 고르는 자리의
+    ///   미리듣기는 기본 크기다). 값이 있으면 **`play()` 전에** 걸어 첫 샘플부터 그 크기로
+    ///   나가게 한다 — 울림 경로(`AlarmVoicePlayer`)와 안드로이드 미리듣기가 이미 그렇다.
+    ///   ⚠ **뒤에 걸지 말 것**(2026-09-07 리뷰 34차). 「소리는 첫 샘플부터 제 크기다」는
+    ///   이 앱의 규약이고(CLAUDE.md), 크기를 재려고 만든 화면이 100%로 시작하면 안 된다.
+    func play(url: URL, startMs: Int, stopAfterMs: Int?, volumePercent: Int? = nil) throws {
         stop()
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .spokenAudio)
@@ -56,6 +60,9 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         player.prepareToPlay()
         if startMs > 0 {
             player.currentTime = Double(startMs) / 1000.0
+        }
+        if let volumePercent {
+            player.volume = Float(min(100, max(0, volumePercent))) / 100
         }
         player.play()
         self.player = player
