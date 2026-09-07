@@ -552,8 +552,12 @@ struct AmPmWheelColumn: View {
                     //   `dragOffset` 을 되돌리지 않는데, 아래에서 새 제스처의 이동량(0에서
                     //   시작한다)으로 **덮어쓰면** 그 남은 오프셋만큼 휠이 튄다 —
                     //   '그 자리에서 잡힌다' 가 아니라 '그 자리에서 뛴다' 가 된다
-                    //   (2026-09-07 리뷰 31차). 게다가 이 콜백은 12pt 를 지나야 오므로
-                    //   손을 댄 순간이 아니라 **움직이기 시작한 순간** 튄다.
+                    //   (2026-09-07 리뷰 31차). 이 콜백은 12pt 를 지나야 오므로 잡히는
+                    //   시점은 '손을 댄 순간' 이 아니라 **'움직이기 시작한 순간'** 이다 —
+                    //   ⚠ 그건 안드로이드도 같다(`Modifier.draggable` 의 `onDragStarted` 는
+                    //   터치 슬롭을 지나야 온다). 원본이 그러므로 여기서 터치다운으로
+                    //   앞당기지 않는다(2026-09-07 리뷰 32차). 앞당기면 스크롤로 넘어가는
+                    //   접촉이나 탭까지 휠을 세워, 반쯤 밀린 채 멎는 갈래가 새로 생긴다.
                     grabbedOffset = dragOffset
                 }
                 dragOffset = min(max(grabbedOffset + gesture.translation.height, minOffset), maxOffset)

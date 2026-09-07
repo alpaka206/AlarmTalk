@@ -82,6 +82,16 @@ export function VoicePreview({ className }: { className?: string }) {
   const capturedRef = useRef<number[]>([...REST_LEVELS]);
   const rafRef = useRef<number>(0);
   const playedToRef = useRef(0);
+  /**
+   * 재생 회차. **사용자가 멈춘 것을 실패로 말하지 않으려고** 둔다.
+   *
+   * 파일을 받는 중에 다시 누르면 `stop()` 의 `pause()` 가 아직 안 끝난 `play()` 를
+   * `AbortError` 로 거절하는데, 그걸 그대로 잡으면 멈춘 직후에 "지금은 재생할 수 없어요"
+   * 가 뜬다 — 멀쩡히 멈췄는데 빨간 글씨가 남는다. 회차가 다르면 그 결과는 **지난 요청의
+   * 것**이므로 화면을 건드리지 않는다. 오디오 컨텍스트를 깨우는 사이에 멈춘 경우
+   * (`resume()` 대기 중)에도 같은 회차 검사가 재생이 뒤늦게 시작되는 것을 막는다.
+   */
+  const playGenRef = useRef(0);
 
   const setBarHeight = useCallback((i: number, level: number) => {
     const el = barRefs.current[i];
@@ -160,6 +170,7 @@ export function VoicePreview({ className }: { className?: string }) {
   }, [setBarHeight]);
 
   const stop = useCallback(() => {
+    playGenRef.current += 1;
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -170,6 +181,7 @@ export function VoicePreview({ className }: { className?: string }) {
   }, [stopLoop]);
 
   const play = useCallback(async () => {
+    const generation = (playGenRef.current += 1);
     const voice = PREVIEW_VOICES[nextIndex];
     const audio = ensureAudio();
     setFailed(false);
@@ -186,8 +198,12 @@ export function VoicePreview({ className }: { className?: string }) {
     try {
       // 사용자 제스처 안에서 깨워야 iOS 사파리가 소리를 낸다.
       await ctxRef.current?.resume();
+      // 깨우는 사이에 멈췄으면 시작하지 않는다 — 멈췄는데 소리가 나면 안 된다.
+      if (playGenRef.current !== generation) return;
       await audio.play();
     } catch {
+      // 사용자가 멈춰서 거절된 것은 실패가 아니다.
+      if (playGenRef.current !== generation) return;
       setStatus("idle");
       setFailed(true);
     }

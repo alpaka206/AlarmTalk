@@ -103,7 +103,11 @@ internal class VoiceOnboardingPreviewController(
          */
         alarmVolumePercent: Int? = null,
     ) {
-        alarmVolumePreview = alarmVolumePercent != null
+        // ⚠ **표식은 정리(`stopPreview`) 뒤에 세운다**(2026-09-07 리뷰 32차). 여기서 먼저
+        //   세우면 아래 두 갈래가 곧바로 부르는 `stopPreview` 가 그걸 지워, **재생 중인데
+        //   표식은 false** 인 상태가 된다 — 그러면 슬라이더를 끌어도 [updateAlarmVolume]
+        //   이 첫 줄에서 돌아가고(소리가 안 변한다), 손을 뗐을 때
+        //   [ensureAlarmVolumePreview] 가 '듣고 있지 않다' 로 읽어 **틀던 샘플을 꺼 버린다.**
         if (playingVoiceId == voiceProfileId) {
             stopPreview()
             return
@@ -121,6 +125,7 @@ internal class VoiceOnboardingPreviewController(
             stopPreview(invalidateRequest = false)
             val player = createPlayer(resId = bundledRes, uri = null, alarmVolumePercent = alarmVolumePercent)
                 ?: return
+            alarmVolumePreview = alarmVolumePercent != null
             playingVoiceId = voiceProfileId
             mediaPlayer = player.apply {
                 setOnCompletionListener {
@@ -157,6 +162,7 @@ internal class VoiceOnboardingPreviewController(
                     return@runCatching
                 }
                 preparingVoiceId = null
+                alarmVolumePreview = alarmVolumePercent != null
                 playingVoiceId = voiceProfileId
                 mediaPlayer = player.apply {
                     setOnCompletionListener {

@@ -1043,6 +1043,23 @@ export interface LegacyBucketHint {
  * ⚠ **은퇴 여부를 보지 않는다.** 힌트가 필요한 알람은 정확히 '은퇴한 클립을 물고 있는'
  *   알람이므로, 여기서 `retired_at IS NULL` 을 걸면 아무것도 안 나온다.
  */
+/**
+ * `messages.retired_at`(#110)이 이미 있는가. **읽기 경로의 배포 창 방어에만 쓴다.**
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `renderedForCurrentVoiceSelect` 와 같은 규약.
+ *
+ * ⚠ **쓰기 경로에는 쓰지 말 것.** 게시 트랜잭션에서 이 조건을 빼면 그 한 번의 요청이
+ * 영구히 잘못된 행을 남긴다 — 거기서는 컬럼이 없으면 통째로 롤백되는 것이 맞다.
+ */
+let retiredColumnReady = false;
+export async function messagesRetiredColumnReady(db: DbExecutor): Promise<boolean> {
+  if (retiredColumnReady) return true;
+  const columns = await db.execute({ sql: "PRAGMA table_info('messages')", args: [] });
+  retiredColumnReady = columns.rows.some((row) => String(row.name) === 'retired_at');
+  return retiredColumnReady;
+}
+
 export async function findLegacyBucketHints(
   db: Client,
   userPk: string,
@@ -1053,6 +1070,21 @@ export async function findLegacyBucketHints(
   // 회차가 쌓여도 응답이 무한정 커지지 않게 최근 것부터 자른다 — 옛 회차의 클립을 아직
   // 물고 있는 기기는 그 사이 강제 업데이트로 이미 갈아탔다.
   const RETIRED_HINT_LIMIT = 400;
+  // ⚠ **배포 창에는 `retired_at` 이 없다**(#110, CLAUDE.md 「배포가 마이그레이션보다 먼저」).
+  //   그냥 참조하면 매니페스트 응답이 통째로 500 이 된다 — 읽기 경로라 그럴 이유가 없다.
+  //   컬럼이 없다 = 은퇴한 행이 없다 이므로, 그때는 ② 갈래를 통째로 빼도 결과가 같다.
+  const retiredReady = await messagesRetiredColumnReady(db);
+  const retiredArm = retiredReady
+    ? `UNION
+            -- ② 은퇴한 시스템 스톡 전부(아직 서버에 안 올라간 로컬 알람이 이걸 가리킨다)
+            SELECT m.id, m.category, m.language, 1 AS ord, m.retired_at
+              FROM messages m
+              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+             WHERE m.retired_at IS NOT NULL
+               AND COALESCE(m.is_preset, 0) = 1
+               AND COALESCE(vp.is_system, 0) = 1
+               AND m.category IN (${placeholders})`
+    : '';
   const result = await db.execute({
     sql: `SELECT message_id, category, language FROM (
             -- ① 이 사용자의 서버 알람이 가리키는 것(버킷이 비어 있는 옛 행)
@@ -1066,19 +1098,13 @@ export async function findLegacyBucketHints(
                AND COALESCE(m.is_preset, 0) = 1
                AND COALESCE(vp.is_system, 0) = 1
                AND m.category IN (${placeholders})
-            UNION
-            -- ② 은퇴한 시스템 스톡 전부(아직 서버에 안 올라간 로컬 알람이 이걸 가리킨다)
-            SELECT m.id, m.category, m.language, 1 AS ord, m.retired_at
-              FROM messages m
-              JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-             WHERE m.retired_at IS NOT NULL
-               AND COALESCE(m.is_preset, 0) = 1
-               AND COALESCE(vp.is_system, 0) = 1
-               AND m.category IN (${placeholders})
+            ${retiredArm}
           )
           ORDER BY ord ASC, retired_at DESC
           LIMIT ?`,
-    args: [userPk, ...categories, ...categories, RETIRED_HINT_LIMIT],
+    args: retiredReady
+      ? [userPk, ...categories, ...categories, RETIRED_HINT_LIMIT]
+      : [userPk, ...categories, RETIRED_HINT_LIMIT],
   });
   return result.rows.map((row) => ({
     messageId: String(row.message_id),

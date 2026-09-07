@@ -36,6 +36,7 @@ import {
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
   findLegacyBucketHints,
+  messagesRetiredColumnReady,
   normalizeStockCategory,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
@@ -1995,6 +1996,23 @@ tts.get('/messages/:id/audio', async (c) => {
  * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
  * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
  */
+/**
+ * 은퇴한 프리셋을 거르는 SQL 조각. **컬럼이 없으면 조건을 빼고 전부 준다.**
+ *
+ * ⚠ `renderedForCurrentVoiceSelect` 와 **완전히 같은 이유**다 — 배포는 마이그레이션보다
+ * 먼저 도니까(CLAUDE.md), `messages.retired_at`(#110)을 그냥 참조하면 그 창(~1분) 동안
+ * **매니페스트 요청이 통째로 500** 이 된다. 읽기 경로라 fail-closed 로 둘 이유가 없고,
+ * 컬럼이 없다는 것은 **은퇴한 행이 하나도 없다**는 뜻이라 조건을 빼도 결과가 같다.
+ *
+ * ⚠ **쓰기 경로에는 쓰지 말 것**(`lib/stock-clips.ts` 의 게시 트랜잭션). 거기서 조건을
+ * 빼면 그 한 번의 요청이 영구히 잘못된 행을 남긴다 — 그쪽은 fail-closed 가 맞다.
+ */
+async function retiredIsNullClause(db: DbExecutor, alias = 'm'): Promise<string> {
+  // 판정은 `lib/stock-clips.ts` 한 곳에 둔다 — 플래그가 둘이면 한쪽만 켜진 상태가 생긴다.
+  // 개발자가 고정한 조각이라 사용자 값이 SQL 문자열로 들어가지 않는다.
+  return (await messagesRetiredColumnReady(db)) ? `AND ${alias}.retired_at IS NULL` : '';
+}
+
 let prerenderRefreshColumnReady = false;
 async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
   if (!prerenderRefreshColumnReady) {
@@ -2025,6 +2043,7 @@ tts.get('/stock-clips', async (c) => {
   const userLoginId = c.get('userLoginId');
   const userPk = c.get('userIdPK') || userLoginId;
   const renderedSelect = await renderedForCurrentVoiceSelect(db);
+  const retiredClause = await retiredIsNullClause(db);
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name,
@@ -2043,7 +2062,8 @@ tts.get('/stock-clips', async (c) => {
           WHERE COALESCE(m.is_preset, 0) = 1
             -- 은퇴한 행은 매니페스트에서 뺀다(#110). 행 자체는 남으므로 그 클립을 물고
             -- 있는 알람은 계속 저장되고 오디오도 그대로 받는다 — 목록에만 안 뜬다.
-            AND m.retired_at IS NULL
+            -- 배포 창에는 컬럼이 없어 조건이 빠진다(그때는 은퇴한 행도 없다).
+            ${retiredClause}
             AND (
               COALESCE(vp.is_system, 0) = 1
               OR m.user_id IN (?, ?)
