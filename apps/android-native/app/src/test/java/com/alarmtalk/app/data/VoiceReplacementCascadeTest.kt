@@ -125,6 +125,35 @@ class VoiceReplacementCascadeTest {
         )
     }
 
+    /**
+     * 표식을 넘기지 않으면 **표식 뒤에 만든 오디오까지** 깎인다. 전경 수렴 경로가 실제로
+     * 그랬다(iOS 는 넘기고 있었다) — 강등은 되돌릴 수 없으므로 그 갈래를 고정한다.
+     */
+    @Test
+    fun replacementWithoutWindowDegradesEvenFreshAudio() = runBlocking {
+        val markerMillis = 2_000_000L
+        writeCachedAudio("new-audio", createdAtMillis = markerMillis + 30_000L)
+        dao.upsert(alarm(id = "fresh", voiceProfileId = "clone-1", cacheKey = "new-audio"))
+
+        // 창을 넘기면 남는다.
+        assertEquals(
+            0,
+            repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                voiceProfileId = "clone-1",
+                expectedOwnerUserId = "user-a",
+                invalidatedBeforeMillis = markerMillis,
+            ),
+        )
+        assertEquals("clone-1", dao.getById("fresh")?.voiceProfileId)
+
+        // 안 넘기면 깎인다 — 그래서 전경 수렴 경로도 반드시 넘겨야 한다.
+        assertEquals(
+            1,
+            repository.degradeCustomMessageAlarmsUsingVoiceProfile("clone-1", "user-a"),
+        )
+        assertNull(dao.getById("fresh")?.voiceProfileId)
+    }
+
     private fun writeCachedAudio(cacheKey: String, createdAtMillis: Long) {
         val dir = java.io.File(context.filesDir, "alarm-audio").also { it.mkdirs() }
         val file = java.io.File(dir, "${AlarmAudioStore.safeCacheKey(cacheKey)}.mp3")

@@ -531,17 +531,15 @@ final class AudioCacheStore {
         return (readMetadata(cacheKey: cacheKey)?.rawAudioUri ?? "").isEmpty
     }
 
-    /// ⚠ **디렉터리 순서에 기대지 말 것.** 한 키에 본체가 둘 남아 있을 수 있다(확장자가
-    /// 바뀐 교체를 겪은 옛 설치본). 그때 `contentsOfDirectory` 의 첫 번째를 그냥 돌려주면
-    /// **옛 바이트가 뽑히는데 메타는 이미 새 세대**라, 낡음 판정도 지문도 통과해 지운
-    /// 목소리가 계속 울린다. 그래서 메타가 말하는 형식을 우선으로 고른다(새로 쓰는 경로는
-    /// `cacheBytes` 가 사본을 하나로 정리하므로 여기 걸릴 일이 없다).
     /// 그 캐시 키의 오디오를 **언제 만들었는가**(없으면 nil).
     ///
     /// 교체 표식(`custom_audio_invalidated_at`)과 비교하는 값이다 — 알람 행의
     /// `updatedAtMillis` 는 쓸 수 없다. 시각만 고치거나 **울리기만 해도**(`markRinging`)
     /// 앞으로 가는데 오디오는 그대로라, 낡은 목소리가 새것으로 통과한다.
     /// 안드로이드 `AlarmAudioStore.cachedAudioCreatedAtMillis` 와 짝이다.
+    ///
+    /// ⚠ **이건 기기 시계다**(`Date()`). 비교 상대인 표식은 서버 UTC 라 도메인이 다르다 —
+    /// 시계가 크게 어긋난 기기에서는 판정이 뒤집힌다(`docs/spec/voice-and-message.md` §5-1).
     nonisolated func cachedAudioCreatedAtMillis(cacheKey: String) -> Int64? {
         if let created = readMetadata(cacheKey: cacheKey)?.createdAtMillis { return created }
         guard let url = cachedURL(for: cacheKey),
@@ -551,6 +549,11 @@ final class AudioCacheStore {
         return date.map { Int64($0.timeIntervalSince1970 * 1000) }
     }
 
+    /// ⚠ **디렉터리 순서에 기대지 말 것.** 한 키에 본체가 둘 남아 있을 수 있다(확장자가
+    /// 바뀐 교체를 겪은 옛 설치본). 그때 `contentsOfDirectory` 의 첫 번째를 그냥 돌려주면
+    /// **옛 바이트가 뽑히는데 메타는 이미 새 세대**라, 낡음 판정도 지문도 통과해 지운
+    /// 목소리가 계속 울린다. 그래서 메타가 말하는 형식을 우선으로 고른다(새로 쓰는 경로는
+    /// `cacheBytes` 가 사본을 하나로 정리하므로 여기 걸릴 일이 없다).
     nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)

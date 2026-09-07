@@ -125,8 +125,15 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
             for ((profileId, invalidatedAt) in markerCandidates) {
                 var degradedNow = 0
                 val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
-                    degradedNow =
-                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
+                    degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                        voiceProfileId = profileId,
+                        expectedOwnerUserId = listOwner,
+                        // ⚠ **표식 뒤에 만든 오디오는 이미 새 목소리다 — 깎지 않는다.**
+                        //   이 경로만 창을 안 넘기고 있었다(iOS `PushNotificationCoordinator`
+                        //   는 넘긴다). 강등은 되돌릴 수 없으므로 좁은 쪽이 맞다.
+                        invalidatedBeforeMillis =
+                            com.alarmtalk.app.data.parseVoiceMarkerMillis(invalidatedAt),
+                    )
                     // **언제나 null 이다** — 이 경로는 확정하지 않는다(위 주석). 계정이 바뀐
                     // 경우도 자연히 포함된다(옛 계정의 0을 '처리 완료' 로 적으면 그 계정은
                     // 영영 재시도하지 않는다).
