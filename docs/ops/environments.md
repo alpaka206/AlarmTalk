@@ -67,9 +67,15 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - 서명·프로비저닝·번들 ID 등 iOS 쪽 환경 값은 여기 적지 않는다. 단일 출처는
   `docs/ios/ENVIRONMENT.md` 와 `docs/ios/APPLE-ACCOUNT-SETUP.md` 이고, 실제 빌드 설정은
   `apps/ios-native/project.yml` 이다(`DEVELOPMENT_TEAM` 은 일부러 비워 두고 주입한다).
-- 백엔드가 애플 경로에서 요구하는 시크릿(`APPLE_BUNDLE_ID`, `APPLE_ISSUER_ID`,
-  `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`)의 목록은 `packages/backend/wrangler.toml` 주석이
-  단일 출처다.
+- 백엔드가 애플 경로에서 요구하는 시크릿은 **세 갈래**이고, 단일 출처는
+  `packages/backend/.dev.vars.example`(그리고 그 목록을 실제로 올리는
+  `scripts/sync-worker-secrets.ts` 의 `WORKER_SECRET_KEYS`)이다. 갈래를 섞으면 한쪽이
+  통째로 죽으므로 함께 적는다:
+  - **로그인 검증**: `APPLE_BUNDLE_ID`
+  - **탈퇴 시 연결 해제**: `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`
+    (없으면 탈퇴가 **말없이 반쪽**이 된다 — 심사 지침 5.1.1(v))
+  - **결제 검증**: `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`
+  - **푸시(APNs)**: `APNS_KEY_ID`, `APNS_PRIVATE_KEY`(팀·번들은 위 값을 함께 쓴다)
 
 ### 이메일 인증
 

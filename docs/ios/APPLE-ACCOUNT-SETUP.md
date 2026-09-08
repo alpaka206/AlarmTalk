@@ -4,8 +4,8 @@
 값이 없으면 각 경로가 조용히 통과하지 않고 명시적으로 실패한다(fail-closed).
 
 > ✅ **가입은 이미 끝났다(2026-09-08 이 맥에서 재확인).** 서명 인증서
-> `Apple Development: GYUWON KIM`(`security find-identity -v -p codesigning`), 팀
-> `29N7GX354N`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
+> `Apple Development: <이름>`(`security find-identity -v -p codesigning`), 팀
+> `<팀 ID>`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
 > (`~/Library/Developer/Xcode/UserData/Provisioning Profiles`, 만료 2027-08),
 > App Store Connect 앱 레코드(Apple ID `6799711245` — `lib/app-version.ts` 의 `IOS.storeUrl`)가
 > 전부 있고, iPhone 14 Pro(iOS 26.6.1)에 Debug 빌드 설치도 된다.
@@ -90,7 +90,7 @@ Xcode 의 Signing & Capabilities 에 Keychain Sharing 이 자동으로 잡히는
 
 ```
 APPLE_BUNDLE_ID=com.alarmtalk.app        # ① 로그인 검증(aud 대조)
-APPLE_TEAM_ID=29N7GX354N                 # ② 연결 해제용 client_secret 서명
+APPLE_TEAM_ID=<팀 ID>                 # ② 연결 해제용 client_secret 서명
 APPLE_SIGNIN_KEY_ID=<Sign in with Apple 키의 Key ID>
 APPLE_SIGNIN_PRIVATE_KEY=<그 키의 .p8 내용 전체(PEM)>
 ```
@@ -187,26 +187,23 @@ App Store Connect → 사용자 및 액세스 → 통합 → **App Store Connect
 
 ```bash
 # packages/backend/.dev.vars.dev  (prod 는 .dev.vars.prod)
+# ⚠ **PEM 은 반드시 한 줄에 `\n` 이스케이프로 적는다.** `scripts/sync-worker-secrets.ts` 가
+#   파일을 줄 단위로 읽어 여러 줄 값을 **거절**한다. 서버는 `lib/pem.ts` 가 이 형태를 풀어
+#   쓰므로 두 형태 다 동작하지만, 업로드가 되는 것은 이 형태뿐이다.
 # 키가 **네 갈래**다 — `.dev.vars.example:42-45` 와 같은 구분이다.
 # ① 로그인 검증
 APPLE_BUNDLE_ID=com.alarmtalk.app
 # ② 탈퇴 시 Sign in with Apple 연결 해제 (4장)
-APPLE_TEAM_ID=29N7GX354N
+APPLE_TEAM_ID=<팀 ID>
 APPLE_SIGNIN_KEY_ID=ABC123DEFG
-APPLE_SIGNIN_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----"
+APPLE_SIGNIN_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
 # ③ 결제 검증 (5-3장) — ②와 **다른 키다**
 APPLE_ISSUER_ID=57246542-96fe-1a63-e053-0824d011072a
 APPLE_KEY_ID=ABC123DEFG
-APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----"
+APPLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
 # ④ 푸시 (7장) — 또 다른 키다
 APNS_KEY_ID=8S2AH3937P
-APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----"
+APNS_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
 ```
 
 ```bash

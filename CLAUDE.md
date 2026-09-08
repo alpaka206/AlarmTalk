@@ -8,8 +8,9 @@
   탭 구성·화면 구성 모두 안드로이드와 같다(알람/목소리/더보기) — 「iOS 는 안드로이드를
   원본으로 삼는다」 절 참조. 빌드·테스트는 XcodeGen(`project.yml`)으로
   `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
-  ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. **Apple 개발자 계정은 이미 있다**
-  (Team `29N7GX354N` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
+  ⚠ 아직 App Store 에 없다. CI 는 2026-09-08 에 복구했다(`.github/workflows/ios-build.yml` —
+  유닛 테스트 + Release 빌드, **필수 체크는 아니다**). **Apple 개발자 계정은 이미 있다**
+  (Team `<팀 ID>` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
   남은 것은 스토어 제출과 CI 복구다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
 
 ## iOS 실기기 설치 (테스트 아이폰은 **WiFi** 로 붙는다)
@@ -20,7 +21,7 @@
   ```
   cd apps/ios-native && xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
     -configuration Debug -destination 'id=<UDID>' -skipPackagePluginValidation \
-    DEVELOPMENT_TEAM=29N7GX354N -allowProvisioningUpdates -derivedDataPath <경로> build
+    DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM -allowProvisioningUpdates -derivedDataPath <경로> build
   xcrun devicectl device install app --device <UDID> <경로>/Build/Products/Debug-iphoneos/AlarmTalk.app
   ```
 - ⚠ `scripts/build-debug.sh` 는 `CODE_SIGNING_ALLOWED=NO` + `generic/platform=iOS` 라

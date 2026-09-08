@@ -737,14 +737,14 @@ ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 
 **실기기 설치 완료(2026-08-18 17:58)** — `이스트의 iPhone (3)`(iPhone 14 Pro).
 유료 개발자 계정으로 서명이 통과했다. 사용자 확인 대기 중.
 
-⚠ **팀 ID 는 `29N7GX354N` 이다.** 인증서 CN 의 괄호값(`8B3CPZ9Q87`)은 **사용자 ID 지
+⚠ **팀 ID 는 `<팀 ID>` 이다.** 인증서 CN 의 괄호값(`<사용자 ID>`)은 **사용자 ID 지
 팀 ID 가 아니다** — 그걸로 `DEVELOPMENT_TEAM` 을 주면 `No Account for Team` 으로 죽는다.
 팀 ID 는 인증서 subject 의 `OU=` 이고, `defaults read com.apple.dt.Xcode` 의
 `IDEProvisioningTeamByIdentifier` 로도 확인된다(`isFreeProvisioningTeam = 0`).
 
     xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
       -destination 'id=<기기 UDID>' -allowProvisioningUpdates \
-      DEVELOPMENT_TEAM=29N7GX354N -derivedDataPath /tmp/att-dev build
+      DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM -derivedDataPath /tmp/att-dev build
     xcrun devicectl device install app --device <기기 UDID> \
       /tmp/att-dev/Build/Products/Debug-iphoneos/AlarmTalk.app
 

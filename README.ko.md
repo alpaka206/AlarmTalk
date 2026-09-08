@@ -18,7 +18,7 @@
   - Google Play 결제: 운영 중 — 월간 구독만(개인 · 커플 · 가족)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI 자동 배포 + DB 마이그레이션(`develop` → dev, `main` → prod)
 
-SwiftUI iOS 클라이언트(`apps/ios-native`)는 2026-08-06 에 되살아나 저장소에 있습니다. 다만 아직 App Store 에 없고 CI 워크플로도 복구되지 않았습니다. 빌드는 XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)으로 하며, 상세는 [`docs/ios/`](docs/ios/) 참조.
+SwiftUI iOS 클라이언트(`apps/ios-native`)는 2026-08-06 에 되살아나 저장소에 있습니다. 다만 아직 App Store 에 없습니다. CI 워크플로(`ios-build.yml` — 유닛 테스트 + Release 빌드)는 2026-09-08 에 복구했습니다. 빌드는 XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)으로 하며, 상세는 [`docs/ios/`](docs/ios/) 참조.
 
 ## 기술 스택
 
@@ -29,7 +29,7 @@ SwiftUI iOS 클라이언트(`apps/ios-native`)는 2026-08-06 에 되살아나 �
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (결정적 TTS 캐시) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, TTL 365일 · 남은 수명 90일 미만이면 열 때 갱신) · 이메일 인증 코드 · Google ID 토큰 · Apple ID 토큰 |
+| Auth | JWT (HS256, TTL 365일 · `/auth/me` 마다 갱신 · 90일은 **백그라운드 갱신** 임계값) · 이메일 인증 코드 · Google ID 토큰 · Apple ID 토큰 |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## 저장소 구조

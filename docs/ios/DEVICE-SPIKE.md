@@ -2,7 +2,7 @@
 
 **시뮬레이터로는 검증할 수 없는 것들이다.** 여기 절차만 적어 둔다.
 iOS 26 실기기 + Apple Developer Program 계정이 있어야 하는데 **둘 다 이미 있다**
-(팀 `29N7GX354N` + `com.alarmtalk.app`/`.widget` 프로파일, iPhone 14 Pro / iOS 26.6.1 페어링됨).
+(팀 `<팀 ID>` + `com.alarmtalk.app`/`.widget` 프로파일, iPhone 14 Pro / iOS 26.6.1 페어링됨).
 값의 출처는 [`APPLE-ACCOUNT-SETUP.md`](APPLE-ACCOUNT-SETUP.md).
 
 왜 시뮬레이터로 안 되는가: 시뮬레이터는 알람 발사·잠금화면 점유·앱 종료 후 동작을

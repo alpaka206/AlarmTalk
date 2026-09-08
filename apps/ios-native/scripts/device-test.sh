@@ -10,7 +10,13 @@
 # 남겨 두는 건 App Group·키체인 공유가 없는 상태를 일부러 재현해 보고 싶을 때뿐이다
 # (`AudioCacheStore` 폴백 검증 등). 평소 실기기 설치는 그냥 Xcode/xcodebuild 로 하면 된다.
 set -e
-TEAM="${DEVELOPMENT_TEAM:?DEVELOPMENT_TEAM 환경변수를 지정할 것 (예: 29N7GX354N)}"
+# ⚠ 팀 ID 를 여기 적지 말 것 — 이 저장소는 public 이다. 값은 gitignore 된
+#   `apps/ios-native/Local.xcconfig` 의 `DEVELOPMENT_TEAM` 에 둔다.
+TEAM="${DEVELOPMENT_TEAM:-}"
+if [ -z "$TEAM" ] && [ -f "$(dirname "$0")/../Local.xcconfig" ]; then
+  TEAM=$(grep -m1 '^DEVELOPMENT_TEAM' "$(dirname "$0")/../Local.xcconfig" | cut -d= -f2 | tr -d ' ')
+fi
+: "${TEAM:?DEVELOPMENT_TEAM 을 환경변수나 Local.xcconfig 에 지정할 것}"
 DEVICE="${DEVICE_UDID:?DEVICE_UDID 환경변수를 지정할 것}"
 cd "$(dirname "$0")/.."
 xcodegen generate

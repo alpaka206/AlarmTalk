@@ -29,8 +29,8 @@
 
 ## 그때 없던 것 — **지금은 전부 채워졌다** (2026-09-08 확인)
 
-- **Apple Developer Program 계정** — ✅ 있다. 서명 인증서 `Apple Development: GYUWON KIM`,
-  팀 `29N7GX354N`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
+- **Apple Developer Program 계정** — ✅ 있다. 서명 인증서 `Apple Development: <이름>`,
+  팀 `<팀 ID>`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
   (만료 2027-08). 확인: `security find-identity -v -p codesigning`,
   `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
 - **iOS 26 실기기** — ✅ 있다. iPhone 14 Pro(iPhone15,2), iOS **26.6.1**, WiFi 페어링됨.

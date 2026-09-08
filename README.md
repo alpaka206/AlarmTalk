@@ -18,7 +18,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
   - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
-The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives in this repository, but it is not on the App Store yet and its CI workflow has not been restored. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
+The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives in this repository, but it is not on the App Store yet. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
 
 ## Stack
 
@@ -29,7 +29,7 @@ The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives i
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 365d TTL · rolls on each launch once under 90d left) · email code · Google ID token · Apple ID token |
+| Auth | JWT (HS256, 365d TTL · rolls on every `/auth/me`; the 90d threshold only triggers background renewal) · email code · Google ID token · Apple ID token |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## Repository Layout

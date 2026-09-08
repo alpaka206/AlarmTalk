@@ -18,7 +18,7 @@
   - Google Play Billing: 稼働中 — 月額サブスクリプションのみ(個人・カップル・ファミリー)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
-SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、リポジトリに存在します。ただしまだ App Store には無く、CI ワークフローも復旧していません。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。
+SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、リポジトリに存在します。ただしまだ App Store には有りません。CI ワークフロー(`ios-build.yml` — ユニットテスト + Release ビルド)は 2026-09-08 に復旧しました。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。
 
 ## 技術スタック
 
@@ -29,7 +29,7 @@ SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, TTL 365日・残り 90日 未満なら起動時に更新) · メール認証コード · Google ID トークン · Apple ID トークン |
+| Auth | JWT (HS256, TTL 365日・`/auth/me` ごとに更新・90日 はバックグラウンド更新の閾値) · メール認証コード · Google ID トークン · Apple ID トークン |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## リポジトリ構成

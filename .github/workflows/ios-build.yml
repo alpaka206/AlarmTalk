@@ -21,9 +21,13 @@ on:
     types: [labeled]
   workflow_dispatch:
 
+# ⚠ **라벨 이름까지 그룹에 넣는다**(ci.yml 과 같은 이유). 그룹을 PR 번호로만 잡으면,
+# `ci` 로 시작된 실행이 도는 중에 `bug` 같은 다른 라벨이 붙는 순간 그 이벤트가 같은 그룹에
+# 들어와 **돌고 있던 진짜 실행을 취소**하고 자기는 아래 `if` 에 걸려 스킵된다 — 검증이
+# 조용히 사라진다.
 concurrency:
-  group: ios-build-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ios-build-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.event.pull_request.number, github.event.label.name) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.label.name == 'ci' }}
 
 permissions:
   contents: read

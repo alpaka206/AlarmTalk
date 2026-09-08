@@ -327,6 +327,11 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         "FREE_NOT_BILLABLE" -> context.getString(R.string.msg2_billing_fail_free_not_billable)
         "CHECKOUT_DISABLED" -> context.getString(R.string.msg2_billing_fail_checkout_disabled)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_user_not_found)
+        // 같은 영수증이 다른 계정에 이미 묶인 경우다(`lib/store-billing.ts` 의 409).
+        // 재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있으므로
+        // 기본 문구로 흘리지 않는다 — 그 계정으로 로그인하면 된다.
+        "TRANSACTION_OWNED_BY_OTHER_USER" ->
+            context.getString(R.string.msg2_billing_fail_transaction_owned_by_other_user)
         else -> fallback
     }
 

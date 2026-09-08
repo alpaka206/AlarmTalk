@@ -4,7 +4,7 @@
 > [`../qa/dev-test-handoff.md`](../qa/dev-test-handoff.md), 동작 계약은 [`../spec/`](../spec/README.md)를 본다.
 >
 > **그 뒤 해결된 것 — 맨 아래 「사람이 판단해야 하는 것」 을 그대로 읽지 말 것:**
-> - **1번(Apple Developer Program 가입) 완료.** 팀 `29N7GX354N`, 서명 인증서,
+> - **1번(Apple Developer Program 가입) 완료.** 팀 `<팀 ID>`, 서명 인증서,
 >   `com.alarmtalk.app`·`.widget` 프로파일, App Store Connect 앱 레코드(Apple ID
 >   `6799711245` — `lib/app-version.ts` 의 `IOS.storeUrl`)까지 있다.
 > - **5번(iOS 푸시) 완료, 다만 방식이 다르다.** Firebase·`GoogleService-Info.plist` 를

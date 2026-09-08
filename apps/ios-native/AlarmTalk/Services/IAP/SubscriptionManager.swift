@@ -533,6 +533,17 @@ final class SubscriptionManager: ObservableObject {
             // 두고, 다음 foreground 사이클의 resyncEntitlements 가 자동 catch-up 한다.
             // (501 은 라우트가 없던 시절의 잔재라 뺐다 — 지금은 라우트가 있다.)
             return false
+        } catch APIError.server(let status, _, let code) where status == 409
+            && code == "TRANSACTION_OWNED_BY_OTHER_USER" {
+            // ⚠ **재시도해도 결과가 같다 — "잠시 후 자동 재시도" 라고 말하면 안 된다.**
+            //   같은 영수증이 다른 계정에 이미 묶여 있다(`lib/store-billing.ts` 의 409).
+            //   재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있다:
+            //   그 계정으로 로그인하면 된다. 안드로이드도 같은 코드에 같은 문구를 쓴다
+            //   (`MainViewModelBillingActions.billingFailureMessage`).
+            self.lastError = String(
+                localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
+            )
+            return false
         } catch {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
             return false
