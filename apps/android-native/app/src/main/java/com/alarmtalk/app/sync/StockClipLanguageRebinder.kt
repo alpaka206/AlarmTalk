@@ -105,12 +105,18 @@ object StockClipLanguageRebinder {
             //   그 워커가 읽는 것이 이 필드들이고, 받은 알람은 전부 비어 있다.
             val next = withRecipientConditions(applied, bucket, conditionInputs)
                 .copy(bucketId = bucket)
-            // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차). #110 은 지운 프리셋을
-            //   가리키던 서버 알람을 `mode='sound-only'`, `message_id=NULL` 로 깎는다.
-            //   여기서 로컬만 되살리고 `SYNCED` 를 그대로 두면 업로드 대상
-            //   (`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·FAILED)에 안 들어가 **영영 안
-            //   올라간다** — 다른 기기나 재설치는 사용자가 직접 알람을 고칠 때까지 그
-            //   깎인 알람을 계속 받는다. iOS 는 upsert 헬퍼가 이미 이걸 한다.
+            // ⚠ **서버에도 올려야 끝난다**(2026-09-03 리뷰 6차).
+            //   ⚠ 여기 적혀 있던 "#110 이 서버 알람을 `mode='sound-only'`,
+            //   `message_id=NULL` 로 깎는다" 는 **틀렸다**(2026-09-08 정정). 그건 되돌린
+            //   초안의 이야기이고, 그 UPDATE 를 가진 것은 **#109** 다. `#110` 은
+            //   `retired_at` 만 찍고 알람은 건드리지 않는다 — 서버 행은 깎이는 대신
+            //   **은퇴한 프리셋을 계속 가리킨 채로** 남는다.
+            //   고쳐야 하는 이유는 그대로다: 로컬만 갈아 끼우고 `SYNCED` 를 두면 업로드
+            //   대상(`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·FAILED)에 안 들어가 **영영 안
+            //   올라간다.** 방금 물린 새 버킷·클립 키도, 바로 위에서 채운 수신자 조건도
+            //   서버에 없으니 다른 기기와 재설치는 옛 바인딩을 그대로 받아 **기기마다 이
+            //   갈아 끼우기를 다시** 해야 하고, 그때까지 그 알람은 옛 목소리로 운다.
+            //   iOS 는 upsert 헬퍼가 이미 이걸 한다.
             alarmDao.upsertPreservingServerSyncFields(
                 next.copy(syncState = next.nextLocalSyncState()),
             )

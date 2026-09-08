@@ -64,9 +64,16 @@ class UsageEventRecorder(
         //
         // ⚠ **그 조회도 실패할 수 있다 — 여기서 새면 알람이 죽는다.** 계정은 암호화
         // 프리퍼런스에서 읽는데(키스토어), 키가 무효화되거나 파일이 깨지면 `getString` 이
-        // `SecurityException` 을 던진다. `RingingService` 는 해제·다시 울림에서 **이 함수를
-        // 먼저** 부르므로(메인 스레드), 새어 나가면 소리를 끄고 다음 예약을 잡는 일이
+        // `SecurityException` 을 던진다. `RingingService.dismiss` 는 소리를 끄기 **전에**
+        // 이 함수를 부르므로(메인 스레드), 새어 나가면 소리를 끄고 다음 예약을 잡는 일이
         // 통째로 죽는다 — 기록은 곁다리인데 본업을 막는다.
+        //
+        // ⚠ **해제와 다시 울림은 부르는 자리가 다르다 — 맞춰 놓지 말 것.** 다시 울림은
+        // 2026-09-07 리뷰 37차부터 `stopRingingOutputs` 뒤 `serviceScope`(IO)에서 부른다:
+        // 누른 것과 미뤄진 것이 달라 **결과를 보고** 적어야 하기 때문이다. 해제는 누름과
+        // 결과가 언제나 같으므로 누른 자리에 그대로 둔다 — 이 클래스의 [scope] 는 프로세스
+        // 수명이지만 `serviceScope` 는 `onDestroy` 에서 취소되므로, 옮기면 서비스가 먼저
+        // 죽은 회차의 해제가 통째로 사라진다(`docs/spec/usage-events.md` 구현 지도 「해제」).
         // 못 읽으면 **그 기록을 버린다.** 계정을 비워 두면 다음에 로그인한 사람의 기록으로
         // 올라가므로(`UsageEventDao.oldest` 는 null 을 아무에게나 준다) 그게 더 나쁘다.
         val userId = runCatching { currentUserId() }.getOrElse { error ->

@@ -168,6 +168,15 @@ export function createMockDB() {
       if (/PRAGMA table_info\('voice_profiles'\)/i.test(query.sql)) {
         return { rows: [{ name: 'custom_audio_invalidated_at' }], rowsAffected: 0 };
       }
+      // #110(은퇴 표식)·#101(교체 회차) 전후 호환 판정도 같은 규약이다 — 최신 스키마를
+      // 기본으로 돌려주고 큐를 소비하지 않는다. 구 스키마 쪽 동작은 프로브를 직접 부르는
+      // 테스트가 고정한다(`stock-clips-retired-column`·`prerender-status-deploy-window`).
+      if (/PRAGMA table_info\('messages'\)/i.test(query.sql)) {
+        return { rows: [{ name: 'retired_at' }], rowsAffected: 0 };
+      }
+      if (/PRAGMA table_info\('voice_prerender_queue'\)/i.test(query.sql)) {
+        return { rows: [{ name: 'refresh_existing' }], rowsAffected: 0 };
+      }
       calls.push({ sql: query.sql, args: query.args });
       return takeNext();
     },

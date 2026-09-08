@@ -66,6 +66,20 @@
 "이번 달 목소리 생성 한도를 모두 사용했어요" 로 말하고 있었고, **회귀 테스트가 그 틀린
 문구를 지키고 있었다**(2026-09-07 정정).
 
+⚠ **맞추는 범위는 '위 네 자리에 닿을 수 있는 코드' 다 — 목록 전체가 아니다.** 표를 부르지
+않는 경로의 코드는 표에 있어도 아무도 읽지 않으므로, 한쪽에만 있다고 반대편에 베껴 넣지
+않는다. 지금 그런 것이 둘 있다: `AUTH_EMAIL_TAKEN`·`AUTH_EMAIL_SOCIAL`
+(`network/ApiErrorMessages.kt`)은 **가입** 경로의 409(`routes/auth.ts`)인데, 표를 부르는 네
+자리에 가입이 없다. 두 앱 모두 가입 실패는 **화면이 직접** 가른다 — 안드로이드
+`duplicateEmailMessage`(`ui/main/MainViewModelAuthActions.kt`), iOS
+`AuthViewModel.requestEmailVerification` 의 `userFacingErrorMessage` 폴백.
+- **그래서 iOS 표에 이 둘을 더해도 아무 화면도 달라지지 않는다** — 더하지 말 것. 표만
+  같아 보이게 만들고 실제 차이는 그대로 남는다.
+- 특히 `AUTH_EMAIL_TAKEN` 은 문구만이 아니라 **로그인 화면 전환**(`authRedirectToLogin`)을
+  겸한다. 표는 문자열 하나만 돌려주므로 구조적으로 그 일을 할 수 없다.
+- 안드로이드 표의 그 두 줄은 지금 **닿지 않는 자리**다. 지우려면 가입 경로가 정말로 표를
+  거치지 않는지 먼저 확인하고, 이 문단도 함께 고친다.
+
 ## 5. 코드를 새로 만들 때
 
 1. `packages/shared/src/schemas/error-codes.ts` 의 도메인 묶음에 알파벳 순으로 넣는다.

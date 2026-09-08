@@ -60,9 +60,20 @@
 확정되면서 개념을 바꿨다 — 연애 문구가 아니다. **옛 값을 읽는 접기는 지우지 말 것**:
 이미 저장된 알람 행과 스토어에 올라간 구버전 앱이 `love` 를 들고 있고, 접지 않으면
 모르는 값으로 보여 `preset` 으로 떨어진다(응원을 골랐는데 기본 인사말이 울린다).
-자리는 넷이다 — 서버 `normalizeRandomContext`·`stockPresetCategory`, 안드로이드
-`normalizedRandomPromptContext`·`randomPromptContextForBucket`, iOS
-`RandomPromptContext.normalized`·`forBucket`.
+접는 자리는 **일곱**이고, 접기 표는 서버에 둘·앱에 다섯이다:
+- 서버 — `RENAMED_RANDOM_CONTEXTS`(`routes/tts.ts`, `normalizeRandomContext` 가 읽는다) ·
+  `RENAMED_STOCK_CATEGORIES`(`lib/stock-clips.ts` 의 `normalizeStockCategory` — 버킷 id 쪽.
+  `stockPresetCategory` 와 `routes/alarm-helpers.ts` 가 **이걸 부를 뿐** 제 표를 갖지 않는다)
+- 안드로이드 — `normalizedRandomPromptContext` · `randomPromptContextForBucket`
+  (둘 다 `ui/editor/AlarmEditorState.kt`)
+- iOS — `RandomPromptContext.normalized` · `RandomPromptContext.forBucket`
+  (`AlarmEnums.swift`) · 요약 라벨의 `case "cheer", "love"`
+  (`Views/Editor/MessageSettingsPane.swift` 의 `MessageModeSummaryRow`)
+
+⚠ **iOS 만 셋인 것은 실수가 아니라 구조다.** `currentMessageContext` 는 테마가 안 붙어
+있으면 저장된 `randomContext` 를 **접지 않고 그대로** 돌려주므로(`AlarmEditorSheet.swift`),
+라벨 쪽에서 한 번 더 접어야 옛 행이 '기본 인사말' 로 읽히지 않는다. 안드로이드는 같은
+자리를 `normalizedRandomPromptContext` 로 통과시켜 표가 둘이다.
 
 ### 그래도 갈리는 축: **오디오를 어떻게 얻는가**
 
@@ -472,8 +483,10 @@ AlarmKit 예약을 다시 만들 수 있다.
   내일 알람을 못 맞추는 일이 있어서는 안 된다. 부족한 목소리는 **그 목소리만** 고를 수
   없게 하고(준비 페이지로 보낸다), 이미 받아 둔 것으로는 언제나 알람을 만들 수 있다.
 
-- 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부** × **기기 언어 하나** × 알람에
-  쓰는 카테고리 **넷**(weather 9 · fortune 5 · love 3 · medication 2) = 4 × 19 = **76개**
+- 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부**(시우·미나·도현·애니 **4종** —
+  `data/SystemVoices.kt`) × **기기 언어 하나** × 알람에 쓰는 카테고리 **넷**
+  (weather 9 · fortune 5 · cheer 3 · medication 2 = 클립 **19개**) = 4 × 19 = **76개**.
+  ⚠ `cheer` 의 옛 이름이 `love` 다(§2) — 이 표의 이름을 옛 값으로 되돌리지 말 것.
 - 언어를 하나로 좁힌다 — 앱은 한 번에 한 언어만 쓰고, 언어를 바꾸면 다시 돌아 채운다
 - ⚠ **고를 수 있는 것은 전부 받는다**(2026-09-02). §2 대로 기본 목소리도 운세·응원을
   고를 수 있게 됐으므로, 안 받는 종류가 있으면 **고를 수는 있는데 오프라인에서 소리가 안
@@ -578,7 +591,7 @@ iOS `selectedBucketDraft`).
 
 **클립은 미리 구워 두고 배포 때 게시한다 — cron 이 채우지 않는다**(2026-09-03).
 
-⚠ **`scheduled.stock_seed` 의 시스템 스톡 드레인은 꺼져 있다.** 그걸 기다리면 카탈로그가
+⚠ **cron 의 시스템 스톡 드레인은 꺼져 있다**(`index.ts` 의 `scheduled`). 그걸 기다리면 카탈로그가
 영영 비어 있고, 그동안 클라는 교체 미완료 차단 화면에 갇힌다.
 
 | 단계 | 하는 일 |
@@ -731,9 +744,9 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
-| 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips` · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 진행률/게시 개수 (**여섯 곳**) |
+| 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
 | 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |
-| 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron `scheduled.stock_seed` 의 **시스템 드레인은 꺼져 있다**(`index.ts`) |
+| 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |

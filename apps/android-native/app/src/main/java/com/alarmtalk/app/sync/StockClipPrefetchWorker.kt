@@ -145,8 +145,23 @@ class StockClipPrefetchWorker(
             when (StockClipManifestStore.save(applicationContext, manifest, manifestTicket, session.user.id)) {
                 // 더 새 매니페스트가 이미 나왔다 — 이 회차의 목록으로 캐시를 갈아 끼우면 그
                 // 새 세대를 옛 바이트로 덮는다. 물러나면 그쪽이 이어서 한다.
-                StockClipManifestStore.PublishResult.SUPERSEDED ->
+                StockClipManifestStore.PublishResult.SUPERSEDED -> {
+                    // ⚠ **물러나도 '시도는 끝났다' 는 남긴다**(2026-09-03 리뷰 23차).
+                    //   물러날 상대는 준비 신호를 세우지 않는다 — 매니페스트를 받는 다른 두
+                    //   곳(`loadStockClips`·`VoiceAccessSyncWorker`)에 `report` 가 없다.
+                    //   게다가 그쪽이 같이 건 `enqueue` 는 **이 실행이 아직 안 끝나** `KEEP`
+                    //   에 버려지므로, 여기서 조용히 성공하면 `checkedUserId` 가 그 세션 내내
+                    //   null 로 남아 웰컴 프로모·첫 권한 안내가 **영영 안 뜬다** — 위 조회
+                    //   실패 갈래와 같은 이유다(`docs/spec/gates-and-overlays.md`
+                    //   「준비 신호는 성공·실패 모두 true」).
+                    // ⚠ **`manifestFetched` 를 true 로 바꾸지 말 것.** false 라야 앞 판정이
+                    //   그대로 지켜진다 — 이 갈래는 판정의 근거가 없으니 **문을 열지 못해야**
+                    //   한다(`StockReplacementStatus.report` 가 스스로 막는다).
+                    StockReplacementStatus.report(
+                        userId = session.user.id, pending = false, manifestFetched = false,
+                    )
                     return@runCatching Result.success()
+                }
                 // ⚠ **디스크 쓰기 실패는 물러날 일이 아니다**(Codex #703 P1). 아무도 새
                 // 권위를 공개하지 못한 상태라, 여기서 성공으로 끝내면 완료 푸시를 놓친 기기에
                 // 회수된 프리셋을 갈아 끼울 폴백이 남지 않는다. 다시 온다.

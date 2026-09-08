@@ -511,6 +511,13 @@ export async function findMissingStockTargets(
             ON ga.message_id = m.id AND ga.audio_url = m.audio_url
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
             -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.
+            -- ⚠ **여기에는 배포 창 가드를 붙이지 말 것**(2026-09-08 감사). 이건 목록이
+            --   아니라 **무엇을 구울지 고르는 조회**다. messagesRetiredColumnReady 식으로
+            --   관용하면 은퇴한 행이 '있다' 로 세어져 targets 가 0 이 되고, 호출자가 그대로
+            --   markPrerenderDone 을 찍는다(아래 drainPrerenderQueue,
+            --   routes/voice-profile.ts 의 advance) — 그 목소리는 **영영 다시 구워지지
+            --   않고** 옛 클립을 문 채 운다. 재시도 가능한 500 을 영구 손실과 바꾸는 짓이다.
+            --   컬럼이 없으면 통째로 실패하는 게 맞다: cron 이 다음 틱에 다시 온다.
             AND m.retired_at IS NULL
             AND m.voice_profile_id IN (${ph})`,
     args: voiceIds,
@@ -974,11 +981,6 @@ export class PrerenderSupersededError extends Error {
 }
 
 /**
- * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
- * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
- * (findMissingStockTargets) 가 담당한다.
- */
-/**
  * 합성 요청에만 붙이는 **여운 꼬리**.
  *
  * ⚠ ElevenLabs v3 는 마지막 음소 직후 **그냥 멈춘다.** 실측(2026-09-02, 미나 목소리 20개):
@@ -997,8 +999,7 @@ export class PrerenderSupersededError extends Error {
  * 재시드가 옛 문구를 지우지 못한다.
  *
  * ⚠ 이미 말줄임으로 끝나면 덧붙이지 않는다(모델이 길게 늘어뜨린다).
- */
-/**
+ *
  * v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 제공자에게 보내는 문장 끝에 ` ...` 를 붙여
  * 말끝을 흐리게 한다. mp3 뒤에 붙이는 무음(`appendMp3TrailingSilence`)과 **다른 장치**이고
  * 둘 다 필요하다: 이건 **말소리**를, 저건 **파일 길이**를 늘린다.
@@ -1060,6 +1061,42 @@ export async function messagesRetiredColumnReady(db: DbExecutor): Promise<boolea
   return retiredColumnReady;
 }
 
+/**
+ * 은퇴한 프리셋을 거르는 SQL 조각. **컬럼이 없으면 조건을 빼고 전부 준다.**
+ *
+ * 쓰는 곳이 둘이라(매니페스트 `GET /tts/stock-clips`, 진행 조회
+ * `GET /voice/:id/prerender-status`) 조각도 여기 한 곳에 둔다 — 철자가 갈라지면 한쪽만
+ * 가드가 걸린 상태가 생긴다. 개발자가 고정한 조각이라 사용자 값이 SQL 에 들어가지 않는다.
+ *
+ * ⚠ **읽기 경로에만 쓴다.** 게시 트랜잭션과 '무엇을 구울지 고르는 조회'
+ * (`findMissingStockTargets`)에서 이 조건을 빼면 은퇴한 행이 '있다' 로 세어져 그 회차가
+ * 조용히 끝난다 — 그쪽은 fail-closed 가 맞다(그 조회 위 주석 참조).
+ */
+export async function retiredIsNullClause(db: DbExecutor, alias = 'm'): Promise<string> {
+  return (await messagesRetiredColumnReady(db)) ? `AND ${alias}.retired_at IS NULL` : '';
+}
+
+/**
+ * `voice_prerender_queue.refresh_existing`(#101)이 이미 있는가. 규약은 위
+ * `messagesRetiredColumnReady` 와 같다 — **읽기 경로의 배포 창 방어에만 쓴다.**
+ *
+ * prod 는 아직 #93 이라 #101 과 #110 이 **같은 배포에** 올라간다. 컬럼이 없으면 교체
+ * 회차 자체가 존재할 수 없으므로(그 값을 1 로 적는 경로가 아직 마이그레이션 전이다)
+ * '교체 회차면 좁힌다' 는 조건을 빼도 결과가 같다.
+ */
+let prerenderRefreshColumnReadyFlag = false;
+export async function prerenderRefreshColumnReady(db: DbExecutor): Promise<boolean> {
+  if (prerenderRefreshColumnReadyFlag) return true;
+  const columns = await db.execute({
+    sql: "PRAGMA table_info('voice_prerender_queue')",
+    args: [],
+  });
+  prerenderRefreshColumnReadyFlag = columns.rows.some(
+    (row) => String(row.name) === 'refresh_existing',
+  );
+  return prerenderRefreshColumnReadyFlag;
+}
+
 export async function findLegacyBucketHints(
   db: Client,
   userPk: string,
@@ -1118,6 +1155,11 @@ export async function findLegacyBucketHints(
   }));
 }
 
+/**
+ * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
+ * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
+ * (findMissingStockTargets) 가 담당한다.
+ */
 export async function generateStockClip(
   db: Client,
   env: Env,

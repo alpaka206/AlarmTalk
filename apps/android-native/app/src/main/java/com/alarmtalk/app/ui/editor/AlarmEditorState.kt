@@ -269,20 +269,6 @@ internal class AlarmEditorState(
     }
 
     /**
-     * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
-     *
-     * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
-     * 저쪽은 "**울릴 때** 버킷 클립을 쓰는가" 를 묻고, 그래서 알람 전용·직접 녹음이면
-     * false 다 — 그건 맞다. 그런데 그 함수를 **문구 종류 표시**에도 쓰고 있어서,
-     * 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` → `직접 입력` 으로 뒤집혔다
-     * (실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 true → false).
-     * 고른 문구는 그대로인데 재생 방식만 바뀐 것이므로 **표시가 틀린 것**이다.
-     *
-     * 나누는 기준:
-     *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
-     *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
-     */
-    /**
      * **사용자가 테마 종류를 골랐는가 — 클립이 아직 안 묶였어도.**
      *
      * ⚠ [hasBucketMessageChoice] 와 다르다. 저쪽은 클립이 **실제로 묶였는지**(`audioCacheKey`
@@ -319,6 +305,20 @@ internal class AlarmEditorState(
     fun hasTypedManualText(): Boolean =
         !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isNotBlank()
 
+    /**
+     * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
+     *
+     * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
+     * 저쪽은 "**울릴 때** 버킷 클립을 쓰는가" 를 묻고, 그래서 알람 전용·직접 녹음이면
+     * false 다 — 그건 맞다. 그런데 그 함수를 **문구 종류 표시**에도 쓰고 있어서,
+     * 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` → `직접 입력` 으로 뒤집혔다
+     * (실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 true → false).
+     * 고른 문구는 그대로인데 재생 방식만 바뀐 것이므로 **표시가 틀린 것**이다.
+     *
+     * 나누는 기준:
+     *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
+     *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
+     */
     fun hasBucketMessageChoice(): Boolean {
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)

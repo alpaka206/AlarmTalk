@@ -20,8 +20,10 @@ import {
   generateStockClip,
   markPrerenderDone,
   notifySharedVoicePrerenderComplete,
+  prerenderRefreshColumnReady,
   PrerenderSupersededError,
   releasePrerenderClaim,
+  retiredIsNullClause,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
@@ -2398,6 +2400,33 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  // ⚠ **이 조회는 배포 창(~1분)에도 열려 있어야 한다**(CLAUDE.md 「배포가 마이그레이션보다
+  //   먼저 돈다」). 아래 SQL 은 `messages.retired_at`(#110)·
+  //   `voice_prerender_queue.refresh_existing`(#101)을 보는데, prod 는 아직 #93 이라 둘이
+  //   **같은 배포에** 올라간다. 읽기 경로라 fail-closed 로 둘 이유가 없고, 그 창에는 은퇴한
+  //   행도 교체 회차도 **존재할 수 없어**(그 값을 쓰는 경로가 아직 마이그레이션 전이다)
+  //   조건을 빼도 개수가 같다 — 추측이 아니라 사실이다.
+  //   ⚠ **두 컬럼을 같이** 막는다. 하나만 막으면 다른 하나에서 똑같이 죽어 아무것도
+  //   달라지지 않는다.
+  //   ⚠ **"클라가 견딘다" 를 근거로 삼지 말 것**(2026-09-08 코덱스 지적). 안드로이드는
+  //   실패한 회차를 건너뛰고 5초 뒤 다시 묻지만(`ui/voices/VoiceProfileManagementPanel.kt`),
+  //   iOS 는 그때 `anyPending` 이 false 로 남아 **폴링 루프를 통째로 빠져나온다**
+  //   (`Views/Voices/VoiceProfileManagementPanel.swift` 의 `pollPrerenderStatuses`) —
+  //   화면을 다시 열기 전까지 진행률도, 소유자 주도 `advance` 도 멈춘다. 한쪽 플랫폼만
+  //   보고 "견딘다" 고 적었던 게 이 주석의 앞 판본이다.
+  const retiredClause = await retiredIsNullClause(db);
+  const refreshReady = await prerenderRefreshColumnReady(db);
+  // 컬럼이 없으면 '교체 회차 좁히기' 자체가 성립하지 않는다 — 조건을 통째로 뺀다.
+  const refreshNarrowing = refreshReady
+    ? `AND (
+                 COALESCE(q.refresh_existing, 0) = 0
+                 OR EXISTS (
+                   SELECT 1 FROM generated_audio_assets ga
+                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                      AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                 )
+               )`
+    : '';
   const [generatedRes, queueRes] = await Promise.all([
     db.execute({
       // ⚠ **교체 회차는 '지금 목소리로 만든 것' 만 센다**(Codex #703 P2).
@@ -2415,16 +2444,9 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
               JOIN voice_profiles vp ON vp.id = m.voice_profile_id
               LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
              WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
-               AND m.retired_at IS NULL
+               ${retiredClause}
                AND m.audio_url IS NOT NULL
-               AND (
-                 COALESCE(q.refresh_existing, 0) = 0
-                 OR EXISTS (
-                   SELECT 1 FROM generated_audio_assets ga
-                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
-                      AND ga.provider_voice_id = vp.elevenlabs_voice_id
-                 )
-               )`,
+               ${refreshNarrowing}`,
       args: [id],
     }),
     db.execute({
@@ -2528,6 +2550,15 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     );
   }
 
+  // ⚠ **이 라우트에는 배포 창 가드를 붙이지 않는다**(2026-09-08 감사). `retired_at`(#110)·
+  //   `refresh_existing`(#101)을 여기서 관용하면 그 창에 들어온 호출이 아래
+  //   `findMissingStockTargets` 를 **빈 목록**으로 만들고(은퇴 행이 '있다' 로 세어진다)
+  //   곧바로 `markPrerenderDone` 을 찍는다 — 그 목소리는 **영영 다시 구워지지 않고** 옛
+  //   클립을 문 채 운다. 재시도 가능한 실패를 영구 손실과 바꾸는 짓이다.
+  //   그 창에는 아래 claim 의 `RETURNING ... refresh_existing` 에서 통째로 실패하는 것이
+  //   맞다 — 소유자 주도 전진만 한 번 못 돌고 남은 몫은 cron 이 이어받는다.
+  //   (바로 아래 개수 세기만 가드해 봐야 claim 이 먼저 죽으므로 **도달하지 않는 죽은 코드**다.)
+  //
   // ⚠ **지금 목소리로 만든 클립만 센다.** 교체 회차(`refresh_existing`)는 옛 클립이 전부
   // `audio_url` 을 들고 있어, 개수만 세면 첫 호출부터 21/21 이 나온다 — 클라의 구동 루프는
   // 세 번 연속 진행이 없으면 멈춘 것으로 보고 빠져나가므로(안드로이드 `startPrerenderDrive`),

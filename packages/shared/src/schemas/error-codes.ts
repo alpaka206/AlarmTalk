@@ -304,4 +304,11 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'TTS_GENERATION_FAILED',
   // 스키마 마이그레이션 창에 걸린 요청 — 배포 직후 잠깐이어야 하고, 계속 나오면 사고다.
   'ALARM_SCHEMA_UPGRADING',
+  // ⚠ **이 400 은 그 기기의 사용 기록 큐를 영구히 막는다.** 두 앱 모두 2xx 가 아닌 배치를
+  // 큐에서 지우지 않으므로(`UsageEventUploadWorker`·`UsageEventUploader`), 배치에 한 건이라도
+  // 서버가 모르는 값이 섞이면 그 기기는 그 뒤로 **아무 기록도 올리지 못한다.** 오타가 아니라
+  // 앱이 서버보다 앞서 나갔다는 신호이고(`usage-event.ts` — 새 종류는 서버를 먼저 올린다),
+  // 고칠 수 있는 것은 우리뿐이라 로그가 아니라 경보로 올린다. `POLICY_VERSION_MISMATCH` 와
+  // 같은 갈래다.
+  'INVALID_USAGE_EVENTS',
 ];
