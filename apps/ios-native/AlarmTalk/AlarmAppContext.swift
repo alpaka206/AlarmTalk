@@ -178,11 +178,11 @@ final class AlarmAppContext {
     }
 
     /// LiveActivity 의 Snooze 버튼이 눌렸을 때 호출.
-    /// snoozeMinutesOverride 가 nil 이면 record.snoozeMinutes 사용.
-    func handleAlarmSnoozed(
-        alarmKitIDString: String,
-        snoozeMinutesOverride: Int? = nil
-    ) async {
+    ///
+    /// 미루는 시간은 **언제나 행의 `snoozeMinutes`** 다. 예약 때 `countdownDuration` 에
+    /// 구워진 값이 그것이고, `countdown(id:)` 은 그 값을 바꿀 수 없다 — 호출자가 다른
+    /// 값을 넘길 수 있으면 행과 OS 가 갈라진다(`SnoozeAlarmIntent` 주석).
+    func handleAlarmSnoozed(alarmKitIDString: String) async {
         guard let store else { return }
         guard let record = store.recordByAlarmKitID(alarmKitIDString) else { return }
         guard record.canSnooze else { return }
@@ -192,7 +192,7 @@ final class AlarmAppContext {
         stopVoiceIfOwned(by: record.id)
 
         let now = nowProvider()
-        let minutes = snoozeMinutesOverride ?? record.snoozeMinutes
+        let minutes = record.snoozeMinutes
         let newFireAtMillis = Int64(now.timeIntervalSince1970 * 1000) + Int64(minutes) * 60_000
 
         store.markSnoozed(

@@ -100,26 +100,27 @@ struct StopAlarmIntent: LiveActivityIntent {
 //    countdown 후 다시 alert.
 //  - 한도 도달 / 비활성: Android AlarmRepository.snooze() 처럼 stop(id:) 로 종료.
 //
-// snoozeMinutes 파라미터는 OS UI 에서 노출되지 않으나, App Intent shortcut
-// 으로 직접 호출될 가능성과 우리 측 markSnoozed(newFireAtMillis:) 계산을 위해
-// 보존. 기본값 0 이면 LocalAlarmRecord.snoozeMinutes 값을 사용한다.
+// ⚠ **다시 울릴 시간은 이 인텐트가 정하지 않는다**(2026-09-08 리뷰 39차).
+// 그 값은 예약할 때 행의 `snoozeMinutes` 로 `countdownDuration` 에 **구워진다**
+// (`AlarmKitViewModel.makeConfiguration`). `AlarmManager/countdown(id:)` 은 시간을
+// 받지 않으므로 — 구워진 그 설정을 다시 걸 뿐이다 — 호출자가 다른 값을 줘 봐야
+// **행만 그만큼 전진하고 OS 는 원래 시간에 울린다.** 예전에는 파라미터가 있어서
+// 5분짜리 예약에 30을 넘기면 홈 화면이 "30분 남음" 을 띄우고 5분 뒤에 울렸다.
+// 맞추려면 취소 후 재예약뿐인데, 그건 **울리는 중인 알람의 예약을 끊는** 일이라
+// 실패하면 카운트다운 없는 `.snoozed` 행이 남아 조용히 안 울린다 — 표시 하나와
+// 바꿀 수 없다. 그래서 **파라미터 자체를 없앴다**(가드가 아니라 구조로 닫는다).
 struct SnoozeAlarmIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "알람 다시 울리기"
 
     @Parameter(title: "알람 ID")
     var alarmID: String
 
-    @Parameter(title: "다시 울릴 시간")
-    var snoozeMinutes: Int
-
     init() {
         alarmID = ""
-        snoozeMinutes = 0
     }
 
-    init(alarmID: String, snoozeMinutes: Int = 0) {
+    init(alarmID: String) {
         self.alarmID = alarmID
-        self.snoozeMinutes = snoozeMinutes
     }
 
     @MainActor
@@ -171,10 +172,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
             do {
                 try AlarmAppContext.rearmCountdown(uuid)
                 AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
-                await ctx?.handleAlarmSnoozed(
-                    alarmKitIDString: uuid.uuidString,
-                    snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
-                )
+                await ctx?.handleAlarmSnoozed(alarmKitIDString: uuid.uuidString)
             } catch {
                 // 재무장에 실패했다 — **미룬 것이 아니다.** 행을 전진시키면 '5분 뒤 울림'
                 // 인데 OS 에는 카운트다운이 없고, 복구 경로도 이 행을 후보로 보지 않아

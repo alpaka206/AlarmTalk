@@ -132,11 +132,11 @@ struct AlarmLiveActivity: Widget {
                 }
                 .tint(AlarmTalkBrand.primaryDark)
 
-                // snoozeMinutes 0 -> 인텐트가 레코드의 snoozeMinutes 를 사용한다
-                // (SnoozeAlarmIntent.perform 의 snoozeMinutesOverride == nil 분기).
+                // 미루는 시간은 인텐트가 정하지 않는다 — 행의 `snoozeMinutes` 가 예약 때
+                // `countdownDuration` 에 구워져 있다(`SnoozeAlarmIntent` 주석).
                 // 정확한 "N분 더 자기" 라벨은 시스템 alert 보조 버튼이 표기한다 — LA 는
                 // ContentState 로 분을 받지 않으므로 정직하게 일반 라벨을 쓴다.
-                Button(intent: SnoozeAlarmIntent(alarmID: alarmID, snoozeMinutes: 0)) {
+                Button(intent: SnoozeAlarmIntent(alarmID: alarmID)) {
                     Label("다시 울리기", systemImage: "moon.zzz.fill")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)

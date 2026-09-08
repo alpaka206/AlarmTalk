@@ -249,7 +249,7 @@ final class BackgroundSyncTask {
                 // iOS 는 그때 우리 코드가 돌지 않고 예약해 둔 사운드가 그대로 울린다.
                 if let store {
                     let weather = WeatherVariantRefreshService(store: store, alarmKit: alarmKit)
-                    _ = await weather.refreshDue(token: session.token)
+                    _ = await weather.refreshDue(token: session.token, ownerUserId: session.user.id)
                 }
             }
             // 위 갱신들이 행의 음원을 갈아 끼웠다면 예약도 맞춰야 한다 — iOS 는 예약 시점에

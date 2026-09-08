@@ -619,7 +619,7 @@ struct AlarmTalkApp: App {
         //   토큰으로 앞 계정의 알람을 묻게 된다(리뷰 38차).
         if converted > 0 || rebound > 0, let token = liveSession(for: startAccount)?.token {
             let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
-            _ = await weather.refreshDue(token: token)
+            _ = await weather.refreshDue(token: token, ownerUserId: startAccount)
             // 이 대기 뒤에도 본다 — 아래 정리·재조정이 남의 계정 위에서 돌면 안 된다.
             guard auth.session?.user.id == startAccount else { return }
         }
@@ -729,19 +729,23 @@ struct AlarmTalkApp: App {
     /// 하던 시절의 이름이라, 그 갈래를 걷어낸 뒤에는 없는 기능을 광고하는 이름이었다.
     @MainActor
     private func refreshWeatherVariantsAndReconcile() async {
-        guard let token = auth.session?.token else { return }
+        // ⚠ **세션을 한 번만 읽는다** — 인자마다 `auth.session` 을 다시 읽으면 대기 사이에
+        // 계정이 바뀌었을 때 **한 인자만** 새 계정 것이 된다(리뷰 38차와 같은 형태).
+        guard let session = auth.session else { return }
         // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거 —
         // `DynamicVoiceRefreshService`). 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일
         // 지어낼 문장이 없다. 되살리지 말 것.
         // 곧 울릴 날씨 알람의 조건도 함께 받아 둔다. 반복 알람은 매일 다시 울리므로
         // 저장할 때 받은 어제 조건으로는 오늘 날씨를 말할 수 없다.
         let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
-        _ = await weather.refreshDue(token: token)
+        _ = await weather.refreshDue(token: session.token, ownerUserId: session.user.id)
+        // 이 대기 뒤에도 본다 — 아래 재조정이 남의 계정 위에서 돌면 안 된다.
+        guard auth.session?.user.id == session.user.id else { return }
         // ⚠ **여기가 마지막 관문이다.** 위 두 갱신은 행의 음원을 갈아 끼우는데, 그것만으로는
         // OS 가 예약 때 받아 간 옛 파일이 그대로 울린다(동적 문구 알람은 매일 새 문구를
         // 만들어 놓고 어제 문구로 울었다 — 서버 호출과 월 한도는 매번 차감하면서).
         // 어긋난 예약을 여기서 한 번에 맞춘다.
-        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
+        await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: session.user.id)
     }
 
     /// PR3: timezone / 시간 변경 알림을 관찰해 `.fixed` 공휴일off one-shot 을 새 시각으로

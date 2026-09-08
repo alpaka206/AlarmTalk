@@ -103,7 +103,14 @@ enum ObservedRingMarkerStore {
         prune(&markers, now: now)
         UserDefaults.standard.set(markers, forKey: key)
         guard let stamp else { return false }
-        return now.timeIntervalSince1970 - stamp < staleAfter
+        // ⚠ **미래에 앉은 표시는 이번 회차의 것이 아니다.** 기기 시계가 뒤로 가면(수동 변경·
+        // 시각 보정) `now - stamp` 가 음수라 이 비교를 **언제나** 통과한다 — 시계를 되돌린
+        // 만큼 6시간을 넘겨 살아남아 **어제 표시가 오늘의 정당한 울림을 삼킨다.**
+        // 나이가 음수면 믿지 않는다: 그쪽 최악은 중복 1건이고, 삼킨 회차는 되짚을 수 없다
+        // (`docs/spec/usage-events.md` §2). 서버가 `occurred_at` 을 도착 시각으로 자르는
+        // 것과 같은 이유다(`routes/events.ts` 의 `boundOccurredAt`).
+        let age = now.timeIntervalSince1970 - stamp
+        return age >= 0 && age < staleAfter
     }
 
     /// 테스트용 — 남은 표시를 전부 지운다.
@@ -118,7 +125,11 @@ enum ObservedRingMarkerStore {
     }
 
     private static func prune(_ markers: inout [String: TimeInterval], now: Date) {
-        let cutoff = now.timeIntervalSince1970 - staleAfter
-        markers = markers.filter { $0.value >= cutoff }
+        let nowStamp = now.timeIntervalSince1970
+        let cutoff = nowStamp - staleAfter
+        // 미래 표시는 나이가 음수라 만료되지 않는다 — 함께 걷어낸다. `mark` 는 같은 `now`
+        // 로 적고 곧바로 이 정리를 부르므로 방금 적은 것은 같은 값이라 남는다.
+        // 잘못 걷어도 최악은 중복 1건이다(표시가 없으면 인텐트가 적는다).
+        markers = markers.filter { $0.value >= cutoff && $0.value <= nowStamp }
     }
 }

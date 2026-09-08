@@ -42,13 +42,24 @@ final class WeatherVariantRefreshService {
         self.alarmKit = alarmKit
     }
 
+    /// - Parameter ownerUserId: **이 계정의 알람만** 훑는다. 재예약이 딸려 오는 경로라
+    ///   소유자 필터가 없으면 남의 계정 행을 지금 로그인한 사람의 토큰으로 고치고
+    ///   다시 걸게 된다(`docs/spec/alarm-lifecycle.md` §1-2). 로그아웃 뒤 다시 로그인한
+    ///   기기에는 옛 계정 행이 `enabled = true`, `alarmKitID = nil` 로 남아 있으므로
+    ///   경합이 없어도 재현된다.
+    ///   ⚠ 여기서는 `SessionExpiryStore.expiredOwnerUserId` 로 되짚지 **않는다** —
+    ///   이 경로는 살아 있는 토큰이 있어야 하고, 만료된 계정에는 부를 토큰이 없다.
+    ///   nil 이면 아무것도 하지 않고 0 을 돌려준다.
     /// - Returns: 조건이 실제로 바뀐 알람 수.
     @discardableResult
     func refreshDue(
         token: String,
+        ownerUserId: String?,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
     ) async -> Int {
-        let due = store.alarms.filter { BucketVariantResolver.weatherVariantNeedsRefresh($0, nowMillis: nowMillis) }
+        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
+        let due = store.alarms(visibleTo: owner)
+            .filter { BucketVariantResolver.weatherVariantNeedsRefresh($0, nowMillis: nowMillis) }
         guard !due.isEmpty else { return 0 }
 
         // 같은 (도시, 날짜)는 한 번만 물어본다 — 같은 답을 받으려고 open-meteo 를 여러 번
@@ -91,7 +102,10 @@ final class WeatherVariantRefreshService {
                 if Task.isCancelled { return changed }
                 // 네트워크를 기다리는 사이 사용자가 시각·지역을 고쳤을 수 있다. 그러면 이 답은
                 // 다른 조건의 것이므로 버린다(안드로이드의 DAO 조건부 UPDATE 와 같은 가드).
+                // 계정이 바뀌었을 수도 있다 — 도시·날짜와 같은 자리에서 소유자도 다시 본다
+                // (`alarms(visibleTo:)` 와 같은 판정이라 옛 nil-소유자 행은 그대로 통과한다).
                 guard let current = store.record(id: alarm.id),
+                      current.ownerUserId == nil || current.ownerUserId == owner,
                       current.bucketId == "weather",
                       (current.voiceWeatherCountry?.trimmed ?? "") == key.country,
                       (current.voiceWeatherCity?.trimmed ?? "") == key.city,

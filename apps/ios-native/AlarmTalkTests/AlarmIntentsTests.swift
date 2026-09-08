@@ -90,21 +90,19 @@ final class AlarmIntentsTests: XCTestCase {
 
     // MARK: - SnoozeAlarmIntent
 
-    func test_snoozeIntent_defaultInit_zeroMinutes() {
+    func test_snoozeIntent_defaultInit_emptyID() {
         let intent = SnoozeAlarmIntent()
         XCTAssertEqual(intent.alarmID, "")
-        XCTAssertEqual(intent.snoozeMinutes, 0)
     }
 
-    func test_snoozeIntent_parameterInit_preservesValues() {
+    func test_snoozeIntent_parameterInit_preservesID() {
         let uuid = UUID().uuidString
-        let intent = SnoozeAlarmIntent(alarmID: uuid, snoozeMinutes: 9)
+        let intent = SnoozeAlarmIntent(alarmID: uuid)
         XCTAssertEqual(intent.alarmID, uuid)
-        XCTAssertEqual(intent.snoozeMinutes, 9)
     }
 
     func test_snoozeIntent_perform_invalidUUID_returnsResult() async throws {
-        let intent = SnoozeAlarmIntent(alarmID: "", snoozeMinutes: 5)
+        let intent = SnoozeAlarmIntent(alarmID: "")
         _ = try await intent.perform()
     }
 
@@ -143,7 +141,7 @@ final class AlarmIntentsTests: XCTestCase {
         store.upsert(record)
         ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
-        _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
+        _ = try await SnoozeAlarmIntent(alarmID: kitID).perform()
 
         XCTAssertEqual(recorded.map(\.0), [.alarmSnoozed])
         XCTAssertEqual(recorded.first?.1, record.id)
@@ -156,7 +154,7 @@ final class AlarmIntentsTests: XCTestCase {
         store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false, state: .ringing))
         ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
-        _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
+        _ = try await SnoozeAlarmIntent(alarmID: kitID).perform()
 
         XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
         XCTAssertEqual(recorded.first?.2, "snooze_denied")
@@ -177,7 +175,7 @@ final class AlarmIntentsTests: XCTestCase {
     func test_snoozeIntent_storeNotLoaded_stillRecordsSnoozed() async throws {
         // 저장소에 그 알람이 아직 없다(디스크 로드 전). 다시 울림 판단은 .unknown 으로
         // 이미 이 창을 인정하고 있으므로, 기록도 같은 태도여야 한다.
-        _ = try await SnoozeAlarmIntent(alarmID: UUID().uuidString, snoozeMinutes: 5).perform()
+        _ = try await SnoozeAlarmIntent(alarmID: UUID().uuidString).perform()
 
         XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmSnoozed])
         XCTAssertNil(recorded.first?.1)
@@ -215,7 +213,7 @@ final class AlarmIntentsTests: XCTestCase {
         store.upsert(armedRecord(alarmKitID: kitID, state: .ringing))
         ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
-        _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
+        _ = try await SnoozeAlarmIntent(alarmID: kitID).perform()
 
         XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
         XCTAssertEqual(recorded.first?.2, "snooze_failed")
@@ -241,6 +239,31 @@ final class AlarmIntentsTests: XCTestCase {
             ObservedRingMarkerStore.consume(alarmKitID: kitID, now: Date().addingTimeInterval(600)),
             "늦게 온 커밋이 표시를 남기면 다음 울림이 삼켜진다"
         )
+    }
+
+    /// ⚠ **미래에 앉은 표시는 믿지 않는다**(리뷰 39차). 기기 시계가 뒤로 가면 `now - stamp`
+    /// 가 음수라 6시간 창을 **언제나** 통과해, 어제 표시가 오늘의 정당한 울림을 삼킨다.
+    func test_미래_표시는_이번_회차로_보지_않는다() {
+        let kitID = UUID().uuidString
+        // 시계가 3시간 앞선 상태에서 적혔다(그 뒤 보정으로 되돌아왔다).
+        ObservedRingMarkerStore.mark(alarmKitID: kitID, now: Date().addingTimeInterval(3 * 3600))
+
+        XCTAssertFalse(
+            ObservedRingMarkerStore.consume(alarmKitID: kitID),
+            "미래 표시를 이번 회차로 읽으면 울림 기록이 통째로 삼켜진다"
+        )
+    }
+
+    /// 정리에서도 함께 걷어낸다 — 안 그러면 나이가 음수라 만료되지 않는다.
+    func test_미래_표시는_정리에서_걷힌다() {
+        let kitID = UUID().uuidString
+        let other = UUID().uuidString
+        ObservedRingMarkerStore.mark(alarmKitID: kitID, now: Date().addingTimeInterval(3 * 3600))
+        // 다른 알람의 표시를 남기며 정리가 돌면, 미래 표시는 그때 걷힌다.
+        ObservedRingMarkerStore.mark(alarmKitID: other)
+
+        XCTAssertFalse(ObservedRingMarkerStore.consume(alarmKitID: kitID))
+        XCTAssertTrue(ObservedRingMarkerStore.consume(alarmKitID: other), "멀쩡한 표시까지 걷었다")
     }
 
     func test_handleAlarmStopped_alone_recordsNothing() async throws {

@@ -112,6 +112,32 @@ final class AlarmKitViewModel: ObservableObject {
         }
     }
 
+    /// **이 행을 지금 예약해도 되는가.**
+    ///
+    /// ⚠ 세대(`accountEpoch`)로는 절반만 잡힌다(2026-09-08 리뷰 39차). 세대는 **이 호출이
+    /// 시작된 뒤의** 변화만 잰다 — 이미 바뀐 **뒤에** 시작한 예약은 새 세대를 들고 시작해
+    /// 그대로 성공한다. 자동 401 뒤 다른 계정이 로그인한 기기에는 앞 계정 행이
+    /// `enabled = true`, `alarmKitID = nil` 로 남아 있어서 경합 없이도 재현된다.
+    ///
+    /// 그래서 소유자를 **예약 길목 한 곳**에서 본다. 경로마다 가드를 붙이는 방식은 네 회차
+    /// (23·36·37·38차) 연속으로 **다음 대기**를 남겼다.
+    /// 소유자 미기록(옛 행)은 지금 계정 것으로 본다 — 저장소의 관용과 같다(§1-2).
+    ///
+    /// ⚠ **Keychain 을 읽지 않는다.** `AuthViewModel.persistSession` 은 Keychain 쓰기 실패를
+    /// 일부러 견디므로(잃는 건 재시작 시 자동 로그인뿐), 그걸 기준으로 삼으면 **지금
+    /// 로그인한 본인의 알람을 거절**하게 된다 — "안 울린다" 쪽이라 원래 버그보다 나쁘다.
+    /// 세션이 자동 401 로 끊긴 기기에서는 **끊긴 그 계정**을 활성으로 본다
+    /// (`recoverScheduledAlarms`·`AlarmScheduleReconciler.reconcile` 과 같은 식).
+    func mayScheduleRecord(_ record: LocalAlarmRecord) -> Bool {
+        guard let rowOwner = record.ownerUserId?.nilIfBlank else { return true }
+        // ⚠ **아직 활성 계정을 본 적이 없으면 막지 않는다.** 백그라운드로만 깨어난 실행은
+        // 화면이 없어 `noteActiveAccount` 가 한 번도 돌지 않는다 — 거기서 막으면 예약
+        // 복구가 통째로 거절돼 **안 울린다.** 세대가 첫 관찰을 세지 않는 것과 같은 이유다.
+        // 그 경로는 이미 호출부(`recoverScheduledAlarms`·`reconcile`)가 소유자로 거른다.
+        guard let observed = lastObservedAccountID else { return true }
+        return rowOwner == (observed ?? SessionExpiryStore.expiredOwnerUserId)
+    }
+
     /// 지금 이 알람을 다른 경로가 재예약하는 중인가.
     ///
     /// ⚠ **예약 경로가 겹치면 취소 불가능한 유령 알람이 남는다.** `schedule` 은 매번 새 UUID를
@@ -534,7 +560,13 @@ final class AlarmKitViewModel: ObservableObject {
             guard record.alarmKitID != nil else { continue }
             // 취소에 실패하면 손잡이를 남긴다 — 지우면 고아 예약이 된다(위 주석과 같은 규칙).
             if await cancelScheduledAlarm(record: record) {
-                store.clearScheduleHandle(id: record.id)
+                // ⚠ **취소한 그 UUID 를 아직 들고 있을 때만 지운다**(리뷰 39차).
+                // 이 await 사이에 그 행이 **다시 예약**됐다면 손잡이는 새 UUID 다 —
+                // 그걸 지우면 앱이 영영 못 끄는 고아 예약이 된다.
+                // `applyResolvedCancellations` 의 "안전판은 `enabled` 가 아니라 UUID 일치" 와 같다.
+                if store.record(id: record.id)?.alarmKitID == record.alarmKitID {
+                    store.clearScheduleHandle(id: record.id)
+                }
                 cancelled += 1
             }
             // 실패해도 여기서 따로 적지 않는다 — `cancelScheduledAlarm` 이 이미 회수
@@ -759,6 +791,10 @@ final class AlarmKitViewModel: ObservableObject {
                 continue
             }
 
+            // ⚠ **거절을 예약 실패로 낙인찍지 않는다**(리뷰 39차). 남의 계정 행이라
+            // 거절된 것이면 `.failed` 는 그 사람 화면에 "다시 예약하지 못했어요" 를
+            // 띄우게 되는데(§1-6), 그건 그 사람이 할 수 있는 일이 아니다.
+            guard mayScheduleRecord(prepared) else { continue }
             let scheduled = await schedule(record: prepared, store: store)
             if scheduled {
                 recovered += 1
@@ -879,6 +915,13 @@ final class AlarmKitViewModel: ObservableObject {
         // 종료 sweep 가 도는 동안 만들어진 예약은 그 sweep 가 못 보고 지나가, 로그아웃이
         // 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**으로 남는다.
         guard !isLeavingAccount else { return false }
+        // ⚠ **바뀐 뒤에 시작한 예약은 세대로 못 잡는다** — 소유자를 여기서 본다(위 주석).
+        guard mayScheduleRecord(record) else {
+            Self.paidGateLogger.info(
+                "Refused to schedule an alarm owned by another account (id: \(record.id, privacy: .public))"
+            )
+            return false
+        }
         // ⚠ **await 하기 전에** 적어 둔다 — 돌아와서 달라졌으면 계정이 바뀐 것이다.
         let epochAtStart = accountEpoch
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
@@ -940,7 +983,9 @@ final class AlarmKitViewModel: ObservableObject {
             // ⚠ **await 사이에 계정이 바뀌었을 수 있다**(Codex #699 P1). 그대로 나아가면
             // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
             // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
-            if accountEpoch != epochAtStart || isLeavingAccount {
+            // 소유자도 다시 본다 — 세대가 그대로여도(로그인 없이 관찰만 갱신된 경우)
+            // 활성 계정이 이 행의 것이 아닐 수 있다.
+            if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
                 await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
