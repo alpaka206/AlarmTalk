@@ -2,6 +2,16 @@
 
 > **보관 문서(2026-08-06):** iOS 복구 작업 당시의 스냅샷이다. 현재 출시 준비 상태는
 > [`../qa/dev-test-handoff.md`](../qa/dev-test-handoff.md), 동작 계약은 [`../spec/`](../spec/README.md)를 본다.
+>
+> **그 뒤 해결된 것 — 맨 아래 「사람이 판단해야 하는 것」 을 그대로 읽지 말 것:**
+> - **1번(Apple Developer Program 가입) 완료.** 팀 `29N7GX354N`, 서명 인증서,
+>   `com.alarmtalk.app`·`.widget` 프로파일, App Store Connect 앱 레코드(Apple ID
+>   `6799711245` — `lib/app-version.ts` 의 `IOS.storeUrl`)까지 있다.
+> - **5번(iOS 푸시) 완료, 다만 방식이 다르다.** Firebase·`GoogleService-Info.plist` 를
+>   쓰지 않는다 — 서버가 APNs 로 직접 쏜다(`lib/apns.ts` ·
+>   `PushNotificationCoordinator.swift`). 문서의 Firebase 지시는 따르지 말 것.
+> - 2번(마이그레이션 #94~#96 미실행)은 **당시 기준**이다. 마이그레이션 목록은 그 뒤
+>   id 112 까지 늘었고 dev·prod 배포가 여러 번 돌았다 — 실제 실행 여부는 DB 로 확인할 것.
 
 > ⚠ **이 브랜치를 머지하면 정책버전 4→5 로 전원 재동의가 발생한다.**
 > iOS 와 무관한 안드로이드 베타 사용자도 동의 게이트를 다시 본다.
@@ -502,8 +512,8 @@ iOS 는 `/user/consents/status` 의 9개 필드 중 4개만 읽고 있었다. �
   참고 스크린샷: `~/Downloads/ios-handoff/안드로이드-화면/` (2026-08-05 02:22 촬영).
   ⚠ 그 뒤 develop 에 UI 커밋이 몇 개 더 있으므로(`ab015980` 문구 선택 유지 등)
   **스크린샷보다 안드로이드 소스가 우선**이다.
-- **iOS 푸시 전체** — 옛 코드에 구현이 **0줄**이다. Apple 개발자 계정 → APNs 키 →
-  Firebase iOS 앱 → `GoogleService-Info.plist` 가 먼저라 계정 없이는 착수 자체가 안 된다.
+- **iOS 푸시 전체** — 옛 코드에 구현이 **0줄**이었다. (그 뒤 구현됨. Firebase 를 거치지
+  않고 서버가 APNs 로 직접 쏜다 — `lib/apns.ts` · `PushNotificationCoordinator.swift`.)
 
 ## 사람이 판단해야 하는 것
 

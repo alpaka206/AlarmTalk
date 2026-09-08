@@ -1,6 +1,9 @@
 # 법무 / 개인정보 문서
 
-알람톡(AlarmTalk)의 법무·개인정보 문서 모음이다. 한국 출시, Android 단일 플랫폼 기준으로 쓰여 있다.
+알람톡(AlarmTalk)의 법무·개인정보 문서 모음이다. 한국 출시 기준이다. **처리방침·약관 본문은
+Android·iOS 양쪽을 다룬다** — 정책 버전 5 에서 Apple 로그인·App Store 인앱결제·Apple 국외이전이
+들어왔다. 다만 스토어 제출 체크리스트(`store-disclosures.ko.md`)는 아직 Google Play 기준이고,
+앱 내 문구(`consent-and-permission-copy.ko.md`)도 Android 화면 기준으로 쓰여 있다.
 법률 자문을 대체하지 않는다 — 출시 전 법무 검토를 권장한다.
 
 ## 파일

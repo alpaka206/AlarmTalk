@@ -1,4 +1,14 @@
-I have everything I need.
+# 옛 iOS 스냅샷 인벤토리 (2026-08-05 조사)
+
+> **보관 문서.** 여기 적힌 것은 **삭제 직전의 스냅샷**(`9f427c69^`)이지 오늘의
+> `apps/ios-native/` 가 아니다. 되살린 뒤 규모와 전제가 크게 달라졌다:
+> - Swift **289파일 60,805줄**(당시 158파일 34,263줄), 테스트 **79파일 704개**(당시 36파일 286개)
+> - **SPM 의존성 0개가 아니다** — Sentry(`getsentry/sentry-cocoa`)가 들어왔다(`project.yml`)
+> - **"한 번도 컴파일된 적 없다" 는 틀렸다** — GitHub Actions macOS 러너에서 빌드·테스트가
+>   돌던 코드다(`3b8788d3`, `0bb451f7`, `89988c16`). 실제 Swift 6 에러는 4곳뿐이었다.
+> - `DynamicPromptPreferenceStore` 는 이제 iOS 에도 있다
+> - `Library/Sounds` 경로는 **된다**(2026-08-18 실기기 — `03-플랫폼제약.md`)
+> 지금 코드의 상태는 `apps/ios-native/README.md` 와 코드 자체가 단일 출처다.
 
 ## 구조 요약 (파일:줄 인용)
 
@@ -211,7 +221,7 @@ holiday?country=\(cc)&from=\(from)&to=\(to)
 
 6. **CLAUDE.md 의 최근 규약이 반영 안 됨.** 「알람 편집기 기본값 = 직전 선택 유지」, 「1회성 오버레이는 확인이 끝난 뒤에만 판단」, 「모달 = `IosAlertDialog` 하나」 같은 규칙은 iOS 제거 이후 Android 에서 확립된 것들이다. iOS 에 `DefaultVoicePreferenceStore` 는 있지만 `DynamicPromptPreferenceStore`(문구 종류·무료 테마 기억)는 없다. parity 재작업이 필요하다.
 
-7. **stale 주석이 이미 생기기 시작했다.** `HolidayStore.swift:393` 의 "placeholder ... 구현은 미룬다" 는 실제로 구현된 뒤에도 안 지워졌다. 규모 대비 적은 편이지만, 주석을 신뢰해서 읽는 코드베이스라 이런 게 쌓이면 강점이 부채로 뒤집힌다.
+7. **stale 주석이 이미 생기기 시작했다.** `HolidayStore.swift` 의 "placeholder ... 구현은 미룬다" 는 실제로 구현된 뒤에도 안 지워졌다(그 주석은 그 뒤 정리됐다). 규모 대비 적은 편이지만, 주석을 신뢰해서 읽는 코드베이스라 이런 게 쌓이면 강점이 부채로 뒤집힌다.
 
 8. **테스트가 XCTest 에 묶여 있다.** 동작에는 문제 없지만 iOS 26 시대에 Swift Testing 으로 옮기는 건 별도 작업이다. 우선순위는 낮다.
 

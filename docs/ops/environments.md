@@ -42,15 +42,34 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 
 ### Backend
 
-- Cloudflare Worker secret은 `wrangler secret put <KEY>` 또는 `wrangler secret put <KEY> --env production`으로 설정한다.
+- Cloudflare Worker secret은 **환경을 반드시 명시**해 설정한다:
+  `wrangler secret put <KEY> --env dev` / `wrangler secret put <KEY> --env production`.
+  - ⚠ **`--env` 를 빼지 말 것.** 그러면 `wrangler.toml` 최상단의 `name = "voice-alarm-api"`
+    를 쓰는데, 그 이름은 `[env.production]` 의 name 과 **같은 워커**다 — dev 에 넣으려다
+    prod 를 덮어쓴다. dev 를 가리키는 무인자 형태는 아예 없다.
+  - 여러 값을 한 번에 밀어 넣으려면 `npm run secrets:sync:dev` / `npm run secrets:sync:prod`
+    (`packages/backend/package.json`, 각각 `.dev.vars.dev` / `.dev.vars.prod` 를 읽는다).
 - 로컬 개발 값은 ignored 파일인 `packages/backend/.dev.vars.dev`, `packages/backend/.dev.vars.prod`에 둔다.
 - GitHub Actions 배포에 필요한 값은 GitHub Secrets에 둔다.
+- **마이그레이션 시크릿은 dev/prod 가 갈려 있다.** Repository Actions secret
+  `INIT_DB_SECRET_DEV` / `INIT_DB_SECRET_PROD` 가 각 워커의 `INIT_DB_SECRET` 과 같아야
+  `npm run migrate:{dev,prod}` 가 통과한다(`.github/workflows/deploy-backend.yml`).
+  안 맞으면 404 로 죽는다.
 
 #### Vertex / Gemini 동적 문구
 
 - `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 번역과 동적 문구 생성 경로가 쓴다.
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
+
+### iOS
+
+- 서명·프로비저닝·번들 ID 등 iOS 쪽 환경 값은 여기 적지 않는다. 단일 출처는
+  `docs/ios/ENVIRONMENT.md` 와 `docs/ios/APPLE-ACCOUNT-SETUP.md` 이고, 실제 빌드 설정은
+  `apps/ios-native/project.yml` 이다(`DEVELOPMENT_TEAM` 은 일부러 비워 두고 주입한다).
+- 백엔드가 애플 경로에서 요구하는 시크릿(`APPLE_BUNDLE_ID`, `APPLE_ISSUER_ID`,
+  `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`)의 목록은 `packages/backend/wrangler.toml` 주석이
+  단일 출처다.
 
 ### 이메일 인증
 

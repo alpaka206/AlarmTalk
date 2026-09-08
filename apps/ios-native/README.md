@@ -29,7 +29,8 @@ SwiftUI + AlarmKit. **더 이상 PoC 가 아니다** — 실기기(iPhone 14 Pro
 - TTS generation, local audio cache, and in-app preview.
 - Voice-backed local alarm records with cached audio metadata.
 - Backend alarm list/create/update/delete API client.
-- Voice profile list/update/delete, voice clone upload, raw voice upload, speaker separation API client.
+- Voice profile list/update/delete, voice clone upload, raw voice upload API client.
+  (화자 분리는 제품에서 사라졌다 — 백엔드 라우트·테이블·클라 경로 모두 없다.)
 - TTS generate/message/audio API client for Android-parity backend communication.
 - AlarmKit limitation notes and physical-device checklist.
 
@@ -56,16 +57,22 @@ bash scripts/build-debug.sh
 In Xcode:
 
 1. Select the `AlarmTalk` target.
-2. Set a development team.
-3. Confirm the bundle ID matches the backend `APPLE_CLIENT_ID` env value.
+2. Set a development team (`DEVELOPMENT_TEAM` — `project.yml` 은 일부러 비워 둔다).
+3. Confirm the bundle ID matches the backend `APPLE_BUNDLE_ID` env value.
 4. Confirm Signing & Capabilities includes **Sign in with Apple**.
 5. Run on a physical iPhone with iOS 26+.
 
-The app reads `VOICE_ALARM_API_BASE_URL` from `AlarmTalk/Info.plist`. The default is production:
+`AlarmTalk/Info.plist` 의 `VOICE_ALARM_API_BASE_URL` 은 빌드 설정을 그대로 받는
+자리표시자(`$(VOICE_ALARM_API_BASE_URL)`)이고, 값은 **configuration 이 정한다**
+(`project.yml` — 안드로이드 dev/prod flavor 와 같은 분리):
 
 ```text
-https://api.alarm-talk.com/api
+Debug   → https://api-dev.alarm-talk.com/api
+Release → https://api.alarm-talk.com/api
 ```
+
+⚠ 예전에는 Info.plist 에 prod URL 이 박혀 있어 **개발 중에 prod 를 때렸다.** prod 에는
+베타 테스터 실데이터가 있다 — 이 분리를 되돌리지 말 것.
 
 ## 크래시 리포팅 (Sentry)
 
@@ -117,15 +124,18 @@ VOICE_ALARM_SENTRY_DSN = https:$(SENTRY_SLASH)$(SENTRY_SLASH)<key>@<org>.ingest.
 
 ## Backend Requirements
 
-- Apply migration `35_apple-login-users`.
-- Set `APPLE_CLIENT_ID` to the iOS bundle ID, for example `com.alarmtalk.app`.
+- 마이그레이션은 목록 전체가 `POST /api/init-db` 로 한 번에 돈다(개별 적용이 아니다).
+  Apple 로그인에 필요한 `users.apple_id` 는 #35 가 만들고 #82 가 지웠다가 **#95 가 복구**했다.
+- Set `APPLE_BUNDLE_ID` to the iOS bundle ID, for example `com.alarmtalk.app`.
+  (탈퇴 시 Apple 연결 해제까지 하려면 `APPLE_TEAM_ID` + `APPLE_SIGNIN_KEY_ID` +
+  `APPLE_SIGNIN_PRIVATE_KEY` 도 필요하다 — `docs/ios/APPLE-ACCOUNT-SETUP.md` 4장.)
 - Deploy the backend before testing Apple login from the iOS app.
 
 The app exchanges the Apple identity token at `POST /api/auth/apple`, stores the returned app JWT in Keychain, and uses that app JWT for all backend calls.
 
 ## AlarmKit References
 
-Apple documentation used for this PoC:
+Apple documentation used for the AlarmKit path:
 
 - https://developer.apple.com/documentation/AlarmKit
 - https://developer.apple.com/documentation/AlarmKit/scheduling-an-alarm-with-alarmkit
@@ -148,8 +158,12 @@ Use a real iPhone running an AlarmKit-capable iOS version and Xcode with the mat
 9. Relaunch the app and confirm Keychain session restore, server alarm refresh, and local alarm storage.
 10. Confirm stopping/snoozing updates the app after reopening through `alarmUpdates`.
 11. Confirm the widget extension renders the snooze countdown on the Lock Screen/Dynamic Island path.
-12. Record 60-120 seconds of voice, upload it for cloning, and confirm the profile returns as `ready`.
-13. Generate a Korean TTS wake phrase, preview the cached local audio, then create an alarm with `voice_only` or `alarm_voice`.
+12. Record 12-120 seconds of voice, upload it for cloning, and confirm the profile returns as `ready`.
+    (하한 12초는 서버 `voice-profile.ts` 의 `MIN_CLONE_DURATION_MS` 와 앱
+    `VoiceProfileLimits.minDurationMs` 가 같은 값으로 고정한다. "60초" 는 옛 오기다.)
+13. Generate a Korean TTS wake phrase, preview the cached local audio, then create an alarm with `voice_only`.
+    (재생 방식은 `alarm_only` / `voice_only` **둘뿐**이다 — `alarm_voice` 는 옛 값을 읽기만
+    하는 legacy 이고 되살리지 않는다. CLAUDE.md 「재생 방식은 둘뿐」.)
 
 ## Custom Sound Check
 
@@ -181,7 +195,8 @@ App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases �
 xcodegen 후 Xcode 에서:
 
 1. Scheme → Edit Scheme → Run → Options → StoreKit Configuration 이 `StoreKitConfiguration.storekit` 인지 확인.
-2. 시뮬레이터에서 앱 실행 → Settings → 이용권 → 6개 카드가 displayPrice 와 함께 노출되는지 확인.
+2. 시뮬레이터에서 앱 실행 → 더보기 → 이용권 → 카드 4장(무료·개인·커플·가족,
+   `PlanTier.allCases`)이 뜨고 유료 3장에 `displayPrice` 가 붙는지 확인.
 3. 구매 버튼 탭 → 결제 시트가 뜨고 success/userCancelled/pending 분기가 모두 동작하는지 확인.
 4. "이전 구매 복원" 버튼 → `AppStore.sync()` 가 호출되고 다른 시뮬레이터 기기/Apple ID 의 구독이 propagate 되는지 확인.
 
@@ -226,7 +241,7 @@ xcodegen 후 Xcode 에서:
 
 ### 비-IAP 흐름
 
-`SocialFeatureViewModel.checkout(planKey:)` 는 `@available(*, deprecated)` 마크되었다. 비-IAP 흐름 중 다음만 살아남는다.
+옛 `SocialFeatureViewModel.checkout(planKey:)`(웹 체크아웃)는 **삭제됐다** — 결제는 StoreKit 하나로 들어온다. 비-IAP 흐름 중 다음만 살아남는다.
 
 - `/api/billing/vouchers/family-share` — 가족 공유 코드 발급.
 - `/api/code/register` — 선물/프로모/초대 코드 등록(옛 `/billing/redeem` 은 없다).

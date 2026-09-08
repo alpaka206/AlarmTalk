@@ -122,7 +122,7 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 
 | | 전환 방식 | 시점 |
 | --- | --- | --- |
-| Play | 구매 요청에 교체 모드를 실어 보낸다(`setSubscriptionUpdateParams`) | 지금은 `WITH_TIME_PRORATION` **고정** — 즉시 전환 + 비례정산 |
+| Play | 구매 요청에 교체 모드를 실어 보낸다(`setSubscriptionUpdateParams`) | **방향으로 고른다** — 업그레이드는 `WITH_TIME_PRORATION`(즉시 전환 + 비례정산), 다운그레이드는 `DEFERRED`(다음 갱신일). 아래 「교체 모드는 **방향으로 고른다**」 |
 | App Store | 같은 구독 그룹이라 다른 플랜을 사는 것 자체가 업/다운그레이드 | 애플이 정한다(업그레이드 즉시+비례정산 / 다운그레이드는 갱신일) |
 
 ⚠ **Play 교체 구매는 새 `purchaseToken` 을 발급한다.** 그래서 RTDN 이 그 토큰으로 사용자를

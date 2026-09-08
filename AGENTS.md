@@ -27,7 +27,7 @@ AlarmTalk은 OS 네이티브 **목소리 알람 앱**이다. 네이티브 리라
 - `packages/shared` — zod 스키마. 백엔드·클라이언트 공용 계약
 - `packages/voice` — 보이스 프로바이더 어댑터 계층(백엔드에서 사용)
 - `apps/android-native` — Kotlin/Compose. dev/prod flavor
-- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(브랜치 `feat/ios-revive`, 아직 미출시)
+- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(develop 에 머지 완료, 아직 미출시)
 - `apps/landing` — 웹 랜딩
 
 ## 알람 불변 규칙

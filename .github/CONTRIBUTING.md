@@ -64,6 +64,7 @@ apps/android-native/gradlew -p apps/android-native :app:assembleDevDebug
 5. Ensure type checks pass: `npm run typecheck`
 6. Commit with conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`
 7. Push and open a PR targeting `develop`
+8. Add the **`ci`** label to the PR — CI runs only on `labeled` events, so without it the 7 required checks never start and the PR cannot merge (`gh pr edit <number> --add-label ci`; to re-run after a new commit, remove the label and add it again). Maintainers add this for PRs from forks, which cannot set labels themselves.
 
 ### Branch Strategy
 

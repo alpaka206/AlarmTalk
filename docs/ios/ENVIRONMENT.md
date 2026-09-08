@@ -1,7 +1,11 @@
-# iOS 개발 환경 — 실측 검증 결과 (2026-08-05)
+# iOS 개발 환경 — 실측 검증 결과 (2026-08-05 측정 · 2026-09-08 재확인)
 
 이 문서는 **추정이 아니라 실제로 명령을 돌려 확인한 값**만 담는다.
 맥 환경 준비는 끝났다. 설치할 것이 없다.
+
+> 2026-09-08 재확인: 아래 툴체인 표는 **그대로 맞다**(Xcode 26.6/17F113, SDK 26.5,
+> macOS 26.4/25E246, Swift 6.3.3, XcodeGen 2.46.0, AlarmKit.framework 양쪽 SDK, 시뮬레이터
+> UDID 유효). 바뀐 것은 Node v24.19.0 / npm 11.17.0 / Homebrew 6.0.22 뿐이다.
 
 ## 툴체인
 
@@ -23,18 +27,24 @@
 > 어떤 iOS 빌드도 불가능했다. `xcodebuild -downloadPlatform iOS` 로 8.52GB 를 받아 설치했다
 > (관리자 암호 불필요). `xcodegen` 도 없어서 `brew install xcodegen` 으로 설치했다.
 
-## 없는 것 (밤새 못 채운다)
+## 그때 없던 것 — **지금은 전부 채워졌다** (2026-09-08 확인)
 
-- **Apple Developer Program 계정** — Xcode 에 로그인된 계정 0개, provisioning profile 0개.
-  이 앱은 엔타이틀먼트가 App Groups + Sign in with Apple 이라 **무료 Apple ID(Personal Team)
-  로는 실기기 실행조차 안 된다.** 유료 가입 필요.
-- **iOS 26 실기기** — 알람이 실제로 우는지는 시뮬레이터로 검증 불가.
-- **`GoogleService-Info.plist`** — 레포에 없다. 옛 iOS 코드에는 **푸시 구현 자체가 0줄**
-  (`registerForRemoteNotifications` 0건, Firebase/FCM 참조 0건). iOS 푸시는 코드부터 새로 짜야 하고,
-  APNs 키는 유료 계정이 있어야 발급된다.
-- **`gh` CLI** — 미설치. push/PR 금지라 필요 없다.
+- **Apple Developer Program 계정** — ✅ 있다. 서명 인증서 `Apple Development: GYUWON KIM`,
+  팀 `29N7GX354N`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
+  (만료 2027-08). 확인: `security find-identity -v -p codesigning`,
+  `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
+- **iOS 26 실기기** — ✅ 있다. iPhone 14 Pro(iPhone15,2), iOS **26.6.1**, WiFi 페어링됨.
+  확인: `xcrun devicectl list devices`. Debug 빌드 설치도 된다.
+- **`GoogleService-Info.plist`** — ❌ 여전히 없고 **필요 없다.** iOS 푸시는 Firebase 를 거치지
+  않는다 — 서버가 APNs 에 직접 쏜다(`packages/backend/src/lib/apns.ts` ·
+  `apps/ios-native/AlarmTalk/PushNotificationCoordinator.swift`). 이유는 그 파일 머리 주석.
+- **`gh` CLI** — ✅ 설치됨(`/opt/homebrew/bin/gh`, 2.97.0).
 
-## 검증된 기준선 — 이 숫자가 줄면 회귀다
+## 검증된 기준선 — **2026-08-05 당시 값이다**
+
+> ⚠ **오늘의 회귀 기준으로 쓰지 말 것.** 그 뒤로 규모가 크게 늘었다 — 백엔드 테스트
+> 파일 107개, `AlarmTalkTests` 79파일 704개 `func test`(+ UI 테스트 47개). 기준선이
+> 필요하면 **지금 한 번 돌려서** 그 숫자를 쓴다.
 
 ```
 백엔드 vitest      : 83 files,  1301 passed | 64 skipped   (4.58s)
@@ -120,11 +130,12 @@ pmset -g assertions | grep PreventUserIdleSystemSleep   # 1 이어야 함
 - ⚠ **전원 어댑터를 꽂을 것.** 배터리로는 컴파일 부하에서 밤을 못 넘긴다.
   (`-s` 는 AC 전원일 때만 적용된다.)
 
-## ⚠ `docs/ios/` 는 gitignore 된다
+## ✅ `docs/ios/` 는 이제 추적된다 (2026-08-05 에는 아니었다)
 
-`.gitignore:21` 의 `ios/` 패턴(React Native 시절 잔재)이 `docs/ios/` 를 통째로 잡는다.
-이 디렉터리의 파일은 `git status` 에 안 나오고 `git add` 도 안 먹는다 — **의도대로 두고
-`.gitignore` 를 고치지 마라.** `PROGRESS.md` 는 로컬 파일로만 존재하면 되고, 아침에
-사람이 이 맥에서 직접 읽는다. "커밋했다" 고 적지 말 것.
+그때는 `.gitignore` 의 빗금 없는 `ios/` 패턴이 `docs/ios/` 를 통째로 삼켜서, 클론한
+사람에게는 `CLAUDE.md` 가 가리키는 문서가 **아예 없었다.** 지금은 패턴이 `/ios/` 로
+고쳐져 있고(그 위에 이 사고를 설명하는 주석이 있다), `git ls-files docs/ios` 가 이
+디렉터리의 문서를 전부 보여 준다. `git check-ignore docs/ios/PROGRESS.md` 도 비어 있다.
 
-확인됨: 이 패턴은 `apps/ios-native/` 를 잡지 않는다. 복원되는 189파일은 전부 정상 추적된다.
+`scripts/check-docs-links.py` 가 백틱으로 적은 docs 경로의 **존재와 추적 여부를 함께** 검사한다 —
+같은 사고가 다시 나면 그 검사가 잡는다.

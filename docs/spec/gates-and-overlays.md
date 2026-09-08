@@ -6,7 +6,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 문제의 형태: 게이트 상태(`updateRequired`·`pendingDeletion`·`needsConsent` …)는 서버 응답으로 채워지는데, **응답 전 기본값 `false` 가 '아니오' 와 구분되지 않는다.** 그 틈에 1회성 오버레이(웰컴 프로모, 첫 권한 안내)가 떠서 **소진 플래그까지 태우고**, 뒤늦게 응답이 와 차단 화면이 깔리면 그 위를 덮는다. 사용자는 본 적도 없이 잃고, 플래그는 계정/기기에 남아 앱을 업데이트해도 되살아나지 않는다.
 
-- **소진되는 플래그를 태우는 오버레이는 관련 `checkXxx` 응답이 도착한 뒤에만 판단한다.** 현재 준비 신호 3종: `consentChecked`(`checkConsentStatus`) / `versionChecked`(`checkAppVersion`) / `accountStatusChecked`(`checkAccountStatus`). **iOS 도 같은 축이 필요하다** — `AuthViewModel.consentStatusChecked` 가 그 역할이고, 목소리 등록 폼이 이걸 봐야 응답 전에 동의 체크박스가 안 그려진 채 제출이 열리지 않는다.
+- **소진되는 플래그를 태우는 오버레이는 관련 `checkXxx` 응답이 도착한 뒤에만 판단한다.** 현재 준비 신호 4종: `consentChecked`(`checkConsentStatus`) / `versionChecked`(`checkAppVersion`) / `accountStatusChecked`(`checkAccountStatus`) / **기본 목소리 교체 판정**(`StockReplacementStatus.checkedUserId` — 2026-09-03 리뷰 21차에 양 앱 모두 추가). **iOS 도 같은 축이 필요하다** — `AuthViewModel.consentStatusChecked` 가 그 역할이고, 목소리 등록 폼이 이걸 봐야 응답 전에 동의 체크박스가 안 그려진 채 제출이 열리지 않는다.
 - **준비 신호는 성공·실패 모두 `true`.** 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다 — 네트워크 실패로 영영 `false` 면 그 오버레이는 영영 안 뜬다.
 - **가드만 넣지 말고 `LaunchedEffect` 키에도 넣어야 한다.** 키에 없으면 응답이 도착해도 효과가 재실행되지 않아, 게이트가 풀린 뒤에도 오버레이가 안 뜬다.
 - **계정별 신호는 세션 정리에서 `false` 로 되돌린다**(`clearUserScopedRemoteState` — `consentChecked`·`accountStatusChecked`). 앞 계정의 '확인 끝남' 이 새 계정에 새면 안 된다. 반면 `versionChecked` 는 앱·기기 단위라 되돌리지 않는다(계정이 바뀐다고 설치 버전이 바뀌지 않는다).
@@ -20,12 +20,13 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 | `consentChecked` / `consentStatusChecked` | 동의 상태 응답 | **되돌린다**(계정별) |
 | `accountStatusChecked` | `/auth/me` 응답 | **되돌린다**(계정별) |
 | `versionChecked` / `AppVersionGate.checked` | 최소지원버전 정책 | 되돌리지 않는다(앱·기기 단위) |
+| `stockReplacementChecked` / `stockReplacement.isChecked(for:)` | 기본 목소리 교체가 미완인지 판정 | **계정 id 를 들고 비교한다**(전역 Bool 이면 A 의 확인이 B 에 샌다). 실패한 시도도 '끝났다' 로 센다 |
 
 ## 구현 지도
 
 | 규칙 | Android | iOS |
 | --- | --- | --- |
-| 준비 신호 | `MainViewModel.consentChecked` / `versionChecked` / `accountStatusChecked` | `AuthViewModel.consentStatusChecked` / `AppVersionGate.checked` |
+| 준비 신호 | `MainViewModel.consentChecked` / `versionChecked` / `accountStatusChecked` · `sync/StockReplacementStatus.kt` 의 `checkedUserId`(`AlarmTalkApp.kt` 의 `stockReplacementChecked`) | `AuthViewModel.consentStatusChecked` / `AppVersionGate.checked` · `StockReplacementStatus.isChecked(for:)`(`RootView.blockingGateActive`) |
 | 차단 게이트 집합 | `AlarmTalkApp.kt` 의 프로모 가드 | `RootView.blockingGateActive` |
 | 판정 키(재실행 트리거) | `LaunchedEffect(...)` 키 목록 | `RootView.promoGateKey` |
 | 소진 플래그 | `PromoPromptStore` | `PromoPromptStore` |

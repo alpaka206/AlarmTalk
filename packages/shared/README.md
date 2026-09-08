@@ -13,7 +13,10 @@ packages/shared/
 │   ├── index.ts            barrel export
 │   └── schemas/
 │       ├── auth.ts         표시 이름·인증 입력 규칙
+│       ├── error-codes.ts  에러 코드 목록 — **단일 출처**(백엔드가 이 타입으로만 코드를 낸다)
 │       ├── fortune.ts      운세 입력 규칙
+│       ├── plan.ts         플랜 상수 — plans.key / plans.plan_type / users.plan 구분
+│       ├── usage-event.ts  사용 기록 이벤트 계약
 │       └── voice.ts        목소리 등록·합성 입력 규칙
 ├── test/
 │   └── schemas.test.ts     zod 스키마 단위 테스트

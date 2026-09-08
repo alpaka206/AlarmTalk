@@ -219,7 +219,7 @@ class RingingService : Service() {
             // (원복은 stopRingingOutputs 에서. 상세는 AlarmStreamVolume 주석 참조.)
             //
             // ⚠ **여기에 슬라이더를 넘기지 말 것 — 곱셈이 된다**(2026-08-28 리뷰).
-            // 슬라이더는 이미 **플레이어 게인**으로 걸린다(`applyAlarmToneVolume`·
+            // 슬라이더는 이미 **플레이어 게인**으로 걸린다(`applyAlarmVolume`·
             // `applyVoiceVolume`). 스트림에도 같은 퍼센트를 넘기면 두 번 곱해져, 목소리 10%
             // 알람이 낮은 기기 볼륨 위에서 ~1% 로 떨어져 **안 들린다.**
             // 그래서 스트림은 **중립(가득)** 으로 올리고, 크기는 게인 한 곳에서만 정한다 —

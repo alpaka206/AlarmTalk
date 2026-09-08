@@ -4,11 +4,13 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(브랜치 `feat/ios-revive`, 아직 미출시).
+- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(develop 에 머지 완료, 아직 미출시).
   탭 구성·화면 구성 모두 안드로이드와 같다(알람/목소리/더보기) — 「iOS 는 안드로이드를
   원본으로 삼는다」 절 참조. 빌드·테스트는 XcodeGen(`project.yml`)으로
   `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
-  ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. Apple 개발자 계정이 선행이다.
+  ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. **Apple 개발자 계정은 이미 있다**
+  (Team `29N7GX354N` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
+  남은 것은 스토어 제출과 CI 복구다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경
@@ -44,6 +46,9 @@
 - **init-db 시크릿**: dev/prod 분리. GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD`(**Repository** Actions secret)가 각 워커의 `INIT_DB_SECRET`(`.dev.vars.{dev,prod}` → `npm run secrets:sync:{dev,prod}`)과 일치해야 migrate 통과. 안 맞으면 404.
 
 ## Android dev 빌드 / 설치
+- 빌드(macOS, 이 맥): `JAVA_HOME=/opt/homebrew/opt/openjdk@17 apps/android-native/gradlew -p apps/android-native :app:assembleDevDebug`
+  (`/usr/bin/java` 는 안 잡혀 있으니 `JAVA_HOME` 을 반드시 넘긴다. adb 는
+  `~/Library/Android/sdk/platform-tools/adb` — PATH 에 없다.)
 - 빌드(Windows): `apps\android-native\gradlew.bat -p apps\android-native :app:assembleDevDebug`
 - APK: `apps/android-native/app/build/outputs/apk/dev/debug/app-dev-debug.apk` (패키지 `com.alarmtalk.app.dev`, dev 백엔드 바라봄)
 - 테스트폰 2대(`adb -s`): `R3CW300EZBA`(SM-S918N/S23 Ultra), `RF9R40323AP`(SM-A325N/A32). 설치: `adb -s <serial> install -r <apk>`
@@ -112,13 +117,21 @@
 ### 디자인 토큰 (Android Compose)
 새 화면/컴포넌트는 **생 리터럴 대신 토큰**을 가져다 쓴다. 단일 출처 두 곳:
 - **모서리 반경**: `ui/components/WakerDesign.kt` 의 `Waker*Shape` 토큰이 유일 출처.
-  - `WakerTileShape`(12, 작은 타일·아이콘박스·인라인배너) / `WakerChipShape`(14, 칩·세그먼트·작은카드/행) / `WakerInputShape`·`WakerButtonShape`·`WakerPanelShape`(18, 입력·버튼·표준 카드/패널) / `WakerCardShape`(22, 큰 카드·다이얼로그 컨테이너) / `WakerHeroShape`(24, 히어로 카드) / `WakerDialogShape`(28, 대형 다이얼로그) / `WakerPillShape`(999, 캡슐).
+  - `WakerTileShape`(12, 작은 타일·아이콘박스·인라인배너) / `WakerChipShape`(14, 칩·세그먼트·작은카드/행) / `WakerInputShape`·`WakerButtonShape`·`WakerPanelShape`(18, 입력·버튼·표준 카드/패널) / `WakerCardShape`(22, 큰 카드·다이얼로그 컨테이너) / `WakerHeroShape`(24, 히어로 카드) / `WakerDialogShape`(28, 대형 다이얼로그) / `WakerSheetShape`(상단만 28, 바텀시트 컨테이너) / `WakerPillShape`(999, 캡슐).
   - `RoundedCornerShape(n.dp)` 를 새로 박지 말 것. `MaterialTheme.shapes` 도 이 토큰에서 파생됨.
-  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `RingingActivity` 잠금화면 슬라이더/스누즈(26/21dp — 고정 팔레트 화면 전용 스케일), `IosAlertDialog` 컨테이너(**34dp** — iOS 26 실측. 14 는 iOS 7~18 시절 값이라 되돌리지 말 것, 아래 「모달」 절 참조).
+  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `IosAlertDialog` 컨테이너(**34dp** — iOS 26 실측. 14 는 iOS 7~18 시절 값이라 되돌리지 말 것, 아래 「모달」 절 참조). (`RingingActivity` 는 예외가 아니다 — 슬라이더·스누즈까지 `WakerPillShape` 로 옮겼다.)
 - **색**: `theme/AlarmTalkTheme.kt` 의 `colorScheme` 가 유일 출처. 항상 `MaterialTheme.colorScheme.*` 로 소비, **생 `Color(0x…)` 금지**.
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
-  - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
+  - 문서화된 예외: 알림 팩토리(Notification accent — `RingingNotificationFactory.kt`·`SocialNotificationFactory.kt`), 랜딩/로그인 브랜드 비주얼(`LandingScreen`·`AuthScreen`·`ConsentScreen`), 배경 그라데이션(`WakerDesign.kt` 의 `HomeGradientDark/Light`·`homeGradientBrush()` — 로그인 딥네이비 감성을 모든 탭과 하위 전체화면에 재현, 라이트/다크 2종). (`RingingActivity` 는 더 이상 예외가 아니다 — 전부 `MaterialTheme.colorScheme` 로 옮겼다.)
+- **동작(애니메이션) 원칙**: 웹 쪽 가이드(ease-out 진입, 눌림 스케일, 중단 가능한 보간)를
+  Compose 로 옮긴 것이다 — 코드가 아니라 원리로 번역한다.
+  `ease-out` 진입 → `FastOutSlowInEasing` / `spring(DampingRatioNoBouncy)`,
+  `scale(0.97) :active` → `interactionSource` + `graphicsLayer`(`wakerPressScale`, WakerDesign.kt),
+  transition 의 보간·중단 가능성 → `Animatable`(`snapTo`/`animateTo` + `initialVelocity`),
+  `prefers-reduced-motion` → 시스템 애니메이션 스케일 존중(기본 Compose 애니메이션은 자동).
+  ⚠ 진입/퇴장을 같은 속도로 두지 말 것 — 퇴장이 더 빨라야 한다. 키보드처럼 **연타되는
+  자리에는 애니메이션을 아예 넣지 않는다**(중간에 끊겨 더 어지럽다).
 - **화면 전환**: `ui/app/AlarmTalkApp.kt` 의 `PushEnterTransition`·`PushExitTransition`·
   `PushPopEnterTransition`·`PushPopExitTransition` 네 짝이 유일 출처(220ms).
   - ⚠ **붙이는 자리는 `NavHost` 하나다 — 라우트마다 붙이지 말 것.** Navigation Compose 는
@@ -151,10 +164,12 @@
   - **안드로이드는 `sp` 라 시스템 글꼴 크기를 곱한다.** 테스트폰(SM-A325N)은
     `settings get system font_scale` 이 **1.1** 이었다. 실제로 1.0 으로 바꿔 재보니
     같은 글자의 높이가 80→74px, 68→63px 로 줄었다(≈8%, 되돌려 놓았다).
-  - **iOS 는 반대로 설정을 아예 무시한다.** `AlarmTalkTypography` 가
-    `Font.custom(_, size:)` 를 쓰는데 `relativeTo:` 가 없어 **Dynamic Type 을 따르지
-    않는다.** 그 아이폰은 `preferredContentSizeCategory` 가 **M**(기본 L 보다 한 칸
-    작음)이라 시스템 `.body` 는 16pt 로 그려지는데, 우리 글자는 그대로 17pt 다.
+  - **iOS 는 당시 설정을 아예 무시하고 있었다 — 2026-08-17 에 고쳤다.** `AlarmTalkTypography`
+    가 `Font.custom(_, size:)` 를 `relativeTo:` 없이 쓰고 있어 **Dynamic Type 을 따르지
+    않았다.** 그 아이폰은 `preferredContentSizeCategory` 가 **M**(기본 L 보다 한 칸
+    작음)이라 시스템 `.body` 는 16pt 로 그려지는데, 우리 글자는 그대로 17pt 였다.
+    지금은 두 오버로드 모두 `relativeTo:` 를 넘긴다(`AlarmTalkTypography.pretendard`) —
+    **빼지 말 것.**
   즉 두 기기가 **두 칸 어긋난 채** 비교되고 있었다. **토큰을 깎아 맞추지 말 것** —
   그러면 1.0 인 기기에서 iOS 보다 작아지고, 사용자가 키운 글꼴을 앱이 도로 취소한다.
   맞춰 보려면 두 기기의 글자 크기 설정을 같은 칸에 두고 비교한다.
@@ -383,7 +398,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   ⚠ **원복이 그 클래스의 존재 이유다** — 원래 값을 올리기 **전에** SharedPreferences 에 적고,
   프로세스가 죽어도 다음 실행이 되돌린다. 안 그러면 사용자의 알람 볼륨이 영구히 고정된다.
   ⚠ **그때 넘기는 퍼센트에 슬라이더를 쓰지 말 것 — 곱셈이 된다**(2026-08-28 정정).
-  슬라이더는 이미 **플레이어 게인**으로 걸리므로(`applyAlarmToneVolume`·`applyVoiceVolume`),
+  슬라이더는 이미 **플레이어 게인**으로 걸리므로(`applyAlarmVolume`·`applyVoiceVolume`),
   스트림에도 같은 값을 넘기면 두 번 곱해진다 — 목소리 10% 알람이 낮은 기기 볼륨 위에서
   ~1% 가 되어 **안 들린다.** 스트림은 **중립(가득)** 으로 올리고 크기는 게인 한 곳에서만
   정한다. (하루 전 여기에 반대로 적었다가 리뷰에서 잡혔다. "목소리 크기가 안 먹는다" 의

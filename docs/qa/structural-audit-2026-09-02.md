@@ -105,7 +105,7 @@ iOS 의 ⚠ 주석이 안드로이드의 **2.2배**(1,225 vs 553) — iOS 를 �
   (`AlarmEditorSheet.swift:482` 등).
 - 🔻 원 보고의 「봇 리뷰가 한 번도 못 잡았다」도 **틀렸다** — PR #660 등에서 잡았다(영어 산문이라 심볼 grep 에 안 걸렸을 뿐).
 
-**조치**: `AlarmEditorState` 에 세 질문을 각각 **이름 있는 프로퍼티**로 노출하고 8자리를 전부 교체.
+**조치**: `AlarmEditorState` 에 세 질문을 각각 **이름 있는 프로퍼티**로 노출하고 8자리를 전부 교체. → **완료(2026-09-02)**: `isActiveBucketAlarm()` / `hasBucketMessageChoice()` / `hasChosenBucketKind()` + 조립본 `isManualForDisplay()` · `isManualForSave()`.
 조립식 `!voiceRandomPrompt && …` 가 호출부에 남지 않는 것이 합격 기준. iOS 도 같이.
 
 ### ✅ 2-2. 유료 플랜 판정 사다리 2벌 + 플랜 키 목록 4벌 · 위험 high
@@ -160,10 +160,10 @@ iOS 의 ⚠ 주석이 안드로이드의 **2.2배**(1,225 vs 553) — iOS 를 �
 | # | 내용 |
 |---|---|
 | ✅ 4-1 | `plan-gates.md` 와 `billing-lifecycle.md` 가 **정반대**를 말했다(응답 없음 = 무료 / = 모름) → **PR #709 de2a1dbf 로 이미 수정됨** |
-| ✅ 4-2 | `docs/README.md:29`(코드가 이긴다) vs `docs/spec/README.md:20`(구현이 틀린 것) — **두 진입 문서가 반대**. 미수정 |
-| ✅ 4-3 | `alarm-editor.md:79-82` 이 **이미 없앤** '끌 때까지 반복' 스위치를 요구하고, 구현 지도가 존재하지 않는 `VoiceRepeatSelector` 를 가리킨다(저장소 전체 히트 1 = 그 스펙 줄) |
-| ✅ 4-4 | `voice-and-message.md:573` 이 존재하지 않는 심볼 `prerenderPendingVoiceIds` 를 가리킨다. 원인 확정: 커밋 `5d9254d3` 이 `notReadyVoiceIds` 로 개명하며 스펙만 안 고침 |
-| ✅ 4-5 | `CLAUDE.md:117` 알럿 반경 **14dp** vs 코드 34dp / `CLAUDE.md:231` 액션 **52dp** vs 코드 48dp. 코드 주석은 "14 로 되돌리지 말 것"이라고 명시 |
+| ✅ 4-2 | `docs/README.md`(코드가 이긴다) vs `docs/spec/README.md`(구현이 틀린 것) — **두 진입 문서가 반대**. → **수정됨(2026-09-02)**: `docs/README.md` 규약 절이 규범(스펙이 이긴다)/서술(코드가 이긴다)로 나눠 정의한다 |
+| ✅ 4-3 | `alarm-editor.md:79-82` 이 **이미 없앤** '끌 때까지 반복' 스위치를 요구하고, 구현 지도가 존재하지 않는 `VoiceRepeatSelector` 를 가리킨다(저장소 전체 히트 1 = 그 스펙 줄) → **수정됨**: `docs/spec/alarm-editor.md` 가 「'끌 때까지 반복' 컨트롤은 두지 않는다」로 바뀌었다 |
+| ✅ 4-4 | `voice-and-message.md:573` 이 존재하지 않는 심볼 `prerenderPendingVoiceIds` 를 가리킨다. 원인 확정: 커밋 `5d9254d3` 이 `notReadyVoiceIds` 로 개명하며 스펙만 안 고침 → **수정됨**: `voice-and-message.md` 가 `notReadyVoiceIds` 를 가리킨다 |
+| ✅ 4-5 | `CLAUDE.md:117` 알럿 반경 **14dp** vs 코드 34dp / `CLAUDE.md:231` 액션 **52dp** vs 코드 48dp. 코드 주석은 "14 로 되돌리지 말 것"이라고 명시 → **수정됨**: `CLAUDE.md` 가 컨테이너 34dp · 액션 48dp 로 정정됐다 |
 | ✅ 4-6 | `IosAlertDialog.kt` **헤더 주석이 같은 파일 본문과 6항목에서 반대**(radius 14 vs 34, 폭 300 vs 320, 액션 44 vs 48 …) |
 | ✅ 4-7 | 판정기 주석이 「우선순위 **네 단**」이라 적고 **다섯 개를 나열**한다 — 안드로이드(`PlatformAndLabelUtils.kt:199`)가 더 나쁘다(같은 블록 안 자기모순). iOS 는 4개 세고 4개 적었으나 2단이 빠짐 |
 | ✅ 4-8 | `billing-lifecycle.md:234` 의 "아래 기한"이 **가리키는 절이 없다**. TTL·`isAutoRenewing` 이 이 문서에 0건인데 두 앱 구현은 서로 다르다 |
@@ -173,18 +173,18 @@ iOS 의 ⚠ 주석이 안드로이드의 **2.2배**(1,225 vs 553) — iOS 를 �
 
 ## 5. 정리 후보 — DB
 
-> ⚠ **prod DB 리셋 금지. 되돌릴 수 없는 DDL 은 dev 먼저.** 다음 마이그레이션 번호는 **#108**(최신 #107).
+> ⚠ **prod DB 리셋 금지. 되돌릴 수 없는 DDL 은 dev 먼저.** 다음 마이그레이션 번호는 **#108**(최신 #107) — *2026-09-02 당시 값. 2026-09-08 기준 최신은 #112이고 다음은 #113이다(`test/migrations.lock.json`).*
 
 | # | 대상 | 확신 | DROP 위험 | 비고 |
 |---|---|---|---|---|
 | 5-1 | `subscriptions` 의 apple 컬럼 3개 + partial 인덱스 2개 | high | low | 🔻 **DROP 하지 말 것 — 우선 주석.** #82 가 뺐고 **#96(4주 전)이 iOS 되살리기 일부로 의도적으로 되살렸다.** 지금 지우면 같은 컬럼의 **세 번째 왕복**. 소유자가 #96 의 의도 폐기를 확정한 뒤에만 |
 | 5-2 | `users.deletion_requested_at` | high | **high** | 🔻 **유지 결정이 이미 문서화돼 있다** — `cleanup-audit-2026-08-01.md` 의 「탈퇴 신청 시각 = 처리 이력 증빙이므로 유지」. 개인정보보호법 21조 기산점 |
-| 5-3 | `generated_audio_assets.mime_type` | high | low | 캐시 히트마다 SELECT 해서 버린다. `audio_format`→MIME 이 1:1 하드코딩이라 재구성 가능. DEFAULT 있어 1릴리스 |
+| ~~5-3~~ **완료(#108)** | `generated_audio_assets.mime_type` | high | low | 캐시 히트마다 SELECT 해서 버린다. `audio_format`→MIME 이 1:1 하드코딩이라 재구성 가능. DEFAULT 있어 1릴리스 |
 | 5-4 | `generated_audio_assets.model_id` / `language` | high | medium | 쓰기 전용. **NOT NULL 이라 2릴리스**(재작성 → INSERT 축소) |
 | 5-5 | `voice_uploads.size_bytes` / `duration_ms` | high | medium | 쓰기 전용(응답값은 DB 가 아니라 storage 에서 온다 — `voice-upload.ts:186-195`). 재작성 시 **인덱스 3개 + FK 를 손으로 복원**해야 함 |
-| 5-6 | `idx_voice_profiles_lru` | high | low | 주석이 광고하는 가속을 못 한다(`ORDER BY (last_used_at IS NULL) DESC …` 와 안 맞음). **감사 대장 :98 이 거짓 완료로 찍혀 있다 — 대장도 같이 정정** |
+| ~~5-6~~ **완료(#108 DROP)** | `idx_voice_profiles_lru` | high | low | 주석이 광고하는 가속을 못 한다(`ORDER BY (last_used_at IS NULL) DESC …` 와 안 맞음). **감사 대장 :98 이 거짓 완료로 찍혀 있다 — 대장도 같이 정정** |
 | 5-7 | `idx_retained_billing_pseudonym` | medium | none | 🔻 논거 정정: pseudonym 은 `SHA-256(userId:salt)` **결정론적**이라 재계산 조회가 가능하다(= 법무·CS 질의의 모양). '앞으로도 생길 이유가 없다'는 틀림 |
-| 5-8 | `idx_voucher_codes_status` | medium | none | 21개 접근 지점 전수 확인, status 단독 술어 0건 |
+| ~~5-8~~ **완료(#108 DROP)** | `idx_voucher_codes_status` | medium | none | 21개 접근 지점 전수 확인, status 단독 술어 0건 |
 | 5-9 | `promo_code_redemptions.redeemed_at` | high | low | 쓰기 전용. ⚠ **`voucher_redemptions.redeemed_at` 은 살아 있다**(`plan-groups.ts:110-124` 가 어느 가족 구독을 채택할지 고르는 정렬) — 헷갈리면 조용한 결제 버그 |
 
 ### ⚠ DB 작업 전 반드시 알 것 — CI 블로커

@@ -14,9 +14,8 @@
 
 - 한도: 개인 30 / 커플 50 / 가족 100, **KST 월 단위**, 커플·가족은 그룹이 한 풀을
   나눠 쓴다 (`packages/backend/src/lib/manual-tts-quota.ts`).
-- `POST /tts/generate` 는 **캐시를 먼저 찾고**, 못 찾았을 때만 `reserveManualTtsQuota`
-  로 카운터를 올린다 (`packages/backend/src/routes/tts.ts`). 생성이 실패하면 환불한다.
-- 즉 **같은 문구 = 차감 없음**이 이미 규칙이다. 단 '같다' 의 기준은 캐시 키다:
+- ⚠ **2026-09-07 에 바뀌었다 — 아래는 그 이전 동작이다.** 지금은 직접 입력이면 **캐시 히트도 1회 차감**한다(§3-1, `routes/tts.ts` 의 히트 분기가 `reserveManualTtsQuota` 를 부른다). 생성이 실패하면 환불한다.
+- (옛 동작) `POST /tts/generate` 는 캐시를 먼저 찾고, 못 찾았을 때만 카운터를 올렸다. 그래서 **같은 문구 = 차감 없음**이었다. 지금도 '같다' 의 기준은 캐시 키다:
   제공자 · 제공자 보이스 id · 목소리 프로필 id · 모델 · 언어 · **정규화한 문구** · 출력
   포맷 (`packages/backend/src/lib/audio-cache.ts` 의 `computeTtsCacheKey`).
   → 같은 문구라도 **목소리를 바꾸면 새 생성**이다(그게 맞다 — 다른 소리를 만드는 것이니).
@@ -104,8 +103,12 @@
 
 ## 2. 데이터 모델 (append-only)
 
-`message_library` 에 **컬럼 하나**만 더한다. 테이블을 새로 만들지 않는다 — 이미 모든
+`message_library` 에 컬럼을 더한다. 테이블을 새로 만들지 않는다 — 이미 모든
 생성이 여기 한 줄을 남기고 있어 이력이 이어진다.
+
+> **상태(2026-09-08)**: `last_used_at` 은 마이그레이션 **#112** 로 들어갔고, 같은 회차에
+> 계획에 없던 `in_use` · `in_use_updated_at` 이 함께 추가됐다(사용 기록이 갱신한다 —
+> `routes/events.ts`). `alarm_count` 는 아직 없다.
 
 | 컬럼 | 뜻 |
 | --- | --- |

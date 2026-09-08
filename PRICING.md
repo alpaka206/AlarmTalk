@@ -1,5 +1,7 @@
 # AlarmTalk 수익성 — v3 품질 유지 · 쓴 만큼만 결제 기준
 
+> **2026-06-23 기준 스냅샷.** 가격 결론(3,900/6,900/14,900·가족 5인)은 마이그레이션 #52 로 반영돼 현행이지만, 환율·단가·수요 가정은 그날의 값이다.
+
 > 기준일 **2026-06-23** · 환율 **US$1 ≈ ₩1,538** (2026-06-22)
 > 전제: ① ElevenLabs **고정비(₩46만) 없이 "쓴 만큼만"** 결제, ② TTS는 품질 위해 **`eleven_v3` 유지**(Flash 안 씀), ③ 다이내믹 알람 **하루 2회**, ④ 공유 플랜 음성 메시지 사용.
 > 적용됨: 마이그레이션 `#52 plan-prices-and-family-5` (개인 ₩3,900 / 커플 ₩6,900 / 가족 ₩14,900, 가족 5인)
@@ -105,5 +107,5 @@ VAT 10%(개발사 직접 납부) + Google 수수료 15% → **실수령 ≈ 표�
 - 단가: 실측값(v3 $0.04641/1k자, Multilingual v2 $0.03978, STT $0.00288/분) + 보수 점검용 공개 API v3 $0.10/1k자. 환율 ₩1,538 ([TradingEconomics](https://tradingeconomics.com/south-korea/currency)).
 - Google 구독 수수료 15% ([112622](https://support.google.com/googleplay/android-developer/answer/112622)) · 한국 개발사 VAT 직접 납부 → 실수령 ≈ 77.3% ([138000](https://support.google.com/googleplay/android-developer/answer/138000)).
 - 모델 품질: v3=최고 표현력, Multilingual v2=동급·안정, Flash=실시간·저품질 ([모델 문서](https://elevenlabs.io/docs/overview/models)).
-- 사용 패턴: 다이내믹 알람 `refreshDueDynamicAlarmTalks`(발화당 1회 재생성, ≤200자), 음성 메시지 `sendTtsNote`(건당 ≤200자, 커플·가족 전용). preset 랜덤은 고정 풀이라 캐시 상각.
+- 사용 패턴: 다이내믹 알람은 발화당 1회 재생성(≤200자), 음성 메시지는 건당 ≤200자(커플·가족 전용). preset 랜덤은 고정 풀이라 캐시 상각. (2026-06 당시 함수명 두 개를 적어 두었으나 네이티브 리라이트로 사라져 지웠다 — 현재 경로는 `routes/tts.ts`·`lib/manual-tts-quota.ts`.)
 - 다이내믹 2회/일·멤버 전원 활동·메시지량·인프라비는 추정 — 실제 퍼널/청구서로 보정. VAT 세부는 세무사 확인.

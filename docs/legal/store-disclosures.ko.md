@@ -76,7 +76,7 @@ Settings:
 - Terms
 - Manage voice profiles
 - Delete account
-- Marketing consent toggle (`더보기 > 법적 정보 > 약관 및 개인정보 처리 동의 > 선택 동의`)
+- Marketing consent toggle (`더보기 > 설정 > 법적 정보 > 약관 및 개인정보 처리 동의 > 선택 동의`)
 - Family/partner sharing toggle and group exit
 
 Account deletion:
