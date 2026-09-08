@@ -10,6 +10,7 @@ final class AlarmIntentsTests: XCTestCase {
     private var recorded: [(UsageEventType, String?, String?)] = []
     /// 전역 훅을 갈아 끼우므로 원래대로 되돌려 놓는다 — 안 그러면 다른 테스트로 샌다.
     private var originalRecordUsageEvent: ((UsageEventType, LocalAlarmRecord?, String?) -> Void)!
+    private var originalRearmCountdown: ((UUID) throws -> Void)!
 
     override func setUp() async throws {
         // 경로는 저장소에게 묻는다 — 손으로 조립하면 기기의 진짜 알람 파일을 지운다.
@@ -21,6 +22,9 @@ final class AlarmIntentsTests: XCTestCase {
         ObservedRingMarkerStore.reset()
         recorded = []
         originalRecordUsageEvent = AlarmAppContext.recordUsageEvent
+        originalRearmCountdown = AlarmAppContext.rearmCountdown
+        // 시뮬레이터에서 실제 AlarmKit 카운트다운을 걸 수 없으므로 성공으로 둔다.
+        AlarmAppContext.rearmCountdown = { _ in }
         AlarmAppContext.recordUsageEvent = { [weak self] type, record, detail in
             self?.recorded.append((type, record?.id, detail))
         }
@@ -29,6 +33,7 @@ final class AlarmIntentsTests: XCTestCase {
     override func tearDown() async throws {
         ObservedRingMarkerStore.reset()
         AlarmAppContext.recordUsageEvent = originalRecordUsageEvent
+        AlarmAppContext.rearmCountdown = originalRearmCountdown
         AlarmAppContext.shared = nil
         ctx = nil
         store = nil
@@ -199,6 +204,43 @@ final class AlarmIntentsTests: XCTestCase {
         _ = try await StopAlarmIntent(alarmID: kitID).perform()
 
         XCTAssertEqual(recorded.map(\.0), [.alarmRang, .alarmDismissed])
+    }
+
+    func test_snoozeIntent_rearmFails_recordsDismissedNotSnoozed() async throws {
+        // 재무장이 실패하면 **미룬 것이 아니다.** 행을 전진시키면 '5분 뒤 울림' 인데 OS 에는
+        // 카운트다운이 없고, 어떤 복구 경로도 그 행을 후보로 보지 않아 조용히 안 울린다.
+        struct RearmFailure: Error {}
+        AlarmAppContext.rearmCountdown = { _ in throw RearmFailure() }
+        let kitID = UUID().uuidString
+        store.upsert(armedRecord(alarmKitID: kitID, state: .ringing))
+        ObservedRingMarkerStore.mark(alarmKitID: kitID)
+
+        _ = try await SnoozeAlarmIntent(alarmID: kitID, snoozeMinutes: 5).perform()
+
+        XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
+        XCTAssertEqual(recorded.first?.2, "snooze_failed")
+    }
+
+    func test_lateCommit_afterConsume_leavesNoMarker() async throws {
+        // 콜백은 도착 시각에 상한이 없다 — 앱이 잠들면 몇 분 뒤에 온다. 그때 표시를 남기면
+        // 아무도 소비하지 않아 **다음 회차의 정당한 울림을 삼킨다.**
+        let kitID = UUID().uuidString
+        let observation = ObservedRingMarkerStore.beginObservation(alarmKitID: kitID)
+        XCTAssertNotNil(observation)
+
+        // 그 사이에 사용자가 눌러 소비가 지나갔다.
+        _ = ObservedRingMarkerStore.consume(alarmKitID: kitID)
+        // 한참 뒤에 콜백이 도착한다(시각으로는 못 거르는 지점).
+        ObservedRingMarkerStore.commit(
+            alarmKitID: kitID,
+            observation: observation!,
+            now: Date().addingTimeInterval(600)
+        )
+
+        XCTAssertFalse(
+            ObservedRingMarkerStore.consume(alarmKitID: kitID, now: Date().addingTimeInterval(600)),
+            "늦게 온 커밋이 표시를 남기면 다음 울림이 삼켜진다"
+        )
     }
 
     func test_handleAlarmStopped_alone_recordsNothing() async throws {

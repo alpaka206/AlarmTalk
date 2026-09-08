@@ -163,16 +163,33 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
             await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         } else {
             // `.unknown`(콜드 부팅)은 다시 울림 쪽이다 — 기본 동작과 기록이 같은 방향이어야 한다.
-            AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
+            //
+            // ⚠ **미룸은 재무장이 돌아온 뒤에 적는다**(2026-09-07 리뷰 38차). 판정만으로는
+            //   부족하다 — 보조 버튼이 `.custom` 이라 OS 는 스스로 다시 걸지 않으므로
+            //   이 호출 하나가 **유일한 재무장**이다. 안드로이드도 `repository.snooze` 가
+            //   DB 쓰기와 재예약을 끝낸 뒤에 값을 돌려준다.
             do {
-                try AlarmManager.shared.countdown(id: uuid)
+                try AlarmAppContext.rearmCountdown(uuid)
+                AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
+                await ctx?.handleAlarmSnoozed(
+                    alarmKitIDString: uuid.uuidString,
+                    snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
+                )
             } catch {
-                // ignored
+                // 재무장에 실패했다 — **미룬 것이 아니다.** 행을 전진시키면 '5분 뒤 울림'
+                // 인데 OS 에는 카운트다운이 없고, 복구 경로도 이 행을 후보로 보지 않아
+                // (`recoverScheduledAlarms` 는 `alarmKitID` 가 살아 있어 건너뛰고,
+                //  `AlarmScheduleReconciler` 는 `.snoozed` 를 in-flight 로 비켜 간다)
+                // **조용히 안 울린다.** 안드로이드가 `repository.snooze == null` 에서
+                // 해제로 마무리하는 것과 같은 이유로 상태를 정상으로 되돌린다.
+                AlarmAppContext.recordUsageEvent(.alarmDismissed, snoozedRecord, "snooze_failed")
+                do {
+                    try AlarmManager.shared.stop(id: uuid)
+                } catch {
+                    // ignored
+                }
+                await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
             }
-            await ctx?.handleAlarmSnoozed(
-                alarmKitIDString: uuid.uuidString,
-                snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
-            )
         }
         #else
         // 위젯 타겟: AlarmAppContext 가 없다. LiveActivityIntent.perform() 은 호스트

@@ -342,16 +342,25 @@ final class AlarmKitViewModel: ObservableObject {
                     //   ⚠ 표시 저장소는 사전 전체를 읽고-고쳐-쓰므로 **메인에서만** 만진다
                     //   (인텐트의 소비도 메인이다) — 큐 스레드에서 바로 쓰면 소비된 표시를
                     //   되살려 다음 회차를 삼킬 수 있다.
+                    // 표는 **여기서 동기로** 뽑는다 — 콜백이 도착하는 시각에는 상한이 없어
+                    // (앱이 잠들면 몇 분 뒤다) 그때 판단하면 이미 끝난 회차에 표시를 남긴다.
+                    let observation = ObservedRingMarkerStore.beginObservation(alarmKitID: kitID)
+                    var onRingPersisted: (@Sendable () -> Void)?
+                    if let observation {
+                        onRingPersisted = {
+                            DispatchQueue.main.async {
+                                ObservedRingMarkerStore.commit(
+                                    alarmKitID: kitID, observation: observation
+                                )
+                            }
+                        }
+                    }
                     UsageEventQueue.shared.record(
                         .alarmRang,
                         alarmID: record.id,
                         voiceProfileID: record.voiceProfileId,
                         messageID: record.ttsMessageId,
-                        onPersisted: {
-                            DispatchQueue.main.async {
-                                ObservedRingMarkerStore.mark(alarmKitID: kitID)
-                            }
-                        }
+                        onPersisted: onRingPersisted
                     )
                     // GROUP 3 (6): 포그라운드 ring-time 1회성 햅틱. didEnterAlerting 의
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이

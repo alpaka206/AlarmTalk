@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AlarmKit)
+import AlarmKit
+#endif
 
 // MARK: - AlarmAppContext
 //
@@ -66,6 +69,15 @@ final class AlarmAppContext {
     /// 부가 값 없이 적는 자리(대부분).
     static func recordUsageEvent(_ type: UsageEventType, _ record: LocalAlarmRecord?) {
         recordUsageEvent(type, record, nil)
+    }
+
+    /// 다시 울림 재무장. **이 호출 하나가 유일한 재무장이다** — 보조 버튼이 `.custom` 이라
+    /// OS 는 스스로 다시 걸지 않는다(`AlarmKitViewModel.makeConfiguration`).
+    /// 테스트가 갈아 끼운다(실제 AlarmKit 알람을 예약할 수 없다) — 갈아 끼웠으면 되돌릴 것.
+    static var rearmCountdown: (UUID) throws -> Void = { uuid in
+        #if canImport(AlarmKit)
+        try AlarmManager.shared.countdown(id: uuid)
+        #endif
     }
 
     init(store: LocalAlarmStore) {

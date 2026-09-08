@@ -516,7 +516,9 @@ struct AlarmTalkApp: App {
         //   캐시에 남아 있을 수 있다(`manifestFetchedThisSession`). 그걸로 돌리면 완전성
         //   검사에 걸려 **아무 일도 안 하고** 끝난다.
         // 반환값은 '이번에 서버에서 새로 받았는가' 다 — 교체 미완료 판정의 근거다.
-        let manifestFetched = await voiceStudio.loadStockClips(session: auth.session, force: true)
+        let manifestFetched = await voiceStudio.loadStockClips(
+            session: liveSession(for: startAccount), force: true
+        )
         // 위와 같은 이유 — 매니페스트를 기다리는 사이에도 계정은 바뀔 수 있다.
         // (`loadStockClips` 는 취소를 삼키고 false 를 돌려주므로 여기서 걸러야 한다.)
         guard auth.session?.user.id == startAccount else { return }
@@ -538,7 +540,7 @@ struct AlarmTalkApp: App {
         let rebinder = StockClipLanguageRebinder(store: alarmStore)
         // 언어가 바뀌었거나, 묶인 클립이 서버에서 사라진 알람을 새 세트로 갈아 끼운다.
         let languageOutcome = await rebinder.rebindIfLanguageChanged(
-            session: auth.session,
+            session: liveSession(for: startAccount),
             clips: voiceStudio.stockClips,
             // 부분 세트로 갈아타지 않도록 완전성 판정에 쓴다.
             expectedVariants: voiceStudio.expectedVariants,
@@ -551,13 +553,13 @@ struct AlarmTalkApp: App {
             // (편집기 `savedPromptPreferences` 와 같은 순서).
             conditionInputs: {
                 let server = DynamicPromptPreferences.from(
-                    settings: auth.session?.user.dynamicPromptSettings
+                    settings: liveSession(for: startAccount)?.user.dynamicPromptSettings
                 )
                 return server == DynamicPromptPreferences()
-                    ? .load(userID: auth.session?.user.id)
+                    ? .load(userID: startAccount)
                     : server
             }(),
-            callerUserId: auth.session?.user.id
+            callerUserId: startAccount
         )
         // ⚠ **여기서도 계정을 다시 본다**(2026-09-07 리뷰 37차). 위 재바인딩은 클립을 받느라
         //   **스스로 대기한다** — 그 사이에 계정이 바뀌면 아래 호출은 지금 계정(B)의 행을
@@ -574,11 +576,21 @@ struct AlarmTalkApp: App {
         // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다. 멱등이라 매번 돌아도
         // 안전하고, 묶을 클립이 없으면 아무 일도 하지 않고 다음에 다시 시도한다.
         let legacyOutcome = await rebinder.rebindLiveGenerationRows(
-            session: auth.session,
+            session: liveSession(for: startAccount),
             clips: voiceStudio.stockClips,
             expectedVariants: voiceStudio.expectedVariants,
-            callerUserId: auth.session?.user.id
+            callerUserId: startAccount
         )
+        // ⚠ **이 대기 뒤에도 본다**(2026-09-07 리뷰 38차). 아래 날씨 갱신은 `store.alarms` 를
+        //   **소유자와 무관하게** 훑고 그 자리에서 다시 예약한다 — 계정이 바뀐 뒤에 돌면
+        //   B 의 토큰으로 A 의 알람을 묻고, 방금 B 의 로그인 정리가 취소한 A 의 예약을
+        //   **되살린다.** 그러면 B 에게는 보이지도 않는 A 의 알람이 울린다.
+        if auth.session?.user.id != startAccount {
+            if !languageOutcome.persisted || !legacyOutcome.persisted {
+                StockReplacementStatus.shared.markUnsavedRebind()
+            }
+            return
+        }
         // ⚠ **날씨는 옮기고 나서 조건을 받아 와야 한다**(2026-09-03 리뷰 6차). 방금 만든
         //   행은 `contextVariantIndex` 가 없는데, 날씨 버킷은 그 값이 없으면 발사 때
         //   **마지막 클립("인터넷이 안 돼 날씨를 못 알아봤어요")** 으로 폴백한다
@@ -603,9 +615,13 @@ struct AlarmTalkApp: App {
         }
         let rebound = languageOutcome.rebound
         let converted = legacyOutcome.rebound
-        if converted > 0 || rebound > 0, let token = auth.session?.token {
+        // ⚠ **이 회차의 계정 토큰만 쓴다** — `auth.session` 을 그때그때 읽으면 바뀐 계정의
+        //   토큰으로 앞 계정의 알람을 묻게 된다(리뷰 38차).
+        if converted > 0 || rebound > 0, let token = liveSession(for: startAccount)?.token {
             let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
             _ = await weather.refreshDue(token: token)
+            // 이 대기 뒤에도 본다 — 아래 정리·재조정이 남의 계정 위에서 돌면 안 된다.
+            guard auth.session?.user.id == startAccount else { return }
         }
         // ⚠ **지우는 것은 언제나 맨 마지막이다**(2026-09-03 지시). 위 두 재바인딩이 끝난
         //   **뒤에만** 옛 스톡 클립 파일을 정리한다. 아직 갈아탈 알람이 남아 있으면 함수가
@@ -616,8 +632,10 @@ struct AlarmTalkApp: App {
             // ⚠ **재바인딩과 같은 힌트**여야 한다. 여기만 힌트 없이 물으면 아직 갈아타지
             //   않은 알람을 두고 파일을 지운다 — 그 알람은 무음이 된다.
             legacyHints: voiceStudio.legacyBucketHints,
-            callerUserId: auth.session?.user.id
+            callerUserId: startAccount
         )
+        // 재조정(OS 예약을 다시 거는 자리) 앞에서 마지막으로 본다.
+        guard auth.session?.user.id == startAccount else { return }
         // ⚠ **삭제 결과는 보지 않는다**(2026-09-03 지시). 여기까지 왔으면 받기와 묶기는
         //   끝났고, 파일 정리가 실패해도 서비스는 정상이다 — 그걸로 화면을 막으면 지울 것이
         //   없는 사용자를 이유 없이 가둔다.
@@ -674,10 +692,22 @@ struct AlarmTalkApp: App {
                 // 게시 전)라 미완료다.
                 manifestFetched: manifestFetched,
                 legacyHints: voiceStudio.legacyBucketHints,
-                callerUserId: auth.session?.user.id
+                callerUserId: startAccount
             ),
             manifestFetched: manifestFetched
         )
+    }
+
+    /// **이 회차의 계정일 때만** 세션을 준다.
+    ///
+    /// ⚠ 꼬리에서 `auth.session` 을 직접 읽지 말 것(2026-09-07 리뷰 38차). 그 인자 하나만
+    /// 새 계정 것이 되어, `startAccount` 기준 판정 속에 **남의 행·남의 토큰**이 섞인다.
+    /// 대기마다 가드를 손으로 붙이는 것으로는 못 막는다 — 리뷰 23·36·37·38차가 각각 하나씩
+    /// 붙였고 매번 **다음 대기**가 남았다.
+    @MainActor
+    private func liveSession(for account: String) -> AuthSession? {
+        guard let session = auth.session, session.user.id == account else { return nil }
+        return session
     }
 
     /// 교체 판정을 적는다 — **시작한 계정이 아직 그 계정일 때만.**

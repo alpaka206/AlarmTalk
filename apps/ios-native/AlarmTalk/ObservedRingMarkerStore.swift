@@ -42,8 +42,40 @@ enum ObservedRingMarkerStore {
     /// 큐에 건 프로세스 안에서만 도착하므로, 프로세스와 함께 사라지는 것이 맞다.
     private static var lastConsumedAt: [String: TimeInterval] = [:]
 
+    /// 열려 있는 관찰의 일련번호. **늦게 도착한 콜백을 시각이 아니라 인과로 가른다**
+    /// (2026-09-07 리뷰 38차) — 콜백은 파일 쓰기 뒤 메인 큐를 거치므로 **도착 시각에
+    /// 상한이 없다**(앱이 잠들면 몇 분 뒤에 온다). 그 사이 소비가 지나갔으면 그 표는
+    /// 무효다: 소비가 번호를 지우므로, 늦게 온 커밋은 아무리 늦어도 걸러진다.
+    private static var openObservations: [String: UInt64] = [:]
+    private static var serialCounter: UInt64 = 0
+
+    /// `.alerting` 을 본 순간 **동기로** 부른다. 돌려주는 표를 커밋에 그대로 넘긴다.
+    ///
+    /// 소비가 방금 지나간 회차면 nil 이다 — 그건 이미 끝난 울림을 뒤늦게 처리하는 것이라,
+    /// 토큰으로는 못 가른다(그 표는 지금 막 발급돼 유효하다). 그래서 짧은 창을 함께 쓴다.
+    static func beginObservation(alarmKitID: String, now: Date = Date()) -> UInt64? {
+        guard !alarmKitID.isEmpty else { return nil }
+        if let consumed = lastConsumedAt[alarmKitID],
+           now.timeIntervalSince1970 - consumed < lateMarkWindow {
+            return nil
+        }
+        serialCounter += 1
+        openObservations[alarmKitID] = serialCounter
+        return serialCounter
+    }
+
     /// 관찰자가 이번 회차를 적었다고 남긴다. **적은 뒤에** 부른다 — 순서를 뒤집으면
     /// 그 사이에 죽었을 때 적히지 않은 울림을 적힌 것으로 오인해 삼킨다.
+    /// 울림이 파일에 적힌 뒤에 부른다. [beginObservation] 이 준 표를 그대로 넘긴다.
+    ///
+    /// 표가 이미 무효면(소비가 지나갔거나 더 새 관찰이 열렸으면) **아무것도 남기지 않는다.**
+    /// 남기면 그 표시는 아무도 소비하지 않아 다음 회차의 정당한 울림을 삼킨다.
+    static func commit(alarmKitID: String, observation: UInt64, now: Date = Date()) {
+        guard openObservations[alarmKitID] == observation else { return }
+        openObservations.removeValue(forKey: alarmKitID)
+        mark(alarmKitID: alarmKitID, now: now)
+    }
+
     static func mark(alarmKitID: String, now: Date = Date()) {
         guard !alarmKitID.isEmpty else { return }
         // 방금 소비가 지나갔으면 이 표시는 **이미 끝난 회차**의 것이다 — 남기면 다음 회차를
@@ -64,6 +96,8 @@ enum ObservedRingMarkerStore {
     static func consume(alarmKitID: String, now: Date = Date()) -> Bool {
         guard !alarmKitID.isEmpty else { return false }
         lastConsumedAt[alarmKitID] = now.timeIntervalSince1970
+        // 열려 있던 관찰을 무효로 만든다 — 그 콜백이 몇 분 뒤에 와도 표시를 남기지 못한다.
+        openObservations.removeValue(forKey: alarmKitID)
         var markers = load()
         let stamp = markers.removeValue(forKey: alarmKitID)
         prune(&markers, now: now)
@@ -75,6 +109,7 @@ enum ObservedRingMarkerStore {
     /// 테스트용 — 남은 표시를 전부 지운다.
     static func reset() {
         lastConsumedAt = [:]
+        openObservations = [:]
         UserDefaults.standard.removeObject(forKey: key)
     }
 
