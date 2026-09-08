@@ -30,7 +30,7 @@
 | 사용자 행동 | 결과 |
 | --- | --- |
 | 알림의 '해제' 누름 | 알람 종료 |
-| 알림의 '다시 알림' 누름 | 스누즈 |
+| 알림의 '다시 알림' 누름 | 스누즈 — **단 한도 도달·비활성이면 알람 종료**(기록도 해제로 남는다, `docs/spec/usage-events.md` §1) |
 | **알림을 스와이프로 지움** | **알람 종료** (소리·진동 함께 멈춤) |
 | 전체 울림 화면에서 해제 | 알람 종료 |
 
@@ -125,7 +125,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 전체화면/알림을 누가 고르나 | **시스템(AlarmKit)**. 앱은 판정하지 않는다 | 알람을 `AlarmManager.shared.schedule` 로 넘기면 ALERT UI 는 OS 가 그린다 |
 | 우리가 울림용 알림을 따로 띄우나 | **아니다** | `UNMutableNotificationContent` 는 `SocialNotificationTracker` 한 곳뿐이고, 그건 '가족 알람을 받았다' 안내 전용이다 |
 | 알림을 스와이프하면 꺼지나 | **해당 없음** | 시스템 alert 은 스와이프로 지울 수 없다. 정지·스누즈 버튼으로만 끝난다 |
-| 정지·스누즈는 어떻게 도나 | `StopAlarmIntent` / `SnoozeAlarmIntent`(LiveActivityIntent) → `AlarmManager.shared.stop` / `countdown` | `Shared/AlarmIntents.swift` |
+| 정지·스누즈는 어떻게 도나 | `StopAlarmIntent` / `SnoozeAlarmIntent`(LiveActivityIntent) → `AlarmManager.shared.stop` / `countdown`. **그 `countdown` 한 번이 유일한 재무장**이라(보조 버튼이 `.custom`) 실패하면 미루지 않고 `stop` 으로 끝낸다. 미루는 시간은 예약 때 구워진 행의 `snoozeMinutes` 뿐이다 | `Shared/AlarmIntents.swift`, `AlarmAppContext.rearmCountdown` |
 | 포그라운드일 때 추가로 하는 것 | ring 시점 **경고 햅틱 1회**만 | 백그라운드·잠금화면에서는 시스템이 진동을 소유하므로 앱이 겹쳐 울리지 않게 `applicationState == .active` 로 가드 |
 
 ⚠ **그러니 iOS 에 '전체화면 vs 알림' 분기 코드를 만들지 말 것.** 만들어도 시스템이 이미

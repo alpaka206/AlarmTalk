@@ -283,11 +283,11 @@ struct VoicePreviewConfirmView: View {
                         .font(.title3)
                         .foregroundStyle(replaceExisting ? theme.palette.primary : theme.palette.onSurfaceVariant)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("‘\(registeredVoice.name)’ 을(를) 이 목소리로 교체합니다")
+                        Text("‘\(registeredVoice.name)’ 대신 이 목소리를 써요")
                             .font(theme.typography.bodyMedium)
                             .fontWeight(.semibold)
                             .foregroundStyle(theme.palette.onSurface)
-                        Text("이전에 저장해둔 목소리는 삭제됩니다. 직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다.")
+                        Text("이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 알람음으로 바뀌어요.")
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }

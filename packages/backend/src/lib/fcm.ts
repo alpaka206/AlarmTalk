@@ -73,7 +73,7 @@ function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
 /** 영구적으로 무효한 토큰을 뜻하는 FCM v1 에러 코드 — push_tokens 에서 제거 대상. */
 const STALE_TOKEN_ERRORS = new Set(['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND']);
 
-export interface PushTarget {
+interface PushTarget {
   token: string;
   platform: string;
 }
@@ -85,7 +85,7 @@ export interface PushTarget {
  * 보내는 쪽이 플랫폼을 알아야 한다 — 섞어서 FCM 으로 보내면 iOS 토큰은 전부 조용히
  * 버려진다(FCM 은 등록되지 않은 토큰으로 보고 지운다).
  */
-export async function getPushTargetsForUser(db: Client, userId: string): Promise<PushTarget[]> {
+async function getPushTargetsForUser(db: Client, userId: string): Promise<PushTarget[]> {
   const result = await db.execute({
     sql: `SELECT pt.token, pt.platform FROM push_tokens pt
           JOIN users u ON u.id = pt.user_id

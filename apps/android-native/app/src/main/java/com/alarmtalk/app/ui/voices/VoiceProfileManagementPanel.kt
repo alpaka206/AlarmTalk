@@ -106,7 +106,7 @@ import kotlinx.coroutines.withContext
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
 // 클론 사전렌더 알람 버킷 4종(잠금화면 발사용). greeting 은 미리듣기 전용이라 준비 게이트에서 제외.
-private val CloneAlarmBucketCategories = listOf("weather", "fortune", "love", "medication")
+private val CloneAlarmBucketCategories = listOf("weather", "fortune", "cheer", "medication")
 
 @Composable
 private fun androidNavigationBarHeightPadding(): Dp {

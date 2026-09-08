@@ -344,4 +344,33 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK3] });
     expect(userGone.rows.length).toBe(0);
   });
+
+  it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {
+    const SUB4 = 'hard-del-sub-2';
+    const PK4 = 'hard-del-pk-2';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK4, SUB4, 'harddel2@test.com', 'Hard Delete 2'],
+    });
+    // `usage_events.user_id` 는 users 의 FK 자식이다 — 파기에서 빼먹으면 여기서
+    // FK 로 던져 **탈퇴가 통째로 롤백된다**(1년 보관이 다할 때까지 계정이 안 지워진다).
+    await db.execute({
+      sql: `INSERT INTO usage_events (id, user_id, type, occurred_at)
+            VALUES (?, ?, 'alarm_rang', '2026-09-01T00:00:00.000Z')`,
+      args: ['ev-purge-1', PK4],
+    });
+
+    const res = await buildApp(SUB4, PK4).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK4] });
+    expect(userGone.rows.length).toBe(0);
+    const events = await db.execute({
+      sql: 'SELECT id FROM usage_events WHERE user_id = ?',
+      args: [PK4],
+    });
+    expect(events.rows.length).toBe(0);
+  });
 });

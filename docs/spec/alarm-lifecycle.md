@@ -189,10 +189,26 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 
 ⚠ **행 스냅샷 비교로도 못 닫힌다** — `SchedulingSnapshot` 은 행이 바뀌었는지만 보고
 활성 계정도 `ownerUserId` 도 담고 있지 않다.
+그래서 **복귀 자리의 소유자는 살아 있는 행에서 본다** — 대기 사이에 `claimUnownedAlarms`
+가 옛 행에 임자를 새길 수 있고, 그때 손에 든 복사본은 여전히 소유자 미기록이다.
 
 그래서 **활성 계정이 바뀐 횟수**를 세어, await 전에 적어 두고 돌아와서 달라졌으면 방금 건
 예약을 취소한다. 첫 관찰은 세지 않는다 — 앱을 켤 때마다 진행 중인 예약을 무의미하게
 취소하지 않기 위해서다.
+
+⚠ **세대는 절반만 잡는다 — 나머지 절반은 소유자다**(2026-09-08 리뷰 39차). 세대는 **이
+호출이 시작된 뒤의** 변화만 잰다. 이미 바뀐 **뒤에** 시작하는 예약은 새 세대를 들고
+시작하므로 그대로 성공한다 — 자동 401 뒤 다른 계정이 로그인한 기기에는 앞 계정 행이
+`enabled = true`, `alarmKitID = nil` 로 남아 있어서 **경합 없이도** 재현된다.
+그래서 **행의 소유자가 활성 계정이 아니면 애초에 걸지 않는다**(`mayScheduleRecord`).
+판정은 예약 길목 한 곳에서 한다 — 경로마다 가드를 붙이는 방식은 네 회차 연속으로
+**다음 대기**를 남겼다. 활성 계정은 마지막으로 관찰한 계정이고, 없으면 자동 401 로
+끊긴 계정이다(**Keychain 이 아니다** — 그 쓰기는 실패해도 되는 것이라, 기준으로 삼으면
+본인 알람을 거절한다). 소유자 미기록(옛 행)은 지금 계정 것으로 본다(§1-2).
+⚠ **한 번도 관찰하지 않은 실행에서는 막지 않는다** — 화면 없이 백그라운드로만 깨어나면
+관찰 자체가 없어서, 거기서 막으면 복구가 통째로 거절돼 **안 울린다**(그 경로는 이미
+호출부가 소유자로 거른다).
+거절은 **예약 실패가 아니다** — `.failed` 로 낙인찍지 않는다(§1-6).
 
 ### 1-5. 삭제는 **예약을 먼저** 끊는다
 
@@ -273,7 +289,8 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
-| 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` · `AlarmScheduleReconciler.reconcile(…ownerUserId:)` · `WeatherVariantRefreshService.refreshDue(token:ownerUserId:)` |
+| 1-4 예약 길목의 소유자 게이트 | — | (해당 없음 — 예약이 동기라 창이 없다) | `AlarmKitViewModel.mayScheduleRecord` (`schedule` 의 진입·복귀 두 자리) |
 | 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `RemoteAlarmPullSync.mergeRemote` 의 `pullOwnerUserID` 대조 |
 | 1-1 종료 중 새 예약 차단 | — | (해당 없음 — 세션 클리어가 동기라 창이 없다) | `AlarmKitViewModel.isLeavingAccount` |
 | 1-1 반영 안 한 회차는 ack 안 함 | `POST /alarm/:id/received` | `RemoteAlarmPullSyncService` 의 `audioSecured` | `RemoteAlarmPullSync` 의 `MergeOutcome.deliveryComplete` |

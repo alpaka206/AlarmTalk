@@ -145,8 +145,8 @@ class AlarmEditorScreenTest {
             .toInstant()
             .toEpochMilli()
 
-        assertEquals("오늘 - 5월 13일(수)", repeatSummaryLabel(context, 8, 30, 0, nowMillis, zoneId))
-        assertEquals("내일 - 5월 14일(목)", repeatSummaryLabel(context, 7, 30, 0, nowMillis, zoneId))
+        assertEquals("오늘 · 5월 13일(수)", repeatSummaryLabel(context, 8, 30, 0, nowMillis, zoneId))
+        assertEquals("내일 · 5월 14일(목)", repeatSummaryLabel(context, 7, 30, 0, nowMillis, zoneId))
         assertEquals(
             "매주 월, 화, 수",
             repeatSummaryLabel(context, 7, 30, (1 shl 1) or (1 shl 2) or (1 shl 3), nowMillis, zoneId),

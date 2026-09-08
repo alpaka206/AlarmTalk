@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
@@ -56,7 +57,7 @@ const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family
  */
 const GOOGLE_GIFT_PRODUCT_IDS = new Set<string>(['personal_gift_1m']);
 
-export function isGoogleGiftProductId(productId: string): boolean {
+function isGoogleGiftProductId(productId: string): boolean {
   return GOOGLE_GIFT_PRODUCT_IDS.has(productId);
 }
 
@@ -150,7 +151,7 @@ export async function acknowledgeGoogleSubscription(params: {
  * 실패해도 흐름은 막지 않는다 — 바우처는 이미 나갔고, 여기서 500 을 내면 클라가 결제를
  * 실패로 알고 재시도해 사용자만 혼란스러워진다.
  */
-export async function consumeGoogleProduct(params: {
+async function consumeGoogleProduct(params: {
   baseUrl: string;
   productId: string;
   purchaseToken: string;
@@ -250,11 +251,10 @@ billingGoogle.post('/google/confirm', async (c) => {
       const detail = (await giftRes.text()).slice(0, 300);
       logStructured('warn', { at: 'billing.google.gift', status: giftRes.status, detail });
       const status = giftRes.status === 404 || giftRes.status === 400 ? 404 : 502;
+      const code: ErrorCode =
+        status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED';
       return c.json(
-        {
-          error: 'Google purchase not found or verification failed',
-          error_code: status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
-        },
+        { error: 'Google purchase not found or verification failed', error_code: code },
         status,
       );
     }

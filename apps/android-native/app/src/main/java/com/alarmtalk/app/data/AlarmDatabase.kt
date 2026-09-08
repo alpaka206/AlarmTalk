@@ -8,13 +8,14 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 25,
+    entities = [AlarmEntity::class, HolidayEntity::class, UsageEventEntity::class],
+    version = 26,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
     abstract fun holidayDao(): HolidayDao
+    abstract fun usageEventDao(): UsageEventDao
 
     companion object {
         @Volatile
@@ -51,6 +52,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_22_23,
                     MIGRATION_23_24,
                     MIGRATION_24_25,
+                    MIGRATION_25_26,
                 )
                     // ⚠ **`fallbackToDestructiveMigration()` 을 다시 넣지 말 것**(2026-08-18 제거).
                     //
@@ -293,6 +295,29 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN observedDeliveryVersion TEXT")
+            }
+        }
+
+        /**
+         * 사용 기록 큐(`usage_events`) — 오프라인에서 쌓았다가 연결되면 보낸다.
+         *
+         * ⚠ Room 엔티티와 **컬럼 이름·타입이 정확히 같아야 한다**(`UsageEventEntity`).
+         * 어긋나면 앱이 켜자마자 `IllegalStateException` 으로 죽는다 — 조용히 지워지는
+         * 것보다 낫다는 게 이 저장소의 규약이다(위 `fallbackToDestructiveMigration` 주석).
+         */
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS usage_events (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "type TEXT NOT NULL, " +
+                        "occurredAtMillis INTEGER NOT NULL, " +
+                        "alarmId TEXT, " +
+                        "voiceProfileId TEXT, " +
+                        "messageId TEXT, " +
+                        "detail TEXT, " +
+                        "userId TEXT)",
+                )
             }
         }
     }

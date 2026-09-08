@@ -27,6 +27,22 @@ fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
         ),
     )
 
+/**
+ * 서버가 들고 있는 조건 설정 → 로컬 표현. 바로 위 `toDynamicPromptSettings` 의 **역**이다.
+ *
+ * ⚠ 짝을 떨어뜨려 두지 말 것. 예전에는 이쪽만 `ui/editor` 에 있어서, 편집기 밖에서
+ * (예: 선다운로드 워커) 서버 값을 쓰려면 UI 패키지를 가져와야 했다 — 그래서 실제로
+ * **로컬만 보고 서버를 버리는 코드**가 생겼다(2026-09-03 리뷰 16차).
+ */
+fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
+    DynamicPromptPreferences(
+        weatherCountry = weather.country?.trim().orEmpty(),
+        weatherCity = weather.city?.trim().orEmpty(),
+        fortuneGender = fortune.gender?.trim().orEmpty(),
+        fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
+        fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
+    )
+
 class DynamicPromptPreferenceStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 

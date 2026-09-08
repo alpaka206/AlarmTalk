@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// 시트 드래그에서 '되돌림' 으로 읽는 위쪽 튕김의 문턱(pt/s). 판정만 바꾸고 닫힘 애니메이션은 그대로다.
+/// (제네릭 뷰라 static stored property 를 둘 수 없어 파일 스코프에 둔다.)
+private let bottomSheetCancelFlingVelocity: CGFloat = 125
+
 /// 바텀시트 치수의 **단일 출처**.
 enum BottomSheetMetrics {
     /// 높이 **상한**. `SheetScrollingContent` 의 **스크롤 갈래에만** 걸린다 — 짧은 시트는
@@ -84,8 +88,11 @@ struct BottomSheetHost<Content: View>: View {
                 DragGesture()
                     .onChanged { dragOffset = $0.translation.height }
                     .onEnded { value in
-                        // 충분히 내렸거나 아래로 튕기면 닫는다.
-                        if value.translation.height > 120 || value.predictedEndTranslation.height > 240 {
+                        // **위로 튕기면 되돌린다** — 많이 내렸다가 마음을 바꿔 위로 튕긴 손이
+                        // 닫힘으로 읽히면 안 된다(안드로이드 M3 시트도 속도 부호를 먼저 본다).
+                        // 그 외에는 충분히 내렸거나 아래로 튕기면 닫는다.
+                        let flungUp = value.velocity.height < -bottomSheetCancelFlingVelocity
+                        if !flungUp, value.translation.height > 120 || value.predictedEndTranslation.height > 240 {
                             close()
                         } else {
                             withAnimation(.snappy(duration: 0.2)) { dragOffset = 0 }

@@ -38,7 +38,7 @@ async function ensurePlanGroupMember(
   });
 }
 
-export async function createOwnedPlanGroupForFamilyPlan(
+async function createOwnedPlanGroupForFamilyPlan(
   db: DB,
   userPk: string,
   planId: string,

@@ -93,16 +93,6 @@ struct DefaultVoicePreferenceStore {
         return defaults.string(forKey: key)?.nilIfBlank
     }
 
-    /// 호칭을 저장한다. 비면 지운다.
-    func setListenerTitle(userID: String?, title: String?) {
-        guard let key = listenerKey(userID) else { return }
-        if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            defaults.set(title, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
-    }
-
     /// 명시적 로그아웃·탈퇴에서만 부른다.
     /// ⚠ 자동 401 에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다.
     func clear(userID: String?) {

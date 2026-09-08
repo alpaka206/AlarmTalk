@@ -11,7 +11,6 @@ import SwiftUI
 /// - 선택 동의 2종 — 음성 생체정보(**단방향 철회 액션**) + 마케팅(양방향 토글).
 struct ConsentHistoryView: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var alarmStore: LocalAlarmStore

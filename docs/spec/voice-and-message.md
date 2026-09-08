@@ -21,7 +21,7 @@
 
 ## 2. 문구 목록은 **하나다** — 등급으로 자르지 않는다
 
-**목록은 하나이고, 등급으로 자르지 않는다**: 기본 인사말 · 날씨 · 운세 · 사랑 · 약 ·
+**목록은 하나이고, 등급으로 자르지 않는다**: 기본 인사말 · 날씨 · 운세 · 응원 · 약 ·
 직접 입력. 유료든 무료든 같은 목록을 본다.
 
 줄이 빠지는 사유는 **둘뿐**이고 **둘 다 등급이 아니다**:
@@ -49,15 +49,20 @@
 ### 2026-09-02 이전: 무료는 2종, 유료는 5종이었다
 
 그전에는 무료·기본 목소리에 **아예 다른 화면**(`FreeBucketSettingsPane`)을 띄우고 목록을
-'날씨+약' 으로 잘랐다. 그 차이는 제품 결정이 아니라 **기본 목소리에 운세·사랑 클립이
+'날씨+약' 으로 잘랐다. 그 차이는 제품 결정이 아니라 **기본 목소리에 운세·응원 클립이
 없다**는 사정이었다 — 대사는 `docs/product/stock-clip-scripts.md` 에 확정돼 있었는데
 `STOCK_CLIP_PRESETS` 에 들어가지 않은 채였다. 클립을 채우고 목록을 합쳤다.
 
 ⚠ **화면을 두 벌로 되돌리지 말 것.** 두 화면이 같은 상태를 다르게 읽어 계속 어긋났다 —
 한쪽만 '날씨 · 서울' 로 도시를 붙였고, 한쪽만 준비 중/오프라인을 구분했다.
 
-⚠ **en·ja 는 아직 한국어를 복사해 둔 임시 문구다**(운세·사랑). `STOCK_CLIP_PLACEHOLDER_LANGUAGES`
-에 적혀 있고, 백엔드 테스트가 표와 실제를 양방향으로 대조한다 — **출시 전에 교체할 것.**
+⚠ **카테고리 id 는 `cheer` 이고 옛 이름은 `love` 였다**(2026-09-02). 대사가 응원·자기돌봄으로
+확정되면서 개념을 바꿨다 — 연애 문구가 아니다. **옛 값을 읽는 접기는 지우지 말 것**:
+이미 저장된 알람 행과 스토어에 올라간 구버전 앱이 `love` 를 들고 있고, 접지 않으면
+모르는 값으로 보여 `preset` 으로 떨어진다(응원을 골랐는데 기본 인사말이 울린다).
+자리는 넷이다 — 서버 `normalizeRandomContext`·`stockPresetCategory`, 안드로이드
+`normalizedRandomPromptContext`·`randomPromptContextForBucket`, iOS
+`RandomPromptContext.normalized`·`forBucket`.
 
 ### 그래도 갈리는 축: **오디오를 어떻게 얻는가**
 
@@ -220,6 +225,29 @@
   - **강등이 디스크에 남은 뒤에 확정한다.** iOS 는 알람 저장이 비동기라, 백그라운드 푸시로
     깨어난 실행이 쓰기 전에 끝나면 다음 실행이 옛 알람을 다시 읽어 오는데 표식만 앞서 나가
     **영영 다시 내리지 않는다.** 그 자리에서는 동기 저장으로 성공을 확인한 뒤에만 적는다.
+  - ⚠ **표식과 비교하는 것은 오디오를 만든 시각이다 — 알람 행의 수정 시각이 아니다**
+    (2026-09-07 리뷰 27차). 행의 `updatedAtMillis` 는 시각·이름만 고쳐도 앞으로 가고,
+    **울리기만 해도** 간다(`markRinging`). 그걸 보면 매일 울리는 알람이 스스로 면제를
+    받아 **지운 사람의 목소리로 계속 운다** — 표식은 0건 강등에도 확정되므로 다음 회차에
+    다시 잡히지도 않는다. 오디오 시각을 모르면(캐시 키가 없거나 파일이 사라졌으면)
+    **강등한다** — 표식을 보기 전의 규칙 그대로다.
+  - ⚠ **표식 경로의 호출자는 모두 둘을 함께 넘긴다 — 기본 목소리 포함(`allowSystemVoice`)
+    과 창(`invalidatedBefore`).** 제자리 교체는 프로필 id 를 그대로 두므로 **기본 목소리도
+    대상**이고(마이그레이션 #111 이 그 경우다), 표식 뒤에 만든 오디오는 건드리지 않는다.
+    기본값(둘 다 끔)을 쓰는 곳은 **자기 클론을 스스로 교체한 그 기기** 하나뿐이다.
+    한 자리만 빠져도 그쪽은 조용히 아무것도 안 한다 — 실제로 안드로이드 전경 수렴 경로가
+    둘 다 빠뜨린 채였다(2026-09-07 리뷰 28·29차).
+  - ⚠ **두 값은 서로 다른 시계다 — 알고 받아들인 것이다.** 표식은 서버의 UTC
+    (`datetime('now')`)이고 오디오 나이는 **기기가 찍은 값**이다(안드로이드 파일 mtime,
+    iOS `createdAtMillis` = `Date()`). 기기 시계가 앞서 있으면 낡은 오디오가 새것으로 보여
+    **강등을 빠져나가고**(그 세대는 다시 잡히지 않는다 — 0건 회차도 확정된다), 뒤처져
+    있으면 표식 **뒤에** 만든 멀쩡한 오디오를 되돌릴 수 없이 깎는다. 어긋남이 그 오디오의
+    나이(앞선 경우)보다 커야 실제로 생긴다. 이 성질은 27차 이전에도 있었다 —
+    `updatedAtMillis` 역시 기기 시계였고, 그건 울릴 때마다 앞으로 가서 훨씬 헐거웠다.
+    없애려면 **서버가 준 세대 문자열을 오디오와 함께 적어** 같은 도메인에서 비교해야 한다
+    (⚠ **동등 비교가 아니라 순서 비교** — 표식은 낡은 채 들어올 수 있다. 위 「표식은 뒤로
+    가지 않는다」와 같은 이유다). 프리셋 갈래는 이미 시계 없이 판정한다
+    (`incomingIsSupersededByManifest`) — 직접 입력 오디오만 시각으로 남아 있다.
   - **확정을 미루더라도 이미 내린 것은 안내한다.** 계정이 바뀌어 확정을 보류한 회차도 강등은
     이미 일어났고, 그 이유를 말할 기회는 그 회차뿐이다(다음 회차는 대상이 0이라 셀 것이 없다).
   - **교체한 기기는 목록에 새 목소리를 올리기 전에 강등을 끝낸다.** 정리에 실패하면 **올리지
@@ -447,7 +475,7 @@ AlarmKit 예약을 다시 만들 수 있다.
 - 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부** × **기기 언어 하나** × 알람에
   쓰는 카테고리 **넷**(weather 9 · fortune 5 · love 3 · medication 2) = 4 × 19 = **76개**
 - 언어를 하나로 좁힌다 — 앱은 한 번에 한 언어만 쓰고, 언어를 바꾸면 다시 돌아 채운다
-- ⚠ **고를 수 있는 것은 전부 받는다**(2026-09-02). §2 대로 기본 목소리도 운세·사랑을
+- ⚠ **고를 수 있는 것은 전부 받는다**(2026-09-02). §2 대로 기본 목소리도 운세·응원을
   고를 수 있게 됐으므로, 안 받는 종류가 있으면 **고를 수는 있는데 오프라인에서 소리가 안
   나는** 알람이 생긴다. 목록이 늘면 받는 것도 같이 늘어야 해서 두 집합을 한 곳에서
   유도한다(`FreeBucketOrder` / `FreeBucket.order`) — 손으로 적지 않는다.
@@ -478,7 +506,7 @@ AlarmKit 예약을 다시 만들 수 있다.
 | 시점 | 무엇을 하나 |
 | --- | --- |
 | **테마를 고를 때** | **값만 바꾼다.** 안드로이드 `bindStockBucketClips` 는 `getCachedAudio(cacheKey) ?: 다운로드` 로 **캐시 우선**이고, iOS `prepareStockClip` 도 같다. 선다운로드가 제 일을 했으면 네트워크가 없다 |
-| **저장할 때** | 그 (목소리·테마·언어)의 클립 목록을 **묶기만** 한다. 조건형(날씨·운세)은 조건에, 회전형(약·사랑)은 순번에 맞춰 고른다 |
+| **저장할 때** | 그 (목소리·테마·언어)의 클립 목록을 **묶기만** 한다. 조건형(날씨·운세)은 조건에, 회전형(약·응원)은 순번에 맞춰 고른다 |
 | 캐시가 비어 있으면 | 그때만 받는다 — 선다운로드 실패에 대한 **폴백**이지 정상 경로가 아니다 |
 
 ⚠ **테마 선택을 준비된 음원에서 파생시키지 말 것.** iOS 는 2026-08-12 전까지 "어떤 테마를
@@ -518,6 +546,56 @@ iOS `selectedBucketDraft`).
 - ⚠ **커스텀 알람이 성공했다는 이유로 확정하지 말 것.** 한 목소리를 커스텀 알람과 프리셋
   알람이 **함께** 쓰는 경우가 흔하다 — 커스텀 쪽 성공으로 확정하면 프리셋 쪽이 영영 남는다.
 - **옛 서버는 이 필드를 주지 않는다** — 그때는 `true`(준비됨)로 읽어 예전처럼 동작한다.
+
+## 5-3. 대사를 통째로 갈 때는 — **지우지 말고 은퇴시킨다**
+
+> 2026-09-03 신설. 「지우고 다시 굽는다」로 만들었다가 리뷰 두 회차에 걸쳐 되돌린 자리다.
+
+스톡 문구·목소리를 전면 교체할 때, 옛 프리셋 행을 **지우지 않는다.** `messages.retired_at`
+에 시각을 찍어 **목록에서만** 뺀다.
+
+**왜 지우면 안 되는가.** 옛 행을 지우고 참조 알람을 `message_id = NULL` 로 떼면 셋이 깨진다:
+
+| 깨지는 것 | 결과 |
+| --- | --- |
+| 되살릴 수 없는 알람 | 버킷 없이 클립 하나만 물린 **옛 행**은 재바인더 두 갈래 **어디에도** 안 걸린다(하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 그 행은 둘 다 없다) → 영구 sound-only |
+| R2 미아 | `generated_audio_assets` 행이 R2 키의 **유일한 원장**이다. 지우면 목소리 삭제·**생체정보 동의 철회**에도 그 오디오를 찾아 지울 수 없다 |
+| 배포 직후 공백 | 기본 목소리 클립이 0개가 된다(게시는 뒤에 온다 — 위 ⑤) |
+
+⚠ **은퇴 수단으로 `is_preset` 을 내리지 말 것.** 그 값은 '목록에 뜨는가' 가 아니라 **세 가지를
+동시에** 뜻한다:
+1. **쓰기 인가** — `messageBelongsToCaller` 의 시스템·공유 프리셋 갈래,
+2. **읽기 인가** — `GET /tts/messages/:id/audio` 의 같은 갈래. 그 라우트의 「알람이 참조하면
+   허용」 갈래는 `target_user_id` 만 보므로 **가족 알람만** 커버한다 — 본인 알람은 안 걸린다,
+3. **TTL 면제** — `audio-retention.ts` 가 프리셋을 보존 스윕에서 제외한다.
+
+내리면 그 알람은 **저장도 안 되고, 재다운로드도 안 되고, 30일 뒤 오디오까지 지워진다** —
+지키려던 호환성이 정확히 반대로 깨진다. 그래서 표식을 따로 둔다.
+
+**`retired_at` 을 봐야 하는 곳은 「살아 있는 프리셋이 있는가」를 묻는 전부다.** 하나라도
+빠지면 조용히 깨진다 — 특히 `generateStockClip` 의 INSERT 가드를 빠뜨리면 **교체가 아무 일도
+안 한다**(INSERT 0행 → 옛 행을 게시본으로 돌려준다). 목록은 「구현 지도」에 있다.
+
+**클립은 미리 구워 두고 배포 때 게시한다 — cron 이 채우지 않는다**(2026-09-03).
+
+⚠ **`scheduled.stock_seed` 의 시스템 스톡 드레인은 꺼져 있다.** 그걸 기다리면 카탈로그가
+영영 비어 있고, 그동안 클라는 교체 미완료 차단 화면에 갇힌다.
+
+| 단계 | 하는 일 |
+| --- | --- |
+| ① `npm run preview:stock` | 확정 대사를 목소리 4종 × 3언어로 굽는다(`voice-preview/`). 멱등이고, **합성 입력의 지문**이 다르면 다시 굽는다 |
+| ② 사람이 들어 본다 | 이 단계가 있어서 미리 굽는다 — 배포 때 합성하면 아무도 못 듣는다 |
+| ③ 스토어에 앱을 올린다 | `minSupported` 가 이미 그 버전이라 **순서를 어기면 앱이 벽돌이 된다** |
+| ④ `main` 머지 | 배포 + 마이그레이션(은퇴) |
+| ⑤ `npm run publish:stock -- --env dev\|prod` | R2 업로드 + 행 INSERT. **환경별로 두 번** |
+
+**왜 cron 과 같이 두지 않는가.** ④와 ⑤ 사이의 5분 틱이 **같은 타깃을 합성하기 시작한다.**
+cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있음' 으로 보고 건너뛰어 **사람이
+들어 보고 확정한 바이트가 영영 안 올라가고**, 그때부터 결정론적 키를 놓고 두 렌더가 겹치는
+경합이 되살아난다. 되살릴 거라면 **게시가 렌더 산출물을 덮어쓰도록** 먼저 고쳐야 한다.
+
+`POST /api/admin/seed-stock-clips` 는 특정 목소리만 다시 굽는 **수동 도구**로 남는다 —
+미리 굽지 않은 프리셋을 급히 채울 때만 쓴다.
 
 ## 6. 무료로 내려가면 — **알람은 잠그고, 목소리는 3일 뒤 지운다**
 
@@ -603,6 +681,38 @@ ElevenLabs 삭제와 푸시 전송만 DB 커밋 뒤에 실행한다.
 잠금화면·앱 종료 상태에서 목소리가 아예 안 울린다. `AVAssetReader`→`AVAssetWriter` 로
 CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파일은 생기는데 열리지 않는다).
 
+## 8. 직접 입력 월 한도 — **폰에 없어서 서버를 부를 때만** 깎인다
+
+기준은 하나다: **저장하는 순간 그 음성이 이 폰에 있는가.**
+
+| 상황 | 차감 |
+| --- | --- |
+| 폰에 있다(그 음성을 쓰는 알람이 하나라도 남아 있다) — 몇 번을 쓰든 | **없음** |
+| 폰에 없어 서버를 부른다 | **1회** — 서버 캐시 히트여도 센다 |
+| 오프라인인데 폰에 없다 | 저장을 막는다(요청도 보내지 않는다) |
+
+- **서버 캐시 히트도 세는 이유**: "우리 서버에 남아 있었는가" 는 사용자에게 보이지 않는
+  사정이다. 합성을 건너뛰어 **우리 비용은 0**이고 사용자는 **같은 소리**를 즉시 받는다 —
+  그 이득은 속도와 소리의 동일성으로 돌려주고, 횟수는 '새로 만든 것' 으로 센다.
+- **로컬 오디오는 참조 카운트로 지운다.** 그 알람을 지웠고 다른 알람도 안 쓰면 파일이
+  사라지고, 그때부터 그 문구는 이 폰에 '없는' 것이다.
+- **새 기기·재설치는 빈 상태다** — 내 알람은 새 기기로 따라오지 않는다(받은 알람만 pull).
+  그래서 새 기기에서 예전 문구를 다시 쓰면 차감된다.
+
+### 저장할 때의 순서
+
+**① 로컬 확인 → ② 오프라인이면 여기서 막는다(요청 없음) → ③ 남은 횟수 확인 →
+④ 생성 요청.** 앱은 폰에 있으면 서버를 아예 부르지 않고, 없으면 **보내기 전에** 남은
+횟수를 그 자리에서 조회해 0이면 알럿으로 막는다.
+
+⚠ **오프라인 갈래는 횟수 조회보다 위다.** 그 조회 자체가 네트워크를 부르므로, 순서가
+뒤집히면 "요청도 보내지 않는다"(위 표)가 깨지고 소켓이 매달릴 때 저장 버튼이 멈춘 것처럼
+보인다. iOS 가 이 순서를 한 번 뒤집었다(2026-09-07 리뷰).
+
+⚠ **강제는 서버 하나다.** 앱의 사전 확인은 불필요한 왕복을 줄이는 것뿐이라, 조회가
+실패하면 그냥 진행하고 서버가 429(`MANUAL_TTS_QUOTA_EXCEEDED`)로 막는다 — 다른 기기가 그
+사이 다 썼을 수 있다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -614,12 +724,18 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
-| 임시 en·ja 문구 표 | — | — | `STOCK_CLIP_PLACEHOLDER_LANGUAGES` (`lib/stock-clips.ts`) |
+| 문구 변경 강제 | — | — | `STOCK_INVALIDATION_NAME`·`STOCK_FINGERPRINT_IN_NAME` (`lib/migrations.ts`, 지문은 **마이그레이션 이름 안에** 있다) |
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
+| 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips` · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 진행률/게시 개수 (**여섯 곳**) |
+| 은퇴해도 그대로 두는 것 | — | — | `is_preset` = 쓰기 인가(`messageBelongsToCaller`) · 읽기 인가(`/tts/messages/:id/audio`) · TTL 면제(`audio-retention.ts`) |
+| 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron `scheduled.stock_seed` 의 **시스템 드레인은 꺼져 있다**(`index.ts`) |
+| 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
+| 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
@@ -663,6 +779,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 고를 때는 **캐시 우선**(네트워크 폴백) | `ui/editor/AlarmEditorScreen.kt` 의 `bindStockBucketClips` | `VoiceStudioViewModel.prepareStockClip` | — |
 | 테마 선택은 **독립 상태**(음원 파생 금지) | `AlarmEditorState.selectedBucket` | `AlarmEditorSheet.selectedBucketDraft` | — |
 | 저장된 알람이 기기 언어를 따라감 | `sync/StockClipLanguageRebinder.kt` | `StockClipLanguageRebinder.swift` | — |
+| 직접 입력 한도 차감 | `ui/editor/AlarmEditorScreen.kt` 의 저장 경로(로컬 확인 → 횟수 확인) | `Views/Editor/AlarmEditorSheet.swift` 의 `manualQuotaBlockIfExhausted` | `routes/tts.ts` 의 `reserveManualTtsQuota`(캐시 히트·미스 양쪽) |
+| 오프라인이면 **요청 없이** 막는다 | `SaveBlockReason.OFFLINE_NEW_MESSAGE` — 저장 버튼이 `saveEditor()` **전에** 판정 | `AlarmEditorSheet.saveFlow` 의 오프라인 갈래는 `manualQuotaBlockIfExhausted` **앞** | — |
 
 ## 검증 방법
 

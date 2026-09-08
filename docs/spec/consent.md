@@ -20,6 +20,32 @@
   처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.** 판별은 **지금 그 유형을 다시
   묻고 있었는가**(`collect` 포함 여부)로 한다 — 대상이면 기록만, 아무도 안 물었는데 온
   false 만 명시적 철회(설정 화면)다. `routes/user.ts` 의 `withdrewSensitiveConsent`.
+## 생체정보(목소리)는 **선택 동의**이고, 묻는 자리는 하나다
+
+⚠ **앱 전체를 막는 필수 동의로 바꾸지 말 것**(2026-09-03 검토·확정). "동의 안 하면 무료도
+못 쓰게 하자" 는 제안이 실제로 나왔고, 그때 이렇게 결론지었다.
+
+- **법이 막는다.** 목소리는 개인정보보호법상 **민감정보**다. 서비스 제공에
+  필수불가결하지 않으면 선택 동의여야 하고, **동의 거부를 이유로 서비스 제공을 거부할 수
+  없다.** 기본 목소리만 쓰는 사용자는 자기 목소리를 등록하지 않으므로 그에게 생체정보
+  동의를 요구할 근거가 없다 — "우리 정책" 으로 문서에 적어도 법이 이긴다.
+- **필요도 없다.** 원래 걱정은 "철회하면 유료 결제하고도 반쪽이 된다" 였는데, 그 상태는
+  아래 규칙으로 **아예 생기지 않는다.**
+
+그래서 규칙은 셋이고, 셋이 한 벌이다:
+
+1. **묻는 자리는 목소리 등록 화면 하나.** 서버가 `sensitive_missing` 으로 알려 주고
+   (`collect` 가 아니다), 앱은 그 자리에 인라인 체크박스를 그린다. 동의하지 않으면
+   **등록만 막히고 앱은 그대로 쓴다.** 기본 목소리 사용자에게는 **묻지 않는다.**
+2. **철회는 곧 삭제다.** 목소리·녹음 원본·생성된 음성 파일·저장한 문구가 함께 사라진다
+   (`deleteSensitiveVoiceDataForUser`). 오디오를 지우는 경로를 따로 두지 않는다 —
+   **'목소리 삭제' 한 곳으로 통일**한다.
+3. **철회 전에 반드시 확인 모달을 띄운다.** 무엇이 사라지는지(공유한 가족 알람이 기본
+   알람음으로 바뀌는 것까지) 적고, 되돌릴 수 없다고 말한다. 양 앱 모두 있다.
+
+이 셋이면 "동의는 안 했는데 유료 기능은 쓰는" 상태도, "동의를 철회했는데 목소리는 남은"
+상태도 만들어지지 않는다. **하나만 빼면 그 상태가 생긴다.**
+
 - **초기 체크 상태는 `prechecked` 로 채운다.** 항상 미체크로 두면 위와 같은 이유로 기존
   동의(마케팅 수신·생체정보)가 조용히 사라진다. 미리 눌러 주는 게 아니라 **가진 것을
   보여주는 것**이다. 필수 유형은 서버가 담지 않는다.
@@ -113,6 +139,8 @@
 | 그릴 목록 | `collect` 그대로 | `collect` 그대로 | `GET /user/consents/status` |
 | 초기 체크 상태 | `prechecked` | `prechecked` (`ConsentView`) | 같은 필드 |
 | 철회 판별 | — | — | `withdrewSensitiveConsent` (`routes/user.ts`) |
+| 철회 확인 모달 | `ConsentHistoryScreen` 의 `withdrawConfirmOpen` (`IosAlertDialog`) | `ConsentHistoryView` 의 `withdrawConfirmOpen` (시스템 `.alert`) | — |
+| 철회 = 삭제 | `withdrawVoiceBiometricConsent` (`MainViewModelAuthActions`) | `AuthViewModel.withdrawVoiceBiometricConsent` | `deleteSensitiveVoiceDataForUser` |
 | 마스터 행 범위 | `masterTypes`=`shownTypes`, `setAll`·`allChecked` 도 같은 집합 (`ConsentScreen`) | 같음 (`ConsentView.masterTypes`) | — |
 | 다시 묻는 자리 | `sensitiveConsentMissing`·`showConsentScreen` (`MainViewModel`) | `consentSensitiveMissing`·`showConsentScreen` (`AuthViewModel`) | `collect` / `sensitive_missing` (`routes/user.ts`) |
 | 묻지 않은 것 기록 금지 | `INLINE_COVERED_CONSENTS` (`MainViewModelVoiceActions`) | `inlineCoveredConsents` (`VoiceCloneUploadFlow`) | `POST /user/consents` 는 받은 것만 기록 |

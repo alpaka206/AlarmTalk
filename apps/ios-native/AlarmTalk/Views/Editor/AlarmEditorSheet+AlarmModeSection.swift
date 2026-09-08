@@ -208,19 +208,3 @@ extension AlarmEditorSheet {
         )
     }
 }
-
-// MARK: - Random prompt context descriptions
-
-extension RandomPromptContext {
-    /// 컨텍스트별 한 줄 안내. Android `strings.xml` 의
-    /// `editorp_random_context_desc_*` 와 1:1 일치 (AlarmRandomPromptSettings.kt:315-324).
-    var contextDescription: String {
-        switch self {
-        case .preset: return "추가 입력 없이 바로 쓰는 기본 인사예요."
-        case .wakeWeather: return "오늘 날씨를 알려주고 옷차림을 권해요."
-        case .wakeFortune: return "가벼운 오늘의 운세를 곁들여요."
-        case .love: return "사랑이 담긴 다정한 한마디를 건네요."
-        case .medication: return "약 챙겨 먹도록 잊지 않게 말해 줘요."
-        }
-    }
-}

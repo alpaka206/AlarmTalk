@@ -18,7 +18,7 @@
  */
 import type { DbExecutor } from './transactions';
 
-export const CONSENT_TYPES = [
+const CONSENT_TYPES = [
   'terms',
   'privacy',
   'age14',
@@ -119,6 +119,14 @@ export const CURRENT_POLICY_VERSION = '5';
  *   그 마찰은 그들의 데이터 처리에 아무 변화가 없는데도 발생하는 것이다.
  *   → **이건 법무 판단이므로 사람이 확인할 것.** 되돌리려면 overseas_transfer 를 5 로 올린다.
  *
+ * ⚠ **버전 5 본문이 그 뒤에 넓어졌다 — 릴리스 때 `privacy` 를 다시 판단할 것.**
+ *   사용 기록(알람 울림·해제·다시 알림·문구 사용 이력)이 수집 항목·이용 목적·보유 기간
+ *   (1년)에 추가됐다(`docs/spec/usage-events.md`). 이건 축소가 아니라 **확대**라 위의
+ *   "올리는 기준" 에 그대로 해당한다. 지금 기록은 전부 3 이므로, 올리지 않으면 그 본문을
+ *   한 번도 못 본 사용자의 기기가 기록을 올리기 시작한다. 다만 올리는 시점은 **버전 5 를
+ *   번들한 앱이 스토어에 게재된 뒤**다 — 먼저 올리면 구버전 앱이 재동의 화면에서 409 로
+ *   갇힌다. 체크리스트는 `docs/qa/dev-test-handoff.md` §1-D.
+ *
  * 올리는 기준: **그 유형의 동의 내용이 실제로 바뀔 때만** 해당 유형만 올린다 —
  * 수집 항목·이용 목적·보유 기간 확대, 새 제3자 제공/국외 이전, 처리 방식 변경 등.
  * 문서 버전(CURRENT_POLICY_VERSION)이 올랐다는 이유만으로 올리지 말 것. 여기서 올린
@@ -151,7 +159,7 @@ export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
  */
 
 /** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
-export type LatestConsent = { agreed: boolean; version: number };
+type LatestConsent = { agreed: boolean; version: number };
 export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
 
 /** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */

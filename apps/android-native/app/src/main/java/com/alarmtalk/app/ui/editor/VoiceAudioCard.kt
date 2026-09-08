@@ -410,6 +410,17 @@ internal fun VoiceAudioCard(
 internal fun VoiceOutputSettingsPane(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
+    /**
+     * 슬라이더에서 손을 뗀 순간. **여기서 자동으로 들려준다** — 크기를 바꾸는 사람은 그
+     * 크기를 들으려는 사람이고, 버튼을 한 번 더 누르게 할 이유가 없다(아이폰 설정의
+     * 벨소리 슬라이더와 같은 결). 끄는 동안에는 다시 틀지 않고 [onVolumeChange] 가
+     * 재생 중인 소리의 크기만 그 자리에서 바꾼다.
+     *
+     * ⚠ **재생 버튼을 다시 두지 말 것**(2026-09-06 지시). 슬라이더가 곧 컨트롤이라
+     * 버튼은 같은 일을 하는 두 번째 컨트롤이 된다. 무엇이 들리는지는 슬라이더 아래
+     * 한 줄이 말한다.
+     */
+    onVolumeSettled: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     Surface(
@@ -449,6 +460,7 @@ internal fun VoiceOutputSettingsPane(
                         VoiceVolumeSelector(
                             volumePercent = volumePercent,
                             onVolumeChange = onVolumeChange,
+                            onVolumeSettled = onVolumeSettled,
                         )
                     }
                 }
@@ -738,6 +750,7 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
 private fun VoiceVolumeSelector(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
+    onVolumeSettled: () -> Unit = {},
 ) {
     // 카드 안 여백 — 다른 카드 행과 같은 값(가로 14 · 세로 12).
     Column(
@@ -764,8 +777,18 @@ private fun VoiceVolumeSelector(
         WakerVolumeSlider(
             value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
             onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
+            onValueChangeFinished = onVolumeSettled,
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
             stepSize = 10,
+        )
+        // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데, 그게 자기가
+        // 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는 문구는 울릴
+        // 때에야 정해지므로 여기서 들려줄 수 없다 — 크기를 재는 데 필요한 건 '이 목소리가
+        // 이 크기로 얼마나 큰가' 뿐이라 이미 기기에 있는 인사말로 답한다.
+        Text(
+            text = stringResource(R.string.editor_voice_volume_preview_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

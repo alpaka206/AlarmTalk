@@ -203,7 +203,7 @@ final class AudioCacheStoreTests: XCTestCase {
             AudioCacheStore.ttsInputKey(userId: "u2", profileId: "v1", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "엄마"),
             AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v2", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "엄마"),
             AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "다른 문구", category: "custom", language: "ko", listenerTitle: "엄마"),
-            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "love", language: "ko", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "cheer", language: "ko", listenerTitle: "엄마"),
             AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "custom", language: "en", listenerTitle: "엄마"),
             AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "아빠"),
         ] {

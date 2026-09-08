@@ -35,6 +35,7 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.UsageEvents
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -232,6 +233,12 @@ class RingingService : Service() {
         }
         openRingingActivity(alarmId)
         Log.i(TAG, "Ringing started id=$alarmId")
+        // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」). 로컬 큐에 적기만
+        // 하고, 전송은 `UsageEventUploadWorker` 가 나중에 한다.
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_RANG,
+            alarmId = alarmId,
+        )
     }
 
     private fun startRingingAudio(alarm: AlarmEntity?, voiceUriOverride: String? = null) {
@@ -617,6 +624,10 @@ class RingingService : Service() {
     }
 
     private fun dismiss(alarmId: String, startId: Int) {
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_DISMISSED,
+            alarmId = alarmId,
+        )
         serviceScope.launch {
             // ⚠ 예전에는 '알람 + 목소리' 모드에서 여기서 끝맺음 목소리를 한 번 재생했다.
             // 그 모드가 사라졌으므로(AlarmPlayModes 주석 참조) 해제는 그냥 멈추는 것이다 —
@@ -632,8 +643,13 @@ class RingingService : Service() {
     }
 
     private fun snooze(alarmId: String, startId: Int) {
+        // ⚠ **결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과 미뤄진 것은 다르다 —
+        //   한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는 여기서 먼저 적어서
+        //   일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도 안 남았다.**
+        //   소리는 그대로 여기서 끈다(그건 누른 순간의 일이다).
         stopRingingOutputs(alarmId)
         serviceScope.launch {
+            val recorder = AlarmAppContainer.usageEventRecorder(applicationContext)
             runCatching {
                 val repository = AlarmAppContainer.repository(applicationContext)
                 // 스누즈가 꺼져 있거나 한도를 넘겼으면 repository.snooze 는 **DB 를 한 글자도
@@ -645,8 +661,23 @@ class RingingService : Service() {
                 if (repository.snooze(alarmId) == null) {
                     Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
                     repository.dismiss(alarmId)
+                    // 미뤄지지 않았다 — 끝난 것으로 적고, **누른 사실은 detail 로** 남긴다.
+                    // 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다.
+                    recorder.record(
+                        type = UsageEvents.ALARM_DISMISSED,
+                        alarmId = alarmId,
+                        detail = SNOOZE_DENIED_DETAIL,
+                    )
+                } else {
+                    recorder.record(type = UsageEvents.ALARM_SNOOZED, alarmId = alarmId)
                 }
             }.onFailure { error ->
+                // 결과를 모른다. 그래도 **누른 사실은 잃지 않는다** — 기록을 잃는 쪽이 더 나쁘다.
+                recorder.record(
+                    type = UsageEvents.ALARM_SNOOZED,
+                    alarmId = alarmId,
+                    detail = SNOOZE_FAILED_DETAIL,
+                )
                 AlarmTalkLog.reportError("Failed to snooze alarm id=$alarmId", error)
             }
             stopSelf(startId)
@@ -745,6 +776,12 @@ class RingingService : Service() {
     }
 
     companion object {
+        /** '다시 알림' 을 눌렀지만 한도·비활성으로 **미뤄지지 않은** 경우의 표시. */
+        internal const val SNOOZE_DENIED_DETAIL = "snooze_denied"
+
+        /** '다시 알림' 을 눌렀는데 결과를 알 수 없는 경우(저장 실패 등)의 표시. */
+        internal const val SNOOZE_FAILED_DETAIL = "snooze_failed"
+
         /**
          * 현재 울림 세션의 알람 id(없으면 null). RingingActivity 가 FGS 차단 폴백으로 진입했을 때
          * 서비스가 이미 울리고 있는지 확인해, 중복 시작과 "서비스→액티비티 재오픈" 루프를 막는다.

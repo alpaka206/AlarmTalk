@@ -1,10 +1,12 @@
 package com.alarmtalk.app
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -62,6 +64,7 @@ import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerTileShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -393,6 +396,18 @@ internal fun AlarmRow(
         bottomEnd = 22.dp,
         bottomStart = 0.dp,
     )
+    // ⚠ **눌림은 리플이 아니라 축소로 알린다**(2026-09-06). 아래 `indication = null` 주석대로
+    // 사각 리플은 카드 모서리와 어긋나 쓰지 않는데, 그렇다고 아무 반응도 없으면 눌렀는지
+    // 모른 채 한 번 더 누르게 된다. 살짝 줄었다 돌아오는 것으로 **눌린 사실만** 말한다.
+    // 스와이프로 삭제가 드러난 동안에는 걸지 않는다 — 카드가 줄면 뒤의 삭제 버튼과 사이가
+    // 벌어져 두 조각으로 보인다.
+    val rowInteractionSource = remember { MutableInteractionSource() }
+    val rowPressed by rowInteractionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (rowPressed && offsetX.value == 0f) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        label = "alarmRowPressScale",
+    )
     val dragState = rememberDraggableState { delta ->
         scope.launch {
             offsetX.snapTo((offsetX.value + delta).coerceIn(-deleteWidthPx, 0f))
@@ -422,8 +437,12 @@ internal fun AlarmRow(
                 // 리플(indication)은 끈다 — 카드 전체를 덮는 사각 하이라이트가 길게 누르는
                 // 내내 남아 카드 모서리와 어긋나 보인다. 선택 모드 진입은 행의 체크 표시와
                 // 상단 [취소][삭제] 바가 이미 분명하게 알려준다.
+                .graphicsLayer {
+                    scaleX = pressScale
+                    scaleY = pressScale
+                }
                 .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
+                    interactionSource = rowInteractionSource,
                     indication = null,
                     onClick = {
                         when {

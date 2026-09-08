@@ -57,7 +57,7 @@ export default async function ContactPage({
   return (
     <>
       <SiteHeader />
-      <main className="relative">
+      <main id="main" className="relative">
         <ContactHero />
         <Channels />
         <ResponseNote />
@@ -114,8 +114,8 @@ function Channels() {
 
         <ul className="mt-12 grid gap-3 sm:grid-cols-2">
           {items.map((item) => (
-            <li key={item.email} className="card group flex flex-col p-7">
-              <span className="inline-flex w-fit items-center rounded-full border border-line bg-raised px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-text-faint">
+            <li key={item.email} className="card flex flex-col p-7">
+              <span className="inline-flex w-fit items-center rounded-full border border-line bg-raised px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-wider text-text-muted">
                 {item.tag}
               </span>
               <h3 className="mt-5 text-[20px] font-semibold leading-[1.3] tracking-[-0.01em] text-text">
@@ -126,13 +126,13 @@ function Channels() {
               </p>
               <a
                 href={`mailto:${item.email}`}
-                className="mt-6 inline-flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 transition hover:border-line/0 hover:bg-raised"
+                className="group mt-6 inline-flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 transition-[background-color,border-color] duration-150 ease-[var(--ease-ui)] hover:border-line/0 hover:bg-raised"
               >
-                <span className="flex flex-col leading-tight">
-                  <span className="text-[10.5px] uppercase tracking-wider text-text-faint">
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="text-[11.5px] uppercase tracking-wider text-text-muted">
                     {item.cta}
                   </span>
-                  <span className="text-[14px] font-semibold text-text">
+                  <span translate="no" className="break-all text-[14px] font-semibold text-text">
                     {item.email}
                   </span>
                 </span>

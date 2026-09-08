@@ -87,6 +87,114 @@ class VoiceReplacementCascadeTest {
         )
     }
 
+    /**
+     * ⚠ **표식과 비교하는 것은 오디오를 만든 시각이지 알람 행의 수정 시각이 아니다.**
+     * 행의 `updatedAtMillis` 는 시각·이름만 고쳐도, **울리기만 해도**(`markRinging`)
+     * 앞으로 간다 — 그걸 보면 매일 울리는 알람이 스스로 면제를 받아 지운 사람의 목소리로
+     * 계속 울고, 표식은 0건 강등에도 확정되므로 다음 회차에 다시 잡히지도 않는다.
+     */
+    @Test
+    fun replacementUsesAudioAgeNotRowUpdateTime() = runBlocking {
+        val markerMillis = 2_000_000L
+        // 오디오는 표식보다 **먼저** 만들었다 = 낡은 목소리다.
+        writeCachedAudio("old-audio", createdAtMillis = markerMillis - 60_000L)
+        // 그런데 그 뒤에 한 번 울려서 행의 수정 시각만 앞으로 갔다.
+        dao.upsert(
+            alarm(id = "rang-after-marker", voiceProfileId = "clone-1", cacheKey = "old-audio")
+                .copy(updatedAtMillis = markerMillis + 60_000L),
+        )
+        // 이쪽은 표식 **뒤에** 만든 오디오다 = 새 목소리라 건드리면 안 된다.
+        writeCachedAudio("new-audio", createdAtMillis = markerMillis + 30_000L)
+        dao.upsert(
+            alarm(id = "made-after-marker", voiceProfileId = "clone-1", cacheKey = "new-audio")
+                .copy(updatedAtMillis = markerMillis - 60_000L),
+        )
+
+        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = "clone-1",
+            expectedOwnerUserId = "user-a",
+            invalidatedBeforeMillis = markerMillis,
+        )
+
+        assertEquals(1, degraded)
+        assertNull("울렸다는 이유로 면제되면 안 된다", dao.getById("rang-after-marker")?.voiceProfileId)
+        assertEquals(
+            "표식 뒤에 만든 오디오는 새 목소리다 — 건드리지 않는다",
+            "clone-1",
+            dao.getById("made-after-marker")?.voiceProfileId,
+        )
+    }
+
+    /**
+     * 표식을 넘기지 않으면 **표식 뒤에 만든 오디오까지** 깎인다. 전경 수렴 경로가 실제로
+     * 그랬다(iOS 는 넘기고 있었다) — 강등은 되돌릴 수 없으므로 그 갈래를 고정한다.
+     */
+    @Test
+    fun replacementWithoutWindowDegradesEvenFreshAudio() = runBlocking {
+        val markerMillis = 2_000_000L
+        writeCachedAudio("new-audio", createdAtMillis = markerMillis + 30_000L)
+        dao.upsert(alarm(id = "fresh", voiceProfileId = "clone-1", cacheKey = "new-audio"))
+
+        // 창을 넘기면 남는다.
+        assertEquals(
+            0,
+            repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                voiceProfileId = "clone-1",
+                expectedOwnerUserId = "user-a",
+                invalidatedBeforeMillis = markerMillis,
+            ),
+        )
+        assertEquals("clone-1", dao.getById("fresh")?.voiceProfileId)
+
+        // 안 넘기면 깎인다 — 그래서 전경 수렴 경로도 반드시 넘겨야 한다.
+        assertEquals(
+            1,
+            repository.degradeCustomMessageAlarmsUsingVoiceProfile("clone-1", "user-a"),
+        )
+        assertNull(dao.getById("fresh")?.voiceProfileId)
+    }
+
+    /**
+     * ⚠ **표식 경로는 기본(시스템) 목소리도 대상이다** — 제자리 교체는 프로필 id 를 그대로
+     * 두고 provider 보이스만 바꾸므로, 기본 목소리로 만든 직접 입력 알람도 옛 소리를 문다
+     * (마이그레이션 #111 이 딱 그 경우다). 회수 경로는 그대로 두어야 하므로 **기본값은
+     * 끈 채**이고, 문을 여는 것은 표식 경로의 호출자다.
+     */
+    @Test
+    fun replacementReachesSystemVoiceAlarmsOnlyWhenAllowed() = runBlocking {
+        val systemVoice = SYSTEM_VOICE_ID_PREFIX + "000000000101"
+        dao.upsert(alarm(id = "manual", voiceProfileId = systemVoice))
+        dao.upsert(alarm(id = "bucket", voiceProfileId = systemVoice, bucketId = "medication"))
+        dao.upsert(alarm(id = "legacy-clip", voiceProfileId = systemVoice, cacheKey = "stock_m-legacy"))
+
+        // 기본값(회수 경로)에서는 기본 목소리를 건드리지 않는다.
+        assertEquals(0, repository.degradeCustomMessageAlarmsUsingVoiceProfile(systemVoice, "user-a"))
+        assertEquals(systemVoice, dao.getById("manual")?.voiceProfileId)
+
+        // 표식 경로에서는 **직접 입력 알람 하나만** 내린다.
+        val degraded = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+            voiceProfileId = systemVoice,
+            expectedOwnerUserId = "user-a",
+            allowSystemVoice = true,
+        )
+
+        assertEquals(1, degraded)
+        assertNull(dao.getById("manual")?.voiceProfileId)
+        assertEquals(
+            "프리셋(버킷) 알람은 서버가 새 목소리로 다시 만든다 — 벗기면 되돌릴 수 없다",
+            systemVoice,
+            dao.getById("bucket")?.voiceProfileId,
+        )
+        assertEquals(systemVoice, dao.getById("legacy-clip")?.voiceProfileId)
+    }
+
+    private fun writeCachedAudio(cacheKey: String, createdAtMillis: Long) {
+        val dir = java.io.File(context.filesDir, "alarm-audio").also { it.mkdirs() }
+        val file = java.io.File(dir, "${AlarmAudioStore.safeCacheKey(cacheKey)}.mp3")
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        file.setLastModified(createdAtMillis)
+    }
+
     @Test
     fun replacementSkipsAnotherAccountsAlarms() = runBlocking {
         dao.upsert(alarm(id = "theirs", voiceProfileId = "clone-1", owner = "user-b"))

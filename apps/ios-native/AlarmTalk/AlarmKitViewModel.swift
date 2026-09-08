@@ -93,18 +93,6 @@ final class AlarmKitViewModel: ObservableObject {
 
     private var leavingAccountDepth = 0
 
-    #if DEBUG
-    /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
-    ///
-    /// ⚠ 왜 이런 것이 필요한가: `stopAllScheduledAlarms` 안에는 **진짜 suspension 이 없어서**
-    /// (AlarmKit 취소가 동기다) MainActor 에서 원자적으로 끝난다 — 밖에서 "도는 동안 닫혀
-    /// 있는지" 를 관찰할 창이 없다. 그래서 게이트가 **열리고 닫히는 규칙**을 여기서 잰다.
-    /// 이걸 안 두면 테스트가 `false` 만 두 번 확인하게 되고, 그건 게이트를 통째로 지워도
-    /// 통과한다(2026-08-19 감사에서 실제로 그랬다).
-    func __beginLeavingAccountForTests() { leavingAccountDepth += 1 }
-    func __endLeavingAccountForTests() { leavingAccountDepth -= 1 }
-    #endif
-
     /// **진행 중인 예약을 그 자리에서 무효화한다.**
     ///
     /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
@@ -122,6 +110,32 @@ final class AlarmKitViewModel: ObservableObject {
         if previous != normalized {
             accountEpoch &+= 1
         }
+    }
+
+    /// **이 행을 지금 예약해도 되는가.**
+    ///
+    /// ⚠ 세대(`accountEpoch`)로는 절반만 잡힌다(2026-09-08 리뷰 39차). 세대는 **이 호출이
+    /// 시작된 뒤의** 변화만 잰다 — 이미 바뀐 **뒤에** 시작한 예약은 새 세대를 들고 시작해
+    /// 그대로 성공한다. 자동 401 뒤 다른 계정이 로그인한 기기에는 앞 계정 행이
+    /// `enabled = true`, `alarmKitID = nil` 로 남아 있어서 경합 없이도 재현된다.
+    ///
+    /// 그래서 소유자를 **예약 길목 한 곳**에서 본다. 경로마다 가드를 붙이는 방식은 네 회차
+    /// (23·36·37·38차) 연속으로 **다음 대기**를 남겼다.
+    /// 소유자 미기록(옛 행)은 지금 계정 것으로 본다 — 저장소의 관용과 같다(§1-2).
+    ///
+    /// ⚠ **Keychain 을 읽지 않는다.** `AuthViewModel.persistSession` 은 Keychain 쓰기 실패를
+    /// 일부러 견디므로(잃는 건 재시작 시 자동 로그인뿐), 그걸 기준으로 삼으면 **지금
+    /// 로그인한 본인의 알람을 거절**하게 된다 — "안 울린다" 쪽이라 원래 버그보다 나쁘다.
+    /// 세션이 자동 401 로 끊긴 기기에서는 **끊긴 그 계정**을 활성으로 본다
+    /// (`recoverScheduledAlarms`·`AlarmScheduleReconciler.reconcile` 과 같은 식).
+    func mayScheduleRecord(_ record: LocalAlarmRecord) -> Bool {
+        guard let rowOwner = record.ownerUserId?.nilIfBlank else { return true }
+        // ⚠ **아직 활성 계정을 본 적이 없으면 막지 않는다.** 백그라운드로만 깨어난 실행은
+        // 화면이 없어 `noteActiveAccount` 가 한 번도 돌지 않는다 — 거기서 막으면 예약
+        // 복구가 통째로 거절돼 **안 울린다.** 세대가 첫 관찰을 세지 않는 것과 같은 이유다.
+        // 그 경로는 이미 호출부(`recoverScheduledAlarms`·`reconcile`)가 소유자로 거른다.
+        guard let observed = lastObservedAccountID else { return true }
+        return rowOwner == (observed ?? SessionExpiryStore.expiredOwnerUserId)
     }
 
     /// 지금 이 알람을 다른 경로가 재예약하는 중인가.
@@ -345,6 +359,35 @@ final class AlarmKitViewModel: ObservableObject {
             if didEnterAlerting {
                 if let record = store.recordByAlarmKitID(kitID) {
                     store.markRinging(id: record.id)
+                    // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」).
+                    // 로컬 큐에 적기만 하고, 전송은 `UsageEventUploader` 가 나중에 한다.
+                    // ⚠ **표시는 실제로 적힌 뒤에 남긴다**(2026-09-07 리뷰 36차). `record` 는
+                    //   파일 쓰기를 큐에 걸고 곧바로 돌아오므로, 부른 직후에 남기면 쓰기가
+                    //   실패하거나 그 사이에 프로세스가 죽었을 때 **적히지 않은 울림을
+                    //   적힌 것으로 오인해** 인텐트가 삼킨다. 삼키는 쪽이 더 나쁘다.
+                    //   ⚠ 표시 저장소는 사전 전체를 읽고-고쳐-쓰므로 **메인에서만** 만진다
+                    //   (인텐트의 소비도 메인이다) — 큐 스레드에서 바로 쓰면 소비된 표시를
+                    //   되살려 다음 회차를 삼킬 수 있다.
+                    // 표는 **여기서 동기로** 뽑는다 — 콜백이 도착하는 시각에는 상한이 없어
+                    // (앱이 잠들면 몇 분 뒤다) 그때 판단하면 이미 끝난 회차에 표시를 남긴다.
+                    let observation = ObservedRingMarkerStore.beginObservation(alarmKitID: kitID)
+                    var onRingPersisted: (@Sendable () -> Void)?
+                    if let observation {
+                        onRingPersisted = {
+                            DispatchQueue.main.async {
+                                ObservedRingMarkerStore.commit(
+                                    alarmKitID: kitID, observation: observation
+                                )
+                            }
+                        }
+                    }
+                    UsageEventQueue.shared.record(
+                        .alarmRang,
+                        alarmID: record.id,
+                        voiceProfileID: record.voiceProfileId,
+                        messageID: record.ttsMessageId,
+                        onPersisted: onRingPersisted
+                    )
                     // GROUP 3 (6): 포그라운드 ring-time 1회성 햅틱. didEnterAlerting 의
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이
                     // 활성(.active)일 때만 발화 — 백그라운드/락스크린에선 AlarmKit/시스템이
@@ -517,7 +560,13 @@ final class AlarmKitViewModel: ObservableObject {
             guard record.alarmKitID != nil else { continue }
             // 취소에 실패하면 손잡이를 남긴다 — 지우면 고아 예약이 된다(위 주석과 같은 규칙).
             if await cancelScheduledAlarm(record: record) {
-                store.clearScheduleHandle(id: record.id)
+                // ⚠ **취소한 그 UUID 를 아직 들고 있을 때만 지운다**(리뷰 39차).
+                // 이 await 사이에 그 행이 **다시 예약**됐다면 손잡이는 새 UUID 다 —
+                // 그걸 지우면 앱이 영영 못 끄는 고아 예약이 된다.
+                // `applyResolvedCancellations` 의 "안전판은 `enabled` 가 아니라 UUID 일치" 와 같다.
+                if store.record(id: record.id)?.alarmKitID == record.alarmKitID {
+                    store.clearScheduleHandle(id: record.id)
+                }
                 cancelled += 1
             }
             // 실패해도 여기서 따로 적지 않는다 — `cancelScheduledAlarm` 이 이미 회수
@@ -553,7 +602,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// 사용자가 **끌 방법이 없는 알람**이 우는 셈이다. 끊어야 하는 진짜 이유가 이것이다.
     ///
     /// 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
-    /// `NextAlarmHeadline` 이 "모든 알람이 꺼진 상태입니다." 를 headline 으로 띄운다.
+    /// `NextAlarmHeadline` 이 "알람이 모두 꺼져 있어요." 를 headline 으로 띄운다.
     /// 로그아웃 중에는 아무 화면도 못 보지만, 그때는 울리지도 않으므로 알 필요가 없다.
     ///
     /// ⚠ **자동 401(세션 만료)에서는 부르지 않는다.** 그건 사용자가 그만두겠다고 한 게
@@ -742,13 +791,21 @@ final class AlarmKitViewModel: ObservableObject {
                 continue
             }
 
+            // ⚠ **거절을 예약 실패로 낙인찍지 않는다**(리뷰 39차). 남의 계정 행이라
+            // 거절된 것이면 `.failed` 는 그 사람 화면에 "다시 예약하지 못했어요" 를
+            // 띄우게 되는데(§1-6), 그건 그 사람이 할 수 있는 일이 아니다.
+            guard mayScheduleRecord(prepared) else { continue }
             let scheduled = await schedule(record: prepared, store: store)
             if scheduled {
                 recovered += 1
                 if record.alarmKitUUID != nil {
                     _ = await cancelScheduledAlarm(record: record)
                 }
-            } else {
+            } else if mayScheduleRecord(store.record(id: prepared.id) ?? prepared) {
+                // ⚠ **거절은 실패가 아니다 — 라이브 행으로 다시 본다**(리뷰 40차).
+                // 위 진입 확인 뒤 대기하는 사이에 이 행이 다른 계정 것으로 새겨졌을 수
+                // 있고, 그때 `markFailed` 는 **남의 행**에 "다시 예약하지 못했어요" 를
+                // 새긴다(§1-6). 복구 후보는 언제나 켜진 행이라 no-op 으로 넘어가지도 않는다.
                 store.markFailed(id: prepared.id)
             }
         }
@@ -862,6 +919,13 @@ final class AlarmKitViewModel: ObservableObject {
         // 종료 sweep 가 도는 동안 만들어진 예약은 그 sweep 가 못 보고 지나가, 로그아웃이
         // 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**으로 남는다.
         guard !isLeavingAccount else { return false }
+        // ⚠ **바뀐 뒤에 시작한 예약은 세대로 못 잡는다** — 소유자를 여기서 본다(위 주석).
+        guard mayScheduleRecord(record) else {
+            Self.paidGateLogger.info(
+                "Refused to schedule an alarm owned by another account (id: \(record.id, privacy: .public))"
+            )
+            return false
+        }
         // ⚠ **await 하기 전에** 적어 둔다 — 돌아와서 달라졌으면 계정이 바뀐 것이다.
         let epochAtStart = accountEpoch
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
@@ -923,7 +987,9 @@ final class AlarmKitViewModel: ObservableObject {
             // ⚠ **await 사이에 계정이 바뀌었을 수 있다**(Codex #699 P1). 그대로 나아가면
             // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
             // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
-            if accountEpoch != epochAtStart || isLeavingAccount {
+            // 소유자도 다시 본다 — 세대가 그대로여도(로그인 없이 관찰만 갱신된 경우)
+            // 활성 계정이 이 행의 것이 아닐 수 있다.
+            if accountEpoch != epochAtStart || isLeavingAccount || !mayScheduleRecord(record) {
                 await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
@@ -949,6 +1015,20 @@ final class AlarmKitViewModel: ObservableObject {
                 await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm deleted while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                )
+                return false
+            }
+            // ⚠ **소유자는 스냅샷이 아니라 살아 있는 행에서 본다**(2026-09-08 리뷰 40차).
+            // 위 진입 확인은 호출자가 들고 온 **복사본**을 보므로, 대기 사이에 그 행이 다른
+            // 계정 것으로 새겨진 것을 못 본다 — `claimUnownedAlarms` 는 소유자 미기록 행에
+            // 임자를 새기는데, 로드 완료 뒤의 재시도는 지금 로그인한 사람과 무관하게 돈다
+            // (`AlarmTalkApp` 의 만료 계정 새기기). 복사본은 여전히 소유자 미기록이라
+            // 그대로 통과하고, `SchedulingSnapshot` 에도 소유자가 없어 아래 비교도 못 잡는다.
+            // 그러면 **B 의 앱에 보이지도 끄지도 못하는 A 의 예약**이 남는다.
+            guard mayScheduleRecord(afterAwait) else {
+                await revertJustScheduled(id)
+                Self.paidGateLogger.info(
+                    "Row was claimed by another account while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
                 return false
             }
@@ -1204,8 +1284,29 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
-        if let releasedAudioCacheKey = store.delete(record) {
+        let releasedAudioCacheKey = store.delete(record)
+        if let releasedAudioCacheKey {
             try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
+        }
+        UsageEventQueue.shared.record(
+            .alarmDeleted,
+            alarmID: record.id,
+            voiceProfileID: record.voiceProfileId,
+            messageID: record.ttsMessageId
+        )
+        // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. `store.delete` 는
+        // 같은 캐시 키를 쓰는 알람이 남아 있으면 nil 을 돌려준다 — 그때 파일은 그대로이고
+        // 여전히 '사용중' 이다. 이 참조 카운트 판정은 폰만 할 수 있고, 서버는 받아 적는다.
+        // 붙임 쪽과 **같은 선**으로 가른다 — 테마 알람도 문구 id·캐시 키를 둘 다 들고 있다.
+        if releasedAudioCacheKey != nil,
+           record.isManualMessageAlarm,
+           let messageID = record.ttsMessageId?.nilIfBlank {
+            UsageEventQueue.shared.record(
+                .manualMessageReleased,
+                alarmID: record.id,
+                voiceProfileID: record.voiceProfileId,
+                messageID: messageID
+            )
         }
     }
 

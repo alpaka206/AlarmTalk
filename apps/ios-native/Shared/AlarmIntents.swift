@@ -60,6 +60,25 @@ struct StopAlarmIntent: LiveActivityIntent {
             // ignored: AlarmKit 에서 이미 dismiss 된 알람일 가능성.
         }
         #if ALARMTALK_APP
+        // 안드로이드 `RingingService.dismiss` 의 미러 — **누른 자리**에서, **무조건** 적는다.
+        // ⚠ `handleAlarmStopped` **앞**에서 기록을 찾는다: `markStopped` 가
+        //   `.fixed` 공휴일off 갈래의 `alarmKitID` 를 비우므로 그 뒤에는 되짚을 수 없다.
+        // ⚠ 이 기록을 `handleAlarmStopped` 안으로 옮기지 말 것 — 그 함수는 '목록에서
+        //   사라진 알람' 루프도 부른다. 알람을 지우거나 스위치를 끄기만 해도 해제로
+        //   적히게 된다.
+        // ⚠ **ctx·기록이 없어도 적는다.** 락스크린 콜드 부팅에서는 `shared` 가 nil 이거나
+        //   저장소의 디스크 로드가 아직 안 끝나 못 찾는다 — 그건 안 누른 것이 아니다.
+        //   안드로이드는 Intent 의 알람 id 로 무조건 적어서 이 창이 아예 없다.
+        let stoppedRecord = AlarmAppContext.shared?.store?.recordByAlarmKitID(uuid.uuidString)
+        // ⚠ **울린 사실도 여기서 적는다**(2026-09-07 리뷰 31차). 이 앱은 **발사 시점에
+        //   우리 코드가 돌지 않는다**(AlarmKit 이 울리고, 우리는 해제할 때 불린다).
+        //   관찰자(`AlarmKitViewModel` 의 `.alerting` 진입)는 그 순간 앱이 살아 있을 때만
+        //   본다 — 밤새 잠든 폰에서 울린 알람은 아무도 못 본다. 그러면 '해제' 는 있는데
+        //   '울림' 이 없는 기록이 남아, 통계가 **앱이 켜져 있던 알람 쪽으로 기운다.**
+        //   중복은 **회차 표시**로 가른다(`ObservedRingMarkerStore`) — 규칙과 그 이유는
+        //   `recordRingIfObserverMissedIt` 주석과 `docs/spec/usage-events.md` §2 에 있다.
+        recordRingIfObserverMissedIt(stoppedRecord, alarmKitID: uuid.uuidString)
+        AlarmAppContext.recordUsageEvent(.alarmDismissed, stoppedRecord)
         if let ctx = AlarmAppContext.shared {
             await ctx.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         }
@@ -81,26 +100,27 @@ struct StopAlarmIntent: LiveActivityIntent {
 //    countdown 후 다시 alert.
 //  - 한도 도달 / 비활성: Android AlarmRepository.snooze() 처럼 stop(id:) 로 종료.
 //
-// snoozeMinutes 파라미터는 OS UI 에서 노출되지 않으나, App Intent shortcut
-// 으로 직접 호출될 가능성과 우리 측 markSnoozed(newFireAtMillis:) 계산을 위해
-// 보존. 기본값 0 이면 LocalAlarmRecord.snoozeMinutes 값을 사용한다.
+// ⚠ **다시 울릴 시간은 이 인텐트가 정하지 않는다**(2026-09-08 리뷰 39차).
+// 그 값은 예약할 때 행의 `snoozeMinutes` 로 `countdownDuration` 에 **구워진다**
+// (`AlarmKitViewModel.makeConfiguration`). `AlarmManager/countdown(id:)` 은 시간을
+// 받지 않으므로 — 구워진 그 설정을 다시 걸 뿐이다 — 호출자가 다른 값을 줘 봐야
+// **행만 그만큼 전진하고 OS 는 원래 시간에 울린다.** 예전에는 파라미터가 있어서
+// 5분짜리 예약에 30을 넘기면 홈 화면이 "30분 남음" 을 띄우고 5분 뒤에 울렸다.
+// 맞추려면 취소 후 재예약뿐인데, 그건 **울리는 중인 알람의 예약을 끊는** 일이라
+// 실패하면 카운트다운 없는 `.snoozed` 행이 남아 조용히 안 울린다 — 표시 하나와
+// 바꿀 수 없다. 그래서 **파라미터 자체를 없앴다**(가드가 아니라 구조로 닫는다).
 struct SnoozeAlarmIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "알람 다시 울리기"
 
     @Parameter(title: "알람 ID")
     var alarmID: String
 
-    @Parameter(title: "다시 울릴 시간")
-    var snoozeMinutes: Int
-
     init() {
         alarmID = ""
-        snoozeMinutes = 0
     }
 
-    init(alarmID: String, snoozeMinutes: Int = 0) {
+    init(alarmID: String) {
         self.alarmID = alarmID
-        self.snoozeMinutes = snoozeMinutes
     }
 
     @MainActor
@@ -121,9 +141,21 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         // 명확한 .deny 일 때만 수행한다. (잘못 종료하면 사용자가 의도한 다시 울림이
         // 사라지는 회귀가 되므로.)
         let ctx = AlarmAppContext.shared
+        // ⚠ **기록을 못 찾아도 적는다** — 바로 아래 `.unknown` 갈래가 그 창을 이미 인정하고
+        //   있다(콜드 부팅이면 판단 근거가 없다). 같은 요청 안에서 저장소를 한쪽은 못 믿고
+        //   한쪽은 믿을 수는 없다.
+        let snoozedRecord = ctx?.store?.recordByAlarmKitID(uuid.uuidString)
+        // 위 해제 갈래와 같은 이유 — 다시 울림을 눌렀다는 것은 **울렸다는 뜻**이다.
+        recordRingIfObserverMissedIt(snoozedRecord, alarmKitID: uuid.uuidString)
+        // ⚠ **다시 울림은 결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과
+        //   미뤄진 것은 다르다 — 한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는
+        //   여기서 먼저 적어 일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도
+        //   안 남았다.** 안드로이드 `RingingService.snooze` 도 같은 규칙이다.
         let decision = ctx?.snoozeDecision(alarmKitIDString: uuid.uuidString) ?? .unknown
         if decision == .deny {
             // 한도 도달 / 다시 울림 비활성 — Android 처럼 알람을 끝낸다.
+            // 누른 사실은 `detail` 이 나른다 — 눌렀는데 막힌 횟수는 한도를 조정할 근거다.
+            AlarmAppContext.recordUsageEvent(.alarmDismissed, snoozedRecord, "snooze_denied")
             do {
                 try AlarmManager.shared.stop(id: uuid)
             } catch {
@@ -131,15 +163,31 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
             }
             await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         } else {
+            // `.unknown`(콜드 부팅)은 다시 울림 쪽이다 — 기본 동작과 기록이 같은 방향이어야 한다.
+            //
+            // ⚠ **미룸은 재무장이 돌아온 뒤에 적는다**(2026-09-07 리뷰 38차). 판정만으로는
+            //   부족하다 — 보조 버튼이 `.custom` 이라 OS 는 스스로 다시 걸지 않으므로
+            //   이 호출 하나가 **유일한 재무장**이다. 안드로이드도 `repository.snooze` 가
+            //   DB 쓰기와 재예약을 끝낸 뒤에 값을 돌려준다.
             do {
-                try AlarmManager.shared.countdown(id: uuid)
+                try AlarmAppContext.rearmCountdown(uuid)
+                AlarmAppContext.recordUsageEvent(.alarmSnoozed, snoozedRecord)
+                await ctx?.handleAlarmSnoozed(alarmKitIDString: uuid.uuidString)
             } catch {
-                // ignored
+                // 재무장에 실패했다 — **미룬 것이 아니다.** 행을 전진시키면 '5분 뒤 울림'
+                // 인데 OS 에는 카운트다운이 없고, 복구 경로도 이 행을 후보로 보지 않아
+                // (`recoverScheduledAlarms` 는 `alarmKitID` 가 살아 있어 건너뛰고,
+                //  `AlarmScheduleReconciler` 는 `.snoozed` 를 in-flight 로 비켜 간다)
+                // **조용히 안 울린다.** 안드로이드가 `repository.snooze == null` 에서
+                // 해제로 마무리하는 것과 같은 이유로 상태를 정상으로 되돌린다.
+                AlarmAppContext.recordUsageEvent(.alarmDismissed, snoozedRecord, "snooze_failed")
+                do {
+                    try AlarmManager.shared.stop(id: uuid)
+                } catch {
+                    // ignored
+                }
+                await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
             }
-            await ctx?.handleAlarmSnoozed(
-                alarmKitIDString: uuid.uuidString,
-                snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
-            )
         }
         #else
         // 위젯 타겟: AlarmAppContext 가 없다. LiveActivityIntent.perform() 은 호스트
@@ -157,3 +205,29 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         #endif
     }
 }
+
+#if ALARMTALK_APP
+/// 관찰자가 이번 울림을 못 봤으면 여기서 적는다.
+///
+/// AlarmKit 은 **발사 시점에 우리 코드를 돌리지 않는다** — 알람이 울릴 때 앱이 죽어 있었다면
+/// `.alerting` 전환을 본 사람이 없다. 그때도 사용자가 끄거나 미루면 이 인텐트는 돌므로,
+/// 여기서 울림을 채워 넣지 않으면 **해제만 있고 울림이 없는** 기록이 남는다.
+///
+/// 판정은 **회차마다 남기는 표시**다(`ObservedRingMarkerStore`) — 관찰자가 적었으면 표시가
+/// 있고, 인텐트가 그걸 소비한다.
+///
+/// ⚠ **행의 상태(`ringing`)로 가르지 않는다**(2026-09-07 리뷰 35차). 두 방향으로 틀렸다:
+/// 관찰자가 적은 뒤 프로세스가 죽고 인텐트가 콜드로 깨어나면 **행을 못 읽어** 한 번 더
+/// 적었고(id 가 달라 서버 멱등으로도 안 걸린다), 반대로 콜드 인텐트는 `markStopped` 를 못
+/// 돌려 행에 `ringing` 이 남아 **다음 회차의 정당한 울림을 삼켰다.** 삼키는 쪽이 더 나쁘다.
+/// 표시가 없어서 한 번 더 적는 것(중복 1건)이 남는 실패 방향이고, 그게 옳은 방향이다.
+///
+/// ⚠ **끝내 아무도 안 누른 울림은 iOS 에서 적을 방법이 없다** — 발사 때 우리 코드가 돌지
+/// 않고, 반복 알람은 목록에서 사라지지도 않는다(`docs/spec/usage-events.md` §2).
+@MainActor
+func recordRingIfObserverMissedIt(_ record: LocalAlarmRecord?, alarmKitID: String) {
+    // 소비는 언제나 한다 — 낡은 표시를 남겨 두면 다음 회차를 삼킨다.
+    if ObservedRingMarkerStore.consume(alarmKitID: alarmKitID) { return }
+    AlarmAppContext.recordUsageEvent(.alarmRang, record)
+}
+#endif

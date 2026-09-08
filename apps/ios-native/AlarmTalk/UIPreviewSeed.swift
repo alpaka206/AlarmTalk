@@ -130,7 +130,7 @@ enum UIPreviewSeed {
         var own = VoiceProfile(id: "preview-voice", name: "엄마 목소리", status: "ready")
         own.relationshipLabel = "엄마"
         own.isShared = true
-        let names = ["아담", "미나", "하준", "소은"]
+        let names = ["시우", "미나", "도현", "애니"]
         let system = names.enumerated().map { index, name -> VoiceProfile in
             var profile = VoiceProfile(
                 id: systemVoiceIDPrefix + String(format: "%012d", 101 + index),

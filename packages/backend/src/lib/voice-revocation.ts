@@ -3,7 +3,7 @@ import type { DbExecutor } from './transactions';
 /**
  * 목소리가 사라졌을 때 걷어내야 할 알람 하나. 그대로 `notifyDowngradedAlarms` 의 target 이다.
  */
-export type RevokedAlarmTarget = {
+type RevokedAlarmTarget = {
   alarmId: string;
   ownerUserId: string;
   isReceived: boolean;

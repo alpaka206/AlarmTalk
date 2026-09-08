@@ -43,11 +43,34 @@ final class VoiceStudioViewModelTests: XCTestCase {
         )
     }
 
+    /// ⚠ 이 테스트는 **틀린 문구를 지키고 있었다**(2026-09-07 정정).
+    /// `VOICE_LIMIT_REACHED` 는 서버에서 "최대 N개까지 등록 가능합니다" — **등록 슬롯**이
+    /// 다 찼다는 뜻이지 월 한도가 아니다(`routes/voice-profile.ts`). '다음 달이면 풀린다'
+    /// 고 읽히는 문구는 사용자를 다음 달까지 기다리게 만든다. 안드로이드
+    /// `api_error_voice_limit_reached` 와 같은 말이어야 한다.
     func test_localizedVoiceMessage_VOICE_LIMIT_REACHED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_LIMIT_REACHED"),
-            "이번 달 목소리 생성 한도를 모두 사용했어요."
+            "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요."
         )
+    }
+
+    /// 목소리 화면이 맡지 않은 코드는 공용 표(`APIErrorMessages`)가 받는다.
+    func test_localizedVoiceMessage_fallsBackToSharedTable() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "RATE_LIMITED"),
+            "요청이 너무 많아요. 잠시 후 다시 시도해 주세요."
+        )
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "ALARM_NOT_FOUND"),
+            "이미 사라진 알람이에요."
+        )
+    }
+
+    /// 공용 표는 **모르는 코드에 문구를 지어내지 않는다** — nil 을 주고 화면이 폴백을 쓴다.
+    func test_apiErrorMessages_unknownCodeIsNil() {
+        XCTAssertNil(APIErrorMessages.message(for: "MYSTERY_CODE"))
+        XCTAssertNil(APIErrorMessages.message(for: nil))
     }
 
     func test_localizedVoiceMessage_AUDIO_DURATION_TOO_SHORT() {

@@ -819,8 +819,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
-    val showVoiceConsentSheet: Boolean get() = pendingSensitiveConsent != null
-
     // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
     var showWelcomePromo by mutableStateOf(false)
         internal set

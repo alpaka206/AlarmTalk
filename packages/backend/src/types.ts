@@ -105,7 +105,7 @@ export interface SentryClient {
   setTags?(tags: Record<string, string | number | boolean | null | undefined>): void;
 }
 
-export type AuthVariables = {
+type AuthVariables = {
   /**
    * users.id (PK). 미들웨어가 JWT sub 을 DB 에서 해석해 항상 이 값으로 정규화한다.
    * 배포 전에 발급돼 sub 이 google_id 인 구(舊) 토큰도 여기서는 users.id 가 된다.
@@ -122,6 +122,11 @@ export type AuthVariables = {
   userEmail: string;
   userName: string;
   sentry: SentryClient;
+  /**
+   * 이 요청의 에러를 `logRouteError` 가 이미 Sentry 로 보냈는가.
+   * `errorCodeMiddleware` 가 나가는 5xx 를 중복 보고하지 않으려고 본다.
+   */
+  errorReported?: boolean;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AuthVariables };

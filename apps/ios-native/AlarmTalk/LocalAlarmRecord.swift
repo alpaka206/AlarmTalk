@@ -246,7 +246,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 안드로이드는 `DateUtils.formatDateTime(SHOW_DATE|ABBREV_MONTH|SHOW_WEEKDAY|
     /// ABBREV_WEEKDAY|NO_YEAR)` 로 만든다. 라벨(알람 이름) 대신 이걸 두는 게 의도다 —
     /// 기본 시계 앱의 라벨보다 '언제 울리나' 가 실용적이라서.
-    func nextFireDateLabel(now: Date = Date()) -> String {
+    func nextFireDateLabel() -> String {
         // ⚠ **로케일을 고정하지 말 것.** 사용자에게 보여 주는 날짜라 기기 언어를 따라야 한다
         // (안드로이드는 어디에서도 로케일을 고정하지 않는다). 기계 파싱용 포맷터만
         // `en_US_POSIX` 를 쓴다.
@@ -254,12 +254,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMEd")
         return formatter.string(from: nextFireDate)
-    }
-
-    /// 호환 헬퍼: 기존 `repeatWeekdays` (1..7 Calendar weekday) 형식.
-    /// Android mask 의 bit 0=Sun..bit 6=Sat 을 Calendar 1=Sun..7=Sat 으로 변환.
-    var repeatWeekdays: [Int] {
-        repeatDaysMask.repeatDays.map(\.localeWeekdayInt)
     }
 
     /// AlarmKit UUID 호환 헬퍼.
@@ -737,5 +731,21 @@ actor LocalAlarmPersistence {
     /// 자물쇠를 거치므로 늦게 도착해도 새 파일을 덮지 않는다.
     func save(_ alarms: [LocalAlarmRecord], seq: UInt64) {
         writer.write(alarms, seq: seq)
+    }
+}
+
+extension LocalAlarmRecord {
+    /// 이 알람이 **직접 입력 문구**를 물고 있는가 — 붙임·놓음이 같은 선을 쓰게 하는 이름.
+    ///
+    /// ⚠ **호출부마다 손으로 조립하지 말 것.** 붙임 쪽에만 이 판정이 있고 놓음 쪽에는 없어서,
+    /// 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
+    /// (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고
+    /// 있어 그 둘만 보면 갈리지 않는다. 안드로이드 `AlarmEntity.isManualMessageAlarm` 의 짝.
+    ///
+    /// ⚠ **`usesCustomMessageVoice` 에서 유도한다 — 항을 다시 적지 말 것**(리뷰 35차).
+    /// 손으로 적었더니 거기 있는 두 항(`stock_` 캐시 키 제외, `voiceCategory`)이 빠져,
+    /// 버킷 없이 프리셋 클립 하나만 문 **옛 행**이 직접 입력으로 통과했다.
+    var isManualMessageAlarm: Bool {
+        usesCustomMessageVoice && ttsMessageId?.nilIfBlank != nil
     }
 }

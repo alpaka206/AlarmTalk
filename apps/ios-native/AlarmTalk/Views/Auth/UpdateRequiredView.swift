@@ -38,7 +38,7 @@ struct UpdateRequiredView: View {
 
             Spacer().frame(height: 12)
 
-            Text("원활하고 안전한 이용을 위해\n최신 버전으로 업데이트해 주세요.")
+            Text("이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요.")
                 .font(.body)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .multilineTextAlignment(.center)

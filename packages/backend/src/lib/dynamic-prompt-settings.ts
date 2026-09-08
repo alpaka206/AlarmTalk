@@ -34,7 +34,7 @@ export function dynamicPromptSettingsFromRow(row: Record<string, unknown>): Dyna
   return parseDynamicPromptSettings(row.dynamic_prompt_settings_json);
 }
 
-export function parseDynamicPromptSettings(raw: unknown): DynamicPromptSettings {
+function parseDynamicPromptSettings(raw: unknown): DynamicPromptSettings {
   if (typeof raw !== 'string' || raw.trim() === '') return EMPTY_DYNAMIC_PROMPT_SETTINGS;
   try {
     return normalizeDynamicPromptSettings(JSON.parse(raw));
@@ -43,7 +43,7 @@ export function parseDynamicPromptSettings(raw: unknown): DynamicPromptSettings 
   }
 }
 
-export function normalizeDynamicPromptSettings(raw: unknown): DynamicPromptSettings {
+function normalizeDynamicPromptSettings(raw: unknown): DynamicPromptSettings {
   if (!raw || typeof raw !== 'object') return EMPTY_DYNAMIC_PROMPT_SETTINGS;
   const record = raw as Record<string, unknown>;
   const weather = record.weather && typeof record.weather === 'object'

@@ -28,7 +28,12 @@ final class MessageContextMemoryTests: XCTestCase {
     /// 두 앱이 같은 서버 행을 읽으므로 어긋나면 한쪽에서만 종류가 틀리게 보인다.
     func testForBucketMatchesAndroidMapping() {
         XCTAssertEqual(RandomPromptContext.forBucket("greeting"), .preset)
-        XCTAssertEqual(RandomPromptContext.forBucket("love"), .love)
+        XCTAssertEqual(RandomPromptContext.forBucket("cheer"), .cheer)
+        // ⚠ **옛 이름 `love` 도 영원히 받는다**(2026-09-02 개명). 이미 저장된 알람 행과
+        //   구버전 앱이 그 값을 들고 있고, 접지 않으면 `preset` 으로 떨어져 응원을
+        //   골랐는데 기본 인사말이 울린다.
+        XCTAssertEqual(RandomPromptContext.forBucket("love"), .cheer)
+        XCTAssertEqual(RandomPromptContext.normalized("love"), .cheer)
         XCTAssertEqual(RandomPromptContext.forBucket("medication"), .medication)
         XCTAssertEqual(RandomPromptContext.forBucket("fortune"), .wakeFortune)
         XCTAssertEqual(RandomPromptContext.forBucket("weather"), .wakeWeather)
@@ -52,8 +57,8 @@ final class MessageContextMemoryTests: XCTestCase {
     /// 저장된 종류가 있으면 **그걸 쓴다.** 테마 id 로 되짚는 건 종류가 없을 때뿐이다 —
     /// 순서가 뒤집히면 사용자가 바꾼 종류를 테마가 도로 덮는다.
     func testStoredContextWinsOverBucketFallback() {
-        let restored = restoreContext(storedContext: RandomPromptContext.love.rawValue, bucketId: "weather")
-        XCTAssertEqual(restored, .love)
+        let restored = restoreContext(storedContext: RandomPromptContext.cheer.rawValue, bucketId: "weather")
+        XCTAssertEqual(restored, .cheer)
     }
 
     /// 종류를 떨어뜨리던 시절에 저장된 행(= 종류 nil + 테마 있음)은 테마로 되짚는다.

@@ -125,8 +125,24 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
             for ((profileId, invalidatedAt) in markerCandidates) {
                 var degradedNow = 0
                 val result = markers.applyIfChanged(listOwner, profileId, invalidatedAt) {
-                    degradedNow =
-                        repository.degradeCustomMessageAlarmsUsingVoiceProfile(profileId, listOwner)
+                    degradedNow = repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                        voiceProfileId = profileId,
+                        expectedOwnerUserId = listOwner,
+                        // ⚠ **표식 경로는 기본 목소리도 대상이다.** 제자리 교체는 프로필
+                        //   id 를 그대로 두고 provider 보이스만 바꾸므로, 기본 목소리로 만든
+                        //   직접 입력 알람도 옛 소리를 물고 있다(마이그레이션 #111 이 딱
+                        //   그 경우다 — 시우·도현·애니). 회수 경로는 그대로 false 다.
+                        //   ⚠ 이 경로만 이 문을 안 열고 있었다(iOS·워커는 연다). 그런데
+                        //   #111 은 **푸시를 보내지 않으므로** 대개 이 자리가 표식을 처음
+                        //   보는 곳이다 — 0건으로 지나가면 기준선만 태우고, 그 뒤엔 워커가
+                        //   올 때까지 옛 목소리로 운다.
+                        allowSystemVoice = true,
+                        // ⚠ **표식 뒤에 만든 오디오는 이미 새 목소리다 — 깎지 않는다.**
+                        //   이 경로만 창을 안 넘기고 있었다(iOS `PushNotificationCoordinator`
+                        //   는 넘긴다). 강등은 되돌릴 수 없으므로 좁은 쪽이 맞다.
+                        invalidatedBeforeMillis =
+                            com.alarmtalk.app.data.parseVoiceMarkerMillis(invalidatedAt),
+                    )
                     // **언제나 null 이다** — 이 경로는 확정하지 않는다(위 주석). 계정이 바뀐
                     // 경우도 자연히 포함된다(옛 계정의 0을 '처리 완료' 로 적으면 그 계정은
                     // 영영 재시도하지 않는다).

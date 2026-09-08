@@ -136,7 +136,7 @@ struct ConsentView: View {
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             } else {
                 Spacer().frame(height: 8)
-                Text("원활한 서비스 제공을 위해 아래 약관에 대한 동의가 필요해요.")
+                Text("서비스를 이용하려면 아래 약관에 동의해야 해요.")
                     .font(.subheadline)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }

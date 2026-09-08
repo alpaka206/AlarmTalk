@@ -38,4 +38,8 @@ export function logRouteError(c: Context<any>, err: unknown): void {
     if (uid) sentry.setTag?.('uid', uid);
     sentry.captureException(err);
   }
+
+  // 이 요청은 **스택까지 붙여** 이미 보고했다. errorCode 미들웨어가 나가는 5xx 를 보고
+  // 한 번 더 올리지 않도록 표시해 둔다 — 같은 사고가 Sentry 에 둘로 보이면 세는 게 틀어진다.
+  c.set('errorReported', true);
 }

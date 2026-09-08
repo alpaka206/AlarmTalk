@@ -908,6 +908,9 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    // ⚠ **캐시 히트도 직접 입력이면 한 번으로 센다**(2026-09-07 규칙 변경).
+    //   한도의 뜻이 "합성했는가" 가 아니라 "폰에 없어서 서버에 달라고 했는가" 로 바뀌었다.
+    pushManualQuotaFlow();
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -922,6 +925,45 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.audio_base64).toBe('Q0g=');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
+    // 합성은 건너뛰되 **횟수는 줄어든다** — 앱이 화면 숫자를 갱신할 수 있게 응답에 싣는다.
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('INSERT INTO manual_tts_usage')),
+    ).toBe(true);
+    expect(body.manual_quota).toEqual({ used: 1, limit: 30, remaining: 29 });
+  });
+
+  it('캐시 히트 뒤에 실패하면 예약한 횟수를 환불한다 — 못 받은 오디오로 차감하지 않는다', async () => {
+    const objectKey = 'generated-tts/user-1/cached.mp3';
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([
+      {
+        message_id: M1,
+        provider: 'elevenlabs',
+        text: 'hello',
+        audio_url: `r2://${objectKey}`,
+        audio_object_key: objectKey,
+        audio_format: 'mp3',
+      },
+    ]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    pushManualQuotaFlow();
+    // 예약과 응답 사이에 남아 있는 DB 쓰기(LRU 갱신)가 터진 상황.
+    mockDB.pushErrorFor('voice_profiles SET last_used_at', new Error('db unavailable'));
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error_code).toBe('TTS_GENERATION_FAILED');
+    // 히트 예약도 캐시 미스와 똑같이 되돌아와야 한다 — 안 그러면 재시도할 때마다 또 깎인다.
+    const refund = mockDB.calls.find((c) => c.sql.includes('used_count = used_count - 1'));
+    expect(refund).toBeDefined();
+    expect(refund!.args).toEqual(['user-1', '2026-07']);
   });
 
   it('checks the provider cache key before synthesizing', async () => {
@@ -948,6 +990,8 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     // 캐시 히트도 **지금 목소리인지** 다시 확인한다(Codex #703 P1) — 그 조회분.
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    // 캐시 히트도 직접 입력이면 한 번으로 센다(2026-09-07) — 그 예약분.
+    pushManualQuotaFlow();
 
     const app = buildApp();
     const res = await app.request(

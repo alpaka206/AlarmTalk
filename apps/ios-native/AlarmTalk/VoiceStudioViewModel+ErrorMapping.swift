@@ -2,9 +2,11 @@ import Foundation
 
 // MARK: - errorCode 매핑
 //
-// Android `MainViewModelVoiceActions.kt:184-190` 의 mapping 을 그대로 옮긴다. 본 매퍼는
-// `APIError.server` 응답 body 안의 error_code 를 한국어 메시지로 변환한다. 해당 코드가
-// 없거나 모르는 코드인 경우 generic fallback 메시지를 반환한다.
+// `APIError.server` 응답 안의 error_code 를 목소리 화면의 말로 옮긴다. 안드로이드
+// `ui/main/MainViewModelVoiceActions.kt` 의 같은 매핑과 짝이다.
+//
+// ⚠ **여기에는 목소리 화면에서만 다르게 말할 코드만 둔다.** 나머지는 두 앱이 공유하는
+// 표(`APIErrorMessages`)가 받는다 — 같은 코드에 두 벌의 문구를 두면 한쪽만 고쳐진다.
 extension VoiceStudioViewModel {
     /// 외부에서도 테스트하기 위해 nonisolated.
     nonisolated func mapVoiceError(_ error: Error) -> String {
@@ -43,52 +45,21 @@ extension VoiceStudioViewModel {
 
     /// 코드 -> 한국어 메시지. 테스트가 직접 호출할 수 있게 static.
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
+        // 목소리 등록·확정 화면에서만 다르게 말해야 하는 코드들. 나머지는 공용 표가 받는다.
         switch code {
-        case "MANUAL_TTS_QUOTA_EXCEEDED":
-            // 안드로이드 `editor_error_manual_tts_quota` 와 같은 뜻이어야 한다.
-            return "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요."
-        case "VOICE_SLOT_EXHAUSTED":
-            return "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
-        case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
-            return PaidGateCopy.message
-        // ⚠ 아래 셋은 **매핑이 없어서** 지금까지 "목소리를 처리하지 못했어요. 잠시 후 다시
-        // 시도해 주세요." 로 떨어졌다(2026-08-11 전수 조사). 다시 시도해도 안 되는
-        // 종류인데 다시 시도하라고 말하고 있었다.
-        case "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY":
-            // 유료여도 뜬다 — 플랜이 아니라 **목소리 종류**의 문제라 `PaidGateCopy` 를 쓰지 않는다.
-            return "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
-        case "VOICE_LOCKED_FREE_PLAN":
-            return "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요."
-        case "VOICE_CLONE_AUDIO_TOO_SHORT":
-            return "목소리를 만들 음성은 12초 이상이어야 해요."
-        case "VOICE_CLONE_AUDIO_TOO_LONG":
-            return "목소리를 만들 음성은 2분 이하로 준비해 주세요."
-        case "INVALID_DURATION":
-            return "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
-        case "VOICE_LIMIT_REACHED":
-            return "이번 달 목소리 생성 한도를 모두 사용했어요."
-        // 아래 둘은 확정(승격·제자리 교체)에서만 나온다. 코드를 모르면 default 의 '잠시 후
-        // 다시 시도' 로 떨어져, 다음 달까지 풀리지 않는 한도를 계속 두드리게 된다.
-        case "VOICE_MONTHLY_CHANGE_LIMIT_REACHED":
-            return "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요."
-        case "VOICE_PREVIEW_REQUIRED":
-            // 다른 기기가 미리듣기 문구를 고쳐 previewed_at 이 지워진 경우. 다시 시도해도
-            // 안 되는 종류라 '잠시 후 다시' 로 뭉개면 영영 눌러 보게 된다.
-            return "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요."
-        case "CONSENT_REQUIRED":
-            return "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요."
         case "AUDIO_DURATION_TOO_SHORT":
-            return "음성이 너무 짧아요. 다시 녹음해 주세요."
+            return String(localized: "음성이 너무 짧아요. 다시 녹음해 주세요.")
         case "VOICE_PROFILE_NOT_FOUND":
-            return "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+            return String(localized: "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요.")
         case "INVALID_VOICE_PROFILE_ID":
-            return "잘못된 목소리 식별자예요."
+            return String(localized: "잘못된 목소리 식별자예요.")
         case "NAME_TOO_LONG":
-            return "이름은 50자 이내로 입력해 주세요."
+            return String(localized: "이름은 50자 이내로 입력해 주세요.")
         case "AUDIO_AND_NAME_REQUIRED":
-            return "음성과 이름을 모두 입력해 주세요."
+            return String(localized: "음성과 이름을 모두 입력해 주세요.")
         default:
-            return "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
+            return APIErrorMessages.message(for: code)
+                ?? String(localized: "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요.")
         }
     }
 
@@ -115,24 +86,50 @@ extension VoiceStudioViewModel {
         return nil
     }
 
+    /// 응답 본문에서 코드를 **문자열로** 찾아야 하는 폴백용 목록.
+    ///
+    /// 정상 경로는 `APIError.serverErrorCode` 다. 이 목록은 그게 비었을 때(옛 응답 형태,
+    /// 프록시가 본문을 감싼 경우) message 안에서 코드를 긁어내는 마지막 수단이다.
+    /// ⚠ 새 코드를 `APIErrorMessages` 에 더했으면 여기에도 더한다 — 안 그러면 그 코드는
+    /// 폴백 경로에서 **영영 발견되지 않는다.**
     nonisolated static let knownErrorCodes: [String] = [
-        "VOICE_SLOT_EXHAUSTED",
-        "VOICE_FEATURE_REQUIRES_PAID_PLAN",
-        "VOICE_MONTHLY_CHANGE_LIMIT_REACHED",
-        "VOICE_PREVIEW_REQUIRED",
-        "CONSENT_REQUIRED",
-        "FREE_PLAN_PRESET_ONLY",
-        "BASIC_VOICE_PRESET_ONLY",
-        "VOICE_LOCKED_FREE_PLAN",
-        "VOICE_CLONE_AUDIO_TOO_SHORT",
-        "VOICE_CLONE_AUDIO_TOO_LONG",
-        "INVALID_DURATION",
-        "VOICE_LIMIT_REACHED",
+        // 목소리 화면 고유
         "AUDIO_DURATION_TOO_SHORT",
         "VOICE_PROFILE_NOT_FOUND",
         "INVALID_VOICE_PROFILE_ID",
         "NAME_TOO_LONG",
         "AUDIO_AND_NAME_REQUIRED",
+        // 공용 표가 받는 것들
+        "RATE_LIMITED",
+        "REQUEST_BODY_TOO_LARGE",
+        "INTERNAL_ERROR",
+        "ALARM_SCHEMA_UPGRADING",
+        "AUTH_INVALID_CREDENTIALS",
+        "AUTH_EMAIL_CODE_INVALID",
+        "AUTH_EMAIL_CODE_EXPIRED",
+        "AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED",
+        "ACCOUNT_PENDING_DELETION",
+        "TOKEN_REVOKED",
+        "AUTH_TOKEN_EXPIRED",
+        "AUTH_USER_NOT_FOUND",
+        "VOICE_FEATURE_REQUIRES_PAID_PLAN",
+        "VOICE_LOCKED_FREE_PLAN",
+        "FREE_PLAN_PRESET_ONLY",
+        "BASIC_VOICE_PRESET_ONLY",
+        "MANUAL_TTS_QUOTA_EXCEEDED",
+        "VOICE_CLONE_AUDIO_TOO_SHORT",
+        "VOICE_CLONE_AUDIO_TOO_LONG",
+        "INVALID_DURATION",
+        "INVALID_AUDIO_MIME_TYPE",
+        "VOICE_SLOT_EXHAUSTED",
+        "VOICE_CAPACITY_EXHAUSTED",
+        "VOICE_LIMIT_REACHED",
+        "VOICE_NOT_READY",
+        "VOICE_CLONING_FAILED",
+        "VOICE_MONTHLY_CHANGE_LIMIT_REACHED",
+        "VOICE_PREVIEW_REQUIRED",
+        "CONSENT_REQUIRED",
+        "ALARM_NOT_FOUND",
+        "TTS_GENERATION_FAILED",
     ]
 }
-

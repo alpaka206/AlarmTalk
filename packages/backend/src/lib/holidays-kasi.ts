@@ -67,7 +67,7 @@ function locdateToIso(locdate: number | string | undefined): string | null {
 }
 
 /** KASI item 1건 → HolidayItem. 공휴일이 아니거나 날짜가 깨졌으면 null. */
-export function mapKasiItem(item: KasiItem): HolidayItem | null {
+function mapKasiItem(item: KasiItem): HolidayItem | null {
   if (item.isHoliday !== 'Y') return null;
   const date = locdateToIso(item.locdate);
   if (!date) return null;

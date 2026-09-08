@@ -84,7 +84,7 @@ struct SettingsView: View {
                         }
                     )
                 }
-                .settingsCard(title: "랜덤 문구 정보")
+                .settingsCard(title: "문구 정보")
 
                 if let user = auth.session?.user {
                     AccountPanel(
@@ -289,7 +289,7 @@ struct SettingsValueButton: View {
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleButtonStyle())
     }
 }
 
@@ -348,36 +348,6 @@ struct ThemeModePickerSheet: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)
             }
-        }
-    }
-}
-
-private struct SettingsSheetHeader: View {
-    let title: LocalizedStringKey
-    var subtitle: LocalizedStringKey? = nil
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(AlarmTalkTheme.text)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-            Spacer()
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.headline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(AlarmTalkTheme.surfaceVariant, in: Circle())
-            }
-            .buttonStyle(.plain)
         }
     }
 }

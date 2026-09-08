@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
@@ -800,7 +801,7 @@ type ReplaceResult =
   | {
       ok: false;
       error: string;
-      errorCode: string;
+      errorCode: ErrorCode;
       status: 403 | 404 | 409 | 429;
       /** CONSENT_REQUIRED 일 때만 — 승격 경로와 같은 필드로 어떤 동의가 빠졌는지 싣는다. */
       consent?: string;
@@ -2218,7 +2219,7 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
 
 function validateCloneDuration(value: unknown): {
   status: 400;
-  body: { error: string; error_code: string };
+  body: { error: string; error_code: ErrorCode };
 } | null {
   if (value == null || value === '') {
     return {
@@ -2414,6 +2415,7 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
               JOIN voice_profiles vp ON vp.id = m.voice_profile_id
               LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
              WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
+               AND m.retired_at IS NULL
                AND m.audio_url IS NOT NULL
                AND (
                  COALESCE(q.refresh_existing, 0) = 0
@@ -2542,6 +2544,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
                   JOIN generated_audio_assets ga
                     ON ga.message_id = m.id AND ga.audio_url = m.audio_url
                  WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
+                   AND m.retired_at IS NULL
                    AND m.audio_url IS NOT NULL
                    AND ga.provider_voice_id = vp.elevenlabs_voice_id`,
           args: [id],

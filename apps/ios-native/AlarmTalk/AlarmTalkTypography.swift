@@ -100,9 +100,15 @@ extension Font {
 
 extension AlarmTalkTypography {
     /// Default scale, matching Material 3 sizes used by Android (Compose M3
-    /// `Typography()` defaults). Line heights are documented in comments since
-    /// SwiftUI `Font` does not encode leading directly — call sites that need
-    /// the leading should reference the constants in `LineHeight` below.
+    /// `Typography()` defaults).
+    ///
+    /// ⚠ **리딩(줄 높이)은 맞추지 않는다**(2026-08-07 확인). SwiftUI 는 `Font` 에 리딩을
+    /// 담지 못해 여러 줄 문구는 Pretendard 자체 리딩으로 그려진다. 안드로이드(Material 3
+    /// lineHeight)와의 차이는 **줄당 최대 2pt** 라 눈에 띄지 않고, 맞추려면 여러 줄 문구
+    /// 16곳에 `lineSpacing` 을 일일이 붙여야 해서 그대로 두기로 했다. 언젠가 맞추기로
+    /// 한다면 **한 곳도 빠뜨리지 말 것** — 절반만 적용하면 같은 화면 안에서 문단마다 줄
+    /// 간격이 달라져 지금보다 나빠진다. (참고용으로 두었던 줄 높이 상수표는 아무 데서도
+    /// 읽지 않아 지웠다 — 값은 Compose M3 `Typography()` 기본 lineHeight 그대로다.)
     /// ⚠ **각 토큰의 `relativeTo:` 는 크기가 가장 가까운 시스템 스타일**로 짝지었다.
     /// 이 짝이 증가 속도를 정한다 — 예를 들어 `.caption`(11~12)에 묶은 글자는 큰 설정에서
     /// `.body`(17)에 묶은 글자보다 덜 커진다. 아무 스타일에나 묶으면 같은 화면 안에서
@@ -128,33 +134,4 @@ extension AlarmTalkTypography {
         labelMedium: .pretendard(.medium, size: 12, relativeTo: .caption),
         labelSmall: .pretendard(.medium, size: 11, relativeTo: .caption2)
     )
-
-    /// Leading (line height) tokens paired with the scale above. Mirrors the
-    /// Material 3 defaults Compose applies on top of `Typography()`.
-    ///
-    /// ⚠ **이 값들은 참고용이고, 실제로 적용되지 않는다**(2026-08-07 확인).
-    /// SwiftUI 는 `Font` 에 리딩을 담지 못해 여러 줄 문구는 Pretendard 자체 리딩으로
-    /// 그려진다. 안드로이드(Material 3 lineHeight)와의 차이는 **줄당 최대 2pt** 라
-    /// 눈에 띄지 않고, 맞추려면 여러 줄 문구 16곳에 `lineSpacing` 을 일일이 붙여야 해서
-    /// 그대로 두기로 했다.
-    ///
-    /// 언젠가 맞추기로 한다면 **한 곳도 빠뜨리지 말 것** — 절반만 적용하면 같은 화면 안에서
-    /// 문단마다 줄 간격이 달라져 지금보다 나빠진다.
-    enum LineHeight {
-        static let displayLarge: CGFloat = 64
-        static let displayMedium: CGFloat = 52
-        static let displaySmall: CGFloat = 44
-        static let headlineLarge: CGFloat = 40
-        static let headlineMedium: CGFloat = 36
-        static let headlineSmall: CGFloat = 32
-        static let titleLarge: CGFloat = 28
-        static let titleMedium: CGFloat = 24
-        static let titleSmall: CGFloat = 20
-        static let bodyLarge: CGFloat = 24
-        static let bodyMedium: CGFloat = 20
-        static let bodySmall: CGFloat = 16
-        static let labelLarge: CGFloat = 20
-        static let labelMedium: CGFloat = 16
-        static let labelSmall: CGFloat = 16
-    }
 }

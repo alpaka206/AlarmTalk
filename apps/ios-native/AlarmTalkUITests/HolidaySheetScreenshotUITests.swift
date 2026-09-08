@@ -36,7 +36,9 @@ final class HolidaySheetScreenshotUITests: XCTestCase {
         dismissSheet(app)
         if app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.waitForExistence(timeout: 5) {
             app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.tap()
-            _ = app.staticTexts["원하는 지역"].waitForExistence(timeout: 5)
+            // 행 이름과 시트 제목이 같은 문자열("날씨 지역")이 됐으므로,
+            // 시트가 떴는지는 시트에만 있는 행으로 가른다.
+            _ = app.staticTexts["직접 입력"].waitForExistence(timeout: 5)
             capture("weather-sheet")
             dismissSheet(app)
         }

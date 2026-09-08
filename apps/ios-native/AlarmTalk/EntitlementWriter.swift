@@ -67,11 +67,6 @@ struct EntitlementWriter {
         return AccessTicket(userID: session.user.id, token: session.token)
     }
 
-    /// 이 표가 가리키는 계정의 스냅샷을 읽는다.
-    func read(_ ticket: AccessTicket) -> AccessSnapshot {
-        snapshots.read(userID: ticket.userID)
-    }
-
     /**
      * 표가 아직 유효할 때만 [transform] 을 반영한다.
      *

@@ -95,8 +95,6 @@ enum NativeTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var navigationTitle: LocalizedStringKey { title }
-
     var systemImage: String {
         switch self {
         case .alarms: return "alarm"

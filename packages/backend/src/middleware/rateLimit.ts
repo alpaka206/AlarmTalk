@@ -47,7 +47,7 @@ function getKey(c: Context): string {
  * 레이트리밋 미들웨어 팩토리. prefix 로 버킷을 분리하면 동일 키(사용자/IP)에 대해
  * 일반 한도와 별개의 더 엄격한 한도를 독립적으로 걸 수 있다.
  */
-export function createRateLimitMiddleware(options?: {
+function createRateLimitMiddleware(options?: {
   windowMs?: number;
   maxRequests?: number;
   prefix?: string;
@@ -78,7 +78,7 @@ export function createRateLimitMiddleware(options?: {
     if (entry.count > maxRequests) {
       const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
       c.header('Retry-After', String(retryAfter));
-      return c.json({ error: 'Too many requests', retryAfter }, 429);
+      return c.json({ error: 'Too many requests', error_code: 'RATE_LIMITED', retryAfter }, 429);
     }
 
     await next();

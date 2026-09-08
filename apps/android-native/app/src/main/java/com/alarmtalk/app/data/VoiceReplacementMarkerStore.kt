@@ -39,6 +39,23 @@ import kotlinx.coroutines.sync.withLock
  *
  * 계정별이다. 앞 사람의 표식이 새 계정 판정에 쓰이면 안 된다.
  */
+/**
+ * 서버 표식(`datetime('now')` → `"2026-09-03 12:34:56"`, **UTC**)을 epoch millis 로.
+ *
+ * 강등이 "이 시각 **이전에** 만든 오디오만" 을 지킬 때 쓴다(2026-09-03 리뷰 23차) —
+ * 시각을 안 보면 교체가 배포된 뒤에 새 목소리로 제대로 만든 알람까지 톤으로 깎는다.
+ * 못 읽으면 null 이고, 그때는 예전처럼 시각을 보지 않는다(무엇을 봤는지 모르므로).
+ */
+internal fun parseVoiceMarkerMillis(marker: String?): Long? {
+    val raw = marker?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching {
+        java.time.LocalDateTime
+            .parse(raw.replace(' ', 'T'))
+            .toInstant(java.time.ZoneOffset.UTC)
+            .toEpochMilli()
+    }.getOrNull()
+}
+
 class VoiceReplacementMarkerStore(context: Context) {
     private val prefs = context.applicationContext
         .getSharedPreferences("voice_replacement_marker", Context.MODE_PRIVATE)
@@ -192,6 +209,23 @@ class VoiceReplacementMarkerStore(context: Context) {
         val key = seenKey(userId, profileId)
         val incoming = invalidatedAt.orEmpty()
         if (!prefs.contains(key)) {
+            // 집을지부터 정한다 — **시드는 그 뒤다.**
+            //
+            // ⚠ **집을 것이면 재시도 표식을 시드보다 먼저 남긴다**(2026-09-07 리뷰 30차).
+            //   시드가 먼저 디스크에 남으면, 강등이 끝나기 전에 프로세스가 죽거나 코루틴이
+            //   취소됐을 때 다음 회차가 `contains(key) == true` 로 들어와 아래 첫 조회 특례를
+            //   **못 보고**, `applied` 도 `retry` 도 없어 `incoming > baseline` 이 false 다 —
+            //   **그 세대를 영영 건너뛴다.** 이 경로의 강등은 되돌릴 수 없고 다른 경로가
+            //   기본 목소리를 줍지 않으므로, 그대로 지운 목소리로 계속 운다.
+            //   표식을 못 남기면 **시드도 하지 않는다**(fail-closed) — 다음 회차가 같은
+            //   첫 조회로 다시 들어온다.
+            val firstSightChanges =
+                prefs.getString(retryKey(userId, profileId), null) != null ||
+                    (incoming.isNotEmpty() && isSystemVoiceId(profileId))
+            if (firstSightChanges && !markRetryLocked(userId, profileId, invalidatedAt)) {
+                Log.w(TAG, "Failed to persist retry intent before seeding; leaving it retryable")
+                return Seen(changed = false, persisted = false)
+            }
             // ⚠ **디스크 쓰기 실패를 메모리 값으로 덮지 말 것**(Codex #703 P1).
             // `edit()` 은 성패와 무관하게 **메모리 맵을 먼저 고친다.** 그대로 두면 이
             // 프로세스 안에서는 `contains` 가 true 라 시드가 다시 시도되지 않고, 재시작하면
@@ -203,14 +237,26 @@ class VoiceReplacementMarkerStore(context: Context) {
                 Log.w(TAG, "Failed to seed replacement baseline; leaving it retryable")
                 return Seen(changed = false, persisted = false)
             }
+            // 위 `firstSightChanges` 두 갈래의 근거는 아래와 같다.
+            //
             // ⚠ **이 기기가 반영에 실패한 적이 있으면 첫 조회라도 집는다**(Codex #703 P1).
-            // 기준선이 없던 시절의 실패는 sentinel 로만 남아 있다 — 그걸 안 보면 이 시드가
-            // '바뀐 것 없음' 으로 끝나 정리 중 표시가 풀린다. 업데이트 직후 모든 설치가
-            // 강등되는 일은 없다: sentinel 은 **실제로 실패한 기기에만** 있다.
-            if (prefs.getString(retryKey(userId, profileId), null) != null) {
-                return Seen(changed = true, persisted = true)
-            }
-            return Seen(changed = false, persisted = true)
+            //   기준선이 없던 시절의 실패는 sentinel 로만 남아 있다 — 그걸 안 보면 이 시드가
+            //   '바뀐 것 없음' 으로 끝나 정리 중 표시가 풀린다. 업데이트 직후 모든 설치가
+            //   강등되는 일은 없다: sentinel 은 **실제로 실패한 기기에만** 있다.
+            //
+            // ⚠ **기본(시스템) 목소리는 첫 조회라도 집는다**(2026-09-03 리뷰 22차).
+            //
+            //   마이그레이션 `#111` 은 DB 만 고치고 **푸시를 보내지 않는다.** 그 뒤에 앱을
+            //   처음 연 기기는 그때의 표식을 **기준선으로 삼고 넘어가**, 그 목소리로 만든
+            //   직접 입력 알람이 **영영 옛 목소리로 운다** — 이름과 미리듣기만 새 목소리다.
+            //
+            //   시스템 목소리에서는 이 값이 **제자리 교체로만** 채워진다(등록·재등록 같은
+            //   일반 경로가 없다). 그래서 "서버에 표식이 있는데 내가 적어 둔 적이 없다" 는
+            //   **아직 반영하지 않았다**는 뜻으로 읽어도 모호하지 않다.
+            //   클론은 그대로 기준선 의미를 유지한다 — 거기서 열면 재등록 때마다 없던
+            //   강등이 생긴다.
+            //   ⚠ 새로 깐 기기에서는 대상 알람이 0개라 아무 일도 일어나지 않는다.
+            return Seen(changed = firstSightChanges, persisted = true)
         }
         // 서버 값은 `datetime('now')` 문자열이라 사전순 = 시간순이다. 앞선 값이면 무시한다.
         val applied = prefs.getString(appliedKey(userId, profileId), "").orEmpty()
@@ -243,7 +289,8 @@ class VoiceReplacementMarkerStore(context: Context) {
      * 그 회차가 실제로 보고 있던 세대는 기준선이므로, 그 값을 재시도 대상으로 적으면
      * 다음 권위 새로고침이 같은 값을 들고 와 그대로 다시 집는다.
      */
-    private fun markRetryLocked(userId: String, profileId: String, invalidatedAt: String?) {
+    /** @return 디스크에 남았으면 true(이미 같은 값이면 쓰지 않고 true). */
+    private fun markRetryLocked(userId: String, profileId: String, invalidatedAt: String?): Boolean {
         // ⚠ **기준선조차 없으면 sentinel 을 남긴다**(Codex #703 P1). 목록에 한 번도 오르지
         // 않은 프로필에 옛 푸시가 와서 실패하면 세대도 기준선도 없어 적을 값이 없는데, 그냥
         // 지나가면 다음 새로고침이 권위 세대를 **첫 조회로 시드하며 `persisted = true`** 로
@@ -256,7 +303,7 @@ class VoiceReplacementMarkerStore(context: Context) {
         val key = retryKey(userId, profileId)
         val previous = prefs.getString(key, null)
         val newest = maxOf(generation, previous.orEmpty())
-        if (newest == previous) return
+        if (newest == previous) return true
         // ⚠ **디스크에 못 남겼으면 메모리도 되돌린다**(Codex #703 P1, `commitLocked` 와 같은
         // 규약). `edit()` 은 성패와 무관하게 메모리 맵을 먼저 고치므로, 실패를 버리면 이
         // 프로세스는 표식이 있다고 읽어 **다음 실패를 `newest == previous` 로 걸러 내고 다시
@@ -268,12 +315,15 @@ class VoiceReplacementMarkerStore(context: Context) {
         // 그러면 뒤처진 회차가 "재시도 없음" 을 읽고 표시를 내리는 사이, 새 회차가 아직
         // 표식을 쓰기 전일 수 있다. 그 틈에 그 목소리로 만든 알람을 새 회차의 재시도가 벗긴다.
         // 잠금 순서는 언제나 MUTEX → SETTLING_LOCK 이라 교착이 없다(setSettling 은 후자만 잡는다).
-        synchronized(SETTLING_LOCK) {
+        return synchronized(SETTLING_LOCK) {
             if (!prefs.edit().putString(key, newest).commit()) {
                 val rollback = prefs.edit()
                 if (previous == null) rollback.remove(key) else rollback.putString(key, previous)
                 rollback.commit()
                 Log.w(TAG, "Failed to persist retry marker; leaving it retryable")
+                false
+            } else {
+                true
             }
         }
     }

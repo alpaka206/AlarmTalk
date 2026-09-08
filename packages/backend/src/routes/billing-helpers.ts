@@ -9,7 +9,7 @@ import {
 // ⚠ **원본은 `@alarmtalk/shared` 다**(2026-09-02). 같은 목록이 네 벌로 갈라져 있던 것을
 // 공용 계약 패키지로 올렸다 — 여기는 기존 호출부를 위한 Set 어댑터일 뿐이다.
 export const PAID_PLAN_TYPES = new Set<string>(SHARED_PAID_PLAN_TYPES);
-export const PAID_USER_PLANS = new Set<string>(SHARED_PAID_USER_PLANS);
+const PAID_USER_PLANS = new Set<string>(SHARED_PAID_USER_PLANS);
 
 /**
  * **그룹형 플랜인가** — 여러 명이 함께 쓰고 초대 코드를 발급하는 종류.

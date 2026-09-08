@@ -53,6 +53,7 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioLimits
+import com.alarmtalk.app.data.toPromptPreferences
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -114,6 +115,14 @@ internal enum class SaveBlockReason {
     WEATHER_LOCATION_MISSING,
     FORTUNE_INFO_MISSING,
     MESSAGE_PREPARING,
+
+    /**
+     * 오프라인인데 그 직접 입력 문구의 오디오가 **폰에 없다.**
+     *
+     * 서버에 있든 없든 지금은 가져올 수 없으므로 **요청을 보내 보지 않고** 막는다 —
+     * 실패를 기다렸다 에러를 보여 주는 것보다, 누른 즉시 이유를 말하는 편이 낫다.
+     */
+    OFFLINE_NEW_MESSAGE,
 }
 
 @Composable
@@ -701,6 +710,25 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    /**
+     * 이 목소리로 말할 때 붙는 호칭. **저장 경로와 오프라인 판정이 같이 쓴다** —
+     * 호칭은 문구 **안에** 병합되므로 캐시 키가 달라진다. 둘이 다른 값을 쓰면 "있는데
+     * 없다고" 하거나 그 반대가 된다.
+     */
+    fun resolvedVoiceListenerTitle(profileId: String, text: String): String? {
+        val isSelectedSystemVoice = isSystemVoiceId(profileId) ||
+            voiceProfiles.any { it.id == profileId && it.isSystem == true }
+        if (editor.hasSelectedStockClipAudio(profileId, text)) return null
+        return editor.voiceListenerTitleOverride.trimmedOrNull()
+            ?: resolveListenerTitle(
+                profileId = profileId,
+                voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
+            ).trimmedOrNull()
+            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
+            ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+    }
+
     fun saveEditor() {
         if (busy) return
         // **권한이 가장 먼저다.** 아래 어느 갈래든 결국 알람을 만들거나 고치는데, 음성 생성은
@@ -802,20 +830,7 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_fortune_info_required)
             return
         }
-        fun resolvedVoiceListenerTitle(): String? {
-            val isSelectedSystemVoice = isSystemVoiceId(profileId) ||
-                voiceProfiles.any { it.id == profileId && it.isSystem == true }
-            if (editor.hasSelectedStockClipAudio(profileId, text)) return null
-            return editor.voiceListenerTitleOverride.trimmedOrNull()
-                ?: resolveListenerTitle(
-                    profileId = profileId,
-                    voiceProfiles = voiceProfiles,
-                    familyVoices = familyVoices,
-                ).trimmedOrNull()
-                // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
-                ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
-        }
-        val listenerTitleForSave = resolvedVoiceListenerTitle()
+        val listenerTitleForSave = resolvedVoiceListenerTitle(profileId, text)
         val usableProfileIds = (
             visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter {
@@ -954,6 +969,26 @@ internal fun AlarmEditorScreen(
             }
             // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
             //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
+            //
+            // ⚠ **보내기 전에 남은 횟수를 한 번 더 본다**(2026-09-07 지시). 순서는
+            //    **① 로컬 확인 → ② 남은 횟수 확인 → ③ 생성 요청** 이다. 위에서 로컬 재사용이
+            //    실패했다 = 이 폰에 없다 = 서버를 불러야 한다 = **차감 대상**이다. 그러니
+            //    한도가 0인데 요청부터 보내 429 를 받을 이유가 없다.
+            //    화면에 띄워 둔 값이 아니라 **그 자리에서 다시 조회한다** — 다른 기기가 그
+            //    사이 다 썼을 수 있고, 편집기를 연 뒤 시간이 흘렀을 수도 있다.
+            //    ⚠ **강제는 여기가 아니다.** 서버가 예약에서 다시 막는다(429) — 이건 불필요한
+            //    왕복을 줄이는 것뿐이라, 조회에 실패하면 그냥 진행한다.
+            if (!familyAlarmMode && onLoadManualQuota != null) {
+                val quota = runCatching { onLoadManualQuota() }.getOrNull()
+                if (quota != null && quota.limit > 0 && quota.remaining <= 0) {
+                    generating = false
+                    manualQuota = quota
+                    familyBlockAlert = context.getString(R.string.editor_block_manual_quota_title) to
+                        context.getString(R.string.editor_block_manual_quota_message, quota.limit)
+                    return@launch
+                }
+                if (quota != null) manualQuota = quota
+            }
             // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
             // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
             // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
@@ -1033,11 +1068,14 @@ internal fun AlarmEditorScreen(
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
-                audioMessage = when (apiErrorCode(error)) {
+                val ttsErrorCode = apiErrorCode(error)
+                audioMessage = when (ttsErrorCode) {
                     "MANUAL_TTS_QUOTA_EXCEEDED" ->
                         context.getString(R.string.editor_error_manual_tts_quota)
-                    else ->
-                        userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                    // 나머지는 공용 표(ApiErrorMessages)가 받는다 — 프리셋 전용 목소리·합성
+                    // 실패처럼 "잠시 후 다시" 로 뭉개면 영영 눌러 보게 되는 코드들이 거기 있다.
+                    else -> com.alarmtalk.app.network.apiErrorMessage(context, ttsErrorCode)
+                        ?: userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
                 }
             }
             generating = false
@@ -1107,10 +1145,17 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
+    // ⚠ **문구 pane 이 돌려준 값에는 종류가 안 바뀐 경우도 있다**(2026-09-06 실기기 재현).
+    //   `applyRandomPromptSettings` 는 버킷·문구·오디오를 **비우고** 다시 붙이는 일을 아래
+    //   효과에 맡기는데, 아래 키는 전부 그때 그대로일 수 있다 — 같은 종류를 다시 확인하고
+    //   나오거나(들어갔다 뒤로만 눌러도 그렇다) 도시만 채워 넣은 경우다. 그러면 효과가 다시
+    //   돌지 않아 편집기가 "문구를 준비하고 있어요" 에 갇힌다. 그래서 **비운 쪽이 직접**
+    //   이 값을 올려 재바인딩을 부른다 — 키에 값 하나를 더 얹는 것보다 인과가 분명하다.
+    var stockClipRebindTick by remember { mutableStateOf(0) }
     // ⚠ **`editor.voiceRandomContext` 가 키에 있어야 한다**(2026-09-02). 문구 목록을 하나로
     //   합친 뒤로 스톡 클립 목소리도 다섯 종류를 고를 수 있는데, 고른 종류가 키에 없으면
     //   이 효과가 다시 돌지 않아 **방금 고른 운세가 붙지 않는다.**
-    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext) {
+    LaunchedEffect(usesStockClips, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline, editor.voiceRandomContext, stockClipRebindTick) {
         if (usesStockClips && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
@@ -1280,6 +1325,33 @@ internal fun AlarmEditorScreen(
      * 그래서 **누르게 두고, 왜 안 되는지 알럿으로 말한다** — 가족 알람 차단 알럿과 같은
      * 껍데기(`IosAlertDialog`)를 쓴다.
      */
+    /**
+     * 이 직접 입력 문구의 오디오를 **폰이 이미 갖고 있는가.**
+     *
+     * 판정은 저장 경로와 **같은 두 단계**다(`saveEditor` 의 `resolveTtsInput` → `getCachedAudio`):
+     * 입력 별칭이 있어도 **파일이 없으면 없는 것**이다. 별칭 파일은 오디오와 이름이 달라
+     * 함께 지워지지 않으므로, 별칭만 보고 판단하면 "있다" 고 착각한다.
+     *
+     * 가족 알람은 제외한다 — 서버가 수신자별로 만들어야 해서 내 캐시로는 대신할 수 없다.
+     */
+    fun manualAudioReadyLocally(profileId: String, text: String): Boolean {
+        if (editor.hasFreshTtsAudio(profileId, text) && !editor.localAudioUri.isNullOrBlank()) return true
+        if (familyAlarmMode) return false
+        val reuseUserId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return false
+        val alias = audioStore.resolveTtsInput(
+            AlarmAudioStore.ttsInputKey(
+                userId = reuseUserId,
+                profileId = profileId,
+                text = text,
+                category = editor.activeVoiceCategory(),
+                language = editor.activeVoiceLanguage(),
+                // 저장 시점과 같은 호칭을 쓴다 — 호칭이 문구 안에 병합되므로 키가 달라진다.
+                listenerTitle = resolvedVoiceListenerTitle(profileId, text),
+            ),
+        ) ?: return false
+        return audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri) != null
+    }
+
     val editorSaveBlockReason: SaveBlockReason? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
         editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
@@ -1311,6 +1383,11 @@ internal fun AlarmEditorScreen(
                 //   **매번 같은 클립**이 나간다. 날씨만 막고 두면 그 조용한 오작동이 남는다.
                 usesStockClips && editor.selectedBucket == "fortune" &&
                     !fortuneInfoReady() -> SaveBlockReason.FORTUNE_INFO_MISSING
+                // 오프라인 + 폰에 그 문구의 오디오가 없다 → 만들 길이 없다.
+                // ⚠ **요청을 보내 보고 실패를 보여 주지 않는다.** 로컬에서 답이 나오는
+                // 질문이라, 누른 즉시 이유를 말하는 편이 낫다(그리고 서버도 안 부른다).
+                editor.isManualForSave() && text.isNotBlank() && !isOnline &&
+                    !manualAudioReadyLocally(profileId, text) -> SaveBlockReason.OFFLINE_NEW_MESSAGE
                 // 빈 문구는 클립이 아직 안 붙은 과도기다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
                     SaveBlockReason.MESSAGE_PREPARING
@@ -1345,6 +1422,22 @@ internal fun AlarmEditorScreen(
             settingsDetailPanel = null
             return
         }
+        // 고른 것이 하나도 안 바뀌었으면 **아무것도 건드리지 않는다.** 직접 입력 갈래의
+        // `unchanged` 가드와 같은 이유다 — 들여다보고 그냥 뒤로 나오는 흐름이 흔한데,
+        // 그때마다 붙어 있던 클립과 오디오를 버리면 다시 붙을 때까지 요약 행이 '준비 중'
+        // 으로 돌아가고, 관문 판정도 한 번 더 돈다.
+        val nextRandomContext = normalizedRandomPromptContext(result.randomContext)
+        val randomChoiceUnchanged = !editor.isManualForDisplay() &&
+            normalizedRandomPromptContext(editor.voiceRandomContext) == nextRandomContext &&
+            editor.voiceWeatherCountry.trim() == result.weatherCountry &&
+            editor.voiceWeatherCity.trim() == result.weatherCity &&
+            editor.voiceFortuneGender.trim() == result.fortuneGender &&
+            editor.voiceFortuneBirthDate.trim() == result.fortuneBirthDate &&
+            editor.voiceFortuneBirthTime.trim() == result.fortuneBirthTime
+        if (randomChoiceUnchanged) {
+            settingsDetailPanel = null
+            return
+        }
         // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
         //
         // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`clonePrerenderBucketCategoryFor`).
@@ -1368,7 +1461,7 @@ internal fun AlarmEditorScreen(
             return
         }
         editor.voiceRandomPrompt = true
-        editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        editor.voiceRandomContext = nextRandomContext
         // ⚠ 위와 같은 이유 — 옛 버킷이 남으면 **새로 고른 종류 대신 옛 종류가 다시 붙는다.**
         // 새 종류의 버킷은 저장 시 `clonePrerenderBucketCategoryFor(새 컨텍스트)` 로 붙는다.
         editor.selectedBucket = null
@@ -1412,6 +1505,8 @@ internal fun AlarmEditorScreen(
         if (shouldSyncOwnDynamicPromptSettings) {
             onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
         }
+        // 방금 비운 버킷을 다시 붙이라고 스톡 클립 효과를 깨운다(위 `stockClipRebindTick` 주석).
+        stockClipRebindTick++
         settingsDetailPanel = null
     }
 
@@ -1706,6 +1801,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.VOICE_SETTLING -> R.string.editor_block_voice_settling_title
                                         SaveBlockReason.WEATHER_LOCATION_MISSING -> R.string.editor_block_weather_title
                                         SaveBlockReason.FORTUNE_INFO_MISSING -> R.string.editor_block_fortune_title
+                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_title
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_title
                                     }
                                     val messageRes = when (reason) {
@@ -1719,6 +1815,7 @@ internal fun AlarmEditorScreen(
                                         SaveBlockReason.FORTUNE_INFO_MISSING ->
                                             if (familyAlarmMode) R.string.editor_block_fortune_family_message
                                             else R.string.editor_block_fortune_message
+                                        SaveBlockReason.OFFLINE_NEW_MESSAGE -> R.string.editor_block_offline_message
                                         SaveBlockReason.MESSAGE_PREPARING -> R.string.editor_block_preparing_message
                                     }
                                     familyBlockAlert = context.getString(titleRes) to context.getString(messageRes)
@@ -1843,7 +1940,21 @@ internal fun AlarmEditorScreen(
 
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
-                onVolumeChange = { editor.voiceVolumePercent = it },
+                onVolumeChange = {
+                    editor.voiceVolumePercent = it
+                    // 듣고 있는 중이면 그 자리에서 크기만 바꾼다(다시 틀지 않는다).
+                    voicePreview.updateAlarmVolume(it)
+                },
+                onVolumeSettled = {
+                    // 목소리를 아직 안 골랐으면 들려줄 것이 없다 — 조용히 아무 일도 안 한다.
+                    editor.voiceProfileId?.takeIf { it.isNotBlank() }?.let { profileId ->
+                        voicePreview.ensureAlarmVolumePreview(
+                            voiceProfileId = profileId,
+                            stockClips = stockClips,
+                            volumePercent = editor.voiceVolumePercent,
+                        )
+                    }
+                },
                 onDismiss = { settingsDetailPanel = null },
             )
         }

@@ -23,12 +23,12 @@ import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
 import { logStructured } from './logger';
 
-export const VOICE_UPLOAD_TTL_DAYS = 7;
-export const GENERATED_TTS_TTL_DAYS = 30;
+const VOICE_UPLOAD_TTL_DAYS = 7;
+const GENERATED_TTS_TTL_DAYS = 30;
 // 화자 분리 후보(draft) 보이스의 유예 시간. 다이얼로그 안에서 몇 분 내 선택/정리되는
 // 임시물이라 1시간이면 충분히 넉넉하다 — 앱 강제종료 등으로 클라이언트 정리를 못 거친
 // 고아만 걸린다.
-export const DRAFT_VOICE_TTL_HOURS = 1;
+const DRAFT_VOICE_TTL_HOURS = 1;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
@@ -118,7 +118,21 @@ export async function enqueueUserVoiceArtifacts(
 }
 
 /** 큐를 배치로 비운다 — cron 전용. 외부 API 호출이 있으므로 트랜잭션 밖에서 실행. */
-export async function drainExternalDeletions(db: Client, env: Env): Promise<void> {
+/**
+ * R2 오브젝트 삭제 유예. **오브젝트가 올라온 지** 이만큼 지난 것만 실제로 지운다.
+ *
+ * 키가 결정론적이라 '내가 올린 것' 과 '남이 올린 같은 내용' 을 구분할 수 없다. 렌더 한
+ * 회차는 길어야 수십 초이므로, 마지막 업로드 이후 이 시간을 넘겼는데도 아무도 참조하지
+ * 않으면 미아가 맞다. 파기(목소리 삭제·동의 철회)에도 같은 유예가 걸리지만 약속 단위가
+ * 일(日)이라 영향이 없다.
+ */
+const R2_DELETE_GRACE_MS = 30 * 60 * 1000;
+
+export async function drainExternalDeletions(
+  db: Client,
+  env: Env,
+  now: Date = new Date(),
+): Promise<void> {
   const pending = await db.execute({
     sql: `WITH
             retry AS (
@@ -135,9 +149,9 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
               ORDER BY created_at ASC
               LIMIT ?
             )
-          SELECT id, kind, ref, attempts FROM retry
+          SELECT id, kind, ref, attempts, created_at FROM retry
           UNION ALL
-          SELECT id, kind, ref, attempts FROM fresh`,
+          SELECT id, kind, ref, attempts, created_at FROM fresh`,
     args: [Math.floor(DRAIN_BATCH_SIZE / 2), Math.ceil(DRAIN_BATCH_SIZE / 2)],
   });
   if (pending.rows.length === 0) return;
@@ -161,7 +175,58 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
         }
       } else {
         if (!bucket) throw new Error('VOICE_BUCKET unset');
-        await bucket.delete(ref);
+        // ⚠ **결정론적 키라 '내 것' 을 확신할 수 없다**(2026-09-03 리뷰 10·11·12차).
+        //   R2 키는 cacheKey 에서 나오므로(`generated-tts/<user>/<cacheKey>.mp3`) 같은
+        //   목소리·같은 문구를 만든 다른 렌더가 **같은 키**를 올린다. 그 렌더가 아직 행을
+        //   커밋하지 않은 사이에 지우면, 곧 게시될 알람이 없는 음원을 가리킨다.
+        //
+        //   ⚠ **유예는 큐 나이가 아니라 오브젝트의 업로드 시각에 건다**(리뷰 12차).
+        //   큐 행의 `created_at` 은 **처음 정리를 시도한 때**를 말할 뿐이다 — 삭제가 실패해
+        //   `attempts` 만 오르고 `created_at` 은 그대로인 행이 30분을 넘긴 뒤, **그때 새
+        //   렌더가 같은 키를 올리면** 그 회차가 유예를 통과해 방금 올라온 오브젝트를 지운다.
+        //   R2 오브젝트의 업로드 시각은 다시 올릴 때마다 갱신되므로, 그걸 보면 유예가
+        //   **경쟁 업로드에 정확히 연동**된다.
+        const head = typeof bucket.head === 'function' ? await bucket.head(ref) : null;
+        if (head) {
+          const uploadedAt = head.uploaded instanceof Date ? head.uploaded.getTime() : NaN;
+          if (Number.isFinite(uploadedAt) && now.getTime() - uploadedAt < R2_DELETE_GRACE_MS) {
+            continue; // 방금 올라왔다 — attempts 를 태우지 않고 다음 회차로 넘긴다.
+          }
+          // ⚠ 판정은 **`messages.audio_url` 만** 본다. `generated_audio_assets` 까지 보면
+          //   제자리 교체가 남긴 **옛 원장 행**이 '살아 있다' 로 읽혀 교체된 옛 음원을
+          //   영영 못 지운다 — 프리셋은 TTL 스윕에서도 면제라 회수 경로가 사라진다.
+          //   목소리 파기·동의 철회는 `messages` 행까지 같은 트랜잭션에서 지우므로
+          //   (`paid-voice-cleanup`·`account-deletion`) 이 확인에 걸리지 않는다.
+          const stillReferenced = await db.execute({
+            sql: 'SELECT 1 FROM messages WHERE audio_url = ? LIMIT 1',
+            args: [`r2://${ref}`],
+          });
+          if (stillReferenced.rows.length === 0) {
+            // ⚠ **지우기 직전에 예약이 아직 있는지 다시 본다**(2026-09-03 리뷰 13차).
+            //   렌더는 **게시에 성공한 그 트랜잭션에서** 자기 키의 예약을 지운다
+            //   (`generateStockClip` 의 `claimKeyFromDeletionQueue`). 그래서 여기서 예약이
+            //   사라졌다는 것은 **방금 누군가 이 키로 게시를 마쳤다**는 뜻이다.
+            //   (14차 정정: 예전에는 렌더가 **올리기 전에** 지웠는데, 그러면 계정 삭제·
+            //    동의 철회가 넣어 둔 남의 예약을 소비하고 업로드가 실패하면 되살릴 곳이
+            //    없었다. 이제 게시와 원자적으로 묶여 있어 실패하면 예약이 그대로 남는다.)
+            //
+            //   ⚠ **이것으로도 완전히 닫히지는 않는다.** 이 확인과 R2 삭제 사이는 DB 밖이라
+            //   원자적일 수 없다 — 그 찰나에 올라온 오브젝트는 여전히 지워질 수 있다.
+            //   완전한 해법은 회차마다 다른 키에 올리고 게시할 때 승격하는 것인데,
+            //   `generated_audio_assets.request_hash` 가 UNIQUE 라 그러면 같은 내용의
+            //   두 번째 행이 `INSERT OR IGNORE` 로 무시되고, 그때 `messages.audio_url` 과
+            //   `ga.audio_object_key` 가 어긋나 `findMissingStockTargets` 가 그 클립을
+            //   **영영 미완성으로 읽는다.** 키 체계를 바꾸려면 그 제약부터 손봐야 한다.
+            //   남은 창은 렌더 한 회차(수 초)가 아니라 **DB 왕복 한 번**이다.
+            const stillQueued = await db.execute({
+              sql: 'SELECT 1 FROM pending_external_deletions WHERE id = ? LIMIT 1',
+              args: [id],
+            });
+            if (stillQueued.rows.length === 0) continue;
+            await bucket.delete(ref);
+          }
+        }
+        // head 가 null 이면 오브젝트가 이미 없다 — 지울 것이 없으니 큐에서 내린다.
       }
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',

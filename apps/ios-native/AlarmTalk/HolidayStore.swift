@@ -296,10 +296,7 @@ final class HolidayStore: ObservableObject {
     /// Android `holidayPredicate` 와 동일 의미. AlarmTimeCalculator 에 주입.
     /// countryCode == nil 이면 평가 시점에 selectedCountryCode 로 resolve 해
     /// 설정 변경에 반응적이다 (weak-self 폴백 분기는 defaultCountryCode 로 resolve).
-    func holidayPredicate(
-        countryCode: String? = nil,
-        startDate: Date = Date()
-    ) -> (Date) -> Bool {
+    func holidayPredicate(countryCode: String? = nil) -> (Date) -> Bool {
         return { [weak self] date in
             guard let self else {
                 let cc = countryCode ?? Self.defaultCountryCode

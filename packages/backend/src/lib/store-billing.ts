@@ -18,7 +18,7 @@ import { planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/b
 
 // 'apple' 은 마이그레이션 #96 이 store_transactions.provider CHECK 에 되돌린 값이다.
 // applyStoreEntitlement 자체는 원래부터 provider-agnostic 이라 로직 변경이 없다.
-export type StoreProvider = 'google' | 'apple';
+type StoreProvider = 'google' | 'apple';
 
 /**
  * App Store 구독 관리 화면. **해지는 여기서만 된다.**

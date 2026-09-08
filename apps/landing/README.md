@@ -33,7 +33,7 @@ npm run build        # 정적 사이트를 out/ 디렉터리로 export
 
 - `i18n/routing.ts` — 지원 로케일(`ko`, `en`, `ja`)과 기본 로케일 정의
 - `i18n/request.ts` — 요청 로케일 해석 + 해당 `messages/<locale>.json` 로드
-- `i18n/navigation.ts` — 로케일 인식 `Link`/`useRouter` 등 내비게이션 헬퍼
+- `i18n/navigation.ts` — 로케일 인식 `Link`/`usePathname` 내비게이션 헬퍼
 - `messages/{ko,en,ja}.json` — 네임스페이스별 카피(meta/hero/pricing/faq 등)
 
 ## 디자인 토큰

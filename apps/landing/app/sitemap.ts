@@ -2,7 +2,7 @@
 import { routing } from "@/i18n/routing";
 import { localeUrl } from "@/lib/site";
 
-const PAGES = ["", "company", "contact", "privacy", "terms", "account-deletion"] as const;
+const PAGES = ["", "cheer", "company", "contact", "privacy", "terms", "account-deletion"] as const;
 
 export const dynamic = "force-static";
 
@@ -15,7 +15,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified,
       changeFrequency: "weekly" as const,
       priority:
-        page === "" ? (locale === routing.defaultLocale ? 1 : 0.8) : 0.5,
+        page === ""
+          ? locale === routing.defaultLocale
+            ? 1
+            : 0.8
+          : page === "cheer"
+            ? 0.7
+            : 0.5,
       alternates: {
         languages: {
           ...Object.fromEntries(

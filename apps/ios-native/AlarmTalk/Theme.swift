@@ -59,7 +59,6 @@ enum AlarmTalkTheme {
     /// 나와야 한쪽만 바뀌어도 대비가 유지된다.
     static let onPrimary = Color.dynamicScheme(light: AlarmTalkPalette.light.onPrimary, dark: AlarmTalkPalette.dark.onPrimary)
     static let secondary = Color.dynamicScheme(light: AlarmTalkPalette.light.secondary, dark: AlarmTalkPalette.dark.secondary)
-    static let accent = Color.dynamicScheme(light: AlarmTalkPalette.light.tertiary, dark: AlarmTalkPalette.dark.tertiary)
 
     // Surfaces
     static let background = Color.dynamicScheme(light: AlarmTalkPalette.light.background, dark: AlarmTalkPalette.dark.background)

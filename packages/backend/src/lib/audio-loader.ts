@@ -67,7 +67,7 @@ function r2KeyOwner(objectKey: string): string | null {
  *   → 타인 네임스페이스(r2://voices/{victim}/...) 추측을 통한 cross-tenant
  *     읽기(IDOR)를 차단한다.
  */
-export function isR2KeyAuthorized(objectKey: string, access: AudioAccess): boolean {
+function isR2KeyAuthorized(objectKey: string, access: AudioAccess): boolean {
   const owner = r2KeyOwner(objectKey);
   if (owner === null) return false;
   if (access.kind === 'owner') {

@@ -16,7 +16,9 @@
     "migrate:dev": "node --experimental-strip-types scripts/run-remote-migrations.ts --env dev",
     "migrate:prod": "node --experimental-strip-types scripts/run-remote-migrations.ts --env production",
     "secrets:sync:dev": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env dev --env-file .dev.vars.dev",
-    "secrets:sync:prod": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env production --env-file .dev.vars.prod"
+    "secrets:sync:prod": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env production --env-file .dev.vars.prod",
+    "preview:stock": "esbuild scripts/prerender-stock-preview.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/prerender-stock-preview.mjs && node node_modules/.cache/prerender-stock-preview.mjs",
+    "publish:stock": "esbuild scripts/publish-stock-clips.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/publish-stock-clips.mjs && node node_modules/.cache/publish-stock-clips.mjs"
   },
   "type": "module",
   "devDependencies": {

@@ -110,11 +110,6 @@ enum SystemRingtoneLibrary {
     /// 시계 앱이 `클래식` 안에 넣어 둔 옛 벨소리.
     static var classicEntries: [Entry] { entries.filter(\.isClassic) }
 
-    static func entry(forPath path: String?) -> Entry? {
-        guard let path, !path.isEmpty else { return nil }
-        return entries.first { $0.url.path == path || $0.url.absoluteString == path }
-    }
-
     private static func scan(_ directory: String) -> [Entry] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
         return names.compactMap { file -> Entry? in

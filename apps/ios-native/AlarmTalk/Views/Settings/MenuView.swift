@@ -10,7 +10,7 @@ import SwiftUI
 ///   4. 회원 탈퇴
 ///   5. 앱 버전
 ///
-/// ⚠ 이 화면은 **라우팅만** 한다. 실제 설정 항목(공휴일 달력·랜덤 문구 정보·알림 등)은
+/// ⚠ 이 화면은 **라우팅만** 한다. 실제 설정 항목(공휴일 달력·문구 정보·알림 등)은
 /// 프로필 카드가 여는 `SettingsView` 안에 있다 — 여기에 옮겨 오지 말 것.
 struct MenuView: View {
     @Environment(\.voiceAlarmTheme) private var theme
@@ -23,7 +23,7 @@ struct MenuView: View {
     let onOpenBilling: () -> Void
     /// 초대 및 구성원 관리 진입.
     let onOpenMembers: () -> Void
-    /// 초대 코드 등록 진입(공유 이용권이 없을 때).
+    /// 코드 등록 진입(공유 이용권이 없을 때).
     let onOpenPeople: () -> Void
     /// 공유 이용권 그룹에 속해 있는가.
     let hasSharedPass: Bool
@@ -56,11 +56,11 @@ struct MenuView: View {
                 Divider()
                 // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:233-243`).
                 // 그룹이 없는 사람에게 '구성원 관리' 를 보여주면 관리할 게 없는 화면으로
-                // 보내고, 정작 필요한 **초대 코드 등록** 경로가 더보기에 없어진다.
+                // 보내고, 정작 필요한 **코드 등록** 경로가 더보기에 없어진다.
                 if hasSharedPass {
                     SettingsValueButton(label: "초대 및 구성원 관리", action: onOpenMembers)
                 } else {
-                    SettingsValueButton(label: "초대 코드 등록", action: onOpenPeople)
+                    SettingsValueButton(label: "코드 등록", action: onOpenPeople)
                 }
             }
             .settingsCard(title: nil)

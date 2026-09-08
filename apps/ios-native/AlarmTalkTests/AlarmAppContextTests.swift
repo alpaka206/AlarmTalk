@@ -79,7 +79,7 @@ final class AlarmAppContextTests: XCTestCase {
         record.snoozeCount = 1
         store.upsert(record)
 
-        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: nil)
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
@@ -88,12 +88,16 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(updated.fireAtMillis, expectedFire)
     }
 
-    func test_handleAlarmSnoozed_overridesSnoozeMinutes() async throws {
+    /// 미루는 시간은 **언제나 행의 값**이다 — 예약 때 `countdownDuration` 에 구워진 값이
+    /// 그것이고 `countdown(id:)` 은 그걸 바꾸지 못한다. 예전에는 인텐트가 넘긴 값으로
+    /// 행만 전진시켜, 홈 화면이 "30분 남음" 을 띄우고 5분 뒤에 울렸다(리뷰 39차).
+    func test_handleAlarmSnoozed_usesRecordSnoozeMinutes() async throws {
         let kitID = UUID().uuidString
-        let record = makeArmedRecord(alarmKitID: kitID)
+        var record = makeArmedRecord(alarmKitID: kitID)
+        record.snoozeMinutes = 12
         store.upsert(record)
 
-        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: 12)
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
         let expectedFire = Int64(fixedNow.timeIntervalSince1970 * 1000) + 12 * 60_000
@@ -102,7 +106,7 @@ final class AlarmAppContextTests: XCTestCase {
 
     func test_handleAlarmSnoozed_unknownKitID_noMutation() async {
         let unknown = UUID().uuidString
-        await ctx.handleAlarmSnoozed(alarmKitIDString: unknown, snoozeMinutesOverride: 5)
+        await ctx.handleAlarmSnoozed(alarmKitIDString: unknown)
         XCTAssertTrue(store.alarms.isEmpty)
     }
 
@@ -112,7 +116,7 @@ final class AlarmAppContextTests: XCTestCase {
         record.snoozeEnabled = false
         store.upsert(record)
 
-        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: nil)
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.snoozeCount, record.snoozeCount)
@@ -126,7 +130,7 @@ final class AlarmAppContextTests: XCTestCase {
         record.snoozeCount = 3
         store.upsert(record)
 
-        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: nil)
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.snoozeCount, 3)

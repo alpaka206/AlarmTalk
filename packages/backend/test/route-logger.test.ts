@@ -2,13 +2,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { logRouteError } from '../src/lib/logger';
 
 function makeContext(overrides?: { userId?: string; sentry?: { captureException: ReturnType<typeof vi.fn> } }) {
+  const vars = new Map<string, unknown>();
   return {
     req: { method: 'POST', path: '/api/friend' },
     get: (key: string) => {
       if (key === 'userId') return overrides?.userId;
       if (key === 'sentry') return overrides?.sentry;
-      return undefined;
+      return vars.get(key);
     },
+    // logRouteError 는 '이미 보고했다' 는 표시를 컨텍스트에 남긴다(errorCode 미들웨어가
+    // 같은 5xx 를 두 번 올리지 않도록). 목이 set 을 갖고 있어야 실제 동작과 같아진다.
+    set: (key: string, value: unknown) => vars.set(key, value),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }

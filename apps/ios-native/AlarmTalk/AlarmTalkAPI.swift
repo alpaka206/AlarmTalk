@@ -336,6 +336,43 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
+    /// 쌓아 둔 사용 기록을 **모아서** 보낸다(`POST /api/events`).
+    ///
+    /// ⚠ **한 건씩 보내지 않는다** — 재연결 순간에 수십 번을 왕복하게 된다. 서버도 배치만
+    /// 받고, `id` 가 PK 라 같은 배치를 다시 보내도 겹치지 않는다(멱등).
+    func uploadUsageEvents(_ events: [QueuedUsageEvent], authToken: String) async throws {
+        struct Payload: Encodable {
+            let id: String
+            let type: String
+            let occurred_at: String
+            let alarm_id: String?
+            let voice_profile_id: String?
+            let message_id: String?
+            let detail: String?
+        }
+        struct Body: Encodable { let events: [Payload] }
+        // 서버 스키마가 오프셋 있는 ISO-8601 을 요구한다(`z.string().datetime({ offset: true })`).
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payloads = events.map { event in
+            Payload(
+                id: event.id,
+                type: event.type.rawValue,
+                occurred_at: formatter.string(from: event.occurredAt),
+                alarm_id: event.alarmID,
+                voice_profile_id: event.voiceProfileID,
+                message_id: event.messageID,
+                detail: event.detail
+            )
+        }
+        let _: EmptyResponse = try await request(
+            "events",
+            method: "POST",
+            token: authToken,
+            body: Body(events: payloads)
+        )
+    }
+
     /// 이 기기 토큰을 서버에서 지운다. **로그아웃·탈퇴 신청 때 부른다.**
     ///
     /// ⚠ **`/auth/logout` 보다 먼저** 불러야 한다 — 로그아웃이 `token_epoch` 를 올리면

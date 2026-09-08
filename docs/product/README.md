@@ -76,6 +76,7 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 ## 관련 문서
 
 - [`voice-prompt-design.ko.md`](voice-prompt-design.ko.md) — 알람 문구 생성(Gemini → ElevenLabs v3) 설계 근거. 백엔드 코드 주석이 `§4.x` 로 이 문서를 참조한다.
+- [`manual-message-reuse-plan.md`](manual-message-reuse-plan.md) — 직접 입력 문구 보관함(재사용·차감·수명) **기획 초안**. 아직 미구현이고, 현행 동작은 그 문서 §0 에 코드 근거와 함께 정리돼 있다.
 
 ## Non-negotiable Rules
 

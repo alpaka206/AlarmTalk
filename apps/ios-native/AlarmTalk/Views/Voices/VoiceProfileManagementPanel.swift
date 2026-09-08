@@ -28,9 +28,6 @@ struct VoiceProfileManagementPanel: View {
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
     @State private var editName: String = ""
-    @State private var editRelationship: String = ""
-    @State private var editListenerTitle: String = ""
-    @State private var editIsShared: Bool = false
 
     /// 삭제 확인 다이얼로그 입력값. force 토글 포함.
     @State private var deleteTarget: VoiceProfile?
@@ -54,9 +51,6 @@ struct VoiceProfileManagementPanel: View {
     /// (⚠ 안드로이드에 `SharedVoiceViewerInfoDialog` 라는 이름은 없다 — 옛 주석이 틀렸다.
     ///  같은 일을 하는 곳은 `ui/voices/VoiceProfileManagementPanel.kt` 의 호칭 등록 흐름이다.)
     @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
-
-    /// 기본 목소리 선택 시트 노출 상태 (Android defaultVoiceSheetOpen 미러).
-    @State private var defaultVoiceSheetOpen: Bool = false
 
     /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리/공유 목소리와 분리해 노출.
     private var systemVoices: [VoiceProfile] {
@@ -342,15 +336,6 @@ struct VoiceProfileManagementPanel: View {
     /// 0 고정이라, 그걸 쓰면 이번 달 등록이 남아 있어도 소진으로 읽힌다.
     private var monthlyExhausted: Bool {
         (monthlyQuota?.registrationRemaining ?? 1) <= 0
-    }
-
-    private var hasPaidVoiceAccess: Bool {
-        PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
-            storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
-        )
-        .meetsOrExceeds(.personal)
     }
 
     // MARK: - Own profiles list

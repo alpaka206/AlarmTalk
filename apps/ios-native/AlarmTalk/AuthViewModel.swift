@@ -95,12 +95,6 @@ final class AuthViewModel: ObservableObject {
         await current.value
     }
 
-    /// 로그인 직전에 부른다 — 진행 중인 로그아웃 뒷정리가 끝나기를 기다린다.
-    func awaitPendingServerSignOut() async {
-        await authServerMutation?.value
-    }
-
-
     // MARK: - 로그인 (서버 뒷정리와 한 줄로)
 
     /// ⚠ **줄에 서기 **전에** busy 를 세운다**(Codex #699 P2). 앞선 뒷정리가 느리면 줄에서
@@ -160,10 +154,17 @@ final class AuthViewModel: ObservableObject {
     /// `loginWithEmail` 이 주입된 `api` 가 아니라 `AlarmTalkAPI.shared` 를 직접 부르는 탓에
     /// 로그인 경로 자체는 단위 테스트로 못 덮는다. 갈림만이라도 순수 함수로 빼서 고정한다.
     nonisolated static func loginErrorMessage(for error: Error) -> String {
-        if (error as? APIError)?.serverErrorCode == "AUTH_INVALID_CREDENTIALS" {
+        let code = (error as? APIError)?.serverErrorCode
+        if code == "AUTH_INVALID_CREDENTIALS" {
             return String(localized: "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.")
         }
-        return userFacingErrorMessage(error, fallback: String(localized: "로그인에 실패했어요"))
+        // 화면이 맡지 않은 코드는 **공용 표**가 받는다 — 안드로이드
+        // `ui/main/MainViewModelAuthActions.kt` 의 로그인 갈래와 같은 층 순서다
+        // (화면 전용 → 공용 표 → 서버 문장/폴백). 로그인은 `authRateLimitMiddleware`
+        // 뒤에 있어 `RATE_LIMITED` 가 실제로 온다 — 표가 없으면 그 429 가
+        // "로그인에 실패했어요" 로 읽혀 사용자가 계속 다시 시도한다.
+        return APIErrorMessages.message(for: code)
+            ?? userFacingErrorMessage(error, fallback: String(localized: "로그인에 실패했어요"))
     }
     @Published var isBusy = false
     /// 401 외의 일시 오류(5xx, 4xx 기타, 네트워크 단절 등) 를 사용자에게 보여주되

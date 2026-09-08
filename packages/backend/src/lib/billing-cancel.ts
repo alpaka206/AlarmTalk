@@ -696,19 +696,6 @@ export async function scheduleCancelAtPeriodEnd(
   });
 }
 
-export async function schedulePlanChangeAtPeriodEnd(
-  db: DbExecutor,
-  subscriptionId: string,
-  nextPlanId: string,
-): Promise<void> {
-  await db.execute({
-    sql: `UPDATE subscriptions
-          SET cancel_at_period_end = 1, next_plan_id = ?, updated_at = datetime('now')
-          WHERE id = ?`,
-    args: [nextPlanId, subscriptionId],
-  });
-}
-
 export async function createNewSubscriptionForPlan(
   db: DbExecutor,
   params: {
@@ -1254,5 +1241,3 @@ export async function processSubscriptionExpiry(
     sweptVoiceData.voiceAccessRevokedUserIds,
   );
 }
-
-export { planTypeToUserPlan };

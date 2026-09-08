@@ -38,7 +38,7 @@ export default async function TermsPage({
   return (
     <>
       <SiteHeader />
-      <main className="mx-auto max-w-4xl px-5 py-16 md:px-8 md:py-24">
+      <main id="main" className="mx-auto max-w-4xl px-5 py-16 md:px-8 md:py-24">
         <LegalMarkdown content={readLegalDoc("terms")} />
       </main>
       <SiteFooter />

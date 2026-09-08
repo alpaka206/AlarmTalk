@@ -21,12 +21,23 @@ final class LoginErrorMessageTests: XCTestCase {
         XCTAssertTrue(message.contains("비밀번호"), "비밀번호도 함께 확인하게 말해야 한다: \(message)")
     }
 
-    func test_서버가_한국어로_말하면_그_말을_쓴다() {
+    func test_공용표가_있는_코드는_표의_문구를_쓴다() {
+        // 로그인은 rate limit 미들웨어 뒤에 있어 429 가 실제로 온다. 그 코드에 문구가
+        // 정해져 있으면 **표가 이긴다** — 안드로이드 로그인 갈래와 같은 층 순서다.
         let message = AuthViewModel.loginErrorMessage(
-            for: APIError.server(status: 429, message: "너무 많이 시도했어요. 잠시 후 다시 해주세요.", errorCode: "RATE_LIMITED")
+            for: APIError.server(status: 429, message: "Too many requests", errorCode: "RATE_LIMITED")
         )
 
-        XCTAssertEqual(message, "너무 많이 시도했어요. 잠시 후 다시 해주세요.")
+        XCTAssertEqual(message, APIErrorMessages.message(for: "RATE_LIMITED"))
+    }
+
+    func test_표에_없는_코드는_한국어_서버문장을_쓴다() {
+        // 마지막 층은 그대로다 — 서버가 한국어로 말하면 그 말을 쓴다.
+        let message = AuthViewModel.loginErrorMessage(
+            for: APIError.server(status: 400, message: "요청을 확인해 주세요", errorCode: "AUTH_VALIDATION_FAILED")
+        )
+
+        XCTAssertEqual(message, "요청을 확인해 주세요")
     }
 
     func test_영어_서버메시지는_폴백으로_바꾼다() {

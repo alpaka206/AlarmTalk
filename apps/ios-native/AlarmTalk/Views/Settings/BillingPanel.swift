@@ -254,7 +254,7 @@ struct BillingPanel: View {
             }
             Button("취소", role: .cancel) {}
         } message: {
-            Text("남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.")
+            Text("남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.")
         }
         .sheet(isPresented: $showPersonalGiftSheet) {
             PersonalGiftPassSheet(

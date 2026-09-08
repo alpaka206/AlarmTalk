@@ -30,54 +30,12 @@ import UIKit
 
 // BillingPanel 에서 분리한 하위 카드/시트 컴포넌트. 동작/디자인 변경 없음.
 
-struct PassSummaryChip: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    let label: String
-
-    var body: some View {
-        // Android `PassSummaryChip`(BillingPanels.kt:646-661): WakerPillShape,
-        // surface@0.7, onSurface 글자, outlineVariant@0.7 보더.
-        Text(label)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(theme.palette.onSurface)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(theme.palette.surface.opacity(0.7), in: Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(theme.palette.outlineVariant.opacity(0.7), lineWidth: 1)
-            )
-    }
-}
-
-func passPlanName(planKey: String?, fallback: String?) -> String {
-    switch planKey {
-    case "free":
-        return "무료"
-    case "personal", "individual", "plus":
-        return "개인"
-    case "couple":
-        return "커플"
-    case "family":
-        return "가족"
-    default:
-        if let fallback, !fallback.isEmpty {
-            return fallback
-        }
-        return "이용권"
-    }
-}
-
 func formatPassDate(_ value: String?) -> String? {
     guard let value else { return nil }
     let date = BillingISODateFormatter.date(from: value)
         ?? BillingShortISODateFormatter.date(from: value)
     guard let date else { return nil }
     return BillingDisplayDateFormatter.string(from: date)
-}
-
-func formatKrw(_ value: Int) -> String {
-    BillingKrwFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
 }
 
 // ISO8601DateFormatter 인스턴스는 iOS 7 이후 thread-safe (Apple docs).
@@ -100,12 +58,6 @@ let BillingDisplayDateFormatter: DateFormatter = {
     // 다른 로케일에서 아라비아 숫자가 아닌 글자로 나오는 것을 막으려면 en_US_POSIX 가 맞다).
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy.MM.dd"
-    return formatter
-}()
-
-let BillingKrwFormatter: NumberFormatter = {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
     return formatter
 }()
 
@@ -222,12 +174,12 @@ struct PlanCard: View {
     @ViewBuilder
     private var purchaseButtons: some View {
         if let plan = SubscriptionProduct.make(tier: tier) {
-            priceButton(for: plan, periodLabel: "월")
+            priceButton(for: plan)
         }
     }
 
     @ViewBuilder
-    private func priceButton(for plan: SubscriptionProduct, periodLabel: String) -> some View {
+    private func priceButton(for plan: SubscriptionProduct) -> some View {
         // ⚠ **현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
         // `BillingPanels.kt` 의 `if (option.key != "free" && !isCurrent)` 와 같다).
         // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서

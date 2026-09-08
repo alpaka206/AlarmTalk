@@ -25,9 +25,6 @@ internal enum class EntitlementWrite {
 
     /** 밀려났다 — 그 사이 로그아웃·계정전환·재로그인이 있었다. 조용히 버린다. */
     Superseded,
-
-    /** 세션이 없다. 표를 뜰 수조차 없었다. */
-    NoSession,
 }
 
 /**
@@ -112,15 +109,5 @@ internal class EntitlementWriter(context: Context) {
                 if (aliveByEpoch) "account changed" else "session generation changed",
         )
         return EntitlementWrite.Superseded
-    }
-
-    /**
-     * 표를 뜨는 것과 반영을 한 번에 — **중단점이 없는** 동기 경로용.
-     *
-     * ⚠ 네트워크·SDK 를 거치는 경로에는 쓰지 말 것. 그 경우 표는 **요청 전에** 떠야 한다.
-     */
-    fun writeNow(reason: String, transform: (AccessSnapshot) -> AccessSnapshot): EntitlementWrite {
-        val ticket = ticket() ?: return EntitlementWrite.NoSession
-        return write(ticket, reason, transform)
     }
 }

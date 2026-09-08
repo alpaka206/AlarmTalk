@@ -28,9 +28,12 @@ describe('STOCK_CLIP_PRESETS (확정 리터럴)', () => {
     expect(byCategory.get(STOCK_GREETING_CATEGORY)).toBe(1);
     // 마지막 weather variant = '날씨 미확인' 폴백 규약
     const weather = STOCK_CLIP_PRESETS.find((p) => p.category === 'weather')!;
-    expect(weather.texts.ko[8]).toContain('인터넷');
-    expect(weather.texts.en[8].toLowerCase()).toContain('internet');
-    expect(weather.texts.ja[8]).toContain('インターネット');
+    // ⚠ **낱말이 아니라 뜻으로 본다.** 예전에는 '인터넷' 을 찾았는데, 대사를 다시 쓰면서
+    //   '날씨 정보를 불러오지 못했어요' 로 바뀌어 멀쩡한 폴백을 실패로 읽었다.
+    //   고정할 것은 **마지막 자리가 '날씨를 못 알려 준다' 는 안내**라는 계약이다.
+    expect(weather.texts.ko[8]).toMatch(/못했|못 봤|확인/);
+    expect(weather.texts.en[8].toLowerCase()).toMatch(/couldn't load|couldn't tell/);
+    expect(weather.texts.ja[8]).toMatch(/取得できません|お伝えできません/);
   });
 
   it('모든 문구가 딜리버리 태그로 시작한다(자동 태깅 미사용 전제)', () => {

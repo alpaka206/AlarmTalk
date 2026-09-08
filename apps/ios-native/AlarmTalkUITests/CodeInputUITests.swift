@@ -13,9 +13,9 @@ final class CodeInputUITests: XCTestCase {
         app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "menu"]
         app.launch()
         let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@", "초대 코드 등록"))
+            .matching(NSPredicate(format: "label CONTAINS %@", "코드 등록"))
             .element(boundBy: 0)
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "'초대 코드 등록' 행이 없다")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "'코드 등록' 행이 없다")
         row.tap()
         return app
     }

@@ -27,6 +27,10 @@
 | 튕김 판정 | 최소 속도 `칸높이 × 4.2/s`, 칸수 `(속도/칸높이) × 0.12` |
 | 붙기 판정 | 반 칸(**0.45**)을 넘긴 쪽으로 |
 
+⚠ **한 칸 굴러갈 때마다 톡 하고 알린다(햅틱).** 끌 때도, 놓고 굴러갈 때도, 숫자를
+눌러 이동할 때도 같다 — 눈으로만 세지 않게 하는 것이 이 컨트롤의 절반이다. 사용자가
+시스템에서 촉각 반응을 꺼 두었으면 아무 일도 일어나지 않는다(OS 가 판단한다).
+
 ⚠ **굴러가는 중에 손을 대면 그 자리에서 잡힌다.** 남은 칸은 넘기지 않는다.
 
 ⚠ **끌 때와 놓을 때의 방향이 같아야 한다.** 한때 놓을 때만 부호가 뒤집혀 있어, 반 칸
@@ -145,6 +149,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | iOS 에 알람 음량 슬라이더 없음 | AlarmKit 이 OS 톤을 소유한다. 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고 확인하기를 반복하게 된다 |
 | 확인 알럿의 껍데기 | iOS 는 시스템 `.alert`, 안드로이드는 그걸 흉내 낸 `IosAlertDialog`. iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다 |
 | 숫자 입력 확정 키 | iOS 숫자 키패드에는 완료 키가 없어 **키보드 툴바**로, 안드로이드는 IME 의 **Done** 으로 |
+| 타임휠 **정착 곡선·튕김 계수** | 안드로이드는 `TimeWheelEasing = (0.3, 0.6, 0.3, 1)`·`FlingStepsPerItemVelocity = 0.09` — 저사양 실기(SM-A325N) 프레임 예산에 맞춰 2026-08-15 에 실측으로 낮춘 값이다. iOS 는 §1-1 원값 `(0.16, 1, 0.3, 1)` 을 쓴다. 같은 기기 조건이 아니라 **맞추지 않는다** |
 | 알럿을 **바깥 탭으로 닫기** | iOS 는 **안 된다** — 시스템 알럿은 명시적 선택을 요구하고 그 동작을 바꾸는 공개 API 가 없다. 안드로이드는 닫힌다(플랫폼 관례). 2026-08-11 에 확인하고 **각자 표준을 따르기로 정했다** — 맞추려면 iOS 시스템 알럿을 버리고 직접 그려야 하는데, 그건 우리가 맞춰 온 원본을 버리는 것이다 |
 
 ## 구현 지도
@@ -154,7 +159,8 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
-| 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/AmPmWheelColumn.swift` |
+| 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
+| 오전/오후 | `ui/editor/AmPmWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `AmPmWheelColumn` |
 | 재생 방식 세그먼트 | `ui/editor/AlarmEditorControls.kt` 의 `EditorSegmentedSelector` | `Views/Editor/VoicePlayModePicker.swift` |
 | 음성 출력(크기·반복) | `ui/editor/VoiceAudioCard.kt` 의 `VoiceVolumeSelector` | `Views/Editor/AlarmSettingsPanes.swift` 의 `VoiceOutputSettingsPane` |
 | 목록 바텀시트 | `ui/components/WakerModal.kt` 의 `WakerSelectionSheet` | `Views/Common/BottomSheetHost.swift` + `Views/Common/SelectionSheet.swift` |

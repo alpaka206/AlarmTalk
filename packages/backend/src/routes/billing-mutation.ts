@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import {
@@ -80,7 +81,7 @@ type FamilyShareCodeResult =
         status: 404 | 409;
         body: {
           error: string;
-          error_code: string;
+          error_code: ErrorCode;
         };
       };
     };
@@ -456,7 +457,7 @@ type FamilyOwnerLookup =
   | {
       error: {
         status: 404;
-        body: { error: string; error_code: string };
+        body: { error: string; error_code: ErrorCode };
       };
     };
 
