@@ -1986,17 +1986,6 @@ tts.get('/messages/:id/audio', async (c) => {
 });
 
 /**
- * 프리셋 준비 신호를 만드는 SQL 조각. **컬럼이 없으면 '준비됨' 으로 답한다.**
- *
- * ⚠ 배포는 마이그레이션보다 먼저 돈다(CLAUDE.md). `voice_prerender_queue.refresh_existing`
- * 을 그냥 참조하면 그 창(~1분) 동안 **모든 매니페스트 요청이 컬럼 없음으로 500** 이 되어
- * 옛 클라까지 클립 목록을 못 받는다. 읽기 경로라 fail-closed 로 둘 이유도 없다 — 그 창에는
- * 교체 자체가 커밋될 수 없으므로(쓰기 경로가 fail-closed 다) '준비됨' 이 사실이다.
- *
- * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
- * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
- */
-/**
  * 은퇴한 프리셋을 거르는 SQL 조각. **컬럼이 없으면 조건을 빼고 전부 준다.**
  *
  * ⚠ `renderedForCurrentVoiceSelect` 와 **완전히 같은 이유**다 — 배포는 마이그레이션보다
@@ -2016,6 +2005,17 @@ async function retiredIsNullClause(db: DbExecutor, alias = 'm'): Promise<string>
   return (await messagesRetiredColumnReady(db)) ? `AND ${alias}.retired_at IS NULL` : '';
 }
 
+/**
+ * 프리셋 준비 신호를 만드는 SQL 조각. **컬럼이 없으면 '준비됨' 으로 답한다.**
+ *
+ * ⚠ 배포는 마이그레이션보다 먼저 돈다(CLAUDE.md). `voice_prerender_queue.refresh_existing`
+ * 을 그냥 참조하면 그 창(~1분) 동안 **모든 매니페스트 요청이 컬럼 없음으로 500** 이 되어
+ * 옛 클라까지 클립 목록을 못 받는다. 읽기 경로라 fail-closed 로 둘 이유도 없다 — 그 창에는
+ * 교체 자체가 커밋될 수 없으므로(쓰기 경로가 fail-closed 다) '준비됨' 이 사실이다.
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
+ */
 let prerenderRefreshColumnReady = false;
 async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
   if (!prerenderRefreshColumnReady) {

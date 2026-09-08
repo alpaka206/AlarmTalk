@@ -228,6 +228,17 @@ export async function drainExternalDeletions(
         }
         // head 가 null 이면 오브젝트가 이미 없다 — 지울 것이 없으니 큐에서 내린다.
       }
+      // ⚠ **살아 있는 참조를 만난 예약도 여기서 내린다 — 남겨 두지 말 것.**
+      //   `messages.audio_url` 이 이 키를 가리킨다 = 그 오브젝트는 **지금 누가 쓰는 것**이고,
+      //   결정론적 키라 그건 이 예약이 겨냥한 파일이 아니라 그 뒤에 올라온 새 렌더다.
+      //   남겨 두면 `attempts` 는 오류에서만 오르므로(아래 catch) 그 행이 영원히
+      //   `attempts = 0` 파티션의 맨 앞(`created_at ASC`)에 앉아, 회차당 몇 칸뿐인 그 자리를
+      //   막는다 — **계정 삭제·동의 철회가 넣은 예약이 드레인되지 못한다.** 미아 하나보다
+      //   나쁘다.
+      //   그리고 그 참조가 사라지는 경로는 스스로 다시 넣는다: TTL 스윕은 `audio_url` 을
+      //   비우기 **전에** 넣고(`cleanupExpiredAudio`), 파기는 `messages` 행과 같은
+      //   트랜잭션에서 넣는다(`voice-profile` 의 DELETE·`paid-voice-cleanup`).
+      //   제자리 교체만 예외인데(참조만 끊고 원장 행은 남긴다) 그건 TTL 스윕이 거둔다.
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',
         args: [id],

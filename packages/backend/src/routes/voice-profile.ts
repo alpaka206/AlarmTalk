@@ -2398,6 +2398,17 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  // ⚠ **배포 창(~1분)에는 이 조회가 500 이다 — 알고 그대로 둔다**(2026-09-08 감사).
+  //   아래 SQL 은 `messages.retired_at`(#110)·`voice_prerender_queue.refresh_existing`(#101)
+  //   을 그냥 참조하는데, prod 는 아직 #93 이라 둘이 **같은 배포에** 올라간다.
+  //   `lib/stock-clips.ts` 의 `messagesRetiredColumnReady` 식 가드를 붙이지 않는 이유:
+  //   **클라가 이미 실패를 견딘다.** 목소리 화면의 폴링은 `runCatching` 으로 그 회차를
+  //   건너뛰고 5초 뒤 다시 묻는다(`ui/voices/VoiceProfileManagementPanel.kt`) — CLAUDE.md
+  //   가 읽기 경로에 요구하는 바로 그 모양이다. 잃는 것은 한 번의 배포에서 진행률 몇 틱뿐인데,
+  //   가드를 붙이려면 매니페스트 헬퍼(`routes/tts.ts` 의 `renderedForCurrentVoiceSelect`)까지
+  //   건드려야 한다.
+  //   ⚠ 그래도 붙이겠다면 **두 컬럼을 같이** 해야 한다 — `retired_at` 만 가드하면 바로 아래
+  //   `refresh_existing` 에서 똑같이 죽어 **아무것도 달라지지 않는다.**
   const [generatedRes, queueRes] = await Promise.all([
     db.execute({
       // ⚠ **교체 회차는 '지금 목소리로 만든 것' 만 센다**(Codex #703 P2).
@@ -2528,6 +2539,15 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     );
   }
 
+  // ⚠ **이 라우트에는 배포 창 가드를 붙이지 않는다**(2026-09-08 감사). `retired_at`(#110)·
+  //   `refresh_existing`(#101)을 여기서 관용하면 그 창에 들어온 호출이 아래
+  //   `findMissingStockTargets` 를 **빈 목록**으로 만들고(은퇴 행이 '있다' 로 세어진다)
+  //   곧바로 `markPrerenderDone` 을 찍는다 — 그 목소리는 **영영 다시 구워지지 않고** 옛
+  //   클립을 문 채 운다. 재시도 가능한 실패를 영구 손실과 바꾸는 짓이다.
+  //   그 창에는 아래 claim 의 `RETURNING ... refresh_existing` 에서 통째로 실패하는 것이
+  //   맞다 — 소유자 주도 전진만 한 번 못 돌고 남은 몫은 cron 이 이어받는다.
+  //   (바로 아래 개수 세기만 가드해 봐야 claim 이 먼저 죽으므로 **도달하지 않는 죽은 코드**다.)
+  //
   // ⚠ **지금 목소리로 만든 클립만 센다.** 교체 회차(`refresh_existing`)는 옛 클립이 전부
   // `audio_url` 을 들고 있어, 개수만 세면 첫 호출부터 21/21 이 나온다 — 클라의 구동 루프는
   // 세 번 연속 진행이 없으면 멈춘 것으로 보고 빠져나가므로(안드로이드 `startPrerenderDrive`),

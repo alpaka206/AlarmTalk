@@ -511,6 +511,13 @@ export async function findMissingStockTargets(
             ON ga.message_id = m.id AND ga.audio_url = m.audio_url
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
             -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.
+            -- ⚠ **여기에는 배포 창 가드를 붙이지 말 것**(2026-09-08 감사). 이건 목록이
+            --   아니라 **무엇을 구울지 고르는 조회**다. messagesRetiredColumnReady 식으로
+            --   관용하면 은퇴한 행이 '있다' 로 세어져 targets 가 0 이 되고, 호출자가 그대로
+            --   markPrerenderDone 을 찍는다(아래 drainPrerenderQueue,
+            --   routes/voice-profile.ts 의 advance) — 그 목소리는 **영영 다시 구워지지
+            --   않고** 옛 클립을 문 채 운다. 재시도 가능한 500 을 영구 손실과 바꾸는 짓이다.
+            --   컬럼이 없으면 통째로 실패하는 게 맞다: cron 이 다음 틱에 다시 온다.
             AND m.retired_at IS NULL
             AND m.voice_profile_id IN (${ph})`,
     args: voiceIds,
@@ -974,11 +981,6 @@ export class PrerenderSupersededError extends Error {
 }
 
 /**
- * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
- * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
- * (findMissingStockTargets) 가 담당한다.
- */
-/**
  * 합성 요청에만 붙이는 **여운 꼬리**.
  *
  * ⚠ ElevenLabs v3 는 마지막 음소 직후 **그냥 멈춘다.** 실측(2026-09-02, 미나 목소리 20개):
@@ -997,8 +999,7 @@ export class PrerenderSupersededError extends Error {
  * 재시드가 옛 문구를 지우지 못한다.
  *
  * ⚠ 이미 말줄임으로 끝나면 덧붙이지 않는다(모델이 길게 늘어뜨린다).
- */
-/**
+ *
  * v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 제공자에게 보내는 문장 끝에 ` ...` 를 붙여
  * 말끝을 흐리게 한다. mp3 뒤에 붙이는 무음(`appendMp3TrailingSilence`)과 **다른 장치**이고
  * 둘 다 필요하다: 이건 **말소리**를, 저건 **파일 길이**를 늘린다.
@@ -1118,6 +1119,11 @@ export async function findLegacyBucketHints(
   }));
 }
 
+/**
+ * 스톡 클립 1개 생성: Vertex 로 문구/번역/태그 → ElevenLabs 합성 → R2 저장 →
+ * messages(is_preset=1) + generated_audio_assets insert. 멱등 보장은 호출자
+ * (findMissingStockTargets) 가 담당한다.
+ */
 export async function generateStockClip(
   db: Client,
   env: Env,

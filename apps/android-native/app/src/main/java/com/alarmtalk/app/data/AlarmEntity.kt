@@ -203,11 +203,6 @@ fun appVoiceLanguageOf(language: String?): String = when (language) {
 const val WEATHER_CLONE_CLIP_COUNT = 9
 
 /**
- * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
- * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
- * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
- */
-/**
  * **이 행을 로컬에서 고쳤을 때 가져야 할 동기 상태.**
  *
  * ⚠ **규칙의 유일 출처다 — 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 6차).
@@ -227,6 +222,11 @@ fun AlarmEntity.nextLocalSyncState(): String =
         else -> AlarmSyncStates.DIRTY
     }
 
+/**
+ * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
+ * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
+ * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
+ */
 fun AlarmEntity.bucketVariantIndex(): Int? {
     val size = bucketClipKeys().size
     if (size <= 0) return null
