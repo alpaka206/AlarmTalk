@@ -63,7 +63,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
@@ -133,7 +133,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install root dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Typecheck
         working-directory: ${{ matrix.package }}
@@ -142,6 +142,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # ⚠ **`command` 키를 정리하지 말 것 — 체크 이름을 만드는 값이다.**
+      # 세 항목의 값이 전부 `npm test` 라 지워도 될 것처럼 보이지만, 매트릭스 값이
+      # 체크 이름에 들어가서 `test (packages/backend, npm test)` 가 된다. 그 세 이름이
+      # develop 브랜치 보호의 **필수 컨텍스트**라, 키를 빼면 이름이 `test (packages/backend)`
+      # 로 바뀌고 필수 컨텍스트는 **영영 보고되지 않아** 모든 PR 이 머지 불가로 잠긴다.
+      # 정말 정리하려면 브랜치 보호의 세 컨텍스트를 **같은 변경에서** 함께 고쳐야 한다.
       matrix:
         include:
           - package: packages/backend
@@ -167,7 +173,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install root dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Test
         working-directory: ${{ matrix.package }}

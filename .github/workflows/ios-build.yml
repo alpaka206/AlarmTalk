@@ -1,0 +1,129 @@
+name: iOS Build
+
+# iOS 를 CI 로 되돌린다(2026-09-08). 2026-06 에 "출시하지 않을 앱" 이라 수동 트리거만 남겼는데,
+# 그 사이 앱이 되살아나 develop 에 머지됐고 유닛 테스트 704건과 Release 빌드가 **사람이
+# 기억할 때만** 돌고 있었다. 저장소가 public 이라 macOS 러너는 무료다.
+#
+# ⚠ **필수 체크가 아니다.** develop 브랜치 보호의 7개 목록에 없으므로 이 잡이 실패해도
+# 머지를 막지 않는다. 필수로 만들려면 브랜치 보호의 컨텍스트 목록을 함께 고쳐야 한다.
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'apps/ios-native/**'
+      # 스톡 클립 원본은 안드로이드 res/raw 를 그대로 참조한다(project.yml).
+      - 'apps/android-native/app/src/main/res/raw/**'
+      # 법무 문서는 빌드 때 번들에 복사되고 정책 버전이 거기서 나온다.
+      - 'docs/legal/**'
+      - '.github/workflows/ios-build.yml'
+  pull_request:
+    branches: [develop, main]
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: AlarmTalk (iOS 유닛 테스트 + Release 빌드)
+    # PR 에서는 `ci` 라벨을 붙였을 때만 — ci.yml 과 같은 규약이다.
+    # ⚠ 여기서는 스킵해도 된다(필수 체크가 아니라 '스킵=성공' 이 머지를 열지 않는다).
+    #   ci.yml 이 스킵 대신 실패시키는 이유는 그쪽 잡이 **필수**이기 때문이다.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/ios-native
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain / SDK info
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --show-sdk-version --sdk iphonesimulator
+
+      - name: Select latest installed Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$latest" ]; then
+            sudo xcode-select -s "$latest/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # ⚠ **기기 이름을 박지 말 것.** 러너 이미지가 바뀌면 그 이름의 시뮬레이터가 없어
+      #   destination 해석에서 통째로 실패한다. 사용 가능한 최신 iPhone 을 골라 쓴다.
+      - name: Pick the newest available iPhone simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available --json | python3 -c '
+import json, sys
+data = json.load(sys.stdin)["devices"]
+best, best_ver = None, ()
+for runtime, devices in data.items():
+    if "iOS" not in runtime:
+        continue
+    ver = tuple(int(p) for p in runtime.split(".iOS-")[-1].split("-") if p.isdigit())
+    for d in devices:
+        if d.get("isAvailable") and d["name"].startswith("iPhone") and ver > best_ver:
+            best, best_ver = d["udid"], ver
+if not best:
+    sys.exit("no usable iPhone simulator")
+print(best)
+')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep -i "$UDID" || true
+
+      # ⚠ **서명을 끄지 말 것.** `CODE_SIGNING_ALLOWED=NO` 로 돌리면 Keychain(SecItem)을
+      #   쓰는 테스트가 entitlement 없이 실패한다(`PendingSignOutStore` 계열 3건).
+      #   시뮬레이터 ad-hoc 서명은 팀·인증서·프로파일이 필요 없다 — 로컬에서 쓰는 것과 같다.
+      - name: Unit tests (simulator, ad-hoc signing)
+        run: |
+          set -o pipefail
+          xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -only-testing:AlarmTalkTests \
+            -skipPackagePluginValidation \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
+            GENERATE_INFOPLIST_FILE=YES \
+            test 2>&1 | tee xcodebuild-test.log
+
+      # 스토어에 올라가는 것은 Release 다 — Debug 만 돌리면 최적화에서만 깨지는 것을 놓친다.
+      - name: Release build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee xcodebuild-release.log
+
+      - name: Upload logs and test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-build-artifacts
+          path: |
+            apps/ios-native/xcodebuild-test.log
+            apps/ios-native/xcodebuild-release.log
+            apps/ios-native/TestResults.xcresult
+          retention-days: 7
+          if-no-files-found: warn

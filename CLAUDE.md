@@ -11,6 +11,22 @@
   ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. **Apple 개발자 계정은 이미 있다**
   (Team `29N7GX354N` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
   남은 것은 스토어 제출과 CI 복구다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
+
+## iOS 실기기 설치 (테스트 아이폰은 **WiFi** 로 붙는다)
+- **아이폰은 케이블이 아니라 WiFi 로 페어링돼 있다.** 목록·설치 모두 `devicectl` 로 한다:
+  `xcrun devicectl list devices` → `이스트의 iPhone (3)`(iPhone 14 Pro).
+  안 보이면 케이블을 찾지 말고, 같은 WiFi 인지와 Xcode 의 기기 페어링이 살아 있는지 본다.
+- 빌드(기기용, 서명 포함) → 설치:
+  ```
+  cd apps/ios-native && xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
+    -configuration Debug -destination 'id=<UDID>' -skipPackagePluginValidation \
+    DEVELOPMENT_TEAM=29N7GX354N -allowProvisioningUpdates -derivedDataPath <경로> build
+  xcrun devicectl device install app --device <UDID> <경로>/Build/Products/Debug-iphoneos/AlarmTalk.app
+  ```
+- ⚠ `scripts/build-debug.sh` 는 `CODE_SIGNING_ALLOWED=NO` + `generic/platform=iOS` 라
+  **기기에 설치할 수 없는 산출물**을 만든다. 컴파일 확인용이지 설치용이 아니다.
+- ⚠ 시뮬레이터 테스트는 별도다(`-destination "id=0733FD07-812F-4EC4-B149-B9A992E51F00"`).
+  기기용 빌드와 파생 데이터를 섞지 말 것 — 서명 설정이 달라 재빌드가 길어진다.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경
