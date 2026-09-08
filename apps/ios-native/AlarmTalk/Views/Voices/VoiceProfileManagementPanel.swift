@@ -546,13 +546,28 @@ struct VoiceProfileManagementPanel: View {
     ///
     /// ⚠ **끝나면 멈춘다.** 준비 중(`pending`)인 목소리가 없으면 루프를 빠져나온다 —
     /// 안 그러면 목소리 탭을 열어 둔 내내 5초마다 네트워크를 친다.
+    ///
+    /// ⚠ **'못 물어봤다' 를 '준비 중이 아니다' 로 읽지 말 것**(2026-09-08 코덱스 지적).
+    /// 조회가 실패한 회차를 그냥 건너뛰면 `anyPending` 이 false 로 남아 **루프를 통째로
+    /// 빠져나온다.** 이 `.task(id:)` 는 목소리 id 목록으로만 걸려 있어(화면 상단),
+    /// 화면을 다시 열거나 목록이 바뀌기 전까지 **재개되지 않는다** — 진행률도, 소유자
+    /// 주도 `advance` 도 함께 멈춘다. 지하철에서 한 번 끊기는 것만으로 그렇게 된다.
+    /// 그래서 **모르면 계속 묻는다.** 화면이 열려 있는 동안만 도는 루프라 비용은 같고,
+    /// 안드로이드도 실패한 회차를 건너뛰고 5초 뒤 다시 묻는다
+    /// (`ui/voices/VoiceProfileManagementPanel.kt`).
+    /// ⚠ 실패를 `prerenderStatuses` 에 **꾸며 넣지는 않는다** — 화면에는 마지막으로
+    /// 확인된 값이 남아야 한다. 루프만 살려 둔다.
     private func pollPrerenderStatuses() async {
         guard let token = auth.session?.token else { return }
         while !Task.isCancelled {
             var anyPending = false
+            var askFailed = false
             for profile in ownVoices where !isSystemVoice(profile) {
                 guard let status = try? await AlarmTalkAPI.shared.voicePrerenderStatus(id: profile.id, token: token)
-                else { continue }
+                else {
+                    askFailed = true
+                    continue
+                }
                 prerenderStatuses[profile.id] = status
                 if status.status == "pending" {
                     anyPending = true
@@ -561,7 +576,7 @@ struct VoiceProfileManagementPanel: View {
                     _ = try? await AlarmTalkAPI.shared.advanceVoicePrerender(id: profile.id, token: token)
                 }
             }
-            guard anyPending else { return }
+            guard anyPending || askFailed else { return }
             try? await Task.sleep(nanoseconds: 5_000_000_000)
         }
     }

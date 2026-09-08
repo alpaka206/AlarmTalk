@@ -20,8 +20,10 @@ import {
   generateStockClip,
   markPrerenderDone,
   notifySharedVoicePrerenderComplete,
+  prerenderRefreshColumnReady,
   PrerenderSupersededError,
   releasePrerenderClaim,
+  retiredIsNullClause,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
@@ -2398,17 +2400,33 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // ⚠ **배포 창(~1분)에는 이 조회가 500 이다 — 알고 그대로 둔다**(2026-09-08 감사).
-  //   아래 SQL 은 `messages.retired_at`(#110)·`voice_prerender_queue.refresh_existing`(#101)
-  //   을 그냥 참조하는데, prod 는 아직 #93 이라 둘이 **같은 배포에** 올라간다.
-  //   `lib/stock-clips.ts` 의 `messagesRetiredColumnReady` 식 가드를 붙이지 않는 이유:
-  //   **클라가 이미 실패를 견딘다.** 목소리 화면의 폴링은 `runCatching` 으로 그 회차를
-  //   건너뛰고 5초 뒤 다시 묻는다(`ui/voices/VoiceProfileManagementPanel.kt`) — CLAUDE.md
-  //   가 읽기 경로에 요구하는 바로 그 모양이다. 잃는 것은 한 번의 배포에서 진행률 몇 틱뿐인데,
-  //   가드를 붙이려면 매니페스트 헬퍼(`routes/tts.ts` 의 `renderedForCurrentVoiceSelect`)까지
-  //   건드려야 한다.
-  //   ⚠ 그래도 붙이겠다면 **두 컬럼을 같이** 해야 한다 — `retired_at` 만 가드하면 바로 아래
-  //   `refresh_existing` 에서 똑같이 죽어 **아무것도 달라지지 않는다.**
+  // ⚠ **이 조회는 배포 창(~1분)에도 열려 있어야 한다**(CLAUDE.md 「배포가 마이그레이션보다
+  //   먼저 돈다」). 아래 SQL 은 `messages.retired_at`(#110)·
+  //   `voice_prerender_queue.refresh_existing`(#101)을 보는데, prod 는 아직 #93 이라 둘이
+  //   **같은 배포에** 올라간다. 읽기 경로라 fail-closed 로 둘 이유가 없고, 그 창에는 은퇴한
+  //   행도 교체 회차도 **존재할 수 없어**(그 값을 쓰는 경로가 아직 마이그레이션 전이다)
+  //   조건을 빼도 개수가 같다 — 추측이 아니라 사실이다.
+  //   ⚠ **두 컬럼을 같이** 막는다. 하나만 막으면 다른 하나에서 똑같이 죽어 아무것도
+  //   달라지지 않는다.
+  //   ⚠ **"클라가 견딘다" 를 근거로 삼지 말 것**(2026-09-08 코덱스 지적). 안드로이드는
+  //   실패한 회차를 건너뛰고 5초 뒤 다시 묻지만(`ui/voices/VoiceProfileManagementPanel.kt`),
+  //   iOS 는 그때 `anyPending` 이 false 로 남아 **폴링 루프를 통째로 빠져나온다**
+  //   (`Views/Voices/VoiceProfileManagementPanel.swift` 의 `pollPrerenderStatuses`) —
+  //   화면을 다시 열기 전까지 진행률도, 소유자 주도 `advance` 도 멈춘다. 한쪽 플랫폼만
+  //   보고 "견딘다" 고 적었던 게 이 주석의 앞 판본이다.
+  const retiredClause = await retiredIsNullClause(db);
+  const refreshReady = await prerenderRefreshColumnReady(db);
+  // 컬럼이 없으면 '교체 회차 좁히기' 자체가 성립하지 않는다 — 조건을 통째로 뺀다.
+  const refreshNarrowing = refreshReady
+    ? `AND (
+                 COALESCE(q.refresh_existing, 0) = 0
+                 OR EXISTS (
+                   SELECT 1 FROM generated_audio_assets ga
+                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                      AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                 )
+               )`
+    : '';
   const [generatedRes, queueRes] = await Promise.all([
     db.execute({
       // ⚠ **교체 회차는 '지금 목소리로 만든 것' 만 센다**(Codex #703 P2).
@@ -2426,16 +2444,9 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
               JOIN voice_profiles vp ON vp.id = m.voice_profile_id
               LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
              WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
-               AND m.retired_at IS NULL
+               ${retiredClause}
                AND m.audio_url IS NOT NULL
-               AND (
-                 COALESCE(q.refresh_existing, 0) = 0
-                 OR EXISTS (
-                   SELECT 1 FROM generated_audio_assets ga
-                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
-                      AND ga.provider_voice_id = vp.elevenlabs_voice_id
-                 )
-               )`,
+               ${refreshNarrowing}`,
       args: [id],
     }),
     db.execute({

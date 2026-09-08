@@ -1061,6 +1061,42 @@ export async function messagesRetiredColumnReady(db: DbExecutor): Promise<boolea
   return retiredColumnReady;
 }
 
+/**
+ * 은퇴한 프리셋을 거르는 SQL 조각. **컬럼이 없으면 조건을 빼고 전부 준다.**
+ *
+ * 쓰는 곳이 둘이라(매니페스트 `GET /tts/stock-clips`, 진행 조회
+ * `GET /voice/:id/prerender-status`) 조각도 여기 한 곳에 둔다 — 철자가 갈라지면 한쪽만
+ * 가드가 걸린 상태가 생긴다. 개발자가 고정한 조각이라 사용자 값이 SQL 에 들어가지 않는다.
+ *
+ * ⚠ **읽기 경로에만 쓴다.** 게시 트랜잭션과 '무엇을 구울지 고르는 조회'
+ * (`findMissingStockTargets`)에서 이 조건을 빼면 은퇴한 행이 '있다' 로 세어져 그 회차가
+ * 조용히 끝난다 — 그쪽은 fail-closed 가 맞다(그 조회 위 주석 참조).
+ */
+export async function retiredIsNullClause(db: DbExecutor, alias = 'm'): Promise<string> {
+  return (await messagesRetiredColumnReady(db)) ? `AND ${alias}.retired_at IS NULL` : '';
+}
+
+/**
+ * `voice_prerender_queue.refresh_existing`(#101)이 이미 있는가. 규약은 위
+ * `messagesRetiredColumnReady` 와 같다 — **읽기 경로의 배포 창 방어에만 쓴다.**
+ *
+ * prod 는 아직 #93 이라 #101 과 #110 이 **같은 배포에** 올라간다. 컬럼이 없으면 교체
+ * 회차 자체가 존재할 수 없으므로(그 값을 1 로 적는 경로가 아직 마이그레이션 전이다)
+ * '교체 회차면 좁힌다' 는 조건을 빼도 결과가 같다.
+ */
+let prerenderRefreshColumnReadyFlag = false;
+export async function prerenderRefreshColumnReady(db: DbExecutor): Promise<boolean> {
+  if (prerenderRefreshColumnReadyFlag) return true;
+  const columns = await db.execute({
+    sql: "PRAGMA table_info('voice_prerender_queue')",
+    args: [],
+  });
+  prerenderRefreshColumnReadyFlag = columns.rows.some(
+    (row) => String(row.name) === 'refresh_existing',
+  );
+  return prerenderRefreshColumnReadyFlag;
+}
+
 export async function findLegacyBucketHints(
   db: Client,
   userPk: string,
