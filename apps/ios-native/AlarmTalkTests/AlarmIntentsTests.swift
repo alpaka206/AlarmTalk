@@ -266,6 +266,39 @@ final class AlarmIntentsTests: XCTestCase {
         XCTAssertTrue(ObservedRingMarkerStore.consume(alarmKitID: other), "멀쩡한 표시까지 걷었다")
     }
 
+    /// ⚠ **소비 시각은 벽시계로 재지 않는다**(리뷰 40차). 시계를 되돌리면 `지금 - 소비` 가
+    /// 음수라 창을 언제나 통과해, 그 구간의 울림이 관찰자·인텐트 양쪽에서 적힌다.
+    func test_시계를_되돌려도_관찰은_표를_받는다() {
+        let kitID = UUID().uuidString
+        var fake = ContinuousClock.now
+        ObservedRingMarkerStore.monotonicNow = { fake }
+        _ = ObservedRingMarkerStore.consume(alarmKitID: kitID)  // 앞 회차를 소비했다
+        fake = fake.advanced(by: .seconds(60))                  // 단조 시계는 흘렀다
+        let rolledBack = Date().addingTimeInterval(-3 * 3600)   // 벽시계는 되돌아갔다
+
+        let observation = ObservedRingMarkerStore.beginObservation(alarmKitID: kitID)
+        XCTAssertNotNil(observation, "벽시계를 되돌렸다고 표를 못 받으면 울림이 두 번 적힌다")
+        ObservedRingMarkerStore.commit(
+            alarmKitID: kitID, observation: observation!, now: rolledBack
+        )
+        XCTAssertTrue(
+            ObservedRingMarkerStore.consume(alarmKitID: kitID, now: rolledBack),
+            "표시가 남지 않으면 인텐트가 같은 회차를 또 적는다"
+        )
+    }
+
+    /// 반대 방향도 함께 고정한다 — **소비 직후**의 관찰은 여전히 걸러야 한다. 그 표시는
+    /// 아무도 소비하지 않아 다음 회차의 정당한 울림을 삼킨다.
+    func test_소비_직후의_관찰은_표를_받지_못한다() {
+        let kitID = UUID().uuidString
+        var fake = ContinuousClock.now
+        ObservedRingMarkerStore.monotonicNow = { fake }
+        _ = ObservedRingMarkerStore.consume(alarmKitID: kitID)
+        fake = fake.advanced(by: .seconds(1))
+
+        XCTAssertNil(ObservedRingMarkerStore.beginObservation(alarmKitID: kitID))
+    }
+
     func test_handleAlarmStopped_alone_recordsNothing() async throws {
         // 스위치를 끄거나 알람을 지우면 '목록에서 사라짐' 루프가 이 함수를 부른다 —
         // 거기서 해제를 적으면 누른 적 없는 해제가 기록된다.

@@ -801,7 +801,11 @@ final class AlarmKitViewModel: ObservableObject {
                 if record.alarmKitUUID != nil {
                     _ = await cancelScheduledAlarm(record: record)
                 }
-            } else {
+            } else if mayScheduleRecord(store.record(id: prepared.id) ?? prepared) {
+                // ⚠ **거절은 실패가 아니다 — 라이브 행으로 다시 본다**(리뷰 40차).
+                // 위 진입 확인 뒤 대기하는 사이에 이 행이 다른 계정 것으로 새겨졌을 수
+                // 있고, 그때 `markFailed` 는 **남의 행**에 "다시 예약하지 못했어요" 를
+                // 새긴다(§1-6). 복구 후보는 언제나 켜진 행이라 no-op 으로 넘어가지도 않는다.
                 store.markFailed(id: prepared.id)
             }
         }
@@ -1011,6 +1015,20 @@ final class AlarmKitViewModel: ObservableObject {
                 await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm deleted while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                )
+                return false
+            }
+            // ⚠ **소유자는 스냅샷이 아니라 살아 있는 행에서 본다**(2026-09-08 리뷰 40차).
+            // 위 진입 확인은 호출자가 들고 온 **복사본**을 보므로, 대기 사이에 그 행이 다른
+            // 계정 것으로 새겨진 것을 못 본다 — `claimUnownedAlarms` 는 소유자 미기록 행에
+            // 임자를 새기는데, 로드 완료 뒤의 재시도는 지금 로그인한 사람과 무관하게 돈다
+            // (`AlarmTalkApp` 의 만료 계정 새기기). 복사본은 여전히 소유자 미기록이라
+            // 그대로 통과하고, `SchedulingSnapshot` 에도 소유자가 없어 아래 비교도 못 잡는다.
+            // 그러면 **B 의 앱에 보이지도 끄지도 못하는 A 의 예약**이 남는다.
+            guard mayScheduleRecord(afterAwait) else {
+                await revertJustScheduled(id)
+                Self.paidGateLogger.info(
+                    "Row was claimed by another account while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
                 return false
             }

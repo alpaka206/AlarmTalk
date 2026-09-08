@@ -70,6 +70,15 @@
   않는다 — 되돌린 만큼 6시간을 넘겨 살아남아 **어제 표시가 오늘 울림을 삼킨다.** 나이가
   음수인 표시는 소비도 정리도 **없는 것으로 본다**(최악은 중복 1건). 서버가 `occurred_at`
   을 도착 시각으로 자르는 것(§3)과 같은 이유다.
+- ⚠ **단, '소비가 방금 지나갔는가' 는 벽시계로 재지 않는다**(2026-09-08 리뷰 40차). 그
+  시각은 디스크에 없고 **한 프로세스 안에서만** 비교되는데, 벽시계로 적어 두면 **두 방향
+  다 틀린다**: 시계를 되돌린 구간에서는 `지금 - 소비` 가 음수라 창을 **언제나** 통과해
+  그 구간의 울림이 관찰자와 인텐트 **양쪽에서** 적히고(중복), 앞으로 뛴 구간에서는 늦은
+  표시가 창을 **빠져나가** 다음 회차를 **삼킨다.** 그래서 이 값만 **단조 시계**로 잰다
+  (`ContinuousClock` — 잠든 사이에도 흘러야 한다. `SuspendingClock`·`systemUptime` 은
+  멈춰서, 밤새 잠든 폰의 다음 울림이 "소비 10초 안" 으로 보인다). 디스크에 남는 표시의
+  시각은 프로세스를 건너 비교되므로 계속 벽시계이고, 거기서는 바로 위의 '미래는 믿지
+  않는다' 가 답이다 — **두 시계는 하는 일이 다르다.**
 - ⚠ **끝내 아무도 안 누른 울림은 적을 방법이 없다** — 그때는 우리 코드가 한 번도 돌지
   않고, 반복 알람은 목록에서 사라지지도 않는다. 플랫폼 한계이고, 그래서 iOS 의 울림 수는
   **아래로 치우친다.**
@@ -196,7 +205,7 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 | 로컬 큐 | `data/UsageEventEntity.kt`(Room) | `UsageEventQueue.swift`(파일) | — |
 | 전송 | `sync/UsageEventUploadWorker.kt` | `UsageEventUploader.swift` | `routes/events.ts` |
 | 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입(표는 `ObservedRingMarkerStore.beginObservation` 으로 **동기로** 뽑고, 울림이 **적힌 뒤** 콜백이 `commit`), 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
-| 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `beginObservation`·`commit`·`consume`·`staleAfter`·`lateMarkWindow` | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
+| 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `beginObservation`·`commit`·`consume`·`staleAfter`(디스크 표시 = 벽시계)·`lateMarkWindow`(메모리 = 단조 시계 `monotonicNow`) | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |
 | 사용중/비사용중 | 붙임 `recordAlarmEvent` / 놓음 `deleteAlarmLocked`·`updateAlarm`(`manualMessageReleasedByEdit`) | 붙임·놓음 모두 `AlarmEditorSheet.recordSaveUsageEvent`, 삭제는 `AlarmKitViewModel.deleteLocalAlarm` | `message_library.in_use` |
 | 해제 | `alarm/RingingService.kt` 의 `dismiss` — Intent 의 알람 id 로 **무조건** 적는다 | `Shared/AlarmIntents.swift` 의 `StopAlarmIntent` — **누른 자리**에서 적고(`handleAlarmStopped` 는 알람을 지우거나 끌 때도 불린다) **조회에 매달지 않는다**(콜드 부팅에서는 기록을 못 찾는다) | — |

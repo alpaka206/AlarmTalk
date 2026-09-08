@@ -843,6 +843,38 @@ final class AccountEpochTests: XCTestCase {
         XCTAssertTrue(kit.mayScheduleRecord(alarm(id: "old", owner: nil)))
     }
 
+    private func makeEpochStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("epoch-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    /// ⚠ **낡은 복사본과 살아 있는 행은 답이 다르다**(리뷰 40차).
+    /// `AlarmManager.schedule` 이 대기하는 사이 로드 완료 새기기가 옛 행에 만료 계정을
+    /// 새기면, 손에 든 복사본은 여전히 소유자 미기록이라 통과한다 — `SchedulingSnapshot`
+    /// 에도 소유자가 없어 그 갈래도 못 잡는다. 그래서 복귀 자리의 판정은 라이브 행으로 한다.
+    /// (`schedule` 은 `AlarmManager.shared` 를 직접 부르는 구조라 대기-후 블록 자체를
+    ///  도는 테스트는 쓸 수 없다 — 그러려면 AlarmManager 이음새가 먼저 필요하다.)
+    func test_대기중_새겨진_소유자는_라이브_행에서만_보인다() {
+        let store = makeEpochStore()
+        let kit = AlarmKitViewModel()
+        kit.noteActiveAccount("B")
+        let stale = alarm(id: "old", owner: nil)
+        store.upsert(stale)
+
+        XCTAssertTrue(kit.mayScheduleRecord(stale), "예약을 시작할 때는 통과한다")
+        store.claimUnownedAlarms(for: "A")      // 대기 사이 — 로드 완료 뒤의 만료 계정 새기기
+        XCTAssertTrue(kit.mayScheduleRecord(stale), "낡은 복사본은 그대로 통과한다(=버그의 입구)")
+        XCTAssertFalse(kit.mayScheduleRecord(store.record(id: "old")!), "라이브 행은 막혀야 한다")
+        XCTAssertEqual(
+            AlarmKitViewModel.SchedulingSnapshot(store.record(id: "old")!),
+            AlarmKitViewModel.SchedulingSnapshot(stale),
+            "스냅샷 비교로는 소유자 변화를 못 잡는다 — 그래서 별도 확인이 필요하다"
+        )
+    }
+
     /// 자동 401 로 아무도 로그인하지 않은 기기 — **끊긴 그 계정**의 알람은 계속 걸 수 있다.
     /// 여기서 막으면 자동 401 을 예외로 둔 뜻이 정반대로 뒤집힌다.
     func test_자동401_계정의_알람은_그대로_건다() {
