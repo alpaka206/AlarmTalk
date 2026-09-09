@@ -6,6 +6,21 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeUserId
 
 object AlarmAppContainer {
+    /**
+     * **화면보다 오래 사는 작업용 스코프.**
+     *
+     * ⚠ 울림 화면의 ＋/− 저장이 여기 붙는다(코덱스 #729 3차). 콤포지션 스코프에 붙이면
+     * 값을 바꾸자마자 끄거나 나갈 때 **Room 커밋 전에 취소돼** 고른 간격이 사라진다.
+     * 단일 스레드라 연타해도 순서가 뒤집히지 않는다.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val appScope: kotlinx.coroutines.CoroutineScope by lazy {
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.Dispatchers.IO.limitedParallelism(1),
+        )
+    }
+
     @Volatile
     private var repository: AlarmRepository? = null
     @Volatile

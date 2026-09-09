@@ -55,6 +55,13 @@ internal object AlarmStreamVolume {
             val current = manager.getStreamVolume(AudioManager.STREAM_ALARM)
             // 최소 1칸은 보장한다 — percent 가 낮아도 0 칸이 되면 무음이라 알람의 뜻이 없다.
             val desired = ((max * percent.coerceIn(0, 100)) / 100).coerceIn(1, max)
+            // ⚠ **주인 인계를 조기 반환보다 먼저 한다**(코덱스 #729 3차). 미리듣기가 이미
+            //   같은 크기로 올려 둔 상태에서 알람이 울리면 아래 `current >= desired` 로
+            //   빠져나가, 슬롯 주인이 PREVIEW 로 남는다 — 그러면 미리듣기 정리가
+            //   **울리는 알람의 볼륨을 도로 낮춘다.**
+            if (owner == Owner.RINGING && readSaved(context) != NONE) {
+                prefs(context).edit().putString(KEY_OWNER, Owner.RINGING.name).commit()
+            }
             if (current >= desired) {
                 Log.i(TAG, "Alarm stream already loud enough current=$current desired=$desired")
                 return
@@ -77,11 +84,12 @@ internal object AlarmStreamVolume {
     }
 
     /** 울림이 끝나면 원래 볼륨으로 되돌린다. 저장된 값이 없으면(안 올렸으면) 아무것도 하지 않는다. */
-    fun restore(context: Context, owner: Owner = Owner.RINGING) {
+    /** @param owner `null` 이면 주인을 따지지 않는다(크래시 복구 전용). */
+    fun restore(context: Context, owner: Owner? = Owner.RINGING) {
         val saved = readSaved(context)
         if (saved == NONE) return
         val savedOwner = prefs(context).getString(KEY_OWNER, Owner.RINGING.name)
-        if (savedOwner != owner.name) {
+        if (owner != null && savedOwner != owner.name) {
             Log.i(TAG, "Skipping restore: stream is owned by $savedOwner, not $owner")
             return
         }
@@ -105,10 +113,17 @@ internal object AlarmStreamVolume {
      * 울리는 중 프로세스가 죽어 원복하지 못한 값이 남아 있으면 되돌린다.
      * 서비스 생성 시 **울림을 시작하기 전에** 한 번 부른다.
      */
+    /**
+     * 지난 실행이 남긴 값을 되돌린다.
+     *
+     * ⚠ **주인을 보지 않는다**(코덱스 #729 3차). 프로세스가 죽으면 그 주인은 이미 없다 —
+     * 주인을 따지면 미리듣기 중에 죽은 경우 `PREVIEW` 로 적힌 값이 **영영 복구되지 않아**
+     * 사용자의 알람 볼륨이 우리가 올린 값에 고정된다.
+     */
     fun restoreIfLeftOver(context: Context) {
         if (readSaved(context) == NONE) return
-        Log.i(TAG, "Found leftover alarm stream volume from a previous ring; restoring")
-        restore(context)
+        Log.i(TAG, "Found leftover alarm stream volume from a previous run; restoring")
+        restore(context, owner = null)
     }
 
     private fun prefs(context: Context) =

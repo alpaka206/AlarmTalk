@@ -31,6 +31,18 @@ object NotificationChannels {
     // 소리를 못 낼 때, 알림 자체가 소리·진동을 내도록 하는 채널. 정상 울림(무음) 채널과 분리해
     // 정상 경로의 중복 소리를 유발하지 않는다.
     const val RINGING_FALLBACK_CHANNEL_ID = "voice_alarm_ringing_fallback_v1"
+
+    /**
+     * **승격 채널** — 울림 화면을 못 띄웠을 때만 쓴다.
+     *
+     * 정상 채널은 `IMPORTANCE_LOW` 라 전체화면 인텐트가 발동하지 않는다. 그런데
+     * `startActivity` 는 백그라운드 시작 제한에 **예외 없이 막힐 수 있어**, 그때는 해제
+     * 수단이 하나도 없다. 그 경우에만 HIGH 로 다시 올려 시스템이 화면을 열게 한다.
+     *
+     * ⚠ **무음이어야 한다.** 이 경로에서는 `RingingService` 가 살아서 이미 소리를 내고
+     * 있다 — 폴백 채널(소리 있음)을 재활용하면 **두 겹으로 울린다.**
+     */
+    const val RINGING_ESCALATION_CHANNEL_ID = "voice_alarm_ringing_escalation_v1"
     const val SOCIAL_CHANNEL_ID = "voice_alarm_social_updates_v1"
 
     /**
@@ -75,6 +87,17 @@ object NotificationChannels {
             setSound(resolveAlarmSoundUri(context), alarmAttributes)
         }
 
+        val escalationChannel = NotificationChannel(
+            RINGING_ESCALATION_CHANNEL_ID,
+            "음성 알람 울림(화면 열기)",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = "울림 화면을 띄우지 못했을 때 시스템이 대신 열도록 하는 알림(소리는 앱이 낸다)"
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            setSound(null, null)
+            enableVibration(false)
+        }
+
         val socialChannel = NotificationChannel(
             SOCIAL_CHANNEL_ID,
             "Voice Alarm updates",
@@ -101,6 +124,7 @@ object NotificationChannels {
         notificationManager.createNotificationChannel(clipPrefetchChannel)
         notificationManager.createNotificationChannel(ringingChannel)
         notificationManager.createNotificationChannel(fallbackChannel)
+        notificationManager.createNotificationChannel(escalationChannel)
         notificationManager.createNotificationChannel(socialChannel)
     }
 

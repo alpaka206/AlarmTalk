@@ -33,10 +33,18 @@ class RingingNotificationDismissTest {
     }
 
     @Test
+    fun escalationNotificationKeepsDeleteIntent() {
+        // ⚠ 승격 경로는 **서비스가 살아 있다**(코덱스 #729 3차). 삭제 인텐트가 없으면
+        //   안드로이드 14+ 에서 스와이프로 배너만 사라지고 소리·진동이 무기한 계속된다.
+        val notification = factory.build("alarm-1", RingingNotificationFactory.Variant.ESCALATION)
+        assertNotNull("승격 알림에 삭제 인텐트가 없다 — 스와이프하면 못 끈다", notification.deleteIntent)
+    }
+
+    @Test
     fun fallbackNotificationHasNoDeleteIntent() {
         // 폴백은 FGS 를 못 띄운 경로라 getService 가 실패할 수 있고, 소리도 채널 사운드
         // 1회성이라 '무한히 울림' 대상이 아니다.
-        val notification = factory.build("alarm-1", fallback = true)
+        val notification = factory.build("alarm-1", RingingNotificationFactory.Variant.FALLBACK)
         assertNull(notification.deleteIntent)
     }
 }

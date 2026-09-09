@@ -16,6 +16,25 @@ internal class RingingNotificationFactory(
     private val context: Context,
 ) {
     /**
+     * 울림 알림의 세 갈래. **어느 채널을 쓰는지와 누가 소리를 내는지가 함께 정해진다** —
+     * 그 둘이 어긋나면 두 겹으로 울리거나(둘 다 소리) 못 끈다(삭제 인텐트 없음).
+     */
+    internal enum class Variant(
+        /** 소리를 `RingingService` 의 MediaPlayer 가 내는가. 그러면 알림은 무음이고
+         *  스와이프 제거에 **삭제 인텐트가 필요하다**(안 그러면 무기한 울린다). */
+        val serviceOwnsSound: Boolean,
+    ) {
+        /** 정상. LOW 채널, 배너 없음, 전체화면 인텐트 없음. */
+        NORMAL(serviceOwnsSound = true),
+
+        /** 액티비티 시작이 막혔다. HIGH·무음 채널 + 전체화면 인텐트. 서비스는 살아 있다. */
+        ESCALATION(serviceOwnsSound = true),
+
+        /** 포그라운드 서비스를 못 띄웠다. HIGH·소리 채널이 직접 울린다. */
+        FALLBACK(serviceOwnsSound = false),
+    }
+
+    /**
      * @param fallback FGS(포그라운드 서비스) 시작이 막혀 알림 자체가 소리·진동을 내야 하는 폴백 경로면 true.
      *   true 면 소리·진동을 내는 폴백 채널을 사용하고, 알림 레벨에서 소리/진동을 무음화하지 않는다.
      *   false(기본, 정상 경로)면 무음 울림 채널을 사용하고 소리는 RingingService 의 MediaPlayer 가 담당한다.
@@ -23,7 +42,7 @@ internal class RingingNotificationFactory(
      */
     fun build(
         alarmId: String,
-        fallback: Boolean = false,
+        variant: Variant = Variant.NORMAL,
     ): Notification {
         val activityIntent = Intent(context, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
@@ -38,10 +57,10 @@ internal class RingingNotificationFactory(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val channelId = if (fallback) {
-            NotificationChannels.RINGING_FALLBACK_CHANNEL_ID
-        } else {
-            NotificationChannels.RINGING_CHANNEL_ID
+        val channelId = when (variant) {
+            Variant.NORMAL -> NotificationChannels.RINGING_CHANNEL_ID
+            Variant.ESCALATION -> NotificationChannels.RINGING_ESCALATION_CHANNEL_ID
+            Variant.FALLBACK -> NotificationChannels.RINGING_FALLBACK_CHANNEL_ID
         }
 
         val builder = NotificationCompat.Builder(context, channelId)
@@ -70,7 +89,7 @@ internal class RingingNotificationFactory(
             servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
         )
 
-        if (fallback) {
+        if (variant != Variant.NORMAL) {
             // ⚠ **폴백에만 전체화면 인텐트를 건다.** 이 경로는 FGS 가 막혀 우리가
             //   `startActivity` 를 부르지 못한 상황이라, 시스템이 대신 울림 화면을 여는 것이
             //   유일한 길이다.
@@ -82,7 +101,7 @@ internal class RingingNotificationFactory(
             builder.setFullScreenIntent(activityPendingIntent, true)
         }
 
-        if (!fallback) {
+        if (variant.serviceOwnsSound) {
             // 정상 경로: 소리는 RingingService 의 MediaPlayer 가 담당 → 알림은 무음(중복 소리 방지).
             builder.setSound(null).setVibrate(null)
             // ⚠ 갱신에서 배너를 다시 띄우지 않는다. 이제 울림 화면이 **항상** 뜨므로

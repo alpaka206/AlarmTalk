@@ -266,8 +266,11 @@ class RingingActivity : ComponentActivity() {
                     // 아니라 옛 값으로 미뤄진다.
                     snoozeMinutesAdjusted = true
                     uiState = uiState.copy(snoozeMinutes = next)
+                    // ⚠ **콤포지션 스코프에 붙이지 말 것**(코덱스 #729 3차). 값을 바꾸자마자
+                    //   끄거나 나가면 화면이 사라지며 **Room 커밋 전에 취소돼** 고른 간격이
+                    //   사라진다. 앱 수명 스코프는 단일 스레드라 연타 순서도 지켜진다.
                     currentAlarmId?.let { id ->
-                        scope.launch(Dispatchers.IO) {
+                        AlarmAppContainer.appScope.launch {
                             AlarmAppContainer.repository(appContext).updateSnoozeMinutes(id, next)
                         }
                     }

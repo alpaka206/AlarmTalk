@@ -640,7 +640,8 @@ class RingingService : Service() {
             runCatching {
                 NotificationManagerCompat.from(this@RingingService).notify(
                     RINGING_NOTIFICATION_ID,
-                    RingingNotificationFactory(this@RingingService).build(alarmId, fallback = true),
+                    RingingNotificationFactory(this@RingingService)
+                        .build(alarmId, RingingNotificationFactory.Variant.ESCALATION),
                 )
             }.onFailure { AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", it) }
         }
