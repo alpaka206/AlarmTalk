@@ -26,7 +26,7 @@ Cloudflare Workers + Hono 기반 API 서버.
 cd packages/backend
 cp .dev.vars.example .dev.vars.dev   # dev 환경 변수 설정
 cp .dev.vars.example .dev.vars.prod  # production 환경 변수 설정
-npm run dev                          # wrangler dev --env dev (localhost:8787)
+npm run dev                          # wrangler dev --env dev --env-file .dev.vars.dev (localhost:8787)
 ```
 
 ## 마이그레이션
@@ -35,9 +35,13 @@ npm run dev                          # wrangler dev --env dev (localhost:8787)
 배포 워커의 `POST /api/init-db`로 실행한다. `INIT_DB_SECRET`이 필요하며 원격 실행은
 `scripts/run-remote-migrations.ts`가 범위별로 나눠 호출한다.
 
+시크릿은 `Authorization` 이 아니라 **`x-init-db-secret` 헤더**로 보낸다(`index.ts` 의 `canRunInitDb`).
+안 맞거나 워커에 `INIT_DB_SECRET` 이 없으면 404 다. 범위는 `fromId`/`toId` 로 지정한다 —
+Workers 서브리퀘스트 캡(~50) 때문에 인자 없이 부르면 전체 실행이라 위험하다.
+
 ```bash
-curl -X POST -H 'Authorization: Bearer <INIT_DB_SECRET>' \
-  'http://localhost:8787/api/init-db?from=1&to=50'
+curl -X POST -H 'x-init-db-secret: <INIT_DB_SECRET>' \
+  'http://localhost:8787/api/init-db?fromId=1&toId=10'
 ```
 
 ## 테스트
@@ -57,9 +61,12 @@ npm run typecheck # tsc --noEmit
 | `/api/voice/*` | 음성 프로필 CRUD + 업로드 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
 | `/api/alarm/*` | 알람 CRUD + 스케줄러 |
-| `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권·코드 |
+| `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권 |
+| `/api/code/*` | 통합 코드 등록(초대권·선물권·프로모) |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 | `/api/push/*` | FCM·APNs 토큰 등록/해제 |
-| `/api/holiday/*` | 공휴일 조회 |
-| `/api/admin/*` | 운영자 콘솔 |
+| `/api/events/*` | 사용 기록 수집(앱이 오프라인에 쌓아 둔 배치) |
+| `/api/holiday/*` | 공휴일 조회 (인증 불필요) |
+| `GET /api/app/version` | 앱 버전 정책 (인증 불필요) |
+| `/admin/*` | 운영자 콘솔 — **`/api` 밑이 아니다.** ADMIN_SECRET 로 보호 |

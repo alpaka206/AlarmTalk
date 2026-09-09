@@ -3,10 +3,18 @@
 코드는 전부 끝나 있다. **여기 적힌 값만 발급받아 지정된 자리에 넣으면 동작한다.**
 값이 없으면 각 경로가 조용히 통과하지 않고 명시적으로 실패한다(fail-closed).
 
+> ✅ **가입은 이미 끝났다(2026-09-08 이 맥에서 재확인).** 서명 인증서
+> `Apple Development: <이름>`(`security find-identity -v -p codesigning`), 팀
+> `<팀 ID>`, `com.alarmtalk.app`·`com.alarmtalk.app.widget` 프로비저닝 프로파일
+> (`~/Library/Developer/Xcode/UserData/Provisioning Profiles`, 만료 2027-08),
+> App Store Connect 앱 레코드(Apple ID `6799711245` — `lib/app-version.ts` 의 `IOS.storeUrl`)가
+> 전부 있고, iPhone 14 Pro(iOS 26.6.1)에 Debug 빌드 설치도 된다.
+> **아래 0~5장은 "다시 하라" 가 아니라 값이 어디서 나와 어디로 들어가는지의 참조표다.**
+>
 > **Apple ID(무료) ≠ Apple Developer Program(연 $99).**
 > 이 앱은 엔타이틀먼트가 App Groups + Sign in with Apple 이라 **무료 Apple ID(Personal
-> Team)로는 실기기 실행조차 안 된다.** 유료 가입이 필요하다.
-> 시뮬레이터 빌드·테스트는 계정 없이 지금도 된다(현재 288 tests 통과 중).
+> Team)로는 실기기 실행조차 안 된다.**
+> 시뮬레이터 빌드·테스트는 계정 없이도 된다.
 
 ---
 
@@ -45,13 +53,13 @@
 | 앱 | `com.alarmtalk.app` |
 | 위젯 확장 | `com.alarmtalk.app.widget` |
 
-**앱**(`...ios`)에 켤 Capability 3개:
+**앱**(`com.alarmtalk.app`)에 켤 Capability 3개:
 
 - ☑ **App Groups**
 - ☑ **Sign in with Apple**
 - ☑ **Push Notifications**
 
-**위젯**(`...ios.widget`)에 켤 것:
+**위젯**(`com.alarmtalk.app.widget`)에 켤 것:
 
 - ☑ **App Groups**
 
@@ -78,16 +86,28 @@ Xcode 의 Signing & Capabilities 에 Keychain Sharing 이 자동으로 잡히는
 
 ---
 
-## 4. Sign in with Apple — 서버에 넣을 값은 **하나뿐**
+## 4. Sign in with Apple — 값이 **둘로 갈린다** (로그인 검증 / 연결 해제)
 
 ```
-APPLE_BUNDLE_ID=com.alarmtalk.app
+APPLE_BUNDLE_ID=com.alarmtalk.app        # ① 로그인 검증(aud 대조)
+APPLE_TEAM_ID=<팀 ID>                 # ② 연결 해제용 client_secret 서명
+APPLE_SIGNIN_KEY_ID=<Sign in with Apple 키의 Key ID>
+APPLE_SIGNIN_PRIVATE_KEY=<그 키의 .p8 내용 전체(PEM)>
 ```
 
-**`.p8` 개인키가 필요 없다.** 네이티브 앱 로그인은 앱이 준 identity token 을 애플 공개키
-(JWKS, `https://appleid.apple.com/auth/keys`)로 검증하는 방식이라 비밀키를 쓰지 않는다.
-`.p8` / Service ID / client_secret 은 **웹·서버 대 서버 플로우**(authorization code 교환,
-토큰 폐기)에서만 필요하다 — 우리는 안 쓴다. 헷갈려서 만들지 말 것.
+**① 로그인 검증에는 `.p8` 이 필요 없다.** 네이티브 앱 로그인은 앱이 준 identity token 을
+애플 공개키(JWKS, `https://appleid.apple.com/auth/keys`)로 검증하는 방식이라 비밀키를
+쓰지 않는다(`lib/apple-oauth.ts`).
+
+⚠ **② 그러나 `.p8` 을 안 만들면 탈퇴가 반쪽이 된다.** 계정 삭제 때
+`POST https://appleid.apple.com/auth/revoke` 로 **Sign in with Apple 연결을 끊는다**
+(`lib/apple-revoke.ts` — 호출부는 `routes/user.ts` 의 탈퇴, `index.ts` 의 예약 삭제).
+폐기는 우리가 우리임을 증명하는 요청이라 client_secret(ES256 JWT)이 필요하고, 그래서
+**Developer Portal → Keys 에서 "Sign in with Apple" 키를 발급**해야 한다. 심사 지침
+5.1.1(v) 가 요구하는 항목이라 선택이 아니다 — 안 끊으면 탈퇴자의 '설정 → Apple 계정'
+목록에 우리 앱이 영원히 남는다.
+⚠ **이 키를 `APPLE_KEY_ID`/`APPLE_PRIVATE_KEY` 에 넣지 말 것** — 그 둘은 5장의 결제
+검증 키(App Store Server API)다. 섞으면 결제 검증이 통째로 죽는다.
 
 이 값이 없으면 `POST /auth/apple` 이 **500 `AUTH_APPLE_CONFIG_MISSING`** 으로 떨어진다
 (aud 를 대조하지 못하면 다른 앱용으로 발급된 유효한 애플 토큰도 통과해 버리기 때문).
@@ -117,7 +137,9 @@ StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용�
 
 ⚠ 가격의 권위는 **App Store Connect** 이고 DB `price_krw` 는 표시용이다. 둘을 일치시켜
 둔다 — 위 값은 마이그레이션 `#52` 의 시드가이고 안드로이드 Play 상품과도 같다.
-`.storekit` 파일의 $1.99/$3.99/$5.99 는 **시뮬레이터 테스트용 참고값**이라 여기와 무관하다.
+`.storekit` 파일도 지금은 같은 값을 담고 있다(`displayPrice` 3900 / 6900 / 14900 + 선물 3900).
+시뮬레이터 전용이라 실제 과금과는 무관하지만, 표시 금액이 어긋나면 사람이 헷갈리므로
+가격을 바꿀 때 **함께** 고친다.
 
 ### 5-2b. 선물 상품 1개 등록 — **소모성(Consumable)**
 
@@ -165,12 +187,23 @@ App Store Connect → 사용자 및 액세스 → 통합 → **App Store Connect
 
 ```bash
 # packages/backend/.dev.vars.dev  (prod 는 .dev.vars.prod)
+# ⚠ **PEM 은 반드시 한 줄에 `\n` 이스케이프로 적는다.** `scripts/sync-worker-secrets.ts` 가
+#   파일을 줄 단위로 읽어 여러 줄 값을 **거절**한다. 서버는 `lib/pem.ts` 가 이 형태를 풀어
+#   쓰므로 두 형태 다 동작하지만, 업로드가 되는 것은 이 형태뿐이다.
+# 키가 **네 갈래**다 — `.dev.vars.example:42-45` 와 같은 구분이다.
+# ① 로그인 검증
 APPLE_BUNDLE_ID=com.alarmtalk.app
+# ② 탈퇴 시 Sign in with Apple 연결 해제 (4장)
+APPLE_TEAM_ID=<팀 ID>
+APPLE_SIGNIN_KEY_ID=ABC123DEFG
+APPLE_SIGNIN_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
+# ③ 결제 검증 (5-3장) — ②와 **다른 키다**
 APPLE_ISSUER_ID=57246542-96fe-1a63-e053-0824d011072a
 APPLE_KEY_ID=ABC123DEFG
-APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----"
+APPLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
+# ④ 푸시 (7장) — 또 다른 키다
+APNS_KEY_ID=8S2AH3937P
+APNS_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----\n
 ```
 
 ```bash
@@ -234,7 +267,9 @@ APNs 인증은 App Store Server API 와 똑같은 ES256 JWT 라, SDK·`GoogleSer
 | 403 `BadEnvironmentKeyInToken` | 키는 살아 있으나 **그 환경용이 아니다** |
 | 403 `InvalidProviderToken` | Key ID 와 `.p8` 이 짝이 아니거나 **키가 폐기됐다** |
 
-APNs 는 HTTP/2 전용이라 `fetch`(undici, HTTP/1.1)로는 못 부른다 — `node:http2` 를 쓴다.
+서버 코드는 그냥 `fetch` 를 쓴다(`lib/apns.ts` — Workers 의 fetch 는 HTTP/2 로 나간다).
+`node:http2` 가 필요한 건 **로컬에서 Node 로 찔러 볼 때뿐**이다 — Node 의 `fetch`(undici)는
+HTTP/1.1 이라 APNs 가 거절한다.
 
 > ⚠ **미해결(2026-08-10)**: `.dev.vars.dev` 의 APNs 키가 양쪽 호스트에서
 > `InvalidProviderToken` 이다. Key ID 는 `3CNKCBLC5U` 인데 짝이 되는 `.p8` 이

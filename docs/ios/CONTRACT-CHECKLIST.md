@@ -1,6 +1,14 @@
 # 백엔드 계약 체크리스트
 
-> **보관 문서:** 옛 iOS 스냅샷을 복구할 때 사용한 체크리스트이며 현재 항목은 구현됐다.
+> **보관 문서(2026-07~08):** 옛 iOS 스냅샷을 복구할 때 쓴 체크리스트다. P0·P1 은 전부
+> 구현됐다(확인: `/auth/me` 롤링 갱신, 마이그레이션 #94~#96, `POST /auth/apple`,
+> `GET /alarm/declined`·`/voice/draft-quota` 소비, 동의 신규 필드, FCM 4종, `bucket_id`).
+> ⚠ **딱 하나 예외가 있다 — P2 의 「권한 게이트 문구」다.** 그 항목은 안드로이드 규약을
+> iOS 로 옮기라고 적었는데 **iOS 에서는 틀렸다.** AlarmKit 권한이 없으면 `schedule` 이
+> 던져 예약 자체가 안 되므로 iOS 는 "울리지 않아요" 가 참이다(`AlarmKitViewModel.swift` 의
+> `alarmDeniedConsequence`, `Views/Alarms/NextAlarmHeadline.swift`). 그 문구를 안드로이드
+> 표대로 고치지 말 것.
+> 아래 「이번 범위 밖」 문장도 무효다 — Apple 로그인·결제는 이 사이클에 들어가 구현됐다.
 > 현재 계약은 [`../spec/`](../spec/README.md)와 실제 코드를 기준으로 한다.
 
 2026-07-21(옛 iOS 스냅샷) → HEAD 사이 403 커밋에서 바뀐 것 중, **iOS 가 반드시 손봐야 하는 것**만.
@@ -48,15 +56,16 @@
 - [ ] 권한 게이트 문구를 "울리지 않아요" 에서 권한별 사실로 교체, 알람 스위치는 저장된 `enabled` 에만 묶기.
 - [ ] 세션 정리 시 계정별 신호만 리셋(`versionChecked` 는 유지), 자동 401 에서 취향 저장소를 지우지 않기.
 
-**참고 경로 (전부 절대경로)**
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\index.ts` — 라우트 마운트 현황
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\lib\migrations.ts` — 78~93 신규
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\middleware\auth.ts` — sub=users.id 통일, 자동생성 제거
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\lib\jwt.ts` — `DEFAULT_TTL_SECONDS` 7일→90일
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\lib\consent.ts` — `CURRENT_POLICY_VERSION = '4'`
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\lib\app-version.ts` — minSupported 21 / latest 23
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\backend\src\lib\account-deletion.ts` — `RevokedRecipientTarget`, `purgeUserAccount` 반환값
-- `C:\Users\gyuwo\Desktop\AlarmTalk\packages\shared\src\schemas\auth.ts` — 표시이름 단일 출처
-- `C:\Users\gyuwo\Desktop\AlarmTalk\apps\android-native\app\src\main\java\com\alarmtalk\app\network\` — 현행 클라 계약 레퍼런스 (8개 Api.kt)
+**참고 경로** (당시 값이라 숫자는 지금과 다르다 — 경로만 쓸 것)
+- `packages/backend/src/index.ts` — 라우트 마운트 현황
+- `packages/backend/src/lib/migrations.ts` — 당시 78~93 신규(지금은 112까지)
+- `packages/backend/src/middleware/auth.ts` — sub=users.id 통일, 자동생성 제거
+- `packages/backend/src/lib/jwt.ts` — `DEFAULT_TTL_SECONDS`(그 뒤 365일로 다시 바뀌었다 —
+  `docs/spec/session-and-auth.md`)
+- `packages/backend/src/lib/consent.ts` — `CURRENT_POLICY_VERSION`(당시 `'4'`, 지금 `'5'`)
+- `packages/backend/src/lib/app-version.ts` — 지금은 platform 별로 갈린다
+- `packages/backend/src/lib/account-deletion.ts` — `RevokedRecipientTarget`
+- `packages/shared/src/schemas/auth.ts` — 표시이름 단일 출처
+- `apps/android-native/app/src/main/java/com/alarmtalk/app/network/` — 현행 클라 계약 레퍼런스
 
 **비용 요약**: 옛 iOS 가 모르는 것은 "엔드포인트 몇 개"가 아니다. ① 세션 모델이 통째로 바뀌었고(sub 의미·90일·rolling), ② 받은-알람 소유권과 목소리 철회라는 **새 도메인 개념**이 생겼으며, ③ iOS 자체가 DB CHECK 제약 수준에서 배제됐고, ④ Apple 로그인/결제는 코드·스키마·법무문서 3중으로 제거됐다. ③④ 만으로도 백엔드 마이그레이션 추가와 법무 문서 개정(→ 전원 재동의)이 선행 조건이다.

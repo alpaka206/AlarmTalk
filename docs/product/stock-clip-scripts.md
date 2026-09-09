@@ -69,7 +69,7 @@ ElevenLabs 로 간다. 합성 경로가 `prepareAlarmTextWithVertex(translate:fa
 **미리듣기에서만 옛 목소리가 남는다.** iOS 는 Android `res/raw` 를 직접 참조하므로
 (`project.yml`) 안드로이드 쪽만 바꾸면 양쪽에 반영된다.
 
-**문구 종류를 등급으로 자르지 않는다**(2026-09-02). 기본 목소리도 날씨·운세·사랑·약을
+**문구 종류를 등급으로 자르지 않는다**(2026-09-02). 기본 목소리도 날씨·운세·응원·약을
 고를 수 있고, 등급으로 갈리는 것은 **직접 입력 잠금 하나**다.
 
 ⚠ 다만 **'기본 인사말'(greeting)은 기본 목소리의 알람 테마가 아니다.** 여기 greeting 은
@@ -290,8 +290,9 @@ variant 인덱스가 그 순서와 일치해야 클라가 사주+날짜로 고�
    넣으면 3축 10종이 된다.
 3. **무료 테마에 자동 편입된다.** `FREE_BUCKET_CATEGORIES` 가 `STOCK_CLIP_PRESETS` 에서
    파생되기 때문이다. 반대로 **유료 클론에는 자동으로 안 들어간다** — `PAID_BUCKET_CATEGORIES`
-   는 별도 목록이라 `CLONE_CLIP_SEEDS` 에 seed 를 추가하고 `CLONE_PRERENDER_TOTAL` 을
-   21 → 28 로 올려야 한다.
+   는 별도 목록이라 거기에 카테고리를 넣고 `CLONE_CLIP_SEEDS` 에 seed 를 추가해야 한다.
+   `CLONE_PRERENDER_TOTAL`(`routes/voice-profile.ts`)은 seed 개수의 합으로 **계산되는 값**이라
+   손으로 올리지 않는다 — seed 7개를 더하면 21 → 28 이 자동으로 따라온다.
 
 ---
 

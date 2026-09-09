@@ -21,6 +21,8 @@ import type { Env } from '../types';
 const APPLE_TOKEN_URL = 'https://appleid.apple.com/auth/token';
 const APPLE_REVOKE_URL = 'https://appleid.apple.com/auth/revoke';
 
+import { pemToPkcs8 } from './pem';
+
 export interface AppleSignInSecretConfig {
   teamId: string;
   keyId: string;
@@ -60,21 +62,6 @@ function b64url(bytes: Uint8Array | ArrayBuffer): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function pemToPkcs8(pem: string): Uint8Array {
-  const body = pem
-    // ⚠ **리터럴 `\n` 을 먼저 진짜 개행으로 바꾼다.** `.dev.vars` 와 wrangler secret 은
-    // **줄 단위**로 파싱돼 여러 줄 값을 담을 수 없다. 그래서 PEM 은 한 줄에 `\n`
-    // 이스케이프로 넣는데, 이걸 안 풀면 뒤의 공백 제거가 백슬래시만 지우고 `n` 을
-    // base64 본문에 남겨 **조용히 망가진 키**가 된다(`n` 도 base64 문자라서).
-    .replace(/\\n/g, '\n')
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
-  const bin = atob(body);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 /**
  * client_secret 을 만든다. 애플 규격: alg=ES256, kid=<Key ID>, iss=<Team ID>,

@@ -54,8 +54,8 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 - **Phase 4**: Backend integration (email/Google auth, manual alarm metadata sync, deterministic TTS cache)
 - **Phase 5**: Social & sharing (family/couple group joined by an `INV-` voucher code, shared voice profiles)
 - **Phase 6**: Billing (plan tiers, subscription, voucher codes, expiry/downgrade cron)
-- **Free bucket rotation**: 4 system voices, 11 preset phrases (weather 9 + medication 2) × ko/en/ja pre-rendered as stock clips; the client picks the weather clip by condition and rotates the medication bucket locally (advance on dismiss, hold on snooze)
-- **Paid clone pre-render**: after a kept (promoted) clone, cron pre-renders 21 clips in the app language — greeting 1 / weather 9 (8 conditions + 1 "weather unresolved" notice) / fortune 5 / love 3 / medication 3. Weather snapshots a server index during the 48h prep window and fires offline; fortune is device-deterministic; love/medication rotate
+- **Free bucket rotation**: 4 system voices, 20 preset phrases per language (weather 9 + medication 2 + fortune 5 + cheer 3 alarm phrases, plus 1 greeting used only for voice preview) × ko/en/ja pre-rendered as stock clips — 240 clips in all. Free themes are derived from the catalog (`FREE_BUCKET_CATEGORIES` = every stock category except greeting), so message kinds are not gated by plan; the client picks the weather clip by condition, derives the fortune index on-device, and rotates the medication/cheer buckets locally (advance on dismiss, hold on snooze)
+- **Paid clone pre-render**: after a kept (promoted) clone, cron pre-renders 21 clips in the app language — greeting 1 / weather 9 (8 conditions + 1 "weather unresolved" notice) / fortune 5 / cheer 3 (renamed from `love` in migration #110; the old id is still accepted on read) / medication 3. Weather snapshots a server index during the 48h prep window and fires offline; fortune is device-deterministic; cheer/medication rotate
 - **FCM instant delivery for family alarms**: data-only push on alarm creation plus pull-on-app-resume; used for delivery only — ringing stays 100% local (`AlarmManager`)
 - **Google Play Billing**: subscription purchase code complete (confirm + RTDN); Toss Payments dropped
 
@@ -76,7 +76,7 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 ## 관련 문서
 
 - [`voice-prompt-design.ko.md`](voice-prompt-design.ko.md) — 알람 문구 생성(Gemini → ElevenLabs v3) 설계 근거. 백엔드 코드 주석이 `§4.x` 로 이 문서를 참조한다.
-- [`manual-message-reuse-plan.md`](manual-message-reuse-plan.md) — 직접 입력 문구 보관함(재사용·차감·수명) **기획 초안**. 아직 미구현이고, 현행 동작은 그 문서 §0 에 코드 근거와 함께 정리돼 있다.
+- [`manual-message-reuse-plan.md`](manual-message-reuse-plan.md) — 직접 입력 문구 보관함(재사용·차감·수명) **기획서**. **일부 구현됨** — §3-1(차감 기준: 폰에 없어서 서버를 부를 때)과 §4(사용 기록)는 2026-09-07 에 들어갔고, 보관함 화면·서버 오디오 무기한 보관은 아직이다. 각 절 머리의 상태 표시를 볼 것.
 
 ## Non-negotiable Rules
 

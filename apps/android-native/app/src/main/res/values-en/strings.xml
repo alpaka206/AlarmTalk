@@ -690,6 +690,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_billing_fail_free_not_billable">The free plan can\'t be applied here</string>
     <string name="msg2_billing_fail_checkout_disabled">In the test version, please enter an invite code</string>
     <string name="msg2_billing_fail_user_not_found">Please check your login details again</string>
+    <string name="msg2_billing_fail_transaction_owned_by_other_user">This purchase is already linked to another account. Please sign in with that account</string>
     <string name="msg2_code_fail_code_required">Please enter a code</string>
     <string name="msg2_code_fail_code_revoked">This code has been revoked</string>
     <string name="msg2_code_fail_already_member">You\'re already in this group</string>

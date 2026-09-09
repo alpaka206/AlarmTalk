@@ -37,6 +37,8 @@ internal object AlarmStreamVolume {
      */
     fun applyForRinging(context: Context, percent: Int) {
         val manager = context.getSystemService(AudioManager::class.java) ?: return
+        // 이 호출이 원본을 적었는가. 앞선 울림이 적어 둔 값은 **남의 것**이라 지우면 안 된다.
+        var savedHere = false
         runCatching {
             val max = manager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
             if (max <= 0) return
@@ -48,14 +50,19 @@ internal object AlarmStreamVolume {
                 return
             }
             // ⚠ 올리기 **전에** 저장한다. 순서를 뒤집으면 그 사이에 죽었을 때 되돌릴 값이 없다.
-            saveOriginal(context, current)
+            savedHere = saveOriginal(context, current)
             manager.setStreamVolume(AudioManager.STREAM_ALARM, desired, 0)
             Log.i(TAG, "Raised alarm stream $current -> $desired (max=$max, percent=$percent)")
         }.onFailure { error ->
             // 방해금지(DND)에서 알람까지 차단한 기기는 ACCESS_NOTIFICATION_POLICY 없이
             // SecurityException 을 던진다. 못 올려도 알람은 그대로 울려야 하므로 삼킨다.
             Log.w(TAG, "Failed to raise alarm stream volume", error)
-            clearSaved(context)
+            // ⚠ **내가 적은 것만 지운다**(2026-09-08). 예전에는 무조건 지웠는데,
+            //   `saveOriginal` 은 이미 값이 있으면 덮지 않으므로 그 값은 **앞선 울림이
+            //   적어 둔 원본**이다. 연달아 울리다 이번 회차만 실패하면 그 원본이 지워져
+            //   **사용자의 알람 볼륨이 우리가 올린 값으로 영구히 굳는다** — 이 클래스가
+            //   존재하는 이유가 바로 그 원복이다.
+            if (savedHere) clearSaved(context)
         }
     }
 
@@ -92,11 +99,14 @@ internal object AlarmStreamVolume {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    private fun saveOriginal(context: Context, volume: Int) {
+    /// @return 이 호출이 실제로 적었으면 true. 이미 값이 있어 건너뛰었으면 false —
+    ///   그 값은 **앞선 울림의 것**이라 이 호출이 실패해도 지우면 안 된다.
+    private fun saveOriginal(context: Context, volume: Int): Boolean {
         // 이미 저장돼 있으면 덮지 않는다 — 연속 울림에서 우리가 올린 값을 '원래 값' 으로
         // 굳혀 버리면 원복이 영영 어긋난다.
-        if (readSaved(context) != NONE) return
+        if (readSaved(context) != NONE) return false
         prefs(context).edit().putInt(KEY_SAVED_VOLUME, volume).commit()
+        return true
     }
 
     private fun readSaved(context: Context): Int =

@@ -698,6 +698,7 @@
     <string name="msg2_billing_fail_free_not_billable">無料プランはここでは適用できません</string>
     <string name="msg2_billing_fail_checkout_disabled">テスト版では招待コードを登録してください</string>
     <string name="msg2_billing_fail_user_not_found">ログイン情報をもう一度ご確認ください</string>
+    <string name="msg2_billing_fail_transaction_owned_by_other_user">この購入は既に別のアカウントに紐づいています。そのアカウントでログインしてください</string>
     <string name="msg2_code_fail_code_required">コードを入力してください</string>
     <string name="msg2_code_fail_code_revoked">取り消されたコードです</string>
     <string name="msg2_code_fail_already_member">すでにこのグループのメンバーです</string>

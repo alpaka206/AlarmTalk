@@ -1,5 +1,11 @@
 # AlarmTalk iOS 되살리기 — 작업 지시 (2026-08-05 개정판)
 
+> **보관 문서(2026-08-05 작업 지시).** 이 지시는 끝났다 — iOS 는 되살아나 실기기까지
+> 올라갔다(`apps/ios-native/README.md`). 아래 기준선·마이그레이션 번호·정책버전은 전부
+> **그날의 값**이라 지금 값과 다르다(예: 마이그레이션 최대 id 93 → 112, 정책버전 4 → 5).
+> 현재 상태는 [`../qa/dev-test-handoff.md`](../qa/dev-test-handoff.md), 동작 규칙은
+> [`../spec/`](../spec/README.md) 가 단일 출처다. **여기 숫자를 오늘의 근거로 인용하지 말 것.**
+
 당신은 이 레포의 iOS 앱을 되살린다. 사람은 자고 있고, 아침까지 혼자 진행한다.
 
 > **이 문서는 개정판이다.** 이전 판은 `분석/00-권고안.md`·`CONTRACT-CHECKLIST.md` 와 정면으로
@@ -228,9 +234,11 @@ cd packages/backend && npx vitest run
 - **`GET /alarm/declined`**: `alarm_ids`=**삭제** vs `revoked_alarm_ids`=**목소리만 제거** — 정반대 처리.
 - FCM 타입 4종: `family_alarm` / `voice_share_changed` / `voice_access_revoked` / `plan_changed`.
   `voice_access_revoked` 를 무시하면 탈퇴자의 복제 목소리를 계속 들고 운다(음성 생체정보 파기 위반).
-  ⚠ **옛 iOS 코드에는 푸시 구현이 0줄이다**(`registerForRemoteNotifications` 0건, Firebase 의존성 0).
-  DB CHECK 를 고쳐도 iOS 푸시는 안 생긴다. APNs 키·Firebase iOS 앱 등록이 필요하고 **둘 다
-  Apple 개발자 계정이 있어야 한다** → 밤새 못 한다. 클라 코드만 짜 두고 `PROGRESS.md` 에 적어라.
+  ⚠ **옛 iOS 코드에는 푸시 구현이 0줄이었다**(`registerForRemoteNotifications` 0건).
+  DB CHECK 를 고쳐도 iOS 푸시는 안 생긴다 — 클라 등록 경로부터 새로 짜야 한다.
+  (2026-09 갱신: 지금은 구현돼 있고 **Firebase 를 거치지 않는다** — 서버가 APNs 로 직접
+  쏜다(`lib/apns.ts` · `PushNotificationCoordinator.swift`). 아래 4항의 Firebase 지시는
+  따르지 말 것.)
 - `GET /tts/presets` 제거 → `GET /tts/stock-clips`
 - 알람 필드 제거: `speaker_id`·`raw_audio_url`·`raw_audio_duration_ms` (내 알람 녹음은 폰에만)
 - `bucket_id` 지원, `GET /voice/draft-quota` 소비, 동의 상태 신규 필드
@@ -262,7 +270,8 @@ cd packages/backend && npx vitest run
 > 사람의 지시: **"모든 기능이 다 되도록. 디자인까지 완벽하게 동일하게, 세세한 기능들까지."**
 > 이전 판은 "차이 0 을 목표로 삼지 마라" 고 적었는데 **그건 뒤집혔다.** 기본값은 **동일**이다.
 
-`안드로이드-화면/` 스크린샷 12장이 1차 기준이지만 **스크린샷에 없는 화면·상태도 전부 맞춘다.**
+`안드로이드-화면/` 스크린샷 12장(레포 밖 — `~/Downloads/ios-handoff/`)이 1차 기준이지만
+**스크린샷에 없는 화면·상태도 전부 맞춘다.**
 스크린샷은 12장뿐이고 실제 화면·상태는 그보다 훨씬 많다 — **안드로이드 소스가 최종 기준이다.**
 
 ```bash
@@ -341,20 +350,17 @@ cd /Users/devrel/Desktop/AlarmTalk && npm run lint && npm run typecheck
 
 기준선(1301/64, lint 0 errors, typecheck 통과, iOS 281/286) 아래로 내려가면 회귀다.
 
-## ⚠ `docs/ios/` 는 git 이 무시한다 — 놀라지 마라
+## ✅ `docs/ios/` 는 이제 git 이 추적한다 (그때는 아니었다)
 
-`.gitignore:21` 에 **`ios/`** 라는 패턴이 있다(React Native 시절 잔재). 이게
-`docs/ios/` 를 통째로 잡아서 그 안의 파일은 `git status` 에 안 나오고 `git add` 도 안 먹는다.
+당시에는 `.gitignore` 의 빗금 없는 `ios/` 가 `docs/ios/` 를 통째로 삼켰다. **지금은
+고쳐져 있다** — `.gitignore` 의 패턴은 `/ios/` 이고(그 위에 이 사고를 설명하는 주석이
+붙어 있다), `git ls-files docs/ios` 가 이 디렉터리의 문서를 전부 보여 준다.
+`scripts/check-docs-links.py` 가 백틱으로 적은 docs 경로의 **추적 여부까지** 검사한다.
 
-- **이건 의도된 상태로 둔다.** `.gitignore` 를 고치지 마라 — 사람이 "이 문서들이 굳이
-  커밋에 들어가야 하나" 라고 했고, 무시되는 편이 그 뜻에 맞는다.
-- `docs/ios/PROGRESS.md` 는 **로컬 파일로만 존재하면 된다.** 아침에 사람이 이 맥에서 직접 읽는다.
-- **커밋된 줄 알고 넘어가지 마라.** "PROGRESS.md 커밋함" 같은 문장을 쓰지 마라.
-- 확인됨: 이 패턴은 `apps/ios-native/` 는 **잡지 않는다**(189파일 전부 정상 추적).
-  복원 커밋은 문제없다.
-
-이미 `docs/ios/` 에 들어 있는 것: `BRIEF.md`(이 문서), `ENVIRONMENT.md`(실측 환경·기준선·
-함정), `CONTRACT-CHECKLIST.md`, `분석/`, `안드로이드-화면/`(대조용 스크린샷 12장).
+이미 `docs/ios/` 에 들어 있는 것: `BRIEF.md`(이 문서), `ENVIRONMENT.md`, `PROGRESS.md`,
+`CONTRACT-CHECKLIST.md`, `DEVICE-SPIKE.md`, `APPLE-ACCOUNT-SETUP.md`, `분석/`.
+⚠ 대조용 스크린샷 12장(`안드로이드-화면/`)은 **레포에 없다** — `~/Downloads/ios-handoff/`
+아래에만 있다(PROGRESS.md 참조).
 
 ## 매 단계 끝에 `docs/ios/PROGRESS.md` 갱신
 
@@ -414,8 +420,9 @@ cd /Users/devrel/Desktop/AlarmTalk && npm run lint && npm run typecheck
    - Keychain Sharing 그룹: `com.alarmtalk.app.keychain`
    - Sign in with Apple: 서버 검증에 필요한 값이 무엇이고 **무엇이 필요 없는지** 명확히
      (네이티브 앱 플로우는 JWKS 검증이라 .p8 이 불필요하다 — 웹/서비스 ID 플로우와 헷갈리지 말 것)
-   - APNs 키(.p8) 생성 → Key ID / Team ID → Firebase 콘솔 iOS 앱 등록 → `GoogleService-Info.plist`
-     (⚠ 레포에 이 파일이 **없다**. iOS 푸시는 이것부터 시작이다)
+   - APNs 키(.p8) 생성 → Key ID / Team ID → 서버 시크릿(`APNS_KEY_ID`/`APNS_PRIVATE_KEY`)
+     (⚠ 2026-09 정정: **Firebase·`GoogleService-Info.plist` 는 쓰지 않는다** — 서버가
+      APNs 에 직접 쏜다. 이유는 `lib/apns.ts` 머리 주석)
    - App Store Connect: 앱 레코드 생성, 인앱결제 상품 ID — **`StoreKitConfiguration.storekit`
      안의 SKU 3개와 정확히 같은 ID 로 만들어야 한다.** 그 ID 목록을 문서에 그대로 옮겨 적어라.
    - 서버 영수증/트랜잭션 검증에 필요한 값(Issuer ID / Key ID / .p8)과 그것을 넣을 시크릿 이름

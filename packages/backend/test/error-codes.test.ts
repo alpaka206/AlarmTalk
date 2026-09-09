@@ -27,8 +27,11 @@ function collectLiterals(): { file: string; line: number; code: string }[] {
         for (const m of text.matchAll(/(?:error_code:\s*|errorBody\(\s*)'([^']+)'/g)) {
           out.push({ file: file.slice(SRC.length + 1), line: index + 1, code: m[1] });
         }
-        // 코드를 담아 돌려주는 판정 헬퍼(`{ ok: false, code: 'X' }`).
-        for (const m of text.matchAll(/\bcode:\s*'([A-Z][A-Z0-9_]+)'/g)) {
+        // 코드를 담아 돌려주는 판정 헬퍼(`{ ok: false, code: 'X' }` / `{ errorCode: 'X' }`).
+        // ⚠ **`errorCode:` 도 잡아야 한다**(2026-09-08 문서 감사). `\bcode:` 는 그걸 구조적으로
+        //   못 잡는다 — `errorCode` 안의 `r`↔`C` 사이에는 단어 경계가 없고 대소문자도 다르다.
+        //   그 사각지대로 `TRANSACTION_OWNED_BY_OTHER_USER` 가 목록에 없는 채 응답에 실려 나갔다.
+        for (const m of text.matchAll(/\b(?:error)?[Cc]ode:\s*'([A-Z][A-Z0-9_]+)'/g)) {
           out.push({ file: file.slice(SRC.length + 1), line: index + 1, code: m[1] });
         }
       });

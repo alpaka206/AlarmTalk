@@ -60,6 +60,12 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
         return String(format: "%@ %d:%02d", hour < 12 ? "오전" : "오후", h12, minute)
     }
 
+    /// ⚠ **새 필드를 여기 빠뜨리면 조용히 사라진다.** `CodingKeys` 를 손으로 적는 순간
+    /// `encode(to:)` 도 이 목록으로 합성되므로, 목록에 없는 저장 프로퍼티는 **쓰이지도
+    /// 읽히지도 않는다.** 옵셔널이라 컴파일도 그대로 통과한다(`var x: Int?` 는 기본값 nil).
+    /// 실제로 `hour`·`minute` 가 그렇게 빠져 있었고, 이 값은 앱에서 인코딩돼 **위젯 프로세스**
+    /// 에서 디코딩되므로 Live Activity 가 늘 nil 을 받아 **큰 시계가 한 번도 안 그려졌다**
+    /// (안드로이드 `RingingActivity` 의 104sp 시계 대응. 2026-09-08 실기기 지적).
     enum CodingKeys: String, CodingKey {
         case localAlarmID
         case label
@@ -67,6 +73,8 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
         case voiceCacheKey
         case alarmKitID
         case voiceText
+        case hour
+        case minute
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +85,9 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
         self.voiceCacheKey = try c.decodeIfPresent(String.self, forKey: .voiceCacheKey)
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
         self.voiceText = try c.decodeIfPresent(String.self, forKey: .voiceText)
+        // 옛 레코드에는 없다 — 그때는 `clockLabel` 이 nil 이라 LA 가 모드 라벨로 폴백한다.
+        self.hour = try c.decodeIfPresent(Int.self, forKey: .hour)
+        self.minute = try c.decodeIfPresent(Int.self, forKey: .minute)
     }
 }
 #endif

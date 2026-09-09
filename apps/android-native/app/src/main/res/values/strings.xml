@@ -726,6 +726,7 @@
     <string name="msg2_billing_fail_free_not_billable">무료 이용권은 여기에서 적용할 수 없어요</string>
     <string name="msg2_billing_fail_checkout_disabled">테스트 버전에서는 초대 코드를 등록해 주세요</string>
     <string name="msg2_billing_fail_user_not_found">로그인 정보를 다시 확인해 주세요</string>
+    <string name="msg2_billing_fail_transaction_owned_by_other_user">이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요</string>
     <string name="msg2_code_fail_code_required">코드를 입력해 주세요</string>
     <string name="msg2_code_fail_code_revoked">취소된 코드예요</string>
     <string name="msg2_code_fail_already_member">이미 함께 쓰고 있는 그룹이에요</string>

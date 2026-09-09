@@ -21,6 +21,8 @@
 const PRODUCTION_HOST = 'https://api.push.apple.com';
 const SANDBOX_HOST = 'https://api.sandbox.push.apple.com';
 
+import { pemToPkcs8 } from './pem';
+
 export interface ApnsConfig {
   keyId: string;
   teamId: string;
@@ -66,16 +68,6 @@ function b64url(bytes: Uint8Array | ArrayBuffer): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function pemToPkcs8(pem: string): Uint8Array {
-  const body = pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
-  const bin = atob(body);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 /**
  * APNs provider JWT(ES256).

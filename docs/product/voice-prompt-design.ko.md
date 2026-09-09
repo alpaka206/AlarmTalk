@@ -28,7 +28,7 @@
 ## 3. 파이프라인
 
 `generateDynamicAlarmTextWithVertex`(동적 모드) 또는 `generatePrerenderClipText`(클론 사전렌더)로 문구를
-만들고 → `routes/tts.ts` 가 `[tag] ` + text 를 조립해 → `lib/elevenlabs.ts` 가 `eleven_v3` 로 합성한다.
+만들고 → `routes/tts.ts` 가 `applyDeliveryTagPerSentence` 로 태그를 입혀 → `lib/elevenlabs.ts` 가 `eleven_v3` 로 합성한다.
 사용자 직접입력/번역 경로만 `prepareAlarmTextWithVertex` 를 탄다.
 
 ## 4. 설계
@@ -77,21 +77,24 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
 |------|------|-----------|
 | **wake_weather** | 부드럽게 깨운 뒤 날씨에서 최대 2개 행동권유를 대화체로(숫자·코드·% 금지). 조건+행동 페어(비→우산, 미세먼지→마스크, 추위→따뜻이, 더위→물, 맑음→산책). 날씨는 **언어중립 토큰**(`WeatherSignal`)으로 받아 타깃 언어로 재표현한다 — 한국어 문장을 넘겨 재번역시키면 뉘앙스가 깨지고 환각이 생긴다 | `cheerfully` |
 | **wake_fortune** | 가벼운 엔터테인먼트 운세(예언 아님). 생년월일·시각·별자리 금지. 연인/배우자면 새 인연·연애운·질투 금지 | `playfully` |
-| **love** | 사적·다정한 아침. 은근한 설렘까지, 드라마·소유욕·새 인연 금지 | `happy` |
+| **cheer** (옛 이름 `love`) | 오늘을 버틸 힘을 주는 응원·자기돌봄. ⚠ **연애 문구가 아니다**(2026-09-03) — 목소리가 연인이어도 말투만 그 관계에 맞추고 주제는 응원이다 | `happy` |
 | preset/custom(사용자 문구) | 사용자 말은 재작성하지 않는다. 번역 요청 시에만 네이티브 구어로 충실 번역. 사용자 입력은 DATA 로만 다룬다(인젝션 안전) | 감정 매칭 1개 |
 
 ### 4.5 태그 정책
 
 - **v3 태그는 enum 이 아니다.** 공식 문서는 audio tag 를 "natural-language instructions" 로 규정하고 지원
   태그 목록을 공개하지 않는다. 효과는 보이스·문맥·stability 에 의존한다. 그래서 우리는 "v3 가 받는 enum"을
-  맞추는 게 아니라 **예측가능성·알람 적합성·태그 낭독 방지**를 위해 큐레이트한 자연어 딜리버리 큐만 쓴다
-  (`APPROVED_TAGS`). 부사형 옛 태그(warmly/encouraging/gentle…)는 실증 근거가 없어 전량 폐기했다.
-- **제외**: `[sighs]`/`[laughs]`(따뜻한 알람에 부적합), `[standing]`/`[music]` 류(공식 문서가 사용 금지
-  예시로 명시). 페이싱은 SSML break 가 없으므로 `…`·쉼표로 만든다.
+  맞추는 게 아니라 **예측가능성·알람 적합성·태그 낭독 방지**를 목표로 삼는다. 닫힌 허용목록은 없다 —
+  모델에게는 `TAG_EXAMPLES` 를 **예시로만** 주고(`vertex-translate.ts`), 실제로 막는 것은 저각성 태그뿐이다
+  (`isLowArousalTag`). `gentle` 은 그 목록에 걸려 막히지만 `warmly`·`encouraging` 은 스톡 대사가 지금도 쓴다.
+- **비언어 소리는 허용한다**: `[laughs]`·`[giggles]`·`[sighs]` 는 `TAG_EXAMPLES` 에 들어 있고 프롬프트가
+  직접 예시로 든다. 금지는 저각성 뜻을 가진 태그와 공식 문서가 든 오용 예(`[standing]`/`[music]` 류)뿐이다.
+  페이싱은 SSML break 가 없으므로 `…`·쉼표로 만든다.
 - **저각성 태그**(`calm/tired/whispers/quietly`)는 취침 모드 전용이었는데 그 모드가 사라졌다. 남은 셋은
   전부 깨우는 알람이라 `sanitizeDeliveryTag` 가 무조건 막는다.
-- **배치**: 문두에 정확히 1개, 조합 금지. 아주 짧거나 맞는 태그가 없으면 무태그(태그가 소리 내어
-  읽히는 사고 방지).
+- **배치**: 톤이 바뀌는 자리마다 **문장 안에 인라인**으로, 한 줄에 보통 1~3개(2026-08-13 C안).
+  아주 짧은 줄(≈20자 미만)은 1개로 충분하고, 맞는 태그가 없으면 무태그로 둔다(태그가 소리 내어
+  읽히는 사고 방지). 별도 `tag` 필드는 옛 클라이언트 호환용 레거시라 빈 문자열로 남긴다.
 - **voice_settings**(고쳐진 버그): 과거 `elevenlabs.ts` 의 역조건 때문에 유일 운영 모델인 v3 에 오히려
   voice_settings 를 안 보내 서버 디폴트가 적용됐고 태그가 약하게 실현됐다. 지금은 항상 전송한다
   (stability 0.5 Natural / similarity 0.8 / style 0.4). **Robust(0.7+) 금지** — 태그를 억제한다.

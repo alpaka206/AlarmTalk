@@ -10,15 +10,15 @@
 
 ## 現状
 
-- **バージョン**: `v1.2.3` (versionCode 23) — Google Play で公開中
-- **Android** — 唯一のクライアント。コアアラームエンジンは実機検証済み:
+- **バージョン**: `v1.2.5` (versionCode 25) — Google Play で公開中
+- **Android** — 公開中のクライアント。コアアラームエンジンは実機検証済み:
   - 無料: システムボイス + 事前レンダリングされたアラームプリセットクリップ、解除ごとにローカルでローテーション(バケットローテーション)
   - 有料: AI クローンボイスのプリセットを「キープ」確定後にサーバー側で事前レンダリング、鳴動時は完全オフライン再生 — オフライン(機内モード)鳴動は実機 QA 待ち
   - 家族アラームは FCM データプッシュでメンバーに即時配信(鳴動自体はローカル — ルール #1) — バックグラウンド配信は実機 QA 待ち
   - Google Play Billing: 稼働中 — 月額サブスクリプションのみ(個人・カップル・ファミリー)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
-iOS アプリはありません。SwiftUI クライアントとそのビルドワークフローはリポジトリから削除されました。
+SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、リポジトリに存在します。ただしまだ App Store には有りません。CI ワークフロー(`ios-build.yml` — ユニットテスト + Release ビルド)は 2026-09-08 に復旧しました。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。
 
 ## 技術スタック
 
@@ -29,7 +29,7 @@ iOS アプリはありません。SwiftUI クライアントとそのビルド�
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 90日・起動ごとに更新) · メール認証コード · Google ID トークン |
+| Auth | JWT (HS256, TTL 365日・`/auth/me` ごとに更新・90日 はバックグラウンド更新の閾値) · メール認証コード · Google ID トークン · Apple ID トークン |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## リポジトリ構成
@@ -38,6 +38,7 @@ iOS アプリはありません。SwiftUI クライアントとそのビルド�
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android アプリ
+│   ├── ios-native/       SwiftUI iOS アプリ (XcodeGen、未リリース)
 │   └── landing/          Next.js ランディングページ (静的 export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API

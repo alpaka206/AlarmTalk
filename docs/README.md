@@ -19,6 +19,8 @@
 | [qa/](qa/README.md) | 테스트 전략과 진행 중인 실기기 검증 |
 | [manual/](manual/README.md) | 사용자 매뉴얼 (en · ko · ja) |
 | [legal/](legal/README.md) | 개인정보처리방침, 이용약관, 동의 문구, 스토어 고지 |
+| [brand/](brand/README.md) | 아이콘·OG 원본과 파생물 재생성 절차 |
+| [ios/](ios/APPLE-ACCOUNT-SETUP.md) | iOS 전용 — 애플 계정·환경·복구 이력 (폴더에 README 없음, 진입점은 APPLE-ACCOUNT-SETUP.md) |
 | [ops/environments.md](ops/environments.md) | 환경 분리, 배포 설정, 릴리스 운영 |
 | [reference/error-codes.md](reference/error-codes.md) | 백엔드 `error_code` 레퍼런스 |
 

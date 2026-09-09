@@ -154,7 +154,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 전체화면 vs 알림 판정 | `alarm/RingingService.kt` `openRingingActivity` / `ringingChannelCanShowHeadsUp` | — (AlarmKit 소유) | — |
 | 알림 구성·액션 | `alarm/RingingNotificationFactory.kt` | — | — |
 | 스와이프 = 해제 | 같은 파일 `setDeleteIntent(ACTION_DISMISS_SILENT)` → `RingingService` 의 `dismiss` | — | — |
-| 울림 화면 | `alarm/RingingActivity` | 시스템 ALERT + `AlarmPresentation.Alert` (`AlarmKitViewModel.swift`) | — |
+| 울림 화면 | `ringing/RingingActivity.kt` | 시스템 ALERT + `AlarmPresentation.Alert` (`AlarmKitViewModel.swift`) | — |
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwnedStatic` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |

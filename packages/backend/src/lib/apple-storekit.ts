@@ -20,6 +20,8 @@ const PRODUCTION_BASE = 'https://api.storekit.itunes.apple.com/inApps/v1';
 const SANDBOX_BASE = 'https://api.storekit-sandbox.itunes.apple.com/inApps/v1';
 const AUDIENCE = 'appstoreconnect-v1';
 
+import { pemToPkcs8 } from './pem';
+
 export interface AppleStoreKitConfig {
   issuerId: string;
   keyId: string;
@@ -62,16 +64,6 @@ function b64urlDecode(s: string): Uint8Array {
 }
 
 /** PEM(.p8) → PKCS#8 DER 바이트. */
-function pemToPkcs8(pem: string): Uint8Array {
-  const body = pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
-  const bin = atob(body);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 /**
  * App Store Server API 호출용 JWT(ES256) 를 만든다.

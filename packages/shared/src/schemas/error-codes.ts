@@ -154,6 +154,12 @@ export const ERROR_CODES = [
   'TRANSACTION_ACCOUNT_UNVERIFIED',
   'TRANSACTION_NOT_FOUND',
   'TRANSACTION_NOT_SUBSCRIPTION',
+  // ⚠ **이미 나가고 있던 코드다**(2026-09-08 문서 감사). `lib/store-billing.ts` 가 409 로
+  // 돌려주고 `routes/billing-google.ts` 가 `error_code` 에 실어 보내는데 이 목록에는 없었다 —
+  // `isKnownErrorCode` 가 거부하니 두 앱이 문구를 못 고르고 기본 메시지로 떨어졌다.
+  // 회귀 테스트가 못 잡은 이유는 판정 헬퍼가 `code:` 가 아니라 `errorCode:` 로 담기 때문이다
+  // (`test/error-codes.test.ts` 의 정규식을 함께 넓혔다).
+  'TRANSACTION_OWNED_BY_OTHER_USER',
   'TRANSACTION_REVOKED',
   'UNKNOWN_PRODUCT',
   'USER_NOT_FOUND',

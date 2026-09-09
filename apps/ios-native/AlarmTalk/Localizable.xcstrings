@@ -8483,6 +8483,23 @@
         }
       }
     },
+    "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This purchase is already linked to another account. Please sign in with that account"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この購入は既に別のアカウントに紐づいています。そのアカウントでログインしてください"
+          }
+        }
+      }
+    },
     "이 버전은 더 이상 쓸 수 없어요.\n최신 버전으로 업데이트해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
