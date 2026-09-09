@@ -1,5 +1,9 @@
 package com.alarmtalk.app
 
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
@@ -64,20 +68,35 @@ internal fun HomeHeader(
     nextAlarm: AlarmEntity?,
     hasAnyAlarm: Boolean,
 ) {
+    // ⚠ **화면으로 돌아올 때도 맞춘다**(iOS `scenePhase` 갱신과 짝). 이펙트 키는 알람
+    //   시각이라 앱을 오래 백그라운드에 두었다 돌아와도 재시작하지 않는다 — 그 사이
+    //   `delay` 가 밀리면 낡은 값으로 한 프레임을 그린다.
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
     // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(nextAlarm?.fireAtMillis) {
         if (nextAlarm == null) return@LaunchedEffect
         // ⚠ **자기 전에 먼저 맞춘다**(2026-09-09 실기기 제보: "1분 뒤인데 2분 뒤로 뜬다").
-        //   아래 루프는 분 경계까지 **자고 나서** 갱신하므로, 그 사이 알람이 바뀌면
-        //   (저장하고 돌아오면) 옛 `now` 로 남은 시간을 잰다. 최대 1분 낡은 값인데
-        //   표시가 **올림**이라 그 1분이 통째로 한 칸으로 부풀어 "2분 후" 가 된다.
+        //   아래 루프는 분 경계까지 **자고 나서** 갱신한다. 알람이 사라졌다가(스위치 끔·
+        //   삭제·울림) 다시 생기면 이 이펙트가 재시작하는데, 그때도 먼저 자므로 `now` 는
+        //   **그 사이 내내 얼어 있던 값** 그대로다.
+        //   ⚠ **틀리는 기준은 '몇 초 낡았나' 가 아니라 '분 경계를 몇 번 넘겼나' 다.**
+        //   알람 시각의 초가 0이면(`AlarmTimeCalculator`) 같은 분 안의 낡음은 결과가
+        //   같다 — 59초 낡아도 라벨은 그대로다. 경계를 하나 넘긴 순간 한 칸이 틀린다.
         now = System.currentTimeMillis()
         while (true) {
             delay(60_000L - System.currentTimeMillis() % 60_000L)
             now = System.currentTimeMillis()
         }
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) now = System.currentTimeMillis()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     // 권한이 모자라도 알람은 울린다(늦거나, 알림이 안 뜨거나, 잠금 화면을 못 덮을 뿐).
     // 그래서 헤드라인은 **언제나 남은 시간**이고, 무엇이 모자란지는 아래 배너가 말한다.
@@ -108,7 +127,7 @@ internal fun HomeHeader(
 }
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
-private fun remainingDurationLabel(remainingMillis: Long): String {
+internal fun remainingDurationLabel(remainingMillis: Long): String {
     // 최소 1분 — 0분이라고 말하지 않는다(iOS `remainingLabel` 과 같은 규칙).
     val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
     val days = totalMinutes / (24 * 60)
