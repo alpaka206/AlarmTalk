@@ -124,30 +124,38 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
 
     // MARK: - LocalHolidayCalendar 통합 (빈 store 가정 — 엔진만으로 true)
 
+    /// ⚠ **질의 존을 명시한다**(2026-09-09 CI 에서 드러남). `isHoliday` 의 `timeZone` 기본값은
+    /// `.current` 이고 **그게 의도된 동작**이다 — 안드로이드 `LocalDate` 와 같게 기기 존의
+    /// 민용일로 환산한다. 그래서 서울 자정 instant 를 넣고 기본값에 맡기면 **기기가 서울일
+    /// 때만** 통과한다(개발 맥은 서울, CI 러너는 UTC 라 6/21 에 추가된 뒤 CI 에서 처음
+    /// 돌자마자 깨졌다). 존을 넘겨 기기와 무관하게 만든다.
     func test_localHolidayCalendar_lunarAndSubstitute_withoutSeed() {
+        let kst = TimeZone(identifier: "Asia/Seoul")!
         // 설날/추석/부처님 + 대체공휴일이 LocalHolidayCalendar.isHoliday 로 잡혀야 함.
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 2, 17), countryCode: "KR"))
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 9, 25), countryCode: "KR"))
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 5, 24), countryCode: "KR"))
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 8, 17), countryCode: "KR"))  // 대체
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 2, 17), countryCode: "KR", timeZone: kst))
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 9, 25), countryCode: "KR", timeZone: kst))
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 5, 24), countryCode: "KR", timeZone: kst))
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 8, 17), countryCode: "KR", timeZone: kst))  // 대체
         // 고정 양력도 여전히 동작.
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 1, 1), countryCode: "KR"))
-        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 6, 6), countryCode: "KR"))
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 1, 1), countryCode: "KR", timeZone: kst))
+        XCTAssertTrue(LocalHolidayCalendar.isHoliday(seoulDate(2026, 6, 6), countryCode: "KR", timeZone: kst))
         // 비-KR 은 false.
-        XCTAssertFalse(LocalHolidayCalendar.isHoliday(seoulDate(2026, 2, 17), countryCode: "US"))
+        XCTAssertFalse(LocalHolidayCalendar.isHoliday(seoulDate(2026, 2, 17), countryCode: "US", timeZone: kst))
         // 평일은 false.
-        XCTAssertFalse(LocalHolidayCalendar.isHoliday(seoulDate(2026, 7, 1), countryCode: "KR"))
+        XCTAssertFalse(LocalHolidayCalendar.isHoliday(seoulDate(2026, 7, 1), countryCode: "KR", timeZone: kst))
     }
 
     // MARK: - 빈 HolidayStore 에서도 엔진 결과가 노출되는지 (cache 없이)
 
     @MainActor
     func test_holidayStore_emptyCache_fallsBackToEngine() {
+        // 위와 같은 이유로 질의 존을 명시한다.
+        let kst = TimeZone(identifier: "Asia/Seoul")!
         let store = HolidayStore()
         // init 의 시드 Task 가 비동기로 채워지더라도, 현재 메모리 holidays 가 비어 있는 시점에도
         // 음력/대체 엔진이 fallback 으로 true 를 줘야 한다. (시드가 들어와도 OR 이므로 true 유지)
-        XCTAssertTrue(store.isHoliday(seoulDate(2026, 2, 17), countryCode: "KR"))   // 설날
-        XCTAssertTrue(store.isHoliday(seoulDate(2028, 10, 5), countryCode: "KR"))   // 2028 대체(개천절)
+        XCTAssertTrue(store.isHoliday(seoulDate(2026, 2, 17), countryCode: "KR", timeZone: kst))   // 설날
+        XCTAssertTrue(store.isHoliday(seoulDate(2028, 10, 5), countryCode: "KR", timeZone: kst))   // 2028 대체(개천절)
     }
 
     // MARK: - 타임존 독립성: 동일 instant 를 극단 디바이스 TZ 로 입력해도 동일 판정
