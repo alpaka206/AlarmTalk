@@ -102,8 +102,13 @@ jobs:
       - name: Unit tests (simulator, ad-hoc signing)
         run: |
           set -o pipefail
+          # ⚠ **로케일을 못 박는다**(2026-09-09). 이 저장소의 iOS 테스트는 한국어 문구를
+          #   그대로 검사한다(`"오전 7:30"` 등). 러너 기본은 영어라 로케일을 안 정하면
+          #   문구 검사 테스트가 **한꺼번에 깨진다** — 코드가 아니라 언어 때문이다.
+          #   안드로이드가 `@Config(qualifiers = "ko")` 로 하는 것과 같은 고정이다.
           xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
+            -testLanguage ko -testRegion KR \
             -only-testing:AlarmTalkTests \
             -skipPackagePluginValidation \
             -resultBundlePath TestResults.xcresult \
