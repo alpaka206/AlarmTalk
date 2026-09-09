@@ -231,12 +231,29 @@ final class AlarmKitViewModel: ObservableObject {
     nonisolated static let alarmRecoveryMessage =
         "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
 
-    /// 울림 알럿 제목 — "오전 7:30 · 아침 알람". 라벨이 없으면 시각만.
-    /// 안드로이드 울림 화면이 시각을 가장 크게 보여주는 것에 맞춘 최소 대응이다.
+    /// 울림 알럿 제목 — "오전 7:30 · 좋은 아침이에요, 일어날 시간이에요".
+    ///
+    /// AlarmKit 의 `AlarmPresentation.Alert` 은 본문 텍스트 필드가 **없고** 제목 하나만
+    /// 받는다. 그래서 안드로이드 울림 화면의 문구 카드에 해당하는 것을 여기 넣는다 —
+    /// **읽어 줄 문장이 있으면 그것을**, 없으면 알람 라벨을 붙인다(2026-09-09 지시
+    /// "텍스트가 보였으면 해서").
+    ///
+    /// ⚠ **시각이 먼저다.** 잠결에 보는 화면이라 어느 알람인지가 문장보다 먼저 읽혀야
+    /// 한다(안드로이드가 104sp 시계를 첫 요소로 두는 것과 같은 이유).
+    /// ⚠ **문장은 잘라서 넣는다.** 제목 한 줄이라 긴 문장을 그대로 넣으면 시스템이 임의로
+    /// 자르고 시각까지 밀려난다. 자를 때 **자소를 가르지 않는다**(이모지·한글 조합).
     nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
         let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
+        let spoken = (record.voiceText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let label = record.label.trimmingCharacters(in: .whitespacesAndNewlines)
-        return label.isEmpty ? time : "\(time) · \(label)"
+        let detail = spoken.isEmpty ? label : Self.shortened(spoken, limit: 40)
+        return detail.isEmpty ? time : "\(time) · \(detail)"
+    }
+
+    /// 자소 단위로 자른다 — `String.prefix` 는 `Character` 단위라 이모지·조합 문자가 안 깨진다.
+    nonisolated static func shortened(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     func requestAuthorization() async {

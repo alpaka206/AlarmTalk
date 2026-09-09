@@ -239,6 +239,7 @@
 		AB6952C6C2E757ECEF15B909 /* VoiceSegmentPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */; };
 		AB8A9EB691B9DE89974FA8FF /* CodeRegistrationErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */; };
 		AC2D607D698A02FF2BE124A1 /* AlarmLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */; };
+		ACA45C2601E7084C81427E63 /* AlertTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981A8751DB9609566B67BD85 /* AlertTitleTests.swift */; };
 		ADA0CE35D34A19651679B713 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = ECCD419D20318FDD0B2DAF13 /* PrivacyInfo.xcprivacy */; };
 		AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */; };
 		AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 113301E9251EE3A26158F72C /* Sentry */; };
@@ -566,6 +567,7 @@
 		956BC28B0AE290CC6A39878E /* RepeatWeekdayChips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatWeekdayChips.swift; sourceTree = "<group>"; };
 		95B28A584FFD00AD1BF0633C /* BillingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingPanel.swift; sourceTree = "<group>"; };
 		9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VoiceStudioViewModel+ErrorMapping.swift"; sourceTree = "<group>"; };
+		981A8751DB9609566B67BD85 /* AlertTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertTitleTests.swift; sourceTree = "<group>"; };
 		98CCA14FD6E4C634ECED32A9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		98DEA7F0002B6032EA05DA9B /* LocalAlarmStoreCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmStoreCopyTests.swift; sourceTree = "<group>"; };
 		990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSignOutStore.swift; sourceTree = "<group>"; };
@@ -1023,6 +1025,7 @@
 				DEA4053147240A726E543944 /* AlarmUserCopyTests.swift */,
 				53F74ECE9BEB717AE2FAA2A3 /* AlarmVoicePlayerTests.swift */,
 				BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */,
+				981A8751DB9609566B67BD85 /* AlertTitleTests.swift */,
 				6631E3233534A061DF16833B /* AppVersionGateTests.swift */,
 				E6CE8AAF8C07B7F35CAF6FC0 /* AudioCacheRoundTripTests.swift */,
 				A9311A4ED6398F9049299873 /* AudioCacheStalenessTests.swift */,
@@ -1682,6 +1685,7 @@
 				90D4B576DF0594E4B87266A4 /* AlarmUserCopyTests.swift in Sources */,
 				42F0D9521755F54DDF582883 /* AlarmVoicePlayerTests.swift in Sources */,
 				D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */,
+				ACA45C2601E7084C81427E63 /* AlertTitleTests.swift in Sources */,
 				23DD6CB6C45C98F8C67EC651 /* AppVersionGateTests.swift in Sources */,
 				E79BF3F34186EF62E526F9A4 /* AudioCacheRoundTripTests.swift in Sources */,
 				C50DEC1CB5458F453DC0E919 /* AudioCacheStalenessTests.swift in Sources */,
