@@ -226,15 +226,6 @@
     <string name="editor_cancel">취소</string>
     <string name="editor_saving">저장 중</string>
     <string name="editor_selected_ringtone">선택한 알람</string>
-    <string name="editor_snooze_custom">직접 입력</string>
-    <string name="editor_snooze_custom_dialog_title">간격 직접 설정</string>
-    <string name="editor_snooze_custom_range_error">1분에서 30분 사이로 정해 주세요.</string>
-    <string name="editor_snooze_custom_range_hint">1분부터 30분까지 정할 수 있어요.</string>
-    <string name="editor_snooze_custom_value">직접 입력 (%1$d분)</string>
-    <string name="editor_snooze_interval">간격</string>
-    <string name="editor_snooze_use">다시 울림 사용</string>
-    <string name="editor_snooze_summary">%1$d분</string>
-    <string name="editor_snooze_title">다시 울림</string>
     <string name="editor_free_bucket_loading">문구를 준비하고 있어요</string>
     <string name="editor_free_bucket_offline">오프라인이라 문구를 불러오지 못했어요</string>
     <string name="editor_vibration_pattern">패턴</string>
@@ -482,6 +473,8 @@
     <string name="rd_duplicate_alarm_time_message">이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.</string>
     <string name="rd_slide_to_dismiss">밀어서 끄기</string>
     <string name="rd_snooze_button_minutes">%1$d분 뒤 다시</string>
+    <string name="rd_snooze_minus">다시 울림 간격 1분 줄이기</string>
+    <string name="rd_snooze_plus">다시 울림 간격 1분 늘리기</string>
     <string name="rd_dismiss_action">끄기</string>
     <string name="rd_clock_spoken">%1$s %2$d시 %3$d분</string>
     <string name="rd_test_alarm_label">테스트 알람</string>

@@ -211,11 +211,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
             !isGeneratedFreeSystemPresetVoice
     }
 
-    /// ⚠ **횟수 한도를 보지 않는다**(2026-09-09 지시로 설정을 없앴다. 안드로이드
-    /// `AlarmEntity.canSnoozeNow` 와 같은 규칙). 자동 재울림이 없으므로 그 숫자는 '사람이
-    /// 누를 수 있는 횟수' 였고 그렇게 읽히지 않았다. 저장된 `snoozeRepeatLimit` 는 계약·
-    /// 동기화를 건드리지 않으려고 행에 그대로 두되 **아무도 읽지 않는다.**
-    var canSnooze: Bool { snoozeEnabled }
+    /// 다시 울림을 지금 누를 수 있는가 — **언제나 그렇다**(2026-09-09, 안드로이드와 같다).
+    ///
+    /// ⚠ 조건을 다시 만들지 말 것. 편집기에서 '다시 울림' 설정 자체를 없앴으므로 저장된
+    /// `snoozeEnabled`·`snoozeRepeatLimit` 은 옛 행에만 남아 있고 **아무도 읽지 않는다.**
+    /// 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때 조용히 꺼진다.
+    var canSnooze: Bool { true }
 
     /// PR3 하이브리드 분기의 단일 진실 원천.
     /// `repeatDaysMask != 0 && holidayOff` 인 반복 알람만 `.fixed` one-shot 경로를 타며,

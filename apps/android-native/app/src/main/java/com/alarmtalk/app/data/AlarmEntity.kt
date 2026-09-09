@@ -259,18 +259,3 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
     return ((raw % size) + size) % size
 }
 
-/**
- * **지금 '다시 울림' 을 누를 수 있는가.**
- *
- * ⚠ **판정을 두 곳에 쓰지 말 것**(2026-09-09). 예전에는 울림 화면만 이 조건을 갖고 있었고
- * (`ringing/RingingActivity.kt` 의 `snoozeAvailable`) 알림은 조건 없이 버튼을 붙였다.
- * 그래서 한도에 닿은 알람에서 **알림의 '다시 울리기' 를 누르면 알람이 꺼졌다** —
- * `AlarmRepository.snooze` 가 null 을 돌려주고 `RingingService` 가 그걸 종료로 마감하기
- * 때문이다. 같은 알람이 두 표면에서 다른 말을 하고 있었다.
- *
- * ⚠ **횟수 한도를 보지 않는다**(2026-09-09 지시로 설정 자체를 없앴다). 자동 재울림이
- * 없으므로 그 숫자는 '사람이 버튼을 누를 수 있는 횟수' 였고, 그렇게 읽히지 않았다 —
- * 한도에 닿으면 '다시 울리기' 를 눌렀는데 알람이 꺼졌다. 저장된 `snoozeRepeatLimit` 값은
- * 계약·동기화를 건드리지 않으려고 **행에 그대로 두되 아무도 읽지 않는다.**
- */
-fun AlarmEntity.canSnoozeNow(): Boolean = snoozeEnabled

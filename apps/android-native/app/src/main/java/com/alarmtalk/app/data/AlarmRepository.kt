@@ -527,9 +527,9 @@ class AlarmRepository(
      * ⚠ 스펙이 이미 요구하던 것이다 — `docs/spec/alarm-ringing.md` §3 「어떤 경로로 끝나든
      * 소리를 먼저 끈다. 끄기·다시 울림·**목록에서 사라짐** — 전부」. 그런데 `setEnabled`·
      * `deleteAlarm` 어디에도 `RingingService` 참조가 없어 **다음 예약만 지우고 지금 나는
-     * 소리는 그대로 뒀다.** 기기를 쓰는 중이면 전체 울림 화면이 안 뜨므로(`RingingService`
-     * 의 사용 중 판정) 사용자는 앱 안에서 소리를 들으며 그 알람을 지울 수 있다 — 실제로
-     * 닿는 경로다.
+     * 소리는 그대로 뒀다.** 울림 화면을 벗어나도 소리는 계속 나므로(주인이 액티비티가 아니라
+     * 포그라운드 서비스다) 사용자는 앱 안에서 소리를 들으며 그 알람을 지울 수 있다 —
+     * 실제로 닿는 경로다.
      *
      * 지금 울리는 그 알람일 때만 보낸다. 다른 알람이면 아무 일도 하지 않는다.
      */
@@ -1273,16 +1273,34 @@ class AlarmRepository(
      *
      * 워커가 락을 먼저 잡아도 결과는 맞다: 스누즈가 나중에 최종 승자가 된다.
      */
+    /**
+     * 울림 화면에서 다시 울림 간격을 바꾼다(＋/−). 다음 '다시 울리기' 부터 이 값이 쓰이고,
+     * 행에 남으므로 다음 회차에도 이어진다.
+     *
+     * 범위 밖 값은 **조용히 자르지 않고** 무시한다 — 화면이 이미 끝값에서 버튼을 흐리게
+     * 두므로 여기 닿는 값은 버그이고, 잘라 저장하면 그 버그가 데이터로 굳는다.
+     */
+    suspend fun updateSnoozeMinutes(alarmId: String, minutes: Int) {
+        if (minutes !in SnoozeMinutes.range) {
+            Log.w(TAG, "Ignoring out-of-range snooze minutes=$minutes id=$alarmId")
+            return
+        }
+        runCatching {
+            alarmDao.updateSnoozeMinutes(alarmId, minutes, System.currentTimeMillis())
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to update snooze minutes id=$alarmId", error)
+        }
+    }
+
     suspend fun snooze(alarmId: String): AlarmEntity? = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")
             return null
         }
-        if (!current.snoozeEnabled) {
-            Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
-            return null
-        }
+        // ⚠ **`snoozeEnabled` 를 보지 않는다**(2026-09-09). 편집기에서 그 설정을 없앴으므로
+        //   저장된 값은 옛 행에만 남아 있고, 그걸 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때
+        //   조용히 꺼진다. 컬럼은 왕복시키되 아무도 읽지 않는다.
         // ⚠ **횟수 한도를 여기서 다시 만들지 말 것**(2026-09-09 지시 "무제한"). 예전에는
         //   `snoozeRepeatLimit` 를 읽어 한도를 넘으면 null 을 돌려줬고, 그러면
         //   `RingingService.snooze` 가 **알람을 끝냈다** — 사용자는 '다시 울리기' 를 눌렀는데

@@ -1796,23 +1796,18 @@ internal fun AlarmEditorScreen(
                         val voiceOn = editor.playMode != AlarmPlayModes.ALARM_ONLY
                         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
                         AlarmSettingsCard(
-                            snoozeEnabled = editor.snoozeEnabled,
-                            snoozeMinutes = editor.snoozeMinutes,
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             alarmSoundEnabled = alarmSoundOn,
                             // 목소리 모드에서는 알람음 행 자체를 숨긴다(위 주석 참조).
                             showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
-                            onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                            onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                             onVibrationEnabledChange = {
                                 editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                             },
                             onVibrationSelect = { editor.vibrationPattern = it },
                             onAlarmVolumeChange = { editor.alarmVolumePercent = it },
                             onAlarmSoundEnabledChange = { on -> applyAlarmOutput(voice = voiceOn, sound = on) },
-                            onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
                         )
@@ -1909,14 +1904,6 @@ internal fun AlarmEditorScreen(
                 fadeOut(tween(180)),
         ) {
         when (lastDetailPanel) {
-            "snooze" -> SnoozeSettingsPane(
-                snoozeEnabled = editor.snoozeEnabled,
-                snoozeMinutes = editor.snoozeMinutes,
-                onDismiss = { settingsDetailPanel = null },
-                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-            )
-
             "vibration" -> VibrationSettingsPane(
                 vibrationPattern = editor.vibrationPattern,
                 onDismiss = { settingsDetailPanel = null },

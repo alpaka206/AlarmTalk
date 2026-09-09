@@ -56,7 +56,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import com.alarmtalk.app.data.canSnoozeNow
 
 /**
  * 울림 정리(`stopRingingOutputs`)가 **지금 이 서비스가 울리는 알람의 것인가.**
@@ -245,19 +244,6 @@ class RingingService : Service() {
             val alarm = repository.getAlarm(alarmId)
             if (ringingAlarmId != alarmId) return@launch
             currentAlarm = alarm
-            // ⚠ **행을 읽은 뒤 알림을 다시 올린다.** `startRinging` 은 행보다 먼저 알림을
-            //   만들어야 해서(포그라운드 승격 기한) 다시 울림 가능 여부를 그때는 모른다.
-            //   모른 채로 붙여 두면 한도에 닿은 알람에서 **누르면 알람이 꺼지는** 버튼이
-            //   남는다(울림 화면은 같은 상황에서 숨긴다). 같은 알림 id 라 제자리 갱신이다.
-            if (alarm != null && !alarm.canSnoozeNow()) {
-                runCatching {
-                    NotificationManagerCompat.from(this@RingingService).notify(
-                        RINGING_NOTIFICATION_ID,
-                        RingingNotificationFactory(this@RingingService)
-                            .build(alarmId, snoozeAvailable = false),
-                    )
-                }.onFailure { Log.w(TAG, "Failed to refresh ringing notification", it) }
-            }
             requestAlarmAudioFocus()
             // 기기 알람 볼륨이 낮거나 0 이면 앱에서 100% 로 맞춰도 작게/안 들린다.
             // 알람은 미리 맞춰 둔 약속이므로 그 순간만큼은 기기 볼륨을 우리가 맞춘다.

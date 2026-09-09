@@ -9,7 +9,23 @@ import android.net.Uri
 import androidx.core.content.getSystemService
 
 object NotificationChannels {
-    const val RINGING_CHANNEL_ID = "voice_alarm_ringing_v2"
+    /**
+     * 정상 울림 알림 채널.
+     *
+     * ⚠ **IMPORTANCE_LOW 다 — 올리지 말 것**(2026-09-09 지시 "배너 자체를 없애 달라").
+     * 울림 화면이 **항상** 뜨므로(`RingingService.openRingingActivity`) 배너는 그 위에
+     * 겹치기만 한다. 이 알림은 **포그라운드 서비스가 요구하는 것이라 없앨 수 없다** — 대신
+     * 알림창에만 조용히 놓이고, 거기서 해제·다시 울리기 액션을 계속 준다.
+     * (HIGH 는 물론이고 DEFAULT 도 쓰지 않는다. 배너 여부를 OEM 재량에 맡기지 않는다.)
+     *
+     * ⚠ **채널 importance 는 만든 뒤에 못 바꾼다.** 값을 고칠 때는 **id 를 새로** 붙이고
+     * 옛 id 를 지워야 한다(v2 → v3 → v4). 코드만 고치면 이미 깔린 기기에는 옛 설정이 그대로
+     * 남아 아무 일도 일어나지 않는다.
+     */
+    const val RINGING_CHANNEL_ID = "voice_alarm_ringing_v4"
+
+    /** 지워야 할 옛 울림 채널들(v2 = HIGH 배너, v3 = DEFAULT). */
+    private val RETIRED_RINGING_CHANNEL_IDS = listOf("voice_alarm_ringing_v2", "voice_alarm_ringing_v3")
 
     // 폴백 전용 채널: FGS(포그라운드 서비스) 시작이 OS 에 막혀 RingingService 의 MediaPlayer 가
     // 소리를 못 낼 때, 알림 자체가 소리·진동을 내도록 하는 채널. 정상 울림(무음) 채널과 분리해
@@ -33,7 +49,7 @@ object NotificationChannels {
         val ringingChannel = NotificationChannel(
             RINGING_CHANNEL_ID,
             "음성 알람 울림",
-            NotificationManager.IMPORTANCE_HIGH,
+            NotificationManager.IMPORTANCE_LOW,
         ).apply {
             description = "포그라운드 서비스가 소리를 내는 정상 울림 알림(중복 소리 방지를 위해 채널은 무음)"
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -77,6 +93,10 @@ object NotificationChannels {
             setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
+
+        // 옛 울림 채널을 지운다 — 남겨 두면 설정 화면에 죽은 채널이 보이고, 무엇보다
+        // 이미 깔린 기기가 계속 옛 importance 로 배너를 띄운다.
+        RETIRED_RINGING_CHANNEL_IDS.forEach(notificationManager::deleteNotificationChannel)
 
         notificationManager.createNotificationChannel(clipPrefetchChannel)
         notificationManager.createNotificationChannel(ringingChannel)

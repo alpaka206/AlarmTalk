@@ -375,20 +375,10 @@ struct AlarmEditorSheet: View {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
                 // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
-                // 예전에는 여기만 '다시 울림' 이고 상세 화면·토글·오류 문구는 '다시 알림'
-                // 이었다. 이 앱에서 **알림은 notification** 이 굳은 뜻이라(알림 권한,
-                // "알람 알림이 뜨지 않아요") 스누즈에 쓰면 충돌한다 — 스누즈는 알림이 다시
-                // 뜨는 게 아니라 **알람이 다시 울린다.**
-                AlarmSettingRow(
-                    title: "다시 울림",
-                    subtitle: snoozeSummary,
-                    onTap: { settingsPane = .snooze },
-                    trailing: {
-                        Toggle("", isOn: $draft.snoozeEnabled)
-                            .labelsHidden()
-                            .alarmTalkSwitch()
-                    }
-                )
+                // ⚠ **'다시 울림' 행을 되살리지 말 것**(2026-09-09 지시, 안드로이드와 같다).
+                //   미리 정해 두는 값이 아니라 울릴 때 그 자리에서 정하는 값으로 옮겼다.
+                //   iOS 는 울림 화면을 AlarmKit 이 소유하므로 ＋/− 도 둘 수 없다 —
+                //   시스템 alert 의 '다시 울리기' 가 저장된 `snoozeMinutes` 로 미룬다.
 
                 // ⚠ **'진동' 행을 되살리지 말 것**(2026-08-17). AlarmKit 이 알람 진동을
                 // 소유해서 우리가 고른 패턴이 실제 알람에 닿지 않는다 — 근거와 판단은
@@ -490,11 +480,6 @@ struct AlarmEditorSheet: View {
         }
         .navigationDestination(item: $settingsPane) { pane in
             switch pane {
-            case .snooze:
-                SnoozeSettingsPane(
-                    enabled: $draft.snoozeEnabled,
-                    minutes: $draft.snoozeMinutes,
-                )
             case .alarmSound:
                 AlarmSoundSettingsPane(
                     soundUri: $draft.alarmSoundUri,
@@ -1657,14 +1642,6 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneGender = result.fortuneGender
         voiceStudio.fortuneBirthDate = result.fortuneBirthDate
         voiceStudio.fortuneBirthTime = result.fortuneBirthTime
-    }
-
-    /// 세부 설정 카드의 '다시 울림' 요약.
-    ///
-    /// ⚠ 횟수를 붙이지 말 것 — 다시 울림은 무제한이다(2026-09-09, 안드로이드와 같다).
-    private var snoozeSummary: String {
-        guard draft.snoozeEnabled else { return "꺼짐" }
-        return "\(draft.snoozeMinutes)분"
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)

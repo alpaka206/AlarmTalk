@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// 편집기 '세부 설정' 카드가 여는 상세 화면 3종.
+/// 편집기 '세부 설정' 카드가 여는 상세 화면들.
 ///
-/// 안드로이드 `ui/editor/AlarmSettingsCard.kt` 의 `SnoozeSettingsPane` /
-/// `AlarmSoundSettingsPane` / `VoiceOutputSettingsPane`.
+/// 안드로이드 `ui/editor/AlarmSettingsCard.kt` 가 여는 것과 짝이다.
+///
+/// ⚠ **'다시 울림' pane 을 되살리지 말 것**(2026-09-09 지시). 미리 정해 두는 값이 아니라
+/// 울릴 때 그 자리에서 정하는 값으로 옮겼다 — 안드로이드는 울림 화면에 ＋/− 를 두고,
+/// iOS 는 AlarmKit 이 그 화면을 소유해 아예 둘 수 없다. 자세한 규칙은
+/// `docs/spec/alarm-ringing.md` §2.
 ///
 /// ⚠ **진동 pane 을 되살리지 말 것**(2026-08-17). 안드로이드에는 있지만 iOS 에는 없다 —
 /// AlarmKit 이 알람 진동을 소유하고 프레임워크가 받는 것은 `sound:` 하나뿐이라, 17종
@@ -13,7 +17,6 @@ import SwiftUI
 /// 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리 선택과 같은
 /// 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
 enum AlarmSettingsPane: String, Identifiable, Hashable {
-    case snooze
     case alarmSound
     case voiceOutput
 
@@ -25,7 +28,6 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
         // notification** 이 굳은 뜻이다(알림 권한, "알람 알림이 뜨지 않아요") — 스누즈는
         // 알림이 다시 뜨는 게 아니라 **알람이 다시 울리는** 것이다. 앱의 다른 어휘도
         // 울림이다(울림 화면, `docs/spec/alarm-ringing.md`).
-        case .snooze: return "다시 울림"
         case .alarmSound: return "알람음"
         // ⚠ **상세 화면 제목은 그 화면을 연 행과 같은 말이다**(2026-08-16 통일) —
         // 다시 울림·진동·알람음·문구가 모두 그렇다. 여기만 행은 '목소리 크기' 인데
@@ -64,76 +66,6 @@ private struct PaneScaffold<Content: View>: View {
 }
 
 // MARK: - 다시 울림
-
-struct SnoozeSettingsPane: View {
-    @Binding var enabled: Bool
-    @Binding var minutes: Int
-
-    /// 안드로이드 `AlarmSnoozeSettings.kt` 의 `SnoozeMinutes.range` 와 같은 값이다.
-    private static let range = 1...30
-
-    var body: some View {
-        PaneScaffold(title: AlarmSettingsPane.snooze.title) {
-            EditorCard {
-                Toggle("다시 울림 사용", isOn: $enabled)
-                    .alarmTalkSwitch()
-                    .padding(.vertical, 12)
-            }
-
-            if enabled {
-                // ⚠ **간격은 스테퍼 하나다**(2026-09-09 지시, 안드로이드 `SnoozeIntervalStepper`
-                //   미러). 예전에는 프리셋 라디오 + '직접 입력' 알럿이었는데, 고를 값이 몇 개뿐이라
-                //   대부분 알럿을 열어야 했다. ＋/− 로 1분씩 움직이면 목록도 모달도 필요 없다.
-                // ⚠ **「최대 반복 횟수」를 되살리지 말 것.** 다시 울림은 무제한이다 —
-                //   `LocalAlarmRecord.canSnooze` 는 `snoozeEnabled` 만 본다. 예전에는 이 화면이
-                //   3회/5회를 고르게 해 놓고 실제로는 무한히 미뤄져, **화면이 약속한 것과 앱
-                //   동작이 영구히 어긋나 있었다.**
-                EditorSectionTitle(text: "간격")
-                EditorCard(verticalPadding: 0) {
-                    SnoozeIntervalStepper(minutes: $minutes, range: Self.range)
-                }
-            }
-        }
-    }
-}
-
-/// 다시 울림 간격 — 가운데 값, 좌우 ＋/− 로 1분씩.
-/// 끝값에서는 버튼을 흐리게 둔다 — 눌리지 않는 이유가 눈에 보여야 한다.
-private struct SnoozeIntervalStepper: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    @Binding var minutes: Int
-    let range: ClosedRange<Int>
-
-    var body: some View {
-        HStack {
-            stepButton("\u{2212}", enabled: minutes > range.lowerBound) {
-                minutes = max(range.lowerBound, minutes - 1)
-            }
-            Spacer()
-            Text("\(minutes)분")
-                .font(theme.typography.titleMedium)
-                .foregroundStyle(theme.palette.onSurface)
-            Spacer()
-            stepButton("+", enabled: minutes < range.upperBound) {
-                minutes = min(range.upperBound, minutes + 1)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    private func stepButton(_ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(width: 44, height: 44)
-        }
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
-        .accessibilityLabel(label == "+" ? "1분 늘리기" : "1분 줄이기")
-    }
-}
 
 // MARK: - 알람음
 

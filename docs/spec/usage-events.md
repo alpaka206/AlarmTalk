@@ -9,13 +9,19 @@
 | --- | --- |
 | `alarm_created` / `alarm_updated` / `alarm_deleted` | 알람을 만들·고칠·지울 때 |
 | `alarm_rang` | 실제로 울린 순간 |
-| `alarm_dismissed` / `alarm_snoozed` | 알람이 **실제로 끝났을 때** / **실제로 미뤄졌을 때**. ⚠ '다시 알림' 을 눌러도 미뤄지지 않는 갈래가 둘이다 — 한도 도달·비활성(`detail = "snooze_denied"`)과 **재무장 실패**(`detail = "snooze_failed"`, iOS)다. 둘 다 `alarm_snoozed` 가 아니라 `alarm_dismissed` 로 적는다. **누른 사실은 그 `detail` 이 나른다** — 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다. ⚠ 안드로이드의 `snooze_failed` 는 뜻이 달라 `alarm_snoozed` 에 붙는다(§2) |
+| `alarm_dismissed` / `alarm_snoozed` | 알람이 **실제로 끝났을 때** / **실제로 미뤄졌을 때**. ⚠ '다시 알림' 을 눌러도 미뤄지지 않는 갈래가 둘이다 — 행이 사라진 경합(`detail = "snooze_denied"`)과 **재무장 실패**(`detail = "snooze_failed"`, iOS)다. (2026-09-09 전에는 '한도 도달·비활성' 이 여기 있었다. 그 설정을 없앴으므로 **정상 조작으로는 더 이상 닿지 않는다** — `snooze_denied` 가 늘면 그건 한도가 아니라 경합이다.) 둘 다 `alarm_snoozed` 가 아니라 `alarm_dismissed` 로 적는다. **누른 사실은 그 `detail` 이 나른다** — 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다. ⚠ 안드로이드의 `snooze_failed` 는 뜻이 달라 `alarm_snoozed` 에 붙는다(§2) |
 | `manual_message_attached` | 직접 입력 문구가 알람에 붙었다 = 그 오디오가 이 기기에서 **사용중** |
 | `manual_message_released` | 그 문구를 쓰는 알람이 이 기기에서 모두 사라져 오디오를 지웠다 = **비사용중** |
 | `voice_created` / `voice_deleted` | 목소리를 등록·삭제할 때(자리만 열어 둠) |
 
 한 건에 담기는 것: 사건 종류, **일어난 시각**, 알람·목소리·문구의 **식별자**, 짧은 부가
 값(`detail`, 120자).
+
+**해제 사유(`alarm_dismissed` 의 `detail`)**: `"screen_off"`(전원 버튼·커버로 화면이 꺼져
+울림 화면을 벗어남) / `"left_screen"`(홈·최근앱·앱 전환·전화 수신으로 벗어남) /
+`"snooze_denied"` / `"snooze_failed"`. 앞의 둘은 **사용자가 '끄기' 를 누르지 않은 유일한
+해제**라 오탐 가능성이 있다 — 가방·플립커버가 알람을 끄고 있는지 확인할 유일한 장치이므로
+지우지 말 것(`docs/spec/alarm-ringing.md` §2).
 
 ⚠ **식별자를 못 붙여도 사건은 적는다.** 식별자는 전부 nullable 이다 — 잠금화면에서 콜드
 부팅된 iOS 는 알람 기록을 아직 못 읽어 알람 id 를 모를 수 있는데, **못 찾은 것은 안 누른

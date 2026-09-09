@@ -37,7 +37,6 @@ import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
 
-internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 
 // 라벨은 리소스(vibrationLabel)로 해석한다 — 패턴 고유명은 전 로케일 영어 고정.
 private val VibrationOptions = listOf(
@@ -80,20 +79,15 @@ internal fun rememberDefaultAlarmSoundTitle(): String {
 
 @Composable
 internal fun AlarmSettingsCard(
-    snoozeEnabled: Boolean,
-    snoozeMinutes: Int,
     vibrationPattern: String,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
     alarmSoundEnabled: Boolean,
     showAlarmSound: Boolean,
-    onSnoozeEnabledChange: (Boolean) -> Unit,
-    onSnoozeMinutesChange: (Int) -> Unit,
     onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
     onAlarmVolumeChange: (Int) -> Unit,
     onAlarmSoundEnabledChange: (Boolean) -> Unit,
-    onOpenSnoozeSettings: () -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
 ) {
@@ -112,22 +106,9 @@ internal fun AlarmSettingsCard(
             border = wakerCardBorder(),
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                AlarmSettingRow(
-                    title = stringResource(R.string.editor_snooze_title),
-                    subtitle = if (snoozeEnabled) {
-                        stringResource(R.string.editor_snooze_summary, snoozeMinutes)
-                    } else {
-                        stringResource(R.string.editor_off)
-                    },
-                    onClick = onOpenSnoozeSettings,
-                    trailing = {
-                        AlarmTalkSwitch(
-                            checked = snoozeEnabled,
-                            onCheckedChange = onSnoozeEnabledChange,
-                        )
-                    },
-                )
-                AlarmSettingDivider()
+                // ⚠ **'다시 울림' 행을 되살리지 말 것**(2026-09-09 지시). 미리 정해 두는 값이
+                //   아니라 **울릴 때 그 자리에서** 정하는 값으로 옮겼다 —
+                //   `ringing/RingingActivity.kt` 의 `RingingSnoozeRow` 가 ＋/− 로 간격을 바꾼다.
                 AlarmSettingRow(
                     title = stringResource(R.string.editor_vibration_title),
                     subtitle = vibrationLabel(context, vibrationPattern),

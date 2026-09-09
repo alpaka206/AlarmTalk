@@ -136,16 +136,17 @@ class SnoozeIsUnlimitedTest {
     }
 
     @Test
-    fun 다시_울림을_꺼_두면_여전히_거부된다() = runBlocking {
-        // 무제한이 된 것은 **횟수**뿐이다 — 스위치를 끈 알람은 그대로 거부돼야 한다.
+    fun 옛_행의_꺼진_스위치도_무시한다() = runBlocking {
+        // 편집기에서 '다시 울림' 설정 자체를 없앴다(2026-09-09). 저장된 snoozeEnabled=false 는
+        // 옛 행에만 남아 있고, 그걸 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때 조용히 꺼진다 —
+        // 켤 방법이 화면에 없으므로 영영 못 고친다.
         dao.upsert(alarm("a3", snoozeEnabled = false))
 
-        assertNull(repository.snooze("a3"))
+        assertNotNull("옛 행의 꺼진 스위치가 다시 울림을 막았다", repository.snooze("a3"))
     }
 
     @Test
-    fun 켜져_있으면_횟수와_무관하게_누를_수_있다() {
-        assertTrue(alarm("a4", snoozeCount = 999).canSnoozeNow())
-        assertTrue(!alarm("a5", snoozeEnabled = false).canSnoozeNow())
+    fun 없는_알람은_거부된다() = runBlocking {
+        assertNull(repository.snooze("does-not-exist"))
     }
 }

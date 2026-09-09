@@ -21,19 +21,9 @@ internal class RingingNotificationFactory(
      *   false(기본, 정상 경로)면 무음 울림 채널을 사용하고 소리는 RingingService 의 MediaPlayer 가 담당한다.
      *   두 경로 모두 카테고리(CATEGORY_ALARM)·전체화면 인텐트·해제/스누즈 액션을 동일하게 유지한다.
      */
-    /**
-     * @param snoozeAvailable 다시 울림을 **지금 누를 수 있는가**(= `AlarmEntity.canSnoozeNow`,
-     *   지금은 `snoozeEnabled` 하나다).
-     *
-     * ⚠ **울림 화면과 같은 기준이어야 한다.** 어긋나면 `AlarmRepository.snooze` 가 null 을
-     * 돌려주고 `RingingService` 가 그때 **알람을 끝낸다** — '다시 울리기' 를 눌렀는데 알람이
-     * 꺼진다. 조건을 여기 손으로 다시 조립하지 말고 `canSnoozeNow` 를 부를 것.
-     * (횟수 한도는 2026-09-09 에 없앴다 — 되살리지 말 것.)
-     */
     fun build(
         alarmId: String,
         fallback: Boolean = false,
-        snoozeAvailable: Boolean = true,
     ): Notification {
         val activityIntent = Intent(context, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
@@ -41,7 +31,7 @@ internal class RingingNotificationFactory(
                 Intent.FLAG_ACTIVITY_CLEAR_TASK or
                 Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
-        val fullScreenIntent = PendingIntent.getActivity(
+        val activityPendingIntent = PendingIntent.getActivity(
             context,
             RINGING_ACTIVITY_REQUEST_CODE,
             activityIntent,
@@ -65,19 +55,31 @@ internal class RingingNotificationFactory(
             .setOngoing(true)
             .setAutoCancel(false)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setContentIntent(fullScreenIntent)
-            .setFullScreenIntent(fullScreenIntent, true)
+            .setContentIntent(activityPendingIntent)
             .addAction(
                 R.drawable.ic_alarm_24,
                 context.getString(R.string.r3misc_ringing_action_dismiss),
                 servicePendingIntent(ACTION_DISMISS, alarmId, DISMISS_REQUEST_CODE),
             )
-        if (snoozeAvailable) {
-            builder.addAction(
-                R.drawable.ic_alarm_24,
-                context.getString(R.string.r3misc_ringing_action_snooze),
-                servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
-            )
+        // ⚠ **조건 없이 붙인다**(2026-09-09). 다시 울림은 언제나 가능하다 — 편집기에서
+        //   그 설정을 없앴고, 저장된 `snoozeEnabled` 도 읽지 않는다. 여기에 조건을 다시
+        //   만들면 울림 화면과 어긋나 '눌렀는데 알람이 꺼지는' 상태가 돌아온다.
+        builder.addAction(
+            R.drawable.ic_alarm_24,
+            context.getString(R.string.r3misc_ringing_action_snooze),
+            servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
+        )
+
+        if (fallback) {
+            // ⚠ **폴백에만 전체화면 인텐트를 건다.** 이 경로는 FGS 가 막혀 우리가
+            //   `startActivity` 를 부르지 못한 상황이라, 시스템이 대신 울림 화면을 여는 것이
+            //   유일한 길이다.
+            //   ⚠ **정상 경로에는 절대 걸지 말 것**(2026-09-09 실기기). 우리가 이미 화면을
+            //   띄우는데 시스템이 FSI 로 **한 번 더** 띄우면, 인텐트의 `CLEAR_TASK` 가 먼저
+            //   뜬 액티비티를 파괴한다 → 그 액티비티의 `onStop` 이 '화면을 벗어났다' 로 읽혀
+            //   **알람이 2초 만에 스스로 꺼졌다**(SM-A325N 잠금화면, logcat 으로 확인:
+            //   START 두 번 → `Task.removeActivities` → `Left ringing screen; dismissing`).
+            builder.setFullScreenIntent(activityPendingIntent, true)
         }
 
         if (!fallback) {

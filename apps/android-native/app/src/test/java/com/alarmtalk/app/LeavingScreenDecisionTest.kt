@@ -17,16 +17,20 @@ class LeavingScreenDecisionTest {
 
     private fun decide(
         handled: Boolean = false,
+        superseded: Boolean = false,
         changingConfigurations: Boolean = false,
         isActiveRingingAlarm: Boolean = true,
         screenOff: Boolean = false,
+        screenCovered: Boolean = false,
         seenUnlocked: Boolean = true,
         elapsedSinceShownMs: Long = 10_000L,
     ) = leavingScreenDecision(
         handled = handled,
+        superseded = superseded,
         changingConfigurations = changingConfigurations,
         isActiveRingingAlarm = isActiveRingingAlarm,
         screenOff = screenOff,
+        screenCovered = screenCovered,
         seenUnlocked = seenUnlocked,
         elapsedSinceShownMs = elapsedSinceShownMs,
     )
@@ -65,6 +69,26 @@ class LeavingScreenDecisionTest {
     }
 
     @Test
+    fun 덮여_있는데_화면이_꺼지면_잠금_여부도_시간도_보지_않는다() {
+        // ⚠ 가장 무서운 오탐. 잠금을 안 쓰는 폰에서는 `seenUnlocked` 가 첫 프레임에 true 라
+        //   유예가 아예 안 걸리고, 배낭 덮개가 8초 열렸다 닫히면 유예를 지나 버린다.
+        //   덮임은 시간이 아니라 **사실**이라 두 구멍을 한꺼번에 막는다.
+        assertEquals(
+            LeavingScreenDecision.MACHINE_TURNED_SCREEN_OFF,
+            decide(screenOff = true, screenCovered = true, seenUnlocked = true, elapsedSinceShownMs = 60_000L),
+        )
+    }
+
+    @Test
+    fun 덮여_있어도_화면이_켜진_채_떠나면_끈다() {
+        // 전화가 오면 화면은 켜진 채 통화 UI 가 덮는다 — 근접 센서가 near 여도 사람이 한 일이다.
+        assertEquals(
+            LeavingScreenDecision.DISMISS,
+            decide(screenOff = false, screenCovered = true, seenUnlocked = false),
+        )
+    }
+
+    @Test
     fun 잠긴_기기에서_뜬_직후_꺼진_화면은_기계로_본다() {
         // 가방·주머니·플립커버. 유일하게 남은 오탐 방어선이다.
         assertEquals(
@@ -77,6 +101,14 @@ class LeavingScreenDecisionTest {
     fun 끄기_다시알림으로_이미_끝냈으면_두_번_끄지_않는다() {
         // 두 번 끄면 무료 테마 클립 회전이 두 칸 전진해 클립 하나를 건너뛴다.
         assertEquals(LeavingScreenDecision.ALREADY_HANDLED, decide(handled = true))
+    }
+
+    @Test
+    fun 같은_화면이_한_번_더_열려_밀려났으면_끄지_않는다() {
+        // ⚠ 2026-09-09 SM-A325N 실기기: 알림의 전체화면 인텐트가 울림 화면을 한 번 더 열어
+        //   `CLEAR_TASK` 가 먼저 뜬 인스턴스를 파괴했고, 그 onStop 이 '떠났다' 로 읽혀
+        //   **알람이 2초 만에 스스로 꺼졌다.**
+        assertEquals(LeavingScreenDecision.SUPERSEDED, decide(superseded = true))
     }
 
     @Test
@@ -95,7 +127,7 @@ class LeavingScreenDecisionTest {
     fun 우선순위는_안전한_쪽부터다() {
         assertEquals(
             LeavingScreenDecision.ALREADY_HANDLED,
-            decide(handled = true, changingConfigurations = true, screenOff = true, seenUnlocked = false),
+            decide(handled = true, superseded = true, changingConfigurations = true, screenOff = true, seenUnlocked = false),
         )
         assertEquals(
             LeavingScreenDecision.NOT_THE_RINGING_ALARM,
