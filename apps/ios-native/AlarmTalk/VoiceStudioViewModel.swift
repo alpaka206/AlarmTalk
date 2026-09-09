@@ -524,12 +524,11 @@ final class VoiceStudioViewModel: ObservableObject {
                     profiles.first(where: { $0.id == id })?.id
                         ?? familyVoices.first(where: { $0.id == id })?.id
                 }
-                // 그 다음이 온보딩에서 고른 기본 목소리(목록에 있으면).
-                let preferredDefault = defaultVoiceId.flatMap { id in
-                    profiles.first(where: { $0.id == id })?.id
-                }
+                // ⚠ **`defaultVoiceId`(온보딩 기본 목소리)는 보지 않는다.**
+                //   `setDefaultVoiceId` 를 부르는 화면이 없어 실기기에서는 늘 nil 이라 죽은
+                //   갈래였다. 안드로이드는 그 개념을 없애고 `default_voice_<uid>` 를
+                //   last-used 로 재사용한다(`data/DefaultVoicePreferenceStore.kt`).
                 selectedProfileID = preferredLastUsed ??
-                    preferredDefault ??
                     profiles.first(where: { $0.status == "ready" })?.id ??
                     profiles.first?.id ??
                     familyVoices.first(where: { $0.status == "ready" })?.id ??
