@@ -268,8 +268,9 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
  * `AlarmRepository.snooze` 가 null 을 돌려주고 `RingingService` 가 그걸 종료로 마감하기
  * 때문이다. 같은 알람이 두 표면에서 다른 말을 하고 있었다.
  *
- * `FOREVER`(=0)는 무제한이라 횟수를 보지 않는다.
+ * ⚠ **횟수 한도를 보지 않는다**(2026-09-09 지시로 설정 자체를 없앴다). 자동 재울림이
+ * 없으므로 그 숫자는 '사람이 버튼을 누를 수 있는 횟수' 였고, 그렇게 읽히지 않았다 —
+ * 한도에 닿으면 '다시 울리기' 를 눌렀는데 알람이 꺼졌다. 저장된 `snoozeRepeatLimit` 값은
+ * 계약·동기화를 건드리지 않으려고 **행에 그대로 두되 아무도 읽지 않는다.**
  */
-fun AlarmEntity.canSnoozeNow(): Boolean =
-    snoozeEnabled &&
-        (snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER || snoozeCount < snoozeRepeatLimit)
+fun AlarmEntity.canSnoozeNow(): Boolean = snoozeEnabled

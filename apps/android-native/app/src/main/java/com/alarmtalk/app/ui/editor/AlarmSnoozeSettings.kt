@@ -155,14 +155,10 @@ internal fun AlarmSettingDivider(modifier: Modifier = Modifier) {
 internal fun SnoozeSettingsPane(
     snoozeEnabled: Boolean,
     snoozeMinutes: Int,
-    snoozeRepeatLimit: Int,
     onDismiss: () -> Unit,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
-    onSnoozeRepeatLimitChange: (Int) -> Unit,
 ) {
-    var customIntervalDialogOpen by remember { mutableStateOf(false) }
-    var customMinutesText by remember(snoozeMinutes) { mutableStateOf(snoozeMinutes.toString()) }
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -216,107 +212,87 @@ internal fun SnoozeSettingsPane(
                     }
                 }
 
+                // ⚠ **간격은 스테퍼 하나다**(2026-09-09 지시). 예전에는 라디오 목록 +
+                //   '직접 설정' 다이얼로그였는데, 고르는 값이 몇 개뿐이라 대부분 다이얼로그를
+                //   열어야 했다. ＋/− 로 1분씩 움직이면 목록도 모달도 필요 없다.
+                //   범위는 `SnoozeMinutes.range`(1~30) 하나에서 온다 — 서버 계약
+                //   (`INVALID_SNOOZE_MINUTES`)·`AlarmRepository` 의 require 와 같은 값이다.
                 SnoozeOptionSection(title = stringResource(R.string.editor_snooze_interval)) {
-                    SnoozeIntervals.forEachIndexed { index, minutes ->
-                        SnoozeRadioRow(
-                            label = stringResource(R.string.editor_minutes, minutes),
-                            selected = snoozeMinutes == minutes,
-                            onClick = { onSnoozeMinutesChange(minutes) },
-                        )
-                        if (index != SnoozeIntervals.lastIndex) SnoozeOptionDivider()
-                    }
-                    SnoozeOptionDivider()
-                    SnoozeRadioRow(
-                        label = if (snoozeMinutes in SnoozeIntervals) {
-                            stringResource(R.string.editor_snooze_custom)
-                        } else {
-                            stringResource(R.string.editor_snooze_custom_value, snoozeMinutes)
-                        },
-                        selected = snoozeMinutes !in SnoozeIntervals,
-                        onClick = {
-                            customMinutesText = snoozeMinutes.toString()
-                            customIntervalDialogOpen = true
-                        },
+                    SnoozeIntervalStepper(
+                        minutes = snoozeMinutes,
+                        onChange = onSnoozeMinutesChange,
                     )
-                }
-
-                SnoozeOptionSection(title = stringResource(R.string.editor_snooze_repeat)) {
-                    val repeatOptions = listOf(
-                        SnoozeRepeatLimits.THREE to stringResource(R.string.editor_snooze_repeat_three),
-                        SnoozeRepeatLimits.FIVE to stringResource(R.string.editor_snooze_repeat_five),
-                        SnoozeRepeatLimits.FOREVER to stringResource(R.string.editor_snooze_repeat_forever),
-                    )
-                    repeatOptions.forEachIndexed { index, (limit, label) ->
-                        SnoozeRadioRow(
-                            label = label,
-                            selected = snoozeRepeatLimit == limit,
-                            onClick = { onSnoozeRepeatLimitChange(limit) },
-                        )
-                        if (index != repeatOptions.lastIndex) SnoozeOptionDivider()
-                    }
                 }
             }
         }
     }
 
-    if (customIntervalDialogOpen) {
-        val customMinutes = customMinutesText.toIntOrNull()
-        // 앱 공용 알럿으로 통일한다 — 입력이 하나뿐인 모달이라 별도 껍데기가 필요 없다.
-        IosAlertDialog(
-            title = stringResource(R.string.editor_snooze_custom_dialog_title),
-            // ⚠ **범위는 묻기 전에 말한다**(2026-08-17 iOS 와 통일). 예전에는 벗어났을 때만
-            // 오류로 알려서, 처음 여는 사람은 몇 분까지 되는지 모른 채 넣어 보고 막혔다.
-            message = stringResource(R.string.editor_snooze_custom_range_hint),
-            onDismiss = { customIntervalDialogOpen = false },
-            actions = listOf(
-                IosAlertAction(
-                    // 버튼 짝은 iOS 와 같은 [취소][확인] 이다 — 예전에는 [닫기][적용] 이라
-                    // 같은 모달이 두 앱에서 다른 말을 했다.
-                    label = stringResource(R.string.editor_cancel),
-                    onClick = { customIntervalDialogOpen = false },
-                ),
-                IosAlertAction(
-                    label = stringResource(R.string.auth_confirm),
-                    emphasized = true,
-                    // 범위 밖이면 **버튼을 흐리게** 둔다. 예전엔 '눌러도 닫히지 않는 것' 으로
-                    // 알렸는데, 그건 고장과 구분되지 않는다(Codex #671 P2).
-                    //
-                    // ⚠ 상한은 **30**이다 — 서버 계약(`routes/alarm-helpers.ts` 의
-                    // `INVALID_SNOOZE_MINUTES`)과 `AlarmRepository.saveAlarm` 의
-                    // `require(snoozeMinutes in 1..30)` 이 그렇다. 여기가 60 이던 시절에는
-                    // 31~60 을 넣으면 다이얼로그는 통과시켜 놓고 저장에서 예외가 났다 —
-                    // 사용자에겐 "알람 저장에 실패했어요" 만 보이고 이유가 없었다.
-                    // 세 숫자(UI·리포지토리·서버)는 항상 같이 움직인다.
-                    enabled = customMinutes != null && customMinutes in SnoozeMinutes.range,
-                    onClick = {
-                        customMinutes?.takeIf { it in SnoozeMinutes.range }?.let {
-                            onSnoozeMinutesChange(it)
-                            customIntervalDialogOpen = false
-                        }
-                    },
-                ),
-            ),
-        ) {
-            IosAlertField(
-                value = customMinutesText,
-                onValueChange = { value -> customMinutesText = value.filter { it.isDigit() }.take(2) },
-                placeholder = stringResource(R.string.editor_minute_label),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+}
+
+/**
+ * **다시 울림 간격 스테퍼** — 가운데 값, 좌우 ＋/− 로 1분씩(2026-09-09 지시).
+ *
+ * ⚠ 범위는 `SnoozeMinutes.range` 하나에서 온다. 여기에 숫자를 다시 적지 말 것 —
+ * 예전에 UI 상한만 60 이던 시절, 다이얼로그는 통과시키고 저장에서 예외가 나
+ * 사용자에겐 "알람 저장에 실패했어요" 만 보였다(이유 없이).
+ * 끝값에서는 버튼을 흐리게 둔다 — 눌리지 않는 이유가 눈에 보여야 한다.
+ */
+@Composable
+internal fun SnoozeIntervalStepper(
+    minutes: Int,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StepperButton(
+            label = "\u2212",
+            enabled = minutes > SnoozeMinutes.MIN,
+            onClick = { onChange((minutes - 1).coerceIn(SnoozeMinutes.range)) },
+        )
+        Text(
+            text = stringResource(R.string.editor_minutes, minutes),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+        StepperButton(
+            label = "+",
+            enabled = minutes < SnoozeMinutes.MAX,
+            onClick = { onChange((minutes + 1).coerceIn(SnoozeMinutes.range)) },
+        )
+    }
+}
+
+@Composable
+private fun StepperButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = WakerPillShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.size(44.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = tint,
             )
-            // 범위를 벗어나면 이유를 말해 준다. 예전 Material 필드는 isError 로 테두리를
-            // 붉혔는데, 알럿으로 옮기며 그 신호가 사라져 '적용을 눌러도 아무 일이 없는'
-            // 상태가 됐다 — 눌리지 않는 이유는 눈에 보여야 한다.
-            if (customMinutesText.isNotBlank() && customMinutes !in SnoozeMinutes.range) {
-                Text(
-                    text = stringResource(R.string.editor_snooze_custom_range_error),
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center,
-                    style = IosAlertType.Message,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                )
-            }
         }
     }
 }

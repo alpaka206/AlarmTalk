@@ -1914,11 +1914,9 @@ internal fun AlarmEditorScreen(
             "snooze" -> SnoozeSettingsPane(
                 snoozeEnabled = editor.snoozeEnabled,
                 snoozeMinutes = editor.snoozeMinutes,
-                snoozeRepeatLimit = editor.snoozeRepeatLimit,
                 onDismiss = { settingsDetailPanel = null },
                 onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                 onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
             )
 
             "vibration" -> VibrationSettingsPane(

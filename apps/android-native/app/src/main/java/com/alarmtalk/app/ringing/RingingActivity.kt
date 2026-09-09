@@ -719,13 +719,9 @@ private fun AlarmEntity.toRingingUiState(
     val voiceMessage = displayedVoiceText
         ?.let { raw -> raw.stripDeliveryTags(generated = bucketText != null || voiceRandomPrompt) }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
-    // 판정은 `AlarmEntity.canSnoozeNow` 한 곳이다 — 알림도 같은 것을 본다.
-    // (여기에 조건을 다시 쓰면 두 표면이 또 갈라진다.)
-    val snoozeAvailable = snoozeEnabled &&
-        (
-            snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER ||
-                snoozeCount < snoozeRepeatLimit
-            )
+    // 판정은 `AlarmEntity.canSnoozeNow` 와 같다 — 켜져 있으면 언제나 누를 수 있다.
+    // (횟수 한도는 2026-09-09 에 없앴다. 조건을 여기 다시 쓰지 말 것.)
+    val snoozeAvailable = snoozeEnabled
 
     val ampm = context.getString(if (hour < 12) R.string.rd2_am else R.string.rd2_pm)
     return RingingUiState(

@@ -123,7 +123,11 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(updated.state, record.state)
     }
 
-    func test_handleAlarmSnoozed_limitReachedNoOps() async throws {
+    /// ⚠ **횟수 한도는 더 이상 다시 울림을 막지 않는다**(2026-09-09 지시로 설정을 없앴다).
+    /// 예전에는 한도에 닿으면 무시했는데, 자동 재울림이 없으므로 그 숫자는 '사람이 누를 수
+    /// 있는 횟수' 였고 그렇게 읽히지 않았다 — 한도에 닿으면 **'다시 울리기' 를 눌렀는데
+    /// 알람이 꺼졌다.** 저장된 값은 행에 남지만 아무도 읽지 않는다.
+    func test_handleAlarmSnoozed_한도를_넘겨도_미뤄진다() async throws {
         let kitID = UUID().uuidString
         var record = makeArmedRecord(alarmKitID: kitID)
         record.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
@@ -133,8 +137,8 @@ final class AlarmAppContextTests: XCTestCase {
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
-        XCTAssertEqual(updated.snoozeCount, 3)
-        XCTAssertEqual(updated.state, record.state)
+        XCTAssertEqual(updated.snoozeCount, 4, "한도를 이유로 거절하면 안 된다")
+        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
     }
 
     // MARK: - Helpers

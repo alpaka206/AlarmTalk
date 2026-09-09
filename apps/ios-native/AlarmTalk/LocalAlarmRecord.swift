@@ -211,11 +211,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
             !isGeneratedFreeSystemPresetVoice
     }
 
-    var canSnooze: Bool {
-        snoozeEnabled &&
-            (snoozeRepeatLimit == SnoozeRepeatLimit.unlimited.rawValue ||
-                snoozeCount < snoozeRepeatLimit)
-    }
+    /// ⚠ **횟수 한도를 보지 않는다**(2026-09-09 지시로 설정을 없앴다. 안드로이드
+    /// `AlarmEntity.canSnoozeNow` 와 같은 규칙). 자동 재울림이 없으므로 그 숫자는 '사람이
+    /// 누를 수 있는 횟수' 였고 그렇게 읽히지 않았다. 저장된 `snoozeRepeatLimit` 는 계약·
+    /// 동기화를 건드리지 않으려고 행에 그대로 두되 **아무도 읽지 않는다.**
+    var canSnooze: Bool { snoozeEnabled }
 
     /// PR3 하이브리드 분기의 단일 진실 원천.
     /// `repeatDaysMask != 0 && holidayOff` 인 반복 알람만 `.fixed` one-shot 경로를 타며,
