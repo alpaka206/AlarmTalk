@@ -205,7 +205,10 @@ class RingingActivity : ComponentActivity() {
         ensureRingingServiceStarted()
 
         setContent {
-            var uiState by remember { mutableStateOf(RingingUiState()) }
+            // ⚠ **알람 id 로 키를 건다.** 겹치는 알람이 `onNewIntent` 로 들어오면 화면은
+            //   다시 만들어지지 않는다 — 키가 없으면 행을 읽을 때까지 **앞 알람의 값**을
+            //   그대로 보여 주고, 그 사이 누른 '다시 울리기' 가 그 값을 새 알람에 쓴다.
+            var uiState by remember(alarmId) { mutableStateOf(RingingUiState()) }
             val currentAlarmId = alarmId
             val appContext = applicationContext
             // ⚠ **알림으로 알람이 끝나면 이 화면도 닫혀야 한다.** 액티비티는 서비스 생명주기를
@@ -302,7 +305,16 @@ class RingingActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        val nextId = intent.getStringExtra(EXTRA_ALARM_ID)
+        // ⚠ **알람이 바뀌면 알람별 상태를 버린다**(코덱스 #729 4차). 이 액티비티는
+        //   `singleTask` 라 겹치는 알람이 **다시 만들어지지 않고** 여기로 온다. 그때
+        //   `snoozeMinutesAdjusted` 가 앞 알람의 것으로 남아 있으면, 행을 읽기 전에 누른
+        //   '다시 울리기' 가 **앞 알람의 간격**을 새 알람에 덮어쓴다.
+        if (nextId != alarmId) {
+            snoozeMinutesAdjusted = false
+            handled = false
+        }
+        alarmId = nextId
         ensureRingingServiceStarted()
     }
 

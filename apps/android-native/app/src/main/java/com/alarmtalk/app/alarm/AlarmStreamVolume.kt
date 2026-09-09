@@ -23,6 +23,9 @@ import android.util.Log
 internal object AlarmStreamVolume {
 
     private const val TAG = "AlarmStreamVolume"
+
+    /** 저장된 값·주인을 읽고 쓰는 구간의 락. */
+    private val lock = Any()
     private const val PREFS = "alarm_stream_volume"
     private const val KEY_SAVED_VOLUME = "saved_alarm_volume"
     private const val KEY_OWNER = "saved_alarm_volume_owner"
@@ -45,7 +48,14 @@ internal object AlarmStreamVolume {
      * **이미 그보다 크면 건드리지 않는다** — 사용자가 더 크게 해 둔 것을 우리가 낮출 이유는
      * 없다(알람은 들려야 하는 쪽이 안전하다).
      */
-    fun applyForRinging(context: Context, percent: Int, owner: Owner = Owner.RINGING) {
+    /**
+     * ⚠ **읽고-쓰기를 한 락 안에서 한다**(코덱스 #729 4차). 미리듣기(UI 스레드)와 울림
+     * (서비스 IO)이 동시에 시작하면 둘 다 '저장된 값 없음' 을 보고, 울림이 먼저 적은 뒤
+     * 미리듣기가 주인을 덮어쓸 수 있다 — 그러면 미리듣기 정리가 **울리는 알람의 볼륨을
+     * 낮춘다.** 프로세스 안의 경합이라 이 락으로 닫힌다(프로세스 간 경합은 없다 —
+     * 이 앱의 프로세스는 하나다).
+     */
+    fun applyForRinging(context: Context, percent: Int, owner: Owner = Owner.RINGING): Unit = synchronized(lock) {
         val manager = context.getSystemService(AudioManager::class.java) ?: return
         // 이 호출이 원본을 적었는가. 앞선 울림이 적어 둔 값은 **남의 것**이라 지우면 안 된다.
         var savedHere = false
@@ -85,7 +95,7 @@ internal object AlarmStreamVolume {
 
     /** 울림이 끝나면 원래 볼륨으로 되돌린다. 저장된 값이 없으면(안 올렸으면) 아무것도 하지 않는다. */
     /** @param owner `null` 이면 주인을 따지지 않는다(크래시 복구 전용). */
-    fun restore(context: Context, owner: Owner? = Owner.RINGING) {
+    fun restore(context: Context, owner: Owner? = Owner.RINGING): Unit = synchronized(lock) {
         val saved = readSaved(context)
         if (saved == NONE) return
         val savedOwner = prefs(context).getString(KEY_OWNER, Owner.RINGING.name)
