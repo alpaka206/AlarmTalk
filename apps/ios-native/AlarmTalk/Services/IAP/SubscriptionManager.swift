@@ -50,6 +50,20 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var isPurchasing: Bool = false
     @Published private(set) var lastError: String? = nil
 
+    /// 결제를 시작조차 하지 못하는 상태. 지금은 한 갈래뿐이다 — 스토어에 실을 계정 표식을
+    /// 만들 수 없는 계정(구 구글 계정은 `users.id` 가 UUID 가 아니다). 표식 없이 결제하면
+    /// 서버가 확정을 거절해 **돈만 나간다**(코덱스 #730).
+    enum SubscriptionError: LocalizedError {
+        case accountNotPurchasable
+
+        var errorDescription: String? {
+            switch self {
+            case .accountNotPurchasable:
+                return "이 계정으로는 결제를 진행할 수 없어요. 로그아웃 후 다시 로그인해 주세요."
+            }
+        }
+    }
+
     /// 최소 1회 이상 제품 fetch 가 끝났는지. UI 가 "로딩 중 스켈레톤" 과
     /// "정말로 제품이 없음(준비중/실패)" 을 구분하는 데 쓴다.
     /// 첫 진입의 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 게이팅.
@@ -132,8 +146,17 @@ final class SubscriptionManager: ObservableObject {
             // 안드로이드는 `setObfuscatedAccountId(sha256(userId))` 로 처음부터 했다.
             // 애플은 해시가 아니라 **UUID 만** 받으므로 사용자 id 를 그대로 싣는다.
             let accountToken = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
-            let options: Set<Product.PurchaseOption> =
-                accountToken.map { [.appAccountToken($0)] } ?? []
+            // ⚠ **토큰을 못 만들면 결제를 시작하지 않는다**(코덱스 #730).
+            //   `b05c6c19` 이전에 만들어진 구글 계정은 `users.id` 가 UUID 가 아니라 구글
+            //   subject(숫자 문자열)라 위 변환이 실패한다. 그대로 진행하면 표식 없는
+            //   트랜잭션이 되고, 서버의 확정 라우트는 그걸 403 으로 거절한다 — 그런데
+            //   구독 갈래는 `confirmed` 와 무관하게 `.success` 를 돌려주고 트랜잭션을
+            //   끝내므로 **돈은 나가고 플랜은 무료로 남는다.**
+            //   여기서 막으면 최소한 청구가 일어나지 않는다.
+            guard let accountToken else {
+                throw SubscriptionError.accountNotPurchasable
+            }
+            let options: Set<Product.PurchaseOption> = [.appAccountToken(accountToken)]
             let result = try await product.purchase(options: options)
             switch result {
             case .success(let verificationResult):

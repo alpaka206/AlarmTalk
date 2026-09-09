@@ -84,12 +84,26 @@ function consentRow(type: string, agreed = 1, version = CURRENT_POLICY_VERSION) 
  * REQUIRED_CONSENT_TYPES 에서 만들어, 필수 목록이 또 바뀌어도 픽스처가 따라오게 한다.
  * overrides 로 특정 유형만 미동의/다른 버전으로 비틀어 시나리오를 만든다.
  */
+/**
+ * 그 유형이 **지금 유효한 최소 버전**. 픽스처에 숫자를 박지 않기 위한 것이다 —
+ * 박아 두면 최소 버전을 올릴 때마다 무관한 테스트가 무더기로 깨진다(2026-09-09 실제로
+ * 19개가 깨졌다). 시나리오가 '유효한 기존 동의' 를 뜻하면 이 값을 쓴다.
+ */
+const BASELINE_MIN_VERSION: Record<string, number> = { ...CONSENT_MIN_POLICY_VERSION };
+
+function minVersionOf(type: string): string {
+  // ⚠ **기준선 스냅샷을 읽는다.** 일부 테스트는 `CONSENT_MIN_POLICY_VERSION` 을 직접
+  //   올려 '최소 버전이 오르면 그 유형만 다시 뜬다' 를 검사한다. 여기서 살아 있는 상수를
+  //   읽으면 픽스처가 그 인상분을 따라 올라가 **시나리오가 스스로 무효가 된다.**
+  return String(BASELINE_MIN_VERSION[type] ?? 3);
+}
+
 function requiredRows(
   overrides: Record<string, { agreed?: number; version?: string }> = {},
-  version = '3',
+  version?: string,
 ) {
   return REQUIRED_CONSENT_TYPES.map((type) =>
-    consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version),
+    consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version ?? minVersionOf(type)),
   );
 }
 
@@ -100,12 +114,12 @@ function requiredRows(
  */
 function answeredRows(
   overrides: Record<string, { agreed?: number; version?: string }> = {},
-  version = '3',
+  version?: string,
 ) {
   return [
     ...requiredRows(overrides, version),
     ...FEATURE_CONSENT_TYPES.map((type) =>
-      consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version),
+      consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version ?? minVersionOf(type)),
     ),
   ];
 }
@@ -137,11 +151,17 @@ describe('lib/consent — config', () => {
   // 아직 prod(`main` = '4')에 없어 동의자가 0명이므로, 8-24 보완분은 5 본문을 제자리에서
   // 고쳤다. 이 상수가 `main` 에 올라간 뒤의 개정은 **반드시** 새 번호를 태워야 한다.
   //
-  // 최소 버전이 전부 3 인 것은 「한 번 받은 동의는 다시 묻지 않는다」 규칙의 집행이다 —
-  // 문서 버전이 올랐다는 이유로 여기를 올리지 말 것(docs/spec/consent.md).
-  it('문서 버전은 5, 유형별 최소 버전은 전부 3 (한 번 받은 동의는 다시 묻지 않는다)', () => {
+  // ⚠ **최소 버전은 「그 유형의 동의 내용이 실제로 바뀔 때만」 올린다** — 문서 버전이
+  // 올랐다는 이유로 올리지 말 것(docs/spec/consent.md). 지금 privacy 만 5 인 이유는
+  // 버전 5 본문에 **'서비스 이용 기록'** 수집이 새로 들어갔기 때문이다(수집 항목 확대).
+  // 나머지 유형의 동의 내용은 3 이후 바뀌지 않았으므로 그대로 3 이다 — 특히 marketing 을
+  // 올리면 거절 기록까지 다시 묻게 된다.
+  it('문서 버전은 5이고, 내용이 바뀐 privacy 만 최소 버전이 5다', () => {
     expect(CURRENT_POLICY_VERSION).toBe('5');
-    expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
+    expect(CONSENT_MIN_POLICY_VERSION.privacy).toBe(5);
+    const others = { ...CONSENT_MIN_POLICY_VERSION } as Record<string, number>;
+    delete others.privacy;
+    expect(Object.values(others).every((v) => v === 3)).toBe(true);
   });
 });
 
@@ -241,7 +261,7 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   it('문서 버전이 4 여도 v3 기록은 그대로 유효하다 (v4 축소 개정 회귀 방지)', async () => {
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, '5'),
       consentRow('age14', 1, '3'),
     ]);
     expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
@@ -264,10 +284,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing 이 된다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = 6;
     mockDB.pushResult([
       consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
+      consentRow('privacy', 1, '5'),
       consentRow('age14', 1, '3'),
     ]);
     expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
@@ -279,7 +299,7 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
     async (version) => {
       mockDB.pushResult([
         consentRow('terms', 1, version),
-        consentRow('privacy', 1, '3'),
+        consentRow('privacy', 1, '5'),
         consentRow('age14', 1, '3'),
       ]);
       expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
@@ -288,10 +308,10 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
   );
 
   it('복수형은 미충족 전부를, 단수형은 그 첫 원소를 돌려준다', async () => {
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
+    mockDB.pushResult([consentRow('privacy', 1, '5')]);
     expect(await missingConsentTypes(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
       .toEqual(['terms', 'age14']);
-    mockDB.pushResult([consentRow('privacy', 1, '3')]);
+    mockDB.pushResult([consentRow('privacy', 1, '5')]);
     expect(await missingConsentType(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS))
       .toBe('terms');
   });
@@ -517,8 +537,8 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   it('문서 버전이 올라가도 최소 버전을 안 올리면 다시 묻지 않는다', async () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).toEqual([]);
-    // 최소 버전을 올린 유형만 다시 담긴다.
-    CONSENT_MIN_POLICY_VERSION.privacy = 5;
+    // 최소 버전을 올린 유형만 다시 담긴다(기준선 5보다 위로 올려야 뜻이 산다).
+    CONSENT_MIN_POLICY_VERSION.privacy = 6;
     expect((await consentStatus()).collect).toEqual(['privacy']);
   });
 
@@ -545,7 +565,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing/collect 에 뜬다', async () => {
-    CONSENT_MIN_POLICY_VERSION.privacy = 4;
+    CONSENT_MIN_POLICY_VERSION.privacy = 6;
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);

@@ -134,7 +134,13 @@ export const CURRENT_POLICY_VERSION = '5';
  */
 export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   terms: 3,
-  privacy: 3,
+  // ⚠ **5 로 올렸다**(2026-09-09, 코덱스 #730). 버전 5 본문에 **'서비스 이용 기록'**
+  //   수집이 새로 들어갔다(2026-09-07 `c2caeedd` — 알람 생성·울림·해제·미룸 시각과
+  //   식별자). 위 기준의 「수집 항목 확대」에 정확히 해당하므로 재동의를 받아야 한다.
+  //   올리지 않으면 3 으로 동의한 기존 사용자가 **그 고지를 본 적 없이** 수집 대상이 된다.
+  //   ⚠ 이 값은 **앱이 v5 문서를 담고 스토어에 올라간 뒤에** prod 로 나가야 한다.
+  //     먼저 나가면 재동의 화면이 뜨는데 받을 앱이 없다(`docs/spec/consent.md`).
+  privacy: 5,
   age14: 3,
   marketing: 3,
   voice_biometric: 3,

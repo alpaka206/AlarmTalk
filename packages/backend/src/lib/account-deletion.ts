@@ -61,6 +61,34 @@ export async function pseudonymizeBillingForRetention(
       ],
     });
   }
+
+  // ⚠ **일회성 결제도 보존한다**(코덱스 #730). 위 SELECT 는 `subscriptions` 만 훑는데,
+  //   **선물 구매는 구독 행을 만들지 않는다** — `store_transactions` 에 `subscription_id`
+  //   가 NULL 인 행으로만 남는다(`routes/billing-apple.ts` 의 선물 갈래). 그런데
+  //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
+  //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
+  const oneTime = await tx.execute({
+    sql: `SELECT st.id, st.plan_key, st.created_at, p.id AS plan_id, p.price_krw
+          FROM store_transactions st
+          LEFT JOIN plans p ON p.key = st.plan_key
+          WHERE st.user_id = ? AND st.subscription_id IS NULL`,
+    args: [userPk],
+  });
+  for (const row of oneTime.rows) {
+    await tx.execute({
+      sql: `INSERT INTO retained_billing_records
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
+            VALUES (?, ?, ?, 'one_time', ?, NULL, ?, 'ecommerce_act_5y', ?)`,
+      args: [
+        crypto.randomUUID(),
+        pseudonym,
+        (row.plan_id as string | null) ?? null,
+        (row.created_at as string | null) ?? null,
+        row.price_krw != null ? Number(row.price_krw) : null,
+        retainUntil,
+      ],
+    });
+  }
 }
 
 /**
