@@ -22,6 +22,7 @@ class LeavingScreenDecisionTest {
         isActiveRingingAlarm: Boolean = true,
         screenOff: Boolean = false,
         screenCovered: Boolean = false,
+        inCall: Boolean = false,
         seenUnlocked: Boolean = true,
         elapsedSinceShownMs: Long = 10_000L,
     ) = leavingScreenDecision(
@@ -31,6 +32,7 @@ class LeavingScreenDecisionTest {
         isActiveRingingAlarm = isActiveRingingAlarm,
         screenOff = screenOff,
         screenCovered = screenCovered,
+        inCall = inCall,
         seenUnlocked = seenUnlocked,
         elapsedSinceShownMs = elapsedSinceShownMs,
     )
@@ -38,16 +40,33 @@ class LeavingScreenDecisionTest {
     @Test
     fun 전화가_오면_잠금_여부와_무관하게_꺼진다() {
         // 통화 화면이 덮으면 화면은 켜진 채 onStop 이 온다. 알람 때문에 전화를 못 받게 할 수는 없다.
-        assertEquals(LeavingScreenDecision.DISMISS, decide(screenOff = false, seenUnlocked = true))
-        assertEquals(LeavingScreenDecision.DISMISS, decide(screenOff = false, seenUnlocked = false))
+        assertEquals(LeavingScreenDecision.DISMISS, decide(inCall = true, seenUnlocked = true))
+        assertEquals(LeavingScreenDecision.DISMISS, decide(inCall = true, seenUnlocked = false))
     }
 
     @Test
-    fun 화면이_켜진_채_떠나면_유예가_없다() {
-        // 전화·홈·앱 전환은 언제나 사람이 한 일이다 — 0초에 일어나도 사람이다.
+    fun 전화는_유예_없이_곧바로_끈다() {
         assertEquals(
             LeavingScreenDecision.DISMISS,
-            decide(screenOff = false, seenUnlocked = false, elapsedSinceShownMs = 0L),
+            decide(inCall = true, seenUnlocked = false, elapsedSinceShownMs = 0L),
+        )
+    }
+
+    @Test
+    fun 홈_최근앱_앱전환으로는_끄지_않는다() {
+        // ⚠ **여기서 끄면 전원 말고도 알람을 끄는 버튼이 생긴다**(2026-09-09 지시).
+        //   사이드키가 카메라·빅스비를 띄우는 것은 홈을 누른 것과 코드상 구분되지 않는다.
+        assertEquals(
+            LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
+            decide(screenOff = false, inCall = false, seenUnlocked = true),
+        )
+    }
+
+    @Test
+    fun 통화가_아니면_화면이_켜진_채로는_시간이_지나도_안_끈다() {
+        assertEquals(
+            LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
+            decide(screenOff = false, inCall = false, elapsedSinceShownMs = 60 * 60_000L),
         )
     }
 
@@ -80,11 +99,11 @@ class LeavingScreenDecisionTest {
     }
 
     @Test
-    fun 덮여_있어도_화면이_켜진_채_떠나면_끈다() {
-        // 전화가 오면 화면은 켜진 채 통화 UI 가 덮는다 — 근접 센서가 near 여도 사람이 한 일이다.
+    fun 통화_중이면_덮여_있어도_끈다() {
+        // 귀에 대면 근접 센서가 near 다 — 통화는 사람이 한 일이므로 덮임을 이유로 막지 않는다.
         assertEquals(
             LeavingScreenDecision.DISMISS,
-            decide(screenOff = false, screenCovered = true, seenUnlocked = false),
+            decide(screenOff = false, screenCovered = true, inCall = true, seenUnlocked = false),
         )
     }
 
@@ -121,6 +140,18 @@ class LeavingScreenDecisionTest {
     fun 남의_알람은_끄지_않는다() {
         // A 가 울리는 중 B 로 인계될 수 있다. 이 화면의 알람이 지금 울리는 알람이 아니면 손대지 않는다.
         assertEquals(LeavingScreenDecision.NOT_THE_RINGING_ALARM, decide(isActiveRingingAlarm = false))
+    }
+
+    @Test
+    fun 전원_버튼_말고는_버튼으로_안_꺼진다() {
+        // 볼륨키·미디어키는 애초에 앱에 닿지 않는다(키 핸들러가 없다). 사이드키가 앱을
+        // 띄우는 경우만 onStop 으로 오는데, 그건 위 규칙이 LEFT_TO_ANOTHER_APP 으로 막는다.
+        assertEquals(
+            LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
+            decide(screenOff = false, inCall = false, screenCovered = false, seenUnlocked = true),
+        )
+        // 전원 버튼(= 화면 꺼짐)만 끈다.
+        assertEquals(LeavingScreenDecision.DISMISS, decide(screenOff = true, seenUnlocked = true))
     }
 
     @Test

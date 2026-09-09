@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -308,6 +309,19 @@ class RingingActivity : ComponentActivity() {
  * ⚠ **`isChangingConfigurations` 를 빼지 말 것** — 설정 변경으로 액티비티가 다시 만들어지는
      * 동안에도 `onStop` 은 온다. 빼면 그 한 번이 알람을 끝낸다.
      */
+    /**
+     * 지금 통화 중인가. **권한 없이** 읽을 수 있는 유일한 신호다 —
+     * `TelephonyManager` 의 통화 상태는 `READ_PHONE_STATE` 를 요구한다.
+     *  - `MODE_RINGTONE` 수신 벨이 울리는 중
+     *  - `MODE_IN_CALL` 일반 통화 / `MODE_IN_COMMUNICATION` VoIP(카카오·페이스타임 등)
+     */
+    private fun isInCall(): Boolean = when (getSystemService<AudioManager>()?.mode) {
+        AudioManager.MODE_RINGTONE,
+        AudioManager.MODE_IN_CALL,
+        AudioManager.MODE_IN_COMMUNICATION -> true
+        else -> false
+    }
+
     private fun dismissOnLeavingScreen() {
         val id = alarmId ?: return
         // 화면이 꺼져서 떠난 것인지(전원 버튼·커버) 다른 화면으로 간 것인지(전화·홈·앱 전환).
@@ -320,6 +334,7 @@ class RingingActivity : ComponentActivity() {
             isActiveRingingAlarm = RingingService.activeRingingAlarmId == id,
             screenOff = screenOff,
             screenCovered = screenCovered,
+            inCall = isInCall(),
             seenUnlocked = seenUnlocked,
             elapsedSinceShownMs = SystemClock.elapsedRealtime() - visibleSinceElapsedMs,
         )
@@ -407,6 +422,15 @@ internal enum class LeavingScreenDecision {
     NOT_THE_RINGING_ALARM,
 
     /**
+     * **화면은 켜져 있는데 통화가 아니다** = 다른 앱으로 갔을 뿐이다.
+     *
+     * 홈·최근앱·앱 전환, 그리고 사이드키가 카메라·어시스턴트를 띄우는 경우가 전부 여기다 —
+     * 안드로이드는 그 넷을 구분해 주지 않는다(`onStop` 하나로 온다). 여기서 끄면
+     * **전원 말고도 알람을 끄는 버튼이 생긴다.**
+     */
+    LEFT_TO_ANOTHER_APP,
+
+    /**
      * **같은 화면이 한 번 더 열려 이 인스턴스가 밀려났다.** 사용자가 떠난 것이 아니라
      * 우리가 화면을 새로 그린 것이다 — 여기서 끄면 알람이 스스로 죽는다.
      */
@@ -422,8 +446,16 @@ internal enum class LeavingScreenDecision {
 /**
  * 울림 화면을 떠났을 때 알람을 끌지 가른다.
  *
- * **기본은 끄는 것이다**(2026-09-09 지시). 전원 버튼이든 전화든 홈이든, 잠금 여부와
- * 무관하게 화면을 떠나면 알람은 끝난다 — 알람이 울린다고 전화를 못 받게 할 수는 없다.
+ * **끄는 것은 둘뿐이다: 화면이 꺼짐(전원 버튼)과 통화**(2026-09-09 지시 "확실하게 전원
+ * 버튼만"). 잠금 여부는 보지 않는다.
+ *
+ * ⚠ **홈·최근앱·앱 전환으로는 끄지 않는다.** 안드로이드는 그것들을 `onStop` 하나로만
+ * 알려 줘서, 사이드키가 카메라·빅스비를 띄우는 것과 **코드상 구분되지 않는다.** 거기서
+ * 끄면 '전원 말고도 알람을 끄는 버튼' 이 생긴다. 대신 나가도 알람은 계속 운다(소리의
+ * 주인이 액티비티가 아니라 포그라운드 서비스다) — 돌아오거나 알림에서 끄면 된다.
+ *
+ * ⚠ **통화는 `AudioManager.mode` 로 가른다 — 권한이 필요 없다.** `TelephonyManager` 의
+ * 통화 상태는 `READ_PHONE_STATE` 를 요구하는데, 그 권한을 알람 앱이 들고 있을 이유가 없다.
  *
  * ⚠ **예외는 하나뿐이고, 지우지 말 것.** 잠긴 기기에서 **뜬 직후**([graceMs] 안에) 화면이
  * 꺼진 경우다. 사람이 그 사이에 반응하기는 어렵고, 그 시간대에 화면을 끄는 것은 대개
@@ -445,6 +477,7 @@ internal fun leavingScreenDecision(
     isActiveRingingAlarm: Boolean,
     screenOff: Boolean,
     screenCovered: Boolean,
+    inCall: Boolean,
     seenUnlocked: Boolean,
     elapsedSinceShownMs: Long,
     graceMs: Long = LEAVE_GRACE_MS,
@@ -458,7 +491,9 @@ internal fun leavingScreenDecision(
     // 센서가 없거나 못 읽는 기기를 위한 두 번째 그물.
     screenOff && !seenUnlocked && elapsedSinceShownMs < graceMs ->
         LeavingScreenDecision.MACHINE_TURNED_SCREEN_OFF
-    else -> LeavingScreenDecision.DISMISS
+    screenOff -> LeavingScreenDecision.DISMISS
+    inCall -> LeavingScreenDecision.DISMISS
+    else -> LeavingScreenDecision.LEFT_TO_ANOTHER_APP
 }
 
 /** 잠긴 기기에서 이만큼 안에 화면이 꺼지면 사람이 아니라 기계로 본다. */
