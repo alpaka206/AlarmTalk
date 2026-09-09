@@ -19,6 +19,7 @@ struct NextAlarmHeadline: View {
     var alarmPermissionMissing: Bool = false
 
     /// 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var now = Date()
 
     var body: some View {
@@ -31,6 +32,11 @@ struct NextAlarmHeadline: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .task(id: nextAlarm?.fireAtMillis) {
                 guard nextAlarm != nil else { return }
+                // ⚠ **자기 전에 먼저 맞춘다**(2026-09-09, 안드로이드 `HomeHeader` 와 같다).
+                //   아래 루프는 분 경계까지 **자고 나서** 갱신하므로, 그 사이 알람이 바뀌면
+                //   옛 `now` 로 남은 시간을 잰다. 표시가 **올림**이라 최대 1분 낡은 값이
+                //   통째로 한 칸이 되어 "2분 후" 로 뜬다.
+                now = Date()
                 while !Task.isCancelled {
                     // 다음 '분' 경계까지만 잔다 — 60초 고정이면 초가 밀려 표시가 어긋난다.
                     let interval = Date().timeIntervalSince1970
@@ -39,6 +45,12 @@ struct NextAlarmHeadline: View {
                     if Task.isCancelled { return }
                     now = Date()
                 }
+            }
+            // ⚠ 잠금·백그라운드 사이에는 `Task.sleep` 이 밀린다 — 돌아왔을 때 옛 값으로
+            //   그리지 않도록 여기서 한 번 더 맞춘다(안드로이드는 `delay` 가 그대로 도므로
+            //   경계 갱신만으로 충분하다).
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { now = Date() }
             }
     }
 

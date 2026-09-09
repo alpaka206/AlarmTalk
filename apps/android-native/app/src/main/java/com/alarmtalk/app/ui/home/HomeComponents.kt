@@ -69,6 +69,11 @@ internal fun HomeHeader(
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(nextAlarm?.fireAtMillis) {
         if (nextAlarm == null) return@LaunchedEffect
+        // ⚠ **자기 전에 먼저 맞춘다**(2026-09-09 실기기 제보: "1분 뒤인데 2분 뒤로 뜬다").
+        //   아래 루프는 분 경계까지 **자고 나서** 갱신하므로, 그 사이 알람이 바뀌면
+        //   (저장하고 돌아오면) 옛 `now` 로 남은 시간을 잰다. 최대 1분 낡은 값인데
+        //   표시가 **올림**이라 그 1분이 통째로 한 칸으로 부풀어 "2분 후" 가 된다.
+        now = System.currentTimeMillis()
         while (true) {
             delay(60_000L - System.currentTimeMillis() % 60_000L)
             now = System.currentTimeMillis()
