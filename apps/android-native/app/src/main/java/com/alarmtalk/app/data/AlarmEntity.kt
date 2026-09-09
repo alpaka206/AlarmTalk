@@ -258,3 +258,4 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
     }
     return ((raw % size) + size) % size
 }
+

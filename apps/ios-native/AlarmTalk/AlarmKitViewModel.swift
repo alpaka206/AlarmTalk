@@ -232,7 +232,11 @@ final class AlarmKitViewModel: ObservableObject {
         "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
 
     /// 울림 알럿 제목 — "오전 7:30 · 아침 알람". 라벨이 없으면 시각만.
-    /// 안드로이드 울림 화면이 시각을 가장 크게 보여주는 것에 맞춘 최소 대응이다.
+    ///
+    /// ⚠ **읽어 줄 문장을 넣지 말 것**(2026-09-09 지시로 되돌렸다). 잠깐 넣어 봤는데
+    /// 오히려 나빴다 — 알럿은 한 줄이라 문장이 들어오면 시각이 밀리고, 긴 문장은 시스템이
+    /// 임의로 잘라 무슨 말인지도 알 수 없다. 문구는 Live Activity 가 따옴표로 보여 준다
+    /// (`AlarmLiveActivity.swift`). 알럿이 말할 것은 **어느 알람인가**다.
     nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
         let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
         let label = record.label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1343,20 +1347,23 @@ final class AlarmKitViewModel: ObservableObject {
     ) -> AlarmManager.AlarmConfiguration<AlarmTalkMetadata> {
         typealias AlarmConfiguration = AlarmManager.AlarmConfiguration<AlarmTalkMetadata>
         let stopButton = AlarmButton(text: "알람 끄기", textColor: .white, systemImageName: "stop.fill")
-        // GROUP 3 (5): 다시 울림 버튼 라벨에 분을 접어 정직하게 만든다 (Android
-        // RingingActivity 의 "N분 더 자기" parity). AlarmKit 제약상 한도 도달 시에도
-        // alert 의 보조 버튼 자체는 숨길 수 없고(라벨만 우리가 정할 수 있음),
-        // 한도 종료 분기는 SnoozeAlarmIntent.perform() 의 .deny 가 담당한다.
+        // 다시 울림 버튼 라벨에 분을 접어 정직하게 만든다(안드로이드 `RingingSnoozeRow` 의
+        // "N분 더 자기" 와 같은 말). **언제나 붙인다** — 다시 울림에는 조건이 없다
+        // (`LocalAlarmRecord.canSnooze` = true, 2026-09-09).
+        // ⚠ 예전 주석은 "AlarmKit 제약상 보조 버튼을 숨길 수 없다" 고 적었는데 **거짓이다.**
+        //   SDK 는 `secondaryButton: AlarmButton? = nil` 로 선택이다 — 없는 제약을 근거로
+        //   삼지 말 것(CLAUDE.md 「주석의 근거를 믿지 말고 확인할 것」).
         let snoozeButton = AlarmButton(
             text: LocalizedStringResource(stringLiteral: "\(record.snoozeMinutes)분 더 자기"),
             textColor: .white,
             systemImageName: "moon.zzz.fill"
         )
-        // .custom 으로 두어 다시 울림 분기 전체를 SnoozeAlarmIntent 가 결정하게 한다.
-        // .countdown 이면 OS 가 secondaryIntent 와 별개로 postAlert countdown 을
-        // 자동 재무장하므로, snoozeRepeatLimit 도달 시에도 알람이 계속 되살아난다
-        // (Android AlarmRepository.snooze() 의 한도 종료 동작과 어긋남). .custom 은
-        // OS 자동 동작을 끄고 우리 intent 가 countdown(id:) / stop(id:) 을 직접 호출.
+        // ⚠ **`.custom` 을 `.countdown` 으로 되돌리지 말 것.** `.countdown` 이면 OS 가
+        //   `secondaryIntent` 와 **별개로** 재무장해, 우리 인텐트가 아예 안 불리거나 두 번
+        //   미뤄진다. 사용 기록(`alarm_snoozed`)도 그만큼 어긋난다. `.custom` 은 그 자동
+        //   동작을 끄고 `AlarmAppContext.rearmCountdown` 이 유일한 재무장이 되게 한다.
+        //   (예전 주석은 근거로 '한도 도달' 을 들었는데 그 한도는 2026-09-09 에 없앴다 —
+        //   근거가 사라져도 결론은 위 이유로 그대로다.)
         // ⚠ **여기가 iOS 에서 우리가 쓸 수 있는 유일한 울림 화면 문구다.** AlarmKit 이
         // 시스템 ALERT UI 를 소유해 안드로이드 `RingingActivity`(전용 잠금화면 씬 —
         // 날짜·104sp 시계·낭독 문구 카드·밀어서 끄기) 를 복제할 수 없다. 그래서 최소한

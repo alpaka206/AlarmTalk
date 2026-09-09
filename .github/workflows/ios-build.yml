@@ -74,24 +74,25 @@ jobs:
 
       # ⚠ **기기 이름을 박지 말 것.** 러너 이미지가 바뀌면 그 이름의 시뮬레이터가 없어
       #   destination 해석에서 통째로 실패한다. 사용 가능한 최신 iPhone 을 골라 쓴다.
+      # ⚠ **여기에 여러 줄 파이썬을 인라인으로 넣지 말 것 — 두 번째다**(2026-09-09).
+      #   `beee90df` 가 처음 넣었고 `5c3af268`("YAML 파싱 오류 수정")이 순수 셸로 고쳤는데,
+      #   `8110a8f7`(iOS 를 CI 로 되돌린 커밋)이 **같은 형태로 되살렸다.**
+      #   `python3 -c '` 뒤에 1열부터 코드를 적었는데, 그러면 `run: |` 블록 스칼라가
+      #   거기서 **끊겨** YAML 이 그 줄을 새 최상위 키로 읽는다. 워크플로 파일이 아예
+      #   파싱되지 않아 잡이 하나도 안 돌고 즉시 실패했고(로그도 잡도 안 남는다),
+      #   2026-09-08 이후 develop 을 포함한 **모든 브랜치에서 실패**했다(마지막 성공은
+      #   2026-06-19). 잡이 안 도니 빨간불의 이유가 로그에 없어 발견도 늦었다.
+      #   블록 안에 넣을 코드는 반드시 들여쓰기가 유지되는 형태여야 한다 — 그래서 jq 다.
       - name: Pick the newest available iPhone simulator
         id: sim
         run: |
-          UDID=$(xcrun simctl list devices available --json | python3 -c '
-import json, sys
-data = json.load(sys.stdin)["devices"]
-best, best_ver = None, ()
-for runtime, devices in data.items():
-    if "iOS" not in runtime:
-        continue
-    ver = tuple(int(p) for p in runtime.split(".iOS-")[-1].split("-") if p.isdigit())
-    for d in devices:
-        if d.get("isAvailable") and d["name"].startswith("iPhone") and ver > best_ver:
-            best, best_ver = d["udid"], ver
-if not best:
-    sys.exit("no usable iPhone simulator")
-print(best)
-')
+          UDID=$(xcrun simctl list devices available --json | jq -r '[ .devices | to_entries[] | select(.key | test("SimRuntime.iOS")) | ((.key | split("iOS-")[1] | split("-") | map(tonumber))) as $ver | .value[] | select(.name | startswith("iPhone")) | {udid: .udid, ver: $ver} ] | sort_by(.ver) | last | .udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "사용 가능한 iPhone 시뮬레이터가 없다" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "고른 시뮬레이터: $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices | grep -i "$UDID" || true
 
@@ -101,8 +102,13 @@ print(best)
       - name: Unit tests (simulator, ad-hoc signing)
         run: |
           set -o pipefail
+          # ⚠ **로케일을 못 박는다**(2026-09-09). 이 저장소의 iOS 테스트는 한국어 문구를
+          #   그대로 검사한다(`"오전 7:30"` 등). 러너 기본은 영어라 로케일을 안 정하면
+          #   문구 검사 테스트가 **한꺼번에 깨진다** — 코드가 아니라 언어 때문이다.
+          #   안드로이드가 `@Config(qualifiers = "ko")` 로 하는 것과 같은 고정이다.
           xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
+            -testLanguage ko -testRegion KR \
             -only-testing:AlarmTalkTests \
             -skipPackagePluginValidation \
             -resultBundlePath TestResults.xcresult \

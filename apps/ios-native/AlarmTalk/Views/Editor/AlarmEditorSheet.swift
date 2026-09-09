@@ -370,45 +370,41 @@ struct AlarmEditorSheet: View {
     /// 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져
     /// 있었다 — 한 번 정하고 다시 안 볼 값들이 시각·목소리와 같은 무게로 화면을
     /// 차지했다. 안드로이드는 요약 행 넷을 한 카드에 모으고 상세는 pane 으로 뺀다.
+    /// ⚠ **비면 통째로 감춘다**(2026-09-09 지시). iOS 에 남은 행은 '알람음' 하나뿐이라
+    /// 재생 방식이 '목소리' 면 카드가 **제목만 남은 빈 상자**가 된다.
+    /// 안드로이드에는 진동 행이 있어 목소리 모드에서도 카드가 비지 않는다 —
+    /// 그래서 이 조건은 iOS 에만 있다(AlarmKit 이 진동을 소유한다).
+    /// ⚠ 행을 새로 넣거든 이 조건도 함께 넓힐 것. 안 그러면 넣은 행이 안 보인다.
     @ViewBuilder
     private var detailSettingsSection: some View {
+        if draft.showsAlarmSoundControls {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
                 // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
-                // 예전에는 여기만 '다시 울림' 이고 상세 화면·토글·오류 문구는 '다시 알림'
-                // 이었다. 이 앱에서 **알림은 notification** 이 굳은 뜻이라(알림 권한,
-                // "알람 알림이 뜨지 않아요") 스누즈에 쓰면 충돌한다 — 스누즈는 알림이 다시
-                // 뜨는 게 아니라 **알람이 다시 울린다.**
-                AlarmSettingRow(
-                    title: "다시 울림",
-                    subtitle: snoozeSummary,
-                    onTap: { settingsPane = .snooze },
-                    trailing: {
-                        Toggle("", isOn: $draft.snoozeEnabled)
-                            .labelsHidden()
-                            .alarmTalkSwitch()
-                    }
-                )
+                // ⚠ **'다시 울림' 행을 되살리지 말 것**(2026-09-09 지시, 안드로이드와 같다).
+                //   미리 정해 두는 값이 아니라 울릴 때 그 자리에서 정하는 값으로 옮겼다.
+                //   iOS 는 울림 화면을 AlarmKit 이 소유하므로 ＋/− 도 둘 수 없다 —
+                //   시스템 alert 의 '다시 울리기' 가 저장된 `snoozeMinutes` 로 미룬다.
 
                 // ⚠ **'진동' 행을 되살리지 말 것**(2026-08-17). AlarmKit 이 알람 진동을
                 // 소유해서 우리가 고른 패턴이 실제 알람에 닿지 않는다 — 근거와 판단은
                 // `AlarmEnums.swift` 의 `VibrationPattern` 주석에 적어 뒀다.
                 // (안드로이드는 자체 울림을 소유하므로 그쪽에는 그대로 있다.)
 
-                if draft.showsAlarmSoundControls {
-                    AlarmSettingDivider()
-                    AlarmSettingRow(
-                        title: "알람음",
-                        subtitle: alarmSoundDisplayLabel,
-                        onTap: { settingsPane = .alarmSound }
-                    )
-                }
+                // ⚠ 위에 아무 행도 없으므로 구분선을 앞에 두지 말 것 — 카드 맨 위에
+                //   금이 하나 그어진 것처럼 보인다.
+                AlarmSettingRow(
+                    title: "알람음",
+                    subtitle: alarmSoundDisplayLabel,
+                    onTap: { settingsPane = .alarmSound }
+                )
 
                 // ⚠ **'음성 출력' 행을 여기에 되살리지 말 것.** 음량·반복은 목소리 카드
                 // 안의 '목소리 크기' 행이 여는 상세가 소유한다. 안드로이드도 이 행을
                 // `showVoiceOutput = false` 로 꺼 두었다 — 같은 값을 바꾸는 자리가 둘이면
                 // 어느 쪽이 진짜인지 매번 확인해야 한다.
             }
+        }
     }
 
     // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
@@ -490,15 +486,6 @@ struct AlarmEditorSheet: View {
         }
         .navigationDestination(item: $settingsPane) { pane in
             switch pane {
-            case .snooze:
-                SnoozeSettingsPane(
-                    enabled: $draft.snoozeEnabled,
-                    minutes: $draft.snoozeMinutes,
-                    repeatLimit: Binding(
-                        get: { draft.snoozeRepeatLimit.rawValue },
-                        set: { draft.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: $0) ?? .three }
-                    )
-                )
             case .alarmSound:
                 AlarmSoundSettingsPane(
                     soundUri: $draft.alarmSoundUri,
@@ -653,6 +640,14 @@ struct AlarmEditorSheet: View {
         .task(id: freeBucketReadinessKey) {
             applyPendingFreeBucketIfNeeded()
         }
+        // ⚠ **목록이 채워질 때 다시 고른다.** 예전에는 `onAppear` 자리에서만 불러서, 그
+        // 순간 고를 수 있는 목소리가 없으면(첫 실행·오프라인·교체 정리 중) 선택이 **nil 로
+        // 남고 영영 회복되지 않았다** — 목소리 행은 '고르기' 인 채고, 시트에서 곧바로 고를 수
+        // 있는 것은 '직접 녹음' 하나뿐이라 그것이 기본처럼 읽힌다(2026-09-08 실기기 보고).
+        // 안드로이드는 이 판정을 목록 상태를 키로 건 `LaunchedEffect` 로 돌린다.
+        .task(id: voicePreselectKey) {
+            selectDefaultVoiceProfileIfNeeded()
+        }
         .task(id: planAccess) {
             guard planAccess == .paid, let token = auth.session?.token else {
                 manualQuota = nil
@@ -803,7 +798,8 @@ struct AlarmEditorSheet: View {
             VoiceOutputSettingsPane(
                 volumePercent: $draft.voiceVolumePercent,
                 onVolumeSettled: { ensureVoicePreviewAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
-                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) }
+                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) },
+                onLeave: stopVoiceVolumePreview
             )
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
@@ -823,6 +819,15 @@ struct AlarmEditorSheet: View {
             title: "이번 달 만들기 횟수를 다 썼어요",
             message: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
         )
+    }
+
+    /// 목소리 크기 화면을 떠날 때 — 미리듣기를 끈다(뒤로가기·스와이프·앱 백그라운드).
+    ///
+    /// ⚠ **표식(`previewingGreetingVoiceId`)도 함께 지운다.** 남겨 두면 목소리 행의
+    /// 재생 버튼이 '정지' 아이콘으로 굳는다.
+    func stopVoiceVolumePreview() {
+        voiceStudio.previewPlayer.stop()
+        voiceStudio.previewingGreetingVoiceId = nil
     }
 
     /// 슬라이더에서 손을 뗐을 때 — 듣고 있으면 크기만 맞추고, 아니면 튼다.
@@ -1278,6 +1283,19 @@ struct AlarmEditorSheet: View {
     /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
     ///
     /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
+    /// 이 테마가 **아직 없는 입력**을 요구하는가(날씨=지역, 운세=사주).
+    ///
+    /// ⚠ 판정은 저장 게이트(`editorSaveBlocked` 의 `selectedFreeBucket` 갈래)와 **같아야
+    /// 한다** — 여기만 느슨하면 고를 수는 있는데 저장은 막히는 상태가 생긴다.
+    /// 안드로이드 `AlarmEditorScreen.kt` 의 `firstUsable` 과 같은 규칙.
+    func bucketNeedsMissingInput(_ bucket: FreeBucket) -> Bool {
+        switch bucket {
+        case .weather: return (voiceStudio.weatherCity).nilIfBlank == nil
+        case .fortune: return !fortuneInfoReady
+        default: return false
+        }
+    }
+
     func applyPendingFreeBucketIfNeeded() {
         guard usesStockClips else { return }
         // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
@@ -1291,15 +1309,22 @@ struct AlarmEditorSheet: View {
         // 조건을 못 맞추고 저장도 막히므로, 그때는 다음 후보로 넘어간다.
         let remembered = pendingFreeBucket.flatMap { bucket -> FreeBucket? in
             guard buckets.contains(bucket) else { return nil }
-            if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil { return nil }
-            return bucket
+            // ⚠ 날씨(지역)뿐 아니라 **운세(사주)도** 값이 없으면 잇지 않는다 —
+            //   둘 다 없으면 저장이 막힌다(`editorSaveBlocked`).
+            return bucketNeedsMissingInput(bucket) ? nil : bucket
         }
 
         // ⚠ **한 번도 고른 적 없어도 무언가는 붙여야 한다.** 예전에는 `pendingFreeBucket`
         // 이 nil 이면(= 이 계정이 테마를 고른 적 없음) 그대로 return 해서, 문구 행이
         // **"불러오는 중이에요" 에서 영영 벗어나지 못했다.** 사용자는 고른 적이 없을 뿐
         // 무언가 잘못한 게 아니다. 안드로이드도 `?: buckets.firstOrNull()` 로 항상 붙인다.
-        guard let target = remembered ?? buckets.first else { return }
+        // ⚠ **한 번도 고른 적 없을 때 조건형 테마를 집지 말 것**(첫 알람 함정).
+        //   목록 첫 값은 날씨인데 지역이 없으면 `editorSaveBlocked` 가 저장을 막는다 —
+        //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
+        //   '기본 인사말' 은 기본 목소리에 줄 수 없으므로(`docs/spec/voice-and-message.md` §2)
+        //   추가 입력이 필요 없는 첫 테마를 집는다. 안드로이드 `firstUsable` 과 같은 규칙.
+        let firstUsable = buckets.first { !bucketNeedsMissingInput($0) }
+        guard let target = remembered ?? firstUsable ?? buckets.first else { return }
 
         selectFreeBucket(target)
         pendingFreeBucket = nil
@@ -1623,13 +1648,6 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneGender = result.fortuneGender
         voiceStudio.fortuneBirthDate = result.fortuneBirthDate
         voiceStudio.fortuneBirthTime = result.fortuneBirthTime
-    }
-
-    /// 세부 설정 카드의 '다시 울림' 요약.
-    private var snoozeSummary: String {
-        guard draft.snoozeEnabled else { return "꺼짐" }
-        let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)
-        return "\(draft.snoozeMinutes)분 · \(limit)"
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)
@@ -2113,8 +2131,37 @@ struct AlarmEditorSheet: View {
         }
     }
 
+    /// 목소리 프리셀렉트를 다시 돌릴 시점을 알리는 합성 키 — 안드로이드 프리셀렉트
+    /// `LaunchedEffect` 의 키들과 같은 값을 묶는다(`ui/editor/AlarmEditorScreen.kt`).
+    ///
+    /// ⚠ **`isReplacementSettling` 을 키에 반영한다.** 교체 정리가 풀리는 순간이 곧 다시
+    /// 골라야 하는 순간이다.
+    var voicePreselectKey: String {
+        let own = voiceStudio.profiles
+            .filter { $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id) }
+            .map(\.id)
+            .joined(separator: ",")
+        let shared = voiceStudio.familyVoices
+            .filter { $0.isReadyForAlarmSelection && !voiceStudio.isReplacementSettling($0.id) }
+            .map(\.id)
+            .joined(separator: ",")
+        return [
+            draft.playMode.rawValue,
+            voiceSourceMode.rawValue,
+            voiceStudio.selectedProfileID ?? "",
+            voiceStudio.lastUsedVoiceId ?? "",
+            own,
+            shared,
+        ].joined(separator: "|")
+    }
+
     func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
+        // ⚠ **직접 녹음 갈래에는 손대지 않는다**(안드로이드 `AlarmEditorScreen.kt` 의
+        // `editor.voiceSource != VoiceSources.LOCAL_AUDIO` 가드 미러). 이 함수는 이제
+        // 목록이 바뀔 때마다 다시 도므로, 가드가 없으면 사용자가 녹음으로 옮긴 뒤에도
+        // 프로필을 계속 갈아 끼운다.
+        guard voiceSourceMode != .localAudio else { return }
         let selected = voiceStudio.selectedProfileID
         // ⚠ **정리 중인 목소리는 자동으로 고르지 않는다**(Codex #703 P1). 선택 시트의 탭만
         // 막아서는 부족하다 — 그 목소리가 **마지막에 쓴 것**이면 새 편집기가 스스로 그것을
@@ -2130,7 +2177,10 @@ struct AlarmEditorSheet: View {
         // 무료 등급은 서버가 시스템 보이스만 허용한다(tts.ts:684-693).
         // 비-시스템 프로필이 선택돼 있으면 시스템 보이스로 갈아끼워 403 을 예방한다.
         // 온보딩/목소리 탭에서 고른 기본 목소리(시스템)를 우선 선택 — Android VoiceAudioCard 미러.
-        let defaultVoice = readyOwn.first { $0.id == voiceStudio.defaultVoiceId }
+        // ⚠ **'온보딩에서 고른 기본 목소리'(`default_voice_<uid>`)를 보지 않는다.**
+        //   그 값을 쓰는 화면이 없어 `setDefaultVoiceId` 를 부르는 곳은 DEBUG 시드뿐이다 —
+        //   실기기에서는 **항상 nil** 이라 이 갈래가 통째로 죽어 있었다.
+        //   순서는 그대로다: **마지막에 쓴 것 → 내 클론 → 공유받은 → 기본.**
 
         // **마지막에 쓴 목소리가 기본·그룹보다 우선한다**(CLAUDE.md 「목소리 프리셀렉트는
         // 마지막에 쓴 것이 그룹보다 우선」). `refresh` 안에도 같은 판단이 있지만 그건 성공
@@ -2143,7 +2193,7 @@ struct AlarmEditorSheet: View {
         if freeVoiceTier {
             // 무료 등급은 서버가 시스템 보이스만 허용하므로, 마지막에 쓴 것도 시스템일 때만 쓴다.
             let lastUsedSystem = lastUsedOwn.flatMap { isSystemVoice($0) ? $0 : nil }
-            let systemVoice = lastUsedSystem ?? defaultVoice ?? readyOwn.first { isSystemVoice($0) }
+            let systemVoice = lastUsedSystem ?? readyOwn.first { isSystemVoice($0) }
             let selectedIsSystem = voiceStudio.isSystemVoiceProfile(id: selected)
             if selectedIsSystem,
                readyOwn.contains(where: { $0.id == selected }) {
@@ -2166,8 +2216,6 @@ struct AlarmEditorSheet: View {
             voiceStudio.selectedProfileID = lastUsedOwn.id
         } else if let lastUsedShared {
             voiceStudio.selectedProfileID = lastUsedShared.id
-        } else if let defaultVoice {
-            voiceStudio.selectedProfileID = defaultVoice.id
         } else if let first = readyOwn.first {
             voiceStudio.selectedProfileID = first.id
         } else if let first = readyShared.first, !first.requiresViewerInfo {

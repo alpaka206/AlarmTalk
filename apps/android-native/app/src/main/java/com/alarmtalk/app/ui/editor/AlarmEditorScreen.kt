@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.alarm.AlarmStreamVolume
+import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -49,6 +51,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
@@ -88,6 +93,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * 미리듣기가 맞추는 기기 알람 스트림 크기 — **울림과 같은 값**이어야 한다
+ * (`RingingService.NEUTRAL_STREAM_PERCENT`). 두 값이 갈라지면 미리듣기로 검증한 크기가
+ * 실제 알람과 달라진다.
+ */
+private const val RingingStreamPercent = 100
 
 private enum class AudioPreviewTarget {
     CachedAudio,
@@ -365,6 +377,24 @@ internal fun AlarmEditorScreen(
     }
     /** [targetProvidesWeather] 의 사주 짝. */
     val targetProvidesFortune = familyAlarmMode && savedFortuneConfigured
+
+    /**
+     * 날씨 문구에 필요한 지역이 확보돼 있는가 — 저장 게이트와 테마 폴백이 이 함수 하나를 본다.
+     *
+     * (원래 아래쪽에 있었으나 테마를 처음 붙이는 자리에서도 같은 판정이 필요해 올렸다.
+     *  코틀린 지역 함수는 선언보다 앞에서 부를 수 없다. **조건을 다시 쓰지 말 것** —
+     *  판정이 두 벌이 되면 저장 게이트와 폴백이 어긋난다.)
+     */
+    fun weatherLocationReady(): Boolean =
+        editor.voiceWeatherCity.isNotBlank() || targetProvidesWeather
+
+    /** [weatherLocationReady] 의 사주 짝 — 판정은 여기 한 곳이다. */
+    fun fortuneInfoReady(): Boolean =
+        targetProvidesFortune || (
+            editor.voiceFortuneGender.isNotBlank() &&
+                editor.voiceFortuneBirthDate.isNotBlank() &&
+                editor.voiceFortuneBirthTime.isNotBlank()
+            )
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -429,10 +459,14 @@ internal fun AlarmEditorScreen(
     fun stopPreview() {
         previewStopJob?.cancel()
         previewStopJob = null
+        val wasPlaying = mediaPlayer != null
         mediaPlayer?.release()
         mediaPlayer = null
         previewTarget = null
         previewPreparing = false
+        // 올렸으면 반드시 되돌린다. `restore` 는 적어 둔 값이 없으면 아무 일도 하지 않으므로
+        // 미리듣기를 하지 않았을 때 불러도 안전하다.
+        if (wasPlaying) AlarmStreamVolume.restore(context, AlarmStreamVolume.Owner.PREVIEW)
     }
 
     fun startPreparedPreview(
@@ -483,7 +517,17 @@ internal fun AlarmEditorScreen(
                     fun startFromPreparedPosition() {
                         if (mediaPlayer !== preparedPlayer) return
                         previewPreparing = false
-                        val previewVolume = editor.voiceVolumePercent.coerceIn(0, 100) / 100f
+                        // ⚠ **기기 알람 볼륨도 울림과 같게 맞춘다**(2026-09-09 실기기 제보:
+                        //   "예시로 들려준 것과 울리는 것의 크기가 달랐다").
+                        //   스트림과 게인만 맞춰서는 부족했다 — `MediaPlayer.setVolume` 은
+                        //   **스트림 볼륨에 곱해지는 상대값**이라, 울림은
+                        //   `AlarmStreamVolume.applyForRinging(100)` 으로 스트림을 가득
+                        //   올려 놓고 나는데 미리듣기는 기기에 설정된 값 위에서 났다.
+                        //   알람 볼륨이 7/15 인 폰에서는 울림이 두 배 컸다.
+                        //   `stopPreview` 가 되돌린다(프로세스가 죽어도 다음 실행의
+                        //   `restoreIfLeftOver` 가 되돌린다 — 그게 이 클래스의 존재 이유다).
+                        AlarmStreamVolume.applyForRinging(context, RingingStreamPercent, AlarmStreamVolume.Owner.PREVIEW)
+                        val previewVolume = VoiceVolumeRamp.targetVolume(editor.voiceVolumePercent)
                         preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()
                         scheduleAutoStop()
@@ -1184,9 +1228,12 @@ internal fun AlarmEditorScreen(
                     // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
                     // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
                     // 있어야 조건 매칭이 되고 없으면 저장이 막히므로, 저장된 도시가 없으면 안 잇는다.
+                    // 조건형 테마는 **필요한 값이 있을 때만** 잇는다 — 없으면 저장이 막힌다.
+                    // 판정은 저장 게이트와 같은 함수 하나를 본다(위 hoist 주석).
                     val remembered = lastFreeBucket?.takeIf {
                         alarm == null && it in buckets &&
-                            (it != "weather" || savedWeatherConfigured || editor.voiceWeatherCity.isNotBlank())
+                            (it != "weather" || weatherLocationReady()) &&
+                            (it != "fortune" || fortuneInfoReady())
                     }
                     // ⚠ **사용자가 방금 고른 종류가 가장 먼저다**(2026-09-02). 문구 pane 이
                     //   `voiceRandomContext` 를 세우고 버킷은 비워 두므로(클론과 같은 규약),
@@ -1194,9 +1241,21 @@ internal fun AlarmEditorScreen(
                     //   붙는다 — '운세' 를 골랐는데 마지막에 쓰던 '약' 이 붙는 식이다.
                     val chosen = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
                         ?.takeIf { it in buckets }
+                    // ⚠ **한 번도 고른 적 없을 때 조건형 테마를 집지 말 것**(첫 알람 함정).
+                    //   `FreeBucketOrder` 첫 값은 날씨인데 지역이 없으면 저장이 막힌다 —
+                    //   계정을 막 만든 사람의 **첫 알람이 저장되지 않는다.**
+                    //   추가 입력이 필요 없는 첫 테마를 고른다.
+                    val firstUsable = buckets.firstOrNull { bucket ->
+                        when (bucket) {
+                            "weather" -> weatherLocationReady()
+                            "fortune" -> fortuneInfoReady()
+                            else -> true
+                        }
+                    }
                     val target = chosen
                         ?: editor.selectedBucket?.takeIf { it in buckets }
                         ?: remembered
+                        ?: firstUsable
                         ?: buckets.firstOrNull()
                     if (target != null &&
                         (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
@@ -1275,16 +1334,7 @@ internal fun AlarmEditorScreen(
      * 저장이 영구히 막혔다(2026-08-24 실기기). 가족 알람에서 지역 칸이 비어 있는 것은
      * **정상**이다 — 서버가 프라이버시 때문에 남의 값을 숨기고 준비 여부만 내려준다.
      */
-    fun weatherLocationReady(): Boolean =
-        editor.voiceWeatherCity.isNotBlank() || targetProvidesWeather
 
-    /** [weatherLocationReady] 의 사주 짝 — 판정은 여기 한 곳이다. */
-    fun fortuneInfoReady(): Boolean =
-        targetProvidesFortune || (
-            editor.voiceFortuneGender.isNotBlank() &&
-                editor.voiceFortuneBirthDate.isNotBlank() &&
-                editor.voiceFortuneBirthTime.isNotBlank()
-            )
 
     fun randomPromptSettingsComplete(): Boolean {
         if (!editor.voiceRandomPrompt) return false
@@ -1517,6 +1567,41 @@ internal fun AlarmEditorScreen(
         settingsDetailPanel = null
     }
 
+    // ⚠ **목소리 크기 화면에서 나오면 미리듣기가 꺼진다**(2026-09-08 지시).
+    // 슬라이더에서 손을 떼면 자동으로 소리가 나므로, 나가는 순간 끄지 않으면 편집기
+    // 본문·다른 pane 에서 인사말이 계속 들린다.
+    //
+    // ⚠ **닫는 자리마다 손으로 붙이지 말 것.** 나가는 길이 셋이다(상단바 뒤로가기,
+    // 시스템 뒤로가기 → 위 `BackHandler`, 재생 방식이 바뀌어 pane 이 갈리는 경우).
+    // 셋에 각각 붙이면 새 경로가 빠진다 — **판정은 '지금 열린 pane 이 무엇인가' 하나**다.
+    // 목소리 선택 시트의 미리듣기는 `settingsDetailPanel` 이 null 인 채로 도므로 이 효과가
+    // 다시 돌지 않아 끊기지 않는다.
+    // iOS 짝은 `VoiceOutputSettingsPane` 의 `onLeave`.
+    LaunchedEffect(settingsDetailPanel) {
+        if (settingsDetailPanel != "voice_output") voicePreview.stopPreview()
+        // ⚠ **편집기에는 재생기가 둘이다.** 위는 목소리 행·목소리 크기용이고, 아래는
+        //   본문 문구 ▶(생성된 TTS·재사용 오디오)다. 2026-09-08 수정이 위 하나만 꺼서
+        //   **문구 페이지에서 나가도 문장이 계속 들렸다**(2026-09-09 지적). 나가는 판정은
+        //   같으므로 같은 자리에서 둘 다 끈다.
+        if (settingsDetailPanel != "random_prompt") stopPreview()
+    }
+
+    // 앱이 뒤로 가는 것도 '나가는 것' 이다 — `MediaPlayer` 는 화면을 떠나도 계속 운다.
+    // (iOS 짝은 같은 pane 의 `scenePhase` 감시.)
+    val previewLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(previewLifecycleOwner, voicePreview) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                voicePreview.stopPreview()
+                // 앱이 뒤로 가면 본문 문구 미리듣기도 멎어야 한다 — `MediaPlayer` 는
+                // 화면을 떠나도 계속 운다.
+                stopPreview()
+            }
+        }
+        previewLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { previewLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(editor.playMode, editor.alarmSoundEnabled) {
         // 알람음이 꺼지면(목소리만 이거나 알람음 토글 off) 알람음 상세(볼륨·벨소리) 패널을 닫는다.
         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
@@ -1734,25 +1819,18 @@ internal fun AlarmEditorScreen(
                         val voiceOn = editor.playMode != AlarmPlayModes.ALARM_ONLY
                         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
                         AlarmSettingsCard(
-                            snoozeEnabled = editor.snoozeEnabled,
-                            snoozeMinutes = editor.snoozeMinutes,
-                            snoozeRepeatLimit = editor.snoozeRepeatLimit,
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             alarmSoundEnabled = alarmSoundOn,
                             // 목소리 모드에서는 알람음 행 자체를 숨긴다(위 주석 참조).
                             showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
-                            onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                            onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                            onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
                             onVibrationEnabledChange = {
                                 editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                             },
                             onVibrationSelect = { editor.vibrationPattern = it },
                             onAlarmVolumeChange = { editor.alarmVolumePercent = it },
                             onAlarmSoundEnabledChange = { on -> applyAlarmOutput(voice = voiceOn, sound = on) },
-                            onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
                         )
@@ -1849,16 +1927,6 @@ internal fun AlarmEditorScreen(
                 fadeOut(tween(180)),
         ) {
         when (lastDetailPanel) {
-            "snooze" -> SnoozeSettingsPane(
-                snoozeEnabled = editor.snoozeEnabled,
-                snoozeMinutes = editor.snoozeMinutes,
-                snoozeRepeatLimit = editor.snoozeRepeatLimit,
-                onDismiss = { settingsDetailPanel = null },
-                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
-            )
-
             "vibration" -> VibrationSettingsPane(
                 vibrationPattern = editor.vibrationPattern,
                 onDismiss = { settingsDetailPanel = null },

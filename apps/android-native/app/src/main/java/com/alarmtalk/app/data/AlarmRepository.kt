@@ -453,6 +453,8 @@ class AlarmRepository(
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
         alarmScheduler.cancel(alarmId)
+        // 끄는 것도 '목록에서 사라짐' 과 같다 — 지금 울리고 있으면 소리를 먼저 끈다.
+        if (!enabled) stopRingingIfThisAlarm(alarmId)
 
         val updated = if (enabled) {
             val holidayPredicate = holidayCalendarStore.holidayPredicate(
@@ -519,6 +521,28 @@ class AlarmRepository(
      * [restoreMutex] 를 **이미 쥔 채** 부르는 삭제. `Mutex` 는 재진입이 안 되므로, 같은 락
      * 안에서 충돌 알람을 지우는 [createAlarm]·[updateAlarm] 은 이 쪽을 쓴다.
      */
+    /**
+     * **울리는 중인 알람을 없앨 때는 소리를 먼저 끈다**(2026-09-09 확인).
+     *
+     * ⚠ 스펙이 이미 요구하던 것이다 — `docs/spec/alarm-ringing.md` §3 「어떤 경로로 끝나든
+     * 소리를 먼저 끈다. 끄기·다시 울림·**목록에서 사라짐** — 전부」. 그런데 `setEnabled`·
+     * `deleteAlarm` 어디에도 `RingingService` 참조가 없어 **다음 예약만 지우고 지금 나는
+     * 소리는 그대로 뒀다.** 울림 화면을 벗어나도 소리는 계속 나므로(주인이 액티비티가 아니라
+     * 포그라운드 서비스다) 사용자는 앱 안에서 소리를 들으며 그 알람을 지울 수 있다 —
+     * 실제로 닿는 경로다.
+     *
+     * 지금 울리는 그 알람일 때만 보낸다. 다른 알람이면 아무 일도 하지 않는다.
+     */
+    private fun stopRingingIfThisAlarm(alarmId: String) {
+        if (RingingService.activeRingingAlarmId != alarmId) return
+        // ⚠ **`dismiss` 를 보내지 말 것**(코덱스 #729). 그 경로는 반복 알람을
+        //   `enabled = true` 로 되살리고 다음 회차를 예약한다 — 이 함수를 부르는 쪽은
+        //   방금 끄거나 지운 참이라, 사용자가 끈 알람이 조용히 다시 켜진다.
+        //   소리만 멈추고 행 상태는 부른 쪽이 쓴다.
+        runCatching { RingingService.stopOutputs(context, alarmId) }
+            .onFailure { Log.w(TAG, "Failed to stop ringing for removed alarm id=$alarmId", it) }
+    }
+
     private suspend fun deleteAlarmLocked(alarmId: String) {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
@@ -526,6 +550,7 @@ class AlarmRepository(
             return
         }
         alarmScheduler.cancel(alarmId)
+        stopRingingIfThisAlarm(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
@@ -1252,27 +1277,81 @@ class AlarmRepository(
      *
      * 워커가 락을 먼저 잡아도 결과는 맞다: 스누즈가 나중에 최종 승자가 된다.
      */
-    suspend fun snooze(alarmId: String): AlarmEntity? = restoreMutex.withLock {
+    /**
+     * 울림 화면에서 다시 울림 간격을 바꾼다(＋/−). 다음 '다시 울리기' 부터 이 값이 쓰이고,
+     * 행에 남으므로 다음 회차에도 이어진다.
+     *
+     * 범위 밖 값은 **조용히 자르지 않고** 무시한다 — 화면이 이미 끝값에서 버튼을 흐리게
+     * 두므로 여기 닿는 값은 버그이고, 잘라 저장하면 그 버그가 데이터로 굳는다.
+     */
+    suspend fun updateSnoozeMinutes(alarmId: String, minutes: Int): Unit = restoreMutex.withLock {
+        if (minutes !in SnoozeMinutes.range) {
+            Log.w(TAG, "Ignoring out-of-range snooze minutes=$minutes id=$alarmId")
+            return
+        }
+        runCatching {
+            val current = alarmDao.getById(alarmId) ?: return
+            if (current.snoozeMinutes == minutes) return
+            // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 컬럼만 고치고 `SYNCED` 를 두면
+            //   `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·DIRTY·FAILED)에 안 들어가
+            //   울림 화면에서 고른 간격이 **서버에 영영 안 올라간다.** 받은 알람은
+            //   `nextLocalSyncState` 가 알아서 SYNCED 로 남긴다(서버 행은 전달 수단일 뿐).
+            // ⚠ **전체 행 upsert 로 쓰지 말 것**(코덱스 #729 2차). 읽어 둔 스냅샷을 통째로
+            //   되쓰면, 그 사이 동기화가 새로 받은 `remoteAlarmId` 를 **옛 값으로 덮는다** —
+            //   다음 동기화가 서버에 알람을 하나 더 만든다. 건드릴 컬럼만 UPDATE 한다.
+            alarmDao.updateSnoozeMinutes(
+                id = alarmId,
+                minutes = minutes,
+                syncState = current.nextLocalSyncState(),
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to update snooze minutes id=$alarmId", error)
+        }
+    }
+
+    /**
+     * @param minutesOverride 울림 화면의 ＋/− 로 방금 고른 간격. 있으면 **이 값으로** 미루고
+     *   행에도 그 값을 남긴다.
+     *
+     * ⚠ **넘겨받는 이유는 경합 때문이다**(코덱스 #729). ＋/− 는 화면에서 비동기로 저장되는데,
+     *   바로 이어 '다시 울리기' 를 누르면 그 쓰기가 끝나기 전에 여기가 행을 읽어 **옛 간격으로
+     *   미뤄진다** — 화면은 6분이라 말하고 알람은 5분 뒤에 온다. 값을 직접 실으면 순서가
+     *   무엇이든 결과가 같다.
+     */
+    suspend fun snooze(alarmId: String, minutesOverride: Int? = null): AlarmEntity? = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")
             return null
         }
-        if (!current.snoozeEnabled) {
-            Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
-            return null
-        }
-        if (
-            current.snoozeRepeatLimit != SnoozeRepeatLimits.FOREVER &&
-            current.snoozeCount >= current.snoozeRepeatLimit
-        ) {
-            Log.i(TAG, "Snooze ignored because repeat limit reached id=$alarmId")
-            return null
-        }
+        val snoozeMinutes = minutesOverride?.takeIf { it in SnoozeMinutes.range } ?: current.snoozeMinutes
+        // ⚠ **`snoozeEnabled` 를 보지 않는다**(2026-09-09). 편집기에서 그 설정을 없앴으므로
+        //   저장된 값은 옛 행에만 남아 있고, 그걸 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때
+        //   조용히 꺼진다. 컬럼은 왕복시키되 아무도 읽지 않는다.
+        // ⚠ **횟수 한도를 여기서 다시 만들지 말 것**(2026-09-09 지시 "무제한"). 예전에는
+        //   `snoozeRepeatLimit` 를 읽어 한도를 넘으면 null 을 돌려줬고, 그러면
+        //   `RingingService.snooze` 가 **알람을 끝냈다** — 사용자는 '다시 울리기' 를 눌렀는데
+        //   알람이 꺼지는 것을 봤다.
+        //   `snoozeRepeatLimit` 컬럼은 남아 있지만 **아무도 읽지 않는다**
+        //   (`AlarmEntity.canSnoozeNow` 도 `snoozeEnabled` 하나만 본다). 서버로도 나가지
+        //   않는다 — `network/` 의 어떤 매퍼에도 이 필드가 없다. 즉 순수 로컬 사장 컬럼이라,
+        //   CLAUDE.md 의 「안 쓰는 컬럼은 DROP 한다」 규약에 따라 **다음 마이그레이션에서
+        //   지워도 된다**(이번 변경에서는 범위를 넓히지 않으려고 두었다).
 
         val now = System.currentTimeMillis()
         val next = current.copy(
-            fireAtMillis = now + current.snoozeMinutes * 60_000L,
+            fireAtMillis = now + snoozeMinutes * 60_000L,
+            snoozeMinutes = snoozeMinutes,
+            // ⚠ **간격이 바뀌었으면 동기화 대상으로 올린다**(코덱스 #729 2차). 화면의
+            //   비동기 저장이 액티비티가 끝나며 취소되면 이 쓰기가 유일한 커밋이 되는데,
+            //   `SYNCED` 를 그대로 두면 서버에 영영 안 올라간다. 안 바뀌었으면 건드리지
+            //   않는다 — 다시 울림 자체는 로컬 상태다.
+            syncState = if (snoozeMinutes != current.snoozeMinutes) {
+                current.nextLocalSyncState()
+            } else {
+                current.syncState
+            },
             enabled = true,
             snoozeCount = current.snoozeCount + 1,
             state = AlarmStates.SNOOZED,

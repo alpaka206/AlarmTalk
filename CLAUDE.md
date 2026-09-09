@@ -283,7 +283,7 @@
 
 | 빠진 권한 | 실제 결과 | 어떻게 말하나 |
 | --- | --- | --- |
-| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작하며, 헤드업이 불가능하면(`ringingChannelCanShowHeadsUp()` false) 울림 화면을 직접 띄운다 | "알람 알림이 뜨지 않아요" |
+| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작하며, 울림 화면은 **기기 상태와 무관하게 언제나** 띄운다(`openRingingActivity`) | "알람 알림이 뜨지 않아요" |
 | 정확한 알람 | `setAndAllowWhileIdle` 폴백으로 **울리되 수 분 늦을 수 있다** | "제때 울리지 않을 수 있어요" |
 | 잠금 화면 | 소리는 나되 **잠금 화면을 못 덮는다** | "잠금 화면에 뜨지 않아요" |
 
@@ -434,7 +434,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 
 | 스펙 | 다루는 것 |
 | --- | --- |
-| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | 울릴 때 전체화면/알림 판정, 스와이프=해제, 소리·음량, 권한별 사실 |
+| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **언제나 전체화면**, **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
 | [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |

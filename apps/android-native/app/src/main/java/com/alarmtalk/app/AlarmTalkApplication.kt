@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.alarmtalk.app.alarm.AlarmStreamVolume
 import com.alarmtalk.app.alarm.NotificationChannels
 import com.alarmtalk.app.fcm.AlarmTalkMessagingService
 import com.alarmtalk.app.core.AlarmTalkLog
@@ -32,6 +33,13 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("Sentry init failed", it) }
         runCatching { NotificationChannels.ensure(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
+        // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
+        //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
+        //   들려주려고 스트림을 올리므로(2026-09-09), 미리듣기 도중 프로세스가 죽으면
+        //   서비스가 뜨는 다음 알람까지 사용자의 알람 볼륨이 100% 로 남는다.
+        //   앱을 여는 것이 그 사이를 메우는 유일한 기회다.
+        runCatching { AlarmStreamVolume.restoreIfLeftOver(this) }
+            .onFailure { AlarmTalkLog.reportError("AlarmStreamVolume.restoreIfLeftOver failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
         // OS 알람 예약 정합성 주기 점검. **여기서 거는 게 핵심이다** — 이 안전망이 막으려는

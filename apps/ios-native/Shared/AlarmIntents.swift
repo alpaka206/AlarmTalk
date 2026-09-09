@@ -34,6 +34,13 @@ import AlarmKit
 // 자체 stop 은 OS 에 의해 처리되고, 다음 앱 활성화 시 alarmUpdates 루프가
 // 사라진 alarmKitID 를 감지해 markStopped 를 호출하므로 멱등성이 유지된다.
 struct StopAlarmIntent: LiveActivityIntent {
+    /// ⚠ **단축어에 노출하지 않는다**(2026-09-09 지시 "확실하게 전원 버튼만").
+    /// `AppIntent` 는 기본이 노출이라, 두면 사용자가 이 인텐트를 단축어로 만들어
+    /// **액션 버튼·백 탭·손전등 위젯 같은 곳에 걸 수 있다** — 그 순간 알람을 끄는
+    /// 경로가 알럿 버튼 말고 하나 더 생긴다. 이 인텐트는 AlarmKit 알럿과
+    /// Live Activity 버튼이 부르는 것이지 사람이 부르는 것이 아니다.
+    static let isDiscoverable = false
+
     static let title: LocalizedStringResource = "알람 끄기"
 
     @Parameter(title: "알람 ID")
@@ -110,6 +117,13 @@ struct StopAlarmIntent: LiveActivityIntent {
 // 실패하면 카운트다운 없는 `.snoozed` 행이 남아 조용히 안 울린다 — 표시 하나와
 // 바꿀 수 없다. 그래서 **파라미터 자체를 없앴다**(가드가 아니라 구조로 닫는다).
 struct SnoozeAlarmIntent: LiveActivityIntent {
+    /// ⚠ **단축어에 노출하지 않는다**(2026-09-09 지시 "확실하게 전원 버튼만").
+    /// `AppIntent` 는 기본이 노출이라, 두면 사용자가 이 인텐트를 단축어로 만들어
+    /// **액션 버튼·백 탭·손전등 위젯 같은 곳에 걸 수 있다** — 그 순간 알람을 끄는
+    /// 경로가 알럿 버튼 말고 하나 더 생긴다. 이 인텐트는 AlarmKit 알럿과
+    /// Live Activity 버튼이 부르는 것이지 사람이 부르는 것이 아니다.
+    static let isDiscoverable = false
+
     static let title: LocalizedStringResource = "알람 다시 울리기"
 
     @Parameter(title: "알람 ID")

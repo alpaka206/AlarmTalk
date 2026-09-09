@@ -1,8 +1,6 @@
 package com.alarmtalk.app.alarm
 
-import android.app.KeyguardManager
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -24,11 +22,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_LEFT_SCREEN
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_SILENT
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_STOP_OUTPUTS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.core.AlarmTalkLog
@@ -55,6 +54,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -127,8 +128,20 @@ class RingingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val alarmId = intent?.getStringExtra(EXTRA_ALARM_ID)
-        return when (intent?.action) {
+        // ⚠ **인텐트가 null 이면 시스템이 `START_STICKY` 로 되살린 것이다**(2026-09-08).
+        //   예전에는 아래 `when` 의 `else` 로 떨어져 **아무 일도 하지 않았다** —
+        //   `startForeground` 도 `stopSelf` 도 없이 살아 있어 **알림 없는 좀비 서비스**가
+        //   남았고, 그 상태가 "울림 알림이 사라졌다" 로 보인다.
+        //   어느 알람이었는지 알 방법이 없으니(STICKY 는 인텐트를 버린다) 깨끗이 끝낸다.
+        //   ⚠ `stopRingingOutputs` 는 부르지 않는다 — 이 인스턴스는 아무것도 들고 있지 않고,
+        //   그 사이 다른 알람이 시작했으면 **남의 소리를 끄게 된다.**
+        if (intent == null) {
+            Log.w(TAG, "RingingService recreated without an intent; stopping instead of lingering")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        return when (intent.action) {
             ACTION_START_RINGING -> {
                 if (alarmId.isNullOrBlank()) {
                     Log.w(TAG, "RingingService start requested without alarm id")
@@ -143,7 +156,8 @@ class RingingService : Service() {
                 // 어느 경로로 해제됐는지 남긴다 — 알림 버튼/울림 화면 슬라이더와 '알림이
                 // 사라져서'(SILENT)를 로그만으로 구분할 수 있어야 자동 해제를 추적할 수 있다.
                 Log.i(TAG, "Dismiss requested by user action id=$alarmId")
-                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                // id 가 없으면 할 일이 없다 — 그래도 **끝내야** 알림 없는 서비스가 안 남는다.
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
@@ -152,16 +166,53 @@ class RingingService : Service() {
             // 알림 delete intent 가 이미 이 액션을 가리키고 있고, 구버전 알림이 살아 있을 수 있다.
             ACTION_DISMISS_SILENT -> {
                 Log.i(TAG, "Dismiss requested by notification removal id=$alarmId")
-                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
+                START_NOT_STICKY
+            }
+
+            // 울림 화면을 벗어났다(홈·앱 전환·전원 버튼). 판정은 액티비티가 한다 —
+            // 거기만 '잠금이 풀린 적이 있는가' 를 안다. 여기서는 마무리하고 사유만 남긴다.
+            ACTION_DISMISS_LEFT_SCREEN -> {
+                val screenOff = intent.getBooleanExtra(EXTRA_SCREEN_OFF, false)
+                Log.i(TAG, "Dismiss requested by leaving the ringing screen id=$alarmId screenOff=$screenOff")
+                if (!alarmId.isNullOrBlank()) {
+                    dismiss(alarmId, startId, detail = if (screenOff) SCREEN_OFF_DETAIL else LEFT_SCREEN_DETAIL)
+                } else {
+                    stopSelf(startId)
+                }
+                START_NOT_STICKY
+            }
+
+            // 목록에서 끄거나 지울 때. **행 상태는 건드리지 않는다** — 그건 부른 쪽이
+            // 이미 쓰고 있고, 여기서 `dismiss` 를 돌리면 반복 알람이 되살아난다.
+            ACTION_STOP_OUTPUTS -> {
+                Log.i(TAG, "Stopping ringing outputs only id=$alarmId")
+                // ⚠ **내 것일 때만 서비스를 끝낸다**(코덱스 #729 2차). A 가 꺼지는 사이
+                //   B 가 현재 알람이 되었으면 `stopRingingOutputs(A)` 는 옳게 빠지는데,
+                //   그 뒤 무조건 `stopSelf` 하면 `onDestroy` 가 인자 없는 정리를 돌려
+                //   **B 의 소리·진동·알림까지 끈다.** 지금 울리는 알람이 나일 때만 끝낸다.
+                val ownsOutputs = synchronized(ringingStateLock) { ringingAlarmId == alarmId }
+                if (!alarmId.isNullOrBlank()) stopRingingOutputs(alarmId)
+                if (ownsOutputs) {
+                    stopSelf(startId)
+                } else {
+                    Log.i(TAG, "Another alarm owns the outputs; keeping the service alive")
+                }
                 START_NOT_STICKY
             }
 
             ACTION_SNOOZE -> {
-                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId)
+                val minutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 0).takeIf { it > 0 }
+                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId, minutes) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
-            else -> START_NOT_STICKY
+            else -> {
+                // 모르는 액션도 그냥 두지 않는다 — 위 null 갈래와 같은 이유다.
+                Log.w(TAG, "RingingService got an unknown action=${intent.action}")
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
         }
     }
 
@@ -549,67 +600,22 @@ class RingingService : Service() {
     }
 
     /**
-     * 사용자가 기기를 능동적으로 쓰는 중(화면 켜짐 + 잠금 해제)인지. 이때는 전체화면 강탈
-     * 대신 알림의 full-screen intent 가 헤드업 배너로 뜨게 둔다. 화면이 꺼져 있거나 잠금
-     * 상태면(자는 중 등) false → 잠금화면 위 전체 울림 화면을 직접 띄운다.
+     * 울림 화면을 띄운다 — **기기 상태를 가리지 않는다**(2026-09-09 지시).
+     *
+     * 예전에는 '화면 켜짐 + 잠금 해제 + 헤드업 가능' 이면 배너에 맡기고 이 화면을 띄우지
+     * 않았다. 그런데 **배너가 실제로 그려지는지는 앱이 알 수 없다** — 알림 권한·채널
+     * importance·DND 를 전부 통과해도 SM-A325N 에서는 알림창에만 쌓이고 위에 뜨지 않았다
+     * (2026-09-09 실기기. 같은 판정을 통과한 S23 Ultra 는 떴다). 판정이 "뜬다" 고 말한
+     * 기기에서 해제 UI 가 하나도 없었다는 뜻이라, 그 판정 자체를 버린다.
+     *
+     * ⚠ **'항상' 은 최선 노력이지 보장이 아니다.** 다른 앱이 전경일 때의 액티비티 시작은
+     *   OS 재량이고(`SYSTEM_ALERT_WINDOW` 를 안 쓴다), 막히면 예외도 없이 무시될 수 있다.
+     *   그래서 알림의 `setFullScreenIntent` 는 **폴백으로 그대로 둔다** — 그게 이 경로가
+     *   실패했을 때 남는 유일한 해제 표면이다.
+     * ⚠ 그 대가로 잠금 해제 상태에서는 배너가 이 화면 위에 잠깐 겹칠 수 있다. 겹침을
+     *   없애겠다고 **채널을 강등하거나 FSI 를 떼지 말 것** — 폴백이 통째로 사라진다.
      */
-    private fun isDeviceActivelyInUse(): Boolean {
-        val interactive = getSystemService<PowerManager>()?.isInteractive == true
-        val locked = getSystemService<KeyguardManager>()?.isKeyguardLocked == true
-        return interactive && !locked
-    }
-
-    /**
-     * 울림 알림이 실제로 헤드업 배너로 떠서 해제 UI 를 제공할 수 있는 상태인지 판정한다.
-     * 하나라도 어긋나면 헤드업이 보장되지 않으므로 false → 전체 울림 화면을 직접 띄운다.
-     *  1) 앱 알림이 켜져 있어야 한다.
-     *  2) 울림 채널(RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을
-     *     음소거·강등하면 areNotificationsEnabled() 는 true 여도 헤드업이 안 뜬다.
-     *  3) 방해금지(DND)가 시각 알림을 억제하지 않아야 한다. 알람 소리는 USAGE_ALARM 이라 DND 에서도
-     *     나지만, 이 채널은 DND 를 우회하지 않으므로 DND 중엔 HIGH 라도 헤드업이 안 뜬다. 시스템이
-     *     실제로 시각 방해가 가능할 때(DND 해제 = INTERRUPTION_FILTER_ALL, 또는 채널이 DND 우회)만 허용.
-     */
-    private fun ringingChannelCanShowHeadsUp(): Boolean {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
-        val nm = getSystemService<NotificationManager>() ?: return false
-        val channel = nm.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
-        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 강등으로 보지 않는다.
-        if (channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH) return false
-        // 채널이 DND 를 우회하면 어떤 DND 에서도 헤드업 가능.
-        if (channel?.canBypassDnd() == true) return true
-        // 이 알림은 CATEGORY_ALARM 이라 '알람 허용' DND 모드에선 시각 방해가 허용된다.
-        //  - ALL(DND off), ALARMS(알람만 허용): 허용
-        //  - PRIORITY: 정책이 알람 카테고리를 허용할 때만
-        //  - NONE(완전 무음)·UNKNOWN: 억제로 본다
-        return when (nm.currentInterruptionFilter) {
-            NotificationManager.INTERRUPTION_FILTER_ALL,
-            NotificationManager.INTERRUPTION_FILTER_ALARMS -> true
-            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> priorityDndAllowsAlarms(nm)
-            else -> false
-        }
-    }
-
-    /**
-     * PRIORITY DND 정책이 알람 카테고리를 허용하는지. getNotificationPolicy 는 알림 정책 접근
-     * 권한이 있어야 하므로(미보유 시 SecurityException) 실패하면 보수적으로 false → 전체 울림
-     * 화면을 띄운다. PRIORITY_CATEGORY_ALARMS 는 API 28+ 라 하위에선 false.
-     */
-    private fun priorityDndAllowsAlarms(nm: NotificationManager): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
-        return runCatching {
-            (nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS) != 0
-        }.getOrDefault(false)
-    }
-
     private fun openRingingActivity(alarmId: String) {
-        // 화면 켜짐 + 잠금 해제 상태이고 '울림 알림이 헤드업으로 뜰 수 있을 때'만 전체화면 직접 실행을
-        // 생략하고 헤드업에 맡긴다(헤드업 + 전체화면 동시 표시 방지). 화면이 꺼졌거나 잠겼거나,
-        // 사용자가 울림 채널을 음소거·강등해 헤드업이 안 뜨는 경우엔 소리만 나고 해제 UI가 사라지지
-        // 않도록 잠금화면 위 전체 울림 화면을 직접 띄운다.
-        if (isDeviceActivelyInUse() && ringingChannelCanShowHeadsUp()) {
-            Log.i(TAG, "Device in active use with heads-up-capable channel; relying on heads-up notification")
-            return
-        }
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -619,14 +625,33 @@ class RingingService : Service() {
         runCatching {
             startActivity(intent)
         }.onFailure { error ->
-            Log.w(TAG, "Direct ringing activity launch failed; relying on full-screen notification", error)
+            Log.w(TAG, "Direct ringing activity launch failed", error)
+        }
+        // ⚠ **떴는지 확인한다 — 예외가 없다고 뜬 것이 아니다**(코덱스 #729).
+        //   안드로이드는 백그라운드 액티비티 시작을 **조용히 무시**할 수 있다. 정상 채널은
+        //   `IMPORTANCE_LOW` 라 배너도 안 뜨므로, 그대로 두면 소리만 나고 **해제 UI 가
+        //   하나도 없는** 상태가 된다 — 이 변경 전체가 없애려던 바로 그 상태다.
+        //   그래서 화면이 안 떴으면 소리·전체화면 인텐트를 든 폴백 알림으로 올린다.
+        serviceScope.launch {
+            delay(ACTIVITY_LAUNCH_CHECK_MS)
+            if (destroyed || ringingAlarmId != alarmId) return@launch
+            if (RingingActivity.isShowing()) return@launch
+            Log.w(TAG, "Ringing screen never appeared; escalating to the fallback notification id=$alarmId")
+            runCatching {
+                NotificationManagerCompat.from(this@RingingService).notify(
+                    RINGING_NOTIFICATION_ID,
+                    RingingNotificationFactory(this@RingingService)
+                        .build(alarmId, RingingNotificationFactory.Variant.ESCALATION),
+                )
+            }.onFailure { AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", it) }
         }
     }
 
-    private fun dismiss(alarmId: String, startId: Int) {
+    private fun dismiss(alarmId: String, startId: Int, detail: String? = null) {
         AlarmAppContainer.usageEventRecorder(applicationContext).record(
             type = UsageEvents.ALARM_DISMISSED,
             alarmId = alarmId,
+            detail = detail,
         )
         serviceScope.launch {
             // ⚠ 예전에는 '알람 + 목소리' 모드에서 여기서 끝맺음 목소리를 한 번 재생했다.
@@ -642,7 +667,7 @@ class RingingService : Service() {
         }
     }
 
-    private fun snooze(alarmId: String, startId: Int) {
+    private fun snooze(alarmId: String, startId: Int, minutesOverride: Int? = null) {
         // ⚠ **결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과 미뤄진 것은 다르다 —
         //   한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는 여기서 먼저 적어서
         //   일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도 안 남았다.**
@@ -652,13 +677,14 @@ class RingingService : Service() {
             val recorder = AlarmAppContainer.usageEventRecorder(applicationContext)
             runCatching {
                 val repository = AlarmAppContainer.repository(applicationContext)
-                // 스누즈가 꺼져 있거나 한도를 넘겼으면 repository.snooze 는 **DB 를 한 글자도
+                // 스누즈가 꺼져 있거나 행이 사라졌으면 repository.snooze 는 **DB 를 한 글자도
                 // 쓰지 않고** null 을 돌려준다. 그런데 소리는 위에서 이미 껐다 — 그대로 두면
                 // enabled=1 · state=RINGING · fireAtMillis=과거 로 굳어, 다음 재예약이 이 행을
-                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 알림의 스누즈 버튼은
-                // 한도를 보지 않고 항상 붙으므로(RingingNotificationFactory) 정상 조작으로도
-                // 닿는 경로다. 스누즈가 안 되면 **해제로 마무리**해 상태를 정상으로 되돌린다.
-                if (repository.snooze(alarmId) == null) {
+                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 스누즈가 안 되면
+                // **해제로 마무리**해 상태를 정상으로 되돌린다.
+                // ⚠ **횟수 한도는 더 이상 사유가 아니다**(2026-09-09). 다시 울림은 무제한이라
+                //   이 갈래에 닿는 정상 조작은 없어졌지만, 행이 지워지는 경합은 남아 있다.
+                if (repository.snooze(alarmId, minutesOverride) == null) {
                     Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
                     repository.dismiss(alarmId)
                     // 미뤄지지 않았다 — 끝난 것으로 적고, **누른 사실은 detail 로** 남긴다.
@@ -778,6 +804,15 @@ class RingingService : Service() {
     companion object {
         /** '다시 알림' 을 눌렀지만 한도·비활성으로 **미뤄지지 않은** 경우의 표시. */
         internal const val SNOOZE_DENIED_DETAIL = "snooze_denied"
+        internal const val SCREEN_OFF_DETAIL = "screen_off"
+        internal const val LEFT_SCREEN_DETAIL = "left_screen"
+        private const val EXTRA_SCREEN_OFF = "com.alarmtalk.app.extra.SCREEN_OFF"
+
+        /**
+         * 울림 화면의 ＋/− 로 방금 고른 간격. **함께 실어 보낸다** — 화면의 비동기 저장이
+         * 끝나기 전에 눌러도 그 값으로 미뤄지게 하기 위해서다(코덱스 #729).
+         */
+        private const val EXTRA_SNOOZE_MINUTES = "com.alarmtalk.app.extra.SNOOZE_MINUTES"
 
         /** '다시 알림' 을 눌렀는데 결과를 알 수 없는 경우(저장 실패 등)의 표시. */
         internal const val SNOOZE_FAILED_DETAIL = "snooze_failed"
@@ -785,10 +820,24 @@ class RingingService : Service() {
         /**
          * 현재 울림 세션의 알람 id(없으면 null). RingingActivity 가 FGS 차단 폴백으로 진입했을 때
          * 서비스가 이미 울리고 있는지 확인해, 중복 시작과 "서비스→액티비티 재오픈" 루프를 막는다.
+         *
+         * `MutableStateFlow` 라 `@Volatile` 이 필요 없다 — 내부 값이 이미 원자적이다.
          */
-        @Volatile
-        var activeRingingAlarmId: String? = null
-            private set
+        private val activeRingingAlarmIdState = MutableStateFlow<String?>(null)
+
+        /**
+         * 지금 울리는 알람을 **관찰**하는 통로.
+         *
+         * ⚠ 울림 화면이 이걸 봐야 한다. 알림의 '해제'·'다시 울리기' 로 서비스가 끝나도
+         * `RingingActivity` 는 그대로 남는데(액티비티는 서비스 생명주기를 모른다),
+         * 이제 그 화면이 **항상** 떠 있으므로 반드시 겹친다. 남은 화면의 '밀어서 끄기' 를
+         * 밀면 이미 미뤄 둔 알람에 `dismiss` 가 한 번 더 나가 **스누즈가 지워진다.**
+         */
+        val activeRingingAlarmIdFlow: StateFlow<String?> get() = activeRingingAlarmIdState
+
+        var activeRingingAlarmId: String?
+            get() = activeRingingAlarmIdState.value
+            private set(value) { activeRingingAlarmIdState.value = value }
 
         /**
          * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(알람 id → 받은 시각).
@@ -865,6 +914,9 @@ class RingingService : Service() {
         private const val NEUTRAL_STREAM_PERCENT = 100
         private const val VOICE_REPEAT_GAP_MS = 900L
 
+        /** 울림 화면이 떴는지 확인하기까지 기다리는 시간. 창 애니메이션·콜드 스타트 여유. */
+        private const val ACTIVITY_LAUNCH_CHECK_MS = 2_500L
+
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {
                 action = ACTION_START_RINGING
@@ -880,10 +932,31 @@ class RingingService : Service() {
             })
         }
 
-        fun snooze(context: Context, alarmId: String) {
+        /**
+         * 울림 화면을 벗어났다 → 해제. 판정은 `RingingActivity` 가 한다.
+         * @param screenOff 화면이 꺼져서 떠난 것(전원 버튼)이면 true. 기록에만 쓴다.
+         */
+        fun dismissForLeavingScreen(context: Context, alarmId: String, screenOff: Boolean) {
+            context.startService(Intent(context, RingingService::class.java).apply {
+                action = ACTION_DISMISS_LEFT_SCREEN
+                putExtra(EXTRA_ALARM_ID, alarmId)
+                putExtra(EXTRA_SCREEN_OFF, screenOff)
+            })
+        }
+
+        /** 소리·진동만 멈춘다. 행 상태는 부른 쪽이 쓴다. */
+        fun stopOutputs(context: Context, alarmId: String) {
+            context.startService(Intent(context, RingingService::class.java).apply {
+                action = ACTION_STOP_OUTPUTS
+                putExtra(EXTRA_ALARM_ID, alarmId)
+            })
+        }
+
+        fun snooze(context: Context, alarmId: String, minutes: Int? = null) {
             context.startService(Intent(context, RingingService::class.java).apply {
                 action = ACTION_SNOOZE
                 putExtra(EXTRA_ALARM_ID, alarmId)
+                minutes?.let { putExtra(EXTRA_SNOOZE_MINUTES, it) }
             })
         }
     }

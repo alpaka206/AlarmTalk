@@ -110,7 +110,11 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertTrue(store.alarms.isEmpty)
     }
 
-    func test_handleAlarmSnoozed_disabledNoOps() async throws {
+    /// ⚠ **저장된 `snoozeEnabled = false` 도 다시 울림을 막지 않는다**(2026-09-09 지시로
+    /// 편집기에서 그 설정 자체를 없앴다). 옛 행에만 남은 값을 읽으면 그 알람만 '다시 울리기'
+    /// 를 눌렀을 때 조용히 꺼지는데, 켤 방법이 화면에 없으므로 사용자는 영영 못 고친다.
+    /// 안드로이드 `SnoozeIsUnlimitedTest.옛_행의_꺼진_스위치도_무시한다` 와 짝이다.
+    func test_handleAlarmSnoozed_옛_행의_꺼진_스위치를_무시한다() async throws {
         let kitID = UUID().uuidString
         var record = makeArmedRecord(alarmKitID: kitID)
         record.snoozeEnabled = false
@@ -119,11 +123,15 @@ final class AlarmAppContextTests: XCTestCase {
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
-        XCTAssertEqual(updated.snoozeCount, record.snoozeCount)
-        XCTAssertEqual(updated.state, record.state)
+        XCTAssertEqual(updated.snoozeCount, record.snoozeCount + 1, "옛 행의 꺼진 스위치가 다시 울림을 막았다")
+        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
     }
 
-    func test_handleAlarmSnoozed_limitReachedNoOps() async throws {
+    /// ⚠ **횟수 한도는 더 이상 다시 울림을 막지 않는다**(2026-09-09 지시로 설정을 없앴다).
+    /// 예전에는 한도에 닿으면 무시했는데, 자동 재울림이 없으므로 그 숫자는 '사람이 누를 수
+    /// 있는 횟수' 였고 그렇게 읽히지 않았다 — 한도에 닿으면 **'다시 울리기' 를 눌렀는데
+    /// 알람이 꺼졌다.** 저장된 값은 행에 남지만 아무도 읽지 않는다.
+    func test_handleAlarmSnoozed_한도를_넘겨도_미뤄진다() async throws {
         let kitID = UUID().uuidString
         var record = makeArmedRecord(alarmKitID: kitID)
         record.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
@@ -133,8 +141,8 @@ final class AlarmAppContextTests: XCTestCase {
         await ctx.handleAlarmSnoozed(alarmKitIDString: kitID)
 
         let updated = try XCTUnwrap(store.record(id: record.id))
-        XCTAssertEqual(updated.snoozeCount, 3)
-        XCTAssertEqual(updated.state, record.state)
+        XCTAssertEqual(updated.snoozeCount, 4, "한도를 이유로 거절하면 안 된다")
+        XCTAssertEqual(updated.state, AlarmRuntimeState.snoozed.rawValue)
     }
 
     // MARK: - Helpers

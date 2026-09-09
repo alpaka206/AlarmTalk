@@ -392,23 +392,6 @@
         }
       }
     },
-    "1분부터 30분까지 정할 수 있어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can set anywhere from 1 to 30 minutes."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1分から30分まで設定できます。"
-          }
-        }
-      }
-    },
     "1초 이상 들리는 음성이 필요해요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -473,40 +456,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "2分以下の音声で登録できます。"
-          }
-        }
-      }
-    },
-    "3회" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3 times"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "3回"
-          }
-        }
-      }
-    },
-    "5회" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "5 times"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "5回"
           }
         }
       }
@@ -1036,23 +985,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "間隔"
-          }
-        }
-      }
-    },
-    "간격 직접 설정" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Set custom interval"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "間隔をカスタム設定"
           }
         }
       }
@@ -3208,23 +3140,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "スヌーズの間隔"
-          }
-        }
-      }
-    },
-    "다시 울림 사용" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use snooze"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スヌーズを使う"
           }
         }
       }
@@ -11189,23 +11104,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最大5人で一緒に利用"
-          }
-        }
-      }
-    },
-    "최대 반복 횟수" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Max repeat count"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最大繰り返し回数"
           }
         }
       }

@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// 편집기 '세부 설정' 카드가 여는 상세 화면 3종.
+/// 편집기 '세부 설정' 카드가 여는 상세 화면들.
 ///
-/// 안드로이드 `ui/editor/AlarmSettingsCard.kt` 의 `SnoozeSettingsPane` /
-/// `AlarmSoundSettingsPane` / `VoiceOutputSettingsPane`.
+/// 안드로이드 `ui/editor/AlarmSettingsCard.kt` 가 여는 것과 짝이다.
+///
+/// ⚠ **'다시 울림' pane 을 되살리지 말 것**(2026-09-09 지시). 미리 정해 두는 값이 아니라
+/// 울릴 때 그 자리에서 정하는 값으로 옮겼다 — 안드로이드는 울림 화면에 ＋/− 를 두고,
+/// iOS 는 AlarmKit 이 그 화면을 소유해 아예 둘 수 없다. 자세한 규칙은
+/// `docs/spec/alarm-ringing.md` §2.
 ///
 /// ⚠ **진동 pane 을 되살리지 말 것**(2026-08-17). 안드로이드에는 있지만 iOS 에는 없다 —
 /// AlarmKit 이 알람 진동을 소유하고 프레임워크가 받는 것은 `sound:` 하나뿐이라, 17종
@@ -13,7 +17,6 @@ import SwiftUI
 /// 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리 선택과 같은
 /// 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
 enum AlarmSettingsPane: String, Identifiable, Hashable {
-    case snooze
     case alarmSound
     case voiceOutput
 
@@ -25,7 +28,6 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
         // notification** 이 굳은 뜻이다(알림 권한, "알람 알림이 뜨지 않아요") — 스누즈는
         // 알림이 다시 뜨는 게 아니라 **알람이 다시 울리는** 것이다. 앱의 다른 어휘도
         // 울림이다(울림 화면, `docs/spec/alarm-ringing.md`).
-        case .snooze: return "다시 울림"
         case .alarmSound: return "알람음"
         // ⚠ **상세 화면 제목은 그 화면을 연 행과 같은 말이다**(2026-08-16 통일) —
         // 다시 울림·진동·알람음·문구가 모두 그렇다. 여기만 행은 '목소리 크기' 인데
@@ -64,80 +66,6 @@ private struct PaneScaffold<Content: View>: View {
 }
 
 // MARK: - 다시 울림
-
-struct SnoozeSettingsPane: View {
-    @Binding var enabled: Bool
-    @Binding var minutes: Int
-    @Binding var repeatLimit: Int
-
-    /// 안드로이드 `AlarmSnoozeSettings.kt` 의 프리셋. '직접 입력' 은 알럿으로 받는다.
-    private static let presets = [5, 10, 15, 30]
-
-    @State private var customOpen = false
-    @State private var customDraft = ""
-
-    var body: some View {
-        PaneScaffold(title: AlarmSettingsPane.snooze.title) {
-            EditorCard {
-                Toggle("다시 울림 사용", isOn: $enabled)
-                    .alarmTalkSwitch()
-                    .padding(.vertical, 12)
-            }
-
-            if enabled {
-                EditorSectionTitle(text: "간격")
-                EditorCard(verticalPadding: 0) {
-                    ForEach(Array(Self.presets.enumerated()), id: \.element) { index, value in
-                        if index > 0 { AlarmSettingDivider() }
-                        RadioRow(label: "\(value)분", selected: minutes == value) { minutes = value }
-                    }
-                    AlarmSettingDivider()
-                    RadioRow(
-                        label: Self.presets.contains(minutes) ? "직접 입력" : "직접 입력 (\(minutes)분)",
-                        selected: !Self.presets.contains(minutes)
-                    ) {
-                        customDraft = String(minutes)
-                        customOpen = true
-                    }
-                }
-
-                EditorSectionTitle(text: "최대 반복 횟수")
-                EditorCard(verticalPadding: 0) {
-                    ForEach(Array(SnoozeRepeatLimit.validValues.enumerated()), id: \.element) { index, value in
-                        if index > 0 { AlarmSettingDivider() }
-                        RadioRow(label: Self.repeatLabel(value), selected: repeatLimit == value) {
-                            repeatLimit = value
-                        }
-                    }
-                }
-            }
-        }
-        .alert("간격 직접 설정", isPresented: $customOpen) {
-            TextField("분", text: $customDraft).keyboardType(.numberPad)
-            Button("취소", role: .cancel) { }
-            Button("확인") {
-                if let value = Int(customDraft.filter(\.isNumber)), (1...30).contains(value) {
-                    minutes = value
-                }
-            }
-            // ⚠ **범위를 벗어나면 잘라서 저장하지 말 것**(2026-08-17 안드로이드와 통일).
-            // 45 를 넣으면 30 이 저장되는데 화면은 그 사실을 말하지 않아, 사용자는 자기가
-            // 넣은 값이 들어간 줄 안다. 안드로이드는 처음부터 **버튼을 흐리게** 두고 아래에
-            // 이유를 적는다(Codex #671 P2 — '눌러도 아무 일이 없는 것' 은 고장과 구분되지
-            // 않는다). 서버 계약도 1–30 이다(`snooze_minutes`).
-            .disabled(!(1...30).contains(Int(customDraft.filter(\.isNumber)) ?? 0))
-        } message: {
-            Text("1분부터 30분까지 정할 수 있어요.")
-        }
-    }
-
-    static func repeatLabel(_ value: Int) -> String {
-        // ⚠ 여기서 `String(localized:)` 로 **미리** 번역해 둔다. `RadioRow` 는 이미
-        // 번역된 문자열(진동 `displayName` 등)도 받으므로 라벨을 `LocalizedStringKey`
-        // 로 받을 수 없다 — 그러면 번역 결과를 한 번 더 조회하게 된다.
-        value == 0 ? String(localized: "무제한") : String(localized: "\(value)회")
-    }
-}
 
 // MARK: - 알람음
 
@@ -273,6 +201,7 @@ struct AlarmSoundSettingsPane: View {
 /// 저장값(`voiceRepeat`)은 계속 true 로 왕복시킨다.
 struct VoiceOutputSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @Binding var volumePercent: Int
     /// 지금 크기로 **인사말 샘플**을 들려준다. 재생 중이면 정지.
     ///
@@ -287,6 +216,13 @@ struct VoiceOutputSettingsPane: View {
     var onVolumeSettled: (() -> Void)?
     /// 끄는 동안 매 값마다. 재생 중이면 다시 틀지 않고 크기만 바꾼다.
     var onVolumeLive: ((Int) -> Void)?
+    /// **이 화면을 떠난다** — 미리듣기를 끈다(2026-09-08 지시).
+    ///
+    /// ⚠ **나가는 길이 셋이다**: 뒤로가기 버튼 · 가장자리 스와이프 · 앱이 뒤로 감.
+    /// 앞의 둘은 `onDisappear`, 마지막은 `scenePhase` 다 — `Info.plist` 에
+    /// `UIBackgroundModes: audio` 가 있어 **백그라운드에서도 계속 재생된다.**
+    /// 판정을 pane 안에 두어 새 호출자가 빠뜨리지 못하게 한다.
+    var onLeave: (() -> Void)?
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
@@ -336,6 +272,10 @@ struct VoiceOutputSettingsPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 12)
             }
+        }
+        .onDisappear { onLeave?() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { onLeave?() }
         }
     }
 }

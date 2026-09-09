@@ -147,17 +147,18 @@ final class AlarmIntentsTests: XCTestCase {
         XCTAssertEqual(recorded.first?.1, record.id)
     }
 
-    func test_snoozeIntent_limitReached_recordsDismissedWithReason() async throws {
-        // 다시 울림이 꺼진 알람 — **미뤄지지 않는다.** 그때는 미룸이 아니라 종료를 적고,
-        // 누른 사실은 `detail` 이 나른다(2026-09-07 리뷰 37차).
+    func test_snoozeIntent_옛_행의_꺼진_스위치를_무시하고_미룬다() async throws {
+        // 편집기에서 '다시 울림' 설정 자체를 없앴다(2026-09-09, 안드로이드
+        // `SnoozeIsUnlimitedTest.옛_행의_꺼진_스위치도_무시한다` 와 짝).
+        // 저장된 `snoozeEnabled = false` 는 옛 행에만 남아 있고, 그걸 읽으면 그 알람만
+        // '다시 울리기' 를 눌렀을 때 조용히 꺼진다 — 켤 방법이 화면에 없으므로 영영 못 고친다.
         let kitID = UUID().uuidString
         store.upsert(armedRecord(alarmKitID: kitID, canSnooze: false, state: .ringing))
         ObservedRingMarkerStore.mark(alarmKitID: kitID)
 
         _ = try await SnoozeAlarmIntent(alarmID: kitID).perform()
 
-        XCTAssertEqual(recorded.map(\.0), [.alarmDismissed])
-        XCTAssertEqual(recorded.first?.2, "snooze_denied")
+        XCTAssertEqual(recorded.map(\.0), [.alarmSnoozed], "옛 행의 꺼진 스위치가 다시 울림을 막았다")
     }
 
     func test_stopIntent_noContext_stillRecordsDismissed() async throws {
