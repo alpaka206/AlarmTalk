@@ -11,14 +11,19 @@ import AVFoundation
 // 30초를 넘기거나 staging (트랜스코드) 이 실패하면 AlarmKit 으로는 `.default`
 // 만 울리고, 우리 앱이 활성화된 동안 AVAudioPlayer 로 같은 목소리를 재생한다.
 //
-// 음량에 대한 정직한 한계:
-//   AlarmKit 이 OS 알람음(.default 시스템 알람 톤)을 소유하며, iOS 에는 알람별
-//   음량을 지정하는 공개 API 가 없다. 즉 시스템 알람 톤은 항상 사용자의 *시스템
-//   알람 음량* 으로 울린다. 따라서 `voiceVolumePercent`/`alarmVolumePercent` 는
-//   여기 IN-APP 폴백 재생(AVAudioPlayer)의 게인에만 적용되며, OS 알람 톤에는
-//   영향을 주지 못한다. (Android 는 자체적으로 ringing 을 소유하므로 이 두 값을
-//   실제 알람음에 적용하지만, iOS 는 그 동등성을 가질 수 없다.)
-//   `alarmVolumePercent == 0` 이면 in-app 폴백 재생 자체를 건너뛴다.
+// 음량에 대한 정직한 한계 — **어디까지 되는지 정확히 적는다**(2026-09-09 정정):
+//   ✅ 목소리로 우는 알람(정상 경로)에는 **적용된다.** 음량 API 가 없어서 대신
+//      `AlarmSoundStaging` 이 게인을 **음원 파일에 구워** AlarmKit 에 넘긴다
+//      (`samples[frame] *= gain`). 파일 이름과 예약 지문에 음량이 들어가므로
+//      슬라이더를 바꾸면 새로 구워 다시 예약한다. 실측 회귀 테스트는
+//      `AlarmSoundVolumeTests`(RMS 비교).
+//   ❌ **시스템 알람 톤(.default)에는 적용되지 않는다.** 스테이징이 실패했거나
+//      알람음 갈래로 떨어지면 OS 톤이 울리는데, iOS 에는 알람별 음량 API가 없어
+//      항상 사용자의 시스템 알람 음량으로 난다.
+//   그 폴백 상황에서 앱이 떠 있으면 아래 AVAudioPlayer 가 같은 게인으로 목소리를
+//   대신 재생한다. `alarmVolumePercent == 0` 이면 그 재생을 건너뛴다.
+//   ⚠ 페이드인은 **없다** — 게인은 재생 전에 한 번 정해진다(안드로이드도 같다,
+//   `VoiceVolumeRamp` 주석 참조).
 //
 // 동작 패턴:
 //   - Pattern A (앱 활성): 알람 fire 직후 ContentView 가 ringing 상태로 진입할 때

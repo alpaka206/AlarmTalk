@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.alarm.AlarmStreamVolume
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
@@ -84,11 +85,14 @@ internal class VoiceOnboardingPreviewController(
 
     fun stopPreview(invalidateRequest: Boolean = true) {
         if (invalidateRequest) previewRequestId += 1
+        val wasAlarmStream = alarmVolumePreview
         alarmVolumePreview = false
         mediaPlayer?.release()
         mediaPlayer = null
         playingVoiceId = null
         preparingVoiceId = null
+        // 올렸으면 되돌린다. 적어 둔 값이 없으면 `restore` 는 아무 일도 하지 않는다.
+        if (wasAlarmStream) AlarmStreamVolume.restore(context)
     }
 
     /**
@@ -212,6 +216,12 @@ internal class VoiceOnboardingPreviewController(
             else -> null
         } ?: return null
         alarmVolumePercent?.let {
+            // ⚠ **기기 알람 볼륨도 울림과 같게 올린다**(2026-09-09 실기기 제보: "예시로
+            //   들려준 것과 울리는 것의 크기가 달랐다"). `MediaPlayer.setVolume` 은
+            //   **스트림 볼륨에 곱해지는 상대값**이라, 스트림과 게인만 맞춰서는 부족하다 —
+            //   울림은 `AlarmStreamVolume.applyForRinging(100)` 을 거치고 나므로 기기
+            //   알람 볼륨이 낮으면 미리듣기만 작게 들린다. `stopPreview` 가 되돌린다.
+            AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT)
             // 울릴 때와 같은 매핑을 쓴다 — 여기만 다른 식으로 계산하면 미리듣기와 알람이 어긋난다.
             val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(it)
             player.setVolume(gain, gain)
@@ -244,3 +254,9 @@ internal fun rememberVoiceOnboardingPreviewController(
     }
     return controller
 }
+
+/**
+ * 미리듣기가 맞추는 기기 알람 스트림 크기 — **울림과 같은 값**이어야 한다
+ * (`RingingService.NEUTRAL_STREAM_PERCENT`).
+ */
+private const val RINGING_STREAM_PERCENT = 100

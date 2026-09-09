@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.alarm.AlarmStreamVolume
+import com.alarmtalk.app.alarm.VoiceVolumeRamp
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
@@ -91,6 +93,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * 미리듣기가 맞추는 기기 알람 스트림 크기 — **울림과 같은 값**이어야 한다
+ * (`RingingService.NEUTRAL_STREAM_PERCENT`). 두 값이 갈라지면 미리듣기로 검증한 크기가
+ * 실제 알람과 달라진다.
+ */
+private const val RingingStreamPercent = 100
 
 private enum class AudioPreviewTarget {
     CachedAudio,
@@ -450,10 +459,14 @@ internal fun AlarmEditorScreen(
     fun stopPreview() {
         previewStopJob?.cancel()
         previewStopJob = null
+        val wasPlaying = mediaPlayer != null
         mediaPlayer?.release()
         mediaPlayer = null
         previewTarget = null
         previewPreparing = false
+        // 올렸으면 반드시 되돌린다. `restore` 는 적어 둔 값이 없으면 아무 일도 하지 않으므로
+        // 미리듣기를 하지 않았을 때 불러도 안전하다.
+        if (wasPlaying) AlarmStreamVolume.restore(context)
     }
 
     fun startPreparedPreview(
@@ -504,7 +517,17 @@ internal fun AlarmEditorScreen(
                     fun startFromPreparedPosition() {
                         if (mediaPlayer !== preparedPlayer) return
                         previewPreparing = false
-                        val previewVolume = editor.voiceVolumePercent.coerceIn(0, 100) / 100f
+                        // ⚠ **기기 알람 볼륨도 울림과 같게 맞춘다**(2026-09-09 실기기 제보:
+                        //   "예시로 들려준 것과 울리는 것의 크기가 달랐다").
+                        //   스트림과 게인만 맞춰서는 부족했다 — `MediaPlayer.setVolume` 은
+                        //   **스트림 볼륨에 곱해지는 상대값**이라, 울림은
+                        //   `AlarmStreamVolume.applyForRinging(100)` 으로 스트림을 가득
+                        //   올려 놓고 나는데 미리듣기는 기기에 설정된 값 위에서 났다.
+                        //   알람 볼륨이 7/15 인 폰에서는 울림이 두 배 컸다.
+                        //   `stopPreview` 가 되돌린다(프로세스가 죽어도 다음 실행의
+                        //   `restoreIfLeftOver` 가 되돌린다 — 그게 이 클래스의 존재 이유다).
+                        AlarmStreamVolume.applyForRinging(context, RingingStreamPercent)
+                        val previewVolume = VoiceVolumeRamp.targetVolume(editor.voiceVolumePercent)
                         preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()
                         scheduleAutoStop()
