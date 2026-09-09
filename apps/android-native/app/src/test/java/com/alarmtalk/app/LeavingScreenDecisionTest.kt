@@ -23,6 +23,7 @@ class LeavingScreenDecisionTest {
         screenOff: Boolean = false,
         screenCovered: Boolean = false,
         inCall: Boolean = false,
+        userLeftDeliberately: Boolean = false,
         seenUnlocked: Boolean = true,
         elapsedSinceShownMs: Long = 10_000L,
     ) = leavingScreenDecision(
@@ -33,6 +34,7 @@ class LeavingScreenDecisionTest {
         screenOff = screenOff,
         screenCovered = screenCovered,
         inCall = inCall,
+        userLeftDeliberately = userLeftDeliberately,
         seenUnlocked = seenUnlocked,
         elapsedSinceShownMs = elapsedSinceShownMs,
     )
@@ -53,20 +55,30 @@ class LeavingScreenDecisionTest {
     }
 
     @Test
-    fun 홈_최근앱_앱전환으로는_끄지_않는다() {
-        // ⚠ **여기서 끄면 전원 말고도 알람을 끄는 버튼이 생긴다**(2026-09-09 지시).
-        //   사이드키가 카메라·빅스비를 띄우는 것은 홈을 누른 것과 코드상 구분되지 않는다.
+    fun 홈_최근앱으로_스스로_나가면_끈다() {
+        // `onUserLeaveHint` 는 사용자의 선택으로 배경에 갈 때만 온다.
         assertEquals(
-            LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
-            decide(screenOff = false, inCall = false, seenUnlocked = true),
+            LeavingScreenDecision.DISMISS,
+            decide(screenOff = false, userLeftDeliberately = true),
         )
     }
 
     @Test
-    fun 통화가_아니면_화면이_켜진_채로는_시간이_지나도_안_끈다() {
+    fun 스스로_나간_것이_아니면_끄지_않는다() {
+        // ⚠ **여기서 끄면 전원 말고도 알람을 끄는 버튼이 생긴다**(2026-09-09 지시).
+        //   다른 앱이 치고 들어온 것(사이드키 단축키 등)은 사용자가 나간 것이 아니다.
         assertEquals(
             LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
-            decide(screenOff = false, inCall = false, elapsedSinceShownMs = 60 * 60_000L),
+            decide(screenOff = false, inCall = false, userLeftDeliberately = false),
+        )
+    }
+
+    @Test
+    fun 스스로_나간_것도_통화도_아니면_시간이_지나도_안_끈다() {
+        assertEquals(
+            LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
+            decide(screenOff = false, inCall = false, userLeftDeliberately = false,
+                   elapsedSinceShownMs = 60 * 60_000L),
         )
     }
 
@@ -148,7 +160,8 @@ class LeavingScreenDecisionTest {
         // 띄우는 경우만 onStop 으로 오는데, 그건 위 규칙이 LEFT_TO_ANOTHER_APP 으로 막는다.
         assertEquals(
             LeavingScreenDecision.LEFT_TO_ANOTHER_APP,
-            decide(screenOff = false, inCall = false, screenCovered = false, seenUnlocked = true),
+            decide(screenOff = false, inCall = false, screenCovered = false,
+                   userLeftDeliberately = false, seenUnlocked = true),
         )
         // 전원 버튼(= 화면 꺼짐)만 끈다.
         assertEquals(LeavingScreenDecision.DISMISS, decide(screenOff = true, seenUnlocked = true))

@@ -164,6 +164,14 @@ class RingingActivity : ComponentActivity() {
      */
     private var screenCovered = false
 
+    /**
+     * **사용자가 스스로 나갔는가**(홈·최근앱). `onUserLeaveHint` 는 사용자의 선택으로
+     * 배경으로 갈 때만 오고, **다른 것이 치고 들어온 경우**(전화 수신 등)에는 오지 않는다.
+     * `onStop` 만으로는 그 둘이 구분되지 않아 이 표시가 필요하다.
+     * 매번 [onStart] 에서 지운다 — 지난번에 나간 기록이 다음 판정에 남으면 안 된다.
+     */
+    private var userLeaveHinted = false
+
     private var proximitySensor: Sensor? = null
 
     private val proximityListener = object : SensorEventListener {
@@ -268,6 +276,7 @@ class RingingActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         visibleSinceElapsedMs = SystemClock.elapsedRealtime()
+        userLeaveHinted = false
         val sensorManager = getSystemService<SensorManager>() ?: return
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         proximitySensor?.let {
@@ -335,13 +344,16 @@ class RingingActivity : ComponentActivity() {
             screenOff = screenOff,
             screenCovered = screenCovered,
             inCall = isInCall(),
+            userLeftDeliberately = userLeaveHinted,
             seenUnlocked = seenUnlocked,
             elapsedSinceShownMs = SystemClock.elapsedRealtime() - visibleSinceElapsedMs,
         )
-        if (decision != LeavingScreenDecision.DISMISS) {
-            Log.i(TAG, "Left ringing screen but keeping the alarm: $decision")
-            return
-        }
+        Log.i(
+            TAG,
+            "onStop decision=$decision screenOff=$screenOff covered=$screenCovered " +
+                "inCall=${isInCall()} userLeaveHint=$userLeaveHinted",
+        )
+        if (decision != LeavingScreenDecision.DISMISS) return
         handled = true
         Log.i(TAG, "Left ringing screen; dismissing id=$id screenOff=$screenOff")
         RingingService.dismissForLeavingScreen(this, id, screenOff)
@@ -350,6 +362,8 @@ class RingingActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        userLeaveHinted = true
+        Log.i(TAG, "onUserLeaveHint — user chose to leave")
         hideSystemBars()
     }
 
@@ -478,6 +492,7 @@ internal fun leavingScreenDecision(
     screenOff: Boolean,
     screenCovered: Boolean,
     inCall: Boolean,
+    userLeftDeliberately: Boolean,
     seenUnlocked: Boolean,
     elapsedSinceShownMs: Long,
     graceMs: Long = LEAVE_GRACE_MS,
@@ -493,6 +508,7 @@ internal fun leavingScreenDecision(
         LeavingScreenDecision.MACHINE_TURNED_SCREEN_OFF
     screenOff -> LeavingScreenDecision.DISMISS
     inCall -> LeavingScreenDecision.DISMISS
+    userLeftDeliberately -> LeavingScreenDecision.DISMISS
     else -> LeavingScreenDecision.LEFT_TO_ANOTHER_APP
 }
 

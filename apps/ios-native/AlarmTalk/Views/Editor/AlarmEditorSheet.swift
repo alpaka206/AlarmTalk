@@ -370,8 +370,14 @@ struct AlarmEditorSheet: View {
     /// 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져
     /// 있었다 — 한 번 정하고 다시 안 볼 값들이 시각·목소리와 같은 무게로 화면을
     /// 차지했다. 안드로이드는 요약 행 넷을 한 카드에 모으고 상세는 pane 으로 뺀다.
+    /// ⚠ **비면 통째로 감춘다**(2026-09-09 지시). iOS 에 남은 행은 '알람음' 하나뿐이라
+    /// 재생 방식이 '목소리' 면 카드가 **제목만 남은 빈 상자**가 된다.
+    /// 안드로이드에는 진동 행이 있어 목소리 모드에서도 카드가 비지 않는다 —
+    /// 그래서 이 조건은 iOS 에만 있다(AlarmKit 이 진동을 소유한다).
+    /// ⚠ 행을 새로 넣거든 이 조건도 함께 넓힐 것. 안 그러면 넣은 행이 안 보인다.
     @ViewBuilder
     private var detailSettingsSection: some View {
+        if draft.showsAlarmSoundControls {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
                 // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
@@ -385,20 +391,20 @@ struct AlarmEditorSheet: View {
                 // `AlarmEnums.swift` 의 `VibrationPattern` 주석에 적어 뒀다.
                 // (안드로이드는 자체 울림을 소유하므로 그쪽에는 그대로 있다.)
 
-                if draft.showsAlarmSoundControls {
-                    AlarmSettingDivider()
-                    AlarmSettingRow(
-                        title: "알람음",
-                        subtitle: alarmSoundDisplayLabel,
-                        onTap: { settingsPane = .alarmSound }
-                    )
-                }
+                // ⚠ 위에 아무 행도 없으므로 구분선을 앞에 두지 말 것 — 카드 맨 위에
+                //   금이 하나 그어진 것처럼 보인다.
+                AlarmSettingRow(
+                    title: "알람음",
+                    subtitle: alarmSoundDisplayLabel,
+                    onTap: { settingsPane = .alarmSound }
+                )
 
                 // ⚠ **'음성 출력' 행을 여기에 되살리지 말 것.** 음량·반복은 목소리 카드
                 // 안의 '목소리 크기' 행이 여는 상세가 소유한다. 안드로이드도 이 행을
                 // `showVoiceOutput = false` 로 꺼 두었다 — 같은 값을 바꾸는 자리가 둘이면
                 // 어느 쪽이 진짜인지 매번 확인해야 한다.
             }
+        }
     }
 
     // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
