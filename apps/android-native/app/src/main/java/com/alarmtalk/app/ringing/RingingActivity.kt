@@ -719,6 +719,8 @@ private fun AlarmEntity.toRingingUiState(
     val voiceMessage = displayedVoiceText
         ?.let { raw -> raw.stripDeliveryTags(generated = bucketText != null || voiceRandomPrompt) }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
+    // 판정은 `AlarmEntity.canSnoozeNow` 한 곳이다 — 알림도 같은 것을 본다.
+    // (여기에 조건을 다시 쓰면 두 표면이 또 갈라진다.)
     val snoozeAvailable = snoozeEnabled &&
         (
             snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER ||

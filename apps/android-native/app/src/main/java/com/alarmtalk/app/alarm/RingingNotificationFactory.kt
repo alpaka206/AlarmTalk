@@ -21,7 +21,20 @@ internal class RingingNotificationFactory(
      *   false(기본, 정상 경로)면 무음 울림 채널을 사용하고 소리는 RingingService 의 MediaPlayer 가 담당한다.
      *   두 경로 모두 카테고리(CATEGORY_ALARM)·전체화면 인텐트·해제/스누즈 액션을 동일하게 유지한다.
      */
-    fun build(alarmId: String, fallback: Boolean = false): Notification {
+    /**
+     * @param snoozeAvailable 다시 울림을 **지금 누를 수 있는가**(꺼져 있거나 한도에 닿았으면 false).
+     *
+     * ⚠ **울림 화면과 같은 기준이어야 한다**(2026-09-09 확인). 예전에는 이 액션을 조건 없이
+     * 붙였는데, 한도에 닿으면 `AlarmRepository.snooze` 가 null 을 돌려주고 `RingingService`
+     * 가 그때 **알람을 끝낸다** — 즉 '다시 울리기' 를 눌렀는데 알람이 꺼졌다.
+     * 울림 화면은 같은 상황에서 버튼을 아예 숨긴다(`RingingActivity` 의 `snoozeAvailable`).
+     * 두 표면이 같은 알람에 대해 다른 말을 하고 있었다.
+     */
+    fun build(
+        alarmId: String,
+        fallback: Boolean = false,
+        snoozeAvailable: Boolean = true,
+    ): Notification {
         val activityIntent = Intent(context, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -56,14 +69,16 @@ internal class RingingNotificationFactory(
             .setFullScreenIntent(fullScreenIntent, true)
             .addAction(
                 R.drawable.ic_alarm_24,
-                context.getString(R.string.r3misc_ringing_action_snooze),
-                servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
-            )
-            .addAction(
-                R.drawable.ic_alarm_24,
                 context.getString(R.string.r3misc_ringing_action_dismiss),
                 servicePendingIntent(ACTION_DISMISS, alarmId, DISMISS_REQUEST_CODE),
             )
+        if (snoozeAvailable) {
+            builder.addAction(
+                R.drawable.ic_alarm_24,
+                context.getString(R.string.r3misc_ringing_action_snooze),
+                servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
+            )
+        }
 
         if (!fallback) {
             // 정상 경로: 소리는 RingingService 의 MediaPlayer 가 담당 → 알림은 무음(중복 소리 방지).

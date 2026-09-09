@@ -1556,6 +1556,11 @@ internal fun AlarmEditorScreen(
     // iOS 짝은 `VoiceOutputSettingsPane` 의 `onLeave`.
     LaunchedEffect(settingsDetailPanel) {
         if (settingsDetailPanel != "voice_output") voicePreview.stopPreview()
+        // ⚠ **편집기에는 재생기가 둘이다.** 위는 목소리 행·목소리 크기용이고, 아래는
+        //   본문 문구 ▶(생성된 TTS·재사용 오디오)다. 2026-09-08 수정이 위 하나만 꺼서
+        //   **문구 페이지에서 나가도 문장이 계속 들렸다**(2026-09-09 지적). 나가는 판정은
+        //   같으므로 같은 자리에서 둘 다 끈다.
+        if (settingsDetailPanel != "random_prompt") stopPreview()
     }
 
     // 앱이 뒤로 가는 것도 '나가는 것' 이다 — `MediaPlayer` 는 화면을 떠나도 계속 운다.
@@ -1563,7 +1568,12 @@ internal fun AlarmEditorScreen(
     val previewLifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(previewLifecycleOwner, voicePreview) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) voicePreview.stopPreview()
+            if (event == Lifecycle.Event.ON_STOP) {
+                voicePreview.stopPreview()
+                // 앱이 뒤로 가면 본문 문구 미리듣기도 멎어야 한다 — `MediaPlayer` 는
+                // 화면을 떠나도 계속 운다.
+                stopPreview()
+            }
         }
         previewLifecycleOwner.lifecycle.addObserver(observer)
         onDispose { previewLifecycleOwner.lifecycle.removeObserver(observer) }

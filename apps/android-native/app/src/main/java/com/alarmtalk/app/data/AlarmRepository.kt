@@ -453,6 +453,8 @@ class AlarmRepository(
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
         alarmScheduler.cancel(alarmId)
+        // 끄는 것도 '목록에서 사라짐' 과 같다 — 지금 울리고 있으면 소리를 먼저 끈다.
+        if (!enabled) stopRingingIfThisAlarm(alarmId)
 
         val updated = if (enabled) {
             val holidayPredicate = holidayCalendarStore.holidayPredicate(
@@ -519,6 +521,24 @@ class AlarmRepository(
      * [restoreMutex] 를 **이미 쥔 채** 부르는 삭제. `Mutex` 는 재진입이 안 되므로, 같은 락
      * 안에서 충돌 알람을 지우는 [createAlarm]·[updateAlarm] 은 이 쪽을 쓴다.
      */
+    /**
+     * **울리는 중인 알람을 없앨 때는 소리를 먼저 끈다**(2026-09-09 확인).
+     *
+     * ⚠ 스펙이 이미 요구하던 것이다 — `docs/spec/alarm-ringing.md` §3 「어떤 경로로 끝나든
+     * 소리를 먼저 끈다. 끄기·다시 울림·**목록에서 사라짐** — 전부」. 그런데 `setEnabled`·
+     * `deleteAlarm` 어디에도 `RingingService` 참조가 없어 **다음 예약만 지우고 지금 나는
+     * 소리는 그대로 뒀다.** 기기를 쓰는 중이면 전체 울림 화면이 안 뜨므로(`RingingService`
+     * 의 사용 중 판정) 사용자는 앱 안에서 소리를 들으며 그 알람을 지울 수 있다 — 실제로
+     * 닿는 경로다.
+     *
+     * 지금 울리는 그 알람일 때만 보낸다. 다른 알람이면 아무 일도 하지 않는다.
+     */
+    private fun stopRingingIfThisAlarm(alarmId: String) {
+        if (RingingService.activeRingingAlarmId != alarmId) return
+        runCatching { RingingService.dismiss(context, alarmId) }
+            .onFailure { Log.w(TAG, "Failed to stop ringing for removed alarm id=$alarmId", it) }
+    }
+
     private suspend fun deleteAlarmLocked(alarmId: String) {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
@@ -526,6 +546,7 @@ class AlarmRepository(
             return
         }
         alarmScheduler.cancel(alarmId)
+        stopRingingIfThisAlarm(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
