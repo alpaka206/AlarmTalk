@@ -187,8 +187,17 @@ class RingingService : Service() {
             // 이미 쓰고 있고, 여기서 `dismiss` 를 돌리면 반복 알람이 되살아난다.
             ACTION_STOP_OUTPUTS -> {
                 Log.i(TAG, "Stopping ringing outputs only id=$alarmId")
+                // ⚠ **내 것일 때만 서비스를 끝낸다**(코덱스 #729 2차). A 가 꺼지는 사이
+                //   B 가 현재 알람이 되었으면 `stopRingingOutputs(A)` 는 옳게 빠지는데,
+                //   그 뒤 무조건 `stopSelf` 하면 `onDestroy` 가 인자 없는 정리를 돌려
+                //   **B 의 소리·진동·알림까지 끈다.** 지금 울리는 알람이 나일 때만 끝낸다.
+                val ownsOutputs = synchronized(ringingStateLock) { ringingAlarmId == alarmId }
                 if (!alarmId.isNullOrBlank()) stopRingingOutputs(alarmId)
-                stopSelf(startId)
+                if (ownsOutputs) {
+                    stopSelf(startId)
+                } else {
+                    Log.i(TAG, "Another alarm owns the outputs; keeping the service alive")
+                }
                 START_NOT_STICKY
             }
 

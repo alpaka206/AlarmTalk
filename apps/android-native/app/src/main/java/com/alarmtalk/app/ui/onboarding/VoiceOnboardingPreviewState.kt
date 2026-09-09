@@ -245,14 +245,14 @@ internal class VoiceOnboardingPreviewController(
      */
     private fun raiseAlarmStreamForPreview() {
         alarmVolumePreview = true
-        AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT)
+        AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT, AlarmStreamVolume.Owner.PREVIEW)
     }
 
     /** 올린 적이 있으면 되돌린다. 없으면 아무 일도 하지 않는다(멱등). */
     private fun restoreAlarmStreamIfRaised() {
         if (!alarmVolumePreview) return
         alarmVolumePreview = false
-        AlarmStreamVolume.restore(context)
+        AlarmStreamVolume.restore(context, AlarmStreamVolume.Owner.PREVIEW)
     }
 
     fun dispose() {

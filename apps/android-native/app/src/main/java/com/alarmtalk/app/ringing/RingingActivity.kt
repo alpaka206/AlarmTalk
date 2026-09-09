@@ -86,6 +86,7 @@ import com.alarmtalk.app.data.SnoozeMinutes
 import com.alarmtalk.app.data.bucketClipTexts
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -140,6 +141,15 @@ class RingingActivity : ComponentActivity() {
     private val superseded: Boolean get() = liveInstance !== this
     /** 끄기·다시 알림으로 이미 끝냈다 — `onStop` 이 한 번 더 끝내지 않게. */
     private var handled = false
+
+    /**
+     * 사용자가 ＋/− 로 간격을 **실제로 바꿨는가.**
+     *
+     * ⚠ 이게 없으면 콜드 스타트에서 사고가 난다(코덱스 #729 2차). 행을 읽어 오기 전까지
+     * 화면은 기본값 5분을 들고 있는데, 그 사이 '다시 울리기' 를 누르면 5를 **덮어쓴다** —
+     * 30분으로 저장해 둔 알람이 5분이 된다. 바꾼 적이 없으면 값을 싣지 않는다.
+     */
+    private var snoozeMinutesAdjusted = false
 
     /**
      * 이 화면이 떠 있는 동안 **잠금이 풀린 적이 있는가**.
@@ -206,11 +216,21 @@ class RingingActivity : ComponentActivity() {
             //   값을 채우기 전에 닫으면 뜨자마자 사라진다.
             LaunchedEffect(currentAlarmId) {
                 val id = currentAlarmId ?: return@LaunchedEffect
-                val startedAt = SystemClock.elapsedRealtime()
                 var everMatched = false
+                // ⚠ **유예를 흐름 방출에 걸지 말 것**(코덱스 #729 2차). 화면이 뜨기 전에
+                //   끝나면 `null` 하나만 오고 그 뒤로 아무것도 안 와서, 방출 안에서만
+                //   시간을 재면 **타이머가 영영 안 돈다.** 진짜 타이머를 따로 태운다.
+                val timeout = launch {
+                    delay(SERVICE_HANDOFF_GRACE_MS)
+                    if (!everMatched && RingingService.activeRingingAlarmId != id) {
+                        handled = true
+                        finishAndRemoveTask()
+                    }
+                }
                 RingingService.activeRingingAlarmIdFlow.collect { active ->
                     if (active == id) {
                         everMatched = true
+                        timeout.cancel()
                         return@collect
                     }
                     // ⚠ **한 번도 못 잡은 경우도 닫아야 한다**(코덱스 #729). 화면이 뜨기
@@ -219,7 +239,7 @@ class RingingActivity : ComponentActivity() {
                     //   남아, 거기서 밀면 **이미 끝난 알람을 한 번 더** 해제·미룬다.
                     //   그렇다고 곧바로 닫으면 서비스가 값을 채우기 전에 사라지므로
                     //   시작 유예를 둔다.
-                    if (everMatched || SystemClock.elapsedRealtime() - startedAt > SERVICE_HANDOFF_GRACE_MS) {
+                    if (everMatched) {
                         handled = true
                         finishAndRemoveTask()
                     }
@@ -244,6 +264,7 @@ class RingingActivity : ComponentActivity() {
                     // 화면은 곧바로 반응하고, 값은 행에 남긴다 — `AlarmRepository.snooze` 가
                     // 읽는 것이 그 행의 `snoozeMinutes` 라서, 저장이 늦으면 방금 고른 값이
                     // 아니라 옛 값으로 미뤄진다.
+                    snoozeMinutesAdjusted = true
                     uiState = uiState.copy(snoozeMinutes = next)
                     currentAlarmId?.let { id ->
                         scope.launch(Dispatchers.IO) {
@@ -260,11 +281,19 @@ class RingingActivity : ComponentActivity() {
                     handled = true
                     // ⚠ **지금 화면에 보이는 값을 실어 보낸다.** ＋/− 의 저장은 비동기라,
                     //   바로 이어 누르면 서비스가 옛 간격으로 미룰 수 있다(코덱스 #729).
-                    currentAlarmId?.let { RingingService.snooze(this, it, uiState.snoozeMinutes) }
+                    currentAlarmId?.let {
+                        RingingService.snooze(this, it, uiState.snoozeMinutes.takeIf { snoozeMinutesAdjusted })
+                    }
                     finishAndRemoveTask()
                 },
             )
         }
+    }
+
+    override fun onDestroy() {
+        // 내 것일 때만 비운다 — 새 인스턴스가 이미 가져갔으면 남의 것이다.
+        if (liveInstance === this) liveInstance = null
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -288,6 +317,7 @@ class RingingActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        visibleCount += 1
         visibleSinceElapsedMs = SystemClock.elapsedRealtime()
         userLeaveHinted = false
         val sensorManager = getSystemService<SensorManager>() ?: return
@@ -305,6 +335,7 @@ class RingingActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        visibleCount -= 1
         // ⚠ **판정 전에는 해제하지 않는다** — 덮임 여부를 판정이 읽어야 한다.
         dismissOnLeavingScreen()
         getSystemService<SensorManager>()?.unregisterListener(proximityListener)
@@ -435,11 +466,19 @@ class RingingActivity : ComponentActivity() {
         @Volatile
         private var liveInstance: RingingActivity? = null
 
+        /** 지금 화면에 보이는 울림 화면의 수. `onStart`/`onStop` 으로만 오간다. */
+        @Volatile
+        private var visibleCount = 0
+
         /**
-         * 울림 화면이 실제로 떠 있는가. `startActivity` 는 백그라운드 시작 제한에 막혀도
+         * 울림 화면이 **지금 보이는가.** `startActivity` 는 백그라운드 시작 제한에 막혀도
          * **예외를 던지지 않고 무시될 수 있어서**, 띄웠다는 사실만으로는 알 수 없다.
+         *
+         * ⚠ **인스턴스 보유로 판정하지 말 것**(코덱스 #729 2차). `liveInstance` 는 화면이
+         * 멈춘 뒤에도 남아 있어, 한 번이라도 뜬 적이 있으면 영영 true 가 된다 — 그러면
+         * 정작 나중에 시작이 막혔을 때 폴백 승격이 억제돼 해제 수단이 사라진다.
          */
-        fun isShowing(): Boolean = liveInstance != null
+        fun isShowing(): Boolean = visibleCount > 0
 
     }
 }

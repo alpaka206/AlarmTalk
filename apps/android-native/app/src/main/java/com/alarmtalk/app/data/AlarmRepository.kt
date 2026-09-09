@@ -1292,17 +1292,18 @@ class AlarmRepository(
         runCatching {
             val current = alarmDao.getById(alarmId) ?: return
             if (current.snoozeMinutes == minutes) return
-            // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 생 UPDATE 로 컬럼만 고치면
-            //   `SYNCED` 가 그대로 남아 `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·
-            //   DIRTY·FAILED)에 안 들어간다 — 울림 화면에서 고른 간격이 **서버에 영영
-            //   안 올라가고**, 다른 기기·재설치는 옛 값을 계속 쓴다. 받은 알람은
+            // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 컬럼만 고치고 `SYNCED` 를 두면
+            //   `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·DIRTY·FAILED)에 안 들어가
+            //   울림 화면에서 고른 간격이 **서버에 영영 안 올라간다.** 받은 알람은
             //   `nextLocalSyncState` 가 알아서 SYNCED 로 남긴다(서버 행은 전달 수단일 뿐).
-            alarmDao.upsert(
-                current.copy(
-                    snoozeMinutes = minutes,
-                    syncState = current.nextLocalSyncState(),
-                    updatedAtMillis = System.currentTimeMillis(),
-                ),
+            // ⚠ **전체 행 upsert 로 쓰지 말 것**(코덱스 #729 2차). 읽어 둔 스냅샷을 통째로
+            //   되쓰면, 그 사이 동기화가 새로 받은 `remoteAlarmId` 를 **옛 값으로 덮는다** —
+            //   다음 동기화가 서버에 알람을 하나 더 만든다. 건드릴 컬럼만 UPDATE 한다.
+            alarmDao.updateSnoozeMinutes(
+                id = alarmId,
+                minutes = minutes,
+                syncState = current.nextLocalSyncState(),
+                updatedAtMillis = System.currentTimeMillis(),
             )
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update snooze minutes id=$alarmId", error)
@@ -1342,6 +1343,15 @@ class AlarmRepository(
         val next = current.copy(
             fireAtMillis = now + snoozeMinutes * 60_000L,
             snoozeMinutes = snoozeMinutes,
+            // ⚠ **간격이 바뀌었으면 동기화 대상으로 올린다**(코덱스 #729 2차). 화면의
+            //   비동기 저장이 액티비티가 끝나며 취소되면 이 쓰기가 유일한 커밋이 되는데,
+            //   `SYNCED` 를 그대로 두면 서버에 영영 안 올라간다. 안 바뀌었으면 건드리지
+            //   않는다 — 다시 울림 자체는 로컬 상태다.
+            syncState = if (snoozeMinutes != current.snoozeMinutes) {
+                current.nextLocalSyncState()
+            } else {
+                current.syncState
+            },
             enabled = true,
             snoozeCount = current.snoozeCount + 1,
             state = AlarmStates.SNOOZED,

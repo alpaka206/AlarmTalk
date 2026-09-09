@@ -466,7 +466,7 @@ internal fun AlarmEditorScreen(
         previewPreparing = false
         // 올렸으면 반드시 되돌린다. `restore` 는 적어 둔 값이 없으면 아무 일도 하지 않으므로
         // 미리듣기를 하지 않았을 때 불러도 안전하다.
-        if (wasPlaying) AlarmStreamVolume.restore(context)
+        if (wasPlaying) AlarmStreamVolume.restore(context, AlarmStreamVolume.Owner.PREVIEW)
     }
 
     fun startPreparedPreview(
@@ -526,7 +526,7 @@ internal fun AlarmEditorScreen(
                         //   알람 볼륨이 7/15 인 폰에서는 울림이 두 배 컸다.
                         //   `stopPreview` 가 되돌린다(프로세스가 죽어도 다음 실행의
                         //   `restoreIfLeftOver` 가 되돌린다 — 그게 이 클래스의 존재 이유다).
-                        AlarmStreamVolume.applyForRinging(context, RingingStreamPercent)
+                        AlarmStreamVolume.applyForRinging(context, RingingStreamPercent, AlarmStreamVolume.Owner.PREVIEW)
                         val previewVolume = VoiceVolumeRamp.targetVolume(editor.voiceVolumePercent)
                         preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()

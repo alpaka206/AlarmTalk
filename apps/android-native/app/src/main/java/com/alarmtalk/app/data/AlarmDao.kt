@@ -211,6 +211,19 @@ interface AlarmDao {
     }
 
     /** 음원·OS 예약까지 확보한 전달 세대를 ACK보다 먼저 영속한다. 사용자 수정 시각은 건드리지 않는다. */
+    /**
+     * 울림 화면의 ＋/− 가 고른 다시 울림 간격.
+     *
+     * ⚠ **건드릴 컬럼만 쓴다.** 행을 읽어 통째로 되쓰면 그 사이 동기화가 받은
+     * `remoteAlarmId` 같은 서버 필드를 옛 스냅샷으로 덮어, 다음 동기화가 서버에 알람을
+     * 하나 더 만든다(코덱스 #729). `syncState` 는 호출부가 `nextLocalSyncState()` 로 정한다.
+     */
+    @Query(
+        "UPDATE alarms SET snoozeMinutes = :minutes, syncState = :syncState, " +
+            "updatedAtMillis = :updatedAtMillis WHERE id = :id",
+    )
+    suspend fun updateSnoozeMinutes(id: String, minutes: Int, syncState: String, updatedAtMillis: Long)
+
     @Query("UPDATE alarms SET remoteDeliveryVersion = :deliveryVersion WHERE id = :id")
     suspend fun markRemoteDeliveryVersion(id: String, deliveryVersion: String): Int
 
