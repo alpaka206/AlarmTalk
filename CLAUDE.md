@@ -11,7 +11,7 @@
   ⚠ 아직 App Store 에 없다. CI 는 2026-09-08 에 복구했다(`.github/workflows/ios-build.yml` —
   유닛 테스트 + Release 빌드, **필수 체크는 아니다**). **Apple 개발자 계정은 이미 있다**
   (Team `<팀 ID>` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
-  남은 것은 스토어 제출과 CI 복구다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
+  남은 것은 스토어 제출이다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
 
 ## iOS 실기기 설치 (테스트 아이폰은 **WiFi** 로 붙는다)
 - **아이폰은 케이블이 아니라 WiFi 로 페어링돼 있다.** 목록·설치 모두 `devicectl` 로 한다:
