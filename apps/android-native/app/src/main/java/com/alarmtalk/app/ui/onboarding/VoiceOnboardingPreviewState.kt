@@ -85,14 +85,11 @@ internal class VoiceOnboardingPreviewController(
 
     fun stopPreview(invalidateRequest: Boolean = true) {
         if (invalidateRequest) previewRequestId += 1
-        val wasAlarmStream = alarmVolumePreview
-        alarmVolumePreview = false
         mediaPlayer?.release()
         mediaPlayer = null
         playingVoiceId = null
         preparingVoiceId = null
-        // 올렸으면 되돌린다. 적어 둔 값이 없으면 `restore` 는 아무 일도 하지 않는다.
-        if (wasAlarmStream) AlarmStreamVolume.restore(context)
+        restoreAlarmStreamIfRaised()
     }
 
     /**
@@ -139,13 +136,20 @@ internal class VoiceOnboardingPreviewController(
             stopPreview(invalidateRequest = false)
             val player = createPlayer(resId = bundledRes, uri = null, alarmVolumePercent = alarmVolumePercent)
                 ?: return
-            alarmVolumePreview = alarmVolumePercent != null
             playingVoiceId = voiceProfileId
+            if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
             mediaPlayer = player.apply {
                 setOnCompletionListener {
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingVoiceId == voiceProfileId) playingVoiceId = null
+                    restoreAlarmStreamIfRaised()
+                }
+                setOnErrorListener { p, _, _ ->
+                    p.release()
+                    if (mediaPlayer === p) mediaPlayer = null
+                    restoreAlarmStreamIfRaised()
+                    true
                 }
                 start()
             }
@@ -176,13 +180,20 @@ internal class VoiceOnboardingPreviewController(
                     return@runCatching
                 }
                 preparingVoiceId = null
-                alarmVolumePreview = alarmVolumePercent != null
                 playingVoiceId = voiceProfileId
+                if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingVoiceId == voiceProfileId) playingVoiceId = null
+                        restoreAlarmStreamIfRaised()
+                    }
+                    setOnErrorListener { p, _, _ ->
+                        p.release()
+                        if (mediaPlayer === p) mediaPlayer = null
+                        restoreAlarmStreamIfRaised()
+                        true
                     }
                     start()
                 }
@@ -216,22 +227,38 @@ internal class VoiceOnboardingPreviewController(
             else -> null
         } ?: return null
         alarmVolumePercent?.let {
-            // ⚠ **기기 알람 볼륨도 울림과 같게 올린다**(2026-09-09 실기기 제보: "예시로
-            //   들려준 것과 울리는 것의 크기가 달랐다"). `MediaPlayer.setVolume` 은
-            //   **스트림 볼륨에 곱해지는 상대값**이라, 스트림과 게인만 맞춰서는 부족하다 —
-            //   울림은 `AlarmStreamVolume.applyForRinging(100)` 을 거치고 나므로 기기
-            //   알람 볼륨이 낮으면 미리듣기만 작게 들린다. `stopPreview` 가 되돌린다.
-            AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT)
             // 울릴 때와 같은 매핑을 쓴다 — 여기만 다른 식으로 계산하면 미리듣기와 알람이 어긋난다.
             val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(it)
             player.setVolume(gain, gain)
         }
+        // ⚠ **여기서 스트림을 올리지 않는다.** 이 함수는 실패하거나 버려질 수 있고
+        //   (요청 취소·다운로드 경합), 그러면 되돌릴 주인이 없다. 올리는 것은 실제로
+        //   재생을 시작하는 자리([raiseAlarmStreamForPreview])에서만 한다.
         return player
+    }
+
+    /**
+     * 재생을 **실제로 시작할 때만** 기기 알람 볼륨을 울림과 같게 올린다.
+     *
+     * ⚠ 짝은 [restoreAlarmStreamIfRaised] 다. 올린 뒤 나가는 길이 넷이라(완료·에러·
+     * 요청 취소·dispose) 하나만 빠져도 사용자의 알람 볼륨이 최대로 굳는다.
+     */
+    private fun raiseAlarmStreamForPreview() {
+        alarmVolumePreview = true
+        AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT)
+    }
+
+    /** 올린 적이 있으면 되돌린다. 없으면 아무 일도 하지 않는다(멱등). */
+    private fun restoreAlarmStreamIfRaised() {
+        if (!alarmVolumePreview) return
+        alarmVolumePreview = false
+        AlarmStreamVolume.restore(context)
     }
 
     fun dispose() {
         mediaPlayer?.release()
         mediaPlayer = null
+        restoreAlarmStreamIfRaised()
     }
 }
 

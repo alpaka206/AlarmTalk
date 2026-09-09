@@ -1,5 +1,7 @@
 package com.alarmtalk.app.ringing
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
@@ -204,11 +206,20 @@ class RingingActivity : ComponentActivity() {
             //   값을 채우기 전에 닫으면 뜨자마자 사라진다.
             LaunchedEffect(currentAlarmId) {
                 val id = currentAlarmId ?: return@LaunchedEffect
+                val startedAt = SystemClock.elapsedRealtime()
                 var everMatched = false
                 RingingService.activeRingingAlarmIdFlow.collect { active ->
                     if (active == id) {
                         everMatched = true
-                    } else if (everMatched) {
+                        return@collect
+                    }
+                    // ⚠ **한 번도 못 잡은 경우도 닫아야 한다**(코덱스 #729). 화면이 뜨기
+                    //   전에 알림·워치에서 해제·다시 울림이 끝나면 서비스는 이미 사라져
+                    //   `everMatched` 가 영영 false 다 — 소리도 서비스도 없는데 화면만
+                    //   남아, 거기서 밀면 **이미 끝난 알람을 한 번 더** 해제·미룬다.
+                    //   그렇다고 곧바로 닫으면 서비스가 값을 채우기 전에 사라지므로
+                    //   시작 유예를 둔다.
+                    if (everMatched || SystemClock.elapsedRealtime() - startedAt > SERVICE_HANDOFF_GRACE_MS) {
                         handled = true
                         finishAndRemoveTask()
                     }
@@ -247,7 +258,9 @@ class RingingActivity : ComponentActivity() {
                 },
                 onSnooze = {
                     handled = true
-                    currentAlarmId?.let { RingingService.snooze(this, it) }
+                    // ⚠ **지금 화면에 보이는 값을 실어 보낸다.** ＋/− 의 저장은 비동기라,
+                    //   바로 이어 누르면 서비스가 옛 간격으로 미룰 수 있다(코덱스 #729).
+                    currentAlarmId?.let { RingingService.snooze(this, it, uiState.snoozeMinutes) }
                     finishAndRemoveTask()
                 },
             )
@@ -412,12 +425,21 @@ class RingingActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val TAG = "RingingActivity"
+    internal companion object {
+        private const val TAG = "RingingActivity"
+
+        /** 서비스가 이 알람을 잡을 때까지 기다려 주는 시간. 넘으면 화면을 닫는다. */
+        private const val SERVICE_HANDOFF_GRACE_MS = 10_000L
 
         /** 가장 최근에 만들어진 울림 화면. 옛 인스턴스가 자기가 밀려났음을 아는 유일한 방법. */
         @Volatile
-        var liveInstance: RingingActivity? = null
+        private var liveInstance: RingingActivity? = null
+
+        /**
+         * 울림 화면이 실제로 떠 있는가. `startActivity` 는 백그라운드 시작 제한에 막혀도
+         * **예외를 던지지 않고 무시될 수 있어서**, 띄웠다는 사실만으로는 알 수 없다.
+         */
+        fun isShowing(): Boolean = liveInstance != null
 
     }
 }
@@ -578,7 +600,19 @@ private fun RingingRoute(
                 // ⚠ **문구가 없으면 그 자리는 비운다**(2026-09-09 지시). 예전에는 '알람음' 칩을
                 //   대신 놓았는데, 재생 방식이 알람음이라는 것은 **잠결에 필요한 정보가 아니다** —
                 //   지금 필요한 건 몇 시인가와 어떻게 끄는가 둘뿐이라, 칩은 시선만 하나 더 만들었다.
-                uiState.voiceText?.let { RingingMessage(it) }
+                // ⚠ **문구가 길어도 컨트롤을 밀어내지 않는다**(코덱스 #729). 이 Column 은
+                //   스크롤되지 않으므로, 자르지 않기로 한 문구(최대 200자·큰 글꼴)가
+                //   남은 높이를 넘기면 다시 알림·끄기 슬라이더가 화면 밖으로 밀려 **알람을
+                //   끌 방법이 사라진다.** 문구 쪽만 남는 공간 안에서 스크롤시킨다.
+                uiState.voiceText?.let { text ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        RingingMessage(text)
+                    }
+                }
 
                 Spacer(Modifier.weight(1f))
 

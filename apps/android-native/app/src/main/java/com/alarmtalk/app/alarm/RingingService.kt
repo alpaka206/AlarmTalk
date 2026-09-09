@@ -27,6 +27,7 @@ import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_LEFT_SCREEN
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_SILENT
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_STOP_OUTPUTS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.core.AlarmTalkLog
@@ -182,8 +183,18 @@ class RingingService : Service() {
                 START_NOT_STICKY
             }
 
+            // 목록에서 끄거나 지울 때. **행 상태는 건드리지 않는다** — 그건 부른 쪽이
+            // 이미 쓰고 있고, 여기서 `dismiss` 를 돌리면 반복 알람이 되살아난다.
+            ACTION_STOP_OUTPUTS -> {
+                Log.i(TAG, "Stopping ringing outputs only id=$alarmId")
+                if (!alarmId.isNullOrBlank()) stopRingingOutputs(alarmId)
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
+
             ACTION_SNOOZE -> {
-                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId) else stopSelf(startId)
+                val minutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 0).takeIf { it > 0 }
+                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId, minutes) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
@@ -605,7 +616,24 @@ class RingingService : Service() {
         runCatching {
             startActivity(intent)
         }.onFailure { error ->
-            Log.w(TAG, "Direct ringing activity launch failed; relying on full-screen notification", error)
+            Log.w(TAG, "Direct ringing activity launch failed", error)
+        }
+        // ⚠ **떴는지 확인한다 — 예외가 없다고 뜬 것이 아니다**(코덱스 #729).
+        //   안드로이드는 백그라운드 액티비티 시작을 **조용히 무시**할 수 있다. 정상 채널은
+        //   `IMPORTANCE_LOW` 라 배너도 안 뜨므로, 그대로 두면 소리만 나고 **해제 UI 가
+        //   하나도 없는** 상태가 된다 — 이 변경 전체가 없애려던 바로 그 상태다.
+        //   그래서 화면이 안 떴으면 소리·전체화면 인텐트를 든 폴백 알림으로 올린다.
+        serviceScope.launch {
+            delay(ACTIVITY_LAUNCH_CHECK_MS)
+            if (destroyed || ringingAlarmId != alarmId) return@launch
+            if (RingingActivity.isShowing()) return@launch
+            Log.w(TAG, "Ringing screen never appeared; escalating to the fallback notification id=$alarmId")
+            runCatching {
+                NotificationManagerCompat.from(this@RingingService).notify(
+                    RINGING_NOTIFICATION_ID,
+                    RingingNotificationFactory(this@RingingService).build(alarmId, fallback = true),
+                )
+            }.onFailure { AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", it) }
         }
     }
 
@@ -629,7 +657,7 @@ class RingingService : Service() {
         }
     }
 
-    private fun snooze(alarmId: String, startId: Int) {
+    private fun snooze(alarmId: String, startId: Int, minutesOverride: Int? = null) {
         // ⚠ **결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과 미뤄진 것은 다르다 —
         //   한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는 여기서 먼저 적어서
         //   일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도 안 남았다.**
@@ -646,7 +674,7 @@ class RingingService : Service() {
                 // **해제로 마무리**해 상태를 정상으로 되돌린다.
                 // ⚠ **횟수 한도는 더 이상 사유가 아니다**(2026-09-09). 다시 울림은 무제한이라
                 //   이 갈래에 닿는 정상 조작은 없어졌지만, 행이 지워지는 경합은 남아 있다.
-                if (repository.snooze(alarmId) == null) {
+                if (repository.snooze(alarmId, minutesOverride) == null) {
                     Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
                     repository.dismiss(alarmId)
                     // 미뤄지지 않았다 — 끝난 것으로 적고, **누른 사실은 detail 로** 남긴다.
@@ -770,6 +798,12 @@ class RingingService : Service() {
         internal const val LEFT_SCREEN_DETAIL = "left_screen"
         private const val EXTRA_SCREEN_OFF = "com.alarmtalk.app.extra.SCREEN_OFF"
 
+        /**
+         * 울림 화면의 ＋/− 로 방금 고른 간격. **함께 실어 보낸다** — 화면의 비동기 저장이
+         * 끝나기 전에 눌러도 그 값으로 미뤄지게 하기 위해서다(코덱스 #729).
+         */
+        private const val EXTRA_SNOOZE_MINUTES = "com.alarmtalk.app.extra.SNOOZE_MINUTES"
+
         /** '다시 알림' 을 눌렀는데 결과를 알 수 없는 경우(저장 실패 등)의 표시. */
         internal const val SNOOZE_FAILED_DETAIL = "snooze_failed"
 
@@ -870,6 +904,9 @@ class RingingService : Service() {
         private const val NEUTRAL_STREAM_PERCENT = 100
         private const val VOICE_REPEAT_GAP_MS = 900L
 
+        /** 울림 화면이 떴는지 확인하기까지 기다리는 시간. 창 애니메이션·콜드 스타트 여유. */
+        private const val ACTIVITY_LAUNCH_CHECK_MS = 2_500L
+
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {
                 action = ACTION_START_RINGING
@@ -897,10 +934,19 @@ class RingingService : Service() {
             })
         }
 
-        fun snooze(context: Context, alarmId: String) {
+        /** 소리·진동만 멈춘다. 행 상태는 부른 쪽이 쓴다. */
+        fun stopOutputs(context: Context, alarmId: String) {
+            context.startService(Intent(context, RingingService::class.java).apply {
+                action = ACTION_STOP_OUTPUTS
+                putExtra(EXTRA_ALARM_ID, alarmId)
+            })
+        }
+
+        fun snooze(context: Context, alarmId: String, minutes: Int? = null) {
             context.startService(Intent(context, RingingService::class.java).apply {
                 action = ACTION_SNOOZE
                 putExtra(EXTRA_ALARM_ID, alarmId)
+                minutes?.let { putExtra(EXTRA_SNOOZE_MINUTES, it) }
             })
         }
     }

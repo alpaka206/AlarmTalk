@@ -535,7 +535,11 @@ class AlarmRepository(
      */
     private fun stopRingingIfThisAlarm(alarmId: String) {
         if (RingingService.activeRingingAlarmId != alarmId) return
-        runCatching { RingingService.dismiss(context, alarmId) }
+        // ⚠ **`dismiss` 를 보내지 말 것**(코덱스 #729). 그 경로는 반복 알람을
+        //   `enabled = true` 로 되살리고 다음 회차를 예약한다 — 이 함수를 부르는 쪽은
+        //   방금 끄거나 지운 참이라, 사용자가 끈 알람이 조용히 다시 켜진다.
+        //   소리만 멈추고 행 상태는 부른 쪽이 쓴다.
+        runCatching { RingingService.stopOutputs(context, alarmId) }
             .onFailure { Log.w(TAG, "Failed to stop ringing for removed alarm id=$alarmId", it) }
     }
 
@@ -1280,24 +1284,47 @@ class AlarmRepository(
      * 범위 밖 값은 **조용히 자르지 않고** 무시한다 — 화면이 이미 끝값에서 버튼을 흐리게
      * 두므로 여기 닿는 값은 버그이고, 잘라 저장하면 그 버그가 데이터로 굳는다.
      */
-    suspend fun updateSnoozeMinutes(alarmId: String, minutes: Int) {
+    suspend fun updateSnoozeMinutes(alarmId: String, minutes: Int): Unit = restoreMutex.withLock {
         if (minutes !in SnoozeMinutes.range) {
             Log.w(TAG, "Ignoring out-of-range snooze minutes=$minutes id=$alarmId")
             return
         }
         runCatching {
-            alarmDao.updateSnoozeMinutes(alarmId, minutes, System.currentTimeMillis())
+            val current = alarmDao.getById(alarmId) ?: return
+            if (current.snoozeMinutes == minutes) return
+            // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 생 UPDATE 로 컬럼만 고치면
+            //   `SYNCED` 가 그대로 남아 `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·
+            //   DIRTY·FAILED)에 안 들어간다 — 울림 화면에서 고른 간격이 **서버에 영영
+            //   안 올라가고**, 다른 기기·재설치는 옛 값을 계속 쓴다. 받은 알람은
+            //   `nextLocalSyncState` 가 알아서 SYNCED 로 남긴다(서버 행은 전달 수단일 뿐).
+            alarmDao.upsert(
+                current.copy(
+                    snoozeMinutes = minutes,
+                    syncState = current.nextLocalSyncState(),
+                    updatedAtMillis = System.currentTimeMillis(),
+                ),
+            )
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update snooze minutes id=$alarmId", error)
         }
     }
 
-    suspend fun snooze(alarmId: String): AlarmEntity? = restoreMutex.withLock {
+    /**
+     * @param minutesOverride 울림 화면의 ＋/− 로 방금 고른 간격. 있으면 **이 값으로** 미루고
+     *   행에도 그 값을 남긴다.
+     *
+     * ⚠ **넘겨받는 이유는 경합 때문이다**(코덱스 #729). ＋/− 는 화면에서 비동기로 저장되는데,
+     *   바로 이어 '다시 울리기' 를 누르면 그 쓰기가 끝나기 전에 여기가 행을 읽어 **옛 간격으로
+     *   미뤄진다** — 화면은 6분이라 말하고 알람은 5분 뒤에 온다. 값을 직접 실으면 순서가
+     *   무엇이든 결과가 같다.
+     */
+    suspend fun snooze(alarmId: String, minutesOverride: Int? = null): AlarmEntity? = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")
             return null
         }
+        val snoozeMinutes = minutesOverride?.takeIf { it in SnoozeMinutes.range } ?: current.snoozeMinutes
         // ⚠ **`snoozeEnabled` 를 보지 않는다**(2026-09-09). 편집기에서 그 설정을 없앴으므로
         //   저장된 값은 옛 행에만 남아 있고, 그걸 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때
         //   조용히 꺼진다. 컬럼은 왕복시키되 아무도 읽지 않는다.
@@ -1313,7 +1340,8 @@ class AlarmRepository(
 
         val now = System.currentTimeMillis()
         val next = current.copy(
-            fireAtMillis = now + current.snoozeMinutes * 60_000L,
+            fireAtMillis = now + snoozeMinutes * 60_000L,
+            snoozeMinutes = snoozeMinutes,
             enabled = true,
             snoozeCount = current.snoozeCount + 1,
             state = AlarmStates.SNOOZED,

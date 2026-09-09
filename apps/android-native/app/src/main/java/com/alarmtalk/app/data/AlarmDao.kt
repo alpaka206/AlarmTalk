@@ -211,13 +211,6 @@ interface AlarmDao {
     }
 
     /** 음원·OS 예약까지 확보한 전달 세대를 ACK보다 먼저 영속한다. 사용자 수정 시각은 건드리지 않는다. */
-    /**
-     * 울림 화면의 ＋/− 가 고른 다시 울림 간격. **울리는 중에** 바뀌므로 행 전체를 덮지 않고
-     * 이 컬럼만 건드린다 — 그 사이 다른 곳(동기화·회전 인덱스)이 같은 행을 쓰고 있을 수 있다.
-     */
-    @Query("UPDATE alarms SET snoozeMinutes = :minutes, updatedAtMillis = :updatedAtMillis WHERE id = :id")
-    suspend fun updateSnoozeMinutes(id: String, minutes: Int, updatedAtMillis: Long)
-
     @Query("UPDATE alarms SET remoteDeliveryVersion = :deliveryVersion WHERE id = :id")
     suspend fun markRemoteDeliveryVersion(id: String, deliveryVersion: String): Int
 
