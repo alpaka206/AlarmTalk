@@ -1798,7 +1798,6 @@ internal fun AlarmEditorScreen(
                         AlarmSettingsCard(
                             snoozeEnabled = editor.snoozeEnabled,
                             snoozeMinutes = editor.snoozeMinutes,
-                            snoozeRepeatLimit = editor.snoozeRepeatLimit,
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
@@ -1807,7 +1806,6 @@ internal fun AlarmEditorScreen(
                             showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
                             onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                             onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                            onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
                             onVibrationEnabledChange = {
                                 editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                             },

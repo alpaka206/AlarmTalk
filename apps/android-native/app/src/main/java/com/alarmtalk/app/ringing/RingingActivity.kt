@@ -1,11 +1,18 @@
 package com.alarmtalk.app.ringing
 
+import android.app.KeyguardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.os.SystemClock
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.getSystemService
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -89,7 +96,6 @@ import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellati
 import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -112,6 +118,23 @@ import com.alarmtalk.app.AlarmTalkTypography
 
 class RingingActivity : ComponentActivity() {
     private var alarmId by mutableStateOf<String?>(null)
+    /** 끄기·다시 알림으로 이미 끝냈다 — `onStop` 이 한 번 더 끝내지 않게. */
+    private var handled = false
+
+    /**
+     * 이 화면이 떠 있는 동안 **잠금이 풀린 적이 있는가**.
+     *
+     * 손에 들고 쓰던 폰이라는 뜻이라, 그때는 전원 버튼이 유예 없이 곧바로 든다.
+     * 자세한 이유는 [leavingScreenDecision] 주석 참조.
+     */
+    private var seenUnlocked = false
+
+    /**
+     * **마지막으로 화면에 보이기 시작한 시각.** 액티비티 생성 시각이 아니다 —
+     * 플립커버는 열렸다 닫히기를 반복하는데, 생성 시각으로 재면 두 번째 닫힘부터는
+     * 유예를 지나 버려 **가방 속에서 알람이 꺼진다.**
+     */
+    private var visibleSinceElapsedMs = SystemClock.elapsedRealtime()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,6 +147,25 @@ class RingingActivity : ComponentActivity() {
             var uiState by remember { mutableStateOf(RingingUiState()) }
             val currentAlarmId = alarmId
             val appContext = applicationContext
+            // ⚠ **알림으로 알람이 끝나면 이 화면도 닫혀야 한다.** 액티비티는 서비스 생명주기를
+            //   모르는데 이제 이 화면이 항상 떠 있으므로, 알림의 '해제'·'다시 울리기' 를 누르면
+            //   소리만 멎고 화면은 남는다. 남은 화면의 '밀어서 끄기' 를 밀면 이미 미뤄 둔
+            //   알람에 dismiss 가 한 번 더 나가 **스누즈가 지워진다.**
+            //   ⚠ 처음 한 번은 서비스가 이 알람을 잡을 때까지 기다린다 — `startRinging` 이
+            //   값을 채우기 전에 닫으면 뜨자마자 사라진다.
+            LaunchedEffect(currentAlarmId) {
+                val id = currentAlarmId ?: return@LaunchedEffect
+                var everMatched = false
+                RingingService.activeRingingAlarmIdFlow.collect { active ->
+                    if (active == id) {
+                        everMatched = true
+                    } else if (everMatched) {
+                        handled = true
+                        finishAndRemoveTask()
+                    }
+                }
+            }
+
             LaunchedEffect(currentAlarmId) {
                 uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
@@ -138,10 +180,12 @@ class RingingActivity : ComponentActivity() {
             RingingRoute(
                 uiState = uiState,
                 onDismiss = {
+                    handled = true
                     currentAlarmId?.let { RingingService.dismiss(this, it) }
                     finishAndRemoveTask()
                 },
                 onSnooze = {
+                    handled = true
                     currentAlarmId?.let { RingingService.snooze(this, it) }
                     finishAndRemoveTask()
                 },
@@ -149,7 +193,7 @@ class RingingActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
@@ -168,9 +212,62 @@ class RingingActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        visibleSinceElapsedMs = SystemClock.elapsedRealtime()
+    }
+
     override fun onResume() {
         super.onResume()
+        if (getSystemService<KeyguardManager>()?.isKeyguardLocked != true) seenUnlocked = true
         hideSystemBars()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        dismissOnLeavingScreen()
+    }
+
+    /**
+     * **울림 화면을 벗어나면 알람이 꺼진다**(2026-09-09 지시). 홈·최근앱·앱 전환·전원 버튼이
+     * 전부 같은 한 가지다 — 화면을 떠났다.
+     *
+     * 하단 내비게이션을 막을 수 없다는 사실에 대한 답이기도 하다(막는 대신 나가는 것을 뜻
+     * 있게 만든다). 알람 자체는 여전히 **아무도 멈춰 주지 않는다** — 끄거나 나갈 때까지 운다.
+     *
+     * ⚠ **판정 기준은 '잠금이 풀린 적이 있는가' 하나다**([seenUnlocked]). 이걸 시간이나
+     * 화면 꺼짐 여부로 대신하지 말 것 — 가장 무서운 오탐이 **가방·주머니**다. 알람이
+     * `setTurnScreenOn` 으로 화면을 켠 직후 커버·근접센서가 곧바로 되끄면 `onStop` 이
+     * 오는데, 그걸 '나갔다' 로 읽으면 **자는 사람이 못 일어난다.** 그 상황의 기기는 잠긴
+     * 채이므로 이 기준이 정확히 걸러 낸다. 잠금화면에서 뜬 알람은 애초에 나갈 곳도 없다
+     * (하단 내비가 없다) — 사용자가 말한 '사용중일 때' 가 바로 이 조건이다.
+     *
+     * ⚠ 두 번째 그물로 [LEAVE_GRACE_MS] 를 둔다. 잠금을 막 푼 순간 커버가 닫히는 경합이 남는다.
+     *
+     * ⚠ **`isChangingConfigurations` 를 빼지 말 것** — 설정 변경으로 액티비티가 다시 만들어지는
+     * 동안에도 `onStop` 은 온다. 빼면 그 한 번이 알람을 끝낸다.
+     */
+    private fun dismissOnLeavingScreen() {
+        val id = alarmId ?: return
+        // 화면이 꺼져서 떠난 것인지(전원 버튼·커버) 다른 화면으로 간 것인지(전화·홈·앱 전환).
+        // 판정에도 쓰고 기록에도 남긴다 — 오탐이 나고 있어도 구분되지 않으면 알 수 없다.
+        val screenOff = getSystemService<PowerManager>()?.isInteractive == false
+        val decision = leavingScreenDecision(
+            handled = handled,
+            changingConfigurations = isChangingConfigurations,
+            isActiveRingingAlarm = RingingService.activeRingingAlarmId == id,
+            screenOff = screenOff,
+            seenUnlocked = seenUnlocked,
+            elapsedSinceShownMs = SystemClock.elapsedRealtime() - visibleSinceElapsedMs,
+        )
+        if (decision != LeavingScreenDecision.DISMISS) {
+            Log.i(TAG, "Left ringing screen but keeping the alarm: $decision")
+            return
+        }
+        handled = true
+        Log.i(TAG, "Left ringing screen; dismissing id=$id screenOff=$screenOff")
+        RingingService.dismissForLeavingScreen(this, id, screenOff)
+        finishAndRemoveTask()
     }
 
     override fun onUserLeaveHint() {
@@ -222,13 +319,80 @@ class RingingActivity : ComponentActivity() {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
+
+    private companion object {
+        const val TAG = "RingingActivity"
+
+    }
 }
+
+/** [leavingScreenDecision] 의 답. 무시할 때는 **왜** 무시했는지가 로그에 남아야 한다. */
+internal enum class LeavingScreenDecision {
+    DISMISS,
+
+    /** 끄기·다시 알림으로 이미 끝냈다. */
+    ALREADY_HANDLED,
+
+    /** 설정 변경으로 다시 만들어지는 중 — 떠난 것이 아니다. */
+    RECREATING,
+
+    /** 이미 다른 알람이 울리는 중이거나 이 알람은 끝났다. */
+    NOT_THE_RINGING_ALARM,
+
+    /**
+     * **잠긴 기기의 화면이 뜬 직후 꺼졌다 = 사람이 아니라 기계다.**
+     * 가방·주머니·플립커버가 되끈 경우다. 유일하게 남은 오탐 방어선이다.
+     */
+    MACHINE_TURNED_SCREEN_OFF,
+}
+
+/**
+ * 울림 화면을 떠났을 때 알람을 끌지 가른다.
+ *
+ * **기본은 끄는 것이다**(2026-09-09 지시). 전원 버튼이든 전화든 홈이든, 잠금 여부와
+ * 무관하게 화면을 떠나면 알람은 끝난다 — 알람이 울린다고 전화를 못 받게 할 수는 없다.
+ *
+ * ⚠ **예외는 하나뿐이고, 지우지 말 것.** 잠긴 기기에서 **뜬 직후**([graceMs] 안에) 화면이
+ * 꺼진 경우다. 사람이 그 사이에 반응하기는 어렵고, 그 시간대에 화면을 끄는 것은 대개
+ * **가방·주머니·플립커버**다. 이걸 '나갔다' 로 읽으면 **자는 사람이 못 일어난다** — 이 앱에서
+ * 가장 나쁜 결과라, 모르면 울리는 쪽으로 기운다.
+ *
+ * 잠금이 풀린 적이 있으면 이 예외도 걸지 않는다. 손에 들고 쓰던 폰이 그 순간 주머니로
+ * 들어갈 일은 없고, 그때는 전원 버튼이 **곧바로** 들어야 한다.
+ *
+ * 화면이 켜진 채 떠난 것(전화·홈·앱 전환)은 언제나 사람이 한 일이라 유예를 두지 않는다.
+ *
+ * 액티비티에서 떼어 낸 것은 이 규칙만 따로 검사하기 위해서다(`LeavingScreenDecisionTest`).
+ * 순서가 곧 우선순위다.
+ */
+internal fun leavingScreenDecision(
+    handled: Boolean,
+    changingConfigurations: Boolean,
+    isActiveRingingAlarm: Boolean,
+    screenOff: Boolean,
+    seenUnlocked: Boolean,
+    elapsedSinceShownMs: Long,
+    graceMs: Long = LEAVE_GRACE_MS,
+): LeavingScreenDecision = when {
+    handled -> LeavingScreenDecision.ALREADY_HANDLED
+    changingConfigurations -> LeavingScreenDecision.RECREATING
+    !isActiveRingingAlarm -> LeavingScreenDecision.NOT_THE_RINGING_ALARM
+    screenOff && !seenUnlocked && elapsedSinceShownMs < graceMs ->
+        LeavingScreenDecision.MACHINE_TURNED_SCREEN_OFF
+    else -> LeavingScreenDecision.DISMISS
+}
+
+/** 잠긴 기기에서 이만큼 안에 화면이 꺼지면 사람이 아니라 기계로 본다. */
+internal const val LEAVE_GRACE_MS = 3_000L
 
 /**
  * 울림 화면 (2026-09-06 다시 그림).
  *
- * 자다 깬 사람이 3초 안에 알아야 할 것은 **몇 시인가**와 **무엇이 울리는가** 둘이다. 그래서
- * 시계가 가장 크고, 문구는 카드 없이 시계 아래에 바로 놓는다. 색은 여기서 새로 짓지 않는다 —
+ * 자다 깬 사람이 3초 안에 알아야 할 것은 **몇 시인가**와 **어떻게 끄는가** 둘이다. 그래서
+ * 시계가 가장 크고, 문구는 카드 없이 시계 아래에 바로 놓는다.
+ * ⚠ **문구가 없으면 그 자리는 비운다**(2026-09-09). 예전에는 '무엇이 울리는가' 를 알리려고
+ * "알람음" 칩을 놓았는데, 재생 방식은 잠결에 필요한 정보가 아니라 시선만 하나 더 만들었다 —
+ * 칩을 되살리지 말 것. 색은 여기서 새로 짓지 않는다 —
  * 잠금화면 위라 앱 테마를 상속하지는 않지만 값은 전부 `AlarmTalkDarkColorScheme` 과 홈 탭
  * 그라데이션(`HomeGradientDark`)에서 온다. 예전에는 이 파일에만 있는 고정색 8종이었고, 잠금화면에서
  * 앱으로 넘어가면 다른 앱처럼 보였다.
@@ -280,13 +444,10 @@ private fun RingingRoute(
                 // 시계 바로 아래 붙이니 화면 가운데가 통째로 비어 보였다). 위 0.5 : 아래 1 비율.
                 Spacer(Modifier.height(24.dp))
                 Spacer(Modifier.weight(0.5f))
-                val voice = uiState.voiceText
-                if (voice != null) {
-                    RingingMessage(voice)
-                } else {
-                    // 문구가 없는 알람은 빈 카드를 그리지 않는다 — 무엇이 울리는지 칩 하나로 말한다.
-                    RingingToneChip()
-                }
+                // ⚠ **문구가 없으면 그 자리는 비운다**(2026-09-09 지시). 예전에는 '알람음' 칩을
+                //   대신 놓았는데, 재생 방식이 알람음이라는 것은 **잠결에 필요한 정보가 아니다** —
+                //   지금 필요한 건 몇 시인가와 어떻게 끄는가 둘뿐이라, 칩은 시선만 하나 더 만들었다.
+                uiState.voiceText?.let { RingingMessage(it) }
 
                 Spacer(Modifier.weight(1f))
 
@@ -394,36 +555,6 @@ private fun RingingMessage(text: String) {
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,
     )
-}
-
-@Composable
-private fun RingingToneChip() {
-    // 채움은 두지 않는다 — surface(#1B2542)는 그 자리 바닥과 1.03:1 이라 있어도 안 보인다.
-    Surface(
-        shape = WakerPillShape,
-        color = Color.Transparent,
-        border = ringingEdge(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Notifications,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = stringResource(R.string.rd_tone_only),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
 }
 
 /**

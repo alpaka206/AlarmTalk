@@ -1283,13 +1283,15 @@ class AlarmRepository(
             Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
             return null
         }
-        if (
-            current.snoozeRepeatLimit != SnoozeRepeatLimits.FOREVER &&
-            current.snoozeCount >= current.snoozeRepeatLimit
-        ) {
-            Log.i(TAG, "Snooze ignored because repeat limit reached id=$alarmId")
-            return null
-        }
+        // ⚠ **횟수 한도를 여기서 다시 만들지 말 것**(2026-09-09 지시 "무제한"). 예전에는
+        //   `snoozeRepeatLimit` 를 읽어 한도를 넘으면 null 을 돌려줬고, 그러면
+        //   `RingingService.snooze` 가 **알람을 끝냈다** — 사용자는 '다시 울리기' 를 눌렀는데
+        //   알람이 꺼지는 것을 봤다.
+        //   `snoozeRepeatLimit` 컬럼은 남아 있지만 **아무도 읽지 않는다**
+        //   (`AlarmEntity.canSnoozeNow` 도 `snoozeEnabled` 하나만 본다). 서버로도 나가지
+        //   않는다 — `network/` 의 어떤 매퍼에도 이 필드가 없다. 즉 순수 로컬 사장 컬럼이라,
+        //   CLAUDE.md 의 「안 쓰는 컬럼은 DROP 한다」 규약에 따라 **다음 마이그레이션에서
+        //   지워도 된다**(이번 변경에서는 범위를 넓히지 않으려고 두었다).
 
         val now = System.currentTimeMillis()
         val next = current.copy(

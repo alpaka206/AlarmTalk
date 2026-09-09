@@ -494,10 +494,6 @@ struct AlarmEditorSheet: View {
                 SnoozeSettingsPane(
                     enabled: $draft.snoozeEnabled,
                     minutes: $draft.snoozeMinutes,
-                    repeatLimit: Binding(
-                        get: { draft.snoozeRepeatLimit.rawValue },
-                        set: { draft.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: $0) ?? .three }
-                    )
                 )
             case .alarmSound:
                 AlarmSoundSettingsPane(
@@ -1664,10 +1660,11 @@ struct AlarmEditorSheet: View {
     }
 
     /// 세부 설정 카드의 '다시 울림' 요약.
+    ///
+    /// ⚠ 횟수를 붙이지 말 것 — 다시 울림은 무제한이다(2026-09-09, 안드로이드와 같다).
     private var snoozeSummary: String {
         guard draft.snoozeEnabled else { return "꺼짐" }
-        let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)
-        return "\(draft.snoozeMinutes)분 · \(limit)"
+        return "\(draft.snoozeMinutes)분"
     }
 
     // MARK: - 같은 문구 재사용 (입력 캐시)

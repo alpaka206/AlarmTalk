@@ -82,7 +82,6 @@ internal fun rememberDefaultAlarmSoundTitle(): String {
 internal fun AlarmSettingsCard(
     snoozeEnabled: Boolean,
     snoozeMinutes: Int,
-    snoozeRepeatLimit: Int,
     vibrationPattern: String,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
@@ -90,7 +89,6 @@ internal fun AlarmSettingsCard(
     showAlarmSound: Boolean,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
-    onSnoozeRepeatLimitChange: (Int) -> Unit,
     onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
     onAlarmVolumeChange: (Int) -> Unit,
@@ -117,7 +115,7 @@ internal fun AlarmSettingsCard(
                 AlarmSettingRow(
                     title = stringResource(R.string.editor_snooze_title),
                     subtitle = if (snoozeEnabled) {
-                        stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(context, snoozeRepeatLimit))
+                        stringResource(R.string.editor_snooze_summary, snoozeMinutes)
                     } else {
                         stringResource(R.string.editor_off)
                     },

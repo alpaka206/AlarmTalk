@@ -15,7 +15,6 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -120,13 +119,6 @@ internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     )
 }
 
-
-internal fun snoozeRepeatLabel(context: Context, limit: Int): String = when (limit) {
-    SnoozeRepeatLimits.THREE -> context.getString(R.string.label_snooze_repeat_three)
-    SnoozeRepeatLimits.FIVE -> context.getString(R.string.label_snooze_repeat_five)
-    SnoozeRepeatLimits.FOREVER -> context.getString(R.string.label_snooze_repeat_forever)
-    else -> context.getString(R.string.label_snooze_repeat_count, limit)
-}
 
 // 패턴 이름은 알람음 이름(예: Homecoming)과 같은 고유명 취급 — 전 로케일 영어 고정
 // (base strings 에 translatable=false). '기본'·'꺼짐' 같은 의미어만 로컬라이즈한다.

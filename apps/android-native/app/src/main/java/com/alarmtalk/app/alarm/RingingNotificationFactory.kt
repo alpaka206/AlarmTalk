@@ -22,13 +22,13 @@ internal class RingingNotificationFactory(
      *   두 경로 모두 카테고리(CATEGORY_ALARM)·전체화면 인텐트·해제/스누즈 액션을 동일하게 유지한다.
      */
     /**
-     * @param snoozeAvailable 다시 울림을 **지금 누를 수 있는가**(꺼져 있거나 한도에 닿았으면 false).
+     * @param snoozeAvailable 다시 울림을 **지금 누를 수 있는가**(= `AlarmEntity.canSnoozeNow`,
+     *   지금은 `snoozeEnabled` 하나다).
      *
-     * ⚠ **울림 화면과 같은 기준이어야 한다**(2026-09-09 확인). 예전에는 이 액션을 조건 없이
-     * 붙였는데, 한도에 닿으면 `AlarmRepository.snooze` 가 null 을 돌려주고 `RingingService`
-     * 가 그때 **알람을 끝낸다** — 즉 '다시 울리기' 를 눌렀는데 알람이 꺼졌다.
-     * 울림 화면은 같은 상황에서 버튼을 아예 숨긴다(`RingingActivity` 의 `snoozeAvailable`).
-     * 두 표면이 같은 알람에 대해 다른 말을 하고 있었다.
+     * ⚠ **울림 화면과 같은 기준이어야 한다.** 어긋나면 `AlarmRepository.snooze` 가 null 을
+     * 돌려주고 `RingingService` 가 그때 **알람을 끝낸다** — '다시 울리기' 를 눌렀는데 알람이
+     * 꺼진다. 조건을 여기 손으로 다시 조립하지 말고 `canSnoozeNow` 를 부를 것.
+     * (횟수 한도는 2026-09-09 에 없앴다 — 되살리지 말 것.)
      */
     fun build(
         alarmId: String,
@@ -83,9 +83,17 @@ internal class RingingNotificationFactory(
         if (!fallback) {
             // 정상 경로: 소리는 RingingService 의 MediaPlayer 가 담당 → 알림은 무음(중복 소리 방지).
             builder.setSound(null).setVibrate(null)
-            // 화면이 켜져 있고 잠금이 풀려 있으면 RingingService 가 울림 화면을 띄우지 않으므로
-            // 이 알림이 유일한 해제 UI 다. 그런데 targetSdk 34+ 에서는 setOngoing(true) 로도
-            // 스와이프 제거를 막지 못한다(Android 13 FGS 스와이프 허용 + 14 의 ongoing 무력화).
+            // ⚠ 갱신에서 배너를 다시 띄우지 않는다. 이제 울림 화면이 **항상** 뜨므로
+            //   (`RingingService.openRingingActivity`) 배너가 그 위에 겹치는데, 다시 울림
+            //   가능 여부가 바뀌어 이 알림을 재게시할 때 겹침이 한 번 더 생긴다.
+            //   ⚠ **폴백에는 걸지 않는다** — 그 경로는 알림 **채널이 소리를 내는 것**이
+            //   존재 이유고(FGS 를 못 띄워 MediaPlayer 가 없다), 같은 id(1001)를 갱신하는
+            //   순간이 오면 ONLY_ALERT_ONCE 가 그 소리를 **삼킨다.**
+            builder.setOnlyAlertOnce(true)
+            // 울림 화면은 이제 **항상** 뜨지만(`RingingService.openRingingActivity`), 그 액티비티
+            // 시작이 OS 에 막히면 이 알림이 남는 유일한 해제 UI 다. 그리고 스와이프 제거를
+            // 막을 수 있는지는 **기기 OS 가 정한다** — 13 은 `setOngoing(true)` 로 막히고,
+            // 14+ 는 막지 못한다(스펙 §2 표 참조).
             // 삭제 인텐트가 없으면 배너만 사라지고 톤·목소리·진동이 무기한 계속된다 →
             // 스와이프도 '해제'로 취급한다.
             builder.setDeleteIntent(

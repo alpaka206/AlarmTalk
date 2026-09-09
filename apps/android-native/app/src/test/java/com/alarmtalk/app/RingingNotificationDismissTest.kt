@@ -12,8 +12,8 @@ import org.robolectric.annotation.Config
 /**
  * 울림 알림 스와이프 제거 회귀 가드.
  *
- * 화면이 켜져 있고 잠금이 풀려 있으면 RingingService 가 울림 화면을 띄우지 않아, 이 알림이
- * 유일한 해제 UI 다. targetSdk 34+ 에서는 setOngoing(true) 로도 스와이프 제거를 막지 못하므로
+ * 울림 화면은 이제 기기 상태와 무관하게 항상 뜨지만(2026-09-09), 그 액티비티 시작이 OS 에
+ * 막히면 이 알림이 **남는 유일한 해제 UI** 다. targetSdk 34+ 에서는 setOngoing(true) 로도 스와이프 제거를 막지 못하므로
  * (Android 13 의 FGS 알림 스와이프 허용 + 14 의 ongoing 무력화), deleteIntent 가 없으면
  * 배너만 사라지고 톤·목소리·진동이 무기한 계속된다.
  *

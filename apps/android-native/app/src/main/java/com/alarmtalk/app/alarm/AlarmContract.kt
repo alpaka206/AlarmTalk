@@ -13,5 +13,14 @@ object AlarmContract {
      * 목소리가 몇 초 더 나오면 "안 꺼졌다"로 느껴지기 때문.
      */
     const val ACTION_DISMISS_SILENT = "com.alarmtalk.app.action.DISMISS_SILENT"
+
+    /**
+     * **울림 화면을 벗어났다**(홈·최근앱·앱 전환·전원 버튼 — 2026-09-09 지시).
+     *
+     * `ACTION_DISMISS` 와 결과는 같지만 액션을 갈라 둔다 — 이 경로는 사용자가 '끄기' 를
+     * 누르지 않은 유일한 해제라 오탐 가능성이 있다(플립커버·근접센서·전화 수신).
+     * 로그와 사용 기록에서 구분되지 않으면 오탐이 나고 있어도 아무도 알 수 없다.
+     */
+    const val ACTION_DISMISS_LEFT_SCREEN = "com.alarmtalk.app.action.DISMISS_LEFT_SCREEN"
     const val EXTRA_ALARM_ID = "com.alarmtalk.app.extra.ALARM_ID"
 }

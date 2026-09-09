@@ -31,7 +31,6 @@
 		14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */; };
 		1594BA4E516859CF2C50DCFA /* voice_greeting_dohyun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 2B816ECA535DDD4DF4F3D173 /* voice_greeting_dohyun_ja.mp3 */; };
 		15A5B1EC292BE3B14658F982 /* VoiceStudioViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BC54CB113C89792079DBAF /* VoiceStudioViewModel.swift */; };
-		15D56324F71243939700EEA4 /* SnoozeRepeatLimitPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D168075D98C6B47603E2133 /* SnoozeRepeatLimitPicker.swift */; };
 		17D3A1884C86F11C693AF962 /* TimeWheelSettleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DFEB7343510C3EED544917B /* TimeWheelSettleTests.swift */; };
 		17F0A605705BECE8DBE9DEBB /* UIPreviewSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 529F45FCEA815E7AD154E399 /* UIPreviewSeed.swift */; };
 		1BA058526C5FAF5721BA9F33 /* AlarmIntentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F3CB496801850A36588DBD5 /* AlarmIntentsTests.swift */; };
@@ -515,7 +514,6 @@
 		6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceStudioViewModelTests.swift; sourceTree = "<group>"; };
 		6C33B74B73D468DD0A54CBA5 /* RemoteAlarmMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapper.swift; sourceTree = "<group>"; };
 		6C888F3A407F04A9A8E871EE /* AudioPreviewTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreviewTarget.swift; sourceTree = "<group>"; };
-		6D168075D98C6B47603E2133 /* SnoozeRepeatLimitPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeRepeatLimitPicker.swift; sourceTree = "<group>"; };
 		6DFEB7343510C3EED544917B /* TimeWheelSettleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettleTests.swift; sourceTree = "<group>"; };
 		6E362F291A9E83445BE588E2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		6F10C03ABE07CF4A44D21B61 /* AlarmTalkTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AlarmTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -994,7 +992,6 @@
 				C2045E291994B947F86212FC /* HolidayUpcomingList.swift */,
 				8196F91EF515F9CE279AF0F9 /* MessageSettingsPane.swift */,
 				956BC28B0AE290CC6A39878E /* RepeatWeekdayChips.swift */,
-				6D168075D98C6B47603E2133 /* SnoozeRepeatLimitPicker.swift */,
 				0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */,
 				9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */,
 				85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */,
@@ -1614,7 +1611,6 @@
 				CF47E876E2B1D1AF14960521 /* SessionTokenRenewal.swift in Sources */,
 				BB470280C0AFF88637CA39EC /* SettingsView.swift in Sources */,
 				B9B1EF2F50B9D315BC21BCC0 /* SheetContentHeight.swift in Sources */,
-				15D56324F71243939700EEA4 /* SnoozeRepeatLimitPicker.swift in Sources */,
 				4F17B4ED7CC3C97D426E515A /* SocialFeatureViewModel.swift in Sources */,
 				AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */,
 				5A349203209B2A59A2F185F0 /* StockClipLanguageRebinder.swift in Sources */,

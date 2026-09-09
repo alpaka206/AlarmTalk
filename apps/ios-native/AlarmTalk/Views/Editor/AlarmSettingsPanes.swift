@@ -68,13 +68,9 @@ private struct PaneScaffold<Content: View>: View {
 struct SnoozeSettingsPane: View {
     @Binding var enabled: Bool
     @Binding var minutes: Int
-    @Binding var repeatLimit: Int
 
-    /// 안드로이드 `AlarmSnoozeSettings.kt` 의 프리셋. '직접 입력' 은 알럿으로 받는다.
-    private static let presets = [5, 10, 15, 30]
-
-    @State private var customOpen = false
-    @State private var customDraft = ""
+    /// 안드로이드 `AlarmSnoozeSettings.kt` 의 `SnoozeMinutes.range` 와 같은 값이다.
+    private static let range = 1...30
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.snooze.title) {
@@ -85,57 +81,57 @@ struct SnoozeSettingsPane: View {
             }
 
             if enabled {
+                // ⚠ **간격은 스테퍼 하나다**(2026-09-09 지시, 안드로이드 `SnoozeIntervalStepper`
+                //   미러). 예전에는 프리셋 라디오 + '직접 입력' 알럿이었는데, 고를 값이 몇 개뿐이라
+                //   대부분 알럿을 열어야 했다. ＋/− 로 1분씩 움직이면 목록도 모달도 필요 없다.
+                // ⚠ **「최대 반복 횟수」를 되살리지 말 것.** 다시 울림은 무제한이다 —
+                //   `LocalAlarmRecord.canSnooze` 는 `snoozeEnabled` 만 본다. 예전에는 이 화면이
+                //   3회/5회를 고르게 해 놓고 실제로는 무한히 미뤄져, **화면이 약속한 것과 앱
+                //   동작이 영구히 어긋나 있었다.**
                 EditorSectionTitle(text: "간격")
                 EditorCard(verticalPadding: 0) {
-                    ForEach(Array(Self.presets.enumerated()), id: \.element) { index, value in
-                        if index > 0 { AlarmSettingDivider() }
-                        RadioRow(label: "\(value)분", selected: minutes == value) { minutes = value }
-                    }
-                    AlarmSettingDivider()
-                    RadioRow(
-                        label: Self.presets.contains(minutes) ? "직접 입력" : "직접 입력 (\(minutes)분)",
-                        selected: !Self.presets.contains(minutes)
-                    ) {
-                        customDraft = String(minutes)
-                        customOpen = true
-                    }
-                }
-
-                EditorSectionTitle(text: "최대 반복 횟수")
-                EditorCard(verticalPadding: 0) {
-                    ForEach(Array(SnoozeRepeatLimit.validValues.enumerated()), id: \.element) { index, value in
-                        if index > 0 { AlarmSettingDivider() }
-                        RadioRow(label: Self.repeatLabel(value), selected: repeatLimit == value) {
-                            repeatLimit = value
-                        }
-                    }
+                    SnoozeIntervalStepper(minutes: $minutes, range: Self.range)
                 }
             }
-        }
-        .alert("간격 직접 설정", isPresented: $customOpen) {
-            TextField("분", text: $customDraft).keyboardType(.numberPad)
-            Button("취소", role: .cancel) { }
-            Button("확인") {
-                if let value = Int(customDraft.filter(\.isNumber)), (1...30).contains(value) {
-                    minutes = value
-                }
-            }
-            // ⚠ **범위를 벗어나면 잘라서 저장하지 말 것**(2026-08-17 안드로이드와 통일).
-            // 45 를 넣으면 30 이 저장되는데 화면은 그 사실을 말하지 않아, 사용자는 자기가
-            // 넣은 값이 들어간 줄 안다. 안드로이드는 처음부터 **버튼을 흐리게** 두고 아래에
-            // 이유를 적는다(Codex #671 P2 — '눌러도 아무 일이 없는 것' 은 고장과 구분되지
-            // 않는다). 서버 계약도 1–30 이다(`snooze_minutes`).
-            .disabled(!(1...30).contains(Int(customDraft.filter(\.isNumber)) ?? 0))
-        } message: {
-            Text("1분부터 30분까지 정할 수 있어요.")
         }
     }
+}
 
-    static func repeatLabel(_ value: Int) -> String {
-        // ⚠ 여기서 `String(localized:)` 로 **미리** 번역해 둔다. `RadioRow` 는 이미
-        // 번역된 문자열(진동 `displayName` 등)도 받으므로 라벨을 `LocalizedStringKey`
-        // 로 받을 수 없다 — 그러면 번역 결과를 한 번 더 조회하게 된다.
-        value == 0 ? String(localized: "무제한") : String(localized: "\(value)회")
+/// 다시 울림 간격 — 가운데 값, 좌우 ＋/− 로 1분씩.
+/// 끝값에서는 버튼을 흐리게 둔다 — 눌리지 않는 이유가 눈에 보여야 한다.
+private struct SnoozeIntervalStepper: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Binding var minutes: Int
+    let range: ClosedRange<Int>
+
+    var body: some View {
+        HStack {
+            stepButton("\u{2212}", enabled: minutes > range.lowerBound) {
+                minutes = max(range.lowerBound, minutes - 1)
+            }
+            Spacer()
+            Text("\(minutes)분")
+                .font(theme.typography.titleMedium)
+                .foregroundStyle(theme.palette.onSurface)
+            Spacer()
+            stepButton("+", enabled: minutes < range.upperBound) {
+                minutes = min(range.upperBound, minutes + 1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private func stepButton(_ label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(theme.palette.onSurface)
+                .frame(width: 44, height: 44)
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(label == "+" ? "1분 늘리기" : "1분 줄이기")
     }
 }
 
