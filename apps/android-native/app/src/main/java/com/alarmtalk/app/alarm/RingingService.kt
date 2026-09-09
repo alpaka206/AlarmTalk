@@ -127,8 +127,20 @@ class RingingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val alarmId = intent?.getStringExtra(EXTRA_ALARM_ID)
-        return when (intent?.action) {
+        // ⚠ **인텐트가 null 이면 시스템이 `START_STICKY` 로 되살린 것이다**(2026-09-08).
+        //   예전에는 아래 `when` 의 `else` 로 떨어져 **아무 일도 하지 않았다** —
+        //   `startForeground` 도 `stopSelf` 도 없이 살아 있어 **알림 없는 좀비 서비스**가
+        //   남았고, 그 상태가 "울림 알림이 사라졌다" 로 보인다.
+        //   어느 알람이었는지 알 방법이 없으니(STICKY 는 인텐트를 버린다) 깨끗이 끝낸다.
+        //   ⚠ `stopRingingOutputs` 는 부르지 않는다 — 이 인스턴스는 아무것도 들고 있지 않고,
+        //   그 사이 다른 알람이 시작했으면 **남의 소리를 끄게 된다.**
+        if (intent == null) {
+            Log.w(TAG, "RingingService recreated without an intent; stopping instead of lingering")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        return when (intent.action) {
             ACTION_START_RINGING -> {
                 if (alarmId.isNullOrBlank()) {
                     Log.w(TAG, "RingingService start requested without alarm id")
@@ -143,7 +155,8 @@ class RingingService : Service() {
                 // 어느 경로로 해제됐는지 남긴다 — 알림 버튼/울림 화면 슬라이더와 '알림이
                 // 사라져서'(SILENT)를 로그만으로 구분할 수 있어야 자동 해제를 추적할 수 있다.
                 Log.i(TAG, "Dismiss requested by user action id=$alarmId")
-                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                // id 가 없으면 할 일이 없다 — 그래도 **끝내야** 알림 없는 서비스가 안 남는다.
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
@@ -152,16 +165,21 @@ class RingingService : Service() {
             // 알림 delete intent 가 이미 이 액션을 가리키고 있고, 구버전 알림이 살아 있을 수 있다.
             ACTION_DISMISS_SILENT -> {
                 Log.i(TAG, "Dismiss requested by notification removal id=$alarmId")
-                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
             ACTION_SNOOZE -> {
-                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId)
+                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
-            else -> START_NOT_STICKY
+            else -> {
+                // 모르는 액션도 그냥 두지 않는다 — 위 null 갈래와 같은 이유다.
+                Log.w(TAG, "RingingService got an unknown action=${intent.action}")
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
         }
     }
 

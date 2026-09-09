@@ -273,6 +273,7 @@ struct AlarmSoundSettingsPane: View {
 /// 저장값(`voiceRepeat`)은 계속 true 로 왕복시킨다.
 struct VoiceOutputSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @Binding var volumePercent: Int
     /// 지금 크기로 **인사말 샘플**을 들려준다. 재생 중이면 정지.
     ///
@@ -287,6 +288,13 @@ struct VoiceOutputSettingsPane: View {
     var onVolumeSettled: (() -> Void)?
     /// 끄는 동안 매 값마다. 재생 중이면 다시 틀지 않고 크기만 바꾼다.
     var onVolumeLive: ((Int) -> Void)?
+    /// **이 화면을 떠난다** — 미리듣기를 끈다(2026-09-08 지시).
+    ///
+    /// ⚠ **나가는 길이 셋이다**: 뒤로가기 버튼 · 가장자리 스와이프 · 앱이 뒤로 감.
+    /// 앞의 둘은 `onDisappear`, 마지막은 `scenePhase` 다 — `Info.plist` 에
+    /// `UIBackgroundModes: audio` 가 있어 **백그라운드에서도 계속 재생된다.**
+    /// 판정을 pane 안에 두어 새 호출자가 빠뜨리지 못하게 한다.
+    var onLeave: (() -> Void)?
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.voiceOutput.title) {
@@ -336,6 +344,10 @@ struct VoiceOutputSettingsPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 12)
             }
+        }
+        .onDisappear { onLeave?() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { onLeave?() }
         }
     }
 }

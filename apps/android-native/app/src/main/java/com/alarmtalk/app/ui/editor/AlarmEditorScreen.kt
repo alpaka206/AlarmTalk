@@ -49,6 +49,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
@@ -1515,6 +1518,31 @@ internal fun AlarmEditorScreen(
     // 여기서 또 가로채 '반영 없이 닫기' 를 하면 순서가 뒤집히는 날 값이 조용히 사라진다.
     BackHandler(enabled = settingsDetailPanel != null) {
         settingsDetailPanel = null
+    }
+
+    // ⚠ **목소리 크기 화면에서 나오면 미리듣기가 꺼진다**(2026-09-08 지시).
+    // 슬라이더에서 손을 떼면 자동으로 소리가 나므로, 나가는 순간 끄지 않으면 편집기
+    // 본문·다른 pane 에서 인사말이 계속 들린다.
+    //
+    // ⚠ **닫는 자리마다 손으로 붙이지 말 것.** 나가는 길이 셋이다(상단바 뒤로가기,
+    // 시스템 뒤로가기 → 위 `BackHandler`, 재생 방식이 바뀌어 pane 이 갈리는 경우).
+    // 셋에 각각 붙이면 새 경로가 빠진다 — **판정은 '지금 열린 pane 이 무엇인가' 하나**다.
+    // 목소리 선택 시트의 미리듣기는 `settingsDetailPanel` 이 null 인 채로 도므로 이 효과가
+    // 다시 돌지 않아 끊기지 않는다.
+    // iOS 짝은 `VoiceOutputSettingsPane` 의 `onLeave`.
+    LaunchedEffect(settingsDetailPanel) {
+        if (settingsDetailPanel != "voice_output") voicePreview.stopPreview()
+    }
+
+    // 앱이 뒤로 가는 것도 '나가는 것' 이다 — `MediaPlayer` 는 화면을 떠나도 계속 운다.
+    // (iOS 짝은 같은 pane 의 `scenePhase` 감시.)
+    val previewLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(previewLifecycleOwner, voicePreview) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) voicePreview.stopPreview()
+        }
+        previewLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { previewLifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(editor.playMode, editor.alarmSoundEnabled) {

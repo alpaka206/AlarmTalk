@@ -803,7 +803,8 @@ struct AlarmEditorSheet: View {
             VoiceOutputSettingsPane(
                 volumePercent: $draft.voiceVolumePercent,
                 onVolumeSettled: { ensureVoicePreviewAtVolume(voiceId: voiceId, volumePercent: draft.voiceVolumePercent) },
-                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) }
+                onVolumeLive: { voiceStudio.previewPlayer.setVolume(percent: $0) },
+                onLeave: stopVoiceVolumePreview
             )
         } else {
             VoiceOutputSettingsPane(volumePercent: $draft.voiceVolumePercent)
@@ -823,6 +824,15 @@ struct AlarmEditorSheet: View {
             title: "이번 달 만들기 횟수를 다 썼어요",
             message: "직접 입력 문구는 한 달에 \(quota.limit)번까지 새로 만들 수 있어요. 이미 만들어 둔 문구는 그대로 쓸 수 있어요."
         )
+    }
+
+    /// 목소리 크기 화면을 떠날 때 — 미리듣기를 끈다(뒤로가기·스와이프·앱 백그라운드).
+    ///
+    /// ⚠ **표식(`previewingGreetingVoiceId`)도 함께 지운다.** 남겨 두면 목소리 행의
+    /// 재생 버튼이 '정지' 아이콘으로 굳는다.
+    func stopVoiceVolumePreview() {
+        voiceStudio.previewPlayer.stop()
+        voiceStudio.previewingGreetingVoiceId = nil
     }
 
     /// 슬라이더에서 손을 뗐을 때 — 듣고 있으면 크기만 맞추고, 아니면 튼다.
