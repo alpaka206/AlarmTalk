@@ -475,8 +475,54 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: ['play-token-hard-5'],
     });
     expect(retained.rows.length).toBe(1);
-    // 기준일이 2018 이 아니라 2030(마지막으로 확인된 기간의 끝)이다.
-    expect(String(retained.rows[0]!.retain_until) > '2034-01-01').toBe(true);
+    // 기준일이 2018 이 아니라 **지금 기간의 시작**(2030-01-01 − 30일 ≈ 2029-12-02)이다.
+    const retainUntil = String(retained.rows[0]!.retain_until);
+    expect(retainUntil > '2034-11-01').toBe(true);
+    // ⚠ **기간의 끝(2030-01-01)을 쓰면 2035-01-01 이 된다 — 한 주기만큼 더 남는다.**
+    //   프로모처럼 기간이 길면 그 초과가 몇 년이 되어 처리방침의 최대 5년을 넘긴다
+    //   (코덱스 #734 3차).
+    expect(retainUntil < '2035-01-01').toBe(true);
+  });
+
+  it('기간이 긴 부여는 초과 보존이 더 커진다 — 그래서 기간의 끝을 쓰지 않는다', async () => {
+    // 3년짜리 수동 부여를 흉내 낸다. 기간의 끝을 기준으로 삼으면 결제일로부터 8년이 남는다.
+    const SUB8 = 'hard-del-sub-6';
+    const PK8 = 'hard-del-pk-6';
+    const LONG_PLAN = 'plan-long-grant';
+    await db.execute({
+      sql: `INSERT INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
+            VALUES (?, 'long_grant', '장기부여', 'personal', 1095, 1, 0, 0)`,
+      args: [LONG_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK8, SUB8, 'harddel6@test.com', 'Hard Delete 6'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-01-01', '2029-01-01')`,
+      args: ['sub-hard-6', PK8, LONG_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'long_grant', 'long_grant', ?, '2026-01-01T00:00:00.000Z')`,
+      args: ['st-hard-6', PK8, 'play-token-hard-6', 'sub-hard-6'],
+    });
+
+    const res = await buildApp(SUB8, PK8).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-6'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 결제일(2026-01-01)로부터 5년 — 기간의 끝(2029-01-01)을 썼다면 2034 가 됐을 것이다.
+    expect(String(retained.rows[0]!.retain_until) < '2032-01-01').toBe(true);
   });
 
   it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {

@@ -47,7 +47,12 @@ export async function pseudonymizeBillingForRetention(
   const subs = await tx.execute({
     sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
                  st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
-                 st.created_at AS txn_created_at
+                 st.created_at AS txn_created_at,
+                 -- 마지막 결제 시각의 추정치 = 지금 기간의 시작.
+                 -- 갱신은 expires_at 만 미므로, 한 주기를 빼면 그 주기를 산 날이 된다.
+                 CASE WHEN p.period_days > 0
+                      THEN datetime(s.expires_at, '-' || p.period_days || ' days')
+                 END AS last_paid_estimate
           FROM subscriptions s
           LEFT JOIN plans p ON p.id = s.plan_id
           LEFT JOIN store_transactions st ON st.id = (
@@ -70,14 +75,18 @@ export async function pseudonymizeBillingForRetention(
     //   갱신해 온 구독이면 이미 지난 날짜가 나와, **이번 달에 결제한 사람의 증빙까지
     //   버린다**(원본은 곧 파기되므로 되돌릴 수 없다).
     //
-    //   그래서 **마지막으로 확인된 기간의 끝**(`expires_at`)을 함께 본다. 정확한 결제일을
-    //   따로 저장하지 않으므로 그것을 상한으로 쓴다 — 실제 결제일보다 최대 한 주기(약 30일)
-    //   늦게 잡히지만, 며칠 더 남는 쪽이 **법정 증빙을 잃는 것보다 낫다.**
-    //   (정확히 하려면 `last_paid_at` 컬럼이 필요하다 — 릴리스 PR 에 마이그레이션을
-    //    더하지 않으려고 지금은 이 상한을 쓴다.)
+    // ⚠ **그렇다고 `expires_at` 을 쓰면 안 된다**(코덱스 #734 3차). 그건 **기간의 끝**이라
+    //   실제 결제일보다 한 주기 뒤다 — 월 구독이면 30일, **프로모·수동 부여처럼 기간이 길면
+    //   몇 년**을 더 남기게 된다. 처리방침이 밝힌 최대 5년을 넘긴다.
+    //
+    //   그래서 **지금 기간의 시작**(`expires_at - period_days`)을 쓴다. 갱신이 `expires_at`
+    //   만 미므로 거기서 한 주기를 빼면 **그 주기를 산 날**이다 — 상한이 아니라 추정치이고,
+    //   기간이 길든 짧든 같은 정확도로 맞는다. 첫 주기에서는 `starts_at` 과 같아진다.
+    //   (별도 `last_paid_at` 컬럼을 두는 편이 더 정확하지만, 이 값이면 마이그레이션 없이
+    //    같은 규칙을 지킬 수 있다.)
     const anchors = [
       row.txn_created_at as string | null,
-      row.expires_at as string | null,
+      row.last_paid_estimate as string | null,
       row.starts_at as string | null,
     ].filter((value): value is string => typeof value === 'string' && value.length > 0);
     const paidAt = anchors.length > 0 ? anchors.reduce((a, b) => (a > b ? a : b)) : null;
