@@ -391,9 +391,10 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(row.provider).toBe('google');
     expect(row.product_id).toBe('personal_monthly');
     expect(row.raw_payload).toBe('{"via":"confirm"}');
-    // 구독 갈래는 요금제 표시가를 함께 남긴다(일회성 갈래와 다른 점 — 그쪽은 스토어
-    // 지역가라 금액을 지어내지 않는다).
-    expect(Number(row.amount_krw)).toBeGreaterThan(0);
+    // ⚠ **증빙이 있으면 금액은 비운다**(코덱스 #734 4차). `plans.price_krw` 는 지금의
+    //   원화 표시가일 뿐인데, 특정 애플/Play 주문 옆에 적으면 **그 주문이 이 금액이었다**
+    //   고 단언하는 셈이다(통화도 비어 있다). 실제 금액은 거래 id 로 스토어에서 확인한다.
+    expect(row.amount_krw).toBeNull();
 
     // 원본은 파기됐다 — 그래서 위 증빙을 옮겨 두는 것이다.
     const gone = await db.execute({
@@ -401,6 +402,34 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
       args: [PK5],
     });
     expect(gone.rows.length).toBe(0);
+  });
+
+  it('스토어 결제가 아니면(프로모·바우처) 요금제 표시가를 남긴다 — 되짚을 곳이 없다', async () => {
+    const SUB9 = 'hard-del-sub-7';
+    const PK9 = 'hard-del-pk-7';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK9, SUB9, 'harddel7@test.com', 'Hard Delete 7'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-08-01', '2026-12-01')`,
+      args: ['sub-hard-7', PK9, PERSONAL_PLAN],
+    });
+    // store_transactions 없음 — 프로모·바우처 갈래.
+
+    const res = await buildApp(SUB9, PK9).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT amount_krw, provider FROM retained_billing_records
+            WHERE plan_id = ? AND provider IS NULL`,
+      args: [PERSONAL_PLAN],
+    });
+    expect(retained.rows.length).toBeGreaterThan(0);
+    expect(Number(retained.rows[retained.rows.length - 1]!.amount_krw)).toBeGreaterThan(0);
   });
 
   it('5년이 지난 구독 결제는 다시 보존하지 않는다 — 기준은 탈퇴일이 아니라 거래일', async () => {

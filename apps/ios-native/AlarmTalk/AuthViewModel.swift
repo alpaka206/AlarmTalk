@@ -363,9 +363,10 @@ final class AuthViewModel: ObservableObject {
             forName: AlarmTalkAPI.unauthorizedNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            let failedToken = note.userInfo?[AlarmTalkAPI.unauthorizedTokenKey] as? String
             Task { @MainActor [weak self] in
-                self?.handleUnauthorized()
+                self?.handleUnauthorized(failedToken: failedToken)
             }
         }
 
@@ -829,8 +830,13 @@ final class AuthViewModel: ObservableObject {
     /// `AlarmTalkAPI` 의 401 알림 핸들러가 호출한다. 이미 로그아웃된 상태면 no-op 으로
     /// 두어 연발 401 이 단 한 번의 signOut 으로 수렴하게 한다.
     /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
-    private func handleUnauthorized() {
-        guard session != nil else { return }
+    private func handleUnauthorized(failedToken: String?) {
+        guard let current = session else { return }
+        // ⚠ **그 401 이 지금 세션의 것일 때만 끊는다**(코덱스 #734 4차). A 의 요청이 날아가는
+        //   사이 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이 여기까지 와서
+        //   **방금 만든 B 의 세션을 끊는다.** 호출부에서 막아도 이 중앙 처리기가 남는다.
+        //   토큰을 모르는 알림(옛 코드 경로)은 예전대로 처리한다 — 세션이 있으면 끊는다.
+        if let failedToken, failedToken != current.token { return }
         // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
         // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
         if UIPreviewSeed.isEnabled { return }

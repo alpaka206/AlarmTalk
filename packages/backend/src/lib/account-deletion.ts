@@ -108,7 +108,14 @@ export async function pseudonymizeBillingForRetention(
         (row.status as string | null) ?? null,
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
-        row.price_krw != null ? Number(row.price_krw) : null,
+        // ⚠ **스토어 증빙이 있으면 금액을 지어내지 않는다**(코덱스 #734 4차). `price_krw` 는
+        //   **지금의 원화 표시가**일 뿐이다 — 스토어 가격은 지역별이고 요금제 가격은 바뀐다.
+        //   증빙(거래 id·원본 페이로드)을 붙여 놓고 그 옆에 이 값을 적으면, **그 애플/Play
+        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화(`amount_currency`)도 비어 있어
+        //   원화인지조차 말할 수 없다. 실제 금액은 그 거래 id 로 스토어에서 확인한다.
+        //   (아래 일회성 갈래가 같은 이유로 처음부터 비워 둔다.)
+        //   스토어 결제가 아니면(dev 스텁·프로모·바우처) 되짚을 곳이 없으므로 그대로 남긴다.
+        row.provider == null && row.price_krw != null ? Number(row.price_krw) : null,
         (row.provider as string | null) ?? null,
         (row.provider_transaction_id as string | null) ?? null,
         (row.product_id as string | null) ?? null,

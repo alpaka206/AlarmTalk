@@ -503,6 +503,9 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     //   **리터럴 `Bearer ${'$'}{session.token}`** 이 나간 적이 있다(코덱스 #734). 컴파일은
     //   되고 401 만 떠서, 모든 구독 결제가 조용히 안 열렸다.
     val authorization = AlarmTalkApiClient.bearer(session.token)
+    // ⚠ **표는 요청 '전에' 끊는다**(다른 조회 경로와 같은 규약). 이 문이 판정과 쓰기를 한
+    //   덩어리로 처리해, 그 사이 계정이 바뀌면 **스냅샷도 화면도 건드리지 않는다.**
+    val ticket = accessTicket() ?: return R.string.msg_gb_billing_info_load_failed
     val fresh = runCatching { api.getSubscription(authorization) }.getOrElse {
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
         return R.string.msg_gb_billing_info_load_failed
@@ -511,8 +514,14 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     //   중단점이라, 기다리는 동안 로그아웃하거나 다른 계정으로 로그인할 수 있다. 그대로
     //   진행하면 **A 의 구독 응답이 B 화면에 실리고, A 의 식별자로 Play 결제가 열린다** —
     //   그 결제의 확정은 B 로 올라가 계정 불일치로 거절된다(이미 청구된 뒤에).
-    if (authSession?.token != session.token) return R.string.msg_gb_billing_info_load_failed
-    // 응답을 받았으니 캐시도 최신으로 맞춰 둔다 — 화면이 옛 값을 들고 있을 이유가 없다.
+    //
+    // ⚠ **디스크에도 남긴다**(코덱스 #734 4차). 화면 상태만 고치면, 사용자가 Play 시트를
+    //   닫고 앱이 재시작될 때 `restoreAccessSnapshotForCurrentUser` 가 **더 오래된 응답**을
+    //   되읽는다 — 그때 시작 조회가 오프라인이면 유료 목소리·울림 게이트가 낡은 상태로
+    //   돈다. 방금 권위 응답을 받아 놓고 버리는 셈이다.
+    if (saveSubscriptionSnapshot(ticket, fresh) != EntitlementWrite.Applied) {
+        return R.string.msg_gb_billing_info_load_failed
+    }
     subscriptionResponse = fresh
     val providers = fresh.storeRenewalProviders ?: return null
     // 판정은 `provider <> ?` 라 우리에게 오는 것은 언제나 **다른 스토어**다.
