@@ -505,7 +505,14 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     val authorization = AlarmTalkApiClient.bearer(session.token)
     // ⚠ **표는 요청 '전에' 끊는다**(다른 조회 경로와 같은 규약). 이 문이 판정과 쓰기를 한
     //   덩어리로 처리해, 그 사이 계정이 바뀌면 **스냅샷도 화면도 건드리지 않는다.**
+    //
+    // ⚠ **그 표가 '잡아 둔 계정' 것인지도 본다**(코덱스 #734 9차). `accessTicket()` 은
+    //   **지금 계정** 것을 뽑는데, `startPlayPurchase` 가 세션을 잡은 뒤 여기까지 오는
+    //   사이에 계정이 바뀌었을 수 있다 — 그러면 헤더는 A 의 토큰이고 표는 B 의 것이라,
+    //   문은 (B 기준으로) 정상이라며 **A 의 응답을 B 스냅샷에 쓴다.** 그 뒤 결제도 A 의
+    //   식별자로 열려 확정이 계정 불일치로 거절된다(이미 청구된 뒤에).
     val ticket = accessTicket() ?: return R.string.msg_gb_billing_info_load_failed
+    if (ticket.userId != session.user.id) return R.string.msg_gb_billing_info_load_failed
     val fresh = runCatching { api.getSubscription(authorization) }.getOrElse {
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
         return R.string.msg_gb_billing_info_load_failed
@@ -568,6 +575,12 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
         //   실패도 아닌** 상태가 된다(사용자는 눌렀는데 아무 일도 안 일어난 것으로 본다).
         //   다시 누르면 새 Activity 로 정상 진행된다.
         if (activity.isDestroyed || activity.isFinishing) {
+            billingBusy = false
+            return@launch
+        }
+        // ⚠ **여는 순간에도 계정을 한 번 더 본다**(코덱스 #734 9차). 위 조회가 중단점이라,
+        //   그 사이 바뀌었으면 **A 의 식별자로 B 의 결제를 여는** 것이 된다.
+        if (authSession?.user?.id != session.user.id) {
             billingBusy = false
             return@launch
         }
