@@ -10745,6 +10745,23 @@
         }
       }
     },
+    "지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We're checking which store renews your current pass. Please try again in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のパスがどのストアで更新されるか確認しています。しばらくしてからもう一度お試しください。"
+          }
+        }
+      }
+    },
     "지금 해지하기" : {
       "extractionState" : "manual",
       "localizations" : {

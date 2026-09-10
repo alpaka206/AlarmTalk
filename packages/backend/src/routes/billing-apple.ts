@@ -281,7 +281,7 @@ billingApple.post('/apple/confirm', async (c) => {
   // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
   // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyPlanChanged(db, c.env, result.demotedUserIds);
+  await notifyPlanChanged(db, c.env, result.planChangedUserIds);
 
   return c.json({
     success: true,
@@ -308,44 +308,51 @@ async function revokeRefundedAppleSubscription(
   env: AppEnv['Bindings'],
   info: { originalTransactionId: string; transactionId: string },
 ): Promise<void> {
-  const res = await db.execute({
-    sql: `SELECT st.user_id, st.subscription_id,
-                 s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
-          FROM store_transactions st
-          JOIN subscriptions s ON s.id = st.subscription_id
-          JOIN plans p ON p.id = s.plan_id
-          WHERE st.provider = 'apple'
-            AND st.provider_transaction_id IN (?, ?)
-            AND s.status = 'active'`,
-    args: [info.originalTransactionId, info.transactionId],
-  });
-  const row = res.rows[0];
-  if (!row) return; // 구독이 아니거나(선물) 이미 정리됐다.
-
-  const mapped: ActiveSubscription = {
-    subscriptionId: String(row.subscription_id),
-    userPk: String(row.user_id),
-    planId: String(row.plan_id),
-    planType: String(row.plan_type),
-    planKey: String(row.plan_key),
-    planGroupId: (row.plan_group_id as string | null) ?? null,
-  };
   const now = new Date();
+  // ⚠ **조회를 쓰기 트랜잭션 안에서 한다**(코덱스 #733). 밖에서 읽으면 그 사이에 같은
+  //   사용자가 재구매·플랜 변경을 할 수 있고, 그러면 이 행은 이미 취소된 채 **그룹만
+  //   새 구독으로 넘어가 있다.** 그 낡은 행으로 정리를 돌리면 구독 UPDATE 는 가드에
+  //   걸려 무해하지만 `disbandOwnedPlanGroup` 은 그대로 돌아 **지금 돈을 내고 있는
+  //   구독이 뒷받침하는 그룹에서 멤버를 전원 내보낸다.**
   const affected = await withWriteTransaction(db, async (tx) => {
+    const res = await tx.execute({
+      sql: `SELECT st.user_id, st.subscription_id,
+                   s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+            FROM store_transactions st
+            JOIN subscriptions s ON s.id = st.subscription_id
+            JOIN plans p ON p.id = s.plan_id
+            WHERE st.provider = 'apple'
+              AND st.provider_transaction_id IN (?, ?)
+              AND s.status = 'active'`,
+      args: [info.originalTransactionId, info.transactionId],
+    });
+    const row = res.rows[0];
+    if (!row) return null; // 구독이 아니거나(선물) 이미 정리됐다.
+
+    const mapped: ActiveSubscription = {
+      subscriptionId: String(row.subscription_id),
+      userPk: String(row.user_id),
+      planId: String(row.plan_id),
+      planType: String(row.plan_type),
+      planKey: String(row.plan_key),
+      planGroupId: (row.plan_group_id as string | null) ?? null,
+    };
     const ids = await cancelSubscriptionImmediate(tx, mapped, now, { deleteVoiceData: false });
     await schedulePaidVoiceRetention(tx, mapped.userPk, now);
-    return ids;
+    return { mapped, ids };
   });
+  if (!affected) return;
+  const { mapped, ids } = affected;
   logStructured('info', {
     at: 'billing.apple.confirm',
     step: 'revoked_cleanup',
     userPk: mapped.userPk,
     subscriptionId: mapped.subscriptionId,
-    affected: affected.length,
+    affected: ids.length,
   });
   // 푸시는 커밋 뒤에(트랜잭션 안에서 네트워크를 쓰지 않는다).
-  await notifyPlanChanged(db, env, affected);
-  await notifyVoiceDeletionScheduled(db, env, affected);
+  await notifyPlanChanged(db, env, ids);
+  await notifyVoiceDeletionScheduled(db, env, ids);
 }
 
 export default billingApple;

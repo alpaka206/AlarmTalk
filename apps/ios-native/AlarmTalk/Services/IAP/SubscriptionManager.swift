@@ -595,6 +595,20 @@ final class SubscriptionManager: ObservableObject {
             // 두고, 다음 foreground 사이클의 resyncEntitlements 가 자동 catch-up 한다.
             // (501 은 라우트가 없던 시절의 잔재라 뺐다 — 지금은 라우트가 있다.)
             return false
+        } catch APIError.server(let status, _, let code) where status == 400
+            && code == "TRANSACTION_REVOKED" {
+            // ⚠ **거절이지만 서버는 방금 정리를 끝냈다**(코덱스 #733). 환불된 트랜잭션이
+            //   오면 서버가 그 구독을 취소하고 플랜을 다시 계산한다 — 애플에는 우리가 받는
+            //   서버 알림이 없어 이 요청이 유일한 통보이기 때문이다. 그런데 응답은 400 이라
+            //   `success` 가 아니고, 여기서 그냥 실패로 처리하면 `onServerEntitlementUpdated`
+            //   가 안 불려 **이 세션은 캐시된 유료 구독과 `users.plan` 을 그대로 들고 있다.**
+            //   `plan_changed` 푸시를 놓치면 다음 갱신까지 `PaidVoiceGate` 가 유료 목소리를
+            //   계속 내준다 — 서버는 이미 회수했는데.
+            //   그래서 **여기서 권위 상태를 다시 읽는다.** 반환은 false 가 맞다(권한을 얻지
+            //   못했다). 구독이라 `mayFinish` 가 트랜잭션을 끝내는 것도 맞다 — 환불된
+            //   트랜잭션은 재시도해도 결과가 같다.
+            await onServerEntitlementUpdated?()
+            return false
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "TRANSACTION_OWNED_BY_OTHER_USER" {
             // ⚠ **재시도해도 결과가 같다 — "잠시 후 자동 재시도" 라고 말하면 안 된다.**

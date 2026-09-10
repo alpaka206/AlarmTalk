@@ -42,8 +42,17 @@ struct BillingPanel: View {
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
     @State private var pendingPurchase: PendingPlanPurchase?
-    /// Play 로 결제 중인 이용권이 있어 애플 결제를 막았다는 안내.
-    @State private var showPlayOwnsRenewalNotice = false
+    /// 결제를 막은 이유. **버튼을 죽이지 않고 눌리면 이유를 말한다**(편집기의
+    /// `SaveBlockReason` 과 같은 규약 — 죽은 버튼은 고장으로 읽힌다).
+    @State private var purchaseBlock: PurchaseBlockReason?
+
+    enum PurchaseBlockReason: String, Identifiable {
+        /// 지금 이용권의 자동갱신을 Play 가 쥐고 있다.
+        case playOwnsRenewal
+        /// 이미 유료인데 **어느 스토어가 갱신을 쥐었는지 아직 모른다**(응답 전·실패).
+        case renewalOwnerUnknown
+        var id: String { rawValue }
+    }
 
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
@@ -102,8 +111,15 @@ struct BillingPanel: View {
                             //   앱에서 사라진다.** 애플 구독을 서버가 못 끊는 것과 같은 이유로,
                             //   Play 구독도 Play 에서만 끊을 수 있다.
                             //   판정은 로컬 StoreKit 이 아니라 서버의 활성 구독이다.
-                            if socialFeatures.subscription?.subscription?.storeProvider == "google" {
-                                showPlayOwnsRenewalNotice = true
+                            if let block = purchaseBlockReason() {
+                                purchaseBlock = block
+                                // 모르는 상태였다면 곧바로 다시 읽어 본다 — 사용자가 아무것도
+                                // 안 해도 다음 시도에서는 답이 나와 있도록.
+                                if block == .renewalOwnerUnknown {
+                                    Task {
+                                        await socialFeatures.refreshAll(session: auth.session, force: true)
+                                    }
+                                }
                                 return
                             }
                             // ⚠ **바로 결제로 보내지 말 것.** 전환일 때는 스토어 시트가
@@ -230,10 +246,21 @@ struct BillingPanel: View {
         // 안드로이드의 IosAlertDialog 가 이걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로
         // 만들면 오히려 원본에서 멀어진다).
         // ⚠ 문구는 안드로이드 `billing_play_*` 문자열과 **글자까지 같다**(스토어 이름만 다르다).
-        .alert("Google Play 에서 결제 중이에요", isPresented: $showPlayOwnsRenewalNotice) {
-            Button("확인", role: .cancel) {}
-        } message: {
-            Text("지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.")
+        .alert(item: $purchaseBlock) { reason in
+            switch reason {
+            case .playOwnsRenewal:
+                return Alert(
+                    title: Text("Google Play 에서 결제 중이에요"),
+                    message: Text("지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요."),
+                    dismissButton: .cancel(Text("확인"))
+                )
+            case .renewalOwnerUnknown:
+                return Alert(
+                    title: Text("이용권 정보를 불러오는 중이에요"),
+                    message: Text("지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요."),
+                    dismissButton: .cancel(Text("확인"))
+                )
+            }
         }
         .alert(
             pendingPurchaseTitle,
@@ -330,6 +357,39 @@ struct BillingPanel: View {
     /// 으로 돌아가고, `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트가 열린다.
     private var isAppStoreSubscription: Bool {
         socialFeatures.subscription?.subscription?.storeProvider == "apple"
+    }
+
+    /// **결제를 시작해도 되는가.** `nil` 이면 진행.
+    ///
+    /// ⚠ **모르는 것은 '아니오' 로 친다**(코덱스 #733). 새 기기·새 로그인이거나
+    /// `GET /billing/subscription` 이 아직 돌고 있거나 실패한 동안에는
+    /// `socialFeatures.subscription` 이 nil 인데, StoreKit 제품은 이미 로드돼 있어 살 수
+    /// 있다. 그 틈에 Play 구독자가 애플 결제를 시작하면 확정이 **우리 DB 의 옛 구독 행만**
+    /// 취소하고 Play 자동갱신은 그대로라 **두 곳에서 청구**된다 — 이 게이트가 막으려던
+    /// 바로 그 일이다.
+    ///
+    /// 무료 사용자는 막지 않는다. 갱신을 쥔 스토어가 애초에 없다.
+    /// ⚠ **판정은 순수 함수로 뽑아 둔다** — 화면 없이 검증할 수 있어야 한다
+    /// (안드로이드 `leavingScreenDecision` 과 같은 이유). 회귀 테스트는
+    /// `PurchaseBlockReasonTests`.
+    static func purchaseBlockReason(
+        currentTier: PlanTier,
+        activeSubscription: BillingSubscription?
+    ) -> PurchaseBlockReason? {
+        guard currentTier != .free else { return nil }
+        guard let active = activeSubscription else {
+            // 이미 유료인데 서버 구독을 못 읽었다 — 어느 스토어인지 모른다.
+            return .renewalOwnerUnknown
+        }
+        // `nil` 은 스토어 결제가 아니라는 뜻이다(프로모·바우처) — 갱신을 쥔 스토어가 없다.
+        return active.storeProvider == "google" ? .playOwnsRenewal : nil
+    }
+
+    private func purchaseBlockReason() -> PurchaseBlockReason? {
+        Self.purchaseBlockReason(
+            currentTier: currentTier,
+            activeSubscription: socialFeatures.subscription?.subscription
+        )
     }
 
     private func openAppStoreSubscriptionManagement() async {

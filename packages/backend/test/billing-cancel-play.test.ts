@@ -1120,6 +1120,11 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     ]);
     mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', [COUPLE_SUB]); // 취소 대상
     // 옮길 코드가 1장 있다 → 새로 발급하지 않는다.
+    // 남는 멤버 둘 — 이들의 구독 행이 새 플랜으로 옮겨 가고, 알림 대상이 된다.
+    mockDB.pushResultFor('SELECT user_id FROM subscriptions', [
+      { user_id: 'member-1' },
+      { user_id: 'member-2' },
+    ]);
     mockDB.pushResultFor('SELECT COUNT(*) AS n FROM voucher_codes', [{ n: 1 }]);
   }
 
@@ -1169,6 +1174,25 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     // 소유자는 제외한다 — 새 구독 행을 따로 만들고, 옛 행은 방금 취소됐다.
     expect(move!.sql).toContain('user_id <> ?');
     expect(move!.args).toEqual(['plan-family', 'group-1', 'user-pk-1']);
+  });
+
+  it('커플 → 가족: 남은 멤버도 통지 대상이다', async () => {
+    // ⚠ 나간 사람만 알리면 남은 사람은 다음 앱 시작·주기 pull 까지 **옛 플랜 키**를
+    //   들고 있다(코덱스 #733). 목록 이름이 `demotedUserIds` 였을 때 이걸 빠뜨렸다.
+    seedCoupleOwner();
+
+    const result = await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-family',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    // 정원이 늘어나는 전환이라 나간 사람은 없고, 남은 둘만 들어온다.
+    expect(result.ok && result.planChangedUserIds).toEqual(['member-1', 'member-2']);
   });
 
   it('멤버 이전은 정원 정리 **뒤**에 돈다 — 쫓겨날 사람까지 옮기지 않는다', async () => {
@@ -1252,6 +1276,8 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
       { id: 'm-2', user_id: 'member-second' },
       { id: 'm-3', user_id: 'member-third' },
     ]);
+    // 정원 정리 뒤 남는 멤버 — 이 사람의 구독 행이 새 플랜으로 옮겨 가고, 알림 대상이 된다.
+    mockDB.pushResultFor('SELECT user_id FROM subscriptions', [{ user_id: 'member-first' }]);
     mockDB.pushResultFor('SELECT COUNT(*) AS n FROM voucher_codes', [{ n: 1 }]);
 
     const result = await applyStoreEntitlement(mockDB.client as never, {
@@ -1266,7 +1292,13 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
 
     expect(result.ok).toBe(true);
     // 커플 정원 2 = 소유자 1 + 멤버 1 → 먼저 들어온 한 명만 남고 둘이 나간다.
-    expect(result.ok && result.demotedUserIds).toEqual(['member-second', 'member-third']);
+    // ⚠ **남은 사람도 알림 대상이다**(코덱스 #733) — 등급이 가족에서 커플로 바뀌었다.
+    //   나간 둘 + 남은 하나. 목록 이름이 `demotedUserIds` 였을 때 남은 사람을 빠뜨렸다.
+    expect(result.ok && result.planChangedUserIds).toEqual([
+      'member-second',
+      'member-third',
+      'member-first',
+    ]);
     // 그룹 자체는 살아 있다 — 남은 한 명은 그대로 쓴다.
     expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
   });

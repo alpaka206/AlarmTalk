@@ -66,11 +66,18 @@ export type StoreEntitlementResult =
         expires_at: string;
       };
       /**
-       * 이 전환으로 **그룹에서 나가게 된** 멤버들(정원 축소). 호출부가 트랜잭션 커밋
-       * **후** `notifyPlanChanged` 로 알린다 — 아무 말 없이 유료 접근을 잃으면
-       * 사용자는 앱이 고장 난 줄 안다.
+       * 이 전환으로 **스냅샷을 다시 읽어야 하는** 사람들. 호출부가 트랜잭션 커밋 **후**
+       * `notifyPlanChanged` 로 알린다.
+       *
+       * 두 갈래가 들어온다:
+       * - **나가게 된 멤버**(정원 축소) — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+       * - **남았지만 플랜이 바뀐 멤버**(커플 ↔ 가족) — 등급·정원이 달라졌는데 알리지 않으면
+       *   다음 앱 시작·주기 pull 까지 **옛 플랜 키를 들고 있다**(코덱스 #733).
+       *
+       * ⚠ 예전 이름은 `demotedUserIds` 였다. 나가는 사람만 담는 줄 알고 남은 사람을
+       * 빠뜨렸으니, 이름을 "알려야 할 사람" 으로 바꿔 같은 실수를 막는다.
        */
-      demotedUserIds: string[];
+      planChangedUserIds: string[];
     }
   | { ok: false; status: 409; errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
 
@@ -173,8 +180,8 @@ export async function applyStoreEntitlement(
           starts_at: startsAtIso,
           expires_at: expiresAtIso,
         },
-        // 같은 plan 갱신이라 그룹이 그대로다 — 나간 사람이 없다.
-        demotedUserIds: [],
+        // 같은 plan 갱신이라 그룹도 플랜도 그대로다 — 알릴 사람이 없다.
+        planChangedUserIds: [],
       };
     }
   }
@@ -197,7 +204,7 @@ export async function applyStoreEntitlement(
 
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
-  const demotedUserIds: string[] = [];
+  const planChangedUserIds: string[] = [];
 
   if (isGroupPlanType(input.plan.plan_type)) {
     if (carryOver) {
@@ -208,7 +215,7 @@ export async function applyStoreEntitlement(
       });
       // 정원이 줄어드는 전환(가족 → 커플)에서는 넘치는 인원을 내보내야 한다.
       // 남길 사람은 **먼저 들어온 순서**로 고른다 — 임의로 고르면 설명할 수 없다.
-      demotedUserIds.push(
+      planChangedUserIds.push(
         ...(await enforceGroupCapacity(tx, {
           planGroupId,
           ownerUserPk: input.userPk,
@@ -225,12 +232,21 @@ export async function applyStoreEntitlement(
       //   **정원 정리 뒤에** 돌린다 — 쫓겨날 멤버까지 새 플랜으로 옮겼다가 바로 취소하는
       //   낭비를 피하고, 남은 사람만 정확히 겨냥한다. 소유자는 새 구독 행을 아래에서
       //   따로 만들므로 제외한다(옛 행은 방금 취소됐다).
+      // ⚠ **옮긴 멤버도 알림 대상이다**(코덱스 #733). 등급이 바뀐 것은 나간 사람만이
+      //   아니다 — 남은 사람도 커플에서 가족으로(또는 반대로) 옮겨 간다. 안 알리면 다음
+      //   앱 시작·주기 pull 까지 옛 플랜 키를 들고 있다. id 를 알아야 하므로 먼저 읽는다.
+      const retained = await tx.execute({
+        sql: `SELECT user_id FROM subscriptions
+              WHERE plan_group_id = ? AND status = 'active' AND user_id <> ?`,
+        args: [planGroupId, input.userPk],
+      });
       await tx.execute({
         sql: `UPDATE subscriptions
               SET plan_id = ?, updated_at = datetime('now')
               WHERE plan_group_id = ? AND status = 'active' AND user_id <> ?`,
         args: [input.plan.id, planGroupId, input.userPk],
       });
+      planChangedUserIds.push(...retained.rows.map((r) => String(r.user_id)));
     } else {
       planGroupId = crypto.randomUUID();
       await tx.execute({
@@ -327,7 +343,7 @@ export async function applyStoreEntitlement(
       starts_at: startsAtIso,
       expires_at: expiresAtIso,
     },
-    demotedUserIds,
+    planChangedUserIds,
   };
 }
 
