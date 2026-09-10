@@ -47,7 +47,7 @@ export async function pseudonymizeBillingForRetention(
   const subs = await tx.execute({
     sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
                  st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
-                 st.created_at AS txn_created_at,
+                 st.created_at AS txn_created_at, st.last_paid_at AS txn_last_paid_at,
                  -- 마지막 결제 시각의 추정치 = 지금 기간의 시작.
                  -- 갱신은 expires_at 만 미므로, 한 주기를 빼면 그 주기를 산 날이 된다.
                  CASE WHEN p.period_days > 0
@@ -75,19 +75,21 @@ export async function pseudonymizeBillingForRetention(
     //   갱신해 온 구독이면 이미 지난 날짜가 나와, **이번 달에 결제한 사람의 증빙까지
     //   버린다**(원본은 곧 파기되므로 되돌릴 수 없다).
     //
-    // ⚠ **그렇다고 `expires_at` 을 쓰면 안 된다**(코덱스 #734 3차). 그건 **기간의 끝**이라
-    //   실제 결제일보다 한 주기 뒤다 — 월 구독이면 30일, **프로모·수동 부여처럼 기간이 길면
-    //   몇 년**을 더 남기게 된다. 처리방침이 밝힌 최대 5년을 넘긴다.
+    //   그래서 확정 경로가 **`last_paid_at` 을 그때그때 적는다**(마이그레이션 114).
     //
-    //   그래서 **지금 기간의 시작**(`expires_at - period_days`)을 쓴다. 갱신이 `expires_at`
-    //   만 미므로 거기서 한 주기를 빼면 **그 주기를 산 날**이다 — 상한이 아니라 추정치이고,
-    //   기간이 길든 짧든 같은 정확도로 맞는다. 첫 주기에서는 `starts_at` 과 같아진다.
-    //   (별도 `last_paid_at` 컬럼을 두는 편이 더 정확하지만, 이 값이면 마이그레이션 없이
-    //    같은 규칙을 지킬 수 있다.)
+    // ⚠ **추정으로 되돌리지 말 것**(코덱스 #734 3·5차). 여기서 두 번 틀렸다:
+    //   `expires_at` 은 **기간의 끝**이라 프로모처럼 기간이 길면 몇 년을 더 남기고,
+    //   `expires_at - period_days` 는 애플이 **달력 달**(P1M)인데 `period_days` 가 30 고정이라
+    //   2월이면 이르게·31일 달이면 늦게 잡힌다. 이르면 증빙을 잃고 늦으면 5년을 넘긴다.
+    //
+    //   `last_paid_at` 이 비어 있는 것은 **마이그레이션 114 이전에 쓰인 행**뿐이다 —
+    //   그때만 옛 추정으로 폴백한다(아무것도 없는 것보다는 낫다).
     const anchors = [
-      row.txn_created_at as string | null,
-      row.last_paid_estimate as string | null,
-      row.starts_at as string | null,
+      row.txn_last_paid_at as string | null,
+      // 폴백(옛 행 전용). 아래 둘은 `last_paid_at` 이 있으면 쓰이지 않는다.
+      (row.txn_last_paid_at as string | null) ? null : (row.txn_created_at as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.last_paid_estimate as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.starts_at as string | null),
     ].filter((value): value is string => typeof value === 'string' && value.length > 0);
     const paidAt = anchors.length > 0 ? anchors.reduce((a, b) => (a > b ? a : b)) : null;
     const recordRetainUntil = paidAt

@@ -513,6 +513,46 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(retainUntil < '2035-01-01').toBe(true);
   });
 
+  it('last_paid_at 이 있으면 그것을 기준으로 삼는다 — 추정치를 쓰지 않는다', async () => {
+    // ⚠ 확정 경로가 결제 시점에 적어 두는 값이다(마이그레이션 114). 추정으로 되돌리면
+    //   애플의 달력 달(P1M)과 period_days=30 이 어긋나 며칠씩 틀린다(코덱스 #734 5차).
+    const SUBA = 'hard-del-sub-8';
+    const PKA = 'hard-del-pk-8';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PKA, SUBA, 'harddel8@test.com', 'Hard Delete 8'],
+    });
+    // 2018 에 시작해 지금도 갱신 중 — created_at 과 last_paid_at 이 크게 벌어진 상태.
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2018-01-01', '2026-10-31')`,
+      args: ['sub-hard-8', PKA, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at, last_paid_at)
+            VALUES (?, ?, 'apple', ?, 'com.alarmtalk.app.personal_monthly', 'personal', ?,
+                    '2018-01-01T00:00:00.000Z', '2026-09-05T00:00:00.000Z')`,
+      args: ['st-hard-8', PKA, 'apple-original-8', 'sub-hard-8'],
+    });
+
+    const res = await buildApp(SUBA, PKA).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['apple-original-8'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 2026-09-05 + 5년 = 2031-09-05.
+    // ⚠ 추정치를 썼다면 2026-10-31 − 30일 = 2026-10-01 → **2031-10-01** 이 나온다.
+    //   두 날짜가 겹치지 않게 기간을 어긋나게 뒀다 — 겹치면 이 테스트가 아무것도 안 지킨다.
+    expect(String(retained.rows[0]!.retain_until).startsWith('2031-09-05')).toBe(true);
+  });
+
   it('기간이 긴 부여는 초과 보존이 더 커진다 — 그래서 기간의 끝을 쓰지 않는다', async () => {
     // 3년짜리 수동 부여를 흉내 낸다. 기간의 끝을 기준으로 삼으면 결제일로부터 8년이 남는다.
     const SUB8 = 'hard-del-sub-6';
