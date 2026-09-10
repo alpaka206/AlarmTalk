@@ -2763,6 +2763,27 @@ export const migrations: Migration[] = [
       `ALTER TABLE message_library ADD COLUMN last_used_at TEXT`,
     ],
   },
+  {
+    // 탈퇴 뒤에도 남는 결제 기록에 **스토어 증빙**을 담는다(코덱스 #731).
+    //
+    // 지금까지 `retained_billing_records` 는 요금제·기간·금액만 들고 있었는데, 원본
+    // `store_transactions` 는 파기에서 지워진다. 그러면 남은 기록을 App Store/Play 주문에
+    // **되짚을 수 없어** 결제 분쟁에서 증빙 구실을 못 한다(`docs/legal/compliance-notes.ko.md`).
+    //
+    // ⚠ **ADD COLUMN 만 쓴다** — 테이블 재작성 금지(CLAUDE.md 의 append-only 규약).
+    id: 113,
+    name: 'retained-billing-store-evidence',
+    statements: [
+      `ALTER TABLE retained_billing_records ADD COLUMN provider TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN provider_transaction_id TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN product_id TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN raw_payload TEXT`,
+      // 금액은 통화가 없으면 뜻이 없다. 스토어 가격은 지역별이라 원화 표시가와 다르다.
+      `ALTER TABLE retained_billing_records ADD COLUMN amount_currency TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_retained_billing_provider_txn
+        ON retained_billing_records(provider, provider_transaction_id)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

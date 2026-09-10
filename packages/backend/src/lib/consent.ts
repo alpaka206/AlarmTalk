@@ -132,8 +132,28 @@ export const CURRENT_POLICY_VERSION = '5';
  * 문서 버전(CURRENT_POLICY_VERSION)이 올랐다는 이유만으로 올리지 말 것. 여기서 올린
  * 유형만 재동의 화면에 뜨고, 나머지 유형의 기존 동의(특히 marketing)는 보존된다.
  */
+/**
+ * **사용 기록을 받기 위해 필요한 privacy 동의 버전.**
+ *
+ * 그 수집은 정책 버전 5 본문에서 처음 고지됐다(2026-09-07). 그 아래 버전으로 동의한
+ * 사용자는 그 고지를 본 적이 없으므로 기록을 받지 않는다 — 재동의를 강제하는 대신
+ * (그건 v5 앱이 스토어에 있어야 가능하다) 수집을 멈추는 쪽을 택했다.
+ */
+export const USAGE_EVENT_MIN_PRIVACY_VERSION = 5;
+
 export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
   terms: 3,
+  // ⚠ **3 그대로 둔다 — 5 로 올리면 기존 사용자가 갇힌다**(코덱스 #731 정정).
+  //   버전 5 본문에 '서비스 이용 기록' 수집이 새로 들어갔으니 기준상 올려야 맞지만,
+  //   `POST /user/consents` 는 `document_version != CURRENT_POLICY_VERSION` 을 409 로
+  //   거절한다(`routes/user.ts`). 스토어에 v5 앱이 없는 동안 여기를 올리면 기존 사용자는
+  //   재동의 화면이 뜨는데 **제출할 방법이 없다** — 앱이 벽돌이 된다.
+  //
+  //   그래서 고지 없는 수집은 **수집 쪽에서** 막는다: `POST /events` 가 privacy 동의
+  //   버전이 `USAGE_EVENT_MIN_PRIVACY_VERSION` 미만이면 받지 않는다. 재동의를 강제하지
+  //   않고도 동의 없는 수집이 일어나지 않는다.
+  //
+  //   ⚠ **여기를 5 로 올리는 것은 v5 앱이 양 스토어에 게재된 뒤의 별도 작업이다.**
   privacy: 3,
   age14: 3,
   marketing: 3,

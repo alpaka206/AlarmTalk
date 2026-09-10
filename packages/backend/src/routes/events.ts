@@ -14,6 +14,8 @@ import { getDB } from '../lib/db';
 import { jsonError } from '../lib/api-error';
 import { inPlaceholders } from '../lib/caller-ids';
 import { withWriteTransaction } from '../lib/transactions';
+import { USAGE_EVENT_MIN_PRIVACY_VERSION, loadLatestConsents } from '../lib/consent';
+
 
 const events = new Hono<AppEnv>();
 
@@ -36,6 +38,20 @@ events.post('/', async (c) => {
     raw = await c.req.json();
   } catch {
     return jsonError(c, 400, 'INVALID_JSON', 'Invalid JSON body');
+  }
+
+  // ⚠ **고지 없이 받지 않는다**(코덱스 #731). 사용 기록 수집은 처리방침 버전 5 에서
+  //   처음 고지됐다. 그 아래 버전으로 동의한 사용자는 본 적이 없으므로 받지 않는다.
+  //   ⚠ **오류로 돌려주지 말 것.** 앱은 성공한 배치만 큐에서 지우므로(usage-events 스펙),
+  //   4xx 를 주면 같은 배치를 **영원히 재전송**한다. 받아들인 것처럼 200 으로 답하고
+  //   버린다 — 큐가 비고, 동의가 올라온 뒤부터 정상 수집된다.
+  // ⚠ 쿼리를 여기서 다시 짜지 말 것 — 동의 판정은 `lib/consent` 가 단일 출처다
+  //   (같은 초 토글의 rowid 보조 정렬, 이상한 버전 문자열 처리까지 거기 있다).
+  const latestConsents = await loadLatestConsents(db, userPk);
+  const privacy = latestConsents.get('privacy');
+  const privacyVersion = privacy?.agreed ? privacy.version : 0;
+  if (privacyVersion < USAGE_EVENT_MIN_PRIVACY_VERSION) {
+    return c.json({ success: true, accepted: 0, skipped_reason: 'consent_below_disclosure' });
   }
 
   const parsed = UsageEventBatchSchema.safeParse(raw);
