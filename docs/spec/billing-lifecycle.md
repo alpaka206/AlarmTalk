@@ -361,6 +361,14 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
     등급도 free 다 — **등급이나 `subscription` 으로 거르면 보류 중인 Play 구독이 안 보인다.**
     결제가 복구되는 순간 두 곳에서 청구된다.
   그래서 신호는 **응답 최상위**에 두고, 만료로 거르지 않으며, 스토어를 **접지 않고 전부** 싣는다.
+- ⚠ **결제 직전에 서버 값을 한 번 받아 온다 — 캐시로 판단하지 않는다**(코덱스 #733 5차).
+  서버의 confirm 가드는 **이미 청구된 뒤**라 되돌릴 수 없다. 그래서 StoreKit 을 부르기
+  직전에 `GET /billing/subscription` 을 다시 받고, **못 받아 오면 진행하지 않는다**
+  (캐시로 넘어가면 이 단계를 둔 이유가 사라진다). 남는 창은 조회와 결제 사이의 수백 ms 뿐이고,
+  그건 아래 서버 가드가 받는다.
+- ⚠ **서버가 거절했으면 성공이라고 말하지 않는다.** 구독 갈래는 확정 여부와 무관하게
+  성공을 돌려주는데, 그건 "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절은
+  따라잡히지 않는다 — 사용자가 Play 를 해지해야 풀린다.
 - ⚠ **앱의 판정만으로는 부족하다 — 서버가 확정 시점에 한 번 더 본다**(코덱스 #733 4차).
   앱이 보는 것은 **캐시된 스냅샷**이라, 같은 계정이 **다른 기기에서 방금** Play 구독을
   시작한 경우를 못 본다(구매자 본인은 `plan_changed` 대상도 아니라 갱신 신호도 안 온다).
@@ -418,6 +426,9 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   `PendingRevokedTransactionStore` 에 담고 `flushPendingRevocations` 가 시작·계정 변경에서
   민다. ⚠ **로그아웃에서 비우지 말 것** — 주인이 로그아웃한 뒤에 온 환불이 정확히 이 큐가
   있어야 하는 경우다.
+  ⚠ **큐에서 지우는 것은 서버가 그 트랜잭션을 판정했을 때뿐이다**(코덱스 #733 5차).
+  401(토큰 거절)·403(동의 필요 등)은 **결제 라우트가 보지도 못했다**는 뜻이라 — 미들웨어가
+  앞에서 막은 것이다 — 지우면 그 환불은 영영 서버에 닿지 않는다.
 - ⚠ **환불 통보는 계정 가드를 건너뛴다.** A 가 산 구독이 환불됐는데 그때 기기에 B 가
   로그인해 있으면 `maySyncToBackend` 가 이걸 버리는데, 환불된 트랜잭션은
   `currentEntitlements` 에 안 나오고 구매 때 이미 finish 돼 있어 **다시 올릴 경로가 하나도
@@ -480,6 +491,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 결제 직전 권위 조회 | `GET /billing/subscription` | — | `BillingPanel.confirmAndPurchase` |
 | 구매 차단 판정 — **서버(권위)** | `CROSS_STORE_RENEWAL_ACTIVE` (`routes/billing-apple.ts`) | 문구 표에만 있다 | `APIErrorMessages` |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |

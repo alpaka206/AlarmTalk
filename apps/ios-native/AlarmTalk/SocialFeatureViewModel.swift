@@ -286,10 +286,14 @@ final class SocialFeatureViewModel: ObservableObject {
     /// `SubscriptionManager.onServerEntitlementUpdated` 훅이 호출한다.
     /// 기존 `refreshAll` 의 구독 fetch 경로(`GET /api/billing/subscription`) 를
     /// 그대로 재사용하며, 실패는 조용히 무시 — 다음 refreshAll 에서 catch-up 된다.
-    func refreshSubscriptionSilently(session: AuthSession?) async {
+    /// - Returns: **권위 응답을 실제로 받아 반영했는가.** 결제 직전 preflight 가 이걸 본다 —
+    ///   실패했는데 캐시로 진행하면 낡은 스냅샷으로 판단하게 된다(코덱스 #733 5차).
+    ///   배경 갱신 호출부는 그대로 무시하면 된다(`@discardableResult`).
+    @discardableResult
+    func refreshSubscriptionSilently(session: AuthSession?) async -> Bool {
         guard let token = session?.token,
               let userID = normalizedUserID(session?.user.id) else {
-            return
+            return false
         }
         activeUserID = userID
         // ⚠ **여기서는 세대를 올리지 않는다 — 잡아 두기만 한다.** 이 갱신은 구독 하나만
@@ -297,18 +301,22 @@ final class SocialFeatureViewModel: ObservableObject {
         // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
         // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
         let generation = refreshGeneration
-        guard let accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else { return }
+        guard let accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else {
+            return false
+        }
         do {
             let nextSubscription = try await api.getSubscription(token: token)
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
-            guard activeUserID == userID, generation == refreshGeneration else { return }
+            guard activeUserID == userID, generation == refreshGeneration else { return false }
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
             }
-            guard silentWrite == .applied else { return }
+            guard silentWrite == .applied else { return false }
             subscription = nextSubscription
+            return true
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
+            return false
         }
     }
 

@@ -83,6 +83,11 @@ final class SubscriptionManager: ObservableObject {
     private let api: AlarmTalkAPI
     private let authProvider: () -> AuthSession?
 
+    /// **마지막 confirm 이 결제를 인정하지 않은 이유.** 구독 갈래가 `.success` 를 돌려주기
+    /// 전에 본다 — 서버가 거절했는데 "결제 완료" 라고 말하면 사용자는 무엇이 잘못됐는지
+    /// 알 길이 없다(코덱스 #733 5차).
+    private var lastConfirmRejection: String?
+
     /// 백엔드 confirm 이 `success: true` 로 응답한 직후 호출되는 훅.
     /// AlarmTalkApp 이 기존 구독 fetch 경로(`SocialFeatureViewModel` 의
     /// `GET /api/billing/subscription`)를 연결해 서버 구독 상태를 새로고침한다.
@@ -127,8 +132,13 @@ final class SubscriptionManager: ObservableObject {
                 )
                 // 200 이면 환불이 아니었다는 뜻이다(적어 둘 이유가 사라졌다).
                 PendingRevokedTransactionStore.remove(transactionID)
+            } catch APIError.server(let status, _, _) where status == 401 || status == 403 {
+                // ⚠ **여기서 지우면 안 된다**(코덱스 #733 5차). 401(토큰 거절)·403(동의
+                //   필요 등)은 **결제 라우트가 이 트랜잭션을 보지도 못했다**는 뜻이다 —
+                //   미들웨어가 앞에서 막은 것이다. 환불된 트랜잭션은 다시 만들 경로가
+                //   없으니, 지우면 그 환불은 영영 서버에 닿지 않는다. 다음 기회에 다시 민다.
             } catch APIError.server(let status, _, _) where (400..<500).contains(status) {
-                // 서버가 판단을 끝냈다 — 환불 회수든 거절이든 다시 보낼 이유가 없다.
+                // 서버가 이 트랜잭션을 **판정했다** — 환불 회수든 거절이든 다시 보낼 이유가 없다.
                 PendingRevokedTransactionStore.remove(transactionID)
                 await onServerEntitlementUpdated?()
             } catch {
@@ -237,6 +247,13 @@ final class SubscriptionManager: ObservableObject {
                     await transaction.finish()
                 }
                 await refreshPurchasedProducts()
+                // ⚠ **서버가 거절했으면 성공이라고 말하지 않는다**(코덱스 #733 5차).
+                //   구독 갈래는 확정 여부와 무관하게 `.success` 를 돌려주는데, 그건
+                //   "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절은
+                //   따라잡히지 않는다 — 사용자가 Play 를 해지해야 풀린다.
+                if let rejection = lastConfirmRejection {
+                    return .failure(reason: rejection)
+                }
                 guard plan.isSubscription || confirmed else {
                     // 결제는 됐지만 발급을 확인하지 못했다. **성공이라고 말하지 않는다** —
                     // 트랜잭션을 안 끝냈으므로 다음 실행에서 `Transaction.updates` 가
@@ -617,6 +634,7 @@ final class SubscriptionManager: ObservableObject {
     /// (`mayFinish` 주석 참조).
     @discardableResult
     private func syncWithBackend(transaction: Transaction) async -> Bool {
+        lastConfirmRejection = nil
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
@@ -655,6 +673,16 @@ final class SubscriptionManager: ObservableObject {
             //   트랜잭션은 재시도해도 결과가 같다.
             await onServerEntitlementUpdated?()
             PendingRevokedTransactionStore.remove(String(transaction.id))
+            return false
+        } catch APIError.server(let status, _, let code) where status == 409
+            && code == "CROSS_STORE_RENEWAL_ACTIVE" {
+            // ⚠ **다른 스토어가 아직 갱신을 쥐고 있다.** 결제 전 preflight 가 막지만
+            //   조회와 결제 사이의 창에서 빠져나올 수 있다. 이미 청구된 뒤라 되돌릴 수
+            //   없으니, 무엇을 해야 하는지 말하고 다음 시도에서 통과시킨다.
+            let message = APIErrorMessages.message(for: code)
+                ?? String(localized: "다른 스토어에서 결제 중인 이용권이 있어요.")
+            self.lastError = message
+            self.lastConfirmRejection = message
             return false
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "TRANSACTION_OWNED_BY_OTHER_USER" {
