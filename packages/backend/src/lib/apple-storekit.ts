@@ -217,6 +217,14 @@ export interface AppleSubscriptionStatus {
   status: number;
   /** 가장 최근 갱신 트랜잭션의 만료 시각(ms). 없으면 조회 실패로 본다. */
   expiresDate?: number;
+  /**
+   * 그 트랜잭션의 **결제 시각**(ms).
+   *
+   * ⚠ 재조회가 갱신을 발견했을 때 `last_paid_at` 에 넣는 값이다 — 크론이 도는 시각이
+   * 아니라 **애플이 서명해 준 결제 시각**이어야 한다. 크론은 결제보다 한참 뒤에 돌 수
+   * 있고(재시도 뒤 발견 등), 그 시각으로 5년을 세면 처리방침의 최대 5년을 넘긴다.
+   */
+  purchaseDate?: number;
   productId: string;
   /** 자동 갱신이 켜져 있나(0/1). 사용자가 스토어에서 껐으면 0. */
   autoRenewStatus?: number;
@@ -291,6 +299,7 @@ export async function fetchAppleSubscriptionStatus(
     return {
       status: Number(entry.status ?? APPLE_SUBSCRIPTION_STATUS.EXPIRED),
       expiresDate: info.expiresDate,
+      purchaseDate: info.purchaseDate,
       productId: info.productId,
       autoRenewStatus: renewal?.autoRenewStatus,
     };

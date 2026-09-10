@@ -523,6 +523,13 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
         return R.string.msg_gb_billing_info_load_failed
     }
     subscriptionResponse = fresh
+    // ⚠ **plan 도 함께 최신화한다**(코덱스 #734 8차). `saveSubscriptionSnapshot` 은 일부러
+    //   `users.plan` 을 안 쓴다(그 자리가 아는 값은 마지막 `/auth/me` 때의 것이라 — 그 함수
+    //   주석 참조). 그런데 여기서 구독이 **없어진 것**을 확인해도 캐시된 유료 plan 이 남으면,
+    //   `resolvePaidVoiceAccess` 의 마지막 갈래가 `plan in PaidUserPlans -> Entitled` 로
+    //   떨어져 **유료 목소리·울림 게이트가 계속 열린다.** plan 을 쓰는 정식 경로를 부른다
+    //   (그 경로가 세션 세대를 대조해 안전하게 쓴다).
+    refreshAppSession()
     val providers = fresh.storeRenewalProviders ?: return null
     // 판정은 `provider <> ?` 라 우리에게 오는 것은 언제나 **다른 스토어**다.
     return if (providers.any { it != "google" }) R.string.msg_cross_store_renewal_active else null
@@ -552,6 +559,15 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
         val blocked = crossStoreRenewalBlocked(session)
         if (blocked != null) {
             message = getApplication<android.app.Application>().getString(blocked)
+            billingBusy = false
+            return@launch
+        }
+        // ⚠ **기다리는 사이 화면이 재생성됐으면 열지 않는다**(코덱스 #734 8차). 이 코루틴은
+        //   뷰모델 것이라 살아남지만 `activity` 는 **위에서 잡은 옛 인스턴스**다 — 회전 등으로
+        //   그게 파괴됐는데 그대로 `launchBillingFlow` 에 넘기면 **결제 시트가 안 뜨는데
+        //   실패도 아닌** 상태가 된다(사용자는 눌렀는데 아무 일도 안 일어난 것으로 본다).
+        //   다시 누르면 새 Activity 로 정상 진행된다.
+        if (activity.isDestroyed || activity.isFinishing) {
             billingBusy = false
             return@launch
         }

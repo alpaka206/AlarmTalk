@@ -535,7 +535,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
-| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription` | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` — 부르는 곳 **셋**: `routes/billing-query.ts`(결제 직전 조회) · `routes/billing-google.ts`(확정 앞) · `routes/billing-google-rtdn.ts`(entitle 앞) | — | — |

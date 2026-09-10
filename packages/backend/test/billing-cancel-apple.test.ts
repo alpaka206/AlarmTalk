@@ -173,6 +173,12 @@ describe('processSubscriptionExpiry — Apple reconciliation', () => {
     expect(update!.sql).toContain('last_paid_at');
     // 같은 값의 재조회는 결제가 아니다 — 실제로 늘어난 경우만 민다.
     expect(update!.sql).toContain('> expires_at');
+    // ⚠ **앵커는 애플이 서명해 준 결제 시각이다 — 크론이 도는 시각이 아니다**
+    //   (코덱스 #734 8차). 크론은 결제보다 한참 뒤에 돌 수 있어, 그 시각으로 5년을
+    //   세면 처리방침의 최대 5년을 넘긴다.
+    const purchasedAt = new Date(NOW.getTime() - 30 * 24 * 3600 * 1000).toISOString();
+    expect(update!.args[1]).toBe(purchasedAt);
+    expect(update!.args[1]).not.toBe(NOW.toISOString());
   });
 
   it('유예 기간(4)은 아직 권한이 있다 — 연장한다', async () => {

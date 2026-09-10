@@ -1146,12 +1146,20 @@ async function reconcileAppleBeforeExpiry(
       //   여기서도 **실제로 늘어난 경우만** 민다(같은 값의 재조회는 결제가 아니다).
       sql: `UPDATE store_transactions
             SET last_paid_at = CASE
-                  WHEN expires_at IS NULL OR ? > expires_at THEN datetime('now')
+                  WHEN expires_at IS NULL OR ? > expires_at THEN ?
                   ELSE last_paid_at
                 END,
                 expires_at = ?
             WHERE provider = 'apple' AND provider_transaction_id = ?`,
-      args: [expiryIso, expiryIso, originalTransactionId],
+      // ⚠ **애플이 서명해 준 결제 시각을 쓴다 — 크론이 도는 시각이 아니라**(코덱스 #734 8차).
+      //   크론은 결제보다 한참 뒤에 돌 수 있고(재시도 뒤 발견 등), 그 시각으로 5년을 세면
+      //   처리방침의 최대 5년을 넘긴다. 못 읽었을 때만 서버 시각으로 떨어진다.
+      args: [
+        expiryIso,
+        status.purchaseDate ? new Date(status.purchaseDate).toISOString() : params.now.toISOString(),
+        expiryIso,
+        originalTransactionId,
+      ],
     });
   });
   logStructured('info', {
