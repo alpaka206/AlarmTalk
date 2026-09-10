@@ -14,6 +14,7 @@
     <string name="auth_consent_privacy">［必須］プライバシーポリシーに同意</string>
     <string name="auth_consent_processing">処理中…</string>
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
+    <string name="auth_consent_document_unavailable">書類を読み込めませんでした。アプリを最新バージョンに更新してから、もう一度お試しください。</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_voice_biometric">［任意］音声生体情報の処理に同意</string>
     <string name="auth_consent_voice_biometric_desc">自分の声をアラームに使いたい場合にのみ必要です。\n録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。\n同意しなくても標準の声のアラームはそのまま使え、声を登録するときに改めてお伺いします。</string>

@@ -4072,6 +4072,23 @@
         }
       }
     },
+    "문서를 불러오지 못했어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't load the document"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書類を読み込めませんでした"
+          }
+        }
+      }
+    },
     "알람이 모두 꺼져 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7790,6 +7807,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "アプリの言語"
+          }
+        }
+      }
+    },
+    "앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please update to the latest version of the app and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリを最新バージョンに更新してから、もう一度お試しください。"
           }
         }
       }

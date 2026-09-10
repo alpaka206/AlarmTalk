@@ -158,6 +158,11 @@
   통일하지 말 것.
 - **단일 출처는 `docs/legal` 하나다.** 두 앱 모두 빌드 때 거기서 복사한다(Android
   `copyLegalDocs`, iOS `project.yml` 의 resources). 사본을 만들지 말 것.
+- ⚠ **번들을 못 읽으면 웹으로 떨어뜨리지 말 것 — 오류를 띄우고 선다**(코덱스 #732).
+  랜딩 문서를 대신 띄우면 이 규칙의 존재 이유가 사라진다(보여 준 것과 기록한 버전이 다시
+  갈라진다). 게다가 오프라인이면 웹은 빈 화면이라, 사용자는 **아무것도 못 본 채** 동의만
+  하게 된다. 번들 읽기 실패는 빌드 사고이고 회귀 테스트가 CI 에서 잡으므로
+  (`BundledLegalDocumentTests`), 그런 빌드가 나갔다면 사용자가 할 수 있는 일은 업데이트뿐이다.
 - ⚠ **번들에 넣는 것은 두 파일뿐이다** — `privacy-policy.ko.md`, `terms-of-service.ko.md`.
   같은 디렉터리에 `compliance-notes.ko.md`·`README.md` 처럼 **사용자에게 보이면 안 되는
   내부 문서**가 함께 있어서, 폴더째 실으면 APK/IPA 를 푼 누구나 읽는다. 목록을 늘릴 때는
@@ -180,6 +185,7 @@
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `CURRENT_POLICY_VERSION` (409) |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
+| 번들을 못 읽을 때 | 오류 문구 (`readLegalDocument` 의 `getOrElse`) | 오류 화면 (`BundledLegalDocumentView.unavailable`) | — |
 | 설정의 문서 뷰어 | 랜딩 웹 (`ui/settings/LegalDocumentScreen.kt`) | 랜딩 웹 (`Views/Settings/LegalDocumentView.swift`) | — |
 | 번들에 넣는 파일 목록 | `copyLegalDocs` 의 `include` (`app/build.gradle.kts`) | `project.yml` 의 resources 두 줄 | `docs/legal` (원본) |
 

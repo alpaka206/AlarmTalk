@@ -14,6 +14,7 @@
     <string name="auth_consent_privacy">[Required] Agree to Privacy Policy</string>
     <string name="auth_consent_processing">Processing…</string>
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
+    <string name="auth_consent_document_unavailable">Couldn\'t load the document. Please update to the latest version of the app and try again.</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_voice_biometric">[Optional] Agree to voice biometric processing</string>
     <string name="auth_consent_voice_biometric_desc">Only needed if you want to use your own voice for alarms.\nRecorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.\nDeclining keeps the built-in voices working, and we will ask again when you register a voice.</string>
