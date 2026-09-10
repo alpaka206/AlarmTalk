@@ -454,6 +454,11 @@ final class SubscriptionManager: ObservableObject {
     /// 사용자가 BillingPanel 의 "동기화 재시도" 를 누르면 호출.
     /// `currentEntitlements` 의 모든 verified 트랜잭션을 다시 백엔드로 보낸다.
     func resyncEntitlements() async {
+        // ⚠ **환불 큐를 먼저 민다**(코덱스 #733 7차). 아래 순회는 `currentEntitlements` 인데
+        //   **환불된 트랜잭션은 거기 나오지 않는다** — 세션이 있어도 confirm 이 일시적으로
+        //   실패하면(502·503·429) 큐에 남기고 트랜잭션은 끝내 버리므로, 전경 복귀가 이걸
+        //   밀어 주지 않으면 **앱을 껐다 켜기 전까지 재시도할 길이 없다.**
+        await flushPendingRevocations()
         // ⚠ **여기에도 같은 계정 필터를 건다**(2026-09-01 리뷰). 안 걸면 같은 Apple ID 를 쓰는
         // B 가 **전경 진입마다** A 의 트랜잭션을 서버로 보내고, 서버는 소유권으로 409 를
         // 돌려준다 — B 는 실패한 결제가 없는데 "결제 확인 동기화에 실패했어요" 가 계속 뜬다.
@@ -588,10 +593,11 @@ final class SubscriptionManager: ObservableObject {
                     let isRevoked = transaction.revocationDate != nil
                     let maySend = await self.maySyncToBackend(transaction)
                     if isRevoked {
-                        // ⚠ **세션이 없으면 적어 둔다**(코덱스 #733 4차). 아래 `syncWithBackend`
-                        //   는 로그인 안 돼 있으면 그냥 false 를 돌려주는데, 환불된 트랜잭션은
-                        //   `currentEntitlements` 에도 `unfinished` 에도 없어 **다시 올릴 경로가
-                        //   하나도 없다.** 다음 로그인 때 이 큐가 밀어 올린다.
+                        // ⚠ **환불은 무조건 적어 둔다**(코덱스 #733 4·7차). 로그아웃이면
+                        //   `syncWithBackend` 가 그냥 실패하고, 로그인돼 있어도 502·503·429
+                        //   로 실패할 수 있다. 환불된 트랜잭션은 `currentEntitlements` 에도
+                        //   `unfinished` 에도 없어 **다시 올릴 경로가 하나도 없으므로**,
+                        //   성공했을 때 지우는 편이 안전하다(성공 시 confirm 갈래가 지운다).
                         PendingRevokedTransactionStore.add(String(transaction.id))
                     }
                     guard isRevoked || maySend else {

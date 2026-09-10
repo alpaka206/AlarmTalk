@@ -300,8 +300,25 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
       }),
     );
+    // ⚠ **권한을 못 준 채로 구매를 확인 처리하지 않는다**(코덱스 #733 7차).
+    //   `applyStoreEntitlement` 가 교차 스토어로 거절하면 **아무것도 쓰이지 않는다.**
+    //   그런데 아래 `acknowledgeGoogleSubscription` 은 `ok` 를 보지 않아서, 예전에는
+    //   **권한 없는 결제를 확인 처리**했다 — 확인된 구매는 Play 의 3일 자동 환불 대상에서
+    //   빠지므로, 사용자는 돈만 내고 아무것도 못 받은 채 되돌릴 길까지 잃는다.
+    //   확인하지 않고 두면 Play 가 3일 뒤 자동 환불한다. 그게 옳은 결말이다.
+    //
+    //   Pub/Sub 자체는 200 으로 받는다 — 재시도해도 결과가 같다.
+    if (!entitleResult.ok) {
+      logStructured('warn', {
+        at: 'billing.google.rtdn',
+        note: 'entitle_rejected',
+        errorCode: entitleResult.errorCode,
+        userPk,
+      });
+      return c.json({ success: true, ignored: 'entitle_rejected' });
+    }
     // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
-    if (entitleResult.ok && entitleResult.planChangedUserIds.length > 0) {
+    if (entitleResult.planChangedUserIds.length > 0) {
       await notifyPlanChanged(db, c.env, entitleResult.planChangedUserIds);
     }
     // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로

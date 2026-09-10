@@ -333,7 +333,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1);
   });
 
-  it('아직 유료면 목소리 보관 유예를 걸지 않는다 — 삭제 예고도 안 보낸다', async () => {
+  it('아직 유료면 목소리 보관 유예를 걸지 않는다', async () => {
     // ⚠ 환불된 애플 구독이 **여러 활성 구독 중 하나**일 수 있다(구글 구독·프로모가 남은
     //   경우). `cancelSubscriptionImmediate` 는 살아남은 유료 플랜을 일부러 보존하는데,
     //   유예 행을 무조건 깔면 **돈을 내고 있는 사용자에게 "3일 뒤 삭제" 가 나간다**
@@ -349,8 +349,25 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
 
     expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1); // 회수 자체는 한다
     expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
-    expect(notifyVoiceDeletionScheduled).not.toHaveBeenCalled();
     expect(notifyPlanChanged).toHaveBeenCalledTimes(1); // 스냅샷 갱신은 여전히 알린다
+  });
+
+  it('소유자가 유료로 남아도 떨어져 나간 멤버에게는 삭제 예고를 보낸다', async () => {
+    // ⚠ `stillPaid` 는 **소유자** 얘기다. 그룹이 해체되면서 떨어져 나간 멤버들은 유예가
+    //   걸려 있는데, 소유자에게 다른 유료 구독이 남았다는 이유로 예고를 통째로 건너뛰면
+    //   **그 멤버들은 아무 경고 없이 목소리를 잃는다**(코덱스 #733 7차).
+    //   `notifyVoiceDeletionScheduled` 는 유예 행이 있는 사람만 고르므로 전원을 넘긴다.
+    stillPaid = true;
+    pushMappedSubscription();
+
+    await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(notifyVoiceDeletionScheduled).toHaveBeenCalledTimes(1);
+    expect(notifyVoiceDeletionScheduled.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
   });
 
   it('유료가 남지 않으면 예전대로 유예를 걸고 예고한다', async () => {
