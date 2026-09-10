@@ -441,6 +441,44 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(userGone.rows.length).toBe(0);
   });
 
+  it('5년 넘게 갱신해 온 구독은 최근 기간을 기준으로 보존한다 — 체인 최초 시각이 아니라', async () => {
+    // ⚠ `store_transactions.created_at` 은 **체인이 처음 들어온 시각**이다(갱신은 그 행의
+    //   expires_at 만 고친다). 그것만 보면 오래 갱신해 온 구독은 이미 지난 날짜가 나와
+    //   **이번 달에 결제한 사람의 증빙까지 버린다**(코덱스 #734 2차).
+    const SUB7 = 'hard-del-sub-5';
+    const PK7 = 'hard-del-pk-5';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK7, SUB7, 'harddel5@test.com', 'Hard Delete 5'],
+    });
+    // 2018년부터 갱신해 온 구독 — 지금도 유효하다.
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2018-01-01', '2030-01-01')`,
+      args: ['sub-hard-5', PK7, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'personal_monthly', 'personal', ?, '2018-01-01T00:00:00.000Z')`,
+      args: ['st-hard-5', PK7, 'play-token-hard-5', 'sub-hard-5'],
+    });
+
+    const res = await buildApp(SUB7, PK7).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-5'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 기준일이 2018 이 아니라 2030(마지막으로 확인된 기간의 끝)이다.
+    expect(String(retained.rows[0]!.retain_until) > '2034-01-01').toBe(true);
+  });
+
   it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {
     const SUB4 = 'hard-del-sub-2';
     const PK4 = 'hard-del-pk-2';

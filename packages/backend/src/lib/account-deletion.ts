@@ -62,10 +62,25 @@ export async function pseudonymizeBillingForRetention(
   for (const row of subs.rows) {
     // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #734 — 일회성 갈래와 같은 규칙).
     //   탈퇴 시각부터 세면 4년 전에 결제한 구독이 그 시점부터 5년을 더 남아 **9년**이 된다 —
-    //   처리방침이 밝힌 최대 5년을 넘긴다. 기준일은 **마지막 결제**(스토어 기록의
-    //   `created_at`)이고, 스토어 결제가 아니면(프로모·바우처) 구독 시작일을 쓴다.
-    const paidAt =
-      ((row.txn_created_at as string | null) ?? (row.starts_at as string | null)) || null;
+    //   처리방침이 밝힌 최대 5년을 넘긴다.
+    //
+    // ⚠ **`store_transactions.created_at` 하나만 보면 안 된다**(코덱스 #734 2차). 그 값은
+    //   **체인이 처음 들어온 시각**이다 — 애플의 originalTransactionId·Play 의 purchaseToken
+    //   은 갱신돼도 그대로이고, 같은-플랜 갱신은 그 행의 `expires_at` 만 고친다. 5년 넘게
+    //   갱신해 온 구독이면 이미 지난 날짜가 나와, **이번 달에 결제한 사람의 증빙까지
+    //   버린다**(원본은 곧 파기되므로 되돌릴 수 없다).
+    //
+    //   그래서 **마지막으로 확인된 기간의 끝**(`expires_at`)을 함께 본다. 정확한 결제일을
+    //   따로 저장하지 않으므로 그것을 상한으로 쓴다 — 실제 결제일보다 최대 한 주기(약 30일)
+    //   늦게 잡히지만, 며칠 더 남는 쪽이 **법정 증빙을 잃는 것보다 낫다.**
+    //   (정확히 하려면 `last_paid_at` 컬럼이 필요하다 — 릴리스 PR 에 마이그레이션을
+    //    더하지 않으려고 지금은 이 상한을 쓴다.)
+    const anchors = [
+      row.txn_created_at as string | null,
+      row.expires_at as string | null,
+      row.starts_at as string | null,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const paidAt = anchors.length > 0 ? anchors.reduce((a, b) => (a > b ? a : b)) : null;
     const recordRetainUntil = paidAt
       ? billingRetentionUntil(new Date(paidAt)).toISOString()
       : retainUntil;

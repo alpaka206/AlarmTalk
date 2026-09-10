@@ -55,24 +55,27 @@ billingQuery.get('/subscription', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
-  const result = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
-                 s.status, s.starts_at, s.expires_at,
-                 s.cancel_at_period_end, s.canceled_at, s.next_plan_id,
-                 p.key AS plan_key, p.name AS plan_name, p.plan_type,
-                 p.period_days, p.max_members, p.price_krw,
-                 np.key AS next_plan_key, np.name AS next_plan_name, np.plan_type AS next_plan_type
-          FROM subscriptions s
-          JOIN users u ON u.id = s.user_id
-          JOIN plans p ON p.id = s.plan_id
-          LEFT JOIN plans np ON np.id = s.next_plan_id
-          WHERE u.id = ?
-            AND s.status = 'active'
-            AND s.expires_at > datetime('now')
-          ORDER BY s.starts_at DESC
-          LIMIT 1`,
-    args: [userId],
-  });
+  const readCurrentSubscription = () =>
+    db.execute({
+      sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
+                   s.status, s.starts_at, s.expires_at,
+                   s.cancel_at_period_end, s.canceled_at, s.next_plan_id,
+                   p.key AS plan_key, p.name AS plan_name, p.plan_type,
+                   p.period_days, p.max_members, p.price_krw,
+                   np.key AS next_plan_key, np.name AS next_plan_name, np.plan_type AS next_plan_type
+            FROM subscriptions s
+            JOIN users u ON u.id = s.user_id
+            JOIN plans p ON p.id = s.plan_id
+            LEFT JOIN plans np ON np.id = s.next_plan_id
+            WHERE u.id = ?
+              AND s.status = 'active'
+              AND s.expires_at > datetime('now')
+            ORDER BY s.starts_at DESC
+            LIMIT 1`,
+      args: [userId],
+    });
+
+  let result = await readCurrentSubscription();
 
   // **지금 이 계정의 갱신을 쥔 스토어 전부.** 위 SELECT 와 달리 만료로 거르지 않고,
   // 활성 구독이 하나도 안 잡혀도 돌려준다.
@@ -105,6 +108,11 @@ billingQuery.get('/subscription', async (c) => {
         db,
         activeSubscriptions.map((s) => s.subscriptionId),
       );
+      // ⚠ **돌려줄 구독 행도 다시 읽는다**(코덱스 #734 2차). 방금 고친 것이
+      //   `cancel_at_period_end` 인데 위 SELECT 는 그 전에 돌았다 — 그대로 두면
+      //   `store_renewal_providers` 는 새 상태이고 `subscription.cancel_at_period_end` 는
+      //   옛 상태인 응답이 나가, 앱의 이용권 화면이 **해지 예약을 반대로** 보여 준다.
+      result = await readCurrentSubscription();
     }
   }
   // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`

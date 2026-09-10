@@ -538,7 +538,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription` | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
-| 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` (Play 확정·RTDN 앞) | — | — |
+| 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` — 부르는 곳 **셋**: `routes/billing-query.ts`(결제 직전 조회) · `routes/billing-google.ts`(확정 앞) · `routes/billing-google-rtdn.ts`(entitle 앞) | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
