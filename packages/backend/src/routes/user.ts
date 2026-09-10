@@ -263,13 +263,16 @@ user.delete('/me', async (c) => {
       ? (userRes.rows[0]!.apple_refresh_token as string | null)
       : null;
     if (appleRefreshToken) {
-      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
-      if (signInConfig) {
-        try {
-          await revokeAppleToken(signInConfig, appleRefreshToken);
-        } catch (err) {
-          logRouteError(c, err);
-        }
+      // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 3차). `appleSignInConfig` 는 PEM 이
+      //   잘려 있으면 **던진다.** 밖에 두면 바깥 catch 가 `DELETE_ACCOUNT_FAILED` 를
+      //   돌려주고 `pseudonymizeBillingForRetention`·`purgeUserAccount` 가 **아예 돌지
+      //   않는다** — 바로 위 주석이 약속한 "실패해도 탈퇴는 진행한다" 가 깨진다.
+      //   (유예 파기 크론은 2차에서 이미 이렇게 고쳤다 — `index.ts`.)
+      try {
+        const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+        if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
+      } catch (err) {
+        logRouteError(c, err);
       }
     }
 

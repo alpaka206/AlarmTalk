@@ -42,6 +42,8 @@ struct BillingPanel: View {
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
     @State private var pendingPurchase: PendingPlanPurchase?
+    /// Play 로 결제 중인 이용권이 있어 애플 결제를 막았다는 안내.
+    @State private var showPlayOwnsRenewalNotice = false
 
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
@@ -92,6 +94,18 @@ struct BillingPanel: View {
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
                         onPurchase: { product in
+                            // ⚠ **갱신을 다른 스토어가 쥐고 있으면 여기서 막는다**
+                            //   (코덱스 #730 3차). Play 로 결제 중인 이용권이 있는데 애플
+                            //   결제를 시작하면, 확정은 **우리 DB 의 옛 구독 행만** 취소할 뿐
+                            //   Play 의 자동갱신은 끊지 못한다 — 두 스토어가 동시에 청구하고,
+                            //   서버는 새 애플 구독만 보여 주므로 **Play 쪽을 관리할 입구가
+                            //   앱에서 사라진다.** 애플 구독을 서버가 못 끊는 것과 같은 이유로,
+                            //   Play 구독도 Play 에서만 끊을 수 있다.
+                            //   판정은 로컬 StoreKit 이 아니라 서버의 활성 구독이다.
+                            if socialFeatures.subscription?.subscription?.storeProvider == "google" {
+                                showPlayOwnsRenewalNotice = true
+                                return
+                            }
                             // ⚠ **바로 결제로 보내지 말 것.** 전환일 때는 스토어 시트가
                             // 말해 주지 않는 게 있다 — **언제 바뀌는지**(업그레이드 즉시 /
                             // 다운그레이드는 다음 갱신일)와 **정원이 줄면 멤버가 나간다**는
@@ -216,6 +230,11 @@ struct BillingPanel: View {
         // 안드로이드의 IosAlertDialog 가 이걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로
         // 만들면 오히려 원본에서 멀어진다).
         // ⚠ 문구는 안드로이드 `billing_play_*` 문자열과 **글자까지 같다**(스토어 이름만 다르다).
+        .alert("Google Play 에서 결제 중이에요", isPresented: $showPlayOwnsRenewalNotice) {
+            Button("확인", role: .cancel) {}
+        } message: {
+            Text("지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요.")
+        }
         .alert(
             pendingPurchaseTitle,
             isPresented: Binding(

@@ -1145,6 +1145,77 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
   });
 
+  it('커플 → 가족: 남은 멤버의 구독 행도 새 플랜으로 옮긴다', async () => {
+    // ⚠ 예전에는 `plan_groups` 만 고쳐서 멤버의 `subscriptions.plan_id` 가 **옛 플랜에
+    //   그대로** 남았다. `GET /billing/subscription` 은 멤버의 등급을 그 행에서 뽑으므로,
+    //   그룹의 정원·코드는 가족으로 옮겨 갔는데 멤버 화면과 권한 스냅샷만 커플로 남는다
+    //   (코덱스 #730 3차).
+    seedCoupleOwner();
+
+    await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-family',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const move = findCall('UPDATE subscriptions\n              SET plan_id = ?');
+    expect(move).toBeDefined();
+    expect(move!.sql).toContain('plan_group_id = ?');
+    expect(move!.sql).toContain("status = 'active'");
+    // 소유자는 제외한다 — 새 구독 행을 따로 만들고, 옛 행은 방금 취소됐다.
+    expect(move!.sql).toContain('user_id <> ?');
+    expect(move!.args).toEqual(['plan-family', 'group-1', 'user-pk-1']);
+  });
+
+  it('멤버 이전은 정원 정리 **뒤**에 돈다 — 쫓겨날 사람까지 옮기지 않는다', async () => {
+    seedCoupleOwner();
+
+    await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-family',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const capacityAt = mockDB.calls.findIndex((c) =>
+      c.sql.includes('FROM plan_group_members') && c.sql.includes('user_id <> ?'),
+    );
+    const moveAt = mockDB.calls.findIndex((c) =>
+      c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
+    );
+    expect(capacityAt).toBeGreaterThanOrEqual(0);
+    expect(moveAt).toBeGreaterThan(capacityAt);
+  });
+
+  it('새 그룹을 만드는 경우에는 옮길 멤버가 없다', async () => {
+    mockDB.pushResultFor('FROM store_transactions', []);
+    mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', []); // 이어받을 그룹 없음
+    mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', []);
+    // 이어받을 그룹이 없으니 코드가 새로 발급된다 — INSERT 가 한 번에 성공하게 둔다.
+    mockDB.pushResultFor('INSERT OR IGNORE INTO voucher_codes', [], 1);
+
+    await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-family',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date(),
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    expect(
+      mockDB.calls.find((c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?')),
+    ).toBeUndefined();
+  });
+
   it('커플 → 가족: 이미 뿌린 초대 코드를 만료시키지 않고 새 구독으로 옮긴다', async () => {
     seedCoupleOwner();
 

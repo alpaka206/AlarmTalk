@@ -4,6 +4,23 @@
     ":" : {
 
     },
+    "Google Play 에서 결제 중이에요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Billed through Google Play"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Play で課金中です"
+          }
+        }
+      }
+    },
     "·" : {
 
     },
@@ -10707,6 +10724,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今すぐ解約しますか？"
+          }
+        }
+      }
+    },
+    "지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your current pass renews automatically through Google Play. Buying on Apple would bill you in both places. Cancel it in Play Store → Subscriptions first, or try again after it expires."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のパスは Google Play で自動更新されています。Apple で購入すると両方から請求されます。Play ストア → 定期購入で先に解約するか、期間終了後にもう一度お試しください。"
           }
         }
       }

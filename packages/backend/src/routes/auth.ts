@@ -817,6 +817,11 @@ auth.post('/apple', async (c) => {
     let plan: 'free' | 'plus' | 'family';
     let tokenEpoch = 0;
     let effectiveName = name;
+    // ⚠ **저장된 진짜 이메일이 이긴다**(코덱스 #730 3차). 애플은 재로그인 때 이메일을 안
+    // 주는 경우가 있어 위에서 `<sub>@apple.local` 을 합성하는데, 그 값을 JWT·응답에 실으면
+    // **앱이 세션의 이메일을 가짜 주소로 덮어쓰고** 그 뒤로는 계속 그걸 보여 준다.
+    // DB 를 덮어쓰지 않는 것과 같은 이유이고, 같은 값을 써야 둘이 어긋나지 않는다.
+    let effectiveEmail = email;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -837,6 +842,8 @@ auth.post('/apple', async (c) => {
       // 규칙을 통과시킨다.
       const storedName = clampDisplayName(row.name ?? '');
       effectiveName = storedName || name;
+      const storedEmail = (row.email ?? '').trim();
+      if (storedEmail) effectiveEmail = storedEmail;
 
       await db.execute({
         sql: `UPDATE users
@@ -867,9 +874,16 @@ auth.post('/apple', async (c) => {
     //
     // ⚠ authorization_code 는 **5분·1회용**이라 지금 교환하지 않으면 영영 못 쓴다.
     if (parsed.data.authorization_code) {
-      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
-      if (signInConfig) {
-        try {
+      // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 3차). `appleSignInConfig` 는 PEM 이
+      //   잘려 있으면 **던진다.** 밖에 두면 그 예외가 바깥 catch 로 빠져나가 **모든 애플
+      //   로그인이 `AUTH_APPLE_FAILED`** 가 된다 — 사용자 행은 이미 만들어졌는데도.
+      //   정상 로그인은 언제나 `authorization_code` 를 실어 보내므로, 시크릿이 잘린
+      //   순간부터 고칠 때까지 **아무도 애플로 못 들어온다.**
+      //   바로 위 주석대로 이 블록은 **최선 노력**이고, 로그인이 본 목적이다.
+      //   (같은 헬퍼를 쓰는 파기 크론은 2차에서 이미 이렇게 고쳤다 — `index.ts`.)
+      try {
+        const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+        if (signInConfig) {
           const { refreshToken } = await exchangeAppleAuthorizationCode(
             signInConfig,
             parsed.data.authorization_code,
@@ -880,15 +894,15 @@ auth.post('/apple', async (c) => {
               args: [refreshToken, userId],
             });
           }
-        } catch (err) {
-          logRouteError(c, err);
         }
+      } catch (err) {
+        logRouteError(c, err);
       }
     }
 
     // JWT sub 은 항상 users.id (구글 경로 주석 참고).
     const token = await signAppJwt(
-      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
+      { sub: userId, email: effectiveEmail, name: effectiveName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -917,7 +931,7 @@ auth.post('/apple', async (c) => {
       token,
       user: {
         id: userId,
-        email,
+        email: effectiveEmail,
         name: effectiveName,
         plan,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,

@@ -9,7 +9,13 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { notifyPlanChanged } from '../lib/billing-cancel';
+import {
+  cancelSubscriptionImmediate,
+  notifyPlanChanged,
+  notifyVoiceDeletionScheduled,
+  schedulePaidVoiceRetention,
+  type ActiveSubscription,
+} from '../lib/billing-cancel';
 import { logStructured } from '../lib/logger';
 import { withWriteTransaction } from '../lib/transactions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
@@ -96,12 +102,23 @@ billingApple.post('/apple/confirm', async (c) => {
     );
   }
 
+  const db0 = getDB(c.env);
+
   // 환불·취소된 트랜잭션으로 권한을 얻을 수 없게 한다.
+  //
+  // ⚠ **거절만 하면 이미 준 권한이 그대로 남는다**(코덱스 #730 3차). 애플에는 우리가 받는
+  //   서버 알림 라우트가 없어서(App Store Server Notifications 미구현), 기간 중 환불은
+  //   클라가 `Transaction.updates` 로 물어다 준 이 요청이 **유일한 통보**다. 여기서
+  //   400 만 돌려주면 만료 크론이 재조회할 때까지 — 즉 저장된 `expires_at` 까지 —
+  //   환불받은 계정과 그 가족 멤버가 계속 유료로 남는다.
+  //
+  //   회수 대상은 **그 트랜잭션에 묶인 구독**이지 요청을 보낸 계정이 아니다. 환불은
+  //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
+  //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
+    await revokeRefundedAppleSubscription(db0, c.env, info);
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
   }
-
-  const db0 = getDB(c.env);
 
   // ⚠ **이 결제가 이 계정 것인지 확인한다**(2026-08-18 Codex #697 P1).
   // 구글 갈래는 `obfuscatedExternalAccountId` 로 처음부터 이 검사를 했는데 애플에는
@@ -272,5 +289,63 @@ billingApple.post('/apple/confirm', async (c) => {
     subscription: result.subscription,
   });
 });
+
+/**
+ * **환불된 애플 결제의 권한을 회수한다.**
+ *
+ * Play 의 RTDN `deactivate` 갈래와 같은 정리다(`billing-google-rtdn.ts`) — 매핑된 구독
+ * 한 건만 취소하고, 목소리는 지우지 않고 보관 유예를 건다(재구독하면 entitle 경로가
+ * 유예를 푼다). 강등되는 당사자와 해체된 그룹 멤버에게 알린다.
+ *
+ * ⚠ **조회 키가 둘이다.** 구독은 `originalTransactionId`(갱신마다 바뀌지 않는다), 선물은
+ * `transactionId` 로 기록된다. 한쪽만 보면 못 찾는다.
+ *
+ * 선물(소모성)은 여기서 아무것도 하지 않는다 — 바우처는 `subscription_id` 가 없어 아래
+ * JOIN 에 걸리지 않는다. 이미 등록된 코드를 되돌리는 것은 별개 문제라 여기서 다루지 않는다.
+ */
+async function revokeRefundedAppleSubscription(
+  db: ReturnType<typeof getDB>,
+  env: AppEnv['Bindings'],
+  info: { originalTransactionId: string; transactionId: string },
+): Promise<void> {
+  const res = await db.execute({
+    sql: `SELECT st.user_id, st.subscription_id,
+                 s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+          FROM store_transactions st
+          JOIN subscriptions s ON s.id = st.subscription_id
+          JOIN plans p ON p.id = s.plan_id
+          WHERE st.provider = 'apple'
+            AND st.provider_transaction_id IN (?, ?)
+            AND s.status = 'active'`,
+    args: [info.originalTransactionId, info.transactionId],
+  });
+  const row = res.rows[0];
+  if (!row) return; // 구독이 아니거나(선물) 이미 정리됐다.
+
+  const mapped: ActiveSubscription = {
+    subscriptionId: String(row.subscription_id),
+    userPk: String(row.user_id),
+    planId: String(row.plan_id),
+    planType: String(row.plan_type),
+    planKey: String(row.plan_key),
+    planGroupId: (row.plan_group_id as string | null) ?? null,
+  };
+  const now = new Date();
+  const affected = await withWriteTransaction(db, async (tx) => {
+    const ids = await cancelSubscriptionImmediate(tx, mapped, now, { deleteVoiceData: false });
+    await schedulePaidVoiceRetention(tx, mapped.userPk, now);
+    return ids;
+  });
+  logStructured('info', {
+    at: 'billing.apple.confirm',
+    step: 'revoked_cleanup',
+    userPk: mapped.userPk,
+    subscriptionId: mapped.subscriptionId,
+    affected: affected.length,
+  });
+  // 푸시는 커밋 뒤에(트랜잭션 안에서 네트워크를 쓰지 않는다).
+  await notifyPlanChanged(db, env, affected);
+  await notifyVoiceDeletionScheduled(db, env, affected);
+}
 
 export default billingApple;

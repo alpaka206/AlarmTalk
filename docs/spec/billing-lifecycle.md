@@ -342,6 +342,45 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 ⚠ **크론에는 보류 갈래가 두 개다**(예약해지 만기 루프 / 일반 만료 루프). 한쪽만 고치면
 예약해지 상태에서 보류가 겹친 사용자는 권한만 조용히 잠긴다 — 실제로 그렇게 빠뜨렸다.
 
+## 갱신을 쥔 스토어가 있으면 **다른 스토어에서 새로 사지 못한다**
+
+⚠ Play 로 결제 중인 이용권이 있는데 애플 결제를 시작하면, 확정은 **우리 DB 의 옛 구독
+행만** 취소할 뿐 Play 의 자동갱신은 끊지 못한다 — 서버가 Play 구독을 끊을 수 있는 것은
+`POST /billing/cancel` 을 탈 때뿐이고, 스토어 구매 확정 경로는 그걸 부르지 않는다.
+결과는 **두 스토어가 동시에 청구**하고, 서버는 새 애플 구독만 보여 주므로 Play 쪽을
+관리할 입구가 앱에서 사라지는 것이다.
+
+- 판정은 **로컬 스토어 상태가 아니라 `store_provider`** 다(위 절과 같은 이유).
+- 막고 나서 **무엇을 해야 하는지 말한다** — "Play 스토어 → 구독에서 먼저 해지하거나,
+  기간이 끝난 뒤에 다시" 다. 그냥 막으면 고장으로 읽힌다.
+- 반대 방향(안드로이드에서 애플 구독이 살아 있을 때)은 같은 규칙이지만 아직 구현이 없다 —
+  iOS 가 스토어에 없어 그 조합이 존재하지 않는다. **iOS 출시 뒤에는 함께 막아야 한다.**
+
+## 환불은 **크론을 기다리지 않고** 권한을 회수한다
+
+⚠ 애플에는 우리가 받는 서버 알림 라우트가 없다(App Store Server Notifications 미구현).
+기간 중 환불은 클라가 `Transaction.updates` 로 물어다 준 `POST /billing/apple/confirm`
+요청이 **유일한 통보**다. 거기서 `TRANSACTION_REVOKED` 로 거절만 하면, 만료 크론이
+재조회할 때까지 — 즉 저장된 `expires_at` 까지 — 환불받은 계정과 그 가족 멤버가 계속
+유료로 남는다.
+
+- 정리는 Play RTDN 의 `deactivate` 갈래와 **같은 벌**이다: 매핑된 구독 한 건만 취소하고,
+  목소리는 지우지 않고 보관 유예를 걸고, 강등되는 당사자와 해체된 멤버에게 알린다.
+- ⚠ **회수 대상은 그 트랜잭션에 묶인 구독이지 요청을 보낸 계정이 아니다.** 환불은 애플이
+  확인해 준 사실이라, 누가 알려 주든 그 구독은 끊기는 것이 맞다.
+- ⚠ **조회 키가 둘이다** — 구독은 `originalTransactionId`(갱신마다 바뀌지 않는다), 선물은
+  `transactionId`. 한쪽만 보면 못 찾는다.
+
+## 그룹형 전환은 **멤버의 구독 행까지** 옮긴다
+
+커플 ↔ 가족 전환에서 `plan_groups` 만 고치면 멤버의 `subscriptions.plan_id` 가 **옛 플랜에
+그대로** 남는다. `GET /billing/subscription` 은 멤버의 등급을 그 행에서 뽑으므로, 그룹의
+정원·코드는 옮겨 갔는데 멤버 화면과 권한 스냅샷만 옛 플랜으로 남는다.
+
+- **정원 정리(`enforceGroupCapacity`) 뒤에** 옮긴다 — 쫓겨날 멤버까지 옮겼다 바로 취소하는
+  낭비를 피하고, 남은 사람만 겨냥한다.
+- 소유자는 제외한다(새 구독 행을 따로 만들고, 옛 행은 방금 취소됐다).
+
 ## 해지가 어느 스토어를 거치는지는 **서버가 정한다**
 
 ⚠ **앱이 로컬 스토어 상태로 흉내 내지 말 것.** iOS 는 `purchasedProductIDs` 에 구독이
@@ -365,6 +404,9 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 해지 — Play 성공 후에만 DB 변경 | `routes/billing-mutation.ts` `POST /cancel` | `MainViewModelBillingActions.cancelSubscription` | — |
 | 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
 | 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
+| 다른 스토어가 갱신 중일 때 구매 차단 | `store_provider` 를 내려보낸다 | (미구현 — iOS 출시 뒤) | `BillingPanel` 의 `showPlayOwnsRenewalNotice` |
+| 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
+| 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
 | 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |

@@ -216,6 +216,21 @@ export async function applyStoreEntitlement(
           now: input.startsAt,
         })),
       );
+      // ⚠ **남은 멤버의 구독 행도 새 플랜으로 옮긴다**(코덱스 #730 3차). 위에서 고친 것은
+      //   `plan_groups` 뿐이라, 멤버의 `subscriptions.plan_id` 는 **옛 플랜에 그대로**
+      //   남아 있었다. `GET /billing/subscription` 은 멤버의 등급을 그 행에서 뽑으므로,
+      //   그룹의 정원·코드는 가족으로 옮겨 갔는데 멤버 화면과 권한 스냅샷만 커플로
+      //   남는다(반대 방향도 같다).
+      //
+      //   **정원 정리 뒤에** 돌린다 — 쫓겨날 멤버까지 새 플랜으로 옮겼다가 바로 취소하는
+      //   낭비를 피하고, 남은 사람만 정확히 겨냥한다. 소유자는 새 구독 행을 아래에서
+      //   따로 만들므로 제외한다(옛 행은 방금 취소됐다).
+      await tx.execute({
+        sql: `UPDATE subscriptions
+              SET plan_id = ?, updated_at = datetime('now')
+              WHERE plan_group_id = ? AND status = 'active' AND user_id <> ?`,
+        args: [input.plan.id, planGroupId, input.userPk],
+      });
     } else {
       planGroupId = crypto.randomUUID();
       await tx.execute({
