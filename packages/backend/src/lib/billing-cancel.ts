@@ -1011,9 +1011,20 @@ async function reconcileGoogleBeforeExpiry(
       args: [planTypeToUserPlan(params.planType), params.userPk],
     });
     await tx.execute({
-      sql: `UPDATE store_transactions SET expires_at = ?
+      // ⚠ **연장을 확인했으면 결제 앵커도 함께 민다**(코덱스 #734 7차). 재조회가
+      //   `expires_at` 만 밀면, 나중에 앱이 **같은 만료**로 확정할 때 확정 경로의
+      //   "만료가 밀렸을 때만" 조건이 걸려 앵커가 영원히 옛 값으로 남는다 — 크론이
+      //   갱신을 잡아 준 계정일수록 보존 기한이 실제보다 이르게 끝나 **최근 결제의
+      //   증빙까지 파기된다.**
+      //   여기서도 **실제로 늘어난 경우만** 민다(같은 값의 재조회는 결제가 아니다).
+      sql: `UPDATE store_transactions
+            SET last_paid_at = CASE
+                  WHEN expires_at IS NULL OR ? > expires_at THEN datetime('now')
+                  ELSE last_paid_at
+                END,
+                expires_at = ?
             WHERE provider = 'google' AND provider_transaction_id = ?`,
-      args: [expiryIso, purchaseToken],
+      args: [expiryIso, expiryIso, purchaseToken],
     });
   });
   logStructured('info', {
@@ -1127,9 +1138,20 @@ async function reconcileAppleBeforeExpiry(
       args: [planTypeToUserPlan(params.planType), params.userPk],
     });
     await tx.execute({
-      sql: `UPDATE store_transactions SET expires_at = ?
+      // ⚠ **연장을 확인했으면 결제 앵커도 함께 민다**(코덱스 #734 7차). 재조회가
+      //   `expires_at` 만 밀면, 나중에 앱이 **같은 만료**로 확정할 때 확정 경로의
+      //   "만료가 밀렸을 때만" 조건이 걸려 앵커가 영원히 옛 값으로 남는다 — 크론이
+      //   갱신을 잡아 준 계정일수록 보존 기한이 실제보다 이르게 끝나 **최근 결제의
+      //   증빙까지 파기된다.**
+      //   여기서도 **실제로 늘어난 경우만** 민다(같은 값의 재조회는 결제가 아니다).
+      sql: `UPDATE store_transactions
+            SET last_paid_at = CASE
+                  WHEN expires_at IS NULL OR ? > expires_at THEN datetime('now')
+                  ELSE last_paid_at
+                END,
+                expires_at = ?
             WHERE provider = 'apple' AND provider_transaction_id = ?`,
-      args: [expiryIso, originalTransactionId],
+      args: [expiryIso, expiryIso, originalTransactionId],
     });
   });
   logStructured('info', {

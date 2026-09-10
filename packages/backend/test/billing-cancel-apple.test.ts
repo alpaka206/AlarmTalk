@@ -157,6 +157,24 @@ describe('processSubscriptionExpiry — Apple reconciliation', () => {
   //  - 4(유예): 애플이 **명시적으로 접근을 허용**하는 기간 → 유료 유지.
   //  - 3(재시도): 유예가 끝났거나 애초에 없는 상태로 결제가 실패한 채 카드만 다시 긁는다.
   //    구글의 ON_HOLD 에 해당하고, 정책상 **보류 기간에는 free** 다.
+  it('연장하면 결제 앵커(last_paid_at)도 함께 민다', async () => {
+    // ⚠ 재조회가 `expires_at` 만 밀면, 나중에 앱이 **같은 만료**로 확정할 때 확정 경로의
+    //   "만료가 밀렸을 때만" 조건이 걸려 앵커가 영원히 옛 값으로 남는다 — 크론이 갱신을
+    //   잡아 준 계정일수록 보존 기한이 이르게 끝나 최근 결제의 증빙까지 파기된다
+    //   (코덱스 #734 7차).
+    stubAppleFetch(appleStatusBody());
+    pushAppleSubscriptionDue();
+    pushExtensionWrites();
+
+    await processSubscriptionExpiry(mockDB.client as never, APPLE_ENV as never, NOW);
+
+    const update = findCall('UPDATE store_transactions');
+    expect(update).toBeDefined();
+    expect(update!.sql).toContain('last_paid_at');
+    // 같은 값의 재조회는 결제가 아니다 — 실제로 늘어난 경우만 민다.
+    expect(update!.sql).toContain('> expires_at');
+  });
+
   it('유예 기간(4)은 아직 권한이 있다 — 연장한다', async () => {
     stubAppleFetch(appleStatusBody({ status: 4 }));
     pushAppleSubscriptionDue();
