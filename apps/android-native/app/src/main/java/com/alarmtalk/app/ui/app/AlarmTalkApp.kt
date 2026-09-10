@@ -85,6 +85,8 @@ internal fun AlarmTalkApp(
     onCompleteInAppUpdate: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    // 빌드 산출물이라 실행 중에 바뀌지 않는다 — 한 번만 본다.
+    val legalDocumentsReadable = remember(context) { context.legalDocumentsReadable() }
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val message = viewModel.message
     val authSession = viewModel.authSession
@@ -1115,6 +1117,26 @@ internal fun AlarmTalkApp(
           // 지킬 선택지가 없다. 삼키면 네트워크가 느릴 때 스피너 앞에서 뒤로가기가 죽은
           // 것처럼 보이고, 사용자는 앱을 못 닫는다. 여기선 표준 동작(앱 종료)이 맞다.
           ConsentCheckLoadingScreen(contentPadding = padding)
+          return@Scaffold
+      }
+      // ⚠ **문서를 못 읽으면 동의를 받지 않는다**(코덱스 #732). `submitConsents` 는
+      //   `BuildConfig.LEGAL_POLICY_VERSION` 을 함께 보내는데, 그 버전의 **본문이 앱에 없는
+      //   상태**다. 오류 문구만 띄우고 지나가게 두면 "보여 준 적 없는 문서"에 동의한 기록이
+      //   남는다. `consentUnsupported` 와 같은 화면인 것이 맞다 — 둘 다 "이 빌드로는 동의를
+      //   정직하게 받을 수 없다" 이고 사용자가 할 수 있는 일은 업데이트뿐이다.
+      //   막는 범위는 **동의 흐름뿐**이다: 이미 동의를 마친 사용자의 알람까지 세우면
+      //   빌드 사고 하나로 앱 전체가 벽돌이 된다(그래서 위 업데이트 게이트에 합치지 않는다).
+      if (viewModel.showConsentScreen && !legalDocumentsReadable) {
+          GateBackGuard()
+          UpdateRequiredScreen(
+              contentPadding = padding,
+              onUpdate = {
+                  val url = viewModel.updateStoreUrl.ifBlank {
+                      "https://play.google.com/store/apps/details?id=com.alarmtalk.app"
+                  }
+                  context.openWebUrl(url)
+              },
+          )
           return@Scaffold
       }
       if (viewModel.showConsentScreen) {

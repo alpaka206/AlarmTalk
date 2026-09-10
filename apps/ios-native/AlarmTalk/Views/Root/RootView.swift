@@ -30,6 +30,15 @@ struct RootView: View {
     @State private var promoBusy = false
     @State private var promoError: String?
 
+    /// 번들 법무 문서를 **둘 다** 읽을 수 있는가. 빌드 산출물이라 실행 중에 바뀌지 않으므로
+    /// 한 번만 본다(`body` 마다 파일을 열지 않는다).
+    ///
+    /// 둘 중 하나만 없어도 막는다 — 제출하는 `LegalPolicy.bundledVersion` 은 **두 문서에서
+    /// 함께** 뽑은 값이라(`scripts/generate-legal-version.sh` 가 다르면 빌드를 세운다),
+    /// 한쪽이 없으면 그 버전이 무엇을 가리키는지 앱이 말할 수 없다.
+    private static let bundledLegalDocumentsReadable = BundledLegalDocument.allCases
+        .allSatisfy { $0.markdown() != nil }
+
     var body: some View {
         Group {
             if versionGate.updateRequired || auth.consentUnsupported {
@@ -66,6 +75,17 @@ struct RootView: View {
                         .progressViewStyle(.circular)
                         .tint(AuthSceneColors.accent)
                 }
+            } else if auth.showConsentScreen && !Self.bundledLegalDocumentsReadable {
+                // ⚠ **문서를 못 읽으면 동의를 받지 않는다 — 오류만 띄우고 지나가게 두면 안 된다**
+                //   (코덱스 #732). `submitConsents` 는 `LegalPolicy.bundledVersion` 을 함께
+                //   보내는데, 그 버전의 **본문이 앱에 없는 상태**다. 사용자가 오류를 닫고
+                //   체크만 하면 "보여 준 적 없는 문서"에 동의한 기록이 남는다.
+                //
+                //   `consentUnsupported` 와 **같은 화면**인 것이 맞다 — 둘 다 "이 빌드로는
+                //   동의를 정직하게 받을 수 없다" 이고, 사용자가 할 수 있는 일은 업데이트뿐이다.
+                //   막는 범위는 **동의 흐름뿐**이다: 이미 동의를 마친 사용자의 알람까지
+                //   세우면 빌드 사고 하나로 앱 전체가 벽돌이 된다.
+                UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if auth.showConsentScreen {
                 // 받을 동의가 남아 있으면 그 화면을 먼저 통과해야 한다.
                 // ⚠ `needsConsent` 가 아니라 `showConsentScreen` 을 본다 — 선택 유형만

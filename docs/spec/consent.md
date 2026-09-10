@@ -158,11 +158,21 @@
   통일하지 말 것.
 - **단일 출처는 `docs/legal` 하나다.** 두 앱 모두 빌드 때 거기서 복사한다(Android
   `copyLegalDocs`, iOS `project.yml` 의 resources). 사본을 만들지 말 것.
-- ⚠ **번들을 못 읽으면 웹으로 떨어뜨리지 말 것 — 오류를 띄우고 선다**(코덱스 #732).
-  랜딩 문서를 대신 띄우면 이 규칙의 존재 이유가 사라진다(보여 준 것과 기록한 버전이 다시
-  갈라진다). 게다가 오프라인이면 웹은 빈 화면이라, 사용자는 **아무것도 못 본 채** 동의만
-  하게 된다. 번들 읽기 실패는 빌드 사고이고 회귀 테스트가 CI 에서 잡으므로
-  (`BundledLegalDocumentTests`), 그런 빌드가 나갔다면 사용자가 할 수 있는 일은 업데이트뿐이다.
+- ⚠ **번들을 못 읽으면 동의 화면 자체를 띄우지 않는다 — 업데이트 차단 화면으로 보낸다**
+  (코덱스 #732). 두 가지를 **둘 다** 지켜야 한다:
+  1. **웹으로 떨어뜨리지 않는다.** 랜딩 문서를 대신 띄우면 이 규칙의 존재 이유가 사라진다
+     (보여 준 것과 기록한 버전이 다시 갈라진다). 오프라인이면 웹은 빈 화면이라 사용자는
+     **아무것도 못 본 채** 동의만 하게 된다.
+  2. ⚠ **오류 문구만 띄우고 지나가게 두지도 않는다.** 닫을 수 있는 오류를 보여 주면
+     사용자는 그걸 닫고 체크만 해서 제출할 수 있고, 그러면 **본문이 앱에 없는 버전**에
+     동의한 기록이 남는다. 실제로 1번만 고쳤다가 이 지적을 다시 받았다.
+  `consentUnsupported` 와 **같은 화면**인 것이 맞다 — 둘 다 "이 빌드로는 동의를 정직하게
+  받을 수 없다" 이고, 사용자가 할 수 있는 일은 업데이트뿐이다.
+- **막는 범위는 동의 흐름뿐이다.** 위 업데이트 게이트에 합치지 말 것 — 이미 동의를 마친
+  사용자의 알람까지 세우면 빌드 사고 하나로 앱 전체가 벽돌이 된다.
+- **판정은 두 문서 모두**다. 제출하는 문서 버전은 두 문서에서 **함께** 뽑은 값이라
+  (버전이 다르면 빌드가 선다), 한쪽이 없으면 그 버전이 무엇을 가리키는지 앱이 말할 수 없다.
+- 번들 읽기 실패는 **빌드 사고**이고 회귀 테스트가 CI 에서 잡는다(`BundledLegalDocumentTests`).
 - ⚠ **번들에 넣는 것은 두 파일뿐이다** — `privacy-policy.ko.md`, `terms-of-service.ko.md`.
   같은 디렉터리에 `compliance-notes.ko.md`·`README.md` 처럼 **사용자에게 보이면 안 되는
   내부 문서**가 함께 있어서, 폴더째 실으면 APK/IPA 를 푼 누구나 읽는다. 목록을 늘릴 때는
@@ -185,7 +195,8 @@
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `CURRENT_POLICY_VERSION` (409) |
 | 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
-| 번들을 못 읽을 때 | 오류 문구 (`readLegalDocument` 의 `getOrElse`) | 오류 화면 (`BundledLegalDocumentView.unavailable`) | — |
+| 번들을 못 읽을 때 — **동의 차단** | `legalDocumentsReadable` → `UpdateRequiredScreen` (`AlarmTalkApp.kt`) | `bundledLegalDocumentsReadable` → `UpdateRequiredView` (`RootView`) | — |
+| 번들을 못 읽을 때 — 뷰어 문구 | `readLegalDocument` 의 `getOrElse` | `BundledLegalDocumentView.unavailable` | — |
 | 설정의 문서 뷰어 | 랜딩 웹 (`ui/settings/LegalDocumentScreen.kt`) | 랜딩 웹 (`Views/Settings/LegalDocumentView.swift`) | — |
 | 번들에 넣는 파일 목록 | `copyLegalDocs` 의 `include` (`app/build.gradle.kts`) | `project.yml` 의 resources 두 줄 | `docs/legal` (원본) |
 

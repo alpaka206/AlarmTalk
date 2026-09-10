@@ -25,6 +25,16 @@ internal enum class LegalDocument(val assetPath: String) {
  * 기록한 버전이 갈라진다** — 번들에 실은 이유가 그것이다(`docs/spec/consent.md`).
  * 여기서 실패하는 것은 빌드 사고이므로 사용자가 할 수 있는 일은 업데이트뿐이다.
  */
+/**
+ * 번들 법무 문서를 **둘 다** 읽을 수 있는가. 동의 화면을 띄우기 전에 본다.
+ *
+ * ⚠ 하나만 없어도 막는다 — 제출하는 `BuildConfig.LEGAL_POLICY_VERSION` 은 **두 문서에서
+ * 함께** 뽑은 값이라(build.gradle.kts 가 다르면 빌드를 세운다), 한쪽이 없으면 그 버전이
+ * 무엇을 가리키는지 앱이 말할 수 없다.
+ */
+internal fun Context.legalDocumentsReadable(): Boolean =
+    LegalDocument.entries.all { runCatching { assets.open(it.assetPath).close() }.isSuccess }
+
 internal fun Context.readLegalDocument(doc: LegalDocument): AnnotatedString =
     runCatching { assets.open(doc.assetPath).bufferedReader().use { it.readText() } }
         .map(::renderLegalMarkdown)
