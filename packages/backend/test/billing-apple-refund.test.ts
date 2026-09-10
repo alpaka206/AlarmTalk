@@ -302,7 +302,10 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     }
   });
 
-  it('애플에 못 물어보면 취소하지 않는다 — 잘못 끊는 쪽이 되돌릴 수 없다', async () => {
+  it('애플에 못 물어보면 취소하지 않고, **재시도 가능한 502** 를 준다', async () => {
+    // ⚠ 400 은 앱이 **최종 판정**으로 읽어 환불 큐에서 지우고 트랜잭션을 끝낸다 — 그러면
+    //   다시 올릴 경로가 사라지는데 정작 회수는 안 한 채다(코덱스 #733 8차).
+    //   502 는 `adjudicatedStatuses`(400·404·409)에 없어 앱이 큐에 남긴다.
     chainStatus = new Error('Apple down');
     pushMappedSubscription();
 
@@ -312,7 +315,8 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
       ENV,
     );
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(502);
+    expect((await res.json()).error_code).toBe('APPLE_VERIFICATION_FAILED');
     expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
   });
 

@@ -17,16 +17,27 @@ import Foundation
 enum PendingRevokedTransactionStore {
     private static let key = "pending_revoked_transaction_ids"
 
+    /// ⚠ **읽고-고치고-쓰기를 직렬화한다**(코덱스 #733 8차). `add` 는 `Transaction.updates`
+    /// 리스너의 `Task.detached` 에서, `remove` 는 MainActor 의 flush 에서 돈다 — 겹치면
+    /// remove 가 읽은 `[A]` 위에 add 가 `[A, B]` 를 쓰고 remove 가 `[]` 로 덮어 **B 가 영영
+    /// 사라진다.** 환불된 트랜잭션은 `currentEntitlements` 에도 `unfinished` 에도 없어
+    /// 그 id 는 다시 만들 방법이 없다.
+    private static let lock = NSLock()
+
     /// 담아 두는 최대 개수. 넘치면 **오래된 것부터** 버린다 — 서버가 영영 못 받는 id
     /// (앱 재설치로 계정을 잃은 경우 등)가 큐를 영구히 채우지 않게 한다.
     private static let limit = 20
 
     static func ids(defaults: UserDefaults = .standard) -> [String] {
-        defaults.stringArray(forKey: key) ?? []
+        lock.lock()
+        defer { lock.unlock() }
+        return stored(defaults)
     }
 
     static func add(_ transactionID: String, defaults: UserDefaults = .standard) {
-        var list = ids(defaults: defaults)
+        lock.lock()
+        defer { lock.unlock() }
+        var list = stored(defaults)
         guard !list.contains(transactionID) else { return }
         list.append(transactionID)
         if list.count > limit { list.removeFirst(list.count - limit) }
@@ -34,7 +45,9 @@ enum PendingRevokedTransactionStore {
     }
 
     static func remove(_ transactionID: String, defaults: UserDefaults = .standard) {
-        let list = ids(defaults: defaults).filter { $0 != transactionID }
+        lock.lock()
+        defer { lock.unlock() }
+        let list = stored(defaults).filter { $0 != transactionID }
         if list.isEmpty {
             defaults.removeObject(forKey: key)
         } else {
@@ -42,9 +55,16 @@ enum PendingRevokedTransactionStore {
         }
     }
 
+    /// 락을 **이미 쥔 상태**에서만 부른다.
+    private static func stored(_ defaults: UserDefaults) -> [String] {
+        defaults.stringArray(forKey: key) ?? []
+    }
+
     /// ⚠ **로그아웃에서 비우지 않는다.** 주인이 로그아웃한 뒤에 온 환불이 정확히 이 큐가
     /// 있어야 하는 경우다 — 비우면 만들자마자 쓸모가 없어진다.
     static func clearAllForTests(defaults: UserDefaults = .standard) {
+        lock.lock()
+        defer { lock.unlock() }
         defaults.removeObject(forKey: key)
     }
 }

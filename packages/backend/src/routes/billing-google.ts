@@ -7,7 +7,9 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseAccountMatches } from '../lib/purchase-account-binding';
-import { notifyPlanChanged } from '../lib/billing-cancel';
+import { notifyPlanChanged,
+  refreshCompetingAppleRenewalState,
+} from '../lib/billing-cancel';
 import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
@@ -497,6 +499,12 @@ billingGoogle.post('/google/confirm', async (c) => {
   if (!plan) {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
+
+  // ⚠ **막기 전에 애플에 물어 갱신 상태를 최신화한다**(코덱스 #733 8차). 애플 상태는
+  //   가만두면 낡는다 — 우리가 받는 서버 알림이 없고, 같은-플랜 갱신 갈래가
+  //   `cancel_at_period_end` 를 0 으로 되돌린다. 낡은 값으로 막으면 **App Store 에서 이미
+  //   자동갱신을 끈 사용자가 아무것도 할 수 없다.** 최선 노력이라 실패해도 진행한다.
+  await refreshCompetingAppleRenewalState(db, c.env, userPk);
 
   const result = await withWriteTransaction(db, (txDb) =>
     applyStoreEntitlement(txDb, {

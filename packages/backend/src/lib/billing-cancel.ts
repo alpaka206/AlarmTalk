@@ -169,6 +169,52 @@ export async function findStoreTransactionsForSubscriptions(
  * 만료로 거르면 보류 중인 Play 구독이 **보이지 않게 되고**, 그 상태에서 애플로 사면
  * 결제가 복구되는 순간 두 곳에서 청구된다.
  */
+/**
+ * **다른 스토어(애플)가 정말 갱신 중인지 애플에 물어 갱신 상태를 최신화한다.**
+ *
+ * ⚠ **애플 상태는 가만두면 낡는다**(코덱스 #733 8차). 우리가 받는 App Store 서버 알림이
+ * 없고, `applyStoreEntitlement` 의 같은-플랜 갱신 갈래는 `cancel_at_period_end` 를 **0 으로
+ * 되돌린다.** 그래서 사용자가 App Store 에서 자동갱신을 껐어도 우리 DB 는 "갱신 중" 으로
+ * 남고, 그 상태로 Play 결제를 막으면 **사용자가 할 수 있는 일이 없다** — 이미 껐는데도
+ * 막히고, 우리 안내(`다른 스토어에서 먼저 해지하세요`)를 따라도 달라지지 않는다.
+ *
+ * Play 쪽은 이 문제가 없다 — RTDN 과 해지 라우트가 `cancel_at_period_end` 를 제때 세운다.
+ *
+ * ⚠ **최선 노력이다.** 애플에 못 물어보면 저장된 값을 그대로 둔다 — 그 값이 "갱신 중" 이면
+ * 막게 되는데, 그쪽이 이중 청구보다 낫다(사용자는 다시 시도할 수 있다).
+ */
+export async function refreshCompetingAppleRenewalState(
+  db: DbExecutor,
+  env: Partial<Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>> | undefined,
+  userPk: string,
+): Promise<void> {
+  const config = env ? appleStoreKitConfigFromEnv(env as Env) : null;
+  if (!config) return;
+  const res = await db.execute({
+    sql: `SELECT s.id AS sub_id, t.provider_transaction_id
+          FROM subscriptions s
+          JOIN store_transactions t ON t.subscription_id = s.id
+          WHERE s.user_id = ? AND s.status = 'active' AND t.provider = 'apple'`,
+    args: [userPk],
+  });
+  for (const row of res.rows) {
+    try {
+      const status = await fetchAppleSubscriptionStatus(String(row.provider_transaction_id), config);
+      await db.execute({
+        sql: `UPDATE subscriptions SET cancel_at_period_end = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [status.autoRenewStatus === 0 ? 1 : 0, String(row.sub_id)],
+      });
+    } catch (err) {
+      logStructured('warn', {
+        at: 'billing.apple.renewal_state',
+        error: String(err),
+        subscriptionId: String(row.sub_id),
+      });
+    }
+  }
+}
+
 export function storeRenewalProvidersOf(
   transactions: readonly SubscriptionStoreTransaction[],
 ): string[] {

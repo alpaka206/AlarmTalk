@@ -52,9 +52,11 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
-    // ⚠ iOS 결제가 이 코드를 받는다. 안드로이드에서는 아직 반대 방향(애플 구독이 살아 있는데
-    //   Play 결제)을 막지 않지만, 표는 **두 앱이 짝**이라 같이 둔다 — 한쪽에만 코드를 더하면
-    //   같은 실패가 두 앱에서 다르게 읽힌다.
+    // ⚠ **막는 쪽은 언제나 '다른 스토어' 다**(코덱스 #733 8차). 서버의 배타성 판정은
+    //   `applyStoreEntitlement` 하나이고 `provider <> ?` 로 자기 스토어를 뺀다 — 그래서
+    //   안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. 문구도 그렇게 말해야 한다.
+    //   예전에는 iOS 문구를 그대로 써서 "Play 에서 해지하라" 고 했는데, 그대로 해도
+    //   다음 시도가 통과하지 않는다.
     "CROSS_STORE_RENEWAL_ACTIVE" to R.string.msg_cross_store_renewal_active,
 
     // ── 목소리 ────────────────────────────────────────────────────────────

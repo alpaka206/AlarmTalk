@@ -127,11 +127,22 @@ billingApple.post('/apple/confirm', async (c) => {
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
     //   구독 행**을 집어 취소해 버린다 — 이어받은 그룹까지 해체되고, 그건 되돌릴 수 없다.
     //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
-    if (await appleChainStillLive(config, info.originalTransactionId)) {
+    const chain = await appleChainStatus(config, info.originalTransactionId);
+    if (chain === 'unknown') {
+      // ⚠ **판정을 못 했으면 판정한 척하지 않는다**(코덱스 #733 8차). 400 은 앱이
+      //   **최종 판정**으로 읽어 환불 큐에서 지우고 트랜잭션을 끝낸다 — 그러면 다시 올릴
+      //   경로가 사라지고, 정작 회수는 하지 않은 채다. 재시도 가능한 502 로 돌려준다
+      //   (`adjudicatedStatuses` 에 없으므로 앱이 큐에 남긴다).
+      return c.json(
+        { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
+        502,
+      );
+    }
+    if (chain === 'live') {
       logStructured('info', {
         at: 'billing.apple.confirm',
         step: 'revoked_stale_renewal',
-        note: 'chain still entitled — skipping cleanup',
+        note: 'chain still live — skipping cleanup',
       });
     } else {
       await revokeRefundedAppleSubscription(db0, c.env, info);
@@ -361,29 +372,31 @@ billingApple.post('/apple/confirm', async (c) => {
  * (`reconcileAppleBeforeExpiry` 는 반대로 '권한 있는 상태' 를 목록으로 적는다. 묻는 것이
  * 달라서 목록도 다르다: 저기는 "지금 유료인가", 여기는 "끝났는가" 다.)
  *
- * ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를 건너뛰면
- * 환불받은 사용자가 `expires_at` 까지 유료로 남고 만료 크론이 결국 정리하지만, 잘못 취소하면
- * **돈을 내고 있는 그룹이 해체되고 되돌릴 수 없다.**
+ * ⚠ **못 물어보면 `unknown` 이다 — '살아 있다' 로 접지 않는다**(코덱스 #733 8차).
+ * 정리를 건너뛰는 것까지는 맞지만, 그때 라우트가 400(최종 판정)을 돌려주면 앱이 환불 큐에서
+ * 지워 **다시 올릴 경로가 사라진다.** 호출부가 재시도 가능한 응답을 내야 한다.
+ * (잘못 취소하는 쪽이 더 나쁘다는 판단은 그대로다 — 돈을 내고 있는 그룹이 해체되면
+ * 되돌릴 수 없다.)
  */
 const APPLE_TERMINATED_STATUSES: readonly number[] = [
   APPLE_SUBSCRIPTION_STATUS.EXPIRED,
   APPLE_SUBSCRIPTION_STATUS.REVOKED,
 ];
 
-async function appleChainStillLive(
+async function appleChainStatus(
   config: Parameters<typeof fetchAppleSubscriptionStatus>[1],
   originalTransactionId: string,
-): Promise<boolean> {
+): Promise<'live' | 'terminated' | 'unknown'> {
   try {
     const status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
-    return !APPLE_TERMINATED_STATUSES.includes(status.status);
+    return APPLE_TERMINATED_STATUSES.includes(status.status) ? 'terminated' : 'live';
   } catch (err) {
     logStructured('warn', {
       at: 'billing.apple.confirm',
       step: 'chain_status',
       error: String(err),
     });
-    return true;
+    return 'unknown';
   }
 }
 

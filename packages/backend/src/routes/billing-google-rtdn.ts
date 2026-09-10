@@ -15,6 +15,7 @@ import {
   schedulePaidVoiceRetention,
   propagateGroupMemberPlans,
   type ActiveSubscription,
+  refreshCompetingAppleRenewalState,
 } from '../lib/billing-cancel';
 import { sendPaymentFailedPush, sendPlanChangedPush } from '../lib/fcm';
 import { timingSafeEqualStr } from '../lib/timing-safe-equal';
@@ -288,6 +289,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
       });
       return c.json({ success: true, ignored: 'plan_not_found' });
     }
+    // 막기 전에 애플 갱신 상태를 최신화한다(confirm 경로와 같은 이유 — 코덱스 #733 8차).
+    await refreshCompetingAppleRenewalState(db, c.env, userPk);
     const entitleResult = await withWriteTransaction(db, (tx) =>
       applyStoreEntitlement(tx, {
         userPk,
