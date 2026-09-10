@@ -466,7 +466,13 @@ export async function sendPaymentFailedPush(
     | 'APPLE_TEAM_ID'
     | 'APPLE_BUNDLE_ID'
   > & { ENVIRONMENT?: string },
-  params: { ownerUserPk: string; memberUserPks: string[] },
+  /**
+   * `ownerUserPk` 가 `null` 이면 **소유자에게는 보내지 않는다.** 크론이 같은 보류를
+   * 5분마다 다시 발견하므로, 소유자 플랜이 실제로 바뀐 회차에만 소유자를 넣는다
+   * (`processSubscriptionExpiry` 의 `paymentHolds`). 멤버만 새로 잠긴 회차 —
+   * 소유자에게 다른 유료 구독이 남아 등급이 그대로인 경우 — 가 그 자리다.
+   */
+  params: { ownerUserPk: string | null; memberUserPks: string[] },
 ): Promise<void> {
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
@@ -475,7 +481,26 @@ export async function sendPaymentFailedPush(
     for (const target of await getPushTargetsForUser(db, userId)) {
       if (target.platform === 'ios') {
         // iOS 는 APNs 로 직접 간다(`lib/apns.ts` 주석). FCM 에 섞어 보내면 조용히 버려진다.
-        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+        //
+        // ⚠ **여기도 두 통이다**(코덱스 #732 P1). 예전에는 alert 한 통만 보내면서 그
+        // payload 에 `plan_changed` 를 실었는데, alert 에는 `content-available` 이 없어
+        // **앱이 백그라운드면 깨어나지 않는다** — 사용자가 앱을 열기 전까지 서버 플랜을
+        // 다시 읽지 못하고, **이미 예약된 유료 목소리 알람이 계속 그 목소리로 울린다**
+        // (iOS 는 예약 시점에 소리가 고정된다). 안드로이드만 두 통을 받고 있었다.
+        //
+        // 클라는 이미 이 짝을 전제로 쓰여 있다 — `PushNotificationCoordinator` 의
+        // `billingHold` 는 "표시 전용, 짝이 되는 data-only `plan_changed` 가 재조회를
+        // 담당한다" 고 적고 아무 일도 하지 않는다. 서버가 그 짝을 안 보내고 있었다.
+        // (1) 표시용
+        apnsMessages.push({ token: target.token, title, body, data: { type: 'billing_hold' } });
+        // (2) 신호용 — `silent` 가 `content-available: 1` + background 우선순위를 만든다.
+        apnsMessages.push({
+          token: target.token,
+          title: '',
+          body: '',
+          data: { type: 'plan_changed' },
+          silent: true,
+        });
       } else {
         // ⚠ **두 통을 보낸다.** `notification` 블록이 붙은 메시지는 앱이 백그라운드일 때
         // `onMessageReceived` 를 호출하지 않는다 — 표시용 한 통만 보내면 알림은 뜨는데
@@ -498,11 +523,13 @@ export async function sendPaymentFailedPush(
     }
   };
 
-  await push(
-    params.ownerUserPk,
-    '결제가 확인되지 않았어요',
-    '이용권이 잠시 멈췄어요. 결제 수단을 확인하면 바로 다시 쓸 수 있어요.',
-  );
+  if (params.ownerUserPk) {
+    await push(
+      params.ownerUserPk,
+      '결제가 확인되지 않았어요',
+      '이용권이 잠시 멈췄어요. 결제 수단을 확인하면 바로 다시 쓸 수 있어요.',
+    );
+  }
   // 소유자가 멤버 목록에 섞여 들어와도 두 번 보내지 않는다.
   for (const memberPk of Array.from(new Set(params.memberUserPks))) {
     if (memberPk === params.ownerUserPk) continue;

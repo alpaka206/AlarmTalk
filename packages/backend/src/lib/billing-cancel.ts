@@ -517,6 +517,20 @@ export async function resolvePlanAfterSuspend(
  *                `false` 면 제외 없이 재계산(→ 그룹 플랜으로 복구).
  * @returns 실제로 plan 이 바뀐 멤버들의 userPk (알림 대상).
  */
+/**
+ * `users.plan` 한 칸을 읽는다. **보류 통지의 중복을 막는 기준**이다.
+ *
+ * ⚠ 보류는 구독 행을 `active` 로 **남겨 두므로**(회복형), 이미 지난 `expires_at` 을 든 그
+ * 행이 5분마다 도는 만료 크론에 **매번** 다시 걸린다. 그때마다 통지하면 사용자는 결제가
+ * 복구될 때까지 "결제가 확인되지 않았어요" 를 5분마다 받는다(코덱스 #732 P1).
+ * 그래서 **플랜이 실제로 바뀐 회차**에만 알린다 — 멤버 쪽이 이미 쓰는 규칙과 같다
+ * (`propagateGroupMemberPlans` 의 `planBefore !== planAfter`).
+ */
+async function readUserPlan(db: DbExecutor, userPk: string): Promise<string> {
+  const res = await db.execute({ sql: `SELECT plan FROM users WHERE id = ?`, args: [userPk] });
+  return res.rows.length > 0 ? String(res.rows[0]!.plan ?? 'free') : 'free';
+}
+
 export async function propagateGroupMemberPlans(
   db: DbExecutor,
   planGroupId: string,
@@ -1166,7 +1180,7 @@ export async function processSubscriptionExpiry(
   // 여기는 **RTDN 을 놓쳤을 때** 크론이 같은 상태를 발견하는 갈래라, 같은 함수를 쓴다.
   // `sendPaymentFailedPush` 는 표시용과 워커 기동용 두 통을 함께 보내므로 이 사람들을
   // `notifyUserPks` 에 또 넣지 않는다(같은 data-only 가 두 번 간다).
-  const paymentHolds: Array<{ ownerUserPk: string; memberUserPks: string[] }> = [];
+  const paymentHolds: Array<{ ownerUserPk: string | null; memberUserPks: string[] }> = [];
   const dueRes = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
                  s.expires_at, p.plan_type, p.key AS plan_key
@@ -1200,14 +1214,23 @@ export async function processSubscriptionExpiry(
     // ⚠ **보류는 종료가 아니다.** 권한(소유자+멤버 plan)만 회수하고 그룹·구독 행은
     // 남긴다 — 결제가 복구되면 재초대 없이 살아나야 한다(구글 ON_HOLD 와 같은 취급).
     if (decision === 'suspend') {
+      // ⚠ **바뀐 회차에만 알린다** — 보류는 구독 행을 남기므로 이 갈래가 5분마다 다시 걸린다.
+      const planBefore = await readUserPlan(db, active.userPk);
       await resolvePlanAfterSuspend(db, active.userPk, active.subscriptionId);
+      const ownerChanged = planBefore !== (await readUserPlan(db, active.userPk));
       // ⚠ **여기도 통지한다.** 아래 만료 갈래에만 넣었다가 이 갈래를 빠뜨렸었다 —
       //   예약해지(`cancel_at_period_end = 1`) 상태에서 보류가 겹치면 권한만 조용히
       //   잠겼다(코덱스 #732 P2).
       const suspended = active.planGroupId
         ? await propagateGroupMemberPlans(db, active.planGroupId, active.userPk, true)
         : [];
-      paymentHolds.push({ ownerUserPk: active.userPk, memberUserPks: suspended });
+      // 멤버 목록은 `propagateGroupMemberPlans` 가 이미 '바뀐 사람만' 으로 걸러 돌려준다.
+      if (ownerChanged || suspended.length > 0) {
+        paymentHolds.push({
+          ownerUserPk: ownerChanged ? active.userPk : null,
+          memberUserPks: suspended,
+        });
+      }
       continue;
     }
 
@@ -1264,7 +1287,10 @@ export async function processSubscriptionExpiry(
     if (decision === 'skip') continue;
     // 보류 — 권한만 회수하고 그룹은 남긴다(위 갈래와 같은 이유).
     if (decision === 'suspend') {
+      // ⚠ 위 갈래와 같은 이유로 **바뀐 회차에만** 알린다.
+      const planBefore = await readUserPlan(db, userPk);
       await resolvePlanAfterSuspend(db, userPk, subscriptionId);
+      const ownerChanged = planBefore !== (await readUserPlan(db, userPk));
       const groupId = (r.plan_group_id as string | null) ?? null;
       const suspended = groupId ? await propagateGroupMemberPlans(db, groupId, userPk, true) : [];
       // ⚠ **통지한다**(코덱스 #730 2차). 예전에는 플랜만 바꾸고 그냥 넘어갔다 —
@@ -1274,7 +1300,9 @@ export async function processSubscriptionExpiry(
       //
       //   ⚠ 그리고 **조용한 신호로는 부족하다**(코덱스 #732 P2) — 결제 실패는 사용자가
       //   직접 고쳐야 풀리는 상태라 보이는 안내가 함께 가야 한다.
-      paymentHolds.push({ ownerUserPk: userPk, memberUserPks: suspended });
+      if (ownerChanged || suspended.length > 0) {
+        paymentHolds.push({ ownerUserPk: ownerChanged ? userPk : null, memberUserPks: suspended });
+      }
       continue;
     }
 

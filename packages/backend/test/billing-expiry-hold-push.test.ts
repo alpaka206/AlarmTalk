@@ -128,12 +128,16 @@ function pushAppleHoldDue(dueRow: Record<string, unknown>) {
   mockDB.pushResult([{ provider_transaction_id: ORIGINAL_ID }]); // apple 트랜잭션
 }
 
-function pushSuspendWrites(memberPks: string[] = []) {
+function pushSuspendWrites(memberPks: string[] = [], ownerPlanAfter = 'free') {
+  // ⚠ 소유자도 **바뀐 회차에만** 알린다 — 보류는 구독 행을 남기므로 이 갈래가 5분마다
+  //   다시 걸린다. 그래서 plan 을 강등 전후로 한 번씩 읽는다.
+  mockDB.pushResult([{ plan: 'family' }]); // before
   // resolvePlanAfterSuspend(소유자) — 남은 활성 구독 조회 + UPDATE users.plan
   mockDB.pushResult([
     { sub_id: 'sub-1', user_id: 'owner-pk', plan_id: 'plan-1', plan_group_id: null, plan_type: 'family', plan_key: 'family' },
   ]);
   mockDB.pushResult([], 1);
+  mockDB.pushResult([{ plan: ownerPlanAfter }]); // after
 
   if (memberPks.length > 0) {
     mockDB.pushResult(memberPks.map((user_id) => ({ user_id }))); // 그룹 멤버 목록
@@ -191,6 +195,29 @@ describe('processSubscriptionExpiry — 결제 보류 안내', () => {
     await processSubscriptionExpiry(mockDB.client as never, ENV as never, NOW);
 
     expect(sendPlanChangedPush).not.toHaveBeenCalled();
+  });
+
+  it('같은 보류가 다음 회차에 또 걸려도 다시 알리지 않는다 — 5분마다 오는 알림이 된다', async () => {
+    // ⚠ 보류는 구독 행을 `active` 로 **남긴다**(회복형). 이미 지난 expires_at 을 든 그
+    //   행이 5분 크론에 매번 다시 걸리므로, 무조건 보내면 결제가 복구될 때까지 사용자는
+    //   "결제가 확인되지 않았어요" 를 5분마다 받는다.
+    pushAppleHoldDue(row());
+    pushSuspendWrites([], 'free'); // 이미 free — 바뀐 것이 없다
+    // before 를 free 로 덮어쓴다: 앞 회차에 이미 강등된 상태.
+    mockDB.reset();
+    mockDB.pushResult([row()]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ provider_transaction_id: ORIGINAL_ID }]);
+    mockDB.pushResult([{ plan: 'free' }]); // before = free
+    mockDB.pushResult([]); // 남은 유료 구독 없음
+    mockDB.pushResult([], 1); // UPDATE users.plan → free (그대로)
+    mockDB.pushResult([{ plan: 'free' }]); // after = free
+    mockDB.pushResult([]); // 일반 만료 대상 없음
+    mockDB.pushResult([]); // sweep 대상 없음
+
+    await processSubscriptionExpiry(mockDB.client as never, ENV as never, NOW);
+
+    expect(sendPaymentFailedPush).not.toHaveBeenCalled();
   });
 
   it('푸시 키가 없으면 발송을 건너뛰되 보류 처리는 그대로 끝난다', async () => {

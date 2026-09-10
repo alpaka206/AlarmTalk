@@ -313,6 +313,14 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 신호일 뿐이라, 사용자는 어느 날 갑자기 유료 기능이 잠긴 이유를 모른 채 이탈한다.
 `sendPaymentFailedPush` 가 표시용 한 통과 워커 기동용 data-only 한 통을 **함께** 보낸다.
 
+⚠ **두 통은 iOS 에도 해당한다.** 예전에는 안드로이드만 두 통이었고 iOS 는 alert 한 통에
+`plan_changed` 를 실었는데, alert 에는 `content-available` 이 없어 **앱이 백그라운드면
+깨어나지 않는다** — 사용자가 앱을 열기 전까지 서버 플랜을 다시 읽지 못하고, iOS 는 예약
+시점에 소리가 고정되므로 **이미 예약된 유료 목소리 알람이 계속 그 목소리로 울린다.**
+지금은 표시용(`billing_hold`) + 조용한 신호(`plan_changed`, `silent`) 두 통이다.
+클라는 원래 이 짝을 전제로 쓰여 있었다(`PushNotificationCoordinator.billingHold` 는
+"표시 전용" 이라 적고 아무 일도 하지 않는다) — 서버가 짝을 안 보내고 있었다.
+
 ⚠ **같은 상태를 발견하는 자리가 둘이다 — 둘 다 보내야 한다.**
 1. **RTDN** — Play 가 알려 주는 주 경로(`routes/billing-google-rtdn.ts`).
 2. **만료 크론** — RTDN 을 놓쳤을 때, 그리고 **애플에는 RTDN 이 아예 없어서**
@@ -322,6 +330,14 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 크론 쪽은 보류자를 `paymentHolds` 에 모아 루프가 끝난 뒤 보낸다(푸시는 DB 쓰기 뒤에).
 **`notifyUserPks` 에 또 넣지 않는다** — `sendPaymentFailedPush` 가 이미 data-only 를
 함께 보내므로 같은 신호가 두 번 간다.
+
+⚠ **크론은 같은 보류를 5분마다 다시 발견한다 — 알림은 바뀐 회차에만.** 보류는 회복형이라
+구독 행을 `active` 로 **남기므로**, 이미 지난 `expires_at` 을 든 그 행이 만료 크론에 매번
+다시 걸린다. 무조건 보내면 결제가 복구될 때까지 "결제가 확인되지 않았어요" 가 **5분마다**
+온다. 판정은 강등 전후의 `users.plan` 비교이고, 멤버 쪽이 이미 쓰던 규칙과 같다
+(`propagateGroupMemberPlans` 의 `planBefore !== planAfter`).
+소유자가 안 바뀌고 멤버만 새로 잠긴 회차(소유자에게 다른 유료 구독이 남은 경우)를 위해
+`ownerUserPk` 는 **null 을 받는다** — 그러면 소유자에게는 보내지 않는다.
 
 ⚠ **크론에는 보류 갈래가 두 개다**(예약해지 만기 루프 / 일반 만료 루프). 한쪽만 고치면
 예약해지 상태에서 보류가 겹친 사용자는 권한만 조용히 잠긴다 — 실제로 그렇게 빠뜨렸다.
@@ -357,6 +373,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 | 결제 실패 알림 — 진입점 **둘** | RTDN(`routes/billing-google-rtdn.ts`) · 크론(`processSubscriptionExpiry` 의 `paymentHolds`) | — | — |
+| 결제 실패 알림 — 중복 방지 | `readUserPlan` 전후 비교(`lib/billing-cancel.ts`) | — | — |
+| 미완료 결제 재전송 — 진입점 **둘** | — | — | `SubscriptionManager.replayUnfinishedTransactions`(`bootstrap` · 계정 변경 `.task`) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |

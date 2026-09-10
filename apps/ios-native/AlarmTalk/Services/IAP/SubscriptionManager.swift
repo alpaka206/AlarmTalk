@@ -118,7 +118,12 @@ final class SubscriptionManager: ObservableObject {
     ///
     /// 확정 성공 여부에 따라 끝낼지 정하는 규칙은 구매 경로와 **같은 함수**를 쓴다
     /// ([mayFinish]) — 두 곳이 갈라지면 소모성이 확정 없이 끝나 버린다.
-    private func replayUnfinishedTransactions() async {
+    ///
+    /// ⚠ **부르는 곳이 둘이다 — `bootstrap` 과 계정 변경**(`AlarmTalkApp` 의
+    /// `.task(id: auth.session?.user.id)`). 아래 계정 가드가 로그아웃·다른 계정 회차의
+    /// 트랜잭션을 건너뛰므로, 시작 때 한 번만 훑으면 **그 뒤 로그인한 주인은 앱을 껐다
+    /// 켜기 전까지 선물을 못 받는다**(코덱스 #732 P2).
+    func replayUnfinishedTransactions() async {
         for await result in Transaction.unfinished {
             guard let transaction = try? checkVerified(result) else { continue }
             // ⚠ **남의 계정 트랜잭션은 보내지도, 끝내지도 않는다**(코덱스 #732 P2).
