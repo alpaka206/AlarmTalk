@@ -23,6 +23,7 @@ struct RootView: View {
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
     @State private var legalDocument: LegalDocumentTarget?
+    @State private var bundledLegalDocument: BundledLegalDocument?
 
     /// 웰컴 프로모 코드 안내(계정당 1회, 무료 플랜만).
     @State private var showWelcomePromo = false
@@ -92,8 +93,13 @@ struct RootView: View {
                     },
                     // ⚠ 외부 브라우저로 내보내지 말 것 — 동의 화면에서 약관을 보러
                     // 나가면 앱으로 못 돌아오고 체크해 둔 값도 사라진다.
-                    onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
-                    onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
+                    // ⚠ **동의 화면은 번들본을 연다 — 웹으로 되돌리지 말 것**(코덱스 #730 2차).
+                    //   `submitConsents` 가 보내는 버전은 빌드 시점의
+                    //   `LegalPolicy.bundledVersion` 이다. 랜딩의 실시간 문서를 띄우면
+                    //   출시 뒤 개정될 때 **보여 준 것과 기록한 버전이 달라진다.**
+                    //   (설정의 뷰어는 웹 그대로다 — 거긴 안내용이고 안드로이드도 같다.)
+                    onOpenTerms: { bundledLegalDocument = .terms },
+                    onOpenPrivacy: { bundledLegalDocument = .privacy }
                 )
             } else if stockReplacement.isPending(for: auth.session?.user.id) {
                 // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
@@ -203,6 +209,16 @@ struct RootView: View {
                         onOpenInstagram: { openURL(URL(string: "https://instagram.com/alarmtalk.app")!) },
                         onDismiss: { showWelcomePromo = false }
                     )
+        }
+        .sheet(item: $bundledLegalDocument) { doc in
+            NavigationStack {
+                BundledLegalDocumentView(document: doc)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("닫기") { bundledLegalDocument = nil }
+                        }
+                    }
+            }
         }
         .sheet(item: $legalDocument) { target in
             NavigationStack {

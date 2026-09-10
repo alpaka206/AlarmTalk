@@ -143,6 +143,26 @@
   `POST /user/consents` 가 `document_version` 불일치를 409 로 막으므로, 구버전 앱은 화면은
   뜨는데 제출이 안 되는 상태에 갇힌다.
 
+## 동의 화면이 보여 주는 문서는 **번들본**이다
+
+⚠ **동의 화면에서 웹 문서를 띄우지 말 것.** 동의를 기록할 때 함께 보내는
+`document_version` 은 **빌드 시점에 문서에서 뽑은 상수**다(Android `BuildConfig.LEGAL_POLICY_VERSION`
+/ iOS `LegalPolicy.bundledVersion`). 화면이 랜딩의 실시간 문서를 띄우면, 출시된 앱이
+그대로인 채 랜딩만 개정되는 순간 **보여 준 문서와 기록한 버전이 달라진다** — 동의는
+"이 사람이 무엇을 읽고 동의했는가" 의 증거라, 그 둘이 어긋나면 기록이 증거 노릇을 못 한다.
+번들본은 그 상수와 **같은 빌드에서 나온 파일**이라 어긋날 수가 없고, 덤으로 오프라인에서도
+보인다(동의는 가입 흐름이라 문서를 못 보면 진행이 막힌다).
+
+- **설정의 뷰어는 반대로 웹이다.** 거기서 보는 것은 "지금 유효한 방침" 이라 최신이 맞고,
+  개정 사실을 앱 업데이트 없이 알릴 수 있어야 한다. 두 갈래는 **의도된 것**이니 한쪽으로
+  통일하지 말 것.
+- **단일 출처는 `docs/legal` 하나다.** 두 앱 모두 빌드 때 거기서 복사한다(Android
+  `copyLegalDocs`, iOS `project.yml` 의 resources). 사본을 만들지 말 것.
+- ⚠ **번들에 넣는 것은 두 파일뿐이다** — `privacy-policy.ko.md`, `terms-of-service.ko.md`.
+  같은 디렉터리에 `compliance-notes.ko.md`·`README.md` 처럼 **사용자에게 보이면 안 되는
+  내부 문서**가 함께 있어서, 폴더째 실으면 APK/IPA 를 푼 누구나 읽는다. 목록을 늘릴 때는
+  양쪽 빌드 설정을 **같이** 고친다.
+
 ## 구현 지도
 
 | 규칙 | Android | iOS | 백엔드 |
@@ -159,6 +179,9 @@
 | 모르는 유형 | 필수→`consentUnsupported`, 선택→버림 (`checkConsentStatus`) | 같음 (`AuthViewModel.checkConsentStatus`) | `optional` 필드 |
 | 재동의 레버 | — | — | `CONSENT_MIN_POLICY_VERSION` |
 | 문서 버전 대조 | `BuildConfig.LEGAL_POLICY_VERSION` | `LegalPolicyVersion` | `CURRENT_POLICY_VERSION` (409) |
+| 동의 화면의 문서 | 번들 자산 (`ui/auth/LegalDocument.kt`) | 번들 리소스 (`BundledLegalDocument`) | — |
+| 설정의 문서 뷰어 | 랜딩 웹 (`ui/settings/LegalDocumentScreen.kt`) | 랜딩 웹 (`Views/Settings/LegalDocumentView.swift`) | — |
+| 번들에 넣는 파일 목록 | `copyLegalDocs` 의 `include` (`app/build.gradle.kts`) | `project.yml` 의 resources 두 줄 | `docs/legal` (원본) |
 
 ## 검증 방법
 
