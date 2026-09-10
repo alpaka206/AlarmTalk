@@ -121,6 +121,13 @@ final class SubscriptionManager: ObservableObject {
     private func replayUnfinishedTransactions() async {
         for await result in Transaction.unfinished {
             guard let transaction = try? checkVerified(result) else { continue }
+            // ⚠ **남의 계정 트랜잭션은 보내지도, 끝내지도 않는다**(코덱스 #732 P2).
+            //   리스너·재동기화와 **같은 가드**다(`maySyncToBackend`) — 여기만 빠져 있었다.
+            //   같은 기기를 A 가 쓰다 B 로 로그인하면, A 가 남긴 미완료 트랜잭션이 **B 의
+            //   토큰으로** 올라가 계정 불일치로 거절되고, 구독 갈래는 `mayFinish` 가
+            //   그걸 **끝내 버려** A 가 다시 로그인해도 재시도할 것이 남지 않는다.
+            //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
+            guard maySyncToBackend(transaction) else { continue }
             let confirmed = await syncWithBackend(transaction: transaction)
             if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
                 await transaction.finish()

@@ -465,8 +465,7 @@ export async function sendPaymentFailedPush(
     | 'APNS_PRIVATE_KEY'
     | 'APPLE_TEAM_ID'
     | 'APPLE_BUNDLE_ID'
-    | 'ENVIRONMENT'
-  >,
+  > & { ENVIRONMENT?: string },
   params: { ownerUserPk: string; memberUserPks: string[] },
 ): Promise<void> {
   const fcmMessages: FcmMessage[] = [];
@@ -530,8 +529,9 @@ export async function sendPaymentFailedPush(
 /**
  * **목소리가 곧 영구 삭제된다고 알린다.** 유료 접근을 잃어 보관 유예가 걸린 순간 보낸다.
  *
- * ⚠ **이것만 눈에 보이는 푸시다.** 나머지 강등 신호(`family_alarm`·`voice_access_revoked`·
- * `plan_changed`)는 전부 **무음 데이터**라 앱을 열어야만 알 수 있다. 그런데 삭제는
+ * ⚠ **눈에 보이는 푸시는 이것과 `sendPaymentFailedPush` 둘뿐이다.** 나머지 강등 신호
+ * (`family_alarm`·`voice_access_revoked`·`plan_changed`)는 전부 **무음 데이터**라 앱을
+ * 열어야만 알 수 있다. 그런데 삭제는
  * 유예 3일이 지나면 **되돌릴 수 없고**, 그 사이 앱을 한 번도 안 여는 사람이 정확히
  * 잃는 쪽이다 — 그래서 여기만 표시용을 함께 보낸다.
  *

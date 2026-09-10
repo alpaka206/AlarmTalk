@@ -2,6 +2,11 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { resolveUserPk } from './billing-helpers';
+import {
+  findActiveSubscriptionsByUserPk,
+  findStoreTransactionsForSubscriptions,
+  storeCancelProviderOf,
+} from '../lib/billing-cancel';
 
 const billingQuery = new Hono<AppEnv>();
 
@@ -73,8 +78,28 @@ billingQuery.get('/subscription', async (c) => {
 
   const r = result.rows[0]!;
   const nextPlanId = (r.next_plan_id as string | null) ?? null;
+
+  // **해지가 어느 스토어를 거쳐야 하는지 앱에 알려 준다**(코덱스 #732 P1).
+  //
+  // ⚠ 앱이 이걸 **로컬 스토어 상태로 흉내 내면 안 된다.** iOS 는 `purchasedProductIDs`
+  // 에 구독이 하나라도 있으면 애플로 보고 애플 관리 시트를 열었는데, 아이폰에서 산 옛
+  // 구독의 entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자가 있다 —
+  // 그 경우 `/billing/cancel` 을 **아예 부르지 않아** 사용자는 해지했다고 믿는데 Play
+  // 구독이 계속 갱신된다.
+  //
+  // 판정 범위는 해지 라우트와 **같은 집합**(그 사용자의 활성 구독 전부)이다. 위 SELECT
+  // 는 최신 1건만 돌려주지만, 해지는 활성 구독 중 **하나라도** 애플이면 409 로 거절한다.
+  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, String(r.user_id));
+  const storeTxns = await findStoreTransactionsForSubscriptions(
+    db,
+    activeSubscriptions.map((s) => s.subscriptionId),
+  );
+
   return c.json({
     subscription: {
+      // 'apple' | 'google' | null. null 은 스토어 결제가 아니라는 뜻이다
+      // (dev 스텁·프로모·바우처) — 서버 로컬 해지가 된다.
+      store_provider: storeCancelProviderOf(storeTxns),
       id: String(r.sub_id),
       user_id: String(r.user_id),
       plan_id: String(r.plan_id),

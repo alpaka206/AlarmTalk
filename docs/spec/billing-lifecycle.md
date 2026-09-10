@@ -306,12 +306,49 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 강제 장치가 셋이다: ① 옛 `update*` API 제거 ② 표를 **인자로 요구**해 컴파일러가 잡는다
 ③ `scripts/check-entitlement-writer.py`(CI 필수 체크)가 우회를 막는다.
 
+## 보류는 **보이게** 알린다 — 그리고 진입점이 둘이다
+
+결제 보류(Play `ON_HOLD`/`PAUSED`, 애플 결제 재시도)는 **사용자가 직접 고쳐야** 풀리는
+상태다. 그래서 조용한 `plan_changed` 만으로는 안 된다 — 그건 "스냅샷을 다시 읽어라" 는
+신호일 뿐이라, 사용자는 어느 날 갑자기 유료 기능이 잠긴 이유를 모른 채 이탈한다.
+`sendPaymentFailedPush` 가 표시용 한 통과 워커 기동용 data-only 한 통을 **함께** 보낸다.
+
+⚠ **같은 상태를 발견하는 자리가 둘이다 — 둘 다 보내야 한다.**
+1. **RTDN** — Play 가 알려 주는 주 경로(`routes/billing-google-rtdn.ts`).
+2. **만료 크론** — RTDN 을 놓쳤을 때, 그리고 **애플에는 RTDN 이 아예 없어서**
+   (`processSubscriptionExpiry` 의 `reconcileStoreBeforeExpiry` → `'suspend'`).
+   애플 보류는 **이 경로로만** 발견된다.
+
+크론 쪽은 보류자를 `paymentHolds` 에 모아 루프가 끝난 뒤 보낸다(푸시는 DB 쓰기 뒤에).
+**`notifyUserPks` 에 또 넣지 않는다** — `sendPaymentFailedPush` 가 이미 data-only 를
+함께 보내므로 같은 신호가 두 번 간다.
+
+⚠ **크론에는 보류 갈래가 두 개다**(예약해지 만기 루프 / 일반 만료 루프). 한쪽만 고치면
+예약해지 상태에서 보류가 겹친 사용자는 권한만 조용히 잠긴다 — 실제로 그렇게 빠뜨렸다.
+
+## 해지가 어느 스토어를 거치는지는 **서버가 정한다**
+
+⚠ **앱이 로컬 스토어 상태로 흉내 내지 말 것.** iOS 는 `purchasedProductIDs` 에 구독이
+하나라도 있으면 애플로 보고 애플 관리 시트를 열었는데, 아이폰에서 산 옛 구독의
+entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자가 있다 — 그 경우
+`/billing/cancel` 을 **아예 부르지 않아** 사용자는 해지했다고 믿는데 Play 구독이 계속
+갱신된다.
+
+- 값의 출처는 `storeCancelProviderOf` 하나이고, `POST /billing/cancel` 의 409 판정과
+  `GET /billing/subscription` 의 `store_provider` 가 **같은 함수**에서 나온다.
+- 판정 범위는 **그 사용자의 활성 구독 전부**다. 해지는 하나라도 애플이면 거절하므로,
+  최신 1건만 보면 예고가 어긋난다.
+- `null` 은 스토어 결제가 아니라는 뜻(프로모·바우처)이거나 **구버전 서버**다. 어느 쪽이든
+  앱은 서버에 물어보고 `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보낸다 —
+  안드로이드가 원래 그 하나만 쓴다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 해지 — Play 성공 후에만 DB 변경 | `routes/billing-mutation.ts` `POST /cancel` | `MainViewModelBillingActions.cancelSubscription` | — |
 | 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
+| 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
 | 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |
@@ -319,6 +356,7 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 | 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
 | 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
+| 결제 실패 알림 — 진입점 **둘** | RTDN(`routes/billing-google-rtdn.ts`) · 크론(`processSubscriptionExpiry` 의 `paymentHolds`) | — | — |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |

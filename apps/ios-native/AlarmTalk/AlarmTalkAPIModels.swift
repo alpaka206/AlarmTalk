@@ -810,6 +810,20 @@ struct BillingSubscription: Codable, Identifiable, Equatable {
     var cancelAtPeriodEnd: Bool?
     var canceledAt: String?
     var nextPlanId: String?
+    /// **해지가 어느 스토어를 거쳐야 하는가** — `"apple"` / `"google"` / `nil`.
+    ///
+    /// ⚠ **이 판정을 로컬 StoreKit 상태로 흉내 내지 말 것**(코덱스 #732 P1).
+    /// `purchasedProductIDs` 에 구독이 있다고 애플로 보면, 아이폰에서 산 옛 구독의
+    /// entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자에게 **애플 관리
+    /// 시트를 열고 `/billing/cancel` 을 부르지 않는다** — 해지한 줄 아는데 Play 구독이
+    /// 계속 갱신된다. 권위는 서버의 활성 구독이고, 그 값이 이 필드다
+    /// (`storeCancelProviderOf`, `routes/billing-query.ts`).
+    ///
+    /// `nil` 은 두 가지다: 스토어 결제가 아니거나(프로모·바우처), **서버가 아직 이
+    /// 필드를 안 주는 구버전**이거나. 어느 쪽이든 안전하다 — 해지를 서버에 물어보고
+    /// `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보내는 길이 그대로 있다
+    /// (`SocialFeatureViewModel.cancelSubscription`). 안드로이드가 원래 그 하나만 쓴다.
+    var storeProvider: String?
 }
 
 struct BillingPlan: Codable, Identifiable, Equatable {
