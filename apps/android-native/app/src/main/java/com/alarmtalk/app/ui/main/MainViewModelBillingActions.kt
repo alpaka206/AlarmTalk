@@ -486,6 +486,30 @@ internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
 }
 
 /**
+ * **결제를 시작해도 되는가** — 막아야 하면 보여 줄 문구 리소스, 진행해도 되면 null.
+ *
+ * ⚠ **캐시된 `subscriptionResponse` 로 판단하지 않는다.** 같은 계정이 **다른 기기에서 방금**
+ * App Store 구독을 시작한 경우는 갱신 신호조차 오지 않는다(구매자 본인은 `plan_changed`
+ * 대상이 아니다). 그래서 여기서 서버에 직접 묻는다.
+ *
+ * ⚠ **구버전 서버는 이 필드를 주지 않는다(null)** — 그때는 막지 않는다. 예전 동작이고,
+ * 서버가 확정 시점에 한 번 더 보므로 완전히 무방비는 아니다.
+ */
+private suspend fun MainViewModel.crossStoreRenewalBlocked(
+    session: com.alarmtalk.app.network.AuthSession,
+): Int? {
+    val fresh = runCatching { api.getSubscription("Bearer ${'$'}{session.token}") }.getOrElse {
+        AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
+        return R.string.msg_gb_billing_info_load_failed
+    }
+    // 응답을 받았으니 캐시도 최신으로 맞춰 둔다 — 화면이 옛 값을 들고 있을 이유가 없다.
+    subscriptionResponse = fresh
+    val providers = fresh.storeRenewalProviders ?: return null
+    // 판정은 `provider <> ?` 라 우리에게 오는 것은 언제나 **다른 스토어**다.
+    return if (providers.any { it != "google" }) R.string.msg_cross_store_renewal_active else null
+}
+
+/**
  * Google Play 구독 결제를 시작한다. 결제 시트 결과(성공/보류/취소)는
  * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
  */
@@ -498,6 +522,20 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
     if (billingBusy) return
     viewModelScope.launch {
         billingBusy = true
+        // ⚠ **Play 를 열기 전에 서버에 묻는다**(코덱스 #730 4차). 다른 스토어가 아직 갱신을
+        //   쥐고 있으면 서버가 확정을 `CROSS_STORE_RENEWAL_ACTIVE` 로 거절하는데, 그건
+        //   **이미 청구된 뒤**다 — 게다가 거절이면 ack 도 하지 않으므로 사용자는 Play 의
+        //   3일 자동 환불을 기다려야 한다. 청구가 일어나기 전에 막는 편이 낫다.
+        //   iOS 도 StoreKit 을 부르기 직전에 같은 것을 본다(`BillingPanel.confirmAndPurchase`).
+        //
+        //   ⚠ **못 물어보면 진행하지 않는다** — 캐시로 넘어가면 이 단계를 둔 이유가 사라진다.
+        //   사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다.
+        val blocked = crossStoreRenewalBlocked(session)
+        if (blocked != null) {
+            message = getApplication<android.app.Application>().getString(blocked)
+            billingBusy = false
+            return@launch
+        }
         runCatching {
             // userId(=서버 users.id)는 구매-계정 바인딩용. 비어 있으면(비정상 세션) 바인딩만 생략.
             playBilling.launchPurchase(activity, productId, userId = session.user.id.takeIf { it.isNotBlank() })

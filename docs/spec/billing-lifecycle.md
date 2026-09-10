@@ -408,6 +408,11 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   ⚠ **문구는 각 앱에서 '다른 스토어' 를 가리켜야 한다.** 판정이 `provider <> ?` 로 자기
   스토어를 빼므로, 안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. iOS 문구를
   그대로 쓰면 "Play 에서 해지하라" 가 되어, 그대로 해도 다음 시도가 통과하지 않는다.
+- ⚠ **두 앱 모두 스토어를 열기 직전에 서버에 묻는다.** iOS 는 `confirmAndPurchase`,
+  안드로이드는 `crossStoreRenewalBlocked` 다. 확정 시점 가드는 **이미 청구된 뒤**라
+  되돌릴 수 없고, Play 는 거절된 구매를 ack 하지 않으므로 사용자가 3일 자동 환불을
+  기다려야 한다. **못 물어보면 진행하지 않는다** — 캐시로 넘어가면 이 단계를 둔 이유가
+  사라진다. 구버전 서버(필드 없음)에서는 막지 않는다(예전 동작).
 - ⚠ **애플 갱신 상태는 막기 직전에 최신화한다.** 우리가 받는 App Store 서버 알림이 없고,
   같은-플랜 갱신 갈래가 `cancel_at_period_end` 를 0 으로 되돌린다 — 낡은 값으로 막으면
   **App Store 에서 이미 자동갱신을 끈 사용자가 아무것도 할 수 없다.** Play 쪽은 RTDN 과
@@ -526,7 +531,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
-| 결제 직전 권위 조회 | `GET /billing/subscription` | — | `BillingPanel.confirmAndPurchase` |
+| 결제 직전 권위 조회 | `GET /billing/subscription` | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` (Play 확정·RTDN 앞) | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |

@@ -774,6 +774,12 @@ final class AuthViewModel: ObservableObject {
             // **rolling refresh** — 서버가 준 새 토큰으로 갈아 끼운다. 이걸 빠뜨리면 최초
             // 발급 토큰이 90일 뒤 죽고, 조용히 로그아웃된 상태로 소유자 게이트에 걸려
             // 알람이 사라진다. 서버가 재발급에 실패하면 token 키가 빠져 오므로 그때는 유지.
+            // ⚠ **그 사이 세션이 바뀌었으면 버린다**(코덱스 #730 4차). `MainActor` 라도
+            //   `await` 를 건너 **재진입**한다 — 응답을 기다리는 동안 사용자가 로그아웃하거나
+            //   다른 계정으로 로그인할 수 있고, 그때 이 쓰기가 그대로 나가면 **A 의 세션이
+            //   되살아나거나 B 가 A 로 덮인다.** 바로 위 `applyRolledToken`·`applyFreshPlan`
+            //   이 이미 같은 가드를 들고 있다 — 출처 토큰이 지금 것과 같을 때만 반영한다.
+            guard session?.token == token else { return }
             let nextToken = rolledToken?.nilIfBlank ?? token
             let nextSession = AuthSession(token: nextToken, user: merged)
             persistSession(nextSession)
@@ -788,6 +794,10 @@ final class AuthViewModel: ObservableObject {
             switch apiError {
             case .server(let status, _, _):
                 if status == 401 {
+                    // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
+                    //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
+                    //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
+                    guard session?.token == token else { return }
                     // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
                     // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
                     if !UIPreviewSeed.isEnabled {

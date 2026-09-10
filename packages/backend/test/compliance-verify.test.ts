@@ -345,6 +345,64 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(userGone.rows.length).toBe(0);
   });
 
+  it('구독 결제도 스토어 증빙(거래 id·상품·원본)을 함께 보존한다', async () => {
+    // ⚠ `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로, 증빙을 옮겨 두지
+    //   않으면 **남은 기록을 실제 주문에 되짚을 방법이 사라진다** — 결제 분쟁에서
+    //   "이 사람이 이 주문을 했다" 를 보일 수 없다(코덱스 #730 4차).
+    const SUB5 = 'hard-del-sub-3';
+    const PK5 = 'hard-del-pk-3';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK5, SUB5, 'harddel3@test.com', 'Hard Delete 3'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-01-01', '2030-01-01')`,
+      args: ['sub-hard-3', PK5, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, raw_payload, created_at)
+            VALUES (?, ?, 'google', ?, ?, 'personal', ?, ?, '2026-01-01T00:00:00.000Z')`,
+      args: [
+        'st-hard-3',
+        PK5,
+        'play-token-hard-3',
+        'personal_monthly',
+        'sub-hard-3',
+        '{"via":"confirm"}',
+      ],
+    });
+
+    const res = await buildApp(SUB5, PK5).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT provider, provider_transaction_id, product_id, raw_payload, amount_krw
+            FROM retained_billing_records
+            WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-3'],
+    });
+    expect(retained.rows.length).toBe(1);
+    const row = retained.rows[0]!;
+    expect(row.provider).toBe('google');
+    expect(row.product_id).toBe('personal_monthly');
+    expect(row.raw_payload).toBe('{"via":"confirm"}');
+    // 구독 갈래는 요금제 표시가를 함께 남긴다(일회성 갈래와 다른 점 — 그쪽은 스토어
+    // 지역가라 금액을 지어내지 않는다).
+    expect(Number(row.amount_krw)).toBeGreaterThan(0);
+
+    // 원본은 파기됐다 — 그래서 위 증빙을 옮겨 두는 것이다.
+    const gone = await db.execute({
+      sql: 'SELECT id FROM store_transactions WHERE user_id = ?',
+      args: [PK5],
+    });
+    expect(gone.rows.length).toBe(0);
+  });
+
   it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {
     const SUB4 = 'hard-del-sub-2';
     const PK4 = 'hard-del-pk-2';

@@ -38,17 +38,33 @@ export async function pseudonymizeBillingForRetention(
   const pseudonym = await pseudonymizeUserId(userPk, salt);
   const retainUntil = billingRetentionUntil(now).toISOString();
   // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
+  //
+  // ⚠ **스토어 증빙도 함께 남긴다**(코덱스 #730 4차). 예전에는 구독 갈래가 plan·기간·금액만
+  //   적었는데, `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로 **남은 기록을
+  //   실제 주문에 되짚을 방법이 사라졌다** — 결제 분쟁에서 "이 사람이 이 주문을 했다" 를
+  //   보일 수 없다. 아래 일회성 갈래는 이미 그걸 남기고 있었다(마이그레이션 113 의 증빙
+  //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면(플랜 전환 등) **가장 최근 것**을 쓴다.
   const subs = await tx.execute({
-    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
-          FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
+                 st.provider, st.provider_transaction_id, st.product_id, st.raw_payload
+          FROM subscriptions s
+          LEFT JOIN plans p ON p.id = s.plan_id
+          LEFT JOIN store_transactions st ON st.id = (
+            SELECT id FROM store_transactions
+            WHERE subscription_id = s.id
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+          )
           WHERE s.user_id = ?`,
     args: [userPk],
   });
   for (const row of subs.rows) {
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw,
+               provider, provider_transaction_id, product_id, raw_payload,
+               retained_reason, retain_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -57,6 +73,10 @@ export async function pseudonymizeBillingForRetention(
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
         row.price_krw != null ? Number(row.price_krw) : null,
+        (row.provider as string | null) ?? null,
+        (row.provider_transaction_id as string | null) ?? null,
+        (row.product_id as string | null) ?? null,
+        (row.raw_payload as string | null) ?? null,
         retainUntil,
       ],
     });
