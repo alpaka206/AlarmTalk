@@ -1305,6 +1305,36 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
   });
 
+  it('재전송(만료 그대로)은 last_paid_at 을 밀지 않는다 — 전경 동기화가 앵커를 옮기면 안 된다', async () => {
+    // ⚠ 이 갈래는 **전경 동기화마다** 탄다(안드로이드 restorePurchases, iOS
+    //   resyncEntitlements). 무조건 now 를 쓰면 앱을 열 때마다 앵커가 밀려, 탈퇴 시
+    //   보존 기한이 **마지막 결제**가 아니라 **마지막 동기화**로부터 5년이 된다
+    //   (코덱스 #734 6차).
+    mockDB.pushResultFor('FROM store_transactions', [
+      { user_id: 'user-pk-1', subscription_id: 'sub-same' },
+    ]);
+    mockDB.pushResultFor('SELECT plan_id FROM subscriptions', [{ plan_id: FAMILY_PLAN.id }]);
+
+    await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-same',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date('2026-09-01T00:00:00.000Z'),
+      expiresAt: new Date('2026-10-01T00:00:00.000Z'),
+    });
+
+    const update = findCall('UPDATE store_transactions');
+    expect(update).toBeDefined();
+    // 새 만료가 **저장된 만료보다 클 때만** 옮긴다 — 조건이 SQL 안에 있어야 한다.
+    expect(update!.sql).toContain('CASE');
+    expect(update!.sql).toContain('> expires_at');
+    // 비교 대상과 갱신 대상이 같은 만료값이다.
+    expect(update!.args[0]).toBe('2026-10-01T00:00:00.000Z');
+    expect(update!.args[2]).toBe('2026-10-01T00:00:00.000Z');
+  });
+
   it('개인 → 가족(이어받을 그룹 없음): 예전처럼 새 그룹을 만든다', async () => {
     mockDB.pushResultFor('FROM store_transactions', []);
     mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', []); // 소유 그룹 없음

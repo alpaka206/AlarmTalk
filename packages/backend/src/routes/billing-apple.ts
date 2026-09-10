@@ -329,6 +329,8 @@ billingApple.post('/apple/confirm', async (c) => {
       productId: info.productId,
       plan,
       startsAt: new Date(info.purchaseDate),
+      // 애플은 이 트랜잭션의 결제 시각을 준다 — 서버 시각보다 정확하다.
+      lastPaidAt: new Date(info.purchaseDate),
       expiresAt,
       rawPayload: JSON.stringify({
         transactionId: info.transactionId,

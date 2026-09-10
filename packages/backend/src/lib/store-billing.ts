@@ -50,6 +50,15 @@ export interface StoreEntitlementInput {
   plan: StorePlan;
   startsAt: Date;
   expiresAt: Date;
+  /**
+   * **스토어가 알려 준 이 결제의 시각.** 없으면 서버 시각을 쓴다.
+   *
+   * 탈퇴 시 결제기록 보존 기한을 '거래일' 부터 세는 근거다(`account-deletion.ts`).
+   * 애플은 트랜잭션 조회가 `purchaseDate` 를 주므로 그걸 싣는다. 구글 v2 응답에는
+   * 갱신 결제 시각에 해당하는 값이 없어 비워 둔다 — 대신 **만료가 실제로 밀렸을 때만**
+   * 이 값을 옮기므로(아래 UPDATE), 전경 동기화가 앵커를 밀지 못한다.
+   */
+  lastPaidAt?: Date;
   /** 감사/디버깅용 원본 페이로드 (민감정보 제외 권장). */
   rawPayload?: string;
 }
@@ -150,6 +159,7 @@ export async function applyStoreEntitlement(
 ): Promise<StoreEntitlementResult> {
   const startsAtIso = input.startsAt.toISOString();
   const expiresAtIso = input.expiresAt.toISOString();
+  const lastPaidAtIso = (input.lastPaidAt ?? new Date()).toISOString();
 
   const existing = await tx.execute({
     sql: `SELECT user_id, subscription_id FROM store_transactions
@@ -197,12 +207,30 @@ export async function applyStoreEntitlement(
         args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],
       });
       await tx.execute({
-        // ⚠ **갱신도 결제다 — `last_paid_at` 을 함께 민다.** 이 갈래가 안 밀면 그 행은
-        //   영원히 첫 결제 시각을 들고 있어, 보존 기한이 실제보다 훨씬 이르게 끝난다.
+        // ⚠ **갱신도 결제다 — 그런데 재전송은 결제가 아니다**(코덱스 #734 6차).
+        //   이 갈래는 **전경 동기화마다** 탄다(안드로이드 `restorePurchases`, iOS
+        //   `resyncEntitlements` 가 활성 구매를 다시 올린다). 무조건 `now` 를 쓰면 앱을 열
+        //   때마다 앵커가 밀려, 보존 기한이 **마지막 결제**가 아니라 **마지막 동기화**로부터
+        //   5년이 된다 — 처리방침의 최대 5년을 넘긴다.
+        //
+        //   그래서 **만료가 실제로 밀렸을 때만** 옮긴다. 그게 새 결제의 신호다(스토어가
+        //   권위로 준 만료가 늘어난 것). 값은 스토어가 준 결제 시각이 있으면 그것,
+        //   없으면 서버 시각 — 확정은 결제 직후에 오므로 몇 시간 안쪽이다.
+        //   (SQLite 는 SET 의 모든 식을 **옛 행 값**으로 평가하므로 순서를 신경 쓰지 않아도 된다.)
         sql: `UPDATE store_transactions
-              SET expires_at = ?, last_paid_at = datetime('now')
+              SET last_paid_at = CASE
+                    WHEN expires_at IS NULL OR ? > expires_at THEN ?
+                    ELSE last_paid_at
+                  END,
+                  expires_at = ?
               WHERE provider = ? AND provider_transaction_id = ?`,
-        args: [expiresAtIso, input.provider, input.providerTransactionId],
+        args: [
+          expiresAtIso,
+          lastPaidAtIso,
+          expiresAtIso,
+          input.provider,
+          input.providerTransactionId,
+        ],
       });
       // 갱신/복구로 유료가 이어지면 예약된 유료 음성 보관 삭제를 해제한다.
       await clearPaidVoiceRetention(tx, input.userPk);
@@ -363,14 +391,13 @@ export async function applyStoreEntitlement(
   }
 
   await tx.execute({
-    // ⚠ **`last_paid_at` 을 여기서 적는다**(코덱스 #734 5차). 이 함수가 도는 순간이
-    //   스토어가 결제를 확인해 준 시점이다 — 나중에 `created_at`(체인 최초 시각)이나
-    //   `expires_at - period_days`(달력 달이라 며칠 어긋난다)로 되짚으려 하지 말 것.
+    // ⚠ **`last_paid_at` 을 여기서 적는다**(코덱스 #734 5차). 나중에 `created_at`(체인 최초
+    //   시각)이나 `expires_at - period_days`(달력 달이라 며칠 어긋난다)로 되짚으려 하지 말 것.
     //   탈퇴 시 결제기록 보존 기한을 '거래일' 부터 세는 근거가 이 값이다.
     sql: `INSERT OR REPLACE INTO store_transactions
             (id, user_id, provider, provider_transaction_id, product_id, plan_key,
              subscription_id, expires_at, raw_payload, last_paid_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(),
       input.userPk,
@@ -381,6 +408,7 @@ export async function applyStoreEntitlement(
       subscriptionId,
       expiresAtIso,
       input.rawPayload ?? null,
+      lastPaidAtIso,
     ],
   });
 
