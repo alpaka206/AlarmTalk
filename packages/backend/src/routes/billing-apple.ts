@@ -123,7 +123,7 @@ billingApple.post('/apple/confirm', async (c) => {
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
     //   구독 행**을 집어 취소해 버린다 — 이어받은 그룹까지 해체되고, 그건 되돌릴 수 없다.
     //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
-    if (await appleChainStillEntitled(config, info.originalTransactionId)) {
+    if (await appleChainStillLive(config, info.originalTransactionId)) {
       logStructured('info', {
         at: 'billing.apple.confirm',
         step: 'revoked_stale_renewal',
@@ -306,24 +306,36 @@ billingApple.post('/apple/confirm', async (c) => {
 });
 
 /**
- * **이 구독 체인이 지금도 권한을 주고 있는가.**
+ * **이 구독 체인이 아직 살아 있는가** — 환불 통보 하나로 취소해도 되는지 가르는 자리다.
  *
- * ⚠ 환불 통보 하나로 취소해도 되는지 가르는 자리다. `originalTransactionId` 는 체인 전체가
- * 공유하므로, 옛 갱신이 환불됐다고 해서 **지금** 권한이 없다는 뜻은 아니다.
+ * `originalTransactionId` 는 체인 전체가 공유하므로, 옛 갱신이 환불됐다고 해서 **지금**
+ * 구독이 끝났다는 뜻은 아니다.
+ *
+ * ⚠ **끝난 상태를 목록으로 적는다(허용 목록의 반대가 아니라).** 예전에는 `!== EXPIRED` 로
+ * 썼는데, **지금 구독 자체가 환불되면 애플은 만료(2)가 아니라 `REVOKED`(5)** 를 준다 —
+ * 그 한 글자 때문에 주 경로인 "지금 구독 환불" 이 통째로 새어 나갔다(코덱스 #733 3차).
+ * 목록에 없는 값(애플이 나중에 늘릴 수도 있다)은 **살아 있다고 본다.**
+ *
+ * 재시도(3)·유예(4)는 회복형이라 여기서 끊지 않는다 — 만료 크론의 보류 갈래가 다룬다.
+ * (`reconcileAppleBeforeExpiry` 는 반대로 '권한 있는 상태' 를 목록으로 적는다. 묻는 것이
+ * 달라서 목록도 다르다: 저기는 "지금 유료인가", 여기는 "끝났는가" 다.)
  *
  * ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를 건너뛰면
  * 환불받은 사용자가 `expires_at` 까지 유료로 남고 만료 크론이 결국 정리하지만, 잘못 취소하면
  * **돈을 내고 있는 그룹이 해체되고 되돌릴 수 없다.**
  */
-async function appleChainStillEntitled(
+const APPLE_TERMINATED_STATUSES: readonly number[] = [
+  APPLE_SUBSCRIPTION_STATUS.EXPIRED,
+  APPLE_SUBSCRIPTION_STATUS.REVOKED,
+];
+
+async function appleChainStillLive(
   config: Parameters<typeof fetchAppleSubscriptionStatus>[1],
   originalTransactionId: string,
 ): Promise<boolean> {
   try {
     const status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
-    // 만료(2)만 "권한 없음" 이다. 재시도(3)·유예(4)는 회복형이라 여기서 끊지 않는다 —
-    // 그 둘은 만료 크론의 보류 갈래가 다룬다.
-    return status.status !== APPLE_SUBSCRIPTION_STATUS.EXPIRED;
+    return !APPLE_TERMINATED_STATUSES.includes(status.status);
   } catch (err) {
     logStructured('warn', {
       at: 'billing.apple.confirm',

@@ -203,6 +203,13 @@ export const APPLE_SUBSCRIPTION_STATUS = {
   IN_BILLING_RETRY: 3,
   /** 가격 인상 동의 대기. 아직 유효하다. */
   IN_GRACE_PERIOD: 4,
+  /**
+   * **환불·취소로 권한이 회수됐다.**
+   *
+   * ⚠ 지금 구독 자체가 환불되면 애플은 `2`(만료)가 아니라 **이 값**을 준다. 만료만 보고
+   * 판단하면 환불이 통째로 새어 나간다(코덱스 #733 3차).
+   */
+  REVOKED: 5,
 } as const;
 
 export interface AppleSubscriptionStatus {

@@ -139,6 +139,25 @@ export async function findStoreTransactionsForSubscriptions(
  *
  * `null` 은 스토어 결제가 아니라는 뜻이다(dev 스텁·프로모·바우처) — 서버 로컬 해지가 된다.
  */
+/**
+ * **활성 구독에 묶인 스토어 전부** — 지금 이 계정의 갱신을 누가 쥐고 있는가.
+ *
+ * ⚠ `storeCancelProviderOf` 와 **다른 질문이다.** 그쪽은 "해지가 어느 스토어를 거치나" 라
+ * 애플이 있으면 애플로 **접어 버린다**(해지 라우트가 그렇게 판정하므로). 여기서 그 값을
+ * 재사용하면 애플·구글이 **함께 살아 있는 계정**이 "애플뿐" 으로 읽혀, Play 가 계속
+ * 갱신되는데도 애플 결제를 또 열어 준다(코덱스 #733 3차).
+ *
+ * ⚠ **만료로 거르지 않는다.** Play 보류(`ON_HOLD`/`PAUSED`)는 회복형이라 구독 행을
+ * `active` 로 남기고 `users.plan` 만 회수하는데, 그 행은 `expires_at` 이 이미 지나 있다.
+ * 만료로 거르면 보류 중인 Play 구독이 **보이지 않게 되고**, 그 상태에서 애플로 사면
+ * 결제가 복구되는 순간 두 곳에서 청구된다.
+ */
+export function storeRenewalProvidersOf(
+  transactions: readonly SubscriptionStoreTransaction[],
+): string[] {
+  return Array.from(new Set(transactions.map((txn) => txn.provider))).sort();
+}
+
 export function storeCancelProviderOf(
   transactions: readonly SubscriptionStoreTransaction[],
 ): 'apple' | 'google' | null {

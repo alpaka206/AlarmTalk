@@ -132,7 +132,8 @@ final class SubscriptionManager: ObservableObject {
             //   토큰으로** 올라가 계정 불일치로 거절되고, 구독 갈래는 `mayFinish` 가
             //   그걸 **끝내 버려** A 가 다시 로그인해도 재시도할 것이 남지 않는다.
             //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
-            guard maySyncToBackend(transaction) else { continue }
+            // 환불은 주인이 아니어도 전달한다(위 리스너와 같은 이유).
+            guard transaction.revocationDate != nil || maySyncToBackend(transaction) else { continue }
             let confirmed = await syncWithBackend(transaction: transaction)
             if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
                 await transaction.finish()
@@ -509,7 +510,15 @@ final class SubscriptionManager: ObservableObject {
                 do {
                     let transaction = try await self.verifyInIsolated(result)
                     // ⚠ **남의 계정 트랜잭션은 보내지 않는다**(위 `maySyncToBackend` 주석).
-                    guard await self.maySyncToBackend(transaction) else {
+                    //   단 **환불은 예외다**(코덱스 #733 3차). A 가 산 구독이 환불됐는데 그때
+                    //   기기에 B 가 로그인해 있으면 가드가 이걸 버리는데, 환불된 트랜잭션은
+                    //   `currentEntitlements` 에 안 나오고 구매 때 이미 finish 돼 있어
+                    //   **다시 올릴 경로가 하나도 없다** — A 와 그 그룹이 만료 크론까지 유료로
+                    //   남는다. 서버의 환불 갈래는 **호출자가 아니라 트랜잭션에서** 대상
+                    //   구독을 찾으므로 B 의 토큰으로 올려도 A 의 것을 정확히 회수한다.
+                    let isRevoked = transaction.revocationDate != nil
+                    let maySend = await self.maySyncToBackend(transaction)
+                    guard isRevoked || maySend else {
                         await self.refreshPurchasedProducts()
                         continue
                     }

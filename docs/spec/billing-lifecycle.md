@@ -351,6 +351,16 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 관리할 입구가 앱에서 사라지는 것이다.
 
 - 판정은 **로컬 스토어 상태가 아니라 `store_provider`** 다(위 절과 같은 이유).
+- ⚠ **판정 신호는 `store_renewal_providers` 다 — `store_provider` 가 아니다**(코덱스 #733 3차).
+  둘은 다른 질문이다:
+  - `store_provider` 는 "해지가 어느 스토어를 거치나" 라 애플이 있으면 **애플로 접힌다.**
+    그걸 재사용하면 애플·구글이 **함께 살아 있는 계정**이 "애플뿐" 으로 읽혀 Play 가
+    갱신 중인데 애플 결제를 또 열어 준다.
+  - `subscription` 자체가 **null 일 수 있다.** Play 보류(`ON_HOLD`/`PAUSED`)는 구독 행을
+    살려 두고 `users.plan` 만 회수하는데, 그 행은 `expires_at` 이 지나 응답에서 빠지고
+    등급도 free 다 — **등급이나 `subscription` 으로 거르면 보류 중인 Play 구독이 안 보인다.**
+    결제가 복구되는 순간 두 곳에서 청구된다.
+  그래서 신호는 **응답 최상위**에 두고, 만료로 거르지 않으며, 스토어를 **접지 않고 전부** 싣는다.
 - ⚠ **모르는 것은 '아니오' 로 친다**(코덱스 #733). 새 기기·새 로그인이거나
   `GET /billing/subscription` 이 아직 돌고 있거나 실패한 동안에는 서버 구독이 **없는
   것처럼 보이는데**, StoreKit 제품은 이미 로드돼 살 수 있다. 그 틈이 정확히 이 게이트가
@@ -383,11 +393,22 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   **체인 전체가 공유**한다 — 자동갱신은 갱신마다 트랜잭션이 새로 나지만 그 id 는 같다.
   그래서 옛 갱신 한 건이 뒤늦게 환불되면 조회가 그 id 로 **지금 살아 있는 구독 행**을
   집는다. 그대로 취소하면 이어받은 그룹까지 해체되고 **되돌릴 수 없다.** 판단은 애플에
-  체인의 현재 상태를 물어서 하고(`fetchAppleSubscriptionStatus`), **만료(2)일 때만** 회수한다.
+  체인의 현재 상태를 물어서 하고(`fetchAppleSubscriptionStatus`), **끝난 상태일 때만** 회수한다.
   재시도(3)·유예(4)는 회복형이라 여기서 끊지 않는다 — 만료 크론의 보류 갈래가 다룬다.
+- ⚠ **끝난 상태는 만료(2) '와' 회수(5) 둘이다.** 지금 구독 자체가 환불되면 애플은 만료가
+  아니라 **`REVOKED`(5)** 를 준다 — `!== EXPIRED` 로 적었다가 주 경로인 "지금 구독 환불" 이
+  통째로 새어 나갔다(코덱스 #733 3차). 그래서 **끝난 상태를 목록으로 적고**, 목록에 없는
+  값(애플이 나중에 늘릴 수 있다)은 살아 있다고 본다.
+  (`reconcileAppleBeforeExpiry` 는 반대로 '권한 있는 상태' 를 목록으로 적는다 — 묻는 것이
+  달라서 목록도 다르다: 저기는 "지금 유료인가", 여기는 "끝났는가" 다.)
 - ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를
   건너뛰면 환불받은 사용자가 `expires_at` 까지 유료로 남고 크론이 결국 정리하지만,
   잘못 취소하면 돈을 내고 있는 그룹이 해체된다.
+- ⚠ **환불 통보는 계정 가드를 건너뛴다.** A 가 산 구독이 환불됐는데 그때 기기에 B 가
+  로그인해 있으면 `maySyncToBackend` 가 이걸 버리는데, 환불된 트랜잭션은
+  `currentEntitlements` 에 안 나오고 구매 때 이미 finish 돼 있어 **다시 올릴 경로가 하나도
+  없다.** 서버의 환불 갈래는 **호출자가 아니라 트랜잭션에서** 대상 구독을 찾으므로 B 의
+  토큰으로 올려도 A 의 것을 정확히 회수한다.
 - ⚠ **커밋 뒤 통지는 최선 노력이다.** 거기서 던지면 라우트가 500 이 되고, 앱은
   `TRANSACTION_REVOKED` 를 못 받아 권위 상태를 다시 읽는 경로를 놓친다 — 회수가 끝났는데
   유료 상태가 남는다.
@@ -444,7 +465,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
-| 구매 차단 판정 | `store_provider` 를 내려보낸다 | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 구매 차단 판정 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
 | 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |

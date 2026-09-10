@@ -382,22 +382,26 @@ struct BillingPanel: View {
     /// `PurchaseBlockReasonTests`.
     static func purchaseBlockReason(
         currentTier: PlanTier,
-        activeSubscription: BillingSubscription?
+        response: BillingSubscriptionResponse?
     ) -> PurchaseBlockReason? {
-        guard currentTier != .free else { return nil }
-        guard let active = activeSubscription else {
-            // 이미 유료인데 서버 구독을 못 읽었다 — 어느 스토어인지 모른다.
-            return .renewalOwnerUnknown
+        guard let response else {
+            // 아직 못 읽었다. 무료면 갱신을 쥔 스토어가 애초에 없으니 통과시킨다.
+            return currentTier == .free ? nil : .renewalOwnerUnknown
         }
-        // `nil` 은 스토어 결제가 아니라는 뜻이다(프로모·바우처) — 갱신을 쥔 스토어가 없다.
-        return active.storeProvider == "google" ? .playOwnsRenewal : nil
+        if let providers = response.storeRenewalProviders {
+            // ⚠ **등급을 보지 않는다**(코덱스 #733 3차). Play 보류는 `users.plan` 을 free 로
+            //   내리고 구독 행만 살려 두므로, 등급으로 거르면 **보류 중인 Play 구독이
+            //   안 보인다** — 결제가 복구되는 순간 두 곳에서 청구된다.
+            return providers.contains("google") ? .playOwnsRenewal : nil
+        }
+        // 구버전 서버 — 옛 신호로 최선을 다한다.
+        if response.subscription?.storeProvider == "google" { return .playOwnsRenewal }
+        if response.subscription == nil && currentTier != .free { return .renewalOwnerUnknown }
+        return nil
     }
 
     private func purchaseBlockReason() -> PurchaseBlockReason? {
-        Self.purchaseBlockReason(
-            currentTier: currentTier,
-            activeSubscription: socialFeatures.subscription?.subscription
-        )
+        Self.purchaseBlockReason(currentTier: currentTier, response: socialFeatures.subscription)
     }
 
     private func openAppStoreSubscriptionManagement() async {

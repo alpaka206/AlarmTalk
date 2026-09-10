@@ -128,10 +128,11 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
     await buildApp('my-user-pk').request(jsonReq('GET', '/billing/subscription'));
 
-    expect(mockDB.calls).toHaveLength(1);
+    // 첫 조회가 구독이고, 그 뒤는 갱신 주인 신호용(활성 구독 → 스토어 기록)이다.
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('u.id = ?');
     expect(mockDB.calls[0]!.args[0]).toBe('my-user-pk');
+    expect(mockDB.calls[1]!.args[0]).toBe('my-user-pk');
   });
 
   it('활성 구독 없으면 { subscription: null, plan: null }', async () => {
@@ -178,6 +179,52 @@ describe('GET /billing/subscription (billingQuery)', () => {
       period_days: 30, max_members: 1, price_krw: 4900,
     }]);
   }
+
+  // -------------------------------------------------------------------------
+  // store_renewal_providers — **지금 갱신을 쥔 스토어 전부** (코덱스 #733 3차)
+  //
+  // ⚠ `store_provider` 와 다른 질문이다. 그쪽은 "해지가 어느 스토어를 거치나" 라 애플이
+  //   있으면 애플로 접어 버린다. 이중 청구를 막으려면 **구글이 살아 있는가**를 알아야 한다.
+  // -------------------------------------------------------------------------
+  it('활성 구독이 없어도 갱신 주인은 돌려준다 — Play 보류가 여기 걸린다', async () => {
+    // Play `ON_HOLD` 는 구독 행을 active 로 남기고 expires_at 은 지나 있다 →
+    // 위 SELECT(만료 필터)에는 안 걸리지만 갱신은 Play 가 쥐고 있다.
+    mockDB.pushResult([]); // 만료되지 않은 활성 구독 없음
+    mockDB.pushResult([{ sub_id: 'sub-hold', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
+
+    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
+    const body = await res.json();
+    expect(body.subscription).toBeNull();
+    expect(body.store_renewal_providers).toEqual(['google']);
+  });
+
+  it('애플·구글이 함께 살아 있으면 둘 다 돌려준다 — store_provider 는 apple 로 접힌다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([
+      { sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+    ]);
+    mockDB.pushResult([
+      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' },
+      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' },
+    ]);
+
+    const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
+    // 해지 판정은 애플 우선으로 접힌다(서버가 애플을 못 끊으므로).
+    expect(body.subscription.store_provider).toBe('apple');
+    // 구매 차단 판정은 접히면 안 된다 — Play 가 살아 있다.
+    expect(body.store_renewal_providers).toEqual(['apple', 'google']);
+  });
+
+  it('스토어 결제가 없으면 빈 배열이다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([]);
+
+    const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
+    expect(body.store_renewal_providers).toEqual([]);
+  });
 
   it('애플 결제면 store_provider=apple', async () => {
     pushSubscriptionRow();

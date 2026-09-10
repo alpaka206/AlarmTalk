@@ -27,7 +27,7 @@ vi.mock('../src/lib/apple-storekit', () => ({
     if (chainStatus instanceof Error) throw chainStatus;
     return { status: chainStatus, productId: 'com.alarmtalk.app.personal_monthly' };
   }),
-  APPLE_SUBSCRIPTION_STATUS: { ACTIVE: 1, EXPIRED: 2, IN_BILLING_RETRY: 3, IN_GRACE_PERIOD: 4 },
+  APPLE_SUBSCRIPTION_STATUS: { ACTIVE: 1, EXPIRED: 2, IN_BILLING_RETRY: 3, IN_GRACE_PERIOD: 4, REVOKED: 5 },
   AppleTransactionNotFoundError: class extends Error {},
 }));
 
@@ -191,6 +191,34 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     );
 
     expect(res.status).toBe(400);
+    expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
+  });
+
+  it('지금 구독이 환불되면 애플은 5(REVOKED)를 준다 — 그것도 회수한다', async () => {
+    // ⚠ **주 경로다.** 예전에는 `!== EXPIRED` 로 판정해서, 만료(2)가 아닌 5 가 오면
+    //   "살아 있다" 로 읽고 회수를 통째로 건너뛰었다(코덱스 #733 3차).
+    chainStatus = 5;
+    pushMappedSubscription();
+
+    await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1);
+  });
+
+  it('모르는 상태값은 살아 있는 것으로 본다 — 애플이 나중에 늘릴 수 있다', async () => {
+    chainStatus = 99;
+    pushMappedSubscription();
+
+    await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
     expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
   });
 
