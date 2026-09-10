@@ -68,24 +68,42 @@ export async function pseudonymizeBillingForRetention(
   //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
   //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
   const oneTime = await tx.execute({
-    sql: `SELECT st.id, st.plan_key, st.created_at, p.id AS plan_id, p.price_krw
+    sql: `SELECT st.id, st.plan_key, st.created_at, st.provider, st.provider_transaction_id,
+                 st.product_id, st.raw_payload, p.id AS plan_id
           FROM store_transactions st
           LEFT JOIN plans p ON p.key = st.plan_key
           WHERE st.user_id = ? AND st.subscription_id IS NULL`,
     args: [userPk],
   });
   for (const row of oneTime.rows) {
+    // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #731). 탈퇴 시각부터 세면 4년 전에 산
+    //   선물이 그 시점부터 5년을 더 남아 **9년**이 된다 — 처리방침이 밝힌 최대 5년을 넘긴다.
+    const purchasedAt = (row.created_at as string | null) ?? null;
+    const recordRetainUntil = purchasedAt
+      ? billingRetentionUntil(new Date(purchasedAt)).toISOString()
+      : retainUntil;
+    // 이미 5년이 지난 거래는 **다시 보존하지 않는다** — 보존 사유가 끝난 기록이다.
+    if (recordRetainUntil <= now.toISOString()) continue;
     await tx.execute({
+      // ⚠ **금액을 지어내지 않는다.** 예전에는 `plans.price_krw`(현재 원화 표시가)를 넣었는데,
+      //   스토어 가격은 지역별이고 요금제 가격은 바뀐다 — 실제로 청구된 금액과 다른 값이
+      //   **법정 결제기록에 남는다.** 통화까지 확실한 값이 없으면 비워 두고, 대신 스토어
+      //   증빙(거래 id·원본 페이로드)을 남겨 주문에 되짚을 수 있게 한다.
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
-            VALUES (?, ?, ?, 'one_time', ?, NULL, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at,
+               amount_krw, amount_currency, provider, provider_transaction_id,
+               product_id, raw_payload, retained_reason, retain_until)
+            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
         (row.plan_id as string | null) ?? null,
-        (row.created_at as string | null) ?? null,
-        row.price_krw != null ? Number(row.price_krw) : null,
-        retainUntil,
+        purchasedAt,
+        (row.provider as string | null) ?? null,
+        (row.provider_transaction_id as string | null) ?? null,
+        (row.product_id as string | null) ?? null,
+        (row.raw_payload as string | null) ?? null,
+        recordRetainUntil,
       ],
     });
   }

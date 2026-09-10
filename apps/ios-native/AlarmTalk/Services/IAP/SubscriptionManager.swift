@@ -59,7 +59,12 @@ final class SubscriptionManager: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .accountNotPurchasable:
-                return "이 계정으로는 결제를 진행할 수 없어요. 로그아웃 후 다시 로그인해 주세요."
+                // ⚠ **"다시 로그인하세요" 라고 하지 말 것**(코덱스 #731). 재로그인은 이
+                //   문제를 못 고친다 — `routes/auth.ts` 의 기존 계정 갈래가 `userId = row.id`
+                //   로 **같은 비-UUID id 를 그대로 돌려주므로** 무한 루프로 보내는 안내가 된다.
+                //   고칠 수 있는 행동이 없으므로 사실만 말하고 문의로 보낸다.
+                return "이 계정은 결제 처리에 필요한 정보가 없어 결제를 시작할 수 없어요. "
+                    + "고객센터로 문의해 주시면 계정을 옮겨 드릴게요."
             }
         }
     }
