@@ -1196,7 +1196,13 @@ export async function processSubscriptionExpiry(
     if (decision === 'suspend') {
       await resolvePlanAfterSuspend(db, userPk, subscriptionId);
       const groupId = (r.plan_group_id as string | null) ?? null;
-      if (groupId) await propagateGroupMemberPlans(db, groupId, userPk, true);
+      const suspended = groupId ? await propagateGroupMemberPlans(db, groupId, userPk, true) : [];
+      // ⚠ **통지 대상에 넣는다**(코덱스 #730 2차). 예전에는 플랜만 바꾸고 그냥 넘어갔다 —
+      //   기기는 유료 스냅샷을 그대로 들고 있어 **이미 예약된 유료 목소리 알람이 계속
+      //   그 목소리로 울린다.** iOS 는 예약 시점에 소리가 고정되므로 특히 그렇다.
+      //   다음 전경 복귀·주기 동기화까지 회수가 미뤄지면 그건 회수가 아니다.
+      notifyUserPks.add(userPk);
+      for (const id of suspended) notifyUserPks.add(id);
       continue;
     }
 
