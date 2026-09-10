@@ -163,6 +163,78 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect(sql).toContain("s.expires_at > datetime('now')");
   });
 
+  // -------------------------------------------------------------------------
+  // store_provider — 해지가 어느 스토어를 거쳐야 하는가 (코덱스 #732 P1)
+  //
+  // ⚠ 앱이 이 판정을 **로컬 스토어 상태로 흉내 내면** 애플 entitlement 가 기기에 남은 채
+  //   Play 구독을 쓰는 사용자의 해지가 조용히 실패한다 — 값의 출처는 서버 하나다.
+  // -------------------------------------------------------------------------
+  function pushSubscriptionRow() {
+    mockDB.pushResult([{
+      sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID,
+      plan_group_id: null, status: 'active',
+      starts_at: '2026-04-21T00:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
+      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
+      period_days: 30, max_members: 1, price_krw: 4900,
+    }]);
+  }
+
+  it('애플 결제면 store_provider=apple', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' }]);
+
+    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
+    expect((await res.json()).subscription.store_provider).toBe('apple');
+  });
+
+  it('구글 결제면 store_provider=google', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
+
+    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
+    expect((await res.json()).subscription.store_provider).toBe('google');
+  });
+
+  it('애플·구글이 섞여 있으면 apple 이 이긴다 — 해지 라우트가 409 로 거절하는 조건과 같다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([
+      { sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+    ]);
+    mockDB.pushResult([
+      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' },
+      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' },
+    ]);
+
+    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
+    expect((await res.json()).subscription.store_provider).toBe('apple');
+  });
+
+  it('스토어 결제가 아니면(프로모·바우처) store_provider=null — 서버 로컬 해지가 된다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([]);
+
+    const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
+    expect((await res.json()).subscription.store_provider).toBeNull();
+  });
+
+  it('판정 범위는 최신 1건이 아니라 **활성 구독 전부** — 해지 라우트와 같은 집합이다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([]);
+
+    await buildApp().request(jsonReq('GET', '/billing/subscription'));
+
+    // 2번째 = 활성 구독 조회(만료 필터 없이 status='active' 전부), 3번째 = 그 구독들의 스토어 기록.
+    expect(mockDB.calls[1]!.sql).toContain("s.status = 'active'");
+    expect(mockDB.calls[1]!.sql).not.toContain('LIMIT 1');
+    expect(mockDB.calls[2]!.sql).toContain('FROM store_transactions');
+    expect(mockDB.calls[2]!.sql).toContain('subscription_id IN');
+  });
+
   it('personal 구독 시 plan_group_id null 반환', async () => {
     mockDB.pushResult([{
       sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID,

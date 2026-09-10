@@ -221,6 +221,16 @@ struct AlarmTalkApp: App {
                         // 로그아웃 상태에서는 등급을 아예 세지 않으므로(계정 토큰을 모른다),
                         // 여기서 다시 읽지 않으면 새 계정이 다음 전경 진입 전까지 '모름' 으로
                         // 남는다. 반대로 앞 계정 값이 남아 새 계정을 유료로 만들지도 않는다.
+                        //
+                        // ⚠ **미완료 트랜잭션도 여기서 다시 훑는다**(코덱스 #732 P2).
+                        //   재전송에는 계정 가드가 걸려 있어(`maySyncToBackend`), 앱이
+                        //   로그아웃 상태로 뜨거나 B 로 뜬 회차에는 A 의 미완료 선물이
+                        //   **건너뛰어진다.** 그런데 재전송을 부르는 곳이 `bootstrap` 하나
+                        //   뿐이라, A 가 같은 실행 안에서 로그인해도 다시 훑을 기회가 없었다 —
+                        //   선물은 소모성이라 `currentEntitlements` 에도 안 나오고
+                        //   `Transaction.updates` 도 앞 프로세스가 남긴 것을 물어다 주지
+                        //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
+                        await subscriptions.replayUnfinishedTransactions()
                         await subscriptions.refreshPurchasedProducts()
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
                         // (`SocialNotificationTracker.notifyReceivedAlarm`)은 `.notDetermined`

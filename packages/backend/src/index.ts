@@ -410,13 +410,16 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         // 파기를 막으면 사용자의 데이터가 유예 기간을 넘겨 남는다.
         const appleRefreshToken = row.apple_refresh_token as string | null;
         if (appleRefreshToken) {
-          const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
-          if (signInConfig) {
-            try {
-              await revokeAppleToken(signInConfig, appleRefreshToken);
-            } catch (err) {
-              captureCron('scheduled.account_purge.apple_revoke', err);
-            }
+          // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 2차). `appleSignInConfig` 는
+          //   PEM 이 잘려 있으면 **던진다.** 밖에 두면 그 예외가 이 루프를 빠져나가
+          //   **그 계정도, 같은 배치의 뒤 계정도 전부 파기되지 않는다** — 조회에
+          //   커서가 없어 다음 틱도 같은 계정에서 다시 막히므로, 파기 요청 데이터가
+          //   무기한 남는다. 애플 연결 해제는 최선 노력이고 파기가 본 목적이다.
+          try {
+            const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
+            if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
+          } catch (err) {
+            captureCron('scheduled.account_purge.apple_revoke', err);
           }
         }
         const purged = await withWriteTransaction(db, async (tx) => {

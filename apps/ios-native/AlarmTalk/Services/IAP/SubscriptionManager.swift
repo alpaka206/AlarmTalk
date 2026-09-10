@@ -103,7 +103,41 @@ final class SubscriptionManager: ObservableObject {
     /// 앱 시작 시 1회 호출 — 제품 + 현재 entitlement 상태 동기화.
     func bootstrap() async {
         await fetchProducts()
+        await replayUnfinishedTransactions()
         await refreshPurchasedProducts()
+    }
+
+    /// **앞 실행이 끝내지 못한 트랜잭션을 다시 올린다.**
+    ///
+    /// ⚠ 이게 없으면 **결제만 되고 선물이 안 나가는 상태가 영구히 남는다**(코덱스 #730 2차).
+    /// 선물은 소모성(consumable)이라 `currentEntitlements` 에 **나오지 않고**,
+    /// `Transaction.updates` 는 앞 프로세스가 남긴 것을 다시 훑어 주는 시퀀스가 아니다.
+    /// 서버 확정 전에 앱이 죽으면 재시도할 경로가 하나도 없었다 — `purchase` 가 확정에
+    /// 실패한 트랜잭션을 **일부러 끝내지 않고** "다시 열면 재시도된다" 고 안내하는데,
+    /// 그 약속을 지키는 것이 여기다.
+    ///
+    /// 확정 성공 여부에 따라 끝낼지 정하는 규칙은 구매 경로와 **같은 함수**를 쓴다
+    /// ([mayFinish]) — 두 곳이 갈라지면 소모성이 확정 없이 끝나 버린다.
+    ///
+    /// ⚠ **부르는 곳이 둘이다 — `bootstrap` 과 계정 변경**(`AlarmTalkApp` 의
+    /// `.task(id: auth.session?.user.id)`). 아래 계정 가드가 로그아웃·다른 계정 회차의
+    /// 트랜잭션을 건너뛰므로, 시작 때 한 번만 훑으면 **그 뒤 로그인한 주인은 앱을 껐다
+    /// 켜기 전까지 선물을 못 받는다**(코덱스 #732 P2).
+    func replayUnfinishedTransactions() async {
+        for await result in Transaction.unfinished {
+            guard let transaction = try? checkVerified(result) else { continue }
+            // ⚠ **남의 계정 트랜잭션은 보내지도, 끝내지도 않는다**(코덱스 #732 P2).
+            //   리스너·재동기화와 **같은 가드**다(`maySyncToBackend`) — 여기만 빠져 있었다.
+            //   같은 기기를 A 가 쓰다 B 로 로그인하면, A 가 남긴 미완료 트랜잭션이 **B 의
+            //   토큰으로** 올라가 계정 불일치로 거절되고, 구독 갈래는 `mayFinish` 가
+            //   그걸 **끝내 버려** A 가 다시 로그인해도 재시도할 것이 남지 않는다.
+            //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
+            guard maySyncToBackend(transaction) else { continue }
+            let confirmed = await syncWithBackend(transaction: transaction)
+            if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
+                await transaction.finish()
+            }
+        }
     }
 
     /// App Store 로부터 6개 제품 정보 fetch.

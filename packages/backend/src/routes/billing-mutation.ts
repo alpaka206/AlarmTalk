@@ -7,10 +7,12 @@ import {
   cancelSubscriptionImmediate,
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
+  findStoreTransactionsForSubscriptions,
   notifyPlanChanged,
   notifyVoiceDeletionScheduled,
   scheduleCancelAtPeriodEnd,
   schedulePaidVoiceRetention,
+  storeCancelProviderOf,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
 import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from '../lib/store-billing';
@@ -708,17 +710,7 @@ billingMutation.post('/cancel', async (c) => {
   // 엣지 케이스까지 전부 조회한다 — 첫 구독 토큰만 취소하면 나머지 토큰이 계속 과금된다.
   // (IN 플레이스홀더는 개발자 고정 조각 — 값은 전부 ?-바인딩.)
   const subIds = activeSubscriptions.map((s) => s.subscriptionId);
-  const inPh = subIds.map(() => '?').join(', ');
-  const txnRes = await db.execute({
-    sql: `SELECT provider, provider_transaction_id, product_id
-          FROM store_transactions WHERE subscription_id IN (${inPh})`,
-    args: subIds,
-  });
-  const storeTxns = txnRes.rows.map((row) => ({
-    provider: String(row.provider),
-    purchaseToken: String(row.provider_transaction_id),
-    productId: String(row.product_id),
-  }));
+  const storeTxns = await findStoreTransactionsForSubscriptions(db, subIds);
 
   // ⚠ **애플 결제 구독은 서버가 해지할 수 없다 — 여기서 막는다.**
   //
@@ -731,8 +723,9 @@ billingMutation.post('/cancel', async (c) => {
   // Play 실패 갈래와 같은 모양으로 낸다(무변경 + manage_url). 안드로이드 클라의
   // `STORE_MANAGE_REQUIRED_CODES` 에 이미 이 코드가 들어 있고, iOS 는 이 코드를 받으면
   // StoreKit 관리 시트를 연다.
-  const appleTxn = storeTxns.find((txn) => txn.provider === 'apple');
-  if (appleTxn) {
+  // ⚠ 판정은 `storeCancelProviderOf` 하나다 — `GET /billing/subscription` 이 앱에
+  // 알려 주는 값이 여기서 나오는 답과 **같아야** 한다(두 곳에 적으면 갈라진다).
+  if (storeCancelProviderOf(storeTxns) === 'apple') {
     return c.json(
       {
         error: 'App Store subscriptions must be cancelled in the App Store',

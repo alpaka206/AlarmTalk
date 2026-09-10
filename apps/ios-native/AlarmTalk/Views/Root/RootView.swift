@@ -22,7 +22,7 @@ struct RootView: View {
     /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
-    @State private var legalDocument: LegalDocumentTarget?
+    @State private var bundledLegalDocument: BundledLegalDocument?
 
     /// 웰컴 프로모 코드 안내(계정당 1회, 무료 플랜만).
     @State private var showWelcomePromo = false
@@ -30,15 +30,14 @@ struct RootView: View {
     @State private var promoBusy = false
     @State private var promoError: String?
 
-    struct LegalDocumentTarget: Identifiable, Hashable {
-        let title: String
-        let url: URL
-        var id: String { url.absoluteString }
-    }
-
-    // 약관/개인정보 처리방침 외부 링크. Android `AlarmTalkApp.kt:539`.
-    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
-    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
+    /// 번들 법무 문서를 **둘 다** 읽을 수 있는가. 빌드 산출물이라 실행 중에 바뀌지 않으므로
+    /// 한 번만 본다(`body` 마다 파일을 열지 않는다).
+    ///
+    /// 둘 중 하나만 없어도 막는다 — 제출하는 `LegalPolicy.bundledVersion` 은 **두 문서에서
+    /// 함께** 뽑은 값이라(`scripts/generate-legal-version.sh` 가 다르면 빌드를 세운다),
+    /// 한쪽이 없으면 그 버전이 무엇을 가리키는지 앱이 말할 수 없다.
+    private static let bundledLegalDocumentsReadable = BundledLegalDocument.allCases
+        .allSatisfy { $0.markdown() != nil }
 
     var body: some View {
         Group {
@@ -76,6 +75,17 @@ struct RootView: View {
                         .progressViewStyle(.circular)
                         .tint(AuthSceneColors.accent)
                 }
+            } else if auth.showConsentScreen && !Self.bundledLegalDocumentsReadable {
+                // ⚠ **문서를 못 읽으면 동의를 받지 않는다 — 오류만 띄우고 지나가게 두면 안 된다**
+                //   (코덱스 #732). `submitConsents` 는 `LegalPolicy.bundledVersion` 을 함께
+                //   보내는데, 그 버전의 **본문이 앱에 없는 상태**다. 사용자가 오류를 닫고
+                //   체크만 하면 "보여 준 적 없는 문서"에 동의한 기록이 남는다.
+                //
+                //   `consentUnsupported` 와 **같은 화면**인 것이 맞다 — 둘 다 "이 빌드로는
+                //   동의를 정직하게 받을 수 없다" 이고, 사용자가 할 수 있는 일은 업데이트뿐이다.
+                //   막는 범위는 **동의 흐름뿐**이다: 이미 동의를 마친 사용자의 알람까지
+                //   세우면 빌드 사고 하나로 앱 전체가 벽돌이 된다.
+                UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if auth.showConsentScreen {
                 // 받을 동의가 남아 있으면 그 화면을 먼저 통과해야 한다.
                 // ⚠ `needsConsent` 가 아니라 `showConsentScreen` 을 본다 — 선택 유형만
@@ -92,8 +102,13 @@ struct RootView: View {
                     },
                     // ⚠ 외부 브라우저로 내보내지 말 것 — 동의 화면에서 약관을 보러
                     // 나가면 앱으로 못 돌아오고 체크해 둔 값도 사라진다.
-                    onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
-                    onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
+                    // ⚠ **동의 화면은 번들본을 연다 — 웹으로 되돌리지 말 것**(코덱스 #730 2차).
+                    //   `submitConsents` 가 보내는 버전은 빌드 시점의
+                    //   `LegalPolicy.bundledVersion` 이다. 랜딩의 실시간 문서를 띄우면
+                    //   출시 뒤 개정될 때 **보여 준 것과 기록한 버전이 달라진다.**
+                    //   (설정의 뷰어는 웹 그대로다 — 거긴 안내용이고 안드로이드도 같다.)
+                    onOpenTerms: { bundledLegalDocument = .terms },
+                    onOpenPrivacy: { bundledLegalDocument = .privacy }
                 )
             } else if stockReplacement.isPending(for: auth.session?.user.id) {
                 // **기본 목소리 교체가 아직 안 끝났다.** 중간 상태로 쓰면 알람이 이름은 새
@@ -204,12 +219,12 @@ struct RootView: View {
                         onDismiss: { showWelcomePromo = false }
                     )
         }
-        .sheet(item: $legalDocument) { target in
+        .sheet(item: $bundledLegalDocument) { doc in
             NavigationStack {
-                LegalDocumentView(title: target.title, url: target.url)
+                BundledLegalDocumentView(document: doc)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("닫기") { legalDocument = nil }
+                            Button("닫기") { bundledLegalDocument = nil }
                         }
                     }
             }

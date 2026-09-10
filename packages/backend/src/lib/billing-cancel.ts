@@ -25,7 +25,7 @@ import {
   type AppleSubscriptionStatus,
 } from './apple-storekit';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
-import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
+import { notifyDowngradedAlarms, sendPaymentFailedPush, sendPlanChangedPush } from './fcm';
 import { sendVoiceDeletionWarningPush } from './fcm';
 import type { Env } from '../types';
 
@@ -91,6 +91,60 @@ export async function findActiveSubscriptionsByUserPk(
     planKey: String(r.plan_key),
     planGroupId: (r.plan_group_id as string | null) ?? null,
   }));
+}
+
+/**
+ * 활성 구독에 묶인 스토어 결제 기록.
+ *
+ * ⚠ 다중 활성 구독이 각각 다른 토큰에 묶인 경우까지 전부 가져온다 — 첫 구독의 토큰만
+ * 취소하면 나머지 토큰이 계속 과금된다.
+ */
+export interface SubscriptionStoreTransaction {
+  provider: string;
+  purchaseToken: string;
+  productId: string;
+}
+
+export async function findStoreTransactionsForSubscriptions(
+  db: DbExecutor,
+  subscriptionIds: string[],
+): Promise<SubscriptionStoreTransaction[]> {
+  if (subscriptionIds.length === 0) return [];
+  // IN 플레이스홀더는 개발자 고정 조각(값 개수만큼 `?`) — 값은 전부 ?-바인딩.
+  const inPh = subscriptionIds.map(() => '?').join(', ');
+  const res = await db.execute({
+    sql: `SELECT provider, provider_transaction_id, product_id
+          FROM store_transactions WHERE subscription_id IN (${inPh})`,
+    args: subscriptionIds,
+  });
+  return res.rows.map((row) => ({
+    provider: String(row.provider),
+    purchaseToken: String(row.provider_transaction_id),
+    productId: String(row.product_id),
+  }));
+}
+
+/**
+ * **해지가 어느 스토어를 거쳐야 하는가.** `POST /billing/cancel` 의 판정과
+ * `GET /billing/subscription` 이 앱에 알려 주는 값이 **같은 함수**에서 나와야 한다.
+ *
+ * ⚠ 앱이 이 판정을 **로컬 스토어 상태로 흉내 내면 안 된다**(코덱스 #732). 아이폰에서
+ * 산 옛 구독의 entitlement 가 기기에 남아 있는 채로 지금은 Play 구독을 쓰는 사용자가
+ * 있다 — 로컬만 보면 애플 관리 시트를 열고 `/billing/cancel` 을 **부르지 않아**,
+ * 사용자는 해지했다고 믿는데 Play 구독이 계속 갱신된다.
+ *
+ * 애플이 먼저인 이유: 해지 라우트가 활성 구독 중 **하나라도** 애플 결제면 409
+ * `STORE_CANCEL_UNSUPPORTED` 로 거절한다(서버가 애플 구독을 끊을 방법이 없다).
+ * 이 값은 그 결정의 예고편이므로 같은 우선순위여야 한다.
+ *
+ * `null` 은 스토어 결제가 아니라는 뜻이다(dev 스텁·프로모·바우처) — 서버 로컬 해지가 된다.
+ */
+export function storeCancelProviderOf(
+  transactions: readonly SubscriptionStoreTransaction[],
+): 'apple' | 'google' | null {
+  if (transactions.some((txn) => txn.provider === 'apple')) return 'apple';
+  if (transactions.some((txn) => txn.provider === 'google')) return 'google';
+  return null;
 }
 
 type CancelCleanupOptions = {
@@ -463,6 +517,20 @@ export async function resolvePlanAfterSuspend(
  *                `false` 면 제외 없이 재계산(→ 그룹 플랜으로 복구).
  * @returns 실제로 plan 이 바뀐 멤버들의 userPk (알림 대상).
  */
+/**
+ * `users.plan` 한 칸을 읽는다. **보류 통지의 중복을 막는 기준**이다.
+ *
+ * ⚠ 보류는 구독 행을 `active` 로 **남겨 두므로**(회복형), 이미 지난 `expires_at` 을 든 그
+ * 행이 5분마다 도는 만료 크론에 **매번** 다시 걸린다. 그때마다 통지하면 사용자는 결제가
+ * 복구될 때까지 "결제가 확인되지 않았어요" 를 5분마다 받는다(코덱스 #732 P1).
+ * 그래서 **플랜이 실제로 바뀐 회차**에만 알린다 — 멤버 쪽이 이미 쓰는 규칙과 같다
+ * (`propagateGroupMemberPlans` 의 `planBefore !== planAfter`).
+ */
+async function readUserPlan(db: DbExecutor, userPk: string): Promise<string> {
+  const res = await db.execute({ sql: `SELECT plan FROM users WHERE id = ?`, args: [userPk] });
+  return res.rows.length > 0 ? String(res.rows[0]!.plan ?? 'free') : 'free';
+}
+
 export async function propagateGroupMemberPlans(
   db: DbExecutor,
   planGroupId: string,
@@ -1101,6 +1169,18 @@ export async function processSubscriptionExpiry(
   // 무료로 강등된 사용자(소유자 + 가족 멤버) — 이후 FCM(plan_changed)으로 통지해 클라가 '강등 시점'에
   // 알람을 변환하게 한다.
   const notifyUserPks = new Set<string>();
+  // **결제 보류로 권한이 잠긴 사람들** — 조용한 `plan_changed` 가 아니라 **보이는 안내**를
+  // 받아야 한다(코덱스 #732 P2).
+  //
+  // ⚠ `notifyUserPks` 와 **다른 물건이다.** 그쪽은 "스냅샷을 다시 읽어라" 는 신호일 뿐이라,
+  // 사용자는 어느 날 갑자기 유료 기능이 잠긴 이유를 모른다. 결제 실패는 사용자가 **직접
+  // 고쳐야** 풀리는 상태이므로 `docs/spec/billing-lifecycle.md` 가 별도 안내를 요구한다.
+  //
+  // RTDN 이 먼저 오면 그 경로가 이미 같은 안내를 보낸다(`billing-google-rtdn.ts`) —
+  // 여기는 **RTDN 을 놓쳤을 때** 크론이 같은 상태를 발견하는 갈래라, 같은 함수를 쓴다.
+  // `sendPaymentFailedPush` 는 표시용과 워커 기동용 두 통을 함께 보내므로 이 사람들을
+  // `notifyUserPks` 에 또 넣지 않는다(같은 data-only 가 두 번 간다).
+  const paymentHolds: Array<{ ownerUserPk: string | null; memberUserPks: string[] }> = [];
   const dueRes = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
                  s.expires_at, p.plan_type, p.key AS plan_key
@@ -1134,9 +1214,22 @@ export async function processSubscriptionExpiry(
     // ⚠ **보류는 종료가 아니다.** 권한(소유자+멤버 plan)만 회수하고 그룹·구독 행은
     // 남긴다 — 결제가 복구되면 재초대 없이 살아나야 한다(구글 ON_HOLD 와 같은 취급).
     if (decision === 'suspend') {
+      // ⚠ **바뀐 회차에만 알린다** — 보류는 구독 행을 남기므로 이 갈래가 5분마다 다시 걸린다.
+      const planBefore = await readUserPlan(db, active.userPk);
       await resolvePlanAfterSuspend(db, active.userPk, active.subscriptionId);
-      if (active.planGroupId) {
-        await propagateGroupMemberPlans(db, active.planGroupId, active.userPk, true);
+      const ownerChanged = planBefore !== (await readUserPlan(db, active.userPk));
+      // ⚠ **여기도 통지한다.** 아래 만료 갈래에만 넣었다가 이 갈래를 빠뜨렸었다 —
+      //   예약해지(`cancel_at_period_end = 1`) 상태에서 보류가 겹치면 권한만 조용히
+      //   잠겼다(코덱스 #732 P2).
+      const suspended = active.planGroupId
+        ? await propagateGroupMemberPlans(db, active.planGroupId, active.userPk, true)
+        : [];
+      // 멤버 목록은 `propagateGroupMemberPlans` 가 이미 '바뀐 사람만' 으로 걸러 돌려준다.
+      if (ownerChanged || suspended.length > 0) {
+        paymentHolds.push({
+          ownerUserPk: ownerChanged ? active.userPk : null,
+          memberUserPks: suspended,
+        });
       }
       continue;
     }
@@ -1194,9 +1287,22 @@ export async function processSubscriptionExpiry(
     if (decision === 'skip') continue;
     // 보류 — 권한만 회수하고 그룹은 남긴다(위 갈래와 같은 이유).
     if (decision === 'suspend') {
+      // ⚠ 위 갈래와 같은 이유로 **바뀐 회차에만** 알린다.
+      const planBefore = await readUserPlan(db, userPk);
       await resolvePlanAfterSuspend(db, userPk, subscriptionId);
+      const ownerChanged = planBefore !== (await readUserPlan(db, userPk));
       const groupId = (r.plan_group_id as string | null) ?? null;
-      if (groupId) await propagateGroupMemberPlans(db, groupId, userPk, true);
+      const suspended = groupId ? await propagateGroupMemberPlans(db, groupId, userPk, true) : [];
+      // ⚠ **통지한다**(코덱스 #730 2차). 예전에는 플랜만 바꾸고 그냥 넘어갔다 —
+      //   기기는 유료 스냅샷을 그대로 들고 있어 **이미 예약된 유료 목소리 알람이 계속
+      //   그 목소리로 울린다.** iOS 는 예약 시점에 소리가 고정되므로 특히 그렇다.
+      //   다음 전경 복귀·주기 동기화까지 회수가 미뤄지면 그건 회수가 아니다.
+      //
+      //   ⚠ 그리고 **조용한 신호로는 부족하다**(코덱스 #732 P2) — 결제 실패는 사용자가
+      //   직접 고쳐야 풀리는 상태라 보이는 안내가 함께 가야 한다.
+      if (ownerChanged || suspended.length > 0) {
+        paymentHolds.push({ ownerUserPk: ownerChanged ? userPk : null, memberUserPks: suspended });
+      }
       continue;
     }
 
@@ -1228,6 +1334,25 @@ export async function processSubscriptionExpiry(
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
+  // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(RTDN 갈래와 같은 규칙) — 네트워크 I/O 이고,
+  // 실패해도 흐름을 깨지 않는다. 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 맡는다.
+  const hasFirebaseForHolds = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const hasApnsForHolds = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
+  if (paymentHolds.length > 0 && (hasFirebaseForHolds || hasApnsForHolds)) {
+    for (const hold of paymentHolds) {
+      try {
+        await sendPaymentFailedPush(db, env as ExpiryEnv, hold);
+      } catch (err) {
+        // 한 사람의 발송 실패로 나머지를 멈추지 않는다.
+        logStructured('error', {
+          at: 'billing.payment_failed_push',
+          action: 'PAYMENT_FAILED_PUSH_FAILED',
+          error: String(err),
+        });
+      }
+    }
+  }
+
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
   // 유예가 걸린 사람에게만 **눈에 보이는** 삭제 예고를 보낸다(위 신호는 전부 무음이다).
   await notifyVoiceDeletionScheduled(db, env, Array.from(notifyUserPks));

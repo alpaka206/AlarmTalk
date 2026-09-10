@@ -131,7 +131,18 @@ struct BillingPanel: View {
                 .disabled(socialFeatures.isBusy)
             } else if socialFeatures.subscription?.subscription != nil {
                 Button(role: .destructive) {
-                    showCancelSubscriptionSheet = true
+                    // ⚠ **App Store 구독이면 곧바로 시스템 시트를 연다**(코덱스 #730 2차).
+                    //   서버는 애플 구독 해지를 **항상** `STORE_CANCEL_UNSUPPORTED` 로
+                    //   거절한다(`routes/billing-mutation.ts`). 그런데 아래 알럿은 먼저
+                    //   '기간 종료 해지 / 지금 해지(일할 환불)' 를 고르게 한다 — 우리가
+                    //   할 수 없는 일을 고르고 확인하게 만드는 것이고, 환불 문구는 약속처럼
+                    //   읽힌다. 실제 결과는 어느 쪽을 눌러도 같은 시트다.
+                    //   모드 선택은 Play 구독에만 뜻이 있다.
+                    if isAppStoreSubscription {
+                        Task { await openAppStoreSubscriptionManagement() }
+                    } else {
+                        showCancelSubscriptionSheet = true
+                    }
                 } label: {
                     // 나가기와 **같은 글리프**다 — 둘 다 이 이용권에서 빠져나가는 뜻이고,
                     // 한 자리에서 갈리는 if/else 라 아이콘까지 다르면 다른 버튼처럼 보인다.
@@ -287,6 +298,21 @@ struct BillingPanel: View {
     /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
     /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
     @MainActor
+    /// 이 이용권이 **App Store 결제인가.** 서버가 provider 를 내려 주지 않으므로 StoreKit
+    /// 이 들고 있는 활성 권한으로 판정한다 — 이 기기에서 애플로 산 구독이면 여기 잡힌다.
+    /// (Play 로 산 구독은 iOS StoreKit 에 없으므로 false 가 되어 예전 흐름 그대로다.)
+    /// ⚠ **서버의 활성 구독이 권위다 — 로컬 StoreKit entitlement 를 보지 말 것**
+    /// (코덱스 #732 P1). 예전에는 `purchasedProductIDs` 에 구독이 하나라도 있으면
+    /// 애플로 봤는데, 아이폰에서 산 옛 구독의 entitlement 가 기기에 남은 채 지금은
+    /// Play 구독을 쓰는 사용자에게 **애플 관리 시트를 열고 `/billing/cancel` 을 부르지
+    /// 않았다** — 사용자는 해지했다고 믿는데 Play 구독이 계속 갱신된다.
+    ///
+    /// 서버가 아직 이 필드를 안 주면 `false` 가 되어 예전 흐름(모드 선택 → 서버 호출)
+    /// 으로 돌아가고, `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트가 열린다.
+    private var isAppStoreSubscription: Bool {
+        socialFeatures.subscription?.subscription?.storeProvider == "apple"
+    }
+
     private func openAppStoreSubscriptionManagement() async {
         let scene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
