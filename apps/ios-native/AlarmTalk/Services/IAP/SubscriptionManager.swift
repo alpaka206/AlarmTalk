@@ -103,8 +103,38 @@ final class SubscriptionManager: ObservableObject {
     /// 앱 시작 시 1회 호출 — 제품 + 현재 entitlement 상태 동기화.
     func bootstrap() async {
         await fetchProducts()
+        await flushPendingRevocations()
         await replayUnfinishedTransactions()
         await refreshPurchasedProducts()
+    }
+
+    /**
+     **로그아웃 중에 받아 둔 환불 통보를 올린다.**
+
+     ⚠ 부르는 곳이 둘이다 — `bootstrap` 과 계정 변경(`AlarmTalkApp` 의 `.task(id:)`).
+     적어 둔 이유가 "그때 로그인돼 있지 않아서" 이므로, **로그인하는 순간**에도 밀어야 한다.
+
+     서버는 호출자가 아니라 트랜잭션에서 대상 구독을 찾으므로 어느 계정으로 올려도 된다.
+     */
+    func flushPendingRevocations() async {
+        let pending = PendingRevokedTransactionStore.ids()
+        guard !pending.isEmpty, let session = authProvider() else { return }
+        for transactionID in pending {
+            do {
+                _ = try await api.confirmAppleSubscription(
+                    transactionID: transactionID,
+                    token: session.token
+                )
+                // 200 이면 환불이 아니었다는 뜻이다(적어 둘 이유가 사라졌다).
+                PendingRevokedTransactionStore.remove(transactionID)
+            } catch APIError.server(let status, _, _) where (400..<500).contains(status) {
+                // 서버가 판단을 끝냈다 — 환불 회수든 거절이든 다시 보낼 이유가 없다.
+                PendingRevokedTransactionStore.remove(transactionID)
+                await onServerEntitlementUpdated?()
+            } catch {
+                // 네트워크·5xx — 다음 기회에 다시 민다.
+            }
+        }
     }
 
     /// **앞 실행이 끝내지 못한 트랜잭션을 다시 올린다.**
@@ -518,6 +548,13 @@ final class SubscriptionManager: ObservableObject {
                     //   구독을 찾으므로 B 의 토큰으로 올려도 A 의 것을 정확히 회수한다.
                     let isRevoked = transaction.revocationDate != nil
                     let maySend = await self.maySyncToBackend(transaction)
+                    if isRevoked {
+                        // ⚠ **세션이 없으면 적어 둔다**(코덱스 #733 4차). 아래 `syncWithBackend`
+                        //   는 로그인 안 돼 있으면 그냥 false 를 돌려주는데, 환불된 트랜잭션은
+                        //   `currentEntitlements` 에도 `unfinished` 에도 없어 **다시 올릴 경로가
+                        //   하나도 없다.** 다음 로그인 때 이 큐가 밀어 올린다.
+                        PendingRevokedTransactionStore.add(String(transaction.id))
+                    }
                     guard isRevoked || maySend else {
                         await self.refreshPurchasedProducts()
                         continue
@@ -617,6 +654,7 @@ final class SubscriptionManager: ObservableObject {
             //   못했다). 구독이라 `mayFinish` 가 트랜잭션을 끝내는 것도 맞다 — 환불된
             //   트랜잭션은 재시도해도 결과가 같다.
             await onServerEntitlementUpdated?()
+            PendingRevokedTransactionStore.remove(String(transaction.id))
             return false
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "TRANSACTION_OWNED_BY_OTHER_USER" {

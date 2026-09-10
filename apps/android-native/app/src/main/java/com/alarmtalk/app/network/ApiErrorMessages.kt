@@ -52,6 +52,10 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
+    // ⚠ iOS 결제가 이 코드를 받는다. 안드로이드에서는 아직 반대 방향(애플 구독이 살아 있는데
+    //   Play 결제)을 막지 않지만, 표는 **두 앱이 짝**이라 같이 둔다 — 한쪽에만 코드를 더하면
+    //   같은 실패가 두 앱에서 다르게 읽힌다.
+    "CROSS_STORE_RENEWAL_ACTIVE" to R.string.msg_cross_store_renewal_active,
 
     // ── 목소리 ────────────────────────────────────────────────────────────
     "VOICE_CLONE_AUDIO_TOO_SHORT" to R.string.msg_voice_clone_audio_too_short,

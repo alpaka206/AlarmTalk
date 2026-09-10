@@ -16,6 +16,7 @@
     <string name="auth_consent_privacy">[필수] 개인정보 처리방침 동의</string>
     <string name="auth_consent_processing">처리 중…</string>
     <string name="auth_consent_terms">[필수] 이용약관 동의</string>
+    <string name="msg_cross_store_renewal_active">이 계정은 Google Play 에서 결제 중이에요. Play 스토어 → 구독에서 먼저 해지한 뒤 다시 시도해 주세요.</string>
     <string name="auth_consent_document_unavailable">문서를 불러오지 못했어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.</string>
     <string name="auth_consent_title">서비스 이용을 위해\n약관에 동의해 주세요</string>
     <string name="auth_consent_voice_biometric">[선택] 음성 생체정보 처리 동의</string>

@@ -36,7 +36,11 @@ const schedulePaidVoiceRetention = vi.fn(async () => undefined);
 const notifyPlanChanged = vi.fn(async () => undefined);
 const notifyVoiceDeletionScheduled = vi.fn(async () => undefined);
 
-vi.mock('../src/lib/billing-cancel', () => ({
+// ⚠ **조회 헬퍼는 진짜를 쓴다.** 라우트가 그걸로 SQL 을 날려야 아래 목 DB 시드가 뜻을
+// 갖는다 — 전부 목으로 덮으면 "무엇을 조회하는가" 를 검증할 수 없다. 파괴적인 것
+// (취소·보관 유예)과 네트워크(푸시)만 목으로 둔다.
+vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/lib/billing-cancel')>()),
   cancelSubscriptionImmediate: (...a: unknown[]) => cancelSubscriptionImmediate(...(a as [])),
   schedulePaidVoiceRetention: (...a: unknown[]) => schedulePaidVoiceRetention(...(a as [])),
   notifyPlanChanged: (...a: unknown[]) => notifyPlanChanged(...(a as [])),
@@ -93,6 +97,61 @@ beforeEach(() => {
   schedulePaidVoiceRetention.mockClear();
   notifyPlanChanged.mockClear();
   notifyVoiceDeletionScheduled.mockClear();
+});
+
+describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () => {
+  it('Play 구독이 살아 있으면 409 로 거절한다 — 앱 스냅샷만 믿을 수 없다', async () => {
+    // ⚠ 앱도 막지만 그 판정은 캐시된 스냅샷이라, 같은 계정이 **다른 기기에서 방금**
+    //   Play 구독을 시작한 경우를 못 본다(구매자 본인은 plan_changed 대상도 아니다).
+    //   그대로 확정하면 우리 DB 의 Play 행만 취소되고 Play 는 계속 갱신한다.
+    transactionInfo = revokedInfo({ revocationDate: undefined });
+    mockDB.pushResult([{ id: 'caller-pk' }]); // resolveUserPk
+    // 계정 식별자가 없는 트랜잭션이라 라우트가 '이미 묶인 것인가' 를 먼저 본다.
+    mockDB.pushResult([{ user_id: 'caller-pk' }]);
+    mockDB.pushResult([{ sub_id: 'sub-play', user_id: 'caller-pk', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('CROSS_STORE_RENEWAL_ACTIVE');
+  });
+
+  it('애플만 살아 있으면 막지 않는다', async () => {
+    transactionInfo = revokedInfo({ revocationDate: undefined });
+    mockDB.pushResult([{ id: 'caller-pk' }]);
+    mockDB.pushResult([{ user_id: 'caller-pk' }]); // 이미 묶인 트랜잭션
+    mockDB.pushResult([{ sub_id: 'sub-a', user_id: 'caller-pk', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' }]);
+    mockDB.pushResult([]); // 이후 흐름은 이 테스트의 관심사가 아니다
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).not.toBe(409);
+  });
+
+  it('환불 갈래는 이 가드보다 먼저다 — 환불 통보는 언제나 받아 준다', async () => {
+    // 환불은 회수 통보이지 구매가 아니다. 여기서 409 로 막으면 회수가 영영 안 된다.
+    chainStatus = 5;
+    pushMappedSubscription();
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TRANSACTION_REVOKED');
+  });
 });
 
 describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {

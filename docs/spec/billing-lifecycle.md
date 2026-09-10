@@ -361,6 +361,14 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
     등급도 free 다 — **등급이나 `subscription` 으로 거르면 보류 중인 Play 구독이 안 보인다.**
     결제가 복구되는 순간 두 곳에서 청구된다.
   그래서 신호는 **응답 최상위**에 두고, 만료로 거르지 않으며, 스토어를 **접지 않고 전부** 싣는다.
+- ⚠ **앱의 판정만으로는 부족하다 — 서버가 확정 시점에 한 번 더 본다**(코덱스 #733 4차).
+  앱이 보는 것은 **캐시된 스냅샷**이라, 같은 계정이 **다른 기기에서 방금** Play 구독을
+  시작한 경우를 못 본다(구매자 본인은 `plan_changed` 대상도 아니라 갱신 신호도 안 온다).
+  `POST /billing/apple/confirm` 이 활성 Play 갱신을 보면 409 `CROSS_STORE_RENEWAL_ACTIVE`
+  로 거절한다. 거절해도 잃는 것은 없다 — 스토어 트랜잭션은 그대로 남아, Play 를 해지한 뒤
+  앱이 다시 올리면(`resyncEntitlements`) 그때 통과한다.
+- ⚠ **환불 갈래가 이 가드보다 먼저다.** 환불은 회수 통보이지 구매가 아니다 — 여기서
+  막으면 회수가 영영 안 된다.
 - ⚠ **모르는 것은 '아니오' 로 친다**(코덱스 #733). 새 기기·새 로그인이거나
   `GET /billing/subscription` 이 아직 돌고 있거나 실패한 동안에는 서버 구독이 **없는
   것처럼 보이는데**, StoreKit 제품은 이미 로드돼 살 수 있다. 그 틈이 정확히 이 게이트가
@@ -404,6 +412,12 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 - ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를
   건너뛰면 환불받은 사용자가 `expires_at` 까지 유료로 남고 크론이 결국 정리하지만,
   잘못 취소하면 돈을 내고 있는 그룹이 해체된다.
+- ⚠ **로그아웃 중에 온 환불은 적어 뒀다가 로그인 때 민다**(코덱스 #733 4차). 가드를
+  건너뛰어도 `syncWithBackend` 는 세션이 없으면 그냥 실패하는데, 환불된 트랜잭션은
+  `currentEntitlements` 에도 `unfinished` 에도 없어 **다시 올릴 경로가 하나도 없다.**
+  `PendingRevokedTransactionStore` 에 담고 `flushPendingRevocations` 가 시작·계정 변경에서
+  민다. ⚠ **로그아웃에서 비우지 말 것** — 주인이 로그아웃한 뒤에 온 환불이 정확히 이 큐가
+  있어야 하는 경우다.
 - ⚠ **환불 통보는 계정 가드를 건너뛴다.** A 가 산 구독이 환불됐는데 그때 기기에 B 가
   로그인해 있으면 `maySyncToBackend` 가 이걸 버리는데, 환불된 트랜잭션은
   `currentEntitlements` 에 안 나오고 구매 때 이미 finish 돼 있어 **다시 올릴 경로가 하나도
@@ -465,7 +479,9 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
-| 구매 차단 판정 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 구매 차단 판정 — **서버(권위)** | `CROSS_STORE_RENEWAL_ACTIVE` (`routes/billing-apple.ts`) | 문구 표에만 있다 | `APIErrorMessages` |
+| 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
 | 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |

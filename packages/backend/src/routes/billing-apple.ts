@@ -11,9 +11,12 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import {
   cancelSubscriptionImmediate,
+  findActiveSubscriptionsByUserPk,
+  findStoreTransactionsForSubscriptions,
   notifyPlanChanged,
   notifyVoiceDeletionScheduled,
   schedulePaidVoiceRetention,
+  storeRenewalProvidersOf,
   type ActiveSubscription,
 } from '../lib/billing-cancel';
 import { logStructured } from '../lib/logger';
@@ -261,6 +264,37 @@ billingApple.post('/apple/confirm', async (c) => {
   }
 
   const db = getDB(c.env);
+
+  // ⚠ **다른 스토어가 아직 갱신을 쥐고 있으면 여기서 거절한다**(코덱스 #733 4차).
+  //   앱도 막지만 그 판정은 **캐시된 스냅샷**이라, 같은 계정이 다른 기기에서 방금 Play
+  //   구독을 시작한 경우를 못 본다(구매자 본인은 `plan_changed` 대상도 아니다). 그대로
+  //   확정하면 `applyStoreEntitlement` 가 **우리 DB 의 Play 구독 행만** 취소하고 Play 는
+  //   계속 갱신한다 — 두 곳에서 청구되고, 행이 사라져 앱에서 Play 를 관리할 입구도 없다.
+  //
+  //   거절해도 잃는 것은 없다: 스토어 트랜잭션은 그대로 남아 있으므로 Play 를 해지한 뒤
+  //   앱이 다시 올리면(`resyncEntitlements`) 그때 통과한다.
+  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
+  const renewalProviders = storeRenewalProvidersOf(
+    await findStoreTransactionsForSubscriptions(
+      db,
+      activeSubscriptions.map((sub) => sub.subscriptionId),
+    ),
+  );
+  if (renewalProviders.includes('google')) {
+    logStructured('warn', {
+      at: 'billing.apple.confirm',
+      step: 'cross_store_renewal',
+      userPk,
+    });
+    return c.json(
+      {
+        error: 'A Google Play subscription is still renewing for this account',
+        error_code: 'CROSS_STORE_RENEWAL_ACTIVE',
+      },
+      409,
+    );
+  }
+
   const plan = await loadPlanByKey(db, planKey);
   if (!plan) {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);

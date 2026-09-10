@@ -161,6 +161,11 @@ export const ERROR_CODES = [
   // (`test/error-codes.test.ts` 의 정규식을 함께 넓혔다).
   'TRANSACTION_OWNED_BY_OTHER_USER',
   'TRANSACTION_REVOKED',
+  // ⚠ **다른 스토어가 아직 갱신을 쥐고 있다.** 앱이 먼저 막지만 그 판정은 캐시된
+  // 스냅샷이라, 다른 기기에서 방금 Play 구독을 시작한 경우를 못 본다 — 서버가
+  // 확정 시점에 한 번 더 본다. 거절해도 스토어 트랜잭션은 남으므로, Play 를 해지한
+  // 뒤 앱이 다시 올리면 그때 통과한다(`docs/spec/billing-lifecycle.md`).
+  'CROSS_STORE_RENEWAL_ACTIVE',
   'UNKNOWN_PRODUCT',
   'USER_NOT_FOUND',
   // 가족 알람 (family-alarm.ts)

@@ -236,6 +236,9 @@ struct AlarmTalkApp: App {
                         //   선물은 소모성이라 `currentEntitlements` 에도 안 나오고
                         //   `Transaction.updates` 도 앞 프로세스가 남긴 것을 물어다 주지
                         //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
+                        // 로그아웃 중에 받아 둔 환불 통보를 먼저 민다(적어 둔 이유가
+                        // "그때 로그인돼 있지 않아서" 라, 로그인하는 순간이 그 자리다).
+                        await subscriptions.flushPendingRevocations()
                         await subscriptions.replayUnfinishedTransactions()
                         await subscriptions.refreshPurchasedProducts()
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
