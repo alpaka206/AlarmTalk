@@ -22,7 +22,6 @@ struct RootView: View {
     /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
-    @State private var legalDocument: LegalDocumentTarget?
     @State private var bundledLegalDocument: BundledLegalDocument?
 
     /// 웰컴 프로모 코드 안내(계정당 1회, 무료 플랜만).
@@ -30,16 +29,6 @@ struct RootView: View {
     @State private var downgradeNotice: DowngradeNoticeStore.Notice?
     @State private var promoBusy = false
     @State private var promoError: String?
-
-    struct LegalDocumentTarget: Identifiable, Hashable {
-        let title: String
-        let url: URL
-        var id: String { url.absoluteString }
-    }
-
-    // 약관/개인정보 처리방침 외부 링크. Android `AlarmTalkApp.kt:539`.
-    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
-    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
 
     var body: some View {
         Group {
@@ -216,16 +205,6 @@ struct RootView: View {
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("닫기") { bundledLegalDocument = nil }
-                        }
-                    }
-            }
-        }
-        .sheet(item: $legalDocument) { target in
-            NavigationStack {
-                LegalDocumentView(title: target.title, url: target.url)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("닫기") { legalDocument = nil }
                         }
                     }
             }
