@@ -126,6 +126,12 @@ struct AlarmTalkApp: App {
                         subscriptions.onServerEntitlementUpdated = { [weak socialFeatures, weak auth] in
                             guard let socialFeatures, let auth else { return }
                             await socialFeatures.refreshSubscriptionSilently(session: auth.session)
+                            // ⚠ **`users.plan` 도 함께 읽는다**(코덱스 #733 2차). 구독 응답만
+                            //   새로 받으면 `auth.session.user.plan` 은 옛 유료 값 그대로라,
+                            //   `PaidVoiceGate.resolve` 가 구독이 사라진 뒤에도 그 값으로
+                            //   **유료 목소리를 계속 내준다** — 환불 회수처럼 구독이 없어지는
+                            //   경로에서 정확히 그 일이 난다.
+                            await auth.refreshUser()
                         }
                         await subscriptions.bootstrap()
                     }

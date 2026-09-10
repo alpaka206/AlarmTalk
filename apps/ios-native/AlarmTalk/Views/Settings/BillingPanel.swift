@@ -272,6 +272,14 @@ struct BillingPanel: View {
         ) { pending in
             Button("결제하기") {
                 pendingPurchase = nil
+                // ⚠ **StoreKit 을 부르기 직전에 다시 본다**(코덱스 #733 2차). 카드 탭에서
+                //   한 번만 보면, 확인 알럿이 떠 있는 사이 `plan_changed` 갱신으로 스냅샷이
+                //   Play 구독으로 바뀌어도(다른 기기에서 Play 결제) 그대로 결제가 나간다 —
+                //   두 스토어가 함께 갱신된다. 판정은 같은 함수 하나다.
+                if let block = purchaseBlockReason() {
+                    purchaseBlock = block
+                    return
+                }
                 Task { await purchase(pending.product) }
             }
             Button("취소", role: .cancel) { pendingPurchase = nil }

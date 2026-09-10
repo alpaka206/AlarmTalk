@@ -15,11 +15,19 @@ vi.mock('../src/lib/db', () => ({ getDB: () => mockDB.client }));
 
 let transactionInfo: Record<string, unknown>;
 
+/** 애플이 말하는 **체인의 현재 상태**. 1=활성 2=만료 3=재시도 4=유예. */
+let chainStatus: number | Error = 2;
+
 vi.mock('../src/lib/apple-storekit', () => ({
   appleStoreKitConfigFromEnv: () => ({ issuerId: 'i', keyId: 'k', privateKeyPem: 'p', bundleId: 'b' }),
   applePlanKeyFromProductId: () => 'personal',
   isAppleGiftProductId: () => false,
   fetchAppleTransaction: vi.fn(async () => transactionInfo),
+  fetchAppleSubscriptionStatus: vi.fn(async () => {
+    if (chainStatus instanceof Error) throw chainStatus;
+    return { status: chainStatus, productId: 'com.alarmtalk.app.personal_monthly' };
+  }),
+  APPLE_SUBSCRIPTION_STATUS: { ACTIVE: 1, EXPIRED: 2, IN_BILLING_RETRY: 3, IN_GRACE_PERIOD: 4 },
   AppleTransactionNotFoundError: class extends Error {},
 }));
 
@@ -80,6 +88,7 @@ function pushMappedSubscription() {
 beforeEach(() => {
   mockDB.reset();
   transactionInfo = revokedInfo();
+  chainStatus = 2; // 기본은 만료 — 체인이 끝났으니 회수해도 된다.
   cancelSubscriptionImmediate.mockClear();
   schedulePaidVoiceRetention.mockClear();
   notifyPlanChanged.mockClear();
@@ -160,6 +169,77 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     expect(res.status).toBe(400);
     expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
     expect(notifyPlanChanged).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // 옛 갱신이 뒤늦게 환불된 경우 (코덱스 #733 2차 P1)
+  //
+  // ⚠ 자동갱신 구독은 갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인
+  //   전체가 공유**한다. 그래서 옛 갱신 한 건이 환불되면 조회가 그 id 로 **지금 살아 있는
+  //   구독 행**을 집는다 — 그대로 취소하면 이어받은 그룹까지 해체되고 되돌릴 수 없다.
+  // -------------------------------------------------------------------------
+  it('체인이 아직 활성이면 취소하지 않는다', async () => {
+    chainStatus = 1; // ACTIVE — 더 최근 갱신이 살아 있다
+    // ⚠ **매핑된 구독을 넣어 둔다.** 안 넣으면 가드가 없어도 조회가 비어 취소가 안 불려,
+    //   테스트가 엉뚱한 이유로 통과한다(실제로 그렇게 썼다가 잡았다).
+    pushMappedSubscription();
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
+  });
+
+  it('재시도·유예도 살아 있는 것으로 본다 — 그건 만료 크론의 보류 갈래가 다룬다', async () => {
+    for (const status of [3, 4]) {
+      mockDB.reset();
+      cancelSubscriptionImmediate.mockClear();
+      chainStatus = status;
+      pushMappedSubscription();
+
+      await buildApp().request(
+        jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+        undefined,
+        ENV,
+      );
+
+      expect(cancelSubscriptionImmediate, `status=${status}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it('애플에 못 물어보면 취소하지 않는다 — 잘못 끊는 쪽이 되돌릴 수 없다', async () => {
+    chainStatus = new Error('Apple down');
+    pushMappedSubscription();
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
+  });
+
+  it('통지가 실패해도 400 을 그대로 돌려준다 — 정리는 이미 커밋됐다', async () => {
+    // ⚠ 여기서 던지면 라우트가 500 이 되고, 앱은 TRANSACTION_REVOKED 를 못 받아
+    //   권위 상태를 다시 읽는 경로를 놓친다 — 회수가 끝났는데 유료 상태가 남는다.
+    notifyPlanChanged.mockRejectedValueOnce(new Error('FCM down'));
+    pushMappedSubscription();
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TRANSACTION_REVOKED');
+    expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1);
   });
 
   it('환불이 아니면 회수 경로를 타지 않는다', async () => {

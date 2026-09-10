@@ -24,6 +24,8 @@ import {
   applePlanKeyFromProductId,
   isAppleGiftProductId,
   fetchAppleTransaction,
+  fetchAppleSubscriptionStatus,
+  APPLE_SUBSCRIPTION_STATUS,
   AppleTransactionNotFoundError,
 } from '../lib/apple-storekit';
 import { resolveUserPk } from './billing-helpers';
@@ -116,7 +118,20 @@ billingApple.post('/apple/confirm', async (c) => {
   //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
   //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
-    await revokeRefundedAppleSubscription(db0, c.env, info);
+    // ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). 자동갱신 구독은
+    //   갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
+    //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
+    //   구독 행**을 집어 취소해 버린다 — 이어받은 그룹까지 해체되고, 그건 되돌릴 수 없다.
+    //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
+    if (await appleChainStillEntitled(config, info.originalTransactionId)) {
+      logStructured('info', {
+        at: 'billing.apple.confirm',
+        step: 'revoked_stale_renewal',
+        note: 'chain still entitled — skipping cleanup',
+      });
+    } else {
+      await revokeRefundedAppleSubscription(db0, c.env, info);
+    }
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
   }
 
@@ -291,6 +306,35 @@ billingApple.post('/apple/confirm', async (c) => {
 });
 
 /**
+ * **이 구독 체인이 지금도 권한을 주고 있는가.**
+ *
+ * ⚠ 환불 통보 하나로 취소해도 되는지 가르는 자리다. `originalTransactionId` 는 체인 전체가
+ * 공유하므로, 옛 갱신이 환불됐다고 해서 **지금** 권한이 없다는 뜻은 아니다.
+ *
+ * ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를 건너뛰면
+ * 환불받은 사용자가 `expires_at` 까지 유료로 남고 만료 크론이 결국 정리하지만, 잘못 취소하면
+ * **돈을 내고 있는 그룹이 해체되고 되돌릴 수 없다.**
+ */
+async function appleChainStillEntitled(
+  config: Parameters<typeof fetchAppleSubscriptionStatus>[1],
+  originalTransactionId: string,
+): Promise<boolean> {
+  try {
+    const status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
+    // 만료(2)만 "권한 없음" 이다. 재시도(3)·유예(4)는 회복형이라 여기서 끊지 않는다 —
+    // 그 둘은 만료 크론의 보류 갈래가 다룬다.
+    return status.status !== APPLE_SUBSCRIPTION_STATUS.EXPIRED;
+  } catch (err) {
+    logStructured('warn', {
+      at: 'billing.apple.confirm',
+      step: 'chain_status',
+      error: String(err),
+    });
+    return true;
+  }
+}
+
+/**
  * **환불된 애플 결제의 권한을 회수한다.**
  *
  * Play 의 RTDN `deactivate` 갈래와 같은 정리다(`billing-google-rtdn.ts`) — 매핑된 구독
@@ -351,8 +395,21 @@ async function revokeRefundedAppleSubscription(
     affected: ids.length,
   });
   // 푸시는 커밋 뒤에(트랜잭션 안에서 네트워크를 쓰지 않는다).
-  await notifyPlanChanged(db, env, ids);
-  await notifyVoiceDeletionScheduled(db, env, ids);
+  //
+  // ⚠ **여기서 던지면 라우트가 500 이 된다 — 정리는 이미 커밋됐는데.**(코덱스 #733 2차)
+  //   그러면 앱은 `TRANSACTION_REVOKED` 를 못 받아 권위 상태를 다시 읽는 경로를 놓치고,
+  //   푸시까지 못 받았으면 **회수가 끝났는데도 유료 상태를 그대로 들고 있다.**
+  //   통지는 즉시성만 담당하고 정확성은 클라의 재조회가 보장한다 — 최선 노력으로 둔다.
+  try {
+    await notifyPlanChanged(db, env, ids);
+    await notifyVoiceDeletionScheduled(db, env, ids);
+  } catch (err) {
+    logStructured('error', {
+      at: 'billing.apple.confirm',
+      step: 'revoked_notify',
+      error: String(err),
+    });
+  }
 }
 
 export default billingApple;
