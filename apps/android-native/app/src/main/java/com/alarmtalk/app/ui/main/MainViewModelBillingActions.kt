@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.app.Application
 import android.util.Log
@@ -498,10 +499,19 @@ internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
 private suspend fun MainViewModel.crossStoreRenewalBlocked(
     session: com.alarmtalk.app.network.AuthSession,
 ): Int? {
-    val fresh = runCatching { api.getSubscription("Bearer ${'$'}{session.token}") }.getOrElse {
+    // ⚠ **헤더는 공용 헬퍼로 만든다.** 직접 문자열을 짜다가 `${'$'}` 를 그대로 넣어
+    //   **리터럴 `Bearer ${'$'}{session.token}`** 이 나간 적이 있다(코덱스 #734). 컴파일은
+    //   되고 401 만 떠서, 모든 구독 결제가 조용히 안 열렸다.
+    val authorization = AlarmTalkApiClient.bearer(session.token)
+    val fresh = runCatching { api.getSubscription(authorization) }.getOrElse {
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
         return R.string.msg_gb_billing_info_load_failed
     }
+    // ⚠ **그 사이 계정이 바뀌었으면 아무것도 하지 않는다**(코덱스 #734). 이 조회는
+    //   중단점이라, 기다리는 동안 로그아웃하거나 다른 계정으로 로그인할 수 있다. 그대로
+    //   진행하면 **A 의 구독 응답이 B 화면에 실리고, A 의 식별자로 Play 결제가 열린다** —
+    //   그 결제의 확정은 B 로 올라가 계정 불일치로 거절된다(이미 청구된 뒤에).
+    if (authSession?.token != session.token) return R.string.msg_gb_billing_info_load_failed
     // 응답을 받았으니 캐시도 최신으로 맞춰 둔다 — 화면이 옛 값을 들고 있을 이유가 없다.
     subscriptionResponse = fresh
     val providers = fresh.storeRenewalProviders ?: return null

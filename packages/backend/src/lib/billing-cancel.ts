@@ -187,9 +187,9 @@ export async function refreshCompetingAppleRenewalState(
   db: DbExecutor,
   env: Partial<Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>> | undefined,
   userPk: string,
-): Promise<void> {
+): Promise<boolean> {
   const config = env ? appleStoreKitConfigFromEnv(env as Env) : null;
-  if (!config) return;
+  if (!config) return false;
   const res = await db.execute({
     sql: `SELECT s.id AS sub_id, t.provider_transaction_id
           FROM subscriptions s
@@ -197,6 +197,7 @@ export async function refreshCompetingAppleRenewalState(
           WHERE s.user_id = ? AND s.status = 'active' AND t.provider = 'apple'`,
     args: [userPk],
   });
+  let changed = false;
   for (const row of res.rows) {
     try {
       const status = await fetchAppleSubscriptionStatus(String(row.provider_transaction_id), config);
@@ -205,6 +206,7 @@ export async function refreshCompetingAppleRenewalState(
               WHERE id = ?`,
         args: [status.autoRenewStatus === 0 ? 1 : 0, String(row.sub_id)],
       });
+      changed = true;
     } catch (err) {
       logStructured('warn', {
         at: 'billing.apple.renewal_state',
@@ -213,6 +215,9 @@ export async function refreshCompetingAppleRenewalState(
       });
     }
   }
+  // 호출부가 **바뀐 게 있을 때만** 다시 읽도록 알려 준다(애플 설정이 없는 환경에서는
+  // 아무것도 하지 않으므로 재조회도 필요 없다).
+  return changed;
 }
 
 export function storeRenewalProvidersOf(

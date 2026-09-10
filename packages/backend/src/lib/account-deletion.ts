@@ -46,7 +46,8 @@ export async function pseudonymizeBillingForRetention(
   //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면(플랜 전환 등) **가장 최근 것**을 쓴다.
   const subs = await tx.execute({
     sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
-                 st.provider, st.provider_transaction_id, st.product_id, st.raw_payload
+                 st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
+                 st.created_at AS txn_created_at
           FROM subscriptions s
           LEFT JOIN plans p ON p.id = s.plan_id
           LEFT JOIN store_transactions st ON st.id = (
@@ -59,6 +60,17 @@ export async function pseudonymizeBillingForRetention(
     args: [userPk],
   });
   for (const row of subs.rows) {
+    // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #734 — 일회성 갈래와 같은 규칙).
+    //   탈퇴 시각부터 세면 4년 전에 결제한 구독이 그 시점부터 5년을 더 남아 **9년**이 된다 —
+    //   처리방침이 밝힌 최대 5년을 넘긴다. 기준일은 **마지막 결제**(스토어 기록의
+    //   `created_at`)이고, 스토어 결제가 아니면(프로모·바우처) 구독 시작일을 쓴다.
+    const paidAt =
+      ((row.txn_created_at as string | null) ?? (row.starts_at as string | null)) || null;
+    const recordRetainUntil = paidAt
+      ? billingRetentionUntil(new Date(paidAt)).toISOString()
+      : retainUntil;
+    // 이미 5년이 지난 거래는 **다시 보존하지 않는다** — 보존 사유가 끝난 기록이다.
+    if (recordRetainUntil <= now.toISOString()) continue;
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
               (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw,
@@ -77,7 +89,7 @@ export async function pseudonymizeBillingForRetention(
         (row.provider_transaction_id as string | null) ?? null,
         (row.product_id as string | null) ?? null,
         (row.raw_payload as string | null) ?? null,
-        retainUntil,
+        recordRetainUntil,
       ],
     });
   }

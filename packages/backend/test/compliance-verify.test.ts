@@ -403,6 +403,44 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(gone.rows.length).toBe(0);
   });
 
+  it('5년이 지난 구독 결제는 다시 보존하지 않는다 — 기준은 탈퇴일이 아니라 거래일', async () => {
+    // ⚠ 탈퇴 시각부터 5년을 세면 4년 전에 결제한 구독이 **9년**을 남는다 —
+    //   처리방침이 밝힌 최대 5년을 넘긴다(코덱스 #734). 일회성 갈래와 같은 규칙이다.
+    const SUB6 = 'hard-del-sub-4';
+    const PK6 = 'hard-del-pk-4';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK6, SUB6, 'harddel4@test.com', 'Hard Delete 4'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'expired', '2018-01-01', '2018-02-01')`,
+      args: ['sub-hard-4', PK6, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'personal_monthly', 'personal', ?, '2018-01-01T00:00:00.000Z')`,
+      args: ['st-hard-4', PK6, 'play-token-hard-4', 'sub-hard-4'],
+    });
+
+    const res = await buildApp(SUB6, PK6).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT id FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-4'],
+    });
+    expect(retained.rows.length).toBe(0);
+
+    // 계정 파기 자체는 끝까지 간다.
+    const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK6] });
+    expect(userGone.rows.length).toBe(0);
+  });
+
   it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {
     const SUB4 = 'hard-del-sub-2';
     const PK4 = 'hard-del-pk-2';

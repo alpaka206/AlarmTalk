@@ -5,6 +5,7 @@ import { resolveUserPk } from './billing-helpers';
 import {
   findActiveSubscriptionsByUserPk,
   findStoreTransactionsForSubscriptions,
+  refreshCompetingAppleRenewalState,
   storeCancelProviderOf,
   storeRenewalProvidersOf,
 } from '../lib/billing-cancel';
@@ -81,11 +82,31 @@ billingQuery.get('/subscription', async (c) => {
   //   지나 있어 위 SELECT 에 안 걸린다 — `subscription: null` 이 된다. 신호를 그 안에 넣어
   //   두면 **보류 중인 Play 구독이 앱에서 보이지 않고**, 그 상태로 애플 결제를 열어 주면
   //   결제가 복구되는 순간 두 곳에서 청구된다.
-  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userId);
-  const storeTxns = await findStoreTransactionsForSubscriptions(
+  let activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userId);
+  let storeTxns = await findStoreTransactionsForSubscriptions(
     db,
     activeSubscriptions.map((s) => s.subscriptionId),
   );
+
+  // ⚠ **애플이 갱신 주인으로 잡히면 그 값을 애플에 다시 물어 확인한다**(코덱스 #734).
+  //   두 앱이 결제 직전 **이 응답으로** 막을지 정하는데, 애플 상태는 가만두면 낡는다 —
+  //   우리가 받는 App Store 서버 알림이 없고 같은-플랜 갱신 갈래가 `cancel_at_period_end`
+  //   를 0 으로 되돌린다. 낡은 값으로 막으면 **App Store 에서 이미 자동갱신을 끈 사용자가
+  //   기간이 끝날 때까지 스토어를 못 옮긴다** — 우리 안내를 따라도 달라지지 않는다.
+  //   (확정 라우트도 같은 것을 하지만, 거기까지 가면 이미 청구된 뒤다.)
+  //
+  //   ⚠ **애플이 걸릴 때만 부른다.** 대부분의 계정에는 애플 결제가 없고, 그때는 위 조회
+  //   두 번으로 끝난다 — 모든 구독 조회가 애플 API 를 때리게 만들지 않는다.
+  if (storeTxns.some((txn) => txn.provider === 'apple')) {
+    const changed = await refreshCompetingAppleRenewalState(db, c.env, userId);
+    if (changed) {
+      activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userId);
+      storeTxns = await findStoreTransactionsForSubscriptions(
+        db,
+        activeSubscriptions.map((s) => s.subscriptionId),
+      );
+    }
+  }
   // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
   //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
   //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
