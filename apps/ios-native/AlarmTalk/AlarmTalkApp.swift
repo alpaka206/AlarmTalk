@@ -126,6 +126,12 @@ struct AlarmTalkApp: App {
                         subscriptions.onServerEntitlementUpdated = { [weak socialFeatures, weak auth] in
                             guard let socialFeatures, let auth else { return }
                             await socialFeatures.refreshSubscriptionSilently(session: auth.session)
+                            // ⚠ **`users.plan` 도 함께 읽는다**(코덱스 #733 2차). 구독 응답만
+                            //   새로 받으면 `auth.session.user.plan` 은 옛 유료 값 그대로라,
+                            //   `PaidVoiceGate.resolve` 가 구독이 사라진 뒤에도 그 값으로
+                            //   **유료 목소리를 계속 내준다** — 환불 회수처럼 구독이 없어지는
+                            //   경로에서 정확히 그 일이 난다.
+                            await auth.refreshUser()
                         }
                         await subscriptions.bootstrap()
                     }
@@ -230,6 +236,9 @@ struct AlarmTalkApp: App {
                         //   선물은 소모성이라 `currentEntitlements` 에도 안 나오고
                         //   `Transaction.updates` 도 앞 프로세스가 남긴 것을 물어다 주지
                         //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
+                        // 로그아웃 중에 받아 둔 환불 통보를 먼저 민다(적어 둔 이유가
+                        // "그때 로그인돼 있지 않아서" 라, 로그인하는 순간이 그 자리다).
+                        await subscriptions.flushPendingRevocations()
                         await subscriptions.replayUnfinishedTransactions()
                         await subscriptions.refreshPurchasedProducts()
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림

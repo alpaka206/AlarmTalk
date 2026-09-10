@@ -399,7 +399,12 @@ class RingingActivity : ComponentActivity() {
             handled = handled,
             superseded = superseded,
             changingConfigurations = isChangingConfigurations,
-            isActiveRingingAlarm = RingingService.activeRingingAlarmId == id,
+            // ⚠ **인계 중인 알람도 '이 알람' 이다**(코덱스 #730 3차). FGS 차단 폴백에서는
+            //   수신기가 인계 표시만 남기고, 이 액티비티가 `RingingService.start` 를 부른 뒤
+            //   `activeRingingAlarmId` 는 `onStartCommand` 가 채운다 — 그 창에서 홈·전원을
+            //   누르면 이 값이 false 라 `NOT_THE_RINGING_ALARM` 으로 **떠난 것을 무시**하고,
+            //   그 뒤 서비스가 떠서 계속 울린다. 사용자는 분명히 나갔는데 알람이 남는다.
+            isRingingOrHandingOff = id in RingingService.ringingOrHandingOffAlarmIds(),
             screenOff = screenOff,
             screenCovered = screenCovered,
             inCall = isInCall(),
@@ -564,7 +569,14 @@ internal fun leavingScreenDecision(
     handled: Boolean,
     superseded: Boolean,
     changingConfigurations: Boolean,
-    isActiveRingingAlarm: Boolean,
+    /**
+     * 지금 울리는 중이거나 **막 인계받아 서비스가 뜨는 중**인가.
+     *
+     * ⚠ `activeRingingAlarmId` 하나만 보면 안 된다 — 그 값은 `onStartCommand` 가 채우므로,
+     * FGS 차단 폴백에서 액티비티가 먼저 뜨는 창 동안 비어 있다. 판정은
+     * `RingingService.ringingOrHandingOffAlarmIds()` 로 한다.
+     */
+    isRingingOrHandingOff: Boolean,
     screenOff: Boolean,
     screenCovered: Boolean,
     inCall: Boolean,
@@ -576,7 +588,7 @@ internal fun leavingScreenDecision(
     handled -> LeavingScreenDecision.ALREADY_HANDLED
     superseded -> LeavingScreenDecision.SUPERSEDED
     changingConfigurations -> LeavingScreenDecision.RECREATING
-    !isActiveRingingAlarm -> LeavingScreenDecision.NOT_THE_RINGING_ALARM
+    !isRingingOrHandingOff -> LeavingScreenDecision.NOT_THE_RINGING_ALARM
     // 덮여 있는데 화면이 꺼졌다 = 가방·주머니·플립커버. 잠금 여부도 시간도 보지 않는다.
     screenOff && screenCovered -> LeavingScreenDecision.MACHINE_TURNED_SCREEN_OFF
     // 센서가 없거나 못 읽는 기기를 위한 두 번째 그물.

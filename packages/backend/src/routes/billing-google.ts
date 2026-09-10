@@ -7,7 +7,9 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseAccountMatches } from '../lib/purchase-account-binding';
-import { notifyPlanChanged } from '../lib/billing-cancel';
+import { notifyPlanChanged,
+  refreshCompetingAppleRenewalState,
+} from '../lib/billing-cancel';
 import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
@@ -498,6 +500,12 @@ billingGoogle.post('/google/confirm', async (c) => {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
 
+  // ⚠ **막기 전에 애플에 물어 갱신 상태를 최신화한다**(코덱스 #733 8차). 애플 상태는
+  //   가만두면 낡는다 — 우리가 받는 서버 알림이 없고, 같은-플랜 갱신 갈래가
+  //   `cancel_at_period_end` 를 0 으로 되돌린다. 낡은 값으로 막으면 **App Store 에서 이미
+  //   자동갱신을 끈 사용자가 아무것도 할 수 없다.** 최선 노력이라 실패해도 진행한다.
+  await refreshCompetingAppleRenewalState(db, c.env, userPk);
+
   const result = await withWriteTransaction(db, (txDb) =>
     applyStoreEntitlement(txDb, {
       userPk,
@@ -525,7 +533,7 @@ billingGoogle.post('/google/confirm', async (c) => {
   // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
   // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyPlanChanged(db, c.env, result.demotedUserIds);
+  await notifyPlanChanged(db, c.env, result.planChangedUserIds);
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
   // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가

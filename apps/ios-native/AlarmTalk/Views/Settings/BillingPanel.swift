@@ -42,6 +42,17 @@ struct BillingPanel: View {
     @State private var voucherShareTargets: [VoucherItem] = []
     /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
     @State private var pendingPurchase: PendingPlanPurchase?
+    /// 결제를 막은 이유. **버튼을 죽이지 않고 눌리면 이유를 말한다**(편집기의
+    /// `SaveBlockReason` 과 같은 규약 — 죽은 버튼은 고장으로 읽힌다).
+    @State private var purchaseBlock: PurchaseBlockReason?
+
+    enum PurchaseBlockReason: String, Identifiable {
+        /// 지금 이용권의 자동갱신을 Play 가 쥐고 있다.
+        case playOwnsRenewal
+        /// 이미 유료인데 **어느 스토어가 갱신을 쥐었는지 아직 모른다**(응답 전·실패).
+        case renewalOwnerUnknown
+        var id: String { rawValue }
+    }
 
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
@@ -91,14 +102,7 @@ struct BillingPanel: View {
                         hasActivePlan: currentTier != .free,
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
-                        onPurchase: { product in
-                            // ⚠ **바로 결제로 보내지 말 것.** 전환일 때는 스토어 시트가
-                            // 말해 주지 않는 게 있다 — **언제 바뀌는지**(업그레이드 즉시 /
-                            // 다운그레이드는 다음 갱신일)와 **정원이 줄면 멤버가 나간다**는
-                            // 사실. 안드로이드는 이미 확인 모달로 말하고 있었는데 iOS 만
-                            // 곧장 StoreKit 으로 갔다(2026-08-11 대조).
-                            pendingPurchase = PendingPlanPurchase(product: product, tier: tier)
-                        },
+                        onPurchase: { product in beginPurchase(product, tier: tier) },
                         onGiftPersonal: {
                             showPersonalGiftSheet = true
                         },
@@ -216,6 +220,22 @@ struct BillingPanel: View {
         // 안드로이드의 IosAlertDialog 가 이걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로
         // 만들면 오히려 원본에서 멀어진다).
         // ⚠ 문구는 안드로이드 `billing_play_*` 문자열과 **글자까지 같다**(스토어 이름만 다르다).
+        .alert(item: $purchaseBlock) { reason in
+            switch reason {
+            case .playOwnsRenewal:
+                return Alert(
+                    title: Text("Google Play 에서 결제 중이에요"),
+                    message: Text("지금 이용권은 Google Play 로 자동 갱신되고 있어요. 애플로 결제하면 두 곳에서 함께 청구돼요. Play 스토어 → 구독에서 먼저 해지하거나, 기간이 끝난 뒤에 다시 시도해 주세요."),
+                    dismissButton: .cancel(Text("확인"))
+                )
+            case .renewalOwnerUnknown:
+                return Alert(
+                    title: Text("이용권 정보를 불러오는 중이에요"),
+                    message: Text("지금 이용권이 어느 스토어에서 갱신되는지 확인하고 있어요. 잠시 후 다시 시도해 주세요."),
+                    dismissButton: .cancel(Text("확인"))
+                )
+            }
+        }
         .alert(
             pendingPurchaseTitle,
             isPresented: Binding(
@@ -226,7 +246,7 @@ struct BillingPanel: View {
         ) { pending in
             Button("결제하기") {
                 pendingPurchase = nil
-                Task { await purchase(pending.product) }
+                Task { await confirmAndPurchase(pending.product) }
             }
             Button("취소", role: .cancel) { pendingPurchase = nil }
         } message: { pending in
@@ -311,6 +331,92 @@ struct BillingPanel: View {
     /// 으로 돌아가고, `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트가 열린다.
     private var isAppStoreSubscription: Bool {
         socialFeatures.subscription?.subscription?.storeProvider == "apple"
+    }
+
+    /// **결제를 시작해도 되는가.** `nil` 이면 진행.
+    ///
+    /// ⚠ **모르는 것은 '아니오' 로 친다**(코덱스 #733). 새 기기·새 로그인이거나
+    /// `GET /billing/subscription` 이 아직 돌고 있거나 실패한 동안에는
+    /// `socialFeatures.subscription` 이 nil 인데, StoreKit 제품은 이미 로드돼 있어 살 수
+    /// 있다. 그 틈에 Play 구독자가 애플 결제를 시작하면 확정이 **우리 DB 의 옛 구독 행만**
+    /// 취소하고 Play 자동갱신은 그대로라 **두 곳에서 청구**된다 — 이 게이트가 막으려던
+    /// 바로 그 일이다.
+    ///
+    /// 무료 사용자는 막지 않는다. 갱신을 쥔 스토어가 애초에 없다.
+    /// ⚠ **판정은 순수 함수로 뽑아 둔다** — 화면 없이 검증할 수 있어야 한다
+    /// (안드로이드 `leavingScreenDecision` 과 같은 이유). 회귀 테스트는
+    /// `PurchaseBlockReasonTests`.
+    static func purchaseBlockReason(
+        currentTier: PlanTier,
+        response: BillingSubscriptionResponse?
+    ) -> PurchaseBlockReason? {
+        guard let response else {
+            // 아직 못 읽었다. 무료면 갱신을 쥔 스토어가 애초에 없으니 통과시킨다.
+            return currentTier == .free ? nil : .renewalOwnerUnknown
+        }
+        if let providers = response.storeRenewalProviders {
+            // ⚠ **등급을 보지 않는다**(코덱스 #733 3차). Play 보류는 `users.plan` 을 free 로
+            //   내리고 구독 행만 살려 두므로, 등급으로 거르면 **보류 중인 Play 구독이
+            //   안 보인다** — 결제가 복구되는 순간 두 곳에서 청구된다.
+            return providers.contains("google") ? .playOwnsRenewal : nil
+        }
+        // 구버전 서버 — 옛 신호로 최선을 다한다.
+        if response.subscription?.storeProvider == "google" { return .playOwnsRenewal }
+        if response.subscription == nil && currentTier != .free { return .renewalOwnerUnknown }
+        return nil
+    }
+
+    private func purchaseBlockReason() -> PurchaseBlockReason? {
+        Self.purchaseBlockReason(currentTier: currentTier, response: socialFeatures.subscription)
+    }
+
+    /// 플랜 카드를 눌렀을 때. **여기서 한 번, 결제 직전에 한 번** 본다.
+    ///
+    /// ⚠ **갱신을 다른 스토어가 쥐고 있으면 막는다**(코덱스 #730 3차). Play 로 결제 중인
+    /// 이용권이 있는데 애플 결제를 시작하면, 확정은 **우리 DB 의 옛 구독 행만** 취소할 뿐
+    /// Play 의 자동갱신은 끊지 못한다 — 두 스토어가 동시에 청구하고, 서버는 새 애플 구독만
+    /// 보여 주므로 **Play 를 관리할 입구가 앱에서 사라진다.**
+    ///
+    /// ⚠ **바로 결제로 보내지 말 것.** 전환일 때는 스토어 시트가 말해 주지 않는 게 있다 —
+    /// **언제 바뀌는지**(업그레이드 즉시 / 다운그레이드는 다음 갱신일)와 **정원이 줄면
+    /// 멤버가 나간다**는 사실. 안드로이드는 이미 확인 모달로 말하고 있었는데 iOS 만 곧장
+    /// StoreKit 으로 갔다(2026-08-11 대조).
+    private func beginPurchase(_ product: SubscriptionProduct, tier: PlanTier) {
+        if let block = purchaseBlockReason() {
+            purchaseBlock = block
+            // 모르는 상태였다면 곧바로 다시 읽어 본다 — 사용자가 아무것도 안 해도
+            // 다음 시도에서는 답이 나와 있도록.
+            if block == .renewalOwnerUnknown {
+                Task { await socialFeatures.refreshAll(session: auth.session, force: true) }
+            }
+            return
+        }
+        pendingPurchase = PendingPlanPurchase(product: product, tier: tier)
+    }
+
+    /// **StoreKit 을 부르기 직전에 서버에 다시 묻는다.**
+    ///
+    /// ⚠ **캐시된 스냅샷으로 판단하면 안 된다**(코덱스 #733 5차). 카드 탭에서 한 번 본 것은
+    /// 확인 알럿이 떠 있는 사이 낡을 수 있고, 애초에 같은 계정이 **다른 기기에서 방금**
+    /// Play 구독을 시작한 경우는 갱신 신호조차 오지 않는다(구매자 본인은 `plan_changed`
+    /// 대상이 아니다). 서버의 confirm 가드는 **이미 청구된 뒤**라 되돌릴 수 없으므로,
+    /// 청구가 일어나기 전에 권위 값을 한 번 받아 온다.
+    ///
+    /// ⚠ **못 받아 오면 진행하지 않는다.** 여기서 캐시로 넘어가면 이 함수를 만든 이유가
+    /// 사라진다 — 사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다.
+    ///
+    /// 남는 창: 조회와 결제 사이의 수백 ms. 그건 서버 가드가 받는다(그때는 청구를
+    /// 되돌릴 수 없으므로 문구로 안내하고, 다음 시도에서 통과시킨다).
+    private func confirmAndPurchase(_ product: SubscriptionProduct) async {
+        guard await socialFeatures.refreshSubscriptionSilently(session: auth.session) else {
+            purchaseBlock = .renewalOwnerUnknown
+            return
+        }
+        if let block = purchaseBlockReason() {
+            purchaseBlock = block
+            return
+        }
+        await purchase(product)
     }
 
     private func openAppStoreSubscriptionManagement() async {

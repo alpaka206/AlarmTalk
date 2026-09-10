@@ -14,6 +14,7 @@
     <string name="auth_consent_privacy">［必須］プライバシーポリシーに同意</string>
     <string name="auth_consent_processing">処理中…</string>
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
+    <string name="msg_cross_store_renewal_active">このアカウントは App Store で課金中です。App Store のサブスクリプションで先に解約してから、もう一度お試しください。</string>
     <string name="auth_consent_document_unavailable">書類を読み込めませんでした。アプリを最新バージョンに更新してから、もう一度お試しください。</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_voice_biometric">［任意］音声生体情報の処理に同意</string>

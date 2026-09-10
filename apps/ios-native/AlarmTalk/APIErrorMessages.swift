@@ -59,6 +59,11 @@ enum APIErrorMessages {
             return String(localized: "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.")
         case "MANUAL_TTS_QUOTA_EXCEEDED":
             return String(localized: "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.")
+        // ⚠ 앱이 먼저 막지만 그 판정은 **캐시된 스냅샷**이라, 다른 기기에서 방금 Play
+        //   구독을 시작한 경우를 못 본다 — 서버가 확정 시점에 한 번 더 보고 이 코드로
+        //   거절한다. 사용자가 할 수 있는 일이 분명하므로 그것을 말한다.
+        case "CROSS_STORE_RENEWAL_ACTIVE":
+            return String(localized: "이 계정은 Google Play 에서 결제 중이에요. Play 스토어 → 구독에서 먼저 해지한 뒤 다시 시도해 주세요.")
 
         // ── 목소리 ────────────────────────────────────────────────────────
         case "VOICE_CLONE_AUDIO_TOO_SHORT":

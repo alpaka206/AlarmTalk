@@ -52,6 +52,12 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "FREE_PLAN_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "BASIC_VOICE_PRESET_ONLY" to R.string.msg_voice_preset_only,
     "MANUAL_TTS_QUOTA_EXCEEDED" to R.string.editor_error_manual_tts_quota,
+    // ⚠ **막는 쪽은 언제나 '다른 스토어' 다**(코덱스 #733 8차). 서버의 배타성 판정은
+    //   `applyStoreEntitlement` 하나이고 `provider <> ?` 로 자기 스토어를 뺀다 — 그래서
+    //   안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. 문구도 그렇게 말해야 한다.
+    //   예전에는 iOS 문구를 그대로 써서 "Play 에서 해지하라" 고 했는데, 그대로 해도
+    //   다음 시도가 통과하지 않는다.
+    "CROSS_STORE_RENEWAL_ACTIVE" to R.string.msg_cross_store_renewal_active,
 
     // ── 목소리 ────────────────────────────────────────────────────────────
     "VOICE_CLONE_AUDIO_TOO_SHORT" to R.string.msg_voice_clone_audio_too_short,

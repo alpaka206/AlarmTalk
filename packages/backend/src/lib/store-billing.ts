@@ -66,13 +66,24 @@ export type StoreEntitlementResult =
         expires_at: string;
       };
       /**
-       * 이 전환으로 **그룹에서 나가게 된** 멤버들(정원 축소). 호출부가 트랜잭션 커밋
-       * **후** `notifyPlanChanged` 로 알린다 — 아무 말 없이 유료 접근을 잃으면
-       * 사용자는 앱이 고장 난 줄 안다.
+       * 이 전환으로 **스냅샷을 다시 읽어야 하는** 사람들. 호출부가 트랜잭션 커밋 **후**
+       * `notifyPlanChanged` 로 알린다.
+       *
+       * 두 갈래가 들어온다:
+       * - **나가게 된 멤버**(정원 축소) — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+       * - **남았지만 플랜이 바뀐 멤버**(커플 ↔ 가족) — 등급·정원이 달라졌는데 알리지 않으면
+       *   다음 앱 시작·주기 pull 까지 **옛 플랜 키를 들고 있다**(코덱스 #733).
+       *
+       * ⚠ 예전 이름은 `demotedUserIds` 였다. 나가는 사람만 담는 줄 알고 남은 사람을
+       * 빠뜨렸으니, 이름을 "알려야 할 사람" 으로 바꿔 같은 실수를 막는다.
        */
-      demotedUserIds: string[];
+      planChangedUserIds: string[];
     }
-  | { ok: false; status: 409; errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
+  | {
+      ok: false;
+      status: 409;
+      errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' | 'CROSS_STORE_RENEWAL_ACTIVE';
+    };
 
 export async function loadPlanByKey(db: DbExecutor, planKey: string): Promise<StorePlan | null> {
   const res = await db.execute({
@@ -102,6 +113,34 @@ async function currentSubscriptionPlanId(
     args: [subscriptionId],
   });
   return res.rows.length > 0 ? String(res.rows[0]!.plan_id) : null;
+}
+
+/**
+ * **다른 스토어가 아직 갱신을 쥐고 있는가** — 있으면 그 provider 를 돌려준다.
+ *
+ * ⚠ **해지 예약된 구독은 세지 않는다.** `cancel_at_period_end = 1` 은 "아직 유료지만 다음
+ * 갱신은 없다" 는 뜻이라, 그걸 막으면 안내대로 해지한 사용자가 남은 기간 내내 못 산다.
+ *
+ * ⚠ **만료로는 거르지 않는다.** Play 보류(`ON_HOLD`/`PAUSED`)는 구독 행을 살려 두고
+ * `users.plan` 만 회수하는데 그 행은 `expires_at` 이 지나 있다 — 그런데 결제가 복구되면
+ * Play 는 다시 청구한다.
+ */
+async function findCrossStoreRenewalProvider(
+  tx: DbExecutor,
+  userPk: string,
+  provider: string,
+): Promise<string | null> {
+  const res = await tx.execute({
+    sql: `SELECT DISTINCT t.provider
+          FROM store_transactions t
+          JOIN subscriptions s ON s.id = t.subscription_id
+          WHERE s.user_id = ?
+            AND s.status = 'active'
+            AND s.cancel_at_period_end = 0
+            AND t.provider <> ?`,
+    args: [userPk, provider],
+  });
+  return res.rows.length > 0 ? String(res.rows[0]!.provider) : null;
 }
 
 /** 트랜잭션 안에서 호출해야 한다 (withWriteTransaction). */
@@ -173,10 +212,24 @@ export async function applyStoreEntitlement(
           starts_at: startsAtIso,
           expires_at: expiresAtIso,
         },
-        // 같은 plan 갱신이라 그룹이 그대로다 — 나간 사람이 없다.
-        demotedUserIds: [],
+        // 같은 plan 갱신이라 그룹도 플랜도 그대로다 — 알릴 사람이 없다.
+        planChangedUserIds: [],
       };
     }
+  }
+
+  // ⚠ **교차 스토어 배타성은 여기서 본다 — 라우트가 아니라**(코덱스 #733 6차).
+  //   라우트에서 미리 보면 두 스토어의 확정이 **동시에** 들어올 때 둘 다 "경쟁자 없음" 으로
+  //   읽고 지나간다. 그러면 쓰기만 직렬화되어 먼저 쓴 로컬 행이 취소되고, **바깥의 두 구독은
+  //   그대로 갱신된다** — 아무도 409 를 못 받는다. 같은 트랜잭션 안에서 봐야 한 쪽이 진다.
+  //   여기에 두면 **두 스토어가 대칭**이 된다(구글 확정도 같은 함수를 탄다).
+  //
+  // ⚠ **자리가 여기인 이유**: 위쪽 갈래(이미 우리가 아는 트랜잭션의 재전송·갱신)는 막으면
+  //   안 된다. 이미 팔린 구독의 갱신을 거절하면 **돈은 나가는데 권한이 끊긴다.** 막을 것은
+  //   **새 구매**뿐이다. 같은 스토어 안의 등급 변경도 막지 않는다(스토어가 처리하는 정상 경로).
+  const crossStore = await findCrossStoreRenewalProvider(tx, input.userPk, input.provider);
+  if (crossStore) {
+    return { ok: false, status: 409, errorCode: 'CROSS_STORE_RENEWAL_ACTIVE' };
   }
 
   // ⚠ **그룹형 → 그룹형 전환은 그룹을 이어받는다**(커플 ↔ 가족).
@@ -197,7 +250,7 @@ export async function applyStoreEntitlement(
 
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
-  const demotedUserIds: string[] = [];
+  const planChangedUserIds: string[] = [];
 
   if (isGroupPlanType(input.plan.plan_type)) {
     if (carryOver) {
@@ -208,7 +261,7 @@ export async function applyStoreEntitlement(
       });
       // 정원이 줄어드는 전환(가족 → 커플)에서는 넘치는 인원을 내보내야 한다.
       // 남길 사람은 **먼저 들어온 순서**로 고른다 — 임의로 고르면 설명할 수 없다.
-      demotedUserIds.push(
+      planChangedUserIds.push(
         ...(await enforceGroupCapacity(tx, {
           planGroupId,
           ownerUserPk: input.userPk,
@@ -216,6 +269,30 @@ export async function applyStoreEntitlement(
           now: input.startsAt,
         })),
       );
+      // ⚠ **남은 멤버의 구독 행도 새 플랜으로 옮긴다**(코덱스 #730 3차). 위에서 고친 것은
+      //   `plan_groups` 뿐이라, 멤버의 `subscriptions.plan_id` 는 **옛 플랜에 그대로**
+      //   남아 있었다. `GET /billing/subscription` 은 멤버의 등급을 그 행에서 뽑으므로,
+      //   그룹의 정원·코드는 가족으로 옮겨 갔는데 멤버 화면과 권한 스냅샷만 커플로
+      //   남는다(반대 방향도 같다).
+      //
+      //   **정원 정리 뒤에** 돌린다 — 쫓겨날 멤버까지 새 플랜으로 옮겼다가 바로 취소하는
+      //   낭비를 피하고, 남은 사람만 정확히 겨냥한다. 소유자는 새 구독 행을 아래에서
+      //   따로 만들므로 제외한다(옛 행은 방금 취소됐다).
+      // ⚠ **옮긴 멤버도 알림 대상이다**(코덱스 #733). 등급이 바뀐 것은 나간 사람만이
+      //   아니다 — 남은 사람도 커플에서 가족으로(또는 반대로) 옮겨 간다. 안 알리면 다음
+      //   앱 시작·주기 pull 까지 옛 플랜 키를 들고 있다. id 를 알아야 하므로 먼저 읽는다.
+      const retained = await tx.execute({
+        sql: `SELECT user_id FROM subscriptions
+              WHERE plan_group_id = ? AND status = 'active' AND user_id <> ?`,
+        args: [planGroupId, input.userPk],
+      });
+      await tx.execute({
+        sql: `UPDATE subscriptions
+              SET plan_id = ?, updated_at = datetime('now')
+              WHERE plan_group_id = ? AND status = 'active' AND user_id <> ?`,
+        args: [input.plan.id, planGroupId, input.userPk],
+      });
+      planChangedUserIds.push(...retained.rows.map((r) => String(r.user_id)));
     } else {
       planGroupId = crypto.randomUUID();
       await tx.execute({
@@ -312,7 +389,7 @@ export async function applyStoreEntitlement(
       starts_at: startsAtIso,
       expires_at: expiresAtIso,
     },
-    demotedUserIds,
+    planChangedUserIds,
   };
 }
 

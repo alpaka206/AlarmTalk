@@ -478,6 +478,37 @@ describe('billing google RTDN', () => {
       );
     });
 
+    it('교차 스토어로 거절되면 ack 하지 않는다 — Play 3일 자동 환불로 돌려준다', async () => {
+      // ⚠ `applyStoreEntitlement` 가 거절하면 **아무것도 쓰이지 않는다.** 그런데 ack 는
+      //   `ok` 를 보지 않아서, 예전에는 **권한 없는 결제를 확인 처리**했다 — 확인된 구매는
+      //   Play 의 3일 자동 환불 대상에서 빠지므로 사용자는 돈만 내고 되돌릴 길까지 잃는다
+      //   (코덱스 #733 7차).
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+              acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
+              lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
+            }),
+            { status: 200 },
+          ),
+        );
+      vi.stubGlobal('fetch', fetchMock);
+      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
+      mockDB.pushResult([PLAN_ROW]); // loadPlanByKey
+      mockDB.pushResult([]); // applyStoreEntitlement — 새 트랜잭션(기존 매핑 없음)
+      mockDB.pushResult([{ provider: 'apple' }]); // 교차 스토어: 애플이 아직 갱신 중
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200); // Pub/Sub 재시도를 부르지 않는다
+      expect((await res.json()).ignored).toBe('entitle_rejected');
+      // 권위 재조회 한 번뿐 — ack 는 나가지 않았다.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('entitle 시 이미 ACKNOWLEDGED 면 ack 를 호출하지 않는다 (D)', async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(

@@ -14,6 +14,7 @@
     <string name="auth_consent_privacy">[Required] Agree to Privacy Policy</string>
     <string name="auth_consent_processing">Processing…</string>
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
+    <string name="msg_cross_store_renewal_active">This account is billed through the App Store. Cancel it in App Store subscriptions first, then try again.</string>
     <string name="auth_consent_document_unavailable">Couldn\'t load the document. Please update to the latest version of the app and try again.</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_voice_biometric">[Optional] Agree to voice biometric processing</string>

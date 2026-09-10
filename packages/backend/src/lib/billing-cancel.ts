@@ -69,6 +69,13 @@ export interface ActiveSubscription {
    */
   planKey: string;
   planGroupId: string | null;
+  /**
+   * **기간 종료로 해지가 예약됐는가.** 아직 유료지만 **다음 갱신은 없다.**
+   *
+   * ⚠ '지금 권한이 있는가' 와 '갱신을 쥐고 있는가' 는 다른 질문이다 —
+   * `storeRenewalProvidersOf` 가 이걸 봐야 한다(코덱스 #733 6차).
+   */
+  cancelAtPeriodEnd: boolean;
 }
 
 
@@ -77,7 +84,8 @@ export async function findActiveSubscriptionsByUserPk(
   userPk: string,
 ): Promise<ActiveSubscription[]> {
   const res = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
+                 s.cancel_at_period_end, p.plan_type, p.key AS plan_key
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.user_id = ? AND s.status = 'active'
           ORDER BY s.starts_at DESC`,
@@ -90,6 +98,7 @@ export async function findActiveSubscriptionsByUserPk(
     planType: String(r.plan_type),
     planKey: String(r.plan_key),
     planGroupId: (r.plan_group_id as string | null) ?? null,
+    cancelAtPeriodEnd: Number(r.cancel_at_period_end ?? 0) === 1,
   }));
 }
 
@@ -103,6 +112,8 @@ export interface SubscriptionStoreTransaction {
   provider: string;
   purchaseToken: string;
   productId: string;
+  /** 어느 구독에 묶였는가 — 호출부가 '갱신 예정인 것' 만 골라 낼 때 쓴다. */
+  subscriptionId: string;
 }
 
 export async function findStoreTransactionsForSubscriptions(
@@ -113,7 +124,7 @@ export async function findStoreTransactionsForSubscriptions(
   // IN 플레이스홀더는 개발자 고정 조각(값 개수만큼 `?`) — 값은 전부 ?-바인딩.
   const inPh = subscriptionIds.map(() => '?').join(', ');
   const res = await db.execute({
-    sql: `SELECT provider, provider_transaction_id, product_id
+    sql: `SELECT provider, provider_transaction_id, product_id, subscription_id
           FROM store_transactions WHERE subscription_id IN (${inPh})`,
     args: subscriptionIds,
   });
@@ -121,6 +132,7 @@ export async function findStoreTransactionsForSubscriptions(
     provider: String(row.provider),
     purchaseToken: String(row.provider_transaction_id),
     productId: String(row.product_id),
+    subscriptionId: String(row.subscription_id ?? ''),
   }));
 }
 
@@ -139,6 +151,76 @@ export async function findStoreTransactionsForSubscriptions(
  *
  * `null` 은 스토어 결제가 아니라는 뜻이다(dev 스텁·프로모·바우처) — 서버 로컬 해지가 된다.
  */
+/**
+ * **활성 구독에 묶인 스토어 전부** — 지금 이 계정의 갱신을 누가 쥐고 있는가.
+ *
+ * ⚠ `storeCancelProviderOf` 와 **다른 질문이다.** 그쪽은 "해지가 어느 스토어를 거치나" 라
+ * 애플이 있으면 애플로 **접어 버린다**(해지 라우트가 그렇게 판정하므로). 여기서 그 값을
+ * 재사용하면 애플·구글이 **함께 살아 있는 계정**이 "애플뿐" 으로 읽혀, Play 가 계속
+ * 갱신되는데도 애플 결제를 또 열어 준다(코덱스 #733 3차).
+ *
+ * ⚠ **해지 예약된 구독은 넣지 말 것**(코덱스 #733 6차). `cancel_at_period_end = 1` 은
+ * "아직 유료지만 **다음 갱신은 없다**" 는 뜻이다. 그걸 갱신 주인으로 세면, 안내대로 Play 에서
+ * 해지한 사용자가 **남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
+ * 호출부가 `cancelAtPeriodEnd` 인 구독을 빼고 넘긴다.
+ *
+ * ⚠ **만료로 거르지 않는다.** Play 보류(`ON_HOLD`/`PAUSED`)는 회복형이라 구독 행을
+ * `active` 로 남기고 `users.plan` 만 회수하는데, 그 행은 `expires_at` 이 이미 지나 있다.
+ * 만료로 거르면 보류 중인 Play 구독이 **보이지 않게 되고**, 그 상태에서 애플로 사면
+ * 결제가 복구되는 순간 두 곳에서 청구된다.
+ */
+/**
+ * **다른 스토어(애플)가 정말 갱신 중인지 애플에 물어 갱신 상태를 최신화한다.**
+ *
+ * ⚠ **애플 상태는 가만두면 낡는다**(코덱스 #733 8차). 우리가 받는 App Store 서버 알림이
+ * 없고, `applyStoreEntitlement` 의 같은-플랜 갱신 갈래는 `cancel_at_period_end` 를 **0 으로
+ * 되돌린다.** 그래서 사용자가 App Store 에서 자동갱신을 껐어도 우리 DB 는 "갱신 중" 으로
+ * 남고, 그 상태로 Play 결제를 막으면 **사용자가 할 수 있는 일이 없다** — 이미 껐는데도
+ * 막히고, 우리 안내(`다른 스토어에서 먼저 해지하세요`)를 따라도 달라지지 않는다.
+ *
+ * Play 쪽은 이 문제가 없다 — RTDN 과 해지 라우트가 `cancel_at_period_end` 를 제때 세운다.
+ *
+ * ⚠ **최선 노력이다.** 애플에 못 물어보면 저장된 값을 그대로 둔다 — 그 값이 "갱신 중" 이면
+ * 막게 되는데, 그쪽이 이중 청구보다 낫다(사용자는 다시 시도할 수 있다).
+ */
+export async function refreshCompetingAppleRenewalState(
+  db: DbExecutor,
+  env: Partial<Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>> | undefined,
+  userPk: string,
+): Promise<void> {
+  const config = env ? appleStoreKitConfigFromEnv(env as Env) : null;
+  if (!config) return;
+  const res = await db.execute({
+    sql: `SELECT s.id AS sub_id, t.provider_transaction_id
+          FROM subscriptions s
+          JOIN store_transactions t ON t.subscription_id = s.id
+          WHERE s.user_id = ? AND s.status = 'active' AND t.provider = 'apple'`,
+    args: [userPk],
+  });
+  for (const row of res.rows) {
+    try {
+      const status = await fetchAppleSubscriptionStatus(String(row.provider_transaction_id), config);
+      await db.execute({
+        sql: `UPDATE subscriptions SET cancel_at_period_end = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [status.autoRenewStatus === 0 ? 1 : 0, String(row.sub_id)],
+      });
+    } catch (err) {
+      logStructured('warn', {
+        at: 'billing.apple.renewal_state',
+        error: String(err),
+        subscriptionId: String(row.sub_id),
+      });
+    }
+  }
+}
+
+export function storeRenewalProvidersOf(
+  transactions: readonly SubscriptionStoreTransaction[],
+): string[] {
+  return Array.from(new Set(transactions.map((txn) => txn.provider))).sort();
+}
+
 export function storeCancelProviderOf(
   transactions: readonly SubscriptionStoreTransaction[],
 ): 'apple' | 'google' | null {
@@ -215,7 +297,7 @@ export async function schedulePaidVoiceRetention(
  * 활성 구독(만료 전) 또는 users.plan 이 무료가 아니면 유료로 본다. 둘 중 하나만 봐도
  * 대부분 맞지만, 어느 한쪽만 갱신하고 다른 쪽을 놓친 경로가 있어 둘 다 확인한다.
  */
-async function hasActivePaidEntitlement(db: DbExecutor, userPk: string): Promise<boolean> {
+export async function hasActivePaidEntitlement(db: DbExecutor, userPk: string): Promise<boolean> {
   const res = await db.execute({
     sql: `SELECT
             (SELECT COUNT(*) FROM subscriptions
@@ -1198,6 +1280,8 @@ export async function processSubscriptionExpiry(
       planType: String(r.plan_type),
       planKey: String(r.plan_key),
       planGroupId: (r.plan_group_id as string | null) ?? null,
+      // 이 루프들의 조회 조건이 `cancel_at_period_end` 를 이미 가른다.
+      cancelAtPeriodEnd: Number(r.cancel_at_period_end ?? 0) === 1,
     };
     const nextPlanId = (r.next_plan_id as string | null) ?? null;
 
@@ -1318,6 +1402,8 @@ export async function processSubscriptionExpiry(
           planType,
           planKey: String(r.plan_key),
           planGroupId: (r.plan_group_id as string | null) ?? null,
+          // 이 루프의 조회 조건이 `cancel_at_period_end = 0` 이다.
+          cancelAtPeriodEnd: false,
         },
         now,
         { deleteVoiceData: false },

@@ -360,7 +360,19 @@ final class BackgroundSyncTask {
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            // 시뮬레이터 / 권한 없음 — silent.
+            // ⚠ **취소는 이미 끝났다 — 여기서 그냥 넘어가면 pending 이 0 이 된다**
+            //   (코덱스 #730 3차). 위 cancel-then-submit 은 "submit 이 즉시 뒤따르므로
+            //   창이 없다" 를 전제로 하는데, 그 submit 이 던지면 **멀쩡히 예약돼 있던
+            //   15분 요청까지 사라진다.** 가족 알람 푸시를 놓쳤을 때의 폴백이 주기 pull
+            //   하나뿐이라, 그게 없어지면 다음 전경 진입까지 받은 알람이 안 들어온다.
+            //
+            //   그래서 표준 주기로 한 번 더 넣어 본다. 시뮬레이터·백그라운드 새로고침
+            //   꺼짐처럼 **기기가 아예 안 받는** 경우에는 이것도 실패하는데, 그때는
+            //   애초에 예약이란 게 없으니 잃는 것이 없다. 건지려는 것은 방금 넘긴
+            //   `earliestBeginDate` 때문에 거절당한 경우다.
+            let fallback = BGAppRefreshTaskRequest(identifier: taskIdentifier)
+            fallback.earliestBeginDate = Date(timeIntervalSinceNow: refreshInterval)
+            try? BGTaskScheduler.shared.submit(fallback)
         }
         #endif
     }

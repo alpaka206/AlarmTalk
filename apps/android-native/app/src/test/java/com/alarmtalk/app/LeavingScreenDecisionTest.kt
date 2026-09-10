@@ -19,7 +19,7 @@ class LeavingScreenDecisionTest {
         handled: Boolean = false,
         superseded: Boolean = false,
         changingConfigurations: Boolean = false,
-        isActiveRingingAlarm: Boolean = true,
+        isRingingOrHandingOff: Boolean = true,
         screenOff: Boolean = false,
         screenCovered: Boolean = false,
         inCall: Boolean = false,
@@ -30,7 +30,7 @@ class LeavingScreenDecisionTest {
         handled = handled,
         superseded = superseded,
         changingConfigurations = changingConfigurations,
-        isActiveRingingAlarm = isActiveRingingAlarm,
+        isRingingOrHandingOff = isRingingOrHandingOff,
         screenOff = screenOff,
         screenCovered = screenCovered,
         inCall = inCall,
@@ -151,7 +151,21 @@ class LeavingScreenDecisionTest {
     @Test
     fun 남의_알람은_끄지_않는다() {
         // A 가 울리는 중 B 로 인계될 수 있다. 이 화면의 알람이 지금 울리는 알람이 아니면 손대지 않는다.
-        assertEquals(LeavingScreenDecision.NOT_THE_RINGING_ALARM, decide(isActiveRingingAlarm = false))
+        assertEquals(LeavingScreenDecision.NOT_THE_RINGING_ALARM, decide(isRingingOrHandingOff = false))
+    }
+
+    /**
+     * ⚠ **인계 중에 떠나도 해제다**(코덱스 #730 3차). FGS 차단 폴백에서는 수신기가 인계
+     * 표시만 남기고 `activeRingingAlarmId` 는 `onStartCommand` 가 채운다 — 그 창에서 홈·전원을
+     * 누르면 예전 판정(`activeRingingAlarmId == id`)은 false 라 떠난 것을 **무시**했고,
+     * 그 뒤 서비스가 떠서 계속 울렸다. 호출부는 `ringingOrHandingOffAlarmIds()` 를 넘긴다.
+     */
+    @Test
+    fun `handing off counts as this alarm`() {
+        assertEquals(
+            LeavingScreenDecision.DISMISS,
+            decide(isRingingOrHandingOff = true, userLeftDeliberately = true),
+        )
     }
 
     @Test
@@ -175,7 +189,7 @@ class LeavingScreenDecisionTest {
         )
         assertEquals(
             LeavingScreenDecision.NOT_THE_RINGING_ALARM,
-            decide(isActiveRingingAlarm = false, screenOff = true, seenUnlocked = false, elapsedSinceShownMs = 0L),
+            decide(isRingingOrHandingOff = false, screenOff = true, seenUnlocked = false, elapsedSinceShownMs = 0L),
         )
     }
 }

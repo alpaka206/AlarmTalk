@@ -798,6 +798,20 @@ struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
     var nextPlan: BillingPlanSummary?
+    /**
+     지금 이 계정의 **갱신을 쥔 스토어 전부** — `["apple"]`, `["google"]`, 둘 다, 또는 빈 배열.
+
+     ⚠ **`subscription.storeProvider` 로 대신하지 말 것**(코덱스 #733 3차). 두 가지가 다르다:
+     - 그 필드는 "해지가 어느 스토어를 거치나" 라 애플이 있으면 **애플로 접힌다.** 애플·구글이
+       함께 살아 있는 계정이 "애플뿐" 으로 읽혀 Play 가 갱신 중인데 애플 결제를 또 열어 준다.
+     - `subscription` 자체가 **null 일 수 있다.** Play 보류(`ON_HOLD`/`PAUSED`)는 구독 행을
+       살려 두고 `users.plan` 만 회수하는데 그 행은 `expires_at` 이 지나 있어 응답에서 빠진다 —
+       그런데 결제가 복구되면 Play 는 다시 청구한다.
+
+     구버전 서버는 이 필드를 주지 않는다(`nil`) — 그때는 옛 신호로 최선을 다한다
+     (`BillingPanel.purchaseBlockReason`).
+     */
+    var storeRenewalProviders: [String]?
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {
