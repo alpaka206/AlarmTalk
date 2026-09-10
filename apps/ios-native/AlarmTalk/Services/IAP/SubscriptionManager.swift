@@ -83,10 +83,31 @@ final class SubscriptionManager: ObservableObject {
     private let api: AlarmTalkAPI
     private let authProvider: () -> AuthSession?
 
-    /// **마지막 confirm 이 결제를 인정하지 않은 이유.** 구독 갈래가 `.success` 를 돌려주기
-    /// 전에 본다 — 서버가 거절했는데 "결제 완료" 라고 말하면 사용자는 무엇이 잘못됐는지
-    /// 알 길이 없다(코덱스 #733 5차).
-    private var lastConfirmRejection: String?
+    /// **결제 라우트가 이 트랜잭션을 실제로 판정한 응답 상태.**
+    ///
+    /// ⚠ **범위(`400..<500`)로 두지 말 것.** 401·403·429 는 미들웨어가 라우트 **앞에서**
+    /// 막은 것이라 트랜잭션을 본 적이 없다 — 그걸 '판정' 으로 세면 환불 큐에서 지워지고,
+    /// 환불된 트랜잭션은 다시 만들 경로가 없어 **영영 서버에 닿지 않는다**(코덱스 #733 6차).
+    /// 라우트가 실제로 내는 것만 적는다: 400(TRANSACTION_REVOKED 등) · 404(없는 트랜잭션) ·
+    /// 409(다른 계정 소유·교차 스토어).
+    static let adjudicatedStatuses: Set<Int> = [400, 404, 409]
+
+    /**
+     confirm 한 번의 결과.
+
+     ⚠ **공유 프로퍼티로 주고받지 말 것**(코덱스 #733 6차). `syncWithBackend` 는 MainActor
+     격리지만 네트워크 `await` 마다 **재진입**한다 — 구매 경로와 `Transaction.updates`
+     리스너가 동시에 돌면 한쪽이 쓴 값을 다른 쪽이 읽는다. 그러면 교차 스토어 거절이
+     "결제 완료" 로 보고되거나, 멀쩡한 구매가 **남의 거절 문구**를 뒤집어쓴다.
+     */
+    struct ConfirmOutcome {
+        /// 서버가 이 결제를 **확정했는가**(`success: true`).
+        let confirmed: Bool
+        /// 서버가 **인정하지 않은** 이유. 있으면 성공이라고 말하지 않는다.
+        let rejection: String?
+
+        static let notConfirmed = ConfirmOutcome(confirmed: false, rejection: nil)
+    }
 
     /// 백엔드 confirm 이 `success: true` 로 응답한 직후 호출되는 훅.
     /// AlarmTalkApp 이 기존 구독 fetch 경로(`SocialFeatureViewModel` 의
@@ -132,17 +153,17 @@ final class SubscriptionManager: ObservableObject {
                 )
                 // 200 이면 환불이 아니었다는 뜻이다(적어 둘 이유가 사라졌다).
                 PendingRevokedTransactionStore.remove(transactionID)
-            } catch APIError.server(let status, _, _) where status == 401 || status == 403 {
-                // ⚠ **여기서 지우면 안 된다**(코덱스 #733 5차). 401(토큰 거절)·403(동의
-                //   필요 등)은 **결제 라우트가 이 트랜잭션을 보지도 못했다**는 뜻이다 —
-                //   미들웨어가 앞에서 막은 것이다. 환불된 트랜잭션은 다시 만들 경로가
-                //   없으니, 지우면 그 환불은 영영 서버에 닿지 않는다. 다음 기회에 다시 민다.
-            } catch APIError.server(let status, _, _) where (400..<500).contains(status) {
+            } catch APIError.server(let status, _, _)
+                where Self.adjudicatedStatuses.contains(status) {
                 // 서버가 이 트랜잭션을 **판정했다** — 환불 회수든 거절이든 다시 보낼 이유가 없다.
                 PendingRevokedTransactionStore.remove(transactionID)
                 await onServerEntitlementUpdated?()
             } catch {
-                // 네트워크·5xx — 다음 기회에 다시 민다.
+                // ⚠ **나머지는 전부 남긴다**(코덱스 #733 5·6차). 401(토큰 거절)·403(동의
+                //   필요)·429(요청 제한)는 **결제 라우트가 이 트랜잭션을 보지도 못했다**는
+                //   뜻이다 — 미들웨어가 앞에서 막은 것이다. 환불된 트랜잭션은 다시 만들
+                //   경로가 없으니, 지우면 그 환불은 영영 서버에 닿지 않는다.
+                //   네트워크·5xx 도 같다. 다음 기회에 다시 민다.
             }
         }
     }
@@ -174,8 +195,8 @@ final class SubscriptionManager: ObservableObject {
             //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
             // 환불은 주인이 아니어도 전달한다(위 리스너와 같은 이유).
             guard transaction.revocationDate != nil || maySyncToBackend(transaction) else { continue }
-            let confirmed = await syncWithBackend(transaction: transaction)
-            if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
+            let outcome = await syncWithBackend(transaction: transaction)
+            if Self.mayFinish(productID: transaction.productID, serverConfirmed: outcome.confirmed) {
                 await transaction.finish()
             }
         }
@@ -241,9 +262,9 @@ final class SubscriptionManager: ObservableObject {
             switch result {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
-                let confirmed = await syncWithBackend(transaction: transaction)
+                let outcome = await syncWithBackend(transaction: transaction)
                 // ⚠ 무조건 finish 하지 말 것 — `mayFinish` 주석 참조.
-                if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
+                if Self.mayFinish(productID: transaction.productID, serverConfirmed: outcome.confirmed) {
                     await transaction.finish()
                 }
                 await refreshPurchasedProducts()
@@ -251,10 +272,11 @@ final class SubscriptionManager: ObservableObject {
                 //   구독 갈래는 확정 여부와 무관하게 `.success` 를 돌려주는데, 그건
                 //   "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절은
                 //   따라잡히지 않는다 — 사용자가 Play 를 해지해야 풀린다.
-                if let rejection = lastConfirmRejection {
+                //   ⚠ 이 값은 **이 호출의 결과**다(공유 상태가 아니다 — 코덱스 #733 6차).
+                if let rejection = outcome.rejection {
                     return .failure(reason: rejection)
                 }
-                guard plan.isSubscription || confirmed else {
+                guard plan.isSubscription || outcome.confirmed else {
                     // 결제는 됐지만 발급을 확인하지 못했다. **성공이라고 말하지 않는다** —
                     // 트랜잭션을 안 끝냈으므로 다음 실행에서 `Transaction.updates` 가
                     // 다시 물어다 주고 리스너가 재시도한다.
@@ -576,12 +598,12 @@ final class SubscriptionManager: ObservableObject {
                         await self.refreshPurchasedProducts()
                         continue
                     }
-                    let confirmed = await self.syncWithBackend(transaction: transaction)
+                    let outcome = await self.syncWithBackend(transaction: transaction)
                     // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
                     // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.
                     if await SubscriptionManager.mayFinish(
                         productID: transaction.productID,
-                        serverConfirmed: confirmed
+                        serverConfirmed: outcome.confirmed
                     ) {
                         await transaction.finish()
                     }
@@ -628,17 +650,14 @@ final class SubscriptionManager: ObservableObject {
     ///
     /// 클라가 보내는 것은 transaction id 하나뿐이다 —
     /// 상품·만료·환불은 서버가 애플에 직접 물어본 응답이 권위다.
-    /// 서버가 이 결제를 **확정했는가**(`success: true`).
-    ///
-    /// ⚠ 반환값을 무시하지 말 것 — 소모성 선물은 이 값이 false 면 `finish()` 하면 안 된다
-    /// (`mayFinish` 주석 참조).
+    /// ⚠ 반환값을 무시하지 말 것 — 소모성 선물은 `confirmed` 가 false 면 `finish()` 하면
+    /// 안 된다(`mayFinish` 주석 참조).
     @discardableResult
-    private func syncWithBackend(transaction: Transaction) async -> Bool {
-        lastConfirmRejection = nil
+    private func syncWithBackend(transaction: Transaction) async -> ConfirmOutcome {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
-            return false
+            return .notConfirmed
         }
         do {
             // 서버는 이 id 로 애플에 직접 물어본다 — 상품·만료·환불은 그 응답이 권위다.
@@ -652,13 +671,13 @@ final class SubscriptionManager: ObservableObject {
                 // 클라이언트 측 서버 구독 상태도 새로고침한다.
                 await onServerEntitlementUpdated?()
             }
-            return response.success
+            return ConfirmOutcome(confirmed: response.success, rejection: nil)
         } catch APIError.server(let status, _, _) where status == 503 {
             // 서버 구성값(APPLE_ISSUER_ID/KEY_ID/PRIVATE_KEY/BUNDLE_ID) 미설정 또는 일시
             // 점검 — 비파괴 처리. StoreKit 영수증이 권위이므로 로컬 entitlement 는 그대로
             // 두고, 다음 foreground 사이클의 resyncEntitlements 가 자동 catch-up 한다.
             // (501 은 라우트가 없던 시절의 잔재라 뺐다 — 지금은 라우트가 있다.)
-            return false
+            return .notConfirmed
         } catch APIError.server(let status, _, let code) where status == 400
             && code == "TRANSACTION_REVOKED" {
             // ⚠ **거절이지만 서버는 방금 정리를 끝냈다**(코덱스 #733). 환불된 트랜잭션이
@@ -673,7 +692,7 @@ final class SubscriptionManager: ObservableObject {
             //   트랜잭션은 재시도해도 결과가 같다.
             await onServerEntitlementUpdated?()
             PendingRevokedTransactionStore.remove(String(transaction.id))
-            return false
+            return .notConfirmed
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "CROSS_STORE_RENEWAL_ACTIVE" {
             // ⚠ **다른 스토어가 아직 갱신을 쥐고 있다.** 결제 전 preflight 가 막지만
@@ -682,8 +701,7 @@ final class SubscriptionManager: ObservableObject {
             let message = APIErrorMessages.message(for: code)
                 ?? String(localized: "다른 스토어에서 결제 중인 이용권이 있어요.")
             self.lastError = message
-            self.lastConfirmRejection = message
-            return false
+            return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "TRANSACTION_OWNED_BY_OTHER_USER" {
             // ⚠ **재시도해도 결과가 같다 — "잠시 후 자동 재시도" 라고 말하면 안 된다.**
@@ -694,10 +712,10 @@ final class SubscriptionManager: ObservableObject {
             self.lastError = String(
                 localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
             )
-            return false
+            return .notConfirmed
         } catch {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
-            return false
+            return .notConfirmed
         }
     }
 

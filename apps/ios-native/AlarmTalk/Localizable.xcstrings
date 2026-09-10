@@ -3056,6 +3056,23 @@
         }
       }
     },
+    "다른 스토어에서 결제 중인 이용권이 있어요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another store is already billing a pass for this account."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のストアで課金中のパスがあります。"
+          }
+        }
+      }
+    },
     "다시 녹음" : {
 
     },
@@ -8462,6 +8479,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この購入は既に別のアカウントに紐づいています。そのアカウントでログインしてください"
+          }
+        }
+      }
+    },
+    "이 계정은 Google Play 에서 결제 중이에요. Play 스토어 → 구독에서 먼저 해지한 뒤 다시 시도해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This account is billed through Google Play. Cancel it in Play Store → Subscriptions first, then try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアカウントは Google Play で課金中です。Play ストア → 定期購入で先に解約してから、もう一度お試しください。"
           }
         }
       }

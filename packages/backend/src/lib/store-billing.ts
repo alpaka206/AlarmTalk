@@ -79,7 +79,11 @@ export type StoreEntitlementResult =
        */
       planChangedUserIds: string[];
     }
-  | { ok: false; status: 409; errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
+  | {
+      ok: false;
+      status: 409;
+      errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' | 'CROSS_STORE_RENEWAL_ACTIVE';
+    };
 
 export async function loadPlanByKey(db: DbExecutor, planKey: string): Promise<StorePlan | null> {
   const res = await db.execute({
@@ -109,6 +113,34 @@ async function currentSubscriptionPlanId(
     args: [subscriptionId],
   });
   return res.rows.length > 0 ? String(res.rows[0]!.plan_id) : null;
+}
+
+/**
+ * **다른 스토어가 아직 갱신을 쥐고 있는가** — 있으면 그 provider 를 돌려준다.
+ *
+ * ⚠ **해지 예약된 구독은 세지 않는다.** `cancel_at_period_end = 1` 은 "아직 유료지만 다음
+ * 갱신은 없다" 는 뜻이라, 그걸 막으면 안내대로 해지한 사용자가 남은 기간 내내 못 산다.
+ *
+ * ⚠ **만료로는 거르지 않는다.** Play 보류(`ON_HOLD`/`PAUSED`)는 구독 행을 살려 두고
+ * `users.plan` 만 회수하는데 그 행은 `expires_at` 이 지나 있다 — 그런데 결제가 복구되면
+ * Play 는 다시 청구한다.
+ */
+async function findCrossStoreRenewalProvider(
+  tx: DbExecutor,
+  userPk: string,
+  provider: string,
+): Promise<string | null> {
+  const res = await tx.execute({
+    sql: `SELECT DISTINCT t.provider
+          FROM store_transactions t
+          JOIN subscriptions s ON s.id = t.subscription_id
+          WHERE s.user_id = ?
+            AND s.status = 'active'
+            AND s.cancel_at_period_end = 0
+            AND t.provider <> ?`,
+    args: [userPk, provider],
+  });
+  return res.rows.length > 0 ? String(res.rows[0]!.provider) : null;
 }
 
 /** 트랜잭션 안에서 호출해야 한다 (withWriteTransaction). */
@@ -184,6 +216,20 @@ export async function applyStoreEntitlement(
         planChangedUserIds: [],
       };
     }
+  }
+
+  // ⚠ **교차 스토어 배타성은 여기서 본다 — 라우트가 아니라**(코덱스 #733 6차).
+  //   라우트에서 미리 보면 두 스토어의 확정이 **동시에** 들어올 때 둘 다 "경쟁자 없음" 으로
+  //   읽고 지나간다. 그러면 쓰기만 직렬화되어 먼저 쓴 로컬 행이 취소되고, **바깥의 두 구독은
+  //   그대로 갱신된다** — 아무도 409 를 못 받는다. 같은 트랜잭션 안에서 봐야 한 쪽이 진다.
+  //   여기에 두면 **두 스토어가 대칭**이 된다(구글 확정도 같은 함수를 탄다).
+  //
+  // ⚠ **자리가 여기인 이유**: 위쪽 갈래(이미 우리가 아는 트랜잭션의 재전송·갱신)는 막으면
+  //   안 된다. 이미 팔린 구독의 갱신을 거절하면 **돈은 나가는데 권한이 끊긴다.** 막을 것은
+  //   **새 구매**뿐이다. 같은 스토어 안의 등급 변경도 막지 않는다(스토어가 처리하는 정상 경로).
+  const crossStore = await findCrossStoreRenewalProvider(tx, input.userPk, input.provider);
+  if (crossStore) {
+    return { ok: false, status: 409, errorCode: 'CROSS_STORE_RENEWAL_ACTIVE' };
   }
 
   // ⚠ **그룹형 → 그룹형 전환은 그룹을 이어받는다**(커플 ↔ 가족).

@@ -33,6 +33,8 @@ vi.mock('../src/lib/apple-storekit', () => ({
 
 const cancelSubscriptionImmediate = vi.fn(async () => ['owner-pk', 'member-1']);
 const schedulePaidVoiceRetention = vi.fn(async () => undefined);
+/** 환불 뒤에도 유료 권한이 남아 있는가(다른 스토어 구독·프로모). */
+let stillPaid = false;
 const notifyPlanChanged = vi.fn(async () => undefined);
 const notifyVoiceDeletionScheduled = vi.fn(async () => undefined);
 
@@ -45,6 +47,7 @@ vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
   schedulePaidVoiceRetention: (...a: unknown[]) => schedulePaidVoiceRetention(...(a as [])),
   notifyPlanChanged: (...a: unknown[]) => notifyPlanChanged(...(a as [])),
   notifyVoiceDeletionScheduled: (...a: unknown[]) => notifyVoiceDeletionScheduled(...(a as [])),
+  hasActivePaidEntitlement: async () => stillPaid,
 }));
 
 import billingApple from '../src/routes/billing-apple';
@@ -92,7 +95,8 @@ function pushMappedSubscription() {
 beforeEach(() => {
   mockDB.reset();
   transactionInfo = revokedInfo();
-  chainStatus = 2; // 기본은 만료 — 체인이 끝났으니 회수해도 된다.
+  chainStatus = 2;
+  stillPaid = false; // 기본은 만료 — 체인이 끝났으니 회수해도 된다.
   cancelSubscriptionImmediate.mockClear();
   schedulePaidVoiceRetention.mockClear();
   notifyPlanChanged.mockClear();
@@ -327,6 +331,40 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('TRANSACTION_REVOKED');
     expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1);
+  });
+
+  it('아직 유료면 목소리 보관 유예를 걸지 않는다 — 삭제 예고도 안 보낸다', async () => {
+    // ⚠ 환불된 애플 구독이 **여러 활성 구독 중 하나**일 수 있다(구글 구독·프로모가 남은
+    //   경우). `cancelSubscriptionImmediate` 는 살아남은 유료 플랜을 일부러 보존하는데,
+    //   유예 행을 무조건 깔면 **돈을 내고 있는 사용자에게 "3일 뒤 삭제" 가 나간다**
+    //   (코덱스 #733 6차).
+    stillPaid = true;
+    pushMappedSubscription();
+
+    await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1); // 회수 자체는 한다
+    expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
+    expect(notifyVoiceDeletionScheduled).not.toHaveBeenCalled();
+    expect(notifyPlanChanged).toHaveBeenCalledTimes(1); // 스냅샷 갱신은 여전히 알린다
+  });
+
+  it('유료가 남지 않으면 예전대로 유예를 걸고 예고한다', async () => {
+    stillPaid = false;
+    pushMappedSubscription();
+
+    await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+
+    expect(schedulePaidVoiceRetention).toHaveBeenCalledTimes(1);
+    expect(notifyVoiceDeletionScheduled).toHaveBeenCalledTimes(1);
   });
 
   it('환불이 아니면 회수 경로를 타지 않는다', async () => {

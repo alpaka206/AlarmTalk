@@ -12,6 +12,7 @@ import { getDB } from '../lib/db';
 import {
   cancelSubscriptionImmediate,
   findActiveSubscriptionsByUserPk,
+  hasActivePaidEntitlement,
   findStoreTransactionsForSubscriptions,
   notifyPlanChanged,
   notifyVoiceDeletionScheduled,
@@ -265,6 +266,10 @@ billingApple.post('/apple/confirm', async (c) => {
 
   const db = getDB(c.env);
 
+  // ⚠ **빠른 거절일 뿐, 권위는 아니다**(코덱스 #733 6차). 진짜 판정은
+  //   `applyStoreEntitlement` 가 **쓰기 트랜잭션 안에서** 한다 — 여기서만 보면 두 스토어의
+  //   확정이 동시에 들어올 때 둘 다 통과한다. 이 검사는 애플 호출·플랜 조회를 아끼는 용도다.
+  //
   // ⚠ **다른 스토어가 아직 갱신을 쥐고 있으면 여기서 거절한다**(코덱스 #733 4차).
   //   앱도 막지만 그 판정은 **캐시된 스냅샷**이라, 같은 계정이 다른 기기에서 방금 Play
   //   구독을 시작한 경우를 못 본다(구매자 본인은 `plan_changed` 대상도 아니다). 그대로
@@ -277,7 +282,9 @@ billingApple.post('/apple/confirm', async (c) => {
   const renewalProviders = storeRenewalProvidersOf(
     await findStoreTransactionsForSubscriptions(
       db,
-      activeSubscriptions.map((sub) => sub.subscriptionId),
+      // 해지 예약된 구독은 갱신 주인이 아니다 — 트랜잭션 안의 판정과 같은 규칙이어야
+      // 두 곳이 다른 답을 내지 않는다.
+      activeSubscriptions.filter((sub) => !sub.cancelAtPeriodEnd).map((sub) => sub.subscriptionId),
     ),
   );
   if (renewalProviders.includes('google')) {
@@ -426,13 +433,21 @@ async function revokeRefundedAppleSubscription(
       planType: String(row.plan_type),
       planKey: String(row.plan_key),
       planGroupId: (row.plan_group_id as string | null) ?? null,
+      // 환불 회수는 이 값을 보지 않는다 — 어차피 지금 끊는다.
+      cancelAtPeriodEnd: false,
     };
     const ids = await cancelSubscriptionImmediate(tx, mapped, now, { deleteVoiceData: false });
-    await schedulePaidVoiceRetention(tx, mapped.userPk, now);
-    return { mapped, ids };
+    // ⚠ **아직 유료면 보관 유예를 걸지 않는다**(코덱스 #733 6차). 환불된 애플 구독이 이
+    //   계정의 **여러 활성 구독 중 하나**일 수 있다(구글 구독·프로모가 남아 있는 경우) —
+    //   `cancelSubscriptionImmediate` 는 살아남은 유료 플랜을 일부러 보존한다. 그런데
+    //   유예 행을 무조건 깔면, 돈을 내고 있는 사용자에게 **"목소리가 3일 뒤 삭제돼요"**
+    //   가 나간다. 스윕이 나중에 취소해 주긴 하지만, 그때는 이미 놀란 뒤다.
+    const stillPaid = await hasActivePaidEntitlement(tx, mapped.userPk);
+    if (!stillPaid) await schedulePaidVoiceRetention(tx, mapped.userPk, now);
+    return { mapped, ids, stillPaid };
   });
   if (!affected) return;
-  const { mapped, ids } = affected;
+  const { mapped, ids, stillPaid } = affected;
   logStructured('info', {
     at: 'billing.apple.confirm',
     step: 'revoked_cleanup',
@@ -448,7 +463,10 @@ async function revokeRefundedAppleSubscription(
   //   통지는 즉시성만 담당하고 정확성은 클라의 재조회가 보장한다 — 최선 노력으로 둔다.
   try {
     await notifyPlanChanged(db, env, ids);
-    await notifyVoiceDeletionScheduled(db, env, ids);
+    // 삭제 예고는 **실제로 유예가 걸린 사람에게만**. 위에서 걸지 않았으면 보낼 것도 없다.
+    // (`notifyVoiceDeletionScheduled` 는 유예 행이 있는 사람만 고르지만, 애초에 부르지
+    //  않는 편이 의도가 분명하다.)
+    if (!stillPaid) await notifyVoiceDeletionScheduled(db, env, ids);
   } catch (err) {
     logStructured('error', {
       at: 'billing.apple.confirm',

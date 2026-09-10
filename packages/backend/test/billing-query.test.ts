@@ -191,7 +191,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     // 위 SELECT(만료 필터)에는 안 걸리지만 갱신은 Play 가 쥐고 있다.
     mockDB.pushResult([]); // 만료되지 않은 활성 구독 없음
     mockDB.pushResult([{ sub_id: 'sub-hold', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-hold' }]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     const body = await res.json();
@@ -206,8 +206,8 @@ describe('GET /billing/subscription (billingQuery)', () => {
       { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
     ]);
     mockDB.pushResult([
-      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' },
-      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' },
+      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' },
+      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-2' },
     ]);
 
     const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
@@ -215,6 +215,20 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect(body.subscription.store_provider).toBe('apple');
     // 구매 차단 판정은 접히면 안 된다 — Play 가 살아 있다.
     expect(body.store_renewal_providers).toEqual(['apple', 'google']);
+  });
+
+  it('해지 예약된 구독은 갱신 주인이 아니다 — 안내대로 해지한 사람을 막지 않는다', async () => {
+    // ⚠ `cancel_at_period_end = 1` 은 "아직 유료지만 **다음 갱신은 없다**" 는 뜻이다.
+    //   그걸 세면 우리가 "Play 에서 먼저 해지하라" 고 안내해 놓고, 그대로 한 사용자를
+    //   남은 기간 내내 막게 된다(코덱스 #733 6차).
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal', cancel_at_period_end: 1 }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' }]);
+
+    const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
+    expect(body.store_renewal_providers).toEqual([]);
+    // 해지 판정은 반대다 — 예약해지든 아니든 서버는 애플 구독을 못 끊는다.
+    expect(body.subscription.store_provider).toBe('google');
   });
 
   it('스토어 결제가 없으면 빈 배열이다', async () => {
@@ -229,7 +243,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
   it('애플 결제면 store_provider=apple', async () => {
     pushSubscriptionRow();
     mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' }]);
+    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' }]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     expect((await res.json()).subscription.store_provider).toBe('apple');
@@ -238,7 +252,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
   it('구글 결제면 store_provider=google', async () => {
     pushSubscriptionRow();
     mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
+    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' }]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     expect((await res.json()).subscription.store_provider).toBe('google');
@@ -251,8 +265,8 @@ describe('GET /billing/subscription (billingQuery)', () => {
       { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
     ]);
     mockDB.pushResult([
-      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' },
-      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' },
+      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' },
+      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' },
     ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));

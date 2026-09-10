@@ -388,6 +388,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     planType: String(mappedRow.plan_type),
     planKey: String(mappedRow.plan_key),
     planGroupId: (mappedRow.plan_group_id as string | null) ?? null,
+    // RTDN 은 스토어가 준 상태로 판단한다 — 이 값을 보지 않는다.
+    cancelAtPeriodEnd: false,
   };
 
   if (action === 'cancel_at_period_end') {

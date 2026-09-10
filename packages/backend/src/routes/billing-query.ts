@@ -86,7 +86,18 @@ billingQuery.get('/subscription', async (c) => {
     db,
     activeSubscriptions.map((s) => s.subscriptionId),
   );
-  const storeRenewalProviders = storeRenewalProvidersOf(storeTxns);
+  // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
+  //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
+  //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
+  //   (해지 판정 `store_provider` 는 반대다. 예약해지든 아니든 서버는 애플 구독을 못 끊으므로
+  //   거기서는 활성 구독 전부를 본다.)
+  //   조회는 한 번이고, 거르는 것은 메모리에서 한다.
+  const renewingSubscriptionIds = new Set(
+    activeSubscriptions.filter((sub) => !sub.cancelAtPeriodEnd).map((sub) => sub.subscriptionId),
+  );
+  const storeRenewalProviders = storeRenewalProvidersOf(
+    storeTxns.filter((txn) => renewingSubscriptionIds.has(txn.subscriptionId)),
+  );
 
   if (result.rows.length === 0) {
     return c.json({

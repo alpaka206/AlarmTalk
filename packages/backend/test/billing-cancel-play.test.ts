@@ -1054,9 +1054,11 @@ describe('POST /billing/cancel (apple 결제)', () => {
       expect(body.manage_url).toBe('https://apps.apple.com/account/subscriptions');
 
       // 스토어도, DB 도 건드리지 않는다.
+      // ⚠ **읽기까지 막는 검사가 되지 않게 한다.** 활성 구독 조회가 이제
+      //   `cancel_at_period_end` 를 **읽으므로**, 그 낱말만 찾으면 정상 조회에도 걸린다.
+      //   보려는 것은 **쓰기**다.
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(findCall('cancel_at_period_end')).toBeUndefined();
-      expect(findCall('UPDATE subscriptions')).toBeUndefined();
+      expect(mockDB.calls.find((c) => /UPDATE\s+subscriptions/i.test(c.sql))).toBeUndefined();
       expect(findCall('UPDATE users')).toBeUndefined();
     });
   }
