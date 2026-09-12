@@ -831,12 +831,11 @@ final class AuthViewModel: ObservableObject {
     /// 두어 연발 401 이 단 한 번의 signOut 으로 수렴하게 한다.
     /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
     private func handleUnauthorized(failedToken: String?) {
-        guard let current = session else { return }
+        guard let current = session, let failedToken, failedToken == current.token else { return }
         // ⚠ **그 401 이 지금 세션의 것일 때만 끊는다**(코덱스 #734 4차). A 의 요청이 날아가는
         //   사이 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이 여기까지 와서
         //   **방금 만든 B 의 세션을 끊는다.** 호출부에서 막아도 이 중앙 처리기가 남는다.
-        //   토큰을 모르는 알림(옛 코드 경로)은 예전대로 처리한다 — 세션이 있으면 끊는다.
-        if let failedToken, failedToken != current.token { return }
+        //   토큰이 없는 로그인 요청의 401 은 현재 세션의 만료 근거가 아니다.
         // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
         // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
         if UIPreviewSeed.isEnabled { return }
@@ -1739,4 +1738,3 @@ final class AuthViewModel: ObservableObject {
 //
 // `AlarmTalkAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
 // 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.
-

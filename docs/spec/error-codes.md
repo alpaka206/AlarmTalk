@@ -12,6 +12,10 @@
 - `error` 는 **마지막 안전망**이다. 앱이 그 코드를 모를 때만 그대로 보여 준다.
 - `error_code` 가 **계약**이다. 앱은 이 값으로 분기하고 문구를 고른다.
 
+요청 본문은 헤더 유무와 무관하게 실제 바이트 수로 최대 25 MiB 를 제한한다.
+초과 시 기존 `413 REQUEST_BODY_TOO_LARGE` 를 반환하고 하위 라우트를 실행하지 않는다.
+프로필 수정은 JSON 객체만 허용하며 null·배열·원시값은 `400 INVALID_REQUEST` 다.
+
 ⚠ **목록은 `packages/shared/src/schemas/error-codes.ts` 하나다.** 예전에는 라우트마다
 문자열 리터럴로만 있어서 같은 뜻에 코드가 둘씩 생겼고(`NO_UPDATE_FIELDS` vs
 `NO_FIELDS_TO_UPDATE`, `INVALID_JSON` vs `JSON_BODY_REQUIRED`), **오타를 내도 컴파일이

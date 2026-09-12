@@ -31,6 +31,16 @@ beforeEach(() => {
 });
 
 describe('PATCH /user/me', () => {
+  it.each([null, [], 'name', 1, true])('객체가 아닌 JSON %j 는 DB 접근 없이 400', async (body) => {
+    const res = await buildApp().request('/user/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REQUEST');
+    expect(mockDB.calls).toHaveLength(0);
+  });
   it('allow_family_alarms=true 성공', async () => {
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -186,15 +196,19 @@ describe('DELETE /user/me', () => {
     // 첫 쿼리는 계정 조회다. 컬럼 목록까지 문자열로 물면 컬럼이 하나 늘 때마다
     // 깨지므로(apple_refresh_token 추가 때 실제로 깨졌다) 테이블만 본다.
     expect(indexOf('FROM users WHERE google_id')).toBe(0);
-    expect(indexOf('DELETE FROM voucher_redemptions')).toBeLessThan(indexOf('DELETE FROM voucher_codes'));
+    expect(indexOf('DELETE FROM voucher_redemptions')).toBeLessThan(
+      indexOf('DELETE FROM voucher_codes'),
+    );
     expect(indexOf('DELETE FROM voucher_codes')).toBeLessThan(indexOf('DELETE FROM subscriptions'));
-    expect(indexOf('DELETE FROM plan_group_invites')).toBeLessThan(indexOf('DELETE FROM plan_groups'));
+    expect(indexOf('DELETE FROM plan_group_invites')).toBeLessThan(
+      indexOf('DELETE FROM plan_groups'),
+    );
     expect(indexOf('DELETE FROM message_library')).toBeLessThan(indexOf('DELETE FROM messages'));
     expect(indexOf('DELETE FROM messages')).toBeLessThan(indexOf('DELETE FROM voice_profiles'));
     expect(indexOf('DELETE FROM users')).toBeGreaterThan(indexOf('DELETE FROM voice_profiles'));
   });
 
-it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {
+  it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {
     // 1) SELECT id FROM users (DELETE 핸들러) → 미해석(null)
     mockDB.pushResult([]);
     // 2) purgeUserAccount 의 orphan guard SELECT → 사용자 행 존재
@@ -216,7 +230,6 @@ it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 P
   });
 });
 
-
 /**
  * 마케팅 재유도 — 거절자에게만, 다른 이유로 화면이 이미 뜰 때만.
  *
@@ -225,7 +238,9 @@ it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 P
  * 까지 끌려와 무심코 지나칠 때 멀쩡한 동의가 사라진다.
  */
 describe('GET /user/consents/status — 마케팅 재유도', () => {
-  function statusFor(rows: Array<{ consent_type: string; policy_version: string; agreed: number }>) {
+  function statusFor(
+    rows: Array<{ consent_type: string; policy_version: string; agreed: number }>,
+  ) {
     mockDB.setConsentMissing(true);
     mockDB.pushResult(rows);
     return buildApp().request('/user/consents/status', undefined, {} as AppEnv['Bindings']);
@@ -291,4 +306,4 @@ describe('GET /user/consents/status — 마케팅 재유도', () => {
     expect(body.collect).toContain('voice_biometric');
     expect(body.prechecked).toContain('voice_biometric');
   });
-})
+});

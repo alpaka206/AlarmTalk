@@ -982,6 +982,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
     private nonisolated(unsafe) static var lastConsentRequiredAt: Date?
 
     private static func handleUnauthorized(token: String?) {
+        // 로그인 같은 비인증 요청의 401 은 현재 로그인 세션에 대한 판정이 아니다.
+        guard let token, !token.isEmpty else { return }
         unauthorizedLock.lock()
         let now = Date()
         // ⚠ **디바운스는 같은 토큰에만 건다**(코덱스 #734 4차). 토큰까지 묶어 세지 않으면,
@@ -999,7 +1001,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         NotificationCenter.default.post(
             name: unauthorizedNotification,
             object: nil,
-            userInfo: token.map { [unauthorizedTokenKey: $0] }
+            userInfo: [unauthorizedTokenKey: token]
         )
     }
 

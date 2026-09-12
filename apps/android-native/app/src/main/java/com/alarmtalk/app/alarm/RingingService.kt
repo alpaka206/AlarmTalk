@@ -637,13 +637,18 @@ class RingingService : Service() {
             if (destroyed || ringingAlarmId != alarmId) return@launch
             if (RingingActivity.isShowing()) return@launch
             Log.w(TAG, "Ringing screen never appeared; escalating to the fallback notification id=$alarmId")
-            runCatching {
+            try {
                 NotificationManagerCompat.from(this@RingingService).notify(
                     RINGING_NOTIFICATION_ID,
                     RingingNotificationFactory(this@RingingService)
                         .build(alarmId, RingingNotificationFactory.Variant.ESCALATION),
                 )
-            }.onFailure { AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", it) }
+            } catch (error: SecurityException) {
+                // runCatching과 동일하게 권한 회수 실패를 격리하되 lint가 검사할 수 있게 한다.
+                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+            } catch (error: Throwable) {
+                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+            }
         }
     }
 

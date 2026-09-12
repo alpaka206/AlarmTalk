@@ -76,6 +76,17 @@ beforeEach(() => {
   });
 });
 
+it('JWT 설정 누락은 세션 만료(401)가 아니라 서버 장애(503)다', async () => {
+  const res = await buildApp().request(req('Bearer existing-session'), undefined, {
+    ...ENV,
+    JWT_SECRET: '',
+  });
+  expect(res.status).toBe(503);
+  expect((await res.json()).error_code).toBe('INTERNAL_ERROR');
+  expect(mockVerifyAppJwt).not.toHaveBeenCalled();
+  expect(mockDbExecute).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -285,7 +296,7 @@ describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-on
     expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
   });
 
-it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
+  it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
     const token = fakeToken({
       sub: 'user-unknown',
       iss: 'https://unknown-issuer.example.com',
