@@ -106,6 +106,33 @@ billingQuery.get('/subscription', async (c) => {
   //
   //   ⚠ 그리고 **애플이 걸릴 때만** 부른다 — 대부분의 계정에는 애플 결제가 없다.
   const refreshStoreState = c.req.query('refresh_store') === '1';
+
+  // ⚠ **낡은 `users.plan` 도 이때 정리한다**(코덱스 #734 11차). 만료가 갓 지났는데 만료
+  //   크론(5분)이 아직 안 돌았으면, 이 라우트는 `subscription: null` 을 주는데 `users.plan`
+  //   은 **여전히 유료**다. 앱이 그 뒤 `/auth/me` 를 불러도 그건 저장된 값을 그대로 돌려줄
+  //   뿐이라, **null 구독 옆에 유료 plan 이 함께 저장된다** — 그 상태로 오프라인 재시작하면
+  //   `resolvePaidVoiceAccess` 가 계속 유료로 답해 울림·목소리 게이트가 열린다.
+  //
+  //   판정은 **만료를 본 활성 구독이 하나라도 있는가** 하나다. 프로모·바우처·그룹 멤버도
+  //   전부 구독 행을 갖는다(보류는 행을 남기되 만료가 지나 있어 0으로 센다 — `users.plan`
+  //   을 free 로 내리는 것이 그쪽 정책과도 같다).
+  //
+  //   ⚠ **결제 직전(`refresh_store=1`)에만 한다.** 일상 조회에 쓰기를 끼우지 않는다.
+  if (refreshStoreState) {
+    const entitledRes = await db.execute({
+      sql: `SELECT COUNT(*) AS n FROM subscriptions
+            WHERE user_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')`,
+      args: [userId],
+    });
+    if (Number(entitledRes.rows[0]?.n ?? 0) === 0) {
+      await db.execute({
+        sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
+              WHERE id = ? AND plan <> 'free'`,
+        args: [userId],
+      });
+    }
+  }
+
   if (refreshStoreState && storeTxns.some((txn) => txn.provider === 'apple')) {
     const changed = await refreshCompetingAppleRenewalState(db, c.env, userId);
     if (changed) {

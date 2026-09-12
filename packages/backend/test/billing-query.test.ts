@@ -186,6 +186,50 @@ describe('GET /billing/subscription (billingQuery)', () => {
   // ⚠ `store_provider` 와 다른 질문이다. 그쪽은 "해지가 어느 스토어를 거치나" 라 애플이
   //   있으면 애플로 접어 버린다. 이중 청구를 막으려면 **구글이 살아 있는가**를 알아야 한다.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // refresh_store=1 — 결제 직전 조회에서만 도는 정리 (코덱스 #734 10·11차)
+  // -------------------------------------------------------------------------
+  it('결제 직전 조회는 낡은 users.plan 을 free 로 정리한다', async () => {
+    // ⚠ 만료가 갓 지났는데 만료 크론이 아직 안 돌면 subscription 은 null 인데
+    //   users.plan 은 유료다. `/auth/me` 는 저장된 값을 그대로 주므로 앱이 **null 구독
+    //   옆에 유료 plan** 을 저장하고, 오프라인 재시작에서 그대로 유료로 읽힌다.
+    mockDB.pushResult([]); // 만료 안 지난 활성 구독 없음
+    mockDB.pushResult([]); // 활성 구독(만료 무시) 없음
+    mockDB.pushResult([]); // 스토어 기록 없음
+    mockDB.pushResult([{ n: 0 }]); // 만료를 본 활성 구독 0건
+
+    await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription?refresh_store=1'));
+
+    const update = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
+    expect(update).toBeDefined();
+    expect(update!.sql).toContain("plan <> 'free'"); // 이미 free 면 건드리지 않는다
+    expect(update!.args).toEqual(['user-pk-1']);
+  });
+
+  it('유효한 구독이 남아 있으면 plan 을 건드리지 않는다', async () => {
+    pushSubscriptionRow();
+    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ n: 1 }]); // 만료를 본 활성 구독 있음
+
+    await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription?refresh_store=1'));
+
+    expect(mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'))).toBeUndefined();
+  });
+
+  it('일상 조회(refresh_store 없음)는 아무것도 쓰지 않는다', async () => {
+    // ⚠ 이 라우트는 앱 시작 갱신·PlanChangeSyncWorker·StockClipPrefetchWorker 도 쓴다.
+    //   거기에 쓰기를 끼우면 안 된다.
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+
+    await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription'));
+
+    expect(mockDB.calls.find((c) => /^\s*UPDATE/i.test(c.sql))).toBeUndefined();
+    expect(mockDB.calls.find((c) => c.sql.includes('COUNT(*) AS n FROM subscriptions'))).toBeUndefined();
+  });
+
   it('활성 구독이 없어도 갱신 주인은 돌려준다 — Play 보류가 여기 걸린다', async () => {
     // Play `ON_HOLD` 는 구독 행을 active 로 남기고 expires_at 은 지나 있다 →
     // 위 SELECT(만료 필터)에는 안 걸리지만 갱신은 Play 가 쥐고 있다.
