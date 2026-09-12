@@ -731,6 +731,7 @@ final class AuthViewModelTests: XCTestCase {
         defer {
             vm.onAccountRecovered = { _ in }
             api.beforeCancelAccountDeletionResponse = nil
+            api.beforeMeResponse = nil
         }
         vm._setSessionForTesting(AuthSession(token: UUID().uuidString, user: user))
         await vm.refreshUser()
@@ -801,6 +802,159 @@ final class AuthViewModelTests: XCTestCase {
             await request.value
             XCTAssertTrue(vm.pendingDeletion)
             XCTAssertEqual(restarts, 0)
+        }
+    }
+
+    func test_ambiguousRecoveryResponseRequiresActiveMeBeforeCompletingRecovery() async throws {
+        let errors: [Error] = [
+            URLError(.networkConnectionLost),
+            APIError.server(status: 404, message: "No pending deletion", errorCode: "NO_PENDING_DELETION"),
+            APIError.server(status: 503, message: "Unavailable", errorCode: nil),
+            APIError.invalidResponse,
+        ]
+        for error in errors {
+            try await withPendingDeletion { vm, api in
+                var active = try XCTUnwrap(vm.session?.user)
+                let userID = active.id
+                let otherID = UUID().uuidString
+                PendingSignOutStore.mark(userID)
+                PendingSignOutStore.mark(otherID)
+                defer { PendingSignOutStore.clear(otherID) }
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+                api.meRolledToken = "recovered-token"
+                api.cancelAccountDeletionResult = .failure(error)
+                var recovered: [String] = []
+                vm.onAccountRecovered = { id in
+                    XCTAssertFalse(vm.pendingDeletion)
+                    XCTAssertFalse(PendingSignOutStore.isPending(id))
+                    XCTAssertEqual(vm.session?.user.deletionStatus, "active")
+                    recovered.append(id)
+                }
+
+                await vm.cancelAccountDeletion()
+
+                XCTAssertEqual(api.meCallCount, 2, "초기 pending 조회 뒤 실패를 재확인한다")
+                XCTAssertEqual(vm.session?.token, "recovered-token")
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active")
+                XCTAssertEqual(recovered, [userID])
+                XCTAssertTrue(PendingSignOutStore.isPending(otherID), "다른 계정의 정리는 보존한다")
+                await vm.refreshUser()
+                XCTAssertEqual(recovered, [userID], "active 재조회로 재등록을 반복하지 않는다")
+            }
+        }
+    }
+
+    func test_lostRecoveryAndFailedRecheckCanCompleteOnLaterUserRefresh() async throws {
+        try await withPendingDeletion { vm, api in
+            var active = try XCTUnwrap(vm.session?.user)
+            PendingSignOutStore.mark(active.id)
+            var restarts = 0
+            vm.onAccountRecovered = { _ in restarts += 1 }
+            api.cancelAccountDeletionResult = .failure(URLError(.networkConnectionLost))
+            api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+
+            await vm.cancelAccountDeletion()
+
+            XCTAssertTrue(vm.pendingDeletion)
+            XCTAssertTrue(PendingSignOutStore.isPending(active.id))
+            XCTAssertEqual(restarts, 0, "실패만 보고 active로 추측하지 않는다")
+            active.deletionStatus = "active"
+            api.meResult = .success(active)
+            await vm.refreshUser()
+            XCTAssertFalse(vm.pendingDeletion)
+            XCTAssertFalse(PendingSignOutStore.isPending(active.id))
+            XCTAssertEqual(restarts, 1)
+        }
+    }
+
+    func test_noPendingDeletionErrorIsNotSuccessWhenMeStillPendingOrUnknown() async throws {
+        for status in ["pending_deletion", "unknown"] {
+            try await withPendingDeletion { vm, api in
+                var user = try XCTUnwrap(vm.session?.user)
+                PendingSignOutStore.mark(user.id)
+                user.deletionStatus = status
+                api.meResult = .success(user)
+                api.cancelAccountDeletionResult = .failure(APIError.server(
+                    status: 404, message: "No pending deletion", errorCode: "NO_PENDING_DELETION"
+                ))
+                var restarts = 0
+                vm.onAccountRecovered = { _ in restarts += 1 }
+                await vm.cancelAccountDeletion()
+                XCTAssertTrue(vm.pendingDeletion)
+                XCTAssertTrue(PendingSignOutStore.isPending(user.id))
+                XCTAssertEqual(restarts, 0)
+            }
+        }
+    }
+
+    func test_idempotentCancelRetryCompletesAfterBothEarlierResponsesWereLost() async throws {
+        try await withPendingDeletion { vm, api in
+            api.cancelAccountDeletionResult = .failure(URLError(.networkConnectionLost))
+            api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+            var restarts = 0
+            vm.onAccountRecovered = { _ in restarts += 1 }
+            await vm.cancelAccountDeletion()
+            XCTAssertTrue(vm.pendingDeletion)
+            api.cancelAccountDeletionResult = .success(CancelDeletionResponse(success: true, status: "active"))
+            await vm.cancelAccountDeletion()
+            XCTAssertFalse(vm.pendingDeletion)
+            XCTAssertEqual(vm.session?.user.deletionStatus, "active")
+            XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active")
+            XCTAssertEqual(restarts, 1)
+        }
+    }
+
+    func test_storedPendingSessionDetectsRecoveryAfterViewModelRestart() async throws {
+        try await withPendingDeletion { vm, api in
+            var active = try XCTUnwrap(vm.session?.user)
+            active.deletionStatus = "active"
+            api.meResult = .success(active)
+            let suite = "restored-recovery-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let restarted = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider(),
+                accessSnapshotStore: AccessSnapshotStore(defaults: defaults))
+            XCTAssertFalse(restarted.pendingDeletion, "메모리 플래그는 새 실행에서 false로 시작한다")
+            XCTAssertEqual(restarted.session?.user.deletionStatus, "pending_deletion")
+            var restarts = 0
+            restarted.onAccountRecovered = { _ in restarts += 1 }
+            await restarted.refreshUser()
+            await restarted.refreshUser()
+            XCTAssertEqual(restarts, 1, "저장된 pending→active도 복구 완료 경로를 통과한다")
+        }
+    }
+
+    func test_pendingMeResponseStartedBeforeRecoveryCannotUndoRecovery() async throws {
+        try await withPendingDeletion { vm, api in
+            var restarts = 0
+            vm.onAccountRecovered = { _ in restarts += 1 }
+            // /auth/me는 pending을 읽었지만 응답 전에 탈퇴 취소가 먼저 성공한 상황.
+            api.beforeMeResponse = { await vm.cancelAccountDeletion() }
+            await vm.refreshUser()
+            XCTAssertFalse(vm.pendingDeletion)
+            XCTAssertEqual(vm.session?.user.deletionStatus, "active")
+            XCTAssertEqual(restarts, 1)
+        }
+    }
+
+    func test_recoveryRecheckCannotApplyAfterSessionChanges() async throws {
+        for signedOut in [false, true] {
+            try await withPendingDeletion { vm, api in
+                var next = try XCTUnwrap(vm.session)
+                next.token = UUID().uuidString
+                var active = next.user
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+                api.cancelAccountDeletionResult = .failure(URLError(.networkConnectionLost))
+                let replacement: AuthSession? = signedOut ? nil : next
+                api.beforeMeResponse = { vm._setSessionForTesting(replacement) }
+                var restarts = 0
+                vm.onAccountRecovered = { _ in restarts += 1 }
+                await vm.cancelAccountDeletion()
+                XCTAssertEqual(vm.session?.token, replacement?.token)
+                XCTAssertEqual(restarts, 0)
+            }
         }
     }
 
@@ -1050,6 +1204,7 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     }
 
     var meResult: StubResult = .failure(.invalidResponse)
+    var beforeMeResponse: (@MainActor @Sendable () async -> Void)?
     var updateProfileResult: Result<UpdateProfileResponse, Error> = .success(
         UpdateProfileResponse(
             success: true,
@@ -1086,9 +1241,12 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func me(token: String) async throws -> (token: String?, user: AuthUser) {
         meCallCount += 1
         lastMeToken = token
-        switch meResult {
+        let result = meResult
+        let rolledToken = meRolledToken
+        await beforeMeResponse?()
+        switch result {
         case .success(let user):
-            return (meRolledToken, user)
+            return (rolledToken, user)
         case .failure(let apiError):
             throw apiError
         case .failureRaw(let err):
