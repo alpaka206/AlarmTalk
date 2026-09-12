@@ -21,7 +21,11 @@ import {
   reconcileBillingPreflight,
   reconcileStoreSubscription,
 } from '../src/lib/billing-reconciliation';
-import { processSubscriptionExpiry, repairOrphanedPaidPlan } from '../src/lib/billing-cancel';
+import {
+  leavePlanGroupMember,
+  processSubscriptionExpiry,
+  repairOrphanedPaidPlan,
+} from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
 import {
@@ -160,7 +164,7 @@ beforeEach(async () => {
   ]) {
     await db.execute(`DELETE FROM ${table}`);
   }
-  await db.execute("DELETE FROM users WHERE id IN ('owner', 'member')");
+  await db.execute("DELETE FROM users WHERE id IN ('owner', 'member', 'retained-member')");
   apple();
 });
 afterAll(() => {
@@ -740,6 +744,141 @@ describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지',
       expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
     },
   );
+
+  async function capacityReplacement(
+    provider: 'apple' | 'google',
+    independent = true,
+    retained = false,
+  ) {
+    await seed(provider);
+    await db.execute(`INSERT INTO users(id,email,name,plan)
+      VALUES ('retained-member','retained@example.test','retained','family')`);
+    // 소유자 + 먼저 들어온 멤버만 커플 정원에 남고, 기존 member가 초과 인원으로 나간다.
+    await db.execute(`INSERT INTO plan_group_members(id,plan_group_id,user_id,role,joined_at)
+      VALUES ('retained-membership','group','retained-member','member','2026-08-01T00:00:00Z')`);
+    await db.execute(
+      "UPDATE plan_group_members SET joined_at='2026-08-02T00:00:00Z' WHERE id='mm'",
+    );
+    await db.execute({
+      sql: `INSERT INTO subscriptions(id,user_id,plan_id,plan_group_id,status,starts_at,expires_at)
+        VALUES ('retained-sub','retained-member',?,'group','active',?,?)`,
+      args: [familyPlanId, PAID, PAST],
+    });
+    if (independent) {
+      const personal = await loadPlanByKey(db, 'personal');
+      await db.execute({
+        sql: `INSERT INTO subscriptions(id,user_id,plan_id,status,starts_at,expires_at)
+          VALUES ('independent','member',?,'active',?,?)`,
+        args: [personal!.id, PAID, FUTURE],
+      });
+    }
+    if (retained)
+      await db.execute({
+        sql: "INSERT INTO paid_voice_retention(user_id,delete_after) VALUES ('member',?)",
+        args: [FUTURE],
+      });
+    if (provider === 'apple') apple({ productId: 'com.alarmtalk.app.couple_monthly' });
+    else playState('SUBSCRIPTION_STATE_ACTIVE', 'couple_monthly');
+  }
+
+  it.each([
+    ['apple', false],
+    ['apple', true],
+    ['google', false],
+    ['google', true],
+  ] as const)(
+    '%s 정원 초과로 나가도 독립 유료 멤버에게 삭제 유예/예고를 남기지 않는다(기존 유예=%s)',
+    async (provider, hasRetention) => {
+      await capacityReplacement(provider, true, hasRetention);
+      let notifiedState: Awaited<ReturnType<typeof billingSnapshot>> | undefined;
+      vi.mocked(sendPlanChangedPush).mockImplementationOnce(async () => {
+        notifiedState = await billingSnapshot();
+      });
+      await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      expect(sendPlanChangedPush).toHaveBeenCalledOnce();
+      expect(vi.mocked(sendPlanChangedPush).mock.calls[0]![2]).toEqual(
+        expect.arrayContaining(['member', 'retained-member']),
+      );
+      // 푸시 오류는 호출부가 삼키므로 커밋 시점 스냅샷의 단언은 콜백 밖에서 한다.
+      expect(notifiedState).toBeDefined();
+      expect(notifiedState).toEqual(await billingSnapshot());
+      expect(await rows('SELECT user_id FROM plan_group_members ORDER BY user_id')).toEqual([
+        { user_id: 'owner' },
+        { user_id: 'retained-member' },
+      ]);
+      expect(
+        (await rows("SELECT max_members FROM plan_groups WHERE id='group'"))[0]!.max_members,
+      ).toBe(2);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+      expect(
+        (await rows("SELECT status FROM subscriptions WHERE id='sub-member'"))[0]!.status,
+      ).toBe('cancelled');
+      expect(
+        (await rows("SELECT status FROM subscriptions WHERE id='independent'"))[0]!.status,
+      ).toBe('active');
+      expect(await rows("SELECT * FROM paid_voice_retention WHERE user_id='member'")).toHaveLength(
+        0,
+      );
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['apple', 'google'] as const)(
+    '%s 정원 초과로 실제 무료가 된 멤버에게는 유예와 삭제 예고를 유지한다',
+    async (provider) => {
+      await capacityReplacement(provider, false);
+      await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('free');
+      expect(await rows('SELECT user_id,delete_after FROM paid_voice_retention')).toEqual([
+        { user_id: 'member', delete_after: new Date(NOW.getTime() + 3 * 86400_000).toISOString() },
+      ]);
+      expect(sendPlanChangedPush).toHaveBeenCalledOnce();
+      expect(vi.mocked(sendPlanChangedPush).mock.calls[0]![2]).toContain('member');
+      expect(sendVoiceDeletionWarningPush).toHaveBeenCalledOnce();
+      expect(vi.mocked(sendVoiceDeletionWarningPush).mock.calls[0]![2]).toEqual({
+        userPks: ['member'],
+        retentionDays: 3,
+      });
+    },
+  );
+
+  it('정원 축소의 유료 멤버 유예 해제 실패는 그룹 정원/이탈/구독 교체를 함께 롤백한다', async () => {
+    await capacityReplacement('google', true, true);
+    const before = await billingSnapshot();
+    await db.execute(`CREATE TRIGGER fail_capacity_retention_clear BEFORE DELETE ON paid_voice_retention
+      WHEN OLD.user_id='member' BEGIN SELECT RAISE(ABORT, 'capacity retention clear failed'); END`);
+    try {
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toThrow(
+        'capacity retention clear failed',
+      );
+      expect(await billingSnapshot()).toEqual(before);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_capacity_retention_clear');
+    }
+  });
+
+  it('개별 이탈/내보내기 함수도 독립 유료 멤버의 기존 유예를 해제한다', async () => {
+    await capacityReplacement('apple', true, true);
+    await withWriteTransaction(db, (tx) =>
+      leavePlanGroupMember(tx, {
+        userPk: 'member',
+        planGroupId: 'group',
+        membershipId: 'mm',
+        now: NOW,
+      }),
+    );
+    expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+    expect((await rows("SELECT status FROM subscriptions WHERE id='independent'"))[0]!.status).toBe(
+      'active',
+    );
+    expect(await rows("SELECT * FROM paid_voice_retention WHERE user_id='member'")).toHaveLength(0);
+    expect(await rows('SELECT user_id FROM plan_group_members ORDER BY user_id')).toEqual([
+      { user_id: 'owner' },
+      { user_id: 'retained-member' },
+    ]);
+  });
 
   it('유료 멤버의 유예 해제 실패는 그룹 교체 전체를 롤백하고 통지하지 않는다', async () => {
     await seed();

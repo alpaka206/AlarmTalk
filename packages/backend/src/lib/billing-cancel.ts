@@ -299,6 +299,23 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 }
 
 /**
+ * 그룹 전체 해체와 개별 이탈(정원 축소·내보내기 포함)의 보관 상태는 같은 규칙이다.
+ * 같은 쓰기 트랜잭션에서 그룹 구독 취소·plan 재계산 뒤 호출한다. 유료 멤버에게 남은
+ * 유예 행은 곧 거짓 삭제 예고가 되므로 스윕까지 기다리지 않고 지운다.
+ */
+async function syncGroupDepartureRetention(
+  db: DbExecutor,
+  userPk: string,
+  now: Date,
+): Promise<void> {
+  if (await hasActivePaidEntitlement(db, userPk)) {
+    await clearPaidVoiceRetention(db, userPk);
+  } else {
+    await schedulePaidVoiceRetention(db, userPk, now);
+  }
+}
+
+/**
  * 만료된(delete_after 경과) 유료 음성 보관 행을 거둔다.
  *
  * ⚠ **이 스윕은 하드삭제를 한다**(2026-08-31 정정 — 예전 주석은 "삭제하지 않고 잠글 뿐"
@@ -696,13 +713,7 @@ async function disbandOwnedPlanGroup(
     // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
     // 실제로 개시한 소유자 본인에게만 국한한다.
     await syncUserPlanAfterCancel(db, memberUserId, { deleteVoiceData: false });
-    // 독립 이용권이 남았는데 유예 행을 만들면 커밋 직후 거짓 삭제 예고가 나간다.
-    // 스윕까지 기다리지 않고 모든 그룹 해체 경로가 여기서 보관 상태까지 맞춘다.
-    if (await hasActivePaidEntitlement(db, memberUserId)) {
-      await clearPaidVoiceRetention(db, memberUserId);
-    } else {
-      await schedulePaidVoiceRetention(db, memberUserId, now);
-    }
+    await syncGroupDepartureRetention(db, memberUserId, now);
     disbanded.push(memberUserId);
   }
 
@@ -832,8 +843,7 @@ export async function leavePlanGroupMember(
   // 그룹 구독 유무와 무관하게 남은 활성 구독 기준으로 plan 을 재정렬한다
   // (다른 유료 구독이 남아 있으면 유지, 없으면 free 강등 + 음성 접근 정리).
   await syncUserPlanAfterCancel(db, params.userPk, { deleteVoiceData: false });
-  // 그룹 이탈로 유료 접근을 잃어도 음성은 즉시 삭제하지 않고 보관 유예를 건다.
-  await schedulePaidVoiceRetention(db, params.userPk, now);
+  await syncGroupDepartureRetention(db, params.userPk, now);
 
   await releaseInviteUseForMember(db, params.userPk, params.planGroupId);
 }

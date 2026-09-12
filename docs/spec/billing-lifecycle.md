@@ -23,10 +23,12 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
 - 그룹형에서 개인형으로 바뀌어 내보낸 멤버도 공통 entitlement 적용 결과에 포함하고,
   확정·RTDN·재조회 호출부가 커밋 후 `plan_changed`와 해당 멤버의 삭제 유예 예고를 보낸다.
   뒤늦게 발견한 전환의 목소리 삭제 유예는 과거 결제일이 아닌 권한 변경을 반영한 시점부터 센다.
-  **독립 유료 이용권이 남은 멤버는 삭제 대상이 아니다.** 공통 그룹 해체 처리에서 남은
-  권한을 재계산한 뒤 유료이면 기존 보관 유예도 지우고, 무료인 멤버만 유예를 예약한다.
+  **독립 유료 이용권이 남은 멤버는 삭제 대상이 아니다.** 그룹 전체 해체뿐 아니라
+  가족→커플 정원 축소·자발적 이탈·멤버 내보내기에도 같은 규칙을 적용한다. 남은 권한을
+  재계산한 뒤 유료이면 기존 보관 유예도 지우고, 무료인 멤버만 유예를 예약한다.
   그룹 접근은 바뀌었으므로 유료 멤버의 `plan_changed`는 유지하되 삭제 예고는 보내지 않는다.
-  이 처리는 고아 등급 복구 같은 개별 호출부가 아니라 그룹 해체 함수 한 곳에서 수행한다.
+  보관 유예 판정은 `syncGroupDepartureRetention` 한 곳에 두고 전체 해체와 개별 이탈
+  함수가 함께 사용한다. 개별 호출부에 조건을 복제하거나 한쪽만 고치지 않는다.
 - 애플 권한은 ACTIVE/IN_GRACE_PERIOD 만 허용한다. 유예의 끝은
   `signedRenewalInfo.gracePeriodExpiresDate` 이며 결제일과 구분한다.
   EXPIRED/REVOKED 는 종료, IN_BILLING_RETRY 는 그룹을 남기는 보류다.
@@ -638,7 +640,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
-| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`에서 독립 유료 멤버의 보관 유예 제거, 동기화 대상은 유지 | — | — |
+| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`·`leavePlanGroupMember`가 `syncGroupDepartureRetention` 공유, 독립 유료 멤버도 동기화 대상은 유지 | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
