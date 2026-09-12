@@ -15,6 +15,7 @@ import {
   hasActivePaidEntitlement,
   findStoreTransactionsForSubscriptions,
   notifyPlanChanged,
+  notifyBillingStateChanged,
   notifyVoiceDeletionScheduled,
   schedulePaidVoiceRetention,
   storeRenewalProvidersOf,
@@ -372,7 +373,7 @@ billingApple.post('/apple/confirm', async (c) => {
   // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
   // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyPlanChanged(db, c.env, result.planChangedUserIds);
+  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
   return c.json({
     success: true,

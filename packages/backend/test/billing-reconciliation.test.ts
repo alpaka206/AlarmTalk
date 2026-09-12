@@ -16,6 +16,7 @@ import {
 } from '../src/lib/account-deletion';
 import { getPlaySubscriptionV2, googlePaymentAnchor } from '../src/lib/play-subscriptions';
 import {
+  BillingStateUnavailableError,
   expireSubscriptionIfDue,
   reconcileBillingPreflight,
   reconcileStoreSubscription,
@@ -23,7 +24,11 @@ import {
 import { processSubscriptionExpiry } from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
-import { sendPaymentFailedPush, sendPlanChangedPush } from '../src/lib/fcm';
+import {
+  sendPaymentFailedPush,
+  sendPlanChangedPush,
+  sendVoiceDeletionWarningPush,
+} from '../src/lib/fcm';
 
 vi.mock('../src/lib/apple-storekit', async (original) => ({
   ...(await original<typeof import('../src/lib/apple-storekit')>()),
@@ -162,6 +167,236 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지', () => {
+  function playState(state = 'SUBSCRIPTION_STATE_ACTIVE', productId = 'family_monthly') {
+    vi.mocked(getPlaySubscriptionV2).mockResolvedValue({
+      subscriptionState: state,
+      lineItems: [
+        {
+          productId,
+          expiryTime: state === 'SUBSCRIPTION_STATE_ACTIVE' ? FUTURE : PAST,
+          latestSuccessfulOrderId: 'order-1',
+          autoRenewingPlan: { autoRenewEnabled: false },
+        },
+      ],
+    });
+  }
+  async function expiredMixedReceipts() {
+    await seed('apple', 1);
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+        (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+        VALUES ('google-receipt','owner','google','google-key','family_monthly','family','sub-owner',?,?)`,
+      args: [PAST, PAID],
+    });
+    await db.execute({
+      sql: 'UPDATE subscriptions SET expires_at=?',
+      args: [new Date(NOW.getTime() - 73 * 3600_000).toISOString()],
+    });
+  }
+  async function schedulePersonal() {
+    const plan = await loadPlanByKey(db, 'personal');
+    await db.execute({
+      sql: "UPDATE subscriptions SET next_plan_id=? WHERE id='sub-owner'",
+      args: [plan!.id],
+    });
+  }
+
+  it.each([
+    ['apple', 2, 'preflight'],
+    ['apple', 5, 'preflight'],
+    ['apple', 2, 'cron'],
+    ['apple', 5, 'cron'],
+    ['google', 'SUBSCRIPTION_STATE_EXPIRED', 'preflight'],
+    ['google', 'SUBSCRIPTION_STATE_CANCELED', 'preflight'],
+    ['google', 'SUBSCRIPTION_STATE_EXPIRED', 'cron'],
+    ['google', 'SUBSCRIPTION_STATE_CANCELED', 'cron'],
+  ] as const)(
+    '%s %s 종료의 예약 플랜은 %s에서도 한 번만 생성된다',
+    async (provider, state, entry) => {
+      await seed(provider, 1);
+      await schedulePersonal();
+      if (provider === 'apple') apple({ status: Number(state) });
+      else playState(String(state));
+      const reconcile = () =>
+        entry === 'cron'
+          ? processSubscriptionExpiry(db, ENV, NOW)
+          : reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      await reconcile();
+      await reconcile();
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+      expect(
+        await rows("SELECT * FROM subscriptions WHERE user_id='owner' AND status='active'"),
+      ).toHaveLength(1);
+      expect(await rows("SELECT * FROM paid_voice_retention WHERE user_id='owner'")).toHaveLength(
+        0,
+      );
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('free');
+    },
+  );
+  it('만기 전 환불은 다음 플랜을 조기에 지급하지 않는다', async () => {
+    await seed('apple', 1);
+    await schedulePersonal();
+    await db.execute({
+      sql: "UPDATE subscriptions SET expires_at=? WHERE id='sub-owner'",
+      args: [FUTURE],
+    });
+    apple({ status: 5 });
+    await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+    expect(await rows("SELECT * FROM subscriptions WHERE status='active'")).toHaveLength(0);
+    expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('free');
+  });
+  it('예약 플랜 생성 실패는 종료와 멤버 강등도 롤백한다', async () => {
+    await seed('apple', 1);
+    await schedulePersonal();
+    apple({ status: 2 });
+    await db.execute(`CREATE TRIGGER fail_next_plan BEFORE INSERT ON subscriptions
+      BEGIN SELECT RAISE(ABORT, 'scheduled creation failed'); END`);
+    try {
+      await expect(processSubscriptionExpiry(db, ENV, NOW)).rejects.toThrow(
+        'scheduled creation failed',
+      );
+      expect(await rows("SELECT * FROM subscriptions WHERE status='active'")).toHaveLength(2);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_next_plan');
+    }
+  });
+  it.each(['apple', 'google'] as const)(
+    '%s 유효 증빙은 다른 조회의 실패와 72시간 경계를 이긴다',
+    async (valid) => {
+      await expiredMixedReceipts();
+      if (valid === 'apple') {
+        apple({ autoRenewStatus: 0 });
+        vi.mocked(getPlaySubscriptionV2).mockRejectedValue(new Error('old Play unavailable'));
+      } else {
+        playState();
+        vi.mocked(fetchAppleSubscriptionStatus).mockRejectedValue(
+          new Error('old Apple unavailable'),
+        );
+      }
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-owner'"))[0]!.expires_at,
+      ).toBe(FUTURE);
+      expect(
+        (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-member'"))[0]!.expires_at,
+      ).toBe(FUTURE);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      // 모르는 쪽의 자동갱신까지 꺼졌다고 답하면 교차 스토어 결제를 열어 주므로 보수적으로 유지.
+      expect(
+        (await rows("SELECT cancel_at_period_end FROM subscriptions WHERE id='sub-owner'"))[0]!
+          .cancel_at_period_end,
+      ).toBe(0);
+    },
+  );
+  it.each(['apple', 'google'] as const)(
+    '%s 보류 증빙도 다른 조회 실패만으로 그룹을 해체하지 않는다',
+    async (valid) => {
+      await expiredMixedReceipts();
+      if (valid === 'apple') {
+        apple({ status: 3 });
+        vi.mocked(getPlaySubscriptionV2).mockRejectedValue(new Error('Play unavailable'));
+      } else {
+        playState('SUBSCRIPTION_STATE_ON_HOLD');
+        vi.mocked(fetchAppleSubscriptionStatus).mockRejectedValue(new Error('Apple unavailable'));
+      }
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toMatchObject({
+        allowForcedExpiry: false,
+      });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows("SELECT * FROM subscriptions WHERE status='active'")).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['apple', 'google'] as const)(
+    '%s만 확인된 플랜 교체는 미확인 그룹을 해체하거나 강제 만료하지 않는다',
+    async (valid) => {
+      await expiredMixedReceipts();
+      if (valid === 'apple') {
+        apple({ productId: 'com.alarmtalk.app.personal_monthly' });
+        vi.mocked(getPlaySubscriptionV2).mockRejectedValue(new Error('Play unavailable'));
+      } else {
+        playState('SUBSCRIPTION_STATE_ACTIVE', 'personal_monthly');
+        vi.mocked(fetchAppleSubscriptionStatus).mockRejectedValue(new Error('Apple unavailable'));
+      }
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toMatchObject({
+        allowForcedExpiry: false,
+      });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows("SELECT * FROM subscriptions WHERE status='active'")).toHaveLength(2);
+      expect(await rows('SELECT DISTINCT subscription_id FROM store_transactions')).toEqual([
+        { subscription_id: 'sub-owner' },
+      ]);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    },
+  );
+  it('권한은 유효하지만 주문 날짜 조회가 실패하면 72시간 강제 만료하지 않는다', async () => {
+    await seed('google');
+    await db.execute({
+      sql: 'UPDATE subscriptions SET expires_at=?',
+      args: [new Date(NOW.getTime() - 73 * 3600_000).toISOString()],
+    });
+    playState();
+    vi.mocked(googlePaymentAnchor).mockRejectedValue(new Error('Orders unavailable'));
+    await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toBeInstanceOf(
+      BillingStateUnavailableError,
+    );
+    await processSubscriptionExpiry(db, ENV, NOW);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+    expect((await rows('SELECT last_paid_at FROM store_transactions'))[0]!.last_paid_at).toBe(PAID);
+  });
+  it.each(['apple', 'google'] as const)(
+    '%s 그룹→개인 전환은 내보낸 멤버에게 커밋 후 알린다',
+    async (provider) => {
+      await seed(provider);
+      if (provider === 'apple') apple({ productId: 'com.alarmtalk.app.personal_monthly' });
+      else playState('SUBSCRIPTION_STATE_ACTIVE', 'personal_monthly');
+      vi.mocked(sendPlanChangedPush).mockImplementationOnce(async (_db, _env, ids) => {
+        expect(ids).toContain('member');
+        expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(0);
+        expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('free');
+      });
+      await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      expect(sendPlanChangedPush).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sendPlanChangedPush).mock.calls[0]![2]).toEqual(
+        expect.arrayContaining(['owner', 'member']),
+      );
+      expect(vi.mocked(sendVoiceDeletionWarningPush).mock.calls[0]![2]).toEqual({
+        userPks: ['member'],
+        retentionDays: 3,
+      });
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+    },
+  );
+  it('확정/RTDN도 사용하는 공통 적용 함수가 해체된 멤버 ID를 반환한다', async () => {
+    await seed('google');
+    const plan = await loadPlanByKey(db, 'personal');
+    const result = await withWriteTransaction(db, (tx) =>
+      applyStoreEntitlement(tx, {
+        userPk: 'owner',
+        provider: 'google',
+        providerTransactionId: 'receipt-key',
+        productId: 'personal_monthly',
+        plan: plan!,
+        startsAt: new Date(PAID),
+        lastPaidAt: new Date(PAID),
+        expiresAt: new Date(FUTURE),
+      }),
+    );
+    expect(result.ok && result.planChangedUserIds).toEqual(['member']);
+  });
+});
+
 describe('경계값·재시도·독립 이용권 보존', () => {
   it('애플이 양쪽 환경에서 체인 없음을 확인한 경우는 최종 만료다', async () => {
     await seed();
@@ -273,6 +508,10 @@ describe('경계값·재시도·독립 이용권 보존', () => {
     });
     await reconcileBillingPreflight(db, ENV, 'owner', NOW);
     expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+    expect(
+      (await rows("SELECT delete_after FROM paid_voice_retention WHERE user_id='member'"))[0]!
+        .delete_after,
+    ).toBe(new Date(NOW.getTime() + 3 * 86400_000).toISOString());
     expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('free');
     expect(await rows("SELECT * FROM paid_voice_retention WHERE user_id='owner'")).toHaveLength(0);
   });

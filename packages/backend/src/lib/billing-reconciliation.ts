@@ -23,8 +23,7 @@ import {
   cancelSubscriptionImmediate,
   createNewSubscriptionForPlan,
   hasActivePaidEntitlement,
-  notifyPlanChanged,
-  notifyVoiceDeletionScheduled,
+  notifyBillingStateChanged,
   propagateGroupMemberPlans,
   resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
@@ -34,14 +33,22 @@ import { logStructured } from './logger';
 import { planTypeToUserPlan } from '../routes/billing-helpers';
 
 export class BillingStateUnavailableError extends Error {
-  constructor(message = 'Store state could not be verified') {
+  constructor(
+    message = 'Store state could not be verified',
+    /** 실제 유효/회복형 증거가 있으면 장애가 길어져도 강제 종료하지 않는다. */
+    readonly allowForcedExpiry = true,
+  ) {
     super(message);
     this.name = 'BillingStateUnavailableError';
   }
 }
 
 /** 더 최신 쓰기가 있는 경우는 시간 경과에 의한 강제 만료 대상도 아니다. */
-export class BillingStateChangedError extends BillingStateUnavailableError {}
+export class BillingStateChangedError extends BillingStateUnavailableError {
+  constructor(message = 'Subscription changed during verification') {
+    super(message, false);
+  }
+}
 
 type StoreState = {
   provider: 'apple' | 'google';
@@ -135,7 +142,7 @@ async function fetchStoreState(
     }
     const paidAt = finiteDate(status.purchaseDate) ?? undefined;
     if (action === 'entitle' && !paidAt)
-      throw new BillingStateUnavailableError('Missing Apple purchase date');
+      throw new BillingStateUnavailableError('Missing Apple purchase date', false);
     return {
       provider: 'apple',
       transactionId,
@@ -166,6 +173,15 @@ async function fetchStoreState(
   if (!planKey) {
     throw new BillingStateUnavailableError('Unknown Play subscription product');
   }
+  let paidAt: Date | undefined;
+  if (action === 'entitle') {
+    try {
+      paidAt = await googlePaymentAnchor(env, sub, transactionId);
+    } catch {
+      // 결제일 기록 실패는 방금 확인한 유효 권한의 반증이 아니다.
+      throw new BillingStateUnavailableError('Play payment date unavailable', false);
+    }
+  }
   return {
     provider: 'google',
     transactionId,
@@ -173,7 +189,7 @@ async function fetchStoreState(
     planKey,
     action,
     expiresAt,
-    paidAt: action === 'entitle' ? await googlePaymentAnchor(env, sub, transactionId) : undefined,
+    paidAt,
     autoRenew:
       state !== 'SUBSCRIPTION_STATE_CANCELED' && item?.autoRenewingPlan?.autoRenewEnabled !== false,
   };
@@ -202,12 +218,21 @@ export async function reconcileStoreSubscription(
   if (!before || before.status !== 'active') return 'not_store';
   const transactions = await readTransactions(db, subscriptionId);
   if (transactions.length === 0) return 'not_store';
-  let states: StoreState[];
-  try {
-    states = await Promise.all(transactions.map((t) => fetchStoreState(env, t, now)));
-  } catch (error) {
-    if (error instanceof BillingStateUnavailableError) throw error;
-    throw new BillingStateUnavailableError('Store verification failed');
+  const checked = await Promise.allSettled(transactions.map((t) => fetchStoreState(env, t, now)));
+  const states = checked.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  const failures = checked.filter((result) => result.status === 'rejected');
+  const entitled = states
+    .filter((state) => state.action === 'entitle')
+    .sort((a, b) => b.expiresAt!.getTime() - a.expiresAt!.getTime())[0];
+  if (!entitled && failures.length) {
+    const protectedEvidence =
+      states.some((state) => state.action === 'suspend') ||
+      failures.some(
+        (failure) =>
+          failure.reason instanceof BillingStateUnavailableError &&
+          !failure.reason.allowForcedExpiry,
+      );
+    throw new BillingStateUnavailableError('Store verification incomplete', !protectedEvidence);
   }
   const notifications = await withWriteTransaction(db, async (tx) => {
     const current = await readSubscription(tx, subscriptionId);
@@ -227,12 +252,16 @@ export async function reconcileStoreSubscription(
       })
     ).rows[0]?.plan;
     // 과거 데이터가 한 구독에 여러 스토어를 묶었어도 하나라도 살아 있으면 종료하지 않는다.
-    const entitled = states
-      .filter((s) => s.action === 'entitle')
-      .sort((a, b) => b.expiresAt!.getTime() - a.expiresAt!.getTime())[0];
     if (entitled) {
+      if (failures.length && entitled.planKey !== before.plan_key) {
+        // 미확인 증빙까지 매핑이 사라지거나 그 증빙이 지원할 수 있는 그룹을 해체하지 않는다.
+        throw new BillingStateUnavailableError(
+          'Plan replacement needs complete store evidence',
+          false,
+        );
+      }
       const plan = await loadPlanByKey(tx, entitled.planKey);
-      if (!plan) throw new BillingStateUnavailableError('Subscription plan is unavailable');
+      if (!plan) throw new BillingStateUnavailableError('Subscription plan is unavailable', false);
       const result = await applyStoreEntitlement(tx, {
         userPk: active.userPk,
         provider: entitled.provider,
@@ -240,24 +269,27 @@ export async function reconcileStoreSubscription(
         productId: entitled.productId,
         plan,
         startsAt: entitled.paidAt ?? now,
+        appliedAt: now,
         lastPaidAt: entitled.paidAt,
         expiresAt: entitled.expiresAt!,
       });
-      if (!result.ok) throw new BillingStateUnavailableError(result.errorCode);
+      if (!result.ok) throw new BillingStateUnavailableError(result.errorCode, false);
       const newId = result.subscription.id;
+      const renewalMayContinue =
+        failures.length > 0 || states.some((s) => s.action !== 'expire' && s.autoRenew);
       await tx.execute({
         sql: `UPDATE subscriptions SET cancel_at_period_end = ? WHERE id = ?`,
-        args: [states.some((s) => s.action !== 'expire' && s.autoRenew) ? 0 : 1, newId],
+        args: [renewalMayContinue ? 0 : 1, newId],
       });
       const affected = new Set(result.planChangedUserIds);
       if (
         Date.parse(String(before.expires_at)) !== Date.parse(result.subscription.expires_at) ||
         ownerBefore !== planTypeToUserPlan(plan.plan_type) ||
-        active.cancelAtPeriodEnd !== !states.some((s) => s.action !== 'expire' && s.autoRenew)
+        active.cancelAtPeriodEnd !== !renewalMayContinue
       ) {
         affected.add(active.userPk);
       }
-      return { changed: [...affected], hold: null, expired: false };
+      return { changed: [...affected], hold: null };
     }
     if (states.some((s) => s.action === 'suspend')) {
       await resolvePlanAfterSuspend(tx, active.userPk, subscriptionId);
@@ -272,21 +304,16 @@ export async function reconcileStoreSubscription(
       ).rows[0]?.plan;
       return {
         changed: [],
-        expired: false,
         hold: {
           ownerUserPk: ownerBefore !== ownerAfter ? active.userPk : null,
           memberUserPks: members,
         },
       };
     }
-    const changed = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
-    if (!(await hasActivePaidEntitlement(tx, active.userPk))) {
-      await schedulePaidVoiceRetention(tx, active.userPk, now);
-    }
-    return { changed, hold: null, expired: true };
+    const changed = await terminateSubscription(tx, before, now);
+    return { changed, hold: null };
   });
-  await notifyPlanChanged(db, env, notifications.changed);
-  if (notifications.expired) await notifyVoiceDeletionScheduled(db, env, notifications.changed);
+  await notifyBillingStateChanged(db, env, notifications.changed);
   const hold = notifications.hold;
   const hasPush =
     (env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT_JSON) ||
@@ -328,31 +355,39 @@ export async function expireSubscriptionIfDue(
     }
     if (!allowStore && (await readTransactions(tx, id)).length)
       throw new BillingStateChangedError();
-    const active = asActive(current);
-    const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
-    const nextPlan =
-      current.cancel_at_period_end && current.next_plan_id
-        ? (
-            await tx.execute({
-              sql: `SELECT id, plan_type, period_days, max_members FROM plans WHERE id = ? AND is_active = 1`,
-              args: [String(current.next_plan_id)],
-            })
-          ).rows[0]
-        : undefined;
-    if (nextPlan) {
-      await createNewSubscriptionForPlan(tx, {
-        userPk: active.userPk,
-        planId: String(nextPlan.id),
-        planType: String(nextPlan.plan_type),
-        periodDays: Number(nextPlan.period_days),
-        maxMembers: Number(nextPlan.max_members),
-        now,
-      });
-    } else if (!(await hasActivePaidEntitlement(tx, active.userPk))) {
-      await schedulePaidVoiceRetention(tx, active.userPk, now);
-    }
-    return ids;
+    return terminateSubscription(tx, current, now);
   });
+}
+
+/** 로컬/스토어 종료가 공유하는 후속 전환. 만기 전 환불은 예약 플랜을 당겨 주지 않는다. */
+async function terminateSubscription(tx: DbExecutor, current: Row, now: Date): Promise<string[]> {
+  const active = asActive(current);
+  const due =
+    Number.isFinite(Date.parse(String(current.expires_at))) &&
+    new Date(String(current.expires_at)) <= now;
+  const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
+  const nextPlan =
+    due && Number(current.cancel_at_period_end) === 1 && current.next_plan_id
+      ? (
+          await tx.execute({
+            sql: `SELECT id, plan_type, period_days, max_members FROM plans WHERE id = ? AND is_active = 1`,
+            args: [String(current.next_plan_id)],
+          })
+        ).rows[0]
+      : undefined;
+  if (nextPlan) {
+    await createNewSubscriptionForPlan(tx, {
+      userPk: active.userPk,
+      planId: String(nextPlan.id),
+      planType: String(nextPlan.plan_type),
+      periodDays: Number(nextPlan.period_days),
+      maxMembers: Number(nextPlan.max_members),
+      now,
+    });
+  } else if (!(await hasActivePaidEntitlement(tx, active.userPk))) {
+    await schedulePaidVoiceRetention(tx, active.userPk, now);
+  }
+  return ids;
 }
 
 /** 결제 전에는 해당 계정과 그 계정에 이용권을 공유한 소유자의 상태까지 확인한다. */
@@ -378,7 +413,6 @@ export async function reconcileBillingPreflight(
     const affected = current
       ? await expireSubscriptionIfDue(db, id, String(current.expires_at), now, false)
       : [];
-    await notifyPlanChanged(db, env, affected);
-    await notifyVoiceDeletionScheduled(db, env, affected);
+    await notifyBillingStateChanged(db, env, affected);
   }
 }

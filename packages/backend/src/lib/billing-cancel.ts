@@ -10,7 +10,6 @@ import {
 import { logStructured } from './logger';
 import type { PlayEnv } from './play-subscriptions';
 import {
-  BillingStateChangedError,
   BillingStateUnavailableError,
   expireSubscriptionIfDue,
   reconcileStoreSubscription,
@@ -175,8 +174,7 @@ export async function findStoreTransactionsForSubscriptions(
  *
  * Play 쪽은 이 문제가 없다 — RTDN 과 해지 라우트가 `cancel_at_period_end` 를 제때 세운다.
  *
- * ⚠ **최선 노력이다.** 애플에 못 물어보면 저장된 값을 그대로 둔다 — 그 값이 "갱신 중" 이면
- * 막게 되는데, 그쪽이 이중 청구보다 낫다(사용자는 다시 시도할 수 있다).
+ * 확인 실패는 호출부로 전달해 확정을 재시도한다. 미확인 상태를 갱신 중단으로 추정하지 않는다.
  */
 export async function refreshCompetingAppleRenewalState(
   db: Client,
@@ -762,12 +760,15 @@ export async function cancelActiveSubscriptionsForUser(
   userPk: string,
   now: Date = new Date(),
   options: CancelCleanupOptions = { deleteVoiceData: false },
-): Promise<ActiveSubscription[]> {
+): Promise<string[]> {
   const subscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
+  const affected = new Set<string>();
   for (const subscription of subscriptions) {
-    await cancelSubscriptionImmediate(db, subscription, now, options);
+    for (const id of await cancelSubscriptionImmediate(db, subscription, now, options))
+      affected.add(id);
   }
-  return subscriptions;
+  // 호출부가 커밋 후 알릴 수 있도록 그룹 해체로 영향받은 사람도 버리지 않는다.
+  return [...affected];
 }
 
 export async function leavePlanGroupMember(
@@ -915,7 +916,7 @@ async function reconcileStoreBeforeExpiry(
   } catch (error) {
     // DB 오류는 만료 근거가 아니다. 권위 조회 실패만 72시간 유예 후 기존 만료 정책을 따른다.
     if (!(error instanceof BillingStateUnavailableError)) throw error;
-    if (error instanceof BillingStateChangedError) return 'skip';
+    if (!error.allowForcedExpiry) return 'skip';
     const expiredMs = new Date(params.expiresAt).getTime();
     const forceExpire =
       Number.isFinite(expiredMs) && expiredMs <= params.now.getTime() - 72 * 60 * 60 * 1000;
@@ -1004,6 +1005,16 @@ export async function notifyPlanChanged(
       error: String(err),
     });
   }
+}
+
+/** 권한 변경과 그 변경으로 생긴 삭제 유예는 커밋 후 함께 통지한다. */
+export async function notifyBillingStateChanged(
+  db: Client,
+  env: ExpiryEnv | undefined,
+  userIds: string[],
+): Promise<void> {
+  await notifyPlanChanged(db, env, userIds);
+  await notifyVoiceDeletionScheduled(db, env, userIds);
 }
 
 export async function processSubscriptionExpiry(

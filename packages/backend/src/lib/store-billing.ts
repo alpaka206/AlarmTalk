@@ -51,6 +51,8 @@ export interface StoreEntitlementInput {
   plan: StorePlan;
   startsAt: Date;
   expiresAt: Date;
+  /** 권한 변경을 실제 반영하는 시각. 삭제 유예는 과거 구매일이 아니라 여기서 시작한다. */
+  appliedAt?: Date;
   /**
    * **스토어가 알려 준 이 결제의 시각.** 생략하면 검증된 startsAt을 쓴다.
    *
@@ -193,6 +195,7 @@ export async function applyStoreEntitlement(
   const startsAtIso = input.startsAt.toISOString();
   let expiresAtIso = input.expiresAt.toISOString();
   const lastPaidAtIso = (input.lastPaidAt ?? input.startsAt).toISOString();
+  const appliedAt = input.appliedAt ?? new Date();
 
   const existing = await tx.execute({
     sql: `SELECT user_id, subscription_id, last_paid_at, expires_at FROM store_transactions
@@ -311,14 +314,14 @@ export async function applyStoreEntitlement(
 
   // 기존 활성 구독을 정리하고 새 구독 생성.
   // 음성 데이터는 보존 (업그레이드/갱신이 다운그레이드 정리를 트리거하면 안 됨).
-  await cancelActiveSubscriptionsForUser(tx, input.userPk, input.startsAt, {
+  const canceledUserIds = await cancelActiveSubscriptionsForUser(tx, input.userPk, appliedAt, {
     deleteVoiceData: false,
     preserveGroupId: carryOver?.planGroupId ?? null,
   });
 
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
-  const planChangedUserIds: string[] = [];
+  const planChangedUserIds = canceledUserIds.filter((id) => id !== input.userPk);
 
   if (isGroupPlanType(input.plan.plan_type)) {
     if (carryOver) {
@@ -334,7 +337,7 @@ export async function applyStoreEntitlement(
           planGroupId,
           ownerUserPk: input.userPk,
           maxMembers: input.plan.max_members,
-          now: input.startsAt,
+          now: appliedAt,
         })),
       );
       // ⚠ **남은 멤버의 구독 행도 새 플랜으로 옮긴다**(코덱스 #730 3차). 위에서 고친 것은
@@ -457,7 +460,7 @@ export async function applyStoreEntitlement(
       starts_at: startsAtIso,
       expires_at: expiresAtIso,
     },
-    planChangedUserIds,
+    planChangedUserIds: [...new Set(planChangedUserIds)],
   };
 }
 

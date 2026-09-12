@@ -11,7 +11,11 @@ import {
 } from '../lib/play-subscriptions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
-import { notifyPlanChanged, refreshCompetingAppleRenewalState } from '../lib/billing-cancel';
+import {
+  notifyPlanChanged,
+  notifyBillingStateChanged,
+  refreshCompetingAppleRenewalState,
+} from '../lib/billing-cancel';
 import {
   BillingStateUnavailableError,
   reconcileStoreSubscription,
@@ -314,7 +318,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     }
     // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
     if (entitleResult.planChangedUserIds.length > 0) {
-      await notifyPlanChanged(db, c.env, entitleResult.planChangedUserIds);
+      await notifyBillingStateChanged(db, c.env, entitleResult.planChangedUserIds);
     }
     // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로
     // confirm 이 오지 않아도 RTDN(구매/갱신 알림)이 서버측 ack 재시도 경로가 된다

@@ -7,7 +7,10 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseAccountMatches } from '../lib/purchase-account-binding';
-import { notifyPlanChanged, refreshCompetingAppleRenewalState } from '../lib/billing-cancel';
+import {
+  notifyBillingStateChanged,
+  refreshCompetingAppleRenewalState,
+} from '../lib/billing-cancel';
 import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
@@ -529,7 +532,7 @@ billingGoogle.post('/google/confirm', async (c) => {
   // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
   // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyPlanChanged(db, c.env, result.planChangedUserIds);
+  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
   // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가
