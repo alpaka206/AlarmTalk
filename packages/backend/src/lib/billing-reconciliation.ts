@@ -265,6 +265,23 @@ export async function reconcileStoreSubscription(
           false,
         );
       }
+      if (entitled.planKey !== before.plan_key) {
+        // 교체는 현재 행뿐 아니라 사용자의 모든 활성 구독을 취소한다. 다른 행의 증빙은
+        // 이번 스토어 조회에 포함되지 않았으므로 별도 정합화로 종료되기 전에는 보호한다.
+        // 만료/해지 예약으로 거르지 않고 쓰기 락 안에서 읽어, 조회 중 추가된 연결도 잡는다.
+        const siblingReceipts = await tx.execute({
+          sql: `SELECT 1 FROM subscriptions s
+                JOIN store_transactions t ON t.subscription_id = s.id
+                WHERE s.user_id = ? AND s.status = 'active' AND s.id <> ? LIMIT 1`,
+          args: [active.userPk, subscriptionId],
+        });
+        if (siblingReceipts.rows.length) {
+          throw new BillingStateUnavailableError(
+            'Plan replacement needs sibling store subscriptions to be terminated',
+            false,
+          );
+        }
+      }
       const plan = await loadPlanByKey(tx, entitled.planKey);
       if (!plan) throw new BillingStateUnavailableError('Subscription plan is unavailable', false);
       const result = await applyStoreEntitlement(tx, {

@@ -262,6 +262,180 @@ describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지',
     }));
   }
 
+  async function splitOtherReceiptToSibling(expiresAt = FUTURE) {
+    await db.execute({
+      sql: `INSERT INTO subscriptions
+        (id,user_id,plan_id,status,starts_at,expires_at,cancel_at_period_end)
+        VALUES ('sibling','owner',?,'active',?,?,1)`,
+      args: [familyPlanId, PAID, expiresAt],
+    });
+    await db.execute(
+      "UPDATE store_transactions SET subscription_id='sibling' WHERE id='other-receipt'",
+    );
+  }
+
+  const billingSnapshot = () =>
+    Promise.all(
+      [
+        'users',
+        'subscriptions',
+        'store_transactions',
+        'plan_groups',
+        'plan_group_members',
+        'voucher_codes',
+        'paid_voice_retention',
+      ].map((table) => rows(`SELECT * FROM ${table} ORDER BY 1`)),
+    );
+
+  it.each([
+    ['apple', 'apple', 'family', FUTURE],
+    ['google', 'google', 'family', FUTURE],
+    ['apple', 'google', 'personal', FUTURE],
+    ['google', 'apple', 'personal', FUTURE],
+    ['apple', 'apple', 'hold', PAST],
+    ['google', 'google', 'hold', PAST],
+    ['apple', 'google', 'expired', PAST],
+    ['google', 'apple', 'expired', PAST],
+  ] as const)(
+    '%s 교체는 다른 활성 행의 %s %s 증빙도 별도 종료 전까지 보호한다(%s)',
+    async (provider, otherProvider, other, expiry) => {
+      await replacementReceipts(provider, otherProvider, other);
+      await splitOtherReceiptToSibling(expiry);
+      const before = await billingSnapshot();
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toMatchObject({
+        message: 'Plan replacement needs sibling store subscriptions to be terminated',
+        allowForcedExpiry: false,
+      });
+      expect(await billingSnapshot()).toEqual(before);
+      // 다른 행은 이번 조회의 states 밖이다. 만료 상태도 실제로 조회/반영하기 전엔 못 버린다.
+      const fetched = [
+        ...vi.mocked(fetchAppleSubscriptionStatus).mock.calls.map(([key]) => key),
+        ...vi.mocked(getPlaySubscriptionV2).mock.calls.map(([, key]) => key),
+      ];
+      expect(fetched).toEqual(['receipt-key']);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it('다른 행의 증빙으로 거절한 교체는 72시간 크론으로도 강제 종료하지 않는다', async () => {
+    await replacementReceipts('google', 'google', 'family');
+    await splitOtherReceiptToSibling();
+    const before = await billingSnapshot();
+    // sub-owner는 이미 73시간 만료, sibling은 미래라 이번 크론 조회 대상이 아니다.
+    await processSubscriptionExpiry(db, ENV, NOW);
+    expect(await billingSnapshot()).toEqual(before);
+    expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+  });
+
+  it.each(['apple', 'google'] as const)(
+    '%s 조회 중 다른 활성 구독/증빙이 추가돼도 교체 직전에 발견한다',
+    async (provider) => {
+      await seed(provider, 1);
+      const insertSibling = async () => {
+        await splitOtherReceiptToSibling();
+        await db.execute({
+          sql: `INSERT INTO store_transactions
+            (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+            VALUES ('other-receipt','owner',?,'other-key',?,'family','sibling',?,?)`,
+          args: [
+            provider,
+            provider === 'apple' ? 'com.alarmtalk.app.family_monthly' : 'family_monthly',
+            FUTURE,
+            PAID,
+          ],
+        });
+      };
+      let afterConcurrentWrite: Awaited<ReturnType<typeof billingSnapshot>> | undefined;
+      if (provider === 'apple') {
+        vi.mocked(fetchAppleSubscriptionStatus).mockImplementationOnce(async () => {
+          await insertSibling();
+          afterConcurrentWrite = await billingSnapshot();
+          return {
+            status: 1,
+            productId: 'com.alarmtalk.app.personal_monthly',
+            expiresDate: Date.parse(FUTURE),
+            purchaseDate: Date.parse(PAID),
+            autoRenewStatus: 0,
+          };
+        });
+      } else {
+        vi.mocked(getPlaySubscriptionV2).mockImplementationOnce(async () => {
+          await insertSibling();
+          afterConcurrentWrite = await billingSnapshot();
+          return {
+            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+            lineItems: [
+              {
+                productId: 'personal_monthly',
+                expiryTime: FUTURE,
+                latestSuccessfulOrderId: 'order-1',
+                autoRenewingPlan: { autoRenewEnabled: false },
+              },
+            ],
+          };
+        });
+      }
+      await expect(reconcileStoreSubscription(db, ENV, 'sub-owner', NOW)).rejects.toMatchObject({
+        message: 'Plan replacement needs sibling store subscriptions to be terminated',
+        allowForcedExpiry: false,
+      });
+      expect(afterConcurrentWrite).toBeDefined();
+      expect(await billingSnapshot()).toEqual(afterConcurrentWrite);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['apple', 'google'] as const)(
+    '%s 다른 구독의 권위 종료를 별도로 반영한 뒤에는 교체를 허용한다',
+    async (provider) => {
+      await replacementReceipts(provider, provider, 'expired');
+      await splitOtherReceiptToSibling(PAST);
+      await expect(reconcileStoreSubscription(db, ENV, 'sub-owner', NOW)).rejects.toMatchObject({
+        allowForcedExpiry: false,
+      });
+      await reconcileStoreSubscription(db, ENV, 'sibling', NOW);
+      expect((await rows("SELECT status FROM subscriptions WHERE id='sibling'"))[0]!.status).toBe(
+        'cancelled',
+      );
+      await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+      expect(
+        await rows(`SELECT t.provider_transaction_id FROM store_transactions t
+        JOIN subscriptions s ON s.id=t.subscription_id WHERE s.status='active'`),
+      ).toEqual([{ provider_transaction_id: 'receipt-key' }]);
+      expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+    },
+  );
+
+  it('다른 활성 구독의 증빙은 플랜 교체 없는 갱신을 막지 않는다', async () => {
+    await replacementReceipts('apple', 'apple', 'family');
+    await splitOtherReceiptToSibling();
+    apple();
+    await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+    expect(await rows('SELECT id,status FROM subscriptions ORDER BY id')).toEqual([
+      { id: 'sibling', status: 'active' },
+      { id: 'sub-member', status: 'active' },
+      { id: 'sub-owner', status: 'active' },
+    ]);
+    expect(await rows('SELECT id,subscription_id FROM store_transactions ORDER BY id')).toEqual([
+      { id: 'other-receipt', subscription_id: 'sibling' },
+      { id: 'receipt', subscription_id: 'sub-owner' },
+    ]);
+  });
+
+  it('스토어 증빙 없는 다른 로컬 이용권은 기존 교체 규칙을 유지한다', async () => {
+    await replacementReceipts('google', 'google', 'family');
+    await splitOtherReceiptToSibling();
+    await db.execute("DELETE FROM store_transactions WHERE id='other-receipt'");
+    await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+    expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+    expect((await rows("SELECT status FROM subscriptions WHERE id='sibling'"))[0]!.status).toBe(
+      'cancelled',
+    );
+  });
+
   it.each([
     ['apple', 'google', 'family'],
     ['google', 'apple', 'family'],
@@ -521,6 +695,78 @@ describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지',
       }),
     );
     expect(result.ok && result.planChangedUserIds).toEqual(['member']);
+  });
+
+  it.each([
+    ['apple', false],
+    ['apple', true],
+    ['google', false],
+    ['google', true],
+  ] as const)(
+    '%s 그룹 해체 후에도 유료인 멤버는 삭제 유예/예고 없이 동기화한다(기존 유예=%s)',
+    async (provider, hasRetention) => {
+      await seed(provider);
+      const personal = await loadPlanByKey(db, 'personal');
+      await db.execute({
+        sql: `INSERT INTO subscriptions(id,user_id,plan_id,status,starts_at,expires_at)
+          VALUES ('independent','member',?,'active',?,?)`,
+        args: [personal!.id, PAID, FUTURE],
+      });
+      if (hasRetention)
+        await db.execute({
+          sql: "INSERT INTO paid_voice_retention(user_id,delete_after) VALUES ('member',?)",
+          args: [FUTURE],
+        });
+      if (provider === 'apple') apple({ productId: 'com.alarmtalk.app.personal_monthly' });
+      else playState('SUBSCRIPTION_STATE_ACTIVE', 'personal_monthly');
+      let notifiedState: Awaited<ReturnType<typeof billingSnapshot>> | undefined;
+      vi.mocked(sendPlanChangedPush).mockImplementationOnce(async () => {
+        notifiedState = await billingSnapshot();
+      });
+      await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      expect(sendPlanChangedPush).toHaveBeenCalledOnce();
+      expect(vi.mocked(sendPlanChangedPush).mock.calls[0]![2]).toContain('member');
+      // 푸시 실패는 제품 코드가 삼키므로 단언은 콜백 밖에서 한다.
+      expect(notifiedState).toBeDefined();
+      expect(notifiedState).toEqual(await billingSnapshot());
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(0);
+      expect(
+        (await rows("SELECT status FROM subscriptions WHERE id='independent'"))[0]!.status,
+      ).toBe('active');
+      expect(await rows("SELECT * FROM paid_voice_retention WHERE user_id='member'")).toHaveLength(
+        0,
+      );
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it('유료 멤버의 유예 해제 실패는 그룹 교체 전체를 롤백하고 통지하지 않는다', async () => {
+    await seed();
+    const personal = await loadPlanByKey(db, 'personal');
+    await db.execute({
+      sql: `INSERT INTO subscriptions(id,user_id,plan_id,status,starts_at,expires_at)
+        VALUES ('independent','member',?,'active',?,?)`,
+      args: [personal!.id, PAID, FUTURE],
+    });
+    await db.execute({
+      sql: "INSERT INTO paid_voice_retention(user_id,delete_after) VALUES ('member',?)",
+      args: [FUTURE],
+    });
+    apple({ productId: 'com.alarmtalk.app.personal_monthly' });
+    const before = await billingSnapshot();
+    await db.execute(`CREATE TRIGGER fail_member_retention_clear BEFORE DELETE ON paid_voice_retention
+      WHEN OLD.user_id='member' BEGIN SELECT RAISE(ABORT, 'retention clear failed'); END`);
+    try {
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toThrow(
+        'retention clear failed',
+      );
+      expect(await billingSnapshot()).toEqual(before);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_member_retention_clear');
+    }
   });
 });
 

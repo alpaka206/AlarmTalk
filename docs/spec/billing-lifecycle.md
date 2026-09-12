@@ -23,6 +23,10 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
 - 그룹형에서 개인형으로 바뀌어 내보낸 멤버도 공통 entitlement 적용 결과에 포함하고,
   확정·RTDN·재조회 호출부가 커밋 후 `plan_changed`와 해당 멤버의 삭제 유예 예고를 보낸다.
   뒤늦게 발견한 전환의 목소리 삭제 유예는 과거 결제일이 아닌 권한 변경을 반영한 시점부터 센다.
+  **독립 유료 이용권이 남은 멤버는 삭제 대상이 아니다.** 공통 그룹 해체 처리에서 남은
+  권한을 재계산한 뒤 유료이면 기존 보관 유예도 지우고, 무료인 멤버만 유예를 예약한다.
+  그룹 접근은 바뀌었으므로 유료 멤버의 `plan_changed`는 유지하되 삭제 예고는 보내지 않는다.
+  이 처리는 고아 등급 복구 같은 개별 호출부가 아니라 그룹 해체 함수 한 곳에서 수행한다.
 - 애플 권한은 ACTIVE/IN_GRACE_PERIOD 만 허용한다. 유예의 끝은
   `signedRenewalInfo.gracePeriodExpiresDate` 이며 결제일과 구분한다.
   EXPIRED/REVOKED 는 종료, IN_BILLING_RETRY 는 그룹을 남기는 보류다.
@@ -146,6 +150,12 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   계속돼도 활성 구독 조회에서 사라진다. 자동갱신이 꺼져 있어도 남은 유료 기간은 보존한다.
   이 경우 전환은 재시도하되 72시간 강제 만료도 하지 않는다. 충돌이 남는 동안 자동으로
   한 결제를 승자로 정하지 않는다. 플랜 교체 없는 갱신은 기존 복수 연결을 유지한다.
+  **범위는 현재 구독 행에서 끝나지 않는다.** 정합화 중 플랜 교체는 같은 사용자의 다른
+  활성 구독에 스토어 증빙이 하나라도 연결돼 있으면 거절한다. 해당 증빙은 현재 조회에서
+  확인하지 않았으므로, 별도의 권위 정합화가 그 구독의 종료를 반영하기 전에는 취소하지 않는다.
+  같은 스토어·같은 새 플랜·해지 예약·지난 로컬 만료도 예외가 아니며 72시간 강제 만료로
+  우회하지 않는다. 이 검사는 교체 쓰기와 같은 트랜잭션 안에서 수행해 조회 중 추가된
+  구독/영수증도 보호한다. 스토어 증빙 없는 로컬 이용권의 정상 교체와 교체 없는 갱신은 유지한다.
 - 스토어 종료 응답에도 로컬 만료가 도래했고 `cancel_at_period_end=1`과 유효한
   `next_plan_id`가 있으면, 로컬 만료와 같은 트랜잭션 경로로 다음 플랜을 만든다.
   만기 전 환불에는 다음 플랜을 조기에 부여하지 않는다.
@@ -628,7 +638,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
-| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
+| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`에서 독립 유료 멤버의 보관 유예 제거, 동기화 대상은 유지 | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
@@ -638,7 +648,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
 | 만료 재조회 — Apple | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
-| 복수 증빙 플랜 교체의 연결 보존 | `reconcileStoreSubscription`의 교체 가드; `test/billing-reconciliation.test.ts`의 복수 증빙 교체 사례 | 기존 조회 실패 처리로 구매 중단 | 기존 조회 실패 처리로 구매 중단 |
+| 복수 증빙 플랜 교체의 연결 보존 | `reconcileStoreSubscription`의 같은 행 증빙 가드 + 쓰기 트랜잭션 내 다른 활성 구독 증빙 가드; `test/billing-reconciliation.test.ts` | 기존 조회 실패 처리로 구매 중단 | 기존 조회 실패 처리로 구매 중단 |
 | 교체 토큰의 첫 비활성 RTDN | `billing-google-rtdn.ts`의 `linkedFromToken` 연결 기록 → 공통 정합화; 실제 DB RTDN 테스트 | — | — |
 | 결제 전 응답과 이전 조회의 경합 | — | — | `refreshSubscriptionForPurchase` 반환 응답 + `billingPreflightRevision`; `BillingPreflightTests` |
 | 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |

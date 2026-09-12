@@ -447,7 +447,6 @@ export async function repairOrphanedPaidPlan(
   for (const group of groups.rows) {
     for (const member of await disbandOwnedPlanGroup(db, userPk, String(group.id), now)) {
       affected.add(member);
-      if (await hasActivePaidEntitlement(db, member)) await clearPaidVoiceRetention(db, member);
     }
   }
   return [...affected];
@@ -666,7 +665,8 @@ export async function propagateGroupMemberPlans(
  * 소유 그룹 해체: 소유자를 제외한 멤버들의 그룹 연동 구독을 취소하고 plan 을 재정렬한 뒤
  * 멤버 행을 전부 지운다. cancelSubscriptionImmediate 의 소유자 경로와, 그룹 연결이 빠진
  * 구독(스크립트 부여/레거시)을 위한 방어 스윕이 공유한다.
- * 반환: 강등된(소유자 제외) 멤버 user_id 목록 — 호출부가 plan_changed 통지 대상에 넣도록.
+ * 반환: 그룹에서 나간(소유자 제외) 멤버 user_id 목록 — 독립 유료 이용권이 남아도
+ * 그룹 접근 변경은 plan_changed로 동기화한다. 삭제 예고는 실제 무료가 된 멤버만 받는다.
  */
 async function disbandOwnedPlanGroup(
   db: DbExecutor,
@@ -696,11 +696,13 @@ async function disbandOwnedPlanGroup(
     // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
     // 실제로 개시한 소유자 본인에게만 국한한다.
     await syncUserPlanAfterCancel(db, memberUserId, { deleteVoiceData: false });
-    // 소유자 해지로 유료 접근을 잃는 멤버도 소유자와 동일 정책으로 유료 음성 보관
-    // 보관을 예약한다 — 예약이 없으면 멤버의 유료 음성이 sweep 대상에서 빠져 영구
-    // 잔존한다. 멤버가 자기 결제로 재구독하면 entitle/redeem 경로가 유예를 해제하고,
-    // sweep 도 삭제 직전에 활성 유료 구독을 재확인하므로 과삭제 위험은 없다.
-    await schedulePaidVoiceRetention(db, memberUserId, now);
+    // 독립 이용권이 남았는데 유예 행을 만들면 커밋 직후 거짓 삭제 예고가 나간다.
+    // 스윕까지 기다리지 않고 모든 그룹 해체 경로가 여기서 보관 상태까지 맞춘다.
+    if (await hasActivePaidEntitlement(db, memberUserId)) {
+      await clearPaidVoiceRetention(db, memberUserId);
+    } else {
+      await schedulePaidVoiceRetention(db, memberUserId, now);
+    }
     disbanded.push(memberUserId);
   }
 
