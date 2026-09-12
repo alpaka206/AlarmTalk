@@ -348,6 +348,12 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 **0 으로는 두지 않는다.** 받는 기기가 오프라인이거나 Doze 에 들어가 있으면 푸시가 늦고,
 그러면 알람이 **울리지 않은 채 시각이 지나간다.** 보낸 사람은 보냈다고 믿는다.
 
+**푸시·주기 pull 모두 알람 목록 전체를 페이지로 가져온다.** 서버 기본 50건은 계정의
+알람 한도가 아니다. 내가 만든 알람 뒤에 받은 가족 알람이 있어도 끝까지 읽어야 한다.
+`limit=100`과 읽은 행 수만큼의 `offset`을 사용하고, 같은 시각의 행은 id로 정렬을 고정한다.
+iOS는 페이지들을 다 모은 뒤 기존 수신 처리에 넘긴다. 중간 실패·취소·중복 페이지나
+전체 건수에 못 미친 빈 페이지는 부분 목록을 성공으로 반환하지 않고 다음 pull에서 재시도한다.
+
 ## 4. 문구는 **받는 사람 기준**으로 고른다 (2026-08-18 결정)
 
 알람 음성이 프리셋 + 직접 입력 둘로 좁혀지면서(`docs/qa/dev-test-handoff.md` 5절),
@@ -383,6 +389,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
 | 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` — 전달이 끝나 행이 지워진 뒤에는 `targeted_alarm_slots` 로 id 를 되짚는다 |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
+| 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmPullSyncService` 페이지 순회 | `AlarmTalkAPI.listAlarms` → `RemoteAlarmPullSync` | `alarm-query.ts`의 `limit`/`offset`/`total`·시각/id 정렬 |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |

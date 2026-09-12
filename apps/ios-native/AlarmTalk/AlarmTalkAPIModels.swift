@@ -319,6 +319,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
 
 struct RemoteAlarmListResponse: Decodable {
     var alarms: [RemoteAlarm]
+    /// 구버전 응답/픽스처에는 없을 수 있다. 이때도 꽉 찬 페이지는 끝으로 보지 않는다.
+    var total: Int?
 }
 
 struct RemoteAlarmResponse: Decodable {

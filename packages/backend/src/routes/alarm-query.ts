@@ -70,7 +70,7 @@ alarmQuery.get('/', async (c) => {
             LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
             LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
             ${whereClause}
-            ORDER BY a.time ASC
+            ORDER BY a.time ASC, a.id ASC
             LIMIT ? OFFSET ?`,
       args: [...whereArgs, limit, offset],
     }),

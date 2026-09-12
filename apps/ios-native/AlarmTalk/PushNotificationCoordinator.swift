@@ -283,6 +283,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
+        deps.auth.onAccountRecovered = { [weak push = deps.push] in
+            // 현재 토큰을 다시 받아 기존 직렬 등록 경로로 올린다. 권한 팝업은 띄우지 않는다.
+            push?.start()
+        }
         // ⚠ **푸시 해제 훅도 launch 에서 꽂는다**(Codex #699 P2). 예전에는 화면의
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이

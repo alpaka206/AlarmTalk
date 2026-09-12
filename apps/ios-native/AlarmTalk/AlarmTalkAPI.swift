@@ -98,8 +98,34 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     func listAlarms(token: String) async throws -> [RemoteAlarm] {
-        let response: RemoteAlarmListResponse = try await request("alarm", token: token)
-        return response.alarms
+        let pageSize = 100
+        var alarms: [RemoteAlarm] = []
+        var seenIDs = Set<String>()
+        var offset = 0
+        while true {
+            try Task.checkCancellation()
+            let page: RemoteAlarmListResponse = try await request(
+                "alarm?limit=\(pageSize)&offset=\(offset)", token: token
+            )
+            try Task.checkCancellation()
+            // 부분 목록을 정상 snapshot으로 넘기면 뒤쪽 가족 알람을 예약하지 못한다.
+            // 중간 실패/목록 이동은 전체 회차 실패로 남겨 다음 pull에서 다시 읽는다.
+            if let total = page.total, total < 0 { throw APIError.invalidResponse }
+            if page.alarms.isEmpty {
+                guard offset >= (page.total ?? offset) else { throw APIError.invalidResponse }
+                return alarms
+            }
+            for alarm in page.alarms {
+                guard seenIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
+                alarms.append(alarm)
+            }
+            offset += page.alarms.count
+            if let total = page.total {
+                if offset >= total { return alarms }
+            } else if page.alarms.count < pageSize {
+                return alarms
+            }
+        }
     }
 
     func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {

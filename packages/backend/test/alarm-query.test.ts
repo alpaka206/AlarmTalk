@@ -76,6 +76,8 @@ describe('GET /alarms', () => {
     const body = await res.json();
     expect(body.limit).toBe(10);
     expect(body.offset).toBe(2);
+    // 같은 시각의 소유/가족 알람도 페이지 경계에서 순서가 바뀌지 않는다.
+    expect(mockDB.calls[1]!.sql).toContain('ORDER BY a.time ASC, a.id ASC');
   });
 
   it('limit 최대값 100 제한', async () => {

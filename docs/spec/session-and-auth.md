@@ -69,6 +69,14 @@
 JWT 서명 설정 누락도 서버 장애(503)이며 사용자 토큰 만료가 아니다.
 JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` 에 도달하면 만료다.
 
+## 탈퇴 예약을 취소해 복구할 때
+
+서버가 복구 성공을 확인한 뒤 **현재 기기의 푸시 등록도 다시 시작한다.** 탈퇴 대기 중에는
+푸시 등록 API가 403으로 차단되므로, 같은 계정 id로 정상 화면만 열어서는 등록이 복구되지
+않는다. iOS는 launch에서 연결한 복구 훅으로 APNs 토큰을 다시 요청하고 기존 직렬 등록
+경로를 사용한다. 알림 권한 팝업이나 전체 앱 재시작을 전제로 하지 않는다.
+실패·취소된 요청 또는 요청 중 세션/토큰이 바뀐 경우에는 복구 상태와 푸시 훅을 적용하지 않는다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -80,6 +88,7 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
+| 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.onAccountRecovered` → `PushNotificationCoordinator.start`(launch에서 연결) |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` | `SessionTokenRenewalTests.swift` |
 
 ## 의도된 플랫폼 차이
