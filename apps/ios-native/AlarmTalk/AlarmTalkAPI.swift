@@ -609,8 +609,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("code/register", method: "POST", token: token, body: CodeRegisterRequest(code: code))
     }
 
-    func getSubscription(token: String) async throws -> BillingSubscriptionResponse {
-        try await request("billing/subscription", token: token)
+    /// - Parameter refreshStoreState: `true` 면 서버가 **애플에 직접 물어** 갱신 상태를
+    ///   최신화한 뒤 답한다. ⚠ **결제 직전에만 켠다** — 애플 서버 호출이 붙어서, 배경
+    ///   갱신이 켜면 애플이 느릴 때 **DB 에 이미 있는 답까지 같이 늦어진다.**
+    func getSubscription(
+        token: String,
+        refreshStoreState: Bool = false
+    ) async throws -> BillingSubscriptionResponse {
+        try await request(
+            refreshStoreState ? "billing/subscription?refresh_store=1" : "billing/subscription",
+            token: token
+        )
     }
 
     /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).

@@ -408,7 +408,12 @@ struct BillingPanel: View {
     /// 남는 창: 조회와 결제 사이의 수백 ms. 그건 서버 가드가 받는다(그때는 청구를
     /// 되돌릴 수 없으므로 문구로 안내하고, 다음 시도에서 통과시킨다).
     private func confirmAndPurchase(_ product: SubscriptionProduct) async {
-        guard await socialFeatures.refreshSubscriptionSilently(session: auth.session) else {
+        // ⚠ `refreshStoreState` 는 **여기서만** 켠다 — 서버가 애플에 직접 물어보므로
+        //   배경 갱신에 켜면 애플이 느릴 때 일상 조회까지 같이 늦어진다.
+        guard await socialFeatures.refreshSubscriptionSilently(
+            session: auth.session,
+            refreshStoreState: true
+        ) else {
             purchaseBlock = .renewalOwnerUnknown
             return
         }

@@ -289,8 +289,14 @@ final class SocialFeatureViewModel: ObservableObject {
     /// - Returns: **권위 응답을 실제로 받아 반영했는가.** 결제 직전 preflight 가 이걸 본다 —
     ///   실패했는데 캐시로 진행하면 낡은 스냅샷으로 판단하게 된다(코덱스 #733 5차).
     ///   배경 갱신 호출부는 그대로 무시하면 된다(`@discardableResult`).
+    /// - Parameter refreshStoreState: 서버가 **애플에 직접 물어** 갱신 상태를 최신화할지.
+    ///   ⚠ **결제 직전 preflight 에서만 켠다** — 배경 갱신이 켜면 애플이 느릴 때 DB 에
+    ///   이미 있는 답까지 같이 늦어지고, 그 사이 울림 게이트가 낡은 로컬 값으로 돈다.
     @discardableResult
-    func refreshSubscriptionSilently(session: AuthSession?) async -> Bool {
+    func refreshSubscriptionSilently(
+        session: AuthSession?,
+        refreshStoreState: Bool = false
+    ) async -> Bool {
         guard let token = session?.token,
               let userID = normalizedUserID(session?.user.id) else {
             return false
@@ -305,7 +311,10 @@ final class SocialFeatureViewModel: ObservableObject {
             return false
         }
         do {
-            let nextSubscription = try await api.getSubscription(token: token)
+            let nextSubscription = try await api.getSubscription(
+                token: token,
+                refreshStoreState: refreshStoreState
+            )
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
             guard activeUserID == userID, generation == refreshGeneration else { return false }
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {

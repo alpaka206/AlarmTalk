@@ -16,6 +16,7 @@ import {
   ENTITLED_STATES,
   isRecoverablePlayState,
   type SubscriptionV2Response,
+  googlePaymentAnchor,
 } from '../lib/play-subscriptions';
 import { resolveUserPk } from './billing-helpers';
 
@@ -515,6 +516,15 @@ billingGoogle.post('/google/confirm', async (c) => {
       productId: parsed.product_id,
       plan,
       startsAt: new Date(),
+      // ⚠ **확정 시각이 아니라 결제 시각을 앵커로 쓴다**(코덱스 #734 10차). RTDN 을
+      //   놓쳤거나 사용자가 한참 뒤에 복원하면 확정이 결제보다 몇 주 뒤다 — 거기에
+      //   5년을 더하면 처리방침의 최대 5년을 그만큼 넘긴다.
+      lastPaidAt: googlePaymentAnchor({
+        startTime: subscription.startTime,
+        expiresAt,
+        periodDays: plan.period_days,
+        now: new Date(),
+      }),
       expiresAt,
       rawPayload: JSON.stringify({
         latestOrderId: subscription.latestOrderId ?? null,

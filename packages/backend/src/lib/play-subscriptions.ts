@@ -12,11 +12,50 @@
 import type { Env } from '../types';
 import { getGoogleAccessToken, parseServiceAccountJson } from './google-oauth';
 
+/**
+ * **이 Play 구독의 마지막 결제 시각 추정.**
+ *
+ * ⚠ **Play v2 에는 갱신 결제 시각이 없다.** `startTime` 은 체인 시작(첫 결제)이고
+ * `latestOrderId` 에는 시각이 없다. 애플과 달리 서명된 `purchaseDate` 를 못 받는다.
+ *
+ * 그래서 **아래 세 값으로 좁힌다**(코덱스 #734 10차):
+ * - `startTime` — 첫 결제. 첫 확정에서는 이게 정답이다.
+ * - `expiry - 기간` — 지금 주기를 산 날. 갱신에서는 이쪽이 최신이다.
+ * - `now` 로 **상한**을 둔다 — 미래 값이 들어오면 그건 결제 시각이 아니다.
+ *
+ * 왜 `now` 만 쓰면 안 되나: RTDN 을 놓쳤거나 사용자가 한참 뒤에 복원하면 **확정 시각이
+ * 결제보다 몇 주 뒤**다. 거기에 5년을 더하면 처리방침이 밝힌 최대 5년을 그만큼 넘긴다.
+ *
+ * 달력 달(P1M)과 `period_days`(30) 차이로 며칠 어긋날 수 있다 — 몇 주를 넘기는 것보다 낫다.
+ */
+export function googlePaymentAnchor(params: {
+  startTime?: string;
+  expiresAt: Date;
+  periodDays: number;
+  now: Date;
+}): Date {
+  const candidates: number[] = [];
+  const started = params.startTime ? Date.parse(params.startTime) : NaN;
+  if (Number.isFinite(started)) candidates.push(started);
+  if (params.periodDays > 0) {
+    candidates.push(params.expiresAt.getTime() - params.periodDays * 24 * 60 * 60 * 1000);
+  }
+  if (candidates.length === 0) return params.now;
+  // 가장 최근 후보를 쓰되, 지금을 넘지 않는다.
+  return new Date(Math.min(params.now.getTime(), Math.max(...candidates)));
+}
+
 export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
 
 export interface SubscriptionV2Response {
   subscriptionState?: string;
   acknowledgementState?: string;
+  /**
+   * **구독 체인이 시작된 시각**(RFC3339). 첫 결제 시각이다 — 갱신해도 바뀌지 않는다.
+   *
+   * 탈퇴 시 결제기록 보존 기한의 기준일로 쓴다(`googlePaymentAnchor`).
+   */
+  startTime?: string;
   lineItems?: Array<{
     productId?: string;
     expiryTime?: string;

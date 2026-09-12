@@ -3,6 +3,7 @@ package com.alarmtalk.app.network
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Query
 import retrofit2.http.Header
 import retrofit2.http.POST
 
@@ -102,8 +103,16 @@ data class CancelSubscriptionResponse(
 
 
 interface BillingApi {
+    /**
+     * @param refreshStore `"1"` 이면 서버가 **애플에 직접 물어** 갱신 상태를 최신화한 뒤
+     *   답한다. ⚠ **결제 직전에만 켠다** — 애플 서버 호출이 붙어서, 앱 시작 갱신이나
+     *   워커가 켜면 애플이 느릴 때 **DB 에 이미 있는 답까지 같이 늦어진다.**
+     */
     @GET("billing/subscription")
-    suspend fun getSubscription(@Header("Authorization") authorization: String): BillingSubscriptionResponse
+    suspend fun getSubscription(
+        @Header("Authorization") authorization: String,
+        @Query("refresh_store") refreshStore: String? = null,
+    ): BillingSubscriptionResponse
 
     @GET("billing/vouchers")
     suspend fun listVouchers(@Header("Authorization") authorization: String): VoucherListResponse

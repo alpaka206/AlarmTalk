@@ -4,7 +4,9 @@ import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
-import { getPlaySubscriptionV2 } from '../lib/play-subscriptions';
+import { getPlaySubscriptionV2,
+  googlePaymentAnchor,
+} from '../lib/play-subscriptions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
@@ -299,6 +301,13 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         productId: authoritativeProductId,
         plan,
         startsAt: new Date(),
+        // confirm 경로와 같은 이유 — 확정 시각이 아니라 결제 시각을 앵커로 쓴다.
+        lastPaidAt: googlePaymentAnchor({
+          startTime: subscription.startTime,
+          expiresAt: new Date(expiryMs),
+          periodDays: plan.period_days,
+          now: new Date(),
+        }),
         expiresAt: new Date(expiryMs),
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
       }),

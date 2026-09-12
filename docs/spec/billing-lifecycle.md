@@ -408,6 +408,10 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   ⚠ **문구는 각 앱에서 '다른 스토어' 를 가리켜야 한다.** 판정이 `provider <> ?` 로 자기
   스토어를 빼므로, 안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. iOS 문구를
   그대로 쓰면 "Play 에서 해지하라" 가 되어, 그대로 해도 다음 시도가 통과하지 않는다.
+- ⚠ **plan 갱신을 기다린다.** 구독이 없어진 것을 확인했으면 `users.plan` 도 그 자리에서
+  최신화하고 **끝날 때까지 기다려야** 한다 — 띄워 놓고 지나가면 사용자가 곧바로 시트를 닫고
+  프로세스가 끝났을 때 **null 구독과 옛 유료 plan 이 함께 남아**, 다음 오프라인 시작에서
+  그 조합이 그대로 유료로 읽힌다(`resolvePaidVoiceAccess` 의 마지막 갈래).
 - ⚠ **두 앱 모두 스토어를 열기 직전에 서버에 묻는다.** iOS 는 `confirmAndPurchase`,
   안드로이드는 `crossStoreRenewalBlocked` 다. 확정 시점 가드는 **이미 청구된 뒤**라
   되돌릴 수 없고, Play 는 거절된 구매를 ack 하지 않으므로 사용자가 3일 자동 환불을
@@ -416,8 +420,12 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 - ⚠ **preflight 응답 자체가 애플 상태를 확인한다**(코덱스 #734). 두 앱은 결제 직전
   `GET /billing/subscription` 으로 막을지 정하는데, 그 응답이 낡은 애플 값을 실어 보내면
   확정 라우트의 최신화는 **닿기 전에** 막히게 된다. 그래서 그 라우트도 애플이 갱신 주인으로
-  잡힐 때 애플에 다시 묻는다. **애플이 걸릴 때만** 부른다 — 대부분의 계정에는 애플 결제가
-  없고, 그때는 조회 두 번으로 끝난다.
+  잡힐 때 애플에 다시 묻는다.
+  ⚠ **단 `?refresh_store=1` 일 때만이다**(코덱스 #734 10차). 이 라우트는 앱 시작 갱신·
+  `PlanChangeSyncWorker`·`StockClipPrefetchWorker` 도 쓴다 — 거기에 애플 서버 호출을 끼우면
+  **애플이 느릴 때 DB 에 이미 있는 답까지 같이 늦어지고**, 그 사이 울림 게이트가 낡은 로컬
+  값으로 돈다. 낡은 애플 값은 **결제를 막는 순간에만** 해가 되므로 그때만 켠다.
+  (그때도 애플 결제가 있는 계정에서만 부른다.)
 - ⚠ **애플 갱신 상태는 막기 직전에 최신화한다.** 우리가 받는 App Store 서버 알림이 없고,
   같은-플랜 갱신 갈래가 `cancel_at_period_end` 를 0 으로 되돌린다 — 낡은 값으로 막으면
   **App Store 에서 이미 자동갱신을 끈 사용자가 아무것도 할 수 없다.** Play 쪽은 RTDN 과
@@ -536,7 +544,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
-| 결제 직전 권위 조회 | `GET /billing/subscription` | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
+| 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
+| 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor` | — | — |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` — 부르는 곳 **셋**: `routes/billing-query.ts`(결제 직전 조회) · `routes/billing-google.ts`(확정 앞) · `routes/billing-google-rtdn.ts`(entitle 앞) | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |

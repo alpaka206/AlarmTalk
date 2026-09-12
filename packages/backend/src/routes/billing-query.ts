@@ -98,9 +98,15 @@ billingQuery.get('/subscription', async (c) => {
   //   기간이 끝날 때까지 스토어를 못 옮긴다** — 우리 안내를 따라도 달라지지 않는다.
   //   (확정 라우트도 같은 것을 하지만, 거기까지 가면 이미 청구된 뒤다.)
   //
-  //   ⚠ **애플이 걸릴 때만 부른다.** 대부분의 계정에는 애플 결제가 없고, 그때는 위 조회
-  //   두 번으로 끝난다 — 모든 구독 조회가 애플 API 를 때리게 만들지 않는다.
-  if (storeTxns.some((txn) => txn.provider === 'apple')) {
+  // ⚠ **결제 직전 조회에서만 한다 — 기본은 끈다**(코덱스 #734 10차). 이 라우트는 앱 시작
+  //   갱신·`PlanChangeSyncWorker`·`StockClipPrefetchWorker` 도 쓴다. 거기에 애플 서버
+  //   호출을 끼우면 **애플이 느릴 때 DB 에 이미 있는 답까지 같이 늦어지고**, 그 사이
+  //   울림 게이트가 낡은 로컬 값으로 돈다. 애플 상태가 낡아서 생기는 문제는 **결제를
+  //   막는 순간에만** 해가 되므로, 그때만 켠다.
+  //
+  //   ⚠ 그리고 **애플이 걸릴 때만** 부른다 — 대부분의 계정에는 애플 결제가 없다.
+  const refreshStoreState = c.req.query('refresh_store') === '1';
+  if (refreshStoreState && storeTxns.some((txn) => txn.provider === 'apple')) {
     const changed = await refreshCompetingAppleRenewalState(db, c.env, userId);
     if (changed) {
       activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userId);

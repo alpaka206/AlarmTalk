@@ -513,7 +513,9 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     //   식별자로 열려 확정이 계정 불일치로 거절된다(이미 청구된 뒤에).
     val ticket = accessTicket() ?: return R.string.msg_gb_billing_info_load_failed
     if (ticket.userId != session.user.id) return R.string.msg_gb_billing_info_load_failed
-    val fresh = runCatching { api.getSubscription(authorization) }.getOrElse {
+    // ⚠ `refresh_store=1` 은 **여기서만** 켠다 — 서버가 애플에 직접 물어보므로 일상 조회에
+    //   켜면 애플이 느릴 때 DB 에 이미 있는 답까지 같이 늦어진다.
+    val fresh = runCatching { api.getSubscription(authorization, refreshStore = "1") }.getOrElse {
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
         return R.string.msg_gb_billing_info_load_failed
     }
@@ -530,13 +532,19 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
         return R.string.msg_gb_billing_info_load_failed
     }
     subscriptionResponse = fresh
-    // ⚠ **plan 도 함께 최신화한다**(코덱스 #734 8차). `saveSubscriptionSnapshot` 은 일부러
-    //   `users.plan` 을 안 쓴다(그 자리가 아는 값은 마지막 `/auth/me` 때의 것이라 — 그 함수
-    //   주석 참조). 그런데 여기서 구독이 **없어진 것**을 확인해도 캐시된 유료 plan 이 남으면,
-    //   `resolvePaidVoiceAccess` 의 마지막 갈래가 `plan in PaidUserPlans -> Entitled` 로
-    //   떨어져 **유료 목소리·울림 게이트가 계속 열린다.** plan 을 쓰는 정식 경로를 부른다
-    //   (그 경로가 세션 세대를 대조해 안전하게 쓴다).
-    refreshAppSession()
+    // ⚠ **plan 도 함께 최신화하고, 끝날 때까지 기다린다**(코덱스 #734 8·10차).
+    //   `saveSubscriptionSnapshot` 은 일부러 `users.plan` 을 안 쓴다(그 자리가 아는 값은
+    //   마지막 `/auth/me` 때의 것이라 — 그 함수 주석 참조). 그런데 여기서 구독이 **없어진
+    //   것**을 확인해도 캐시된 유료 plan 이 남으면, `resolvePaidVoiceAccess` 의 마지막 갈래가
+    //   `plan in PaidUserPlans -> Entitled` 로 떨어져 **유료 목소리·울림 게이트가 계속 열린다.**
+    //
+    //   ⚠ **띄워 놓고 지나가면 안 된다.** `refreshAppSession()` 은 코루틴만 띄우고 바로
+    //   돌아오므로, 사용자가 곧바로 Play 시트를 닫고 프로세스가 끝나면 **null 구독과 옛
+    //   유료 plan 이 함께 남는다** — 다음 오프라인 시작에서 그 조합이 그대로 유료로 읽힌다.
+    //   구독이 사라진 것을 확인했을 때만 기다린다(있으면 plan 은 어차피 유료다).
+    if (fresh.subscription == null && !refreshAppSessionNow()) {
+        return R.string.msg_gb_billing_info_load_failed
+    }
     val providers = fresh.storeRenewalProviders ?: return null
     // 판정은 `provider <> ?` 라 우리에게 오는 것은 언제나 **다른 스토어**다.
     return if (providers.any { it != "google" }) R.string.msg_cross_store_renewal_active else null
