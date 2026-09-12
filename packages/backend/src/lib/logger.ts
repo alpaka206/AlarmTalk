@@ -13,6 +13,9 @@ export function logStructured(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono Context is invariant on Env; this accepts both pre-auth and post-auth contexts
 export function logRouteError(c: Context<any>, err: unknown): void {
+  // 본문 제한은 서버 장애가 아니다. 파서가 예외를 감싸도 요청별 표시로 구분하고,
+  // bodyLimit이 확정한 최종 413을 errorCodeMiddleware 한 곳에서 기록한다.
+  if (c.get('requestBodyLimitExceeded')) return;
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join(' | ') : undefined;
 

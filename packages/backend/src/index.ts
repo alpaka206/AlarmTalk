@@ -64,7 +64,7 @@ app.use('*', loggerMiddleware);
 // 버킷(아래 api.use). prefix 분리로 같은 요청이 두 버킷에 이중 카운트되지 않는다.
 app.use('*', ipRateLimitMiddleware);
 
-// Body size limit (512 KB)
+// 실제 본문 25 MiB 상한. 인증 전에는 헤더만 검사하고 본문은 하위 코드가 소비할 때 센다.
 app.use('*', bodyLimitMiddleware);
 
 // CORS
