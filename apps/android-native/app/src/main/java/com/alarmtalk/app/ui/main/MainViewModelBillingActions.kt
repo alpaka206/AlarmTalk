@@ -459,12 +459,14 @@ internal fun MainViewModel.registerCode(
  * 구독 교체 파라미터를 붙이면 Play 가 거절한다.
  */
 internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
+    val ticket = accessTicket()
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
         return
     }
     if (billingBusy) return
+    if (ticket == null || ticket.userId != session.user.id) return
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -472,6 +474,7 @@ internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
                 activity,
                 com.alarmtalk.app.billing.PlayBillingProducts.PERSONAL_GIFT_1M,
                 userId = session.user.id.takeIf { it.isNotBlank() },
+                mayLaunch = { responseStillBelongsToRequester(ticket.userId, ticket.epoch) },
             )
         }.onSuccess { launched ->
             if (!launched) {
@@ -493,61 +496,30 @@ internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
  * App Store 구독을 시작한 경우는 갱신 신호조차 오지 않는다(구매자 본인은 `plan_changed`
  * 대상이 아니다). 그래서 여기서 서버에 직접 묻는다.
  *
- * ⚠ **구버전 서버는 이 필드를 주지 않는다(null)** — 그때는 막지 않는다. 예전 동작이고,
- * 서버가 확정 시점에 한 번 더 보므로 완전히 무방비는 아니다.
+ * 구버전 응답(권한·갱신 주인 필드 없음)도 확인 실패로 처리한다.
  */
 private suspend fun MainViewModel.crossStoreRenewalBlocked(
     session: com.alarmtalk.app.network.AuthSession,
+    ticket: AccessTicket,
 ): Int? {
-    // ⚠ **헤더는 공용 헬퍼로 만든다.** 직접 문자열을 짜다가 `${'$'}` 를 그대로 넣어
-    //   **리터럴 `Bearer ${'$'}{session.token}`** 이 나간 적이 있다(코덱스 #734). 컴파일은
-    //   되고 401 만 떠서, 모든 구독 결제가 조용히 안 열렸다.
-    val authorization = AlarmTalkApiClient.bearer(session.token)
-    // ⚠ **표는 요청 '전에' 끊는다**(다른 조회 경로와 같은 규약). 이 문이 판정과 쓰기를 한
-    //   덩어리로 처리해, 그 사이 계정이 바뀌면 **스냅샷도 화면도 건드리지 않는다.**
-    //
-    // ⚠ **그 표가 '잡아 둔 계정' 것인지도 본다**(코덱스 #734 9차). `accessTicket()` 은
-    //   **지금 계정** 것을 뽑는데, `startPlayPurchase` 가 세션을 잡은 뒤 여기까지 오는
-    //   사이에 계정이 바뀌었을 수 있다 — 그러면 헤더는 A 의 토큰이고 표는 B 의 것이라,
-    //   문은 (B 기준으로) 정상이라며 **A 의 응답을 B 스냅샷에 쓴다.** 그 뒤 결제도 A 의
-    //   식별자로 열려 확정이 계정 불일치로 거절된다(이미 청구된 뒤에).
-    val ticket = accessTicket() ?: return R.string.msg_gb_billing_info_load_failed
-    if (ticket.userId != session.user.id) return R.string.msg_gb_billing_info_load_failed
-    // ⚠ `refresh_store=1` 은 **여기서만** 켠다 — 서버가 애플에 직접 물어보므로 일상 조회에
-    //   켜면 애플이 느릴 때 DB 에 이미 있는 답까지 같이 늦어진다.
-    val fresh = runCatching { api.getSubscription(authorization, refreshStore = "1") }.getOrElse {
-        AlarmTalkLog.reportError("Failed to preflight cross-store renewal", it)
+    if (!responseStillBelongsToRequester(ticket.userId, ticket.epoch) ||
+        ticket.userId != session.user.id) return R.string.msg_gb_billing_info_load_failed
+    val fresh = try {
+        api.getSubscription(AlarmTalkApiClient.bearer(session.token), refreshStore = "1")
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        AlarmTalkLog.reportError("Failed to preflight cross-store renewal", error)
         return R.string.msg_gb_billing_info_load_failed
     }
-    // ⚠ **그 사이 계정이 바뀌었으면 아무것도 하지 않는다**(코덱스 #734). 이 조회는
-    //   중단점이라, 기다리는 동안 로그아웃하거나 다른 계정으로 로그인할 수 있다. 그대로
-    //   진행하면 **A 의 구독 응답이 B 화면에 실리고, A 의 식별자로 Play 결제가 열린다** —
-    //   그 결제의 확정은 B 로 올라가 계정 불일치로 거절된다(이미 청구된 뒤에).
-    //
-    // ⚠ **디스크에도 남긴다**(코덱스 #734 4차). 화면 상태만 고치면, 사용자가 Play 시트를
-    //   닫고 앱이 재시작될 때 `restoreAccessSnapshotForCurrentUser` 가 **더 오래된 응답**을
-    //   되읽는다 — 그때 시작 조회가 오프라인이면 유료 목소리·울림 게이트가 낡은 상태로
-    //   돈다. 방금 권위 응답을 받아 놓고 버리는 셈이다.
-    if (saveSubscriptionSnapshot(ticket, fresh) != EntitlementWrite.Applied) {
+    // 구독과 plan 을 한 번에 저장해야 시트 취소·프로세스 종료 뒤에도 같은 판정이 남는다.
+    if (fresh.userPlan == null || fresh.storeRenewalProviders == null ||
+        saveSubscriptionSnapshot(ticket, fresh) != EntitlementWrite.Applied) {
         return R.string.msg_gb_billing_info_load_failed
     }
     subscriptionResponse = fresh
-    // ⚠ **plan 도 함께 최신화하고, 끝날 때까지 기다린다**(코덱스 #734 8·10차).
-    //   `saveSubscriptionSnapshot` 은 일부러 `users.plan` 을 안 쓴다(그 자리가 아는 값은
-    //   마지막 `/auth/me` 때의 것이라 — 그 함수 주석 참조). 그런데 여기서 구독이 **없어진
-    //   것**을 확인해도 캐시된 유료 plan 이 남으면, `resolvePaidVoiceAccess` 의 마지막 갈래가
-    //   `plan in PaidUserPlans -> Entitled` 로 떨어져 **유료 목소리·울림 게이트가 계속 열린다.**
-    //
-    //   ⚠ **띄워 놓고 지나가면 안 된다.** `refreshAppSession()` 은 코루틴만 띄우고 바로
-    //   돌아오므로, 사용자가 곧바로 Play 시트를 닫고 프로세스가 끝나면 **null 구독과 옛
-    //   유료 plan 이 함께 남는다** — 다음 오프라인 시작에서 그 조합이 그대로 유료로 읽힌다.
-    //   구독이 사라진 것을 확인했을 때만 기다린다(있으면 plan 은 어차피 유료다).
-    if (fresh.subscription == null && !refreshAppSessionNow()) {
-        return R.string.msg_gb_billing_info_load_failed
-    }
-    val providers = fresh.storeRenewalProviders ?: return null
-    // 판정은 `provider <> ?` 라 우리에게 오는 것은 언제나 **다른 스토어**다.
-    return if (providers.any { it != "google" }) R.string.msg_cross_store_renewal_active else null
+    return if (fresh.storeRenewalProviders.any { it != "google" })
+        R.string.msg_cross_store_renewal_active else null
 }
 
 /**
@@ -555,12 +527,13 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
  * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
  */
 internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
+    val ticket = accessTicket()
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
         return
     }
-    if (billingBusy) return
+    if (billingBusy || ticket == null || ticket.userId != session.user.id) return
     viewModelScope.launch {
         billingBusy = true
         // ⚠ **Play 를 열기 전에 서버에 묻는다**(코덱스 #730 4차). 다른 스토어가 아직 갱신을
@@ -571,7 +544,12 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
         //
         //   ⚠ **못 물어보면 진행하지 않는다** — 캐시로 넘어가면 이 단계를 둔 이유가 사라진다.
         //   사용자는 다시 시도하면 되고, 잃는 것은 한 번의 탭이다.
-        val blocked = crossStoreRenewalBlocked(session)
+        val blocked = try {
+            crossStoreRenewalBlocked(session, ticket)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            billingBusy = false
+            throw cancelled
+        }
         if (blocked != null) {
             message = getApplication<android.app.Application>().getString(blocked)
             billingBusy = false
@@ -588,13 +566,15 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
         }
         // ⚠ **여는 순간에도 계정을 한 번 더 본다**(코덱스 #734 9차). 위 조회가 중단점이라,
         //   그 사이 바뀌었으면 **A 의 식별자로 B 의 결제를 여는** 것이 된다.
-        if (authSession?.user?.id != session.user.id) {
+        if (!responseStillBelongsToRequester(ticket.userId, ticket.epoch)) {
             billingBusy = false
             return@launch
         }
         runCatching {
             // userId(=서버 users.id)는 구매-계정 바인딩용. 비어 있으면(비정상 세션) 바인딩만 생략.
-            playBilling.launchPurchase(activity, productId, userId = session.user.id.takeIf { it.isNotBlank() })
+            playBilling.launchPurchase(activity, productId, userId = session.user.id) {
+                responseStillBelongsToRequester(ticket.userId, ticket.epoch)
+            }
         }.onSuccess { launched ->
             if (!launched) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)

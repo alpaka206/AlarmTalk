@@ -1,7 +1,6 @@
 import type { Client } from '@libsql/client';
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
-import { withWriteTransaction } from './transactions';
 import {
   deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
@@ -9,34 +8,26 @@ import {
   type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
+import type { PlayEnv } from './play-subscriptions';
 import {
-  ENTITLED_STATES,
-  getPlaySubscriptionV2,
-  isRecoverablePlayState,
-  PlayBillingUnconfiguredError,
-  type PlayEnv,
-  type SubscriptionV2Response,
-} from './play-subscriptions';
-import {
-  APPLE_SUBSCRIPTION_STATUS,
-  AppleTransactionNotFoundError,
-  appleStoreKitConfigFromEnv,
-  fetchAppleSubscriptionStatus,
-  type AppleSubscriptionStatus,
-} from './apple-storekit';
+  BillingStateChangedError,
+  BillingStateUnavailableError,
+  expireSubscriptionIfDue,
+  reconcileStoreSubscription,
+} from './billing-reconciliation';
 import {
   PAID_PLAN_TYPES,
   planTypeToUserPlan,
   plannedMaxUses,
   isGroupPlanType,
 } from '../routes/billing-helpers';
-import { notifyDowngradedAlarms, sendPaymentFailedPush, sendPlanChangedPush } from './fcm';
+import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
 import { sendVoiceDeletionWarningPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
 // 핸들러가 워커 env(전체)를 넘기므로 런타임엔 존재하며, 타입만 넓혀 준다.
-// 애플 재조회(reconcileAppleBeforeExpiry)에는 App Store Server API 자격증명도 필요하다.
+// 공통 스토어 재조회에는 App Store Server API 자격증명도 필요하다.
 type ExpiryEnv = PlayEnv &
   Partial<
     Pick<
@@ -188,79 +179,20 @@ export async function findStoreTransactionsForSubscriptions(
  * 막게 되는데, 그쪽이 이중 청구보다 낫다(사용자는 다시 시도할 수 있다).
  */
 export async function refreshCompetingAppleRenewalState(
-  db: DbExecutor,
-  env:
-    | Partial<
-        Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>
-      >
-    | undefined,
+  db: Client,
+  env: Partial<Env> | undefined,
   userPk: string,
 ): Promise<boolean> {
-  const config = env ? appleStoreKitConfigFromEnv(env as Env) : null;
-  if (!config) return false;
-  const res = await db.execute({
-    sql: `SELECT s.id AS sub_id, t.provider_transaction_id
-          FROM subscriptions s
+  const result = await db.execute({
+    sql: `SELECT DISTINCT s.id FROM subscriptions s
           JOIN store_transactions t ON t.subscription_id = s.id
           WHERE s.user_id = ? AND s.status = 'active' AND t.provider = 'apple'`,
     args: [userPk],
   });
-  let changed = false;
-  for (const row of res.rows) {
-    try {
-      const status = await fetchAppleSubscriptionStatus(
-        String(row.provider_transaction_id),
-        config,
-      );
-      // ⚠ **만료도 함께 민다**(코덱스 #734 12차). 갱신 상태만 고치면, 애플이 "아직
-      //   활성" 이라고 답해도 우리 `expires_at` 은 옛 값 그대로다 — 그 값을 보고
-      //   "유효한 구독 0건" 으로 판정하면 **돈을 내고 있는 사용자를 무료로 내린다.**
-      //   애플이 준 만료가 **뒤로 갈 때만** 민다(앞당기는 것은 이 경로의 일이 아니다 —
-      //   종료 판정은 만료 크론의 재조회가 한다).
-      //   갱신을 확인했으니 결제 앵커도 같은 규칙으로 옮긴다.
-      const expiresIso = status.expiresDate ? new Date(status.expiresDate).toISOString() : null;
-      const paidIso = status.purchaseDate ? new Date(status.purchaseDate).toISOString() : null;
-      await db.execute({
-        sql: `UPDATE subscriptions
-                SET cancel_at_period_end = ?,
-                    expires_at = CASE
-                      WHEN ? IS NOT NULL AND ? > expires_at THEN ?
-                      ELSE expires_at
-                    END,
-                    updated_at = datetime('now')
-                WHERE id = ?`,
-        args: [
-          status.autoRenewStatus === 0 ? 1 : 0,
-          expiresIso,
-          expiresIso,
-          expiresIso,
-          String(row.sub_id),
-        ],
-      });
-      if (expiresIso) {
-        await db.execute({
-          sql: `UPDATE store_transactions
-                  SET last_paid_at = CASE
-                        WHEN ? > expires_at THEN COALESCE(?, last_paid_at)
-                        ELSE last_paid_at
-                      END,
-                      expires_at = CASE WHEN ? > expires_at THEN ? ELSE expires_at END
-                  WHERE provider = 'apple' AND provider_transaction_id = ?`,
-          args: [expiresIso, paidIso, expiresIso, expiresIso, String(row.provider_transaction_id)],
-        });
-      }
-      changed = true;
-    } catch (err) {
-      logStructured('warn', {
-        at: 'billing.apple.renewal_state',
-        error: String(err),
-        subscriptionId: String(row.sub_id),
-      });
-    }
+  for (const row of result.rows) {
+    await reconcileStoreSubscription(db, env ?? {}, String(row.id));
   }
-  // 호출부가 **바뀐 게 있을 때만** 다시 읽도록 알려 준다(애플 설정이 없는 환경에서는
-  // 아무것도 하지 않으므로 재조회도 필요 없다).
-  return changed;
+  return result.rows.length > 0;
 }
 
 export function storeRenewalProvidersOf(
@@ -647,20 +579,6 @@ export async function resolvePlanAfterSuspend(
  *                `false` 면 제외 없이 재계산(→ 그룹 플랜으로 복구).
  * @returns 실제로 plan 이 바뀐 멤버들의 userPk (알림 대상).
  */
-/**
- * `users.plan` 한 칸을 읽는다. **보류 통지의 중복을 막는 기준**이다.
- *
- * ⚠ 보류는 구독 행을 `active` 로 **남겨 두므로**(회복형), 이미 지난 `expires_at` 을 든 그
- * 행이 5분마다 도는 만료 크론에 **매번** 다시 걸린다. 그때마다 통지하면 사용자는 결제가
- * 복구될 때까지 "결제가 확인되지 않았어요" 를 5분마다 받는다(코덱스 #732 P1).
- * 그래서 **플랜이 실제로 바뀐 회차**에만 알린다 — 멤버 쪽이 이미 쓰는 규칙과 같다
- * (`propagateGroupMemberPlans` 의 `planBefore !== planAfter`).
- */
-async function readUserPlan(db: DbExecutor, userPk: string): Promise<string> {
-  const res = await db.execute({ sql: `SELECT plan FROM users WHERE id = ?`, args: [userPk] });
-  return res.rows.length > 0 ? String(res.rows[0]!.plan ?? 'free') : 'free';
-}
-
 export async function propagateGroupMemberPlans(
   db: DbExecutor,
   planGroupId: string,
@@ -965,268 +883,7 @@ export async function createNewSubscriptionForPlan(
   return subscriptionId;
 }
 
-/**
- * RTDN 유실 대비 reconciliation — 만료 처리 직전에 Play 실상태를 재조회한다.
- *  - 'expire': 정상 만료 진행 (google 결제 아님 / env 미설정 / Play 도 만료 판정)
- *  - 'skip'  : 이번 run 은 건드리지 않음 (Play 가 아직 유효 → 만료를 연장했거나,
- *              일시 장애로 판정 불가 → 다음 run 재시도)
- */
-async function reconcileGoogleBeforeExpiry(
-  db: Client,
-  env: PlayEnv | undefined,
-  params: {
-    subscriptionId: string;
-    userPk: string;
-    planType: string;
-    expiresAt: string;
-    now: Date;
-  },
-): Promise<'expire' | 'skip' | 'suspend'> {
-  const txnRes = await db.execute({
-    sql: `SELECT provider_transaction_id FROM store_transactions
-          WHERE subscription_id = ? AND provider = 'google'`,
-    args: [params.subscriptionId],
-  });
-  if (txnRes.rows.length === 0) return 'expire';
-  const purchaseToken = String(txnRes.rows[0]!.provider_transaction_id);
-
-  let subscription: SubscriptionV2Response;
-  try {
-    subscription = await getPlaySubscriptionV2(env ?? {}, purchaseToken);
-  } catch (err) {
-    // env 미설정(dev/테스트) — 재조회 없이 현행대로 만료 진행.
-    if (err instanceof PlayBillingUnconfiguredError) return 'expire';
-    // 일시 장애(네트워크/OAuth/5xx) — 이번 run 은 만료를 보류하고 다음 run 에 재시도.
-    // 단 만료 시각이 72시간 넘게 지났으면 조회 실패여도 만료를 강행한다(영구 좀비 방지).
-    const expiredMs = new Date(params.expiresAt).getTime();
-    const staleLimitMs = params.now.getTime() - 72 * 60 * 60 * 1000;
-    const forceExpire = Number.isFinite(expiredMs) && expiredMs <= staleLimitMs;
-    logStructured('warn', {
-      at: 'billing.expiry.reconcile',
-      subscriptionId: params.subscriptionId,
-      error: String(err),
-      forceExpire,
-    });
-    return forceExpire ? 'expire' : 'skip';
-  }
-
-  const lineItem = subscription.lineItems?.[0];
-  const expiryMs = lineItem?.expiryTime ? new Date(lineItem.expiryTime).getTime() : NaN;
-  const state = subscription.subscriptionState ?? '';
-  // RTDN 경로(decideSubscriptionAction)와 동일 규칙: CANCELED(기간종료 해지 예약)도
-  // 만료 전까지는 유료 권한이 유지된다. ENTITLED_STATES(ACTIVE/GRACE)만 보면
-  // 기간종료 해지 후 만료 전 구독을 cron 이 조기 강등해 버린다.
-  const stillEntitled =
-    (ENTITLED_STATES.has(state) || state === 'SUBSCRIPTION_STATE_CANCELED') &&
-    Number.isFinite(expiryMs) &&
-    expiryMs > params.now.getTime();
-  if (!stillEntitled) {
-    // ⚠ **ON_HOLD/PAUSED 를 'expire' 로 보내면 그룹이 해체된다.** RTDN 이 보류로
-    // 그룹을 보존해도, 구독 행은 status='active' + 옛 expires_at 으로 남아 이 크론의
-    // 만료 쿼리에 **바로 걸린다**(5분 주기). 그러면 `cancelSubscriptionImmediate` →
-    // `disbandOwnedPlanGroup` 이 멤버십을 통째로 지우고, 결제가 복구돼도 초대 코드까지
-    // 만료돼 **가족·커플이 영구히 깨진다.** 판정은 RTDN 과 같은 헬퍼를 쓴다.
-    // ⚠ `!stillEntitled` **이후에만** 갈라야 한다 — 앞에 두면 '기간종료 해지 예약 +
-    //    만료 미래'(CANCELED)까지 보류로 새어 나간다.
-    return isRecoverablePlayState(state) ? 'suspend' : 'expire';
-  }
-
-  // RTDN(갱신 알림) 유실 — Play 는 아직 유효하다. 만료 처리 대신 Play 권위값으로
-  // 연장한다 (applyStoreEntitlement 갱신 분기와 동일 규칙: 구독·스토어 트랜잭션·
-  // 공유 코드 만료 연장 + users.plan 유지).
-  const expiryIso = new Date(expiryMs).toISOString();
-  const autoRenew = lineItem?.autoRenewingPlan?.autoRenewEnabled === true;
-  // CANCELED 이거나 autoRenewEnabled=false 면 기간종료 해지가 예약된 상태 —
-  // cancel_at_period_end=1 로 세워 만기 도래 시 조용히 만료되게 한다.
-  const cancelAtPeriodEnd = state === 'SUBSCRIPTION_STATE_CANCELED' || !autoRenew ? 1 : 0;
-  await withWriteTransaction(db, async (tx) => {
-    await tx.execute({
-      sql: `UPDATE subscriptions
-            SET expires_at = ?, status = 'active', cancel_at_period_end = ?,
-                updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [expiryIso, cancelAtPeriodEnd, params.subscriptionId],
-    });
-    await tx.execute({
-      sql: `UPDATE voucher_codes SET expires_at = ?
-            WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
-      args: [expiryIso, params.subscriptionId],
-    });
-    await tx.execute({
-      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [planTypeToUserPlan(params.planType), params.userPk],
-    });
-    await tx.execute({
-      // ⚠ **연장을 확인했으면 결제 앵커도 함께 민다**(코덱스 #734 7차). 재조회가
-      //   `expires_at` 만 밀면, 나중에 앱이 **같은 만료**로 확정할 때 확정 경로의
-      //   "만료가 밀렸을 때만" 조건이 걸려 앵커가 영원히 옛 값으로 남는다 — 크론이
-      //   갱신을 잡아 준 계정일수록 보존 기한이 실제보다 이르게 끝나 **최근 결제의
-      //   증빙까지 파기된다.**
-      //   여기서도 **실제로 늘어난 경우만** 민다(같은 값의 재조회는 결제가 아니다).
-      sql: `UPDATE store_transactions
-            SET last_paid_at = CASE
-                  WHEN expires_at IS NULL OR ? > expires_at THEN datetime('now')
-                  ELSE last_paid_at
-                END,
-                expires_at = ?
-            WHERE provider = 'google' AND provider_transaction_id = ?`,
-      args: [expiryIso, expiryIso, purchaseToken],
-    });
-  });
-  logStructured('info', {
-    at: 'billing.expiry.reconcile',
-    action: 'extended',
-    subscriptionId: params.subscriptionId,
-    expiresAt: expiryIso,
-    autoRenew,
-  });
-  return 'skip';
-}
-
-/**
- * 애플 결제 구독의 만료 재조회. `reconcileGoogleBeforeExpiry` 의 애플 판.
- *
- * ⚠ **이게 없으면 돈은 내는데 기능을 잃는다.** 애플에는 Play 의 RTDN 에 해당하는
- * 서버 알림을 우리가 받는 라우트가 없고(App Store Server Notifications 미구현),
- * 구독 연장은 **앱이 전경으로 올라올 때** iOS 가 `resyncEntitlements` 로 알려 주는 게
- * 전부였다. 알람 앱은 안 열어도 울리므로 한 달 넘게 안 여는 사용자가 흔한데, 그 사이
- * 5분마다 도는 만료 크론이 `expires_at` 을 지나 **무료로 강등**시킨다 —
- * 목소리 알람이 잠기고(applyFreePlanVoiceLock) 애플은 계속 청구한다.
- *
- * 그래서 구글과 **같은 모양**으로 만료 직전 스토어에 되묻는다.
- */
-async function reconcileAppleBeforeExpiry(
-  db: Client,
-  env: ExpiryEnv | undefined,
-  params: {
-    subscriptionId: string;
-    userPk: string;
-    planType: string;
-    expiresAt: string;
-    now: Date;
-  },
-): Promise<'expire' | 'skip' | 'suspend'> {
-  const txnRes = await db.execute({
-    sql: `SELECT provider_transaction_id FROM store_transactions
-          WHERE subscription_id = ? AND provider = 'apple'`,
-    args: [params.subscriptionId],
-  });
-  if (txnRes.rows.length === 0) return 'expire';
-
-  // env 미설정(dev/테스트) — 재조회 없이 현행대로 만료 진행(구글과 같은 규칙).
-  const config = appleStoreKitConfigFromEnv(env ?? {});
-  if (!config) return 'expire';
-
-  const originalTransactionId = String(txnRes.rows[0]!.provider_transaction_id);
-  let status: AppleSubscriptionStatus;
-  try {
-    status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
-  } catch (err) {
-    // 구독이 애플에 아예 없다 → 만료가 맞다.
-    if (err instanceof AppleTransactionNotFoundError) return 'expire';
-    // 일시 장애 — 이번 run 은 보류하고 다음 run 에 재시도. 단 만료가 72시간 넘게
-    // 지났으면 강행한다(영구 좀비 방지). 구글 갈래와 같은 규칙이다.
-    const expiredMs = new Date(params.expiresAt).getTime();
-    const forceExpire =
-      Number.isFinite(expiredMs) && expiredMs <= params.now.getTime() - 72 * 60 * 60 * 1000;
-    logStructured('warn', {
-      at: 'billing.expiry.reconcile.apple',
-      subscriptionId: params.subscriptionId,
-      error: String(err),
-      forceExpire,
-    });
-    return forceExpire ? 'expire' : 'skip';
-  }
-
-  // ⚠ ACTIVE 만 보면 안 된다. 결제 재시도(3)와 유예기간(4)도 **아직 권한이 있다** —
-  // 카드가 잠깐 막힌 사용자를 그 자리에서 무료로 떨어뜨리면, 결제가 통과한 뒤에도
-  // 알람은 이미 잠긴 채다. 구글 갈래가 CANCELED 를 살려 두는 것과 같은 취지다.
-  // ⚠ **재시도(3)와 유예(4)는 다르다.** 유예는 애플이 **명시적으로 접근을 허용**하는
-  // 기간이라 그대로 유료다. 재시도는 유예가 끝났거나 애초에 유예를 안 걸어 둔 상태로,
-  // 결제가 실패한 채 카드만 다시 긁고 있는 것이다 — 구글의 ON_HOLD 에 해당한다.
-  // 정책(사용자 확정): **결제 실패 보류 기간에는 free.** 그래서 3 은 권한에서 뺀다.
-  const entitledStatuses: number[] = [
-    APPLE_SUBSCRIPTION_STATUS.ACTIVE,
-    APPLE_SUBSCRIPTION_STATUS.IN_GRACE_PERIOD,
-  ];
-  const expiryMs = status.expiresDate ?? NaN;
-  const stillEntitled =
-    entitledStatuses.includes(status.status) &&
-    Number.isFinite(expiryMs) &&
-    expiryMs > params.now.getTime();
-  if (!stillEntitled) {
-    // ⚠ **재시도는 회복형이라 'expire' 로 보내면 안 된다.** expire 는 그룹을 해체하고
-    // 멤버를 전원 떼어내는 종료 처리라, 카드가 며칠 막힌 것으로 가족 다섯 명이
-    // 재초대 대상이 된다. 권한만 회수하고 구조는 남기는 'suspend' 로 보낸다
-    // (구글의 ON_HOLD 갈래와 같은 취급).
-    return status.status === APPLE_SUBSCRIPTION_STATUS.IN_BILLING_RETRY ? 'suspend' : 'expire';
-  }
-
-  // 애플이 아직 유효하다고 한다 — 만료 대신 애플 권위값으로 연장한다.
-  // 자동갱신이 꺼져 있으면(사용자가 App Store 에서 해지) 기간종료 해지 예약 상태로 세운다.
-  const expiryIso = new Date(expiryMs).toISOString();
-  const cancelAtPeriodEnd = status.autoRenewStatus === 0 ? 1 : 0;
-  await withWriteTransaction(db, async (tx) => {
-    await tx.execute({
-      sql: `UPDATE subscriptions
-            SET expires_at = ?, status = 'active', cancel_at_period_end = ?,
-                updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [expiryIso, cancelAtPeriodEnd, params.subscriptionId],
-    });
-    await tx.execute({
-      sql: `UPDATE voucher_codes SET expires_at = ?
-            WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
-      args: [expiryIso, params.subscriptionId],
-    });
-    await tx.execute({
-      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [planTypeToUserPlan(params.planType), params.userPk],
-    });
-    await tx.execute({
-      // ⚠ **연장을 확인했으면 결제 앵커도 함께 민다**(코덱스 #734 7차). 재조회가
-      //   `expires_at` 만 밀면, 나중에 앱이 **같은 만료**로 확정할 때 확정 경로의
-      //   "만료가 밀렸을 때만" 조건이 걸려 앵커가 영원히 옛 값으로 남는다 — 크론이
-      //   갱신을 잡아 준 계정일수록 보존 기한이 실제보다 이르게 끝나 **최근 결제의
-      //   증빙까지 파기된다.**
-      //   여기서도 **실제로 늘어난 경우만** 민다(같은 값의 재조회는 결제가 아니다).
-      sql: `UPDATE store_transactions
-            SET last_paid_at = CASE
-                  WHEN expires_at IS NULL OR ? > expires_at THEN ?
-                  ELSE last_paid_at
-                END,
-                expires_at = ?
-            WHERE provider = 'apple' AND provider_transaction_id = ?`,
-      // ⚠ **애플이 서명해 준 결제 시각을 쓴다 — 크론이 도는 시각이 아니라**(코덱스 #734 8차).
-      //   크론은 결제보다 한참 뒤에 돌 수 있고(재시도 뒤 발견 등), 그 시각으로 5년을 세면
-      //   처리방침의 최대 5년을 넘긴다. 못 읽었을 때만 서버 시각으로 떨어진다.
-      args: [
-        expiryIso,
-        status.purchaseDate
-          ? new Date(status.purchaseDate).toISOString()
-          : params.now.toISOString(),
-        expiryIso,
-        originalTransactionId,
-      ],
-    });
-  });
-  logStructured('info', {
-    at: 'billing.expiry.reconcile.apple',
-    action: 'extended',
-    subscriptionId: params.subscriptionId,
-    expiresAt: expiryIso,
-    status: status.status,
-  });
-  return 'skip';
-}
-
-/**
- * 만료 직전 **스토어에 되묻는다.** 결제 스토어에 따라 갈라진다.
- *
- * ⚠ 새 스토어를 붙이면 **여기에 갈래를 추가해야 한다.** 빠뜨리면 그 스토어 구독은
- * 재조회 없이 만료된다 — 애플이 정확히 그 상태였다(구글 갈래만 있어서, 애플 결제는
- * 스토어에 묻지도 않고 강등됐다).
- */
+/** 크론과 결제 전 조회는 같은 스토어 판정·쓰기 경로를 사용한다. */
 async function reconcileStoreBeforeExpiry(
   db: Client,
   env: ExpiryEnv | undefined,
@@ -1237,16 +894,39 @@ async function reconcileStoreBeforeExpiry(
     expiresAt: string;
     now: Date;
   },
-): Promise<'expire' | 'skip' | 'suspend'> {
-  const google = await reconcileGoogleBeforeExpiry(db, env, params);
-  // ⚠ **'expire' 일 때만 애플에 물어본다.** 'skip'(아직 유효)과 'suspend'(보류)는
-  // 구글이 내린 확정 판정이라 그대로 돌려줘야 한다. 예전에는 'skip' 만 단락시켜서,
-  // 구글이 'suspend' 를 내도 애플 갈래가 다시 돌고 애플 트랜잭션이 없어 'expire' 로
-  // 덮였다 — 보류가 통째로 무효가 되는 자리였다.
-  if (google !== 'expire') return google;
-  // 구글 트랜잭션이 없어 'expire' 가 나왔을 수 있다 — 애플도 물어본다.
-  // (한 구독이 두 스토어에 동시에 묶이는 일은 없으므로 순서는 무해하다.)
-  return reconcileAppleBeforeExpiry(db, env, params);
+): Promise<'expire' | 'skip'> {
+  // 그룹 멤버의 수명은 소유자가 정한다. 보류·조회 실패 중에도 멤버십은 남겨 둔다.
+  const owner = await db.execute({
+    sql: `SELECT 1 FROM subscriptions member
+          JOIN plan_groups g ON g.id = member.plan_group_id
+          JOIN subscriptions owner ON owner.plan_group_id = g.id AND owner.user_id = g.owner_user_id
+          WHERE member.id = ? AND member.user_id <> g.owner_user_id AND owner.status = 'active'`,
+    args: [params.subscriptionId],
+  });
+  if (owner.rows.length) return 'skip';
+  try {
+    const result = await reconcileStoreSubscription(
+      db,
+      env ?? {},
+      params.subscriptionId,
+      params.now,
+    );
+    return result === 'applied' ? 'skip' : 'expire';
+  } catch (error) {
+    // DB 오류는 만료 근거가 아니다. 권위 조회 실패만 72시간 유예 후 기존 만료 정책을 따른다.
+    if (!(error instanceof BillingStateUnavailableError)) throw error;
+    if (error instanceof BillingStateChangedError) return 'skip';
+    const expiredMs = new Date(params.expiresAt).getTime();
+    const forceExpire =
+      Number.isFinite(expiredMs) && expiredMs <= params.now.getTime() - 72 * 60 * 60 * 1000;
+    logStructured('warn', {
+      at: 'billing.expiry.reconcile',
+      subscriptionId: params.subscriptionId,
+      error: String(error),
+      forceExpire,
+    });
+    return forceExpire ? 'expire' : 'skip';
+  }
 }
 
 /**
@@ -1331,170 +1011,28 @@ export async function processSubscriptionExpiry(
   env?: ExpiryEnv,
   now: Date = new Date(),
 ): Promise<void> {
-  // 무료로 강등된 사용자(소유자 + 가족 멤버) — 이후 FCM(plan_changed)으로 통지해 클라가 '강등 시점'에
-  // 알람을 변환하게 한다.
   const notifyUserPks = new Set<string>();
-  // **결제 보류로 권한이 잠긴 사람들** — 조용한 `plan_changed` 가 아니라 **보이는 안내**를
-  // 받아야 한다(코덱스 #732 P2).
-  //
-  // ⚠ `notifyUserPks` 와 **다른 물건이다.** 그쪽은 "스냅샷을 다시 읽어라" 는 신호일 뿐이라,
-  // 사용자는 어느 날 갑자기 유료 기능이 잠긴 이유를 모른다. 결제 실패는 사용자가 **직접
-  // 고쳐야** 풀리는 상태이므로 `docs/spec/billing-lifecycle.md` 가 별도 안내를 요구한다.
-  //
-  // RTDN 이 먼저 오면 그 경로가 이미 같은 안내를 보낸다(`billing-google-rtdn.ts`) —
-  // 여기는 **RTDN 을 놓쳤을 때** 크론이 같은 상태를 발견하는 갈래라, 같은 함수를 쓴다.
-  // `sendPaymentFailedPush` 는 표시용과 워커 기동용 두 통을 함께 보내므로 이 사람들을
-  // `notifyUserPks` 에 또 넣지 않는다(같은 data-only 가 두 번 간다).
-  const paymentHolds: Array<{ ownerUserPk: string | null; memberUserPks: string[] }> = [];
-  const dueRes = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
-                 s.expires_at, p.plan_type, p.key AS plan_key
+  const due = await db.execute({
+    sql: `SELECT s.id AS sub_id, s.user_id, s.expires_at, p.plan_type
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-          WHERE s.status = 'active'
-            AND s.cancel_at_period_end = 1
-            AND s.expires_at <= ?`,
+          WHERE s.status = 'active' AND julianday(s.expires_at) <= julianday(?)
+          ORDER BY CASE WHEN EXISTS (
+            SELECT 1 FROM plan_groups g WHERE g.id = s.plan_group_id AND g.owner_user_id = s.user_id
+          ) THEN 0 ELSE 1 END, s.id`,
     args: [now.toISOString()],
   });
-  for (const r of dueRes.rows) {
-    const active = {
-      subscriptionId: String(r.sub_id),
-      userPk: String(r.user_id),
-      planId: String(r.plan_id),
-      planType: String(r.plan_type),
-      planKey: String(r.plan_key),
-      planGroupId: (r.plan_group_id as string | null) ?? null,
-      // 이 루프들의 조회 조건이 `cancel_at_period_end` 를 이미 가른다.
-      cancelAtPeriodEnd: Number(r.cancel_at_period_end ?? 0) === 1,
-    };
-    const nextPlanId = (r.next_plan_id as string | null) ?? null;
-
-    // 만료 처리 전에 Play 실상태 재조회 — RTDN 을 놓쳐 DB 만료가 뒤처진 경우
-    // 즉시 해지 대신 연장한다.
-    const decision = await reconcileStoreBeforeExpiry(db, env, {
-      subscriptionId: active.subscriptionId,
-      userPk: active.userPk,
-      planType: active.planType,
-      expiresAt: String(r.expires_at ?? ''),
-      now,
-    });
-    if (decision === 'skip') continue;
-    // ⚠ **보류는 종료가 아니다.** 권한(소유자+멤버 plan)만 회수하고 그룹·구독 행은
-    // 남긴다 — 결제가 복구되면 재초대 없이 살아나야 한다(구글 ON_HOLD 와 같은 취급).
-    if (decision === 'suspend') {
-      // ⚠ **바뀐 회차에만 알린다** — 보류는 구독 행을 남기므로 이 갈래가 5분마다 다시 걸린다.
-      const planBefore = await readUserPlan(db, active.userPk);
-      await resolvePlanAfterSuspend(db, active.userPk, active.subscriptionId);
-      const ownerChanged = planBefore !== (await readUserPlan(db, active.userPk));
-      // ⚠ **여기도 통지한다.** 아래 만료 갈래에만 넣었다가 이 갈래를 빠뜨렸었다 —
-      //   예약해지(`cancel_at_period_end = 1`) 상태에서 보류가 겹치면 권한만 조용히
-      //   잠겼다(코덱스 #732 P2).
-      const suspended = active.planGroupId
-        ? await propagateGroupMemberPlans(db, active.planGroupId, active.userPk, true)
-        : [];
-      // 멤버 목록은 `propagateGroupMemberPlans` 가 이미 '바뀐 사람만' 으로 걸러 돌려준다.
-      if (ownerChanged || suspended.length > 0) {
-        paymentHolds.push({
-          ownerUserPk: ownerChanged ? active.userPk : null,
-          memberUserPks: suspended,
-        });
-      }
-      continue;
-    }
-
-    // 소유자 구독이 만료/변경되면(무료 강등뿐 아니라 개인플랜 예약 전환 포함) 소유 그룹이 해체돼
-    // 멤버가 강등된다. cancelSubscriptionImmediate 가 취소 당사자+해체 멤버를 반환하므로 그대로
-    // 통지 대상에 넣는다(과다통지는 클라가 재조회로 무시).
-    const affected = await withWriteTransaction(db, async (tx) => {
-      const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
-
-      if (!nextPlanId) {
-        // 예약취소 만료 — 음성은 즉시 삭제하지 않고 보관 유예를 건다(PAID_VOICE_RETENTION_DAYS).
-        await schedulePaidVoiceRetention(tx, active.userPk, now);
-        return ids;
-      }
-      const nextPlanRes = await tx.execute({
-        sql: `SELECT id, plan_type, period_days, max_members
-              FROM plans WHERE id = ? AND is_active = 1`,
-        args: [nextPlanId],
-      });
-      if (nextPlanRes.rows.length === 0) return ids;
-
-      const nextPlan = nextPlanRes.rows[0]!;
-      await createNewSubscriptionForPlan(tx, {
-        userPk: active.userPk,
-        planId: String(nextPlan.id),
-        planType: String(nextPlan.plan_type),
-        periodDays: Number(nextPlan.period_days) || 30,
-        maxMembers: Number(nextPlan.max_members) || 1,
-        now,
-      });
-      return ids;
-    });
-    for (const id of affected) notifyUserPks.add(id);
-  }
-
-  const expiredRes = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.expires_at, p.plan_type, p.key AS plan_key
-          FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-          WHERE s.status = 'active' AND s.expires_at <= ? AND s.cancel_at_period_end = 0`,
-    args: [now.toISOString()],
-  });
-  for (const r of expiredRes.rows) {
-    const subscriptionId = String(r.sub_id);
-    const userPk = String(r.user_id);
-    const planType = String(r.plan_type);
-
+  for (const row of due.rows) {
+    const subscriptionId = String(row.sub_id);
     const decision = await reconcileStoreBeforeExpiry(db, env, {
       subscriptionId,
-      userPk,
-      planType,
-      expiresAt: String(r.expires_at ?? ''),
+      userPk: String(row.user_id),
+      planType: String(row.plan_type),
+      expiresAt: String(row.expires_at),
       now,
     });
     if (decision === 'skip') continue;
-    // 보류 — 권한만 회수하고 그룹은 남긴다(위 갈래와 같은 이유).
-    if (decision === 'suspend') {
-      // ⚠ 위 갈래와 같은 이유로 **바뀐 회차에만** 알린다.
-      const planBefore = await readUserPlan(db, userPk);
-      await resolvePlanAfterSuspend(db, userPk, subscriptionId);
-      const ownerChanged = planBefore !== (await readUserPlan(db, userPk));
-      const groupId = (r.plan_group_id as string | null) ?? null;
-      const suspended = groupId ? await propagateGroupMemberPlans(db, groupId, userPk, true) : [];
-      // ⚠ **통지한다**(코덱스 #730 2차). 예전에는 플랜만 바꾸고 그냥 넘어갔다 —
-      //   기기는 유료 스냅샷을 그대로 들고 있어 **이미 예약된 유료 목소리 알람이 계속
-      //   그 목소리로 울린다.** iOS 는 예약 시점에 소리가 고정되므로 특히 그렇다.
-      //   다음 전경 복귀·주기 동기화까지 회수가 미뤄지면 그건 회수가 아니다.
-      //
-      //   ⚠ 그리고 **조용한 신호로는 부족하다**(코덱스 #732 P2) — 결제 실패는 사용자가
-      //   직접 고쳐야 풀리는 상태라 보이는 안내가 함께 가야 한다.
-      if (ownerChanged || suspended.length > 0) {
-        paymentHolds.push({ ownerUserPk: ownerChanged ? userPk : null, memberUserPks: suspended });
-      }
-      continue;
-    }
-
-    // 일반 만료도 소유자면 그룹 해체 → 멤버 강등. cancelSubscriptionImmediate 반환값(당사자+해체
-    // 멤버)을 그대로 통지 대상에 넣는다.
-    const affected = await withWriteTransaction(db, async (tx) => {
-      const ids = await cancelSubscriptionImmediate(
-        tx,
-        {
-          subscriptionId,
-          userPk,
-          planId: String(r.plan_id),
-          planType,
-          planKey: String(r.plan_key),
-          planGroupId: (r.plan_group_id as string | null) ?? null,
-          // 이 루프의 조회 조건이 `cancel_at_period_end = 0` 이다.
-          cancelAtPeriodEnd: false,
-        },
-        now,
-        { deleteVoiceData: false },
-      );
-      // 일반 만료도 하드삭제 대신 보관 유예(PAID_VOICE_RETENTION_DAYS).
-      await schedulePaidVoiceRetention(tx, userPk, now);
-      return ids;
-    });
+    // 외부 조회 동안 갱신·전환된 행은 쓰기 트랜잭션에서 다시 검사한다.
+    const affected = await expireSubscriptionIfDue(db, subscriptionId, String(row.expires_at), now);
     for (const id of affected) notifyUserPks.add(id);
   }
 
@@ -1505,25 +1043,6 @@ export async function processSubscriptionExpiry(
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(RTDN 갈래와 같은 규칙) — 네트워크 I/O 이고,
   // 실패해도 흐름을 깨지 않는다. 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 맡는다.
-  const hasFirebaseForHolds = Boolean(
-    env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON,
-  );
-  const hasApnsForHolds = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
-  if (paymentHolds.length > 0 && (hasFirebaseForHolds || hasApnsForHolds)) {
-    for (const hold of paymentHolds) {
-      try {
-        await sendPaymentFailedPush(db, env as ExpiryEnv, hold);
-      } catch (err) {
-        // 한 사람의 발송 실패로 나머지를 멈추지 않는다.
-        logStructured('error', {
-          at: 'billing.payment_failed_push',
-          action: 'PAYMENT_FAILED_PUSH_FAILED',
-          error: String(err),
-        });
-      }
-    }
-  }
-
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
   // 유예가 걸린 사람에게만 **눈에 보이는** 삭제 예고를 보낸다(위 신호는 전부 무음이다).
   await notifyVoiceDeletionScheduled(db, env, Array.from(notifyUserPks));

@@ -22,6 +22,8 @@ data class BillingSubscriptionResponse(
      * 구버전 서버는 이 필드를 주지 않는다(null) — 그때는 막지 않는다(예전 동작).
      */
     @SerializedName("store_renewal_providers") val storeRenewalProviders: List<String>? = null,
+    /** 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan. */
+    @SerializedName("user_plan") val userPlan: String? = null,
 )
 
 data class BillingSubscription(

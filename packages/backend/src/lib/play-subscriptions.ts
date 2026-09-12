@@ -13,36 +13,41 @@ import type { Env } from '../types';
 import { getGoogleAccessToken, parseServiceAccountJson } from './google-oauth';
 
 /**
- * **이 Play 구독의 마지막 결제 시각 추정.**
- *
- * ⚠ **Play v2 에는 갱신 결제 시각이 없다.** `startTime` 은 체인 시작(첫 결제)이고
- * `latestOrderId` 에는 시각이 없다. 애플과 달리 서명된 `purchaseDate` 를 못 받는다.
- *
- * 그래서 **아래 세 값으로 좁힌다**(코덱스 #734 10차):
- * - `startTime` — 첫 결제. 첫 확정에서는 이게 정답이다.
- * - `expiry - 기간` — 지금 주기를 산 날. 갱신에서는 이쪽이 최신이다.
- * - `now` 로 **상한**을 둔다 — 미래 값이 들어오면 그건 결제 시각이 아니다.
- *
- * 왜 `now` 만 쓰면 안 되나: RTDN 을 놓쳤거나 사용자가 한참 뒤에 복원하면 **확정 시각이
- * 결제보다 몇 주 뒤**다. 거기에 5년을 더하면 처리방침이 밝힌 최대 5년을 그만큼 넘긴다.
- *
- * 달력 달(P1M)과 `period_days`(30) 차이로 며칠 어긋날 수 있다 — 몇 주를 넘기는 것보다 낫다.
+ * 최신 성공 주문의 실제 처리 시각. 구독 만료나 조회 시각으로 결제일을 추정하지 않는다.
+ * https://developers.google.com/android-publisher/api-ref/rest/v3/orders
  */
-export function googlePaymentAnchor(params: {
-  startTime?: string;
-  expiresAt: Date;
-  periodDays: number;
-  now: Date;
-}): Date {
-  const candidates: number[] = [];
-  const started = params.startTime ? Date.parse(params.startTime) : NaN;
-  if (Number.isFinite(started)) candidates.push(started);
-  if (params.periodDays > 0) {
-    candidates.push(params.expiresAt.getTime() - params.periodDays * 24 * 60 * 60 * 1000);
+export async function googlePaymentAnchor(
+  env: PlayEnv,
+  subscription: SubscriptionV2Response,
+  purchaseToken: string,
+): Promise<Date> {
+  const orderId =
+    selectAuthoritativeLineItem(subscription.lineItems)?.latestSuccessfulOrderId ??
+    subscription.latestOrderId;
+  if (!orderId) throw new Error('Play subscription is missing its latest successful order');
+  const { account, packageName } = requirePlayConfig(env);
+  const accessToken = await getGoogleAccessToken(account, ANDROID_PUBLISHER_SCOPE);
+  const response = await fetch(
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/orders/${encodeURIComponent(orderId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!response.ok) throw new Error(`Play order lookup failed (${response.status})`);
+  const order = (await response.json()) as {
+    orderId?: string;
+    purchaseToken?: string;
+    orderHistory?: { processedEvent?: { eventTime?: string } };
+  };
+  const timestamp = order.orderHistory?.processedEvent?.eventTime;
+  const paidAt = timestamp ? new Date(timestamp) : null;
+  if (
+    order.orderId !== orderId ||
+    order.purchaseToken !== purchaseToken ||
+    !paidAt ||
+    !Number.isFinite(paidAt.getTime())
+  ) {
+    throw new Error('Play order does not identify a processed payment for this purchase');
   }
-  if (candidates.length === 0) return params.now;
-  // 가장 최근 후보를 쓰되, 지금을 넘지 않는다.
-  return new Date(Math.min(params.now.getTime(), Math.max(...candidates)));
+  return paidAt;
 }
 
 export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
@@ -53,12 +58,13 @@ export interface SubscriptionV2Response {
   /**
    * **구독 체인이 시작된 시각**(RFC3339). 첫 결제 시각이다 — 갱신해도 바뀌지 않는다.
    *
-   * 탈퇴 시 결제기록 보존 기한의 기준일로 쓴다(`googlePaymentAnchor`).
+   * 갱신의 결제일은 Orders API 로 따로 확인한다.
    */
   startTime?: string;
   lineItems?: Array<{
     productId?: string;
     expiryTime?: string;
+    latestSuccessfulOrderId?: string;
     /** autoRenewEnabled=false 면 사용자가 자동갱신을 꺼둔 상태(기간종료 해지 예약). */
     autoRenewingPlan?: { autoRenewEnabled?: boolean };
   }>;
@@ -84,6 +90,27 @@ export const ENTITLED_STATES = new Set([
   'SUBSCRIPTION_STATE_ACTIVE',
   'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
 ]);
+
+/** 예약 교체 대상(아직 소유하지 않은 상품)을 현재 유료 상품으로 고르지 않는다. */
+export function selectAuthoritativeLineItem<
+  T extends { productId?: string; latestSuccessfulOrderId?: string },
+>(lineItems: T[] | undefined, requestedProductId?: string): T | undefined {
+  const owned = lineItems?.filter((item) => item.latestSuccessfulOrderId);
+  const candidates = owned?.length ? owned : lineItems;
+  return candidates?.find((item) => item.productId === requestedProductId) ?? candidates?.[0];
+}
+
+export function googlePlanKeyFromProductId(
+  productId: string,
+): 'personal' | 'couple' | 'family' | null {
+  const products: Record<string, 'personal' | 'couple' | 'family'> = {
+    personal_monthly: 'personal',
+    couple_monthly: 'couple',
+    family_monthly: 'family',
+    personal_gift_1m: 'personal',
+  };
+  return products[productId] ?? null;
+}
 
 /** Play 구독 제어에 필요한 env 부분집합 (billing-google.ts confirm 과 동일 시크릿). */
 /**
@@ -122,10 +149,7 @@ class PlayApiError extends Error {
  * 사용자가 스토어에서 직접 구독을 관리할 수 있는 Play 딥링크.
  * 서버 측 cancel/revoke 실패 시 응답 manage_url 로 내려 클라가 안내한다.
  */
-export function playManageUrl(
-  productId?: string | null,
-  packageName?: string | null,
-): string {
+export function playManageUrl(productId?: string | null, packageName?: string | null): string {
   const base = 'https://play.google.com/store/account/subscriptions';
   if (!productId || !packageName) return base;
   return `${base}?sku=${encodeURIComponent(productId)}&package=${encodeURIComponent(packageName)}`;

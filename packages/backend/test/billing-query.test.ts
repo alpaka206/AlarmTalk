@@ -44,13 +44,22 @@ describe('GET /billing/vouchers (billingQuery)', () => {
 
   it('voucher JOIN plans — plan_key, plan_name, plan_type 포함', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([{
-      id: 'v1', code: 'INV-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
-      issuer_subscription_id: 'sub-1', redeemed_by_user_id: null,
-      status: 'issued', issued_at: '2026-04-21T00:00:00.000Z',
-      used_at: null, expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
-    }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        code: 'INV-AAAA-BBBB-CCCC',
+        plan_id: PLAN_PLUS_ID,
+        issuer_subscription_id: 'sub-1',
+        redeemed_by_user_id: null,
+        status: 'issued',
+        issued_at: '2026-04-21T00:00:00.000Z',
+        used_at: null,
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'personal',
+        plan_name: '개인',
+        plan_type: 'personal',
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
     const body = await res.json();
@@ -89,13 +98,22 @@ describe('GET /billing/vouchers (billingQuery)', () => {
 
   it('used 상태 voucher 의 redeemed_by_user_id, used_at 정상 매핑', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([{
-      id: 'v1', code: 'INV-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
-      issuer_subscription_id: 'sub-1', redeemed_by_user_id: 'user-pk-2',
-      status: 'used', issued_at: '2026-04-21T00:00:00.000Z',
-      used_at: '2026-04-22T10:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
-    }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        code: 'INV-AAAA-BBBB-CCCC',
+        plan_id: PLAN_PLUS_ID,
+        issuer_subscription_id: 'sub-1',
+        redeemed_by_user_id: 'user-pk-2',
+        status: 'used',
+        issued_at: '2026-04-21T00:00:00.000Z',
+        used_at: '2026-04-22T10:00:00.000Z',
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'personal',
+        plan_name: '개인',
+        plan_type: 'personal',
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
     const body = await res.json();
@@ -107,8 +125,34 @@ describe('GET /billing/vouchers (billingQuery)', () => {
   it('여러 voucher 반환 시 순서 유지 (DB 결과 순서대로)', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([
-      { id: 'v1', code: 'INV-AAAA-2222-2222', plan_id: PLAN_PLUS_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-22T00:00:00.000Z', used_at: null, expires_at: '2026-05-22T00:00:00.000Z', plan_key: 'personal', plan_name: '플러스', plan_type: 'personal' },
-      { id: 'v2', code: 'INV-BBBB-2222-2222', plan_id: PLAN_FAMILY_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-21T00:00:00.000Z', used_at: null, expires_at: '2026-05-21T00:00:00.000Z', plan_key: 'family', plan_name: '가족', plan_type: 'family' },
+      {
+        id: 'v1',
+        code: 'INV-AAAA-2222-2222',
+        plan_id: PLAN_PLUS_ID,
+        issuer_subscription_id: null,
+        redeemed_by_user_id: null,
+        status: 'issued',
+        issued_at: '2026-04-22T00:00:00.000Z',
+        used_at: null,
+        expires_at: '2026-05-22T00:00:00.000Z',
+        plan_key: 'personal',
+        plan_name: '플러스',
+        plan_type: 'personal',
+      },
+      {
+        id: 'v2',
+        code: 'INV-BBBB-2222-2222',
+        plan_id: PLAN_FAMILY_ID,
+        issuer_subscription_id: null,
+        redeemed_by_user_id: null,
+        status: 'issued',
+        issued_at: '2026-04-21T00:00:00.000Z',
+        used_at: null,
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'family',
+        plan_name: '가족',
+        plan_type: 'family',
+      },
     ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
@@ -161,7 +205,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain("s.status = 'active'");
-    expect(sql).toContain("s.expires_at > datetime('now')");
+    expect(sql).toContain("datetime(s.expires_at) > datetime('now')");
   });
 
   // -------------------------------------------------------------------------
@@ -171,13 +215,23 @@ describe('GET /billing/subscription (billingQuery)', () => {
   //   Play 구독을 쓰는 사용자의 해지가 조용히 실패한다 — 값의 출처는 서버 하나다.
   // -------------------------------------------------------------------------
   function pushSubscriptionRow() {
-    mockDB.pushResult([{
-      sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID,
-      plan_group_id: null, status: 'active',
-      starts_at: '2026-04-21T00:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
-      period_days: 30, max_members: 1, price_krw: 4900,
-    }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        status: 'active',
+        starts_at: '2026-04-21T00:00:00.000Z',
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'personal',
+        plan_name: '개인',
+        plan_type: 'personal',
+        period_days: 30,
+        max_members: 1,
+        price_krw: 4900,
+      },
+    ]);
   }
 
   // -------------------------------------------------------------------------
@@ -205,27 +259,11 @@ describe('GET /billing/subscription (billingQuery)', () => {
     // ⚠ **세는 것과 쓰는 것이 한 문이어야 한다**(코덱스 #734 12차). 따로 두면 그 사이
     //   다른 기기의 확정이 만든 구독·유료 plan 을 이 요청이 free 로 덮어쓴다.
     expect(update!.sql).toContain('NOT EXISTS');
-    expect(update!.sql).toContain("datetime(expires_at) > datetime('now')");
+    expect(update!.sql).toContain("status = 'active'");
     expect(update!.args).toEqual(['user-pk-1', 'user-pk-1']);
   });
 
-  it('정리는 애플 재조회 **뒤에** 온다 — 갱신된 구독을 0건으로 읽으면 안 된다', async () => {
-    // ⚠ 애플 재조회가 만료를 밀어 주기 전에 세면, 애플이 갱신해 준 구독을 "유효한 구독
-    //   0건" 으로 읽어 **돈 내는 사용자를 무료로 내린다**(코덱스 #734 12차).
-    pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' }]);
-
-    await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription?refresh_store=1'));
-
-    // 애플 재조회는 **스토어 기록 조회 결과**를 보고 부를지 정한다. 그러니 정리가 그
-    // 조회보다 뒤에 있으면 재조회 뒤라는 뜻이다(이 테스트 환경에는 애플 자격이 없어
-    // 재조회 자체는 건너뛴다 — 순서만 고정한다).
-    const storeTxnAt = mockDB.calls.findIndex((c) => c.sql.includes('FROM store_transactions'));
-    const cleanupAt = mockDB.calls.findIndex((c) => c.sql.includes('UPDATE users SET plan'));
-    expect(storeTxnAt).toBeGreaterThanOrEqual(0);
-    expect(cleanupAt).toBeGreaterThan(storeTxnAt);
-  });
+  // 실제 갱신 후 정리 순서는 billing-reconciliation.test.ts 에서 DB 상태로 검증한다.
 
   it('일상 조회(refresh_store 없음)는 아무것도 쓰지 않는다', async () => {
     // ⚠ 이 라우트는 앱 시작 갱신·PlanChangeSyncWorker·StockClipPrefetchWorker 도 쓴다.
@@ -237,15 +275,33 @@ describe('GET /billing/subscription (billingQuery)', () => {
     await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription'));
 
     expect(mockDB.calls.find((c) => /^\s*UPDATE/i.test(c.sql))).toBeUndefined();
-    expect(mockDB.calls.find((c) => c.sql.includes('COUNT(*) AS n FROM subscriptions'))).toBeUndefined();
+    expect(
+      mockDB.calls.find((c) => c.sql.includes('COUNT(*) AS n FROM subscriptions')),
+    ).toBeUndefined();
   });
 
   it('활성 구독이 없어도 갱신 주인은 돌려준다 — Play 보류가 여기 걸린다', async () => {
     // Play `ON_HOLD` 는 구독 행을 active 로 남기고 expires_at 은 지나 있다 →
     // 위 SELECT(만료 필터)에는 안 걸리지만 갱신은 Play 가 쥐고 있다.
     mockDB.pushResult([]); // 만료되지 않은 활성 구독 없음
-    mockDB.pushResult([{ sub_id: 'sub-hold', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-hold' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-hold',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        provider: 'google',
+        provider_transaction_id: 'tok-1',
+        product_id: 'p1',
+        subscription_id: 'sub-hold',
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     const body = await res.json();
@@ -256,12 +312,36 @@ describe('GET /billing/subscription (billingQuery)', () => {
   it('애플·구글이 함께 살아 있으면 둘 다 돌려준다 — store_provider 는 apple 로 접힌다', async () => {
     pushSubscriptionRow();
     mockDB.pushResult([
-      { sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
-      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+      {
+        sub_id: 'sub-2',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
     ]);
     mockDB.pushResult([
-      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' },
-      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-2' },
+      {
+        provider: 'apple',
+        provider_transaction_id: 'tx-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
+      {
+        provider: 'google',
+        provider_transaction_id: 'tok-1',
+        product_id: 'p1',
+        subscription_id: 'sub-2',
+      },
     ]);
 
     const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
@@ -276,8 +356,25 @@ describe('GET /billing/subscription (billingQuery)', () => {
     //   그걸 세면 우리가 "Play 에서 먼저 해지하라" 고 안내해 놓고, 그대로 한 사용자를
     //   남은 기간 내내 막게 된다(코덱스 #733 6차).
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal', cancel_at_period_end: 1 }]);
-    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+        cancel_at_period_end: 1,
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        provider: 'google',
+        provider_transaction_id: 'tok-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
+    ]);
 
     const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
     expect(body.store_renewal_providers).toEqual([]);
@@ -287,7 +384,16 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('스토어 결제가 없으면 빈 배열이다', async () => {
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
     mockDB.pushResult([]);
 
     const body = await (await buildApp().request(jsonReq('GET', '/billing/subscription'))).json();
@@ -296,8 +402,24 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('애플 결제면 store_provider=apple', async () => {
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        provider: 'apple',
+        provider_transaction_id: 'tx-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     expect((await res.json()).subscription.store_provider).toBe('apple');
@@ -305,8 +427,24 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('구글 결제면 store_provider=google', async () => {
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        provider: 'google',
+        provider_transaction_id: 'tok-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     expect((await res.json()).subscription.store_provider).toBe('google');
@@ -315,12 +453,36 @@ describe('GET /billing/subscription (billingQuery)', () => {
   it('애플·구글이 섞여 있으면 apple 이 이긴다 — 해지 라우트가 409 로 거절하는 조건과 같다', async () => {
     pushSubscriptionRow();
     mockDB.pushResult([
-      { sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
-      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+      {
+        sub_id: 'sub-2',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
     ]);
     mockDB.pushResult([
-      { provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1', subscription_id: 'sub-1' },
-      { provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' },
+      {
+        provider: 'google',
+        provider_transaction_id: 'tok-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
+      {
+        provider: 'apple',
+        provider_transaction_id: 'tx-1',
+        product_id: 'p1',
+        subscription_id: 'sub-1',
+      },
     ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
@@ -329,7 +491,16 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('스토어 결제가 아니면(프로모·바우처) store_provider=null — 서버 로컬 해지가 된다', async () => {
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
     mockDB.pushResult([]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
@@ -338,7 +509,16 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('판정 범위는 최신 1건이 아니라 **활성 구독 전부** — 해지 라우트와 같은 집합이다', async () => {
     pushSubscriptionRow();
-    mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
     mockDB.pushResult([]);
 
     await buildApp().request(jsonReq('GET', '/billing/subscription'));
@@ -351,13 +531,23 @@ describe('GET /billing/subscription (billingQuery)', () => {
   });
 
   it('personal 구독 시 plan_group_id null 반환', async () => {
-    mockDB.pushResult([{
-      sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID,
-      plan_group_id: null, status: 'active',
-      starts_at: '2026-04-21T00:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
-      period_days: 30, max_members: 1, price_krw: 4900,
-    }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-1',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_PLUS_ID,
+        plan_group_id: null,
+        status: 'active',
+        starts_at: '2026-04-21T00:00:00.000Z',
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'personal',
+        plan_name: '개인',
+        plan_type: 'personal',
+        period_days: 30,
+        max_members: 1,
+        price_krw: 4900,
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     const body = await res.json();
@@ -366,13 +556,23 @@ describe('GET /billing/subscription (billingQuery)', () => {
   });
 
   it('family 구독 시 plan_group_id 포함 + plan 필드 전체 정확성', async () => {
-    mockDB.pushResult([{
-      sub_id: 'sub-fam', user_id: 'user-pk-1', plan_id: PLAN_FAMILY_ID,
-      plan_group_id: 'group-1', status: 'active',
-      starts_at: '2026-04-21T00:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'family', plan_name: '가족', plan_type: 'family',
-      period_days: 30, max_members: 6, price_krw: 9900,
-    }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-fam',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_FAMILY_ID,
+        plan_group_id: 'group-1',
+        status: 'active',
+        starts_at: '2026-04-21T00:00:00.000Z',
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'family',
+        plan_name: '가족',
+        plan_type: 'family',
+        period_days: 30,
+        max_members: 6,
+        price_krw: 9900,
+      },
+    ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     const body = await res.json();
@@ -406,7 +606,9 @@ describe('GET /billing/subscription (billingQuery)', () => {
 
   it('DB 에러 → 500', async () => {
     const origExecute = mockDB.client.execute;
-    mockDB.client.execute = async () => { throw new Error('DB read failed'); };
+    mockDB.client.execute = async () => {
+      throw new Error('DB read failed');
+    };
 
     const res = await buildApp().request(jsonReq('GET', '/billing/subscription'));
     expect(res.status).toBe(500);

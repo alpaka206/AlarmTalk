@@ -812,6 +812,8 @@ struct BillingSubscriptionResponse: Codable, Equatable {
      (`BillingPanel.purchaseBlockReason`).
      */
     var storeRenewalProviders: [String]?
+    /// 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan.
+    var userPlan: String? = nil
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {

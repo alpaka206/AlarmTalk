@@ -43,7 +43,7 @@ export async function pseudonymizeBillingForRetention(
   //   적었는데, `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로 **남은 기록을
   //   실제 주문에 되짚을 방법이 사라졌다** — 결제 분쟁에서 "이 사람이 이 주문을 했다" 를
   //   보일 수 없다. 아래 일회성 갈래는 이미 그걸 남기고 있었다(마이그레이션 113 의 증빙
-  //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면(플랜 전환 등) **가장 최근 것**을 쓴다.
+  //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면 각각 보존한다. 최신 것만 남기지 않는다.
   const subs = await tx.execute({
     sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
                  st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
@@ -55,12 +55,7 @@ export async function pseudonymizeBillingForRetention(
                  END AS last_paid_estimate
           FROM subscriptions s
           LEFT JOIN plans p ON p.id = s.plan_id
-          LEFT JOIN store_transactions st ON st.id = (
-            SELECT id FROM store_transactions
-            WHERE subscription_id = s.id
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-          )
+          LEFT JOIN store_transactions st ON st.subscription_id = s.id
           WHERE s.user_id = ?`,
     args: [userPk],
   });
@@ -91,7 +86,8 @@ export async function pseudonymizeBillingForRetention(
       (row.txn_last_paid_at as string | null) ? null : (row.last_paid_estimate as string | null),
       (row.txn_last_paid_at as string | null) ? null : (row.starts_at as string | null),
     ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-    const paidAt = anchors.length > 0 ? anchors.reduce((a, b) => (a > b ? a : b)) : null;
+    const paidAt =
+      anchors.length > 0 ? anchors.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b)) : null;
     const recordRetainUntil = paidAt
       ? billingRetentionUntil(new Date(paidAt)).toISOString()
       : retainUntil;
@@ -133,7 +129,7 @@ export async function pseudonymizeBillingForRetention(
   //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
   //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
   const oneTime = await tx.execute({
-    sql: `SELECT st.id, st.plan_key, st.created_at, st.provider, st.provider_transaction_id,
+    sql: `SELECT st.id, st.plan_key, st.created_at, st.last_paid_at, st.provider, st.provider_transaction_id,
                  st.product_id, st.raw_payload, p.id AS plan_id
           FROM store_transactions st
           LEFT JOIN plans p ON p.key = st.plan_key
@@ -143,7 +139,8 @@ export async function pseudonymizeBillingForRetention(
   for (const row of oneTime.rows) {
     // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #731). 탈퇴 시각부터 세면 4년 전에 산
     //   선물이 그 시점부터 5년을 더 남아 **9년**이 된다 — 처리방침이 밝힌 최대 5년을 넘긴다.
-    const purchasedAt = (row.created_at as string | null) ?? null;
+    const purchasedAt =
+      (row.last_paid_at as string | null) ?? (row.created_at as string | null) ?? null;
     const recordRetainUntil = purchasedAt
       ? billingRetentionUntil(new Date(purchasedAt)).toISOString()
       : retainUntil;

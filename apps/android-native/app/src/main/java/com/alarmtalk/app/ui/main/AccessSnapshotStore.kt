@@ -40,7 +40,13 @@ internal data class AccessSnapshot(
      * 이 값만 회수하므로, 그룹만 봐서도 안 된다.
      */
     val userPlan: String? = null,
-)
+) {
+    /** 결제 전 조회는 플랜과 구독을 함께 교체한다. 일상 조회는 플랜을 제공하지 않는다. */
+    fun withBillingResponse(response: BillingSubscriptionResponse?): AccessSnapshot = copy(
+        subscriptionResponse = response,
+        userPlan = response?.userPlan ?: userPlan,
+    )
+}
 
 /**
  * 스토어 신호의 신선도 상한 — **40일**.

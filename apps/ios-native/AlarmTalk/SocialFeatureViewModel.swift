@@ -149,7 +149,8 @@ final class SocialFeatureViewModel: ObservableObject {
         // 권한 스냅샷은 **문 하나로만** 쓴다. 표는 요청 전에 뜨고, rolling refresh 로 토큰이
         // 굴러가면 **우리가 굴린 것**이므로 표도 함께 옮긴다(안 옮기면 그 뒤 쓰기가 전부 거절된다 —
         // 30차에 실제로 그렇게 `entitlementSnapshotComplete` 가 영영 안 섰다).
-        guard var accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else { return }
+        guard var accessTicket = entitlementWriter.ticket(),
+              accessTicket.userID == userID, accessTicket.token == token else { return }
 
         var familyGroupOK = false
         var entitlementOK = false
@@ -307,7 +308,8 @@ final class SocialFeatureViewModel: ObservableObject {
         // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
         // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
         let generation = refreshGeneration
-        guard let accessTicket = entitlementWriter.ticket(), accessTicket.userID == userID else {
+        guard let accessTicket = entitlementWriter.ticket(),
+              accessTicket.userID == userID, accessTicket.token == token else {
             return false
         }
         do {
@@ -315,13 +317,19 @@ final class SocialFeatureViewModel: ObservableObject {
                 token: token,
                 refreshStoreState: refreshStoreState
             )
+            // 구버전 서버·취소된 요청으로 반쪽 스냅샷을 남기거나 결제를 열지 않는다.
+            guard !Task.isCancelled,
+                  !refreshStoreState || (nextSubscription.userPlan != nil &&
+                    nextSubscription.storeRenewalProviders != nil) else { return false }
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
             guard activeUserID == userID, generation == refreshGeneration else { return false }
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
+                if let plan = nextSubscription.userPlan { $0.userPlan = plan }
             }
             guard silentWrite == .applied else { return false }
             subscription = nextSubscription
+            if let plan = nextSubscription.userPlan { onFreshPlan?(userID, token, plan) }
             return true
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.

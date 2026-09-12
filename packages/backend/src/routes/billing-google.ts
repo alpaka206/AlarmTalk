@@ -7,9 +7,7 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseAccountMatches } from '../lib/purchase-account-binding';
-import { notifyPlanChanged,
-  refreshCompetingAppleRenewalState,
-} from '../lib/billing-cancel';
+import { notifyPlanChanged, refreshCompetingAppleRenewalState } from '../lib/billing-cancel';
 import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
@@ -17,6 +15,8 @@ import {
   isRecoverablePlayState,
   type SubscriptionV2Response,
   googlePaymentAnchor,
+  googlePlanKeyFromProductId,
+  selectAuthoritativeLineItem,
 } from '../lib/play-subscriptions';
 import { resolveUserPk } from './billing-helpers';
 
@@ -38,19 +38,7 @@ import { resolveUserPk } from './billing-helpers';
 export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES, isRecoverablePlayState };
 export type { SubscriptionV2Response };
 
-/**
- * Play Console 구독 상품 ID → plans.key 매핑.
- * 월간 SKU 만 판매한다.
- */
-const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
-  personal_monthly: 'personal',
-  couple_monthly: 'couple',
-  family_monthly: 'family',
-  // ⚠ **선물 상품은 구독이 아니라 1회성 인앱 상품이다.** 자동 갱신 구독은 남에게 줄 수
-  // 없어서(Play 가 구매자 계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로
-  // **바우처 코드**를 발급한다.
-  personal_gift_1m: 'personal',
-};
+export { googlePlanKeyFromProductId };
 
 /**
  * 선물용 1회성 상품 ID.
@@ -62,12 +50,6 @@ const GOOGLE_GIFT_PRODUCT_IDS = new Set<string>(['personal_gift_1m']);
 
 function isGoogleGiftProductId(productId: string): boolean {
   return GOOGLE_GIFT_PRODUCT_IDS.has(productId);
-}
-
-export function googlePlanKeyFromProductId(
-  productId: string,
-): 'personal' | 'couple' | 'family' | null {
-  return GOOGLE_PRODUCT_TO_PLAN_KEY[productId] ?? null;
 }
 
 interface ConfirmRequest {
@@ -296,7 +278,10 @@ billingGoogle.post('/google/confirm', async (c) => {
           error: 'obfuscatedExternalAccountId mismatch',
         });
         return c.json(
-          { error: 'Purchase is bound to another account', error_code: 'TRANSACTION_ACCOUNT_MISMATCH' },
+          {
+            error: 'Purchase is bound to another account',
+            error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
+          },
           403,
         );
       }
@@ -315,7 +300,10 @@ billingGoogle.post('/google/confirm', async (c) => {
           error: 'obfuscatedExternalAccountId missing on first claim',
         });
         return c.json(
-          { error: 'Purchase is missing the account identifier', error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED' },
+          {
+            error: 'Purchase is missing the account identifier',
+            error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED',
+          },
           403,
         );
       }
@@ -324,9 +312,13 @@ billingGoogle.post('/google/confirm', async (c) => {
     if (!giftPlan) {
       return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
     }
-    const issuedAt = product.purchaseTimeMillis
-      ? new Date(Number(product.purchaseTimeMillis))
-      : new Date();
+    const issuedAt = new Date(Number(product.purchaseTimeMillis));
+    if (!product.purchaseTimeMillis || !Number.isFinite(issuedAt.getTime())) {
+      return c.json(
+        { error: 'Missing purchase time', error_code: 'GOOGLE_VERIFICATION_FAILED' },
+        502,
+      );
+    }
     const voucherExpiresAt = new Date(
       issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
     );
@@ -345,8 +337,8 @@ billingGoogle.post('/google/confirm', async (c) => {
         // 바우처가 안 나간다. 애플 쪽(`billing-apple.ts`)이 같은 버그였다 — **두 갈래는
         // 한 벌이다.** 회귀 방지는 `scripts/check-insert-not-null.py`.
         sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload)
-              VALUES (?, ?, 'google', ?, ?, ?, NULL, ?)`,
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload, last_paid_at)
+              VALUES (?, ?, 'google', ?, ?, ?, NULL, ?, ?)`,
         args: [
           crypto.randomUUID(),
           userPk,
@@ -354,6 +346,7 @@ billingGoogle.post('/google/confirm', async (c) => {
           parsed.product_id,
           planKey,
           JSON.stringify({ kind: 'gift', orderId: product.orderId ?? null }),
+          issuedAt.toISOString(),
         ],
       });
       return issueVoucherCode(txDb, {
@@ -407,8 +400,7 @@ billingGoogle.post('/google/confirm', async (c) => {
     return c.json(
       {
         error: 'Google purchase not found or verification failed',
-        error_code:
-          status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
+        error_code: status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
       },
       status,
     );
@@ -425,8 +417,7 @@ billingGoogle.post('/google/confirm', async (c) => {
     );
   }
 
-  const lineItem = subscription.lineItems?.find((item) => item.productId === parsed.product_id)
-    ?? subscription.lineItems?.[0];
+  const lineItem = selectAuthoritativeLineItem(subscription.lineItems, parsed.product_id);
   if (!lineItem?.expiryTime) {
     return c.json({ error: 'Missing expiry time', error_code: 'GOOGLE_VERIFICATION_FAILED' }, 502);
   }
@@ -445,8 +436,7 @@ billingGoogle.post('/google/confirm', async (c) => {
   // setObfuscatedAccountId(sha256hex(로그인 사용자 id — JWT sub 와 동일한 세션 user id))
   // 를 설정한다. Play 응답의 식별자가 호출자(sub 또는 users.id PK)의 해시와 다르면
   // 훔친/다른 계정의 purchaseToken 이므로 403 으로 거절한다.
-  const obfuscatedId =
-    subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
+  const obfuscatedId = subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
   if (obfuscatedId) {
     // 클라는 구매 시점 세션의 로그인 id(JWT sub)를 해시해 넣는다. userId 는 이제
     // users.id 로 정규화되므로, 구 토큰으로 결제한 사용자를 위해 원래 sub 도 함께 본다.
@@ -504,9 +494,10 @@ billingGoogle.post('/google/confirm', async (c) => {
   // ⚠ **막기 전에 애플에 물어 갱신 상태를 최신화한다**(코덱스 #733 8차). 애플 상태는
   //   가만두면 낡는다 — 우리가 받는 서버 알림이 없고, 같은-플랜 갱신 갈래가
   //   `cancel_at_period_end` 를 0 으로 되돌린다. 낡은 값으로 막으면 **App Store 에서 이미
-  //   자동갱신을 끈 사용자가 아무것도 할 수 없다.** 최선 노력이라 실패해도 진행한다.
+  //   자동갱신을 끈 사용자가 아무것도 할 수 없다.** 확인 실패 시 확정도 재시도하도록 막는다.
   await refreshCompetingAppleRenewalState(db, c.env, userPk);
 
+  const lastPaidAt = await googlePaymentAnchor(c.env, subscription, parsed.purchase_token);
   const result = await withWriteTransaction(db, (txDb) =>
     applyStoreEntitlement(txDb, {
       userPk,
@@ -519,12 +510,7 @@ billingGoogle.post('/google/confirm', async (c) => {
       // ⚠ **확정 시각이 아니라 결제 시각을 앵커로 쓴다**(코덱스 #734 10차). RTDN 을
       //   놓쳤거나 사용자가 한참 뒤에 복원하면 확정이 결제보다 몇 주 뒤다 — 거기에
       //   5년을 더하면 처리방침의 최대 5년을 그만큼 넘긴다.
-      lastPaidAt: googlePaymentAnchor({
-        startTime: subscription.startTime,
-        expiresAt,
-        periodDays: plan.period_days,
-        now: new Date(),
-      }),
+      lastPaidAt,
       expiresAt,
       rawPayload: JSON.stringify({
         latestOrderId: subscription.latestOrderId ?? null,
