@@ -107,32 +107,6 @@ billingQuery.get('/subscription', async (c) => {
   //   ⚠ 그리고 **애플이 걸릴 때만** 부른다 — 대부분의 계정에는 애플 결제가 없다.
   const refreshStoreState = c.req.query('refresh_store') === '1';
 
-  // ⚠ **낡은 `users.plan` 도 이때 정리한다**(코덱스 #734 11차). 만료가 갓 지났는데 만료
-  //   크론(5분)이 아직 안 돌았으면, 이 라우트는 `subscription: null` 을 주는데 `users.plan`
-  //   은 **여전히 유료**다. 앱이 그 뒤 `/auth/me` 를 불러도 그건 저장된 값을 그대로 돌려줄
-  //   뿐이라, **null 구독 옆에 유료 plan 이 함께 저장된다** — 그 상태로 오프라인 재시작하면
-  //   `resolvePaidVoiceAccess` 가 계속 유료로 답해 울림·목소리 게이트가 열린다.
-  //
-  //   판정은 **만료를 본 활성 구독이 하나라도 있는가** 하나다. 프로모·바우처·그룹 멤버도
-  //   전부 구독 행을 갖는다(보류는 행을 남기되 만료가 지나 있어 0으로 센다 — `users.plan`
-  //   을 free 로 내리는 것이 그쪽 정책과도 같다).
-  //
-  //   ⚠ **결제 직전(`refresh_store=1`)에만 한다.** 일상 조회에 쓰기를 끼우지 않는다.
-  if (refreshStoreState) {
-    const entitledRes = await db.execute({
-      sql: `SELECT COUNT(*) AS n FROM subscriptions
-            WHERE user_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')`,
-      args: [userId],
-    });
-    if (Number(entitledRes.rows[0]?.n ?? 0) === 0) {
-      await db.execute({
-        sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
-              WHERE id = ? AND plan <> 'free'`,
-        args: [userId],
-      });
-    }
-  }
-
   if (refreshStoreState && storeTxns.some((txn) => txn.provider === 'apple')) {
     const changed = await refreshCompetingAppleRenewalState(db, c.env, userId);
     if (changed) {
@@ -148,6 +122,36 @@ billingQuery.get('/subscription', async (c) => {
       result = await readCurrentSubscription();
     }
   }
+
+  // ⚠ **낡은 `users.plan` 을 정리한다 — 애플에 물어본 '뒤에'**(코덱스 #734 11·12차).
+  //   만료가 갓 지났는데 만료 크론(5분)이 아직 안 돌았으면 이 라우트는 `subscription: null`
+  //   을 주는데 `users.plan` 은 **여전히 유료**다. 앱이 그 뒤 `/auth/me` 를 불러도 그건
+  //   저장된 값을 그대로 돌려줄 뿐이라, **null 구독 옆에 유료 plan 이 함께 저장된다** —
+  //   그 상태로 오프라인 재시작하면 울림·목소리 게이트가 계속 열린다.
+  //
+  // ⚠ **순서가 핵심이다.** 위 애플 재조회가 만료를 밀어 주기 전에 세면, 애플이 갱신해 준
+  //   구독을 **"유효한 구독 0건" 으로 읽어 돈 내는 사용자를 무료로 내린다.**
+  //
+  // ⚠ **세는 것과 쓰는 것을 한 문으로 묶는다.** 따로 두면 그 사이 다른 기기의 확정이
+  //   구독을 만들고 유료 plan 을 적었는데 이 요청이 그걸 `free` 로 덮어쓴다 — 구독은
+  //   있는데 `/auth/me` 는 무료라고 답하는 상태가 되어 서버·클라 게이트가 모두 막는다.
+  //
+  //   판정은 **만료를 본 활성 구독이 하나라도 있는가** 하나다. 프로모·바우처·그룹 멤버도
+  //   전부 구독 행을 갖는다(보류는 행을 남기되 만료가 지나 있어 0으로 센다 — `users.plan`
+  //   을 free 로 내리는 것이 그쪽 정책과도 같다).
+  if (refreshStoreState) {
+    await db.execute({
+      sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
+            WHERE id = ? AND plan <> 'free'
+              AND NOT EXISTS (
+                SELECT 1 FROM subscriptions
+                WHERE user_id = ? AND status = 'active'
+                  AND datetime(expires_at) > datetime('now')
+              )`,
+      args: [userId, userId],
+    });
+  }
+
   // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
   //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
   //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.

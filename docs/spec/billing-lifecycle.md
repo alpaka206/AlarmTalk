@@ -416,6 +416,15 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   그래서 `?refresh_store=1` 조회가 **만료를 본 활성 구독이 0건이면 `users.plan` 을 free 로
   내린다.** 프로모·바우처·그룹 멤버도 전부 구독 행을 가지므로 이 하나로 판정된다.
   ⚠ **일상 조회에는 이 쓰기를 끼우지 않는다.**
+  ⚠ **순서가 있다 — 애플에 물어본 '뒤'다**(코덱스 #734 12차). 애플 재조회가 만료를 밀어
+  주기 전에 세면, 애플이 갱신해 준 구독을 "0건" 으로 읽어 **돈 내는 사용자를 무료로 내린다.**
+  그래서 그 재조회도 `cancel_at_period_end` 만이 아니라 **만료와 결제 앵커까지** 민다.
+  ⚠ **세는 것과 쓰는 것은 한 문이다.** 따로 두면 그 사이 다른 기기의 확정이 만든 구독·유료
+  plan 을 이 요청이 free 로 덮어쓴다 — 구독은 있는데 `/auth/me` 는 무료라고 답하는 상태가
+  되어 서버·클라 게이트가 모두 막는다.
+  ⚠ **앱도 그 plan 을 저장해야 한다.** 서버가 정리해도 앱이 구독만 저장하면 **null 구독 +
+  옛 유료 plan** 이 디스크에 남는다(시트를 취소하면 성공 경로 갱신이 안 돈다).
+  안드로이드 `refreshAppSessionNow`, iOS `refreshAll` 이 그 정식 경로다.
 - ⚠ **plan 갱신을 기다린다.** 구독이 없어진 것을 확인했으면 `users.plan` 도 그 자리에서
   최신화하고 **끝날 때까지 기다려야** 한다 — 띄워 놓고 지나가면 사용자가 곧바로 시트를 닫고
   프로세스가 끝났을 때 **null 구독과 옛 유료 plan 이 함께 남아**, 다음 오프라인 시작에서
@@ -553,7 +562,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
-| 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor` | — | — |
+| 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor` — **만료를 미는 모든 경로**(확정·RTDN entitle·RTDN 해지예약·만료 재조회·애플 상태 최신화)가 함께 민다 | — | — |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` — 부르는 곳 **셋**: `routes/billing-query.ts`(결제 직전 조회) · `routes/billing-google.ts`(확정 앞) · `routes/billing-google-rtdn.ts`(entitle 앞) | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |

@@ -196,25 +196,35 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([]); // 만료 안 지난 활성 구독 없음
     mockDB.pushResult([]); // 활성 구독(만료 무시) 없음
     mockDB.pushResult([]); // 스토어 기록 없음
-    mockDB.pushResult([{ n: 0 }]); // 만료를 본 활성 구독 0건
 
     await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription?refresh_store=1'));
 
     const update = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
     expect(update).toBeDefined();
     expect(update!.sql).toContain("plan <> 'free'"); // 이미 free 면 건드리지 않는다
-    expect(update!.args).toEqual(['user-pk-1']);
+    // ⚠ **세는 것과 쓰는 것이 한 문이어야 한다**(코덱스 #734 12차). 따로 두면 그 사이
+    //   다른 기기의 확정이 만든 구독·유료 plan 을 이 요청이 free 로 덮어쓴다.
+    expect(update!.sql).toContain('NOT EXISTS');
+    expect(update!.sql).toContain("datetime(expires_at) > datetime('now')");
+    expect(update!.args).toEqual(['user-pk-1', 'user-pk-1']);
   });
 
-  it('유효한 구독이 남아 있으면 plan 을 건드리지 않는다', async () => {
+  it('정리는 애플 재조회 **뒤에** 온다 — 갱신된 구독을 0건으로 읽으면 안 된다', async () => {
+    // ⚠ 애플 재조회가 만료를 밀어 주기 전에 세면, 애플이 갱신해 준 구독을 "유효한 구독
+    //   0건" 으로 읽어 **돈 내는 사용자를 무료로 내린다**(코덱스 #734 12차).
     pushSubscriptionRow();
     mockDB.pushResult([{ sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID, plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ n: 1 }]); // 만료를 본 활성 구독 있음
+    mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1', subscription_id: 'sub-1' }]);
 
     await buildApp('user-pk-1').request(jsonReq('GET', '/billing/subscription?refresh_store=1'));
 
-    expect(mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'))).toBeUndefined();
+    // 애플 재조회는 **스토어 기록 조회 결과**를 보고 부를지 정한다. 그러니 정리가 그
+    // 조회보다 뒤에 있으면 재조회 뒤라는 뜻이다(이 테스트 환경에는 애플 자격이 없어
+    // 재조회 자체는 건너뛴다 — 순서만 고정한다).
+    const storeTxnAt = mockDB.calls.findIndex((c) => c.sql.includes('FROM store_transactions'));
+    const cleanupAt = mockDB.calls.findIndex((c) => c.sql.includes('UPDATE users SET plan'));
+    expect(storeTxnAt).toBeGreaterThanOrEqual(0);
+    expect(cleanupAt).toBeGreaterThan(storeTxnAt);
   });
 
   it('일상 조회(refresh_store 없음)는 아무것도 쓰지 않는다', async () => {

@@ -421,6 +421,17 @@ struct BillingPanel: View {
             purchaseBlock = block
             return
         }
+        // ⚠ **구독이 없어진 것을 확인했으면 plan 까지 저장하고 간다**(코덱스 #734 12차).
+        //   위 조회는 `subscriptionResponse` 만 쓴다 — 캐시된 유료 `userPlan` 이 그대로
+        //   남으면 `PaidVoiceGate.resolve` 가 **null 구독 + 유료 plan** 조합을 유료로 읽는다.
+        //   사용자가 StoreKit 시트를 취소하면 `purchase` 의 성공 경로 갱신이 안 돌므로,
+        //   그 조합이 디스크에 남은 채 다음 오프라인 시작까지 간다.
+        //   `refreshAll` 이 `/auth/me` 와 구독을 같은 표로 함께 쓰는 정식 경로다.
+        //   (서버가 `refresh_store=1` 조회에서 이미 `users.plan` 을 정리해 두므로
+        //    여기서 받는 값이 최신이다.)
+        if socialFeatures.subscription?.subscription == nil {
+            await socialFeatures.refreshAll(session: auth.session, force: true)
+        }
         await purchase(product)
     }
 

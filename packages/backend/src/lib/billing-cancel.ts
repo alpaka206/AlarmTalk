@@ -24,7 +24,12 @@ import {
   fetchAppleSubscriptionStatus,
   type AppleSubscriptionStatus,
 } from './apple-storekit';
-import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
+import {
+  PAID_PLAN_TYPES,
+  planTypeToUserPlan,
+  plannedMaxUses,
+  isGroupPlanType,
+} from '../routes/billing-helpers';
 import { notifyDowngradedAlarms, sendPaymentFailedPush, sendPlanChangedPush } from './fcm';
 import { sendVoiceDeletionWarningPush } from './fcm';
 import type { Env } from '../types';
@@ -77,7 +82,6 @@ export interface ActiveSubscription {
    */
   cancelAtPeriodEnd: boolean;
 }
-
 
 export async function findActiveSubscriptionsByUserPk(
   db: DbExecutor,
@@ -185,7 +189,11 @@ export async function findStoreTransactionsForSubscriptions(
  */
 export async function refreshCompetingAppleRenewalState(
   db: DbExecutor,
-  env: Partial<Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>> | undefined,
+  env:
+    | Partial<
+        Pick<Env, 'APPLE_ISSUER_ID' | 'APPLE_KEY_ID' | 'APPLE_PRIVATE_KEY' | 'APPLE_BUNDLE_ID'>
+      >
+    | undefined,
   userPk: string,
 ): Promise<boolean> {
   const config = env ? appleStoreKitConfigFromEnv(env as Env) : null;
@@ -200,12 +208,47 @@ export async function refreshCompetingAppleRenewalState(
   let changed = false;
   for (const row of res.rows) {
     try {
-      const status = await fetchAppleSubscriptionStatus(String(row.provider_transaction_id), config);
+      const status = await fetchAppleSubscriptionStatus(
+        String(row.provider_transaction_id),
+        config,
+      );
+      // ⚠ **만료도 함께 민다**(코덱스 #734 12차). 갱신 상태만 고치면, 애플이 "아직
+      //   활성" 이라고 답해도 우리 `expires_at` 은 옛 값 그대로다 — 그 값을 보고
+      //   "유효한 구독 0건" 으로 판정하면 **돈을 내고 있는 사용자를 무료로 내린다.**
+      //   애플이 준 만료가 **뒤로 갈 때만** 민다(앞당기는 것은 이 경로의 일이 아니다 —
+      //   종료 판정은 만료 크론의 재조회가 한다).
+      //   갱신을 확인했으니 결제 앵커도 같은 규칙으로 옮긴다.
+      const expiresIso = status.expiresDate ? new Date(status.expiresDate).toISOString() : null;
+      const paidIso = status.purchaseDate ? new Date(status.purchaseDate).toISOString() : null;
       await db.execute({
-        sql: `UPDATE subscriptions SET cancel_at_period_end = ?, updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [status.autoRenewStatus === 0 ? 1 : 0, String(row.sub_id)],
+        sql: `UPDATE subscriptions
+                SET cancel_at_period_end = ?,
+                    expires_at = CASE
+                      WHEN ? IS NOT NULL AND ? > expires_at THEN ?
+                      ELSE expires_at
+                    END,
+                    updated_at = datetime('now')
+                WHERE id = ?`,
+        args: [
+          status.autoRenewStatus === 0 ? 1 : 0,
+          expiresIso,
+          expiresIso,
+          expiresIso,
+          String(row.sub_id),
+        ],
       });
+      if (expiresIso) {
+        await db.execute({
+          sql: `UPDATE store_transactions
+                  SET last_paid_at = CASE
+                        WHEN ? > expires_at THEN COALESCE(?, last_paid_at)
+                        ELSE last_paid_at
+                      END,
+                      expires_at = CASE WHEN ? > expires_at THEN ? ELSE expires_at END
+                  WHERE provider = 'apple' AND provider_transaction_id = ?`,
+          args: [expiresIso, paidIso, expiresIso, expiresIso, String(row.provider_transaction_id)],
+        });
+      }
       changed = true;
     } catch (err) {
       logStructured('warn', {
@@ -747,8 +790,7 @@ export async function cancelSubscriptionImmediate(
       sql: `SELECT owner_user_id FROM plan_groups WHERE id = ?`,
       args: [subscription.planGroupId],
     });
-    const ownerUserId =
-      groupRes.rows.length > 0 ? String(groupRes.rows[0]!.owner_user_id) : null;
+    const ownerUserId = groupRes.rows.length > 0 ? String(groupRes.rows[0]!.owner_user_id) : null;
 
     if (ownerUserId !== subscription.userPk) {
       await db.execute({
@@ -759,7 +801,12 @@ export async function cancelSubscriptionImmediate(
       return Array.from(affected);
     }
 
-    for (const m of await disbandOwnedPlanGroup(db, subscription.userPk, subscription.planGroupId, now)) {
+    for (const m of await disbandOwnedPlanGroup(
+      db,
+      subscription.userPk,
+      subscription.planGroupId,
+      now,
+    )) {
       affected.add(m);
     }
   }
@@ -991,8 +1038,7 @@ async function reconcileGoogleBeforeExpiry(
   const autoRenew = lineItem?.autoRenewingPlan?.autoRenewEnabled === true;
   // CANCELED 이거나 autoRenewEnabled=false 면 기간종료 해지가 예약된 상태 —
   // cancel_at_period_end=1 로 세워 만기 도래 시 조용히 만료되게 한다.
-  const cancelAtPeriodEnd =
-    state === 'SUBSCRIPTION_STATE_CANCELED' || !autoRenew ? 1 : 0;
+  const cancelAtPeriodEnd = state === 'SUBSCRIPTION_STATE_CANCELED' || !autoRenew ? 1 : 0;
   await withWriteTransaction(db, async (tx) => {
     await tx.execute({
       sql: `UPDATE subscriptions
@@ -1156,7 +1202,9 @@ async function reconcileAppleBeforeExpiry(
       //   처리방침의 최대 5년을 넘긴다. 못 읽었을 때만 서버 시각으로 떨어진다.
       args: [
         expiryIso,
-        status.purchaseDate ? new Date(status.purchaseDate).toISOString() : params.now.toISOString(),
+        status.purchaseDate
+          ? new Date(status.purchaseDate).toISOString()
+          : params.now.toISOString(),
         expiryIso,
         originalTransactionId,
       ],
@@ -1457,7 +1505,9 @@ export async function processSubscriptionExpiry(
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(RTDN 갈래와 같은 규칙) — 네트워크 I/O 이고,
   // 실패해도 흐름을 깨지 않는다. 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 맡는다.
-  const hasFirebaseForHolds = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const hasFirebaseForHolds = Boolean(
+    env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON,
+  );
   const hasApnsForHolds = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
   if (paymentHolds.length > 0 && (hasFirebaseForHolds || hasApnsForHolds)) {
     for (const hold of paymentHolds) {

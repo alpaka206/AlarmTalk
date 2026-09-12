@@ -390,7 +390,9 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // Play 권위 재조회(reconcile)가 보정한다.
   const mappedRes = mappedSubscriptionId
     ? await db.execute({
-        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+        // `period_days` 는 결제 앵커(`googlePaymentAnchor`) 계산에 쓴다 — 빠지면 월(30)로
+        // 떨어져 연간·장기 부여에서 앵커가 크게 어긋난다.
+        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key, p.period_days
               FROM subscriptions s JOIN plans p ON p.id = s.plan_id
               WHERE s.id = ? AND s.user_id = ? AND s.status = 'active'`,
         args: [mappedSubscriptionId, userPk],
@@ -438,6 +440,29 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
                 updated_at = datetime('now')
             WHERE id = ? AND status = 'active'`,
       args: [periodEndIso, mappedSubscription.subscriptionId],
+    });
+    // ⚠ **결제 앵커도 함께 민다**(코덱스 #734 12차). RENEWED 를 놓친 뒤 CANCELED 가
+    //   현재 기간 끝을 실어 오는 경우가 있는데, 그때 만료만 밀면 `last_paid_at` 은 옛
+    //   결제에 머문다 — 그 값이 이제 **권위**라(마이그레이션 114) 탈퇴 시 폴백도 안 타고,
+    //   마지막 갱신의 증빙이 보존에서 빠진 채 파기된다.
+    //   실제로 뒤로 갈 때만 민다(같은 값의 재전송은 결제가 아니다).
+    await db.execute({
+      sql: `UPDATE store_transactions
+            SET last_paid_at = CASE WHEN ? > expires_at THEN ? ELSE last_paid_at END,
+                expires_at = CASE WHEN ? > expires_at THEN ? ELSE expires_at END
+            WHERE provider = 'google' AND provider_transaction_id = ?`,
+      args: [
+        periodEndIso,
+        googlePaymentAnchor({
+          startTime: subscription.startTime,
+          expiresAt: new Date(expiryMs),
+          periodDays: mappedRow.period_days ? Number(mappedRow.period_days) : 30,
+          now: new Date(),
+        }).toISOString(),
+        periodEndIso,
+        periodEndIso,
+        purchaseToken,
+      ],
     });
     // 구독 만료를 권위값으로 밀 때 같은 구독에 묶인 공유 코드 만료도 함께 동기화한다.
     // (store-billing 갱신 경로와 동일 규칙) issued·used 모두 연장, expired 는 제외.
