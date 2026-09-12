@@ -63,13 +63,15 @@ export function ProductScroll() {
         {/* 문구 자리를 두 줄 높이로 잡아 둔다 — 높이를 고정해야 문구가 바뀔 때 폰이
             위아래로 밀리지 않는다. */}
         <div className="relative h-28 w-full max-w-2xl sm:h-32">
-          <motion.h2
+          {/* 앞 문구는 스크럽 장면의 시각 요소다 — 스크린리더에는 완성형(after) 하나만 읽힌다. */}
+          <motion.p
             data-scrub="before"
+            aria-hidden="true"
             className="t-h1 absolute inset-x-0 top-0 text-center text-text"
             style={{ opacity: beforeOpacity }}
           >
             {t("before")}
-          </motion.h2>
+          </motion.p>
           <motion.h2
             data-scrub="after"
             className="t-h1 absolute inset-x-0 top-0 text-center text-text"

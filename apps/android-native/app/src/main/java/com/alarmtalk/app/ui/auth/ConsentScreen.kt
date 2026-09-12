@@ -85,15 +85,23 @@ internal fun ConsentScreen(
     busy: Boolean,
     collect: List<String>,
     optional: List<String>,
+    // **이미 동의해 둔** 유형 — 초기 체크 상태로 쓴다(서버 prechecked).
+    prechecked: List<String>,
     isReconsent: Boolean,
     onAgree: (agreedOptional: Set<String>) -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
-    var voiceBiometric by remember { mutableStateOf(false) }
     var overseasTransfer by remember { mutableStateOf(false) }
-    var marketing by remember { mutableStateOf(false) }
+    // ⚠ **이미 동의해 둔 선택 항목은 체크된 채로 시작한다.**
+    // 선택 동의는 체크 없이도 CTA 가 통과되므로, 초기 상태를 항상 미체크로 두면 이미
+    // 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로 제출돼 사라진다
+    // — 목소리 기능이 막히고(sensitive_missing) 마케팅 수신 동의가 없어진다.
+    // 미리 눌러 주는 게 아니라 **가진 것을 보여주는 것**이다(필수 유형은 서버가 prechecked
+    // 에 담지 않으므로 여기 들어오지 않는다). key 를 prechecked 로 둬 응답이 늦게 와도 반영된다.
+    var voiceBiometric by remember(prechecked) { mutableStateOf("voice_biometric" in prechecked) }
+    var marketing by remember(prechecked) { mutableStateOf("marketing" in prechecked) }
 
     // 전문은 앱에 실려 있어 네트워크가 없어도 읽힌다. 문서가 바뀌지 않으니 한 번만 파싱한다.
     val context = LocalContext.current
@@ -120,25 +128,34 @@ internal fun ConsentScreen(
     // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
     val shownRequired = requiredShown.isNotEmpty()
+    // '전체 동의' 가 실제로 다루는 집합 — **선택까지 포함**한다(2026-08-18 결정).
+    // 라벨이 '필수 약관 전체 동의' 라 '전체' 라고 써 놓고 일부만 켜는 화면이었다.
+    // 개별 체크박스와 [필수]/[선택] 표기는 그대로라 선택을 따로 끌 수 있다(제22조제5항).
+    // 마스터 행 표시·`allChecked`·`setAll` 이 **모두 이 집합**을 본다(iOS `ConsentView.masterTypes`).
+    val masterTypes = shownTypes
+
+    /** 화면의 체크 상태를 유형 이름으로 읽는다. 모르는 유형은 그리지 못했으므로 false. */
+    fun isChecked(type: String): Boolean = when (type) {
+        "age14" -> age14
+        "terms" -> terms
+        "privacy" -> privacy
+        "voice_biometric" -> voiceBiometric
+        "overseas_transfer" -> overseasTransfer
+        "marketing" -> marketing
+        else -> false
+    }
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
     // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
     // 그런 상태는 checkConsentStatus 가 consentUnsupported 로 잡아 이 화면 대신 업데이트
     // 차단 화면을 띄우므로 여기까지 오지 않는다 — 통과시키면 사용자가 본 적 없는 동의가
     // '체크됨' 으로 기록되기에 남겨 두는 이중 방어다(Codex #660).
-    val allRequiredChecked = requiredShown.all { type ->
-        when (type) {
-            "age14" -> age14
-            "terms" -> terms
-            "privacy" -> privacy
-            "voice_biometric" -> voiceBiometric
-            "overseas_transfer" -> overseasTransfer
-            "marketing" -> marketing
-            else -> false
-        }
-    }
-    val allChecked = allRequiredChecked &&
-        (!showVoiceBiometric || voiceBiometric) && (!showMarketing || marketing)
+    val allRequiredChecked = requiredShown.all { isChecked(it) }
+    // ⚠ **마스터 행의 체크 상태는 `setAll` 과 같은 집합을 본다.** 한쪽만 바꾸면 전체 동의
+    // 표시가 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다.
+    // ⚠ **CTA 판정(`allRequiredChecked`)과 섞지 말 것** — 그건 필수만 본다. 선택을 안 켰다고
+    // 가입을 막으면 제22조제5항(거부해도 서비스 거부 불가) 위반이다.
+    val allChecked = masterTypes.isNotEmpty() && masterTypes.all { isChecked(it) }
 
     // 화면에서 사용자가 실제로 체크한 '선택' 유형 — 제출은 이 값으로 agreed 를 정한다.
     val agreedOptional = buildSet {
@@ -146,12 +163,15 @@ internal fun ConsentScreen(
         if (showMarketing && marketing) add("marketing")
     }
 
+    // ⚠ **끄는 것도 전체다** — 위 `allChecked` 와 **같은 집합**(`masterTypes`)을 본다.
+    // 선택까지 한 번에 켜는 것이 「한 번 받은 동의는 다시 묻지 않는다」를 돕는다: 여기서
+    // 생체정보를 켠 사람은 첫 목소리 등록에서도 인라인 동의를 만나지 않는다.
     fun setAll(value: Boolean) {
         if (showAge14) age14 = value
         if (showTerms) terms = value
         if (showPrivacy) privacy = value
-        if (showVoiceBiometric) voiceBiometric = value
         if (showOverseas) overseasTransfer = value
+        if (showVoiceBiometric) voiceBiometric = value
         if (showMarketing) marketing = value
     }
 
@@ -181,13 +201,18 @@ internal fun ConsentScreen(
                     color = TextOnSceneDim,
                 )
             }
-            // '약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에 동의할 수
-            // 있어야 한다(항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다).
-            if (shownCount > 1) {
+            // '필수 약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에
+            // 동의할 수 있어야 한다. 필수가 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지
+            // 않는다(선택 항목은 마스터가 다루지 않으므로 개수에 넣지 않는다).
+            if (masterTypes.size > 1) {
                 Spacer(Modifier.height(24.dp))
                 ConsentRow(
                     checked = allChecked,
-                    onCheckedChange = ::setAll,
+                    // ⚠ **`::setAll` 로 넘기지 말 것**(CLAUDE.md 「Compose 콜백에 지역 함수
+                    // 참조를 넘기지 않는다」). 이 함수는 콤포지션 지역 `val`(`show*`)을
+                    // 캡처하는데, 함수 참조는 캡처가 달라도 서로 `equals` 라 행이 통째로
+                    // 건너뛰어지면 **옛 목록을 켜는 람다가 남는다.**
+                    onCheckedChange = { setAll(it) },
                     label = stringResource(R.string.auth_consent_agree_all),
                     emphasized = true,
                 )
@@ -353,6 +378,9 @@ private fun ConsentRow(
                     )
                 }
             }
+            // ⚠ 민감 동의(생체정보·국외이전)의 긴 설명은 `description` 이 아니라 **`detail`**
+            // 로 넘긴다 — 그래야 이 화살표로 접힌다. iOS 는 같은 일을
+            // `ConsentRow.collapsibleDescription` 으로 한다(구조가 달라 이름이 다르다).
             if (detail != null) {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(

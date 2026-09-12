@@ -13,6 +13,7 @@
  * API 를 막는다.
  */
 import type { Context, Next } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { verifyAppJwt } from '../lib/jwt';
 
@@ -44,6 +45,12 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const token = authHeader.slice(7);
   if (!token) {
     return c.json({ error: 'Token is empty', error_code: 'AUTH_EMPTY_TOKEN' }, 401);
+  }
+  if (!c.env?.JWT_SECRET) {
+    return c.json(
+      { error: 'Authentication is temporarily unavailable', error_code: 'INTERNAL_ERROR' },
+      503,
+    );
   }
 
   try {
@@ -113,10 +120,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       // 토큰 폐기 검사(B5): JWT epoch 가 현재 users.token_epoch 보다 낮으면, 로그아웃
       // (전 기기) 또는 비밀번호 재설정으로 무효화된 구(舊) 토큰이다. 만료 전이라도 거부.
       if (verified.epoch < tokenEpoch) {
-        return c.json(
-          { error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' },
-          401,
-        );
+        return c.json({ error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' }, 401);
       }
 
       // 탈퇴 유예(pending_deletion) 계정은 탈퇴 철회(DELETE /user/me/deletion) 외의
@@ -157,7 +161,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     await next();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    const code = message.includes('expired')
+    const code: ErrorCode = message.includes('expired')
       ? 'AUTH_TOKEN_EXPIRED'
       : message.includes('audience')
         ? 'AUTH_AUDIENCE_MISMATCH'

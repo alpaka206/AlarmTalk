@@ -15,9 +15,6 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AlarmEntity?
 
-    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
-    suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
-
     /** 같은 서버 알람을 가리키는 모든 로컬 행 — 과거 동시 pull 레이스로 생긴 중복 임포트 정리용. */
     @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId ORDER BY createdAtMillis")
     suspend fun getAllByRemoteAlarmId(remoteAlarmId: String): List<AlarmEntity>
@@ -158,7 +155,7 @@ interface AlarmDao {
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
-     * remoteAlarmId/lastSyncedAtMillis 와, 동일 날씨 컨텍스트의 variant/freshness 를
+     * remoteAlarmId/lastSyncedAtMillis/remoteDeliveryVersion 와, 동일 날씨 컨텍스트의 variant/freshness 를
      * [updated] 에 병합한 뒤 저장한다. sync/worker 만 갱신하는 값을 편집이 읽은 stale
      * 스냅샷으로 덮어쓰지 않는다.
      *
@@ -193,6 +190,11 @@ interface AlarmDao {
             updated.copy(
                 remoteAlarmId = fresh.remoteAlarmId,
                 lastSyncedAtMillis = fresh.lastSyncedAtMillis,
+                remoteDeliveryVersion = fresh.remoteDeliveryVersion,
+                // ⚠ **수신자 편집이 '어느 전달을 받았는지' 를 지우면 안 된다.** 편집 경로가
+                // 만드는 엔티티에는 이 값이 없어, 보존하지 않으면 그 행이 다시 '옛 행' 이 되고
+                // 재전송이 영영 덮이지 못한다(`isResendOfDifferentDelivery`).
+                observedDeliveryVersion = fresh.observedDeliveryVersion,
                 contextVariantIndex = if (preserveFreshWeatherVariant) {
                     fresh.contextVariantIndex
                 } else {
@@ -207,6 +209,23 @@ interface AlarmDao {
         }
         upsert(merged)
     }
+
+    /** 음원·OS 예약까지 확보한 전달 세대를 ACK보다 먼저 영속한다. 사용자 수정 시각은 건드리지 않는다. */
+    /**
+     * 울림 화면의 ＋/− 가 고른 다시 울림 간격.
+     *
+     * ⚠ **건드릴 컬럼만 쓴다.** 행을 읽어 통째로 되쓰면 그 사이 동기화가 받은
+     * `remoteAlarmId` 같은 서버 필드를 옛 스냅샷으로 덮어, 다음 동기화가 서버에 알람을
+     * 하나 더 만든다(코덱스 #729). `syncState` 는 호출부가 `nextLocalSyncState()` 로 정한다.
+     */
+    @Query(
+        "UPDATE alarms SET snoozeMinutes = :minutes, syncState = :syncState, " +
+            "updatedAtMillis = :updatedAtMillis WHERE id = :id",
+    )
+    suspend fun updateSnoozeMinutes(id: String, minutes: Int, syncState: String, updatedAtMillis: Long)
+
+    @Query("UPDATE alarms SET remoteDeliveryVersion = :deliveryVersion WHERE id = :id")
+    suspend fun markRemoteDeliveryVersion(id: String, deliveryVersion: String): Int
 
     @Delete
     suspend fun delete(alarm: AlarmEntity)
@@ -240,24 +259,6 @@ interface AlarmDao {
     )
     suspend fun setState(
         id: String,
-        state: String,
-        enabled: Boolean,
-        updatedAtMillis: Long,
-    )
-
-    @Query(
-        """
-        UPDATE alarms
-        SET fireAtMillis = :fireAtMillis,
-            state = :state,
-            enabled = :enabled,
-            updatedAtMillis = :updatedAtMillis
-        WHERE id = :id
-        """,
-    )
-    suspend fun setScheduleState(
-        id: String,
-        fireAtMillis: Long,
         state: String,
         enabled: Boolean,
         updatedAtMillis: Long,
@@ -330,14 +331,4 @@ interface AlarmDao {
     // updateDynamicVoiceAudio 는 지웠다 — 호출부가 없었고, 시그니처가 localAudioUri(non-null)에
     // audioCacheKey(nullable)를 짝지어 **참조 카운트로 지울 수 없는 음성 파일**을 만들 수 있는
     // 레포 유일의 API 였다(Codex #677 P1). 다시 필요해지면 두 값을 함께 non-null 로 둘 것.
-
-    /** 무료 버킷 회전 인덱스를 다음 값으로 영속화한다(알람이 울린 직후 호출). */
-    @Query(
-        """
-        UPDATE alarms
-        SET bucketRotationIndex = :index, updatedAtMillis = :updatedAtMillis
-        WHERE id = :id
-        """,
-    )
-    suspend fun updateBucketRotationIndex(id: String, index: Int, updatedAtMillis: Long)
 }

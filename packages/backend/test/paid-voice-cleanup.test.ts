@@ -165,14 +165,30 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     ).toHaveLength(1);
   });
 
+  it('민감 음성 삭제 결과에 같은 그룹의 공유 목소리 사용자도 포함한다', async () => {
+    await db.execute({
+      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
+            VALUES ('group-ab', 'A', '70000000-0000-4000-8000-000000000003', 6)`,
+      args: [],
+    });
+    await db.execute(
+      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+       VALUES ('member-a', 'group-ab', 'A', 'owner'),
+              ('member-b', 'group-ab', 'B', 'member')`,
+    );
+
+    const revocation = await deleteSensitiveVoiceDataForUser(db, 'A');
+
+    expect(new Set(revocation.voiceAccessRevokedUserIds)).toEqual(new Set(['A', 'B']));
+  });
+
   // 참고: 실데이터에서 voice_profiles.user_id 가 로그인 id(google_id)로 저장된 케이스는
   // deletePaidVoiceDataForUser 와 동일하게 [userPk, loginId] 두 id 를 모두 매칭해 덮는다(PR #536 P1).
   // 이 인메모리 테스트는 FK(user_id REFERENCES users(id))를 강제해 login-id 저장 자체를 못 만드므로
   // 별도 재현 대신 코드 정합(두 id 매칭)으로 보장한다.
 
-  // ---- G(P1): 삭제 스코프는 '호출 사용자 소유 데이터'로 한정 ----
-  // 나를 target 으로 한 타인(발신자) 소유 알람 행과 그 raw 오디오는 발신자의 데이터다.
-  // 수신자의 delete-now/보관만료/강등이 발신자 데이터를 파기하면 안 된다.
+  // ---- G(P1): 유료 음성 데이터 정리는 '호출 사용자 소유 데이터'로 한정 ----
+  // 계정은 살아 있는 채 목소리만 지우는 경로이므로 target 전달 행은 발신자의 것으로 보존한다.
 
   async function enqueuedRefs(db: Client): Promise<string[]> {
     const res = await db.execute(`SELECT ref FROM pending_external_deletions`);
@@ -224,7 +240,7 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(sent2!.message_id).toBeNull();
   });
 
-  it('purgeUserAccount(B, 계정 삭제): 나를 target 으로 한 알람 행도 함께 삭제한다', async () => {
+  it('purgeUserAccount(B, 계정 삭제): B에게 아직 전달되지 않은 알람 행도 삭제한다', async () => {
     await db.execute({
       sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
             VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
@@ -233,7 +249,7 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
 
     await purgeUserAccount(db, 'B', 'google-B');
 
-    // 계정 삭제는 수신자 없는 알람을 남기지 않는다.
+    // 서버 행은 로컬 원본이 아니라 미전달 대기열이다. B가 사라지면 pull/ack 불가능하므로 제거한다.
     expect(await getAlarm(db, 'al-sent')).toBeNull();
     expect((await db.execute(`SELECT id FROM users WHERE id = 'B'`)).rows).toEqual([]);
   });
@@ -293,7 +309,7 @@ describe('deleteSensitiveVoiceDataForUser — 클론 파생만 지운다', () =>
 
     const downgraded = await deleteSensitiveVoiceDataForUser(db, 'user-C');
 
-    expect(downgraded).toEqual([]);
+    expect(downgraded.downgradedAlarms).toEqual([]);
     expect(await countRows(db, `SELECT id FROM messages WHERE id = 'msg-free'`)).toBe(1);
     expect((await getAlarm(db, 'al-free'))?.mode).toBe('tts');
   });

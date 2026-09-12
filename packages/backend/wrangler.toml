@@ -59,11 +59,20 @@ crons = ["*/5 * * * *"]
 # FIREBASE_PROJECT_ID
 # FIREBASE_SERVICE_ACCOUNT_JSON   (서비스 계정 JSON 전체, client_email/private_key 포함)
 #
+# Apple 로그인 (POST /auth/apple) — 미설정 시 500 fail-closed:
+# APPLE_BUNDLE_ID                 (iOS 앱 번들 ID — 우리 값은 com.alarmtalk.app)
+#                                  네이티브 로그인은 애플 공개키(JWKS) 검증이라 **비밀키가 필요 없다.**
+#                                  aud 대조용이라 이 값이 없으면 다른 앱용 토큰도 통과하므로 fail-closed.
+#
 # Billing — 미설정 provider 는 해당 confirm 라우트가 503:
 # GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (Play Developer API 서비스 계정 JSON)
 # ANDROID_PACKAGE_NAME            (com.alarmtalk.app)
 # GOOGLE_RTDN_VERIFICATION_TOKEN  (RTDN Pub/Sub push 검증 토큰 — Play Console RTDN 토픽의
 #                                  push 구독 URL `/api/billing/google/rtdn?token=<이 값>` 에 박는다)
+# APPLE_ISSUER_ID                 (App Store Connect Issuer ID, UUID 형식)
+# APPLE_KEY_ID                    (App Store Server API 키의 Key ID)
+# APPLE_PRIVATE_KEY               (그 키의 .p8 파일 내용 전체, PEM. 개행 포함)
+#                                  ↑ 이 셋 + APPLE_BUNDLE_ID 가 다 있어야 /billing/apple/confirm 이 산다.
 #
 # 공휴일(KR 보정) — 미설정 시 KR 오버레이 생략, date-holidays 결과만 제공:
 # KASI_SERVICE_KEY                (data.go.kr 특일정보 getRestDeInfo, **Decoding(디코딩)** 키.

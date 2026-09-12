@@ -30,7 +30,10 @@ class HolidayCountryPreferenceStore(context: Context) {
     }
 
     companion object {
-        val SUPPORTED = listOf("KR", "JP", "US", "VN", "CN")
+        // ⚠ **베트남·중국은 뺐다(2026-08-10).** 목록에서만 감추는 것이라, 이미 그 값을
+        // 고른 계정은 저장된 코드를 그대로 들고 있을 수 있다 — 이름 풀이는 계속 되고
+        // 선택 UI 에만 안 나온다. iOS `HolidayStore.supportedCountryCodes` 와 같이 고칠 것.
+        val SUPPORTED = listOf("KR", "JP", "US")
 
         private const val PREFS_NAME = "holiday_country_preferences"
         private const val KEY_COUNTRY = "country_code"

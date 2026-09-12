@@ -1,6 +1,6 @@
 // 타인 발신 알람 가드 실동작 검증 — mock 결과 주입이 아니라 실제 libsql DB 에 전체
 // 마이그레이션을 올리고 실제 라우트(POST /alarms, target_user_id 경로)를 호출해,
-// (수신자, HH:mm) 슬롯의 원자적 교체·멱등, 30분 리드타임, 수신자 시간대 quiet 요일
+// (수신자, HH:mm) 슬롯의 원자적 교체·멱등, 리드타임, 수신자 시간대 quiet 요일
 // 판정을 DB 상태로 확인한다.
 //
 // libsql `:memory:` 는 연결마다 별도 DB 라 autocommit execute 와 transaction 이 스키마를
@@ -26,12 +26,19 @@ const SENDER_A = { pk: 'guard-a-pk', login: 'guard-a-pk' };
 const SENDER_B = { pk: 'guard-b-pk', login: 'guard-b-pk' };
 const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-r-pk' }; // quiet 창 없음
 const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-q-pk' }; // 주말 00:00-08:00 quiet
+// ⚠ **pk 와 login 이 다른 유일한 픽스처.** 식별자 통일 이전 구글 계정의 모양이라,
+// 발신자를 한 값으로만 조회하는 회귀를 이 픽스처만 잡는다.
+const SENDER_LEGACY = { pk: 'guard-legacy-pk', login: 'guard-legacy-google' };
 
 function appFor(user: { pk: string; login: string }) {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
-    c.set('userId', user.login);
+    // 실제 미들웨어와 같은 모양: `userId` 는 **users.id 로 정규화된 값**이고, 토큰의 로그인
+    // 식별자는 `userLoginId` 로 따로 온다. 대부분의 픽스처는 둘이 같지만 SENDER_LEGACY 만
+    // 다르다 — 그 픽스처가 '옛 행은 로그인 식별자로 저장돼 있다' 는 갈래를 지킨다.
+    c.set('userId', user.pk);
     c.set('userIdPK', user.pk);
+    c.set('userLoginId', user.login);
     await next();
   });
   app.route('/alarms', alarmMutation);
@@ -67,7 +74,8 @@ function patchAlarm(
 
 async function alarmRow(id: string) {
   const res = await db.execute({
-    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes, timezone
+    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes, timezone,
+                 delivery_version
           FROM alarms WHERE id = ?`,
     args: [id],
   });
@@ -78,6 +86,10 @@ beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행 잔재 정리(파일 DB 재사용). 시스템 시드 users 행은 건드리지 않는다.
   await db.execute('DELETE FROM alarms');
+  // ⚠ 슬롯 신원 표도 함께 비운다(마이그레이션 107). 이게 남으면 알람 id 가 **회차 사이에**
+  // 고정돼, 앞 실행이 남긴 `alarm_recipient_state` 행과 UNIQUE 충돌한다.
+  await db.execute('DELETE FROM targeted_alarm_slots');
+  await db.execute('DELETE FROM alarm_recipient_state');
   await db.execute("DELETE FROM plan_group_members WHERE plan_group_id = 'guard-group'");
   await db.execute("DELETE FROM plan_groups WHERE id = 'guard-group'");
   await db.execute("DELETE FROM users WHERE id LIKE 'guard-%'");
@@ -90,6 +102,7 @@ beforeAll(async () => {
     });
   await insertUser(SENDER_A, 0, '[]');
   await insertUser(SENDER_B, 0, '[]');
+  await insertUser(SENDER_LEGACY, 0, '[]');
   await insertUser(RECIPIENT, 1, '[]');
   await insertUser(RECIPIENT_QUIET, 1, '[{"days":[0,6],"start":"00:00","end":"08:00"}]');
 
@@ -110,10 +123,15 @@ beforeAll(async () => {
   await insertMember('guard-m2', SENDER_B, 'member');
   await insertMember('guard-m3', RECIPIENT, 'member');
   await insertMember('guard-m4', RECIPIENT_QUIET, 'member');
+  await insertMember('guard-m6', SENDER_LEGACY, 'member');
 });
 
 beforeEach(async () => {
   await db.execute('DELETE FROM alarms');
+  // ⚠ 슬롯 신원 표도 함께 비운다(마이그레이션 107). 이게 남으면 알람 id 가 **회차 사이에**
+  // 고정돼, 앞 실행이 남긴 `alarm_recipient_state` 행과 UNIQUE 충돌한다.
+  await db.execute('DELETE FROM targeted_alarm_slots');
+  await db.execute('DELETE FROM alarm_recipient_state');
   // 리드타임 판정이 실제 시계에 좌우되지 않도록 고정: 2026-07-15T00:00Z = KST 수요일 09:00.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
@@ -132,6 +150,7 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     });
     expect(resA.status).toBe(201);
     const idA = ((await resA.json()) as { alarm: { id: string } }).alarm.id;
+    const versionA = String((await alarmRow(idA))!.delivery_version);
 
     const resB = await postAlarm(SENDER_B, {
       time: '23:00',
@@ -145,8 +164,88 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const rowA = await alarmRow(idA);
     const rowB = await alarmRow(idB);
     expect(Number(rowA!.is_active)).toBe(0); // 이전 발신자 알람은 비활성화(교체)
+    expect(String(rowA!.delivery_version)).not.toBe(versionA); // 옛 ACK가 원격 끄기를 지우지 못함
     expect(Number(rowB!.is_active)).toBe(1); // 최신 발신 알람만 활성
     expect(String(rowB!.target_user_id)).toBe(RECIPIENT.login);
+  });
+
+  // ⚠ **수신 확인으로 행이 지워진 뒤의 재전송도 같은 알람이어야 한다**(2026-08-27 실기기 재현).
+  //
+  // 수신 확인(`POST /alarm/:id/received`)은 alarms 행을 지운다. 슬롯 신원이 그 행에만
+  // 달려 있으면 그 뒤의 재전송은 **새 알람 id** 를 받고, 수신자 기기에는 remoteAlarmId 가
+  // 다른 두 번째 줄이 생긴다 — 껐던 옛 줄은 영영 울리지 않는 유령으로 남는다.
+  // `targeted_alarm_slots`(마이그레이션 107)가 id 하나를 기억해 이걸 막는다.
+  it('전달이 끝나 행이 지워진 뒤 재전송해도 같은 알람 id 를 쓴다', async () => {
+    const first = await postAlarm(SENDER_A, {
+      time: '21:30',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 5,
+    });
+    expect(first.status).toBe(201);
+    const firstId = ((await first.json()) as { alarm: { id: string } }).alarm.id;
+
+    // 수신 확인이 하는 일 — 행을 지운다.
+    await db.execute({ sql: 'DELETE FROM alarms WHERE id = ?', args: [firstId] });
+    expect(await alarmRow(firstId)).toBeNull();
+
+    const resend = await postAlarm(SENDER_A, {
+      time: '21:30',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 9,
+    });
+    expect(resend.status).toBe(201);
+    const resendId = ((await resend.json()) as { alarm: { id: string } }).alarm.id;
+
+    expect(resendId).toBe(firstId);
+    // 응답 id 로 실제 행이 찾아져야 한다 — 삽입 id 와 응답 id 가 어긋나면 201 을 받고도
+    // 그 알람을 어디서도 못 찾는다.
+    const row = await alarmRow(resendId);
+    expect(row).not.toBeNull();
+    expect(Number(row!.is_active)).toBe(1);
+    expect(Number(row!.snooze_minutes)).toBe(9);
+    // 새 전달 세대여야 수신자가 '다시 보냈다' 로 읽고 덮어쓴다.
+    expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  // ⚠ **식별자 통일 이전에 만들어진 발신 행도 같은 슬롯이어야 한다**(2026-08-28 리뷰).
+  //
+  // 구글 로그인 계정의 옛 알람은 `alarms.user_id` 에 google_id 가 들어 있는데 인증은 지금
+  // users.id 로 정규화한다. 발신자를 한 값으로만 조회하면 그 행도, 그 행으로 채운 슬롯도
+  // 못 찾아 **새 알람 id** 가 발급된다 — 이 표가 막으려던 중복 줄이 그대로 생긴다.
+  // (다른 픽스처는 pk == login 이라 이 갈래를 통과시킨다.)
+  it('레거시 발신자 식별자로 남은 슬롯도 같은 알람 id 로 이어 쓴다', async () => {
+    const LEGACY_SENDER = SENDER_LEGACY;
+    const legacyAlarmId = crypto.randomUUID();
+    // 옛 스키마가 남긴 모양: 발신 행과 슬롯이 모두 **로그인 식별자**로 키돼 있다.
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, time, repeat_days, is_active,
+              mode, wake_mode, snooze_minutes, timezone, delivery_version, created_at, updated_at)
+            VALUES (?, ?, ?, '07:15', '[]', 1, 'sound-only', 'sound_then_voice', 5, 'Asia/Seoul', ?,
+              datetime('now'), datetime('now'))`,
+      args: [legacyAlarmId, LEGACY_SENDER.login, RECIPIENT.login, crypto.randomUUID()],
+    });
+    await db.execute({
+      sql: `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+            VALUES (?, ?, '07:15', ?, datetime('now'))`,
+      args: [LEGACY_SENDER.login, RECIPIENT.login, legacyAlarmId],
+    });
+    // 전달이 끝난 상태 — 행은 지워지고 슬롯만 남는다.
+    await db.execute({ sql: 'DELETE FROM alarms WHERE id = ?', args: [legacyAlarmId] });
+
+    const resend = await postAlarm(LEGACY_SENDER, {
+      time: '07:15',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+      snooze_minutes: 7,
+    });
+    expect(resend.status).toBe(201);
+    const resendId = ((await resend.json()) as { alarm: { id: string } }).alarm.id;
+    expect(resendId).toBe(legacyAlarmId);
+    const row = await alarmRow(resendId);
+    expect(row).not.toBeNull();
+    expect(Number(row!.snooze_minutes)).toBe(7);
   });
 
   it('같은 발신자의 동일 (수신자, time) 재전송은 멱등 — 행 1개, id 유지, 내용 갱신', async () => {
@@ -158,6 +257,15 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     });
     expect(res1.status).toBe(201);
     const id1 = ((await res1.json()) as { alarm: { id: string } }).alarm.id;
+    const firstDeliveryVersion = String((await alarmRow(id1))!.delivery_version);
+    expect(firstDeliveryVersion).toMatch(/^[0-9a-f-]{36}$/);
+    await db.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, voice_profile_id,
+               sender_voice_upload, created_at, updated_at)
+            VALUES (?, ?, 1, 1, 'old-voice', 1, datetime('now'), datetime('now'))`,
+      args: [id1, RECIPIENT.login],
+    });
 
     const res2 = await postAlarm(SENDER_A, {
       time: '23:00',
@@ -177,8 +285,36 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const row = await alarmRow(id1);
     expect(Number(row!.is_active)).toBe(1);
     expect(Number(row!.snooze_minutes)).toBe(12); // 재전송 내용으로 UPDATE 됨
+    expect(String(row!.delivery_version)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(String(row!.delivery_version)).not.toBe(firstDeliveryVersion);
+    const recipientState = await db.execute({
+      sql: `SELECT declined, revoked, voice_profile_id, sender_voice_upload FROM alarm_recipient_state
+            WHERE alarm_id = ? AND recipient_user_id = ?`,
+      args: [id1, RECIPIENT.login],
+    });
+    expect(Number(recipientState.rows[0]!.declined)).toBe(1);
+    expect(Number(recipientState.rows[0]!.revoked)).toBe(0);
+    expect(recipientState.rows[0]!.voice_profile_id).toBeNull();
+    expect(Number(recipientState.rows[0]!.sender_voice_upload)).toBe(0);
     // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
     expect(String(row!.timezone)).toBe('Asia/Seoul');
+  });
+
+  it('타깃 알람의 일반 PATCH를 거부하고 원본을 보존한다', async () => {
+    const created = await postAlarm(SENDER_A, {
+      time: '23:00',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul',
+    });
+    const id = ((await created.json()) as { alarm: { id: string } }).alarm.id;
+    const before = String((await alarmRow(id))!.delivery_version);
+
+    const patched = await patchAlarm(SENDER_A, id, { snooze_minutes: 12 });
+    expect(patched.status).toBe(409);
+    expect(((await patched.json()) as { error_code: string }).error_code).toBe(
+      'TARGETED_ALARM_IMMUTABLE',
+    );
+    expect(String((await alarmRow(id))!.delivery_version)).toBe(before);
   });
 
   it('수신자 본인이 만든 같은 시각 알람(target 없음)은 서버가 건드리지 않는다', async () => {
@@ -201,11 +337,11 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
   });
 });
 
-describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임', () => {
-  it('수신자 시간대 기준 30분 미만이면 400 FAMILY_ALARM_LEAD_TIME, 행 미생성', async () => {
-    // now = KST 09:00 → KST 09:20 은 20분 뒤.
+describe('타인 발신 알람 — 수신자 시간대 기준 리드타임(FAMILY_ALARM_MIN_LEAD_MINUTES)', () => {
+  it('수신자 시간대 기준 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME, 행 미생성', async () => {
+    // now = KST 09:00 → KST 09:03 은 3분 뒤(리드타임 미만).
     const res = await postAlarm(SENDER_A, {
-      time: '09:20',
+      time: '09:03',
       target_user_id: RECIPIENT.login,
       timezone: 'Asia/Seoul',
     });
@@ -217,7 +353,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
     expect(Number(count.rows[0]!.cnt)).toBe(0);
   });
 
-  it('30분 이상이면 201', async () => {
+  it('리드타임 이상이면 201', async () => {
     const res = await postAlarm(SENDER_A, {
       time: '09:40',
       target_user_id: RECIPIENT.login,
@@ -233,11 +369,11 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
             VALUES ('guard-tz', ?, '12:00', 'America/New_York', 1)`,
       args: [RECIPIENT.login],
     });
-    // now = 2026-07-15T00:00Z = NY(EDT) 7/14 20:00 → '20:15' 는 NY 기준 15분 뒤.
+    // now = 2026-07-15T00:00Z = NY(EDT) 7/14 20:00 → '20:03' 은 NY 기준 3분 뒤(리드타임 미만).
     // 발신자가 body 에 Asia/Seoul 을 보내도(서울로 해석하면 11시간 이상 남아 201 이 났을 것 =
     // 리드타임 우회) 수신자 저장 tz 가 우선하므로 400 이어야 한다.
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
       timezone: 'Asia/Seoul',
     });
@@ -254,7 +390,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
       args: [RECIPIENT.login],
     });
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
     });
     expect(res.status).toBe(400);
@@ -270,7 +406,7 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
     // Asia/Seoul(11시간 이상 리드타임)이므로 201 이어야 한다. 저장 timezone 도
     // 발신자 값이 아니라 효과 시간대여야 한다.
     const res = await postAlarm(SENDER_A, {
-      time: '20:15',
+      time: '20:03',
       target_user_id: RECIPIENT.login,
       timezone: 'America/New_York',
     });
@@ -337,88 +473,7 @@ describe('타인 발신 알람 — quiet 요일을 수신자 시간대의 발사
   });
 });
 
-describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결과) 기준으로 재실행', () => {
-  it('PATCH time 을 리드타임 미만으로 바꾸면 400 FAMILY_ALARM_LEAD_TIME, 행 미변경', async () => {
-    // now = KST 09:00. 12:00 로 정상 생성 후 09:20(20분 뒤)로 PATCH → 리드타임 위반.
-    const create = await postAlarm(SENDER_A, {
-      time: '12:00',
-      target_user_id: RECIPIENT.login,
-      timezone: 'Asia/Seoul',
-    });
-    expect(create.status).toBe(201);
-    const id = ((await create.json()) as { alarm: { id: string } }).alarm.id;
-
-    const res = await patchAlarm(SENDER_A, id, { time: '09:20' });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error_code: string }).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
-    expect(String((await alarmRow(id))!.time)).toBe('12:00'); // 거부됐으므로 변경 안 됨
-  });
-
-  it('PATCH time 을 수신자 quiet 시간대로 바꾸면 403 FAMILY_ALARM_QUIET_TIME, 행 미변경', async () => {
-    // now = UTC 금 14:00 = KST 금 23:00. 12:00 로 생성 후 00:30(다음 발사 KST 토 00:30)로 PATCH.
-    vi.setSystemTime(new Date('2026-07-17T14:00:00Z'));
-    const create = await postAlarm(SENDER_A, {
-      time: '12:00',
-      target_user_id: RECIPIENT_QUIET.login,
-      timezone: 'Asia/Seoul',
-    });
-    expect(create.status).toBe(201);
-    const id = ((await create.json()) as { alarm: { id: string } }).alarm.id;
-
-    const res = await patchAlarm(SENDER_A, id, { time: '00:30' });
-    expect(res.status).toBe(403);
-    expect(((await res.json()) as { error_code: string }).error_code).toBe('FAMILY_ALARM_QUIET_TIME');
-    expect(String((await alarmRow(id))!.time)).toBe('12:00');
-  });
-
-  it('PATCH is_active 0→1 재활성화 시 (수신자, time) 슬롯을 원자 재점유(이전 활성 비활성화)', async () => {
-    // A→R, B→R 를 같은 시각으로 생성하면 B 가 슬롯을 차지하고 A 는 비활성화된다.
-    // 이후 발신자 A 가 자기 알람을 is_active=1 로 재활성화하면 A 가 슬롯을 되찾고 B 는 비활성화돼야 한다.
-    const ra = await postAlarm(SENDER_A, {
-      time: '23:00',
-      target_user_id: RECIPIENT.login,
-      timezone: 'Asia/Seoul',
-    });
-    const idA = ((await ra.json()) as { alarm: { id: string } }).alarm.id;
-    const rb = await postAlarm(SENDER_B, {
-      time: '23:00',
-      target_user_id: RECIPIENT.login,
-      timezone: 'Asia/Seoul',
-    });
-    const idB = ((await rb.json()) as { alarm: { id: string } }).alarm.id;
-    expect(Number((await alarmRow(idA))!.is_active)).toBe(0); // B 가 A 를 교체
-    expect(Number((await alarmRow(idB))!.is_active)).toBe(1);
-
-    const res = await patchAlarm(SENDER_A, idA, { is_active: true });
-    expect(res.status).toBe(200);
-    expect(Number((await alarmRow(idA))!.is_active)).toBe(1); // A 재활성화(슬롯 되찾음)
-    expect(Number((await alarmRow(idB))!.is_active)).toBe(0); // 이전 활성(B) 비활성화
-  });
-
-  it('같은 슬롯에 발신자 활성 알람이 둘이어도 PATCH 대상이 승자로 남고 나머지만 비활성화(Codex #563)', async () => {
-    // 비정상 상태((수신자, time) 슬롯에 발신자 A 의 활성 알람 2개)를 직접 만든 뒤 그 중 하나를
-    // PATCH 하면 대상이 유일 승자로 남아야 한다. 구버전은 POST 용 claimTargetedAlarmSlot 이
-    // 다른 행을 keeper 로 골라 PATCH 대상까지 비활성화해 둘 다 꺼지는 버그가 있었다.
-    const DBX = '11111111-1111-4111-8111-111111111111';
-    const DBY = '22222222-2222-4222-8222-222222222222';
-    // 무료 발신자 알람은 sound-only(POST 가 무료 플랜에 넣는 기본값)로 넣어 플랜 게이트를 피한다.
-    await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, time, is_active, timezone, mode)
-            VALUES (?, ?, ?, '23:00', 1, 'Asia/Seoul', 'sound-only'),
-                   (?, ?, ?, '23:00', 1, 'Asia/Seoul', 'sound-only')`,
-      args: [DBX, SENDER_A.login, RECIPIENT.login, DBY, SENDER_A.login, RECIPIENT.login],
-    });
-    const res = await patchAlarm(SENDER_A, DBX, { time: '23:00' });
-    expect(res.status).toBe(200);
-    expect(Number((await alarmRow(DBX))!.is_active)).toBe(1); // 대상 = 승자
-    expect(Number((await alarmRow(DBY))!.is_active)).toBe(0); // 나머지 비활성화
-    const active = await db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM alarms WHERE target_user_id = ? AND time = '23:00' AND is_active = 1`,
-      args: [RECIPIENT.login],
-    });
-    expect(Number(active.rows[0]!.cnt)).toBe(1); // 슬롯에 정확히 하나만 활성
-  });
-
+describe('본인 알람 PATCH', () => {
   it('본인 알람(target 없음) PATCH 는 가드가 걸리지 않는다(리드타임 미만이어도 200)', async () => {
     // 본인 알람은 리드타임/quiet 가드 대상이 아니다 — target_user_id 가 없으면 재실행하지 않는다.
     const create = await postAlarm(SENDER_A, { time: '12:00', timezone: 'Asia/Seoul' });

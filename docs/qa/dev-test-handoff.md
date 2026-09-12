@@ -1,13 +1,309 @@
-# Dev 테스트 핸드오프 (갱신 2026-08-04)
+# Dev 테스트 핸드오프 (갱신 2026-09-13)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
+## #734 전반 점검 후 남은 릴리스 확인
+
+자동 검증과 수정 범위는 [2026-09-12 점검 기록](pr-734-project-audit-2026-09-12.md)에 있다.
+
+- [ ] `develop → main`에서만: #734 후속 복수 증빙 교체 테스트 11건과 Play EXPIRED 픽스처 변경 실행
+      (수정/작성만 완료, 이번 HEAD는 미검증. 이전 통과 수치를 이어 쓰지 않는다)
+- [ ] 같은 릴리스 단계에서: iOS preflight 경합 3건·기존 구매 전 조회 6건,
+      새 Play 교체 토큰의 첫 비활성 RTDN 8건 실행(작성만 완료)
+- [ ] 같은 릴리스 단계에서: 활성 구독 없는 유료 등급 복구 5건 실행
+      (후속 강등 처리·롤백·멱등·활성 구독/독립 이용권 보존, 작성만 완료)
+- [ ] 같은 릴리스 단계에서: Android `BillingPreflightSnapshotTest` 8건 실행
+      (무료 preflight의 Play 캐시 무효화·재시작 판정·일반 조회/유료 신호 보존, 작성만 완료)
+- [ ] Android 실기기: 푸시 미수신·Play 조회 실패에서 무료 preflight 후 시트 취소/재시작 시
+      유료 캐시가 되살아나지 않는지, Play 조회와 preflight가 겹칠 때 이후 새 구매는 반영되는지 확인
+- [ ] `develop → main`에서만: `bodyLimit.test.ts`의 소비 시점·인증 거절·취소·413 회귀 사례 실행
+      (작성만 완료). Workers 런타임에서 비인증 동시 요청과 25 MiB 경계 업로드의 메모리·응답 확인
+- [ ] 같은 릴리스 단계에서: 다른 활성 구독 증빙 보호·독립 유료 멤버 보관 유예 회귀 20건 실행
+      (`billing-reconciliation.test.ts`, 작성만 완료; 동시 추가·72시간·재시도·롤백 포함)
+- [ ] 같은 릴리스 단계에서: 정원 축소·개별 이탈의 독립 유료 멤버 보관 정책 8건 실행
+      (`billing-reconciliation.test.ts`, 작성만 완료; 양 스토어·무료 유지·기존 유예·롤백 포함)
+- [ ] 스테이징 실제 Play 주문으로 Orders API 접근 권한·`processedEvent.eventTime`·구매 토큰 대조 확인
+- [ ] 양 플랫폼: 결제 전 조회 실패/재로그인/시트 취소 후 오프라인 재시작, 보류→복구·환불→가족 강등 확인
+- [ ] Android 실기기: 잠금/백그라운드/비행기 모드 울림과 알림 권한 회수 시 폴백 회귀 확인
+- [ ] 마이그레이션 114 전 `last_paid_at` 없는 원장과 이미 분리 보존한 과거 원장의 날짜 점검
+- [ ] #730의 기존 출시 순서 유지: Play v25 게재 → main 반영 → 마이그레이션 → stock 240개 게시 → Apple/APNs 시크릿 확인
+
+이 점검에서는 #734/#730을 머지하거나 운영 데이터를 변경하지 않았다.
+
+## 0-A. 기본 목소리·대사 교체 — **미리 구워 두었다. 게시만 남았다**
+
+세 언어 대사가 확정됐고(2026-09-02), `love` → `cheer`(응원)로 개념도 바뀌었다.
+2026-09-03 에 **기본 목소리 4종도 교체**됐다: 시우 · 미나 · 도현 · 애니(#111).
+교체 전에는 넷 중 둘이 영어권 premade 였다(`아담`=Adam, `소은`=Jessica).
+
+### 무엇이 바뀌었나 — 배포 때 **재합성하지 않는다**
+
+예전에는 배포 직후 cron 이 240개를 5분에 6개씩 다시 구웠다. 그 **3시간 20분** 동안
+기본 목소리로 테마를 하나도 못 골랐고(`freeBucketsFor` 는 완전한 세트만 노출한다),
+그 창이 리뷰 지적의 상당수를 만들었다. 지금은 **미리 구워 올린다** —
+cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` — 둘을 같이 두면 서로
+싸운다). 예전 주석이 부르던 `scheduled.stock_seed` 라는 이름은 코드에 없다.
+
+    npm run preview:stock -- --dry-run      # 무엇이 낡았는지/빠졌는지
+    npm run preview:stock                   # 240개를 굽는다(멱등)
+    npm run publish:stock -- --env dev      # R2 업로드 + 행 INSERT(멱등)
+    npm run publish:stock -- --env prod
+
+⚠ **R2 버킷과 DB 는 환경별로 따로다**(dev `voice-alarm-voices` / prod `…-prod`).
+합성은 한 번이지만 **게시는 두 번**이다.
+⚠ **게시는 마이그레이션 뒤에.** `messages.retired_at` 이 없으면 스크립트가 먼저 말하고
+멈춘다(은퇴 전에는 옛 행이 같은 자리에 살아 있어 전부 건너뛴다).
+⚠ **파일이 있다는 것만으로 최신이 아니다.** 지문(`voice-preview/_fingerprints.json`)이
+합성 입력과 맞아야 한다. 안 맞으면 `preview:stock` 이 다시 굽고, `publish:stock` 은
+올리기를 거부한다.
+
+### dev 체크리스트
+
+- [ ] 배포 확인 → `npm run publish:stock -- --env dev` (240개, 몇 분)
+- [ ] 실기기: 기본 목소리 편집기의 문구 목록이 **날씨·운세·응원·약 + 직접 입력** 인지
+- [ ] 운세를 고르면 사주를 묻는지(없으면 저장이 막힌다)
+- [ ] 비행기모드 발사 — 선다운로드가 네 카테고리를 다 받았는지
+- [ ] **교체 미완료 차단 화면**: 게시 전에 앱을 켜면 "목소리를 새로 받고 있어요" 가
+      뜨고, 게시 뒤 재시도를 누르면 풀리는지
+- [ ] **버킷 없는 옛 알람**이 갈아타는지(서버가 `legacy_bucket_hints` 로 테마를 준다)
+- [ ] **받은 가족 알람(날씨·운세)**: 갈아탄 뒤 내 지역·사주가 채워지는지
+      (안 채우면 날씨는 서울, 운세는 빈 프로필로 떨어진다)
+
+⚠ **유료 클론은 이번에 안 건드린다**(사용자 확정). 재등록할 때 갱신된다. 그래서 유료
+사용자의 「응원」 테마가 한동안 **옛 연애 문구**를 말한다 — 의도된 상태다.
+
+### ⚠⚠ prod 배포 순서 — 코드로 못 막는다
+
+`#111` 은 프로필 id 를 그대로 두고 목소리만 바꾸는데, 앱은 그 id 에 **내장 인사말 mp3**
+를 매핑해 미리듣기에서 서버 클립보다 **우선**한다. 구버전이 남으면 목록 이름은 시우,
+미리듣기는 Adam, 실제 알람은 Krys 가 된다.
+
+`minSupported` 는 이미 **25** 로 올려 두었다(`latest` 도 25 — 배너가 아니라 **차단
+화면**이다). 그래서 순서를 어기면 **받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.**
+`app/build.gradle.kts` 의 `versionCode = 25` / `versionName = "1.2.5"` 와 서버의
+`app-version.ts` 가 같은 숫자를 가리키고 있어야 한다.
+
+⚠⚠ **`#110` 이 도는 순간부터 게시가 끝날 때까지 prod 에는 기본 목소리 4종의 살아 있는
+프리셋이 0개다.** 은퇴 서브쿼리가 문구를 가리지 않아 전부 걸린다. **cron 은 그 자리를
+채우지 않는다**(시스템 드레인은 꺼져 있다) — 창을 닫는 것은 사람이 돌리는 `publish:stock`
+한 줄뿐이라, **게시가 배포의 마지막 단계**이고 머지와 게시 사이는 짧을수록 좋다. 그동안
+앱은 「교체 미완료」 차단 화면에 머문다.
+
+2026-09-08 실측(운영자가 DB·R2 를 직접 조회해 얻은 값):
+- prod DB 는 마이그레이션 **93** 에 있고 develop 은 **112** 다.
+- `#109` 의 DELETE 는 prod 에서 **0행 no-op** 이다 — 얼어붙은 문구 목록이 prod 가 실제로
+  들고 있는 행과 안 맞는다. 실제 일은 `#110` 이 **144행을 은퇴**시키는 것이고, 그때
+  떨어져 나가는 알람은 **0개**다.
+- ✅ **바이트는 이미 두 버킷에 다 있다** — `voice-alarm-voices`(dev) ·
+  `voice-alarm-voices-prod` 양쪽에 240개(= 언어 3 × 목소리 4 × 클립 20), sha256 왕복으로
+  확인했다. dev 는 게시까지 끝났다. 그래서 prod 게시는 사실상 **행 INSERT** 다 — 키가
+  결정론적이라 스크립트가 같은 자리에 같은 바이트를 다시 PUT 하는 것뿐이다.
+
+- [ ] 1.2.5(versionCode 25) 를 **스토어에 먼저** 올린다
+- [ ] 게재 확인 뒤 `main` 에 머지한다(= 배포 + 마이그레이션)
+- [ ] **`#111` 이 돌았는지 확인한다** — Deploy Backend 로그에
+      `production migration 111/112: replace-system-voices-2026-09-03` 이 찍혔는지 본다.
+      못 미더우면 `npm run migrate:prod` 를 다시 돌린다(멱등 — 이미 끝났으면
+      `production migration 111/112: already applied` 만 찍는다).
+      앱에서는 목소리 목록이 **시우 · 미나 · 도현 · 애니** 여야 한다
+      (옛 이름 `아담`·`소은`·`하준` 이 보이면 아직 안 돈 것이다)
+- [ ] `npm run publish:stock -- --env prod --dry-run` — 240개가 다 대상인지 본다.
+      `⚠ prod DB 에 messages.retired_at 이 없다 — 마이그레이션 #110 이 아직 안 돌았다.`
+      가 나오면 배포/마이그레이션이 아직이다
+- [ ] `npm run publish:stock -- --env prod` (240개 × `wrangler r2 object put` 이라 몇 분)
+      - 첫 줄: `환경 prod · 버킷 voice-alarm-voices-prod · 대상 240개`
+      - 끝 줄: `게시 240개 · 이미 있음 0개` ← **240 / 0 이어야 끝난 것**이다.
+        `· 실패 N개` 가 붙으면 그것만 다시 돌리면 된다(멱등)
+- [ ] 실기기에서 「교체 미완료」 차단 화면이 재시도로 풀리는지
+- [ ] 다음 릴리스에서 은퇴한 프리셋과 R2 오브젝트를 **삭제**한다(이번엔 은퇴까지만).
+      R2 미아는 **아무도 회수하지 않는다** — 백엔드는 버킷을 훑지 않고, TTL 스윕은
+      `generated_audio_assets` 행에서 출발하는 데다 `is_preset = 1` 을 제외한다
+
+## 0-B. 랜딩 재작성 (2026-09-06) — 코드는 끝, 게재 뒤 스위치 하나
+
+레퍼런스 11곳(알라미·Sleep Cycle·Calm·Headspace·Duolingo·Oura·토스 등)을 실측해 카피 결을
+정했다: **히어로는 아침에 일어나는 일**, 방법은 본문 둘째 줄과 FAQ. AI·합성·클론 같은 낱말은
+페이지에 쓰지 않고, 숫자는 측정된 사실만(사양 숫자 타일은 뺐다).
+
+### 바뀐 것
+- **홈**: 헤드라인 `알람이 아니라, {누구} 목소리가 깨워요` — 돌아가는 자리는 '누구' 뿐이다
+  (`components/motion/cycling-word.tsx`). 서브 아래에 **미리 들어보기**(`voice-preview.tsx`):
+  버튼 하나로 시우 → 미나 → 도현 → 애니 인사말을 차례로 듣는다. 고르는 UI 는 두지 않는다.
+  파형은 장식이 아니라 재생 중 실제 음량이다(AnalyserNode). 숫자 타일 자리는 '누구 목소리'
+  챕터(`sections/whose-voice.tsx`)로, 문구 예시 카드는 앱 대본(`voice-preview/*/문구.txt`)을
+  줄인 문장으로 바꿨다 — **없는 문장을 광고하지 않는다.** ko/en/ja 세 벌 모두.
+- **미리듣기 클립**은 안드로이드가 목소리를 눌렀을 때 트는 그 파일이다
+  (`res/raw/voice_greeting_<voice>_<lang>.mp3` → `apps/landing/public/audio/<voice>-greeting.<lang>.mp3`,
+  `.gitignore` 에 예외). **앱의 인사말을 바꾸면 이 복사본도 같이 바꾼다.**
+- **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
+  대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
+  (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
+- **응원 메시지 `/cheer/`**: 이름 입력 + 카드별 재생. 재생 경로는 `cheer-playback.ts` 의
+  `resolveCheerPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
+  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `cheer-voices.ts`,
+  이름·역할·문장은 `messages/*.json` 의 `cheer.voices`. 이름 정리는 앱 `sanitizeDisplayName`
+  과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
+- **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
+  바닥 색을 앱 다크 스킴(`AlarmTalkTheme.kt`)에서 가져온다(`globals.css`). 브랜드 마크는
+  `BrandMark` 안에서 아이콘 마스크 비율(22%)로 **한 번만** 깎는다 — 호출부에 `rounded-*`
+  를 덧대지 말 것.
+
+### 확인한 것 (정적 export 를 헤드리스 크로미움으로)
+- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/cheer/` 등 404 는 Vercel rewrite 가 맡는 접두사
+  없는 경로 프리페치 — 로컬 서빙에서만 난다).
+- 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
+- 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
+
+### 2차 — 스킬 검수 (같은 날)
+`design-taste-frontend`(Leonxlnx/taste-skill)·`web-design-guidelines`(vercel-labs)를
+`apps/landing/.claude/skills` 에 깔고(`skills-lock.json`) 적용했다.
+- **taste**: 스크롤 큐·장식 점·칸별 아이브로·히어로 꼬리표를 걷어냈고, 세 언어 카피의
+  대시(— –)를 전부 없앴다(문장부호로 대체). 안 쓰는 모션 파일 셋(count-up·living-waveform·
+  scroll-cue)도 지웠다. 라이트 단일 테마는 **일부러** 그대로다(흰 바닥 설계, `globals.css` 주석).
+- **WIG**(파일 묶음 4개 병렬 검수 → 지적마다 반박 검증, 확정 9건): 일본어가 `keep-all`
+  때문에 한 문장이 한 단어가 돼 칸을 넘치던 것(FAQ·시나리오·누구 목소리 3열 — 375/768px
+  실측) → `html:lang(ja) body { word-break: normal }`; 본문 건너뛰기 링크 + 모든 `<main id="main">`;
+  모바일 메뉴를 네이티브 `<dialog>` 로(포커스 트랩·Escape·초점 복귀·세로 스크롤); 언어 전환을
+  버튼에서 **링크**로(`hreflang`·`lang`·`aria-current`); 스크린샷 드리프트에 `data-reveal`.
+  덤으로 저위험 지적: 제목 `text-wrap: balance` 전역, `touch-action: manipulation`, 장식 전용
+  색(`text-faint`)을 읽히는 글자에서 제거, FAQ 질문 `h3`+`id`, 요금·챕터 목록 구조, 브랜드명
+  `translate="no"`, 폰 목업 `role="img"`, 응원 입력의 `name`/`aria-describedby`/초점 링 복원.
+- 검수가 반박으로 **기각**한 것: 앵커 `scroll-padding-top`(증상 재현 안 됨), 헤더 backdrop
+  블러 성능, 미리듣기 글자 칸 폭. 근거는 워크플로 저널에 있다.
+- 실측으로 새로 잡은 것: 일본어 헤더 메뉴가 768px 에 한 줄로 안 들어가(840px) 데스크톱 내비를
+  **lg(1024) 부터**로 올렸고, 미리듣기 알약은 막대를 `flex-1 max-w-[3px]` 로 바꿔 320px 까지
+  들어간다. 1024px 에서 기능 섹션 스크린샷이 32px 밖으로 흘러 `scrollWidth` 가 커지는 것은
+  의도한 설계(`lg:-mr-16`, body `overflow-x: hidden`)라 두었다.
+- `apps/landing/AGENTS.md`·`CLAUDE.md` 는 검수 에이전트가 `next dev` 를 돌리며 Next 가 생성한
+  파일이다. 지워도 다시 생기므로 그대로 커밋했다.
+
+### 사람이 확인할 것
+- **iOS 사파리 실기기**에서 미리듣기 첫 탭에 소리가 나는가(AudioContext 는 제스처 안에서
+  `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).
+- 응원 페이지의 브라우저 목소리 품질은 기기마다 다르다 — 전용 생성 경로가 붙기 전까지의
+  임시 소리다. 카드 이름·문장은 자리 표시용이라 실제 목록이 오면 JSON 만 바꾼다.
+- App Store 게재 당일: Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=1` 추가 후 재배포.
+- `apps/landing/skills-lock.json` 은 apple-design 스킬 설치가 남긴 파일이라 커밋하지 않았다
+  (스킬 본체는 `.claude/` 로 무시된다).
+
+## 0-C. 앱 움직임 — apple-design 원칙 대조 판정 (2026-09-06)
+
+랜딩에 쓴 apple-design 스킬(움직임 원칙)을 앱에도 적용할지 **코드 인벤토리 → 원칙별 판정 →
+갭마다 반박 → 종합**으로 판정했다(워크플로 저널: `subagents/workflows/wf_c21873b0-14f`).
+
+**결론: 안드로이드는 지금대로, iOS 는 두 곳만 고친다.** 살아남은 갭은 전부 "iOS 가 안드로이드
+원본과 이유 없이 다른 곳" 이라 스킬 적용이 아니라 **원본 맞추기**다(CLAUDE.md 「다르면 iOS 가
+틀린 것」). 반박당한 갭은 전부 오너 지시로 일부러 정한 동작(리플 제거·스와이프 바운드), 저사양
+실기 프레임 예산으로 비워 둔 자리(타임휠 콜백), 되돌릴 수 없는 해제 슬라이더에 관성을 얹는 것
+처럼 **적용하면 곧 회귀**가 되는 자리였다. 이미 지키는 것이 대부분이었다 — Compose·SwiftUI 기본값
+(리플·additive 애니메이션·인터럽트 가능 push)과 코드가 한 것(스프링 damping 1.0, 속도 이어받기
+`initialVelocity`, 전환 토큰 한 짝, `sp`/`relativeTo:` 글자 크기).
+
+### 고친 것 (셋)
+1. **Android `AmPmWheelColumn` 정착 취소** — 숫자 칼럼과 같은 `settleJob` 패턴. 정착 중 다시 잡거나
+   탭을 빠르게 두 번 누르면 정착 두 개가 겹쳐 `onStep` 홀짝 토글이 **두 번 넘겨 제자리**로 돌아오던
+   결함이 같이 사라진다. 탭 정착도 0 이 아니라 현재 오프셋에서 이어 간다.
+2. **iOS `AmPmWheelColumn` 1:1 추종** — 전에는 `onEnded` 만 있어 손을 뗄 때까지 아무것도 안
+   움직였다. 밴드(±0.22/0.72칸)·위치 임계(0.38칸)·속도 임계(3.5칸/s)를 안드로이드 값 그대로 쓰고,
+   정착은 숫자 칼럼과 같은 `WheelSettleDriver`. 기본 자리 애니메이션은 시 칼럼이 11↔12 를 넘겨
+   밖에서 바뀔 때만 돈다(`animateBase`).
+3. **iOS 플릭 판정을 속도 부호 우선으로** — `AlarmRow` 스와이프(420pt/s, 위치 임계 0.42 로
+   안드로이드와 통일), `BottomSheetHost` 닫기(위로 튕기면 되돌림). **판정만** 바꾸고 애니메이션은
+   그대로다(속도를 넘기면 원본 M3 tween 과 갈라진다).
+
+같이 처리한 무해 조각: 타임휠 탭 `Surface` 10dp → `WakerTileShape`, iOS 생 반경 18 → 토큰
+(`CodeRegisterRow`·`FortunePromptInputFields`), 재생 방식 세그먼트 썸 `.offset { }` 람다,
+스펙 「의도된 차이」에 안드로이드 정착 곡선 `(0.3,0.6,0.3,1)`·계수 0.09 행 추가 + 구현 지도의
+없는 파일 경로 정정 + iOS `TimeWheelSettle` 낡은 주석 정정.
+
+### 하지 않은 것 (요지)
+- 울림 '밀어서 끄기' 슬라이더에 속도·관성·스프링 이어받기 — 확인 슬라이더의 마찰이 존재 이유.
+  A32 실측 튕김 속도가 관성 임계의 2배라 제자리에서 한 번 튕기면 알람이 영구 종료된다.
+- 알람 행 고무줄·오버슈트(양 앱) — 726a9fe0 이 바로 그 오버슈트 때문에 바운드를 넣었다.
+- 리플/눌림 틴트 복원(오너 지시로 뺀 것), 안드로이드 햅틱, 미리듣기 실시간 게인.
+- iOS 크롭 슬라이더 grab offset(원본 M3 `RangeSlider` 도 같음), 0초 Reduce Motion 헬퍼,
+  시스템 텍스트 스타일 135곳 치환, 루트 스왑 페이드.
+
+### 선택 후속(규약에는 맞음, 이번엔 안 함)
+- iOS 시스템 `.sheet` 셋(사주 입력·설정 불가 시간·이용권 공유 선택)을 스펙 §4 형태
+  (`WakerFormSheet`/`WakerSelectionSheet` 짝)로. `.sheet(item:)` 은 바꿔 써야 한다.
+- iOS FAB 표시 조건을 `fabVisible` 하나로 묶어 `.animation(value:)`.
+- iOS AlarmRow 에 한해 무진동 스프링 + 클램프 `GeometryEffect` 로 속도 이어받기.
+
+### 사람이 확인할 것
+- **iOS AlarmRow 스와이프** — 제스처 스택에 회귀 이력이 셋(`highPriorityGesture` 로 탭 사망 등).
+  `onEnded` 판정식만 건드렸지만 실기에서 왼쪽 짧은 플릭 → 열림, 열린 뒤 오른쪽 플릭 → 닫힘,
+  느린 드래그 → 0.42 위치 판정을 눌러 볼 것.
+- **오전/오후 칸** 양 앱 — 끌면 따라오고, 굴러가는 중에 잡으면 그 자리에서 잡히고, 빠르게 두 번
+  탭해도 한 번만 넘어가는지.
+
+## 0-D. 울림 화면 다시 그림 (2026-09-06, Android `RingingActivity`)
+
+목업과 대응표: https://claude.ai/code/artifact/16b023c4-a80f-420d-aeb4-af0664dc92d8
+
+- **색은 앱에서**: 이 파일에만 있던 고정색 8종을 지우고 `AlarmTalkDarkColorScheme` + 홈 탭
+  그라데이션(`HomeGradientDark`)만 쓴다. 잠금화면 예외(항상 다크)는 그대로.
+- **문구는 카드 없이** 시계 아래 23sp/33sp 세 줄. 날짜 줄에 알람 이름을 합쳤다("9월 7일 월요일 · 출근").
+  목소리 이름·"말하고 있어요" 표시는 **두지 않기로 했다**(2026-09-06 결정).
+- **문구 없는 알람**(알람음만)은 그 자리를 **비운다**(2026-09-09. 그전에는 "알람음" 칩을 뒀는데,
+  재생 방식은 잠결에 필요한 정보가 아니라 시선만 하나 더 만들었다).
+- **끄기·다시 알림 비대칭을 시각으로**: 다시 알림 52dp 투명 캡슐, 끄기 72dp 슬라이더 + primary 손잡이.
+  손잡이는 누르는 순간 0.94 로 눌리고(튕기지 않는 스프링), 70% 문턱을 넘는 순간 햅틱 한 번
+  (`CONFIRM`, API 30 미만은 `KEYBOARD_TAP`). 관성·플릭·길게 누르기는 **일부러 없다** — 잠결에
+  꺼진다.
+- **접근성**: 슬라이더에 커스텀 액션 "끄기"(`rd_dismiss_action`) — 밀기만 있던 탈출구에 TalkBack 경로.
+- 대비 실측(WCAG): 글자 쌍 전부 5.2:1 이상(가장 낮은 것이 힌트 셰브론), 손잡이/트랙 8.4:1,
+  다시 알림 테두리 3.7:1.
+- **2차 검수**(움직임·타이포·접근성 세 렌즈 → 반박 검증, 확정 6건 + 저위험 9건 반영):
+  글꼴을 넘기지 않아 이 화면만 시스템 글꼴이던 것(`typography = AlarmTalkTypography`, 그래서
+  시계 기준 폭 320→340dp), **놓는 순간 끄기**(채움 애니메이션이 끝나기를 기다리는 동안 소리가
+  계속 나고 다시 잡으면 확정이 무효가 됐다), 잡는 순간 정착 정지 + 표시값에서 드래그 시작,
+  다시 알림 리플이 안 보이던 것(`LocalContentColor`), 칩·캡슐·트랙 테두리 규칙 하나로
+  (`ringingEdge` 3.7:1), 시계를 TalkBack 한 노드 + 말로 읽는 시각(`rd_clock_spoken`),
+  문턱 통과 시 트랙 색(햅틱 끈 기기의 짝), 셰브론 위상 시차·머티리얼 아이콘, 영어 '6:30 AM'
+  순서, 창 제목(`paneTitle`), 다시 알림 role=Button, 라벨 16sp 통일, 한글 문구 자간 0.
+  기각 4건(시계 lineHeight 상속, 트랙 노드 병합, 5줄 문구, 트랙 대비)은 워크플로 저널에.
+- 검증: 컴파일·단위 테스트 373·assembleDevDebug 통과. **화면은 실기로 못 봤다**(이 세션에 폰이
+  안 붙어 있었다) — 다음에 폰이 붙으면 `adb shell am start -n com.alarmtalk.app.dev/com.alarmtalk.app.ringing.RingingActivity`
+  로 기본 상태를 띄워 확인할 것(알람 id 없이 열면 `defaultRingingUiState`, 소리는 안 난다).
+
+## 0-E. 문구 정리 + 미사용 코드 정리 (2026-09-06)
+
+- **문구**: 앱 ko/en/ja·iOS 카탈로그·랜딩에서 AI 티(대시 — –, 필러 '원활한/smooth/快適', 번역투·오역,
+  한 화면 안 해요체/합니다체 혼용)를 걷어냈다. 대시는 네 벌 모두 0개. 동의·약관 문구는 구두점·사실
+  오류(일본어 탭 이름)만 고치고 말투는 뜻이 안 바뀌는 범위에서만 맞췄다. 일부러 남긴 것: 앱 랜딩 CTA
+  "시작하기", 응원 페이지 헤드라인 느낌표(지시 문장 그대로), 초대 메시지 느낌표.
+- **미사용 코드**: Periphery(iOS)·knip(TS)·Lint UnusedResources(Android)·grep 휴리스틱(Kotlin) 후보를
+  에이전트가 코드로 검증한 뒤 지웠다 — Swift 75건, Kotlin 27건, TS export 8건, Android 문자열 29개
+  (3개 언어), iOS 카탈로그 미사용 키 260개. 남긴 것의 이유는 워크플로 저널(`wf_8dd0eab8-fdc`)에.
+  Periphery 의 `assignOnlyProperty`(Codable 필드 213건)는 서버 계약이라 손대지 않았다.
+- **백엔드 스크립트 타입체크**가 HEAD 에서부터 깨져 있었다(스톡 스크립트가 `.ts` 확장자 import 와
+  Workers 타입을 쓰는데 `scripts/tsconfig.json` 이 NodeNext·node 타입이었다). bundler 해석 +
+  `allowImportingTsExtensions` + workers-types 로 고쳤다. `npm run typecheck` 전 워크스페이스 통과.
+- 검증: Android 373 / iOS 677 / 백엔드 1539 / shared 16 / voice 11 테스트, 랜딩 빌드.
+
+## 0. 진행 중 — 클립 선다운로드 후속
+
+클립 선다운로드 1~5단계는 양 앱과 백엔드에서 모두 완료됐다. 라이브 랜덤 생성은
+`3929214c`에서 제거되어 알람 음성을 **사전렌더 프리셋 + 직접 입력** 두 경로로만 만든다.
+현재 규약과 구현 지도는 [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md)를 본다.
+
+지금 남은 것은 **iOS 백그라운드 진행 표시 연결 하나**다. Android는 WorkManager 진행률
+알림이 동작한다. iOS는 `Shared/ClipPrefetchActivityAttributes.swift`와
+`AlarmTalkWidget/ClipPrefetchLiveActivity.swift`가 번들에 등록돼 있지만
+`StockClipPrefetcher`가 아직 Live Activity를 시작·갱신·종료하지 않는다.
+
+Swift 6에서 `Activity`가 `Sendable`이 아니어서 `update/end` 전달 시 데이터 레이스 진단이
+발생한다. 기존에 `@MainActor`, `Task { @MainActor in }`, 제네릭 명시를 시도했으나 같은
+지점에서 막혔다. 다시 작업할 때는 Activity 조작을 소유하는 별도 경계에서 해결하되,
+`@unchecked Sendable`로 경고만 숨기지 말고 실제 실행 순서를 직렬화한다.
+
 ## 1. 남은 것 = 실기기 검증 체크리스트
 
 ### ① 사전렌더 라이브 (dev 배포됨, 유료 계정 필요)
-- [ ] 클론 목소리 등록(keep/promote) → cron(`*/5`)이 **21클립** 렌더: greeting 1 / weather 9(조건 8 + 미해결 안내 1) / fortune 5 / love 3 / medication 3, 앱 언어 1개. 틱당 6클립이라 완성까지 ~20분.
-- [ ] 편집기에서 날씨/운세/사랑/약 각각 선택·저장 → 클론 버킷 부착(`hasCompleteCloneBucket`, weather 9개 풀셋 요구).
+- [ ] 클론 목소리 등록(keep/promote) → cron(`*/5`)이 **21클립** 렌더: greeting 1 / weather 9(조건 8 + 미해결 안내 1) / fortune 5 / cheer 3(옛 이름 love) / medication 3, 앱 언어 1개. 틱당 10클립(`index.ts` 의 `maxClips`, 2026-08-20 에 6→10)이라 완성까지 ~10분.
+- [ ] 편집기에서 날씨/운세/응원/약 각각 선택·저장 → 클론 버킷 부착(`hasCompleteCloneBucket`, weather 9개 풀셋 요구).
 - [ ] **비행기모드 발사**: 그 목소리 클립 재생 + 잠금화면 문구가 재생 오디오와 같은 인덱스로 일치.
 - [ ] 날씨 미해결(준비창에 인터넷 없음) 시 '맑음' 오재생 대신 **마지막 안내 클립**("인터넷이 안 돼서 날씨를 미리 확인 못 했어요" 톤) 재생.
 
@@ -29,15 +325,15 @@
 ### ⑤ 직전 선택 유지 (새 알람 기본값)
 규약: [`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」](../../CLAUDE.md). **기억은 알람 저장 성공 시에만**, 적용은 **새 알람에만**.
 - [ ] 클론이 있는 계정에서 **기본(시스템) 목소리**로 알람 저장 → 새 알람이 그 시스템 목소리로 열린다(내 클론으로 되돌아가지 않는다).
-- [ ] 유료 클론에서 문구 '사랑' 저장 → 새 알람이 '사랑'으로 열리고, **문구 pane 을 열어도 '사랑'이 체크**돼 있다(예전엔 '약'으로 보였다).
-- [ ] **저장한 그 알람을 다시 열면** 문구 행이 '사랑'이고 pane 도 '사랑'에 체크돼 있다(2026-08-05 이전엔 행 '기본 인사말' / pane '직접 입력'이었다). 사전렌더가 끝난 클론이어야 버킷 경로를 탄다 — 라이브 생성으로 폴백하면 이 버그가 안 보인다.
-- [ ] **이 수정 전에 만든 알람**(종류 null + 버킷만 있는 행)을 열어도 버킷대로 보인다 — greeting→기본 인사말 / love→사랑 / medication→약 / fortune→운세 / weather→날씨.
+- [ ] 유료 클론에서 문구 '응원'(`cheer`, 옛 이름 love) 저장 → 새 알람이 '응원'으로 열리고, **문구 pane 을 열어도 '응원'이 체크**돼 있다(예전엔 '약'으로 보였다).
+- [ ] **저장한 그 알람을 다시 열면** 문구 행이 '응원'이고 pane 도 '응원'에 체크돼 있다(2026-08-05 이전엔 행 '기본 인사말' / pane '직접 입력'이었다). 사전렌더가 끝난 클론이어야 버킷 경로를 탄다 — 라이브 생성으로 폴백하면 이 버그가 안 보인다.
+- [ ] **이 수정 전에 만든 알람**(종류 null + 버킷만 있는 행)을 열어도 버킷대로 보인다 — greeting→기본 인사말 / cheer(옛 love)→응원 / medication→약 / fortune→운세 / weather→날씨.
 - [ ] 무료/기본 목소리에서 테마를 '날씨'로 저장 → 새 알람이 '날씨'로 열린다(매번 '약'으로 돌아가지 않는다). 저장된 도시가 없으면 '약'으로 폴백하는 게 정상.
 - [ ] 문구 pane 에서 종류만 바꾸고 **저장하지 않고 나가면** 다음 새 알람에 반영되지 않는다.
 - [ ] **기존 알람을 열었다 닫아도** 목소리·문구·테마가 변하지 않는다.
 - [ ] 직접 입력 문구가 있는 기존 알람을 열어 **시각만 바꿔 저장** → 문구가 그대로 남는다(대괄호 포함 문구도 안 잘린다).
 - [ ] **직접 입력으로 저장 → 새 알람이 그 문구가 담긴 직접 입력으로 열린다**(2026-08-06 변경, 그전에는 직전 생성형으로 되돌아갔다). 문구 요약 행에 `직접 입력 · 문구…` 로 보이고, **저장이 바로 눌린다**(재생성·한도 차감 없음 — 비행기모드에서도 저장된다).
-- [ ] 그 뒤 생성형(사랑 등)으로 한 번 저장 → 새 알람이 '사랑'으로 열린다(직접 입력 기록이 지워진다). 마지막 선택은 **둘 중 하나만** 남는다.
+- [ ] 그 뒤 생성형(응원 등)으로 한 번 저장 → 새 알람이 '응원'으로 열린다(직접 입력 기록이 지워진다). 마지막 선택은 **둘 중 하나만** 남는다.
 - [ ] 로그아웃 → 다른 계정 로그인 → 새 알람이 기본 인사말/약으로 시작하고 **앞 계정이 쓴 직접 입력 문구가 안 보인다**. 자동 401 후 같은 계정 재로그인은 **유지**되는 게 정상.
 
 ### ⑤-1 문구 화면 — 다시 묻지 않기 / 모달 닫힘 범위
@@ -46,6 +342,18 @@
 - [ ] 값을 고치는 길은 리스트 아래 상세 카드의 **'변경하기'** 하나다 — 날씨·운세·직접 입력 셋 다.
 - [ ] 다이얼로그에서 **확인/닫기 어느 쪽이든 문구 목록은 그대로 남는다**(예전엔 목록까지 닫혔다). 반영은 문구 화면의 저장 버튼을 눌러야 일어난다.
 - [ ] 직접 입력 문구가 길 때: 상세 카드는 **전문**, 편집기 요약 행은 **한 줄 말줄임**.
+
+### ⑤-2 목소리 교체 — 직접 입력 알람 강등 (유료 계정 필요, 되돌릴 수 없음)
+규약: [`docs/spec/voice-and-message.md`](../spec/voice-and-message.md) 「제자리 교체」.
+- [ ] 클론 목소리로 **직접 입력** 알람 1개 + **프리셋(테마)** 알람 1개를 만든다.
+- [ ] 새 목소리를 등록하며 '교체' 체크 → 저장. **그 기기에서 바로**: 직접 입력 알람이 기본
+      알람음이 되고(목록 배지), 프리셋 알람은 그대로 남는다(잠시 뒤 새 목소리로 재렌더된다).
+- [ ] 같은 계정의 **다른 기기**: 푸시(`voice_access_revoked` + `voiceProfileId`) 수신 후 같은
+      결과가 되고, 앱을 열면 "새 목소리로 바뀌었어요" 모달이 **한 번** 뜬다.
+- [ ] 그 뒤 프리셋 알람을 발사 → **새 목소리**로 울린다(옛 목소리가 아니다). 재렌더가 끝난 뒤에
+      확인할 것(21클립, 틱당 10개라 ~10분 — `index.ts` 의 `maxClips`).
+- [ ] 같은 달에 **한 번 더 교체**하려 하면 `목소리는 한 달에 1번만 변경할 수 있습니다` 로 막힌다
+      (예전에는 교체가 월 한도를 그냥 지나갔다).
 
 ### ⑥ 음성 생체정보 동의 철회 (되돌릴 수 없음 — 유료 계정 필요)
 - [ ] 더보기 → 약관 및 동의 → 선택 동의의 '동의 철회' → **확인 모달에서 취소** 시 아무 일도 일어나지 않는다.
@@ -63,8 +371,10 @@
 - [ ] **비행기모드**에서도 같은 문구면 저장된다.
 - [ ] 문구를 한 글자라도 바꾸면 정상적으로 새로 생성된다.
 
-### ⑨ 모달·아이콘 개편 (`fix/welcome-promo-modal-style`, 미머지)
-알럿 껍데기 3종을 `IosAlertDialog` 하나로 합치고 브랜드 이미지를 교체한 브랜치. 화면 확인은
+### ⑨ 모달·아이콘 개편
+알럿 껍데기 3종을 `IosAlertDialog` 하나로 합치고 브랜드 이미지를 교체한 작업.
+**코드는 `feat/ios-revive` 에 들어와 있다** — 예전엔 `fix/welcome-promo-modal-style`
+브랜치를 가리켰는데 그 브랜치는 사라졌다(2026-08-11 정정). 화면 확인은
 S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 직접입력·직접문구·목소리 이름 변경,
 운세 생년월일 드롭다운·윤년 클램프). 아래만 남았다.
 
@@ -75,6 +385,171 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
       같은 구글 계정으로 다시 로그인 → **바꾼 닉네임이 그대로**다(예전엔 구글 프로필
       이름으로 되돌아갔다).
 - [ ] **코드 길이 상한**: 64자 넘는 코드를 직접 호출로 보내면 `CODE_TOO_LONG` 400.
+
+## 1-B. iOS 실기기 검증 (2026-08-06 전수 대조 이후)
+
+시뮬레이터로 확인한 것은 여기 남기지 않는다 — **실기기가 있어야만** 판별되는 것만 둔다.
+
+### ⓐ 잠금화면·앱 종료 상태에서 목소리가 울리는가 ← **가장 중요**
+`AlarmSoundStaging` 이 `AVAssetExportPresetAppleM4A` 로 `.caf` 를 굽고 있었는데 그
+프리셋은 `.caf` 를 못 낸다 — staging 이 **항상** 실패해 잠금화면·백그라운드에서 목소리
+대신 시스템 톤만 울렸다. `AVAssetReader`→`AVAssetWriter`(CAF/LPCM)로 바꿨고 시뮬레이터
+단위 테스트(`AlarmSoundStagingCapabilityTests`)는 통과하지만, **실기기에서 실제로 울리는지는
+아직 확인 못 했다.**
+- [ ] 앱을 완전히 종료하고 알람 발사 → 목소리 재생
+- [ ] 기기 잠금 상태에서 발사 → 목소리 재생
+- [ ] 30초 넘는 클립이 앞 30초로 잘려 재생되는지(AlarmKit 한도)
+
+### ⓑ 앱 실행 직후 권한 팝업
+시뮬레이터에서 앱을 켜자마자 AlarmKit 권한 팝업이 떴다. 알람을 만들기도 전에 묻는
+셈이라 안드로이드의 "게이트는 알람 기능을 쓸 때" 규칙과 어긋난다.
+- [ ] 실기기에서도 켜자마자 뜨는지 확인 → 뜬다면 `AlarmManager.alarmUpdates` 구독을
+      권한 허용 이후로 미루는 것을 검토(구독 자체가 프롬프트를 유발하는지부터 확인).
+
+### ⓒ 등록 확인 스텝(초안 → 승격)
+서버 계약대로 `isDraft=true` 로 만들고 미리듣기를 끝까지 들어야 저장이 열리게 했다.
+서버 왕복이 필요해 시뮬레이터에서는 못 봤다.
+- [ ] 등록 → 미리듣기 자동 재생 → 끝까지 들으면 '저장하기' 활성
+- [ ] 문구 수정 → 저장 다시 잠김 → 새 문구로 재생 후 활성
+- [ ] '다시 만들기' → 초안 삭제 + 이번 달 등록 횟수 **차감 없음**
+
+### ⓓ 사전렌더 진행 표시
+- [ ] 유료 클론 등록 직후 목소리 행에 '알람 음성 준비 중 n%' → 완료 시 사라짐
+- [ ] 실패 상태에서 '다시 시도' 가 실제로 큐를 되살리는지
+- [ ] 큐가 없는 상태(`none`)에서 "준비 중 0%" 가 **뜨지 않는지**
+
+### ⓔ 목소리 이름 변경 (409 회귀)
+- [ ] 등록 끝난 목소리의 이름을 바꿔 저장 → 성공(예전에는 관계·호칭을 함께 보내
+      409 `VOICE_PERSONA_LOCKED` 로 이름 변경조차 실패했다)
+
+### ⓕ 생체정보 동의 철회 (되돌릴 수 없음 — 유료 계정 필요)
+- [ ] 더보기 → 설정 → 법적 정보 → 약관 및 개인정보 처리 동의 → 음성 생체정보 '동의 철회'
+- [ ] 서버 목소리 삭제 + **그 기기의 알람이 기본 알람음으로 강등**되는지(응답 직후
+      세션 가드보다 먼저 끊는다)
+
+### ⓕ-2 편집기 컨트롤 (2026-08-11 변경 — 실기 1차 확인은 끝)
+
+시뮬레이터/실기 캡처로 확인했고, 아래만 **손으로 만져 봐야** 판별된다.
+규칙은 [`docs/spec/alarm-editor.md`](../spec/alarm-editor.md) 가 단일 출처다.
+
+- [ ] 휠을 **세게 튕겼을 때** 숫자가 굴러가다 멎는 감이 두 앱에서 비슷한가(같은 곡선·시간표를 쓴다).
+- [ ] 굴러가는 중에 **손을 대면 그 자리에서 잡히는가**(남은 칸을 마저 넘기지 않는다).
+- [ ] 숫자를 눌러 고쳐 쓸 때 키보드가 휠을 가리지 않는가(작은 화면 — A32).
+
+### ⓖ 애플 계정 — 출시 전에 사람이 해야 하는 것 (2026-08-10 실측)
+
+키 설정과 검증은 끝났다. **남은 둘은 코드로 못 고친다** — 애플 콘솔에서 해야 한다.
+자세한 판정표·검증법은 [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
+
+**끝난 것** — 앱 레코드(`Alarm-Talk`, Apple ID `6799711245`), 상품 4종 등록,
+결제 검증 키, 프로덕션 APNs 키(`8S2AH3937P`). 상품 ID 4종이 콘솔 =
+`apple-storekit.ts` = `StoreKitConfiguration.storekit` 로 일치함을 대조했다.
+
+- [ ] **dev 워커 APNs 키를 되살린다.** `.dev.vars.dev` 의 키가 양쪽 호스트에서
+      `InvalidProviderToken` 이다(Key ID `3CNKCBLC5U` 와 짝이 아니거나 폐기됨).
+      **prod 는 정상이라 출시에는 영향 없고, 막히는 건 dev 워커 푸시뿐이다.**
+      ① `3CNKCBLC5U` 의 `.p8` 재확보 또는 ② 두 환경 모두 되는 키 하나 발급 후
+      dev·prod 양쪽에 같은 값. 자세한 판정표는
+      [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
+- [ ] **시크릿을 워커로 올린다** — `npm run secrets:sync:dev` / `:prod`.
+      (아직 안 올렸다. 배포는 PR 이후이므로 그때 함께.)
+- [ ] 실기기에서 **가격이 스토어에서 내려오는지** 확인. 상품 상태가 "제출 준비 중" 이라
+      **1.0 빌드와 함께 제출해야** 조회된다.
+      - ⚠ **dev 빌드에서는 애초에 안 내려온다**(2026-08-11 로그로 확인). 안드로이드 dev 는
+        패키지명이 `com.alarmtalk.app.dev` 라 Play 에게는 **다른 앱**이고, 상품은
+        `com.alarmtalk.app` 에 등록돼 있다. 조회는 **성공**하고 상품이 0개로 돌아온다
+        (에러 로그가 안 남는 이유). **prod 플레이버로 트랙에 올려야** 확인된다.
+      - 가격을 못 받으면 **폴백**(3,900/6,900/14,900)을 보여 준다 — 스토어 값이 오면
+        언제나 그쪽이 이긴다. 숫자의 출처는 백엔드 `plans.price_krw` 이고, 앱의
+        `FallbackPlanPriceKrw`(안드) / `FallbackPlanPrice`(iOS) 와 **함께** 고쳐야 한다.
+      - ⚠ 폴백은 **한국 기준**이라 해외 사용자에게는 틀릴 수 있다. 스토어 가격이 내려오기
+        시작하면 이 표가 실제로 쓰이지 않는지 확인할 것.
+- [ ] 첫 제출 후 결제 검증 키의 **프로덕션 401 이 풀리는지** 확인. 지금 401 인 건
+      키 문제가 아니라 앱이 아직 프로덕션에 없어서다 — 고칠 것 없다.
+
+### ⓗ 성능 — 찾았지만 **고치지 않은** 것 (2026-08-10)
+
+고칠 수 있는 건 고쳤고(백엔드 인덱스 6개, iOS 경고 79→5), 아래 둘은 **실기기 검증
+없이 손대면 더 위험해서** 남긴다. 근거와 판단을 함께 적어 둔다.
+
+- [ ] **iOS `AlarmSoundStaging` 이 메인 스레드를 막는다.** `@MainActor` 인데 내부에서
+      `AVAssetReader`→`AVAssetWriter` 변환을 `DispatchSemaphore.wait()` 로 **동기 대기**
+      한다(`stage(url:key:)`). 새 오디오마다 한 번씩(파일이 이미 있으면 건너뛴다) 알람
+      저장·동기화 중 UI 가 그 시간만큼 멈춘다.
+      - **왜 안 고쳤나**: 비동기로 바꾸면 *예약*과 *스테이징*의 순서가 바뀐다. 이 파일은
+        전에 `AVAssetExportSession` 을 쓰다가 **잠금화면·앱 종료 상태에서 목소리가 아예
+        안 울리게** 만든 이력이 있다(CLAUDE.md 참조). 시뮬레이터로는 그 경로를 검증할 수
+        없어, 확인 못 할 변경으로 가장 중요한 기능을 걸 수 없다.
+      - **고칠 때**: 변환만 background executor 로 내리고 `stage` 를 async 로 바꾼 뒤,
+        §1-B ⓐ(잠금화면·앱 종료 상태 울림)를 실기기로 반드시 재확인할 것.
+- [ ] **안드로이드에 baseline profile 이 없다.** `androidx.profileinstaller` 의존성도
+      `baseline-prof.txt` 도 없다. Compose 앱에서 저사양 기기 콜드스타트·스크롤 자레지를
+      줄이는 표준 수단이라 A32 같은 기기에 특히 효과가 크다.
+      - 제대로 만들려면 macrobenchmark 모듈에서 기기 실행으로 프로파일을 **생성**해야 한다.
+        손으로 쓴 프로파일은 효과가 없거나 역효과라 그 절차를 건너뛸 수 없다.
+
+> ⚠ **디버그 빌드 자레지 수치를 릴리스로 읽지 말 것.** 2026-08-10 A32 실측에서 탭 전환
+> 326프레임 중 293(89.9%)이 자레지였지만 **devDebug 빌드**다(GPU 는 50th 14ms 로 여유,
+> UI 스레드가 270프레임 느림). Compose 디버그 빌드는 R8 미적용 + 컴포지션 추적이 붙어
+> 릴리스와 크게 다르다. 릴리스로 재보려면 `devRelease` 를 설치해야 하는데 서명이 달라
+> **debug 앱을 지워야 하고 로그인 세션이 날아간다** — 그래서 이번엔 측정하지 않았다.
+
+## 1-D. 릴리스 때 **반드시 같이** 해야 하는 것 (2026-08-11 추가)
+
+- [ ] ⚠ **버전 5 를 번들한 앱을 스토어에 먼저 올리고, 그 뒤에 서버 상수 5 를 main 에
+  머지한다**(`packages/backend/src/lib/consent.ts`의 `CURRENT_POLICY_VERSION`).
+  main 은 아직 **4** 이고 5 는 develop 에만 있다. 순서를 뒤집으면 `POST /user/consents` 가
+  전부 **409 POLICY_VERSION_MISMATCH** 로 막혀 **신규 가입과 재동의가 통째로 멈춘다.**
+  - iOS·안드로이드를 같이 올리므로 그 릴리스에서 한 번에 처리한다.
+  - ⚠ **번호를 6 으로 올리지 않는다**(2026-08-26 확정, `193a9204`). 5 는 main 에 올라간
+    적이 없어 **그 본문으로 동의한 사람이 0명**이므로, 5 의 내용이 바뀌면 제자리에서
+    고친다(`docs/legal/README.md`). 한 번 6 을 태웠다가 되돌린 이력이 있다.
+- [ ] ⚠ **그 릴리스에서 `CONSENT_MIN_POLICY_VERSION.privacy` 를 3 → 5 로 올릴지 정한다
+  (법무 판단, 사람이 확인할 것).** 버전 5 본문이 그 사이 **넓어졌다** — 「유료 이용권 종료 시
+  목소리 3일 보관 후 파기」에 더해 **서비스 이용 기록**(알람 울림·해제·다시 알림·문구 사용
+  이력, 새 이용 목적, 보관 1년)이 들어갔다(`docs/legal/privacy-policy.ko.md` 1·3장,
+  `docs/spec/usage-events.md`). 지금 사용자 동의 기록은 전부 **3** 이라, 올리지 않으면 그
+  본문을 **한 번도 못 본 채** 기기가 기록을 올리기 시작한다. 올리면 재동의 화면이 뜨므로
+  **버전 5 앱이 스토어에 게재된 뒤**여야 한다(구버전 앱은 화면은 떠도 제출이 409 로 막힌다).
+
+## 1-H. 교체 표식을 **시계 없이** 판정한다 (2026-09-07 리뷰 28차, 후속)
+
+지금은 서버 표식(UTC)과 오디오 나이(기기 시계)를 비교한다 — 시계가 크게 어긋난 기기에서
+판정이 뒤집힌다(앞서면 낡은 목소리가 살아남고, 뒤처지면 멀쩡한 오디오를 깎는다).
+프리셋 갈래는 이미 시계 없이 판정하므로(`incomingIsSupersededByManifest`) 직접 입력
+오디오만 남았다.
+
+- [ ] 서버가 `POST /tts/generate` 응답에 **그때 쓴 세대**를 싣는다. 값은 이미 라우트 안에
+  있다(`tts.ts` 의 `requestVoiceGeneration`) — 새 쿼리를 만들지 말 것(배포 창에 500 이 난다).
+- [ ] 두 앱이 그 값을 오디오 옆에 적는다(안드로이드 `.meta` 프로퍼티, iOS
+  `AudioCacheMetadata`). 둘 다 선택 필드라 옛 사본은 그대로 읽힌다.
+- [ ] 판정을 **순서 비교**로 바꾼다(`적힌 세대 < 표식` 이면 강등). ⚠ **동등 비교로 만들지
+  말 것** — 표식은 낡은 채 들어올 수 있어(공유 목록과 내 목록의 갱신 경로가 다르다) 멀쩡한
+  오디오를 깎게 된다.
+- [ ] **세대가 안 적힌 사본은 지금 규칙(오디오 나이)으로 판정한다.** '없으면 강등' 으로
+  두면 사이드카가 사라진 것만으로 되돌릴 수 없는 강등이 일어난다.
+
+## 1-E~1-G. 유료 게이트 통합 · 기본 목소리 직접 입력 — **끝났다(2026-09-08 확인)**
+
+- 유료 게이트 문구·쿠폰 액션은 한 곳으로 합쳤다: iOS `Views/Common/PaidGateCopy.swift`(message/viewPlans/redeemCode), 안드로이드 `plan_gate_paid_message`.
+- 알람 편집기의 파일 업로드(iOS)는 제거됐다(`AlarmEditorSheet.swift` 에 `fileImporter` 없음). 목소리 등록의 업로드·녹음 경로는 그대로다.
+- 사장 코드 정리: `PlanGateDialog.swift` → `PlanTier.swift`(`PlanGateState` 참조 0건), 안드로이드 중복 문자열 키 제거.
+- 서버 에러코드 3종(`FREE_PLAN_PRESET_ONLY`·`BASIC_VOICE_PRESET_ONLY`·`VOICE_LOCKED_FREE_PLAN`)은 양 앱에 매핑됐다(`network/ApiErrorMessages.kt`, `APIErrorMessages.swift`).
+- 기본 목소리 + 직접 입력: `restrictToWeatherMedication` 은 `usesStockClips` 로 갈라졌고, **등급으로 갈리는 것은 직접 입력 잠금 하나뿐**이다(`ui/editor/AlarmEditorScreen.kt`).
+
+## 1-C. 콘솔 작업 (코드는 끝, 사람이 눌러야 하는 것)
+
+- [x] ~~Sentry 프로젝트 생성 → DSN 발급~~ **2026-08-11 완료.** 세 프로젝트(ios/android/backend)
+  DSN 을 각각 넣고 **전송까지 확인**했다:
+  - iOS → `apps/ios-native/Local.xcconfig`(gitignore). 시뮬레이터에서 조직 ingest 호스트로
+    붙는 것 확인. ⚠ xcconfig 의 `//` 주석 함정 주의 — README 참조.
+  - 안드로이드 → `~/.gradle/gradle.properties`(리포 **밖**). logcat 에 `Initializing SDK with DSN` 확인.
+    리포 안 `gradle.properties` 는 비워 둔 채로 유지한다(공개 리포).
+  - 백엔드 → dev·prod 워커 시크릿 `SENTRY_DSN`(`wrangler secret put`, 단일 키만).
+    dev 에 임시 라우트로 500 을 내 전달을 확인하고 즉시 원복했다.
+  - 알림은 세 프로젝트 모두 기본 Error Monitor("high priority issues → Email") 활성.
+- [ ] **Play Console RTDN**: Pub/Sub 토픽 + push 구독 연결. 없으면 dev 워커가
+  `503 RTDN_UNCONFIGURED` 를 돌려준다(구독 전환·해지 알림이 서버에 안 들어온다).
 
 ## 2. 예정 기능 (미구현)
 
@@ -110,3 +585,472 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 
 - **WSAEFAULT(10014)**: 소켓 bind/listen 간헐 실패로 Gradle 데몬·adb 기동 실패 → 성공까지 재시도. adb가 아예 죽으면 라온 보안 드라이버 정지(관리자): `Stop-Service AnySign4PC Launcher, MagicLine4NXSVC, 'RAON K', WizveraPMSvc` + `sc stop KingsNET` `sc stop TNXNET_SVR` → `adb start-server`. 상세=메모리 `reference_winsock_wsaefault_build_workaround`.
 - **K2 캐스케이드**: 같은 모듈 멀쩡한 심볼이 무더기 "Unresolved reference" → clean 재빌드로 해결.
+- ⚠ **iOS 실기기 테스트는 예전에 그 폰의 로그인·알람·목소리를 지웠다**(2026-08-19 원인 규명·수정).
+  유닛 테스트가 **호스트 앱 프로세스**에서 돌아 기본 저장 위치가 사용자의 것과 같았다 —
+  `AuthViewModelTests` 가 진짜 `signOut()` 을 불러 키체인 세션을 지웠고, `AlarmAppContextTests`
+  의 `setUp` 이 알람 JSON 을 `removeItem` 했고, 그 바람에 스톡 클립도 함께 날아가 **다음
+  로그인이 기본 목소리를 전부 다시 받았다**("로그인마다 다시 받는다" 제보의 정체).
+  앱 데이터 컨테이너는 멀쩡했으므로(며칠 전 파일이 그대로 있었다) **재설치 탓이 아니다.**
+  이제 `AlarmTalk/TestIsolation.swift` 가 저장 위치를 한 곳에서 가르고, 우회는
+  `scripts/check-test-isolation.py`(CI lint)가 막는다. 회귀 테스트 `TestIsolationTests`.
+  검증 방법: 진짜 경로에 센티넬을 심고 전체 스위트를 돌린 뒤 그대로인지 본다
+  (`devicectl device copy to --domain-type appDataContainer ... --user mobile`).
+
+## 5. 알람 음성의 **최종 목적지** (2026-08-18 지시 — 5단계의 미결을 이걸로 닫는다)
+
+> **알람 음성파일은 프리셋 + 직접 입력으로 만드는 것만 남는다.**
+
+즉 알람에 실리는 오디오를 만드는 길은 **둘뿐**이다:
+
+| 남는 것 | 무엇 | 언제 만들어지나 |
+| --- | --- | --- |
+| **프리셋(사전렌더 클립)** | 기본 목소리 무료 테마 + 등록/공유 목소리의 프리셋 | 서버 cron 이 미리 만들고, 앱이 **선다운로드**로 받아 둔다 |
+| **직접 입력** | 사용자가 친 문구 | 저장할 때 그 자리에서 합성(월 한도 차감). 같은 글자면 캐시 재사용 |
+
+**없앤다: 라이브 랜덤 생성.** 날씨·운세·사랑 등을 알람 저장/갱신 시점에 서버가 새 문장으로
+합성하던 갈래다. 이게 5단계의 대상이고, 지금까지 **관문의 구멍을 전부 덮고 있던 폴백**이다.
+
+⚠ **이 결정이 닫는 미결 두 가지**(그전에는 "제품 판단이 필요하다" 로 남겨 뒀다):
+- **가족 알람**: 지금은 수신자의 날씨·사주로 서버가 라이브 문장을 만든다
+  (`generateTTS(targetUserId:targetDynamicPromptState:)`). 그 갈래도 없어진다 →
+  가족 알람도 **프리셋 아니면 직접 입력**이다. 프리셋으로 갈 경우
+  `toRemoteAlarmWriteRequest` 가 `bucketId` 를 싣지 않는 계약 변경이 선행이고,
+  날씨 variant 를 **누구 위치로** 고를지도 정해야 한다(보내는 사람 / 받는 사람).
+- **옛 라이브 알람**: `voiceRandomPrompt = true` 로 저장된 반복 알람은 갱신자가 사라지면
+  매일 같은 문장이 되고, 시각만 바꾸려 열어도 재사용 판정이 어긋나 **영영 못 고친다.**
+  → 문구 종류 ↔ 버킷 역매핑(`RandomPromptContext.forBucket` / `randomPromptContextForBucket`)으로
+  **테마 클립에 재바인딩하는 마이그레이션을 같이 낸다.**
+
+### 지우면 안 되는 것 (이름이 비슷해 헷갈린다)
+
+- `WeatherVariantRefreshService`(iOS) / `DynamicVoiceRefreshWorker`(안드) — **음성을 만들지 않는다.**
+  `GET /tts/prerender-variant` 로 *이미 받아 둔 클립 중 오늘 어느 것을 틀지* 인덱스만 받아 온다.
+  지우면 날씨 테마가 매일 같은 클립으로 굳는다.
+- `VoiceStudioViewModel.generateTTS` / 안드 `onGenerateTts` **함수 자체** — 직접 입력의
+  유일한 생성기다. 랜덤 갈래만 접고 껍데기는 남긴다.
+- `voiceRandomPrompt` **필드** — 무료 강등 판정 2곳과 잠금화면 태그 제거가 읽는다.
+- `randomPrompt`/`randomContext`(iOS) — 이름만 '랜덤' 이고 실제로는 **문구 종류 상태**다.
+  지우면 사전렌더 버킷을 고를 수단이 없어진다.
+
+### 배포 순서 (뒤집으면 사고)
+
+앱 먼저, 백엔드는 **두 스토어 게재 뒤**. 백엔드 400 을 먼저 넣으면 구버전 앱은
+"음성 생성에 실패했어요"(다시 시도해도 안 되는데 다시 시도하라는 문구)만 반복한다.
+거절은 반드시 `!draftPreviewRequested && body.random === true` **그 자리에서** 낸다 —
+앞당기면 iOS 목소리 등록 미리듣기(`playDraftPreview` 가 `random:true`+`draftPreview:true` 를
+함께 보낸다)가 400 이 되어 **새 목소리를 아예 등록할 수 없다.**
+
+### 남은 작업 순서
+
+1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
+2. ~~iOS 편집기 하단 문구 정리~~ — **끝났다(2026-08-18).** 아래 「iOS 저장 사유 문구」 참조.
+3. ~~iOS `statusMessage` 유출 차단~~ — **끝났다(2026-08-18).** 같은 절.
+4. **5단계 앱 쪽 제거** ← **여기부터.** 착수 전 아래 「5단계 착수 전 실측」을 반드시 읽을 것.
+   파생 결정은 **닫혔다(2026-08-18 지시)**:
+   가족 알람의 날씨 variant 는 **받는 사람 위치**로 고른다 —
+   규칙 전문은 [`docs/spec/family-alarm.md`](../spec/family-alarm.md) 4절.
+   남은 일은 (a) `toRemoteAlarmWriteRequest` 에 `bucketId` 싣기, (b) 옛
+   `voiceRandomPrompt = true` 행을 테마 클립으로 재바인딩하는 마이그레이션 — 안 내면 그
+   알람들이 매일 같은 문장이 되고 시각만 바꾸려 열어도 영영 못 고친다, (c) 양 앱의 라이브
+   생성 경로 제거.
+5. 백엔드 정리 — 스토어 게재 후.
+
+조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
+`wy88mi9ha.output`(관문이 돌아야 할 자리 전수 + 저장 경로 추적),
+`wnfzhawji.output`(사유 문구 7갈래의 안드로이드·iOS 대체 수단 대조).
+
+### 5단계 착수 전 실측 (2026-08-18, `w9noiym6f.output`)
+
+전수 조사에서 **착수 전에 알아야 계획이 바뀌는 것 넷**이 나왔다. 전부 직접 코드로 확인했다.
+
+**① 가족 알람은 지금 테마를 실을 수 **없다** — 다리가 세 군데 끊겨 있다.**
+`bucket_id` 는 와이어 타입에도(`RemoteAlarmWriteRequest` 양 앱), 백엔드 검증에도
+(`alarm-helpers.ts` 의 `INVALID_BUCKET_ID` 화이트리스트), 쓰기·읽기 SQL 에도(`SELECT a.*`)
+이미 있다. 그런데:
+- **보내는 쪽이 안 싣는다.** 안드로이드는 `AlarmDraft.toRemoteAlarmWriteRequest`
+  (`MainViewModelAlarmActions.kt`)가 11개 필드만 넣고 `bucketId` 를 뺀다. iOS
+  `createFamilyTargetAlarm` 도 같다. **와이어 타입의 기본값이 `null` 이라 컴파일 에러가 안 난다.**
+- ⚠ **빌더가 두 벌인 게 원인이다.** 자기 알람용 `RemoteAlarmMapper.toWriteRequest` 는
+  `bucketId = alarm.bucketId.trimmedOrNull()` 를 **보낸다.** 필드가 한쪽에만 추가되고 다른
+  쪽에 안 따라간 것 — CLAUDE.md 「한 곳에서만」이 말하는 그 사고다. 고칠 때 **둘을 합치거나
+  최소한 어긋나면 깨지는 테스트**를 같이 둘 것.
+- **받는 쪽은 플랫폼마다 달랐다.** 안드로이드 `buildReceivedAlarmRow` 는 **이미 옮기고
+  있었다**(`bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && … }`). iOS 는
+  달랐다 — 읽기 모델 `RemoteAlarm` 에 `bucketId` **필드 자체가 없었고**,
+  `LocalAlarmRecord` 의 **명시적 init** 에도 없어서(멤버와이즈가 아니다) 생성 시 넣을 수가
+  없었다. 그래서 iOS 는 이 값을 '로컬 전용' 으로 다뤄 왔고, pull 병합이 무조건
+  `existing.bucketId` 로 덮었다 — **받은 알람은 로컬 값이 생길 일이 없으니 영원히 nil.**
+
+**→ 셋 다 고쳤다(2026-08-18).** 보내는 쪽 양 앱 + iOS 읽기 모델·매퍼·병합.
+회귀 테스트 `FamilyAlarmWriteRequestParityTest` 는 두 빌더의 결과를 **통째로 비교**한다
+(data class `equals` 라 **앞으로 생길 필드까지** 자동으로 대상이다). 의도된 차이 둘
+(`isActive`·`targetUserId`)만 눌러 두고 비교하므로, 한쪽에만 필드를 넣으면 그 순간 깨진다.
+⚠ **아직 실기기 2대 검증은 안 했다** — 스펙의 「검증 방법」대로 확인할 것.
+
+**② ~~Room 의 `fallbackToDestructiveMigration()`~~ — 걷어냈다(2026-08-18).**
+붙어 있던 근거가 "개발 중이라 보존할 데이터 없음" 이었는데 그건 이제 사실이 아니다 — 앱은
+스토어에 있고 베타 테스터의 알람이 들어 있다. 켜져 있으면 마이그레이션을 빠뜨린 채
+`version` 만 올렸을 때 **알람이 조용히 전부 삭제**된다(예외도 로그도 없다). 지금은 없는 게
+안전하다: 1→24 가 빠짐없이 등록돼 있고, 앞으로 빠뜨리면 **앱이 켜자마자 죽는다** — 죽는 건
+즉시 눈에 띄어 고칠 수 있지만 지워진 알람은 되돌릴 수 없다.
+회귀 방지 `AlarmDatabaseMigrationSafetyTest` 가 **소스를 읽어** 둘을 지킨다: 플래그가 없을 것,
+그리고 `version = N` 이면 `MIGRATION_1_2`…`MIGRATION_(N-1)_N` 이 **전부 `addMigrations` 에
+넘어가 있을 것**(정의만 하고 안 넘기면 무효라 그것도 잡는다).
+23→24 는 받은 알람의 적용 완료 전달 버전(`remoteDeliveryVersion`)을 영속하기 위해 추가했고,
+같은 회귀 테스트가 등록 누락을 막는다.
+
+**③ ~~iOS 의 두 번째 라이브 생성 경로~~ — 걷어냈다(2026-08-18, 아래 (c)).**
+`DynamicVoiceRefreshService` 가 반복 랜덤 알람을 **매일 밤 다시 합성**한다(포그라운드 진입 +
+`BGAppRefreshTask` 양쪽). 안드로이드의 `DynamicVoiceRefreshWorker` 는 날씨 variant 인덱스만
+resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에서 비대칭이다.
+남길 것과 섞지 말 것: `WeatherVariantRefreshService`(variant 재선택, 합성 아님)와
+`AlarmScheduleReconciler`(행↔OS 예약 정합)는 프리셋 경로에서도 필요하다.
+
+**④ 옛 행 재바인딩은 Room 마이그레이션으로 못 한다.** 마이그레이션은 `bucketId` 를
+`voiceRandomContext` 에서 채우는 오프라인 절반만 할 수 있고, `bucketClipKeysJson` 이 가리키는
+클립 파일은 **받아야 생긴다.** 제자리는 `sync/StockClipLanguageRebinder.kt` 다 — 이미
+네트워크를 쓰고 멱등이며 매니페스트 수신 뒤 `StockClipPrefetchWorker` 의 **모든 성공 경로**
+에서 불린다. 술어만 넓히면 된다. 매핑은 `clonePrerenderBucketCategoryFor` 를 **그대로 재사용**
+할 것(다시 적지 말 것).
+→ **그대로 했다(2026-08-18, 아래 (b)).**
+
+### 5단계 (b)(c) 완료 (2026-08-18)
+
+**순서를 지켰다 — (b) 재바인딩이 (c) 제거보다 먼저 나가야 한다.** 뒤집으면 옛 알람이
+옮겨지기 전에 생성 경로가 사라져, 그 사이 **마지막에 만들어진 한 문장만 매일 반복**한다.
+
+**(b) 옛 행 재바인딩** — `voiceRandomPrompt = true` 이고 `bucketId` 가 빈 행을 문구 종류에
+맞는 테마 클립으로 옮긴다. 랜덤 플래그는 내리고 **종류는 남긴다**(편집기가 열 때 되짚는 값).
+묶을 클립이 없으면 **아무 일도 하지 않는다** — 지우면 소리가 사라지고, 옛 문장이라도 울리는
+편이 낫다. 멱등이라 매 회차 돌아도 안전하다.
+곁들여: 클립 바인딩 루프를 두 재바인더가 **공유**하도록 끌어냈고, iOS 루프에 없던
+**variant 정렬·중복 제거**를 넣었다(날씨·운세는 절대 인덱스라 순서가 곧 뜻이다).
+
+**(c) 라이브 랜덤 생성 제거**
+- 편집기(양 앱): 문구 종류를 골랐으면 **반드시** 사전렌더 클립으로 묶고, 못 묶으면
+  **준비 페이지로 보낸다.** 라이브 폴백은 없앴다.
+- 안드로이드 `/tts/generate` 요청은 이제 `random = false, randomContext = null` 고정이고
+  `alarmHour`·`weather*`·`fortune*` 를 **보내지 않는다.** ⚠ 그 값들은 **행에는 그대로 남는다**
+  — 사전렌더 variant 를 고르는 데 쓰인다.
+- 안드로이드 버킷 바인딩의 제외 갈래 둘(`!familyAlarmMode`, `!isSystemVoiceId`)을 없앴다.
+  가족 알람은 이제 `bucket_id` 를 실어 보내므로(위 ①) 수신자 무음 문제가 사라졌다.
+- iOS `DynamicVoiceRefreshService` **삭제**(+ `BackgroundSyncTask`·`AlarmTalkApp` 주입, 테스트).
+  `refreshDynamicVoicesIfNeeded` → `refreshWeatherVariantsAndReconcile` 로 이름을 고쳤다 —
+  없는 기능을 광고하는 이름이었다.
+- **남긴 것**: 직접 입력 합성(월 한도 차감), `WeatherVariantRefreshService`(합성이 아니라
+  variant 재선택), `AlarmScheduleReconciler`, `generateTTS` 함수 자체, `voiceRandomPrompt`
+  필드, iOS `playDraftPreview`(목소리 등록 미리듣기 — `random:true` + `draftPreview:true` 를
+  같이 보내므로 걷어내면 **새 목소리 등록이 통째로 막힌다**).
+
+### dev 백엔드 배포 완료 (2026-08-18)
+
+`npm run deploy:dev` 로 `feat/ios-revive` 의 백엔드를 dev 에 올렸다(Version `d68337dd`).
+마이그레이션은 101개 전부 **이미 적용돼 있었다** — 스키마 변경 없이 워커 코드만 새로 올라갔다.
+
+⚠ **배포 범위가 `expected_variants` 만이 아니다.** 이 브랜치에는 애플 IAP 마이그레이션
+94~96(`users.apple_id`, `subscriptions.apple_*`, `push_tokens`/`store_transactions` 테이블
+재생성)도 들어 있다. 재생성은 `INSERT INTO … SELECT` 로 **데이터를 옮기는** 방식이라 행이
+사라지지 않는다. dev 에는 이미 적용돼 있었다.
+
+**확인**: 기기가 받은 매니페스트에 `expected_variants` 가 들어온다 —
+`clone {greeting:1, weather:9, fortune:5, love:3, medication:3}` /
+`system {weather:9, medication:2, greeting:1}`. 코드 주석이 말하던 "medication 은 시스템 2 /
+클론 3" 이 실제로 그렇다. **앞서 지목한 원인(`ae0e4e7a` 미배포)이 맞았다.**
+
+⚠ **클론 클립은 아직 0개다.** `expected_variants` 는 왔지만 사전렌더 cron(`*/5 * * * *`)이
+ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 **클론 + 테마 저장 경로**와
+**클론 옛 행 재바인딩**을 검증할 수 있다.
+
+### iOS 알람 삭제 — 남은 갈래 (2026-08-18)
+
+**실기기 설치 완료(2026-08-18 17:58)** — `이스트의 iPhone (3)`(iPhone 14 Pro).
+유료 개발자 계정으로 서명이 통과했다. 사용자 확인 대기 중.
+
+⚠ **팀 ID 는 `<팀 ID>` 이다.** 인증서 CN 의 괄호값(`<사용자 ID>`)은 **사용자 ID 지
+팀 ID 가 아니다** — 그걸로 `DEVELOPMENT_TEAM` 을 주면 `No Account for Team` 으로 죽는다.
+팀 ID 는 인증서 subject 의 `OU=` 이고, `defaults read com.apple.dt.Xcode` 의
+`IDEProvisioningTeamByIdentifier` 로도 확인된다(`isFreeProvisioningTeam = 0`).
+
+    xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
+      -destination 'id=<기기 UDID>' -allowProvisioningUpdates \
+      DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM -derivedDataPath /tmp/att-dev build
+    xcrun devicectl device install app --device <기기 UDID> \
+      /tmp/att-dev/Build/Products/Debug-iphoneos/AlarmTalk.app
+
+⚠ 기기 바이너리에는 `nm` 으로 Swift 내부 심볼이 안 보인다 — 그걸로 "옛 빌드다" 라고
+판단하지 말 것. 빌드 시각과 워킹트리 상태로 확인한다.
+
+**고친 것**: `AlarmManager.cancel(id:)` 은 AlarmKit 이 그 id 를 **모를 때 throw** 한다.
+예전 코드는 그때 로컬 행을 남겨 **영영 지울 수 없는 알람**이 됐다(`8b4be497`).
+지금은 AlarmKit 이 정말 안 들고 있을 때만 지운다. 판정은 **`AlarmManager.alarms`(권위)** 로
+하고, 못 물어볼 때만 `lastAlarmStateSnapshot` 캐시로 폴백한다 — 캐시는 emit 때만 갱신돼
+울리고 해제된 직후 창에서 "아직 예약돼 있다" 고 잘못 답한다.
+
+**⚠ 아직 안 고친 두 번째 갈래 — 받은(가족) 알람의 부활.**
+iOS 로컬 스토어에는 **툼스톤이 없다**(`LocalAlarmStore.delete` 는 하드 삭제).
+받은 알람을 지울 때 `deleteRemote` 가 **decline 에 실패하면**(네트워크 등) 로컬에서만
+사라지고 **다음 pull 이 그대로 다시 가져온다** — 사용자 눈에는 "지워도 다시 생긴다" 다.
+증상이 겹칠 수 있어 확인했는데, **2026-08-18 보고건은 이 갈래가 아니다** — 사용자가 직접
+만든 알람이었다(`local_owned` 는 `DELETE /alarm/:id` 로 서버에서도 지워지고,
+`isReceivedRemoteCandidate` 가 `target_user_id` 를 요구하므로 pull 이 되살릴 수 없다).
+그래도 **받은 알람에는 이 구멍이 그대로 남아 있다** — 별건으로 툼스톤을 넣어야 한다.
+(조사 원문 `w0vkdrwrt.output` 의 `mergeRemote` 항목 — 검증자 평가 medium.)
+
+### 삭제 낙관적 업데이트 — 다음에 할 것 (2026-08-18 요청)
+
+사용자 보고: **양 앱 모두 삭제를 눌러도 바로 안 사라지고 조금 뒤에 적용된다.**
+
+**원인**
+- iOS `AlarmsListView.deleteAlarm` 은 `remoteSync.deleteRemote` 를 **먼저 await** 하고,
+  그 성공 경로가 다시 `refresh(session:)` 으로 **pull 한 바퀴**(목록 + TTS 음원)를 돈다.
+  로컬 행은 그게 다 끝난 뒤에야 사라진다 — 체감 지연의 본체다.
+- 안드로이드는 내 알람이면 곧장 `repository.deleteAlarm` 이지만, 그게
+  `restoreMutex.withLock` 이라 복구·동기화가 락을 잡고 있으면 그만큼 밀린다.
+
+⚠ **받은(가족) 알람은 낙관적으로 바꾸면 안 된다.** iOS 스토어에 **툼스톤이 없어서**
+(`LocalAlarmStore.delete` 는 하드 삭제) decline 없이 지우면 **다음 pull 이 되살린다.**
+안드로이드 `deleteAlarm` 이 decline 실패 시 로컬 삭제까지 보류하는 게 바로 그 이유이고,
+주석에 근거가 적혀 있다. "조금 늦게 사라짐" 보다 "지웠는데 다시 생김" 이 훨씬 나쁘다.
+
+**진행 상황(2026-08-18)**
+- ✅ **1·2번 완료.** iOS `deleteRemote` 가 성공 뒤 돌던 **전체 `refresh()` 를 걷어냈고**
+  (알람 하나 지우자고 목록 + TTS 음원을 다시 받고 있었다 — 체감 지연의 본체),
+  결과를 `Bool` 로 돌려주게 해 갈래를 나눌 수 있게 했다. **내 알람은 로컬을 먼저 지우고
+  서버 삭제를 뒤로** 보낸다.
+- ⚠ **안드로이드는 고칠 게 없었다(가설이 틀렸다).** 내 알람 경로는 이미 로컬 전용이고
+  (`repository.deleteAlarm` = 예약 취소 + Room 삭제 + 캐시 정리), 의심했던 `restoreMutex` 도
+  pull 이 **DB 작업 동안만 짧게** 잡는다 — `fetchRemoteMessageAudio` 는 락 **밖**이다
+  (`RemoteAlarmPullSyncService` 의 `alarmMutationLock.withLock` 블록 3개 모두 DB 전용).
+  안드로이드가 느리게 느껴졌다면 원인이 다른 데 있다 — **실기기 측정이 먼저**다.
+
+**할 일 (순서)**
+1. iOS `deleteRemote` 가 **성공/실패를 반환**하게 고친다(지금은 `async -> Void` 라
+   statusMessage 로만 알린다 — 갈래를 나눌 수가 없다).
+2. **내가 만든 알람만** 낙관적으로: 로컬·AlarmKit 취소를 먼저 하고 서버 삭제는 뒤에서.
+   pull 이 되살릴 수 없으므로(`isReceivedRemoteCandidate` 가 `target_user_id` 를 요구)
+   안전하다. 실패하면 서버에 고아 행이 남는 것뿐이라 재시도로 정리한다.
+3. iOS 삭제 성공 뒤의 **전체 `refresh()` 를 걷어낸다** — 알람 하나 지우자고 목록과 음원을
+   다시 받을 이유가 없다.
+4. 받은 알람 툼스톤은 **별건**으로 남긴다(그게 있어야 받은 알람도 낙관적으로 갈 수 있다).
+
+### 테마 토글 감사 — 고친 것과 **두기로 한 것** (2026-08-18)
+
+**고쳤다**
+- `IosAlertDialog` — 컨테이너만 고정 다크라 라이트에서 제목이 안 보였다. 컨테이너·버튼
+  채움만 스킴별로 가르고(다크는 실측값 유지), 판정은 새로 노출한 `LocalIsDarkTheme` 로 한다.
+  ⚠ `isSystemInDarkTheme()` 을 직접 보지 말 것 — 앱 자체 `ThemeMode` 를 놓친다. 실제로
+  테스트폰이 시스템 다크인데 앱이 Light 라 **시스템 토글만으로는 재현조차 안 됐다.**
+
+**확인했고 두기로 했다(2026-08-18 지시 "그건 괜찮을거같아")** — 다시 올리지 말 것:
+- `WakerBackButton` 의 `WakerBackCircleFill/Stroke` (생 색, 라이트 대비 ≈1.01:1)
+- `AlarmTalkSwitch` 의 `Color.White` 손잡이 (라이트 OFF 에서 `surfaceVariant` 와 근접)
+
+둘 다 "고정색 + 테마색 혼용" 으로 알럿과 같은 패턴이고 감사에서 real-defect 로 검증됐지만,
+**제품 판단으로 두기로 했다.** 나중에 화면에서 실제로 거슬리면 그때 고친다.
+조사 원문: `wrfo7ista.output`.
+
+### QA 전용 dev 계정 3개 (2026-08-18 생성)
+
+구글 로그인은 재설치 뒤 계정 선택을 자동화하기 어려워, **이메일·비밀번호 계정**을 만들어 뒀다.
+지우고 새로 깔아도 이걸로 다시 들어갈 수 있다.
+
+| 이메일 | user id | 플랜 |
+| --- | --- | --- |
+| `qa.tester1@alarmtalk.dev` | `66840fd2-51c4-475f-955c-9d8221f0ed6f` | free |
+| `qa.tester2@alarmtalk.dev` | `0a8db71e-076f-4de7-ab05-930de4be836f` | free |
+| `qa.tester3@alarmtalk.dev` | `e459c2a4-3f45-4c95-ba17-003550b28b7e` | free |
+
+비밀번호 셋 다 `QaTest!2026aa`.
+
+**어떻게 만들었나** — 메일을 받을 수 없으므로 `email_verification_codes` 의 `code_hash` 를
+내가 아는 코드(`424242`)의 해시로 바꾼 뒤 **진짜 `/auth/register` 를 태웠다.**
+해시는 `SHA-256(정규화이메일:코드:PASSWORD_PEPPER)`.
+스크립트: `<scratchpad>/mkacct.mjs`, 질의 헬퍼: `<scratchpad>/dq.mjs`
+(둘 다 `.dev.vars.dev` 의 `TURSO_*`·`PASSWORD_PEPPER` 를 env 로 받는다).
+
+⚠ **users 행을 손으로 INSERT 하지 말 것.** `family_alarm_quiet_windows` 컬럼 DEFAULT 가
+`평일 09:00–18:30` 이라, 명시하지 않으면 그 시간대에 가족 알람이 **조용히 막힌다**
+(docs/spec/family-alarm.md 2절). 위 셋은 진짜 가입 플로우를 타서 `[]` 로 들어갔다 — 확인함.
+
+⚠ `.dev.vars.dev` 는 **줄 단위로 못 읽는다**(PEM 등 여러 줄 값이 섞여 있어 `source` 가 깨진다).
+필요한 변수만 `grep -m1 '^NAME=' | cut -d= -f2-` 로 뽑아 쓸 것.
+
+### 다음 세션 QA 계획 (2026-08-18 지시)
+
+**필요한 것은 다 있다** — 두 폰 연결됨(`R3CW300EZBA` S23 Ultra / `RF9R40323AP` A32),
+`packages/backend/.dev.vars.dev` 에 `TURSO_DATABASE_URL`·`TURSO_AUTH_TOKEN`(dev DB 직접 수정
+가능)과 `INIT_DB_SECRET`, wrangler 인증됨.
+
+알려진 계정 id: S23 `3c059777-086f-4653-826e-bbbc92f85afd` /
+`9671a7ae-d272-4091-872c-b123754191e4`, A32 는 구글 id `101930194963020851904`
+(AlarmTalk user id 는 DB 에서 이메일로 찾을 것).
+
+**순서**
+1. **셋 다 무료로 내린다**(dev DB `users.plan` 수정) → 무료에서 되는 것/막히는 것 전수 점검:
+   설정·알람 수정·목소리 선택·문구(테마) 선택·이용권 게이트 3상태.
+2. **지우고 새로 깔아 본다**(사용자 승인함) — 목적은 **음성 다운로드 확인**(선다운로드가
+   처음부터 도는지, 오프라인 콜드스타트에서 매니페스트 디스크 캐시가 먹는지).
+   ⚠ **로그인 복구 경로를 먼저 확인할 것** — 구글 계정 선택이 자동화 가능한지 보고 지울 것.
+   못 돌아오면 그 폰으로 더는 테스트할 수 없다.
+3. **유료로 올려 초대·가족 알람**(dev DB 수정) — 서로 보내고 받기 양방향.
+   여기서 비로소 앞 세션에 막혔던 ① 가족 알람 테마(`bucket_id` 왕복 +
+   `messageBelongsToCaller` 3갈래)를 검증할 수 있다.
+
+⚠ **앞 세션에서 확인된 제약**: 편집기에 **수신자 행이 아예 안 뜬다** — 가족 알람은 커플/가족
+이용권이 있어야 열린다. 그래서 3번이 1·2번 뒤에 온다.
+
+### 실기기 검증 결과 (2026-08-18, S23 Ultra `R3CW300EZBA` + A32 `RF9R40323AP`)
+
+**② 옛 행 재바인딩 — 통과.** 폰에 옛 행이 하나도 없어서(4행/2행 모두 `voiceRandomPrompt=0`)
+**만들어서** 검증했다: 시스템 목소리 행을 `voiceRandomPrompt=1` + `bucketId=NULL` +
+클립키 없음으로 되돌린 뒤 앱 실행. `StockClipPrefetchWorker` SUCCESS 직후
+
+    rp 1→0 · bucketId (null)→greeting · 클립 1개 바인딩 · ctx 'preset' **그대로**
+
+`ctx` 가 남는 것이 핵심이다(편집기가 열 때 되짚는 값). 매핑도 맞다 — `preset`→`greeting`.
+클립 1개는 정상이다: 매니페스트에서 greeting/ko 는 **목소리당 1개**다(4개는 시스템 목소리
+4종의 합).
+
+**③ 못 묶는 행은 그대로 둔다 — 통과.** 같은 회차에 클론 목소리(`e33f6fe0`) 행도 옛 행으로
+만들어 뒀는데, 매니페스트에 그 목소리 클립이 **하나도 없어** 손대지 않고 넘어갔다
+(`rp=1`, `bucketId` 없음, 옛 음원 유지). 설계한 대로다 — 지웠으면 소리가 사라진다.
+
+**① 가족 알람 테마 — 검증 못 했다. 이유가 둘이고 둘째가 중요하다.**
+
+  1. 테스트 계정에 가족 알람 수단이 없다(편집기에 수신자 행이 안 뜬다).
+  2. ⚠ **dev 백엔드에 필요한 커밋이 안 올라가 있다.** 기기에서 받은 매니페스트가
+     `expected_variants: null` 이고 **클론 클립이 0개**다. 그 값을 내려주는
+     `routes/tts.ts` 의 `expectedVariantCounts()` 는 커밋 `ae0e4e7a`
+     (「클론도 사전렌더를 쓴다 + 세트 크기를 서버가 정한다」)에 들어 있는데, 그 커밋은
+     **`feat/ios-revive` 에만 있고 `develop` 에는 없다.**
+
+⚠ **그래서 5단계는 백엔드 배포와 짝이다.** (c) 로 테마 바인딩이 **필수**가 됐는데, 지금
+dev 백엔드에는 클론 사전렌더 클립이 존재하지 않는다 → 클론 + 테마 알람은 **영원히 준비
+페이지로 튕긴다.** 순서는 **`ae0e4e7a` 가 든 백엔드를 dev 에 먼저 배포**한 뒤 앱을 올리는
+것이다. 배포 전에는 ①을 테스트할 수 없다.
+
+**아직 못 한 것**: 편집기에서 테마 알람을 **새로 저장**하는 경로(저장 탭이 안 먹혀 행이
+안 생겼다 — 좌표 문제로 보인다). 재바인딩 경로는 위처럼 확인됐다.
+
+**검증 뒤 폰 상태는 원래대로 되돌렸다**(4행 전부 원값, A32 예약 `pending=1 scheduled=1`).
+
+⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.**
+
+⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.** 거부 판정은 정확히
+`!draftPreviewRequested && body.random === true` 자리여야 한다 — 앞당기면 iOS 목소리 등록이
+깨진다.
+
+### iOS 저장 사유 문구 — 값이 사는 자리로 옮겼다 (2026-08-18 완료)
+
+안드로이드가 같은 날 `editorSaveBlockedReason` 을 Boolean 으로 바꾼 것과 같은 정리다.
+**조건은 그대로 두고 문구만 없앴다.**
+
+⚠ **그냥 지우면 iOS 가 안드로이드보다 나빠진다.** 안드로이드가 지울 수 있었던 건 값이 사는
+자리가 대신 말해 주기 때문이다. 일곱 갈래를 대조해 **여섯은 이미 있었고 하나가 없었다**:
+
+| 갈래 | 말하는 자리(iOS) |
+| --- | --- |
+| 플랜 잠금 / **사용 불가 목소리** | `unusableVoiceBanner` — **없어서 새로 만들었다** |
+| 목소리 미선택 | 목소리 행 "고르기" + '목소리 탭에서 만들기' |
+| 녹음 미완료 | `RecordingCard` 자체가 CTA |
+| 날씨 테마 지역 없음 / 랜덤 문구 미완 / 빈 직접 입력 | `PromptDetailCard`("아직 정하지 않았어요") |
+
+- **`unusableVoiceBanner` 의 판정이 안드로이드보다 한 갈래 넓다.** 안드로이드는 무료 등급에서
+  `visibleVoiceProfiles` 가 클론을 통째로 걸러 내 "목록에 없다" 하나로 두 경우가 다 잡히는데,
+  iOS 는 잠금 배지만 달아 목록에 남기므로 `locked` 도 함께 본다.
+- 문구는 안드로이드 `editor_voice_deleted_title/_desc` 를 en·ja 까지 그대로 가져왔다.
+  ⚠ **"저장된 목소리는 그대로 울린다" 고 말하는 게 핵심이다** — 막히는 건 문구를 바꾸는
+  것뿐인데 "쓸 수 없어요" 로만 읽히면 울리지도 않는 줄 안다.
+- **생성 실패는 알럿으로 뺐다**(`showSaveFailureAlert`). 예전에는 `saveFlow` 의 실패 갈래가
+  조용히 `return` 하고 사유가 `voiceStudio.statusMessage` 에만 남아, 저장이 막힌 이유를
+  말하는 한 줄이 그걸 주워 보여 줬다 — 성격이 다른 두 문장이 같은 자리를 번갈아 썼다.
+
+**곁가지로 나온 것 둘**(둘 다 주석이 없는 동작을 광고하고 있었다):
+
+- **문구 화면의 취소가 취소가 아니었다.** `select(_:)` 가 종류를 먼저 쓰고 나서 물어서,
+  취소하면 값 없는 종류가 선택된 채 남았다. 사주 시트만 `draftFortune*` 에 **직접 바인딩**
+  이었고(바로 아래 직접 입력 알럿에는 "직접 바인딩하지 말 것" 주석이 있는데도), 운세 완성도
+  판정이 `select(_:)`(생년월일 하나)와 `saveEnabled`(셋 다)로 **두 벌**이었다. 서버
+  `fortune_ready` 는 셋을 본다 — 생년월일만 채우면 **저장은 되는데 울릴 때 안 나온다.**
+- **오프라인인데 "불러오는 중" 이라고 말했다.** iOS 에 연결 상태를 보는 수단이 **아예
+  없었다**(`NetworkMonitor` 를 그래서 만들었다 — 안드로이드 `rememberIsOnline` 짝).
+  사유 문구를 없앤 뒤로는 이 행이 대체 수단이라, 거짓말하면 지운 근거가 무너진다.
+
+### P1 #2 — 관문 세 자리 (2026-08-18 완료)
+
+**무엇이 문제였나.** 사전렌더 클립 관문이 **목소리를 고를 때 한 번만** 돌았다. 그런데
+문구 종류마다 버킷 category 가 다르고(`clonePrerenderBucketCategoryFor`) 서버 렌더는
+category 단위로 끝나므로, **같은 목소리가 종류에 따라 준비됐을 수도 아닐 수도 있다.**
+목소리를 통과시킨 것이 그 뒤 고른 종류까지 보장하지 못했다.
+
+지금은 라이브 랜덤 생성이 이 구멍을 덮고 있어 증상이 안 나온다. 그걸 걷어내면(위 5절)
+그대로 **저장이 조용히 막히는 막다른 길**이 된다 — 사유 문구를 없앴으므로 왜 안 되는지
+말해 줄 자리도 없다.
+
+**어떻게 고쳤나 — 판정 하나, 부르는 자리 셋.**
+
+| 자리 | Android | iOS |
+| --- | --- | --- |
+| 판정(유일 출처) | `ClipGate.needsClipPreparation`(`ui/editor/ClipPreparationGate.kt`) | `AlarmEditorSheet.needsClipPreparation` |
+| 1. 목소리 선택 | `VoiceAudioCard` 의 `onNeedsClipPreparation` | `selectedProfileID` 의 `onChange` |
+| 2. 문구 종류 선택 | `applyRandomPromptSettings` | `applyMessageSettings` |
+| 3. 저장 직전 | `saveEditor` | `saveFlow` |
+
+⚠ **판정식을 세 벌로 베끼지 않았다.** 안드로이드는 컴포저블 밖 `ClipPreparationGate.kt` 로
+빼서 파일 경계로 못 박았고(덤으로 테스트 가능해졌다), iOS 는 메서드 하나를 셋이 부른다.
+CLAUDE.md 「일곱 자리」가 네 번 깨진 이유가 '같은 판정식을 여러 벌 적어 둔 것' 이라,
+**같은 함수를 부르는 것**으로 바꿨다. 새 자리가 생기면 그 함수를 부를 것.
+
+**막을 때는 반드시 준비 페이지로 보낸다.** 막기만 하면 빠져나갈 길이 없다.
+
+⚠ **자리(3)의 위치가 중요하다.** 안드로이드는 `hasFreshTtsAudio` 조기 submit **뒤**,
+iOS 는 라이브 생성 블록 **안**이다. 그 앞에 두면 **이미 오디오가 붙어 있는 알람의 시각만
+고치는 재저장**까지 준비 페이지로 튀긴다 — 생성할 것도 바인딩할 것도 없는데 클립을
+기다리게 하는 셈이고, 매니페스트가 잠깐 비면 멀쩡한 알람을 고칠 길이 사라진다.
+
+**같이 잡은 것 — iOS 테마 알람의 관문 우회.** `selectedProfileID` 의 `onChange` 는 관문을
+지난 **뒤** 테마 알람의 `randomPrompt` 를 되켠다(`wasThemeAlarm` 분기). 관문은 그 전 값
+(false)으로 물어봐서 "랜덤이 아니니 클립이 필요 없다" 며 통과시켰고, 곧바로 랜덤이 켜져
+클립이 필요한 상태로 바뀌었다 — **테마 알람의 목소리를 아직 못 받은 클론으로 바꾸는
+흐름이 통째로 관문을 빠져나갔다.** 이제 `wasThemeAlarm` 을 먼저 구해 **바뀔 값**으로
+판정한다. 안드로이드에는 목소리 변경 시 `voiceRandomPrompt` 를 켜는 자리가 없어(grep 확인)
+같은 구멍이 없다.
+
+**회귀 테스트**: `ClipPreparationGateTest`(7개). 지키는 것은 **"한 목소리가 종류에 따라
+준비됐을 수도 아닐 수도 있다"** 는 사실 하나 — 그게 맞아야 자리(2)(3)이 필요하다.
+
+### 울림 화면 — 2026-09-09 변경분 (폰에서 꼭 볼 것)
+
+코드로는 확인이 끝나지 않는 것들이다. 위 넷은 **실기기에서만** 드러난다.
+
+- [ ] **언제나 전체화면**: 폰을 쓰는 중(잠금 해제)에 알람이 울리면 울림 화면이 화면을
+      덮는가. A32(안드로이드 13)와 S23 둘 다 볼 것 — 배너만 뜨던 것이 A32 였다.
+- [ ] **배너 겹침**: 잠금 해제 상태에서 울림 화면 위에 알림 배너가 잠깐 겹치는가.
+      겹쳐도 정상이다(FSI 는 폴백이라 뗄 수 없다). **겹침을 없애겠다고 채널을 강등하지 말 것.**
+- [ ] **전원 버튼만 끈다**: 전원 버튼으로 끝나는가(잠금화면에서도, 뜬 지 3초 뒤).
+- [ ] **홈·최근앱·앱 전환으로는 안 꺼진다**: 홈을 눌러도 계속 울려야 한다. 돌아오면 울림
+      화면이 다시 떠야 하고, 알림에서도 끌 수 있어야 한다.
+- [ ] **사이드키 단축키**: 설정에서 사이드키 두 번 누르기를 '카메라' 로 켜 두고 알람 중에
+      눌러 볼 것. 카메라가 떠도 **알람은 계속 울려야** 한다(홈과 같은 갈래다).
+- [ ] **전화 수신**: 알람이 우는 중에 전화를 걸어 볼 것. 통화 화면이 뜨면 알람이 **끝나야**
+      한다. 기기·통신사 UI 에 따라 우리 화면을 `onStop` 시키지 않을 수 있어 실기기 확인이
+      유일한 검증이다 — 안 끊기면 통화 중에 알람을 끌 방법이 없다.
+- [ ] **볼륨키로는 안 꺼진다**: 알람이 우는 중 볼륨키를 눌러 볼 것. 음량만 바뀌고 알람은
+      계속 울려야 한다(앱은 키 이벤트를 받지 않는다). 전원 버튼만 끈다.
+- [ ] **배너 없음**: 알림창을 열기 전에는 위에 아무것도 안 뜨는가(채널이 `IMPORTANCE_LOW`).
+      알림창 안에는 해제·다시 울리기가 그대로 있어야 한다.
+- [ ] ⚠ **가방 오탐**: 폰을 잠근 채 **플립커버를 씌우거나 주머니에 넣고** 알람을 울려 볼 것.
+      화면이 켜졌다 곧바로 꺼져도 **알람은 계속 울려야 한다.** 여기서 꺼지면 자는 사람이
+      못 일어난다 — 이 변경에서 가장 위험한 자리다. 커버를 열었다 닫기를 반복해도 같다.
+- [ ] **알림으로 끝내면 화면도 닫히는가**: 셰이드를 내려 알림의 '해제'/'다시 울리기' 를
+      누르면 울림 화면이 함께 사라지는가. 남아 있으면 그 화면의 '밀어서 끄기' 가 방금
+      미뤄 둔 알람을 지운다.
+- [ ] **다시 울림 무제한**: '다시 울리기' 를 4번 이상 눌러도 계속 미뤄지는가(예전에는
+      4번째에 알람이 꺼졌다). 편집기 요약에 '3회' 같은 횟수가 안 보이는가.
+- [ ] **＋/− 스테퍼는 울림 화면에 있다**: 알람이 울릴 때 '5분 뒤 다시' 좌우의 ＋/− 로
+      1분씩 움직이는가(1~30 끝값에서 버튼이 흐려지는가). 6분으로 바꿔 누르면 6분 뒤에 오고,
+      다음 회차에도 6분이 남는가.
+      - 편집기에는 '다시 울림' 항목이 **없다**(양 앱). 있으면 그게 회귀다.
+      - **아이폰에는 ＋/− 가 없다** — AlarmKit 이 울림 화면을 소유해서 둘 수 없다.
+        시스템 알럿의 '다시 울리기' 가 저장된 값으로 미루는지만 본다.
+- [ ] **알람음 칩 없음**: 재생 방식을 '알람' 으로 둔 알람이 울릴 때 가운데가 비어 있는가.

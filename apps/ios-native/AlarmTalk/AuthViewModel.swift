@@ -1,0 +1,1740 @@
+import AuthenticationServices
+import Foundation
+import OSLog
+
+/// `AuthViewModel` 이 의존하는 API 시그니처. 단위 테스트에서 mock 으로 주입하기 위해
+/// protocol 로 분리한다. `AlarmTalkAPI` 가 conform.
+/// MainActor 제약을 두지 않아 `AlarmTalkAPI` (non-isolated) 가 그대로 만족.
+/// `Sendable` — MainActor 격리된 호출자가 async 컨텍스트로 self 인스턴스를 캡처할 때
+/// race 경고를 피하기 위해. 실제 conformer 인 `AlarmTalkAPI` 는 `@unchecked Sendable`.
+protocol AuthAPIProviding: AnyObject, Sendable {
+    /// rolling refresh — 새 토큰을 함께 돌려준다(서버 재발급 실패 시 nil).
+    func me(token: String) async throws -> (token: String?, user: AuthUser)
+    func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
+    func deleteAccount(token: String) async throws -> DeleteAccountResponse
+    func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
+    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse
+    func consentStatus(token: String) async throws -> ConsentStatusResponse
+    func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse
+    func logout(token: String) async throws
+}
+
+extension AlarmTalkAPI: AuthAPIProviding {}
+
+/// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
+/// 실제 구현은 `ASAuthorizationAppleIDProvider.getCredentialState(forUserID:)` 를 호출.
+protocol AppleCredentialStateProviding: Sendable {
+    func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
+}
+
+struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
+    func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState {
+        let provider = ASAuthorizationAppleIDProvider()
+        return try await withCheckedThrowingContinuation { continuation in
+            provider.getCredentialState(forUserID: userID) { state, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: state)
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class AuthViewModel: ObservableObject {
+    @Published private(set) var session: AuthSession?
+    @Published var statusMessage: String? {
+        didSet {
+            // 새 메시지는 기본이 '안내' 다. 오류 경로는 대입 **직후**
+            // `statusIsError = true` 로 표시한다(아래 `failStatus` 헬퍼).
+            if statusMessage != oldValue { statusIsError = false }
+        }
+    }
+
+    /// 지금 `statusMessage` 가 오류인가.
+    ///
+    /// ⚠ **이게 없으면 화면이 성공까지 빨간색으로 그린다.** 로그인 화면은 이 값 하나에
+    /// "인증 코드를 보냈어요"(안내)와 "비밀번호가 달라요"(오류)를 모두 실어 보내는데,
+    /// iOS 는 전부 error 색으로 칠하고 있었다 — 코드를 잘 받은 사용자에게 빨간 글씨가
+    /// 뜨면 뭔가 잘못된 줄 안다. 안드로이드는 `AuthErrorText`/`AuthNoticeText` 로 나눈다.
+    @Published private(set) var statusIsError = false
+
+    /// 오류 메시지를 세운다. `statusMessage` 에 직접 대입하면 안내로 처리된다.
+    func failStatus(_ message: String?) {
+        statusMessage = message
+        statusIsError = message != nil
+    }
+
+    /// 로그인 실패를 **비밀번호 입력창 바로 아래**에 붙이기 위한 값.
+    ///
+    /// ⚠ **하단 `statusMessage` 로 보내지 말 것.** 그 자리는 제출 버튼·비밀번호 찾기·
+    /// 애플 로그인 행을 지나서야 나와, 비밀번호를 틀린 사람이 **틀린 줄도 모른다**
+    /// (2026-08-19 실기기 사용자 보고: "틀리고도 뭐지? 했다"). 게다가 그 자리에는
+    /// "인증 코드를 보냈어요" 같은 안내도 함께 오므로 눈에 걸리지도 않는다.
+    /// 안드로이드는 처음부터 `OutlinedTextField.supportingText` 로 붙이고 있었다
+    /// (`ui/auth/AuthScreen.kt` 의 `loginError`).
+    @Published var loginError: String?
+
+    /// 진행 중인 **서버 쪽 로그아웃 뒷정리**. 로그인은 이게 끝난 뒤에 세션을 심는다.
+    ///
+    /// ⚠ 표시를 지우는 것으로는 **이미 날아간 요청을 취소하지 못한다**(Codex #699 P1).
+    /// `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 처리되는 동안
+    /// 새 로그인이 끝나면 **방금 발급받은 세션이 무효가 된다.** 그래서 순서를 세운다.
+    private var authServerMutation: Task<Void, Never>?
+
+    /// 앞선 서버 뒷정리가 끝난 뒤에 실행한다.
+    private func serializeAuthServerMutation(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = authServerMutation
+        let current = Task { @MainActor in
+            await previous?.value
+            await body()
+        }
+        authServerMutation = current
+        await current.value
+    }
+
+    // MARK: - 로그인 (서버 뒷정리와 한 줄로)
+
+    /// ⚠ **줄에 서기 **전에** busy 를 세운다**(Codex #699 P2). 앞선 뒷정리가 느리면 줄에서
+    /// 기다리는 동안 화면이 열려 있어, 사용자가 더 누르는 만큼 로그인이 **쌓인다** —
+    /// 먼저 끝난 것이 세션을 심은 뒤 다음 것이 **다른 계정을 계정-이탈 뒷정리 없이** 심을 수 있다.
+    ///
+    /// ⚠ **로그인 요청 자체를 줄에 태운다**(Codex #699 P1). "기다렸다가 보낸다" 로는 부족하다 —
+    /// 그 기다림은 **그 시점의 줄**만 보므로, 요청이 날아가는 사이에 복구가 새로 넣은
+    /// `/auth/logout` 이 그 뒤에 처리되면 `token_epoch` 가 올라가 **방금 받은 토큰이 무효**가 된다.
+    /// 줄에 태우면 그 뒷정리는 로그인이 끝난 뒤로 밀리고, 그때는 이 계정의 표시가 지워져 있어
+    /// (`PendingSignOutStore.clear`) 서버 호출 자체가 멈춘다.
+    func loginWithApple(
+        idToken: String,
+        name: String?,
+        email: String?,
+        rawNonce: String?,
+        authorizationCode: String? = nil,
+        appleUserIdHint: String? = nil
+    ) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performLoginWithApple(idToken: idToken, name: name, email: email, rawNonce: rawNonce, authorizationCode: authorizationCode, appleUserIdHint: appleUserIdHint)
+        }
+    }
+
+    func loginWithEmail(email: String, password: String) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performLoginWithEmail(email: email, password: password)
+        }
+    }
+
+    func registerWithEmail(
+        email: String,
+        password: String,
+        name: String,
+        verificationCode: String
+    ) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performRegisterWithEmail(email: email, password: password, name: name, verificationCode: verificationCode)
+        }
+    }
+
+    /// 로그인 실패를 사용자 문구로 바꾼다.
+    ///
+    /// 서버는 **미가입과 비밀번호 불일치를 구분하지 않고** `AUTH_INVALID_CREDENTIALS` 401
+    /// 하나로 답한다(계정 존재 여부 노출 방지). 그래서 문구도 둘을 함께 확인하게 쓴다 —
+    /// 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 같은 갈래와 같은 말이다.
+    ///
+    /// `loginWithEmail` 이 주입된 `api` 가 아니라 `AlarmTalkAPI.shared` 를 직접 부르는 탓에
+    /// 로그인 경로 자체는 단위 테스트로 못 덮는다. 갈림만이라도 순수 함수로 빼서 고정한다.
+    nonisolated static func loginErrorMessage(for error: Error) -> String {
+        let code = (error as? APIError)?.serverErrorCode
+        if code == "AUTH_INVALID_CREDENTIALS" {
+            return String(localized: "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.")
+        }
+        // 화면이 맡지 않은 코드는 **공용 표**가 받는다 — 안드로이드
+        // `ui/main/MainViewModelAuthActions.kt` 의 로그인 갈래와 같은 층 순서다
+        // (화면 전용 → 공용 표 → 서버 문장/폴백). 로그인은 `authRateLimitMiddleware`
+        // 뒤에 있어 `RATE_LIMITED` 가 실제로 온다 — 표가 없으면 그 429 가
+        // "로그인에 실패했어요" 로 읽혀 사용자가 계속 다시 시도한다.
+        return APIErrorMessages.message(for: code)
+            ?? userFacingErrorMessage(error, fallback: String(localized: "로그인에 실패했어요"))
+    }
+    @Published var isBusy = false
+    /// 401 외의 일시 오류(5xx, 4xx 기타, 네트워크 단절 등) 를 사용자에게 보여주되
+    /// 세션은 유지한다. UI 가 빨간 띠/스낵바 등으로 노출하면 된다.
+    /// nil 이면 마지막 호출이 정상이었음을 의미.
+    @Published private(set) var lastNetworkError: String?
+    /// 30일 유예 탈퇴 진행 중 여부. true 면 RootView 가 복구 화면으로 게이팅한다.
+    /// `/auth/me` 응답의 `deletion_status == "pending_deletion"` 에서 설정된다.
+    /// Android `MainViewModel.pendingDeletion`.
+    @Published private(set) var pendingDeletion = false
+    /// **필수** 약관 동의가 없어 앱을 못 쓰는 상태인지.
+    /// `/user/consents/status` 의 `needs_consent`. Android `MainViewModel.needsConsent`.
+    ///
+    /// ⚠ 화면을 띄울지는 이 값이 아니라 `showConsentScreen` 으로 판단한다.
+    @Published private(set) var needsConsent = false
+    /// 서버가 계산해 준 '받을 게 있는가'(선택 유형만 재수집일 때도 true).
+    @Published private(set) var consentNeedsCollection = false
+    /// 이번 화면에서 받아야 하는 동의 유형. **화면은 이것만 그리고 제출도 이것만 한다.**
+    @Published private(set) var consentCollect: [String] = []
+    /// `consentCollect` 중 체크 없이 통과하는 유형(선택 동의).
+    @Published private(set) var consentOptional: [String] = []
+    /// `consentCollect` 중 이미 동의해 둔 유형 — 화면의 초기 체크 상태.
+    @Published private(set) var consentPrechecked: [String] = []
+    /// 목소리 등록 화면에서 인라인으로 다시 물어야 하는 민감 동의.
+    @Published private(set) var consentSensitiveMissing: [String] = []
+    /// 개정에 따른 재동의인지(이미 동의한 적 있는 계정). 문구가 달라야 한다.
+    @Published private(set) var consentIsReconsent = false
+    /// **이 계정의 동의 상태 응답을 실제로 받았는가.** 성공·실패 모두 true 다 —
+    /// 못 물어본 것이 기능을 막을 이유는 아니다(네트워크 실패로 영영 false 면 영영 잠긴다).
+    ///
+    /// ⚠ 이게 없으면 응답 전 `consentSensitiveMissing` 이 빈 배열이라, 가입 때 생체정보를
+    /// 거절한 사람에게 **등록 폼의 동의 체크박스가 안 그려진 채** 제출이 열려 403 을 맞는다
+    /// (CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」와 같은 형태의 버그).
+    /// 계정별 신호이므로 세션 정리에서 되돌린다.
+    @Published private(set) var consentStatusChecked = false
+
+    /// 동의 화면을 띄워야 하는가.
+    ///
+    /// ⚠ **`needsConsent` 만 보면 안 된다.** 선택 유형만 재수집하는 경우
+    /// (`collect == ["marketing"]`) `needsConsent` 는 false 라 화면이 영영 안 뜬다.
+    /// 반대로 이 값을 보지 않고 크롬(하단바·FAB)을 그리면 동의 화면 **아래에** 탭이 남아
+    /// 수집이 끝나기 전에 다른 화면으로 샐 수 있다(Android Codex #660 과 같은 판단).
+    var showConsentScreen: Bool {
+        needsConsent || consentNeedsCollection || !consentCollect.isEmpty
+    }
+
+    /// **이 앱 버전이 화면에 그릴 수 있는** 동의 유형 전부.
+    ///
+    /// 서버가 새 유형을 먼저 추가하고 구버전 앱이 살아 있는 구간이 있다. 그때 화면이 그리지
+    /// 못한 유형을 '체크됨' 으로 취급하면 **사용자가 본 적 없는 동의가 기록된다** — 동의
+    /// 기록의 신뢰성이 통째로 무너지는 종류의 버그다. 모르는 유형은 제출에서 빼고,
+    /// 그게 필수면 화면이 CTA 를 막는다.
+    static let knownConsentTypes: Set<String> = [
+        "terms", "privacy", "age14", "marketing", "voice_biometric", "overseas_transfer",
+    ]
+
+    /// status 응답을 못 받았을 때의 폴백(가입 필수 4종).
+    static let signupRequiredConsentTypes = ["age14", "terms", "privacy", "overseas_transfer"]
+
+    /// 목소리/TTS 라우트가 그 자리에서 요구하는 민감 동의. 가입 게이트와 별개다.
+    static let sensitiveConsentTypes: Set<String> = ["voice_biometric", "overseas_transfer"]
+
+    /// 목소리를 만들려는 순간에 받아야 하는 민감 동의 요청.
+    struct SensitiveConsentRequest: Identifiable, Equatable {
+        let id = UUID()
+        /// 이번에 받을 유형. 서버가 지목한 것만 담는다 — 이미 유효한 동의를 다시 묻지 않는다.
+        var types: [String]
+        /// 동의 직후 목소리 등록이 이어지는가. **문맥은 '무엇을 묻는가' 가 아니라 '동의 직후
+        /// 무엇을 하는가' 로 정한다** — 묻는 항목으로 문맥을 파생하면, 국외 이전만 빠진
+        /// 상태에서 TTS 문구가 떠서 사용자는 '문구 생성 동의' 인 줄 알고 눌렀는데 실제로는
+        /// 녹음이 올라가고 클론이 만들어진다.
+        var registeringVoice: Bool = false
+    }
+
+    /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
+    @Published var pendingSensitiveConsent: SensitiveConsentRequest?
+
+    /// 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+    ///
+    /// ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+    /// 실제로 있다 — 로그인 직후 조회와 전경 복귀 조회, 그리고 **동의 제출과 경합하는**
+    /// 조회. 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면, 이미 다 받은
+    /// 상태를 덮어 **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+    private var consentStatusRevision = 0
+
+    /// 지금 날아가고 있는 동의 상태 응답을 **전부 무효화**한다. 동의를 기록해 상태가 바뀐
+    /// 직후에 부른다 — 그 전에 떠난 조회의 답은 이미 낡았다.
+    private func invalidateInFlightConsentStatus() {
+        consentStatusRevision &+= 1
+    }
+
+    /// 목소리 등록처럼 **곧 시작할 동작**이 요구하는 민감 동의를 선제적으로 받는다.
+    ///
+    /// ⚠ 이걸 두는 이유: 예전에는 `SensitiveConsentRequest` 를 만드는 곳이 403 핸들러
+    /// 하나뿐이라 `registeringVoice` 가 **항상 false** 였다. 그래서 등록 화면의 인라인
+    /// 체크박스가 덮지 않는 유형(예: 국외 이전)이 남아 있으면, 녹음을 다 올린 **뒤에야**
+    /// 403 으로 시트가 뜨고 그 시트는 TTS 카피를 보여 줬다 — 사용자는 '문구 생성 동의' 인
+    /// 줄 알고 누르는데 실제로는 목소리가 만들어진다. 안드로이드는 업로드 전에
+    /// `pendingSensitiveConsent` 를 세운다(`MainViewModelVoiceActions.createVoiceProfiles`).
+    ///
+    /// 이미 유효한 동의는 서버 `sensitive_missing` 에서 빠지므로 여기 담기지 않는다 —
+    /// **한 번 받은 동의를 다시 묻지 않는다**(`docs/spec/consent.md`).
+    /// - Returns: 호출자가 **자기 동작을 그대로 이어서 해도 되는가**. false 면 멈춰야 한다 —
+    ///   시트가 떴거나 업데이트 게이트로 보냈다는 뜻이다. 멈춘 동작을 나중에 이어받을지는
+    ///   호출자가 정한다(`pendingSensitiveConsent` 가 떠 있으면 이어받을 수 있다).
+    @discardableResult
+    func requestSensitiveConsent(types: [String], registeringVoice: Bool) -> Bool {
+        let wanted = types.filter { Self.sensitiveConsentTypes.contains($0) }
+        // ⚠ **모르는 유형을 조용히 버리지 않는다**(Codex #703 P2). 이 앱으로 받을 방법이
+        // 없는 동의를 그냥 지나가면, 호출자는 '시트를 띄웠다' 고 믿고 자기 동작을 멈추는데
+        // 화면에는 아무것도 뜨지 않는다 — 등록 버튼을 눌러도 **아무 일도 일어나지 않는다.**
+        // 받을 방법이 없다는 사실을 말해 주는 자리는 업데이트 안내다.
+        if wanted.count != types.count {
+            consentUnsupported = true
+            return false
+        }
+        // 받을 것이 없으면 막지 않는다.
+        guard !wanted.isEmpty else { return true }
+        // 이미 시트가 떠 있으면 그것이 이 유형들을 덮는다 — 겹쳐 띄우지 않는다.
+        guard pendingSensitiveConsent == nil else { return false }
+        pendingSensitiveConsent = SensitiveConsentRequest(types: wanted, registeringVoice: registeringVoice)
+        return false
+    }
+    /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
+    /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
+    @Published var passwordResetCodeSentTo: String?
+    /// 설정 화면의 마케팅(광고성 정보 수신) 동의 토글 상태. `loadMarketingConsent` 로 채운다.
+    /// Android `MainViewModel.marketingConsentAgreed`.
+    @Published var marketingConsentAgreed = false
+    /// 마케팅 동의 상태 로드가 실패했는지. true 면 UI 가 재시도 안내를 노출할 수 있다.
+    /// Android `MainViewModel.marketingConsentLoadFailed`.
+    @Published private(set) var marketingConsentLoadFailed = false
+    /// 서버가 이 빌드보다 새 법무 문서를 게시 중이라 동의를 기록할 수 없는 상태.
+    /// true 면 UI 가 업데이트 안내로 게이팅한다. Android `MainViewModel.consentUnsupported`.
+    @Published private(set) var consentUnsupported = false
+
+    private let api: AuthAPIProviding
+    private let appleCredentialProvider: AppleCredentialStateProviding
+    private let accessSnapshotStore: AccessSnapshotStore
+    /// `addObserver(forName:object:queue:using:)` 가 반환한 토큰. deinit 시
+    /// 명시 해제해야 NotificationCenter 내부 strong reference 가 풀린다.
+    /// `nonisolated(unsafe)` — deinit 은 nonisolated 컨텍스트인데 본 프로퍼티는
+    /// init/deinit 외에서 건드리지 않으므로 동시성 race 없음.
+    private nonisolated(unsafe) var appleRevokeObserver: NSObjectProtocol?
+    /// 모든 API 요청이 401 을 받으면 `AlarmTalkAPI` 가 쏘는 세션 만료 알림의 옵저버 토큰.
+    /// Android `UnauthorizedAuthenticator` → `handleUnauthorized` 강제 로그아웃과 동등.
+    /// `appleRevokeObserver` 와 동일한 수명 관리(deinit 에서 removeObserver).
+    private nonisolated(unsafe) var unauthorizedObserver: NSObjectProtocol?
+    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 `AlarmTalkAPI` 가 쏘는 알림의 옵저버.
+    /// 세션은 유지하되 동의 화면으로 게이팅하기 위해 `needsConsent=true` 로 둔다.
+    private nonisolated(unsafe) var consentRequiredObserver: NSObjectProtocol?
+    /// `verifyAppleCredentialStateIfNeeded` 가 같은 사용자에 대해 중복 동시 호출되는
+    /// 일을 막는다. SwiftUI scenePhase 가 짧은 시간 안에 두 번 .active 가 되는
+    /// 경우(예: 시스템 알림창 → 복귀) 가 있어 직렬화.
+    private var isVerifyingAppleCredential = false
+
+    init(
+        api: AuthAPIProviding = AlarmTalkAPI.shared,
+        appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider(),
+        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore()
+    ) {
+        self.api = api
+        self.appleCredentialProvider = appleCredentialProvider
+        self.accessSnapshotStore = accessSnapshotStore
+        session = KeychainStore.readSession()
+        #if DEBUG
+        // 화면 확인 모드(-UIPreviewSeed)에서는 여기서 바로 세션을 심는다. 뷰의 `.task`
+        // 에서 심으면 게이트 판정과 경쟁해 어떤 실행에서는 랜딩이 그대로 남는다.
+        if UIPreviewSeed.isEnabled {
+            let seeded = UIPreviewSeed.makeSession()
+            UIPreviewSeed.markGatesPassed(userID: seeded.user.id)
+            session = seeded
+            // 서버가 없으니 동의 확인이 60초 타임아웃까지 매달린다 — 화면 확인 모드에서는
+            // 그 사이 로딩 게이트가 화면을 덮어 아무것도 못 본다.
+            consentStatusChecked = true
+        }
+        #endif
+
+        // Apple 자격 증명이 다른 디바이스에서 revoke 되면 시스템이 이 알림을 쏜다.
+        // block-based observer 는 deinit 에서 명시 removeObserver 가 필요하므로
+        // 토큰을 보관한다. [weak self] 로 self 가 strong 으로 capture 되지 않게.
+        appleRevokeObserver = NotificationCenter.default.addObserver(
+            forName: ASAuthorizationAppleIDProvider.credentialRevokedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // userInfo 가 없으므로 단순히 trigger 로만 사용.
+            Task { @MainActor [weak self] in
+                self?.handleAppleCredentialRevoked()
+            }
+        }
+
+        // 모든 API 요청 레이어가 401 을 받으면 강제 로그아웃. `AlarmTalkAPI` 가
+        // 디바운스(연발 401 → 1회) 후 알림을 쏘고, 여기서 main actor 로 받아 signOut.
+        unauthorizedObserver = NotificationCenter.default.addObserver(
+            forName: AlarmTalkAPI.unauthorizedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let failedToken = note.userInfo?[AlarmTalkAPI.unauthorizedTokenKey] as? String
+            Task { @MainActor [weak self] in
+                self?.handleUnauthorized(failedToken: failedToken)
+            }
+        }
+
+        // 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 동의 화면으로 게이팅한다.
+        // 세션은 유지하므로 signOut 이 아니라 needsConsent 만 올린다(재기록 후 재시도).
+        consentRequiredObserver = NotificationCenter.default.addObserver(
+            forName: AlarmTalkAPI.consentRequiredNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let consent = note.userInfo?[AlarmTalkAPI.consentRequiredTypeKey] as? String
+            Task { @MainActor [weak self] in
+                self?.handleConsentRequired(consent: consent)
+            }
+        }
+    }
+
+    deinit {
+        // nonisolated deinit — main-actor isolated property 에는 접근하지 않는다.
+        // appleRevokeObserver 는 nonisolated(unsafe) 이라 안전하게 읽을 수 있다.
+        if let token = appleRevokeObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = unauthorizedObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = consentRequiredObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    var token: String? {
+        session?.token
+    }
+
+    var isAuthenticated: Bool {
+        session != nil
+    }
+
+    /// 키체인에 저장된 세션을 **네트워크 없이 즉시** 채택한다.
+    ///
+    /// ⚠ 백그라운드로 깨어난 실행(푸시·BGTask)에는 화면이 없어 `restoreSession()` 이 돌지
+    /// 않는다. 그때 세션이 nil 이면 받은 알람을 당겨올 토큰이 없어 **푸시가 와도 아무 일도
+    /// 안 일어난다**(2026-08-18 Codex #697 P1). 키체인 읽기는 동기라 launch 에서 부를 수 있다.
+    func adoptStoredSessionIfNeeded() {
+        guard session == nil, let saved = KeychainStore.readSession() else { return }
+        session = saved
+    }
+
+    func restoreSession() async {
+        guard let saved = KeychainStore.readSession() else { return }
+        session = saved
+        await refreshUser()
+        await checkConsentStatus()
+    }
+
+    func handleAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String?) async {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            statusMessage = "Apple 로그인 정보를 확인하지 못했어요."
+            return
+        }
+        guard
+            let tokenData = credential.identityToken,
+            let idToken = String(data: tokenData, encoding: .utf8)
+        else {
+            statusMessage = "Apple identity token을 받지 못했어요."
+            return
+        }
+
+        let displayName = credential.fullName.flatMap(Self.displayName)
+        // 탈퇴 시 애플 연결 해제에 쓸 authorization code. 매 로그인마다 새로 오고
+        // 5분·1회용이라 그대로 흘려보낸다.
+        let authorizationCode = credential.authorizationCode
+            .flatMap { String(data: $0, encoding: .utf8) }
+        await loginWithApple(
+            idToken: idToken,
+            name: displayName,
+            email: credential.email,
+            rawNonce: rawNonce,
+            authorizationCode: authorizationCode,
+            // Apple 의 stable user identifier. 백엔드 응답이 비어 있어도
+            // 이 값을 세션에 보존해 credentialState 조회에 사용한다.
+            appleUserIdHint: credential.user
+        )
+    }
+
+    func handleAppleAuthorizationFailure(_ error: Error) {
+        failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+    }
+
+    private func performLoginWithApple(
+        idToken: String,
+        name: String?,
+        email: String?,
+        rawNonce: String?,
+        authorizationCode: String? = nil,
+        appleUserIdHint: String? = nil
+    ) async {
+
+        do {
+            var nextSession = try await AlarmTalkAPI.shared.loginWithApple(
+                idToken: idToken,
+                name: name,
+                email: email,
+                nonce: rawNonce,
+                authorizationCode: authorizationCode
+            )
+            // 백엔드가 `apple_user_id` 를 비워서 돌려주는 경우에도 클라이언트가
+            // 갖고 있던 credential.user 를 보존. 백엔드 변경 전/후 모두 호환.
+            if nextSession.user.appleUserId.nilIfBlank == nil,
+               let hint = appleUserIdHint, !hint.isEmpty {
+                nextSession.user.appleUserId = hint
+            }
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
+            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
+            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
+            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
+            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
+                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+                SessionExpiryStore.clear()
+            }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
+            lastNetworkError = nil
+            // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
+            await refreshUser()
+            // 필수 약관 미동의면 동의 화면으로 게이팅.
+            await checkConsentStatus()
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
+        }
+    }
+
+    // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드
+
+    /// 이메일 인증 코드를 발송한다. UI 는 statusMessage 를 받아 상태 메시지로 노출.
+    /// 인증 코드를 보낸다. **성공하면 true** — 호출부는 이 값으로 다음 단계를 연다.
+    ///
+    /// ⚠ **반환값을 없애고 `statusMessage` 를 비교하는 방식으로 되돌리지 말 것.**
+    /// 예전에는 호출부가 `auth.statusMessage == "인증 코드를 보냈어요…"` 로 성공을
+    /// 판정했다. 사용자에게 보여 주는 **문장**을 제어 신호로 쓴 것이라, 문구를 다듬거나
+    /// 번역하는 순간(en/ja 기기에서는 영어·일본어가 들어온다) 비교가 어긋나 코드 입력칸이
+    /// 영영 안 열린다. 형제 함수 `verifyEmailCode` 는 이미 Bool 을 돌려준다.
+    @discardableResult
+    func requestEmailVerification(email: String) async -> Bool {
+        guard !isBusy, !email.isEmpty else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await AlarmTalkAPI.shared.requestEmailVerification(email: email)
+            statusMessage = String(localized: "인증 코드를 보냈어요. 메일을 확인해 주세요.")
+            return true
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
+            return false
+        }
+    }
+
+    /// 이메일 인증 코드를 검증한다. 성공하면 true, 실패하면 false.
+    /// UI 는 반환값으로 다음 단계(비밀번호 입력 활성화)를 결정.
+    @discardableResult
+    func verifyEmailCode(email: String, code: String) async -> Bool {
+        guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let response = try await AlarmTalkAPI.shared.verifyEmailCode(email: email, code: code)
+            if response.verified == false {
+                statusMessage = "인증 코드가 일치하지 않아요."
+                return false
+            }
+            statusMessage = "이메일 인증이 완료됐어요."
+            return true
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요"))
+            return false
+        }
+    }
+
+    /// 이메일/비밀번호 로그인.
+    private func performLoginWithEmail(email: String, password: String) async {
+
+        loginError = nil
+        do {
+            let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
+            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
+            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
+            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
+            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
+                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+                SessionExpiryStore.clear()
+            }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
+            lastNetworkError = nil
+            // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
+            await refreshUser()
+            // 필수 약관 미동의면 동의 화면으로 게이팅.
+            await checkConsentStatus()
+        } catch {
+            // ⚠ **하단 `failStatus` 로 보내지 말 것** — 그 자리는 눈에 안 걸린다.
+            // 판정과 문구는 `loginErrorMessage(for:)` 에 있다.
+            loginError = Self.loginErrorMessage(for: error)
+        }
+    }
+
+    /// 이메일/비밀번호 회원가입. 인증코드 검증 직후 호출.
+    private func performRegisterWithEmail(
+        email: String,
+        password: String,
+        name: String,
+        verificationCode: String
+    ) async {
+
+        do {
+            let nextSession = try await AlarmTalkAPI.shared.register(
+                email: email,
+                password: password,
+                name: name,
+                verificationCode: verificationCode
+            )
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
+            // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
+            // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
+            // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
+            // 후의 재시도(`AlarmTalkApp`)가 "세션이 있으니 건너뛴다" 로 빠져, A 의 행이
+            // B 것으로 노출되고 **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **새기지 못했으면 표시를 남긴다**(Codex #699 P1). 저장소 로드가 상한(3초)을
+            // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
+            // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
+            // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
+            if await claimAlarmsForExpiredOwnerBeforeSignIn() {
+                // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+                SessionExpiryStore.clear()
+            }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
+            statusMessage = "환영해요! 계정이 만들어졌어요."
+            lastNetworkError = nil
+            // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
+            await checkConsentStatus()
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"))
+        }
+    }
+
+    // MARK: - 비밀번호 재설정
+
+    /// 비밀번호 재설정 코드를 발송한다. 백엔드는 계정 존재 여부를 노출하지 않으므로(비번
+    /// 계정에만 발송) 응답은 항상 성공이다. 성공 시 `passwordResetCodeSentTo` 를 채워 UI 가
+    /// 다음 단계(코드 + 새 비밀번호)를 노출한다. Android `MainViewModel.requestPasswordReset`.
+    func requestPasswordReset(email: String) async {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !isBusy, !normalized.isEmpty else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await AlarmTalkAPI.shared.requestPasswordReset(email: normalized)
+            passwordResetCodeSentTo = normalized
+            statusMessage = "재설정 코드를 보냈어요. 메일을 확인해 주세요."
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
+        }
+    }
+
+    /// 비밀번호 재설정 확정. 6자리 코드 검증 후 새 비밀번호로 교체한다. 성공하면 true 를
+    /// 돌려주고 `passwordResetCodeSentTo` 를 비워 UI 가 로그인 화면으로 돌아가게 한다.
+    /// 비밀번호 정책은 서버(8~128자 + 영문 + 숫자)와 동일하게 호출 측에서 1차 검증한다.
+    /// Android `MainViewModel.confirmPasswordReset`.
+    @discardableResult
+    func confirmPasswordReset(email: String, code: String, newPassword: String) async -> Bool {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isBusy else { return false }
+        guard !normalized.isEmpty, trimmedCode.count == 6, !newPassword.isEmpty else {
+            statusMessage = "모든 항목을 입력해 주세요."
+            return false
+        }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await AlarmTalkAPI.shared.confirmPasswordReset(
+                email: normalized,
+                code: trimmedCode,
+                password: newPassword
+            )
+            passwordResetCodeSentTo = nil
+            statusMessage = "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요."
+            return true
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요"))
+            return false
+        }
+    }
+
+    /// 세션을 메모리에 반영하고 Keychain 에도 남긴다.
+    ///
+    /// ⚠ **Keychain 쓰기 실패로 세션 반영을 통째로 버리지 말 것.** 예전에는
+    /// `try KeychainStore.saveSession(...)` 이 던지면 그 아래 `session = nextSession`
+    /// 이 실행되지 않아 **로그인·토큰 갱신 결과가 메모리에서도 사라졌다.**
+    /// 특히 `refreshUser` 의 rolling refresh 가 이 경로라, 기기가 잠겨 있거나 Keychain 이
+    /// 일시적으로 실패하는 순간마다 새 토큰이 버려졌다 — 그 상태가 이어지면 최초 발급
+    /// 토큰이 90일 뒤 죽고 조용히 로그아웃된다(그게 rolling refresh 를 넣은 이유다).
+    ///
+    /// 저장에 실패하면 잃는 것은 **앱을 껐다 켰을 때의 자동 로그인**뿐이다. 그건
+    /// 다시 로그인하면 되지만, 갱신 자체를 버리면 되돌릴 방법이 없다.
+    private static let keychainLogger = Logger(
+        subsystem: "com.alarmtalk.app",
+        category: "AuthSessionPersistence"
+    )
+
+    private func persistSession(_ nextSession: AuthSession) {
+        do {
+            try KeychainStore.saveSession(nextSession)
+        } catch {
+            Self.keychainLogger.error("Failed to persist session to Keychain: \(String(describing: error), privacy: .public)")
+        }
+        session = nextSession
+    }
+
+    /// 다른 경로(`SocialFeatureViewModel.refreshAll`)가 `/auth/me` 에서 받은 **굴러온 토큰**을
+    /// 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **계정을 대조한다.** 배경 갱신은 비동기라 그 사이 로그아웃·계정 전환이 일어날 수
+    /// 있는데, 그대로 쓰면 A 의 토큰이 B 의 세션에 박힌다.
+    /// **프로필은 건드리지 않는다** — 전경에서 방금 바꾼 이름을 옛 값으로 되돌리지 않기 위해서다.
+    func applyRolledToken(userID: String, from previous: String, to rolled: String) {
+        // ⚠ **계정 id 만 보면 안 된다**(2026-09-01 리뷰). 같은 계정으로 로그아웃→재로그인하면
+        // 토큰 세대가 바뀌는데, 그 사이 떠 있던 배경 `/auth/me` 응답은 **로그아웃 전 토큰으로
+        // 인가된 것**이다 — id 만 보고 반영하면 방금 발급된 로그인 토큰을 옛 것으로 덮어
+        // 이후 요청이 전부 401 이 된다. **굴러온 출처 토큰이 지금 것과 같을 때만** 갈아 끼운다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.token != rolled
+        else { return }
+        persistSession(AuthSession(token: rolled, user: current.user))
+    }
+
+    /// 배경 갱신이 받아 온 **지금 plan** 을 세션에 반영한다(2026-09-01 리뷰).
+    ///
+    /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+    /// 계정을 대조해 남의 값이 박히지 않게 한다.
+    func applyFreshPlan(userID: String, from previous: String, plan: String) {
+        // ⚠ **`applyRolledToken` 과 같은 에폭 가드가 필요하다**(2026-09-01 리뷰). 같은 계정으로
+        // 로그아웃→재로그인하면 id 는 그대로라, 로그아웃 **전** 토큰으로 인가된 응답의 plan 이
+        // 새 세션에 박힌다 — 옛 free 가 유료 게이트를 잠그거나 옛 유료가 무료 잠금을 막는다.
+        guard let current = session,
+              current.user.id == userID,
+              current.token == previous,
+              current.user.plan != plan
+        else { return }
+        var user = current.user
+        user.plan = plan
+        persistSession(AuthSession(token: current.token, user: user))
+    }
+
+    /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
+    /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
+    func refreshUser() async {
+        guard let token else { return }
+        do {
+            let (rolledToken, user) = try await api.me(token: token)
+            // Apple 로그인 사용자라면 기존에 보관 중이던 appleUserId 가 유실되지 않도록
+            // merge 한다. (백엔드가 `apple_user_id` 를 빈 채로 반환하는 경우 대비.)
+            var merged = user
+            if merged.appleUserId.nilIfBlank == nil,
+               let prev = session?.user.appleUserId, !prev.isEmpty {
+                merged.appleUserId = prev
+            }
+            // **rolling refresh** — 서버가 준 새 토큰으로 갈아 끼운다. 이걸 빠뜨리면 최초
+            // 발급 토큰이 90일 뒤 죽고, 조용히 로그아웃된 상태로 소유자 게이트에 걸려
+            // 알람이 사라진다. 서버가 재발급에 실패하면 token 키가 빠져 오므로 그때는 유지.
+            // ⚠ **그 사이 세션이 바뀌었으면 버린다**(코덱스 #730 4차). `MainActor` 라도
+            //   `await` 를 건너 **재진입**한다 — 응답을 기다리는 동안 사용자가 로그아웃하거나
+            //   다른 계정으로 로그인할 수 있고, 그때 이 쓰기가 그대로 나가면 **A 의 세션이
+            //   되살아나거나 B 가 A 로 덮인다.** 바로 위 `applyRolledToken`·`applyFreshPlan`
+            //   이 이미 같은 가드를 들고 있다 — 출처 토큰이 지금 것과 같을 때만 반영한다.
+            guard session?.token == token else { return }
+            let nextToken = rolledToken?.nilIfBlank ?? token
+            let nextSession = AuthSession(token: nextToken, user: merged)
+            persistSession(nextSession)
+            // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
+            // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
+            // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
+            // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
+            // Android `MainViewModel.checkAccountStatus()` 와 동등.
+            pendingDeletion = merged.isPendingDeletion
+            lastNetworkError = nil
+        } catch let apiError as APIError {
+            switch apiError {
+            case .server(let status, _, _):
+                if status == 401 {
+                    // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
+                    //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
+                    //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
+                    guard session?.token == token else { return }
+                    // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
+                    // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
+                    if !UIPreviewSeed.isEnabled {
+                        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+                    }
+                } else if status == 403 {
+                    // 권한 박탈 — 세션은 유지하되 사용자에게 알림
+                    lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
+                } else {
+                    // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
+                    lastNetworkError = userFacingErrorMessage(
+                        apiError,
+                        fallback: "서버에 일시적으로 연결할 수 없어요."
+                    )
+                }
+            case .invalidResponse:
+                lastNetworkError = "서버 응답을 해석하지 못했어요."
+            }
+        } catch is URLError {
+            // 네트워크 끊김, 타임아웃 등 — 세션 보존
+            lastNetworkError = "네트워크 연결을 확인해 주세요."
+        } catch {
+            // 알 수 없는 에러 — 보수적으로 세션 보존
+            lastNetworkError = "잠시 후 다시 시도해 주세요."
+        }
+    }
+
+    /// 어떤 API 요청이든 401 을 받으면 호출 — 세션 만료로 보고 강제 로그아웃.
+    /// `AlarmTalkAPI` 의 401 알림 핸들러가 호출한다. 이미 로그아웃된 상태면 no-op 으로
+    /// 두어 연발 401 이 단 한 번의 signOut 으로 수렴하게 한다.
+    /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
+    private func handleUnauthorized(failedToken: String?) {
+        guard let current = session, let failedToken, failedToken == current.token else { return }
+        // ⚠ **그 401 이 지금 세션의 것일 때만 끊는다**(코덱스 #734 4차). A 의 요청이 날아가는
+        //   사이 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이 여기까지 와서
+        //   **방금 만든 B 의 세션을 끊는다.** 호출부에서 막아도 이 중앙 처리기가 남는다.
+        //   토큰이 없는 로그인 요청의 401 은 현재 세션의 만료 근거가 아니다.
+        // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
+        // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
+        if UIPreviewSeed.isEnabled { return }
+        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+    }
+
+    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때. 세션은 유지한다(로그아웃하지 않음).
+    ///
+    /// 서버가 **민감 동의를 지목했으면**(`consent`) 가입 게이트가 아니라 그 동의만 받는
+    /// 시트를 연다. 여기서 안내만 하고 끝내면, 가입 때 그 동의를 거절한 사람은 동의할
+    /// 방법이 없어 같은 403 을 무한 반복한다 — `collect` 에도 안 담긴다(이미 '거절'로
+    /// 답했으므로 서버는 다시 묻지 않는다).
+    private func handleConsentRequired(consent: String?) {
+        guard session != nil else { return }
+        if let consent, Self.sensitiveConsentTypes.contains(consent) {
+            if !consentSensitiveMissing.contains(consent) {
+                consentSensitiveMissing.append(consent)
+            }
+            if pendingSensitiveConsent == nil {
+                pendingSensitiveConsent = SensitiveConsentRequest(types: [consent])
+            }
+            return
+        }
+        needsConsent = true
+        // ⚠ **무엇을 받아야 하는지 모르는 채로 게이트를 열지 않는다.** 상태 조회가 늦거나
+        // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가 비어
+        // 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨' 으로 판정돼 버튼이
+        // 켜진다 → 사용자가 보지도 않은 동의가 기록된다. 채울 목록은 **가입 게이트가 요구하는
+        // 전부**여야 한다(이 403 을 낸 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면
+        // 국외 이전이 안 기록된 채 통과된다).
+        if consentCollect.isEmpty {
+            consentCollect = Self.signupRequiredConsentTypes
+        }
+    }
+
+    /// Apple 자격 증명이 외부에서 revoke 되었을 때 — 강제 로그아웃.
+    /// `credentialRevokedNotification` 핸들러가 호출한다.
+    private func handleAppleCredentialRevoked() {
+        // Apple 로그인 사용자가 아니라면 무시. (이메일/Google 사용자는 영향 없음.)
+        guard session?.user.appleUserId.nilIfBlank != nil else { return }
+        signOut(message: "Apple ID 로그인이 해제되었어요.")
+    }
+
+    /// 앱 foreground 진입 시 호출 — Apple credentialState 점검. Apple 로그인 사용자만.
+    /// 이메일/Google 사용자는 즉시 return (no-op).
+    func verifyAppleCredentialStateIfNeeded() async {
+        guard let appleUserId = session?.user.appleUserId.nilIfBlank else { return }
+        guard !isVerifyingAppleCredential else { return }
+        isVerifyingAppleCredential = true
+        defer { isVerifyingAppleCredential = false }
+
+        do {
+            let state = try await appleCredentialProvider.credentialState(forUserID: appleUserId)
+            switch state {
+            case .authorized:
+                // OK — 정상 세션
+                return
+            case .revoked, .notFound:
+                signOut(message: "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요.")
+            case .transferred:
+                // iCloud 가족 공유로 디바이스가 다른 사용자에게 이전 — 안내만, 세션 유지
+                lastNetworkError = "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요."
+            @unknown default:
+                return
+            }
+        } catch {
+            // credentialState 조회 실패(드물게 시스템 오류) — 세션 보존
+            lastNetworkError = "Apple 로그인 상태를 확인하지 못했어요."
+        }
+    }
+
+    func updateProfile(
+        name: String? = nil,
+        allowFamilyAlarms: Bool? = nil,
+        quietWindows: [FamilyAlarmQuietWindow]? = nil,
+        dynamicPromptSettings: DynamicPromptSettings? = nil
+    ) async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
+        if let normalizedQuietWindows,
+           normalizedQuietWindows.contains(where: { !Self.isValidTimeText($0.start) || !Self.isValidTimeText($0.end) }) {
+            statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
+            return
+        }
+        // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서
+        // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
+        // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
+        let firstQuietWindow = normalizedQuietWindows?.first
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await api.updateProfile(
+                UpdateProfileRequest(
+                    name: name,
+                    allowFamilyAlarms: allowFamilyAlarms,
+                    familyAlarmQuietDays: firstQuietWindow?.days,
+                    familyAlarmQuietStart: firstQuietWindow?.start,
+                    familyAlarmQuietEnd: firstQuietWindow?.end,
+                    familyAlarmQuietWindows: normalizedQuietWindows,
+                    dynamicPromptSettings: dynamicPromptSettings
+                ),
+                token: token
+            )
+            await refreshUser()
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
+        }
+    }
+
+    // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가
+    // 명시적으로 켜는 기능이다 — 만들어 주면 아무도 설정한 적 없는 시간에 가족 알람이
+    // 막히고, 받는 사람은 자기가 막아 둔 줄 모른다.
+
+    private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
+        Array(
+            windows
+                .map { window in
+                    FamilyAlarmQuietWindow(
+                        days: Array(Set(window.days.filter { (0...6).contains($0) })).sorted(),
+                        start: window.start,
+                        end: window.end
+                    )
+                }
+                .filter { !$0.days.isEmpty }
+                .prefix(8)
+        )
+    }
+
+    private static func isValidTimeText(_ value: String) -> Bool {
+        value.range(
+            of: #"^([01]\d|2[0-3]):[0-5]\d$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    func deleteAccount() async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        // ⚠ **탈퇴도 '계정을 떠나는' 것이다 — 로그아웃과 같은 뒷정리가 필요하다**
+        // (2026-08-19 감사 P2). 두 가지가 빠져 있었다:
+        //  1. 기기 푸시 토큰을 안 뗐다 → **탈퇴했는데 그 계정 알림이 계속 온다.**
+        //     계정이 사라지기 **전에** 떼야 한다(토큰이 아직 유효할 때).
+        //  2. 복구 표시가 없었다 → 아래 `onLeaveAccountStopAlarms` 는 저장소가 로드 전이면
+        //     조용히 물러서는데, 그때 되짚을 근거가 하나도 없어 **탈퇴한 계정의 알람이
+        //     그대로 예약된 채** 남는다.
+        // ⚠ **여기서 푸시를 떼지 않는다**(Codex #699 P2). 요청 **전에** 떼면, 요청이
+        // 오프라인·5xx 로 실패했을 때 사용자는 로그인된 채인데 **기기 토큰만 사라져**
+        // 가족 알람 푸시를 놓친다(다시 등록되는 건 보통 다음 실행이다).
+        // 즉시 탈퇴는 서버가 계정과 함께 `push_tokens` 를 지우므로(`lib/account-deletion.ts`)
+        // 클라이언트가 뗄 일이 애초에 없다.
+        do {
+            _ = try await api.deleteAccount(token: token)
+            // ⚠ **표시는 요청이 성공한 뒤에 남긴다**(Codex #699 P1). 먼저 남기면 요청이
+            // 오프라인·5xx 로 실패했을 때도 표시가 살아남아, **다음 실행이 계정이 멀쩡한
+            // 사용자를 로그아웃시키고 알람까지 끈다.**
+            PendingSignOutStore.mark(currentUserID)
+            if let currentUserID, !currentUserID.isEmpty {
+                accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferences.clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+            }
+            // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
+            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
+            signOut(message: "회원 탈퇴가 완료됐어요.")
+            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
+            SessionExpiryStore.clear()
+            // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
+            // 저장소 로드가 상한 안에 안 끝나면 위 훅은 아무것도 못 끄고 물러서는데, 그때
+            // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
+            if cleaned { PendingSignOutStore.clear(currentUserID) }
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
+        }
+    }
+
+    /// 30일 유예 탈퇴 신청. 즉시 삭제(`deleteAccount`) 대신 유예 상태로 전환하고
+    /// 로그아웃 처리한다. 유예 기간 내 다시 로그인해 `cancelAccountDeletion` 으로 복구 가능.
+    /// Android `MainViewModel.requestAccountDeletion()`.
+    func requestAccountDeletion() async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        // 즉시 탈퇴와 같은 이유로 푸시를 떼고 복구 표시를 남긴다(위 `deleteAccount` 주석).
+        // ⚠ 유예 탈퇴는 30일 안에 **복구할 수 있다** — 그때 다시 로그인하면 푸시가 다시
+        // 등록되고(`registerToken`) 알람도 사용자가 켠다. 지금 떼는 것이 맞다:
+        // 그 30일 동안 이 기기는 그 계정을 쓰지 않는데 알림만 받고 있을 이유가 없다.
+        // ⚠ **유예 탈퇴는 즉시 탈퇴와 다르다** — 계정이 30일 동안 **살아 있으므로** 서버가
+        // `push_tokens` 를 지우지 않는다. 그래서 이쪽은 클라이언트가 떼야 하는데,
+        // **요청이 성공한 뒤에** 뗀다(안드로이드도 같은 순서다) — 먼저 떼면 요청이 실패했을 때
+        // 로그인된 사용자의 푸시만 사라진다.
+        do {
+            _ = try await api.requestAccountDeletion(token: token)
+            // 표시는 요청이 성공한 뒤에 남긴다(즉시 탈퇴 주석과 같은 이유).
+            PendingSignOutStore.mark(currentUserID)
+            let pushUnregistered = await onSignOutUnregisterPush(token, currentUserID, { true })
+            if !pushUnregistered {
+                // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
+                // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
+                PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
+            }
+            if let currentUserID, !currentUserID.isEmpty {
+                accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferences.clear(userID: currentUserID)
+                // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 지우지 않는다.**
+                // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전
+                // 기준**이다 — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 지우면 그 사이의
+                // 교체를 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
+            }
+            // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
+            let cleaned = await onLeaveAccountStopAlarms(currentUserID)
+            // ⚠ **재시도용 토큰을 남겼으면 폐기하지 않는다**(Codex #699 P2).
+            // `signOut` 의 기본값은 `revokeOnServer: true` 라 `/auth/logout` 으로 그 토큰을
+            // 죽인다 — 다음 실행의 `/push/unregister` 재시도가 **401 로 영원히** 실패하고
+            // 바인딩과 표시만 남는다.
+            // ⚠ **폐기하지 않는다.** 유예 계정은 백엔드가 `/auth/logout` 을 403 으로 막는다
+            // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
+            // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
+            signOut(
+                message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
+                revokeOnServer: false
+            )
+            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
+            SessionExpiryStore.clear()
+            // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
+            if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
+        }
+    }
+
+    /// 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 `pendingDeletion` 을 내려 정상 진입.
+    /// Android `MainViewModel.cancelAccountDeletion()`.
+    func cancelAccountDeletion() async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await api.cancelAccountDeletion(token: token)
+            pendingDeletion = false
+            // ⚠ **탈퇴 뒷정리 표시도 함께 거둔다**(Codex #699 P2). 유예 탈퇴에서 푸시 해제나
+            // 알람 정리가 실패하면 표시와 토큰이 남는데, 그 상태로 **탈퇴를 철회하면**
+            // 다음 실행의 복구가 "끝내지 못한 로그아웃" 으로 읽는다 — 계정이 방금 되살아난
+            // 사용자의 알람을 끄고 **다시 로그아웃시킨다.** 철회는 그 뒷정리를 무효로 만든다.
+            //
+            // ⚠ 단, **내 것일 때만** 거둔다. 앞 계정(A)의 뒷정리가 오프라인으로 못 끝나
+            // 표시가 남아 있는데 B 가 자기 탈퇴를 철회했다면, 그건 A 와 아무 상관이 없다 —
+            // 그때 지우면 A 의 푸시 바인딩과 토큰이 영영 정리되지 않는다.
+            if let mine = session?.user.id.nilIfBlank {
+                PendingSignOutStore.clear(mine)
+            }
+            statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
+        }
+    }
+
+    /// 로그인 후 필수 약관 동의 여부를 서버에 확인한다. 미동의면 `needsConsent=true` 로
+    /// 두어 RootView 가 동의 화면을 띄운다. 네트워크 실패 시 앱 진입을 막지 않는다.
+    /// Android `MainViewModel.checkConsentStatus()`.
+    func checkConsentStatus() async {
+        guard let token else { return }
+        // 응답이 오는 사이에 계정이 바뀔 수 있다 — 남의 동의 상태를 지금 사용자에게 씌우면
+        // 받은 적 없는 동의를 받은 것으로 읽는다(안드로이드 `checkConsentStatus` 의
+        // `if (authSession?.user?.id != userId) return@launch` 미러).
+        let ownerUserID = session?.user.id
+        invalidateInFlightConsentStatus()
+        let revision = consentStatusRevision
+        do {
+            let status = try await api.consentStatus(token: token)
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
+            // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
+            // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
+            let known = status.collect.filter { Self.knownConsentTypes.contains($0) }
+            // ⚠ **모르는 유형은 필수/선택으로 갈라 다르게 다룬다**(안드로이드 미러).
+            //  - 모르는 **필수** 유형: 이 앱으로는 받을 방법이 없다. 동의 화면 대신 업데이트
+            //    차단 화면으로 보낸다. 안 그러면 항목 0개짜리 화면이 뜨고, CTA 를 누르면
+            //    제출 폴백이 **본 적 없는 동의를 기록**한다.
+            //  - 모르는 **선택** 유형: 버리고 지나간다. 없어도 서비스가 성립한다.
+            consentUnsupported = status.collect.contains {
+                !Self.knownConsentTypes.contains($0) && !status.optional.contains($0)
+            }
+            needsConsent = status.needsConsent
+            // ⚠ **그릴 것이 하나도 없으면 화면을 띄우지 않는다.** 서버 플래그를 날것으로 받으면
+            // 앱이 모르는 선택 유형 하나 때문에 **빈 동의 화면이 콜드 스타트마다** 뜬다 —
+            // 이미 다 동의한 사람에게 다시 묻는 셈이다(「한 번 받은 동의는 다시 묻지 않는다」).
+            consentNeedsCollection = status.needsCollection && !known.isEmpty
+            consentCollect = known
+            consentOptional = status.optional
+            consentPrechecked = status.prechecked
+            consentSensitiveMissing = status.sensitiveMissing
+            consentIsReconsent = status.hasPriorConsent
+            // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
+            serverPolicyVersionHint = status.policyVersion
+            consentStatusChecked = true
+            // 더 받을 게 없으면 이 기기에 '완료' 를 적어 둔다 — 다음 콜드 스타트에서
+            // 로딩 게이트를 즉시 통과시키기 위해서다. 받을 게 남았으면 적지 않는다.
+            //
+            // ⚠ **판정은 필터링한 뒤 값으로 한다**(Codex #703 P2). 서버 플래그를 그대로 보면,
+            // 앱이 모르는 **선택** 유형 하나 때문에 위에서 '그릴 것 없음' 으로 결론 내리고도
+            // 완료를 적지 않아 **콜드 스타트마다 로딩 게이트가 응답을 기다린다** — 느리거나
+            // 끊긴 네트워크에서는 타임아웃까지 앉아 있게 된다.
+            if !needsConsent && !consentNeedsCollection {
+                ConsentCompletionStore().markCompleted(
+                    userID: session?.user.id,
+                    policyVersion: Self.currentPolicyVersion
+                )
+            }
+        } catch {
+            guard session?.user.id == ownerUserID, revision == consentStatusRevision else { return }
+            // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
+            // ⚠ **403 이 세워 둔 게이트까지 지우지는 않는다.** `handleConsentRequired` 가
+            // 채워 둔 `consentCollect` 를 뒤늦은 실패 응답이 비우면, 서버가 요구한 동의를
+            // 받지 못한 채 화면이 사라진다(안드로이드는 `needsConsent` 만 내린다).
+            if consentCollect.isEmpty {
+                needsConsent = false
+                consentNeedsCollection = false
+            }
+            // 실패해도 true — 못 물어본 것이 등록을 막을 이유는 아니다.
+            consentStatusChecked = true
+        }
+    }
+
+    /// 동의 항목마다 동봉하는 정책 버전. **손으로 관리하지 않는다** —
+    /// 빌드 시 `docs/legal` 에서 뽑은 값(`scripts/generate-legal-version.sh`)을 그대로 쓴다.
+    ///
+    /// 예전에는 "3" 이 리터럴로 박혀 있어 문서가 4·5 로 올라가는 동안 그대로 남아 있었다.
+    /// (서버는 항목별 version 을 받기만 하고 무시하므로 기록이 깨지진 않았지만, 기록에
+    ///  남는 값이 사실과 달랐다. 요청 단위 `document_version` 은 서버가 실제로 검증한다.)
+    static var currentPolicyVersion: String { LegalPolicy.bundledVersion }
+
+    /// 동의 기록 요청을 만든다.
+    ///
+    /// ⚠ **`collect` 에 든 유형만 담는다.** 예전에는 6종을 항상 보냈는데, 그러면 재동의
+    /// 화면에서 묻지도 않은 marketing 이 화면 초기값(false)으로 제출돼 **기존 마케팅 동의가
+    /// 조용히 철회된다.**
+    ///
+    /// - 필수 유형은 화면을 통과한 시점에 이미 체크됐으므로 `true`.
+    /// - 선택 유형은 사용자가 실제로 체크한 것만 `true`.
+    /// - 구버전 서버(`optional` 없음) 폴백은 **화면과 같은 기준**이어야 한다 — 여기만 다르면
+    ///   화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
+    static func makeConsentsRequest(
+        collect: [String],
+        optional: [String],
+        agreedOptional: Set<String>,
+        version: String = currentPolicyVersion
+    ) -> RecordConsentsRequest {
+        let optionalTypes = Set(optional.isEmpty ? ["marketing"] : optional)
+        let types = collect.filter { knownConsentTypes.contains($0) }
+        return RecordConsentsRequest(consents: types.map { type in
+            ConsentItemRequest(
+                type: type,
+                agreed: !optionalTypes.contains(type) || agreedOptional.contains(type),
+                version: version
+            )
+        })
+    }
+
+    /// 동의 기록이 '문서 버전 불일치' 로 거부됐을 때의 처리. 처리했으면 true.
+    ///
+    /// Android `handleConsentVersionMismatch` 와 같은 판단이다:
+    ///  - **서버가 앞서면**(문서가 개정됐는데 이 빌드가 옛 본문을 싣고 있으면) 사용자가 할 수
+    ///    있는 일은 업데이트뿐이다 → 업데이트 게이트로 보낸다.
+    ///  - **이 빌드가 앞서면**(백엔드 배포가 아직 안 끝난 구간) 업데이트해도 안 풀린다.
+    ///    그때 "업데이트하세요" 라고 하면 거짓말이므로 일반 실패 메시지만 낸다.
+    private func handleConsentVersionMismatch(_ error: Error) -> Bool {
+        guard case let APIError.server(status, _, errorCode) = error else { return false }
+        let isVersionError =
+            errorCode == "POLICY_VERSION_MISMATCH"
+            || errorCode == "DOCUMENT_VERSION_REQUIRED"
+            || status == 409
+        guard isVersionError else { return false }
+
+        // 서버가 게시 중인 버전을 알 수 없으면(구 응답 등) 보수적으로 업데이트 게이트.
+        let bundled = Int(LegalPolicy.bundledVersion)
+        let server = serverPolicyVersionHint.flatMap(Int.init)
+        if let server, let bundled, server <= bundled {
+            statusMessage = "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"
+            return true
+        }
+        consentUnsupported = true
+        return true
+    }
+
+    /// 마지막 `GET /user/consents/status` 가 알려 준 서버의 게시 버전. 위 판별에만 쓴다.
+    private var serverPolicyVersionHint: String?
+
+    /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
+    func submitConsents(agreedOptional: Set<String>) async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        // 이 요청을 시작한 계정. 응답이 오는 사이 401 로 세션이 끊기고 다른 계정이 로그인해도
+        // 이 continuation 은 살아 있다 — 앞 계정의 성공으로 뒤 계정의 동의 상태를 비우면
+        // 뒤 계정이 받아야 할 재수집·민감 동의를 건너뛴다.
+        let ownerUserID = session?.user.id
+        // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 그때만 가입 필수로 폴백한다.
+        let collect = consentCollect.isEmpty ? Self.signupRequiredConsentTypes : consentCollect
+        let request = Self.makeConsentsRequest(
+            collect: collect,
+            optional: consentOptional,
+            agreedOptional: agreedOptional
+        )
+        guard !request.consents.isEmpty else {
+            // 이 앱이 그릴 수 있는 유형이 하나도 없다 = 서버가 앞서 있다. 업데이트가 답이다.
+            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await api.recordConsents(request, token: token)
+            // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
+            guard session?.user.id == ownerUserID else { return }
+            // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
+            invalidateInFlightConsentStatus()
+            needsConsent = false
+            // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
+            // 화면이 닫히지 않는다.
+            consentCollect = []
+            consentOptional = []
+            consentPrechecked = []
+            consentNeedsCollection = false
+            // 방금 **동의로** 기록한 민감 유형은 서버 상태와 맞춘다 — 안 지우면 목소리 등록
+            // 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아 그때 다시 묻는다.
+            consentSensitiveMissing = consentSensitiveMissing.filter { !agreedOptional.contains($0) }
+            // 마케팅을 이 화면에서 결정했으면 설정 토글도 함께 맞춘다. 안 맞추면 방금
+            // 동의했는데 더보기 > 설정의 토글이 이전 값 그대로 '거부' 로 보인다.
+            if collect.contains("marketing") {
+                marketingConsentAgreed = agreedOptional.contains("marketing")
+            }
+            statusMessage = "동의가 완료됐어요"
+        } catch {
+            if handleConsentVersionMismatch(error) { return }
+            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+        }
+    }
+
+    /// 민감 동의 시트 제출. 시트가 물어본 유형만 `agreed: true` 로 기록한다.
+    ///
+    /// 성공하면 `consentSensitiveMissing` 에서 그 유형을 지운다 — 안 지우면 목소리 등록
+    /// 화면이 이미 받은 동의를 또 묻는다.
+    @discardableResult
+    func submitSensitiveConsents(types: [String]) async -> Bool {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return false
+        }
+        let ownerUserID = session?.user.id
+        let recordable = types.filter { Self.knownConsentTypes.contains($0) }
+        guard !recordable.isEmpty else {
+            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            return false
+        }
+        guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        let version = Self.currentPolicyVersion
+        let request = RecordConsentsRequest(
+            consents: recordable.map { ConsentItemRequest(type: $0, agreed: true, version: version) }
+        )
+        do {
+            _ = try await api.recordConsents(request, token: token)
+            guard session?.user.id == ownerUserID else { return false }
+            // 위 `submitConsents` 와 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
+            invalidateInFlightConsentStatus()
+            consentSensitiveMissing.removeAll { recordable.contains($0) }
+            pendingSensitiveConsent = nil
+            return true
+        } catch {
+            if handleConsentVersionMismatch(error) { return false }
+            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
+            return false
+        }
+    }
+
+    // MARK: - 마케팅(광고성 정보 수신) 동의
+
+    /// 설정 화면 진입 시 현재 마케팅 동의 상태를 서버에서 읽어 토글에 반영한다.
+    /// `GET /user/consents` 는 유형별 최신값을 돌려주므로 marketing 의 agreed 를 그대로 쓴다.
+    /// 실패해도 앱을 막지 않고 `marketingConsentLoadFailed` 로만 표시한다.
+    /// Android `MainViewModel.loadMarketingConsent`.
+    func loadMarketingConsent() async {
+        guard let token else { return }
+        marketingConsentLoadFailed = false
+        do {
+            // listConsents 는 AuthAPIProviding 프로토콜 밖이므로(테스트 mock 불필요)
+            // requestEmailVerification 과 동일하게 공유 인스턴스로 직접 호출한다.
+            let response = try await AlarmTalkAPI.shared.listConsents(token: token)
+            marketingConsentAgreed = response.consents.first { $0.consentType == "marketing" }?.agreed ?? false
+        } catch {
+            marketingConsentLoadFailed = true
+        }
+    }
+
+    /// 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다
+    /// (누적 저장, 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로
+    /// 되돌린다. Android `MainViewModel.updateMarketingConsent`.
+    func updateMarketingConsent(_ agreed: Bool) async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        let previous = marketingConsentAgreed
+        marketingConsentAgreed = agreed
+        do {
+            _ = try await api.recordConsents(
+                RecordConsentsRequest(consents: [
+                    ConsentItemRequest(type: "marketing", agreed: agreed, version: Self.currentPolicyVersion),
+                ]),
+                token: token
+            )
+            // ⚠ **성공 토스트를 되살리지 말 것**(안드로이드와 같은 조치, 2026-08-11).
+            // 스위치가 이미 결과를 보여준다 — 실패만 알린다(아래 catch).
+        } catch {
+            marketingConsentAgreed = previous
+            if handleConsentVersionMismatch(error) { return }
+            failStatus(userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요"))
+        }
+    }
+
+    // MARK: - 음성 생체정보 동의 철회
+
+    /// 동의 내역 화면의 '동의 철회'. 등록한 목소리·녹음 원본·생성 음성이 서버에서
+    /// 영구 삭제되고, 그 목소리로 울리던 알람은 기본 알람음으로 강등된다.
+    ///
+    /// ⚠ **철회로 사라질 목소리 id 를 POST 전에 서버에서 확정한다.** 화면 상태만 믿으면
+    /// 프리로드가 아직 안 끝났거나 실패했을 때 대상이 0개가 되어, 철회한 목소리가 그
+    /// 기기에서 계속 울린다. 확정하지 못하면 **철회를 시작하지 않는다** — 아직 아무것도
+    /// 지우지 않은 상태라 재시도가 안전하고, 지운 뒤 실패하면 되돌릴 방법이 없다.
+    ///
+    /// 반환값은 성공 여부다(호출부가 기록을 다시 읽을지 판단한다).
+    @discardableResult
+    func withdrawVoiceBiometricConsent(
+        voiceStudio: VoiceStudioViewModel?,
+        alarmStore: LocalAlarmStore?,
+        audioCache: AudioCacheStore?
+    ) async -> Bool {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return false
+        }
+        let userID = session?.user.id
+
+        let revokedVoiceIDs: [String]
+        do {
+            let profiles = try await AlarmTalkAPI.shared.listVoiceProfiles(token: token)
+            // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
+            revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
+        } catch {
+            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            return false
+        }
+
+        do {
+            _ = try await api.recordConsents(
+                RecordConsentsRequest(consents: [
+                    ConsentItemRequest(type: "voice_biometric", agreed: false, version: Self.currentPolicyVersion),
+                ]),
+                token: token
+            )
+        } catch {
+            if handleConsentVersionMismatch(error) { return false }
+            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
+            return false
+        }
+
+        // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
+        if let alarmStore {
+            voiceStudio?.degradeAlarms(
+                usingVoiceProfileIDs: revokedVoiceIDs,
+                alarmStore: alarmStore,
+                audioCache: audioCache
+            )
+        }
+        // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
+        guard session?.user.id == userID else { return true }
+        if !consentSensitiveMissing.contains("voice_biometric") {
+            consentSensitiveMissing.append("voice_biometric")
+        }
+        statusMessage = "음성 생체정보 처리 동의를 철회했어요."
+        return true
+    }
+
+    /// **사용자가 직접 누른 로그아웃.** 취향 기록(마지막 목소리·문구·사주·날씨 지역)까지 지운다.
+    ///
+    /// ⚠ **`signOut` 안에 넣지 말 것.** 같은 함수를 자동 401(세션 만료·Apple 자격 무효)
+    /// 경로도 쓰는데, 거기서 지우면 **같은 사람이 다시 로그인할 때 취향을 잃는다**
+    /// (Codex #646 회귀). 안드로이드가 `clearSignedInSession`(명시적)과
+    /// `clearSessionKeepingAlarms`(자동)를 함수로 갈라 놓은 것과 같은 분리다.
+    /// 로그아웃·탈퇴 신청 때 이 기기의 푸시 토큰을 서버에서 지우는 훅.
+    /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
+    /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
+    var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
+
+    /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
+    ///
+    /// ⚠ 계정을 떠났는데 알람이 울리면 안 된다 — 특히 받은 알람은 보낸 사람의 복제
+    /// 목소리를 담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
+    ///
+    /// 예약을 끊고 **떠나는 계정의 행은 `enabled = false` 로 둔다**(2026-08-19 지시).
+    /// 인자로 그 계정을 넘기는 이유가 여기 있다 — 남의 계정 행까지 끄면 자동 401 로
+    /// 세션만 잃은 사람의 알람이 영영 꺼진다(`stopAllScheduledAlarms` 주석).
+    ///
+    /// ⚠ **자동 401 에서는 부르지 않는다.** 토큰이 낡은 것뿐인데 내일 아침 알람을
+    /// 조용히 없애면 안 된다 — `signOut(revokeOnServer:)` 이 아니라 명시적 경로에서만 건다.
+    /// - Returns: 뒷정리가 **실제로 끝났는가**. 저장소가 로드되지 않아 물러선 경우 `false` —
+    ///   그때 복구 표시를 지우면 되짚을 근거가 사라진다(Codex #699 P1).
+    var onLeaveAccountStopAlarms: (String?) async -> Bool = { _ in true }
+
+    /// **세션이 끝나기 직전에 소유자 미기록 알람에 그 계정을 새기는** 훅.
+    ///
+    /// ⚠ 자동 401 과 명시적 로그아웃 **양쪽에서** 부른다. 세션이 끝난 뒤에는 그 행들이
+    /// 누구 것이었는지 알 길이 없고, 그러면 다음 계정이 그것들을 자기 것으로 오인한다
+    /// (`LocalAlarmStore.claimUnownedAlarms` 주석). 안드로이드도 로그아웃 경로에서
+    /// `claimUnownedAlarmsFor` 로 같은 일을 한다.
+    /// - Returns: **실제로 새겼는가.** 저장소가 로드되지 않아 물러선 경우 `false` —
+    ///   그때 만료 표시를 지우면 그 계정의 옛 행이 누구 것인지 알 길이 사라진다(Codex #699 P1).
+    var onSessionEndClaimAlarms: (String?) async -> Bool = { _ in true }
+
+    /// **끊긴 로그아웃을 이어서 끝낸다.** 다음 실행이 `PendingSignOutStore` 표시를 보고 부른다.
+    ///
+    /// ⚠ 로컬 세션만 지우면 부족하다(Codex #699 P2). 원래 태스크가 들고 있던 **서버 쪽
+    /// 뒷정리가 함께 사라졌기 때문이다** — 기기 토큰이 그 계정에 묶인 채라 **로그아웃한
+    /// 사용자에게 그 계정의 알림이 계속 오고**, 서버 토큰도 유효한 채 남는다.
+    /// 그래서 여기서 순서대로 마저 한다: 푸시 해제 → 토큰 폐기 → 로컬 세션 정리.
+    /// (순서가 뒤바뀌면 폐기가 먼저 `token_epoch` 를 올려 해제가 401 로 죽는다 —
+    /// `signOutExplicitly` 주석과 같은 이유다.)
+    /// **서버 쪽 뒷정리만** 마저 한다. 로컬 세션은 건드리지 않는다.
+    ///
+    /// ⚠ 끊긴 로그아웃을 이어서 끝내려는데 **그 사이 다른 계정이 로그인해 있는** 경우가 있다.
+    /// 그때 `finishInterruptedSignOut()` 을 부르면 **지금 쓰고 있는 사람을 로그아웃시킨다.**
+    /// 서버 쪽(떠난 계정의 푸시 바인딩·토큰)만 정리하고 물러선다.
+    /// 로그인 확정 **전에** 자동 만료 계정의 소유자 미기록 행을 그 계정으로 새긴다.
+    ///
+    /// 저장소 로드를 기다린 뒤 새기므로, 콜드 스타트에서 로드보다 로그인이 빨라도 놓치지 않는다.
+    /// 새길 것이 없으면 아무 일도 하지 않는다.
+    /// - Returns: 표시를 내려도 되는가(새길 것이 없었거나, 실제로 새겼다).
+    private func claimAlarmsForExpiredOwnerBeforeSignIn() async -> Bool {
+        guard let expired = SessionExpiryStore.expiredOwnerUserId else { return true }
+        return await onSessionEndClaimAlarms(expired)
+    }
+
+    func finishInterruptedServerCleanupOnly(for userId: String?) async {
+        await serializeAuthServerMutation { [weak self] in await self?.runInterruptedServerCleanup(for: userId) }
+    }
+
+    private func runInterruptedServerCleanup(for userId: String?) async {
+        let cleaned = await Self.runServerSignOutCleanup(
+            token: PendingSignOutStore.serverCleanupToken(for: userId),
+            ownerUserId: userId,
+            unregister: onSignOutUnregisterPush,
+            api: api,
+            stillNeeded: { PendingSignOutStore.isPending(userId) }
+        )
+        if cleaned { PendingSignOutStore.clear(userId) }
+    }
+
+    func finishInterruptedSignOut(for userId: String?) async {
+        await serializeAuthServerMutation { [weak self] in await self?.runInterruptedSignOut(for: userId) }
+    }
+
+    private func runInterruptedSignOut(for userId: String?) async {
+        // ⚠ **그 계정의 토큰만 쓴다**(Codex #699 P1). 예전에는 `session?.token` 을 먼저 봤는데,
+        // 이 뒷정리가 도는 사이에 **다른 계정이 로그인해 있을 수 있다** — 그러면 지금 쓰는
+        // 사람의 토큰으로 푸시를 떼고 폐기하고, 이어지는 `signOut` 이 그 사람을 로그아웃시킨다.
+        // 살아 있는 세션 토큰은 **그 세션이 바로 그 계정일 때만** 쓴다.
+        let sameAccount = session?.user.id.nilIfBlank == userId?.nilIfBlank
+        let revokeToken = PendingSignOutStore.serverCleanupToken(for: userId)
+            ?? (sameAccount ? session?.token.nilIfBlank : nil)
+        let cleaned = await Self.runServerSignOutCleanup(
+            token: revokeToken,
+            ownerUserId: userId,
+            unregister: onSignOutUnregisterPush,
+            api: api,
+            stillNeeded: { PendingSignOutStore.isPending(userId) }
+        )
+        // ⚠ **철회됐는지 다시 본다**(Codex #699 P1). 위 서버 왕복이 도는 사이에 그 사용자가
+        // 탈퇴를 철회할 수 있는데, 그때 세션 id 는 **그대로**라 계정 비교만으로는 못 걸러진다.
+        // 그대로 나아가면 **방금 계정을 되살린 사람을 로그아웃시킨다.**
+        guard PendingSignOutStore.isPending(userId) else { return }
+        // ⚠ **그 계정이 아직 활성일 때만 로그아웃한다.** await 사이에 다른 계정이
+        // 로그인했으면 그 사람을 끊게 된다.
+        if session == nil || session?.user.id.nilIfBlank == userId?.nilIfBlank {
+            signOut(revokeOnServer: false)
+        }
+        if cleaned { PendingSignOutStore.clear(userId) }
+    }
+
+    /// 서버 쪽 로그아웃 뒷정리 — **푸시 해제 → 토큰 폐기** 순서.
+    ///
+    /// - Returns: 둘 다 끝났는가. ⚠ **실패를 성공으로 보고하지 말 것**(Codex #699 P2).
+    ///   호출부는 이 값으로 복구 표시를 내릴지 정한다 — 오프라인이나 5xx 에서 표시를
+    ///   지우면 **다음 실행이 재시도할 근거를 잃고**, 기기는 떠난 계정에 묶인 채 알림을
+    ///   계속 받는다.
+    ///
+    /// 401 은 **성공으로 본다** — 그 토큰은 이미 폐기됐다는 뜻이라, 실패로 치면 지울 수도
+    /// 없는 것을 영원히 재시도하게 된다.
+    /// - Parameter stillNeeded: **각 서버 호출 직전에** 다시 묻는다. 그 사이에 사용자가
+    ///   탈퇴를 철회하면 그 계정은 **되살아난 상태**인데, 그대로 `/auth/logout` 을 부르면
+    ///   `token_epoch` 가 올라가 **방금 되살린 세션이 죽는다**(Codex #699 P1).
+    ///   로컬 `signOut` 만 막는 것으로는 늦다 — 서버 쪽은 이미 벌어진 뒤다.
+    static func runServerSignOutCleanup(
+        token: String?,
+        ownerUserId: String?,
+        unregister: (String, String?, @escaping @Sendable () -> Bool) async -> Bool,
+        api: AuthAPIProviding,
+        stillNeeded: @escaping @Sendable () -> Bool = { true }
+    ) async -> Bool {
+        guard let token = token?.nilIfBlank else { return true }
+        guard stillNeeded() else { return false }
+        let unregistered = await unregister(token, ownerUserId, stillNeeded)
+        // ⚠ **해제가 실패했으면 토큰을 폐기하지 말 것**(Codex #699 P2). 폐기는 `token_epoch`
+        // 를 올려 그 토큰을 죽인다 — 다음 실행이 재시도하려 해도 **401 이 영원히** 돌아오고,
+        // 떠난 계정의 푸시 바인딩은 그대로 남는다. 재시도할 수 있게 토큰을 살려 둔다.
+        guard unregistered else { return false }
+        // ⚠ 해제가 도는 사이에 철회됐을 수 있다 — 폐기는 되돌릴 수 없다.
+        guard stillNeeded() else { return false }
+        do {
+            try await api.logout(token: token)
+            return true
+        } catch {
+            // 401 은 이미 폐기됐다는 뜻이라 성공으로 본다 — 아니면 지울 수도 없는 것을
+            // 영원히 재시도하게 된다.
+            // 403 `ACCOUNT_PENDING_DELETION` 도 같다: 유예 계정은 백엔드가 폐기를 **허용하지
+            // 않으므로**(탈퇴 철회·푸시 해제만 통과) 실패로 치면 재시도가 영원히 돈다.
+            // 그 상태에서 토큰이 살아 있는 것은 **의도된 것**이다 — 그래야 탈퇴를 철회한다.
+            let apiError = error as? APIError
+            return apiError?.isUnauthorized == true || apiError?.isAccountPendingDeletion == true
+        }
+    }
+
+    func signOutExplicitly() {
+        let userID = session?.user.id
+        DefaultVoicePreferenceStore().clear(userID: userID)
+        DynamicPromptPreferenceStore().clear(userID: userID)
+        DynamicPromptPreferences.clear(userID: userID)
+        // 목소리 교체 표식은 남긴다 — 위 주석 참조(로그아웃은 로컬 알람을 지우지 않는다).
+        // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
+        // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
+        // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로
+        // 죽고(그 실패는 삼켜진다) **기기가 그 계정에 묶인 채 남는다.**
+        // 그래서 해제 → 폐기를 **한 흐름에서 순서대로** 돌리고, 로컬 세션은 즉시 지운다
+        // (사용자를 네트워크 왕복만큼 기다리게 하지 않는다).
+        let revokeToken = session?.token.nilIfBlank
+        let unregister = onSignOutUnregisterPush
+        let stopAlarms = onLeaveAccountStopAlarms
+        let api = self.api
+        // ⚠ **세션을 지우기 전에 예약 끊기가 끝나야 한다 — 띄우기만 하면 소용없다**
+        // (Codex #699 P1). 예전에는 `Task { await stopAlarms() }` 로 띄우고 곧바로
+        // `signOut()` 을 불렀다. 그 사이에 세션이 비므로:
+        //   * 취소 루프가 AlarmKit 을 기다리는 동안 앱이 백그라운드로 가거나 종료되면
+        //     **켜진 OS 예약이 그대로 남아** 로그인 게이트 뒤에서 운다. 화면에 들어갈 수
+        //     없으니 사용자가 끌 방법이 없다.
+        //   * 뒤늦게 도는 복구 sweep 는 이제 계정이 nil 이라 **아직 안 꺼진 행을 다시
+        //     건다**(`recoverScheduledAlarms` 의 nil 갈래).
+        // 두 사고가 같은 창에서 나므로 그 창을 없앤다.
+        //
+        // 네트워크 왕복(`unregister`/`logout`)은 여전히 기다리지 않는다 — 그건 서버 쪽
+        // 정리라 로컬 상태를 붙잡아 둘 이유가 없다.
+        let departingUserID = userID
+        // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
+        // '떠나는 계정 것' 으로 보고 끄는데, 그 판단이 맞으려면 지금 확정해 둬야 한다.
+        // 사용자가 끝낸 것이다 — 다시 로그인하기 전까지 아무것도 되살리지 않는다.
+        SessionExpiryStore.clear()
+        isBusy = true
+        // ⚠ **뒷정리가 끝났다는 보장이 없다.** 저장소가 아직 로드 전이면 아래 두 훅이
+        // 빈 목록을 보고 아무것도 못 끈다 — 그 계정의 OS 예약은 살아 있는데 화면에는
+        // 못 들어간다. 표시를 남겨 다음 실행이 마저 하게 한다(`PendingSignOutStore`).
+        PendingSignOutStore.mark(departingUserID)
+        // ⚠ 서버 뒷정리에 쓸 토큰을 **로컬 세션을 지우기 전에** 따로 남긴다 — 지운 뒤에
+        // 프로세스가 죽으면 다시 시도할 방법이 없다(`PendingSignOutStore` 주석).
+        PendingSignOutStore.markServerCleanup(token: session?.token, for: departingUserID)
+        let claimAlarms = onSessionEndClaimAlarms
+        Task {
+            // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
+            // '떠나는 계정 것' 으로 보고 끄는데, 그 판단이 맞으려면 지금 확정해 둬야 한다.
+            await claimAlarms(departingUserID)
+            await stopAlarms(departingUserID)
+            isBusy = false
+            signOut(revokeOnServer: false)
+            // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
+            // ⚠ 줄에 태운다 — 이 요청이 날아가는 동안 새 로그인이 끝나면 `token_epoch` 가
+            // 올라가 **그 새 세션이 죽는다**(`authServerMutation` 주석).
+            await serializeAuthServerMutation { [weak self] in
+                guard let self else { return }
+                if await Self.runServerSignOutCleanup(
+                    token: revokeToken,
+                    ownerUserId: departingUserID,
+                    unregister: unregister,
+                    api: self.api,
+                    stillNeeded: { PendingSignOutStore.isPending(departingUserID) }
+                ) {
+                    PendingSignOutStore.clear(departingUserID)
+                }
+            }
+        }
+    }
+
+    /// - Parameter revokeOnServer: 서버 토큰 폐기(`/auth/logout`)를 **여기서** 할지.
+    ///   명시적 로그아웃은 `false` 로 부른다 — 푸시 토큰 해제를 먼저 끝내야 하는데,
+    ///   여기서 폐기를 띄우면 그 둘이 경주해 해제가 401 로 죽는다(`signOutExplicitly` 주석).
+    func signOut(message: String? = nil, revokeOnServer: Bool = true) {
+        // ⚠ **자동으로 끊긴 계정을 남긴다**(Codex #699 P1). 비로그인 상태에서 어떤 알람을
+        // 되살려도 되는지 가르는 유일한 근거다 — 자동 401 과 명시적 로그아웃은 둘 다
+        // 세션이 비지만 알람에 대한 기대가 정반대다(`SessionExpiryStore`).
+        // 명시적 로그아웃·탈퇴는 `revokeOnServer: false` 로 들어오거나 곧바로 `clear()` 한다.
+        if revokeOnServer {
+            SessionExpiryStore.markSessionExpired(userId: session?.user.id)
+        }
+        // ⚠ **세션을 비우기 전에** 소유자를 새긴다 — 뒤에 하면 누구 것인지 알 수 없다.
+        //
+        // 여기(자동 401)는 동기 경로라 기다릴 수 없다. 콜드 스타트 중이면 저장소가 아직
+        // 로드 전이라 이 시도가 **빈 배열을 새기고 끝난다** — 그래서 위에서 남긴
+        // `SessionExpiryStore` 를 근거로 **로드가 끝난 뒤 다시 시도**한다(`AlarmTalkApp`).
+        let claimingUserID = session?.user.id
+        Task { await onSessionEndClaimAlarms(claimingUserID) }
+        // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
+        // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
+        // 이미 폐기/만료된 토큰으로 호출되는 경로(401 핸들러 등)에서도 안전하다.
+        if revokeOnServer, let revokeToken = session?.token.nilIfBlank {
+            let api = self.api
+            Task.detached {
+                try? await api.logout(token: revokeToken)
+            }
+        }
+        KeychainStore.deleteSession()
+        session = nil
+        pendingDeletion = false
+        needsConsent = false
+        // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면
+        // 새 계정이 받아야 할 재수집·민감 동의를 건너뛴다.
+        consentNeedsCollection = false
+        consentCollect = []
+        consentOptional = []
+        consentPrechecked = []
+        consentSensitiveMissing = []
+        consentIsReconsent = false
+        consentStatusChecked = false
+        // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
+        // Android `clearUserScopedRemoteState` 와 동등.
+        passwordResetCodeSentTo = nil
+        marketingConsentAgreed = false
+        marketingConsentLoadFailed = false
+        statusMessage = message
+        lastNetworkError = nil
+    }
+
+    private static func displayName(from components: PersonNameComponents) -> String? {
+        let value = PersonNameComponentsFormatter().string(from: components)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+
+    // MARK: - Testing support
+    //
+    // 단위 테스트가 Keychain 을 거치지 않고 session 을 직접 채우기 위한 internal 진입점.
+    // 운영 코드(production)는 이 메서드를 호출하지 않는다. `@testable import AlarmTalk`
+    // 에서만 접근 가능하도록 internal 가시성을 유지.
+    func _setSessionForTesting(_ value: AuthSession?) {
+        session = value
+    }
+}
+
+// MARK: - Helper for blank-check on Optional<String>
+//
+// `AlarmTalkAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
+// 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.

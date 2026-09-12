@@ -69,6 +69,47 @@ describe('paid voice access gates', () => {
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
   });
 
+  // **직접 녹음 알람은 유료 기능이 아니다**(2026-08-12 확정).
+  //
+  // 사용자가 자기 폰에 녹음한 소리는 서버에 올라오지 않는다 — 양 앱의 `RemoteAlarmMapper`
+  // 가 `mode: hasRemoteVoice ? 'tts' : 'sound-only'` 로 보내고 `hasRemoteVoice` 는
+  // `ttsMessageId != null` 이라, 녹음 알람에는 `message_id` 도 `voice_profile_id` 도 없다.
+  //
+  // ⚠ 예전에는 `alarmUsesPaidVoice` 가 `wake_mode === 'voice_only'` 만 보고 403 을 냈다.
+  // 그러면 무료 사용자의 녹음 알람이 **서버에서 거절돼 로컬에만 남고 sync 가 영구히
+  // 실패**한다(앱에는 저장된 것처럼 보인다). 그 항을 지운 것을 여기서 고정한다.
+  it('allows a free-plan user to save a locally recorded voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        // 서버가 아는 유료 자산이 하나도 없다 — 음원은 기기에만 있다.
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
+      }),
+    );
+
+    expect(res.status).not.toBe(403);
+  });
+
+  // 반대 방향 — 이 완화가 **클론 목소리까지 열어 주면 안 된다.**
+  it('still blocks a free-plan user from a clone-voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        voice_profile_id: ID.alarm,
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
   it('blocks custom-text TTS with a system stock voice for a free-plan user', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // findUsableVoiceProfile: owned 보이스 없음
@@ -85,7 +126,12 @@ describe('paid voice access gates', () => {
 
   // F2: 유료 사용자가 '기본(시스템) 목소리'를 고르면 무료처럼 프리셋(날씨/약)만 허용한다 —
   // 직접 입력(커스텀 텍스트)은 차단(BASIC_VOICE_PRESET_ONLY). 이렇게 커스텀 클론 슬롯 공간을 아낀다.
-  it('restricts a paid user to preset phrases when they pick a basic (system) voice', async () => {
+  // ⚠ **이 테스트가 옛 제한을 고정하고 있었다**(2026-08-11 뒤집음).
+  // 유료 사용자가 기본(시스템) 목소리를 고르면 직접 입력이 막혔는데, 이용권을 산 사람이
+  // **왜 안 되는지 알 수 없는 벽**을 만나는 자리였다. 시스템 보이스에도
+  // `elevenlabs_voice_id` 가 있어 말할 수는 있고, 막던 이유(비용)는 **직접 입력 월 한도**가
+  // 이미 세고 있다 — 한도를 차감하는 조건으로 열었다.
+  it('lets a paid user type custom text with a basic (system) voice', async () => {
     mockDB.pushResult([{ plan: 'plus' }]); // 유료 사용자
     mockDB.pushResult([]); // findUsableVoiceProfile: 본인 소유 보이스 없음
     // findUsableVoiceProfile: 시스템(기본) 보이스
@@ -93,6 +139,26 @@ describe('paid voice access gates', () => {
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
+    );
+
+    // 프리셋 게이트를 통과했음만 본다(그 뒤 동의·합성 단계에서 다른 응답이 날 수 있다).
+    expect((await res.json()).error_code).not.toBe('BASIC_VOICE_PRESET_ONLY');
+  });
+
+  // 열린 것은 **직접 입력뿐**이다 — 동적 문구(날씨·운세)는 여전히 막는다.
+  // 그쪽은 매번 새로 만들어야 해서 월 한도로 셀 수 없다.
+  it('still blocks translation on a basic (system) voice even for a paid user', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 }]);
+
+    const res = await buildApp().request(
+      // 번역은 매번 새로 만들어야 해서 한도로 셀 수 없다 — 기본 목소리에는 여전히 막힌다.
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: ID.alarm,
+        text: 'hello',
+        translate: true,
+      }),
     );
 
     expect(res.status).toBe(403);
@@ -134,6 +200,47 @@ describe('paid voice access gates', () => {
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
   });
 
+  // **직접 녹음 알람은 유료 기능이 아니다**(2026-08-12 확정).
+  //
+  // 사용자가 자기 폰에 녹음한 소리는 서버에 올라오지 않는다 — 양 앱의 `RemoteAlarmMapper`
+  // 가 `mode: hasRemoteVoice ? 'tts' : 'sound-only'` 로 보내고 `hasRemoteVoice` 는
+  // `ttsMessageId != null` 이라, 녹음 알람에는 `message_id` 도 `voice_profile_id` 도 없다.
+  //
+  // ⚠ 예전에는 `alarmUsesPaidVoice` 가 `wake_mode === 'voice_only'` 만 보고 403 을 냈다.
+  // 그러면 무료 사용자의 녹음 알람이 **서버에서 거절돼 로컬에만 남고 sync 가 영구히
+  // 실패**한다(앱에는 저장된 것처럼 보인다). 그 항을 지운 것을 여기서 고정한다.
+  it('allows a free-plan user to save a locally recorded voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        // 서버가 아는 유료 자산이 하나도 없다 — 음원은 기기에만 있다.
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
+      }),
+    );
+
+    expect(res.status).not.toBe(403);
+  });
+
+  // 반대 방향 — 이 완화가 **클론 목소리까지 열어 주면 안 된다.**
+  it('still blocks a free-plan user from a clone-voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        voice_profile_id: ID.alarm,
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
   it('blocks voice alarms for a resolved free-plan user', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
 
@@ -143,6 +250,47 @@ describe('paid voice access gates', () => {
         message_id: ID.message,
         mode: 'tts',
         wake_mode: 'sound_then_voice',
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
+  // **직접 녹음 알람은 유료 기능이 아니다**(2026-08-12 확정).
+  //
+  // 사용자가 자기 폰에 녹음한 소리는 서버에 올라오지 않는다 — 양 앱의 `RemoteAlarmMapper`
+  // 가 `mode: hasRemoteVoice ? 'tts' : 'sound-only'` 로 보내고 `hasRemoteVoice` 는
+  // `ttsMessageId != null` 이라, 녹음 알람에는 `message_id` 도 `voice_profile_id` 도 없다.
+  //
+  // ⚠ 예전에는 `alarmUsesPaidVoice` 가 `wake_mode === 'voice_only'` 만 보고 403 을 냈다.
+  // 그러면 무료 사용자의 녹음 알람이 **서버에서 거절돼 로컬에만 남고 sync 가 영구히
+  // 실패**한다(앱에는 저장된 것처럼 보인다). 그 항을 지운 것을 여기서 고정한다.
+  it('allows a free-plan user to save a locally recorded voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        // 서버가 아는 유료 자산이 하나도 없다 — 음원은 기기에만 있다.
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
+      }),
+    );
+
+    expect(res.status).not.toBe(403);
+  });
+
+  // 반대 방향 — 이 완화가 **클론 목소리까지 열어 주면 안 된다.**
+  it('still blocks a free-plan user from a clone-voice alarm', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        time: '07:30',
+        voice_profile_id: ID.alarm,
+        mode: 'sound-only',
+        wake_mode: 'voice_only',
       }),
     );
 

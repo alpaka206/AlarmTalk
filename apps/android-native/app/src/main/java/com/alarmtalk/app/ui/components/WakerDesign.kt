@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 디자인 토큰 — 모서리 반경(코너 radius)의 단일 출처(single source of truth).
@@ -41,6 +43,24 @@ internal val WakerSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.
 internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill) — 진행바·세그먼트·상태 배지
 
 /** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
+/**
+ * 한 줄에 나란히 놓이는 컨트롤의 **공통 치수** — 입력칸과 그 옆 버튼이 같이 쓴다.
+ *
+ * ⚠ **기본값끼리 두면 어긋난다.** M3 `OutlinedTextField` 는 56, `Button` 은 40 이라
+ * 그냥 나란히 두면 **버튼만 16dp 낮게** 앉는다(코드 등록 화면이 그랬다 — 2026-08-17).
+ *
+ * ⚠ **맞추는 방향은 '버튼을 키우기' 가 아니라 '입력칸을 줄이기' 다**(같은 날 지시).
+ * 56 짜리 버튼은 한 줄 액션치고 너무 크다. 그래서 **48**(안드로이드 최소 터치 타깃)로
+ * 내리고, 입력칸은 M3 기본형 대신 컴팩트 필드(`IosAlertField`)를 쓴다 —
+ * `OutlinedTextField` 는 최소 높이가 56이라 48로 내리면 글자가 잘린다.
+ *
+ * **iOS 도 같은 값을 쓴다**(`AlarmTalkControl`) — 두 앱의 버튼 크기를 맞춘 기준점이라
+ * 한쪽만 바꾸지 말 것. 폭도 마찬가지다: 라벨이 짧아도 이 최소 폭은 지킨다(번역이 길어지면
+ * 자연히 늘어난다).
+ */
+internal val WakerControlHeight = 48.dp
+internal val WakerControlMinWidth = 88.dp
+
 internal val WakerScrimColor = Color(0xBD05080E)
 
 // 탭·하위 전체화면이 공유하는 새벽 네이비 그라데이션 배경(로그인 딥네이비 감성)의 단일 출처.
@@ -63,13 +83,23 @@ internal fun homeGradientBrush(): androidx.compose.ui.graphics.Brush =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) HomeGradientDark else HomeGradientLight
 
 
+/**
+ * 다크에서 카드 테두리로 쓰는 색 — `outlineVariant`(#3B4870)보다 한 단계 밝다.
+ *
+ * ⚠ **다시 옅게 만들지 말 것**(2026-08-17 지적 "다크모드일 때 구분이 잘 안 간다").
+ * 근거는 실측이다: 알람 목록에서 **카드 표면과 배경의 대비가 1.0:1** 이다(그라데이션이
+ * 카드와 같은 밝기 구간을 지난다). 즉 **테두리가 유일한 구분선**인데, 그 테두리가
+ * `outlineVariant` × 0.62 라 배경 대비 1.7:1 도 안 됐다 — 눈에 카드가 없는 것과 같다.
+ * 지금 값은 배경 대비 약 **2.9:1** 로, 비텍스트 요소 기준(3:1)에 근접한다.
+ */
+private val WakerCardBorderDark = Color(0xFF5A6A9C)
+
 @Composable
 internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke {
-    // 다크에서는 테두리를 옅게 깔아 '와이어프레임' 인상을 줄이고 표면 대비에 기댄다.
-    // 라이트는 흰 카드가 배경과 붙지 않도록 기존 농도를 유지한다.
     val darkScheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val base = if (darkScheme) 0.62f else 1f
-    return BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = base * alpha))
+    // 라이트는 흰 카드가 배경과 붙지 않을 정도면 되므로 기존 토큰 그대로다.
+    val color = if (darkScheme) WakerCardBorderDark else MaterialTheme.colorScheme.outlineVariant
+    return BorderStroke(1.dp, color.copy(alpha = alpha))
 }
 
 @Composable
@@ -87,11 +117,32 @@ internal fun wakerOutlinedTextFieldColors(): TextFieldColors =
         unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
+/**
+ * 채움 버튼 색 — **비활성일 때 글자가 읽히도록** 한다.
+ *
+ * ⚠ **M3 기본값을 그대로 쓰지 말 것**(2026-08-17 "등록 버튼 글씨가 안 보인다").
+ * 기본 비활성은 컨테이너 `onSurface@12%` + 글자 `onSurface@38%` 인데, 우리 딥네이비
+ * 위에서는 그 둘이 **대비 2.8:1** 까지 떨어진다(코드 등록 버튼 실측). 비활성은 '못 누른다'
+ * 는 신호이지 **글자를 지우라는 뜻이 아니다** — 무엇을 누르려 했는지는 계속 보여야 한다.
+ *
+ * 값: 컨테이너 `surfaceVariant`(카드 위에서 버튼 모양이 남는 최소 밝기) + 글자
+ * `onSurfaceVariant`(대비 약 5:1). 활성 색은 기본값 그대로다.
+ */
+@Composable
+internal fun wakerButtonColors() =
+    ButtonDefaults.buttonColors(
+        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
 @Composable
 internal fun wakerOutlinedButtonColors() =
     ButtonDefaults.outlinedButtonColors(
         contentColor = MaterialTheme.colorScheme.onSurface,
-        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f),
+        // ⚠ **알파를 다시 깎지 말 것**(2026-08-17). 42% 는 딥네이비 위에서 대비 **2.34:1**
+        // 이라 글자가 지워진 것처럼 보였다. 비활성은 '못 누른다' 는 신호이지 무엇을 누르려
+        // 했는지까지 감추라는 뜻이 아니다 — 색을 한 단계 낮추는 것으로 충분하다(약 6:1).
+        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
 /**
@@ -115,4 +166,56 @@ internal fun Modifier.wakerPressScale(interactionSource: InteractionSource): Mod
         scaleX = scale
         scaleY = scale
     }
+}
+
+/**
+ * **고정 자리에 들어가는 큰 한 줄 글자**를 가용 폭에 맞춰 줄이는 배율.
+ *
+ * ⚠ **아무 데나 쓰지 말 것.** 글꼴을 키운 사용자의 설정을 앱이 도로 취소하는 셈이 된다.
+ * 쓰는 기준은 하나다 — **줄바꿈으로 흐를 수 없는 자리**인가:
+ *
+ * | 쓴다 | 안 쓴다 |
+ * | --- | --- |
+ * | 울림 화면 시계 — 자다 깬 사람이 읽는 유일한 정보. 겹치면 화면이 무용지물 | 본문·설명 — 커지면 스크롤로 흐르게 둔다 |
+ * | 편집기 타임휠 — 3칸 높이가 고정된 컨트롤 | 섹션 제목 — 줄이 늘어나도 된다 |
+ * | 하단 액션 버튼 라벨 — 폭이 반으로 고정 | 알람 목록 행 — 행 높이가 늘어날 뿐 안 깨진다 |
+ *
+ * 식은 `가용 폭 ÷ (기준 폭 × 글꼴 배율)` 이다. **글꼴 배율로 나누는 것이 핵심** —
+ * 폭은 dp 라 사용자가 글꼴을 키워도 그대로인데 글자만 커져서 넘치기 때문이다.
+ *
+ * @param availableWidth `BoxWithConstraints` 의 `maxWidth`
+ * @param referenceWidth 축소 없이 들어가는 폭
+ * @param minimumScale 아무리 좁아도 이보다 더 줄이지 않는다(읽을 수 없어지면 의미가 없다)
+ */
+@Composable
+internal fun fitToWidthScale(
+    availableWidth: Dp,
+    referenceWidth: Dp,
+    minimumScale: Float = 0.45f,
+): Float {
+    val fontScale = LocalDensity.current.fontScale
+    if (referenceWidth <= 0.dp || fontScale <= 0f) return 1f
+    return (availableWidth / (referenceWidth * fontScale)).coerceIn(minimumScale, 1f)
+}
+
+/**
+ * 위 배율과 **짝을 이루는 `dp` 치수용 배율**. 글꼴 배율로 나누지 **않는다.**
+ *
+ * ⚠ **`fitToWidthScale` 을 dp 에 곱하지 말 것.** 그게 실제 버그였다 — 타임휠의
+ * '오전/오후' 상자가 `96.dp * fitToWidthScale(...)` 이었는데, 글자 크기는 `sp` 라
+ * 글꼴 배율이 이미 반영돼 배율의 나눗셈과 상쇄되는 반면 **상자만 글꼴 배율만큼
+ * 좁아졌다.** 그래서 화면 폭과 무관하게 **글꼴 배율 1.26 을 넘는 순간**(삼성 기본
+ * 슬라이더 최대치가 1.3이다) 글자가 상자를 넘고, `clipToBounds` 가 좌우를 잘라내
+ * 오전인지 오후인지 읽을 수 없었다 — 12시간 어긋난 알람을 저장하게 된다.
+ *
+ * 정리하면: **`sp` 에는 [fitToWidthScale], `dp` 에는 이 함수.**
+ */
+@Composable
+internal fun fitToWidthBoxScale(
+    availableWidth: Dp,
+    referenceWidth: Dp,
+    minimumScale: Float = 0.45f,
+): Float {
+    if (referenceWidth <= 0.dp) return 1f
+    return (availableWidth / referenceWidth).coerceIn(minimumScale, 1f)
 }

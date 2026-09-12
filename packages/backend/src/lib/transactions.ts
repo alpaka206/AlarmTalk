@@ -14,7 +14,23 @@ export async function withWriteTransaction<T>(
   db: Client,
   fn: (tx: DbExecutor) => Promise<T>,
 ): Promise<T> {
-  const tx = await db.transaction('write');
+  return withTransaction(db, 'write', fn);
+}
+
+/** 여러 SELECT 가 같은 커밋을 보도록 응답 스냅샷을 고정한다. */
+export async function withReadTransaction<T>(
+  db: Client,
+  fn: (tx: DbExecutor) => Promise<T>,
+): Promise<T> {
+  return withTransaction(db, 'read', fn);
+}
+
+async function withTransaction<T>(
+  db: Client,
+  mode: 'read' | 'write',
+  fn: (tx: DbExecutor) => Promise<T>,
+): Promise<T> {
+  const tx = await db.transaction(mode);
   try {
     const result = await fn(tx as unknown as DbExecutor);
     await tx.commit();

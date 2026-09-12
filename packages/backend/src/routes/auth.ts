@@ -4,6 +4,8 @@ import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
+import { errorBody } from '../lib/api-error';
+import type { ErrorCode } from '@alarmtalk/shared';
 import { typedRow } from '../lib/db-types';
 import { DUMMY_BCRYPT_HASH, hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
@@ -11,6 +13,7 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
+  AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
@@ -18,6 +21,8 @@ import {
   clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
+import { verifyAppleIdToken } from '../lib/apple-oauth';
+import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -41,9 +46,6 @@ const auth = new Hono<{ Bindings: Env }>();
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 const EMAIL_VERIFICATION_PURPOSE_RESET = 'reset';
 
-function jsonError(code: string, message: string) {
-  return { error: message, error_code: code };
-}
 
 type EmailVerificationRow = {
   id: string;
@@ -54,7 +56,8 @@ type EmailVerificationRow = {
 
 type EmailVerificationCheck =
   | { ok: true; id: string }
-  | { ok: false; status: 400 | 429; code: string; message: string };
+  // code 는 **목록에 있는 코드**여야 한다 — 그대로 응답에 실려 앱이 분기하는 값이다.
+  | { ok: false; status: 400 | 429; code: ErrorCode; message: string };
 
 async function checkEmailVerificationCode(
   db: Client,
@@ -154,11 +157,11 @@ async function classifyExistingAccount(db: Client, email: string): Promise<Exist
 
 function existingAccountConflict(account: ExistingAccount) {
   if (account.kind === 'password') {
-    return { body: jsonError('AUTH_EMAIL_TAKEN', 'Email already registered'), status: 409 as const };
+    return { body: errorBody('AUTH_EMAIL_TAKEN', 'Email already registered'), status: 409 as const };
   }
   return {
     body: {
-      ...jsonError('AUTH_EMAIL_SOCIAL', 'Email registered via social login'),
+      ...errorBody('AUTH_EMAIL_SOCIAL', 'Email registered via social login'),
       provider: account.provider,
     },
     status: 409 as const,
@@ -170,12 +173,12 @@ auth.post('/email-code', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = EmailVerificationRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -243,7 +246,7 @@ auth.post('/email-code', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status = detail.includes('Email delivery') ? 503 : 500;
-    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+    return c.json(errorBody('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
   }
 });
 
@@ -252,12 +255,12 @@ auth.post('/email-code/verify', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = EmailVerificationConfirmRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -266,12 +269,12 @@ auth.post('/email-code/verify', async (c) => {
   try {
     const check = await checkEmailVerificationCode(db, c.env, email, parsed.data.code);
     if (!check.ok) {
-      return c.json(jsonError(check.code, check.message), check.status);
+      return c.json(errorBody(check.code, check.message), check.status);
     }
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+    return c.json(errorBody('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
   }
 });
 
@@ -282,12 +285,12 @@ auth.post('/password-reset', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = PasswordResetRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const email = normalizeAuthEmail(parsed.data.email);
@@ -350,7 +353,7 @@ auth.post('/password-reset', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status = detail.includes('Email delivery') ? 503 : 500;
-    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+    return c.json(errorBody('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
   }
 });
 
@@ -361,13 +364,13 @@ auth.post('/password-reset/confirm', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = PasswordResetConfirmRequestSchema.safeParse(body);
   if (!parsed.success) {
     return c.json(
-      { ...jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      { ...errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
       400,
     );
   }
@@ -384,13 +387,13 @@ auth.post('/password-reset/confirm', async (c) => {
       EMAIL_VERIFICATION_PURPOSE_RESET,
     );
     if (!check.ok) {
-      return c.json(jsonError(check.code, check.message), check.status);
+      return c.json(errorBody(check.code, check.message), check.status);
     }
 
     // 코드가 유효해도 비밀번호 계정이 아니면(소셜/미가입) 재설정하지 않는다.
     const account = await classifyExistingAccount(db, email);
     if (!account || account.kind !== 'password') {
-      return c.json(jsonError('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
+      return c.json(errorBody('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
     }
 
     const passwordHash = await hashPassword(parsed.data.password, c.env.PASSWORD_PEPPER);
@@ -406,7 +409,7 @@ auth.post('/password-reset/confirm', async (c) => {
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_PASSWORD_RESET_FAILED', 'Failed to reset password'), 500);
+    return c.json(errorBody('AUTH_PASSWORD_RESET_FAILED', 'Failed to reset password'), 500);
   }
 });
 
@@ -415,13 +418,13 @@ auth.post('/register', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = RegisterRequestSchema.safeParse(body);
   if (!parsed.success) {
     return c.json(
-      { ...jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      { ...errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
       400,
     );
   }
@@ -440,7 +443,7 @@ auth.post('/register', async (c) => {
       email_verification_code,
     );
     if (!verification.ok) {
-      return c.json(jsonError(verification.code, verification.message), verification.status);
+      return c.json(errorBody(verification.code, verification.message), verification.status);
     }
 
     // 인증 코드를 통과했더라도(이론상 경쟁 상태) 이미 존재하는 이메일이면 가입 방식에 맞는
@@ -458,8 +461,12 @@ auth.post('/register', async (c) => {
     // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
     // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, NULL, ?, ?)`,
+      // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+      // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+      // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+      // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name, family_alarm_quiet_windows)
+            VALUES (?, ?, NULL, ?, ?, '[]')`,
       args: [id, normalizedEmail, passwordHash, name],
     });
 
@@ -481,10 +488,13 @@ auth.post('/register', async (c) => {
           name,
           plan: 'free' as const,
           allow_family_alarms: false,
-          family_alarm_quiet_days: [1, 2, 3, 4, 5],
+          // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
+          // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
+          // 적 없는 시간대에 가족 알람이 막혔고, 받는 사람은 자기가 막아 둔 줄 몰랐다.
+          family_alarm_quiet_days: [],
           family_alarm_quiet_start: '09:00',
           family_alarm_quiet_end: '18:30',
-          family_alarm_quiet_windows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          family_alarm_quiet_windows: [],
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
@@ -492,7 +502,7 @@ auth.post('/register', async (c) => {
     );
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
+    return c.json(errorBody('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
   }
 });
 
@@ -501,12 +511,12 @@ auth.post('/login', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = LoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const { email, password } = parsed.data;
@@ -528,7 +538,7 @@ auth.post('/login', async (c) => {
     // 응답 시간(타이밍 오라클)으로 새지 않게 한다.
     if (result.rows.length === 0) {
       await verifyPassword(password, DUMMY_BCRYPT_HASH, c.env.PASSWORD_PEPPER);
-      return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+      return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
     const row = typedRow<{
@@ -546,7 +556,7 @@ auth.post('/login', async (c) => {
     const passwordHash = row.password_hash ?? DUMMY_BCRYPT_HASH;
     const ok = await verifyPassword(password, passwordHash, c.env.PASSWORD_PEPPER);
     if (!row.password_hash || !ok) {
-      return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+      return c.json(errorBody('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
     if (!row.google_id) {
@@ -589,7 +599,7 @@ auth.post('/login', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_LOGIN_FAILED', 'Login failed'), 500);
+    return c.json(errorBody('AUTH_LOGIN_FAILED', 'Login failed'), 500);
   }
 });
 
@@ -598,12 +608,12 @@ auth.post('/google', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
   }
 
   const parsed = GoogleLoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
   }
 
   const db = getDB(c.env);
@@ -612,7 +622,7 @@ auth.post('/google', async (c) => {
     // 구성 가드. GOOGLE_CLIENT_ID 미설정 시 aud 검증이 무력화되면
     // 안 되므로(oauth.ts 는 fail-closed) 명시적으로 500 을 반환한다.
     if (!c.env.GOOGLE_CLIENT_ID) {
-      return c.json(jsonError('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
+      return c.json(errorBody('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
     }
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
@@ -676,8 +686,12 @@ auth.post('/google', async (c) => {
       userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name)
-              VALUES (?, ?, ?, ?)`,
+        // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+        // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+        // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+        // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+        sql: `INSERT INTO users (id, google_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
         args: [userId, googleId, email, name || null],
       });
     }
@@ -741,14 +755,216 @@ auth.post('/google', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
-    return c.json(jsonError('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
+    return c.json(errorBody('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
+  }
+});
+
+// Sign in with Apple. 구조는 POST /google 과 같고 식별자 컬럼만 apple_id 다.
+//
+// 애플 고유의 두 가지:
+//  1) **이름은 최초 1회만 온다.** 애플은 첫 로그인 응답에만 fullName 을 주고 그 뒤로는
+//     영영 안 준다. 그래서 앱이 그때 받은 값을 `full_name` 으로 보내 주고, 여기서
+//     빈 칸을 채우는 데만 쓴다.
+//  2) **이메일 가리기(Private Relay).** 사용자가 이메일 가리기를 고르면 `@privaterelay
+//     .appleid.com` 주소가 온다. 정상 값이라 그대로 저장한다. 아예 이메일이 없는 경우도
+//     있어(재로그인 시 미포함) 구글과 같은 방식으로 합성 주소를 쓴다.
+auth.post('/apple', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(errorBody('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = AppleLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    // 구성 가드 — 구글과 같은 이유로 fail-closed. aud(번들 ID)를 모르면 **다른 앱용으로
+    // 발급된 유효한 애플 토큰**도 통과해 그 앱 사용자가 우리 계정을 차지할 수 있다.
+    if (!c.env.APPLE_BUNDLE_ID) {
+      return c.json(
+        errorBody('AUTH_APPLE_CONFIG_MISSING', 'Apple bundle ID is not configured'),
+        500,
+      );
+    }
+
+    const apple = await verifyAppleIdToken(
+      parsed.data.identity_token,
+      c.env.APPLE_BUNDLE_ID,
+      parsed.data.nonce,
+    );
+    const appleId = apple.sub;
+    const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
+    // 애플이 준 이름도 **외부 입력**이다(구글과 동일 규약 — CLAUDE.md 「입력 규칙은 한 곳에서만」).
+    const name = clampDisplayName(parsed.data.full_name ?? '');
+
+    const existing = await db.execute({
+      sql: `SELECT id, apple_id, email, name, plan, token_epoch,
+                   allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users
+            WHERE apple_id = ? OR email = ?
+            LIMIT 1`,
+      args: [appleId, email],
+    });
+
+    let userId: string;
+    let plan: 'free' | 'plus' | 'family';
+    let tokenEpoch = 0;
+    let effectiveName = name;
+    // ⚠ **저장된 진짜 이메일이 이긴다**(코덱스 #730 3차). 애플은 재로그인 때 이메일을 안
+    // 주는 경우가 있어 위에서 `<sub>@apple.local` 을 합성하는데, 그 값을 JWT·응답에 실으면
+    // **앱이 세션의 이메일을 가짜 주소로 덮어쓰고** 그 뒤로는 계속 그걸 보여 준다.
+    // DB 를 덮어쓰지 않는 것과 같은 이유이고, 같은 값을 써야 둘이 어긋나지 않는다.
+    let effectiveEmail = email;
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<
+        {
+          id: string;
+          apple_id: string | null;
+          email: string;
+          name: string | null;
+          plan: 'free' | 'plus' | 'family' | null;
+          token_epoch: number | string | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
+      userId = row.id;
+      plan = row.plan ?? 'free';
+      tokenEpoch = Number(row.token_epoch ?? 0);
+      // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
+      // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
+      // 규칙을 통과시킨다.
+      const storedName = clampDisplayName(row.name ?? '');
+      effectiveName = storedName || name;
+      const storedEmail = (row.email ?? '').trim();
+      if (storedEmail) effectiveEmail = storedEmail;
+
+      await db.execute({
+        sql: `UPDATE users
+              SET apple_id = ?, name = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        // ⚠ 구글 경로와 달리 **email 을 덮어쓰지 않는다.** 애플은 재로그인 때 이메일을
+        // 안 주는 경우가 있어, 그때 합성한 `<sub>@apple.local` 로 갱신하면 이미 저장된
+        // 진짜 주소가 지워진다.
+        args: [appleId, effectiveName || null, userId],
+      });
+    } else {
+      userId = crypto.randomUUID();
+      plan = 'free';
+      await db.execute({
+        // ⚠ 위 두 INSERT 와 같은 이유로 `family_alarm_quiet_windows` 를 명시한다 —
+        // 생략하면 컬럼 DEFAULT(평일 09:00-18:30)가 박힌다.
+        sql: `INSERT INTO users (id, apple_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
+        args: [userId, appleId, email, name || null],
+      });
+    }
+
+    // 탈퇴 때 애플 연결을 끊으려면 refresh token 이 있어야 한다(애플 심사 5.1.1(v)).
+    //
+    // ⚠ **여기서 실패해도 로그인은 성공시킨다.** 애플 토큰 엔드포인트가 잠깐 죽었다고
+    // 로그인을 막을 이유가 없고, 폐기는 다음 로그인에서 다시 채울 수 있다. 반대로
+    // 로그인을 막으면 사용자는 들어올 방법이 아예 없어진다.
+    //
+    // ⚠ authorization_code 는 **5분·1회용**이라 지금 교환하지 않으면 영영 못 쓴다.
+    if (parsed.data.authorization_code) {
+      // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 3차). `appleSignInConfig` 는 PEM 이
+      //   잘려 있으면 **던진다.** 밖에 두면 그 예외가 바깥 catch 로 빠져나가 **모든 애플
+      //   로그인이 `AUTH_APPLE_FAILED`** 가 된다 — 사용자 행은 이미 만들어졌는데도.
+      //   정상 로그인은 언제나 `authorization_code` 를 실어 보내므로, 시크릿이 잘린
+      //   순간부터 고칠 때까지 **아무도 애플로 못 들어온다.**
+      //   바로 위 주석대로 이 블록은 **최선 노력**이고, 로그인이 본 목적이다.
+      //   (같은 헬퍼를 쓰는 파기 크론은 2차에서 이미 이렇게 고쳤다 — `index.ts`.)
+      try {
+        const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+        if (signInConfig) {
+          const { refreshToken } = await exchangeAppleAuthorizationCode(
+            signInConfig,
+            parsed.data.authorization_code,
+          );
+          if (refreshToken) {
+            await db.execute({
+              sql: `UPDATE users SET apple_refresh_token = ? WHERE id = ?`,
+              args: [refreshToken, userId],
+            });
+          }
+        }
+      } catch (err) {
+        logRouteError(c, err);
+      }
+    }
+
+    // JWT sub 은 항상 users.id (구글 경로 주석 참고).
+    const token = await signAppJwt(
+      { sub: userId, email: effectiveEmail, name: effectiveName || undefined, epoch: tokenEpoch },
+      c.env.JWT_SECRET,
+    );
+
+    const fresh = await db.execute({
+      sql: `SELECT allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users WHERE id = ? LIMIT 1`,
+      args: [userId],
+    });
+    const familyAlarmSettings =
+      fresh.rows.length > 0
+        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : {
+            allowFamilyAlarms: false,
+            quietDays: [1, 2, 3, 4, 5],
+            quietStart: '09:00',
+            quietEnd: '18:30',
+            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          };
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
+
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email: effectiveEmail,
+        name: effectiveName,
+        plan,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
+      },
+    });
+  } catch (err) {
+    // 구글 경로와 동일 — 검증 실패 상세는 서버 로그에만, 클라에는 generic.
+    logRouteError(c, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const status =
+      detail.includes('Apple token') ||
+      detail.includes('Apple signing key') ||
+      detail.includes('Apple identity token') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('expired') ||
+      detail.includes('nonce') ||
+      detail.includes('Token')
+        ? 401
+        : 500;
+    return c.json(errorBody('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
 
 auth.get('/me', async (c) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
-    return c.json(jsonError('AUTH_MISSING', 'Authorization header required'), 401);
+    return c.json(errorBody('AUTH_MISSING', 'Authorization header required'), 401);
   }
   const token = authHeader.slice(7);
   // **검증 실패와 그 뒤의 장애를 구조로 가른다.** 하나의 try 로 묶으면 DB 오류까지 401 로
@@ -761,7 +977,7 @@ auth.get('/me', async (c) => {
     payload = await verifyAppJwt(token, c.env.JWT_SECRET);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+    return c.json(errorBody('AUTH_INVALID_TOKEN', detail), 401);
   }
   try {
     const db = getDB(c.env);
@@ -773,7 +989,7 @@ auth.get('/me', async (c) => {
       args: [payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
-      return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
+      return c.json(errorBody('AUTH_USER_NOT_FOUND', 'User not found'), 404);
     }
     const row = typedRow<
       {
@@ -789,7 +1005,7 @@ auth.get('/me', async (c) => {
     // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
     // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
     if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
-      return c.json(jsonError('TOKEN_REVOKED', 'Token has been revoked'), 401);
+      return c.json(errorBody('TOKEN_REVOKED', 'Token has been revoked'), 401);
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
@@ -838,7 +1054,7 @@ auth.get('/me', async (c) => {
     const { logStructured } = await import('../lib/logger');
     logStructured('error', { at: 'auth.me', error: detail });
     return c.json(
-      jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+      errorBody('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
       503,
     );
   }
@@ -866,7 +1082,7 @@ logout.post('/', async (c) => {
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json(jsonError('AUTH_LOGOUT_FAILED', 'Logout failed'), 500);
+    return c.json(errorBody('AUTH_LOGOUT_FAILED', 'Logout failed'), 500);
   }
 });
 auth.route('/logout', logout);

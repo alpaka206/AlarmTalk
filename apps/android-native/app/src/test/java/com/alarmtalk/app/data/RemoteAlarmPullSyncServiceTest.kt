@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.network.RemoteAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,23 +100,23 @@ class RemoteAlarmPullSyncServiceTest {
     fun unlockedReceivedAlarmKeepsRebuiltRemoteVoiceMode() {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 
-        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+        val state = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, existing)
 
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.playMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.playMode)
         assertEquals(null, state.preLockPlayMode)
     }
 
     @Test
     fun lockedReceivedAlarmStaysLockedAfterPullAndSnapshotsRebuiltVoiceMode() {
-        // 무료로 잠긴 받은 알람: pull 이 원격 목소리 모드(ALARM_VOICE)를 재구성해도 잠금을 유지하고,
+        // 무료로 잠긴 받은 알람: pull 이 원격 목소리 모드(VOICE_ONLY)를 재구성해도 잠금을 유지하고,
         // 그 최신 모드를 복원용으로 스냅샷한다(재유료 시 unlockPaidAlarmTalks 가 이 값으로 복원).
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
             .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)
 
-        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+        val state = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, existing)
 
         assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.preLockPlayMode)
     }
 
     @Test
@@ -123,12 +124,12 @@ class RemoteAlarmPullSyncServiceTest {
         // 이번 pull 에서 오디오를 못 받아 사운드온리(computed==ALARM_ONLY)가 돼도 기존 잠금 마커를
         // 잃지 않는다 — 잃으면 다음 성공 pull 이 무료인데도 목소리로 되살린다.
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
-            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.ALARM_VOICE)
+            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)
 
         val state = resolveReceivedLockState(AlarmPlayModes.ALARM_ONLY, existing)
 
         assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.preLockPlayMode)
     }
 
     @Test
@@ -154,6 +155,144 @@ class RemoteAlarmPullSyncServiceTest {
         val remote = RemoteAlarm(id = "remote-id", messageId = " ")
 
         assertFalse(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun receivedAlarmAcksOnlyAfterEnabledAlarmIsScheduledAndVersioned() {
+        assertFalse(receivedAlarmDeliveryComplete(true, true, false, "version-1"))
+        assertFalse(receivedAlarmDeliveryComplete(true, true, true, null))
+        assertTrue(receivedAlarmDeliveryComplete(true, true, true, "version-1"))
+        assertTrue(receivedAlarmDeliveryComplete(true, false, false, "version-1"))
+    }
+
+    @Test
+    fun editedReceivedAlarmRetriesAckOnlyForAppliedDeliveryVersion() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(remoteDeliveryVersion = "version-1")
+
+        assertTrue(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-1"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, "version-2"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(existing, null))
+
+        val legacy = existing.copy(remoteDeliveryVersion = null)
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "0123456789abcdef0123456789abcdef"))
+        assertTrue(isLegacyBackfilledDelivery(legacy, "0123456789abcdef0123456789abcdef"))
+        assertFalse(isLegacyBackfilledDelivery(existing, "0123456789abcdef0123456789abcdef"))
+        assertFalse(receivedAlarmDeliveryVersionAlreadyApplied(legacy, "11111111-1111-4111-8111-111111111111"))
+        // ⚠ **복구는 #104 backfill(32자리 hex)에만 허용한다**(docs/spec/family-alarm.md).
+        // 넓히면 재전송을 삼킨다 — 첫 전달이 버전 없이 저장된 뒤 온 새 세대(UUID)를
+        // '복구 대상' 으로 읽으면, 수신자 편집을 보존한 채 그 세대를 ACK·삭제해 버린다.
+        assertFalse(isLegacyBackfilledDelivery(legacy, "11111111-1111-4111-8111-111111111111"))
+        // 내가 만든 알람은 애초에 이 복구 대상이 아니다.
+        assertFalse(
+            isLegacyBackfilledDelivery(
+                legacy.copy(origin = AlarmOrigins.LOCAL_OWNED),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
+    }
+
+    /**
+     * ⚠ **재전송은 수신자 편집을 덮는다**(2026-08-26 확정, docs/spec/family-alarm.md).
+     *
+     * 서버는 같은 슬롯에 **같은 알람 id** 를 재사용하고 새 `delivery_version` 만 발급한다.
+     * 그때 편집을 보존하면 그 슬롯은 **이후 모든 전달을 영구히 거부**한다 — 실기기에서
+     * 재현됐다(매 pull 마다 skipped=1, 수신자 화면엔 옛 알람 그대로).
+     */
+    @Test
+    fun resendOfDifferentDeliveryOverwritesRecipientEdits() {
+        val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(observedDeliveryVersion = "11111111-1111-4111-8111-111111111111")
+
+        // 같은 세대가 다시 오면 **덮지 않는다** — 매 pull 마다 수신자 편집이 되돌아가면 안 된다.
+        assertFalse(
+            isResendOfDifferentDelivery(received, "11111111-1111-4111-8111-111111111111"),
+        )
+        // 다른 세대 = 발신자가 다시 보냈다 → 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(received, "22222222-2222-4222-8222-222222222222"),
+        )
+        // ⚠ 관찰 세대가 없는 **옛 행도 뚫어 준다** — 이 필드가 생기기 전에 꼬인 행이 영원히
+        // 막히면 안 된다(실기기 재현). 새 전달 세대(UUID)면 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 단 #104 backfill(32자리 hex)은 새로 보낸 것이 아니다 — 편집 보존 경로가 맞다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(observedDeliveryVersion = null),
+                "0123456789abcdef0123456789abcdef",
+            ),
+        )
+        // ⚠ **이미 적용한 세대는 재전송이 아니다**(Codex #703 P1). 관찰 세대 컬럼이 생기기
+        // 전에 정상 반영된 행은 observed 가 null 인데 적용 세대에는 그 값이 적혀 있다 —
+        // 그걸 안 보면 같은 전달을 매 pull 마다 덮어써 수신자 편집이 계속 지워진다.
+        assertFalse(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "22222222-2222-4222-8222-222222222222",
+            ),
+        )
+        // 그 행에 **다른** 세대가 오면 진짜 재전송이다 — 여전히 덮는다.
+        assertTrue(
+            isResendOfDifferentDelivery(
+                received.copy(
+                    observedDeliveryVersion = null,
+                    remoteDeliveryVersion = "22222222-2222-4222-8222-222222222222",
+                ),
+                "33333333-3333-4333-8333-333333333333",
+            ),
+        )
+        // 서버가 세대를 주지 않으면 판단 근거가 없다 — 덮지 않는다.
+        assertFalse(isResendOfDifferentDelivery(received, null))
+    }
+
+    @Test
+    fun legacyBackfillLinksRecoveredAudioWithoutChangingRecipientSchedule() {
+        val current = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(hour = 9, minute = 17, updatedAtMillis = 2_000L)
+        val remote = remote().copy(
+            messageId = "message-1",
+            messageAudioUrl = "r2://voice.mp3",
+            voiceProfileId = "voice-1",
+            messageText = "일어나세요",
+            category = "custom",
+        )
+        val cached = CachedAlarmAudio(
+            localAudioUri = "remote-message-message-1.mp3",
+            rawAudioUri = "r2://voice.mp3",
+            displayName = "voice.mp3",
+            durationMillis = 3_000L,
+            cacheKey = "remote-message-message-1",
+            messageId = "message-1",
+        )
+
+        val recovered = linkRecoveredLegacyRemoteAudio(current, remote, cached)
+
+        assertEquals(9, recovered.hour)
+        assertEquals(17, recovered.minute)
+        assertEquals(2_000L, recovered.updatedAtMillis)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, recovered.playMode)
+        assertEquals(cached.localAudioUri, recovered.localAudioUri)
+        assertEquals(cached.cacheKey, recovered.audioCacheKey)
+        assertEquals("message-1", recovered.ttsMessageId)
+        assertEquals("voice-1", recovered.voiceProfileId)
+
+        val recipientVoice = current.copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            localAudioUri = "my-recording.m4a",
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+        )
+        assertEquals(
+            recipientVoice,
+            linkRecoveredLegacyRemoteAudio(recipientVoice, remote, cached),
+        )
     }
 
     @Test
@@ -313,8 +452,8 @@ class RemoteAlarmPullSyncServiceTest {
         // 기대고 자는 자기 정보라, 알람까지 지우면 그날 못 일어난다(Codex #676 P1).
         val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             label = "김규원 님이 보낸 알람",
-            playMode = AlarmPlayModes.ALARM_VOICE,
-            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/remote-message-m1.m4a",
             audioCacheKey = "remote-message-m1",
             voiceProfileId = "vp-A",
@@ -346,7 +485,7 @@ class RemoteAlarmPullSyncServiceTest {
         // 쓸 수 없는 알람**이 된다(Codex #677 P2). 걷어낼 것은 탈퇴한 사람이 보낸 음성뿐이다.
         val mine = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             label = "출근",
-            playMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/tts-abc.m4a",
             audioCacheKey = "tts-abc",
             voiceProfileId = "vp-mine",
@@ -369,7 +508,7 @@ class RemoteAlarmPullSyncServiceTest {
         // 값을 같은 CachedAlarmAudio 에서 채운다). 그래도 실기기의 옛 DB 까지 없다고 단정하고
         // 발신자의 녹음을 남겨 둘 수는 없다 — 키가 없으면 URI 로 잡는다(Codex #677 P1).
         val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
-            playMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///data/audio/legacy_recording.m4a",
             audioCacheKey = null,
         )
@@ -385,12 +524,82 @@ class RemoteAlarmPullSyncServiceTest {
         // 디스크에 그대로 있다. 재생 모드로 판정하면 이 행을 놓쳐 생체정보가 남는다.
         val locked = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             playMode = AlarmPlayModes.ALARM_ONLY,
-            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/remote-message-m1.m4a",
             audioCacheKey = "remote-message-m1",
         )
         assertTrue(hasSenderVoice(locked))
         assertNull(withVoiceRevoked(locked, context).audioCacheKey)
+    }
+
+    // ── 받은 뒤에는 받은 사람이 관리한다 (docs/spec/family-alarm.md 1절) ──────────────
+    // 예전에는 '지켜야 할 필드' 목록을 늘려 가며 막았고, 목록에 없는 값은 매 pull 마다
+    // 되돌아왔다. 이제는 **고쳐진 행 자체에 손대지 않는다** — 그 판정을 고정한다.
+
+    @Test
+    fun pullWrittenRowIsNotTreatedAsRecipientEdit() {
+        // pull 이 만든 행은 두 시각이 같다. 이걸 '편집됨' 으로 읽으면 갓 받은 알람이
+        // 곧바로 잠겨, 음성 다운로드가 실패했던 행의 **재시도**까지 죽는다.
+        val fresh = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        assertFalse(locallyEditedByRecipient(fresh))
+    }
+
+    @Test
+    fun recipientEditMakesRowStickAgainstRemote() {
+        // 수신자가 저장하면 updateAlarm 이 lastSyncedAtMillis 를 보존한 채
+        // updatedAtMillis 만 올린다(upsertPreservingServerSyncFields).
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(updatedAtMillis = 2_000L)
+        assertTrue(locallyEditedByRecipient(edited))
+    }
+
+    @Test
+    fun legacyRowWithoutSyncStampIsTreatedAsEdited() {
+        // pull 이 만든 게 아닌 행은 근거가 없으니 보수적으로 지킨다.
+        val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(lastSyncedAtMillis = null)
+        assertTrue(locallyEditedByRecipient(legacy))
+    }
+
+    @Test
+    fun rebuiltReceivedRowKeepsTheUneditedInvariant() {
+        // ⚠ 이 불변식이 깨지면 위 판정이 통째로 뒤집힌다 — buildReceivedAlarmRow 가
+        // 두 시각을 **같은 now** 로 넣어야 '아직 안 고침' 이 표현된다.
+        val row = buildReceivedAlarmRow(
+            context = context,
+            remote = remote(),
+            existing = null,
+            cachedAudio = null,
+            currentUserId = "recipient",
+            now = 5_000L,
+        )
+        assertNotNull(row)
+        assertEquals(row!!.updatedAtMillis, row.lastSyncedAtMillis)
+        assertFalse(locallyEditedByRecipient(row))
+    }
+
+    @Test
+    fun recipientPlayModeChoiceSurvivesAPullThatCarriesNoVoice() {
+        // 실제 증상(2026-08-17): 가족 알람은 message_id 가 없어 remote 에 음성이 없다.
+        // 수신자가 자기 목소리로 바꿔 저장해도, 재구성이 돌면 ALARM_ONLY 로 되돌아갔다.
+        // 이제는 재구성 자체가 돌지 않아야 한다.
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            audioCacheKey = "my-own-voice",
+            updatedAtMillis = 2_000L,
+        )
+        assertTrue(locallyEditedByRecipient(edited))
+        // 대조군 — 손대지 않은 행이라면 서버본으로 재구성된다(첫 수신·음성 재시도 경로).
+        val untouched = edited.copy(updatedAtMillis = edited.lastSyncedAtMillis!!)
+        assertFalse(locallyEditedByRecipient(untouched))
+        val rebuilt = buildReceivedAlarmRow(
+            context = context,
+            remote = remote(),
+            existing = untouched,
+            cachedAudio = null,
+            currentUserId = "recipient",
+        )
+        assertEquals(AlarmPlayModes.ALARM_ONLY, rebuilt!!.playMode)
     }
 
     private fun remote(): RemoteAlarm = RemoteAlarm(

@@ -14,7 +14,7 @@ object RemoteAlarmMapper {
             snoozeMinutes = alarm.snoozeMinutes,
             mode = if (hasRemoteVoice) "tts" else "sound-only",
             vibrationPattern = alarm.vibrationPattern,
-            wakeMode = when (alarm.playMode) {
+            wakeMode = when (AlarmPlayModes.normalize(alarm.playMode)) {
                 AlarmPlayModes.VOICE_ONLY -> "voice_only"
                 else -> "sound_then_voice"
             },

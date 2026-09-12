@@ -4,9 +4,13 @@ import { enqueueExternalDeletion } from './audio-retention';
 
 // F1: 전역(전 사용자 합산) 커스텀 클론 provider 보이스 상한. per-user 상한(voice-profile.ts의
 // MAX_VOICE_PROFILES)과 의미가 완전히 다르다 — 이건 공급자(ElevenLabs, 향후 벤더) 계정 전체에서
-// 살아있는 커스텀 클론 보이스의 최대 개수다. 이 숫자 하나만 바꾸면 전체에 적용된다(운영 50,
+// 살아있는 커스텀 클론 보이스의 최대 개수다. 이 숫자 하나만 바꾸면 전체에 적용된다(운영 200,
 // 폰 테스트 시 2~3). 시스템 기본 목소리(is_system)는 이 카운트에서 제외한다.
-export const MAX_PROVIDER_CLONE_VOICES = 50;
+//
+// 200 은 **프로바이더 요금제가 실제로 허용하는 수**에 맞춰 두는 값이다 — 넘기면 클론 생성이
+// 공급자 쪽에서 거절되고, 그 실패는 사용자에게 '지금은 등록이 몰려 있어요'(503)로만 보인다.
+// 요금제를 바꾸면 이 숫자도 함께 올린다. (2026-08-25: 50 → 200)
+export const MAX_PROVIDER_CLONE_VOICES = 200;
 
 /**
  * F1(Codex #599 3차): 새 클론 1개를 받아들일 여지가 있는지 사전 판정한다.

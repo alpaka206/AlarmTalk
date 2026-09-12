@@ -110,6 +110,7 @@ internal fun AlarmTalkTheme(
         )
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalIsDarkTheme provides isDark) {
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AlarmTalkTypography,
@@ -122,7 +123,20 @@ internal fun AlarmTalkTheme(
             content = content,
         )
     }
+    }
 }
+
+/**
+ * 지금 그리는 스킴이 **다크인가.**
+ *
+ * ⚠ **`isSystemInDarkTheme()` 을 직접 보지 말 것.** 앱에 자체 테마 설정([ThemeMode])이 있어서,
+ * 사용자가 앱에서 라이트/다크를 강제하면 시스템 값과 갈라진다. 이 값은 그 설정까지 반영한
+ * **실제로 칠해진 스킴**을 말한다.
+ *
+ * 색은 여전히 `MaterialTheme.colorScheme` 이 유일 출처다 — 이건 "명암 중 어느 쪽을 그리는
+ * 중인가" 를 물어야만 하는 자리(예: 라이트·다크 각각에 실측값이 따로 있는 알럿 컨테이너)에서만 쓴다.
+ */
+val LocalIsDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { true }
 
 // 모서리 스케일의 단일 출처는 WakerDesign.kt 의 Waker*Shape 토큰이다.
 // 여기서는 그 토큰을 M3 Shapes 슬롯에 매핑만 한다(값 중복 정의 금지).

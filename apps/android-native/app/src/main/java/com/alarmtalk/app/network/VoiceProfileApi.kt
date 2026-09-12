@@ -59,6 +59,13 @@ data class VoiceProfileUpdateRequest(
     @SerializedName("listener_title") val listenerTitle: String? = null,
     // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
     val language: String? = null,
+    /**
+     * 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때, 막는 대신
+     * **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 지우지 않고 재사용한다 —
+     * 지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로 떨어진다).
+     * null 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
+     */
+    @SerializedName("replace_existing") val replaceExisting: Boolean? = null,
 )
 
 data class VoicePreviewPlayedRequest(
@@ -89,11 +96,19 @@ data class VoicePrerenderStatusResponse(
     val attempts: Int = 0,
 )
 
-/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 3클립). */
+/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 2클립). */
 data class VoicePrerenderAdvanceResponse(
     val done: Boolean = false,
     val generated: Int = 0,
     val total: Int = 0,
+    /**
+     * 서버가 클레임을 **풀지 못한 채** 답했다 — 그 리스가 끝나기 전에는 다시 물어도 같은
+     * 개수만 돌아온다. 이걸 평범한 '진행 없음' 으로 세면 구동 루프가 3회 만에 화면을 닫아
+     * 생성이 눈에 안 보이는 채로 남는다. 옛 서버는 이 필드를 안 보내므로 기본값은 false 다.
+     */
+    @SerializedName("claim_stuck") val claimStuck: Boolean = false,
+    /** 다시 부르기 전에 기다릴 시간(ms). 서버의 클레임 리스와 같은 값이다. */
+    @SerializedName("retry_after_ms") val retryAfterMs: Long = 0L,
 )
 
 data class VoicePrerenderRetryResponse(
@@ -121,6 +136,15 @@ data class VoiceProfile(
     @SerializedName("listener_title") val listenerTitle: String? = null,
     // 말투(스피치 스타일) 분석 상태: null | "pending" | "done" | "failed". 클론 보이스 전용.
     @SerializedName("speech_style_status") val speechStyleStatus: String? = null,
+    /**
+     * **이 프로필의 직접 입력 음원이 무효가 된 시각**(제자리 교체). 값이 바뀌면 그 목소리로
+     * 만들어 둔 직접 입력 알람은 다시 만들 수 없는 옛 목소리다.
+     *
+     * 교체는 프로필 **id 를 그대로 재사용**하므로 접근 가능 목록 대조로는 영원히 안 걸린다.
+     * 푸시(`voice_access_revoked` + voiceProfileId)는 즉시성만 맡고, 정확성은 이 값을
+     * `VoiceReplacementMarkerStore` 와 대조하는 주기·앱 시작 경로가 맡는다.
+     */
+    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -134,6 +158,12 @@ data class FamilyVoiceProfile(
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
     @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
+    /**
+     * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
+     * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접
+     * 입력 알람을 만들 수 있고, 그 행 역시 pull 대상이 아니라 서버 강등이 닿지 않는다.
+     */
+    @SerializedName("custom_audio_invalidated_at") val customAudioInvalidatedAt: String? = null,
 )
 
 data class FamilyVoiceProfileListResponse(

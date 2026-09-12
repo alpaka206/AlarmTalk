@@ -145,8 +145,11 @@ android {
         // document_version 을 보내기 시작한 건 그 다음날(7/30)이다. 즉 "versionCode 20" 이
         // 두 가지 앱을 가리켜서 강제 업데이트 하한으로 쓸 수 없다 — app-version.ts 의
         // minSupported 도 21 로 맞춰 두었다.
-        versionCode = 24
-        versionName = "1.2.4"
+        // 25 = 1.2.5. 기본 목소리 4종 교체 릴리스다. ⚠ 이 빌드는 **강제 업데이트 하한**이
+        // 되므로(`app-version.ts` 의 `minSupported: 25`) 스토어 게재 전에 서버를 올리면
+        // 안 된다 — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.
+        versionCode = 25
+        versionName = "1.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -288,6 +291,18 @@ android {
             isIncludeAndroidResources = true
         }
     }
+}
+
+
+composeCompiler {
+    // 리스트·응답 모델을 stable 로 취급해 불필요한 리컴포지션을 막는다.
+    // 무엇을·왜 넣었는지는 그 파일 주석에 있다. **거짓말을 적으면 화면이 안 갱신된다.**
+    stabilityConfigurationFile =
+        rootProject.layout.projectDirectory.file("compose-stability.conf")
+    // 리컴포지션 상태를 다시 재려면 아래 두 줄을 켜고 빌드한 뒤
+    // `app/build/compose-reports/app_devDebug-composables.txt` 를 본다.
+    // metricsDestination = layout.buildDirectory.dir("compose-metrics")
+    // reportsDestination = layout.buildDirectory.dir("compose-reports")
 }
 
 tasks.named("preBuild").configure {

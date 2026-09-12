@@ -45,9 +45,11 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 스낵바(전역 message) 대신 로그인 화면 인라인 에러로 — 키보드가 열려 있어도 보인다.
             // 서버는 미가입/비밀번호 불일치를 구분하지 않고 AUTH_INVALID_CREDENTIALS 401 하나로
             // 응답한다(계정 존재 여부 노출 방지) — 안내 문구도 이메일·비밀번호를 함께 확인하게 쓴다.
-            loginError = when (com.alarmtalk.app.network.apiError(error).code) {
+            val loginErrorCode = com.alarmtalk.app.network.apiError(error).code
+            loginError = when (loginErrorCode) {
                 "AUTH_INVALID_CREDENTIALS" -> app.getString(R.string.auth_error_invalid_credentials)
-                else -> userFacingError(error, app.getString(R.string.msg_login_failed))
+                else -> com.alarmtalk.app.network.apiErrorMessage(app, loginErrorCode)
+                    ?: userFacingError(error, app.getString(R.string.msg_login_failed))
             }
         }
         authBusy = false
@@ -265,10 +267,15 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * 로그인 성공 직후 공통 처리. 세 경로(이메일 로그인·이메일 가입·구글)가 같은 일을 하므로
  * 한 곳으로 모은다 — 경로마다 손으로 나열하면 새 로그인 방식이 생길 때 하나씩 빠진다.
  *
- * 알람 재예약이 여기 있는 이유: 로그아웃은 이 기기의 AlarmManager 예약을 전부 취소하지만
- * Room 행은 켜진 채로 둔다(detachAlarmsOnSignOut). 앱을 다시 켜지 않고 그대로 다시
- * 로그인하면 목록에는 알람이 돌아오는데 예약이 없어 하나도 울리지 않는다. 예전에는
- * MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
+ * 알람 재예약이 여기 있는 이유: **자동 401** 로 세션만 끊긴 기기는 예약이 취소된 채 행이
+ * 켜져 있다(그건 사용자가 그만두겠다고 한 게 아니라 토큰이 낡은 것뿐이다). 앱을 다시 켜지
+ * 않고 그대로 다시 로그인하면 목록에는 알람이 돌아오는데 예약이 없어 하나도 울리지 않는다.
+ * 예전에는 MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
+ *
+ * ⚠ **명시적 로그아웃은 여기 해당하지 않는다**(2026-08-19 정책 변경). 그쪽은
+ * [detachAlarmsOnSignOut] 이 예약과 함께 **행도 끄므로**, 재예약 후보(`getEnabledAlarms`)에
+ * 애초에 들어오지 않는다 — 사용자가 직접 켜야 돌아온다. 예전 이 주석은 "행은 켜진 채로
+ * 둔다" 를 재예약이 필요한 근거로 댔는데, 그 전제가 뒤집혔다.
  */
 private suspend fun MainViewModel.onSignedIn() {
     // 로그아웃 잠금을 푼다 — 다시 로그인했으니 이후의 401 은 정상적으로 처리해야 한다.
@@ -284,6 +291,10 @@ private suspend fun MainViewModel.onSignedIn() {
     runCatching { repository.clearSignOutWithoutSessionClearGate(authSession?.user?.id) }
         .onFailure { error -> Log.w(TAG, "Failed to clear sign-out restore gate", error) }
     restoreAccessSnapshotForCurrentUser()
+    // 로그인 직후에도 스토어에 물어본다 — 안 물어보면 이 계정의 `storeEntitlementChecked` 가
+    // 계속 false 라 무료 확정 판정이 영영 서지 않고, 반대로 스토어가 유료를 확인해 줄
+    // 기회도 없다(2026-08-31 리뷰).
+    viewModelScope.launch { refreshStoreEntitlement() }
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
     com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
@@ -330,7 +341,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         // 알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
-        clearSignedInSession()
+        clearSignedInSession(departingUserId = session?.user?.id)
         authBusy = false
     }
 }
@@ -358,7 +369,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
-            clearSignedInSession()
+            clearSignedInSession(departingUserId = session?.user?.id)
             pendingDeletion = false
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
@@ -465,8 +476,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
         message = getApplication<android.app.Application>().getString(R.string.msg_time_format_required)
         return
     }
+    // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서 평일
+    // 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다 —
+    // "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 null 로 보낸다.
     val firstWindow = normalizedWindows.firstOrNull()
-        ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -477,9 +490,9 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 authorization,
                 com.alarmtalk.app.network.UpdateProfileRequest(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    familyAlarmQuietStart = firstWindow?.start,
+                    familyAlarmQuietEnd = firstWindow?.end,
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
@@ -487,9 +500,11 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             val updated = session.copy(
                 user = session.user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
+                    // 실제 판정은 언제나 `familyAlarmQuietWindows`(빈 목록 = 방해금지 없음)다.
+                    familyAlarmQuietStart = firstWindow?.start ?: "09:00",
+                    familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
@@ -552,7 +567,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
             clearCurrentAccessSnapshot()
-            clearSignedInSession()
+            clearSignedInSession(departingUserId = session?.user?.id)
             dismissDeleteAccount()
             message = if (revokeError == null) {
                 getApplication<android.app.Application>().getString(R.string.msg_account_deleted)
@@ -616,18 +631,24 @@ internal fun MainViewModel.checkConsentStatus() {
         consentChecked = false
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 이 조회의 세대. 뒤에 시작한 조회나 동의 제출이 세대를 올리면 이 응답은 버린다.
+    consentStatusRevision += 1
+    val revision = consentStatusRevision
     viewModelScope.launch {
         runCatching {
             api.consentStatus(authorization)
         }.onSuccess { status ->
             // 응답을 기다리는 사이 로그아웃/계정전환이 일어났으면, 옛 사용자의 결과로
             // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
-            if (authSession?.user?.id != userId) return@launch
+            // ⚠ 계정만 보면 부족하다 — 같은 계정에서 조회가 겹치면 **앞선 응답이 나중에**
+            // 도착해 최신 상태를 덮는다(consentStatusRevision 주석).
+            if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             needsConsent = status.needsConsent
             // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             val collected = status.collect.ifEmpty { status.missing }
             consentOptional = status.optional
+            consentPrechecked = status.prechecked
             // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
             // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
             consentUnsupported = collected.any {
@@ -651,7 +672,7 @@ internal fun MainViewModel.checkConsentStatus() {
                 !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
             rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
         }.onFailure { error ->
-            if (authSession?.user?.id != userId) return@launch
+            if (authSession?.user?.id != userId || revision != consentStatusRevision) return@launch
             Log.w(TAG, "Failed to check consent status", error)
             // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
             if (!isConsentCachedDone(userId)) needsConsent = false
@@ -750,6 +771,8 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             // 화면 상태(아래)는 현재 세션이 그대로일 때만 건드린다.
             policyVersion?.let { rememberConsentDone(ownerUserId, true, it) }
             if (authSession?.user?.id != ownerUserId) return@onSuccess
+            // 상태가 방금 바뀌었다 — 그 전에 떠난 조회의 답은 낡았으므로 버린다.
+            consentStatusRevision += 1
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -761,6 +784,13 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             // 등록 화면에서 다시 만난다(그게 이 설계의 핵심이다).
             val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
             sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
+            // 마케팅을 이 화면에서 결정했으면 설정 토글과 캐시도 함께 맞춘다.
+            // 안 맞추면 방금 동의했는데 더보기 > 설정의 토글이 캐시 때문에 '거부' 로 보인다.
+            consents.firstOrNull { it.type == "marketing" }?.let { row ->
+                marketingConsentAgreed = row.agreed
+                com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>())
+                    .write(ownerUserId, row.agreed)
+            }
             consentChecked = true
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
@@ -820,6 +850,8 @@ internal fun MainViewModel.submitVoiceConsents() {
                 request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
                 return@onSuccess
             }
+            // 위 동의 화면 제출과 같은 이유 — 진행 중인 조회의 답이 이 결과를 덮지 않게 한다.
+            consentStatusRevision += 1
             sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
             pendingSensitiveConsent = null
             // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔
@@ -891,8 +923,15 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
-    // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
-    if (marketingConsentWriteInFlight) return
+    // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
+    // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
+    // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
+    // 곧바로 하고, 실제 전송은 지금 쓰기가 끝난 뒤 이어서 한 번 더 보낸다.
+    if (marketingConsentWriteInFlight) {
+        marketingConsentAgreed = agreed
+        pendingMarketingConsent = agreed
+        return
+    }
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
@@ -928,15 +967,23 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
         // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
         if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+        marketingConsentWriteInFlight = false
+        // 진행 중에 사용자가 또 눌렀으면 **마지막 값**을 이어서 보낸다.
+        pendingMarketingConsent?.let { queued ->
+            pendingMarketingConsent = null
+            if (queued != agreed) {
+                updateMarketingConsent(queued)
+                return@launch
+            }
+        }
         result.onSuccess {
             val app = getApplication<android.app.Application>()
             // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).
             com.alarmtalk.app.data.MarketingConsentCache(app).write(userId, agreed)
-            message = if (agreed) {
-                app.getString(R.string.msg_marketing_consent_on)
-            } else {
-                app.getString(R.string.msg_marketing_consent_off)
-            }
+            // ⚠ **성공 토스트를 되살리지 말 것**(2026-08-11 요청). 스위치가 이미 결과를
+            // 보여주는데 토스트가 같은 말을 한 번 더 한다 — 켜고 끌 때마다 화면 아래가
+            // 가려진다. **실패는 그대로 알린다**(아래) — 그때는 스위치가 되돌아가므로
+            // 왜 되돌아갔는지 말해 줄 것이 필요하다.
         }.onFailure { error ->
             marketingConsentAgreed = previous
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
@@ -1098,7 +1145,7 @@ internal fun MainViewModel.syncNow() {
             val app = getApplication<android.app.Application>()
             when {
                 // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
-                // common_alarm_warning_sync_failed). 같은 말을 위에서 한 번 더 하면 사용자는
+                // `AlarmStates.FAILED` 배지). 같은 말을 위에서 한 번 더 하면 사용자는
                 // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
                 //
                 // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가
@@ -1185,10 +1232,25 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
 }
 
 internal fun MainViewModel.refreshAppSession() {
-    val session = authSession ?: return
+    viewModelScope.launch { refreshAppSessionNow() }
+}
+
+/**
+ * [refreshAppSession] 의 **기다릴 수 있는** 형태.
+ *
+ * ⚠ 결제 preflight 처럼 **그 결과를 보고 다음 행동을 정하는** 자리에서는 이걸 쓴다
+ * (코덱스 #734 10차). `refreshAppSession()` 은 코루틴을 띄우고 바로 돌아오므로,
+ * 그 뒤 코드는 **plan 이 아직 옛 값인 상태로** 진행한다 — 구독이 없어진 것을 확인해도
+ * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
+ *
+ * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
+ */
+internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
+    val session = authSession ?: return false
     // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
     val startGeneration = authSessionStore.sessionGeneration()
-    viewModelScope.launch {
+    var applied = false
+    run {
         runCatching {
             api.me(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { me ->
@@ -1224,10 +1286,25 @@ internal fun MainViewModel.refreshAppSession() {
                 return@onSuccess
             }
             authSession = saved
+            // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
+            // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
+            saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
+                val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
+                    it.copy(userPlan = saved.user.plan)
+                }
+                // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
+                // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
+                // 메모리가 갈라진다 — 그리고 갈라졌을 때 이기는 쪽이 **거절된 값**이다.
+                if (planWrite == EntitlementWrite.Applied) {
+                    storeSnapshotUserPlan = saved.user.plan
+                    applied = true
+                }
+            }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }
     }
+    return applied
 }
 
 /**

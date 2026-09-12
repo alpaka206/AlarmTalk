@@ -119,7 +119,7 @@ class TtsGenerateGateTest {
         repeatDaysMask = 0,
         snoozeMinutes = 5,
         vibrationPattern = VibrationPatterns.DEFAULT,
-        playMode = AlarmPlayModes.ALARM_VOICE,
+        playMode = AlarmPlayModes.VOICE_ONLY,
         localAudioUri = localAudioUri,
         audioCacheKey = audioCacheKey,
         rawAudioUri = rawAudioUri,

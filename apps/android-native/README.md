@@ -1,6 +1,11 @@
 # AlarmTalk Android
 
-Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, backend sync outside the ring path, and social sharing:
+> ⭐ **동작 규칙은 [`docs/spec/`](../../docs/spec/README.md) 이 단일 출처다.**
+> 안드로이드·iOS·백엔드가 같이 본다. 화면 동작을 고치기 전에 거기부터 읽고,
+> 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
+
+
+The shipping Android app. It is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, backend sync outside the ring path, and social sharing:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -10,7 +15,7 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - 30 second voice audio limit
 - reusable local audio cache keys for generated TTS, recordings, and selected files
 - copy alarm action that reuses the cached local audio file
-- `alarm_only`, `voice_only`, and `alarm_voice` playback modes
+- `alarm_only` and `voice_only` playback modes (`alarm_voice` is a legacy stored value, read-normalized to `voice_only` — see `AlarmPlayModes` in `data/AlarmConstants.kt`)
 - app theme using the unified blue (azure) Material 3 tokens (light primary `#175FB0`, dark primary `#A6D2FF`); the single source of truth is `app/src/main/java/com/alarmtalk/app/ui/theme/AlarmTalkTheme.kt` (corner-radius tokens live in `ui/components/WakerDesign.kt`)
 - email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
@@ -46,7 +51,7 @@ Expected response includes `status: ok` and `db: ok`.
 Current deployed auth support:
 
 - Email/password: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
-- Google: protected routes accept a Google ID token as a bearer token, matching the legacy app behavior.
+- Google: the app exchanges the Google ID token at `POST /api/auth/google` for an app JWT. Protected routes accept the app JWT only — a raw provider ID token is rejected by the auth middleware.
 - Email-code login: live — `POST /api/auth/email-code` issues a 6-digit code and `POST /api/auth/email-code/verify` exchanges it for a token (delivery via Resend on both dev and prod).
 
 Provider-costing endpoints are only called from explicit user actions such as saving a new voice-profile TTS alarm or cloning a voice profile. Automated QA should not tap those paths unless provider credit spend is intended.
@@ -134,7 +139,7 @@ Current verified device:
 ### Foreground
 
 1. Open the app.
-2. Create a local alarm for the next few minutes, or use the 1 minute test alarm button.
+2. Create a local alarm for the next few minutes, or use the debug broadcast below (`DEBUG_CREATE_TEST_ALARM`) — there is no in-app test-alarm button.
 3. Confirm OS registration:
 
 ```powershell
@@ -157,7 +162,7 @@ Expected logs include `Scheduled alarm clock`, `Debug test alarm created`, `Alar
 
 ### Background
 
-1. Create a local alarm for the next few minutes, or use the 1 minute test alarm button.
+1. Create a local alarm for the next few minutes, or use the debug broadcast below (`DEBUG_CREATE_TEST_ALARM`) — there is no in-app test-alarm button.
 2. Press Home or switch to another app.
 3. Wait for the alarm.
 
@@ -165,7 +170,7 @@ Expected: full-screen ringing opens. Dismiss stops sound and vibration.
 
 ### Screen Off / Lock Screen
 
-1. Create a local alarm for the next few minutes, or use the 1 minute test alarm button.
+1. Create a local alarm for the next few minutes, or use the debug broadcast below (`DEBUG_CREATE_TEST_ALARM`) — there is no in-app test-alarm button.
 2. Turn the screen off and lock the device.
 3. Wait for the alarm.
 
@@ -215,8 +220,8 @@ Opening the alarm list also performs a startup sync from Room to `AlarmManager`,
 ### Alarm Editor Modes
 
 - `Alarm only`: uses only the bundled local alarm sound. Voice audio is not required or saved for this mode.
-- `Voice only`: requires a generated voice-profile TTS clip, a server-saved dubbed/TTS clip, or a recorded/selected local audio clip.
-- `Alarm + Voice`: rings the bundled alarm first. When the user dismisses the alarm tone, the cached voice clip plays once, then the alarm is dismissed/rescheduled.
+- `Voice only`: requires a generated voice-profile TTS clip, a server-saved dubbed/TTS clip, or a recorded/selected local audio clip. The voice loops until Dismiss.
+- There is no `Alarm + Voice` mode. Do not reintroduce it (see the note in `ui/editor/AlarmEditorControls.kt`). Alarms saved with the legacy `alarm_voice` value are read back as `Voice only`.
 
 If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips holidays from the local `holiday_dates` cache by country/region, with a bundled KR seed as fallback, without a ring-time network fetch.
 
@@ -225,7 +230,7 @@ If no repeat days are selected, the alarm is a one-shot alarm and is disabled af
 Local recording/file voice alarms do not require login. Login is only required for voice-profile TTS, shared/server voice features, and backend sync.
 
 1. Tap New alarm or edit an existing alarm.
-2. Choose `Voice only` or `Alarm + Voice`.
+2. Choose `Voice only`.
 3. Select `Record/File`.
 4. Tap Record and grant microphone permission.
 5. Stop before 30 seconds, or let the app stop at the 30 second limit.
@@ -245,7 +250,7 @@ adb logcat -c
 adb logcat | findstr AlarmTalk
 ```
 
-Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` loops bundled alarm audio until Dismiss, then plays the cached voice once. No fetch is allowed at ring time.
+Expected: `alarm_only` loops bundled audio and `voice_only` loops the cached voice file. No fetch is allowed at ring time.
 
 Restore radios after testing:
 
@@ -259,7 +264,7 @@ This path calls paid providers only when the user taps Save for a voice-profile 
 
 1. Sign in.
 2. Load voice profiles and choose a ready profile.
-3. Select `Voice only` or `Alarm + Voice`.
+3. Select `Voice only`.
 4. Select `Voice profile`.
 5. Enter text, or enable random prompt and choose category/language.
 6. Tap Save.

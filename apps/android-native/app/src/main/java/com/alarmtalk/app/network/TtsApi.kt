@@ -52,13 +52,6 @@ data class ManualQuotaResponse(
     val remaining: Int = 0,
 )
 
-data class TtsMessageListResponse(
-    val messages: List<TtsMessage>,
-    val total: Int? = null,
-    val limit: Int? = null,
-    val offset: Int? = null,
-)
-
 data class TtsMessage(
     val id: String,
     val text: String = "",
@@ -81,7 +74,43 @@ data class TtsMessageAudioResponse(
 
 data class StockClipListResponse(
     val clips: List<StockClip> = emptyList(),
+    /** 카테고리별 **완전한 세트의 클립 수**. 옛 서버면 null. */
+    @SerializedName("expected_variants") val expectedVariants: ExpectedVariantCounts? = null,
+    /**
+     * **버킷 없이 클립 하나만 물린 옛 알람**이 어떤 테마였는지(서버가 알려 준다).
+     *
+     * `bucket_id` 를 행에 적기 전에 만들어진 알람은 재바인더 두 갈래 어디에도 안 걸린다 —
+     * 하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구하는데 둘 다 없다.
+     * 그래서 목소리를 갈아도 그 알람만 **영원히 옛 대사·옛 목소리**로 운다(이름은 새 이름).
+     * 서버는 그 알람이 가리키는 message 의 `category` 를 알고 있으므로 실어 보낸다.
+     *
+     * 옛 서버면 빈 목록이고, 그러면 예전대로 그 알람은 건너뛴다.
+     */
+    @SerializedName("legacy_bucket_hints") val legacyBucketHints: List<LegacyBucketHint> = emptyList(),
 )
+
+/** [StockClipListResponse.legacyBucketHints] 한 줄 — 이 message 를 문 알람의 테마. */
+data class LegacyBucketHint(
+    @SerializedName("message_id") val messageId: String,
+    val category: String,
+    val language: String = "ko",
+)
+
+/**
+ * ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다**(지금도 `medication` 이 2 vs 3).
+ * 하나로 합치면 한쪽이 반드시 깨진다 — 기본 목소리의 완전한 세트가 '불완전' 으로 읽혀
+ * 오프라인 재생이 안 켜지거나, 클론이 부분 세트인데 완전하다고 읽혀 없는 자리를 튼다.
+ *
+ * 앱에 개수를 박지 않으려고 서버가 내려준다. 운영이 시드를 늘리면 앱 업데이트 없이 따라온다.
+ */
+data class ExpectedVariantCounts(
+    val system: Map<String, Int> = emptyMap(),
+    val clone: Map<String, Int> = emptyMap(),
+) {
+    /** 이 목소리 종류에서 해당 카테고리가 완전하려면 몇 개여야 하는가. 모르면 null. */
+    fun countFor(category: String, isSystemVoice: Boolean): Int? =
+        (if (isSystemVoice) system else clone)[category]
+}
 
 data class StockClip(
     @SerializedName("message_id") val messageId: String,
@@ -93,7 +122,26 @@ data class StockClip(
     val variant: Int = 0,
     val text: String = "",
     @SerializedName("audio_url") val audioUrl: String? = null,
-)
+    /**
+     * **서버가 이 클립을 '지금 목소리' 로 이미 구웠는가.**
+     *
+     * ⚠ 제자리 목소리 교체는 세대 표식(custom_audio_invalidated_at)을 **먼저 커밋하고**
+     * 프리셋 재렌더는 큐에만 넣는다 — 굽는 것은 cron 이 나중에 한다. 그 사이 매니페스트의
+     * [audioUrl] 은 **옛 클립 그대로**라, 앱이 "낡은 키가 없다 = 다 끝났다" 로 읽으면 교체
+     * 세대를 확정해 버리고 재렌더가 끝난 뒤에도 다시 받지 않는다(Codex #703 P1).
+     * false 인 클립이 하나라도 있으면 **아직 끝난 것이 아니다.**
+     *
+     * ⚠ **nullable 이어야 한다**(Codex #703 P2). Retrofit 의 Gson 은 이 클래스를 리플렉션으로
+     * 만들어 **코틀린 기본 인자를 적용하지 않는다** — 필드가 없으면 원시 Boolean 은 `false`
+     * 로 채워진다. 그러면 옛 서버에서 **모든 클립이 '아직 안 구워짐'** 이 되어 워커가 계속
+     * `Result.retry()` 만 하고 교체 표식을 영영 확정하지 못한다. 없으면 [isRendered] 가
+     * true 로 읽는다. iOS 짝은 `StockClip.renderedForCurrentVoice`(같은 이유로 옵셔널).
+     */
+    @SerializedName("rendered_for_current_voice") val renderedForCurrentVoice: Boolean? = null,
+) {
+    /** 옛 서버(필드 없음)는 '준비됨' 으로 본다 — 없는 신호로 앱을 멈추지 않는다. */
+    val isRendered: Boolean get() = renderedForCurrentVoice ?: true
+}
 
 data class PrerenderVariantResponse(
     val context: String? = null,
@@ -106,9 +154,6 @@ interface TtsApi {
         @Header("Authorization") authorization: String,
         @Body request: TtsGenerateRequest,
     ): TtsGenerateResponse
-
-    @GET("tts/messages")
-    suspend fun listTtsMessages(@Header("Authorization") authorization: String): TtsMessageListResponse
 
     @GET("tts/stock-clips")
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse

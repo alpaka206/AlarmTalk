@@ -78,6 +78,22 @@ data class AlarmEntity(
     // 잠금/복원은 현재 세션이 이 알람의 소유자일 때만 수행한다 — 다른 계정으로 로그인해 무료/유료가 돼도
     // 남의 목소리 알람을 잠그거나(→소유자가 복원 못하는 영구 잠금) 복원하지(→남의 목소리 재생) 못하게 한다.
     val ownerUserId: String? = null,
+    // 받은 알람의 음원 확보와 OS 예약까지 끝난 전달 세대. 서버 ACK보다 먼저 저장해 ACK 실패 뒤
+    // 수신자가 편집해도 같은 세대만 안전하게 재확인할 수 있게 한다.
+    val remoteDeliveryVersion: String? = null,
+    /**
+     * **이 행을 만들거나 갱신할 때 서버가 준 전달 세대.** 반영 성패와 무관하게 그 자리에서 적는다.
+     *
+     * ⚠ [remoteDeliveryVersion] 과 다른 값이다 — 저쪽은 '음원·예약까지 끝냈다', 이쪽은
+     * '이 전달을 받아 행에 반영했다' 다. 이 값이 있어야 **재전송**과 **반영 실패**를 가른다:
+     *  - 서버 세대 == 이 값 → 내가 이미 받은 그 전달이다. 수신자 편집을 **보존**하고 ack 만 재시도.
+     *  - 서버 세대 != 이 값 → 발신자가 **다시 보냈다**. 새 전달로 **덮어쓴다**.
+     *
+     * 이게 없던 시절에는 적용 버전이 비어 있고 수신자가 손댄 행 하나가 그 슬롯의 **이후 모든
+     * 전달을 영구히 거부**했다(2026-08-26 실기기 재현 — 매 pull 마다 skipped=1).
+     * 상세는 `docs/spec/family-alarm.md` 「적용한 전달 버전을 로컬에 남긴다」.
+     */
+    val observedDeliveryVersion: String? = null,
 )
 
 data class AlarmDraft(
@@ -187,6 +203,26 @@ fun appVoiceLanguageOf(language: String?): String = when (language) {
 const val WEATHER_CLONE_CLIP_COUNT = 9
 
 /**
+ * **이 행을 로컬에서 고쳤을 때 가져야 할 동기 상태.**
+ *
+ * ⚠ **규칙의 유일 출처다 — 호출부에서 손으로 조립하지 말 것**(2026-09-03 리뷰 6차).
+ *   예전에는 `AlarmRepository` 에만 private 로 있어서, 같은 판단이 필요한
+ *   `StockClipLanguageRebinder` 는 **아예 하지 않았다.** 그래서 재바인딩이 Room 만
+ *   고치고 `SYNCED` 를 그대로 둬, 업로드 대상(`AlarmSyncService` 의 LOCAL_ONLY·DIRTY·
+ *   FAILED)에 안 들어가 **서버에 영영 안 올라갔다** — 다른 기기·재설치는 #110 이
+ *   깎아 둔 sound-only 알람을 계속 받는다.
+ *
+ * 받은 알람(`RECEIVED_REMOTE`)은 올리지 않는다 — 서버 행은 전달 수단일 뿐이다.
+ * iOS 짝은 `LocalAlarmStore.nextLocalSyncState(for:)` 다 — **한쪽만 고치지 말 것.**
+ */
+fun AlarmEntity.nextLocalSyncState(): String =
+    when {
+        origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
+        remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
+        else -> AlarmSyncStates.DIRTY
+    }
+
+/**
  * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
  * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
  * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
@@ -222,3 +258,4 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
     }
     return ((raw % size) + size) % size
 }
+

@@ -26,6 +26,31 @@ describe('migrations', () => {
     }
   });
 
+  it('마이그레이션 #104가 기존 받은 알람에만 전달 버전을 채운다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrationsRange(db, 1, 103);
+    await db.execute(
+      `INSERT INTO users (id, google_id, email) VALUES
+        ('sender', 'g-sender', 'sender@example.com'),
+        ('recipient', 'g-recipient', 'recipient@example.com')`,
+    );
+    await db.execute(
+      `INSERT INTO alarms (id, user_id, target_user_id, time) VALUES
+        ('received', 'sender', 'recipient', '07:00'),
+        ('local', 'recipient', NULL, '08:00')`,
+    );
+
+    expect(await runMigrationsRange(db, 104, 104)).toEqual(['104_alarm-delivery-version']);
+    const rows = await db.execute(
+      `SELECT id, delivery_version FROM alarms ORDER BY id`,
+    );
+    expect(rows.rows.find((row) => row.id === 'received')?.delivery_version).toMatch(
+      /^[0-9a-f]{32}$/,
+    );
+    expect(rows.rows.find((row) => row.id === 'local')?.delivery_version).toBeNull();
+    db.close();
+  });
+
   it('초기 마이그레이션(0001)에 8개 테이블 생성이 포함된다', () => {
     const initial = migrations.find((m) => m.id === 1);
     expect(initial).toBeDefined();

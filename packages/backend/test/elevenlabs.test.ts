@@ -72,7 +72,7 @@ describe('ElevenLabsClient', () => {
         stability: 0.5,
         similarity_boost: 0.8,
         style: 0.4,
-        speed: 1.0,
+        speed: 0.9,
         use_speaker_boost: true,
       });
     });
@@ -116,7 +116,9 @@ describe('ElevenLabsClient', () => {
       expect(body.voice_settings.stability).toBe(0.8);
       expect(body.voice_settings.similarity_boost).toBe(0.9);
       expect(body.voice_settings.style).toBe(0.3);
-      expect(body.voice_settings.speed).toBe(1.0);
+      // ⚠ 알람은 막 깬 사람이 듣는다 — 평상시 속도(1.0)로 읽으면 따라가지 못한다.
+      // 2026-08-13 사용자 지적("말이 엄청 빠르다")으로 0.9 가 기본이 됐다.
+      expect(body.voice_settings.speed).toBe(0.9);
       expect(body.voice_settings.use_speaker_boost).toBe(true);
     });
 

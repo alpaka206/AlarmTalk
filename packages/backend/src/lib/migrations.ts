@@ -69,6 +69,42 @@ const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
   '[brightly] こんにちは!お会いできてうれしいです。[warmly] これから毎朝、私の声で気持ちよく起こしますね。よろしくお願いします!',
 ];
 
+/**
+ * 2026-09-02 확정 리터럴 — 위 36종에 **운세 5 · 사랑 3** 을 더한 것이다.
+ *
+ * 왜 더했나: 운세·사랑을 기본(시스템) 목소리에도 열어 **유료/무료의 문구 목록 차이를
+ * 없앴다**(`docs/spec/voice-and-message.md`). 그전에는 기본 목소리에 그 두 카테고리의
+ * 클립이 없어서 목록에서 아예 감췄다.
+ *
+ * ⚠ 이 사본은 **그때의** 문구다. 그 뒤 2026-09-02 에 세 언어 대사를 전부 새로 썼고,
+ * #110 이 시스템 프리셋을 통째로 지운다 — 이 목록과 현재 문구는 더 이상 같지 않다.
+ *
+ * 앞의 36종은 **글자 하나 바뀌지 않았다.** 그래서 아래 무효화는 dev/prod 에서 0행 no-op 다 —
+ * 승인된 실오디오를 지우지 않는다. 새 8종은 아직 시딩된 적이 없어 지울 것도 없다.
+ */
+const STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02 = [
+  ...STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19,
+  // 운세(fortune) — CLONE_FORTUNE_THEMES 순서(luck/caution/wealth/health/relationship).
+  '[brightly] 오늘은 운이 좋은 날이래요. [cheerfully] 기대해도 좋겠는데요? [warmly] 좋은 일 있으면 저한테도 얘기해 주세요.',
+  '[matter-of-fact] 오늘은 작은 실수만 조심하면 괜찮은 날이래요. [measured, deliberate] 서두르지 말고 하나씩 하면 다 잘될 거예요. [warmly] 천천히 가요.',
+  '[playfully] 오늘은 재물운이 살짝 따른대요. [lightly] 뜻밖의 좋은 소식이 있을지도 모르고요. [matter-of-fact] 재미로 듣는 거예요, 너무 믿진 말고요.',
+  '[caring] 오늘은 몸을 잘 챙기면 좋은 날이래요. [firmly] 무리하지 말고, 피곤하면 잠깐이라도 쉬어요. [warmly] 건강이 먼저예요.',
+  '[brightly] 오늘은 사람들과 기분 좋은 일이 있을 수 있대요. [warmly] 먼저 다정하게 건네 보세요. [cheerfully] 돌아오는 게 더 클지도 몰라요.',
+  // 사랑(love) — 응원·다정함까지만. 기본 목소리는 연인이 아니다.
+  '[warmly] 오늘도 곁에서 응원하고 있어요. [encouraging] 어떤 하루가 되든, 잘 해낼 거예요. [cheerfully] 힘내요!',
+  '[warmly] 좋은 아침이에요. 오늘도 잘 지내고 있죠? [caring] 밥 거르지 말고 꼭 챙겨 드세요. [cheerfully] 그거면 하루가 달라져요.',
+  '[caring] 힘든 일이 있으면 혼자 담아 두지 말아요. [warmly] 기댈 곳은 늘 있어요. [encouraging] 오늘도 제가 응원할게요.',
+];
+
+const STALE_STOCK_PRESET_SUBQUERY_2026_09_02 = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )
+    AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
+      ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_09_02.map(sqlLiteral).join(',\n      ')}
+    )`;
+
 // 시스템 보이스 preset 중 확정 리터럴(위 36종)과 문구가 다른 '낡은' 행의 id 집합.
 // 2026-07-19 시딩으로 이미 최신 문구가 들어간 DB(dev/prod)에서는 정확히 0행 = no-op.
 const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
@@ -79,6 +115,46 @@ const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
     AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
       ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19.map(sqlLiteral).join(',\n      ')}
     )`;
+
+/**
+ * **문구 지문은 무효화 마이그레이션의 `name` 안에 산다.**
+ *
+ * ⚠ `findMissingStockTargets` 는 (voice|category|language|variant) **존재 여부만** 본다.
+ * 옛 행을 지우지 않으면 재시드해도 **옛 문구가 그대로 남고**, 코드와 실제 울리는 소리가
+ * 갈라진 채 아무 데서도 드러나지 않는다.
+ *
+ * 그래서 지문을 **별도 상수로 두지 않는다.** 별도 상수는 문구를 고친 사람이 그 값만 새로
+ * 계산해 넣으면 테스트가 초록이 되어, 무효화 없이 넘어갈 수 있다(2026-09-03 리뷰 지적 —
+ * 실제로 그 우회가 통과했다).
+ *
+ * 지금은 **마이그레이션 이름 끝에 지문을 박는다**: `...-script-<지문>`.
+ * 적용된 마이그레이션의 본문·이름은 고칠 수 없으므로(원장이 id 로 기록한다), 지문을
+ * 바꾸려면 **새 마이그레이션을 만드는 수밖에 없다.** 그게 곧 무효화다.
+ *
+ * 테스트(`test/migrations-stock-refresh.test.ts`)가 최신 무효화 마이그레이션 이름에서
+ * 지문을 뽑아 현재 문구와 대조한다.
+ */
+export const STOCK_FINGERPRINT_IN_NAME = /-([0-9a-f]{16})$/;
+
+/** 스톡 문구를 무효화하는 마이그레이션의 이름 규칙. 테스트가 '최신' 을 이걸로 찾는다. */
+export const STOCK_INVALIDATION_NAME = /^(refresh|replace)-stock-clips/;
+
+/**
+ * **시스템(스톡) 보이스의 프리셋 행 전부.** 문구를 가리지 않는다.
+ *
+ * #70·#109 의 "확정 문구와 다른 것만" 서브쿼리와 다르다 — 대사를 통째로 새로 썼을 때는
+ * 전부가 대상이라, 텍스트 목록을 동결해 두는 것이 오히려 헷갈린다. 클론(사용자 등록)
+ * 클립은 `is_system = 0` 이라 여기 걸리지 않는다.
+ */
+const SYSTEM_STOCK_PRESET_SUBQUERY = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )`;
+
+// 등록(클론) 보이스 프리셋을 통째로 고르는 짝 서브쿼리가 여기 있었는데 지웠다
+// (2026-09-03). 마이그레이션이 남의 클론을 대신 다시 굽지 않기로 했기 때문이다 —
+// 이유는 #110 의 ③ 자리에 적어 두었다. 다시 필요해지면 그 주석부터 읽을 것.
 
 export const migrations: Migration[] = [
   {
@@ -268,7 +344,7 @@ export const migrations: Migration[] = [
     id: 6,
     name: 'plans-and-subscriptions',
     statements: [
-      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 6인
+      // plan_type: 'free'=무료, 'personal'=개인 1인, 'family'=가족 최대 5인
       `CREATE TABLE IF NOT EXISTS plans (
         id TEXT PRIMARY KEY,
         key TEXT UNIQUE NOT NULL,
@@ -728,7 +804,7 @@ export const migrations: Migration[] = [
     // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
     //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
     //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
-    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    //   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
     // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
     id: 36,
     name: 'subscriptions-apple-fields',
@@ -1961,6 +2037,11 @@ export const migrations: Migration[] = [
      *
      * 그래서 조건부 무효화에 기대지 않고 여기서 값을 지운다. 현재 문서 버전은 '4' 이고 서버는
      * 그보다 큰 값을 발급한 적이 없으므로, 4 를 넘는 행은 정의상 전부 위조·버그다.
+     *
+     * ⚠ **아래 `> 4` 는 이 마이그레이션을 쓰던 시점의 CURRENT_POLICY_VERSION 이다 — 문서
+     * 버전을 올려도 여기를 따라 올리지 말 것.** 마이그레이션은 append-only 라 한 번 돈 것을
+     * 고쳐도 다시 돌지 않고, 값을 올리면 **정상적으로 5 로 기록된 동의가 새 DB 에서만 0 이
+     * 되어** 그 사람들만 재동의를 받게 된다. 새로 걸러 낼 값이 생기면 새 id 를 추가한다.
      * 행 자체(누가·언제·동의했는지)는 남기고 **버전만 '0'(=모름)** 으로 바꾼다 — 어느 문서를
      * 보고 동의했는지 알 수 없다는 게 사실이고, 0 은 어떤 최소 버전도 만족하지 못해 재동의를
      * 받게 된다. 숫자가 아닌 값은 이미 0 으로 읽히므로 건드리지 않는다.
@@ -2011,8 +2092,719 @@ export const migrations: Migration[] = [
     name: 'alarm-recipient-state-sender',
     statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN sender_user_id TEXT`],
   },
-];
+  {
+    /**
+     * push_tokens.platform CHECK 에 'ios' 를 되돌린다.
+     *
+     * #88 이 iOS 미운영을 이유로 CHECK 를 `('android','web')` 로 좁혔는데, iOS 앱을
+     * 되살리면서 **DB 가 iOS 토큰 등록을 거절하는** 상태가 됐다. 이게 막히면 가족 알람·
+     * 목소리 공유·목소리 철회 신호를 iOS 기기가 하나도 못 받는다.
+     *
+     * SQLite/libSQL 은 CHECK 제약을 ALTER 로 못 고쳐서 테이블 재작성이 유일한 방법이다.
+     * #88 과 같은 방식이되 **필터 없이 전 행을 옮긴다** — 좁힐 때와 달리 넓히는
+     * 방향이라 버릴 행이 없다. 기존 android/web 토큰은 그대로 보존된다.
+     *
+     * 인덱스는 **지금 살아 있는 2개만** 다시 만든다. `idx_push_tokens_user` 는 #89 가
+     * 중복이라고 지운 것이라(`idx_push_tokens_unique` 의 선두 컬럼이 user_id) 여기서
+     * 되살리면 그 정리를 무효화한다.
+     */
+    id: 94,
+    name: 'restore-ios-push-platform',
+    atomic: true,
+    statements: [
+      `CREATE TABLE push_tokens_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('ios','android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO push_tokens_v3 (id, user_id, token, platform, created_at, updated_at)
+        SELECT id, user_id, token, platform, created_at, updated_at FROM push_tokens`,
+      `DROP TABLE push_tokens`,
+      `ALTER TABLE push_tokens_v3 RENAME TO push_tokens`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
+    ],
+  },
+  {
+    /**
+     * Sign in with Apple 을 위해 users.apple_id 를 되돌린다.
+     *
+     * #82 가 "iOS 미운영" 을 이유로 떨궜던 것(그때 dev·prod 실측 0건이라 손실은 없었다)을
+     * 같은 정의로 되살린다 — 부분 UNIQUE 인덱스라 NULL 인 행끼리는 충돌하지 않으므로
+     * 기존 안드로이드·이메일 계정에는 아무 영향이 없다.
+     *
+     * App Store 심사 규정상 소셜 로그인(구글)이 있으면 Sign in with Apple 은 **필수**라
+     * 선택지가 아니다.
+     */
+    id: 95,
+    name: 'restore-apple-identity',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
+  {
+    /**
+     * Apple 결제(StoreKit 2)를 위한 스키마 복구. #82 가 떨궜던 것을 같은 정의로 되살리고,
+     * #88 이 `provider = 'google'` 로 좁혀 둔 store_transactions CHECK 를 넓힌다.
+     *
+     * store_transactions 는 CHECK 변경이라 테이블 재작성이 필요하다(#88·#94 와 같은 방식).
+     * **넓히는 방향이라 필터 없이 전 행을 옮긴다** — 기존 구글 결제 이력은 그대로 보존된다.
+     * 인덱스 3개를 모두 되살린다: #88 이 만든 provider_tx·user 둘과 #89 가 추가한
+     * subscription 하나(구독 해지 경로가 subscription_id 로 훑는다).
+     *
+     * subscriptions 의 apple 컬럼 3개는 ALTER ADD COLUMN 이라 append-only 다:
+     *   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+     *   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+     *   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
+     *
+     * ⚠ 기존 구글 경로는 건드리지 않는다. provider 를 좁히던 CHECK 만 넓히는 것이라
+     * 구글 결제 코드·데이터는 그대로 동작한다.
+     */
+    id: 96,
+    name: 'restore-apple-billing',
+    atomic: true,
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+      `CREATE TABLE store_transactions_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO store_transactions_v3 (
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      ) SELECT
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      FROM store_transactions`,
+      `DROP TABLE store_transactions`,
+      `ALTER TABLE store_transactions_v3 RENAME TO store_transactions`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription
+        ON store_transactions(subscription_id)`,
+    ],
+  },
+  {
+    /**
+     * 탈퇴 시 애플 연결을 끊기 위한 refresh token 보관.
+     *
+     * ⚠ **애플 심사 지침 5.1.1(v) 요구사항이다.** 계정 삭제를 제공하는 앱은 Sign in with
+     * Apple 연결도 함께 끊어야 한다. 안 끊으면 탈퇴한 사용자의 기기 '설정 → Apple 계정 →
+     * 암호 및 보안 → Apple로 로그인' 목록에 우리 앱이 **영원히 남는다** — 지웠다고 믿는
+     * 사용자에게 거짓말이 되고, 심사에서 반려된다.
+     *
+     * 왜 이 값이어야 하나: 애플의 `/auth/revoke` 는 폐기할 토큰을 요구하는데, 로그인
+     * 시점의 `id_token` 으로는 못 한다. `authorization_code` 는 5분·1회용이라 저장해 둘
+     * 수도 없다. 그래서 로그인 순간에 refresh token 으로 바꿔 이 컬럼에 넣어 둔다.
+     */
+    id: 97,
+    name: 'apple-refresh-token-for-revocation',
+    statements: [`ALTER TABLE users ADD COLUMN apple_refresh_token TEXT`],
+  },
+  {
+    /**
+     * 아무도 설정한 적 없는 '설정 불가능 시간' 을 지운다.
+     *
+     * ⚠ 마이그레이션 30 이 이 컬럼을 `DEFAULT '[{"days":[1,2,3,4,5],...09:00~18:30}]'`
+     * 로 만들었다. 그래서 **가입만 하면 평일 낮에 가족 알람이 막혔다** — 받는 사람은
+     * 자기가 막아 둔 줄 모르고, 보내는 사람은 왜 못 보내는지 모른다. 방해금지는
+     * 사용자가 **명시적으로 켜는** 기능이라는 것이 2026-08-08 결정이다.
+     *
+     * ⚠ **정확히 그 기본값인 행만** 비운다. 사용자가 직접 만든 창은 값이 다르므로
+     * 건드리지 않는다 — 공백까지 같은 문자열만 대상이라 오탐이 없다.
+     * (SQLite 는 컬럼 DEFAULT 를 바꿀 수 없어 새 행은 여전히 저 값으로 생기지만,
+     *  읽는 쪽이 그 값을 만들어 내지 않게 바꿨고 가입 응답도 빈 목록을 준다.)
+     */
+    id: 98,
+    name: 'clear-auto-added-family-quiet-windows',
+    statements: [
+      `UPDATE users
+          SET family_alarm_quiet_windows = '[]'
+        WHERE family_alarm_quiet_windows = '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
+    ],
+  },
+  {
+    /**
+     * 오디오 TTL 스윕이 `messages` 를 **행마다 풀스캔**하던 것을 막는다.
+     *
+     * 스윕 쿼리(`lib/audio-retention.ts`)는 만료 후보마다
+     * `NOT EXISTS (SELECT 1 FROM alarms a JOIN messages m ON m.id = a.message_id
+     *              WHERE m.audio_url = 'r2://' || g.audio_object_key)`
+     * 를 돈다. `messages.audio_url` 에 인덱스가 없어 후보 하나당 messages 전체를
+     * 훑었다 — 데이터가 늘수록 곱으로 느려진다.
+     *
+     * ⚠ **이게 느려지면 탈퇴자 목소리 파기까지 같이 멈춘다.** 스윕은 같은 크론
+     * 사이클에서 외부 삭제 큐를 함께 처리하므로, 여기서 시간을 다 쓰면 파기가
+     * 밀린다 — 개인정보 파기 약속이 걸린 자리다.
+     *
+     * 인덱스 추가는 되돌리기가 `DROP INDEX` 한 줄이라 데이터 손실이 0 이다.
+     */
+    id: 99,
+    name: 'index-audio-retention-sweep',
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_messages_audio_url ON messages(audio_url)`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_created
+         ON generated_audio_assets(created_at)`,
+    ],
+  },
+  {
+    id: 100,
+    name: 'index-missing-lookup-columns',
+    // 실제 스키마(마이그레이션 전량 적용)와 코드의 SQL 을 대조해 **필터로 쓰이는데
+    // 인덱스가 없는** 컬럼만 골랐다(2026-08-10). 인덱스만 만드는 append-only 라
+    // 되돌릴 수 없는 DDL 이 없고 기존 행도 건드리지 않는다.
+    //
+    // 뽑을 때 걸러낸 것들 — 이미 복합 인덱스가 덮고 있어 넣지 않았다:
+    //   store_transactions.provider_transaction_id → 조회가 항상 `provider = ? AND ...`
+    //     이라 `idx_store_transactions_provider_tx(provider, provider_transaction_id)` 가 탄다.
+    //   promo_code_redemptions(promo_code_id, user_id) 조회 → 기존 UNIQUE 인덱스가 덮는다.
+    //   plans 를 가리키는 *_plan_id → plans 는 행이 몇 개뿐이라 인덱스 이득이 없다.
+    statements: [
+      // 그룹 플랜의 핵심 조인. 한도 계산·그룹 전파·바우처 사용에서 매번 탄다.
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_group
+         ON subscriptions(plan_group_id)`,
+      // 결제 이벤트(RTDN)·만료 크론이 발급 구독으로 바우처를 되짚는다.
+      `CREATE INDEX IF NOT EXISTS idx_voucher_codes_issuer_subscription
+         ON voucher_codes(issuer_subscription_id)`,
+      // UNIQUE(user_id, voice_profile_id) 는 **user_id 가 앞**이라 프로필 단독 조회를
+      // 못 탄다. tts 요청 경로에서 쓰인다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_profile
+         ON voice_profile_relationships(voice_profile_id)`,
+      // 목소리 삭제·복구가 업로드 원본을 프로필로 찾는다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_uploads_profile
+         ON voice_uploads(voice_profile_id)`,
+      // 유료 만료 정리·스톡 클립 조회가 소유자로 큐를 훑는다(기존 인덱스는 status 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_voice_prerender_queue_owner
+         ON voice_prerender_queue(owner_user_id)`,
+      // 프로모 이력 조회가 사용자 단독으로 거른다(UNIQUE 는 promo_code_id 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_promo_redemptions_user
+         ON promo_code_redemptions(user_id)`,
+    ],
+  },
+  {
+    id: 101,
+    name: 'voice-prerender-replace-mode',
+    // 목소리 **교체**(같은 프로필의 음원만 갈아끼우기)를 위한 append-only 컬럼 하나.
+    //
+    // 지금까지 등록은 "새 프로필을 만들고 옛 것을 지운다" 였다. 지우는 순간 그 목소리를
+    // 쓰던 알람이 기본 알람음으로 떨어진다 — 사용자가 없애고 싶어 한 동작이다.
+    // 교체는 프로필 id·message id 를 **그대로 두고** 오디오 실체만 덮어쓰므로 알람이
+    // 아무것도 눈치채지 못한다.
+    //
+    // 큐가 이 회차를 '재렌더' 로 알아야 `generateStockClip` 이 기존 preset 을 no-op 로
+    // 건너뛰지 않고 **UPDATE** 한다. 기본값 0 이라 기존 행은 지금과 똑같이 동작한다.
+    statements: [
+      `ALTER TABLE voice_prerender_queue ADD COLUMN refresh_existing INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 102,
+    name: 'alarm-recipient-state-voice-ref',
+    // **받은 알람이 어느 목소리를 쓰는지 서버가 기억하는 유일한 자리.**
+    //
+    // 수신 확인(`POST /alarm/:id/received`)이 끝나면 `alarms` 행을 지운다 — 전달이
+    // 끝났고 아무도 그 행을 읽지 않기 때문이다. 그런데 그러고 나면 발신자가 나중에
+    // **목소리를 지웠을 때** 어느 수신 알람을 걷어내야 하는지 알 방법이 사라진다.
+    // 그래서 지우기 직전에 목소리 id 를 이 tombstone 에 옮겨 적는다.
+    //
+    // ⚠ **클론(비-system)만 적는다.** 스톡 목소리는 없어지지 않으므로 적을 이유가 없고,
+    // 적어 두면 "이 알람은 걷어낼 것이 있다" 는 잘못된 근거가 된다.
+    // 값은 revoke 하는 순간 NULL 로 지운다 — 소비하고 나면 남길 이유가 없다.
+    statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN voice_profile_id TEXT`],
+  },
+  {
+    id: 103,
+    name: 'alarm-recipient-state-sender-voice-upload',
+    // `family-voice`의 실제 음원은 messages.voice_profile_id가 아니라 발신자의 직접 업로드다.
+    // 수신 확인 뒤 alarms/messages가 없어져도 탈퇴·음성 동의 철회 시 그 녹음만 걷어내도록
+    // tombstone에 출처 종류를 남긴다. sender_user_id는 #93 컬럼을 그대로 쓴다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN sender_voice_upload INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 104,
+    name: 'alarm-delivery-version',
+    // 같은 발신자가 같은 수신자·시각으로 다시 보내면 알람 id는 유지되고 내용만 교체된다.
+    // 구버전 다운로드가 늦게 끝나도 신버전 행을 ACK로 지우지 못하게 전달 세대를 구분한다.
+    // 기존 행은 새 전달 세대의 UUID와 구별되는 32자리 hex로 채워, 적용 표식이 없던 구형
+    // 클라이언트가 이 세대만 안전하게 부트스트랩할 수 있게 한다.
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN delivery_version TEXT`,
+      `UPDATE alarms SET delivery_version = lower(hex(randomblob(16)))
+        WHERE target_user_id IS NOT NULL AND delivery_version IS NULL`,
+    ],
+  },
+  {
+    id: 105,
+    name: 'alarm-recipient-state-custom-voice',
+    // 전달이 끝난 custom 음원은 alarms 행이 없어 목소리 교체 때 preset 과 구분할 수 없다.
+    // preset 은 같은 message id로 재렌더하지만 custom 은 재생성하지 않으므로, ACK 직전에
+    // 이 한 비트만 tombstone에 남겨 교체 시 custom 캐시만 정확히 철회한다.
+    statements: [
+      `ALTER TABLE alarm_recipient_state
+         ADD COLUMN custom_voice INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    id: 106,
+    name: 'voice-profile-custom-audio-invalidated-at',
+    // **제자리 교체는 프로필 id 를 그대로 재사용한다.** 그래서 클라의 '접근 가능 목소리
+    // 목록 대조'로는 교체를 절대 감지할 수 없고, 본인 소유 알람은 pull 대상도 아니다.
+    // 푸시(voice_access_revoked + voiceProfileId)는 즉시성만 맡는다 — best-effort 라
+    // 오프라인·강제종료에서 조용히 버려지므로, **정확성을 맡을 표식**이 따로 필요하다.
+    //
+    // ⚠ `updated_at` 으로 대신하지 말 것. 이름 변경·공유 토글도 그 값을 올리므로,
+    // 그걸 기준으로 강등하면 **이름만 바꿔도** 직접 입력 알람이 되돌릴 수 없이 사라진다.
+    //
+    // 백필하지 않는다(NULL 유지) — 값을 채우면 기존 설치가 첫 조회에서 전부 '방금 교체됨'
+    // 으로 읽는다.
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN custom_audio_invalidated_at TEXT`,
+    ],
+  },
+  {
+    id: 107,
+    name: 'targeted-alarm-slots',
+    // **재전송이 같은 알람을 덮어쓰려면 슬롯 신원이 전달보다 오래 살아야 한다.**
+    //
+    // `claimTargetedAlarmSlot` 은 (발신자·수신자·시각) 으로 **살아 있는 alarms 행**을 찾아
+    // 같은 알람 id 를 재사용한다. 그런데 수신 확인(`POST /alarm/:id/received`)이 그 행을
+    // 지우므로, 확인이 끝난 뒤의 재전송은 슬롯을 못 찾고 **새 알람 id** 를 발급받는다 —
+    // 수신자 기기에는 remoteAlarmId 가 다른 **두 번째 줄**이 생기고, 껐던 옛 줄은 영영
+    // 울리지 않는 유령으로 남는다(2026-08-27 실기기 재현).
+    //
+    // 그래서 **id 하나만** 따로 남긴다. 생체 음원·문구는 예정대로 지운다 — 여기 남는 것은
+    // 슬롯 신원뿐이라 「전달이 끝난 알람은 서버에서 지운다」와 충돌하지 않는다.
+    statements: [
+      `CREATE TABLE IF NOT EXISTS targeted_alarm_slots (
+        sender_user_id TEXT NOT NULL,
+        recipient_user_id TEXT NOT NULL,
+        time TEXT NOT NULL,
+        alarm_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (sender_user_id, recipient_user_id, time)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_targeted_alarm_slots_recipient
+         ON targeted_alarm_slots(recipient_user_id)`,
+      // ⚠ **이미 전달 중인 알람도 신원을 남겨 둔다**(2026-08-28 리뷰).
+      // 빈 표로 시작하면, 배포 시점에 떠 있던 알람은 **수신 확인으로 지워지고 나서야**
+      // 슬롯이 없는 상태가 된다 — 그 뒤의 재전송이 새 id 를 발급해, 이 마이그레이션이
+      // 막으려던 중복 줄이 그대로 한 번 더 생긴다. 그래서 현재 발신 알람에서 슬롯을 채운다.
+      // 같은 (발신자·수신자·시각)이 여럿이면 **가장 최근 것**이 그 슬롯의 주인이다.
+      `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+        SELECT a.user_id, a.target_user_id, a.time, a.id, datetime('now')
+        FROM alarms a
+        WHERE a.target_user_id IS NOT NULL AND a.user_id IS NOT NULL
+          AND a.created_at = (
+            SELECT MAX(b.created_at) FROM alarms b
+            WHERE b.user_id = a.user_id AND b.target_user_id = a.target_user_id AND b.time = a.time
+          )
+        ON CONFLICT(sender_user_id, recipient_user_id, time) DO NOTHING`,
+    ],
+  },
+  {
+    id: 108,
+    name: 'drop-unused-index-and-column',
+    // 2026-09-02 구조 감사에서 **읽는 코드가 하나도 없다**고 확인된 것만 지운다.
+    // 각 항목은 반증 단계를 거쳤다(조사 → "쓰는 곳을 찾아내려 애쓴다" → 살아남은 것만).
+    // 전문: `docs/qa/structural-audit-2026-09-02.md` §5.
+    //
+    // ⚠ **여기 없는 것은 일부러 뺐다.**
+    //  - `subscriptions` 의 apple 컬럼 3개: #82 가 뺐고 **#96 이 iOS 되살리기의 일부로
+    //    의도적으로 되살렸다**(4주 전). 지금 지우면 같은 컬럼의 **세 번째 왕복**이다.
+    //  - `users.deletion_requested_at`: 「탈퇴 신청 시각 = 처리 이력 증빙이므로 유지」가
+    //    이미 문서화된 결정이다(`cleanup-audit-2026-08-01.md`). 개인정보보호법 21조 기산점.
+    //  - `generated_audio_assets.model_id`/`language`, `voice_uploads.size_bytes`/
+    //    `duration_ms`: **NOT NULL 이라 테이블 재작성이 필요하고**, 재작성을 건너뛰고
+    //    DROP COLUMN 만 하면 `scripts/check-insert-not-null.py`(CI 필수 체크)가 빨개진다
+    //    — 그 검사는 `DROP COLUMN` 을 추적하지 않는다. 별도 릴리스로 다룬다.
+    statements: [
+      // ① `generated_audio_assets.mime_type` — 캐시 히트마다 SELECT 해 놓고 버린다.
+      //    `tts.ts` 가 `ga.mime_type` 을 고르지만 반환 객체에 넣지 않는다(직접 확인).
+      //    재구성 가능: `voice-provider.ts` 가 outputFormat='mp3'/mimeType='audio/mpeg' 로
+      //    하드코딩이라 audio_format→MIME 이 1:1 이다. DEFAULT 가 있어 1릴리스로 끝난다.
+      //    ⚠ **읽는 곳만 보고 지울 뻔했다.** 쓰는 곳이 셋 살아 있었다(`tts.ts` 의 직접
+      //    입력 합성, `stock-clips.ts` 의 클론 사전렌더·스톡 시딩). 같이 지웠다 —
+      //    안 지웠으면 마이그레이션이 도는 순간 그 셋이 전부 500 이 된다.
+      //    회귀 방지: `test/insert-columns-exist.test.ts`.
+      `ALTER TABLE generated_audio_assets DROP COLUMN mime_type`,
+      // ② `idx_voice_profiles_lru` — 주석이 광고하는 가속을 실제로는 못 한다.
+      //    LRU 선정 쿼리가 `ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC`
+      //    라 이 인덱스 순서와 맞지 않고, `last_used_at` 을 WHERE 술어로 쓰는 쿼리는 0건이며
+      //    (나머지 3곳은 전부 `SET last_used_at = ...`), SELECT 하는 컬럼도 안 담아 커버링
+      //    이득도 없다. 쓰기마다 유지 비용만 낸다.
+      `DROP INDEX IF EXISTS idx_voice_profiles_lru`,
+      // ③ `idx_voucher_codes_status` — status 가 선행 술어인 쿼리가 하나도 없다.
+      //    `voucher_codes` 접근 21곳을 전수 확인했고 전부 id / code_hash /
+      //    issuer_subscription_id / issuer_user_id 로 거른다(각각 다른 인덱스가 덮는다).
+      //    게다가 3값짜리 저카디널리티라 있어도 도움이 안 된다.
+      `DROP INDEX IF EXISTS idx_voucher_codes_status`,
+    ],
+  },
+  {
+    // 스톡 클립에 **운세·사랑**을 더한 데 맞춘 수렴형 무효화(#70 과 같은 패턴).
+    // 확정 리터럴과 문구가 '다른' 시스템 preset 행만 지운다.
+    //  - 앞선 36종은 글자 하나 바뀌지 않았으므로 dev/prod 에서 **0행 no-op** 다.
+    //  - 새 8종은 아직 시딩된 적이 없다. 배포 후 `POST /api/admin/seed-stock-clips` 가
+    //    (보이스 4 × 언어 3 × 새 문구 8) 을 채운다.
+    //  - R2 오브젝트는 #70 과 마찬가지로 여기서 지우지 않는다(마이그레이션은 DB 전용).
+    //
+    // ⚠ **여기는 고치지 않는다 — 이미 dev 에 적용됐다**(2026-09-03 리뷰 7차).
+    //   #110 은 같은 지적을 받아 「지우지 말고 은퇴」로 바꿨지만, 이 마이그레이션은
+    //   `develop` 에 이미 올라가 dev DB 가 **옛 문장으로** 실행을 마쳤다. 본문을 고치면
+    //   러너가 id 로만 기록하므로 **새 DB 와 dev 의 스키마가 갈라진다.**
+    //   위 설계대로 이 회차는 **0행 no-op** 이라(문구가 바뀌지 않은 36종 + 아직 시딩된 적
+    //   없는 8종) 실제로 지워지는 알람이 없고, 뒤이어 #110 이 전부 은퇴시킨다.
+    id: 109,
+    name: 'refresh-stock-clips-2026-09-02-script',
+    statements: [
+      // ⚠ #70 을 복사할 때 **이미 사라진 컬럼을 지우는 것**이 이 문장의 함정이다.
+      //   #83 이 `speaker_id` 를, #84 가 `raw_audio_url`·`raw_audio_duration_ms` 를
+      //   DROP 했다. 러너는 `no such column` 을 "이미 적용됨" 으로 삼키므로
+      //   (`isIdempotentDDLError`) 죽은 문장도 **성공으로 기록되고 다시는 재시도되지
+      //   않는다** — 배포는 초록불인데 알람 분리만 조용히 빠진다.
+      //   `test/insert-columns-exist.test.ts` 가 최신 refresh 문장을 실제 스키마에서
+      //   날것으로 돌려 이걸 잡는다.
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM message_library
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM generated_audio_assets
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+      `DELETE FROM messages
+        WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_09_02})`,
+    ],
+  },
+  {
+    // 대사 전면 교체 + 카테고리 이름 변경(2026-09-02 사용자 확정본).
+    //
+    // ⚠ **이번엔 수렴형(텍스트 비교)이 아니라 전면 교체다.** #70·#109 는 "확정 문구와
+    //   다른 것만" 고르는 방식이었는데, 이번에는 **대사를 전부 새로 썼으므로** 어차피
+    //   전부가 대상이다(시스템·클론 양쪽).
+    //
+    // ⚠⚠ **지우지 말고 은퇴시킨다 — `retired_at`**(2026-09-03 리뷰 7차·8차).
+    //   #70·#109 를 베껴 `DELETE FROM messages` + `UPDATE alarms SET message_id = NULL`
+    //   로 썼다가 되돌렸다. 그 방식은 **세 가지를 한꺼번에 부순다**:
+    //
+    //   1. **되살릴 수 없는 알람이 생긴다.** 버킷 없이 스톡 클립 하나만 물린 **옛 행**
+    //      (`bucketId` 를 행에 적기 전에 만들어진 알람 — `usesCustomMessageVoice` 가
+    //      일부러 갈라내는 그 형태)은 재바인더 두 갈래 **어디에도** 안 걸린다
+    //      (하나는 `bucketId` 를, 다른 하나는 `voiceRandomPrompt` 를 요구한다).
+    //      그 알람은 서버에서 sound-only 로 깎인 채 영영 복구되지 않는다.
+    //   2. **R2 오브젝트가 미아가 된다.** `sweepAudioRetention`·`enqueueUserVoiceArtifacts`
+    //      는 R2 키를 **오직 `generated_audio_assets` 행으로만** 찾는다. 행을 지우면
+    //      사용자가 나중에 목소리를 지우거나 **생체정보 동의를 철회해도** 그 오디오를
+    //      찾아 지울 수 없다 — 파기 약속을 지킬 수 없게 된다.
+    //   3. **배포 직후 기본 목소리에 클립이 0개가 된다.** 아래 「시딩」 참조.
+    //
+    //   은퇴는 셋을 한 번에 없앤다. 목록을 만드는 두 곳(`findMissingStockTargets` 와
+    //   `GET /tts/stock-clips`)만 `retired_at IS NULL` 을 보므로 **새 클립이 새 id 로
+    //   생기고**, 옛 행은 `is_preset = 1` 그대로 남아 인가·TTL 면제가 유지된다 —
+    //   옛 클립을 물고 있는 알람은 계속 저장되고, 재설치해도 그 오디오를 받는다.
+    //   버킷 알람은 키가 매니페스트에서 사라지므로 재바인더가 새 세트로 갈아탄다 —
+    //   **그게 원래 설계다.**
+    //
+    // ⚠⚠ **이 회차가 끝나도 아무도 다시 채우지 않는다 — 사람이 게시해야 한다.**
+    //   여기 예전에는 "cron 이 틱마다 빠진 시스템 스톡을 채운다(`scheduled.stock_seed`)"
+    //   고 적혀 있었는데, **그 이름은 코드에 없고 그 드레인은 껐다**(2026-09-03 리뷰
+    //   15차 — `index.ts` 의 클론 드레인 바로 위 주석). 미리 구워 사람이 들어 본 바이트를
+    //   올리는 방식과 같이 두면 5분 틱이 같은 자리를 먼저 커밋하고, 게시는 그 자리를
+    //   '이미 있음' 으로 보고 건너뛴다 — **확정한 바이트가 영영 안 올라간다.**
+    //
+    //   그래서 위 ②가 도는 순간부터 게시가 끝날 때까지 기본 목소리 4종의 **살아 있는
+    //   프리셋은 0개**다(위 서브쿼리는 문구를 가리지 않는다). 그동안 클라는 「교체 미완료」
+    //   차단 화면에 머물고, 그 창을 닫는 것은 cron 이 아니라 손으로 돌리는 게시 한 줄이다.
+    //
+    //   순서의 정본은 `docs/spec/voice-and-message.md` §5-3 이다:
+    //     ① `npm run preview:stock` → ② 사람이 들어 본다 → ③ 스토어 게재
+    //     → ④ `main` 머지(= 배포 + 이 마이그레이션)
+    //     → ⑤ `npm run publish:stock -- --env dev|prod`
+    //   ⑤ 는 **환경별로 두 번**이고 배포의 **마지막** 단계다 — ④와 ⑤ 사이가 곧 위의 공백
+    //   이라 짧을수록 좋다. 운영 체크리스트는 `docs/qa/dev-test-handoff.md` §0-A.
+    //
+    //   클론 사전렌더는 이 회차가 **건드리지 않는다**(아래 ③). 큐를 되돌리는 문장도 여기
+    //   없으니 "클론은 기존 드레인이 맡는다" 로 읽지 말 것 — 클론은 그 사람이 목소리를
+    //   다시 등록할 때 갱신된다. `POST /api/admin/seed-stock-clips` 는 미리 굽지 못한
+    //   자리를 급히 채우는 **수동 도구**로만 남는다.
+    id: 110,
+    name: 'replace-stock-clips-and-rename-love-to-cheer-fe68a6ede87ad096',
+    statements: [
+      // ── ⓪ 은퇴 표식 컬럼 ─────────────────────────────────────────────
+      // ⚠ **`is_preset` 을 내려서 은퇴시키지 말 것**(2026-09-03 리뷰 8차). 그 값은 단순한
+      //   '목록에 뜨는가' 가 아니라 **세 가지를 동시에 뜻한다**:
+      //     1. 쓰기 인가 — `messageBelongsToCaller` 의 시스템/공유 프리셋 갈래,
+      //     2. 읽기 인가 — `GET /tts/messages/:id/audio` 의 같은 갈래.
+      //        (그 라우트의 「알람이 참조하면 허용」 갈래는 `target_user_id` 만 보므로
+      //         **가족 알람만** 커버한다 — 본인 알람은 여기에 안 걸린다.)
+      //     3. TTL 면제 — `audio-retention.ts` 가 프리셋을 스윕에서 제외한다.
+      //   그래서 `is_preset = 0` 은 옛 클립을 물고 있는 알람의 **저장을 막고, 재다운로드를
+      //   막고, 30일 뒤 오디오까지 지운다** — 지키려던 호환성이 정확히 반대로 깨진다.
+      //
+      // 별도 표식이면 그 셋을 한 글자도 건드리지 않는다. 목록에서 빼는 곳만 이 값을 본다
+      // (`findMissingStockTargets` 와 `GET /tts/stock-clips`).
+      `ALTER TABLE messages ADD COLUMN retired_at TEXT`,
 
+      // ── ① 카테고리 이름: love → cheer ─────────────────────────────────
+      // 옛 이름은 코드에서 **읽을 때 접어** 계속 받는다(구버전 앱·기기 로컬 DB 는 우리가
+      // 고칠 수 없다). 여기서는 서버가 들고 있는 행만 새 이름으로 옮긴다.
+      `UPDATE messages SET category = 'cheer' WHERE category = 'love'`,
+      `UPDATE alarms SET bucket_id = 'cheer' WHERE bucket_id = 'love'`,
+
+      // ── ② 시스템 스톡 프리셋 전면 은퇴 ────────────────────────────────
+      `DELETE FROM message_library WHERE message_id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+      `UPDATE messages SET retired_at = datetime('now')
+        WHERE retired_at IS NULL AND id IN (${SYSTEM_STOCK_PRESET_SUBQUERY})`,
+
+      // ── ③ 클론 사전렌더는 **건드리지 않는다**(2026-09-03 사용자 확정) ──────
+      //
+      // 여기서 유료 클론 클립까지 은퇴시키던 문장이 있었는데 뺐다. 이유는 비용이 아니라
+      // **누가 언제 다시 굽는가**다: 클론은 그 목소리를 등록한 사람의 것이고, 다시 굽는
+      // 자연스러운 시점은 **그 사람이 목소리를 다시 등록할 때**다. 마이그레이션이 남의
+      // 목소리를 대신 다시 굽기 시작하면 따라오는 것이 많았다 —
+      //   · 큐를 되살려야 하고(안 그러면 클립 0개로 남는다),
+      //   · 진행 중인 클레임을 무효화해야 하고(옛 스냅샷이 나머지만 게시하고 닫는다),
+      //   · 공유받은 기기에 바뀌었다고 알려야 하고(`refresh_existing`),
+      //   · 그 셋이 전부 배포 직후 cron 과 겹쳐 경합을 만든다.
+      // 리뷰 1·2·3차에서 지적된 넷이 전부 이 문장 하나에서 파생됐다.
+      //
+      // ⚠ **대가를 알고 택했다.** 옛 시드로 구운 클론 클립은 남는다. 특히 `love` 는
+      //   위 ①에서 `cheer` 로 이름만 바뀌므로, 유료 사용자의 「응원」 테마가 한동안
+      //   **연애 문구를 말한다**(사용자 확인함 — 재등록 때 갱신되면 된다).
+      //   여기 문장을 되살릴 거라면 위 네 가지를 **같이** 되살려야 한다.
+    ],
+  },
+  {
+    // 기본(시스템) 목소리 4종 전면 교체(2026-09-03 사용자 확정).
+    //
+    // ## 왜 바꾸나
+    //
+    // 4종 중 **둘이 영어권 premade 목소리로 한국어를 읽고 있었다.**
+    //  - `아담` = ElevenLabs `Adam` — 최초 시드 그대로. 가장 널리 쓰인 기본 목소리라
+    //    아는 사람에게는 'AI 목소리' 그 자체로 읽힌다.
+    //  - `소은` = ElevenLabs `Jessica` — **이름만** 한국어로 바꿨다(#44 가
+    //    `SET name = '소은'` 만 했고 voice id 는 그대로다).
+    // 그리고 `하준`(Mr. K)은 실제 재생에서 음이 깨지는 구간이 있었다.
+    //
+    // 2026-09-02 에 대사를 전면 교체하면서 기준이 올라간 것도 이유다. 예전 문구는
+    // 정보 전달("비가 온대요, 우산 챙겨요")이라 억양이 어긋나도 넘어갔는데, 지금은
+    // "빗소리 들으면서 조금만 더 누워 있고 싶어지죠..." 처럼 **곁에서 말 거는 말투**라
+    // 어색함이 그대로 드러난다.
+    //
+    // ## 무엇으로 바꾸나 — 네 칸이 서로 다른 사람이 되게
+    //
+    // | 이름 | 결 | 출처 |
+    // | --- | --- | --- |
+    // | 미나 | 차분·따뜻한 여성 | 그대로 둔다(한국어 원어, 검증된 품질) |
+    // | 애니 | 발랄한 애니 캐릭터 여성 | Kano |
+    // | 시우 | 밝은 소년미 남성 | Krys (한국어 원어, 라이브러리 최다 사용) |
+    // | 도현 | 따뜻하고 단단한 어른 남성 | Jon (한국어 verified) |
+    //
+    // ⚠ **이름은 목소리를 따라간다.** '아담' 은 Adam 이라서 붙은 이름이라 목소리가
+    //   바뀌면 유지할 이유가 없고, '소은' 은 차분한 이름이라 발랄한 캐릭터 목소리와
+    //   결이 어긋난다. 네 이름을 한국 이름으로 맞춰 한 벌로 보이게 한다.
+    //
+    // ⚠ 목소리가 바뀌면 그 목소리로 구운 클립은 **전부 남의 목소리**다. #110 이 이미
+    //   시스템 프리셋을 통째로 지우므로 여기서 또 지우지 않는다 — 순서상 #110 이
+    //   먼저 돌고, 재시드가 새 목소리로 굽는다.
+    //
+    // ⚠⚠ **배포 순서를 지켜야 한다 — 코드로는 못 막는다.**
+    //
+    // 프로필 **id 는 그대로 두고 목소리만** 바꾼다(101=시우, 103=도현, 104=애니).
+    // 그런데 앱은 그 id 에 **내장 인사말 mp3** 를 매핑해 두고 미리듣기에서 서버 클립보다
+    // **우선**한다(`VoiceProfileManagementPanel.playGreeting` → `bundledSystemGreetingRes`).
+    // 그래서 이 마이그레이션이 구버전 APK 가 깔린 상태에서 배포되면:
+    //   - 목록의 이름은 서버가 준 '시우'
+    //   - 미리듣기는 APK 에 박힌 **Adam** 목소리
+    //   - 실제 알람은 서버가 새로 구운 **Krys** 목소리
+    // 즉 **들어 보고 고른 목소리와 울리는 목소리가 다르다.**
+    //
+    // id 를 새로 파는 방법도 있지만 그러면 기존 알람의 `voice_profile_id` 가 전부
+    // 고아가 되어 더 나쁘다(그 알람들이 목소리를 잃는다).
+    //
+    // 그래서 **새 목소리를 담은 앱을 스토어에 먼저 올리고**, `app-version.ts` 의
+    // `minSupported` 를 그 versionCode 로 올린 뒤 이 마이그레이션을 prod 에 낸다.
+    // dev 는 테스트 기기의 APK 를 함께 갈아 끼우면 되므로 무관하다.
+    // (`CURRENT_POLICY_VERSION`·`minSupported` 가 같은 이유로 순서를 타는 것과 같다.)
+    id: 111,
+    name: 'replace-system-voices-2026-09-03',
+    // ⚠ **atomic 필수**: provider 교체(`elevenlabs_voice_id`)와 무효화 표식
+    // (`custom_audio_invalidated_at`)은 **한 덩어리**다 — 런타임의 제자리 교체
+    // (`replaceVoiceInPlace`)도 한 트랜잭션에서 둘을 함께 한다(스펙 §5-2). 쪼개지면 그
+    // 사이에 합성된 오디오가 **새 목소리인데 표식보다 이르고**, 재시도가 찍는 더 늦은
+    // 표식이 그걸 낡은 것으로 보고 **되돌릴 수 없이 강등**한다.
+    // 표식은 `datetime('now')` 라 재실행이 등가가 아니다(#110 의 문장들과 다른 점).
+    // 전부 DML 이라 'no such column' 관용도 필요 없다 — 오히려 삼키면 표식 없이 provider 만
+    // 바뀐 상태가 성공으로 기록돼 다시는 안 돈다(fail-open).
+    atomic: true,
+    statements: [
+      // 미나(102)는 그대로 둔다.
+      `UPDATE voice_profiles
+         SET name = '시우', elevenlabs_voice_id = '1W00IGEmNmwmsDeYy7ag'
+       WHERE id = '70000000-0000-4000-9000-000000000101'`,
+      `UPDATE voice_profiles
+         SET name = '도현', elevenlabs_voice_id = 'MFZUKuGQUsGJPQjTS4wC'
+       WHERE id = '70000000-0000-4000-9000-000000000103'`,
+      `UPDATE voice_profiles
+         SET name = '애니', elevenlabs_voice_id = 'OSwaPSNdfituxkWcjlkR'
+       WHERE id = '70000000-0000-4000-9000-000000000104'`,
+
+      // ⚠ **직접 입력 알람의 오디오도 무효가 된다**(2026-09-03 리뷰 21차).
+      //   프로필 id 를 그대로 두고 provider 만 바꾸므로, 이 목소리로 만들어 둔 **직접 입력
+      //   알람**의 로컬 오디오는 **옛 목소리 그대로**다 — 목록의 이름과 미리듣기는 새
+      //   목소리인데 울리는 소리만 옛것이다. 그 알람은 프리셋이 아니라 재바인더 두 갈래
+      //   어디에도 안 걸리고(테마도 없고 `voiceRandomPrompt` 도 꺼져 있다), 서버가 주는
+      //   `legacy_bucket_hints` 도 프리셋만 담으므로 **아무도 못 잡는다.**
+      //
+      //   이미 있는 장치를 쓴다: `custom_audio_invalidated_at` 을 찍으면 클라의 표식 경로가
+      //   그 목소리로 만든 직접 입력 알람을 **강등하고 사용자에게 알린다**
+      //   (`VoiceAccessSyncWorker` → `degradeCustomMessageAlarmsUsingVoiceProfile`).
+      //   ⚠ 그 강등은 원래 시스템 목소리를 건너뛰었다 — 접근권을 잃을 일이 없어서다.
+      //   제자리 교체는 그 가정이 깨지는 유일한 경우라, **표식 경로에서만** 문을 열었다
+      //   (`allowSystemVoice`). 회수 경로는 그대로다.
+      //   ⚠ **미나(102)는 찍지 않는다** — provider 가 안 바뀌어 그 오디오는 여전히 맞다.
+      `UPDATE voice_profiles SET custom_audio_invalidated_at = datetime('now')
+        WHERE id IN (
+          '70000000-0000-4000-9000-000000000101',
+          '70000000-0000-4000-9000-000000000103',
+          '70000000-0000-4000-9000-000000000104'
+        )`,
+
+      // ⚠ **provider 가 어긋난 살아 있는 시스템 클립을 회수한다**(2026-09-03 리뷰 9차).
+      //   #110(은퇴)과 이 마이그레이션은 **따로 실행**되고(러너가 id 별로 호출한다) 그
+      //   사이에도 5분 cron 은 계속 돈다. 그 틈에 시작한 합성은 **위 UPDATE 전의 목소리**
+      //   로 구워지고, 게시되고 나면 `findMissingStockTargets` 가 '있다' 로 세어 그
+      //   variant 만 영영 옛 목소리로 남는다.
+      //   게시 직전 검사는 `generateStockClip` 에 넣었지만(같은 회차), 그 검사가 없던
+      //   시절에 이미 구워졌거나 어떤 이유로든 어긋난 행이 있으면 여기서 되돌린다.
+      //   은퇴시키기만 하면 된다 — 뒤따르는 `publish:stock` 이 그 자리를 '없음' 으로 보고
+      //   (게시 판정이 `retired_at IS NULL` 이다) 새 목소리로 굽힌 바이트를 올린다.
+      //   ⚠ **cron 이 다시 굽는다고 읽지 말 것**(2026-09-08 정정). 시스템 스톡 드레인은
+      //   꺼져 있다 — 이유는 #110 의 시딩 주석에 있다.
+      `UPDATE messages
+          SET retired_at = datetime('now')
+        WHERE retired_at IS NULL
+          AND COALESCE(is_preset, 0) = 1
+          AND voice_profile_id IN (
+            SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+          )
+          AND EXISTS (
+            SELECT 1
+              FROM generated_audio_assets ga
+              JOIN voice_profiles vp ON vp.id = messages.voice_profile_id
+             WHERE ga.message_id = messages.id
+               AND ga.audio_url = messages.audio_url
+               AND ga.provider_voice_id <> vp.elevenlabs_voice_id
+          )`,
+    ],
+  },
+  {
+    // 사용 기록(이벤트) — 앱이 오프라인이면 쌓아 두었다가 연결될 때 모아 보낸다.
+    //
+    // ⚠ **식별자만 담는다.** 문구 원문 같은 개인 텍스트는 넣지 않는다 — 문구는 이미
+    //   `messages` 에 있고, 여기 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이
+    //   하나 더 늘어난다. 자유 문자열은 `detail` 하나뿐이고 앱·서버 양쪽에서 짧게 자른다.
+    //
+    // ⚠ **`id` 는 클라가 만든 UUID 를 그대로 PK 로 쓴다** — `INSERT OR IGNORE` 와 짝이 되어
+    //   재전송을 멱등으로 만든다. 서버가 새 id 를 발급하면 "받았는지 확신 못 한 배치" 를
+    //   다시 보낼 때마다 같은 사건이 여러 줄이 된다.
+    //
+    // `message_library` 의 두 컬럼은 **폰에 그 오디오가 남아 있는가**(사용중/비사용중)를
+    // 기록한다. 판정은 폰이 하고(참조 카운트), 서버는 그 결과를 받아 적을 뿐이다 —
+    // 서버가 추측하면 기기마다 다른 사실을 서로 덮어쓴다.
+    id: 112,
+    name: 'usage-events-and-message-in-use',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS usage_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        type TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        received_at TEXT DEFAULT (datetime('now')),
+        alarm_id TEXT,
+        voice_profile_id TEXT,
+        message_id TEXT,
+        detail TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_user_time
+         ON usage_events(user_id, occurred_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_usage_events_type
+         ON usage_events(type, occurred_at)`,
+      // 기존 행은 '사용중' 으로 시작한다 — 지금까지는 알람이 쓰는 것만 남아 있었다.
+      `ALTER TABLE message_library ADD COLUMN in_use INTEGER DEFAULT 1`,
+      `ALTER TABLE message_library ADD COLUMN in_use_updated_at TEXT`,
+      `ALTER TABLE message_library ADD COLUMN last_used_at TEXT`,
+    ],
+  },
+  {
+    // 탈퇴 뒤에도 남는 결제 기록에 **스토어 증빙**을 담는다(코덱스 #731).
+    //
+    // 지금까지 `retained_billing_records` 는 요금제·기간·금액만 들고 있었는데, 원본
+    // `store_transactions` 는 파기에서 지워진다. 그러면 남은 기록을 App Store/Play 주문에
+    // **되짚을 수 없어** 결제 분쟁에서 증빙 구실을 못 한다(`docs/legal/compliance-notes.ko.md`).
+    //
+    // ⚠ **ADD COLUMN 만 쓴다** — 테이블 재작성 금지(CLAUDE.md 의 append-only 규약).
+    id: 113,
+    name: 'retained-billing-store-evidence',
+    statements: [
+      `ALTER TABLE retained_billing_records ADD COLUMN provider TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN provider_transaction_id TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN product_id TEXT`,
+      `ALTER TABLE retained_billing_records ADD COLUMN raw_payload TEXT`,
+      // 금액은 통화가 없으면 뜻이 없다. 스토어 가격은 지역별이라 원화 표시가와 다르다.
+      `ALTER TABLE retained_billing_records ADD COLUMN amount_currency TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_retained_billing_provider_txn
+        ON retained_billing_records(provider, provider_transaction_id)`,
+    ],
+  },
+  {
+    id: 114,
+    name: 'store-transactions-last-paid-at',
+    statements: [
+      // **마지막으로 결제가 확인된 시각.**
+      //
+      // ⚠ `created_at` 으로는 이걸 알 수 없다 — 애플의 originalTransactionId·Play 의
+      //   purchaseToken 은 갱신돼도 그대로라 그 행은 **체인이 처음 들어온 시각**을 들고 있고,
+      //   같은-플랜 갱신은 `expires_at` 만 민다. 탈퇴 시 결제기록 보존 기한을 '거래일' 부터
+      //   세야 하는데(전자상거래법 5년, 처리방침), 그 기준일이 없었다.
+      //
+      // ⚠ **`expires_at - period_days` 로 추정하지 않는다**(코덱스 #734 5차). 애플 상품은
+      //   달력 기준(P1M)인데 `plans.period_days` 는 30 고정이라 며칠씩 어긋난다 — 2월이면
+      //   이르게, 31일 달이면 늦게 잡힌다. 며칠이라도 이르면 **증빙을 잃고**, 늦으면
+      //   처리방침이 밝힌 최대 5년을 넘긴다. 확정 시점에 그냥 적어 두는 편이 정확하다.
+      //
+      // 옛 행은 NULL 이다 — 읽는 쪽이 예전 추정으로 폴백한다.
+      `ALTER TABLE store_transactions ADD COLUMN last_paid_at TEXT`,
+    ],
+  },
+];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
 // reality (e.g. partial historical migration runs before the ledger existed).

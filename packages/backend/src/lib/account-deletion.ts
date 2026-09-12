@@ -1,14 +1,21 @@
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { enqueueUserVoiceArtifacts } from './audio-retention';
+import { revokeDeletedVoices } from './voice-revocation';
 
 const TEXT_ENCODER = new TextEncoder();
+
+export function billingRetentionUntil(now: Date): Date {
+  const retainUntil = new Date(now);
+  retainUntil.setUTCFullYear(retainUntil.getUTCFullYear() + 5);
+  return retainUntil;
+}
 
 /**
  * user_id 를 비가역 가명 키로 변환한다 (개인정보보호법 제2조 가명처리).
  * pseudonym = SHA-256(user_id + salt). salt(=PASSWORD_PEPPER) 없이는 원본을 복원할 수 없다.
  */
-export async function pseudonymizeUserId(userId: string, salt: string): Promise<string> {
+async function pseudonymizeUserId(userId: string, salt: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     'SHA-256',
     TEXT_ENCODER.encode(`${userId}:${salt ?? ''}`),
@@ -29,19 +36,69 @@ export async function pseudonymizeBillingForRetention(
   now: Date,
 ): Promise<void> {
   const pseudonym = await pseudonymizeUserId(userPk, salt);
-  const retainUntil = new Date(now.getTime() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
+  const retainUntil = billingRetentionUntil(now).toISOString();
   // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
+  //
+  // ⚠ **스토어 증빙도 함께 남긴다**(코덱스 #730 4차). 예전에는 구독 갈래가 plan·기간·금액만
+  //   적었는데, `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로 **남은 기록을
+  //   실제 주문에 되짚을 방법이 사라졌다** — 결제 분쟁에서 "이 사람이 이 주문을 했다" 를
+  //   보일 수 없다. 아래 일회성 갈래는 이미 그걸 남기고 있었다(마이그레이션 113 의 증빙
+  //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면 각각 보존한다. 최신 것만 남기지 않는다.
   const subs = await tx.execute({
-    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
-          FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
+                 st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
+                 st.created_at AS txn_created_at, st.last_paid_at AS txn_last_paid_at,
+                 -- 마지막 결제 시각의 추정치 = 지금 기간의 시작.
+                 -- 갱신은 expires_at 만 미므로, 한 주기를 빼면 그 주기를 산 날이 된다.
+                 CASE WHEN p.period_days > 0
+                      THEN datetime(s.expires_at, '-' || p.period_days || ' days')
+                 END AS last_paid_estimate
+          FROM subscriptions s
+          LEFT JOIN plans p ON p.id = s.plan_id
+          LEFT JOIN store_transactions st ON st.subscription_id = s.id
           WHERE s.user_id = ?`,
     args: [userPk],
   });
   for (const row of subs.rows) {
+    // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #734 — 일회성 갈래와 같은 규칙).
+    //   탈퇴 시각부터 세면 4년 전에 결제한 구독이 그 시점부터 5년을 더 남아 **9년**이 된다 —
+    //   처리방침이 밝힌 최대 5년을 넘긴다.
+    //
+    // ⚠ **`store_transactions.created_at` 하나만 보면 안 된다**(코덱스 #734 2차). 그 값은
+    //   **체인이 처음 들어온 시각**이다 — 애플의 originalTransactionId·Play 의 purchaseToken
+    //   은 갱신돼도 그대로이고, 같은-플랜 갱신은 그 행의 `expires_at` 만 고친다. 5년 넘게
+    //   갱신해 온 구독이면 이미 지난 날짜가 나와, **이번 달에 결제한 사람의 증빙까지
+    //   버린다**(원본은 곧 파기되므로 되돌릴 수 없다).
+    //
+    //   그래서 확정 경로가 **`last_paid_at` 을 그때그때 적는다**(마이그레이션 114).
+    //
+    // ⚠ **추정으로 되돌리지 말 것**(코덱스 #734 3·5차). 여기서 두 번 틀렸다:
+    //   `expires_at` 은 **기간의 끝**이라 프로모처럼 기간이 길면 몇 년을 더 남기고,
+    //   `expires_at - period_days` 는 애플이 **달력 달**(P1M)인데 `period_days` 가 30 고정이라
+    //   2월이면 이르게·31일 달이면 늦게 잡힌다. 이르면 증빙을 잃고 늦으면 5년을 넘긴다.
+    //
+    //   `last_paid_at` 이 비어 있는 것은 **마이그레이션 114 이전에 쓰인 행**뿐이다 —
+    //   그때만 옛 추정으로 폴백한다(아무것도 없는 것보다는 낫다).
+    const anchors = [
+      row.txn_last_paid_at as string | null,
+      // 폴백(옛 행 전용). 아래 둘은 `last_paid_at` 이 있으면 쓰이지 않는다.
+      (row.txn_last_paid_at as string | null) ? null : (row.txn_created_at as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.last_paid_estimate as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.starts_at as string | null),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const paidAt =
+      anchors.length > 0 ? anchors.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b)) : null;
+    const recordRetainUntil = paidAt
+      ? billingRetentionUntil(new Date(paidAt)).toISOString()
+      : retainUntil;
+    // 이미 5년이 지난 거래는 **다시 보존하지 않는다** — 보존 사유가 끝난 기록이다.
+    if (recordRetainUntil <= now.toISOString()) continue;
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw,
+               provider, provider_transaction_id, product_id, raw_payload,
+               retained_reason, retain_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -49,8 +106,66 @@ export async function pseudonymizeBillingForRetention(
         (row.status as string | null) ?? null,
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
-        row.price_krw != null ? Number(row.price_krw) : null,
-        retainUntil,
+        // ⚠ **스토어 증빙이 있으면 금액을 지어내지 않는다**(코덱스 #734 4차). `price_krw` 는
+        //   **지금의 원화 표시가**일 뿐이다 — 스토어 가격은 지역별이고 요금제 가격은 바뀐다.
+        //   증빙(거래 id·원본 페이로드)을 붙여 놓고 그 옆에 이 값을 적으면, **그 애플/Play
+        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화(`amount_currency`)도 비어 있어
+        //   원화인지조차 말할 수 없다. 실제 금액은 그 거래 id 로 스토어에서 확인한다.
+        //   (아래 일회성 갈래가 같은 이유로 처음부터 비워 둔다.)
+        //   스토어 결제가 아니면(dev 스텁·프로모·바우처) 되짚을 곳이 없으므로 그대로 남긴다.
+        row.provider == null && row.price_krw != null ? Number(row.price_krw) : null,
+        (row.provider as string | null) ?? null,
+        (row.provider_transaction_id as string | null) ?? null,
+        (row.product_id as string | null) ?? null,
+        (row.raw_payload as string | null) ?? null,
+        recordRetainUntil,
+      ],
+    });
+  }
+
+  // ⚠ **일회성 결제도 보존한다**(코덱스 #730). 위 SELECT 는 `subscriptions` 만 훑는데,
+  //   **선물 구매는 구독 행을 만들지 않는다** — `store_transactions` 에 `subscription_id`
+  //   가 NULL 인 행으로만 남는다(`routes/billing-apple.ts` 의 선물 갈래). 그런데
+  //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
+  //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
+  const oneTime = await tx.execute({
+    sql: `SELECT st.id, st.plan_key, st.created_at, st.last_paid_at, st.provider, st.provider_transaction_id,
+                 st.product_id, st.raw_payload, p.id AS plan_id
+          FROM store_transactions st
+          LEFT JOIN plans p ON p.key = st.plan_key
+          WHERE st.user_id = ? AND st.subscription_id IS NULL`,
+    args: [userPk],
+  });
+  for (const row of oneTime.rows) {
+    // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #731). 탈퇴 시각부터 세면 4년 전에 산
+    //   선물이 그 시점부터 5년을 더 남아 **9년**이 된다 — 처리방침이 밝힌 최대 5년을 넘긴다.
+    const purchasedAt =
+      (row.last_paid_at as string | null) ?? (row.created_at as string | null) ?? null;
+    const recordRetainUntil = purchasedAt
+      ? billingRetentionUntil(new Date(purchasedAt)).toISOString()
+      : retainUntil;
+    // 이미 5년이 지난 거래는 **다시 보존하지 않는다** — 보존 사유가 끝난 기록이다.
+    if (recordRetainUntil <= now.toISOString()) continue;
+    await tx.execute({
+      // ⚠ **금액을 지어내지 않는다.** 예전에는 `plans.price_krw`(현재 원화 표시가)를 넣었는데,
+      //   스토어 가격은 지역별이고 요금제 가격은 바뀐다 — 실제로 청구된 금액과 다른 값이
+      //   **법정 결제기록에 남는다.** 통화까지 확실한 값이 없으면 비워 두고, 대신 스토어
+      //   증빙(거래 id·원본 페이로드)을 남겨 주문에 되짚을 수 있게 한다.
+      sql: `INSERT INTO retained_billing_records
+              (id, pseudonym, plan_id, status, starts_at, expires_at,
+               amount_krw, amount_currency, provider, provider_transaction_id,
+               product_id, raw_payload, retained_reason, retain_until)
+            VALUES (?, ?, ?, 'one_time', ?, NULL, NULL, NULL, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+      args: [
+        crypto.randomUUID(),
+        pseudonym,
+        (row.plan_id as string | null) ?? null,
+        purchasedAt,
+        (row.provider as string | null) ?? null,
+        (row.provider_transaction_id as string | null) ?? null,
+        (row.product_id as string | null) ?? null,
+        (row.raw_payload as string | null) ?? null,
+        recordRetainUntil,
       ],
     });
   }
@@ -121,16 +236,12 @@ export async function purgeUserAccount(
     await enqueueUserVoiceArtifacts(tx, userIds);
     await cancelActiveSubscriptionsForUser(tx, userPk);
 
-    // **내 클론을 볼 수 있었던 사람들을 그룹이 해체되기 전에 뽑아 둔다.**
-    //
-    // 아래에서 plan_group_members·plan_groups 를 지우고 나면 '누가 내 목소리를 쓸 수
-    // 있었는지' 를 알 방법이 없어진다. 그리고 서버 alarms 행만 보면 부족하다 — 알람은
-    // 로컬이 원본이라 아직 동기화 안 된 알람은 서버에 없는데, 그 기기는 캐시된 내 녹음으로
-    // 그대로 울린다. 그래서 알람 유무와 무관하게 **볼 수 있었던 사람 전부**에게 알린다
-    // (받은 쪽은 목소리 목록을 다시 받아 '없어진 목소리' 알람만 강등한다 — 과다발송해도
-    // 재조회로 확인하므로 안전하다). 스코프는 공유 목소리 조회와 같은 그룹 동석 기준이다.
-    //
+    // **파기할 내 클론 목록.** 탈퇴가 남에게 미치는 영향은 전부 이 목록에서 나온다.
     // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.
+    //
+    // 뽑는 시점이 중요하다 — 아래에서 plan_group_members·plan_groups 를 지우고 나면
+    // '누가 내 목소리를 쓸 수 있었는지' 를 알 방법이 없어진다. 그래서 그룹 해체 **전에**
+    // `revokeDeletedVoices` 를 부른다(그 함수가 동석 멤버를 조회한다).
     const cloneProfiles = await tx.execute({
       // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
       sql: `SELECT id FROM voice_profiles
@@ -138,18 +249,31 @@ export async function purgeUserAccount(
       args: userIds,
     });
     const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
-    if (cloneIds.length > 0) {
-      const members = await tx.execute({
-        sql: `SELECT DISTINCT m2.user_id
-                FROM plan_group_members m1
-                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-               WHERE m1.user_id IN (?, ?) AND m2.user_id NOT IN (?, ?)`,
-        args: [...userIds, ...userIds],
-      });
-      for (const row of members.rows) {
-        voiceAccessRevokedUserIds.push(String(row.user_id));
-      }
-    }
+
+    // ── 탈퇴가 남에게 미치는 영향은 **내 목소리가 사라지는 것** 하나다 ──────────────
+    //
+    // 예전에는 여기에 탈퇴 전용 갈래가 있었다: 내가 **보낸 알람 전부**를 목소리와 무관하게
+    // 철회하고, 이미 지운 알람도 `sender_user_id` 표식으로 찾아 함께 철회했다. 그건 두 가지를
+    // 뭉뚱그린 것이다 — 파기해야 할 것은 **내 생체정보(녹음)** 이지 남의 기상 시각이 아니다.
+    // 기본 목소리로 보낸 알람에는 파기할 내 데이터가 없고, 받은 순간부터 그 알람은 받은
+    // 사람 것이다(`docs/spec/family-alarm.md`).
+    //
+    // 그래서 판정을 **목소리 하나로** 모았다. 목소리 삭제·플랜 강등과 **같은 함수**가 돈다
+    // (`lib/voice-revocation.ts`) — 같은 사건이므로 결과도 같아야 한다.
+    //
+    // ⚠ **자리를 옮기지 말 것.** 아래 세 가지보다 모두 앞이어야 한다:
+    //   plan_group_members 삭제(누가 내 목소리를 볼 수 있었는지 알 수 없게 된다),
+    //   `DELETE FROM alarms`(아직 수신 확인 전인 내 보낸 알람의 tombstone 을 여기서 남긴다),
+    //   messages·voice_profiles 삭제(조회 대상이 사라진다).
+    const revocation = await revokeDeletedVoices(tx, {
+      voiceProfileIds: cloneIds,
+      ownerUserIds: userIds,
+      senderVoiceOwnerUserIds: userIds,
+      // 내 기기는 곧 사라진다 — 나에게 보내는 철회 푸시는 받을 사람이 없다.
+      excludeOwnerUserIds: userIds,
+    });
+    revokedTargets.push(...revocation.downgradedAlarms);
+    voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
 
     await tx.execute({
       sql: `DELETE FROM voucher_redemptions
@@ -215,107 +339,28 @@ export async function purgeUserAccount(
                )`,
       args: [...userIds, ...userIds, ...userIds],
     });
-    // 이 사람이 **남에게 보낸** 알람은 지우기 전에 수신자 쪽에 철회 기록을 남긴다.
-    // 안 남기면 수신자 기기는 '보낸 사람이 알람 하나를 지웠다'(=내 알람은 남긴다)와
-    // 구분하지 못해, 탈퇴한 사람의 복제 목소리가 그 기기에서 계속 울린다.
-    // 기록을 보면 수신자 앱이 목소리만 걷어내고 알람은 남긴다(RemoteAlarmPullSyncService).
-    //
-    // 알릴 대상은 행이 지워지기 전에 뽑아 둔다. 기록만 남기고 알리지 않으면 수신자가
-    // 백그라운드일 때 다음 주기 pull 까지 탈퇴자의 목소리로 계속 울린다 — 파기 요구가
-    // 걸린 생체정보를 폴백 주기만큼 더 들고 있게 된다.
-    const revoked = await tx.execute({
-      sql: `SELECT a.id AS alarm_id, a.target_user_id AS recipient_user_id
-              FROM alarms a
-             WHERE a.user_id IN (?, ?)
-               AND a.target_user_id IS NOT NULL
-               AND a.target_user_id NOT IN (?, ?)`,
-      args: [...userIds, ...userIds],
-    });
-    for (const row of revoked.rows) {
-      revokedTargets.push({
-        alarmId: String(row.alarm_id),
-        ownerUserId: String(row.recipient_user_id),
-        isReceived: true,
-      });
-    }
-    await tx.execute({
-      sql: `INSERT INTO alarm_recipient_state
-              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
-            SELECT a.id, a.target_user_id, 0, 1, datetime('now'), datetime('now')
-              FROM alarms a
-             WHERE a.user_id IN (?, ?)
-               AND a.target_user_id IS NOT NULL
-               AND a.target_user_id NOT IN (?, ?)
-            ON CONFLICT(alarm_id, recipient_user_id)
-              DO UPDATE SET revoked = 1, updated_at = datetime('now')`,
-      args: [...userIds, ...userIds],
-    });
-    // **내가 이미 지운 보낸 알람**도 걷어낸다. 위 SELECT/INSERT 는 `alarms` 행을 훑으므로,
-    // 지운 알람은 잡히지 않는다 — 그런데 수신자 기기는 그 알람을 그대로 들고 있다(#675).
-    // 삭제할 때 남겨 둔 표식(sender_user_id)이 그 근거다(Codex #676 P1).
-    const senderTombstones = await tx.execute({
-      sql: `SELECT alarm_id, recipient_user_id FROM alarm_recipient_state
-             WHERE sender_user_id IN (?, ?) AND recipient_user_id NOT IN (?, ?)`,
-      args: [...userIds, ...userIds],
-    });
-    for (const row of senderTombstones.rows) {
-      revokedTargets.push({
-        alarmId: String(row.alarm_id),
-        ownerUserId: String(row.recipient_user_id),
-        isReceived: true,
-      });
-    }
-    // 플래그를 세우면서 **보낸이 식별자는 지운다** — 철회 사실만 남기고 탈퇴자의 직접
-    // 식별자는 남기지 않는다(개인정보보호법 제21조). 이 행 자체는 수신자 것이라 남는다.
+    // **보낸이 식별자는 지운다** — 탈퇴자의 직접 식별자를 남기지 않는다(개인정보보호법
+    // 제21조). 이 행 자체는 수신자 것이라 남는다. 철회 여부는 위에서 목소리 기준으로 이미
+    // 정해졌으므로 여기서 `revoked` 는 건드리지 않는다.
     await tx.execute({
       sql: `UPDATE alarm_recipient_state
-               SET revoked = 1, sender_user_id = NULL, updated_at = datetime('now')
+               SET sender_user_id = NULL, updated_at = datetime('now')
              WHERE sender_user_id IN (?, ?)`,
       args: userIds,
     });
+    // 서버 알람 행은 로컬 원본이 아니라 **수신 확인 전 전달 대기열**이다. 내가 만든 행뿐 아니라
+    // 나를 target 으로 한 행도 지운다. 후자는 계정이 사라지면 영원히 pull/ack 될 수 없고,
+    // 남겨 두면 audio-retention 이 message_id 를 영구 사용 참조로 오인한다. 이미 전달된 알람은
+    // ack 때 서버 행이 없어졌으므로 수신자 기기의 로컬 알람에는 영향이 없다.
+    // `user_id` 갈래는 users FK 때문에도 반드시 필요하다.
     await tx.execute({
       sql: `DELETE FROM alarms
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
       args: [...userIds, ...userIds],
     });
-    // **내 클론 목소리를 쓰던 남의 알람도 목소리를 잃는다.**
-    //
-    // 위 철회 기록은 '내가 보낸 알람' 만 덮는다. 그런데 같은 플랜 그룹에서 내 목소리를 공유
-    // 받은 사람은 **자기 알람**에 내 클론을 골라 뒀을 수 있다. 그 알람은 내 알람이 아니라
-    // 지워지지 않고, 그 기기는 캐시된 녹음으로 계속 울린다 — 파기 대상인 내 생체정보다.
-    // 서버 행을 알람음으로 내리고(아래 UPDATE), 주인들에게 알려 기기에서도 걷어내게 한다
-    // (isReceived=false → voice_access_revoked → VoiceAccessSyncWorker).
-    //
-    // 여긴 `DELETE FROM alarms` **뒤**라 내 알람은 이미 없다 — 남의 알람만 남는다.
-    // messages·voice_profiles 는 아직 살아 있어야 하므로 그 삭제보다는 **앞**이어야 한다.
-    // (cloneIds 는 위에서 그룹 해체 전에 뽑아 둔 것을 그대로 쓴다.)
     if (cloneIds.length > 0) {
       const cph = cloneIds.map(() => '?').join(', ');
-      const sharedScope = `voice_profile_id IN (${cph})
-             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`;
-      const sharedArgs = [...cloneIds, ...cloneIds];
-      const sharedVoiceAlarms = await tx.execute({
-        sql: `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
-                     target_user_id IS NOT NULL AS is_received
-                FROM alarms
-               WHERE ${sharedScope}`,
-        args: sharedArgs,
-      });
-      for (const row of sharedVoiceAlarms.rows) {
-        revokedTargets.push({
-          alarmId: String(row.id),
-          ownerUserId: String(row.owner_user_id),
-          isReceived: Number(row.is_received) === 1,
-        });
-      }
-      await tx.execute({
-        sql: `UPDATE alarms
-              SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-                  message_id = NULL, voice_profile_id = NULL
-              WHERE ${sharedScope}`,
-        args: sharedArgs,
-      });
-      // 알람에서 떼어 냈다고 끝이 아니다 — 그 알람이 쓰던 **문구 행**은 남의 것이라
+      // 알람에서 목소리를 떼어 냈다고 끝이 아니다 — 그 알람이 쓰던 **문구 행**은 남의 것이라
       // (messages.user_id = 그 멤버) 아래 `DELETE FROM messages WHERE user_id IN (내 것)`
       // 에 안 걸리는데, messages.voice_profile_id 는 NOT NULL FK 로 내 클론을 가리킨다.
       // 그대로 두면 `DELETE FROM voice_profiles` 가 FK 로 실패해 **탈퇴가 통째로 500** 이
@@ -376,12 +421,28 @@ export async function purgeUserAccount(
       sql: `DELETE FROM alarm_recipient_state WHERE recipient_user_id IN (?, ?)`,
       args: userIds,
     });
+    // 재전송 슬롯도 사용자 식별자를 **양쪽 다** 담는다(보낸 사람·받는 사람). FK 가 없어
+    // 남겨 두면 떠난 계정의 id 가 그대로 남으므로 두 자리 모두에서 지운다. 슬롯이 사라지면
+    // 다음 전송은 새 id 로 시작하는데, 그 상대는 이미 없는 계정이라 이어 붙일 것도 없다.
+    await tx.execute({
+      sql: `DELETE FROM targeted_alarm_slots
+            WHERE sender_user_id IN (?, ?) OR recipient_user_id IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
     await tx.execute({
       sql: `DELETE FROM promo_code_redemptions WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     await tx.execute({
       sql: `DELETE FROM paid_voice_retention WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    // 사용 기록도 users 의 FK 자식이다(`usage_events.user_id REFERENCES users(id)`).
+    // 안 지우면 아래 `DELETE FROM users` 가 FK 로 던져 **탈퇴가 통째로 롤백된다** —
+    // 마지막 기록이 1년을 채울 때까지 계정을 지울 수 없게 된다. 기록은 식별자만 담으므로
+    // 남겨 둘 이유도 없다(파기 범위에 포함).
+    await tx.execute({
+      sql: `DELETE FROM usage_events WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     // 인증 코드(이메일 키)는 users 행 삭제 전에 이메일을 역참조해 지운다.

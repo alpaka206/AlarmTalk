@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -76,34 +74,26 @@ internal fun ConsentHistoryScreen(
     // 선택 동의(마케팅) 토글은 서버 최신값을 별도로 읽어 두 방향 반영한다(쓰기 시 낙관·롤백은 뷰모델이 관리).
     LaunchedEffect(Unit) { onLoadMarketingConsent() }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            // 탭·설정과 같은 그라데이션 배경 + 좌우 20dp·간격 16dp 공통 규격.
+            // 탭과 같은 그라데이션 배경 — 진입 시 배경 톤이 튀지 않게.
             .background(homeGradientBrush())
             .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+    ) {
+        // ⚠ **상단바는 목록 밖에 고정한다.** 목록 안에 두면 스크롤과 함께 사라져,
+        // 내려간 상태에서 뒤로가기에 닿으려면 맨 위로 되돌아와야 한다(iOS 는 네비게이션
+        // 바라 항상 남는다). 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한다.
+        WakerTopBar(
+            title = stringResource(R.string.consent_screen_title),
+            onBack = onBack,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.hs_settings_back),
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.consent_screen_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-
         if (loadFailed) {
             item {
                 Text(
@@ -183,6 +173,7 @@ internal fun ConsentHistoryScreen(
             }
         }
     }
+    }
 
     if (withdrawConfirmOpen) {
         IosAlertDialog(
@@ -248,11 +239,16 @@ private fun ConsentToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            // 로드 전(null)엔 비활성, 쓰기 진행 중(busy)엔 연속 토글로 인한 opt-out 유실 방지로 비활성.
+            // ⚠ **쓰기 중이라고 스위치를 끄지 말 것**(2026-08-11 지적 "위치만 옮겨졌다가
+            // 색이 나중에 나온다"). 비활성으로 만들면 손잡이는 낙관적으로 옮겨가는데 색이
+            // **비활성 회색**으로 바뀌었다가 응답이 와야 제 색이 돌아온다 — 켜고 끌 때마다
+            // 두 단계로 보인다. 연속 토글은 뷰모델이 마지막 값을 이어서 보내 처리한다
+            // (`updateMarketingConsent` 의 `pendingMarketingConsent`).
+            // 로드 전(null)에만 비활성 — 그때는 무엇을 켜고 끄는지 알 수 없다.
             AlarmTalkSwitch(
                 checked = agreed == true,
                 onCheckedChange = onChange,
-                enabled = agreed != null && !busy,
+                enabled = agreed != null,
             )
         }
     }

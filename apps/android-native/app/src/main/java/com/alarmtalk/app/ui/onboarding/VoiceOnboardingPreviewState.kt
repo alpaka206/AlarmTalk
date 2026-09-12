@@ -1,6 +1,9 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.alarm.AlarmStreamVolume
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
@@ -33,7 +36,52 @@ internal class VoiceOnboardingPreviewController(
         private set
 
     private var mediaPlayer: MediaPlayer? = null
+
+    /**
+     * 지금 재생 중인 것이 **알람 크기 미리듣기**인가. 목소리를 고르는 자리의 미리듣기는
+     * 크기를 건드리지 않으므로, 슬라이더가 움직여도 그쪽 게인까지 바꾸면 안 된다.
+     */
+    private var alarmVolumePreview = false
     private var previewRequestId by mutableIntStateOf(0)
+
+    /**
+     * 재생 중인 알람 크기 미리듣기의 **게인만** 바꾼다(다시 틀지 않는다).
+     * 슬라이더를 끄는 동안 소리가 그 자리에서 커지고 작아진다.
+     */
+    fun updateAlarmVolume(volumePercent: Int) {
+        if (!alarmVolumePreview) return
+        val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(volumePercent)
+        runCatching { mediaPlayer?.setVolume(gain, gain) }
+    }
+
+    /**
+     * 슬라이더에서 손을 뗐을 때 — **토글이 아니다.**
+     *
+     * 이미 그 목소리를 그 모드로 듣고 있으면 크기만 맞추고 끝낸다(말 중간에 다시 트는 것이
+     * 더 거슬린다). 안 듣고 있으면(대개 2~3초짜리 샘플이 이미 끝났다) 그때 튼다.
+     * 행의 재생 버튼은 예전대로 [previewVoice] 의 토글을 쓴다 — 누르면 멈춰야 하니까.
+     */
+    fun ensureAlarmVolumePreview(
+        voiceProfileId: String,
+        stockClips: List<StockClip>,
+        volumePercent: Int,
+    ) {
+        if (playingVoiceId == voiceProfileId) {
+            if (alarmVolumePreview) {
+                updateAlarmVolume(volumePercent)
+                return
+            }
+            // ⚠ **다른 모드로 듣던 중이면 토글로 흘려보내지 않는다**(2026-09-07 리뷰 33차).
+            //   목소리 시트의 미리듣기(USAGE_MEDIA)가 아직 울리는 채로 손을 떼면
+            //   [previewVoice] 의 같은-id 토글에 걸려 **틀던 샘플만 꺼지고 아무 소리도 안
+            //   난다** — 손을 뗀 순간은 토글이 아니다. 스트림은 바꿔 끼울 수 없으므로
+            //   (`AudioAttributes` 는 prepare 전에만 정해진다) 멈추고 알람 스트림으로 다시
+            //   튼다. iOS 는 스트림 구분이 없어 게인만 바꾸면 된다
+            //   (`VoiceStudioViewModel.ensureGreetingPreview`).
+            stopPreview()
+        }
+        previewVoice(voiceProfileId, stockClips, alarmVolumePercent = volumePercent)
+    }
 
     fun stopPreview(invalidateRequest: Boolean = true) {
         if (invalidateRequest) previewRequestId += 1
@@ -41,6 +89,7 @@ internal class VoiceOnboardingPreviewController(
         mediaPlayer = null
         playingVoiceId = null
         preparingVoiceId = null
+        restoreAlarmStreamIfRaised()
     }
 
     /**
@@ -51,7 +100,25 @@ internal class VoiceOnboardingPreviewController(
      *
      * 모르는 id 면 인사말 클립을 못 찾아 조용히 아무것도 하지 않는다.
      */
-    fun previewVoice(voiceProfileId: String, stockClips: List<StockClip>) {
+    fun previewVoice(
+        voiceProfileId: String,
+        stockClips: List<StockClip>,
+        /**
+         * 목소리 크기 화면에서 부를 때의 **알람 음량**(0~100). 주면 울릴 때와 같은
+         * 스트림(USAGE_ALARM)으로, 그 크기 그대로 들려준다.
+         *
+         * ⚠ **`null` 로 두는 자리(목소리 고르기·온보딩)와 뜻이 다르다.** 거기서는
+         * "이 사람 목소리가 어떤가" 를 듣는 것이라 미디어 볼륨이 맞고, 여기서는
+         * "이 설정이 얼마나 큰가" 를 재는 것이라 알람 볼륨이 아니면 잴 수가 없다
+         * (CLAUDE.md 「미리듣기는 울림과 같은 스트림이어야 한다」).
+         */
+        alarmVolumePercent: Int? = null,
+    ) {
+        // ⚠ **표식은 정리(`stopPreview`) 뒤에 세운다**(2026-09-07 리뷰 32차). 여기서 먼저
+        //   세우면 아래 두 갈래가 곧바로 부르는 `stopPreview` 가 그걸 지워, **재생 중인데
+        //   표식은 false** 인 상태가 된다 — 그러면 슬라이더를 끌어도 [updateAlarmVolume]
+        //   이 첫 줄에서 돌아가고(소리가 안 변한다), 손을 뗐을 때
+        //   [ensureAlarmVolumePreview] 가 '듣고 있지 않다' 로 읽어 **틀던 샘플을 꺼 버린다.**
         if (playingVoiceId == voiceProfileId) {
             stopPreview()
             return
@@ -67,13 +134,22 @@ internal class VoiceOnboardingPreviewController(
         if (bundledRes != null) {
             previewRequestId += 1
             stopPreview(invalidateRequest = false)
-            val player = MediaPlayer.create(context, bundledRes) ?: return
+            val player = createPlayer(resId = bundledRes, uri = null, alarmVolumePercent = alarmVolumePercent)
+                ?: return
             playingVoiceId = voiceProfileId
+            if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
             mediaPlayer = player.apply {
                 setOnCompletionListener {
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
                     if (playingVoiceId == voiceProfileId) playingVoiceId = null
+                    restoreAlarmStreamIfRaised()
+                }
+                setOnErrorListener { p, _, _ ->
+                    p.release()
+                    if (mediaPlayer === p) mediaPlayer = null
+                    restoreAlarmStreamIfRaised()
+                    true
                 }
                 start()
             }
@@ -94,19 +170,30 @@ internal class VoiceOnboardingPreviewController(
                     val ext = response.audioFormat.ifBlank { "mp3" }
                     File(context.cacheDir, "voice_onboarding_preview.$ext").apply { writeBytes(bytes) }
                 }
-                val player = MediaPlayer.create(context, Uri.fromFile(file))
-                    ?: error("Failed to create greeting preview player.")
+                val player = createPlayer(
+                    resId = null,
+                    uri = Uri.fromFile(file),
+                    alarmVolumePercent = alarmVolumePercent,
+                ) ?: error("Failed to create greeting preview player.")
                 if (previewRequestId != requestId) {
                     player.release()
                     return@runCatching
                 }
                 preparingVoiceId = null
                 playingVoiceId = voiceProfileId
+                if (alarmVolumePercent != null) raiseAlarmStreamForPreview()
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
                         if (playingVoiceId == voiceProfileId) playingVoiceId = null
+                        restoreAlarmStreamIfRaised()
+                    }
+                    setOnErrorListener { p, _, _ ->
+                        p.release()
+                        if (mediaPlayer === p) mediaPlayer = null
+                        restoreAlarmStreamIfRaised()
+                        true
                     }
                     start()
                 }
@@ -119,9 +206,59 @@ internal class VoiceOnboardingPreviewController(
         }
     }
 
+    /**
+     * 미리듣기 플레이어를 만든다. [alarmVolumePercent] 가 있으면 알람 스트림·그 게인으로,
+     * 없으면 예전처럼 기본(미디어) 스트림으로 만든다.
+     */
+    private fun createPlayer(resId: Int?, uri: Uri?, alarmVolumePercent: Int?): MediaPlayer? {
+        val attributes = alarmVolumePercent?.let {
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        }
+        val player = when {
+            resId != null && attributes != null ->
+                MediaPlayer.create(context, resId, attributes, AudioManager.AUDIO_SESSION_ID_GENERATE)
+            resId != null -> MediaPlayer.create(context, resId)
+            uri != null && attributes != null ->
+                MediaPlayer.create(context, uri, null, attributes, AudioManager.AUDIO_SESSION_ID_GENERATE)
+            uri != null -> MediaPlayer.create(context, uri)
+            else -> null
+        } ?: return null
+        alarmVolumePercent?.let {
+            // 울릴 때와 같은 매핑을 쓴다 — 여기만 다른 식으로 계산하면 미리듣기와 알람이 어긋난다.
+            val gain = com.alarmtalk.app.alarm.VoiceVolumeRamp.targetVolume(it)
+            player.setVolume(gain, gain)
+        }
+        // ⚠ **여기서 스트림을 올리지 않는다.** 이 함수는 실패하거나 버려질 수 있고
+        //   (요청 취소·다운로드 경합), 그러면 되돌릴 주인이 없다. 올리는 것은 실제로
+        //   재생을 시작하는 자리([raiseAlarmStreamForPreview])에서만 한다.
+        return player
+    }
+
+    /**
+     * 재생을 **실제로 시작할 때만** 기기 알람 볼륨을 울림과 같게 올린다.
+     *
+     * ⚠ 짝은 [restoreAlarmStreamIfRaised] 다. 올린 뒤 나가는 길이 넷이라(완료·에러·
+     * 요청 취소·dispose) 하나만 빠져도 사용자의 알람 볼륨이 최대로 굳는다.
+     */
+    private fun raiseAlarmStreamForPreview() {
+        alarmVolumePreview = true
+        AlarmStreamVolume.applyForRinging(context, RINGING_STREAM_PERCENT, AlarmStreamVolume.Owner.PREVIEW)
+    }
+
+    /** 올린 적이 있으면 되돌린다. 없으면 아무 일도 하지 않는다(멱등). */
+    private fun restoreAlarmStreamIfRaised() {
+        if (!alarmVolumePreview) return
+        alarmVolumePreview = false
+        AlarmStreamVolume.restore(context, AlarmStreamVolume.Owner.PREVIEW)
+    }
+
     fun dispose() {
         mediaPlayer?.release()
         mediaPlayer = null
+        restoreAlarmStreamIfRaised()
     }
 }
 
@@ -144,3 +281,9 @@ internal fun rememberVoiceOnboardingPreviewController(
     }
     return controller
 }
+
+/**
+ * 미리듣기가 맞추는 기기 알람 스트림 크기 — **울림과 같은 값**이어야 한다
+ * (`RingingService.NEUTRAL_STREAM_PERCENT`).
+ */
+private const val RINGING_STREAM_PERCENT = 100

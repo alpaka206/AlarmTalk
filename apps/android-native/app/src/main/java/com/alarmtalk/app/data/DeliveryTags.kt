@@ -1,42 +1,13 @@
 package com.alarmtalk.app
 
 /**
- * 우리가 실제로 내보낸 적 있는 ElevenLabs delivery 태그(대괄호 안 연출 지시문) — **닫힌 목록**이다.
+ * delivery 태그의 **모양**. 백엔드 `vertex-translate.ts` 의 `TAG_BODY_PATTERN` 과 같은 문자셋이다 —
+ * **한쪽만 고치지 말 것.**
  *
- * 지금 쓰는 세트(백엔드 `vertex-translate.ts` 의 `APPROVED_TAGS`)에 더해, 그 이전 세트와 옛 프리셋
- * 문구에 섞여 저장된 것까지 담는다. 옛 행을 씻어내는 것이 이 헬퍼의 존재 이유라서다.
- * 서버에 태그를 새로 추가하면 여기에도 추가한다.
+ * ⚠ **쉼표를 빼지 말 것.** `[low, controlled]`·`[measured, deliberate]` 처럼 두 마디로 된 지시가
+ * 흔하다. 쉼표가 없던 동안 그 형태는 **매치조차 되지 않아** 잠금화면에 대괄호가 그대로 샜다.
  */
-private val DELIVERY_TAGS = setOf(
-    "brightly",
-    "calm",
-    "calmly",
-    "caring",
-    "cheerfully",
-    "comforting",
-    "curious",
-    "encouraging",
-    "excited",
-    "gentle",
-    "gently",
-    "happily",
-    "happy",
-    "lighthearted",
-    "lightly",
-    "playfully",
-    "proudly",
-    "quietly",
-    "reassuringly",
-    "sleepily",
-    "softly",
-    "tired",
-    "warmly",
-    "whispers",
-    // 태그는 아니지만 옛 프리셋 문구 앞에 붙은 채 저장된 카테고리 표기(지금은 안 쓴다).
-    "morning",
-)
-
-private val BRACKETED_RE = Regex("""\[([a-z][a-z -]{1,32})]""", RegexOption.IGNORE_CASE)
+private val BRACKETED_RE = Regex("""\[[a-z][a-z ,-]{1,48}]""", RegexOption.IGNORE_CASE)
 private val WHITESPACE_RE = Regex("""\s+""")
 
 /**
@@ -52,7 +23,12 @@ private val WHITESPACE_RE = Regex("""\s+""")
  * `[calm] 약 먹기` 처럼 **태그와 같은 단어를 사용자가 쓴 경우**를 구분할 수 없다(Codex #660).
  * 그래서 호출부가 '이 문구가 생성물인가'를 [generated] 로 알려 준다.
  *
- * 생성물이어도 [DELIVERY_TAGS] 에 있는 것만 벗기고(우리가 내보낸 적 없는 대괄호는 보존),
+ * ⚠ **철자 목록으로 판정하지 말 것**(2026-08-13 변경). 예전에는 우리가 내보낸 적 있는 태그
+ * 25개를 적어 두고 그 철자에만 반응했는데, 이제 태그 어휘가 **열린 집합**이다(비언어 소리·
+ * 발성 방식·태도를 모델이 고른다). 목록으로는 원리적으로 못 따라가고, 빠진 것은
+ * `[shouting]`·`[laughs nervously]`·`[through gritted teeth]` 처럼 **그대로 화면에 샌다.**
+ * 사용자가 친 대괄호를 지키는 일은 이제 전적으로 [generated](출처)가 맡는다.
+ *
  * 벗길 게 없으면 원문을 **그대로** 돌려준다 — 공백 정리조차 하지 않는다. 이 값이 그대로 다시
  * 저장되는 경로가 있다.
  *
@@ -60,18 +36,12 @@ private val WHITESPACE_RE = Regex("""\s+""")
  */
 internal fun String.stripDeliveryTags(generated: Boolean): String {
     if (!generated) return this
-    var removed = false
-    val stripped = BRACKETED_RE.replace(this) { match ->
-        if (match.groupValues[1].lowercase() in DELIVERY_TAGS) {
-            removed = true
-            " "
-        } else {
-            match.value
-        }
-    }
-    if (!removed) return this
+    if (!BRACKETED_RE.containsMatchIn(this)) return this
+    val stripped = BRACKETED_RE.replace(this, " ")
     val cleaned = stripped.replace(WHITESPACE_RE, " ").trim()
     // 다 벗겨 아무것도 안 남으면 벗기지 않은 것으로 친다. 문구가 비면 편집기가 저장을 막아
-    // (`editor_save_blocked_enter_message_or_random`) 알람을 고칠 수도 지울 수도 없게 된다.
+    // (`AlarmEditorScreen` 의 `editorSaveBlocked` — 빈 문구 갈래) 알람을 고칠 수도 지울
+    // 수도 없게 된다. ⚠ 그 차단에는 **사유 문구가 없다**(2026-08-18) — 저장 버튼만 회색이
+    // 되므로, 여기서 빈 문자열을 흘리면 사용자는 이유도 모른 채 갇힌다.
     return cleaned.ifBlank { this }
 }

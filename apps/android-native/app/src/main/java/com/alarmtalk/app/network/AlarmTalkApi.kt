@@ -9,4 +9,5 @@ interface AlarmTalkApi :
     CodeApi,
     BillingApi,
     HolidayApi,
-    PushApi
+    PushApi,
+    UsageEventApi

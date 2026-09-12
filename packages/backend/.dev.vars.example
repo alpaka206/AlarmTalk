@@ -36,3 +36,32 @@ INIT_DB_SECRET=
 # Used by sync-worker-secrets.ts and reset-test-data.ts.
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=
+
+# --- Apple (iOS) ---
+# ⚠ 키가 **세 갈래**다. 서로 다른 화면에서 발급하고 권한도 다르다 — 바꿔 넣으면 401 만 난다.
+#   ① 로그인   : APPLE_TEAM_ID + APPLE_SIGNIN_KEY_ID + APPLE_SIGNIN_PRIVATE_KEY
+#   ② 결제 검증 : APPLE_ISSUER_ID + APPLE_KEY_ID + APPLE_PRIVATE_KEY  (App Store Connect)
+#   ③ 푸시     : APNS_KEY_ID + APNS_PRIVATE_KEY                       (Developer Portal → Keys)
+# 자세한 발급 순서·검증법은 docs/ios/APPLE-ACCOUNT-SETUP.md.
+
+# 세 갈래가 공유하는 값.
+APPLE_BUNDLE_ID=com.alarmtalk.app
+APPLE_TEAM_ID=
+
+# ① Sign in with Apple. 미설정이면 애플 로그인만 막히고 나머지는 정상.
+APPLE_SIGNIN_KEY_ID=
+APPLE_SIGNIN_PRIVATE_KEY=
+
+# ② 결제 검증(App Store Server API). 채우기 전에는
+#    POST /billing/apple/confirm 이 503 으로 fail-closed 된다.
+APPLE_ISSUER_ID=
+APPLE_KEY_ID=
+# .p8 파일 내용 전체(PEM). 개행이 들어가므로 따옴표로 감싸거나 \n 로 이스케이프한다.
+# ⚠ .dev.vars 는 줄 단위로 읽히므로 여러 줄로 붙여넣으면 첫 줄만 올라간다.
+APPLE_PRIVATE_KEY=
+
+# ③ 푸시(APNs). 미설정이면 iOS 푸시만 조용히 건너뛴다(예외를 던지지 않는다).
+# ⚠ 키를 만들 때 **Sandbox 전용을 고르지 말 것** — 프로덕션이 403
+#    BadEnvironmentKeyInToken 으로 전부 막힌다.
+APNS_KEY_ID=
+APNS_PRIVATE_KEY=

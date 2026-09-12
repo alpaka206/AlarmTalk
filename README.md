@@ -10,15 +10,15 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v1.2.3` (versionCode 23) — live on Google Play
-- **Android** — the only client; core alarm engine verified on physical devices:
+- **Version**: `v1.2.5` (versionCode 25) — live on Google Play
+- **Android** — the shipping client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
   - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
   - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
-There is no iOS app. The SwiftUI client and its build workflow were removed from the repository.
+The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives in this repository, but it is not on the App Store yet. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
 
 ## Stack
 
@@ -29,7 +29,7 @@ There is no iOS app. The SwiftUI client and its build workflow were removed from
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 90d · rolls on each launch) · email code · Google ID token |
+| Auth | JWT (HS256, 365d TTL · rolls on every `/auth/me`; the 90d threshold only triggers background renewal) · email code · Google ID token · Apple ID token |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## Repository Layout
@@ -38,6 +38,7 @@ There is no iOS app. The SwiftUI client and its build workflow were removed from
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android app
+│   ├── ios-native/       SwiftUI iOS app (XcodeGen; not yet released)
 │   └── landing/          Next.js landing page (static export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API

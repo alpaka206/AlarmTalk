@@ -39,7 +39,11 @@ export function PhonePreview({ toggle, widthClass }: Props = {}) {
   // 폭은 --w 하나로만 바뀐다(.device 가 그걸로 베젤 두께·라운드까지 계산한다).
   // 좁은 화면에서 넘치지 않게 뷰포트에 물린다.
   return (
-    <div className={`device mx-auto ${widthClass ?? "[--w:min(340px,78vw)]"}`}>
+    <div
+      role="img"
+      aria-label={t("alt")}
+      className={`device mx-auto ${widthClass ?? "[--w:min(340px,78vw)]"}`}
+    >
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-[inherit]"
         style={{

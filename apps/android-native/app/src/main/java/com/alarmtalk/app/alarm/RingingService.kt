@@ -1,8 +1,6 @@
 package com.alarmtalk.app.alarm
 
-import android.app.KeyguardManager
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -13,7 +11,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -25,17 +22,19 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.getSystemService
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_LEFT_SCREEN
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_SILENT
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_STOP_OUTPUTS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.UsageEvents
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -44,7 +43,9 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.hasCoupleOrFamilyAccess
-import com.alarmtalk.app.isPaidVoiceEntitledNow
+import com.alarmtalk.app.isEntitledOptimistic
+import com.alarmtalk.app.resolvePaidVoiceAccess
+import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +54,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -91,18 +94,14 @@ class RingingService : Service() {
     private var audioSequenceActive = false
     private var voiceLoopActive = false
     private var voiceRepeatJob: Job? = null
-    private var voiceFadeJob: Job? = null
-    private var voiceRepeatLoudness: LoudnessEnhancer? = null
     private var currentAlarm: AlarmEntity? = null
     private var ringingAlarmId: String? = null
-    private var voiceAfterAlarmStarted = false
-    private var voiceHasPlayedThisRing = false
 
     /**
      * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
      *
-     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 끝맺음 목소리를
-     * 기다리다 도는 `finishDismiss`([serviceScope] = IO)다. 락이 없으면 이렇게 샌다: A 의
+     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 `dismiss`/`snooze`
+     * 가 도는 [serviceScope](= IO)다. 락이 없으면 이렇게 샌다: A 의
      * 정리가 '내가 아직 주인인가' 를 통과한 직후 B 가 시작해 자기 플레이어와 표시를 걸고,
      * 이어서 A 가 `stopMediaAndVibration()` 을 돌며 **B 를 침묵시키고** `ringingAlarmId` 를
      * 비운다. 그런데 `activeRingingAlarmId` 는 B 로 남아 정합성 복원이 B 를 영영 건너뛴다
@@ -123,11 +122,26 @@ class RingingService : Service() {
             getSystemService(VIBRATOR_SERVICE) as Vibrator
         }
         audioManager = getSystemService(AudioManager::class.java)
+        // 지난 울림이 원복하지 못하고 죽었으면 여기서 되돌린다 — 안 되돌리면 사용자의
+        // 알람 볼륨이 우리가 올린 값에 영구히 고정된다.
+        AlarmStreamVolume.restoreIfLeftOver(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val alarmId = intent?.getStringExtra(EXTRA_ALARM_ID)
-        return when (intent?.action) {
+        // ⚠ **인텐트가 null 이면 시스템이 `START_STICKY` 로 되살린 것이다**(2026-09-08).
+        //   예전에는 아래 `when` 의 `else` 로 떨어져 **아무 일도 하지 않았다** —
+        //   `startForeground` 도 `stopSelf` 도 없이 살아 있어 **알림 없는 좀비 서비스**가
+        //   남았고, 그 상태가 "울림 알림이 사라졌다" 로 보인다.
+        //   어느 알람이었는지 알 방법이 없으니(STICKY 는 인텐트를 버린다) 깨끗이 끝낸다.
+        //   ⚠ `stopRingingOutputs` 는 부르지 않는다 — 이 인스턴스는 아무것도 들고 있지 않고,
+        //   그 사이 다른 알람이 시작했으면 **남의 소리를 끄게 된다.**
+        if (intent == null) {
+            Log.w(TAG, "RingingService recreated without an intent; stopping instead of lingering")
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        val alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        return when (intent.action) {
             ACTION_START_RINGING -> {
                 if (alarmId.isNullOrBlank()) {
                     Log.w(TAG, "RingingService start requested without alarm id")
@@ -139,27 +153,66 @@ class RingingService : Service() {
             }
 
             ACTION_DISMISS -> {
-                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                // 어느 경로로 해제됐는지 남긴다 — 알림 버튼/울림 화면 슬라이더와 '알림이
+                // 사라져서'(SILENT)를 로그만으로 구분할 수 있어야 자동 해제를 추적할 수 있다.
+                Log.i(TAG, "Dismiss requested by user action id=$alarmId")
+                // id 가 없으면 할 일이 없다 — 그래도 **끝내야** 알림 없는 서비스가 안 남는다.
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
-            // 알림 스와이프 제거. 끝맺음 목소리 없이 즉시 정지한다 — 플래그를 미리 세우면
-            // dismiss() 의 끝맺음 분기(voiceUri != null && !voiceAfterAlarmStarted)를 건너뛰고
-            // stopRingingOutputs() 로 직행한다.
+            // 알림 스와이프 제거. '알람 + 목소리' 가 사라져 끝맺음 목소리 자체가 없으므로
+            // 이제 ACTION_DISMISS 와 결과가 완전히 같다. 액션은 남겨 둔다 —
+            // 알림 delete intent 가 이미 이 액션을 가리키고 있고, 구버전 알림이 살아 있을 수 있다.
             ACTION_DISMISS_SILENT -> {
+                Log.i(TAG, "Dismiss requested by notification removal id=$alarmId")
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId) else stopSelf(startId)
+                START_NOT_STICKY
+            }
+
+            // 울림 화면을 벗어났다(홈·앱 전환·전원 버튼). 판정은 액티비티가 한다 —
+            // 거기만 '잠금이 풀린 적이 있는가' 를 안다. 여기서는 마무리하고 사유만 남긴다.
+            ACTION_DISMISS_LEFT_SCREEN -> {
+                val screenOff = intent.getBooleanExtra(EXTRA_SCREEN_OFF, false)
+                Log.i(TAG, "Dismiss requested by leaving the ringing screen id=$alarmId screenOff=$screenOff")
                 if (!alarmId.isNullOrBlank()) {
-                    voiceAfterAlarmStarted = true
-                    dismiss(alarmId, startId)
+                    dismiss(alarmId, startId, detail = if (screenOff) SCREEN_OFF_DETAIL else LEFT_SCREEN_DETAIL)
+                } else {
+                    stopSelf(startId)
+                }
+                START_NOT_STICKY
+            }
+
+            // 목록에서 끄거나 지울 때. **행 상태는 건드리지 않는다** — 그건 부른 쪽이
+            // 이미 쓰고 있고, 여기서 `dismiss` 를 돌리면 반복 알람이 되살아난다.
+            ACTION_STOP_OUTPUTS -> {
+                Log.i(TAG, "Stopping ringing outputs only id=$alarmId")
+                // ⚠ **내 것일 때만 서비스를 끝낸다**(코덱스 #729 2차). A 가 꺼지는 사이
+                //   B 가 현재 알람이 되었으면 `stopRingingOutputs(A)` 는 옳게 빠지는데,
+                //   그 뒤 무조건 `stopSelf` 하면 `onDestroy` 가 인자 없는 정리를 돌려
+                //   **B 의 소리·진동·알림까지 끈다.** 지금 울리는 알람이 나일 때만 끝낸다.
+                val ownsOutputs = synchronized(ringingStateLock) { ringingAlarmId == alarmId }
+                if (!alarmId.isNullOrBlank()) stopRingingOutputs(alarmId)
+                if (ownsOutputs) {
+                    stopSelf(startId)
+                } else {
+                    Log.i(TAG, "Another alarm owns the outputs; keeping the service alive")
                 }
                 START_NOT_STICKY
             }
 
             ACTION_SNOOZE -> {
-                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId)
+                val minutes = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 0).takeIf { it > 0 }
+                if (!alarmId.isNullOrBlank()) snooze(alarmId, startId, minutes) else stopSelf(startId)
                 START_NOT_STICKY
             }
 
-            else -> START_NOT_STICKY
+            else -> {
+                // 모르는 액션도 그냥 두지 않는다 — 위 null 갈래와 같은 이유다.
+                Log.w(TAG, "RingingService got an unknown action=${intent.action}")
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
         }
     }
 
@@ -211,9 +264,19 @@ class RingingService : Service() {
             val alarm = repository.getAlarm(alarmId)
             if (ringingAlarmId != alarmId) return@launch
             currentAlarm = alarm
-            voiceAfterAlarmStarted = false
-            voiceHasPlayedThisRing = false
             requestAlarmAudioFocus()
+            // 기기 알람 볼륨이 낮거나 0 이면 앱에서 100% 로 맞춰도 작게/안 들린다.
+            // 알람은 미리 맞춰 둔 약속이므로 그 순간만큼은 기기 볼륨을 우리가 맞춘다.
+            // (원복은 stopRingingOutputs 에서. 상세는 AlarmStreamVolume 주석 참조.)
+            //
+            // ⚠ **여기에 슬라이더를 넘기지 말 것 — 곱셈이 된다**(2026-08-28 리뷰).
+            // 슬라이더는 이미 **플레이어 게인**으로 걸린다(`applyAlarmVolume`·
+            // `applyVoiceVolume`). 스트림에도 같은 퍼센트를 넘기면 두 번 곱해져, 목소리 10%
+            // 알람이 낮은 기기 볼륨 위에서 ~1% 로 떨어져 **안 들린다.**
+            // 그래서 스트림은 **중립(가득)** 으로 올리고, 크기는 게인 한 곳에서만 정한다 —
+            // 「목소리 슬라이더 = 목소리 게인, 알람음 슬라이더 = 톤 게인」(docs/spec).
+            // (올리기만 하고 낮추지 않으며, 끝나면 원복한다 — `AlarmStreamVolume`.)
+            AlarmStreamVolume.applyForRinging(applicationContext, NEUTRAL_STREAM_PERCENT)
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -221,6 +284,12 @@ class RingingService : Service() {
         }
         openRingingActivity(alarmId)
         Log.i(TAG, "Ringing started id=$alarmId")
+        // ⚠ **여기서 네트워크를 부르지 않는다**(CLAUDE.md 「Real alarm」). 로컬 큐에 적기만
+        // 하고, 전송은 `UsageEventUploadWorker` 가 나중에 한다.
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_RANG,
+            alarmId = alarmId,
+        )
     }
 
     private fun startRingingAudio(alarm: AlarmEntity?, voiceUriOverride: String? = null) {
@@ -250,7 +319,7 @@ class RingingService : Service() {
             Log.i(TAG, "Free plan at ring time — downgrading paid voice to alarm tone id=${alarm?.id}")
         }
         val voiceUri = if (downgradePaidVoice) null else rawVoiceUri
-        val playMode = if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode
+        val playMode = AlarmPlayModes.normalize(if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode)
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
         // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
@@ -267,7 +336,7 @@ class RingingService : Service() {
         )
         when {
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null && voiceVolumePercent > 0 -> {
-                startVoiceLoop(voiceUri, alarm, fadeIn = true)
+                startVoiceLoop(voiceUri, alarm)
             }
 
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
@@ -275,39 +344,34 @@ class RingingService : Service() {
                 Log.i(TAG, "Voice-only alarm muted by per-voice volume id=${alarm?.id}")
             }
 
-            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                if (alarmToneAllowed) {
-                    startAlarmToneLoop(alarm)
-                } else if (voiceVolumePercent > 0) {
-                    voiceAfterAlarmStarted = true
-                    startVoiceLoop(voiceUri, alarm, fadeIn = true)
-                } else {
-                    stopMediaOnly()
-                    Log.i(TAG, "Alarm+voice audio muted by per-alarm settings id=${alarm?.id}")
-                }
-            }
-
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
                 // 음성이 없어도 알람음을 끈 사용자에겐 톤을 강제하지 않는다(진동·화면은 계속 울린다).
                 startToneFallbackOrSilent(alarm, alarmToneAllowed, "Voice-only alarm has no local voice audio")
-            }
-
-            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
-                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Alarm+voice alarm has no local voice audio")
             }
 
             else -> startToneFallbackOrSilent(alarm, alarmToneAllowed, "Ringing audio fallback")
         }
     }
 
-    /** 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정. */
-    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean =
-        (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+    /**
+     * 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정.
+     *
+     * ⚠ **'목소리만' 알람은 톤 폴백을 막지 않는다.** 그 모드를 고른 사용자는 알람음을
+     * 거부한 게 아니라 목소리를 고른 것이다. 목소리를 못 틀 때(유료 만료·프로필 삭제·캐시
+     * 유실)까지 톤을 막으면 진동만 남아 **소리가 하나도 안 난다** — 위 강등 주석이 약속한
+     * "알람 자체는 그대로 울린다" 를 어긴다. 옛 행에는 그 조합이 저장돼 있으므로 여기서 받는다.
+     */
+    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean {
+        if (alarm?.playMode == AlarmPlayModes.VOICE_ONLY) {
+            return (alarm.alarmVolumePercent) > 0
+        }
+        return (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+    }
 
     /** 유료(무료 강등 대상) 목소리를 쓰는 알람인지 — lockPaidAlarmTalks 의 usesVoice 기준과 동일. */
+    // ⚠ 재생 방식은 조건이 아니다 — `AlarmRepository.lockPaidAlarmTalks` 의 usesVoice 주석 참조.
     private fun alarmUsesPaidVoice(alarm: AlarmEntity): Boolean =
-        alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
-            !alarm.localAudioUri.isNullOrBlank() ||
+        !alarm.localAudioUri.isNullOrBlank() ||
             !alarm.rawAudioUri.isNullOrBlank() ||
             !alarm.voiceProfileId.isNullOrBlank() ||
             !alarm.ttsMessageId.isNullOrBlank()
@@ -323,13 +387,35 @@ class RingingService : Service() {
      * subscription==null 분기에만 적용 — stale 캐시의 만료된 family 소유자 오통과 방지).
      */
     private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
-        val userId = AuthSessionStore(applicationContext).read()?.user?.id ?: return@runCatching true
+        // ⚠ **세션은 한 번만 읽는다**(2026-09-01 리뷰). 두 번 읽으면 그 사이의 계정 전환에서
+        // **A 의 구독·그룹 스냅샷과 B 의 plan** 이 한 판정에 섞인다 — 울림 경로는 알람을 id
+        // 로 바로 집어오므로 그 섞인 답이 그대로 이 알람에 적용된다(A 유료→B 무료면 A 의
+        // 클론이 톤으로 죽고, 반대면 무료 계정에서 남은 클론이 울린다).
+        val session = AuthSessionStore(applicationContext).read()
+        val userId = session?.user?.id ?: return@runCatching true
         val snapshot = AccessSnapshotStore(applicationContext).read(userId)
-        val sub = snapshot.subscriptionResponse ?: return@runCatching true
-        if (sub.subscription == null) {
-            return@runCatching hasCoupleOrFamilyAccess(sub, snapshot.familyGroup)
-        }
-        isPaidVoiceEntitledNow(sub, System.currentTimeMillis())
+        // 2026-08-31: 손으로 갈라 쓰던 것을 **유일 판정기**로 옮겼다. 뜻은 그대로이되
+        // **스토어 신호가 하나 더 들어온다** — 앱이 전경에서 물어 캐시에 적어 둔 값이라
+        // 여기서 BillingClient 를 붙이지 않고도 「스토어가 권위다」를 지킬 수 있다.
+        // 울림은 잘못 잠그면 알람이 조용해지는 쪽이라 **모르면 통과**시킨다.
+        val now = System.currentTimeMillis()
+        // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
+        // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
+        val storeStillValid = snapshot.storeSignalStillValid(now)
+        resolvePaidVoiceAccess(
+            subscriptionResponse = snapshot.subscriptionResponse,
+            familyGroup = snapshot.familyGroup,
+            // ⚠ **null 로 두지 말 것.** 서버가 '구독 없음' 이라 답한 경우 이 값이 없으면
+            // 판정이 `Unknown` 이 되고 낙관 규칙상 통과해, 강등된 사용자의 클론 목소리가
+            // 계속 울린다 — 로컬 폴백의 존재 이유가 사라진다(2026-08-31 리뷰).
+            // ⚠ **옛 버전이 쓴 스냅샷에는 이 필드가 없다**(2026-08-31 리뷰). null 로 두면
+            // '구독 없음 + 그룹 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
+            // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
+            // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
+            userPlan = snapshot.userPlan ?: session.user.plan,
+            storeEntitled = storeStillValid,
+            nowMillis = now,
+        ).isEntitledOptimistic()
     }.getOrDefault(true)
 
     /**
@@ -350,7 +436,6 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
         mediaPlayer?.release()
         val player = createAlarmTonePlayer(alarm, looping = true)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
@@ -370,15 +455,14 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?, fadeIn: Boolean) {
+    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         audioSequenceActive = false
         voiceLoopActive = true
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
-        releaseVoiceRepeatLoudness()
         mediaPlayer?.release()
-        val repeatVoice = alarm?.voiceRepeat != false
-        val shouldFadeIn = fadeIn && !voiceHasPlayedThisRing
+        // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시 — 편집기에서 선택지를 없앴다).
+        // 옛 행에 false 가 남아 있을 수 있으므로 여기서도 값을 보지 않는다.
+        val repeatVoice = true
         val player = createVoicePlayer(voiceUri)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
         if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
@@ -387,13 +471,11 @@ class RingingService : Service() {
             return
         }
         mediaPlayer = player?.apply {
-            voiceHasPlayedThisRing = true
-            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
+            applyVoiceVolume(this, alarm)
             isLooping = false
             setOnCompletionListener { completed ->
                 if (repeatVoice && voiceLoopActive) {
                     if (mediaPlayer === completed) {
-                        cancelVoiceFadeJob()
                         scheduleVoiceRepeat(completed, alarm)
                     } else {
                         completed.release()
@@ -401,7 +483,6 @@ class RingingService : Service() {
                 } else {
                     completed.release()
                     if (mediaPlayer === completed) {
-                        cancelVoiceFadeJob()
                         mediaPlayer = null
                     }
                 }
@@ -426,7 +507,6 @@ class RingingService : Service() {
             val targetVolume = VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)
             runCatching {
                 Log.i(TAG, "Repeating voice playback on existing player volume=$targetVolume")
-                enableVoiceRepeatLoudness(player)
                 player.setVolume(targetVolume, targetVolume)
                 player.seekTo(0)
                 player.start()
@@ -441,85 +521,6 @@ class RingingService : Service() {
     private fun cancelVoiceRepeatJob() {
         voiceRepeatJob?.cancel()
         voiceRepeatJob = null
-    }
-
-    private fun cancelVoiceFadeJob() {
-        voiceFadeJob?.cancel()
-        voiceFadeJob = null
-    }
-
-    private fun enableVoiceRepeatLoudness(player: MediaPlayer) {
-        if (voiceRepeatLoudness != null) return
-        runCatching {
-            LoudnessEnhancer(player.audioSessionId).apply {
-                setTargetGain(VOICE_REPEAT_LOUDNESS_GAIN_MB)
-                enabled = true
-                voiceRepeatLoudness = this
-                Log.i(TAG, "Enabled repeat voice loudness enhancer gainMb=$VOICE_REPEAT_LOUDNESS_GAIN_MB")
-            }
-        }.onFailure { error ->
-            Log.w(TAG, "Unable to enable repeat voice loudness enhancer", error)
-        }
-    }
-
-    private fun releaseVoiceRepeatLoudness() {
-        voiceRepeatLoudness?.run {
-            runCatching { enabled = false }
-            release()
-        }
-        voiceRepeatLoudness = null
-    }
-
-    private fun startAlarmVoiceSequence(voiceUri: Uri, alarm: AlarmEntity?) {
-        voiceLoopActive = false
-        cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
-        audioSequenceActive = true
-        mediaPlayer?.release()
-        playSequenceStep(voiceUri = voiceUri, alarm = alarm, playAlarmTone = true)
-    }
-
-    private fun playSequenceStep(voiceUri: Uri, alarm: AlarmEntity?, playAlarmTone: Boolean) {
-        if (!audioSequenceActive) return
-
-        val nextPlayer = if (playAlarmTone) {
-            createAlarmTonePlayer(alarm, looping = false)
-        } else {
-            createVoicePlayer(voiceUri)
-        }
-
-        if (nextPlayer == null) {
-            AlarmTalkLog.reportError("Failed to create sequence MediaPlayer")
-            startToneFallbackOrSilent(alarm, isAlarmToneAllowed(alarm), "sequence MediaPlayer creation failed")
-            return
-        }
-
-        // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 플레이어를 남기지 않는다.
-        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
-            nextPlayer.release()
-            mediaPlayer = null
-            return
-        }
-
-        mediaPlayer = nextPlayer.apply {
-            if (playAlarmTone) {
-                applyAlarmVolume(alarm)
-            } else {
-                val shouldFadeIn = !voiceHasPlayedThisRing
-                voiceHasPlayedThisRing = true
-                applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
-            }
-            isLooping = false
-            setOnCompletionListener { completed ->
-                completed.release()
-                if (mediaPlayer === completed) {
-                    if (!playAlarmTone) cancelVoiceFadeJob()
-                    mediaPlayer = null
-                }
-                playSequenceStep(voiceUri, alarm, playAlarmTone = !playAlarmTone)
-            }
-            start()
-        }
     }
 
     private fun createAlarmTonePlayer(alarm: AlarmEntity?, looping: Boolean): MediaPlayer? {
@@ -573,28 +574,15 @@ class RingingService : Service() {
         setVolume(volume, volume)
     }
 
-    private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?, fadeIn: Boolean) {
-        val plan = VoiceVolumeRamp.plan(
-            volumePercent = alarm?.voiceVolumePercent ?: 100,
-            fadeIn = fadeIn,
-        )
-        Log.i(
-            TAG,
-            "Applying voice volume fadeIn=$fadeIn start=${plan.startVolume} target=${VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)} steps=${plan.stepVolumes.size}",
-        )
-        player.setVolume(plan.startVolume, plan.startVolume)
-        if (plan.stepVolumes.isEmpty()) {
-            return
-        }
-
-        voiceFadeJob = serviceScope.launch {
-            plan.stepVolumes.forEach { volume ->
-                delay(VoiceVolumeRamp.FADE_IN_MS / VoiceVolumeRamp.FADE_STEPS)
-                if (mediaPlayer !== player) return@launch
-                runCatching { player.setVolume(volume, volume) }
-            }
-            if (mediaPlayer === player) voiceFadeJob = null
-        }
+    /**
+     * 목소리 게인을 **첫 샘플부터 target 으로** 건다. 램프 없음(VoiceVolumeRamp 주석 참조).
+     *
+     * `start()` 보다 먼저 불려야 한다 — 그래야 첫 샘플부터 제 크기이고 진폭 점프가 없다.
+     */
+    private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?) {
+        val target = VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)
+        Log.i(TAG, "Applying voice volume target=$target")
+        player.setVolume(target, target)
     }
 
     private fun startVibration(patternName: String) {
@@ -612,67 +600,22 @@ class RingingService : Service() {
     }
 
     /**
-     * 사용자가 기기를 능동적으로 쓰는 중(화면 켜짐 + 잠금 해제)인지. 이때는 전체화면 강탈
-     * 대신 알림의 full-screen intent 가 헤드업 배너로 뜨게 둔다. 화면이 꺼져 있거나 잠금
-     * 상태면(자는 중 등) false → 잠금화면 위 전체 울림 화면을 직접 띄운다.
+     * 울림 화면을 띄운다 — **기기 상태를 가리지 않는다**(2026-09-09 지시).
+     *
+     * 예전에는 '화면 켜짐 + 잠금 해제 + 헤드업 가능' 이면 배너에 맡기고 이 화면을 띄우지
+     * 않았다. 그런데 **배너가 실제로 그려지는지는 앱이 알 수 없다** — 알림 권한·채널
+     * importance·DND 를 전부 통과해도 SM-A325N 에서는 알림창에만 쌓이고 위에 뜨지 않았다
+     * (2026-09-09 실기기. 같은 판정을 통과한 S23 Ultra 는 떴다). 판정이 "뜬다" 고 말한
+     * 기기에서 해제 UI 가 하나도 없었다는 뜻이라, 그 판정 자체를 버린다.
+     *
+     * ⚠ **'항상' 은 최선 노력이지 보장이 아니다.** 다른 앱이 전경일 때의 액티비티 시작은
+     *   OS 재량이고(`SYSTEM_ALERT_WINDOW` 를 안 쓴다), 막히면 예외도 없이 무시될 수 있다.
+     *   그래서 알림의 `setFullScreenIntent` 는 **폴백으로 그대로 둔다** — 그게 이 경로가
+     *   실패했을 때 남는 유일한 해제 표면이다.
+     * ⚠ 그 대가로 잠금 해제 상태에서는 배너가 이 화면 위에 잠깐 겹칠 수 있다. 겹침을
+     *   없애겠다고 **채널을 강등하거나 FSI 를 떼지 말 것** — 폴백이 통째로 사라진다.
      */
-    private fun isDeviceActivelyInUse(): Boolean {
-        val interactive = getSystemService<PowerManager>()?.isInteractive == true
-        val locked = getSystemService<KeyguardManager>()?.isKeyguardLocked == true
-        return interactive && !locked
-    }
-
-    /**
-     * 울림 알림이 실제로 헤드업 배너로 떠서 해제 UI 를 제공할 수 있는 상태인지 판정한다.
-     * 하나라도 어긋나면 헤드업이 보장되지 않으므로 false → 전체 울림 화면을 직접 띄운다.
-     *  1) 앱 알림이 켜져 있어야 한다.
-     *  2) 울림 채널(RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을
-     *     음소거·강등하면 areNotificationsEnabled() 는 true 여도 헤드업이 안 뜬다.
-     *  3) 방해금지(DND)가 시각 알림을 억제하지 않아야 한다. 알람 소리는 USAGE_ALARM 이라 DND 에서도
-     *     나지만, 이 채널은 DND 를 우회하지 않으므로 DND 중엔 HIGH 라도 헤드업이 안 뜬다. 시스템이
-     *     실제로 시각 방해가 가능할 때(DND 해제 = INTERRUPTION_FILTER_ALL, 또는 채널이 DND 우회)만 허용.
-     */
-    private fun ringingChannelCanShowHeadsUp(): Boolean {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
-        val nm = getSystemService<NotificationManager>() ?: return false
-        val channel = nm.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
-        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 강등으로 보지 않는다.
-        if (channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH) return false
-        // 채널이 DND 를 우회하면 어떤 DND 에서도 헤드업 가능.
-        if (channel?.canBypassDnd() == true) return true
-        // 이 알림은 CATEGORY_ALARM 이라 '알람 허용' DND 모드에선 시각 방해가 허용된다.
-        //  - ALL(DND off), ALARMS(알람만 허용): 허용
-        //  - PRIORITY: 정책이 알람 카테고리를 허용할 때만
-        //  - NONE(완전 무음)·UNKNOWN: 억제로 본다
-        return when (nm.currentInterruptionFilter) {
-            NotificationManager.INTERRUPTION_FILTER_ALL,
-            NotificationManager.INTERRUPTION_FILTER_ALARMS -> true
-            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> priorityDndAllowsAlarms(nm)
-            else -> false
-        }
-    }
-
-    /**
-     * PRIORITY DND 정책이 알람 카테고리를 허용하는지. getNotificationPolicy 는 알림 정책 접근
-     * 권한이 있어야 하므로(미보유 시 SecurityException) 실패하면 보수적으로 false → 전체 울림
-     * 화면을 띄운다. PRIORITY_CATEGORY_ALARMS 는 API 28+ 라 하위에선 false.
-     */
-    private fun priorityDndAllowsAlarms(nm: NotificationManager): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
-        return runCatching {
-            (nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS) != 0
-        }.getOrDefault(false)
-    }
-
     private fun openRingingActivity(alarmId: String) {
-        // 화면 켜짐 + 잠금 해제 상태이고 '울림 알림이 헤드업으로 뜰 수 있을 때'만 전체화면 직접 실행을
-        // 생략하고 헤드업에 맡긴다(헤드업 + 전체화면 동시 표시 방지). 화면이 꺼졌거나 잠겼거나,
-        // 사용자가 울림 채널을 음소거·강등해 헤드업이 안 뜨는 경우엔 소리만 나고 해제 UI가 사라지지
-        // 않도록 잠금화면 위 전체 울림 화면을 직접 띄운다.
-        if (isDeviceActivelyInUse() && ringingChannelCanShowHeadsUp()) {
-            Log.i(TAG, "Device in active use with heads-up-capable channel; relying on heads-up notification")
-            return
-        }
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -682,30 +625,43 @@ class RingingService : Service() {
         runCatching {
             startActivity(intent)
         }.onFailure { error ->
-            Log.w(TAG, "Direct ringing activity launch failed; relying on full-screen notification", error)
+            Log.w(TAG, "Direct ringing activity launch failed", error)
+        }
+        // ⚠ **떴는지 확인한다 — 예외가 없다고 뜬 것이 아니다**(코덱스 #729).
+        //   안드로이드는 백그라운드 액티비티 시작을 **조용히 무시**할 수 있다. 정상 채널은
+        //   `IMPORTANCE_LOW` 라 배너도 안 뜨므로, 그대로 두면 소리만 나고 **해제 UI 가
+        //   하나도 없는** 상태가 된다 — 이 변경 전체가 없애려던 바로 그 상태다.
+        //   그래서 화면이 안 떴으면 소리·전체화면 인텐트를 든 폴백 알림으로 올린다.
+        serviceScope.launch {
+            delay(ACTIVITY_LAUNCH_CHECK_MS)
+            if (destroyed || ringingAlarmId != alarmId) return@launch
+            if (RingingActivity.isShowing()) return@launch
+            Log.w(TAG, "Ringing screen never appeared; escalating to the fallback notification id=$alarmId")
+            try {
+                NotificationManagerCompat.from(this@RingingService).notify(
+                    RINGING_NOTIFICATION_ID,
+                    RingingNotificationFactory(this@RingingService)
+                        .build(alarmId, RingingNotificationFactory.Variant.ESCALATION),
+                )
+            } catch (error: SecurityException) {
+                // runCatching과 동일하게 권한 회수 실패를 격리하되 lint가 검사할 수 있게 한다.
+                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+            } catch (error: Throwable) {
+                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+            }
         }
     }
 
-    private fun dismiss(alarmId: String, startId: Int) {
+    private fun dismiss(alarmId: String, startId: Int, detail: String? = null) {
+        AlarmAppContainer.usageEventRecorder(applicationContext).record(
+            type = UsageEvents.ALARM_DISMISSED,
+            alarmId = alarmId,
+            detail = detail,
+        )
         serviceScope.launch {
-            val repository = AlarmAppContainer.repository(applicationContext)
-            val alarm = currentAlarm ?: repository.getAlarm(alarmId)
-            val voiceUri = alarm
-                ?.takeIf { it.playMode == AlarmPlayModes.ALARM_VOICE }
-                ?.let {
-                    repository.resolveBucketClipLocalUri(it)
-                        ?: storedVoiceFallbackUri(
-                            localAudioUri = it.localAudioUri,
-                            bucketId = it.bucketId,
-                            bucketClipCount = decodeBucketClipKeys(it.bucketClipKeysJson).size,
-                            bucketSelectionAvailable = false,
-                        )
-                }
-                ?.let(Uri::parse)
-            if (voiceUri != null && !voiceAfterAlarmStarted) {
-                startDismissVoiceThenFinish(alarmId, startId, voiceUri, alarm)
-                return@launch
-            }
+            // ⚠ 예전에는 '알람 + 목소리' 모드에서 여기서 끝맺음 목소리를 한 번 재생했다.
+            // 그 모드가 사라졌으므로(AlarmPlayModes 주석 참조) 해제는 그냥 멈추는 것이다 —
+            // 목소리는 울리는 동안 재생된다.
             stopRingingOutputs(alarmId)
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
@@ -716,72 +672,43 @@ class RingingService : Service() {
         }
     }
 
-    private fun startDismissVoiceThenFinish(alarmId: String, startId: Int, voiceUri: Uri, alarm: AlarmEntity?) {
-        voiceAfterAlarmStarted = true
-        stopMediaAndVibration()
-        val player = createVoicePlayer(voiceUri)
-        if (player == null) {
-            AlarmTalkLog.reportError("Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
-            serviceScope.launch {
-                finishDismiss(alarmId, startId)
-            }
-            return
-        }
-        // 준비 도중 파괴/알람 교체 시 좀비 플레이어를 남기지 않고, 파괴가 아니면 dismiss 는 마무리한다.
-        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
-            player.release()
-            mediaPlayer = null
-            serviceScope.launch {
-                finishDismiss(alarmId, startId)
-            }
-            return
-        }
-        mediaPlayer = player.apply {
-            val shouldFadeIn = !voiceHasPlayedThisRing
-            voiceHasPlayedThisRing = true
-            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
-            isLooping = false
-            setOnCompletionListener { completed ->
-                completed.release()
-                if (mediaPlayer === completed) {
-                    cancelVoiceFadeJob()
-                    mediaPlayer = null
-                }
-                serviceScope.launch {
-                    finishDismiss(alarmId, startId)
-                }
-            }
-            start()
-        }
-        Log.i(TAG, "Alarm tone dismissed; playing voice once before finish id=$alarmId")
-    }
-
-    private suspend fun finishDismiss(alarmId: String, startId: Int) {
-        stopRingingOutputs(alarmId)
-        runCatching {
-            AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to dismiss alarm id=$alarmId", error)
-        }
-        stopSelf(startId)
-    }
-
-    private fun snooze(alarmId: String, startId: Int) {
+    private fun snooze(alarmId: String, startId: Int, minutesOverride: Int? = null) {
+        // ⚠ **결과가 정해진 뒤에 적는다**(2026-09-07 리뷰 37차). 누른 것과 미뤄진 것은 다르다 —
+        //   한도 도달·비활성이면 이 누름은 알람을 **끝낸다.** 예전에는 여기서 먼저 적어서
+        //   일어나지 않은 미룸이 기록되고 **실제로 일어난 종료는 아무 데도 안 남았다.**
+        //   소리는 그대로 여기서 끈다(그건 누른 순간의 일이다).
         stopRingingOutputs(alarmId)
         serviceScope.launch {
+            val recorder = AlarmAppContainer.usageEventRecorder(applicationContext)
             runCatching {
                 val repository = AlarmAppContainer.repository(applicationContext)
-                // 스누즈가 꺼져 있거나 한도를 넘겼으면 repository.snooze 는 **DB 를 한 글자도
+                // 스누즈가 꺼져 있거나 행이 사라졌으면 repository.snooze 는 **DB 를 한 글자도
                 // 쓰지 않고** null 을 돌려준다. 그런데 소리는 위에서 이미 껐다 — 그대로 두면
                 // enabled=1 · state=RINGING · fireAtMillis=과거 로 굳어, 다음 재예약이 이 행을
-                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 알림의 스누즈 버튼은
-                // 한도를 보지 않고 항상 붙으므로(RingingNotificationFactory) 정상 조작으로도
-                // 닿는 경로다. 스누즈가 안 되면 **해제로 마무리**해 상태를 정상으로 되돌린다.
-                if (repository.snooze(alarmId) == null) {
+                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 스누즈가 안 되면
+                // **해제로 마무리**해 상태를 정상으로 되돌린다.
+                // ⚠ **횟수 한도는 더 이상 사유가 아니다**(2026-09-09). 다시 울림은 무제한이라
+                //   이 갈래에 닿는 정상 조작은 없어졌지만, 행이 지워지는 경합은 남아 있다.
+                if (repository.snooze(alarmId, minutesOverride) == null) {
                     Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
                     repository.dismiss(alarmId)
+                    // 미뤄지지 않았다 — 끝난 것으로 적고, **누른 사실은 detail 로** 남긴다.
+                    // 눌렀는데 막힌 횟수는 한도를 조정할 유일한 근거라 버리지 않는다.
+                    recorder.record(
+                        type = UsageEvents.ALARM_DISMISSED,
+                        alarmId = alarmId,
+                        detail = SNOOZE_DENIED_DETAIL,
+                    )
+                } else {
+                    recorder.record(type = UsageEvents.ALARM_SNOOZED, alarmId = alarmId)
                 }
             }.onFailure { error ->
+                // 결과를 모른다. 그래도 **누른 사실은 잃지 않는다** — 기록을 잃는 쪽이 더 나쁘다.
+                recorder.record(
+                    type = UsageEvents.ALARM_SNOOZED,
+                    alarmId = alarmId,
+                    detail = SNOOZE_FAILED_DETAIL,
+                )
                 AlarmTalkLog.reportError("Failed to snooze alarm id=$alarmId", error)
             }
             stopSelf(startId)
@@ -818,9 +745,9 @@ class RingingService : Service() {
         ringingAlarmId = null
         releaseRingingMarkers(completedAlarmId)
         currentAlarm = null
-        voiceAfterAlarmStarted = false
-        voiceHasPlayedThisRing = false
         abandonAlarmAudioFocus()
+        // 우리가 올린 기기 알람 볼륨을 되돌린다. 사용자 설정을 건드린 것이므로 반드시 짝이 맞아야 한다.
+        AlarmStreamVolume.restore(applicationContext)
     }
 
     private fun stopMediaAndVibration() {
@@ -832,8 +759,6 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
-        releaseVoiceRepeatLoudness()
         mediaPlayer?.run {
             runCatching {
                 if (isPlaying) stop()
@@ -882,13 +807,42 @@ class RingingService : Service() {
     }
 
     companion object {
+        /** '다시 알림' 을 눌렀지만 한도·비활성으로 **미뤄지지 않은** 경우의 표시. */
+        internal const val SNOOZE_DENIED_DETAIL = "snooze_denied"
+        internal const val SCREEN_OFF_DETAIL = "screen_off"
+        internal const val LEFT_SCREEN_DETAIL = "left_screen"
+        private const val EXTRA_SCREEN_OFF = "com.alarmtalk.app.extra.SCREEN_OFF"
+
+        /**
+         * 울림 화면의 ＋/− 로 방금 고른 간격. **함께 실어 보낸다** — 화면의 비동기 저장이
+         * 끝나기 전에 눌러도 그 값으로 미뤄지게 하기 위해서다(코덱스 #729).
+         */
+        private const val EXTRA_SNOOZE_MINUTES = "com.alarmtalk.app.extra.SNOOZE_MINUTES"
+
+        /** '다시 알림' 을 눌렀는데 결과를 알 수 없는 경우(저장 실패 등)의 표시. */
+        internal const val SNOOZE_FAILED_DETAIL = "snooze_failed"
+
         /**
          * 현재 울림 세션의 알람 id(없으면 null). RingingActivity 가 FGS 차단 폴백으로 진입했을 때
          * 서비스가 이미 울리고 있는지 확인해, 중복 시작과 "서비스→액티비티 재오픈" 루프를 막는다.
+         *
+         * `MutableStateFlow` 라 `@Volatile` 이 필요 없다 — 내부 값이 이미 원자적이다.
          */
-        @Volatile
-        var activeRingingAlarmId: String? = null
-            private set
+        private val activeRingingAlarmIdState = MutableStateFlow<String?>(null)
+
+        /**
+         * 지금 울리는 알람을 **관찰**하는 통로.
+         *
+         * ⚠ 울림 화면이 이걸 봐야 한다. 알림의 '해제'·'다시 울리기' 로 서비스가 끝나도
+         * `RingingActivity` 는 그대로 남는데(액티비티는 서비스 생명주기를 모른다),
+         * 이제 그 화면이 **항상** 떠 있으므로 반드시 겹친다. 남은 화면의 '밀어서 끄기' 를
+         * 밀면 이미 미뤄 둔 알람에 `dismiss` 가 한 번 더 나가 **스누즈가 지워진다.**
+         */
+        val activeRingingAlarmIdFlow: StateFlow<String?> get() = activeRingingAlarmIdState
+
+        var activeRingingAlarmId: String?
+            get() = activeRingingAlarmIdState.value
+            private set(value) { activeRingingAlarmIdState.value = value }
 
         /**
          * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(알람 id → 받은 시각).
@@ -956,8 +910,17 @@ class RingingService : Service() {
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001
+        // ⚠ **반복은 커지지 않는다**(2026-08-27). 예전에는 두 번째 재생부터
+        // 음량 증폭기로 +6dB 를 걸었다 — 삭제한 페이드인과 같은 커밋(ad23e67e)에서 근거 없이
+        // 들어온 것이고 결과도 같은 종류다: 사용자가 맞춘 음량이 첫 회만 지켜지고 그 뒤로 더
+        // 크게 울린다. 공동 공간에 맞춰 작게 둔 알람이 두 번째 문장부터 커지면 그건 '작게' 가
+        // 아니다. 소리는 **첫 샘플부터 끝까지 같은 크기**다.
+        /** 스트림은 중립(가득)으로 올린다 — 크기는 플레이어 게인 한 곳에서만 정한다. */
+        private const val NEUTRAL_STREAM_PERCENT = 100
         private const val VOICE_REPEAT_GAP_MS = 900L
-        private const val VOICE_REPEAT_LOUDNESS_GAIN_MB = 600
+
+        /** 울림 화면이 떴는지 확인하기까지 기다리는 시간. 창 애니메이션·콜드 스타트 여유. */
+        private const val ACTIVITY_LAUNCH_CHECK_MS = 2_500L
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {
@@ -974,10 +937,31 @@ class RingingService : Service() {
             })
         }
 
-        fun snooze(context: Context, alarmId: String) {
+        /**
+         * 울림 화면을 벗어났다 → 해제. 판정은 `RingingActivity` 가 한다.
+         * @param screenOff 화면이 꺼져서 떠난 것(전원 버튼)이면 true. 기록에만 쓴다.
+         */
+        fun dismissForLeavingScreen(context: Context, alarmId: String, screenOff: Boolean) {
+            context.startService(Intent(context, RingingService::class.java).apply {
+                action = ACTION_DISMISS_LEFT_SCREEN
+                putExtra(EXTRA_ALARM_ID, alarmId)
+                putExtra(EXTRA_SCREEN_OFF, screenOff)
+            })
+        }
+
+        /** 소리·진동만 멈춘다. 행 상태는 부른 쪽이 쓴다. */
+        fun stopOutputs(context: Context, alarmId: String) {
+            context.startService(Intent(context, RingingService::class.java).apply {
+                action = ACTION_STOP_OUTPUTS
+                putExtra(EXTRA_ALARM_ID, alarmId)
+            })
+        }
+
+        fun snooze(context: Context, alarmId: String, minutes: Int? = null) {
             context.startService(Intent(context, RingingService::class.java).apply {
                 action = ACTION_SNOOZE
                 putExtra(EXTRA_ALARM_ID, alarmId)
+                minutes?.let { putExtra(EXTRA_SNOOZE_MINUTES, it) }
             })
         }
     }

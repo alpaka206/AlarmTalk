@@ -18,15 +18,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,16 +42,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
-import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatterns
@@ -66,23 +60,49 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 import androidx.compose.ui.text.style.TextOverflow
 
+/** 마지막 사용값이 있으면 그룹보다 우선하고, 없을 때만 내 것 → 공유 → 기본 순으로 고른다. */
+internal fun preferredInitialVoiceProfileId(
+    lastUsedVoiceId: String?,
+    ownVoiceIds: List<String>,
+    familyVoiceIds: List<String>,
+    systemVoiceIds: List<String>,
+    profileLoadFinished: Boolean,
+): String? {
+    val available = ownVoiceIds + familyVoiceIds + systemVoiceIds
+    if (!profileLoadFinished && lastUsedVoiceId != null && lastUsedVoiceId !in systemVoiceIds) {
+        return null
+    }
+    return lastUsedVoiceId?.takeIf(available::contains)
+        ?: ownVoiceIds.firstOrNull()
+        ?: familyVoiceIds.firstOrNull()
+        ?: systemVoiceIds.firstOrNull()
+}
+
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
+    /** 이 목소리가 아직 준비 안 됐는가(사전렌더 클립 미수신). true 면 고르지 못하게 막는다. */
+    onNeedsClipPreparation: (String) -> Boolean = { false },
+    /** 준비 화면으로 보낸다. */
+    onOpenClipPreparation: (String) -> Unit = {},
     voiceEnabled: Boolean,
     onVoiceEnabledChange: (Boolean) -> Unit,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
+    /**
+     * 교체 정리가 끝나지 않아 **아직 고를 수 없는** 목소리들.
+     * 목록에는 그대로 두고 흐리게 그린다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
+     */
+    settlingVoiceProfileIds: Set<String> = emptySet(),
     voiceProfileBusy: Boolean,
+    voiceProfileLoadFinished: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
-    lastUsedVoiceId: String? = null,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
+    /** 아직 고를 수 없는 목소리를 눌렀을 때 이유를 알린다(교체 정리 중 등). */
+    onVoiceUnavailable: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
     previewPreparingVoiceId: String? = null,
-    // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
-    // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
-    restrictToWeatherMedication: Boolean,
     audioMessage: String?,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
@@ -94,9 +114,19 @@ internal fun VoiceAudioCard(
     // '다시 녹음' — 재생 중인 미리듣기를 멈추고 기존 녹음을 비워 대기(멈춘) 상태로 되돌린다.
     onDiscardRecording: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
+    /**
+     * 이 목소리가 **미리 구워 둔 스톡 클립**으로 우는가(무료 플랜이거나 기본 목소리).
+     *
+     * ⚠ **여기 쓰이는 곳은 요약 행의 '준비 중' 판정 하나뿐이다.** 목록을 자르는 데는
+     * 쓰지 않는다 — 문구 목록은 등급으로 갈리지 않는다(`docs/spec/voice-and-message.md` §2).
+     *
+     * 왜 필요한가: 스톡 클립 목소리는 클립을 받아 붙이기 전까지 `voiceText` 도 버킷도
+     * 비어 있어 '아직 아무것도 안 골랐다' 가 참이다. 등록(클론) 목소리는 **정상 상태가
+     * 그렇다** — 버킷이 저장 시점에 붙으므로 편집 내내 둘 다 비어 있다. 그래서 이걸
+     * 안 보고 판정하면 클론 알람의 문구 행이 **항상** "문구를 준비하고 있어요" 가 된다.
+     */
+    usesStockClips: Boolean,
     onOpenRandomPromptSettings: () -> Unit,
-    // 무료 문구 행 — 테마(버킷) 선택 pane 을 연다(유료의 문구 pane 과 같은 자리).
-    onOpenFreeBucketSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -109,9 +139,26 @@ internal fun VoiceAudioCard(
     // 기본 목소리로 바꾸면 직접 입력 문구를 잃는 경우, 확인받기 전까지 보류해 둔 선택.
     var pendingVoiceSwitch by remember { mutableStateOf<VoiceProfileOption?>(null) }
     val applyVoiceSelection: (VoiceProfileOption) -> Unit = { option ->
+        // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 공유받은 목소리는 선다운로드 대상이
+        // 아니라 고르는 순간 클립이 없을 수 있고, 그대로 저장하면 라이브 생성으로 흘러가
+        // 오프라인에서 안 울린다. **그 목소리만** 막고 준비 화면으로 보낸다 —
+        // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
+        // iOS `AlarmEditorSheet.needsPreparation` 과 같은 판정이다.
+        if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
+            onOpenClipPreparation(option.id)
+        } else {
         // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
         if (!voiceEnabled) onVoiceEnabledChange(true)
         if (option.id == VoiceSources.LOCAL_AUDIO) {
+            // ⚠ **옮겨오기 전 오디오를 지운다**(2026-08-16 지적 "녹음 안 했는데 녹음 완료라고
+            // 뜨고 알람 문구 소리가 난다"). `localAudioUri` 는 **녹음 전용이 아니라** 캐시된
+            // 오디오 파일 일반이다 — `setGeneratedTtsAudio`·`setStockClipAudio` 도 여기에
+            // 담는다. 안 지우면 방금 만든 TTS 파일이 남아 녹음 UI 가 '녹음 완료' 로 읽고,
+            // 재생 버튼이 그 TTS 를 튼다.
+            //
+            // ⚠ **이미 녹음 상태였으면 지우지 않는다** — 같은 항목을 다시 골랐다고
+            // 녹음물이 사라지면 안 된다.
+            if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) editor.clearAudio()
             editor.voiceSource = VoiceSources.LOCAL_AUDIO
             editor.clearTtsMeta()
         } else {
@@ -119,6 +166,7 @@ internal fun VoiceAudioCard(
             editor.clearAudio()
             editor.clearTtsMeta()
             editor.selectVoiceProfile(option.id)
+        }
         }
     }
     val readyOwnProfiles = voiceProfiles.filter {
@@ -134,11 +182,14 @@ internal fun VoiceAudioCard(
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
     }
+    val settlingReason = stringResource(R.string.editor_voice_replacement_settling)
+    val settlingMessage = stringResource(R.string.msg_voice_replacement_settling)
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
             name = it.name,
             detail = ownedVoiceDetail(context, it),
+            unavailableReason = settlingReason.takeIf { _ -> it.id in settlingVoiceProfileIds },
         )
     } +
         readyFamilyVoices.map { profile ->
@@ -187,15 +238,13 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
-                voiceEnabled = voiceEnabled,
-                onVoiceEnabledChange = onVoiceEnabledChange,
+                onUnavailableSelect = { onVoiceUnavailable(settlingMessage) },
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
                     val losesManualText = readySystemProfiles.any { it.id == option.id } &&
                         editor.voiceText.isNotBlank() &&
-                        !editor.voiceRandomPrompt &&
-                        !editor.isActiveBucketAlarm()
+                        editor.isManualForSave()
                     if (losesManualText) {
                         pendingVoiceSwitch = option
                     } else {
@@ -209,35 +258,13 @@ internal fun VoiceAudioCard(
         }
         if (voiceEnabled) {
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
-                    if (
-                        visibleVoiceSource == VoiceSources.TTS_PROFILE &&
-                        !voiceProfileBusy &&
-                        profileOptions.isNotEmpty()
-                    ) {
-                        val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
-                        if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 처음 고르는 목소리: 마지막에 쓴 목소리가 **어느 그룹이든 최우선**이다.
-                            // 그룹을 먼저 보면(내 클론 우선) 클론을 가진 사람이 마지막에 기본
-                            // 목소리나 공유받은 목소리를 썼을 때 그 선택이 매번 무시된다 —
-                            // 사용자에겐 '고른 게 유지되지 않는' 리셋으로 보인다.
-                            // 마지막에 쓴 게 없을 때만 내 목소리 → 공유받은 목소리 → 목록 첫째.
-                            editor.selectVoiceProfile(
-                                profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
-                                    ?: readyOwnProfiles.firstOrNull()?.id
-                                    ?: readyFamilyVoices.firstOrNull()?.id
-                                    ?: profileOptions.first().id,
-                            )
-                        }
-                    }
-                }
-                val selectedProfileUnavailable = !voiceProfileBusy &&
+                val selectedProfileUnavailable = voiceProfileLoadFinished && !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
                 // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
                 // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
                 // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
-                if (voiceProfileBusy) {
+                if (voiceProfileBusy || (!voiceProfileLoadFinished && profileOptions.isEmpty())) {
                     MutedText(stringResource(R.string.editor_voice_loading))
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
@@ -250,20 +277,23 @@ internal fun VoiceAudioCard(
                         border = wakerCardBorder(),
                     ) {
                         Column {
-                            if (restrictToWeatherMedication) {
-                                FreeThemeSummaryRow(
-                                    selectedBucket = editor.selectedBucket,
-                                    weatherCity = editor.voiceWeatherCity,
-                                    onClick = onOpenFreeBucketSettings,
-                                )
-                            } else {
-                                MessageModeSummaryRow(
-                                    isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
-                                    randomContext = editor.voiceRandomContext,
-                                    manualText = editor.voiceText,
-                                    onClick = onOpenRandomPromptSettings,
-                                )
-                            }
+                            // ⚠ **행은 하나다**(2026-09-02). 유료·무료가 같은 문구 목록을
+                            // 쓰므로 요약 행도 갈리지 않는다 — 갈라 두면 같은 상태를 두 곳이
+                            // 다르게 읽는 사고가 반복된다.
+                            MessageModeSummaryRow(
+                                // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                                isManual = editor.isManualForDisplay(),
+                                randomContext = editor.voiceRandomContext,
+                                weatherCity = editor.voiceWeatherCity,
+                                // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
+                                // 이 행이 이걸 `isManual` 보다 먼저 본다.
+                                // ⚠ **스톡 클립 목소리에서만 묻는다** — 클론은 버킷이
+                                // 저장 시점에 붙어 편집 내내 비어 있는 게 정상이다.
+                                nothingChosenYet = usesStockClips &&
+                                    editor.voiceText.isBlank() &&
+                                    !editor.hasBucketMessageChoice(),
+                                onClick = onOpenRandomPromptSettings,
+                            )
                             AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
                             VoiceVolumeSummaryRow(
                                 volumePercent = editor.voiceVolumePercent,
@@ -302,25 +332,28 @@ internal fun VoiceAudioCard(
                 // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
                 // 녹음이 끝나면 마이크→재생 버튼, 우측 시간→'다시 녹음' 아이콘으로 바꾼다.
                 // 미리듣기·지우기 별도 버튼은 두지 않는다(재생/다시 녹음이 대신한다).
-                if (editor.localAudioUri != null && !isRecording) {
-                    RecordedPlaybackControls(
-                        isPreviewActive = isCachedAudioPreviewActive,
-                        isPreparing = isPreviewPreparing,
-                        onPlay = onPreviewAudio,
-                        // '다시 녹음'은 즉시 녹음을 시작하지 않고 재생 중인 미리듣기를 멈춘 뒤 기존 녹음을
-                        // 비워 대기(멈춘) 상태로 되돌린다 → VoiceRecordControls(마이크 대기)로 전환.
-                        onRedo = onDiscardRecording,
-                    )
-                } else {
-                    VoiceRecordControls(
-                        isRecording = isRecording,
-                        elapsedMillis = recordingElapsedMillis,
-                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                        level = recordingLevel,
-                        enabled = true,
-                        onRecordClick = onRecord,
-                    )
-                }
+                // ⚠ **녹음 UI 는 `VoiceRecordControls` 하나다**(2026-08-16 정리).
+                // 예전에는 녹음 전/후로 컴포넌트가 갈려(`RecordedPlaybackControls`) 같은
+                // 카드가 상태에 따라 다른 모양으로 바뀌었고, 목소리 등록 화면은 또 다른
+                // 조합을 쓰고 있었다. 이제 두 화면이 같은 카드를 쓴다.
+                VoiceRecordControls(
+                    isRecording = isRecording,
+                    elapsedMillis = recordingElapsedMillis,
+                    maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                    level = recordingLevel,
+                    enabled = true,
+                    onRecordClick = onRecord,
+                    // 녹음물이 있으면(그리고 녹음 중이 아니면) '저장됨' 상태로 그린다.
+                    // 값은 방금 녹음한 길이다 — 기존 알람을 열어 온 경우엔 0 이고,
+                    // 그때도 카드 제목이 "녹음을 저장했어요" 라고 상태를 말한다.
+                    recordedDurationMillis = recordingElapsedMillis
+                        .takeIf { editor.localAudioUri != null && !isRecording },
+                    isRecordedPreviewActive = isCachedAudioPreviewActive,
+                    isRecordedPreviewPreparing = isPreviewPreparing,
+                    onPreviewRecording = onPreviewAudio.takeIf { editor.localAudioUri != null },
+                    // '다시 녹음' 은 재생을 멈추고 녹음물을 비워 대기 상태로 되돌린다.
+                    onRedoRecording = onDiscardRecording.takeIf { editor.localAudioUri != null },
+                )
                 // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(세부설정엔 두지 않음).
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -377,9 +410,17 @@ internal fun VoiceAudioCard(
 internal fun VoiceOutputSettingsPane(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
-    showRepeat: Boolean,
-    repeat: Boolean,
-    onRepeatChange: (Boolean) -> Unit,
+    /**
+     * 슬라이더에서 손을 뗀 순간. **여기서 자동으로 들려준다** — 크기를 바꾸는 사람은 그
+     * 크기를 들으려는 사람이고, 버튼을 한 번 더 누르게 할 이유가 없다(아이폰 설정의
+     * 벨소리 슬라이더와 같은 결). 끄는 동안에는 다시 틀지 않고 [onVolumeChange] 가
+     * 재생 중인 소리의 크기만 그 자리에서 바꾼다.
+     *
+     * ⚠ **재생 버튼을 다시 두지 말 것**(2026-09-06 지시). 슬라이더가 곧 컨트롤이라
+     * 버튼은 같은 일을 하는 두 번째 컨트롤이 된다. 무엇이 들리는지는 슬라이더 아래
+     * 한 줄이 말한다.
+     */
+    onVolumeSettled: () -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     Surface(
@@ -387,40 +428,41 @@ internal fun VoiceOutputSettingsPane(
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_voice_output_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·문구 pane 이 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_voice_output_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(top = 24.dp),
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    // 다른 pane·iOS `PaneScaffold` 와 같은 여백.
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                VoiceVolumeSelector(
-                    volumePercent = volumePercent,
-                    onVolumeChange = onVolumeChange,
-                )
-                if (showRepeat) {
-                    VoiceRepeatSelector(
-                        repeat = repeat,
-                        onRepeatChange = onRepeatChange,
-                    )
+                // ⚠ **카드 밖으로 다시 꺼내지 말 것**(2026-08-16 통일). 편집기의 모든 설정은
+                // 카드에 담긴다(세부 설정·다시 울림·진동·알람음·문구) — 여기만 맨몸으로
+                // 나와 있어 같은 층위의 컨트롤이 화면마다 다르게 보였다. iOS 도 한 카드에
+                // 담고 구분선으로 나눈다(`VoiceOutputSettingsPane`).
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerPanelShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // ⚠ **'끌 때까지 반복' 선택지는 두지 않는다**(2026-08-27 지시).
+                        // 목소리 알람은 **항상 반복**한다 — 한 번만 나고 그치면 그것은 알림이지
+                        // 알람이 아니다. 껐다 켤 수 있는 선택지로 두면 꺼 둔 사용자가 못 일어난다.
+                        // 저장값(`voiceRepeat`)은 계속 true 로 왕복시킨다.
+                        VoiceVolumeSelector(
+                            volumePercent = volumePercent,
+                            onVolumeChange = onVolumeChange,
+                            onVolumeSettled = onVolumeSettled,
+                        )
+                    }
                 }
             }
         }
@@ -431,6 +473,13 @@ private data class VoiceProfileOption(
     val id: String,
     val name: String,
     val detail: String,
+    /**
+     * **지금은 고를 수 없는 이유.** `null` 이면 고를 수 있다.
+     *
+     * ⚠ 목록에서 빼지 말고 이걸 쓴다 — 감추면 사라진 것으로 보여 고장으로 읽힌다.
+     * iOS `VoiceSelectionSheet.Option.unavailableReason` 과 같은 규칙이다.
+     */
+    val unavailableReason: String? = null,
 )
 
 @Composable
@@ -470,9 +519,9 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
-    voiceEnabled: Boolean,
-    onVoiceEnabledChange: (Boolean) -> Unit,
     onSelect: (VoiceProfileOption) -> Unit,
+    /** 지금 고를 수 없는 행을 눌렀을 때 — 이유를 말한다(시트는 닫지 않는다). */
+    onUnavailableSelect: () -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
     playingVoiceId: String?,
@@ -497,22 +546,21 @@ private fun VoiceProfileSelector(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
+                // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
+                // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
+                // "목소리 크기 · 미나" 가 됐다 — 두 자리는 서로 다른 것을 가리킨다.
                 Text(
-                    text = stringResource(R.string.editor_voice_output_title),
+                    text = stringResource(R.string.editor_voice_row_title),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText(
-                    if (voiceEnabled) {
-                        selectedOption?.name ?: stringResource(R.string.editor_voice_select)
-                    } else {
-                        stringResource(R.string.editor_off)
-                    },
-                )
+                // ⚠ **스위치를 다시 넣지 말 것.** 목소리를 쓸지는 위 '재생 방식' 세그먼트가
+                // 소유한다. 여기 스위치를 두면 같은 상태를 조종하는 컨트롤이 둘이 되고,
+                // 이 카드는 목소리 모드에서만 그려지므로 스위치를 끄는 순간 **자기 자신이
+                // 사라진다**.
+                MutedText(selectedOption?.name ?: stringResource(R.string.editor_voice_select))
             }
             Spacer(Modifier.width(12.dp))
-            AlarmTalkSwitch(checked = voiceEnabled, onCheckedChange = onVoiceEnabledChange)
-            Spacer(Modifier.width(6.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
@@ -523,24 +571,40 @@ private fun VoiceProfileSelector(
     }
     if (sheetOpen) {
         WakerSelectionSheet(
-            title = stringResource(R.string.editor_voice_select),
+            // 시트 제목은 iOS `VoiceSelectionSheet` 와 같은 "목소리 고르기" 다.
+            // ⚠ 아래 요약 행의 자리표시자(`editor_voice_select`, "목소리 선택")와 **다른
+            // 문자열**이다 — 하나로 합치면 값 자리에 "고르기" 라는 동작이 들어간다.
+            title = stringResource(R.string.editor_voice_select_title),
             onDismiss = { sheetOpen = false },
         ) { dismiss ->
             options.forEachIndexed { index, option ->
                 WakerSheetOptionRow(
                     title = option.name,
-                    description = option.detail,
+                    // 이유가 있으면 그것을 말한다 — 원래 설명보다 지금 중요한 정보다.
+                    description = option.unavailableReason ?: option.detail,
                     selected = option.id == selectedOption?.id,
+                    dimmed = option.unavailableReason != null,
                     onClick = {
+                        // 정리 중인 목소리는 고르지 않고 이유만 말한다(시트도 닫지 않는다) —
+                        // 지금 고르면 뒤이은 정리가 그 알람까지 되돌릴 수 없이 벗긴다.
+                        if (option.unavailableReason != null) {
+                            onUnavailableSelect()
+                            return@WakerSheetOptionRow
+                        }
                         onSelect(option)
                         dismiss()
                     },
                     trailing = {
-                        VoicePreviewButton(
-                            playing = playingVoiceId == option.id,
-                            preparing = preparingVoiceId == option.id,
-                            onClick = { onPreview(option) },
-                        )
+                        // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
+                        // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
+                        // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
+                        if (option.id != VoiceSources.LOCAL_AUDIO) {
+                            VoicePreviewButton(
+                                playing = playingVoiceId == option.id,
+                                preparing = preparingVoiceId == option.id,
+                                onClick = { onPreview(option) },
+                            )
+                        }
                     },
                     divider = index != options.lastIndex,
                 )
@@ -561,140 +625,51 @@ private fun VoicePreviewButton(
     }
 }
 
-// 무료 문구 행 — 현재 테마(기상/약 …)를 값으로 보여주고 누르면 테마 선택 pane 을 연다.
-// 유료의 문구 행(MessageModeSummaryRow)과 같은 문법(제목/값 + 셰브론)으로 UI 를 통일한다.
-@Composable
-private fun FreeThemeSummaryRow(
-    selectedBucket: String?,
-    weatherCity: String,
-    onClick: () -> Unit,
-) {
-    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
-    val isOnline by rememberIsOnline()
-    val valueLabel = when {
-        // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
-        selectedBucket == "weather" && weatherCity.isNotBlank() ->
-            "${stringResource(freeBucketLabelRes(selectedBucket))} · $weatherCity"
-        selectedBucket != null -> stringResource(freeBucketLabelRes(selectedBucket))
-        !isOnline -> stringResource(R.string.editor_free_bucket_offline)
-        else -> stringResource(R.string.editor_free_bucket_loading)
-    }
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
-                MutedText(valueLabel)
-            }
-            Spacer(Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
-}
-
 /**
- * 무료 테마(버킷) 선택 pane — 진동·스누즈와 같은 드릴인 서브페이지 문법.
- * 버킷 안 개별 문구는 노출하지 않고, 선택하면 그 버킷의 N개 클립이 캐시되어
- * 매 울림마다 순차 회전한다.
+ * '문구' 단일 선택기 요약 행 — 현재 선택을 보여주고 누르면 선택 pane 을 연다.
+ *
+ * ⚠ **이 행 하나가 유료·무료 양쪽을 다 그린다**(2026-09-02 통합). 그전에는 무료·기본
+ * 목소리용 `FreeThemeSummaryRow` 가 따로 있었고, 같은 자리를 다른 규칙으로 채워 계속
+ * 어긋났다 — 한쪽만 '날씨 · 서울' 로 도시를 붙였고, 한쪽만 준비 중/오프라인을 구분했다.
+ * 규칙은 이제 여기 한 곳이다.
  */
-@Composable
-internal fun FreeBucketSettingsPane(
-    buckets: List<String>,
-    selectedBucket: String?,
-    onSelectBucket: (String) -> Unit,
-    onDismiss: () -> Unit,
-    /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
-    onManualLocked: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_msg_section),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SnoozeOptionSection {
-                    buckets.forEach { bucket ->
-                        SnoozeRadioRow(
-                            label = stringResource(freeBucketLabelRes(bucket)),
-                            selected = selectedBucket == bucket,
-                            onClick = { onSelectBucket(bucket) },
-                        )
-                        SnoozeOptionDivider()
-                    }
-                    // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
-                    // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
-                    SnoozeLockedRow(
-                        label = stringResource(R.string.editor_msg_mode_manual),
-                        onClick = onManualLocked,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// '문구' 단일 선택기 요약 행 — 현재 선택(직접 입력 / 기본 인사말 / 동적 문구)을 보여주고
-// 누르면 선택 pane 을 연다. 옛 랜덤/직접입력 토글을 대체한다.
 @Composable
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
-    // 직접 입력일 때 이 알람이 실제로 읽어 줄 문구. 새 알람이 직전 문구를 이어받게 되면서
-    // **여기 보여 주지 않으면 안 된다** — 종류만 '직접 입력' 이라고 적혀 있으면, 어제 넣은
-    // 문구를 그대로 물고 온 새 알람을 사용자가 알아챌 방법이 없다(생성형은 내용이 매번 새로
-    // 만들어져 이 위험이 없다). 전문은 문구 화면의 상세 카드에서 본다.
-    manualText: String = "",
+    /** 날씨를 골랐을 때 함께 보여줄 도시. 비면 종류 이름만 나온다. */
+    weatherCity: String = "",
+    /**
+     * 아직 아무것도 정해지지 않았는가(`voiceText` 도 비고 버킷도 없음).
+     *
+     * ⚠ [isManual] **보다 먼저** 본다. 스톡 클립을 쓰는 목소리에서 클립이 아직 안 붙은
+     * 창에는 `isManual`(= `!voiceRandomPrompt && !hasBucketMessageChoice()`)이 **필연적으로
+     * true** 라, 먼저 보지 않으면 클립을 받는 중인데 행이 "직접 입력" 이라고 말한다 —
+     * 무료 사용자에게는 **잠겨 있어 고를 수도 없는** 것을 골랐다고 말하는 셈이다.
+     */
+    nothingChosenYet: Boolean = false,
     onClick: () -> Unit,
 ) {
+    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
+    val isOnline by rememberIsOnline()
+    val normalized = normalizedRandomPromptContext(randomContext)
     val valueLabel = when {
-        isManual -> {
-            val label = stringResource(R.string.editor_msg_mode_manual)
-            manualText.trim().takeIf { it.isNotBlank() }?.let { "$label · $it" } ?: label
-        }
+        // ⚠ 위 [nothingChosenYet] 주석 — 이 두 갈래가 반드시 먼저다.
+        nothingChosenYet && !isOnline -> stringResource(R.string.editor_free_bucket_offline)
+        nothingChosenYet -> stringResource(R.string.editor_free_bucket_loading)
+        // ⚠ **문장을 여기 붙이지 말 것**(2026-08-15 지시 "요약 행이고, 가져오는 건
+        // 가져오는 거고, 왜 화면에 띄워야 하냐"). 편집기 본문은 **무엇을 골랐는지**만
+        // 말한다 — 알람이 읽어 줄 문장은 문구 화면에서 본다.
+        // 예전에는 `"직접 입력 문구 · <문장>"` 으로 붙였고, 재생 방식을 바꿀 때 이 줄이
+        // 사라지는 카드에 실려 잠깐 읽히는 것이 계속 지적됐다.
+        isManual -> stringResource(R.string.editor_msg_mode_manual)
+        // 날씨는 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        normalized == "wake_weather" && weatherCity.isNotBlank() ->
+            "${stringResource(R.string.editor2_ctx_wake_weather)} · $weatherCity"
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
-        normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
+        normalized == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)
-        else -> voiceOptionLabelRes(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
+        else -> voiceOptionLabelRes(RandomPromptContexts, normalized)
             ?.let { stringResource(it) }.orEmpty()
     }
     // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
@@ -734,71 +709,6 @@ internal fun MessageModeSummaryRow(
         }
     }
 }
-
-// 녹음 완료 상태 — 마이크 자리는 재생(▶/■), 우측 시간 자리는 '다시 녹음'(↻) 아이콘.
-// 미리듣기·지우기 별도 버튼을 없애고 이 카드가 재생·재녹음을 모두 담당한다.
-@Composable
-private fun RecordedPlaybackControls(
-    isPreviewActive: Boolean,
-    isPreparing: Boolean,
-    onPlay: () -> Unit,
-    onRedo: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = wakerCardBorder(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(
-                onClick = onPlay,
-                // 캐시 오디오 준비 중엔 눌러도 소용없으므로 비활성으로 로딩을 알린다.
-                enabled = !isPreparing,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                Icon(
-                    imageVector = if (isPreviewActive) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                    contentDescription = stringResource(
-                        if (isPreviewActive) R.string.editor_audio_preview_stop else R.string.editor_audio_preview_play,
-                    ),
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            Text(
-                text = stringResource(R.string.editor_recorded_done),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            IconButton(
-                onClick = onRedo,
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.editor_record_again),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-// '목소리 크기' 요약 행 — 현재 볼륨(%)을 보여주고 누르면 목소리 출력 pane(볼륨·반복)을 연다.
-// 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명). 볼륨을 세부설정에서 이 카드로 옮겼다.
 @Composable
 private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
     Surface(
@@ -830,70 +740,23 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun VoiceRepeatSelector(
-    repeat: Boolean,
-    onRepeatChange: (Boolean) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.editor_voice_repeat_title), fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoiceRepeatChoice(
-                label = stringResource(R.string.editor_voice_repeat_once),
-                selected = !repeat,
-                onClick = { onRepeatChange(false) },
-                modifier = Modifier.weight(1f),
-            )
-            VoiceRepeatChoice(
-                label = stringResource(R.string.editor_voice_repeat_on),
-                selected = repeat,
-                onClick = { onRepeatChange(true) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun VoiceRepeatChoice(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = WakerTileShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        },
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 11.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
+/// 목소리를 **끌 때까지 반복**할지. 켜기/끄기 두 값뿐이라 스위치 하나로 낸다.
+///
+/// ⚠ **두 칸짜리 세그먼트('한 번만' / '반복')로 되돌리지 말 것**(2026-08-10 결정).
+/// 값이 둘인 것과 **선택지가 둘인 것은 다르다** — 반복은 켜고 끄는 성질이라 스위치가
+/// 맞고, iOS 가 이미 그렇게 돼 있었다. 세그먼트는 켠 상태가 어느 쪽인지 라벨을 읽어야
+/// 알 수 있는 반면 스위치는 한눈에 보인다.
 @Composable
 private fun VoiceVolumeSelector(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
+    onVolumeSettled: () -> Unit = {},
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 카드 안 여백 — 다른 카드 행과 같은 값(가로 14 · 세로 12).
+    Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -907,11 +770,25 @@ private fun VoiceVolumeSelector(
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        Slider(
+        // ⚠ **눈금은 10단위다**(10/20/…/100 = 10구간 → 중간 마크 9개).
+        // `steps = 6` 이던 시절에는 구간이 (100-10)/7 = 12.857 이라 22%·48%·74% 같은
+        // 값이 나왔다 — 알람음 볼륨은 10단위인데 목소리만 어중간한 숫자가 찍혔다.
+        // 공용 슬라이더 — 알람음 볼륨과 같은 물건이다(`WakerVolumeSlider`).
+        WakerVolumeSlider(
             value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
             onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
+            onValueChangeFinished = onVolumeSettled,
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
-            steps = 6,
+            stepSize = 10,
+        )
+        // ⚠ **무엇이 들리는지 미리 말한다.** 손을 떼면 곧바로 소리가 나는데, 그게 자기가
+        // 쓴 문구가 아니면 고장으로 읽힌다. 날씨·운세처럼 조건으로 고르는 문구는 울릴
+        // 때에야 정해지므로 여기서 들려줄 수 없다 — 크기를 재는 데 필요한 건 '이 목소리가
+        // 이 크기로 얼마나 큰가' 뿐이라 이미 기기에 있는 인사말로 답한다.
+        Text(
+            text = stringResource(R.string.editor_voice_volume_preview_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -37,6 +37,26 @@ object SocialNotificationFactory {
         )
     }
 
+    /**
+     * 공유 이용권 결제 실패 안내.
+     *
+     * ⚠ **포그라운드에서도 보여야 한다.** 서버가 `notification` 블록을 실어 보내므로
+     * 앱이 백그라운드일 때는 시스템이 알아서 띄우지만, **포그라운드에서는 `onMessageReceived`
+     * 로만 오고 아무것도 안 뜬다.** 그래서 여기서 직접 그린다.
+     */
+    fun notifyBillingHold(context: Context, title: String, body: String) {
+        notify(
+            context = context,
+            notificationId = BILLING_HOLD_NOTIFICATION_ID,
+            title = title,
+            body = body,
+            groupId = "billing_hold",
+        )
+    }
+
+    /** 결제 안내는 한 번에 하나만 — 여러 번 와도 덮어쓴다(알림함을 채우지 않는다). */
+    private const val BILLING_HOLD_NOTIFICATION_ID = 90_001
+
     private fun notify(
         context: Context,
         notificationId: Int,

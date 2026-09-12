@@ -77,6 +77,70 @@ describe('scheduled() — email_verification_codes prune (FIX 10)', () => {
   });
 });
 
+describe('scheduled() — usage_events 보관 기간 정리', () => {
+  it('처리방침에 적은 1년이 지난 기록을 배치로 지운다', async () => {
+    const now = new Date('2026-06-22T00:00:00.000Z');
+    const env = {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+      PASSWORD_PEPPER: 'pep',
+    } as never;
+
+    await worker.scheduled(
+      { scheduledTime: now.getTime(), cron: '*/5 * * * *' } as never,
+      env,
+    );
+
+    const pruneCall = executeMock.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'object' &&
+        call[0] !== null &&
+        typeof (call[0] as { sql?: string }).sql === 'string' &&
+        (call[0] as { sql: string }).sql.includes('DELETE FROM usage_events'),
+    );
+
+    expect(pruneCall).toBeDefined();
+    const stmt = pruneCall![0] as { sql: string; args: unknown[] };
+    // 파라미터 바인딩(인라인 금지) + 한 회차에 지우는 양을 묶는다.
+    expect(stmt.sql).toContain('occurred_at < ?');
+    expect(stmt.sql).toContain('LIMIT ?');
+    // 기기 시계가 미래여도 늙는다 — 서버가 적은 도착 시각으로도 지운다.
+    expect(stmt.sql).toContain('received_at < datetime(?)');
+    // ⚠ **문서와 같은 값이어야 한다** — `docs/legal/privacy-policy.ko.md` 3장 표의 1년.
+    const expected = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    expect(stmt.args[0]).toBe(expected);
+    expect(stmt.args[1]).toBe(expected);
+  });
+});
+
+describe('scheduled() — retained_billing_records prune', () => {
+  it('법정 보존기간이 끝난 가명 결제 기록을 현재 시각 기준으로 삭제한다', async () => {
+    const now = new Date('2026-06-22T00:00:00.000Z');
+    const env = {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+      PASSWORD_PEPPER: 'pep',
+    } as never;
+
+    await worker.scheduled(
+      { scheduledTime: now.getTime(), cron: '*/5 * * * *' } as never,
+      env,
+    );
+
+    const pruneCall = executeMock.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'object' &&
+        call[0] !== null &&
+        (call[0] as { sql?: string }).sql?.includes('DELETE FROM retained_billing_records'),
+    );
+
+    expect(pruneCall).toBeDefined();
+    const stmt = pruneCall![0] as { sql: string; args: unknown[] };
+    expect(stmt.sql).toContain('retain_until <= ?');
+    expect(stmt.args).toEqual([now.toISOString()]);
+  });
+});
+
 describe('scheduled() — 탈퇴 파기 알림', () => {
   it('배치 뒤쪽이 실패해도 이미 커밋된 파기는 알린다', async () => {
     const { withWriteTransaction } = await import('../src/lib/transactions');
