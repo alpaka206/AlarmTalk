@@ -422,6 +422,37 @@ export async function downgradeUserToFree(
   });
 }
 
+/** 반드시 쓰기 트랜잭션 안에서 호출한다. 활성 근거 없는 등급의 복구도 강등 전체를 수행한다. */
+export async function repairOrphanedPaidPlan(
+  db: DbExecutor,
+  userPk: string,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const repaired = await db.execute({
+    sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
+          WHERE id = ? AND plan <> 'free' AND NOT EXISTS (
+            SELECT 1 FROM subscriptions WHERE user_id = ? AND status = 'active'
+          ) RETURNING id`,
+    args: [userPk, userPk],
+  });
+  if (repaired.rows.length === 0) return [];
+  await downgradeUserToFree(db, userPk, { deleteVoiceData: false });
+  await schedulePaidVoiceRetention(db, userPk, now);
+  const affected = new Set([userPk]);
+  // 활성 소유자 구독이 없으므로 남은 소유 그룹에도 지불 근거가 없다.
+  const groups = await db.execute({
+    sql: 'SELECT id FROM plan_groups WHERE owner_user_id = ?',
+    args: [userPk],
+  });
+  for (const group of groups.rows) {
+    for (const member of await disbandOwnedPlanGroup(db, userPk, String(group.id), now)) {
+      affected.add(member);
+      if (await hasActivePaidEntitlement(db, member)) await clearPaidVoiceRetention(db, member);
+    }
+  }
+  return [...affected];
+}
+
 async function expireUnusedVouchersFor(db: DbExecutor, subscriptionId: string): Promise<void> {
   await db.execute({
     sql: `UPDATE voucher_codes SET status = 'expired'

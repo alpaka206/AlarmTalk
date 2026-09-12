@@ -260,6 +260,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     //   다른 기기의 확정이 만든 구독·유료 plan 을 이 요청이 free 로 덮어쓴다.
     expect(update!.sql).toContain('NOT EXISTS');
     expect(update!.sql).toContain("status = 'active'");
+    expect(update!.sql).toContain('RETURNING id'); // 실제 바뀐 경우에만 후속 강등/통지
     expect(update!.args).toEqual(['user-pk-1', 'user-pk-1']);
   });
 

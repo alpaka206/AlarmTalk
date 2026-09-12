@@ -7,13 +7,15 @@ import {
   findStoreTransactionsForSubscriptions,
   storeCancelProviderOf,
   storeRenewalProvidersOf,
+  repairOrphanedPaidPlan,
+  notifyBillingStateChanged,
 } from '../lib/billing-cancel';
 
 import {
   reconcileBillingPreflight,
   BillingStateUnavailableError,
 } from '../lib/billing-reconciliation';
-import { withReadTransaction } from '../lib/transactions';
+import { withReadTransaction, withWriteTransaction } from '../lib/transactions';
 import { jsonError } from '../lib/api-error';
 
 const billingQuery = new Hono<AppEnv>();
@@ -75,13 +77,8 @@ billingQuery.get('/subscription', async (c) => {
       );
     }
     // 스토어·공유 구독을 모두 처리한 뒤, 활성 근거 자체가 사라진 계정만 정리한다.
-    await db.execute({
-      sql: `UPDATE users SET plan = 'free', updated_at = datetime('now')
-            WHERE id = ? AND plan <> 'free' AND NOT EXISTS (
-              SELECT 1 FROM subscriptions WHERE user_id = ? AND status = 'active'
-            )`,
-      args: [userId, userId],
-    });
+    const repaired = await withWriteTransaction(db, (tx) => repairOrphanedPaidPlan(tx, userId));
+    await notifyBillingStateChanged(db, c.env, repaired);
   }
 
   return withReadTransaction(db, async (tx) => {

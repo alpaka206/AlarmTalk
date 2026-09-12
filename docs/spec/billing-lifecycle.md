@@ -27,6 +27,12 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   `signedRenewalInfo.gracePeriodExpiresDate` 이며 결제일과 구분한다.
   EXPIRED/REVOKED 는 종료, IN_BILLING_RETRY 는 그룹을 남기는 보류다.
 - 스토어 왕복 전에 읽은 구독이 그 사이 교체·갱신됐으면 옛 결과를 적용하지 않는다.
+- 활성 구독 없이 유료 `users.plan`만 남은 계정의 복구도 **정상 강등 처리**를 사용한다.
+  `plan`만 free로 바꾸지 않는다. 활성 구독 부재 확인·등급 변경·제공자 클론 반납 큐·공유 해제·
+  타인 알람 강등·보관 유예를 한 쓰기 트랜잭션으로 처리하고 커밋 후 통지한다.
+  지불 주체 없는 소유 그룹도 정리하되 멤버의 독립 이용권은 보존한다. 이미 free이거나
+  보류를 포함한 활성 구독이 하나라도 있으면 이 복구를 적용하지 않는다. 재조회로 유예를 연장하거나
+  통지를 반복하지 않으며, 중간 실패 시 등급까지 롤백해 다음 시도에서 복구를 끝낼 수 있어야 한다.
 - 응답의 `user_plan` 은 `subscription` 과 같은 DB 스냅샷에서 읽는다. 앱은 둘을
   `EntitlementWriter` 한 번으로 저장한 뒤에만 결제를 연다. 필드가 없는 구버전 응답이나
   세션 변경·취소·저장 거절이면 결제를 열지 않는다. `/auth/me` 를 나중에 호출해
@@ -641,7 +647,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 판정 스냅샷 — **쓰기 문(유일)** | — | `EntitlementWriter`(`ui/main/EntitlementWriter.kt`) | `EntitlementWriter.swift` |
 | 문의 원자성 근거 | — | `AuthSessionStore.runIfGeneration`(세션 쓰기와 같은 락) | `KeychainStore.runIfCurrentSession`(세션 쓰기와 같은 락) |
 | 우회 차단 | — | `scripts/check-entitlement-writer.py`(CI) | 같은 스크립트가 둘 다 검사 |
-| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
+| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-reconciliation.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
+| 활성 구독 없는 유료 등급 복구 | `repairOrphanedPaidPlan` → 공통 강등·그룹 정리·보관 유예; `billing-query.ts`에서 커밋 후 통지 | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |

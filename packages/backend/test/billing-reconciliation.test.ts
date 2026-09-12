@@ -21,7 +21,7 @@ import {
   reconcileBillingPreflight,
   reconcileStoreSubscription,
 } from '../src/lib/billing-reconciliation';
-import { processSubscriptionExpiry } from '../src/lib/billing-cancel';
+import { processSubscriptionExpiry, repairOrphanedPaidPlan } from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
 import {
@@ -144,6 +144,10 @@ beforeEach(async () => {
   vi.mocked(getPlaySubscriptionV2).mockReset();
   vi.mocked(googlePaymentAnchor).mockResolvedValue(new Date(PAID));
   // 테스트 DB 안에서만 초기화한다. FK 의존 순서대로 지운다.
+  await db.execute("DELETE FROM alarms WHERE id IN ('orphan-own-alarm','orphan-shared-alarm')");
+  await db.execute("DELETE FROM messages WHERE id='orphan-message'");
+  await db.execute("DELETE FROM voice_profiles WHERE id='orphan-voice'");
+  await db.execute("DELETE FROM pending_external_deletions WHERE ref='orphan-provider'");
   for (const table of [
     'voucher_redemptions',
     'voucher_codes',
@@ -1104,6 +1108,128 @@ describe('결제 전 HTTP 응답', () => {
     app.route('/billing', billingQuery);
     return app;
   }
+  async function orphanedPlan() {
+    await seed();
+    await db.execute("UPDATE subscriptions SET status='cancelled' WHERE id='sub-owner'");
+    await db.execute(`INSERT INTO voice_profiles (id,user_id,name,is_shared,elevenlabs_voice_id)
+      VALUES ('orphan-voice','owner','남길 목소리',1,'orphan-provider')`);
+    await db.execute(`INSERT INTO messages (id,user_id,voice_profile_id,text)
+      VALUES ('orphan-message','owner','orphan-voice','보관할 문구')`);
+    await db.execute(`INSERT INTO alarms (id,user_id,message_id,voice_profile_id,time,mode) VALUES
+      ('orphan-own-alarm','owner','orphan-message','orphan-voice','07:00','tts'),
+      ('orphan-shared-alarm','member','orphan-message','orphan-voice','08:00','tts')`);
+  }
+  it('고아 유료 등급도 강등 전체를 커밋하고 통지하며 재조회로 유예를 늘리지 않는다', async () => {
+    await orphanedPlan();
+    vi.mocked(sendPlanChangedPush).mockImplementationOnce(async (_db, _env, ids) => {
+      expect(ids).toEqual(expect.arrayContaining(['owner', 'member']));
+      // 별도 DB 읽기로 커밋 후 통지임을 확인한다.
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('free');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(0);
+      expect(
+        await rows("SELECT * FROM pending_external_deletions WHERE ref='orphan-provider'"),
+      ).toHaveLength(1);
+    });
+    const res = await app().request('/billing/subscription?refresh_store=1', {}, ENV);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ subscription: null, user_plan: 'free' });
+    const voice = (await rows("SELECT * FROM voice_profiles WHERE id='orphan-voice'"))[0]!;
+    expect(voice.is_shared).toBe(0);
+    expect(voice.elevenlabs_voice_id).toBeNull();
+    expect(voice.evicted_provider_voice_id).toBe('orphan-provider');
+    expect(voice.evicted_at).not.toBeNull();
+    expect(await rows("SELECT * FROM messages WHERE id='orphan-message'")).toHaveLength(1);
+    expect((await rows("SELECT mode FROM alarms WHERE id='orphan-own-alarm'"))[0]!.mode).toBe(
+      'tts',
+    );
+    expect(
+      (
+        await rows(
+          "SELECT mode,message_id,voice_profile_id FROM alarms WHERE id='orphan-shared-alarm'",
+        )
+      )[0],
+    ).toEqual({ mode: 'sound-only', message_id: null, voice_profile_id: null });
+    const retention = await rows('SELECT * FROM paid_voice_retention ORDER BY user_id');
+    expect(retention).toHaveLength(2);
+    expect(sendPlanChangedPush).toHaveBeenCalledTimes(1);
+    expect(sendVoiceDeletionWarningPush).toHaveBeenCalledTimes(1);
+    expect((await app().request('/billing/subscription?refresh_store=1', {}, ENV)).status).toBe(
+      200,
+    );
+    expect(await rows('SELECT * FROM paid_voice_retention ORDER BY user_id')).toEqual(retention);
+    expect(sendPlanChangedPush).toHaveBeenCalledTimes(1);
+    expect(sendVoiceDeletionWarningPush).toHaveBeenCalledTimes(1);
+  });
+  it('고아 등급 복구 중 실패는 plan·클론 반납·공유·알람까지 롤백하고 재시도한다', async () => {
+    await orphanedPlan();
+    await db.execute(`CREATE TRIGGER fail_orphan_retention BEFORE INSERT ON paid_voice_retention
+      WHEN NEW.user_id='owner' BEGIN SELECT RAISE(ABORT, 'retention failed'); END`);
+    try {
+      expect((await app().request('/billing/subscription?refresh_store=1', {}, ENV)).status).toBe(
+        500,
+      );
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('family');
+      expect(
+        (
+          await rows(
+            "SELECT is_shared,elevenlabs_voice_id FROM voice_profiles WHERE id='orphan-voice'",
+          )
+        )[0],
+      ).toEqual({ is_shared: 1, elevenlabs_voice_id: 'orphan-provider' });
+      expect((await rows("SELECT mode FROM alarms WHERE id='orphan-shared-alarm'"))[0]!.mode).toBe(
+        'tts',
+      );
+      expect(
+        await rows("SELECT * FROM pending_external_deletions WHERE ref='orphan-provider'"),
+      ).toHaveLength(0);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_orphan_retention');
+    }
+    expect((await app().request('/billing/subscription?refresh_store=1', {}, ENV)).status).toBe(
+      200,
+    );
+    expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(2);
+  });
+  it.each([FUTURE, PAST])(
+    '활성 근거가 있으면 만료값 %s와 무관하게 고아 등급 복구를 건너뛴다',
+    async (expiry) => {
+      await orphanedPlan();
+      // 새 결제가 먼저 반영됐거나 회복형 보류가 남은 상태는 고아가 아니다.
+      await db.execute({
+        sql: "UPDATE subscriptions SET status='active',expires_at=? WHERE id='sub-owner'",
+        args: [expiry],
+      });
+      expect(
+        await withWriteTransaction(db, (tx) => repairOrphanedPaidPlan(tx, 'owner', NOW)),
+      ).toEqual([]);
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT is_shared FROM voice_profiles WHERE id='orphan-voice'"))[0]!.is_shared,
+      ).toBe(1);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+    },
+  );
+  it('지불 주체 없는 그룹을 정리해도 멤버의 독립 이용권에는 삭제 유예를 남기지 않는다', async () => {
+    await orphanedPlan();
+    const plan = await loadPlanByKey(db, 'personal');
+    await db.execute({
+      sql: `INSERT INTO subscriptions(id,user_id,plan_id,status,starts_at,expires_at)
+        VALUES ('independent','member',?,'active',?,?)`,
+      args: [plan!.id, PAID, FUTURE],
+    });
+    expect((await app().request('/billing/subscription?refresh_store=1', {}, ENV)).status).toBe(
+      200,
+    );
+    expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+    expect((await rows("SELECT status FROM subscriptions WHERE id='independent'"))[0]!.status).toBe(
+      'active',
+    );
+    expect(await rows('SELECT user_id FROM paid_voice_retention')).toEqual([{ user_id: 'owner' }]);
+  });
   it('해지 직후 응답은 정합화된 null 구독과 free plan 을 함께 준다', async () => {
     await seed();
     apple({ status: 2 });
