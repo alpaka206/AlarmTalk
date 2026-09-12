@@ -501,24 +501,26 @@ internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
 private suspend fun MainViewModel.crossStoreRenewalBlocked(
     session: com.alarmtalk.app.network.AuthSession,
     ticket: AccessTicket,
-): Int? {
+): Int? = storeRefreshMutex.withLock {
+    // 이전 Play 조회가 무료 preflight의 캐시 무효화를 뒤집지 않도록 요청부터 저장까지
+    // 같은 잠금 안에서 수행한다. 이후 Play 조회는 새 구매를 정상 반영할 수 있다.
     if (!responseStillBelongsToRequester(ticket.userId, ticket.epoch) ||
-        ticket.userId != session.user.id) return R.string.msg_gb_billing_info_load_failed
+        ticket.userId != session.user.id) return@withLock R.string.msg_gb_billing_info_load_failed
     val fresh = try {
         api.getSubscription(AlarmTalkApiClient.bearer(session.token), refreshStore = "1")
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
         throw cancelled
     } catch (error: Exception) {
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", error)
-        return R.string.msg_gb_billing_info_load_failed
+        return@withLock R.string.msg_gb_billing_info_load_failed
     }
     // 구독과 plan 을 한 번에 저장해야 시트 취소·프로세스 종료 뒤에도 같은 판정이 남는다.
     if (fresh.userPlan == null || fresh.storeRenewalProviders == null ||
         saveSubscriptionSnapshot(ticket, fresh) != EntitlementWrite.Applied) {
-        return R.string.msg_gb_billing_info_load_failed
+        return@withLock R.string.msg_gb_billing_info_load_failed
     }
     subscriptionResponse = fresh
-    return if (fresh.storeRenewalProviders.any { it != "google" })
+    if (fresh.storeRenewalProviders.any { it != "google" })
         R.string.msg_cross_store_renewal_active else null
 }
 

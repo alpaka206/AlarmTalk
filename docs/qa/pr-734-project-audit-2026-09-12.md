@@ -89,6 +89,27 @@
 중간 실패 롤백/재시도, 활성 구독의 두 만료 조건, 그룹 멤버 독립 이용권 보존.
 **이번에도 작성만 했고 빌드·테스트·CI·별도 전체 리뷰는 실행하지 않았다.**
 
+### 2026-09-13 추가 리뷰 1건 (`8ecb52ae` 대상) — 무료 preflight의 오래된 Play 캐시
+
+- [무료를 확정한 뒤에도 남는 스토어 증거](https://github.com/alpaka206/AlarmTalk/pull/734#discussion_r3996680522):
+  실제 누락. 앞선 원자적 저장은 `subscription`·`user_plan`만 함께 바꾸고, 일반 조회의
+  「독립 스토어 증거 보존」 규칙을 스토어 재조회 성공에도 적용했다. 기존 테스트도 free
+  preflight에 캐시 보존을 기대해 이 잘못된 경계를 고정했다. 그 결과 푸시를 놓치고 Play
+  조회까지 실패하면 40일 TTL 캐시가 방금 확정한 free보다 우선했다.
+- `AccessSnapshot.withBillingResponse`가 무료 preflight의 구독·plan과 스토어 키·기한을
+  같은 쓰기에서 정합화한다. `saveSubscriptionSnapshot`은 저장 성공한 스냅샷의 값을
+  화면 사본에도 반영한다. 세션이 바뀌어 쓰기가 거절되면 메모리도 바꾸지 않는다.
+- preflight 요청부터 저장까지 기존 `storeRefreshMutex`를 공유해, 이전 Play 조회가 늦게
+  끝나 무효화한 캐시를 되살리지 못하게 했다. 이후 Play에서 새 구매를 확인하면 다시 유료로
+  반영할 수 있다. 일반 조회(`user_plan` 없음)·유료 응답·실패는 이전 스토어 증거를 보존한다.
+  이 수정으로 Play 확인 완료 표시를 세우거나 로컬 알람을 직접 영구 변환하지 않는다.
+
+`BillingPreflightSnapshotTest`의 기존 3건을 보완하고 5건을 추가했다(총 8건):
+무료 확정 후 즉시/직렬화 복원 판정, 일반 조회·유료 응답·응답 없음의 캐시 보존,
+보류로 행이 남은 free, 뒤늦은 일반 응답, 이후 새 구매의 권한 복구를 기대값으로 둔다.
+회귀 방지 규칙과 구현 지도는 `docs/spec/billing-lifecycle.md`에 기록했다.
+**작성만 했고 빌드·테스트·CI·별도 자체 리뷰는 실행하지 않았다.**
+
 ## 함께 고친 결함과 중복 제거
 
 - 결제 전 조회·만료 크론·RTDN 종료/보류는 `billing-reconciliation.ts`를 공유한다.

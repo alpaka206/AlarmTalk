@@ -27,8 +27,8 @@ internal data class AccessSnapshot(
      *
      * Play `Purchase` 에는 **만료 시각이 없다**(AAR 메서드 목록 확인 — `isAutoRenewing` 은
      * 있어도 만료는 없다). 그래서 안드로이드는 **확인 시각 + 보수적 상한**으로 둔다.
-     * 상한은 자동갱신 주기(최소 월 단위)보다 훨씬 짧아야 하고, 앱을 며칠 안 열어도 결제 중인
-     * 사용자가 잠기지 않을 만큼은 길어야 한다 — 그 사이 값이 [STORE_ENTITLEMENT_TTL_MILLIS] 다.
+     * 앱을 며칠 안 열어도 자동갱신 중인 사용자가 잠기지 않도록 월 주기보다 넉넉히 둔다
+     * ([STORE_ENTITLEMENT_TTL_MILLIS]). 스토어 재조회가 무료를 확정하면 기한 전에도 지운다.
      * iOS 는 StoreKit 이 실제 만료를 주므로 그 값을 그대로 쓴다.
      */
     val storeEntitlementUntilMillis: Long? = null,
@@ -41,11 +41,20 @@ internal data class AccessSnapshot(
      */
     val userPlan: String? = null,
 ) {
-    /** 결제 전 조회는 플랜과 구독을 함께 교체한다. 일상 조회는 플랜을 제공하지 않는다. */
-    fun withBillingResponse(response: BillingSubscriptionResponse?): AccessSnapshot = copy(
-        subscriptionResponse = response,
-        userPlan = response?.userPlan ?: userPlan,
-    )
+    /**
+     * 결제 전 조회는 플랜·구독과 오래된 Play 증거를 함께 정합화한다.
+     * user_plan은 스토어 재조회 성공 응답에만 있다. 그 free를 40일 TTL이 뒤집으면 안 된다.
+     * 일상 조회(필드 없음)나 유료 응답은 독립적인 스토어 신호를 보존한다.
+     */
+    fun withBillingResponse(response: BillingSubscriptionResponse?): AccessSnapshot {
+        val invalidateStoreSignal = response?.userPlan?.trim()?.lowercase() == "free"
+        return copy(
+            subscriptionResponse = response,
+            userPlan = response?.userPlan ?: userPlan,
+            storePlanKey = if (invalidateStoreSignal) null else storePlanKey,
+            storeEntitlementUntilMillis = if (invalidateStoreSignal) null else storeEntitlementUntilMillis,
+        )
+    }
 }
 
 /**

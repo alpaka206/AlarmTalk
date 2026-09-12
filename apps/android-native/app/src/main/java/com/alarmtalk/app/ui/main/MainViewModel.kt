@@ -613,7 +613,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 스토어 조회를 **한 번에 하나만** 돌린다(2026-09-01 리뷰).
+     * 스토어 조회와 결제 전 서버 스토어 재조회를 **한 번에 하나만** 돌린다.
      *
      * ⚠ 앱 시작과 탭 진입이 각각 `refreshStoreEntitlement()` 를 던지므로 같은 계정의 조회가
      * 겹칠 수 있다. 계정 가드는 둘 다 통과시켜서, 겹치면 먼저 시작한 쪽이 늦게 끝나며 최신을
@@ -1208,11 +1208,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ticket: AccessTicket,
         response: BillingSubscriptionResponse?,
     ): EntitlementWrite {
+        var persisted: AccessSnapshot? = null
         val result = entitlementWriter.write(ticket, "subscription snapshot") {
-            it.withBillingResponse(response)
+            it.withBillingResponse(response).also { snapshot -> persisted = snapshot }
         }
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
-            storeSnapshotUserPlan = response.userPlan
+            // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
+            val snapshot = checkNotNull(persisted)
+            storeSnapshotUserPlan = snapshot.userPlan
+            storePlanKey = snapshot.storePlanKey
+            storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         }
         // plan은 방금 받은 권위 응답에 있을 때만 같은 쓰기로 갱신한다.
         // 일상 조회(user_plan 없음)는 기존 값을 보존하며 캐시된 authSession.plan을 복사하지 않는다.

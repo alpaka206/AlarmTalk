@@ -37,6 +37,13 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   `EntitlementWriter` 한 번으로 저장한 뒤에만 결제를 연다. 필드가 없는 구버전 응답이나
   세션 변경·취소·저장 거절이면 결제를 열지 않는다. `/auth/me` 를 나중에 호출해
   반쪽 스냅샷을 보정하는 방식은 쓰지 않는다.
+- Android의 성공한 무료 preflight는 **이전 Play 캐시도 같은 쓰기에서 무효화**한다.
+  `storePlanKey`·`storeEntitlementUntilMillis`를 지우고 저장 성공 뒤 화면 사본도 맞춘다.
+  스토어를 재확인한 free를 과거의 40일 TTL 신호가 뒤집거나, 푸시가 와야만 정리되는
+  상태를 허용하지 않는다. 일반 조회(`user_plan` 없음)·유료 응답·조회 실패는 신호를 보존한다.
+  preflight의 요청부터 저장까지는 기존 Play 조회와 같은 잠금으로 직렬화한다. 이전 Play
+  응답이 무효화 뒤에 다시 쓰이지 않고, 이후에 새로 확인한 구매는 정상 반영돼야 한다.
+  이 무효화만으로 로컬 알람을 영구 변환하거나 Play 확인 완료 표시를 세우지는 않는다.
 - 결제 판단에는 **그 preflight가 반환한 응답 자체**를 사용한다. 성공 여부만 받고 공용
   화면 캐시를 다시 읽으면, 이전에 시작한 일반 조회가 사이에 끝나 결제 차단을 지울 수 있다.
   성공한 preflight 이전에 시작한 구독 조회는 해당 구독·plan을 다시 덮지 못한다.
@@ -325,6 +332,10 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 `expires_at` 이 하고, 그쪽은 앱이 열릴 때마다 갱신된다. 그래서 상한은 **월 구독 주기보다
 넉넉히 길게** 둔다 — 짧게 잡으면 앱을 안 여는 사이 자동갱신된 사용자가 잘린다(3일로 뒀다가
 되돌린 이력이 있다).
+
+단, 스토어를 재조회한 **무료 preflight가 이미 성공했다면** Android의 이전 TTL 증거는
+더 이상 유효하지 않다. 위 「결제 전 조회의 원자성」에 따라 제거한다. 일반 서버 조회보다
+스토어를 우선하는 규칙과, 스토어 재확인으로 낡은 캐시를 무효화하는 규칙을 혼동하지 않는다.
 
 ⚠ **단, 해지 예약(`isAutoRenewing == false`)이면 서버가 아는 기간 말로 상한을 낮춘다.**
 TTL 은 '언제 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 직전에 확인하면 그 뒤 수십 일이
@@ -644,6 +655,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |
 | 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me`의 `user.plan` · 결제 전 응답의 `user_plan` | `MainViewModelAuthActions` · `sync/PlanChangeSyncWorker` · `saveSubscriptionSnapshot` — 방금 받은 값만 | `SocialFeatureViewModel.refreshAll` · `refreshSubscriptionSilently` |
+| 무료 preflight의 Play TTL 캐시 무효화 | `refresh_store=1` 성공 응답의 `user_plan` | `AccessSnapshot.withBillingResponse` · `saveSubscriptionSnapshot` · `crossStoreRenewalBlocked`(Play 조회 잠금 공유); 회귀 `BillingPreflightSnapshotTest` | 해당 40일 TTL 없음(StoreKit 실제 만료 사용) |
 | 판정 스냅샷 — **쓰기 문(유일)** | — | `EntitlementWriter`(`ui/main/EntitlementWriter.kt`) | `EntitlementWriter.swift` |
 | 문의 원자성 근거 | — | `AuthSessionStore.runIfGeneration`(세션 쓰기와 같은 락) | `KeychainStore.runIfCurrentSession`(세션 쓰기와 같은 락) |
 | 우회 차단 | — | `scripts/check-entitlement-writer.py`(CI) | 같은 스크립트가 둘 다 검사 |
