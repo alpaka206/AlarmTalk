@@ -38,8 +38,18 @@
   아니다. 네트워크가 잠깐 나빴다는 이유로 이미 받아 둔 알람 pull 까지 통째로 버리게 된다.
 - ⚠ **저장 직전에 세션을 다시 확인한다.** 네트워크 왕복 중 로그아웃·계정 전환이 끼면
   **비운 저장소에 끝난 세션을 되쓴다.** 안드로이드는 세션 세대로
-  (`saveTokenIfGeneration` — 판정과 쓰기가 한 덩어리), iOS 는 저장 직전 사용자 id
-  재확인으로 막는다.
+  (`saveTokenIfGeneration` — 판정과 쓰기가 한 덩어리), iOS 는 저장 직전 **토큰** 재확인으로
+  막는다.
+- ⚠ **iOS 의 비교 대상은 사용자 id 가 아니라 토큰이다**(코덱스 #734). 같은 계정으로
+  로그아웃→재로그인하면 **id 는 그대로**라, 로그아웃 전 토큰으로 인가된 늦은 응답이
+  새 세션에 그대로 박힌다. `applyRolledToken`·`applyFreshPlan`·`refreshUser` 가 전부
+  출처 토큰을 대조한다.
+- ⚠ **401 도 마찬가지다 — 그리고 그건 중앙에서 처리된다.** `AlarmTalkAPI` 가 모든 401 에
+  알림을 쏘고 `AuthViewModel` 이 받아 로그아웃하는데, 그 알림에 **실패한 요청의 토큰**을
+  싣지 않으면 늦게 온 A 의 401 이 **방금 만든 B 의 세션을 끊는다.** 개별 호출부에서 막아도
+  이 경로가 남는다. 디바운스도 **토큰별**이어야 한다 — 안 그러면 옛 토큰의 401 이 3초 창을
+  차지해 지금 세션의 진짜 401 이 삼켜진다.
+  토큰 없는 로그인 요청이나 출처를 알 수 없는 알림의 401 은 현재 세션을 끊지 않는다.
 - ⚠ **JWT 서명은 검증하지 않는다.** 이 값은 **판단이 아니라 일정**에 쓴다. 위조된 exp 로
   할 수 있는 최악은 갱신을 한 번 더 시도하는 것뿐이고, 진짜 판정은 서버가 한다.
 
@@ -56,6 +66,8 @@
 ⚠ **네트워크 실패·5xx 를 세션 만료로 읽지 말 것.** 401 만 만료다. `/auth/me` 는 앱을
 열 때마다 도는 자리라 여기서 잘못 판정하면 피해가 크다 — 그래서 백엔드도 DB 장애를
 401 이 아니라 **503** 으로 낸다.
+JWT 서명 설정 누락도 서버 장애(503)이며 사용자 토큰 만료가 아니다.
+JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` 에 도달하면 만료다.
 
 ## 구현 지도
 
@@ -65,7 +77,8 @@
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로 | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |
-| 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `BackgroundSyncTask` 의 사용자 id 재확인 |
+| 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
+| 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` | `SessionTokenRenewalTests.swift` |
 
@@ -73,5 +86,5 @@
 
 | 차이 | 이유 |
 | --- | --- |
-| 안드로이드는 세션 **세대**로, iOS 는 **사용자 id** 로 경합을 막는다 | 안드로이드는 같은 prefs 를 워커와 뷰모델이 서로 다른 인스턴스로 보므로 세대가 필요했다. iOS 는 Keychain 단일 접근이라 id 비교로 충분하다 |
+| 안드로이드는 세션 **세대**로, iOS 는 **토큰** 으로 경합을 막는다 | 안드로이드는 같은 prefs 를 워커와 뷰모델이 서로 다른 인스턴스로 보므로 세대가 필요했다. iOS 는 Keychain 단일 접근이라 값 비교로 충분한데, **id 로는 부족하다** — 같은 계정으로 재로그인하면 id 가 그대로라 옛 응답을 못 걸러낸다(코덱스 #734) |
 | 주기: 안드로이드 15분 고정 / iOS 는 시스템이 정함 | `BGAppRefreshTask` 는 실행 시점을 iOS 가 정한다 — 요청은 15분이지만 보장은 없다 |

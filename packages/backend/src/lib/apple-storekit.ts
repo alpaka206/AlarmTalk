@@ -140,7 +140,7 @@ function isEnvironmentClosed(status: number): boolean {
  * 어느 환경도 열리지 않았으면 **NotFound 가 아니라 오류로** 끝낸다.
  *
  * ⚠ 이 구분이 핵심이다. `AppleTransactionNotFoundError` 를 호출부
- * (`billing-cancel.ts` 의 `reconcileAppleBeforeExpiry`)는 **"애플도 모르는 구독" = 즉시
+ * (`billing-reconciliation.ts`의 `reconcileStoreSubscription`)는 **"애플도 모르는 구독" = 즉시
  * `expire`** 로 읽는다. 자격증명이 깨졌거나 키가 만료됐을 때 그 길로 흘리면, 돈을 내고
  * 있는 애플 구독자가 **전원 한 번에 무료로 강등된다.** 일반 오류로 던지면 같은 호출부가
  * `skip`(다음 크론 재시도)으로 처리한다 — fail-closed 다.
@@ -180,7 +180,8 @@ export async function fetchAppleTransaction(
       throw new Error(`Apple transaction lookup failed (${res.status})`);
     }
     const body = (await res.json()) as { signedTransactionInfo?: string };
-    if (!body.signedTransactionInfo) throw new Error('Apple response missing signedTransactionInfo');
+    if (!body.signedTransactionInfo)
+      throw new Error('Apple response missing signedTransactionInfo');
     const info = decodeAppleJws<AppleTransactionInfo>(body.signedTransactionInfo);
 
     // 애플이 준 값이라도 **번들 ID 는 반드시 대조한다.** 다른 앱의 트랜잭션이 우리
@@ -195,13 +196,13 @@ export async function fetchAppleTransaction(
   throw new AppleTransactionNotFoundError();
 }
 
-/** 애플이 돌려주는 구독 상태 코드. 1·2·3·4 만 쓰이고 나머지는 없다. */
+/** 애플이 돌려주는 구독 상태 코드. 알 수 없는 신규 값은 권한 부여 근거가 아니다. */
 export const APPLE_SUBSCRIPTION_STATUS = {
   ACTIVE: 1,
   EXPIRED: 2,
   /** 결제 실패 후 재시도 중(billing retry). 아직 만료가 아니다. */
   IN_BILLING_RETRY: 3,
-  /** 가격 인상 동의 대기. 아직 유효하다. */
+  /** 결제 실패 후 유예 기간. gracePeriodExpiresDate까지 접근을 유지한다. */
   IN_GRACE_PERIOD: 4,
   /**
    * **환불·취소로 권한이 회수됐다.**
@@ -217,9 +218,19 @@ export interface AppleSubscriptionStatus {
   status: number;
   /** 가장 최근 갱신 트랜잭션의 만료 시각(ms). 없으면 조회 실패로 본다. */
   expiresDate?: number;
+  /**
+   * 그 트랜잭션의 **결제 시각**(ms).
+   *
+   * ⚠ 재조회가 갱신을 발견했을 때 `last_paid_at` 에 넣는 값이다 — 크론이 도는 시각이
+   * 아니라 **애플이 서명해 준 결제 시각**이어야 한다. 크론은 결제보다 한참 뒤에 돌 수
+   * 있고(재시도 뒤 발견 등), 그 시각으로 5년을 세면 처리방침의 최대 5년을 넘긴다.
+   */
+  purchaseDate?: number;
   productId: string;
   /** 자동 갱신이 켜져 있나(0/1). 사용자가 스토어에서 껐으면 0. */
   autoRenewStatus?: number;
+  /** 유예 중 접근권의 끝. 결제된 기간의 expiresDate 와 구분한다. */
+  gracePeriodExpiresDate?: number;
 }
 
 /**
@@ -279,20 +290,25 @@ export async function fetchAppleSubscriptionStatus(
       .find((t) => t.originalTransactionId === originalTransactionId);
     if (!entry) continue;
 
-    if (!entry.signedTransactionInfo) throw new Error('Apple response missing signedTransactionInfo');
+    if (!entry.signedTransactionInfo)
+      throw new Error('Apple response missing signedTransactionInfo');
     const info = decodeAppleJws<AppleTransactionInfo>(entry.signedTransactionInfo);
     if (info.bundleId !== config.bundleId) {
       throw new Error('Apple subscription bundle id mismatch');
     }
     const renewal = entry.signedRenewalInfo
-      ? decodeAppleJws<{ autoRenewStatus?: number }>(entry.signedRenewalInfo)
+      ? decodeAppleJws<{ autoRenewStatus?: number; gracePeriodExpiresDate?: number }>(
+          entry.signedRenewalInfo,
+        )
       : undefined;
 
     return {
-      status: Number(entry.status ?? APPLE_SUBSCRIPTION_STATUS.EXPIRED),
+      status: Number(entry.status),
       expiresDate: info.expiresDate,
+      purchaseDate: info.purchaseDate,
       productId: info.productId,
       autoRenewStatus: renewal?.autoRenewStatus,
+      gracePeriodExpiresDate: renewal?.gracePeriodExpiresDate,
     };
   }
   // ⚠ 401 을 "없음" 으로 흘리면 재조회가 **즉시 만료**로 떨어진다 — 위 헬퍼 주석 참조.
@@ -319,9 +335,7 @@ const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'
 };
 
 /** 선물용 1회성 상품 ID. 구독 갈래로 새면 구매자 본인이 이용권을 받게 된다. */
-const APPLE_GIFT_PRODUCT_IDS = new Set<string>([
-  'com.alarmtalk.app.personal_gift_1m',
-]);
+const APPLE_GIFT_PRODUCT_IDS = new Set<string>(['com.alarmtalk.app.personal_gift_1m']);
 
 export function isAppleGiftProductId(productId: string): boolean {
   return APPLE_GIFT_PRODUCT_IDS.has(productId);

@@ -13,6 +13,7 @@ import {
   cancelActiveSubscriptionsForUser,
   clearPaidVoiceRetention,
   leavePlanGroupMember,
+  propagateGroupMemberPlans,
 } from './billing-cancel';
 import { planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
 
@@ -50,6 +51,16 @@ export interface StoreEntitlementInput {
   plan: StorePlan;
   startsAt: Date;
   expiresAt: Date;
+  /** 권한 변경을 실제 반영하는 시각. 삭제 유예는 과거 구매일이 아니라 여기서 시작한다. */
+  appliedAt?: Date;
+  /**
+   * **스토어가 알려 준 이 결제의 시각.** 생략하면 검증된 startsAt을 쓴다.
+   *
+   * 탈퇴 시 결제기록 보존 기한을 '거래일' 부터 세는 근거다(`account-deletion.ts`).
+   * 애플은 `purchaseDate`, 구글은 최신 성공 주문의 Orders API `processedEvent.eventTime`.
+   * 현재 시각·만료·유예 연장 시각은 결제일의 대용품이 아니다.
+   */
+  lastPaidAt?: Date;
   /** 감사/디버깅용 원본 페이로드 (민감정보 제외 권장). */
   rawPayload?: string;
 }
@@ -82,7 +93,8 @@ export type StoreEntitlementResult =
   | {
       ok: false;
       status: 409;
-      errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' | 'CROSS_STORE_RENEWAL_ACTIVE';
+      errorCode:
+        'TRANSACTION_OWNED_BY_OTHER_USER' | 'CROSS_STORE_RENEWAL_ACTIVE' | 'SUBSCRIPTION_EXPIRED';
     };
 
 export async function loadPlanByKey(db: DbExecutor, planKey: string): Promise<StorePlan | null> {
@@ -113,6 +125,38 @@ async function currentSubscriptionPlanId(
     args: [subscriptionId],
   });
   return res.rows.length > 0 ? String(res.rows[0]!.plan_id) : null;
+}
+
+/** 갱신·복원·RTDN·크론이 모두 호출하는 그룹 기간/권한 복구다. */
+export async function extendStoreGroupPeriod(
+  tx: DbExecutor,
+  subscriptionId: string,
+  expiresAt: string,
+): Promise<string[]> {
+  const group = (
+    await tx.execute({
+      sql: `SELECT g.id, g.owner_user_id FROM subscriptions s
+          JOIN plan_groups g ON g.id = s.plan_group_id AND g.owner_user_id = s.user_id
+          WHERE s.id = ? AND s.status = 'active'`,
+      args: [subscriptionId],
+    })
+  ).rows[0];
+  if (!group) return [];
+  const extended = await tx.execute({
+    sql: `UPDATE subscriptions SET expires_at = ?, updated_at = datetime('now')
+          WHERE plan_group_id = ? AND user_id <> ? AND status = 'active'
+            AND julianday(?) > julianday(expires_at) RETURNING user_id`,
+    args: [expiresAt, String(group.id), String(group.owner_user_id), expiresAt],
+  });
+  const restored = await propagateGroupMemberPlans(
+    tx,
+    String(group.id),
+    String(group.owner_user_id),
+    false,
+  );
+  const members = [...new Set([...extended.rows.map((row) => String(row.user_id)), ...restored])];
+  for (const id of members) await clearPaidVoiceRetention(tx, id);
+  return members;
 }
 
 /**
@@ -149,10 +193,12 @@ export async function applyStoreEntitlement(
   input: StoreEntitlementInput,
 ): Promise<StoreEntitlementResult> {
   const startsAtIso = input.startsAt.toISOString();
-  const expiresAtIso = input.expiresAt.toISOString();
+  let expiresAtIso = input.expiresAt.toISOString();
+  const lastPaidAtIso = (input.lastPaidAt ?? input.startsAt).toISOString();
+  const appliedAt = input.appliedAt ?? new Date();
 
   const existing = await tx.execute({
-    sql: `SELECT user_id, subscription_id FROM store_transactions
+    sql: `SELECT user_id, subscription_id, last_paid_at, expires_at FROM store_transactions
           WHERE provider = ? AND provider_transaction_id = ?`,
     args: [input.provider, input.providerTransactionId],
   });
@@ -161,6 +207,10 @@ export async function applyStoreEntitlement(
     const row = existing.rows[0]!;
     if (String(row.user_id) !== input.userPk) {
       return { ok: false, status: 409, errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
+    }
+    // 늦게 도착한 이전 결제가 새 상품·기간을 되돌리지 못하게 한다.
+    if (row.last_paid_at && Date.parse(String(row.last_paid_at)) > Date.parse(lastPaidAtIso)) {
+      return { ok: false, status: 409, errorCode: 'SUBSCRIPTION_EXPIRED' };
     }
     // 같은 사용자의 재전송(갱신 포함) — 기존 구독 만료를 스토어 기준으로 갱신.
     const subscriptionId = (row.subscription_id as string | null) ?? null;
@@ -172,12 +222,16 @@ export async function applyStoreEntitlement(
       ? await currentSubscriptionPlanId(tx, subscriptionId)
       : null;
     if (subscriptionId && currentPlanId === input.plan.id) {
+      if (row.expires_at && Date.parse(String(row.expires_at)) > Date.parse(expiresAtIso)) {
+        expiresAtIso = new Date(String(row.expires_at)).toISOString();
+      }
       await tx.execute({
         sql: `UPDATE subscriptions
-              SET expires_at = ?, status = 'active', cancel_at_period_end = 0,
+              SET expires_at = CASE WHEN julianday(?) > julianday(expires_at) THEN ? ELSE expires_at END,
+                  status = 'active', cancel_at_period_end = 0,
                   canceled_at = NULL, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [expiresAtIso, subscriptionId],
+        args: [expiresAtIso, expiresAtIso, subscriptionId],
       });
       // 갱신(다음 달 결제 등)으로 구독 만료가 연장되면, 같은 구독에 묶인 공유 코드의
       // 만료도 함께 밀어 코드가 끊기지 않게 한다. 코드 문자열은 그대로 유지되므로
@@ -188,20 +242,37 @@ export async function applyStoreEntitlement(
       // (expired 코드는 의도적으로 무효화된 것이므로 되살리지 않는다.)
       await tx.execute({
         sql: `UPDATE voucher_codes
-              SET expires_at = ?
+              SET expires_at = CASE WHEN julianday(?) > julianday(expires_at) THEN ? ELSE expires_at END
               WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
-        args: [expiresAtIso, subscriptionId],
+        args: [expiresAtIso, expiresAtIso, subscriptionId],
       });
       await tx.execute({
         sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
         args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],
       });
       await tx.execute({
-        sql: `UPDATE store_transactions SET expires_at = ? WHERE provider = ? AND provider_transaction_id = ?`,
-        args: [expiresAtIso, input.provider, input.providerTransactionId],
+        // 재전송·유예 연장과 실제 결제는 다르다. 검증된 결제일이 새로울 때만 앵커를 옮긴다.
+        sql: `UPDATE store_transactions
+              SET last_paid_at = CASE
+                    WHEN last_paid_at IS NULL OR julianday(?) > julianday(last_paid_at) THEN ?
+                    ELSE last_paid_at
+                  END,
+                  expires_at = CASE WHEN expires_at IS NULL OR julianday(?) > julianday(expires_at) THEN ? ELSE expires_at END,
+                  raw_payload = COALESCE(?, raw_payload)
+              WHERE provider = ? AND provider_transaction_id = ?`,
+        args: [
+          lastPaidAtIso,
+          lastPaidAtIso,
+          expiresAtIso,
+          expiresAtIso,
+          input.rawPayload ?? null,
+          input.provider,
+          input.providerTransactionId,
+        ],
       });
       // 갱신/복구로 유료가 이어지면 예약된 유료 음성 보관 삭제를 해제한다.
       await clearPaidVoiceRetention(tx, input.userPk);
+      const planChangedUserIds = await extendStoreGroupPeriod(tx, subscriptionId, expiresAtIso);
       return {
         ok: true,
         subscription: {
@@ -212,8 +283,8 @@ export async function applyStoreEntitlement(
           starts_at: startsAtIso,
           expires_at: expiresAtIso,
         },
-        // 같은 plan 갱신이라 그룹도 플랜도 그대로다 — 알릴 사람이 없다.
-        planChangedUserIds: [],
+        // 같은 plan이어도 보류 복구·그룹 기간 연장으로 멤버 스냅샷이 바뀔 수 있다.
+        planChangedUserIds,
       };
     }
   }
@@ -243,14 +314,14 @@ export async function applyStoreEntitlement(
 
   // 기존 활성 구독을 정리하고 새 구독 생성.
   // 음성 데이터는 보존 (업그레이드/갱신이 다운그레이드 정리를 트리거하면 안 됨).
-  await cancelActiveSubscriptionsForUser(tx, input.userPk, input.startsAt, {
+  const canceledUserIds = await cancelActiveSubscriptionsForUser(tx, input.userPk, appliedAt, {
     deleteVoiceData: false,
     preserveGroupId: carryOver?.planGroupId ?? null,
   });
 
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
-  const planChangedUserIds: string[] = [];
+  const planChangedUserIds = canceledUserIds.filter((id) => id !== input.userPk);
 
   if (isGroupPlanType(input.plan.plan_type)) {
     if (carryOver) {
@@ -266,7 +337,7 @@ export async function applyStoreEntitlement(
           planGroupId,
           ownerUserPk: input.userPk,
           maxMembers: input.plan.max_members,
-          now: input.startsAt,
+          now: appliedAt,
         })),
       );
       // ⚠ **남은 멤버의 구독 행도 새 플랜으로 옮긴다**(코덱스 #730 3차). 위에서 고친 것은
@@ -330,13 +401,7 @@ export async function applyStoreEntitlement(
         sql: `UPDATE voucher_codes
               SET issuer_subscription_id = ?, plan_id = ?, expires_at = ?, max_uses = ?
               WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
-        args: [
-          subscriptionId,
-          input.plan.id,
-          expiresAtIso,
-          maxUses,
-          carryOver.subscriptionId,
-        ],
+        args: [subscriptionId, input.plan.id, expiresAtIso, maxUses, carryOver.subscriptionId],
       });
       const movedRes = await tx.execute({
         sql: `SELECT COUNT(*) AS n FROM voucher_codes WHERE issuer_subscription_id = ?`,
@@ -359,10 +424,13 @@ export async function applyStoreEntitlement(
   }
 
   await tx.execute({
+    // ⚠ **`last_paid_at` 을 여기서 적는다**(코덱스 #734 5차). 나중에 `created_at`(체인 최초
+    //   시각)이나 `expires_at - period_days`(달력 달이라 며칠 어긋난다)로 되짚으려 하지 말 것.
+    //   탈퇴 시 결제기록 보존 기한을 '거래일' 부터 세는 근거가 이 값이다.
     sql: `INSERT OR REPLACE INTO store_transactions
             (id, user_id, provider, provider_transaction_id, product_id, plan_key,
-             subscription_id, expires_at, raw_payload)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             subscription_id, expires_at, raw_payload, last_paid_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(),
       input.userPk,
@@ -373,11 +441,14 @@ export async function applyStoreEntitlement(
       subscriptionId,
       expiresAtIso,
       input.rawPayload ?? null,
+      lastPaidAtIso,
     ],
   });
 
   // 재구독(신규 트랜잭션)으로 유료가 되살아나면 예약된 유료 음성 보관 삭제를 해제한다.
   await clearPaidVoiceRetention(tx, input.userPk);
+
+  planChangedUserIds.push(...(await extendStoreGroupPeriod(tx, subscriptionId, expiresAtIso)));
 
   return {
     ok: true,
@@ -389,7 +460,7 @@ export async function applyStoreEntitlement(
       starts_at: startsAtIso,
       expires_at: expiresAtIso,
     },
-    planChangedUserIds,
+    planChangedUserIds: [...new Set(planChangedUserIds)],
   };
 }
 

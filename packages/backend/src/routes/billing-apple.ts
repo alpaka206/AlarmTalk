@@ -15,13 +15,15 @@ import {
   hasActivePaidEntitlement,
   findStoreTransactionsForSubscriptions,
   notifyPlanChanged,
+  notifyBillingStateChanged,
   notifyVoiceDeletionScheduled,
   schedulePaidVoiceRetention,
   storeRenewalProvidersOf,
   type ActiveSubscription,
 } from '../lib/billing-cancel';
 import { logStructured } from '../lib/logger';
-import { withWriteTransaction } from '../lib/transactions';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { BillingStateChangedError } from '../lib/billing-reconciliation';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   appleStoreKitConfigFromEnv,
@@ -84,10 +86,7 @@ billingApple.post('/apple/confirm', async (c) => {
     info = await fetchAppleTransaction(parsed.transaction_id, config);
   } catch (err) {
     if (err instanceof AppleTransactionNotFoundError) {
-      return c.json(
-        { error: 'Transaction not found', error_code: 'TRANSACTION_NOT_FOUND' },
-        404,
-      );
+      return c.json({ error: 'Transaction not found', error_code: 'TRANSACTION_NOT_FOUND' }, 404);
     }
     logStructured('error', {
       at: 'billing.apple.confirm',
@@ -127,6 +126,7 @@ billingApple.post('/apple/confirm', async (c) => {
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
     //   구독 행**을 집어 취소해 버린다 — 이어받은 그룹까지 해체되고, 그건 되돌릴 수 없다.
     //   판단은 애플에 **체인의 현재 상태**를 물어서 한다.
+    const refundSnapshot = await readRefundedMapping(db0, info);
     const chain = await appleChainStatus(config, info.originalTransactionId);
     if (chain === 'unknown') {
       // ⚠ **판정을 못 했으면 판정한 척하지 않는다**(코덱스 #733 8차). 400 은 앱이
@@ -145,7 +145,18 @@ billingApple.post('/apple/confirm', async (c) => {
         note: 'chain still live — skipping cleanup',
       });
     } else {
-      await revokeRefundedAppleSubscription(db0, c.env, info);
+      try {
+        await revokeRefundedAppleSubscription(db0, c.env, info, refundSnapshot);
+      } catch (error) {
+        if (!(error instanceof BillingStateChangedError)) throw error;
+        return c.json(
+          {
+            error: 'Subscription changed during verification',
+            error_code: 'APPLE_VERIFICATION_FAILED',
+          },
+          502,
+        );
+      }
     }
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
   }
@@ -170,7 +181,10 @@ billingApple.post('/apple/confirm', async (c) => {
         error: 'appAccountToken mismatch',
       });
       return c.json(
-        { error: 'Purchase is bound to another account', error_code: 'TRANSACTION_ACCOUNT_MISMATCH' },
+        {
+          error: 'Purchase is bound to another account',
+          error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
+        },
         403,
       );
     }
@@ -181,7 +195,9 @@ billingApple.post('/apple/confirm', async (c) => {
     const boundRes = await db0.execute({
       sql: `SELECT user_id FROM store_transactions
             WHERE provider = 'apple' AND provider_transaction_id = ?`,
-      args: [info.transactionId],
+      args: [
+        isAppleGiftProductId(info.productId) ? info.transactionId : info.originalTransactionId,
+      ],
     });
     if (boundRes.rows.length === 0) {
       logStructured('warn', {
@@ -190,7 +206,10 @@ billingApple.post('/apple/confirm', async (c) => {
         error: 'appAccountToken missing on first claim',
       });
       return c.json(
-        { error: 'Purchase is missing the account identifier', error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED' },
+        {
+          error: 'Purchase is missing the account identifier',
+          error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED',
+        },
         403,
       );
     }
@@ -225,8 +244,8 @@ billingApple.post('/apple/confirm', async (c) => {
         // 없음)로 만든 컬럼이라, 빠지면 INSERT 가 거절되고 **트랜잭션이 통째로 롤백**된다 —
         // 스토어는 이미 결제를 받았는데 바우처가 안 나간다(2026-08-18 Codex #697 P1).
         sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload)
-              VALUES (?, ?, 'apple', ?, ?, ?, NULL, ?)`,
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload, last_paid_at)
+              VALUES (?, ?, 'apple', ?, ?, ?, NULL, ?, ?)`,
         args: [
           crypto.randomUUID(),
           userPk,
@@ -234,6 +253,7 @@ billingApple.post('/apple/confirm', async (c) => {
           info.productId,
           planKey,
           JSON.stringify({ kind: 'gift', environment: info.environment ?? null }),
+          issuedAt.toISOString(),
         ],
       });
       return issueVoucherCode(txDb, {
@@ -272,7 +292,10 @@ billingApple.post('/apple/confirm', async (c) => {
   }
   const expiresAt = new Date(info.expiresDate);
   if (expiresAt.getTime() <= Date.now()) {
-    return c.json({ error: 'Subscription already expired', error_code: 'SUBSCRIPTION_EXPIRED' }, 400);
+    return c.json(
+      { error: 'Subscription already expired', error_code: 'SUBSCRIPTION_EXPIRED' },
+      400,
+    );
   }
 
   const db = getDB(c.env);
@@ -329,6 +352,8 @@ billingApple.post('/apple/confirm', async (c) => {
       productId: info.productId,
       plan,
       startsAt: new Date(info.purchaseDate),
+      // 애플은 이 트랜잭션의 결제 시각을 준다 — 서버 시각보다 정확하다.
+      lastPaidAt: new Date(info.purchaseDate),
       expiresAt,
       rawPayload: JSON.stringify({
         transactionId: info.transactionId,
@@ -348,7 +373,7 @@ billingApple.post('/apple/confirm', async (c) => {
   // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
   // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
   // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyPlanChanged(db, c.env, result.planChangedUserIds);
+  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
   return c.json({
     success: true,
@@ -369,7 +394,7 @@ billingApple.post('/apple/confirm', async (c) => {
  * 목록에 없는 값(애플이 나중에 늘릴 수도 있다)은 **살아 있다고 본다.**
  *
  * 재시도(3)·유예(4)는 회복형이라 여기서 끊지 않는다 — 만료 크론의 보류 갈래가 다룬다.
- * (`reconcileAppleBeforeExpiry` 는 반대로 '권한 있는 상태' 를 목록으로 적는다. 묻는 것이
+ * (`reconcileStoreSubscription`은 반대로 '권한 있는 상태'를 목록으로 적는다. 묻는 것이
  * 달라서 목록도 다르다: 저기는 "지금 유료인가", 여기는 "끝났는가" 다.)
  *
  * ⚠ **못 물어보면 `unknown` 이다 — '살아 있다' 로 접지 않는다**(코덱스 #733 8차).
@@ -400,6 +425,25 @@ async function appleChainStatus(
   }
 }
 
+async function readRefundedMapping(
+  db: DbExecutor,
+  info: { originalTransactionId: string; transactionId: string },
+) {
+  const result = await db.execute({
+    sql: `SELECT st.user_id, st.subscription_id, st.last_paid_at, st.expires_at AS store_expires_at,
+                 st.product_id, s.expires_at, s.updated_at,
+                 s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+          FROM store_transactions st
+          JOIN subscriptions s ON s.id = st.subscription_id
+          JOIN plans p ON p.id = s.plan_id
+          WHERE st.provider = 'apple'
+            AND st.provider_transaction_id IN (?, ?)
+            AND s.status = 'active'`,
+    args: [info.originalTransactionId, info.transactionId],
+  });
+  return result.rows[0];
+}
+
 /**
  * **환불된 애플 결제의 권한을 회수한다.**
  *
@@ -417,6 +461,7 @@ async function revokeRefundedAppleSubscription(
   db: ReturnType<typeof getDB>,
   env: AppEnv['Bindings'],
   info: { originalTransactionId: string; transactionId: string },
+  expected: Awaited<ReturnType<typeof readRefundedMapping>>,
 ): Promise<void> {
   const now = new Date();
   // ⚠ **조회를 쓰기 트랜잭션 안에서 한다**(코덱스 #733). 밖에서 읽으면 그 사이에 같은
@@ -425,18 +470,9 @@ async function revokeRefundedAppleSubscription(
   //   걸려 무해하지만 `disbandOwnedPlanGroup` 은 그대로 돌아 **지금 돈을 내고 있는
   //   구독이 뒷받침하는 그룹에서 멤버를 전원 내보낸다.**
   const affected = await withWriteTransaction(db, async (tx) => {
-    const res = await tx.execute({
-      sql: `SELECT st.user_id, st.subscription_id,
-                   s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
-            FROM store_transactions st
-            JOIN subscriptions s ON s.id = st.subscription_id
-            JOIN plans p ON p.id = s.plan_id
-            WHERE st.provider = 'apple'
-              AND st.provider_transaction_id IN (?, ?)
-              AND s.status = 'active'`,
-      args: [info.originalTransactionId, info.transactionId],
-    });
-    const row = res.rows[0];
+    const row = await readRefundedMapping(tx, info);
+    // Apple 왕복 중 새 갱신이 같은 체인에 반영됐으면, 옛 종료 응답으로 그룹을 해체하지 않는다.
+    if (JSON.stringify(row) !== JSON.stringify(expected)) throw new BillingStateChangedError();
     if (!row) return null; // 구독이 아니거나(선물) 이미 정리됐다.
 
     const mapped: ActiveSubscription = {

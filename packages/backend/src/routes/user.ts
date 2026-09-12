@@ -2,10 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
-import {
-  deleteSensitiveVoiceDataForUser,
-  type DowngradedAlarm,
-} from '../lib/paid-voice-cleanup';
+import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import { notifyDowngradedAlarms } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
@@ -57,6 +54,9 @@ user.patch('/me', async (c) => {
       name?: unknown;
     }>()
     .catch(() => ({}));
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: 'Body must be a JSON object', error_code: 'INVALID_REQUEST' }, 400);
+  }
 
   const updates: string[] = [];
   const args: (string | number)[] = [];
@@ -259,9 +259,8 @@ user.delete('/me', async (c) => {
     //
     // ⚠ **실패해도 탈퇴는 진행한다.** 애플이 잠깐 죽었다고 탈퇴를 막으면 사용자는 자기
     // 데이터를 못 지운다 — 그건 폐기 누락보다 나쁘다. 대신 로그에 남겨 추적한다.
-    const appleRefreshToken = userRes.rows.length > 0
-      ? (userRes.rows[0]!.apple_refresh_token as string | null)
-      : null;
+    const appleRefreshToken =
+      userRes.rows.length > 0 ? (userRes.rows[0]!.apple_refresh_token as string | null) : null;
     if (appleRefreshToken) {
       // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 3차). `appleSignInConfig` 는 PEM 이
       //   잘려 있으면 **던진다.** 밖에 두면 바깥 catch 가 `DELETE_ACCOUNT_FAILED` 를
@@ -434,11 +433,7 @@ user.post('/consents', async (c) => {
         });
       }
       if (withdrewSensitiveConsent) {
-        const revocation = await deleteSensitiveVoiceDataForUser(
-          tx,
-          userPk,
-          c.get('userLoginId'),
-        );
+        const revocation = await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
         downgradedAlarms = revocation.downgradedAlarms;
         voiceAccessRevokedUserIds = revocation.voiceAccessRevokedUserIds;
       }
@@ -446,12 +441,7 @@ user.post('/consents', async (c) => {
     // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
     // 동기화되지 않은 로컬 알람은 여기서 안 잡히는데, 발사는 로컬이고 울림 시점 동의 게이트도
     // 없어 그 기기는 지워진 녹음으로 계속 울린다.
-    await notifyDowngradedAlarms(
-      db,
-      c.env,
-      downgradedAlarms,
-      voiceAccessRevokedUserIds,
-    );
+    await notifyDowngradedAlarms(db, c.env, downgradedAlarms, voiceAccessRevokedUserIds);
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {
     logRouteError(c, err);

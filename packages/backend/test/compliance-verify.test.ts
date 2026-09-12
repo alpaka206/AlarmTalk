@@ -345,6 +345,255 @@ describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', (
     expect(userGone.rows.length).toBe(0);
   });
 
+  it('구독 결제도 스토어 증빙(거래 id·상품·원본)을 함께 보존한다', async () => {
+    // ⚠ `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로, 증빙을 옮겨 두지
+    //   않으면 **남은 기록을 실제 주문에 되짚을 방법이 사라진다** — 결제 분쟁에서
+    //   "이 사람이 이 주문을 했다" 를 보일 수 없다(코덱스 #730 4차).
+    const SUB5 = 'hard-del-sub-3';
+    const PK5 = 'hard-del-pk-3';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK5, SUB5, 'harddel3@test.com', 'Hard Delete 3'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-01-01', '2030-01-01')`,
+      args: ['sub-hard-3', PK5, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, raw_payload, created_at)
+            VALUES (?, ?, 'google', ?, ?, 'personal', ?, ?, '2026-01-01T00:00:00.000Z')`,
+      args: [
+        'st-hard-3',
+        PK5,
+        'play-token-hard-3',
+        'personal_monthly',
+        'sub-hard-3',
+        '{"via":"confirm"}',
+      ],
+    });
+
+    const res = await buildApp(SUB5, PK5).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT provider, provider_transaction_id, product_id, raw_payload, amount_krw
+            FROM retained_billing_records
+            WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-3'],
+    });
+    expect(retained.rows.length).toBe(1);
+    const row = retained.rows[0]!;
+    expect(row.provider).toBe('google');
+    expect(row.product_id).toBe('personal_monthly');
+    expect(row.raw_payload).toBe('{"via":"confirm"}');
+    // ⚠ **증빙이 있으면 금액은 비운다**(코덱스 #734 4차). `plans.price_krw` 는 지금의
+    //   원화 표시가일 뿐인데, 특정 애플/Play 주문 옆에 적으면 **그 주문이 이 금액이었다**
+    //   고 단언하는 셈이다(통화도 비어 있다). 실제 금액은 거래 id 로 스토어에서 확인한다.
+    expect(row.amount_krw).toBeNull();
+
+    // 원본은 파기됐다 — 그래서 위 증빙을 옮겨 두는 것이다.
+    const gone = await db.execute({
+      sql: 'SELECT id FROM store_transactions WHERE user_id = ?',
+      args: [PK5],
+    });
+    expect(gone.rows.length).toBe(0);
+  });
+
+  it('스토어 결제가 아니면(프로모·바우처) 요금제 표시가를 남긴다 — 되짚을 곳이 없다', async () => {
+    const SUB9 = 'hard-del-sub-7';
+    const PK9 = 'hard-del-pk-7';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK9, SUB9, 'harddel7@test.com', 'Hard Delete 7'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-08-01', '2026-12-01')`,
+      args: ['sub-hard-7', PK9, PERSONAL_PLAN],
+    });
+    // store_transactions 없음 — 프로모·바우처 갈래.
+
+    const res = await buildApp(SUB9, PK9).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT amount_krw, provider FROM retained_billing_records
+            WHERE plan_id = ? AND provider IS NULL`,
+      args: [PERSONAL_PLAN],
+    });
+    expect(retained.rows.length).toBeGreaterThan(0);
+    expect(Number(retained.rows[retained.rows.length - 1]!.amount_krw)).toBeGreaterThan(0);
+  });
+
+  it('5년이 지난 구독 결제는 다시 보존하지 않는다 — 기준은 탈퇴일이 아니라 거래일', async () => {
+    // ⚠ 탈퇴 시각부터 5년을 세면 4년 전에 결제한 구독이 **9년**을 남는다 —
+    //   처리방침이 밝힌 최대 5년을 넘긴다(코덱스 #734). 일회성 갈래와 같은 규칙이다.
+    const SUB6 = 'hard-del-sub-4';
+    const PK6 = 'hard-del-pk-4';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK6, SUB6, 'harddel4@test.com', 'Hard Delete 4'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'expired', '2018-01-01', '2018-02-01')`,
+      args: ['sub-hard-4', PK6, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'personal_monthly', 'personal', ?, '2018-01-01T00:00:00.000Z')`,
+      args: ['st-hard-4', PK6, 'play-token-hard-4', 'sub-hard-4'],
+    });
+
+    const res = await buildApp(SUB6, PK6).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT id FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-4'],
+    });
+    expect(retained.rows.length).toBe(0);
+
+    // 계정 파기 자체는 끝까지 간다.
+    const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK6] });
+    expect(userGone.rows.length).toBe(0);
+  });
+
+  it('5년 넘게 갱신해 온 구독은 최근 기간을 기준으로 보존한다 — 체인 최초 시각이 아니라', async () => {
+    // ⚠ `store_transactions.created_at` 은 **체인이 처음 들어온 시각**이다(갱신은 그 행의
+    //   expires_at 만 고친다). 그것만 보면 오래 갱신해 온 구독은 이미 지난 날짜가 나와
+    //   **이번 달에 결제한 사람의 증빙까지 버린다**(코덱스 #734 2차).
+    const SUB7 = 'hard-del-sub-5';
+    const PK7 = 'hard-del-pk-5';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK7, SUB7, 'harddel5@test.com', 'Hard Delete 5'],
+    });
+    // 2018년부터 갱신해 온 구독 — 지금도 유효하다.
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2018-01-01', '2030-01-01')`,
+      args: ['sub-hard-5', PK7, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'personal_monthly', 'personal', ?, '2018-01-01T00:00:00.000Z')`,
+      args: ['st-hard-5', PK7, 'play-token-hard-5', 'sub-hard-5'],
+    });
+
+    const res = await buildApp(SUB7, PK7).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-5'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 기준일이 2018 이 아니라 **지금 기간의 시작**(2030-01-01 − 30일 ≈ 2029-12-02)이다.
+    const retainUntil = String(retained.rows[0]!.retain_until);
+    expect(retainUntil > '2034-11-01').toBe(true);
+    // ⚠ **기간의 끝(2030-01-01)을 쓰면 2035-01-01 이 된다 — 한 주기만큼 더 남는다.**
+    //   프로모처럼 기간이 길면 그 초과가 몇 년이 되어 처리방침의 최대 5년을 넘긴다
+    //   (코덱스 #734 3차).
+    expect(retainUntil < '2035-01-01').toBe(true);
+  });
+
+  it('last_paid_at 이 있으면 그것을 기준으로 삼는다 — 추정치를 쓰지 않는다', async () => {
+    // ⚠ 확정 경로가 결제 시점에 적어 두는 값이다(마이그레이션 114). 추정으로 되돌리면
+    //   애플의 달력 달(P1M)과 period_days=30 이 어긋나 며칠씩 틀린다(코덱스 #734 5차).
+    const SUBA = 'hard-del-sub-8';
+    const PKA = 'hard-del-pk-8';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PKA, SUBA, 'harddel8@test.com', 'Hard Delete 8'],
+    });
+    // 2018 에 시작해 지금도 갱신 중 — created_at 과 last_paid_at 이 크게 벌어진 상태.
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2018-01-01', '2026-10-31')`,
+      args: ['sub-hard-8', PKA, PERSONAL_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at, last_paid_at)
+            VALUES (?, ?, 'apple', ?, 'com.alarmtalk.app.personal_monthly', 'personal', ?,
+                    '2018-01-01T00:00:00.000Z', '2026-09-05T00:00:00.000Z')`,
+      args: ['st-hard-8', PKA, 'apple-original-8', 'sub-hard-8'],
+    });
+
+    const res = await buildApp(SUBA, PKA).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['apple-original-8'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 2026-09-05 + 5년 = 2031-09-05.
+    // ⚠ 추정치를 썼다면 2026-10-31 − 30일 = 2026-10-01 → **2031-10-01** 이 나온다.
+    //   두 날짜가 겹치지 않게 기간을 어긋나게 뒀다 — 겹치면 이 테스트가 아무것도 안 지킨다.
+    expect(String(retained.rows[0]!.retain_until).startsWith('2031-09-05')).toBe(true);
+  });
+
+  it('기간이 긴 부여는 초과 보존이 더 커진다 — 그래서 기간의 끝을 쓰지 않는다', async () => {
+    // 3년짜리 수동 부여를 흉내 낸다. 기간의 끝을 기준으로 삼으면 결제일로부터 8년이 남는다.
+    const SUB8 = 'hard-del-sub-6';
+    const PK8 = 'hard-del-pk-6';
+    const LONG_PLAN = 'plan-long-grant';
+    await db.execute({
+      sql: `INSERT INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
+            VALUES (?, 'long_grant', '장기부여', 'personal', 1095, 1, 0, 0)`,
+      args: [LONG_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK8, SUB8, 'harddel6@test.com', 'Hard Delete 6'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-01-01', '2029-01-01')`,
+      args: ['sub-hard-6', PK8, LONG_PLAN],
+    });
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key,
+               subscription_id, created_at)
+            VALUES (?, ?, 'google', ?, 'long_grant', 'long_grant', ?, '2026-01-01T00:00:00.000Z')`,
+      args: ['st-hard-6', PK8, 'play-token-hard-6', 'sub-hard-6'],
+    });
+
+    const res = await buildApp(SUB8, PK8).request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT retain_until FROM retained_billing_records WHERE provider_transaction_id = ?`,
+      args: ['play-token-hard-6'],
+    });
+    expect(retained.rows.length).toBe(1);
+    // 결제일(2026-01-01)로부터 5년 — 기간의 끝(2029-01-01)을 썼다면 2034 가 됐을 것이다.
+    expect(String(retained.rows[0]!.retain_until) < '2032-01-01').toBe(true);
+  });
+
   it('사용 기록이 남아 있어도 계정 파기가 끝까지 간다', async () => {
     const SUB4 = 'hard-del-sub-2';
     const PK4 = 'hard-del-pk-2';

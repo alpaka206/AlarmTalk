@@ -41,8 +41,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble devDebug + run unit tests
-        run: ./gradlew :app:assembleDevDebug :app:testDevDebugUnitTest --stacktrace
+      - name: Assemble devDebug + unit tests + release lint
+        run: ./gradlew :app:assembleDevDebug :app:testDevDebugUnitTest :app:lintProdRelease --stacktrace
 
       - name: Upload unit test report
         if: always()
@@ -50,5 +50,14 @@ jobs:
         with:
           name: android-unit-test-report
           path: apps/android-native/app/build/reports/tests/testDevDebugUnitTest
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload release lint report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-release-lint-report
+          path: apps/android-native/app/build/reports/lint-results-prodRelease.*
           retention-days: 7
           if-no-files-found: warn

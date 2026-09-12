@@ -609,8 +609,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("code/register", method: "POST", token: token, body: CodeRegisterRequest(code: code))
     }
 
-    func getSubscription(token: String) async throws -> BillingSubscriptionResponse {
-        try await request("billing/subscription", token: token)
+    /// - Parameter refreshStoreState: `true` 면 서버가 **애플에 직접 물어** 갱신 상태를
+    ///   최신화한 뒤 답한다. ⚠ **결제 직전에만 켠다** — 애플 서버 호출이 붙어서, 배경
+    ///   갱신이 켜면 애플이 느릴 때 **DB 에 이미 있는 답까지 같이 늦어진다.**
+    func getSubscription(
+        token: String,
+        refreshStoreState: Bool = false
+    ) async throws -> BillingSubscriptionResponse {
+        try await request(
+            refreshStoreState ? "billing/subscription?refresh_store=1" : "billing/subscription",
+            token: token
+        )
     }
 
     /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).
@@ -848,7 +857,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
             return try decoder.decode(Response.self, from: data)
         }
         if http.statusCode == 401 {
-            Self.handleUnauthorized()
+            Self.handleUnauthorized(token: token)
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
         if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
@@ -910,7 +919,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
             return try decoder.decode(Response.self, from: responseData)
         }
         if http.statusCode == 401 {
-            Self.handleUnauthorized()
+            Self.handleUnauthorized(token: token)
         }
         let serverError = try? decoder.decode(ServerError.self, from: responseData)
         if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
@@ -959,21 +968,41 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// `consentRequiredNotification` 의 userInfo 키 — 서버가 지목한 민감 동의 유형.
     static let consentRequiredTypeKey = "consentType"
 
+    /// 401 을 받은 **그 요청이 쓴 토큰**. 수신측이 "지금 세션의 것인가" 를 가른다.
+    ///
+    /// ⚠ **이게 없으면 늦게 온 401 이 새 세션을 끊는다**(코덱스 #734 4차). A 의 요청이
+    /// 날아가는 사이 사용자가 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이
+    /// 중앙 처리기를 깨워 **B 를 로그아웃**시킨다 — 개별 호출부에서 막아도 소용없다.
+    static let unauthorizedTokenKey = "failedToken"
+
     /// 디바운스용 상태. 동시 호출이 있을 수 있어 lock 으로 보호한다.
     private static let unauthorizedLock = NSLock()
     private nonisolated(unsafe) static var lastUnauthorizedAt: Date?
+    private nonisolated(unsafe) static var lastUnauthorizedToken: String?
     private nonisolated(unsafe) static var lastConsentRequiredAt: Date?
 
-    private static func handleUnauthorized() {
+    private static func handleUnauthorized(token: String?) {
+        // 로그인 같은 비인증 요청의 401 은 현재 로그인 세션에 대한 판정이 아니다.
+        guard let token, !token.isEmpty else { return }
         unauthorizedLock.lock()
         let now = Date()
-        if let last = lastUnauthorizedAt, now.timeIntervalSince(last) < 3 {
+        // ⚠ **디바운스는 같은 토큰에만 건다**(코덱스 #734 4차). 토큰까지 묶어 세지 않으면,
+        //   먼저 도착한 **옛 토큰**의 401 이 3초 창을 차지해 **지금 세션의 진짜 401 이
+        //   삼켜진다** — 죽은 세션으로 계속 도는 상태가 된다.
+        if let last = lastUnauthorizedAt,
+           now.timeIntervalSince(last) < 3,
+           lastUnauthorizedToken == token {
             unauthorizedLock.unlock()
             return
         }
         lastUnauthorizedAt = now
+        lastUnauthorizedToken = token
         unauthorizedLock.unlock()
-        NotificationCenter.default.post(name: unauthorizedNotification, object: nil)
+        NotificationCenter.default.post(
+            name: unauthorizedNotification,
+            object: nil,
+            userInfo: [unauthorizedTokenKey: token]
+        )
     }
 
     /// 403 + `CONSENT_REQUIRED` 을 받으면 한 번만 동의 필요 알림을 쏜다.

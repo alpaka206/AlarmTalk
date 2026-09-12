@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -257,6 +258,7 @@ class PlayBillingManager(
         activity: Activity,
         productId: String,
         userId: String? = null,
+        mayLaunch: () -> Boolean = { true },
     ): Boolean {
         if (!ensureConnected()) return false
         val details = productDetailsCache[productId] ?: run {
@@ -287,6 +289,8 @@ class PlayBillingManager(
                 ),
             )
         userId?.takeIf { it.isNotBlank() }?.let { builder.setObfuscatedAccountId(sha256Hex(it)) }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (activity.isDestroyed || activity.isFinishing || !mayLaunch()) return false
         val result = billingClient.launchBillingFlow(activity, builder.build())
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "launchBillingFlow(one-time) failed code=${result.responseCode}")
@@ -303,7 +307,12 @@ class PlayBillingManager(
      *   (레거시 허용 — 서버도 부재 시 허용).
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.
      */
-    suspend fun launchPurchase(activity: Activity, productId: String, userId: String? = null): Boolean {
+    suspend fun launchPurchase(
+        activity: Activity,
+        productId: String,
+        userId: String? = null,
+        mayLaunch: () -> Boolean = { true },
+    ): Boolean {
         val productDetails = productDetailsCache[productId]
             ?: queryProductDetails(listOf(productId)).firstOrNull()
             ?: run {
@@ -367,6 +376,9 @@ class PlayBillingManager(
                     .build(),
             )
         }
+        // 상품·기존 구매 조회도 중단점이다. 실제 SDK 호출 직전에 세션과 화면을 확인한다.
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (activity.isDestroyed || activity.isFinishing || !mayLaunch()) return false
         val result = billingClient.launchBillingFlow(activity, flowParamsBuilder.build())
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "launchBillingFlow failed code=${result.responseCode} message=${result.debugMessage}")

@@ -2784,6 +2784,26 @@ export const migrations: Migration[] = [
         ON retained_billing_records(provider, provider_transaction_id)`,
     ],
   },
+  {
+    id: 114,
+    name: 'store-transactions-last-paid-at',
+    statements: [
+      // **마지막으로 결제가 확인된 시각.**
+      //
+      // ⚠ `created_at` 으로는 이걸 알 수 없다 — 애플의 originalTransactionId·Play 의
+      //   purchaseToken 은 갱신돼도 그대로라 그 행은 **체인이 처음 들어온 시각**을 들고 있고,
+      //   같은-플랜 갱신은 `expires_at` 만 민다. 탈퇴 시 결제기록 보존 기한을 '거래일' 부터
+      //   세야 하는데(전자상거래법 5년, 처리방침), 그 기준일이 없었다.
+      //
+      // ⚠ **`expires_at - period_days` 로 추정하지 않는다**(코덱스 #734 5차). 애플 상품은
+      //   달력 기준(P1M)인데 `plans.period_days` 는 30 고정이라 며칠씩 어긋난다 — 2월이면
+      //   이르게, 31일 달이면 늦게 잡힌다. 며칠이라도 이르면 **증빙을 잃고**, 늦으면
+      //   처리방침이 밝힌 최대 5년을 넘긴다. 확정 시점에 그냥 적어 두는 편이 정확하다.
+      //
+      // 옛 행은 NULL 이다 — 읽는 쪽이 예전 추정으로 폴백한다.
+      `ALTER TABLE store_transactions ADD COLUMN last_paid_at TEXT`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

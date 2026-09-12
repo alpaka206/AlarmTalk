@@ -613,7 +613,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * 스토어 조회를 **한 번에 하나만** 돌린다(2026-09-01 리뷰).
+     * 스토어 조회와 결제 전 서버 스토어 재조회를 **한 번에 하나만** 돌린다.
      *
      * ⚠ 앱 시작과 탭 진입이 각각 `refreshStoreEntitlement()` 를 던지므로 같은 계정의 조회가
      * 겹칠 수 있다. 계정 가드는 둘 다 통과시켜서, 겹치면 먼저 시작한 쪽이 늦게 끝나며 최신을
@@ -1208,19 +1208,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ticket: AccessTicket,
         response: BillingSubscriptionResponse?,
     ): EntitlementWrite {
+        var persisted: AccessSnapshot? = null
         val result = entitlementWriter.write(ticket, "subscription snapshot") {
-            it.copy(subscriptionResponse = response)
+            it.withBillingResponse(response).also { snapshot -> persisted = snapshot }
         }
-        // ⚠ **여기서 `users.plan` 을 같이 쓰지 않는다**(2026-09-01 리뷰). 이 자리가 아는
-        // plan 은 **마지막으로 `/auth/me` 를 받았을 때의 값**이라, 앱을 닫아 둔 사이 강등된
-        // 계정이 `plan_changed` 를 놓치면 옛 유료 값이다. 보류에서는 `/billing/subscription`
-        // 이 남아 있는 행을 그대로 돌려주므로 이 경로가 그대로 돌아 **판정에 옛 유료 plan 을
-        // 심고**, 잠금 이펙트의 `billingNotEntitled` 갈래도 (행이 살아 있어) 안 타서
-        // `refreshAppSession()` 이 불리지 않는다.
-        //
-        // 그래서 plan 은 **방금 받아 온 경로만** 적는다 — `refreshAppSession`(시작 시·
-        // plan_changed 시) 과 `PlanChangeSyncWorker`. 안 적혀 있으면 판정기가 구독·그룹으로
-        // 답하고(예전 동작), 그건 옛 값을 심는 것보다 낫다.
+        if (result == EntitlementWrite.Applied && response?.userPlan != null) {
+            // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
+            val snapshot = checkNotNull(persisted)
+            storeSnapshotUserPlan = snapshot.userPlan
+            storePlanKey = snapshot.storePlanKey
+            storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        }
+        // plan은 방금 받은 권위 응답에 있을 때만 같은 쓰기로 갱신한다.
+        // 일상 조회(user_plan 없음)는 기존 값을 보존하며 캐시된 authSession.plan을 복사하지 않는다.
         return result
     }
 

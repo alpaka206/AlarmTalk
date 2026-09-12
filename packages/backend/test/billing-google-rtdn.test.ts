@@ -4,6 +4,10 @@ import type { AppEnv } from '../src/types';
 import { createMockDB } from './helpers';
 
 const mockDB = createMockDB();
+vi.mock('../src/lib/play-subscriptions', async (original) => ({
+  ...(await original<typeof import('../src/lib/play-subscriptions')>()),
+  googlePaymentAnchor: vi.fn().mockResolvedValue(new Date('2026-09-01T00:00:00.000Z')),
+}));
 
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
@@ -83,9 +87,9 @@ describe('billing google RTDN', () => {
     });
 
     it('GRACE_PERIOD + 만료 미래 → entitle', () => {
-      expect(
-        decideSubscriptionAction('SUBSCRIPTION_STATE_IN_GRACE_PERIOD', future, now),
-      ).toBe('entitle');
+      expect(decideSubscriptionAction('SUBSCRIPTION_STATE_IN_GRACE_PERIOD', future, now)).toBe(
+        'entitle',
+      );
     });
 
     it('CANCELED + 만료 미래 → cancel_at_period_end (기간까지 유지)', () => {
@@ -98,14 +102,15 @@ describe('billing google RTDN', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_CANCELED', past, now)).toBe('deactivate');
     });
 
-    it('EXPIRED → deactivate', () => {
+    it('EXPIRED(만료 또는 REVOKED 알림 후 조회 상태) → deactivate', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_EXPIRED', past, now)).toBe('deactivate');
     });
 
-    it('ON_HOLD / PAUSED / REVOKED → deactivate', () => {
-      expect(decideSubscriptionAction('SUBSCRIPTION_STATE_ON_HOLD', future, now)).toBe('deactivate');
+    it('ON_HOLD / PAUSED → deactivate', () => {
+      expect(decideSubscriptionAction('SUBSCRIPTION_STATE_ON_HOLD', future, now)).toBe(
+        'deactivate',
+      );
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_PAUSED', future, now)).toBe('deactivate');
-      expect(decideSubscriptionAction('SUBSCRIPTION_STATE_REVOKED', past, now)).toBe('deactivate');
     });
 
     it('ACTIVE 라도 만료가 지났으면 deactivate (방어적)', () => {
@@ -128,10 +133,7 @@ describe('billing google RTDN', () => {
     });
 
     it('알림 productId 가 실제 lineItem 과 일치하면 그 항목을 고른다', () => {
-      const lineItems = [
-        { productId: 'personal_monthly' },
-        { productId: 'family_monthly' },
-      ];
+      const lineItems = [{ productId: 'personal_monthly' }, { productId: 'family_monthly' }];
       expect(selectAuthoritativeLineItem(lineItems, 'family_monthly')?.productId).toBe(
         'family_monthly',
       );
@@ -208,6 +210,7 @@ describe('billing google RTDN', () => {
 
     beforeEach(() => {
       mockDB.reset();
+      mockDB.pushResultFor('SELECT DISTINCT s.id FROM subscriptions s', []);
     });
 
     afterEach(() => {
@@ -235,14 +238,16 @@ describe('billing google RTDN', () => {
       if (obfuscatedId) {
         payload.externalAccountIdentifiers = { obfuscatedExternalAccountId: obfuscatedId };
       }
-      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
       vi.stubGlobal('fetch', fetchMock);
       return fetchMock;
     }
 
     it('전환: 매핑 없는 새 토큰이어도 linkedPurchaseToken 으로 주인을 찾는다', async () => {
       stubLinkedLookup(await sha256hex('user-pk-1')); // 결제 계정 == 옛 구독의 주인
-      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([]); // 새 토큰 매핑 없음
       mockDB.pushResult([TXN_ROW]); // linkedPurchaseToken 으로 재조회 → 주인 후보
       mockDB.pushResult([{ google_id: 'google-user-1' }]); // 바인딩 대조용 로그인 id
 
@@ -273,7 +278,7 @@ describe('billing google RTDN', () => {
     // 돈 낸 B 의 confirm 은 그 뒤로 영영 409(TRANSACTION_OWNED_BY_OTHER_USER)다.
     it('linked 주인이 결제 계정과 다르면 채택하지 않는다(unmapped_token)', async () => {
       stubLinkedLookup(await sha256hex('somebody-else')); // 다른 사람이 결제했다
-      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([]); // 새 토큰 매핑 없음
       mockDB.pushResult([TXN_ROW]); // 옛 토큰의 주인 후보 = user-pk-1
       mockDB.pushResult([{ google_id: 'google-user-1' }]);
 
@@ -338,49 +343,9 @@ describe('billing google RTDN', () => {
       expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
     });
 
-    it('활성 매핑 구독 EXPIRED → 그 구독 한 건만 취소 (사용자 전체 취소 아님)', async () => {
-      stubPlayLookup('SUBSCRIPTION_STATE_EXPIRED', PAST);
-      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
-      mockDB.pushResult([ACTIVE_MAPPED_ROW]); // 매핑 구독이 현재 활성
+    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
 
-      const res = await buildApp().request(rtdnRequest(13), undefined, RTDN_ENV);
-
-      expect(res.status).toBe(200);
-      expect((await res.json()).action).toBe('deactivated');
-
-      // 취소 UPDATE 는 구독 id 스코프 — WHERE id = ?
-      const cancelCalls = mockDB.calls.filter((c) => c.sql.includes("status = 'cancelled'"));
-      expect(cancelCalls).toHaveLength(1);
-      expect(cancelCalls[0]!.sql).toContain("WHERE id = ? AND status = 'active'");
-      expect(cancelCalls[0]!.args).toContain('sub-old');
-      // plan 재정렬(E2)을 위한 남은 활성 구독 '조회'는 허용된다 — 사용자 전체 '취소'가
-      // 없다는 보장은 위의 cancelCalls(1건·WHERE id = ? 스코프) 단언이 담당한다.
-      // 30일 보관 예약은 유지된다 (sweep 이 삭제 전 활성 유료 구독을 재확인).
-      expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-      expect(mockDB.transactions.commits).toBe(1);
-    });
-
-    it('활성 매핑 구독 CANCELED(기간 남음) → cancel_at_period_end 도 그 구독만', async () => {
-      stubPlayLookup('SUBSCRIPTION_STATE_CANCELED', FUTURE);
-      mockDB.pushResult([TXN_ROW]);
-      mockDB.pushResult([ACTIVE_MAPPED_ROW]);
-
-      const res = await buildApp().request(rtdnRequest(3), undefined, RTDN_ENV);
-
-      expect(res.status).toBe(200);
-      expect((await res.json()).action).toBe('cancel_at_period_end');
-
-      const scheduleCall = findCall('cancel_at_period_end = 1');
-      expect(scheduleCall).toBeDefined();
-      expect(scheduleCall!.sql).toContain("WHERE id = ? AND status = 'active'");
-      expect(scheduleCall!.args).toEqual([FUTURE, 'sub-old']);
-
-      const voucherCall = findCall('UPDATE voucher_codes');
-      expect(voucherCall).toBeDefined();
-      expect(voucherCall!.sql).toContain('issuer_subscription_id = ?');
-      expect(voucherCall!.sql).not.toContain('issuer_user_id');
-      expect(voucherCall!.args).toEqual([FUTURE, 'sub-old']);
-    });
+    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
 
     it('스테일 토큰 CANCELED 도 무시한다 (신규 구독 예약취소 오염 방지)', async () => {
       stubPlayLookup('SUBSCRIPTION_STATE_CANCELED', FUTURE);
@@ -428,7 +393,7 @@ describe('billing google RTDN', () => {
       expect(res.status).toBe(200);
       expect((await res.json()).action).toBe('entitled');
       // 갱신도 토큰에 매핑된 구독 스코프로만 작용한다 (store-billing 경로).
-      const renewCall = findCall('SET expires_at = ?');
+      const renewCall = findCall('SET expires_at = CASE');
       expect(renewCall).toBeDefined();
       expect(renewCall!.args).toContain('sub-old');
     });
@@ -483,18 +448,16 @@ describe('billing google RTDN', () => {
       //   `ok` 를 보지 않아서, 예전에는 **권한 없는 결제를 확인 처리**했다 — 확인된 구매는
       //   Play 의 3일 자동 환불 대상에서 빠지므로 사용자는 돈만 내고 되돌릴 길까지 잃는다
       //   (코덱스 #733 7차).
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
-              acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
-              lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
-            }),
-            { status: 200 },
-          ),
-        );
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+            acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
+            lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
+          }),
+          { status: 200 },
+        ),
+      );
       vi.stubGlobal('fetch', fetchMock);
       mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
       mockDB.pushResult([PLAN_ROW]); // loadPlanByKey
@@ -537,26 +500,7 @@ describe('billing google RTDN', () => {
     // E: suspend(ON_HOLD/PAUSED)도 잔여 활성 유료 구독을 존중 (deactivate E2 와 대칭).
     //    매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 free 로 내리지 않는다.
     // -------------------------------------------------------------------------
-    it('suspend 시 매핑 구독 외 다른 활성 유료 구독이 있으면 그 plan 을 유지한다 (E)', async () => {
-      stubPlayLookup('SUBSCRIPTION_STATE_ON_HOLD', FUTURE);
-      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑 (subscription_id='sub-old')
-      mockDB.pushResult([ACTIVE_MAPPED_ROW]); // 매핑 구독이 현재 활성 (게이트 통과)
-      mockDB.pushResult([
-        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family', plan_key: 'family' },
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
-      ]); // 남은 활성 구독 (매핑 sub-old + 다른 유료 sub-other)
-
-      const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
-
-      expect(res.status).toBe(200);
-      expect((await res.json()).action).toBe('suspended');
-      // 매핑(sub-old) 제외한 다른 활성 유료 구독(family)의 plan 으로 유지 — free 강등 아님.
-      expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['family', 'user-pk-1']);
-      expect(findCall("plan = 'free'")).toBeUndefined();
-      // 회복형 상태 — 음성 접근 정리(is_shared 해제·타인 알람 강등)는 하지 않는다.
-      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
-      expect(findCall('UPDATE alarms')).toBeUndefined();
-    });
+    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
 
     // -------------------------------------------------------------------------
     // 보류는 **그룹 전체**에 전파된다.
@@ -566,64 +510,8 @@ describe('billing google RTDN', () => {
     //    화면에는 공유 목소리가 멀쩡히 보이는데 그걸로 새 알람을 만들면 404 로 막혔다.
     // ⚠ 그룹 구조는 **보존**해야 한다 — 결제가 복구되면 재초대 없이 살아나야 한다.
     // -------------------------------------------------------------------------
-    it('suspend 시 그룹 멤버도 함께 free 로 내리되 그룹은 보존한다', async () => {
-      stubPlayLookup('SUBSCRIPTION_STATE_ON_HOLD', FUTURE);
-      mockDB.pushResult([TXN_ROW]);
-      // 매핑 구독이 그룹 소유 구독이다.
-      mockDB.pushResult([{ plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' }]);
-      // 소유자 재계산 — 남은 건 정지된 구독뿐 → free
-      mockDB.pushResult([
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
-      ]);
-      mockDB.pushResult([], 1); // UPDATE users SET plan (소유자 → free)
-      // 그룹 멤버 목록
-      mockDB.pushResult([{ user_id: 'member-1' }]);
-      mockDB.pushResult([{ plan: 'family' }]); // 멤버 plan(before)
-      mockDB.pushResult([{ id: 'sub-member-1' }]); // 멤버의 그룹 구독
-      mockDB.pushResult([
-        { sub_id: 'sub-member-1', user_id: 'member-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
-      ]); // 멤버 재계산 대상(제외되면 유료 없음)
-      mockDB.pushResult([], 1); // UPDATE users SET plan (멤버 → free)
-      mockDB.pushResult([{ plan: 'free' }]); // 멤버 plan(after)
-      mockDB.pushResult([]); // FCM 토큰 조회(소유자)
-      mockDB.pushResult([]); // FCM 토큰 조회(멤버)
+    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
 
-      const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
-
-      expect(res.status).toBe(200);
-      expect((await res.json()).action).toBe('suspended');
-
-      // 소유자와 멤버 **둘 다** free 로 내려간다.
-      const planUpdates = mockDB.calls.filter((c) => c.sql.includes('UPDATE users SET plan = ?'));
-      expect(planUpdates.map((c) => c.args)).toEqual([
-        ['free', 'user-pk-1'],
-        ['free', 'member-1'],
-      ]);
-
-      // ⚠ 그룹·멤버십·구독 행은 건드리지 않는다(재초대 없이 복구되어야 한다).
-      expect(findCall('DELETE FROM plan_group_members')).toBeUndefined();
-      expect(findCall('DELETE FROM plan_groups')).toBeUndefined();
-      expect(findCall("status = 'cancelled'")).toBeUndefined();
-      // 회복형이라 음성 접근 정리도 하지 않는다.
-      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
-    });
-
-    it('suspend 시 매핑 구독뿐이면(다른 유료 구독 없음) free 로 내린다 (E)', async () => {
-      stubPlayLookup('SUBSCRIPTION_STATE_PAUSED', FUTURE);
-      mockDB.pushResult([TXN_ROW]);
-      mockDB.pushResult([ACTIVE_MAPPED_ROW]);
-      mockDB.pushResult([
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
-      ]); // 남은 활성 구독은 매핑(정지된) 구독뿐 → 제외하면 유료 없음
-
-      const res = await buildApp().request(rtdnRequest(6), undefined, RTDN_ENV);
-
-      expect(res.status).toBe(200);
-      expect((await res.json()).action).toBe('suspended');
-      expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['free', 'user-pk-1']);
-      // 회복형 free 강등은 음성 접근 정리 없이 users.plan 만 회수한다.
-      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
-      expect(findCall('UPDATE alarms')).toBeUndefined();
-    });
+    // 이 상태의 파생 쓰기는 billing-reconciliation.test.ts 에서 실제 DB 로 검증한다.
   });
 });

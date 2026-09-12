@@ -118,7 +118,12 @@ export async function verifyAppJwt(token: string, secret: string): Promise<AppJw
 
   if (payload.iss !== ISSUER) throw new Error('Invalid issuer');
   if (payload.aud !== AUDIENCE) throw new Error('Token audience mismatch');
-  if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
+  if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+    throw new Error('Invalid token expiry format');
+  }
+  if (payload.exp <= Math.floor(Date.now() / 1000)) throw new Error('Token expired');
+  if (typeof payload.sub !== 'string' || !payload.sub.trim())
+    throw new Error('Invalid subject format');
 
   // epoch 클레임이 없는(레거시) 토큰은 0 으로 정규화해 호출자가 항상 숫자를 받게 한다.
   payload.epoch = typeof payload.epoch === 'number' ? payload.epoch : 0;

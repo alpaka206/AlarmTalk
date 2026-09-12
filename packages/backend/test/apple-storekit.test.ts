@@ -34,11 +34,10 @@ function decodeSeg<T>(seg: string): T {
 let cachedConfig: AppleStoreKitConfig | null = null;
 async function makeConfig(): Promise<AppleStoreKitConfig> {
   if (cachedConfig) return cachedConfig;
-  const kp = (await crypto.subtle.generateKey(
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    true,
-    ['sign', 'verify'],
-  )) as CryptoKeyPair;
+  const kp = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])) as CryptoKeyPair;
   const pkcs8 = await crypto.subtle.exportKey('pkcs8', kp.privateKey);
   const b64 = btoa(String.fromCharCode(...new Uint8Array(pkcs8)));
   const pem = `-----BEGIN PRIVATE KEY-----\n${b64.match(/.{1,64}/g)!.join('\n')}\n-----END PRIVATE KEY-----\n`;
@@ -78,7 +77,9 @@ describe('signAppStoreServerJwt', () => {
     const jwt = await signAppStoreServerJwt(config, 1_700_000_000_000);
     const [h, p] = jwt.split('.') as [string, string, string];
     const header = decodeSeg<{ alg: string; kid: string; typ: string }>(h);
-    const payload = decodeSeg<{ iss: string; aud: string; bid: string; exp: number; iat: number }>(p);
+    const payload = decodeSeg<{ iss: string; aud: string; bid: string; exp: number; iat: number }>(
+      p,
+    );
 
     expect(header.alg).toBe('ES256');
     expect(header.kid).toBe(config.keyId);
@@ -97,9 +98,12 @@ describe('fetchAppleTransaction', () => {
     const urls: string[] = [];
     const f = (async (url: string) => {
       urls.push(String(url));
-      return new Response(JSON.stringify({ signedTransactionInfo: signedTransactionInfo(txPayload()) }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ signedTransactionInfo: signedTransactionInfo(txPayload()) }),
+        {
+          status: 200,
+        },
+      );
     }) as unknown as typeof fetch;
 
     const info = await fetchAppleTransaction('2000000900000001', config, f);
@@ -165,7 +169,8 @@ describe('fetchAppleTransaction', () => {
   // 구독자가 전원 무료로 강등된다.** 일반 오류여야 `skip`(다음 크론 재시도)이 된다.
   it('양쪽 다 401 이면 NotFound 가 아니라 오류를 던진다', async () => {
     const config = await makeConfig();
-    const f = (async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
+    const f = (async () =>
+      new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
     const err = await fetchAppleTransaction('x', config, f).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     expect(err).not.toBeInstanceOf(AppleTransactionNotFoundError);
@@ -277,13 +282,16 @@ describe('fetchAppleSubscriptionStatus', () => {
     return `${header}.${body}.c2ln`;
   }
 
-  function statusBody(over: {
-    status?: number;
-    expiresDate?: number;
-    autoRenewStatus?: number;
-    originalTransactionId?: string;
-    bundleId?: string;
-  } = {}) {
+  function statusBody(
+    over: {
+      status?: number;
+      expiresDate?: number;
+      gracePeriodExpiresDate?: number;
+      autoRenewStatus?: number;
+      originalTransactionId?: string;
+      bundleId?: string;
+    } = {},
+  ) {
     return {
       bundleId: over.bundleId ?? BUNDLE_ID,
       data: [
@@ -300,6 +308,7 @@ describe('fetchAppleSubscriptionStatus', () => {
               ),
               signedRenewalInfo: signedRenewalInfo({
                 autoRenewStatus: over.autoRenewStatus ?? 1,
+                gracePeriodExpiresDate: over.gracePeriodExpiresDate,
               }),
             },
           ],
@@ -371,6 +380,42 @@ describe('fetchAppleSubscriptionStatus', () => {
     expect(result.autoRenewStatus).toBe(0);
   });
 
+  it('유예 만료는 signedRenewalInfo 에서 결제 기간과 별도로 읽는다', async () => {
+    const config = await makeConfig();
+    const graceEnd = Date.now() + 7 * 86400_000;
+    const fetchMock = async () =>
+      new Response(
+        JSON.stringify(
+          statusBody({
+            status: 4,
+            expiresDate: Date.now() - 1000,
+            gracePeriodExpiresDate: graceEnd,
+          }),
+        ),
+      );
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as typeof fetch,
+    );
+    expect(result.status).toBe(4);
+    expect(result.gracePeriodExpiresDate).toBe(graceEnd);
+    expect(result.expiresDate).toBeLessThan(Date.now());
+  });
+
+  it('상태 필드 누락을 EXPIRED 로 추정하지 않는다', async () => {
+    const config = await makeConfig();
+    const body = statusBody();
+    delete (body.data[0]!.lastTransactions[0]! as { status?: number }).status;
+    const fetchMock = async () => new Response(JSON.stringify(body));
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as typeof fetch,
+    );
+    expect(Number.isNaN(result.status)).toBe(true);
+  });
+
   it('프로덕션에 없으면 샌드박스를 한 번 더 본다', async () => {
     const config = await makeConfig();
     const seen: string[] = [];
@@ -412,10 +457,9 @@ describe('fetchAppleSubscriptionStatus', () => {
   it('같은 그룹의 다른 구독을 집지 않는다', async () => {
     const config = await makeConfig();
     const fetchMock = async () =>
-      new Response(
-        JSON.stringify(statusBody({ originalTransactionId: '9999999999999999' })),
-        { status: 200 },
-      );
+      new Response(JSON.stringify(statusBody({ originalTransactionId: '9999999999999999' })), {
+        status: 200,
+      });
     await expect(
       fetchAppleSubscriptionStatus(ORIGINAL_ID, config, fetchMock as unknown as typeof fetch),
     ).rejects.toBeInstanceOf(AppleTransactionNotFoundError);

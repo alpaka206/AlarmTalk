@@ -4,6 +4,10 @@ import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 
 const mockDB = createMockDB();
+vi.mock('../src/lib/play-subscriptions', async (original) => ({
+  ...(await original<typeof import('../src/lib/play-subscriptions')>()),
+  googlePaymentAnchor: vi.fn().mockResolvedValue(new Date('2026-09-01T00:00:00.000Z')),
+}));
 
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
@@ -26,11 +30,7 @@ vi.mock('../src/lib/google-oauth', () => ({
 import { PAID_VOICE_RETENTION_DAYS } from '../src/lib/billing-cancel';
 import billingMutation from '../src/routes/billing-mutation';
 import billingGoogle from '../src/routes/billing-google';
-import {
-  cancelSubscriptionImmediate,
-  processSubscriptionExpiry,
-  sweepPaidVoiceRetention,
-} from '../src/lib/billing-cancel';
+import { cancelSubscriptionImmediate, sweepPaidVoiceRetention } from '../src/lib/billing-cancel';
 import { releaseClonedVoicesForUser } from '../src/lib/paid-voice-cleanup';
 import { applyStoreEntitlement } from '../src/lib/store-billing';
 
@@ -64,9 +64,7 @@ function buildApp(userId = 'google-1') {
 }
 
 function stubPlayFetch(status = 200, body: unknown = {}) {
-  const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify(body), { status }),
-  );
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -77,6 +75,7 @@ function findCall(sqlFragment: string) {
 
 beforeEach(() => {
   mockDB.reset();
+  mockDB.pushResultFor('SELECT DISTINCT s.id FROM subscriptions s', []);
 });
 
 afterEach(() => {
@@ -393,12 +392,12 @@ describe('POST /billing/cancel — 이미 취소/철회된 토큰 수렴 (C5)', 
     expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
   });
 
-  it(':revoke 4xx 이어도 재조회로 이미 REVOKED(=entitled 아님)면 성공으로 수렴한다', async () => {
+  it(':revoke 4xx 이어도 재조회로 이미 EXPIRED면 성공으로 수렴한다', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('{}', { status: 400 })) // :revoke 4xx
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_REVOKED' }), {
+        new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED' }), {
           status: 200,
         }),
       );
@@ -474,7 +473,13 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
     mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
     mockDB.pushResult([], 1); // 미사용 코드 만료
     mockDB.pushResult([
-      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+      {
+        sub_id: 'sub-2',
+        user_id: 'user-pk-1',
+        plan_id: 'plan-1',
+        plan_group_id: null,
+        plan_type: 'personal',
+      },
     ]); // 남은 활성 구독 조회
     mockDB.pushResult([], 1); // UPDATE users SET plan = ? (유지)
 
@@ -572,7 +577,11 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
     mockDB.pushResult([{ id: 'sub-member' }]); // 멤버의 그룹 구독
     // 이후(멤버 취소·강등·보관 예약·그룹 삭제)는 기본 빈 결과로 진행.
 
-    const affected = await cancelSubscriptionImmediate(mockDB.client as never, OWNER_SUB, new Date());
+    const affected = await cancelSubscriptionImmediate(
+      mockDB.client as never,
+      OWNER_SUB,
+      new Date(),
+    );
 
     // 반환값: 취소 당사자(소유자) + 해체로 강등되는 멤버 → 호출부의 plan_changed 통지 대상.
     expect(affected).toContain('owner-pk');
@@ -673,145 +682,7 @@ describe('applyStoreEntitlement — paid_voice_retention 해제', () => {
 // ---------------------------------------------------------------------------
 // processSubscriptionExpiry — Play reconciliation (RTDN 유실 대비)
 // ---------------------------------------------------------------------------
-describe('processSubscriptionExpiry — Play reconciliation', () => {
-  const NOW = new Date('2026-07-18T00:00:00.000Z');
-  const PAST = '2026-07-17T23:00:00.000Z'; // 1시간 전 만료 (72h 이내)
-  const VERY_PAST = '2026-07-10T00:00:00.000Z'; // 8일 전 만료 (72h 초과)
-  const PLAY_FUTURE = '2026-08-01T00:00:00.000Z';
-
-  const DUE_ROW = {
-    sub_id: 'sub-1',
-    user_id: 'user-pk-1',
-    plan_id: 'plan-1',
-    plan_group_id: null,
-    next_plan_id: null,
-    expires_at: PAST,
-    plan_type: 'personal',
-  };
-
-  it('DB 만료가 지났어도 Play 가 미래 expiryTime 을 반환하면 만료 대신 연장한다', async () => {
-    stubPlayFetch(200, {
-      subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
-      lineItems: [
-        {
-          productId: 'personal_monthly',
-          expiryTime: PLAY_FUTURE,
-          autoRenewingPlan: { autoRenewEnabled: false },
-        },
-      ],
-    });
-    mockDB.pushResult([DUE_ROW]); // cancel_at_period_end=1 만기 도래
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]); // google 트랜잭션
-    mockDB.pushResult([], 1); // UPDATE subscriptions (연장)
-    mockDB.pushResult([], 1); // UPDATE voucher_codes
-    mockDB.pushResult([], 1); // UPDATE users.plan
-    mockDB.pushResult([], 1); // UPDATE store_transactions
-    mockDB.pushResult([]); // 일반 만료 대상 없음
-    mockDB.pushResult([]); // sweep 대상 없음
-
-    await processSubscriptionExpiry(mockDB.client as never, PLAY_ENV, NOW);
-
-    // 만료(취소) 처리 없이 Play 값으로 연장됐는지.
-    expect(findCall("status = 'cancelled'")).toBeUndefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeUndefined();
-    const extendCall = findCall('UPDATE subscriptions');
-    expect(extendCall?.args[0]).toBe(PLAY_FUTURE);
-    // autoRenewEnabled=false → cancel_at_period_end=1 유지.
-    expect(extendCall?.args[1]).toBe(1);
-    expect(extendCall?.args[2]).toBe('sub-1');
-    // users.plan 유지 (personal → plus).
-    expect(findCall('UPDATE users SET plan')?.args[0]).toBe('plus');
-  });
-
-  it('C14: CANCELED 인데 만료가 미래면(기간종료 해지 예약) 강등 대신 연장 + cancel_at_period_end=1', async () => {
-    // RTDN 경로(decideSubscriptionAction)와 동일 규칙 — CANCELED + 만료 미래는
-    // 기간까지 권한 유지다. ENTITLED_STATES 만 보면 cron 이 조기 강등한다.
-    stubPlayFetch(200, {
-      subscriptionState: 'SUBSCRIPTION_STATE_CANCELED',
-      lineItems: [
-        {
-          productId: 'personal_monthly',
-          expiryTime: PLAY_FUTURE,
-          autoRenewingPlan: { autoRenewEnabled: false },
-        },
-      ],
-    });
-    mockDB.pushResult([DUE_ROW]); // cancel_at_period_end=1 만기 도래
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]); // google 트랜잭션
-    mockDB.pushResult([], 1); // UPDATE subscriptions (연장)
-    mockDB.pushResult([], 1); // UPDATE voucher_codes
-    mockDB.pushResult([], 1); // UPDATE users.plan
-    mockDB.pushResult([], 1); // UPDATE store_transactions
-    mockDB.pushResult([]); // 일반 만료 대상 없음
-    mockDB.pushResult([]); // sweep 대상 없음
-
-    await processSubscriptionExpiry(mockDB.client as never, PLAY_ENV, NOW);
-
-    expect(findCall("status = 'cancelled'")).toBeUndefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeUndefined();
-    const extendCall = findCall('UPDATE subscriptions');
-    expect(extendCall?.args[0]).toBe(PLAY_FUTURE);
-    // CANCELED → 기간종료 해지 예약 유지.
-    expect(extendCall?.args[1]).toBe(1);
-    expect(extendCall?.args[2]).toBe('sub-1');
-  });
-
-  it('C14: CANCELED + 만료 지남은 진짜 만료 — 정상 강등한다', async () => {
-    stubPlayFetch(200, {
-      subscriptionState: 'SUBSCRIPTION_STATE_CANCELED',
-      lineItems: [{ productId: 'personal_monthly', expiryTime: PAST }],
-    });
-    mockDB.pushResult([DUE_ROW]);
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]);
-
-    await processSubscriptionExpiry(mockDB.client as never, PLAY_ENV, NOW);
-
-    expect(findCall("status = 'cancelled'")).toBeDefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-  });
-
-  it('Play 조회 실패 + 만료 72h 이내면 이번 run 은 스킵한다', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
-    mockDB.pushResult([DUE_ROW]);
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]);
-    mockDB.pushResult([]); // 일반 만료 대상 없음
-    mockDB.pushResult([]); // sweep 대상 없음
-
-    await processSubscriptionExpiry(mockDB.client as never, PLAY_ENV, NOW);
-
-    expect(findCall("status = 'cancelled'")).toBeUndefined();
-    expect(mockDB.transactions.commits).toBe(0);
-  });
-
-  it('Play 조회 실패라도 만료가 72h 넘게 지났으면 만료를 강행한다 (영구 좀비 방지)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
-    mockDB.pushResult([{ ...DUE_ROW, expires_at: VERY_PAST }]);
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]);
-
-    await processSubscriptionExpiry(mockDB.client as never, PLAY_ENV, NOW);
-
-    expect(findCall("status = 'cancelled'")).toBeDefined();
-    // 만료 처리도 하드삭제 대신 30일 보관 예약.
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-  });
-
-  it('env 미설정이면 재조회 없이 현행대로 만료 처리한다', async () => {
-    const fetchMock = stubPlayFetch(200, {});
-    mockDB.pushResult([DUE_ROW]);
-    mockDB.pushResult([{ provider_transaction_id: 'play-token-1' }]);
-
-    await processSubscriptionExpiry(mockDB.client as never, undefined, NOW);
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(findCall("status = 'cancelled'")).toBeDefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /billing/google/confirm — 구매-계정 바인딩 검증 (C4)
-// ---------------------------------------------------------------------------
+// 크론의 상태 전이 검증은 billing-reconciliation.test.ts 의 실제 DB 테스트로 통합한다.
 describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
   function buildGoogleApp(userId = 'google-1') {
     const app = new Hono<AppEnv>();
@@ -949,7 +820,7 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
     // 갱신 분기 — 기존 구독 만료를 스토어 값으로 연장한다.
-    expect(findCall('SET expires_at = ?')).toBeDefined();
+    expect(findCall('SET expires_at = CASE')).toBeDefined();
   });
 
   // -------------------------------------------------------------------------
@@ -1210,11 +1081,11 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
-    const capacityAt = mockDB.calls.findIndex((c) =>
-      c.sql.includes('FROM plan_group_members') && c.sql.includes('user_id <> ?'),
+    const capacityAt = mockDB.calls.findIndex(
+      (c) => c.sql.includes('FROM plan_group_members') && c.sql.includes('user_id <> ?'),
     );
-    const moveAt = mockDB.calls.findIndex((c) =>
-      c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
+    const moveAt = mockDB.calls.findIndex(
+      (c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
     );
     expect(capacityAt).toBeGreaterThanOrEqual(0);
     expect(moveAt).toBeGreaterThan(capacityAt);
@@ -1238,7 +1109,9 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     });
 
     expect(
-      mockDB.calls.find((c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?')),
+      mockDB.calls.find(
+        (c) => c.sql.includes('UPDATE subscriptions') && c.sql.includes('SET plan_id = ?'),
+      ),
     ).toBeUndefined();
   });
 
@@ -1256,7 +1129,9 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     });
 
     // 코드를 새 구독으로 다시 매단다(문자열은 그대로 — 뿌려 둔 초대장이 계속 통한다).
-    expect(findCall('UPDATE voucher_codes\n              SET issuer_subscription_id = ?')).toBeDefined();
+    expect(
+      findCall('UPDATE voucher_codes\n              SET issuer_subscription_id = ?'),
+    ).toBeDefined();
     // ⚠ 만료시키면 소유자는 새 코드를 다시 찾아 재초대해야 한다.
     expect(findCall("UPDATE voucher_codes SET status = 'expired'")).toBeUndefined();
   });
@@ -1305,11 +1180,47 @@ describe('applyStoreEntitlement — 그룹형 전환은 그룹을 이어받는�
     expect(findCall('DELETE FROM plan_group_members WHERE plan_group_id = ?')).toBeUndefined();
   });
 
+  it('재전송(만료 그대로)은 last_paid_at 을 밀지 않는다 — 전경 동기화가 앵커를 옮기면 안 된다', async () => {
+    // ⚠ 이 갈래는 **전경 동기화마다** 탄다(안드로이드 restorePurchases, iOS
+    //   resyncEntitlements). 무조건 now 를 쓰면 앱을 열 때마다 앵커가 밀려, 탈퇴 시
+    //   보존 기한이 **마지막 결제**가 아니라 **마지막 동기화**로부터 5년이 된다
+    //   (코덱스 #734 6차).
+    mockDB.pushResultFor('FROM store_transactions', [
+      { user_id: 'user-pk-1', subscription_id: 'sub-same' },
+    ]);
+    mockDB.pushResultFor('SELECT plan_id FROM subscriptions', [{ plan_id: FAMILY_PLAN.id }]);
+
+    await applyStoreEntitlement(mockDB.client as never, {
+      userPk: 'user-pk-1',
+      provider: 'google',
+      providerTransactionId: 'play-token-same',
+      productId: 'family_monthly',
+      plan: FAMILY_PLAN,
+      startsAt: new Date('2026-09-01T00:00:00.000Z'),
+      expiresAt: new Date('2026-10-01T00:00:00.000Z'),
+    });
+
+    const update = findCall('UPDATE store_transactions');
+    expect(update).toBeDefined();
+    // 새 만료가 **저장된 만료보다 클 때만** 옮긴다 — 조건이 SQL 안에 있어야 한다.
+    expect(update!.sql).toContain('CASE');
+    expect(update!.sql).toContain('julianday(?) > julianday(last_paid_at)');
+    // 비교 대상과 갱신 대상이 같은 만료값이다.
+    expect(update!.args[0]).toBe('2026-09-01T00:00:00.000Z');
+    expect(update!.args[2]).toBe('2026-10-01T00:00:00.000Z');
+  });
+
   it('개인 → 가족(이어받을 그룹 없음): 예전처럼 새 그룹을 만든다', async () => {
     mockDB.pushResultFor('FROM store_transactions', []);
     mockDB.pushResultFor('JOIN plan_groups g ON g.id = s.plan_group_id', []); // 소유 그룹 없음
     mockDB.pushResultFor('JOIN plans p ON p.id = s.plan_id', [
-      { ...COUPLE_SUB, sub_id: 'sub-personal', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+      {
+        ...COUPLE_SUB,
+        sub_id: 'sub-personal',
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
     ]);
     // 이어받을 그룹이 없으니 코드도 새로 발급된다 — INSERT 가 한 번에 성공하게 둔다.
     mockDB.pushResultFor('INSERT OR IGNORE INTO voucher_codes', [], 1);

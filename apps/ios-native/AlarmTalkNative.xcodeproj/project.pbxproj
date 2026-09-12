@@ -139,6 +139,7 @@
 		622BF9FEE49772584B889551 /* FreePlanVoiceLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49EFA49237024C6A06804BA5 /* FreePlanVoiceLockTests.swift */; };
 		624594B6D1A9D657DF902C04 /* TimeWheelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */; };
 		62E206ED87D9144797933483 /* UpdateRequiredView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACD1A5C25E56DD57B17BE473 /* UpdateRequiredView.swift */; };
+		6394F9517F2E681E6C0B6B71 /* BillingPreflightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BEE1783301BE9BAC37B77 /* BillingPreflightTests.swift */; };
 		63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A22132409AC4AE4AB65E3B /* AlarmTalkPalette.swift */; };
 		6435272191E36EB4988B971A /* StockClipManifestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0996FA9899B83A51D9A1154D /* StockClipManifestStore.swift */; };
 		68169BCE6066FE499AC4DC87 /* SubscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4028869EEA0A313C4D673E6B /* SubscriptionManager.swift */; };
@@ -652,6 +653,7 @@
 		D6697FC7D66C83915B09938A /* WelcomePromoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomePromoSheet.swift; sourceTree = "<group>"; };
 		D7F9E4D2319711428E8D5B87 /* AlarmTalkWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkWidgetBundle.swift; sourceTree = "<group>"; };
 		D9A1058713E81FFD99D5A552 /* LoginErrorMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginErrorMessageTests.swift; sourceTree = "<group>"; };
+		DA3BEE1783301BE9BAC37B77 /* BillingPreflightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingPreflightTests.swift; sourceTree = "<group>"; };
 		DA991BC0E37E0A9D0C4A1487 /* AlarmTalkWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AlarmTalkWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DAAB337BB0E5A35DE416C328 /* RecipientConditionHydrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipientConditionHydrationTests.swift; sourceTree = "<group>"; };
 		DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -1060,6 +1062,7 @@
 				8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */,
 				376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */,
 				BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */,
+				DA3BEE1783301BE9BAC37B77 /* BillingPreflightTests.swift */,
 				7013E802595239222ABAC302 /* BottomSheetMetricsTests.swift */,
 				90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */,
 				2814AA70411EC7A3564475A1 /* BucketVariantResolverTests.swift */,
@@ -1728,6 +1731,7 @@
 				DB82555FB5EDA5964A490C43 /* AuthUserDecodingTests.swift in Sources */,
 				46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */,
 				516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */,
+				6394F9517F2E681E6C0B6B71 /* BillingPreflightTests.swift in Sources */,
 				973AC760CBB111823F641262 /* BottomSheetMetricsTests.swift in Sources */,
 				749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */,
 				D2D1F86586550DD78EA7ABFF /* BucketVariantResolverTests.swift in Sources */,

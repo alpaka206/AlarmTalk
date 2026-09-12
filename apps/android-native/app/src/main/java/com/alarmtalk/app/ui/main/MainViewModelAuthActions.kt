@@ -1232,10 +1232,25 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
 }
 
 internal fun MainViewModel.refreshAppSession() {
-    val session = authSession ?: return
+    viewModelScope.launch { refreshAppSessionNow() }
+}
+
+/**
+ * [refreshAppSession] 의 **기다릴 수 있는** 형태.
+ *
+ * ⚠ 결제 preflight 처럼 **그 결과를 보고 다음 행동을 정하는** 자리에서는 이걸 쓴다
+ * (코덱스 #734 10차). `refreshAppSession()` 은 코루틴을 띄우고 바로 돌아오므로,
+ * 그 뒤 코드는 **plan 이 아직 옛 값인 상태로** 진행한다 — 구독이 없어진 것을 확인해도
+ * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
+ *
+ * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
+ */
+internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
+    val session = authSession ?: return false
     // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
     val startGeneration = authSessionStore.sessionGeneration()
-    viewModelScope.launch {
+    var applied = false
+    run {
         runCatching {
             api.me(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { me ->
@@ -1282,12 +1297,14 @@ internal fun MainViewModel.refreshAppSession() {
                 // 메모리가 갈라진다 — 그리고 갈라졌을 때 이기는 쪽이 **거절된 값**이다.
                 if (planWrite == EntitlementWrite.Applied) {
                     storeSnapshotUserPlan = saved.user.plan
+                    applied = true
                 }
             }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }
     }
+    return applied
 }
 
 /**

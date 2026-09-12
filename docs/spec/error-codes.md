@@ -12,6 +12,19 @@
 - `error` 는 **마지막 안전망**이다. 앱이 그 코드를 모를 때만 그대로 보여 준다.
 - `error_code` 가 **계약**이다. 앱은 이 값으로 분기하고 문구를 고른다.
 
+요청 본문은 헤더 유무와 무관하게 실제 바이트 수로 최대 25 MiB 를 제한한다.
+`Content-Length`가 이미 초과하면 본문을 읽지 않고 `413 REQUEST_BODY_TOO_LARGE`로 거절한다.
+그 외에는 **하위 코드가 본문을 읽을 때만** 바이트를 세고 초과 청크를 전달하지 않는다.
+인증·권한·라우팅에서 거절한 요청을 크기 검사를 위해 미리 읽거나 끝까지 비우지 않는다.
+제한 미들웨어는 전체 본문의 청크 목록·사본을 보관하지 않으며, 응답 후 남은 입력은 취소한다.
+취소 완료를 기다리느라 거절 응답을 늦추지 않는다.
+
+본문 소비 중 초과해도 최종 응답은 같은 413 코드다. JSON/multipart 파서나 라우트의 catch가
+이를 400/500으로 바꾸지 못하며, 서버 장애로 중복 경보를 보내지 않는다. 본문이 필요한
+라우트는 파싱을 성공적으로 끝낸 뒤에만 저장·외부 호출을 진행한다. 본문을 읽지 않는
+라우트에는 크기 확인만을 위한 강제 읽기를 추가하지 않는다.
+프로필 수정은 JSON 객체만 허용하며 null·배열·원시값은 `400 INVALID_REQUEST` 다.
+
 ⚠ **목록은 `packages/shared/src/schemas/error-codes.ts` 하나다.** 예전에는 라우트마다
 문자열 리터럴로만 있어서 같은 뜻에 코드가 둘씩 생겼고(`NO_UPDATE_FIELDS` vs
 `NO_FIELDS_TO_UPDATE`, `INVALID_JSON` vs `JSON_BODY_REQUIRED`), **오타를 내도 컴파일이
@@ -99,6 +112,8 @@
 | --- | --- | --- | --- |
 | 코드 목록 | — | — | `packages/shared/src/schemas/error-codes.ts` |
 | 코드 붙여 응답 | — | — | `lib/api-error.ts` 의 `jsonError`·`errorBody` |
+| 본문 크기 제한·소비 시점 | — | — | `middleware/bodyLimit.ts` · `test/bodyLimit.test.ts` |
+| 본문 초과의 서버 장애 오인 방지 | — | — | `lib/logger.ts`의 요청별 초과 표시 확인; 최종 413은 `middleware/errorCode.ts`에서 기록 |
 | 기록·경보 | — | — | `middleware/errorCode.ts` |
 | 중복 보고 방지 표시 | — | — | `lib/logger.ts` 의 `logRouteError` |
 | 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode` | `APIError.serverErrorCode` | — |

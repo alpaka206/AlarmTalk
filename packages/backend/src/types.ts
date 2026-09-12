@@ -127,6 +127,8 @@ type AuthVariables = {
    * `errorCodeMiddleware` 가 나가는 5xx 를 중복 보고하지 않으려고 본다.
    */
   errorReported?: boolean;
+  /** 본문 스트림의 실제 바이트가 상한을 넘었는가. 파싱 오류/서버 장애와 구분한다. */
+  requestBodyLimitExceeded?: boolean;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AuthVariables };

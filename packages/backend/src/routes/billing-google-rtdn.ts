@@ -4,20 +4,23 @@ import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
-import { getPlaySubscriptionV2 } from '../lib/play-subscriptions';
+import {
+  getPlaySubscriptionV2,
+  googlePaymentAnchor,
+  selectAuthoritativeLineItem,
+} from '../lib/play-subscriptions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
-  cancelSubscriptionImmediate,
   notifyPlanChanged,
-  notifyVoiceDeletionScheduled,
-  resolvePlanAfterSuspend,
-  schedulePaidVoiceRetention,
-  propagateGroupMemberPlans,
-  type ActiveSubscription,
+  notifyBillingStateChanged,
   refreshCompetingAppleRenewalState,
 } from '../lib/billing-cancel';
-import { sendPaymentFailedPush, sendPlanChangedPush } from '../lib/fcm';
+import {
+  BillingStateChangedError,
+  BillingStateUnavailableError,
+  reconcileStoreSubscription,
+} from '../lib/billing-reconciliation';
 import { timingSafeEqualStr } from '../lib/timing-safe-equal';
 import {
   acknowledgeGoogleSubscription,
@@ -88,8 +91,9 @@ export type SubscriptionAction = 'entitle' | 'cancel_at_period_end' | 'deactivat
  * 재조회한 권위 상태(subscriptionState)와 만료시각으로 동기화 액션을 결정한다.
  *  - ACTIVE/GRACE & 만료 미래       → entitle (갱신/복구, 멱등 재적용)
  *  - CANCELED & 만료 미래            → cancel_at_period_end (자동갱신만 꺼짐, 기간까지 유지)
- *  - 그 외(EXPIRED/ON_HOLD/PAUSED/   → deactivate (즉시 권한 회수)
- *    REVOKED/CANCELED+만료지남 등)
+ *  - 그 외(EXPIRED/ON_HOLD/PAUSED/   → deactivate (이후 재조회로 종료/보류 확인)
+ *    CANCELED+만료지남 등)
+ * 회수 알림 SUBSCRIPTION_REVOKED도 조회 상태는 EXPIRED다. 알림 종류를 상태로 쓰지 않는다.
  */
 export function decideSubscriptionAction(
   state: string,
@@ -104,16 +108,7 @@ export function decideSubscriptionAction(
   return 'deactivate';
 }
 
-// RTDN 알림 본문(subscriptionId)은 위조 가능하므로, 등급 결정에 쓸 lineItem 은 재조회한
-// subscription.lineItems(Google 권위 응답)에서 고른다. 알림 productId 와 일치하는 항목이 있으면
-// 그것, 없으면 첫 항목 — 어느 쪽이든 productId 는 위조 본문이 아니라 권위 응답에서 온다.
-// (저가 구독 토큰에 상위 productId 를 실어 셀프 등급상승하는 것을 차단)
-export function selectAuthoritativeLineItem<T extends { productId?: string }>(
-  lineItems: T[] | undefined,
-  notifiedProductId: string,
-): T | undefined {
-  return lineItems?.find((item) => item.productId === notifiedProductId) ?? lineItems?.[0];
-}
+export { selectAuthoritativeLineItem };
 
 const billingGoogleRtdn = new Hono<AppEnv>();
 
@@ -291,6 +286,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     }
     // 막기 전에 애플 갱신 상태를 최신화한다(confirm 경로와 같은 이유 — 코덱스 #733 8차).
     await refreshCompetingAppleRenewalState(db, c.env, userPk);
+    const lastPaidAt = await googlePaymentAnchor(c.env, subscription, purchaseToken);
     const entitleResult = await withWriteTransaction(db, (tx) =>
       applyStoreEntitlement(tx, {
         userPk,
@@ -299,6 +295,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         productId: authoritativeProductId,
         plan,
         startsAt: new Date(),
+        // confirm 경로와 같은 이유 — 확정 시각이 아니라 결제 시각을 앵커로 쓴다.
+        lastPaidAt,
         expiresAt: new Date(expiryMs),
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
       }),
@@ -322,7 +320,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     }
     // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
     if (entitleResult.planChangedUserIds.length > 0) {
-      await notifyPlanChanged(db, c.env, entitleResult.planChangedUserIds);
+      await notifyBillingStateChanged(db, c.env, entitleResult.planChangedUserIds);
     }
     // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로
     // confirm 이 오지 않아도 RTDN(구매/갱신 알림)이 서버측 ack 재시도 경로가 된다
@@ -335,34 +333,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         accessToken,
       });
     }
-    // ⚠ **멤버 권한도 되돌린다.** 보류 때 멤버들을 free 로 내렸으므로(위 isRecoverable
-    // 갈래), 여기서 복원하지 않으면 소유자만 살아나고 **가족·커플 멤버는 영영 무료로
-    // 남는다** — 보류 전파보다 더 나쁜 버그가 된다.
-    // 그룹은 보류 중에도 보존되므로 재초대 없이 그대로 살아난다.
-    const groupRes = await db.execute({
-      sql: `SELECT plan_group_id FROM subscriptions
-            WHERE user_id = ? AND status = 'active' AND plan_group_id IS NOT NULL
-            ORDER BY starts_at DESC LIMIT 1`,
-      args: [userPk],
-    });
-    const restoredGroupId =
-      groupRes.rows.length > 0 ? (groupRes.rows[0]!.plan_group_id as string | null) : null;
-    const restoredMembers = restoredGroupId
-      ? await propagateGroupMemberPlans(db, restoredGroupId, userPk, false)
-      : [];
-    if (restoredMembers.length > 0) {
-      // 조용한 신호로 충분하다 — 클라가 재조회해 잠긴 목소리 알람을 되살리고
-      // 그 결과를 자기 화면에서 알린다. 여기서 또 알림을 띄우면 말이 두 번 나온다.
-      await sendPlanChangedPush(db, c.env, restoredMembers);
-    }
-
-    logStructured('info', {
-      at: 'billing.google.rtdn',
-      action: 'entitle',
-      state,
-      userPk,
-      restoredMembers: restoredMembers.length,
-    });
+    // 멤버 기간·권한은 applyStoreEntitlement 의 동일 트랜잭션에서 이미 복구했다.
+    await notifyPlanChanged(db, c.env, [userPk]);
     return c.json({ success: true, action: 'entitled' });
   }
 
@@ -381,7 +353,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // Play 권위 재조회(reconcile)가 보정한다.
   const mappedRes = mappedSubscriptionId
     ? await db.execute({
-        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
+        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key, p.period_days
               FROM subscriptions s JOIN plans p ON p.id = s.plan_id
               WHERE s.id = ? AND s.user_id = ? AND s.status = 'active'`,
         args: [mappedSubscriptionId, userPk],
@@ -401,115 +373,85 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     });
     return c.json({ success: true, ignored: 'stale_token' });
   }
-  const mappedSubscription: ActiveSubscription = {
-    subscriptionId: mappedSubscriptionId,
-    userPk,
-    planId: String(mappedRow.plan_id),
-    planType: String(mappedRow.plan_type),
-    planKey: String(mappedRow.plan_key),
-    planGroupId: (mappedRow.plan_group_id as string | null) ?? null,
-    // RTDN 은 스토어가 준 상태로 판단한다 — 이 값을 보지 않는다.
-    cancelAtPeriodEnd: false,
-  };
-
-  if (action === 'cancel_at_period_end') {
-    // 자동갱신만 꺼졌고 기간까지는 유효 — 활성 유지하되 예약취소 플래그만 세운다.
-    // 권위 조회로 얻은 만료시각으로 expires_at 도 함께 갱신한다. 갱신(RENEWED)
-    // 알림을 놓쳤거나 순서가 뒤바뀌어 DB 만료가 과거값으로 남아 있으면,
-    // processSubscriptionExpiry 가 기간이 남았는데도 즉시 해지해버리기 때문이다.
-    // (decideSubscriptionAction 이 cancel_at_period_end 를 반환하는 조건상 expiryMs 는 유한값이다.)
-    const periodEndIso = new Date(expiryMs).toISOString();
-    // 사용자 전체가 아니라 토큰에 매핑된 그 구독 한 건만 갱신한다 — 옛 토큰의 늦은
-    // CANCELED 알림이 재가입/플랜변경으로 생긴 다른 활성 구독을 건드리지 않도록.
-    await db.execute({
-      sql: `UPDATE subscriptions
-            SET cancel_at_period_end = 1,
-                expires_at = ?,
-                canceled_at = COALESCE(canceled_at, datetime('now')),
-                updated_at = datetime('now')
-            WHERE id = ? AND status = 'active'`,
-      args: [periodEndIso, mappedSubscription.subscriptionId],
-    });
-    // 구독 만료를 권위값으로 밀 때 같은 구독에 묶인 공유 코드 만료도 함께 동기화한다.
-    // (store-billing 갱신 경로와 동일 규칙) issued·used 모두 연장, expired 는 제외.
-    // 누락하면 만료가 미뤄진 구독에 옛 만료의 코드가 남아 redemption 이 만료로 거부된다.
-    await db.execute({
-      sql: `UPDATE voucher_codes
-            SET expires_at = ?
-            WHERE issuer_subscription_id = ?
-              AND status IN ('issued', 'used')`,
-      args: [periodEndIso, mappedSubscription.subscriptionId],
-    });
-    logStructured('info', { at: 'billing.google.rtdn', action: 'cancel_at_period_end', userPk });
-    return c.json({ success: true, action: 'cancel_at_period_end' });
+  // 취소·보류·만료도 크론/구매 전 조회와 같은 원자적 정합화 경로를 탄다.
+  // 매핑 조회 이후 전환됐더라도 내부의 낙관적 스냅샷 검사가 옛 응답을 거부한다.
+  try {
+    if (linkedFromToken) {
+      // linked 토큰으로 알아낸 것은 소유자뿐이다. 새 토큰까지 기록해야 공통 정합화가
+      // 이전 토큰의 EXPIRED만 보고 남은 유료 기간/보류 중인 새 구독을 해체하지 않는다.
+      const planKey = authoritativeProductId && googlePlanKeyFromProductId(authoritativeProductId);
+      if (subscription.linkedPurchaseToken !== linkedFromToken || !planKey) {
+        throw new BillingStateUnavailableError('Linked Play purchase changed', false);
+      }
+      const lastPaidAt = await googlePaymentAnchor(c.env, subscription, purchaseToken).catch(() => {
+        throw new BillingStateUnavailableError('Linked Play payment date unavailable', false);
+      });
+      await withWriteTransaction(db, async (tx) => {
+        const predecessor = await tx.execute({
+          sql: `SELECT 1 FROM store_transactions t JOIN subscriptions s ON s.id=t.subscription_id
+            WHERE t.provider='google' AND t.provider_transaction_id=? AND t.user_id=?
+              AND s.id=? AND s.user_id=? AND s.status='active'`,
+          args: [linkedFromToken, userPk, mappedSubscriptionId, userPk],
+        });
+        const existing = await tx.execute({
+          sql: `SELECT 1 FROM store_transactions WHERE provider='google' AND provider_transaction_id=?`,
+          args: [purchaseToken],
+        });
+        if (!predecessor.rows.length || existing.rows.length) {
+          // 동시 confirm이 이미 연결했거나 이전 구독을 교체했다. 새 연결을 덮지 않는다.
+          throw new BillingStateChangedError('Linked Play mapping changed');
+        }
+        if (
+          !(await purchaseBelongsToUser(
+            tx,
+            subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId,
+            userPk,
+          ))
+        ) {
+          throw new BillingStateUnavailableError('Linked Play purchase account changed', false);
+        }
+        await tx.execute({
+          sql: `INSERT INTO store_transactions
+            (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,
+             expires_at,last_paid_at,raw_payload)
+            VALUES (?,?,'google',?,?,?,?,?,?,?)`,
+          args: [
+            crypto.randomUUID(),
+            userPk,
+            purchaseToken,
+            authoritativeProductId,
+            planKey,
+            mappedSubscriptionId,
+            Number.isFinite(expiryMs) ? new Date(expiryMs).toISOString() : null,
+            lastPaidAt.toISOString(),
+            JSON.stringify({ via: 'rtdn_linked', state, notificationType: sub.notificationType }),
+          ],
+        });
+        if (isRecoverablePlayState(state)) {
+          // 이전 토큰의 해지 예약은 새 토큰의 회복 후 재청구를 부정하지 않는다.
+          await tx.execute({
+            sql: `UPDATE subscriptions SET cancel_at_period_end=0 WHERE id=?`,
+            args: [mappedSubscriptionId],
+          });
+        }
+      });
+      // 관측한 구매 연결은 먼저 보존한다. 아래 재조회가 실패해도 다음 크론/RTDN이
+      // 새 토큰을 빠뜨리지 않으며, 기존 토큰만 읽었던 동시 작업은 스냅샷 비교로 거절된다.
+    }
+    await reconcileStoreSubscription(db, c.env, mappedSubscriptionId);
+  } catch (error) {
+    if (!(error instanceof BillingStateUnavailableError)) throw error;
+    return c.json({ error: 'verification failed', error_code: 'GOOGLE_VERIFICATION_FAILED' }, 502);
   }
-
-  // ON_HOLD/PAUSED 는 결제 복구로 되살아날 수 있는 일시 상태다. 이때
-  // 구독 취소(cancelSubscriptionImmediate)를 하면 소유자의 가족 그룹 멤버가
-  // 전원 삭제·강등되고(owner 분기), 이후 복구(entitle)는 소유자 구독만 되살려
-  // 그룹이 깨진 채로 남는다. 따라서 회복형 상태에서는 그룹·멤버 구조를 보존하고
-  // 소유자 권한만 보수적으로 회수한다(결제가 복구되면 entitle 가 users.plan 을
-  // 원복). 진짜 종료 상태(EXPIRED/REVOKED/CANCELED+만료지남)에서만 그룹 정리를
-  // 포함한 완전 취소를 한다. 스테일 토큰(비활성 매핑)은 위 게이트에서 걸러졌다.
-  // 판정은 만료 크론 재조회(`reconcileGoogleBeforeExpiry`)와 **같은 헬퍼**를 쓴다 —
-  // 갈라지면 한쪽이 보존한 그룹을 다른 쪽이 해체한다.
-  const isRecoverable = isRecoverablePlayState(state);
-  if (isRecoverable) {
-    // 매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 그 plan 을 유지하고,
-    // 없을 때만 free 로 내린다 (deactivate 의 E2 잔여구독 유지와 대칭). 회복형 상태라
-    // 음성 접근 정리 없이 users.plan 만 보수적으로 회수한다 — 결제 복구 시 entitle 가 원복.
-    const keptPlanType = await resolvePlanAfterSuspend(
-      db,
-      userPk,
-      mappedSubscription.subscriptionId,
-    );
-
-    // ⚠ **멤버들도 함께 회수한다.** 예전에는 소유자만 free 가 되고 그룹 멤버는 유료
-    // 그대로였다 — 소유자는 돈을 안 내는데 가족·커플 전원이 최대 30일(Play 계정보류)간
-    // 유료 기능을 계속 썼다. 게다가 멤버 화면에는 공유 목소리가 멀쩡히 보이는데 그걸로
-    // 새 알람을 만들면 404 로 막혀서 '보이는데 안 되는' 상태였다.
-    // 그룹 구조(plan_group_members·멤버 구독 행)는 그대로 둔다 — 결제가 복구되면
-    // 재초대 없이 살아나야 한다(커플도 같은 경로다).
-    const suspendedMembers = mappedSubscription.planGroupId
-      ? await propagateGroupMemberPlans(db, mappedSubscription.planGroupId, userPk, true)
-      : [];
-
-    logStructured('info', {
-      at: 'billing.google.rtdn',
-      action: 'suspend',
-      state,
-      userPk,
-      keptPlanType,
-      suspendedMembers: suspendedMembers.length,
-    });
-
-    // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지
-    // 않는다 — 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 담당한다.
-    await sendPaymentFailedPush(db, c.env, {
-      ownerUserPk: userPk,
-      memberUserPks: suspendedMembers,
-    });
-
-    return c.json({ success: true, action: 'suspended' });
-  }
-
-  // deactivate — 즉시 권한 회수(가족 그룹/바우처 정리 포함). 사용자 전체
-  // (cancelActiveSubscriptionsForUser)가 아니라 토큰에 매핑된 구독 한 건만 취소한다.
-  // 음성 데이터는 즉시 삭제하지 않고 보관 유예를 건다(PAID_VOICE_RETENTION_DAYS)(재구독 시 entitle 경로가
-  // 유예를 해제하고, sweep 도 삭제 전 활성 유료 구독을 재확인한다).
-  const affected = await withWriteTransaction(db, async (tx) => {
-    const ids = await cancelSubscriptionImmediate(tx, mappedSubscription, new Date(), {
-      deleteVoiceData: false,
-    });
-    await schedulePaidVoiceRetention(tx, userPk, new Date());
-    return ids;
+  return c.json({
+    success: true,
+    action:
+      action === 'cancel_at_period_end'
+        ? 'cancel_at_period_end'
+        : isRecoverablePlayState(state)
+          ? 'suspended'
+          : 'deactivated',
   });
-  // 실시간 만료·취소(Play RTDN 주 경로)로 강등되는 당사자+해체 멤버에게 plan_changed 푸시 →
-  // 크론을 기다리지 않고 '강등 시점'에 클라가 유료 목소리 알람을 기본 알람으로 변환(백그라운드 여도).
-  await notifyPlanChanged(db, c.env, affected);
-  await notifyVoiceDeletionScheduled(db, c.env, affected);
-  logStructured('info', { at: 'billing.google.rtdn', action: 'deactivate', state, userPk });
-  return c.json({ success: true, action: 'deactivated' });
 });
 
 export default billingGoogleRtdn;

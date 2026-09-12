@@ -19,7 +19,12 @@ let transactionInfo: Record<string, unknown>;
 let chainStatus: number | Error = 2;
 
 vi.mock('../src/lib/apple-storekit', () => ({
-  appleStoreKitConfigFromEnv: () => ({ issuerId: 'i', keyId: 'k', privateKeyPem: 'p', bundleId: 'b' }),
+  appleStoreKitConfigFromEnv: () => ({
+    issuerId: 'i',
+    keyId: 'k',
+    privateKeyPem: 'p',
+    bundleId: 'b',
+  }),
   applePlanKeyFromProductId: () => 'personal',
   isAppleGiftProductId: () => false,
   fetchAppleTransaction: vi.fn(async () => transactionInfo),
@@ -27,7 +32,13 @@ vi.mock('../src/lib/apple-storekit', () => ({
     if (chainStatus instanceof Error) throw chainStatus;
     return { status: chainStatus, productId: 'com.alarmtalk.app.personal_monthly' };
   }),
-  APPLE_SUBSCRIPTION_STATUS: { ACTIVE: 1, EXPIRED: 2, IN_BILLING_RETRY: 3, IN_GRACE_PERIOD: 4, REVOKED: 5 },
+  APPLE_SUBSCRIPTION_STATUS: {
+    ACTIVE: 1,
+    EXPIRED: 2,
+    IN_BILLING_RETRY: 3,
+    IN_GRACE_PERIOD: 4,
+    REVOKED: 5,
+  },
   AppleTransactionNotFoundError: class extends Error {},
 }));
 
@@ -78,18 +89,18 @@ function revokedInfo(over: Record<string, unknown> = {}) {
 }
 
 /** 매핑된 구독이 있는 상태. */
-function pushMappedSubscription() {
+function pushMappedSubscription(changed: Record<string, unknown> = {}) {
   mockDB.pushResult([{ id: 'caller-pk' }]); // resolveUserPk
-  mockDB.pushResult([
-    {
-      user_id: 'owner-pk',
-      subscription_id: 'sub-1',
-      plan_id: 'plan-1',
-      plan_group_id: 'group-1',
-      plan_type: 'family',
-      plan_key: 'family',
-    },
-  ]);
+  const row = {
+    user_id: 'owner-pk',
+    subscription_id: 'sub-1',
+    plan_id: 'plan-1',
+    plan_group_id: 'group-1',
+    plan_type: 'family',
+    plan_key: 'family',
+  };
+  mockDB.pushResult([row]); // 스토어 왕복 전 스냅샷
+  mockDB.pushResult([{ ...row, ...changed }]); // 쓰기 트랜잭션의 재확인
 }
 
 beforeEach(() => {
@@ -112,7 +123,16 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
     mockDB.pushResult([{ id: 'caller-pk' }]); // resolveUserPk
     // 계정 식별자가 없는 트랜잭션이라 라우트가 '이미 묶인 것인가' 를 먼저 본다.
     mockDB.pushResult([{ user_id: 'caller-pk' }]);
-    mockDB.pushResult([{ sub_id: 'sub-play', user_id: 'caller-pk', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-play',
+        user_id: 'caller-pk',
+        plan_id: 'plan-1',
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
     mockDB.pushResult([{ provider: 'google', provider_transaction_id: 'tok-1', product_id: 'p1' }]);
 
     const res = await buildApp().request(
@@ -129,7 +149,16 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
     transactionInfo = revokedInfo({ revocationDate: undefined });
     mockDB.pushResult([{ id: 'caller-pk' }]);
     mockDB.pushResult([{ user_id: 'caller-pk' }]); // 이미 묶인 트랜잭션
-    mockDB.pushResult([{ sub_id: 'sub-a', user_id: 'caller-pk', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' }]);
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-a',
+        user_id: 'caller-pk',
+        plan_id: 'plan-1',
+        plan_group_id: null,
+        plan_type: 'personal',
+        plan_key: 'personal',
+      },
+    ]);
     mockDB.pushResult([{ provider: 'apple', provider_transaction_id: 'tx-1', product_id: 'p1' }]);
     mockDB.pushResult([]); // 이후 흐름은 이 테스트의 관심사가 아니다
 
@@ -159,6 +188,24 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
 });
 
 describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
+  it.each([
+    { subscription_id: 'replacement-sub' },
+    { expires_at: '2027-01-01T00:00:00.000Z' },
+    { last_paid_at: '2026-09-12T00:00:00.000Z' },
+  ])('Apple 조회 중 갱신/교체됐으면 회수하지 않고 재시도를 요청한다: %o', async (changed) => {
+    pushMappedSubscription(changed);
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/apple/confirm', { transaction_id: 'tx' }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(502);
+    expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
+    expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
+    expect(notifyPlanChanged).not.toHaveBeenCalled();
+    expect(mockDB.transactions.rollbacks).toBe(1);
+  });
+
   it('여전히 400 으로 거절한다', async () => {
     pushMappedSubscription();
 

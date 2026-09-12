@@ -38,17 +38,67 @@ export async function pseudonymizeBillingForRetention(
   const pseudonym = await pseudonymizeUserId(userPk, salt);
   const retainUntil = billingRetentionUntil(now).toISOString();
   // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
+  //
+  // ⚠ **스토어 증빙도 함께 남긴다**(코덱스 #730 4차). 예전에는 구독 갈래가 plan·기간·금액만
+  //   적었는데, `purgeUserAccount` 가 `store_transactions` 를 통째로 지우므로 **남은 기록을
+  //   실제 주문에 되짚을 방법이 사라졌다** — 결제 분쟁에서 "이 사람이 이 주문을 했다" 를
+  //   보일 수 없다. 아래 일회성 갈래는 이미 그걸 남기고 있었다(마이그레이션 113 의 증빙
+  //   컬럼이 그 용도다). 한 구독에 기록이 여럿이면 각각 보존한다. 최신 것만 남기지 않는다.
   const subs = await tx.execute({
-    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
-          FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw,
+                 st.provider, st.provider_transaction_id, st.product_id, st.raw_payload,
+                 st.created_at AS txn_created_at, st.last_paid_at AS txn_last_paid_at,
+                 -- 마지막 결제 시각의 추정치 = 지금 기간의 시작.
+                 -- 갱신은 expires_at 만 미므로, 한 주기를 빼면 그 주기를 산 날이 된다.
+                 CASE WHEN p.period_days > 0
+                      THEN datetime(s.expires_at, '-' || p.period_days || ' days')
+                 END AS last_paid_estimate
+          FROM subscriptions s
+          LEFT JOIN plans p ON p.id = s.plan_id
+          LEFT JOIN store_transactions st ON st.subscription_id = s.id
           WHERE s.user_id = ?`,
     args: [userPk],
   });
   for (const row of subs.rows) {
+    // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #734 — 일회성 갈래와 같은 규칙).
+    //   탈퇴 시각부터 세면 4년 전에 결제한 구독이 그 시점부터 5년을 더 남아 **9년**이 된다 —
+    //   처리방침이 밝힌 최대 5년을 넘긴다.
+    //
+    // ⚠ **`store_transactions.created_at` 하나만 보면 안 된다**(코덱스 #734 2차). 그 값은
+    //   **체인이 처음 들어온 시각**이다 — 애플의 originalTransactionId·Play 의 purchaseToken
+    //   은 갱신돼도 그대로이고, 같은-플랜 갱신은 그 행의 `expires_at` 만 고친다. 5년 넘게
+    //   갱신해 온 구독이면 이미 지난 날짜가 나와, **이번 달에 결제한 사람의 증빙까지
+    //   버린다**(원본은 곧 파기되므로 되돌릴 수 없다).
+    //
+    //   그래서 확정 경로가 **`last_paid_at` 을 그때그때 적는다**(마이그레이션 114).
+    //
+    // ⚠ **추정으로 되돌리지 말 것**(코덱스 #734 3·5차). 여기서 두 번 틀렸다:
+    //   `expires_at` 은 **기간의 끝**이라 프로모처럼 기간이 길면 몇 년을 더 남기고,
+    //   `expires_at - period_days` 는 애플이 **달력 달**(P1M)인데 `period_days` 가 30 고정이라
+    //   2월이면 이르게·31일 달이면 늦게 잡힌다. 이르면 증빙을 잃고 늦으면 5년을 넘긴다.
+    //
+    //   `last_paid_at` 이 비어 있는 것은 **마이그레이션 114 이전에 쓰인 행**뿐이다 —
+    //   그때만 옛 추정으로 폴백한다(아무것도 없는 것보다는 낫다).
+    const anchors = [
+      row.txn_last_paid_at as string | null,
+      // 폴백(옛 행 전용). 아래 둘은 `last_paid_at` 이 있으면 쓰이지 않는다.
+      (row.txn_last_paid_at as string | null) ? null : (row.txn_created_at as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.last_paid_estimate as string | null),
+      (row.txn_last_paid_at as string | null) ? null : (row.starts_at as string | null),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+    const paidAt =
+      anchors.length > 0 ? anchors.reduce((a, b) => (Date.parse(a) > Date.parse(b) ? a : b)) : null;
+    const recordRetainUntil = paidAt
+      ? billingRetentionUntil(new Date(paidAt)).toISOString()
+      : retainUntil;
+    // 이미 5년이 지난 거래는 **다시 보존하지 않는다** — 보존 사유가 끝난 기록이다.
+    if (recordRetainUntil <= now.toISOString()) continue;
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw,
+               provider, provider_transaction_id, product_id, raw_payload,
+               retained_reason, retain_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -56,8 +106,19 @@ export async function pseudonymizeBillingForRetention(
         (row.status as string | null) ?? null,
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
-        row.price_krw != null ? Number(row.price_krw) : null,
-        retainUntil,
+        // ⚠ **스토어 증빙이 있으면 금액을 지어내지 않는다**(코덱스 #734 4차). `price_krw` 는
+        //   **지금의 원화 표시가**일 뿐이다 — 스토어 가격은 지역별이고 요금제 가격은 바뀐다.
+        //   증빙(거래 id·원본 페이로드)을 붙여 놓고 그 옆에 이 값을 적으면, **그 애플/Play
+        //   주문이 이 금액이었다**고 단언하는 셈이 된다. 통화(`amount_currency`)도 비어 있어
+        //   원화인지조차 말할 수 없다. 실제 금액은 그 거래 id 로 스토어에서 확인한다.
+        //   (아래 일회성 갈래가 같은 이유로 처음부터 비워 둔다.)
+        //   스토어 결제가 아니면(dev 스텁·프로모·바우처) 되짚을 곳이 없으므로 그대로 남긴다.
+        row.provider == null && row.price_krw != null ? Number(row.price_krw) : null,
+        (row.provider as string | null) ?? null,
+        (row.provider_transaction_id as string | null) ?? null,
+        (row.product_id as string | null) ?? null,
+        (row.raw_payload as string | null) ?? null,
+        recordRetainUntil,
       ],
     });
   }
@@ -68,7 +129,7 @@ export async function pseudonymizeBillingForRetention(
   //   `purgeUserAccount` 는 그 표를 통째로 지우므로, 선물을 산 사람이 탈퇴하면
   //   **대금결제 기록이 사라진다** — 전자상거래법상 5년 보존이 깨진다.
   const oneTime = await tx.execute({
-    sql: `SELECT st.id, st.plan_key, st.created_at, st.provider, st.provider_transaction_id,
+    sql: `SELECT st.id, st.plan_key, st.created_at, st.last_paid_at, st.provider, st.provider_transaction_id,
                  st.product_id, st.raw_payload, p.id AS plan_id
           FROM store_transactions st
           LEFT JOIN plans p ON p.key = st.plan_key
@@ -78,7 +139,8 @@ export async function pseudonymizeBillingForRetention(
   for (const row of oneTime.rows) {
     // ⚠ **보존 기한은 '거래일' 부터 센다**(코덱스 #731). 탈퇴 시각부터 세면 4년 전에 산
     //   선물이 그 시점부터 5년을 더 남아 **9년**이 된다 — 처리방침이 밝힌 최대 5년을 넘긴다.
-    const purchasedAt = (row.created_at as string | null) ?? null;
+    const purchasedAt =
+      (row.last_paid_at as string | null) ?? (row.created_at as string | null) ?? null;
     const recordRetainUntil = purchasedAt
       ? billingRetentionUntil(new Date(purchasedAt)).toISOString()
       : retainUntil;

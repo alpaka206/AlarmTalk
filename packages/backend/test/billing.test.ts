@@ -67,9 +67,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1); // INSERT voucher_code retry guard
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -99,9 +97,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'family' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'family' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.plan.plan_type).toBe('family');
@@ -122,9 +118,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1); // INSERT voucher_code
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'family' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'family' }));
     expect(res.status).toBe(200);
     const body = await res.json();
 
@@ -134,9 +128,7 @@ describe('POST /billing/checkout', () => {
     expect(insertGroup?.args[2]).toBe(PLAN_FAMILY.id); // plan_id
     expect(insertGroup?.args[3]).toBe(6); // max_members
 
-    const insertMember = mockDB.calls.find((c) =>
-      c.sql.includes('INSERT INTO plan_group_members'),
-    );
+    const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
     expect(insertMember).toBeDefined();
     expect(insertMember?.args[1]).toBe(insertGroup?.args[0]); // plan_group_id
     expect(insertMember?.args[2]).toBe('user-pk-1'); // user_id
@@ -161,16 +153,12 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     const body = await res.json();
 
     const insertGroup = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_groups'));
     expect(insertGroup).toBeUndefined();
-    const insertMember = mockDB.calls.find((c) =>
-      c.sql.includes('INSERT INTO plan_group_members'),
-    );
+    const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
     expect(insertMember).toBeUndefined();
 
     const insertSub = mockDB.calls.find((c) => c.sql.includes('INSERT INTO subscriptions'));
@@ -187,9 +175,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     const body = await res.json();
     const starts = new Date(body.subscription.starts_at).getTime();
     const expires = new Date(body.subscription.expires_at).getTime();
@@ -210,9 +196,7 @@ describe('POST /billing/checkout', () => {
   it('free plan_key → 400 (결제 대상 아님)', async () => {
     mockDB.pushResult([PLAN_FREE]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'free' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'free' }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('FREE_NOT_BILLABLE');
@@ -229,9 +213,7 @@ describe('POST /billing/checkout', () => {
   it('비활성(is_active=0) 플랜 → 400', async () => {
     mockDB.pushResult([{ ...PLAN_PLUS, is_active: 0 }]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('PLAN_INACTIVE');
@@ -241,9 +223,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([PLAN_PLUS]);
     mockDB.pushResult([]); // no user
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     expect(res.status).toBe(404);
   });
 
@@ -268,9 +248,7 @@ describe('POST /billing/checkout', () => {
   it('비활성 플랜 → error_code PLAN_INACTIVE', async () => {
     mockDB.pushResult([{ ...PLAN_PLUS, is_active: 0 }]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     const body = await res.json();
     expect(body.error_code).toBe('PLAN_INACTIVE');
   });
@@ -278,9 +256,7 @@ describe('POST /billing/checkout', () => {
   it('free 플랜 → error_code FREE_NOT_BILLABLE', async () => {
     mockDB.pushResult([PLAN_FREE]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'free' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'free' }));
     const body = await res.json();
     expect(body.error_code).toBe('FREE_NOT_BILLABLE');
   });
@@ -289,9 +265,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([PLAN_PLUS]);
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     const body = await res.json();
     expect(body.error_code).toBe('USER_NOT_FOUND');
   });
@@ -311,9 +285,7 @@ describe('POST /billing/checkout', () => {
 
   it('plan_key 가 문자열이 아닌 경우 → 400', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 12345 }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 12345 }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('PLAN_KEY_REQUIRED');
@@ -327,9 +299,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     const body = await res.json();
     expect(body.plan.period_days).toBe(30);
     const starts = new Date(body.subscription.starts_at).getTime();
@@ -349,9 +319,7 @@ describe('POST /billing/checkout', () => {
       if (callCount === 3) throw new Error('DB write failed');
       return origExecute(query);
     };
-    const res = await app.request(
-      jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/checkout', { plan_key: 'personal' }));
     expect(res.status).toBe(500);
     mockDB.client.execute = origExecute;
   });
@@ -402,7 +370,7 @@ describe('GET /billing/subscription', () => {
     await app.request(jsonReq('GET', '/billing/subscription'));
     const sql = mockDB.calls[0].sql;
     expect(sql).toContain("s.status = 'active'");
-    expect(sql).toContain("s.expires_at > datetime('now')");
+    expect(sql).toContain("datetime(s.expires_at) > datetime('now')");
   });
 
   it('family 구독이면 plan_group_id 가 non-null', async () => {
@@ -436,7 +404,9 @@ describe('GET /billing/subscription', () => {
   it('DB 에러 → 500', async () => {
     const app = buildApp();
     const origExecute = mockDB.client.execute;
-    mockDB.client.execute = async () => { throw new Error('DB read failed'); };
+    mockDB.client.execute = async () => {
+      throw new Error('DB read failed');
+    };
     const res = await app.request(jsonReq('GET', '/billing/subscription'));
     expect(res.status).toBe(500);
     mockDB.client.execute = origExecute;
@@ -552,7 +522,9 @@ describe('GET /billing/vouchers', () => {
   it('DB 에러 → 500', async () => {
     const app = buildApp();
     const origExecute = mockDB.client.execute;
-    mockDB.client.execute = async () => { throw new Error('DB read failed'); };
+    mockDB.client.execute = async () => {
+      throw new Error('DB read failed');
+    };
     const res = await app.request(jsonReq('GET', '/billing/vouchers'));
     expect(res.status).toBe(500);
     mockDB.client.execute = origExecute;
@@ -585,9 +557,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([], 1); // UPDATE users.plan
 
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -595,8 +565,8 @@ describe.skip('POST /billing/redeem', () => {
     expect(body.subscription.plan_id).toBe(PLAN_PLUS.id);
     expect(body.voucher.status).toBe('used');
 
-    const updateVoucher = mockDB.calls.find((c) =>
-      c.sql.includes("UPDATE voucher_codes") && c.sql.includes("status = 'used'"),
+    const updateVoucher = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE voucher_codes') && c.sql.includes("status = 'used'"),
     );
     expect(updateVoucher?.args[0]).toBe('user-pk-2');
 
@@ -623,9 +593,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(200);
     const updateUser = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
     expect(updateUser?.args[0]).toBe('family');
@@ -641,9 +609,7 @@ describe.skip('POST /billing/redeem', () => {
 
   it('잘못된 포맷 → 400', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: 'INVALID-123' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: 'INVALID-123' }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('형식');
@@ -653,9 +619,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([{ id: 'user-pk-2' }]); // user
     mockDB.pushResult([]); // voucher not found
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error).toContain('찾을 수 없');
@@ -675,9 +639,7 @@ describe.skip('POST /billing/redeem', () => {
       },
     ]);
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toContain('이미 사용');
@@ -697,9 +659,7 @@ describe.skip('POST /billing/redeem', () => {
       },
     ]);
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toContain('만료');
@@ -721,9 +681,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([], 1); // UPDATE voucher → expired
 
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(409);
     const expireUpdate = mockDB.calls.find((c) =>
       c.sql.includes("UPDATE voucher_codes SET status = 'expired'"),
@@ -745,9 +703,7 @@ describe.skip('POST /billing/redeem', () => {
       },
     ]);
     const app = buildApp('google-1');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('본인');
@@ -762,9 +718,7 @@ describe.skip('POST /billing/redeem', () => {
 
   it('잘못된 포맷 → error_code INVALID_FORMAT', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: 'BAD' }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: 'BAD' }));
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_FORMAT');
   });
@@ -773,9 +727,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([{ id: 'user-pk-2' }]);
     mockDB.pushResult([]);
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     const body = await res.json();
     expect(body.error_code).toBe('CODE_NOT_FOUND');
   });
@@ -784,12 +736,17 @@ describe.skip('POST /billing/redeem', () => {
     const hash = await hashVoucherCode(VALID_CODE);
     mockDB.pushResult([{ id: 'user-pk-2' }]);
     mockDB.pushResult([
-      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'used', expires_at: FUTURE },
+      {
+        id: 'v-1',
+        code_hash: hash,
+        plan_id: PLAN_PLUS.id,
+        issuer_user_id: 'user-pk-1',
+        status: 'used',
+        expires_at: FUTURE,
+      },
     ]);
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     const body = await res.json();
     expect(body.error_code).toBe('CODE_ALREADY_USED');
   });
@@ -798,12 +755,17 @@ describe.skip('POST /billing/redeem', () => {
     const hash = await hashVoucherCode(VALID_CODE);
     mockDB.pushResult([{ id: 'user-pk-2' }]);
     mockDB.pushResult([
-      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'expired', expires_at: PAST },
+      {
+        id: 'v-1',
+        code_hash: hash,
+        plan_id: PLAN_PLUS.id,
+        issuer_user_id: 'user-pk-1',
+        status: 'expired',
+        expires_at: PAST,
+      },
     ]);
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     const body = await res.json();
     expect(body.error_code).toBe('CODE_EXPIRED');
   });
@@ -812,12 +774,17 @@ describe.skip('POST /billing/redeem', () => {
     const hash = await hashVoucherCode(VALID_CODE);
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([
-      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+      {
+        id: 'v-1',
+        code_hash: hash,
+        plan_id: PLAN_PLUS.id,
+        issuer_user_id: 'user-pk-1',
+        status: 'issued',
+        expires_at: FUTURE,
+      },
     ]);
     const app = buildApp('google-1');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     const body = await res.json();
     expect(body.error_code).toBe('SELF_ISSUED');
   });
@@ -825,9 +792,7 @@ describe.skip('POST /billing/redeem', () => {
   it('사용자 없음(google_id 매칭 실패) → 404 + USER_NOT_FOUND', async () => {
     mockDB.pushResult([]); // no user
     const app = buildApp('ghost');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('USER_NOT_FOUND');
@@ -837,13 +802,18 @@ describe.skip('POST /billing/redeem', () => {
     const hash = await hashVoucherCode(VALID_CODE);
     mockDB.pushResult([{ id: 'user-pk-2' }]);
     mockDB.pushResult([
-      { id: 'v-1', code_hash: hash, plan_id: 'deleted-plan', issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+      {
+        id: 'v-1',
+        code_hash: hash,
+        plan_id: 'deleted-plan',
+        issuer_user_id: 'user-pk-1',
+        status: 'issued',
+        expires_at: FUTURE,
+      },
     ]);
     mockDB.pushResult([]); // plan not found
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('PLAN_NOT_FOUND');
@@ -853,7 +823,14 @@ describe.skip('POST /billing/redeem', () => {
     const hash = await hashVoucherCode(VALID_CODE);
     mockDB.pushResult([{ id: 'user-pk-2' }]);
     mockDB.pushResult([
-      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+      {
+        id: 'v-1',
+        code_hash: hash,
+        plan_id: PLAN_PLUS.id,
+        issuer_user_id: 'user-pk-1',
+        status: 'issued',
+        expires_at: FUTURE,
+      },
     ]);
     mockDB.pushResult([PLAN_PLUS]);
     mockDB.pushResult([], 1);
@@ -861,9 +838,7 @@ describe.skip('POST /billing/redeem', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp('google-2');
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     const body = await res.json();
     const starts = new Date(body.subscription.starts_at).getTime();
     const expires = new Date(body.subscription.expires_at).getTime();
@@ -886,10 +861,10 @@ describe.skip('POST /billing/redeem', () => {
   it('DB 에러 → 500', async () => {
     const app = buildApp();
     const origExecute = mockDB.client.execute;
-    mockDB.client.execute = async () => { throw new Error('DB write failed'); };
-    const res = await app.request(
-      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
-    );
+    mockDB.client.execute = async () => {
+      throw new Error('DB write failed');
+    };
+    const res = await app.request(jsonReq('POST', '/billing/redeem', { code: VALID_CODE }));
     expect(res.status).toBe(500);
     mockDB.client.execute = origExecute;
   });

@@ -3,6 +3,7 @@ package com.alarmtalk.app.network
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Query
 import retrofit2.http.Header
 import retrofit2.http.POST
 
@@ -10,6 +11,19 @@ data class BillingSubscriptionResponse(
     val subscription: BillingSubscription?,
     val plan: BillingPlan?,
     @SerializedName("next_plan") val nextPlan: BillingPlanSummary? = null,
+    /**
+     * 지금 이 계정의 **갱신을 쥔 스토어 전부** — `["apple"]`, `["google"]`, 둘 다, 또는 빈 배열.
+     *
+     * ⚠ **[subscription] 으로 대신하지 말 것**(코덱스 #730 4차). 보류(`ON_HOLD`/`PAUSED`)는
+     * 구독 행을 살려 두고 `users.plan` 만 회수하는데, 그 행은 `expires_at` 이 지나 응답에서
+     * 빠진다 — 그런데 결제가 복구되면 스토어는 다시 청구한다. 그래서 신호가 **최상위**에 있고
+     * 만료로 거르지 않는다.
+     *
+     * 구버전 서버는 이 필드를 주지 않는다(null) — 그때는 막지 않는다(예전 동작).
+     */
+    @SerializedName("store_renewal_providers") val storeRenewalProviders: List<String>? = null,
+    /** 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan. */
+    @SerializedName("user_plan") val userPlan: String? = null,
 )
 
 data class BillingSubscription(
@@ -91,8 +105,16 @@ data class CancelSubscriptionResponse(
 
 
 interface BillingApi {
+    /**
+     * @param refreshStore `"1"` 이면 서버가 **애플에 직접 물어** 갱신 상태를 최신화한 뒤
+     *   답한다. ⚠ **결제 직전에만 켠다** — 애플 서버 호출이 붙어서, 앱 시작 갱신이나
+     *   워커가 켜면 애플이 느릴 때 **DB 에 이미 있는 답까지 같이 늦어진다.**
+     */
     @GET("billing/subscription")
-    suspend fun getSubscription(@Header("Authorization") authorization: String): BillingSubscriptionResponse
+    suspend fun getSubscription(
+        @Header("Authorization") authorization: String,
+        @Query("refresh_store") refreshStore: String? = null,
+    ): BillingSubscriptionResponse
 
     @GET("billing/vouchers")
     suspend fun listVouchers(@Header("Authorization") authorization: String): VoucherListResponse

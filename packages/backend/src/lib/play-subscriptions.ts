@@ -12,14 +12,59 @@
 import type { Env } from '../types';
 import { getGoogleAccessToken, parseServiceAccountJson } from './google-oauth';
 
+/**
+ * 최신 성공 주문의 실제 처리 시각. 구독 만료나 조회 시각으로 결제일을 추정하지 않는다.
+ * https://developers.google.com/android-publisher/api-ref/rest/v3/orders
+ */
+export async function googlePaymentAnchor(
+  env: PlayEnv,
+  subscription: SubscriptionV2Response,
+  purchaseToken: string,
+): Promise<Date> {
+  const orderId =
+    selectAuthoritativeLineItem(subscription.lineItems)?.latestSuccessfulOrderId ??
+    subscription.latestOrderId;
+  if (!orderId) throw new Error('Play subscription is missing its latest successful order');
+  const { account, packageName } = requirePlayConfig(env);
+  const accessToken = await getGoogleAccessToken(account, ANDROID_PUBLISHER_SCOPE);
+  const response = await fetch(
+    `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/orders/${encodeURIComponent(orderId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!response.ok) throw new Error(`Play order lookup failed (${response.status})`);
+  const order = (await response.json()) as {
+    orderId?: string;
+    purchaseToken?: string;
+    orderHistory?: { processedEvent?: { eventTime?: string } };
+  };
+  const timestamp = order.orderHistory?.processedEvent?.eventTime;
+  const paidAt = timestamp ? new Date(timestamp) : null;
+  if (
+    order.orderId !== orderId ||
+    order.purchaseToken !== purchaseToken ||
+    !paidAt ||
+    !Number.isFinite(paidAt.getTime())
+  ) {
+    throw new Error('Play order does not identify a processed payment for this purchase');
+  }
+  return paidAt;
+}
+
 export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
 
 export interface SubscriptionV2Response {
   subscriptionState?: string;
   acknowledgementState?: string;
+  /**
+   * **구독 체인이 시작된 시각**(RFC3339). 첫 결제 시각이다 — 갱신해도 바뀌지 않는다.
+   *
+   * 갱신의 결제일은 Orders API 로 따로 확인한다.
+   */
+  startTime?: string;
   lineItems?: Array<{
     productId?: string;
     expiryTime?: string;
+    latestSuccessfulOrderId?: string;
     /** autoRenewEnabled=false 면 사용자가 자동갱신을 꺼둔 상태(기간종료 해지 예약). */
     autoRenewingPlan?: { autoRenewEnabled?: boolean };
   }>;
@@ -45,6 +90,27 @@ export const ENTITLED_STATES = new Set([
   'SUBSCRIPTION_STATE_ACTIVE',
   'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
 ]);
+
+/** 예약 교체 대상(아직 소유하지 않은 상품)을 현재 유료 상품으로 고르지 않는다. */
+export function selectAuthoritativeLineItem<
+  T extends { productId?: string; latestSuccessfulOrderId?: string },
+>(lineItems: T[] | undefined, requestedProductId?: string): T | undefined {
+  const owned = lineItems?.filter((item) => item.latestSuccessfulOrderId);
+  const candidates = owned?.length ? owned : lineItems;
+  return candidates?.find((item) => item.productId === requestedProductId) ?? candidates?.[0];
+}
+
+export function googlePlanKeyFromProductId(
+  productId: string,
+): 'personal' | 'couple' | 'family' | null {
+  const products: Record<string, 'personal' | 'couple' | 'family'> = {
+    personal_monthly: 'personal',
+    couple_monthly: 'couple',
+    family_monthly: 'family',
+    personal_gift_1m: 'personal',
+  };
+  return products[productId] ?? null;
+}
 
 /** Play 구독 제어에 필요한 env 부분집합 (billing-google.ts confirm 과 동일 시크릿). */
 /**
@@ -83,10 +149,7 @@ class PlayApiError extends Error {
  * 사용자가 스토어에서 직접 구독을 관리할 수 있는 Play 딥링크.
  * 서버 측 cancel/revoke 실패 시 응답 manage_url 로 내려 클라가 안내한다.
  */
-export function playManageUrl(
-  productId?: string | null,
-  packageName?: string | null,
-): string {
+export function playManageUrl(productId?: string | null, packageName?: string | null): string {
   const base = 'https://play.google.com/store/account/subscriptions';
   if (!productId || !packageName) return base;
   return `${base}?sku=${encodeURIComponent(productId)}&package=${encodeURIComponent(packageName)}`;
@@ -165,12 +228,13 @@ export async function playRevokeSubscription(env: PlayEnv, purchaseToken: string
   if (res.ok) return;
   const apiError = new PlayApiError('revoke', res.status, (await res.text()).slice(0, 300));
   // 복구 경로(cancel 과 동일한 갈림 창 수렴): revoke 4xx 면 실상태를 재조회해 이미
-  // EXPIRED/REVOKED(=entitled 아님)면 성공으로 간주한다. 그 외에는 기존대로 throw.
+  // EXPIRED면 성공으로 간주한다. 그 외에는 기존대로 throw.
+  // REVOKED는 RTDN 알림 종류이고 조회 상태는 EXPIRED다(docs/spec/billing-lifecycle.md).
   if (apiError.status >= 400 && apiError.status < 500) {
     try {
       const sub = await getPlaySubscriptionV2(env, purchaseToken);
       const state = sub.subscriptionState ?? '';
-      if (state === 'SUBSCRIPTION_STATE_EXPIRED' || state === 'SUBSCRIPTION_STATE_REVOKED') return;
+      if (state === 'SUBSCRIPTION_STATE_EXPIRED') return;
     } catch {
       // 재조회 실패 — 원래 revoke 에러로 처리.
     }

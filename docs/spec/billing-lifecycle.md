@@ -12,6 +12,60 @@
 
 그래서 **스토어를 못 확인하면 아무것도 바꾸지 않는다**(fail-closed).
 
+### 결제 전 조회의 원자성
+
+`GET /billing/subscription?refresh_store=1` 은 이 계정과 공유 이용권 소유자의 스토어 상태를
+확인한다. 조회 실패·알 수 없는 상태·확인 도중의 구독 교체는 재시도 가능한 실패다.
+DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부 스토어 호출을 넣지 않는다.
+
+- 갱신은 구독·스토어 기록·발급/사용된 초대 코드·그룹 멤버 구독의 만료를 같은 트랜잭션에서
+  바꾼다. 회복된 소유자와 멤버의 권한·보관 유예도 함께 복구한다.
+- 그룹형에서 개인형으로 바뀌어 내보낸 멤버도 공통 entitlement 적용 결과에 포함하고,
+  확정·RTDN·재조회 호출부가 커밋 후 `plan_changed`와 해당 멤버의 삭제 유예 예고를 보낸다.
+  뒤늦게 발견한 전환의 목소리 삭제 유예는 과거 결제일이 아닌 권한 변경을 반영한 시점부터 센다.
+  **독립 유료 이용권이 남은 멤버는 삭제 대상이 아니다.** 그룹 전체 해체뿐 아니라
+  가족→커플 정원 축소·자발적 이탈·멤버 내보내기에도 같은 규칙을 적용한다. 남은 권한을
+  재계산한 뒤 유료이면 기존 보관 유예도 지우고, 무료인 멤버만 유예를 예약한다.
+  그룹 접근은 바뀌었으므로 유료 멤버의 `plan_changed`는 유지하되 삭제 예고는 보내지 않는다.
+  보관 유예 판정은 `syncGroupDepartureRetention` 한 곳에 두고 전체 해체와 개별 이탈
+  함수가 함께 사용한다. 개별 호출부에 조건을 복제하거나 한쪽만 고치지 않는다.
+- 애플 권한은 ACTIVE/IN_GRACE_PERIOD 만 허용한다. 유예의 끝은
+  `signedRenewalInfo.gracePeriodExpiresDate` 이며 결제일과 구분한다.
+  EXPIRED/REVOKED 는 종료, IN_BILLING_RETRY 는 그룹을 남기는 보류다.
+- 스토어 왕복 전에 읽은 구독이 그 사이 교체·갱신됐으면 옛 결과를 적용하지 않는다.
+- 활성 구독 없이 유료 `users.plan`만 남은 계정의 복구도 **정상 강등 처리**를 사용한다.
+  `plan`만 free로 바꾸지 않는다. 활성 구독 부재 확인·등급 변경·제공자 클론 반납 큐·공유 해제·
+  타인 알람 강등·보관 유예를 한 쓰기 트랜잭션으로 처리하고 커밋 후 통지한다.
+  지불 주체 없는 소유 그룹도 정리하되 멤버의 독립 이용권은 보존한다. 이미 free이거나
+  보류를 포함한 활성 구독이 하나라도 있으면 이 복구를 적용하지 않는다. 재조회로 유예를 연장하거나
+  통지를 반복하지 않으며, 중간 실패 시 등급까지 롤백해 다음 시도에서 복구를 끝낼 수 있어야 한다.
+- 응답의 `user_plan` 은 `subscription` 과 같은 DB 스냅샷에서 읽는다. 앱은 둘을
+  `EntitlementWriter` 한 번으로 저장한 뒤에만 결제를 연다. 필드가 없는 구버전 응답이나
+  세션 변경·취소·저장 거절이면 결제를 열지 않는다. `/auth/me` 를 나중에 호출해
+  반쪽 스냅샷을 보정하는 방식은 쓰지 않는다.
+- Android의 성공한 무료 preflight는 **이전 Play 캐시도 같은 쓰기에서 무효화**한다.
+  `storePlanKey`·`storeEntitlementUntilMillis`를 지우고 저장 성공 뒤 화면 사본도 맞춘다.
+  스토어를 재확인한 free를 과거의 40일 TTL 신호가 뒤집거나, 푸시가 와야만 정리되는
+  상태를 허용하지 않는다. 일반 조회(`user_plan` 없음)·유료 응답·조회 실패는 신호를 보존한다.
+  preflight의 요청부터 저장까지는 기존 Play 조회와 같은 잠금으로 직렬화한다. 이전 Play
+  응답이 무효화 뒤에 다시 쓰이지 않고, 이후에 새로 확인한 구매는 정상 반영돼야 한다.
+  이 무효화만으로 로컬 알람을 영구 변환하거나 Play 확인 완료 표시를 세우지는 않는다.
+- 결제 판단에는 **그 preflight가 반환한 응답 자체**를 사용한다. 성공 여부만 받고 공용
+  화면 캐시를 다시 읽으면, 이전에 시작한 일반 조회가 사이에 끝나 결제 차단을 지울 수 있다.
+  성공한 preflight 이전에 시작한 구독 조회는 해당 구독·plan을 다시 덮지 못한다.
+  전체 갱신의 작업 세대/완료 표시는 별도로 유지하고, 취소·실패한 preflight로 기존 갱신을
+  무효화하지 않는다. 늦은 이전 전체 갱신을 버려도 다음 전체 갱신이 시작될 수 있어야 한다.
+
+### 결제 기록의 날짜
+
+결제일은 Apple `purchaseDate`, Play 최신 성공 주문의 `orderHistory.processedEvent.eventTime`
+을 사용한다. 최초 구독일, 만료일에서 30일을 뺀 추정일, 서버 수신일로 대신하지 않는다.
+갱신·유예 연장·중복 조회는 서로 다르며 같은 결제의 재전송은 보존 기한을 늘리지 않는다.
+선물도 스토어의 실제 구매일을 `last_paid_at` 에 남긴다. 한 구독에 여러 스토어 증빙이
+있으면 탈퇴 시 모두 보존 대상으로 검토하고, 각 증빙의 결제일부터 5년을 계산한다.
+마이그레이션 114 이전의 결제일 없는 원장은 기존 추정 폴백이 남는다. 저장되지 않은 과거
+결제일은 이 코드 변경만으로 복원되지 않으므로 운영 원장 점검이 필요하다.
+
 ## 해지
 
 | 스토어 | 서버가 해지할 수 있나 | 어떻게 |
@@ -61,7 +115,7 @@
 끝났거나 애초에 없는 상태다.
 
 ⚠ 애플 재시도를 `expire` 로 보내면 **그룹이 해체된다** — 종료가 아니라 `suspend` 로 보내
-권한만 회수한다(`reconcileAppleBeforeExpiry`).
+권한만 회수한다(`reconcileStoreSubscription`).
 
 ## 만료 — 크론 전에 스토어에 되묻는다
 
@@ -87,10 +141,54 @@
     `expire` 가 아니라 `suspend` 로 보낸다 — `expire` 로 보내면 그룹이 해체된다
 - ⚠ **일시 장애로 강등하지 말 것.** 스토어 API 가 5분 삐끗한 값으로 유료 사용자가 무료가
   된다. 단 **만료가 72시간 넘게 지났으면 강행**한다 — 안 그러면 좀비 구독이 영원히 남는다.
+- 여러 영수증은 독립적으로 확인한다. 하나라도 유효한 유료 상태를 확인했으면 다른 조회의
+  실패로 그 증거를 버리지 않는다. 미확인 스토어의 자동갱신은 꺼졌다고 추정하지 않는다.
+  유효 권한은 확인했으나 결제일/플랜 반영에 실패한 경우, 또는 회복형 보류가 확인된 상태에서
+  다른 조회가 실패한 경우도 72시간 강제 종료 근거가 아니다.
+  다른 플랜으로 교체할 때는 **선택한 영수증 외의 모든 증빙이 종료됐는지** 확인한다.
+  미확인뿐 아니라 유효·회복형 보류 증빙이 하나라도 남으면 전환을 거절하고 기존
+  구독·그룹·영수증 연결을 보존한다. 모두 조회에 성공했거나 같은 스토어/같은 새 플랜인
+  경우도 예외가 아니다 — 만료가 가장 늦은 한 건만 새 구독에 연결하면 나머지는 과금이
+  계속돼도 활성 구독 조회에서 사라진다. 자동갱신이 꺼져 있어도 남은 유료 기간은 보존한다.
+  이 경우 전환은 재시도하되 72시간 강제 만료도 하지 않는다. 충돌이 남는 동안 자동으로
+  한 결제를 승자로 정하지 않는다. 플랜 교체 없는 갱신은 기존 복수 연결을 유지한다.
+  **범위는 현재 구독 행에서 끝나지 않는다.** 정합화 중 플랜 교체는 같은 사용자의 다른
+  활성 구독에 스토어 증빙이 하나라도 연결돼 있으면 거절한다. 해당 증빙은 현재 조회에서
+  확인하지 않았으므로, 별도의 권위 정합화가 그 구독의 종료를 반영하기 전에는 취소하지 않는다.
+  같은 스토어·같은 새 플랜·해지 예약·지난 로컬 만료도 예외가 아니며 72시간 강제 만료로
+  우회하지 않는다. 이 검사는 교체 쓰기와 같은 트랜잭션 안에서 수행해 조회 중 추가된
+  구독/영수증도 보호한다. 스토어 증빙 없는 로컬 이용권의 정상 교체와 교체 없는 갱신은 유지한다.
+- 스토어 종료 응답에도 로컬 만료가 도래했고 `cancel_at_period_end=1`과 유효한
+  `next_plan_id`가 있으면, 로컬 만료와 같은 트랜잭션 경로로 다음 플랜을 만든다.
+  만기 전 환불에는 다음 플랜을 조기에 부여하지 않는다.
 - ⚠ **자동갱신이 꺼져 있으면 연장하되 `cancel_at_period_end = 1`** 로 세운다. 그래야
   만기가 오면 조용히 만료된다.
 - ⚠ **새 스토어를 붙이면 `reconcileStoreBeforeExpiry` 에 갈래를 추가해야 한다.**
   빠뜨리면 그 스토어 구독은 스토어에 묻지도 않고 강등된다 — 애플이 정확히 그 상태였다.
+
+## Google 회수 알림과 조회 상태를 구분한다
+
+`SUBSCRIPTION_REVOKED`는 **RTDN 알림 종류**다. 그 알림 뒤
+`purchases.subscriptionsv2.get`이 반환하는 `subscriptionState`는
+`SUBSCRIPTION_STATE_EXPIRED`이며, `SUBSCRIPTION_STATE_REVOKED`라는 조회 상태는 없다.
+환불·회수도 권위 재조회에서 `EXPIRED`를 확인한 뒤 종료한다. 알림만 믿고 회수하거나,
+Apple의 `REVOKED` 상태를 Play 조회 응답에 옮기지 않는다.
+
+근거: [Google 구독 수명주기 — Revocations](https://developer.android.com/google/play/billing/lifecycle/subscriptions#revoke),
+[SubscriptionState 공식 목록](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#SubscriptionState).
+회귀 픽스처도 이 계약을 따른다. 기존 코드·주석·테스트의 상태명만으로 새 처리 분기를 만들지 않는다.
+
+### Play 교체 토큰의 소유자와 구독 연결은 다르다
+
+새 토큰의 첫 RTDN이 해지 예약·보류·만료이고 클라이언트 confirm이 아직 없어도,
+`linkedPurchaseToken`은 **소유자를 찾는 단서**일 뿐 새 토큰의 상태를 대체하지 않는다.
+이전 토큰이 이미 EXPIRED인 것만으로 새 토큰의 남은 유료 기간이나 회복형 보류를 종료하지 않는다.
+권위 조회의 계정 바인딩과 연결 토큰을 재확인하고, 이전 구독이 여전히 활성인 경우 새 토큰의
+실제 결제일·상품·만료와 구독 연결을 먼저 기록한다. 그 뒤 새 토큰까지 포함한 공통 정합화를 한다.
+중간 조회 실패 시에도 기록한 새 연결은 남아 크론/재시도가 이전 토큰만 보지 않게 한다.
+동시 confirm으로 이미 새 토큰이 연결됐거나 이전 구독이 교체됐으면 덮지 않고 재시도한다.
+보류는 그룹을 보존하고, 만료 전 CANCELED는 남은 기간을 유지한다. 이전 토큰의 늦은 알림도
+새 토큰을 포함해 확인한다. 새 토큰이 이미 끝난 경우만 다른 살아 있는 증빙과 함께 종료를 판단한다.
 
 ## 애플 구독 상태를 읽는 법
 
@@ -246,6 +344,10 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 `expires_at` 이 하고, 그쪽은 앱이 열릴 때마다 갱신된다. 그래서 상한은 **월 구독 주기보다
 넉넉히 길게** 둔다 — 짧게 잡으면 앱을 안 여는 사이 자동갱신된 사용자가 잘린다(3일로 뒀다가
 되돌린 이력이 있다).
+
+단, 스토어를 재조회한 **무료 preflight가 이미 성공했다면** Android의 이전 TTL 증거는
+더 이상 유효하지 않다. 위 「결제 전 조회의 원자성」에 따라 제거한다. 일반 서버 조회보다
+스토어를 우선하는 규칙과, 스토어 재확인으로 낡은 캐시를 무효화하는 규칙을 혼동하지 않는다.
 
 ⚠ **단, 해지 예약(`isAutoRenewing == false`)이면 서버가 아는 기간 말로 상한을 낮춘다.**
 TTL 은 '언제 물어봤는가' 에서 시작하므로, 기간 말 해지를 만료 직전에 확인하면 그 뒤 수십 일이
@@ -408,10 +510,22 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   ⚠ **문구는 각 앱에서 '다른 스토어' 를 가리켜야 한다.** 판정이 `provider <> ?` 로 자기
   스토어를 빼므로, 안드로이드가 이 코드를 받았다면 걸린 것은 **애플**이다. iOS 문구를
   그대로 쓰면 "Play 에서 해지하라" 가 되어, 그대로 해도 다음 시도가 통과하지 않는다.
-- ⚠ **애플 갱신 상태는 막기 직전에 최신화한다.** 우리가 받는 App Store 서버 알림이 없고,
-  같은-플랜 갱신 갈래가 `cancel_at_period_end` 를 0 으로 되돌린다 — 낡은 값으로 막으면
-  **App Store 에서 이미 자동갱신을 끈 사용자가 아무것도 할 수 없다.** Play 쪽은 RTDN 과
-  해지 라우트가 제때 세우므로 이 문제가 없다.
+- **결제 직전에는 두 앱 모두 권위 응답을 기다린다.** iOS는 `confirmAndPurchase`,
+  안드로이드는 `crossStoreRenewalBlocked`에서 `?refresh_store=1`을 사용한다.
+  조회 실패·필수 필드 누락·저장 거절이면 무료/유료 캐시와 무관하게 스토어를 열지 않는다.
+  별도의 `refreshAll`·`/auth/me` 성공을 가정하지 않는다.
+- 서버는 Apple과 Play 및 공유 이용권 소유자의 상태를 먼저 확인한다. 만료된 로컬 이용권도
+  공통 해지 경로로 처리하며, 보류 중인 활성 행은 그룹과 함께 남긴다.
+  그 후 **활성 근거 자체가 없을 때만** `NOT EXISTS` 조건부 UPDATE로 `users.plan`을
+  free로 정리한다. 만료 시각만 보고 소유자·멤버를 무료로 만들지 않는다.
+- 응답의 `user_plan`·`subscription`·`store_renewal_providers`는 한 읽기 트랜잭션의
+  스냅샷이다. 앱은 계정/세대 가드를 통과한 한 번의 권한 쓰기로 plan과 구독을 저장하고,
+  취소·세션 전환·늦은 응답이면 구매를 중단한다. SDK가 제품 조회를 마친 **최종 호출 직전**에도
+  세션/취소 상태를 확인한다.
+- **일상 구독 조회는 외부 스토어를 호출하지 않는다.** 시작 갱신·동기화 워커·프리페치와
+  구매 직전 조회를 구분해, 스토어 지연이 로컬 알람용 동기화 전체로 번지지 않게 한다.
+- **확정 시점에도 교차 스토어 가드를 유지한다.** Play 확정/RTDN entitle은 먼저 경쟁 Apple
+  구독을 공통 정합화 경로로 확인한다. 확인 실패는 재시도할 오류이며 낡은 값으로 진행하지 않는다.
 
 ## 환불은 **크론을 기다리지 않고** 권한을 회수한다
 
@@ -437,11 +551,13 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   아니라 **`REVOKED`(5)** 를 준다 — `!== EXPIRED` 로 적었다가 주 경로인 "지금 구독 환불" 이
   통째로 새어 나갔다(코덱스 #733 3차). 그래서 **끝난 상태를 목록으로 적고**, 목록에 없는
   값(애플이 나중에 늘릴 수 있다)은 살아 있다고 본다.
-  (`reconcileAppleBeforeExpiry` 는 반대로 '권한 있는 상태' 를 목록으로 적는다 — 묻는 것이
+  (`reconcileStoreSubscription` 는 반대로 '권한 있는 상태' 를 목록으로 적는다 — 묻는 것이
   달라서 목록도 다르다: 저기는 "지금 유료인가", 여기는 "끝났는가" 다.)
 - ⚠ **못 물어보면 살아 있다고 본다(fail-closed).** 두 오류의 무게가 다르다 — 회수를
   건너뛰면 환불받은 사용자가 `expires_at` 까지 유료로 남고 크론이 결국 정리하지만,
   잘못 취소하면 돈을 내고 있는 그룹이 해체된다.
+- 환불 회수도 스토어 왕복 전후의 매핑·만료·결제일을 대조한다. 확인 중 새 갱신이 반영됐으면
+  쓰기를 롤백하고 502로 재시도를 요청한다. 같은 체인의 새 구독/그룹을 옛 응답으로 해체하지 않는다.
 - ⚠ **로그아웃 중에 온 환불은 적어 뒀다가 로그인 때 민다**(코덱스 #733 4차). 가드를
   건너뛰어도 `syncWithBackend` 는 세션이 없으면 그냥 실패하는데, 환불된 트랜잭션은
   `currentEntitlements` 에도 `unfinished` 에도 없어 **다시 올릴 경로가 하나도 없다.**
@@ -524,21 +640,25 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
-| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람) | — | — |
-| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | — | `BillingPanel.purchaseBlockReason`(순수 함수) |
-| 결제 직전 권위 조회 | `GET /billing/subscription` | — | `BillingPanel.confirmAndPurchase` |
+| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`·`leavePlanGroupMember`가 `syncGroupDepartureRetention` 공유, 독립 유료 멤버도 동기화 대상은 유지 | — | — |
+| 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
+| 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
+| 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
-| 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` (Play 확정·RTDN 앞) | — | — |
+| 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
-| 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
-| 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |
+| 만료 재조회 — Google | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
+| 만료 재조회 — Apple | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
+| 복수 증빙 플랜 교체의 연결 보존 | `reconcileStoreSubscription`의 같은 행 증빙 가드 + 쓰기 트랜잭션 내 다른 활성 구독 증빙 가드; `test/billing-reconciliation.test.ts` | 기존 조회 실패 처리로 구매 중단 | 기존 조회 실패 처리로 구매 중단 |
+| 교체 토큰의 첫 비활성 RTDN | `billing-google-rtdn.ts`의 `linkedFromToken` 연결 기록 → 공통 정합화; 실제 DB RTDN 테스트 | — | — |
+| 결제 전 응답과 이전 조회의 경합 | — | — | `refreshSubscriptionForPurchase` 반환 응답 + `billingPreflightRevision`; `BillingPreflightTests` |
 | 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |
 | 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
-| 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
+| 보류 — Apple 진입점 | `reconcileStoreSubscription` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
-| 결제 실패 알림 — 진입점 **둘** | RTDN(`routes/billing-google-rtdn.ts`) · 크론(`processSubscriptionExpiry` 의 `paymentHolds`) | — | — |
-| 결제 실패 알림 — 중복 방지 | `readUserPlan` 전후 비교(`lib/billing-cancel.ts`) | — | — |
+| 결제 실패 알림 — 공통 진입점 | `reconcileStoreSubscription`(RTDN·크론·결제 전 조회) | — | — |
+| 결제 실패 알림 — 중복 방지 | 같은 쓰기 트랜잭션의 소유자/멤버 plan 전후 비교 | — | — |
 | 미완료 결제 재전송 — 진입점 **둘** | — | — | `SubscriptionManager.replayUnfinishedTransactions`(`bootstrap` · 계정 변경 `.task`) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
@@ -546,11 +666,13 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(`isDefinitelyFreePlan`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |
-| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me` 응답의 `user.plan` | `MainViewModelAuthActions`(`/auth/me` 성공 경로) · `sync/PlanChangeSyncWorker` — **방금 받아 온 곳만** | `SocialFeatureViewModel.refreshAll`(받으면 적고, 못 받으면 미완 표시) |
+| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me`의 `user.plan` · 결제 전 응답의 `user_plan` | `MainViewModelAuthActions` · `sync/PlanChangeSyncWorker` · `saveSubscriptionSnapshot` — 방금 받은 값만 | `SocialFeatureViewModel.refreshAll` · `refreshSubscriptionSilently` |
+| 무료 preflight의 Play TTL 캐시 무효화 | `refresh_store=1` 성공 응답의 `user_plan` | `AccessSnapshot.withBillingResponse` · `saveSubscriptionSnapshot` · `crossStoreRenewalBlocked`(Play 조회 잠금 공유); 회귀 `BillingPreflightSnapshotTest` | 해당 40일 TTL 없음(StoreKit 실제 만료 사용) |
 | 판정 스냅샷 — **쓰기 문(유일)** | — | `EntitlementWriter`(`ui/main/EntitlementWriter.kt`) | `EntitlementWriter.swift` |
 | 문의 원자성 근거 | — | `AuthSessionStore.runIfGeneration`(세션 쓰기와 같은 락) | `KeychainStore.runIfCurrentSession`(세션 쓰기와 같은 락) |
 | 우회 차단 | — | `scripts/check-entitlement-writer.py`(CI) | 같은 스크립트가 둘 다 검사 |
-| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
+| 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-reconciliation.test.ts` · `test/apple-storekit.test.ts` | `PaidVoiceAccessTest` | `PaidVoiceGateTests` |
+| 활성 구독 없는 유료 등급 복구 | `repairOrphanedPaidPlan` → 공통 강등·그룹 정리·보관 유예; `billing-query.ts`에서 커밋 후 통지 | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
