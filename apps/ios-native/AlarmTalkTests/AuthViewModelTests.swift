@@ -729,7 +729,7 @@ final class AuthViewModelTests: XCTestCase {
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider(),
             accessSnapshotStore: AccessSnapshotStore(defaults: defaults))
         defer {
-            vm.onAccountRecovered = {}
+            vm.onAccountRecovered = { _ in }
             api.beforeCancelAccountDeletionResponse = nil
         }
         vm._setSessionForTesting(AuthSession(token: UUID().uuidString, user: user))
@@ -742,7 +742,10 @@ final class AuthViewModelTests: XCTestCase {
         try await withPendingDeletion { vm, _ in
             let userID = vm.session?.user.id
             var pendingAtRestart: [Bool] = []
-            vm.onAccountRecovered = { pendingAtRestart.append(vm.pendingDeletion) }
+            vm.onAccountRecovered = { recoveredID in
+                XCTAssertEqual(recoveredID, userID)
+                pendingAtRestart.append(vm.pendingDeletion)
+            }
             await vm.cancelAccountDeletion()
             XCTAssertEqual(vm.session?.user.id, userID)
             XCTAssertEqual(pendingAtRestart, [false], "403 게이트가 풀린 복구 성공 뒤에만 재등록한다")
@@ -752,7 +755,7 @@ final class AuthViewModelTests: XCTestCase {
     func test_failedRecoveryDoesNotRestartPushOrClearPending() async throws {
         try await withPendingDeletion { vm, api in
             var restarts = 0
-            vm.onAccountRecovered = { restarts += 1 }
+            vm.onAccountRecovered = { _ in restarts += 1 }
             api.cancelAccountDeletionResult = .failure(URLError(.notConnectedToInternet))
             await vm.cancelAccountDeletion()
             XCTAssertTrue(vm.pendingDeletion)
@@ -763,7 +766,7 @@ final class AuthViewModelTests: XCTestCase {
     func test_unsuccessfulRecoveryResponseDoesNotRestartPush() async throws {
         try await withPendingDeletion { vm, api in
             var restarts = 0
-            vm.onAccountRecovered = { restarts += 1 }
+            vm.onAccountRecovered = { _ in restarts += 1 }
             api.cancelAccountDeletionResult = .success(CancelDeletionResponse(success: false))
             await vm.cancelAccountDeletion()
             XCTAssertTrue(vm.pendingDeletion)
@@ -775,7 +778,7 @@ final class AuthViewModelTests: XCTestCase {
         for sameUser in [true, false] {
             try await withPendingDeletion { vm, api in
                 var restarts = 0
-                vm.onAccountRecovered = { restarts += 1 }
+                vm.onAccountRecovered = { _ in restarts += 1 }
                 var replacement = try XCTUnwrap(vm.session)
                 replacement.token = UUID().uuidString
                 if !sameUser { replacement.user.id = UUID().uuidString }
@@ -792,7 +795,7 @@ final class AuthViewModelTests: XCTestCase {
     func test_cancelledRecoveryDoesNotRestartPush() async throws {
         try await withPendingDeletion { vm, _ in
             var restarts = 0
-            vm.onAccountRecovered = { restarts += 1 }
+            vm.onAccountRecovered = { _ in restarts += 1 }
             let request = Task { await vm.cancelAccountDeletion() }
             request.cancel()
             await request.value

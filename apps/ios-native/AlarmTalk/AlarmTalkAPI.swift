@@ -101,30 +101,32 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let pageSize = 100
         var alarms: [RemoteAlarm] = []
         var seenIDs = Set<String>()
-        var offset = 0
+        var cursor: String?
         while true {
             try Task.checkCancellation()
+            var query = URLComponents()
+            query.queryItems = [
+                URLQueryItem(name: "pagination", value: "cursor"),
+                URLQueryItem(name: "limit", value: String(pageSize)),
+            ]
+            if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
             let page: RemoteAlarmListResponse = try await request(
-                "alarm?limit=\(pageSize)&offset=\(offset)", token: token
+                "alarm?\(query.percentEncodedQuery!)", token: token
             )
             try Task.checkCancellation()
-            // 부분 목록을 정상 snapshot으로 넘기면 뒤쪽 가족 알람을 예약하지 못한다.
-            // 중간 실패/목록 이동은 전체 회차 실패로 남겨 다음 pull에서 다시 읽는다.
-            if let total = page.total, total < 0 { throw APIError.invalidResponse }
-            if page.alarms.isEmpty {
-                guard offset >= (page.total ?? offset) else { throw APIError.invalidResponse }
-                return alarms
-            }
+            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 불변 id
+            // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
             for alarm in page.alarms {
                 guard seenIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
                 alarms.append(alarm)
             }
-            offset += page.alarms.count
-            if let total = page.total {
-                if offset >= total { return alarms }
-            } else if page.alarms.count < pageSize {
+            if !page.hasMore {
+                guard page.nextCursor == nil else { throw APIError.invalidResponse }
                 return alarms
             }
+            guard let next = page.nextCursor, !next.isEmpty,
+                  next == page.alarms.last?.id, next != cursor else { throw APIError.invalidResponse }
+            cursor = next
         }
     }
 

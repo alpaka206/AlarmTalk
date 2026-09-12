@@ -319,8 +319,9 @@ struct AuthUser: Codable, Equatable, Identifiable {
 
 struct RemoteAlarmListResponse: Decodable {
     var alarms: [RemoteAlarm]
-    /// 구버전 응답/픽스처에는 없을 수 있다. 이때도 꽉 찬 페이지는 끝으로 보지 않는다.
-    var total: Int?
+    /// 필수 필드: 커서를 지원하지 않는 서버의 첫 페이지만 성공으로 오인하지 않는다.
+    var hasMore: Bool
+    var nextCursor: String?
 }
 
 struct RemoteAlarmResponse: Decodable {

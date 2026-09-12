@@ -1120,7 +1120,7 @@ final class AuthViewModel: ObservableObject {
             }
             // 대기 중 로그인 때 /push/register는 403이다. 계정 id가 그대로라 세션 task도
             // 다시 돌지 않으므로 복구 성공 직후 APNs 등록을 명시적으로 재시작한다.
-            onAccountRecovered()
+            onAccountRecovered(ownerUserID)
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
             guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token else { return }
@@ -1129,7 +1129,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// launch에서 연결한다. 테스트에서는 실제 APNs 대신 복구 성공 경계를 관찰한다.
-    var onAccountRecovered: () -> Void = {}
+    var onAccountRecovered: (String) -> Void = { _ in }
 
     /// 로그인 후 필수 약관 동의 여부를 서버에 확인한다. 미동의면 `needsConsent=true` 로
     /// 두어 RootView 가 동의 화면을 띄운다. 네트워크 실패 시 앱 진입을 막지 않는다.

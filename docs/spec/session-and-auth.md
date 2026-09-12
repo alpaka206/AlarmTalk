@@ -73,8 +73,12 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 
 서버가 복구 성공을 확인한 뒤 **현재 기기의 푸시 등록도 다시 시작한다.** 탈퇴 대기 중에는
 푸시 등록 API가 403으로 차단되므로, 같은 계정 id로 정상 화면만 열어서는 등록이 복구되지
-않는다. iOS는 launch에서 연결한 복구 훅으로 APNs 토큰을 다시 요청하고 기존 직렬 등록
-경로를 사용한다. 알림 권한 팝업이나 전체 앱 재시작을 전제로 하지 않는다.
+않는다. iOS는 launch에서 연결한 복구 훅으로 기존 등록/해제 큐에 들어간 뒤 **복구 계정과
+일치하는 등록 캐시의 서버 확인을 별도 플래그로 무효화**하고 APNs 토큰을 다시 요청한다. 해제는 서버에서
+성공했지만 응답만 유실된 경우에도 같은 토큰을 POST해야 한다. 기기 토큰과 소유자는 남겨
+재등록 실패 후 로그아웃에서도 정확한 계정만 해제할 수 있게 하고, 다른 계정의 등록 캐시는 건드리지 않는다.
+무효화는 영속적이므로 재등록이 실패하거나 프로세스가 종료돼도 다음 등록에서 재시도한다.
+알림 권한 팝업이나 전체 앱 재시작을 전제로 하지 않는다.
 실패·취소된 요청 또는 요청 중 세션/토큰이 바뀐 경우에는 복구 상태와 푸시 훅을 적용하지 않는다.
 
 ## 구현 지도
@@ -88,7 +92,7 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
-| 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.onAccountRecovered` → `PushNotificationCoordinator.start`(launch에서 연결) |
+| 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.onAccountRecovered` → `PushNotificationCoordinator.restartAfterAccountRecovery`(launch에서 연결) |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` | `SessionTokenRenewalTests.swift` |
 
 ## 의도된 플랫폼 차이

@@ -5,16 +5,17 @@ import XCTest
 /// #730 — 목록을 다 받은 뒤에만 pull에 넘긴다. 실제 서버/알람 엔진은 실행하지 않는다.
 @MainActor
 final class AlarmPaginationTests: XCTestCase {
-    private func page(_ range: Range<Int>, total: Int?) throws -> Data {
+    private func page(_ range: Range<Int>, hasMore: Bool, total: Int? = nil) throws -> Data {
         var body: [String: Any] = ["alarms": range.map {
-            ["id": "alarm-\($0)", "is_received_family_alarm": $0 == 250] as [String: Any]
-        }]
+            ["id": String(format: "alarm-%03d", $0), "is_received_family_alarm": $0 == 250] as [String: Any]
+        }, "has_more": hasMore]
+        if hasMore, let last = range.last { body["next_cursor"] = String(format: "alarm-%03d", last) }
         if let total { body["total"] = total }
         return try JSONSerialization.data(withJSONObject: body)
     }
 
     private func withAPI(
-        pages: [Int: (Int, Data)],
+        pages: [String: (Int, Data)],
         _ body: (AlarmTalkAPI, AlarmPageFixture) async throws -> Void
     ) async throws {
         let host = "\(UUID().uuidString.lowercased()).alarm-pages.example.test"
@@ -34,99 +35,103 @@ final class AlarmPaginationTests: XCTestCase {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer alarm-test-token")
             XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "limit" })?.value, "100")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            XCTAssertEqual(query?.first(where: { $0.name == "pagination" })?.value, "cursor")
+            XCTAssertFalse(query?.contains(where: { $0.name == "offset" }) ?? true)
         }
     }
 
     func test_readsAllPagesIncludingFamilyAlarmBeyondFirstFifty() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: 251)),
-            100: (200, try page(100..<200, total: 251)),
-            200: (200, try page(200..<251, total: 251)),
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (200, try page(100..<200, hasMore: true)),
+            "alarm-199": (200, try page(200..<251, hasMore: false)),
         ]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
-            XCTAssertEqual(alarms.map(\.id), (0..<251).map { "alarm-\($0)" })
+            XCTAssertEqual(alarms.map(\.id), (0..<251).map { String(format: "alarm-%03d", $0) })
             XCTAssertEqual(alarms.last?.isReceivedFamilyAlarm, true)
-            XCTAssertEqual(fixture.offsets, [0, 100, 200])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099", "alarm-199"])
         }
     }
 
-    func test_exactPageBoundaryStopsAtReportedTotal() async throws {
+    func test_exactPageBoundaryStopsAtServerEndCursor() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: 200)),
-            100: (200, try page(100..<200, total: 200)),
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (200, try page(100..<200, hasMore: false)),
         ]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
             XCTAssertEqual(alarms.count, 200)
-            XCTAssertEqual(fixture.offsets, [0, 100])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099"])
         }
     }
 
     func test_emptySnapshotStopsAfterFirstPage() async throws {
-        try await withAPI(pages: [0: (200, try page(0..<0, total: 0))]) { api, fixture in
+        try await withAPI(pages: ["": (200, try page(0..<0, hasMore: false))]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
             XCTAssertTrue(alarms.isEmpty)
-            XCTAssertEqual(fixture.offsets, [0])
+            XCTAssertEqual(fixture.cursors, [""])
         }
     }
 
-    func test_missingTotalContinuesUntilShortPage() async throws {
+    func test_shrinkingTotalDoesNotEndCursorTraversalEarly() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: nil)),
-            100: (200, try page(100..<101, total: nil)),
+            "": (200, try page(0..<100, hasMore: true, total: 201)),
+            "alarm-099": (200, try page(100..<200, hasMore: true, total: 200)),
+            "alarm-199": (200, try page(200..<201, hasMore: false, total: 200)),
         ]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
-            XCTAssertEqual(alarms.count, 101)
-            XCTAssertEqual(fixture.offsets, [0, 100])
+            XCTAssertEqual(alarms.count, 201)
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099", "alarm-199"])
         }
     }
 
-    func test_shortPageStillContinuesWhenTotalReportsRemainingRows() async throws {
+    func test_shortPageStillContinuesWhenServerHasAnotherCursor() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<2, total: 3)),
-            2: (200, try page(2..<3, total: 3)),
+            "": (200, try page(0..<2, hasMore: true)),
+            "alarm-001": (200, try page(2..<3, hasMore: false)),
         ]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
             XCTAssertEqual(alarms.count, 3)
-            XCTAssertEqual(fixture.offsets, [0, 2])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-001"])
         }
     }
 
     func test_failedLaterPageThrowsInsteadOfReturningPartialAlarms() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: 101)),
-            100: (503, Data(#"{"error":"temporarily unavailable"}"#.utf8)),
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (503, Data(#"{"error":"temporarily unavailable"}"#.utf8)),
         ]) { api, fixture in
             do {
                 _ = try await api.listAlarms(token: "alarm-test-token")
                 XCTFail("첫 100개를 성공으로 반환하면 안 된다")
             } catch APIError.server(let status, _, _) { XCTAssertEqual(status, 503) }
-            XCTAssertEqual(fixture.offsets, [0, 100])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099"])
         }
     }
 
     func test_emptyIncompletePageThrowsInsteadOfLoopingOrReturningPartialAlarms() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: 101)),
-            100: (200, try page(100..<100, total: 101)),
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (200, try page(100..<100, hasMore: true)),
         ]) { api, fixture in
             do {
                 _ = try await api.listAlarms(token: "alarm-test-token")
-                XCTFail("전체 건수에 못 미친 빈 페이지는 불완전 응답이다")
+                XCTFail("계속 진행하라면서 커서도 행도 없는 페이지는 불완전 응답이다")
             } catch APIError.invalidResponse { }
-            XCTAssertEqual(fixture.offsets, [0, 100])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099"])
         }
     }
 
     func test_overlappingPagesRequireRetryRatherThanDuplicateSnapshot() async throws {
         try await withAPI(pages: [
-            0: (200, try page(0..<100, total: 101)),
-            100: (200, try page(99..<100, total: 101)),
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (200, try page(99..<100, hasMore: true)),
         ]) { api, fixture in
             do {
                 _ = try await api.listAlarms(token: "alarm-test-token")
                 XCTFail("페이지 경계에서 목록이 움직인 회차는 다시 읽어야 한다")
             } catch APIError.invalidResponse { }
-            XCTAssertEqual(fixture.offsets, [0, 100])
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099"])
         }
     }
 
@@ -141,30 +146,49 @@ final class AlarmPaginationTests: XCTestCase {
             XCTAssertTrue(fixture.requests.isEmpty)
         }
     }
+
+    func test_legacyOffsetResponseCannotBeAcceptedAsComplete() async throws {
+        try await withAPI(pages: ["": (200, Data(#"{"alarms":[],"total":0}"#.utf8))]) { api, _ in
+            do {
+                _ = try await api.listAlarms(token: "alarm-test-token")
+                XCTFail("커서 계약이 없는 서버로 offset 폴백하지 않는다")
+            } catch is DecodingError { }
+        }
+    }
+
+    func test_remainingRowsDeletedAfterFirstPageCanEndWithEmptyCursorPage() async throws {
+        try await withAPI(pages: [
+            "": (200, try page(0..<100, hasMore: true)),
+            "alarm-099": (200, try page(100..<100, hasMore: false)),
+        ]) { api, fixture in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            XCTAssertEqual(alarms.count, 100)
+            XCTAssertEqual(fixture.cursors, ["", "alarm-099"])
+        }
+    }
 }
 
 private final class AlarmPageFixture: @unchecked Sendable {
-    private let pages: [Int: (Int, Data)]
+    private let pages: [String: (Int, Data)]
     private let lock = NSLock()
     private var recorded: [URLRequest] = []
-    init(pages: [Int: (Int, Data)]) { self.pages = pages }
+    init(pages: [String: (Int, Data)]) { self.pages = pages }
     var requests: [URLRequest] {
         lock.lock()
         defer { lock.unlock() }
         return recorded
     }
-    var offsets: [Int] { requests.compactMap(Self.offset) }
-    private static func offset(_ request: URLRequest) -> Int? {
-        guard let url = request.url,
-              let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-                .first(where: { $0.name == "offset" })?.value else { return nil }
-        return Int(value)
+    var cursors: [String] { requests.map(Self.cursor) }
+    private static func cursor(_ request: URLRequest) -> String {
+        guard let url = request.url else { return "" }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .first(where: { $0.name == "after" })?.value ?? ""
     }
     func respond(to request: URLRequest) -> (Int, Data) {
         lock.lock()
         defer { lock.unlock() }
         recorded.append(request)
-        guard let offset = Self.offset(request), let page = pages[offset] else {
+        guard let page = pages[Self.cursor(request)] else {
             return (500, Data(#"{"error":"unexpected page"}"#.utf8))
         }
         return page
