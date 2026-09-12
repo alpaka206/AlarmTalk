@@ -1143,7 +1143,8 @@ final class AuthViewModel: ObservableObject {
     }
 
     private static func isAmbiguousDeletionCancellation(_ error: Error) -> Bool {
-        if error is URLError { return true }
+        // API의 2xx 본문 디코딩 오류는 invalidResponse로 변환되지 않고 그대로 전달된다.
+        if error is URLError || error is DecodingError { return true }
         guard let apiError = error as? APIError else { return false }
         switch apiError {
         case .invalidResponse: return true

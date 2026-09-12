@@ -53,6 +53,23 @@
   응답이 복구를 되돌리지 못하며, 계정/토큰 변경·취소 가드도 유지한다. 이미 active인 계정을
   다시 조회한다고 복구 훅을 반복하지 않는다.
 
+## #735 추가 — 실제 디코더 오류가 재확인 분기에서 빠짐
+
+[응답 디코딩 P2](https://github.com/alpaka206/AlarmTalk/pull/735#discussion_r3997367548)는
+`b02d0711`의 해석 실패 처리에 남은 오류 타입 누락이다. `AlarmTalkAPI.request`는 2xx 본문을
+`JSONDecoder.decode`로 읽다가 실패하면 `DecodingError`를 그대로 전달한다. 앞선 수정은
+`APIError.invalidResponse`만 처리했고, 해당 테스트도 그 오류를 직접 주입해 실제 경로와 달랐다.
+서버는 복구됐어도 잘린 응답/잘못된 스키마를 받으면 `/auth/me` 재확인과 푸시 훅을 건너뛰었다.
+
+- `isAmbiguousDeletionCancellation`에 `DecodingError`를 포함했다. 다른 API의 오류 계약은
+  바꾸지 않고, 탈퇴 취소 뒤 재확인으로만 연결한다. 복구 확정은 기존처럼 active 조회가 필요하다.
+- `AccountRecoveryDecodingTests`는 오류를 직접 주입하지 않는다. 격리한 `URLProtocol`로
+  실제 API에 잘못된 200 응답을 전달해 디코딩 → 재확인 → 세션 저장·표시 해제·복구 훅을 연결한다.
+  재확인이 pending/503/디코딩 실패인 경우에는 복구를 확정하지 않는 사례도 작성했다.
+- 같은 종류의 후속 수정에서는 **오류를 만드는 실제 계층의 타입과 테스트 입력을 맞춘다.**
+  `APIError.invalidResponse` 테스트를 JSON 디코딩 실패까지 다룬 근거로 쓰지 않는다.
+  동작 규칙은 [세션 스펙](../spec/session-and-auth.md)에 구체화했다.
+
 ## 작성한 회귀 사례 — 실행하지 않음
 
 - `billing-reconciliation.test.ts`: 즉시 해지 중 새 구매(기존 유예 유/무), 정상 무료 전환,
@@ -75,6 +92,9 @@
 - `AuthViewModelTests.swift` 추가 7개 함수(12경우): 불확실한 응답 4종 재확인, 재확인 실패 뒤
   일반 조회, pending/알 수 없는 상태, 멱등 재시도, 재실행의 저장된 pending,
   복구 전 시작한 늦은 조회, 재확인 도중 로그아웃/토큰 교체. 기존 5개 복구 훅 테스트도 유지.
+- `AccountRecoveryDecodingTests.swift` 2개 함수(7경우): 실제 2xx의 잘린 JSON·필수 키 누락·
+  타입 불일치·null 뒤 active 재확인 4경우, pending/503/깨진 재확인 응답 3경우.
+  재확인 요청 순서·횟수·인증 토큰, 세션 저장, 미완료 정리 표시, 복구 훅을 단언한다.
 
 사용자 지시에 따라 빌드·테스트·lint/typecheck·CI·독립 추가 리뷰는 실행하지 않았다.
 테스트를 작성했다는 사실은 통과했다는 뜻이 아니다. 스토어/운영 데이터·워크플로·보호 설정은
