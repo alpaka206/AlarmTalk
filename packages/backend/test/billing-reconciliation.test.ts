@@ -708,7 +708,7 @@ describe('RTDN 도 동일한 실제 DB 상태 전이를 사용한다', () => {
       vi.fn(async () => new Response(JSON.stringify(status))),
     );
   }
-  async function notify() {
+  async function notify(purchaseToken = 'receipt-key') {
     const app = new Hono<AppEnv>();
     app.route('/billing/google', billingGoogleRtdn);
     return app.request(
@@ -722,7 +722,7 @@ describe('RTDN 도 동일한 실제 DB 상태 전이를 사용한다', () => {
               JSON.stringify({
                 packageName: ENV.ANDROID_PACKAGE_NAME,
                 subscriptionNotification: {
-                  purchaseToken: 'receipt-key',
+                  purchaseToken,
                   subscriptionId: 'family_monthly',
                   notificationType: 2,
                 },
@@ -734,6 +734,155 @@ describe('RTDN 도 동일한 실제 DB 상태 전이를 사용한다', () => {
       ENV,
     );
   }
+  async function linkedPurchase(state: string, expiryTime = FUTURE) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('owner'));
+    const accountId = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('');
+    const next = {
+      subscriptionState: state,
+      linkedPurchaseToken: 'receipt-key',
+      externalAccountIdentifiers: { obfuscatedExternalAccountId: accountId },
+      lineItems: [
+        { productId: 'family_monthly', expiryTime, latestSuccessfulOrderId: 'new-order' },
+      ],
+    };
+    vi.mocked(getPlaySubscriptionV2).mockImplementation(async (_env, token) =>
+      token === 'new-key'
+        ? next
+        : {
+            subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED',
+            lineItems: [{ productId: 'family_monthly', expiryTime: PAST }],
+          },
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(next))),
+    );
+    return next;
+  }
+  it('새 토큰의 첫 CANCELED도 남은 기간과 그룹을 보존하고 늦은 옛 RTDN을 견딘다', async () => {
+    await seed('google', 1);
+    await linkedPurchase('SUBSCRIPTION_STATE_CANCELED');
+    expect((await notify('new-key')).status).toBe(200);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    expect(
+      (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-owner'"))[0]!.expires_at,
+    ).toBe(FUTURE);
+    expect(
+      await rows(
+        "SELECT subscription_id,last_paid_at FROM store_transactions WHERE provider_transaction_id='new-key'",
+      ),
+    ).toEqual([{ subscription_id: 'sub-owner', last_paid_at: PAID }]);
+    // 옛 토큰의 직접 조회는 EXPIRED이지만 공통 정합화에는 새 토큰도 포함된다.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED',
+              lineItems: [{ productId: 'family_monthly', expiryTime: PAST }],
+            }),
+          ),
+      ),
+    );
+    expect((await notify()).status).toBe(200);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+  });
+  it.each(['SUBSCRIPTION_STATE_ON_HOLD', 'SUBSCRIPTION_STATE_PAUSED'])(
+    '새 토큰의 첫 %s는 이전 토큰 만료와 구분하고 복구 때 같은 그룹을 살린다',
+    async (state) => {
+      await seed('google', 1);
+      await linkedPurchase(state, PAST);
+      expect((await notify('new-key')).status).toBe(200);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('free');
+      expect(
+        (await rows("SELECT cancel_at_period_end FROM subscriptions WHERE id='sub-owner'"))[0]!
+          .cancel_at_period_end,
+      ).toBe(0);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+      const recovered = await linkedPurchase('SUBSCRIPTION_STATE_ACTIVE');
+      // 앱 confirm 없이 크론이 새 토큰을 다시 읽어도 복구해야 한다.
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-owner'"))[0]!.expires_at,
+      ).toBe(recovered.lineItems[0]!.expiryTime);
+    },
+  );
+  it.each(['SUBSCRIPTION_STATE_EXPIRED', 'SUBSCRIPTION_STATE_CANCELED'])(
+    '새 토큰도 %s로 실제 만료된 경우에만 그룹을 종료한다',
+    async (state) => {
+      await seed('google');
+      await linkedPurchase(state, PAST);
+      expect((await notify('new-key')).status).toBe(200);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(0);
+      expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(2);
+    },
+  );
+  it('연결 기록 뒤 재조회 실패에도 새 토큰을 남겨 다음 재시도가 옛 토큰만 보지 않는다', async () => {
+    await seed('google');
+    const next = await linkedPurchase('SUBSCRIPTION_STATE_ON_HOLD', PAST);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        vi.mocked(getPlaySubscriptionV2).mockRejectedValue(new Error('temporary outage'));
+        return new Response(JSON.stringify(next));
+      }),
+    );
+    expect((await notify('new-key')).status).toBe(502);
+    expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    await linkedPurchase('SUBSCRIPTION_STATE_ON_HOLD', PAST);
+    expect((await notify('new-key')).status).toBe(200);
+    expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+  });
+  it('마지막 새 토큰 응답의 계정 바인딩이 다르면 연결과 이전 구독을 바꾸지 않는다', async () => {
+    await seed('google');
+    const next = await linkedPurchase('SUBSCRIPTION_STATE_CANCELED');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ...next,
+              externalAccountIdentifiers: { obfuscatedExternalAccountId: 'different-account' },
+            }),
+          ),
+      ),
+    );
+    expect((await notify('new-key')).status).toBe(502);
+    expect(await rows('SELECT * FROM store_transactions')).toHaveLength(1);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    expect(sendPlanChangedPush).not.toHaveBeenCalled();
+  });
+  it('주문 조회 중 confirm이 새 토큰을 연결하면 그 최신 기록을 덮지 않는다', async () => {
+    await seed('google');
+    await linkedPurchase('SUBSCRIPTION_STATE_CANCELED');
+    vi.mocked(googlePaymentAnchor).mockImplementationOnce(async () => {
+      await db.execute({
+        sql: `INSERT INTO store_transactions
+          (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+          VALUES ('confirmed','owner','google','new-key','family_monthly','family','sub-owner',?,?)`,
+        args: [FUTURE, NOW.toISOString()],
+      });
+      return new Date(PAID);
+    });
+    expect((await notify('new-key')).status).toBe(502);
+    expect(
+      (await rows("SELECT last_paid_at FROM store_transactions WHERE id='confirmed'"))[0]!
+        .last_paid_at,
+    ).toBe(NOW.toISOString());
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+    expect(sendPlanChangedPush).not.toHaveBeenCalled();
+  });
   it.each([
     'SUBSCRIPTION_STATE_ACTIVE',
     'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',

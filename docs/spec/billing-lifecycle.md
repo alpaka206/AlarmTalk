@@ -31,6 +31,11 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   `EntitlementWriter` 한 번으로 저장한 뒤에만 결제를 연다. 필드가 없는 구버전 응답이나
   세션 변경·취소·저장 거절이면 결제를 열지 않는다. `/auth/me` 를 나중에 호출해
   반쪽 스냅샷을 보정하는 방식은 쓰지 않는다.
+- 결제 판단에는 **그 preflight가 반환한 응답 자체**를 사용한다. 성공 여부만 받고 공용
+  화면 캐시를 다시 읽으면, 이전에 시작한 일반 조회가 사이에 끝나 결제 차단을 지울 수 있다.
+  성공한 preflight 이전에 시작한 구독 조회는 해당 구독·plan을 다시 덮지 못한다.
+  전체 갱신의 작업 세대/완료 표시는 별도로 유지하고, 취소·실패한 preflight로 기존 갱신을
+  무효화하지 않는다. 늦은 이전 전체 갱신을 버려도 다음 전체 갱신이 시작될 수 있어야 한다.
 
 ### 결제 기록의 날짜
 
@@ -147,6 +152,18 @@ Apple의 `REVOKED` 상태를 Play 조회 응답에 옮기지 않는다.
 근거: [Google 구독 수명주기 — Revocations](https://developer.android.com/google/play/billing/lifecycle/subscriptions#revoke),
 [SubscriptionState 공식 목록](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#SubscriptionState).
 회귀 픽스처도 이 계약을 따른다. 기존 코드·주석·테스트의 상태명만으로 새 처리 분기를 만들지 않는다.
+
+### Play 교체 토큰의 소유자와 구독 연결은 다르다
+
+새 토큰의 첫 RTDN이 해지 예약·보류·만료이고 클라이언트 confirm이 아직 없어도,
+`linkedPurchaseToken`은 **소유자를 찾는 단서**일 뿐 새 토큰의 상태를 대체하지 않는다.
+이전 토큰이 이미 EXPIRED인 것만으로 새 토큰의 남은 유료 기간이나 회복형 보류를 종료하지 않는다.
+권위 조회의 계정 바인딩과 연결 토큰을 재확인하고, 이전 구독이 여전히 활성인 경우 새 토큰의
+실제 결제일·상품·만료와 구독 연결을 먼저 기록한다. 그 뒤 새 토큰까지 포함한 공통 정합화를 한다.
+중간 조회 실패 시에도 기록한 새 연결은 남아 크론/재시도가 이전 토큰만 보지 않게 한다.
+동시 confirm으로 이미 새 토큰이 연결됐거나 이전 구독이 교체됐으면 덮지 않고 재시도한다.
+보류는 그룹을 보존하고, 만료 전 CANCELED는 남은 기간을 유지한다. 이전 토큰의 늦은 알림도
+새 토큰을 포함해 확인한다. 새 토큰이 이미 끝난 경우만 다른 살아 있는 증빙과 함께 종료를 판단한다.
 
 ## 애플 구독 상태를 읽는 법
 
@@ -605,6 +622,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 만료 재조회 — Google | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
 | 만료 재조회 — Apple | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
 | 복수 증빙 플랜 교체의 연결 보존 | `reconcileStoreSubscription`의 교체 가드; `test/billing-reconciliation.test.ts`의 복수 증빙 교체 사례 | 기존 조회 실패 처리로 구매 중단 | 기존 조회 실패 처리로 구매 중단 |
+| 교체 토큰의 첫 비활성 RTDN | `billing-google-rtdn.ts`의 `linkedFromToken` 연결 기록 → 공통 정합화; 실제 DB RTDN 테스트 | — | — |
+| 결제 전 응답과 이전 조회의 경합 | — | — | `refreshSubscriptionForPurchase` 반환 응답 + `billingPreflightRevision`; `BillingPreflightTests` |
 | 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |
 | 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
 | 보류 — Apple 진입점 | `reconcileStoreSubscription` → `'suspend'` | — | — |

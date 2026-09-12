@@ -82,6 +82,9 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 늦게 끝나면 방금 쓴 `free` 를 덮고 스냅샷을 '확정' 으로까지 표시한다 — 강등 정합화가
     /// 그 한 번의 경합으로 무효가 된다.
     private var refreshGeneration = 0
+    /// 성공한 구매 전 조회보다 먼저 시작한 구독 읽기는 plan/구독을 되돌릴 수 없다.
+    /// 전체 갱신의 세대와 분리해 isRefreshing의 완료 소유권을 빼앗지 않는다.
+    private var billingPreflightRevision = 0
 
     init(
         api: AlarmTalkAPI = .shared,
@@ -172,6 +175,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
+            let preflightRevision = billingPreflightRevision
             async let nextSubscription = api.getSubscription(token: token)
             async let nextVouchers = api.listVouchers(token: token)
             let resolvedSubscription = try await nextSubscription
@@ -194,7 +198,7 @@ final class SocialFeatureViewModel: ObservableObject {
             var planOK = false
             var rolledToken: String?
             do {
-                let me = try await AlarmTalkAPI.shared.me(token: token)
+                let me = try await api.me(token: token)
                 freshPlan = me.user.plan
                 planOK = true
                 rolledToken = me.token?.nilIfBlank
@@ -209,7 +213,8 @@ final class SocialFeatureViewModel: ObservableObject {
             // 요청에서 멈춰 있는 사이 로그아웃·계정 전환이 일어날 수 있다 — 그대로 쓰면
             // A 의 태스크가 **지워진 A 의 스냅샷을 되살리고** A 의 공유 코드를 B 의 화면에
             // 올린다(B 의 새로고침은 A 가 `isRefreshing` 을 쥐고 있어 일찍 반환했을 수도 있다).
-            guard activeUserID == userID, generation == refreshGeneration else { return }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  preflightRevision == billingPreflightRevision else { return }
             // rolling refresh — **세대 가드를 통과한 뒤에** 넘긴다(2026-09-01 리뷰).
             // 앞에서 넘기면 밀려난 갱신이 굴린 토큰까지 세션에 박힌다.
             // ⚠ **plan 을 토큰 회전보다 먼저 적용한다**(2026-09-01 리뷰). 둘 다 출처 토큰을
@@ -287,30 +292,42 @@ final class SocialFeatureViewModel: ObservableObject {
     /// `SubscriptionManager.onServerEntitlementUpdated` 훅이 호출한다.
     /// 기존 `refreshAll` 의 구독 fetch 경로(`GET /api/billing/subscription`) 를
     /// 그대로 재사용하며, 실패는 조용히 무시 — 다음 refreshAll 에서 catch-up 된다.
-    /// - Returns: **권위 응답을 실제로 받아 반영했는가.** 결제 직전 preflight 가 이걸 본다 —
-    ///   실패했는데 캐시로 진행하면 낡은 스냅샷으로 판단하게 된다(코덱스 #733 5차).
-    ///   배경 갱신 호출부는 그대로 무시하면 된다(`@discardableResult`).
-    /// - Parameter refreshStoreState: 서버가 **애플에 직접 물어** 갱신 상태를 최신화할지.
-    ///   ⚠ **결제 직전 preflight 에서만 켠다** — 배경 갱신이 켜면 애플이 느릴 때 DB 에
+    /// - Returns: **응답을 실제로 받아 반영했는가.** 배경 갱신은 결과를 무시해도 된다.
+    ///   구매는 `refreshSubscriptionForPurchase`에서 응답 자체를 받아 판단한다.
+    /// - Parameter refreshStoreState: 서버가 **스토어에 직접 물어** 갱신 상태를 최신화할지.
+    ///   ⚠ **결제 직전 preflight 에서만 켠다** — 배경 갱신이 켜면 스토어가 느릴 때 DB 에
     ///   이미 있는 답까지 같이 늦어지고, 그 사이 울림 게이트가 낡은 로컬 값으로 돈다.
     @discardableResult
     func refreshSubscriptionSilently(
         session: AuthSession?,
         refreshStoreState: Bool = false
     ) async -> Bool {
+        await refreshAndPersistSubscription(session: session, refreshStoreState: refreshStoreState) != nil
+    }
+
+    /// 호출자가 공용 캐시를 다시 읽지 않고 이번 응답으로 구매를 판단하게 한다.
+    func refreshSubscriptionForPurchase(session: AuthSession?) async -> BillingSubscriptionResponse? {
+        await refreshAndPersistSubscription(session: session, refreshStoreState: true)
+    }
+
+    private func refreshAndPersistSubscription(
+        session: AuthSession?,
+        refreshStoreState: Bool
+    ) async -> BillingSubscriptionResponse? {
         guard let token = session?.token,
               let userID = normalizedUserID(session?.user.id) else {
-            return false
+            return nil
         }
         activeUserID = userID
         // ⚠ **여기서는 세대를 올리지 않는다 — 잡아 두기만 한다.** 이 갱신은 구독 하나만
         // 쓰는 좁은 경로라, 올리면 더 넓은 `refreshAll`(plan·그룹·확정 표시까지 쓴다)이
-        // 진행 중일 때 그걸 무효로 만든다. 잡아 두기만 하면 방향이 하나로 정리된다 —
-        // 나중에 시작한 `refreshAll` 은 이 결과를 버리게 하고, 그 반대는 하지 않는다.
+        // 진행 중일 때 그걸 무효로 만든다. 나중에 시작한 전체 갱신은 이 결과를 버리게 한다.
+        // 성공한 preflight의 역방향 보호는 별도 billingPreflightRevision으로 처리한다.
         let generation = refreshGeneration
+        let preflightRevision = billingPreflightRevision
         guard let accessTicket = entitlementWriter.ticket(),
               accessTicket.userID == userID, accessTicket.token == token else {
-            return false
+            return nil
         }
         do {
             let nextSubscription = try await api.getSubscription(
@@ -320,20 +337,22 @@ final class SocialFeatureViewModel: ObservableObject {
             // 구버전 서버·취소된 요청으로 반쪽 스냅샷을 남기거나 결제를 열지 않는다.
             guard !Task.isCancelled,
                   !refreshStoreState || (nextSubscription.userPlan != nil &&
-                    nextSubscription.storeRenewalProviders != nil) else { return false }
+                    nextSubscription.storeRenewalProviders != nil) else { return nil }
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
-            guard activeUserID == userID, generation == refreshGeneration else { return false }
+            guard activeUserID == userID, generation == refreshGeneration,
+                  preflightRevision == billingPreflightRevision else { return nil }
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
                 if let plan = nextSubscription.userPlan { $0.userPlan = plan }
             }
-            guard silentWrite == .applied else { return false }
+            guard silentWrite == .applied else { return nil }
+            if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
             if let plan = nextSubscription.userPlan { onFreshPlan?(userID, token, plan) }
-            return true
+            return nextSubscription
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
-            return false
+            return nil
         }
     }
 

@@ -411,14 +411,13 @@ struct BillingPanel: View {
         guard let requestToken = auth.session?.token else { return }
         // ⚠ `refreshStoreState` 는 **여기서만** 켠다 — 서버가 애플에 직접 물어보므로
         //   배경 갱신에 켜면 애플이 느릴 때 일상 조회까지 같이 늦어진다.
-        guard await socialFeatures.refreshSubscriptionSilently(
-            session: auth.session,
-            refreshStoreState: true
-        ) else {
+        guard let preflight = await socialFeatures.refreshSubscriptionForPurchase(session: auth.session) else {
             purchaseBlock = .renewalOwnerUnknown
             return
         }
-        if let block = purchaseBlockReason() {
+        guard !Task.isCancelled, auth.session?.token == requestToken else { return }
+        // await 사이에 공용 화면 캐시가 바뀌어도 이번 권위 응답의 차단은 사라지지 않는다.
+        if let block = Self.purchaseBlockReason(currentTier: currentTier, response: preflight) {
             purchaseBlock = block
             return
         }

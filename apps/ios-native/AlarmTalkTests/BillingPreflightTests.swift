@@ -45,14 +45,16 @@ final class BillingPreflightTests: XCTestCase {
         let vm = SocialFeatureViewModel(api: AlarmTalkAPI(
             baseURL: URL(string: "https://\(host)/api/")!, session: urlSession
         ))
-        let request = Task { await vm.refreshSubscriptionSilently(session: current, refreshStoreState: true) }
+        let request = Task { await vm.refreshSubscriptionForPurchase(session: current) }
         if cancel { request.cancel() }
-        let applied = await request.value
+        let response = await request.value
+        let applied = response != nil
         XCTAssertEqual(applied, expected)
         // 새로운 저장소 인스턴스로 읽어 재시작 뒤 남는 값까지 확인한다.
         let snapshot = AccessSnapshotStore().read(userID: userID)
         XCTAssertEqual(snapshot.userPlan, expected ? "free" : "family")
         if expected {
+            XCTAssertEqual(response?.storeRenewalProviders, [])
             XCTAssertNotNil(snapshot.subscriptionResponse)
             XCTAssertNil(snapshot.subscriptionResponse?.subscription)
             XCTAssertEqual(snapshot.subscriptionResponse?.storeRenewalProviders, [])
@@ -82,14 +84,141 @@ final class BillingPreflightTests: XCTestCase {
     func test_cancelledPreflightCannotAuthorizePurchase() async throws {
         try await check(body: #"{"subscription":null,"plan":null,"next_plan":null,"user_plan":"free","store_renewal_providers":[]}"#, cancel: true, expected: false)
     }
+
+    private func checkOverlappingRefresh(silent: Bool = false, preflightFails: Bool = false) async throws {
+        let userID = UUID().uuidString
+        let current = session(token: UUID().uuidString, userID: userID)
+        let host = "\(UUID().uuidString.lowercased()).billing.example.test"
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(current)
+        let oldReadStarted = expectation(description: "이전 조회가 응답 반영 직전에 대기")
+        let gate = PreflightResponseGate()
+        let stale = Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8)
+        let authoritative = Data(#"{"subscription":null,"plan":null,"next_plan":null,"user_plan":"family","store_renewal_providers":["google"]}"#.utf8)
+        let staleMe = try JSONSerialization.data(withJSONObject: [
+            "user": ["id": userID, "email": "preflight@example.test", "name": "Test", "plan": "free"]
+        ])
+        PreflightURLProtocol.configureDeferred(host: host) { request, complete in
+            let url = request.url!
+            if url.query == "refresh_store=1" {
+                complete(preflightFails ? 503 : 200, authoritative)
+            } else if url.path.hasSuffix("billing/subscription") {
+                if silent { gate.hold { complete(200, stale) }; oldReadStarted.fulfill() }
+                else { complete(200, stale) }
+            } else if url.path.hasSuffix("auth/me") {
+                gate.hold { complete(200, staleMe) }
+                oldReadStarted.fulfill()
+            } else if url.path.hasSuffix("billing/vouchers") {
+                complete(200, Data(#"{"vouchers":[]}"#.utf8))
+            } else {
+                complete(200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+            }
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PreflightURLProtocol.self]
+        let urlSession = URLSession(configuration: config)
+        let vm = SocialFeatureViewModel(api: AlarmTalkAPI(
+            baseURL: URL(string: "https://\(host)/api/")!, session: urlSession
+        ))
+        defer {
+            gate.release()
+            urlSession.invalidateAndCancel()
+            PreflightURLProtocol.configure(host: host, handler: nil)
+            AccessSnapshotStore().clear(userID: userID)
+            if let previous { try? KeychainStore.saveSession(previous) }
+            else { KeychainStore.deleteSession() }
+        }
+        let older = Task {
+            if silent { _ = await vm.refreshSubscriptionSilently(session: current) }
+            else { await vm.refreshAll(session: current) }
+        }
+        await fulfillment(of: [oldReadStarted], timeout: 2)
+        let preflight = await vm.refreshSubscriptionForPurchase(session: current)
+        gate.release()
+        await older.value
+        XCTAssertFalse(vm.isRefreshing)
+        if preflightFails {
+            XCTAssertNil(preflight)
+            XCTAssertEqual(vm.subscription?.storeRenewalProviders, [])
+            XCTAssertTrue(vm.entitlementSnapshotComplete)
+            XCTAssertEqual(AccessSnapshotStore().read(userID: userID).userPlan, "free")
+        } else {
+            XCTAssertEqual(preflight?.storeRenewalProviders, ["google"])
+            XCTAssertEqual(vm.subscription?.storeRenewalProviders, ["google"])
+            XCTAssertEqual(AccessSnapshotStore().read(userID: userID).userPlan, "family")
+            XCTAssertEqual(AccessSnapshotStore().read(userID: userID).subscriptionResponse?.storeRenewalProviders, ["google"])
+            // 공용 화면 값이 이후 바뀌더라도 구매 판단은 반환된 응답만 사용한다.
+            vm.subscription = nil
+            XCTAssertEqual(BillingPanel.purchaseBlockReason(currentTier: .free, response: preflight), .playOwnsRenewal)
+            XCTAssertFalse(vm.entitlementSnapshotComplete)
+        }
+        // 이전 전체 갱신을 버려도 다음 전체 갱신의 admission이 잠기면 안 된다.
+        if !silent {
+            PreflightURLProtocol.configure(host: host) { request in
+                if request.url!.path.hasSuffix("auth/me") { return (200, staleMe) }
+                if request.url!.path.hasSuffix("billing/subscription") { return (200, stale) }
+                if request.url!.path.hasSuffix("billing/vouchers") { return (200, Data(#"{"vouchers":[]}"#.utf8)) }
+                return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+            }
+            await vm.refreshAll(session: current)
+            XCTAssertTrue(vm.entitlementSnapshotComplete)
+        }
+    }
+
+    func test_olderFullRefreshCannotErasePreflightDecisionOrPersistedPlan() async throws {
+        try await checkOverlappingRefresh()
+    }
+
+    func test_olderSilentRefreshCannotEraseSuccessfulPreflight() async throws {
+        try await checkOverlappingRefresh(silent: true)
+    }
+
+    func test_failedPreflightDoesNotInvalidatePendingFullRefresh() async throws {
+        try await checkOverlappingRefresh(preflightFails: true)
+    }
+}
+
+private final class PreflightResponseGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completion: (@Sendable () -> Void)?
+    private var released = false
+
+    func hold(_ completion: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if released { lock.unlock(); completion(); return }
+        self.completion = completion
+        lock.unlock()
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        let completion = self.completion
+        self.completion = nil
+        lock.unlock()
+        completion?()
+    }
 }
 
 private final class PreflightURLProtocol: URLProtocol, @unchecked Sendable {
+    typealias Reply = @Sendable (Int, Data) -> Void
+    typealias Handler = @Sendable (URLRequest, @escaping Reply) -> Void
     private static let lock = NSLock()
     // 취소된 요청이 늦게 startLoading에 도착해도 다음 테스트의 핸들러를 쓰지 않는다.
-    nonisolated(unsafe) private static var handlers: [String: @Sendable (URLRequest) -> (Int, Data)] = [:]
+    nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
 
     static func configure(host: String, handler: (@Sendable (URLRequest) -> (Int, Data))?) {
+        lock.lock()
+        defer { lock.unlock() }
+        if let handler {
+            handlers[host] = { request, complete in
+                let (status, data) = handler(request)
+                complete(status, data)
+            }
+        } else { handlers[host] = nil }
+    }
+
+    static func configureDeferred(host: String, handler: @escaping Handler) {
         lock.lock()
         defer { lock.unlock() }
         handlers[host] = handler
@@ -107,11 +236,12 @@ private final class PreflightURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
             return
         }
-        let (status, data) = handler(request)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
-            httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        handler(request) { [self] status, data in
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
+                httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
     override func stopLoading() {}
 }

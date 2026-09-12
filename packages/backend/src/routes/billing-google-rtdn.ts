@@ -17,6 +17,7 @@ import {
   refreshCompetingAppleRenewalState,
 } from '../lib/billing-cancel';
 import {
+  BillingStateChangedError,
   BillingStateUnavailableError,
   reconcileStoreSubscription,
 } from '../lib/billing-reconciliation';
@@ -352,8 +353,6 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // Play 권위 재조회(reconcile)가 보정한다.
   const mappedRes = mappedSubscriptionId
     ? await db.execute({
-        // `period_days` 는 결제 앵커(`googlePaymentAnchor`) 계산에 쓴다 — 빠지면 월(30)로
-        // 떨어져 연간·장기 부여에서 앵커가 크게 어긋난다.
         sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key, p.period_days
               FROM subscriptions s JOIN plans p ON p.id = s.plan_id
               WHERE s.id = ? AND s.user_id = ? AND s.status = 'active'`,
@@ -377,6 +376,68 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // 취소·보류·만료도 크론/구매 전 조회와 같은 원자적 정합화 경로를 탄다.
   // 매핑 조회 이후 전환됐더라도 내부의 낙관적 스냅샷 검사가 옛 응답을 거부한다.
   try {
+    if (linkedFromToken) {
+      // linked 토큰으로 알아낸 것은 소유자뿐이다. 새 토큰까지 기록해야 공통 정합화가
+      // 이전 토큰의 EXPIRED만 보고 남은 유료 기간/보류 중인 새 구독을 해체하지 않는다.
+      const planKey = authoritativeProductId && googlePlanKeyFromProductId(authoritativeProductId);
+      if (subscription.linkedPurchaseToken !== linkedFromToken || !planKey) {
+        throw new BillingStateUnavailableError('Linked Play purchase changed', false);
+      }
+      const lastPaidAt = await googlePaymentAnchor(c.env, subscription, purchaseToken).catch(() => {
+        throw new BillingStateUnavailableError('Linked Play payment date unavailable', false);
+      });
+      await withWriteTransaction(db, async (tx) => {
+        const predecessor = await tx.execute({
+          sql: `SELECT 1 FROM store_transactions t JOIN subscriptions s ON s.id=t.subscription_id
+            WHERE t.provider='google' AND t.provider_transaction_id=? AND t.user_id=?
+              AND s.id=? AND s.user_id=? AND s.status='active'`,
+          args: [linkedFromToken, userPk, mappedSubscriptionId, userPk],
+        });
+        const existing = await tx.execute({
+          sql: `SELECT 1 FROM store_transactions WHERE provider='google' AND provider_transaction_id=?`,
+          args: [purchaseToken],
+        });
+        if (!predecessor.rows.length || existing.rows.length) {
+          // 동시 confirm이 이미 연결했거나 이전 구독을 교체했다. 새 연결을 덮지 않는다.
+          throw new BillingStateChangedError('Linked Play mapping changed');
+        }
+        if (
+          !(await purchaseBelongsToUser(
+            tx,
+            subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId,
+            userPk,
+          ))
+        ) {
+          throw new BillingStateUnavailableError('Linked Play purchase account changed', false);
+        }
+        await tx.execute({
+          sql: `INSERT INTO store_transactions
+            (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,
+             expires_at,last_paid_at,raw_payload)
+            VALUES (?,?,'google',?,?,?,?,?,?,?)`,
+          args: [
+            crypto.randomUUID(),
+            userPk,
+            purchaseToken,
+            authoritativeProductId,
+            planKey,
+            mappedSubscriptionId,
+            Number.isFinite(expiryMs) ? new Date(expiryMs).toISOString() : null,
+            lastPaidAt.toISOString(),
+            JSON.stringify({ via: 'rtdn_linked', state, notificationType: sub.notificationType }),
+          ],
+        });
+        if (isRecoverablePlayState(state)) {
+          // 이전 토큰의 해지 예약은 새 토큰의 회복 후 재청구를 부정하지 않는다.
+          await tx.execute({
+            sql: `UPDATE subscriptions SET cancel_at_period_end=0 WHERE id=?`,
+            args: [mappedSubscriptionId],
+          });
+        }
+      });
+      // 관측한 구매 연결은 먼저 보존한다. 아래 재조회가 실패해도 다음 크론/RTDN이
+      // 새 토큰을 빠뜨리지 않으며, 기존 토큰만 읽었던 동시 작업은 스냅샷 비교로 거절된다.
+    }
     await reconcileStoreSubscription(db, c.env, mappedSubscriptionId);
   } catch (error) {
     if (!(error instanceof BillingStateUnavailableError)) throw error;
