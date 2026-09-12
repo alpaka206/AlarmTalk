@@ -111,6 +111,36 @@ describe('가족 알람 수신자 그만받기(decline)', () => {
     testDb = await seed();
   });
 
+  for (const removedId of [ALARM_ID, '22222222-2222-2222-2222-222222222222']) {
+    it(`커서 앞 행 또는 커서 자체가 ack로 삭제돼도 다음 가족 알람을 건너뛰지 않는다: ${removedId}`, async () => {
+      const middle = '22222222-2222-2222-2222-222222222222';
+      const last = '33333333-3333-3333-3333-333333333333';
+      for (const id of [middle, last]) {
+        await testDb.execute({
+          sql: `INSERT INTO alarms (id,user_id,target_user_id,time,mode,is_active,delivery_version)
+            VALUES (?,'A','B','07:00','sound-only',1,?)`,
+          args: [id, DELIVERY_VERSION_1],
+        });
+      }
+      const first = await appFor('B').request('/?pagination=cursor&limit=2');
+      expect(first.status).toBe(200);
+      const page = await first.json();
+      expect(page.alarms.map((a: { id: string }) => a.id)).toEqual([ALARM_ID, middle]);
+      expect(page).toMatchObject({ has_more: true, next_cursor: middle });
+
+      expect((await markReceived(removedId)).status).toBe(200);
+      // 다른 기기의 시각 편집도 커서 위치를 바꾸지 않는다.
+      await testDb.execute({ sql: "UPDATE alarms SET time='00:01' WHERE id=?", args: [last] });
+      const next = await appFor('B').request(`/?pagination=cursor&limit=2&after=${page.next_cursor}`);
+      expect(next.status).toBe(200);
+      expect(await next.json()).toMatchObject({
+        alarms: [{ id: last, is_received: true }], has_more: false, next_cursor: null,
+      });
+      // 같은 커서로 다시 읽어도 수신자 스코프를 넘지 않는다.
+      expect((await (await appFor('unrelated').request(`/?pagination=cursor&after=${middle}`)).json()).alarms).toEqual([]);
+    });
+  }
+
   async function listIds(userId: string): Promise<string[]> {
     const res = await appFor(userId).request('/');
     const body = (await res.json()) as { alarms: Array<{ id: string }> };

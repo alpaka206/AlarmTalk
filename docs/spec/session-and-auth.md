@@ -69,6 +69,31 @@
 JWT 서명 설정 누락도 서버 장애(503)이며 사용자 토큰 만료가 아니다.
 JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` 에 도달하면 만료다.
 
+## 탈퇴 예약을 취소해 복구할 때
+
+서버가 복구 성공을 확인한 뒤 **현재 기기의 푸시 등록도 다시 시작한다.** 탈퇴 대기 중에는
+푸시 등록 API가 403으로 차단되므로, 같은 계정 id로 정상 화면만 열어서는 등록이 복구되지
+않는다. iOS는 launch에서 연결한 복구 훅으로 기존 등록/해제 큐에 들어간 뒤 **복구 계정과
+일치하는 등록 캐시의 서버 확인을 별도 플래그로 무효화**하고 APNs 토큰을 다시 요청한다. 해제는 서버에서
+성공했지만 응답만 유실된 경우에도 같은 토큰을 POST해야 한다. 기기 토큰과 소유자는 남겨
+재등록 실패 후 로그아웃에서도 정확한 계정만 해제할 수 있게 하고, 다른 계정의 등록 캐시는 건드리지 않는다.
+무효화는 영속적이므로 재등록이 실패하거나 프로세스가 종료돼도 다음 등록에서 재시도한다.
+알림 권한 팝업이나 전체 앱 재시작을 전제로 하지 않는다.
+**탈퇴 취소는 재시도 가능해야 한다.** 서버에서 복구됐는데 응답만 유실돼도 같은 요청을 다시
+보내면 active 계정에는 성공을 반환한다. 이미 active인 행은 다시 수정하지 않으며, 계정 없음이나
+알 수 없는 상태를 active로 되살리지 않는다. 상태 확인과 취소는 같은 쓰기 트랜잭션에서 한다.
+
+iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETION`을 받으면 `/auth/me`로
+현재 상태를 재확인한다. 응답 해석 실패에는 `APIError.invalidResponse`뿐 아니라 실제 API의
+`JSONDecoder`가 전달하는 `DecodingError`(잘린 JSON·필수 필드 누락·타입 불일치·null)도 포함한다.
+실패 응답 자체를 복구 성공으로 읽지 않는다. **pending → active가
+확인되면 요청 재시도뿐 아니라 일반 계정 조회에서도 동일한 복구 완료 처리**를 수행한다:
+세션의 탈퇴 상태 저장, 해당 계정의 미완료 탈퇴 정리 표시 해제, 푸시 강제 재등록.
+재실행 시에는 저장된 세션의 pending 상태도 전환 근거로 사용한다. active 재조회로 반복
+재등록하지 않고, 복구 전에 시작한 늦은 조회가 다시 pending으로 덮어쓰지도 못하게 한다.
+재확인이 실패하거나 여전히 pending/알 수 없는 상태이면 복구를 확정하지 않는다.
+취소된 요청 또는 요청 중 세션/토큰이 바뀐 경우에도 복구 상태와 푸시 훅을 적용하지 않는다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -80,6 +105,8 @@ JWT 는 유한한 숫자 만료 시각이 필수이고, 현재 시각이 `exp` �
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |
+| 탈퇴 취소 뒤 푸시 재등록 | `authMiddleware` 탈퇴 대기 허용 경로·`user.ts` 탈퇴 취소 | `MainViewModelAuthActions.cancelAccountDeletion` → `registerCurrentToken` | `AuthViewModel.onAccountRecovered` → `PushNotificationCoordinator.restartAfterAccountRecovery`(launch에서 연결) |
+| 탈퇴 취소 응답 유실·재확인 | `user.ts` DELETE 멱등 처리(이미 active는 무변경 성공) | 기존 취소 재시도 응답 소비 | `cancelAccountDeletion` 재확인·`refreshUser` 전환 감지 → `completeAccountRecovery` |
 | 회귀 테스트 | `test/auth.test.ts` (TTL·503) | `network/SessionTokenRenewalTest.kt` | `SessionTokenRenewalTests.swift` |
 
 ## 의도된 플랫폼 차이

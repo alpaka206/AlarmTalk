@@ -14,7 +14,11 @@ import {
   billingRetentionUntil,
   pseudonymizeBillingForRetention,
 } from '../src/lib/account-deletion';
-import { getPlaySubscriptionV2, googlePaymentAnchor } from '../src/lib/play-subscriptions';
+import {
+  getPlaySubscriptionV2,
+  googlePaymentAnchor,
+  playRevokeSubscription,
+} from '../src/lib/play-subscriptions';
 import {
   BillingStateUnavailableError,
   expireSubscriptionIfDue,
@@ -42,6 +46,7 @@ vi.mock('../src/lib/play-subscriptions', async (original) => ({
   ...(await original<typeof import('../src/lib/play-subscriptions')>()),
   getPlaySubscriptionV2: vi.fn(),
   googlePaymentAnchor: vi.fn().mockResolvedValue(new Date(Date.now() - 86400_000)),
+  playRevokeSubscription: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/fcm', () => ({
   sendPaymentFailedPush: vi.fn().mockResolvedValue(undefined),
@@ -56,6 +61,7 @@ vi.mock('../src/lib/google-oauth', () => ({
 }));
 import billingQuery from '../src/routes/billing-query';
 import billingGoogleRtdn from '../src/routes/billing-google-rtdn';
+import billingMutation from '../src/routes/billing-mutation';
 
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-billing-reconciliation-'));
 const db: Client = createClient({ url: `file:${join(directory, 'test.db')}` });
@@ -146,6 +152,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(fetchAppleSubscriptionStatus).mockReset();
   vi.mocked(getPlaySubscriptionV2).mockReset();
+  vi.mocked(playRevokeSubscription).mockReset().mockResolvedValue(undefined);
   vi.mocked(googlePaymentAnchor).mockResolvedValue(new Date(PAID));
   // 테스트 DB 안에서만 초기화한다. FK 의존 순서대로 지운다.
   await db.execute("DELETE FROM alarms WHERE id IN ('orphan-own-alarm','orphan-shared-alarm')");
@@ -1480,6 +1487,157 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     expect(
       (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-member'"))[0]!.expires_at,
     ).toBe(FUTURE);
+  });
+});
+
+describe('#730 즉시 해지 중 새 결제의 보관 유예', () => {
+  function cancel() {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('userId', 'owner');
+      await next();
+    });
+    app.route('/billing', billingMutation);
+    return app.request(
+      '/billing/cancel',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'immediate' }),
+      },
+      ENV,
+    );
+  }
+
+  async function confirmConcurrentPurchase() {
+    await withWriteTransaction(db, async (tx) => {
+      await tx.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+          SELECT 'new-sub','owner',id,'active',?,? FROM plans WHERE key='personal'`,
+        args: [NOW.toISOString(), FUTURE],
+      });
+      await tx.execute({
+        sql: `INSERT INTO store_transactions
+          (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+          VALUES ('new-receipt','owner','google','new-token','personal_monthly','personal','new-sub',?,?)`,
+        args: [FUTURE, NOW.toISOString()],
+      });
+      await tx.execute("UPDATE users SET plan='plus' WHERE id='owner'");
+    });
+  }
+
+  async function snapshot() {
+    return Promise.all([
+      rows('SELECT * FROM users ORDER BY id'),
+      rows('SELECT * FROM subscriptions ORDER BY id'),
+      rows('SELECT * FROM plan_group_members ORDER BY id'),
+      rows('SELECT * FROM voucher_codes ORDER BY id'),
+      rows('SELECT * FROM paid_voice_retention ORDER BY user_id'),
+    ]);
+  }
+
+  for (const retained of [false, true]) {
+    it(`Play 대기 중 새 유료 권한에는 삭제 예고와 기한을 붙이지 않는다(기존 유예=${retained})`, async () => {
+      await seed('google');
+      vi.mocked(playRevokeSubscription).mockImplementationOnce(async () => {
+        await confirmConcurrentPurchase();
+        // 옛 버전에서 남은 유예도 즉시 해지 트랜잭션이 지워야 한다.
+        if (retained)
+          await db.execute({
+            sql: "INSERT INTO paid_voice_retention (user_id,delete_after) VALUES ('owner',?)",
+            args: [FUTURE],
+          });
+      });
+      let pushedSnapshot: Awaited<ReturnType<typeof snapshot>> | undefined;
+      vi.mocked(sendPlanChangedPush).mockImplementationOnce(async () => {
+        pushedSnapshot = await snapshot();
+      });
+
+      const response = await cancel();
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ success: true, voice_retention_until: null });
+      expect(vi.mocked(playRevokeSubscription).mock.calls.map((call) => call[1])).toEqual([
+        'receipt-key',
+      ]);
+      expect(await rows("SELECT status FROM subscriptions WHERE id='new-sub'")).toEqual([
+        { status: 'active' },
+      ]);
+      expect(await rows("SELECT status FROM subscriptions WHERE id='sub-owner'")).toEqual([
+        { status: 'cancelled' },
+      ]);
+      expect(await rows('SELECT id,plan FROM users ORDER BY id')).toEqual([
+        { id: 'member', plan: 'free' },
+        { id: 'owner', plan: 'plus' },
+      ]);
+      expect(await rows('SELECT user_id FROM paid_voice_retention')).toEqual([
+        { user_id: 'member' },
+      ]);
+      expect(sendPlanChangedPush).toHaveBeenCalledWith(
+        db,
+        ENV,
+        expect.arrayContaining(['owner', 'member']),
+      );
+      expect(sendVoiceDeletionWarningPush).toHaveBeenCalledTimes(1);
+      expect(sendVoiceDeletionWarningPush).toHaveBeenCalledWith(db, ENV, {
+        userPks: ['member'],
+        retentionDays: 3,
+      });
+      expect(pushedSnapshot).toBeDefined();
+      expect(pushedSnapshot).toEqual(await snapshot());
+    });
+  }
+
+  it('다른 유료 권한이 없으면 당사자와 무료 멤버의 기한·삭제 예고를 유지한다', async () => {
+    await seed('google');
+    const response = await cancel();
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { voice_retention_until: string };
+    expect(
+      await rows('SELECT user_id,delete_after FROM paid_voice_retention ORDER BY user_id'),
+    ).toEqual([
+      { user_id: 'member', delete_after: body.voice_retention_until },
+      { user_id: 'owner', delete_after: body.voice_retention_until },
+    ]);
+    expect(Date.parse(body.voice_retention_until)).toBeGreaterThan(NOW.getTime());
+    expect(sendVoiceDeletionWarningPush).toHaveBeenCalledWith(db, ENV, {
+      userPks: expect.arrayContaining(['owner', 'member']),
+      retentionDays: 3,
+    });
+  });
+
+  it('유료 계정의 옛 유예 제거 실패는 해지·멤버 강등까지 롤백하고 통지하지 않는다', async () => {
+    await seed('google');
+    let beforeCancel: Awaited<ReturnType<typeof snapshot>> | undefined;
+    vi.mocked(playRevokeSubscription).mockImplementationOnce(async () => {
+      await confirmConcurrentPurchase();
+      await db.execute({
+        sql: "INSERT INTO paid_voice_retention (user_id,delete_after) VALUES ('owner',?)",
+        args: [FUTURE],
+      });
+      beforeCancel = await snapshot();
+    });
+    await db.execute(`CREATE TRIGGER fail_cancel_retention BEFORE DELETE ON paid_voice_retention
+      WHEN OLD.user_id='owner' BEGIN SELECT RAISE(ABORT, 'retention failed'); END`);
+    try {
+      expect((await cancel()).status).toBe(500);
+      expect(beforeCancel).toBeDefined();
+      expect(await snapshot()).toEqual(beforeCancel);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_cancel_retention');
+    }
+  });
+
+  it('Play revoke 실패는 보관 상태와 DB를 바꾸거나 예고하지 않는다', async () => {
+    await seed('google');
+    const before = await snapshot();
+    vi.mocked(playRevokeSubscription).mockRejectedValueOnce(new Error('store unavailable'));
+    expect((await cancel()).status).toBe(502);
+    expect(await snapshot()).toEqual(before);
+    expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
   });
 });
 

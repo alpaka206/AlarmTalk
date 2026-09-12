@@ -98,8 +98,36 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     func listAlarms(token: String) async throws -> [RemoteAlarm] {
-        let response: RemoteAlarmListResponse = try await request("alarm", token: token)
-        return response.alarms
+        let pageSize = 100
+        var alarms: [RemoteAlarm] = []
+        var seenIDs = Set<String>()
+        var cursor: String?
+        while true {
+            try Task.checkCancellation()
+            var query = URLComponents()
+            query.queryItems = [
+                URLQueryItem(name: "pagination", value: "cursor"),
+                URLQueryItem(name: "limit", value: String(pageSize)),
+            ]
+            if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
+            let page: RemoteAlarmListResponse = try await request(
+                "alarm?\(query.percentEncodedQuery!)", token: token
+            )
+            try Task.checkCancellation()
+            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 불변 id
+            // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
+            for alarm in page.alarms {
+                guard seenIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
+                alarms.append(alarm)
+            }
+            if !page.hasMore {
+                guard page.nextCursor == nil else { throw APIError.invalidResponse }
+                return alarms
+            }
+            guard let next = page.nextCursor, !next.isEmpty,
+                  next == page.alarms.last?.id, next != cursor else { throw APIError.invalidResponse }
+            cursor = next
+        }
     }
 
     func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {

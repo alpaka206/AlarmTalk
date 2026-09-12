@@ -2,6 +2,13 @@ import Foundation
 import UIKit
 import UserNotifications
 
+protocol PushTokenAPIProviding: Sendable {
+    func registerPushToken(token: String, platform: String, authToken: String) async throws
+    func unregisterPushToken(token: String, authToken: String) async throws
+}
+
+extension AlarmTalkAPI: PushTokenAPIProviding {}
+
 /// iOS 푸시 — 기기 토큰 등록과 수신 처리.
 ///
 /// ⚠ **알림 권한과 별개다.** APNs 는 두 종류인데:
@@ -19,6 +26,20 @@ import UserNotifications
 /// 안드로이드 대응: `fcm/AlarmTalkMessagingService.kt`.
 @MainActor
 final class PushNotificationCoordinator: NSObject, ObservableObject {
+    private let api: PushTokenAPIProviding
+    private let defaults: UserDefaults
+    private let requestAPNsToken: @MainActor () -> Void
+
+    init(
+        api: PushTokenAPIProviding = AlarmTalkAPI.shared,
+        defaults: UserDefaults = .standard,
+        requestAPNsToken: @escaping @MainActor () -> Void = { UIApplication.shared.registerForRemoteNotifications() }
+    ) {
+        self.api = api
+        self.defaults = defaults
+        self.requestAPNsToken = requestAPNsToken
+        super.init()
+    }
 
     /// 서버가 보내는 `type` 값. 안드로이드 핸들러와 **같은 문자열**이어야 한다.
     enum PushType: String {
@@ -58,25 +79,32 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     /// (또는 등록이 실패한 기기에서) 로그아웃하면 지울 토큰을 몰라 **옛 계정에 묶인 채**
     /// 남는다. 그러면 로그아웃한 기기가 그 계정의 알림을 계속 받는다.
     private var lastRegisteredToken: String? {
-        get { UserDefaults.standard.string(forKey: Self.lastTokenKey) }
+        get { defaults.string(forKey: Self.lastTokenKey) }
         set {
             if let newValue, !newValue.isEmpty {
-                UserDefaults.standard.set(newValue, forKey: Self.lastTokenKey)
+                defaults.set(newValue, forKey: Self.lastTokenKey)
             } else {
-                UserDefaults.standard.removeObject(forKey: Self.lastTokenKey)
+                defaults.removeObject(forKey: Self.lastTokenKey)
             }
         }
     }
 
     private var lastRegisteredUserID: String? {
-        get { UserDefaults.standard.string(forKey: Self.lastUserKey) }
+        get { defaults.string(forKey: Self.lastUserKey) }
         set {
             if let newValue, !newValue.isEmpty {
-                UserDefaults.standard.set(newValue, forKey: Self.lastUserKey)
+                defaults.set(newValue, forKey: Self.lastUserKey)
             } else {
-                UserDefaults.standard.removeObject(forKey: Self.lastUserKey)
+                defaults.removeObject(forKey: Self.lastUserKey)
             }
         }
+    }
+
+    /// 토큰/소유자는 해제와 계정 가드에 필요해 지우지 않는다. 서버 등록의 확인만 별도로
+    /// 무효화하고, 재등록 POST가 성공한 뒤에만 해제한다(실패·재시작에서도 재시도).
+    private var requiresRegistrationUpload: Bool {
+        get { defaults.bool(forKey: Self.retryRegistrationKey) }
+        set { defaults.set(newValue, forKey: Self.retryRegistrationKey) }
     }
 
     /// 등록/해제를 **한 줄로 세운다.**
@@ -101,12 +129,25 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
 
     private static let lastTokenKey = "push_last_registered_token"
     private static let lastUserKey = "push_last_registered_user"
+    private static let retryRegistrationKey = "push_registration_needs_upload"
 
     /// 원격 알림 등록을 시작한다. **권한 팝업을 띄우지 않는다** — 토큰만 받는다.
     func start() {
         // 화면 확인 모드에서는 시뮬레이터에 APNs 가 없어 항상 실패한다(로그만 더럽힌다).
         guard !UIPreviewSeed.isEnabled else { return }
-        UIApplication.shared.registerForRemoteNotifications()
+        requestAPNsToken()
+    }
+
+    /// 해제 응답 유실로 캐시에만 남은 바인딩도 복구한다. 앞선 등록이 늦게 캐시를
+    /// 되쓰지 못하게 같은 큐에서 무효화한다. 토큰/소유자는 이후 해제의 계정 가드에 보존한다.
+    func restartAfterAccountRecovery(userID: String) async {
+        await serializePushMutation { [weak self] in
+            guard let self else { return }
+            if self.lastRegisteredUserID == userID {
+                self.requiresRegistrationUpload = true
+            }
+            self.start()
+        }
     }
 
     /// APNs 가 준 기기 토큰을 서버에 등록한다.
@@ -123,15 +164,16 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         // 그러면 **등록해 줄 사람이 아무도 없다**(다음 실행의 APNs 등록까지 푸시를 놓친다).
         await serializePushMutation { [weak self] in
             guard let self else { return }
-            guard hex != self.lastRegisteredToken || session.user.id != self.lastRegisteredUserID else { return }
+            guard self.requiresRegistrationUpload || hex != self.lastRegisteredToken || session.user.id != self.lastRegisteredUserID else { return }
             do {
-                try await AlarmTalkAPI.shared.registerPushToken(
+                try await self.api.registerPushToken(
                     token: hex,
                     platform: "ios",
                     authToken: session.token
                 )
                 self.lastRegisteredToken = hex
                 self.lastRegisteredUserID = session.user.id
+                self.requiresRegistrationUpload = false
             } catch {
                 // 실패해도 앱 흐름을 깨지 않는다 — 다음 실행이 다시 시도한다.
                 // 잃는 것은 푸시의 즉시성뿐이고, 주기 동기화가 그물로 남아 있다.
@@ -190,7 +232,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
                 return
             }
             do {
-                try await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
+                try await self.api.unregisterPushToken(token: deviceToken, authToken: authToken)
                 self.clearRegistrationCache()
                 result = true
             } catch {
@@ -204,6 +246,7 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     func clearRegistrationCache() {
         lastRegisteredToken = nil
         lastRegisteredUserID = nil
+        requiresRegistrationUpload = false
     }
 
     /// 푸시 payload 를 처리한다. background·alert 양쪽에서 불린다.
@@ -283,6 +326,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
+        deps.auth.onAccountRecovered = { [weak push = deps.push] userID in
+            Task { await push?.restartAfterAccountRecovery(userID: userID) }
+        }
         // ⚠ **푸시 해제 훅도 launch 에서 꽂는다**(Codex #699 P2). 예전에는 화면의
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이

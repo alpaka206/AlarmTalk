@@ -51,6 +51,37 @@ const sampleAlarmRow = {
 // GET /alarms — 알람 목록 조회
 // ---------------------------------------------------------------------------
 describe('GET /alarms', () => {
+  it('커서 페이지는 1행 더 조회해 다음 커서를 판단하고 응답은 limit까지만 반환한다', async () => {
+    mockDB.pushResult([sampleAlarmRow, { ...sampleAlarmRow, id: 'next-alarm' }]);
+    const response = await buildApp().request('/alarms?pagination=cursor&limit=1');
+    expect(await response.json()).toMatchObject({
+      alarms: [{ id: ID.alarm }], has_more: true, next_cursor: ID.alarm,
+    });
+    expect(mockDB.calls).toHaveLength(1);
+    expect(mockDB.calls[0]!.sql).toContain('ORDER BY a.id ASC LIMIT ?');
+    expect(mockDB.calls[0]!.args.at(-1)).toBe(2);
+    expect(mockDB.calls[0]!.sql).not.toContain('OFFSET');
+  });
+
+  it('커서 값은 바인딩하며 외부 limit은 100으로 제한한다', async () => {
+    mockDB.pushResult([]);
+    const after = "id' OR 1=1 --";
+    const response = await buildApp().request(`/alarms?pagination=cursor&limit=999&after=${encodeURIComponent(after)}`);
+    expect(await response.json()).toEqual({ alarms: [], has_more: false, next_cursor: null });
+    expect(mockDB.calls[0]!.sql).toContain('AND a.id > ?');
+    expect(mockDB.calls[0]!.sql).not.toContain(after);
+    expect(mockDB.calls[0]!.args.slice(-2)).toEqual([after, 101]);
+  });
+
+  it.each(['pagination=unknown', 'pagination=cursor&after=', 'after=id', 'pagination=cursor&offset=0', `pagination=cursor&after=${'x'.repeat(129)}`])(
+    '잘못된 페이지 조합은 DB 조회 없이 거절한다: %s', async (query) => {
+      const response = await buildApp().request(`/alarms?${query}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error_code: 'INVALID_REQUEST' });
+      expect(mockDB.calls).toHaveLength(0);
+    },
+  );
+
   it('빈 목록 반환', async () => {
     // count
     mockDB.pushResult([{ total: 0 }]);
@@ -76,6 +107,8 @@ describe('GET /alarms', () => {
     const body = await res.json();
     expect(body.limit).toBe(10);
     expect(body.offset).toBe(2);
+    // 같은 시각의 소유/가족 알람도 페이지 경계에서 순서가 바뀌지 않는다.
+    expect(mockDB.calls[1]!.sql).toContain('ORDER BY a.time ASC, a.id ASC');
   });
 
   it('limit 최대값 100 제한', async () => {
