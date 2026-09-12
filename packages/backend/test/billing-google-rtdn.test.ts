@@ -102,16 +102,15 @@ describe('billing google RTDN', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_CANCELED', past, now)).toBe('deactivate');
     });
 
-    it('EXPIRED → deactivate', () => {
+    it('EXPIRED(만료 또는 REVOKED 알림 후 조회 상태) → deactivate', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_EXPIRED', past, now)).toBe('deactivate');
     });
 
-    it('ON_HOLD / PAUSED / REVOKED → deactivate', () => {
+    it('ON_HOLD / PAUSED → deactivate', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_ON_HOLD', future, now)).toBe(
         'deactivate',
       );
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_PAUSED', future, now)).toBe('deactivate');
-      expect(decideSubscriptionAction('SUBSCRIPTION_STATE_REVOKED', past, now)).toBe('deactivate');
     });
 
     it('ACTIVE 라도 만료가 지났으면 deactivate (방어적)', () => {

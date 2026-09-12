@@ -392,12 +392,12 @@ describe('POST /billing/cancel — 이미 취소/철회된 토큰 수렴 (C5)', 
     expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
   });
 
-  it(':revoke 4xx 이어도 재조회로 이미 REVOKED(=entitled 아님)면 성공으로 수렴한다', async () => {
+  it(':revoke 4xx 이어도 재조회로 이미 EXPIRED면 성공으로 수렴한다', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('{}', { status: 400 })) // :revoke 4xx
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_REVOKED' }), {
+        new Response(JSON.stringify({ subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED' }), {
           status: 200,
         }),
       );

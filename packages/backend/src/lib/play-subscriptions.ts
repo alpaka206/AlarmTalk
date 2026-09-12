@@ -228,12 +228,13 @@ export async function playRevokeSubscription(env: PlayEnv, purchaseToken: string
   if (res.ok) return;
   const apiError = new PlayApiError('revoke', res.status, (await res.text()).slice(0, 300));
   // 복구 경로(cancel 과 동일한 갈림 창 수렴): revoke 4xx 면 실상태를 재조회해 이미
-  // EXPIRED/REVOKED(=entitled 아님)면 성공으로 간주한다. 그 외에는 기존대로 throw.
+  // EXPIRED면 성공으로 간주한다. 그 외에는 기존대로 throw.
+  // REVOKED는 RTDN 알림 종류이고 조회 상태는 EXPIRED다(docs/spec/billing-lifecycle.md).
   if (apiError.status >= 400 && apiError.status < 500) {
     try {
       const sub = await getPlaySubscriptionV2(env, purchaseToken);
       const state = sub.subscriptionState ?? '';
-      if (state === 'SUBSCRIPTION_STATE_EXPIRED' || state === 'SUBSCRIPTION_STATE_REVOKED') return;
+      if (state === 'SUBSCRIPTION_STATE_EXPIRED') return;
     } catch {
       // 재조회 실패 — 원래 revoke 에러로 처리.
     }

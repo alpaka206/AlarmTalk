@@ -90,8 +90,9 @@ export type SubscriptionAction = 'entitle' | 'cancel_at_period_end' | 'deactivat
  * 재조회한 권위 상태(subscriptionState)와 만료시각으로 동기화 액션을 결정한다.
  *  - ACTIVE/GRACE & 만료 미래       → entitle (갱신/복구, 멱등 재적용)
  *  - CANCELED & 만료 미래            → cancel_at_period_end (자동갱신만 꺼짐, 기간까지 유지)
- *  - 그 외(EXPIRED/ON_HOLD/PAUSED/   → deactivate (즉시 권한 회수)
- *    REVOKED/CANCELED+만료지남 등)
+ *  - 그 외(EXPIRED/ON_HOLD/PAUSED/   → deactivate (이후 재조회로 종료/보류 확인)
+ *    CANCELED+만료지남 등)
+ * 회수 알림 SUBSCRIPTION_REVOKED도 조회 상태는 EXPIRED다. 알림 종류를 상태로 쓰지 않는다.
  */
 export function decideSubscriptionAction(
   state: string,

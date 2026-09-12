@@ -201,6 +201,129 @@ describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지',
       args: [plan!.id],
     });
   }
+  async function replacementReceipts(
+    provider: 'apple' | 'google',
+    otherProvider: 'apple' | 'google',
+    other: 'family' | 'personal' | 'hold' | 'expired',
+  ) {
+    // 로컬 해지 예약값으로 교차 스토어 가드가 통과해도 증빙 연결은 별도로 보호해야 한다.
+    await seed(provider, 1);
+    await db.execute({
+      sql: `INSERT INTO store_transactions
+        (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+        VALUES ('other-receipt','owner',?,'other-key',?,'family','sub-owner',?,?)`,
+      args: [
+        otherProvider,
+        otherProvider === 'apple' ? 'com.alarmtalk.app.family_monthly' : 'family_monthly',
+        PAST,
+        PAID,
+      ],
+    });
+    await db.execute({
+      sql: 'UPDATE subscriptions SET expires_at=?',
+      args: [new Date(NOW.getTime() - 73 * 3600_000).toISOString()],
+    });
+    const otherExpiry = new Date(Date.parse(FUTURE) - 86400_000).toISOString();
+    vi.mocked(fetchAppleSubscriptionStatus).mockImplementation(async (key) => ({
+      status: key !== 'other-key' ? 1 : other === 'hold' ? 3 : other === 'expired' ? 2 : 1,
+      expiresDate: Date.parse(key === 'other-key' ? otherExpiry : FUTURE),
+      purchaseDate: Date.parse(PAID),
+      autoRenewStatus: 0,
+      productId:
+        key !== 'other-key' || other === 'personal'
+          ? 'com.alarmtalk.app.personal_monthly'
+          : 'com.alarmtalk.app.family_monthly',
+    }));
+    vi.mocked(getPlaySubscriptionV2).mockImplementation(async (_env, key) => ({
+      subscriptionState:
+        key === 'other-key' && other === 'hold'
+          ? 'SUBSCRIPTION_STATE_ON_HOLD'
+          : key === 'other-key' && other === 'expired'
+            ? 'SUBSCRIPTION_STATE_EXPIRED'
+            : 'SUBSCRIPTION_STATE_ACTIVE',
+      lineItems: [
+        {
+          productId:
+            key !== 'other-key' || other === 'personal' ? 'personal_monthly' : 'family_monthly',
+          expiryTime:
+            key !== 'other-key'
+              ? FUTURE
+              : other === 'hold' || other === 'expired'
+                ? PAST
+                : otherExpiry,
+          latestSuccessfulOrderId: 'order-1',
+          autoRenewingPlan: { autoRenewEnabled: false },
+        },
+      ],
+    }));
+  }
+
+  it.each([
+    ['apple', 'google', 'family'],
+    ['google', 'apple', 'family'],
+    ['apple', 'apple', 'family'],
+    ['google', 'google', 'family'],
+    ['apple', 'google', 'personal'],
+    ['google', 'apple', 'personal'],
+    ['apple', 'google', 'hold'],
+    ['google', 'apple', 'hold'],
+  ] as const)(
+    '%s 플랜 교체는 조회 성공한 다른 %s %s 증빙을 취소된 구독에 버리지 않는다',
+    async (provider, otherProvider, other) => {
+      await replacementReceipts(provider, otherProvider, other);
+      const snapshot = () =>
+        Promise.all(
+          [
+            'users',
+            'subscriptions',
+            'store_transactions',
+            'plan_groups',
+            'plan_group_members',
+            'voucher_codes',
+            'paid_voice_retention',
+          ].map((table) => rows(`SELECT * FROM ${table} ORDER BY 1`)),
+        );
+      const before = await snapshot();
+      await expect(reconcileBillingPreflight(db, ENV, 'owner', NOW)).rejects.toMatchObject({
+        message: 'Plan replacement needs every other receipt to be terminated',
+        allowForcedExpiry: false,
+      });
+      expect(await snapshot()).toEqual(before);
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(await snapshot()).toEqual(before);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+      expect(sendVoiceDeletionWarningPush).not.toHaveBeenCalled();
+      expect(sendPaymentFailedPush).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ['apple', 'google'],
+    ['google', 'apple'],
+  ] as const)(
+    '%s 플랜 교체는 다른 %s 증빙이 종료됐으면 허용한다',
+    async (provider, otherProvider) => {
+      await replacementReceipts(provider, otherProvider, 'expired');
+      await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='owner'"))[0]!.plan).toBe('plus');
+      const liveReceipts = await rows(`SELECT t.provider_transaction_id FROM store_transactions t
+        JOIN subscriptions s ON s.id=t.subscription_id WHERE s.status='active'`);
+      expect(liveReceipts).toEqual([{ provider_transaction_id: 'receipt-key' }]);
+      expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+    },
+  );
+  it('플랜 교체 없는 복수 정상 영수증 갱신은 연결을 모두 보존한다', async () => {
+    await expiredMixedReceipts();
+    playState();
+    await reconcileBillingPreflight(db, ENV, 'owner', NOW);
+    expect(await rows('SELECT DISTINCT subscription_id FROM store_transactions')).toEqual([
+      { subscription_id: 'sub-owner' },
+    ]);
+    expect(await rows('SELECT * FROM store_transactions')).toHaveLength(2);
+    expect(
+      (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-owner'"))[0]!.expires_at,
+    ).toBe(FUTURE);
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+  });
 
   it.each([
     ['apple', 2, 'preflight'],

@@ -121,8 +121,13 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   실패로 그 증거를 버리지 않는다. 미확인 스토어의 자동갱신은 꺼졌다고 추정하지 않는다.
   유효 권한은 확인했으나 결제일/플랜 반영에 실패한 경우, 또는 회복형 보류가 확인된 상태에서
   다른 조회가 실패한 경우도 72시간 강제 종료 근거가 아니다.
-  일부 증빙이 미확인인 동안 다른 플랜으로 교체해 그룹/증빙 매핑을 파괴하지 않는다.
-  이 경우 전환은 재시도하되 확인된 유효 증거 때문에 강제 만료하지 않는다.
+  다른 플랜으로 교체할 때는 **선택한 영수증 외의 모든 증빙이 종료됐는지** 확인한다.
+  미확인뿐 아니라 유효·회복형 보류 증빙이 하나라도 남으면 전환을 거절하고 기존
+  구독·그룹·영수증 연결을 보존한다. 모두 조회에 성공했거나 같은 스토어/같은 새 플랜인
+  경우도 예외가 아니다 — 만료가 가장 늦은 한 건만 새 구독에 연결하면 나머지는 과금이
+  계속돼도 활성 구독 조회에서 사라진다. 자동갱신이 꺼져 있어도 남은 유료 기간은 보존한다.
+  이 경우 전환은 재시도하되 72시간 강제 만료도 하지 않는다. 충돌이 남는 동안 자동으로
+  한 결제를 승자로 정하지 않는다. 플랜 교체 없는 갱신은 기존 복수 연결을 유지한다.
 - 스토어 종료 응답에도 로컬 만료가 도래했고 `cancel_at_period_end=1`과 유효한
   `next_plan_id`가 있으면, 로컬 만료와 같은 트랜잭션 경로로 다음 플랜을 만든다.
   만기 전 환불에는 다음 플랜을 조기에 부여하지 않는다.
@@ -130,6 +135,18 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   만기가 오면 조용히 만료된다.
 - ⚠ **새 스토어를 붙이면 `reconcileStoreBeforeExpiry` 에 갈래를 추가해야 한다.**
   빠뜨리면 그 스토어 구독은 스토어에 묻지도 않고 강등된다 — 애플이 정확히 그 상태였다.
+
+## Google 회수 알림과 조회 상태를 구분한다
+
+`SUBSCRIPTION_REVOKED`는 **RTDN 알림 종류**다. 그 알림 뒤
+`purchases.subscriptionsv2.get`이 반환하는 `subscriptionState`는
+`SUBSCRIPTION_STATE_EXPIRED`이며, `SUBSCRIPTION_STATE_REVOKED`라는 조회 상태는 없다.
+환불·회수도 권위 재조회에서 `EXPIRED`를 확인한 뒤 종료한다. 알림만 믿고 회수하거나,
+Apple의 `REVOKED` 상태를 Play 조회 응답에 옮기지 않는다.
+
+근거: [Google 구독 수명주기 — Revocations](https://developer.android.com/google/play/billing/lifecycle/subscriptions#revoke),
+[SubscriptionState 공식 목록](https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#SubscriptionState).
+회귀 픽스처도 이 계약을 따른다. 기존 코드·주석·테스트의 상태명만으로 새 처리 분기를 만들지 않는다.
 
 ## 애플 구독 상태를 읽는 법
 
@@ -587,6 +604,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
 | 만료 재조회 — Apple | `lib/billing-reconciliation.ts` `reconcileStoreSubscription` | — | — |
+| 복수 증빙 플랜 교체의 연결 보존 | `reconcileStoreSubscription`의 교체 가드; `test/billing-reconciliation.test.ts`의 복수 증빙 교체 사례 | 기존 조회 실패 처리로 구매 중단 | 기존 조회 실패 처리로 구매 중단 |
 | 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |
 | 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
 | 보류 — Apple 진입점 | `reconcileStoreSubscription` → `'suspend'` | — | — |

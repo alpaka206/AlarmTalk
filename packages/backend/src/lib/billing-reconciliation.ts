@@ -253,10 +253,15 @@ export async function reconcileStoreSubscription(
     ).rows[0]?.plan;
     // 과거 데이터가 한 구독에 여러 스토어를 묶었어도 하나라도 살아 있으면 종료하지 않는다.
     if (entitled) {
-      if (failures.length && entitled.planKey !== before.plan_key) {
-        // 미확인 증빙까지 매핑이 사라지거나 그 증빙이 지원할 수 있는 그룹을 해체하지 않는다.
+      const hasOtherLiveEvidence = states.some(
+        (state) => state !== entitled && state.action !== 'expire',
+      );
+      if (entitled.planKey !== before.plan_key && (failures.length || hasOtherLiveEvidence)) {
+        // applyStoreEntitlement의 교체는 선택한 영수증만 새 구독에 연결한다.
+        // 모두 조회에 성공해도 다른 유효/보류 증빙은 취소된 행에 남겨서는 안 된다.
+        // 같은 스토어·같은 새 플랜·자동갱신 해제도 잔여 권한을 버릴 근거가 아니다.
         throw new BillingStateUnavailableError(
-          'Plan replacement needs complete store evidence',
+          'Plan replacement needs every other receipt to be terminated',
           false,
         );
       }
