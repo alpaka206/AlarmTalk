@@ -20,6 +20,7 @@ final class BillingPreflightTests: XCTestCase {
         let userID = UUID().uuidString
         let current = session(token: UUID().uuidString, userID: userID)
         let replacement = session(token: UUID().uuidString, userID: userID)
+        let host = "\(UUID().uuidString.lowercased()).billing.example.test"
         let previous = KeychainStore.readSession()
         try KeychainStore.saveSession(current)
         let writer = EntitlementWriter()
@@ -28,9 +29,9 @@ final class BillingPreflightTests: XCTestCase {
             AccessSnapshotStore().clear(userID: userID)
             if let previous { try? KeychainStore.saveSession(previous) }
             else { KeychainStore.deleteSession() }
-            PreflightURLProtocol.configure(nil)
+            PreflightURLProtocol.configure(host: host, handler: nil)
         }
-        PreflightURLProtocol.configure { request in
+        PreflightURLProtocol.configure(host: host) { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(current.token)")
             XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "refresh_store" })?.value, "1")
@@ -42,7 +43,7 @@ final class BillingPreflightTests: XCTestCase {
         let urlSession = URLSession(configuration: config)
         defer { urlSession.invalidateAndCancel() }
         let vm = SocialFeatureViewModel(api: AlarmTalkAPI(
-            baseURL: URL(string: "https://billing.example.test/api/")!, session: urlSession
+            baseURL: URL(string: "https://\(host)/api/")!, session: urlSession
         ))
         let request = Task { await vm.refreshSubscriptionSilently(session: current, refreshStoreState: true) }
         if cancel { request.cancel() }
@@ -85,21 +86,27 @@ final class BillingPreflightTests: XCTestCase {
 
 private final class PreflightURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var handler: (@Sendable (URLRequest) -> (Int, Data))?
+    // 취소된 요청이 늦게 startLoading에 도착해도 다음 테스트의 핸들러를 쓰지 않는다.
+    nonisolated(unsafe) private static var handlers: [String: @Sendable (URLRequest) -> (Int, Data)] = [:]
 
-    static func configure(_ next: (@Sendable (URLRequest) -> (Int, Data))?) {
+    static func configure(host: String, handler: (@Sendable (URLRequest) -> (Int, Data))?) {
         lock.lock()
         defer { lock.unlock() }
-        handler = next
+        handlers[host] = handler
     }
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host?.hasSuffix(".billing.example.test") == true
+    }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.lock.lock()
-        let handler = Self.handler
+        let handler = request.url?.host.flatMap { Self.handlers[$0] }
         Self.lock.unlock()
-        guard let handler else { return }
+        guard let handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            return
+        }
         let (status, data) = handler(request)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
             httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
