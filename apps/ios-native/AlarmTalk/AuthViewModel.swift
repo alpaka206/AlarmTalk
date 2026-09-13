@@ -1175,11 +1175,12 @@ final class AuthViewModel: ObservableObject {
         var recovered = recoveredSession ?? current
         recovered.user.deletionStatus = "active"
         accountRecoveryRevision &+= 1
-        pendingDeletion = false
-        persistSession(recovered)
-        // 탈퇴 철회는 미완료 탈퇴 정리도 무효로 만든다. 남겨 두면 다음 실행에서
-        // 복구된 계정의 알람을 끄고 다시 로그아웃한다. 다른 계정의 표시는 지우지 않는다.
+        // active 저장보다 먼저 지운다. 반대 순서에서 중단되면 다음 실행이 복구된
+        // 계정의 알람을 끄고 로그아웃한다. 여기서 중단되면 저장된 pending으로 복구를
+        // 재시도할 수 있다. 다른 계정의 표시와 정리용 토큰은 지우지 않는다.
         PendingSignOutStore.clear(userID)
+        persistSession(recovered)
+        pendingDeletion = false
         // user id는 그대로라 세션 task가 다시 돌지 않는다. 확인 경로와 무관하게 재등록한다.
         onAccountRecovered(userID)
         return true

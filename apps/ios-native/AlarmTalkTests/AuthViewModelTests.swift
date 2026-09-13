@@ -1,4 +1,5 @@
 import AuthenticationServices
+import Combine
 import Foundation
 import XCTest
 @testable import AlarmTalk
@@ -754,6 +755,44 @@ final class AuthViewModelTests: XCTestCase {
         }
     }
 
+    func test_recoveryClearsDepartureStateBeforeActiveSessionPublication() async throws {
+        for throughRefresh in [false, true] {
+            try await withPendingDeletion { vm, api in
+                let userID = try XCTUnwrap(vm.session?.user.id)
+                let otherID = UUID().uuidString
+                PendingSignOutStore.mark(userID)
+                PendingSignOutStore.markServerCleanup(token: "old-cleanup-token", for: userID)
+                PendingSignOutStore.mark(otherID)
+                PendingSignOutStore.markServerCleanup(token: "other-cleanup-token", for: otherID)
+                defer { PendingSignOutStore.clear(otherID) }
+                XCTAssertEqual(PendingSignOutStore.serverCleanupToken(for: userID), "old-cleanup-token")
+                var active = try XCTUnwrap(vm.session?.user)
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+
+                var activePublications = 0
+                // persistSession은 Keychain 저장 직후 session을 게시한다. 완료 훅까지
+                // 기다리면 저장과 표시 해제 사이의 위험한 상태를 관찰하지 못한다.
+                let observation = vm.$session.sink { next in
+                    guard next?.user.id == userID, next?.user.deletionStatus == "active" else { return }
+                    activePublications += 1
+                    XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active")
+                    XCTAssertFalse(PendingSignOutStore.isPending(userID))
+                    XCTAssertNil(PendingSignOutStore.serverCleanupToken(for: userID))
+                    XCTAssertTrue(PendingSignOutStore.isPending(otherID))
+                    XCTAssertEqual(PendingSignOutStore.serverCleanupToken(for: otherID), "other-cleanup-token")
+                }
+                defer { observation.cancel() }
+
+                if throughRefresh { await vm.refreshUser() }
+                else { await vm.cancelAccountDeletion() }
+
+                XCTAssertEqual(activePublications, 1)
+                XCTAssertFalse(vm.pendingDeletion)
+            }
+        }
+    }
+
     func test_recoveryKeepsPersistedPendingUntilPushPreparationCompletes() async throws {
         for throughRefresh in [false, true] {
             try await withPendingDeletion { vm, api in
@@ -988,9 +1027,16 @@ final class AuthViewModelTests: XCTestCase {
         }
     }
 
-    func test_storedPendingSessionDetectsRecoveryAfterViewModelRestart() async throws {
+    func test_storedPendingSessionDetectsRecoveryAfterCleanupMarkerClearedAndViewModelRestarted() async throws {
         try await withPendingDeletion { vm, api in
             var active = try XCTUnwrap(vm.session?.user)
+            PendingSignOutStore.mark(active.id)
+            PendingSignOutStore.markServerCleanup(token: "old-cleanup-token", for: active.id)
+            // 표시 해제 직후, active 세션 저장 전에 앱이 종료된 중간 상태를 재현한다.
+            PendingSignOutStore.clear(active.id)
+            XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "pending_deletion")
+            XCTAssertFalse(PendingSignOutStore.isPending(active.id))
+            XCTAssertNil(PendingSignOutStore.serverCleanupToken(for: active.id))
             active.deletionStatus = "active"
             api.meResult = .success(active)
             let suite = "restored-recovery-\(UUID().uuidString)"
@@ -1000,11 +1046,16 @@ final class AuthViewModelTests: XCTestCase {
                 accessSnapshotStore: AccessSnapshotStore(defaults: defaults))
             XCTAssertFalse(restarted.pendingDeletion, "메모리 플래그는 새 실행에서 false로 시작한다")
             XCTAssertEqual(restarted.session?.user.deletionStatus, "pending_deletion")
+            var preparations = 0
             var restarts = 0
+            restarted.prepareAccountRecovery = { _ in preparations += 1 }
             restarted.onAccountRecovered = { _ in restarts += 1 }
             await restarted.refreshUser()
             await restarted.refreshUser()
             XCTAssertEqual(restarts, 1, "저장된 pending→active도 복구 완료 경로를 통과한다")
+            XCTAssertEqual(preparations, 1)
+            XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active")
+            XCTAssertFalse(PendingSignOutStore.isPending(active.id))
         }
     }
 
