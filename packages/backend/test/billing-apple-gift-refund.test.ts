@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { migrations, runMigrations } from '../src/lib/migrations';
+import { billingRetentionUntil } from '../src/lib/account-deletion';
 
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-gift-refund-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
@@ -20,6 +21,7 @@ vi.mock('../src/lib/apple-storekit', async (original) => ({
 }));
 import { fetchAppleSubscriptionStatus } from '../src/lib/apple-storekit';
 import billingApple from '../src/routes/billing-apple';
+import userRoutes from '../src/routes/user';
 
 async function confirm(transactionId = 'gift-1', caller = 'owner') {
   const app = new Hono<AppEnv>();
@@ -30,11 +32,19 @@ async function confirm(transactionId = 'gift-1', caller = 'owner') {
     body: JSON.stringify({ transaction_id: transactionId }),
   }, {});
 }
+
+async function deleteOwner() {
+  const app = new Hono<AppEnv>();
+  app.use('*', async (c, next) => { c.set('userId', 'owner'); await next(); });
+  app.route('/user', userRoutes);
+  return app.request('/user/me', { method: 'DELETE' }, { PASSWORD_PEPPER: 'test-pepper' });
+}
+
 const rows = async (sql: string) => (await db.execute(sql)).rows;
 beforeAll(async () => { await runMigrations(db); });
 beforeEach(async () => {
   vi.clearAllMocks();
-  for (const table of ['apple_gift_deliveries', 'voucher_redemptions', 'voucher_codes', 'store_transactions']) {
+  for (const table of ['apple_gift_deliveries', 'voucher_redemptions', 'voucher_codes', 'store_transactions', 'retained_billing_records']) {
     await db.execute(`DELETE FROM ${table}`);
   }
   await db.execute("INSERT OR IGNORE INTO users (id,email,name) VALUES ('owner','owner@example.test','owner'),('other','other@example.test','other')");
@@ -108,5 +118,60 @@ describe('Apple 소모성 선물 환불', () => {
     expect((await confirm()).status).toBe(502);
     expect(await rows('SELECT status FROM voucher_codes')).toEqual([{ status: 'issued' }]);
     expect(fetchAppleSubscriptionStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('Apple 선물 구매자 영구 탈퇴', () => {
+  it.each(['issued', 'refunded', 'unlinked', 'expired'] as const)(
+    '%s 선물 연결을 파기하고 기한 내 증빙과 다른 계정의 선물을 보존한다',
+    async (state) => {
+      const paidAt = state === 'expired' ? Date.parse('2018-01-01T00:00:00.000Z') : purchasedAt;
+      info = { ...info, purchaseDate: paidAt };
+      expect((await confirm()).status).toBe(200);
+      if (state === 'refunded') {
+        info = { ...info, revocationDate: paidAt + 1000 };
+        expect((await confirm()).status).toBe(400);
+      } else if (state === 'unlinked') {
+        await db.execute('DELETE FROM voucher_codes');
+        expect(await rows('SELECT voucher_id FROM apple_gift_deliveries')).toEqual([{ voucher_id: null }]);
+      }
+      info = {
+        ...info, transactionId: 'other-gift', appAccountToken: 'other',
+        purchaseDate: purchasedAt, revocationDate: undefined,
+      };
+      expect((await confirm('other-gift', 'other')).status).toBe(200);
+      const otherMapping = await rows("SELECT * FROM apple_gift_deliveries WHERE transaction_id = 'other-gift'");
+      const otherVoucher = await rows("SELECT * FROM voucher_codes WHERE issuer_user_id = 'other'");
+      // provider를 빼먹으면 탈퇴자의 Google 거래 ID와 같은 타인 Apple 선물까지 지운다.
+      await db.execute(`INSERT INTO store_transactions
+        (id, user_id, provider, provider_transaction_id, product_id, plan_key, last_paid_at)
+        VALUES ('google-collision', 'owner', 'google', 'other-gift', 'personal_monthly', 'personal', '2018-01-01T00:00:00.000Z')`);
+
+      expect((await deleteOwner()).status).toBe(200);
+      expect(await rows("SELECT id FROM users WHERE id = 'owner'")).toEqual([]);
+      expect(await rows("SELECT id FROM store_transactions WHERE user_id = 'owner'")).toEqual([]);
+      expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual(otherMapping);
+      expect(await rows('SELECT * FROM voucher_codes')).toEqual(otherVoucher);
+      const retained = await rows('SELECT provider, provider_transaction_id, retain_until FROM retained_billing_records');
+      expect(retained).toEqual(state === 'expired' ? [] : [{
+        provider: 'apple', provider_transaction_id: 'gift-1',
+        retain_until: billingRetentionUntil(new Date(paidAt)).toISOString(),
+      }]);
+    },
+  );
+
+  it('뒤쪽 원장 삭제가 실패하면 선물 연결·코드·증빙 이관도 함께 롤백한다', async () => {
+    expect((await confirm()).status).toBe(200);
+    const mapping = await rows('SELECT * FROM apple_gift_deliveries');
+    const voucher = await rows('SELECT * FROM voucher_codes');
+    const transaction = await rows('SELECT * FROM store_transactions');
+    await db.execute("CREATE TRIGGER reject_gift_purge BEFORE DELETE ON store_transactions BEGIN SELECT RAISE(ABORT,'test failure'); END");
+    try { expect((await deleteOwner()).status).toBe(500); }
+    finally { await db.execute('DROP TRIGGER reject_gift_purge'); }
+    expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual(mapping);
+    expect(await rows('SELECT * FROM voucher_codes')).toEqual(voucher);
+    expect(await rows('SELECT * FROM store_transactions')).toEqual(transaction);
+    expect(await rows('SELECT * FROM retained_billing_records')).toEqual([]);
+    expect(await rows("SELECT id FROM users WHERE id = 'owner'")).toEqual([{ id: 'owner' }]);
   });
 });

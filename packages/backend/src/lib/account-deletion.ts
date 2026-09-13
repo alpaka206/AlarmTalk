@@ -275,6 +275,19 @@ export async function purgeUserAccount(
     revokedTargets.push(...revocation.downgradedAlarms);
     voiceAccessRevokedUserIds.push(...revocation.voiceAccessRevokedUserIds);
 
+    // 코드의 ON DELETE SET NULL만으로는 거래 ID가 무기한 남는다. 소유 근거를 지우기
+    // 전에 연결도 파기한다. 이미 코드가 없으면 Apple 원장으로 찾고, 거래 증빙은 호출부가
+    // retained_billing_records에 분리 보존해 기존 기한 정리의 대상이 되게 한다.
+    await tx.execute({
+      sql: `DELETE FROM apple_gift_deliveries
+            WHERE transaction_id IN (
+              SELECT provider_transaction_id FROM store_transactions
+              WHERE provider = 'apple' AND user_id IN (?, ?)
+            ) OR voucher_id IN (
+              SELECT id FROM voucher_codes WHERE issuer_user_id = ?
+            )`,
+      args: [...userIds, userPk],
+    });
     await tx.execute({
       sql: `DELETE FROM voucher_redemptions
             WHERE user_id = ?

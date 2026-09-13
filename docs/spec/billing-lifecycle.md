@@ -70,6 +70,12 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
 마이그레이션 114 이전의 결제일 없는 원장은 기존 추정 폴백이 남는다. 저장되지 않은 과거
 결제일은 이 코드 변경만으로 복원되지 않으므로 운영 원장 점검이 필요하다.
 
+계정을 영구 파기할 때 Apple 선물의 결제↔코드 연결도 같은 트랜잭션에서 삭제한다.
+코드가 먼저 지워져 연결이 비었거나 이미 환불됐어도, 해당 계정의 Apple 결제 원장으로
+찾아 지운다. 결제 원장·발급 코드를 지우기 전에 연결을 정리해야 소유 근거를 잃지 않는다.
+거래 증빙은 `retained_billing_records`에만 분리 보존하고 기존 5년 기한 정리로 파기한다.
+다른 계정의 선물 연결과 다른 스토어의 같은 문자열 거래 ID는 삭제 근거가 아니다.
+
 ## 해지
 
 | 스토어 | 서버가 해지할 수 있나 | 어떻게 |
@@ -662,6 +668,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
+| 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |
