@@ -7,7 +7,7 @@ import XCTest
 final class AlarmPaginationTests: XCTestCase {
     private func page(_ range: Range<Int>, hasMore: Bool, total: Int? = nil) throws -> Data {
         var body: [String: Any] = ["alarms": range.map {
-            ["id": String(format: "alarm-%03d", $0), "is_received_family_alarm": $0 == 250] as [String: Any]
+            ["id": String(format: "alarm-%03d", $0), "is_received": $0 == 250] as [String: Any]
         }, "has_more": hasMore]
         if hasMore, let last = range.last { body["next_cursor"] = String(last + 1) }
         if let total { body["total"] = total }
@@ -66,8 +66,42 @@ final class AlarmPaginationTests: XCTestCase {
         ]) { api, fixture in
             let alarms = try await api.listAlarms(token: "alarm-test-token")
             XCTAssertEqual(alarms.map(\.id), (0..<251).map { String(format: "alarm-%03d", $0) })
-            XCTAssertEqual(alarms.last?.isReceivedFamilyAlarm, true)
+            XCTAssertEqual(alarms.last?.isReceivedForPull, true)
             XCTAssertEqual(fixture.cursors, ["", "100", "200"])
+        }
+    }
+
+    func test_receivedFlagsControlPullAndOriginAcrossLegacyAccountIdentifiers() async throws {
+        let flags: [[String: Any]] = [
+            ["id": "modern", "is_received": true],
+            ["id": "legacy", "is_received_family_alarm": true],
+            ["id": "modern-false", "is_received": false, "is_received_family_alarm": true],
+            ["id": "modern-true", "is_received": true, "is_received_family_alarm": false],
+            ["id": "null-fallback", "is_received": NSNull(), "is_received_family_alarm": true],
+            ["id": "legacy-false", "is_received_family_alarm": false],
+            ["id": "missing"],
+        ]
+        let rows = flags.map { fields in
+            var row = fields
+            row["target_user_id"] = "legacy-login-id"
+            row["sender_user_id"] = "sender"
+            row["time"] = "07:30"
+            return row
+        }
+        let page = try JSONSerialization.data(withJSONObject: ["alarms": rows, "has_more": false])
+        try await withAPI(pages: ["": (200, page)]) { api, _ in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            let received = alarms.filter {
+                RemoteAlarmPullSync.isReceivedRemoteCandidate($0, currentUserID: "account-uuid")
+            }
+            XCTAssertEqual(received.map(\.id), ["modern", "legacy", "modern-true", "null-fallback"])
+            for remote in alarms {
+                let local = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(
+                    remote, currentUserID: "account-uuid", nowMillis: 1_700_000_000_000
+                ))
+                XCTAssertEqual(local.originEnum, received.contains(remote) ? .receivedRemote : .localOwned)
+                XCTAssertEqual(local.ownerUserId, "account-uuid")
+            }
         }
     }
 

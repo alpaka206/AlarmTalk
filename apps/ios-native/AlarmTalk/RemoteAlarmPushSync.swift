@@ -1,5 +1,12 @@
 import Foundation
 
+protocol RemoteAlarmWriting: Sendable {
+    func createAlarm(_ body: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm
+    func updateAlarm(id: String, requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm
+}
+
+extension AlarmTalkAPI: RemoteAlarmWriting {}
+
 // MARK: - RemoteAlarmPushSync
 //
 // Android `AlarmSyncService.kt` 의 push 흐름과 동등.
@@ -7,7 +14,7 @@ import Foundation
 // 책임:
 //   - origin == .localOwned 이고 syncState != .synced 인 모든 로컬 알람을 서버에 push.
 //   - remoteAlarmId 가 nil 이면 POST /alarm (create), 있으면 PATCH /alarm/{id} (update).
-//   - 성공 시 markRemote 로 syncState = synced, lastSyncedAtMillis 갱신.
+//   - 성공 시 markRemote 로 서버 ID를 저장하고, 전송 중 편집된 행은 dirty로 보존.
 //   - 실패 시 markSyncFailed 로 syncState = sync_failed 만 기록. 다음 사이클이 재시도.
 //
 // 호출 컨텍스트:
@@ -16,8 +23,8 @@ import Foundation
 //     `RemoteAlarmSyncViewModel.push(record:)` 로 단건 push.
 //
 // Sendable 안전성:
-//   - 모든 mutable state 와 메서드가 `@MainActor` 격리되어 외부 race condition 이
-//     본질적으로 발생하지 않는다. `BGTaskScheduler.shared.register` 가 요구하는
+//   - mutable state 는 `@MainActor` 격리지만 await 중에는 사용자 편집이 끼어들 수 있어
+//     응답 커밋에서 스냅샷을 비교한다. `BGTaskScheduler.shared.register` 가 요구하는
 //     `@Sendable` 클로저 안에서 인스턴스를 capture 해야 하므로 (Swift 6 strict
 //     concurrency 대비), `@unchecked Sendable` 로 명시적 인증을 표기한다.
 //     실제 transfer 는 MainActor 로 즉시 hop 한 뒤에만 사용된다.
@@ -26,10 +33,12 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
 
     enum PushError: LocalizedError, Equatable {
         case noSession
+        case localCommitFailed
 
         var errorDescription: String? {
             switch self {
             case .noSession: return "Push sync requires an active session."
+            case .localCommitFailed: return "알람 변경사항을 저장하지 못했어요. 잠시 후 다시 시도해 주세요."
             }
         }
     }
@@ -41,11 +50,11 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         var failed: Int
     }
 
-    private let api: AlarmTalkAPI
+    private let api: any RemoteAlarmWriting
     private let store: LocalAlarmStore
     private let auth: AuthViewModel
 
-    init(api: AlarmTalkAPI = .shared, store: LocalAlarmStore, auth: AuthViewModel) {
+    init(api: any RemoteAlarmWriting = AlarmTalkAPI.shared, store: LocalAlarmStore, auth: AuthViewModel) {
         self.api = api
         self.store = store
         self.auth = auth
@@ -93,6 +102,7 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
         for candidate in candidates {
+            try Task.checkCancellation()
             // 편집기에서 교체 중인 행 또는 대기 사이 삭제된 행은 전송하지 않는다.
             guard !store.isServerSyncDeferred(id: candidate.id),
                   let record = store.record(id: candidate.id),
@@ -112,23 +122,19 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
                 let remote: RemoteAlarm
                 if let remoteID = record.remoteAlarmId {
                     remote = try await api.updateAlarm(id: remoteID, requestBody: body, token: token)
-                    updated += 1
                 } else {
                     remote = try await api.createAlarm(body, token: token)
-                    created += 1
                 }
-                // ⚠ **쓰기 직전에 취소를 다시 본다**(같은 사이클의 pull 과 같은 이유).
-                // 취소는 협력적이라 요청이 **성공한 직후**에 올 수 있고, 그러면 아래
-                // `catch` 에 걸리지 않는다. 여기서 멈추면 서버에는 이미 반영됐지만
-                // 로컬 표식만 안 찍힌 상태로 남는다 — 다음 회차가 같은 알람을 다시
-                // 밀어 넣되 `remoteAlarmId` 가 있으면 update 라 멱등이다.
-                try Task.checkCancellation()
-                store.markRemote(
-                    localID: record.id,
+                // 성공 응답의 ID를 await 없이 디스크에 쓴 뒤 취소를 전파한다.
+                // 특히 create는 이 순서를 뒤집으면 다음 회차가 중복 POST를 한다.
+                guard store.markRemote(
+                    snapshot: record,
                     remoteID: remote.id,
-                    lastSyncedAtMillis: nowMillis,
-                    syncState: .synced
-                )
+                    lastSyncedAtMillis: nowMillis
+                ) else { throw PushError.localCommitFailed }
+                if record.remoteAlarmId == nil { created += 1 }
+                else { updated += 1 }
+                try Task.checkCancellation()
             } catch is CancellationError {
                 // ⚠ **취소는 실패가 아니다 — 회차를 멈춘다**(2026-08-18 Codex #697 P2).
                 // 워치독·BGTask 만료가 이 회차를 접는 신호인데, 여기서 여느 실패처럼

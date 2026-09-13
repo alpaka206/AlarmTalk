@@ -89,7 +89,7 @@ final class DuplicateAlarmReplacementTests: XCTestCase {
                                         fireAtMillis: 1, remoteAlarmId: "conflict")
         store.upsert(conflict)
         // 보류 직전 시작한 push 응답이 뒤늦게 도착해도 서버 연결을 잃지 않는다.
-        store.markRemote(localID: staged.id, remoteID: "latest-server-id", lastSyncedAtMillis: 123)
+        store.markRemote(snapshot: staged, remoteID: "latest-server-id", lastSyncedAtMillis: 123)
         let conflictsRemoved = await removeReplacementConflicts([conflict], deleteRemote: {
             await sync.deleteRemote(record: $0, session: auth.session)
         }, deleteLocal: { _ in

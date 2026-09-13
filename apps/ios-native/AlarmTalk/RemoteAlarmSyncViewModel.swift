@@ -81,8 +81,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 
     /// 단일 알람 push (UI 액션 "서버에 저장").
-    /// configure 된 경우 일관성을 위해 PushSync 의 한 cycle 을 돌리되, 실패 시
-    /// 단건 push 로 폴백한다.
+    /// 응답 커밋은 일괄 push와 같은 스냅샷 비교·디스크 저장 경계를 사용한다.
     func push(record: LocalAlarmRecord, store: LocalAlarmStore, session: AuthSession?) async {
         guard !store.isServerSyncDeferred(id: record.id) else { return }
         guard let token = session?.token else {
@@ -94,6 +93,9 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         await syncGate.acquire()
         defer { syncGate.release() }
         guard !Task.isCancelled else { return }
+        guard !store.isServerSyncDeferred(id: record.id),
+              let record = store.record(id: record.id),
+              record.originEnum == .localOwned else { return }
         busyOperations += 1
         defer { busyOperations -= 1 }
 
@@ -106,16 +108,16 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 remote = try await api.createAlarm(body, token: token)
             }
             let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
-            store.markRemote(
-                localID: record.id,
+            guard store.markRemote(
+                snapshot: record,
                 remoteID: remote.id,
-                lastSyncedAtMillis: nowMillis,
-                syncState: .synced
-            )
+                lastSyncedAtMillis: nowMillis
+            ) else { throw RemoteAlarmPushSync.PushError.localCommitFailed }
+            try Task.checkCancellation()
             await refresh(session: session, force: true)
         } catch {
-            store.markSyncFailed(id: record.id)
             guard !isCancellation(error) else { return }
+            store.markSyncFailed(id: record.id)
             statusMessage = userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요")
         }
     }

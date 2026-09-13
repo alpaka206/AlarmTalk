@@ -376,8 +376,9 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
 
     // MARK: - received remote filter
 
-    func test_isReceivedRemoteCandidate_targetMeSenderOther_returnsTrue() {
-        let remote = makeRemote(targetUserID: "me", senderUserID: "other")
+    func test_isReceivedRemoteCandidate_serverClassificationWinsOverDifferentTargetIdentifier() {
+        var remote = makeRemote(targetUserID: "legacy-login-id", senderUserID: "other")
+        remote.isReceived = true
 
         XCTAssertTrue(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
     }
@@ -385,6 +386,15 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
     func test_isReceivedRemoteCandidate_senderIsMe_returnsFalse() {
         let remote = makeRemote(targetUserID: "me", senderUserID: "me")
 
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
+    }
+
+    func test_isReceivedRemoteCandidate_matchingRawIdentifiersDoNotOverrideMissingOrFalseFlags() {
+        var remote = makeRemote(targetUserID: "me", senderUserID: "other")
+        remote.isReceivedFamilyAlarm = nil
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
+        remote.isReceivedFamilyAlarm = true
+        remote.isReceived = false
         XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
     }
 
@@ -535,10 +545,9 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
 
         // 편집 중 push 가 끼어들어 remoteAlarmId 를 새긴다.
         store.markRemote(
-            localID: record.id,
+            snapshot: store.record(id: record.id)!,
             remoteID: "remote-new",
-            lastSyncedAtMillis: 777,
-            syncState: .synced
+            lastSyncedAtMillis: 777
         )
         store.markRemoteDeliveryVersion(remoteID: "remote-new", deliveryVersion: "version-1")
 

@@ -351,6 +351,9 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     var senderEmail: String?
     var isFamilyAlarm: Bool?
     var isReceivedFamilyAlarm: Bool?
+    var isReceived: Bool? = nil
+    /// 서버는 UUID와 옛 로그인 식별자를 함께 판정한다. 명시적인 새 false도 우선한다.
+    var isReceivedForPull: Bool { isReceived ?? isReceivedFamilyAlarm ?? false }
     /// 고른 테마. ⚠ **서버에 사본이 있다** — `alarms.bucket_id` 를 목록 응답이 그대로
     /// 돌려준다(`SELECT a.*`). 2026-08-18 전에는 이 필드가 **읽기 모델에 아예 없어서**,
     /// 받는 사람이 테마를 볼 방법이 없었다. 안드로이드 `RemoteAlarm.bucketId` 짝.
