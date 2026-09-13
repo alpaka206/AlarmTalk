@@ -33,9 +33,9 @@ async function confirm(transactionId = 'gift-1', caller = 'owner') {
   }, {});
 }
 
-async function deleteOwner() {
+async function deleteOwner(caller = 'owner') {
   const app = new Hono<AppEnv>();
-  app.use('*', async (c, next) => { c.set('userId', 'owner'); await next(); });
+  app.use('*', async (c, next) => { c.set('userId', caller); await next(); });
   app.route('/user', userRoutes);
   return app.request('/user/me', { method: 'DELETE' }, { PASSWORD_PEPPER: 'test-pepper' });
 }
@@ -91,7 +91,58 @@ describe('Apple 소모성 선물 환불', () => {
     info = unrevoked; // 먼저 조회한 미환불 응답이 늦게 쓰기를 시도하는 상황.
     expect((await confirm()).status).toBe(400);
     expect(await rows('SELECT * FROM voucher_codes')).toEqual([]);
+    expect(await rows('SELECT user_id, provider_transaction_id, subscription_id, last_paid_at FROM store_transactions')).toEqual([{
+      user_id: 'owner', provider_transaction_id: 'gift-1', subscription_id: null,
+      last_paid_at: new Date(purchasedAt).toISOString(),
+    }]);
+  });
+
+  it('기존 무연결 환불 표식도 Apple 구매자로 연결하고 재전송은 원장을 중복 생성하지 않는다', async () => {
+    await db.execute("INSERT INTO apple_gift_deliveries (transaction_id, revoked_at) VALUES ('gift-1', '2026-01-01T00:00:00.000Z')");
+    info = { ...info, revocationDate: purchasedAt + 1000 };
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
+    const receipt = await rows('SELECT * FROM store_transactions');
+    expect(receipt).toHaveLength(1);
+    expect(receipt[0]?.user_id).toBe('owner');
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
+    expect(await rows('SELECT * FROM store_transactions')).toEqual(receipt);
+    expect(await rows('SELECT * FROM voucher_codes')).toEqual([]);
+  });
+
+  it('제보자 탈퇴는 구매자 환불 표식을 보존하고 구매자 파기 후 재전송은 고아를 만들지 않는다', async () => {
+    info = { ...info, revocationDate: purchasedAt + 1000 };
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
+    expect((await deleteOwner('other')).status).toBe(200);
+    expect(await rows('SELECT transaction_id FROM apple_gift_deliveries')).toEqual([{ transaction_id: 'gift-1' }]);
+    expect((await deleteOwner()).status).toBe(200);
+    const retained = await rows('SELECT * FROM retained_billing_records');
+    expect(retained).toHaveLength(1);
+    await db.execute("INSERT INTO users (id,email,name) VALUES ('other','other@example.test','other')");
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
+    expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual([]);
     expect(await rows('SELECT * FROM store_transactions')).toEqual([]);
+    expect(await rows('SELECT * FROM retained_billing_records')).toEqual(retained);
+  });
+
+  it.each([undefined, '', 'deleted-owner'])('구매자를 확인할 수 없는 환불(%s)은 제보자 원장이나 고아 표식을 만들지 않는다', async (appAccountToken) => {
+    info = { ...info, appAccountToken, revocationDate: purchasedAt + 1000 };
+    await db.execute("INSERT INTO apple_gift_deliveries (transaction_id, revoked_at) VALUES ('gift-1', '2026-01-01T00:00:00.000Z')");
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
+    expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual([]);
+    expect(await rows('SELECT * FROM store_transactions')).toEqual([]);
+    info = { ...info, revocationDate: undefined };
+    expect((await confirm('gift-1', 'other')).status).toBe(403);
+    expect(await rows('SELECT * FROM voucher_codes')).toEqual([]);
+  });
+
+  it('발급 전 환불 표식 쓰기 실패는 구매자 원장도 롤백한다', async () => {
+    info = { ...info, revocationDate: purchasedAt + 1000 };
+    await db.execute("CREATE TRIGGER reject_refund_marker BEFORE INSERT ON apple_gift_deliveries BEGIN SELECT RAISE(ABORT,'test failure'); END");
+    try { expect((await confirm('gift-1', 'other')).status).toBe(500); }
+    finally { await db.execute('DROP TRIGGER reject_refund_marker'); }
+    expect(await rows('SELECT * FROM store_transactions')).toEqual([]);
+    expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual([]);
+    expect((await confirm('gift-1', 'other')).status).toBe(400);
   });
 
   it('회수 쓰기 실패는 코드·환불 표식을 함께 롤백한다', async () => {
@@ -122,12 +173,21 @@ describe('Apple 소모성 선물 환불', () => {
 });
 
 describe('Apple 선물 구매자 영구 탈퇴', () => {
-  it.each(['issued', 'refunded', 'unlinked', 'expired'] as const)(
+  it.each(['issued', 'refunded', 'unlinked', 'expired', 'refund-first', 'refund-first-expired'] as const)(
     '%s 선물 연결을 파기하고 기한 내 증빙과 다른 계정의 선물을 보존한다',
     async (state) => {
-      const paidAt = state === 'expired' ? Date.parse('2018-01-01T00:00:00.000Z') : purchasedAt;
+      const expired = state === 'expired' || state === 'refund-first-expired';
+      const refundFirst = state === 'refund-first' || state === 'refund-first-expired';
+      const paidAt = expired ? Date.parse('2018-01-01T00:00:00.000Z') : purchasedAt;
       info = { ...info, purchaseDate: paidAt };
-      expect((await confirm()).status).toBe(200);
+      if (refundFirst) {
+        info = { ...info, revocationDate: paidAt + 1000 };
+        expect((await confirm('gift-1', 'other')).status).toBe(400);
+        expect(await rows('SELECT * FROM voucher_codes')).toEqual([]);
+        expect(await rows('SELECT user_id FROM store_transactions')).toEqual([{ user_id: 'owner' }]);
+      } else {
+        expect((await confirm()).status).toBe(200);
+      }
       if (state === 'refunded') {
         info = { ...info, revocationDate: paidAt + 1000 };
         expect((await confirm()).status).toBe(400);
@@ -153,7 +213,7 @@ describe('Apple 선물 구매자 영구 탈퇴', () => {
       expect(await rows('SELECT * FROM apple_gift_deliveries')).toEqual(otherMapping);
       expect(await rows('SELECT * FROM voucher_codes')).toEqual(otherVoucher);
       const retained = await rows('SELECT provider, provider_transaction_id, retain_until FROM retained_billing_records');
-      expect(retained).toEqual(state === 'expired' ? [] : [{
+      expect(retained).toEqual(expired ? [] : [{
         provider: 'apple', provider_transaction_id: 'gift-1',
         retain_until: billingRetentionUntil(new Date(paidAt)).toISOString(),
       }]);

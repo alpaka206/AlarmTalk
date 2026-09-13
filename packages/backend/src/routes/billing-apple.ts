@@ -33,6 +33,7 @@ import {
   fetchAppleSubscriptionStatus,
   APPLE_SUBSCRIPTION_STATUS,
   AppleTransactionNotFoundError,
+  type AppleTransactionInfo,
 } from '../lib/apple-storekit';
 import { resolveUserPk } from './billing-helpers';
 import { issueVoucherCode } from '../lib/voucher-issue';
@@ -122,7 +123,7 @@ billingApple.post('/apple/confirm', async (c) => {
   //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
     if (isAppleGiftProductId(info.productId)) {
-      const settled = await revokeRefundedAppleGift(db0, info.transactionId, info.revocationDate);
+      const settled = await revokeRefundedAppleGift(db0, info, planKey);
       if (!settled) {
         return c.json({ error: 'Gift mapping requires reconciliation', error_code: 'APPLE_VERIFICATION_FAILED' }, 502);
       }
@@ -453,28 +454,60 @@ async function appleChainStatus(
 
 /** 실제 결제→코드 연결만 회수한다. 환불이 발급을 앞질러도 재발급 금지 표식을 남긴다. */
 async function revokeRefundedAppleGift(
-  db: ReturnType<typeof getDB>, transactionId: string, revokedAt: number,
+  db: ReturnType<typeof getDB>, info: AppleTransactionInfo, planKey: string,
 ): Promise<boolean> {
   return withWriteTransaction(db, async (tx) => {
+    const transactionId = info.transactionId;
     const mapping = await tx.execute({
       sql: 'SELECT voucher_id FROM apple_gift_deliveries WHERE transaction_id = ?',
       args: [transactionId],
     });
-    if (mapping.rows.length === 0) {
-      const legacy = await tx.execute({
-        sql: "SELECT id FROM store_transactions WHERE provider = 'apple' AND provider_transaction_id = ?",
-        args: [transactionId],
+    const receipt = await tx.execute({
+      sql: "SELECT id FROM store_transactions WHERE provider = 'apple' AND provider_transaction_id = ?",
+      args: [transactionId],
+    });
+    // 연결을 복구하지 못한 옛 결제는 임의의 다른 코드를 만료시키지 않는다.
+    if (mapping.rows.length === 0 && receipt.rows.length > 0) return false;
+    const voucherId = mapping.rows[0]?.voucher_id;
+    if (receipt.rows.length === 0) {
+      // 발급 전 환불도 원장에 구매자를 남겨야 계정 파기/5년 보존 경로가 찾을 수 있다.
+      // 요청자는 제보자일 뿐이다. 기존 코드 또는 Apple이 검증한 계정 연결만 사용한다.
+      const accountToken = info.appAccountToken?.trim().toLowerCase() ?? '';
+      const purchaser = await tx.execute(typeof voucherId === 'string' ? {
+        sql: `SELECT u.id FROM users u JOIN voucher_codes v ON v.issuer_user_id = u.id
+              WHERE v.id = ?`,
+        args: [voucherId],
+      } : {
+        sql: `SELECT id FROM users WHERE ? <> '' AND (lower(id) = ? OR lower(google_id) = ?) LIMIT 2`,
+        args: [accountToken, accountToken, accountToken],
       });
-      // 연결을 복구하지 못한 옛 결제는 임의의 다른 코드를 만료시키지 않는다.
-      if (legacy.rows.length > 0) return false;
+      if (purchaser.rows.length !== 1) {
+        if (purchaser.rows.length > 1 || typeof voucherId === 'string') return false;
+        // 이미 탈퇴했거나 최초 청구에 필요한 계정 연결이 없다. 발급할 대상이 없는데
+        // 표식만 재생성하면 다시 무기한 고아가 된다. 기존 무연결 표식도 함께 정리한다.
+        await tx.execute({
+          sql: 'DELETE FROM apple_gift_deliveries WHERE transaction_id = ? AND voucher_id IS NULL',
+          args: [transactionId],
+        });
+        return true;
+      }
+      await tx.execute({
+        sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, raw_payload, last_paid_at)
+              VALUES (?, ?, 'apple', ?, ?, ?, ?, ?)`,
+        args: [
+          crypto.randomUUID(), String(purchaser.rows[0]!.id), transactionId, info.productId,
+          planKey, JSON.stringify({ kind: 'gift', refunded: true, environment: info.environment ?? null }),
+          new Date(info.purchaseDate).toISOString(),
+        ],
+      });
     }
     await tx.execute({
       sql: `INSERT INTO apple_gift_deliveries (transaction_id, revoked_at) VALUES (?, ?)
         ON CONFLICT(transaction_id) DO UPDATE SET
           revoked_at = COALESCE(apple_gift_deliveries.revoked_at, excluded.revoked_at)`,
-      args: [transactionId, new Date(revokedAt).toISOString()],
+      args: [transactionId, new Date(info.revocationDate!).toISOString()],
     });
-    const voucherId = mapping.rows[0]?.voucher_id;
     if (typeof voucherId === 'string') {
       await tx.execute({
         sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ? AND status = 'issued'
