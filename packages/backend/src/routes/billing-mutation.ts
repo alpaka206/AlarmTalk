@@ -485,6 +485,7 @@ async function loadActiveFamilyOwnerContext(
           WHERE s.user_id = ?
             AND pg.owner_user_id = ?
             AND s.status = 'active'
+            AND s.entitlement_state = 'entitled'
             AND s.expires_at > datetime('now')
             AND p.plan_type = 'family'
           ORDER BY s.starts_at DESC

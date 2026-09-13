@@ -9,6 +9,7 @@ import {
   storeRenewalProvidersOf,
   repairOrphanedPaidPlan,
   notifyBillingStateChanged,
+  strongestPaidSubscription,
 } from '../lib/billing-cancel';
 
 import {
@@ -84,7 +85,7 @@ billingQuery.get('/subscription', async (c) => {
   return withReadTransaction(db, async (tx) => {
     const result = await tx.execute({
       sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
-                   s.status, s.starts_at, s.expires_at,
+                   s.status, s.starts_at, s.expires_at, s.entitlement_state,
                    s.cancel_at_period_end, s.canceled_at, s.next_plan_id,
                    p.key AS plan_key, p.name AS plan_name, p.plan_type,
                    p.period_days, p.max_members, p.price_krw,
@@ -96,8 +97,7 @@ billingQuery.get('/subscription', async (c) => {
             WHERE u.id = ?
               AND s.status = 'active'
               AND datetime(s.expires_at) > datetime('now')
-            ORDER BY s.starts_at DESC
-            LIMIT 1`,
+            ORDER BY s.starts_at DESC`,
       args: [userId],
     });
 
@@ -126,7 +126,15 @@ billingQuery.get('/subscription', async (c) => {
       storeTxns.filter((txn) => renewingSubscriptionIds.has(txn.subscriptionId)),
     );
 
-    if (result.rows.length === 0) {
+    // 등급 재계산과 같은 선택 함수를 쓴다. 보류·미확인 행은 표시용 유료 근거가 아니다.
+    const r = strongestPaidSubscription(
+      result.rows.map((row) => ({
+        row,
+        planType: String(row.plan_type),
+        entitlementState: String(row.entitlement_state),
+      })),
+    )?.row;
+    if (!r) {
       return c.json({
         user_plan: userPlan,
         subscription: null,
@@ -136,7 +144,6 @@ billingQuery.get('/subscription', async (c) => {
       });
     }
 
-    const r = result.rows[0]!;
     const nextPlanId = (r.next_plan_id as string | null) ?? null;
 
     // **해지가 어느 스토어를 거쳐야 하는지 앱에 알려 준다**(코덱스 #732 P1).
@@ -148,7 +155,7 @@ billingQuery.get('/subscription', async (c) => {
     // 구독이 계속 갱신된다.
     //
     // 판정 범위는 해지 라우트와 **같은 집합**(그 사용자의 활성 구독 전부)이다. 위 SELECT
-    // 는 최신 1건만 돌려주지만, 해지는 활성 구독 중 **하나라도** 애플이면 409 로 거절한다.
+    // 에서 표시할 권한을 고르지만, 해지는 활성 구독 중 **하나라도** 애플이면 409 로 거절한다.
     // (그 집합은 이 라우트 앞머리에서 이미 구했다 — `storeTxns`.)
 
     return c.json({

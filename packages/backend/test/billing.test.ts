@@ -330,6 +330,7 @@ describe('GET /billing/subscription', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS.id,
         plan_group_id: null,
@@ -377,6 +378,7 @@ describe('GET /billing/subscription', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-fam',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_FAMILY.id,
         plan_group_id: 'group-1',

@@ -69,6 +69,7 @@ function pushLatestVoiceProfile(found: boolean) {
 }
 
 function pushInserts() {
+  mockDB.pushResult([{ plan: 'family' }]); // 쓰기 트랜잭션의 발신자 권한 재확인
   mockDB.pushResult([], 1); // INSERT messages
   mockDB.pushResult([]); // 멱등 슬롯 조회(같은 발신자·수신자·time 기존 발신 알람 없음)
   mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
