@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { jsonError } from '../lib/api-error';
 import { normalizeAlarmRow, type AlarmRow } from './alarm-helpers';
 
 const alarmQuery = new Hono<AppEnv>();
@@ -26,6 +27,19 @@ alarmQuery.get('/', async (c) => {
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
   const isActiveParam = c.req.query('is_active');
   const voiceProfileId = c.req.query('voice_profile_id');
+  const pagination = c.req.query('pagination');
+  const cursorMode = pagination === 'cursor';
+  const after = c.req.query('after');
+  if (
+    (pagination !== undefined && !cursorMode) ||
+    (after !== undefined &&
+      (!cursorMode ||
+        !/^[1-9][0-9]{0,15}$/.test(after) ||
+        !Number.isSafeInteger(Number(after)))) ||
+    (cursorMode && c.req.query('offset') !== undefined)
+  ) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'Invalid alarm pagination parameters');
+  }
 
   let whereClause = `WHERE (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))
         AND NOT (
@@ -50,6 +64,36 @@ alarmQuery.get('/', async (c) => {
     whereArgs.push(voiceProfileId);
   }
 
+  // 두 페이지 계약이 같은 행/표시 필드를 내려주도록 조회 본문은 공유한다.
+  const selectAlarms = `SELECT a.*${cursorMode ? ', CAST(aco.sequence AS TEXT) AS pagination_cursor' : ''}, m.text as message_text, m.category, vp.name as voice_name,
+              m.audio_url as message_audio_url,
+              creator.email as creator_email, creator.name as creator_name
+            FROM alarms a
+            ${cursorMode ? 'JOIN alarm_creation_order aco ON aco.alarm_id = a.id' : ''}
+            LEFT JOIN messages m ON a.message_id = m.id
+            LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
+            LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id`;
+
+  if (cursorMode) {
+    // UUID는 삽입 순서가 아니다. DB가 생성/새 전달 세대마다 발급한 순번으로 전진한다.
+    // #116 트리거가 같은 id의 재전송도 뒤로 옮기며 삭제된 최대 순번도 재사용하지 않는다.
+    if (after !== undefined) {
+      whereClause += ' AND aco.sequence > ?';
+      whereArgs.push(Number(after));
+    }
+    const result = await db.execute({
+      sql: `${selectAlarms}
+            ${whereClause}
+            ORDER BY aco.sequence ASC LIMIT ?`,
+      args: [...whereArgs, limit + 1],
+    });
+    const rows = result.rows.slice(0, limit);
+    const alarms = (rows as AlarmRow[]).map(({ pagination_cursor: _cursor, ...row }) =>
+      normalizeAlarmRow(row, ids));
+    const hasMore = result.rows.length > limit;
+    return c.json({ alarms, has_more: hasMore, next_cursor: hasMore ? String(rows.at(-1)!.pagination_cursor) : null });
+  }
+
   // LEFT JOIN messages/voice_profiles so the new "alarm-only" play mode
   // (message_id NULL, no associated voice clip) still appears in the list.
   // The voice_profile_id filter naturally excludes those rows by requiring
@@ -62,15 +106,9 @@ alarmQuery.get('/', async (c) => {
       args: whereArgs,
     }),
     db.execute({
-      sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
-              m.audio_url as message_audio_url,
-              creator.email as creator_email, creator.name as creator_name
-            FROM alarms a
-            LEFT JOIN messages m ON a.message_id = m.id
-            LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
-            LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
+      sql: `${selectAlarms}
             ${whereClause}
-            ORDER BY a.time ASC
+            ORDER BY a.time ASC, a.id ASC
             LIMIT ? OFFSET ?`,
       args: [...whereArgs, limit, offset],
     }),

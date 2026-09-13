@@ -11,7 +11,7 @@ import {
   notifyPlanChanged,
   notifyVoiceDeletionScheduled,
   scheduleCancelAtPeriodEnd,
-  schedulePaidVoiceRetention,
+  syncPaidVoiceRetention,
   storeCancelProviderOf,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
@@ -799,13 +799,16 @@ billingMutation.post('/cancel', async (c) => {
     // 스냅샷(activeSubscriptions)의 구독만 취소하고 새 구독은 건드리지 않는다.
     // (plan 재정렬은 cancelSubscriptionImmediate 내부에서 남은 활성 구독 기준으로 처리)
     for (const subscription of activeSubscriptions) {
-      const ids = await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
+      const ids = await cancelSubscriptionImmediate(tx, subscription, now, {
+        deleteVoiceData: false,
+      });
       for (const id of ids) cancelAffected.add(id);
     }
     // 즉시 해지여도 음성은 보관 유예(PAID_VOICE_RETENTION_DAYS) 동안 남는다 —
     // '지금 삭제'는 /voice-data/delete-now 로 분리.
-    // (그 사이 새 유료 구독이 생겼어도 sweep 이 삭제 전 활성 유료 구독을 재확인한다.)
-    return schedulePaidVoiceRetention(tx, userPk, now);
+    // 새 결제가 살아남으면 유예·응답 기한도 없다. 스윕까지 기다리면 그 전에 거짓
+    // 삭제 예고가 나가므로 plan 재계산과 같은 트랜잭션에서 보관 상태를 결정한다.
+    return syncPaidVoiceRetention(tx, userPk, now);
   });
   // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
   await notifyPlanChanged(db, c.env, Array.from(cancelAffected));

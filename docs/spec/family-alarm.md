@@ -348,6 +348,32 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 **0 으로는 두지 않는다.** 받는 기기가 오프라인이거나 Doze 에 들어가 있으면 푸시가 늦고,
 그러면 알람이 **울리지 않은 채 시각이 지나간다.** 보낸 사람은 보냈다고 믿는다.
 
+**푸시·주기 pull 모두 알람 목록 전체를 페이지로 가져온다.** 서버 기본 50건은 계정의
+알람 한도가 아니다. 내가 만든 알람 뒤에 받은 가족 알람이 있어도 끝까지 읽어야 한다.
+**iOS pull은 `pagination=cursor`와 `after`를 사용한다.** 서버는 알람 생성 또는 전달 세대 변경과 같은 트랜잭션의
+트리거가 부여한 단조 증가 순번(`alarm_creation_order.sequence`, AUTOINCREMENT)으로
+`sequence > after`를 조회하고, 한 행을 더 읽어 `has_more`·`next_cursor`를 반환한다.
+`after`/`next_cursor`는 양의 안전 정수를 나타내는 문자열이며 알람 UUID와는 별개다.
+이미 읽은 행이나
+커서 행 자체가 다른 기기의 ack/삭제로 없어져도 다음 행을 건너뛰지 않는다. 수정 가능한
+알람 시각이나 숫자 offset, 조회 도중 바뀌는 `total`을 완료 근거로 쓰지 않는다.
+iOS는 페이지들을 다 모은 뒤 기존 수신 처리에 넘긴다. **다음 페이지에서 같은 id의 새
+`delivery_version`을 받으면 옛 항목을 제거하고 최신 항목 하나를 마지막으로 읽은 순서에 둔다.**
+재전송·같은 슬롯 교체로 비활성화된 새 세대도 동일하다. 같은 세대의 중복, 새 버전이 없는
+중복, 이미 본 옛 세대로의 역행, 한 페이지 안의 중복 id는 정상 재전송으로 읽지 않는다.
+중간 실패·취소·위의 잘못된 중복·진행하지 않는
+커서·커서 계약 없는 응답은 부분 목록을 성공으로 반환하지 않고 다음 pull에서 재시도한다.
+이는 요청 간 DB를 고정하는 스냅샷은 아니다. **다음 페이지 요청 전에 생성되거나 전달 버전이
+바뀐 가족 알람은 UUID나 시각 값에 관계없이 커서 뒤에 붙는다.** 최대 순번 행을 삭제한 뒤에도
+순번을 재사용하지 않는다. 같은 버전의 재쓰기/일반 시각 편집은 커서를 움직이지 않는다.
+마지막 조회가 끝난 뒤 생성/재전송된 알람은 새 푸시/다음 pull이 받아야 한다는 도착 한계는 그대로다.
+마이그레이션 115는 기존 행의 순번 백필과 생성/삭제 트리거를 원자적으로 설치한다.
+마이그레이션 116은 타깃 행의 `delivery_version` 변경 때 새 순번을 발급하는 트리거를 추가한다.
+`alarm_creation_order`라는 기존 이름은 유지하지만 순번의 의미는 생성 + 새 전달 세대다.
+순번 갱신 실패는 새 전달 내용과 함께 롤백한다. 지원 서버와 마이그레이션 116까지를 iOS보다
+먼저 배포한다. 옛 스키마로의 폴백은 하지 않는다.
+기존 클라이언트의 offset 계약은 별도 호환 경로로 유지한다(Android는 현재 이 경로).
+
 ## 4. 문구는 **받는 사람 기준**으로 고른다 (2026-08-18 결정)
 
 알람 음성이 프리셋 + 직접 입력 둘로 좁혀지면서(`docs/qa/dev-test-handoff.md` 5절),
@@ -383,6 +409,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
 | 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` — 전달이 끝나 행이 지워진 뒤에는 `targeted_alarm_slots` 로 id 를 되짚는다 |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
+| 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmPullSyncService` 기존 offset 계약 | `AlarmTalkAPI.listAlarms` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSync` | `alarm-query.ts`의 생성/전달 세대 순번 커서·`migrations.ts` #115/#116·기존 offset 호환 분기 |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |

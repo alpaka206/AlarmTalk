@@ -111,6 +111,80 @@ describe('가족 알람 수신자 그만받기(decline)', () => {
     testDb = await seed();
   });
 
+  for (const removedId of [ALARM_ID, '22222222-2222-2222-2222-222222222222']) {
+    it(`커서 앞 행 또는 커서 자체가 ack로 삭제돼도 다음 가족 알람을 건너뛰지 않는다: ${removedId}`, async () => {
+      const middle = '22222222-2222-2222-2222-222222222222';
+      const last = '33333333-3333-3333-3333-333333333333';
+      for (const id of [middle, last]) {
+        await testDb.execute({
+          sql: `INSERT INTO alarms (id,user_id,target_user_id,time,mode,is_active,delivery_version)
+            VALUES (?,'A','B','07:00','sound-only',1,?)`,
+          args: [id, DELIVERY_VERSION_1],
+        });
+      }
+      const first = await appFor('B').request('/?pagination=cursor&limit=2');
+      expect(first.status).toBe(200);
+      const page = await first.json();
+      expect(page.alarms.map((a: { id: string }) => a.id)).toEqual([ALARM_ID, middle]);
+      expect(page).toMatchObject({ has_more: true });
+      expect(page.next_cursor).toMatch(/^[1-9][0-9]*$/);
+
+      expect((await markReceived(removedId)).status).toBe(200);
+      // 다른 기기의 시각 편집도 커서 위치를 바꾸지 않는다.
+      await testDb.execute({ sql: "UPDATE alarms SET time='00:01' WHERE id=?", args: [last] });
+      const next = await appFor('B').request(`/?pagination=cursor&limit=2&after=${page.next_cursor}`);
+      expect(next.status).toBe(200);
+      expect(await next.json()).toMatchObject({
+        alarms: [{ id: last, is_received: true }], has_more: false, next_cursor: null,
+      });
+      // 같은 커서로 다시 읽어도 수신자 스코프를 넘지 않는다.
+      expect((await (await appFor('unrelated').request(`/?pagination=cursor&after=${page.next_cursor}`)).json()).alarms).toEqual([]);
+    });
+  }
+
+  it('페이지 사이에 UUID가 앞서는 가족 알람이 생겨도 같은 순회에서 받는다', async () => {
+    const tail = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const inserted = '00000000-0000-4000-8000-000000000001';
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id,user_id,target_user_id,time,delivery_version)
+        VALUES (?,'A','B','07:00',?)`,
+      args: [tail, DELIVERY_VERSION_1],
+    });
+    const first = await (await appFor('B').request('/?pagination=cursor&limit=1')).json();
+    expect(first.alarms.map((a: { id: string }) => a.id)).toEqual([ALARM_ID]);
+    expect(first.has_more).toBe(true);
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id,user_id,target_user_id,time,delivery_version,created_at)
+        VALUES (?,'A','B','06:59',?,'2000-01-01')`,
+      args: [inserted, DELIVERY_VERSION_1],
+    });
+    const next = await (await appFor('B').request(`/?pagination=cursor&after=${first.next_cursor}`)).json();
+    expect(next.alarms.map((a: { id: string }) => a.id)).toEqual([tail, inserted]);
+    expect(next.has_more).toBe(false);
+    expect(next.alarms.every((a: { is_received: boolean }) => a.is_received)).toBe(true);
+  });
+
+  it('현재 최대 순번을 포함한 모든 행을 지운 뒤에도 새 생성은 이전 커서 뒤에 붙는다', async () => {
+    const tail = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id,user_id,target_user_id,time,delivery_version)
+        VALUES (?,'A','B','07:00',?)`,
+      args: [tail, DELIVERY_VERSION_1],
+    });
+    const first = await (await appFor('B').request('/?pagination=cursor&limit=1')).json();
+    expect((await markReceived(ALARM_ID)).status).toBe(200);
+    expect((await markReceived(tail)).status).toBe(200);
+    expect((await testDb.execute('SELECT * FROM alarm_creation_order')).rows).toEqual([]);
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id,user_id,target_user_id,time,delivery_version)
+        VALUES (?,'A','B','07:00',?)`,
+      args: [ALARM_ID, DELIVERY_VERSION_2],
+    });
+    const next = await (await appFor('B').request(`/?pagination=cursor&after=${first.next_cursor}`)).json();
+    expect(next.alarms.map((a: { id: string }) => a.id)).toEqual([ALARM_ID]);
+    expect(next.has_more).toBe(false);
+  });
+
   async function listIds(userId: string): Promise<string[]> {
     const res = await appFor(userId).request('/');
     const body = (await res.json()) as { alarms: Array<{ id: string }> };

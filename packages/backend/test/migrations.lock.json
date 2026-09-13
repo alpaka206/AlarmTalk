@@ -434,5 +434,13 @@
   "114": {
     "name": "store-transactions-last-paid-at",
     "sha": "5295c8b04e172e9e"
+  },
+  "115": {
+    "name": "alarm-monotonic-creation-cursor",
+    "sha": "ffe2ddecf0153de7"
+  },
+  "116": {
+    "name": "alarm-delivery-generation-cursor",
+    "sha": "79a0b986f3d36350"
   }
 }

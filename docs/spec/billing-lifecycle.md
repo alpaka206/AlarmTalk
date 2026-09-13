@@ -27,8 +27,12 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   가족→커플 정원 축소·자발적 이탈·멤버 내보내기에도 같은 규칙을 적용한다. 남은 권한을
   재계산한 뒤 유료이면 기존 보관 유예도 지우고, 무료인 멤버만 유예를 예약한다.
   그룹 접근은 바뀌었으므로 유료 멤버의 `plan_changed`는 유지하되 삭제 예고는 보내지 않는다.
-  보관 유예 판정은 `syncGroupDepartureRetention` 한 곳에 두고 전체 해체와 개별 이탈
-  함수가 함께 사용한다. 개별 호출부에 조건을 복제하거나 한쪽만 고치지 않는다.
+  보관 유예 판정은 `syncPaidVoiceRetention` 한 곳에 두고 전체 해체·개별 이탈·즉시 해지가
+  함께 사용한다. 개별 호출부에 조건을 복제하거나 한쪽만 고치지 않는다.
+  **즉시 해지의 스토어 왕복 중 새 결제가 완료된 경우도 같다.** 해지 대상 구독만 취소한 뒤
+  같은 쓰기 트랜잭션에서 남은 유료 권한을 확인한다. 유료이면 기존 유예를 지우고 응답의
+  `voice_retention_until`은 `null`로 반환한다. 무료가 된 멤버의 유예·예고와 전체 영향 계정의
+  `plan_changed`는 유지한다. 나중의 스윕이 취소해 줄 거라며 거짓 기한을 먼저 만들지 않는다.
 - 애플 권한은 ACTIVE/IN_GRACE_PERIOD 만 허용한다. 유예의 끝은
   `signedRenewalInfo.gracePeriodExpiresDate` 이며 결제일과 구분한다.
   EXPIRED/REVOKED 는 종료, IN_BILLING_RETRY 는 그룹을 남기는 보류다.
@@ -640,7 +644,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
-| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`·`leavePlanGroupMember`가 `syncGroupDepartureRetention` 공유, 독립 유료 멤버도 동기화 대상은 유지 | — | — |
+| 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`·`leavePlanGroupMember`가 `syncPaidVoiceRetention` 공유, 독립 유료 멤버도 동기화 대상은 유지 | — | — |
+| 즉시 해지 중 새 유료 권한의 보관 정책 | `billing-mutation.ts` → `syncPaidVoiceRetention`(남은 유료 권한이면 기존 유예 삭제·응답 기한 null) | 기존 응답 소비 | 기존 응답 소비 |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |

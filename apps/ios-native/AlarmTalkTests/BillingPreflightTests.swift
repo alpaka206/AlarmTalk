@@ -96,7 +96,7 @@ final class BillingPreflightTests: XCTestCase {
         let stale = Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8)
         let authoritative = Data(#"{"subscription":null,"plan":null,"next_plan":null,"user_plan":"family","store_renewal_providers":["google"]}"#.utf8)
         let staleMe = try JSONSerialization.data(withJSONObject: [
-            "user": ["id": userID, "email": "preflight@example.test", "name": "Test", "plan": "free"]
+            "user": ["id": userID, "email": "preflight@example.test", "name": "Test", "plan": "free", "deletion_status": "active"]
         ])
         PreflightURLProtocol.configureDeferred(host: host) { request, complete in
             let url = request.url!

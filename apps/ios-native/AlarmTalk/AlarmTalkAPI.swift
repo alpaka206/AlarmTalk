@@ -84,6 +84,21 @@ final class AlarmTalkAPI: @unchecked Sendable {
         struct Response: Decodable {
             var token: String?
             var user: AuthUser
+
+            private enum CodingKeys: String, CodingKey { case token, user }
+            private enum StatusKeys: String, CodingKey { case deletionStatus }
+
+            init(from decoder: Decoder) throws {
+                let values = try decoder.container(keyedBy: CodingKeys.self)
+                let status = try values.nestedContainer(keyedBy: StatusKeys.self, forKey: .user)
+                    .decode(String.self, forKey: .deletionStatus)
+                // 저장된 옛 세션의 기본값과 서버가 명시한 복구 상태를 혼동하지 않는다.
+                guard !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw APIError.invalidResponse
+                }
+                token = try values.decodeIfPresent(String.self, forKey: .token)
+                user = try values.decode(AuthUser.self, forKey: .user)
+            }
         }
         let response: Response = try await request("auth/me", token: token)
         return (response.token, response.user)
@@ -98,8 +113,52 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     func listAlarms(token: String) async throws -> [RemoteAlarm] {
-        let response: RemoteAlarmListResponse = try await request("alarm", token: token)
-        return response.alarms
+        let pageSize = 100
+        var alarms: [RemoteAlarm?] = []
+        var latestIndexByID: [String: Int] = [:]
+        var seenDeliveryVersions: [String: Set<String>] = [:]
+        var cursor: String?
+        while true {
+            try Task.checkCancellation()
+            var query = URLComponents()
+            query.queryItems = [
+                URLQueryItem(name: "pagination", value: "cursor"),
+                URLQueryItem(name: "limit", value: String(pageSize)),
+            ]
+            if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
+            let page: RemoteAlarmListResponse = try await request(
+                "alarm?\(query.percentEncodedQuery!)", token: token
+            )
+            try Task.checkCancellation()
+            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 생성/전달 순번
+            // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
+            var pageIDs = Set<String>()
+            for alarm in page.alarms {
+                guard pageIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
+                let version = alarm.deliveryVersion?.nilIfBlank
+                if let previous = latestIndexByID[alarm.id] {
+                    // 재전송은 같은 id로 뒤 페이지에 다시 온다. 새 세대만 교체하며
+                    // 이미 본 세대/버전 없는 중복은 잘못된 페이지로 거절한다.
+                    guard let version, seenDeliveryVersions[alarm.id]?.contains(version) != true else {
+                        throw APIError.invalidResponse
+                    }
+                    // 옛 위치에 덮어쓰지 않는다. 슬롯 교체도 최신 전달 순서대로 적용한다.
+                    alarms[previous] = nil
+                }
+                if let version { seenDeliveryVersions[alarm.id, default: []].insert(version) }
+                latestIndexByID[alarm.id] = alarms.count
+                alarms.append(alarm)
+            }
+            if !page.hasMore {
+                guard page.nextCursor == nil else { throw APIError.invalidResponse }
+                return alarms.compactMap { $0 }
+            }
+            guard !page.alarms.isEmpty, let next = page.nextCursor,
+                  let sequence = UInt64(next), String(sequence) == next,
+                  sequence > 0, sequence <= 9_007_199_254_740_991,
+                  sequence > (cursor.flatMap { UInt64($0) } ?? 0) else { throw APIError.invalidResponse }
+            cursor = next
+        }
     }
 
     func createAlarm(_ requestBody: RemoteAlarmWriteRequest, token: String) async throws -> RemoteAlarm {

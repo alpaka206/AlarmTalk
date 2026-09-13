@@ -611,16 +611,27 @@ user.delete('/me/deletion', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
   try {
-    const res = await db.execute({
-      sql: `UPDATE users
+    const recovered = await withWriteTransaction(db, async (tx) => {
+      const res = await tx.execute({
+        sql: `UPDATE users
             SET deletion_status = 'active',
                 deletion_requested_at = NULL,
                 deletion_purge_at = NULL,
                 updated_at = datetime('now')
             WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion'`,
-      args: [userId, userId],
+        args: [userId, userId],
+      });
+      if (res.rowsAffected > 0) return true;
+      // 복구 성공 응답만 유실될 수 있다. 이미 active면 무변경 성공으로 수렴시킨다.
+      // 별도 요청의 탈퇴 신청/파기와 판정이 엇갈리지 않게 같은 쓰기 트랜잭션에서 읽는다.
+      const active = await tx.execute({
+        sql: `SELECT id FROM users
+              WHERE (google_id = ? OR id = ?) AND deletion_status = 'active' LIMIT 1`,
+        args: [userId, userId],
+      });
+      return active.rows.length > 0;
     });
-    if (res.rowsAffected === 0) {
+    if (!recovered) {
       return c.json({ error: 'No pending deletion', error_code: 'NO_PENDING_DELETION' }, 404);
     }
     return c.json({ success: true, status: 'active' });

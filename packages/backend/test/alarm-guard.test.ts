@@ -20,6 +20,7 @@ const db: Client = createClient({ url: `file:${DB_PATH}` });
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
+const { default: alarmQuery } = await import('../src/routes/alarm-query');
 
 // 발신자/수신자 식별자 — JWT sub 은 항상 users.id 라 pk 와 login 이 같은 값이다.
 const SENDER_A = { pk: 'guard-a-pk', login: 'guard-a-pk' };
@@ -42,6 +43,7 @@ function appFor(user: { pk: string; login: string }) {
     await next();
   });
   app.route('/alarms', alarmMutation);
+  app.route('/alarms', alarmQuery);
   return app;
 }
 
@@ -142,6 +144,90 @@ afterEach(() => {
 });
 
 describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () => {
+  async function createForCursor(sender = SENDER_A, time = '23:00', snoozeMinutes = 5) {
+    const response = await postAlarm(sender, {
+      time, target_user_id: RECIPIENT.login, timezone: 'Asia/Seoul', snooze_minutes: snoozeMinutes,
+    });
+    expect(response.status).toBe(201);
+    return ((await response.json()) as { alarm: { id: string } }).alarm.id;
+  }
+
+  async function cursorPage(after?: string, limit = 1) {
+    const query = new URLSearchParams({ pagination: 'cursor', limit: String(limit) });
+    if (after) query.set('after', after);
+    const response = await appFor(RECIPIENT).request(`/alarms?${query}`);
+    expect(response.status).toBe(200);
+    return await response.json() as {
+      alarms: { id: string; delivery_version: string; snooze_minutes: number; is_active: boolean }[];
+      has_more: boolean;
+      next_cursor: string | null;
+    };
+  }
+
+  it('앞 페이지에서 읽은 알람을 실제 POST로 재전송하면 뒤 페이지에 새 전달 버전이 온다', async () => {
+    const id = await createForCursor();
+    const tail = await createForCursor(SENDER_A, '22:00');
+    const first = await cursorPage();
+    expect(first.alarms.map((alarm) => alarm.id)).toEqual([id]);
+    expect(first.has_more).toBe(true);
+    const oldVersion = first.alarms[0]!.delivery_version;
+
+    expect(await createForCursor(SENDER_A, '23:00', 12)).toBe(id);
+    const middle = await cursorPage(first.next_cursor!);
+    expect(middle.alarms.map((alarm) => alarm.id)).toEqual([tail]);
+    expect(middle.has_more).toBe(true);
+    const last = await cursorPage(middle.next_cursor!);
+    expect(last.alarms).toMatchObject([{ id, snooze_minutes: 12, is_active: true }]);
+    expect(last.alarms[0]!.delivery_version).not.toBe(oldVersion);
+    expect(last.has_more).toBe(false);
+
+    const acknowledge = (version: string) => appFor(RECIPIENT).request(`/alarms/${id}/received`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery_version: version }),
+    });
+    expect(await (await acknowledge(oldVersion)).json()).toMatchObject({ deleted: false });
+    expect((await alarmRow(id))!.delivery_version).toBe(last.alarms[0]!.delivery_version);
+    expect(await (await acknowledge(last.alarms[0]!.delivery_version)).json()).toMatchObject({ deleted: true });
+    expect(await alarmRow(id)).toBeNull();
+  });
+
+  it('다른 발신자의 슬롯 교체로 앞 행이 비활성화돼도 새 세대가 커서 뒤로 이동한다', async () => {
+    const id = await createForCursor();
+    const tail = await createForCursor(SENDER_A, '22:00');
+    const first = await cursorPage();
+    const replacement = await createForCursor(SENDER_B);
+    const next = await cursorPage(first.next_cursor!, 100);
+    expect(next.alarms.map((alarm) => alarm.id)).toEqual([tail, id, replacement]);
+    expect(next.alarms[1]).toMatchObject({ id, is_active: false });
+    expect(next.alarms[1]!.delivery_version).not.toBe(first.alarms[0]!.delivery_version);
+    expect(next.alarms[2]).toMatchObject({ id: replacement, is_active: true });
+    expect(next.has_more).toBe(false);
+    const unrelated = await appFor(SENDER_LEGACY).request(`/alarms?pagination=cursor&after=${first.next_cursor}`);
+    expect(await unrelated.json()).toMatchObject({ alarms: [] });
+  });
+
+  it('새 전달 순번 발급이 실패하면 재전송 내용과 버전도 함께 롤백한다', async () => {
+    const id = await createForCursor();
+    const before = await alarmRow(id);
+    const cursorBefore = await db.execute({
+      sql: 'SELECT sequence FROM alarm_creation_order WHERE alarm_id = ?', args: [id],
+    });
+    await db.execute(`CREATE TRIGGER reject_delivery_cursor BEFORE INSERT ON alarm_creation_order
+      BEGIN SELECT RAISE(ABORT, 'forced delivery cursor failure'); END`);
+    try {
+      const response = await postAlarm(SENDER_A, {
+        time: '23:00', target_user_id: RECIPIENT.login, timezone: 'Asia/Seoul', snooze_minutes: 12,
+      });
+      expect(response.status).toBe(500);
+      expect(await alarmRow(id)).toEqual(before);
+      expect((await db.execute({
+        sql: 'SELECT sequence FROM alarm_creation_order WHERE alarm_id = ?', args: [id],
+      })).rows).toEqual(cursorBefore.rows);
+    } finally {
+      await db.execute('DROP TRIGGER reject_delivery_cursor');
+    }
+  });
+
   it('발신자 A→B 가 같은 수신자·같은 시각으로 순차 생성하면 마지막 것만 is_active=1', async () => {
     const resA = await postAlarm(SENDER_A, {
       time: '23:00',
