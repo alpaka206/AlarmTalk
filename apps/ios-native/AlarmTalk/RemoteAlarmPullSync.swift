@@ -842,15 +842,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.
     /// 내가 만든 서버 알람은 push sync 의 결과물이므로 received import 대상으로 삼지 않는다.
     static func isReceivedRemoteCandidate(_ remote: RemoteAlarm, currentUserID: String) -> Bool {
-        guard let target = remote.targetUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !target.isEmpty,
-              target == currentUserID,
-              let sender = remote.senderUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !sender.isEmpty,
-              sender != currentUserID else {
-            return false
-        }
-        return true
+        remote.isReceivedForPull
     }
 
     /// 받은 알람을 다시 예약한 결과.

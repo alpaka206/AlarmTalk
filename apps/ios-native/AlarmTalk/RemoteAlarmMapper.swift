@@ -167,13 +167,7 @@ enum RemoteAlarmMapper {
     /// - target_user_id == currentUserID         -> .receivedRemote (남이 나에게 보냄)
     /// - 그 외 (sender == me 또는 target nil)    -> .localOwned (내가 만든 알람)
     static func resolveOrigin(_ remote: RemoteAlarm, currentUserID: String) -> AlarmOrigin {
-        if let target = remote.targetUserId,
-           !target.isEmpty,
-           target == currentUserID,
-           remote.senderUserId != currentUserID {
-            return .receivedRemote
-        }
-        return .localOwned
+        remote.isReceivedForPull ? .receivedRemote : .localOwned
     }
 
     // MARK: Helpers

@@ -16,6 +16,56 @@ final class RemoteAlarmPushQueueTests: XCTestCase {
         try await assertQueuedPush(cancelFirst: true, cancelWaiter: true)
     }
 
+    func test_singleCreatePreservesEditWhileHTTPResponseIsPending() async throws {
+        try await assertSinglePushPreservesEdit(existingRemoteID: nil)
+    }
+
+    func test_singleUpdatePreservesEditWhileHTTPResponseIsPending() async throws {
+        try await assertSinglePushPreservesEdit(existingRemoteID: "remote-existing")
+    }
+
+    private func assertSinglePushPreservesEdit(existingRemoteID: String?) async throws {
+        let firstRequest = expectation(description: "단건 전송 HTTP 응답 대기")
+        let host = "\(UUID().uuidString.lowercased()).push-queue.example.test"
+        let fixture = PushQueueFixture(firstRequest: firstRequest)
+        PushQueueURLProtocol.configure(host: host, fixture: fixture)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PushQueueURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("single-push-\(UUID()).json")
+        defer {
+            session.invalidateAndCancel()
+            PushQueueURLProtocol.configure(host: host, fixture: nil)
+            try? FileManager.default.removeItem(at: url)
+        }
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://\(host)/api/")!, session: session)
+        let store = LocalAlarmStore(storageURL: url, loadFromDisk: false)
+        var row = LocalAlarmRecord(id: "single", label: "alarm", hour: 8, minute: 0, fireAtMillis: 1)
+        row.remoteAlarmId = existingRemoteID
+        row.ownerUserId = "owner"
+        let sent = store.upsert(row)
+        let authSession = AuthSession(token: "test-token", user: AuthUser(id: "owner", email: "owner@example.test"))
+        let model = RemoteAlarmSyncViewModel(api: api)
+        let active = Task { @MainActor in await model.push(record: sent, store: store, session: authSession) }
+        await fulfillment(of: [firstRequest], timeout: 2)
+        var edited = sent
+        edited.hour = 9
+        edited = store.upsertPreservingServerSyncFields(edited)
+        fixture.completeFirstRequest()
+        await active.value
+        let committed = try XCTUnwrap(store.record(id: sent.id))
+        XCTAssertEqual(committed.hour, 9)
+        XCTAssertEqual(committed.updatedAtMillis, edited.updatedAtMillis)
+        XCTAssertEqual(committed.remoteAlarmId, existingRemoteID ?? "remote-new")
+        XCTAssertEqual(committed.syncStateEnum, .dirty)
+        let disk = try JSONDecoder().decode([LocalAlarmRecord].self, from: Data(contentsOf: url))
+        XCTAssertEqual(disk.first, committed)
+        await model.push(record: committed, store: store, session: authSession)
+        XCTAssertEqual(fixture.requests.map(\.httpMethod), [existingRemoteID == nil ? "POST" : "PATCH", "PATCH"])
+        XCTAssertEqual(fixture.requests.last?.url?.lastPathComponent, existingRemoteID ?? "remote-new")
+        XCTAssertEqual(store.record(id: sent.id)?.syncStateEnum, .synced)
+    }
+
     private func assertQueuedPush(cancelFirst: Bool, cancelWaiter: Bool = false) async throws {
         let firstRequest = expectation(description: "background PATCH awaiting response")
         let host = "\(UUID().uuidString.lowercased()).push-queue.example.test"
@@ -124,11 +174,17 @@ private final class PushQueueFixture: @unchecked Sendable {
         else { transport.respond(status: 200) }
     }
     func failFirstRequest() {
+        respondToFirstRequest(status: 503)
+    }
+    func completeFirstRequest() {
+        respondToFirstRequest(status: 200)
+    }
+    private func respondToFirstRequest(status: Int) {
         lock.lock()
         let transport = blocked
         blocked = nil
         lock.unlock()
-        transport?.respond(status: 503)
+        transport?.respond(status: status)
     }
 }
 
@@ -155,7 +211,7 @@ private final class PushQueueURLProtocol: URLProtocol, @unchecked Sendable {
         fixture.receive(self)
     }
     func respond(status: Int) {
-        let remoteID = request.httpMethod == "PATCH" ? "remote-existing" : "remote-new"
+        let remoteID = request.httpMethod == "PATCH" ? request.url!.lastPathComponent : "remote-new"
         let body = status == 200 ? "{\"alarm\":{\"id\":\"\(remoteID)\"}}" : #"{"error":"unavailable"}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
             httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)

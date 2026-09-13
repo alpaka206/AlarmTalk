@@ -27,7 +27,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             senderName: "Sender",
             senderEmail: nil,
             isFamilyAlarm: false,
-            isReceivedFamilyAlarm: false
+            isReceivedFamilyAlarm: true
         )
         XCTAssertEqual(RemoteAlarmMapper.resolveOrigin(remote, currentUserID: "me"), .receivedRemote)
     }
@@ -302,7 +302,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             senderName: "Sender",
             senderEmail: nil,
             isFamilyAlarm: false,
-            isReceivedFamilyAlarm: false
+            isReceivedFamilyAlarm: true
         )
         let local = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000))
         XCTAssertEqual(local.label, "Sender님이 보낸 알람")
@@ -392,7 +392,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             senderName: "Other",
             senderEmail: nil,
             isFamilyAlarm: false,
-            isReceivedFamilyAlarm: false
+            isReceivedFamilyAlarm: true
         )
     }
 }

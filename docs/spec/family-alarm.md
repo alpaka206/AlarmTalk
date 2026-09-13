@@ -365,6 +365,10 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 별도 인스턴스의 전경·백그라운드 **일괄 push도 호출별로 기다린다**. 앞 회차의 오류·취소가
 대기 요청을 지우지 않으며, 차례가 온 호출은 최신 로컬 후보와 세션으로 자기 회차를 수행한다.
 아직 전송하지 않은 호출에 성공/0건을 반환하지 않는다.
+전송 성공 표시는 **요청한 로컬 스냅샷이 그대로일 때만** 완료로 바꾼다. 네트워크 대기 중
+편집된 행은 최신 내용·편집 시각과 재전송 상태를 보존한다. 생성 응답의 서버 ID는 편집 여부와
+관계없이 저장해 다음 회차가 PATCH로 이어지게 한다. 성공 응답을 받은 뒤에는 작업 취소를
+전파하기 전에 이 연결을 디스크에 기록한다. 저장 실패는 성공으로 처리하지 않는다.
 실패 후 pending 예약 취소 재처리 역시 저장소 로드가 끝나지 않았으면 보류한다. OS 예약만
 지우고 디스크의 핸들이 남는 부분 처리를 하지 않는다(`alarm-lifecycle.md` 1-3절).
 
@@ -401,9 +405,11 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 요청과 같아야 하고 limit은 1~100, 행 수는 limit 이하여야 한다. 필드 누락·잘못된 응답·중간 실패·
 취소·중복은 부분 성공으로 반환하지 않는다. 한 번 커서로 시작한 회차가 중간에 offset으로 바뀌거나
 그 반대가 되면 실패한다. 다음 pull은 다시 커서를 요청해 지원 서버 배포 뒤 자동 전환한다.
-Android의 수신 판별은 `is_received`를 우선한다. 값이 없을 때만 구서버의
+양 앱의 수신 판별과 로컬 origin 매핑은 서버의 `is_received`를 우선한다. 값이 없을 때만 구서버의
 `is_received_family_alarm`을 사용하며, 둘 다 없으면 수신으로 처리하지 않는다.
 새 필드의 명시적인 false를 구형 필드의 true로 뒤집지 않는다.
+서버가 UUID와 옛 로그인 식별자를 함께 판정하므로 앱에서 `target_user_id`와 현재 UUID의
+문자열 비교로 수신 여부를 다시 결정하지 않는다.
 offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으므로 호환 기간에만 사용한다.
 마이그레이션 116까지 적용된 서버에서는 위 커서 계약을 사용한다. 정책 문서를 번들한 앱의
 선출시 순서는 `CLAUDE.md`의 법무 문서 배포 규칙을 따른다.
@@ -447,6 +453,8 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 콜드 스타트 디스크 로드 후 수신 | — | `RemoteAlarmPullSync.runCycle` → `requireLoadedStore` → `LocalAlarmStore.waitUntilLoadedFromDisk` | — |
 | 앞 pull 실패 뒤에도 대기 요청 실행 | — | `AlarmTalkApp` 가족 콜백 → `RemoteAlarmSyncViewModel.runFullSync` → `RemoteAlarmPullSync.runOnce`; 각 진입점의 `AsyncSerialGate` | — |
 | 앞 일괄 push 취소 뒤에도 대기 요청 실행 | 기존 `AlarmSyncService` 동기화 | `RemoteAlarmPushSync.runOnce` → 타입 공용 `AsyncSerialGate`; `RemoteAlarmPushQueueTests` | — |
+| 서버 수신 판별·origin 일치 | `RemoteAlarm.isReceivedForPull` → 받은 행 생성 | `RemoteAlarm.isReceivedForPull` → `RemoteAlarmPullSync`·`RemoteAlarmMapper` | `normalizeAlarmRow`의 UUID·로그인 식별자 판정 |
+| 전송 중 편집 보존·생성 성공 뒤 취소 | `AlarmSyncService`의 `NonCancellable` → `AlarmDao.setSyncStateIfUnchanged`·`markRemoteIdKeepDirty` | 일괄/단건 push → `LocalAlarmStore.markRemote(snapshot:)` → `saveNow` 후 취소 확인 | 기존 POST 생성·PATCH 수정 |
 | APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |

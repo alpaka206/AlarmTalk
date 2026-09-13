@@ -294,7 +294,7 @@ private final class QueuedPullURLProtocol: URLProtocol, @unchecked Sendable {
             body = #"{"error":"unexpected request"}"#
         } else if url.path == "/api/alarm" {
             status = 200
-            body = #"{"alarms":[{"id":"received","target_user_id":"fresh-owner","sender_user_id":"sender","time":"invalid"}],"has_more":false,"next_cursor":null}"#
+            body = #"{"alarms":[{"id":"received","target_user_id":"fresh-owner","sender_user_id":"sender","is_received":true,"time":"invalid"}],"has_more":false,"next_cursor":null}"#
             NotificationCenter.default.post(name: Self.didListAlarms, object: nil)
         } else if url.path == "/api/alarm/declined" {
             status = 200
