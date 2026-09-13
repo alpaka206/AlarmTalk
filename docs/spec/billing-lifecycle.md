@@ -114,6 +114,9 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   만들면 안 된다. 업계 표준(Spotify·Apple 가족공유)도 그룹은 유지하고 서비스만 멈춘다.
 - ⚠ **멤버가 자기 개인 구독을 따로 가진 경우를 지킨다.** 값을 직접 대입하지 말고
   `resolvePlanAfterSuspend` 로 **남은 활성 구독에서 다시 계산**한다.
+  남은 구독이 여러 개면 시작일보다 권한 등급을 우선한다(`family` > `plus` > `free`).
+  가족·커플 결제가 복구되면 더 최근에 산 개인 구독이 있어도 공유 권한으로 돌아온다.
+  부분 해지 뒤 남은 구독을 재계산할 때도 같은 우선순위를 적용한다.
 - ⚠ **바뀐 사람에게만 알린다.** 자기 결제가 따로 있어 등급이 안 바뀐 멤버에게
   "결제가 실패했어요" 를 보내면 자기 카드에 문제가 생긴 줄 안다.
 - ⚠ **복구도 같이 구현한다.** 보류만 넣고 복구를 빠뜨리면 멤버가 **영영 무료로 남아**
@@ -684,6 +687,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 교체 토큰의 첫 비활성 RTDN | `billing-google-rtdn.ts`의 `linkedFromToken` 연결 기록 → 공통 정합화; 실제 DB RTDN 테스트 | — | — |
 | 결제 전 응답과 이전 조회의 경합 | — | — | `refreshSubscriptionForPurchase` 반환 응답 + `billingPreflightRevision`; `BillingPreflightTests` |
 | 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |
+| 보류·복구·부분 해지 뒤 가장 높은 잔여 등급 | `lib/billing-cancel.ts` `strongestPaidSubscription` → `resolvePlanAfterSuspend`·`syncUserPlanAfterCancel`; `billing-reconciliation.test.ts` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
 | 보류 — Apple 진입점 | `reconcileStoreSubscription` → `'suspend'` | — | — |
 | 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |

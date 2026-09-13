@@ -26,6 +26,8 @@ import {
   reconcileStoreSubscription,
 } from '../src/lib/billing-reconciliation';
 import {
+  cancelSubscriptionImmediate,
+  findActiveSubscriptionsByUserPk,
   leavePlanGroupMember,
   processSubscriptionExpiry,
   repairOrphanedPaidPlan,
@@ -1403,6 +1405,64 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     expect(
       (await rows("SELECT expires_at FROM subscriptions WHERE id='sub-member'"))[0]!.expires_at,
     ).toBe(FUTURE);
+  });
+
+  it.each(['family', 'couple'] as const)(
+    '%s 복구는 더 최근의 개인 구독보다 공유 권한을 우선하고 멤버에게 알린다',
+    async (key) => {
+      await seed();
+      const groupPlan = (await loadPlanByKey(db, key))!;
+      const personalPlan = (await loadPlanByKey(db, 'personal'))!;
+      await db.execute({ sql: 'UPDATE subscriptions SET plan_id=?', args: [groupPlan.id] });
+      await db.execute({ sql: 'UPDATE plan_groups SET plan_id=?', args: [groupPlan.id] });
+      await db.execute({
+        sql: 'UPDATE store_transactions SET product_id=?, plan_key=?',
+        args: [`com.alarmtalk.app.${key}_monthly`, key],
+      });
+      await db.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES ('member-personal','member',?,'active',?,?)`,
+        args: [personalPlan.id, NOW.toISOString(), FUTURE],
+      });
+      apple({ status: 3, productId: `com.alarmtalk.app.${key}_monthly` });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+
+      vi.clearAllMocks();
+      apple({ productId: `com.alarmtalk.app.${key}_monthly` });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT status FROM subscriptions WHERE id='member-personal'"))[0]!.status,
+      ).toBe('active');
+      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain('member');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      vi.clearAllMocks();
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it('부분 해지 뒤에도 남은 개인 구독보다 기존 공유 권한을 우선한다', async () => {
+    await seed();
+    const personal = (await loadPlanByKey(db, 'personal'))!;
+    for (const id of ['keep-personal', 'cancel-personal']) {
+      await db.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES (?,'member',?,'active',?,?)`,
+        args: [id, personal.id, NOW.toISOString(), FUTURE],
+      });
+    }
+    const cancelled = (await findActiveSubscriptionsByUserPk(db, 'member')).find(
+      (sub) => sub.subscriptionId === 'cancel-personal',
+    )!;
+    await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+    expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+    expect((await rows("SELECT status FROM subscriptions WHERE id='keep-personal'"))[0]!.status).toBe(
+      'active',
+    );
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
   });
 
   it.each([undefined, 99])('알 수 없는 애플 상태 %s 는 무료 강등 근거가 아니다', async (status) => {

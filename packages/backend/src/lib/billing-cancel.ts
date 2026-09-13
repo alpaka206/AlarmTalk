@@ -554,8 +554,7 @@ async function syncUserPlanAfterCancel(
   options: CancelCleanupOptions = {},
 ): Promise<void> {
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
-  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다.
-  const paid = remaining.find((s) => PAID_PLAN_TYPES.has(s.planType));
+  const paid = strongestPaidSubscription(remaining);
   if (paid) {
     await db.execute({
       sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -564,6 +563,14 @@ async function syncUserPlanAfterCancel(
     return;
   }
   await downgradeUserToFree(db, userPk, options);
+}
+
+function strongestPaidSubscription(subscriptions: ActiveSubscription[]): ActiveSubscription | undefined {
+  // 시작일은 같은 등급 안에서만 의미가 있다. 새 개인 구독이 공유 권한을 덮으면 안 된다.
+  return (
+    subscriptions.find((s) => isGroupPlanType(s.planType)) ??
+    subscriptions.find((s) => PAID_PLAN_TYPES.has(s.planType))
+  );
 }
 
 /**
@@ -591,10 +598,7 @@ export async function resolvePlanAfterSuspend(
     typeof excludeSubscriptionIds === 'string' ? [excludeSubscriptionIds] : excludeSubscriptionIds,
   );
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
-  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다. 매핑(정지된) 구독은 제외.
-  const paid = remaining.find(
-    (s) => !excluded.has(s.subscriptionId) && PAID_PLAN_TYPES.has(s.planType),
-  );
+  const paid = strongestPaidSubscription(remaining.filter((s) => !excluded.has(s.subscriptionId)));
   await db.execute({
     sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [paid ? planTypeToUserPlan(paid.planType) : 'free', userPk],
