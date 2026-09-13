@@ -147,6 +147,20 @@ function apple(overrides: Partial<Awaited<ReturnType<typeof fetchAppleSubscripti
   });
 }
 
+function playState(state = 'SUBSCRIPTION_STATE_ACTIVE', productId = 'family_monthly') {
+  vi.mocked(getPlaySubscriptionV2).mockResolvedValue({
+    subscriptionState: state,
+    lineItems: [
+      {
+        productId,
+        expiryTime: state === 'SUBSCRIPTION_STATE_ACTIVE' ? FUTURE : PAST,
+        latestSuccessfulOrderId: 'order-1',
+        autoRenewingPlan: { autoRenewEnabled: false },
+      },
+    ],
+  });
+}
+
 beforeAll(async () => {
   await runMigrations(db);
   familyPlanId = String((await rows("SELECT id FROM plans WHERE key = 'family'"))[0]!.id);
@@ -186,19 +200,6 @@ afterEach(() => {
 });
 
 describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지', () => {
-  function playState(state = 'SUBSCRIPTION_STATE_ACTIVE', productId = 'family_monthly') {
-    vi.mocked(getPlaySubscriptionV2).mockResolvedValue({
-      subscriptionState: state,
-      lineItems: [
-        {
-          productId,
-          expiryTime: state === 'SUBSCRIPTION_STATE_ACTIVE' ? FUTURE : PAST,
-          latestSuccessfulOrderId: 'order-1',
-          autoRenewingPlan: { autoRenewEnabled: false },
-        },
-      ],
-    });
-  }
   async function expiredMixedReceipts() {
     await seed('apple', 1);
     await db.execute({
