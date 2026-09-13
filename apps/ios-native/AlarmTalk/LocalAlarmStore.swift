@@ -93,6 +93,33 @@ final class LocalAlarmStore: ObservableObject {
         alarms.first { $0.id == id }
     }
 
+    /// 화면에 보이는 레거시 행도 전송 전에는 소유자가 확정돼야 한다.
+    static func isOutboundSyncCandidate(_ record: LocalAlarmRecord, ownerUserID: String) -> Bool {
+        guard let owner = ownerUserID.nilIfBlank,
+              record.originEnum == .localOwned, record.syncStateEnum != .synced,
+              !PendingSignOutStore.isPending(owner) else { return false }
+        if let recordedOwner = record.ownerUserId?.nilIfBlank { return recordedOwner == owner }
+        // 앞 계정의 소유자 새기기가 밀려 있을 수 있다. 기존 세션 정리가 확정할 때까지 보류한다.
+        return PendingSignOutStore.pendingUserIds.isEmpty
+            && (SessionExpiryStore.expiredOwnerUserId == nil || SessionExpiryStore.expiredOwnerUserId == owner)
+    }
+
+    /// 요청 직전 최신 행을 다시 확인한다. 최초 귀속은 await 없이 디스크에 남긴다.
+    func outboundSyncRecord(id: String, ownerUserID: String) -> LocalAlarmRecord? {
+        guard hasLoadedFromDisk, !isServerSyncDeferred(id: id),
+              let index = alarms.firstIndex(where: { $0.id == id }),
+              Self.isOutboundSyncCandidate(alarms[index], ownerUserID: ownerUserID) else { return nil }
+        if alarms[index].ownerUserId?.nilIfBlank == nil {
+            let original = alarms[index]
+            alarms[index].ownerUserId = ownerUserID
+            guard saveNow() else {
+                alarms[index] = original
+                return nil
+            }
+        }
+        return alarms[index]
+    }
+
     func record(alarmKitID: String) -> LocalAlarmRecord? {
         alarms.first { $0.alarmKitID == alarmKitID }
     }
