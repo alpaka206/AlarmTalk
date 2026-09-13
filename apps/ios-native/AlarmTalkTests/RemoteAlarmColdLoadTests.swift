@@ -82,6 +82,85 @@ final class RemoteAlarmColdLoadTests: XCTestCase {
         try await assertQueuedPullSurvivesFirstFailure(cancelFirst: true)
     }
 
+    func test_familyPushThroughFullSyncSurvivesFirstColdLoadTimeout() async {
+        await assertQueuedFullSync(cancelFirst: false)
+    }
+
+    func test_familyPushThroughFullSyncSurvivesFirstCancellation() async {
+        await assertQueuedFullSync(cancelFirst: true)
+    }
+
+    func test_cancelledFamilyPushPassesTurnToNextFullSync() async {
+        await assertQueuedFullSync(cancelFirst: false, cancelQueued: true)
+    }
+
+    private func assertQueuedFullSync(cancelFirst: Bool, cancelQueued: Bool = false) async {
+        let loader = DeferredAlarmLoad()
+        let store = makeStore(loader)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [QueuedPullURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://pull-queue.example.test/api/")!, session: session)
+        let auth = AuthViewModel(api: api)
+        auth._setSessionForTesting(AuthSession(token: "old-token", user: AuthUser(id: "old-owner", email: "old@example.test")))
+        let firstWait = AsyncSerialGate()
+        await firstWait.acquire()
+        let firstEntered = expectation(description: "startup full sync waits for disk")
+        let secondEntered = expectation(description: "family callback gets its own disk wait")
+        let requested = expectation(description: "family push arrives during startup")
+        let httpRequested = expectation(forNotification: QueuedPullURLProtocol.didListAlarms, object: nil)
+        let model = RemoteAlarmSyncViewModel(api: api)
+        var waits = 0
+        model.configure(store: store, alarmKit: AlarmKitViewModel(), auth: auth, waitForStore: { store in
+            waits += 1
+            if waits == 1 {
+                firstEntered.fulfill()
+                await firstWait.acquire()
+                defer { firstWait.release() }
+                try await RemoteAlarmPullSync.requireLoadedStore(store, timeout: 0)
+            } else {
+                secondEntered.fulfill()
+                try await RemoteAlarmPullSync.requireLoadedStore(store)
+            }
+        })
+        let coordinator = PushNotificationCoordinator(api: api, requestAPNsToken: {})
+        // AlarmTalkApp과 같은 콜백/래퍼를 실제 푸시 디스패처에서 호출한다.
+        coordinator.onFamilyAlarm = { await model.runFullSync() }
+        let startup = Task { @MainActor in await model.runFullSync() }
+        await fulfillment(of: [firstEntered], timeout: 1)
+        XCTAssertTrue(model.isBusy)
+        var pushFinished = false
+        let family = Task { @MainActor in
+            requested.fulfill()
+            await coordinator.handle(userInfo: ["type": "family_alarm"])
+            pushFinished = true
+        }
+        await fulfillment(of: [requested], timeout: 1)
+        XCTAssertFalse(pushFinished, "상위 busy 가드가 푸시를 버리면 안 된다")
+        var nextFamily: Task<Void, Never>?
+        if cancelQueued {
+            family.cancel()
+            nextFamily = Task { @MainActor in
+                _ = await coordinator.handle(userInfo: ["type": "family_alarm"])
+            }
+        }
+        auth._setSessionForTesting(AuthSession(token: "fresh-token", user: AuthUser(id: "fresh-owner", email: "fresh@example.test")))
+        if cancelFirst { startup.cancel() }
+        firstWait.release()
+        await startup.value
+        await fulfillment(of: [secondEntered], timeout: 1)
+        XCTAssertTrue(model.isBusy)
+        XCTAssertFalse(store.hasLoadedFromDisk)
+        await loader.finish()
+        await family.value
+        await nextFamily?.value
+        await fulfillment(of: [httpRequested], timeout: 1)
+        XCTAssertEqual(waits, 2, "취소된 대기 호출은 pull을 시작하면 안 된다")
+        XCTAssertFalse(model.isBusy)
+        XCTAssertNil(model.statusMessage)
+    }
+
     private func assertQueuedPullSurvivesFirstFailure(cancelFirst: Bool) async throws {
         let loader = DeferredAlarmLoad()
         let store = makeStore(loader)
@@ -203,6 +282,7 @@ final class RemoteAlarmColdLoadTests: XCTestCase {
 
 /// 외부 통신 없이 실제 pull 회차를 실행한다. 다른 토큰에는 성공을 반환하지 않는다.
 private final class QueuedPullURLProtocol: URLProtocol, @unchecked Sendable {
+    static let didListAlarms = Notification.Name("QueuedPullDidListAlarms")
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -215,6 +295,7 @@ private final class QueuedPullURLProtocol: URLProtocol, @unchecked Sendable {
         } else if url.path == "/api/alarm" {
             status = 200
             body = #"{"alarms":[{"id":"received","target_user_id":"fresh-owner","sender_user_id":"sender","time":"invalid"}],"has_more":false,"next_cursor":null}"#
+            NotificationCenter.default.post(name: Self.didListAlarms, object: nil)
         } else if url.path == "/api/alarm/declined" {
             status = 200
             body = #"{"alarm_ids":[],"revoked_alarm_ids":[],"has_more":false}"#

@@ -14,7 +14,11 @@ import OSLog
 @MainActor
 final class RemoteAlarmSyncViewModel: ObservableObject {
     @Published var statusMessage: String?
-    @Published var isBusy = false
+    @Published private(set) var isBusy = false
+    private var busyOperations = 0 {
+        didSet { isBusy = busyOperations > 0 }
+    }
+    private let syncGate = AsyncSerialGate()
 
     private let api: AlarmTalkAPI
     private var pull: RemoteAlarmPullSync?
@@ -29,14 +33,20 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 
     /// 메인 앱 초기화 시 한 번 주입. 이후 refresh/push 는 새 동기화 컴포넌트를 사용.
-    func configure(store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel) {
+    func configure(
+        store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel,
+        waitForStore: @escaping @MainActor (LocalAlarmStore) async throws -> Void = {
+            try await RemoteAlarmPullSync.requireLoadedStore($0)
+        }
+    ) {
         if pull == nil {
             pull = RemoteAlarmPullSync(
                 api: api,
                 store: store,
                 alarmKit: alarmKit,
                 audioCache: .shared,
-                auth: auth
+                auth: auth,
+                waitForStore: waitForStore
             )
         }
         if push == nil {
@@ -51,15 +61,8 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     func refresh(session: AuthSession?, force: Bool = false) async {
         guard session?.token != nil else { return }
         guard force || !isBusy else { return }
-        let shouldManageBusy = !isBusy
-        if shouldManageBusy {
-            isBusy = true
-        }
-        defer {
-            if shouldManageBusy {
-                isBusy = false
-            }
-        }
+        busyOperations += 1
+        defer { busyOperations -= 1 }
 
         do {
             if let pull {
@@ -87,8 +90,12 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             return
         }
         guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+        // 전체 동기화가 단건 create의 응답 전에 같은 행을 다시 create하지 않게 한다.
+        await syncGate.acquire()
+        defer { syncGate.release() }
+        guard !Task.isCancelled else { return }
+        busyOperations += 1
+        defer { busyOperations -= 1 }
 
         do {
             let body = RemoteAlarmMapper.toRemoteRequest(record)
@@ -122,9 +129,13 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// generic fallback 으로 폴백한다.
     func runFullSync() async {
         guard let push, let pull else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+        // 가족 푸시도 이 진입점을 쓴다. 표시용 busy 가드에서 버리면 하위 pull 큐에
+        // 도달하지 못하므로, 앞 회차의 실패/취소 뒤에도 호출별로 차례를 넘긴다.
+        await syncGate.acquire()
+        defer { syncGate.release() }
+        guard !Task.isCancelled else { return }
+        busyOperations += 1
+        defer { busyOperations -= 1 }
         do {
             let pushResult = try await push.runOnce()
             let pullResult = try await pull.runOnce()

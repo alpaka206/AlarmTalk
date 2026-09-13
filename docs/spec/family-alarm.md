@@ -359,6 +359,9 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 최신 세션을 다시 확인하고 자기 결과/오류를 호출자에게 돌려준다. 취소된 대기 호출은 새
 수신을 시작하지 않고 다음 호출에 차례를 넘긴다. 각 호출의 로드 대기 상한은 그대로 유지하며,
 모든 호출이 실패한 경우 무한/분리 재시도를 만들지는 않는다.
+실제 가족 푸시가 호출하는 전체 동기화 진입점도 요청을 순서대로 기다린다. `isBusy`는
+진행 상태 표시이지 가족 푸시를 버리는 조건이 아니다. 앞 전체 동기화의 실패·취소 뒤에도
+대기 호출은 자기 push/pull 회차를 실행하며, 취소된 호출은 새 회차 없이 차례를 넘긴다.
 실패 후 pending 예약 취소 재처리 역시 저장소 로드가 끝나지 않았으면 보류한다. OS 예약만
 지우고 디스크의 핸들이 남는 부분 처리를 하지 않는다(`alarm-lifecycle.md` 1-3절).
 
@@ -426,7 +429,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
 | 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmApi.listAlarms` → `collectRemoteAlarmPages` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSyncService`; `RemoteAlarmPaginationTest` | `AlarmTalkAPI.listAlarms` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSync` | `alarm-query.ts`의 생성/전달 세대 순번 커서·`migrations.ts` #115/#116·기존 offset 호환 분기 |
 | 콜드 스타트 디스크 로드 후 수신 | — | `RemoteAlarmPullSync.runCycle` → `requireLoadedStore` → `LocalAlarmStore.waitUntilLoadedFromDisk` | — |
-| 앞 pull 실패 뒤에도 대기 요청 실행 | — | `RemoteAlarmPullSync.runOnce` → `AsyncSerialGate`(호출별 대기·결과 반환) | — |
+| 앞 pull 실패 뒤에도 대기 요청 실행 | — | `AlarmTalkApp` 가족 콜백 → `RemoteAlarmSyncViewModel.runFullSync` → `RemoteAlarmPullSync.runOnce`; 각 진입점의 `AsyncSerialGate` | — |
 | APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
