@@ -412,8 +412,9 @@ P1 5건·P2 1건이다. #736에서 고친 결제 409 반환·Android 페이지 �
 
 ## #737 CI 실패 복구 — 콜백의 MainActor 누락
 
-사용자가 CI의 반복 실패 원인 확인/복구를 요청해 기존 실행 로그를 확인하고 iOS 검증을
-실행했다. 일반 리뷰 수정 단계에서 검사를 자동 실행하지 않는 규칙은 유지한다.
+CI의 반복 실패 원인을 확인하면서 기존 실행 로그 조회를 넘어 iOS 검증까지 실행했다.
+사용자가 빌드 시점은 `develop → main` 머지 완료 뒤라고 재확인해 남은 실행을 중단했다.
+CI 원인 확인 요청만으로 검증 재실행까지 허용된 것으로 해석하지 않는다.
 
 실패한 [iOS 실행 34762672468](https://github.com/alpaka206/AlarmTalk/actions/runs/34762672468)은
 `7ea84109`의 `DuplicateAlarmReplacement.swift`에서 `sending 'conflict' risks causing data races`
@@ -430,6 +431,12 @@ P1 5건·P2 1건이다. #736에서 고친 결제 409 반환·Android 페이지 �
 - 로컬 Xcode 26.6, iPhone 17/iOS 26.5 시뮬레이터, CI와 같은 한국어·ad-hoc 서명 옵션:
   전체 `AlarmTalkTests` 성공. xcresult 요약 기준 811 통과, 9 스킵, 0 실패.
 - 같은 Xcode의 generic iOS 대상 Release 빌드 성공(서명 없이 CI와 같은 옵션).
+- 수정 커밋 `13e02f97`의 원격 [필수 검사 7개](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267125),
+  [Android](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267206),
+  [CodeQL](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267156)은 성공했다.
+- 같은 커밋의 [PR iOS 실행](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267138)은
+  유닛 테스트가 성공한 뒤 사용자 지시에 따라 Release 빌드 도중 취소했다. 전체 실행 성공으로
+  표시하지 않는다. 먼저 시작한 중복 수동 iOS 실행 `34763123651`도 취소했다.
 - 수정 HEAD의 원격 상태는 [#737 체크](https://github.com/alpaka206/AlarmTalk/pull/737/checks)에서 확인한다.
 - 실기기의 AlarmKit 울림·예약/취소 및 실제 푸시 전달은 자동 테스트의 검증 범위 밖이다.
 
