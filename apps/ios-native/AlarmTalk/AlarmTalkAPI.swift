@@ -84,6 +84,21 @@ final class AlarmTalkAPI: @unchecked Sendable {
         struct Response: Decodable {
             var token: String?
             var user: AuthUser
+
+            private enum CodingKeys: String, CodingKey { case token, user }
+            private enum StatusKeys: String, CodingKey { case deletionStatus }
+
+            init(from decoder: Decoder) throws {
+                let values = try decoder.container(keyedBy: CodingKeys.self)
+                let status = try values.nestedContainer(keyedBy: StatusKeys.self, forKey: .user)
+                    .decode(String.self, forKey: .deletionStatus)
+                // 저장된 옛 세션의 기본값과 서버가 명시한 복구 상태를 혼동하지 않는다.
+                guard !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw APIError.invalidResponse
+                }
+                token = try values.decodeIfPresent(String.self, forKey: .token)
+                user = try values.decode(AuthUser.self, forKey: .user)
+            }
         }
         let response: Response = try await request("auth/me", token: token)
         return (response.token, response.user)
@@ -114,7 +129,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 "alarm?\(query.percentEncodedQuery!)", token: token
             )
             try Task.checkCancellation()
-            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 불변 id
+            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 생성 순번
             // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
             for alarm in page.alarms {
                 guard seenIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
@@ -124,8 +139,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 guard page.nextCursor == nil else { throw APIError.invalidResponse }
                 return alarms
             }
-            guard let next = page.nextCursor, !next.isEmpty,
-                  next == page.alarms.last?.id, next != cursor else { throw APIError.invalidResponse }
+            guard !page.alarms.isEmpty, let next = page.nextCursor,
+                  let sequence = UInt64(next), String(sequence) == next,
+                  sequence > 0, sequence <= 9_007_199_254_740_991,
+                  sequence > (cursor.flatMap { UInt64($0) } ?? 0) else { throw APIError.invalidResponse }
             cursor = next
         }
     }

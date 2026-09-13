@@ -140,13 +140,13 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
 
     /// 해제 응답 유실로 캐시에만 남은 바인딩도 복구한다. 앞선 등록이 늦게 캐시를
     /// 되쓰지 못하게 같은 큐에서 무효화한다. 토큰/소유자는 이후 해제의 계정 가드에 보존한다.
-    func restartAfterAccountRecovery(userID: String) async {
+    /// 호출자는 이 준비를 await한 뒤 로컬 상태를 확정하고 start를 호출한다.
+    func prepareAccountRecovery(userID: String) async {
         await serializePushMutation { [weak self] in
             guard let self else { return }
             if self.lastRegisteredUserID == userID {
                 self.requiresRegistrationUpload = true
             }
-            self.start()
         }
     }
 
@@ -326,9 +326,10 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
-        deps.auth.onAccountRecovered = { [weak push = deps.push] userID in
-            Task { await push?.restartAfterAccountRecovery(userID: userID) }
+        deps.auth.prepareAccountRecovery = { [push = deps.push] userID in
+            await push.prepareAccountRecovery(userID: userID)
         }
+        deps.auth.onAccountRecovered = { [push = deps.push] _ in push.start() }
         // ⚠ **푸시 해제 훅도 launch 에서 꽂는다**(Codex #699 P2). 예전에는 화면의
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이

@@ -764,7 +764,11 @@ final class AuthViewModel: ObservableObject {
     /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {
-        guard let token else { return }
+        _ = await refreshUserApplyingToken()
+    }
+
+    private func refreshUserApplyingToken() async -> String? {
+        guard let token else { return nil }
         let recoveryRevision = accountRecoveryRevision
         do {
             let (rolledToken, user) = try await api.me(token: token)
@@ -785,34 +789,37 @@ final class AuthViewModel: ObservableObject {
             //   이 이미 같은 가드를 들고 있다 — 출처 토큰이 지금 것과 같을 때만 반영한다.
             guard !Task.isCancelled, session?.token == token,
                   session?.user.id == merged.id,
-                  accountRecoveryRevision == recoveryRevision else { return }
+                  accountRecoveryRevision == recoveryRevision else { return nil }
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
             }
             let nextToken = rolledToken?.nilIfBlank ?? token
             let nextSession = AuthSession(token: nextToken, user: merged)
-            persistSession(nextSession)
             // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
             // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
             // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
             // Android `MainViewModel.checkAccountStatus()` 와 동등.
-            pendingDeletion = merged.isPendingDeletion
             if wasPendingDeletion, merged.deletionStatus == "active" {
-                completeAccountRecovery(userID: merged.id)
+                guard await completeAccountRecovery(userID: merged.id, recoveredSession: nextSession) else { return nil }
+            } else {
+                persistSession(nextSession)
+                pendingDeletion = merged.isPendingDeletion
             }
             lastNetworkError = nil
+            // 이 조회가 적용한 rolling token만 호출자에게 넘긴다. 외부 교체는 nil이다.
+            return nextToken
         } catch let apiError as APIError {
             guard !Task.isCancelled, session?.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
+                  accountRecoveryRevision == recoveryRevision else { return nil }
             switch apiError {
             case .server(let status, _, _):
                 if status == 401 {
                     // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
                     //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
                     //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
-                    guard session?.token == token else { return }
+                    guard session?.token == token else { return nil }
                     // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
                     // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
                     if !UIPreviewSeed.isEnabled {
@@ -833,15 +840,16 @@ final class AuthViewModel: ObservableObject {
             }
         } catch is URLError {
             guard !Task.isCancelled, session?.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
+                  accountRecoveryRevision == recoveryRevision else { return nil }
             // 네트워크 끊김, 타임아웃 등 — 세션 보존
             lastNetworkError = "네트워크 연결을 확인해 주세요."
         } catch {
             guard !Task.isCancelled, session?.token == token,
-                  accountRecoveryRevision == recoveryRevision else { return }
+                  accountRecoveryRevision == recoveryRevision else { return nil }
             // 알 수 없는 에러 — 보수적으로 세션 보존
             lastNetworkError = "잠시 후 다시 시도해 주세요."
         }
+        return nil
     }
 
     /// 어떤 API 요청이든 401 을 받으면 호출 — 세션 만료로 보고 강제 로그아웃.
@@ -1126,7 +1134,7 @@ final class AuthViewModel: ObservableObject {
             guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
                   accountRecoveryRevision == recoveryRevision else { return }
             guard response.success, response.status == "active" else { throw APIError.invalidResponse }
-            completeAccountRecovery(userID: ownerUserID)
+            guard await completeAccountRecovery(userID: ownerUserID) else { return }
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
             guard !Task.isCancelled, session?.user.id == ownerUserID, self.token == token,
@@ -1134,9 +1142,10 @@ final class AuthViewModel: ObservableObject {
             // 응답 유실/구서버 재시도 거절은 서버의 현재 상태로 판정한다. 재확인에서
             // pending→active를 확인하면 refreshUser가 공통 복구 처리와 푸시 훅을 실행한다.
             if Self.isAmbiguousDeletionCancellation(error) {
-                await refreshUser()
+                let confirmedToken = await refreshUserApplyingToken()
                 guard !Task.isCancelled, session?.user.id == ownerUserID,
-                      accountRecoveryRevision == recoveryRevision, self.token == token else { return }
+                      accountRecoveryRevision == recoveryRevision,
+                      self.token == (confirmedToken ?? token) else { return }
             }
             failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
         }
@@ -1154,21 +1163,30 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 성공 응답과 이후의 권위 조회가 같은 복구 후처리를 사용한다.
-    private func completeAccountRecovery(userID: String) {
+    private func completeAccountRecovery(userID: String, recoveredSession: AuthSession? = nil) async -> Bool {
         guard let userID = userID.nilIfBlank,
-              var current = session, current.user.id == userID else { return }
+              let current = session, current.user.id == userID else { return false }
+        let recoveryRevision = accountRecoveryRevision
+        // 큐 앞의 네트워크 요청 때문에 준비가 지연돼도 저장된 pending은 남는다.
+        // 앱이 이 await에서 중단되면 다음 실행의 pending→active 조회가 다시 준비한다.
+        await prepareAccountRecovery(userID)
+        guard !Task.isCancelled, session?.user.id == userID, token == current.token,
+              accountRecoveryRevision == recoveryRevision else { return false }
+        var recovered = recoveredSession ?? current
+        recovered.user.deletionStatus = "active"
         accountRecoveryRevision &+= 1
         pendingDeletion = false
-        if current.user.deletionStatus != "active" {
-            current.user.deletionStatus = "active"
-            persistSession(current)
-        }
+        persistSession(recovered)
         // 탈퇴 철회는 미완료 탈퇴 정리도 무효로 만든다. 남겨 두면 다음 실행에서
         // 복구된 계정의 알람을 끄고 다시 로그아웃한다. 다른 계정의 표시는 지우지 않는다.
         PendingSignOutStore.clear(userID)
         // user id는 그대로라 세션 task가 다시 돌지 않는다. 확인 경로와 무관하게 재등록한다.
         onAccountRecovered(userID)
+        return true
     }
+
+    /// 로컬 active 확정 전에 영속 푸시 무효화가 끝날 때까지 기다린다. launch에서 연결한다.
+    var prepareAccountRecovery: @MainActor (String) async -> Void = { _ in }
 
     /// launch에서 연결한다. 테스트에서는 실제 APNs 대신 복구 성공 경계를 관찰한다.
     var onAccountRecovered: (String) -> Void = { _ in }

@@ -26,6 +26,30 @@ describe('migrations', () => {
     }
   });
 
+  it('마이그레이션 #115는 기존 행을 보존해 백필하고 재실행/삭제 뒤에도 생성 순번을 재사용하지 않는다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrationsRange(db, 1, 114);
+      await db.execute("INSERT INTO users (id,google_id,email) VALUES ('cursor-user','cursor-login','cursor@example.test')");
+      await db.execute("INSERT INTO alarms (id,user_id,time) VALUES ('z-old','cursor-user','07:00')");
+      await runMigrationsRange(db, 115, 115);
+      const before = await db.execute('SELECT sequence,alarm_id FROM alarm_creation_order');
+      expect(before.rows).toHaveLength(1);
+      expect(before.rows[0]!.alarm_id).toBe('z-old');
+      // 실제 DDL/백필 재시도도 순번을 바꾸지 않는다(원장 쓰기 직전 중단 복구).
+      await db.execute('DELETE FROM _migrations WHERE id=115');
+      await runMigrationsRange(db, 115, 115);
+      expect((await db.execute('SELECT sequence,alarm_id FROM alarm_creation_order')).rows).toEqual(before.rows);
+      expect((await db.execute('SELECT id,time FROM alarms')).rows).toEqual([{ id: 'z-old', time: '07:00' }]);
+      await db.execute("DELETE FROM alarms WHERE id='z-old'");
+      expect((await db.execute('SELECT * FROM alarm_creation_order')).rows).toEqual([]);
+      await db.execute("INSERT INTO alarms (id,user_id,time) VALUES ('a-new','cursor-user','06:00')");
+      const after = await db.execute('SELECT sequence,alarm_id FROM alarm_creation_order');
+      expect(Number(after.rows[0]!.sequence)).toBeGreaterThan(Number(before.rows[0]!.sequence));
+      expect(after.rows[0]!.alarm_id).toBe('a-new');
+    } finally { db.close(); }
+  });
+
   it('마이그레이션 #104가 기존 받은 알람에만 전달 버전을 채운다', async () => {
     const db = createClient({ url: ':memory:' });
     await runMigrationsRange(db, 1, 103);

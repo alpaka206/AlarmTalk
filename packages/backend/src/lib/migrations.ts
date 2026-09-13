@@ -2804,6 +2804,31 @@ export const migrations: Migration[] = [
       `ALTER TABLE store_transactions ADD COLUMN last_paid_at TEXT`,
     ],
   },
+  {
+    id: 115,
+    name: 'alarm-monotonic-creation-cursor',
+    atomic: true,
+    statements: [
+      // UUID/시각은 삽입 순서가 아니다. 최대 행을 삭제해도 재사용하지 않는 순번을 DB가 발급한다.
+      `CREATE TABLE IF NOT EXISTS alarm_creation_order (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        alarm_id TEXT NOT NULL UNIQUE REFERENCES alarms(id) ON DELETE CASCADE
+      )`,
+      `INSERT INTO alarm_creation_order (alarm_id)
+        SELECT a.id FROM alarms a
+        WHERE NOT EXISTS (SELECT 1 FROM alarm_creation_order o WHERE o.alarm_id = a.id)
+        ORDER BY a.created_at, a.id`,
+      `CREATE TRIGGER IF NOT EXISTS alarm_creation_order_insert AFTER INSERT ON alarms
+        BEGIN
+          INSERT OR REPLACE INTO alarm_creation_order (alarm_id) VALUES (NEW.id);
+        END`,
+      // 외래 키 설정에 의존하지 않고 ACK/삭제 시 식별자도 함께 지운다.
+      `CREATE TRIGGER IF NOT EXISTS alarm_creation_order_delete AFTER DELETE ON alarms
+        BEGIN
+          DELETE FROM alarm_creation_order WHERE alarm_id = OLD.id;
+        END`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

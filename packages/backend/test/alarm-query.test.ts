@@ -52,28 +52,29 @@ const sampleAlarmRow = {
 // ---------------------------------------------------------------------------
 describe('GET /alarms', () => {
   it('커서 페이지는 1행 더 조회해 다음 커서를 판단하고 응답은 limit까지만 반환한다', async () => {
-    mockDB.pushResult([sampleAlarmRow, { ...sampleAlarmRow, id: 'next-alarm' }]);
+    mockDB.pushResult([{ ...sampleAlarmRow, pagination_cursor: '41' }, { ...sampleAlarmRow, id: 'next-alarm', pagination_cursor: '42' }]);
     const response = await buildApp().request('/alarms?pagination=cursor&limit=1');
     expect(await response.json()).toMatchObject({
-      alarms: [{ id: ID.alarm }], has_more: true, next_cursor: ID.alarm,
+      alarms: [{ id: ID.alarm }], has_more: true, next_cursor: '41',
     });
     expect(mockDB.calls).toHaveLength(1);
-    expect(mockDB.calls[0]!.sql).toContain('ORDER BY a.id ASC LIMIT ?');
+    expect(mockDB.calls[0]!.sql).toContain('ORDER BY aco.sequence ASC LIMIT ?');
     expect(mockDB.calls[0]!.args.at(-1)).toBe(2);
     expect(mockDB.calls[0]!.sql).not.toContain('OFFSET');
   });
 
   it('커서 값은 바인딩하며 외부 limit은 100으로 제한한다', async () => {
     mockDB.pushResult([]);
-    const after = "id' OR 1=1 --";
+    const after = '12345';
     const response = await buildApp().request(`/alarms?pagination=cursor&limit=999&after=${encodeURIComponent(after)}`);
     expect(await response.json()).toEqual({ alarms: [], has_more: false, next_cursor: null });
-    expect(mockDB.calls[0]!.sql).toContain('AND a.id > ?');
+    expect(mockDB.calls[0]!.sql).toContain('AND aco.sequence > ?');
     expect(mockDB.calls[0]!.sql).not.toContain(after);
-    expect(mockDB.calls[0]!.args.slice(-2)).toEqual([after, 101]);
+    expect(mockDB.calls[0]!.args.slice(-2)).toEqual([12345, 101]);
   });
 
-  it.each(['pagination=unknown', 'pagination=cursor&after=', 'after=id', 'pagination=cursor&offset=0', `pagination=cursor&after=${'x'.repeat(129)}`])(
+  it.each(['pagination=unknown', 'pagination=cursor&after=', 'after=id', 'pagination=cursor&offset=0',
+    ...['0', '-1', '01', '1.5', '1e2', '9007199254740992', "id' OR 1=1 --"].map((after) => `pagination=cursor&after=${encodeURIComponent(after)}`)])(
     '잘못된 페이지 조합은 DB 조회 없이 거절한다: %s', async (query) => {
       const response = await buildApp().request(`/alarms?${query}`);
       expect(response.status).toBe(400);

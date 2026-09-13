@@ -729,6 +729,7 @@ final class AuthViewModelTests: XCTestCase {
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider(),
             accessSnapshotStore: AccessSnapshotStore(defaults: defaults))
         defer {
+            vm.prepareAccountRecovery = { _ in }
             vm.onAccountRecovered = { _ in }
             api.beforeCancelAccountDeletionResponse = nil
             api.beforeMeResponse = nil
@@ -750,6 +751,88 @@ final class AuthViewModelTests: XCTestCase {
             await vm.cancelAccountDeletion()
             XCTAssertEqual(vm.session?.user.id, userID)
             XCTAssertEqual(pendingAtRestart, [false], "403 게이트가 풀린 복구 성공 뒤에만 재등록한다")
+        }
+    }
+
+    func test_recoveryKeepsPersistedPendingUntilPushPreparationCompletes() async throws {
+        for throughRefresh in [false, true] {
+            try await withPendingDeletion { vm, api in
+                let userID = try XCTUnwrap(vm.session?.user.id)
+                PendingSignOutStore.mark(userID)
+                var active = try XCTUnwrap(vm.session?.user)
+                active.deletionStatus = "active"
+                api.meResult = .success(active)
+                api.meRolledToken = "recovered-token"
+                let started = expectation(description: "푸시 큐의 영속 무효화를 기다림")
+                var resume: CheckedContinuation<Void, Never>?
+                var prepared = false
+                var restarts = 0
+                vm.prepareAccountRecovery = { id in
+                    XCTAssertEqual(id, userID)
+                    await withCheckedContinuation { continuation in
+                        resume = continuation
+                        started.fulfill()
+                    }
+                    prepared = true
+                }
+                vm.onAccountRecovered = { _ in
+                    XCTAssertTrue(prepared)
+                    XCTAssertFalse(vm.pendingDeletion)
+                    XCTAssertFalse(PendingSignOutStore.isPending(userID))
+                    restarts += 1
+                }
+                let recovery = Task {
+                    if throughRefresh { await vm.refreshUser() }
+                    else { await vm.cancelAccountDeletion() }
+                }
+                await fulfillment(of: [started], timeout: 2)
+                XCTAssertTrue(vm.pendingDeletion)
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "pending_deletion")
+                XCTAssertTrue(PendingSignOutStore.isPending(userID))
+                XCTAssertEqual(restarts, 0, "준비 중 중단돼도 다음 실행에 pending 전환 근거가 남는다")
+
+                resume?.resume()
+                await recovery.value
+
+                XCTAssertEqual(restarts, 1)
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "active")
+                XCTAssertFalse(PendingSignOutStore.isPending(userID))
+            }
+        }
+    }
+
+    func test_recoveryCannotCommitAfterCancellationOrTokenReplacementDuringPushPreparation() async throws {
+        for replaceToken in [false, true] {
+            try await withPendingDeletion { vm, _ in
+                let userID = try XCTUnwrap(vm.session?.user.id)
+                PendingSignOutStore.mark(userID)
+                let started = expectation(description: "복구 준비가 반환되기 전")
+                var resume: CheckedContinuation<Void, Never>?
+                var restarts = 0
+                vm.prepareAccountRecovery = { _ in
+                    await withCheckedContinuation { continuation in
+                        resume = continuation
+                        started.fulfill()
+                    }
+                }
+                vm.onAccountRecovered = { _ in restarts += 1 }
+                let recovery = Task { await vm.cancelAccountDeletion() }
+                await fulfillment(of: [started], timeout: 2)
+                if replaceToken {
+                    var replacement = try XCTUnwrap(vm.session)
+                    replacement.token = "new-login-token"
+                    vm._setSessionForTesting(replacement)
+                } else {
+                    recovery.cancel()
+                }
+                resume?.resume()
+                await recovery.value
+                XCTAssertEqual(restarts, 0)
+                XCTAssertTrue(vm.pendingDeletion)
+                XCTAssertTrue(PendingSignOutStore.isPending(userID))
+                XCTAssertEqual(KeychainStore.readSession()?.user.deletionStatus, "pending_deletion")
+                if replaceToken { XCTAssertEqual(vm.session?.token, "new-login-token") }
+            }
         }
     }
 

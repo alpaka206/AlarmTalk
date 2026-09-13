@@ -70,6 +70,35 @@
   `APIError.invalidResponse` 테스트를 JSON 디코딩 실패까지 다룬 근거로 쓰지 않는다.
   동작 규칙은 [세션 스펙](../spec/session-and-auth.md)에 구체화했다.
 
+## #735 추가 4건 — 복구 확정 순서·생성 커서·재확인 계약
+
+다음은 `8520c412`에 새로 달린 리뷰이며, 위 절들은 당시 수정 이력이다.
+
+- [복구 영속화 P1](https://github.com/alpaka206/AlarmTalk/pull/735#discussion_r3997408564):
+  로컬 active 저장/정리 표시 해제 뒤 띄운 Task가 등록 큐에 도달하기 전에 중단되면 복구
+  재시도 근거와 푸시 무효화 표시가 모두 없었다. 이제 `prepareAccountRecovery`를 await해
+  같은 등록 큐의 영속 무효화를 끝낸 뒤 로컬 상태를 확정하고, 동기 완료 훅에서 APNs를 요청한다.
+  준비 대기 중에는 저장된 pending/정리 표시가 남고, 대기 뒤 세션·토큰·취소·복구 세대를 다시 확인한다.
+- [생성 커서 P1](https://github.com/alpaka206/AlarmTalk/pull/735#discussion_r3997408568):
+  불변 UUID도 무작위라 다음 페이지 전에 생긴 가족 알람이 커서 앞에 끼어 누락될 수 있었다.
+  마이그레이션 115가 `alarm_creation_order`의 AUTOINCREMENT 순번을 기존 행에 백필하고
+  생성/삭제 트리거를 원자적으로 설치한다. 신규 순번은 알람 생성과 같은 트랜잭션에서 발급되며,
+  최대 행 삭제 뒤에도 재사용되지 않는다. API/iOS 모두 알람 ID와 별개인 생성 순번으로 전진한다.
+  마지막 조회가 끝난 뒤의 생성까지 고정하는 스냅샷은 아니다. 기존 offset 호환은 유지한다.
+- [rolling token P2](https://github.com/alpaka206/AlarmTalk/pull/735#discussion_r3997408569):
+  재확인이 pending이라도 새 토큰이 저장되면 원래 토큰 가드가 실패 안내를 건너뛰었다.
+  `refreshUserApplyingToken`이 실제 반영한 토큰을 돌려주고 취소 요청의 후속 가드가 이를 사용한다.
+  외부 세션 교체나 적용 실패는 nil이므로 기존 출처 토큰 가드는 유지된다.
+- [명시적 복구 상태 P2](https://github.com/alpaka206/AlarmTalk/pull/735#discussion_r3997408571):
+  `/auth/me`의 상태 누락/null이 `AuthUser`의 옛 저장 세션 호환 기본값 active로 바뀌었다.
+  네트워크 `/auth/me` 응답은 상태 필드의 명시적 문자열을 요구하고 빈 값도 거절한다.
+  로컬 옛 세션의 디코딩 계약은 그대로다. pending 계정은 불완전한 조회로 복구되지 않는다.
+
+재발 방지 기준: **영속 준비 → 로컬 복구 확정 → APNs 시작**의 순서를 지키고, 삽입 커서는
+불변성뿐 아니라 생성 순서의 단조 증가/삭제 후 비재사용을 요구한다. 상태 재확인 테스트에서는
+실제 rolling token과 필드 누락/null도 입력한다. 규칙 전문은 세션/가족 알람 스펙에 반영했다.
+**서버 및 마이그레이션 115 완료가 iOS 배포의 선행 조건**이다. 이번에는 적용/배포하지 않았다.
+
 ## 작성한 회귀 사례 — 실행하지 않음
 
 - `billing-reconciliation.test.ts`: 즉시 해지 중 새 구매(기존 유예 유/무), 정상 무료 전환,
@@ -95,6 +124,22 @@
 - `AccountRecoveryDecodingTests.swift` 2개 함수(7경우): 실제 2xx의 잘린 JSON·필수 키 누락·
   타입 불일치·null 뒤 active 재확인 4경우, pending/503/깨진 재확인 응답 3경우.
   재확인 요청 순서·횟수·인증 토큰, 세션 저장, 미완료 정리 표시, 복구 훅을 단언한다.
+
+이번 4건 대응에서 추가/수정한 사례:
+
+- `AuthViewModelTests`: 준비 대기 중 저장된 pending 유지(직접 취소/일반 조회), 준비 도중
+  취소/같은 계정 토큰 교체의 2개 함수(4경우). 실제 APNs 대신 준비/완료 훅의 경계를 관찰한다.
+- `PushRegistrationRecoveryTests`: 기존 5건을 준비/시작 분리 계약으로 변경하고, APNs 요청 전
+  중단/코디네이터 재생성에서도 같은 캐시 토큰을 재업로드하는 1건 추가.
+- `AccountRecoveryDecodingTests`: pending 응답이 실제로 새 토큰을 발급하도록 변경했다.
+  확인 상태 누락/null/공백 3경우도 추가해 총 2개 함수(10경우)이며 불확실한 복구를 거절한다.
+- `AlarmPaginationTests`: 기존 11건을 생성 순번 계약으로 변경하고, UUID와 독립된 커서 진행과
+  역행/잘못된 커서 거절의 2개 함수(7경우)를 추가했다.
+- 실제 DB: `alarm-decline.test.ts`의 기존 ACK 삭제 2건을 유지하고 페이지 사이 작은 UUID/과거
+  생성 시각의 새 알람 수신, 전체 행 삭제 뒤 재삽입의 2건 추가. `migrations.test.ts`는 기존 행
+  보존 백필·원장 기록 전 중단 재시도·삭제 후 순번 비재사용 1건 추가.
+- `alarm-query.test.ts`: 순번 바인딩/계약과 잘못된 커서 입력 거절 사례로 변경했다.
+  `BillingPreflightTests`의 `/auth/me` 픽스처에도 서버 계약의 명시적 active를 추가했다.
 
 사용자 지시에 따라 빌드·테스트·lint/typecheck·CI·독립 추가 리뷰는 실행하지 않았다.
 테스트를 작성했다는 사실은 통과했다는 뜻이 아니다. 스토어/운영 데이터·워크플로·보호 설정은

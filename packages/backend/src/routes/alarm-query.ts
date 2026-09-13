@@ -34,9 +34,8 @@ alarmQuery.get('/', async (c) => {
     (pagination !== undefined && !cursorMode) ||
     (after !== undefined &&
       (!cursorMode ||
-        after.length === 0 ||
-        after.length > 128 ||
-        Array.from(after).some((ch) => ch.charCodeAt(0) < 32 || ch.charCodeAt(0) === 127))) ||
+        !/^[1-9][0-9]{0,15}$/.test(after) ||
+        !Number.isSafeInteger(Number(after)))) ||
     (cursorMode && c.req.query('offset') !== undefined)
   ) {
     return jsonError(c, 400, 'INVALID_REQUEST', 'Invalid alarm pagination parameters');
@@ -66,32 +65,33 @@ alarmQuery.get('/', async (c) => {
   }
 
   // 두 페이지 계약이 같은 행/표시 필드를 내려주도록 조회 본문은 공유한다.
-  const selectAlarms = `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
+  const selectAlarms = `SELECT a.*${cursorMode ? ', CAST(aco.sequence AS TEXT) AS pagination_cursor' : ''}, m.text as message_text, m.category, vp.name as voice_name,
               m.audio_url as message_audio_url,
               creator.email as creator_email, creator.name as creator_name
             FROM alarms a
+            ${cursorMode ? 'JOIN alarm_creation_order aco ON aco.alarm_id = a.id' : ''}
             LEFT JOIN messages m ON a.message_id = m.id
             LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
             LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id`;
 
   if (cursorMode) {
-    // 시각은 편집으로 바뀌고 offset은 앞 행 삭제로 밀린다. 불변 PK로 이어 읽는다.
-    // 커서 행이 ack되어 없어져도 id 값의 비교만 하므로 다음 가족 알람을 건너뛰지 않는다.
+    // UUID는 무작위라 새 삽입이 커서 앞에 놓일 수 있다. DB 생성 순번으로만 전진한다.
+    // 삭제된 최대 순번도 재사용하지 않아 페이지 사이의 생성/ACK가 누락을 만들지 않는다.
     if (after !== undefined) {
-      whereClause += ' AND a.id > ?';
-      whereArgs.push(after);
+      whereClause += ' AND aco.sequence > ?';
+      whereArgs.push(Number(after));
     }
     const result = await db.execute({
       sql: `${selectAlarms}
             ${whereClause}
-            ORDER BY a.id ASC LIMIT ?`,
+            ORDER BY aco.sequence ASC LIMIT ?`,
       args: [...whereArgs, limit + 1],
     });
-    const alarms = (result.rows.slice(0, limit) as AlarmRow[]).map((r) =>
-      normalizeAlarmRow(r, ids),
-    );
+    const rows = result.rows.slice(0, limit);
+    const alarms = (rows as AlarmRow[]).map(({ pagination_cursor: _cursor, ...row }) =>
+      normalizeAlarmRow(row, ids));
     const hasMore = result.rows.length > limit;
-    return c.json({ alarms, has_more: hasMore, next_cursor: hasMore ? alarms.at(-1)!.id : null });
+    return c.json({ alarms, has_more: hasMore, next_cursor: hasMore ? String(rows.at(-1)!.pagination_cursor) : null });
   }
 
   // LEFT JOIN messages/voice_profiles so the new "alarm-only" play mode

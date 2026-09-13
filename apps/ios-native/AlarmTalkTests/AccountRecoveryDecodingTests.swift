@@ -34,7 +34,7 @@ final class AccountRecoveryDecodingTests: XCTestCase {
     }
 
     func test_decoderFailureAloneCannotCompleteRecovery() async throws {
-        for confirmation in [Confirmation.pending, .unavailable, .malformed] {
+        for confirmation in [Confirmation.pending, .unavailable, .malformed, .missingStatus, .nullStatus, .blankStatus] {
             try await withRecovery(cancelBody: #"{"success":true}"#, confirmation: confirmation) { vm, userID in
                 var restarts = 0
                 vm.onAccountRecovered = { _ in restarts += 1 }
@@ -48,11 +48,14 @@ final class AccountRecoveryDecodingTests: XCTestCase {
                 XCTAssertTrue(PendingSignOutStore.isPending(userID))
                 XCTAssertNotNil(vm.statusMessage)
                 XCTAssertFalse(vm.isBusy)
+                if confirmation == .pending {
+                    XCTAssertEqual(vm.session?.token, "pending-rolled-token")
+                }
             }
         }
     }
 
-    private enum Confirmation { case active, pending, unavailable, malformed }
+    private enum Confirmation { case active, pending, unavailable, malformed, missingStatus, nullStatus, blankStatus }
 
     private func withRecovery(
         cancelBody: String,
@@ -74,9 +77,16 @@ final class AccountRecoveryDecodingTests: XCTestCase {
         let confirmationResponse: (Int, Data)
         switch confirmation {
         case .active: confirmationResponse = (200, try me("active", token: "confirmed-token"))
-        case .pending: confirmationResponse = (200, try me("pending_deletion", token: "initial-token"))
+        case .pending: confirmationResponse = (200, try me("pending_deletion", token: "pending-rolled-token"))
         case .unavailable: confirmationResponse = (503, Data(#"{"error":"unavailable"}"#.utf8))
         case .malformed: confirmationResponse = (200, Data(#"{"user":null}"#.utf8))
+        case .missingStatus, .nullStatus, .blankStatus:
+            var user: [String: Any] = ["id": userID, "email": pendingUser.email]
+            if confirmation == .nullStatus { user["deletion_status"] = NSNull() }
+            if confirmation == .blankStatus { user["deletion_status"] = "  " }
+            confirmationResponse = (200, try JSONSerialization.data(withJSONObject: [
+                "token": "unconfirmed-token", "user": user,
+            ]))
         }
         let fixture = RecoveryDecodingFixture(responses: [
             (200, try me("pending_deletion", token: "initial-token")),
