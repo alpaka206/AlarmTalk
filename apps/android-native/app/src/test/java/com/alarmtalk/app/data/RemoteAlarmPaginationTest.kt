@@ -3,6 +3,7 @@ package com.alarmtalk.app.data
 import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.RemoteAlarmApi
 import com.alarmtalk.app.network.RemoteAlarmListResponse
+import com.google.gson.Gson
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -55,7 +56,7 @@ class RemoteAlarmPaginationTest {
                 api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
             }
             assertEquals(2601, alarms.size)
-            assertEquals(listOf("alarm-2600"), alarms.filter { it.isReceived }.map { it.id })
+            assertEquals(listOf("alarm-2600"), alarms.filter { it.isReceivedForPull }.map { it.id })
             assertEquals(listOf(null) + (100..2600 step 100).map { it.toString() }, requests)
         } finally {
             client.dispatcher.executorService.shutdown()
@@ -181,7 +182,7 @@ class RemoteAlarmPaginationTest {
             requested.add(offset)
             val end = minOf(offset + 100, 2601)
             val alarms = (offset until end).joinToString(",") { index ->
-                """{"id":"alarm-$index","is_received":${index == 2600}}"""
+                """{"id":"alarm-$index","is_received_family_alarm":${index == 2600}}"""
             }
             // total이 줄어도 첫 페이지/짧은 페이지에서 완료하지 않는다.
             val body = """{"alarms":[$alarms],"total":${if (offset == 0) 2601 else 1},"limit":100,"offset":$offset}"""
@@ -196,7 +197,7 @@ class RemoteAlarmPaginationTest {
                 api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
             }
             assertEquals(2601, result.size)
-            assertTrue(result.last().isReceived)
+            assertEquals(listOf("alarm-2600"), result.filter { it.isReceivedForPull }.map { it.id })
             assertEquals((0..2600 step 100).toList() + 2601, requested)
         } finally {
             client.dispatcher.executorService.shutdown()
@@ -220,6 +221,22 @@ class RemoteAlarmPaginationTest {
         )) {
             var index = 0
             expectInvalid { collectRemoteAlarmPages { _, _ -> pages[index++] } }
+        }
+    }
+
+    @Test
+    fun receivedMarkerUsesLegacyOnlyWhenModernMarkerIsAbsent() {
+        val fixtures = listOf(
+            """{"id":"a","is_received_family_alarm":true}""" to true,
+            """{"id":"a","is_received_family_alarm":false}""" to false,
+            """{"id":"a"}""" to false,
+            """{"id":"a","is_received":true,"is_received_family_alarm":false}""" to true,
+            """{"id":"a","is_received":false,"is_received_family_alarm":true}""" to false,
+            """{"id":"a","is_received_family_alarm":true,"is_received":false}""" to false,
+        )
+        val gson = Gson()
+        for ((json, received) in fixtures) {
+            assertEquals(json, received, gson.fromJson(json, RemoteAlarm::class.java).isReceivedForPull)
         }
     }
 
