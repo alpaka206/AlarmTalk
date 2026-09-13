@@ -413,8 +413,9 @@ P1 5건·P2 1건이다. #736에서 고친 결제 409 반환·Android 페이지 �
 ## #737 CI 실패 복구 — 콜백의 MainActor 누락
 
 CI의 반복 실패 원인을 확인하면서 기존 실행 로그 조회를 넘어 iOS 검증까지 실행했다.
-사용자가 빌드 시점은 `develop → main` 머지 완료 뒤라고 재확인해 남은 실행을 중단했다.
-CI 원인 확인 요청만으로 검증 재실행까지 허용된 것으로 해석하지 않는다.
+사용자의 로컬 빌드 제한을 원격 CI까지 잘못 확대해 남은 실행을 중단했다.
+이후 사용자가 CI는 허용하고 에이전트는 커밋·푸시 뒤 종료하라는 뜻으로 명확히 했다.
+로컬 빌드는 `develop → main` 머지 완료 뒤에 다루며 CI 완료를 기다리지 않는다.
 
 실패한 [iOS 실행 34762672468](https://github.com/alpaka206/AlarmTalk/actions/runs/34762672468)은
 `7ea84109`의 `DuplicateAlarmReplacement.swift`에서 `sending 'conflict' risks causing data races`
@@ -435,8 +436,11 @@ CI 원인 확인 요청만으로 검증 재실행까지 허용된 것으로 해�
   [Android](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267206),
   [CodeQL](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267156)은 성공했다.
 - 같은 커밋의 [PR iOS 실행](https://github.com/alpaka206/AlarmTalk/actions/runs/34763267138)은
-  유닛 테스트가 성공한 뒤 사용자 지시에 따라 Release 빌드 도중 취소했다. 전체 실행 성공으로
+  유닛 테스트가 성공한 뒤 로컬 빌드 제한을 잘못 해석해 Release 빌드 도중 취소했다. 전체 실행 성공으로
   표시하지 않는다. 먼저 시작한 중복 수동 iOS 실행 `34763123651`도 취소했다.
+- develop 머지 뒤 잘못 취소한 [iOS](https://github.com/alpaka206/AlarmTalk/actions/runs/34763738173)·
+  [Android](https://github.com/alpaka206/AlarmTalk/actions/runs/34763738186)는 재실행을 요청했다.
+  이미 머지된 PR의 중복 실행은 재개하지 않으며, develop 실행의 완료를 기다리지 않는다.
 - 수정 HEAD의 원격 상태는 [#737 체크](https://github.com/alpaka206/AlarmTalk/pull/737/checks)에서 확인한다.
 - 실기기의 AlarmKit 울림·예약/취소 및 실제 푸시 전달은 자동 테스트의 검증 범위 밖이다.
 
