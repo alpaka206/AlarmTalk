@@ -1566,7 +1566,8 @@ describe('#730 즉시 해지 중 새 결제의 보관 유예', () => {
       expect(await rows("SELECT status FROM subscriptions WHERE id='sub-owner'")).toEqual([
         { status: 'cancelled' },
       ]);
-      expect(await rows('SELECT id,plan FROM users ORDER BY id')).toEqual([
+      // 전체 마이그레이션이 만든 시스템 계정이 아니라 해지 영향 계정을 검증한다.
+      expect(await rows('SELECT id,plan FROM users WHERE id IN (?,?) ORDER BY id', ['owner', 'member'])).toEqual([
         { id: 'member', plan: 'free' },
         { id: 'owner', plan: 'plus' },
       ]);

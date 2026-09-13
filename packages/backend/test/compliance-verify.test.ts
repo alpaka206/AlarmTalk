@@ -301,11 +301,15 @@ describe('탈퇴 30일 유예 / 철회', () => {
     expect(row.rows[0]!.deletion_status).toBe('active');
   });
 
-  it('유예 상태가 아닐 때 철회는 404 NO_PENDING_DELETION', async () => {
+  it('이미 active인 계정의 철회 재시도는 무변경 성공이다', async () => {
     const app = buildApp();
+    const before = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [PK] });
+    expect(before.rows[0]!.deletion_status).toBe('active');
     const res = await app.request(req('DELETE', '/user/me/deletion'));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('NO_PENDING_DELETION');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, status: 'active' });
+    const after = await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [PK] });
+    expect(after.rows).toEqual(before.rows);
   });
 });
 
