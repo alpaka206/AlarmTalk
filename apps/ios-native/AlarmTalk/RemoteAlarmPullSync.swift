@@ -120,6 +120,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     private let alarmKit: AlarmKitViewModel
     private let audioCache: AudioCacheStore
     private let auth: AuthViewModel
+    /// 준비 대기만 주입한다. 실제 회차는 이어서 취소/로드 상태와 최신 세션을 재확인한다.
+    private let waitForStore: @MainActor (LocalAlarmStore) async throws -> Void
 
     /// 캐싱 실패 등 비정상 경로 기록용. 코드베이스에 공용 로깅 유틸이 없어
     /// os.Logger 를 직접 사용한다 (print 금지 — 콘솔/Instruments 에서 필터 가능).
@@ -133,13 +135,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         store: LocalAlarmStore,
         alarmKit: AlarmKitViewModel,
         audioCache: AudioCacheStore = .shared,
-        auth: AuthViewModel
+        auth: AuthViewModel,
+        waitForStore: @escaping @MainActor (LocalAlarmStore) async throws -> Void = {
+            try await RemoteAlarmPullSync.requireLoadedStore($0)
+        }
     ) {
         self.api = api
         self.store = store
         self.alarmKit = alarmKit
         self.audioCache = audioCache
         self.auth = auth
+        self.waitForStore = waitForStore
     }
 
     /// **타입 단위** 겹침 가드. push 쪽(`RemoteAlarmPushSync`)과 같은 이유다 —
@@ -150,8 +156,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// `recordWithCachedTTSIfNeeded` 에서 **음원을 통째로 내려받고**(수 초) 그 다음에야
     /// upsert 한다. 그 창에서 겹치면 같은 받은-알람이 **로컬에 두 행**으로 들어오고 둘 다
     /// 예약돼 **같은 알람이 두 번 울린다.** 하나를 꺼도 다른 하나가 울린다.
-    private static var isRunning = false
-    private static var requestedWhileRunning = false
+    private static let serialGate = AsyncSerialGate()
 
     /// pull 사이클을 수행한다. **동시 호출은 이 함수가 직렬화한다** — 호출자가 막지
     /// 않아도 된다(예전 주석은 "호출자가 동시 호출을 방지해야 한다" 였는데, 실제로는
@@ -159,28 +164,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ///
     /// 반환하는 `PullResult` 는 Android `RemoteAlarmPullSyncService.pullReceivedAlarms`
     /// 의 카운터와 동일한 의미를 가진다. `BackgroundSyncTask` 가 retry 판단에 사용한다.
-    /// 미뤄 둔 회차가 함께 돌면 카운터는 **합산**된다.
+    /// 각 호출은 **자기 회차의 결과**를 받는다. 앞 호출의 시간 초과/취소가 대기 요청을
+    /// 잃게 하거나, 실제 수신 전에 대기 호출을 성공으로 완료시키지 않는다.
     @discardableResult
     func runOnce() async throws -> PullResult {
-        if Self.isRunning {
-            Self.requestedWhileRunning = true
-            return PullResult(imported: 0, updated: 0, skipped: 0, failed: 0)
-        }
-        Self.isRunning = true
-        defer { Self.isRunning = false }
+        await Self.serialGate.acquire()
+        defer { Self.serialGate.release() }
+        try Task.checkCancellation()
 
-        var total = PullResult(imported: 0, updated: 0, skipped: 0, failed: 0)
+        let result: PullResult
         do {
-            repeat {
-                Self.requestedWhileRunning = false
-                let cycle = try await runCycle()
-                total = PullResult(
-                    imported: total.imported + cycle.imported,
-                    updated: total.updated + cycle.updated,
-                    skipped: total.skipped + cycle.skipped,
-                    failed: total.failed + cycle.failed
-                )
-            } while Self.requestedWhileRunning
+            result = try await runCycle()
         } catch {
             // ⚠ **회차가 던져도 회수는 한다**(Codex #703 P1). 이 일은 통째로 로컬이라
             // 네트워크 성패와 무관한데, 실패로 건너뛰면 회수된 목소리를 문 예약이 다음
@@ -196,7 +190,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // (BGTask 는 push/pull 앞에서 **독립적으로** 한 번 더 돈다 — push 가 먼저 실패하면
         // 이 함수에 들어오지도 못하기 때문이다.)
         await alarmKit.retryPendingCancellations(store: store)
-        return total
+        return result
     }
 
     /// 모든 pull 진입점이 공유하는 준비 경계. 실패하면 조회·수신·예약·ACK로 나아가지 않는다.
@@ -206,11 +200,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         guard store.hasLoadedFromDisk else { throw PullError.storeNotReady }
     }
 
-    /// 한 회차. **세션은 회차마다 다시 읽는다**(안드로이드 `2836ebcf`) — 미뤄 둔 회차가
-    /// 앞 회차의 왕복 뒤에 도는데, 그 사이 로그아웃/계정 전환이 있었으면 옛 토큰으로 나간다.
+    /// 한 회차. 대기 중 로그아웃/계정 전환이 있었을 수 있어 준비 경계 뒤에 세션을 읽는다.
     private func runCycle() async throws -> PullResult {
         // launch 전용 푸시를 포함해 모든 진입점에서 디스크의 옛 목록이 새 수신을 덮지 않게 한다.
-        try await Self.requireLoadedStore(store)
+        try await waitForStore(store)
+        try Task.checkCancellation()
+        guard store.hasLoadedFromDisk else { throw PullError.storeNotReady }
         guard let session = auth.session else { throw PullError.noSession }
         let userID = session.user.id
         let token = session.token
