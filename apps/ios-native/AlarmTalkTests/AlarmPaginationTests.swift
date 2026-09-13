@@ -50,8 +50,11 @@ final class AlarmPaginationTests: XCTestCase {
             XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
                 .first(where: { $0.name == "limit" })?.value, "100")
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-            XCTAssertEqual(query?.first(where: { $0.name == "pagination" })?.value, "cursor")
-            XCTAssertFalse(query?.contains(where: { $0.name == "offset" }) ?? true)
+            if query?.contains(where: { $0.name == "offset" }) == true {
+                XCTAssertFalse(query?.contains(where: { $0.name == "pagination" || $0.name == "after" }) ?? true)
+            } else {
+                XCTAssertEqual(query?.first(where: { $0.name == "pagination" })?.value, "cursor")
+            }
         }
     }
 
@@ -161,12 +164,90 @@ final class AlarmPaginationTests: XCTestCase {
         }
     }
 
-    func test_legacyOffsetResponseCannotBeAcceptedAsComplete() async throws {
+    func test_incompleteLegacyResponseCannotBeAcceptedAsComplete() async throws {
         try await withAPI(pages: ["": (200, Data(#"{"alarms":[],"total":0}"#.utf8))]) { api, _ in
             do {
                 _ = try await api.listAlarms(token: "alarm-test-token")
-                XCTFail("커서 계약이 없는 서버로 offset 폴백하지 않는다")
-            } catch is DecodingError { }
+                XCTFail("구서버도 total/limit/offset 계약이 모두 필요하다")
+            } catch APIError.invalidResponse { }
+        }
+    }
+
+    private func legacyPage(_ range: Range<Int>, total: Int = 251) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "alarms": range.map { ["id": "alarm-\($0)", "is_received_family_alarm": $0 == 250] as [String: Any] },
+            "total": total, "limit": 100, "offset": range.lowerBound,
+        ])
+    }
+
+    func test_legacyServerReadsFamilyAlarmAndProbesEmptyPageDespiteShrinkingTotal() async throws {
+        try await withAPI(pages: [
+            "": (200, try legacyPage(0..<100)),
+            "offset-100": (200, try legacyPage(100..<200, total: 1)),
+            "offset-200": (200, try legacyPage(200..<251, total: 1)),
+            "offset-251": (200, try legacyPage(251..<251, total: 1)),
+        ]) { api, fixture in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            XCTAssertEqual(alarms.count, 251)
+            XCTAssertEqual(alarms.last?.isReceivedFamilyAlarm, true)
+            XCTAssertEqual(fixture.cursors, ["", "offset-100", "offset-200", "offset-251"])
+        }
+    }
+
+    func test_legacyExactBoundaryRequiresEmptyPage() async throws {
+        try await withAPI(pages: [
+            "": (200, try legacyPage(0..<100, total: 100)),
+            "offset-100": (200, try legacyPage(100..<100, total: 100)),
+        ]) { api, fixture in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            XCTAssertEqual(alarms.count, 100)
+            XCTAssertEqual(fixture.cursors, ["", "offset-100"])
+        }
+        try await withAPI(pages: ["": (200, try legacyPage(0..<0, total: 0))]) { api, fixture in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            XCTAssertTrue(alarms.isEmpty)
+            XCTAssertEqual(fixture.cursors, [""])
+        }
+    }
+
+    func test_legacyInvalidOrChangedContractsAndDuplicatesRejectPartialCollection() async throws {
+        let invalidBodies = [
+            #"{"alarms":[],"total":1,"offset":1}"#,
+            #"{"alarms":[],"total":1,"limit":0,"offset":1}"#,
+            #"{"alarms":[],"total":1,"limit":101,"offset":1}"#,
+            #"{"alarms":[],"total":-1,"limit":100,"offset":1}"#,
+            #"{"alarms":[],"total":1,"limit":100,"offset":0}"#,
+            #"{"alarms":[],"total":1,"limit":100,"offset":1,"next_cursor":"2"}"#,
+            #"{"alarms":[],"has_more":false}"#,
+            #"{"alarms":[{"id":"alarm-0"}],"total":1,"limit":100,"offset":1}"#,
+        ]
+        for body in invalidBodies {
+            try await withAPI(pages: [
+                "": (200, try legacyPage(0..<1)), "offset-1": (200, Data(body.utf8)),
+            ]) { api, _ in
+                do {
+                    _ = try await api.listAlarms(token: "alarm-test-token")
+                    XCTFail("구서버 호환도 불완전한 회차를 반환하지 않는다: \(body)")
+                } catch APIError.invalidResponse { }
+            }
+        }
+        try await withAPI(pages: [
+            "": (200, try page(0..<1, hasMore: true)),
+            "1": (200, try legacyPage(1..<1)),
+        ]) { api, _ in
+            do { _ = try await api.listAlarms(token: "alarm-test-token"); XCTFail("커서 회차를 폴백하지 않는다") }
+            catch APIError.invalidResponse { }
+        }
+    }
+
+    func test_legacyLaterFailureDoesNotReturnPartialAlarms() async throws {
+        try await withAPI(pages: [
+            "": (200, try legacyPage(0..<1)),
+            "offset-1": (503, Data(#"{"error":"unavailable"}"#.utf8)),
+        ]) { api, fixture in
+            do { _ = try await api.listAlarms(token: "alarm-test-token"); XCTFail("부분 성공 금지") }
+            catch APIError.server(let status, _, _) { XCTAssertEqual(status, 503) }
+            XCTAssertEqual(fixture.cursors, ["", "offset-1"])
         }
     }
 
@@ -307,8 +388,9 @@ private final class AlarmPageFixture: @unchecked Sendable {
     var cursors: [String] { requests.map(Self.cursor) }
     private static func cursor(_ request: URLRequest) -> String {
         guard let url = request.url else { return "" }
-        return URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
-            .first(where: { $0.name == "after" })?.value ?? ""
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        if let offset = query?.first(where: { $0.name == "offset" })?.value { return "offset-\(offset)" }
+        return query?.first(where: { $0.name == "after" })?.value ?? ""
     }
     func respond(to request: URLRequest) -> (Int, Data) {
         lock.lock()

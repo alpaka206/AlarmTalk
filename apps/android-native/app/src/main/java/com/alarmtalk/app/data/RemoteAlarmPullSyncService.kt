@@ -218,8 +218,8 @@ internal class RemoteAlarmPullSyncService(
         // 클라측 session.user.id 로 sender 를 직접 비교하면 계정 연동(PK≠google_id) 사용자의
         // '보낸 알람'을 '받은 알람'으로 오분류해 자기 기기에 예약해버린다(PR #536 P1).
         // 고정 상한 없이 서버의 완료 응답까지 읽는다. 중간 실패면 로컬 반영에 진입하지 않는다.
-        val allRemote = collectRemoteAlarmPages { after ->
-            api.listAlarms(authorization, limit = 100, after = after)
+        val allRemote = collectRemoteAlarmPages { after, offset ->
+            api.listAlarms(authorization, limit = 100, after = after, offset = offset)
         }
         val remoteAlarms = allRemote.filter { it.isReceived }
 

@@ -319,9 +319,12 @@ struct AuthUser: Codable, Equatable, Identifiable {
 
 struct RemoteAlarmListResponse: Decodable {
     var alarms: [RemoteAlarm]
-    /// 필수 필드: 커서를 지원하지 않는 서버의 첫 페이지만 성공으로 오인하지 않는다.
-    var hasMore: Bool
+    /// 없으면 유효한 total/limit/offset 계약을 요구하며, 첫 페이지만 완료로 읽지 않는다.
+    var hasMore: Bool?
     var nextCursor: String?
+    var total: Int?
+    var limit: Int?
+    var offset: Int?
 }
 
 struct RemoteAlarmResponse: Decodable {

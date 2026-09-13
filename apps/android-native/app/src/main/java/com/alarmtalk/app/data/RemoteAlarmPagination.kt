@@ -6,19 +6,31 @@ import java.io.IOException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 전체 커서 순회가 성공한 뒤에만 반환한다. 부분 목록으로 예약·ACK·prune하지 않는다. */
+/** 첫 응답으로 커서/구서버 offset 계약을 정하고, 전체 성공 뒤에만 예약·ACK·prune에 넘긴다. */
 internal suspend fun collectRemoteAlarmPages(
-    fetchPage: suspend (after: String?) -> RemoteAlarmListResponse,
+    fetchPage: suspend (after: String?, offset: Int?) -> RemoteAlarmListResponse,
 ): List<RemoteAlarm> {
     val latestById = linkedMapOf<String, RemoteAlarm>()
     val seenVersions = mutableMapOf<String, MutableSet<String>>()
     var cursor: String? = null
+    var offset = 0
+    var cursorMode: Boolean? = null
     var sequence = 0L
     while (true) {
         currentCoroutineContext().ensureActive()
-        val page = fetchPage(cursor)
+        val page = fetchPage(cursor, if (cursorMode == false) offset else null)
         currentCoroutineContext().ensureActive()
-        val hasMore = page.hasMore ?: throw IOException("Missing alarm cursor contract")
+        if (cursorMode == null) cursorMode = page.hasMore != null
+        if (cursorMode == false) {
+            val limit = page.limit
+            if (page.hasMore != null || page.nextCursor != null || page.offset != offset ||
+                page.total == null || page.total < 0 || limit == null || limit !in 1..100 ||
+                page.alarms.size > limit
+            ) throw IOException("Invalid legacy alarm pagination contract")
+            if (page.alarms.isEmpty()) return latestById.values.toList()
+        } else if (page.hasMore == null) {
+            throw IOException("Missing alarm cursor contract")
+        }
         val pageIds = mutableSetOf<String>()
         for (alarm in page.alarms) {
             if (!pageIds.add(alarm.id)) throw IOException("Duplicate alarm in one page")
@@ -34,7 +46,12 @@ internal suspend fun collectRemoteAlarmPages(
             if (version != null) versions.add(version)
             latestById[alarm.id] = alarm
         }
-        if (!hasMore) {
+        if (cursorMode == false) {
+            if (offset > Int.MAX_VALUE - page.alarms.size) throw IOException("Alarm offset overflow")
+            offset += page.alarms.size
+            continue
+        }
+        if (page.hasMore == false) {
             if (page.nextCursor != null) throw IOException("Unexpected terminal alarm cursor")
             return latestById.values.toList()
         }
