@@ -185,6 +185,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // ⚠ **회차가 던져도 회수는 한다**(Codex #703 P1). 이 일은 통째로 로컬이라
             // 네트워크 성패와 무관한데, 실패로 건너뛰면 회수된 목소리를 문 예약이 다음
             // 성공 회차나 전경 복귀까지 살아남는다. `defer` 로는 못 한다(`await` 불가).
+            // 단, 디스크 로드 전이면 retryPendingCancellations 자체가 OS/목록/행 정리를 보류한다.
             await alarmKit.retryPendingCancellations(store: store)
             throw error
         }

@@ -3,7 +3,7 @@
 // 실제 RSA 키쌍을 만들어 토큰에 서명하고, 애플 JWKS 응답만 목킹한다 —
 // 서명 검증 경로를 진짜로 태우기 위해서다. **유료 개발자 계정 없이 전부 검증된다**
 // (네이티브 로그인 플로우는 공개키 검증만 하고 .p8 비밀키를 쓰지 않는다).
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { verifyAppleIdToken, __resetAppleJwksCacheForTests } from '../src/lib/apple-oauth';
 
 const BUNDLE_ID = 'com.alarmtalk.app';
@@ -21,6 +21,7 @@ function b64urlJson(obj: unknown): string {
 
 let keyPair: CryptoKeyPair;
 let jwk: JsonWebKey;
+let nowMillis: number;
 
 async function ensureKeys() {
   if (keyPair) return;
@@ -76,8 +77,11 @@ function jwksFetch(overrideKeys?: unknown): typeof fetch {
 describe('verifyAppleIdToken', () => {
   beforeEach(async () => {
     await ensureKeys();
+    nowMillis = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMillis);
     __resetAppleJwksCacheForTests();
   });
+  afterEach(() => { vi.restoreAllMocks(); });
 
   it('올바른 토큰을 검증하고 payload 를 돌려준다', async () => {
     const token = await makeToken(basePayload({ email: 'a@b.com', email_verified: 'true' }));
@@ -140,7 +144,7 @@ describe('verifyAppleIdToken', () => {
     await expect(verifyAppleIdToken(token, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(
       /signing key not found/i,
     );
-    expect(fetcher).toHaveBeenCalledTimes(2); // 초기 조회 + 한 번 재조회, 무한 반복하지 않는다.
+    expect(fetcher).toHaveBeenCalledTimes(1); // 콜드 조회 직후 같은 키 묶음을 다시 받지 않는다.
   });
 
   it('아직 유효한 캐시에 없는 새 kid는 재조회하여 검증하고 새 캐시를 재사용한다', async () => {
@@ -148,6 +152,7 @@ describe('verifyAppleIdToken', () => {
     const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
     const fetcher = vi.fn(jwksFetch());
     await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    nowMillis += 30_000;
     fetcher.mockImplementation(jwksFetch([{ ...jwk, kid: 'rotated-key' }]));
     expect((await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).sub).toBe('apple-sub-001');
     await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher);
@@ -159,17 +164,76 @@ describe('verifyAppleIdToken', () => {
     const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
     const fetcher = vi.fn(jwksFetch());
     await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    nowMillis += 30_000;
     fetcher.mockImplementation(async () => new Response('', { status: 503 }));
     await expect(verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/fetch failed/i);
+    // 실패도 간격 제한에 포함하지만 유효한 기존 키의 정상 로그인은 막지 않는다.
+    await expect(verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/signing key not found/i);
     await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
     expect(fetcher).toHaveBeenCalledTimes(2);
+    nowMillis += 30_000;
+    fetcher.mockImplementation(jwksFetch([{ ...jwk, kid: 'rotated-key' }]));
+    await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it('키 재조회 뒤에도 위조 서명은 거절한다', async () => {
     await verifyAppleIdToken(await makeToken(basePayload()), BUNDLE_ID, undefined, jwksFetch());
+    nowMillis += 30_000;
     const forged = await makeToken(basePayload(), { kid: 'rotated-key', signWithWrongKey: true });
     await expect(verifyAppleIdToken(forged, BUNDLE_ID, undefined,
       jwksFetch([{ ...jwk, kid: 'rotated-key' }]))).rejects.toThrow(/signature/i);
+  });
+
+  it('콜드 캐시에서 서로 다른 미검증 kid를 보내도 조회는 한 번만 한다', async () => {
+    const fetcher = vi.fn(jwksFetch());
+    for (let i = 0; i < 12; i++) {
+      const forged = `${b64urlJson({ alg: 'RS256', kid: `unknown-${i}` })}.${b64urlJson(basePayload())}.invalid`;
+      await expect(verifyAppleIdToken(forged, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/signing key not found/i);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('임의 kid가 제한 시간을 연장하지 않고 30초 경계 뒤 진짜 교체 키를 조회한다', async () => {
+    const old = await makeToken(basePayload());
+    const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
+    const fetcher = vi.fn(jwksFetch());
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    nowMillis += 30_000;
+    // 간격이 지난 뒤 잘못된 kid가 재조회를 먼저 소비한 경우.
+    const forged = `${b64urlJson({ alg: 'RS256', kid: 'unknown' })}.${b64urlJson(basePayload())}.invalid`;
+    await expect(verifyAppleIdToken(forged, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/signing key not found/i);
+    fetcher.mockImplementation(jwksFetch([{ ...jwk, kid: 'rotated-key' }]));
+    nowMillis += 29_999;
+    await expect(verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/signing key not found/i);
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    nowMillis += 1;
+    await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it('서로 다른 kid의 동시 요청은 진행 중 재조회를 공유한다', async () => {
+    const old = await makeToken(basePayload());
+    const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
+    const fetcher = vi.fn(jwksFetch());
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    nowMillis += 30_000;
+    let release!: (response: Response) => void;
+    let started!: () => void;
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    fetcher.mockImplementation(() => new Promise<Response>((resolve) => { release = resolve; started(); }));
+    const forged = `${b64urlJson({ alg: 'RS256', kid: 'unknown' })}.${b64urlJson(basePayload())}.invalid`;
+    const outcomes = Promise.allSettled([
+      verifyAppleIdToken(forged, BUNDLE_ID, undefined, fetcher),
+      verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher),
+    ]);
+    await entered;
+    release(new Response(JSON.stringify({ keys: [{ ...jwk, kid: 'rotated-key' }] }), { status: 200 }));
+    const [unknown, genuine] = await outcomes;
+    expect(unknown.status).toBe('rejected');
+    expect(genuine).toMatchObject({ status: 'fulfilled', value: { sub: 'apple-sub-001' } });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   // nonce 는 재생 공격 방지다. 앱이 보냈으면 반드시 일치해야 한다.
@@ -232,7 +296,7 @@ describe('verifyAppleIdToken', () => {
   });
 
   // 실패를 캐시하면 애플의 일시적 5xx 가 TTL 동안 모든 로그인을 막는다.
-  it('JWKS 조회 실패는 캐시하지 않는다', async () => {
+  it('콜드 조회 실패는 30초 뒤 재시도하며 실패를 10분 캐시에 넣지 않는다', async () => {
     let calls = 0;
     const flaky = (async () => {
       calls += 1;
@@ -245,8 +309,11 @@ describe('verifyAppleIdToken', () => {
 
     const token = await makeToken(basePayload());
     await expect(verifyAppleIdToken(token, BUNDLE_ID, undefined, flaky)).rejects.toThrow(/JWKS/i);
-    // 두 번째 시도는 성공해야 한다 — 실패가 캐시됐다면 여기서도 실패한다.
+    await expect(verifyAppleIdToken(token, BUNDLE_ID, undefined, flaky)).rejects.toThrow(/cooling down/i);
+    expect(calls).toBe(1);
+    nowMillis += 30_000;
     const p = await verifyAppleIdToken(token, BUNDLE_ID, undefined, flaky);
     expect(p.sub).toBe('apple-sub-001');
+    expect(calls).toBe(2);
   });
 });

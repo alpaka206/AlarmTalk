@@ -173,6 +173,11 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 행이 새 UUID 로 다시 예약돼도 옛 고아를 잃지 않는다 — `alarmKitID` 한 칸으로는 둘을
 동시에 들 수 없다. 앱 시작·전경 복귀에서 재예약보다 **먼저** 돈다.
 
+**취소 재처리도 디스크 로드 뒤에만 한다.** 로드 전에는 OS 예약을 취소하거나 pending
+목록에서 완료 처리하지 않는다. pull 시간 초과/취소/실패 뒤 정리도 같은 조건을 따른다.
+빈 임시 목록으로 처리하면 디스크에 남은 행의 핸들을 비울 수 없어, 나중에 로드된 행이
+죽은 핸들을 들고 재예약 대상에서 빠진다. 로드가 끝난 다음 재처리가 OS와 로컬 행을 함께 정리한다.
+
 ⚠ **끝난 UUID 를 가리키던 손잡이는 `enabled` 와 무관하게 비운다.** 회수가 늦어져 그 고아가
 울면 `markRinging` 이 행을 켜는데, 그때 정리를 건너뛰면 행에 **이미 취소된 UUID** 가 남는다 —
 복구 sweep 는 "핸들이 있으니 예약돼 있다" 고 보고 건너뛰어 **반복 알람의 다음 회차부터
@@ -292,6 +297,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
+| 1-3 로드 전 취소 재처리 보류 | — | — | `AlarmKitViewModel.retryPendingCancellations` 진입 가드(pull 실패 후 정리 포함) |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` · `AlarmScheduleReconciler.reconcile(…ownerUserId:)` · `WeatherVariantRefreshService.refreshDue(token:ownerUserId:)` |
 | 실행 중 들어온 재예약도 순서대로 처리 | — | — | `AlarmScheduleReconciler` → `AsyncSerialGate`, `VoiceStudioViewModel.scheduleReconcileRevision` → `AlarmTalkApp` 완료 후 플래그 해제 |
 | 1-4 예약 길목의 소유자 게이트 | — | (해당 없음 — 예약이 동기라 창이 없다) | `AlarmKitViewModel.mayScheduleRecord` (`schedule` 의 진입·복귀 두 자리) |

@@ -453,14 +453,25 @@ final class AlarmKitViewModel: ObservableObject {
     /// 소유자·`enabled` 와 무관하게 돈다. 지우는 것은 **우리가 못 끈 예약**뿐이라 남의
     /// 계정 것을 건드릴 위험이 없다.
     @discardableResult
-    func retryPendingCancellations(store: LocalAlarmStore) async -> Int {
+    func retryPendingCancellations(
+        store: LocalAlarmStore,
+        readScheduledIDs: (() throws -> Set<UUID>)? = nil,
+        cancelAlarm: ((UUID) throws -> Void)? = nil
+    ) async -> Int {
+        // pull의 로드 시간 초과/취소 뒤에도 이 메서드로 들어온다. 아직 빈 목록이면
+        // OS만 취소하고 pending을 지워 디스크 행에 죽은 핸들이 남으므로 전부 보류한다.
+        guard store.hasLoadedFromDisk else { return 0 }
         #if canImport(AlarmKit)
         let pending = PendingAlarmCancellationStore.all
         guard !pending.isEmpty else { return 0 }
         // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
         // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 목록은 그대로 남아 다음 기회에.
-        guard let live = try? AlarmManager.shared.alarms else { return 0 }
-        let liveIDs = Set(live.map(\.id))
+        // OS 접점만 주입 가능하게 두어 로드 전후의 실제 재처리/행 정리를 회귀 사례로 쓴다.
+        let liveIDs: Set<UUID>
+        do {
+            if let readScheduledIDs { liveIDs = try readScheduledIDs() }
+            else { liveIDs = Set(try AlarmManager.shared.alarms.map(\.id)) }
+        } catch { return 0 }
         var cleared = 0
         // 이번 회차에 **끝난** UUID 들(끊었거나, OS 에 이미 없다고 확인했거나).
         var resolved: Set<String> = []
@@ -484,7 +495,8 @@ final class AlarmKitViewModel: ObservableObject {
                 continue
             }
             do {
-                try AlarmManager.shared.cancel(id: uuid)
+                if let cancelAlarm { try cancelAlarm(uuid) }
+                else { try AlarmManager.shared.cancel(id: uuid) }
                 resolvedOrigins[raw] = PendingAlarmCancellationStore.origin(of: raw)
                 PendingAlarmCancellationStore.remove(raw)
                 resolved.insert(raw)

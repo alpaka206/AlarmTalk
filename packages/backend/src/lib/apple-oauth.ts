@@ -43,9 +43,12 @@ interface AppleJwk {
 let jwksCache: { keys: AppleJwk[]; fetchedAt: number } | null = null;
 let jwksRequest: Promise<AppleJwk[]> | null = null;
 const JWKS_TTL_MS = 10 * 60 * 1000;
+const JWKS_REFRESH_COOLDOWN_MS = 30 * 1000;
+let jwksRefreshAllowedAt = 0;
 
 export function __resetAppleJwksCacheForTests(): void {
   jwksCache = null;
+  jwksRefreshAllowedAt = 0;
 }
 
 async function fetchAppleJwks(fetchImpl: typeof fetch, force = false): Promise<AppleJwk[]> {
@@ -54,6 +57,13 @@ async function fetchAppleJwks(fetchImpl: typeof fetch, force = false): Promise<A
     return jwksCache.keys;
   }
   if (jwksRequest) return jwksRequest;
+  // kid는 서명 검증 전의 외부 입력이다. kid별 제한은 값을 바꾸면 우회되므로 isolate가
+  // 공유하는 조회 간격을 둔다. 콜드 조회/실패도 포함하고 유효한 기존 키는 계속 사용한다.
+  if (now < jwksRefreshAllowedAt) {
+    if (jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys;
+    throw new Error('Apple JWKS refresh is cooling down');
+  }
+  jwksRefreshAllowedAt = now + JWKS_REFRESH_COOLDOWN_MS;
   const request = (async () => {
     const res = await fetchImpl(APPLE_JWKS_URL);
     if (!res.ok) throw new Error('Apple JWKS fetch failed');
@@ -66,7 +76,10 @@ async function fetchAppleJwks(fetchImpl: typeof fetch, force = false): Promise<A
   try {
     return await request;
   } finally {
-    if (jwksRequest === request) jwksRequest = null;
+    if (jwksRequest === request) {
+      jwksRequest = null;
+      jwksRefreshAllowedAt = Date.now() + JWKS_REFRESH_COOLDOWN_MS;
+    }
   }
 }
 
@@ -127,7 +140,7 @@ export async function verifyAppleIdToken(
   const keys = await fetchAppleJwks(fetchImpl);
   let jwk = keys.find((k) => k.kid === header.kid);
   if (!jwk) {
-    // Apple이 새 키를 쓰기 시작하면 10분 TTL을 기다리지 않고 한 번만 새로 확인한다.
+    // 10분 TTL과 별개로 재조회하되, 공통 간격 제한 안에서는 캐시로 거절한다.
     const refreshed = await fetchAppleJwks(fetchImpl, true);
     jwk = refreshed.find((k) => k.kid === header.kid);
   }
