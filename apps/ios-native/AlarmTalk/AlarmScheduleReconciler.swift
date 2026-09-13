@@ -29,7 +29,7 @@ enum AlarmScheduleReconciler {
     /// **서로 다른 UUID** 두 개를 만드는데, `markScheduled` 는 마지막 것만 행에 남긴다 →
     /// 먼저 만든 핸들은 어느 행도 가리키지 않아 앱이 영영 취소하지 못하고, 매 회차 같은
     /// 시각에 한 번 더 울린다. 사용자가 그 알람을 끄거나 지워도 남는다.
-    private static var isRunning = false
+    private static let serialGate = AsyncSerialGate()
 
     /// 스테이징이 실패해 **의도한 소리가 실리지 못한** 예약의 표시.
     ///
@@ -74,9 +74,9 @@ enum AlarmScheduleReconciler {
         /// 지문이 없어도 반드시 다시 걸 행(교체가 소리를 갈아 끼운 것들).
         forceRearmIds: Set<String> = []
     ) async -> Int {
-        guard !isRunning else { return 0 }
-        isRunning = true
-        defer { isRunning = false }
+        await serialGate.acquire()
+        defer { serialGate.release() }
+        guard !Task.isCancelled else { return 0 }
 
         var repaired = 0
         // 스테이징이 **결정적으로** 실패하는 소스(지원 못 하는 포맷 등)는 다시 걸어도 또
@@ -86,6 +86,7 @@ enum AlarmScheduleReconciler {
 
         let owner = ownerUserId?.nilIfBlank ?? SessionExpiryStore.expiredOwnerUserId
         for snapshot in store.alarms(visibleTo: owner) {
+            guard !Task.isCancelled else { break }
             guard !attempted.contains(snapshot.id) else { continue }
 
             // ⚠ **반영 직전에 다시 읽는다.** 위 배열은 루프 시작 시점의 **복사본**이고,
@@ -102,7 +103,7 @@ enum AlarmScheduleReconciler {
             // 울리는 중·스누즈 중에는 건드리지 않는다 — 재예약이 지금 울리는 알람을
             // 취소하거나 카운트다운을 날린다.
             guard !isInFlight(current) else { continue }
-            // 다른 경로가 같은 행을 재예약하는 중이면 비켜선다(위 `isRunning` 과 같은 이유).
+            // 다른 경로가 같은 행을 재예약하는 중이면 비켜선다(위 직렬화와 같은 이유).
             guard !alarmKit.isRearmInFlight(current.id) else { continue }
 
             attempted.insert(current.id)

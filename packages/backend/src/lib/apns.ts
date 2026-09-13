@@ -57,7 +57,7 @@ export interface ApnsMessage {
 export interface ApnsSendResult {
   token: string;
   success: boolean;
-  /** APNs `reason`. `BadDeviceToken`/`Unregistered` 면 토큰을 지워야 한다. */
+  /** APNs `reason`. 자동 삭제 여부는 `isDeadApnsToken` 한 곳에서 판정한다. */
   reason?: string;
 }
 
@@ -242,7 +242,9 @@ export async function sendApnsNotifications(
  * 영영 못 받는다. 애플이 "이 토큰은 죽었다" 고 명시한 경우만 지운다.
  */
 export function isDeadApnsToken(reason: string | undefined): boolean {
-  return reason === 'BadDeviceToken' || reason === 'Unregistered' || reason === 'DeviceTokenNotForTopic';
+  // topic/샌드박스 설정 오류도 정상 토큰에 BadDeviceToken/DeviceTokenNotForTopic을 만든다.
+  // 클라가 같은 토큰의 재등록을 생략하므로 그런 응답으로 서버 바인딩을 지우면 복구되지 않는다.
+  return reason === 'Unregistered';
 }
 
 export function apnsConfigFromEnv(env: {

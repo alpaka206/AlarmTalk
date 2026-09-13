@@ -2652,7 +2652,11 @@ struct AlarmEditorSheet: View {
     /// 확인(`confirmReplaceDuplicate`)은 그 판정을 지나온 뒤 **다시 이 함수로 들어오고**,
     /// 그 사이에 다른 기기의 교체가 반영돼 정리 중이 될 수 있다. 여기서 막지 않으면 정리
     /// 중인 목소리로 알람이 저장되고, 그 호출은 **기존 알람까지 지운다.**
-    func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async -> Bool {
+    func finishScheduling(
+        merged: LocalAlarmRecord, existing: LocalAlarmRecord?,
+        beforeCompletion: (@MainActor () async -> Bool)? = nil
+    ) async -> Bool {
+        let ownerID = auth.session?.user.id
         if let profileID = merged.voiceProfileId?.nilIfBlank,
            voiceStudio.isReplacementSettling(profileID) {
             voiceGateAlert = VoiceGateAlertContent(
@@ -2665,12 +2669,14 @@ struct AlarmEditorSheet: View {
         // ⚠ 편집 커밋은 전용 진입점을 쓴다. 화면 진입 시점의 스냅샷으로 전체 행을 덮으면,
         // TTS 생성(수 초~수십 초) 사이에 push 가 새긴 remoteAlarmId 를 nil 로 되돌려
         // 다음 push 가 같은 알람을 또 create 한다(서버에 두 행).
+        if beforeCompletion != nil { store.deferServerSync(id: merged.id) }
+        defer { if beforeCompletion != nil { store.resumeServerSync(id: merged.id) } }
         store.upsertPreservingServerSyncFields(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
-            if let existing {
-                store.upsert(existing)
-            } else {
+            if let existing, auth.session?.user.id == ownerID, store.record(id: merged.id) != nil {
+                store.upsertPreservingServerSyncFields(existing)
+            } else if existing == nil, auth.session?.user.id == ownerID {
                 // 신규 저장 롤백. 반환되는 releasedAudioCacheKey 는 의도적으로
                 // 무시한다 — 같은 키의 음원을 voiceStudio.preparedAlarm 이 아직
                 // 들고 있어 사용자가 곧바로 재시도하면 그대로 재사용되기 때문.
@@ -2682,6 +2688,24 @@ struct AlarmEditorSheet: View {
                 message: alarmKit.statusMessage ?? "알람 예약에 실패했어요."
             )
             return false
+        }
+        let staged = store.record(id: merged.id)
+        if let beforeCompletion, !(await beforeCompletion()) || auth.session?.user.id != ownerID {
+            // 새 예약만 해제한다. 기존 편집본의 옛 예약은 아직 취소하지 않아 롤백할 수 있다.
+            if let staged {
+                await rollbackAlarmReplacement(staged: staged, previous: existing, store: store) {
+                    await alarmKit.cancelScheduledAlarm(record: $0)
+                }
+            }
+            validationAlert = ValidationAlertContent(
+                title: "저장할 수 없어요",
+                message: remoteSync.statusMessage ?? "알람 삭제에 실패했어요"
+            )
+            return false
+        }
+        if beforeCompletion != nil, var committed = store.record(id: merged.id) {
+            committed.syncState = store.nextLocalSyncState(for: committed).rawValue
+            store.upsert(committed)
         }
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
@@ -2802,16 +2826,21 @@ struct AlarmEditorSheet: View {
     /// 마지막 참조로 간주돼 삭제되어, 같은 음성을 재사용하는 새 알람이 깨진다.
     /// 저장 실패 시에는 충돌 알람을 보존한다.
     func confirmReplaceDuplicate(_ content: DuplicateAlarmConfirmContent) async {
-        let saved = await finishScheduling(merged: content.merged, existing: content.existing)
-        guard saved else { return }
-        for conflict in content.conflicts {
-            // 서버에도 알린 뒤 로컬을 지운다(AlarmsListView.deleteAlarm 와 같은 순서).
-            // ⚠ 로컬만 지우면 **받은 알람이 다음 pull 에 새 UUID 로 되살아난다** —
-            // decline 이 기록되지 않아 프루닝 조건(`state.declined`)에 걸리지 않고,
-            // 서버 목록에는 그대로 있기 때문이다. 본인 알람도 서버에 남아 되살아난다.
-            await remoteSync.deleteRemote(record: conflict, session: auth.session)
-            // cancel(record:store:) = AlarmKit 예약 취소 + store.delete + 고아 캐시만 정리.
-            _ = await alarmKit.cancel(record: conflict, store: store)
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let ownerID = auth.session?.user.id
+        await finishScheduling(merged: content.merged, existing: content.existing) {
+            await removeReplacementConflicts(content.conflicts, deleteRemote: { conflict in
+                guard auth.session?.user.id == ownerID else { return false }
+                // 확인 창을 띄운 사이 push가 새긴 서버 ID를 버리지 않는다.
+                guard let current = store.record(id: conflict.id) else { return true }
+                return await remoteSync.deleteRemote(record: current, session: auth.session)
+            }, deleteLocal: { conflict in
+                guard auth.session?.user.id == ownerID else { return false }
+                guard let current = store.record(id: conflict.id) else { return true }
+                return await alarmKit.cancel(record: current, store: store)
+            })
         }
     }
 

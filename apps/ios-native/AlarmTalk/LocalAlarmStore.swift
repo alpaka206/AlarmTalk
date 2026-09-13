@@ -11,6 +11,13 @@ final class LocalAlarmStore: ObservableObject {
     private let writer: LocalAlarmFileWriter
     /// 스냅샷을 뜰 때마다 올라가는 순번. 늦게 도착한 옛 스냅샷을 가려내는 기준이다.
     private var saveSeq: UInt64 = 0
+    /// 교체 확정 전 임시 편집본은 서버에 보내지 않는다. synced로 위장해 디스크에 남기면
+    /// 앱 종료 뒤에도 영구히 push되지 않으므로, 진행 중인 작업의 수명으로만 보류한다.
+    private var deferredServerSyncIDs: Set<String> = []
+
+    func deferServerSync(id: String) { deferredServerSyncIDs.insert(id) }
+    func resumeServerSync(id: String) { deferredServerSyncIDs.remove(id) }
+    func isServerSyncDeferred(id: String) -> Bool { deferredServerSyncIDs.contains(id) }
 
     /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
     ///
@@ -23,7 +30,10 @@ final class LocalAlarmStore: ObservableObject {
         )
     }
 
-    init(storageURL: URL? = nil, loadFromDisk: Bool = true) {
+    init(
+        storageURL: URL? = nil, loadFromDisk: Bool = true,
+        loadRecords: (@Sendable () async -> [LocalAlarmRecord])? = nil
+    ) {
         let resolvedStorageURL: URL
         if let storageURL {
             resolvedStorageURL = storageURL
@@ -38,7 +48,9 @@ final class LocalAlarmStore: ObservableObject {
             return
         }
         Task { [persistence] in
-            let loaded = await persistence.load()
+            let loaded: [LocalAlarmRecord]
+            if let loadRecords { loaded = await loadRecords() }
+            else { loaded = await persistence.load() }
             await MainActor.run {
                 self.alarms = loaded
                 self.hasLoadedFromDisk = true
@@ -66,10 +78,7 @@ final class LocalAlarmStore: ObservableObject {
             // 마감까지 **MainActor 에서 계속 돈다** — 예산이 이미 회수된 바로 그 순간에
             // launch·델리게이트 작업을 막는다. 던지면 그대로 물러선다.
             //
-            // ⚠ 이 갈래에는 **회귀 테스트가 없다.** 붙여 봤지만 `persistence` 를 주입할 수
-            // 없어 "끝나지 않는 로드" 를 만들 수 없었고, 그렇게 쓴 테스트는 `try?` 로
-            // 되돌려도 그대로 통과했다(빈 파일이라 로드가 즉시 끝난다). 아무것도 지키지
-            // 못하는 초록은 없느니만 못해 지웠다 — 고칠 사람은 이 주석을 근거로 삼는다.
+            // 로드 지연/취소 회귀는 주입한 loadRecords를 대기시켜 실제 미완료 상태로 쓴다.
             do {
                 try await Task.sleep(nanoseconds: 20_000_000)
             } catch {

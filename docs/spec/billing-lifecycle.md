@@ -70,6 +70,17 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
 마이그레이션 114 이전의 결제일 없는 원장은 기존 추정 폴백이 남는다. 저장되지 않은 과거
 결제일은 이 코드 변경만으로 복원되지 않으므로 운영 원장 점검이 필요하다.
 
+계정을 영구 파기할 때 Apple 선물의 결제↔코드 연결도 같은 트랜잭션에서 삭제한다.
+코드가 먼저 지워져 연결이 비었거나 이미 환불됐어도, 해당 계정의 Apple 결제 원장으로
+찾아 지운다. 결제 원장·발급 코드를 지우기 전에 연결을 정리해야 소유 근거를 잃지 않는다.
+거래 증빙은 `retained_billing_records`에만 분리 보존하고 기존 5년 기한 정리로 파기한다.
+다른 계정의 선물 연결과 다른 스토어의 같은 문자열 거래 ID는 삭제 근거가 아니다.
+발급 전 환불도 Apple이 검증한 `appAccountToken`으로 실제 구매자를 찾아, 환불 표식과
+함께 결제 원장에 연결한다. 환불을 알려 준 현재 로그인 계정으로 소유자를 정하지 않는다.
+코드는 발급하지 않으며 구매일은 실제 `purchaseDate`를 보존한다. 살아 있는 구매자도
+발급 코드도 없는 환불은 새 고아 표식을 만들지 않는다(소유자 없는 최초 발급은 거절된다).
+기존 무연결 표식도 환불 재검증 시 같은 원장에 연결하거나, 구매자가 없으면 정리한다.
+
 ## 해지
 
 | 스토어 | 서버가 해지할 수 있나 | 어떻게 |
@@ -549,6 +560,14 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
   확인해 준 사실이라, 누가 알려 주든 그 구독은 끊기는 것이 맞다.
 - ⚠ **조회 키가 둘이다** — 구독은 `originalTransactionId`(갱신마다 바뀌지 않는다), 선물은
   `transactionId`. 한쪽만 보면 못 찾는다.
+- **Apple 소모성 선물 환불은 구독 상태 API를 호출하지 않는다.** 검증된 `transactionId`와
+  발급 코드의 연결을 `apple_gift_deliveries`에 같은 트랜잭션으로 기록한다. 환불 확인 시
+  미사용 코드만 만료시키고 환불 표식을 남겨, 먼저 시작한 발급 요청/재전송이 다시 발급하지 못하게 한다.
+  코드 사용과 환불은 같은 쓰기 잠금으로 직렬화한다. 이미 사용한 코드의 수신자 이용권은
+  이 수정에서 소급 회수하지 않는다. 구독·다른 선물·요청자 권한은 건드리지 않는다.
+  기존 기록은 결제자·플랜·결제 시각이 양방향으로 유일한 코드만 연결한다. 예전 연결을
+  확정할 수 없으면 추측해 다른 코드를 만료시키거나 완료 응답을 보내지 않고 502로 남긴다.
+  발급 전 환불도 표식으로 보존한다. 이 경로는 마이그레이션 117 전에는 실패해야 한다.
 - ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). `originalTransactionId` 는
   **체인 전체가 공유**한다 — 자동갱신은 갱신마다 트랜잭션이 새로 나지만 그 id 는 같다.
   그래서 옛 갱신 한 건이 뒤늦게 환불되면 조회가 그 id 로 **지금 살아 있는 구독 행**을
@@ -647,12 +666,14 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |
 | 환불 — 즉시 권한 회수 | `revokeRefundedAppleSubscription` (`routes/billing-apple.ts`) | — | — |
+| Apple 소모성 선물 환불 | `billing-apple.ts` `revokeRefundedAppleGift`·발급 트랜잭션, 마이그레이션 117 `apple_gift_deliveries` | — | 기존 `PendingRevokedTransactionStore` 재전송·400 확정/5xx 보류 |
 | 그룹형 전환 — 멤버 플랜 이전 | `applyStoreEntitlement` 의 carryOver 갈래 (`lib/store-billing.ts`) | — | — |
 | 전환 — 알려야 할 사람 | `planChangedUserIds`(나간 사람 + 남은 사람); `disbandOwnedPlanGroup`·`leavePlanGroupMember`가 `syncPaidVoiceRetention` 공유, 독립 유료 멤버도 동기화 대상은 유지 | — | — |
 | 즉시 해지 중 새 유료 권한의 보관 정책 | `billing-mutation.ts` → `syncPaidVoiceRetention`(남은 유료 권한이면 기존 유예 삭제·응답 기한 null) | 기존 응답 소비 | 기존 응답 소비 |
 | 구매 차단 판정 — 앱 | `store_renewal_providers`(최상위·만료 무시·접지 않음) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.purchaseBlockReason`(순수 함수) |
 | 결제 직전 권위 조회 | `GET /billing/subscription?refresh_store=1`(옵트인) | `crossStoreRenewalBlocked` (`MainViewModelBillingActions`) | `BillingPanel.confirmAndPurchase` |
 | 결제 앵커(`last_paid_at`) | 애플 `purchaseDate` · 구글 `googlePaymentAnchor`(Orders API) — 확정·RTDN·재조회·선물 모두 실제 결제일 사용 | — | — |
+| 영구 탈퇴 시 Apple 선물 연결 파기 | `lib/account-deletion.ts` `purgeUserAccount`(즉시 삭제·유예 파기 공통); 증빙은 `pseudonymizeBillingForRetention` → `index.ts` 보존 기한 정리 | 기존 탈퇴 API 사용 | 기존 탈퇴 API 사용 |
 | 구매 차단 — 빠른 거절(권위 아님) | `routes/billing-apple.ts` 선행 검사 | — | — |
 | 경쟁 애플 갱신 상태 최신화 | `refreshCompetingAppleRenewalState` → `reconcileStoreSubscription`; Google 확정·RTDN entitle에서 사용. 결제 전 조회는 `reconcileBillingPreflight` | — | — |
 | 로그아웃 중 환불 큐 | — | — | `PendingRevokedTransactionStore` · `flushPendingRevocations` |

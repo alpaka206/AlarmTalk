@@ -132,12 +132,12 @@ describe('sendApnsNotifications', () => {
 
 describe('isDeadApnsToken', () => {
   // 애플이 "이 토큰은 죽었다" 고 명시한 것만 지운다.
-  it.each(['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic'])('%s → 지운다', (reason) => {
+  it.each(['Unregistered'])('%s → 지운다', (reason) => {
     expect(isDeadApnsToken(reason)).toBe(true);
   });
 
   // ⚠ 네트워크 오류로 지우면 그 기기는 재로그인 전까지 푸시를 영영 못 받는다.
-  it.each(['NetworkError', 'TooManyRequests', 'InternalServerError', undefined, 'HTTP_503'])(
+  it.each(['BadDeviceToken', 'DeviceTokenNotForTopic', 'NetworkError', 'TooManyRequests', 'InternalServerError', undefined, 'HTTP_503'])(
     '%s → 지우지 않는다',
     (reason) => {
       expect(isDeadApnsToken(reason)).toBe(false);

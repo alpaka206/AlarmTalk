@@ -103,11 +103,21 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 발급한 경우에는 그 조회가 실제 적용한 토큰으로 실패 안내를 계속한다. 외부 세션/토큰 교체와는 구분한다.
 취소된 요청 또는 요청 중 세션/토큰이 바뀐 경우에도 복구 상태와 푸시 훅을 적용하지 않는다.
 
+## Apple 서명 키 교체
+
+서버의 Apple JWKS 캐시에 토큰의 `kid`가 없으면 10분 캐시 유효기간과 별개로 재조회하되,
+**키 ID·IP와 무관한 isolate 공통 30초 조회 간격**을 지킨다. 첫 조회·실패한 조회도 간격에
+포함하여 콜드 캐시에서 연속 두 번 조회하거나 임의 kid를 바꾸어 제한을 우회할 수 없게 한다.
+겹친 조회는 공유한다. 간격 제한 중 새 kid는 거절하며, 간격이 지나면 다음 요청에서 다시
+조회할 수 있다. 실패로 기존 정상 캐시를 덮지 않으며 아직 유효한 기존 키는 계속 검증한다.
+재조회에도 키가 없거나 조회·서명·issuer/audience/nonce 검증이 실패하면 거절한다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | TTL 365일 | `lib/jwt.ts` `DEFAULT_TTL_SECONDS` | — | — |
+| Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로 | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |

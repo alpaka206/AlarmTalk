@@ -2844,6 +2844,34 @@ export const migrations: Migration[] = [
         END`,
     ],
   },
+  {
+    id: 117,
+    name: 'apple-gift-delivery-refunds',
+    atomic: true,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS apple_gift_deliveries (
+        transaction_id TEXT PRIMARY KEY,
+        voucher_id TEXT UNIQUE REFERENCES voucher_codes(id) ON DELETE SET NULL,
+        revoked_at TEXT
+      )`,
+      // 기존 선물은 양방향 유일 매칭만 복구한다. 이름/시각이 비슷하다는 이유로 추측하지 않는다.
+      `INSERT OR IGNORE INTO apple_gift_deliveries (transaction_id, voucher_id)
+        SELECT st.provider_transaction_id, v.id
+        FROM store_transactions st
+        JOIN plans p ON p.key = st.plan_key
+        JOIN voucher_codes v ON v.issuer_user_id = st.user_id AND v.plan_id = p.id
+          AND v.issued_at = st.last_paid_at AND v.issuer_subscription_id IS NULL
+        WHERE st.provider = 'apple' AND st.product_id = 'com.alarmtalk.app.personal_gift_1m'
+          AND st.subscription_id IS NULL
+          AND (SELECT COUNT(*) FROM voucher_codes candidate
+            WHERE candidate.issuer_user_id = st.user_id AND candidate.plan_id = p.id
+              AND candidate.issued_at = st.last_paid_at AND candidate.issuer_subscription_id IS NULL) = 1
+          AND (SELECT COUNT(*) FROM store_transactions receipt
+            WHERE receipt.provider = 'apple' AND receipt.product_id = st.product_id
+              AND receipt.user_id = st.user_id AND receipt.plan_key = st.plan_key
+              AND receipt.last_paid_at = st.last_paid_at AND receipt.subscription_id IS NULL) = 1`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

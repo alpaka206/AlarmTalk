@@ -41,23 +41,46 @@ interface AppleJwk {
 // ⚠ 캐시는 **성공한 조회만** 담는다. 실패를 캐시하면 애플의 일시적 5xx 가 TTL 동안
 // 모든 로그인을 막는다.
 let jwksCache: { keys: AppleJwk[]; fetchedAt: number } | null = null;
+let jwksRequest: Promise<AppleJwk[]> | null = null;
 const JWKS_TTL_MS = 10 * 60 * 1000;
+const JWKS_REFRESH_COOLDOWN_MS = 30 * 1000;
+let jwksRefreshAllowedAt = 0;
 
 export function __resetAppleJwksCacheForTests(): void {
   jwksCache = null;
+  jwksRefreshAllowedAt = 0;
 }
 
-async function fetchAppleJwks(fetchImpl: typeof fetch): Promise<AppleJwk[]> {
+async function fetchAppleJwks(fetchImpl: typeof fetch, force = false): Promise<AppleJwk[]> {
   const now = Date.now();
-  if (jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
+  if (!force && jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
     return jwksCache.keys;
   }
-  const res = await fetchImpl(APPLE_JWKS_URL);
-  if (!res.ok) throw new Error('Apple JWKS fetch failed');
-  const body = (await res.json()) as { keys?: AppleJwk[] };
-  if (!body.keys || body.keys.length === 0) throw new Error('Apple JWKS is empty');
-  jwksCache = { keys: body.keys, fetchedAt: now };
-  return body.keys;
+  if (jwksRequest) return jwksRequest;
+  // kid는 서명 검증 전의 외부 입력이다. kid별 제한은 값을 바꾸면 우회되므로 isolate가
+  // 공유하는 조회 간격을 둔다. 콜드 조회/실패도 포함하고 유효한 기존 키는 계속 사용한다.
+  if (now < jwksRefreshAllowedAt) {
+    if (jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys;
+    throw new Error('Apple JWKS refresh is cooling down');
+  }
+  jwksRefreshAllowedAt = now + JWKS_REFRESH_COOLDOWN_MS;
+  const request = (async () => {
+    const res = await fetchImpl(APPLE_JWKS_URL);
+    if (!res.ok) throw new Error('Apple JWKS fetch failed');
+    const body = (await res.json()) as { keys?: AppleJwk[] };
+    if (!body.keys || body.keys.length === 0) throw new Error('Apple JWKS is empty');
+    jwksCache = { keys: body.keys, fetchedAt: Date.now() };
+    return body.keys;
+  })();
+  jwksRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (jwksRequest === request) {
+      jwksRequest = null;
+      jwksRefreshAllowedAt = Date.now() + JWKS_REFRESH_COOLDOWN_MS;
+    }
+  }
 }
 
 function base64UrlDecode(s: string): Uint8Array {
@@ -115,7 +138,12 @@ export async function verifyAppleIdToken(
   if (!header.kid) throw new Error('Apple token has no key id');
 
   const keys = await fetchAppleJwks(fetchImpl);
-  const jwk = keys.find((k) => k.kid === header.kid);
+  let jwk = keys.find((k) => k.kid === header.kid);
+  if (!jwk) {
+    // 10분 TTL과 별개로 재조회하되, 공통 간격 제한 안에서는 캐시로 거절한다.
+    const refreshed = await fetchAppleJwks(fetchImpl, true);
+    jwk = refreshed.find((k) => k.kid === header.kid);
+  }
   if (!jwk) throw new Error('Apple signing key not found');
 
   const key = await crypto.subtle.importKey(

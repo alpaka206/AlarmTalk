@@ -33,6 +33,7 @@ import {
   fetchAppleSubscriptionStatus,
   APPLE_SUBSCRIPTION_STATUS,
   AppleTransactionNotFoundError,
+  type AppleTransactionInfo,
 } from '../lib/apple-storekit';
 import { resolveUserPk } from './billing-helpers';
 import { issueVoucherCode } from '../lib/voucher-issue';
@@ -121,6 +122,13 @@ billingApple.post('/apple/confirm', async (c) => {
   //   애플이 확인해 준 사실이고(`fetchAppleTransaction` 이 검증한다), 그 구독은 누가
   //   알려 주든 끊기는 것이 맞다.
   if (info.revocationDate) {
+    if (isAppleGiftProductId(info.productId)) {
+      const settled = await revokeRefundedAppleGift(db0, info, planKey);
+      if (!settled) {
+        return c.json({ error: 'Gift mapping requires reconciliation', error_code: 'APPLE_VERIFICATION_FAILED' }, 502);
+      }
+      return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
+    }
     // ⚠ **체인이 아직 살아 있으면 손대지 않는다**(코덱스 #733 2차). 자동갱신 구독은
     //   갱신마다 트랜잭션이 새로 나지만 `originalTransactionId` 는 **체인 전체가 공유**한다.
     //   그래서 옛 갱신 한 건이 뒤늦게 환불되면, 아래 조회가 그 id 로 **지금 살아 있는
@@ -231,14 +239,22 @@ billingApple.post('/apple/confirm', async (c) => {
       issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
     );
     const gift = await withWriteTransaction(db0, async (txDb) => {
+      const state = await txDb.execute({
+        sql: 'SELECT revoked_at FROM apple_gift_deliveries WHERE transaction_id = ?',
+        args: [info.transactionId],
+      });
+      if (state.rows[0]?.revoked_at) return 'revoked' as const;
       // ⚠ **같은 결제로 두 번 발급하지 않는다.** 스토어는 같은 트랜잭션을 재전송할 수
       // 있고(네트워크 재시도·복원), 멱등하지 않으면 코드가 여러 장 나온다.
       const seen = await txDb.execute({
-        sql: `SELECT id FROM store_transactions
+        sql: `SELECT id, user_id FROM store_transactions
               WHERE provider = 'apple' AND provider_transaction_id = ? LIMIT 1`,
         args: [info.transactionId],
       });
-      if (seen.rows.length > 0) return null;
+      if (seen.rows.length > 0) {
+        if (seen.rows[0]!.user_id !== userPk) return 'owned' as const;
+        return null;
+      }
       await txDb.execute({
         // ⚠ **`plan_key` 를 빠뜨리지 말 것.** 마이그레이션 42 가 `TEXT NOT NULL`(기본값
         // 없음)로 만든 컬럼이라, 빠지면 INSERT 가 거절되고 **트랜잭션이 통째로 롤백**된다 —
@@ -256,7 +272,7 @@ billingApple.post('/apple/confirm', async (c) => {
           issuedAt.toISOString(),
         ],
       });
-      return issueVoucherCode(txDb, {
+      const voucher = await issueVoucherCode(txDb, {
         kind: 'gift',
         planId: giftPlan.id,
         issuerUserId: userPk,
@@ -265,7 +281,18 @@ billingApple.post('/apple/confirm', async (c) => {
         expiresAt: voucherExpiresAt.toISOString(),
         maxUses: 1,
       });
+      await txDb.execute({
+        sql: 'INSERT INTO apple_gift_deliveries (transaction_id, voucher_id) VALUES (?, ?)',
+        args: [info.transactionId, voucher.id],
+      });
+      return voucher;
     });
+    if (gift === 'revoked') {
+      return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
+    }
+    if (gift === 'owned') {
+      return c.json({ error: 'Transaction belongs to another user', error_code: 'TRANSACTION_OWNED_BY_OTHER_USER' }, 409);
+    }
     // ⚠ **성공 필드는 `success` 다 — `ok` 가 아니다.** 아래 구독 갈래도, 클라의
     // `ConfirmAppleSubscriptionResponse` 도 `success` 만 읽는다(없으면 `false` 로 떨어진다).
     // 그래서 선물은 **발급에 성공해도 클라에서는 실패**로 보였다(2026-08-18 Codex #697 P1).
@@ -425,6 +452,73 @@ async function appleChainStatus(
   }
 }
 
+/** 실제 결제→코드 연결만 회수한다. 환불이 발급을 앞질러도 재발급 금지 표식을 남긴다. */
+async function revokeRefundedAppleGift(
+  db: ReturnType<typeof getDB>, info: AppleTransactionInfo, planKey: string,
+): Promise<boolean> {
+  return withWriteTransaction(db, async (tx) => {
+    const transactionId = info.transactionId;
+    const mapping = await tx.execute({
+      sql: 'SELECT voucher_id FROM apple_gift_deliveries WHERE transaction_id = ?',
+      args: [transactionId],
+    });
+    const receipt = await tx.execute({
+      sql: "SELECT id FROM store_transactions WHERE provider = 'apple' AND provider_transaction_id = ?",
+      args: [transactionId],
+    });
+    // 연결을 복구하지 못한 옛 결제는 임의의 다른 코드를 만료시키지 않는다.
+    if (mapping.rows.length === 0 && receipt.rows.length > 0) return false;
+    const voucherId = mapping.rows[0]?.voucher_id;
+    if (receipt.rows.length === 0) {
+      // 발급 전 환불도 원장에 구매자를 남겨야 계정 파기/5년 보존 경로가 찾을 수 있다.
+      // 요청자는 제보자일 뿐이다. 기존 코드 또는 Apple이 검증한 계정 연결만 사용한다.
+      const accountToken = info.appAccountToken?.trim().toLowerCase() ?? '';
+      const purchaser = await tx.execute(typeof voucherId === 'string' ? {
+        sql: `SELECT u.id FROM users u JOIN voucher_codes v ON v.issuer_user_id = u.id
+              WHERE v.id = ?`,
+        args: [voucherId],
+      } : {
+        sql: `SELECT id FROM users WHERE ? <> '' AND (lower(id) = ? OR lower(google_id) = ?) LIMIT 2`,
+        args: [accountToken, accountToken, accountToken],
+      });
+      if (purchaser.rows.length !== 1) {
+        if (purchaser.rows.length > 1 || typeof voucherId === 'string') return false;
+        // 이미 탈퇴했거나 최초 청구에 필요한 계정 연결이 없다. 발급할 대상이 없는데
+        // 표식만 재생성하면 다시 무기한 고아가 된다. 기존 무연결 표식도 함께 정리한다.
+        await tx.execute({
+          sql: 'DELETE FROM apple_gift_deliveries WHERE transaction_id = ? AND voucher_id IS NULL',
+          args: [transactionId],
+        });
+        return true;
+      }
+      await tx.execute({
+        sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, raw_payload, last_paid_at)
+              VALUES (?, ?, 'apple', ?, ?, ?, ?, ?)`,
+        args: [
+          crypto.randomUUID(), String(purchaser.rows[0]!.id), transactionId, info.productId,
+          planKey, JSON.stringify({ kind: 'gift', refunded: true, environment: info.environment ?? null }),
+          new Date(info.purchaseDate).toISOString(),
+        ],
+      });
+    }
+    await tx.execute({
+      sql: `INSERT INTO apple_gift_deliveries (transaction_id, revoked_at) VALUES (?, ?)
+        ON CONFLICT(transaction_id) DO UPDATE SET
+          revoked_at = COALESCE(apple_gift_deliveries.revoked_at, excluded.revoked_at)`,
+      args: [transactionId, new Date(info.revocationDate!).toISOString()],
+    });
+    if (typeof voucherId === 'string') {
+      await tx.execute({
+        sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ? AND status = 'issued'
+          AND NOT EXISTS (SELECT 1 FROM voucher_redemptions WHERE voucher_id = voucher_codes.id)`,
+        args: [voucherId],
+      });
+    }
+    return true;
+  });
+}
+
 async function readRefundedMapping(
   db: DbExecutor,
   info: { originalTransactionId: string; transactionId: string },
@@ -451,11 +545,7 @@ async function readRefundedMapping(
  * 한 건만 취소하고, 목소리는 지우지 않고 보관 유예를 건다(재구독하면 entitle 경로가
  * 유예를 푼다). 강등되는 당사자와 해체된 그룹 멤버에게 알린다.
  *
- * ⚠ **조회 키가 둘이다.** 구독은 `originalTransactionId`(갱신마다 바뀌지 않는다), 선물은
- * `transactionId` 로 기록된다. 한쪽만 보면 못 찾는다.
- *
- * 선물(소모성)은 여기서 아무것도 하지 않는다 — 바우처는 `subscription_id` 가 없어 아래
- * JOIN 에 걸리지 않는다. 이미 등록된 코드를 되돌리는 것은 별개 문제라 여기서 다루지 않는다.
+ * 구독만 처리한다. 선물은 체인 조회 전에 `revokeRefundedAppleGift`로 분기한다.
  */
 async function revokeRefundedAppleSubscription(
   db: ReturnType<typeof getDB>,

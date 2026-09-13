@@ -110,7 +110,11 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         var failed = 0
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
-        for record in candidates {
+        for candidate in candidates {
+            // 편집기에서 교체 중인 행 또는 대기 사이 삭제된 행은 전송하지 않는다.
+            guard !store.isServerSyncDeferred(id: candidate.id),
+                  let record = store.record(id: candidate.id),
+                  record.originEnum == .localOwned, record.syncStateEnum != .synced else { continue }
             // 토큰은 **건마다 다시 읽는다.** 회차 시작에 한 번만 읽으면, 건이 여러 개일 때
             // 중간에 rolling refresh 로 토큰이 갱신돼도 뒤쪽 건이 옛 토큰으로 나가
             // 만료 직전이었다면 401 로 떨어진다.
