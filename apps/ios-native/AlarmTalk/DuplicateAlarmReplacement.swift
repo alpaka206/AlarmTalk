@@ -4,8 +4,9 @@ import Foundation
 @MainActor
 func removeReplacementConflicts<Conflict>(
     _ conflicts: [Conflict],
-    deleteRemote: (Conflict) async -> Bool,
-    deleteLocal: (Conflict) async -> Bool
+    // 함수뿐 아니라 콜백도 같은 actor에 묶어야 Conflict를 격리 밖으로 보내지 않는다.
+    deleteRemote: @MainActor (Conflict) async -> Bool,
+    deleteLocal: @MainActor (Conflict) async -> Bool
 ) async -> Bool {
     for conflict in conflicts {
         guard !Task.isCancelled, await deleteRemote(conflict) else { return false }
@@ -35,7 +36,7 @@ func rollbackAlarmReplacement(
     staged: LocalAlarmRecord,
     previous: LocalAlarmRecord?,
     store: LocalAlarmStore,
-    cancelScheduled: (LocalAlarmRecord) async -> Bool
+    cancelScheduled: @MainActor (LocalAlarmRecord) async -> Bool
 ) async {
     if let current = store.record(id: staged.id), !sameStagedEdit(current, staged),
        current.alarmKitID == staged.alarmKitID {

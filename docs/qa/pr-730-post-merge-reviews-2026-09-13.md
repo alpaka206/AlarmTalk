@@ -410,6 +410,29 @@ P1 5건·P2 1건이다. #736에서 고친 결제 409 반환·Android 페이지 �
 예약/취소·콜드 푸시 수신/ACK 확인과 기존 무연결 환불 표식의 운영 재검증은 남아 있다.
 운영 데이터·배포·마이그레이션 fingerprint는 변경하지 않았다.
 
+## #737 CI 실패 복구 — 콜백의 MainActor 누락
+
+사용자가 CI의 반복 실패 원인 확인/복구를 요청해 기존 실행 로그를 확인하고 iOS 검증을
+실행했다. 일반 리뷰 수정 단계에서 검사를 자동 실행하지 않는 규칙은 유지한다.
+
+실패한 [iOS 실행 34762672468](https://github.com/alpaka206/AlarmTalk/actions/runs/34762672468)은
+`7ea84109`의 `DuplicateAlarmReplacement.swift`에서 `sending 'conflict' risks causing data races`
+두 건으로 컴파일이 중단됐다. 테스트는 시작하지 못했고 Release 단계도 실행되지 않았다.
+`removeReplacementConflicts` 함수에만 `@MainActor`가 있고 `deleteRemote`/`deleteLocal`
+콜백 타입에는 없어, generic `Conflict`를 격리 밖으로 보내는 호출로 해석된 것이다.
+콜백 두 개와 같은 파일의 롤백 취소 콜백에도 `@MainActor`를 명시했다. Swift 동시성 검사나
+테스트를 끄거나 CI 설정을 완화하지 않았다.
+
+같은 워크플로의 직전 develop 실행과 직전 9회 iOS 실행은 성공했다. 확인한 이전 실패
+`34696615869`는 `BillingPreflightTests`의 상태 값 비교 실패로, 이번 컴파일 오류와 원인이
+다르다. 이번 HEAD의 CI 워크플로(백엔드/shared/voice·lint)는 이미 성공했다.
+
+- 로컬 Xcode 26.6, iPhone 17/iOS 26.5 시뮬레이터, CI와 같은 한국어·ad-hoc 서명 옵션:
+  전체 `AlarmTalkTests` 성공. xcresult 요약 기준 811 통과, 9 스킵, 0 실패.
+- 같은 Xcode의 generic iOS 대상 Release 빌드 성공(서명 없이 CI와 같은 옵션).
+- 수정 HEAD의 원격 상태는 [#737 체크](https://github.com/alpaka206/AlarmTalk/pull/737/checks)에서 확인한다.
+- 실기기의 AlarmKit 울림·예약/취소 및 실제 푸시 전달은 자동 테스트의 검증 범위 밖이다.
+
 ## 릴리스 단계에서 남은 확인
 
 - 향후 실행 요청 시 수정 HEAD의 네이티브 CI 확인(백엔드 로컬 실행 결과는 위 절 참조).
