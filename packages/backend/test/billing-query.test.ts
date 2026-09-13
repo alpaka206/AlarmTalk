@@ -188,14 +188,15 @@ describe('GET /billing/subscription (billingQuery)', () => {
     expect(body.plan).toBeNull();
   });
 
-  it('SQL 에 LIMIT 1 + ORDER BY starts_at DESC (최신 구독만)', async () => {
+  it('시작일 순 후보 전체를 읽어 공통 권한 선택기에 넘긴다', async () => {
     mockDB.pushResult([]);
 
     await buildApp().request(jsonReq('GET', '/billing/subscription'));
 
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('ORDER BY s.starts_at DESC');
-    expect(sql).toContain('LIMIT 1');
+    expect(sql).not.toContain('LIMIT 1');
+    expect(sql).toContain('s.entitlement_state');
   });
 
   it('SQL 에 active 상태 + 만료되지 않은 조건 포함', async () => {
@@ -218,6 +219,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -288,6 +290,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-hold',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -315,6 +318,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -323,6 +327,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
       },
       {
         sub_id: 'sub-2',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -360,6 +365,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -388,6 +394,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -406,6 +413,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -431,6 +439,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -456,6 +465,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -464,6 +474,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
       },
       {
         sub_id: 'sub-2',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -495,6 +506,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -513,6 +525,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -535,6 +548,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-1',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_PLUS_ID,
         plan_group_id: null,
@@ -560,6 +574,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
     mockDB.pushResult([
       {
         sub_id: 'sub-fam',
+        entitlement_state: 'entitled',
         user_id: 'user-pk-1',
         plan_id: PLAN_FAMILY_ID,
         plan_group_id: 'group-1',

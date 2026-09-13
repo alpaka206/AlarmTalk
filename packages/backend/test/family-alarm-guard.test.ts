@@ -109,6 +109,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await db.execute({ sql: "UPDATE users SET plan = 'family' WHERE id = ?", args: [SENDER.pk] });
   await db.execute('DELETE FROM alarms');
   await db.execute('DELETE FROM pending_external_deletions');
   await db.execute('DELETE FROM generated_audio_assets');
@@ -123,6 +124,30 @@ afterEach(() => {
 });
 
 describe('가족 알람 멱등 재전송 — message 행 누적 방지(항목 D)', () => {
+  it('보류로 무료가 된 발신자는 기존 업로드로 생성·재전송하지 못하고 복구 뒤에는 보낸다', async () => {
+    expect((await postJson('/family-alarm/alarms/voice', voiceBody())).status).toBe(201);
+    const beforeAlarms = (await db.execute('SELECT * FROM alarms')).rows;
+    const beforeMessages = (
+      await db.execute({ sql: 'SELECT * FROM messages WHERE user_id=?', args: [RECIPIENT.pk] })
+    ).rows;
+    await db.execute({ sql: "UPDATE users SET plan='free' WHERE id=?", args: [SENDER.pk] });
+    for (const wakeAt of ['23:00', '22:00']) {
+      const response = await postJson('/family-alarm/alarms/voice', voiceBody({ wake_at: wakeAt }));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN' });
+      expect((await db.execute('SELECT * FROM alarms')).rows).toEqual(beforeAlarms);
+      expect(
+        (await db.execute({ sql: 'SELECT * FROM messages WHERE user_id=?', args: [RECIPIENT.pk] })).rows,
+      ).toEqual(beforeMessages);
+    }
+    expect(
+      await countRows('SELECT COUNT(*) AS cnt FROM plan_group_members WHERE plan_group_id=?', [GROUP_ID]),
+    ).toBe(2);
+    // 별도 개인 유료권이 있는 멤버도 발신자 권한을 충족한다.
+    await db.execute({ sql: "UPDATE users SET plan='plus' WHERE id=?", args: [SENDER.pk] });
+    expect((await postJson('/family-alarm/alarms/voice', voiceBody())).status).toBe(201);
+  });
+
   it('voice 재전송 2회: family-voice 메시지도 1행 유지', async () => {
     const res1 = await postJson('/family-alarm/alarms/voice', voiceBody({ label: '첫번째 응원' }));
     expect(res1.status).toBe(201);
@@ -186,4 +211,3 @@ describe('가족 알람 timezone 저장 — 검증에 쓴 효과 시간대와 �
     expect(String(row.rows[0]!.timezone)).toBe('America/New_York');
   });
 });
-

@@ -573,9 +573,9 @@ async function syncUserPlanAfterCancel(
   }
 }
 
-function strongestPaidSubscription(
-  subscriptions: ActiveSubscription[],
-): ActiveSubscription | undefined {
+export function strongestPaidSubscription<
+  T extends Pick<ActiveSubscription, 'planType' | 'entitlementState'>,
+>(subscriptions: T[]): T | undefined {
   // 시작일은 같은 등급 안에서만 의미가 있다. 새 개인 구독이 공유 권한을 덮으면 안 된다.
   const entitled = subscriptions.filter((s) => s.entitlementState === 'entitled');
   return (

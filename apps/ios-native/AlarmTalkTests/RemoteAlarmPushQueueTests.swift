@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class RemoteAlarmPushQueueTests: XCTestCase {
+    func test_singlePushPreservesOtherOwnersRowWithoutSendingIt() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PushQueueURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("single-owner-\(UUID()).json")
+        defer { session.invalidateAndCancel(); try? FileManager.default.removeItem(at: url) }
+        // 해당 host에는 응답 픽스처가 없다. 잘못 전송하면 즉시 실패하며 행/상태에 흔적이 남는다.
+        let api = AlarmTalkAPI(baseURL: URL(string: "https://unregistered.push-queue.example.test/api/")!, session: session)
+        let store = LocalAlarmStore(storageURL: url, loadFromDisk: false)
+        var row = LocalAlarmRecord(id: "other", label: "A", hour: 8, minute: 0, fireAtMillis: 1)
+        row.ownerUserId = "A"
+        let original = store.upsert(row)
+        let model = RemoteAlarmSyncViewModel(api: api)
+        await model.push(record: original, store: store,
+                         session: AuthSession(token: "token-B", user: AuthUser(id: "B", email: "b@example.test")))
+        XCTAssertEqual(store.record(id: original.id), original)
+        XCTAssertNil(model.statusMessage)
+    }
+
     func test_foregroundPushRunsAfterBackgroundPassIsCancelled() async throws {
         try await assertQueuedPush(cancelFirst: true)
     }
@@ -205,7 +224,7 @@ private final class PushQueueURLProtocol: URLProtocol, @unchecked Sendable {
         let fixture = request.url?.host.flatMap { Self.fixtures[$0] }
         Self.lock.unlock()
         guard let fixture else {
-            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return
         }
         fixture.receive(self)

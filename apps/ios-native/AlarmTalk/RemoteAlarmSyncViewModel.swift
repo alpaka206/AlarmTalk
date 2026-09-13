@@ -21,6 +21,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     private let syncGate = AsyncSerialGate()
 
     private let api: AlarmTalkAPI
+    private weak var auth: AuthViewModel?
     private var pull: RemoteAlarmPullSync?
     private var push: RemoteAlarmPushSync?
 
@@ -39,6 +40,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             try await RemoteAlarmPullSync.requireLoadedStore($0)
         }
     ) {
+        self.auth = auth
         if pull == nil {
             pull = RemoteAlarmPullSync(
                 api: api,
@@ -84,7 +86,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// 응답 커밋은 일괄 push와 같은 스냅샷 비교·디스크 저장 경계를 사용한다.
     func push(record: LocalAlarmRecord, store: LocalAlarmStore, session: AuthSession?) async {
         guard !store.isServerSyncDeferred(id: record.id) else { return }
-        guard let token = session?.token else {
+        guard let requestedOwner = session?.user.id else {
             statusMessage = "로그인이 필요해요."
             return
         }
@@ -93,9 +95,10 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         await syncGate.acquire()
         defer { syncGate.release() }
         guard !Task.isCancelled else { return }
-        guard !store.isServerSyncDeferred(id: record.id),
-              let record = store.record(id: record.id),
-              record.originEnum == .localOwned else { return }
+        let currentSession = if let auth { auth.session } else { session }
+        guard let currentSession, currentSession.user.id == requestedOwner,
+              let record = store.outboundSyncRecord(id: record.id, ownerUserID: requestedOwner) else { return }
+        let token = currentSession.token
         busyOperations += 1
         defer { busyOperations -= 1 }
 
@@ -114,7 +117,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 lastSyncedAtMillis: nowMillis
             ) else { throw RemoteAlarmPushSync.PushError.localCommitFailed }
             try Task.checkCancellation()
-            await refresh(session: session, force: true)
+            await refresh(session: currentSession, force: true)
         } catch {
             guard !isCancellation(error) else { return }
             store.markSyncFailed(id: record.id)

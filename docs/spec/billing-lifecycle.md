@@ -125,6 +125,11 @@ DB 만료만 보고 무료로 내리지 않는다. 평상시 조회에는 외부
   기존 DB에는 보류 근거가 저장되지 않았으므로 마이그레이션 118은 기존 스토어 연결 활성 구독과
   그 그룹 멤버를 unverified로 둔다. 현재 users.plan을 추측으로 바꾸지 않으며, 다음 스토어
   정합화가 상태를 확정한다. 그 전의 권한 재계산에서는 미확인 행으로 유료 권한을 새로 부여하지 않는다.
+- **조회·초대도 같은 권한 상태를 따른다.** 구독 응답은 만료되지 않은 entitled 행 중
+  가장 높은 등급을 선택하고, 같은 등급 안에서 시작일을 비교한다. 보류·미확인 행도 갱신
+  스토어 판정에는 남겨 이중 결제를 막는다. 초대 코드 발급·재발급·사용은 발급 근거 구독이
+  entitled일 때만 허용한다. 보류·미확인으로 사용을 거절할 때는 코드와 사용 횟수를 보존해
+  복구 뒤 같은 초대를 사용할 수 있게 한다.
 - ⚠ **바뀐 사람에게만 알린다.** 자기 결제가 따로 있어 등급이 안 바뀐 멤버에게
   "결제가 실패했어요" 를 보내면 자기 카드에 문제가 생긴 줄 안다.
 - ⚠ **복구도 같이 구현한다.** 보류만 넣고 복구를 빠뜨리면 멤버가 **영영 무료로 남아**
@@ -673,6 +678,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | 해지 — Play 성공 후에만 DB 변경 | `routes/billing-mutation.ts` `POST /cancel` | `MainViewModelBillingActions.cancelSubscription` | — |
+| 유효 구독 표시와 등급 재계산 일치 | `billing-query.ts`·`billing-cancel.ts`의 `strongestPaidSubscription` | 기존 구독 응답 소비 | 기존 구독 응답 소비 |
+| 보류·미확인 그룹의 신규 초대 금지 | `voucher-redemption.ts`의 발급 근거 조회·`billing-mutation.ts`의 `loadActiveFamilyOwnerContext` | 기존 코드 API 사용 | 기존 코드 API 사용 |
 | 해지 — 애플은 거절 | 같은 파일, `STORE_CANCEL_UNSUPPORTED` | `STORE_MANAGE_REQUIRED_CODES` | `SocialFeatureViewModel.cancelSubscription` → `BillingPanel.openAppStoreSubscriptionManagement` |
 | 해지 — **어느 스토어를 거치나** | `storeCancelProviderOf`(`lib/billing-cancel.ts`) → `GET /billing/subscription` 의 `store_provider` | 에러 코드로 판단(`STORE_MANAGE_REQUIRED_CODES`) | `BillingSubscription.storeProvider`(로컬 StoreKit 금지) |
 | 다른 스토어가 갱신 중일 때 구매 차단 | `applyStoreEntitlement` 의 `findCrossStoreRenewalProvider`(권위·트랜잭션 안) | 에러 문구 (`ApiErrorMessages`) | `BillingPanel.purchaseBlockReason` + 서버 409 |

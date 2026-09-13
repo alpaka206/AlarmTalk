@@ -4,6 +4,7 @@ import type { Client } from '@libsql/client/web';
 import type { AppEnv } from '../types';
 import { callerOwnerIds } from '../lib/caller-ids';
 import { getDB } from '../lib/db';
+import { isPaidVoicePlan } from './billing-helpers';
 import { resolveUserPk, assertSameGroup } from '../lib/family-helpers';
 import {
   familyAlarmSettingsFromRow,
@@ -262,6 +263,11 @@ familyAlarm.post('/alarms/voice', async (c) => {
   // 교체된 이전 message 정리, 다른 발신자의 같은 시각 발신 알람은 비활성화. 수신자 본인
   // 알람은 건드리지 않는다. timezone 은 검증에 쓴 효과 시간대를 그대로 저장한다.
   const alarmId = await withWriteTransaction(db, async (tx) => {
+    const senderPlan = await tx.execute({
+      sql: 'SELECT plan FROM users WHERE id = ?',
+      args: [senderPk],
+    });
+    if (!isPaidVoicePlan(senderPlan.rows[0]?.plan)) return null;
     await tx.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
             VALUES (?, ?, ?, ?, ?, 'family-voice')`,
@@ -311,6 +317,16 @@ familyAlarm.post('/alarms/voice', async (c) => {
     }
     return claimed.alarmId;
   });
+
+  if (!alarmId) {
+    return c.json(
+      {
+        error: 'Voice alarms require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
 
   // 수신자 push 는 반드시 커밋 후에 실행한다 — 롤백될 수 있는 알람을 미리 알리지 않는다.
   notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);

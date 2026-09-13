@@ -116,6 +116,11 @@
 
 `ownerUserId == null || ownerUserId == 현재 계정` 인 것만 보이고, 그것만 다시 건다.
 
+**서버 전송은 현재 계정 소유 행만 허용한다.** 일괄·단건 전송 모두 후보 선택과 실제 요청
+직전에 같은 소유자 규칙을 확인한다. 소유자 미기록 로컬 행은 저장소 로드 완료 후,
+다른 계정의 자동 만료 표시나 미완료 로그아웃이 없을 때만 현재 계정에 귀속해 디스크에
+남긴 뒤 전송한다. 귀속이 불확실한 행과 다른 계정의 행은 보존하고 전송을 미룬다.
+
 로컬 저장소의 첫 로드가 끝나기 전 빈 배열은 **실제 빈 목록이 아니다.** 알람 화면은 이때
 "알람이 없어요"를 그리지 않고 로드 완료를 기다린다. 네트워크를 기다리는 규칙이 아니라
 Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
@@ -296,6 +301,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
+| 1-2 서버 전송 소유자 필터·레거시 귀속 | — | `AlarmRepository.settlePendingAlarmOwnership` → `AlarmSyncService.isOutboundSyncCandidate` | 일괄·단건 push → `LocalAlarmStore.isOutboundSyncCandidate`·`outboundSyncRecord` |
 | 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
 | 1-3 로드 전 취소 재처리 보류 | — | — | `AlarmKitViewModel.retryPendingCancellations` 진입 가드(pull 실패 후 정리 포함) |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` · `AlarmScheduleReconciler.reconcile(…ownerUserId:)` · `WeatherVariantRefreshService.refreshDue(token:ownerUserId:)` |

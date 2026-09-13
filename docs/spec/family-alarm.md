@@ -6,6 +6,10 @@
 
 가족 알람은 **한 번 보내고 손을 뗀다.**
 
+음성 업로드로 보내는 가족 알람도 발신자의 서버 유료 권한이 필요하다. 결제 보류로 그룹
+구조만 남아 있는 것은 전송 권한이 아니다. 메시지·알람을 쓰는 트랜잭션에서 발신자 plan을
+재확인하며, 무료이면 기존 업로드가 있어도 생성·재전송·푸시 없이 거절한다.
+
 | | 보낸 사람 | 받은 사람 |
 | --- | --- | --- |
 | 만들기 | 한다 | — |
@@ -441,6 +445,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
 | 보내기(로컬 행 없음) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
+| 음성 업로드 발신자의 유료 권한 | 기존 API 소비 | 기존 API 소비 | `family-alarm.ts` 쓰기 트랜잭션 → `isPaidVoicePlan` |
 | 받는 사람 고르기 | 「누구를 깨울까요?」 시트 | `WakeTargetSheet` | — |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |
 | 방해금지 판정 | — | — | `lib/family-alarm-settings.ts` `isBlockedByFamilyAlarmQuietTime` |

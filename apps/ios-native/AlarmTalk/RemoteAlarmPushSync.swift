@@ -93,7 +93,7 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         let ownerID = session.user.id
 
         let candidates = store.alarms.filter { record in
-            record.originEnum == .localOwned && record.syncStateEnum != .synced
+            LocalAlarmStore.isOutboundSyncCandidate(record, ownerUserID: ownerID)
         }
 
         var created = 0
@@ -103,10 +103,6 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
 
         for candidate in candidates {
             try Task.checkCancellation()
-            // 편집기에서 교체 중인 행 또는 대기 사이 삭제된 행은 전송하지 않는다.
-            guard !store.isServerSyncDeferred(id: candidate.id),
-                  let record = store.record(id: candidate.id),
-                  record.originEnum == .localOwned, record.syncStateEnum != .synced else { continue }
             // 토큰은 **건마다 다시 읽는다.** 회차 시작에 한 번만 읽으면, 건이 여러 개일 때
             // 중간에 rolling refresh 로 토큰이 갱신돼도 뒤쪽 건이 옛 토큰으로 나가
             // 만료 직전이었다면 401 로 떨어진다.
@@ -115,6 +111,8 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
             // 앞 계정의 알람을 **새 계정에 써 넣는다.** 주인이 달라지면 회차를 멈춘다 —
             // 남은 건은 syncState 가 그대로라 다음 회차에 새 주인 기준으로 다시 걸러진다.
             guard current.user.id == ownerID else { break }
+            // 최신 행의 소유자와 전송 보류도 건마다 확인한다.
+            guard let record = store.outboundSyncRecord(id: candidate.id, ownerUserID: ownerID) else { continue }
             let token = current.token
 
             let body = RemoteAlarmMapper.toRemoteRequest(record)
