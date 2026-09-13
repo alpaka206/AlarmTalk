@@ -55,7 +55,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 이 강등은 sync 경로(`cascadeAlarmsAfterVoiceDeletion`)라 여기서 `await schedule` 을
     /// 부를 수 없다. 그래서 신호만 세우고, 화면 계층이 `AlarmScheduleReconciler` 를 돌린다.
     /// 맞추기 전까지는 **지운 목소리가 예약에 남아 있다** — 늦추지 말 것.
-    @Published var needsScheduleReconcile = false
+    @Published private(set) var scheduleReconcileRevision: UInt64 = 0
+    @Published var needsScheduleReconcile = false {
+        didSet {
+            if needsScheduleReconcile { scheduleReconcileRevision &+= 1 }
+        }
+    }
 
     /// 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
     ///

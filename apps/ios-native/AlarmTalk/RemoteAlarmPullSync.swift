@@ -38,10 +38,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     enum PullError: LocalizedError, Equatable {
         case noSession
+        case storeNotReady
 
         var errorDescription: String? {
             switch self {
             case .noSession: return "Pull sync requires an active session."
+            case .storeNotReady: return "Local alarms are still loading."
             }
         }
     }
@@ -196,9 +198,18 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         return total
     }
 
+    /// 모든 pull 진입점이 공유하는 준비 경계. 실패하면 조회·수신·예약·ACK로 나아가지 않는다.
+    static func requireLoadedStore(_ store: LocalAlarmStore, timeout: TimeInterval = 3) async throws {
+        await store.waitUntilLoadedFromDisk(timeout: timeout)
+        try Task.checkCancellation()
+        guard store.hasLoadedFromDisk else { throw PullError.storeNotReady }
+    }
+
     /// 한 회차. **세션은 회차마다 다시 읽는다**(안드로이드 `2836ebcf`) — 미뤄 둔 회차가
     /// 앞 회차의 왕복 뒤에 도는데, 그 사이 로그아웃/계정 전환이 있었으면 옛 토큰으로 나간다.
     private func runCycle() async throws -> PullResult {
+        // launch 전용 푸시를 포함해 모든 진입점에서 디스크의 옛 목록이 새 수신을 덮지 않게 한다.
+        try await Self.requireLoadedStore(store)
         guard let session = auth.session else { throw PullError.noSession }
         let userID = session.user.id
         let token = session.token

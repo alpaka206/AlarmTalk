@@ -103,11 +103,18 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 발급한 경우에는 그 조회가 실제 적용한 토큰으로 실패 안내를 계속한다. 외부 세션/토큰 교체와는 구분한다.
 취소된 요청 또는 요청 중 세션/토큰이 바뀐 경우에도 복구 상태와 푸시 훅을 적용하지 않는다.
 
+## Apple 서명 키 교체
+
+서버의 Apple JWKS 캐시에 토큰의 `kid`가 없으면 캐시 유효기간이 남아 있어도 한 번 새로
+조회한다. 재조회에도 키가 없거나 조회·서명·issuer/audience/nonce 검증이 실패하면 거절한다.
+겹친 키 조회는 공유하고, 실패한 조회로 기존 정상 캐시를 덮지 않는다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
 | TTL 365일 | `lib/jwt.ts` `DEFAULT_TTL_SECONDS` | — | — |
+| Apple 서명 키 교체 | `lib/apple-oauth.ts` `verifyAppleIdToken`·공유 JWKS 재조회 | — | 기존 로그인 응답 소비 |
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로 | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |

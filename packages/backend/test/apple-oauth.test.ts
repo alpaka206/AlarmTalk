@@ -3,7 +3,7 @@
 // 실제 RSA 키쌍을 만들어 토큰에 서명하고, 애플 JWKS 응답만 목킹한다 —
 // 서명 검증 경로를 진짜로 태우기 위해서다. **유료 개발자 계정 없이 전부 검증된다**
 // (네이티브 로그인 플로우는 공개키 검증만 하고 .p8 비밀키를 쓰지 않는다).
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { verifyAppleIdToken, __resetAppleJwksCacheForTests } from '../src/lib/apple-oauth';
 
 const BUNDLE_ID = 'com.alarmtalk.app';
@@ -136,9 +136,40 @@ describe('verifyAppleIdToken', () => {
 
   it('JWKS 에 없는 kid 를 거부한다', async () => {
     const token = await makeToken(basePayload(), { kid: 'unknown-kid' });
-    await expect(verifyAppleIdToken(token, BUNDLE_ID, undefined, jwksFetch())).rejects.toThrow(
+    const fetcher = vi.fn(jwksFetch());
+    await expect(verifyAppleIdToken(token, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(
       /signing key not found/i,
     );
+    expect(fetcher).toHaveBeenCalledTimes(2); // 초기 조회 + 한 번 재조회, 무한 반복하지 않는다.
+  });
+
+  it('아직 유효한 캐시에 없는 새 kid는 재조회하여 검증하고 새 캐시를 재사용한다', async () => {
+    const old = await makeToken(basePayload());
+    const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
+    const fetcher = vi.fn(jwksFetch());
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    fetcher.mockImplementation(jwksFetch([{ ...jwk, kid: 'rotated-key' }]));
+    expect((await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).sub).toBe('apple-sub-001');
+    await verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('새 키 조회 실패는 거절하되 이전 정상 캐시를 망가뜨리지 않는다', async () => {
+    const old = await makeToken(basePayload());
+    const rotated = await makeToken(basePayload(), { kid: 'rotated-key' });
+    const fetcher = vi.fn(jwksFetch());
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    fetcher.mockImplementation(async () => new Response('', { status: 503 }));
+    await expect(verifyAppleIdToken(rotated, BUNDLE_ID, undefined, fetcher)).rejects.toThrow(/fetch failed/i);
+    await verifyAppleIdToken(old, BUNDLE_ID, undefined, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('키 재조회 뒤에도 위조 서명은 거절한다', async () => {
+    await verifyAppleIdToken(await makeToken(basePayload()), BUNDLE_ID, undefined, jwksFetch());
+    const forged = await makeToken(basePayload(), { kid: 'rotated-key', signWithWrongKey: true });
+    await expect(verifyAppleIdToken(forged, BUNDLE_ID, undefined,
+      jwksFetch([{ ...jwk, kid: 'rotated-key' }]))).rejects.toThrow(/signature/i);
   });
 
   // nonce 는 재생 공격 방지다. 앱이 보냈으면 반드시 일치해야 한다.

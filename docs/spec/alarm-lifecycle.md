@@ -250,6 +250,9 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 - **예약에 실린 소리는 예약 시점에 확정된다.** 발사 순간 우리 코드가 돌지 않으므로,
   행만 고치고 재예약을 빠뜨리면 **행과 실제 소리가 갈라진다**(옛 목소리가 그대로 운다).
   → `scheduledSoundFingerprint` 로 지문을 남기고 `AlarmScheduleReconciler` 가 대조한다.
+  **진행 중 들어온 재조정 요청도 버리지 않는다.** 요청은 직렬 대기 후 최신 행을 다시 읽으며,
+  각 호출의 저장소·소유자·강제 재예약 ID를 유지한다. 취소된 요청은 예약하지 않고 다음 대기자를
+  깨운다. 목소리 변경 신호는 완료된 세대만 해제하며, 처리 중 새 변경이 오면 새 회차를 요청한다.
 - **예약 취소는 우리가 든 핸들(`alarmKitID`)로만 된다.** 핸들을 잃으면 **취소할 수 없는
   고아 예약**이 남는다. 그래서 예약을 끊을 때는 핸들도 같이 비운다.
 - `AlarmManager.shared.alarms` 가 **권위**다. 캐시된 스냅샷으로 "아직 예약돼 있는가" 를
@@ -290,6 +293,7 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 첫 로드 전 빈 상태 숨김 | — | `MainViewModel.alarmsLoaded` | `LocalAlarmStore.hasLoadedFromDisk` + `AlarmsListView` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` · `AlarmScheduleReconciler.reconcile(…ownerUserId:)` · `WeatherVariantRefreshService.refreshDue(token:ownerUserId:)` |
+| 실행 중 들어온 재예약도 순서대로 처리 | — | — | `AlarmScheduleReconciler` → `AsyncSerialGate`, `VoiceStudioViewModel.scheduleReconcileRevision` → `AlarmTalkApp` 완료 후 플래그 해제 |
 | 1-4 예약 길목의 소유자 게이트 | — | (해당 없음 — 예약이 동기라 창이 없다) | `AlarmKitViewModel.mayScheduleRecord` (`schedule` 의 진입·복귀 두 자리) |
 | 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `RemoteAlarmPullSync.mergeRemote` 의 `pullOwnerUserID` 대조 |
 | 1-1 종료 중 새 예약 차단 | — | (해당 없음 — 세션 클리어가 동기라 창이 없다) | `AlarmKitViewModel.isLeavingAccount` |

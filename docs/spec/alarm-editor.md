@@ -146,6 +146,14 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 도 애플 플랫폼 전용 라이선스다. 안드로이드는 Pretendard 를 쓴다 — 그 자리를 메우려고
 만들어진 글꼴이라 선택은 맞고, 맞춰야 할 것은 **자간과 실제 글리프 크기**다.
 
+## iOS 중복 시각 알람 교체의 실패 처리
+
+새 알람의 저장·예약이 성공한 뒤 충돌 알람을 정리하되, **서버 삭제/그만받기 성공을 확인한
+행만 로컬에서 삭제**한다. 하나라도 실패하면 그 행과 아직 처리하지 않은 충돌을 보존하고
+새 저장을 롤백한다. 이미 삭제에 성공한 앞선 충돌은 되살리지 않는다. 편집 중이던 기존
+알람의 예약은 교체 정리가 끝나기 전에는 취소하지 않는다. 성공 안내·선택 기억·저장 사건은
+정리 완료 뒤에만 기록한다. 정리 대기 중인 새 내용은 서버 push 대상으로 내보내지 않는다.
+
 ## 의도된 차이
 
 | 무엇 | 왜 |
@@ -161,6 +169,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
+| 교체 중 서버 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`; `LocalAlarmStore` 보류 → 두 push 진입점에서 제외 |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
@@ -177,6 +186,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 무엇 | 어디 |
 | --- | --- |
 | 정착 곡선·시간표·칸 경계 통과 | `AlarmTalkTests/TimeWheelSettleTests.swift` |
+| 교체 시 서버/로컬 삭제 순서·실패 중단·세션 없음·서버 업로드 보류 | `AlarmTalkTests/DuplicateAlarmReplacementTests.swift` |
 | 튕긴 뒤에도 굴러가는가(순간이동 감지) | `AlarmTalkUITests/TimeWheelFlingUITests.swift` |
 | 숫자 탭 = 모달 없이 그 자리 입력, 범위 초과는 잘림 | `AlarmTalkUITests/TimeWheelTypeInUITests.swift` |
 | 스냅 방향(되돌아가지 않는가) | `AlarmTalkTests/TimeWheelSnapDirectionTests.swift` |

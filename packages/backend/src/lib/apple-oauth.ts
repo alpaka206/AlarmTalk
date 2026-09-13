@@ -41,23 +41,33 @@ interface AppleJwk {
 // ⚠ 캐시는 **성공한 조회만** 담는다. 실패를 캐시하면 애플의 일시적 5xx 가 TTL 동안
 // 모든 로그인을 막는다.
 let jwksCache: { keys: AppleJwk[]; fetchedAt: number } | null = null;
+let jwksRequest: Promise<AppleJwk[]> | null = null;
 const JWKS_TTL_MS = 10 * 60 * 1000;
 
 export function __resetAppleJwksCacheForTests(): void {
   jwksCache = null;
 }
 
-async function fetchAppleJwks(fetchImpl: typeof fetch): Promise<AppleJwk[]> {
+async function fetchAppleJwks(fetchImpl: typeof fetch, force = false): Promise<AppleJwk[]> {
   const now = Date.now();
-  if (jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
+  if (!force && jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
     return jwksCache.keys;
   }
-  const res = await fetchImpl(APPLE_JWKS_URL);
-  if (!res.ok) throw new Error('Apple JWKS fetch failed');
-  const body = (await res.json()) as { keys?: AppleJwk[] };
-  if (!body.keys || body.keys.length === 0) throw new Error('Apple JWKS is empty');
-  jwksCache = { keys: body.keys, fetchedAt: now };
-  return body.keys;
+  if (jwksRequest) return jwksRequest;
+  const request = (async () => {
+    const res = await fetchImpl(APPLE_JWKS_URL);
+    if (!res.ok) throw new Error('Apple JWKS fetch failed');
+    const body = (await res.json()) as { keys?: AppleJwk[] };
+    if (!body.keys || body.keys.length === 0) throw new Error('Apple JWKS is empty');
+    jwksCache = { keys: body.keys, fetchedAt: Date.now() };
+    return body.keys;
+  })();
+  jwksRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (jwksRequest === request) jwksRequest = null;
+  }
 }
 
 function base64UrlDecode(s: string): Uint8Array {
@@ -115,7 +125,12 @@ export async function verifyAppleIdToken(
   if (!header.kid) throw new Error('Apple token has no key id');
 
   const keys = await fetchAppleJwks(fetchImpl);
-  const jwk = keys.find((k) => k.kid === header.kid);
+  let jwk = keys.find((k) => k.kid === header.kid);
+  if (!jwk) {
+    // Apple이 새 키를 쓰기 시작하면 10분 TTL을 기다리지 않고 한 번만 새로 확인한다.
+    const refreshed = await fetchAppleJwks(fetchImpl, true);
+    jwk = refreshed.find((k) => k.kid === header.kid);
+  }
   if (!jwk) throw new Error('Apple signing key not found');
 
   const key = await crypto.subtle.importKey(

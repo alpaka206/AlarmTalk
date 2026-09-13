@@ -81,6 +81,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// configure 된 경우 일관성을 위해 PushSync 의 한 cycle 을 돌리되, 실패 시
     /// 단건 push 로 폴백한다.
     func push(record: LocalAlarmRecord, store: LocalAlarmStore, session: AuthSession?) async {
+        guard !store.isServerSyncDeferred(id: record.id) else { return }
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
@@ -196,7 +197,11 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         announceFailure: Bool = true
     ) async -> Bool {
         // 서버에 사본이 없는 알람(로컬 전용)은 지울 것이 없으므로 성공으로 본다.
-        guard let token = session?.token, let remoteID = record.remoteAlarmId else { return true }
+        guard let remoteID = record.remoteAlarmId else { return true }
+        guard let token = session?.token else {
+            if announceFailure { statusMessage = "로그인이 필요해요." }
+            return false
+        }
         do {
             if record.originEnum == .receivedRemote {
                 try await api.declineAlarm(id: remoteID, token: token)

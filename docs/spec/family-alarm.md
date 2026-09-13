@@ -348,6 +348,13 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 **0 으로는 두지 않는다.** 받는 기기가 오프라인이거나 Doze 에 들어가 있으면 푸시가 늦고,
 그러면 알람이 **울리지 않은 채 시각이 지나간다.** 보낸 사람은 보냈다고 믿는다.
 
+**APNs 설정 오류로 등록을 지우지 않는다.** `DeviceTokenNotForTopic`·`BadDeviceToken`은
+서버의 topic/샌드박스 설정 불일치일 수도 있으므로 등록을 보존한다. 명시적인 `Unregistered`만
+자동 정리한다. 설정을 바로잡으면 같은 등록으로 다시 전송할 수 있어야 한다.
+
+**콜드 실행의 가족 알람 pull도 로컬 저장소 로드를 기다린다.** 상한 내에 로드되지 않거나
+작업이 취소되면 새 행·예약·ACK를 만들지 않고 실패로 처리해 다음 수신/동기화에서 재시도한다.
+
 **푸시·주기 pull 모두 알람 목록 전체를 페이지로 가져온다.** 서버 기본 50건은 계정의
 알람 한도가 아니다. 내가 만든 알람 뒤에 받은 가족 알람이 있어도 끝까지 읽어야 한다.
 **Android·iOS pull은 `pagination=cursor`와 `after`를 사용한다.** 페이지 수/누적 개수의 고정 상한으로
@@ -411,6 +418,8 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` — 전달이 끝나 행이 지워진 뒤에는 `targeted_alarm_slots` 로 id 를 되짚는다 |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
 | 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmApi.listAlarms` → `collectRemoteAlarmPages` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSyncService`; `RemoteAlarmPaginationTest` | `AlarmTalkAPI.listAlarms` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSync` | `alarm-query.ts`의 생성/전달 세대 순번 커서·`migrations.ts` #115/#116·기존 offset 호환 분기 |
+| 콜드 스타트 디스크 로드 후 수신 | — | `RemoteAlarmPullSync.runCycle` → `requireLoadedStore` → `LocalAlarmStore.waitUntilLoadedFromDisk` | — |
+| APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |
 | 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |

@@ -309,10 +309,13 @@ struct AlarmTalkApp: App {
                     }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
-                    .task(id: voiceStudio.needsScheduleReconcile) {
+                    .task(id: voiceStudio.scheduleReconcileRevision) {
                         guard voiceStudio.needsScheduleReconcile else { return }
-                        voiceStudio.needsScheduleReconcile = false
+                        let revision = voiceStudio.scheduleReconcileRevision
                         await AlarmScheduleReconciler.reconcile(store: alarmStore, alarmKit: alarmKit, ownerUserId: auth.session?.user.id)
+                        if !Task.isCancelled, voiceStudio.scheduleReconcileRevision == revision {
+                            voiceStudio.needsScheduleReconcile = false
+                        }
                     }
                     .task(id: freePlanVoiceLockKey) {
                         await applyFreePlanVoiceLockIfNeeded()
