@@ -446,5 +446,9 @@
   "117": {
     "name": "apple-gift-delivery-refunds",
     "sha": "f367e757e4946e47"
+  },
+  "118": {
+    "name": "persist-subscription-entitlement-state",
+    "sha": "bece232e0424e4ec"
   }
 }

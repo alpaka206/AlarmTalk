@@ -228,7 +228,7 @@ export async function applyStoreEntitlement(
       await tx.execute({
         sql: `UPDATE subscriptions
               SET expires_at = CASE WHEN julianday(?) > julianday(expires_at) THEN ? ELSE expires_at END,
-                  status = 'active', cancel_at_period_end = 0,
+                  status = 'active', entitlement_state = 'entitled', cancel_at_period_end = 0,
                   canceled_at = NULL, updated_at = datetime('now')
               WHERE id = ?`,
         args: [expiresAtIso, expiresAtIso, subscriptionId],

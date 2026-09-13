@@ -2872,6 +2872,27 @@ export const migrations: Migration[] = [
               AND receipt.last_paid_at = st.last_paid_at AND receipt.subscription_id IS NULL) = 1`,
     ],
   },
+  {
+    id: 118,
+    name: 'persist-subscription-entitlement-state',
+    atomic: true,
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN entitlement_state TEXT NOT NULL DEFAULT 'entitled'
+        CHECK (entitlement_state IN ('entitled', 'suspended', 'unverified'))`,
+      // 기존 active 행만으로는 정상 결제와 보류를 구분할 수 없다. 스토어 근거가 있는 행과
+      // 그 그룹의 멤버는 재검증 전까지 권한 재계산에서 제외한다. users.plan은 건드리지 않는다.
+      `UPDATE subscriptions SET entitlement_state = 'unverified'
+        WHERE status = 'active' AND (
+          EXISTS (SELECT 1 FROM store_transactions t
+            WHERE t.subscription_id = subscriptions.id AND t.provider IN ('apple', 'google'))
+          OR EXISTS (SELECT 1 FROM plan_groups g
+            JOIN subscriptions owner ON owner.plan_group_id = g.id AND owner.user_id = g.owner_user_id
+            JOIN store_transactions t ON t.subscription_id = owner.id
+            WHERE g.id = subscriptions.plan_group_id AND owner.status = 'active'
+              AND t.provider IN ('apple', 'google'))
+        )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

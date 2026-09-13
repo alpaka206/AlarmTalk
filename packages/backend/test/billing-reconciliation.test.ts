@@ -31,6 +31,7 @@ import {
   leavePlanGroupMember,
   processSubscriptionExpiry,
   repairOrphanedPaidPlan,
+  resolvePlanAfterSuspend,
 } from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
@@ -1436,7 +1437,9 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
       expect(
         (await rows("SELECT status FROM subscriptions WHERE id='member-personal'"))[0]!.status,
       ).toBe('active');
-      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain('member');
+      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain(
+        'member',
+      );
       expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
       vi.clearAllMocks();
       await processSubscriptionExpiry(db, ENV, NOW);
@@ -1459,10 +1462,99 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     )!;
     await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
     expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
-    expect((await rows("SELECT status FROM subscriptions WHERE id='keep-personal'"))[0]!.status).toBe(
-      'active',
-    );
+    expect(
+      (await rows("SELECT status FROM subscriptions WHERE id='keep-personal'"))[0]!.status,
+    ).toBe('active');
     expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+  });
+
+  it.each([
+    ['apple', 'family'],
+    ['google', 'couple'],
+  ] as const)(
+    '%s %s 보류는 다른 개인 구독 종료 뒤에도 유지되고 스토어 복구만 해제한다',
+    async (provider, key) => {
+      await seed(provider);
+      const group = (await loadPlanByKey(db, key))!;
+      const personal = (await loadPlanByKey(db, 'personal'))!;
+      const productId =
+        provider === 'apple' ? `com.alarmtalk.app.${key}_monthly` : `${key}_monthly`;
+      await db.execute({ sql: 'UPDATE subscriptions SET plan_id=?', args: [group.id] });
+      await db.execute({ sql: 'UPDATE plan_groups SET plan_id=?', args: [group.id] });
+      await db.execute({
+        sql: 'UPDATE store_transactions SET product_id=?, plan_key=?',
+        args: [productId, key],
+      });
+      for (const user of ['owner', 'member']) {
+        await db.execute({
+          sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES (?,?,?,'active',?,?)`,
+          args: [`personal-${user}`, user, personal.id, NOW.toISOString(), FUTURE],
+        });
+      }
+      if (provider === 'apple') apple({ status: 3, productId });
+      else playState('SUBSCRIPTION_STATE_ON_HOLD', productId);
+      await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'plus' },
+        { plan: 'plus' },
+      ]);
+      for (const user of ['owner', 'member']) {
+        const cancelled = (await findActiveSubscriptionsByUserPk(db, user)).find(
+          (sub) => sub.subscriptionId === `personal-${user}`,
+        )!;
+        await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+        // 별도 요청의 재계산에도 지난 보류가 남아 있어야 한다.
+        await withWriteTransaction(db, (tx) => resolvePlanAfterSuspend(tx, user, []));
+        expect((await rows('SELECT plan FROM users WHERE id=?', [user]))[0]!.plan).toBe('free');
+      }
+      expect(
+        await rows(
+          "SELECT status,entitlement_state FROM subscriptions WHERE plan_group_id='group'",
+        ),
+      ).toEqual([
+        { status: 'active', entitlement_state: 'suspended' },
+        { status: 'active', entitlement_state: 'suspended' },
+      ]);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+
+      vi.clearAllMocks();
+      if (provider === 'apple') apple({ productId });
+      else playState('SUBSCRIPTION_STATE_ACTIVE', productId);
+      await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'family' },
+        { plan: 'family' },
+      ]);
+      expect(
+        await rows("SELECT entitlement_state FROM subscriptions WHERE plan_group_id='group'"),
+      ).toEqual([{ entitlement_state: 'entitled' }, { entitlement_state: 'entitled' }]);
+      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain(
+        'member',
+      );
+    },
+  );
+
+  it('보류 적용 실패는 소유자·멤버의 권한 상태까지 함께 롤백한다', async () => {
+    await seed();
+    apple({ status: 3 });
+    await db.execute(`CREATE TRIGGER fail_member_hold BEFORE UPDATE OF entitlement_state ON subscriptions
+      WHEN NEW.id='sub-member' BEGIN SELECT RAISE(ABORT, 'hold update failed'); END`);
+    try {
+      await expect(reconcileStoreSubscription(db, ENV, 'sub-owner', NOW)).rejects.toThrow();
+      expect(await rows('SELECT entitlement_state FROM subscriptions')).toEqual([
+        { entitlement_state: 'entitled' },
+        { entitlement_state: 'entitled' },
+      ]);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'family' },
+        { plan: 'family' },
+      ]);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_member_hold');
+    }
   });
 
   it.each([undefined, 99])('알 수 없는 애플 상태 %s 는 무료 강등 근거가 아니다', async (status) => {
@@ -1627,7 +1719,9 @@ describe('#730 즉시 해지 중 새 결제의 보관 유예', () => {
         { status: 'cancelled' },
       ]);
       // 전체 마이그레이션이 만든 시스템 계정이 아니라 해지 영향 계정을 검증한다.
-      expect(await rows('SELECT id,plan FROM users WHERE id IN (?,?) ORDER BY id', ['owner', 'member'])).toEqual([
+      expect(
+        await rows('SELECT id,plan FROM users WHERE id IN (?,?) ORDER BY id', ['owner', 'member']),
+      ).toEqual([
         { id: 'member', plan: 'free' },
         { id: 'owner', plan: 'plus' },
       ]);
