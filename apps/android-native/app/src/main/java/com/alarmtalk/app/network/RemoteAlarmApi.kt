@@ -15,6 +15,9 @@ data class RemoteAlarmListResponse(
     val total: Int? = null,
     val limit: Int? = null,
     val offset: Int? = null,
+    // null은 완료가 아니라 커서 계약 없는 응답이다(구서버/잘못된 응답을 거절).
+    @SerializedName("has_more") val hasMore: Boolean? = null,
+    @SerializedName("next_cursor") val nextCursor: String? = null,
 )
 
 data class RemoteAlarmResponse(
@@ -66,11 +69,11 @@ data class RemoteAlarmWriteRequest(
 )
 
 interface RemoteAlarmApi {
-    @GET("alarm")
+    @GET("alarm?pagination=cursor")
     suspend fun listAlarms(
         @Header("Authorization") authorization: String,
         @Query("limit") limit: Int,
-        @Query("offset") offset: Int,
+        @Query("after") after: String? = null,
     ): RemoteAlarmListResponse
 
     @POST("alarm")

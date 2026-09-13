@@ -475,6 +475,10 @@ PR #709 에서 그 가드를 82줄 붙였는데 국소 가드끼리 어긋나면
 - ⚠ **서버가 거절했으면 성공이라고 말하지 않는다.** 구독 갈래는 확정 여부와 무관하게
   성공을 돌려주는데, 그건 "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절은
   따라잡히지 않는다 — 사용자가 Play 를 해지해야 풀린다.
+  **다른 AlarmTalk 계정 소유(`TRANSACTION_OWNED_BY_OTHER_USER`)도 같다.** 현재 계정의
+  구매 성공으로 표시하지 않고 원래 계정으로 로그인하라는 문구를 해당 호출의
+  `ConfirmOutcome.rejection`으로 전달한다. 공유 `lastError`만 설정하거나 자동 재시도로
+  해결된다고 안내하지 않는다. 구독/선물의 `finish` 가능 여부와 화면 성공 여부는 별개다.
 - ⚠ **권위 판정은 쓰기 트랜잭션 안이다**(코덱스 #733 6차). 라우트에서만 보면 두 스토어의
   확정이 **동시에** 들어올 때 둘 다 "경쟁자 없음" 으로 읽고 지나간다 — 쓰기만 직렬화되어
   먼저 쓴 로컬 행이 취소되고 **바깥의 두 구독은 그대로 갱신된다.** `applyStoreEntitlement`
@@ -681,6 +685,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
+| 다른 계정 소유 결제의 실패 안내 | confirm의 `TRANSACTION_OWNED_BY_OTHER_USER` | `MainViewModelBillingActions.billingFailureMessage` | `SubscriptionManager.syncWithBackend` → `ConfirmOutcome.rejection` → `purchase`; `SubscriptionConfirmationTests` |
 | 전환 — 그룹 이어받기 | `lib/store-billing.ts` `findOwnedGroupToCarryOver` · `lib/billing-cancel.ts` `preserveGroupId` | — | — |
 | 전환 — 정원 축소 강등 통지 | `lib/store-billing.ts` `enforceGroupCapacity` → `demotedUserIds` → `notifyPlanChanged` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 | 변경 반영 푸시 | `lib/billing-cancel.ts` `notifyPlanChanged` → `lib/fcm.ts` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |

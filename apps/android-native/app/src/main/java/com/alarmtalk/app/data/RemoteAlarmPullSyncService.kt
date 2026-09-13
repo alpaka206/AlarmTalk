@@ -217,22 +217,9 @@ internal class RemoteAlarmPullSyncService(
         // 판별은 서버가 뷰어의 두 식별자(PK·로그인 id)를 모두 담은 집합으로 계산한 is_received 를 쓴다.
         // 클라측 session.user.id 로 sender 를 직접 비교하면 계정 연동(PK≠google_id) 사용자의
         // '보낸 알람'을 '받은 알람'으로 오분류해 자기 기기에 예약해버린다(PR #536 P1).
-        // 페이지네이션으로 전체 스냅샷을 모은다 — 1페이지만 받으면 알람이 많은 사용자는 받은 알람
-        // 처리·prune 이 누락된다. 완전 스냅샷(snapshotComplete)일 때만 아래에서 prune 한다.
-        val allRemote = mutableListOf<RemoteAlarm>()
-        var offset = 0
-        var reportedTotal = 0
-        var snapshotComplete = false
-        val pageSize = 100
-        for (page in 0 until 25) {
-            val resp = api.listAlarms(authorization, pageSize, offset)
-            allRemote.addAll(resp.alarms)
-            reportedTotal = resp.total ?: allRemote.size
-            offset += resp.alarms.size
-            if (resp.alarms.size < pageSize || allRemote.size >= reportedTotal) {
-                snapshotComplete = true
-                break
-            }
+        // 고정 상한 없이 서버의 완료 응답까지 읽는다. 중간 실패면 로컬 반영에 진입하지 않는다.
+        val allRemote = collectRemoteAlarmPages { after ->
+            api.listAlarms(authorization, limit = 100, after = after)
         }
         val remoteAlarms = allRemote.filter { it.isReceived }
 
@@ -612,7 +599,7 @@ internal class RemoteAlarmPullSyncService(
         // 비교 기준은 전체(allRemote)가 아니라 '받은 것'(is_received) 하위집합의 id 다 — 구 네임스페이스
         // 버그로 '보낸 알람'을 RECEIVED_REMOTE 로 잘못 임포트한 기기에서, 그 행의 remoteAlarmId 는 여전히
         // allRemote(내 보낸 알람)에 있어 안 지워진다. 받은 집합 기준으로 비교해야 그 잔재까지 정리된다.
-        // 단, 목록이 페이지네이션으로 잘렸으면(size < total) 오삭제 위험이 있어 건너뛴다(완전 스냅샷일 때만).
+        // 전체 커서 순회가 실패하면 위에서 반환되지 않으므로 부분 목록으로 정리하지 않는다.
         var pruned = 0
         // 그만받기 한 알람만 지우기 위해 서버에 따로 묻는다. 실패하면(네트워크 등) **아무것도
         // 지우지 않는다** — 못 물어봤다고 남의 알람을 지우는 쪽으로 기울면 안 된다.
@@ -638,7 +625,7 @@ internal class RemoteAlarmPullSyncService(
             .getOrNull()
         val declinedRemoteIds = recipientState?.first
         val revokedRemoteIds = recipientState?.second.orEmpty()
-        if (snapshotComplete && declinedRemoteIds != null) {
+        if (declinedRemoteIds != null) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
             val allRemoteIds = allRemote.map { it.id }.toSet()
             // 서버가 취소한 알람을 지우고 예약을 내리는 구간 — 정합성 복원과 겹치면 복원이

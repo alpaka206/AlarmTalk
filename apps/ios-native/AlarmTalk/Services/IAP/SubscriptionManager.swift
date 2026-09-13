@@ -114,10 +114,14 @@ final class SubscriptionManager: ObservableObject {
     /// `GET /api/billing/subscription`)를 연결해 서버 구독 상태를 새로고침한다.
     var onServerEntitlementUpdated: (@MainActor () async -> Void)?
 
-    init(api: AlarmTalkAPI, authProvider: @escaping () -> AuthSession?) {
+    init(
+        api: AlarmTalkAPI,
+        authProvider: @escaping () -> AuthSession?,
+        listenForTransactions: Bool = true
+    ) {
         self.api = api
         self.authProvider = authProvider
-        startListeningForTransactions()
+        if listenForTransactions { startListeningForTransactions() }
     }
 
     deinit {
@@ -270,8 +274,8 @@ final class SubscriptionManager: ObservableObject {
                 await refreshPurchasedProducts()
                 // ⚠ **서버가 거절했으면 성공이라고 말하지 않는다**(코덱스 #733 5차).
                 //   구독 갈래는 확정 여부와 무관하게 `.success` 를 돌려주는데, 그건
-                //   "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절은
-                //   따라잡히지 않는다 — 사용자가 Play 를 해지해야 풀린다.
+                //   "다음 동기화가 따라잡는다" 가 참일 때 얘기다. 교차 스토어 거절이나
+                //   다른 계정 소유는 사용자 조치가 필요하므로 성공으로 표시하지 않는다.
                 //   ⚠ 이 값은 **이 호출의 결과**다(공유 상태가 아니다 — 코덱스 #733 6차).
                 if let rejection = outcome.rejection {
                     return .failure(reason: rejection)
@@ -660,6 +664,12 @@ final class SubscriptionManager: ObservableObject {
     /// 안 된다(`mayFinish` 주석 참조).
     @discardableResult
     private func syncWithBackend(transaction: Transaction) async -> ConfirmOutcome {
+        await syncWithBackend(transactionID: String(transaction.id))
+    }
+
+    // StoreKit 객체를 만들지 않고 실제 HTTP 응답부터 confirm 결과까지 확인할 수 있는 경계.
+    @discardableResult
+    func syncWithBackend(transactionID: String) async -> ConfirmOutcome {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
@@ -668,7 +678,7 @@ final class SubscriptionManager: ObservableObject {
         do {
             // 서버는 이 id 로 애플에 직접 물어본다 — 상품·만료·환불은 그 응답이 권위다.
             let response = try await api.confirmAppleSubscription(
-                transactionID: String(transaction.id),
+                transactionID: transactionID,
                 token: session.token
             )
             self.lastError = nil
@@ -697,7 +707,7 @@ final class SubscriptionManager: ObservableObject {
             //   못했다). 구독이라 `mayFinish` 가 트랜잭션을 끝내는 것도 맞다 — 환불된
             //   트랜잭션은 재시도해도 결과가 같다.
             await onServerEntitlementUpdated?()
-            PendingRevokedTransactionStore.remove(String(transaction.id))
+            PendingRevokedTransactionStore.remove(transactionID)
             return .notConfirmed
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "CROSS_STORE_RENEWAL_ACTIVE" {
@@ -715,10 +725,11 @@ final class SubscriptionManager: ObservableObject {
             //   재설치·계정 갈아타기에서 실제로 나오고, 사용자가 할 수 있는 일이 있다:
             //   그 계정으로 로그인하면 된다. 안드로이드도 같은 코드에 같은 문구를 쓴다
             //   (`MainViewModelBillingActions.billingFailureMessage`).
-            self.lastError = String(
+            let message = String(
                 localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
             )
-            return .notConfirmed
+            self.lastError = message
+            return ConfirmOutcome(confirmed: false, rejection: message)
         } catch {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
             return .notConfirmed
@@ -802,4 +813,3 @@ enum RestoreResult: Equatable {
         }
     }
 }
-
