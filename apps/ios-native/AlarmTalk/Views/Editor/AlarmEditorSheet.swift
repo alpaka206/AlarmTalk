@@ -2693,13 +2693,9 @@ struct AlarmEditorSheet: View {
         if let beforeCompletion, !(await beforeCompletion()) || auth.session?.user.id != ownerID {
             // 새 예약만 해제한다. 기존 편집본의 옛 예약은 아직 취소하지 않아 롤백할 수 있다.
             if let staged {
-                await alarmKit.cancelScheduledAlarm(record: staged)
-            }
-            // 계정 이탈·동시 삭제/끄기의 결과를 옛 편집본으로 되살리지 않는다.
-            if auth.session?.user.id == ownerID, let current = store.record(id: merged.id),
-               current.alarmKitID == staged?.alarmKitID {
-                if let existing { store.upsertPreservingServerSyncFields(existing) }
-                else { store.deleteByID(merged.id) } // 재시도 음원은 남긴다.
+                await rollbackAlarmReplacement(staged: staged, previous: existing, store: store) {
+                    await alarmKit.cancelScheduledAlarm(record: $0)
+                }
             }
             validationAlert = ValidationAlertContent(
                 title: "저장할 수 없어요",

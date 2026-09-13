@@ -153,6 +153,10 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 새 저장을 롤백한다. 이미 삭제에 성공한 앞선 충돌은 되살리지 않는다. 편집 중이던 기존
 알람의 예약은 교체 정리가 끝나기 전에는 취소하지 않는다. 성공 안내·선택 기억·저장 사건은
 정리 완료 뒤에만 기록한다. 정리 대기 중인 새 내용은 서버 push 대상으로 내보내지 않는다.
+충돌 삭제 중 자동 401로 세션이 없어져도 임시 저장은 롤백한다. 저장 당시 소유자·내용·
+예약 핸들이 여전히 같은 행인지 확인해 기존 편집본/예약을 복원하거나 신규 행을 지운다.
+현재 인증 여부만으로 복원을 생략하지 않는다. 동시 삭제·끄기·다른 소유자/예약으로 교체된
+행은 덮어쓰지 않으며, 서버 동기화 메타데이터만 바뀐 경우에는 그 최신 값을 보존한다.
 
 ## 의도된 차이
 
@@ -169,7 +173,7 @@ iOS 26 의 `UIAlertController` 를 시뮬레이터에서 재서 얻은 값이다
 | 규칙 | Android | iOS |
 | --- | --- | --- |
 | 타임휠 전체 | `ui/editor/AlarmTimePicker.kt` | `Views/Editor/TimeWheelPicker.swift` |
-| 교체 중 서버 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`; `LocalAlarmStore` 보류 → 두 push 진입점에서 제외 |
+| 교체 중 서버 삭제 실패 보존·새 예약 롤백 | — | `AlarmEditorSheet.finishScheduling`·`confirmReplaceDuplicate` → `removeReplacementConflicts`·`rollbackAlarmReplacement`; `LocalAlarmStore` 보류 → 두 push 진입점에서 제외 |
 | 칼럼·드래그·그 자리 입력 | `ui/editor/DraggableTimeWheelColumn.kt` | `Views/Editor/TimeWheelPicker.swift` 의 `DraggableNumberColumn` |
 | 정착(굴러가서 멎기) | `animateWheelSettle` | `Views/Editor/TimeWheelSettle.swift` |
 | 한 칸마다 햅틱 | `ui/editor/DraggableTimeWheelColumn.kt` 의 `performWheelTick` | `Views/Editor/TimeWheelPicker.swift` 의 `selectionGenerator` |
