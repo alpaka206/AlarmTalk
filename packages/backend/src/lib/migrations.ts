@@ -2829,6 +2829,21 @@ export const migrations: Migration[] = [
         END`,
     ],
   },
+  {
+    id: 116,
+    name: 'alarm-delivery-generation-cursor',
+    atomic: true,
+    statements: [
+      // 같은 id의 재전송과 슬롯 교체에 따른 비활성화도 새 전달이다. 생성 때뿐 아니라
+      // 전달 버전이 실제 바뀔 때 새 순번을 발급한다. 내용/순번은 같은 쓰기로 커밋·롤백된다.
+      `CREATE TRIGGER IF NOT EXISTS alarm_creation_order_delivery_update
+        AFTER UPDATE OF delivery_version ON alarms
+        WHEN NEW.target_user_id IS NOT NULL AND OLD.delivery_version IS NOT NEW.delivery_version
+        BEGIN
+          INSERT OR REPLACE INTO alarm_creation_order (alarm_id) VALUES (NEW.id);
+        END`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

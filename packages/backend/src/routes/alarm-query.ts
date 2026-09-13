@@ -75,8 +75,8 @@ alarmQuery.get('/', async (c) => {
             LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id`;
 
   if (cursorMode) {
-    // UUID는 무작위라 새 삽입이 커서 앞에 놓일 수 있다. DB 생성 순번으로만 전진한다.
-    // 삭제된 최대 순번도 재사용하지 않아 페이지 사이의 생성/ACK가 누락을 만들지 않는다.
+    // UUID는 삽입 순서가 아니다. DB가 생성/새 전달 세대마다 발급한 순번으로 전진한다.
+    // #116 트리거가 같은 id의 재전송도 뒤로 옮기며 삭제된 최대 순번도 재사용하지 않는다.
     if (after !== undefined) {
       whereClause += ' AND aco.sequence > ?';
       whereArgs.push(Number(after));

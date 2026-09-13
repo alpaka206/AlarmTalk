@@ -50,6 +50,40 @@ describe('migrations', () => {
     } finally { db.close(); }
   });
 
+  it('마이그레이션 #116은 설치/재시도로 순번을 바꾸지 않고 실제 전달 세대 변경만 전진시킨다', async () => {
+    const db = createClient({ url: ':memory:' });
+    try {
+      await runMigrationsRange(db, 1, 115);
+      await db.execute(`INSERT INTO users (id,google_id,email) VALUES
+        ('cursor-sender','cursor-sender','sender@example.test'),
+        ('cursor-recipient','cursor-recipient','recipient@example.test')`);
+      await db.execute(`INSERT INTO alarms (id,user_id,target_user_id,time,delivery_version) VALUES
+        ('family','cursor-sender','cursor-recipient','07:00',NULL),
+        ('own','cursor-recipient',NULL,'08:00',NULL)`);
+      const cursors = () => db.execute('SELECT alarm_id,sequence FROM alarm_creation_order ORDER BY alarm_id');
+      const before = await cursors();
+      await runMigrationsRange(db, 116, 116);
+      expect((await cursors()).rows).toEqual(before.rows);
+
+      // 일반 편집/같은 null 재쓰기는 새 전달이 아니다.
+      await db.execute("UPDATE alarms SET time='09:00',delivery_version=delivery_version");
+      expect((await cursors()).rows).toEqual(before.rows);
+      await db.execute("UPDATE alarms SET delivery_version='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' WHERE id='family'");
+      const changed = await cursors();
+      expect(Number(changed.rows[0]!.sequence)).toBeGreaterThan(Number(before.rows[1]!.sequence));
+      expect(changed.rows[1]).toEqual(before.rows[1]);
+      await db.execute("UPDATE alarms SET delivery_version=delivery_version WHERE id='family'");
+      expect((await cursors()).rows).toEqual(changed.rows);
+      await db.execute("UPDATE alarms SET delivery_version='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',is_active=0 WHERE id='family'");
+      const disabled = await cursors();
+      expect(Number(disabled.rows[0]!.sequence)).toBeGreaterThan(Number(changed.rows[0]!.sequence));
+
+      await db.execute('DELETE FROM _migrations WHERE id=116');
+      await runMigrationsRange(db, 116, 116);
+      expect((await cursors()).rows).toEqual(disabled.rows);
+    } finally { db.close(); }
+  });
+
   it('마이그레이션 #104가 기존 받은 알람에만 전달 버전을 채운다', async () => {
     const db = createClient({ url: ':memory:' });
     await runMigrationsRange(db, 1, 103);

@@ -14,6 +14,20 @@ final class AlarmPaginationTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: body)
     }
 
+    private func deliveryPage(
+        _ version: String?, next: String? = nil, leadingID: String? = nil,
+        active: Bool = true, snooze: Int = 5
+    ) throws -> Data {
+        var rows: [[String: Any]] = []
+        if let leadingID { rows.append(["id": leadingID]) }
+        var family: [String: Any] = ["id": "family", "is_active": active, "snooze_minutes": snooze]
+        if let version { family["delivery_version"] = version }
+        rows.append(family)
+        var body: [String: Any] = ["alarms": rows, "has_more": next != nil]
+        if let next { body["next_cursor"] = next }
+        return try JSONSerialization.data(withJSONObject: body)
+    }
+
     private func withAPI(
         pages: [String: (Int, Data)],
         _ body: (AlarmTalkAPI, AlarmPageFixture) async throws -> Void
@@ -193,6 +207,89 @@ final class AlarmPaginationTests: XCTestCase {
                 } catch APIError.invalidResponse { }
                 XCTAssertEqual(fixture.cursors, ["", "40"])
             }
+        }
+    }
+
+    func test_resentDeliveryKeepsOnlyNewestContentsInLatestReadOrder() async throws {
+        let initialVersions: [String?] = ["v1", nil]
+        for initial in initialVersions {
+            try await withAPI(pages: [
+                "": (200, try deliveryPage(initial, next: "10", leadingID: "older")),
+                "10": (200, try deliveryPage("v2", next: "20", leadingID: "middle", snooze: 10)),
+                "20": (200, try deliveryPage("v3", snooze: 12)),
+            ]) { api, fixture in
+                let alarms = try await api.listAlarms(token: "alarm-test-token")
+                XCTAssertEqual(alarms.map(\.id), ["older", "middle", "family"])
+                XCTAssertEqual(alarms.last?.deliveryVersion, "v3")
+                XCTAssertEqual(alarms.last?.snoozeMinutes, 12)
+                XCTAssertEqual(fixture.cursors, ["", "10", "20"])
+            }
+        }
+    }
+
+    func test_slotReplacementCanDeliverDisabledGenerationOnLaterPage() async throws {
+        try await withAPI(pages: [
+            "": (200, try deliveryPage("v1", next: "10")),
+            "10": (200, try deliveryPage("v2", active: false)),
+        ]) { api, _ in
+            let alarms = try await api.listAlarms(token: "alarm-test-token")
+            XCTAssertEqual(alarms.count, 1)
+            XCTAssertEqual(alarms.first?.deliveryVersion, "v2")
+            XCTAssertEqual(alarms.first?.isActive, false)
+        }
+    }
+
+    func test_duplicateWithoutNewDeliveryGenerationIsRejected() async throws {
+        let versions: [String?] = ["v1", nil, "  "]
+        for version in versions {
+            try await withAPI(pages: [
+                "": (200, try deliveryPage("v1", next: "10")),
+                "10": (200, try deliveryPage(version)),
+            ]) { api, fixture in
+                do {
+                    _ = try await api.listAlarms(token: "alarm-test-token")
+                    XCTFail("새 전달 버전 없는 중복을 재전송으로 처리하면 안 된다")
+                } catch APIError.invalidResponse { }
+                XCTAssertEqual(fixture.cursors, ["", "10"])
+            }
+        }
+    }
+
+    func test_previousDeliveryGenerationCannotReappearAfterReplacement() async throws {
+        try await withAPI(pages: [
+            "": (200, try deliveryPage("v1", next: "10")),
+            "10": (200, try deliveryPage("v2", next: "20")),
+            "20": (200, try deliveryPage("v1")),
+        ]) { api, fixture in
+            do {
+                _ = try await api.listAlarms(token: "alarm-test-token")
+                XCTFail("이미 버린 옛 세대를 최신 세대로 되살리면 안 된다")
+            } catch APIError.invalidResponse { }
+            XCTAssertEqual(fixture.cursors, ["", "10", "20"])
+        }
+    }
+
+    func test_duplicateIDWithinOnePageIsNotAnInPlaceResend() async throws {
+        let response = Data(#"{"alarms":[{"id":"family","delivery_version":"v1"},{"id":"family","delivery_version":"v2"}],"has_more":false}"#.utf8)
+        try await withAPI(pages: ["": (200, response)]) { api, _ in
+            do {
+                _ = try await api.listAlarms(token: "alarm-test-token")
+                XCTFail("한 SELECT에서 같은 id의 두 세대가 나오는 응답은 잘못된 계약이다")
+            } catch APIError.invalidResponse { }
+        }
+    }
+
+    func test_failureAfterResentDeliveryStillRejectsPartialPull() async throws {
+        try await withAPI(pages: [
+            "": (200, try deliveryPage("v1", next: "10")),
+            "10": (200, try deliveryPage("v2", next: "20")),
+            "20": (503, Data(#"{"error":"unavailable"}"#.utf8)),
+        ]) { api, fixture in
+            do {
+                _ = try await api.listAlarms(token: "alarm-test-token")
+                XCTFail("재전송을 병합했어도 뒤 페이지 실패를 부분 성공으로 반환하지 않는다")
+            } catch APIError.server(let status, _, _) { XCTAssertEqual(status, 503) }
+            XCTAssertEqual(fixture.cursors, ["", "10", "20"])
         }
     }
 }

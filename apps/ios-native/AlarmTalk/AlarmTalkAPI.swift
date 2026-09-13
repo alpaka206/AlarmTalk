@@ -114,8 +114,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     func listAlarms(token: String) async throws -> [RemoteAlarm] {
         let pageSize = 100
-        var alarms: [RemoteAlarm] = []
-        var seenIDs = Set<String>()
+        var alarms: [RemoteAlarm?] = []
+        var latestIndexByID: [String: Int] = [:]
+        var seenDeliveryVersions: [String: Set<String>] = [:]
         var cursor: String?
         while true {
             try Task.checkCancellation()
@@ -129,15 +130,28 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 "alarm?\(query.percentEncodedQuery!)", token: token
             )
             try Task.checkCancellation()
-            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 생성 순번
+            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 생성/전달 순번
             // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
+            var pageIDs = Set<String>()
             for alarm in page.alarms {
-                guard seenIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
+                guard pageIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
+                let version = alarm.deliveryVersion?.nilIfBlank
+                if let previous = latestIndexByID[alarm.id] {
+                    // 재전송은 같은 id로 뒤 페이지에 다시 온다. 새 세대만 교체하며
+                    // 이미 본 세대/버전 없는 중복은 잘못된 페이지로 거절한다.
+                    guard let version, seenDeliveryVersions[alarm.id]?.contains(version) != true else {
+                        throw APIError.invalidResponse
+                    }
+                    // 옛 위치에 덮어쓰지 않는다. 슬롯 교체도 최신 전달 순서대로 적용한다.
+                    alarms[previous] = nil
+                }
+                if let version { seenDeliveryVersions[alarm.id, default: []].insert(version) }
+                latestIndexByID[alarm.id] = alarms.count
                 alarms.append(alarm)
             }
             if !page.hasMore {
                 guard page.nextCursor == nil else { throw APIError.invalidResponse }
-                return alarms
+                return alarms.compactMap { $0 }
             }
             guard !page.alarms.isEmpty, let next = page.nextCursor,
                   let sequence = UInt64(next), String(sequence) == next,
