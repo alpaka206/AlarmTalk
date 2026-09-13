@@ -3,6 +3,7 @@ package com.alarmtalk.app.data
 import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.RemoteAlarmApi
 import com.alarmtalk.app.network.RemoteAlarmListResponse
+import com.google.gson.Gson
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -51,11 +52,11 @@ class RemoteAlarmPaginationTest {
             val api = Retrofit.Builder().baseUrl("https://pagination.example.test/api/")
                 .client(client).addConverterFactory(GsonConverterFactory.create()).build()
                 .create(RemoteAlarmApi::class.java)
-            val alarms = collectRemoteAlarmPages { after ->
-                api.listAlarms("Bearer test-token", limit = 100, after = after)
+            val alarms = collectRemoteAlarmPages { after, offset ->
+                api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
             }
             assertEquals(2601, alarms.size)
-            assertEquals(listOf("alarm-2600"), alarms.filter { it.isReceived }.map { it.id })
+            assertEquals(listOf("alarm-2600"), alarms.filter { it.isReceivedForPull }.map { it.id })
             assertEquals(listOf(null) + (100..2600 step 100).map { it.toString() }, requests)
         } finally {
             client.dispatcher.executorService.shutdown()
@@ -66,7 +67,7 @@ class RemoteAlarmPaginationTest {
     @Test
     fun cursorSurvivesDeletionAndDoesNotUseTotalOrPageLength() = runBlocking {
         val requested = mutableListOf<String?>()
-        val result = collectRemoteAlarmPages { after ->
+        val result = collectRemoteAlarmPages { after, _ ->
             requested.add(after)
             when (after) {
                 null -> page(listOf(alarm("removed")), true, "10").copy(total = 2)
@@ -77,14 +78,14 @@ class RemoteAlarmPaginationTest {
         }
         assertEquals(listOf(null, "10"), requested)
         assertEquals(listOf("removed", "family"), result.map { it.id })
-        assertTrue(collectRemoteAlarmPages { page(emptyList(), false) }.isEmpty())
+        assertTrue(collectRemoteAlarmPages { _, _ -> page(emptyList(), false) }.isEmpty())
     }
 
     @Test
     fun mergesNewDeliveryAtLatestPositionIncludingDisabledGeneration() = runBlocking {
         for (originalVersion in listOf(null, "old")) {
             var call = 0
-            val result = collectRemoteAlarmPages {
+            val result = collectRemoteAlarmPages { _, _ ->
                 when (call++) {
                     0 -> page(listOf(alarm("a", originalVersion), alarm("b", "b1")), true, "2")
                     else -> page(listOf(alarm("a", "new").copy(isActive = false)), false)
@@ -111,22 +112,22 @@ class RemoteAlarmPaginationTest {
         )
         for (pages in invalidPages) {
             var call = 0
-            expectInvalid { collectRemoteAlarmPages { pages[call++] } }
+            expectInvalid { collectRemoteAlarmPages { _, _ -> pages[call++] } }
         }
     }
 
     @Test
     fun rejectsMissingIncompleteAndNonAdvancingCursorContracts() = runBlocking {
-        expectInvalid { collectRemoteAlarmPages { RemoteAlarmListResponse(listOf(alarm("a"))) } }
-        expectInvalid { collectRemoteAlarmPages { page(emptyList(), true, "1") } }
-        expectInvalid { collectRemoteAlarmPages { page(listOf(alarm("a")), false, "1") } }
+        expectInvalid { collectRemoteAlarmPages { _, _ -> RemoteAlarmListResponse(listOf(alarm("a"))) } }
+        expectInvalid { collectRemoteAlarmPages { _, _ -> page(emptyList(), true, "1") } }
+        expectInvalid { collectRemoteAlarmPages { _, _ -> page(listOf(alarm("a")), false, "1") } }
         for (cursor in listOf(null, "", "0", "-1", "01", "+1", "1.0", " 1", "9007199254740992")) {
-            expectInvalid { collectRemoteAlarmPages { page(listOf(alarm("a")), true, cursor) } }
+            expectInvalid { collectRemoteAlarmPages { _, _ -> page(listOf(alarm("a")), true, cursor) } }
         }
         for (cursor in listOf("9", "10")) {
             var call = 0
             expectInvalid {
-                collectRemoteAlarmPages {
+                collectRemoteAlarmPages { _, _ ->
                     if (call++ == 0) page(listOf(alarm("a")), true, "10")
                     else page(listOf(alarm("b")), true, cursor)
                 }
@@ -138,7 +139,7 @@ class RemoteAlarmPaginationTest {
     fun laterFailureDoesNotReturnPartialCollection() = runBlocking {
         var call = 0
         expectInvalid {
-            collectRemoteAlarmPages {
+            collectRemoteAlarmPages { _, _ ->
                 if (call++ == 0) page(listOf(alarm("a")), true, "1")
                 else throw IOException("page unavailable")
             }
@@ -151,7 +152,7 @@ class RemoteAlarmPaginationTest {
         supervisorScope {
             var returned = false
             val task = async {
-                collectRemoteAlarmPages {
+                collectRemoteAlarmPages { _, _ ->
                     currentCoroutineContext().cancel()
                     page(listOf(alarm("a")), false)
                 }
@@ -168,6 +169,91 @@ class RemoteAlarmPaginationTest {
 
     private fun alarm(id: String, version: String? = null) =
         RemoteAlarm(id = id, deliveryVersion = version)
+
+    @Test
+    fun legacyServerReadsBeyond2500AndProbesEmptyPageThroughActualRequests() = runBlocking {
+        val requested = mutableListOf<Int>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val offset = request.url.queryParameter("offset")?.toInt() ?: 0
+            assertNull(request.url.queryParameter("after"))
+            if (requested.isEmpty()) assertEquals("cursor", request.url.queryParameter("pagination"))
+            else assertNull(request.url.queryParameter("pagination"))
+            requested.add(offset)
+            val end = minOf(offset + 100, 2601)
+            val alarms = (offset until end).joinToString(",") { index ->
+                """{"id":"alarm-$index","is_received_family_alarm":${index == 2600}}"""
+            }
+            // total이 줄어도 첫 페이지/짧은 페이지에서 완료하지 않는다.
+            val body = """{"alarms":[$alarms],"total":${if (offset == 0) 2601 else 1},"limit":100,"offset":$offset}"""
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                .message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        try {
+            val api = Retrofit.Builder().baseUrl("https://pagination.example.test/api/")
+                .client(client).addConverterFactory(GsonConverterFactory.create()).build()
+                .create(RemoteAlarmApi::class.java)
+            val result = collectRemoteAlarmPages { after, offset ->
+                api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
+            }
+            assertEquals(2601, result.size)
+            assertEquals(listOf("alarm-2600"), result.filter { it.isReceivedForPull }.map { it.id })
+            assertEquals((0..2600 step 100).toList() + 2601, requested)
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
+
+    @Test
+    fun legacyContractMustBeCompleteAndCannotChangeDuringTraversal() = runBlocking {
+        val first = RemoteAlarmListResponse(listOf(alarm("first")), total = 2, limit = 100, offset = 0)
+        for (invalid in listOf(
+            first.copy(total = null), first.copy(total = -1), first.copy(limit = null),
+            first.copy(limit = 0), first.copy(limit = 101), first.copy(offset = null),
+            first.copy(offset = 1), first.copy(nextCursor = "2"),
+            first.copy(alarms = listOf(alarm("a"), alarm("b")), limit = 1),
+        )) expectInvalid { collectRemoteAlarmPages { _, _ -> invalid } }
+        for (pages in listOf(
+            listOf(first, first.copy(alarms = emptyList())), // 서버가 offset을 무시했다.
+            listOf(first, page(emptyList(), false)),
+            listOf(page(listOf(alarm("a")), true, "1"), first.copy(offset = 1)),
+        )) {
+            var index = 0
+            expectInvalid { collectRemoteAlarmPages { _, _ -> pages[index++] } }
+        }
+    }
+
+    @Test
+    fun receivedMarkerUsesLegacyOnlyWhenModernMarkerIsAbsent() {
+        val fixtures = listOf(
+            """{"id":"a","is_received_family_alarm":true}""" to true,
+            """{"id":"a","is_received_family_alarm":false}""" to false,
+            """{"id":"a"}""" to false,
+            """{"id":"a","is_received":true,"is_received_family_alarm":false}""" to true,
+            """{"id":"a","is_received":false,"is_received_family_alarm":true}""" to false,
+            """{"id":"a","is_received_family_alarm":true,"is_received":false}""" to false,
+        )
+        val gson = Gson()
+        for ((json, received) in fixtures) {
+            assertEquals(json, received, gson.fromJson(json, RemoteAlarm::class.java).isReceivedForPull)
+        }
+    }
+
+    @Test
+    fun legacyFailureAndDuplicateCannotPublishPartialCollection() = runBlocking {
+        for (duplicate in listOf(false, true)) {
+            var calls = 0
+            expectInvalid {
+                collectRemoteAlarmPages { _, offset ->
+                    calls++
+                    if (offset != null && !duplicate) throw IOException("unavailable")
+                    RemoteAlarmListResponse(listOf(alarm("a")), total = 2, limit = 100, offset = offset ?: 0)
+                }
+            }
+            assertEquals(2, calls)
+        }
+    }
 
     private fun page(alarms: List<RemoteAlarm>, more: Boolean, next: String? = null) =
         RemoteAlarmListResponse(alarms, hasMore = more, nextCursor = next)

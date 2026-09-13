@@ -71,6 +71,8 @@ export interface ActiveSubscription {
    * `storeRenewalProvidersOf` 가 이걸 봐야 한다(코덱스 #733 6차).
    */
   cancelAtPeriodEnd: boolean;
+  /** 스토어 생존(status)과 별개인 권한 상태. 목록 조회는 항상 이 값을 채운다. */
+  entitlementState?: string;
 }
 
 export async function findActiveSubscriptionsByUserPk(
@@ -79,7 +81,7 @@ export async function findActiveSubscriptionsByUserPk(
 ): Promise<ActiveSubscription[]> {
   const res = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
-                 s.cancel_at_period_end, p.plan_type, p.key AS plan_key
+                 s.cancel_at_period_end, s.entitlement_state, p.plan_type, p.key AS plan_key
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.user_id = ? AND s.status = 'active'
           ORDER BY s.starts_at DESC`,
@@ -93,6 +95,7 @@ export async function findActiveSubscriptionsByUserPk(
     planKey: String(r.plan_key),
     planGroupId: (r.plan_group_id as string | null) ?? null,
     cancelAtPeriodEnd: Number(r.cancel_at_period_end ?? 0) === 1,
+    entitlementState: String(r.entitlement_state ?? 'entitled'),
   }));
 }
 
@@ -554,8 +557,7 @@ async function syncUserPlanAfterCancel(
   options: CancelCleanupOptions = {},
 ): Promise<void> {
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
-  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다.
-  const paid = remaining.find((s) => PAID_PLAN_TYPES.has(s.planType));
+  const paid = strongestPaidSubscription(remaining);
   if (paid) {
     await db.execute({
       sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -563,7 +565,23 @@ async function syncUserPlanAfterCancel(
     });
     return;
   }
-  await downgradeUserToFree(db, userPk, options);
+  if (remaining.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
+    // 보류·미확인 구독은 회복 가능하다. 다른 구독의 종료가 공유 구조까지 영구 정리하지 않는다.
+    await resolvePlanAfterSuspend(db, userPk, []);
+  } else {
+    await downgradeUserToFree(db, userPk, options);
+  }
+}
+
+function strongestPaidSubscription(
+  subscriptions: ActiveSubscription[],
+): ActiveSubscription | undefined {
+  // 시작일은 같은 등급 안에서만 의미가 있다. 새 개인 구독이 공유 권한을 덮으면 안 된다.
+  const entitled = subscriptions.filter((s) => s.entitlementState === 'entitled');
+  return (
+    entitled.find((s) => isGroupPlanType(s.planType)) ??
+    entitled.find((s) => PAID_PLAN_TYPES.has(s.planType))
+  );
 }
 
 /**
@@ -574,7 +592,8 @@ async function syncUserPlanAfterCancel(
  * deactivate 와 달리 ON_HOLD/PAUSED 는 결제 복구로 되살아날 수 있는 회복형 상태라,
  * is_shared 해제·타인 알람 강등 같은 음성 접근 정리는 하지 않는다(그룹·공유 구조 보존).
  * 소유자 users.plan 만 보수적으로 회수하며, 결제가 복구되면 entitle 가 users.plan 을 원복한다.
- * (매핑 구독은 suspend 에서 취소하지 않아 여전히 active 이므로 subscriptionId 로 명시 제외한다.)
+ * 매핑 구독은 active로 보존하고 entitlement_state에 보류를 기록한다. 이후 다른 구독의
+ * 해지·환불에서도 이 제외가 유지되며, 스토어가 복구를 확인한 경로만 표식을 해제한다.
  * 반환값: 유지된 plan_type(없으면 null — free 로 내림).
  */
 export async function resolvePlanAfterSuspend(
@@ -590,11 +609,16 @@ export async function resolvePlanAfterSuspend(
   const excluded = new Set(
     typeof excludeSubscriptionIds === 'string' ? [excludeSubscriptionIds] : excludeSubscriptionIds,
   );
+  if (excluded.size) {
+    const placeholders = [...excluded].map(() => '?').join(', ');
+    await db.execute({
+      sql: `UPDATE subscriptions SET entitlement_state = 'suspended', updated_at = datetime('now')
+            WHERE user_id = ? AND status = 'active' AND id IN (${placeholders})`,
+      args: [userPk, ...excluded],
+    });
+  }
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
-  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다. 매핑(정지된) 구독은 제외.
-  const paid = remaining.find(
-    (s) => !excluded.has(s.subscriptionId) && PAID_PLAN_TYPES.has(s.planType),
-  );
+  const paid = strongestPaidSubscription(remaining);
   await db.execute({
     sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [paid ? planTypeToUserPlan(paid.planType) : 'free', userPk],
@@ -621,8 +645,8 @@ export async function resolvePlanAfterSuspend(
  *
  * 커플도 같은 경로다(`isGroupPlanType` 주석 참조 — 커플은 정원 2명짜리 그룹이다).
  *
- * @param suspend `true` 면 그룹 구독을 제외하고 재계산(→ 대개 free),
- *                `false` 면 제외 없이 재계산(→ 그룹 플랜으로 복구).
+ * @param suspend `true` 면 그룹 구독의 보류를 저장하고 재계산(→ 대개 free),
+ *                `false` 면 확인된 이 그룹의 보류만 해제하고 재계산한다.
  * @returns 실제로 plan 이 바뀐 멤버들의 userPk (알림 대상).
  */
 export async function propagateGroupMemberPlans(
@@ -648,7 +672,7 @@ export async function propagateGroupMemberPlans(
 
     // 보류: 이 그룹에 묶인 멤버 구독을 **제외**하고 재계산한다. 멤버가 자기 개인
     // 구독을 따로 샀다면 그건 그대로 남는다.
-    // 복구: 제외 없이 재계산 — 그룹 구독이 다시 잡혀 원래 등급으로 돌아온다.
+    // 복구: 이 그룹만 entitled로 되돌린다. 다른 구독에 남은 보류·미확인은 계속 제외한다.
     if (suspend) {
       const memberSubRes = await db.execute({
         sql: `SELECT id FROM subscriptions
@@ -664,6 +688,11 @@ export async function propagateGroupMemberPlans(
         memberSubRes.rows.map((r) => String(r.id)),
       );
     } else {
+      await db.execute({
+        sql: `UPDATE subscriptions SET entitlement_state = 'entitled', updated_at = datetime('now')
+              WHERE user_id = ? AND plan_group_id = ? AND status = 'active'`,
+        args: [memberPk, planGroupId],
+      });
       await resolvePlanAfterSuspend(db, memberPk, []);
     }
 

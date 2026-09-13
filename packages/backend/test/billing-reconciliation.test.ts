@@ -26,9 +26,12 @@ import {
   reconcileStoreSubscription,
 } from '../src/lib/billing-reconciliation';
 import {
+  cancelSubscriptionImmediate,
+  findActiveSubscriptionsByUserPk,
   leavePlanGroupMember,
   processSubscriptionExpiry,
   repairOrphanedPaidPlan,
+  resolvePlanAfterSuspend,
 } from '../src/lib/billing-cancel';
 import { applyStoreEntitlement, loadPlanByKey } from '../src/lib/store-billing';
 import { withWriteTransaction } from '../src/lib/transactions';
@@ -144,6 +147,20 @@ function apple(overrides: Partial<Awaited<ReturnType<typeof fetchAppleSubscripti
   });
 }
 
+function playState(state = 'SUBSCRIPTION_STATE_ACTIVE', productId = 'family_monthly') {
+  vi.mocked(getPlaySubscriptionV2).mockResolvedValue({
+    subscriptionState: state,
+    lineItems: [
+      {
+        productId,
+        expiryTime: state === 'SUBSCRIPTION_STATE_ACTIVE' ? FUTURE : PAST,
+        latestSuccessfulOrderId: 'order-1',
+        autoRenewingPlan: { autoRenewEnabled: false },
+      },
+    ],
+  });
+}
+
 beforeAll(async () => {
   await runMigrations(db);
   familyPlanId = String((await rows("SELECT id FROM plans WHERE key = 'family'"))[0]!.id);
@@ -183,19 +200,6 @@ afterEach(() => {
 });
 
 describe('추가 리뷰 — 예약 전환·복수 증빙·그룹 해체 통지', () => {
-  function playState(state = 'SUBSCRIPTION_STATE_ACTIVE', productId = 'family_monthly') {
-    vi.mocked(getPlaySubscriptionV2).mockResolvedValue({
-      subscriptionState: state,
-      lineItems: [
-        {
-          productId,
-          expiryTime: state === 'SUBSCRIPTION_STATE_ACTIVE' ? FUTURE : PAST,
-          latestSuccessfulOrderId: 'order-1',
-          autoRenewingPlan: { autoRenewEnabled: false },
-        },
-      ],
-    });
-  }
   async function expiredMixedReceipts() {
     await seed('apple', 1);
     await db.execute({
@@ -1405,6 +1409,155 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     ).toBe(FUTURE);
   });
 
+  it.each(['family', 'couple'] as const)(
+    '%s 복구는 더 최근의 개인 구독보다 공유 권한을 우선하고 멤버에게 알린다',
+    async (key) => {
+      await seed();
+      const groupPlan = (await loadPlanByKey(db, key))!;
+      const personalPlan = (await loadPlanByKey(db, 'personal'))!;
+      await db.execute({ sql: 'UPDATE subscriptions SET plan_id=?', args: [groupPlan.id] });
+      await db.execute({ sql: 'UPDATE plan_groups SET plan_id=?', args: [groupPlan.id] });
+      await db.execute({
+        sql: 'UPDATE store_transactions SET product_id=?, plan_key=?',
+        args: [`com.alarmtalk.app.${key}_monthly`, key],
+      });
+      await db.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES ('member-personal','member',?,'active',?,?)`,
+        args: [personalPlan.id, NOW.toISOString(), FUTURE],
+      });
+      apple({ status: 3, productId: `com.alarmtalk.app.${key}_monthly` });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('plus');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+
+      vi.clearAllMocks();
+      apple({ productId: `com.alarmtalk.app.${key}_monthly` });
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT status FROM subscriptions WHERE id='member-personal'"))[0]!.status,
+      ).toBe('active');
+      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain(
+        'member',
+      );
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      vi.clearAllMocks();
+      await processSubscriptionExpiry(db, ENV, NOW);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    },
+  );
+
+  it('부분 해지 뒤에도 남은 개인 구독보다 기존 공유 권한을 우선한다', async () => {
+    await seed();
+    const personal = (await loadPlanByKey(db, 'personal'))!;
+    for (const id of ['keep-personal', 'cancel-personal']) {
+      await db.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES (?,'member',?,'active',?,?)`,
+        args: [id, personal.id, NOW.toISOString(), FUTURE],
+      });
+    }
+    const cancelled = (await findActiveSubscriptionsByUserPk(db, 'member')).find(
+      (sub) => sub.subscriptionId === 'cancel-personal',
+    )!;
+    await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+    expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+    expect(
+      (await rows("SELECT status FROM subscriptions WHERE id='keep-personal'"))[0]!.status,
+    ).toBe('active');
+    expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+  });
+
+  it.each([
+    ['apple', 'family'],
+    ['google', 'couple'],
+  ] as const)(
+    '%s %s 보류는 다른 개인 구독 종료 뒤에도 유지되고 스토어 복구만 해제한다',
+    async (provider, key) => {
+      await seed(provider);
+      const group = (await loadPlanByKey(db, key))!;
+      const personal = (await loadPlanByKey(db, 'personal'))!;
+      const productId =
+        provider === 'apple' ? `com.alarmtalk.app.${key}_monthly` : `${key}_monthly`;
+      await db.execute({ sql: 'UPDATE subscriptions SET plan_id=?', args: [group.id] });
+      await db.execute({ sql: 'UPDATE plan_groups SET plan_id=?', args: [group.id] });
+      await db.execute({
+        sql: 'UPDATE store_transactions SET product_id=?, plan_key=?',
+        args: [productId, key],
+      });
+      for (const user of ['owner', 'member']) {
+        await db.execute({
+          sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,starts_at,expires_at)
+              VALUES (?,?,?,'active',?,?)`,
+          args: [`personal-${user}`, user, personal.id, NOW.toISOString(), FUTURE],
+        });
+      }
+      if (provider === 'apple') apple({ status: 3, productId });
+      else playState('SUBSCRIPTION_STATE_ON_HOLD', productId);
+      await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'plus' },
+        { plan: 'plus' },
+      ]);
+      for (const user of ['owner', 'member']) {
+        const cancelled = (await findActiveSubscriptionsByUserPk(db, user)).find(
+          (sub) => sub.subscriptionId === `personal-${user}`,
+        )!;
+        await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+        // 별도 요청의 재계산에도 지난 보류가 남아 있어야 한다.
+        await withWriteTransaction(db, (tx) => resolvePlanAfterSuspend(tx, user, []));
+        expect((await rows('SELECT plan FROM users WHERE id=?', [user]))[0]!.plan).toBe('free');
+      }
+      expect(
+        await rows(
+          "SELECT status,entitlement_state FROM subscriptions WHERE plan_group_id='group'",
+        ),
+      ).toEqual([
+        { status: 'active', entitlement_state: 'suspended' },
+        { status: 'active', entitlement_state: 'suspended' },
+      ]);
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+      expect(await rows('SELECT * FROM paid_voice_retention')).toHaveLength(0);
+
+      vi.clearAllMocks();
+      if (provider === 'apple') apple({ productId });
+      else playState('SUBSCRIPTION_STATE_ACTIVE', productId);
+      await reconcileStoreSubscription(db, ENV, 'sub-owner', NOW);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'family' },
+        { plan: 'family' },
+      ]);
+      expect(
+        await rows("SELECT entitlement_state FROM subscriptions WHERE plan_group_id='group'"),
+      ).toEqual([{ entitlement_state: 'entitled' }, { entitlement_state: 'entitled' }]);
+      expect(vi.mocked(sendPlanChangedPush).mock.calls.flatMap((call) => call[2])).toContain(
+        'member',
+      );
+    },
+  );
+
+  it('보류 적용 실패는 소유자·멤버의 권한 상태까지 함께 롤백한다', async () => {
+    await seed();
+    apple({ status: 3 });
+    await db.execute(`CREATE TRIGGER fail_member_hold BEFORE UPDATE OF entitlement_state ON subscriptions
+      WHEN NEW.id='sub-member' BEGIN SELECT RAISE(ABORT, 'hold update failed'); END`);
+    try {
+      await expect(reconcileStoreSubscription(db, ENV, 'sub-owner', NOW)).rejects.toThrow();
+      expect(await rows('SELECT entitlement_state FROM subscriptions')).toEqual([
+        { entitlement_state: 'entitled' },
+        { entitlement_state: 'entitled' },
+      ]);
+      expect(await rows("SELECT plan FROM users WHERE id IN ('owner','member')")).toEqual([
+        { plan: 'family' },
+        { plan: 'family' },
+      ]);
+      expect(sendPlanChangedPush).not.toHaveBeenCalled();
+    } finally {
+      await db.execute('DROP TRIGGER fail_member_hold');
+    }
+  });
+
   it.each([undefined, 99])('알 수 없는 애플 상태 %s 는 무료 강등 근거가 아니다', async (status) => {
     await seed();
     apple({ status: status as number });
@@ -1567,7 +1720,9 @@ describe('#730 즉시 해지 중 새 결제의 보관 유예', () => {
         { status: 'cancelled' },
       ]);
       // 전체 마이그레이션이 만든 시스템 계정이 아니라 해지 영향 계정을 검증한다.
-      expect(await rows('SELECT id,plan FROM users WHERE id IN (?,?) ORDER BY id', ['owner', 'member'])).toEqual([
+      expect(
+        await rows('SELECT id,plan FROM users WHERE id IN (?,?) ORDER BY id', ['owner', 'member']),
+      ).toEqual([
         { id: 'member', plan: 'free' },
         { id: 'owner', plan: 'plus' },
       ]);

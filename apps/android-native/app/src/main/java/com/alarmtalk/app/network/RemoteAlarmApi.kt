@@ -15,7 +15,7 @@ data class RemoteAlarmListResponse(
     val total: Int? = null,
     val limit: Int? = null,
     val offset: Int? = null,
-    // null은 완료가 아니라 커서 계약 없는 응답이다(구서버/잘못된 응답을 거절).
+    // null이면 total/limit/offset을 검증한 뒤 구서버 호환 순회 여부를 결정한다.
     @SerializedName("has_more") val hasMore: Boolean? = null,
     @SerializedName("next_cursor") val nextCursor: String? = null,
 )
@@ -41,10 +41,14 @@ data class RemoteAlarm(
     @SerializedName("sender_email") val senderEmail: String? = null,
     // 서버 권위 판별: 내가 target 이고 내가 만든 게 아니면 true(카테고리 무관). pull 은 이 값으로
     // 받은 알람만 임포트한다 — 클라측 session.user.id 비교는 계정 연동 시 네임스페이스가 어긋난다.
-    @SerializedName("is_received") val isReceived: Boolean = false,
+    @SerializedName("is_received") val isReceived: Boolean? = null,
     @SerializedName("bucket_id") val bucketId: String? = null,
     @SerializedName("delivery_version") val deliveryVersion: String? = null,
-)
+    @SerializedName("is_received_family_alarm") val isReceivedFamilyAlarm: Boolean? = null,
+) {
+    // 두 필드를 합치면 신서버의 명시적인 false도 구형 표시 때문에 뒤집힐 수 있다.
+    val isReceivedForPull: Boolean get() = isReceived ?: isReceivedFamilyAlarm ?: false
+}
 
 data class RemoteAlarmReceivedRequest(
     @SerializedName("delivery_version") val deliveryVersion: String,
@@ -69,11 +73,13 @@ data class RemoteAlarmWriteRequest(
 )
 
 interface RemoteAlarmApi {
-    @GET("alarm?pagination=cursor")
+    @GET("alarm")
     suspend fun listAlarms(
         @Header("Authorization") authorization: String,
         @Query("limit") limit: Int,
         @Query("after") after: String? = null,
+        @Query("offset") offset: Int? = null,
+        @Query("pagination") pagination: String? = if (offset == null) "cursor" else null,
     ): RemoteAlarmListResponse
 
     @POST("alarm")

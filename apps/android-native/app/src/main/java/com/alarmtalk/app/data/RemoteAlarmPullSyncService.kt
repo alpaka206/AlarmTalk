@@ -214,14 +214,14 @@ internal class RemoteAlarmPullSyncService(
         val pullOwnerUserId = currentUserIdProvider()
         // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 받은 알람만 가져온다 —
-        // 판별은 서버가 뷰어의 두 식별자(PK·로그인 id)를 모두 담은 집합으로 계산한 is_received 를 쓴다.
+        // 신서버의 is_received가 우선이며, 없을 때만 구서버 is_received_family_alarm을 쓴다.
         // 클라측 session.user.id 로 sender 를 직접 비교하면 계정 연동(PK≠google_id) 사용자의
         // '보낸 알람'을 '받은 알람'으로 오분류해 자기 기기에 예약해버린다(PR #536 P1).
         // 고정 상한 없이 서버의 완료 응답까지 읽는다. 중간 실패면 로컬 반영에 진입하지 않는다.
-        val allRemote = collectRemoteAlarmPages { after ->
-            api.listAlarms(authorization, limit = 100, after = after)
+        val allRemote = collectRemoteAlarmPages { after, offset ->
+            api.listAlarms(authorization, limit = 100, after = after, offset = offset)
         }
-        val remoteAlarms = allRemote.filter { it.isReceived }
+        val remoteAlarms = allRemote.filter { it.isReceivedForPull }
 
         var imported = 0
         var updated = 0

@@ -61,33 +61,15 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
     /// 그 창 안에서 겹치면 둘 다 `remoteAlarmId == nil` 을 보고 **둘 다 create 로 가서
     /// 서버에 같은 알람이 두 행 생긴다.** 로컬 행은 하나라 앱에서는 정상으로 보이고,
     /// 가족 알람이면 수신자 기기에서 두 번 울린다.
-    private static var isRunning = false
-    /// 겹친 요청을 **버리지 않고 미뤄 둔다**(안드로이드 `9f07a096`). 그냥 return 하면
-    /// 앞 회차가 스냅샷한 뒤 저장된 알람이 다음 트리거(최대 15분)까지 안 올라간다 —
-    /// 중복을 막으려다 누락을 만드는 것이다.
-    private static var requestedWhileRunning = false
+    private static let serialGate = AsyncSerialGate()
 
     @discardableResult
     func runOnce() async throws -> PushResult {
-        if Self.isRunning {
-            Self.requestedWhileRunning = true
-            return PushResult(attempted: 0, created: 0, updated: 0, failed: 0)
-        }
-        Self.isRunning = true
-        defer { Self.isRunning = false }
-
-        var total = PushResult(attempted: 0, created: 0, updated: 0, failed: 0)
-        repeat {
-            Self.requestedWhileRunning = false
-            let cycle = try await runCycle()
-            total = PushResult(
-                attempted: total.attempted + cycle.attempted,
-                created: total.created + cycle.created,
-                updated: total.updated + cycle.updated,
-                failed: total.failed + cycle.failed
-            )
-        } while Self.requestedWhileRunning
-        return total
+        await Self.serialGate.acquire()
+        defer { Self.serialGate.release() }
+        try Task.checkCancellation()
+        // 대기 호출이 자기 회차를 맡는다. 앞 BGTask의 취소·오류가 후속 전송을 버리지 않는다.
+        return try await runCycle()
     }
 
     /// 한 회차. **세션은 회차마다, 그리고 건마다 다시 읽는다** — 미뤄 둔 회차는 앞 회차의

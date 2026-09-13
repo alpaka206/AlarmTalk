@@ -166,6 +166,8 @@ describe('#72~#73 갭 — 백필 전 사전 존재 동명 코드도 웰컴 규�
     );
     // #72 만 적용(#73 백필 전) — 컬럼은 생겼지만 gap-op 의 group 은 NULL
     await runMigrationsRange(gapDb, 72, 72);
+    // 프로모 백필 전 상태는 유지하고, 현행 리딤 경로가 요구하는 구독 권한 스키마만 준비한다.
+    await runMigrationsRange(gapDb, 118, 118);
     await gapDb.execute({
       sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
       args: ['gap-u', 'gap-u', 'gap@test'],
@@ -199,6 +201,8 @@ describe('마이그레이션 #78 — 폐기 동작', () => {
     rmSync(CONT_PATH, { force: true });
     const contDb = createClient({ url: `file:${CONT_PATH}` });
     await runMigrationsRange(contDb, 1, 77);
+    // #78 폐기 전 시드는 보존한 채 현행 리딤 경로의 구독 권한 스키마를 준비한다.
+    await runMigrationsRange(contDb, 118, 118);
     // #74 가 스탬프한 등록기한(2026-08-31)이 실제 시간으로 지나도 이 테스트가 깨지지 않게
     // 기한을 지운다 — 여기서 검증하는 건 윈도우가 아니라 '리딤 이력 보존'이다.
     await contDb.execute(
@@ -272,14 +276,15 @@ describe('마이그레이션 #78 — 폐기 동작', () => {
   });
 });
 
-describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', () => {
-  // deploy-backend.yml 이 배포 후 마이그레이션을 돌리므로, 새 코드가 redemption_group 컬럼이
-  // 없는 DB(#71까지만 적용)를 만나도 리딤이 500 나지 않고 레거시 규칙으로 동작해야 한다.
+describe('redemption_group 누락 호환 (#72 적용 전 프로모 스키마)', () => {
+  // 프로모 그룹 컬럼 누락 시 이름 기반 폴백만 검증한다. 현행 결제 경로의 #118은 별도 적용하며,
+  // 모든 마이그레이션이 #71에 멈춘 DB와 현행 코드의 호환을 보장하는 테스트는 아니다.
   it('redemption_group 컬럼이 없어도 리딤이 정상 동작한다(레거시 폴백)', async () => {
     const LEGACY_PATH = join(tmpdir(), 'alarmtalk-promo-legacy-schema.db');
     rmSync(LEGACY_PATH, { force: true });
     const legacyDb = createClient({ url: `file:${LEGACY_PATH}` });
     await runMigrationsRange(legacyDb, 1, 71);
+    await runMigrationsRange(legacyDb, 118, 118);
     await legacyDb.execute({
       sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
       args: ['legacy-u', 'legacy-u', 'legacy@test'],

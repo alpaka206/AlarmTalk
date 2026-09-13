@@ -362,6 +362,9 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 실제 가족 푸시가 호출하는 전체 동기화 진입점도 요청을 순서대로 기다린다. `isBusy`는
 진행 상태 표시이지 가족 푸시를 버리는 조건이 아니다. 앞 전체 동기화의 실패·취소 뒤에도
 대기 호출은 자기 push/pull 회차를 실행하며, 취소된 호출은 새 회차 없이 차례를 넘긴다.
+별도 인스턴스의 전경·백그라운드 **일괄 push도 호출별로 기다린다**. 앞 회차의 오류·취소가
+대기 요청을 지우지 않으며, 차례가 온 호출은 최신 로컬 후보와 세션으로 자기 회차를 수행한다.
+아직 전송하지 않은 호출에 성공/0건을 반환하지 않는다.
 실패 후 pending 예약 취소 재처리 역시 저장소 로드가 끝나지 않았으면 보류한다. OS 예약만
 지우고 디스크의 핸들이 남는 부분 처리를 하지 않는다(`alarm-lifecycle.md` 1-3절).
 
@@ -380,7 +383,7 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 재전송·같은 슬롯 교체로 비활성화된 새 세대도 동일하다. 같은 세대의 중복, 새 버전이 없는
 중복, 이미 본 옛 세대로의 역행, 한 페이지 안의 중복 id는 정상 재전송으로 읽지 않는다.
 중간 실패·취소·위의 잘못된 중복·진행하지 않는
-커서·커서 계약 없는 응답은 부분 목록을 성공으로 반환하지 않고 다음 pull에서 재시도한다.
+커서는 부분 목록을 성공으로 반환하지 않고 다음 pull에서 재시도한다.
 이는 요청 간 DB를 고정하는 스냅샷은 아니다. **다음 페이지 요청 전에 생성되거나 전달 버전이
 바뀐 가족 알람은 UUID나 시각 값에 관계없이 커서 뒤에 붙는다.** 최대 순번 행을 삭제한 뒤에도
 순번을 재사용하지 않는다. 같은 버전의 재쓰기/일반 시각 편집은 커서를 움직이지 않는다.
@@ -388,9 +391,22 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 마이그레이션 115는 기존 행의 순번 백필과 생성/삭제 트리거를 원자적으로 설치한다.
 마이그레이션 116은 타깃 행의 `delivery_version` 변경 때 새 순번을 발급하는 트리거를 추가한다.
 `alarm_creation_order`라는 기존 이름은 유지하지만 순번의 의미는 생성 + 새 전달 세대다.
-순번 갱신 실패는 새 전달 내용과 함께 롤백한다. 지원 서버와 마이그레이션 116까지를 커서 사용 앱보다
-먼저 배포한다. 옛 스키마로의 폴백은 하지 않는다.
+순번 갱신 실패는 새 전달 내용과 함께 롤백한다. 커서 서버의 DB 쓰기는 옛 스키마로 폴백하지 않는다.
 기존 클라이언트의 offset 계약은 서버의 별도 호환 경로로 유지한다.
+
+**앱 선출시 기간에는 구서버의 offset 응답도 읽는다.** 첫 응답에 `has_more`가 없고
+`total`·`limit`·`offset`이 유효한 경우에만 그 회차를 offset 방식으로 이어간다. 뒤 요청에서는
+`pagination`·`after`를 보내지 않고 실제 읽은 행 수만큼 `offset`을 늘린다. 줄어드는 `total`로
+완료를 판단하지 않고 빈 페이지까지 읽으며, 고정 페이지 상한을 두지 않는다. 페이지의 offset은
+요청과 같아야 하고 limit은 1~100, 행 수는 limit 이하여야 한다. 필드 누락·잘못된 응답·중간 실패·
+취소·중복은 부분 성공으로 반환하지 않는다. 한 번 커서로 시작한 회차가 중간에 offset으로 바뀌거나
+그 반대가 되면 실패한다. 다음 pull은 다시 커서를 요청해 지원 서버 배포 뒤 자동 전환한다.
+Android의 수신 판별은 `is_received`를 우선한다. 값이 없을 때만 구서버의
+`is_received_family_alarm`을 사용하며, 둘 다 없으면 수신으로 처리하지 않는다.
+새 필드의 명시적인 false를 구형 필드의 true로 뒤집지 않는다.
+offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으므로 호환 기간에만 사용한다.
+마이그레이션 116까지 적용된 서버에서는 위 커서 계약을 사용한다. 정책 문서를 번들한 앱의
+선출시 순서는 `CLAUDE.md`의 법무 문서 배포 규칙을 따른다.
 
 ## 4. 문구는 **받는 사람 기준**으로 고른다 (2026-08-18 결정)
 
@@ -427,9 +443,10 @@ pull 을 돌린다(실측 3초). 그래서 근거가 사라진 값이다.
 | 리드타임(**세 값이 같아야 한다**) | `AlarmEditorScreenComponents.kt` 의 `FAMILY_ALARM_MIN_LEAD_MILLIS`·`earliestSelectableFamilyAlarmMillis`·`isFamilyAlarmLeadTooSoon` | `AlarmEditorSheet.familyAlarmMinLeadMillis`·`earliestSelectableFamilyAlarmMillis` | `routes/alarm-helpers.ts` 의 `FAMILY_ALARM_MIN_LEAD_MINUTES` |
 | 재전송은 덮어쓴다 | `observedDeliveryVersion` (`AlarmEntity`·`RemoteAlarmPullSyncService`) | 같음 (`LocalAlarmRecord`·`RemoteAlarmPullSync`) | `claimTargetedAlarmSlot` 이 같은 id·새 `delivery_version` — 전달이 끝나 행이 지워진 뒤에는 `targeted_alarm_slots` 로 id 를 되짚는다 |
 | 수신 확인 → 서버 행 삭제 | `RemoteAlarmPullSyncService`(`audioSecured` + 예약 성공 + `remoteDeliveryVersion`) | `RemoteAlarmPullSync`(`MergeOutcome.deliveryComplete` + `remoteDeliveryVersion`) | `claimTargetedAlarmSlot`, `POST /alarm/:id/received`(한 트랜잭션에서 현재 버전만 삭제) |
-| 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmApi.listAlarms` → `collectRemoteAlarmPages` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSyncService`; `RemoteAlarmPaginationTest` | `AlarmTalkAPI.listAlarms` 커서 순회·최신 전달 세대 병합 → `RemoteAlarmPullSync` | `alarm-query.ts`의 생성/전달 세대 순번 커서·`migrations.ts` #115/#116·기존 offset 호환 분기 |
+| 첫 페이지 뒤의 가족 알람도 수신 | `RemoteAlarmApi.listAlarms` → `collectRemoteAlarmPages` 커서/구서버 offset 순회·최신 전달 세대 병합 → `RemoteAlarmPullSyncService`; `RemoteAlarmPaginationTest` | `AlarmTalkAPI.listAlarms` 커서/구서버 offset 순회·최신 전달 세대 병합 → `RemoteAlarmPullSync`; `AlarmPaginationTests` | `alarm-query.ts`의 생성/전달 세대 순번 커서·`migrations.ts` #115/#116·기존 offset 호환 분기 |
 | 콜드 스타트 디스크 로드 후 수신 | — | `RemoteAlarmPullSync.runCycle` → `requireLoadedStore` → `LocalAlarmStore.waitUntilLoadedFromDisk` | — |
 | 앞 pull 실패 뒤에도 대기 요청 실행 | — | `AlarmTalkApp` 가족 콜백 → `RemoteAlarmSyncViewModel.runFullSync` → `RemoteAlarmPullSync.runOnce`; 각 진입점의 `AsyncSerialGate` | — |
+| 앞 일괄 push 취소 뒤에도 대기 요청 실행 | 기존 `AlarmSyncService` 동기화 | `RemoteAlarmPushSync.runOnce` → 타입 공용 `AsyncSerialGate`; `RemoteAlarmPushQueueTests` | — |
 | APNs 설정 오류는 등록 보존 | — | 기존 등록 캐시 유지 | `apns.ts` `isDeadApnsToken` → `fcm.ts` `pruneDeadApnsTokens` |
 | 보낸 뒤 수정 금지 | — | — | `alarm-mutation.ts` 타깃 PATCH → 409 |
 | 수신자 음원 접근권 | — | — | `routes/tts.ts` `GET /messages/:id/audio` 의 `target_user_id` 갈래 |

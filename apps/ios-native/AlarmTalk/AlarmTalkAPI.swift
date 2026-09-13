@@ -118,20 +118,35 @@ final class AlarmTalkAPI: @unchecked Sendable {
         var latestIndexByID: [String: Int] = [:]
         var seenDeliveryVersions: [String: Set<String>] = [:]
         var cursor: String?
+        var offset = 0
+        var cursorMode: Bool?
         while true {
             try Task.checkCancellation()
             var query = URLComponents()
             query.queryItems = [
-                URLQueryItem(name: "pagination", value: "cursor"),
                 URLQueryItem(name: "limit", value: String(pageSize)),
             ]
-            if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
+            if cursorMode == false {
+                query.queryItems?.append(URLQueryItem(name: "offset", value: String(offset)))
+            } else {
+                query.queryItems?.append(URLQueryItem(name: "pagination", value: "cursor"))
+                if let cursor { query.queryItems?.append(URLQueryItem(name: "after", value: cursor)) }
+            }
             let page: RemoteAlarmListResponse = try await request(
                 "alarm?\(query.percentEncodedQuery!)", token: token
             )
             try Task.checkCancellation()
-            // 숫자 offset/total은 다른 기기의 ack로 줄어들 수 있다. 서버가 준 생성/전달 순번
-            // 커서로만 전진하고, 계약이 없는 옛 응답은 Decodable에서 실패시킨다.
+            if cursorMode == nil { cursorMode = page.hasMore != nil }
+            if cursorMode == false {
+                guard page.hasMore == nil, page.nextCursor == nil, page.offset == offset,
+                      let total = page.total, total >= 0, let limit = page.limit,
+                      (1...pageSize).contains(limit), page.alarms.count <= limit else {
+                    throw APIError.invalidResponse
+                }
+                if page.alarms.isEmpty { return alarms.compactMap { $0 } }
+            } else if page.hasMore == nil {
+                throw APIError.invalidResponse
+            }
             var pageIDs = Set<String>()
             for alarm in page.alarms {
                 guard pageIDs.insert(alarm.id).inserted else { throw APIError.invalidResponse }
@@ -149,7 +164,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 latestIndexByID[alarm.id] = alarms.count
                 alarms.append(alarm)
             }
-            if !page.hasMore {
+            if cursorMode == false {
+                let (next, overflow) = offset.addingReportingOverflow(page.alarms.count)
+                guard !overflow else { throw APIError.invalidResponse }
+                offset = next
+                continue
+            }
+            if page.hasMore == false {
                 guard page.nextCursor == nil else { throw APIError.invalidResponse }
                 return alarms.compactMap { $0 }
             }
