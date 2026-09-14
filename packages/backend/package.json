@@ -34,8 +34,8 @@
     "@alarmtalk/voice": "*",
     "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
-    "date-holidays": "^3.36.0",
-    "hono": "^4.13.5",
+    "date-holidays": "^3.36.1",
+    "hono": "^4.13.7",
     "toucan-js": "^4.1.1"
   }
 }
