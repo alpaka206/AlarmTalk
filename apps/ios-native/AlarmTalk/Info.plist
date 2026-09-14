@@ -22,6 +22,9 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <!-- 통신·보관은 OS의 TLS/Keychain을 사용하고 자체 암호화 구현은 없다. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
   <key>NSAlarmKitUsageDescription</key>
   <string>잠금 화면에서도 정확한 시간에 알람을 울리기 위해 알람 권한이 필요해요.</string>
   <key>NSMicrophoneUsageDescription</key>

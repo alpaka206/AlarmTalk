@@ -100,6 +100,24 @@ final class ScreenSweepUITests: XCTestCase {
         }
     }
 
+    /// App Store 목업에는 실제 iOS 화면만 넣는다. 녹음·업로드·구매는 수행하지 않는다.
+    func test_capture_storeMockupSources() {
+        launch(["-UIPreviewAuthScreen", "landing"])
+        XCTAssertTrue(app.buttons["시작하기"].waitForExistence(timeout: 15))
+        shot("mockup-welcome")
+
+        launch(["-UIPreviewSeed", "-UIPreviewTab", "voices"])
+        let add = app.buttons["추가"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 15))
+        add.tap()
+        let file = app.buttons["파일"].firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 15))
+        shot("mockup-voice-recording")
+        file.tap()
+        XCTAssertTrue(app.buttons["파일 또는 영상 업로드"].waitForExistence(timeout: 5))
+        shot("mockup-voice-upload")
+    }
+
     /// 더보기 **하위** 화면 — 탭 순회는 최상위만 훑어서 여기까지 오지 않는다.
     ///
     /// 코드 등록은 안드로이드와 갈라지기 쉬운 자리다(입력창을 종류별로 나눌지, 확인을

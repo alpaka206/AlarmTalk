@@ -14,6 +14,7 @@ import {
   clearPaidVoiceRetention,
   leavePlanGroupMember,
   propagateGroupMemberPlans,
+  resolvePlanAfterSuspend,
 } from './billing-cancel';
 import { planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
 
@@ -80,7 +81,8 @@ export type StoreEntitlementResult =
        * 이 전환으로 **스냅샷을 다시 읽어야 하는** 사람들. 호출부가 트랜잭션 커밋 **후**
        * `notifyPlanChanged` 로 알린다.
        *
-       * 두 갈래가 들어온다:
+       * 다음 사람들이 들어온다:
+       * - **구매자** — 같은 상품 복구·갱신으로 실제 유효 등급이 바뀐 경우.
        * - **나가게 된 멤버**(정원 축소) — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
        * - **남았지만 플랜이 바뀐 멤버**(커플 ↔ 가족) — 등급·정원이 달라졌는데 알리지 않으면
        *   다음 앱 시작·주기 pull 까지 **옛 플랜 키를 들고 있다**(코덱스 #733).
@@ -198,7 +200,9 @@ export async function applyStoreEntitlement(
   const appliedAt = input.appliedAt ?? new Date();
 
   const existing = await tx.execute({
-    sql: `SELECT user_id, subscription_id, last_paid_at, expires_at FROM store_transactions
+    sql: `SELECT user_id, subscription_id, last_paid_at, expires_at,
+                 (SELECT plan FROM users WHERE id = store_transactions.user_id) AS user_plan
+          FROM store_transactions
           WHERE provider = ? AND provider_transaction_id = ?`,
     args: [input.provider, input.providerTransactionId],
   });
@@ -246,10 +250,9 @@ export async function applyStoreEntitlement(
               WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
         args: [expiresAtIso, expiresAtIso, subscriptionId],
       });
-      await tx.execute({
-        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-        args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],
-      });
+      // 복구된 개인 구독이 기존 공유 권한을 덮지 않도록 전체 유효 구독에서 다시 고른다.
+      const effectivePlanType = await resolvePlanAfterSuspend(tx, input.userPk, []);
+      const effectiveUserPlan = effectivePlanType ? planTypeToUserPlan(effectivePlanType) : 'free';
       await tx.execute({
         // 재전송·유예 연장과 실제 결제는 다르다. 검증된 결제일이 새로울 때만 앵커를 옮긴다.
         sql: `UPDATE store_transactions
@@ -273,6 +276,7 @@ export async function applyStoreEntitlement(
       // 갱신/복구로 유료가 이어지면 예약된 유료 음성 보관 삭제를 해제한다.
       await clearPaidVoiceRetention(tx, input.userPk);
       const planChangedUserIds = await extendStoreGroupPeriod(tx, subscriptionId, expiresAtIso);
+      if (String(row.user_plan) !== effectiveUserPlan) planChangedUserIds.push(input.userPk);
       return {
         ok: true,
         subscription: {

@@ -1448,6 +1448,62 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     },
   );
 
+  it.each([
+    ['apple', 'family'],
+    ['apple', 'couple'],
+    ['google', 'family'],
+    ['google', 'couple'],
+  ] as const)(
+    '%s 개인 구독의 같은 상품 복구·갱신도 기존 %s 권한을 유지하고 실제 변경만 알린다',
+    async (provider, key) => {
+      await seed(provider);
+      const shared = (await loadPlanByKey(db, key))!;
+      const personal = (await loadPlanByKey(db, 'personal'))!;
+      await db.execute({
+        sql: 'UPDATE subscriptions SET plan_id=?,expires_at=?',
+        args: [shared.id, FUTURE],
+      });
+      await db.execute({ sql: 'UPDATE plan_groups SET plan_id=?', args: [shared.id] });
+      await db.execute({
+        sql: `INSERT INTO subscriptions (id,user_id,plan_id,status,entitlement_state,starts_at,expires_at)
+              VALUES ('personal-recovery','member',?,'active','suspended',?,?)`,
+        args: [personal.id, NOW.toISOString(), PAST],
+      });
+      await db.execute({
+        sql: `INSERT INTO store_transactions
+              (id,user_id,provider,provider_transaction_id,product_id,plan_key,subscription_id,expires_at,last_paid_at)
+              VALUES ('personal-receipt','member',?,'personal-token','personal_monthly','personal','personal-recovery',?,?)`,
+        args: [provider, PAST, PAID],
+      });
+      const input = {
+        userPk: 'member',
+        provider,
+        providerTransactionId: 'personal-token',
+        productId: 'personal_monthly',
+        plan: personal,
+        startsAt: new Date(PAID),
+        expiresAt: new Date(FUTURE),
+        lastPaidAt: new Date(PAID),
+      };
+      const recovered = await withWriteTransaction(db, (tx) => applyStoreEntitlement(tx, input));
+      expect(recovered.ok && recovered.planChangedUserIds).toEqual([]);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+      expect(
+        (await rows("SELECT entitlement_state FROM subscriptions WHERE id='personal-recovery'"))[0]!
+          .entitlement_state,
+      ).toBe('entitled');
+      expect(await rows('SELECT * FROM plan_group_members')).toHaveLength(2);
+
+      // 이미 옛 경로가 잘못 내린 스냅샷도 갱신 때 복구하고 구매자에게 알려야 한다.
+      await db.execute("UPDATE users SET plan='plus' WHERE id='member'");
+      const repaired = await withWriteTransaction(db, (tx) => applyStoreEntitlement(tx, input));
+      expect(repaired.ok && repaired.planChangedUserIds).toEqual(['member']);
+      expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
+      const replayed = await withWriteTransaction(db, (tx) => applyStoreEntitlement(tx, input));
+      expect(replayed.ok && replayed.planChangedUserIds).toEqual([]);
+    },
+  );
+
   it('부분 해지 뒤에도 남은 개인 구독보다 기존 공유 권한을 우선한다', async () => {
     await seed();
     const personal = (await loadPlanByKey(db, 'personal'))!;
