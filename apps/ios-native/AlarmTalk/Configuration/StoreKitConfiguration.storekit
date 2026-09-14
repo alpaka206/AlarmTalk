@@ -8,8 +8,8 @@
       "internalID": "55927B60",
       "localizations": [
         {
-          "description": "개인 이용권 1개월을 선물할 수 있는 코드를 만들어요.",
-          "displayName": "개인 이용권 선물 (1개월)",
+          "description": "퍼스널 1개월 이용권 선물, 1회성 결제",
+          "displayName": "AlarmTalk 개인플랜 1달 이용권",
           "locale": "ko_KR"
         }
       ],
@@ -93,14 +93,14 @@
           "adHocOffers": [],
           "codeOffers": [],
           "displayPrice": "14900",
-          "familyShareable": true,
+          "familyShareable": false,
           "groupNumber": 1,
           "internalID": "21500105",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "가족 플랜 월간 구독 (최대 5인)",
-              "displayName": "가족 (월간)",
+              "description": "가족이 함께 쓰는 요금제, 매월 자동 갱신",
+              "displayName": "AlarmTalk 가족플랜",
               "locale": "ko_KR"
             },
             {
@@ -125,8 +125,8 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "커플 플랜 월간 구독",
-              "displayName": "커플 (월간)",
+              "description": "두 사람이 함께 쓰는 요금제, 매월 자동 갱신",
+              "displayName": "AlarmTalk 커플플랜",
               "locale": "ko_KR"
             },
             {
@@ -151,8 +151,8 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "개인 플랜 월간 구독",
-              "displayName": "개인 (월간)",
+              "description": "내 목소리 알람 1인 요금제, 매월 자동 갱신",
+              "displayName": "AlarmTalk 개인플랜",
               "locale": "ko_KR"
             },
             {

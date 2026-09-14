@@ -21,13 +21,19 @@
   ```
   cd apps/ios-native && xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
     -configuration Debug -destination 'id=<UDID>' -skipPackagePluginValidation \
-    DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM -allowProvisioningUpdates -derivedDataPath <경로> build
-  xcrun devicectl device install app --device <UDID> <경로>/Build/Products/Debug-iphoneos/AlarmTalk.app
+    -xcconfig Local.xcconfig -allowProvisioningUpdates -derivedDataPath DerivedData/Device build
+  xcrun devicectl device install app --device <UDID> DerivedData/Device/Build/Products/Debug-iphoneos/AlarmTalk.app
   ```
 - ⚠ `scripts/build-debug.sh` 는 `CODE_SIGNING_ALLOWED=NO` + `generic/platform=iOS` 라
   **기기에 설치할 수 없는 산출물**을 만든다. 컴파일 확인용이지 설치용이 아니다.
 - ⚠ 시뮬레이터 테스트는 별도다(`-destination "id=0733FD07-812F-4EC4-B149-B9A992E51F00"`).
   기기용 빌드와 파생 데이터를 섞지 말 것 — 서명 설정이 달라 재빌드가 길어진다.
+- **산출물·로그·테스트 기록은 프로젝트 안의 기존 경로에 둔다**(2026-09-14 사용자 지시).
+  iOS는 `apps/ios-native/DerivedData/` 아래에 기기·시뮬레이터·Release 경로를 나누고,
+  Android는 기존 `apps/android-native/app/build/`를 쓴다. 임시 폴더로 빼지 않는다.
+  시뮬레이터 테스트도 기존 CI처럼 ad-hoc 서명(`CODE_SIGN_IDENTITY=-`,
+  `CODE_SIGNING_REQUIRED=NO`, `CODE_SIGNING_ALLOWED=YES`)과 `-testLanguage ko -testRegion KR`로 실행한다. 서명을 끄면
+  Keychain을 사용하는 테스트가 entitlement 오류 `-34018`로 실패한다.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경

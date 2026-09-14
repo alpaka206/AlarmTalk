@@ -1,7 +1,11 @@
-# Apple 개발자 계정 세팅 — 값만 채우면 되는 상태
+# Apple 개발자 계정 세팅 — 발급·연결 참조
 
-코드는 전부 끝나 있다. **여기 적힌 값만 발급받아 지정된 자리에 넣으면 동작한다.**
-값이 없으면 각 경로가 조용히 통과하지 않고 명시적으로 실패한다(fail-closed).
+이 문서는 키·인증서가 어디서 나와 어디에 들어가는지의 참조다. 값이 등록돼 있다는 사실만으로
+실제 구매·푸시·심사 준비 완료를 보장하지 않는다. 누락된 값은 명시적으로 실패한다(fail-closed).
+
+> **2026-09-14 실제 출시 준비 현황은 [출시 기록](../qa/ios-release-preparation-2026-09-14.md) 참조.**
+> dev·운영 Apple 시크릿, 배포 서명·IPA·스토어 문구·스크린샷을 준비했다.
+> 유료 앱 계약·사업자 정보, Play 25 게재 후 서버 배포, 실기기 결제 검증이 남아 있다.
 
 > ✅ **가입은 이미 끝났다(2026-09-08 이 맥에서 재확인).** 서명 인증서
 > `Apple Development: <이름>`(`security find-identity -v -p codesigning`), 팀
@@ -115,7 +119,7 @@ APPLE_SIGNIN_PRIVATE_KEY=<그 키의 .p8 내용 전체(PEM)>
 ## 5. 인앱결제 — App Store Connect
 
 ### 5-1. 앱 레코드 생성
-<https://appstoreconnect.apple.com> → 앱 → `+` → 새로운 앱. Bundle ID 는 위 `...ios`.
+<https://appstoreconnect.apple.com> → 앱 → `+` → 새로운 앱. Bundle ID 는 `com.alarmtalk.app`.
 
 ### 5-2. 구독 상품 3개 등록
 
@@ -160,8 +164,8 @@ StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용�
 
 ### 5-3. App Store Server API 키 발급
 
-App Store Connect → 사용자 및 액세스 → 통합 → **App Store Connect API** → 키 생성
-(**In-App Purchase** 권한).
+App Store Connect → 사용자 및 액세스 → 통합 → **앱 내 구입(In-App Purchase)** → 키 생성.
+앱 업로드·메타데이터 관리용 **App Store Connect API 팀 키와는 별도**다.
 
 발급 결과 3가지를 서버에 넣는다:
 
@@ -222,9 +226,9 @@ npm run secrets:sync:prod    # prod 워커로
 | 400 `Invalid transaction id` | **인증 통과** (ID 만 가짜라 거부) |
 | 404 | 인증 통과, 그런 구독이 없다 |
 
-⚠ **401 을 곧바로 "키가 틀렸다" 로 읽지 말 것.** 2026-08-10 실측에서 같은 JWT 로
-production 은 401, sandbox 는 400 이 나왔다 — 키는 정상이고 **앱이 아직 프로덕션에
-안 올라가서** 프로덕션 호스트가 안 열린 것이다. 출시하면 프로덕션도 열린다.
+⚠ **401의 원인을 미출시 때문이라고 확정하지 말 것.** 같은 키로 production 401,
+sandbox 400이 나왔다면 Sandbox 인증만 확인된 것이다. Production은 키 종류·Issuer·
+Bundle ID·권한과 유효 거래를 다시 확인해야 한다. 출시 뒤 자동으로 해결된다고 보장하지 않는다.
 (그래서 `apple-storekit.ts` 는 401 을 만나면 샌드박스를 마저 본다 —
 `docs/spec/billing-lifecycle.md` 참조.)
 

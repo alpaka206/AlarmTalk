@@ -5,8 +5,9 @@ import XCTest
 final class BillingScreenshotUITests: XCTestCase {
 
     func test_이용권_화면을_연다() throws {
+        // UI 미리보기 촬영이다. 가격 조회·실제 결제 성공을 검증하는 테스트는 아니다.
         let app = XCUIApplication()
-        app.launchArguments += ["-UIPreviewSeed", "-UIPreviewTab", "menu"]
+        app.launchArguments += ["-UIPreviewSeed", "-UIPreviewPlan", "free", "-UIPreviewTab", "menu"]
         app.launch()
 
         let billing = app.buttons.containing(.staticText, identifier: "이용권").firstMatch
@@ -40,6 +41,15 @@ final class BillingScreenshotUITests: XCTestCase {
         bottom.lifetime = .keepAlways
         add(bottom)
 
-        XCTAssertTrue(true)
+        app.swipeDown()
+        app.swipeDown()
+        let gift = app.buttons["선물하기"].firstMatch
+        XCTAssertTrue(gift.waitForExistence(timeout: 5))
+        gift.tap()
+        XCTAssertTrue(app.staticTexts["개인 이용권 선물하기"].waitForExistence(timeout: 5))
+        let giftScreen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        giftScreen.name = "billing-gift"
+        giftScreen.lifetime = .keepAlways
+        add(giftScreen)
     }
 }
