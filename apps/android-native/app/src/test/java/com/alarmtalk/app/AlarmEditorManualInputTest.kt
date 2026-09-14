@@ -25,7 +25,7 @@ class AlarmEditorManualInputTest {
     @Test
     fun bucketAlarmIsNotClassifiedAsManualInput() {
         val editor = AlarmEditorState.from(alarm = null)
-        editor.playMode = AlarmPlayModes.ALARM_VOICE
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
         editor.voiceSource = VoiceSources.SERVER_TTS
         editor.voiceRandomPrompt = false
         editor.voiceText = "오늘은 비가 올 수도 있대요."
@@ -39,7 +39,7 @@ class AlarmEditorManualInputTest {
     @Test
     fun manualInputAlarmIsClassifiedAsManual() {
         val editor = AlarmEditorState.from(alarm = null)
-        editor.playMode = AlarmPlayModes.ALARM_VOICE
+        editor.playMode = AlarmPlayModes.VOICE_ONLY
         editor.voiceSource = VoiceSources.SERVER_TTS
         editor.voiceRandomPrompt = false
         editor.voiceText = "일어나서 물 한 잔 마시기"

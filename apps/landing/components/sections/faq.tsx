@@ -24,12 +24,13 @@ export function Faq() {
             <RevealItem
               as="details"
               key={i}
+              id={`faq-${i}`}
               className="group p-6 transition-[background-color] duration-150 ease-[var(--ease-ui)] open:bg-raised md:p-7"
             >
               <summary className="flex cursor-pointer list-none items-start justify-between gap-6">
-                <span className="text-[16px] font-semibold text-text sm:text-[17px]">
+                <h3 className="min-w-0 text-[16px] font-semibold text-text [overflow-wrap:anywhere] sm:text-[17px]">
                   {t(`items.${i}.q`)}
-                </span>
+                </h3>
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line text-text-muted transition-[transform,color,border-color] duration-150 ease-[var(--ease-ui)] group-open:rotate-45 group-open:border-accent group-open:text-accent"

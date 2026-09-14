@@ -66,7 +66,7 @@
   - 위험: 서버 축소는 테스트 동반 수정 필요: tts.test.ts:878,918,957,958 이 body.cache_hit/provider 로 캐시 동작을 검증하므로 관측 수단을 로그로 옮긴 뒤 지울 것. billing 계열 테스트가 필드를 단언하는지 확인. max_members·period_days·price_krw 는 서버 내부 로직에서 계속 쓰이니 '응답 필드'만 제거
   - 확신도: high
 
-- [ ] **tts 캐시 조회가 ga.mime_type 을 SELECT 하지만 타입에도 반환값에도 없어 매 히트마다 읽고 버린다**
+- [x] **tts 캐시 조회가 ga.mime_type 을 SELECT 하지만 타입에도 반환값에도 없어 매 히트마다 읽고 버린다** — 처리됨(SELECT 제거 + 마이그레이션 #108 이 컬럼 DROP).
   - 위치: `packages/backend/src/routes/tts.ts:1885 (typedRow 1894-1901, 반환 1907-1915)`
   - 조치: SELECT 목록에서 `, ga.mime_type` 제거. 그러면 generated_audio_assets.mime_type 도 완전 INSERT 전용이 되어 아래 컬럼 DROP 후보로 승격(audio_format 으로 MIME 재구성 가능)
   - 확신도: high
@@ -96,12 +96,16 @@
   - 확신도: high
 
 - [x] **idx_voice_profiles_lru 가 ORDER BY 선행항 표현식 때문에 안 걸린다(#75 도입 목적 미달성)**
+  - ⚠ **이 체크는 2026-09-02 까지 거짓이었다.** `git log -L` 로 추적하니 체크를 바꾼 커밋
+    (`24b1d507`, #89·#90)이 **ORDER BY 도 인덱스도 건드리지 않았다** — 대장이 하지 않은
+    수정을 완료로 적고 있었다. 실제 처리는 마이그레이션 **#108**(인덱스 DROP)이다.
+    ⚠ 이 문서의 다른 체크박스도 코드로 확인하고 믿을 것.
   - 위치: `packages/backend/src/lib/voice-slots.ts:85 / 인덱스 packages/backend/src/lib/migrations.ts:1544-1545`
   - 조치: `(last_used_at IS NULL) DESC,` 를 제거해 `ORDER BY last_used_at ASC, created_at ASC` 로 변경(SQLite ASC = NULLS FIRST 라 의미 동일 + 인덱스 적중). 이 수정을 안 할 거면 인덱스를 DROP
   - 위험: NULL 정렬 순서를 SQLite 기본 동작에 의존하게 된다 — 명시성을 원하면 `ORDER BY last_used_at ASC NULLS FIRST`(인덱스 여전히 적중)
   - 확신도: high
 
-- [ ] **PUSH_PLATFORMS 의 'web' — 등록할 클라이언트가 없는 죽은 enum 값**
+- [ ] **PUSH_PLATFORMS 의 'web' — 등록할 클라이언트가 없는 죽은 enum 값** ⚠ **2026-09-08 정정: 좁힐 때 `['android']` 로 좁히지 말 것.** iOS 가 되살아나 `platform: "ios"` 로 등록한다(`apps/ios-native/AlarmTalk/AlarmTalkAPIModels.swift` 의 `PushTokenRequest`). 지금 지울 수 있는 값은 `'web'` 하나이고 목록은 `['ios','android']` 가 된다.
   - 위치: `packages/backend/src/routes/push.ts:8 (근거: network/PushApi.kt:10 platform="android" 하드코딩, apps/landing 참조 0건)`
   - 조치: PUSH_PLATFORMS 를 ['android'] 로 좁힌다. DB CHECK 는 테이블 재작성이 필요하니 다음 재작성 마이그레이션 때 처리
   - 위험: packages/backend/test/push-token-unique.test.ts:60,66 이 'web' 을 두 번째 플랫폼 값으로 쓴다 — 테스트 의도는 토큰 유니크성이라 'android' 로 치환 가능
@@ -121,7 +125,7 @@
   - 위험: 30초는 AlarmAudioStore.kt:26 의 로컬 알람 오디오 상한이지 목소리 프로필과 무관 — 같은 파일 32행에 120_000L 도 있어 '30초=로컬 상한' 서술은 한쪽만 맞다
   - 확신도: high
 
-- [ ] **docs/standards 가 존재하지 않는 Gradle 태스크를 표준 명령으로 안내(product flavor 때문에 생성되지 않음)**
+- [x] **docs/standards 가 존재하지 않는 Gradle 태스크를 표준 명령으로 안내(product flavor 때문에 생성되지 않음)** — 처리됨(현재 `docs/standards/README.md` 는 `:app:testDevDebugUnitTest` / `:app:lintDevDebug`).
   - 위치: `docs/standards/README.md:57,59`
   - 조치: :57 → `./gradlew :app:testDevDebugUnitTest`, :59 → `./gradlew :app:lintDevDebug`. :58 connectedAndroidTest 는 유효하니 유지
   - 확신도: high
@@ -131,7 +135,7 @@
   - 조치: 수치 하드코딩 대신 코드 참조로 변경 — "rateLimit.ts 의 MAX_REQUESTS 를 넘겨 1분 내 호출", "bodyLimit.ts 의 MAX_BODY_BYTES 를 넘는 content-length 전송". docs/standards/README.md:152-153 의 자체 규약(상한을 문서에 베끼지 말 것)과도 정합
   - 확신도: high
 
-- [ ] **아키텍처 문서가 존재하지 않는 '지금 동기화' 탭을 절 제목으로 사용**
+- [x] **아키텍처 문서가 존재하지 않는 '지금 동기화' 탭을 절 제목으로 사용** — 처리됨(`docs/tech/README.md` 「서버 동기화 — 알람 탭 진입 시 자동, 60초 스로틀」).
   - 위치: `docs/tech/README.md:95 (실제: AlarmTalkApp.kt:521 알람 탭 진입 LaunchedEffect + :510-511 60초 스로틀)`
   - 조치: 제목을 `### 서버 동기화 (알람 탭 진입 시 자동, 60초 스로틀)` 로 바꾸고 '수동 버튼은 없다' 한 줄 명시
   - 확신도: high
@@ -262,13 +266,13 @@
   - 위험: Play formattedPrice 미수신 시 스토어 표기와 다른 가격이 그대로 노출 — Play 정책·표시광고 이슈 가능
   - 확신도: high
 
-- [ ] **POST /api/billing/test-codes(QA 전용 유료 바우처 발급기)에 production 하드게이트가 없다**
+- [x] **POST /api/billing/test-codes(QA 전용 유료 바우처 발급기)에 production 하드게이트가 없다** — 처리됨(`routes/billing-mutation.ts` 진입부에서 `ENVIRONMENT === 'production'` 이면 404).
   - 위치: `packages/backend/src/routes/billing-mutation.ts:342-346 (대조군: isBillingStubEnabled :104, 사용처 :252-253, :803-804)`
   - 조치: 라우트 진입부에 `if (c.env.ENVIRONMENT === 'production') return c.json({...}, 404)` 추가. 라우트 자체는 dev QA 에서 쓰이므로 삭제 대상 아님
   - 위험: 현재는 TEST_CODE_ISSUER_EMAILS 미설정 시 fail-closed(전원 403)라 즉시 위험은 아니지만, prod 에 이 env 를 실수로 채우는 순간 1콜 최대 50장/365일 유료 바우처 발급이 열린다. LAUNCH_AUDIT 의 동일 지적이 미해결 상태
   - 확신도: high
 
-- [ ] **retained_billing_records 의 retain_until 경과분을 파기하는 cron 이 없어 보존기간 초과 보관이 무기한 누적**
+- [x] **retained_billing_records 의 retain_until 경과분을 파기하는 cron 이 없어 보존기간 초과 보관이 무기한 누적** — 처리됨(`src/index.ts` 의 `scheduled` 가 `DELETE FROM retained_billing_records WHERE retain_until <= ?`).
   - 위치: `packages/backend/src/lib/migrations.ts:825-840, lib/account-deletion.ts:42-54(유일 INSERT), src/index.ts:326-341(scheduled 는 deletion_purge_at 만 본다)`
   - 조치: index.ts 의 scheduled 에 retain_until <= now 인 행을 삭제하는 블록 추가
   - 위험: 테이블·컬럼은 절대 삭제 금지 — 전자상거래법 5년 보존 대상이고 test/compliance-verify.test.ts:324 가 retained_reason 을 읽는다. 인덱스 2개는 DROP 해도 무방하나 이득이 작다
@@ -345,5 +349,5 @@
 - [ ] store_transactions.raw_payload 를 지워도 되는가? 결제 분쟁 대응 증빙이라 '안 읽는 게 정상'인 컬럼이라 결제 담당 판단이 필요하다.
 - [ ] messages.is_preset 을 NOT NULL 정규화(테이블 재작성 + COALESCE 11곳 교체)까지 갈 것인가, 아니면 idx_messages_stock 을 그냥 DROP 하고 끝낼 것인가?
 - [ ] dev 스톡 클립 144개가 코드 프리셋과 desync 라 admin seed reset 금지라는 MEMORY 내용이 지금도 유효한가? 유효하면 마이그레이션 주석 5곳에 경고를 박겠다.
-- [ ] #89 마이그레이션(컬럼 13개 + 인덱스 12개 DROP)을 한 PR 로 묶을지, 컬럼/인덱스로 나눌지? prod DB 초기화 예정이라 하위호환은 불필요하지만 되돌리기는 어렵다.
+- [x] #89 마이그레이션(컬럼 13개 + 인덱스 12개 DROP)을 한 PR 로 묶을지, 컬럼/인덱스로 나눌지? → 제자리 마이그레이션 #89·#90 으로 적용 완료. ⚠ **'prod DB 초기화 예정' 은 2026-08-01 에 취소됐다**(CLAUDE.md) — 하위호환을 불필요로 보지 말 것.
 

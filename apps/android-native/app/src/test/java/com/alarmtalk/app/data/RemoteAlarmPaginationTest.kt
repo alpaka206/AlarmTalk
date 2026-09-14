@@ -1,0 +1,269 @@
+package com.alarmtalk.app.data
+
+import com.alarmtalk.app.network.RemoteAlarm
+import com.alarmtalk.app.network.RemoteAlarmApi
+import com.alarmtalk.app.network.RemoteAlarmListResponse
+import com.google.gson.Gson
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+
+class RemoteAlarmPaginationTest {
+    @Test
+    fun readsFamilyAlarmBeyond2500ThroughActualCursorRequests() = runBlocking {
+        val requests = mutableListOf<String?>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            assertEquals("Bearer test-token", request.header("Authorization"))
+            assertEquals("cursor", request.url.queryParameter("pagination"))
+            assertEquals("100", request.url.queryParameter("limit"))
+            assertNull(request.url.queryParameter("offset"))
+            val after = request.url.queryParameter("after")
+            requests.add(after)
+            val start = after?.toInt() ?: 0
+            val end = minOf(start + 100, 2601)
+            val alarms = (start until end).joinToString(",") { index ->
+                """{"id":"alarm-$index","is_received":${index == 2600}}"""
+            }
+            val next = if (end < 2601) "\"$end\"" else "null"
+            // total은 의도적으로 없다. 완료 여부는 커서 계약으로만 결정한다.
+            val body = """{"alarms":[$alarms],"has_more":${end < 2601},"next_cursor":$next}"""
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                .message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        try {
+            val api = Retrofit.Builder().baseUrl("https://pagination.example.test/api/")
+                .client(client).addConverterFactory(GsonConverterFactory.create()).build()
+                .create(RemoteAlarmApi::class.java)
+            val alarms = collectRemoteAlarmPages { after, offset ->
+                api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
+            }
+            assertEquals(2601, alarms.size)
+            assertEquals(listOf("alarm-2600"), alarms.filter { it.isReceivedForPull }.map { it.id })
+            assertEquals(listOf(null) + (100..2600 step 100).map { it.toString() }, requests)
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
+
+    @Test
+    fun cursorSurvivesDeletionAndDoesNotUseTotalOrPageLength() = runBlocking {
+        val requested = mutableListOf<String?>()
+        val result = collectRemoteAlarmPages { after, _ ->
+            requested.add(after)
+            when (after) {
+                null -> page(listOf(alarm("removed")), true, "10").copy(total = 2)
+                // 앞 행과 커서 행이 삭제돼 total이 줄어도 after=10 뒤의 새 행을 읽는다.
+                "10" -> page(listOf(alarm("family")), false).copy(total = 1)
+                else -> error("Unexpected cursor")
+            }
+        }
+        assertEquals(listOf(null, "10"), requested)
+        assertEquals(listOf("removed", "family"), result.map { it.id })
+        assertTrue(collectRemoteAlarmPages { _, _ -> page(emptyList(), false) }.isEmpty())
+    }
+
+    @Test
+    fun mergesNewDeliveryAtLatestPositionIncludingDisabledGeneration() = runBlocking {
+        for (originalVersion in listOf(null, "old")) {
+            var call = 0
+            val result = collectRemoteAlarmPages { _, _ ->
+                when (call++) {
+                    0 -> page(listOf(alarm("a", originalVersion), alarm("b", "b1")), true, "2")
+                    else -> page(listOf(alarm("a", "new").copy(isActive = false)), false)
+                }
+            }
+            assertEquals(listOf("b", "a"), result.map { it.id })
+            assertEquals("new", result.last().deliveryVersion)
+            assertEquals(false, result.last().isActive)
+        }
+    }
+
+    @Test
+    fun rejectsDuplicateMissingAndRegressedDeliveryVersions() = runBlocking {
+        val invalidPages = listOf(
+            listOf(page(listOf(alarm("a"), alarm("a")), false)),
+            listOf(page(listOf(alarm("a", "old")), true, "1"), page(listOf(alarm("a", "old")), false)),
+            listOf(page(listOf(alarm("a", "old")), true, "1"), page(listOf(alarm("a")), false)),
+            listOf(page(listOf(alarm("a", "old")), true, "1"), page(listOf(alarm("a", "  ")), false)),
+            listOf(
+                page(listOf(alarm("a", "old")), true, "1"),
+                page(listOf(alarm("a", "new")), true, "2"),
+                page(listOf(alarm("a", "old")), false),
+            ),
+        )
+        for (pages in invalidPages) {
+            var call = 0
+            expectInvalid { collectRemoteAlarmPages { _, _ -> pages[call++] } }
+        }
+    }
+
+    @Test
+    fun rejectsMissingIncompleteAndNonAdvancingCursorContracts() = runBlocking {
+        expectInvalid { collectRemoteAlarmPages { _, _ -> RemoteAlarmListResponse(listOf(alarm("a"))) } }
+        expectInvalid { collectRemoteAlarmPages { _, _ -> page(emptyList(), true, "1") } }
+        expectInvalid { collectRemoteAlarmPages { _, _ -> page(listOf(alarm("a")), false, "1") } }
+        for (cursor in listOf(null, "", "0", "-1", "01", "+1", "1.0", " 1", "9007199254740992")) {
+            expectInvalid { collectRemoteAlarmPages { _, _ -> page(listOf(alarm("a")), true, cursor) } }
+        }
+        for (cursor in listOf("9", "10")) {
+            var call = 0
+            expectInvalid {
+                collectRemoteAlarmPages { _, _ ->
+                    if (call++ == 0) page(listOf(alarm("a")), true, "10")
+                    else page(listOf(alarm("b")), true, cursor)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun laterFailureDoesNotReturnPartialCollection() = runBlocking {
+        var call = 0
+        expectInvalid {
+            collectRemoteAlarmPages { _, _ ->
+                if (call++ == 0) page(listOf(alarm("a")), true, "1")
+                else throw IOException("page unavailable")
+            }
+        }
+        assertEquals(2, call)
+    }
+
+    @Test
+    fun cancellationAfterResponseCannotPublishPartialOrCompleteCollection() = runBlocking {
+        supervisorScope {
+            var returned = false
+            val task = async {
+                collectRemoteAlarmPages { _, _ ->
+                    currentCoroutineContext().cancel()
+                    page(listOf(alarm("a")), false)
+                }
+                returned = true
+            }
+            try {
+                task.await()
+                fail("Cancellation must propagate")
+            } catch (_: CancellationException) {
+                assertFalse(returned)
+            }
+        }
+    }
+
+    private fun alarm(id: String, version: String? = null) =
+        RemoteAlarm(id = id, deliveryVersion = version)
+
+    @Test
+    fun legacyServerReadsBeyond2500AndProbesEmptyPageThroughActualRequests() = runBlocking {
+        val requested = mutableListOf<Int>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val offset = request.url.queryParameter("offset")?.toInt() ?: 0
+            assertNull(request.url.queryParameter("after"))
+            if (requested.isEmpty()) assertEquals("cursor", request.url.queryParameter("pagination"))
+            else assertNull(request.url.queryParameter("pagination"))
+            requested.add(offset)
+            val end = minOf(offset + 100, 2601)
+            val alarms = (offset until end).joinToString(",") { index ->
+                """{"id":"alarm-$index","is_received_family_alarm":${index == 2600}}"""
+            }
+            // total이 줄어도 첫 페이지/짧은 페이지에서 완료하지 않는다.
+            val body = """{"alarms":[$alarms],"total":${if (offset == 0) 2601 else 1},"limit":100,"offset":$offset}"""
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                .message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        try {
+            val api = Retrofit.Builder().baseUrl("https://pagination.example.test/api/")
+                .client(client).addConverterFactory(GsonConverterFactory.create()).build()
+                .create(RemoteAlarmApi::class.java)
+            val result = collectRemoteAlarmPages { after, offset ->
+                api.listAlarms("Bearer test-token", limit = 100, after = after, offset = offset)
+            }
+            assertEquals(2601, result.size)
+            assertEquals(listOf("alarm-2600"), result.filter { it.isReceivedForPull }.map { it.id })
+            assertEquals((0..2600 step 100).toList() + 2601, requested)
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
+
+    @Test
+    fun legacyContractMustBeCompleteAndCannotChangeDuringTraversal() = runBlocking {
+        val first = RemoteAlarmListResponse(listOf(alarm("first")), total = 2, limit = 100, offset = 0)
+        for (invalid in listOf(
+            first.copy(total = null), first.copy(total = -1), first.copy(limit = null),
+            first.copy(limit = 0), first.copy(limit = 101), first.copy(offset = null),
+            first.copy(offset = 1), first.copy(nextCursor = "2"),
+            first.copy(alarms = listOf(alarm("a"), alarm("b")), limit = 1),
+        )) expectInvalid { collectRemoteAlarmPages { _, _ -> invalid } }
+        for (pages in listOf(
+            listOf(first, first.copy(alarms = emptyList())), // 서버가 offset을 무시했다.
+            listOf(first, page(emptyList(), false)),
+            listOf(page(listOf(alarm("a")), true, "1"), first.copy(offset = 1)),
+        )) {
+            var index = 0
+            expectInvalid { collectRemoteAlarmPages { _, _ -> pages[index++] } }
+        }
+    }
+
+    @Test
+    fun receivedMarkerUsesLegacyOnlyWhenModernMarkerIsAbsent() {
+        val fixtures = listOf(
+            """{"id":"a","is_received_family_alarm":true}""" to true,
+            """{"id":"a","is_received_family_alarm":false}""" to false,
+            """{"id":"a"}""" to false,
+            """{"id":"a","is_received":true,"is_received_family_alarm":false}""" to true,
+            """{"id":"a","is_received":false,"is_received_family_alarm":true}""" to false,
+            """{"id":"a","is_received_family_alarm":true,"is_received":false}""" to false,
+        )
+        val gson = Gson()
+        for ((json, received) in fixtures) {
+            assertEquals(json, received, gson.fromJson(json, RemoteAlarm::class.java).isReceivedForPull)
+        }
+    }
+
+    @Test
+    fun legacyFailureAndDuplicateCannotPublishPartialCollection() = runBlocking {
+        for (duplicate in listOf(false, true)) {
+            var calls = 0
+            expectInvalid {
+                collectRemoteAlarmPages { _, offset ->
+                    calls++
+                    if (offset != null && !duplicate) throw IOException("unavailable")
+                    RemoteAlarmListResponse(listOf(alarm("a")), total = 2, limit = 100, offset = offset ?: 0)
+                }
+            }
+            assertEquals(2, calls)
+        }
+    }
+
+    private fun page(alarms: List<RemoteAlarm>, more: Boolean, next: String? = null) =
+        RemoteAlarmListResponse(alarms, hasMore = more, nextCursor = next)
+
+    private suspend fun expectInvalid(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Invalid or incomplete pages must not succeed")
+        } catch (_: IOException) {
+            // 목록 수집이 실패하므로 호출자의 예약·ACK·prune 단계로 넘어갈 수 없다.
+        }
+    }
+}

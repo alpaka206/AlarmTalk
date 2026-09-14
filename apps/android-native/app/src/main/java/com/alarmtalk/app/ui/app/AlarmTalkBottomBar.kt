@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +17,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -33,10 +34,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -63,6 +66,11 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
+                // ⚠ **세 탭 모두 Material 아이콘이다**(2026-08-17 지시 "글리프는 각 OS 것").
+                // 예전에는 알람만 Material 이고 목소리·더보기는 **iOS(SF) 모양을 베낀 자체
+                // 드로어블**이었다 — 한 줄 안에 두 디자인 언어가 섞여 있었다.
+                // ⚠ Material 알람은 Outlined 와 Filled 의 path 가 사실상 같다 — 선택 표시는
+                // **색으로만** 된다. 그게 원래 안드로이드 동작이다.
                 icon = Icons.Outlined.Alarm,
                 selectedIcon = Icons.Filled.Alarm,
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
@@ -82,8 +90,7 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Menu,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Menu,
-                selectedIcon = Icons.Filled.Menu,
+                icon = Icons.Filled.Menu,
                 label = stringResource(R.string.r3app_bottom_tab_menu),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -96,8 +103,15 @@ internal fun AlarmTalkBottomBar(
 internal fun AlarmTalkTabItem(
     tab: NativeTab,
     selectedTab: NativeTab,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selectedIcon: androidx.compose.ui.graphics.vector.ImageVector = icon,
+    // ⚠ 탭마다 아이콘 출처가 다르다 — 알람은 Material `ImageVector`, 목소리·더보기는
+    // iOS 모양을 옮긴 자체 드로어블(`res/drawable/ic_tab_*.xml`)이다. 하나로 통일하려
+    // 하지 말 것: 알람만 안드로이드 모양으로 두는 게 사용자 결정이다.
+    icon: ImageVector,
+    selectedIcon: ImageVector = icon,
+    /// 아이콘 박스 크기. Material 은 24 격자에서 잉크가 20.2(84%)뿐이라, SF 심볼 기준
+    /// 22 로 두면 작아 보인다 — 잉크를 맞춘 값이 26 이다(22 / 0.842).
+    /// 세 탭이 모두 Material 이므로 이제 한 값이다(2026-08-17).
+    iconSize: Dp = 26.dp,
     label: String,
     badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
@@ -145,11 +159,12 @@ internal fun AlarmTalkTabItem(
                     }
                 },
             ) {
+                val iconModifier = Modifier.size(iconSize)
                 Icon(
                     imageVector = if (selected) selectedIcon else icon,
                     contentDescription = label,
                     tint = selectedContentColor,
-                    modifier = Modifier.size(22.dp),
+                    modifier = iconModifier,
                 )
             }
         }
@@ -165,5 +180,6 @@ internal fun AlarmTalkTabItem(
         )
     }
 }
+
 
 private fun badgeLabel(count: Int): String = if (count > 99) "99+" else count.toString()

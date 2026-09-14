@@ -38,7 +38,7 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 4. **Create your first alarm**
    - Alarm tab → "+ New alarm".
    - Pick the time and repeat days.
-   - Choose mode = "Alarm + voice" (recommended): a default alarm tone plays first; when you tap stop, the voice plays once.
+   - Choose mode = "Voice" (recommended): the voice repeats until you stop the alarm. The other mode, "Alarm", uses the built-in tone only.
    - Pick the voice profile you just created and type the message to read.
    - Save.
 
@@ -53,7 +53,7 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 - **Full-screen alerts**: On Android 14+ there is a dedicated menu — Settings → Apps → AlarmTalk → "Full-screen notification access".
 - **Battery optimization**: Some manufacturers (Samsung One UI, Xiaomi MIUI) require AlarmTalk to be excluded from battery optimization for reliable rings.
 
-The More tab shows the current permission state and links straight to the system settings.
+If a permission is missing, the Alarm tab shows a banner above your alarm list saying which one it is; tapping it goes straight to that system setting.
 
 ## 5. Connecting family or a partner
 
@@ -80,7 +80,7 @@ The More tab shows the current permission state and links straight to the system
 
 - **Be considerate**: don't test alarms at unsocial hours; neighbors hear them too.
 - **Heavy sleeper**: schedule three repeating alarms 5–10 minutes apart on weekdays.
-- **Volume**: alarm volume follows the system Alarm category. Settings → Sound → Alarm volume.
+- **Volume**: each alarm has its own voice / tone volume in the alarm editor — set it there. AlarmTalk also raises the device Alarm-category volume for the duration of a ring if it is set lower, and restores it afterwards, so turning the system slider down will not quiet an alarm.
 - **Vibration**: "Default" for light sleep, "Strong" for deep sleep.
 
 ## 7. Subscriptions and codes
@@ -99,16 +99,17 @@ Current prices and quotas are shown in the app under More → subscription.
 - `GIFT-XXXX-XXXX-XXXX` → activate a personal plan someone gifted you.
 - Any other promotional code → type it exactly as you received it.
 
-### Pause / cancel
+### Cancel
 
-- Payments renew monthly. More → subscription → "Pause".
-- Your subscription stays active until the next billing date, then drops to Free automatically.
+- Payments renew monthly. More → subscription → "Cancel plan". There is no pause.
+- **Cancel at period end**: you keep everything until the next billing date, then drop to Free automatically.
+- **Cancel now**: the remaining period is refunded pro rata and the plan ends immediately. Your voices are kept for 3 days — re-register a plan within that window and they come back; after it they are deleted permanently.
 
 ## 8. FAQ
 
 ### Q. My alarm did not ring once.
-- 99% of the time it is a permission issue. More tab → permission state.
-- If permissions are fine, exclude AlarmTalk from battery optimization and turn off "auto-close unused apps" in your manufacturer's settings.
+- Missing permissions do not stop the ring — the alarm still makes sound and vibrates. What they cost you is the notification (no heads-up alert), punctuality (an alarm without exact-alarm permission can be several minutes late), or the lock screen (sound plays but no full-screen alarm). Check the banner on the Alarm tab for which one is missing.
+- If it genuinely made no sound, exclude AlarmTalk from battery optimization and turn off "auto-close unused apps" in your manufacturer's settings.
 - If it still does not ring, contact support.
 
 ### Q. If the server is down, do my alarms still ring?
@@ -147,7 +148,7 @@ Current prices and quotas are shown in the app under More → subscription.
 | Voice profile | A cloned voice made from a recording or upload. |
 | TTS | Text-to-Speech. Turns text into audio. |
 | Shared voice | A voice profile created by another member of your family / partner group. |
-| Alarm mode | "Alarm only", "Voice only", or "Alarm + Voice". |
+| Alarm mode | "Alarm" (built-in tone) or "Voice" (your chosen voice, repeating). |
 | Snooze | Postpones the alarm for a few minutes. |
 | Invite code | `INV-XXXX-XXXX-XXXX`, for joining a family or couple group. |
 | Gift code | `GIFT-XXXX-XXXX-XXXX`, for a gifted personal plan. |

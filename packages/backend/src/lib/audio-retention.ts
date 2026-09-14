@@ -8,7 +8,8 @@
  *      실패 시 attempts 를 올리고 남겨 다음 주기에 재시도한다.
  *
  * 2) R2 TTL 정리 (cleanupExpiredAudio)
- *    - voice_uploads(클론 학습용 원본): 클론 완료 후에는 불필요 → 7일 경과 시 삭제.
+ *    - voice_uploads(클론 학습용 원본): 확정 목소리는 재생성·말투 분석 재시도용으로
+ *      프로필 삭제까지 보관. 미확정 초안·프로필 미연결 원본만 7일 경과 시 삭제.
  *    - generated_audio_assets(TTS 캐시): 기기들이 로컬 캐싱하므로 서버 보관은
  *      전달용 버퍼다 → 30일 경과 시 삭제. 단 알람이 message_id 로 참조 중인
  *      오브젝트와 시스템/클론 프리셋 클립은 건너뛴다.
@@ -22,12 +23,12 @@ import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
 import { logStructured } from './logger';
 
-export const VOICE_UPLOAD_TTL_DAYS = 7;
-export const GENERATED_TTS_TTL_DAYS = 30;
+const VOICE_UPLOAD_TTL_DAYS = 7;
+const GENERATED_TTS_TTL_DAYS = 30;
 // 화자 분리 후보(draft) 보이스의 유예 시간. 다이얼로그 안에서 몇 분 내 선택/정리되는
 // 임시물이라 1시간이면 충분히 넉넉하다 — 앱 강제종료 등으로 클라이언트 정리를 못 거친
 // 고아만 걸린다.
-export const DRAFT_VOICE_TTL_HOURS = 1;
+const DRAFT_VOICE_TTL_HOURS = 1;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
@@ -117,7 +118,21 @@ export async function enqueueUserVoiceArtifacts(
 }
 
 /** 큐를 배치로 비운다 — cron 전용. 외부 API 호출이 있으므로 트랜잭션 밖에서 실행. */
-export async function drainExternalDeletions(db: Client, env: Env): Promise<void> {
+/**
+ * R2 오브젝트 삭제 유예. **오브젝트가 올라온 지** 이만큼 지난 것만 실제로 지운다.
+ *
+ * 키가 결정론적이라 '내가 올린 것' 과 '남이 올린 같은 내용' 을 구분할 수 없다. 렌더 한
+ * 회차는 길어야 수십 초이므로, 마지막 업로드 이후 이 시간을 넘겼는데도 아무도 참조하지
+ * 않으면 미아가 맞다. 파기(목소리 삭제·동의 철회)에도 같은 유예가 걸리지만 약속 단위가
+ * 일(日)이라 영향이 없다.
+ */
+const R2_DELETE_GRACE_MS = 30 * 60 * 1000;
+
+export async function drainExternalDeletions(
+  db: Client,
+  env: Env,
+  now: Date = new Date(),
+): Promise<void> {
   const pending = await db.execute({
     sql: `WITH
             retry AS (
@@ -134,9 +149,9 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
               ORDER BY created_at ASC
               LIMIT ?
             )
-          SELECT id, kind, ref, attempts FROM retry
+          SELECT id, kind, ref, attempts, created_at FROM retry
           UNION ALL
-          SELECT id, kind, ref, attempts FROM fresh`,
+          SELECT id, kind, ref, attempts, created_at FROM fresh`,
     args: [Math.floor(DRAIN_BATCH_SIZE / 2), Math.ceil(DRAIN_BATCH_SIZE / 2)],
   });
   if (pending.rows.length === 0) return;
@@ -160,8 +175,70 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
         }
       } else {
         if (!bucket) throw new Error('VOICE_BUCKET unset');
-        await bucket.delete(ref);
+        // ⚠ **결정론적 키라 '내 것' 을 확신할 수 없다**(2026-09-03 리뷰 10·11·12차).
+        //   R2 키는 cacheKey 에서 나오므로(`generated-tts/<user>/<cacheKey>.mp3`) 같은
+        //   목소리·같은 문구를 만든 다른 렌더가 **같은 키**를 올린다. 그 렌더가 아직 행을
+        //   커밋하지 않은 사이에 지우면, 곧 게시될 알람이 없는 음원을 가리킨다.
+        //
+        //   ⚠ **유예는 큐 나이가 아니라 오브젝트의 업로드 시각에 건다**(리뷰 12차).
+        //   큐 행의 `created_at` 은 **처음 정리를 시도한 때**를 말할 뿐이다 — 삭제가 실패해
+        //   `attempts` 만 오르고 `created_at` 은 그대로인 행이 30분을 넘긴 뒤, **그때 새
+        //   렌더가 같은 키를 올리면** 그 회차가 유예를 통과해 방금 올라온 오브젝트를 지운다.
+        //   R2 오브젝트의 업로드 시각은 다시 올릴 때마다 갱신되므로, 그걸 보면 유예가
+        //   **경쟁 업로드에 정확히 연동**된다.
+        const head = typeof bucket.head === 'function' ? await bucket.head(ref) : null;
+        if (head) {
+          const uploadedAt = head.uploaded instanceof Date ? head.uploaded.getTime() : NaN;
+          if (Number.isFinite(uploadedAt) && now.getTime() - uploadedAt < R2_DELETE_GRACE_MS) {
+            continue; // 방금 올라왔다 — attempts 를 태우지 않고 다음 회차로 넘긴다.
+          }
+          // ⚠ 판정은 **`messages.audio_url` 만** 본다. `generated_audio_assets` 까지 보면
+          //   제자리 교체가 남긴 **옛 원장 행**이 '살아 있다' 로 읽혀 교체된 옛 음원을
+          //   영영 못 지운다 — 프리셋은 TTL 스윕에서도 면제라 회수 경로가 사라진다.
+          //   목소리 파기·동의 철회는 `messages` 행까지 같은 트랜잭션에서 지우므로
+          //   (`paid-voice-cleanup`·`account-deletion`) 이 확인에 걸리지 않는다.
+          const stillReferenced = await db.execute({
+            sql: 'SELECT 1 FROM messages WHERE audio_url = ? LIMIT 1',
+            args: [`r2://${ref}`],
+          });
+          if (stillReferenced.rows.length === 0) {
+            // ⚠ **지우기 직전에 예약이 아직 있는지 다시 본다**(2026-09-03 리뷰 13차).
+            //   렌더는 **게시에 성공한 그 트랜잭션에서** 자기 키의 예약을 지운다
+            //   (`generateStockClip` 의 `claimKeyFromDeletionQueue`). 그래서 여기서 예약이
+            //   사라졌다는 것은 **방금 누군가 이 키로 게시를 마쳤다**는 뜻이다.
+            //   (14차 정정: 예전에는 렌더가 **올리기 전에** 지웠는데, 그러면 계정 삭제·
+            //    동의 철회가 넣어 둔 남의 예약을 소비하고 업로드가 실패하면 되살릴 곳이
+            //    없었다. 이제 게시와 원자적으로 묶여 있어 실패하면 예약이 그대로 남는다.)
+            //
+            //   ⚠ **이것으로도 완전히 닫히지는 않는다.** 이 확인과 R2 삭제 사이는 DB 밖이라
+            //   원자적일 수 없다 — 그 찰나에 올라온 오브젝트는 여전히 지워질 수 있다.
+            //   완전한 해법은 회차마다 다른 키에 올리고 게시할 때 승격하는 것인데,
+            //   `generated_audio_assets.request_hash` 가 UNIQUE 라 그러면 같은 내용의
+            //   두 번째 행이 `INSERT OR IGNORE` 로 무시되고, 그때 `messages.audio_url` 과
+            //   `ga.audio_object_key` 가 어긋나 `findMissingStockTargets` 가 그 클립을
+            //   **영영 미완성으로 읽는다.** 키 체계를 바꾸려면 그 제약부터 손봐야 한다.
+            //   남은 창은 렌더 한 회차(수 초)가 아니라 **DB 왕복 한 번**이다.
+            const stillQueued = await db.execute({
+              sql: 'SELECT 1 FROM pending_external_deletions WHERE id = ? LIMIT 1',
+              args: [id],
+            });
+            if (stillQueued.rows.length === 0) continue;
+            await bucket.delete(ref);
+          }
+        }
+        // head 가 null 이면 오브젝트가 이미 없다 — 지울 것이 없으니 큐에서 내린다.
       }
+      // ⚠ **살아 있는 참조를 만난 예약도 여기서 내린다 — 남겨 두지 말 것.**
+      //   `messages.audio_url` 이 이 키를 가리킨다 = 그 오브젝트는 **지금 누가 쓰는 것**이고,
+      //   결정론적 키라 그건 이 예약이 겨냥한 파일이 아니라 그 뒤에 올라온 새 렌더다.
+      //   남겨 두면 `attempts` 는 오류에서만 오르므로(아래 catch) 그 행이 영원히
+      //   `attempts = 0` 파티션의 맨 앞(`created_at ASC`)에 앉아, 회차당 몇 칸뿐인 그 자리를
+      //   막는다 — **계정 삭제·동의 철회가 넣은 예약이 드레인되지 못한다.** 미아 하나보다
+      //   나쁘다.
+      //   그리고 그 참조가 사라지는 경로는 스스로 다시 넣는다: TTL 스윕은 `audio_url` 을
+      //   비우기 **전에** 넣고(`cleanupExpiredAudio`), 파기는 `messages` 행과 같은
+      //   트랜잭션에서 넣는다(`voice-profile` 의 DELETE·`paid-voice-cleanup`).
+      //   제자리 교체만 예외인데(참조만 끊고 원장 행은 남긴다) 그건 TTL 스윕이 거둔다.
       await db.execute({
         sql: 'DELETE FROM pending_external_deletions WHERE id = ?',
         args: [id],
@@ -284,6 +361,13 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   // 2) TTS 캐시 — 알람이 message_id → messages.audio_url 로 참조 중인 오브젝트는
   //    보존한다. 이 가드가 없으면 활성 알람이 쓰는 TTS 오브젝트가 TTL 후 삭제되어
   //    알람이 무음이 된다.
+  //
+  //    ⚠ **받은(가족) 알람은 이 보존 대상이 아니다.** 수신 확인이 끝나면 서버 행이
+  //    지워지므로(`POST /alarm/:id/received`) 이 EXISTS 에 걸리지 않고, 그 음원은 TTL
+  //    대로 정리된다. 그래도 되는 이유는 **수신자 기기가 이미 음원을 로컬에 갖고 있기
+  //    때문**이다 — ack 는 다운로드가 끝난 뒤에만 나간다. 뒤집어 말하면 클라가 음원
+  //    확보 전에 ack 하면 이 정리가 그 알람의 음원을 지워도 아무도 막지 못한다.
+  //    (전달 전 알람은 행이 남아 있으므로 여기서 정상적으로 보존된다.)
   const generated = await db.execute({
     sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
           WHERE g.created_at <= ?

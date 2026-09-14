@@ -6,16 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -24,14 +19,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import com.alarmtalk.app.R
@@ -58,7 +50,11 @@ internal fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val promptPreferenceStore = remember(context) { DynamicPromptPreferenceStore(context) }
-    var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
+    // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
+    val promptOwnerUserId = authSession?.user?.id
+    var promptPreferences by remember(context, promptOwnerUserId) {
+        mutableStateOf(promptPreferenceStore.read(promptOwnerUserId))
+    }
     val holidayCountryStore = remember(context) { HolidayCountryPreferenceStore(context) }
     var holidayCountryCode by remember(context) { mutableStateOf(holidayCountryStore.read()) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
@@ -66,35 +62,27 @@ internal fun SettingsScreen(
     var showHolidayCountryDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            // 탭과 같은 그라데이션 배경 — 더보기 → 설정 진입 시 배경 톤이 튀지 않게.
+            // 탭과 같은 그라데이션 배경 — 진입 시 배경 톤이 튀지 않게.
             .background(homeGradientBrush())
             .padding(contentPadding),
+    ) {
+        // ⚠ **상단바는 목록 밖에 고정한다.** 목록 안에 두면 스크롤과 함께 사라져,
+        // 내려간 상태에서 뒤로가기에 닿으려면 맨 위로 되돌아와야 한다(iOS 는 네비게이션
+        // 바라 항상 남는다). 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한다.
+        WakerTopBar(
+            title = stringResource(R.string.hs_settings_title),
+            onBack = onBack,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
         // 좌우 20dp·카드 간 16dp — 전 화면 공통 규격.
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.hs_settings_back),
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.hs_settings_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-
         item {
             // 테마·앱 언어는 전체 탭에서 관리한다(토스 패턴). 여기엔 알람 동작에 걸리는 설정만 남긴다.
             SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
@@ -124,7 +112,6 @@ internal fun SettingsScreen(
                         context,
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
-                        promptPreferences.fortuneBirthTime,
                     ),
                     onClick = { showFortuneInfoDialog = true },
                 )
@@ -140,6 +127,11 @@ internal fun SettingsScreen(
                         onClick = onEditNickname,
                     )
                     HorizontalDivider()
+                    // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시 "굳이 밖에서부터
+                    // 강조를 해야 해?"). 이 행은 **문**이다 — 눌러도 아직 아무 일도
+                    // 일어나지 않고 확인 모달이 뜬다. 결정하는 자리(모달의 [로그아웃])만
+                    // 빨강이면 그 색이 "여기서 되돌릴 수 없다" 는 뜻으로 남는다.
+                    // 목록의 행마다 빨강을 뿌리면 색이 아무 말도 하지 않게 된다.
                     SettingsRow(
                         label = stringResource(R.string.hs_settings_logout),
                         value = null,
@@ -170,6 +162,7 @@ internal fun SettingsScreen(
             }
         }
     }
+    }
 
     if (showLogoutConfirm) {
         IosAlertDialog(
@@ -184,6 +177,10 @@ internal fun SettingsScreen(
                 IosAlertAction(
                     label = stringResource(R.string.hs_settings_logout),
                     emphasized = true,
+                    // ⚠ **빨강은 여기뿐이다**(2026-08-17). 되돌리기 어려운 행동을 실제로
+                    // 실행하는 자리라서다 — 목록의 행은 기본색으로 둔다(위 주석).
+                    // iOS 도 알럿 액션만 `role: .destructive` 다.
+                    destructive = true,
                     onClick = {
                         showLogoutConfirm = false
                         onLogout()
@@ -200,8 +197,8 @@ internal fun SettingsScreen(
             city = promptPreferences.weatherCity,
             onDismissWithoutSave = { showWeatherLocationDialog = false },
             onConfirm = { country, city ->
-                promptPreferenceStore.saveWeatherLocation(country, city)
-                promptPreferences = promptPreferenceStore.read()
+                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+                promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showWeatherLocationDialog = false
             },
@@ -215,8 +212,8 @@ internal fun SettingsScreen(
             birthTime = promptPreferences.fortuneBirthTime,
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
-                promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
-                promptPreferences = promptPreferenceStore.read()
+                promptPreferenceStore.saveFortuneInfo(promptOwnerUserId, gender, birthDate, birthTime)
+                promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showFortuneInfoDialog = false
             },

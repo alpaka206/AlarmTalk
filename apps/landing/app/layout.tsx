@@ -22,7 +22,7 @@ export default function RootLayout({
         {/* No-JS safety net: motion primitives bake their hidden initial state into
             the static HTML; without JS this forces every revealed element visible. */}
         <noscript>
-          <style>{`[data-reveal]{opacity:1!important;transform:none!important;clip-path:none!important;filter:none!important}`}</style>
+          <style>{`[data-reveal],[data-scrub]{opacity:1!important;transform:none!important;clip-path:none!important;filter:none!important}[data-scrub="before"]{display:none}`}</style>
         </noscript>
         <div className="relative z-10">{children}</div>
       </body>

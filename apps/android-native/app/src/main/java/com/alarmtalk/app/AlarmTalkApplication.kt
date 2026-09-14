@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.alarmtalk.app.alarm.AlarmStreamVolume
 import com.alarmtalk.app.alarm.NotificationChannels
 import com.alarmtalk.app.fcm.AlarmTalkMessagingService
 import com.alarmtalk.app.core.AlarmTalkLog
@@ -32,6 +33,13 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("Sentry init failed", it) }
         runCatching { NotificationChannels.ensure(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
+        // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
+        //   되돌리고 그 서비스가 다시 뜰 때 한 번 더 본다. 그런데 **미리듣기**도 같은 크기로
+        //   들려주려고 스트림을 올리므로(2026-09-09), 미리듣기 도중 프로세스가 죽으면
+        //   서비스가 뜨는 다음 알람까지 사용자의 알람 볼륨이 100% 로 남는다.
+        //   앱을 여는 것이 그 사이를 메우는 유일한 기회다.
+        runCatching { AlarmStreamVolume.restoreIfLeftOver(this) }
+            .onFailure { AlarmTalkLog.reportError("AlarmStreamVolume.restoreIfLeftOver failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
         // OS 알람 예약 정합성 주기 점검. **여기서 거는 게 핵심이다** — 이 안전망이 막으려는
@@ -43,6 +51,10 @@ class AlarmTalkApplication : Application() {
         // 지키는 비-FCM 폴백. 하루 한 번.
         runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("VoiceAccessSyncWorker.ensurePeriodic failed", it) }
+        // 사용 기록 전송 — 오프라인에 쌓인 이벤트를 주기적으로 올린다. **울릴 때가 아니라
+        // 여기서** 보낸다(울림 경로는 로컬·오프라인이 원칙 — CLAUDE.md 「Real alarm」).
+        runCatching { com.alarmtalk.app.sync.UsageEventUploadWorker.ensurePeriodic(this) }
+            .onFailure { AlarmTalkLog.reportError("UsageEventUploadWorker.ensurePeriodic failed", it) }
         // 앱이 포그라운드로 올라올 때마다(cold start 포함, 어느 화면/탭이든) 즉시 원격 알람을 pull 한다.
         // 로그인 세션이 있을 때만, 60초 throttle 로 연속 복귀 중복을 막는다. 이전엔 cold start + '알람 탭
         // 진입' 에서만 즉시 pull 이었던 것을 포그라운드 복귀 전체로 확장 — FCM 없이도 "앱을 열면 바로"
@@ -54,6 +66,11 @@ class AlarmTalkApplication : Application() {
                         runCatching {
                             if (AuthSessionStore(this@AlarmTalkApplication).read() != null) {
                                 RemoteAlarmSyncScheduler.runOnceThrottled(this@AlarmTalkApplication)
+                                // 앱을 열 때마다 밀린 기록을 올려 본다 — 네트워크 제약이 붙어
+                                // 있어 연결이 없으면 워커가 아예 돌지 않는다.
+                                com.alarmtalk.app.sync.UsageEventUploadWorker.runOnce(
+                                    this@AlarmTalkApplication,
+                                )
                             }
                         }.onFailure { AlarmTalkLog.reportError("Foreground alarm sync failed", it) }
                     }

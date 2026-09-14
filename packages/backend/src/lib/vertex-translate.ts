@@ -24,19 +24,30 @@ type VertexGenerateContentResponse = {
 };
 
 export type AlarmTextPreparation = {
+  /** **표시용** 문구 — 딜리버리 태그가 없는 순수 낭독 텍스트. 화면·저장은 이걸 쓴다. */
   text: string;
   translated: boolean;
   tags: string[];
+  /**
+   * **합성용** 문구 — 모델이 배치한 인라인 태그가 그대로 박힌 텍스트. 없으면 호출부가
+   * `text` 에 태그를 다시 입힌다(`applyDeliveryTagPerSentence`).
+   *
+   * ⚠ `text` 와 나뉘어 있는 이유: 예전에는 하나였는데, 모델이 인라인 태그를 내기
+   * 시작하자 **그 대괄호가 화면 문구로 그대로 샜다**(Codex #701 P2).
+   */
+  synthesisText?: string;
   provider: 'vertex' | 'local';
 };
 
 // 편집기가 고를 수 있는 동적 생성 모드.
-export type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'love';
+// ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경 — 연애가 아니라 응원).
+// 들어오는 값은 `normalizeRandomContext` 가 이미 접어서 준다.
+type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'cheer';
 
 // 구조화 날씨 시그널(설계 #7). 한국어 문자열 대신 언어무관 토큰으로 전달해, 동적 프롬프트가
 // 타깃 언어로 네이티브 재표현하고 폴백도 언어별 표면을 만든다(한국어 누출 0).
-export type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
-export type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
+type WeatherConditionKind = 'rain' | 'snow' | 'dust' | 'cold' | 'heat' | 'nice';
+type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
 export type WeatherCondition = { kind: WeatherConditionKind; action: WeatherAction };
 export type WeatherSignal = { conditions: WeatherCondition[] };
 
@@ -70,34 +81,78 @@ const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
 const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
-const TAG_RE = /\[[a-z][a-z -]{1,32}\]/i;
+/// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
+/// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
+///
+/// ⚠ **쉼표를 빼지 말 것.** ElevenLabs v3 태그는 고정 enum 이 아니라 자연어 지시라
+/// `[low, controlled]`·`[measured, deliberate]` 같은 두 마디 지시가 흔하다. 쉼표가 빠져
+/// 있던 동안 그 형태는 **태그로 인식조차 되지 않아** 그냥 글자로 낭독되거나 뒤 검사에서
+/// 통째로 폐기됐다(2026-08-13 실측).
+export const TAG_BODY_PATTERN = '[a-z][a-z ,-]{1,48}';
+const TAG_RE = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'i');
+const TAG_RE_GLOBAL = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi');
 // ElevenLabs v3 태그는 고정 enum이 아니라 대괄호 안 자연어 지시이며, 실제 효과는 보이스·문맥·
-// stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증). 아래는 우리가 예측가능성·
-// 알람적합성·태그 낭독 방지를 위해 쓰는 큐레이트 세트(공식 문서/예시 실증분). 저각성 태그는
-// 사용자가 직접 쓴 문구(prepareAlarmTextWithVertex)의 밤/마무리 뉘앙스에만 남겨 둔다.
-const APPROVED_TAGS = [
-  'happy',
-  'cheerfully',
-  'excited',
-  'playfully',
-  'curious',
-  'lighthearted',
-  'calm',
-  'tired',
-  'whispers',
-  'quietly',
+// stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증).
+//
+// ⚠ **닫힌 허용 목록으로 되돌리지 말 것**(2026-08-13 확정).
+// 예전에는 감정 형용사 10개짜리 allowlist 였고, 그 밖의 태그는 조용히 무태그로 강등됐다.
+// 그래서 [laughs]·[through gritted teeth]·[defiant] 같은 **비언어 소리·발성 방식·태도**
+// 지시를 아예 쓸 수 없었다 — 목록을 넓혀도 새 어휘가 나올 때마다 또 막힌다.
+// 이제 판정은 **모양(TAG_RE) + 아래 저각성 금지**뿐이다.
+//
+// 프롬프트에 예시로 보여줄 어휘. 목록에 없다고 막지는 않는다 — 모델에게 방향만 준다.
+const TAG_EXAMPLES = [
+  // 감정·태도
+  'happy', 'cheerfully', 'excited', 'playfully', 'curious', 'lighthearted',
+  'proud', 'defiant', 'flustered', 'fierce', 'embarrassed',
+  // 비언어 소리
+  'laughs', 'giggles', 'sighs', 'laughs nervously', 'giggling',
+  // 발성 방식
+  'shouting', 'low, controlled', 'through gritted teeth', 'measured, deliberate',
 ];
 // Bruck/McFarlane: 저각성 신호는 기상을 방해한다. 깨우는 경로(동적 생성·사전렌더)는 서버가
-// 이 태그들을 무조건 드롭하므로 프롬프트 allowlist 에도 노출하지 않는다.
-const LOW_AROUSAL_TAGS = ['calm', 'tired', 'whispers', 'quietly'];
-// 깨우는 경로 전용 allowlist. 드롭될 태그를 모델에게 제시해 무태그로 끝나는 낭비를 막는다.
-const WAKE_TAGS = APPROVED_TAGS.filter((tag) => !LOW_AROUSAL_TAGS.includes(tag));
+// 이 뜻을 가진 태그를 무조건 드롭한다.
+//
+// ⚠ **"천천히" 와 "졸리게" 를 섞지 말 것**(2026-08-13 확정 — C안).
+// 말 속도를 늦추는 지시(measured·deliberate·slow)는 **허용**한다. 사용자가 "말이 너무
+// 빠르다" 고 했고, 천천히 말하는 것은 각성을 낮추지 않는다. 막는 것은 **졸리고 작게**
+// 말하라는 쪽이다.
+const LOW_AROUSAL_WORDS = [
+  'tired', 'sleepy', 'drowsy', 'yawn',
+  'whisper', 'whispers', 'whispering',
+  'quiet', 'quietly', 'soft', 'softly', 'hushed',
+  'calm', 'calmly', 'soothing', 'gentle', 'gently',
+  'mumbl', 'murmur',
+];
 
-// 정규화 후 큐레이트 세트에 있으면 그대로, 아니면 무태그(''). 출시 전 단계라 옛 태그
-// back-compat 매핑은 두지 않는다 — 세트 밖 태그는 SOFT로 무태그 강등.
+/**
+ * 프롬프트에 그대로 실을 금지 태그 문구. `LOW_AROUSAL_WORDS` 에서 **파생**시킨다.
+ *
+ * ⚠ 손으로 적어 두면 가드와 어긋난다(실측 2026-08-21): 목록에 `[gently]` 만 있고
+ * `[gentle]` 이 없어서, 모델이 형용사형 `[gentle]` 을 붙였다가 가드에 걸려 일본어 운세
+ * '건강' 시드가 3회 전부 실패했다. 무엇이 막히는지 모델에게 정확히 알려 준다.
+ */
+const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
+  (word) => !word.endsWith('l') && word !== 'mumbl',
+)
+  .map((word) => `[${word}]`)
+  .join(', ');
+
+/// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
+function isLowArousalTag(tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  if (!normalized) return false;
+  return LOW_AROUSAL_WORDS.some((word) => normalized.includes(word));
+}
+
+/// 태그로 받아들일 수 있는가 — **모양만** 본다(닫힌 목록 없음).
+///
+/// ⚠ 예전에는 여기서 큐레이트 세트 멤버십을 봤고, 밖의 태그는 조용히 무태그가 됐다.
+/// 그래서 프롬프트만 넓히면 **모델은 태그를 내는데 결과는 무태그**라 원인을 못 찾았다.
 function normalizeApprovedTag(tag: string): string {
   const normalized = normalizeTag(tag);
-  return normalized && APPROVED_TAGS.includes(normalized) ? normalized : '';
+  if (!normalized) return '';
+  return TAG_RE.test(`[${normalized}]`) ? normalized : '';
 }
 
 // 모드별 기본 delivery 태그(§4.4). 폴백/가이드에 쓰인다.
@@ -107,18 +162,31 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
       return 'cheerfully';
     case 'wake_fortune':
       return 'playfully';
-    case 'love':
+    case 'cheer':
       return 'happy';
   }
 }
 
 // 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단(남은 모드는 전부
 // '깨우는' 알람이다). 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
+/// 깨우는 경로용 — 모양이 맞고 **저각성이 아니면** 통과.
 function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
-  if (LOW_AROUSAL_TAGS.includes(approved)) return '';
+  if (isLowArousalTag(approved)) return '';
   return approved;
+}
+
+/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다.
+/// 저각성 태그만 지우고 나머지는 **위치까지 그대로** 남긴다 — 여러 개·중간 태그가 요점이다.
+export function dropLowArousalTags(text: string): string {
+  return text
+    .replace(TAG_RE_GLOBAL, (match) => {
+      const body = match.slice(1, -1);
+      return isLowArousalTag(body) ? '' : match;
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -257,18 +325,45 @@ export async function generateDynamicAlarmTextWithVertex(
     }
 
     const parsed = parseDynamicAlarmTextResult(raw);
-    // SOFT 자동수리: 손주 존대 어체·날씨 문장의 조사/띄어쓰기 슬립을 reject가 아니라 수리한다.
-    const text = polishDynamicAlarmText(parsed.text.trim(), context);
+    const raw2 = parsed.text.trim();
+    // ⚠ **검증·수리·표시는 태그를 뺀 본문으로 한다**(Codex #701 P2).
+    // 모델이 인라인 태그를 내기 시작하면서 `[warmly]` 같은 영어 대괄호가 본문에 섞이는데,
+    // 그대로 재면 (1) 200자 상한에 장식이 얹히고 (2) `hasLanguageMismatch` 가 한국어
+    // 문구를 영어 섞임으로 오판하며 (3) 무엇보다 그 대괄호가 **화면 문구로 샌다.**
+    // ⚠ **수리(polish)는 합성 문구에도 반영돼야 한다**(Codex #701 P2).
+    // 예전에는 태그를 벗긴 본문만 수리하고 합성에는 원문을 넘겨, 조사·띄어쓰기 수리가
+    // 화면에만 반영되고 **실제로 들리는 소리는 안 고쳐진** 상태가 됐다.
+    // 태그가 붙은 원문을 그대로 수리하되, 수리가 태그를 건드렸으면(개수·내용이 달라지면)
+    // 그 결과는 믿지 않고 태그 없는 쪽만 쓴다.
+    const polishedTagged = polishDynamicAlarmText(raw2, context);
+    const tagsSurvivedPolish =
+      JSON.stringify(extractTags(polishedTagged)) === JSON.stringify(extractTags(raw2));
+    const taggedSource = tagsSurvivedPolish ? polishedTagged : raw2;
+    const spoken = tagsSurvivedPolish
+      ? normalizeAlarmTextWithoutTags(polishedTagged)
+      : polishDynamicAlarmText(normalizeAlarmTextWithoutTags(raw2), context);
 
-    if (dynamicTextHardFailure(text, context)) {
+    // 태그 검사만 **원문**으로 한다 — 저각성 태그(`[quietly]`)는 벗긴 뒤엔 보이지 않아
+    // 그대로 통과해 버린다. 나머지(길이·언어·호칭·유출)는 태그를 뺀 본문 기준이다.
+    if (dynamicTextHardFailure(spoken, context, taggedSource)) {
       continue; // HARD → 1회 재롤
     }
 
-    const tag = sanitizeDeliveryTag(parsed.tag);
+    // 저각성 태그는 기상을 방해하므로 여기서 떨군다(`sanitizeDeliveryTag` 와 같은 규칙).
+    const inlineTags = extractTags(taggedSource)
+      .map((tag) => sanitizeDeliveryTag(tag))
+      .filter(Boolean);
+    const legacyTag = sanitizeDeliveryTag(parsed.tag);
+    const tags = inlineTags.length > 0 ? inlineTags : legacyTag ? [legacyTag] : [];
+    // 모델이 배치한 자리를 살린다. 다만 저각성 태그를 떨궜다면 원문을 그대로 쓸 수 없으므로
+    // (떨군 태그가 남는다) 그때는 호출부가 `text` 에 다시 입히게 넘기지 않는다.
+    const keptAllInlineTags =
+      inlineTags.length > 0 && inlineTags.length === extractTags(taggedSource).length;
     return {
-      text,
+      text: spoken,
       translated: false,
-      tags: tag ? [tag] : [],
+      tags,
+      ...(keptAllInlineTags ? { synthesisText: taggedSource } : {}),
       provider: 'vertex',
     };
   }
@@ -277,16 +372,31 @@ export async function generateDynamicAlarmTextWithVertex(
 }
 
 // HARD 차단(§4.7): 차단 시 재롤→폴백. allowlist/단일태그/저각성 가드는 별도(태그 정제는 SOFT).
-function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext): boolean {
+function dynamicTextHardFailure(
+  text: string,
+  context: DynamicAlarmTextContext,
+  /** 태그가 붙어 있는 원문. 태그 관련 검사만 이걸 본다(없으면 `text`). */
+  taggedText?: string,
+): boolean {
   if (!text) return true;
   // 파싱불가/메타 JSON('here is the json' 등)은 형식 위반.
   if (isMetaJsonResponse(text)) return true;
   if (text.length > 200) return true;
   if (hasLanguageMismatch(text, context.targetLanguage)) return true;
   if (hasUnsupportedListenerAddress(text, context.listenerTitle)) return true;
-  if (hasRelationshipLabelLeak(text, context.relationshipLabel, context.listenerTitle)) return true;
-  // text 안의 브래킷/지문은 HARD. 태그는 별도 필드라 정상 출력은 여기서 안 걸린다.
-  if (hasDeliveryTagOrStageDirection(text)) return true;
+  if (
+    hasRelationshipLabelLeak(
+      text,
+      context.relationshipLabel,
+      context.listenerTitle,
+      context.targetLanguage,
+    )
+  ) {
+    return true;
+  }
+  // 소괄호 지문과 **저각성 대괄호 태그**는 HARD. 태그를 벗긴 본문으로 재면 저각성 태그가
+  // 보이지 않아 그대로 통과하므로 반드시 원문으로 본다.
+  if (hasDeliveryTagOrStageDirection(taggedText ?? text)) return true;
   if (hasAlarmTimeEcho(text, context.alarmTimeLabel)) return true;
   if (hasDateLabelEcho(text, context.dateLabel)) return true;
   // 연인/배우자 톤: '새 인연/연애운/질투' 어휘만 HARD. 정중 어미 슬립은 SOFT로 강등.
@@ -443,7 +553,7 @@ function alarmTextPrompt(args: {
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
   const tagInstruction = args.shouldTag
-    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the very beginning of the text. Pick the tag that best matches the meaning and intended mood of the user text — use [cheerfully]/[happy] for warm or upbeat lines, [calm] for quiet, soothing, or night/wind-down lines, [excited]/[playfully]/[curious] for lively or light-hearted lines. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
+    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -547,30 +657,34 @@ REGISTER (one consistent register per line, matched to the relationship)
   title-free greeting.
 
 DELIVERY TAG (ElevenLabs v3)
-- You MAY prepend AT MOST ONE delivery tag, chosen ONLY from the allowlist in the user message,
-  matching the mode/relationship mood. Return it in the separate "tag" field WITHOUT brackets;
-  the backend prepends it as [tag]. Do NOT put any bracket/[tag]/stage direction inside "text".
-- One tag, or none. Never combine tags, never invent tags, never use a tag mid-line.
-- For pauses/pacing use punctuation and ellipses (…), NOT tags — the engine has no SSML breaks
+- Write delivery tags INLINE inside "text", in square brackets, at each point where the delivery
+  changes — including mid-line. Use as many as the line needs (typically 1 to 3).
+- Leave the separate "tag" field as "" — it is a legacy field the backend no longer reads.
+- For pauses/pacing use punctuation and ellipses (…) as well — the engine has no SSML breaks
   and a soft '…' or comma after the greeting is the soft-start.
-- If the line is very short (under ~20 characters) or no tag clearly fits, leave "tag" empty —
-  punctuation alone is fine, and an under-realized tag can be read aloud.
+- If a line is very short (under ~20 characters), one tag is plenty; never stack tags on a
+  single short clause, and never invent a tag that the delivery does not actually change.
 - Tag effects are SUBTLE in Japanese and Korean — carry the emotion in word/particle/ending
-  choice; treat the tag as a light touch only.
+  choice too; treat tags as a light touch, not a replacement for good wording.
 
 NEVER
 - Never recite raw values the user did not write: temperatures, percentages, weather codes, exact
   clock time, dates, weekdays, birth date/time, zodiac specifics, or city/district/country/
   location labels.
-- Never state whose voice this is or name the relationship.
+- Never describe the voice from outside ("your mom's voice", "speaking as your mom") or speak as
+  if you were someone else standing in for that person ("엄마처럼", "엄마 대신"). Referring to
+  yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine.
+- Never speak as a MESSENGER for that person — you are that person, not someone carrying their
+  words or running their errand: no "엄마가 깨우래", "엄마가 깨워 달래", "엄마한테 부탁받아서
+  왔어", "엄마가 시켜서", "엄마 심부름으로".
 - Never use a stiff/formal/business register (Korean 합니다체; Japanese ビジネス敬語/文語;
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
 
 OUTPUT
 - Return STRICT JSON only, matching the schema: {"text": string, "tag": string}. "text" = the
-  final spoken line in the target language (no brackets). "tag" = exactly one allowlisted tag
-  name, lowercase, no brackets, or "" for none.`;
+  final spoken line in the target language, WITH delivery tags written inline in square
+  brackets where the delivery changes. "tag" = "" (legacy field, no longer used).`;
 
 // 구조화 출력(§4.7). responseMimeType/json·thinkingBudget:0 과 함께 1차 파서로 쓰고,
 // 간헐 빈응답 대비 brace-slice 파서를 최후 폴백으로 유지한다.
@@ -660,46 +774,60 @@ function activeLanguageBlock(targetLanguage: string): string {
   return '';
 }
 
-// few-shot(§4.9). 출력계약이 {text, tag}이므로 표의 [tag] 접두는 tag 필드로 분리해 주입한다.
-const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string; tag: string }>> = {
+// few-shot(§4.9).
+//
+// ⚠ **예시가 곧 계약이다**(2026-08-20). 프롬프트에는 "태그를 문장 안 전달이 바뀌는 자리마다
+// 인라인으로 쓰라" 고 적어 두고, 정작 예시는 `text` 에 태그가 없고 `tag` 한 개만 채운
+// 형태였다. 모델은 지시문이 아니라 **예시와 반환 형식을 따랐다** — dev 실측에서 받은 응답이
+// 전부 무태그 `text` + `tag:"cheerfully"` 였다. 지시만 고치고 예시를 두면 또 무효가 된다.
+const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>> = {
   ko: [
-    { context: 'wake_weather, 손녀→할아버지, rain', text: '할아버지, 좋은 아침이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요.', tag: 'cheerfully' },
-    { context: 'wake_weather, 연인, dust', text: '자기야, 일어나자. 오늘 미세먼지 많대. 나갈 때 마스크 꼭 챙겨, 알았지?', tag: 'cheerfully' },
-    { context: 'wake_fortune, 중립', text: '좋은 아침이에요. 오늘은 작은 선택에 좋은 기운이 따른대요. 가벼운 마음으로 시작해요.', tag: 'playfully' },
+    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 좋은 아침이에요. [brightly] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
+    { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
+    { context: 'wake_fortune, 중립', text: '[cheerfully] 좋은 아침이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해요.' },
   ],
   ja: [
-    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: 'おばあちゃん、おはよう。今日は雨が降るみたい、出かけるとき傘忘れないでね。', tag: 'cheerfully' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: 'おはようございます。今日は冷えるみたいなので、一枚羽織ってくださいね。', tag: 'cheerfully' },
-    { context: 'wake_fortune, 중립/casual', text: 'おはよう。今日はちょっといいことがありそうだよ。気楽にいこうね。', tag: 'playfully' },
+    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、おはよう。[brightly] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[cheerfully] おはようございます。[warmly] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '[playfully] おはよう。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
-    { context: 'wake_weather, neutral, rain', text: 'Morning… time to get up. Looks like rain later, grab your umbrella before you head out.', tag: 'cheerfully' },
-    { context: 'love, romantic, babe', text: "Morning, babe. Take your time getting up — I've got you today, okay?", tag: 'happy' },
+    { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
+    // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
+    //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
+    //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
+    //   예시도 함께 바꾼다.
+    { context: 'cheer, neutral', text: "[warmly] Morning. [caring] Big day ahead — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 
 function fewShotBlock(targetLanguage: string): string {
   const examples = DYNAMIC_FEW_SHOT[targetLanguage];
   if (!examples || examples.length === 0) return '';
-  const lines = examples.map(
-    (ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":"${ex.tag}"}`,
-  );
-  return ['Few-shot examples (target language, follow the {text, tag} contract):', ...lines].join('\n');
+  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":""}`);
+  return [
+    'Few-shot examples — note the tags live INSIDE "text" and the "tag" field stays empty:',
+    ...lines,
+  ].join('\n');
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
   const listenerTitle = context.listenerTitle?.trim();
+  // ⚠ **지시와 가드를 같이 움직인다**(Codex #701 P2). 호칭이 비었을 때 가드는 관계에서
+  // 유도한 상대 호칭(아들/딸 → 엄마·아빠)을 허용하는데, 지시가 "가족 호칭을 쓰지 말라" 로
+  // 남아 있으면 모델은 안 쓰고 어색한 무호칭 문장을 낸다. 아이 목소리가 부모를 못 부르는
+  // 것도 그 탓이었다.
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
+    : neutralAddressGuidance();
   // 어체는 관계 기반(auto)으로만 결정한다.
   const koreanRegisterInstruction =
     context.targetLanguage === 'ko'
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. Use this only to choose a natural speech register and warmth. Never mention the relationship label in the text, and never write phrases like "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", or "speaking as your ${context.relationshipLabel}". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${context.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. What you must never do is break the illusion by describing the voice from outside: no "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", "speaking as your ${context.relationshipLabel}", and never speak as if that person were someone else ("${context.relationshipLabel}처럼", "${context.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${context.relationshipLabel}가 깨우래", "${context.relationshipLabel}한테 부탁받아서", "${context.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
@@ -712,19 +840,36 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee. For Korean, make the fortune feel like a soft, playful reading rather than something the speaker personally knows for certain; endings like "~래", "~라네요", "~것 같아", or "~면 좋겠다" are good when they sound natural. If the speaker is a romantic partner or spouse, do not mention new relationships, romantic opportunities, attraction from others, flirting, jealousy, or dating luck; keep the fortune about mood, small luck, confidence, health, work, study, or daily energy.`;
     }
+    // `cheer` — ⚠ **연애 문구가 아니다**(2026-09-03). 옛 이름이 `love` 라 이 갈래는
+    //   "romantic partner wake-up line" 을 요구했는데, 대사가 응원·자기돌봄으로 확정되면서
+    //   개념 자체가 바뀌었다. 그대로 두면 `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true` 인
+    //   순간 **없앤 연애 카테고리가 되살아난다** — 로컬 폴백은 이미 응원인데 이 경로만
+    //   반대로 간다(`docs/spec/voice-and-message.md` §2).
+    //   목소리가 연인이어도 마찬가지다. 응원의 **말투**만 그 관계에 맞추고, 다루는 것은
+    //   여전히 오늘을 버틸 힘이다.
     return isRomanticRelationship(context.relationshipLabel)
-      ? 'Create a romantic partner wake-up line that feels private, affectionate, and gently exciting to hear, while still short enough for a practical alarm. Avoid generic "좋은 하루 보내" unless paired with a more personal caring phrase.'
-      : 'Create a warm love/relationship message that feels personal, caring, and suitable for a voice alarm without being overly dramatic.';
+      ? 'Create an encouraging wake-up line in the private, affectionate voice of a partner: acknowledge that the day ahead may feel heavy, then offer steady support — doing one thing at a time, eating properly, resting when tired, not carrying everything alone. Keep it short enough for a practical alarm. Do NOT make it a romantic/flirtatious message; the warmth comes from how it is said, not from romance as the topic.'
+      : 'Create an encouraging wake-up message about getting through the day: acknowledge how the listener might feel, then offer steady support — starting with one small thing, eating properly, resting when tired, or leaning on someone they trust. Personal and caring, never dramatic, and never a romantic/relationship message.';
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
-    (tag) => `[${tag}]`,
-  ).join(
-    ' ',
-  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default for this ${context.mode} mode is "${modeDefaultTag(
-    context.mode,
-  )}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  // ⚠ **태그를 "tag" 필드 하나로 받지 말 것**(2026-08-13 — C안).
+  // 예전에는 별도 필드에 한 개만 받아서, 여러 개도 중간 배치도 **구조적으로 불가능**했다.
+  // 이제 텍스트 안에 직접 쓰게 한다. `tag` 필드는 옛 클라이언트 호환으로만 남는다.
+  //
+  // ⚠ **저각성 금지를 여기에 명시해야 한다.** 예전에는 허용 목록에서 빼는 것으로만
+  // 막았는데, 자유형으로 바뀌면 그 장치가 사라진다 — 말로 적어 둔다.
+  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
+    (tag) => !isLowArousalTag(tag),
+  )
+    .map((tag) => `[${tag}]`)
+    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
+Use an ellipsis ("...") where the speaker would naturally pause or trail off before turning to the point ("그래도 이제... 슬슬 일어나 볼까?"). One or two per line at most — it is a breath, not a mannerism.
+SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge.
+⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause, a tag, or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
+Leave the separate "tag" field as "" — it is legacy.`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -749,7 +894,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     tagAllowlistInstruction,
     fewShotBlock(context.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -775,21 +920,25 @@ function prerenderClipPrompt(params: {
   const listenerTitle = params.listenerTitle?.trim();
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use it naturally, do not translate it, and never replace it with guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
-    : 'Do not address the listener by guessed family titles. Use a neutral warm address instead.';
+    : neutralAddressGuidance();
   const koreanRegisterInstruction =
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${params.relationshipLabel}" relationship. Use this ONLY to choose a natural speech register and warmth. Never mention the relationship label in the text. ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${params.relationshipLabel}가 깨우래", "${params.relationshipLabel}한테 부탁받아서", "${params.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
       : '';
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
-    (tag) => `[${tag}]`,
-  ).join(
-    ' ',
-  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  // 사전렌더도 동적 경로와 **같은 규칙**이다(위 `tagAllowlistInstruction` 주석 참조).
+  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
+    (tag) => !isLowArousalTag(tag),
+  )
+    .map((tag) => `[${tag}]`)
+    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
+Leave the separate "tag" field as "" — it is legacy.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -809,6 +958,17 @@ function prerenderClipPrompt(params: {
             : ''
         }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
       : '';
+  // 아이 목소리로 **판정된 경우에만** 켠다(SpeechStyle.childlike). 어른 목소리가 이렇게
+  // 말하면 이상하므로 분석 쪽에서 보수적으로 판단하고, 여기서는 그 결과를 그대로 따른다.
+  // 알람이라 알아들을 수 있어야 하므로 '늘어진 발음' 은 한두 낱말까지만 허용한다.
+  const childlikeInstruction = params.speechStyle?.childlike
+    ? [
+        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one.',
+        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses.',
+        'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
+        'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
+      ].join(' ')
+    : '';
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     activeLanguageBlock(params.targetLanguage),
@@ -816,6 +976,7 @@ function prerenderClipPrompt(params: {
     relationship,
     romanticToneInstruction,
     speechStyleInstruction,
+    childlikeInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
@@ -825,7 +986,7 @@ function prerenderClipPrompt(params: {
     'Make it feel warm and human, not a robotic prerecorded template.',
     tagAllowlistInstruction,
     fewShotBlock(params.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -853,40 +1014,95 @@ export async function generatePrerenderClipText(
   if (!hasGeminiConfiguration(env)) {
     throw new AlarmTextPreparationInvalidError();
   }
-  const prompt = prerenderClipPrompt({ ...params, targetLanguage });
-  let raw: string;
-  try {
-    raw = await generateContentText(env, prompt, {
-      temperature: 0.6,
-      maxOutputTokens: 256,
-      systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
-      responseSchema: DYNAMIC_RESPONSE_SCHEMA,
-    });
-  } catch {
-    throw new AlarmTextPreparationInvalidError();
-  }
-  const parsed = parseDynamicAlarmTextResult(raw);
-  const text = parsed.text.trim();
-  if (
-    !text ||
-    isMetaJsonResponse(text) ||
-    text.length > 200 ||
-    hasLanguageMismatch(text, targetLanguage, params.listenerTitle) ||
-    hasDeliveryTagOrStageDirection(text) ||
-    hasUnsupportedListenerAddress(text, params.listenerTitle) ||
-    hasRelationshipLabelLeak(text, params.relationshipLabel, params.listenerTitle)
-  ) {
-    throw new AlarmTextPreparationInvalidError();
-  }
   // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
   // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
-    return approved && !LOW_AROUSAL_TAGS.includes(approved) ? approved : '';
+    return approved && !isLowArousalTag(approved) ? approved : '';
   };
-  const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
-  return { text, tag };
+
+  // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
+  // throw 했고, cron 은 그걸 5번 반복한 뒤 큐를 `failed` 로 내렸다. 그런데 거절 사유가
+  // **결정적**이면(같은 시드+관계에서 모델이 매번 같은 문장을 낸다) 재시도는 전부 같은
+  // 결과라, 21개 중 1개가 영구히 안 만들어지고 '다시 시도' 버튼도 무력했다 —
+  // 실제로 사랑 3번 시드 × 관계 '엄마' 에서 그렇게 막혔다.
+  // 그래서 **회차마다 제약을 더해** 다시 묻는다. 마지막 회차는 관계 낱말 자체를 금지한다.
+  const MAX_ATTEMPTS = 3;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const label = params.relationshipLabel?.trim();
+    // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
+    // 관계 '엄마' 가 3회 전부 `[softly]` 를 붙여 나와 저각성 가드에 걸려 **영구 실패**했다.
+    // '다르게 써 봐' 만으로는 모델이 문장만 바꾸고 태그는 그대로 둔다.
+    const retryTagHint =
+      ` The rejection may have been the delivery tags: never use sleepy or hushed ones` +
+      ` (${LOW_AROUSAL_TAG_EXAMPLES}) — this line must wake someone up.`;
+    const retryHint =
+      attempt === 1
+        ? ''
+        : attempt === 2
+          ? `RETRY: the previous attempt was rejected. Keep the same intent but rephrase it differently — vary the sentence shape and wording.${retryTagHint}`
+          : label
+            ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
+            : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
+    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
+      .filter(Boolean)
+      .join('\n');
+    let raw: string;
+    try {
+      raw = await generateContentText(env, prompt, {
+        // 회차마다 온도를 올려 같은 문장이 되풀이되는 것을 피한다.
+        temperature: attempt === 1 ? 0.6 : 0.9,
+        maxOutputTokens: 256,
+        systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
+        responseSchema: DYNAMIC_RESPONSE_SCHEMA,
+      });
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    const parsed = parseDynamicAlarmTextResult(raw);
+    const text = parsed.text.trim();
+    // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
+    // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
+    const spoken = normalizeAlarmTextWithoutTags(text);
+    if (
+      // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
+      // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
+      // 클립이 영구 저장된다.
+      !spoken ||
+      isMetaJsonResponse(text) ||
+      spoken.length > 200 ||
+      hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
+      hasDeliveryTagOrStageDirection(text) ||
+      hasUnsupportedListenerAddress(spoken, params.listenerTitle) ||
+      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle, targetLanguage)
+    ) {
+      lastError = new AlarmTextPreparationInvalidError();
+      continue;
+    }
+    // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
+    // 다시 앞세운다 — v3 태그는 뒤로 갈수록 풀려 끝 문장이 빨라진다
+    // (`normalizeSameLanguageTaggedText` 와 같은 규칙, 한 곳에서 두 번 정하지 않는다).
+    const inlineTags = extractTags(text);
+    const onlyLeadingTag =
+      inlineTags.length === 1 && text.trimStart().startsWith(`[${inlineTags[0]!}]`);
+    const primaryTag =
+      sanitizePrerenderTag(inlineTags[0] ?? '') ||
+      sanitizePrerenderTag(parsed.tag) ||
+      sanitizePrerenderTag(params.defaultTag ?? '');
+    if (inlineTags.length === 0 || onlyLeadingTag) {
+      return {
+        text: primaryTag ? applyDeliveryTagPerSentence(primaryTag, spoken) : spoken,
+        tag: primaryTag,
+      };
+    }
+    return { text, tag: primaryTag };
+  }
+  throw lastError instanceof AlarmTextPreparationInvalidError
+    ? lastError
+    : new AlarmTextPreparationInvalidError();
 }
 
 /**
@@ -909,6 +1125,24 @@ export interface SpeechStyle {
    * 어미를 늘이며 반말". 특징이 없으면 ''.
    */
   persona: string;
+  /**
+   * 화자가 **어린아이**로 판단되는가. true 일 때만 문구 생성이 아이 말투(늘어진 발음·
+   * 반복·짧은 문장)를 쓴다.
+   *
+   * ⚠ **판단 근거는 오디오가 아니라 전사 텍스트뿐이다** — 목소리 높이를 듣는 게 아니라
+   * 낱말·문장 구조를 본다. 어른이 아이처럼 말하면 이상하므로(사용자 지시) 모델에게
+   * **확신할 때만** true 를 내라고 하고, 기본은 false 다. 옛 행에는 이 필드가 없으므로
+   * `parseSpeechStyle` 이 false 로 채운다.
+   *
+   * ⚠ **알려진 한계 — 아이가 '예시 대본' 을 그대로 읽으면 켜지지 않는다**(Codex #701).
+   * 등록 화면이 권하는 대본(`onb`/`voices` 예시 문구)은 어른 말투로 다듬어진 글이라,
+   * 누가 읽든 전사가 똑같이 나온다. 그래서 정상 등록 경로의 아이는 false 로 판정된다.
+   * **의도한 실패 방향이다.** 반대로 틀리면(어른을 아이로) 부모·배우자 목소리가 유아어로
+   * 알람을 읽는다 — 그쪽이 훨씬 나쁘다. 자유롭게 말한 녹음·업로드 음원에서는 켜진다.
+   * 이걸 제대로 고치려면 전사가 아니라 **음향 특징**을 봐야 하는데, 지금 파이프라인은
+   * ElevenLabs STT 로 텍스트만 얻으므로 그 신호가 존재하지 않는다.
+   */
+  childlike: boolean;
 }
 
 const SPEECH_STYLE_RESPONSE_SCHEMA = {
@@ -919,9 +1153,10 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
     register: { type: 'STRING' },
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
     persona: { type: 'STRING' },
+    childlike: { type: 'BOOLEAN' },
     confidence: { type: 'NUMBER' },
   },
-  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'confidence'],
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'confidence'],
 } as const;
 
 function speechStylePrompt(transcript: string, language: string): string {
@@ -934,7 +1169,8 @@ function speechStylePrompt(transcript: string, language: string): string {
   return [
     'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
     dialectGuide,
-    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","confidence":0.0-1.0}.',
+    'Also decide "childlike": is this speaker a young child (roughly preschool to early elementary)? Judge ONLY from how the transcript reads — very short simple sentences, a small everyday vocabulary, childish word choice or mispronunciations written out, talking about school/toys/parents from a child\'s position. A short or casual line from an adult is NOT enough. Default to false: only set true when the transcript would read as a child to any reader. Getting this wrong is worse than leaving it off, because it makes an adult voice speak like a toddler.',
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","childlike":true or false,"confidence":0.0-1.0}.',
     'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
     `TRANSCRIPT (${language}):`,
     transcript.slice(0, 2000),
@@ -992,9 +1228,10 @@ export async function analyzeSpeechStyleWithVertex(
       typeof (parsed as { persona?: unknown }).persona === 'string'
         ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
         : '';
-    if (!dialect && !register && markers.length === 0 && !persona) return null;
+    const childlike = (parsed as { childlike?: unknown }).childlike === true;
+    if (!dialect && !register && markers.length === 0 && !persona && !childlike) return null;
     // 표준어인데 사투리 강도만 있는 모순 정리.
-    return { dialect, strength: dialect ? strength : '', register, markers, persona };
+    return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike };
   } catch {
     return null;
   }
@@ -1015,6 +1252,8 @@ export function parseSpeechStyle(value: unknown): SpeechStyle | null {
         ? parsed.markers.filter((m): m is string => typeof m === 'string').slice(0, 5)
         : [],
       persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
+      // 옛 행에는 이 필드가 없다 — 없으면 false(아이 말투를 켜지 않는다)가 안전한 기본이다.
+      childlike: parsed.childlike === true,
     };
   } catch {
     return null;
@@ -1109,7 +1348,7 @@ function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): str
     );
     return `${wakeOpener} ${body}`.slice(0, 200).trim();
   }
-  if (context.mode === 'love') {
+  if (context.mode === 'cheer') {
     if (romantic) {
       const body = pickFallbackRotation(
         ['좋은 아침이야. 오늘도 네 편이니까 천천히 일어나자.', '좋은 아침이야. 오늘도 내가 응원할게, 천천히 일어나자.'],
@@ -1286,6 +1525,21 @@ function dynamicAlarmTextPreparationFallback(
 const FAMILY_TITLE_RE =
   /(^|[\s"'“”‘’(（])(할머니|할머님|할아버지|할아버님|엄마|어머니|어머님|아빠|아버지|아버님|부모님|할미|할배|손녀|손자|딸|아들)(?:님)?(?:아|야)?(?=[\s,，.!！?？~]|$)/g;
 
+/**
+ * 호칭(`listener_title`)이 비었을 때의 지시.
+ *
+ * ⚠ **관계 라벨로 상대 호칭을 추측하지 않는다**(Codex #701 P2). 2026-08-20 에 한 번
+ * 열었다가 되돌렸다: 관계 '아들' 은 **화자가 아들**이라는 뜻일 뿐, 듣는 사람이 엄마인지
+ * 아빠인지는 알려 주지 않는다. 둘 다 허용하고 모델에게 고르게 하면 **엄마를 "아빠" 라고
+ * 부르는 클립이 영구 저장**될 수 있다(손녀/손자, 아들/딸도 같다).
+ *
+ * 대신 지시를 **분명하게** 준다. 앞선 실패(아이 목소리가 매번 거절됨)는 이 규칙 자체가
+ * 아니라 지시가 흐릿한데 가드만 빡빡해서 났다 — 무엇을 쓰면 되는지 말해 주면 맞춘다.
+ */
+function neutralAddressGuidance(): string {
+  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "좋은 아침이에요", "잘 잤어?"), or use an affectionate title-free address. This is a hard requirement.';
+}
+
 function hasUnsupportedListenerAddress(
   text: string,
   listenerTitle: string | null | undefined,
@@ -1307,23 +1561,365 @@ function hasUnsupportedListenerAddress(
   return false;
 }
 
+/**
+ * 절이 끝났다고 볼 문장부호. 전각(`，`)·말줄임(`…`)까지 넣는 이유는 모델이 실제로 섞어
+ * 쓰기 때문이다(Codex #702 P2).
+ */
+const CLAUSE_END_PUNCTUATION = '[.!?~,、。，…！？]';
+
+/**
+ * `~래` 로 끝나지만 전언이 **아닌** 낱말. 적대적 검증(754문장, 2026-08-21)에서 나온 실측
+ * 충돌들이다 — 명사(`노래`·`빨래`), 접속부사 어간(`그래`), ㅎ불규칙 형용사 활용(`파래`),
+ * 부사(`오래`), 용언 활용(`바래`).
+ *
+ * ⚠ 이 목록은 **닫히지 않는다.** 한국어에 낱말 경계가 없어 `래` 한 글자로는 근본적으로
+ * 가를 수 없다는 뜻이고, 그래서 이 가드는 **백스톱**이지 유일 방어선이 아니다(프롬프트가
+ * 1차다). 목록을 늘리는 것보다 새 어미를 더 잡겠다고 넓히는 쪽이 훨씬 위험하다.
+ */
+const QUOTATIVE_LOOKALIKES = new Set([
+  '노래',
+  '빨래',
+  '미래',
+  '유래',
+  '장래',
+  '원래',
+  '이래',
+  '저래',
+  '거래',
+  '그래',
+  '파래',
+  '오래',
+  '바래',
+]);
+
+/**
+ * 화자가 **대신 하는 행동**. 대리 구문은 "라벨이 시켰다" 만으로는 성립하지 않는다 — 그
+ * 결과로 **화자가** 무언가를 하고 있어야 심부름꾼이다.
+ *
+ * 이게 없으면 "엄마가 시켜서 억지로 하지는 마"(청자에게 주는 당부)나 "엄마가 시켜서 하는 게
+ * 아니라 네가 하고 싶어서 하는 거야"(오히려 부정하는 말)까지 떨어진다 — 둘 다 실측 오탐이다.
+ */
+/**
+ * 뒤에 이게 붙으면 그 낱말은 **청자에게 시키는 것**이라 화자의 대리 행동이 아니다
+ * (Codex #702 P2). "엄마가 부탁해서 미안해, **전화해 줘**" 는 엄마 자신의 부탁이다 —
+ * 대리 행동으로 읽으면 정상 문구가 떨어진다.
+ * 화자가 하는 형태(`전화했어`, `말해 주는 거야`, `깨우러 왔어`)는 그대로 통과시킨다.
+ */
+const NOT_LISTENER_IMPERATIVE =
+  '(?!\\s*(?:해\\s*)?(?:줘|줄래|주렴|주세요|보렴|봐|세요|렴|라|자)(?![가-힣]))';
+
+const PROXY_ACTION =
+  `(?:왔|오는\\s*길|들렀|깨우|깨워|전하|전해|알려|대신|전화|말해|말하|데리러)${NOT_LISTENER_IMPERATIVE}`;
+
+/**
+ * 전언 어미 `~라…` 앞에서 **전언이 아님을 드러내는 앞글자**. 두 종류를 함께 막는다:
+ *  - 어간이 `라` 로 끝나는 용언: 바라다·자라다·놀라다("깜짝 놀라네").
+ *  - 계사: `~이라`·`~ㄹ 거라`·`아니라`("늘 네 편이란다" 는 정반대 뜻이다).
+ */
+const QUOTATIVE_STEM_GUARD = '(?<![바자놀이거])(?<!아니)';
+
+/**
+ * 트리거 뒤에 **라벨이 아닌 다른 사람**이 행위자로 나오는가. 나오면 화자는 대리인이 아니다 —
+ * "엄마를 대신해서 오늘은 **아빠가** 데리러 갈 거야" 는 엄마 본인이 하는 말이다(실측 오탐).
+ */
+const OTHER_ACTOR_RE =
+  /(할머니|할아버지|엄마|어머니|아빠|아버지|언니|오빠|누나|형|이모|고모|삼촌|동생|선생님)\s*(?:가|이|는|은|께서|께|한테|에게)/g;
+
+function hasOtherActor(segment: string, label: string): boolean {
+  for (const m of segment.matchAll(OTHER_ACTOR_RE)) {
+    // ⚠ **부분 일치를 라벨로 인정한다**(Codex #702 P2). 라벨은 자유 입력이라 "우리 엄마" 처럼
+    // 가족 토큰을 품은 복합어일 수 있다. 잡힌 토큰(`엄마`)을 라벨 전체(`우리 엄마`)와 그대로
+    // 비교하면 **자기 자신을 남으로 읽어** 대리 구문 탐지가 통째로 꺼진다.
+    if (label.includes(m[1]!)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * `pattern` 에 걸리되, **다른 행위자**가 끼어 있지 않은 자리가 하나라도 있는가.
+ *
+ * 매치 **구간 안**은 언제나 본다 — "엄마가 부탁해서 아빠가 깨우러" 는 대리 행동(`깨우`)까지가
+ * 한 매치라, 뒤만 보면 `아빠가` 를 놓친다(실측 오탐).
+ *
+ * ⚠ **뒤를 훑을지는 패턴이 대리 행동을 이미 품었는지로 갈린다**(Codex #702 P2).
+ *  - `requestFromLabel`·`orderedByLabel` 은 패턴 끝이 `PROXY_ACTION` 이라 **대리 행동까지가
+ *    매치**다. 그 뒤는 딴 이야기이므로 훑으면 안 된다 — "엄마가 시켜서 깨우러 왔어,
+ *    아빠한테도 전화해야 해" 의 `아빠한테` 를 보고 **진짜 유출을 통과시킨다.**
+ *  - `thirdPartyReference`(`엄마 대신`)는 행동이 매치 **밖**에 있으므로 뒤를 봐야 한다 —
+ *    "엄마를 대신해서 오늘은 아빠가 데리러 갈 거야" 의 `아빠가` 가 거기 있다.
+ *
+ * ⚠ 뒤를 훑을 때도 **같은 문장까지만**이다(Codex #702 P2). "엄마 대신 깨우러 왔어.
+ * 아빠한테도 전화해야 해" 의 뒷문장을 보고 대리 판정을 끄면 진짜 유출이 통과한다.
+ * 오탐을 막아 주는 `아빠가` 는 언제나 같은 문장 안에 있다.
+ */
+function matchesWithoutOtherActor(
+  text: string,
+  label: string,
+  pattern: string,
+  scanAfterMatch = false,
+): boolean {
+  for (const m of text.matchAll(new RegExp(pattern, 'gi'))) {
+    const end = m.index + m[0].length;
+    let suffix = '';
+    if (scanAfterMatch) {
+      suffix = text.slice(end, end + 40);
+      const stop = suffix.search(/[.!?。！？…]/);
+      if (stop !== -1) suffix = suffix.slice(0, stop);
+    }
+    // 매치 시작 부분의 라벨 자체는 `hasOtherActor` 가 라벨 비교로 걸러 준다.
+    if (!hasOtherActor(m[0] + suffix, label)) return true;
+  }
+  return false;
+}
+
+/**
+ * 라벨 뒤에 **현재형 전언 어미**(`~래`)가 붙었는가 — "엄마가 깨우래", "엄마가 깨우래서 왔어".
+ *
+ * ⚠ 정규식만으로는 가를 수 없어 코드로 거른다. 한국어에는 낱말 경계가 없어서 `래` 한 글자는
+ * 세 가지와 겹친다:
+ *  - **권유형 `~ㄹ래`**("입을래?", "갈래?", "들어줄래?") — 앞 글자 받침이 ㄹ 이다.
+ *  - **명사·접속부사**("노래", "빨래", "그래서") — `QUOTATIVE_LOOKALIKES` 로 걸러낸다.
+ *  - **전언형 `~래`**("깨우래", "일어나래") — 이것만 유출이다.
+ * 그래서 ①라벨이 **주격**(가/이/께서)이고 ②`래` 뒤가 **절 끝**(`요?` + 문장부호/끝)이거나
+ * **연결형 `서`** 이며 ③앞 글자가 ㄹ받침이 아니고 ④위 목록에 없을 때만 전언으로 본다.
+ *
+ * ⚠ 절 끝 조건에 **공백은 넣지 않는다.** `래` 는 용언 뒤에서는 전언이지만 체언 뒤에서는
+ * 계사 전언("휴일이래", "30도래")이라 `~대`(비 온대)와 같은 **사실 전달**이다. 부호 없이
+ * 이어지는 자리까지 열면 그 계사형이 통째로 걸려 멀쩡한 문구가 떨어진다.
+ *
+ * ⚠ `~대`(비 온대, 많대요)는 **넣지 않는다.** 날씨 전달의 표준 어미라 프롬프트 few-shot 이
+ * 직접 쓰고 있다("비가 올 수 있대요") — 넣으면 멀쩡한 날씨 문구가 통째로 떨어진다.
+ * 같은 이유로 `~ㄹ 거래`(= `~ㄹ 거라고 해`)도 뺀다: 실 Vertex 호출에서 "오늘은 흐릴 거래,
+ * 따뜻하게 입고 나가요" 가 그대로 나왔다(2026-08-21 실측). "엄마가 데리러 올 거래" 같은
+ * 전언도 같은 꼴이라 갈라낼 수 없는데, 실제로 나오는 쪽은 날씨다.
+ */
+function hasPresentReportedSpeech(text: string, escapedLabel: string): boolean {
+  const re = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|도|께서)\\s*[^.!?]{0,20}?([가-힣])래(?=서|잖|요?\\s*(?:${CLAUSE_END_PUNCTUATION}|$))`,
+    'gi',
+  );
+  for (const match of text.matchAll(re)) {
+    const prev = match[1]!;
+    if (QUOTATIVE_LOOKALIKES.has(`${prev}래`)) continue;
+    // "깨워 달래(서)" 는 `달라고 해` 의 준말이라 앞 글자 받침이 ㄹ 이지만 전언이 맞다.
+    // 어루만지는 `달래다`("엄마가 달래 줄게")는 뒤에 용언이 붙어 절 끝 조건에서 걸러진다.
+    if (prev === '달') return true;
+    const syllable = prev.charCodeAt(0) - 0xac00;
+    // 받침 ㄹ(종성 인덱스 8) = 권유형 `~ㄹ래`.
+    if (syllable >= 0 && syllable < 11172 && syllable % 28 === 8) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 관계 라벨(한국어 정규값)이 en·ja 출력에서 어떤 낱말로 나오는가.
+ *
+ * ⚠ **라벨은 앱 언어와 무관하게 한국어로 저장된다**(안드로이드 `RelationshipPreset` 의
+ * `label` 은 정규값이고 로케일 리소스는 표시용일 뿐이다). 그래서 en·ja 문구에는 `엄마` 라는
+ * 글자가 아예 없고, 한국어 조사·어미만 보는 가드는 **그 두 언어에서 통째로 무력**했다
+ * (Codex #702 P2). 프롬프트는 세 언어 모두에 걸려 있지만 백스톱이 비어 있었다.
+ *
+ * 자유 입력 라벨은 여기 없다 — 그건 한국어 갈래로만 걸러진다(알려진 한계).
+ */
+const RELATIONSHIP_LABEL_TRANSLATIONS: Record<string, { en: string[]; ja: string[] }> = {
+  엄마: { en: ['mom', 'mum', 'mother', 'mommy'], ja: ['お母さん', 'ママ', '母'] },
+  아빠: { en: ['dad', 'father', 'daddy'], ja: ['お父さん', 'パパ', '父'] },
+  할머니: { en: ['grandma', 'grandmother', 'granny'], ja: ['おばあちゃん', '祖母'] },
+  할아버지: { en: ['grandpa', 'grandfather'], ja: ['おじいちゃん', '祖父'] },
+  아들: { en: ['son'], ja: ['息子'] },
+  딸: { en: ['daughter'], ja: ['娘'] },
+  손녀: { en: ['granddaughter'], ja: ['孫娘'] },
+  손주: { en: ['grandson', 'grandchild'], ja: ['孫'] },
+  '형제·자매': { en: ['brother', 'sister', 'sibling'], ja: ['兄弟', '姉妹'] },
+  남자친구: { en: ['boyfriend'], ja: ['彼氏'] },
+  여자친구: { en: ['girlfriend'], ja: ['彼女'] },
+  남편: { en: ['husband'], ja: ['夫', '旦那'] },
+  아내: { en: ['wife'], ja: ['妻', '奥さん'] },
+  친구: { en: ['friend'], ja: ['友達'] },
+  연예인: { en: ['celebrity'], ja: ['芸能人'] },
+};
+
+/**
+ * 한국어가 아닌 출력에서 **화자가 전달자처럼 말하는가.**
+ *
+ * 한국어와 달리 en·ja 는 전달 구문이 **1인칭 대명사를 요구**해서("mom asked **me** to",
+ * "**私**が頼まれて") 훨씬 덜 모호하다. 그래서 라벨 낱말 + 전달 틀이 붙은 형태만 좁게 본다.
+ * 자기 3인칭 지칭("Mom is always on your side", "ママはいつも味方だよ")은 틀이 없으니 통과한다.
+ */
+function hasForeignLanguageProxy(
+  text: string,
+  label: string,
+  targetLanguage: string,
+): boolean {
+  const language = targetLanguage === 'en' || targetLanguage === 'ja' ? targetLanguage : null;
+  if (!language) return false;
+  const words = RELATIONSHIP_LABEL_TRANSLATIONS[label.trim()]?.[language];
+  if (!words?.length) return false;
+  const alternation = words.map(escapeRegExp).join('|');
+
+  if (language === 'en') {
+    // "your mom's voice" — 목소리를 밖에서 묘사한다.
+    if (new RegExp(`(?:${alternation})(?:'s|s')\\s+voice`, 'i').test(text)) return true;
+    // "mom asked me to wake you" / "mom wants me to" / "mom sent me" / "on behalf of your mom"
+    return (
+      new RegExp(
+        `(?:${alternation})\\b[^.!?]{0,20}?\\b(?:asked|told|wanted|wants|needs|sent|had)\\s+me\\b`,
+        'i',
+      ).test(text) ||
+      new RegExp(`\\bon\\s+behalf\\s+of\\b[^.!?]{0,15}?(?:${alternation})\\b`, 'i').test(text) ||
+      new RegExp(`\\b(?:instead\\s+of|in\\s+place\\s+of)\\s+(?:your\\s+)?(?:${alternation})\\b`, 'i').test(
+        text,
+      )
+    );
+  }
+
+  // ja: 「お母さんに頼まれて」「ママの代わりに」「お母さんの声」「お母さんが起こしてって」
+  return (
+    new RegExp(`(?:${alternation})の声`).test(text) ||
+    new RegExp(`(?:${alternation})(?:に|から)[^。！？]{0,10}?(?:頼まれ|言われ|頼まれて|命じられ)`).test(
+      text,
+    ) ||
+    new RegExp(`(?:${alternation})の代わり`).test(text) ||
+    new RegExp(`(?:${alternation})が[^。！？]{0,15}?(?:って言ってた|と言ってた|だって)`).test(text)
+  );
+}
+
+/**
+ * 문구가 **화자가 그 관계의 사람이 아닌 것처럼** 말하는가.
+ *
+ * ⚠ **이 가드는 백스톱이지 유일 방어선이 아니다.** 1차는 프롬프트다(3곳: 시스템 지시·동적·
+ * 사전렌더 모두 "너는 그 사람이지 그 사람의 말을 전하는 사람이 아니다" 를 예시와 함께 준다).
+ *
+ * 근본 한계가 있다: 한국어는 **3인칭 자기 지칭이 표준**이라("엄마는 늘 네 편이야"),
+ * 과거형 인용은 화자가 엄마든 심부름꾼이든 **글자가 같다**.
+ * "엄마가 일어나라고 했잖아" 는 엄마가 자기 잔소리를 되짚는 말로도, 남이 엄마 말을 옮기는
+ * 말로도 완벽히 읽힌다. 패턴으로는 가를 수 없다.
+ *
+ * 그래서 **현재형과 과거형을 다르게 다룬다** — 이게 이 함수의 설계 축이다:
+ *  - 현재형 전언(`~래`·`~라네`·`~라잖아`·`~라셔`)은 지금 남의 말을 옮기는 형태라 넓게 잡는다.
+ *  - 과거형(`했`·`그랬`·`랬`)은 자기 서술과 겹치므로 좁게 둔다.
+ *  - 대리 구문은 지시 낱말만으로는 부족하고 **화자가 대신 하는 행동**까지 있어야 한다.
+ *
+ * **일부러 안 잡는 것**(적대적 검증 754문장 + 실 Vertex 168콜로 확인, 2026-08-21):
+ *  - `~다더라`("엄마가 데리러 온다더라") — `~대`(비 온대)와 같은 사실 전달 어미라 날씨 문구가
+ *    통째로 떨어진다. 실제 모델 출력이 이 형태를 쓴다.
+ *  - `엄마가 시켰어`(대리 행동 없음) — "엄마가 시켰잖아"(내가 시켰잖아)와 구별되지 않는다.
+ *  - `가재`·`됐냬` 같은 한 음절 인용 — 명사와 충돌이 너무 크다.
+ * 이것들을 잡겠다고 넓히면 **과잉 거절**로 되돌아간다. 그게 이 파일에서 가장 비싼 실수다.
+ */
 function hasRelationshipLabelLeak(
   text: string,
   relationshipLabel: string | null | undefined,
   listenerTitle: string | null | undefined,
+  targetLanguage: string,
 ): boolean {
   const label = relationshipLabel?.trim();
   if (!label) return false;
+
+  if (hasForeignLanguageProxy(text, label, targetLanguage)) return true;
 
   const escapedLabel = escapeRegExp(label);
   const sourcePhrase = new RegExp(`${escapedLabel}\\s*(?:목소리|voice)`, 'i');
   if (sourcePhrase.test(text)) return true;
 
-  const koreanSelfReference = new RegExp(
-    `${escapedLabel}\\s*(?:가|이|는|은|도|의|로|으로|에게|한테|처럼|입장에서|대신)`,
+  // ⚠ **화자가 자기를 3인칭으로 부르는 것은 유출이 아니다**(2026-08-20).
+  // 예전에는 `엄마` + 조사(가/는/도/의/에게/한테…)를 전부 거절했는데, "엄마는 늘 네 편이야"
+  // 는 엄마가 자식에게 하는 **가장 자연스러운 한국어**다. 실제로 그 때문에 사랑 3번
+  // 시드("늘 네 편이라고 응원한다")가 관계=엄마에서 **영구 실패**했다 — 모델이 매번
+  // "엄마는 늘 네 편인 거 알지?" 를 내놓고 매번 거절돼 21개 중 20개에서 멈췄다
+  // (dev 실측: cron 5틱 연속 AlarmTextPreparationInvalidError → 큐 failed).
+  //
+  // 남겨 두는 것은 **화자가 그 사람이 아님을 드러내는** 쓰임뿐이다:
+  // `엄마처럼`(엄마가 아닌 사람의 비유) / `엄마 대신` / `엄마 입장에서`.
+  // 목적격 조사를 허용하는 이유는 `엄마를 대신해서` 가 `엄마 대신` 과 같은 말이기 때문이다.
+  //
+  // ⚠ `대신할`·`대신하는`(관형형)은 뺀다 — "엄마를 대신할 알람은 없으니까" 처럼 대신하는
+  // 주체가 화자가 아닌(사람도 아닌) 경우라, 화자를 사칭한다는 뜻이 되지 않는다.
+  if (
+    matchesWithoutOtherActor(
+      text,
+      label,
+      `${escapedLabel}\\s*(?:을|를)?\\s*(?:처럼|입장에서|대신(?!할|하는|한\\s))`,
+      true,
+    )
+  ) {
+    return true;
+  }
+
+  // **전언(傳言) 구문도 화자가 그 사람이 아님을 드러낸다**(Codex #701 P2).
+  // "엄마가 깨워 달라고 했어" 는 화자가 심부름꾼이라는 뜻이라, 자기 지칭("엄마는 늘 네
+  // 편이야")과는 정반대다. 라벨 뒤 짧은 구간에 전언 어미가 오면 거절한다.
+  //
+  // ⚠ **한 음절 어미는 다른 낱말과 겹친다**(적대적 검증 실측):
+  //  - `그랬` 앞글자 `그` 를 뺐다. "엄마가 걱정돼서 그랬어" / "엄마가 늘 그랬듯이" /
+  //    "엄마가 그랬잖아" 는 전부 엄마 **자신의** 말이고, 3인칭 자기 지칭이 표준인 한국어에서
+  //    `그랬` 은 전언과 자기 서술을 가르지 못한다.
+  //  - `랬` 앞에 `바` 가 오면 `바라다/바래다`(바랬어, 바랬네)라 전언이 아니다.
+  //  - `랬`·`댔` 앞에 공백이 오면 별개 낱말이다("손을 댔어" 의 `대다`).
+  //  - `라고 했`·`라고 하셨` 도 뺐다. "엄마가 어릴 때부터 그러라고 했잖아?" 는 엄마가 **자기**
+  //    잔소리를 되짚는 말이다. 남기는 것은 자기 말로 읽히지 않는 `말했`·`전했`·`하더` 뿐이다.
+  const reportedSpeech = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|께서)?[^.!?]{0,20}?(?:달라고|라고\\s*(?:말했|전했|하더)|(?<![\\s바그])랬|(?<!\\s)댔)`,
     'i',
   );
-  if (koreanSelfReference.test(text)) return true;
+  if (reportedSpeech.test(text)) return true;
+  if (hasPresentReportedSpeech(text, escapedLabel)) return true;
+
+  // **현재형 전언은 과거형과 달리 모호하지 않다.** 이게 이 가드의 핵심 구분선이다:
+  //  - 과거형(`했`·`그랬`·`랬`)은 **엄마 자신이 지난 말을 되짚는 것**과 형태가 같다
+  //    ("엄마가 일어나라고 했잖아" 는 엄마가 하는 말로 완벽히 자연스럽다). 그래서 좁게 둔다.
+  //  - 현재형(`~래`·`~라네`·`~라잖아`·`~라셔`·`~라며`·`~라던데`)은 **지금 남의 말을 옮기는**
+  //    형태라, 엄마가 자기 말에 쓰지 않는다. 그래서 넓게 잡아도 안전하다.
+  // ⚠ **`라` 앞글자로 걸러야 하는 것이 두 종류 있다**(`QUOTATIVE_STEM_GUARD`):
+  //   ① 어간이 `라` 로 끝나는 용언 — `바라다`("네 행복을 바라네"), `자라다`("키가 자라며"),
+  //      `놀라다`("네 성장에 깜짝 놀라네"). 전언이 아니라 그냥 그 동사다.
+  //   ② 계사 `~이라`/`~ㄹ 거라`/`아니라` — "할머니는 늘 네 편이란다" 는 **정반대 뜻**이고
+  //      실 Vertex 출력이 실제로 이 형태를 낸다(2026-08-21 실측).
+  //   `~다더라` 는 넣지 않는다: "비가 온다더라" 는 `~대` 와 같은 사실 전달이다.
+  const presentQuotative = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|도|께서)?[^.!?]{0,20}?` +
+      `(?:${QUOTATIVE_STEM_GUARD}라(?:네|셔|셨|잖아|며|던데|는데)|` +
+      `라고\\s*(?:해|하네|하셔|하시|하더|한다|부탁)|달라(?:네|셔|잖아|는데)|` +
+      `${QUOTATIVE_STEM_GUARD}라\\s*(?:해|하|했|시켜|시키)|` +
+      `${QUOTATIVE_STEM_GUARD}(?:란다|랍니다))`,
+    'i',
+  );
+  if (presentQuotative.test(text)) return true;
+
+  // **대리(代理) 구문**(Codex #701 P2 후속). 어미가 아니라 **조사**로 화자를 심부름꾼으로
+  // 만드는 형태라 위의 전언 정규식이 통째로 비켜 간다 — "엄마한테 부탁받아서 깨우러 왔어",
+  // "엄마 부탁으로 알려 주는 거야", "엄마가 시켜서 왔어".
+  //
+  // 성립 조건이 **둘 다** 필요하다:
+  //  1. 라벨이 부탁·지시의 **출처**여야 한다. `부탁` 만으로는 안 된다 — "엄마 부탁 하나만
+  //     들어줄래?" 는 엄마 자신의 말이다. 조사가 뜻을 뒤집는 것도 여기다(Codex #702 P2):
+  //     `엄마한테 부탁받아서`(엄마가 준 쪽) ≠ `엄마가 네 부탁받아서`(엄마가 받은 쪽).
+  //     그래서 주격·주제 조사가 붙으면 이 갈래는 아예 보지 않는다.
+  //     관형형 `부탁받은`(→ "엄마한테 부탁받은 우산 챙겨 가")도 뺀다 — 받은 쪽이 청자다.
+  //  2. 그 결과로 **화자가 대신 하는 행동**(`PROXY_ACTION`)이 이어져야 한다. 없으면
+  //     "엄마의 심부름 때문에 아침이 바쁘겠다" 같은 자기 서술까지 떨어진다.
+  const requestFromLabel =
+    `${escapedLabel}(?!\\s*(?:가|이|께서|는|은|도))\\s*(?:한테서?|에게서?|의|께)?\\s*` +
+    `[^.!?]{0,6}?(?:부탁\\s*[^.!?]{0,6}?받(?:아|고)|부탁(?:으로|\\s*때문에)|` +
+    `심부름(?:으로|\\s*때문에|을?\\s*하러)|말씀(?:을|를)?\\s*전하)` +
+    `\\s*[^.!?]{0,10}?${PROXY_ACTION}`;
+  if (matchesWithoutOtherActor(text, label, requestFromLabel)) return true;
+
+  // `시키다`·`부탁하다` 는 반대로 라벨이 **주격**일 때가 유출이다 — "엄마가 시켜서 왔어".
+  // 여기도 대리 행동이 있어야 한다: "엄마가 시켜서 억지로 하지는 마" 는 청자에게 주는
+  // 당부이고, "엄마가 시켜서 하는 게 아니라" 는 오히려 그것을 부정하는 말이다(실측 오탐).
+  //
+  // ⚠ **맨 과거형(`시켰`·`시키셨`)은 넣지 않는다**(Codex #702 P2). "엄마가 시켰잖아,
+  // 전화해 줘" 는 엄마가 **자기** 지시를 되짚는 말인데, `시켰` 이 `시켰잖아` 의 앞부분에
+  // 걸리고 뒤의 `전화` 가 대리 행동 조건까지 채워 버린다. 위 「일부러 안 잡는 것」에
+  // `엄마가 시켰어` 를 적어 둔 것과도 어긋났다 — 과거형은 좁게 둔다는 규칙 그대로다.
+  const orderedByLabel =
+    `${escapedLabel}\\s*(?:가|이|께서|한테서?|에게서?|의)?\\s*` +
+    `[^.!?]{0,6}?(?:시켜서|시키셔서|시키신|시킨\\s*대로|시키는\\s*대로|보내서|보내셔서|` +
+    `부탁(?:해|하셔|하시어)서|부탁하신\\s*대로|부탁한\\s*(?:대로|일))\\s*[^.!?]{0,8}?${PROXY_ACTION}`;
+  if (matchesWithoutOtherActor(text, label, orderedByLabel)) return true;
 
   const allowedAddress =
     normalizeAddressLabel(label) !== null &&
@@ -1335,16 +1931,49 @@ function hasRelationshipLabelLeak(
   return directAddress.test(text) && !allowedAddress;
 }
 
-function hasDeliveryTagOrStageDirection(text: string): boolean {
-  if (TAG_RE.test(text)) return true;
-  if (/^\s*[[（(]/.test(text)) return true;
+/// 모델 출력에 **낭독되면 안 되는 지문**이 섞였는가.
+///
+/// ⚠ **대괄호 태그 자체는 이제 정상이다**(2026-08-13 — C안). 예전에는 대괄호가 하나라도
+/// 있으면 HARD 실패로 보고 재롤/폴백했는데, 그러면 여러 개·중간 태그가 구조적으로 불가능했다.
+/// 지금 막는 것은 둘뿐이다:
+///  1. **전각/소괄호 지문** — `（다정하게）` `(웃으며)` 는 ElevenLabs 가 태그로 안 읽고
+///     **글자 그대로 낭독**한다. 대괄호만 태그다.
+///  2. **저각성 지시** — 대괄호든 아니든, 졸리게 말하라는 뜻이면 깨우는 알람에 맞지 않는다.
+/**
+ * 태그 문법에 **맞지 않는 대괄호**가 남아 있는가 — 예: `[다정하게]`, `[아침 인사]`.
+ *
+ * ⚠ `TAG_BODY_PATTERN` 은 ASCII 소문자만 받는다(`[a-z][a-z ,-]{1,48}`). 그래서 한글
+ * 대괄호 지문은 **태그로 인식되지도, 벗겨지지도 않는다** — 그대로 두면 합성 문구에도
+ * 표시 문구에도 남아 낭독되거나 화면에 뜬다(Codex #701 P2). 인라인 태그를 쓰라고
+ * 지시하기 시작하면서 모델이 이 형태를 낼 여지가 커졌으므로 명시적으로 거절한다.
+ */
+function hasUnknownBracketedSegment(text: string): boolean {
+  // 인식되는 태그를 먼저 걷어내고, **대괄호가 한 짝이라도 남으면** 거절한다.
+  // ⚠ 닫히지 않은 지문(`[다정하게 좋은 아침이에요`)은 `[...]` 쌍 매칭으로는 잡히지 않는다 —
+  // 남은 낱개 `[`·`]` 까지 봐야 합성·표시 문구에 새는 것을 막는다(Codex #701 P2).
+  const withoutKnownTags = text.replace(TAG_RE_GLOBAL, '');
+  return withoutKnownTags.includes('[') || withoutKnownTags.includes(']');
+}
 
-  const bracketedParts = text.match(/[[（(][^\])）\]]{1,50}[\])）\]]/g) ?? [];
-  return bracketedParts.some((part) =>
-    /(softly|warmly|gently|cheerfully|brightly|calmly|whisper|속삭|다정하게|밝게|차분하게|부드럽게|따뜻하게|상냥하게)/i.test(
-      part,
-    ),
-  );
+function hasDeliveryTagOrStageDirection(text: string): boolean {
+  if (hasUnknownBracketedSegment(text)) return true;
+  // 소괄호·전각괄호로 시작하면 지문이다(대괄호는 태그라 통과).
+  if (/^\s*[（(]/.test(text)) return true;
+
+  const parenthesized = text.match(/[（(][^）)]{1,50}[）)]/g) ?? [];
+  if (
+    parenthesized.some((part) =>
+      /(softly|warmly|gently|cheerfully|brightly|calmly|whisper|속삭|다정하게|밝게|차분하게|부드럽게|따뜻하게|상냥하게)/i.test(
+        part,
+      ),
+    )
+  ) {
+    return true;
+  }
+
+  // 대괄호 태그 중 저각성이 있으면 실패로 본다 — 깨우는 경로 전용 판정이다.
+  const bracketed = text.match(TAG_RE_GLOBAL) ?? [];
+  return bracketed.some((part) => isLowArousalTag(part.slice(1, -1)));
 }
 
 function hasAlarmTimeEcho(text: string, alarmTimeLabel: string | null | undefined): boolean {
@@ -1564,7 +2193,8 @@ function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
 }
 
 function extractTags(text: string): string[] {
-  const matches = text.match(/\[([a-z][a-z -]{1,32})\]/gi) ?? [];
+  // ⚠ 정규식을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
+  const matches = text.match(TAG_RE_GLOBAL) ?? [];
   return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
 }
 
@@ -1579,6 +2209,14 @@ function stripWrappingQuotes(text: string): string {
     .trim();
 }
 
+/// 사용자가 친 문구에 모델이 태그만 얹었는지 확인하고, **얹은 그대로** 돌려준다.
+///
+/// ⚠ **태그를 하나로 접어 원문에 다시 붙이지 말 것**(2026-08-13 — C안).
+/// 예전에는 `pickApprovedTag` 로 **첫 태그 하나만** 고른 뒤 `applyDeliveryTagPerSentence`
+/// 로 원문을 재조립했다. 그래서 모델이 어디에 몇 개를 넣었든 **결과는 언제나 '원문 앞에
+/// 태그 하나'** 였다 — 프롬프트를 아무리 고쳐도 이 경로에서는 변화가 관측되지 않았다.
+///
+/// 지금은 글자(태그를 뺀 본문)가 원문과 같은지만 확인하고 배치는 모델에 맡긴다.
 function normalizeSameLanguageTaggedText(
   preparedText: string,
   originalText: string,
@@ -1587,15 +2225,34 @@ function normalizeSameLanguageTaggedText(
   if (normalizeAlarmTextWithoutTags(preparedText) !== normalizeAlarmTextWithoutTags(originalText)) {
     return null;
   }
-  const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
-  if (!tag) return null;
-  return applyDeliveryTagPerSentence(tag, originalText, 200);
+  const tagsInText = preparedText.match(TAG_RE_GLOBAL) ?? [];
+
+  // ⚠ **선두 태그 하나뿐이면 문장마다 다시 앞세운다 — 이 장치를 없애지 말 것.**
+  // v3 태그는 뒤로 갈수록 효력이 약해져, 여러 문장을 선두 태그 하나로 합성하면 **끝
+  // 문장에서 톤이 풀리고 말이 빨라진다.** 사용자가 지적한 "말이 엄청 빠르다" 와 같은 축이다.
+  // 모델이 스스로 여러 개·중간에 배치했다면 그건 의도이므로 건드리지 않는다.
+  const onlyLeadingTag =
+    tagsInText.length === 1 && preparedText.trimStart().startsWith(tagsInText[0]!);
+  if (tagsInText.length === 0 || onlyLeadingTag) {
+    const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
+    if (!tag) return null;
+    return applyDeliveryTagPerSentence(tag, originalText, 200);
+  }
+  return preparedText.trim();
 }
 
 // ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
 // 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
 // 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
 // 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
+/// 문구에 인라인으로 박힌 딜리버리 태그 목록(중복 제거·소문자). `messages.delivery_tags_json`
+/// 처럼 "이 클립이 어떤 전달 톤으로 합성됐나" 를 남길 때 쓴다.
+///
+/// ⚠ 정규식을 호출부에 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
+export function extractDeliveryTags(text: string): string[] {
+  return extractTags(text);
+}
+
 export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
   const trimmed = text.trim();
   if (!tag) return trimmed;
@@ -1613,9 +2270,9 @@ export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength
   return single.length <= maxLength ? single : trimmed;
 }
 
-function normalizeAlarmTextWithoutTags(text: string): string {
+export function normalizeAlarmTextWithoutTags(text: string): string {
   return text
-    .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
+    .replace(new RegExp(`\\s*\\[${TAG_BODY_PATTERN}\\]\\s*`, 'gi'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

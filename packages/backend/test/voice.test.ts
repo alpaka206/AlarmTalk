@@ -452,17 +452,18 @@ describe('POST /voice/clone — 음성 클론', () => {
     return new Request('http://localhost/voice/clone', { method: 'POST', body: form });
   }
 
-  it('프로필 1개 이상이면 403', async () => {
-    // userIdPK 가 채워지며 클론 라우트의 플랜 조회가 실제로 실행된다 — 한도 검사 앞에
-    // 유료 플랜 행을 넣어 준다(없으면 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 먼저 떨어짐).
+  // ⚠ **슬롯이 차 있어도 클론 생성은 막지 않는다.** official 은 마지막 확정 화면의
+  // '교체' 로, 남은 draft 는 여기서 버리는 것으로 각각 풀린다(2026-08-12·2026-08-25).
+  it('슬롯이 차 있어도 초안 생성은 진행된다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
-    // 한도 검사는 draft/official 슬롯을 함께 센다(둘 중 하나라도 차면 차단).
     mockDB.pushResult([{ draft_count: 1, official_count: 1 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
+    expect(res.status).not.toBe(403);
   });
 
   it('audio 파일 누락 시 400', async () => {

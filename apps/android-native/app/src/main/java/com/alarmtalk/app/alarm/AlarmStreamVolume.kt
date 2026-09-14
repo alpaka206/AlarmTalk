@@ -1,0 +1,166 @@
+package com.alarmtalk.app.alarm
+
+import android.content.Context
+import android.media.AudioManager
+import android.util.Log
+
+/**
+ * 울리는 동안 **시스템 알람 스트림 볼륨**을 알람에 맞춘 크기로 올리고, 끝나면 원래대로 되돌린다.
+ *
+ * 왜 필요한가: `MediaPlayer.setVolume` 은 스트림 볼륨에 **곱해지는 상대값**이다. 기기의 알람
+ * 볼륨이 낮거나 0 이면 앱에서 100% 로 설정해도 작게 울리거나 아예 안 들린다 — 사용자에게는
+ * "앱 설정이 안 먹는다" 로 보인다. 알람은 사용자가 **미리 맞춰 둔 약속**이므로, 그 순간만큼은
+ * 기기 볼륨을 우리가 맞춘다.
+ *
+ * (참고: 무음/진동 모드 자체는 원래 알람 스트림을 막지 않는다 — 안드로이드가 알람을 예외로
+ * 둔다. 여기서 해결하는 것은 **알람 볼륨 슬라이더가 낮거나 0** 인 경우다.)
+ *
+ * ⚠ **원복이 이 클래스의 존재 이유다.** 사용자의 기기 설정을 우리가 바꾸는 것이므로 반드시
+ * 되돌려야 한다. 그래서 원래 값을 메모리가 아니라 **SharedPreferences 에 먼저 적어 둔다** —
+ * 울리는 중 프로세스가 죽어도 다음 실행의 [restoreIfLeftOver] 가 되돌린다. 그게 없으면
+ * 사용자의 알람 볼륨이 우리가 올린 값에 **영구히 고정**된다.
+ */
+internal object AlarmStreamVolume {
+
+    private const val TAG = "AlarmStreamVolume"
+
+    /** 저장된 값·주인을 읽고 쓰는 구간의 락. */
+    private val lock = Any()
+    private const val PREFS = "alarm_stream_volume"
+    private const val KEY_SAVED_VOLUME = "saved_alarm_volume"
+    private const val KEY_OWNER = "saved_alarm_volume_owner"
+
+    /**
+     * 누가 올렸는지. **울림이 미리듣기를 이긴다.**
+     *
+     * ⚠ 주인이 없으면 사고가 난다(코덱스 #729). 미리듣기 중에 진짜 알람이 울리면 서비스가
+     * 스트림을 올리는데, 그때 편집기가 화면에서 밀려나며 정리를 돌면 **울리는 알람의 볼륨을
+     * 도로 낮춘다.** 지금 주인이 아닌 쪽의 원복은 무시한다.
+     */
+    internal enum class Owner { RINGING, PREVIEW }
+
+    /** 저장된 값이 없음을 뜻하는 표식(0 도 유효한 볼륨이라 -1 을 쓴다). */
+    private const val NONE = -1
+
+    /**
+     * [percent] (0~100) 에 해당하는 크기로 알람 스트림을 올린다.
+     *
+     * **이미 그보다 크면 건드리지 않는다** — 사용자가 더 크게 해 둔 것을 우리가 낮출 이유는
+     * 없다(알람은 들려야 하는 쪽이 안전하다).
+     */
+    /**
+     * ⚠ **읽고-쓰기를 한 락 안에서 한다**(코덱스 #729 4차). 미리듣기(UI 스레드)와 울림
+     * (서비스 IO)이 동시에 시작하면 둘 다 '저장된 값 없음' 을 보고, 울림이 먼저 적은 뒤
+     * 미리듣기가 주인을 덮어쓸 수 있다 — 그러면 미리듣기 정리가 **울리는 알람의 볼륨을
+     * 낮춘다.** 프로세스 안의 경합이라 이 락으로 닫힌다(프로세스 간 경합은 없다 —
+     * 이 앱의 프로세스는 하나다).
+     */
+    fun applyForRinging(context: Context, percent: Int, owner: Owner = Owner.RINGING): Unit = synchronized(lock) {
+        val manager = context.getSystemService(AudioManager::class.java) ?: return
+        // 이 호출이 원본을 적었는가. 앞선 울림이 적어 둔 값은 **남의 것**이라 지우면 안 된다.
+        var savedHere = false
+        runCatching {
+            val max = manager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            if (max <= 0) return
+            val current = manager.getStreamVolume(AudioManager.STREAM_ALARM)
+            // 최소 1칸은 보장한다 — percent 가 낮아도 0 칸이 되면 무음이라 알람의 뜻이 없다.
+            val desired = ((max * percent.coerceIn(0, 100)) / 100).coerceIn(1, max)
+            // ⚠ **주인 인계를 조기 반환보다 먼저 한다**(코덱스 #729 3차). 미리듣기가 이미
+            //   같은 크기로 올려 둔 상태에서 알람이 울리면 아래 `current >= desired` 로
+            //   빠져나가, 슬롯 주인이 PREVIEW 로 남는다 — 그러면 미리듣기 정리가
+            //   **울리는 알람의 볼륨을 도로 낮춘다.**
+            if (owner == Owner.RINGING && readSaved(context) != NONE) {
+                prefs(context).edit().putString(KEY_OWNER, Owner.RINGING.name).commit()
+            }
+            if (current >= desired) {
+                Log.i(TAG, "Alarm stream already loud enough current=$current desired=$desired")
+                return
+            }
+            // ⚠ 올리기 **전에** 저장한다. 순서를 뒤집으면 그 사이에 죽었을 때 되돌릴 값이 없다.
+            savedHere = saveOriginal(context, current, owner)
+            manager.setStreamVolume(AudioManager.STREAM_ALARM, desired, 0)
+            Log.i(TAG, "Raised alarm stream $current -> $desired (max=$max, percent=$percent)")
+        }.onFailure { error ->
+            // 방해금지(DND)에서 알람까지 차단한 기기는 ACCESS_NOTIFICATION_POLICY 없이
+            // SecurityException 을 던진다. 못 올려도 알람은 그대로 울려야 하므로 삼킨다.
+            Log.w(TAG, "Failed to raise alarm stream volume", error)
+            // ⚠ **내가 적은 것만 지운다**(2026-09-08). 예전에는 무조건 지웠는데,
+            //   `saveOriginal` 은 이미 값이 있으면 덮지 않으므로 그 값은 **앞선 울림이
+            //   적어 둔 원본**이다. 연달아 울리다 이번 회차만 실패하면 그 원본이 지워져
+            //   **사용자의 알람 볼륨이 우리가 올린 값으로 영구히 굳는다** — 이 클래스가
+            //   존재하는 이유가 바로 그 원복이다.
+            if (savedHere) clearSaved(context)
+        }
+    }
+
+    /** 울림이 끝나면 원래 볼륨으로 되돌린다. 저장된 값이 없으면(안 올렸으면) 아무것도 하지 않는다. */
+    /** @param owner `null` 이면 주인을 따지지 않는다(크래시 복구 전용). */
+    fun restore(context: Context, owner: Owner? = Owner.RINGING): Unit = synchronized(lock) {
+        val saved = readSaved(context)
+        if (saved == NONE) return
+        val savedOwner = prefs(context).getString(KEY_OWNER, Owner.RINGING.name)
+        if (owner != null && savedOwner != owner.name) {
+            Log.i(TAG, "Skipping restore: stream is owned by $savedOwner, not $owner")
+            return
+        }
+        val manager = context.getSystemService(AudioManager::class.java)
+        if (manager == null) {
+            clearSaved(context)
+            return
+        }
+        runCatching {
+            manager.setStreamVolume(AudioManager.STREAM_ALARM, saved, 0)
+            Log.i(TAG, "Restored alarm stream volume to $saved")
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to restore alarm stream volume", error)
+        }
+        // 성공·실패 모두 지운다 — 실패한 값을 남겨 두면 다음 울림에서 그걸 '원래 값' 으로
+        // 다시 복원하려 들어 더 어긋난다.
+        clearSaved(context)
+    }
+
+    /**
+     * 울리는 중 프로세스가 죽어 원복하지 못한 값이 남아 있으면 되돌린다.
+     * 서비스 생성 시 **울림을 시작하기 전에** 한 번 부른다.
+     */
+    /**
+     * 지난 실행이 남긴 값을 되돌린다.
+     *
+     * ⚠ **주인을 보지 않는다**(코덱스 #729 3차). 프로세스가 죽으면 그 주인은 이미 없다 —
+     * 주인을 따지면 미리듣기 중에 죽은 경우 `PREVIEW` 로 적힌 값이 **영영 복구되지 않아**
+     * 사용자의 알람 볼륨이 우리가 올린 값에 고정된다.
+     */
+    fun restoreIfLeftOver(context: Context) {
+        if (readSaved(context) == NONE) return
+        Log.i(TAG, "Found leftover alarm stream volume from a previous run; restoring")
+        restore(context, owner = null)
+    }
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /// @return 이 호출이 실제로 적었으면 true. 이미 값이 있어 건너뛰었으면 false —
+    ///   그 값은 **앞선 울림의 것**이라 이 호출이 실패해도 지우면 안 된다.
+    private fun saveOriginal(context: Context, volume: Int, owner: Owner): Boolean {
+        // 이미 저장돼 있으면 원래 값은 덮지 않는다 — 연속 울림에서 우리가 올린 값을
+        // '원래 값' 으로 굳혀 버리면 원복이 영영 어긋난다.
+        if (readSaved(context) != NONE) {
+            // 다만 **울림은 주인을 가져간다.** 미리듣기가 올려 둔 상태에서 알람이 울리면,
+            // 그 뒤 미리듣기의 정리가 울리는 알람의 볼륨을 낮추면 안 된다.
+            if (owner == Owner.RINGING) prefs(context).edit().putString(KEY_OWNER, owner.name).commit()
+            return false
+        }
+        prefs(context).edit()
+            .putInt(KEY_SAVED_VOLUME, volume)
+            .putString(KEY_OWNER, owner.name)
+            .commit()
+        return true
+    }
+
+    private fun readSaved(context: Context): Int =
+        prefs(context).getInt(KEY_SAVED_VOLUME, NONE)
+
+    private fun clearSaved(context: Context) {
+        prefs(context).edit().remove(KEY_SAVED_VOLUME).remove(KEY_OWNER).commit()
+    }
+}

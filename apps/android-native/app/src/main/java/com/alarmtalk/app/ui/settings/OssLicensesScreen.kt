@@ -14,10 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +27,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.R
@@ -39,12 +34,18 @@ import com.alarmtalk.app.R
 private enum class OssLicenseKind(val displayName: String, val rawRes: Int) {
     APACHE_2_0("Apache License 2.0", R.raw.license_apache_2_0),
     MIT("MIT License", R.raw.license_mit),
+    OFL_1_1("SIL Open Font License 1.1", R.raw.license_ofl_1_1),
 }
 
 private data class OssLibrary(val name: String, val license: OssLicenseKind)
 
 // 앱이 실제 사용하는 오픈소스 라이브러리(직접 의존성). Google Play SDK(billing·play-services·
 // app-update)는 오픈소스가 아니라 여기서 제외한다. build.gradle.kts 의존성을 추가/삭제하면 함께 갱신한다.
+//
+// ⚠ **코드 의존성만 적는 목록이 아니다 — 번들하는 리소스도 고지 대상이다.**
+// Pretendard 는 `res/font/pretendard_*.otf` 로 APK 에 실려 나가는데 2026-08-11 까지
+// 이 목록에 없었다(iOS 쪽에는 있었다). 서체·아이콘·사운드 같은 자산도 라이선스가 붙으면
+// 여기에 넣는다.
 private val OSS_LIBRARIES: List<OssLibrary> = listOf(
     OssLibrary("AndroidX Activity Compose", OssLicenseKind.APACHE_2_0),
     OssLibrary("AndroidX Core KTX", OssLicenseKind.APACHE_2_0),
@@ -60,6 +61,7 @@ private val OSS_LIBRARIES: List<OssLibrary> = listOf(
     OssLibrary("Kotlin Coroutines", OssLicenseKind.APACHE_2_0),
     OssLibrary("Kotlin Standard Library", OssLicenseKind.APACHE_2_0),
     OssLibrary("OkHttp", OssLicenseKind.APACHE_2_0),
+    OssLibrary("Pretendard", OssLicenseKind.OFL_1_1),
     OssLibrary("OkHttp Logging Interceptor", OssLicenseKind.APACHE_2_0),
     OssLibrary("Retrofit", OssLicenseKind.APACHE_2_0),
     OssLibrary("Retrofit Gson Converter", OssLicenseKind.APACHE_2_0),
@@ -84,26 +86,12 @@ internal fun OssLicensesScreen(
             .background(homeGradientBrush())
             .padding(contentPadding),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { if (current != null) selected = null else onBack() }) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = stringResource(R.string.hs_settings_back),
-                )
-            }
-            Text(
-                text = current?.name ?: stringResource(R.string.menu_open_source_licenses),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        WakerTopBar(
+            // 본문을 열어 둔 상태면 뒤로가기가 목록으로 돌아간다(화면을 나가지 않는다).
+            title = current?.name ?: stringResource(R.string.menu_open_source_licenses),
+            onBack = { if (current != null) selected = null else onBack() },
+            modifier = Modifier.padding(top = 12.dp),
+        )
 
         if (current == null) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {

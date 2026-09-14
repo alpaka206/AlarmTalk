@@ -43,6 +43,7 @@ async function setupDb() {
       language TEXT,
       variant INTEGER DEFAULT 0,
       is_preset INTEGER DEFAULT 0,
+      retired_at TEXT,
       audio_url TEXT
     );
     CREATE TABLE voice_prerender_queue (
@@ -54,7 +55,15 @@ async function setupDb() {
       claimed_at TEXT,
       claim_token TEXT,
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      -- 마이그레이션 #101. 교체 회차인지(기존 preset 을 덮어쓸지) 나른다.
+      refresh_existing INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE generated_audio_assets (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL,
+      provider_voice_id TEXT NOT NULL,
+      audio_url TEXT
     );
   `);
   return db;
@@ -146,7 +155,7 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
 
     expect(targets).toHaveLength(CLONE_TOTAL_SEEDS);
     expect(new Set(targets.map((t) => t.category))).toEqual(
-      new Set(['greeting', 'weather', 'fortune', 'love', 'medication']),
+      new Set(['greeting', 'weather', 'fortune', 'cheer', 'medication']),
     );
     // languageOverride='ko' → 앱 언어 1개만(비용 곱연산 회피).
     expect(new Set(targets.map((t) => t.language))).toEqual(new Set(['ko']));
@@ -158,8 +167,38 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(targets.every((t) => t.ownerUserId === 'owner-1')).toBe(true);
     expect(targets.every((t) => t.voiceProfileId === 'clone-ready')).toBe(true);
     expect(targets.every((t) => t.claimToken === 'claim-current')).toBe(true);
-    // baseText 는 최종 문구가 아니라 생성 seed(지시문).
-    expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
+    // baseText 는 최종 문구가 아니라 **생성 seed(지시문)** 이다 — 그 성질만 고정한다.
+    // ⚠ 낱말이나 어미에 묶지 말 것. 예전에는 `'알리'` 를 찾았는데, 시드를 다듬으며
+    //   '알린 뒤' 가 되자 실패했다 — '알린' 은 '알리'+'ㄴ' 이 아니라 별개 음절이라
+    //   부분문자열이 아니다. 고정할 것은 "완성 문구가 아니라 **지시문**" 이라는 계약이다.
+    const weatherSeed = targets.find((t) => t.category === 'weather')?.baseText ?? '';
+    expect(weatherSeed.length).toBeGreaterThan(20);
+    // 지시문은 '~한다/~준다/~권한다' 로 끝난다(완성 대사는 그렇게 끝나지 않는다).
+    expect(weatherSeed).toMatch(/(한다|준다|챙긴다)\.?$/);
+    // 완성 대사와 달리 delivery 태그가 없다 — 태그는 생성 결과에 붙는다.
+    expect(weatherSeed).not.toMatch(/\[[a-z]/i);
+  });
+
+  // ⚠ **먼저 쓸 것부터 만든다**(2026-08-20). 사전렌더는 5분 주기 배치라 풀셋이 채워지기까지
+  // 십수 분이 걸리는데, 그동안 사용자가 부딪히는 건 처음 고르는 문구 하나다. 예전에는 시드
+  // 선언 순서(날씨 9개 먼저)라 인사말 하나 들으려고 날씨 아홉 개를 기다렸다.
+  it('첫 배치가 인사말·약부터 만들도록 대상이 정렬된다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready' });
+
+    const targets = await findMissingStockTargets(db, [cloneVoice()]);
+
+    expect(targets[0]?.category).toBe('greeting');
+    const categoryOrder = targets.map((t) => t.category);
+    expect(categoryOrder.indexOf('medication')).toBeLessThan(categoryOrder.indexOf('weather'));
+    expect(categoryOrder.indexOf('weather')).toBeLessThan(categoryOrder.indexOf('fortune'));
+
+    // 같은 카테고리 안의 variant 순서는 **계약**이다(날씨 variant = 조건 인덱스).
+    // 정렬이 안정적이지 않으면 사전렌더 인덱스와 클라 매칭이 어긋난다.
+    const weatherVariants = targets
+      .filter((t) => t.category === 'weather')
+      .map((t) => t.variantIndex);
+    expect(weatherVariants).toEqual([...weatherVariants].sort((a, b) => a - b));
   });
 
   it('languageOverride 를 en 으로 주면 en 으로만 대상 생성', async () => {
@@ -181,6 +220,27 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     const targets = await findMissingStockTargets(db, [cloneVoice()]);
     expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
     expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 0)).toBeUndefined();
+  });
+
+  it('교체 배치는 새 provider로 게시된 항목을 건너뛰고 남은 클립부터 이어간다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready', voiceId: 'el-new' });
+    await db.execute({
+      sql: `INSERT INTO messages
+              (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
+            VALUES ('m-new', 'owner-1', 'clone-ready', 'greeting', 'ko', 0, 1, 'r2://new')`,
+      args: [],
+    });
+    await db.execute({
+      sql: `INSERT INTO generated_audio_assets (id, message_id, provider_voice_id, audio_url)
+            VALUES ('ga-new', 'm-new', 'el-new', 'r2://new')`,
+      args: [],
+    });
+
+    const targets = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-new' })], true);
+
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
+    expect(targets.find((t) => t.category === 'greeting' && t.variantIndex === 0)).toBeUndefined();
   });
 
   it('다른 보이스의 기존 클립은 이 보이스 스코프에 영향 없음(전유저 스캔 아님)', async () => {

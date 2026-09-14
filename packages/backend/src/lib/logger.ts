@@ -13,6 +13,9 @@ export function logStructured(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono Context is invariant on Env; this accepts both pre-auth and post-auth contexts
 export function logRouteError(c: Context<any>, err: unknown): void {
+  // 본문 제한은 서버 장애가 아니다. 파서가 예외를 감싸도 요청별 표시로 구분하고,
+  // bodyLimit이 확정한 최종 413을 errorCodeMiddleware 한 곳에서 기록한다.
+  if (c.get('requestBodyLimitExceeded')) return;
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join(' | ') : undefined;
 
@@ -38,4 +41,8 @@ export function logRouteError(c: Context<any>, err: unknown): void {
     if (uid) sentry.setTag?.('uid', uid);
     sentry.captureException(err);
   }
+
+  // 이 요청은 **스택까지 붙여** 이미 보고했다. errorCode 미들웨어가 나가는 5xx 를 보고
+  // 한 번 더 올리지 않도록 표시해 둔다 — 같은 사고가 Sentry 에 둘로 보이면 세는 게 틀어진다.
+  c.set('errorReported', true);
 }

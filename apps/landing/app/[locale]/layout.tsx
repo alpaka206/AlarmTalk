@@ -68,6 +68,7 @@ export default async function LocaleLayout({
   }
 
   setRequestLocale(locale);
+  const tNav = await getTranslations({ locale, namespace: "nav" });
 
   const organizationLd = {
     "@context": "https://schema.org",
@@ -82,6 +83,13 @@ export default async function LocaleLayout({
   return (
     <NextIntlClientProvider>
       <HtmlLangSync locale={locale} />
+      {/* 키보드 사용자가 매 페이지 헤더 링크 여덟 개를 지나지 않게. 초점이 올 때만 보인다. */}
+      <a
+        href="#main"
+        className="sr-only fixed left-3 top-3 z-[60] rounded-[var(--radius-pill)] bg-accent px-4 py-2 text-[14px] font-semibold text-white focus:not-sr-only focus:fixed"
+      >
+        {tNav("skipToContent")}
+      </a>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}

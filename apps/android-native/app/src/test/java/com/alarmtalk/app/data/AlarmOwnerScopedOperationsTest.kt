@@ -103,7 +103,7 @@ class AlarmOwnerScopedOperationsTest {
         snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
         snoozeCount = 0,
         vibrationPattern = VibrationPatterns.DEFAULT,
-        playMode = AlarmPlayModes.ALARM_VOICE,
+        playMode = AlarmPlayModes.VOICE_ONLY,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
         localAudioUri = null,
         audioCacheKey = null,
@@ -169,7 +169,7 @@ class AlarmOwnerScopedOperationsTest {
         assertEquals("A 의 알람은 그대로", "clone-a", voiceOf("a-1"))
         // 강등 마커(목록 배지)도 남아야 한다.
         assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("b-1")?.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, dao.getById("b-1")?.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("b-1")?.preLockPlayMode)
     }
 
     @Test
@@ -352,6 +352,45 @@ class AlarmOwnerScopedOperationsTest {
         assertEquals(0, repository.lockPaidAlarmTalks())
         assertEquals("user-a", dao.getById("legacy-1")?.ownerUserId)
         assertNull(dao.getById("legacy-1")?.preLockPlayMode)
+    }
+
+    @Test
+    fun lockingSkipsReceivedAlarmsBecauseTheyFollowVoiceAccessNotThePlan() = runBlocking {
+        // ⚠ **받은 알람은 '받는 사람 플랜' 축이 아니다.** 공유가 끊기면 서버가 직접
+        // sound-only 로 걷어내고 pull sync 로 내려온다. 여기서 플랜으로 또 잠그면
+        // **결제 보류(유예) 중에 오발한다** — 그룹·공유는 살아 있는데 users.plan 만
+        // 잠깐 회수되는 구간이라, 파트너가 보낸 알람의 목소리가 잠긴다.
+        dao.upsert(
+            voiceAlarm(id = "recv-1", owner = "user-b", voiceProfileId = "clone-partner")
+                .copy(origin = AlarmOrigins.RECEIVED_REMOTE),
+        )
+        currentUser = "user-b"
+        pendingOwner = null
+
+        assertEquals(0, repository.lockPaidAlarmTalks())
+        assertNull(dao.getById("recv-1")?.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("recv-1")?.playMode)
+    }
+
+    @Test
+    fun lockingUnlocksReceivedAlarmsThatTheOldPlanAxisHadLocked() = runBlocking {
+        // 옛 버그로 이미 잠긴 받은 알람은 **되돌린다.** 플랜 축이 사라졌으니
+        // 그냥 건너뛰면 풀어 줄 경로가 없어 영구히 알람음으로 남는다.
+        dao.upsert(
+            voiceAlarm(id = "recv-2", owner = "user-b", voiceProfileId = "clone-partner")
+                .copy(
+                    origin = AlarmOrigins.RECEIVED_REMOTE,
+                    playMode = AlarmPlayModes.ALARM_ONLY,
+                    preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
+                ),
+        )
+        currentUser = "user-b"
+        pendingOwner = null
+
+        repository.lockPaidAlarmTalks()
+
+        assertNull(dao.getById("recv-2")?.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("recv-2")?.playMode)
     }
 
     @Test

@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -21,21 +19,6 @@ import androidx.compose.runtime.setValue
 internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
-}
-
-internal fun timeUntilAlarmLabel(context: android.content.Context, fireAtMillis: Long): String {
-    val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
-    val duration = java.time.Duration.ofMillis(millisUntilFire)
-    val days = duration.toDays()
-    val hours = duration.minusDays(days).toHours()
-    val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
-    return when {
-        days > 0L && hours == 0L -> context.getString(R.string.r3ed_time_until_days, days)
-        days > 0L -> context.getString(R.string.r3ed_time_until_days_hours, days, hours)
-        hours == 0L -> context.getString(R.string.r3ed_time_until_minutes, minutes.coerceAtLeast(1))
-        minutes == 0L -> context.getString(R.string.r3ed_time_until_hours, hours)
-        else -> context.getString(R.string.r3ed_time_until_hours_minutes, hours, minutes)
-    }
 }
 
 internal fun googleSignInErrorMessage(context: android.content.Context, statusCode: Int): String = when (statusCode) {
@@ -126,7 +109,6 @@ internal class AlarmEditorState(
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
-    var voiceTranslationEnabled by mutableStateOf(!voiceRandomPrompt && (voiceLanguage ?: "ko") != "ko")
     var voiceRepeat by mutableStateOf(voiceRepeat)
     var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
@@ -194,7 +176,7 @@ internal class AlarmEditorState(
             voiceRandomContext = if (
                 alarmOnly ||
                 voiceSource == VoiceSources.LOCAL_AUDIO ||
-                (!voiceRandomPrompt && !isActiveBucketAlarm())
+                isManualForSave()
             ) {
                 null
             } else {
@@ -227,7 +209,10 @@ internal class AlarmEditorState(
             } else {
                 null
             },
-            voiceRepeat = if (alarmOnly) true else voiceRepeat,
+            // ⚠ **목소리는 항상 반복한다**(2026-08-27 지시). 선택지를 없앴으므로 저장값도
+            // 늘 true 다 — 옛 행에 false 가 남아 있어도 다음 저장에서 true 로 올라온다.
+            // 한 번만 나고 그치면 그것은 알림이지 알람이 아니다.
+            voiceRepeat = true,
             voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
             // 실제 버킷 회전 알람일 때만 저장 — 유료가 기존 버킷 알람을 일반/랜덤 TTS 로 바꾸면
@@ -270,13 +255,71 @@ internal class AlarmEditorState(
      * voiceText=클립문구가 되므로, `!voiceRandomPrompt` 만으로 판별하면 버킷 알람이 직접 입력으로
      * 오분류된다(그 오분류 때문에 2026-07-21 에 문구 프리필이 통째로 제거됐었다).
      *
-     * **판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
+     * **표시 판정식은 `!voiceRandomPrompt && !hasBucketMessageChoice()` 다**(2026-08-16 분리 —
+     * 위 `hasBucketMessageChoice` 주석 참조). 저장·오디오 판정식은 `!isActiveBucketAlarm()` 이고,
+     * 각 갈래 안에서는 여전히 **철자까지 같아야 한다.**
+     * 예전 주석: 판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
      * 한다**: 저장([toDraft] 의 voiceRandomContext), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
      * `random_prompt` → randomContext·manualText), 요약 행(`VoiceAudioCard` 의 isManual).
      * 2026-08-05 에 요약 행만 맞고 나머지가 틀려, 행은 '사랑'인데 눌러 열면 '직접 입력'이었다.
      */
     fun isActiveBucketAlarm(): Boolean {
         if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        return hasBucketMessageChoice()
+    }
+
+    /**
+     * **사용자가 테마 종류를 골랐는가 — 클립이 아직 안 묶였어도.**
+     *
+     * ⚠ [hasBucketMessageChoice] 와 다르다. 저쪽은 클립이 **실제로 묶였는지**(`audioCacheKey`
+     * 가 클립 목록에 있는지)까지 보므로, 방금 고르고 아직 바인딩 전이면 false 다.
+     * 저장 직전 갈래를 가를 때는 그 구분이 필요하다 — 2026-08-31 에 저 함수를 쓰다가
+     * **무료·기본 목소리 테마 알람이 유료 게이트에 걸렸다**(클립이 아직 없어 직접입력으로 읽혔다).
+     */
+    fun hasChosenBucketKind(): Boolean = selectedBucket != null
+
+    /**
+     * **저장 관점에서 직접 입력인가.** 저장·오디오 바인딩·컨텍스트 플래그가 쓴다.
+     *
+     * ⚠ [isManualForDisplay] 와 **결과가 다를 수 있다** — 재생 방식이 '알람' 이면
+     * [isActiveBucketAlarm] 이 false 라 여기서는 직접입력으로 읽힌다. 그건 저장 관점에선
+     * 맞고 **표시 관점에선 틀리다**(고른 문구는 그대로인데 재생 방식만 바뀐 것이므로).
+     */
+    fun isManualForSave(): Boolean = !voiceRandomPrompt && !isActiveBucketAlarm()
+
+    /**
+     * **표시 관점에서 직접 입력인가.** 요약 행·pane 프리셀렉트·직접입력 여부가 쓴다.
+     * 재생 방식과 **무관**하다 — 그게 [isManualForSave] 와 갈라지는 유일한 축이다.
+     */
+    fun isManualForDisplay(): Boolean = !voiceRandomPrompt && !hasBucketMessageChoice()
+
+    /**
+     * **문구 종류를 무엇이든 골랐는가**(생성형이거나 테마). 저장 갈래를 가를 때 쓴다.
+     *
+     * ⚠ 여기서 [hasBucketMessageChoice]·[isActiveBucketAlarm] 을 쓰면 안 된다 — 둘 다
+     * `audioCacheKey` 가 살아 있어야 true 라, **방금 고른 테마**를 못 본다.
+     */
+    fun hasMessageKindChoice(): Boolean = voiceRandomPrompt || hasChosenBucketKind()
+
+    /** **직접 입력을 실제로 쳐 넣었는가.** 잔재 정리가 그 문구를 지우지 않도록 가른다. */
+    fun hasTypedManualText(): Boolean =
+        !voiceRandomPrompt && !hasChosenBucketKind() && voiceText.isNotBlank()
+
+    /**
+     * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
+     *
+     * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
+     * 저쪽은 "**울릴 때** 버킷 클립을 쓰는가" 를 묻고, 그래서 알람 전용·직접 녹음이면
+     * false 다 — 그건 맞다. 그런데 그 함수를 **문구 종류 표시**에도 쓰고 있어서,
+     * 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` → `직접 입력` 으로 뒤집혔다
+     * (실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 true → false).
+     * 고른 문구는 그대로인데 재생 방식만 바뀐 것이므로 **표시가 틀린 것**이다.
+     *
+     * 나누는 기준:
+     *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
+     *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
+     */
+    fun hasBucketMessageChoice(): Boolean {
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
         return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
@@ -399,7 +442,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
@@ -433,7 +475,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         voiceText = text
         voiceLanguage = language
         localAudioUri = audio.localAudioUri
@@ -441,6 +482,11 @@ internal class AlarmEditorState(
         rawAudioUri = audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
         selectedBucket = bucket
+        // ⚠ **문구 종류를 버킷과 맞춰 둔다**(2026-08-31). 컨텍스트가 밀린 채(목소리 재선택 등)
+        // 여기로 오면 버킷은 '날씨' 인데 종류는 'preset' 으로 남아, 저장된 행을 다시 열 때
+        // **기본 인사말**로 보인다(CLAUDE.md 「일곱 자리」가 막으려는 바로 그 어긋남).
+        // 되짚기는 `clonePrerenderBucketCategoryFor` 의 역함수 하나뿐이다 — 한쪽만 고치지 말 것.
+        randomPromptContextForBucket(bucket)?.let { voiceRandomContext = it }
         bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
         bucketClipTextsJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipTexts)
         bucketResolvedForProfileId = profileId
@@ -448,13 +494,20 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    /**
+     * ⚠ **이건 번역 스위치가 아니다 — 지우지 말 것.**
+     *
+     * 번역은 2026-08-12 지시("직접 입력한 거 그대로 나오도록")로 없앴다. 예전에는 앱 언어가
+     * 한국어가 아니면 직접 입력 문구를 서버가 그 언어로 **옮겨서** 읽었고, 그래서 사용자가
+     * 친 글자와 실제로 들리는 말이 달라졌다. 이제 TTS 요청의 `translate` 는 언제나 false 다.
+     *
+     * 반면 이 함수가 정하는 건 **어느 언어의 스톡 클립을 고를지**와 캐시 키다. 축이 다르다 —
+     * 번역을 없앴다고 이걸 같이 지우면 en·ja 기기에서 한국어 클립이 재생된다.
+     */
     fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
-
-    fun shouldTranslateVoiceText(): Boolean =
-        !voiceRandomPrompt && activeVoiceLanguage() != "ko"
 
     companion object {
         fun from(
@@ -517,7 +570,7 @@ internal class AlarmEditorState(
                 voiceFortuneGender = alarm?.voiceFortuneGender,
                 voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
                 voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
-                voiceRepeat = alarm?.voiceRepeat ?: true,
+                voiceRepeat = true,
                 voiceVolumePercent = alarm?.voiceVolumePercent ?: 100,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
@@ -549,12 +602,17 @@ internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
         "daily", "weather" -> "wake_weather"
         "fortune" -> "wake_fortune"
+        // ⚠ **옛 이름을 지우지 말 것.** 2026-09-02 에 '사랑'(`love`)을 '응원'(`cheer`)으로
+        //   바꿨는데, 이미 저장된 알람 행과 스토어에 올라간 구버전 앱이 여전히 `love` 를
+        //   들고 있다. 이 줄이 없으면 아래 `else` 가 모르는 값으로 보고 **`preset` 으로
+        //   접는다** — 사용자는 응원을 골랐는데 기본 인사말이 울린다.
+        "love" -> "cheer"
         else -> if (RandomPromptContexts.any { (key, _) -> key == context }) context else DefaultRandomPromptContext
     }
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "love" -> "love"
+        "cheer" -> "cheer"
         "medication" -> "medication"
         // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버가 preset 경로에서
         // greeting 문구로 이어 붙이고(stockPresetCategory), 날씨·운세는 동적 생성이라
@@ -579,7 +637,7 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
 internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
         "preset" -> "greeting"
-        "love" -> "love"
+        "cheer" -> "cheer"
         "medication" -> "medication"
         // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
         "wake_fortune" -> "fortune"
@@ -604,7 +662,9 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
 internal fun randomPromptContextForBucket(bucket: String?): String? =
     when (bucket?.trim()) {
         "greeting" -> "preset"
-        "love" -> "love"
+        "cheer" -> "cheer"
+        // 옛 버킷 이름 — 이미 저장된 알람 행이 들고 있다(위 normalize 와 같은 이유).
+        "love" -> "cheer"
         "medication" -> "medication"
         "fortune" -> "wake_fortune"
         "weather" -> "wake_weather"
@@ -614,4 +674,15 @@ internal fun randomPromptContextForBucket(bucket: String?): String? =
 private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"
-internal const val MinVoiceVolumePercent = 30
+/**
+ * 목소리 음량 하한. **0 을 허용하지 않는다** — 0 은 '무음' 이라는 별개의 뜻인데 슬라이더
+ * 끝값으로 두면 실수로 닿아 목소리 알람이 조용히 안 들리게 된다. 끄는 것은 재생 방식을
+ * '알람' 으로 바꾸는 것으로 표현한다. iOS `AlarmEditDraft.minVoiceVolumePercent` 와 같은 값.
+ */
+internal const val MinVoiceVolumePercent = 10
+
+/**
+ * 알람 음량 하한. 목소리와 같은 이유로 **0 을 슬라이더로 만들 수 없다** —
+ * 무음은 알람음 스위치(`alarmSoundEnabled`)로만 표현한다.
+ */
+internal const val MinAlarmVolumePercent = 10

@@ -1,16 +1,56 @@
 package com.alarmtalk.app.data
 
 import com.alarmtalk.app.network.StockClip
+import com.alarmtalk.app.network.VoiceProfile
 
 /**
  * 백엔드 migration 43(system-stock-voices)에서 시드되는 시스템 스톡 보이스의
- * 고정 UUID prefix. 서버가 단일 진실 공급원이며, 클라이언트는 오프라인 판정
- * (무료 다운그레이드 시 로컬 알람 보존 등)에만 이 prefix 를 쓴다.
+ * 고정 UUID prefix. 서버 응답이 전체 목록의 권위이며, 클라이언트는 첫 응답 전 카탈로그와
+ * 오프라인 판정(무료 다운그레이드 시 로컬 알람 보존 등)에 이 값을 쓴다.
  */
 const val SYSTEM_VOICE_ID_PREFIX = "70000000-0000-4000-9000-"
 
+/**
+ * 첫 서버 응답 전에도 즉시 그릴 수 있는 기본 목소리 카탈로그.
+ *
+
+ * ⚠ **표시 이름 '애니' 와 파일명 `narin` 이 다르다**(2026-09-03). 파일명·내부 식별자는
+ *   일부러 바꾸지 않았다 — '애니' 를 그대로 쓰면 `voice_greeting_애니_ko` 처럼 한글
+ *   리소스명이 되거나 `ani` 로 줄여야 하는데, 그 낱말은 코드 곳곳의 '애니메이션'
+ *   (`애니메이션이 끝난 뒤`, `TimeWheelSettle` 등)과 검색에서 뒤섞인다.
+ *   표시 이름은 제품이 정하고 식별자는 안정적으로 둔다.
+ *
+ * 개인·공유 목소리는 절대 넣지 않는다. 서버 `GET /voice` 성공 응답이 오면 이 목록은
+ * 전체 응답으로 교체된다. 백엔드 system-stock-voices 시드를 바꾸면 이 목록도 함께 맞춘다.
+ */
+fun bundledSystemVoiceProfiles(): List<VoiceProfile> = listOf(
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000101", name = "시우", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000102", name = "미나", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000103", name = "도현", status = "ready", isSystem = true),
+    VoiceProfile(id = SYSTEM_VOICE_ID_PREFIX + "000000000104", name = "애니", status = "ready", isSystem = true),
+)
+
 /** 시스템 제공(스톡) 보이스 id 인지 — 무료 플랜에서도 사용할 수 있다. */
 fun isSystemVoiceId(id: String?): Boolean = id?.startsWith(SYSTEM_VOICE_ID_PREFIX) == true
+
+/**
+ * **직접 입력 문구로 합성한 음성 알람인가** — 서버 `messages.category = 'custom'` 의 로컬 짝.
+ *
+ * 제자리 목소리 교체는 프리셋(버킷) 알람을 **같은 message id 로 재렌더해 살리고**, 다시 만들 수
+ * 없는 직접 입력만 내린다. 그래서 이 판정식을 넓히면 되돌릴 수 없이 프리셋 알람까지 벗긴다.
+ * 판정 축은 CLAUDE.md 의 `!voiceRandomPrompt && 버킷 아님` 규약 그대로다. iOS 짝은
+ * `LocalAlarmRecord.usesCustomMessageVoice` — **둘은 철자까지 같아야 한다.**
+ */
+fun AlarmEntity.usesCustomMessageVoice(): Boolean =
+    !voiceRandomPrompt &&
+        bucketId.isNullOrBlank() &&
+        // ⚠ **`voiceCategory == "custom"` 만 보면 안 된다.** 버킷이 붙으면
+        // `voiceRandomPrompt` 가 꺼지고 `activeVoiceCategory()` 가 "custom" 을 돌려주므로
+        // (CLAUDE.md 「버킷이 붙으면…」), 버킷 없이 프리셋 클립 하나만 물린 **옛 행**은
+        // 세 값이 직접 입력과 똑같아 보인다. 그 행은 캐시 키가 `stock_<messageId>` 라서
+        // 갈라진다 — 직접 입력의 캐시 키는 문구 해시라 이 접두가 붙지 않는다.
+        audioCacheKey?.startsWith(AlarmAudioStore.STOCK_CACHE_KEY_PREFIX) != true &&
+        (voiceCategory == null || voiceCategory == "custom")
 
 fun AlarmDraft.usesFreeSystemVoiceAlarm(): Boolean =
     usesFreeSystemVoiceAlarm(
@@ -49,7 +89,19 @@ private fun usesFreeSystemVoiceAlarm(
     rawAudioUri: String?,
     audioCacheKey: String?,
 ): Boolean {
-    if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+    if (playMode == AlarmPlayModes.ALARM_ONLY) return false
+    // **직접 녹음은 유료 기능이 아니다**(2026-08-12 확정). 내 폰에 있는 파일을 그대로
+    // 재생하는 것이라 서버 자산을 하나도 쓰지 않는다 — 클론 목소리·서버 생성 클립과 다르다.
+    //
+    // ⚠ 예전에는 여기서 `voiceSource == LOCAL_AUDIO` 를 곧바로 false 로 떨어뜨렸고, 이
+    // 함수를 보는 **세 게이트가 전부** 막혔다: 저장(`voiceAlarmAllowed`), 무료 강등
+    // 잠금(`lockPaidAlarmTalks`), 울림 강등(`RingingService.downgradePaidVoice`).
+    // 그래서 무료 사용자는 녹음을 다 해 놓고 저장 단계에서 거절당했다.
+    //
+    // `localAudioUri` 를 함께 보는 이유: `degradeMatchingLocalOwnedVoiceAlarms` 가 강등
+    // 표식으로 `voiceSource=LOCAL_AUDIO + localAudioUri=null` 을 남기므로, 그 빈 껍데기를
+    // '녹음' 으로 오인하면 안 된다.
+    if (voiceSource == VoiceSources.LOCAL_AUDIO) return !localAudioUri.isNullOrBlank()
     if (!isSystemVoiceId(voiceProfileId)) return false
 
     val noCachedAudio = localAudioUri.isNullOrBlank() && rawAudioUri.isNullOrBlank()
@@ -75,33 +127,33 @@ const val STOCK_GREETING_CATEGORY = "greeting"
  */
 fun bundledSystemGreetingRes(voiceProfileId: String?, appLanguage: String): Int? {
     val voice = when (voiceProfileId) {
-        SYSTEM_VOICE_ID_PREFIX + "000000000101" -> "adam"
+        SYSTEM_VOICE_ID_PREFIX + "000000000101" -> "siwoo"
         SYSTEM_VOICE_ID_PREFIX + "000000000102" -> "mina"
-        SYSTEM_VOICE_ID_PREFIX + "000000000103" -> "hajun"
-        SYSTEM_VOICE_ID_PREFIX + "000000000104" -> "soeun"
+        SYSTEM_VOICE_ID_PREFIX + "000000000103" -> "dohyun"
+        SYSTEM_VOICE_ID_PREFIX + "000000000104" -> "narin"
         else -> return null
     }
     val language = appVoiceLanguageOf(appLanguage)
     return when (voice) {
-        "adam" -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_adam_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_adam_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_adam_ko
+        "siwoo" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_siwoo_ko
         }
         "mina" -> when (language) {
             "en" -> com.alarmtalk.app.R.raw.voice_greeting_mina_en
             "ja" -> com.alarmtalk.app.R.raw.voice_greeting_mina_ja
             else -> com.alarmtalk.app.R.raw.voice_greeting_mina_ko
         }
-        "hajun" -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ko
+        "dohyun" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_dohyun_ko
         }
         else -> when (language) {
-            "en" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_en
-            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ja
-            else -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ko
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_narin_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_narin_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_narin_ko
         }
     }
 }

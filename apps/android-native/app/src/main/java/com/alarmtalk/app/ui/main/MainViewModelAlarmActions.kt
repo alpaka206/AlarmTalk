@@ -26,7 +26,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
-
 private fun MainViewModel.requireAlarmPermissionsForMutation(): Boolean {
     val snapshot = PermissionSnapshot.read(getApplication<Application>())
     val missingTarget = snapshot.firstMissingAlarmTarget() ?: return true
@@ -51,7 +50,8 @@ private fun MainViewModel.alarmPermissionBlockedMessage(target: PermissionTarget
  */
 private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
     if (draft.playMode == AlarmPlayModes.ALARM_ONLY) return true
-    if (hasPaidVoiceAccess(subscriptionResponse)) return true
+    // 유일 판정기 — 모르면 잠그지 않는다(저장은 되돌릴 수 있는 쪽이다).
+    if (isPaidVoiceEntitledOptimistic()) return true
     return draft.usesFreeSystemVoiceAlarm()
 }
 
@@ -81,7 +81,7 @@ internal fun MainViewModel.createAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
+        message = getApplication<Application>().getString(R.string.plan_gate_paid_message)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -121,6 +121,17 @@ internal fun MainViewModel.createAlarm(
     }
 }
 
+/**
+ * 가족 알람을 **보낸다**. 이름 그대로 만들기 전용이다.
+ *
+ * ⚠ **보낸 알람을 고치는 함수를 여기 만들지 말 것.** 서버가 `PATCH /alarm/:id` 를
+ * 409 `TARGETED_ALARM_IMMUTABLE` 로 거절한다(`docs/spec/family-alarm.md`). 받는 쪽은
+ * 「받은 뒤엔 전부 받은 사람 것」이라 발신자의 변경을 무시하므로, 수정을 받아 주면
+ * **발신자는 고쳤다고 믿고 수신자는 옛 시각에 일어난다.**
+ *
+ * 그래서 여기서는 **로컬 행도 만들지 않는다** — 목록에 없으니 편집기로 열 길이 없다.
+ * 내용을 바꾸려면 같은 (수신자, 시각) 으로 **다시 보낸다**(서버가 옛 행을 교체한다).
+ */
 private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     val session = authSession
     if (session == null) {
@@ -197,7 +208,21 @@ private fun AlarmDraft.toCachedLocalAudio(context: Context, audioStore: AlarmAud
     )
 }
 
-private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
+/**
+ * 가족(상대) 알람의 서버 쓰기 모양.
+ *
+ * ⚠ **`RemoteAlarmMapper.toWriteRequest`(자기 알람용)와 한 쌍이다 — 필드를 더하면 양쪽에.**
+ * 같은 와이어 타입에 빌더가 둘인데, `RemoteAlarmWriteRequest` 의 필드가 전부 기본값을 가져
+ * **한쪽에서 빠뜨려도 컴파일이 통과한다.** 실제로 `bucketId` 가 자기 알람 쪽에만 추가돼,
+ * 테마를 고른 가족 알람이 **테마 없이** 수신자에게 도착했다(2026-08-18 확인).
+ * 회귀 테스트 `FamilyAlarmWriteRequestParityTest` 가 두 빌더의 필드 커버리지를 비교한다.
+ *
+ * 의도적으로 다른 것은 둘뿐이다:
+ *  - `isActive = true` — 보낼 때는 항상 켠 채로 보낸다(자기 알람은 저장된 `enabled`).
+ *  - `targetUserId` — 여기만 채운다(자기 알람은 언제나 null. 스펙 1절: 보낸 사람은 가족
+ *    알람을 PATCH 하지 않는다).
+ */
+internal fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
     val hasRemoteVoice = ttsMessageId != null
     return RemoteAlarmWriteRequest(
         time = String.format(java.util.Locale.US, "%02d:%02d", hour, minute),
@@ -205,7 +230,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         snoozeMinutes = snoozeMinutes,
         mode = if (hasRemoteVoice) "tts" else "sound-only",
         vibrationPattern = vibrationPattern,
-        wakeMode = when (playMode) {
+        wakeMode = when (AlarmPlayModes.normalize(playMode)) {
             AlarmPlayModes.VOICE_ONLY -> "voice_only"
             else -> "sound_then_voice"
         },
@@ -214,6 +239,11 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         voiceProfileId = voiceProfileId.takeIf { voiceSource != VoiceSources.LOCAL_AUDIO }.trimmedOrNull(),
         targetUserId = targetUserId.trimmedOrNull(),
         timezone = java.util.TimeZone.getDefault().id,
+        // ⚠ **테마 정체성은 이것 하나로만 건너간다.** 클립 키 목록(`bucketClipKeysJson`)은
+        // 보내는 사람 기기의 캐시 파일을 가리켜 수신자에게 아무 뜻이 없다 — 받는 쪽이
+        // `bucketId` 로 자기 클립을 다시 묶는다. 안 실으면 테마를 고른 가족 알람이
+        // **테마 없이** 도착한다.
+        bucketId = bucketId.trimmedOrNull(),
     )
 }
 
@@ -224,7 +254,7 @@ internal fun MainViewModel.updateAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
+        message = getApplication<Application>().getString(R.string.plan_gate_paid_message)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -324,30 +354,3 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
     }
 }
 
-internal fun MainViewModel.copyAlarm(alarmId: String) {
-    if (!requireAlarmPermissionsForMutation()) return
-    viewModelScope.launch {
-        runCatching {
-            repository.copyAlarm(alarmId)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to copy alarm id=$alarmId", error)
-            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_copy_failed))
-        }
-    }
-}
-
-internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
-    if (!requireAlarmPermissionsForMutation()) return
-    viewModelScope.launch {
-        runCatching {
-            repository.createTestAlarm(delayMinutes)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to create test alarm", error)
-            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_test_alarm_schedule_failed))
-        }
-    }
-}

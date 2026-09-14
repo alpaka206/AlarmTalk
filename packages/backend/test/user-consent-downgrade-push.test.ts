@@ -51,6 +51,14 @@ function stubDowngradeTarget(
   }) as typeof mockDB.client.execute;
 }
 
+function stubDeletedClone(groupMembers: string[] = []) {
+  mockDB.pushResultFor('SELECT id FROM voice_profiles', [{ id: 'clone-1' }]);
+  mockDB.pushResultFor(
+    'FROM plan_group_members m1',
+    groupMembers.map((user_id) => ({ user_id })),
+  );
+}
+
 describe('POST /user/consents — 민감 동의 철회', () => {
   it('강등된 알람의 주인에게 알람 동기화 신호를 보낸다', async () => {
     stubDowngradeTarget({ id: 'al-1', owner_user_id: 'recipient', is_received: 1 });
@@ -79,6 +87,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
    * 한다 — 아니면 그 기기는 지워진 녹음으로 계속 울린다(Codex #654).
    */
   it('강등할 알람 행이 없어도 철회한 계정에는 접근권 상실을 알린다', async () => {
+    stubDeletedClone(['group-member-1']);
     const app = buildApp();
 
     const res = await app.request(
@@ -92,7 +101,9 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     expect(res.status).toBe(200);
     expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([]);
-    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
+    expect(new Set(notifyDowngradedAlarms.mock.calls[0]![3] as string[])).toEqual(
+      new Set(['user-1', 'group-member-1']),
+    );
   });
 
   /**
@@ -143,5 +154,75 @@ describe('POST /user/consents — 민감 동의 철회', () => {
       [],
       [],
     );
+  });
+});
+
+/**
+ * ⚠ **재동의 화면에서 안 누른 것을 '철회' 로 읽으면 안 된다.**
+ *
+ * voice_biometric 은 `optional` 로 내려가 동의 화면의 CTA 가 체크를 요구하지 않는다.
+ * 이미 동의한 사용자가 그 화면을 그냥 통과하면 `agreed=false` 가 제출되는데, 그걸 철회로
+ * 처리하면 ElevenLabs 보이스와 R2 원본이 **영구 삭제**된다 — 사용자는 무언가를 지운다는
+ * 자각조차 없다. 이 지뢰는 `CONSENT_MIN_POLICY_VERSION.voice_biometric` 을 올리는 순간
+ * 전원에게 터진다.
+ */
+describe('POST /user/consents — 재동의 대상은 철회로 읽지 않는다', () => {
+  it('재동의 대상(collect)인 민감 유형의 미체크는 데이터를 파기하지 않는다', async () => {
+    // 이 계정의 voice_biometric 기록이 **옛 버전**이라 지금 다시 묻고 있는 상황.
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([
+      { consent_type: 'voice_biometric', policy_version: '1', agreed: 1 },
+      { consent_type: 'terms', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'privacy', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'age14', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
+        consents: [{ type: 'voice_biometric', agreed: false }],
+      }),
+      undefined,
+      {} as AppEnv['Bindings'],
+    );
+
+    expect(res.status).toBe(200);
+    // 파기가 없어야 한다. notify 는 항상 불리므로 **인자**로 확인한다 —
+    // 강등된 알람 0개, 접근권 상실을 알릴 계정 0개.
+    expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([]);
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual([]);
+  });
+
+  /**
+   * 반대로 아무도 묻지 않았는데 온 false 는 설정 화면의 **명시적 철회**다
+   * (`withdrawVoiceBiometricConsent`). 이 경로는 계속 파기해야 한다 — 사용자가
+   * '철회하고 삭제' 를 눌렀는데 아무 일도 안 일어나면 그게 더 큰 사고다.
+   */
+  it('재동의 대상이 아닐 때의 false 는 명시적 철회로 처리한다', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([
+      { consent_type: 'voice_biometric', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'terms', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'privacy', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'age14', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+    stubDeletedClone();
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
+        consents: [{ type: 'voice_biometric', agreed: false }],
+      }),
+      undefined,
+      {} as AppEnv['Bindings'],
+    );
+
+    expect(res.status).toBe(200);
+    expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
   });
 });

@@ -65,6 +65,18 @@ beforeEach(() => {
 });
 
 describe('POST /billing/test-codes', () => {
+  it('is unavailable in production even for an allowlisted issuer', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/test-codes', { plan_key: 'personal' }),
+      undefined,
+      { ENVIRONMENT: 'production' } as AppEnv['Bindings'],
+    );
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('NOT_FOUND');
+    expect(mockDB.calls).toHaveLength(0);
+  });
+
   it('allows issuer@example.com to issue a personal test code', async () => {
     mockDB.pushResult([{ id: 'admin-pk' }]);
     mockDB.pushResult([PLAN_PERSONAL]);

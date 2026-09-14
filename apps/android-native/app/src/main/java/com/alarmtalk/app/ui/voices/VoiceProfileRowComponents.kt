@@ -2,13 +2,17 @@ package com.alarmtalk.app
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +27,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -51,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -102,6 +105,8 @@ internal fun RelationshipDropdownField(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
+                // `readOnly` 드롭다운 트리거라 입력칸이 아니다 — `textInputTapTarget` 을
+                // 붙이지 않는다(누르면 편집이 끝나는 게 맞다).
                 modifier = Modifier
                     .fillMaxWidth()
                     .menuAnchor(MenuAnchorType.PrimaryNotEditable),
@@ -133,14 +138,18 @@ internal fun RelationshipDropdownField(
             OutlinedTextField(
                 value = selection.customLabel,
                 onValueChange = {
-                    onSelectionChange(selection.copy(customLabel = it.take(30)))
+                    onSelectionChange(
+                        selection.copy(
+                            customLabel = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength),
+                        ),
+                    )
                 },
                 label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
             )
         }
     }
@@ -220,9 +229,6 @@ internal data class RelationshipSelection(
             RelationshipPreset.Custom -> customLabel.trim()
             else -> preset.label
         }
-
-    val isComplete: Boolean
-        get() = resolved.isNotBlank()
 }
 
 internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
@@ -260,7 +266,7 @@ internal sealed interface CloneVoiceReadiness {
  * 다시 한 번 가려지는데, 이 화면을 고친 이유가 바로 그거였다. 접기는 목소리가 많아졌을 때
  * 스스로 접는 선택지로만 둔다.
  *
- * [trailing] 은 '내 목소리' 머리의 [이번 달 n/1][추가] 자리.
+ * [trailing] 은 '내 목소리' 머리의 [생성 가능 n/1회][추가] 자리.
  */
 @Composable
 internal fun VoiceCatalogSectionHeader(
@@ -359,13 +365,27 @@ internal fun VoiceCatalogRow(
 ) {
     // 관리할 게 있는 행(내 목소리)은 행 전체가 그 입구, 나머지는 행 전체가 재생.
     val rowAction = onOpenActions ?: onPreview
+    // ⚠ **리플 대신 축소로 알린다**(2026-09-06, 알람 행과 같은 규칙 —
+    // `ui/components/ControlsAndPermissions.kt` 의 `pressScale`). 리플을 끄면서 아무 반응도
+    // 없어져, 목소리를 눌러도 미리듣기가 시작되기 전까지는 눌렸는지 알 수 없었다.
+    val rowInteractionSource = remember { MutableInteractionSource() }
+    val rowPressed by rowInteractionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (rowPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+        label = "voiceRowPressScale",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             // 눌림 리플은 끈다 — 행 전체를 덮는 사각 하이라이트가 그룹 카드 모서리와 어긋난다.
             .clickable(
                 enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = rowInteractionSource,
                 indication = null,
                 onClick = rowAction,
             )
@@ -404,13 +424,10 @@ internal fun VoiceCatalogRow(
                 // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
                 Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
             }
-            // 듣기 ↔ 정지. 하단 탭과 같은 24dp 그리드·같은 선 굵기로 그린 전용 벡터라
-            // Material 기본 아이콘을 끌어다 쓴 티가 나지 않는다(ic_voice_listen/stop_24).
+            // 듣기 ↔ 정지 — 머티리얼 아이콘(2026-08-17 "글리프는 각 OS 것").
             IconButton(onClick = onPreview, enabled = enabled) {
                 Icon(
-                    painter = painterResource(
-                        if (isPlaying) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
-                    ),
+                    imageVector = if (isPlaying) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = stringResource(
                         if (isPlaying) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
                     ),
@@ -600,34 +617,6 @@ private fun VoiceProfileMenuSheet(
 }
 
 @Composable
-internal fun PlayingEqualizer() {
-    val transition = rememberInfiniteTransition(label = "voicePlaying")
-    val barColor = MaterialTheme.colorScheme.primary
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        listOf(0, 160, 320, 120).forEachIndexed { index, delayMillis ->
-            val scale by transition.animateFloat(
-                initialValue = 0.35f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 520, delayMillis = delayMillis),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "bar$index",
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height((6 + scale * 14).dp)
-                    .background(barColor, WakerPillShape),
-            )
-        }
-    }
-}
-
-@Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
     isPlaying: Boolean,
@@ -643,5 +632,4 @@ internal fun SharedVoiceProfileRow(
         onPreview = onPlay,
     )
 }
-
 

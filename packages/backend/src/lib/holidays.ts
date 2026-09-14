@@ -8,7 +8,7 @@
 // esbuild 가 CJS(lib/index.cjs) 대신 번들 친화적 ESM 진입점을 고르게 한다.
 import Holidays from 'date-holidays';
 
-export type HolidayType = 'public' | 'bank' | 'school' | 'optional' | 'observance';
+type HolidayType = 'public' | 'bank' | 'school' | 'optional' | 'observance';
 
 export interface HolidayItem {
   /** 'YYYY-MM-DD' — 해당 국가 현지 민간 날짜(시각 없음). */

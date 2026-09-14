@@ -16,10 +16,29 @@ internal enum class LegalDocument(val assetPath: String) {
     Terms("legal/terms-of-service.ko.md"),
 }
 
+/**
+ * ⚠ **못 읽으면 백지가 아니라 이유를 보여 준다**(코덱스 #732). 예전에는 빈 문자열을
+ * 돌려줘서, 사용자는 아무 설명 없는 백지 앞에서 동의만 하게 됐다.
+ *
+ * ⚠ **랜딩 웹으로 떨어뜨리지 말 것.** 동의 기록에 실리는 버전은 빌드 시점의
+ * `BuildConfig.LEGAL_POLICY_VERSION` 이라, 실시간 문서를 대신 띄우면 **보여 준 것과
+ * 기록한 버전이 갈라진다** — 번들에 실은 이유가 그것이다(`docs/spec/consent.md`).
+ * 여기서 실패하는 것은 빌드 사고이므로 사용자가 할 수 있는 일은 업데이트뿐이다.
+ */
+/**
+ * 번들 법무 문서를 **둘 다** 읽을 수 있는가. 동의 화면을 띄우기 전에 본다.
+ *
+ * ⚠ 하나만 없어도 막는다 — 제출하는 `BuildConfig.LEGAL_POLICY_VERSION` 은 **두 문서에서
+ * 함께** 뽑은 값이라(build.gradle.kts 가 다르면 빌드를 세운다), 한쪽이 없으면 그 버전이
+ * 무엇을 가리키는지 앱이 말할 수 없다.
+ */
+internal fun Context.legalDocumentsReadable(): Boolean =
+    LegalDocument.entries.all { runCatching { assets.open(it.assetPath).close() }.isSuccess }
+
 internal fun Context.readLegalDocument(doc: LegalDocument): AnnotatedString =
     runCatching { assets.open(doc.assetPath).bufferedReader().use { it.readText() } }
         .map(::renderLegalMarkdown)
-        .getOrElse { AnnotatedString("") }
+        .getOrElse { AnnotatedString(getString(R.string.auth_consent_document_unavailable)) }
 
 /**
  * 법무 문서 마크다운을 폰에서 읽히는 텍스트로 만든다. 렌더러 의존성을 새로 들이지 않고

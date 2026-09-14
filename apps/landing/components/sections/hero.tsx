@@ -1,7 +1,8 @@
 import { useTranslations } from "next-intl";
 import { StoreBadges } from "../store-badges";
+import { VoicePreview } from "../voice-preview";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
-import { ScrollCue } from "../motion/scroll-cue";
+import { CyclingWord } from "../motion/cycling-word";
 
 /**
  * 히어로에는 제품 화면을 두지 않는다.
@@ -12,6 +13,8 @@ import { ScrollCue } from "../motion/scroll-cue";
  */
 export function Hero() {
   const t = useTranslations("hero");
+  // 돌아가는 자리는 '누구' 뿐이다 — 엄마 → 최애 → 딸 → 그 사람. 기능을 돌리지 않는다.
+  const who = t.raw("who") as string[];
 
   return (
     <section className="relative">
@@ -22,20 +25,28 @@ export function Hero() {
           delay={0.05}
           trigger="mount"
         >
-          <RevealItem as="h1" className="t-display max-w-4xl text-text">
-            {t("headline")}
+          <RevealItem as="h1" className="t-display max-w-4xl text-pretty text-text">
+            {t.rich("headline", {
+              who: () => <CyclingWord words={who} className="text-accent" />,
+            })}
           </RevealItem>
 
           <RevealItem as="p" className="t-lead mt-7 max-w-3xl text-balance text-text-body">
             {t("description")}
           </RevealItem>
 
-          <RevealItem as="div" className="mt-11">
+          {/* 소리가 곧 제품이다 — 설명을 다 읽기 전에 들을 수 있어야 한다. 스토어 배지보다
+              위에 두는 이유: 듣고 나서 받는 순서가 자연스럽고, 안 듣고 받는 사람은 어차피
+              배지를 찾아 내려온다. */}
+          <RevealItem as="div" className="mt-10 flex w-full justify-center">
+            <VoicePreview />
+          </RevealItem>
+
+          <RevealItem as="div" className="mt-9">
             <StoreBadges />
           </RevealItem>
         </RevealGroup>
 
-        <ScrollCue className="mt-20 hidden lg:block" />
       </div>
     </section>
   );

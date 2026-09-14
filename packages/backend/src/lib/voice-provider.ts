@@ -1,7 +1,7 @@
 import type { Env } from '../types';
 import { ElevenLabsClient } from './elevenlabs';
 
-export interface VoiceProviderEnrollResult {
+interface VoiceProviderEnrollResult {
   provider: string;
   providerVoiceId: string;
   status: 'processing' | 'ready' | 'failed';
@@ -12,7 +12,7 @@ export interface VoiceProviderEnrollAttempt {
   enroll(): Promise<VoiceProviderEnrollResult>;
 }
 
-export interface VoiceProviderSynthesizeResult {
+interface VoiceProviderSynthesizeResult {
   provider: string;
   providerVoiceId: string;
   modelId: string;

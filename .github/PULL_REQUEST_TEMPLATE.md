@@ -13,10 +13,11 @@
 - [ ] test: 테스트
 
 ## Branch
-- [ ] `feature/*` / `fix/*` → `develop` (CI 통과 시 셀프 머지 가능)
+- [ ] `feat/*` / `fix/*` → `develop` (CI 통과 시 셀프 머지 가능)
 - [ ] `develop` → `main` (1명 approve 필요: @Jin1370 @alpaka206)
 
 ## Checklist
+- [ ] **`ci` 라벨 부착** (없으면 필수 체크 7개가 아예 안 돈다 — 재실행은 뗐다 붙이기)
 - [ ] `npm run lint` 통과
 - [ ] `npm run typecheck` 통과
 - [ ] `npm test` 통과

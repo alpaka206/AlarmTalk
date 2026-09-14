@@ -16,6 +16,7 @@ import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
+import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { retryTransientTurso } from './lib/turso-retry';
@@ -28,11 +29,21 @@ import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
+import billingApple from './routes/billing-apple';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
+import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
+
+/**
+ * 사용 기록 보관 기간. **처리방침(개인정보 처리방침 3장)에 적은 값과 같아야 한다** —
+ * 문서와 코드가 갈라지면 어느 쪽이 진실인지 아무도 모른다.
+ */
+const USAGE_EVENT_RETENTION_DAYS = 365;
+/** cron 한 회차가 길어지지 않게 묶어 지운다. 남으면 다음 회차가 이어서 지운다. */
+const USAGE_EVENT_PRUNE_BATCH = 500;
 
 const app = new Hono<AppEnv>();
 
@@ -42,6 +53,10 @@ app.use('*', securityHeadersMiddleware);
 // Sentry error tracking (no-op if SENTRY_DSN is not set)
 app.use('*', sentryMiddleware);
 
+// 나가는 4xx/5xx 를 하나도 빠짐없이 기록한다(에러 코드별 집계 + 선별 경보).
+// ⚠ rateLimit·bodyLimit **위**에 둔다 — 그들이 내는 429/413 도 기록 대상이다.
+app.use('*', errorCodeMiddleware);
+
 // Structured request logging
 app.use('*', loggerMiddleware);
 
@@ -49,7 +64,7 @@ app.use('*', loggerMiddleware);
 // 버킷(아래 api.use). prefix 분리로 같은 요청이 두 버킷에 이중 카운트되지 않는다.
 app.use('*', ipRateLimitMiddleware);
 
-// Body size limit (512 KB)
+// 실제 본문 25 MiB 상한. 인증 전에는 헤더만 검사하고 본문은 하위 코드가 소비할 때 센다.
 app.use('*', bodyLimitMiddleware);
 
 // CORS
@@ -111,7 +126,7 @@ function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | u
 //   POST /api/init-db?fromId=1&toId=10   → run migrations 1..10 inclusive
 app.post('/api/init-db', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const fromId = c.req.query('fromId');
@@ -133,7 +148,7 @@ app.post('/api/init-db', async (c) => {
   } catch (err) {
     // SQL/Turso 내부 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'DB init failed' }, 500);
+    return c.json({ error: 'DB init failed', error_code: 'DB_INIT_FAILED' }, 500);
   }
 });
 
@@ -142,7 +157,7 @@ app.post('/api/init-db', async (c) => {
 // 돌려준다. 호출자가 remaining 이 0 이 될 때까지 반복 호출한다 (멱등).
 app.post('/api/admin/seed-stock-clips', async (c) => {
   if (!canRunInitDb(c)) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'Not found', error_code: 'NOT_FOUND' }, 404);
   }
   try {
     const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
@@ -179,7 +194,7 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   } catch (err) {
     // 합성/스토리지 내부 오류 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
     logRouteError(c, err);
-    return c.json({ error: 'Stock clip seed failed' }, 500);
+    return c.json({ error: 'Stock clip seed failed', error_code: 'STOCK_CLIP_SEED_FAILED' }, 500);
   }
 });
 
@@ -228,10 +243,13 @@ api.route('/voice', voiceRoutes);
 api.route('/tts', ttsRoutes);
 api.route('/alarm', alarmRoutes);
 api.route('/user', userRoutes);
+api.route('/billing', billingApple);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
 api.route('/push', pushRoutes);
+// 사용 기록 — 앱이 오프라인에 쌓아 둔 이벤트를 모아 보낸다(routes/events.ts).
+api.route('/events', eventsRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
 // (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
@@ -240,10 +258,10 @@ app.route('/admin', adminRoutes);
 app.route('/api', api);
 
 app.onError((err, c) => {
-  const sentry = c.get('sentry');
-  if (sentry) sentry.captureException(err);
+  // ⚠ 여기서 sentry.captureException 을 직접 부르지 말 것 — logRouteError 가 이미 보낸다.
+  //    예전에는 둘 다 불러 같은 사고가 Sentry 에 **두 번** 올라왔다(스택 없는 사본이 하나 더).
   logRouteError(c, err);
-  return c.json({ error: 'Internal server error' }, 500);
+  return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
@@ -296,9 +314,32 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
     // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
     await cleanupStaleDraftVoices(db, now);
-    await drainExternalDeletions(db, env);
+    await drainExternalDeletions(db, env, now);
   } catch (err) {
     captureCron('scheduled.audio_retention', err);
+  }
+
+  // 사용 기록(이벤트) 보관 기간 정리 — **처리방침에 적은 1년**을 코드로 지킨다
+  // (`docs/legal/privacy-policy.ko.md` 3장 표). append-only 테이블이라 아무도 지우지 않으면
+  // 무한히 는다. 한 번에 지우는 양을 묶어 cron 한 회차가 길어지지 않게 한다.
+  try {
+    const cutoff = new Date(now.getTime() - USAGE_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString();
+    // ⚠ `received_at` 도 함께 본다. `occurred_at` 은 기기 시계라(수집 시 도착 시각으로
+    // 자르지만) 그 자르기 이전에 들어온 행이 미래에 앉아 있을 수 있다 — 서버가 적은
+    // 도착 시각으로도 늙게 해서 **어떤 행도 1년을 넘기지 못하게** 한다.
+    // `datetime(?)` 이 필요하다: `received_at` 은 DDL 기본값이라 `YYYY-MM-DD HH:MM:SS`
+    // (공백 구분, `Z` 없음)로 저장되고, ISO 문자열과 그대로 비교하면 경계에서 어긋난다.
+    await db.execute({
+      sql: `DELETE FROM usage_events WHERE id IN (
+              SELECT id FROM usage_events
+               WHERE occurred_at < ? OR received_at < datetime(?)
+               LIMIT ?
+            )`,
+      args: [cutoff, cutoff, USAGE_EVENT_PRUNE_BATCH],
+    });
+  } catch (err) {
+    captureCron('scheduled.usage_event_prune', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
@@ -311,6 +352,17 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
   } catch (err) {
     captureCron('scheduled.email_code_prune', err);
+  }
+
+  // 전자상거래법 보존기간이 끝난 가명 결제 기록 파기. retain_until 을 저장만 하고
+  // 지우지 않으면 '5년 보존'이 사실상 무기한 보존이 된다.
+  try {
+    await db.execute({
+      sql: 'DELETE FROM retained_billing_records WHERE retain_until <= ?',
+      args: [now.toISOString()],
+    });
+  } catch (err) {
+    captureCron('scheduled.billing_retention_prune', err);
   }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
@@ -328,8 +380,13 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     const { purgeUserAccount, pseudonymizeBillingForRetention } =
       await import('./lib/account-deletion');
     const { withWriteTransaction } = await import('./lib/transactions');
+    // ⚠ **`apple_refresh_token` 을 함께 읽는다.** 파기하면 읽을 곳이 없어져 영영 폐기하지
+    // 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이 남는다(애플 심사 5.1.1(v)).
+    // 즉시 삭제(`DELETE /user/me`)에는 이 처리가 있었는데 **앱이 실제로 쓰는 경로**는
+    // 유예 삭제(`POST /user/me/deletion`)라, 정작 대부분의 탈퇴에서 빠져 있었다
+    // (2026-08-18 Codex #697 P1).
     const due = await db.execute({
-      sql: `SELECT id, google_id FROM users
+      sql: `SELECT id, google_id, apple_refresh_token FROM users
             WHERE deletion_status = 'pending_deletion'
               AND deletion_purge_at IS NOT NULL
               AND deletion_purge_at <= ?
@@ -344,9 +401,27 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // sendPushNotifications 는 호출마다 OAuth 를 새로 받아, 계정마다 나눠 부르면 틱당
     // 최대 50 왕복이 된다).
     try {
+      const { appleSignInConfig, revokeAppleToken } = await import('./lib/apple-revoke');
       for (const row of due.rows) {
         const userPk = String(row.id);
         const userId = (row.google_id as string | null) ?? userPk;
+        // 애플 연결을 끊는다 — **행을 지우기 전에.**
+        // ⚠ 실패해도 파기는 진행한다(즉시 삭제 경로와 같은 판단). 애플이 잠깐 죽었다고
+        // 파기를 막으면 사용자의 데이터가 유예 기간을 넘겨 남는다.
+        const appleRefreshToken = row.apple_refresh_token as string | null;
+        if (appleRefreshToken) {
+          // ⚠ **설정 생성까지 try 안에 둔다**(코덱스 #730 2차). `appleSignInConfig` 는
+          //   PEM 이 잘려 있으면 **던진다.** 밖에 두면 그 예외가 이 루프를 빠져나가
+          //   **그 계정도, 같은 배치의 뒤 계정도 전부 파기되지 않는다** — 조회에
+          //   커서가 없어 다음 틱도 같은 계정에서 다시 막히므로, 파기 요청 데이터가
+          //   무기한 남는다. 애플 연결 해제는 최선 노력이고 파기가 본 목적이다.
+          try {
+            const signInConfig = appleSignInConfig(env, env.APPLE_BUNDLE_ID);
+            if (signInConfig) await revokeAppleToken(signInConfig, appleRefreshToken);
+          } catch (err) {
+            captureCron('scheduled.account_purge.apple_revoke', err);
+          }
+        }
         const purged = await withWriteTransaction(db, async (tx) => {
           await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
           return purgeUserAccount(tx, userPk, userId);
@@ -379,90 +454,48 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
   //  틱마다 Turso row-read 만 소모했다.)
 
+  // ⚠⚠ **기본(시스템) 목소리 스톡 클립 드레인은 껐다**(2026-09-03 리뷰 15차).
+  //
+  // 7차에 이걸 붙인 이유는 "교체가 배포되는 순간 기본 목소리에 클립이 0개가 된다" 였다.
+  // 그 문제는 이제 **미리 구워 올리는 것**으로 푼다(`scripts/publish-stock-clips.ts`) —
+  // 배포 전에 R2 에 바이트를 올려 두고, 마이그레이션 직후 행만 넣으면 공백이 거의 없다.
+  //
+  // 그런데 **둘을 같이 두면 서로 싸운다.** 롤아웃은 `#110` 이 전부 은퇴시킨 뒤 사람이
+  // `publish:stock` 을 돌리는 순서인데, 그 사이의 5분 틱이 **같은 타깃을 합성하기
+  // 시작한다.** cron 이 한 자리를 먼저 커밋하면 `publish:stock` 은 그 자리를
+  // '이미 있음' 으로 보고 건너뛰어, **사람이 들어 보고 확정한 바이트가 영영 안 올라간다.**
+  // 그리고 그때부터 결정론적 키를 놓고 두 렌더가 겹치는 옛 경합이 되살아난다.
+  //
+  // 되살릴 거라면 **게시가 렌더 산출물을 덮어쓰도록** 먼저 고쳐야 한다(지금은 건너뛴다).
+  // 클론 드레인(아래)은 그대로다 — 그건 큐가 지목한 목소리만 굽고, 미리 구울 수 없다
+  // (등록한 사람의 목소리라서 우리가 미리 갖고 있지 않다).
+  //
+  // 특정 목소리만 다시 굽는 수동 도구는 남아 있다: `POST /api/admin/seed-stock-clips`
+  // (`?voice=`·`?reset=`). 새 프리셋을 추가했는데 미리 굽지 않았다면 그걸로 채운다.
+
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
   // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
   try {
-    const {
-      claimPendingPrerenderVoices,
-      listReadyCloneVoices,
-      findMissingStockTargets,
-      generateStockClip,
-      markPrerenderDone,
-      markPrerenderFailed,
-      releasePrerenderClaim,
-    } = await import('./lib/stock-clips');
-    const { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } = await import('./lib/consent');
-    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드라 서브리퀘스트·
-    // 비용·rate 를 제한하되, 목소리 1개 풀셋(21클립)이 너무 늦지 않게 6으로 잡는다(≈4틱, keep 후 ~20분).
-    // 발사 시각 알람 푸시는 cron 에서 제거돼(중복 알림) 이 드레인이 틱의 시간민감 작업을 막을 일은 없다.
-    const MAX_CLIPS_PER_TICK = 6;
-    const claimed = await claimPendingPrerenderVoices(db, 5);
-    if (claimed.length > 0) {
-      const cloneVoices = await listReadyCloneVoices(db, claimed);
-      const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
-      // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
-      const readyIds = new Set(cloneVoices.map((v) => v.id));
-      for (const req of claimed) {
-        if (!readyIds.has(req.voiceProfileId)) {
-          await markPrerenderFailed(db, req.voiceProfileId, req.claimToken);
-        }
-      }
-      let rendered = 0;
-      let subrequestExhausted = false;
-      for (const voice of cloneVoices) {
-        if (subrequestExhausted) break;
-        const claim = claimByVoiceId.get(voice.id);
-        if (!claim) continue;
-        if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
-          await markPrerenderFailed(db, voice.id, claim.claimToken);
-          continue;
-        }
-        if (rendered >= MAX_CLIPS_PER_TICK) {
-          await releasePrerenderClaim(db, voice.id, claim.claimToken);
-          continue;
-        }
-        const targets = await findMissingStockTargets(db, [voice]);
-        if (targets.length === 0) {
-          await markPrerenderDone(db, voice.id, claim.claimToken);
-          continue;
-        }
-        let voiceRendered = 0;
-        let voiceError = false;
-        for (const target of targets) {
-          if (rendered >= MAX_CLIPS_PER_TICK) break;
-          rendered += 1;
-          try {
-            await generateStockClip(db, env, target);
-            voiceRendered += 1;
-          } catch (genErr) {
-            // 한 클립 실패가 이 보이스의 나머지 클립(예: love/medication)을 버리지 않도록, 그 클립만
-            // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
-            captureCron('scheduled.stock_clips.generate', genErr);
-            voiceError = true;
-            // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
-            // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우
-            // 15분 임대 만료가 회수해 다음 틱에 재시도된다. (7/11~ dev 실사례: 매 틱 실패하던
-            // account_purge 가 파기 시퀀스로 예산을 태워 프리렌더가 항상 이 오류로 죽었다.)
-            if (String(genErr).includes('Too many subrequests')) {
-              subrequestExhausted = true;
-              break;
-            }
-          }
-        }
-        // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
-        if (voiceRendered === targets.length && !voiceError) {
-          await markPrerenderDone(db, voice.id, claim.claimToken);
-        } else if (voiceError && voiceRendered === 0) {
-          // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
-          await markPrerenderFailed(db, voice.id, claim.claimToken);
-        } else {
-          await releasePrerenderClaim(db, voice.id, claim.claimToken);
-        }
-      }
-      if (rendered > 0) {
-        logStructured('info', { at: 'scheduled.stock_clips', rendered, claimed: claimed.length });
-      }
+    const { runPrerenderBatch } = await import('./lib/stock-clips');
+    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드다.
+    //
+    // ⚠ **6 → 10 으로 올렸다**(2026-08-20). 6은 목소리 1개 풀셋(21클립)에 4틱 = 20분이
+    // 걸린다는 뜻이었고, 실기기 QA 에서 그 대기가 문제로 지적됐다. 상한을 넘겨 서브리퀘스트가
+    // 소진되면 `runPrerenderBatch` 가 즉시 멈추고 pending 을 유지해 다음 틱이 이어받으므로,
+    // 올려서 손해 보는 경우가 "그 틱이 조금 일찍 끝난다" 뿐이다 — 그 안전장치가 이미
+    // 검증돼 있어서 올릴 수 있다. 등록 직후 첫 배치는 요청 쪽에서 따로 돈다(promote).
+    const result = await runPrerenderBatch(db, env, {
+      maxClips: 10,
+      maxVoices: 5,
+      onClipError: (genErr) => captureCron('scheduled.stock_clips.generate', genErr),
+    });
+    if (result.rendered > 0) {
+      logStructured('info', {
+        at: 'scheduled.stock_clips',
+        rendered: result.rendered,
+        claimed: result.claimed,
+      });
     }
   } catch (err) {
     captureCron('scheduled.stock_clips', err);

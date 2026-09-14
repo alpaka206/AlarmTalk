@@ -69,6 +69,7 @@ function pushLatestVoiceProfile(found: boolean) {
 }
 
 function pushInserts() {
+  mockDB.pushResult([{ plan: 'family' }]); // 쓰기 트랜잭션의 발신자 권한 재확인
   mockDB.pushResult([], 1); // INSERT messages
   mockDB.pushResult([]); // 멱등 슬롯 조회(같은 발신자·수신자·time 기존 발신 알람 없음)
   mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
@@ -261,6 +262,9 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect(body.alarm.voice_upload_id).toBe(UPLOAD_ID);
     expect(body.message.category).toBe('family-voice');
     expect(body.message.audio_url).toBe('audio/family-voice.wav');
+    const alarmInsert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO alarms'));
+    expect(alarmInsert?.sql).toContain('delivery_version');
+    expect(alarmInsert?.args.some((arg) => /^[0-9a-f-]{36}$/.test(String(arg)))).toBe(true);
   });
 
   it('label 미지정 → 기본 라벨 사용', async () => {

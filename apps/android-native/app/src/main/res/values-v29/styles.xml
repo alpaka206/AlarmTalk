@@ -5,7 +5,11 @@
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:navigationBarColor">@color/voice_alarm_app_background</item>
-        <item name="android:navigationBarDividerColor">@color/voice_alarm_app_background</item>
+        <!-- ⚠ 구분선은 **투명**이다(2026-09-06 실기기). 예전 값(#171A1D)은 엣지투엣지 이전의
+             잔재라, 바가 투명해진 지금은 우리 화면 맨 아래에 **고정 색 1dp 검은 줄**로 남는다 —
+             다크에서는 배경과 같아 안 보이고 **라이트에서만** 도드라진다. 바 배경은 아래
+             navigationBarColor 가 아니라 콘텐츠가 칠한다(AlarmTalkTheme 의 AppSystemBars). -->
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@color/voice_alarm_app_background</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
@@ -19,7 +23,11 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:keepScreenOn">true</item>
         <item name="android:navigationBarColor">@color/voice_alarm_status_bar</item>
-        <item name="android:navigationBarDividerColor">@color/voice_alarm_status_bar</item>
+        <!-- ⚠ 구분선은 **투명**이다(2026-09-06 실기기). 예전 값(#171A1D)은 엣지투엣지 이전의
+             잔재라, 바가 투명해진 지금은 우리 화면 맨 아래에 **고정 색 1dp 검은 줄**로 남는다 —
+             다크에서는 배경과 같아 안 보이고 **라이트에서만** 도드라진다. 바 배경은 아래
+             navigationBarColor 가 아니라 콘텐츠가 칠한다(AlarmTalkTheme 의 AppSystemBars). -->
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@color/voice_alarm_status_bar</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>

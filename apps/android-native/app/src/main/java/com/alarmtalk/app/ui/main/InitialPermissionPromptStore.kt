@@ -20,6 +20,23 @@ internal class InitialPermissionPromptStore(context: Context) {
         prefs.edit().putBoolean(KEY, true).apply()
     }
 
+    /**
+     * 이 **런타임 권한**을 시스템 다이얼로그로 물어본 적이 있는가.
+     *
+     * 왜 위 단일 플래그로 안 되나: 그건 '첫 진입 1회 안내를 띄웠나' 라는 다른 질문이다.
+     * 여기서 필요한 건 권한 하나하나에 대해 "시스템이 이미 물어봤나" 다 —
+     * `shouldShowRequestPermissionRationale` 이 false 일 때 **한 번도 안 물어본 것**과
+     * **영구 거부**를 가르는 유일한 근거다. 그 둘을 구분 못 하면 영구 거부한 사용자에게
+     * 아무 설명 없이 시스템 다이얼로그만 반복해 띄우게 된다(뜨지도 않는다).
+     */
+    fun hasPrompted(permission: String): Boolean = prefs.getBoolean(permissionKey(permission), false)
+
+    fun markPrompted(permission: String) {
+        prefs.edit().putBoolean(permissionKey(permission), true).apply()
+    }
+
+    private fun permissionKey(permission: String) = "asked_$permission"
+
     private companion object {
         const val PREFS_NAME = "voice_alarm_initial_permission_prompt"
         const val KEY = "initial_alarm_permission_prompted"

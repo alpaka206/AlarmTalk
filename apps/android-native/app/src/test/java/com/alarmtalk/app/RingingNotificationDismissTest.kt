@@ -12,8 +12,8 @@ import org.robolectric.annotation.Config
 /**
  * 울림 알림 스와이프 제거 회귀 가드.
  *
- * 화면이 켜져 있고 잠금이 풀려 있으면 RingingService 가 울림 화면을 띄우지 않아, 이 알림이
- * 유일한 해제 UI 다. targetSdk 34+ 에서는 setOngoing(true) 로도 스와이프 제거를 막지 못하므로
+ * 울림 화면은 이제 기기 상태와 무관하게 항상 뜨지만(2026-09-09), 그 액티비티 시작이 OS 에
+ * 막히면 이 알림이 **남는 유일한 해제 UI** 다. targetSdk 34+ 에서는 setOngoing(true) 로도 스와이프 제거를 막지 못하므로
  * (Android 13 의 FGS 알림 스와이프 허용 + 14 의 ongoing 무력화), deleteIntent 가 없으면
  * 배너만 사라지고 톤·목소리·진동이 무기한 계속된다.
  *
@@ -33,10 +33,18 @@ class RingingNotificationDismissTest {
     }
 
     @Test
+    fun escalationNotificationKeepsDeleteIntent() {
+        // ⚠ 승격 경로는 **서비스가 살아 있다**(코덱스 #729 3차). 삭제 인텐트가 없으면
+        //   안드로이드 14+ 에서 스와이프로 배너만 사라지고 소리·진동이 무기한 계속된다.
+        val notification = factory.build("alarm-1", RingingNotificationFactory.Variant.ESCALATION)
+        assertNotNull("승격 알림에 삭제 인텐트가 없다 — 스와이프하면 못 끈다", notification.deleteIntent)
+    }
+
+    @Test
     fun fallbackNotificationHasNoDeleteIntent() {
         // 폴백은 FGS 를 못 띄운 경로라 getService 가 실패할 수 있고, 소리도 채널 사운드
         // 1회성이라 '무한히 울림' 대상이 아니다.
-        val notification = factory.build("alarm-1", fallback = true)
+        val notification = factory.build("alarm-1", RingingNotificationFactory.Variant.FALLBACK)
         assertNull(notification.deleteIntent)
     }
 }

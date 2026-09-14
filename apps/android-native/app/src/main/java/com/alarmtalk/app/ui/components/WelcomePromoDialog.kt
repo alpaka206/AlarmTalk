@@ -2,6 +2,8 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -72,36 +74,33 @@ internal fun WelcomePromoDialog(
     errorText: String? = null,
 ) {
     var code by remember { mutableStateOf("") }
-    IosAlertDialog(
+    // ⚠ **알럿(`IosAlertDialog`)으로 되돌리지 말 것**(2026-08-18 지시로 시트가 됐다).
+    //
+    // 세 가지가 알럿과 맞지 않았다:
+    //  1. **닫아도 되는 안내**다(주석도 "닫기가 1급 선택지" 라고 적고 있었다). 알럿은
+    //     "지금 답하라" 는 무게이고, 시트는 쓸어내려 닫는 게 표준이라 성격이 맞는다.
+    //  2. 액션이 **셋**이라 알럿에서는 구분선으로 똑같이 쌓였다 — 실기기에서 보면
+    //     주행동인 '등록' 이 나머지 둘과 구분되지 않는다.
+    //  3. 입력 + **실패 사유**가 함께 있어야 하는데(계정당 1회라 실패하면 기회가 끝난다),
+    //     그 자리를 만들려고 알럿을 흉내 낸 자체 카드를 쓰고 있었다.
+    //
+    // 보조 액션 둘은 **상단바**로 올린다(운세 정보 입력 시트와 같은 골격) — iOS 짝은
+    // `Views/Auxiliary/WelcomePromoSheet.swift` 이고 **배치까지 같아야 한다.**
+    WakerFormSheet(
         title = stringResource(R.string.welcome_promo_title),
-        // 본문은 강조색이 섞인 두 줄이라 알럿의 message(순수 문자열) 대신 슬롯에서 그린다.
-        // 타이포는 알럿 본문과 같게 맞춘다(13/18, 가운데, 보조색).
-        message = null,
-        onDismiss = { if (!busy) onDismiss() },
-        actions = listOf(
-            // 등록 중에는 셋 다 잠근다. 특히 '닫기' — 이 안내는 계정당 1회라 응답 전에
-            // 닫아 버리면 실패 안내를 받을 화면이 사라지고 다시 뜨지도 않는다.
-            IosAlertAction(
-                label = stringResource(R.string.code_redeem_submit),
-                emphasized = true,
-                enabled = !busy && code.isNotBlank(),
-                onClick = { code.trim().takeIf { it.isNotBlank() }?.let(onSubmitCode) },
-            ),
-            IosAlertAction(
-                label = stringResource(R.string.welcome_promo_where),
-                enabled = !busy,
-                onClick = onOpenInstagram,
-            ),
-            // iOS 는 세로 스택에서 닫기를 맨 아래에 둔다.
-            IosAlertAction(
-                label = stringResource(R.string.r3dlg_modal_dialog_close),
-                enabled = !busy,
-                onClick = onDismiss,
-            ),
-        ),
+        onCancel = { if (!busy) onDismiss() },
+        onSave = onOpenInstagram,
+        // ⚠ 툴바 액션은 **짧아야** 한다 — '코드 받으러 가기' 를 그대로 쓰면 제목을 밀어내
+        // 셋이 한 줄에서 다툰다(iOS 실기기 확인). 무엇을 받는지는 제목이 이미 말한다.
+        saveLabel = stringResource(R.string.welcome_promo_where_short),
+        cancelLabel = stringResource(R.string.r3dlg_modal_dialog_close),
+        saveEnabled = !busy,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             AlertBodyLine(
@@ -116,25 +115,33 @@ internal fun WelcomePromoDialog(
                     highlight = stringResource(R.string.welcome_promo_highlight_where),
                 ),
             )
-        }
-        // 설명과 입력란 사이는 알럿의 필드 간격(16)을 그대로 쓴다.
-        IosAlertField(
-            value = code,
-            onValueChange = { code = sanitizeRedeemCode(it) },
-            placeholder = stringResource(R.string.code_redeem_placeholder),
-            enabled = !busy,
-            modifier = Modifier.padding(top = 14.dp),
-        )
-        errorText?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-                style = IosAlertType.Message,
+            IosAlertField(
+                value = code,
+                onValueChange = { code = sanitizeRedeemCode(it) },
+                placeholder = stringResource(R.string.code_redeem_placeholder),
+                enabled = !busy,
+                modifier = Modifier.padding(top = 14.dp),
+            )
+            errorText?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = IosAlertType.Message,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                )
+            }
+            // 주행동만 채움 버튼으로 남긴다 — 상단바의 둘과 무게를 가른다.
+            Button(
+                onClick = { code.trim().takeIf { it.isNotBlank() }?.let(onSubmitCode) },
+                enabled = !busy && code.isNotBlank(),
+                shape = WakerButtonShape,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp),
-            )
+                    .padding(top = 16.dp)
+                    .height(52.dp),
+            ) {
+                Text(stringResource(R.string.code_redeem_submit))
+            }
         }
     }
 }
@@ -145,7 +152,9 @@ private fun AlertBodyLine(text: AnnotatedString) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
+        // ⚠ **왼쪽 정렬이다**(2026-08-18 지시). 알럿이던 시절엔 가운데였는데, 시트에서는
+        // 입력창·버튼이 모두 왼쪽에서 시작해 설명만 가운데면 시작점이 둘이 된다.
+        textAlign = TextAlign.Start,
         style = IosAlertType.Message,
         modifier = Modifier.fillMaxWidth(),
     )

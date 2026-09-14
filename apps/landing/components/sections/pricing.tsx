@@ -30,18 +30,20 @@ export function Pricing() {
         </Reveal>
 
         <RevealGroup
+          as="ul"
           className="card mx-auto mt-12 max-w-3xl divide-y divide-line overflow-hidden"
           stagger={0.07}
         >
           {PLANS.map((plan) => (
             <RevealItem
+              as="li"
               key={plan}
               className="grid gap-2 px-6 py-7 sm:grid-cols-[30%_1fr] sm:items-baseline sm:gap-6 sm:px-8"
             >
               <div>
-                <p className="t-h3 text-text">{t(`plans.${plan}.name`)}</p>
+                <h3 className="t-h3 text-text">{t(`plans.${plan}.name`)}</h3>
                 {/* 금액은 숫자로만 강해진다 — 강조색을 쓰지 않는다. */}
-                <p className="t-caption mt-1 text-text-muted">
+                <p className="t-caption mt-1 tabular-nums text-text-muted">
                   {t(`plans.${plan}.price`)}
                 </p>
               </div>

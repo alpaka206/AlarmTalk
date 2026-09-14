@@ -27,7 +27,36 @@ describe('#89·#90 — 사장 인덱스·컬럼이 실제로 사라진다', () =
     // 같은 이름의 messages.delivery_tags_json 은 실제로 읽는 컬럼이라 살아 있어야 한다.
     expect(await columnsOf('messages')).toContain('delivery_tags_json');
     // 읽는 컬럼들도 그대로인지 한 번 더.
-    expect(assetColumns).toEqual(expect.arrayContaining(['audio_object_key', 'mime_type', 'text']));
+    // ⚠ 여기 `mime_type` 이 있었는데 **#108 이 지웠다** — 캐시 히트마다 SELECT 해 놓고
+    //   반환 객체에 넣지 않는 컬럼이었다. 아래 「#108」 블록이 사라짐을 확인한다.
+    expect(assetColumns).toEqual(expect.arrayContaining(['audio_object_key', 'text']));
+  });
+
+  // #108 도 되돌릴 수 없는 정리라 같은 방식으로 확인한다.
+  // 「지운다」와 「지운 줄 알았다」를 가르는 건 이 스키마 확인뿐이다.
+  it('#108 — 아무도 읽지 않던 컬럼·인덱스가 사라진다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrations(db);
+
+    const assetColumns = (await db.execute('PRAGMA table_info(generated_audio_assets)')).rows.map(
+      (row) => String(row.name),
+    );
+    // SELECT 는 했지만 반환 객체에 넣지 않던 컬럼. audio_format 으로 재구성 가능하다.
+    expect(assetColumns).not.toContain('mime_type');
+    // 같은 테이블에서 실제로 읽는 컬럼은 남아 있어야 한다.
+    expect(assetColumns).toEqual(expect.arrayContaining(['audio_object_key', 'audio_format', 'text']));
+
+    const indexes = (
+      await db.execute(`SELECT name FROM sqlite_master WHERE type = 'index'`)
+    ).rows.map((row) => String(row.name));
+    // LRU 인덱스: ORDER BY 선행항이 표현식이라 애초에 안 걸렸다.
+    expect(indexes).not.toContain('idx_voice_profiles_lru');
+    // status 가 선행 술어인 쿼리가 0건이었다.
+    expect(indexes).not.toContain('idx_voucher_codes_status');
+    // 실제로 거르는 술어(issuer_user_id · issuer_subscription_id)의 인덱스는 남아야 한다.
+    expect(indexes).toEqual(
+      expect.arrayContaining(['idx_voucher_codes_issuer', 'idx_voucher_codes_issuer_subscription']),
+    );
   });
 
   it('중복·무용 인덱스가 사라지고 빠져 있던 인덱스가 생긴다', async () => {

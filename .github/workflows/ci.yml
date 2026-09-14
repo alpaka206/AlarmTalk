@@ -63,10 +63,56 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
+
+      - name: Audit dependencies for high severity vulnerabilities
+        run: npm audit --audit-level=high
+
+      # iOS 주석이 대는 안드로이드·백엔드 근거가 실재하는지. iOS 는 안드로이드를 원본으로
+      # 삼으므로(CLAUDE.md) 주석 대부분이 "안드로이드 Foo.kt 미러" 꼴인데, 안드로이드가
+      # 그 화면을 지워도 주석은 남는다 — 그걸 믿고 고친 코드가 다시 틀렸다.
+      - name: Check cross-platform comment references
+        run: python3 scripts/check-cross-platform-refs.py
+
+      # 동작 규칙은 `docs/spec/` 한 곳에 모으고 CLAUDE.md 는 포인터만 남겼다. 그 포인터가
+      # 깨지면 규칙이 있는 줄도 모른 채 코드만 고치게 된다.
+      - name: Check docs links and spec index
+        run: python3 scripts/check-docs-links.py
+
+      # 새 입력창이 새니타이저를 건너뛰고 `it.take(50)` 처럼 생 리터럴로 자르는 것.
+      # 함수 단위 테스트로는 못 잡는다(함수는 멀쩡하고 아무도 안 부르는 게 문제다).
+      - name: Check input sanitizers
+        run: python3 scripts/check-input-sanitizers.py
+
+      # INSERT 가 NOT NULL 컬럼을 빠뜨리는 것. 타입체커는 SQL 문자열 안을 못 보고,
+      # 실패하면 트랜잭션이 통째로 롤백된다 — 실제로 **선물 결제 두 갈래**가 이걸로
+      # 죽어 있었다(스토어는 결제를 받았는데 바우처가 안 나갔다).
+      - name: Check INSERT statements cover NOT NULL columns
+        run: python3 scripts/check-insert-not-null.py
+
+      # 권한 스냅샷(구독·그룹·users.plan·스토어 신호)을 쓰는 문은 `EntitlementWriter` 하나다.
+      # 그전에는 쓰는 곳이 안드로이드 9곳·iOS 8곳이었고 각자 계정·세대·에폭 가드를 손으로
+      # 들고 있었다 — 그 국소 가드끼리 어긋나면서 PR #709 리뷰가 37회·119건까지 갔다.
+      # 문을 만드는 것만으로는 다음 사람이 우회하는 걸 못 막아서, 우회를 여기서 막는다.
+      - name: Check entitlement snapshot writes go through the single gate
+        run: python3 scripts/check-entitlement-writer.py
+
+      # 유료 플랜 목록이 백엔드·안드로이드(2벌)·iOS 에 **네 벌**로 흩어져 있었고 실제로
+      # 갈라져 있었다(안드로이드에만 도달 불가능한 `individual`·`plus`·`couple`). 지금은
+      # `@alarmtalk/shared` 의 `plan.ts` 가 원본이고, 네이티브 두 앱은 같은 값을 손으로
+      # 두므로 어긋나는 것을 여기서 막는다. 한 칸만 어긋나면 돈 낸 사용자가 잠긴다.
+      - name: Check plan constants match across shared/Android/iOS/DB
+        run: python3 scripts/check-plan-constants.py
+
+      # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
+      # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
+      # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로
+      # 통과하고 개발자 기기만 조용히 지워지므로 문법으로 잡는다.
+      - name: Check iOS test isolation
+        run: python3 scripts/check-test-isolation.py
 
   typecheck:
     runs-on: ubuntu-latest
@@ -90,7 +136,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install root dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Typecheck
         working-directory: ${{ matrix.package }}
@@ -99,6 +145,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # ⚠ **`command` 키를 정리하지 말 것 — 체크 이름을 만드는 값이다.**
+      # 세 항목의 값이 전부 `npm test` 라 지워도 될 것처럼 보이지만, 매트릭스 값이
+      # 체크 이름에 들어가서 `test (packages/backend, npm test)` 가 된다. 그 세 이름이
+      # develop 브랜치 보호의 **필수 컨텍스트**라, 키를 빼면 이름이 `test (packages/backend)`
+      # 로 바뀌고 필수 컨텍스트는 **영영 보고되지 않아** 모든 PR 이 머지 불가로 잠긴다.
+      # 정말 정리하려면 브랜치 보호의 세 컨텍스트를 **같은 변경에서** 함께 고쳐야 한다.
       matrix:
         include:
           - package: packages/backend
@@ -124,7 +176,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install root dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Test
         working-directory: ${{ matrix.package }}

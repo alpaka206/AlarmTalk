@@ -1,14 +1,25 @@
 import { Hono } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
+import { purchaseAccountMatches } from '../lib/purchase-account-binding';
+import {
+  notifyBillingStateChanged,
+  refreshCompetingAppleRenewalState,
+} from '../lib/billing-cancel';
+import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
+  isRecoverablePlayState,
   type SubscriptionV2Response,
+  googlePaymentAnchor,
+  googlePlanKeyFromProductId,
+  selectAuthoritativeLineItem,
 } from '../lib/play-subscriptions';
 import { resolveUserPk } from './billing-helpers';
 
@@ -27,37 +38,27 @@ import { resolveUserPk } from './billing-helpers';
 // scope·응답 타입·ENTITLED_STATES 는 lib/play-subscriptions.ts 가 단일 출처
 // (해지/RTDN/reconciliation 과 공유). 기존 import 경로 유지를 위해 re-export 한다.
 
-export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES };
+export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES, isRecoverablePlayState };
 export type { SubscriptionV2Response };
 
-/**
- * Play Console 구독 상품 ID → plans.key 매핑.
- * 월간 SKU 만 판매한다.
- */
-const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
-  personal_monthly: 'personal',
-  couple_monthly: 'couple',
-  family_monthly: 'family',
-};
+export { googlePlanKeyFromProductId };
 
-export function googlePlanKeyFromProductId(
-  productId: string,
-): 'personal' | 'couple' | 'family' | null {
-  return GOOGLE_PRODUCT_TO_PLAN_KEY[productId] ?? null;
+/**
+ * 선물용 1회성 상품 ID.
+ *
+ * ⚠ 검증 API 가 **다르다.** 구독은 `purchases/subscriptionsv2`, 1회성은
+ * `purchases/products` 다. 구독 경로로 조회하면 404 가 나므로 반드시 갈라야 한다.
+ */
+const GOOGLE_GIFT_PRODUCT_IDS = new Set<string>(['personal_gift_1m']);
+
+function isGoogleGiftProductId(productId: string): boolean {
+  return GOOGLE_GIFT_PRODUCT_IDS.has(productId);
 }
 
 interface ConfirmRequest {
   purchase_token: string;
   product_id: string;
   package_name?: string;
-}
-
-/** Workers 런타임(crypto.subtle) SHA-256 → 소문자 hex 64자. 계정 바인딩 대조용. */
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string } {
@@ -123,6 +124,58 @@ export async function acknowledgeGoogleSubscription(params: {
   return false;
 }
 
+/**
+ * Play **1회성 상품(선물)** 소비. `:consume` 은 acknowledge 도 겸한다.
+ *
+ * ⚠ **반드시 해야 한다 — 안 하면 두 가지가 난다**(2026-08-18 Codex #697 P1):
+ *  1. 미확인 구매는 **3일 뒤 Play 가 자동 환불**한다. 그런데 우리가 발급한 바우처는
+ *     그대로 쓸 수 있다 — 돈은 돌려주고 이용권은 나간 상태가 된다.
+ *  2. 소모성 상품이 소유된 채 남아 구매자가 **선물을 또 살 수 없다.**
+ * 클라(`PlayBillingManager`)는 소비를 하지 않는다(구독 acknowledge 와 같은 이유 — 서버가
+ * 권위다). 그래서 이 경로가 유일하다.
+ *
+ * 멱등하므로 **중복 confirm 에서도 다시 시도한다** — 첫 시도가 바우처 커밋 뒤에 실패했을
+ * 수 있고, 그때 재시도할 다른 경로가 없다(1회성 구매에는 RTDN 이 오지 않는다).
+ * 실패해도 흐름은 막지 않는다 — 바우처는 이미 나갔고, 여기서 500 을 내면 클라가 결제를
+ * 실패로 알고 재시도해 사용자만 혼란스러워진다.
+ */
+async function consumeGoogleProduct(params: {
+  baseUrl: string;
+  productId: string;
+  purchaseToken: string;
+  accessToken: string;
+}): Promise<boolean> {
+  const { baseUrl, productId, purchaseToken, accessToken } = params;
+  const url = `${baseUrl}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:consume`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, ACK_BACKOFF_MS[attempt - 1]));
+    }
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) return true;
+      logStructured('warn', {
+        at: 'billing.google.consume',
+        attempt,
+        status: res.status,
+        detail: (await res.text()).slice(0, 300),
+      });
+      // 4xx(이미 소비됨 등)는 재시도해도 같다.
+      if (res.status < 500) return false;
+    } catch (err) {
+      logStructured('error', { at: 'billing.google.consume', attempt, error: String(err) });
+    }
+  }
+  return false;
+}
+
 const billingGoogle = new Hono<AppEnv>();
 
 billingGoogle.post('/google/confirm', async (c) => {
@@ -174,6 +227,171 @@ billingGoogle.post('/google/confirm', async (c) => {
   }
 
   const baseUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(expectedPackage)}`;
+
+  // ⚠ **선물(1회성 상품)은 여기서 갈라진다.** 검증 API 가 구독과 다르고
+  // (`purchases/products`), 결과도 구독이 아니라 **바우처 코드**다.
+  if (isGoogleGiftProductId(parsed.product_id)) {
+    const giftRes = await fetch(
+      `${baseUrl}/purchases/products/${encodeURIComponent(parsed.product_id)}/tokens/${encodeURIComponent(parsed.purchase_token)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!giftRes.ok) {
+      const detail = (await giftRes.text()).slice(0, 300);
+      logStructured('warn', { at: 'billing.google.gift', status: giftRes.status, detail });
+      const status = giftRes.status === 404 || giftRes.status === 400 ? 404 : 502;
+      const code: ErrorCode =
+        status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED';
+      return c.json(
+        { error: 'Google purchase not found or verification failed', error_code: code },
+        status,
+      );
+    }
+    const product = (await giftRes.json()) as {
+      purchaseState?: number;
+      orderId?: string;
+      purchaseTimeMillis?: string;
+      obfuscatedExternalAccountId?: string;
+    };
+    // purchaseState: 0=구매완료, 1=취소, 2=보류. 완료가 아니면 권한을 주지 않는다.
+    if (product.purchaseState !== 0) {
+      return c.json(
+        { error: 'Purchase is not completed', error_code: 'PURCHASE_NOT_COMPLETED' },
+        400,
+      );
+    }
+    const db = getDB(c.env);
+
+    // ⚠ **선물도 계정 바인딩을 검사한다**(2026-08-18 Codex #697 P1).
+    // 예전에는 이 갈래가 아래 구독 경로의 검사에 **닿기 전에** 바우처를 발급하고 끝냈다 —
+    // 남의 미소비 purchaseToken 을 손에 넣은 사람이 먼저 제출하면 **그 사람이 바우처를
+    // 가져갔다.** 안드로이드는 1회성 구매에도 `setObfuscatedAccountId` 를 실어 보내므로
+    // (`PlayBillingManager.launchOneTimePurchase`) 대조할 값은 이미 있었고, 서버가 안 볼
+    // 뿐이었다. 판정 규칙은 구독 갈래와 **같다** — 한쪽만 고치지 말 것.
+    const giftObfuscatedId = product.obfuscatedExternalAccountId?.trim();
+    if (giftObfuscatedId) {
+      const matches = await purchaseAccountMatches(giftObfuscatedId, [
+        c.get('userLoginId'),
+        c.get('userId'),
+        userPk,
+      ]);
+      if (!matches) {
+        logStructured('warn', {
+          at: 'billing.google.gift',
+          step: 'account_binding',
+          error: 'obfuscatedExternalAccountId mismatch',
+        });
+        return c.json(
+          {
+            error: 'Purchase is bound to another account',
+            error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
+          },
+          403,
+        );
+      }
+    } else {
+      // 식별자가 없는 최초 청구는 거절한다(구독 갈래와 같은 이유 — 유출 토큰
+      // first-claim 구멍). 이미 바인딩된 토큰의 재전송은 아래 멱등 검사가 받아 준다.
+      const boundRes = await db.execute({
+        sql: `SELECT user_id FROM store_transactions
+              WHERE provider = 'google' AND provider_transaction_id = ?`,
+        args: [parsed.purchase_token],
+      });
+      if (boundRes.rows.length === 0) {
+        logStructured('warn', {
+          at: 'billing.google.gift',
+          step: 'account_binding',
+          error: 'obfuscatedExternalAccountId missing on first claim',
+        });
+        return c.json(
+          {
+            error: 'Purchase is missing the account identifier',
+            error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED',
+          },
+          403,
+        );
+      }
+    }
+    const giftPlan = await loadPlanByKey(db, planKey);
+    if (!giftPlan) {
+      return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
+    }
+    const issuedAt = new Date(Number(product.purchaseTimeMillis));
+    if (!product.purchaseTimeMillis || !Number.isFinite(issuedAt.getTime())) {
+      return c.json(
+        { error: 'Missing purchase time', error_code: 'GOOGLE_VERIFICATION_FAILED' },
+        502,
+      );
+    }
+    const voucherExpiresAt = new Date(
+      issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
+    );
+    const gift = await withWriteTransaction(db, async (txDb) => {
+      // ⚠ **멱등**해야 한다. Play 는 같은 구매를 재전송할 수 있고(재시도·복원),
+      // 그때 코드가 여러 장 나가면 결제 한 번에 이용권 여러 개를 주게 된다.
+      const seen = await txDb.execute({
+        sql: `SELECT id FROM store_transactions
+              WHERE provider = 'google' AND provider_transaction_id = ? LIMIT 1`,
+        args: [parsed.purchase_token],
+      });
+      if (seen.rows.length > 0) return null;
+      await txDb.execute({
+        // ⚠ **`plan_key` 를 빠뜨리지 말 것** — `TEXT NOT NULL`(기본값 없음)이라 빠지면
+        // INSERT 가 거절되고 트랜잭션이 통째로 롤백된다. 스토어는 이미 결제를 받았는데
+        // 바우처가 안 나간다. 애플 쪽(`billing-apple.ts`)이 같은 버그였다 — **두 갈래는
+        // 한 벌이다.** 회귀 방지는 `scripts/check-insert-not-null.py`.
+        sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload, last_paid_at)
+              VALUES (?, ?, 'google', ?, ?, ?, NULL, ?, ?)`,
+        args: [
+          crypto.randomUUID(),
+          userPk,
+          parsed.purchase_token,
+          parsed.product_id,
+          planKey,
+          JSON.stringify({ kind: 'gift', orderId: product.orderId ?? null }),
+          issuedAt.toISOString(),
+        ],
+      });
+      return issueVoucherCode(txDb, {
+        kind: 'gift',
+        planId: giftPlan.id,
+        issuerUserId: userPk,
+        issuerSubscriptionId: null,
+        issuedAt: issuedAt.toISOString(),
+        expiresAt: voucherExpiresAt.toISOString(),
+        maxUses: 1,
+      });
+    });
+    if (!gift) {
+      // ⚠ 중복이어도 **소비는 다시 시도한다** — 첫 시도가 바우처 커밋 뒤에 실패했을 수
+      // 있고, 1회성 구매에는 RTDN 이 없어 재시도할 다른 경로가 없다.
+      await consumeGoogleProduct({
+        baseUrl,
+        productId: parsed.product_id,
+        purchaseToken: parsed.purchase_token,
+        accessToken,
+      });
+      // ⚠ **성공 필드는 `success` 다 — `ok` 가 아니다.** 안드로이드
+      // `GooglePlayConfirmResponse.success` 는 non-null 이라 필드가 없으면 Gson 이
+      // `false` 로 둔다. 그러면 정상 발급된 선물이 **실패로 보이고** 바우처 새로고침도
+      // 건너뛴다. 애플 갈래에서 같은 버그를 고쳤는데(2026-08-18) 이쪽을 놓쳤다 —
+      // **두 스토어의 선물 갈래는 한 벌이다.**
+      return c.json({ success: true, gift: true, duplicate: true });
+    }
+    // 바우처가 **커밋된 뒤에** 소비한다. 먼저 소비하면 발급이 실패했을 때 되돌릴 수 없다.
+    await consumeGoogleProduct({
+      baseUrl,
+      productId: parsed.product_id,
+      purchaseToken: parsed.purchase_token,
+      accessToken,
+    });
+    return c.json({
+      success: true,
+      gift: true,
+      voucher: { code: gift.code, expires_at: gift.expires_at },
+    });
+  }
+
   const lookupRes = await fetch(
     `${baseUrl}/purchases/subscriptionsv2/tokens/${encodeURIComponent(parsed.purchase_token)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -185,8 +403,7 @@ billingGoogle.post('/google/confirm', async (c) => {
     return c.json(
       {
         error: 'Google purchase not found or verification failed',
-        error_code:
-          status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
+        error_code: status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
       },
       status,
     );
@@ -203,8 +420,7 @@ billingGoogle.post('/google/confirm', async (c) => {
     );
   }
 
-  const lineItem = subscription.lineItems?.find((item) => item.productId === parsed.product_id)
-    ?? subscription.lineItems?.[0];
+  const lineItem = selectAuthoritativeLineItem(subscription.lineItems, parsed.product_id);
   if (!lineItem?.expiryTime) {
     return c.json({ error: 'Missing expiry time', error_code: 'GOOGLE_VERIFICATION_FAILED' }, 502);
   }
@@ -223,17 +439,16 @@ billingGoogle.post('/google/confirm', async (c) => {
   // setObfuscatedAccountId(sha256hex(로그인 사용자 id — JWT sub 와 동일한 세션 user id))
   // 를 설정한다. Play 응답의 식별자가 호출자(sub 또는 users.id PK)의 해시와 다르면
   // 훔친/다른 계정의 purchaseToken 이므로 403 으로 거절한다.
-  const obfuscatedId =
-    subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
+  const obfuscatedId = subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
   if (obfuscatedId) {
     // 클라는 구매 시점 세션의 로그인 id(JWT sub)를 해시해 넣는다. userId 는 이제
     // users.id 로 정규화되므로, 구 토큰으로 결제한 사용자를 위해 원래 sub 도 함께 본다.
-    const expectedHashes = await Promise.all(
-      Array.from(new Set([c.get('userLoginId'), c.get('userId'), userPk].filter(Boolean))).map(
-        (id) => sha256Hex(id as string),
-      ),
-    );
-    if (!expectedHashes.includes(obfuscatedId.toLowerCase())) {
+    const matches = await purchaseAccountMatches(obfuscatedId, [
+      c.get('userLoginId'),
+      c.get('userId'),
+      userPk,
+    ]);
+    if (!matches) {
       logStructured('warn', {
         at: 'billing.google.confirm',
         step: 'account_binding',
@@ -279,6 +494,13 @@ billingGoogle.post('/google/confirm', async (c) => {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
 
+  // ⚠ **막기 전에 애플에 물어 갱신 상태를 최신화한다**(코덱스 #733 8차). 애플 상태는
+  //   가만두면 낡는다 — 우리가 받는 서버 알림이 없고, 같은-플랜 갱신 갈래가
+  //   `cancel_at_period_end` 를 0 으로 되돌린다. 낡은 값으로 막으면 **App Store 에서 이미
+  //   자동갱신을 끈 사용자가 아무것도 할 수 없다.** 확인 실패 시 확정도 재시도하도록 막는다.
+  await refreshCompetingAppleRenewalState(db, c.env, userPk);
+
+  const lastPaidAt = await googlePaymentAnchor(c.env, subscription, parsed.purchase_token);
   const result = await withWriteTransaction(db, (txDb) =>
     applyStoreEntitlement(txDb, {
       userPk,
@@ -288,6 +510,10 @@ billingGoogle.post('/google/confirm', async (c) => {
       productId: parsed.product_id,
       plan,
       startsAt: new Date(),
+      // ⚠ **확정 시각이 아니라 결제 시각을 앵커로 쓴다**(코덱스 #734 10차). RTDN 을
+      //   놓쳤거나 사용자가 한참 뒤에 복원하면 확정이 결제보다 몇 주 뒤다 — 거기에
+      //   5년을 더하면 처리방침의 최대 5년을 그만큼 넘긴다.
+      lastPaidAt,
       expiresAt,
       rawPayload: JSON.stringify({
         latestOrderId: subscription.latestOrderId ?? null,
@@ -302,6 +528,11 @@ billingGoogle.post('/google/confirm', async (c) => {
       result.status,
     );
   }
+
+  // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
+  // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+  // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
+  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
   // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가

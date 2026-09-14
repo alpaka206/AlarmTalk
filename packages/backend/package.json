@@ -16,23 +16,26 @@
     "migrate:dev": "node --experimental-strip-types scripts/run-remote-migrations.ts --env dev",
     "migrate:prod": "node --experimental-strip-types scripts/run-remote-migrations.ts --env production",
     "secrets:sync:dev": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env dev --env-file .dev.vars.dev",
-    "secrets:sync:prod": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env production --env-file .dev.vars.prod"
+    "secrets:sync:prod": "node --experimental-strip-types scripts/sync-worker-secrets.ts --env production --env-file .dev.vars.prod",
+    "preview:stock": "esbuild scripts/prerender-stock-preview.ts --bundle --platform=node --format=esm --log-level=error --outfile=node_modules/.cache/prerender-stock-preview.mjs && node node_modules/.cache/prerender-stock-preview.mjs",
+    "publish:stock": "esbuild scripts/publish-stock-clips.ts --bundle --platform=node --format=esm --external:@libsql/client --log-level=error --outfile=node_modules/.cache/publish-stock-clips.mjs && node node_modules/.cache/publish-stock-clips.mjs"
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260731.1",
+    "@cloudflare/workers-types": "^5.20260904.1",
     "@types/bcryptjs": "^3.0.0",
+    "esbuild": "^0.28.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.118.0"
+    "vitest": "^5.0.0",
+    "wrangler": "^4.129.0"
   },
   "dependencies": {
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
-    "@libsql/client": "^0.17.4",
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
-    "date-holidays": "^3.34.0",
-    "hono": "^4.12.33",
+    "date-holidays": "^3.36.0",
+    "hono": "^4.13.5",
     "toucan-js": "^4.1.1"
   }
 }

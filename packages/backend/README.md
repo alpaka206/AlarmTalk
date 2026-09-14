@@ -1,5 +1,10 @@
 # AlarmTalk Backend
 
+> ⭐ **동작 규칙은 [`docs/spec/`](../../docs/spec/README.md) 이 단일 출처다.**
+> 안드로이드·iOS·백엔드가 같이 본다. 화면 동작을 고치기 전에 거기부터 읽고,
+> 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
+
+
 Cloudflare Workers + Hono 기반 API 서버.
 
 ## 기술 스택
@@ -12,17 +17,8 @@ Cloudflare Workers + Hono 기반 API 서버.
 
 ## 환경 변수
 
-| 변수 | 설명 | 필수 |
-|---|---|---|
-| `TURSO_DATABASE_URL` | Turso DB URL | ✅ |
-| `TURSO_AUTH_TOKEN` | Turso 인증 토큰 | ✅ |
-| `JWT_SECRET` | JWT 서명 시크릿 (32자 이상 권장) | ✅ |
-| `PASSWORD_PEPPER` | 비밀번호 해싱 페퍼 | ✅ |
-| `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | 선택 |
-| `GOOGLE_VERTEX_CREDENTIALS_JSON` | Vertex AI service account JSON for translation and legacy dynamic text generation | Optional |
-| `GOOGLE_VERTEX_LOCATION` | Vertex AI location override | Optional |
-| `GOOGLE_VERTEX_MODEL` | Vertex AI model override | Optional |
-| `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` | Set to `true` only to re-enable Gemini-generated dynamic alarm text. Default is off; dynamic contexts use local/preset fallback. | Optional |
+전체 목록과 Apple 로그인·결제·APNs 키의 구분은 [`.dev.vars.example`](.dev.vars.example)이
+단일 출처다. 실제 값이 든 `.dev.vars.*`는 커밋하지 않는다.
 
 ## 로컬 실행
 
@@ -30,16 +26,22 @@ Cloudflare Workers + Hono 기반 API 서버.
 cd packages/backend
 cp .dev.vars.example .dev.vars.dev   # dev 환경 변수 설정
 cp .dev.vars.example .dev.vars.prod  # production 환경 변수 설정
-npm run dev                          # wrangler dev --env dev (localhost:8787)
+npm run dev                          # wrangler dev --env dev --env-file .dev.vars.dev (localhost:8787)
 ```
 
 ## 마이그레이션
 
 마이그레이션은 `src/lib/migrations.ts`에 인라인 정의됨.
-서버 시작 시 `POST /api/init-db`로 실행하거나, 코드에서 `initDB(env)` 호출.
+배포 워커의 `POST /api/init-db`로 실행한다. `INIT_DB_SECRET`이 필요하며 원격 실행은
+`scripts/run-remote-migrations.ts`가 범위별로 나눠 호출한다.
+
+시크릿은 `Authorization` 이 아니라 **`x-init-db-secret` 헤더**로 보낸다(`index.ts` 의 `canRunInitDb`).
+안 맞거나 워커에 `INIT_DB_SECRET` 이 없으면 404 다. 범위는 `fromId`/`toId` 로 지정한다 —
+Workers 서브리퀘스트 캡(~50) 때문에 인자 없이 부르면 전체 실행이라 위험하다.
 
 ```bash
-curl -X POST http://localhost:8787/api/init-db
+curl -X POST -H 'x-init-db-secret: <INIT_DB_SECRET>' \
+  'http://localhost:8787/api/init-db?fromId=1&toId=10'
 ```
 
 ## 테스트
@@ -59,9 +61,12 @@ npm run typecheck # tsc --noEmit
 | `/api/voice/*` | 음성 프로필 CRUD + 업로드 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
 | `/api/alarm/*` | 알람 CRUD + 스케줄러 |
-| `/api/billing/*` | 결제 스텁 + 이용권 코드 |
+| `/api/billing/*` | Google Play·App Store 결제 검증, 구독·이용권 |
+| `/api/code/*` | 통합 코드 등록(초대권·선물권·프로모) |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
-
-> iOS 를 재개하면 라우트·시크릿·컬럼을 함께 되살려야 한다.
-
+| `/api/push/*` | FCM·APNs 토큰 등록/해제 |
+| `/api/events/*` | 사용 기록 수집(앱이 오프라인에 쌓아 둔 배치) |
+| `/api/holiday/*` | 공휴일 조회 (인증 불필요) |
+| `GET /api/app/version` | 앱 버전 정책 (인증 불필요) |
+| `/admin/*` | 운영자 콘솔 — **`/api` 밑이 아니다.** ADMIN_SECRET 로 보호 |

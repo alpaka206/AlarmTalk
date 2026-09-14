@@ -17,7 +17,6 @@ import com.alarmtalk.app.network.toPublicHolidayDates
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -53,12 +52,20 @@ class AlarmRepository(
     // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
+    // 로그아웃 때 끄기가 실패해 아직 켜진 채인 알람. 메모리 게이트로만 막으면 프로세스가
+    // 죽는 순간 사라져, 재로그인이 명시적으로 로그아웃한 알람을 되살린다(Codex #699 P2).
+    private val pendingDisableAlarmIdsProvider: () -> Set<String> = { emptySet() },
+    private val onPendingDisableAdded: (Collection<String>) -> Unit = {},
+    private val onPendingDisableCleared: (Collection<String>) -> Unit = {},
     // 지금 실제로 울리는 중이거나 리시버→서비스 인계 중인 알람 id**들**(없으면 빈 집합).
     // 영속 상태(state=RINGING)가 아니라 이걸로 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이
     // 복구에서 영구 배제되지 않는다. **하나가 아니라 집합인 이유**는
     // [RingingService.ringingOrHandingOffAlarmIds] 주석 참고 — 울리는 알람과 인계 중인 알람이
     // 서로 다를 수 있고, 하나만 보면 뒤엣것이 무방비가 된다.
     private val ringingAlarmIdsProvider: () -> Set<String> = { RingingService.ringingOrHandingOffAlarmIds() },
+    // 사용 기록. **없어도 돌아야 한다** — 기록은 곁다리라, 테스트나 옛 호출부가 안 넘겨도
+    // 알람 동작은 그대로다(기본값 no-op).
+    private val usageEvents: UsageEventRecorder? = null,
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -96,12 +103,22 @@ class AlarmRepository(
      * 음성 다운로드)를 락 밖에 두므로 이 락이 오래 잡히지 않는다.
      *
      * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
-     * 추가할 것. (지금은 [degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile]
-     * 이 공통 private 인 [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
+     * 추가할 것. (지금은 공개 강등 진입점이 전부 공통 private 인
+     * [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
      * 이중 획득이 없다. [pullReceivedAlarms] 도 이 락을 잡은 채로 불리지 않는다 — 잠금 순서는
      * 항상 pullMutex → restoreMutex 한 방향이라 순환이 없다.)
      */
     private val restoreMutex = Mutex()
+
+    /**
+     * 알람 행을 고치는 **백그라운드 작업이 함께 잡아야 하는 락**.
+     *
+     * 워커가 "읽고 → 고치고 → 통째로 되쓰기" 를 하는 동안 사용자가 저장하면, 워커의
+     * 재조회는 그 창을 **좁힐 뿐 닫지 못한다**(같은 이유가 [setEnabled] 주석에 있다).
+     * `RemoteAlarmPullSyncService` 가 이미 이 락을 받아 쓴다 — 저장소 밖의 쓰기 경로는
+     * 전부 이 락을 지나야 한다.
+     */
+    internal val alarmMutationLock: Mutex get() = restoreMutex
 
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -180,6 +197,7 @@ class AlarmRepository(
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
+            remoteDeliveryVersion = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
@@ -267,6 +285,7 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            remoteDeliveryVersion = null,
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -285,6 +304,7 @@ class AlarmRepository(
         // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_CREATED, alarm)
         alarm
     }
 
@@ -400,6 +420,25 @@ class AlarmRepository(
         // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
         ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
+        recordAlarmEvent(UsageEvents.ALARM_UPDATED, updated)
+        // 편집으로 앞 문구를 놓았고, 그 오디오를 쓰는 알람이 이 기기에 하나도 안 남았으면
+        // '비사용중' 으로 적는다. 안 적으면 그 문구가 서버에서 **영원히 사용중**으로 남는다.
+        //
+        // ⚠ **파일은 지우지 않는다.** 30일 sweep 이 회수하고, 그 사이 같은 문구를 다시
+        //   고르면 서버 호출도 월 한도 차감도 없이 재사용된다(`manualAudioReadyLocally`).
+        //   여기서 지우면 되돌아올 때 한도를 깎게 된다.
+        // ⚠ **충돌 알람 삭제 뒤**여야 한다 — 그 행이 같은 캐시 키를 들고 있으면 참조로 세어진다.
+        manualMessageReleasedByEdit(current, updated)?.let { releasedMessageId ->
+            val previousCacheKey = current.audioCacheKey?.takeIf { it.isNotBlank() }
+            if (previousCacheKey == null || alarmDao.countByAudioCacheKey(previousCacheKey) == 0) {
+                usageEvents?.record(
+                    type = UsageEvents.MANUAL_MESSAGE_RELEASED,
+                    alarmId = current.id,
+                    voiceProfileId = current.voiceProfileId,
+                    messageId = releasedMessageId,
+                )
+            }
+        }
         updated
     }
 
@@ -414,6 +453,8 @@ class AlarmRepository(
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
         alarmScheduler.cancel(alarmId)
+        // 끄는 것도 '목록에서 사라짐' 과 같다 — 지금 울리고 있으면 소리를 먼저 끈다.
+        if (!enabled) stopRingingIfThisAlarm(alarmId)
 
         val updated = if (enabled) {
             val holidayPredicate = holidayCalendarStore.holidayPredicate(
@@ -480,6 +521,28 @@ class AlarmRepository(
      * [restoreMutex] 를 **이미 쥔 채** 부르는 삭제. `Mutex` 는 재진입이 안 되므로, 같은 락
      * 안에서 충돌 알람을 지우는 [createAlarm]·[updateAlarm] 은 이 쪽을 쓴다.
      */
+    /**
+     * **울리는 중인 알람을 없앨 때는 소리를 먼저 끈다**(2026-09-09 확인).
+     *
+     * ⚠ 스펙이 이미 요구하던 것이다 — `docs/spec/alarm-ringing.md` §3 「어떤 경로로 끝나든
+     * 소리를 먼저 끈다. 끄기·다시 울림·**목록에서 사라짐** — 전부」. 그런데 `setEnabled`·
+     * `deleteAlarm` 어디에도 `RingingService` 참조가 없어 **다음 예약만 지우고 지금 나는
+     * 소리는 그대로 뒀다.** 울림 화면을 벗어나도 소리는 계속 나므로(주인이 액티비티가 아니라
+     * 포그라운드 서비스다) 사용자는 앱 안에서 소리를 들으며 그 알람을 지울 수 있다 —
+     * 실제로 닿는 경로다.
+     *
+     * 지금 울리는 그 알람일 때만 보낸다. 다른 알람이면 아무 일도 하지 않는다.
+     */
+    private fun stopRingingIfThisAlarm(alarmId: String) {
+        if (RingingService.activeRingingAlarmId != alarmId) return
+        // ⚠ **`dismiss` 를 보내지 말 것**(코덱스 #729). 그 경로는 반복 알람을
+        //   `enabled = true` 로 되살리고 다음 회차를 예약한다 — 이 함수를 부르는 쪽은
+        //   방금 끄거나 지운 참이라, 사용자가 끈 알람이 조용히 다시 켜진다.
+        //   소리만 멈추고 행 상태는 부른 쪽이 쓴다.
+        runCatching { RingingService.stopOutputs(context, alarmId) }
+            .onFailure { Log.w(TAG, "Failed to stop ringing for removed alarm id=$alarmId", it) }
+    }
+
     private suspend fun deleteAlarmLocked(alarmId: String) {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
@@ -487,22 +550,69 @@ class AlarmRepository(
             return
         }
         alarmScheduler.cancel(alarmId)
+        stopRingingIfThisAlarm(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+        recordAlarmEvent(UsageEvents.ALARM_DELETED, current)
+        // ⚠ **오디오가 실제로 사라졌을 때만** '비사용중' 으로 적는다. 같은 캐시 키를 쓰는
+        // 다른 알람이 남아 있으면 파일은 그대로이므로 여전히 '사용중' 이다 — 그 판정은
+        // 폰만 할 수 있고(참조 카운트), 서버는 이 기록을 받아 적을 뿐이다.
+        if (cacheKey != null && current.isManualMessageAlarm() &&
+            alarmDao.countByAudioCacheKey(cacheKey) == 0
+        ) {
+            usageEvents?.record(
+                type = UsageEvents.MANUAL_MESSAGE_RELEASED,
+                alarmId = current.id,
+                voiceProfileId = current.voiceProfileId,
+                messageId = current.ttsMessageId,
+            )
+        }
+    }
+
+    /**
+     * 알람 사건 하나를 남긴다. **식별자만** 담는다 — 문구 원문은 이미 알람 행에 있고,
+     * 기록에 사본을 만들면 목소리 삭제·동의 철회 때 지워야 할 곳이 하나 더 늘어난다.
+     */
+    private fun recordAlarmEvent(type: String, alarm: AlarmEntity) {
+        val recorder = usageEvents ?: return
+        recorder.record(
+            type = type,
+            alarmId = alarm.id,
+            voiceProfileId = alarm.voiceProfileId,
+            messageId = alarm.ttsMessageId,
+        )
+        // 직접 입력 문구가 붙은 알람이면 그 문구가 이 기기에서 **사용중**이 됐다고 남긴다.
+        // 판정은 저장 갈래와 같은 모양이다 — 랜덤도 아니고 테마 클립도 아닌데 문구 id 가
+        // 있으면 직접 입력이다(`AlarmEditorState` 의 `isManualForSave` 와 같은 선).
+        if (alarm.isManualMessageAlarm() &&
+            (type == UsageEvents.ALARM_CREATED || type == UsageEvents.ALARM_UPDATED)
+        ) {
+            recorder.record(
+                type = UsageEvents.MANUAL_MESSAGE_ATTACHED,
+                alarmId = alarm.id,
+                voiceProfileId = alarm.voiceProfileId,
+                messageId = alarm.ttsMessageId,
+            )
+        }
     }
 
     /**
      * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
      *
-     * 지우지는 않는다 — 알람의 원본은 기기(Room)이고 서버는 백업/가족알람 전달용이라,
-     * 내 알람을 서버에서 다시 받아오는 경로가 없다. 지우면 같은 계정으로 다시 로그인해도
-     * 되살아나지 않는다.
+     * 지우지는 않는다 — **알람의 원본은 기기(Room)다.** 서버는 백업이 아니라 남에게
+     * 보내는 알람의 **전달 수단**일 뿐이고(전달이 끝나면 그 행마저 지운다 —
+     * `docs/spec/family-alarm.md` 1-2), 내 알람을 서버에서 다시 받아오는 경로는 아예
+     * 없다. 그러니 여기서 지우면 같은 계정으로 다시 로그인해도 되살아나지 않는다.
      *
      * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
      * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
-     * 않게 한다. 본인이 다시 로그인하면 [reschedulePendingAlarms] 가 되살린다.
+     * 않게 한다.
+     *
+     * ⚠ **행도 끈다**(2026-08-19 정책). 그래서 본인이 다시 로그인해도 [reschedulePendingAlarms]
+     * 가 되살리지 **않는다** — 그 sweep 는 켜진 행만 후보로 잡는다. 돌아온 사용자는 목록에서
+     * 알람이 꺼진 것을 보고 직접 켠다. 예전 이 문장은 "되살린다" 였고, 그건 뒤집힌 정책이다.
      * 목록 노출은 [observeAlarms] 의 소유자 필터가 막는다.
      *
      * 반환값은 예약을 내린 알람 수.
@@ -554,6 +664,18 @@ class AlarmRepository(
         }
     }
 
+    /** 한 행을 끈다. 성공 여부를 돌려준다 — 호출부가 재시도·게이트를 판단한다. */
+    private suspend fun disableOnSignOut(id: String, nowMillis: Long): Boolean =
+        runCatching {
+            alarmDao.setState(
+                id = id,
+                state = AlarmStates.DISABLED,
+                enabled = false,
+                updatedAtMillis = nowMillis,
+            )
+        }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
+            .isSuccess
+
     private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
@@ -562,6 +684,19 @@ class AlarmRepository(
         // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
         // 취소 루프 전체가 건너뛰어진다.
         all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
+        // ⚠ **행도 끈다 — 예약만 취소하고 `enabled=1` 로 남기지 말 것**(2026-08-19 지시).
+        // 예전에는 "재로그인하면 그대로 돌아오게" 하려고 켜진 채 뒀는데, **로그아웃은 이 앱을
+        // 그만 쓰겠다는 뜻**이라는 쪽이 맞다. 목소리는 서버에 있어 로그아웃하면 핵심 기능
+        // 자체를 못 쓰고 그동안 알람도 울리지 않는다 — 그렇게 지내다 돌아왔는데 옛 알람이
+        // 저절로 울리기 시작하는 편이 오히려 놀랍다.
+        //
+        // ⚠ **로그아웃 상태에서는 알람 화면에 들어갈 수도 없다**(로그인 게이트).
+        // 그래서 예약이 남으면 사용자가 **끌 방법이 없는 알람**이 우는 셈이다 —
+        // 위 주석의 "목록에서 감춰져 사용자가 끌 수도 없는데" 와 같은 말이다.
+        //
+        // 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
+        // `hs_status_inactive`("모든 알람이 꺼진 상태입니다.")가 홈 headline 으로 뜬다.
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms` — **한쪽만 고치지 말 것.**
         // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
         // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
         // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자
@@ -570,6 +705,61 @@ class AlarmRepository(
             // 새기기가 실패해도 예약은 이미 내려갔다. 임자 표시가 남아 다음 기회에 다시 시도한다.
             runCatching { claimUnownedAlarmsFor(signedOutUserId) }
                 .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        }
+        // ⚠ **끄는 것은 떠나는 계정 것만이다 — 위 예약 취소와 범위가 다르다**(Codex #699 P1).
+        // 취소는 되돌릴 수 있지만(주인이 다시 로그인하면 reschedulePendingAlarms 가 다시 건다)
+        // `enabled = false` 는 되돌릴 수 없다. 남의 계정 행까지 끄면 이렇게 된다:
+        // A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+        // **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+        //
+        // 소유권 확정 **뒤에** 판단하고, ⚠ **행을 다시 읽는다.** 위 `settlePendingAlarmOwnership`
+        // 은 **앞 계정(A)** 의 미해결 행을 A 로 새긴다 — 확정 전 스냅샷(`all`)으로 판정하면
+        // 그 행이 아직 null 로 보여 **지금 떠나는 B 것으로 오인해 A 의 알람을 꺼 버린다.**
+        // (이 함수가 막으려는 바로 그 사고를, 스냅샷을 재사용하는 것만으로 다시 낸다.)
+        //
+        // 다시 읽으면 A 것은 A 로, B 의 옛 행은 방금 `claimUnownedAlarmsFor` 가 B 로 새겼다.
+        // **다시 읽는 데 성공했는데도** null 이 남았다면 새기기가 실패한 것이라 임자를 알 수
+        // 없으므로 끄는 쪽에 넣는다(안 울리는 쪽이 안전하다). `signedOutUserId` 가 비어
+        // 누구인지 모를 때도 같다. **다시 읽기 자체가 실패한 경우는 아래에서 따로 가른다.**
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms`.
+        val now = System.currentTimeMillis()
+        val leaving = signedOutUserId?.takeIf { it.isNotBlank() }
+        val rereadOrNull = runCatching { alarmDao.getAllAlarms() }
+            .onFailure { error -> Log.w(TAG, "Failed to re-read alarms after ownership settle", error) }
+            .getOrNull()
+        // ⚠ **다시 읽기가 실패하면 옛 스냅샷으로 되돌아가지 말 것**(Codex #699 P1).
+        // 그 스냅샷에서는 방금 A 로 새겨진 행이 아직 `ownerUserId == null` 이라, 아래 판정이
+        // 그걸 **지금 떠나는 B 것으로 오인해 영구히 끈다** — 다시 읽기를 넣은 이유가 정확히
+        // 그 사고를 막는 것이었는데, 폴백이 그 구멍을 도로 뚫는다.
+        // 그래서 실패했을 때는 **임자가 모호한 행(owner == null)을 아예 건드리지 않는다.**
+        // 그 행들의 예약은 위에서 이미 취소했으므로 울지 않고, 켜짐은 주인이 돌아왔을 때
+        // 되살아난다 — 잃는 것이 없는 쪽이다.
+        val settled = rereadOrNull ?: all
+        val ownershipIsCertain = rereadOrNull != null
+        settled.filter { alarm ->
+            if (!alarm.enabled) return@filter false
+            if (leaving == null) return@filter true
+            when (alarm.ownerUserId) {
+                leaving -> true
+                null -> ownershipIsCertain
+                else -> false
+            }
+        }.let { targets ->
+            // ⚠ **끄기 실패를 로그만 남기고 넘어가지 말 것**(2026-08-19 Codex #699 P2).
+            // 예약은 이미 취소됐지만 행이 켜진 채 남으면, 같은 계정으로 다시 로그인할 때
+            // `reschedulePendingAlarms` 가 **명시적으로 로그아웃한 알람을 자동으로 되살린다.**
+            // Room/디스크의 일시적 실패가 대부분이라 **한 번 더** 시도하고,
+            // 그래도 안 되면 이 프로세스의 재예약을 막는 게이트를 세운다.
+            val failed = targets.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            val stillFailed = failed.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            if (stillFailed.isNotEmpty()) {
+                Log.w(TAG, "Failed to disable ${stillFailed.size} alarms on sign-out — persisting for retry")
+                // 이 프로세스에서 락을 기다리던 복원을 막고,
+                signOutWithoutSessionClearOwner = signedOutUserId
+                // **프로세스가 죽어도 남게** 적어 둔다 — 다음 기회에 마저 끈다.
+                runCatching { onPendingDisableAdded(stillFailed.map { it.id }) }
+                    .onFailure { error -> Log.w(TAG, "Failed to persist pending disables", error) }
+            }
         }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size
@@ -676,8 +866,7 @@ class AlarmRepository(
      * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
      * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
-     */
-    /**
+     *
      * @param expectedOwnerUserId 이 목록을 **가져온 계정**. 소유자를 고르는 시점에 계정이
      *   그대로인지 확인한다 — 목록은 A 로 받아 놓고 그 사이 B 로 바뀌면, B 의 알람에서 A 기준
      *   접근권으로 목소리를 **영구히** 벗긴다(되돌릴 수 없다, Codex #665 P1). 호출부의 사전
@@ -702,9 +891,80 @@ class AlarmRepository(
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
+    /**
+     * **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람으로 내린다.
+     *
+     * 삭제와 다른 점이 하나 있다: **프리셋(버킷) 알람은 살린다.** 서버가 같은 message id 로
+     * 새 목소리를 다시 만들어 게시하므로(`voice_prerender_queue.refresh_existing`) 여기서
+     * 벗기면 되돌릴 수 없이 잃는다. 직접 입력은 반대로 서버가 `messages.audio_url` 을 비워
+     * **다시 받을 수도 없다** — 기기에 남은 것은 지운 사람의 목소리뿐이라 내리는 것만이 답이다.
+     *
+     * ⚠ 교체는 프로필 **id 를 그대로 재사용**한다. 그래서 접근권 대조
+     * ([degradeAlarmsWithInaccessibleVoice])로는 영원히 안 걸린다 — 목록에 그대로 있기 때문이다.
+     *
+     * @param expectedOwnerUserId 이 강등을 확정한 계정. 백그라운드 워커에서 부를 때 반드시 넘긴다
+     *   (계정 전환 중이면 남의 알람을 되돌릴 수 없게 부순다 — Codex #646/#665 규약).
+     *
+     * @param allowSystemVoice **기본(시스템) 목소리도 대상으로 삼는다.**
+     *
+     * ⚠ 평소에는 시스템 목소리를 **일부러 건너뛴다** — 그건 앱이 주는 목소리라 접근권을
+     *   잃는 일이 없고, 회수 경로가 건드리면 멀쩡한 알람을 깎는다.
+     *   그런데 **제자리 교체**(2026-09-03 `#111`)는 다르다: 프로필 id 는 그대로 두고
+     *   provider 보이스만 바꾸므로, 그 목소리로 만들어 둔 **직접 입력 알람의 오디오는
+     *   낡은 목소리 그대로**다 — 이름과 미리듣기는 새 목소리인데 울리는 소리만 옛것이다.
+     *   그 알람은 재바인더 두 갈래 어디에도 안 걸린다(테마도 없고 `voiceRandomPrompt` 도
+     *   꺼져 있다). 그래서 **무효화 표식 경로만** 이 문을 연다(리뷰 21차).
+     *   회수 경로(`false`)는 그대로 둔다 — 거기서 열면 없던 강등이 생긴다.
+     *
+     * @param invalidatedBeforeMillis **이 시각보다 뒤에 만든 오디오는 건드리지 않는다.**
+     *
+     * ⚠ 표식(`custom_audio_invalidated_at`)은 "이 시각 이전에 만든 오디오가 낡았다" 는
+     *   뜻이다(2026-09-03 리뷰 23차). 그런데 시각을 안 보면, 교체가 **이미 배포된 뒤에**
+     *   만든 알람 — 즉 새 목소리로 제대로 합성된 것 — 까지 톤으로 깎는다. 서버가 먼저
+     *   나가고 기기가 늦게 표식을 읽는 이번 롤아웃에서 실제로 생기는 창이다.
+     *   `null` 이면 예전처럼 시각을 보지 않는다(세대를 모르는 옛 신호).
+     *
+     * ⚠ **비교 대상은 오디오를 만든 시각이지 알람 행의 수정 시각이 아니다**(리뷰 27차).
+     *   `updatedAtMillis` 는 시각·이름만 고쳐도 앞으로 가고, **울리기만 해도** 간다
+     *   (`markRinging` 이 그 값을 갱신한다). 그걸 보면 매일 울리는 알람은 스스로 면제를
+     *   받아 **지운 사람의 목소리로 계속 울게 된다** — 표식은 0건 강등에도 확정되므로
+     *   다음 회차에 다시 잡히지도 않는다. 오디오 시각을 모르면(캐시 키가 없거나 파일이
+     *   사라졌으면) **강등한다** — 표식 이전 규칙 그대로다.
+     *
+     * ⚠ **표식은 서버 시계(UTC), 오디오 나이는 기기 시계다 — 알고 두는 창이다.**
+     *   기기 시계가 그 오디오의 나이보다 더 앞서 있으면 낡은 오디오가 빠져나가고,
+     *   뒤처져 있으면 표식 뒤에 만든 오디오를 깎는다. 없애려면 서버가 준 세대 문자열을
+     *   오디오와 함께 적어 **순서 비교**해야 한다(동등 비교가 아니다 — 표식은 낡은 채
+     *   들어올 수 있다). 상세는 `docs/spec/voice-and-message.md` §4-1(제자리 교체).
+     */
+    suspend fun degradeCustomMessageAlarmsUsingVoiceProfile(
+        voiceProfileId: String,
+        expectedOwnerUserId: String?,
+        allowSystemVoice: Boolean = false,
+        invalidatedBeforeMillis: Long? = null,
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
+            alarm.voiceProfileId == voiceProfileId &&
+                (allowSystemVoice || !isSystemVoiceId(alarm.voiceProfileId)) &&
+                alarm.usesCustomMessageVoice() &&
+                // 표식보다 나중에 **만든 오디오**는 이미 새 목소리다.
+                (
+                    invalidatedBeforeMillis == null ||
+                        audioCreatedAtMillis(alarm) < invalidatedBeforeMillis
+                    )
+        }
+
+    /** 그 알람이 물고 있는 오디오를 만든 시각. 모르면 0 — 즉 '낡았다' 쪽으로 판정한다. */
+    private fun audioCreatedAtMillis(alarm: AlarmEntity): Long =
+        alarm.audioCacheKey
+            ?.takeIf { it.isNotBlank() }
+            ?.let { alarmAudioStore.cachedAudioCreatedAtMillis(it) }
+            ?: 0L
+
     // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).
-    // 두 공개 진입점([degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile])이
-    // 모두 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입 불가).
+    // **모든 공개 진입점**이 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입
+    // 불가 — 진입점에서 또 잡으면 그대로 교착이다). 진입점을 새로 만들 때도 반드시 이 함수를
+    // 거칠 것.
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
         expectedOwnerUserId: String?,
         match: (AlarmEntity) -> Boolean,
@@ -817,12 +1077,55 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
-            val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
-                !alarm.localAudioUri.isNullOrBlank() ||
+    // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
+    // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
+    // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는
+    // 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가 뜬다. iOS 짝은
+    // `LocalAlarmRecord.usesPaidVoiceFeatures` · `PaidVoiceGate.usesPaidVoice` — 같이 고친다.
+            val usesVoice = !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) {
+                // 옛 규칙(직접 녹음 = 유료)으로 이미 잠긴 행은 여기서 **되돌린다.**
+                // 그냥 건너뛰면 잠긴 채 남는데, 이제 잠글 축이 사라졌으니 풀어 줄 다른
+                // 경로가 없다. 아래 '옛 버그로 잠긴 받은 알람' 과 같은 모양이다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
+            // ⚠ **받은 알람은 '받는 사람 플랜' 으로 다스리지 않는다 — 축이 다르다.**
+            // 받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. 공유가 끊기면
+            // 서버가 직접 걷어내고(`paid-voice-cleanup.ts` 가 `is_received` 까지
+            // sound-only 로 UPDATE) 그 결과가 pull sync 로 내려온다.
+            //
+            // 여기서 플랜으로 한 번 더 잠그면 **결제 보류(유예) 중에 오발한다** —
+            // `resolvePlanAfterSuspend` 는 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로,
+            // 카드가 잠깐 실패한 사이 파트너가 보낸 알람의 목소리가 잠긴다. 게다가
+            // `unlockPaidAlarmTalks` 는 **받는 사람이 유료가 될 때만** 돌아서, 결제가
+            // 복구돼도 그룹에서 나간 뒤라면 `preLockPlayMode` 가 영구히 남는다.
+            // iOS 는 `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` 로 처음부터 제외한다.
+            if (alarm.origin != AlarmOrigins.LOCAL_OWNED) {
+                // 옛 버그로 이미 잠긴 받은 알람은 여기서 **되돌린다.** 그냥 건너뛰면
+                // 잠긴 채로 남는데, 플랜 축이 사라졌으니 풀어 줄 다른 경로가 없다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
             // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 임자가 확정된 미기록
             // (레거시 null) 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
             // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
@@ -857,8 +1160,15 @@ class AlarmRepository(
      * ownerUserId 일치만 본다(null 허용 시 다른 계정이 레거시 잠금을 복원·스케줄하는 크로스계정 창).
      */
     // [lockPaidAlarmTalks] 와 같은 이유로 직렬화한다 — 여기도 행을 고치고 OS 예약을 다시 건다.
-    suspend fun unlockPaidAlarmTalks(): Int = restoreMutex.withLock {
+    /**
+     * @param expectedOwnerUserId **자격을 확인한 계정.** 넘기면 그 계정일 때만 복원한다 —
+     *   A 로 판정해 놓고 코루틴이 도는 사이 B 로 바뀌면, 그대로 두면 A 의 판정으로 **B 의
+     *   잠긴 알람을 목소리로 되살린다**(B 는 새 세션이라 무료 잠금이 아직 안 돌 수 있다).
+     *   잠금 쪽 `lockPaidAlarmTalks(expectedOwnerUserId)` 와 같은 규칙이다(2026-09-01 리뷰).
+     */
+    suspend fun unlockPaidAlarmTalks(expectedOwnerUserId: String? = null): Int = restoreMutex.withLock {
         val currentUser = currentUserIdProvider() ?: return 0
+        if (expectedOwnerUserId != null && expectedOwnerUserId != currentUser) return 0
         val targets = alarmDao.getAllAlarms().filter {
             !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }
@@ -875,50 +1185,6 @@ class AlarmRepository(
             Log.i(TAG, "Restored paid voice alarms after re-subscription count=${targets.size}")
         }
         return targets.size
-    }
-
-    suspend fun copyAlarm(alarmId: String): AlarmEntity {
-        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        val now = System.currentTimeMillis()
-        val copiedTime = copyTargetTime(current.hour, current.minute)
-        requireUniqueTime(copiedTime.hour, copiedTime.minute)
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(
-            countryCode = currentHolidayCountry(),
-            startDate = currentLocalDate(now),
-        )
-        val copied = current.copy(
-            id = UUID.randomUUID().toString(),
-            label = current.label.takeIf { it.isNotBlank() }
-                ?.let { context.getString(R.string.rd_copied_alarm_label_suffix, it) }
-                ?: context.getString(R.string.rd_copied_alarm_label),
-            hour = copiedTime.hour,
-            minute = copiedTime.minute,
-            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = copiedTime.hour,
-                minute = copiedTime.minute,
-                repeatDaysMask = current.repeatDaysMask,
-                holidayOff = current.holidayOff,
-                nowMillis = now,
-                isHoliday = holidayPredicate,
-            ),
-            remoteAlarmId = null,
-            lastSyncedAtMillis = null,
-            syncState = AlarmSyncStates.LOCAL_ONLY,
-            origin = AlarmOrigins.LOCAL_OWNED,
-            ownerUserId = currentUserIdProvider(),
-            // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
-            // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
-            // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
-            preLockPlayMode = null,
-            enabled = true,
-            state = AlarmStates.SCHEDULED,
-            createdAtMillis = now,
-            updatedAtMillis = now,
-        )
-        alarmScheduler.schedule(copied)
-        alarmDao.upsert(copied)
-        Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
-        return copied
     }
 
     suspend fun markRinging(alarmId: String) {
@@ -1011,27 +1277,81 @@ class AlarmRepository(
      *
      * 워커가 락을 먼저 잡아도 결과는 맞다: 스누즈가 나중에 최종 승자가 된다.
      */
-    suspend fun snooze(alarmId: String): AlarmEntity? = restoreMutex.withLock {
+    /**
+     * 울림 화면에서 다시 울림 간격을 바꾼다(＋/−). 다음 '다시 울리기' 부터 이 값이 쓰이고,
+     * 행에 남으므로 다음 회차에도 이어진다.
+     *
+     * 범위 밖 값은 **조용히 자르지 않고** 무시한다 — 화면이 이미 끝값에서 버튼을 흐리게
+     * 두므로 여기 닿는 값은 버그이고, 잘라 저장하면 그 버그가 데이터로 굳는다.
+     */
+    suspend fun updateSnoozeMinutes(alarmId: String, minutes: Int): Unit = restoreMutex.withLock {
+        if (minutes !in SnoozeMinutes.range) {
+            Log.w(TAG, "Ignoring out-of-range snooze minutes=$minutes id=$alarmId")
+            return
+        }
+        runCatching {
+            val current = alarmDao.getById(alarmId) ?: return
+            if (current.snoozeMinutes == minutes) return
+            // ⚠ **`syncState` 를 함께 올린다**(코덱스 #729). 컬럼만 고치고 `SYNCED` 를 두면
+            //   `AlarmSyncService` 의 업로드 대상(LOCAL_ONLY·DIRTY·FAILED)에 안 들어가
+            //   울림 화면에서 고른 간격이 **서버에 영영 안 올라간다.** 받은 알람은
+            //   `nextLocalSyncState` 가 알아서 SYNCED 로 남긴다(서버 행은 전달 수단일 뿐).
+            // ⚠ **전체 행 upsert 로 쓰지 말 것**(코덱스 #729 2차). 읽어 둔 스냅샷을 통째로
+            //   되쓰면, 그 사이 동기화가 새로 받은 `remoteAlarmId` 를 **옛 값으로 덮는다** —
+            //   다음 동기화가 서버에 알람을 하나 더 만든다. 건드릴 컬럼만 UPDATE 한다.
+            alarmDao.updateSnoozeMinutes(
+                id = alarmId,
+                minutes = minutes,
+                syncState = current.nextLocalSyncState(),
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to update snooze minutes id=$alarmId", error)
+        }
+    }
+
+    /**
+     * @param minutesOverride 울림 화면의 ＋/− 로 방금 고른 간격. 있으면 **이 값으로** 미루고
+     *   행에도 그 값을 남긴다.
+     *
+     * ⚠ **넘겨받는 이유는 경합 때문이다**(코덱스 #729). ＋/− 는 화면에서 비동기로 저장되는데,
+     *   바로 이어 '다시 울리기' 를 누르면 그 쓰기가 끝나기 전에 여기가 행을 읽어 **옛 간격으로
+     *   미뤄진다** — 화면은 6분이라 말하고 알람은 5분 뒤에 온다. 값을 직접 실으면 순서가
+     *   무엇이든 결과가 같다.
+     */
+    suspend fun snooze(alarmId: String, minutesOverride: Int? = null): AlarmEntity? = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")
             return null
         }
-        if (!current.snoozeEnabled) {
-            Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
-            return null
-        }
-        if (
-            current.snoozeRepeatLimit != SnoozeRepeatLimits.FOREVER &&
-            current.snoozeCount >= current.snoozeRepeatLimit
-        ) {
-            Log.i(TAG, "Snooze ignored because repeat limit reached id=$alarmId")
-            return null
-        }
+        val snoozeMinutes = minutesOverride?.takeIf { it in SnoozeMinutes.range } ?: current.snoozeMinutes
+        // ⚠ **`snoozeEnabled` 를 보지 않는다**(2026-09-09). 편집기에서 그 설정을 없앴으므로
+        //   저장된 값은 옛 행에만 남아 있고, 그걸 읽으면 그 알람만 '다시 울리기' 를 눌렀을 때
+        //   조용히 꺼진다. 컬럼은 왕복시키되 아무도 읽지 않는다.
+        // ⚠ **횟수 한도를 여기서 다시 만들지 말 것**(2026-09-09 지시 "무제한"). 예전에는
+        //   `snoozeRepeatLimit` 를 읽어 한도를 넘으면 null 을 돌려줬고, 그러면
+        //   `RingingService.snooze` 가 **알람을 끝냈다** — 사용자는 '다시 울리기' 를 눌렀는데
+        //   알람이 꺼지는 것을 봤다.
+        //   `snoozeRepeatLimit` 컬럼은 남아 있지만 **아무도 읽지 않는다**
+        //   (`AlarmEntity.canSnoozeNow` 도 `snoozeEnabled` 하나만 본다). 서버로도 나가지
+        //   않는다 — `network/` 의 어떤 매퍼에도 이 필드가 없다. 즉 순수 로컬 사장 컬럼이라,
+        //   CLAUDE.md 의 「안 쓰는 컬럼은 DROP 한다」 규약에 따라 **다음 마이그레이션에서
+        //   지워도 된다**(이번 변경에서는 범위를 넓히지 않으려고 두었다).
 
         val now = System.currentTimeMillis()
         val next = current.copy(
-            fireAtMillis = now + current.snoozeMinutes * 60_000L,
+            fireAtMillis = now + snoozeMinutes * 60_000L,
+            snoozeMinutes = snoozeMinutes,
+            // ⚠ **간격이 바뀌었으면 동기화 대상으로 올린다**(코덱스 #729 2차). 화면의
+            //   비동기 저장이 액티비티가 끝나며 취소되면 이 쓰기가 유일한 커밋이 되는데,
+            //   `SYNCED` 를 그대로 두면 서버에 영영 안 올라간다. 안 바뀌었으면 건드리지
+            //   않는다 — 다시 울림 자체는 로컬 상태다.
+            syncState = if (snoozeMinutes != current.snoozeMinutes) {
+                current.nextLocalSyncState()
+            } else {
+                current.syncState
+            },
             enabled = true,
             snoozeCount = current.snoozeCount + 1,
             state = AlarmStates.SNOOZED,
@@ -1107,9 +1427,11 @@ class AlarmRepository(
             // 계정이 실제로 로그인한' 시점에 onSignedIn 의 cancelAlarmsNotOwnedBy 가 한다.
             //
             // **비로그인일 때 되살릴 수 있는 건 '자동으로 끊긴 그 계정' 의 알람뿐이다.**
-            // detachAlarmsOnSignOut 은 예약만 취소하고 행은 enabled=1 로 남기므로(재로그인하면
-            // 되살리려고), 비로그인을 전부 '이 기기 것' 으로 다루면 사용자가 끝낸 계정의 알람이
-            // 콜드스타트·부팅·업데이트마다 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.**
+            // 자동 401 은 행을 켠 채 두므로(사용자가 그만두겠다고 한 게 아니다), 비로그인을
+            // 전부 '이 기기 것' 으로 다루면 그 계정들 알람이 콜드스타트·부팅·업데이트마다
+            // 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.**
+            // (명시적 로그아웃은 detachAlarmsOnSignOut 이 행까지 끄므로 여기 후보에 없다 —
+            //  2026-08-19 정책 변경 전에는 그쪽도 켜진 채 남아 이 게이트가 유일한 방어였다.)
             // 한 기기에 여러 계정이 오갔다면 그 계정들 알람이 한꺼번에 살아난다(Codex #665 P1).
             //
             // 복원 대상이 없으면(명시적 로그아웃·이 빌드 이전 상태) 소유자 있는 행은 건드리지
@@ -1127,6 +1449,19 @@ class AlarmRepository(
             if (blockedOwner != null && (alarm.ownerUserId == null || alarm.ownerUserId == blockedOwner)) {
                 alarmScheduler.cancel(alarm.id)
                 return@forEach
+            }
+            // ⚠ **밀린 끄기를 먼저 마저 한다**(Codex #699 P2). 로그아웃 때 쓰기가 실패해 켜진
+            // 채 남은 행들이다 — 여기서 안 끄면 바로 아래 재예약이 **명시적으로 로그아웃한
+            // 알람을 되살린다.**
+            val pendingDisable = runCatching { pendingDisableAlarmIdsProvider() }.getOrDefault(emptySet())
+            if (pendingDisable.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val done = pendingDisable.filter { id ->
+                    alarmScheduler.cancel(id)
+                    disableOnSignOut(id, now)
+                }
+                runCatching { onPendingDisableCleared(done) }
+                    .onFailure { error -> Log.w(TAG, "Failed to clear pending disables", error) }
             }
             val restorableOwner = currentUser ?: sessionExpiredOwnerUserIdProvider()
             if (alarm.ownerUserId != null && alarm.ownerUserId != restorableOwner) {
@@ -1448,7 +1783,7 @@ class AlarmRepository(
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
         require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
-        require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
+        require(draft.snoozeMinutes in SnoozeMinutes.range) { "Snooze must be between ${SnoozeMinutes.MIN} and ${SnoozeMinutes.MAX} minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
         require(draft.voiceVolumePercent in 0..100) { "Voice volume must be between 0 and 100." }
@@ -1507,9 +1842,6 @@ class AlarmRepository(
         }
         return existing
     }
-
-    private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
-        java.time.LocalTime.of(hour, minute).plusMinutes(10)
 
     private fun currentLocalDate(nowMillis: Long): java.time.LocalDate =
         Instant.ofEpochMilli(nowMillis)
@@ -1589,19 +1921,22 @@ class AlarmRepository(
         }
     }
 
-    private fun AlarmEntity.nextLocalSyncState(): String =
-        when {
-            origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
-            remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
-            else -> AlarmSyncStates.DIRTY
-        }
-
     private companion object {
         // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
-        val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
+        val MATCHING_BUCKET_IDS = MatchingBucketIds
     }
 }
+
+/**
+ * **조건/테마로 클립을 고르는 버킷** — 순차 회전이 아니라 절대 인덱스로 고른다.
+ *
+ * ⚠ 이 버킷들은 `contextVariantIndex`(날씨) 나 사주 입력(운세)이 있어야 제 클립을 고른다.
+ *   그 값이 없는 채로 전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로,
+ *   운세는 빈 프로필 해시로 떨어진다. 그래서 그 값을 못 채우는 경로는 이 목록을 보고
+ *   비켜 가야 한다(`StockClipLanguageRebinder`).
+ */
+val MatchingBucketIds = setOf("weather", "fortune")
 
 data class BucketClipSelection(
     val variantIndex: Int,
@@ -1707,6 +2042,40 @@ internal fun nextWeatherVariantState(
         resolvedAtMillis = currentResolvedAtMillis,
     )
     else -> WeatherVariantState(index = draftIndex, resolvedAtMillis = null)
+}
+
+/**
+ * 이 알람이 **직접 입력 문구**를 물고 있는가 — 붙임·놓음이 같은 선을 쓰게 하는 이름.
+ *
+ * ⚠ **호출부마다 손으로 조립하지 말 것.** 붙임 쪽에만 이 판정이 있고 놓음 쪽에는 없어서,
+ * 테마·생성형 알람을 지우거나 고칠 때도 '직접 입력 문구를 놓았다' 고 적고 있었다
+ * (2026-09-07 리뷰 34차). 테마 알람도 `ttsMessageId`·`audioCacheKey` 를 둘 다 들고 있어
+ * 그 둘만 보면 갈리지 않는다.
+ *
+ * ⚠ **[usesCustomMessageVoice] 에서 **유도**한다 — 항을 다시 적지 말 것**(리뷰 35차).
+ * 손으로 적었더니 거기 있는 두 항(`stock_` 캐시 키 제외, `voiceCategory`)이 빠져,
+ * **버킷 없이 프리셋 클립 하나만 문 옛 행**이 직접 입력으로 통과했다 — 규칙을 하나로
+ * 모으겠다면서 세 번째 철자를 만든 셈이다. 여기서 더하는 것은 문구 id 하나뿐이다
+ * (기록에 실을 id 가 없으면 적을 것도 없다).
+ */
+internal fun AlarmEntity.isManualMessageAlarm(): Boolean =
+    usesCustomMessageVoice() && !ttsMessageId.isNullOrBlank()
+
+/**
+ * 편집으로 **놓여난** 직접 입력 문구 id. 참조 카운트를 세기 전 단계다.
+ *
+ * ⚠ **같은 문구가 그대로 붙어 있으면 null 이다.** 문구는 그대로인데 오디오만 다시 만든
+ * 경우까지 해제로 적으면, 해제와 붙임이 **같은 밀리초**에 찍힐 수 있고(둘은 각각 기록된다)
+ * 업로드 정렬은 시각 하나뿐이라 순서가 뒤집힌다. 그때 서버의 `in_use_updated_at <= ?` 가
+ * 늦게 온 해제를 이기게 해서, **붙어 있는 문구가 비사용중으로** 뒤집힌다.
+ */
+internal fun manualMessageReleasedByEdit(current: AlarmEntity, updated: AlarmEntity): String? {
+    // ⚠ **판정은 `current`(놓는 쪽) 로 한다.** `updated` 로 하면 직접 입력 → 테마 편집에서
+    //   앞 문구를 영영 안 놓아 준다 — 고치려던 것보다 나쁜 상태다.
+    if (!current.isManualMessageAlarm()) return null
+    val previousMessageId = current.ttsMessageId?.takeIf { it.isNotBlank() } ?: return null
+    if (previousMessageId == updated.ttsMessageId) return null
+    return previousMessageId
 }
 
 /**

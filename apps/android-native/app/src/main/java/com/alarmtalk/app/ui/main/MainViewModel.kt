@@ -4,9 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -19,13 +16,13 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.bundledSystemVoiceProfiles
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
@@ -94,6 +91,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
     internal val accessSnapshotStore = AccessSnapshotStore(application)
+    /** 권한 스냅샷에 쓰는 **유일한 문**. 직접 스냅샷을 쓰지 말 것. */
+    internal val entitlementWriter = EntitlementWriter(application)
     private val initialAuthSession = authSessionStore.read()
     private val initialAccessSnapshot = initialAuthSession
         ?.user
@@ -134,6 +133,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         listener = object : PlayBillingManager.Listener {
             override fun onPurchaseReady(purchaseToken: String, productId: String) {
                 viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
+            }
+
+            override fun onPurchaseRestored(
+                purchaseToken: String,
+                productId: String,
+                userInitiated: Boolean,
+                ownerUserId: String?,
+            ) {
+                // 사용자가 방금 산 게 아니다 — 이동은 어느 쪽이든 하지 않는다.
+                // 다만 **사용자가 누른 복원은 결과를 말해 줘야 한다**(2026-09-01 리뷰).
+                viewModelScope.launch {
+                    confirmGooglePurchase(
+                        purchaseToken,
+                        productId,
+                        origin = if (userInitiated) {
+                            PurchaseConfirmOrigin.UserRestore
+                        } else {
+                            PurchaseConfirmOrigin.AutoReconcile
+                        },
+                        startedByUserId = ownerUserId,
+                    )
+                }
             }
 
             override fun onPurchasePending(productId: String) {
@@ -289,10 +310,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 목록에서 감추는데, OS 예약은 그대로 남아 AlarmReceiver 가 Room 에서 바로 읽어 울린다.
      * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
      */
-    internal suspend fun clearSignedInSession() {
+    /**
+     * @param departingUserId 떠나는 계정. 호출부가 **네트워크 왕복을 시작하기 전에** 잡아
+     *   넘긴다.
+     *
+     * ⚠ **여기서 [authSession] 을 읽는 것만으로는 부족하다**(2026-08-19 감사 P2).
+     * 로그아웃은 `api.logout()` 으로 `token_epoch` 를 먼저 올리는데, 그러면 진행 중이던
+     * 다른 요청이 401 로 돌아와 `handleSessionExpired` 가 세션을 비운다. 그 뒤 여기서 읽으면
+     * **null** 이고, null 은 '누구인지 모름' 이라 [detachAlarmsOnSignOut] 이 **켜진 알람을
+     * 전부** 끈다 — 자동 401 로 세션만 잃고 기다리던 **다른 계정의 알람까지 영구히 꺼진다.**
+     * 로그아웃 버튼 연타로도 같은 상태가 된다.
+     */
+    internal suspend fun clearSignedInSession(departingUserId: String? = null) {
         // 로그아웃이 끝날 때까지 401 처리기를 잠근다 — 이유는 [signingOut] 주석 참고.
         signingOut = true
-        val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        val signedOutUserId = departingUserId?.takeIf { it.isNotBlank() }
+            ?: authSession?.user?.id?.takeIf { it.isNotBlank() }
         // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
         // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
         // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
@@ -311,6 +344,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
         // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
         clearCurrentDefaultVoicePreferences()
+        // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
+        // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
+        // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
+        // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
+        // ⚠ **지우기와 표 무효화는 한 번에**(Codex #703 P1). 둘로 나누면 그 사이에 앞 계정의
+        // 저장이 끼어들어 지운 파일을 되살리고, 계정 B 가 A 의 클론 매니페스트(목소리 이름·
+        // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
+        // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
+        com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
+        stockClipManifestFetched = false
         // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
         // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
         clearSessionKeepingAlarms()
@@ -321,6 +364,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 종료에 쓴다 — 여기서 지우는 것은 '이 계정으로서의 세션 상태'까지다.
      */
     private fun clearSessionKeepingAlarms() {
+        // ⚠ **떠 있는 매니페스트 조회의 표는 여기서도 죽인다**(Codex #703 P1). 파일은 일부러
+        // 남기지만(위 주석 — 같은 사람 재로그인 시 오프라인 사용), 세션이 끝난 뒤 도착한
+        // 앞 계정의 응답이 그 파일을 **다시 공개하는 것**은 막아야 한다. WorkManager 요청은
+        // 세션과 무관하게 살아 있어 취소로는 못 막는다.
+        com.alarmtalk.app.data.StockClipManifestStore.invalidateOutstandingTickets()
         runCatching { authSessionStore.clear() }
         clearUserScopedRemoteState()
         authSession = null
@@ -430,7 +478,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var syncBusy by mutableStateOf(false)
         internal set
 
-    var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
+    /**
+     * 교체 정리(강등·재예약)가 끝나지 않아 **아직 고를 수 없는** 목소리들.
+     *
+     * ⚠ **목록에서 빼는 것이 아니다**(2026-08-25 지시). 감추면 사용자에게는 목소리가
+     * 사라진 것으로 보여 고장으로 읽힌다 — 자리에 두고 흐리게 그린 뒤 이유를 말한다.
+     * 고를 수 있게 두면 그 사이 만든 새 알람을 다음 회차가 함께 벗긴다(강등 대상은
+     * 프로필 id 로만 고른다). iOS `VoiceStudioViewModel.replacementSuppressedProfileIDs`.
+     */
+    var settlingVoiceProfileIds by mutableStateOf<Set<String>>(emptySet())
+        internal set
+
+    /**
+     * 디스크에 **못 남긴** '정리 중' 표시들. 디스크를 다시 읽어 올 때 합집합으로 얹는다.
+     *
+     * ⚠ 없으면 디스크 재조회가 **맞는 메모리 값을 덮는다**(Codex #703 P1) — 쓰기에 실패한
+     * 표시는 디스크에 없으므로, 목록을 새로 받는 순간 그 목소리가 다시 고를 수 있게 된다.
+     */
+    internal var settlingUnpersistedIds: Set<String> = emptySet()
+
+    var voiceProfiles by mutableStateOf(bundledSystemVoiceProfiles())
         internal set
 
     var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
@@ -446,14 +513,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileLoadFinished by mutableStateOf(false)
         internal set
 
-    var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
-        internal set
-
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
+
+    /**
+     * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
+     *
+     * ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
+     * 기본 목소리와 등록 목소리는 개수가 다르므로 목소리 종류로 갈라 본다.
+     */
+    var expectedVariants by mutableStateOf<com.alarmtalk.app.network.ExpectedVariantCounts?>(null)
+
+    /** 목소리별 준비도(생성+다운로드). 준비 페이지와 편집기 관문이 함께 본다. */
+    var clipReadiness by mutableStateOf<List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>>(emptyList())
         internal set
 
-    var ttsMessageBusy by mutableStateOf(false)
+    /**
+     * 공유받은 목소리인데 **소유자 쪽 생성이 아직 안 끝난** 것.
+     *
+     * 받는 사람이 할 수 있는 일이 없으므로 진행률에 넣지 않는다(넣으면 영원히 안 차는
+     * 몫이 되고, '다시 시도' 도 소유자 큐라 누를 수 없다). 준비 화면이 다른 문구로 말한다.
+     */
+    var clipReadinessAwaitingOwner by mutableStateOf<Set<String>>(emptySet())
         internal set
+
+    /**
+     * 이번 실행에서 서버 매니페스트를 받았는가. **디스크 시드와 구분하기 위한 값이다** —
+     * `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간 재조회가 막혀, 운영이 추가한
+     * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     */
+    internal var stockClipManifestFetched = false
+
+    /**
+     * 매니페스트 조회의 **세대**. 늦게 도착한 앞선 응답이 새 매니페스트를 덮는 것을 막는다.
+     *
+     * ⚠ 이 값이 없으면 권위 자체가 뒤로 간다(Codex #703 P1). `loadStockClips` 는
+     * `viewModelScope.launch` 라 겹칠 수 있는데, 교체 **전에** 시작한 요청이 나중에 끝나면
+     * `stockClips` 와 디스크 매니페스트를 옛 것으로 되돌린다. 그러면 캐시 쓰기 경로의
+     * '지나간 응답인가' 대조가 **되살아난 옛 주소**를 기준으로 삼아, 서버의 현재 음원을
+     * 지나간 것으로 판정해 회수된 목소리를 그대로 남긴다.
+     */
+    internal var stockClipManifestRevision: Int = 0
 
     var socialBusy by mutableStateOf(false)
         internal set
@@ -474,6 +573,98 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var billingBusy by mutableStateOf(false)
+
+    /**
+     * **스토어가 확인해 준 등급**(plan key). null 이면 '무료' 가 아니라 **아직 확인 못 함**이다.
+     *
+     * 「스토어가 권위다」(`docs/spec/billing-lifecycle.md`)를 판정에 실제로 반영하는 값이다.
+     * 예전에는 앱이 보는 구독 상태가 100% 서버 응답이라, Play 가 자동갱신했는데 서버 반영이
+     * 늦으면 **돈을 내는 사용자가 잠겼다**(2026-08-31). iOS 는 `SubscriptionManager.currentTier`
+     * 로 이미 하던 일이다.
+     *
+     * ⚠ Play 에는 iOS `Transaction.updates` 같은 **푸시가 없다** — 실시간 신호는 서버로 가는
+     * RTDN 이다. 그래서 여기서는 **폴링**한다(앱 시작·전경 진입).
+     */
+    /**
+     * ⚠ **콜드 스타트에 캐시에서 되살린다**(2026-09-01 리뷰). null 로 시작하면, 앱을 켠
+     * 직후 BillingClient 가 연결되지 않는 동안(비행기모드·Play 서비스 문제) 전경 게이트가
+     * 전부 '스토어 신호 없음' 으로 읽는다 — `refreshStoreEntitlement` 는 못 물어봤을 때
+     * **저장된 신호를 일부러 그대로 두는데**, 정작 화면은 그 값을 못 본다.
+     */
+    var storePlanKey by mutableStateOf<String?>(initialAccessSnapshot.storePlanKey)
+        internal set
+
+    /** 스냅샷에 적힌 `users.plan`(= 마지막으로 `/auth/me` 를 받은 값). [effectiveUserPlan] 참조. */
+    var storeSnapshotUserPlan by mutableStateOf<String?>(initialAccessSnapshot.userPlan)
+        internal set
+
+    /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
+    var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
+        internal set
+
+    /**
+     * **스토어에 한 번이라도 물어봤는가.** 되돌릴 수 없는 잠금은 이게 참이 되기 전에는 하지 않는다.
+     *
+     * ⚠ BillingClient 조회는 **비동기**다. 앱 시작 직후에는 `storePlanKey` 가 아직 null 인데,
+     * 그 순간을 '무료 확정' 으로 읽으면 Play 가 갱신을 알려 주기 **전에** 알람이 영구 강등된다
+     * (2026-08-31 리뷰). 그 변환은 되돌릴 수 없다.
+     */
+    var storeEntitlementChecked by mutableStateOf(false)
+        internal set
+
+    /**
+     * 스토어 조회와 결제 전 서버 스토어 재조회를 **한 번에 하나만** 돌린다.
+     *
+     * ⚠ 앱 시작과 탭 진입이 각각 `refreshStoreEntitlement()` 를 던지므로 같은 계정의 조회가
+     * 겹칠 수 있다. 계정 가드는 둘 다 통과시켜서, 겹치면 먼저 시작한 쪽이 늦게 끝나며 최신을
+     * 덮었다 — 옛 빈 결과가 방금 확인한 갱신을 지워 **되돌릴 수 없는 잠금**을 부르거나, 옛
+     * 유료 결과가 해지 뒤에 통행증을 되살린다. 직렬화하면 버려지는 결과 없이 순서가 선다.
+     */
+    internal val storeRefreshMutex = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * **유료 목소리 판정 — 앱 전체가 이걸 쓴다**(2026-08-31). 우선순위는
+     * `resolvePaidVoiceAccess` 주석 참고: 스토어 → 서버 구독(만료) → users.plan → 그룹.
+     */
+    /**
+     * ⚠ **plan 은 스냅샷을 먼저 본다**(2026-09-01 리뷰). `PlanChangeSyncWorker` 는 프로세스가
+     * 죽어 있는 동안 강등을 확정하면 `AccessSnapshot.userPlan` 을 갱신하지만 세션은
+     * **토큰만** 굴린다(프로필을 덮으면 그 사이 바꾼 닉네임이 되돌아가기 때문이다) —
+     * 그래서 다음 콜드 스타트의 `authSession.user.plan` 은 낡아 있다. 오프라인이면 그
+     * 상태로 계속 판정하게 되어, 회복된 유료 사용자가 잠긴 채 남거나 정지된 사용자의
+     * 남은 구독 행이 유료로 읽힌다. 스냅샷 값은 **방금 `/auth/me` 를 받은 경로만** 쓰므로
+     * 세션 값보다 새롭거나 같다.
+     */
+    private val effectiveUserPlan: String?
+        get() = storeSnapshotUserPlan ?: authSession?.user?.plan
+
+    internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
+        resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = effectiveUserPlan,
+            storeEntitled = isStoreEntitledNow(nowMillis),
+            nowMillis = nowMillis,
+        )
+
+    /**
+     * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
+     * 원시 `storePlanKey` 를 넘기면 기한이 지난 키를 그대로 믿게 된다(2026-08-31 리뷰).
+     */
+    internal fun isStoreEntitledNow(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        storePlanKey != null && (storeEntitlementUntilMillis ?: 0L) > nowMillis
+
+    /** 모르면 잠그지 않는다 — 표시·저장·생성 게이트용. */
+    internal fun isPaidVoiceEntitledOptimistic(): Boolean = paidVoiceAccess().isEntitledOptimistic()
+
+    /**
+     * 확실히 무료일 때만 참 — 되돌리기 어려운 잠금·강등용.
+     *
+     * ⚠ **스토어 확인 전에는 절대 참이 아니다.** 조회가 비동기라 시작 직후의 null 을
+     * '무료' 로 읽으면 갱신을 확인하기 전에 영구 변환이 걸린다.
+     */
+    internal fun isDefinitelyFreePlan(): Boolean =
+        storeEntitlementChecked && paidVoiceAccess().isDefinitelyFree()
 
     // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
     // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
@@ -573,6 +764,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // consentCollect 중 '선택'(체크 없이 통과) 인 유형. 서버가 내려준다 — 화면이 목록을 따로
     // 들고 있으면 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
     var consentOptional by mutableStateOf<List<String>>(emptyList())
+
+    // collect 중 **이미 동의해 둔** 유형 — 동의 화면의 초기 체크 상태.
+    // 이걸 안 쓰면 이미 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로
+    // 제출돼 조용히 사라진다(목소리 기능 차단 + 마케팅 수신 동의 소멸).
+    var consentPrechecked by mutableStateOf<List<String>>(emptyList())
         internal set
 
     // 아직 없는 민감 동의(voice_biometric·overseas_transfer).
@@ -623,8 +819,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
-    val showVoiceConsentSheet: Boolean get() = pendingSensitiveConsent != null
-
     // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
     var showWelcomePromo by mutableStateOf(false)
         internal set
@@ -662,6 +856,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 마케팅 동의 POST 진행 중 여부. true 동안엔 토글을 비활성화해 동시/연속 쓰기를 막는다.
     // (늦게 도착한 옛 POST 가 최신 의도 뒤에 INSERT 되어 opt-out 이 유실되는 것 방지)
     var marketingConsentWriteInFlight by mutableStateOf(false)
+
+    /**
+     * 쓰기가 도는 동안 사용자가 또 토글했을 때의 **마지막 값**.
+     *
+     * 스위치를 상시 활성으로 둔 뒤로는(쓰기 중 비활성이면 색이 두 단계로 보인다) 연속
+     * 토글이 실제로 들어온다. 그때 새 요청을 그냥 버리면 **화면과 서버가 갈라진다** —
+     * 여기 담아 두고 지금 쓰기가 끝나면 이어서 보낸다.
+     */
+    var pendingMarketingConsent: Boolean? = null
         internal set
 
     // 직전 마케팅 동의 로드(GET)가 실패했는지. marketingConsentAgreed 가 null 인 동안 '로딩 중'과
@@ -683,6 +886,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 한다(CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
      */
     var consentStatusChecked by mutableStateOf(false)
+
+    /**
+     * 동의 상태 조회의 **세대**. 늦게 도착한 앞선 응답이 최신 상태를 덮는 것을 막는다.
+     *
+     * ⚠ 계정만 보는 것으로는 부족하다(Codex #703 P2). 같은 계정에서 조회가 겹치는 경로가
+     * 있다 — `checkConsentStatus` 는 `viewModelScope.launch` 로 도는데 그건 토큰이 갱신돼
+     * `LaunchedEffect` 가 다시 걸려도 **취소되지 않는다.** 동의 제출과 경합하는 경우도 같다.
+     * 먼저 떠난 요청이 '아직 받을 게 있다' 를 읽고 뒤늦게 돌아오면 이미 다 받은 상태를 덮어
+     * **동의 화면이 다시 열리거나 이미 기록한 생체정보 동의를 또 묻는다.**
+     * iOS 짝은 `AuthViewModel.consentStatusRevision`.
+     */
+    var consentStatusRevision: Int = 0
         internal set
 
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
@@ -849,9 +1064,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 목소리(rememberVoiceUsed)와 한 쌍이라 기록 시점도 같다: **알람 저장 성공 시.**
      *
      * 편집기에서 문구를 눌러만 보고 취소한 것까지 기억하면, 만들지도 않은 알람의 선택이 다음
-     * 알람에 남는다. 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이고(사용자 확정),
-     * 빈 직접입력으로 시작하면 저장이 막힌다. 이어받는 것은 '종류' 하나뿐이고 회전 인덱스·
-     * 클립 키 같은 알람별 상태는 절대 따라가지 않는다.
+     * 알람에 남는다.
+     *
+     * **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 '빈 직접입력으로 열려 저장이
+     * 막힌다' 는 이유로 아예 기억하지 않았다). 문구를 함께 이어받으면 글자가 같아
+     * `AlarmAudioStore` 입력 캐시에 걸려 서버 호출도 월 한도 차감도 없이 저장되므로,
+     * 그 근거가 사라졌다.
+     *
+     * 이어받는 것은 '종류'(+직접 입력이면 그 문구)뿐이고 회전 인덱스·클립 키 같은 알람별
+     * 상태는 절대 따라가지 않는다.
      */
     internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
@@ -871,16 +1092,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
         when {
-            // 무료·기본 목소리 경로: 사용자가 고른 것이 '테마(버킷)' 그 자체다.
-            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) ->
+            // 기본 목소리 경로: 고른 것이 '테마(버킷)' 그 자체다.
+            //
+            // ⚠ **테마와 문구 종류를 같이 적는다**(2026-09-02). 문구 목록을 하나로 합치면서
+            //   둘은 `clonePrerenderBucketCategoryFor` 로 1:1 이 됐는데, 여기서 테마만
+            //   적으면 `last_message_context` 가 낡은 값에 고정된다. 그러면 새 알람이
+            //   그 낡은 종류로 열리고, 편집기의 버킷 해석이 그걸 먼저 보므로
+            //   (`AlarmEditorScreen` 의 `chosen`) **직전에 고른 테마가 밀려난다** —
+            //   CLAUDE.md 가 회귀라고 못 박은 「직전 선택 유지」 증상 그대로다.
+            //   두 저장소가 어긋날 수 있는 상태 자체를 없앤다.
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) -> {
                 dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+                randomPromptContextForBucket(bucket)
+                    ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+                Unit
+            }
             // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
             // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
-            // (love→love, wake_fortune→fortune, preset→greeting …).
-            // 이걸 테마로 저장하면 두 가지가 깨진다(Codex #660):
-            //  - greeting·love·fortune 은 FreeBucketOrder 밖이라 읽을 때 걸러지는데, 그 전에
-            //    이미 저장돼 있던 유효한 테마(weather)를 덮어써 다음 기본 목소리 알람이 '약' 으로 되돌아간다.
-            //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
+            // (love→love, wake_fortune→fortune, preset→greeting …). 그걸 테마로 저장하면
+            // 정작 문구 종류가 기록되지 않아 다음 클론 알람이 옛 문구로 열린다(Codex #660).
+            //
+            // ⚠ 2026-09-02 에 근거 하나가 사라졌다 — 그전에는 "greeting·love·fortune 은
+            //   FreeBucketOrder 밖이라 읽을 때 걸러진다" 도 이유였는데, 이제 다섯이 모두
+            //   목록 안이다. 남은 이유(종류 미기록)만으로도 이 갈래는 그대로 옳다.
             bucket != null -> rememberContext()
             draft.voiceRandomPrompt -> rememberContext()
             // 직접 입력: **문구까지** 기억한다. 종류만 기억하면 새 알람이 빈 직접입력으로 열려
@@ -954,17 +1188,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ?: AccessSnapshot()
         subscriptionResponse = snapshot.subscriptionResponse
         familyGroup = snapshot.familyGroup
+        // ⚠ **스토어 신호도 계정에 묶인다**(2026-08-31 리뷰). 여기서 복원하지 않으면 계정을
+        // 바꿔도 앞 사람의 값이 메모리에 남아, 무료 계정이 유료로 취급된다.
+        storePlanKey = snapshot.storePlanKey
+        storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
+        storeSnapshotUserPlan = snapshot.userPlan
+        // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
+        storeEntitlementChecked = false
     }
 
-    internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateSubscription(userId, response)
+    /**
+     * ⚠ **표(`AccessTicket`)를 인자로 받는 이유** — 컴파일러가 강제하기 위해서다.
+     * 이 함수는 예전에 지금 계정을 스스로 읽어 키를 잡았고, 그래서 `await` 뒤에 부르면
+     * **전환된 계정의 스냅샷에 남의 구독을 적었다**(2026-09-02 감사에서 가드 없는 writer
+     * 2곳 중 하나로 발견됨). 표를 받게 하면 호출부가 **요청 전에** 뜰 수밖에 없다.
+     */
+    internal fun saveSubscriptionSnapshot(
+        ticket: AccessTicket,
+        response: BillingSubscriptionResponse?,
+    ): EntitlementWrite {
+        var persisted: AccessSnapshot? = null
+        val result = entitlementWriter.write(ticket, "subscription snapshot") {
+            it.withBillingResponse(response).also { snapshot -> persisted = snapshot }
+        }
+        if (result == EntitlementWrite.Applied && response?.userPlan != null) {
+            // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
+            val snapshot = checkNotNull(persisted)
+            storeSnapshotUserPlan = snapshot.userPlan
+            storePlanKey = snapshot.storePlanKey
+            storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
+        }
+        // plan은 방금 받은 권위 응답에 있을 때만 같은 쓰기로 갱신한다.
+        // 일상 조회(user_plan 없음)는 기존 값을 보존하며 캐시된 authSession.plan을 복사하지 않는다.
+        return result
     }
 
-    internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        accessSnapshotStore.updateFamilyGroup(userId, response)
-    }
+    internal fun saveFamilyGroupSnapshot(
+        ticket: AccessTicket,
+        response: FamilyGroupCurrentResponse?,
+    ): EntitlementWrite =
+        entitlementWriter.write(ticket, "family group snapshot") { it.copy(familyGroup = response) }
+
+    /** 권한 스냅샷을 쓰려면 **요청 전에** 이걸 뜬다(`EntitlementWriter` 참조). */
+    internal fun accessTicket(): AccessTicket? = entitlementWriter.ticket()
 
     internal fun clearCurrentAccessSnapshot() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
@@ -977,6 +1244,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
         // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
         dynamicPromptStore.clearLastSelections(userId)
+        // ⚠ **목소리 교체 표식(`VoiceReplacementMarkerStore`)은 여기서 지우지 않는다.**
+        // 취향은 계정과 함께 떠나도 되지만 그 표식은 **남아 있는 로컬 알람의 안전 기준**이다
+        // — 로그아웃은 알람을 끄기만 하고 지우지 않으므로, 표식을 지우면 그 사이의 교체를
+        // 다시 로그인한 기기가 '처음 봤다' 로 읽어 영영 강등하지 않는다.
     }
 
     internal fun clearUserScopedRemoteState() {
@@ -993,19 +1264,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         shareToggleJobs.clear()
         shareToggleDesired.clear()
         prerenderDrive = null
-        voiceProfiles = emptyList()
+        voiceProfiles = bundledSystemVoiceProfiles()
         pendingVoiceDraft = null
+        voiceDraftQuota = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         lastUsedVoiceId = null
-        ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
         subscriptionResponse = null
+        // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
+        // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.
+        storePlanKey = null
+        storeEntitlementUntilMillis = null
+        storeEntitlementChecked = false
         vouchers = emptyList()
         billingPlayManageUrl = null
         receivedAlarmSeenAtMillis = 0L
@@ -1018,6 +1294,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         consentChecked = false
         consentCollect = emptyList()
         consentOptional = emptyList()
+        consentPrechecked = emptyList()
         consentUnsupported = false
         consentNeedsCollection = false
         consentIsReconsent = false
@@ -1107,6 +1384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 runCatching { playBilling.resendUnconfirmedPurchases() }
                     .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
+                refreshStoreEntitlement()
             }
         }
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.

@@ -1,4 +1,6 @@
 import { Hono, type Context } from 'hono';
+import type { ErrorCode } from '@alarmtalk/shared';
+import { jsonError } from '../lib/api-error';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { callerOwnerIds } from '../lib/caller-ids';
@@ -23,6 +25,7 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
+  normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
@@ -32,6 +35,10 @@ import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
+  findLegacyBucketHints,
+  normalizeStockCategory,
+  prerenderRefreshColumnReady,
+  retiredIsNullClause,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
@@ -56,11 +63,13 @@ const tts = new Hono<AppEnv>();
 //  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
 //  - medication / love: 그 문구를 고른 알람
 //  - custom: 직접 입력
-const TTS_CATEGORIES = ['morning', 'medication', 'love', 'custom'] as const;
+// ⚠ `cheer` 의 옛 이름은 `love` 다(2026-09-02 개념 변경). 구버전 앱과 이미 저장된 행이
+// 여전히 `love` 를 보내오므로 **둘 다 받고** 아래 normalize 가 `cheer` 로 접는다.
+const TTS_CATEGORIES = ['morning', 'medication', 'cheer', 'love', 'custom'] as const;
 
 // 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
 // normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
-const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'love'] as const;
+const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'cheer'] as const;
 type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
 
@@ -114,12 +123,25 @@ type WeatherGeocodingResponse = {
   }>;
 };
 
+/**
+ * 클라가 보낸 카테고리를 **저장할 값**으로 접는다.
+ *
+ * ⚠ **받는 것과 저장하는 것을 같게 두지 말 것**(2026-09-03 리뷰 18차). 옛 이름(`love`)은
+ *   구버전 앱과 기기 로컬 DB 가 계속 보내오므로 **받아 주어야** 하지만, 그대로 저장하면
+ *   `#110` 이 한 번 옮겨 놓은 것을 **새 생성이 되살린다** — 유료 클론이 문구를 하나 만들
+ *   때마다 `messages.category = 'love'` 가 다시 생기고, `cheer` 로 거르는 목록·매니페스트가
+ *   그 행을 못 본다. 접기는 **요청 경계에서 한 번**, 그게 곧 저장값이다.
+ *   (`normalizeStockCategory` 는 `stockPresetCategory` 에서 프리셋을 **찾을 때만** 쓰였고,
+ *    저장되는 `category` 는 건드리지 않았다.)
+ */
 function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
   const raw = category.trim();
-  if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
-    return raw as (typeof TTS_CATEGORIES)[number];
-  }
-  return null;
+  if (!(TTS_CATEGORIES as readonly string[]).includes(raw)) return null;
+  // 옛 이름 → 정본. 단일 출처는 `lib/stock-clips.ts` 의 별칭 표다.
+  const folded = normalizeStockCategory(raw);
+  return ((TTS_CATEGORIES as readonly string[]).includes(folded)
+    ? folded
+    : raw) as (typeof TTS_CATEGORIES)[number];
 }
 
 function randomIndex(length: number): number {
@@ -129,8 +151,25 @@ function randomIndex(length: number): number {
   return values[0]! % length;
 }
 
+/**
+ * 이름이 바뀐 값의 **옛 이름 → 새 이름** 표.
+ *
+ * ⚠ **이 표가 없으면 조용히 뜻이 바뀐다.** 아래 normalize 는 모르는 값을 `preset` 으로
+ * 접으므로, 구버전 앱이 보낸 `love` 가 **'기본 인사말' 로 둔갑**한다 — 사용자는 응원을
+ * 골랐는데 인사말이 울린다. 이미 저장된 행도 같은 값을 들고 있다.
+ *
+ * 옛 이름은 **지우지 않는다.** 스토어에 올라간 앱과 사용자 기기의 로컬 DB 는 우리가
+ * 고칠 수 없다(`meal`/`sleep`/`exercise` 를 접어 두는 것과 같은 이유).
+ */
+const RENAMED_RANDOM_CONTEXTS: Readonly<Record<string, RandomContext>> = {
+  // 2026-09-02: '사랑' 을 '응원' 으로 바꿨다(연애 문구가 아니라 응원·자기돌봄).
+  love: 'cheer',
+};
+
 function normalizeRandomContext(value: unknown): RandomContext {
   const raw = typeof value === 'string' ? value.trim() : '';
+  const renamed = RENAMED_RANDOM_CONTEXTS[raw];
+  if (renamed) return renamed;
   return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
 }
 
@@ -229,16 +268,22 @@ function todayKoreaLabel(): string {
 
 /**
  * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라는 기본값 문구를 'morning' 으로
- * 보내는데, 문구 출처인 STOCK_CLIP_PRESETS 는 greeting·weather·medication 만 갖는다.
- * 여기서만 이어 붙이고 클라는 건드리지 않는다.
+ * 보내는데 STOCK_CLIP_PRESETS 에는 그 이름이 없다. 여기서만 이어 붙이고 클라는 건드리지 않는다.
  *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
- *  - medication = 그대로
- *  - love 는 스톡 프리셋에 대응 문구가 없다(동적 생성 전용) → null 이 돌아가고
- *    호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
+ *  - 나머지는 이름이 그대로다.
+ *
+ * ⚠ **`love` 는 이제 null 이 아니다**(2026-09-02). 그전 주석은 "love 는 스톡 프리셋에 대응
+ * 문구가 없다(동적 생성 전용) → null" 이라고 적혀 있었는데, 문구 목록을 하나로 합치면서
+ * `STOCK_CLIP_PRESETS` 에 love 3문구·fortune 5문구가 들어갔다. 기본 목소리도 그 둘을 고를
+ * 수 있으므로 프리셋 문구가 정상적으로 나온다 — 그 서술을 근거로 아래 F2 게이트를 손대면
+ * Codex #599(카테고리가 새어 시스템 보이스로 합성되던 것) 재발 방지 장치가 깨진다.
  */
 function stockPresetCategory(category: string): string {
-  return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
+  if (category === 'morning') return STOCK_GREETING_CATEGORY;
+  // 이름이 바뀐 카테고리도 여기서 접는다 — 구버전 앱은 `love` 를 보낸다.
+  return normalizeStockCategory(category);
 }
+
 
 /**
  * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
@@ -265,8 +310,14 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
   const spoken = base.slice(lead.length);
   if (!spoken || spoken.startsWith(title)) return base;
-  const withTitle = `${lead}${title}, ${spoken}`;
-  return withTitle.length <= 200 ? withTitle : base;
+  // ⚠ **길이로 호칭을 떨어뜨리지 않는다**(2026-09-02 정정). 예전에는 결과가 200자를 넘으면
+  //   호칭을 통째로 버렸는데, 그 200 은 **사용자가 직접 친 문구**의 상한이지 우리 프리셋의
+  //   상한이 아니다. 실제로 영어 프리셋은 그 자체가 200자를 넘고(최장 308자), 그래서
+  //   20개 중 17개가 **7자짜리 호칭을 붙이는 것만** 거부당했다 — 프리셋 본문은 그대로
+  //   나가면서 호칭만 조용히 사라지는, 앞뒤가 안 맞는 동작이었다.
+  //   호칭 자체는 이미 30자로 잘려 들어오므로(`normalizeRelationshipLabel`) 늘어나는
+  //   길이는 최대 32자로 묶여 있다.
+  return `${lead}${title}, ${spoken}`;
 }
 
 function draftPreviewText(language: string): string {
@@ -731,15 +782,31 @@ tts.post('/generate', async (c) => {
     }
   }
 
-  if (requestText && requestText.length > 200) {
+  // ⚠ **상한은 '사용자가 친 글자' 에만 건다**(2026-09-03 리뷰 2차).
+  //
+  //   `requestText` 는 이 지점에서 이미 **우리 프리셋 문구**일 수 있다(위 751행 —
+  //   `random_context=preset` 이면 `pickRandomPresetText` 가 채운다). 그때 이 검사는
+  //   우리가 확정한 대사를 사용자 입력 규칙으로 재는 셈이라, 영어 프리셋 20개 중 12개가
+  //   **TEXT_TOO_LONG(400)** 이 된다 — 들리는 말은 181자인데 태그까지 세어 213자로 읽는다.
+  //
+  //   200자는 **사용자에게 들리는 말**의 상한이고(2026-08-13 C안), 프리셋은 우리가 길이를
+  //   보고 확정한 신뢰 입력이다. 그래서 여기서는 **body.text 로 들어온 것만** 재고,
+  //   프리셋·초안 미리듣기는 지나게 둔다. 최종 안전망은 아래 합성 직전의
+  //   `normalizeAlarmTextWithoutTags(...)  > 200` 하나다.
+  const userTypedText = draftPreviewRequested || presetTextUsed ? '' : requestText;
+  if (userTypedText && userTypedText.length > 200) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
     );
   }
 
+  // ⚠ `SELECT *` 로 두지 말 것. 여기서 쓰는 건 `plan` 하나인데, users 행에는
+  // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`,
+  // `family_alarm_quiet_windows`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
+  // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
-    sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
   if (user.rows.length === 0) {
@@ -814,10 +881,20 @@ tts.post('/generate', async (c) => {
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  // F2: 기본(시스템) 목소리는 요금제와 무관하게 무료처럼 '프리셋(날씨/약)'만 허용한다.
-  // 커스텀 텍스트·운세/날씨 동적 생성·번역은 유료 '커스텀 클론' 전용이므로, 기본 목소리를
-  // 고른 유료 사용자도 무료와 동일하게 제한한다(→ 그만큼 커스텀 클론 슬롯 공간을 아낀다).
-  const presetOnlyRestricted = freePlanRestricted || isSystemVoice;
+  // 기본(시스템) 목소리는 원칙적으로 '프리셋(날씨/약)'만 허용한다 — 동적 생성·번역은
+  // 매번 비용이 들어 유료 커스텀 클론 전용이다.
+  //
+  // ⚠ **단 하나 예외: 유료 사용자의 '직접 입력' 은 기본 목소리로도 허용한다**
+  // (2026-08-11 결정). 예전에는 유료여도 기본 목소리면 직접 입력이 막혀서, 이용권을 산
+  // 사람이 **왜 안 되는지 알 수 없는 벽**을 만났다("왜 사라졌지"). 시스템 보이스에도
+  // `elevenlabs_voice_id` 가 있어 **말할 수는 있고**, 막던 이유는 비용이었다 —
+  // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
+  // 그래서 한도를 차감하는 조건으로 연다.
+  //
+  // 여전히 막는 것: 무료 플랜 / 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  const manualTextOnSystemVoice =
+    !freePlanRestricted && isSystemVoice && !randomRequested && body.translate !== true;
+  const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
   if (freePlanRestricted && !isSystemVoice) {
     return c.json(
@@ -830,7 +907,9 @@ tts.post('/generate', async (c) => {
   }
   if (presetOnlyRestricted) {
     // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
-    const presetOnlyCode = freePlanRestricted ? 'FREE_PLAN_PRESET_ONLY' : 'BASIC_VOICE_PRESET_ONLY';
+    const presetOnlyCode: ErrorCode = freePlanRestricted
+      ? 'FREE_PLAN_PRESET_ONLY'
+      : 'BASIC_VOICE_PRESET_ONLY';
     // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
     if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
       return c.json(
@@ -843,13 +922,16 @@ tts.post('/generate', async (c) => {
     }
     // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
     // morning/love 등 다른 요청 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
-    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
+    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES) 화이트리스트로 바꿔 그 외
     // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
     // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
     if (!FREE_BUCKET_CATEGORIES.includes(category)) {
       return c.json(
         {
-          error: 'This voice supports weather and medication phrases only.',
+          // ⚠ 허용 목록을 문장에 **베껴 적지 않는다.** 예전에는 "weather and medication
+          // only" 라고 못 박아 두었는데, 2026-09-02 에 fortune·love 가 들어오면서 곧바로
+          // 거짓이 됐다. 목록은 STOCK_CLIP_PRESETS 하나에서 자란다.
+          error: 'This voice only supports its prepared preset phrases.',
           error_code: presetOnlyCode,
         },
         403,
@@ -925,7 +1007,13 @@ tts.post('/generate', async (c) => {
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
               speechStyle: parseSpeechStyle(vp.speech_style),
             });
-            requestText = generated.text;
+            // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
+            // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
+            // 돌려준다. 그런데 이 값은 `preview_text` 로 저장돼 **사용자가 직접 고치는**
+            // 문구이고, 아래에서 `applyDeliveryTagPerSentence` 로 태그를 다시 입힌다 —
+            // 그대로 받으면 화면에 대괄호가 노출되고 합성 문구는 `[cheerfully] [cheerfully] …`
+            // 로 겹친다(테스트 `draft 미리듣기는 … 톤 적응 문구로 합성한다` 가 잡았다).
+            requestText = normalizeAlarmTextWithoutTags(generated.text) || generated.text;
             if (generated.tag) draftPreviewTag = generated.tag;
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
@@ -947,7 +1035,10 @@ tts.post('/generate', async (c) => {
                       AND (preview_claimed_at IS NULL
                         OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
               args: [
-                generated.text,
+                // 위에서 태그를 벗겨 `requestText` 로 쓴 그 문구를 그대로 저장한다.
+                // `generated.text`(태그 포함)를 저장하면 **저장본과 합성·표시본이 갈려**
+                // 다음 재생이 캐시를 빗나가고, 사용자가 고치는 화면에 대괄호가 뜬다.
+                requestText,
                 draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
@@ -1064,12 +1155,12 @@ tts.post('/generate', async (c) => {
         400,
       );
     }
-    if (requestText.length > 200) {
-      return c.json(
-        { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
-        400,
-      );
-    }
+    // ⚠ **여기에 길이 검사를 다시 두지 말 것**(2026-09-03 리뷰 12차). 상한은 두 곳에서만
+    //   잰다: 위쪽의 `userTypedText`(사용자가 친 글자)와 합성 직전의 최종 안전망
+    //   (`Prepared text must be…`, 프리셋 면제). 예전에 여기 있던 세 번째 검사는
+    //   **프리셋을 면제하지 않아** `random_context=preset` 라이브 폴백이 400 으로 죽었다 —
+    //   면제를 넣은 최종 검사에 닿기도 전에 막혔다. 사용자 입력에 대해서는 위 검사가
+    //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
     // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),
@@ -1090,14 +1181,22 @@ tts.post('/generate', async (c) => {
         tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
+      // ⚠ **모델이 배치한 인라인 태그를 살린다**(Codex #701 P2).
+      // 예전에는 `tags[0]` 하나를 뽑아 문장마다 다시 앞세웠다. 모델이 태그를 인라인으로
+      // 내기 시작하면 그 경로는 배치를 뭉갤 뿐 아니라, `tags` 가 빈 채로 남아
+      // `delivery_tags_json` 이 `[]` 가 되고 대괄호가 화면 문구로 샌다.
+      // `synthesisText` 가 있으면 그게 곧 합성 문구다(표시는 아래 `messageText` 가 태그 없는
+      // `dynamicGenerated.text` 를 쓴다). 없으면 예전대로 태그 하나를 문장마다 입힌다.
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
       // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
-      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
-      const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
+      const taggedText =
+        dynamicGenerated.synthesisText ??
+        applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
+      const tagApplied = taggedText !== dynamicGenerated.text;
       prepared = {
         text: taggedText,
         translated: false,
-        tags: tagApplied ? [dynamicTag] : [],
+        tags: tagApplied ? dynamicGenerated.tags : [],
       };
     } else {
       const shouldTranslate =
@@ -1140,7 +1239,16 @@ tts.post('/generate', async (c) => {
       synthesisLanguage = inferred === 'en' && latinOverride ? requestedLanguage : inferred;
     }
 
-    if (synthesisText.length > 200) {
+    // ⚠ **태그를 뺀 길이로 잰다**(2026-08-13 — C안).
+    // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
+    // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
+    // 문구가 뒤늦게 400 으로 거절됐다.
+    // ⚠ **프리셋은 이 상한에서 면제한다**(2026-09-03 리뷰 2차). 200자는 사용자가 친 글자를
+    //   재는 규칙이고, 스톡 프리셋은 우리가 길이를 보고 확정한 대사다 — 실제로 영어
+    //   프리셋 20개 중 12개가 낭독 기준으로도 200자를 넘는다(최장 283자). 여기서 막으면
+    //   그 문구를 고른 알람이 **라이브 폴백 경로에서만 400** 이 나 원인을 찾기 어렵다.
+    //   (평소에는 사전렌더 클립을 쓰므로 이 경로에 오지 않는다.)
+    if (!presetTextUsed && normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
@@ -1194,6 +1302,16 @@ tts.post('/generate', async (c) => {
       }
     };
     let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    // ⚠ **합성을 시작할 때의 교체 세대를 붙잡아 둔다**(Codex #703 P1). 게시 시점에 이 값이
+    // 달라졌으면 그 사이 **제자리 교체**가 일어난 것이고, 교체의 스냅샷 정리(회수된 목소리로
+    // 만든 custom 행을 톤으로 내리는 1회성 스윕)는 **이미 지나갔다** — 지금 게시하면 그
+    // 스윕이 다시는 훑지 않는 자리에 회수된 목소리 행이 영구히 남는다.
+    //
+    // ⚠ **전용 SELECT 를 새로 만들지 말 것.** `vp` 는 `SELECT *` 라 컬럼이 없는 배포 창
+    // (마이그레이션이 배포보다 늦게 도는 창 — CLAUDE.md)에서도 그냥 `undefined` 이고,
+    // 그 창에는 제자리 교체 자체가 이 컬럼을 참조해 롤백되므로 지킬 대상이 없다.
+    // 전용 쿼리로 읽으면 그 창 동안 **모든 직접 입력 생성이 500** 이 된다.
+    const requestVoiceGeneration = String(vp.custom_audio_invalidated_at ?? '');
     const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
     const evictedProbeVoiceId = isEvictedWithoutVoice
       ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
@@ -1244,13 +1362,74 @@ tts.post('/generate', async (c) => {
       activePreviewClaimToken = previewClaimToken;
     }
 
-    for (const { cacheKey } of preparedAttempts) {
+    for (const { attempt: cacheAttempt, cacheKey } of preparedAttempts) {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
-        anyUser: isSystemVoice,
+        // ⚠ **직접 입력은 사용자끼리 캐시를 공유하지 않는다.**
+        // 공유하면 남의 `messages` 행 id 를 그대로 돌려주는데, 그 행은 `is_preset` 이
+        // 0이라 `messageBelongsToCaller` 가 나중에 거절한다 — **들리는데 저장이 안 되는**
+        // 그 사고다(CLAUDE.md 「messageBelongsToCaller」 절). 게다가 캐시 히트가
+        // `reserveManualTtsQuota` 보다 앞이라, 남의 문구에 얹히면 **월 한도가 안 깎인다.**
+        // 프리셋(랜덤) 문구는 문구 자체가 우리 것이라 예전처럼 공유한다.
+        anyUser: isSystemVoice && !isManualGeneration,
       });
       if (cached) {
+        // ⚠ **캐시 히트도 교체를 통과시키면 안 된다**(Codex #703 P1). 캐시 키는 **요청을
+        // 시작할 때의** provider voice 로 만들어지므로, 그 사이 제자리 교체가 커밋돼도
+        // 히트는 그대로 난다 — 교체가 `messages.audio_url` 을 비웠어도
+        // `generated_audio_assets.audio_url` 은 남아 있어 **회수된 목소리의 바이트와
+        // message id** 가 그대로 반환된다. 교체의 스냅샷 정리는 1회성이라, 클라가 그걸
+        // 저장하면 아무도 다시 훑지 않는다.
+        //
+        // 합성-게시 경로와 **같은 기준**으로 막는다. 여기는 `reserveManualTtsQuota` 보다
+        // 앞이라 월 한도를 태우지 않고, 클라는 다시 저장하면 새 목소리로 받는다.
+        // (`SELECT *` 인 `findUsableVoiceProfile` 로 읽는 이유는 아래 게시 검사와 같다 —
+        // 전용 SELECT 는 마이그레이션이 아직 안 돈 배포 창에서 전부 500 이 된다.)
+        const cacheVoice = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
+        const cacheProviderVoiceId =
+          typeof cacheVoice?.elevenlabs_voice_id === 'string' ? cacheVoice.elevenlabs_voice_id : null;
+        if (
+          !cacheVoice ||
+          (cacheProviderVoiceId !== null && cacheProviderVoiceId !== cacheAttempt.providerVoiceId) ||
+          String(cacheVoice.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration
+        ) {
+          throw new VoiceAuthorizationChangedDuringTtsError();
+        }
+        // ⚠ **직접 입력은 캐시 히트도 한 번으로 센다**(2026-09-07 결정).
+        //
+        // 한도의 뜻이 "우리가 합성했는가" 가 아니라 **"이 폰에 없어서 서버에 달라고 했는가"**
+        // 로 바뀌었다. 앱은 그 음성이 폰에 있으면 서버를 아예 부르지 않으므로
+        // (`AlarmEditorScreen` 의 `resolveTtsInput` → `getCachedAudio`), **여기까지 왔다는
+        // 것은 폰에 없다는 뜻**이다. 우리 서버에 남아 있었는지는 사용자에게 보이지 않는
+        // 사정이라 계산에 넣지 않는다 — 합성을 건너뛰어 비용은 그대로 0이고, 사용자는
+        // 같은 소리를 즉시 받는다.
+        //
+        // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
+        // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
+        if (isManualGeneration) {
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+          const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+          if (!reservation.ok) {
+            return jsonError(
+              c,
+              429,
+              'MANUAL_TTS_QUOTA_EXCEEDED',
+              '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+              { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
+            );
+          }
+          // 히트로 예약한 횟수도 되돌릴 수 있어야 한다 — 아래 catch 의 환불이 이 두 값을
+          // 본다. 여기 뒤에도 던질 수 있는 DB 쓰기가 남아 있어(바로 아래 `last_used_at`),
+          // 안 적어 두면 **오디오는 못 받았는데 횟수만 깎인 채** 끝난다.
+          manualQuotaPoolKey = pool.poolKey;
+          manualQuotaMonth = reservation.month;
+          manualQuotaResult = {
+            used: reservation.used,
+            limit: reservation.limit,
+            remaining: reservation.remaining,
+          };
+        }
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
         // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
         await db.execute({
@@ -1294,6 +1473,8 @@ tts.post('/generate', async (c) => {
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
+            // 히트도 한 번으로 세므로 남은 횟수가 줄어든다 — 앱이 화면 숫자를 갱신한다.
+            manual_quota: manualQuotaResult,
             random_context: randomRequested ? randomContext : null,
             preview_playback_token: activePreviewClaimToken,
             preview_playback_confirmed: Boolean(vp.previewed_at),
@@ -1340,13 +1521,12 @@ tts.post('/generate', async (c) => {
       const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
-        return c.json(
-          {
-            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
-            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
-            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
-          },
+        return jsonError(
+          c,
           429,
+          'MANUAL_TTS_QUOTA_EXCEEDED',
+          '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+          { manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 } },
         );
       }
       manualQuotaPoolKey = pool.poolKey;
@@ -1387,10 +1567,28 @@ tts.post('/generate', async (c) => {
               userPk,
               body.voice_profile_id,
             );
+            // ⚠ **'같은 프로필이 여전히 ready 인가' 만으로는 부족하다**(Codex #703 P1).
+            // 제자리 교체는 행 id·소유자·status 를 **그대로 둔 채** provider voice 만 갈아
+            // 끼우므로 이 셋은 교체 뒤에도 전부 참이다. 합성에 실제로 쓴 목소리와 지금 행의
+            // 목소리를 맞대 봐야 그 사이 교체가 있었는지 알 수 있다.
+            const publicationProviderVoiceId =
+              typeof publicationVoice?.elevenlabs_voice_id === 'string'
+                ? publicationVoice.elevenlabs_voice_id
+                : null;
+            // NULL 은 교체가 아니라 **LRU eviction** 일 수 있다(그건 음원을 무효로 만들지
+            // 않는다) — 그걸 이유로 멀쩡한 오디오를 버리지 않는다. 재클론은 새 id 를 행에
+            // 커밋하고 그 id 로 합성하므로 값이 일치해 오탐이 없다.
+            const replacedDuringSynthesis =
+              publicationProviderVoiceId !== null &&
+              publicationProviderVoiceId !== generated.providerVoiceId;
+            const generationChanged =
+              String(publicationVoice?.custom_audio_invalidated_at ?? '') !== requestVoiceGeneration;
             if (
               !publicationVoice ||
               publicationVoice.status !== 'ready' ||
-              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested
+              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested ||
+              replacedDuringSynthesis ||
+              generationChanged
             ) {
               throw new VoiceAuthorizationChangedDuringTtsError();
             }
@@ -1430,8 +1628,8 @@ tts.post('/generate', async (c) => {
                 sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, audio_url,
-                   audio_object_key, audio_format, mime_type)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                   audio_object_key, audio_format)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 args: [
                   crypto.randomUUID(),
                   userPk,
@@ -1446,7 +1644,6 @@ tts.post('/generate', async (c) => {
                   audioUrl,
                   audioObjectKey,
                   generated.outputFormat,
-                  generated.mimeType,
                 ],
               });
             }
@@ -1789,18 +1986,60 @@ tts.get('/messages/:id/audio', async (c) => {
   });
 });
 
+/**
+ * 프리셋 준비 신호를 만드는 SQL 조각. **컬럼이 없으면 '준비됨' 으로 답한다.**
+ *
+ * ⚠ 배포는 마이그레이션보다 먼저 돈다(CLAUDE.md). `voice_prerender_queue.refresh_existing`
+ * 을 그냥 참조하면 그 창(~1분) 동안 **모든 매니페스트 요청이 컬럼 없음으로 500** 이 되어
+ * 옛 클라까지 클립 목록을 못 받는다. 읽기 경로라 fail-closed 로 둘 이유도 없다 — 그 창에는
+ * 교체 자체가 커밋될 수 없으므로(쓰기 경로가 fail-closed 다) '준비됨' 이 사실이다.
+ *
+ * 한 번 있다고 확인되면 다시 묻지 않는다(컬럼은 사라지지 않는다). 없을 때만 매번 확인해
+ * 마이그레이션이 끝나는 즉시 자연히 켜진다 — `customAudioMarkerSelect` 와 같은 규약.
+ */
+async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
+  // 판정 플래그는 `lib/stock-clips.ts` 한 곳에 둔다 — 플래그가 둘이면 한쪽만 켜진 상태가
+  // 생긴다. 같은 컬럼을 `GET /voice/:id/prerender-status` 도 본다.
+  if (!(await prerenderRefreshColumnReady(db))) return '1 AS rendered_for_current_voice';
+  return `CASE
+                   WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
+                   WHEN EXISTS (
+                     SELECT 1 FROM generated_audio_assets ga
+                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   ) THEN 1
+                   ELSE 0
+                 END AS rendered_for_current_voice`;
+}
+
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
   // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
   // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
   const userLoginId = c.get('userLoginId');
   const userPk = c.get('userIdPK') || userLoginId;
+  const renderedSelect = await renderedForCurrentVoiceSelect(db);
+  const retiredClause = await retiredIsNullClause(db);
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
-                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
+                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name,
+                 -- 이 클립이 '지금 목소리' 로 구워진 것인가 (Codex #703 P1).
+                 -- 제자리 교체는 custom_audio_invalidated_at 을 먼저 커밋하고 프리셋
+                 -- 재렌더는 큐에만 넣는다(replaceVoiceInPlace) — 실제 굽기는 cron 이 나중에
+                 -- 한다. 그래서 표식이 올라간 뒤에도 여기 audio_url 은 한동안 옛 클립이다.
+                 -- 앱이 그걸 모르면 '낡은 키가 없다 = 다 끝났다' 로 읽고 교체 세대를 확정해,
+                 -- 재렌더가 끝난 뒤에도 다시 받지 않아 회수된 목소리로 계속 운다.
+                 -- 판정은 GET /voice/:id/prerender-status 의 완료 판정과 같은 식이다:
+                 -- 그 오디오가 프로필의 현재 provider voice 로 만들어졌는가.
+                 ${renderedSelect}
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+          LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
+            -- 은퇴한 행은 매니페스트에서 뺀다(#110). 행 자체는 남으므로 그 클립을 물고
+            -- 있는 알람은 계속 저장되고 오디오도 그대로 받는다 — 목록에만 안 뜬다.
+            -- 배포 창에는 컬럼이 없어 조건이 빠진다(그때는 은퇴한 행도 없다).
+            ${retiredClause}
             AND (
               COALESCE(vp.is_system, 0) = 1
               OR m.user_id IN (?, ?)
@@ -1823,6 +2062,9 @@ tts.get('/stock-clips', async (c) => {
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
     args: [userPk, userLoginId, userPk],
   });
+  // 버킷 없이 클립 하나만 물린 옛 알람의 테마 힌트 — 규칙과 이유는 그 함수 주석에 있다.
+  const legacyHints = await findLegacyBucketHints(db, userPk);
+
   return c.json({
     clips: result.rows.map((row) => ({
       message_id: row.message_id,
@@ -1834,9 +2076,52 @@ tts.get('/stock-clips', async (c) => {
       text: row.text,
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),
+      // false 면 **서버가 아직 이 클립을 새 목소리로 굽지 않았다.** 앱은 이때 교체 세대를
+      // 확정하지 않고 다음 회차에 다시 본다(위 SELECT 주석).
+      rendered_for_current_voice: Number(row.rendered_for_current_voice ?? 1) === 1,
+    })),
+    // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
+    // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.
+    //
+    // ⚠ **앱에 개수를 박아 두지 않으려고 서버가 내려준다.** 운영이 시드를 늘리면
+    // (예: 날씨 9 → 11) 앱 업데이트 없이 그 값이 따라와야 한다. 상수로 두면 늘어난 분을
+    // 영영 안 받고, 그 클립을 고른 알람이 무음이 된다.
+    // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
+    // 이 판정이 특히 중요하다.
+    expected_variants: expectedVariantCounts(),
+    // 버킷 없는 옛 알람이 어떤 테마였는지. 앱은 이 값을 `bucketId` 에 적고 나서
+    // 평소의 재바인딩을 태운다 — 없으면 그 알람은 갈아탈 방법이 없다.
+    legacy_bucket_hints: legacyHints.map((hint) => ({
+      message_id: hint.messageId,
+      category: hint.category,
+      language: hint.language,
     })),
   });
 });
+
+/**
+ * 목소리 종류별 · 카테고리별로 **완전한 세트의 클립 수**.
+ *
+ * ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다.** 지금도 `medication` 이 시스템 2 /
+ * 클론 3 이다. 그래서 하나로 합치면 안 된다 — 큰 쪽으로 합치면 기본 목소리의 **완전한**
+ * 세트(2개)가 '불완전' 으로 읽혀 오프라인 재생이 영영 안 켜지고, 작은 쪽으로 합치면 클론이
+ * 부분 세트인데도 완전하다고 읽혀 **없는 클립 자리를 재생하려 든다.**
+ *
+ * 출처: 시스템은 `STOCK_CLIP_PRESETS`, 클론은 `CLONE_CLIP_SEEDS`. 앱은 고른 목소리가
+ * 시스템인지에 따라 둘 중 하나를 본다.
+ */
+function expectedVariantCounts(): { system: Record<string, number>; clone: Record<string, number> } {
+  const system: Record<string, number> = {};
+  for (const preset of STOCK_CLIP_PRESETS) {
+    // 언어별 문구 수는 같아야 하지만, 어긋나도 ko 를 기준으로 삼는다(시드 원본이 ko 다).
+    system[preset.category] = preset.texts.ko?.length ?? 0;
+  }
+  const clone: Record<string, number> = {};
+  for (const group of CLONE_CLIP_SEEDS) {
+    clone[group.category] = group.seeds.length;
+  }
+  return { system, clone };
+}
 
 // 사전렌더 클론 버킷(날씨/운세)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve 한다. 클라는
 // 발사 전날 준비창(온라인)에서 이걸 호출해 알람에 인덱스를 스냅샷하고, 발사는 오프라인 lookup 만
@@ -1878,7 +2163,7 @@ async function findCachedGeneratedAudio(
   const result = await db.execute({
     sql: `SELECT ga.message_id, ga.provider,
                  COALESCE(ga.text, m.synthesis_text, m.text) AS synthesis_text,
-                 ga.audio_url, ga.audio_object_key, ga.audio_format, ga.mime_type
+                 ga.audio_url, ga.audio_object_key, ga.audio_format
           FROM generated_audio_assets ga
           JOIN messages m ON m.id = ga.message_id
           WHERE ${options?.anyUser ? '' : 'ga.user_id IN (?, ?) AND '}ga.request_hash = ?

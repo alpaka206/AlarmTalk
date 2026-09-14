@@ -15,6 +15,9 @@ data class RemoteAlarmListResponse(
     val total: Int? = null,
     val limit: Int? = null,
     val offset: Int? = null,
+    // null이면 total/limit/offset을 검증한 뒤 구서버 호환 순회 여부를 결정한다.
+    @SerializedName("has_more") val hasMore: Boolean? = null,
+    @SerializedName("next_cursor") val nextCursor: String? = null,
 )
 
 data class RemoteAlarmResponse(
@@ -38,8 +41,17 @@ data class RemoteAlarm(
     @SerializedName("sender_email") val senderEmail: String? = null,
     // 서버 권위 판별: 내가 target 이고 내가 만든 게 아니면 true(카테고리 무관). pull 은 이 값으로
     // 받은 알람만 임포트한다 — 클라측 session.user.id 비교는 계정 연동 시 네임스페이스가 어긋난다.
-    @SerializedName("is_received") val isReceived: Boolean = false,
+    @SerializedName("is_received") val isReceived: Boolean? = null,
     @SerializedName("bucket_id") val bucketId: String? = null,
+    @SerializedName("delivery_version") val deliveryVersion: String? = null,
+    @SerializedName("is_received_family_alarm") val isReceivedFamilyAlarm: Boolean? = null,
+) {
+    // 두 필드를 합치면 신서버의 명시적인 false도 구형 표시 때문에 뒤집힐 수 있다.
+    val isReceivedForPull: Boolean get() = isReceived ?: isReceivedFamilyAlarm ?: false
+}
+
+data class RemoteAlarmReceivedRequest(
+    @SerializedName("delivery_version") val deliveryVersion: String,
 )
 
 data class RemoteAlarmWriteRequest(
@@ -65,7 +77,9 @@ interface RemoteAlarmApi {
     suspend fun listAlarms(
         @Header("Authorization") authorization: String,
         @Query("limit") limit: Int,
-        @Query("offset") offset: Int,
+        @Query("after") after: String? = null,
+        @Query("offset") offset: Int? = null,
+        @Query("pagination") pagination: String? = if (offset == null) "cursor" else null,
     ): RemoteAlarmListResponse
 
     @POST("alarm")
@@ -93,6 +107,22 @@ interface RemoteAlarmApi {
     suspend fun declineAlarm(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
+    )
+
+    /**
+     * 수신 확인 — 음원 확보와 켜진 알람의 OS 예약까지 끝나 **서버 행을 지워도 된다**고 알린다.
+     *
+     * 받은 알람은 로컬이 원본이라(`docs/spec/family-alarm.md`) 전달이 끝나면 서버 행이
+     * 할 일이 없다. 남겨 두면 오디오 보존 판정이 "아직 쓰는 알람이 있다" 고 보아
+     * 클론 음원을 TTL 이 지나도 영구 보존한다.
+     *
+     * 실패해도 무시한다 — 다음 pull 이 같은 알람을 다시 임포트하며 재시도한다.
+     */
+    @POST("alarm/{id}/received")
+    suspend fun markAlarmReceived(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: RemoteAlarmReceivedRequest,
     )
 
     /**

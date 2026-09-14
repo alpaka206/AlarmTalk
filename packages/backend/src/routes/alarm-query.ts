@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { jsonError } from '../lib/api-error';
 import { normalizeAlarmRow, type AlarmRow } from './alarm-helpers';
 
 const alarmQuery = new Hono<AppEnv>();
@@ -26,6 +27,19 @@ alarmQuery.get('/', async (c) => {
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
   const isActiveParam = c.req.query('is_active');
   const voiceProfileId = c.req.query('voice_profile_id');
+  const pagination = c.req.query('pagination');
+  const cursorMode = pagination === 'cursor';
+  const after = c.req.query('after');
+  if (
+    (pagination !== undefined && !cursorMode) ||
+    (after !== undefined &&
+      (!cursorMode ||
+        !/^[1-9][0-9]{0,15}$/.test(after) ||
+        !Number.isSafeInteger(Number(after)))) ||
+    (cursorMode && c.req.query('offset') !== undefined)
+  ) {
+    return jsonError(c, 400, 'INVALID_REQUEST', 'Invalid alarm pagination parameters');
+  }
 
   let whereClause = `WHERE (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))
         AND NOT (
@@ -50,6 +64,36 @@ alarmQuery.get('/', async (c) => {
     whereArgs.push(voiceProfileId);
   }
 
+  // 두 페이지 계약이 같은 행/표시 필드를 내려주도록 조회 본문은 공유한다.
+  const selectAlarms = `SELECT a.*${cursorMode ? ', CAST(aco.sequence AS TEXT) AS pagination_cursor' : ''}, m.text as message_text, m.category, vp.name as voice_name,
+              m.audio_url as message_audio_url,
+              creator.email as creator_email, creator.name as creator_name
+            FROM alarms a
+            ${cursorMode ? 'JOIN alarm_creation_order aco ON aco.alarm_id = a.id' : ''}
+            LEFT JOIN messages m ON a.message_id = m.id
+            LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
+            LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id`;
+
+  if (cursorMode) {
+    // UUID는 삽입 순서가 아니다. DB가 생성/새 전달 세대마다 발급한 순번으로 전진한다.
+    // #116 트리거가 같은 id의 재전송도 뒤로 옮기며 삭제된 최대 순번도 재사용하지 않는다.
+    if (after !== undefined) {
+      whereClause += ' AND aco.sequence > ?';
+      whereArgs.push(Number(after));
+    }
+    const result = await db.execute({
+      sql: `${selectAlarms}
+            ${whereClause}
+            ORDER BY aco.sequence ASC LIMIT ?`,
+      args: [...whereArgs, limit + 1],
+    });
+    const rows = result.rows.slice(0, limit);
+    const alarms = (rows as AlarmRow[]).map(({ pagination_cursor: _cursor, ...row }) =>
+      normalizeAlarmRow(row, ids));
+    const hasMore = result.rows.length > limit;
+    return c.json({ alarms, has_more: hasMore, next_cursor: hasMore ? String(rows.at(-1)!.pagination_cursor) : null });
+  }
+
   // LEFT JOIN messages/voice_profiles so the new "alarm-only" play mode
   // (message_id NULL, no associated voice clip) still appears in the list.
   // The voice_profile_id filter naturally excludes those rows by requiring
@@ -62,15 +106,9 @@ alarmQuery.get('/', async (c) => {
       args: whereArgs,
     }),
     db.execute({
-      sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
-              m.audio_url as message_audio_url,
-              creator.email as creator_email, creator.name as creator_name
-            FROM alarms a
-            LEFT JOIN messages m ON a.message_id = m.id
-            LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
-            LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
+      sql: `${selectAlarms}
             ${whereClause}
-            ORDER BY a.time ASC
+            ORDER BY a.time ASC, a.id ASC
             LIMIT ? OFFSET ?`,
       args: [...whereArgs, limit, offset],
     }),
@@ -85,9 +123,16 @@ alarmQuery.get('/', async (c) => {
  * 이 사용자가 '그만받기' 한 알람 id 목록.
  *
  * 목록(`GET /alarm`)은 그만받기 한 알람을 아예 빼서 내려주므로, 클라는 "목록에서 사라짐" 의
- * 이유를 구분할 수 없다 — **수신자가 그만받기** 했는지, **발신자가 지웠**는지. 그 둘은 결과가
- * 정반대여야 한다: 그만받기는 이 계정의 다른 기기에서도 지워야 하고, 발신자 삭제는 이미
- * 받은 사람의 알람을 건드리면 안 된다(받은 뒤부터는 받는 사람 것이다).
+ * 이유를 구분할 수 없다. 사유는 **셋**이고 결과가 서로 다르다:
+ *
+ *  1. **수신자가 그만받기** → 이 계정의 다른 기기에서도 지운다(`alarm_ids`)
+ *  2. **목소리가 사라졌다**(발신자 탈퇴·목소리 삭제·플랜 강등) → 목소리만 걷어내고 알람은
+ *     남긴다(`revoked_alarm_ids`)
+ *  3. **전달이 끝나 서버가 행을 지웠다** → 두 배열 어디에도 안 실린다. 로컬은 **그대로
+ *     둔다** — 정상 종료이지 사라진 것이 아니다(`docs/spec/family-alarm.md` 1-2).
+ *
+ * 3번이 기본값이라, 목록에서 빠졌다는 사실만으로 로컬을 지우면 **정상적으로 받은 알람이
+ * 전부 사라진다.** 지우는 근거는 언제나 이 엔드포인트가 명시적으로 준 id 다.
  */
 alarmQuery.get('/declined', async (c) => {
   const db = getDB(c.env);

@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck

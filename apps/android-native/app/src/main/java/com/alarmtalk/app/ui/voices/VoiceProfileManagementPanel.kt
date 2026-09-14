@@ -7,9 +7,16 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
@@ -29,16 +36,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
@@ -65,14 +71,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.clearFocusOnOutsideTap
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -97,7 +106,7 @@ import kotlinx.coroutines.withContext
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
 // 클론 사전렌더 알람 버킷 4종(잠금화면 발사용). greeting 은 미리듣기 전용이라 준비 게이트에서 제외.
-private val CloneAlarmBucketCategories = listOf("weather", "fortune", "love", "medication")
+private val CloneAlarmBucketCategories = listOf("weather", "fortune", "cheer", "medication")
 
 @Composable
 private fun androidNavigationBarHeightPadding(): Dp {
@@ -142,6 +151,14 @@ private fun VoiceRecordScriptCard(
     modifier: Modifier = Modifier,
 ) {
     var scriptExpanded by rememberSaveable { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(
+        targetValue = if (scriptExpanded) 180f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "voiceScriptArrowRotation",
+    )
     OutlinedCard(
         modifier = modifier,
         shape = WakerCardShape,
@@ -150,16 +167,19 @@ private fun VoiceRecordScriptCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         ),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Column {
             // **대사는 예시일 뿐 필수가 아니다.** 항상 펼쳐 두면 화면 절반을 차지해
             // '이걸 그대로 읽어야 하는 것' 처럼 보인다. 필요한 사람만 펼치게 접어 둔다.
+            //
+            // ⚠ **여백을 `clickable` **안쪽**에 둔다.** 예전에는 카드 `Column` 이
+            // `padding(16)` 을 갖고 `clickable` 은 그 안의 `Row` 에만 걸려 있어서,
+            // **제목 주변 여백을 눌러도 아무 일이 없었다**(2026-08-11 지적).
+            // 행처럼 생긴 것은 행 전체가 눌려야 한다 — 글자를 정확히 겨냥하게 만들지 말 것.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { scriptExpanded = !scriptExpanded },
+                    .clickable { scriptExpanded = !scriptExpanded }
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -169,31 +189,35 @@ private fun VoiceRecordScriptCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Icon(
-                    imageVector = if (scriptExpanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
+                    imageVector = Icons.Outlined.KeyboardArrowDown,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.graphicsLayer { rotationZ = arrowRotation },
                 )
             }
-            if (scriptExpanded) {
-            Text(
-                text = stringResource(R.string.voices2_record_script),
-                modifier = Modifier
-                    .then(
-                        if (fillHeight) {
-                            Modifier.weight(1f, fill = false)
-                        } else {
-                            Modifier.heightIn(max = 240.dp)
-                        },
-                    )
-                    .verticalScroll(rememberScrollState()),
-                style = MaterialTheme.typography.bodyMedium,
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            AnimatedVisibility(
+                visible = scriptExpanded,
+                modifier = if (fillHeight) Modifier.weight(1f, fill = false) else Modifier,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices2_record_script),
+                    modifier = Modifier
+                        // 헤더가 제 여백을 가져갔으니 본문도 제 여백을 갖는다.
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                        .then(
+                            if (!fillHeight) {
+                                Modifier.heightIn(max = 240.dp)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .verticalScroll(rememberScrollState()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }
@@ -210,19 +234,23 @@ internal fun VoiceProfileManagementPanel(
     voiceDraftQuotaExhausted: Boolean = false,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
+    /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
+    storeEntitledNow: Boolean,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
@@ -263,23 +291,21 @@ internal fun VoiceProfileManagementPanel(
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
     // 함께 초기화한다(closeCreateDialog).
     var voiceBiometricAgreed by remember { mutableStateOf(false) }
-    var recordingAttested by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
     // 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 인라인 동의 항목을 그린다.
     // 한 번 동의하면 서버 기록이 남아 sensitiveConsentMissing 이 비고 다시 뜨지 않는다.
     val needsBiometricConsent = "voice_biometric" in sensitiveConsentMissing
-    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지. 이 녹음에 대한 확인은 매번 받고,
-    // 법정 동의는 아직 없을 때만 받는다.
-    val registrationConsentSatisfied =
-        recordingAttested && (!needsBiometricConsent || voiceBiometricAgreed)
+    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지 — **법정 동의만** 본다.
+    // 권리 보증 확인은 약관 제7조가 담당하므로 체크박스가 아니라 안내 문구다
+    // (VoiceRegistrationAttestation 주석 참조).
+    val registrationConsentSatisfied = !needsBiometricConsent || voiceBiometricAgreed
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
 
-    // 하한(12초) 미달로 버려진 녹음이 있었는지. 버려지면 selectedAudio 가 null 이라 길이만
-    // 봐서는 "아직 녹음 안 함" 과 구분되지 않는데, 이 둘의 안내는 달라야 한다 —
-    // 전자는 '12초 이상 녹음해 주세요', 후자는 '다음'(흐림).
+    // 하한(12초) 미달 녹음이 있는지. 실제 길이는 카드에 남기되 유효한 완료본처럼
+    // 재생·다시 녹음을 열지 않고, 카드와 하단 버튼이 같은 이유를 말한다.
     var recordTooShort by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
@@ -303,7 +329,6 @@ internal fun VoiceProfileManagementPanel(
     }
     var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
-    var voiceLimitNoticeOpen by remember { mutableStateOf(false) }
     // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
     var ownSectionExpanded by remember { mutableStateOf(true) }
     var sharedSectionExpanded by remember { mutableStateOf(true) }
@@ -338,28 +363,75 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewEditing by remember { mutableStateOf(false) }
     var confirmPreviewEditText by remember { mutableStateOf("") }
     var confirmPreviewSaving by remember { mutableStateOf(false) }
+    // 등록 확정의 **교체 체크**. 이미 등록된 목소리가 있을 때만 낸다.
+    var replaceExistingChecked by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
-    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
-    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    // ⚠ 만료까지 보는 판정을 **생성·쿼터 게이트에도** 쓴다(2026-08-31 리뷰). 목록만 숨기고
+    // 여기를 옛 판정으로 두면, 만료된 스냅샷에서 목소리는 사라졌는데 '생성 가능 n/m회' 와
+    // 등록 흐름은 그대로 열려 있다 — 게다가 교체 대상은 비어 버린 목록에서 오므로 보관된
+    // 프로필을 교체할 길도 없이 확정에서 거절당한다.
+    val paidVoiceAccess = resolvePaidVoiceAccess(
+        subscriptionResponse = subscriptionResponse,
+        familyGroup = familyGroup,
+        userPlan = authSession?.user?.plan,
+        storeEntitled = storeEntitledNow,
+        nowMillis = System.currentTimeMillis(),
+    )
+    // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
+    // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
+    // '세션이 free 면 모름을 낙관하지 않는다' 는 **판정기 안으로 옮겼다**(2026-09-01 리뷰) —
+    // 같은 규칙을 화면마다 손으로 쓰면 또 갈라진다.
+    val canCreateVoice = paidVoiceAccess.isEntitledOptimistic()
+    // 무료 강등 시 클론 데이터는 서버에 **보관 유예 동안** 살아 있지만(`PAID_VOICE_RETENTION_DAYS`,
+    // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
+    // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
+    // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
+    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`,
+    // `msg_gb_free_plan_voice_alarms_locked`). 여기 붙이면 무료로 지내는 내내 같은 말이
+    // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
+    // `ControlsAndPermissions.kt` 주석).
+    // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).
+    //
+    // ⚠ **만료까지 보는 판정을 쓴다**(2026-08-31 리뷰). `hasPaidVoiceAccess` 는
+    // `status == "active"` 만 보므로, 오프라인이거나 갱신이 느리면 **만료된 스냅샷으로도**
+    // true 가 되어 숨겨야 할 목소리가 미리듣기·삭제까지 가능한 채로 드러난다.
     val ownVoices = remember(voiceProfiles, canCreateVoice) {
         if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
     }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
-    val canOpenCreateForm = canCreateVoice && !isLimitReached
+    // 등록 확정에서 교체 대상이 되는 **이미 등록된** 목소리(초안·실패 제외).
+    // 있으면 저장이 한도에 걸리므로 교체 체크를 낸다.
+    val replaceTargetVoice = remember(ownVoices, confirmNewVoice) {
+        ownVoices.firstOrNull {
+            it.id != confirmNewVoice?.id && it.isDraft != true &&
+                it.status?.trim()?.lowercase() != "failed"
+        }
+    }
+    // ⚠ **슬롯이 찼다고 폼을 막지 않는다**(2026-08-12 확정).
+    // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**에서
+    // "기존 목소리를 교체할까요"(`replaceExistingChecked`)를 묻는다. 예전에는 여기서
+    // 막아 그 체크에 도달할 수 없었고, 교체 갈래가 **죽은 코드**였다.
+    //
+    // 막는 기준은 **월 등록 한도 하나**다(아래 `monthlyExhausted`) — 그건 교체해도 풀리지
+    // 않으므로, 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
+    //
+    // ⚠ **남은 초안으로도 막지 않는다**(2026-08-25 지시. 그전에는 `pendingVoiceDraft == null`
+    // 을 함께 봤다). 초안은 **저장하지 않으면 없는 것**이라, 화면을 정상적으로 나가면 이미
+    // 지워진다 — 남아 있다는 건 앱이 죽었다는 뜻이지 사용자가 결정을 미뤘다는 뜻이 아니다.
+    // 그걸 근거로 "먼저 끝내라" 고 하면, 사용자는 **이미 사라진 화면**을 마치라는 말을 듣는다.
+    // 서버가 새 등록을 받을 때 옛 초안을 버리고(`discardAbandonedDrafts`), 아무도 다시
+    // 시작하지 않는 초안은 cron 이 1시간 뒤 거둔다(`DRAFT_VOICE_TTL_HOURS`).
+    val canOpenCreateForm = canCreateVoice
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
-    // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    // (유지/삭제를 골라야만 끝난다).
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
-    // promote 직후 사전렌더 진행 화면 — 등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지해야
+    // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
-    val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
-    val maxProfilesReachedMessage =
-        stringResource(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
+    val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
         if (invalidateGreetingPreview) greetingPreviewRequestId += 1
@@ -378,7 +450,9 @@ internal fun VoiceProfileManagementPanel(
     // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
     suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
         val cacheKey = "greeting_${clip.messageId}"
-        withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey) }?.let { return it }
+        withContext(Dispatchers.IO) {
+            audioStore.getCachedAudio(cacheKey, clip.audioUrl)
+        }?.let { return it }
         val response = onDownloadStockAudio(clip.messageId)
         return withContext(Dispatchers.IO) {
             // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
@@ -639,20 +713,18 @@ internal fun VoiceProfileManagementPanel(
                 val duration = audio.durationMillis
                 val error = voiceProfileDurationError(context, duration)
                 if (error == null) {
+                    recordTooShort = false
                     applySelectedAudio(audio)
                 } else {
-                    // 짧아서 버려진 녹음은 타이머도 0으로 되돌린다 — 지난 시간이 남아 있으면
-                    // 저장된 것처럼 보인다.
-                    selectedAudio = null
-                    recordingElapsedMillis = 0L
-                    // 짧아서 버려졌으면 그렇다고 말한다. 위에서 오디오와 타이머를 되돌리므로
-                    // 아무 말도 안 하면 화면에는 아무 일도 일어나지 않은 것처럼 보인다.
-                    // 다만 **하한 미달은 배너로 띄우지 않는다** — 그 말이 필요한 곳은 못 넘어가는
-                    // '다음' 버튼 자리다. 화면 위쪽 배너는 버튼에서 멀어 왜 안 눌리는지 이어지지
-                    // 않는다. 길이를 못 읽는 등 다른 실패만 배너로 남긴다.
                     if (duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+                        // 실제 시간은 보여 주되 완료본처럼 재생/되돌리기를 열지 않는다.
+                        // 카드와 하단 버튼이 같은 이유를 말하고, 마이크를 누르면 바로 덮어쓴다.
+                        selectedAudio = audio
+                        recordingElapsedMillis = duration
                         recordTooShort = true
+                        localMessage = null
                     } else {
+                        selectedAudio = null
                         localMessage = error
                     }
                 }
@@ -668,6 +740,12 @@ internal fun VoiceProfileManagementPanel(
         // 미리듣기(방금 녹음 클립 등)가 재생 중이면 먼저 멈춘다 — 스피커 소리가
         // 새 녹음(클론 원본)에 섞여 들어가는 것을 막는다.
         stopMediaPreview()
+        selectedAudio?.takeIf { recordTooShort }?.let { discarded ->
+            selectedAudio = null
+            discarded.cacheKey?.let { cacheKey ->
+                scope.launch(Dispatchers.IO) { audioStore.deleteCachedAudio(cacheKey) }
+            }
+        }
         runCatching {
             recorder.start(maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
             recordingElapsedMillis = 0L
@@ -700,7 +778,6 @@ internal fun VoiceProfileManagementPanel(
         profileListenerTitle = ""
         shareVoice = false
         voiceBiometricAgreed = false
-        recordingAttested = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
@@ -900,7 +977,10 @@ internal fun VoiceProfileManagementPanel(
     // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
     // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
     fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
-        val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        // 서버가 내려준 값을 쓴다(앱 상수 금지). 클론 프로필이므로 clone 쪽을 본다.
+        val fullCount = expectedVariants?.countFor(category = category, isSystemVoice = false)
+            ?: return@all false
+        if (fullCount <= 0) return@all false
         val clipLanguage = cloneClipLanguageFor(profileId, category)
         val variants = stockClips
             .filter {
@@ -925,7 +1005,9 @@ internal fun VoiceProfileManagementPanel(
             }
         }
         val total = allClips.size
-        var done = allClips.count { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        var done = allClips.count {
+            audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+        }
         if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         CloneAlarmBucketCategories.forEach { category ->
             val clipLanguage = cloneClipLanguageFor(profileId, category)
@@ -936,7 +1018,7 @@ internal fun VoiceProfileManagementPanel(
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"
-                    if (audioStore.getCachedAudio(cacheKey) == null) {
+                    if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
                         runCatching {
                             val response = onDownloadStockAudio(clip.messageId)
                             audioStore.cacheGeneratedAudio(
@@ -974,7 +1056,9 @@ internal fun VoiceProfileManagementPanel(
                     it.voiceProfileId == profileId && it.category == category &&
                         (it.language ?: "ko") == clipLanguage
                 }
-                .all { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+                .all {
+                    audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+                }
         }
     }
 
@@ -1274,9 +1358,9 @@ internal fun VoiceProfileManagementPanel(
             expanded = ownSectionExpanded,
             onToggle = { ownSectionExpanded = !ownSectionExpanded },
         ) {
-            // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
+            // 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
             // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
-            // 유료만 숫자를 본다. 무료에게 '이번 달 0/1'은 마치 이용권만 있으면 이미 다 쓴
+            // 유료만 숫자를 본다. 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면 이미 다 쓴
             // 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고 눌렀을 때 안내한다.
             val monthlyQuota = voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }
             monthlyQuota?.let { quota ->
@@ -1289,19 +1373,16 @@ internal fun VoiceProfileManagementPanel(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
             }
-            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '이번 달 0/1'이 있어
+            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '생성 가능 0/1회'가 있어
             // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
             // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
             val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0
             Button(
                 onClick = {
-                    when {
-                        canOpenCreateForm -> showCreateForm = true
-                        !canCreateVoice -> voicePlanGateOpen = true
-                        else -> voiceLimitNoticeOpen = true
-                    }
+                    if (canOpenCreateForm) showCreateForm = true else voicePlanGateOpen = true
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
+                colors = wakerButtonColors(),
             ) {
                 Text(stringResource(R.string.voices_add))
             }
@@ -1441,24 +1522,10 @@ internal fun VoiceProfileManagementPanel(
             }
     }
 
-    if (voiceLimitNoticeOpen) {
-        IosAlertDialog(
-            title = stringResource(R.string.voices_limit_title),
-            message = stringResource(R.string.voices_limit_message),
-            actions = listOf(
-                IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
-                    onClick = { voiceLimitNoticeOpen = false },
-                ),
-            ),
-            onDismiss = { voiceLimitNoticeOpen = false },
-        )
-    }
-
     if (voicePlanGateOpen) {
         PlanGateDialog(
             title = stringResource(R.string.voices_create_paid_title),
-            message = stringResource(R.string.voices_create_paid_notice),
+            message = stringResource(R.string.plan_gate_paid_message),
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()
@@ -1474,8 +1541,14 @@ internal fun VoiceProfileManagementPanel(
         if (systemVoices.isEmpty()) stopMediaPreview()
     }
 
-    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
-    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || (!isLimitReached && canCreateVoice))) {
+    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 상태가 바뀌어도 다이얼로그를 유지한다.
+    //
+    // ⚠ **여는 조건과 그리는 조건은 반드시 같은 값이어야 한다.**
+    // 2026-08-12 에 버튼 쪽(`canOpenCreateForm`)만 열어 두고 여기는 옛 `!isLimitReached` 를
+    // 그대로 두어서, 목소리가 이미 하나 있으면 **버튼을 눌러도 아무 일도 일어나지 않았다** —
+    // `showCreateForm` 은 true 가 되는데 그릴 조건이 false 라 화면이 그대로였다.
+    // 눌러도 아무 반응이 없는 것이 가장 나쁜 형태다(막혔다는 것조차 알 수 없다).
+    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || canOpenCreateForm)) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -1523,36 +1596,34 @@ internal fun VoiceProfileManagementPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        // ⚠ **이 다이얼로그는 자기 창이다** — `AlarmTalkApp` 에 건 제스처가
+                        // 닿지 않으므로 여기에 따로 건다(`IosAlertDialog` 과 같은 이유).
+                        // 목소리 이름·듣는 사람 호칭 입력이 이 안에 있다.
+                        .clearFocusOnOutsideTap()
                         .imePadding(),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.voices_create_dialog_title),
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        IconButton(
-                            onClick = {
-                                // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
-                                if (inDraftDecisionFlow) {
-                                    draftExitWarningOpen = true
-                                } else {
-                                    closeCreateDialog()
+                    WakerTopBar(
+                        title = stringResource(R.string.voices_create_dialog_title),
+                        onBack = when (currentStep) {
+                            VoiceRegistrationStep.Source -> ::closeCreateDialog
+                            VoiceRegistrationStep.Details -> {
+                                {
+                                    currentStep = VoiceRegistrationStep.Source
+                                    createSubmitAttempted = false
+                                    localMessage = null
                                 }
-                            },
-                            enabled = !voiceProfileBusy,
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
-                        }
-                    }
+                            }
+                            VoiceRegistrationStep.Preview -> {
+                                { draftExitWarningOpen = true }
+                            }
+                            // 생성 중에는 이탈 불가. 준비 중에는 본문의
+                            // '백그라운드에서 계속'이 나가는 유일한 행동이다.
+                            VoiceRegistrationStep.Creating,
+                            VoiceRegistrationStep.Prerendering -> null
+                        },
+                        backEnabled = !voiceProfileBusy,
+                        modifier = Modifier.padding(top = 18.dp),
+                    )
 
                     // 녹음 모드(첫 스텝)는 대사 카드가 남은 화면 높이를 채우고 카드 안에서만
                     // 스크롤하므로 페이지 스크롤을 끈다. 파일 모드·다른 스텝은 콘텐츠가
@@ -1585,6 +1656,16 @@ internal fun VoiceProfileManagementPanel(
                                         if (inputMode != it) {
                                             stopMediaPreview()
                                             localMessage = null
+                                            if (recordTooShort) {
+                                                val discarded = selectedAudio
+                                                selectedAudio = null
+                                                recordingElapsedMillis = 0L
+                                                discarded?.cacheKey?.let { cacheKey ->
+                                                    scope.launch(Dispatchers.IO) {
+                                                        audioStore.deleteCachedAudio(cacheKey)
+                                                    }
+                                                }
+                                            }
                                             recordTooShort = false
                                         }
                                         inputMode = it
@@ -1599,10 +1680,17 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        // 카드 안은 비워 둔다 — 옆에 `0:00 / 2:00` 이 이미 있어
-                                        // 문구까지 넣으면 두 줄로 접히고 시간이 밀린다.
-                                        // 길이 안내는 카드 아래 안내문으로 내렸다.
-                                        idleStatusText = "",
+                                        idleStatusText = if (recordTooShort) {
+                                            stringResource(R.string.voices_record_too_short)
+                                        } else {
+                                            null
+                                        },
+                                        // ⚠ **`idleStatusText = ""` 로 비우지 말 것**(2026-08-18 되돌림).
+                                        // 빈 문자열은 `?:` 를 통과해 **빈 `Text` 가 한 줄을 차지**하므로,
+                                        // 카드에 이유 없는 빈 칸이 남는다("녹음하기 글자가 안 보인다"로
+                                        // 보고됨). 기본값 "녹음하기" 를 그대로 쓴다 — 알람 편집기의
+                                        // 직접 녹음도 같은 컴포넌트를 기본값으로 쓰고 문제가 없다.
+                                        // (두 줄로 접힌다던 옛 근거는 실기기에서 재현되지 않는다.)
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1614,9 +1702,22 @@ internal fun VoiceProfileManagementPanel(
                                                 recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                             }
                                         },
-                                        recordedDurationMillis = selectedAudio?.durationMillis,
+                                        recordedDurationMillis = selectedAudio?.durationMillis
+                                            ?.takeIf { it >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS },
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
+                                        onRedoRecording = {
+                                            stopMediaPreview()
+                                            val discarded = selectedAudio
+                                            selectedAudio = null
+                                            recordingElapsedMillis = 0L
+                                            recordTooShort = false
+                                            discarded?.cacheKey?.let { cacheKey ->
+                                                scope.launch(Dispatchers.IO) {
+                                                    audioStore.deleteCachedAudio(cacheKey)
+                                                }
+                                            }
+                                        },
                                     )
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
                                     // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
@@ -1648,7 +1749,14 @@ internal fun VoiceProfileManagementPanel(
                                             uploadLabel = stringResource(R.string.voices_upload_file_or_video),
                                             notice = stringResource(R.string.voices_crop_duration_notice),
                                             noticeAfterUpload = true,
-                                            uploadSubtitle = stringResource(R.string.voices_upload_zone_subtitle),
+                                            // ⚠ **길이 조건을 여기서 말하지 않는다**(2026-08-18 지시).
+                                            // 고른 파일은 길이로 막지 않는다 — `prepareSelectedFile` 이
+                                            // `cropEnd` 를 2분으로 잡아 **자르기 화면**으로 넘긴다(3분짜리
+                                            // 영상도 된다). "12초 이상 2분 이하 파일이면 돼요" 는 **없는
+                                            // 제약을 광고**하는 문구라, 쓸 수 있는 파일을 안 쓰게 만든다.
+                                            // 실제 조건은 **잘라낸 구간**에만 있고, 그건 자르기 화면이
+                                            // `voices_crop_duration_notice` 로 그 자리에서 말한다.
+                                            uploadSubtitle = null,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
@@ -1673,7 +1781,7 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Details -> {
                                 OutlinedTextField(
                                     value = profileName,
-                                    onValueChange = { profileName = it.take(50) },
+                                    onValueChange = { profileName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
                                     label = { Text(stringResource(R.string.voices_name_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
@@ -1688,7 +1796,7 @@ internal fun VoiceProfileManagementPanel(
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                 )
                                 // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다.
                                 RelationshipDropdownField(
@@ -1697,13 +1805,13 @@ internal fun VoiceProfileManagementPanel(
                                 )
                                 OutlinedTextField(
                                     value = profileListenerTitle,
-                                    onValueChange = { profileListenerTitle = it.take(30) },
+                                    onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
                                     label = { Text(stringResource(R.string.voices_listener_title_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
                                     singleLine = true,
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                 )
                                 // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
                                 Text(
@@ -1721,31 +1829,11 @@ internal fun VoiceProfileManagementPanel(
                                     selected = profileVoiceLanguage,
                                     onSelect = { profileVoiceLanguage = it },
                                 )
-                                // 공유 설정 — 토글 하나뿐이라 단독 단계를 없애고 세부 정보에 합쳤다.
-                                Text(
-                                    text = stringResource(R.string.voices_step_sharing),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                                ShareVoiceToggleCard(
-                                    enabled = canShareVoice,
-                                    checked = shareVoice && canShareVoice,
-                                    title = stringResource(R.string.voices_sharing_shared_title),
-                                    description = if (canShareVoice) {
-                                        stringResource(R.string.voices_sharing_shared_desc_enabled)
-                                    } else {
-                                        stringResource(R.string.voices_sharing_shared_desc_disabled)
-                                    },
-                                    onCheckedChange = { shareVoice = it },
-                                )
                                 // 등록 직전 확인 — 이 단계에 두는 이유는 다음 버튼('등록')이
                                 // draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론 생성이기
                                 // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
                                 // 만들어 놓고 사후 동의를 받는 꼴이 된다.
                                 VoiceRegistrationAttestation(
-                                    attested = recordingAttested,
-                                    onAttestedChange = { recordingAttested = it },
                                     // 가입 화면에서 이미 동의했으면 그리지 않는다 — 한 번 받은
                                     // 동의를 등록할 때마다 다시 묻지 않는다.
                                     showBiometricConsent = needsBiometricConsent,
@@ -1836,6 +1924,21 @@ internal fun VoiceProfileManagementPanel(
                                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                         )
                                     }
+                                    // ⚠ **나가는 길을 X 에만 맡기지 말 것**(2026-08-20 지시).
+                                    // 예전에는 전용 버튼 없이 부제로만 "지금 닫아도 계속
+                                    // 만들어져요" 라고 안내했다. 그런데 이 대기는 서버 cron
+                                    // 배치라 십수 분이 걸리는데, 화면에는 누를 것이 오른쪽 위
+                                    // X 뿐이라 "닫으면 취소되는 것 아닌가" 로 읽힌다.
+                                    // 최초 기본 목소리 다운로드 화면과 **같은 낱말·같은 자리**로
+                                    // 맞춘다(`onb_voice_download_background`) — 두 화면이 하는
+                                    // 일이 같으니 말도 같아야 한다.
+                                    Spacer(Modifier.height(6.dp))
+                                    TextButton(onClick = { closeCreateDialog() }) {
+                                        Text(
+                                            text = stringResource(R.string.onb_voice_download_background),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
 
@@ -1865,12 +1968,16 @@ internal fun VoiceProfileManagementPanel(
                                             if (confirmPreviewEditing) {
                                                 OutlinedTextField(
                                                     value = confirmPreviewEditText,
-                                                    onValueChange = { confirmPreviewEditText = it.take(200) },
+                                                    onValueChange = {
+                                        confirmPreviewEditText =
+                                            sanitizeUserText(it, allowNewlines = true)
+                                                .takeWithoutSplittingPairs(200)
+                                    },
                                                     minLines = 2,
                                                     enabled = !confirmPreviewSaving,
                                                     shape = WakerInputShape,
                                                     colors = wakerOutlinedTextFieldColors(),
-                                                    modifier = Modifier.fillMaxWidth(),
+                                                    modifier = Modifier.textInputTapTarget().then(Modifier.fillMaxWidth()),
                                                 )
                                                 Row(
                                                     modifier = Modifier.fillMaxWidth(),
@@ -1893,6 +2000,7 @@ internal fun VoiceProfileManagementPanel(
                                                     Button(
                                                         onClick = { savePreviewTextEdit(previewVoice) },
                                                         enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
+                                                        colors = wakerButtonColors(),
                                                         modifier = Modifier.weight(1f),
                                                         shape = WakerButtonShape,
                                                     ) {
@@ -1976,6 +2084,75 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+
+                                    // ⚠ **공유 설정은 여기(확정 단계)에 둔다**(2026-08-13 지시).
+                                    // 앞 단계에서 물으면 아직 **초안**일 뿐인 것에 공유 여부를
+                                    // 정하게 된다 — '다시 만들기' 로 버리면 그 답도 함께 사라진다.
+                                    // 실제 등록은 이 화면의 '저장하기' 이므로, 남과 나눠 쓸지도
+                                    // 여기서 정하는 것이 맞다.
+                                    Text(
+                                        text = stringResource(R.string.voices_step_sharing),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                    ShareVoiceToggleCard(
+                                        enabled = canShareVoice,
+                                        checked = shareVoice && canShareVoice,
+                                        title = stringResource(R.string.voices_sharing_shared_title),
+                                        description = if (canShareVoice) {
+                                            stringResource(R.string.voices_sharing_shared_desc_enabled)
+                                        } else {
+                                            stringResource(R.string.voices_sharing_shared_desc_disabled)
+                                        },
+                                        onCheckedChange = { shareVoice = it },
+                                    )
+
+                                    // 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 —
+                                    // 없으면 그냥 저장되므로 체크를 보여 줄 이유가 없다.
+                                    //
+                                    // ⚠ 문구가 곧 계약이다. 체크하면 실제로 이 두 가지가 일어난다:
+                                    //  - 이전 목소리는 목록에서 사라진다(서버는 그 행을 지우지 않고
+                                    //    **재사용**한다 — 지우면 그 목소리를 쓰던 알람이 전부 기본
+                                    //    알람음으로 떨어진다).
+                                    //  - 직접 입력 문구로 만든 알람만 기본 알람음이 된다. 나머지
+                                    //    알람은 그대로 살아 새 목소리로 운다.
+                                    replaceTargetVoice?.let { targetVoice ->
+                                        OutlinedCard(
+                                            onClick = { replaceExistingChecked = !replaceExistingChecked },
+                                            enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                            shape = WakerPanelShape,
+                                            border = wakerCardBorder(),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(14.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            ) {
+                                                AlarmTalkCheckbox(
+                                                    checked = replaceExistingChecked,
+                                                    onCheckedChange = { checked -> replaceExistingChecked = checked },
+                                                    enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                                )
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(
+                                                        text = stringResource(
+                                                            R.string.voices_replace_existing_title,
+                                                            targetVoice.name,
+                                                        ),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    )
+                                                    Text(
+                                                        text = stringResource(R.string.voices_replace_existing_desc),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2005,28 +2182,6 @@ internal fun VoiceProfileManagementPanel(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (currentStep == VoiceRegistrationStep.Details) {
-                            OutlinedButton(
-                                onClick = {
-                                    currentStep = VoiceRegistrationStep.Source
-                                    createSubmitAttempted = false
-                                    localMessage = null
-                                },
-                                enabled = !voiceProfileBusy && !createPreparing,
-                                modifier = Modifier.weight(1f),
-                                shape = WakerButtonShape,
-                                border = wakerCardBorder(),
-                                colors = wakerOutlinedButtonColors(),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.voices_previous))
-                            }
-                        }
                         when (currentStep) {
                             VoiceRegistrationStep.Source -> {
                                 Button(
@@ -2035,6 +2190,7 @@ internal fun VoiceProfileManagementPanel(
                                         currentStep = VoiceRegistrationStep.Details
                                     },
                                     enabled = canAdvanceFromSource,
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
@@ -2102,27 +2258,51 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
                                     enabled = !voiceProfileBusy && !confirmPreviewSaving,
                                 ) {
-                                    Text(
-                                        text = stringResource(R.string.voices_confirm_new_delete),
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
+                                    // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
+                                    // 아니라(위 주석 참조).
+                                    if (voiceProfileBusy && promotedForPrerenderId == null) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.voices_confirm_new_delete),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                 }
                                 Button(
                                     onClick = {
                                         confirmNewVoice?.let {
                                             promotedForPrerenderId = it.id
-                                            onPromoteVoiceDraft(it.id)
+                                            onPromoteVoiceDraft(
+                                                it.id,
+                                                replaceExistingChecked,
+                                                shareVoice && canShareVoice,
+                                            )
                                         }
                                     },
+                                    // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다.
+                                    // 서버가 어차피 VOICE_LIMIT_REACHED 로 막으므로, 열어 두면 눌러도
+                                    // 실패하는 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
                                     enabled = confirmPreviewCompleted && !voiceProfileBusy &&
-                                        !confirmPreviewEditing && !confirmPreviewSaving,
+                                        !confirmPreviewEditing && !confirmPreviewSaving &&
+                                        (replaceTargetVoice == null || replaceExistingChecked),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    // 승격 API 가 나가는 동안(voiceProfileBusy) 버튼에 진행 표시를 남겨
-                                    // "눌러도 아무 반응 없다"는 인상을 없앤다. 성공하면 다이얼로그가 닫히고
+                                    // 승격 API 가 나가는 동안 버튼에 진행 표시를 남겨 "눌러도 아무
+                                    // 반응 없다"는 인상을 없앤다. 성공하면 다이얼로그가 닫히고
                                     // 스낵바로 완료를 알린다.
-                                    if (voiceProfileBusy) {
+                                    //
+                                    // ⚠ **`voiceProfileBusy` 하나만 보지 말 것.** 그 플래그는 초안을
+                                    // **지울 때도** 켜진다 — 그래서 '다시 만들기' 를 눌렀는데 옆
+                                    // 버튼이 '저장 중…' 이라고 말했다(2026-08-13 지적 "저장한 거야?").
+                                    // 지우는 중인데 저장한다고 하면 되돌릴 수 없는 일을 한 줄 안다.
+                                    // 승격이 실제로 나갔을 때만(`promotedForPrerenderId`) 표시한다.
+                                    if (voiceProfileBusy && promotedForPrerenderId != null) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,
@@ -2227,4 +2407,3 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 }
-

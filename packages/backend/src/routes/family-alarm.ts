@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { Client } from '@libsql/client/web';
 import type { AppEnv } from '../types';
+import { callerOwnerIds } from '../lib/caller-ids';
 import { getDB } from '../lib/db';
+import { isPaidVoicePlan } from './billing-helpers';
 import { resolveUserPk, assertSameGroup } from '../lib/family-helpers';
 import {
   familyAlarmSettingsFromRow,
@@ -15,6 +17,7 @@ import {
   resolveEffectiveTimezone,
   computeNextAlarmFire,
   claimTargetedAlarmSlot,
+  alarmDeliveryVersionSupported,
   FAMILY_ALARM_MIN_LEAD_MINUTES,
 } from './alarm-helpers';
 
@@ -185,7 +188,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
   // JWT sub 이 users.id 로 통일돼, google_id 로 저장하면 수신자가 자기 알람을 못 본다.
   const recipientLegacyId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
-  // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(30분 리드타임 + quiet 요일).
+  // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(FAMILY_ALARM_MIN_LEAD_MINUTES 리드타임 + quiet 요일).
   // 발신자 body.timezone 은 판정·저장 어디에도 쓰지 않는다(우회 차단).
   const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLegacyId]);
   const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);
@@ -246,12 +249,25 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const messageId = crypto.randomUUID();
   const newAlarmId = crypto.randomUUID();
+  const deliveryVersionSupported = await alarmDeliveryVersionSupported(db);
+  if (!deliveryVersionSupported) {
+    return c.json(
+      { error: 'Alarm schema is upgrading', error_code: 'ALARM_SCHEMA_UPGRADING' },
+      503,
+    );
+  }
+  const deliveryVersion = crypto.randomUUID();
   const audioUrl = objectKey;
 
   // TTS 경로와 동일한 원자 교체: 같은 발신자 재전송은 기존 행 UPDATE(멱등, id 유지) +
   // 교체된 이전 message 정리, 다른 발신자의 같은 시각 발신 알람은 비활성화. 수신자 본인
   // 알람은 건드리지 않는다. timezone 은 검증에 쓴 효과 시간대를 그대로 저장한다.
   const alarmId = await withWriteTransaction(db, async (tx) => {
+    const senderPlan = await tx.execute({
+      sql: 'SELECT plan FROM users WHERE id = ?',
+      args: [senderPk],
+    });
+    if (!isPaidVoicePlan(senderPlan.rows[0]?.plan)) return null;
     await tx.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
             VALUES (?, ?, ?, ?, ?, 'family-voice')`,
@@ -259,7 +275,8 @@ familyAlarm.post('/alarms/voice', async (c) => {
     });
     const claimed = await claimTargetedAlarmSlot(
       tx,
-      userId,
+      // 조회용 발신자 쌍 — 저장에는 계속 `userId`(PK) 하나만 쓴다(수신자 쪽과 대칭).
+      callerOwnerIds(c),
       [recipientPk, recipientLegacyId],
       wakeAt,
       newAlarmId,
@@ -267,17 +284,25 @@ familyAlarm.post('/alarms/voice', async (c) => {
     if (claimed.reused) {
       await tx.execute({
         sql: `UPDATE alarms SET message_id = ?, repeat_days = ?, mode = 'sound-only', timezone = ?,
-                is_active = 1, updated_at = datetime('now')
+                delivery_version = ?, is_active = 1,
+                updated_at = datetime('now')
               WHERE id = ?`,
-        args: [messageId, JSON.stringify(repeatDays), effectiveTimezone, claimed.alarmId],
+        args: [
+          messageId,
+          JSON.stringify(repeatDays),
+          effectiveTimezone,
+          deliveryVersion,
+          claimed.alarmId,
+        ],
       });
       // 재전송으로 교체돼 고아가 된 이전 message 행을 같은 트랜잭션에서 정리(누적 방지).
       await cleanupReplacedFamilyMessage(tx, claimed.previousMessageId, messageId, recipientPk);
     } else {
       await tx.execute({
         sql: `INSERT INTO alarms
-              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone)
-              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?)`,
+              (id, user_id, target_user_id, message_id, time, repeat_days, mode, timezone,
+               delivery_version)
+              VALUES (?, ?, ?, ?, ?, ?, 'sound-only', ?, ?)`,
         args: [
           claimed.alarmId,
           userId,
@@ -286,11 +311,22 @@ familyAlarm.post('/alarms/voice', async (c) => {
           wakeAt,
           JSON.stringify(repeatDays),
           effectiveTimezone,
+          deliveryVersion,
         ],
       });
     }
     return claimed.alarmId;
   });
+
+  if (!alarmId) {
+    return c.json(
+      {
+        error: 'Voice alarms require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
 
   // 수신자 push 는 반드시 커밋 후에 실행한다 — 롤백될 수 있는 알람을 미리 알리지 않는다.
   notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);

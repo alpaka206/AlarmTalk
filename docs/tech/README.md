@@ -18,15 +18,15 @@ AlarmTalk의 시스템 구조와 API 개요.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        CLIENTS                          │
-│      Android (Kotlin/Compose)          Landing (web)    │
+│  Android (Compose)   iOS (SwiftUI)    Landing (web)     │
 └─────────────┬──────────────────────────────┬────────────┘
               │ HTTPS                        │
               ▼                              ▼
 ┌─────────────────────────────────────────────────────────┐
 │           Cloudflare Workers — voice-alarm-api          │
-│  securityHeaders → sentry → logger → ipRateLimit →      │
-│  bodyLimit → cors → (/api/*: auth → consent →           │
-│  rateLimit → cache)                                     │
+│  securityHeaders → sentry → errorCode → logger →        │
+│  ipRateLimit → bodyLimit → cors → (/api/*: auth →       │
+│  ipRateLimitRefund → consent → rateLimit → cache)       │
 │                                                         │
 │  Routes: /auth /user /voice /tts /alarm /family /code   │
 │          /billing /push /holiday /admin                 │
@@ -92,7 +92,10 @@ RingingActivity
 
 **이 경로에는 네트워크 호출이 하나도 없다.** 출시 전 QA 는 `adb shell cmd connectivity airplane-mode enable` 로 이를 검증한다. 이 원칙을 깨는 변경은 리뷰에서 반려한다.
 
-### 수동 서버 동기화 ("지금 동기화" 탭)
+### 서버 동기화
+
+알람 탭에 들어오면 자동으로 실행하며, 같은 세션의 재진입은 60초 동안 스로틀한다.
+백그라운드 폴백은 WorkManager가 맡는다.
 
 ```
 WorkManager.enqueueOneTimeWork(RemoteAlarmSyncWorker)
@@ -176,12 +179,13 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 | `/billing` | 구독·바우처. `/billing/google/rtdn` 은 유저 인증 없는 공개 RTDN 웹훅(쿼리 토큰으로 보호) |
 | `/code` | 통합 코드 등록(`INV-`/`GIFT-` 이용권 / 프로모 자동 판별) |
 | `/push` | FCM 토큰 등록·해제 |
+| `/events` | 사용 기록 배치 수신(기기 UUID 가 PK 라 재전송이 멱등) — `docs/spec/usage-events.md` |
 | `/holiday` | 공휴일 조회(인증 없음, 공개 캐시) |
 | `/admin` | 관리 콘솔 — `/api` 가 아니라 `/admin` 에 마운트, `ADMIN_SECRET` HTTP Basic |
 
 인증 없이 열려 있는 것은 `GET /`·`GET /health`(DB 연결 확인)와 `POST /api/init-db`(시크릿 헤더 게이트), 그리고 `/api/auth/*`·`/api/holiday`·RTDN 웹훅뿐이다. 나머지 `/api/*` 는 전부 `authMiddleware` 뒤에 있다.
 
-> `/library` 라우터와 `GET /api/tts/presets` 는 클라이언트가 호출하지 않아 제거됐다. 보관함 테이블(`message_library`)은 남아 있지만 읽는 API 는 없다.
+> `/library` 라우터와 `GET /api/tts/presets` 는 클라이언트가 호출하지 않아 제거됐다. 보관함 테이블(`message_library`)은 남아 있고, 지금 읽는 곳은 `GET /tts/messages` 하나다(저장 문구만 돌려주려고 `message_library` 로 거른다 — `routes/tts.ts`).
 
 ### 시그니처가 아니라 정책인 것들
 
@@ -197,7 +201,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 
 `*/5 * * * *` 의 `scheduled` 핸들러는 외부 오디오 삭제 정합, 만료된 이메일 코드 정리, 구독 만료·다운그레이드, 계정 파기(30일 유예), 그리고 명시적으로 승인된 보이스 사전렌더 작업을 돌린다.
 
-프리뷰를 마친 비공개 초안을 keep 하면 소유자 스코프의 사전렌더 잡이 1개 생긴다. 매니페스트는 앱 언어 1개에 대해 `greeting` 1 + `weather` 9 + `fortune` 5 + `love` 3 + `medication` 3 = **21클립**으로 고정이다(`CLONE_CLIP_SEEDS`, `lib/stock-clips.ts`). `weather` 9개 중 앞 8개는 `CLONE_WEATHER_CONDITIONS`(인덱스 0–7)이고, 마지막 1개는 **항상** "날씨 미해결" 폴백이다 — 준비창에서 날씨를 못 받아온 클라가 무음이나 엉뚱한 조건 대신 이걸 튼다(클라 규약: 마지막 클립 = `size - 1`). `resolvePrerenderWeatherIndex` 는 0–7 만 반환하므로 인덱스 8 은 폴백 전용이다. 워커는 정확한 claim 토큰으로만 이 유한 매니페스트를 이어받고, 합성 전과 게시 전에 보이스 소유권·상태·민감 동의를 다시 확인한다. 스스로 유저를 찾아 나서거나 매니페스트 밖 카테고리를 추가하지 않는다.
+프리뷰를 마친 비공개 초안을 keep 하면 소유자 스코프의 사전렌더 잡이 1개 생긴다. 매니페스트는 앱 언어 1개에 대해 `greeting` 1 + `weather` 9 + `fortune` 5 + `cheer` 3 + `medication` 3 = **21클립**으로 고정이다(`CLONE_CLIP_SEEDS`, `lib/stock-clips.ts`) — `cheer` 의 옛 이름은 `love` 다(2026-09-02 개명, 읽는 쪽이 옛 값을 접는다). `weather` 9개 중 앞 8개는 `CLONE_WEATHER_CONDITIONS`(인덱스 0–7)이고, 마지막 1개는 **항상** "날씨 미해결" 폴백이다 — 준비창에서 날씨를 못 받아온 클라가 무음이나 엉뚱한 조건 대신 이걸 튼다(클라 규약: 마지막 클립 = `size - 1`). `resolvePrerenderWeatherIndex` 는 0–7 만 반환하므로 인덱스 8 은 폴백 전용이다. 워커는 정확한 claim 토큰으로만 이 유한 매니페스트를 이어받고, 합성 전과 게시 전에 보이스 소유권·상태·민감 동의를 다시 확인한다. 스스로 유저를 찾아 나서거나 매니페스트 밖 카테고리를 추가하지 않는다.
 
 > **원칙**: 알람 **울림은 온디바이스**(`AlarmManager`)이며 네트워크에 의존하지 않는다. **서버 푸시는 동기화 트리거 전용** — 가족 알람 *생성* 시 수신자에게 data-only FCM 신호(`sendFamilyAlarmPush`)를 1회 보내 앱이 즉시 pull → 로컬 스케줄하게 할 뿐, 발사 시각에는 어떤 푸시도 보내지 않는다(로컬 링과 중복 알림 방지 — `src/index.ts` scheduled 주석 참고).
 
@@ -208,4 +212,4 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret:
 3. `apps/android-native/app/.../network/` 의 대응 `*Api.kt` 를 맞춘다.
 4. 정책이 바뀌었다면(시그니처가 아니라 규칙) 이 문서의 해당 문단만 고친다.
 
-출시 전이라 prod DB 는 초기화 예정이고, 하위호환 유지 의무는 없다. 브레이킹 변경은 클라와 같은 PR 에서 맞춰 넣으면 된다.
+⚠ **prod DB 는 초기화하지 않는다**(2026-08-01 확정, CLAUDE.md) — 이미 출시돼 실사용자 데이터가 들어 있다. 스키마 변경은 append-only 제자리 마이그레이션으로만 하고, 스토어에 남아 있는 구버전 앱이 있으므로 브레이킹 변경은 강제 업데이트(`app-version.ts` 의 `minSupported`)와 짝을 맞춰 넣는다.

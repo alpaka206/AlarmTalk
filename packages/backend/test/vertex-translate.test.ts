@@ -5,6 +5,7 @@ import {
   deriveAlarmDisplayText,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
+  dropLowArousalTags,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
 
@@ -149,9 +150,62 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    // 승인 태그가 여러 개여도 첫 태그 하나만 채택하고, 문장마다 다시 앞세운다(텍스트 불변).
-    expect(prepared.text).toBe('[cheerfully] Today is your stage. [cheerfully] Wake up with confidence.');
-    expect(prepared.tags).toEqual(['cheerfully']);
+    // ⚠ **모델이 넣은 태그를 그대로 둔다**(2026-08-13 — C안).
+    // 예전에는 첫 태그 하나만 채택해 원문을 재조립했다 — 그래서 프롬프트를 아무리 고쳐도
+    // 결과는 언제나 '원문 앞에 태그 하나' 였다. 여러 개·중간 배치가 요점이다.
+    expect(prepared.text).toBe('[cheerfully] Today is your stage. [excited] Wake up with confidence.');
+    expect(prepared.tags).toEqual(['cheerfully', 'excited']);
+  });
+
+  // ⚠ **C안(2026-08-13) 회귀 방지.** 오디오 태그는 여러 개·문장 중간·자유 어휘를 쓴다.
+  // 예전에는 (1) 프롬프트가 "정확히 하나, 맨 앞에" 로 못 박고 (2) 허용 목록이 감정 형용사
+  // 10개뿐이라 목록 밖 태그가 조용히 무태그로 강등되고 (3) 최종 문자열이 '원문 + 태그 하나'
+  // 로 재조립돼, 셋 중 하나만 고쳐도 변화가 관측되지 않았다.
+  it('허용 목록에 없던 어휘(비언어 소리·발성 방식·태도)도 태그로 살아남는다', async () => {
+    const text = '일어나! 오늘도 힘내자.';
+    queueContent(
+      geminiText(
+        '{"text":"[shouting] 일어나! [laughs] 오늘도 힘내자.","tags":["shouting","laughs"]}',
+      ),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toBe('[shouting] 일어나! [laughs] 오늘도 힘내자.');
+    expect(prepared.tags).toEqual(['shouting', 'laughs']);
+  });
+
+  // 쉼표가 든 두 마디 지시는 정규식에서 **태그로 인식조차 되지 않아** 통째로 폐기됐다.
+  it('쉼표가 든 태그도 인식한다', async () => {
+    const text = 'I am ready.';
+    queueContent(
+      geminiText('{"text":"[measured, deliberate] I am ready.","tags":["measured, deliberate"]}'),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+      targetLanguage: 'en',
+      sourceLanguage: 'en',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toContain('[measured, deliberate]');
+  });
+
+  // ⚠ **저각성 차단은 유지한다**(C안의 단서). 천천히 말하는 것과 졸리게 말하는 것은 다르다.
+  it('속도 지시는 허용하고 저각성 지시는 깨우는 경로에서 막는다', async () => {
+    expect(dropLowArousalTags('[measured, deliberate] 일어나!')).toBe(
+      '[measured, deliberate] 일어나!',
+    );
+    expect(dropLowArousalTags('[quietly] 일어나!')).toBe('일어나!');
+    expect(dropLowArousalTags('[shouting] 일어나! [whispers] 지금.')).toBe(
+      '[shouting] 일어나! 지금.',
+    );
   });
 
   it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {
@@ -478,7 +532,13 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('손녀 목소리');
   });
 
-  it('falls back when Gemini writes as the speaker relationship', async () => {
+  // ⚠ **이 테스트는 2026-08-20 에 뒤집혔다 — 예전에는 이걸 거절하도록 고정하고 있었다.**
+  // "민지야, … 엄마가 응원할게!" 는 엄마가 딸에게 하는 **가장 자연스러운 한국어**다.
+  // 그런데 옛 가드가 `엄마`+조사를 전부 유출로 보고 떨어뜨렸고, 그 탓에 사전렌더
+  // 사랑 3번 시드("늘 네 편이라고 응원한다") × 관계 '엄마' 가 **영구 실패**했다
+  // (dev 실측: cron 5틱 연속 거절 → 큐 failed → 앱에 "생성에 실패했어요").
+  // 화자의 3인칭 자기 지칭은 통과시키고, 화자가 그 사람이 **아님**을 드러내는 쓰임만 막는다.
+  it('keeps the line when the speaker refers to themselves in the third person', async () => {
     queueContent(
       geminiText('{"text":"민지야, 실내에서 가볍게 운동하자. 엄마가 응원할게!"}'),
     );
@@ -492,14 +552,358 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       listenerTitle: '민지야',
     });
 
-    expect(generated.provider).toBe('local');
-    expect(generated.text).toContain('민지야');
-    expect(generated.text).not.toContain('엄마가');
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).toContain('엄마가 응원할게');
   });
 
-  it('falls back when Gemini includes delivery tags or stage directions', async () => {
+  // ⚠ **관계 라벨로 상대 호칭을 추측하지 않는다**(Codex #701 P2). 2026-08-20 에 잠깐
+  // 열었다가 되돌렸다 — 관계 '아들' 은 화자가 아들이라는 뜻일 뿐 듣는 사람이 엄마인지
+  // 아빠인지는 모른다. 추측을 허용하면 **엄마를 "아빠" 라고 부르는 클립이 영구 저장**된다.
+  it('rejects a guessed family title when no listener title was provided', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
+  // ⚠ 태그 문법(ASCII)에 안 맞는 대괄호는 **벗겨지지도 인식되지도 않는다** — 그대로 두면
+  // 낭독되거나 화면에 뜬다(Codex #701 P2).
+  it('falls back when the line carries a bracketed direction outside the tag grammar', async () => {
+    queueContent(geminiText('{"text":"[다정하게] 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[다정하게]');
+  });
+
+  // ⚠ 닫히지 않은 대괄호는 `[...]` 쌍 매칭으로 잡히지 않는다(Codex #701 P2).
+  it('falls back when a bracketed direction is left unclosed', async () => {
+    queueContent(geminiText('{"text":"[다정하게 좋은 아침이에요. 오늘도 힘내요!"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[');
+  });
+
+  // ⚠ 인라인 태그가 **화면 문구로 새면 안 된다**(Codex #701 P2). 표시용(`text`)은 태그를
+  // 벗긴 본문, 합성용(`synthesisText`)은 모델이 배치한 그대로, `tags` 에는 전부 담긴다.
+  it('splits inline delivery tags into synthesis text, display text and tag metadata', async () => {
     queueContent(
-      geminiText('{"text":"[warmly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
+      geminiText('{"text":"[warmly] 좋은 아침이에요. [brightly] 오늘도 힘내요!","tag":""}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+    });
+
+    expect(generated.provider).toBe('vertex');
+    expect(generated.text).not.toContain('[');
+    expect(generated.text).toContain('좋은 아침이에요');
+    expect(generated.synthesisText).toContain('[warmly]');
+    expect(generated.synthesisText).toContain('[brightly]');
+    expect(generated.tags).toEqual(['warmly', 'brightly']);
+  });
+
+  // ⚠ 관계에서 유도한 호칭은 **호칭이 비었을 때만** 쓰는 보완책이다(Codex #701 P1).
+  // 사용자가 "자기야" 라고 넣었는데 "엄마," 로 시작하는 문구가 통과하면, 프롬프트가 약속한
+  // 호칭과 다른 말이 사전렌더 클립에 영구 저장된다.
+  it('prefers the explicit listener title over the inferred counterpart title', async () => {
+    queueContent(geminiText('{"text":"엄마, 일어나! 오늘도 좋은 하루 보내."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+      listenerTitle: '자기야',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
+  it('still falls back when the line uses a family title the relationship does not imply', async () => {
+    queueContent(geminiText('{"text":"할머니, 일어나세요! 오늘도 좋은 하루 보내세요."}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '아들',
+    });
+
+    expect(generated.provider).toBe('local');
+  });
+
+  it('still falls back when the line speaks as if the relationship were someone else', async () => {
+    // 전언 구문("엄마가 … 달라고 했어")은 화자가 심부름꾼이라는 뜻이다 — 자기 지칭과 반대다.
+    //
+    // ⚠ **어미만 보면 안 된다**(Codex #701 P2 후속). 대리 구문은 조사로도 만들어져서
+    // ("엄마한테 부탁받아서 깨우러 왔어") 전언 어미 검사를 통째로 비켜 갔다 —
+    // 그대로 두면 엄마 목소리가 "엄마가 시켜서 왔어" 라고 말하는 클립이 영구 저장된다.
+    for (const leak of [
+      '엄마처럼 챙겨 줄게',
+      '오늘은 엄마 대신 깨워 줄게',
+      '엄마가 깨워 달라고 했어',
+      '엄마를 대신해서 깨우러 왔어',
+      '엄마한테 부탁받아서 깨우러 왔어',
+      '엄마 부탁으로 알려 주는 거야',
+      '엄마가 시켜서 왔어',
+      '엄마 심부름으로 왔어',
+      '엄마가 부탁해서 깨우러 왔어',
+      '엄마가 깨우래',
+      '엄마가 깨워 달래',
+      '엄마가 얼른 일어나래요',
+      // 절 끝 부호는 마침표만이 아니다 — 쉼표·전각쉼표·말줄임도 절을 닫는다(Codex #702 P2).
+      '엄마가 깨우래, 얼른 준비하자',
+      '엄마가 깨우래， 서두르자',
+      '엄마가 깨우래요, 서두르자',
+      '엄마가 깨우래… 서두르자',
+      // 연결형 `래서` 도 전언이다 — 절 끝 부호가 아예 오지 않는다(Codex #702 P2).
+      '엄마가 깨우래서 왔어',
+      '엄마가 일어나래서 깨우는 거야',
+      '엄마가 깨워 달래서 왔어',
+      // **현재형 전언**은 지금 남의 말을 옮기는 형태라 엄마가 자기 말에 쓰지 않는다.
+      // 적대적 검증(754문장)에서 무더기로 새던 갈래다.
+      '엄마가 일어나라고 하네',
+      '엄마가 우산 챙기라잖아',
+      '엄마가 이제 일어나라네',
+      '엄마가 나더러 깨우라셔',
+      '엄마가 너 좀 깨워 달라네',
+      '엄마가 일어나라며 성화야',
+      '엄마가 깨우라던데 이제 일어나자',
+      '엄마가 나한테 널 깨우라고 부탁했어',
+      // **대리 구문 + 화자의 행동**. 지시 낱말만으로는 안 되고 대신 하는 행동이 있어야 한다.
+      '엄마가 시킨 대로 깨우러 왔어',
+      '엄마가 부탁하신 대로 깨우러 왔어',
+      '엄마의 말씀을 전하러 왔어',
+      '엄마의 부탁 때문에 깨우러 왔어',
+      '엄마한테 부탁을 하나 받아서 왔어',
+      // ⚠ '다른 행위자' 검사는 **대리 행동까지가 매치**인 갈래에서는 뒤를 보지 않는다
+      // (Codex #702 P2). 뒤에 이어지는 딴 이야기의 사람을 보고 대리 판정을 꺼 버리면
+      // 진짜 유출이 통과한다 — 마침표든 쉼표든 마찬가지다.
+      '엄마가 시켜서 깨우러 왔어. 아빠한테도 전화해야 해',
+      '엄마가 시켜서 깨우러 왔어, 아빠한테도 전화해야 해',
+      // 축약형 `~란다`·`~랍니다`(= `~라고 한다`)도 현재형 전언이다.
+      '엄마가 얼른 일어나란다',
+      '엄마가 얼른 일어나랍니다',
+      // 대리 행동은 깨우기·전달만이 아니다.
+      '엄마가 시켜서 전화했어',
+      '엄마가 부탁해서 말해 주는 거야',
+      '엄마가 얼른 일어나라네',
+      '엄마께서 시키신 일이라 왔어',
+      '엄마가 보내서 깨우러 왔어',
+      '엄마가 보내셔서 전하러 왔어',
+      // 뒤를 훑는 갈래(`엄마 대신`)도 **같은 문장까지만** 본다 — 뒷문장의 사람을 보고
+      // 대리 판정을 끄면 진짜 유출이 통과한다(Codex #702 P2).
+      '엄마 대신 깨우러 왔어. 아빠한테도 전화해야 해',
+    ]) {
+      queueContent(geminiText(`{"text":"민지야, ${leak}. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, leak).toBe('local');
+    }
+  });
+
+  // ⚠ **라벨은 앱 언어와 무관하게 한국어 정규값으로 저장된다**(안드로이드 `RelationshipPreset`).
+  // 그래서 en·ja 문구에는 `엄마` 라는 글자가 없고, 한국어 조사·어미만 보는 가드는 그 두
+  // 언어에서 통째로 무력했다(Codex #702 P2). 프롬프트는 세 언어에 걸려 있는데 백스톱만 비어
+  // 있던 것이다.
+  it('rejects messenger wording in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, your mom asked me to wake you up. Time to get going!' },
+      { lang: 'en', listener: 'Minji', text: "Minji, I'm here on behalf of your mom. Rise and shine!" },
+      { lang: 'en', listener: 'Minji', text: "Minji, this is your mom's voice reminding you to get up." },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんに頼まれて起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママの代わりに起こしに来たよ。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、お母さんが早く起きなさいって言ってたよ。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('local');
+    }
+  });
+
+  // 자기 3인칭 지칭은 en·ja 에서도 자연스럽다 — 전달 틀이 없으면 통과해야 한다.
+  it('keeps third-person self-reference in English and Japanese output', async () => {
+    const cases = [
+      { lang: 'en', listener: 'Minji', text: 'Minji, good morning! Mom is always on your side. Have a great day.' },
+      { lang: 'en', listener: 'Minji', text: 'Minji, it might rain today. Mom wants you to take an umbrella.' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、おはよう。ママはいつも味方だからね。' },
+      { lang: 'ja', listener: 'みんじ', text: 'みんじ、ママが作った朝ごはん、ちゃんと食べてね。' },
+    ];
+    for (const c of cases) {
+      queueContent(geminiText(JSON.stringify({ text: c.text })));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: c.lang,
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: c.listener,
+      });
+
+      expect(generated.provider, c.text).toBe('vertex');
+    }
+  });
+
+  // ⚠ 관계 라벨은 **자유 입력**이라 "우리 엄마" 처럼 가족 토큰을 품은 복합어일 수 있다
+  // (Codex #702 P2). 잡힌 토큰(`엄마`)을 라벨 전체와 그대로 비교하면 자기 자신을 '다른
+  // 행위자' 로 읽어 대리 구문 탐지가 통째로 꺼진다.
+  it('still detects proxy wording when the relationship label is a compound', async () => {
+    for (const label of ['우리 엄마', '사랑하는 엄마']) {
+      queueContent(geminiText(`{"text":"민지야, ${label}가 시켜서 깨우러 왔어. 얼른 일어나자!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: label,
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, label).toBe('local');
+    }
+  });
+
+  // ⚠ 대리 구문 가드가 **자기 지칭까지 삼키면 안 된다.** 한국어에는 낱말 경계가 없어서
+  // `~래` 한 글자가 권유형(`입을래?`)·명사(`노래`)와 겹치고, `~대` 는 날씨 전달의 표준
+  // 어미라 프롬프트 few-shot 이 직접 쓴다("비가 올 수 있대요"). 넓게 잡으면 멀쩡한 문구가
+  // 떨어지고, 그게 사랑 3번 시드를 영구 실패시켰던 바로 그 사고다.
+  it('keeps natural self-reference that only looks like reported speech', async () => {
+    for (const line of [
+      '민지야, 엄마가 사 준 옷 입을래? 오늘 좀 쌀쌀해',
+      '민지야, 엄마가 데려다줄까? 아니면 같이 걸어갈래?',
+      '민지야, 일어나면 엄마가 틀어 주는 노래. 그거 듣고 힘내자',
+      '민지야, 속상하면 엄마가 달래 줄게. 얼른 일어나자',
+      '민지야, 엄마가 보니까 오늘 비 온대. 우산 꼭 챙겨',
+      // 실 Vertex 출력(2026-08-21): `~ㄹ 거래` 는 날씨 전달의 표준 어미다.
+      '민지야, 엄마가 창밖 보니 오늘은 흐릴 거래. 따뜻하게 입고 나가',
+      '민지야, 엄마가 부탁해서 미안한데 오늘은 좀 일찍 나가 줘',
+      '민지야, 일어나면 엄마한테 전화 한 통 줘',
+      // 쉼표를 절 끝으로 인정한 뒤에도 권유형·명사는 그대로 통과해야 한다.
+      '민지야, 엄마가 사 준 옷 입을래, 오늘 좀 쌀쌀해',
+      '민지야, 엄마가 틀어 주는 노래, 그거 듣고 힘내자',
+      // ⚠ **조사가 뜻을 뒤집는다**(Codex #702 P2). `부탁받다` 는 라벨이 **주는 쪽**일 때만
+      // 유출이다 — 주격이면 엄마가 부탁을 **받은** 쪽이라 자기 지칭이다.
+      '민지야, 엄마가 네 부탁받아서 오늘 일찍 깨워 주는 거야',
+      '민지야, 엄마가 부탁받아서 오늘은 일찍 깨워 줄게',
+      // `그래서`(접속부사)를 연결형 전언 `래서` 로 읽으면 안 된다.
+      '민지야, 엄마가 걱정돼서 그래서 깨우는 거야',
+      '민지야, 엄마가 심부름 좀 부탁할게. 우유 사다 줄래?',
+      // ── 아래는 적대적 검증(754문장)에서 나온 **실측 오탐**이다. 전부 엄마 자신의 말이다.
+      // 한 음절 어미가 다른 낱말과 겹치는 것들.
+      '민지야, 엄마가 걱정돼서 그랬어. 미안해',
+      '민지야, 엄마가 늘 그랬듯이 오늘도 응원할게',
+      '민지야, 엄마가 그랬잖아, 아침이 하루를 만든다고',
+      '민지야, 엄마가 오늘 하늘 봤는데 정말 파래',
+      '민지야, 엄마가 널 사랑한 지 참 오래',
+      '민지야, 엄마가 이마에 손을 댔더니 열이 좀 있네',
+      '민지야, 엄마가 네 행복을 늘 바라네. 오늘도 좋은 하루 보내',
+      '민지야, 엄마가 보니까 키가 많이 자라네. 밥 잘 챙겨 먹어',
+      // 과거형 인용은 **엄마가 자기 잔소리를 되짚는 말**과 형태가 같다.
+      '민지야, 엄마가 어릴 때부터 그러라고 했잖아? 아침밥은 꼭 먹기',
+      // 지시 낱말이 있어도 화자가 대신 하는 행동이 없으면 자기 서술이다.
+      '민지야, 엄마가 시켜서 억지로 하지는 마. 네가 하고 싶은 대로 해',
+      '민지야, 엄마가 시켜서 하는 게 아니라 네가 하고 싶어서 하는 거야',
+      '민지야, 엄마의 심부름 때문에 아침이 바쁘겠다. 얼른 일어나',
+      // 관형형 `부탁받은` 은 받은 쪽이 **청자**다.
+      '민지야, 엄마한테 부탁받은 우산 꼭 챙겨 가',
+      // 대신하는 사람이 **다른 사람**으로 적혀 있으면 화자가 대리인이 아니다.
+      '민지야, 엄마를 대신해서 오늘은 아빠가 데리러 갈 거야',
+      '민지야, 엄마가 부탁해서 아빠가 깨우러 갈 수도 있어',
+      '민지야, 엄마를 대신할 알람은 없으니까 얼른 일어나',
+      '민지야, 엄마를 대신해서, 오늘은 아빠가 데리러 갈 거야',
+      // ⚠ 계사 `~이란다`/`~ㄹ 거란다` 는 전언 `~란다` 와 정반대다. 실 Vertex 출력이
+      // "할머니는 늘 네 편이란다" 를 냈다(2026-08-21 실측).
+      '민지야, 엄마는 늘 네 편이란다. 얼른 일어나자',
+      '민지야, 엄마는 늘 네 편이랍니다. 얼른 일어나요',
+      '민지야, 엄마가 보기엔 오늘도 좋은 하루가 될 거란다. 힘내',
+      '민지야, 엄마가 화난 게 아니란다. 걱정 말고 일어나',
+      '민지야, 엄마는 네가 행복하기를 바란다. 오늘도 힘내',
+      '민지야, 엄마가 네 행복을 바랍니다',
+      // 대리 행동 낱말이 화자 자신의 행동일 때는 유출이 아니다.
+      '민지야, 엄마가 이따 전화할게. 얼른 일어나',
+      '민지야, 엄마가 데리러 갈게. 준비하고 있어',
+      // ⚠ 어간이 `라` 로 끝나는 용언은 전언이 아니다 — 바라다·자라다에 더해 `놀라다`.
+      '민지야, 엄마가 네 성장에 깜짝 놀라네. 오늘도 화이팅',
+      '민지야, 엄마가 놀란다. 얼른 일어나',
+      // 계사 `~이라네`/`~ㄹ 거라네`/`아니라네` 도 마찬가지.
+      '민지야, 엄마의 마음은 늘 사랑이라네. 힘내',
+      '민지야, 엄마가 보기엔 오늘도 좋은 날이라네',
+      '민지야, 엄마가 화난 게 아니라네. 걱정 마',
+      // ⚠ 맨 과거형 `시켰` 은 **자기 지시를 되짚는 말**과 구별되지 않는다.
+      '민지야, 엄마가 시켰잖아, 전화해 줘',
+      '민지야, 엄마가 시켰지? 얼른 전화해 줘',
+      // ⚠ 같은 낱말이라도 **청자에게 시키는 것**이면 화자의 대리 행동이 아니다.
+      '민지야, 엄마가 부탁해서 미안해, 전화해 줘',
+      '민지야, 엄마가 부탁해서 미안한데 이따 전화해 줄래?',
+      '민지야, 엄마가 부탁해서 전해 줘',
+      '민지야, 엄마가 보내서 온 택배 잊지 말고 받아',
+    ]) {
+      queueContent(geminiText(`{"text":"${line}!"}`));
+
+      const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '엄마',
+        listenerTitle: '민지야',
+      });
+
+      expect(generated.provider, line).toBe('vertex');
+    }
+  });
+
+  // ⚠ **대괄호 태그는 이제 정상이다**(2026-08-13 — C안). 막는 것은 소괄호·전각괄호 지문과
+  // 저각성 지시뿐이다. 여기서는 저각성(`[quietly]`)으로 실패를 확인한다.
+  it('falls back when Gemini includes stage directions or low-arousal tags', async () => {
+    queueContent(
+      geminiText('{"text":"[quietly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
     );
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -672,8 +1076,10 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
     expect(out.tag).toBe('cheerfully');
   });
 
-  it('문구 안에 대괄호/지문이 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '[shouting] 일어나!', tag: '' })));
+  // ⚠ 대괄호 태그는 이제 정상이다(C안). 막는 것은 **낭독돼 버리는 소괄호 지문**과
+  // 저각성 지시뿐이다 — `（다정하게）` 는 ElevenLabs 가 태그로 안 읽고 글자로 읽는다.
+  it('문구 안에 소괄호 지문이나 저각성 지시가 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
     await expect(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);

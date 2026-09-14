@@ -60,7 +60,7 @@ export default async function CompanyPage({
   return (
     <>
       <SiteHeader />
-      <main className="relative">
+      <main id="main" className="relative">
         <CompanyHero />
         <Principles />
         <Products />
@@ -154,7 +154,7 @@ function Products() {
         </div>
         <div className="mt-12 grid gap-6 lg:grid-cols-2">
           <article className="card-raised p-8 lg:p-10">
-            <span className="eyebrow">{alarm.tag}</span>
+            <span className="eyebrow" translate="no">{alarm.tag}</span>
             <h3 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.01em] text-text">
               {alarm.title}
             </h3>
@@ -196,9 +196,9 @@ function FutureSlots() {
           {items.map((item) => (
             <li
               key={item.title}
-              className="card p-6 opacity-80 transition hover:opacity-100"
+              className="card p-6"
             >
-              <span className="inline-flex items-center rounded-full border border-line bg-raised px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-text-faint">
+              <span className="inline-flex items-center rounded-full border border-line bg-raised px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-wider text-text-muted">
                 {item.tag}
               </span>
               <h3 className="mt-5 text-[17px] font-semibold leading-[1.4] tracking-[-0.01em] text-text">

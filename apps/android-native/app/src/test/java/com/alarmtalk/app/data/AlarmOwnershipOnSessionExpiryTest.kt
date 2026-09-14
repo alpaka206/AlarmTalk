@@ -91,6 +91,64 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /** 기본값은 ownerUserId 컬럼이 생기기 전에 만들어진 '소유자 미기록' 알람. */
+    /**
+     * **로그아웃이 끄는 것은 떠나는 계정 것뿐이다** (Codex #699 P1, 2026-08-19 감사에서 테스트 부재 확인).
+     *
+     * 예약 취소는 전부에 걸어도 되지만(주인이 다시 로그인하면 되살아난다) `enabled=false` 는
+     * 되돌릴 수 없다. A 가 자동 401 로 세션만 잃은 상태에서 B 가 로그인했다 로그아웃하면
+     * **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다.
+     *
+     * iOS 에는 같은 규칙의 테스트가 있는데(`LeaveAccountScopeTests`) 안드로이드에는 없어서,
+     * 필터를 `settled.filter { it.enabled }` 로 바꿔 전부 끄게 만들어도 전 스위트가 통과했다.
+     */
+    @Test
+    fun signOutDisablesOnlyTheDepartingAccountsAlarms() = runBlocking {
+        seedLegacyAlarm(id = "a-owned", owner = "account-A")
+        seedLegacyAlarm(id = "b-owned", owner = "account-B")
+        currentUser = "account-B"
+
+        repository.detachAlarmsOnSignOut("account-B") { }
+
+        assertEquals(
+            "떠나는 계정(B)의 알람은 꺼져야 한다",
+            false,
+            dao.getById("b-owned")?.enabled,
+        )
+        assertEquals(
+            "자동 401 로 세션만 잃은 A 의 알람이 B 의 로그아웃에 꺼졌다 — A 는 영영 되찾지 못한다",
+            true,
+            dao.getById("a-owned")?.enabled,
+        )
+    }
+
+    /**
+     * 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다 — 단 **소유권 확정에 성공했을 때만**이다.
+     * 확정 전 스냅샷으로 판정하면 앞 계정 행을 오인한다(같은 리뷰에서 한 번 밟았다).
+     */
+    @Test
+    fun signOutDisablesOwnerlessRowsAsTheDepartingAccount() = runBlocking {
+        seedLegacyAlarm(id = "legacy", owner = null)
+        currentUser = "account-B"
+
+        repository.detachAlarmsOnSignOut("account-B") { }
+
+        assertEquals(false, dao.getById("legacy")?.enabled)
+    }
+
+    /**
+     * **게이트만 남기고 '후보 없음' 지름길을 없앤다** (2026-08-19 감사 P2).
+     *
+     * 2026-08-19 정책 변경으로 [detachAlarmsOnSignOut] 이 행까지 끄면서,
+     * [reschedulePendingAlarms] 가 0 을 돌려주는 이유가 **게이트가 아니라 그냥 후보가
+     * 없어서**가 됐다. 그래서 아래 테스트들이 지키던 게이트·락·복원대상 판정을 통째로
+     * 지워도 전부 통과했다(공허한 초록).
+     *
+     * 그 판정을 계속 재려면 행을 도로 켜서 **후보로 만들어 놓고** 게이트가 막는지 봐야 한다.
+     */
+    private suspend fun makeCandidateAgain(id: String = "legacy-1") {
+        dao.setState(id = id, state = AlarmStates.SCHEDULED, enabled = true, updatedAtMillis = 3_000L)
+    }
+
     private suspend fun seedLegacyAlarm(
         id: String = "legacy-1",
         owner: String? = null,
@@ -357,6 +415,8 @@ class AlarmOwnershipOnSessionExpiryTest {
         repository.detachAlarmsOnSignOut("account-A")
 
         // 그 뒤에 워커가 돌아도 되살아나면 안 된다.
+        // 행이 꺼진 것만으로 0 이 되면 복원대상 판정을 못 재므로, 후보로 되돌려 놓고 본다.
+        makeCandidateAgain()
         val scheduled = repository.reschedulePendingAlarms()
 
         assertEquals("로그아웃 뒤 복원은 아무것도 예약하지 않는다", 0, scheduled)
@@ -515,9 +575,25 @@ class AlarmOwnershipOnSessionExpiryTest {
             shadowAlarmManager.peekNextScheduledAlarm(),
         )
 
-        // 같은 계정이 다시 로그인하면 게이트를 내려 정상 복원된다 — 굳으면 영영 안 울린다.
+        // ⚠ **로그아웃은 행도 끈다**(2026-08-19 정책). 그래서 재로그인만으로는 되살아나지
+        // 않는다 — 예전 이 테스트는 "재로그인하면 되살아나야 한다" 를 고정하고 있었고,
+        // 그건 정책이 바뀌기 전의 기대다.
+        assertEquals("로그아웃했으면 행도 꺼져 있어야 한다", false, dao.getById("legacy-1")?.enabled)
+
+        // 게이트가 **굳지 않았는지**는 사용자가 다시 켰을 때로 확인한다. 이 테스트의 원래
+        // 목적이 그것이다 — 게이트가 영구히 남으면 그 계정은 무슨 짓을 해도 못 울린다.
         repository.clearSignOutWithoutSessionClearGate("account-A")
-        assertEquals("재로그인하면 되살아나야 한다", 1, repository.reschedulePendingAlarms())
+        dao.setState(
+            id = "legacy-1",
+            state = AlarmStates.SCHEDULED,
+            enabled = true,
+            updatedAtMillis = 2_000L,
+        )
+        assertEquals(
+            "재로그인 뒤 사용자가 켠 알람은 예약돼야 한다 — 게이트가 굳으면 영영 안 울린다",
+            1,
+            repository.reschedulePendingAlarms(),
+        )
     }
 
     /**
@@ -543,6 +619,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         }
         assertNull("전제: 소유자는 여전히 미기록이다", ownerOf("legacy-1"))
 
+        makeCandidateAgain()
         val scheduled = repo.reschedulePendingAlarms()
 
         assertEquals("주인 없는 행도 되살리면 안 된다", 0, scheduled)

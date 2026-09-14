@@ -42,22 +42,6 @@ internal data class PermissionSnapshot(
     val alarmReady: Boolean
         get() = exactAlarms && notifications && fullScreenIntent
 
-    /**
-     * **권한이 모자라 제 성능이 안 나오는 상태.** 세 권한 중 하나라도 빠지면 true.
-     *
-     * 셋 다 '못 울리게' 만들지는 **않는다** — 실기기 코드 기준:
-     *  - 알림 없음: 알림·헤드업이 안 뜰 뿐이다. `RingingService` 는 알림 권한을 보지 않고
-     *    포그라운드 서비스로 소리·진동을 그대로 시작하며, 헤드업이 불가능하면
-     *    (`ringingChannelCanShowHeadsUp()` false) **울림 화면을 직접 띄우도록** 짜여 있다.
-     *  - 정확 알람 없음: `setAndAllowWhileIdle` 폴백 → 울리되 수 분 늦을 수 있다.
-     *  - 전체화면 없음: 소리는 나되 잠금 화면을 덮지 못한다.
-     *
-     * 그래서 어떤 경우에도 "울리지 않아요" 라고 말하지 않는다. 안 울린다고 하면 사용자가
-     * 멀쩡히 울릴 알람을 없는 것으로 믿고 다른 알람을 또 맞춘다(Codex #671 P1).
-     */
-    val ringingDegraded: Boolean
-        get() = !alarmReady
-
     val allStartupGranted: Boolean
         get() = alarmReady && recordAudio
 

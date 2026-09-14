@@ -29,10 +29,16 @@ class DeliveryTagStripTest {
 
     @Test
     fun `사용자가 친 대괄호는 그대로 둔다`() {
-        // 태그 목록에 없는 대괄호 = 사용자 문구. 지우면 저장 시 영구 소실된다.
+        // ⚠ **판정 축은 '출처' 하나다**(2026-08-13 변경).
+        // 예전에는 철자 목록으로 "우리 태그인가" 를 가렸지만, 이제 태그 어휘가 **열린
+        // 집합**이라(비언어 소리·발성 방식·태도) `[after lunch]`(사용자 메모)와
+        // `[laughs nervously]`(우리 태그)를 **모양으로는 구분할 수 없다.**
+        //
+        // 그래서 사용자 문구는 `generated = false` 로 들어와 **아예 손대지 않는 것**으로
+        // 지킨다. 서버도 같은 축이다(`deriveAlarmDisplayText` 는 사용자가 친 대괄호를 보존).
         assertEquals(
             "[after lunch] take medicine",
-            "[after lunch] take medicine".stripDeliveryTags(generated = true),
+            "[after lunch] take medicine".stripDeliveryTags(generated = false),
         )
     }
 
@@ -43,11 +49,17 @@ class DeliveryTagStripTest {
         assertEquals(original, original.stripDeliveryTags(generated = true))
     }
 
+    // 생성물 안의 대괄호는 **전부 우리 것**이다 — 그 문구는 사용자가 친 적이 없다.
     @Test
-    fun `태그와 사용자 대괄호가 섞이면 태그만 벗긴다`() {
+    fun `생성물의 대괄호는 목록에 없던 어휘도 벗긴다`() {
         assertEquals(
-            "[after lunch] 약 먹자",
-            "[warmly] [after lunch] 약 먹자".stripDeliveryTags(generated = true),
+            "일어나! 오늘도 힘내자.",
+            "[shouting] 일어나! [laughs nervously] 오늘도 힘내자.".stripDeliveryTags(generated = true),
+        )
+        // 쉼표가 든 두 마디 지시도 벗겨야 한다 — 예전 정규식은 매치조차 못 했다.
+        assertEquals(
+            "I am ready.",
+            "[measured, deliberate] I am ready.".stripDeliveryTags(generated = true),
         )
     }
 

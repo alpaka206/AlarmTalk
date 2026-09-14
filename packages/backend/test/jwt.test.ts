@@ -29,6 +29,35 @@ describe('appJwt', () => {
     await expect(verifyAppJwt(token, SECRET)).rejects.toThrow(/expired/i);
   });
 
+  it('exp 에 정확히 도달한 토큰도 만료다', async () => {
+    const token = await signAppJwt({ sub: 'u1', email: 'u@test.com' }, SECRET, 0);
+    await expect(verifyAppJwt(token, SECRET)).rejects.toThrow(/expired/i);
+  });
+
+  it.each([undefined, null, '2999999999'])(
+    '서명이 유효해도 잘못된 exp %s 는 거절한다',
+    async (exp) => {
+      const valid = await signAppJwt({ sub: 'u1', email: 'u@test.com' }, SECRET);
+      const [header, encoded] = valid.split('.');
+      const body = JSON.parse(Buffer.from(encoded!, 'base64url').toString()) as Record<
+        string,
+        unknown
+      >;
+      body.exp = exp;
+      const input = `${header}.${Buffer.from(JSON.stringify(body)).toString('base64url')}`;
+      const key = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(SECRET),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign'],
+      );
+      const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(input));
+      const token = `${input}.${Buffer.from(signature).toString('base64url')}`;
+      await expect(verifyAppJwt(token, SECRET)).rejects.toThrow(/expiry/i);
+    },
+  );
+
   it('형식 잘못된 토큰 거부', async () => {
     await expect(verifyAppJwt('not-a-jwt', SECRET)).rejects.toThrow();
   });

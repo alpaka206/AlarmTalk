@@ -1,25 +1,31 @@
 # 에러 코드 레퍼런스 (error_code)
 
-백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내려주는 `error_code` 목록이다.
-응답 형태는 `{ "error": "<사람이 읽는 메시지>", "error_code": "<SCREAMING_SNAKE>", ... }` 이고,
-클라이언트는 이 `error_code` 를 키로 사용자 안내 문구를 매핑한다.
+백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내려주는 `error_code` 의
+**HTTP status 와 발생 위치** 표다. 응답 형태는
+`{ "error": "<사람이 읽는 메시지>", "error_code": "<SCREAMING_SNAKE>", ... }` 이다.
 
-> **드리프트 확인**: 이 표는 손으로 관리하므로 코드가 유일한 진실이다. 어긋났는지 보려면
-> `packages/backend` 에서 아래를 돌려 표와 비교한다.
+> ⚠ **코드 목록의 단일 출처는 여기가 아니다** —
+> `packages/shared/src/schemas/error-codes.ts` 의 `ERROR_CODES` 하나다. 규약(코드를
+> 바꾸지 않는다 / 기록은 전부·경보는 골라서 / 앱의 3층 문구 표)은
+> [`docs/spec/error-codes.md`](../spec/error-codes.md) 가 단일 출처다.
+> 이 문서는 그 목록이 담지 않는 것 — **status 와 위치** — 만 보탠다.
 >
-> ```
-> grep -rhoE "error_code:\s*'[A-Z0-9_]+'" src | sed -E "s/.*'([A-Z0-9_]+)'/\1/" | sort -u
-> ```
+> 어긋났는지 보려면 `ERROR_CODES` 와 아래 표를 대조한다. 회귀 방지는
+> `packages/backend/test/error-codes.test.ts` 가 맡는다(목록 중복 / 소스 리터럴이 목록에
+> 있는지 / 안 쓰는 코드 / 코드 없는 4xx·5xx).
 >
-> `routes/auth.ts` 는 `jsonError('<CODE>', …)` 헬퍼를, `middleware/auth.ts` 의 토큰 검증 실패는
-> 삼항 분기를 쓰므로 위 grep 에 안 걸린다. 그 두 파일은 직접 확인한다.
+> **아래 표에 없는 코드가 `ERROR_CODES` 에는 있을 수 있다**(2026-09-08 기준 19개).
+> 분기하려는 코드는 목록을 먼저 본다.
 
 ## 원칙: 앱 = 안내 문구 / 관리자 = 코드 + 위치
 
-- **앱(사용자)**: `error_code` 원문을 노출하지 않고 코드별로 매핑한 안내 문구만 보여준다.
-  Android 는 `network/ApiErrors.kt` 의 `apiErrorCode()` 로 코드를 뽑아 화면/뷰모델의 `when(code)` 로
-  문구를 고르고, 매핑이 없으면 로컬라이즈된 fallback 을 쓴다. `ui/util/PlatformAndLabelUtils.kt` 의
-  `userFacingError()` 는 서버 메시지 중 **한글이 포함된 것만** 노출하므로 SCREAMING_SNAKE 가 화면에 새지 않는다.
+- **앱(사용자)**: `error_code` 원문을 노출하지 않고 코드로 문구를 고른다. **층이 셋**이고
+  위에서부터 이긴다 — ① 화면별 `when(code)`, ② 공용 표
+  (`network/ApiErrorMessages.kt` / `APIErrorMessages.swift`), ③ 폴백
+  (`userFacingError()`, `ui/util/PlatformAndLabelUtils.kt` — 서버 메시지 중 한글이 포함된
+  것만 노출). 코드는 `network/ApiErrors.kt` 의 `apiErrorCode()` 로 뽑는다.
+  **두 앱의 공용 표는 짝이다** — 한쪽에만 코드를 더하면 같은 실패가 다르게 읽힌다.
+  자세한 규칙은 [`docs/spec/error-codes.md`](../spec/error-codes.md) §4.
 - **관리자**: `error_code` + '어디서/무엇' 을 서버 로그(구조화 JSON)와 Sentry 로 식별한다.
   `lib/logger.ts` 의 `logRouteError()` 가 `{ method, path, uid, error, stack }` 을 남기고,
   Sentry 캡처 시 `route`·`method`·`uid` 를 태그로 붙인다.
@@ -47,7 +53,7 @@
 | `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | `routes/user.ts`, `billing-*.ts`, `code.ts`, `family-*.ts` |
 | `FORBIDDEN` | 리소스 접근/소유권 없음(테스트 코드 발급자 아님) | 403 | `routes/billing-mutation.ts` |
 | `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열) | 400 | `routes/billing-google.ts` |
-| `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts`, `push.ts` |
+| `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts`, `push.ts`, `events.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts` |
 | `ADMIN_UNCONFIGURED` | 관리자 콘솔 미구성(`ADMIN_SECRET` 없음) | 503 | `routes/admin.ts` |
 
@@ -137,7 +143,7 @@
 | `TRANSACTION_ACCOUNT_MISMATCH` | 구매의 `obfuscatedAccountId` 가 다른 계정 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_ACCOUNT_UNVERIFIED` | 구매에 계정 식별자가 없어 귀속 확인 불가 | 403 | `routes/billing-google.ts` |
 | `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 이미 귀속된 트랜잭션 | 409 | `lib/store-billing.ts`(→ `billing-google.ts`) |
-| `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 403 | `routes/billing-mutation.ts` |
+| `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 409 | `routes/billing-mutation.ts` |
 | `PLAN_KEY_REQUIRED` | plan_key 필요 | 400 | `routes/billing-mutation.ts` |
 | `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
 | `PLAN_INACTIVE` | 비활성 플랜 | 400 | `routes/billing-mutation.ts` |
@@ -146,10 +152,16 @@
 | `INVALID_COUNT` | 테스트 코드 count 범위 오류(1~50) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_DAYS` | 테스트 코드 days 범위 오류(1~365) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
-| `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소/변경 대상 없음) | 400 | `routes/billing-mutation.ts` |
-| `SAME_PLAN` | 이미 해당 플랜 이용 중 | 400 | `routes/billing-mutation.ts` |
+| `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소 대상 없음) | 404 | `routes/billing-mutation.ts` |
 | `PLAY_CANCEL_FAILED` | Play 구독 해지 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
 | `PLAY_REVOKE_FAILED` | Play 구독 즉시 철회 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
+| `STORE_CANCEL_UNSUPPORTED` | **애플 구독은 서버가 못 끊는다**(+`manage_url`) — 앱이 App Store 관리 화면을 연다 | 409 | `routes/billing-mutation.ts` |
+| `APPLE_BILLING_UNCONFIGURED` | 애플 결제 시크릿 미설정 | 503 | `routes/billing-apple.ts` |
+| `TRANSACTION_NOT_FOUND` | App Store Server API 에 그 트랜잭션이 없음 | 404 | `routes/billing-apple.ts` |
+| `APPLE_VERIFICATION_FAILED` | 애플 서명 검증 실패 | 502 | `routes/billing-apple.ts` |
+| `UNKNOWN_PRODUCT` | 우리가 모르는 애플 product id | 400 | `routes/billing-apple.ts` |
+| `TRANSACTION_REVOKED` | 환불·취소된 트랜잭션 | 400 | `routes/billing-apple.ts` |
+| `TRANSACTION_NOT_SUBSCRIPTION` | 만료일이 없는 트랜잭션(구독 아님) | 400 | `routes/billing-apple.ts` |
 | `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
 | `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 
@@ -248,7 +260,6 @@
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `DEV_ONLY_ROUTE` | dev 전용 라우트 | 404 | `routes/voice-profile.ts` |
 | `INVALID_NAME_LENGTH` | 이름 길이 규칙 위반 | 400 | `routes/voice-profile.ts` |
 | `NAME_TOO_LONG` | 이름 50자 초과 | 400 | `routes/voice-profile.ts` |
 | `INVALID_RELATIONSHIP_LABEL` | relationship_label 형식 오류 | 400 | `routes/voice-profile.ts` |
@@ -339,9 +350,14 @@
 
 ## 관리자 가시성 (Sentry / 로그)
 
-- **구조화 로그**: `logRouteError()` 가 `{ level:"error", method, path, uid, error, stack }` JSON 을
-  stderr 로 남긴다. Cloudflare Workers 로그(wrangler tail / 대시보드)에서 `path` 로 검색한다.
-- **Sentry 태그**: `SENTRY_DSN` 이 설정된 경우 캡처 전에 `route`(=`c.req.path`)·`method`·`uid` 를
-  태그로 붙인다. `route:/api/...`, `method:POST`, `uid:<...>` 로 필터할 수 있다(`lib/logger.ts`).
-- **주의**: 5xx(서버/업스트림 실패) 계열만 `logRouteError()` 로 캡처된다. 4xx(사용자 입력/상태)는
-  정상 흐름이라 캡처하지 않고, 클라가 응답 본문의 `error_code` 로 안내 문구를 고른다.
+- **기록은 전부.** `middleware/errorCode.ts` 가 **나가는 모든 4xx/5xx** 를 한 줄로 남긴다
+  (`{ level, at:"api_error", status, method, path, code, uid }`). 라우트가 `jsonError` 를
+  쓰든 `c.json` 을 직접 쓰든 다른 미들웨어(rateLimit·bodyLimit)가 내든 걸린다 —
+  기록 지점이 응답 쪽이기 때문이다. Cloudflare Workers 로그에서 `at:"api_error"` 나
+  `code` 로 검색한다.
+- **경보는 골라서.** Sentry 로 올라가는 것은 `ALERTING_ERROR_CODES`
+  (`packages/shared/src/schemas/error-codes.ts`)에 있는 4xx **+ 모든 5xx** 다. 오타·형식
+  오류까지 보내면 진짜 사고가 그 사이에 묻힌다.
+- **중복 방지**: 라우트가 이미 `logRouteError()`(`lib/logger.ts`, 스택까지 갖고 있다)로
+  보고했으면 컨텍스트에 `errorReported` 가 남고 미들웨어는 그 5xx 를 건너뛴다.
+- **Sentry 태그**: `route`(=`c.req.path`)·`method`·`status`·`error_code`, 그리고 있으면 `uid`.

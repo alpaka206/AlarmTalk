@@ -1,5 +1,10 @@
 import { UUID_RE } from '../lib/validate';
-import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
+import type { ErrorCode } from '@alarmtalk/shared';
+import {
+  FREE_BUCKET_CATEGORIES,
+  CLONE_PRERENDER_CATEGORIES,
+  normalizeStockCategory,
+} from '../lib/stock-clips';
 import {
   isBlockedByFamilyAlarmQuietTime,
   type FamilyAlarmSettings,
@@ -7,7 +12,7 @@ import {
 import type { DbExecutor } from '../lib/transactions';
 
 /** 알람 시각 판정의 폴백 시간대. 클라가 IANA tz 를 안 보냈거나 값이 부정확할 때 쓴다. */
-export const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
+const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
@@ -15,6 +20,16 @@ export const VIBRATION_PATTERNS = ['default', 'strong', 'none'] as const;
 export type VibrationPattern = (typeof VIBRATION_PATTERNS)[number];
 export const WAKE_MODES = ['sound_then_voice', 'voice_only'] as const;
 export type WakeMode = (typeof WAKE_MODES)[number];
+
+/**
+ * 배포가 Worker → 원격 migration 순서라 새 코드가 #104 이전 스키마를 잠깐 만날 수 있다.
+ * 타깃 알람 경로는 이 값이 false면 쓰기를 거부한다. 구형 방식으로 저장하면 컬럼 확인 직후
+ * migration이 끝나는 경합에서 delivery_version=NULL 행이 영구히 남을 수 있다.
+ */
+export async function alarmDeliveryVersionSupported(db: DbExecutor): Promise<boolean> {
+  const columns = await db.execute({ sql: "PRAGMA table_info('alarms')", args: [] });
+  return columns.rows.some((row) => String(row.name) === 'delivery_version');
+}
 
 export type AlarmRow = Record<string, unknown> & {
   repeat_days?: unknown;
@@ -96,7 +111,8 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
   };
 }
 
-type FieldError = { error: string; error_code: string };
+// error_code 는 **목록에 있는 코드**여야 한다 — 이 객체가 그대로 400 본문이 된다.
+type FieldError = { error: string; error_code: ErrorCode };
 
 export function validateAlarmFields(body: {
   mode?: string;
@@ -120,14 +136,22 @@ export function validateAlarmFields(body: {
   // greeting(기상 인사) 도 실어 동기화한다(AlarmEditorState.clonePrerenderBucketCategoryFor: preset→greeting).
   // CLONE_PRERENDER_CATEGORIES(=유료 버킷+greeting) 로 허용하지 않으면 기본 클론 알람이 INVALID_BUCKET_ID
   // 로 거부돼 영구 미동기화된다.
-  if (
-    body.bucket_id !== undefined &&
-    body.bucket_id !== null &&
-    (typeof body.bucket_id !== 'string' ||
-      (!FREE_BUCKET_CATEGORIES.includes(body.bucket_id) &&
-        !CLONE_PRERENDER_CATEGORIES.includes(body.bucket_id)))
-  ) {
-    return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+  if (body.bucket_id !== undefined && body.bucket_id !== null) {
+    if (typeof body.bucket_id !== 'string') {
+      return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+    }
+    // ⚠ **옛 이름을 여기서 접는다**(2026-09-03). 두 허용 집합은 카탈로그에서 파생되므로
+    //   이름을 바꾸는 순간 옛 값이 목록에서 사라진다 — 구버전 앱이 보내는 `love` 가
+    //   **INVALID_BUCKET_ID(400)** 이 되어 그 앱의 알람 저장·수정·전송이 전부 막힌다.
+    //   스토어에 올라간 앱은 우리가 고칠 수 없으니, 경계에서 새 이름으로 바꿔 받는다.
+    //   ⚠ 검증 **전에** 접어야 한다 — 접고 나서 검사해야 통과한다.
+    body.bucket_id = normalizeStockCategory(body.bucket_id);
+    if (
+      !FREE_BUCKET_CATEGORIES.includes(body.bucket_id) &&
+      !CLONE_PRERENDER_CATEGORIES.includes(body.bucket_id)
+    ) {
+      return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
+    }
   }
 
   if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {
@@ -185,8 +209,18 @@ export function validateAlarmFields(body: {
 // 타인 발신(가족/친구) 알람 가드 — 수신자 시간대 판정 + (수신자, time) 슬롯 원자 점유
 // ---------------------------------------------------------------------------
 
-/** 타인 발신 알람의 최소 리드타임(분). 다음 발사 시각이 이보다 임박하면 400 으로 거부한다. */
-export const FAMILY_ALARM_MIN_LEAD_MINUTES = 30;
+/**
+ * 타인 발신 알람의 최소 리드타임(분). 다음 발사 시각이 이보다 임박하면 400 으로 거부한다.
+ *
+ * ⚠ **앱의 같은 상수와 반드시 같은 값이다** — 안드로이드 `FAMILY_ALARM_MIN_LEAD_MILLIS`,
+ * iOS `familyAlarmMinLeadMillis`. 앱만 낮추면 앱은 통과시키고 서버가 400 으로 막아
+ * **"상대 알람 설정에 실패했어요" 만 뜨는 막다른 길**이 된다(2026-08-24 실기기 재현).
+ *
+ * ⚠ 예전 값 30분은 **푸시가 없고 15분 주기 폴링으로만** 받은 알람을 가져오던 시절의
+ * 것이다. 지금은 `family_alarm` 푸시가 즉시 pull 을 돌리므로 그 근거가 사라졌다.
+ * 0 으로 두지 않는 이유는 앱 쪽 주석과 같다(수신 기기 오프라인·Doze 면 pull 이 늦는다).
+ */
+export const FAMILY_ALARM_MIN_LEAD_MINUTES = 5;
 
 /**
  * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
@@ -363,7 +397,7 @@ export function computeNextAlarmFire(
  *
  * 요청 body 의 timezone 은 '발신자' 기기 값이라 어떤 경우에도 판정 기준으로 신뢰하지
  * 않는다 — 수신자 기록이 없을 때 body 로 폴백하면 발신자가 오프셋이 다른 시간대를 보내
- * 30분 리드타임/quiet 판정을 우회할 수 있으므로, 폴백은 Asia/Seoul 고정이다.
+ * 리드타임(FAMILY_ALARM_MIN_LEAD_MINUTES)/quiet 판정을 우회할 수 있으므로, 폴백은 Asia/Seoul 고정이다.
  * 호출부는 이 함수가 돌려준 효과 시간대를 알람 행(timezone)에 그대로 저장해, cron
  * 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.
  * (본인 알람(비-target) 생성의 timezone 저장 동작과는 무관.)
@@ -389,7 +423,7 @@ export async function resolveEffectiveTimezone(
  * 타인 발신 알람의 (수신자, time) 슬롯을 원자적으로 점유한다. 반드시
  * withWriteTransaction 안에서 호출할 것(조회→비활성화→insert/update 가 한 트랜잭션).
  *
- * 1) 멱등: 같은 발신자(senderUserId)·같은 수신자·같은 time 의 active 알람이 이미 있으면
+ * 1) 멱등: 같은 발신자(senderIds)·같은 수신자·같은 time 의 active 알람이 이미 있으면
  *    새 행을 만들지 않고 그 id 를 재사용한다(호출부가 내용을 UPDATE). 같은 요청 재전송이
  *    중복 행을 만들지 않는다. 이때 기존 행이 가리키던 message_id(previousMessageId)를
  *    함께 돌려줘, 호출부가 교체로 고아가 된 이전 message 행을 같은 트랜잭션에서 정리할
@@ -403,26 +437,101 @@ export async function resolveEffectiveTimezone(
  */
 export async function claimTargetedAlarmSlot(
   executor: DbExecutor,
-  senderUserId: string,
+  // ⚠ **발신자도 식별자가 둘이다**(2026-08-28 리뷰). 식별자 통일 전에 만들어진 알람은
+  // `alarms.user_id` 에 로그인 식별자(구글이면 google_id)가 들어 있는데 인증은 지금
+  // `users.id` 로 정규화한다 — 하나로만 조회하면 옛 발신 행도, 그 행으로 채운 슬롯도
+  // 못 찾아 **새 알람 id 가 발급된다.** 그게 이 슬롯 표가 막으려던 중복 줄이다.
+  // 수신자(`recipientIds`)와 같은 규약이다: **조회는 둘 다, 쓰기는 첫 값(PK)만.**
+  senderIds: [string, string],
   recipientIds: [string, string],
   time: string,
   newAlarmId: string,
 ): Promise<{ alarmId: string; reused: boolean; previousMessageId: string | null }> {
   const existing = await executor.execute({
     sql: `SELECT id, message_id FROM alarms
-          WHERE user_id = ? AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
+          WHERE user_id IN (?, ?) AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
           ORDER BY created_at DESC LIMIT 1`,
-    args: [senderUserId, recipientIds[0], recipientIds[1], time],
+    args: [senderIds[0], senderIds[1], recipientIds[0], recipientIds[1], time],
   });
-  const reused = existing.rows.length > 0;
-  const alarmId = reused ? String(existing.rows[0]!.id) : newAlarmId;
-  const previousMessageId =
-    reused && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
+  const liveRow = existing.rows.length > 0;
+  // ⚠ **전달이 끝난 슬롯도 같은 id 로 이어야 한다**(2026-08-27 실기기 재현).
+  // 수신 확인은 alarms 행을 지우므로(`POST /alarm/:id/received`), 그 뒤의 재전송은 위
+  // 조회로는 아무것도 못 찾는다. 그대로 두면 **새 알람 id** 가 발급돼 수신자 기기에
+  // remoteAlarmId 가 다른 **두 번째 줄**이 생기고, 껐던 옛 줄은 영영 울리지 않는 유령으로
+  // 남는다 — 「재전송은 새 알람이다: 받은 사람이 뭘 했든 덮어쓴다」가 깨진다.
+  // 그래서 id 하나만 따로 남겨 둔다(`targeted_alarm_slots`, 마이그레이션 107).
+  const remembered = liveRow
+    ? null
+    : await executor.execute({
+        sql: `SELECT alarm_id FROM targeted_alarm_slots
+              WHERE sender_user_id IN (?, ?) AND recipient_user_id IN (?, ?) AND time = ?
+              ORDER BY updated_at DESC LIMIT 1`,
+        args: [senderIds[0], senderIds[1], recipientIds[0], recipientIds[1], time],
+      });
+  const rememberedId =
+    remembered && remembered.rows.length > 0 ? String(remembered.rows[0]!.alarm_id) : null;
+  // ⚠ **기억해 둔 id 의 행이 '비활성' 으로 살아 있을 수 있다**(2026-08-28 리뷰).
+  // 위 조회는 `is_active = 1` 만 본다. 그런데 다른 발신자가 같은 수신자·시각을 덮으면
+  // 내 행은 지워지지 않고 `is_active = 0` 으로 남는다. 그 상태에서 내가 다시 보내면
+  // '살아 있는 행 없음 → INSERT' 로 가면서 **같은 PK 로 INSERT 해 500** 이 난다.
+  // 그러니 기억한 id 는 '행이 아직 있는가' 까지 확인해 UPDATE/INSERT 를 가른다.
+  const rememberedRow =
+    rememberedId != null
+      ? await executor.execute({
+          sql: `SELECT id, message_id FROM alarms WHERE id = ? AND user_id IN (?, ?) LIMIT 1`,
+          args: [rememberedId, senderIds[0], senderIds[1]],
+        })
+      : null;
+  const rememberedRowExists = rememberedRow != null && rememberedRow.rows.length > 0;
+  // ⚠ `reused` 는 **덮어쓸 행이 살아 있는가** 다 — 호출부가 이 값으로 UPDATE/INSERT 를
+  // 가른다. 기억해 둔 id 는 행이 아니라 **신원**이므로 둘을 섞지 않는다(섞으면 없는 행에
+  // UPDATE 를 쏴 0행이 되고, 201 을 돌려주고도 알람이 만들어지지 않는다).
+  const reused = liveRow || rememberedRowExists;
+  const alarmId = liveRow ? String(existing.rows[0]!.id) : (rememberedId ?? newAlarmId);
+  const previousMessageId = liveRow
+    ? (existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null)
+    : rememberedRowExists && rememberedRow!.rows[0]!.message_id != null
+      ? String(rememberedRow!.rows[0]!.message_id)
+      : null;
+  // ⚠ **신원을 이어받는 순간 옛 세대의 표식을 지운다 — 행이 남았는지와 무관하다**
+  // (2026-08-28 리뷰). 수신 확인은 alarms 행만 지우고 `alarm_recipient_state` 는 남긴다.
+  // 그 행에 `revoked = 1` 이나 옛 음원 출처가 남은 채 같은 id 로 다시 보내면, 받는 쪽이
+  // **새 목소리를 받자마자 철회된 것으로 다루거나**, 옛 목소리를 지우는 순간 상관없는 새
+  // 전달이 함께 철회된다. 그래서 판정은 '행이 살아 있는가'(reused)가 아니라
+  // **'이 id 를 물려받았는가'** 다. declined 는 수신자 선택이라 보존한다.
+  if (alarmId !== newAlarmId) {
+    await executor.execute({
+      sql: `UPDATE alarm_recipient_state
+            SET revoked = 0, voice_profile_id = NULL, sender_voice_upload = 0, custom_voice = 0,
+                updated_at = datetime('now')
+            WHERE alarm_id = ? AND recipient_user_id IN (?, ?)`,
+      args: [alarmId, recipientIds[0], recipientIds[1]],
+    });
+  }
   // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
   await executor.execute({
-    sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+    sql: `UPDATE alarms
+          SET is_active = 0, delivery_version = ?,
+              updated_at = datetime('now')
           WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
-    args: [recipientIds[0], recipientIds[1], time, alarmId],
+    args: [
+      crypto.randomUUID(),
+      recipientIds[0],
+      recipientIds[1],
+      time,
+      alarmId,
+    ],
+  });
+  // 다음 재전송이 이 슬롯을 찾을 수 있게 신원을 남긴다. 전달이 끝나 alarms 행이 지워져도
+  // 여기 id 는 남는다 — 생체 음원·문구는 예정대로 지우므로 「전달이 끝나면 지운다」와
+  // 충돌하지 않는다. 수신자 후보 둘 중 **실제 저장에는 하나만** 쓴다(둘은 같은 사람의
+  // 로그인 식별자/PK 이고, 조회는 `IN (?, ?)` 로 양쪽을 본다).
+  await executor.execute({
+    sql: `INSERT INTO targeted_alarm_slots (sender_user_id, recipient_user_id, time, alarm_id, updated_at)
+          VALUES (?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(sender_user_id, recipient_user_id, time)
+          DO UPDATE SET alarm_id = excluded.alarm_id, updated_at = excluded.updated_at`,
+    args: [senderIds[0], recipientIds[0], time, alarmId],
   });
   return { alarmId, reused, previousMessageId };
 }
@@ -430,14 +539,14 @@ export async function claimTargetedAlarmSlot(
 /** 타인 발신 알람 시각 가드 결과 — 통과(효과 시간대 반환) 또는 거부(에러 응답 필드). */
 export type FamilyAlarmTimingGuardResult =
   | { ok: true; effectiveTimezone: string; nextFire: NextAlarmFire | null }
-  | { ok: false; error: string; error_code: string; status: 400 | 403 };
+  | { ok: false; error: string; error_code: ErrorCode; status: 400 | 403 };
 
 /**
- * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성)·PATCH(수정) 공용.
+ * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성) 전용.
  * 발신자 body.timezone 은 어떤 경우에도 신뢰하지 않고, resolveEffectiveTimezone 이 산출한
  * 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로 다음 발사 시각을 구해 판정한다.
  *  ① 수신자가 알람 수신을 허용하지 않으면 403 FAMILY_ALARM_DISABLED
- *  ② 다음 발사 시각이 30분 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME
+ *  ② 다음 발사 시각이 FAMILY_ALARM_MIN_LEAD_MINUTES 미만이면 400 FAMILY_ALARM_LEAD_TIME
  *  ③ 다음 발사 요일·시각이 수신자 quiet 창에 걸리면 403 FAMILY_ALARM_QUIET_TIME
  * 통과 시 { ok:true, effectiveTimezone } — 호출부는 이 효과 시간대를 알람 행(timezone)에
  * 그대로 저장해 cron 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.

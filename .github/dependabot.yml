@@ -1,4 +1,12 @@
 version: 2
+
+# ⚠ **npm 항목은 루트(`/`) 하나뿐이다.** 이 저장소는 워크스페이스라 lockfile 이
+# `package-lock.json` **한 개**이고, 루트 항목이 `packages/*` 와 `apps/landing` 을 전부 훑는다.
+# 예전에는 `/packages/backend` 항목이 따로 있었는데, 그 항목이 만든 PR 은
+# `packages/backend/package.json` 만 고치고 **lockfile 을 갱신하지 못했다** —
+# 그대로 머지하면 package.json 이 lockfile 보다 앞서서 `npm ci` 가 깨진다.
+# 실제로 매주 머지 불가능한 중복 PR 이 나왔다(2026-09-08 에 #718·#719 를 그래서 닫았다).
+# 되살리지 말 것 — 되살리려면 그 디렉터리에 자기 lockfile 이 먼저 있어야 한다.
 updates:
   - package-ecosystem: "npm"
     directory: "/"
@@ -19,17 +27,6 @@ updates:
         dependency-type: "production"
         update-types:
           - "patch"
-
-  - package-ecosystem: "npm"
-    directory: "/packages/backend"
-    target-branch: "develop"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "backend"
 
   - package-ecosystem: "github-actions"
     directory: "/"
