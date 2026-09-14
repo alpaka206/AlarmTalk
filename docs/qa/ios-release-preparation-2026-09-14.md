@@ -1,6 +1,6 @@
 # iOS 첫 출시 준비 — 2026-09-14
 
-기준 develop: `d5893dde`(#741 머지). 사용자가 최신 develop 실기기 설치와 가능한 출시 준비
+기준 develop: `d5893dde`(#741 머지). 수정 PR: [#742](https://github.com/alpaka206/AlarmTalk/pull/742). 사용자가 최신 develop 실기기 설치와 가능한 출시 준비
 전체를 요청했다. 빌드·로그·기기 기록은 프로젝트 내부의 기존 ignored 경로에만 보관한다.
 
 ## 완료한 것
@@ -9,6 +9,7 @@
 - Android S23 Ultra·A32: `com.alarmtalk.app.dev`, 1.2.5(25) 설치·실행.
 - iOS Release 아카이브, Apple Distribution 인증서와 앱·위젯 App Store 프로파일 생성,
   배포 서명 IPA 내보내기. Apple 사전 검증과 업로드 모두 오류 없이 완료.
+  Apple 처리 결과는 `VALID`이며 1.2.5 제출 버전에 연결했다.
   Xcode의 `No Accounts`는 수동 배포 서명과 기존 App Store Connect API 키로 해결했다.
 - Android `bundleProdRelease` 25 빌드·서명. Google Play production 트랙에 **초안**으로 저장.
   공개 버전 24는 유지했고, 심사 제출·출시 전환은 하지 않았다.
@@ -19,6 +20,8 @@
   `400 BadDeviceToken`까지 확인했다(인증 통과이며 실제 기기 배달 확인은 별도).
 - App Store Connect 버전 `1.0` → `1.2.5`, 한국어 소개·부제·검색어·프로모션 문구,
   지원·마케팅·개인정보 URL, 저작권 입력. 공개 URL의 최종 응답 200 확인.
+  앱 다운로드 가격은 무료로 저장하고, 지원하지 않는 Mac·Vision Pro 배포는 껐다.
+  판매 국가는 사용자 선택을 기다리고 있다.
 - 실제 iPhone 17 Pro Max 시뮬레이터 화면 3장(1320×2868) 등록. Apple 처리 상태 `COMPLETE`.
 - 구독 3개와 소모성 선물 1개에 심사용 화면·진입 방법을 등록. 네 상품 모두
   `READY_TO_SUBMIT`. 결제 화면 촬영은 UI 확인이며 Sandbox 실구매 검증이 아니다.
@@ -79,6 +82,8 @@ Apple/Google × 커플/가족 네 가지 실제 DB 회귀 사례에서 권한 �
 2. **출시 국가 및 심사 정보**: 판매 국가 선택, 심사 연락처 전화번호와 테스트 계정 준비.
    비밀번호·인증 코드는 채팅이나 git에 넣지 않고 App Store Connect 심사 정보에 직접 입력한다.
    앱 권한·콘텐츠 권리와 개인정보 초안도 확인 후 게시한다.
+   심사 설명 초안은 로컬 `review-detail-draft.json`에 준비했다. Apple API가 `contactPhone`
+   필수 오류로 저장을 거부했으므로 전화번호를 추정해서 채우지 않았다.
 3. **Play 25 게재**: 준비된 production 초안을 심사·게재한다. 단순 업로드/초안 상태는
    아래 서버 배포 조건을 충족하지 않는다. 실제 스토어 다운로드 가능 여부를 확인한다.
 4. **수정 PR → develop → main**: 필수 체크·리뷰를 거쳐 반영한다. main 배포·제자리
