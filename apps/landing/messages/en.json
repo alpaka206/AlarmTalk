@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "AlarmTalk · Not an alarm. A voice.",
-    "description": "A voice you recorded, one a family member shared, or one of four built in. Tomorrow morning it reads you the weather. Voices stay inside your couple or family group."
+    "description": "A voice you registered, one family or friends registered, or one of the built-in voices. Tomorrow morning it reads you the weather. Voices stay inside your couple or family group."
   },
   "nav": {
     "features": "Features",
@@ -37,10 +37,10 @@
   },
   "voice": {
     "headline": "Register once,\nmake any number of alarms.",
-    "description": "Record, or upload an audio file, and the voice is ready.\nFrom then on you only choose the words, and make as many alarms in that voice as you like.",
+    "description": "Record, or upload an audio file, and the voice is ready.\nFrom then on, you only choose what it says.",
     "bullet1": "Record or upload, whichever is easier",
     "bullet2": "Use the voice in any alarm",
-    "bullet3": "Adding your own voice starts with a plan, one a month"
+    "bullet3": "Add your own voice once a month"
   },
   "shared": {
     "headline": "Far away,\nstill there in the morning.",
@@ -50,10 +50,10 @@
     "bullet3": "Set their alarm. Once it arrives, it’s theirs"
   },
   "language": {
-    "headline": "Tired of writing lines?\nLet it pick one each day.",
-    "description": "Choose a topic instead of writing, and you get a different greeting every morning.\nToday’s weather, a reminder to take your medicine, or your horoscope.",
-    "bullet1": "Weather · horoscope · medicine · encouragement, all free",
-    "bullet2": "Writing your own lines starts with a plan",
+    "headline": "Pick a line,\nor write your own.",
+    "description": "If writing one every day is a chore, just pick a line.\nIf there’s something you want to hear, type it in yourself.",
+    "bullet1": "Weather · horoscope · medicine · encouragement lines, all free",
+    "bullet2": "Typing your own lines starts with a plan",
     "bullet3": "Korean, English and Japanese"
   },
   "scenarios": {
@@ -293,8 +293,8 @@
     }
   },
   "declare": {
-    "headline": "Not a louder alarm.\nOne you want to keep hearing.",
-    "body": "No math problems, no photo missions.\nWe’d rather you opened your eyes because you wanted to hear it."
+    "headline": "Not an alarm that annoys you.\nOne that wakes you up feeling good.",
+    "body": "No math problems, no photo missions.\nInstead of dragging yourself up, make a morning you can’t wait to hear."
   },
   "pricing": {
     "tag": "Pricing",
