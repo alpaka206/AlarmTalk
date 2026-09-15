@@ -66,6 +66,33 @@ export function EventStudio() {
 
   const celebrity = CELEBRITIES[index];
   const trimmed = name.trim();
+
+  // 딥링크: `?celeb=winter`(id) 또는 `?celeb=1`(1부터 세는 순번). 홍보 링크로 들어오면 그 인물로
+  // 시작한다. 정적 export 라 서버가 쿼리를 모르니 붙은 뒤에 읽고, 돌릴 때마다 주소를 바꿔 둔다
+  // (replaceState — 뒤로가기 목록을 채우지 않는다).
+  // 주소를 읽기 전에 아래 동기화가 먼저 돌아 쿼리를 덮어쓰면 안 된다(StrictMode 의 이중
+  // 실행 포함) — 한 번만 읽고, 읽은 뒤에야 동기화를 켠다.
+  const [deepLinked, setDeepLinked] = useState(false);
+  const readQueryRef = useRef(false);
+  useEffect(() => {
+    if (readQueryRef.current) return;
+    readQueryRef.current = true;
+    const raw = new URLSearchParams(window.location.search).get("celeb");
+    if (raw) {
+      const byId = CELEBRITIES.findIndex((c) => c.id === raw.toLowerCase());
+      const byNumber = /^\d+$/.test(raw) ? Number(raw) - 1 : -1;
+      const found = byId >= 0 ? byId : byNumber >= 0 && byNumber < CELEBRITIES.length ? byNumber : -1;
+      if (found >= 0) setIndex(found);
+    }
+    setDeepLinked(true);
+  }, []);
+  useEffect(() => {
+    if (!deepLinked) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("celeb") === celebrity.id) return;
+    url.searchParams.set("celeb", celebrity.id);
+    window.history.replaceState(window.history.state, "", url);
+  }, [deepLinked, celebrity.id]);
   const nameLength = Array.from(name).length;
   const key = `${celebrity.id}:${trimmed}`;
   const bundle = trimmed ? bundles[key] : undefined;
@@ -141,7 +168,7 @@ export function EventStudio() {
 
   return (
     <section className="relative" aria-labelledby={`${uid}-h`}>
-      <div className="mx-auto max-w-site px-5 pb-24 md:px-8 lg:pb-32">
+      <div className="mx-auto max-w-site px-5 pb-24 pt-8 md:px-8 lg:pb-32 lg:pt-12">
         <div className="mx-auto max-w-[560px]">
           {/* 1. 이름 */}
           <h2 id={`${uid}-h`} className="t-h3 text-text">

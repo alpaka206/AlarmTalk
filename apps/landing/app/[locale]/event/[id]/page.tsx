@@ -10,7 +10,6 @@ import { SiteFooter } from "@/components/sections/site-footer";
 import { StoreBadges } from "@/components/store-badges";
 import { EventStudio } from "@/components/event/event-studio";
 import { Reveal } from "@/components/motion/reveal";
-import { RevealGroup, RevealItem } from "@/components/motion/reveal-group";
 import { SITE_NAME, localeUrl, localePath, languageAlternates, OG_IMAGES } from "@/lib/site";
 
 export function generateStaticParams() {
@@ -73,7 +72,8 @@ export default async function EventPage({
     <>
       <main id="main" className="relative">
         <BackToList />
-        <EventHero />
+        {/* 화면 제목은 없다(2026-09-15 지시). 문서 개요와 스크린리더를 위해 h1 만 숨겨 둔다. */}
+        <EventTitle />
         <EventStudio />
         <EventCta />
       </main>
@@ -97,23 +97,9 @@ function BackToList() {
   );
 }
 
-/**
- * 첫 화면은 헤드라인 한 문장뿐이다(2026-09-15 지시로 설명·아이브로·AI 고지 칩을 뺐다).
- * AI 목소리 고지는 카드 아래 각주 한 곳에서 한다.
- */
-function EventHero() {
+function EventTitle() {
   const t = useTranslations("event.hero");
-  return (
-    <section className="relative">
-      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-12 pt-10 text-center md:px-8 lg:pb-16 lg:pt-16">
-        <RevealGroup className="flex flex-col items-center" stagger={0.07} trigger="mount">
-          <RevealItem as="h1" className="t-display text-text">
-            {t("headline")}
-          </RevealItem>
-        </RevealGroup>
-      </div>
-    </section>
-  );
+  return <h1 className="sr-only">{t("headline")}</h1>;
 }
 
 function EventCta() {
