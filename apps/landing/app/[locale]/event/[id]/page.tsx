@@ -99,7 +99,8 @@ function BackToList() {
 
 /**
  * 첫 화면은 한 문장으로 무엇인지 넘기고, **AI 목소리라는 사실을 같은 화면에서** 말한다.
- * 그 문장을 각주로 내리면 카드 여섯 장을 다 듣고 나서야 알게 된다.
+ * 그 문장을 각주로 내리면 카드를 다 듣고 나서야 알게 된다. 아이브로("응원 메시지")는
+ * 2026-09-15 지시로 뺐다 — 헤드라인이 이미 무엇인지 말한다.
  */
 function EventHero() {
   const t = useTranslations("event.hero");
@@ -107,10 +108,7 @@ function EventHero() {
     <section className="relative">
       <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-14 pt-10 text-center md:px-8 lg:pb-20 lg:pt-16">
         <RevealGroup className="flex flex-col items-center" stagger={0.07} trigger="mount">
-          <RevealItem as="span" className="eyebrow">
-            {t("eyebrow")}
-          </RevealItem>
-          <RevealItem as="h1" className="t-display mt-5 max-w-4xl text-text">
+          <RevealItem as="h1" className="t-display max-w-4xl text-text">
             {t("headline")}
           </RevealItem>
           <RevealItem as="p" className="t-lead mt-6 max-w-2xl text-balance text-text-body">

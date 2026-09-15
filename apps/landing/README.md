@@ -95,7 +95,8 @@ components/
   store-badges.tsx        스토어 배지 2종(Google Play + App Store, APP_STORE_LIVE 스위치)
   voice-preview.tsx       목소리 미리듣기
   app-mini/               앱 화면 미니어처(DOM). primitives 가 판·헤더·행 부품, record·pick-message·share 가 기능 섹션 시각물
-  event/                  이벤트(응원 메시지) 페이지 스튜디오·재생·목소리 목록
+  event/                  이벤트 1(내 이름 음성 메시지): event-catalog(인물·메시지 종류) · event-api(생성·좋아요, 서버 이음매) ·
+                          event-studio(이름·종류·카드) · download-dialog(앱 권유 모달) · use-event-player(재생기)
   legal-markdown.tsx      법무 마크다운 → HTML 렌더러
   motion/                 reveal·reveal-group·scroll-drift·cycling-word 와 reduced-motion 대응
   sections/

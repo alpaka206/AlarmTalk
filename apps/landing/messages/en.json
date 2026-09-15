@@ -364,91 +364,90 @@
     "backToList": "All events",
     "items": {
       "cheer": {
-        "title": "Cheer messages in celebrity voices"
+        "title": "A voice message with your name, in a voice you love"
       }
     }
   },
   "event": {
     "meta": {
-      "title": "Cheer messages in celebrity voices",
-      "description": "Type a name and hear a few words of encouragement in celebrity-style voices. These are AI voices, not the real people."
+      "title": "A voice message with your name, in a voice you love",
+      "description": "Type a name, pick a message, and hear a celebrity-style voice say it with your name. AI voices, not the real people."
     },
     "hero": {
-      "eyebrow": "Cheer messages",
-      "headline": "Hear a cheer\nin a celebrity’s voice!",
-      "description": "Type a name, press play, and the voice calls that name and cheers you on.\nFor the days that feel a little heavy.",
+      "headline": "Hear a voice message with your name,\nin a celebrity voice you love!",
+      "description": "Type a name and pick a message, and it says it calling that name.\nFor a birthday, or the end of a hard day.",
       "disclaimer": "AI voices, not the real people"
     },
     "studio": {
-      "nameLabel": "Who needs cheering up?",
+      "nameLabel": "Whose name should it say?",
       "namePlaceholder": "e.g. Jamie…",
       "namePlaceholderInline": "you",
-      "nameHint": "Up to {max} characters. A friend’s name works too.",
-      "playAria": "Play in the {voice} voice",
-      "stopAria": "Stop the {voice} voice",
+      "nameHint": "Up to {max} characters. Your name, or a friend’s.",
+      "kindLabel": "Which message?",
+      "kinds": {
+        "birthday": {
+          "name": "Happy birthday",
+          "line": "<b>{name}</b>, happy birthday! Today is all yours. Fill it with the things you love most."
+        },
+        "comfort": {
+          "name": "A word of comfort",
+          "line": "<b>{name}</b>, you worked so hard today. I see the effort nobody else does. You’re doing more than enough."
+        }
+      },
+      "generate": "Make it",
+      "play": "Play",
+      "stop": "Stop",
+      "generating": "Making it…",
+      "ready": "Ready",
+      "generateAria": "Make it in {celebrity}’s voice",
+      "playAria": "Play {celebrity}",
+      "stopAria": "Stop {celebrity}",
       "playing": "Speaking",
-      "unsupported": "This browser can’t play voices. Try another browser.",
-      "disclaimer": "The voices here are AI voices made to resemble a style, not recordings of real people. They don’t imply anyone’s participation or endorsement."
+      "like": "Like",
+      "liked": "Unlike",
+      "download": "Download",
+      "unsupported": "This browser can’t play audio. Try another browser.",
+      "failed": "Can’t make it right now. Try again in a moment.",
+      "disclaimer": "These are AI voices made to resemble a feel, not the real people’s voices. They don’t imply anyone’s participation or endorsement."
     },
-    "voices": {
-      "actor": {
-        "name": "Calm and low",
-        "role": "Actor",
-        "style": "Low, clear voice",
-        "line": "<b>{name}</b>, you’re doing fine. It’s okay to take it slow."
+    "celebrities": {
+      "winter": {
+        "name": "Winter",
+        "portraitAlt": "Photo of Winter"
       },
-      "idol": {
-        "name": "Sunny high tone",
-        "role": "Idol",
-        "style": "Bright and lively",
-        "line": "<b>{name}</b>! You’ve got this today. You know I’m always cheering for you, right?"
-      },
-      "host": {
-        "name": "The familiar one",
-        "role": "TV host",
-        "style": "Warm and easy",
-        "line": "<b>{name}</b>, shall we start the day on a good note? It’s going to go well."
-      },
-      "announcer": {
-        "name": "Clear and steady",
-        "role": "Announcer",
-        "style": "Neat and trustworthy",
-        "line": "<b>{name}</b>, I hope today brings you only good news."
-      },
-      "singer": {
-        "name": "Soft ballad",
-        "role": "Singer",
-        "style": "Soft and warm",
-        "line": "<b>{name}</b>, rest for a moment if it’s hard. You’re already doing enough."
-      },
-      "athlete": {
-        "name": "Loud and rallying",
-        "role": "Athlete",
-        "style": "Strong and steady",
-        "line": "<b>{name}</b>, let’s go all the way. One more today."
+      "nanami": {
+        "name": "Nanami",
+        "portraitAlt": "Photo of Nanami"
       }
+    },
+    "downloadModal": {
+      "title": "Want to hear more voices like this?",
+      "body": "With AlarmTalk, a voice you love can wake you every morning.\nStart your day with a voice that says your name.",
+      "secondary": "Just download",
+      "unavailable": "Downloads open soon",
+      "close": "Close"
     },
     "steps": {
       "headline": "How it works",
       "items": [
         {
           "title": "Type a name",
-          "body": "Anyone who needs cheering up. Yours, or a friend’s."
+          "body": "Yours, or a friend’s."
         },
         {
-          "title": "Pick a voice",
-          "body": "Each card speaks differently. Press the one you like."
+          "title": "Pick a message",
+          "body": "Happy birthday, or a word of comfort."
         },
         {
-          "title": "Listen",
-          "body": "Press play and the voice calls the name and cheers. As many times as you like."
+          "title": "Make it and listen",
+          "body": "Press Make it on the voice you like and it says the message with that name. Download it if you love it."
         }
       ]
     },
     "cta": {
-      "headline": "Want a voice like this every morning?",
-      "body": "In AlarmTalk you make alarms in a voice you love.\nOne you recorded, or one your family shared.",
-      "secondary": "More about AlarmTalk"
+      "headline": "Want to wake up to a voice like this?",
+      "body": "AlarmTalk turns a voice you love into your alarm.\nYour own recording, or a family member’s.",
+      "secondary": "Learn more about AlarmTalk"
     }
   }
 }

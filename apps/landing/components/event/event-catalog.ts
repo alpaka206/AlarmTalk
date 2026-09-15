@@ -1,29 +1,31 @@
 /**
- * 응원 메시지 페이지의 목소리 목록.
+ * 이벤트 1 의 목록 — **누구 목소리로, 어떤 메시지를**.
  *
- * 화면은 이 배열만 돈다 — 목소리를 더하거나 빼거나 순서를 바꾸는 일은 **여기서만** 한다.
- * 이름·역할·응원 문장은 `messages/<locale>.json` 의 `event.voices.<id>` 에 있고, 소리를
- * 어떻게 내는지는 `event-playback.ts` 가 정한다(이 파일은 소리 경로를 모른다).
+ * 화면은 이 두 배열만 돈다. 인물을 더하거나 빼거나 순서를 바꾸는 일은 여기서만 한다. 이름·사진
+ * 대체 텍스트는 `messages/<locale>.json` 의 `event.celebrities.<id>`, 메시지 문장은
+ * `event.studio.kinds.<kind>.line`. 소리를 어떻게 만드는지는 `event-api.ts` 가 정한다.
  *
- * `pitch`/`rate` 는 브라우저 합성 음성으로 낼 때의 톤이다(1.0 이 기본). 전용 생성 경로가
- * 붙으면 그쪽 파라미터로 대체된다.
+ * `portrait` 는 `public/` 아래 경로다. 파일이 없으면 화면은 이니셜 원으로 대신 그린다
+ * (`event-studio.tsx` 의 `Portrait`) — 사진은 초상권 허락을 받은 것만 넣는다.
+ * `pitch`/`rate` 는 생성 서버가 붙기 전 브라우저 합성 음성으로 낼 때의 톤이다(1.0 이 기본).
  */
-export type EventVoice = {
+export type Celebrity = {
   id: string;
+  portrait: string;
   pitch: number;
   rate: number;
 };
 
-export const EVENT_VOICES: readonly EventVoice[] = [
-  { id: "actor", pitch: 0.9, rate: 0.95 },
-  { id: "idol", pitch: 1.15, rate: 1.05 },
-  { id: "host", pitch: 1.0, rate: 1.1 },
-  { id: "announcer", pitch: 0.95, rate: 1.0 },
-  { id: "singer", pitch: 1.05, rate: 0.9 },
-  { id: "athlete", pitch: 0.85, rate: 1.0 },
+export const CELEBRITIES: readonly Celebrity[] = [
+  { id: "winter", portrait: "/event/winter.jpg", pitch: 1.12, rate: 1.02 },
+  { id: "nanami", portrait: "/event/nanami.jpg", pitch: 1.06, rate: 0.96 },
 ] as const;
 
-/** 이름 상한. 응원 한 문장에 들어갈 호칭이라 닉네임(30)보다 짧다. */
+/** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
+export const MESSAGE_KINDS = ["birthday", "comfort"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+/** 이름 상한. 한 문장에 들어갈 호칭이라 닉네임(30)보다 짧다. */
 export const EVENT_NAME_MAX_LENGTH = 12;
 
 /**
