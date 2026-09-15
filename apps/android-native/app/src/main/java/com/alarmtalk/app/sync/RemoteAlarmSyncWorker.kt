@@ -15,8 +15,10 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.SessionTokenRenewal
+import com.alarmtalk.app.network.apiErrorCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 class RemoteAlarmSyncWorker(
     appContext: Context,
@@ -52,8 +54,17 @@ class RemoteAlarmSyncWorker(
                 Result.success()
             }
         }.getOrElse { error ->
-            AlarmTalkLog.reportError("Remote alarm worker failed", error)
-            Result.retry()
+            when (remoteAlarmSyncFailureOutcome(error)) {
+                RemoteAlarmSyncFailureOutcome.RETHROW -> throw error
+                RemoteAlarmSyncFailureOutcome.CONSENT_PENDING -> {
+                    Log.i(TAG, "Remote alarm worker deferred: consent not settled yet")
+                    Result.success()
+                }
+                RemoteAlarmSyncFailureOutcome.RETRY -> {
+                    AlarmTalkLog.reportError("Remote alarm worker failed", error)
+                    Result.retry()
+                }
+            }
         }
     }
 
@@ -62,7 +73,7 @@ class RemoteAlarmSyncWorker(
      *
      * ⚠ **실패해도 던지지 않는다.** 갱신은 알람 동기화의 전제 조건이 아니다 — 여기서
      * 던지면 네트워크가 잠깐 나빴다는 이유로 이미 받아 둔 알람 pull 까지 통째로
-     * 재시도로 밀려난다.
+     * 재시도로 밀려난다. 유일한 예외는 **취소**다(실패가 아니라 워커가 멈추는 것).
      *
      * ⚠ 저장은 [AuthSessionStore.saveTokenIfGeneration] 으로 **판정과 쓰기를 한 덩어리**
      * 로 한다. 따로 하면 그 사이에 낀 로그아웃을 되돌려, 비운 저장소에 끝난 세션을 되쓴다
@@ -106,7 +117,36 @@ class RemoteAlarmSyncWorker(
                 Log.i(TAG, "Session token renewed in background")
             }
         }.onFailure { error ->
+            // 취소는 바깥 `runCatching` 까지 그대로 올린다 — 여기서 삼키면 워커가 멈추는
+            // 중에도 아래 pull 을 이어 간다.
+            if (error is CancellationException) throw error
             AlarmTalkLog.reportError("Background session renewal failed", error)
         }
     }
 }
+
+/**
+ * `doWork` 의 `runCatching` 이 잡은 실패를 어떻게 마무리할지.
+ *
+ * - [RETHROW]: **취소는 오류가 아니다.** `CoroutineWorker` 가 멈추거나(`ExistingWorkPolicy.REPLACE`
+ *   로 대체되는 앱 복귀 때마다) 나며, `runCatching` 은 이것까지 잡는다. 삼키고 `retry()` 를
+ *   돌려주면 WorkManager 는 무시하지만 그 사이 Sentry 에 "Job was cancelled" 가 한 건씩
+ *   쌓였다(2026-09-14, 실사용자 10명·17건). 되던져야 WorkManager 가 취소로 본다.
+ * - [CONSENT_PENDING]: 로그인 직후 동의 전에는 서버가 모든 데이터 라우트를 403
+ *   `CONSENT_REQUIRED` 로 막는다(`middleware/consent.ts`). 사용자가 동의를 마쳐야 풀리는
+ *   상태라 백오프 재시도는 403 만 반복한다 — 한 사용자가 17분에 12건을 남겼다. 성공으로
+ *   끝내고, 동의 뒤 알람 탭 진입의 `syncNow` 와 15분 주기가 다시 끌어온다. 전경 경로
+ *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
+ *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION`
+ *   같은 실제 인증·동의 파손은 [RETRY] 로 가 모니터링에 남는다.
+ * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가
+ *   이슈 대신 브레드크럼으로 낮춘다).
+ */
+internal enum class RemoteAlarmSyncFailureOutcome { RETHROW, CONSENT_PENDING, RETRY }
+
+internal fun remoteAlarmSyncFailureOutcome(error: Throwable): RemoteAlarmSyncFailureOutcome =
+    when {
+        error is CancellationException -> RemoteAlarmSyncFailureOutcome.RETHROW
+        apiErrorCode(error) == "CONSENT_REQUIRED" -> RemoteAlarmSyncFailureOutcome.CONSENT_PENDING
+        else -> RemoteAlarmSyncFailureOutcome.RETRY
+    }

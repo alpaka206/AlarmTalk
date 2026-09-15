@@ -3,7 +3,7 @@ import type { Client } from '@libsql/client/web';
 import type { Env, AppEnv } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
-import { logRouteError } from '../lib/logger';
+import { logRouteError, logStructured } from '../lib/logger';
 import { errorBody } from '../lib/api-error';
 import type { ErrorCode } from '@alarmtalk/shared';
 import { typedRow } from '../lib/db-types';
@@ -745,7 +745,6 @@ auth.post('/google', async (c) => {
   } catch (err) {
     // 검증 실패 상세(err.message)는 서버에만 로깅하고, 클라이언트에는 provider/검증
     // 내부 정보를 반영하지 않는 안정적인 generic 메시지만 반환한다(정보 노출 방지).
-    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status =
       detail.includes('Google token') ||
@@ -755,6 +754,15 @@ auth.post('/google', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
+    // ⚠ **상태를 정한 뒤에 보고한다.** 401 은 클라가 보낸 토큰이 틀린 것이라 우리가 고칠
+    // 코드가 없다 — 스택째 Sentry 에 올리면 진짜 사고가 묻힌다(`docs/spec/error-codes.md`
+    // §3, 2026-09-14 BACKEND-7). 거절 사유는 서버 로그에만 남기고, 나가는 4xx 한 줄은
+    // errorCode 미들웨어가 적는다. 5xx 만 스택과 함께 올린다.
+    if (status === 500) {
+      logRouteError(c, err);
+    } else {
+      logStructured('warn', { at: 'auth.google.rejected', reason: detail });
+    }
     return c.json(errorBody('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
   }
 });
@@ -944,7 +952,6 @@ auth.post('/apple', async (c) => {
     });
   } catch (err) {
     // 구글 경로와 동일 — 검증 실패 상세는 서버 로그에만, 클라에는 generic.
-    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status =
       detail.includes('Apple token') ||
@@ -957,6 +964,12 @@ auth.post('/apple', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
+    // 구글과 같은 이유로 401 은 경보가 아니다 — 위 `/google` 의 주석 참조.
+    if (status === 500) {
+      logRouteError(c, err);
+    } else {
+      logStructured('warn', { at: 'auth.apple.rejected', reason: detail });
+    }
     return c.json(errorBody('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
