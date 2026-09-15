@@ -73,6 +73,12 @@ export const STORE_LINKS = {
     "https://apps.apple.com/app/id6799711245",
 } as const;
 
+/**
+ * 백엔드 API 원점. 랜딩이 부르는 것은 인증 없는 공개 라우트뿐이다(이벤트 좋아요).
+ * 로컬에서 dev 백엔드를 보려면 `NEXT_PUBLIC_API_BASE=https://api-dev.alarm-talk.com`.
+ */
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "https://api.alarm-talk.com").replace(/\/+$/, "");
+
 /** App Store 배지가 링크로 사는가. 기본 켜짐 — `NEXT_PUBLIC_APP_STORE_LIVE=0` 으로만 끈다. */
 export const APP_STORE_LIVE = process.env.NEXT_PUBLIC_APP_STORE_LIVE !== "0";
 

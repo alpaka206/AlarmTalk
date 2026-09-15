@@ -378,7 +378,6 @@
     },
     "studio": {
       "voiceLabel": "Whose voice?",
-      "voiceAria": "Choose {celebrity}’s voice",
       "nameLabel": "Enter a name.",
       "namePlaceholder": "e.g. Jamie…",
       "namePlaceholderInline": "you",
@@ -393,21 +392,24 @@
           "line": "<b>{name}</b>, you worked so hard today. I see the effort nobody else does. You’re doing more than enough."
         }
       },
-      "generate": "Make it",
+      "generate": "Generate",
       "play": "Play",
       "stop": "Stop",
-      "generating": "Making it…",
-      "ready": "Ready",
-      "generateAria": "Make it in {celebrity}’s voice",
+      "generating": "Generating…",
       "playAria": "Play {celebrity}",
       "stopAria": "Stop {celebrity}",
       "playing": "Speaking",
-      "like": "Like",
-      "liked": "Unlike",
       "download": "Download",
       "unsupported": "This browser can’t play audio. Try another browser.",
       "failed": "Can’t make it right now. Try again in a moment.",
-      "disclaimer": "These are generated AI voices, not trained on any real person’s voice."
+      "disclaimer": "These are generated AI voices, not trained on any real person’s voice.",
+      "sampleName": "Jamie",
+      "prevVoice": "Previous",
+      "nextVoice": "Next",
+      "regenerate": "Generate again",
+      "likeAria": "Like {celebrity}",
+      "likesCount": "{n} likes",
+      "resultsHeading": "Messages in {celebrity}’s voice"
     },
     "celebrities": {
       "winter": {

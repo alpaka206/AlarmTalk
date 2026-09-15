@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Download, Heart, Play, Square } from "lucide-react";
-import { motion } from "motion/react";
+import { ChevronLeft, ChevronRight, Download, Heart, Play, Square } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePrefersReducedMotion } from "../motion/use-prefers-reduced-motion";
 import { DownloadDialog } from "./download-dialog";
 import {
+  addLike,
   downloadableSrc,
+  fetchLikes,
   generateVoiceMessage,
-  loadLikes,
-  toggleLike,
   type EventPlayback,
-  type LikeState,
+  type LikeCounts,
 } from "./event-api";
 import {
   CELEBRITIES,
+  EVENT_ID,
   EVENT_NAME_MAX_LENGTH,
   MESSAGE_KINDS,
   sanitizeEventName,
@@ -25,334 +26,322 @@ import {
 import { useEventPlayer } from "./use-event-player";
 
 /**
- * 이벤트 1 — 세 단계를 위에서 아래로 흐른다(2026-09-15 지시: 인물 먼저, 단계별로).
+ * 이벤트 1 — 이름을 적고, 인물을 **돌려 보며** 고르고, 생성하기를 누르면 그 인물 목소리로
+ * 메시지 **둘 다**(생일 축하 · 위로 한마디)를 만들어 들려준다(2026-09-15 지시).
  *
- *   1. 누구 목소리로 들을까요?   인물 카드 중 하나를 고른다(카드마다 좋아요).
- *   2. 어떤 메시지를 들을까요?   생일 축하 / 위로 한마디.
- *   3. 이름을 입력해 주세요.      이름을 적으면 만들기가 켜진다.
- *   → 만들기                     결과 카드: 문장 · 듣기/멈춤 · 다운로드 · 좋아요.
+ *   이름 입력 → 인물 캐러셀(이전/다음, 좋아요 수) → 생성하기 → 결과 두 줄(듣기 · 다운로드)
  *
- * 다음 단계는 앞 단계를 마쳐야 열린다. 미리 다 보이되 잠겨 있어 "다음에 뭘 하는지" 는 보이고
- * 순서는 강제된다(아무 데나 누르다 만들기가 왜 안 눌리는지 모르는 상태를 만들지 않는다).
- * 셋 중 하나라도 바꾸면 결과는 사라진다 — 다른 조합으로 만든 소리를 지금 조합인 것처럼
- * 들려주지 않는다.
+ * 결과는 (인물, 이름) 에 묶여 캐시된다: 인물을 돌리다 이미 만든 인물로 돌아오면 그 결과가
+ * 그대로 있고, 안 만든 인물이면 생성하기가 보인다. 이름을 바꾸면 전부 새로 만든다 — 다른
+ * 이름으로 만든 소리를 지금 이름인 것처럼 들려주지 않는다.
  *
- * 문구는 `t.rich` 로 이름 자리만 강조하고 사용자가 친 값은 값으로만 들어간다. 생성·좋아요는
- * `event-api.ts` 만 안다. 재생은 언제나 하나.
+ * 만들고 나면 결과로 스크롤하고 첫 듣기 버튼에 초점을 준다(모바일에서 버튼이 접힘선 근처에
+ * 있으면 결과가 화면 밖에 생긴다는 검수 지적). 문구는 `t.rich` 로 이름 자리만 강조하고
+ * 사용자가 친 값은 값으로만 들어간다. 생성·좋아요는 `event-api.ts` 만 안다. 재생은 언제나 하나.
  */
-type Status = "idle" | "generating" | "ready" | "failed";
+type Status = "idle" | "generating" | "failed";
 
-type Result = {
-  key: string;
-  celebrity: Celebrity;
-  kind: MessageKind;
-  name: string;
-  playback: EventPlayback;
-};
+type Bundle = Record<MessageKind, EventPlayback>;
 
-const RESULT_ID = "event-result";
+const SLIDE = { type: "spring" as const, duration: 0.35, bounce: 0 };
 
 export function EventStudio() {
   const t = useTranslations("event");
   const locale = useLocale();
   const reduced = usePrefersReducedMotion();
   const uid = useId();
-  const [celebrityId, setCelebrityId] = useState<string | null>(null);
-  const [kind, setKind] = useState<MessageKind | null>(null);
   const [name, setName] = useState("");
+  const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState<1 | -1>(1);
   const [status, setStatus] = useState<Status>("idle");
-  const [result, setResult] = useState<Result | null>(null);
-  const [likes, setLikes] = useState<Record<string, LikeState>>({});
-  const [downloadOpen, setDownloadOpen] = useState(false);
+  /** (인물:이름) → 만든 소리 둘. */
+  const [bundles, setBundles] = useState<Record<string, Bundle>>({});
+  const [likes, setLikes] = useState<LikeCounts>({});
+  const [download, setDownload] = useState<{ kind: MessageKind } | null>(null);
+  /** 방금 만든 결과의 키. 그 결과가 그려진 뒤 한 번 스크롤·초점을 옮기고 지운다. */
+  const [justMade, setJustMade] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const firstPlayRef = useRef<HTMLButtonElement | null>(null);
   const { activeId, play, stop, unsupported } = useEventPlayer();
 
-  const celebrity = CELEBRITIES.find((c) => c.id === celebrityId) ?? null;
+  const celebrity = CELEBRITIES[index];
   const trimmed = name.trim();
   const nameLength = Array.from(name).length;
-  const canGenerate = celebrity !== null && kind !== null && trimmed.length > 0;
-  /** 결과는 (인물, 메시지, 이름) 셋에 묶인다. 하나라도 바뀌면 다른 키 → 결과 없음. */
-  const key = celebrity && kind ? `${celebrity.id}:${kind}:${trimmed}` : "";
-  const current = result && result.key === key ? result : null;
-  const playing = current !== null && activeId === RESULT_ID;
+  const key = `${celebrity.id}:${trimmed}`;
+  const bundle = trimmed ? bundles[key] : undefined;
   const nameOf = (c: Celebrity) => t(`celebrities.${c.id}.name`);
+  const playIdFor = (kind: MessageKind) => `${key}:${kind}`;
 
-  // 좋아요는 브라우저가 기억한 것을 하이드레이션 뒤에 읽는다(서버와 첫 그림을 같게).
+  // 좋아요 수는 서버에서. 못 받으면 빈 채로 둔다(숫자를 지어내지 않는다).
   useEffect(() => {
-    setLikes(loadLikes(CELEBRITIES.map((c) => c.id)));
+    let alive = true;
+    void fetchLikes(EVENT_ID).then((counts) => {
+      if (alive) setLikes(counts);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  // 결과가 사라지면(조합을 바꿈) 소리도 멈춘다 — 화면에 없는 것이 계속 말하면 안 된다.
+  // 인물을 돌리거나 이름을 바꾸면 소리를 멈춘다 — 화면에 없는 것이 계속 말하면 안 된다.
   useEffect(() => {
-    if (current === null && activeId === RESULT_ID) stop();
-  }, [current, activeId, stop]);
+    if (activeId && !activeId.startsWith(`${key}:`)) stop();
+  }, [key, activeId, stop]);
+
+  // 결과가 접힘선 아래에 생기면 소리만 나고 멈춤 버튼은 안 보인다 — 결과가 그려진 뒤
+  // 거기로 데려가고 첫 듣기/멈춤 버튼에 초점을 준다(입력칸 키보드도 닫힌다).
+  useEffect(() => {
+    if (justMade === null || justMade !== key || !bundle) return;
+    resultsRef.current?.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    firstPlayRef.current?.focus({ preventScroll: true });
+    setJustMade(null);
+  }, [justMade, key, bundle, reduced]);
 
   // 읽어 줄 문장은 태그를 벗긴 **문자열**이어야 한다 — 화면용 `t.rich` 와 같은 메시지를
   // `t.markup` 으로 풀어 쓴다(`<b>` 는 강조 표시일 뿐 소리에는 없다).
-  const lineText = (k: MessageKind, n: string) =>
-    t.markup(`studio.kinds.${k}.line`, { name: n, b: (chunks) => chunks });
+  const lineText = (kind: MessageKind) =>
+    t.markup(`studio.kinds.${kind}.line`, { name: trimmed, b: (chunks) => chunks });
 
   const onGenerate = async () => {
-    if (!celebrity || !kind || !canGenerate) return;
+    if (!trimmed || status === "generating") return;
+    const target = celebrity;
+    const targetKey = key;
     setStatus("generating");
     try {
-      const playback = await generateVoiceMessage({
-        celebrity,
-        kind,
-        text: lineText(kind, trimmed),
-        locale,
-      });
-      setResult({ key, celebrity, kind, name: trimmed, playback });
-      setStatus("ready");
-      play(RESULT_ID, playback);
+      const made = await Promise.all(
+        MESSAGE_KINDS.map((kind) =>
+          generateVoiceMessage({ celebrity: target, kind, text: lineText(kind), locale }),
+        ),
+      );
+      const next = Object.fromEntries(MESSAGE_KINDS.map((kind, i) => [kind, made[i]])) as Bundle;
+      setBundles((b) => ({ ...b, [targetKey]: next }));
+      setStatus("idle");
+      setJustMade(targetKey);
+      play(`${targetKey}:${MESSAGE_KINDS[0]}`, next[MESSAGE_KINDS[0]]);
     } catch {
       setStatus("failed");
     }
   };
 
+  const step = (delta: 1 | -1) => {
+    setDirection(delta);
+    setIndex((i) => (i + delta + CELEBRITIES.length) % CELEBRITIES.length);
+  };
+
   const onLike = async (c: Celebrity) => {
-    const next = !likes[c.id]?.liked;
-    setLikes((l) => ({ ...l, [c.id]: { ...l[c.id], liked: next } }));
-    const saved = await toggleLike(c.id, next);
-    setLikes((l) => ({ ...l, [c.id]: saved }));
+    // 낙관 갱신. 서버가 모르는 대상(숫자 없음)은 하트만 반응한다.
+    setLikes((l) => (l[c.id] === undefined ? l : { ...l, [c.id]: l[c.id] + 1 }));
+    const count = await addLike(EVENT_ID, c.id);
+    if (count !== null) setLikes((l) => ({ ...l, [c.id]: count }));
   };
 
   const tap = reduced ? undefined : { scale: 0.96 };
   const spring = { type: "spring" as const, duration: 0.3, bounce: 0 };
-  const step2Open = celebrity !== null;
-  const step3Open = step2Open && kind !== null;
 
   return (
     <section className="relative" aria-labelledby={`${uid}-h`}>
       <div className="mx-auto max-w-site px-5 pb-24 md:px-8 lg:pb-32">
-        <div className="mx-auto max-w-[640px]">
-          <h2 id={`${uid}-h`} className="sr-only">
-            {t("studio.voiceLabel")}
+        <div className="mx-auto max-w-[560px]">
+          {/* 1. 이름 */}
+          <h2 id={`${uid}-h`} className="t-h3 text-text">
+            <label htmlFor={`${uid}-name`}>{t("studio.nameLabel")}</label>
           </h2>
+          <div className="relative mt-3">
+            <input
+              id={`${uid}-name`}
+              type="text"
+              name="eventName"
+              inputMode="text"
+              autoComplete="given-name"
+              autoCapitalize="words"
+              spellCheck={false}
+              enterKeyHint="done"
+              aria-describedby={`${uid}-count`}
+              value={name}
+              onChange={(e) => setName(sanitizeEventName(e.target.value))}
+              onKeyDown={(e) => {
+                // IME 조합을 확정하는 Enter(한글·일본어)는 생성이 아니다.
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && trimmed && !bundle) {
+                  void onGenerate();
+                }
+              }}
+              placeholder={t("studio.namePlaceholder")}
+              className="h-14 w-full rounded-[var(--radius-lg)] border border-line bg-surface px-5 pr-16 text-[18px] font-semibold text-text placeholder:font-medium placeholder:text-text-muted focus-visible:border-accent"
+            />
+            <span
+              id={`${uid}-count`}
+              className={`pointer-events-none absolute inset-y-0 right-5 grid place-items-center text-[12px] tabular-nums ${
+                nameLength >= EVENT_NAME_MAX_LENGTH ? "text-text" : "text-text-muted"
+              }`}
+            >
+              {nameLength}/{EVENT_NAME_MAX_LENGTH}
+            </span>
+          </div>
 
-          {/* 1. 인물 */}
-          <Step n={1} title={t("studio.voiceLabel")} done={celebrity !== null} open>
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {CELEBRITIES.map((c) => {
-                const selected = c.id === celebrityId;
-                const liked = likes[c.id]?.liked ?? false;
-                return (
-                  <li
-                    key={c.id}
-                    className={`relative flex items-center gap-3 rounded-[var(--radius-lg)] border p-3 pr-2 transition-[border-color,background-color] duration-150 ease-[var(--ease-ui)] has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-accent ${
-                      selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-text-dim"
-                    }`}
-                  >
-                    {/* 라벨이 카드 전체를 덮는다(absolute inset-0). 좋아요 버튼은 그 위(z)에 따로 선다. */}
-                    <label className="absolute inset-0 cursor-pointer rounded-[inherit]">
-                      <input
-                        type="radio"
-                        name={`${uid}-voice`}
-                        value={c.id}
-                        checked={selected}
-                        onChange={() => setCelebrityId(c.id)}
-                        aria-label={t("studio.voiceAria", { celebrity: nameOf(c) })}
-                        className="sr-only"
-                      />
-                    </label>
-                    <Portrait src={c.portrait} name={nameOf(c)} alt={t(`celebrities.${c.id}.portraitAlt`)} />
-                    <span
-                      className={`min-w-0 flex-1 truncate text-[16px] font-bold ${
-                        selected ? "text-accent" : "text-text"
-                      }`}
-                    >
-                      {nameOf(c)}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className={`grid h-5 w-5 shrink-0 place-items-center rounded-[var(--radius-pill)] border ${
-                        selected ? "border-accent bg-accent text-white" : "border-line bg-surface"
-                      }`}
-                    >
-                      {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                    </span>
-                    <LikeButton liked={liked} count={likes[c.id]?.count} onClick={() => void onLike(c)} />
-                  </li>
-                );
-              })}
-            </ul>
-          </Step>
+          {/* 2. 인물 캐러셀 */}
+          <h3 className="t-h3 mt-10 text-text">{t("studio.voiceLabel")}</h3>
+          <div className="card mt-3 flex items-center gap-2 p-3 sm:gap-4 sm:p-4">
+            <motion.button
+              type="button"
+              onClick={() => step(-1)}
+              aria-label={t("studio.prevVoice")}
+              whileTap={tap}
+              transition={spring}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-pill)] bg-raised text-text-body transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-line hover:text-text"
+            >
+              <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+            </motion.button>
 
-          {/* 2. 메시지 종류 */}
-          <Step n={2} title={t("studio.kindLabel")} done={kind !== null} open={step2Open}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {MESSAGE_KINDS.map((k) => {
-                const selected = k === kind;
-                return (
-                  <label
-                    key={k}
-                    className={`relative flex h-14 items-center rounded-[var(--radius-lg)] border px-4 transition-[border-color,background-color] duration-150 ease-[var(--ease-ui)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent ${
-                      step2Open ? "cursor-pointer" : ""
-                    } ${selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-text-dim"}`}
-                  >
-                    <input
-                      type="radio"
-                      name={`${uid}-kind`}
-                      value={k}
-                      checked={selected}
-                      disabled={!step2Open}
-                      onChange={() => setKind(k)}
-                      className="sr-only"
-                    />
-                    <span className="flex w-full items-center justify-between gap-3">
-                      <span className={`text-[15.5px] font-bold ${selected ? "text-accent" : "text-text"}`}>
-                        {t(`studio.kinds.${k}.name`)}
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className={`grid h-5 w-5 shrink-0 place-items-center rounded-[var(--radius-pill)] border ${
-                          selected ? "border-accent bg-accent text-white" : "border-line bg-surface"
-                        }`}
-                      >
-                        {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                      </span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </Step>
-
-          {/* 3. 이름 + 만들기 */}
-          <Step
-            n={3}
-            title={t("studio.nameLabel")}
-            done={trimmed.length > 0}
-            open={step3Open}
-            htmlFor={`${uid}-name`}
-          >
-            <div className="relative">
-              <input
-                id={`${uid}-name`}
-                type="text"
-                name="eventName"
-                inputMode="text"
-                autoComplete="given-name"
-                autoCapitalize="words"
-                spellCheck={false}
-                enterKeyHint="done"
-                disabled={!step3Open}
-                aria-describedby={`${uid}-count`}
-                value={name}
-                onChange={(e) => setName(sanitizeEventName(e.target.value))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && canGenerate && status !== "generating" && !current) {
-                    void onGenerate();
-                  }
-                }}
-                placeholder={t("studio.namePlaceholder")}
-                className="h-14 w-full rounded-[var(--radius-lg)] border border-line bg-surface px-5 pr-16 text-[18px] font-semibold text-text placeholder:font-medium placeholder:text-text-muted focus-visible:border-accent disabled:bg-bg-alt"
-              />
-              <span
-                id={`${uid}-count`}
-                aria-live="polite"
-                className={`pointer-events-none absolute inset-y-0 right-5 grid place-items-center text-[12px] tabular-nums ${
-                  nameLength >= EVENT_NAME_MAX_LENGTH ? "text-rose" : "text-text-muted"
-                }`}
-              >
-                {nameLength}/{EVENT_NAME_MAX_LENGTH}
-              </span>
+            {/* 한 장씩. 옆으로 밀려 들어오고 나간다(축소 동작이면 그냥 바뀐다). */}
+            <div className="relative min-w-0 flex-1 overflow-hidden" aria-live="polite">
+              <AnimatePresence initial={false} mode="popLayout" custom={direction}>
+                <motion.div
+                  key={celebrity.id}
+                  custom={direction}
+                  initial={reduced ? false : { x: direction * 48, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={reduced ? undefined : { x: direction * -48, opacity: 0 }}
+                  transition={SLIDE}
+                  className="flex flex-col items-center py-3 text-center"
+                >
+                  <Portrait
+                    src={celebrity.portrait}
+                    name={nameOf(celebrity)}
+                    alt={t(`celebrities.${celebrity.id}.portraitAlt`)}
+                  />
+                  <p className="t-h2 mt-4 truncate text-text">{nameOf(celebrity)}</p>
+                  <LikeButton
+                    count={likes[celebrity.id]}
+                    label={t("studio.likeAria", { celebrity: nameOf(celebrity) })}
+                    countLabel={
+                      likes[celebrity.id] !== undefined
+                        ? t("studio.likesCount", { n: likes[celebrity.id] })
+                        : undefined
+                    }
+                    onClick={() => void onLike(celebrity)}
+                    reduced={reduced}
+                  />
+                </motion.div>
+              </AnimatePresence>
             </div>
 
             <motion.button
               type="button"
-              onClick={() => void onGenerate()}
-              disabled={!canGenerate || status === "generating" || current !== null}
-              aria-busy={status === "generating" || undefined}
-              whileTap={canGenerate ? tap : undefined}
+              onClick={() => step(1)}
+              aria-label={t("studio.nextVoice")}
+              whileTap={tap}
               transition={spring}
-              className="btn btn-primary mt-4 w-full gap-2 disabled:cursor-default disabled:opacity-40"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-pill)] bg-raised text-text-body transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-line hover:text-text"
             >
-              {status === "generating" ? (
-                <span
-                  aria-hidden="true"
-                  className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
-                />
-              ) : null}
-              <span>{status === "generating" ? t("studio.generating") : t("studio.generate")}</span>
+              <ChevronRight className="h-6 w-6" aria-hidden="true" />
             </motion.button>
-            {status === "failed" ? (
-              <p role="alert" className="t-caption mt-3 text-rose">
-                {t("studio.failed")}
-              </p>
-            ) : null}
-          </Step>
+          </div>
+          {/* 몇 번째인지. 점은 읽히지 않는다 — 이름과 이전/다음 라벨이 이미 말한다. */}
+          <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-1.5">
+            {CELEBRITIES.map((c, i) => (
+              <span
+                key={c.id}
+                className={`block h-1.5 w-1.5 rounded-[var(--radius-pill)] ${
+                  i === index ? "bg-accent" : "bg-line"
+                }`}
+              />
+            ))}
+          </div>
 
-          {/* 결과 */}
-          {current ? (
-            <div
-              className={`card mt-8 p-6 transition-[border-color] duration-200 ease-[var(--ease-ui)] ${
-                playing ? "border-accent" : ""
-              }`}
-              aria-live="polite"
-            >
-              <div className="flex items-center gap-3">
-                <Portrait
-                  src={current.celebrity.portrait}
-                  name={nameOf(current.celebrity)}
-                  alt={t(`celebrities.${current.celebrity.id}.portraitAlt`)}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-bold text-text">{nameOf(current.celebrity)}</p>
-                  <p className="t-caption mt-0.5 text-text-muted">{t(`studio.kinds.${current.kind}.name`)}</p>
-                </div>
-                <LikeButton
-                  liked={likes[current.celebrity.id]?.liked ?? false}
-                  count={likes[current.celebrity.id]?.count}
-                  onClick={() => void onLike(current.celebrity)}
-                />
-              </div>
-
-              <p className="t-body mt-5 text-text-body">
-                {t.rich(`studio.kinds.${current.kind}.line`, {
-                  name: current.name,
-                  b: (chunks) => <span className="font-bold text-text">{chunks}</span>,
+          {/* 3. 생성하기 또는 결과 */}
+          {bundle ? (
+            <div ref={resultsRef} className="mt-8 scroll-mt-24">
+              <h3 className="t-h3 text-text">
+                {t("studio.resultsHeading", { celebrity: nameOf(celebrity) })}
+              </h3>
+              <ul className="mt-3 flex flex-col gap-3">
+                {MESSAGE_KINDS.map((kind, i) => {
+                  const id = playIdFor(kind);
+                  const playing = activeId === id;
+                  return (
+                    <li
+                      key={kind}
+                      className={`card p-5 transition-[border-color] duration-200 ease-[var(--ease-ui)] ${
+                        playing ? "border-accent" : ""
+                      }`}
+                    >
+                      <p className="t-caption font-semibold text-text-muted">
+                        {t(`studio.kinds.${kind}.name`)}
+                      </p>
+                      <p className="t-body mt-1.5 text-text-body [overflow-wrap:anywhere]">
+                        {t.rich(`studio.kinds.${kind}.line`, {
+                          name: trimmed,
+                          b: (chunks) => <span className="font-bold text-text">{chunks}</span>,
+                        })}
+                      </p>
+                      <div className="mt-4 flex items-center gap-2">
+                        <motion.button
+                          ref={i === 0 ? firstPlayRef : undefined}
+                          type="button"
+                          onClick={() => (playing ? stop() : play(id, bundle[kind]))}
+                          aria-label={
+                            playing
+                              ? t("studio.stopAria", { celebrity: nameOf(celebrity) })
+                              : t("studio.playAria", { celebrity: nameOf(celebrity) })
+                          }
+                          whileTap={tap}
+                          transition={spring}
+                          className={`btn btn-primary flex-1 gap-2 ${
+                            playing ? "bg-text hover:bg-text-strong" : ""
+                          }`}
+                        >
+                          {playing ? (
+                            <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+                          ) : (
+                            <Play className="ml-0.5 h-4 w-4 fill-current" aria-hidden="true" />
+                          )}
+                          <span>{playing ? t("studio.stop") : t("studio.play")}</span>
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          onClick={() => setDownload({ kind })}
+                          aria-label={t("studio.download")}
+                          whileTap={tap}
+                          transition={spring}
+                          className="inline-grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-pill)] border border-line bg-surface text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
+                        >
+                          <Download className="h-5 w-5" aria-hidden="true" />
+                        </motion.button>
+                      </div>
+                    </li>
+                  );
                 })}
-              </p>
-
-              <div className="mt-5 flex items-center gap-2">
-                <motion.button
-                  type="button"
-                  onClick={() => (playing ? stop() : play(RESULT_ID, current.playback))}
-                  aria-label={
-                    playing
-                      ? t("studio.stopAria", { celebrity: nameOf(current.celebrity) })
-                      : t("studio.playAria", { celebrity: nameOf(current.celebrity) })
-                  }
-                  whileTap={tap}
-                  transition={spring}
-                  className={`btn btn-primary flex-1 gap-2 ${playing ? "bg-text hover:bg-gray-800" : ""}`}
-                >
-                  {playing ? (
-                    <Square className="h-4 w-4 fill-current" aria-hidden="true" />
-                  ) : (
-                    <Play className="ml-0.5 h-4 w-4 fill-current" aria-hidden="true" />
-                  )}
-                  <span>{playing ? t("studio.stop") : t("studio.play")}</span>
-                </motion.button>
-                <motion.button
-                  type="button"
-                  onClick={() => setDownloadOpen(true)}
-                  aria-label={t("studio.download")}
-                  whileTap={tap}
-                  transition={spring}
-                  className="inline-grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-pill)] border border-line bg-surface text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
-                >
-                  <Download className="h-5 w-5" aria-hidden="true" />
-                </motion.button>
-              </div>
-              <p className="t-caption mt-3 min-h-[1.2em] text-text-muted">
-                {playing ? t("studio.playing") : t("studio.ready")}
-              </p>
+              </ul>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-8">
+              <motion.button
+                type="button"
+                onClick={() => void onGenerate()}
+                disabled={!trimmed || status === "generating"}
+                aria-busy={status === "generating" || undefined}
+                whileTap={trimmed ? tap : undefined}
+                transition={spring}
+                className="btn btn-primary w-full gap-2 disabled:cursor-default disabled:opacity-40"
+              >
+                {status === "generating" ? (
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                  />
+                ) : null}
+                <span>{status === "generating" ? t("studio.generating") : t("studio.generate")}</span>
+              </motion.button>
+              {status === "failed" ? (
+                <p role="alert" className="t-caption mt-3 text-center text-text">
+                  {t("studio.failed")}
+                </p>
+              ) : null}
+            </div>
+          )}
 
           {unsupported ? (
-            <p role="alert" className="t-caption mt-6 text-center text-rose">
+            <p role="alert" className="t-caption mt-6 text-center text-text">
               {t("studio.unsupported")}
             </p>
           ) : null}
@@ -362,75 +351,50 @@ export function EventStudio() {
       </div>
 
       <DownloadDialog
-        open={downloadOpen}
-        src={current ? downloadableSrc(current.playback) : null}
+        open={download !== null}
+        src={download && bundle ? downloadableSrc(bundle[download.kind]) : null}
         fileName={
-          current ? `alarmtalk-${current.celebrity.id}-${current.kind}-${current.name}.mp3` : "alarmtalk.mp3"
+          download ? `alarmtalk-${celebrity.id}-${download.kind}-${trimmed}.mp3` : "alarmtalk.mp3"
         }
-        onClose={() => setDownloadOpen(false)}
+        onClose={() => setDownload(null)}
       />
     </section>
   );
 }
 
 /**
- * 단계 하나: 번호 · 제목 · 내용. 앞 단계를 마쳐야 열린다(`open`). 잠긴 단계는 흐리게 두고 안의
- * 입력은 각자 `disabled` 다 — 화면에서 사라지지 않아 다음에 뭘 하는지는 보인다.
- * 번호는 마치면 체크로 바뀐다(진행 표시).
+ * 좋아요. 누른 횟수만큼 올라간다(끄기 없음). 숫자는 서버가 줄 때만.
+ * 누를 때 하트가 한 번 줄었다 돌아온다 — 낙관 갱신이 눈에 보이게.
  */
-function Step({
-  n,
-  title,
-  done,
-  open,
-  htmlFor,
-  children,
+function LikeButton({
+  count,
+  label,
+  countLabel,
+  onClick,
+  reduced,
 }: {
-  n: number;
-  title: string;
-  done: boolean;
-  open: boolean;
-  htmlFor?: string;
-  children: React.ReactNode;
+  count?: number;
+  label: string;
+  countLabel?: string;
+  onClick: () => void;
+  reduced: boolean;
 }) {
   return (
-    <fieldset
-      aria-disabled={!open || undefined}
-      className={`mt-9 transition-opacity duration-200 ease-[var(--ease-ui)] first:mt-0 ${
-        open ? "" : "opacity-40"
-      }`}
-    >
-      <legend className="flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className={`grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-pill)] text-[13px] font-bold tabular-nums ${
-            done ? "bg-accent text-white" : open ? "bg-accent-soft text-accent" : "bg-raised text-text-muted"
-          }`}
-        >
-          {done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : n}
-        </span>
-        <span className="t-h3 text-text">{htmlFor ? <label htmlFor={htmlFor}>{title}</label> : title}</span>
-      </legend>
-      <div className="mt-4">{children}</div>
-    </fieldset>
-  );
-}
-
-function LikeButton({ liked, count, onClick }: { liked: boolean; count?: number; onClick: () => void }) {
-  const t = useTranslations("event.studio");
-  return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
-      aria-pressed={liked}
-      aria-label={liked ? t("liked") : t("like")}
-      className={`relative z-10 inline-flex h-10 shrink-0 items-center gap-1.5 rounded-[var(--radius-pill)] border px-3 text-[13.5px] font-semibold transition-[background-color,border-color,color] duration-150 ease-[var(--ease-ui)] ${
-        liked ? "border-rose/40 bg-rose/10 text-rose" : "border-line bg-surface text-text-muted hover:text-text"
-      }`}
+      aria-label={countLabel ? `${label}. ${countLabel}` : label}
+      whileTap={reduced ? undefined : { scale: 0.9 }}
+      transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+      className="mt-3 inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-pill)] border border-line bg-surface px-3.5 text-[14px] font-semibold text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
     >
-      <Heart className={`h-4 w-4 ${liked ? "fill-current" : ""}`} aria-hidden="true" />
-      {count !== undefined ? <span className="tabular-nums">{count}</span> : null}
-    </button>
+      <Heart className="h-4 w-4 fill-accent text-accent" aria-hidden="true" />
+      {count !== undefined ? (
+        <span className="tabular-nums" aria-hidden="true">
+          {count.toLocaleString()}
+        </span>
+      ) : null}
+    </motion.button>
   );
 }
 
@@ -453,7 +417,7 @@ function Portrait({ src, name, alt }: { src: string; name: string; alt: string }
       <span
         role="img"
         aria-label={alt}
-        className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-surface text-[18px] font-bold text-accent ring-1 ring-line"
+        className="grid h-40 w-40 shrink-0 place-items-center rounded-full bg-surface text-[48px] font-bold text-accent ring-1 ring-line"
       >
         {Array.from(name)[0] ?? ""}
       </span>
@@ -464,11 +428,10 @@ function Portrait({ src, name, alt }: { src: string; name: string; alt: string }
       ref={imgRef}
       src={src}
       alt={alt}
-      width={48}
-      height={48}
-      loading="lazy"
+      width={160}
+      height={160}
       onError={() => setFailed(true)}
-      className="h-12 w-12 shrink-0 rounded-full object-cover ring-1 ring-line"
+      className="h-40 w-40 shrink-0 rounded-full object-cover ring-1 ring-line"
     />
   );
 }

@@ -16,6 +16,9 @@ export type Celebrity = {
   rate: number;
 };
 
+/** 이 페이지의 이벤트 번호(`lib/events.ts`). 좋아요 카운터의 키다. */
+export const EVENT_ID = "1";
+
 export const CELEBRITIES: readonly Celebrity[] = [
   { id: "winter", portrait: "/event/winter.jpg", pitch: 1.12, rate: 1.02 },
   { id: "nanami", portrait: "/event/nanami.jpg", pitch: 1.06, rate: 0.96 },

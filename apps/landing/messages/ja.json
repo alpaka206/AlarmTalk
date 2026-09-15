@@ -378,7 +378,6 @@
     },
     "studio": {
       "voiceLabel": "誰の声で聞きますか。",
-      "voiceAria": "{celebrity}の声を選ぶ",
       "nameLabel": "名前を入力してください。",
       "namePlaceholder": "例: はるか…",
       "namePlaceholderInline": "あなた",
@@ -393,21 +392,24 @@
           "line": "<b>{name}</b>、今日も本当におつかれさま。誰にも見えないところでがんばったの、知ってるよ。十分やれてる。"
         }
       },
-      "generate": "作る",
+      "generate": "生成する",
       "play": "再生",
       "stop": "停止",
       "generating": "作成中…",
-      "ready": "できました",
-      "generateAria": "{celebrity}の声で作る",
       "playAria": "{celebrity}の声を再生",
       "stopAria": "{celebrity}の声を止める",
       "playing": "話しています",
-      "like": "いいね",
-      "liked": "いいねを取り消す",
       "download": "ダウンロード",
       "unsupported": "このブラウザでは音声を再生できません。別のブラウザで開いてみてください。",
       "failed": "いまは作れません。少し待ってもう一度押してください。",
-      "disclaimer": "実在の人物の声で学習したものではない、生成されたAIの声です。"
+      "disclaimer": "実在の人物の声で学習したものではない、生成されたAIの声です。",
+      "sampleName": "はるか",
+      "prevVoice": "前の人物",
+      "nextVoice": "次の人物",
+      "regenerate": "もう一度生成",
+      "likeAria": "{celebrity}にいいね",
+      "likesCount": "いいね {n}",
+      "resultsHeading": "{celebrity}の声で作ったメッセージ"
     },
     "celebrities": {
       "winter": {

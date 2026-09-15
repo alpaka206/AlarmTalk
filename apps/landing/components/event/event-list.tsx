@@ -109,11 +109,11 @@ export function EventList() {
  * 늘어날 거라 그리지 않는다(2026-09-15 지시). 대신 흐름 그대로 두 장면만: 이름을 적은 입력칸
  * 모형과, 그 이름이 들어간 메시지 말풍선. 본문에 없는 것(기간, 인원, 배지)은 그리지 않는다.
  * 문장은 본문과 같은 `event.studio.kinds.birthday.line`, 라벨은 `event.studio.nameLabel`,
- * 예시 이름은 본문 입력칸의 placeholder("예: 지민…")에서 이름만 뗀 것이다.
+ * 예시 이름은 `event.studio.sampleName` 이다(입력칸 placeholder 와 같은 이름).
  */
 function VoiceMessagePreview() {
   const t = useTranslations("event");
-  const sample = t("studio.namePlaceholder").replace(/^.*?:\s*/, "").replace(/…$/, "");
+  const sample = t("studio.sampleName");
   return (
     <div className="flex w-full max-w-[18.5rem] flex-col">
       {/* 입력칸 모형. 본문의 입력칸과 같은 라벨·반경, 값은 예시 이름. */}

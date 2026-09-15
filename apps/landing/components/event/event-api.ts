@@ -1,17 +1,17 @@
+import { API_BASE } from "@/lib/site";
 import type { Celebrity, MessageKind } from "./event-catalog";
 
 /**
- * 이벤트 1 의 **생성 경로** — 이름·메시지·인물을 넣으면 재생할 것을 돌려준다. 화면(카드·버튼·
- * 입력)은 이 함수만 안다.
+ * 이벤트 1 의 바깥 세계 — **생성**과 **좋아요**. 화면(카드·버튼·입력)은 이 파일만 안다.
  *
- * 지금은 서버가 없다. 생성 서버(Perso 로 인물 목소리를 다시 만드는 경로)가 붙으면 이 파일만
- * 바꾼다: `generateVoiceMessage` 가 서버에 `{ celebrity, kind, name, locale }` 를 보내고
+ * 생성: 지금은 서버가 없다. Perso 로 인물 목소리를 다시 만드는 경로가 붙으면
+ * `generateVoiceMessage` 가 서버에 `{ celebrity, kind, name, locale }` 를 보내고
  * `{ kind: "url", src }` 를 돌려주면, 재생기(`use-event-player.ts`)의 url 갈래와 다운로드가
  * 그대로 살아난다. 그때까지는 브라우저 음성 합성으로 **흐름만** 보여 준다 — 만드는 시간을
- * 흉내 내는 짧은 지연은 화면의 "만드는 중" 상태가 실제로 어떻게 보이는지 확인하려는 것이다.
+ * 흉내 내는 짧은 지연은 "만드는 중" 상태가 실제로 어떻게 보이는지 확인하려는 것이다.
  *
- * 좋아요도 같다: 서버가 붙기 전에는 이 브라우저 안에서만 기억한다(localStorage). 숫자는
- * 서버가 줄 때만 보여 준다 — 없는 숫자를 지어내지 않는다.
+ * 좋아요: 백엔드의 공개 카운터(`packages/backend/src/routes/event.ts`)에 누른 횟수만큼
+ * 더한다. 숫자는 서버가 준 것만 보여 준다 — 서버에 못 닿으면 숫자를 지어내지 않고 하트만 남긴다.
  */
 export type EventPlayback =
   | { kind: "speech"; text: string; lang: string; pitch: number; rate: number }
@@ -50,32 +50,44 @@ export function downloadableSrc(playback: EventPlayback | undefined): string | n
   return playback?.kind === "url" ? playback.src : null;
 }
 
-const LIKES_KEY = "alarmtalk.event1.likes";
+/** 좋아요 수. 서버가 모르는 대상은 키가 없다(= 숫자를 보여 주지 않는다). */
+export type LikeCounts = Record<string, number>;
 
-export type LikeState = { liked: boolean; count?: number };
+const LIKES_TIMEOUT_MS = 4000;
 
-function readLikedIds(): Set<string> {
+export async function fetchLikes(eventId: string): Promise<LikeCounts> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LIKES_TIMEOUT_MS);
   try {
-    const raw = window.localStorage.getItem(LIKES_KEY);
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    const res = await fetch(`${API_BASE}/api/event/${encodeURIComponent(eventId)}/likes`, {
+      signal: ctrl.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return {};
+    const body = (await res.json()) as { likes?: Record<string, unknown> };
+    const out: LikeCounts = {};
+    for (const [id, n] of Object.entries(body.likes ?? {})) {
+      if (typeof n === "number" && Number.isFinite(n)) out[id] = n;
+    }
+    return out;
   } catch {
-    return new Set();
+    return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-export function loadLikes(ids: readonly string[]): Record<string, LikeState> {
-  const liked = readLikedIds();
-  return Object.fromEntries(ids.map((id) => [id, { liked: liked.has(id) }]));
-}
-
-export async function toggleLike(id: string, next: boolean): Promise<LikeState> {
-  const liked = readLikedIds();
-  if (next) liked.add(id);
-  else liked.delete(id);
+/** 누른 횟수만큼 더한다. 서버가 돌려준 새 수, 못 닿으면 null(화면은 낙관 값을 유지). */
+export async function addLike(eventId: string, subjectId: string): Promise<number | null> {
   try {
-    window.localStorage.setItem(LIKES_KEY, JSON.stringify([...liked]));
+    const res = await fetch(
+      `${API_BASE}/api/event/${encodeURIComponent(eventId)}/likes/${encodeURIComponent(subjectId)}`,
+      { method: "POST", cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { count?: unknown };
+    return typeof body.count === "number" ? body.count : null;
   } catch {
-    // 저장이 막힌 브라우저(사생활 모드 등)에서는 이 세션 안에서만 기억된다.
+    return null;
   }
-  return { liked: next };
 }
