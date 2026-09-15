@@ -58,10 +58,9 @@ iOS 는 App Store 심사 중이다(홈의 App Store 버튼은 스토어 페이�
 - Google Play: https://play.google.com/store/apps/details?id=com.alarmtalk.app
 - App Store: https://apps.apple.com/app/id6799711245 (심사 중 — 게재 승인 뒤 다운로드 가능)
 - 이벤트(응원 메시지): https://alarm-talk.com/event/
-- 회사 소개: https://alarm-talk.com/company/
-- 문의: https://alarm-talk.com/contact/
 - 개인정보 처리방침: https://alarm-talk.com/privacy/
 - 이용약관: https://alarm-talk.com/terms/
+- 자주 묻는 질문: https://alarm-talk.com/faq/
 - 계정 삭제 안내: https://alarm-talk.com/account-deletion/
 - 영어: https://alarm-talk.com/en/ · 일본어: https://alarm-talk.com/ja/
 

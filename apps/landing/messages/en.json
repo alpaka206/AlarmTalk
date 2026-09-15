@@ -7,8 +7,6 @@
     "features": "Features",
     "pricing": "Pricing",
     "faq": "FAQ",
-    "company": "Company",
-    "contact": "Contact",
     "event": "Event",
     "skipToContent": "Skip to content"
   },
@@ -56,6 +54,10 @@
     "bullet3": "Korean, English and Japanese"
   },
   "faq": {
+    "meta": {
+      "title": "FAQ",
+      "description": "Common questions about using AlarmTalk: voices, plans, sharing and your account."
+    },
     "headline": "Frequently asked",
     "items": [
       {
@@ -103,14 +105,11 @@
   "footer": {
     "tagline": "Not an alarm. A voice. Record once, and any line you write is read in that voice.",
     "product": "Product",
-    "company": "Company",
     "legal": "Legal",
     "linkVoices": "Features",
     "linkHow": "How it works",
     "linkFaq": "FAQ",
-    "linkAbout": "Company",
     "linkGithub": "GitHub",
-    "linkContact": "Contact",
     "linkPrivacy": "Privacy",
     "linkTerms": "Terms",
     "linkAccountDeletion": "Account deletion",
@@ -189,80 +188,6 @@
     "note": {
       "headline": "Reply times",
       "body": "We usually reply within 1-3 business days. Longer answers can take a little more. If you don’t hear back, please check your spam folder too."
-    }
-  },
-  "company": {
-    "meta": {
-      "title": "Company",
-      "description": "At AlarmTalk an alarm is a relationship, not a sound. Our mission, our principles, and what we’re building."
-    },
-    "hero": {
-      "eyebrow": "Our mission",
-      "headline1": "Instead of a louder alarm,",
-      "headline2": "one you want to hear.",
-      "description": "At AlarmTalk an alarm is a relationship, not a sound. Opening the first second of every morning with a line in a voice you love. That’s the one thing we do."
-    },
-    "principles": {
-      "headline": "Five principles we work by",
-      "description": "We’re still going from zero to one. That’s when clear principles matter most.",
-      "items": [
-        {
-          "title": "Build something people want every day",
-          "body": "Not a one-time trick. The first thing people meet every morning."
-        },
-        {
-          "title": "Weigh trust heaviest",
-          "body": "A voice is sensitive data. It never leaves the group, and it can never be exported as a file. We don’t compromise on either."
-        },
-        {
-          "title": "Emotion over force",
-          "body": "Not a louder alarm. One you actually want to hear. We wake the mind, not just the body."
-        },
-        {
-          "title": "Ask for a 10× answer",
-          "body": "We don’t chase 10% gains. We look for an answer that is 10× different: what comes after loud alarms and mission alarms."
-        },
-        {
-          "title": "Build globally from day one",
-          "body": "Not a Korea-only product. We’ve had users in other languages and cultures in mind from the start."
-        }
-      ]
-    },
-    "products": {
-      "headline": "What we’re building",
-      "description": "One product. Every decision the company makes is for this app.",
-      "alarmtalk": {
-        "tag": "AlarmTalk",
-        "title": "A voice alarm app",
-        "body": "Register a voice you love and build alarms that read your lines back in it. Family, partners and friends exchange voices only inside their group.",
-        "cta": "Back to home"
-      }
-    },
-    "future": {
-      "headline": "Coming soon to this page",
-      "description": "Press coverage and the team’s story will go here once we launch.",
-      "items": [
-        {
-          "tag": "Press",
-          "title": "Press",
-          "body": "First coverage will live here once we launch."
-        },
-        {
-          "tag": "Team",
-          "title": "Team & culture",
-          "body": "Stories about the people building this, published at launch."
-        },
-        {
-          "tag": "Careers",
-          "title": "Careers",
-          "body": "Hiring runs through direct contact for now. Formal postings will follow launch."
-        }
-      ]
-    },
-    "cta": {
-      "headline": "Want to build this with us?",
-      "body": "Get notified when the app launches, or write to us.",
-      "secondary": "Contact us"
     }
   },
   "declare": {

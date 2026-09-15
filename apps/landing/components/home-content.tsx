@@ -13,16 +13,11 @@ import { Declare } from "@/components/sections/declare";
 import { FinalCta } from "@/components/sections/final-cta";
 import { UiCrop } from "@/components/ui-crop";
 import { UiCropStack } from "@/components/ui-crop-stack";
-import { Faq } from "@/components/sections/faq";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { APP_STORE_LIVE, SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
 
-type FaqItem = { q: string; a: string };
-
 export async function HomeContent({ locale }: { locale: string }) {
   const tMeta = await getTranslations({ locale, namespace: "meta" });
-  const tFaq = await getTranslations({ locale, namespace: "faq" });
-  const faqItems = tFaq.raw("items") as FaqItem[];
 
   const softwareApplicationLd = {
     "@context": "https://schema.org",
@@ -40,16 +35,6 @@ export async function HomeContent({ locale }: { locale: string }) {
     ],
   };
 
-  const faqPageLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqItems.map((item) => ({
-      "@type": "Question",
-      name: item.q,
-      acceptedAnswer: { "@type": "Answer", text: item.a },
-    })),
-  };
-
   return (
     <>
       <script
@@ -57,10 +42,6 @@ export async function HomeContent({ locale }: { locale: string }) {
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(softwareApplicationLd),
         }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageLd) }}
       />
       <SiteHeader />
       {/* 순서는 **사용자가 겪는 시간**이 정한다: 이게 뭔가(듣는다) → 내일 아침에 무슨
@@ -92,7 +73,6 @@ export async function HomeContent({ locale }: { locale: string }) {
           namespace="shared"
           visual={<UiCropStack names={["voice-groups", "who-to-wake"]} />}
         />
-        <Faq />
         <FinalCta />
       </main>
       <SiteFooter />

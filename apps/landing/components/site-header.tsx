@@ -51,7 +51,7 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        {/* 라벨과 도착지를 맞춘다 — 앵커는 홈 안의 섹션 id 와 1:1 이다. */}
+        {/* 라벨과 도착지를 맞춘다 — 기능만 홈 안의 앵커이고 나머지는 각자 페이지다. */}
         <nav className="hidden items-center gap-1 lg:flex">
           <Link
             href="/#how"
@@ -72,22 +72,10 @@ export function SiteHeader() {
             {t("event")}
           </Link>
           <Link
-            href="/#faq"
+            href="/faq"
             className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("faq")}
-          </Link>
-          <Link
-            href="/company"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("company")}
-          </Link>
-          <Link
-            href="/contact"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("contact")}
           </Link>
         </nav>
 

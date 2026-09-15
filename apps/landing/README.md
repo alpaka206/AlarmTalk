@@ -32,7 +32,6 @@ npm run build        # next build(정적 export → out/) + scripts/postbuild-la
 ## 다국어 (i18n)
 
 `next-intl` 기반. 기본 로케일 `ko`는 접두사 없이(`/`, `/pricing/` …), `en`·`ja`만 `/en`·`/ja` 접두사를 씁니다(`localePrefix: "as-needed"`). 정적 export 라 미들웨어가 없으므로 접두사 없는 한국어 페이지는 `app/(ko)/` 가 실제 파일로 내보냅니다.
-`next-intl` 기반. 기본 로케일 `ko`는 접두사 없이(`/`, `/company/` …), `en`·`ja`만 `/en`·`/ja` 접두사를 씁니다(`localePrefix: "as-needed"`). 정적 export 라 미들웨어가 없으므로 공개 URL → 산출물(`/ko/*`) 매핑은 `vercel.json`이 담당합니다.
 
 - `i18n/routing.ts` — 지원 로케일(`ko`, `en`, `ja`)과 기본 로케일 정의
 - `i18n/request.ts` — 요청 로케일 해석 + 해당 `messages/<locale>.json` 로드
@@ -79,8 +78,8 @@ app/
     privacy/page.tsx      개인정보처리방침 (docs/legal 마크다운 렌더)
     terms/page.tsx        이용약관 (docs/legal 마크다운 렌더)
     pricing/page.tsx      요금 비교표(홈에서 분리, 2026-09-15)
-    company/page.tsx      회사 소개
-    contact/page.tsx      문의
+    faq/page.tsx          자주 묻는 질문(홈에서 분리, 2026-09-15)
+    contact/page.tsx      문의. 내비·사이트맵에서는 뺐고 App Store 지원 URL(/ko/contact/)로만 열린다
     account-deletion/page.tsx  계정 삭제 안내(스토어 정책 요구)
     event/page.tsx        이벤트(응원 메시지) 페이지. 옛 주소 `/cheer/` 는 vercel.json 이 308 로 보낸다
 components/
@@ -104,7 +103,7 @@ components/
     feature-section.tsx   기능 섹션 공통 레이아웃(좌우 반전 지원)
     product-scroll.tsx    제품 화면 소개
     declare.tsx           제품 선언
-    faq.tsx               자주 묻는 질문
+    faq.tsx               자주 묻는 질문(/faq 페이지 본문)
     final-cta.tsx         마지막 스토어 CTA
     site-footer.tsx       푸터
 i18n/                     next-intl 라우팅/요청/내비게이션 설정

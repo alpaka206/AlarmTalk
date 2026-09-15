@@ -36,7 +36,7 @@ export function SiteFooter() {
             </div>
           </RevealItem>
 
-          <RevealItem as="div" className="grid grid-cols-2 gap-10 sm:grid-cols-3">
+          <RevealItem as="div" className="grid grid-cols-2 gap-10">
             <div>
               <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
                 {t("product")}
@@ -74,29 +74,12 @@ export function SiteFooter() {
                     {t("linkFaq")}
                   </Link>
                 </li>
-              </ul>
-            </div>
-            <div>
-              <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                <li>
+                  <Link
                     href="/event"
-                {t("company")}
-              </h2>
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
                     {t("linkEvent")}
-              <ul className="mt-4 space-y-2.5 text-[14px]">
-                <li>
-                  <Link
-                    href="/company"
-                    className="whitespace-nowrap text-text-muted hover:text-text"
-                  >
-                    {t("linkAbout")}
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/contact"
-                    className="whitespace-nowrap text-text-muted hover:text-text"
-                  >
-                    {t("linkContact")}
                   </Link>
                 </li>
               </ul>

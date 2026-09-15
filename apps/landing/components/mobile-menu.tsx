@@ -56,9 +56,7 @@ export function MobileMenu() {
     { href: "/#how", label: t("features") },
     { href: "/pricing", label: t("pricing") },
     { href: "/event", label: t("event") },
-    { href: "/#faq", label: t("faq") },
-    { href: "/company", label: t("company") },
-    { href: "/contact", label: t("contact") },
+    { href: "/faq", label: t("faq") },
   ];
 
   return (
