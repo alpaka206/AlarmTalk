@@ -7,12 +7,23 @@ account_id = "34cf9e5d676b15021704b5b3d247887c"
 #   wrangler deploy --env dev
 #   wrangler deploy --env production
 
+# Workers Logs — 나가는 4xx/5xx 한 줄(`at: "api_error"`)과 `logStructured` 의 JSON 을 대시보드에
+# **보존**한다. 2026-09-15 전에는 이 블록이 없어 과거 로그가 아예 없었고, 401 거절 같은 4xx 를
+# Sentry 에서 내리자(#749) 그 기록이 실시간 `wrangler tail` 에만 남게 됐다.
+# ⚠ **환경마다 반복해야 한다** — `observability` 는 [env.*] 에 상속되지 않는다.
+# 보존 3일(무료)/7일(유료). 100% 샘플링 — 5분 cron + API 로 하루 수천 건이라 한도(50억)에
+# 한참 못 미친다. 로그에는 uid(users.id)만 실리고 이메일·토큰은 없다(`lib/logger.ts`).
+
 [env.dev]
 name = "voice-alarm-api-dev"
 routes = [
   { pattern = "api-dev.alarm-talk.com", custom_domain = true }
 ]
 vars = { ENVIRONMENT = "development" }
+
+[env.dev.observability]
+enabled = true
+head_sampling_rate = 1
 
 [[env.dev.r2_buckets]]
 binding = "VOICE_BUCKET"
@@ -27,6 +38,10 @@ routes = [
   { pattern = "api.alarm-talk.com", custom_domain = true }
 ]
 vars = { ENVIRONMENT = "production" }
+
+[env.production.observability]
+enabled = true
+head_sampling_rate = 1
 
 [[env.production.r2_buckets]]
 binding = "VOICE_BUCKET"
