@@ -14,7 +14,7 @@
   },
   "hero": {
     "headline": "Not an alarm.\n<who></who> voice wakes you.",
-    "description": "A voice you recorded, one a family member shared, or one of four built in.\nYou decide what it says.",
+    "description": "Set your own alarm to a voice you love,\nand set one for family and friends, too.",
     "phone": {
       "countdown": "Rings in 9 hours 21 minutes.",
       "meridiem": "AM",
@@ -27,9 +27,12 @@
     },
     "who": [
       "Mom’s",
+      "Dad’s",
       "Your favorite",
-      "Your daughter’s",
-      "Their"
+      "Your granddaughter’s",
+      "Your boyfriend’s",
+      "Your girlfriend’s",
+      "Your idol’s"
     ]
   },
   "voice": {
