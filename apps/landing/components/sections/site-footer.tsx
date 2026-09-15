@@ -122,9 +122,6 @@ export function SiteFooter() {
           <p className="whitespace-nowrap text-[12.5px] text-text-muted">
             © {year} <span translate="no">AlarmTalk</span> · {t("rights")}
           </p>
-          <p className="whitespace-nowrap text-[12.5px] text-text-muted">
-            {t("made")}
-          </p>
         </div>
       </div>
     </footer>

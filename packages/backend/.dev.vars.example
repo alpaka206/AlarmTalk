@@ -65,3 +65,5 @@ APPLE_PRIVATE_KEY=
 #    BadEnvironmentKeyInToken 으로 전부 막힌다.
 APNS_KEY_ID=
 APNS_PRIVATE_KEY=
+# Perso (이벤트 페이지 음성 생성). 미설정이면 이벤트 생성 라우트만 503.
+PERSO_API_KEY=

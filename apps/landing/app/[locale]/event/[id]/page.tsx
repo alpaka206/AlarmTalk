@@ -6,7 +6,6 @@ import { hasLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { routing, type Locale } from "@/i18n/routing";
 import { EVENTS, findEvent } from "@/lib/events";
-import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { StoreBadges } from "@/components/store-badges";
 import { EventStudio } from "@/components/event/event-studio";
@@ -55,8 +54,11 @@ export async function generateMetadata({
 }
 
 /**
- * 이벤트 1, 응원 메시지. 목록(`/event/`)에서 번호로 들어온다. 지금은 이벤트가 하나라 id 별로
- * 본문을 가르지 않고, 아는 id 가 아니면 404 다(`lib/events.ts`).
+ * 이벤트 1, 내 이름 음성 메시지. 목록(`/event/`)에서 번호로 들어온다. 지금은 이벤트가 하나라
+ * id 별로 본문을 가르지 않고, 아는 id 가 아니면 404 다(`lib/events.ts`).
+ *
+ * 상단 내비는 두지 않는다(2026-09-15 지시) — 이벤트 본문은 공유 링크로 들어와 한 가지만 하는
+ * 화면이라, 나가는 길은 위의 "이벤트 목록" 과 아래 푸터면 된다.
  */
 export default async function EventPage({
   params,
@@ -69,7 +71,6 @@ export default async function EventPage({
 
   return (
     <>
-      <SiteHeader />
       <main id="main" className="relative">
         <BackToList />
         <EventHero />
@@ -84,7 +85,7 @@ export default async function EventPage({
 function BackToList() {
   const t = useTranslations("eventList");
   return (
-    <div className="mx-auto max-w-site px-5 pt-8 md:px-8">
+    <div className="mx-auto max-w-site px-5 pt-6 md:px-8 md:pt-8">
       <Link
         href="/event"
         className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text"

@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { motion, useScroll, useSpring, useTransform } from "motion/react";
+import { motion, useMotionValueEvent, useScroll, useSpring, useTransform } from "motion/react";
+import { usePrefersReducedMotion } from "./motion/use-prefers-reduced-motion";
 import { Link, usePathname } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 import { MobileMenu } from "./mobile-menu";
@@ -22,8 +24,37 @@ export function SiteHeader() {
     ["saturate(140%) blur(0px)", "saturate(140%) blur(12px)"],
   );
 
+  // 내리면 숨고 올리면 나온다(2026-09-15 지시, 모든 페이지). 맨 위 근처에서는 늘 보이고,
+  // 방향이 바뀌어도 몇 px 흔들림에는 반응하지 않는다(히스테리시스). 숨는 동안 헤더 안에
+  // 초점이 있으면(탭 이동) 숨기지 않는다 — 보이지 않는 곳에 초점이 가면 안 된다.
+  const reduced = usePrefersReducedMotion();
+  const [hidden, setHidden] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  useMotionValueEvent(scrollY, "change", (y) => {
+    const prev = scrollY.getPrevious() ?? y;
+    const delta = y - prev;
+    if (y < 80) {
+      setHidden(false);
+    } else if (delta > 8) {
+      setHidden(true);
+    } else if (delta < -8) {
+      setHidden(false);
+    }
+  });
+  useEffect(() => {
+    if (focusWithin) setHidden(false);
+  }, [focusWithin]);
+
   return (
-    <header className="sticky top-0 z-30">
+    <motion.header
+      className="sticky top-0 z-30"
+      animate={{ y: hidden && !focusWithin ? "-100%" : "0%" }}
+      transition={reduced ? { duration: 0 } : { type: "spring", duration: 0.35, bounce: 0 }}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusWithin(false);
+      }}
+    >
       {/* translucent backdrop that fades in on scroll */}
       <motion.div
         aria-hidden="true"
@@ -67,7 +98,7 @@ export function SiteHeader() {
           <MobileMenu />
         </div>
       </div>
-    </header>
+    </motion.header>
   );
 }
 
