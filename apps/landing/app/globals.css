@@ -285,7 +285,7 @@
      어긋날 틈이 없다. */
   .scrub-stage {
     position: relative;
-    height: 240vh;
+    height: 200vh; /* 핀 100vh + 스크롤 100vh: 폰이 오르고 토글이 켜지면 끝 */
   }
   .scrub-pin {
     position: sticky;
@@ -302,7 +302,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    /* 핀도 스크럽도 없다. 240vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
+    /* 핀도 스크럽도 없다. 200vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
        접근성 문제라, 평범한 섹션 하나로 접고 **끝난 상태**를 보여준다. */
     .scrub-stage {
       height: auto;
@@ -316,9 +316,6 @@
     .scrub-stage [data-scrub] {
       opacity: 1 !important;
       transform: none !important;
-    }
-    .scrub-stage [data-scrub="before"] {
-      display: none;
     }
     /* 알람은 켜진 채로 보여준다 — 이 장면이 말하려는 것이 그 상태다. */
     .scrub-stage [data-scrub-knob] {

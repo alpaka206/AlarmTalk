@@ -329,8 +329,7 @@
     "body": "Install it and set one alarm.\nThe built-in voices are there the moment you open it."
   },
   "productScroll": {
-    "before": "Keep the alarm.\nChange the voice.",
-    "after": "6:00 tomorrow,\nMom’s voice wakes you."
+    "headline": "Set it like always.\nWake up feeling better."
   },
   "crop": {
     "alarm-row": "Alarm list showing time left until the next alarm",
