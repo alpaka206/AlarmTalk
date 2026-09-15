@@ -57,6 +57,7 @@
   --color-ink-surface: #1b2542; /* 앱 surface — 어두운 바닥 위의 카드 */
   --color-ink-high: #222e52; /* 앱 surfaceContainerHigh — 카드 위의 칩·입력 */
   --color-ink-body: #a7afc0; /* 앱 onSurfaceVariant. ink 위 8.9 */
+  --color-ink-fg: #f7f8fc; /* 앱 onSurface — ink 위 글자 */
   --color-ink-line: rgba(255, 255, 255, 0.1);
 
   /* typography */
@@ -330,7 +331,7 @@
      페이지에서 **한 번**만 쓴다. 두 번 쓰면 리듬이 아니라 줄무늬가 된다. */
   .section-ink {
     background: linear-gradient(180deg, #1a2a52 0%, #070c1d 100%);
-    color: #f7f8fc;
+    color: var(--color-ink-fg);
   }
   /* ink 위에 ink 베젤을 올리면 베젤이 사라진다. 어두운 섹션에서는 가장자리만 남긴다. */
   .section-ink .device {
@@ -373,7 +374,7 @@
     background: var(--color-ink-surface);
     border: 1px solid var(--color-ink-line);
     border-radius: var(--radius-xl);
-    color: #f7f8fc;
+    color: var(--color-ink-fg);
   }
 
   /* button base — never wraps, never breaks.

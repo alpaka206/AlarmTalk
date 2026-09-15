@@ -279,21 +279,43 @@
     }
   },
   "whoseVoice": {
-    "headline": "Whose voice\nwill wake you?",
+    "headline": "Which voices\ncan wake you?",
     "items": [
       {
-        "title": "A voice you recorded",
-        "body": "Read a few lines into your phone once.\nAfter that, you only choose what it says."
+        "title": "A voice you registered",
+        "body": "Register it once,\nthen set any alarm to that voice."
       },
       {
-        "title": "A voice someone shared",
-        "body": "People on the same plan share voices.\nFar away, still there in the morning."
+        "title": "A voice family or friends registered",
+        "body": "People on the same plan\ncan use each other’s voices."
       },
       {
-        "title": "Four built-in voices",
-        "body": "Siwoo, Mina, Dohyun and Aeni.\nNo setup, free, in an alarm today."
+        "title": "Built-in voices",
+        "body": "The voices included from the start.\nNo setup, and free."
       }
-    ]
+    ],
+    "mini": {
+      "myVoices": "My voices",
+      "sharedVoices": "Shared with me",
+      "systemVoices": "Built-in voices",
+      "add": "Add",
+      "ownName": "Mom",
+      "shared": [
+        {
+          "name": "Dad",
+          "from": "Voice shared by Dad"
+        },
+        {
+          "name": "Grandma",
+          "from": "Voice shared by Grandma"
+        }
+      ],
+      "alt": {
+        "own": "The app’s Voices tab, My voices group: one voice you registered and an Add button",
+        "shared": "The app’s Voices tab, Shared with me group: two voices shared by Dad and Grandma",
+        "system": "The app’s Voices tab, Built-in voices group: Siwoo, Mina, Dohyun and Aeni"
+      }
+    }
   },
   "event": {
     "meta": {
