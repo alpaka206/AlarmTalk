@@ -101,7 +101,6 @@ components/
     whose-voice.tsx       누구 목소리로 깨우고 싶나요
     feature-section.tsx   기능 섹션 공통 레이아웃(좌우 반전 지원)
     product-scroll.tsx    제품 화면 소개
-    scenarios.tsx         사용 시나리오
     pricing.tsx           요금제
     declare.tsx           제품 선언
     faq.tsx               자주 묻는 질문

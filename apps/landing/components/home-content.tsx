@@ -14,7 +14,6 @@ import { Pricing } from "@/components/sections/pricing";
 import { FinalCta } from "@/components/sections/final-cta";
 import { UiCrop } from "@/components/ui-crop";
 import { UiCropStack } from "@/components/ui-crop-stack";
-import { Scenarios } from "@/components/sections/scenarios";
 import { Faq } from "@/components/sections/faq";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { APP_STORE_LIVE, SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
@@ -90,7 +89,6 @@ export async function HomeContent({ locale }: { locale: string }) {
           alt
           visual={<UiCrop name="pick-message" />}
         />
-        <Scenarios />
         <FeatureSection
           namespace="shared"
           visual={<UiCropStack names={["voice-groups", "who-to-wake"]} />}

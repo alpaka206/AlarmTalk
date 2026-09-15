@@ -40,8 +40,9 @@ export function FeatureSection({ namespace, reverse, visual, id, alt }: Props) {
               </RevealItem>
             </RevealGroup>
 
+            {/* 불릿은 있는 만큼만 그린다 — 섹션마다 두세 개라 개수를 고정하지 않는다. */}
             <RevealGroup as="ul" className="mt-7 space-y-3" stagger={0.07}>
-              {(["bullet1", "bullet2", "bullet3"] as const).map((key) => (
+              {(["bullet1", "bullet2", "bullet3"] as const).filter((key) => t.has(key)).map((key) => (
                 <RevealItem as="li" key={key} className="flex items-start gap-3">
                   <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
                     <Check className="h-3 w-3" strokeWidth={3} />

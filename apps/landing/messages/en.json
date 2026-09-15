@@ -46,8 +46,7 @@
     "headline": "Far away,\nstill there in the morning.",
     "description": "Do you call a parent every day to check they took their medicine?\nOn a couple or family plan you share voices and can set their alarm for them.",
     "bullet1": "Couple: 2 people · Family: 5 including you",
-    "bullet2": "Use a shared voice in any of your alarms",
-    "bullet3": "Set their alarm. Once it arrives, it’s theirs"
+    "bullet2": "Use a shared voice in any of your alarms"
   },
   "language": {
     "headline": "Pick a line,\nor write your own.",
@@ -55,32 +54,6 @@
     "bullet1": "Weather · horoscope · medicine · encouragement lines, all free",
     "bullet2": "Typing your own lines starts with a plan",
     "bullet3": "Korean, English and Japanese"
-  },
-  "scenarios": {
-    "headline": "What does the voice\nsay in the morning?",
-    "description": "Pick a topic and it chooses a line that fits the day.\nAll four are free.",
-    "items": [
-      {
-        "tag": "Weather",
-        "title": "“It might rain today. Don’t forget your umbrella when you head out.”",
-        "body": "Clear, rain, snow, fine dust, heat or cold: the greeting matches the day."
-      },
-      {
-        "tag": "Medicine",
-        "title": "“Time for your medicine. Take it now, before you turn off the alarm.”",
-        "body": "Set it on a parent’s alarm and it reminds them every day. Nothing to write."
-      },
-      {
-        "tag": "Horoscope",
-        "title": "“Luck is on your side today. If there’s something you’ve been putting off, give it a light try.”",
-        "body": "Enter a birth date once and hear the day’s reading every morning."
-      },
-      {
-        "tag": "Encouragement",
-        "title": "“You don’t have to do everything perfectly from the start. Begin with what you can do now, one thing at a time.”",
-        "body": "For the hard weeks. A different line every day."
-      }
-    ]
   },
   "faq": {
     "headline": "Frequently asked",
