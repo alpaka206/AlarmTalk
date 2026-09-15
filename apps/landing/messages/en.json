@@ -258,13 +258,6 @@
   "productScroll": {
     "headline": "Set it like always.\nWake up feeling better."
   },
-  "crop": {
-    "alarm-row": "Alarm list showing time left until the next alarm",
-    "record": "Create a voice: record or upload a file",
-    "pick-message": "Choosing what it says: greeting, weather, fortune, encouragement, medication, or your own",
-    "voice-groups": "Voice list: your voice and voices shared with you",
-    "who-to-wake": "Choosing who to wake"
-  },
   "voicePreview": {
     "failed": "Can’t play right now. Tap to try again",
     "playAria": "Play {name}",
@@ -293,8 +286,51 @@
         "title": "Built-in voices",
         "body": "The voices included from the start.\nNo setup, and free."
       }
-    ],
-    "mini": {
+    ]
+  },
+  "appMini": {
+    "record": {
+      "modeRecord": "Record",
+      "modeFile": "File",
+      "status": "Record",
+      "hint": "Too short and the voice may not match.",
+      "videoTip": "No file of the voice you want? Play a video and record that.",
+      "scriptTitle": "Example script",
+      "alt": "The app’s Create a voice screen at the Record step: Record is selected over File, a record card shows 0:00 / 2:00 and a microphone button, with two hints and a collapsed example script below"
+    },
+    "pick-message": {
+      "options": {
+        "preset": "Default greeting",
+        "weather": "Weather",
+        "fortune": "Fortune",
+        "cheer": "Encouragement",
+        "medication": "Meds",
+        "manual": "Type it yourself"
+      },
+      "manualTitle": "Your message",
+      "manualText": "Time to get up, sweetheart. Good luck on your test today",
+      "change": "Change",
+      "alt": "The app’s Message screen: Default greeting, Weather, Fortune, Encouragement, Meds and Type it yourself, with Type it yourself selected and the typed message shown in a card below"
+    },
+    "share": {
+      "myVoices": "My voices",
+      "quota": "1/1 creations available",
+      "add": "Add",
+      "ownName": "Mom",
+      "sharing": "Sharing",
+      "sharedVoices": "Shared with me",
+      "sharedName": "Dad",
+      "sharedFrom": "Voice shared by Dad",
+      "sheetTitle": "Who is this alarm for?",
+      "selfTitle": "Set my alarm",
+      "targetName": "Dad",
+      "quietHours": "Hours they don’t receive alarms: <schedule>Weekdays 09:00-18:30</schedule>",
+      "alt": {
+        "voices": "The app’s Voices tab. Under My voices, Mom’s voice marked Sharing and an Add button; under Shared with me, a voice shared by Dad",
+        "target": "The sheet asking who this alarm is for: Set my alarm, and Dad with the hours he doesn’t receive alarms, weekdays 09:00-18:30"
+      }
+    },
+    "voices": {
       "myVoices": "My voices",
       "sharedVoices": "Shared with me",
       "systemVoices": "Built-in voices",
@@ -328,8 +364,7 @@
     "backToList": "All events",
     "items": {
       "cheer": {
-        "title": "Cheer messages in celebrity voices",
-        "description": "Type a name and hear a word of encouragement in celebrity-style voices. AI voices, not the real people."
+        "title": "Cheer messages in celebrity voices"
       }
     }
   },

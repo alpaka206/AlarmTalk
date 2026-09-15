@@ -105,8 +105,6 @@ function EventList() {
                   <span className="t-h2 block text-text [overflow-wrap:anywhere]">
                     {t(`items.${event.key}.title`)}
                   </span>
-                  <span className="t-body mt-2 block text-text-body [overflow-wrap:anywhere]">
-                    {t(`items.${event.key}.description`)}
                   </span>
                 </span>
                 <ArrowRight className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />

@@ -11,8 +11,9 @@ import { FeatureSection } from "@/components/sections/feature-section";
 import { ProductScroll } from "@/components/sections/product-scroll";
 import { Declare } from "@/components/sections/declare";
 import { FinalCta } from "@/components/sections/final-cta";
-import { UiCrop } from "@/components/ui-crop";
-import { UiCropStack } from "@/components/ui-crop-stack";
+import { RecordMini } from "@/components/app-mini/record";
+import { PickMessageMini } from "@/components/app-mini/pick-message";
+import { ShareMini } from "@/components/app-mini/share";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { APP_STORE_LIVE, SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
 
@@ -61,17 +62,17 @@ export async function HomeContent({ locale }: { locale: string }) {
         <FeatureSection
           id="how"
           namespace="voice"
-          visual={<UiCrop name="record" />}
+          visual={<RecordMini />}
         />
         <FeatureSection
           namespace="language"
           reverse
           alt
-          visual={<UiCrop name="pick-message" />}
+          visual={<PickMessageMini />}
         />
         <FeatureSection
           namespace="shared"
-          visual={<UiCropStack names={["voice-groups", "who-to-wake"]} />}
+          visual={<ShareMini />}
         />
         <FinalCta />
       </main>

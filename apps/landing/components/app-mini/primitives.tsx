@@ -52,7 +52,8 @@ export function PillButton({ children }: { children: ReactNode }) {
 export function GroupHeader({ title, trailing }: { title: string; trailing?: ReactNode }) {
   return (
     <div className="flex min-h-10 items-center gap-1">
-      <span className="text-[15px] font-semibold leading-tight">{title}</span>
+      {/* 제목은 못 줄게 잠근다. trailing 이 길면(영어 "1/1 creations available") 그쪽이 접힌다. */}
+      <span className="shrink-0 text-[15px] font-semibold leading-tight">{title}</span>
       <ChevronDown className="h-4.5 w-4.5 shrink-0 text-ink-body" strokeWidth={2.2} />
       {trailing ? <span className="ml-auto pl-3">{trailing}</span> : null}
     </div>

@@ -94,8 +94,7 @@ components/
   home-content.tsx        홈 섹션 조립
   store-badges.tsx        스토어 배지 2종(Google Play + App Store, APP_STORE_LIVE 스위치)
   voice-preview.tsx       목소리 미리듣기
-  ui-crop.tsx             앱 스크린샷 크롭
-  ui-crop-stack.tsx       크롭 스택 레이아웃
+  app-mini/               앱 화면 미니어처(DOM). primitives 가 판·헤더·행 부품, record·pick-message·share 가 기능 섹션 시각물
   event/                  이벤트(응원 메시지) 페이지 스튜디오·재생·목소리 목록
   legal-markdown.tsx      법무 마크다운 → HTML 렌더러
   motion/                 reveal·reveal-group·scroll-drift·cycling-word 와 reduced-motion 대응

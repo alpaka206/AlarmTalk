@@ -50,6 +50,7 @@ const GROUP_CELL = [
 
 export function WhoseVoice() {
   const t = useTranslations("whoseVoice");
+  const tMini = useTranslations("appMini.voices");
   const tVoices = useTranslations("voicePreview");
   const items = [0, 1, 2] as const;
 
@@ -58,26 +59,26 @@ export function WhoseVoice() {
     0: (
       <>
         <GroupHeader
-          title={t("mini.myVoices")}
-          trailing={<PillButton>{t("mini.add")}</PillButton>}
+          title={tMini("myVoices")}
+          trailing={<PillButton>{tMini("add")}</PillButton>}
         />
-        <GroupCard rows={[{ name: t("mini.ownName"), actions: true }]} />
+        <GroupCard rows={[{ name: tMini("ownName"), actions: true }]} />
       </>
     ),
     1: (
       <>
-        <GroupHeader title={t("mini.sharedVoices")} />
+        <GroupHeader title={tMini("sharedVoices")} />
         <GroupCard
           rows={[
-            { name: t("mini.shared.0.name"), subtitle: t("mini.shared.0.from") },
-            { name: t("mini.shared.1.name"), subtitle: t("mini.shared.1.from") },
+            { name: tMini("shared.0.name"), subtitle: tMini("shared.0.from") },
+            { name: tMini("shared.1.name"), subtitle: tMini("shared.1.from") },
           ]}
         />
       </>
     ),
     2: (
       <>
-        <GroupHeader title={t("mini.systemVoices")} />
+        <GroupHeader title={tMini("systemVoices")} />
         {/* 기본 목소리에는 부가설명이 없다. 묶음 이름이 이미 '기본 목소리' 라고 말한다(앱 주석). */}
         <GroupCard
           rows={(["siwoo", "mina", "dohyun", "aeni"] as const).map((voice) => ({
@@ -90,7 +91,7 @@ export function WhoseVoice() {
 
   return (
     <section id="voices" className="relative">
-      <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">
+      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <Reveal className="mx-auto max-w-155 text-center">
           <h2 className="t-h1 text-text">{t("headline")}</h2>
         </Reveal>
@@ -133,7 +134,7 @@ export function WhoseVoice() {
                     role="img" 로 묶어 한 문장으로 읽힌다(폰 목업과 같은 규칙). */}
                 <div
                   role="img"
-                  aria-label={t(`mini.alt.${GROUP_KEYS[i]}`)}
+                  aria-label={tMini(`alt.${GROUP_KEYS[i]}`)}
                   className={[
                     "mt-5 w-full max-w-[22rem] rounded-3xl px-4 py-4 text-ink-fg ring-1 ring-ink-line sm:px-5 sm:py-5",
                     INK_SCREEN,
