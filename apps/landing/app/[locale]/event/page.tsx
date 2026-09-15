@@ -76,7 +76,7 @@ function EventList() {
   const t = useTranslations("eventList");
   return (
     <section className="relative">
-      <div className="mx-auto max-w-4xl px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
+      <div className="mx-auto max-w-site px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
         <RevealGroup className="flex flex-col" stagger={0.07} trigger="mount">
           <RevealItem as="h1" className="t-display text-text">
             {t("headline")}
@@ -104,7 +104,6 @@ function EventList() {
                   <span className="sr-only">{t("numberAria", { n: event.id })} </span>
                   <span className="t-h2 block text-text [overflow-wrap:anywhere]">
                     {t(`items.${event.key}.title`)}
-                  </span>
                   </span>
                 </span>
                 <ArrowRight className="h-5 w-5 shrink-0 text-text-muted" aria-hidden="true" />

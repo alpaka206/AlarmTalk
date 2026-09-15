@@ -39,7 +39,7 @@ export function SiteHeader() {
         style={{ scaleX: progress }}
       />
 
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 md:px-8">
+      <div className="mx-auto flex max-w-site items-center justify-between px-5 py-5 md:px-8">
         <Link
           href="/"
           aria-label="AlarmTalk"

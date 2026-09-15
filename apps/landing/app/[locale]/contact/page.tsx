@@ -72,7 +72,7 @@ function ContactHero() {
   const t = useTranslations("contact.hero");
   return (
     <section className="relative">
-      <div className="mx-auto max-w-6xl px-5 pb-16 pt-16 md:px-8 lg:pb-20 lg:pt-24">
+      <div className="mx-auto max-w-site px-5 pb-16 pt-16 md:px-8 lg:pb-20 lg:pt-24">
         <div className="max-w-3xl">
           <span className="eyebrow">{t("eyebrow")}</span>
           <h1 className="mt-6 text-[44px] font-bold leading-[1.05] tracking-[-0.03em] text-text sm:text-[58px] lg:text-[64px]">
@@ -103,7 +103,7 @@ function Channels() {
   return (
     <section className="relative">
       <div className="hairline" />
-      <div className="mx-auto max-w-6xl px-5 py-16 md:px-8 lg:py-24">
+      <div className="mx-auto max-w-site px-5 py-16 md:px-8 lg:py-24">
         <div className="max-w-3xl">
           <h2 className="text-[28px] font-bold leading-[1.2] tracking-[-0.02em] text-text sm:text-[36px]">
             {t("headline")}
@@ -152,7 +152,7 @@ function ResponseNote() {
   return (
     <section className="relative">
       <div className="hairline" />
-      <div className="mx-auto max-w-6xl px-5 py-16 md:px-8 lg:py-20">
+      <div className="mx-auto max-w-site px-5 py-16 md:px-8 lg:py-20">
         <div className="card mx-auto max-w-3xl p-8 lg:p-10">
           <h2 className="text-[20px] font-semibold leading-[1.3] tracking-[-0.01em] text-text sm:text-[22px]">
             {t("headline")}

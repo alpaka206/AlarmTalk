@@ -12,7 +12,7 @@ export function Faq() {
 
   return (
     <section id="faq" className="relative">
-      <div className="mx-auto max-w-4xl px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
+      <div className="mx-auto max-w-site px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
         <Reveal as="h1" className="t-display text-text">
           {t("headline")}
         </Reveal>

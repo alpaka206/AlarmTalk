@@ -85,7 +85,7 @@ export default async function EventPage({
 function BackToList() {
   const t = useTranslations("eventList");
   return (
-    <div className="mx-auto max-w-6xl px-5 pt-8 md:px-8">
+    <div className="mx-auto max-w-site px-5 pt-8 md:px-8">
       <Link
         href="/event"
         className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text"
@@ -105,7 +105,7 @@ function EventHero() {
   const t = useTranslations("event.hero");
   return (
     <section className="relative">
-      <div className="mx-auto flex max-w-6xl flex-col items-center px-5 pb-14 pt-10 text-center md:px-8 lg:pb-20 lg:pt-16">
+      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-14 pt-10 text-center md:px-8 lg:pb-20 lg:pt-16">
         <RevealGroup className="flex flex-col items-center" stagger={0.07} trigger="mount">
           <RevealItem as="span" className="eyebrow">
             {t("eyebrow")}
@@ -135,7 +135,7 @@ function EventSteps() {
   const items = t.raw("items") as Step[];
   return (
     <section className="bg-bg-alt">
-      <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">
+      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <Reveal className="mx-auto max-w-155 text-center">
           <h2 className="t-h1 text-text">{t("headline")}</h2>
         </Reveal>
@@ -158,7 +158,7 @@ function EventCta() {
   const t = useTranslations("event.cta");
   return (
     <section className="relative">
-      <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">
+      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <Reveal className="mx-auto flex max-w-155 flex-col items-center text-center">
           <h2 className="t-h1 text-text">{t("headline")}</h2>
           <p className="t-lead mt-5 text-text-body">{t("body")}</p>

@@ -11,7 +11,7 @@ export function SiteFooter() {
   return (
     <footer className="relative">
       <div className="hairline" />
-      <div className="mx-auto max-w-6xl px-5 py-14 md:px-8 lg:py-20">
+      <div className="mx-auto max-w-site px-5 py-14 md:px-8 lg:py-20">
         <RevealGroup
           as="div"
           stagger={0.08}

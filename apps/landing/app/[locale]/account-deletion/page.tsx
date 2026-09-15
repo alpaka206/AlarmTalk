@@ -181,7 +181,7 @@ export default async function AccountDeletionPage({
     <>
       <SiteHeader />
       <main id="main">
-        <section className="mx-auto max-w-6xl px-5 pb-14 pt-16 md:px-8 lg:pb-20 lg:pt-24">
+        <section className="mx-auto max-w-site px-5 pb-14 pt-16 md:px-8 lg:pb-20 lg:pt-24">
           <div className="max-w-3xl">
             <span className="eyebrow">{copy.eyebrow}</span>
             <h1 className="mt-6 text-[40px] font-bold leading-[1.08] text-text sm:text-[56px] lg:text-[64px]">
@@ -195,7 +195,7 @@ export default async function AccountDeletionPage({
 
         <section className="relative">
           <div className="hairline" />
-          <div className="mx-auto grid max-w-6xl gap-4 px-5 py-14 md:grid-cols-2 md:px-8 lg:py-20">
+          <div className="mx-auto grid max-w-site gap-4 px-5 py-14 md:grid-cols-2 md:px-8 lg:py-20">
             <InfoPanel
               icon={<Smartphone className="h-5 w-5" />}
               title={copy.appTitle}
@@ -218,7 +218,7 @@ export default async function AccountDeletionPage({
 
         <section className="relative">
           <div className="hairline" />
-          <div className="mx-auto max-w-6xl px-5 py-14 md:px-8 lg:py-20">
+          <div className="mx-auto max-w-site px-5 py-14 md:px-8 lg:py-20">
             <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
               <div>
                 <span className="inline-flex rounded-full border border-line bg-raised px-3 py-1 text-[11.5px] font-semibold uppercase tracking-wider text-text-muted">
@@ -241,7 +241,7 @@ export default async function AccountDeletionPage({
 
         <section className="relative">
           <div className="hairline" />
-          <div className="mx-auto grid max-w-6xl gap-4 px-5 py-14 md:grid-cols-2 md:px-8 lg:py-20">
+          <div className="mx-auto grid max-w-site gap-4 px-5 py-14 md:grid-cols-2 md:px-8 lg:py-20">
             <InfoPanel
               icon={<ShieldCheck className="h-5 w-5" />}
               title={copy.retainedTitle}

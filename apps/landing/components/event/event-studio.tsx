@@ -53,7 +53,7 @@ export function EventStudio() {
 
   return (
     <section className="relative" aria-labelledby={`${inputId}-heading`}>
-      <div className="mx-auto max-w-6xl px-5 pb-24 md:px-8 lg:pb-32">
+      <div className="mx-auto max-w-site px-5 pb-24 md:px-8 lg:pb-32">
         <div className="mx-auto max-w-[560px]">
           <h2 id={`${inputId}-heading`} className="t-h3 text-text">
             <label htmlFor={inputId}>{t("studio.nameLabel")}</label>

@@ -18,7 +18,7 @@ export function Hero() {
 
   return (
     <section className="relative">
-      <div className="mx-auto flex max-w-6xl flex-col items-center px-5 pb-24 pt-20 text-center md:px-8 lg:pb-32 lg:pt-28">
+      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-24 pt-20 text-center md:px-8 lg:pb-32 lg:pt-28">
         <RevealGroup
           className="flex flex-col items-center"
           stagger={0.07}

@@ -20,7 +20,7 @@ export function FeatureSection({ namespace, reverse, visual, id, alt }: Props) {
       id={id}
       className={`relative ${alt ? "bg-bg-alt" : ""}`}
     >
-      <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">
+      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <div
           className={`grid items-center gap-12 lg:grid-cols-2 lg:gap-16 ${
             reverse ? "lg:[direction:rtl]" : ""
