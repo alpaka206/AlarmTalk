@@ -19,6 +19,43 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.6 (versionCode 26)
+
+1.2.5 뒤 변경을 반영한 배포 릴리스.
+
+### ko-KR
+
+```
+• 울림 화면이 더 안정적으로 뜨고, 울림 화면을 나가도 알람이 깔끔하게 종료됩니다.
+• 알람 끄기는 한 번의 조작으로 처리되도록 정리했습니다.
+• 울림 중 미리듣기/재생이 겹치거나 누수되는 구간이 줄어들었습니다.
+• 받는 가족 알람의 수신 상태 표시가 더 일관되게 보입니다.
+• 구글 결제 소유권·캐시 동기화가 안정화되어 안내가 더 정확해졌습니다.
+• 볼륨 미리듣기 동작이 단순화되어 알람 직전 조절이 더 자연스러워졌습니다.
+```
+
+### en-US
+
+```
+• The ringing screen is more stable and exits cleanly when you leave it.
+• Alarm dismissal is simplified to one-step handling.
+• Duplicate ringing preview/playback has been reduced.
+• Family alarm receiving status is shown more consistently.
+• Billing ownership and state synchronization is more stable with clearer notices.
+• Ring-time volume preview flow is simpler, so pre-ring adjustment is smoother.
+```
+
+### ja-JP
+
+```
+• 通知アラーム画面の立ち上がりが安定し、画面を離れるとアラームがきれいに終了します。
+• アラーム解除操作を1ステップで終えられるよう整理しました。
+• 鳴動中のプレビュー/再生の重複やリークが減りました。
+• 受け取り家族アラームの受信状態表示がより一貫して見えるようになりました。
+• 課金の所有権・状態同期が安定し、案内が分かりやすくなります。
+• ボリュームプレビューの操作が簡素化され、鳴る前の調整がしやすくなりました。
+```
+
 ## 1.2.4 (versionCode 24)
 
 #685 한 건. 마이그레이션은 없다(백엔드는 알람 저장의 메시지 접근 조건만 고쳤다).
