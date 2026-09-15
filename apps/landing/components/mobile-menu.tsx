@@ -98,16 +98,25 @@ export function MobileMenu() {
         </div>
 
         <nav className="flex flex-col gap-1 px-5 py-4">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setOpen(false)}
-              className="rounded-2xl border border-transparent px-4 py-4 text-[18px] font-semibold text-text transition-[color,background-color,border-color] duration-150 ease-[var(--ease-ui)] hover:border-line hover:bg-surface focus-visible:border-line focus-visible:bg-surface"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {links.map((link) => {
+            const page = link.href.startsWith("/#") ? null : link.href;
+            const active = page !== null && (pathname === page || pathname.startsWith(`${page}/`));
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                aria-current={active ? "page" : undefined}
+                className={`rounded-2xl border px-4 py-4 text-[18px] font-semibold transition-[color,background-color,border-color] duration-150 ease-[var(--ease-ui)] ${
+                  active
+                    ? "border-transparent bg-accent-soft text-accent"
+                    : "border-transparent text-text hover:border-line hover:bg-surface focus-visible:border-line focus-visible:bg-surface"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="mt-auto flex flex-col gap-4 border-t border-line px-5 py-6">

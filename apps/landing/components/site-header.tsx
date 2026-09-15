@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { motion, useScroll, useSpring, useTransform } from "motion/react";
-import { Link } from "@/i18n/navigation";
+import { Link, usePathname } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 import { MobileMenu } from "./mobile-menu";
 import { LocaleSwitcher } from "./locale-switcher";
@@ -51,32 +51,13 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        {/* 라벨과 도착지를 맞춘다 — 기능만 홈 안의 앵커이고 나머지는 각자 페이지다. */}
+        {/* 라벨과 도착지를 맞춘다 — 기능만 홈 안의 앵커이고 나머지는 각자 페이지다.
+            지금 있는 페이지는 알약으로 강조한다(2026-09-15 지시 — 페이지 제목 대신 내비가 말한다). */}
         <nav className="hidden items-center gap-1 lg:flex">
-          <Link
-            href="/#how"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("features")}
-          </Link>
-          <Link
-            href="/pricing"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("pricing")}
-          </Link>
-          <Link
-            href="/event"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("event")}
-          </Link>
-          <Link
-            href="/faq"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("faq")}
-          </Link>
+          <NavLink href="/#how">{t("features")}</NavLink>
+          <NavLink href="/pricing">{t("pricing")}</NavLink>
+          <NavLink href="/event">{t("event")}</NavLink>
+          <NavLink href="/faq">{t("faq")}</NavLink>
         </nav>
 
         <div className="flex items-center gap-2">
@@ -87,5 +68,28 @@ export function SiteHeader() {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * 헤더 링크. 현재 페이지(경로가 href 로 시작)면 `aria-current="page"` 와 강조 알약. 앵커(`/#how`)
+ * 는 홈의 한 구간이라 강조하지 않는다 — 홈에서 '기능' 이 켜져 있으면 다른 구간에 있어도 거짓이다.
+ */
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const page = href.startsWith("/#") ? null : href;
+  const active = page !== null && (pathname === page || pathname.startsWith(`${page}/`));
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium transition-[color,background-color] duration-150 ease-[var(--ease-ui)] ${
+        active
+          ? "bg-accent-soft font-semibold text-accent"
+          : "text-text-muted hover:text-text focus-visible:text-text"
+      }`}
+    >
+      {children}
+    </Link>
   );
 }

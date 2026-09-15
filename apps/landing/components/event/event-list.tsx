@@ -1,10 +1,11 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { ComponentType } from "react";
-import { ArrowRight, Heart, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { EVENTS, type EventEntry } from "@/lib/events";
 import { CELEBRITIES } from "@/components/event/event-catalog";
-import { Reveal } from "@/components/motion/reveal";
 import { RevealGroup, RevealItem } from "@/components/motion/reveal-group";
 
 /**
@@ -47,16 +48,15 @@ export function EventList() {
   return (
     <section className="relative">
       <div className="mx-auto max-w-site px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
-        <Reveal as="h1" className="t-display text-text" trigger="mount">
-          {t("headline")}
-        </Reveal>
+        {/* 페이지 제목은 헤더의 강조된 '이벤트' 가 대신한다(2026-09-15 지시). 문서 개요를 위해
+            h1 은 두되 보이지 않게. */}
+        <h1 className="sr-only">{t("headline")}</h1>
 
-        {/* 첫 포스터가 곧 첫 화면이라 관찰자에 걸지 않고 mount 로 띄운다. 제목보다 한 박자 늦게. */}
+        {/* 첫 포스터가 곧 첫 화면이라 관찰자에 걸지 않고 mount 로 띄운다. */}
         <RevealGroup
           as="ol"
-          className="mt-10 flex flex-col gap-6 lg:mt-14"
+          className="flex flex-col gap-6"
           stagger={0.09}
-          delay={0.15}
           trigger="mount"
         >
           {EVENTS.map((event) => {
@@ -108,52 +108,57 @@ export function EventList() {
 }
 
 /**
- * 이벤트 1(내 이름 음성 메시지)의 본질: 좋아하는 인물 카드에서 만들기를 누르면 내 이름을
- * 부르는 메시지가 생긴다. 그래서 본문의 인물 카드(`event-studio.tsx`)를 작게 두 장 겹쳐
- * 놓는다. 구조는 실물과 같다: 이니셜 원 → 이름, 오른쪽에 좋아요, 아래에 만들기 버튼 모양.
- * 본문에 없는 것(기간, 인원, 배지)은 그리지 않는다. 이름은 본문과 같은 `event.celebrities.*`
- * 키, 버튼 글자는 `event.studio.generate` 다.
- *
- * 뒤 카드는 앞 카드 아래로 40px 들어가고 오른쪽으로 12px 밀린다(계단 겹침). 카드 폭을
- * 0.75rem 줄여 두는 이유: 마지막 카드의 밀림까지 더해도 무대 폭 안에 든다. 320px 에서도
- * 넘치지 않는다.
+ * 이벤트 1(내 이름 음성 메시지)의 본질: 좋아하는 인물이 **내 이름을 불러 준다**. 그래서
+ * 카드 축소판을 겹쳐 놓는 대신(버튼이 서로 가려 어수선했다) 말풍선 하나와 인물 둘만 둔다:
+ * 위에 이름이 들어간 메시지 한 줄, 아래에 인물 초상 둘과 이름. 사진이 오면 초상 원이 사진이
+ * 된다(`public/event/<id>.jpg`, 없으면 이니셜). 본문에 없는 것(기간, 인원, 배지)은 그리지
+ * 않는다. 문장은 본문과 같은 `event.studio.kinds.birthday.line`, 이름은 `event.celebrities.*`.
  */
-const STEP = ["", "-mt-10 ml-3"] as const;
-
 function VoiceMessagePreview() {
   const t = useTranslations("event");
+  const sample = t("studio.namePlaceholder").replace(/^.*?:\s*/, "").replace(/…$/, "");
   return (
-    <div className="w-full max-w-[18.5rem]">
-      {CELEBRITIES.slice(0, STEP.length).map((c, i) => {
-        const name = t(`celebrities.${c.id}.name`);
-        return (
-          // `relative` 가 없으면 앞 카드의 글자가 뒤 카드의 바닥 위로 그려진다(블록 배경이
-          // 먼저, 인라인 글자는 나중에 칠해지는 순서). 위치 지정 요소는 통째로 순서대로 칠해진다.
-          // `.card` 를 안 쓰는 이유: 22 라운드를 유틸리티 뒤에서 선언해 `rounded-*` 로 못 덮는다.
-          // 실물 카드(22)의 축소판이라 한 단 작은 18 을 쓴다.
-          <div
-            key={c.id}
-            className={`relative w-[calc(100%-0.75rem)] rounded-[var(--radius-lg)] border border-line bg-surface p-4 ${STEP[i]}`}
-          >
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--radius-pill)] bg-accent-soft text-[15px] font-bold text-accent">
-                {Array.from(name)[0] ?? ""}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[15px] font-bold leading-tight text-text">
-                {name}
-              </span>
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius-pill)] border border-line text-text-muted">
-                <Heart className="h-3.5 w-3.5" />
-              </span>
+    <div className="flex w-full max-w-[18.5rem] flex-col items-center">
+      {/* 말풍선. 꼬리는 아래 인물 쪽을 향한다. */}
+      <div className="relative w-full rounded-[var(--radius-xl)] border border-line bg-surface px-5 py-4 text-center text-[15px] font-semibold leading-snug text-text">
+        {t.rich("studio.kinds.birthday.line", {
+          name: sample,
+          b: (chunks) => <span className="text-accent">{chunks}</span>,
+        })}
+        <span
+          className="absolute left-1/2 top-full -ml-2 h-4 w-4 -translate-y-1/2 rotate-45 border-b border-r border-line bg-surface"
+        />
+      </div>
+
+      <div className="mt-7 flex items-start justify-center gap-8">
+        {CELEBRITIES.map((c) => {
+          const name = t(`celebrities.${c.id}.name`);
+          return (
+            <div key={c.id} className="flex w-20 flex-col items-center">
+              <PreviewPortrait src={c.portrait} name={name} />
+              <span className="mt-2.5 truncate text-[14px] font-bold text-text">{name}</span>
             </div>
-            {/* 본문의 만들기 버튼과 같은 모양. 눌리지 않는 장식이라 button 이 아니라 span 이다. */}
-            <span className="mt-3 flex h-10 items-center justify-center gap-1.5 rounded-[var(--radius-pill)] bg-accent text-[13.5px] font-semibold text-white">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t("studio.generate")}
-            </span>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+/**
+ * 초상 원. 사진 파일이 `public/` 에 있으면 사진, 없으면 이니셜. 서버 컴포넌트라(정적 export 는
+ * 빌드 때 렌더) 파일 존재를 직접 본다 — 없는 사진에 깨진 이미지 아이콘을 띄우지 않는다.
+ */
+function PreviewPortrait({ src, name }: { src: string; name: string }) {
+  const hasPhoto = existsSync(path.join(process.cwd(), "public", src));
+  return (
+    <span className="relative grid h-20 w-20 place-items-center overflow-hidden rounded-[var(--radius-pill)] bg-accent-soft text-[24px] font-bold text-accent ring-1 ring-line">
+      {hasPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <span>{Array.from(name)[0] ?? ""}</span>
+      )}
+    </span>
   );
 }
