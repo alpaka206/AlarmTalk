@@ -8,24 +8,21 @@ import {
   SITE_URL,
   localePath,
   localeUrl,
-  languageAlternates,
+  languageAlternates, OG_IMAGES
 } from "@/lib/site";
 import { HtmlLangSync } from "@/components/html-lang-sync";
-import { HomeContent } from "@/components/home-content";
 
 /**
- * 루트 `/` — **한국어 홈의 정식 주소다.**
+ * 접두사 없는 한국어 라우트 묶음 — `/`, `/pricing/`, `/faq/`, `/event/` … 의 **정식 주소**.
  *
- * 기본 로케일은 접두사를 쓰지 않으므로(`localePrefix: "as-needed"`) canonical·hreflang
- * x-default·사이트맵이 전부 `/` 를 가리킨다. 그런데 라우트가 `[locale]` 하나뿐이면
- * 정작 그 주소에 파일이 없어서, 배포에서는 rewrite 에 기대고 로컬에서는 404 가 났다.
+ * 기본 로케일(ko)은 접두사를 쓰지 않는데(`localePrefix: "as-needed"`) 라우트가 `[locale]`
+ * 하나뿐이면 그 주소에 파일이 없다. 배포에서는 Vercel rewrite 에 기댔고 로컬 dev 에서는
+ * `/pricing/` 이 `[locale]=pricing` 으로 잡혀 500 이 났다(2026-09-15). 그래서 한국어
+ * 페이지를 **진짜 파일**로 한 벌 더 만든다: 이 그룹의 페이지들은 `[locale]/<page>/page.tsx` 를
+ * 로케일만 ko 로 고정해 다시 내보내는 얇은 껍데기다. 본문·메타데이터는 한 곳에만 있다.
  *
- * 여기에 **리다이렉트 껍데기를 두면 안 된다.** 정적 export 에서는 이 파일이
- * `out/index.html` 이 되고, 호스팅은 rewrite 보다 파일시스템을 먼저 본다 — 즉 색인의
- * 대표 주소가 껍데기가 된다. 그래서 진짜 본문을 렌더한다.
- *
- * 로케일 컨텍스트는 `[locale]/layout.tsx` 가 주는데 루트는 그 레이아웃 밖이라,
- * 그 레이아웃이 하는 일(로케일 고정 · 프로바이더 · html lang · 조직 LD)을 여기서 한다.
+ * 이 레이아웃은 `[locale]/layout.tsx` 가 하는 일(로케일 고정 · 프로바이더 · html lang ·
+ * 건너뛰기 링크 · 조직 LD)을 ko 로 고정해서 똑같이 한다.
  */
 
 const LOCALE = routing.defaultLocale;
@@ -51,14 +48,16 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: SITE_NAME,
       title,
       description,
+      images: OG_IMAGES,
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: { card: "summary_large_image", title, description, images: OG_IMAGES },
     robots: { index: true, follow: true },
   };
 }
 
-export default async function RootHomePage() {
+export default async function KoLayout({ children }: { children: React.ReactNode }) {
   setRequestLocale(LOCALE);
+  const tNav = await getTranslations({ locale: LOCALE, namespace: "nav" });
 
   const organizationLd = {
     "@context": "https://schema.org",
@@ -73,11 +72,17 @@ export default async function RootHomePage() {
   return (
     <NextIntlClientProvider locale={LOCALE}>
       <HtmlLangSync locale={LOCALE} />
+      <a
+        href="#main"
+        className="sr-only fixed left-3 top-3 z-[60] rounded-[var(--radius-pill)] bg-accent px-4 py-2 text-[14px] font-semibold text-white focus:not-sr-only focus:fixed"
+      >
+        {tNav("skipToContent")}
+      </a>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}
       />
-      <HomeContent locale={LOCALE} />
+      {children}
     </NextIntlClientProvider>
   );
 }

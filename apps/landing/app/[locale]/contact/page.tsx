@@ -5,7 +5,7 @@ import { hasLocale, useTranslations } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
-import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
+import { SITE_NAME, localeUrl, localePath, languageAlternates, OG_IMAGES } from "@/lib/site";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -41,8 +41,9 @@ export async function generateMetadata({
       siteName: SITE_NAME,
       title,
       description,
+      images: OG_IMAGES,
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: { card: "summary_large_image", title, description, images: OG_IMAGES },
   };
 }
 

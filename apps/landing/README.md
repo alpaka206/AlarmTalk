@@ -26,7 +26,7 @@ npm run build        # next build(정적 export → out/) + scripts/postbuild-la
 프로덕션은 Vercel에 배포되어 있습니다.
 
 - **리디렉션은 `vercel.json`이 담당합니다.** `output: "export"`에서는 `next.config.ts`의 `redirects()`가 동작하지 않고, `public/_redirects`(Netlify/Cloudflare Pages 형식)는 Vercel이 무시합니다. `_redirects`는 다른 정적 호스트로 옮길 때를 대비한 백업입니다.
-- **접두사 없는 경로가 정식 주소다.** 기본 로케일 ko 는 접두사를 쓰지 않으므로(`localePrefix: "as-needed"`), `vercel.json`은 `/privacy`, `/terms`, `/account-deletion`, `/company`, `/contact`, `/cheer`(그리고 `/ko` 자체)를 빌드 산출물인 `/ko/...`로 **rewrite** 하고, 반대로 `/ko/<page>`로 들어온 요청은 접두사 없는 정식 주소로 **308 리디렉트**합니다. 스토어 심사(Google Play 개인정보처리방침 URL 등)에 `https://alarm-talk.com/privacy` 같은 짧은 URL을 제출해도 동작해야 하기 때문입니다.
+- **접두사 없는 경로가 정식 주소이고, 진짜 파일이다.** 기본 로케일 ko 는 접두사를 쓰지 않으므로(`localePrefix: "as-needed"`) `app/(ko)/` 라우트 그룹이 `/`, `/privacy/`, `/terms/`, `/account-deletion/`, `/contact/`, `/event/`, `/pricing/`, `/faq/` 를 **실제 산출물**로 만듭니다(각 페이지는 `[locale]/<page>/page.tsx` 를 ko 로 고정해 다시 내보내는 껍데기, 2026-09-15). 그래서 로컬 dev 에서도 접두사 없는 주소가 바로 열리고, rewrite 없는 정적 호스트에서도 동작합니다. `vercel.json` 은 `/ko/<page>` 로 들어온 요청을 정식 주소로 **308 리디렉트**하는 일과 옛 주소(`/cheer`, `/company`) 정리만 맡습니다.
 - **도메인 설정**: 코드의 canonical/sitemap/robots는 모두 `https://alarm-talk.com`(non-www, `lib/site.ts`의 `SITE_URL`)을 기준으로 합니다. Vercel 대시보드의 Domains 설정에서 반드시 `alarm-talk.com`을 primary로 두고 `www.alarm-talk.com`을 308로 apex에 리디렉션해야 합니다. 반대로 설정하면 canonical URL이 리디렉션을 가리키게 되어 Search Console에서 색인 문제가 발생합니다.
 
 ## 다국어 (i18n)
@@ -62,7 +62,8 @@ npm run build        # next build(정적 export → out/) + scripts/postbuild-la
 ```
 app/
   layout.tsx              루트 shell (정적 export 호환을 위한 최소 래퍼)
-  page.tsx                루트 `/` = 한국어 홈 본문(리다이렉트 껍데기를 두지 말 것)
+  (ko)/                   접두사 없는 한국어 정식 주소. layout.tsx 가 ko 고정 프로바이더, page.tsx 가 홈,
+                          나머지는 [locale]/<page>/page.tsx 를 ko 로 고정해 다시 내보내는 껍데기
   manifest.ts             /manifest.webmanifest
   globals.css             Tailwind v4 + 디자인 토큰(@theme)
   robots.ts               /robots.txt

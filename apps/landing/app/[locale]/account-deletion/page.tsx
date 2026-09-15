@@ -5,7 +5,7 @@ import { setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
+import { SITE_NAME, localeUrl, localePath, languageAlternates, OG_IMAGES } from "@/lib/site";
 
 const PRIVACY_EMAIL = "privacy@alarm-talk.com";
 
@@ -159,6 +159,7 @@ export async function generateMetadata({
       siteName: SITE_NAME,
       title: copy.title,
       description: copy.description,
+      images: OG_IMAGES,
     },
     robots: { index: true, follow: true },
   };
