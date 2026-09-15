@@ -65,5 +65,8 @@ APPLE_PRIVATE_KEY=
 #    BadEnvironmentKeyInToken 으로 전부 막힌다.
 APNS_KEY_ID=
 APNS_PRIVATE_KEY=
-# Perso (이벤트 페이지 음성 생성). 미설정이면 이벤트 생성 라우트만 503.
+# Perso (랜딩 이벤트 이름 클립, routes/event.ts). 셋 다 있어야 켜진다 — 아니면 그 라우트만 503.
+# PERSO_VOICE_IDS 는 인물 id → Perso 목소리 id JSON: {"winter":"…","nanami":"…"}
 PERSO_API_KEY=
+PERSO_TTS_URL=
+PERSO_VOICE_IDS=

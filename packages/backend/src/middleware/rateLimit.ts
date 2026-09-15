@@ -146,3 +146,13 @@ export const eventLikeRateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 30,
   prefix: 'event-like:',
 });
+
+/**
+ * 랜딩 이벤트 이름 클립(공개, Perso 호출 = 비용) 전용 한도. 이름을 몇 번 고쳐 다시 만드는
+ * 정도(분당 8)는 받고, 스크립트로 목록을 돌리는 것은 막는다. 같은 이름은 R2 캐시가 받아 준다.
+ */
+export const eventNameClipRateLimitMiddleware = createRateLimitMiddleware({
+  windowMs: 60_000,
+  maxRequests: 8,
+  prefix: 'event-name-clip:',
+});

@@ -91,6 +91,15 @@ export interface Env {
   TEST_CODE_ISSUER_EMAILS?: string;
   SENTRY_DSN?: string;
   VOICE_BUCKET?: R2Bucket;
+  /**
+   * Perso — 랜딩 이벤트 **이름 클립**(`routes/event.ts`). 셋 다 있어야 켜지고, 아니면 그 라우트만
+   * 503 (랜딩은 브라우저 합성 음성으로 물러난다). 계약은 `lib/perso.ts` 참고.
+   */
+  PERSO_API_KEY?: string;
+  /** Perso 합성 엔드포인트 URL. */
+  PERSO_TTS_URL?: string;
+  /** 인물 id → Perso 목소리 id, JSON. 예) {"winter":"…","nanami":"…"} */
+  PERSO_VOICE_IDS?: string;
 }
 
 export interface SentryClient {

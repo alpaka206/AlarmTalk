@@ -12,6 +12,7 @@ import {
   ipRateLimitRefundMiddleware,
   authRateLimitMiddleware,
   eventLikeRateLimitMiddleware,
+  eventNameClipRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
@@ -223,6 +224,7 @@ app.route('/api/holiday', holidayRoutes);
 // 랜딩 이벤트 좋아요 (인증 불필요). 수가 바뀌므로 캐시하지 않고, POST 는 별도 IP 한도.
 app.use('/api/event/*', noStore);
 app.post('/api/event/*', eventLikeRateLimitMiddleware);
+app.post('/api/event/*/name-clip', eventNameClipRateLimitMiddleware);
 app.route('/api/event', eventRoutes);
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
