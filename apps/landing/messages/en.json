@@ -359,8 +359,8 @@
       "description": "Events from AlarmTalk, numbered in order. See what you can take part in right now."
     },
     "headline": "Events",
-    "lead": "These are open right now. Tap a number to go in.",
     "numberAria": "Event {n}.",
+    "open": "Take part",
     "backToList": "All events",
     "items": {
       "cheer": {
@@ -374,7 +374,7 @@
       "description": "Type a name, pick a message, and hear a celebrity-style voice say it with your name. AI voices, not the real people."
     },
     "hero": {
-      "headline": "Hear a voice message with your name,\nin a celebrity voice you love!",
+      "headline": "Hear a message that says your name,\nin a celebrity voice you love!",
       "description": "Type a name and pick a message, and it says it calling that name.\nFor a birthday, or the end of a hard day.",
       "disclaimer": "AI voices, not the real people"
     },
@@ -424,7 +424,6 @@
       "title": "Want to hear more voices like this?",
       "body": "With AlarmTalk, a voice you love can wake you every morning.\nStart your day with a voice that says your name.",
       "secondary": "Just download",
-      "unavailable": "Downloads open soon",
       "close": "Close"
     },
     "steps": {

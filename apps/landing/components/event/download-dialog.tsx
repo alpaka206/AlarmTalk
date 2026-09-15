@@ -12,8 +12,8 @@ import { StoreBadges } from "../store-badges";
  * 네이티브 `<dialog>` 다(모바일 메뉴와 같은 이유: 포커스 트랩·top layer·Escape 를 브라우저가
  * 맡는다). 항상 마운트돼 있고 `open` 으로 `showModal()`/`close()` 만 한다.
  *
- * `src` 가 없으면(생성 서버가 붙기 전, 합성 음성) "그냥 다운로드" 는 눌리지 않고 이유를 적는다
- * — 눌렀는데 아무 일도 없는 버튼을 두지 않는다.
+ * `src` 가 없으면(생성 서버가 붙기 전, 합성 음성) "그냥 다운로드" 는 눌리지 않는다 — 눌렀는데
+ * 아무 일도 없는 버튼을 두지 않는다.
  */
 export function DownloadDialog({
   open,
@@ -80,12 +80,9 @@ export function DownloadDialog({
               {t("secondary")}
             </a>
           ) : (
-            <>
-              <button type="button" disabled className="btn btn-secondary w-full opacity-50">
-                {t("secondary")}
-              </button>
-              <p className="t-caption mt-2 text-center text-text-muted">{t("unavailable")}</p>
-            </>
+            <button type="button" disabled className="btn btn-secondary w-full opacity-50">
+              {t("secondary")}
+            </button>
           )}
         </div>
       </div>

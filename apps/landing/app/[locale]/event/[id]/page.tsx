@@ -108,7 +108,7 @@ function EventHero() {
     <section className="relative">
       <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-14 pt-10 text-center md:px-8 lg:pb-20 lg:pt-16">
         <RevealGroup className="flex flex-col items-center" stagger={0.07} trigger="mount">
-          <RevealItem as="h1" className="t-display max-w-4xl text-text">
+          <RevealItem as="h1" className="t-display max-w-5xl text-text">
             {t("headline")}
           </RevealItem>
           <RevealItem as="p" className="t-lead mt-6 max-w-2xl text-balance text-text-body">
