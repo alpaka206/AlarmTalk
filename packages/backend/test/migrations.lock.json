@@ -450,5 +450,9 @@
   "118": {
     "name": "persist-subscription-entitlement-state",
     "sha": "bece232e0424e4ec"
+  },
+  "119": {
+    "name": "event-likes",
+    "sha": "590b1ba270bf5f62"
   }
 }

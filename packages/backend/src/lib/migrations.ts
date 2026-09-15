@@ -2893,6 +2893,26 @@ export const migrations: Migration[] = [
         )`,
     ],
   },
+  {
+    id: 119,
+    name: 'event-likes',
+    atomic: true,
+    statements: [
+      // 랜딩 이벤트 페이지의 좋아요 수. 인증 없이 세는 공개 카운터라 사용자와 묶지 않고
+      // (event_id, subject_id) 한 행에 누른 횟수만 더한다. 행은 여기서 시드하고 라우트는
+      // UPDATE 만 한다 — 아무 id 나 POST 해서 행을 만들어 내는 스팸을 막는다. 인물을
+      // 더할 때는 시드 마이그레이션을 하나 더 얹는다(`routes/event.ts`).
+      `CREATE TABLE IF NOT EXISTS event_likes (
+        event_id TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (event_id, subject_id)
+      )`,
+      `INSERT OR IGNORE INTO event_likes (event_id, subject_id, count) VALUES ('1', 'winter', 0)`,
+      `INSERT OR IGNORE INTO event_likes (event_id, subject_id, count) VALUES ('1', 'nanami', 0)`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

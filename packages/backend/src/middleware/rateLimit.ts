@@ -136,3 +136,13 @@ export const authRateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 15,
   prefix: 'auth:',
 });
+
+/**
+ * 랜딩 이벤트 좋아요(공개, 인증 없음) 전용 한도. 손가락으로 연타하는 정도(분당 30)는 받고,
+ * 스크립트로 수를 부풀리는 것은 좁힌다. isolate 메모리 버킷이라 완전한 방어는 아니다.
+ */
+export const eventLikeRateLimitMiddleware = createRateLimitMiddleware({
+  windowMs: 60_000,
+  maxRequests: 30,
+  prefix: 'event-like:',
+});
