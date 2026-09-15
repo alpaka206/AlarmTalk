@@ -48,7 +48,7 @@ export function DownloadDialog({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="m-auto w-[calc(100%-2.5rem)] max-w-md rounded-[var(--radius-3xl)] border border-line bg-surface p-0 text-text shadow-[var(--shadow-elevated)] backdrop:bg-ink/55"
+      className="m-auto w-[calc(100%-2.5rem)] max-w-md overscroll-contain rounded-[var(--radius-3xl)] border border-line bg-surface p-0 text-text shadow-[var(--shadow-elevated)] backdrop:bg-ink/55"
     >
       <div className="relative px-6 pb-6 pt-7 sm:px-8 sm:pb-8 sm:pt-9">
         <button

@@ -118,7 +118,7 @@ function EventHero() {
 function EventCta() {
   const t = useTranslations("event.cta");
   return (
-    <section className="relative">
+    <section className="bg-bg-alt">
       <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <Reveal className="mx-auto flex max-w-155 flex-col items-center text-center">
           <h2 className="t-h1 text-text">{t("headline")}</h2>

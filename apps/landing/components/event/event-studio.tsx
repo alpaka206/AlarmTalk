@@ -126,6 +126,7 @@ export function EventStudio() {
   const step = (delta: 1 | -1) => {
     setDirection(delta);
     setIndex((i) => (i + delta + CELEBRITIES.length) % CELEBRITIES.length);
+    if (status === "failed") setStatus("idle");
   };
 
   const onLike = async (c: Celebrity) => {
@@ -158,7 +159,10 @@ export function EventStudio() {
               enterKeyHint="done"
               aria-describedby={`${uid}-count`}
               value={name}
-              onChange={(e) => setName(sanitizeEventName(e.target.value))}
+              onChange={(e) => {
+                setName(sanitizeEventName(e.target.value));
+                if (status === "failed") setStatus("idle");
+              }}
               onKeyDown={(e) => {
                 // IME 조합을 확정하는 Enter(한글·일본어)는 생성이 아니다.
                 if (e.key === "Enter" && !e.nativeEvent.isComposing && trimmed && !bundle) {
@@ -248,7 +252,11 @@ export function EventStudio() {
             ))}
           </div>
 
-          {/* 3. 생성하기 또는 결과 */}
+          {/* 3. 생성하기 또는 결과. 스크린리더에는 결과가 생긴 순간 제목 문장이 한 번 읽힌다
+              (role=status 는 항상 있고 내용만 바뀐다). */}
+          <p role="status" className="sr-only">
+            {bundle ? t("studio.resultsHeading", { celebrity: nameOf(celebrity) }) : ""}
+          </p>
           {bundle ? (
             <div ref={resultsRef} className="mt-8 scroll-mt-24">
               <h3 className="t-h3 text-text">
