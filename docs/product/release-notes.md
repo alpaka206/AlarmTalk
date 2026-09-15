@@ -1,6 +1,8 @@
-# 출시 노트 (Play 스토어)
+# 출시 노트 (Play 스토어 · App Store)
 
-Play Console 의 "이 출시의 새로운 기능" 에 그대로 붙여 넣는 원문. 언어당 **500자 제한**이라
+Play Console 의 "이 출시의 새로운 기능" 과 App Store Connect 의 "이 버전의 새로운 기능" 에
+그대로 붙여 넣는 원문. **세 언어(ko/en/ja)를 항상 함께 쓴다** — App Store 도 en-US·ja 현지화가
+있다([`app-store-listing.md`](app-store-listing.md)). 언어당 **500자 제한**이라
 길이를 넘기지 말 것. 지원 언어는 앱의 `resourceConfigurations`(ko/en/ja)와 같다.
 
 길이는 눈대중하지 말고 재고, **줄바꿈이 CRLF 로 세어질 여지까지 감안해 여유를 남긴다**
