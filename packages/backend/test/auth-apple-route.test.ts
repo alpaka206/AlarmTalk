@@ -2,7 +2,7 @@
 // **합성 이메일이 세션에 새어 나가지 않는가**(코덱스 #730 3차).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import type { Env } from '../src/types';
+import type { AppEnv, Env } from '../src/types';
 import { createMockDB, jsonReq } from './helpers';
 
 const mockDB = createMockDB();
@@ -26,6 +26,7 @@ vi.mock('../src/lib/apple-revoke', async (importOriginal) => ({
 }));
 
 import authRoutes from '../src/routes/auth';
+import { verifyAppleIdToken } from '../src/lib/apple-oauth';
 
 /** 애플이 이번 로그인에 실어 준 이메일. 재로그인 때는 없을 수 있다. */
 let appleEmail: string | undefined;
@@ -164,5 +165,45 @@ describe('POST /auth/apple — 재로그인 이메일', () => {
     const json = await res.json();
 
     expect(json.user.email).toBe('new@example.com');
+  });
+});
+
+// 2026-09-14 BACKEND-7: 클라가 보낸 **잘못된 토큰(401)** 이 스택째 Sentry 이슈로 올라갔다.
+// 401 은 우리가 고칠 코드가 없는 거절이라 경보가 아니다(`docs/spec/error-codes.md` §3).
+// 500 만 스택과 함께 올린다 — 이걸 같이 낮추면 진짜 서버 장애가 사라진다.
+describe('POST /auth/apple — 토큰 거절은 경보가 아니다', () => {
+  function buildAppWithSentry(sentry: { captureException: ReturnType<typeof vi.fn> }) {
+    const app = new Hono<AppEnv>();
+    app.use('*', async (c, next) => {
+      c.set('sentry', sentry as unknown as AppEnv['Variables']['sentry']);
+      await next();
+    });
+    app.route('/auth', authRoutes);
+    return app;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('잘못된 identity_token 은 401 이고 Sentry 로 가지 않는다', async () => {
+    vi.mocked(verifyAppleIdToken).mockRejectedValueOnce(new Error('Malformed Apple identity token'));
+    const sentry = { captureException: vi.fn() };
+    const res = await buildAppWithSentry(sentry).request(jsonReq('POST', '/auth/apple', body()), undefined, BASE_ENV);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error_code: string }).error_code).toBe('AUTH_APPLE_FAILED');
+    expect(sentry.captureException).not.toHaveBeenCalled();
+    // 거절 사유는 서버 로그에는 남는다 — 왜 막혔는지는 알 수 있어야 한다.
+    const warned = vi.mocked(console.warn).mock.calls.map((c) => String(c[0]));
+    expect(warned.some((line) => line.includes('auth.apple.rejected') && line.includes('Malformed'))).toBe(true);
+  });
+
+  it('검증 바깥의 장애는 여전히 500 이고 Sentry 로 간다', async () => {
+    vi.mocked(verifyAppleIdToken).mockRejectedValueOnce(new Error('KV exploded'));
+    const sentry = { captureException: vi.fn() };
+    const res = await buildAppWithSentry(sentry).request(jsonReq('POST', '/auth/apple', body()), undefined, BASE_ENV);
+    expect(res.status).toBe(500);
+    expect(sentry.captureException).toHaveBeenCalledOnce();
   });
 });

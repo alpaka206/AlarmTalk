@@ -24,7 +24,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260904.1",
     "@types/bcryptjs": "^3.0.0",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0",
     "wrangler": "^4.129.0"
@@ -34,8 +34,8 @@
     "@alarmtalk/voice": "*",
     "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
-    "date-holidays": "^3.36.0",
-    "hono": "^4.13.5",
+    "date-holidays": "^3.36.1",
+    "hono": "^4.13.7",
     "toucan-js": "^4.1.1"
   }
 }

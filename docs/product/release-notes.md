@@ -1,6 +1,8 @@
-# 출시 노트 (Play 스토어)
+# 출시 노트 (Play 스토어 · App Store)
 
-Play Console 의 "이 출시의 새로운 기능" 에 그대로 붙여 넣는 원문. 언어당 **500자 제한**이라
+Play Console 의 "이 출시의 새로운 기능" 과 App Store Connect 의 "이 버전의 새로운 기능" 에
+그대로 붙여 넣는 원문. **세 언어(ko/en/ja)를 항상 함께 쓴다** — App Store 도 en-US·ja 현지화가
+있다([`app-store-listing.md`](app-store-listing.md)). 언어당 **500자 제한**이라
 길이를 넘기지 말 것. 지원 언어는 앱의 `resourceConfigurations`(ko/en/ja)와 같다.
 
 길이는 눈대중하지 말고 재고, **줄바꿈이 CRLF 로 세어질 여지까지 감안해 여유를 남긴다**
@@ -18,6 +20,68 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
   맞춰 둔 것이다(예: 더보기/More/その他 = `r3app_bottom_tab_menu`).
 
 ---
+
+## 1.2.7 (versionCode 27)
+
+#749 한 건. 마이그레이션은 없다(백엔드는 로그인 거절의 보고 수준만 낮췄다).
+
+### ko-KR
+
+```
+• 로그인 직후 알람 동기화가 불필요하게 반복되던 문제를 고쳐 배터리와 데이터를 아낍니다.
+• 오류 진단이 더 정확해져 문제를 더 빨리 찾아 고칠 수 있게 되었습니다.
+```
+
+### en-US
+
+```
+• Fixed alarm sync retrying needlessly right after sign-in, saving battery and data.
+• Error diagnostics are more accurate, so issues can be found and fixed faster.
+```
+
+### ja-JP
+
+```
+• ログイン直後にアラーム同期が不要に繰り返される問題を修正し、バッテリーと通信量を節約します。
+• エラー診断がより正確になり、問題をより早く見つけて修正できるようになりました。
+```
+
+## 1.2.6 (versionCode 26)
+
+1.2.5 뒤 변경을 반영한 배포 릴리스.
+
+### ko-KR
+
+```
+• 울림 화면이 더 안정적으로 뜨고, 울림 화면을 나가도 알람이 깔끔하게 종료됩니다.
+• 알람 끄기는 한 번의 조작으로 처리되도록 정리했습니다.
+• 울림 중 미리듣기/재생이 겹치거나 누수되는 구간이 줄어들었습니다.
+• 받는 가족 알람의 수신 상태 표시가 더 일관되게 보입니다.
+• 구글 결제 소유권·캐시 동기화가 안정화되어 안내가 더 정확해졌습니다.
+• 볼륨 미리듣기 동작이 단순화되어 알람 직전 조절이 더 자연스러워졌습니다.
+```
+
+### en-US
+
+```
+• The ringing screen is more stable and exits cleanly when you leave it.
+• Alarm dismissal is simplified to one-step handling.
+• Duplicate ringing preview/playback has been reduced.
+• Family alarm receiving status is shown more consistently.
+• Billing ownership and state synchronization is more stable with clearer notices.
+• Ring-time volume preview flow is simpler, so pre-ring adjustment is smoother.
+```
+
+### ja-JP
+
+```
+• 通知アラーム画面の立ち上がりが安定し、画面を離れるとアラームがきれいに終了します。
+• アラーム解除操作を1ステップで終えられるよう整理しました。
+• 鳴動中のプレビュー/再生の重複やリークが減りました。
+• 受け取り家族アラームの受信状態表示がより一貫して見えるようになりました。
+• 課金の所有権・状態同期が安定し、案内が分かりやすくなります。
+• ボリュームプレビューの操作が簡素化され、鳴る前の調整がしやすくなりました。
+```
 
 ## 1.2.4 (versionCode 24)
 

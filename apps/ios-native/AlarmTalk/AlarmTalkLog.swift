@@ -29,8 +29,59 @@ enum AlarmTalkLog {
         )
     }
 
+    /// URLSession 이 던지는 코드 중 **기기 네트워크 사정**인 것. 안드로이드의
+    /// `UnknownHostException`·`SocketTimeoutException`·`ConnectException`·`SSLException` 에
+    /// 대응한다. `.badServerResponse`·`.cannotParseResponse` 같은 응답 형식 문제는 결함일
+    /// 수 있어 일부러 뺀다.
+    private static let transientURLErrorCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .networkConnectionLost, .timedOut,
+        .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .secureConnectionFailed, .serverCertificateUntrusted,
+        .internationalRoamingOff, .dataNotAllowed, .callIsActive,
+    ]
+
+    /// Sentry 에 **이슈로 올리지 않는** 실패인가. 로그와 브레드크럼에만 남긴다.
+    ///
+    /// 안드로이드 `AlarmTalkLog.isExpectedTransientFailure` 의 대응물이고 기준도 같다 —
+    /// `docs/spec/error-codes.md` §3 「기록은 전부, 경보는 골라서」. 사용자가 고칠 수 없고
+    /// 우리도 고칠 코드가 없는 실패를 이슈로 올리면 진짜 결함이 그 사이에 묻힌다
+    /// (2026-09-14 안드로이드 1.2.6 출시 직후 미해결 11건 중 8건이 이 종류였다).
+    ///
+    /// 1. **태스크 취소**(`CancellationError`). 오류가 아니라 흐름 제어다.
+    /// 2. **일시적 네트워크 실패**([transientURLErrorCodes]). `NSUnderlyingErrorKey` 사슬
+    ///    어디에 있든 본다 — 도메인 오류로 한 번 감싼 것도 같은 실패다.
+    ///
+    /// ⚠ HTTP 4xx(`APIError.server`)는 여기서 가르지 않는다. 호출부가 `error_code` 를 보고
+    /// 결정한다(`RemoteAlarmSyncViewModel` 의 `CONSENT_REQUIRED`).
+    static func isExpectedTransientFailure(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        var current: Error? = error
+        var depth = 0
+        while let candidate = current, depth < 8 {
+            if let urlError = candidate as? URLError, transientURLErrorCodes.contains(urlError.code) {
+                return true
+            }
+            current = (candidate as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+            depth += 1
+        }
+        return false
+    }
+
     /// 잡아서 처리한 오류를 알린다. 크래시는 SDK 가 알아서 잡는다.
     static func reportError(_ message: String, error: Error? = nil) {
+        if let error, isExpectedTransientFailure(error) {
+            // 이슈가 아니라 브레드크럼이다 — 다음 진짜 이벤트에 맥락으로 붙고, 그 자체로는
+            // 아무것도 만들지 않는다. 로그도 error 가 아니라 warning 으로 낮춘다.
+            logger.warning("\(message, privacy: .public): \(String(describing: error), privacy: .public)")
+            let crumb = Breadcrumb(level: .warning, category: "transient")
+            crumb.message = redactUserURIs(message)
+            crumb.data = [
+                "exception": String(describing: type(of: error)),
+                "detail": redactUserURIs(String(describing: error)),
+            ]
+            SentrySDK.addBreadcrumb(crumb)
+            return
+        }
         if let error {
             logger.error("\(message, privacy: .public): \(String(describing: error), privacy: .public)")
         } else {

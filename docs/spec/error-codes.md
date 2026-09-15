@@ -56,6 +56,35 @@
   보내면 진짜 사고가 그 사이에 묻힌다.
 - ⚠ **같은 사고를 두 번 올리지 않는다.** 라우트가 `logRouteError` 로 이미 보고했으면
   (그쪽이 스택까지 갖고 있다) 컨텍스트에 `errorReported` 표시가 남고, 미들웨어는 건너뛴다.
+- ⚠ **라우트는 상태를 정한 뒤에 보고한다.** `catch` 첫 줄에서 `logRouteError` 를 부르면
+  401 로 나갈 거절(클라가 보낸 토큰이 틀린 것)까지 스택째 Sentry 에 올라간다 — 로그인
+  라우트가 실제로 그랬다(2026-09-14 BACKEND-7). 5xx 갈래에서만 부르고, 4xx 갈래는
+  거절 사유를 `logStructured('warn', …)` 로 남긴다(나가는 4xx 한 줄은 어차피 미들웨어가
+  적는다).
+
+### 앱도 같다 — 잡은 것을 전부 올리지 않는다
+
+앱의 `reportError` 는 하나뿐이고(`core/AlarmTalkLog.kt` / `AlarmTalkLog.swift`) 호출부는
+140곳이 넘는다. 그 함수가 "잡은 건 전부 이슈" 였을 때 2026-09-14 1.2.6 출시 직후 미해결
+11건 중 **8건이 고칠 코드가 없는 실패**였고, 실제 크래시(빌링) 한 건이 그 아래 깔렸다.
+그래서 판정을 **호출부가 아니라 그 함수 한 곳**에 둔다(`isExpectedTransientFailure`) —
+호출부마다 고르면 새 호출부가 빠지고, 빠진 줄도 모른다.
+
+| 이슈로 올리지 않는 것 | 왜 | 대신 |
+| --- | --- | --- |
+| 코루틴·태스크 **취소** | 오류가 아니라 흐름 제어. 워커가 `REPLACE` 로 대체될 때마다 난다 | 로그 + 브레드크럼 |
+| **일시적 네트워크 실패**(DNS·시간초과·연결 거부·TLS) | 기기 네트워크 사정. 원인 사슬 어디에 있든 같다 | 로그 + 브레드크럼, 워커는 재시도 |
+| FCM 의 재시도 가능 코드(`SERVICE_NOT_AVAILABLE`·`INTERNAL_SERVER_ERROR`) | Firebase 문서가 재시도하라는 구글 쪽 장애 | 위와 같다 |
+
+- ⚠ **`IOException` 전체가 아니다.** 파일 없음·디스크 가득참은 결함일 수 있어 그대로 올린다.
+  iOS 도 `.badServerResponse`·`.cannotParseResponse` 는 뺀다.
+- ⚠ **HTTP 4xx 는 여기서 가르지 않는다.** `errorBody` 는 한 번만 읽히므로 호출부가 코드를
+  보는 자리에서 결정한다 — 로그인 직후 동의 전 `403 CONSENT_REQUIRED` 는 재시도 대상이
+  아니라 **동의를 마쳐야 풀리는 상태**라, 백그라운드 워커는 성공으로 끝내고 다음 전경
+  진입·주기가 다시 끌어온다(`RemoteAlarmSyncWorker`, iOS 는 `RemoteAlarmSyncViewModel`).
+  정확히 그 코드만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION` 은 파손이다.
+- **브레드크럼이지 침묵이 아니다.** 다음 진짜 이벤트에 맥락으로 붙는다. "왜 그때 sync 가
+  안 됐나" 는 브레드크럼에 있고, 이슈 목록에는 고칠 수 있는 것만 남는다.
 
 ## 4. 앱은 **코드로** 문구를 고른다
 
@@ -115,7 +144,10 @@
 | 본문 크기 제한·소비 시점 | — | — | `middleware/bodyLimit.ts` · `test/bodyLimit.test.ts` |
 | 본문 초과의 서버 장애 오인 방지 | — | — | `lib/logger.ts`의 요청별 초과 표시 확인; 최종 413은 `middleware/errorCode.ts`에서 기록 |
 | 기록·경보 | — | — | `middleware/errorCode.ts` |
+| 라우트의 4xx 거절은 경보가 아님 | — | — | `routes/auth.ts` 의 `/google`·`/apple` catch · `test/auth-apple-route.test.ts` |
 | 중복 보고 방지 표시 | — | — | `lib/logger.ts` 의 `logRouteError` |
+| 앱의 이슈/브레드크럼 판정 | `core/AlarmTalkLog.kt` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTests` | — |
+| 동의 전 403 은 재시도가 아님 | `sync/RemoteAlarmSyncWorker.kt` 의 `remoteAlarmSyncFailureOutcome` | `RemoteAlarmSyncViewModel` 의 `runFullSync` catch | `middleware/consent.ts` |
 | 응답에서 코드 꺼내기 | `network/ApiErrors.kt` 의 `apiErrorCode` | `APIError.serverErrorCode` | — |
 | 코드 → 문구(공용) | `network/ApiErrorMessages.kt` | `APIErrorMessages.swift` | — |
 | 코드 → 문구(목소리 화면) | `ui/main/MainViewModelVoiceActions.kt` | `VoiceStudioViewModel+ErrorMapping.swift` | — |
