@@ -60,16 +60,18 @@ export function SiteFooter() {
                 </li>
                 <li>
                   <Link
-                    href="/#faq"
+                    href="/pricing"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
-                    {t("linkFaq")}
+                    {t("linkPricing")}
                   </Link>
                 </li>
                 <li>
                   <Link
+                    href="/faq"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
+                    {t("linkFaq")}
                   </Link>
                 </li>
               </ul>

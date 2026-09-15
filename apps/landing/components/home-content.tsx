@@ -10,7 +10,6 @@ import { WhoseVoice } from "@/components/sections/whose-voice";
 import { FeatureSection } from "@/components/sections/feature-section";
 import { ProductScroll } from "@/components/sections/product-scroll";
 import { Declare } from "@/components/sections/declare";
-import { Pricing } from "@/components/sections/pricing";
 import { FinalCta } from "@/components/sections/final-cta";
 import { UiCrop } from "@/components/ui-crop";
 import { UiCropStack } from "@/components/ui-crop-stack";
@@ -93,7 +92,6 @@ export async function HomeContent({ locale }: { locale: string }) {
           namespace="shared"
           visual={<UiCropStack names={["voice-groups", "who-to-wake"]} />}
         />
-        <Pricing />
         <Faq />
         <FinalCta />
       </main>

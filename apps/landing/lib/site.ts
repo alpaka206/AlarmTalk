@@ -76,6 +76,21 @@ export const STORE_LINKS = {
 /** App Store 배지가 링크로 사는가. 기본 켜짐 — `NEXT_PUBLIC_APP_STORE_LIVE=0` 으로만 끈다. */
 export const APP_STORE_LIVE = process.env.NEXT_PUBLIC_APP_STORE_LIVE !== "0";
 
+/**
+ * OG·트위터 카드 이미지. `app/opengraph-image.png` 파일 규약은 `app/page.tsx` 한 곳에만 붙고
+ * `[locale]`·`(ko)` 아래 라우트에는 상속되지 않는다(2026-09-15 빌드 산출물 실측: 그 페이지들에
+ * og:image 가 0건). 그래서 메타데이터마다 명시한다. 파일 규약이 만드는 `/opengraph-image.png`
+ * 라우트는 그대로 쓴다.
+ */
+export const OG_IMAGES = [
+  {
+    url: "/opengraph-image.png",
+    width: 1200,
+    height: 630,
+    alt: "AlarmTalk: wake up to a voice you love",
+  },
+];
+
 export const ORGANIZATION = {
   name: "AlarmTalk",
   legalName: "AlarmTalk",
