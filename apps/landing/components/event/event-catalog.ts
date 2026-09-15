@@ -25,8 +25,8 @@ export const CELEBRITIES: readonly Celebrity[] = [
 export const MESSAGE_KINDS = ["birthday", "comfort"] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
-/** 이름 상한. 한 문장에 들어갈 호칭이라 닉네임(30)보다 짧다. */
-export const EVENT_NAME_MAX_LENGTH = 12;
+/** 이름 상한. 영어 이름·성까지 들어가게 넉넉히(2026-09-15 지시). 한 문장의 호칭이라 닉네임(30)보다는 짧다. */
+export const EVENT_NAME_MAX_LENGTH = 20;
 
 /**
  * 거르는 글자 — 앱 `sanitizeDisplayName` 과 같은 세 묶음. 코드포인트 숫자로 적는다:

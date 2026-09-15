@@ -74,7 +74,6 @@ export default async function EventPage({
         <BackToList />
         <EventHero />
         <EventStudio />
-        <EventSteps />
         <EventCta />
       </main>
       <SiteFooter />
@@ -98,54 +97,18 @@ function BackToList() {
 }
 
 /**
- * 첫 화면은 한 문장으로 무엇인지 넘기고, **AI 목소리라는 사실을 같은 화면에서** 말한다.
- * 그 문장을 각주로 내리면 카드를 다 듣고 나서야 알게 된다. 아이브로("응원 메시지")는
- * 2026-09-15 지시로 뺐다 — 헤드라인이 이미 무엇인지 말한다.
+ * 첫 화면은 헤드라인 한 문장뿐이다(2026-09-15 지시로 설명·아이브로·AI 고지 칩을 뺐다).
+ * AI 목소리 고지는 카드 아래 각주 한 곳에서 한다.
  */
 function EventHero() {
   const t = useTranslations("event.hero");
   return (
     <section className="relative">
-      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-14 pt-10 text-center md:px-8 lg:pb-20 lg:pt-16">
+      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-12 pt-10 text-center md:px-8 lg:pb-16 lg:pt-16">
         <RevealGroup className="flex flex-col items-center" stagger={0.07} trigger="mount">
-          <RevealItem as="h1" className="t-display max-w-5xl text-text">
+          <RevealItem as="h1" className="t-display text-text">
             {t("headline")}
           </RevealItem>
-          <RevealItem as="p" className="t-lead mt-6 max-w-2xl text-balance text-text-body">
-            {t("description")}
-          </RevealItem>
-          <RevealItem
-            as="p"
-            className="mt-7 inline-flex items-center rounded-[var(--radius-pill)] border border-line bg-bg-alt px-4 py-2 text-[13px] font-semibold text-text-strong"
-          >
-            {t("disclaimer")}
-          </RevealItem>
-        </RevealGroup>
-      </div>
-    </section>
-  );
-}
-
-type Step = { title: string; body: string };
-
-function EventSteps() {
-  const t = useTranslations("event.steps");
-  const items = t.raw("items") as Step[];
-  return (
-    <section className="bg-bg-alt">
-      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
-        <Reveal className="mx-auto max-w-155 text-center">
-          <h2 className="t-h1 text-text">{t("headline")}</h2>
-        </Reveal>
-        <RevealGroup as="ol" className="mt-14 grid gap-10 md:grid-cols-3 md:gap-8" stagger={0.07}>
-          {items.map((item, i) => (
-            <RevealItem as="li" key={item.title} className="flex flex-col">
-              {/* 번호는 장식이 아니다 — 실제로 이 순서대로 한다(이름 → 목소리 → 재생). */}
-              <span className="t-metric text-text">{i + 1}</span>
-              <span className="t-h3 mt-3 text-text">{item.title}</span>
-              <p className="t-body mt-2 text-text-body">{item.body}</p>
-            </RevealItem>
-          ))}
         </RevealGroup>
       </div>
     </section>

@@ -374,15 +374,14 @@
       "description": "Type a name, pick a message, and hear a celebrity-style voice say it with your name. AI voices, not the real people."
     },
     "hero": {
-      "headline": "Hear a message that says your name,\nin a celebrity voice you love!",
-      "description": "Type a name and pick a message, and it says it calling that name.\nFor a birthday, or the end of a hard day.",
-      "disclaimer": "AI voices, not the real people"
+      "headline": "Hear a voice message that says your name,\nin a celebrity voice you love!"
     },
     "studio": {
-      "nameLabel": "Whose name should it say?",
+      "voiceLabel": "Whose voice?",
+      "voiceAria": "Choose {celebrity}’s voice",
+      "nameLabel": "Enter a name.",
       "namePlaceholder": "e.g. Jamie…",
       "namePlaceholderInline": "you",
-      "nameHint": "Up to {max} characters. Your name, or a friend’s.",
       "kindLabel": "Which message?",
       "kinds": {
         "birthday": {
@@ -408,7 +407,7 @@
       "download": "Download",
       "unsupported": "This browser can’t play audio. Try another browser.",
       "failed": "Can’t make it right now. Try again in a moment.",
-      "disclaimer": "These are AI voices made to resemble a feel, not the real people’s voices. They don’t imply anyone’s participation or endorsement."
+      "disclaimer": "These are generated AI voices, not trained on any real person’s voice."
     },
     "celebrities": {
       "winter": {
@@ -425,23 +424,6 @@
       "body": "With AlarmTalk, a voice you love can wake you every morning.\nStart your day with a voice that says your name.",
       "secondary": "Just download",
       "close": "Close"
-    },
-    "steps": {
-      "headline": "How it works",
-      "items": [
-        {
-          "title": "Type a name",
-          "body": "Yours, or a friend’s."
-        },
-        {
-          "title": "Pick a message",
-          "body": "Happy birthday, or a word of comfort."
-        },
-        {
-          "title": "Make it and listen",
-          "body": "Press Make it on the voice you like and it says the message with that name. Download it if you love it."
-        }
-      ]
     },
     "cta": {
       "headline": "Want to wake up to a voice like this?",
