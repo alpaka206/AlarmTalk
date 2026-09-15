@@ -58,3 +58,33 @@ export function sanitizeEventName(raw: string): string {
   const cleaned = chars.join("").replace(/ {2,}/g, " ").trimStart();
   return Array.from(cleaned).slice(0, EVENT_NAME_MAX_LENGTH).join("");
 }
+
+/**
+ * 고정 본문 클립 경로. 이름 뒤에 붙는 문장(`event.studio.kinds.<kind>.line` 에서 이름을 뺀 부분)을
+ * 그 인물 목소리로 **미리** 만들어 둔 파일이다 — 요청마다 만드는 것은 이름뿐(`event-api.ts`).
+ *
+ *   public/event/clips/<celebrity>-<kind>.<locale>.mp3   예) winter-birthday.ko.mp3
+ *
+ * 파일이 없으면(아직 안 만든 언어·인물) 생성이 실패하고 화면은 브라우저 합성 음성으로 물러난다.
+ */
+export function bodyClipSrc(celebrityId: string, kind: MessageKind, locale: string): string {
+  return `/event/clips/${celebrityId}-${kind}.${locale}.mp3`;
+}
+
+/**
+ * 부르는 꼴 — 이름 클립에 **읽힐** 글자이자 화면의 문장에 **보일** 글자.
+ *
+ * 한국어는 받침이 있으면 「아」, 없으면 「야」(지민→지민아, 하나→하나야). 마지막 글자가
+ * 한글이 아니면(영어 이름·숫자·이모지) 조사를 붙이지 않는다 — 어떤 소리로 끝나는지 알 수
+ * 없어 틀린 조사가 붙느니 없는 편이 낫다. 영어·일본어는 이름만 부른다.
+ *
+ * 백엔드 `routes/event.ts` 의 `vocative` 와 같은 규칙이다(랜딩은 shared 를 물지 않아 옮겨 적음).
+ * 한쪽을 고치면 다른 쪽도 같이 고친다 — 서버가 만든 소리와 화면 글자가 어긋나면 안 된다.
+ */
+export function vocative(name: string, locale: string): string {
+  if (locale !== "ko" || !name) return name;
+  const lastCp = Array.from(name).at(-1)!.codePointAt(0)!;
+  if (lastCp < 0xac00 || lastCp > 0xd7a3) return name;
+  const hasFinal = (lastCp - 0xac00) % 28 !== 0;
+  return name + (hasFinal ? "아" : "야");
+}

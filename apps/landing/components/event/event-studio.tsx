@@ -10,8 +10,8 @@ import {
   addLike,
   downloadableSrc,
   fetchLikes,
-  generateVoiceMessage,
-  type EventPlayback,
+  generateVoiceMessages,
+  type Bundle,
   type LikeCounts,
 } from "./event-api";
 import {
@@ -20,6 +20,7 @@ import {
   EVENT_NAME_MAX_LENGTH,
   MESSAGE_KINDS,
   sanitizeEventName,
+  vocative,
   type Celebrity,
   type MessageKind,
 } from "./event-catalog";
@@ -37,11 +38,10 @@ import { useEventPlayer } from "./use-event-player";
  *
  * 만들고 나면 결과로 스크롤하고 첫 듣기 버튼에 초점을 준다(모바일에서 버튼이 접힘선 근처에
  * 있으면 결과가 화면 밖에 생긴다는 검수 지적). 문구는 `t.rich` 로 이름 자리만 강조하고
- * 사용자가 친 값은 값으로만 들어간다. 생성·좋아요는 `event-api.ts` 만 안다. 재생은 언제나 하나.
+ * 사용자가 친 값은 값으로만 들어간다 — 화면에는 소리가 **부르는 꼴**(지민→지민아)이 보인다.
+ * 생성·좋아요는 `event-api.ts` 만 안다. 재생은 언제나 하나.
  */
 type Status = "idle" | "generating" | "failed";
-
-type Bundle = Record<MessageKind, EventPlayback>;
 
 const SLIDE = { type: "spring" as const, duration: 0.35, bounce: 0 };
 
@@ -57,7 +57,8 @@ export function EventStudio() {
   /** (인물:이름) → 만든 소리 둘. */
   const [bundles, setBundles] = useState<Record<string, Bundle>>({});
   const [likes, setLikes] = useState<LikeCounts>({});
-  const [download, setDownload] = useState<{ kind: MessageKind } | null>(null);
+  /** 열린 다운로드 모달. `src` 는 mp3 가 준비되면 채워진다(그때까지 저장 버튼은 닫혀 있다). */
+  const [download, setDownload] = useState<{ kind: MessageKind; src: string | null } | null>(null);
   /** 방금 만든 결과의 키. 그 결과가 그려진 뒤 한 번 스크롤·초점을 옮기고 지운다. */
   const [justMade, setJustMade] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +67,8 @@ export function EventStudio() {
 
   const celebrity = CELEBRITIES[index];
   const trimmed = name.trim();
+  /** 소리가 실제로 부르는 글자(한국어면 조사까지). 화면 문장도 이걸 보여 준다. */
+  const spokenName = vocative(trimmed, locale);
 
   // 딥링크: `?celeb=winter`(id) 또는 `?celeb=1`(1부터 세는 순번). 홍보 링크로 들어오면 그 인물로
   // 시작한다. 정적 export 라 서버가 쿼리를 모르니 붙은 뒤에 읽고, 돌릴 때마다 주소를 바꿔 둔다
@@ -127,7 +130,7 @@ export function EventStudio() {
   // 읽어 줄 문장은 태그를 벗긴 **문자열**이어야 한다 — 화면용 `t.rich` 와 같은 메시지를
   // `t.markup` 으로 풀어 쓴다(`<b>` 는 강조 표시일 뿐 소리에는 없다).
   const lineText = (kind: MessageKind) =>
-    t.markup(`studio.kinds.${kind}.line`, { name: trimmed, b: (chunks) => chunks });
+    t.markup(`studio.kinds.${kind}.line`, { name: spokenName, b: (chunks) => chunks });
 
   const onGenerate = async () => {
     if (!trimmed || status === "generating") return;
@@ -135,12 +138,15 @@ export function EventStudio() {
     const targetKey = key;
     setStatus("generating");
     try {
-      const made = await Promise.all(
-        MESSAGE_KINDS.map((kind) =>
-          generateVoiceMessage({ celebrity: target, kind, text: lineText(kind), locale }),
-        ),
-      );
-      const next = Object.fromEntries(MESSAGE_KINDS.map((kind, i) => [kind, made[i]])) as Bundle;
+      const next = await generateVoiceMessages({
+        celebrity: target,
+        name: trimmed,
+        locale,
+        texts: Object.fromEntries(MESSAGE_KINDS.map((kind) => [kind, lineText(kind)])) as Record<
+          MessageKind,
+          string
+        >,
+      });
       setBundles((b) => ({ ...b, [targetKey]: next }));
       setStatus("idle");
       setJustMade(targetKey);
@@ -154,6 +160,14 @@ export function EventStudio() {
     setDirection(delta);
     setIndex((i) => (i + delta + CELEBRITIES.length) % CELEBRITIES.length);
     if (status === "failed") setStatus("idle");
+  };
+
+  // 모달은 바로 열고, mp3 는 그 사이에 만든다(처음 한 번만 인코더를 부른다). 만드는 동안
+  // 모달을 닫거나 다른 결과를 골랐으면 늦게 온 값은 버린다.
+  const onDownload = async (kind: MessageKind) => {
+    setDownload({ kind, src: null });
+    const src = bundle ? await downloadableSrc(bundle[kind]) : null;
+    setDownload((d) => (d && d.kind === kind && d.src === null ? { kind, src } : d));
   };
 
   const onLike = async (c: Celebrity) => {
@@ -305,7 +319,7 @@ export function EventStudio() {
                       </p>
                       <p className="t-body mt-1.5 text-text-body [overflow-wrap:anywhere]">
                         {t.rich(`studio.kinds.${kind}.line`, {
-                          name: trimmed,
+                          name: spokenName,
                           b: (chunks) => <span className="font-bold text-text">{chunks}</span>,
                         })}
                       </p>
@@ -334,7 +348,7 @@ export function EventStudio() {
                         </motion.button>
                         <motion.button
                           type="button"
-                          onClick={() => setDownload({ kind })}
+                          onClick={() => void onDownload(kind)}
                           aria-label={t("studio.download")}
                           whileTap={tap}
                           transition={spring}
@@ -387,7 +401,7 @@ export function EventStudio() {
 
       <DownloadDialog
         open={download !== null}
-        src={download && bundle ? downloadableSrc(bundle[download.kind]) : null}
+        src={download?.src ?? null}
         fileName={
           download ? `alarmtalk-${celebrity.id}-${download.kind}-${trimmed}.mp3` : "alarmtalk.mp3"
         }
