@@ -61,9 +61,8 @@ export function languageAlternates(page = ""): Record<string, string> {
  *   배포 환경변수 하나 빠뜨렸다고 출시된 앱을 '곧 출시' 로 말하게 두지 않는다.
  * - App Store: App Store Connect 앱 레코드의 Apple ID `6799711245`
  *   (`packages/backend/src/lib/app-version.ts` 의 `IOS.storeUrl` 과 같은 값).
- *   ⚠ 심사 전이라 게재 뒤에야 열린다. 그전에는 배지가 '곧 출시' 로 떨어진다 —
- *   `NEXT_PUBLIC_APP_STORE_LIVE=1` 을 켜는 순간 링크가 산다. 죽은 링크를 사람에게
- *   누르게 하지 않으면서, 게재 당일에 코드 변경 없이 켤 수 있게 둔 스위치다.
+ *   2026-09-15 심사 제출 — 배지는 기본으로 **링크가 살아 있다**(게재 승인 즉시 열리게).
+ *   다시 '곧 출시' 로 내려야 하면 `NEXT_PUBLIC_APP_STORE_LIVE=0` 을 켠다.
  */
 export const STORE_LINKS = {
   googlePlay:
@@ -74,8 +73,8 @@ export const STORE_LINKS = {
     "https://apps.apple.com/app/id6799711245",
 } as const;
 
-/** App Store 링크가 실제로 열리는가(게재 뒤 환경변수로 켠다). */
-export const APP_STORE_LIVE = process.env.NEXT_PUBLIC_APP_STORE_LIVE === "1";
+/** App Store 배지가 링크로 사는가. 기본 켜짐 — `NEXT_PUBLIC_APP_STORE_LIVE=0` 으로만 끈다. */
+export const APP_STORE_LIVE = process.env.NEXT_PUBLIC_APP_STORE_LIVE !== "0";
 
 export const ORGANIZATION = {
   name: "AlarmTalk",
