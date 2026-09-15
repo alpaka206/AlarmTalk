@@ -340,13 +340,10 @@
     "who-to-wake": "Choosing who to wake"
   },
   "voicePreview": {
-    "idleTitle": "Hear a voice",
-    "idleCaption": "Give it a listen",
-    "loading": "One moment…",
-    "speaking": "Speaking",
-    "tapForNext": "Tap again for the next one",
     "failed": "Can’t play right now. Tap to try again",
-    "playAria": "Play a built-in voice",
+    "playAria": "Play {name}",
+    "prevAria": "Previous voice",
+    "nextAria": "Next voice",
     "stopAria": "Stop {name}",
     "voices": {
       "siwoo": "Siwoo",

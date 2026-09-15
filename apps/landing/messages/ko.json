@@ -340,13 +340,10 @@
     "who-to-wake": "누구를 깨울지 고르는 화면"
   },
   "voicePreview": {
-    "idleTitle": "목소리 들어보기",
-    "idleCaption": "한번 들어 보세요",
-    "loading": "잠시만요…",
-    "speaking": "말하고 있어요",
-    "tapForNext": "다시 누르면 다음 목소리",
     "failed": "지금은 재생할 수 없어요. 다시 눌러 보세요",
-    "playAria": "기본 목소리 들어보기",
+    "playAria": "{name} 목소리 들어보기",
+    "prevAria": "이전 목소리",
+    "nextAria": "다음 목소리",
     "stopAria": "{name} 목소리 멈추기",
     "voices": {
       "siwoo": "시우",

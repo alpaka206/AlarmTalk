@@ -340,13 +340,10 @@
     "who-to-wake": "だれを起こすか選ぶ画面"
   },
   "voicePreview": {
-    "idleTitle": "声を聞いてみる",
-    "idleCaption": "聞いてみてください",
-    "loading": "少々お待ちください…",
-    "speaking": "話しています",
-    "tapForNext": "もう一度押すと次の声",
     "failed": "いま再生できません。もう一度押してみてください",
-    "playAria": "基本の声を再生",
+    "playAria": "{name}の声を再生",
+    "prevAria": "前の声",
+    "nextAria": "次の声",
     "stopAria": "{name}の声を止める",
     "voices": {
       "siwoo": "シウ",
