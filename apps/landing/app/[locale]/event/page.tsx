@@ -6,10 +6,10 @@ import { routing, type Locale } from "@/i18n/routing";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { StoreBadges } from "@/components/store-badges";
-import { CheerStudio } from "@/components/cheer/cheer-studio";
+import { EventStudio } from "@/components/event/event-studio";
 import { Reveal } from "@/components/motion/reveal";
 import { RevealGroup, RevealItem } from "@/components/motion/reveal-group";
-import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
+import { SITE_NAME, localeUrl, localePath, languageAlternates, OG_IMAGES } from "@/lib/site";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -23,7 +23,7 @@ export async function generateMetadata({
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) return {};
 
-  const t = await getTranslations({ locale, namespace: "cheer.meta" });
+  const t = await getTranslations({ locale, namespace: "event.meta" });
   const title = t("title");
   const description = t("description");
   const ogLocale = ({ ko: "ko_KR", en: "en_US", ja: "ja_JP" } as const)[
@@ -34,22 +34,23 @@ export async function generateMetadata({
     title,
     description,
     alternates: {
-      canonical: localePath(locale, "cheer"),
-      languages: languageAlternates("cheer"),
+      canonical: localePath(locale, "event"),
+      languages: languageAlternates("event"),
     },
     openGraph: {
       type: "website",
       locale: ogLocale,
-      url: localeUrl(locale, "cheer"),
+      url: localeUrl(locale, "event"),
       siteName: SITE_NAME,
       title,
       description,
+      images: OG_IMAGES,
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: { card: "summary_large_image", title, description, images: OG_IMAGES },
   };
 }
 
-export default async function CheerPage({
+export default async function EventPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
@@ -61,10 +62,10 @@ export default async function CheerPage({
     <>
       <SiteHeader />
       <main id="main" className="relative">
-        <CheerHero />
-        <CheerStudio />
-        <CheerSteps />
-        <CheerCta />
+        <EventHero />
+        <EventStudio />
+        <EventSteps />
+        <EventCta />
       </main>
       <SiteFooter />
     </>
@@ -75,8 +76,8 @@ export default async function CheerPage({
  * 첫 화면은 한 문장으로 무엇인지 넘기고, **AI 목소리라는 사실을 같은 화면에서** 말한다.
  * 그 문장을 각주로 내리면 카드 여섯 장을 다 듣고 나서야 알게 된다.
  */
-function CheerHero() {
-  const t = useTranslations("cheer.hero");
+function EventHero() {
+  const t = useTranslations("event.hero");
   return (
     <section className="relative">
       <div className="mx-auto flex max-w-6xl flex-col items-center px-5 pb-14 pt-16 text-center md:px-8 lg:pb-20 lg:pt-24">
@@ -104,8 +105,8 @@ function CheerHero() {
 
 type Step = { title: string; body: string };
 
-function CheerSteps() {
-  const t = useTranslations("cheer.steps");
+function EventSteps() {
+  const t = useTranslations("event.steps");
   const items = t.raw("items") as Step[];
   return (
     <section className="bg-bg-alt">
@@ -128,8 +129,8 @@ function CheerSteps() {
   );
 }
 
-function CheerCta() {
-  const t = useTranslations("cheer.cta");
+function EventCta() {
+  const t = useTranslations("event.cta");
   return (
     <section className="relative">
       <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">

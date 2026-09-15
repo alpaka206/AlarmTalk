@@ -66,10 +66,10 @@ export function SiteHeader() {
             {t("pricing")}
           </Link>
           <Link
-            href="/cheer"
+            href="/event"
             className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
-            {t("cheer")}
+            {t("event")}
           </Link>
           <Link
             href="/#faq"

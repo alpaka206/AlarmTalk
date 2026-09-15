@@ -9,7 +9,7 @@
     "faq": "FAQ",
     "company": "Company",
     "contact": "Contact",
-    "cheer": "Cheer messages",
+    "event": "Event",
     "skipToContent": "Skip to content"
   },
   "hero": {
@@ -141,7 +141,7 @@
     "rights": "All rights reserved.",
     "made": "Made in Korea",
     "linkPricing": "Pricing",
-    "linkCheer": "Cheer messages"
+    "linkEvent": "Event"
   },
   "language_switcher": {
     "label": "Language",
@@ -369,7 +369,7 @@
       }
     ]
   },
-  "cheer": {
+  "event": {
     "meta": {
       "title": "Cheer messages in celebrity voices",
       "description": "Type a name and hear a few words of encouragement in celebrity-style voices. These are AI voices, not the real people."

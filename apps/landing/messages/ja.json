@@ -9,7 +9,7 @@
     "faq": "よくある質問",
     "company": "会社概要",
     "contact": "お問い合わせ",
-    "cheer": "応援メッセージ",
+    "event": "イベント",
     "skipToContent": "本文へスキップ"
   },
   "hero": {
@@ -141,7 +141,7 @@
     "rights": "All rights reserved.",
     "made": "韓国でつくっています",
     "linkPricing": "料金",
-    "linkCheer": "応援メッセージ"
+    "linkEvent": "イベント"
   },
   "language_switcher": {
     "label": "Language",
@@ -369,7 +369,7 @@
       }
     ]
   },
-  "cheer": {
+  "event": {
     "meta": {
       "title": "芸能人の声で聞く応援メッセージ",
       "description": "名前を入れると、芸能人風の声で応援のひとことが聞けます。本人の声ではなくAIの声です。"

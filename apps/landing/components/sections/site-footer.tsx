@@ -68,18 +68,18 @@ export function SiteFooter() {
                 </li>
                 <li>
                   <Link
-                    href="/cheer"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
-                    {t("linkCheer")}
                   </Link>
                 </li>
               </ul>
             </div>
             <div>
               <h2 className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                    href="/event"
                 {t("company")}
               </h2>
+                    {t("linkEvent")}
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
                   <Link

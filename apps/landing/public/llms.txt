@@ -23,7 +23,7 @@ iOS 는 App Store 출시를 준비 중이다(게재되면 홈의 App Store 버�
 
 - **미리 들어보기**: 홈 첫 화면의 재생 버튼 하나로 기본 목소리 넷(시우·미나·도현·애니)의
   인사말을 차례로 들을 수 있다. 앱이 실제로 쓰는 클립 그대로다.
-- **응원 메시지**(https://alarm-talk.com/cheer/): 이름을 적으면 여러 연예인 느낌의
+- **이벤트 · 응원 메시지**(https://alarm-talk.com/event/): 이름을 적으면 여러 연예인 느낌의
   목소리로 응원 한마디를 들려준다. 실제 인물의 목소리가 아닌 AI 목소리이며, 인물의
   참여나 보증을 뜻하지 않는다.
 
@@ -58,7 +58,7 @@ iOS 는 App Store 출시를 준비 중이다(게재되면 홈의 App Store 버�
 - 홈: https://alarm-talk.com/
 - Google Play: https://play.google.com/store/apps/details?id=com.alarmtalk.app
 - App Store: https://apps.apple.com/app/id6799711245 (출시 준비 중)
-- 응원 메시지: https://alarm-talk.com/cheer/
+- 이벤트(응원 메시지): https://alarm-talk.com/event/
 - 회사 소개: https://alarm-talk.com/company/
 - 문의: https://alarm-talk.com/contact/
 - 개인정보 처리방침: https://alarm-talk.com/privacy/

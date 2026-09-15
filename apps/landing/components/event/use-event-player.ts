@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CheerPlayback } from "./cheer-playback";
+import type { EventPlayback } from "./event-playback";
 
 /**
  * 한 번에 하나만 말한다. 다른 카드를 누르면 앞 것을 **즉시** 끊고 새 것을 시작한다
  * (끝날 때까지 기다리게 하지 않는다 — apple-design 의 interruptibility).
  */
-export function useCheerPlayer() {
+export function useEventPlayer() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -35,7 +35,7 @@ export function useCheerPlayer() {
   }, []);
 
   const play = useCallback(
-    (id: string, playback: CheerPlayback) => {
+    (id: string, playback: EventPlayback) => {
       stop();
       const generation = generationRef.current;
       const release = () => {

@@ -55,7 +55,7 @@ export function MobileMenu() {
   const links: { href: string; label: string }[] = [
     { href: "/#how", label: t("features") },
     { href: "/#pricing", label: t("pricing") },
-    { href: "/cheer", label: t("cheer") },
+    { href: "/event", label: t("event") },
     { href: "/#faq", label: t("faq") },
     { href: "/company", label: t("company") },
     { href: "/contact", label: t("contact") },

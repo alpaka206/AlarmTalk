@@ -80,7 +80,7 @@ app/
     company/page.tsx      회사 소개
     contact/page.tsx      문의
     account-deletion/page.tsx  계정 삭제 안내(스토어 정책 요구)
-    cheer/page.tsx        응원 페이지
+    event/page.tsx        이벤트(응원 메시지) 페이지. 옛 주소 `/cheer/` 는 vercel.json 이 308 로 보낸다
 components/
   site-header.tsx         상단 헤더 + 모바일 메뉴 + 로케일 전환
   mobile-menu.tsx         모바일 내비게이션
@@ -93,7 +93,7 @@ components/
   voice-preview.tsx       목소리 미리듣기
   ui-crop.tsx             앱 스크린샷 크롭
   ui-crop-stack.tsx       크롭 스택 레이아웃
-  cheer/                  응원 페이지 스튜디오·재생·목소리 목록
+  event/                  이벤트(응원 메시지) 페이지 스튜디오·재생·목소리 목록
   legal-markdown.tsx      법무 마크다운 → HTML 렌더러
   motion/                 reveal·reveal-group·scroll-drift·cycling-word 와 reduced-motion 대응
   sections/

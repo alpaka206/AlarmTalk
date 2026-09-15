@@ -6,14 +6,14 @@ import { motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePrefersReducedMotion } from "../motion/use-prefers-reduced-motion";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
-import { resolveCheerPlayback } from "./cheer-playback";
+import { resolveEventPlayback } from "./event-playback";
 import {
-  CHEER_NAME_MAX_LENGTH,
-  CHEER_VOICES,
-  sanitizeCheerName,
-  type CheerVoice,
-} from "./cheer-voices";
-import { useCheerPlayer } from "./use-cheer-player";
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_VOICES,
+  sanitizeEventName,
+  type EventVoice,
+} from "./event-voices";
+import { useEventPlayer } from "./use-event-player";
 
 /**
  * 응원 메시지 — 이름 하나 적으면 목소리마다 그 이름을 부르며 응원해 준다.
@@ -24,31 +24,31 @@ import { useCheerPlayer } from "./use-cheer-player";
  *
  * 문구는 `t.rich` 로 이름 자리만 강조한다 — 사용자가 친 값은 값으로만 들어간다.
  */
-export function CheerStudio() {
-  const t = useTranslations("cheer");
+export function EventStudio() {
+  const t = useTranslations("event");
   const locale = useLocale();
   const reduced = usePrefersReducedMotion();
   const inputId = useId();
   const [name, setName] = useState("");
-  const { activeId, play, stop, unsupported } = useCheerPlayer();
+  const { activeId, play, stop, unsupported } = useEventPlayer();
 
   const displayName = name.trim() || t("studio.namePlaceholderInline");
   const nameLength = Array.from(name).length;
 
   // 읽어 줄 문장은 태그를 벗긴 **문자열**이어야 한다 — 화면용 `t.rich` 와 같은 메시지를
   // `t.markup` 으로 풀어 쓴다(`<b>` 는 강조 표시일 뿐 소리에는 없다).
-  const lineFor = (voice: CheerVoice) =>
+  const lineFor = (voice: EventVoice) =>
     t.markup(`voices.${voice.id}.line`, {
       name: displayName,
       b: (chunks) => chunks,
     });
 
-  const onPress = (voice: CheerVoice) => {
+  const onPress = (voice: EventVoice) => {
     if (activeId === voice.id) {
       stop();
       return;
     }
-    play(voice.id, resolveCheerPlayback(voice, lineFor(voice), locale));
+    play(voice.id, resolveEventPlayback(voice, lineFor(voice), locale));
   };
 
   return (
@@ -62,7 +62,7 @@ export function CheerStudio() {
             <input
               id={inputId}
               type="text"
-              name="cheerName"
+              name="eventName"
               inputMode="text"
               autoComplete="given-name"
               autoCapitalize="words"
@@ -70,7 +70,7 @@ export function CheerStudio() {
               enterKeyHint="done"
               aria-describedby={`${inputId}-hint ${inputId}-count`}
               value={name}
-              onChange={(e) => setName(sanitizeCheerName(e.target.value))}
+              onChange={(e) => setName(sanitizeEventName(e.target.value))}
               placeholder={t("studio.namePlaceholder")}
               className="h-14 w-full rounded-[var(--radius-lg)] border border-line bg-surface px-5 pr-16 text-[18px] font-semibold text-text placeholder:font-medium placeholder:text-text-muted focus-visible:border-accent"
             />
@@ -78,14 +78,14 @@ export function CheerStudio() {
               id={`${inputId}-count`}
               aria-live="polite"
               className={`pointer-events-none absolute inset-y-0 right-5 grid place-items-center text-[12px] tabular-nums ${
-                nameLength >= CHEER_NAME_MAX_LENGTH ? "text-rose" : "text-text-muted"
+                nameLength >= EVENT_NAME_MAX_LENGTH ? "text-rose" : "text-text-muted"
               }`}
             >
-              {nameLength}/{CHEER_NAME_MAX_LENGTH}
+              {nameLength}/{EVENT_NAME_MAX_LENGTH}
             </span>
           </div>
           <p id={`${inputId}-hint`} className="t-caption mt-3 text-text-muted">
-            {t("studio.nameHint", { max: CHEER_NAME_MAX_LENGTH })}
+            {t("studio.nameHint", { max: EVENT_NAME_MAX_LENGTH })}
           </p>
         </div>
 
@@ -94,7 +94,7 @@ export function CheerStudio() {
           className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
           stagger={0.06}
         >
-          {CHEER_VOICES.map((voice) => {
+          {EVENT_VOICES.map((voice) => {
             const playing = activeId === voice.id;
             const voiceName = t(`voices.${voice.id}.name`);
             return (

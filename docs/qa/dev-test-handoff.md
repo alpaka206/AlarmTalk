@@ -334,10 +334,11 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
   대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
   (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
-- **응원 메시지 `/cheer/`**: 이름 입력 + 카드별 재생. 재생 경로는 `cheer-playback.ts` 의
   `resolveCheerPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
-  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `cheer-voices.ts`,
-  이름·역할·문장은 `messages/*.json` 의 `cheer.voices`. 이름 정리는 앱 `sanitizeDisplayName`
+- **이벤트(응원 메시지) `/event/`**(2026-09-15 에 `/cheer/` 에서 개명 — 옛 주소는 vercel.json 308): 이름 입력 + 카드별 재생. 재생 경로는 `event-playback.ts` 의
+  `resolveEventPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
+  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `event-voices.ts`,
+  이름·역할·문장은 `messages/*.json` 의 `event.voices`. 이름 정리는 앱 `sanitizeDisplayName`
   과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
 - **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
   바닥 색을 앱 다크 스킴(`AlarmTalkTheme.kt`)에서 가져온다(`globals.css`). 브랜드 마크는
@@ -345,7 +346,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
   를 덧대지 말 것.
 
 ### 확인한 것 (정적 export 를 헤드리스 크로미움으로)
-- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/cheer/` 등 404 는 Vercel rewrite 가 맡는 접두사
+- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/event/` 등 404 는 Vercel rewrite 가 맡는 접두사
   없는 경로 프리페치 — 로컬 서빙에서만 난다).
 - 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
 - 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
