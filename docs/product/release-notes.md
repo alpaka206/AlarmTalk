@@ -19,6 +19,31 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.7 (versionCode 27)
+
+#749 한 건. 마이그레이션은 없다(백엔드는 로그인 거절의 보고 수준만 낮췄다).
+
+### ko-KR
+
+```
+• 로그인 직후 알람 동기화가 불필요하게 반복되던 문제를 고쳐 배터리와 데이터를 아낍니다.
+• 오류 진단이 더 정확해져 문제를 더 빨리 찾아 고칠 수 있게 되었습니다.
+```
+
+### en-US
+
+```
+• Fixed alarm sync retrying needlessly right after sign-in, saving battery and data.
+• Error diagnostics are more accurate, so issues can be found and fixed faster.
+```
+
+### ja-JP
+
+```
+• ログイン直後にアラーム同期が不要に繰り返される問題を修正し、バッテリーと通信量を節約します。
+• エラー診断がより正確になり、問題をより早く見つけて修正できるようになりました。
+```
+
 ## 1.2.6 (versionCode 26)
 
 1.2.5 뒤 변경을 반영한 배포 릴리스.

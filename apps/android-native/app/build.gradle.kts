@@ -149,8 +149,10 @@ android {
         // 되므로(`app-version.ts` 의 `minSupported: 25`) 스토어 게재 전에 서버를 올리면
         // 안 된다 — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.
         // 26 = 1.2.6. 울림/구독 동기화 안정화 릴리스다.
-        versionCode = 26
-        versionName = "1.2.6"
+        // 27 = 1.2.7. 로그인 직후 동의 전 백그라운드 알람 동기화가 403 만 반복하던 것과,
+        // 워커 취소·일시적 네트워크 실패를 Sentry 이슈로 올리던 것을 고친다(#749).
+        versionCode = 27
+        versionName = "1.2.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
