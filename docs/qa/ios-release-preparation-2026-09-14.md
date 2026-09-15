@@ -160,3 +160,39 @@ Apple/Google × 커플/가족 네 가지 실제 DB 회귀 사례에서 권한 �
 - [EU 회원국 목록](https://european-union.europa.eu/principles-countries-history/eu-countries_en)
 - [ElevenLabs 상업적 이용 조건](https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform)
 - [Eleven v3 정식 제공](https://elevenlabs.io/blog/eleven-v3-is-now-generally-available)
+
+## 2026-09-15 재확인 — App Store Connect API 로 실제 상태 조회
+
+`asc-api.mjs` 의 키(7R4M96QGPF)로 다시 읽었다. 어제 기록과 달라진 것과 남은 것만 적는다.
+
+**스토어에 이미 들어가 있는 것(API 확인)**
+- 버전 `1.2.5` `READY_FOR_REVIEW`, 빌드 **2** 연결(`VALID`, 암호화 비해당 선언 포함).
+- ko 메타데이터: 설명 733자·검색어·프로모션 문구·부제·지원/마케팅/개인정보 URL. iPhone 6.7"
+  스크린샷 5장 전부 `COMPLETE`. `TARGETED_DEVICE_FAMILY=1` 이라 iPad 스크린샷은 필요 없다.
+- 심사 정보: 연락처·데모 계정(필수)·심사 노트 저장됨.
+- 연령 등급 16+ 오버라이드, 콘텐츠 권한 `USES_THIRD_PARTY_CONTENT`, 카테고리 유틸리티, 무료.
+- 구독 3개·소모성 1개 `READY_TO_SUBMIT`, 구독 그룹 ko 현지화 `PREPARE_FOR_SUBMISSION`(정상 —
+  심사와 함께 나간다).
+- **심사 제출 초안 1개에 항목 6개**(앱 버전·구독 그룹·구독 3·선물 1)가 `READY_FOR_REVIEW` 로
+  묶여 있고 **`submittedDate` 가 비어 있다** — 아직 제출 버튼을 누르지 않은 상태다.
+- 공개 웹 약관·개인정보처리방침이 **버전 5** 로 배포됐다(어제는 4). `GET /api/app/version
+  ?platform=ios` 는 min 1 / latest 1.
+- Android 는 Play production 에 **versionCode 26(1.2.6)** 이 게재 완료(`completed`)다. prod
+  백엔드의 `minSupported: 25`·문서 버전 5 와 맞는다.
+
+**남은 것 — 제출 전에 소유자가 정할 일**
+1. **TestFlight 베타 그룹이 0개**다. 빌드 2 는 한 번도 TestFlight 로 실기기에 깔린 적이 없다.
+   어제 문서의 4번(Apple 로그인·Sandbox 구매/복원·APNs 실수신)과 5번(잠금·종료·오프라인
+   울림)은 그래서 미검증이다. 내부 테스터 그룹을 만들어 빌드 2 를 넣으면 곧바로 할 수 있다.
+   건너뛰고 제출하는 것도 가능하지만, 첫 심사에서 결제·로그인이 막히면 리젝 사유가 된다.
+2. **대한민국 세금 양식 `대기 중`** — API 로는 안 보인다. App Store Connect > 비즈니스에서
+   상태를 본다. 유료 앱 계약 자체는 활성이라 제출은 막히지 않는다.
+3. **App Store Server API 운영 401** 원인 미확정. Sandbox 는 통과. 앱이 스토어에 실제로
+   게재되기 전에는 운영 엔드포인트가 401 을 돌려주는 것으로 알려져 있어, 출시 뒤 **첫 실제
+   구매의 `/billing/apple/confirm` 을 지켜봐야** 한다.
+4. App Store Server Notifications URL 은 비어 있다(수신 라우트가 없다). 갱신·해지 반영은
+   StoreKit 재조회에 의존한다 — 출시 뒤 별도 과제.
+5. "이 버전의 새로운 기능"(`whatsNew`) 은 비어 있다. 첫 출시라 필수는 아니다.
+
+**제출 자체는 API 한 번이다**: `PATCH /v1/reviewSubmissions/adf974af-…` `submitted: true`.
+1번을 건너뛸지 결정한 뒤 누른다.
