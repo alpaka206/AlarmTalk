@@ -3,7 +3,7 @@ import { routing } from "@/i18n/routing";
 import { localeUrl } from "@/lib/site";
 
 // contact 는 스토어 지원 URL 로만 살아 있는 비공개 페이지라 사이트맵에 넣지 않는다.
-const PAGES = ["", "event", "pricing", "faq", "privacy", "terms", "account-deletion"] as const;
+const PAGES = ["", "event", "event/1", "pricing", "faq", "privacy", "terms", "account-deletion"] as const;
 
 export const dynamic = "force-static";
 
@@ -20,7 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
           ? locale === routing.defaultLocale
             ? 1
             : 0.8
-          : page === "event"
+          : page.startsWith("event")
             ? 0.7
             : 0.5,
       alternates: {

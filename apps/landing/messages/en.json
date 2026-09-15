@@ -317,6 +317,22 @@
       }
     }
   },
+  "eventList": {
+    "meta": {
+      "title": "Events",
+      "description": "Events from AlarmTalk, numbered in order. See what you can take part in right now."
+    },
+    "headline": "Events",
+    "lead": "These are open right now. Tap a number to go in.",
+    "numberAria": "Event {n}.",
+    "backToList": "All events",
+    "items": {
+      "cheer": {
+        "title": "Cheer messages in celebrity voices",
+        "description": "Type a name and hear a word of encouragement in celebrity-style voices. AI voices, not the real people."
+      }
+    }
+  },
   "event": {
     "meta": {
       "title": "Cheer messages in celebrity voices",

@@ -82,7 +82,8 @@ app/
     faq/page.tsx          자주 묻는 질문(홈에서 분리, 2026-09-15)
     contact/page.tsx      문의. 내비·사이트맵에서는 뺐고 App Store 지원 URL(/ko/contact/)로만 열린다
     account-deletion/page.tsx  계정 삭제 안내(스토어 정책 요구)
-    event/page.tsx        이벤트(응원 메시지) 페이지. 옛 주소 `/cheer/` 는 vercel.json 이 308 로 보낸다
+    event/page.tsx        이벤트 목록(번호순, lib/events.ts)
+    event/[id]/page.tsx   이벤트 본문. 1 = 응원 메시지. 옛 주소 `/cheer/` 는 vercel.json 이 /event/1/ 로 308
 components/
   site-header.tsx         상단 헤더 + 모바일 메뉴 + 로케일 전환
   mobile-menu.tsx         모바일 내비게이션

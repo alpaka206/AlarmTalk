@@ -335,7 +335,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
   대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
   (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
-- **이벤트(응원 메시지) `/event/`**(2026-09-15 에 `/cheer/` 에서 개명 — 옛 주소는 vercel.json 308): 이름 입력 + 카드별 재생. 재생 경로는 `event-playback.ts` 의
+- **이벤트 1 · 응원 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 + 카드별 재생. 재생 경로는 `event-playback.ts` 의
   `resolveEventPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
   생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `event-voices.ts`,
   이름·역할·문장은 `messages/*.json` 의 `event.voices`. 이름 정리는 앱 `sanitizeDisplayName`

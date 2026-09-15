@@ -34,32 +34,32 @@
     },
     {
       "source": "/cheer",
-      "destination": "/event/",
+      "destination": "/event/1/",
       "permanent": true
     },
     {
       "source": "/cheer/",
-      "destination": "/event/",
+      "destination": "/event/1/",
       "permanent": true
     },
     {
       "source": "/ko/cheer",
-      "destination": "/event/",
+      "destination": "/event/1/",
       "permanent": true
     },
     {
       "source": "/ko/cheer/",
-      "destination": "/event/",
+      "destination": "/event/1/",
       "permanent": true
     },
     {
       "source": "/:locale(en|ja)/cheer",
-      "destination": "/:locale/event/",
+      "destination": "/:locale/event/1/",
       "permanent": true
     },
     {
       "source": "/:locale(en|ja)/cheer/",
-      "destination": "/:locale/event/",
+      "destination": "/:locale/event/1/",
       "permanent": true
     },
     {
