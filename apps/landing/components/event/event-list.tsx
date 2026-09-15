@@ -1,11 +1,8 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import type { ComponentType } from "react";
 import { ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { EVENTS, type EventEntry } from "@/lib/events";
-import { CELEBRITIES } from "@/components/event/event-catalog";
 import { RevealGroup, RevealItem } from "@/components/motion/reveal-group";
 
 /**
@@ -108,57 +105,32 @@ export function EventList() {
 }
 
 /**
- * 이벤트 1(내 이름 음성 메시지)의 본질: 좋아하는 인물이 **내 이름을 불러 준다**. 그래서
- * 카드 축소판을 겹쳐 놓는 대신(버튼이 서로 가려 어수선했다) 말풍선 하나와 인물 둘만 둔다:
- * 위에 이름이 들어간 메시지 한 줄, 아래에 인물 초상 둘과 이름. 사진이 오면 초상 원이 사진이
- * 된다(`public/event/<id>.jpg`, 없으면 이니셜). 본문에 없는 것(기간, 인원, 배지)은 그리지
- * 않는다. 문장은 본문과 같은 `event.studio.kinds.birthday.line`, 이름은 `event.celebrities.*`.
+ * 이벤트 1(내 이름 음성 메시지)의 본질: **이름을 적으면 그 이름을 불러 준다**. 인물은 계속
+ * 늘어날 거라 그리지 않는다(2026-09-15 지시). 대신 흐름 그대로 두 장면만: 이름을 적은 입력칸
+ * 모형과, 그 이름이 들어간 메시지 말풍선. 본문에 없는 것(기간, 인원, 배지)은 그리지 않는다.
+ * 문장은 본문과 같은 `event.studio.kinds.birthday.line`, 라벨은 `event.studio.nameLabel`,
+ * 예시 이름은 본문 입력칸의 placeholder("예: 지민…")에서 이름만 뗀 것이다.
  */
 function VoiceMessagePreview() {
   const t = useTranslations("event");
   const sample = t("studio.namePlaceholder").replace(/^.*?:\s*/, "").replace(/…$/, "");
   return (
-    <div className="flex w-full max-w-[18.5rem] flex-col items-center">
-      {/* 말풍선. 꼬리는 아래 인물 쪽을 향한다. */}
-      <div className="relative w-full rounded-[var(--radius-xl)] border border-line bg-surface px-5 py-4 text-center text-[15px] font-semibold leading-snug text-text">
+    <div className="flex w-full max-w-[18.5rem] flex-col">
+      {/* 입력칸 모형. 본문의 입력칸과 같은 라벨·반경, 값은 예시 이름. */}
+      <span className="text-[12.5px] font-semibold text-text-muted">{t("studio.nameLabel")}</span>
+      <span className="mt-2 flex h-12 items-center rounded-[var(--radius-lg)] border border-line bg-surface px-4 text-[16px] font-semibold text-text">
+        {sample}
+        <span aria-hidden="true" className="ml-0.5 h-5 w-px bg-accent" />
+      </span>
+
+      {/* 답: 그 이름을 부르는 메시지. 꼬리는 위 입력칸을 향한다. */}
+      <div className="relative mt-6 w-full rounded-[var(--radius-xl)] bg-accent px-5 py-4 text-[15px] font-semibold leading-snug text-white">
+        <span className="absolute left-6 top-0 -mt-2 h-4 w-4 rotate-45 bg-accent" />
         {t.rich("studio.kinds.birthday.line", {
           name: sample,
-          b: (chunks) => <span className="text-accent">{chunks}</span>,
-        })}
-        <span
-          className="absolute left-1/2 top-full -ml-2 h-4 w-4 -translate-y-1/2 rotate-45 border-b border-r border-line bg-surface"
-        />
-      </div>
-
-      <div className="mt-7 flex items-start justify-center gap-8">
-        {CELEBRITIES.map((c) => {
-          const name = t(`celebrities.${c.id}.name`);
-          return (
-            <div key={c.id} className="flex w-20 flex-col items-center">
-              <PreviewPortrait src={c.portrait} name={name} />
-              <span className="mt-2.5 truncate text-[14px] font-bold text-text">{name}</span>
-            </div>
-          );
+          b: (chunks) => <span className="text-accent-on-dark">{chunks}</span>,
         })}
       </div>
     </div>
-  );
-}
-
-/**
- * 초상 원. 사진 파일이 `public/` 에 있으면 사진, 없으면 이니셜. 서버 컴포넌트라(정적 export 는
- * 빌드 때 렌더) 파일 존재를 직접 본다 — 없는 사진에 깨진 이미지 아이콘을 띄우지 않는다.
- */
-function PreviewPortrait({ src, name }: { src: string; name: string }) {
-  const hasPhoto = existsSync(path.join(process.cwd(), "public", src));
-  return (
-    <span className="relative grid h-20 w-20 place-items-center overflow-hidden rounded-[var(--radius-pill)] bg-accent-soft text-[24px] font-bold text-accent ring-1 ring-line">
-      {hasPhoto ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      ) : (
-        <span>{Array.from(name)[0] ?? ""}</span>
-      )}
-    </span>
   );
 }
