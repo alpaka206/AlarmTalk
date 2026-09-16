@@ -1,7 +1,6 @@
 ﻿import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "../brand-mark";
-import { LocaleSwitcher } from "../locale-switcher";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
 
 export function SiteFooter() {
@@ -31,9 +30,6 @@ export function SiteFooter() {
             <p className="mt-4 text-[14px] leading-[1.65] text-text-muted">
               {t("tagline")}
             </p>
-            <div className="mt-6">
-              <LocaleSwitcher />
-            </div>
           </RevealItem>
 
           <RevealItem as="div" className="grid grid-cols-2 gap-10">
@@ -118,7 +114,12 @@ export function SiteFooter() {
           </RevealItem>
         </RevealGroup>
 
-        <div className="mt-14 flex flex-col gap-3 border-t border-line pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-14 flex flex-col gap-3 border-t border-line pt-6">
+          {/* 사업자 정보 — 값의 출처는 docs/legal/privacy-policy.ko.md 머리말이다. 거기와 어긋나면 그쪽이 맞다. */}
+          <p className="text-[12.5px] leading-[1.7] text-text-muted [overflow-wrap:anywhere]">
+            <span className="sr-only">{t("businessLabel")}: </span>
+            {t("business")}
+          </p>
           <p className="whitespace-nowrap text-[12.5px] text-text-muted">
             © {year} <span translate="no">AlarmTalk</span> · {t("rights")}
           </p>

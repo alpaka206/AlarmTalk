@@ -115,7 +115,9 @@
     "linkAccountDeletion": "계정 삭제",
     "rights": "All rights reserved.",
     "linkPricing": "요금",
-    "linkEvent": "이벤트"
+    "linkEvent": "이벤트",
+    "businessLabel": "사업자 정보",
+    "business": "베일런(Vailen) · 대표 김규원 · 사업자등록번호 819-32-01933 · 인천광역시 서구 서곶로 45, 103동 4301호 · support@alarm-talk.com"
   },
   "language_switcher": {
     "label": "Language",

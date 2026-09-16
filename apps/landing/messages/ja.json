@@ -115,7 +115,9 @@
     "linkAccountDeletion": "アカウント削除",
     "rights": "All rights reserved.",
     "linkPricing": "料金",
-    "linkEvent": "イベント"
+    "linkEvent": "イベント",
+    "businessLabel": "事業者情報",
+    "business": "Vailen · 代表 キム・ギュウォン · 事業者登録番号 819-32-01933 · 103-4301, 45 Seogot-ro, Seo-gu, Incheon, Republic of Korea · support@alarm-talk.com"
   },
   "language_switcher": {
     "label": "Language",
