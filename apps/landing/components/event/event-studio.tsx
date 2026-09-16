@@ -42,7 +42,8 @@ import { useEventPlayer } from "./use-event-player";
  * 링크: `?celeb=winter&name=지민` 으로 들어오면 그 인물·이름으로 **바로** 만든다(홍보 댓글에
  * 보내는 개인 링크). 만든 뒤에는 주소도 그렇게 맞춰 둔다 — 주소창이 곧 공유 링크다.
  *
- * 문장은 서버가 정한 것을 그대로 보여 주고 이름 자리만 굵게 표시한다. 재생은 언제나 하나.
+ * 문장은 화면에 보여 주지 않는다(2026-09-16 지시) — 종류 이름과 듣기·다운로드뿐이다. 재생은
+ * 언제나 하나.
  */
 type ClipState =
   { status: "pending" } | { status: "ready"; clip: Clip } | { status: "failed"; code: string };
@@ -451,10 +452,8 @@ export function EventStudio() {
                         </p>
                         {state?.status === "ready" ? (
                           <>
-                            <p className="t-body mt-1.5 whitespace-pre-line text-text-body [overflow-wrap:anywhere]">
-                              <EmphasizedName text={state.clip.text} spoken={state.clip.spoken} />
-                            </p>
-                            <div className="mt-4 flex items-center gap-2">
+                            {/* 문장은 보여 주지 않는다(2026-09-16 지시) — 들어 보는 것이 전부다. */}
+                            <div className="mt-3 flex items-center gap-2">
                               <motion.button
                                 type="button"
                                 onClick={() => (playing ? stop() : void play(key, state.clip.src))}
@@ -567,19 +566,6 @@ export function EventStudio() {
         onClose={() => setDownload(null)}
       />
     </section>
-  );
-}
-
-/** 문장에서 이름이 읽히는 자리만 굵게. 서버가 준 `spoken` 이 문장 안에 그대로 있다. */
-function EmphasizedName({ text, spoken }: { text: string; spoken: string }) {
-  const at = spoken ? text.indexOf(spoken) : -1;
-  if (at < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, at)}
-      <span className="font-bold text-text">{spoken}</span>
-      {text.slice(at + spoken.length)}
-    </>
   );
 }
 

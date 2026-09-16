@@ -6,9 +6,10 @@ import { EVENT_ID, type Celebrity, type MessageKind } from "./event-catalog";
  * 이벤트 1 의 바깥 세계 — **생성**과 **좋아요**. 화면(카드·버튼·입력)은 이 파일만 안다.
  *
  * 생성(2026-09-16 결정: 문장 전체를 인물 목소리로): 서버(`POST /api/event/:id/clips`)가 Perso 로
- * 문장 하나를 만들어 R2 에 두고 그 파일의 경로와 **읽힌 문장**을 돌려준다. 문장은 서버가 정한다
- * — 클라는 {인물, 이름, 언어, 종류}만 보낸다. 같은 이름은 서버가 캐시해 두 번째부터는 곧바로
- * 온다. 처음 만들 때는 10~30초 걸리므로 종류마다 따로 부르고 오는 대로 보여 준다.
+ * 문장 하나를 만들고 그 소리를 내려받을 경로를 돌려준다(소리는 Perso 저장소에 있고 서버가
+ * 흘려보낸다). 문장은 서버가 정한다 — 클라는 {인물, 이름, 언어, 종류}만 보낸다. 같은 이름은
+ * 서버가 기억해 두 번째부터는 곧바로 온다. 처음 만들 때는 10~30초 걸리므로 종류마다 따로 부르고
+ * 오는 대로 보여 준다.
  *
  * 좋아요: 백엔드의 공개 카운터(`packages/backend/src/routes/event.ts`)에 누른 횟수만큼
  * 더한다. 숫자는 서버가 준 것만 보여 준다 — 서버에 못 닿으면 숫자를 지어내지 않고 하트만 남긴다.
@@ -18,9 +19,7 @@ export type Clip = {
   locale: Locale;
   /** 재생·다운로드용 절대 URL(서버가 내용 해시로 영구 캐시한다). */
   src: string;
-  /** 화면에 보일 문장(감정 태그 없음, 줄바꿈은 문단). */
-  text: string;
-  /** 문장 안에서 이름이 실제로 읽히는 꼴(지민→지민아). 화면이 이 글자를 굵게 표시한다. */
+  /** 문장 안에서 이름이 실제로 읽히는 꼴(지민→지민아). 파일명에 쓴다. */
   spoken: string;
 };
 
@@ -71,19 +70,13 @@ export async function generateClip(req: ClipRequest, signal?: AbortSignal): Prom
     }
     const body = (await res.json()) as { clip?: Record<string, unknown> };
     const c = body.clip;
-    if (
-      !c ||
-      typeof c.path !== "string" ||
-      typeof c.text !== "string" ||
-      typeof c.spoken !== "string"
-    ) {
+    if (!c || typeof c.path !== "string" || typeof c.spoken !== "string") {
       throw new ClipError("BAD_RESPONSE", res.status);
     }
     return {
       kind: req.kind,
       locale: req.locale,
       src: `${API_BASE}${c.path}`,
-      text: c.text,
       spoken: c.spoken,
     };
   } finally {
