@@ -148,12 +148,12 @@ export const eventLikeRateLimitMiddleware = createRateLimitMiddleware({
 });
 
 /**
- * 랜딩 이벤트 메시지 클립 생성(공개, Perso 호출 = 슬롯 점유 10~30초) 전용 한도. 한 사람이 세
- * 언어 × 두 메시지를 다 들어 보고 이름을 한 번 고치는 정도(분당 12)는 받고, 스크립트로 이름
- * 목록을 돌리는 것은 막는다. 같은 이름은 R2 캐시가 받아 준다.
+ * 랜딩 이벤트 메시지 클립 생성(공개, Perso 호출 = 슬롯 점유 10~30초) 전용 한도. 생성하기 한 번이
+ * 세 언어 × 두 메시지 = 여섯 요청이라, 이름을 몇 번 고쳐 다시 만드는 정도(분당 30)는 받고,
+ * 스크립트로 이름 목록을 돌리는 것은 막는다. 캐시가 없으니 요청 하나가 곧 Perso 생성 하나다.
  */
 export const eventClipRateLimitMiddleware = createRateLimitMiddleware({
   windowMs: 60_000,
-  maxRequests: 12,
+  maxRequests: 30,
   prefix: 'event-clip:',
 });
