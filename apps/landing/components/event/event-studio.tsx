@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Heart, Play, RotateCcw, Square } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Heart,
+  Play,
+  RotateCcw,
+  Square,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
@@ -25,17 +34,18 @@ import {
   type Celebrity,
   type MessageKind,
 } from "./event-catalog";
-import { useEventPlayer } from "./use-event-player";
+import { formatClock, probeDuration, useEventPlayer } from "./use-event-player";
 
 /**
  * 이벤트 1 — 이름을 적고, 인물을 **돌려 보며** 고르고, 생성하기를 누르면 그 인물 목소리로
- * 메시지 **둘 다**(생일 축하 · 위로 한마디)를 만들어 들려준다. 세 언어 모두 들을 수 있다
- * (2026-09-16 지시): 지금 페이지 언어부터 만들고, 다른 언어는 **누르면** 그때 만든다.
+ * 메시지 **둘 다**(생일 축하 · 위로 한마디)를 **세 언어 모두** 만들어 들려준다(2026-09-16 지시:
+ * 한 번에 여섯). 언어 버튼은 만든 것을 골라 듣는 자리다.
  *
- *   이름 입력 → 인물 캐러셀(이전/다음, 좋아요 수) → 생성하기 → 언어 고르기 → 결과 두 줄(듣기 · 다운로드)
+ *   이름 입력 → 인물 캐러셀(이전/다음, 좋아요 수) → 생성하기 → 언어 고르기 → 결과 두 줄(재생 · 다운로드)
  *
  * 소리는 서버가 문장 전체를 인물 목소리로 만들어 mp3 로 준다(`event-api.ts`). 만드는 데 10~30초
- * 걸리므로 종류마다 따로 부르고 **오는 대로** 카드를 채운다. 결과는 이 탭의 메모리에만 (인물,
+ * 걸리므로 여섯을 따로 불러 **오는 대로** 카드를 채운다. 카드는 트랙 한 줄이다 — 왼쪽 원형
+ * 재생, 가운데 제목과 시간, 오른쪽 다운로드. 재생 중엔 바닥에 진행 막대. 결과는 이 탭의 메모리에만 (인물,
  * 이름, 언어, 종류)로 묶여 있다: 인물을 돌리다 이미 만든 인물로 돌아오면 그 결과가 그대로 있고,
  * 이름을 바꾸면 새로 만든다 — 다른 이름으로 만든 소리를 지금 이름인 것처럼 들려주지 않는다.
  * 페이지를 떠나면 사라진다(지시: 서버에도 남기지 않는다).
@@ -70,13 +80,15 @@ export function EventStudio() {
   /** 생성하기를 누른 (인물:이름). 결과 칸은 이게 있을 때만 보인다. */
   const [started, setStarted] = useState<Record<string, true>>({});
   const [likes, setLikes] = useState<LikeCounts>({});
+  /** 클립 키 → 길이(초). 재생 전에도 "0:13" 을 보여 주려고 오는 대로 읽어 둔다. */
+  const [durations, setDurations] = useState<Record<string, number>>({});
   const [download, setDownload] = useState<Clip | null>(null);
   /** 방금 생성하기를 누른 (인물:이름). 결과 칸이 그려진 뒤 한 번 거기로 스크롤하고 지운다. */
   const [justStarted, setJustStarted] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const resultsHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const inflightRef = useRef<Set<string>>(new Set());
-  const { activeId, play, stop } = useEventPlayer();
+  const { activeId, position, duration, play, stop } = useEventPlayer();
   /** 지금 무엇이 재생 중인지 — 30초 뒤에 온 자동 재생이 사용자가 튼 소리를 끊지 않게. */
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
@@ -134,6 +146,9 @@ export function EventStudio() {
           .then((clip) => {
             if (!mountedRef.current) return;
             setClips((c) => ({ ...c, [key]: { status: "ready", clip } }));
+            void probeDuration(clip.src).then((d) => {
+              if (d !== null && mountedRef.current) setDurations((m) => ({ ...m, [key]: d }));
+            });
             const stillViewing = viewRef.current === `${target.id}:${targetName}:${locale}`;
             const idle = activeIdRef.current === null;
             if (opts.autoplay && kind === MESSAGE_KINDS[0] && stillViewing && idle) {
@@ -179,7 +194,9 @@ export function EventStudio() {
       const key = `${CELEBRITIES[found].id}:${linkedName}`;
       setStarted((s) => ({ ...s, [key]: true }));
       setJustStarted(key);
-      request(CELEBRITIES[found], linkedName, pageLocale, { autoplay: true });
+      for (const l of routing.locales) {
+        request(CELEBRITIES[found], linkedName, l, { autoplay: l === pageLocale });
+      }
     }
     setDeepLinked(true);
     // 마운트 때 한 번만 읽는다(readQueryRef 가 지킨다) — request 는 그 시점의 것이면 된다.
@@ -225,24 +242,24 @@ export function EventStudio() {
     setJustStarted(null);
   }, [justStarted, bundleKey, hasResults, reduced]);
 
+  // 세 언어 여섯 개를 한 번에 부른다(지시). 보고 있는 언어의 첫 메시지만 오면 자동으로 들려준다.
   const onGenerate = () => {
     if (!trimmed || hasResults) return;
     setStarted((s) => ({ ...s, [bundleKey]: true }));
     setJustStarted(bundleKey);
-    request(celebrity, trimmed, lang, { autoplay: true });
+    for (const l of routing.locales) request(celebrity, trimmed, l, { autoplay: l === lang });
   };
 
-  // 언어를 누르면 그 언어로 만든다. 이미 만들어 둔 것이면 **누른 김에** 첫 메시지를 들려준다 —
+  // 언어를 누르면 그 언어의 카드로 바꾼다. 이미 온 것이면 **누른 김에** 첫 메시지를 들려준다 —
   // 눌렀는데 아무 소리도 없으면 안 만들어진 줄 안다(누름 안이라 iOS 도 재생을 허락한다).
+  // 아직 안 온 언어는 안전망 effect 가 챙긴다(보통은 이미 만드는 중이다).
   const selectLang = (l: Locale) => {
     setLang(l);
     if (!hasResults) return;
     const first = clips[clipKey(celebrity.id, trimmed, l, MESSAGE_KINDS[0])];
     if (first?.status === "ready") {
       void play(clipKey(celebrity.id, trimmed, l, MESSAGE_KINDS[0]), first.clip.src);
-      return;
     }
-    request(celebrity, trimmed, l, { autoplay: true });
   };
 
   const step = (delta: 1 | -1) => {
@@ -431,16 +448,27 @@ export function EventStudio() {
                     const state = clips[key];
                     const playing = activeId === key;
                     const kindName = t(`studio.kinds.${kind}.name`);
+                    const total = playing && duration !== null ? duration : durations[key];
+                    const progress = playing && total ? Math.min(1, position / total) : 0;
+                    const subline =
+                      state?.status === "ready"
+                        ? playing && total
+                          ? `${formatClock(position)} / ${formatClock(total)}`
+                          : total
+                            ? formatClock(total)
+                            : ""
+                        : state?.status === "failed"
+                          ? errorText(state.code)
+                          : `${t("studio.generating")} ${t("studio.generatingHint")}`;
                     return (
                       <li
                         key={kind}
                         tabIndex={-1}
                         aria-busy={!state || state.status === "pending" || undefined}
-                        className={`card p-5 outline-none transition-[border-color] duration-200 ease-[var(--ease-ui)] ${
+                        className={`card relative overflow-hidden p-4 outline-none transition-[border-color] duration-200 ease-[var(--ease-ui)] ${
                           playing ? "border-accent" : ""
                         }`}
                       >
-                        <p className="t-caption font-semibold text-text-muted">{kindName}</p>
                         {/* 기다리는 동안과 다 됐을 때를 스크린리더가 듣는다(카드 안 글자 바꿈은 읽히지 않는다). */}
                         <p role="status" className="sr-only">
                           {state?.status === "ready"
@@ -449,54 +477,77 @@ export function EventStudio() {
                               ? ""
                               : `${kindName}: ${t("studio.generating")}`}
                         </p>
-                        {state?.status === "ready" ? (
-                          <>
-                            {/* 문장은 보여 주지 않는다(2026-09-16 지시) — 들어 보는 것이 전부다. */}
-                            <div className="mt-3 flex items-center gap-2">
-                              <motion.button
-                                type="button"
-                                onClick={() => (playing ? stop() : void play(key, state.clip.src))}
-                                aria-label={
-                                  playing
-                                    ? t("studio.stopAria", { kind: kindName })
-                                    : t("studio.playAria", {
-                                        kind: kindName,
-                                        celebrity: nameOf(celebrity),
-                                      })
-                                }
-                                whileTap={tap}
-                                transition={spring}
-                                className={`btn btn-primary flex-1 gap-2 ${
-                                  playing ? "bg-text hover:bg-text-strong" : ""
-                                }`}
-                              >
-                                {playing ? (
-                                  <Square className="h-4 w-4 fill-current" aria-hidden="true" />
-                                ) : (
-                                  <Play
-                                    className="ml-0.5 h-4 w-4 fill-current"
-                                    aria-hidden="true"
-                                  />
-                                )}
-                                <span>{playing ? t("studio.stop") : t("studio.play")}</span>
-                              </motion.button>
-                              <motion.button
-                                type="button"
-                                onClick={() => setDownload(state.clip)}
-                                aria-label={t("studio.downloadAria", { kind: kindName })}
-                                whileTap={tap}
-                                transition={spring}
-                                className="inline-grid h-14 w-14 shrink-0 place-items-center rounded-[var(--radius-pill)] border border-line bg-surface text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
-                              >
-                                <Download className="h-5 w-5" aria-hidden="true" />
-                              </motion.button>
-                            </div>
-                          </>
-                        ) : state?.status === "failed" ? (
-                          <>
-                            <p role="alert" className="t-body mt-1.5 text-text">
-                              {errorText(state.code)}
+                        <div className="flex items-center gap-4">
+                          {/* 왼쪽: 재생/멈춤. 만드는 중엔 도는 고리, 실패면 표시만. */}
+                          {state?.status === "ready" ? (
+                            <motion.button
+                              type="button"
+                              onClick={() => (playing ? stop() : void play(key, state.clip.src))}
+                              aria-label={
+                                playing
+                                  ? t("studio.stopAria", { kind: kindName })
+                                  : t("studio.playAria", {
+                                      kind: kindName,
+                                      celebrity: nameOf(celebrity),
+                                    })
+                              }
+                              aria-pressed={playing}
+                              whileTap={reduced ? undefined : { scale: 0.92 }}
+                              transition={spring}
+                              className={`grid h-13 w-13 shrink-0 place-items-center rounded-full text-white transition-[background-color] duration-200 ease-[var(--ease-ui)] ${
+                                playing
+                                  ? "bg-text hover:bg-text-strong"
+                                  : "bg-accent hover:bg-accent-strong"
+                              }`}
+                            >
+                              {playing ? (
+                                <Square className="h-4.5 w-4.5 fill-current" aria-hidden="true" />
+                              ) : (
+                                <Play className="ml-0.5 h-5 w-5 fill-current" aria-hidden="true" />
+                              )}
+                            </motion.button>
+                          ) : state?.status === "failed" ? (
+                            <span
+                              aria-hidden="true"
+                              className="grid h-13 w-13 shrink-0 place-items-center rounded-full bg-raised text-text-muted"
+                            >
+                              <AlertCircle className="h-5 w-5" />
+                            </span>
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="grid h-13 w-13 shrink-0 place-items-center rounded-full bg-accent-soft"
+                            >
+                              <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
+                            </span>
+                          )}
+
+                          {/* 가운데: 제목과 시간(또는 상태). */}
+                          <div className="min-w-0 flex-1">
+                            <p className="t-body font-semibold text-text">{kindName}</p>
+                            <p
+                              className={`t-caption mt-0.5 min-h-[1.25rem] tabular-nums ${
+                                state?.status === "failed" ? "text-text" : "text-text-muted"
+                              }`}
+                              role={state?.status === "failed" ? "alert" : undefined}
+                            >
+                              {subline}
                             </p>
+                          </div>
+
+                          {/* 오른쪽: 다운로드(조용히) 또는 다시 시도. */}
+                          {state?.status === "ready" ? (
+                            <motion.button
+                              type="button"
+                              onClick={() => setDownload(state.clip)}
+                              aria-label={t("studio.downloadAria", { kind: kindName })}
+                              whileTap={tap}
+                              transition={spring}
+                              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-text-muted transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-raised hover:text-text"
+                            >
+                              <Download className="h-5 w-5" aria-hidden="true" />
+                            </motion.button>
+                          ) : state?.status === "failed" ? (
                             <motion.button
                               type="button"
                               onClick={(e) => {
@@ -505,23 +556,26 @@ export function EventStudio() {
                               }}
                               whileTap={tap}
                               transition={spring}
-                              className="btn btn-secondary mt-4 w-full gap-2"
+                              className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[var(--radius-pill)] border border-line bg-surface px-4 text-[14px] font-semibold text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
                             >
                               <RotateCcw className="h-4 w-4" aria-hidden="true" />
                               <span>{t("studio.retry")}</span>
                             </motion.button>
-                          </>
-                        ) : (
-                          <p className="t-body mt-1.5 flex items-center gap-2.5 text-text-muted">
-                            <span
-                              aria-hidden="true"
-                              className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent"
+                          ) : null}
+                        </div>
+
+                        {/* 재생 중 진행 막대 — 카드 바닥에 얇게. */}
+                        {playing ? (
+                          <div
+                            aria-hidden="true"
+                            className="absolute inset-x-0 bottom-0 h-[3px] bg-line"
+                          >
+                            <div
+                              className={`h-full bg-accent ${reduced ? "" : "transition-[width] duration-250 ease-linear"}`}
+                              style={{ width: `${progress * 100}%` }}
                             />
-                            <span>
-                              {t("studio.generating")} {t("studio.generatingHint")}
-                            </span>
-                          </p>
-                        )}
+                          </div>
+                        ) : null}
                       </li>
                     );
                   })}
