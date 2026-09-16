@@ -220,10 +220,11 @@ export function EventStudio() {
     };
   }, []);
 
-  // 인물을 돌리거나 이름·언어를 바꾸면 소리를 멈춘다 — 화면에 없는 것이 계속 말하면 안 된다.
+  // 인물을 돌리거나 이름을 바꿔 결과 칸이 통째로 사라지면 소리를 멈춘다 — 멈출 버튼이 없는
+  // 소리를 두지 않는다. 언어를 바꾸거나 다른 곳을 눌러도 재생은 그대로다(2026-09-16 지시).
   useEffect(() => {
-    if (activeId && !activeId.startsWith(`${bundleKey}:${lang}:`)) stop();
-  }, [bundleKey, lang, activeId, stop]);
+    if (activeId && !activeId.startsWith(`${bundleKey}:`)) stop();
+  }, [bundleKey, activeId, stop]);
 
   // 결과 칸이 보이는데 이 언어의 소리가 없으면 만든다 — 생성하기·언어 버튼이 이미 불렀으면
   // 건너뛴다(request 가 가린다). 이름을 지웠다 되돌렸을 때처럼 버튼을 거치지 않은 길의 안전망이다.
@@ -250,17 +251,9 @@ export function EventStudio() {
     for (const l of routing.locales) request(celebrity, trimmed, l, { autoplay: l === lang });
   };
 
-  // 언어를 누르면 그 언어의 카드로 바꾼다. 이미 온 것이면 **누른 김에** 첫 메시지를 들려준다 —
-  // 눌렀는데 아무 소리도 없으면 안 만들어진 줄 안다(누름 안이라 iOS 도 재생을 허락한다).
-  // 아직 안 온 언어는 안전망 effect 가 챙긴다(보통은 이미 만드는 중이다).
-  const selectLang = (l: Locale) => {
-    setLang(l);
-    if (!hasResults) return;
-    const first = clips[clipKey(celebrity.id, trimmed, l, MESSAGE_KINDS[0])];
-    if (first?.status === "ready") {
-      void play(clipKey(celebrity.id, trimmed, l, MESSAGE_KINDS[0]), first.clip.src);
-    }
-  };
+  // 언어를 누르면 그 언어의 카드로 바꾼다 — 재생은 누른 사람이 시작한다(지시: 언어를 바꿔도
+  // 자동 재생 없음). 듣던 소리는 그대로 이어진다. 아직 안 온 언어는 안전망 effect 가 챙긴다.
+  const selectLang = (l: Locale) => setLang(l);
 
   const step = (delta: 1 | -1) => {
     setDirection(delta);
