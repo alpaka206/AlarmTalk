@@ -12,7 +12,7 @@ import {
   ipRateLimitRefundMiddleware,
   authRateLimitMiddleware,
   eventLikeRateLimitMiddleware,
-  eventNameClipRateLimitMiddleware,
+  eventClipRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
@@ -222,9 +222,12 @@ app.use('/api/holiday', publicCache);
 app.route('/api/holiday', holidayRoutes);
 
 // 랜딩 이벤트 좋아요 (인증 불필요). 수가 바뀌므로 캐시하지 않고, POST 는 별도 IP 한도.
-app.use('/api/event/*', noStore);
-app.post('/api/event/*', eventLikeRateLimitMiddleware);
-app.post('/api/event/*/name-clip', eventNameClipRateLimitMiddleware);
+// 클립 GET(/api/event/*/clips/…)은 내용 해시가 키라 라우트가 immutable 캐시 헤더를 직접 단다 —
+// 여기서 noStore 를 전체에 걸면 그걸 덮어쓴다.
+app.get('/api/event/*/likes', noStore);
+app.post('/api/event/*', noStore);
+app.post('/api/event/*/likes/*', eventLikeRateLimitMiddleware);
+app.post('/api/event/*/clips', eventClipRateLimitMiddleware);
 app.route('/api/event', eventRoutes);
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)

@@ -45,10 +45,8 @@ const WORKER_SECRET_KEYS = [
   //  4) 푸시(APNs): APNS_KEY_ID + APNS_PRIVATE_KEY (+ APPLE_TEAM_ID 재사용)
   'APNS_KEY_ID',
   'APNS_PRIVATE_KEY',
-  // Perso(랜딩 이벤트 이름 클립). 셋 다 비어 있으면 그 라우트만 503.
+  // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
   'PERSO_API_KEY',
-  'PERSO_TTS_URL',
-  'PERSO_VOICE_IDS',
 ] as const;
 
 const REQUIRED_SECRET_KEYS = [
