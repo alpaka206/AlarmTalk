@@ -9,6 +9,7 @@ import { EVENTS, findEvent } from "@/lib/events";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { StoreBadges } from "@/components/store-badges";
 import { EventStudio } from "@/components/event/event-studio";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 import { Reveal } from "@/components/motion/reveal";
 import { SITE_NAME, localeUrl, localePath, languageAlternates, OG_IMAGES } from "@/lib/site";
 
@@ -82,10 +83,14 @@ export default async function EventPage({
   );
 }
 
+/**
+ * 위쪽 한 줄: 왼쪽은 목록으로, 오른쪽은 언어. 상단 내비가 없는 페이지라 언어 전환이 여기 산다
+ * (2026-09-16 지시). 한국어는 접두사 없는 주소, 쿼리(`?celeb=…&name=…`)는 그대로 들고 간다.
+ */
 function BackToList() {
   const t = useTranslations("eventList");
   return (
-    <div className="mx-auto max-w-site px-5 pt-6 md:px-8 md:pt-8">
+    <div className="mx-auto flex max-w-site items-center justify-between gap-4 px-5 pt-6 md:px-8 md:pt-8">
       <Link
         href="/event"
         className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text"
@@ -93,6 +98,7 @@ function BackToList() {
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         {t("backToList")}
       </Link>
+      <LocaleSwitcher keepQuery />
     </div>
   );
 }
