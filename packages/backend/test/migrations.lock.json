@@ -454,5 +454,9 @@
   "119": {
     "name": "event-likes",
     "sha": "590b1ba270bf5f62"
+  },
+  "120": {
+    "name": "event-clips",
+    "sha": "0cf73e633adaa665"
   }
 }

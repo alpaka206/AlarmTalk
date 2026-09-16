@@ -2913,6 +2913,32 @@ export const migrations: Migration[] = [
       `INSERT OR IGNORE INTO event_likes (event_id, subject_id, count) VALUES ('1', 'nanami', 0)`,
     ],
   },
+  {
+    id: 120,
+    name: 'event-clips',
+    atomic: true,
+    statements: [
+      // 랜딩 이벤트의 메시지 클립(routes/event.ts). 소리 파일은 우리 쪽에 두지 않는다 —
+      // Perso 가 만든 파일 경로만 적어 두고 재생·다운로드 때 거기서 흘려보낸다(2026-09-16 지시:
+      // 서버에 파일을 남기지 않는다). clip_key 는 (이벤트, 인물, 언어, 종류, 읽힌 문장)의 해시라
+      // 같은 이름은 한 번만 만든다.
+      `CREATE TABLE IF NOT EXISTS event_clips (
+        clip_key TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        celebrity TEXT NOT NULL,
+        locale TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        perso_path TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      // Perso 슬롯(더빙 프로젝트의 문장)을 돌려 쓰는 순번. 워커는 상태가 없어 "다음 문장" 을
+      // 여기서 센다 — 같은 문장에 두 요청이 겹쳐 서로 글자를 덮어쓰는 일을 줄인다.
+      `CREATE TABLE IF NOT EXISTS event_slot_cursor (
+        project INTEGER PRIMARY KEY,
+        position INTEGER NOT NULL DEFAULT 0
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

@@ -1,16 +1,17 @@
 import type { PersoSlot } from './perso';
 
 /**
- * 랜딩 이벤트 1 의 목록 — **누구 목소리로, 어떤 말을, 어느 슬롯에서**.
+ * 랜딩 이벤트 1 의 목록 — **누구 목소리로, 어떤 말을, 어느 프로젝트에서**.
  *
  * 이 파일이 서버 쪽 단일 출처다. 랜딩(`apps/landing/components/event/event-catalog.ts`)은 인물
- * 순서·사진만 알고, 읽을 문장은 서버가 만든 것을 그대로 보여 준다 — 클라가 임의 문장을 보내
- * 인물 목소리로 읽히는 길을 두지 않는다. 인물·언어·문장을 더하거나 바꾸는 일은 여기서만.
+ * 순서·사진만 알고, 읽을 문장은 서버가 정한다 — 클라가 임의 문장을 보내 인물 목소리로 읽히는
+ * 길을 두지 않는다. 인물·언어·문장을 더하거나 바꾸는 일은 여기서만.
  *
- * 슬롯: Perso 프로젝트의 문장(audio-sentence). 하나에 한 번에 한 요청만 안전하다(`lib/perso.ts`)
- * — 겹치는 요청이 서로 덮어쓰므로 언어마다 여럿을 둔다. 여기 적힌 문장만 덮어쓴다: 같은
- * 프로젝트의 다른 문장(예: 홍보 영상용 11135215, 11162674)은 건드리지 않는다.
- * 프로젝트는 언어마다 다를 수도, 같을 수도 있다(2026-09-16: ko 는 413673, en·ja 는 415525).
+ * 슬롯: Perso 더빙 프로젝트의 문장(audio-sentence) **전부**를 돌려 쓴다(2026-09-16 지시 —
+ * 문장은 100개가 넘는다). 목록은 요청 때 Perso 에서 읽어 잠깐 들고 있고(`routes/event.ts`),
+ * 순번은 DB 카운터로 돌린다(`event_slot_cursor`) — 한 문장에 두 요청이 겹치면 서로 글자를
+ * 덮어쓰기 때문이다(`lib/perso.ts`). `reserved` 는 돌리지 않는 문장(홍보 영상용).
+ * 프로젝트는 언어마다 다를 수도, 같을 수도 있다(ko 는 413673, en·ja 는 415525).
  */
 export const EVENT_LOCALES = ['ko', 'en', 'ja'] as const;
 export type EventLocale = (typeof EVENT_LOCALES)[number];
@@ -24,15 +25,21 @@ export function isEventMessageKind(v: unknown): v is EventMessageKind {
   return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
 }
 
-export type VoiceSlots = { project: number; sentences: readonly number[] };
+export type VoiceProject = {
+  project: number;
+  /** 프로젝트가 속한 스페이스(`GET /portal/api/v1/spaces`). 문장 목록을 읽을 때 필요하다. */
+  spaceSeq: number;
+  /** 돌리지 않는 문장 — 홍보 영상에 쓰는 글자가 들어 있다. */
+  reserved?: readonly number[];
+};
 
-/** 이벤트 id → 인물 id → 언어 → 슬롯. 없는 조합은 만들 수 없다(503). */
-export const EVENT_VOICES: Record<string, Record<string, Partial<Record<EventLocale, VoiceSlots>>>> = {
+/** 이벤트 id → 인물 id → 언어 → 프로젝트. 없는 조합은 만들 수 없다(503). */
+export const EVENT_VOICES: Record<string, Record<string, Partial<Record<EventLocale, VoiceProject>>>> = {
   '1': {
     winter: {
-      ko: { project: 413673, sentences: [11135210, 11135214] },
-      en: { project: 415525, sentences: [11162671, 11162672] },
-      ja: { project: 415525, sentences: [11162673] },
+      ko: { project: 413673, spaceSeq: 501031, reserved: [11135215, 11135216, 11135217] },
+      en: { project: 415525, spaceSeq: 501031, reserved: [11162674, 11162675] },
+      ja: { project: 415525, spaceSeq: 501031, reserved: [11162674, 11162675] },
     },
     // nanami: 아직 프로젝트 없음(2026-09-16 지시: 윈터부터).
   },
@@ -156,13 +163,12 @@ export function renderMessage(kind: EventMessageKind, locale: EventLocale, name:
 }
 
 /**
- * 어느 슬롯을 쓸까. 같은 사람의 두 메시지(생일·위로)가 **다른** 슬롯에 가도록 종류 순번을 섞고,
- * 이름으로 한 번 더 흩뜨려 다른 사람끼리도 한 슬롯에 몰리지 않게 한다. `attempt` 는 겹침을
- * 겪고 다시 시도할 때 옆 슬롯으로 옮기는 값이다.
+ * 순번 → 슬롯. `position` 은 DB 카운터가 준 값(요청마다 1 씩 큰다)이라 요청이 문장을 하나씩
+ * 돌아가며 쓴다. 카운터를 못 받았으면(로컬·DB 장애) 호출자가 무작위 값을 준다.
  */
-export function pickSlot(slots: VoiceSlots, kind: EventMessageKind, name: string, attempt: number): PersoSlot {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
-  const idx = (h + EVENT_MESSAGE_KINDS.indexOf(kind) + attempt) % slots.sentences.length;
-  return { project: slots.project, sentence: slots.sentences[idx]! };
+export function slotAt(voice: VoiceProject, sentences: readonly number[], position: number): PersoSlot {
+  const usable = sentences.filter((seq) => !voice.reserved?.includes(seq));
+  if (usable.length === 0) throw new Error(`project ${voice.project} has no usable sentences`);
+  const idx = ((position % usable.length) + usable.length) % usable.length;
+  return { project: voice.project, sentence: usable[idx]! };
 }

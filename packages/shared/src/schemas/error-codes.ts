@@ -283,7 +283,6 @@ export const ERROR_CODES = [
   'INVALID_ID',
   'PERSO_FAILED',
   'PERSO_NOT_CONFIGURED',
-  'STORAGE_NOT_CONFIGURED',
   'VOICE_NOT_AVAILABLE',
   // 공통·미들웨어 (index.ts, middleware/)
   // ⚠ 라우트 도메인에 속하지 않는 것들. 앱은 이 코드로 "다시 시도" 를 안내한다.
