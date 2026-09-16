@@ -6,10 +6,9 @@ import { EVENT_ID, type Celebrity, type MessageKind } from "./event-catalog";
  * 이벤트 1 의 바깥 세계 — **생성**과 **좋아요**. 화면(카드·버튼·입력)은 이 파일만 안다.
  *
  * 생성(2026-09-16 결정: 문장 전체를 인물 목소리로): 서버(`POST /api/event/:id/clips`)가 Perso 로
- * 문장 하나를 만들고 그 소리를 내려받을 경로를 돌려준다(소리는 Perso 저장소에 있고 서버가
- * 흘려보낸다). 문장은 서버가 정한다 — 클라는 {인물, 이름, 언어, 종류}만 보낸다. 같은 이름은
- * 서버가 기억해 두 번째부터는 곧바로 온다. 처음 만들 때는 10~30초 걸리므로 종류마다 따로 부르고
- * 오는 대로 보여 준다.
+ * 문장 하나를 만들어 **mp3 바이트를 그 응답으로** 준다. 어디에도 남지 않는다 — 이 탭의 메모리에
+ * Blob 으로만 있고 나가면 사라진다(지시). 문장은 서버가 정한다 — 클라는 {인물, 이름, 언어, 종류}만
+ * 보낸다. 만드는 데 10~30초 걸리므로 종류마다 따로 부르고 오는 대로 보여 준다.
  *
  * 좋아요: 백엔드의 공개 카운터(`packages/backend/src/routes/event.ts`)에 누른 횟수만큼
  * 더한다. 숫자는 서버가 준 것만 보여 준다 — 서버에 못 닿으면 숫자를 지어내지 않고 하트만 남긴다.
@@ -17,10 +16,10 @@ import { EVENT_ID, type Celebrity, type MessageKind } from "./event-catalog";
 export type Clip = {
   kind: MessageKind;
   locale: Locale;
-  /** 재생·다운로드용 절대 URL(서버가 내용 해시로 영구 캐시한다). */
+  /** 받은 mp3. 재생·다운로드는 이걸로 만든 Blob URL(`src`)을 쓴다. */
+  blob: Blob;
+  /** `URL.createObjectURL(blob)`. 다 쓰면 `releaseClip` 으로 돌려준다. */
   src: string;
-  /** 문장 안에서 이름이 실제로 읽히는 꼴(지민→지민아). 파일명에 쓴다. */
-  spoken: string;
 };
 
 export type ClipRequest = {
@@ -68,29 +67,20 @@ export async function generateClip(req: ClipRequest, signal?: AbortSignal): Prom
         res.status,
       );
     }
-    const body = (await res.json()) as { clip?: Record<string, unknown> };
-    const c = body.clip;
-    if (!c || typeof c.path !== "string" || typeof c.spoken !== "string") {
+    const blob = await res.blob();
+    if (!blob.type.startsWith("audio/") || blob.size === 0) {
       throw new ClipError("BAD_RESPONSE", res.status);
     }
-    return {
-      kind: req.kind,
-      locale: req.locale,
-      src: `${API_BASE}${c.path}`,
-      spoken: c.spoken,
-    };
+    return { kind: req.kind, locale: req.locale, blob, src: URL.createObjectURL(blob) };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", onOuterAbort);
   }
 }
 
-/**
- * 저장용 주소. 서버가 `download=` 를 보면 첨부 파일로 내려준다 — 다른 출처의 `<a download>` 는
- * 브라우저가 무시하므로 파일명은 서버가 헤더로 정한다(글자·숫자·공백만 남기고 60자).
- */
-export function clipDownloadUrl(clip: Clip, fileName: string): string {
-  return `${clip.src}?download=${encodeURIComponent(fileName)}`;
+/** Blob URL 을 돌려준다 — 페이지를 떠날 때(언마운트) 부른다. */
+export function releaseClip(clip: Clip): void {
+  URL.revokeObjectURL(clip.src);
 }
 
 /** 좋아요 수. 서버가 모르는 대상은 키가 없다(= 숫자를 보여 주지 않는다). */

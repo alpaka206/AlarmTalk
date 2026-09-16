@@ -10,9 +10,9 @@ import { DownloadDialog } from "./download-dialog";
 import {
   addLike,
   ClipError,
-  clipDownloadUrl,
   fetchLikes,
   generateClip,
+  releaseClip,
   type Clip,
   type LikeCounts,
 } from "./event-api";
@@ -34,13 +34,14 @@ import { useEventPlayer } from "./use-event-player";
  *
  *   이름 입력 → 인물 캐러셀(이전/다음, 좋아요 수) → 생성하기 → 언어 고르기 → 결과 두 줄(듣기 · 다운로드)
  *
- * 소리는 서버가 문장 전체를 인물 목소리로 만든다(`event-api.ts`). 처음 만들 때 10~30초 걸리므로
- * 종류마다 따로 부르고 **오는 대로** 카드를 채운다. 결과는 (인물, 이름, 언어, 종류)에 묶여
- * 캐시된다: 인물을 돌리다 이미 만든 인물로 돌아오면 그 결과가 그대로 있고, 이름을 바꾸면
- * 새로 만든다 — 다른 이름으로 만든 소리를 지금 이름인 것처럼 들려주지 않는다.
+ * 소리는 서버가 문장 전체를 인물 목소리로 만들어 mp3 로 준다(`event-api.ts`). 만드는 데 10~30초
+ * 걸리므로 종류마다 따로 부르고 **오는 대로** 카드를 채운다. 결과는 이 탭의 메모리에만 (인물,
+ * 이름, 언어, 종류)로 묶여 있다: 인물을 돌리다 이미 만든 인물로 돌아오면 그 결과가 그대로 있고,
+ * 이름을 바꾸면 새로 만든다 — 다른 이름으로 만든 소리를 지금 이름인 것처럼 들려주지 않는다.
+ * 페이지를 떠나면 사라진다(지시: 서버에도 남기지 않는다).
  *
  * 링크: `?celeb=winter&name=지민` 으로 들어오면 그 인물·이름으로 **바로** 만든다(홍보 댓글에
- * 보내는 개인 링크). 만든 뒤에는 주소도 그렇게 맞춰 둔다 — 주소창이 곧 공유 링크다.
+ * 보내는 개인 링크). 공유 링크 기능은 두지 않는다 — 인물만 주소에 따라간다.
  *
  * 문장은 화면에 보여 주지 않는다(2026-09-16 지시) — 종류 이름과 듣기·다운로드뿐이다. 재생은
  * 언제나 하나.
@@ -85,10 +86,16 @@ export function EventStudio() {
    * 들을 수 있다(StrictMode 의 가짜 언마운트에도 맞게 effect 안에서 켠다).
    */
   const mountedRef = useRef(false);
+  const clipsRef = useRef(clips);
+  clipsRef.current = clips;
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // 떠나면 사라진다 — 들고 있던 소리의 Blob URL 을 돌려준다.
+      for (const state of Object.values(clipsRef.current)) {
+        if (state.status === "ready") releaseClip(state.clip);
+      }
     };
   }, []);
 
@@ -180,18 +187,10 @@ export function EventStudio() {
   useEffect(() => {
     if (!deepLinked) return;
     const url = new URL(window.location.href);
-    const wantName = hasResults ? trimmed : null;
-    if (
-      url.searchParams.get("celeb") === celebrity.id &&
-      url.searchParams.get("name") === wantName
-    ) {
-      return;
-    }
+    if (url.searchParams.get("celeb") === celebrity.id) return;
     url.searchParams.set("celeb", celebrity.id);
-    if (wantName) url.searchParams.set("name", wantName);
-    else url.searchParams.delete("name");
     window.history.replaceState(window.history.state, "", url);
-  }, [deepLinked, celebrity.id, hasResults, trimmed]);
+  }, [deepLinked, celebrity.id]);
 
   // 좋아요 수는 서버에서. 못 받으면 빈 채로 둔다(숫자를 지어내지 않는다).
   useEffect(() => {
@@ -550,19 +549,13 @@ export function EventStudio() {
 
       <DownloadDialog
         open={download !== null}
-        src={
-          download
-            ? clipDownloadUrl(
-                download,
-                t("studio.fileName", {
-                  celebrity: nameOf(celebrity),
-                  kind: t(`studio.kinds.${download.kind}.name`),
-                  language: tl(download.locale),
-                  name: download.spoken,
-                }),
-              )
-            : null
-        }
+        src={download?.src ?? null}
+        fileName={`${t("studio.fileName", {
+          celebrity: nameOf(celebrity),
+          kind: download ? t(`studio.kinds.${download.kind}.name`) : "",
+          language: download ? tl(download.locale) : "",
+          name: trimmed,
+        })}.mp3`}
         onClose={() => setDownload(null)}
       />
     </section>
