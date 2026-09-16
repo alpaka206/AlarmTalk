@@ -370,7 +370,7 @@
   "event": {
     "meta": {
       "title": "A voice message with your name, in a voice you love",
-      "description": "Type a name, pick a message, and hear a celebrity-style voice say it with your name. AI voices, not the real people."
+      "description": "Type a name and hear a celebrity-style voice say it in a birthday wish and a word of comfort — in Korean, English and Japanese. AI voices, not the real people."
     },
     "hero": {
       "headline": "Hear a voice message that says your name,\nin a celebrity voice you love!"
@@ -379,36 +379,40 @@
       "voiceLabel": "Whose voice?",
       "nameLabel": "Enter a name.",
       "namePlaceholder": "e.g. Jamie…",
-      "namePlaceholderInline": "you",
-      "kindLabel": "Which message?",
       "kinds": {
         "birthday": {
-          "name": "Happy birthday",
-          "line": "<b>{name}</b>, happy birthday! Today is all yours. Fill it with the things you love most."
+          "name": "Happy birthday"
         },
         "comfort": {
-          "name": "A word of comfort",
-          "line": "<b>{name}</b>, you worked so hard today. I see the effort nobody else does. You’re doing more than enough."
+          "name": "A word of comfort"
         }
       },
       "generate": "Generate",
       "play": "Play",
       "stop": "Stop",
       "generating": "Generating…",
-      "playAria": "Play {celebrity}",
-      "stopAria": "Stop {celebrity}",
-      "playing": "Speaking",
+      "playAria": "Play {kind} in {celebrity}’s voice",
+      "stopAria": "Stop {kind}",
       "download": "Download",
-      "unsupported": "This browser can’t play audio. Try another browser.",
       "failed": "Can’t make it right now. Try again in a moment.",
       "disclaimer": "These are generated AI voices, not trained on any real person’s voice.",
       "sampleName": "Jamie",
       "prevVoice": "Previous",
       "nextVoice": "Next",
-      "regenerate": "Generate again",
       "likeAria": "Like {celebrity}",
       "likesCount": "{n} likes",
-      "resultsHeading": "Messages in {celebrity}’s voice"
+      "resultsHeading": "Messages in {celebrity}’s voice",
+      "generatingHint": "Takes about 30 seconds, longer when busy.",
+      "retry": "Try again",
+      "languageLabel": "Language",
+      "errors": {
+        "VOICE_NOT_AVAILABLE": "Not ready in this language yet.",
+        "RATE_LIMITED": "Too many in a row. Try again in a moment."
+      },
+      "fileName": "AlarmTalk {celebrity} {kind} {language} {name}",
+      "sampleLine": "Hey, <b>{name}</b>. Happy birthday! Thank you so much for always supporting me.",
+      "downloadAria": "Download {kind}",
+      "ready": "Ready."
     },
     "celebrities": {
       "winter": {

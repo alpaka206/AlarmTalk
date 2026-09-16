@@ -12,18 +12,17 @@ import { StoreBadges } from "../store-badges";
  * 네이티브 `<dialog>` 다(모바일 메뉴와 같은 이유: 포커스 트랩·top layer·Escape 를 브라우저가
  * 맡는다). 항상 마운트돼 있고 `open` 으로 `showModal()`/`close()` 만 한다.
  *
- * `src` 가 없으면(합성 음성이라 파일이 없거나, mp3 를 아직 만드는 중) "그냥 다운로드" 는
- * 눌리지 않는다 — 눌렀는데 아무 일도 없는 버튼을 두지 않는다.
+ * `src` 는 서버의 첨부 다운로드 주소다(`event-api.ts` 의 `clipDownloadUrl` — 파일명은 서버가
+ * 헤더로 정한다. 다른 출처라 `<a download>` 의 이름은 브라우저가 무시한다). 없으면 "그냥
+ * 다운로드" 는 눌리지 않는다 — 눌렀는데 아무 일도 없는 버튼을 두지 않는다.
  */
 export function DownloadDialog({
   open,
   src,
-  fileName,
   onClose,
 }: {
   open: boolean;
   src: string | null;
-  fileName: string;
   onClose: () => void;
 }) {
   const t = useTranslations("event.downloadModal");
@@ -73,7 +72,7 @@ export function DownloadDialog({
           {src ? (
             <a
               href={src}
-              download={fileName}
+              download
               onClick={onClose}
               className="btn btn-secondary w-full"
             >

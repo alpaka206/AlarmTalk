@@ -108,8 +108,9 @@ export function EventList() {
  * 이벤트 1(내 이름 음성 메시지)의 본질: **이름을 적으면 그 이름을 불러 준다**. 인물은 계속
  * 늘어날 거라 그리지 않는다(2026-09-15 지시). 대신 흐름 그대로 두 장면만: 이름을 적은 입력칸
  * 모형과, 그 이름이 들어간 메시지 말풍선. 본문에 없는 것(기간, 인원, 배지)은 그리지 않는다.
- * 문장은 본문과 같은 `event.studio.kinds.birthday.line`, 라벨은 `event.studio.nameLabel`,
- * 예시 이름은 `event.studio.sampleName` 이다(입력칸 placeholder 와 같은 이름).
+ * 문장은 본문의 생일 메시지 앞부분(`event.studio.sampleLine` — 실제 문장은 서버가 정한다,
+ * `packages/backend/src/lib/event-voices.ts`), 라벨은 `event.studio.nameLabel`, 예시 이름은
+ * `event.studio.sampleName` 이다(입력칸 placeholder 와 같은 이름).
  */
 function VoiceMessagePreview() {
   const t = useTranslations("event");
@@ -126,7 +127,7 @@ function VoiceMessagePreview() {
       {/* 답: 그 이름을 부르는 메시지. 꼬리는 위 입력칸을 향한다. */}
       <div className="relative mt-6 w-full rounded-[var(--radius-xl)] bg-accent px-5 py-4 text-[15px] font-semibold leading-snug text-white">
         <span className="absolute left-6 top-0 -mt-2 h-4 w-4 rotate-45 bg-accent" />
-        {t.rich("studio.kinds.birthday.line", {
+        {t.rich("studio.sampleLine", {
           name: sample,
           b: (chunks) => <span className="text-accent-on-dark">{chunks}</span>,
         })}

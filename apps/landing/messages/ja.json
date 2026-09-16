@@ -370,7 +370,7 @@
   "event": {
     "meta": {
       "title": "好きな芸能人の声で聞く、自分の名前入り音声メッセージ",
-      "description": "名前を入れてメッセージを選ぶと、好きな芸能人風の声が名前を呼んでくれる音声メッセージを作ります。本人の声ではなくAIの声です。"
+      "description": "名前を入れると、好きな芸能人風の声が名前を呼んでくれる誕生日とねぎらいのメッセージを作ります。韓国語・英語・日本語で聞けます。本人の声ではなくAIの声です。"
     },
     "hero": {
       "headline": "好きな芸能人の声で\n名前を呼んでくれる音声メッセージを聞いてみよう!"
@@ -379,36 +379,40 @@
       "voiceLabel": "誰の声で聞きますか。",
       "nameLabel": "名前を入力してください。",
       "namePlaceholder": "例: はるか…",
-      "namePlaceholderInline": "あなた",
-      "kindLabel": "どのメッセージを聞きますか。",
       "kinds": {
         "birthday": {
-          "name": "誕生日おめでとう",
-          "line": "<b>{name}</b>、お誕生日おめでとう! 今日は丸ごとあなたの日。いちばん好きなことで満たしてね。"
+          "name": "誕生日おめでとう"
         },
         "comfort": {
-          "name": "ねぎらいのひとこと",
-          "line": "<b>{name}</b>、今日も本当におつかれさま。誰にも見えないところでがんばったの、知ってるよ。十分やれてる。"
+          "name": "ねぎらいのひとこと"
         }
       },
       "generate": "生成する",
       "play": "再生",
       "stop": "停止",
       "generating": "作成中…",
-      "playAria": "{celebrity}の声を再生",
-      "stopAria": "{celebrity}の声を止める",
-      "playing": "話しています",
+      "playAria": "{kind}を{celebrity}の声で再生",
+      "stopAria": "{kind}を止める",
       "download": "ダウンロード",
-      "unsupported": "このブラウザでは音声を再生できません。別のブラウザで開いてみてください。",
       "failed": "いまは作れません。少し待ってもう一度押してください。",
       "disclaimer": "実在の人物の声で学習したものではない、生成されたAIの声です。",
       "sampleName": "はるか",
       "prevVoice": "前の人物",
       "nextVoice": "次の人物",
-      "regenerate": "もう一度生成",
       "likeAria": "{celebrity}にいいね",
       "likesCount": "いいね {n}",
-      "resultsHeading": "{celebrity}の声で作ったメッセージ"
+      "resultsHeading": "{celebrity}の声で作ったメッセージ",
+      "generatingHint": "30秒ほどかかります。混雑時はもう少しかかります。",
+      "retry": "もう一度",
+      "languageLabel": "言語",
+      "errors": {
+        "VOICE_NOT_AVAILABLE": "この言語ではまだ準備中です。",
+        "RATE_LIMITED": "続けて作りすぎました。少し待ってもう一度押してください。"
+      },
+      "fileName": "アラームトーク {celebrity} {kind} {language} {name}",
+      "sampleLine": "<b>{name}</b>、お誕生日、本当におめでとう！ いつも応援してくれて、本当にありがとう。",
+      "downloadAria": "{kind}をダウンロード",
+      "ready": "できました。"
     },
     "celebrities": {
       "winter": {

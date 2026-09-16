@@ -370,7 +370,7 @@
   "event": {
     "meta": {
       "title": "내가 좋아하는 연예인 목소리로 듣는 내 이름 음성 메시지",
-      "description": "이름을 적고 메시지를 고르면, 좋아하는 연예인 느낌의 목소리로 내 이름을 부르는 음성 메시지를 만들어 줘요. 실제 목소리가 아닌 AI 목소리입니다."
+      "description": "이름을 적으면 좋아하는 연예인 느낌의 목소리가 내 이름을 부르는 생일 축하·위로 메시지를 만들어 줘요. 한국어·영어·일본어로 들을 수 있어요. 실제 목소리가 아닌 AI 목소리입니다."
     },
     "hero": {
       "headline": "내가 좋아하는 연예인 목소리로\n내 이름을 불러 주는 음성 메시지를 들어보세요!"
@@ -379,36 +379,40 @@
       "voiceLabel": "누구 목소리로 들을까요?",
       "nameLabel": "이름을 입력해 주세요.",
       "namePlaceholder": "예: 지민…",
-      "namePlaceholderInline": "○○",
-      "kindLabel": "어떤 메시지를 들을까요?",
       "kinds": {
         "birthday": {
-          "name": "생일 축하",
-          "line": "<b>{name}</b>, 생일 축하해! 오늘은 온전히 너의 날이야. 제일 좋아하는 걸로 하루를 채워 봐."
+          "name": "생일 축하"
         },
         "comfort": {
-          "name": "위로 한마디",
-          "line": "<b>{name}</b>, 오늘도 정말 고생했어. 안 보이는 데서 애쓴 거 다 알아. 충분히 잘하고 있어."
+          "name": "위로 한마디"
         }
       },
       "generate": "생성하기",
       "play": "듣기",
       "stop": "멈춤",
       "generating": "만드는 중…",
-      "playAria": "{celebrity} 목소리로 듣기",
-      "stopAria": "{celebrity} 목소리 멈추기",
-      "playing": "말하고 있어요",
+      "playAria": "{kind} 듣기 — {celebrity} 목소리",
+      "stopAria": "{kind} 멈추기",
       "download": "다운로드",
-      "unsupported": "이 브라우저에서는 소리를 낼 수 없어요. 다른 브라우저에서 다시 열어 보세요.",
       "failed": "지금은 만들 수 없어요. 잠시 후 다시 눌러 보세요.",
       "disclaimer": "실제 인물의 목소리로 학습한 것이 아닌, 생성된 AI 목소리입니다.",
       "sampleName": "지민",
       "prevVoice": "이전 인물",
       "nextVoice": "다음 인물",
-      "regenerate": "다시 생성하기",
       "likeAria": "{celebrity} 좋아요",
       "likesCount": "좋아요 {n}",
-      "resultsHeading": "{celebrity} 목소리로 만든 메시지"
+      "resultsHeading": "{celebrity} 목소리로 만든 메시지",
+      "generatingHint": "30초쯤 걸려요. 붐비면 더 걸릴 수 있어요.",
+      "retry": "다시 시도",
+      "languageLabel": "언어",
+      "errors": {
+        "VOICE_NOT_AVAILABLE": "이 언어로는 아직 준비 중이에요.",
+        "RATE_LIMITED": "너무 자주 만들었어요. 잠시 후 다시 눌러 주세요."
+      },
+      "fileName": "알람톡 {celebrity} {kind} {language} {name}",
+      "sampleLine": "<b>{name}아</b>, 생일 너무너무 축하해! 늘 응원해 줘서 너무 고마워.",
+      "downloadAria": "{kind} 다운로드",
+      "ready": "준비됐어요."
     },
     "celebrities": {
       "winter": {
