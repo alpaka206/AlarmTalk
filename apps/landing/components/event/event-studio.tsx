@@ -459,7 +459,7 @@ export function EventStudio() {
                             : ""
                         : state?.status === "failed"
                           ? errorText(state.code)
-                          : `${t("studio.generating")} ${t("studio.generatingHint")}`;
+                          : t("studio.generating");
                     return (
                       <li
                         key={kind}

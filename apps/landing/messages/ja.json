@@ -390,7 +390,7 @@
       "generate": "生成する",
       "play": "再生",
       "stop": "停止",
-      "generating": "作成中…",
+      "generating": "生成中",
       "playAria": "{kind}を{celebrity}の声で再生",
       "stopAria": "{kind}を止める",
       "download": "ダウンロード",
@@ -402,7 +402,6 @@
       "likeAria": "{celebrity}にいいね",
       "likesCount": "いいね {n}",
       "resultsHeading": "{celebrity}の声で作ったメッセージ",
-      "generatingHint": "30秒ほどかかります。混雑時はもう少しかかります。",
       "retry": "もう一度",
       "languageLabel": "言語",
       "errors": {

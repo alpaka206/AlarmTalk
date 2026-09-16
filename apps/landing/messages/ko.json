@@ -390,7 +390,7 @@
       "generate": "생성하기",
       "play": "듣기",
       "stop": "멈춤",
-      "generating": "만드는 중…",
+      "generating": "생성 중",
       "playAria": "{kind} 듣기 — {celebrity} 목소리",
       "stopAria": "{kind} 멈추기",
       "download": "다운로드",
@@ -402,7 +402,6 @@
       "likeAria": "{celebrity} 좋아요",
       "likesCount": "좋아요 {n}",
       "resultsHeading": "{celebrity} 목소리로 만든 메시지",
-      "generatingHint": "30초쯤 걸려요. 붐비면 더 걸릴 수 있어요.",
       "retry": "다시 시도",
       "languageLabel": "언어",
       "errors": {

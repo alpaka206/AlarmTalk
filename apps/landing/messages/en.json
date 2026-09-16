@@ -390,7 +390,7 @@
       "generate": "Generate",
       "play": "Play",
       "stop": "Stop",
-      "generating": "Generating…",
+      "generating": "Generating",
       "playAria": "Play {kind} in {celebrity}’s voice",
       "stopAria": "Stop {kind}",
       "download": "Download",
@@ -402,7 +402,6 @@
       "likeAria": "Like {celebrity}",
       "likesCount": "{n} likes",
       "resultsHeading": "Messages in {celebrity}’s voice",
-      "generatingHint": "Takes about 30 seconds, longer when busy.",
       "retry": "Try again",
       "languageLabel": "Language",
       "errors": {
