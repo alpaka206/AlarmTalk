@@ -233,64 +233,41 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('처음 보는 문장: 문장 목록 → 순번 슬롯에 match-rewrite → generate-audio → mp3 확인 → DB 행 → 경로', async () => {
+  it('문장 목록 → 순번 슬롯에 match-rewrite → generate-audio → 파일 받기 → mp3 바이트를 그대로 응답', async () => {
     const { calls, stored } = fakePerso();
     cursorPositions(7);
     const res = await buildApp()('/event/1/clips', post({ ...ok, name: ' 지민 ' }));
     expect(res.status).toBe(200);
-    const { clip } = (await res.json()) as { clip: Record<string, unknown> };
-    expect(clip.cached).toBe(false);
-    expect(clip.spoken).toBe('지민아');
-    expect(clip.text).toMatch(/^지민아, 생일 너무너무 축하해!/);
-    expect(clip.path).toMatch(/^\/api\/event\/1\/clips\/winter\/ko\/birthday\/[0-9a-f]{64}\.mp3$/);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('content-length')).toBe(String(MP3_BYTES.byteLength));
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(MP3_BYTES);
 
     // 순번 7 → 쓸 수 있는 다섯 중 7 % 5 = 2번째. 순서가 곧 계약이다: 저장(match-rewrite) 없이
-    // generate-audio 를 부르면 옛 글자가 읽힌다. 마지막으로 앞 4KB 만 받아 mp3 인지 본다.
+    // generate-audio 를 부르면 옛 글자가 읽힌다.
     const slot = slotAt(WINTER_KO, KO_SENTENCES, 7);
     expect(calls).toEqual([
       'GET script 413673 size=10000',
       'GET script 413673 size=10000&cursorId=11135213',
       `POST ${slot.project}/${slot.sentence} match-rewrite`,
       `PATCH ${slot.project}/${slot.sentence} generate-audio`,
-      `GET media /perso-storage/p-${slot.project}/윈터 클립_${slot.sentence}_1.mp3 [bytes=0-4095]`,
+      `GET media /perso-storage/p-${slot.project}/윈터 클립_${slot.sentence}_1.mp3`,
     ]);
     // 보낸 글자는 태그가 붙은 전체 문장이고 이름은 부르는 꼴이다.
     expect(stored.get(`${slot.project}/${slot.sentence}`)).toContain('[warm, relaxed] 지민아,');
-
-    // DB 에는 경로만 — 소리는 우리 쪽에 남지 않는다. 값은 전부 바인딩.
-    const insert = mockDB.calls.find((q) => q.sql.includes('INSERT INTO event_clips'));
-    expect(insert).toBeDefined();
-    expect(insert!.args).toEqual([
-      (clip.path as string).match(/([0-9a-f]{64})\.mp3$/)![1],
-      '1',
-      'winter',
-      'ko',
-      'birthday',
-      `/perso-storage/p-${slot.project}/윈터 클립_${slot.sentence}_1.mp3`,
-    ]);
-    expect(insert!.sql).not.toContain('지민');
+    // 어디에도 남기지 않는다 — DB 에 간 것은 순번 카운터뿐이고 값은 바인딩.
+    const writes = mockDB.calls.filter((q) => !q.sql.includes('event_slot_cursor'));
+    expect(writes).toEqual([]);
+    expect(mockDB.calls[0]!.args).toEqual([WINTER_KO.project]);
   });
 
-  it('DB 가 알고 있는 문장은 Perso 를 부르지 않는다', async () => {
-    const { fetchSpy } = fakePerso();
-    mockDB.pushResultFor('FROM event_clips', [{ perso_path: '/perso-storage/p-413673/이미.mp3' }]);
-    const res = await buildApp()('/event/1/clips', post(ok));
-    const { clip } = (await res.json()) as { clip: { cached: boolean } };
-    expect(clip.cached).toBe(true);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('같은 요청을 두 번 하면 두 번째는 만들지 않는다(이 워커가 기억한다)', async () => {
-    const { fetchSpy } = fakePerso();
+  it('같은 이름을 두 번 만들면 두 번 만든다 — 아무것도 기억하지 않는다', async () => {
+    const { calls } = fakePerso();
+    cursorPositions(0, 1);
     const req = buildApp();
-    const first = (await (await req('/event/1/clips', post(ok))).json()) as { clip: { path: string } };
-    const persoCalls = fetchSpy.mock.calls.length;
-    const { clip } = (await (await req('/event/1/clips', post(ok))).json()) as {
-      clip: { path: string; cached: boolean };
-    };
-    expect(clip.cached).toBe(true);
-    expect(clip.path).toBe(first.clip.path);
-    expect(fetchSpy.mock.calls.length).toBe(persoCalls);
+    await req('/event/1/clips', post(ok));
+    await req('/event/1/clips', post(ok));
+    expect(calls.filter((c) => c.includes('generate-audio'))).toHaveLength(2);
   });
 
   it('요청마다 다음 문장으로 돌아간다 — 문장 목록은 한 번만 읽는다', async () => {
@@ -309,16 +286,6 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     ]);
   });
 
-  it('이름이 다르면 다른 경로 — 다른 사람 소리를 주지 않는다', async () => {
-    fakePerso();
-    const req = buildApp();
-    const a = (await (await req('/event/1/clips', post(ok))).json()) as { clip: { path: string } };
-    const b = (await (await req('/event/1/clips', post({ ...ok, name: '민정' }))).json()) as {
-      clip: { path: string };
-    };
-    expect(a.clip.path).not.toBe(b.clip.path);
-  });
-
   it('슬롯이 겹쳐 남의 글자가 읽히면 다음 문장으로 다시 만든다', async () => {
     const first = slotAt(WINTER_KO, KO_SENTENCES, 0);
     const { calls } = fakePerso({ overwriteOnGenerate: new Set([first.sentence]) });
@@ -330,14 +297,14 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
       `PATCH ${first.project}/${first.sentence} generate-audio`,
       `PATCH ${second.project}/${second.sentence} generate-audio`,
     ]);
-    expect(mockDB.calls.filter((q) => q.sql.includes('INSERT INTO event_clips'))).toHaveLength(1);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
   });
 
-  it('저장소가 mp3 가 아닌 것을 주면 502 — 경로를 적어 두지 않는다', async () => {
+  it('저장소가 mp3 가 아닌 것을 주면 502 — 오류 페이지를 소리라고 내려보내지 않는다', async () => {
     fakePerso({ media: new TextEncoder().encode('<html>Service Unavailable</html>'.repeat(200)) });
     const res = await buildApp()('/event/1/clips', post(ok));
     expect(res.status).toBe(502);
-    expect(mockDB.calls.some((q) => q.sql.includes('INSERT INTO event_clips'))).toBe(false);
+    expect((await res.json()).error_code).toBe('PERSO_FAILED');
   });
 
   it('Perso 가 실패하면 502', async () => {
@@ -345,84 +312,5 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     const res = await buildApp()('/event/1/clips', post(ok));
     expect(res.status).toBe(502);
     expect((await res.json()).error_code).toBe('PERSO_FAILED');
-    expect(mockDB.calls.some((q) => q.sql.includes('INSERT INTO event_clips'))).toBe(false);
-  });
-});
-
-describe('GET /event/:id/clips/… — Perso 저장소에서 흘려보내기', () => {
-  beforeEach(() => {
-    mockDB.reset();
-    vi.restoreAllMocks();
-    resetEventCaches();
-  });
-
-  const make = async (req: ReturnType<typeof buildApp>) => {
-    const { clip } = (await (
-      await req(
-        '/event/1/clips',
-        post({ celebrity: 'winter', name: '지민', locale: 'ko', kind: 'birthday' }),
-      )
-    ).json()) as { clip: { path: string } };
-    return clip.path.replace(/^\/api/, '');
-  };
-
-  it('전체는 200 + immutable 캐시, download= 는 첨부 파일명, Range 는 저장소 206 그대로', async () => {
-    const { calls } = fakePerso();
-    const req = buildApp();
-    const path = await make(req);
-
-    const res = await req(path);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('audio/mpeg');
-    expect(res.headers.get('cache-control')).toContain('immutable');
-    expect(res.headers.get('accept-ranges')).toBe('bytes');
-    expect(res.headers.get('content-length')).toBe(String(MP3_BYTES.byteLength));
-    expect(res.headers.get('content-disposition')).toBeNull();
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(MP3_BYTES);
-    expect(calls.at(-1)).toMatch(/^GET media \/perso-storage\/p-413673\/윈터 클립_\d+_1\.mp3$/);
-
-    const dl = await req(`${path}?download=${encodeURIComponent('알람톡 윈터 생일 축하 지민')}`);
-    expect(dl.status).toBe(200);
-    expect(dl.headers.get('content-disposition')).toBe(
-      `attachment; filename="alarmtalk-winter-birthday.mp3"; filename*=UTF-8''${encodeURIComponent('알람톡 윈터 생일 축하 지민.mp3')}`,
-    );
-    // 라틴 이름은 옛 브라우저용 filename 에도 그대로.
-    const dlAscii = await req(`${path}?download=${encodeURIComponent('AlarmTalk Winter Emily')}`);
-    expect(dlAscii.headers.get('content-disposition')).toContain('filename="AlarmTalk Winter Emily.mp3"');
-
-    const part = await req(path, { headers: { range: 'bytes=100-199' } });
-    expect(part.status).toBe(206);
-    expect(part.headers.get('content-range')).toBe(`bytes 100-199/${MP3_BYTES.byteLength}`);
-    expect(part.headers.get('content-length')).toBe('100');
-    expect((await part.arrayBuffer()).byteLength).toBe(100);
-    expect(calls.at(-1)).toContain('[bytes=100-199]');
-  });
-
-  it('DB 에 있는 경로로도 준다(다른 워커가 만든 것)', async () => {
-    fakePerso();
-    mockDB.pushResultFor('FROM event_clips', [{ perso_path: '/perso-storage/p-413673/어제 만든.mp3' }]);
-    const res = await buildApp()(`/event/1/clips/winter/ko/birthday/${'a'.repeat(64)}.mp3`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('audio/mpeg');
-  });
-
-  it('없는 클립은 404, 해시 꼴이 아닌 경로는 400 — 저장소에 가지 않는다', async () => {
-    const { fetchSpy } = fakePerso();
-    const req = buildApp();
-    expect((await req(`/event/1/clips/winter/ko/birthday/${'a'.repeat(64)}.mp3`)).status).toBe(404);
-    // `..` 은 URL 단계에서 접혀 라우트에 닿지 않는다(404). 해시 꼴이 아니면 400.
-    expect((await req('/event/1/clips/winter/ko/birthday/../secret.mp3')).status).toBe(404);
-    expect((await req('/event/1/clips/winter/ko/birthday/x.mp3')).status).toBe(400);
-    expect((await req('/event/1/clips/winter/ko/birthday/%2e%2e.mp3')).status).toBe(400);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('저장소가 죽으면 502', async () => {
-    fakePerso();
-    const req = buildApp();
-    const path = await make(req);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('gone', { status: 503 }));
-    const res = await req(path);
-    expect(res.status).toBe(502);
   });
 });
