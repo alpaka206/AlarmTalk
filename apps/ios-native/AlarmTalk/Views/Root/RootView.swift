@@ -375,8 +375,13 @@ struct RootView: View {
             return
         }
         #endif
-        voiceSetupDone = AudioCacheStore.shared.hasAnyStockClip
-            || DefaultVoicePreferenceStore().hasSkipped(userID: userID)
+        // ⚠ **'한 개라도 있다' 로 판정하지 말 것**(2026-09-17). 받다 만 기기가 다시 켜면
+        // 받기 화면을 건너뛰고, 알람 관문(`StockClipPrefetcher.defaultVoicesReady`)에서야
+        // 막힌다. 매니페스트를 한 번도 못 받은 옛 설치만 파일 유무로 본다.
+        let ready = StockClipPrefetcher.defaultVoiceProgress() == nil
+            ? AudioCacheStore.shared.hasAnyStockClip
+            : StockClipPrefetcher.defaultVoicesReady()
+        voiceSetupDone = ready || DefaultVoicePreferenceStore().hasSkipped(userID: userID)
     }
 
     /// 다운로드가 끝났다. **건너뜀으로 기록하지 않는다** — 받아 둔 파일이 증거고,

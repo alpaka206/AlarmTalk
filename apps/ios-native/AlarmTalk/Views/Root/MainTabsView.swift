@@ -12,6 +12,11 @@ struct MainTabsView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
+    @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
+
+    /// 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
+    @State private var voicesNotReadyProgress: (done: Int, total: Int)?
+    @State private var voicesNotReadyAlert = false
 
     @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
@@ -39,6 +44,41 @@ struct MainTabsView: View {
     /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
     @State private var alarmSelectionActive = false
 
+    /// 알람 설정 화면(새로 만들기·고치기)을 연다 — **기본 목소리를 다 받았을 때만.**
+    ///
+    /// 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면
+    /// 문구 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다.
+    /// 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+    private func openEditorIfVoicesReady(_ target: AlarmEditorTarget) {
+        #if DEBUG
+        if UIPreviewSeed.isEnabled { editorTarget = target; return }
+        #endif
+        guard StockClipPrefetcher.defaultVoicesReady() else {
+            voicesNotReadyProgress = StockClipPrefetcher.defaultVoiceProgress()
+            // 막았으면 받기부터 깨운다 — 멈춰 있던 다운로드를 사용자가 따로 찾게 하지 않는다.
+            if !stockClipPrefetcher.isRunning { restartDefaultVoiceDownload() }
+            voicesNotReadyAlert = true
+            return
+        }
+        editorTarget = target
+    }
+
+    private func restartDefaultVoiceDownload() {
+        stockClipPrefetcher.cancel()
+        stockClipPrefetcher.start(
+            session: auth.session,
+            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+        )
+    }
+
+    private var voicesNotReadyMessage: String {
+        if let progress = voicesNotReadyProgress, progress.total > 0 {
+            let percent = min(progress.done * 100 / progress.total, 99)
+            return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (\(percent)%)\n목소리 탭에서 진행 상황을 볼 수 있어요.")
+        }
+        return String(localized: "알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.")
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -48,7 +88,7 @@ struct MainTabsView: View {
                 // 들어갔을 때 **삭제·취소 바가 화면 위로 밀려나 닿을 수 없다.**
                 // 안드로이드도 헤더를 `LazyColumn` 밖 `Column` 에 둔다.
                 if selectedTab == .alarms {
-                    AlarmsListView(createRequest: alarmCreateRequest, openEditor: { editorTarget = $0 })
+                    AlarmsListView(createRequest: alarmCreateRequest, openEditor: openEditorIfVoicesReady)
                         .onPreferenceChange(AlarmSelectionActiveKey.self) { alarmSelectionActive = $0 }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(theme.homeGradient)
@@ -104,6 +144,17 @@ struct MainTabsView: View {
                 }
             }
             .animation(.snappy(duration: 0.18), value: selectedTab)
+            .task {
+                // 알림 권한은 **로그인·약관 동의·목소리 받기가 다 끝난 뒤** 여기서 처음 묻는다
+                // (2026-09-17 실기기: 로그인 직후 동의 화면보다 먼저 떴다). 이미 답했으면 no-op.
+                await SocialNotificationTracker.requestAuthorizationIfNeeded()
+            }
+            .alert("목소리를 아직 받는 중이에요", isPresented: $voicesNotReadyAlert) {
+                // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.
+                Button("확인", role: .cancel) {}
+            } message: {
+                Text(voicesNotReadyMessage)
+            }
             .task {
                 // DEBUG 전용 — 편집기 화면 확인 진입점.
                 if UIPreviewSeed.opensEditor, editorTarget == nil {

@@ -24,7 +24,11 @@ struct VoiceSetupView: View {
     /// 다시 뜨지 않는다(2026-08-11 확인: iOS 가 그 상태였다).
     var onSkip: (() -> Void)?
 
-    @StateObject private var prefetcher = StockClipPrefetcher()
+    /// ⚠ **앱 전역 프리페처를 같이 쓴다 — 여기서 새로 만들지 말 것**(2026-09-17 실기기).
+    /// 예전에는 이 화면이 자기 인스턴스를 만들어, 로그인 때 `AlarmTalkApp` 이 이미 시작한
+    /// 전역 프리페처와 **같은 클립을 동시에 받았다.** 같은 파일을 두 곳이 쓰다 일부가
+    /// 실패했고, 그 회차가 '하나라도 받았으면 끝' 으로 닫히면서 다 받기 전에 메인으로 넘어갔다.
+    @EnvironmentObject private var prefetcher: StockClipPrefetcher
 
     private var failed: Bool { prefetcher.state == .failed }
 
@@ -88,6 +92,11 @@ struct VoiceSetupView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .homeGradientBackground()
         .task {
+            // 전역 프리페처가 이미 받는 중이면 그 진행을 그대로 보여 준다. 그 밖(동의 전에
+            // 돌다 실패해 재시도를 기다리는 중·끝난 뒤 캐시가 빈 경우)에는 새로 돌린다 —
+            // 이미 받은 클립은 건너뛰므로 다시 돌려도 손해가 없다.
+            if case .running = prefetcher.state { return }
+            prefetcher.cancel()
             prefetcher.start(session: auth.session)
         }
         .onChange(of: prefetcher.state) { _, new in

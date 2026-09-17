@@ -908,4 +908,8 @@ Pass code: %1$s
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
+    <string name="voices_not_ready_title">Still downloading voices</string>
+    <string name="voices_not_ready_message_progress">You can set alarms once the default voices finish downloading. (%1$d%%)\nYou can check progress in the Voices tab.</string>
+    <string name="voices_not_ready_message">You can set alarms once the default voices finish downloading.\nPlease stay connected to the internet for a moment.</string>
+    <string name="voices_default_download_progress">Downloading %1$d%%</string>
 </resources>

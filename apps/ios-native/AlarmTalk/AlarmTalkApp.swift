@@ -241,11 +241,10 @@ struct AlarmTalkApp: App {
                         await subscriptions.flushPendingRevocations()
                         await subscriptions.replayUnfinishedTransactions()
                         await subscriptions.refreshPurchasedProducts()
-                        // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
-                        // (`SocialNotificationTracker.notifyReceivedAlarm`)은 `.notDetermined`
-                        // 에서 조용히 버려지므로, 한 번도 묻지 않으면 신규 설치에서 그 알림이
-                        // 영영 뜨지 않는다. 이미 답한 뒤에는 no-op 이라 매 토큰 갱신마다 불려도 된다.
-                        await SocialNotificationTracker.requestAuthorizationIfNeeded()
+                        // ⚠ **알림 권한은 여기서 묻지 않는다**(2026-09-17 실기기). 로그인 직후라
+                        // 약관 동의·목소리 받기보다 **먼저** 팝업이 떴다. 메인 화면이 처음 뜰 때
+                        // 묻는다(`MainTabsView`) — 그 전에는 동의 전이라 서버가 동기화를 막으므로
+                        // 받은 알람 알림이 버려질 일도 없다.
                         // ⚠ 권한 결과와 **무관하게** 원격 알림에 등록한다 — 거절해도
                         // background push 는 오고, 그게 받은 알람을 예약한다.
                         PushAppDelegate.coordinator = push

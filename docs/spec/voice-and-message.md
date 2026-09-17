@@ -487,9 +487,34 @@ AlarmKit 예약을 다시 만들 수 있다.
 - **실패는 재시도한다.** 서버 생성 실패는 `POST /voice/:id/prerender-retry`(큐를 pending
   으로 되돌린다), 다운로드 실패는 그 클립만 다시 받는다.
 - **오프라인이면 목소리 등록을 막는다.** 등록은 생성·다운로드가 있어야 끝나는 일이라
-  반쯤 된 상태로 두지 않는다. ⚠ 단 **알람 만들기는 막지 않는다** — 새벽에 전파가 나빠
-  내일 알람을 못 맞추는 일이 있어서는 안 된다. 부족한 목소리는 **그 목소리만** 고를 수
-  없게 하고(준비 페이지로 보낸다), 이미 받아 둔 것으로는 언제나 알람을 만들 수 있다.
+  반쯤 된 상태로 두지 않는다. 부족한 **클론·공유 목소리**는 그 목소리만 고를 수 없게 하고
+  (준비 페이지로 보낸다), 알람 설정 자체는 아래 규칙을 따른다.
+
+#### 기본 목소리를 다 받아야 알람을 설정한다 (2026-09-17 지시)
+
+⚠ **예전 규칙(「알람 만들기는 막지 않는다」)을 뒤집었다.** 받다 만 상태로 편집기에 들어가면
+문구 행이 「문구를 준비하고 있어요」 에 머물고(고를 테마 클립이 폰에 없다), 저장해도 테마
+회전이 비어 운다. 실기기에서 신규 가입 직후 그대로 드러났다.
+
+- **막는 곳: 알람 설정 화면 전부** — 새로 만들기(＋·빈 상태 카드·「누구를 깨울까요?」)와
+  기존 알람 열기. 누르면 알럿 「목소리를 아직 받는 중이에요」 가 **몇 퍼센트인지**와 함께
+  이유를 말하고, 멈춰 있던 받기를 다시 건다(누를 버튼을 따로 두지 않는다).
+  알람 켜기·끄기·삭제는 막지 않는다 — 설정 화면이 아니다.
+- **판정: 서버 매니페스트에 실제로 있는 기본 목소리 클립**(기본 목소리 × 기기 언어 × 무료 테마)이
+  **전부 캐시에 있는가.** 기대 개수표(`expected_variants`)로 세지 않는다 — 서버가 아직 못 만든
+  몫까지 세면 받을 수 없는 몫 때문에 관문이 영영 안 열린다. 매니페스트가 비어 있으면(줄 것이
+  없다) 막지 않는다.
+- **매니페스트를 한 번도 못 받았으면(모른다) 막는다.** 받기 화면이 그 상태로 메인을 열어 두지
+  않으므로, 이 갈래는 새로 깔고 곧바로 오프라인이 된 경우다. 대신 받은 매니페스트는 디스크에
+  남긴다 — 다 받아 둔 기기는 오프라인 콜드스타트에서도 열린다.
+- **받기 화면(온보딩)도 같은 기준으로 끝난다.** '한 개라도 받았으면 끝' 으로 닫지 않는다 —
+  캐시를 다시 셌을 때 빠진 것이 0개일 때만 끝이다. 일부만 실패하면 그 회차 안에서 곧바로
+  다시 받고, 그래도 남으면 실패 상태('다시 시도' / '나중에 받기')로 멈춘다.
+  iOS 는 받기 화면이 **앱 전역 프리페처**를 같이 본다 — 따로 만들면 같은 파일을 두 곳이 동시에
+  받다 일부가 실패했다.
+- **'백그라운드에서 계속' 으로 닫은 뒤의 진행은 목소리 탭 '기본 목소리' 헤더 옆**에 보인다
+  (「받는 중 N%」). 섹션을 접어도 보이게 목록 아래가 아니라 헤더에 둔다.
+- 잃는 것을 알고 택했다: 새로 깔고 받기 전에 네트워크가 끊기면 **그동안 알람을 설정할 수 없다.**
 
 - 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부**(시우·미나·도현·애니 **4종** —
   `data/SystemVoices.kt`) × **기기 언어 하나** × 알람에 쓰는 카테고리 **넷**
@@ -757,6 +782,9 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
+| 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.defaultVoicesReadyOrExplain`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
+| 받기 진행 = 헤더 옆 | `VoiceProfileManagementPanel` 기본 목소리 `VoiceCatalogSectionHeader(trailing)` ← 워커 진행 | `VoiceProfileManagementPanel.defaultVoiceDownloadBadge` ← `StockClipPrefetcher.state` | — |
+| 받기 화면 완료 = 빠진 것 0 | 워커가 실패 0일 때만 `success` | `StockClipPrefetcher.run` 이 캐시를 다시 세어 판정 | — |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
