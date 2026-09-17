@@ -30,7 +30,7 @@
       "Your granddaughter’s",
       "Your boyfriend’s",
       "Your girlfriend’s",
-      "Your idol’s"
+      "Your chosen"
     ]
   },
   "voice": {
@@ -62,7 +62,7 @@
     "items": [
       {
         "q": "How do I make a voice?",
-        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. If you don’t have a file, playing a video of that person and recording it works too. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
+        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. Only register your own voice, or a voice whose owner has given you permission. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
       },
       {
         "q": "Does it ring in airplane mode or without internet?",
@@ -94,7 +94,7 @@
       },
       {
         "q": "Who actually uses this?",
-        "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character, and seniors and long-distance families who want their child, grandchild, or partner’s voice every morning. Both share one thing: a specific voice they want to hear daily."
+        "a": "People who already know whose voice they want to hear every morning: parents who miss their children’s or grandchildren’s voices, families living apart, couples who set each other’s alarms, and anyone who would rather wake up to a voice they chose than a beep."
       },
       {
         "q": "Which devices are supported?",
@@ -295,7 +295,7 @@
       "modeFile": "File",
       "status": "Record",
       "hint": "Too short and the voice may not match.",
-      "videoTip": "No file of the voice you want? Play a video and record that.",
+      "videoTip": "Only register your own voice or one you have permission to use.",
       "scriptTitle": "Example script",
       "alt": "The app’s Create a voice screen at the Record step: Record is selected over File, a record card shows 0:00 / 2:00 and a microphone button, with two hints and a collapsed example script below"
     },

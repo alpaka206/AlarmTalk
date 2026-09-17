@@ -13,7 +13,7 @@ import { CyclingWord } from "../motion/cycling-word";
  */
 export function Hero() {
   const t = useTranslations("hero");
-  // 돌아가는 자리는 '누구' 뿐이다 — 엄마 → 아빠 → 최애 → 손녀 → 남자친구 → 여자친구 → 아이돌. 기능을 돌리지 않는다.
+  // 돌아가는 자리는 '누구' 뿐이다 — 엄마 → 아빠 → 최애 → 손녀 → 남자친구 → 여자친구 → 내가 원하는. 기능을 돌리지 않는다.
   const who = t.raw("who") as string[];
 
   return (
