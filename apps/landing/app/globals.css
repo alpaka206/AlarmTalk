@@ -57,6 +57,7 @@
   --color-ink-surface: #1b2542; /* 앱 surface — 어두운 바닥 위의 카드 */
   --color-ink-high: #222e52; /* 앱 surfaceContainerHigh — 카드 위의 칩·입력 */
   --color-ink-body: #a7afc0; /* 앱 onSurfaceVariant. ink 위 8.9 */
+  --color-ink-fg: #f7f8fc; /* 앱 onSurface — ink 위 글자 */
   --color-ink-line: rgba(255, 255, 255, 0.1);
 
   /* typography */
@@ -74,6 +75,11 @@
   --radius-2xl: 24px;
   --radius-3xl: 28px;
   --radius-pill: 999px;
+
+  /* 페이지 폭 한 값. 헤더·푸터·모든 섹션·서브페이지 컨테이너가 `max-w-site` 로 같은 폭을 쓴다
+     (2026-09-15: 본문이 헤더보다 좁아 좌우가 비어 보인다는 지적 — 폭을 하나로 묶고 넓혔다).
+     글줄 폭은 컨테이너가 아니라 안쪽 요소(max-w-2xl 등)가 정한다. */
+  --container-site: 80rem;
 
   /* 그림자는 기기 마운트에만 쓴다. 흰 바닥에서는 웜 그림자가 누렇게 뜬다. */
   --shadow-card: 0 1px 2px rgba(25, 31, 40, 0.04), 0 18px 44px rgba(25, 31, 40, 0.06);
@@ -111,6 +117,12 @@
   html:lang(ja) body {
     word-break: normal;
     line-break: strict;
+  }
+  /* 일본어 제목은 문절 단위로 줄을 바꾼다(Chrome/Edge 119+). 미지원 브라우저는 normal 로 떨어진다.
+     "う!" 한 글자 고아 줄이 헤드라인에 남는 것을 막는다. */
+  html:lang(ja) h1,
+  html:lang(ja) h2 {
+    word-break: auto-phrase;
   }
 
   /* 제목도 본문과 같은 산세리프다. 무게로만 가른다 — 800 은 한글에서 획이 뭉치지
@@ -285,7 +297,7 @@
      어긋날 틈이 없다. */
   .scrub-stage {
     position: relative;
-    height: 240vh;
+    height: 200vh; /* 핀 100vh + 스크롤 100vh: 폰이 오르고 토글이 켜지면 끝 */
   }
   .scrub-pin {
     position: sticky;
@@ -302,7 +314,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    /* 핀도 스크럽도 없다. 240vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
+    /* 핀도 스크럽도 없다. 200vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
        접근성 문제라, 평범한 섹션 하나로 접고 **끝난 상태**를 보여준다. */
     .scrub-stage {
       height: auto;
@@ -317,9 +329,6 @@
       opacity: 1 !important;
       transform: none !important;
     }
-    .scrub-stage [data-scrub="before"] {
-      display: none;
-    }
     /* 알람은 켜진 채로 보여준다 — 이 장면이 말하려는 것이 그 상태다. */
     .scrub-stage [data-scrub-knob] {
       transform: translateX(100%) !important;
@@ -333,7 +342,7 @@
      페이지에서 **한 번**만 쓴다. 두 번 쓰면 리듬이 아니라 줄무늬가 된다. */
   .section-ink {
     background: linear-gradient(180deg, #1a2a52 0%, #070c1d 100%);
-    color: #f7f8fc;
+    color: var(--color-ink-fg);
   }
   /* ink 위에 ink 베젤을 올리면 베젤이 사라진다. 어두운 섹션에서는 가장자리만 남긴다. */
   .section-ink .device {
@@ -376,7 +385,7 @@
     background: var(--color-ink-surface);
     border: 1px solid var(--color-ink-line);
     border-radius: var(--radius-xl);
-    color: #f7f8fc;
+    color: var(--color-ink-fg);
   }
 
   /* button base — never wraps, never breaks.

@@ -136,3 +136,24 @@ export const authRateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 15,
   prefix: 'auth:',
 });
+
+/**
+ * 랜딩 이벤트 좋아요(공개, 인증 없음) 전용 한도. 손가락으로 연타하는 정도(분당 30)는 받고,
+ * 스크립트로 수를 부풀리는 것은 좁힌다. isolate 메모리 버킷이라 완전한 방어는 아니다.
+ */
+export const eventLikeRateLimitMiddleware = createRateLimitMiddleware({
+  windowMs: 60_000,
+  maxRequests: 30,
+  prefix: 'event-like:',
+});
+
+/**
+ * 랜딩 이벤트 메시지 클립 생성(공개, Perso 호출 = 슬롯 점유 10~30초) 전용 한도. 생성하기 한 번이
+ * 세 언어 × 두 메시지 = 여섯 요청이라, 이름을 몇 번 고쳐 다시 만드는 정도(분당 30)는 받고,
+ * 스크립트로 이름 목록을 돌리는 것은 막는다. 캐시가 없으니 요청 하나가 곧 Perso 생성 하나다.
+ */
+export const eventClipRateLimitMiddleware = createRateLimitMiddleware({
+  windowMs: 60_000,
+  maxRequests: 30,
+  prefix: 'event-clip:',
+});

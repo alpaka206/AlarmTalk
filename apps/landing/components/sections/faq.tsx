@@ -2,17 +2,18 @@ import { useTranslations } from "next-intl";
 import { Reveal } from "../motion/reveal";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
 
+/**
+ * 자주 묻는 질문 — 홈에서 떼어 낸 별도 페이지의 본문(2026-09-15 지시). 페이지 제목이라
+ * h1 이고, 질문 하나하나가 h3 인 위계는 그대로다(h2 는 없다 — 목록 하나뿐이라 사이 단계가 없다).
+ */
 export function Faq() {
   const t = useTranslations("faq");
   const items = (t.raw("items") as unknown[]).map((_, i) => i);
 
   return (
     <section id="faq" className="relative">
-      <div className="mx-auto max-w-4xl px-5 py-24 md:px-8 lg:py-32">
-        <Reveal
-          as="h2"
-          className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
-        >
+      <div className="mx-auto max-w-site px-5 pb-24 pt-16 md:px-8 lg:pb-32 lg:pt-24">
+        <Reveal as="h1" className="t-display text-text">
           {t("headline")}
         </Reveal>
 

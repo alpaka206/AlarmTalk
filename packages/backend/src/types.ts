@@ -91,6 +91,11 @@ export interface Env {
   TEST_CODE_ISSUER_EMAILS?: string;
   SENTRY_DSN?: string;
   VOICE_BUCKET?: R2Bucket;
+  /**
+   * Perso API 키(`pk_live_…`) — 랜딩 이벤트 **메시지 클립**(`routes/event.ts`). 없으면 그 라우트만
+   * 503. 프로젝트·문장 슬롯은 비밀이 아니라 코드에 있다(`lib/event-voices.ts`).
+   */
+  PERSO_API_KEY?: string;
 }
 
 export interface SentryClient {

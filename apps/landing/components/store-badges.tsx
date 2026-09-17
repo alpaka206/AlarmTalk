@@ -89,9 +89,9 @@ function Badge({ href, live, glyph, eyebrow, label, ariaLive, ariaSoon }: BadgeP
 /**
  * 스토어 배지 두 개 — Google Play 와 App Store 를 **같은 무게로** 나란히 둔다.
  *
- * 앱은 안드로이드에 먼저 나왔고 iOS 는 심사 전이다. 그래도 배지는 둘 다 그린다:
- * 아이폰 사용자가 첫 화면에서 "나는 아니구나" 로 떠나지 않게, 그리고 게재 당일에
- * 페이지를 다시 만들지 않아도 되게(`APP_STORE_LIVE` 스위치 하나로 켠다).
+ * 앱은 안드로이드에 먼저 나왔고 iOS 는 심사 중이다(2026-09-15 제출). 배지는 둘 다 링크로
+ * 그린다: 아이폰 사용자가 첫 화면에서 "나는 아니구나" 로 떠나지 않게, 그리고 게재 승인
+ * 순간 페이지를 다시 만들지 않아도 되게. 내려야 하면 `APP_STORE_LIVE`(env `=0`) 로 끈다.
  */
 export function StoreBadges({ className }: { className?: string }) {
   const t = useTranslations("store");

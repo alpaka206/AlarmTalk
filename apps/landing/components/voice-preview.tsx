@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { ChevronLeft, ChevronRight, Play, Square } from "lucide-react";
 import { motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePrefersReducedMotion } from "./motion/use-prefers-reduced-motion";
 
 /**
- * 「미리 들어보기」 — 기본 목소리 넷의 인사말을 **한 버튼으로 차례로** 들려준다.
+ * 「미리 들어보기」 — 기본 목소리 넷의 인사말을 **골라서** 듣는 작은 플레이어.
  *
- * 고르는 UI 가 아니다(2026-09-05 지시: "선택해서 듣는 건 아니고"). 첫 화면에서 할 일은
- * "이 앱은 이런 소리가 난다" 를 3초 안에 넘기는 것이고, 넷 중 무엇을 고를지는 앱에서
- * 정한다. 누를 때마다 다음 목소리로 넘어가고, 다 돌면 처음으로 돌아온다.
+ * 위에 파형, 아래에 이전 · 재생 · 다음(2026-09-15 지시). 처음(2026-09-05)에는 버튼 하나로
+ * 차례로 넘기는 방식이었는데, "다시 누르면 다음 목소리" 는 지금 누가 말하는지·다음이
+ * 누구인지가 안 보였다. 화살표는 **누르는 즉시 그 목소리를 튼다** — 고르고 나서 다시
+ * 재생을 누르게 하지 않는다(인사말은 3초 남짓이라 듣는 게 곧 고르는 것이다).
  *
  * 클립은 앱이 목소리를 눌렀을 때 트는 인사말 **그 파일**이다(안드로이드
  * `res/raw/voice_greeting_<voice>_<lang>.mp3` 를 `public/audio/` 로 복사, 언어별 3벌).
@@ -23,9 +24,9 @@ import { usePrefersReducedMotion } from "./motion/use-prefers-reduced-motion";
  * 소리 없이 흔들리는 파형은 '살아 있는 척' 이라 두지 않는다.
  *
  * 움직임 규약(apple-design 스킬): 누르는 순간 반응(`whileTap`), 재생 중 다시 누르면
- * **즉시** 멈춘다(끝날 때까지 기다리게 하지 않는다), 스프링은 튕기지 않는다(bounce 0).
- * 축소 동작 설정에서는 눌림 축소만 빼고 파형은 그대로 둔다 — 파형은 사용자가 직접
- * 시작한 재생의 진행 표시라 장식 모션이 아니다.
+ * **즉시** 멈춘다(끝날 때까지 기다리게 하지 않는다), 다른 목소리로 넘기면 앞 것을 즉시
+ * 끊는다, 스프링은 튕기지 않는다(bounce 0). 축소 동작 설정에서는 눌림 축소만 빼고 파형은
+ * 그대로 둔다 — 파형은 사용자가 직접 시작한 재생의 진행 표시라 장식 모션이 아니다.
  */
 
 /** 기본 목소리 4명 — 앱이 보여 주는 순서 그대로(애니의 파일명은 앱과 같은 이력상 이름이 아니라 표시 이름을 따른다). */
@@ -43,11 +44,16 @@ type Status = "idle" | "loading" | "playing";
 const BAR_COUNT = 28;
 const MIN_LEVEL = 0.14;
 
-/** 쉬고 있을 때의 파형. 결정적 값이라 서버와 클라가 같은 그림을 그린다(하이드레이션 안전). */
+/**
+ * 쉬고 있을 때의 파형. 결정적 값이라 서버와 클라가 같은 그림을 그린다(하이드레이션 안전).
+ * 소수 셋째 자리에서 끊는다 — 서버 HTML 은 `scaleY(0.22361)` 로 짧게 직렬화되는데 클라는
+ * `0.22360999289684322` 를 그대로 문자열로 만들어 속성이 어긋났다(dev 콘솔 hydration 경고).
+ */
 const REST_LEVELS: readonly number[] = Array.from({ length: BAR_COUNT }, (_, i) => {
   const t = i / (BAR_COUNT - 1);
   const envelope = 1 - Math.abs(t - 0.5) * 1.1;
-  return MIN_LEVEL + 0.3 * Math.abs(Math.sin(t * Math.PI * 2.3 + 0.6)) * envelope;
+  const level = MIN_LEVEL + 0.3 * Math.abs(Math.sin(t * Math.PI * 2.3 + 0.6)) * envelope;
+  return Math.round(level * 1000) / 1000;
 });
 
 /** 시간 영역 샘플의 RMS(0..1). 목소리는 대개 0.05~0.3 사이라 3.2 배로 펴서 쓴다. */
@@ -67,10 +73,8 @@ export function VoicePreview({ className }: { className?: string }) {
   const reduced = usePrefersReducedMotion();
 
   const [status, setStatus] = useState<Status>("idle");
-  /** 다음에 들려줄 목소리. */
-  const [nextIndex, setNextIndex] = useState(0);
-  /** 지금 말하고 있거나 마지막으로 말한 목소리. */
-  const [spoken, setSpoken] = useState<VoiceId | null>(null);
+  /** 지금 골라져 있는 목소리. 재생·이전·다음이 전부 이 값을 기준으로 움직인다. */
+  const [index, setIndex] = useState(0);
   /** 재생 헤드가 지나간 막대 수(0..BAR_COUNT). 색칠에만 쓴다 — 높이는 ref 로 직접 만진다. */
   const [playedTo, setPlayedTo] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -176,6 +180,14 @@ export function VoicePreview({ className }: { className?: string }) {
     rafRef.current = requestAnimationFrame(tick);
   }, [setBarHeight]);
 
+  /** 파형을 쉬는 모양으로 되돌린다 — 목소리를 바꾸거나 새로 틀 때. */
+  const resetWave = useCallback(() => {
+    capturedRef.current = [...REST_LEVELS];
+    playedToRef.current = 0;
+    setPlayedTo(0);
+    paintRest();
+  }, [paintRest]);
+
   const stop = useCallback(() => {
     playGenRef.current += 1;
     const audio = audioRef.current;
@@ -187,35 +199,36 @@ export function VoicePreview({ className }: { className?: string }) {
     setStatus("idle");
   }, [stopLoop]);
 
-  const play = useCallback(async () => {
-    const generation = (playGenRef.current += 1);
-    reportingGenRef.current = generation;
-    const voice = PREVIEW_VOICES[nextIndex];
-    const audio = ensureAudio();
-    setFailed(false);
+  const play = useCallback(
+    async (voiceIndex: number) => {
+      const generation = (playGenRef.current += 1);
+      reportingGenRef.current = generation;
+      const voice = PREVIEW_VOICES[voiceIndex];
+      const audio = ensureAudio();
+      setFailed(false);
 
-    // 새 재생은 파형을 처음부터 다시 그린다.
-    capturedRef.current = [...REST_LEVELS];
-    playedToRef.current = 0;
-    setPlayedTo(0);
-    paintRest();
+      // 재생 중에 다른 목소리로 넘어온 경우: 앞 것의 그리기 루프를 먼저 끊는다(소리는
+      // 아래 `src` 교체가 끊는다). 새 재생은 파형을 처음부터 다시 그린다.
+      stopLoop();
+      resetWave();
 
-    setSpoken(voice);
-    setStatus("loading");
-    audio.src = previewClipSrc(voice, locale);
-    try {
-      // 사용자 제스처 안에서 깨워야 iOS 사파리가 소리를 낸다.
-      await ctxRef.current?.resume();
-      // 깨우는 사이에 멈췄으면 시작하지 않는다 — 멈췄는데 소리가 나면 안 된다.
-      if (playGenRef.current !== generation) return;
-      await audio.play();
-    } catch {
-      // 사용자가 멈춰서 거절된 것은 실패가 아니다.
-      if (playGenRef.current !== generation) return;
-      setStatus("idle");
-      setFailed(true);
-    }
-  }, [ensureAudio, locale, nextIndex, paintRest]);
+      setStatus("loading");
+      audio.src = previewClipSrc(voice, locale);
+      try {
+        // 사용자 제스처 안에서 깨워야 iOS 사파리가 소리를 낸다.
+        await ctxRef.current?.resume();
+        // 깨우는 사이에 멈췄으면 시작하지 않는다 — 멈췄는데 소리가 나면 안 된다.
+        if (playGenRef.current !== generation) return;
+        await audio.play();
+      } catch {
+        // 사용자가 멈춰서 거절된 것은 실패가 아니다.
+        if (playGenRef.current !== generation) return;
+        setStatus("idle");
+        setFailed(true);
+      }
+    },
+    [ensureAudio, locale, resetWave, stopLoop],
+  );
 
   // 재생 이벤트는 요소에 한 번만 건다(재생마다 걸면 핸들러가 쌓인다).
   useEffect(() => {
@@ -237,12 +250,11 @@ export function VoicePreview({ className }: { className?: string }) {
     };
     const onEnded = () => {
       stopLoop();
-      // 끝난 파형은 끝까지 색칠해 둔다.
+      // 끝난 파형은 끝까지 색칠해 둔다 — 고른 목소리는 그대로 남는다(다음은 화살표로).
       for (let i = 0; i < BAR_COUNT; i++) setBarHeight(i, capturedRef.current[i]);
       playedToRef.current = BAR_COUNT;
       setPlayedTo(BAR_COUNT);
       setStatus("idle");
-      setNextIndex((i) => (i + 1) % PREVIEW_VOICES.length);
     };
     const onError = () => {
       // 사용자가 멈춘 뒤 뒤늦게 온 실패는 말하지 않는다(위 `reportingGenRef`).
@@ -265,51 +277,31 @@ export function VoicePreview({ className }: { className?: string }) {
   const busy = status !== "idle";
   const onPress = () => {
     if (busy) stop();
-    else void play();
+    else void play(index);
+  };
+  /** 이전/다음 — 고르는 즉시 튼다. 재생 중이면 앞 것을 끊고 바로 넘어간다. */
+  const step = (delta: 1 | -1) => {
+    const next = (index + delta + PREVIEW_VOICES.length) % PREVIEW_VOICES.length;
+    setIndex(next);
+    void play(next);
   };
 
-  const name = spoken ? t(`voices.${spoken}`) : null;
-  const primaryLine = name ?? t("idleTitle");
-  const secondaryLine = failed
-    ? t("failed")
-    : status === "playing"
-      ? t("speaking")
-      : status === "loading"
-        ? t("loading")
-        : name
-          ? t("tapForNext")
-          : t("idleCaption");
+  const voice = PREVIEW_VOICES[index];
+  const name = t(`voices.${voice}`);
+
+  const tap = reduced ? undefined : { scale: 0.94 };
+  const spring = { type: "spring" as const, duration: 0.3, bounce: 0 };
+  const sideButton =
+    "grid h-11 w-11 shrink-0 place-items-center rounded-full bg-raised text-text-body transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-line hover:text-text";
 
   return (
-    <div className={`flex w-full max-w-[460px] flex-col items-center ${className ?? ""}`}>
-      {/* 폭 예산(375px 기준 335): 버튼 56 + 막대(줄어듦) + 글자 칸(최대 120) + 여백. 막대는
-          `flex-1 max-w-[3px] min-w-px` 라 좁으면 가늘어지지, 알약이 페이지를 넘지 않는다. */}
-      <div className="flex w-full items-center gap-3 rounded-[var(--radius-pill)] border border-line bg-surface py-2 pl-2 pr-4 shadow-[var(--shadow-card)] sm:gap-4 sm:pr-5">
-        <motion.button
-          type="button"
-          onClick={onPress}
-          aria-label={busy ? t("stopAria", { name: name ?? "" }) : t("playAria")}
-          whileTap={reduced ? undefined : { scale: 0.94 }}
-          transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-          className="relative grid h-14 w-14 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-accent-strong"
-        >
-          {busy ? (
-            <Square className="h-5 w-5 fill-current" aria-hidden="true" />
-          ) : (
-            <Play className="ml-0.5 h-6 w-6 fill-current" aria-hidden="true" />
-          )}
-          {status === "loading" ? (
-            <span
-              aria-hidden="true"
-              className="absolute inset-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
-            />
-          ) : null}
-        </motion.button>
-
-        {/* 파형 — 높이는 rAF 가 ref 로 직접 만지고, 색만 React 가 정한다. */}
+    <div className={`flex w-full max-w-[420px] flex-col items-center ${className ?? ""}`}>
+      <div className="flex w-full flex-col items-center rounded-[var(--radius-xl)] border border-line bg-surface px-5 pb-5 pt-5 shadow-[var(--shadow-card)] sm:px-7">
+        {/* 파형 — 높이는 rAF 가 ref 로 직접 만지고, 색만 React 가 정한다. 막대는
+            `flex-1 max-w-[3px] min-w-px` 라 좁으면 가늘어지지, 카드가 페이지를 넘지 않는다. */}
         <div
           aria-hidden="true"
-          className="flex h-10 min-w-0 flex-1 items-center justify-between gap-[2px] sm:gap-[3px]"
+          className="flex h-12 w-full items-center justify-between gap-[2px] sm:gap-[3px]"
         >
           {REST_LEVELS.map((level, i) => (
             <span
@@ -325,14 +317,63 @@ export function VoicePreview({ className }: { className?: string }) {
           ))}
         </div>
 
-        <div className="min-w-[5.5rem] max-w-[7.5rem] text-left sm:max-w-none" aria-live="polite">
-          <p className="truncate text-[14px] font-semibold leading-tight text-text sm:text-[15px]">
-            {primaryLine}
-          </p>
-          <p className={`mt-0.5 truncate text-[12px] leading-tight ${failed ? "text-rose" : "text-text-muted"}`}>
-            {secondaryLine}
-          </p>
+        {/* 이전 · 재생 · 다음. 가운데가 주인공이라 크고 색이 있고, 양옆은 조용히. */}
+        <div className="mt-4 flex items-center gap-3 sm:gap-5">
+          <motion.button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label={t("prevAria")}
+            whileTap={tap}
+            transition={spring}
+            className={sideButton}
+          >
+            <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={onPress}
+            aria-label={busy ? t("stopAria", { name }) : t("playAria", { name })}
+            whileTap={tap}
+            transition={spring}
+            className="relative grid h-14 w-14 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-accent-strong"
+          >
+            {busy ? (
+              <Square className="h-5 w-5 fill-current" aria-hidden="true" />
+            ) : (
+              <Play className="ml-0.5 h-6 w-6 fill-current" aria-hidden="true" />
+            )}
+            {status === "loading" ? (
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 animate-spin rounded-full border-2 border-white/30 border-t-white"
+              />
+            ) : null}
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={() => step(1)}
+            aria-label={t("nextAria")}
+            whileTap={tap}
+            transition={spring}
+            className={sideButton}
+          >
+            <ChevronRight className="h-6 w-6" aria-hidden="true" />
+          </motion.button>
         </div>
+
+        {/* 누구인지. 이름은 항상 보인다 — 화살표가 무엇을 고르는지 알아야 한다. 상태 문구는
+            두지 않는다(2026-09-15 지시) — 재생 중/멈춤은 가운데 버튼 모양이 말한다. */}
+        <p className="mt-3 text-center text-[15px] font-semibold leading-tight text-text" aria-live="polite">
+          {name}
+        </p>
+        {/* 실패만 말한다 — 눌렀는데 아무 일도 없는 것처럼 보이면 안 된다. */}
+        {failed ? (
+          <p role="alert" className="mt-1.5 text-center text-[12px] leading-tight text-rose">
+            {t("failed")}
+          </p>
+        ) : null}
       </div>
     </div>
   );

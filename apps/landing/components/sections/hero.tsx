@@ -13,12 +13,12 @@ import { CyclingWord } from "../motion/cycling-word";
  */
 export function Hero() {
   const t = useTranslations("hero");
-  // 돌아가는 자리는 '누구' 뿐이다 — 엄마 → 최애 → 딸 → 그 사람. 기능을 돌리지 않는다.
+  // 돌아가는 자리는 '누구' 뿐이다 — 엄마 → 아빠 → 최애 → 손녀 → 남자친구 → 여자친구 → 아이돌. 기능을 돌리지 않는다.
   const who = t.raw("who") as string[];
 
   return (
     <section className="relative">
-      <div className="mx-auto flex max-w-6xl flex-col items-center px-5 pb-24 pt-20 text-center md:px-8 lg:pb-32 lg:pt-28">
+      <div className="mx-auto flex max-w-site flex-col items-center px-5 pb-24 pt-20 text-center md:px-8 lg:pb-32 lg:pt-28">
         <RevealGroup
           className="flex flex-col items-center"
           stagger={0.07}

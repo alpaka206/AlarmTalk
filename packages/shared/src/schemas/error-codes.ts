@@ -278,6 +278,12 @@ export const ERROR_CODES = [
   'SELF_ISSUED',
   // 코드 등록 (code.ts)
   'CODE_TOO_LONG',
+  // 랜딩 이벤트 (event.ts) — 앱이 아니라 랜딩 페이지가 받는다(문구는 apps/landing 의 messages).
+  'INVALID_BODY',
+  'INVALID_ID',
+  'PERSO_FAILED',
+  'PERSO_NOT_CONFIGURED',
+  'VOICE_NOT_AVAILABLE',
   // 공통·미들웨어 (index.ts, middleware/)
   // ⚠ 라우트 도메인에 속하지 않는 것들. 앱은 이 코드로 "다시 시도" 를 안내한다.
   'DB_INIT_FAILED',
@@ -313,6 +319,7 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   // 외부 제공자(음성 합성·클론)가 실패한 것. 우리가 고칠 수 있는 유일한 갈래다.
   'VOICE_CLONING_FAILED',
   'TTS_GENERATION_FAILED',
+  'PERSO_FAILED',
   // 스키마 마이그레이션 창에 걸린 요청 — 배포 직후 잠깐이어야 하고, 계속 나오면 사고다.
   'ALARM_SCHEMA_UPGRADING',
   // ⚠ **이 400 은 그 기기의 사용 기록 큐를 영구히 막는다.** 두 앱 모두 2xx 가 아닌 배치를

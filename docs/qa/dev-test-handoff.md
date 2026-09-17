@@ -324,7 +324,8 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 ### 바뀐 것
 - **홈**: 헤드라인 `알람이 아니라, {누구} 목소리가 깨워요` — 돌아가는 자리는 '누구' 뿐이다
   (`components/motion/cycling-word.tsx`). 서브 아래에 **미리 들어보기**(`voice-preview.tsx`):
-  버튼 하나로 시우 → 미나 → 도현 → 애니 인사말을 차례로 듣는다. 고르는 UI 는 두지 않는다.
+  위에 파형, 아래에 이전 · 재생 · 다음(2026-09-15 지시 — 처음엔 버튼 하나로 차례로 넘겼다).
+  화살표는 누르는 즉시 그 목소리(시우·미나·도현·애니)를 튼다.
   파형은 장식이 아니라 재생 중 실제 음량이다(AnalyserNode). 숫자 타일 자리는 '누구 목소리'
   챕터(`sections/whose-voice.tsx`)로, 문구 예시 카드는 앱 대본(`voice-preview/*/문구.txt`)을
   줄인 문장으로 바꿨다 — **없는 문장을 광고하지 않는다.** ko/en/ja 세 벌 모두.
@@ -334,10 +335,10 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
   대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
   (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
-- **응원 메시지 `/cheer/`**: 이름 입력 + 카드별 재생. 재생 경로는 `cheer-playback.ts` 의
-  `resolveCheerPlayback` **한 곳** — 지금은 브라우저 음성 합성(`speechSynthesis`)이고, 전용
-  생성 경로가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다. 목소리 목록·톤은 `cheer-voices.ts`,
-  이름·역할·문장은 `messages/*.json` 의 `cheer.voices`. 이름 정리는 앱 `sanitizeDisplayName`
+- **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 위로 한마디) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
+  `generateVoiceMessage` **한 곳** — 지금은 브라우저 음성 합성으로 흐름만 흉내 내고(만드는 시간 1.1초 지연), Perso 로 인물 목소리를
+  만드는 서버가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다(그때 다운로드 버튼이 산다). 좋아요는 localStorage, 숫자는 서버가 줄 때만. 인물 목록·톤·사진 경로는 `event-catalog.ts`(사진은 `public/event/<id>.jpg`, 없으면 이니셜 원),
+  이름·문장은 `messages/*.json` 의 `event.celebrities` / `event.studio.kinds`. 이름 정리는 앱 `sanitizeDisplayName`
   과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
 - **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
   바닥 색을 앱 다크 스킴(`AlarmTalkTheme.kt`)에서 가져온다(`globals.css`). 브랜드 마크는
@@ -345,9 +346,9 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
   를 덧대지 말 것.
 
 ### 확인한 것 (정적 export 를 헤드리스 크로미움으로)
-- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/cheer/` 등 404 는 Vercel rewrite 가 맡는 접두사
+- ko/en/ja 홈·응원 페이지 콘솔 오류 0(ko 의 `/event/` 등 404 는 Vercel rewrite 가 맡는 접두사
   없는 경로 프리페치 — 로컬 서빙에서만 난다).
-- 미리듣기: 누르면 '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다시 누르면 다음 목소리'.
+- 미리듣기: 재생 → '시우 · 말하고 있어요' → 끝나면 파형 28칸 채워지고 '다른 목소리도 들어 보세요'. 다음 → 미나가 바로 나온다(2026-09-15 개편 뒤 상태 전이는 브라우저에서 확인, 실제 소리는 실기기 확인 필요).
 - 응원: '규원' 입력 → 카드 문장이 '규원님, …' 으로 바뀌고, 재생 시 `speechSynthesis.speaking`.
 
 ### 2차 — 스킬 검수 (같은 날)
@@ -378,7 +379,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
   `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).
 - 응원 페이지의 브라우저 목소리 품질은 기기마다 다르다 — 전용 생성 경로가 붙기 전까지의
   임시 소리다. 카드 이름·문장은 자리 표시용이라 실제 목록이 오면 JSON 만 바꾼다.
-- App Store 게재 당일: Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=1` 추가 후 재배포.
+- App Store 배지는 2026-09-15 부터 **기본 링크 활성**(심사 제출과 함께). 게재 전에 내려야 하면 Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=0` 추가 후 재배포.
 - `apps/landing/skills-lock.json` 은 apple-design 스킬 설치가 남긴 파일이라 커밋하지 않았다
   (스킬 본체는 `.claude/` 로 무시된다).
 

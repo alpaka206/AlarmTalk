@@ -3,27 +3,94 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "www.alarm-talk.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.alarm-talk.com"
+        }
+      ],
       "destination": "https://alarm-talk.com/:path*",
       "permanent": true
     },
     {
-      "source": "/ko/:page(privacy|terms|account-deletion|company|contact|cheer)",
+      "source": "/ko/:page(privacy|terms|account-deletion|contact|event|pricing|faq)",
       "destination": "/:page/",
       "permanent": true
     },
     {
-      "source": "/ko/:page(privacy|terms|account-deletion|company|contact|cheer)/",
+      "source": "/ko/:page(privacy|terms|account-deletion|contact|event|pricing|faq)/",
       "destination": "/:page/",
       "permanent": true
     },
-    { "source": "/ko", "destination": "/", "permanent": true },
-    { "source": "/ko/", "destination": "/", "permanent": true }
-  ],
-  "rewrites": [
     {
-      "source": "/:page(privacy|terms|account-deletion|company|contact|cheer)/",
-      "destination": "/ko/:page/"
+      "source": "/ko",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/ko/",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/cheer",
+      "destination": "/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/cheer/",
+      "destination": "/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/ko/cheer",
+      "destination": "/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/ko/cheer/",
+      "destination": "/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/:locale(en|ja)/cheer",
+      "destination": "/:locale/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/:locale(en|ja)/cheer/",
+      "destination": "/:locale/event/1/",
+      "permanent": true
+    },
+    {
+      "source": "/company",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/company/",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/ko/company",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/ko/company/",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/:locale(en|ja)/company",
+      "destination": "/:locale/",
+      "permanent": true
+    },
+    {
+      "source": "/:locale(en|ja)/company/",
+      "destination": "/:locale/",
+      "permanent": true
     }
   ]
 }

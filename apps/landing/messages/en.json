@@ -1,20 +1,18 @@
 {
   "meta": {
     "title": "AlarmTalk · Not an alarm. A voice.",
-    "description": "A voice you recorded, one a family member shared, or one of four built in. Tomorrow morning it reads you the weather. Voices stay inside your couple or family group."
+    "description": "A voice you registered, one family or friends registered, or one of the built-in voices. Tomorrow morning it reads you the weather. Voices stay inside your couple or family group."
   },
   "nav": {
     "features": "Features",
     "pricing": "Pricing",
     "faq": "FAQ",
-    "company": "Company",
-    "contact": "Contact",
-    "cheer": "Cheer messages",
+    "event": "Event",
     "skipToContent": "Skip to content"
   },
   "hero": {
     "headline": "Not an alarm.\n<who></who> voice wakes you.",
-    "description": "A voice you recorded, one a family member shared, or one of four built in.\nYou decide what it says.",
+    "description": "Set your own alarm to a voice you love,\nand set one for family and friends, too.",
     "phone": {
       "countdown": "Rings in 9 hours 21 minutes.",
       "meridiem": "AM",
@@ -27,59 +25,39 @@
     },
     "who": [
       "Mom’s",
+      "Dad’s",
       "Your favorite",
-      "Your daughter’s",
-      "Their"
+      "Your granddaughter’s",
+      "Your boyfriend’s",
+      "Your girlfriend’s",
+      "Your idol’s"
     ]
   },
   "voice": {
     "headline": "Register once,\nmake any number of alarms.",
-    "description": "Record, or upload an audio file, and the voice is ready.\nFrom then on you only choose the words, and make as many alarms in that voice as you like.",
+    "description": "Record, or upload an audio file, and the voice is ready.\nFrom then on, you only choose what it says.",
     "bullet1": "Record or upload, whichever is easier",
     "bullet2": "Use the voice in any alarm",
-    "bullet3": "Adding your own voice starts with a plan, one a month"
+    "bullet3": "Add your own voice once a month"
   },
   "shared": {
     "headline": "Far away,\nstill there in the morning.",
     "description": "Do you call a parent every day to check they took their medicine?\nOn a couple or family plan you share voices and can set their alarm for them.",
     "bullet1": "Couple: 2 people · Family: 5 including you",
-    "bullet2": "Use a shared voice in any of your alarms",
-    "bullet3": "Set their alarm. Once it arrives, it’s theirs"
+    "bullet2": "Use a shared voice in any of your alarms"
   },
   "language": {
-    "headline": "Tired of writing lines?\nLet it pick one each day.",
-    "description": "Choose a topic instead of writing, and you get a different greeting every morning.\nToday’s weather, a reminder to take your medicine, or your horoscope.",
-    "bullet1": "Weather · horoscope · medicine · encouragement, all free",
-    "bullet2": "Writing your own lines starts with a plan",
+    "headline": "Pick a line,\nor write your own.",
+    "description": "If writing one every day is a chore, just pick a line.\nIf there’s something you want to hear, type it in yourself.",
+    "bullet1": "Weather · horoscope · medicine · encouragement lines, all free",
+    "bullet2": "Typing your own lines starts with a plan",
     "bullet3": "Korean, English and Japanese"
   },
-  "scenarios": {
-    "headline": "What does the voice\nsay in the morning?",
-    "description": "Pick a topic and it chooses a line that fits the day.\nAll four are free.",
-    "items": [
-      {
-        "tag": "Weather",
-        "title": "“It might rain today. Don’t forget your umbrella when you head out.”",
-        "body": "Clear, rain, snow, fine dust, heat or cold: the greeting matches the day."
-      },
-      {
-        "tag": "Medicine",
-        "title": "“Time for your medicine. Take it now, before you turn off the alarm.”",
-        "body": "Set it on a parent’s alarm and it reminds them every day. Nothing to write."
-      },
-      {
-        "tag": "Horoscope",
-        "title": "“Luck is on your side today. If there’s something you’ve been putting off, give it a light try.”",
-        "body": "Enter a birth date once and hear the day’s reading every morning."
-      },
-      {
-        "tag": "Encouragement",
-        "title": "“You don’t have to do everything perfectly from the start. Begin with what you can do now, one thing at a time.”",
-        "body": "For the hard weeks. A different line every day."
-      }
-    ]
-  },
   "faq": {
+    "meta": {
+      "title": "FAQ",
+      "description": "Common questions about using AlarmTalk: voices, plans, sharing and your account."
+    },
     "headline": "Frequently asked",
     "items": [
       {
@@ -127,21 +105,19 @@
   "footer": {
     "tagline": "Not an alarm. A voice. Record once, and any line you write is read in that voice.",
     "product": "Product",
-    "company": "Company",
     "legal": "Legal",
     "linkVoices": "Features",
     "linkHow": "How it works",
     "linkFaq": "FAQ",
-    "linkAbout": "Company",
     "linkGithub": "GitHub",
-    "linkContact": "Contact",
     "linkPrivacy": "Privacy",
     "linkTerms": "Terms",
     "linkAccountDeletion": "Account deletion",
     "rights": "All rights reserved.",
-    "made": "Made in Korea",
     "linkPricing": "Pricing",
-    "linkCheer": "Cheer messages"
+    "linkEvent": "Event",
+    "businessLabel": "Business information",
+    "business": "Vailen · CEO Gyuwon Kim · Business registration no. 819-32-01933 · 103-4301, 45 Seogot-ro, Seo-gu, Incheon, Republic of Korea · support@alarm-talk.com"
   },
   "language_switcher": {
     "label": "Language",
@@ -215,135 +191,79 @@
       "body": "We usually reply within 1-3 business days. Longer answers can take a little more. If you don’t hear back, please check your spam folder too."
     }
   },
-  "company": {
-    "meta": {
-      "title": "Company",
-      "description": "At AlarmTalk an alarm is a relationship, not a sound. Our mission, our principles, and what we’re building."
-    },
-    "hero": {
-      "eyebrow": "Our mission",
-      "headline1": "Instead of a louder alarm,",
-      "headline2": "one you want to hear.",
-      "description": "At AlarmTalk an alarm is a relationship, not a sound. Opening the first second of every morning with a line in a voice you love. That’s the one thing we do."
-    },
-    "principles": {
-      "headline": "Five principles we work by",
-      "description": "We’re still going from zero to one. That’s when clear principles matter most.",
-      "items": [
-        {
-          "title": "Build something people want every day",
-          "body": "Not a one-time trick. The first thing people meet every morning."
-        },
-        {
-          "title": "Weigh trust heaviest",
-          "body": "A voice is sensitive data. It never leaves the group, and it can never be exported as a file. We don’t compromise on either."
-        },
-        {
-          "title": "Emotion over force",
-          "body": "Not a louder alarm. One you actually want to hear. We wake the mind, not just the body."
-        },
-        {
-          "title": "Ask for a 10× answer",
-          "body": "We don’t chase 10% gains. We look for an answer that is 10× different: what comes after loud alarms and mission alarms."
-        },
-        {
-          "title": "Build globally from day one",
-          "body": "Not a Korea-only product. We’ve had users in other languages and cultures in mind from the start."
-        }
-      ]
-    },
-    "products": {
-      "headline": "What we’re building",
-      "description": "One product. Every decision the company makes is for this app.",
-      "alarmtalk": {
-        "tag": "AlarmTalk",
-        "title": "A voice alarm app",
-        "body": "Register a voice you love and build alarms that read your lines back in it. Family, partners and friends exchange voices only inside their group.",
-        "cta": "Back to home"
-      }
-    },
-    "future": {
-      "headline": "Coming soon to this page",
-      "description": "Press coverage and the team’s story will go here once we launch.",
-      "items": [
-        {
-          "tag": "Press",
-          "title": "Press",
-          "body": "First coverage will live here once we launch."
-        },
-        {
-          "tag": "Team",
-          "title": "Team & culture",
-          "body": "Stories about the people building this, published at launch."
-        },
-        {
-          "tag": "Careers",
-          "title": "Careers",
-          "body": "Hiring runs through direct contact for now. Formal postings will follow launch."
-        }
-      ]
-    },
-    "cta": {
-      "headline": "Want to build this with us?",
-      "body": "Get notified when the app launches, or write to us.",
-      "secondary": "Contact us"
-    }
-  },
   "declare": {
-    "headline": "Not a louder alarm.\nOne you want to keep hearing.",
-    "body": "No math problems, no photo missions.\nWe’d rather you opened your eyes because you wanted to hear it."
+    "headline": "Not an alarm that annoys you.\nOne that wakes you up feeling good.",
+    "body": "No math problems, no photo missions.\nInstead of dragging yourself up, make a morning you can’t wait to hear."
   },
   "pricing": {
-    "tag": "Pricing",
+    "meta": {
+      "title": "Pricing",
+      "description": "Start free, and add a plan when you want your own voice or sharing. Compare Free, Personal, Couple and Family at a glance."
+    },
     "headline": "Try it free first.",
-    "description": "Alarms, the four built-in voices and every topic are free.\nYou need a plan when you write your own lines or add your own voice.",
+    "lead": "Start free, add a plan when you need one.",
     "plans": {
       "free": {
         "name": "Free",
-        "price": "Free",
-        "includes": "Unlimited alarms, 4 built-in voices, and weather, horoscope, medicine and encouragement lines"
+        "price": "Free"
       },
       "personal": {
         "name": "Personal",
-        "price": "$3.90/mo",
-        "includes": "Add your own voice (one a month) and write your own lines"
+        "price": "$3.90/mo"
       },
       "couple": {
         "name": "Couple",
-        "price": "$6.90/mo · 2 people",
-        "includes": "Everything in Personal, plus sharing voices with each other and setting their alarm"
+        "price": "$6.90/mo"
       },
       "family": {
         "name": "Family",
-        "price": "$14.90/mo · 5 including you",
-        "includes": "Everything in Couple, for five people sharing voices"
+        "price": "$14.90/mo"
       }
     },
-    "note": "Monthly plans only. The exact amount in your currency is shown in the store you downloaded from, where billing and cancellation happen. Cancelling leaves the time you already paid for intact."
+    "groups": {
+      "basics": "Basics",
+      "voice": "Voice",
+      "together": "Together"
+    },
+    "rows": {
+      "alarms": "Alarms",
+      "builtin": "Built-in voices",
+      "presets": "Weather · horoscope · medicine · encouragement lines",
+      "languages": "Korean · English · Japanese",
+      "customText": "Type your own lines",
+      "myVoice": "Add your own voice",
+      "sharing": "Voice sharing",
+      "setOthers": "Set someone else’s alarm"
+    },
+    "values": {
+      "unlimited": "Unlimited",
+      "monthly": "Once a month",
+      "people2": "2 people including you",
+      "people5": "5 people including you"
+    },
+    "a11y": {
+      "planColumn": "Plan",
+      "included": "Included",
+      "notIncluded": "Not included",
+      "caption": "What each plan includes"
+    },
+    "cta": {
+      "headline": "Start right in the app",
+      "body": "Plans are bought inside the app.\nTry it free first and decide later."
+    }
   },
   "finalCta": {
     "headline": "Whose voice should\nwake you tomorrow?",
     "body": "Install it and set one alarm.\nThe built-in voices are there the moment you open it."
   },
   "productScroll": {
-    "before": "Keep the alarm.\nChange the voice.",
-    "after": "6:00 tomorrow,\nMom’s voice wakes you."
-  },
-  "crop": {
-    "alarm-row": "Alarm list showing time left until the next alarm",
-    "record": "Create a voice: record or upload a file",
-    "pick-message": "Choosing what it says: greeting, weather, fortune, encouragement, medication, or your own",
-    "voice-groups": "Voice list: your voice and voices shared with you",
-    "who-to-wake": "Choosing who to wake"
+    "headline": "Set it like always.\nWake up feeling better."
   },
   "voicePreview": {
-    "idleTitle": "Hear a voice",
-    "idleCaption": "Give it a listen",
-    "loading": "One moment…",
-    "speaking": "Speaking",
-    "tapForNext": "Tap again for the next one",
     "failed": "Can’t play right now. Tap to try again",
-    "playAria": "Play a built-in voice",
+    "playAria": "Play {name}",
+    "prevAria": "Previous voice",
+    "nextAria": "Next voice",
     "stopAria": "Stop {name}",
     "voices": {
       "siwoo": "Siwoo",
@@ -353,103 +273,161 @@
     }
   },
   "whoseVoice": {
-    "headline": "Whose voice\nwill wake you?",
+    "headline": "Which voices\ncan wake you?",
     "items": [
       {
-        "title": "A voice you recorded",
-        "body": "Read a few lines into your phone once.\nAfter that, you only choose what it says."
+        "title": "A voice you registered",
+        "body": "Register it once,\nthen set any alarm to that voice."
       },
       {
-        "title": "A voice someone shared",
-        "body": "People on the same plan share voices.\nFar away, still there in the morning."
+        "title": "A voice family or friends registered",
+        "body": "People on the same plan\ncan use each other’s voices."
       },
       {
-        "title": "Four built-in voices",
-        "body": "Siwoo, Mina, Dohyun and Aeni.\nNo setup, free, in an alarm today."
+        "title": "Built-in voices",
+        "body": "The voices included from the start.\nNo setup, and free."
       }
     ]
   },
-  "cheer": {
-    "meta": {
-      "title": "Cheer messages in celebrity voices",
-      "description": "Type a name and hear a few words of encouragement in celebrity-style voices. These are AI voices, not the real people."
+  "appMini": {
+    "record": {
+      "modeRecord": "Record",
+      "modeFile": "File",
+      "status": "Record",
+      "hint": "Too short and the voice may not match.",
+      "videoTip": "No file of the voice you want? Play a video and record that.",
+      "scriptTitle": "Example script",
+      "alt": "The app’s Create a voice screen at the Record step: Record is selected over File, a record card shows 0:00 / 2:00 and a microphone button, with two hints and a collapsed example script below"
     },
-    "hero": {
-      "eyebrow": "Cheer messages",
-      "headline": "Hear a cheer\nin a celebrity’s voice!",
-      "description": "Type a name, press play, and the voice calls that name and cheers you on.\nFor the days that feel a little heavy.",
-      "disclaimer": "AI voices, not the real people"
+    "pick-message": {
+      "options": {
+        "preset": "Default greeting",
+        "weather": "Weather",
+        "fortune": "Fortune",
+        "cheer": "Encouragement",
+        "medication": "Meds",
+        "manual": "Type it yourself"
+      },
+      "manualTitle": "Your message",
+      "manualText": "Time to get up, sweetheart. Good luck on your test today",
+      "change": "Change",
+      "alt": "The app’s Message screen: Default greeting, Weather, Fortune, Encouragement, Meds and Type it yourself, with Type it yourself selected and the typed message shown in a card below"
     },
-    "studio": {
-      "nameLabel": "Who needs cheering up?",
-      "namePlaceholder": "e.g. Jamie…",
-      "namePlaceholderInline": "you",
-      "nameHint": "Up to {max} characters. A friend’s name works too.",
-      "playAria": "Play in the {voice} voice",
-      "stopAria": "Stop the {voice} voice",
-      "playing": "Speaking",
-      "unsupported": "This browser can’t play voices. Try another browser.",
-      "disclaimer": "The voices here are AI voices made to resemble a style, not recordings of real people. They don’t imply anyone’s participation or endorsement."
-    },
-    "voices": {
-      "actor": {
-        "name": "Calm and low",
-        "role": "Actor",
-        "style": "Low, clear voice",
-        "line": "<b>{name}</b>, you’re doing fine. It’s okay to take it slow."
-      },
-      "idol": {
-        "name": "Sunny high tone",
-        "role": "Idol",
-        "style": "Bright and lively",
-        "line": "<b>{name}</b>! You’ve got this today. You know I’m always cheering for you, right?"
-      },
-      "host": {
-        "name": "The familiar one",
-        "role": "TV host",
-        "style": "Warm and easy",
-        "line": "<b>{name}</b>, shall we start the day on a good note? It’s going to go well."
-      },
-      "announcer": {
-        "name": "Clear and steady",
-        "role": "Announcer",
-        "style": "Neat and trustworthy",
-        "line": "<b>{name}</b>, I hope today brings you only good news."
-      },
-      "singer": {
-        "name": "Soft ballad",
-        "role": "Singer",
-        "style": "Soft and warm",
-        "line": "<b>{name}</b>, rest for a moment if it’s hard. You’re already doing enough."
-      },
-      "athlete": {
-        "name": "Loud and rallying",
-        "role": "Athlete",
-        "style": "Strong and steady",
-        "line": "<b>{name}</b>, let’s go all the way. One more today."
+    "share": {
+      "myVoices": "My voices",
+      "quota": "1/1 creations available",
+      "add": "Add",
+      "ownName": "Mom",
+      "sharing": "Sharing",
+      "sharedVoices": "Shared with me",
+      "sharedName": "Dad",
+      "sharedFrom": "Voice shared by Dad",
+      "sheetTitle": "Who is this alarm for?",
+      "selfTitle": "Set my alarm",
+      "targetName": "Dad",
+      "quietHours": "Hours they don’t receive alarms: <schedule>Weekdays 09:00-18:30</schedule>",
+      "alt": {
+        "voices": "The app’s Voices tab. Under My voices, Mom’s voice marked Sharing and an Add button; under Shared with me, a voice shared by Dad",
+        "target": "The sheet asking who this alarm is for: Set my alarm, and Dad with the hours he doesn’t receive alarms, weekdays 09:00-18:30"
       }
     },
-    "steps": {
-      "headline": "How it works",
-      "items": [
+    "voices": {
+      "myVoices": "My voices",
+      "sharedVoices": "Shared with me",
+      "systemVoices": "Built-in voices",
+      "add": "Add",
+      "ownName": "Mom",
+      "shared": [
         {
-          "title": "Type a name",
-          "body": "Anyone who needs cheering up. Yours, or a friend’s."
+          "name": "Dad",
+          "from": "Voice shared by Dad"
         },
         {
-          "title": "Pick a voice",
-          "body": "Each card speaks differently. Press the one you like."
-        },
-        {
-          "title": "Listen",
-          "body": "Press play and the voice calls the name and cheers. As many times as you like."
+          "name": "Grandma",
+          "from": "Voice shared by Grandma"
         }
-      ]
+      ],
+      "alt": {
+        "own": "The app’s Voices tab, My voices group: one voice you registered and an Add button",
+        "shared": "The app’s Voices tab, Shared with me group: two voices shared by Dad and Grandma",
+        "system": "The app’s Voices tab, Built-in voices group: Siwoo, Mina, Dohyun and Aeni"
+      }
+    }
+  },
+  "eventList": {
+    "meta": {
+      "title": "Events",
+      "description": "Events from AlarmTalk, numbered in order. See what you can take part in right now."
+    },
+    "headline": "Events",
+    "numberAria": "Event {n}.",
+    "open": "Take part",
+    "backToList": "All events",
+    "items": {
+      "cheer": {
+        "title": "A voice message with your name, in a voice you like"
+      }
+    }
+  },
+  "event": {
+    "meta": {
+      "title": "A voice message with your name, in a voice you like",
+      "description": "Type a name and hear an AI voice say it in a birthday wish and a word of comfort — in Korean, English and Japanese. AI voices, not real people."
+    },
+    "hero": {
+      "headline": "Hear a voice message that says your name,\nin a voice you like!"
+    },
+    "studio": {
+      "voiceLabel": "Which voice?",
+      "nameLabel": "Enter a name.",
+      "namePlaceholder": "e.g. Jamie…",
+      "kinds": {
+        "birthday": {
+          "name": "Happy birthday"
+        },
+        "comfort": {
+          "name": "A word of comfort"
+        }
+      },
+      "generate": "Generate",
+      "play": "Play",
+      "stop": "Stop",
+      "generating": "Generating",
+      "playAria": "Play {kind} in {celebrity}’s voice",
+      "stopAria": "Stop {kind}",
+      "download": "Download",
+      "failed": "Can’t make it right now. Try again in a moment.",
+      "disclaimer": "An AI-generated voice, not a real person’s.",
+      "sampleName": "Jamie",
+      "prevVoice": "Previous",
+      "nextVoice": "Next",
+      "likeAria": "Like {celebrity}",
+      "likesCount": "{n} likes",
+      "resultsHeading": "Messages in {celebrity}’s voice",
+      "retry": "Try again",
+      "languageLabel": "Language",
+      "errors": {
+        "VOICE_NOT_AVAILABLE": "Not ready in this language yet.",
+        "RATE_LIMITED": "Too many in a row. Try again in a moment."
+      },
+      "fileName": "AlarmTalk {celebrity} {kind} {language} {name}",
+      "sampleLine": "Hey, <b>{name}</b>. Happy birthday! Thank you so much for always supporting me.",
+      "downloadAria": "Download {kind}",
+      "ready": "Ready.",
+      "preview": "Preview",
+      "previewAria": "Preview {celebrity}",
+      "previewStopAria": "Stop preview"
+    },
+    "downloadModal": {
+      "title": "Want to hear more voices like this?",
+      "body": "With AlarmTalk, a voice you love can wake you every morning.\nStart your day with a voice that says your name.",
+      "secondary": "Just download",
+      "close": "Close"
     },
     "cta": {
-      "headline": "Want a voice like this every morning?",
-      "body": "In AlarmTalk you make alarms in a voice you love.\nOne you recorded, or one your family shared.",
-      "secondary": "More about AlarmTalk"
+      "headline": "Want to wake up to a voice like this?",
+      "body": "AlarmTalk turns a voice you love into your alarm.\nYour own recording, or a family member’s.",
+      "secondary": "Learn more about AlarmTalk"
     }
   }
 }
