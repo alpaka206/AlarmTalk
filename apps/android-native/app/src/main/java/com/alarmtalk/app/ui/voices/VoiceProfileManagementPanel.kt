@@ -1483,10 +1483,33 @@ internal fun VoiceProfileManagementPanel(
         // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저 온다.
         // 내 목소리·공유받은 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
+            // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.defaultVoicesReadyOrExplain`) 그 이유가
+            // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
+            val downloadProgress = voicePrefetchProgress
+                ?.takeIf { (done, total) -> total > 0 && done < total }
             VoiceCatalogSectionHeader(
                 title = stringResource(R.string.voices_system_voices_title),
                 expanded = systemSectionExpanded,
                 onToggle = { systemSectionExpanded = !systemSectionExpanded },
+                trailing = downloadProgress?.let { (done, total) ->
+                    {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.voices_default_download_progress,
+                                (done.coerceIn(0, total) * 100 / total).coerceAtMost(99),
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
             )
             if (systemSectionExpanded) {
                 VoiceCatalogGroup(
@@ -1504,22 +1527,7 @@ internal fun VoiceProfileManagementPanel(
                 )
             }
         }
-        // 기본 목소리 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다(실패해도 편집기
-        // 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
-        //
-        // 온보딩의 '백그라운드에서 계속 받기' 로 화면을 닫아도 워커는 계속 도는데, 그때
-        // 진행을 볼 곳이 여기뿐이다. 클론 목소리와 **같은 퍼센트 문구**를 쓴다 — 사용자에겐
-        // 둘 다 "알람 음성이 준비되는 중" 한 가지다.
-        voicePrefetchProgress
-            ?.takeIf { (done, total) -> total > 0 && done < total }
-            ?.let { (done, total) ->
-                VoiceProgressMessage(
-                    stringResource(
-                        R.string.voicesr_prerender_progress,
-                        (done.coerceIn(0, total) * 100) / total,
-                    ),
-                )
-            }
+        // 기본 목소리 받기 진행은 위 헤더 옆으로 옮겼다(2026-09-17).
     }
 
     if (voicePlanGateOpen) {

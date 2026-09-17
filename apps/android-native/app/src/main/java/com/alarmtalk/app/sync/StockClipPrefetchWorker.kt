@@ -538,10 +538,7 @@ class StockClipPrefetchWorker(
      *    **고를 수는 있는데 오프라인에서 소리가 안 나는** 알람이 생긴다.
      *  - greeting 은 받지 않는다 — 알람 테마가 아니고(§2), 미리듣기용은 APK 에 내장돼 있다.
      */
-    private fun StockClip.targetsDefaultVoices(language: String): Boolean =
-        isSystemVoiceId(voiceProfileId) &&
-            (this.language ?: "ko") == language &&
-            category in FREE_BUCKET_CATEGORIES
+    private fun StockClip.targetsDefaultVoices(language: String): Boolean = isDefaultVoiceTarget(language)
 
     companion object {
         private const val WORK_NAME = "stock_clip_prefetch"
@@ -568,6 +565,38 @@ class StockClipPrefetchWorker(
          */
         private val FREE_BUCKET_CATEGORIES: Set<String> =
             com.alarmtalk.app.FreeBucketOrder.toSet()
+
+        /** 기본 목소리 선다운로드 대상인가 — 기본 목소리 × 기기 언어 × 무료 테마. */
+        internal fun StockClip.isDefaultVoiceTarget(language: String): Boolean =
+            isSystemVoiceId(voiceProfileId) &&
+                (this.language ?: "ko") == language &&
+                category in FREE_BUCKET_CATEGORIES
+
+        /**
+         * 기본 목소리 클립을 **몇 개 중 몇 개 받았는가**(done to total). 매니페스트를 한 번도
+         * 못 받았으면 null(= 모른다).
+         *
+         * 기준은 서버 매니페스트에 **실제로 있는** 클립이다 — 기대 개수표로 세면 서버가 아직
+         * 못 만든 몫 때문에 알람 설정 관문이 영영 안 열린다. iOS 짝은
+         * `StockClipPrefetcher.defaultVoiceProgress`.
+         */
+        fun defaultVoiceProgress(context: Context, userId: String?): Pair<Int, Int>? {
+            val manifest = StockClipManifestStore.load(context, userId) ?: return null
+            val locales = context.resources.configuration.locales
+            val language = appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
+            val store = AlarmAudioStore(context)
+            val targets = manifest.clips.filter { it.isDefaultVoiceTarget(language) }
+            val done = targets.count { store.getCachedAudio(cacheKeyFor(it), it.audioUrl) != null }
+            return done to targets.size
+        }
+
+        /**
+         * 기본 목소리를 다 받아 **알람을 설정해도 되는가**(2026-09-17 지시: 다 받기 전에는 알람
+         * 설정 화면 자체를 막는다). 규칙은 `docs/spec/voice-and-message.md`
+         * 「기본 목소리를 다 받아야 알람을 설정한다」.
+         */
+        fun defaultVoicesReady(context: Context, userId: String?): Boolean =
+            defaultVoiceProgress(context, userId)?.let { (done, total) -> done >= total } ?: false
 
         private fun cacheKeyFor(clip: StockClip): String =
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"

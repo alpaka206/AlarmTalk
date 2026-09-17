@@ -916,4 +916,8 @@
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
+    <string name="voices_not_ready_title">声をダウンロード中です</string>
+    <string name="voices_not_ready_message_progress">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。(%1$d%%)\n進み具合は「声」タブで確認できます。</string>
+    <string name="voices_not_ready_message">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。\nインターネットに接続したまま少しお待ちください。</string>
+    <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
 </resources>

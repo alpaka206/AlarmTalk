@@ -723,7 +723,42 @@ internal fun AlarmTalkApp(
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         alarmTargetRecipients.isNotEmpty()
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
+    // 선다운로드 워커의 진행(받는 중일 때만). 목소리 탭 '기본 목소리' 헤더 옆에 뜬다.
+    val backgroundPrefetchInfo by com.alarmtalk.app.sync.StockClipPrefetchWorker
+        .observe(context)
+        .collectAsState(initial = null)
+    val backgroundPrefetchProgress = backgroundPrefetchInfo
+        ?.takeIf { it.state == androidx.work.WorkInfo.State.RUNNING }
+        ?.progress
+        ?.let {
+            it.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_DONE, 0) to
+                it.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_TOTAL, 0)
+        }
+        ?.takeIf { (done, total) -> total > 0 && done < total }
+
+    // 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
+    var voicesNotReadyOpen by remember { mutableStateOf(false) }
+    var voicesNotReadyProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    /**
+     * 알람 설정 화면(새로 만들기·고치기)을 열어도 되는가 — **기본 목소리를 다 받았을 때만.**
+     *
+     * 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면 문구
+     * 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다. 막았으면
+     * 받기부터 다시 건다(유니크 작업이라 돌고 있으면 그대로 둔다).
+     * 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+     */
+    fun defaultVoicesReadyOrExplain(): Boolean {
+        val userId = authSession?.user?.id
+        if (com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoicesReady(context, userId)) return true
+        voicesNotReadyProgress = com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+        com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
+        voicesNotReadyOpen = true
+        return false
+    }
+
     fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
+        if (!defaultVoicesReadyOrExplain()) return
         if (!permissions.alarmReady) {
             // 권한 게이트로 넘어가되, 허용 완료 후 이 알람 추가를 이어서 편집 페이지로 진입시킨다.
             pendingCreateAlarmAfterPermission = familyTargetMode to targetUserId
@@ -735,6 +770,7 @@ internal fun AlarmTalkApp(
         }
     }
     fun requestCreateAlarm() {
+        if (!defaultVoicesReadyOrExplain()) return
         if (canCreateFamilyAlarm) {
             alarmTargetSheetVisible = true
         } else {
@@ -757,6 +793,29 @@ internal fun AlarmTalkApp(
                 }
                 navController.navigateTopLevelTab(backTarget)
             },
+        )
+    }
+
+    if (voicesNotReadyOpen) {
+        val progress = voicesNotReadyProgress
+        IosAlertDialog(
+            title = stringResource(R.string.voices_not_ready_title),
+            message = if (progress != null && progress.second > 0) {
+                stringResource(
+                    R.string.voices_not_ready_message_progress,
+                    (progress.first * 100 / progress.second).coerceIn(0, 99),
+                )
+            } else {
+                stringResource(R.string.voices_not_ready_message)
+            },
+            onDismiss = { voicesNotReadyOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.auth_confirm),
+                    emphasized = true,
+                    onClick = { voicesNotReadyOpen = false },
+                ),
+            ),
         )
     }
 
@@ -1283,7 +1342,9 @@ internal fun AlarmTalkApp(
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
-                          voicePrefetchProgress = viewModel.voicePrefetchProgress,
+                          // 워커(온보딩·앱 시작의 선다운로드)가 받는 중이면 그 진행을 먼저 보여 준다.
+                          // '백그라운드에서 계속' 으로 받기 화면을 닫은 뒤 진행을 볼 곳이 여기다.
+                          voicePrefetchProgress = backgroundPrefetchProgress ?: viewModel.voicePrefetchProgress,
                           onGetVoicePrerenderStatus = viewModel::fetchVoicePrerenderStatus,
                           onRetryVoicePrerender = viewModel::retryVoicePrerender,
                           prerenderDrive = viewModel.prerenderDrive,
@@ -1316,7 +1377,9 @@ internal fun AlarmTalkApp(
                           },
                           // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
                           onEditAlarm = {
-                              if (permissions.alarmReady) {
+                              if (!defaultVoicesReadyOrExplain()) {
+                                  // 막힌 이유는 알럿이 말한다(`defaultVoicesReadyOrExplain`).
+                              } else if (permissions.alarmReady) {
                                   navController.navigate(AppRoute.alarmEdit(it.id))
                               } else {
                                   requestFirstMissingAlarmPermission()

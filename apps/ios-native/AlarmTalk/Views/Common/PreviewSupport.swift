@@ -58,6 +58,7 @@ struct PreviewEnvironment: ViewModifier {
             .environmentObject(SubscriptionManager.preview)
             .environmentObject(AppVersionGate.preview)
             .environmentObject(HolidayStore.preview)
+            .environmentObject(StockClipPrefetcher())
     }
 }
 
