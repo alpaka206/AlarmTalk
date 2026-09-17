@@ -365,20 +365,20 @@
     "backToList": "イベント一覧",
     "items": {
       "cheer": {
-        "title": "好きな芸能人の声で聞く、自分の名前入り音声メッセージ"
+        "title": "気に入った声で聞く、自分の名前入り音声メッセージ"
       }
     }
   },
   "event": {
     "meta": {
-      "title": "好きな芸能人の声で聞く、自分の名前入り音声メッセージ",
-      "description": "名前を入れると、好きな芸能人風の声が名前を呼んでくれる誕生日とねぎらいのメッセージを作ります。韓国語・英語・日本語で聞けます。本人の声ではなくAIの声です。"
+      "title": "気に入った声で聞く、自分の名前入り音声メッセージ",
+      "description": "名前を入れると、AIの声が名前を呼んでくれる誕生日とねぎらいのメッセージを作ります。韓国語・英語・日本語で聞けます。本人の声ではなくAIの声です。"
     },
     "hero": {
-      "headline": "好きな芸能人の声で\n名前を呼んでくれる音声メッセージを聞いてみよう!"
+      "headline": "気に入った声で\n自分の名前を呼んでくれる音声メッセージを聞いてみて！"
     },
     "studio": {
-      "voiceLabel": "誰の声で聞きますか。",
+      "voiceLabel": "どの声で聞きますか。",
       "nameLabel": "名前を入力してください。",
       "namePlaceholder": "例: はるか…",
       "kinds": {
@@ -397,7 +397,7 @@
       "stopAria": "{kind}を止める",
       "download": "ダウンロード",
       "failed": "いまは作れません。少し待ってもう一度押してください。",
-      "disclaimer": "実在の人物の声で学習したものではない、生成されたAIの声です。",
+      "disclaimer": "実在の人物の声ではなく、AIで生成した声です。",
       "sampleName": "はるか",
       "prevVoice": "前の人物",
       "nextVoice": "次の人物",
@@ -413,17 +413,10 @@
       "fileName": "アラームトーク {celebrity} {kind} {language} {name}",
       "sampleLine": "<b>{name}</b>、お誕生日、本当におめでとう！ いつも応援してくれて、本当にありがとう。",
       "downloadAria": "{kind}をダウンロード",
-      "ready": "できました。"
-    },
-    "celebrities": {
-      "winter": {
-        "name": "ウィンター",
-        "portraitAlt": "ウィンターの写真"
-      },
-      "nanami": {
-        "name": "ななみ",
-        "portraitAlt": "ななみの写真"
-      }
+      "ready": "できました。",
+      "preview": "試聴",
+      "previewAria": "{celebrity}を試聴",
+      "previewStopAria": "試聴を止める"
     },
     "downloadModal": {
       "title": "こんな声をもっと聞きたいですか?",

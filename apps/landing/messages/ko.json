@@ -365,20 +365,20 @@
     "backToList": "이벤트 목록",
     "items": {
       "cheer": {
-        "title": "내가 좋아하는 연예인 목소리로 듣는 내 이름 음성 메시지"
+        "title": "마음에 드는 목소리로 듣는 내 이름 음성 메시지"
       }
     }
   },
   "event": {
     "meta": {
-      "title": "내가 좋아하는 연예인 목소리로 듣는 내 이름 음성 메시지",
-      "description": "이름을 적으면 좋아하는 연예인 느낌의 목소리가 내 이름을 부르는 생일 축하·위로 메시지를 만들어 줘요. 한국어·영어·일본어로 들을 수 있어요. 실제 목소리가 아닌 AI 목소리입니다."
+      "title": "마음에 드는 목소리로 듣는 내 이름 음성 메시지",
+      "description": "이름을 적으면 AI 로 만든 목소리가 내 이름을 부르는 생일 축하·위로 메시지를 만들어 줘요. 한국어·영어·일본어로 들을 수 있어요. 실제 인물의 음성이 아닌 AI 목소리입니다."
     },
     "hero": {
-      "headline": "내가 좋아하는 연예인 목소리로\n내 이름을 불러 주는 음성 메시지를 들어보세요!"
+      "headline": "마음에 드는 목소리로\n내 이름을 불러 주는 음성 메시지를 들어보세요!"
     },
     "studio": {
-      "voiceLabel": "누구 목소리로 들을까요?",
+      "voiceLabel": "어떤 목소리로 들을까요?",
       "nameLabel": "이름을 입력해 주세요.",
       "namePlaceholder": "예: 지민…",
       "kinds": {
@@ -397,7 +397,7 @@
       "stopAria": "{kind} 멈추기",
       "download": "다운로드",
       "failed": "지금은 만들 수 없어요. 잠시 후 다시 눌러 보세요.",
-      "disclaimer": "실제 인물의 목소리로 학습한 것이 아닌, 생성된 AI 목소리입니다.",
+      "disclaimer": "실제 인물의 음성이 아닌, AI 로 생성된 목소리입니다.",
       "sampleName": "지민",
       "prevVoice": "이전 인물",
       "nextVoice": "다음 인물",
@@ -413,17 +413,10 @@
       "fileName": "알람톡 {celebrity} {kind} {language} {name}",
       "sampleLine": "<b>{name}아</b>, 생일 너무너무 축하해! 늘 응원해 줘서 너무 고마워.",
       "downloadAria": "{kind} 다운로드",
-      "ready": "준비됐어요."
-    },
-    "celebrities": {
-      "winter": {
-        "name": "윈터",
-        "portraitAlt": "윈터 사진"
-      },
-      "nanami": {
-        "name": "나나미",
-        "portraitAlt": "나나미 사진"
-      }
+      "ready": "준비됐어요.",
+      "preview": "미리 듣기",
+      "previewAria": "{celebrity} 미리 듣기",
+      "previewStopAria": "미리 듣기 멈추기"
     },
     "downloadModal": {
       "title": "이런 목소리를 더 듣고 싶으신가요?",

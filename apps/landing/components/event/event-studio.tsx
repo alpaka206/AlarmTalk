@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
-  ChevronLeft,
-  ChevronRight,
+  AudioLines,
   Download,
   Heart,
+  Pause,
   Play,
   RotateCcw,
+  SkipBack,
+  SkipForward,
   Square,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -30,7 +32,9 @@ import {
   EVENT_ID,
   EVENT_NAME_MAX_LENGTH,
   MESSAGE_KINDS,
+  sampleSrc,
   sanitizeEventName,
+  voiceName,
   type Celebrity,
   type MessageKind,
 } from "./event-catalog";
@@ -41,7 +45,7 @@ import { formatClock, probeDuration, useEventPlayer } from "./use-event-player";
  * 메시지 **둘 다**(생일 축하 · 위로 한마디)를 **세 언어 모두** 만들어 들려준다(2026-09-16 지시:
  * 한 번에 여섯). 언어 버튼은 만든 것을 골라 듣는 자리다.
  *
- *   이름 입력 → 인물 캐러셀(이전/다음, 좋아요 수) → 생성하기 → 언어 고르기 → 결과 두 줄(재생 · 다운로드)
+ *   이름 입력 → 목소리 플레이어(미리 듣기, ⏮ ⏭, 좋아요) → 생성하기 → 언어 고르기 → 결과 두 줄(재생 · 다운로드)
  *
  * 소리는 서버가 문장 전체를 인물 목소리로 만들어 mp3 로 준다(`event-api.ts`). 만드는 데 10~30초
  * 걸리므로 여섯을 따로 불러 **오는 대로** 카드를 채운다. 카드는 트랙 한 줄이다 — 왼쪽 원형
@@ -50,7 +54,7 @@ import { formatClock, probeDuration, useEventPlayer } from "./use-event-player";
  * 이름을 바꾸면 새로 만든다 — 다른 이름으로 만든 소리를 지금 이름인 것처럼 들려주지 않는다.
  * 페이지를 떠나면 사라진다(지시: 서버에도 남기지 않는다).
  *
- * 링크: `?celeb=winter&name=지민` 으로 들어오면 그 인물·이름으로 **바로** 만든다(홍보 댓글에
+ * 링크: `?celeb=voice1&name=지민` 으로 들어오면 그 인물·이름으로 **바로** 만든다(홍보 댓글에
  * 보내는 개인 링크). 공유 링크 기능은 두지 않는다 — 인물만 주소에 따라간다.
  *
  * 문장은 화면에 보여 주지 않는다(2026-09-16 지시) — 종류 이름과 듣기·다운로드뿐이다. 재생은
@@ -115,11 +119,13 @@ export function EventStudio() {
   const trimmed = name.trim();
   const bundleKey = `${celebrity.id}:${trimmed}`;
   const hasResults = trimmed !== "" && started[bundleKey] === true;
+  /** 미리 듣기 재생 id — 결과 클립 키와 겹치지 않게 접두사를 둔다. */
+  const previewId = `preview:${celebrity.id}:${pageLocale}`;
   /** 지금 화면이 보고 있는 (인물:이름:언어). 30초 뒤에 온 소리를 자동 재생해도 되는지 여기 대고 본다. */
   const viewRef = useRef(`${bundleKey}:${lang}`);
   viewRef.current = `${bundleKey}:${lang}`;
   const nameLength = Array.from(name).length;
-  const nameOf = (c: Celebrity) => t(`celebrities.${c.id}.name`);
+  const nameOf = (c: Celebrity) => voiceName(c, pageLocale);
 
   /**
    * 한 언어의 두 메시지를 만든다. 이미 있거나 만드는 중이면 건너뛴다(`retry` 면 실패한 것을 다시).
@@ -166,7 +172,7 @@ export function EventStudio() {
     [clips, play],
   );
 
-  // 딥링크: `?celeb=winter`(id) 또는 `?celeb=1`(1부터 세는 순번), 그리고 `?name=지민`. 이름까지
+  // 딥링크: `?celeb=voice1`(id) 또는 `?celeb=1`(1부터 세는 순번), 그리고 `?name=지민`. 이름까지
   // 있으면 곧바로 만든다(홍보 댓글에 보내는 개인 링크 — 열면 바로 들린다). 정적 export 라
   // 서버가 쿼리를 모르니 붙은 뒤에 읽고, 그 뒤로는 돌릴 때마다 주소를 따라 바꿔 둔다
   // (replaceState — 뒤로가기 목록을 채우지 않는다). 주소를 읽기 전에 아래 동기화가 먼저 돌아
@@ -223,8 +229,13 @@ export function EventStudio() {
   // 인물을 돌리거나 이름을 바꿔 결과 칸이 통째로 사라지면 소리를 멈춘다 — 멈출 버튼이 없는
   // 소리를 두지 않는다. 언어를 바꾸거나 다른 곳을 눌러도 재생은 그대로다(2026-09-16 지시).
   useEffect(() => {
-    if (activeId && !activeId.startsWith(`${bundleKey}:`)) stop();
-  }, [bundleKey, activeId, stop]);
+    if (!activeId) return;
+    if (activeId.startsWith("preview:")) {
+      if (activeId !== previewId) stop();
+      return;
+    }
+    if (!activeId.startsWith(`${bundleKey}:`)) stop();
+  }, [bundleKey, previewId, activeId, stop]);
 
   // 결과 칸이 보이는데 이 언어의 소리가 없으면 만든다 — 생성하기·언어 버튼이 이미 불렀으면
   // 건너뛴다(request 가 가린다). 이름을 지웠다 되돌렸을 때처럼 버튼을 거치지 않은 길의 안전망이다.
@@ -278,6 +289,20 @@ export function EventStudio() {
   const tap = reduced ? undefined : { scale: 0.96 };
   const spring = { type: "spring" as const, duration: 0.3, bounce: 0 };
 
+  // 미리 듣기 — 같은 재생기를 쓴다(한 번에 하나만 소리 남). 샘플 길이는 미리 읽어 둔다.
+  const previewing = activeId === previewId;
+  const previewTotal = previewing && duration !== null ? duration : (durations[previewId] ?? null);
+  const previewProgress = previewing && previewTotal ? Math.min(1, position / previewTotal) : 0;
+  useEffect(() => {
+    let alive = true;
+    void probeDuration(sampleSrc(celebrity.id, pageLocale)).then((d) => {
+      if (d !== null && alive) setDurations((m) => ({ ...m, [previewId]: d }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [celebrity.id, pageLocale, previewId]);
+
   return (
     <section className="relative" aria-labelledby={`${uid}-h`}>
       <div className="mx-auto max-w-site px-5 pb-24 pt-8 md:px-8 lg:pb-32 lg:pt-12">
@@ -318,24 +343,12 @@ export function EventStudio() {
             </span>
           </div>
 
-          {/* 2. 인물 캐러셀. 인물이 하나면 화살표·점은 두지 않는다. */}
-          <h3 className="t-h3 mt-10 text-text">{t("studio.voiceLabel")}</h3>
-          <div className="card mt-3 flex items-center gap-2 p-3 sm:gap-4 sm:p-4">
-            {CELEBRITIES.length > 1 ? (
-              <motion.button
-                type="button"
-                onClick={() => step(-1)}
-                aria-label={t("studio.prevVoice")}
-                whileTap={tap}
-                transition={spring}
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-pill)] bg-raised text-text-body transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-line hover:text-text"
-              >
-                <ChevronLeft className="h-6 w-6" aria-hidden="true" />
-              </motion.button>
-            ) : null}
-
-            {/* 한 장씩. 옆으로 밀려 들어오고 나간다(축소 동작이면 그냥 바뀐다). */}
-            <div className="relative min-w-0 flex-1 overflow-hidden" aria-live="polite">
+          {/* 2. 목소리 플레이어. 음악 앱의 지금 재생 화면처럼 — 아트워크, 제목줄(하트), 진행 막대, ⏮ ▶ ⏭.
+              가운데 ▶ 는 미리 듣기(정적 샘플). 목소리가 여럿이면 ⏮ ⏭·스와이프로 넘긴다. */}
+          {/* 제목은 화면엔 없다(2026-09-17 지시) — 문서 개요·스크린리더용으로만. */}
+          <h3 className="sr-only">{t("studio.voiceLabel")}</h3>
+          <div className="card mt-8 overflow-hidden p-5 sm:p-6">
+            <div className="relative overflow-hidden" aria-live="polite">
               <AnimatePresence initial={false} mode="popLayout" custom={direction}>
                 <motion.div
                   key={celebrity.id}
@@ -344,55 +357,108 @@ export function EventStudio() {
                   animate={{ x: 0, opacity: 1 }}
                   exit={reduced ? undefined : { x: direction * -48, opacity: 0 }}
                   transition={SLIDE}
-                  className="flex flex-col items-center py-3 text-center"
+                  drag={CELEBRITIES.length > 1 && !reduced ? "x" : false}
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={(_, info) => {
+                    // 손을 뗀 순간의 거리·속도로 넘긴다(apple-design: 속도 이어받기).
+                    if (info.offset.x < -48 || info.velocity.x < -300) step(1);
+                    else if (info.offset.x > 48 || info.velocity.x > 300) step(-1);
+                  }}
+                  className="flex flex-col items-center"
                 >
                   <Portrait
                     src={celebrity.portrait}
                     name={nameOf(celebrity)}
-                    alt={t(`celebrities.${celebrity.id}.portraitAlt`)}
-                  />
-                  <p className="t-h2 mt-4 truncate text-text">{nameOf(celebrity)}</p>
-                  <LikeButton
-                    count={likes[celebrity.id]}
-                    label={t("studio.likeAria", { celebrity: nameOf(celebrity) })}
-                    countLabel={
-                      likes[celebrity.id] !== undefined
-                        ? t("studio.likesCount", { n: likes[celebrity.id] })
-                        : undefined
-                    }
-                    onClick={() => void onLike(celebrity)}
-                    reduced={reduced}
+                    alt={nameOf(celebrity)}
                   />
                 </motion.div>
               </AnimatePresence>
             </div>
 
-            {CELEBRITIES.length > 1 ? (
+            {/* 제목줄: 이름 왼쪽, 하트 오른쪽 — 플레이어의 즐겨찾기 자리. */}
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <p className="t-h2 min-w-0 truncate text-text">{nameOf(celebrity)}</p>
+              <LikeButton
+                count={likes[celebrity.id]}
+                label={t("studio.likeAria", { celebrity: nameOf(celebrity) })}
+                countLabel={
+                  likes[celebrity.id] !== undefined
+                    ? t("studio.likesCount", { n: likes[celebrity.id] })
+                    : undefined
+                }
+                onClick={() => void onLike(celebrity)}
+                reduced={reduced}
+              />
+            </div>
+
+            {/* 진행 막대와 시간. 미리 듣기 중이 아니면 비어 있는 막대 + 샘플 길이. */}
+            <div className="mt-4">
+              <div
+                aria-hidden="true"
+                className="h-1 overflow-hidden rounded-[var(--radius-pill)] bg-line"
+              >
+                <div
+                  className={`h-full rounded-[var(--radius-pill)] bg-accent ${
+                    reduced ? "" : "transition-[width] duration-250 ease-linear"
+                  }`}
+                  style={{ width: `${previewProgress * 100}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[12px] tabular-nums text-text-muted">
+                <span>{formatClock(previewing ? position : 0)}</span>
+                <span>{previewTotal !== null ? formatClock(previewTotal) : ""}</span>
+              </div>
+            </div>
+
+            {/* ⏮ ▶ ⏭ */}
+            <div className="mt-3 flex items-center justify-center gap-6">
+              <motion.button
+                type="button"
+                onClick={() => step(-1)}
+                disabled={CELEBRITIES.length < 2}
+                aria-label={t("studio.prevVoice")}
+                whileTap={CELEBRITIES.length > 1 ? tap : undefined}
+                transition={spring}
+                className="grid h-11 w-11 place-items-center rounded-full text-text transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-raised disabled:cursor-default disabled:text-line disabled:hover:bg-transparent"
+              >
+                <SkipBack className="h-6 w-6 fill-current" aria-hidden="true" />
+              </motion.button>
+              <motion.button
+                type="button"
+                onClick={() =>
+                  previewing ? stop() : void play(previewId, sampleSrc(celebrity.id, pageLocale))
+                }
+                aria-label={
+                  previewing
+                    ? t("studio.previewStopAria")
+                    : t("studio.previewAria", { celebrity: nameOf(celebrity) })
+                }
+                aria-pressed={previewing}
+                whileTap={reduced ? undefined : { scale: 0.92 }}
+                transition={spring}
+                className="grid h-16 w-16 place-items-center rounded-full bg-accent text-white transition-[background-color] duration-200 ease-[var(--ease-ui)] hover:bg-accent-strong"
+              >
+                {previewing ? (
+                  <Pause className="h-7 w-7 fill-current" aria-hidden="true" />
+                ) : (
+                  <Play className="ml-1 h-7 w-7 fill-current" aria-hidden="true" />
+                )}
+              </motion.button>
               <motion.button
                 type="button"
                 onClick={() => step(1)}
+                disabled={CELEBRITIES.length < 2}
                 aria-label={t("studio.nextVoice")}
-                whileTap={tap}
+                whileTap={CELEBRITIES.length > 1 ? tap : undefined}
                 transition={spring}
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-pill)] bg-raised text-text-body transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-line hover:text-text"
+                className="grid h-11 w-11 place-items-center rounded-full text-text transition-[background-color,color] duration-150 ease-[var(--ease-ui)] hover:bg-raised disabled:cursor-default disabled:text-line disabled:hover:bg-transparent"
               >
-                <ChevronRight className="h-6 w-6" aria-hidden="true" />
+                <SkipForward className="h-6 w-6 fill-current" aria-hidden="true" />
               </motion.button>
-            ) : null}
-          </div>
-          {CELEBRITIES.length > 1 ? (
-            // 몇 번째인지. 점은 읽히지 않는다 — 이름과 이전/다음 라벨이 이미 말한다.
-            <div aria-hidden="true" className="mt-3 flex items-center justify-center gap-1.5">
-              {CELEBRITIES.map((c, i) => (
-                <span
-                  key={c.id}
-                  className={`block h-1.5 w-1.5 rounded-[var(--radius-pill)] ${
-                    i === index ? "bg-accent" : "bg-line"
-                  }`}
-                />
-              ))}
             </div>
-          ) : null}
+            <p className="t-caption mt-3 text-center text-text-muted">{t("studio.preview")}</p>
+          </div>
 
           {/* 3. 생성하기 또는 결과. 스크린리더에는 결과 칸이 생긴 순간 제목 문장이 한 번 읽힌다
               (role=status 는 항상 있고 내용만 바뀐다). */}
@@ -401,7 +467,8 @@ export function EventStudio() {
           </p>
           {hasResults ? (
             <div ref={resultsRef} className="mt-8 scroll-mt-24">
-              <h3 ref={resultsHeadingRef} tabIndex={-1} className="t-h3 text-text outline-none">
+              {/* 제목은 화면엔 없다(2026-09-17 지시). 초점·스크린리더용으로만 남긴다. */}
+              <h3 ref={resultsHeadingRef} tabIndex={-1} className="sr-only outline-none">
                 {t("studio.resultsHeading", { celebrity: nameOf(celebrity) })}
               </h3>
               {/* 언어. 누르면 그 언어로 만든다(이미 있으면 바로). 라벨은 각자의 언어로 적혀 있어
@@ -409,7 +476,7 @@ export function EventStudio() {
               <div
                 role="group"
                 aria-label={t("studio.languageLabel")}
-                className="mt-3 inline-flex items-center rounded-[var(--radius-pill)] border border-line bg-surface p-1"
+                className="inline-flex items-center rounded-[var(--radius-pill)] border border-line bg-surface p-1"
               >
                 {routing.locales.map((l) => {
                   const active = l === lang;
@@ -659,6 +726,18 @@ function Portrait({ src, name, alt }: { src: string; name: string; alt: string }
     const el = imgRef.current;
     if (el && el.complete && el.naturalWidth === 0) setFailed(true);
   }, []);
+  if (!src) {
+    // 사진이 없는 목소리 — 누구를 연상시키는 이미지 없이 소리 결만.
+    return (
+      <span
+        role="img"
+        aria-label={alt}
+        className="grid h-40 w-40 shrink-0 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_30%,var(--color-accent-soft),var(--color-surface)_70%)] text-accent ring-1 ring-line"
+      >
+        <AudioLines className="h-16 w-16" strokeWidth={1.5} aria-hidden="true" />
+      </span>
+    );
+  }
   if (failed) {
     return (
       <span

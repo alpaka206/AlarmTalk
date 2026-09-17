@@ -365,20 +365,20 @@
     "backToList": "All events",
     "items": {
       "cheer": {
-        "title": "A voice message with your name, in a voice you love"
+        "title": "A voice message with your name, in a voice you like"
       }
     }
   },
   "event": {
     "meta": {
-      "title": "A voice message with your name, in a voice you love",
-      "description": "Type a name and hear a celebrity-style voice say it in a birthday wish and a word of comfort — in Korean, English and Japanese. AI voices, not the real people."
+      "title": "A voice message with your name, in a voice you like",
+      "description": "Type a name and hear an AI voice say it in a birthday wish and a word of comfort — in Korean, English and Japanese. AI voices, not real people."
     },
     "hero": {
-      "headline": "Hear a voice message that says your name,\nin a celebrity voice you love!"
+      "headline": "Hear a voice message that says your name,\nin a voice you like!"
     },
     "studio": {
-      "voiceLabel": "Whose voice?",
+      "voiceLabel": "Which voice?",
       "nameLabel": "Enter a name.",
       "namePlaceholder": "e.g. Jamie…",
       "kinds": {
@@ -397,7 +397,7 @@
       "stopAria": "Stop {kind}",
       "download": "Download",
       "failed": "Can’t make it right now. Try again in a moment.",
-      "disclaimer": "These are generated AI voices, not trained on any real person’s voice.",
+      "disclaimer": "An AI-generated voice, not a real person’s.",
       "sampleName": "Jamie",
       "prevVoice": "Previous",
       "nextVoice": "Next",
@@ -413,17 +413,10 @@
       "fileName": "AlarmTalk {celebrity} {kind} {language} {name}",
       "sampleLine": "Hey, <b>{name}</b>. Happy birthday! Thank you so much for always supporting me.",
       "downloadAria": "Download {kind}",
-      "ready": "Ready."
-    },
-    "celebrities": {
-      "winter": {
-        "name": "Winter",
-        "portraitAlt": "Photo of Winter"
-      },
-      "nanami": {
-        "name": "Nanami",
-        "portraitAlt": "Photo of Nanami"
-      }
+      "ready": "Ready.",
+      "preview": "Preview",
+      "previewAria": "Preview {celebrity}",
+      "previewStopAria": "Stop preview"
     },
     "downloadModal": {
       "title": "Want to hear more voices like this?",

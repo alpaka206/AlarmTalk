@@ -1,28 +1,47 @@
+import catalog from "../../../../packages/shared/src/event-voices.json";
+
 /**
- * 이벤트 1 의 목록 — **누구 목소리로, 어떤 메시지를**.
+ * 이벤트 1 의 목록 — **어떤 목소리로, 어떤 메시지를**.
  *
- * 화면은 이 두 배열만 돈다. 인물을 더하거나 빼거나 순서를 바꾸는 일은 여기서만 한다. 이름·사진
- * 대체 텍스트는 `messages/<locale>.json` 의 `event.celebrities.<id>`, 메시지 종류 이름은
- * `event.studio.kinds.<kind>.name`. **읽힐 문장은 서버가 정한다**(`packages/backend/src/lib/
- * event-voices.ts`) — 화면은 서버가 만든 문장을 그대로 보여 준다. 여기 인물 id 와 종류 id 는
- * 서버의 것과 같아야 한다.
+ * 목소리 목록의 단일 출처는 `packages/shared/src/event-voices.json` 이다(백엔드도 같은 파일을 읽는다).
+ * 목소리를 더하는 방법은 그 옆 `schemas/event-voices.ts` 머리 주석에 있다 — JSON 항목 하나와
+ * 미리 듣기 샘플 mp3 셋(`public/event/samples/<id>.<locale>.mp3`)이면 끝난다. 여기서는 그 JSON 을
+ * 화면이 쓰는 모양으로 옮길 뿐, 목소리를 손으로 적지 않는다.
  *
- * `portrait` 는 `public/` 아래 경로다. 파일이 없으면 화면은 이니셜 원으로 대신 그린다
- * (`event-studio.tsx` 의 `Portrait`) — 사진은 초상권 허락을 받은 것만 넣는다.
+ * 메시지 종류 이름은 `event.studio.kinds.<kind>.name`. **읽힐 문장은 서버가 정한다**
+ * (`packages/backend/src/lib/event-voices.ts`). 여기 종류 id 는 서버의 것과 같아야 한다.
+ *
+ * `portrait` 는 `public/` 아래 경로다. 빈 문자열이면 화면은 추상 아바타(소리 결 아이콘)를 그린다
+ * (`event-studio.tsx` 의 `Portrait`). 실존 인물의 사진·이름은 쓰지 않는다(2026-09-17, 퍼블리시티권).
  */
 export type Celebrity = {
   id: string;
   portrait: string;
+  /** 언어별 라벨(JSON 의 name). */
+  name: Record<string, string>;
 };
 
 /** 이 페이지의 이벤트 번호(`lib/events.ts`). 좋아요 카운터·클립 생성의 키다. */
 export const EVENT_ID = "1";
 
-export const CELEBRITIES: readonly Celebrity[] = [
-  { id: "winter", portrait: "/event/winter.jpg" },
-  // 나나미는 서버에 목소리 슬롯이 아직 없어 뺀다(2026-09-16 지시: 윈터부터). 사진·문구는 남겨 둔다.
-  // { id: "nanami", portrait: "/event/nanami.jpg" },
-] as const;
+export const CELEBRITIES: readonly Celebrity[] = catalog[EVENT_ID].voices.map((v) => ({
+  id: v.id,
+  portrait: v.portrait ?? "",
+  name: v.name,
+}));
+
+/** 화면에 보일 라벨. 그 언어가 없으면 한국어. */
+export function voiceName(c: Celebrity, locale: string): string {
+  return c.name[locale] ?? c.name.ko ?? c.id;
+}
+
+/**
+ * 미리 듣기 샘플 — 이 목소리로 예시 이름(`event.studio.sampleName`)을 부른 생일 메시지. 생성 전에
+ * 목소리를 들어 보라고 두는 정적 파일이다: `public/event/samples/<id>.<locale>.mp3`.
+ */
+export function sampleSrc(celebrityId: string, locale: string): string {
+  return `/event/samples/${celebrityId}.${locale}.mp3`;
+}
 
 /** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
 export const MESSAGE_KINDS = ["birthday", "comfort"] as const;
