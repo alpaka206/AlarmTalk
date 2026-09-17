@@ -1,19 +1,19 @@
+import { findEventVoice, type EventVoiceLocale } from '@alarmtalk/shared';
 import type { PersoSlot } from './perso';
 
 /**
- * 랜딩 이벤트 1 의 목록 — **누구 목소리로, 어떤 말을, 어느 프로젝트에서**.
+ * 랜딩 이벤트의 **문장과 슬롯 규칙**. 목소리 목록(누가 있고, 어느 Perso 프로젝트인지)은
+ * `packages/shared/src/event-voices.json` 이 단일 출처다 — 목소리를 더하는 방법은 그 옆
+ * `schemas/event-voices.ts` 머리 주석에 있다. 여기는 그 목록을 읽어 쓸 뿐이다.
  *
- * 이 파일이 서버 쪽 단일 출처다. 랜딩(`apps/landing/components/event/event-catalog.ts`)은 인물
- * 순서·사진만 알고, 읽을 문장은 서버가 정한다 — 클라가 임의 문장을 보내 인물 목소리로 읽히는
- * 길을 두지 않는다. 인물·언어·문장을 더하거나 바꾸는 일은 여기서만.
+ * 읽을 문장은 서버가 정한다 — 클라가 임의 문장을 보내 남의 목소리로 읽히는 길을 두지 않는다.
  *
  * 슬롯: Perso 더빙 프로젝트의 문장(audio-sentence) **전부**를 돌려 쓴다(2026-09-16 지시 —
  * 문장은 100개가 넘는다). 목록은 요청 때 Perso 에서 읽어 잠깐 들고 있고(`routes/event.ts`),
  * 순번은 DB 카운터로 돌린다(`event_slot_cursor`) — 한 문장에 두 요청이 겹치면 서로 글자를
  * 덮어쓰기 때문이다(`lib/perso.ts`). `reserved` 는 돌리지 않는 문장(홍보 영상용).
- * 프로젝트는 언어마다 다를 수도, 같을 수도 있다(ko 는 413673, en·ja 는 415525).
  */
-export const EVENT_LOCALES = ['ko', 'en', 'ja'] as const;
+export const EVENT_LOCALES = ['ko', 'en', 'ja'] as const satisfies readonly EventVoiceLocale[];
 export type EventLocale = (typeof EVENT_LOCALES)[number];
 export function isEventLocale(v: unknown): v is EventLocale {
   return typeof v === 'string' && (EVENT_LOCALES as readonly string[]).includes(v);
@@ -30,20 +30,24 @@ export type VoiceProject = {
   /** 프로젝트가 속한 스페이스(`GET /portal/api/v1/spaces`). 문장 목록을 읽을 때 필요하다. */
   spaceSeq: number;
   /** 돌리지 않는 문장 — 홍보 영상에 쓰는 글자가 들어 있다. */
-  reserved?: readonly number[];
+  reserved: readonly number[];
 };
 
-/** 이벤트 id → 인물 id → 언어 → 프로젝트. 없는 조합은 만들 수 없다(503). */
-export const EVENT_VOICES: Record<string, Record<string, Partial<Record<EventLocale, VoiceProject>>>> = {
-  '1': {
-    winter: {
-      ko: { project: 413673, spaceSeq: 501031, reserved: [11135215, 11135216, 11135217] },
-      en: { project: 415525, spaceSeq: 501031, reserved: [11162674, 11162675] },
-      ja: { project: 415525, spaceSeq: 501031, reserved: [11162674, 11162675] },
-    },
-    // nanami: 아직 프로젝트 없음(2026-09-16 지시: 윈터부터).
-  },
-};
+/**
+ * (이벤트, 목소리, 언어) → Perso 프로젝트. 목소리가 없으면 `null`(404 감), 있는데 그 언어 프로젝트가
+ * 없으면 `undefined`(503 감).
+ */
+export function voiceProjectFor(
+  eventId: string,
+  voiceId: string,
+  locale: EventLocale,
+): VoiceProject | null | undefined {
+  const voice = findEventVoice(eventId, voiceId);
+  if (!voice) return null;
+  const p = voice.perso[locale];
+  if (!p) return undefined;
+  return { project: p.project, spaceSeq: voice.perso.spaceSeq, reserved: p.reserved };
+}
 
 /**
  * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 ElevenLabs v3 감정
@@ -167,7 +171,7 @@ export function renderMessage(kind: EventMessageKind, locale: EventLocale, name:
  * 돌아가며 쓴다. 카운터를 못 받았으면(로컬·DB 장애) 호출자가 무작위 값을 준다.
  */
 export function slotAt(voice: VoiceProject, sentences: readonly number[], position: number): PersoSlot {
-  const usable = sentences.filter((seq) => !voice.reserved?.includes(seq));
+  const usable = sentences.filter((seq) => !voice.reserved.includes(seq));
   if (usable.length === 0) throw new Error(`project ${voice.project} has no usable sentences`);
   const idx = ((position % usable.length) + usable.length) % usable.length;
   return { project: voice.project, sentence: usable[idx]! };

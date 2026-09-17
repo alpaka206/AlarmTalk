@@ -62,7 +62,7 @@ async function persoRequest(
 }
 
 /**
- * 프로젝트의 문장(슬롯) 번호 전부. 문장은 많다(윈터 ko 는 100개 넘게) — 커서로 끝까지 읽는다.
+ * 프로젝트의 문장(슬롯) 번호 전부. 문장은 많다(voice1 ko 는 90개 넘게) — 커서로 끝까지 읽는다.
  * 호출자가 잠깐 들고 있다(`routes/event.ts` 의 isolate 캐시) — 요청마다 부르지 않는다.
  */
 export async function listSentenceSeqs(

@@ -4,12 +4,12 @@ import type { AppEnv } from '../src/types';
 import { createMockDB } from './helpers';
 import {
   EVENT_MESSAGES,
-  EVENT_VOICES,
   renderMessage,
   sanitizeEventName,
   slotAt,
   stripEmotionTags,
   vocative,
+  voiceProjectFor,
 } from '../src/lib/event-voices';
 
 const mockDB = createMockDB();
@@ -20,7 +20,7 @@ vi.mock('../src/lib/db', () => ({
 
 import eventRoutes, { resetEventCaches } from '../src/routes/event';
 
-const WINTER_KO = EVENT_VOICES['1']!.winter!.ko!;
+const WINTER_KO = voiceProjectFor('1', 'voice1', 'ko')!;
 // 보이지 않는 글자는 코드포인트로 적는다 — 소스에 그대로 실리면 편집기·리뷰 도구에서 안 보인다.
 const ZERO_WIDTH = String.fromCodePoint(0x200b);
 const BELL = String.fromCodePoint(0x07);
@@ -34,7 +34,7 @@ const MP3_BYTES = (() => {
   return b;
 })();
 
-/** 윈터 ko 프로젝트의 문장(슬롯) 흉내 — 홍보용 셋(reserved)을 포함해 여덟. */
+/** voice1 ko 프로젝트의 문장(슬롯) 흉내 — 홍보용 셋(reserved)을 포함해 여덟. */
 const KO_SENTENCES = [11135210, 11135211, 11135212, 11135213, 11135214, 11135215, 11135216, 11135217];
 
 function buildApp(env: Record<string, unknown> = { PERSO_API_KEY: 'k' }) {
@@ -178,7 +178,7 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
   });
 
   it('slotAt: 순번대로 돌고, 홍보용 문장은 건너뛴다', () => {
-    const usable = KO_SENTENCES.filter((s) => !WINTER_KO.reserved!.includes(s));
+    const usable = KO_SENTENCES.filter((s) => !WINTER_KO.reserved.includes(s));
     expect(usable).toHaveLength(5);
     expect(slotAt(WINTER_KO, KO_SENTENCES, 0).sentence).toBe(usable[0]);
     expect(slotAt(WINTER_KO, KO_SENTENCES, 4).sentence).toBe(usable[4]);
@@ -186,7 +186,7 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
     expect(slotAt(WINTER_KO, KO_SENTENCES, 123456).sentence).toBe(usable[123456 % 5]);
     for (const seq of KO_SENTENCES) {
       for (let p = 0; p < 20; p++) {
-        if (WINTER_KO.reserved!.includes(seq)) expect(slotAt(WINTER_KO, KO_SENTENCES, p).sentence).not.toBe(seq);
+        if (WINTER_KO.reserved.includes(seq)) expect(slotAt(WINTER_KO, KO_SENTENCES, p).sentence).not.toBe(seq);
       }
     }
     expect(() => slotAt(WINTER_KO, [11135215], 0)).toThrow();
@@ -201,7 +201,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
   });
   afterAll(() => vi.restoreAllMocks());
 
-  const ok = { celebrity: 'winter', name: '지민', locale: 'ko', kind: 'birthday' };
+  const ok = { celebrity: 'voice1', name: '지민', locale: 'ko', kind: 'birthday' };
 
   it('Perso 키가 없으면 503 — 외부 호출 없이 닫힌다', async () => {
     const { fetchSpy } = fakePerso();
@@ -214,7 +214,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
   it('모르는 인물·이벤트는 404', async () => {
     fakePerso();
     const req = buildApp();
-    expect((await req('/event/1/clips', post({ ...ok, celebrity: 'nanami' }))).status).toBe(404);
+    expect((await req('/event/1/clips', post({ ...ok, celebrity: 'nobody' }))).status).toBe(404);
     expect((await req('/event/2/clips', post(ok))).status).toBe(404);
   });
 

@@ -2899,9 +2899,9 @@ export const migrations: Migration[] = [
     atomic: true,
     statements: [
       // 랜딩 이벤트 페이지의 좋아요 수. 인증 없이 세는 공개 카운터라 사용자와 묶지 않고
-      // (event_id, subject_id) 한 행에 누른 횟수만 더한다. 행은 여기서 시드하고 라우트는
-      // UPDATE 만 한다 — 아무 id 나 POST 해서 행을 만들어 내는 스팸을 막는다. 인물을
-      // 더할 때는 시드 마이그레이션을 하나 더 얹는다(`routes/event.ts`).
+      // (event_id, subject_id) 한 행에 누른 횟수만 더한다. 행은 시드하지 않는다 — 대상 id 는
+      // `packages/shared/src/event-voices.json` 의 목소리 목록이 정하고, 라우트가 그 목록에 있는
+      // id 만 첫 좋아요 때 만든다(`routes/event.ts`). 목록 밖 id 로는 행이 생기지 않는다.
       `CREATE TABLE IF NOT EXISTS event_likes (
         event_id TEXT NOT NULL,
         subject_id TEXT NOT NULL,
@@ -2909,8 +2909,6 @@ export const migrations: Migration[] = [
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (event_id, subject_id)
       )`,
-      `INSERT OR IGNORE INTO event_likes (event_id, subject_id, count) VALUES ('1', 'winter', 0)`,
-      `INSERT OR IGNORE INTO event_likes (event_id, subject_id, count) VALUES ('1', 'nanami', 0)`,
     ],
   },
   {

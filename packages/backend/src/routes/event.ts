@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../types';
 import { getDB } from '../lib/db';
+import { eventVoiceIds } from '@alarmtalk/shared';
 import {
-  EVENT_VOICES,
   isEventLocale,
   isEventMessageKind,
   renderMessage,
   sanitizeEventName,
   slotAt,
+  voiceProjectFor,
   type VoiceProject,
 } from '../lib/event-voices';
 import {
@@ -26,8 +27,9 @@ import { jsonError } from '../lib/api-error';
 //   POST /api/event/:eventId/likes/:subjectId            → { count }   (누른 횟수만큼 1 씩 더한다)
 //   POST /api/event/:eventId/clips  { celebrity, name, locale, kind }  → audio/mpeg (그 자리에서 만든 소리)
 //
-// 좋아요 행은 마이그레이션이 시드한다(#119). POST 는 있는 행만 UPDATE 하므로 모르는 id 는 404 이고
-// 스팸이 행을 만들어 내지 못한다. 남용 방어는 IP 버킷(index.ts 의 eventLikeRateLimitMiddleware,
+// 좋아요 대상은 `packages/shared/src/event-voices.json` 의 목소리 id 뿐이다 — 목록에 없는 id 는
+// 404 라 스팸이 행을 만들어 내지 못하고, 목록에 있으면 첫 좋아요 때 행이 생긴다(시드 마이그레이션
+// 없이 목소리를 더할 수 있게). 남용 방어는 IP 버킷(index.ts 의 eventLikeRateLimitMiddleware,
 // 클립 생성은 더 좁은 eventClipRateLimitMiddleware). id 는 짧은 슬러그만 받는다 — 값은
 // 예외 없이 `?` 바인딩.
 
@@ -40,13 +42,19 @@ event.get('/:eventId/likes', async (c) => {
   if (!ID_RE.test(eventId)) {
     return jsonError(c, 400, 'INVALID_ID', 'invalid event id');
   }
+  const ids = eventVoiceIds(eventId);
+  if (ids.length === 0) return jsonError(c, 404, 'NOT_FOUND', 'unknown event');
   const db = getDB(c.env);
   const r = await db.execute({
     sql: 'SELECT subject_id, count FROM event_likes WHERE event_id = ? ORDER BY subject_id',
     args: [eventId],
   });
-  const likes: Record<string, number> = {};
-  for (const row of r.rows) likes[String(row.subject_id)] = Number(row.count);
+  // 아직 아무도 안 누른 목소리는 0 — 화면이 숫자를 지어내지 않고도 0 을 보여 줄 수 있게.
+  const likes: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]));
+  for (const row of r.rows) {
+    const id = String(row.subject_id);
+    if (id in likes) likes[id] = Number(row.count);
+  }
   return c.json({ likes });
 });
 
@@ -56,16 +64,17 @@ event.post('/:eventId/likes/:subjectId', async (c) => {
   if (!ID_RE.test(eventId) || !ID_RE.test(subjectId)) {
     return jsonError(c, 400, 'INVALID_ID', 'invalid id');
   }
-  const db = getDB(c.env);
-  const r = await db.execute({
-    sql: `UPDATE event_likes SET count = count + 1, updated_at = datetime('now')
-          WHERE event_id = ? AND subject_id = ? RETURNING count`,
-    args: [eventId, subjectId],
-  });
-  if (r.rows.length === 0) {
+  if (!eventVoiceIds(eventId).includes(subjectId)) {
     return jsonError(c, 404, 'NOT_FOUND', 'unknown subject');
   }
-  return c.json({ count: Number(r.rows[0]!.count) });
+  const db = getDB(c.env);
+  const r = await db.execute({
+    sql: `INSERT INTO event_likes (event_id, subject_id, count) VALUES (?, ?, 1)
+          ON CONFLICT(event_id, subject_id)
+          DO UPDATE SET count = count + 1, updated_at = datetime('now') RETURNING count`,
+    args: [eventId, subjectId],
+  });
+  return c.json({ count: Number(r.rows[0]?.count ?? 1) });
 });
 
 // ── 메시지 클립 ────────────────────────────────────────────────────────────────
@@ -142,10 +151,9 @@ event.post('/:eventId/clips', async (c) => {
   const locale = b.locale;
   const kind = b.kind;
 
-  const celebrityVoices = EVENT_VOICES[eventId]?.[celebrity];
-  if (!celebrityVoices) return jsonError(c, 404, 'NOT_FOUND', 'unknown celebrity');
-  const voice = celebrityVoices[locale];
-  if (!voice) {
+  const voice = voiceProjectFor(eventId, celebrity, locale);
+  if (voice === null) return jsonError(c, 404, 'NOT_FOUND', 'unknown voice');
+  if (voice === undefined) {
     return jsonError(c, 503, 'VOICE_NOT_AVAILABLE', 'voice not available in this language');
   }
   const apiKey = c.env.PERSO_API_KEY;
