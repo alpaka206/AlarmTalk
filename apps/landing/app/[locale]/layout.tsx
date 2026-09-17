@@ -9,7 +9,7 @@ import {
   SITE_URL,
   localePath,
   localeUrl,
-  languageAlternates,
+  languageAlternates, OG_IMAGES
 } from "@/lib/site";
 import { HtmlLangSync } from "@/components/html-lang-sync";
 
@@ -49,8 +49,9 @@ export async function generateMetadata({
       siteName: SITE_NAME,
       title,
       description,
+      images: OG_IMAGES,
     },
-    twitter: { card: "summary_large_image", title, description },
+    twitter: { card: "summary_large_image", title, description, images: OG_IMAGES },
     robots: { index: true, follow: true },
   };
 }

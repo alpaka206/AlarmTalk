@@ -14,10 +14,12 @@ import { PhonePreview, SCREEN_ACCENT, SCREEN_LINE } from "../phone-preview";
  *
  * 값은 `%`·`scale` 로만 쓴다 — `px` 로 잡으면 뷰포트 폭에서 어긋난다.
  *
- * 구간 배분(진행률):
- *   0.00–0.30  폰이 올라오며 자리를 잡는다
- *   0.38–0.55  토글이 켜진다 (이 구간이 이 섹션의 이유다)
- *   0.60–0.85  문구가 바뀐다
+ * 구간 배분(진행률, 스테이지 200vh = 스크롤 100vh):
+ *   0.00–0.35  폰이 올라오며 자리를 잡는다
+ *   0.50–0.80  토글이 켜진다 (이 구간이 이 섹션의 이유다)
+ *   0.80–1.00  켜진 채로 잠깐 머물다 풀린다
+ * 문구는 하나뿐이고 바뀌지 않는다(2026-09-15 지시 — 예전엔 토글 뒤에 "내일 아침 6시…" 로
+ * 갈아 끼웠는데, 두 문장이 서로 다른 말을 해서 애매했다). 토글이 켜지면 장면은 끝이다.
  *
  * **reduced-motion 을 JS 로 가르지 않는다.** 그 훅은 하이드레이션 뒤에야 참을 돌려주므로
  * 마크업을 갈라 놓으면 그 순간 섹션이 접힌다 — 아래 앵커(#pricing·#faq)로 들어온 사람은
@@ -36,21 +38,18 @@ export function ProductScroll() {
   // 되튀지 않게 한다(바운스가 보이면 그건 제품이 아니라 장난감처럼 읽힌다).
   const p = useSpring(scrollYProgress, { stiffness: 90, damping: 26, mass: 0.4 });
 
-  const phoneY = useTransform(p, [0, 0.3], ["12%", "0%"]);
-  const phoneOpacity = useTransform(p, [0, 0.18], [0, 1]);
-  const phoneScale = useTransform(p, [0, 0.3], [0.94, 1]);
+  const phoneY = useTransform(p, [0, 0.35], ["12%", "0%"]);
+  const phoneOpacity = useTransform(p, [0, 0.2], [0, 1]);
+  const phoneScale = useTransform(p, [0, 0.35], [0.94, 1]);
 
   // 토글: 손잡이가 왼쪽 끝에서 오른쪽 끝으로. 트랙 색도 같이 산다.
-  const knobX = useTransform(p, [0.38, 0.55], ["0%", "100%"]);
-  const trackOn = useTransform(p, [0.38, 0.55], [0, 1]);
+  const knobX = useTransform(p, [0.5, 0.8], ["0%", "100%"]);
+  const trackOn = useTransform(p, [0.5, 0.8], [0, 1]);
   const trackBg = useTransform(
     trackOn,
     [0, 1],
     ["rgba(255,255,255,0.14)", SCREEN_ACCENT],
   );
-
-  const beforeOpacity = useTransform(p, [0.6, 0.72], [1, 0]);
-  const afterOpacity = useTransform(p, [0.73, 0.85], [0, 1]);
 
   return (
     <section
@@ -60,26 +59,7 @@ export function ProductScroll() {
       style={{ "--scrub-on": SCREEN_ACCENT } as React.CSSProperties}
     >
       <div className="scrub-pin px-5">
-        {/* 문구 자리를 두 줄 높이로 잡아 둔다 — 높이를 고정해야 문구가 바뀔 때 폰이
-            위아래로 밀리지 않는다. */}
-        <div className="relative h-28 w-full max-w-2xl sm:h-32">
-          {/* 앞 문구는 스크럽 장면의 시각 요소다 — 스크린리더에는 완성형(after) 하나만 읽힌다. */}
-          <motion.p
-            data-scrub="before"
-            aria-hidden="true"
-            className="t-h1 absolute inset-x-0 top-0 text-center text-text"
-            style={{ opacity: beforeOpacity }}
-          >
-            {t("before")}
-          </motion.p>
-          <motion.h2
-            data-scrub="after"
-            className="t-h1 absolute inset-x-0 top-0 text-center text-text"
-            style={{ opacity: afterOpacity }}
-          >
-            {t("after")}
-          </motion.h2>
-        </div>
+        <h2 className="t-h1 w-full max-w-2xl text-center text-text">{t("headline")}</h2>
 
         <motion.div
           data-scrub="phone"

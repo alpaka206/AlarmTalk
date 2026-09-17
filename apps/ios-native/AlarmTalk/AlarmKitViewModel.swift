@@ -162,6 +162,8 @@ final class AlarmKitViewModel: ObservableObject {
     /// `.alerting` 진입 감지(idempotent) 와 사라짐 감지(dismiss) 를 위해 유지.
     private var lastAlarmStateSnapshot: [String: String] = [:]
     private var observationTask: Task<Void, Never>?
+    /// 권한이 아직 없어 **구독을 미뤄 둔** 저장소. 권한이 생기는 순간 구독을 시작한다.
+    private weak var deferredObservationStore: LocalAlarmStore?
 
     private static let alarmUnavailableMessage = "이 iOS 버전에서는 알람 기능을 사용할 수 없어요."
 
@@ -271,14 +273,29 @@ final class AlarmKitViewModel: ObservableObject {
         // 권한 팝업을 띄워 화면을 가린다.
         if UIPreviewSeed.isEnabled { return }
         #if canImport(AlarmKit)
+        // ⚠ **권한이 없으면 구독하지 않는다**(2026-09-17 실기기). `alarmUpdates` 를 구독하는
+        // 것만으로 시스템이 알람 권한 팝업을 띄워, 새로 깐 앱이 **로그인·약관 동의보다 먼저**
+        // 권한부터 물었다. 권한은 알람을 처음 만들 때(`AlarmsListView.openCreateAlarm`) 묻고,
+        // 허용되는 순간 `applyAuthorizationState` 가 여기서 미뤄 둔 구독을 시작한다.
+        // 권한이 없으면 예약된 알람도 없으니 그 사이에 놓치는 갱신은 없다.
+        deferredObservationStore = store
         refreshAuthorizationState()
-        guard observationTask == nil else { return }
+        beginObservingIfAuthorized()
+        #endif
+    }
+
+    #if canImport(AlarmKit)
+    private func beginObservingIfAuthorized() {
+        guard observationTask == nil,
+              AlarmManager.shared.authorizationState == .authorized,
+              let store = deferredObservationStore
+        else { return }
         observationTask = Task { [weak self, weak store] in
             guard let self, let store else { return }
             await self.observeAlarmUpdates(store: store)
         }
-        #endif
     }
+    #endif
 
     #if canImport(AlarmKit)
     private func applyAuthorizationState(_ state: AlarmManager.AuthorizationState) {
@@ -286,6 +303,7 @@ final class AlarmKitViewModel: ObservableObject {
         authorizationLabel = Self.authorizationDisplayLabel(raw)
         alarmAuthorized = state == .authorized
         permissionRecoveryNeeded = Self.isPermissionRecoveryNeeded(raw)
+        if alarmAuthorized { beginObservingIfAuthorized() }
     }
 
     private func observeAlarmUpdates(store: LocalAlarmStore) async {

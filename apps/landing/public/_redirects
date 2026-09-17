@@ -1,1 +1,4 @@
-/  /ko/  302
+# 다른 정적 호스트(Netlify/Cloudflare Pages) 백업. Vercel 은 이 파일을 무시하고 vercel.json 을 쓴다.
+/ko/*  /:splat  301
+/cheer/*  /event/1/  301
+/company/*  /  301

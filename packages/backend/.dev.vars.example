@@ -65,3 +65,6 @@ APPLE_PRIVATE_KEY=
 #    BadEnvironmentKeyInToken 으로 전부 막힌다.
 APNS_KEY_ID=
 APNS_PRIVATE_KEY=
+# Perso API 키 (랜딩 이벤트 메시지 클립, routes/event.ts). 없으면 그 라우트만 503.
+# 프로젝트·문장 슬롯은 src/lib/event-voices.ts 에 있다.
+PERSO_API_KEY=

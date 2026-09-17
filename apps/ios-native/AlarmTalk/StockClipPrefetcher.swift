@@ -44,6 +44,10 @@ final class StockClipPrefetcher: ObservableObject {
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
+    /// `start` 마다 올리는 세대. **취소된 앞 회차가 뒤늦게 상태를 덮어쓰지 못하게** 한다 —
+    /// 취소는 배치 경계에서만 확인되므로, 앞 회차가 마지막 배치를 끝내고 `.finished` 를
+    /// 쓰면 새 회차가 받는 중인데도 받기 화면이 닫혔다.
+    private var generation = 0
 
     init(api: AlarmTalkAPI = .shared) {
         self.api = api
@@ -70,35 +74,92 @@ final class StockClipPrefetcher: ObservableObject {
     ) {
         guard task == nil, let token = session?.token else { return }
         let owned = ownedVoiceProfileIDs
+        generation += 1
+        let gen = generation
         task = Task { [weak self] in
             // ⚠ **재시도가 없으면 한 번의 일시 실패가 영구가 된다.** 안드로이드는 WorkManager
             // 가 30초 백오프로 다시 돌리는데, iOS 에는 그 장치가 없어 콜드 스타트에서 한 번
             // 실패하면 그 실행 내내 테마 클립이 비어 있었다.
             for attempt in 0..<Self.maxAttempts {
                 if Task.isCancelled { break }
-                await self?.run(token: token, language: language, ownedVoiceProfileIDs: owned)
+                await self?.run(token: token, language: language, ownedVoiceProfileIDs: owned, gen: gen)
                 guard await self?.state == .failed else { break }
                 if attempt < Self.maxAttempts - 1 {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
                 }
             }
-            self?.task = nil
+            if self?.generation == gen { self?.task = nil }
         }
+    }
+
+    /// 기본 목소리 선다운로드 대상인가 — 기기 언어 하나 × 무료 테마.
+    static func isDefaultVoiceTarget(_ clip: StockClip, language: String) -> Bool {
+        isSystemVoiceId(clip.voiceProfileId)
+            && (clip.language ?? "ko") == language
+            && freeBucketCategories.contains(clip.category ?? "")
+    }
+
+    /// 기본 목소리 클립을 **몇 개 중 몇 개 받았는가**. 알람 설정 관문과 목소리 탭 진행 표시가 본다.
+    ///
+    /// 기준은 서버 매니페스트에 **실제로 있는** 클립이다(기대 개수표가 아니다) — 서버가 아직
+    /// 못 만든 클립까지 세면 받을 수 없는 몫 때문에 관문이 영영 안 열린다.
+    /// 매니페스트를 한 번도 못 받았으면 nil(= 모른다).
+    static func defaultVoiceProgress(
+        language: String = VoiceStudioViewModel.appVoiceLanguage()
+    ) -> (done: Int, total: Int)? {
+        guard let manifest = StockClipManifestStore.load() else { return nil }
+        let targets = manifest.clips.filter { isDefaultVoiceTarget($0, language: language) }
+        let missing = missingClips(targets).count
+        return (targets.count - missing, targets.count)
+    }
+
+    /// 기본 목소리를 다 받아 **알람을 설정해도 되는가**(2026-09-17 지시: 다 받기 전에는 알람
+    /// 설정 화면 자체를 막는다). 매니페스트가 비어 있으면(서버가 줄 것이 없다) 막지 않는다.
+    static func defaultVoicesReady() -> Bool {
+        guard let progress = defaultVoiceProgress() else { return false }
+        return progress.done >= progress.total
+    }
+
+    var isRunning: Bool {
+        if case .running = state { return true }
+        return false
     }
 
     func cancel() {
         task?.cancel()
         task = nil
+        generation += 1
     }
 
-    private func run(token: String, language: String, ownedVoiceProfileIDs: Set<String> = []) async {
-        state = .running(done: 0, total: 0)
+    /// 이 회차가 아직 현재 회차일 때만 상태를 쓴다.
+    private func setState(_ new: State, gen: Int) {
+        guard gen == generation, !Task.isCancelled else { return }
+        state = new
+    }
+
+    /// 받을 목록 중 **아직 캐시에 없는(또는 낡은) 것**.
+    private static func missingClips(_ clips: [StockClip]) -> [StockClip] {
+        let cache = AudioCacheStore.shared
+        return clips.filter {
+            let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
+            return cache.cachedURL(for: key) == nil
+                || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
+        }
+    }
+
+    /// 한 회차 안에서 빠진 클립을 다시 받는 횟수. 동시에 같은 파일을 쓰다 실패한 것처럼
+    /// 곧바로 다시 받으면 되는 실패를 30초 대기로 미루지 않는다.
+    private static let passesPerRun = 3
+
+    private func run(token: String, language: String, ownedVoiceProfileIDs: Set<String> = [], gen: Int) async {
+        setState(.running(done: 0, total: 0), gen: gen)
         do {
-            let clips = try await api.getStockClips(token: token).filter { clip in
+            let manifest = try await api.getStockClipManifest(token: token)
+            // 알람 관문(`defaultVoiceProgress`)이 오프라인 콜드스타트에서도 같은 목록을 보게 남긴다.
+            StockClipManifestStore.save(manifest)
+            let clips = manifest.clips.filter { clip in
                 if isSystemVoiceId(clip.voiceProfileId) {
-                    // 기본 목소리 — 기기 언어 하나 × 무료 테마.
-                    return (clip.language ?? "ko") == language
-                        && Self.freeBucketCategories.contains(clip.category ?? "")
+                    return Self.isDefaultVoiceTarget(clip, language: language)
                 }
                 // 내가 등록한 클론 — **카테고리·언어를 거르지 않는다.**
                 // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르면
@@ -106,58 +167,51 @@ final class StockClipPrefetcher: ObservableObject {
                 // (안드로이드 `downloadAllPresetClips` 도 거르지 않는다).
                 return ownedVoiceProfileIDs.contains(clip.voiceProfileId)
             }
-            guard !clips.isEmpty else { state = .finished; return }
+            guard !clips.isEmpty else { setState(.finished, gen: gen); return }
 
-            let cache = AudioCacheStore.shared
-            let missing = clips.filter {
-                let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
-                return cache.cachedURL(for: key) == nil
-                    || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
-            }
-            var done = clips.count - missing.count
-            state = .running(done: done, total: clips.count)
-            guard !missing.isEmpty else { state = .finished; return }
+            var missing = Self.missingClips(clips)
+            setState(.running(done: clips.count - missing.count, total: clips.count), gen: gen)
 
-            for batch in stride(from: 0, to: missing.count, by: Self.parallelism).map({
-                Array(missing[$0..<min($0 + Self.parallelism, missing.count)])
-            }) {
-                if Task.isCancelled { return }
-                await withTaskGroup(of: Bool.self) { group in
-                    for clip in batch {
-                        group.addTask { [api] in
-                            do {
-                                let response = try await api.getTTSMessageAudio(
-                                    id: clip.messageId,
-                                    token: token
-                                )
-                                _ = try await AudioCacheStore.cacheStockClipOffMain(
-                                    audio: response,
-                                    messageId: clip.messageId,
-                                    cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId)
-                                )
-                                return true
-                            } catch AudioCacheError.legacyAliasFailed {
-                                // 이 경로의 성공 기준은 **정본(cacheKey)** 하나다(`missing`
-                                // 판정도 그 키를 본다). 옛 별칭 실패로 실패라고 말하면
-                                // 실제로는 다 받아 놓고 '받기 실패' 를 띄우는데, 다시
-                                // 시도해도 받을 게 없어 그 화면에서 못 빠져나온다.
-                                return true
-                            } catch {
-                                // 한 클립이 실패해도 나머지는 계속 받는다 — 회전은 남은
-                                // 것만으로도 돈다. 전부 실패했을 때만 실패로 본다.
-                                return false
+            // ⚠ **'하나라도 받았으면 끝' 으로 판정하지 말 것**(2026-09-17 실기기). 예전에는
+            // `done == 0 ? .failed : .finished` 라, 일부가 실패해도 받기 화면이 닫히고 메인으로
+            // 넘어갔다 — 다 받지 못한 테마는 오프라인에서 소리가 비고 회전 순서도 어긋난다.
+            // 끝났다고 말하는 기준은 **캐시를 다시 셌을 때 빠진 것이 0개** 하나다.
+            for _ in 0..<Self.passesPerRun where !missing.isEmpty {
+                for batch in stride(from: 0, to: missing.count, by: Self.parallelism).map({
+                    Array(missing[$0..<min($0 + Self.parallelism, missing.count)])
+                }) {
+                    if Task.isCancelled || gen != generation { return }
+                    await withTaskGroup(of: Void.self) { group in
+                        for clip in batch {
+                            group.addTask { [api] in
+                                do {
+                                    let response = try await api.getTTSMessageAudio(
+                                        id: clip.messageId,
+                                        token: token
+                                    )
+                                    _ = try await AudioCacheStore.cacheStockClipOffMain(
+                                        audio: response,
+                                        messageId: clip.messageId,
+                                        cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId)
+                                    )
+                                } catch {
+                                    // 한 클립이 실패해도 나머지는 계속 받는다. 성공 여부는 아래에서
+                                    // **캐시를 다시 세어** 판정한다 — 옛 별칭 실패(`legacyAliasFailed`)
+                                    // 처럼 정본은 저장된 경우도 그렇게 해야 정확하다.
+                                }
                             }
                         }
                     }
-                    for await ok in group where ok { done += 1 }
+                    setState(
+                        .running(done: clips.count - Self.missingClips(clips).count, total: clips.count),
+                        gen: gen
+                    )
                 }
-                state = .running(done: done, total: clips.count)
+                missing = Self.missingClips(clips)
             }
-            // 하나도 못 받았으면 실패다 — '다 받았다' 고 말하면 사용자는 오프라인에서
-            // 알람이 조용한 이유를 영영 모른다.
-            state = done == 0 ? .failed : .finished
+            setState(missing.isEmpty ? .finished : .failed, gen: gen)
         } catch {
-            state = .failed
+            setState(.failed, gen: gen)
         }
     }
 }

@@ -2893,6 +2893,38 @@ export const migrations: Migration[] = [
         )`,
     ],
   },
+  {
+    id: 119,
+    name: 'event-likes',
+    atomic: true,
+    statements: [
+      // 랜딩 이벤트 페이지의 좋아요 수. 인증 없이 세는 공개 카운터라 사용자와 묶지 않고
+      // (event_id, subject_id) 한 행에 누른 횟수만 더한다. 행은 시드하지 않는다 — 대상 id 는
+      // `packages/shared/src/event-voices.json` 의 목소리 목록이 정하고, 라우트가 그 목록에 있는
+      // id 만 첫 좋아요 때 만든다(`routes/event.ts`). 목록 밖 id 로는 행이 생기지 않는다.
+      `CREATE TABLE IF NOT EXISTS event_likes (
+        event_id TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0 CHECK (count >= 0),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (event_id, subject_id)
+      )`,
+    ],
+  },
+  {
+    id: 120,
+    name: 'event-slot-cursor',
+    atomic: true,
+    statements: [
+      // 랜딩 이벤트 메시지 클립(routes/event.ts)이 Perso 슬롯(더빙 프로젝트의 문장)을 돌려 쓰는
+      // 순번. 워커는 상태가 없어 "다음 문장" 을 여기서 센다 — 같은 문장에 두 요청이 겹쳐 서로
+      // 글자를 덮어쓰는 일을 줄인다. 만든 소리는 어디에도 두지 않으므로 표는 이것뿐이다.
+      `CREATE TABLE IF NOT EXISTS event_slot_cursor (
+        project INTEGER PRIMARY KEY,
+        position INTEGER NOT NULL DEFAULT 0
+      )`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

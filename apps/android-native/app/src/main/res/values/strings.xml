@@ -941,4 +941,8 @@
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>
+    <string name="voices_not_ready_message_progress">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요. (%1$d%%)\n목소리 탭에서 진행 상황을 볼 수 있어요.</string>
+    <string name="voices_not_ready_message">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
+    <string name="voices_default_download_progress">받는 중 %1$d%%</string>
 </resources>

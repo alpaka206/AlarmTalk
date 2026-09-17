@@ -6,7 +6,8 @@ import SwiftUI
 /// 하나의 값(`ClipReadinessModel.percent`)만 크게 보여 주고, 무엇이 남았는지는 아래 줄에서
 /// 말한다. 규약은 docs/spec/voice-and-message.md 「미리 받아 둔다」 절.
 ///
-/// ⚠ **이 화면이 알람 만들기를 막지 않는다.** 여기서 나가도 알람은 만들 수 있어야 한다 —
+/// ⚠ **이 화면이 알람 만들기를 막지 않는다.** (알람 설정 관문은 따로 있다 — 기본 목소리를 다
+/// 받기 전에는 `MainTabsView.openEditorIfVoicesReady` 가 막는다, 2026-09-17.) 여기서 나가도 알람은 만들 수 있어야 한다 —
 /// 새벽에 전파가 나빠 내일 알람을 못 맞추는 일이 있어서는 안 된다. 못 받은 목소리만
 /// 고를 수 없을 뿐이다.
 struct ClipPreparationView: View {

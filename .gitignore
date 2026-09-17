@@ -86,6 +86,8 @@ test/*
 *.caf
 !packages/**/test/**
 !apps/android-native/**/res/raw/**
+# 랜딩이 배포하는 정적 소리(미리 들어보기·이벤트 본문 클립)는 커밋한다.
+!apps/landing/public/**
 
 handoff
 # 로컬 전용(커밋 안 함): omo 툴 스크래치, 목소리 프리뷰 클립(30MB, 로컬 청취용)

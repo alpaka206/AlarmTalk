@@ -13,7 +13,7 @@ export function FinalCta() {
 
   return (
     <section className="bg-bg-alt">
-      <div className="section-pad mx-auto max-w-6xl px-5 md:px-8">
+      <div className="section-pad mx-auto max-w-site px-5 md:px-8">
         <Reveal className="mx-auto flex max-w-155 flex-col items-center text-center">
           <h2 className="t-h1 text-text">{t("headline")}</h2>
           <p className="t-lead mt-5 text-text-body">{t("body")}</p>

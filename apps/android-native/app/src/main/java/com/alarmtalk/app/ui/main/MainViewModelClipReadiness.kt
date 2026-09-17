@@ -17,9 +17,10 @@ import kotlinx.coroutines.withContext
  *
  * iOS `ClipReadinessModel.swift` 와 같은 역할이고 같은 규칙이다.
  *
- * ⚠ **이 값으로 알람 만들기를 막지 말 것.** 100% 가 아니어도 알람은 만들 수 있어야 한다
- * (오프라인에서 내일 알람을 못 맞추면 안 된다 — docs/spec/voice-and-message.md).
- * 막는 것은 목소리 등록과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다.
+ * ⚠ **이 값으로 알람 만들기를 막지 말 것**(클론·공유 목소리까지 센다). 알람 설정 관문은
+ * **기본 목소리만** 보는 `StockClipPrefetchWorker.defaultVoicesReady` 하나다(2026-09-17).
+ * 이 값으로 막는 것은 목소리 등록과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다
+ * (docs/spec/voice-and-message.md 「기본 목소리를 다 받아야 알람을 설정한다」).
  */
 /**
  * @param selectedVoiceProfileId **관문이 막은 바로 그 목소리.** 공유받은 목소리는 선다운로드

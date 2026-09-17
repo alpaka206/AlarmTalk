@@ -13,6 +13,8 @@ struct VoiceProfileManagementPanel: View {
     @EnvironmentObject private var alarmStore: LocalAlarmStore
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var subscriptions: SubscriptionManager
+    /// 기본 목소리 받기 진행을 헤더 옆에 보여 주려고 본다(앱 전역 인스턴스).
+    @EnvironmentObject private var stockClipPrefetcher: StockClipPrefetcher
 
     @Binding var route: VoicesRoute
 
@@ -516,6 +518,29 @@ struct VoiceProfileManagementPanel: View {
 
     // MARK: - 기본(시스템) 목소리
 
+    /// 기본 목소리를 **받는 중일 때만** 헤더 옆에 붙는 진행 표시(2026-09-17 지시).
+    ///
+    /// 받기 화면을 '백그라운드에서 계속' 으로 닫으면 진행을 볼 곳이 없는데, 그동안 알람 설정은
+    /// 막혀 있다(`MainTabsView.openEditorIfVoicesReady`). 막힌 이유가 여기서 보여야 한다.
+    /// 안드로이드 `VoiceProfileManagementPanel` 의 기본 목소리 헤더와 같은 자리다.
+    private var defaultVoiceDownloadBadge: AnyView? {
+        guard case let .running(done, total) = stockClipPrefetcher.state, total > 0, done < total else {
+            return nil
+        }
+        return AnyView(
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(theme.palette.primary)
+                Text("받는 중 \(min(done * 100 / total, 99))%")
+                    .font(theme.typography.labelMedium)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .monospacedDigit()
+            }
+            .accessibilityElement(children: .combine)
+        )
+    }
+
     /// ⚠ **시트 뒤에 숨기지 말 것.** 안드로이드는 기본 목소리 4종을 목록에 그대로 펼친다.
     /// 예전 구조(값 + 셰브론 → 시트)에서는 **무료 사용자에게 정작 쓸 수 있는 기본 목소리
     /// 4개가 시트를 열기 전까진 보이지 않았다** — 안드로이드가 이 화면을 고친 이유가 그거다.
@@ -523,7 +548,7 @@ struct VoiceProfileManagementPanel: View {
     /// '호칭' TextField 도 여기 두지 않는다(안드로이드에 없다). 호칭은 등록 플로우에서 받는다.
     @ViewBuilder
     private var systemVoicesSection: some View {
-        VoiceSectionCard(title: "기본 목소리") {
+        VoiceSectionCard(title: "기본 목소리", trailing: defaultVoiceDownloadBadge) {
             ForEach(Array(systemVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)

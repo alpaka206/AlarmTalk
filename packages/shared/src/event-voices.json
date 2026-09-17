@@ -1,0 +1,17 @@
+{
+  "1": {
+    "voices": [
+      {
+        "id": "voice1",
+        "name": { "ko": "voice 1", "en": "voice 1", "ja": "voice 1" },
+        "portrait": null,
+        "perso": {
+          "spaceSeq": 501031,
+          "ko": { "project": 413673, "reserved": [11135215, 11135216, 11135217] },
+          "en": { "project": 415525, "reserved": [11162674, 11162675] },
+          "ja": { "project": 415525, "reserved": [11162674, 11162675] }
+        }
+      }
+    ]
+  }
+}

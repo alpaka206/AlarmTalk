@@ -11,6 +11,8 @@ import {
   ipRateLimitMiddleware,
   ipRateLimitRefundMiddleware,
   authRateLimitMiddleware,
+  eventLikeRateLimitMiddleware,
+  eventClipRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
@@ -35,6 +37,7 @@ import codeRoutes from './routes/code';
 import pushRoutes from './routes/push';
 import eventsRoutes from './routes/events';
 import holidayRoutes from './routes/holiday';
+import eventRoutes from './routes/event';
 import adminRoutes from './routes/admin';
 
 /**
@@ -71,6 +74,8 @@ app.use('*', bodyLimitMiddleware);
 const ALLOWED_ORIGINS = [
   'http://localhost:8081',
   'exp://localhost:8081',
+  // 랜딩 dev 서버(이벤트 좋아요 같은 공개 라우트를 로컬에서 부른다).
+  'http://localhost:3100',
   'https://alarm-talk.com',
   'https://www.alarm-talk.com',
 ];
@@ -215,6 +220,12 @@ app.get('/api/app/version', noStore, async (c) => {
 // KR 은 KASI_SERVICE_KEY 설정 시 대체/임시공휴일을 보정한다 (미설정 시 date-holidays 결과만).
 app.use('/api/holiday', publicCache);
 app.route('/api/holiday', holidayRoutes);
+
+// 랜딩 이벤트 좋아요 (인증 불필요). 수가 바뀌므로 캐시하지 않고, POST 는 별도 IP 한도.
+app.use('/api/event/*', noStore);
+app.post('/api/event/*/likes/*', eventLikeRateLimitMiddleware);
+app.post('/api/event/*/clips', eventClipRateLimitMiddleware);
+app.route('/api/event', eventRoutes);
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
 // 무차별 대입 방어용 엄격 한도를 일반 한도와 별개 버킷으로 추가 적용한다.
