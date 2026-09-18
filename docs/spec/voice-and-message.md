@@ -514,6 +514,9 @@ AlarmKit 예약을 다시 만들 수 있다.
   받다 일부가 실패했다.
 - **'백그라운드에서 계속' 으로 닫은 뒤의 진행은 목소리 탭 '기본 목소리' 헤더 옆**에 보인다
   (「받는 중 N%」). 섹션을 접어도 보이게 목록 아래가 아니라 헤더에 둔다.
+- **목소리 교체 차단 화면에도 같은 퍼센트를 보여 준다**(2026-09-17 지시). 그 화면도 결국
+  같은 클립을 다시 받는 일이라 판정·분모가 같다. 분모가 0이면 줄을 그리지 않는다 — 뜻 없는
+  0% 를 보여 주지 않는다.
 - 잃는 것을 알고 택했다: 새로 깔고 받기 전에 네트워크가 끊기면 **그동안 알람을 설정할 수 없다.**
 
 - 받는 대상(기본 목소리) = 기본(시스템) 목소리 **전부**(시우·미나·도현·애니 **4종** —
@@ -783,6 +786,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
 | 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.defaultVoicesReadyOrExplain`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
+| 교체 화면 퍼센트 | `StockReplacementScreen(progress)` ← 워커 진행 또는 `defaultVoiceProgress` | `StockReplacementView` 의 `defaultVoiceProgress` 폴링 | — |
 | 받기 진행 = 헤더 옆 | `VoiceProfileManagementPanel` 기본 목소리 `VoiceCatalogSectionHeader(trailing)` ← 워커 진행 | `VoiceProfileManagementPanel.defaultVoiceDownloadBadge` ← `StockClipPrefetcher.state` | — |
 | 받기 화면 완료 = 빠진 것 0 | 워커가 실패 0일 때만 `success` | `StockClipPrefetcher.run` 이 캐시를 다시 세어 판정 | — |
 | 기본 목소리 즉시 카탈로그 | `data/SystemVoices.kt` + `MainViewModel.voiceProfiles` | `SystemVoices.swift` + `VoiceStudioViewModel.profiles` | 성공한 `GET /voice` 가 전체 목록 권위 |

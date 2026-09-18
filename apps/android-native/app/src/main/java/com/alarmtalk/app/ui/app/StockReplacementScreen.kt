@@ -45,6 +45,12 @@ internal fun StockReplacementScreen(
     contentPadding: PaddingValues,
     working: Boolean,
     onRetry: () -> Unit,
+    /**
+     * 받은 개수 to 받아야 할 개수. 교체도 결국 '기본 목소리 클립을 다시 받는 일' 이라
+     * 받기 화면·알람 관문과 **같은 값**을 쓴다(2026-09-17 지시: 여기에도 퍼센트를 보여 준다).
+     * null 이거나 분모가 0 이면 줄을 그리지 않는다 — 뜻 없는 0% 를 보여 주지 않는다.
+     */
+    progress: Pair<Int, Int>? = null,
 ) {
     Column(
         modifier = Modifier
@@ -68,6 +74,15 @@ internal fun StockReplacementScreen(
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
+        progress?.takeIf { (_, total) -> total > 0 }?.let { (done, total) ->
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "${(done.coerceIn(0, total) * 100 / total).coerceAtMost(99)}%",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.r3app_stock_replacement_body),
