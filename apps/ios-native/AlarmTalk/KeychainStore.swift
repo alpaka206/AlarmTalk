@@ -12,6 +12,24 @@ enum KeychainStore {
     static var isIsolatedForTests: Bool { service.hasSuffix(TestIsolation.storageSuffix) && TestIsolation.isRunningUnitTests }
     private static let sessionAccount = "session"
 
+    /// **앱을 지웠다 다시 깔면 로그인도 풀린다**(2026-09-17 지시).
+    ///
+    /// iOS 는 앱을 지워도 키체인 항목을 지우지 않는다. 그래서 새로 깐 앱이 옛 세션을 읽어
+    /// **로그인된 채로** 뜬다 — 사용자가 기대하는 '처음부터'가 아니고, 심사 녹화처럼
+    /// 첫 실행을 보여 줘야 할 때 방법이 없다. UserDefaults 는 삭제와 함께 사라지므로,
+    /// 이 표시가 없으면 '새로 깐 것' 으로 보고 세션을 지운다.
+    ///
+    /// ⚠ 업데이트는 UserDefaults 가 남으므로 표시가 그대로 있고, 세션도 그대로다.
+    private static let installMarkerKey = "com.alarmtalk.app.installMarker\(TestIsolation.storageSuffix)"
+
+    /// 앱 실행에서 **딱 한 번** 부른다(`AuthViewModel.init` 이 세션을 읽기 전에).
+    static func clearSessionIfFreshInstall() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: installMarkerKey) else { return }
+        deleteSession()
+        defaults.set(true, forKey: installMarkerKey)
+    }
+
     /// 세션 쓰기·CAS 가 공유하는 잠금. 배경 작업과 전경이 같은 항목을 건드린다.
     private static let sessionLock = NSLock()
 

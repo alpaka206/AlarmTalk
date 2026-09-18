@@ -331,6 +331,8 @@ final class AuthViewModel: ObservableObject {
         self.api = api
         self.appleCredentialProvider = appleCredentialProvider
         self.accessSnapshotStore = accessSnapshotStore
+        // ⚠ **읽기 전에** 판정한다 — 새로 깐 앱이 옛 키체인 세션을 물고 뜨지 않게.
+        KeychainStore.clearSessionIfFreshInstall()
         session = KeychainStore.readSession()
         #if DEBUG
         // 화면 확인 모드(-UIPreviewSeed)에서는 여기서 바로 세션을 심는다. 뷰의 `.task`

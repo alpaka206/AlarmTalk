@@ -80,7 +80,14 @@ struct VoicePreviewConfirmView: View {
                             .foregroundStyle(theme.palette.error)
                     }
 
-                    sharingSection
+                    // ⚠ **공유할 수 없는 등급에는 이 칸을 아예 두지 않는다**(2026-09-17 지시).
+                    // 개인 이용권은 혼자 쓰는 등급이라 공유가 성립하지 않는다 — 꺼진 스위치와
+                    // "커플/가족에서 쓸 수 있어요" 안내를 등록 화면에 깔아 두면, 만들기 흐름
+                    // 한복판에서 못 쓰는 기능부터 읽게 된다(같은 이유로 목소리 탭도 등급이
+                    // 되는 사람에게만 공유 행을 보여 준다 — `VoiceProfileManagementPanel`).
+                    if canShareVoice {
+                        sharingSection
+                    }
                     replaceConsent
                     Spacer(minLength: 4)
                 }
@@ -115,9 +122,7 @@ struct VoicePreviewConfirmView: View {
                     Text("가족·연인에게 공유 허용")
                         .font(theme.typography.bodyMedium)
                         .fontWeight(.semibold)
-                    Text(canShareVoice
-                         ? "등록한 목소리를 가족·연인도 함께 사용할 수 있어요."
-                         : "공유는 커플/가족 이용권에서 사용할 수 있어요.")
+                    Text("등록한 목소리를 가족·연인도 함께 사용할 수 있어요.")
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -126,7 +131,7 @@ struct VoicePreviewConfirmView: View {
                     .labelsHidden()
                     .alarmTalkSwitch()
             }
-            .disabled(!canShareVoice || busy)
+            .disabled(busy)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(theme.palette.surfaceVariant.opacity(0.42))
@@ -313,21 +318,40 @@ struct VoicePreviewConfirmView: View {
         }
     }
 
+    /// 하단 액션 — **'다시 만들기'(보조) · '저장하기'(주)** 를 같은 높이·같은 모서리로
+    /// 나란히 둔다(2026-09-17 지시).
+    ///
+    /// ⚠ 예전에는 '다시 만들기' 가 `.plain` 글자 버튼이라 높이도 배경도 없었고, 주 버튼만
+    /// `maxWidth: .infinity` 라 **두 버튼의 크기·세로 중심이 어긋나** 보였다. 폭은 1:2 로
+    /// 나눠 주 버튼이 더 크되, 두 버튼 모두 같은 최소 높이(50)를 갖는다.
     private var actions: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button("다시 만들기") {
                 Task { await discard() }
             }
             .buttonStyle(.plain)
+            .font(theme.typography.bodyMedium.weight(.semibold))
             .foregroundStyle(theme.palette.error)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(
+                theme.palette.surface,
+                in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
             .disabled(busy)
 
             Button(saving ? "저장 중…" : "저장하기") {
                 Task { await promote() }
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: theme.shapes.vocaButton))
+            .controlSize(.large)
             .tint(theme.palette.primary)
-            .frame(maxWidth: .infinity)
+            .font(theme.typography.bodyMedium.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 50)
             // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
             // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
             //
@@ -336,8 +360,9 @@ struct VoicePreviewConfirmView: View {
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
             .disabled(busy || !listened || (registeredVoice != nil && !replaceExisting))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 16)
     }
 
     // MARK: - 동작
