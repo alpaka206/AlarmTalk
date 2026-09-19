@@ -30,7 +30,12 @@ vi.mock('../src/lib/apple-storekit', () => ({
   fetchAppleTransaction: vi.fn(async () => transactionInfo),
   fetchAppleSubscriptionStatus: vi.fn(async () => {
     if (chainStatus instanceof Error) throw chainStatus;
-    return { status: chainStatus, productId: 'com.alarmtalk.app.personal_monthly' };
+    // 확정은 체인의 **최신 트랜잭션**으로 판정한다 — 이 파일에서는 보낸 것이 곧 최신이다.
+    return {
+      status: chainStatus,
+      productId: 'com.alarmtalk.app.personal_monthly',
+      latest: transactionInfo,
+    };
   }),
   APPLE_SUBSCRIPTION_STATUS: {
     ACTIVE: 1,
@@ -120,6 +125,8 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
     //   Play 구독을 시작한 경우를 못 본다(구매자 본인은 plan_changed 대상도 아니다).
     //   그대로 확정하면 우리 DB 의 Play 행만 취소되고 Play 는 계속 갱신한다.
     transactionInfo = revokedInfo({ revocationDate: undefined });
+    // 확정은 체인의 현재 상태로 판정한다 — 살아 있는 구독이어야 교차 스토어 검사까지 간다.
+    chainStatus = 1;
     mockDB.pushResult([{ id: 'caller-pk' }]); // resolveUserPk
     // 계정 식별자가 없는 트랜잭션이라 라우트가 '이미 묶인 것인가' 를 먼저 본다.
     mockDB.pushResult([{ user_id: 'caller-pk' }]);
@@ -147,6 +154,7 @@ describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () =>
 
   it('애플만 살아 있으면 막지 않는다', async () => {
     transactionInfo = revokedInfo({ revocationDate: undefined });
+    chainStatus = 1;
     mockDB.pushResult([{ id: 'caller-pk' }]);
     mockDB.pushResult([{ user_id: 'caller-pk' }]); // 이미 묶인 트랜잭션
     mockDB.pushResult([

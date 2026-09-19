@@ -231,6 +231,12 @@ export interface AppleSubscriptionStatus {
   autoRenewStatus?: number;
   /** 유예 중 접근권의 끝. 결제된 기간의 expiresDate 와 구분한다. */
   gracePeriodExpiresDate?: number;
+  /**
+   * 그 체인의 **가장 최근 트랜잭션** 자체 — 결제 확정이 이걸로 판정한다
+   * (`docs/spec/billing-lifecycle.md` 「애플 결제 확정」). 앱이 올린 트랜잭션은 재전달된
+   * 옛 갱신일 수 있어서, 표식(`appAccountToken`)·상품·만료를 전부 여기서 읽는다.
+   */
+  latest: AppleTransactionInfo;
 }
 
 /**
@@ -309,6 +315,7 @@ export async function fetchAppleSubscriptionStatus(
       productId: info.productId,
       autoRenewStatus: renewal?.autoRenewStatus,
       gracePeriodExpiresDate: renewal?.gracePeriodExpiresDate,
+      latest: info,
     };
   }
   // ⚠ 401 을 "없음" 으로 흘리면 재조회가 **즉시 만료**로 떨어진다 — 위 헬퍼 주석 참조.

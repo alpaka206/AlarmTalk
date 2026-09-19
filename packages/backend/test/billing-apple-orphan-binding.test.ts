@@ -25,7 +25,10 @@ vi.mock('../src/lib/apple-storekit', async (original) => ({
   ...(await original<typeof import('../src/lib/apple-storekit')>()),
   appleStoreKitConfigFromEnv: () => ({ issuerId: 't', keyId: 't', privateKeyPem: 't', bundleId: 'com.alarmtalk.app' }),
   fetchAppleTransaction: vi.fn(async () => info),
-  fetchAppleSubscriptionStatus: vi.fn(async () => ({ status: 1, expiresDate: purchasedAt + 30 * 86_400_000 })),
+  // 확정은 **체인의 최신 트랜잭션**으로 판정한다 — 여기서는 보낸 것이 곧 최신이다.
+  fetchAppleSubscriptionStatus: vi.fn(async () => ({
+    status: 1, expiresDate: purchasedAt + 30 * 86_400_000, latest: info,
+  })),
 }));
 import billingApple from '../src/routes/billing-apple';
 
