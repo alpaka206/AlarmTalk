@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.util.Log
@@ -736,6 +738,19 @@ internal fun AlarmTalkApp(
         }
         ?.takeIf { (done, total) -> total > 0 && done < total }
 
+    // 교체 차단 화면의 퍼센트. 워커가 진행을 안 내보내는 동안에도 값이 보이게 캐시를 센다.
+    // 파일 검사라 값싸고, 차단 화면이 떠 있는 동안에만 돈다.
+    var stockReplacementProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    LaunchedEffect(stockReplacementPending, authSession?.user?.id) {
+        while (stockReplacementPending) {
+            stockReplacementProgress = withContext(Dispatchers.IO) {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker
+                    .defaultVoiceProgress(context, authSession?.user?.id)
+            }
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+
     // 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
     var voicesNotReadyOpen by remember { mutableStateOf(false) }
     var voicesNotReadyProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -1226,6 +1241,8 @@ internal fun AlarmTalkApp(
               contentPadding = padding,
               working = stockReplacementWorking,
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
+              // 워커 진행이 있으면 그걸, 없으면(막 시작·재시도 대기) 캐시를 세어 보여 준다.
+              progress = backgroundPrefetchProgress ?: stockReplacementProgress,
           )
           return@Scaffold
       }

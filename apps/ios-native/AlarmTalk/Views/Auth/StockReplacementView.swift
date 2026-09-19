@@ -13,6 +13,15 @@ struct StockReplacementView: View {
     let working: Bool
     let onRetry: () -> Void
 
+    /// 받은 개수 / 받아야 할 개수. 교체도 결국 '기본 목소리 클립을 다시 받는 일' 이라
+    /// 받기 화면·알람 관문과 **같은 값**을 쓴다(2026-09-17 지시: 여기에도 퍼센트를 보여 준다).
+    @State private var progress: (done: Int, total: Int)?
+
+    private var percentLabel: String? {
+        guard let progress, progress.total > 0 else { return nil }
+        return "\(min(progress.done * 100 / progress.total, 99))%"
+    }
+
     /// ⚠ **ScrollView 를 빼지 말 것.** 이 화면의 탈출구는 아래 버튼 하나뿐이라, 큰 글꼴에서
     /// 내용이 화면을 넘치면 버튼이 밖으로 나가 **누를 방법이 사라진다** — 앱이 벽돌이 된다.
     /// 안드로이드도 같은 이유로 `verticalScroll` 을 둔다.
@@ -36,6 +45,16 @@ struct StockReplacementView: View {
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
                 .multilineTextAlignment(.center)
+
+            if let percentLabel {
+                Spacer().frame(height: 12)
+                Text(percentLabel)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.primary)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.2), value: percentLabel)
+            }
 
             Spacer().frame(height: 12)
 
@@ -71,6 +90,13 @@ struct StockReplacementView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AlarmTalkTheme.background)
+        // 받는 동안 값이 움직인다. 캐시 파일 검사라 값싸다(`ClipPreparationView` 와 같은 주기).
+        .task {
+            while !Task.isCancelled {
+                progress = StockClipPrefetcher.defaultVoiceProgress()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
     }
 }
 
