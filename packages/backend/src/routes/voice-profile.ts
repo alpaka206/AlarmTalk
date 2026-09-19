@@ -1554,10 +1554,19 @@ voiceProfile.patch('/:id', async (c) => {
   // 제자리 교체가 같은 경로를 써야 어느 한쪽의 조기 return에서 빠지지 않는다.
   if (hasShared) scheduleVoiceShareChangedPush(c, db, userPk);
 
+  // ⚠ **이름은 언제나 실어 보낸다**(2026-09-19 실기기). 예전에는 "이번 요청이 바꾼 필드" 만
+  //   돌려줬는데, 저장하기(승격)는 `is_draft` 만 보내므로 응답에 `name` 이 없었다. 앱의
+  //   `VoiceProfile.name` 은 필수라 **해석에 실패했고**, 서버는 200 인데 화면에는
+  //   「처리 중 오류가 발생했어요」 가 떴다 — 목소리는 저장돼 있는데 실패로 보인다.
+  //   (교체 갈래는 프로필 전체를 돌려줘서 이 문제가 없었다 — 그래서 첫 등록에서만 났다.)
+  const currentName = await db.execute({
+    sql: 'SELECT name FROM voice_profiles WHERE id = ? LIMIT 1',
+    args: [id],
+  });
   return c.json({
     profile: {
       id,
-      ...(hasName ? { name } : {}),
+      name: hasName ? name : String(currentName.rows[0]?.name ?? ''),
       ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
       ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),

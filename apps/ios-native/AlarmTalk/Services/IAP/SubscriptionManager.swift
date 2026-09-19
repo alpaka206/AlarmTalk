@@ -198,8 +198,10 @@ final class SubscriptionManager: ObservableObject {
             //   그걸 **끝내 버려** A 가 다시 로그인해도 재시도할 것이 남지 않는다.
             //   건너뛴 것은 끝내지 않은 채로 둔다 — 주인이 로그인하면 그때 올라간다.
             // 환불은 주인이 아니어도 전달한다(위 리스너와 같은 이유).
-            guard transaction.revocationDate != nil || maySyncToBackend(transaction) else { continue }
-            let outcome = await syncWithBackend(transaction: transaction)
+            // ⚠ 리스너와 같은 이유로 **건너뛰지 않는다**(2026-09-19). 판정은 서버가 하고,
+            //   구독은 결과와 무관하게 끝내 큐가 비게 한다. 자세한 근거는 리스너 주석.
+            let mine = transaction.revocationDate != nil || maySyncToBackend(transaction)
+            let outcome = await syncWithBackend(transaction: transaction, surfacesError: mine)
             if Self.mayFinish(productID: transaction.productID, serverConfirmed: outcome.confirmed) {
                 await transaction.finish()
             }
@@ -604,11 +606,20 @@ final class SubscriptionManager: ObservableObject {
                         //   성공했을 때 지우는 편이 안전하다(성공 시 confirm 갈래가 지운다).
                         PendingRevokedTransactionStore.add(String(transaction.id))
                     }
-                    guard isRevoked || maySend else {
-                        await self.refreshPurchasedProducts()
-                        continue
-                    }
-                    let outcome = await self.syncWithBackend(transaction: transaction)
+                    // ⚠ **건너뛰기만 하면 트랜잭션이 영영 쌓인다**(2026-09-19 실기기).
+                    //   남의 표식이 박힌 갱신을 보내지도 끝내지도 않으면 스토어가 앱을 열
+                    //   때마다 다시 배달한다 — 실제로 한 기기에 미완료 20건이 쌓였고, 그
+                    //   계정이 **탈퇴로 사라진 뒤에는** 아무도 그걸 끝낼 수 없었다.
+                    //   판정은 서버가 한다(주인이 살아 있으면 403, 사라졌으면 이어받는다 —
+                    //   `routes/billing-apple.ts`). 그래서 **보내 보고**, 구독은 결과와
+                    //   무관하게 끝낸다(아래 `mayFinish` 주석: 구독은 `currentEntitlements`
+                    //   에 남아 다음 동기화가 따라잡는다). 소모성 선물만 확정 전까지 남긴다.
+                    //   배경 경로라 실패 문구는 띄우지 않는다 — 결제한 적 없는 사용자에게
+                    //   "동기화 실패" 가 상시로 뜨던 이유가 그것이었다.
+                    let outcome = await self.syncWithBackend(
+                        transaction: transaction,
+                        surfacesError: isRevoked || maySend
+                    )
                     // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
                     // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.
                     if await SubscriptionManager.mayFinish(
@@ -663,13 +674,18 @@ final class SubscriptionManager: ObservableObject {
     /// ⚠ 반환값을 무시하지 말 것 — 소모성 선물은 `confirmed` 가 false 면 `finish()` 하면
     /// 안 된다(`mayFinish` 주석 참조).
     @discardableResult
-    private func syncWithBackend(transaction: Transaction) async -> ConfirmOutcome {
-        await syncWithBackend(transactionID: String(transaction.id))
+    private func syncWithBackend(
+        transaction: Transaction,
+        /// 실패를 화면 문구로 띄울 것인가. 배경에서 남의 트랜잭션을 확인해 보는 회차는
+        /// 띄우지 않는다 — 결제한 적 없는 사용자에게 "동기화 실패" 가 뜬다.
+        surfacesError: Bool = true
+    ) async -> ConfirmOutcome {
+        await syncWithBackend(transactionID: String(transaction.id), surfacesError: surfacesError)
     }
 
     // StoreKit 객체를 만들지 않고 실제 HTTP 응답부터 confirm 결과까지 확인할 수 있는 경계.
     @discardableResult
-    func syncWithBackend(transactionID: String) async -> ConfirmOutcome {
+    func syncWithBackend(transactionID: String, surfacesError: Bool = true) async -> ConfirmOutcome {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
@@ -716,7 +732,7 @@ final class SubscriptionManager: ObservableObject {
             //   없으니, 무엇을 해야 하는지 말하고 다음 시도에서 통과시킨다.
             let message = APIErrorMessages.message(for: code)
                 ?? String(localized: "다른 스토어에서 결제 중인 이용권이 있어요.")
-            self.lastError = message
+            if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch APIError.server(let status, _, let code) where status == 409
             && code == "TRANSACTION_OWNED_BY_OTHER_USER" {
@@ -728,10 +744,12 @@ final class SubscriptionManager: ObservableObject {
             let message = String(
                 localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
             )
-            self.lastError = message
+            if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch {
-            self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
+            if surfacesError {
+                self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
+            }
             return .notConfirmed
         }
     }

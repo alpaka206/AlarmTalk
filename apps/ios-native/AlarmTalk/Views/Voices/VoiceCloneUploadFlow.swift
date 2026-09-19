@@ -590,17 +590,15 @@ struct VoiceCloneUploadFlow: View {
     /// (`VoiceConsentSheet` 는 폼 밖에서 호출된 경로를 위한 폴백이다.)
     private var consentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // 권리 보증은 **약관 제7조**가 담당한다(가입 시 필수 동의). 여기서는 업로드
-            // 시점 고지만 남긴다 — 체크박스로 다시 받지 않는다.
-            Text("본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요. 권한 없는 등록으로 생기는 책임은 등록한 사람에게 있어요(이용약관 제7조).")
-            .font(theme.typography.bodySmall)
-            .foregroundStyle(theme.palette.onSurfaceVariant)
-            .fixedSize(horizontal: false, vertical: true)
+            // ⚠ **권리 고지 문구를 여기 두지 않는다**(2026-09-19 지시). 권리 보증은 가입 때
+            // 필수로 받는 약관 제7조가 이미 담당한다 — 등록할 때마다 같은 말을 다시 읽히면
+            // 만들기 흐름만 길어진다. 아직 동의하지 않은 사람에게 묻는 **생체정보 체크는
+            // 남긴다**(그건 고지가 아니라 실제로 받아야 하는 동의다).
             if needsBiometricConsent {
                 consentCheck(
                     isOn: $voiceBiometricAgreed,
                     label: "음성 생체정보 처리에 동의해요",
-                    description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요. 목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
+                    description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
                 )
             }
         }

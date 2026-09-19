@@ -347,6 +347,17 @@ billingApple.post('/apple/confirm', async (c) => {
   }
   const expiresAt = new Date(info.expiresDate);
   if (expiresAt.getTime() <= Date.now()) {
+    // ⚠ **어느 결제가 만료였는지 남긴다**(2026-09-19). 이 거절이 반복될 때 로그만 보고는
+    //   "앱이 새 결제를 만든 것인가, 옛 갱신을 다시 올린 것인가" 를 가릴 수 없었다 —
+    //   실기기에서 그 구분이 안 돼 원인을 좁히는 데 하루가 걸렸다. 결제 번호·만료 시각은
+    //   개인정보가 아니고, 애플 콘솔·서버 API 조회의 유일한 열쇠다.
+    logStructured('warn', {
+      at: 'billing.apple.confirm',
+      step: 'expired',
+      transaction_id: info.transactionId,
+      original_transaction_id: info.originalTransactionId,
+      expires_at: expiresAt.toISOString(),
+    });
     return c.json(
       { error: 'Subscription already expired', error_code: 'SUBSCRIPTION_EXPIRED' },
       400,
