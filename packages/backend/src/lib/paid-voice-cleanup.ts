@@ -1,7 +1,7 @@
 import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import {
-  enqueueExternalDeletion,
+  enqueueExternalDeletionsBatch,
   enqueueUserVoiceArtifacts,
   externalDeletionStatement,
 } from './audio-retention';
@@ -309,16 +309,22 @@ export async function deleteSensitiveVoiceDataForUser(
           WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
     args: ids,
   });
-  for (const row of providerVoices.rows) {
-    await enqueueExternalDeletion(db, 'elevenlabs_voice', row.elevenlabs_voice_id as string);
-  }
+  // 한 문장으로 적재한다 — 파일마다 왕복하면 사전렌더 클립(목소리당 21개)만으로 워커
+  // subrequest 한도(~50)를 넘겨, 보관 기한 스윕이 그 사용자에서 영영 멈췄다(2026-09-20 실측).
+  await enqueueExternalDeletionsBatch(
+    db,
+    'elevenlabs_voice',
+    providerVoices.rows.map((row) => row.elevenlabs_voice_id as string),
+  );
   const uploadObjects = await db.execute({
     sql: `SELECT object_key FROM voice_uploads WHERE user_id IN (${ph})`,
     args: ids,
   });
-  for (const row of uploadObjects.rows) {
-    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    db,
+    'r2_object',
+    uploadObjects.rows.map((row) => row.object_key as string),
+  );
   if (hasClones) {
     // 시스템 보이스 캐시 오브젝트를 여기 넣으면 **다른 사용자의 알람까지** 깨진다
     // (그 캐시는 전 사용자가 공유한다).
@@ -328,9 +334,11 @@ export async function deleteSensitiveVoiceDataForUser(
               AND voice_profile_id IN (${cph})`,
       args: cloneIds,
     });
-    for (const row of generatedObjects.rows) {
-      await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
-    }
+    await enqueueExternalDeletionsBatch(
+      db,
+      'r2_object',
+      generatedObjects.rows.map((row) => row.audio_object_key as string),
+    );
   }
 
   // 클론과 발신자 직접 업로드를 **지우기 전에** 한 번에 철회한다. family-voice의

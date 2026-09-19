@@ -408,6 +408,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
             WHERE deletion_status = 'pending_deletion'
               AND deletion_purge_at IS NOT NULL
               AND deletion_purge_at <= ?
+            ORDER BY deletion_purge_at, id
             LIMIT 2`,
       args: [now.toISOString()],
     });
@@ -440,12 +441,20 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
             captureCron('scheduled.account_purge.apple_revoke', err);
           }
         }
-        const purged = await withWriteTransaction(db, async (tx) => {
-          await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-          return purgeUserAccount(tx, userPk, userId);
-        });
-        revokedTargets.push(...purged.downgradedAlarms);
-        voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+        // ⚠ **한 계정이 실패해도 다음 계정으로 간다**(2026-09-20). 예전에는 예외가 루프를
+        //   빠져나가 같은 배치의 뒤 계정이 파기되지 않았고, 다음 틱도 같은 계정에서 다시
+        //   막혔다 — 파기 요청 데이터가 무기한 남는다. 실패한 계정은 트랜잭션이 통째로
+        //   롤백돼 다음 틱이 처음부터 다시 한다.
+        try {
+          const purged = await withWriteTransaction(db, async (tx) => {
+            await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+            return purgeUserAccount(tx, userPk, userId);
+          });
+          revokedTargets.push(...purged.downgradedAlarms);
+          voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+        } catch (err) {
+          captureCron('scheduled.account_purge.user', err);
+        }
       }
       if (due.rows.length > 0) {
         logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });

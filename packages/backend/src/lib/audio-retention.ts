@@ -104,17 +104,21 @@ export async function enqueueUserVoiceArtifacts(
           WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
     args: ownerIds,
   });
-  for (const row of voices.rows) {
-    await enqueueExternalDeletion(tx, 'elevenlabs_voice', row.elevenlabs_voice_id as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'elevenlabs_voice',
+    voices.rows.map((row) => row.elevenlabs_voice_id as string),
+  );
 
   const uploads = await tx.execute({
     sql: `SELECT object_key FROM voice_uploads WHERE user_id IN (${ph})`,
     args: ownerIds,
   });
-  for (const row of uploads.rows) {
-    await enqueueExternalDeletion(tx, 'r2_object', row.object_key as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    uploads.rows.map((row) => row.object_key as string),
+  );
 
   const generated = await tx.execute({
     sql: `SELECT audio_object_key FROM generated_audio_assets
@@ -123,9 +127,11 @@ export async function enqueueUserVoiceArtifacts(
                  OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph})))`,
     args: [...ownerIds, ...ownerIds],
   });
-  for (const row of generated.rows) {
-    await enqueueExternalDeletion(tx, 'r2_object', row.audio_object_key as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    generated.rows.map((row) => row.audio_object_key as string),
+  );
 
 }
 
