@@ -170,6 +170,10 @@ internal fun VoiceRegistrationAttestation(
     biometricAgreed: Boolean,
     onBiometricAgreedChange: (Boolean) -> Unit,
 ) {
+    // ⚠ **물을 것이 없으면 상자째 그리지 않는다**(2026-09-19 실기기). 권리 고지 문구를
+    //   동의 화면으로 옮긴 뒤로는, 이미 동의한 사람에게 **내용 없는 배경만** 남았다.
+    //   iOS `VoiceCloneUploadFlow.detailsSection` 과 같은 판정이다.
+    if (!showBiometricConsent) return
     Surface(
         shape = WakerPanelShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -185,14 +189,12 @@ internal fun VoiceRegistrationAttestation(
             // 같은 말을 두 번 읽히면 "내가 뭘 잘못하고 있나" 로 읽힌다. 문장은 **동의를 받는
             // 자리**(가입 동의 화면의 생체정보 항목, 그리고 아직 동의 안 한 사람에게 뜨는
             // 아래 체크)에 들어가 있다. iOS `VoiceCloneUploadFlow` 와 같은 규칙이다.
-            if (showBiometricConsent) {
-                VoiceRegistrationCheck(
-                    checked = biometricAgreed,
-                    onCheckedChange = onBiometricAgreedChange,
-                    label = stringResource(R.string.voices_register_biometric_consent),
-                    description = stringResource(R.string.voices_register_biometric_desc),
-                )
-            }
+            VoiceRegistrationCheck(
+                checked = biometricAgreed,
+                onCheckedChange = onBiometricAgreedChange,
+                label = stringResource(R.string.voices_register_biometric_consent),
+                description = stringResource(R.string.voices_register_biometric_desc),
+            )
         }
     }
 }
