@@ -64,6 +64,16 @@ export interface StoreEntitlementInput {
   lastPaidAt?: Date;
   /** 감사/디버깅용 원본 페이로드 (민감정보 제외 권장). */
   rawPayload?: string;
+  /**
+   * **스토어가 이 결제를 호출자 것으로 찍어 줬는가**(애플 `appAccountToken` 일치).
+   *
+   * true 일 때만, **앞 주인의 기간이 끝난** 구독 체인의 소유권을 호출자에게 옮긴다.
+   * 애플은 한 App Store 계정의 구독을 같은 체인(`originalTransactionId`)으로 잇기 때문에,
+   * A 계정의 구독이 끝난 뒤 같은 애플 계정으로 B 계정이 새로 결제하면 **B 의 표식이 박힌
+   * 새 트랜잭션이 옛 체인 id 로** 올라온다. 이 값이 없으면 B 는 영원히 409 를 받는다 —
+   * 돈은 나갔는데 권한이 안 붙는다(2026-09-19 운영 재현).
+   */
+  purchaserVerified?: boolean;
 }
 
 export type StoreEntitlementResult =
@@ -199,6 +209,9 @@ export async function applyStoreEntitlement(
   const lastPaidAtIso = (input.lastPaidAt ?? input.startsAt).toISOString();
   const appliedAt = input.appliedAt ?? new Date();
 
+  // 소유권을 넘겨받았다면 그 앞 주인 — 커밋 뒤 스냅샷을 다시 읽으라고 알릴 대상이다.
+  let transferredFrom: string | null = null;
+
   const existing = await tx.execute({
     sql: `SELECT user_id, subscription_id, last_paid_at, expires_at,
                  (SELECT plan FROM users WHERE id = store_transactions.user_id) AS user_plan
@@ -210,8 +223,34 @@ export async function applyStoreEntitlement(
   if (existing.rows.length > 0) {
     const row = existing.rows[0]!;
     if (String(row.user_id) !== input.userPk) {
-      return { ok: false, status: 409, errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
-    }
+      // ⚠ **앞 주인의 기간이 끝났고, 스토어가 이번 결제를 호출자 것으로 찍었으면 넘겨준다.**
+      //   (위 `purchaserVerified` 주석 참조.) 둘 중 하나라도 아니면 예전처럼 막는다 —
+      //   앞 주인이 아직 기간 안이면 두 계정이 같은 결제를 다투는 상황이다.
+      const previousOwner = String(row.user_id);
+      const lapsed =
+        !row.expires_at || Date.parse(String(row.expires_at)) <= appliedAt.getTime();
+      if (!(input.purchaserVerified === true && lapsed)) {
+        return { ok: false, status: 409, errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
+      }
+      // 앞 주인의 그 구독 행만 정리한다(다른 스토어의 멀쩡한 구독은 건드리지 않는다).
+      const previousSubscriptionId = (row.subscription_id as string | null) ?? null;
+      if (previousSubscriptionId) {
+        await tx.execute({
+          sql: `UPDATE subscriptions
+                SET status = 'cancelled', canceled_at = COALESCE(canceled_at, ?),
+                    updated_at = datetime('now')
+                WHERE id = ? AND status = 'active'`,
+          args: [appliedAt.toISOString(), previousSubscriptionId],
+        });
+      }
+      const previousPlanType = await resolvePlanAfterSuspend(tx, previousOwner, []);
+      await tx.execute({
+        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+        args: [previousPlanType ? planTypeToUserPlan(previousPlanType) : 'free', previousOwner],
+      });
+      transferredFrom = previousOwner;
+      // 아래 '새 구매' 갈래로 내려간다 — `INSERT OR REPLACE` 가 체인의 주인을 호출자로 바꾼다.
+    } else {
     // 늦게 도착한 이전 결제가 새 상품·기간을 되돌리지 못하게 한다.
     if (row.last_paid_at && Date.parse(String(row.last_paid_at)) > Date.parse(lastPaidAtIso)) {
       return { ok: false, status: 409, errorCode: 'SUBSCRIPTION_EXPIRED' };
@@ -290,6 +329,7 @@ export async function applyStoreEntitlement(
         // 같은 plan이어도 보류 복구·그룹 기간 연장으로 멤버 스냅샷이 바뀔 수 있다.
         planChangedUserIds,
       };
+    }
     }
   }
 
@@ -464,7 +504,9 @@ export async function applyStoreEntitlement(
       starts_at: startsAtIso,
       expires_at: expiresAtIso,
     },
-    planChangedUserIds: [...new Set(planChangedUserIds)],
+    planChangedUserIds: [
+      ...new Set([...planChangedUserIds, ...(transferredFrom ? [transferredFrom] : [])]),
+    ],
   };
 }
 

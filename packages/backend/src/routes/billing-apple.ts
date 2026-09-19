@@ -178,11 +178,14 @@ billingApple.post('/apple/confirm', async (c) => {
   // 대조 값은 클라가 구매 시 `appAccountToken` 에 실은 우리 쪽 사용자 id(UUID)다.
   // 구글이 해시를 쓰는 것과 달리 애플은 **UUID 만** 허용해 그대로 싣는다.
   const appleAccountToken = info.appAccountToken?.trim().toLowerCase();
+  // 스토어가 찍어 준 표식이 **호출자 본인**인가. 아래 검사를 통과한 뒤에도 쓴다.
+  let purchaserVerified = false;
   if (appleAccountToken) {
     const candidates = [c.get('userLoginId'), c.get('userId'), userPk]
       .map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : ''))
       .filter((v) => v.length > 0);
-    if (!candidates.includes(appleAccountToken)) {
+    purchaserVerified = candidates.includes(appleAccountToken);
+    if (!purchaserVerified) {
       // ⚠ **표식이 가리키는 계정이 이미 없으면 막지 않는다**(2026-09-19).
       //
       //   애플 구독은 **App Store 계정**에 달려 있고 앱 계정이 사라져도 자동 갱신이 계속된다.
@@ -415,6 +418,9 @@ billingApple.post('/apple/confirm', async (c) => {
       // 그걸 키로 삼으면 매달 새 구독이 생긴다. originalTransactionId 는 구독 수명 동안
       // 고정이라 구글의 purchaseToken 과 같은 역할을 한다.
       providerTransactionId: info.originalTransactionId,
+      // 애플이 이 결제에 **호출자의 표식**을 찍었을 때만 true(위 계정 바인딩 검사 통과분).
+      // 끝난 체인의 소유권을 새 결제자에게 옮기는 근거다 — `lib/store-billing.ts` 주석.
+      purchaserVerified,
       productId: info.productId,
       plan,
       startsAt: new Date(info.purchaseDate),

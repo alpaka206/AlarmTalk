@@ -431,7 +431,12 @@ struct VoiceCloneUploadFlow: View {
     private var detailsSection: some View {
         nameSection
         languageSection
-        consentSection
+        // ⚠ **물을 것이 없으면 상자째 그리지 않는다**(2026-09-19 실기기: 언어 선택 아래에
+        //   빈 상자가 남았다). 권리 고지 문구를 동의 화면으로 옮긴 뒤로는, 이미 동의한
+        //   사람에게 **내용 없는 배경만** 그려졌다. 판정은 `needsBiometricConsent` 하나다.
+        if needsBiometricConsent {
+            consentSection
+        }
     }
 
     private var languageSection: some View {
@@ -594,6 +599,7 @@ struct VoiceCloneUploadFlow: View {
             // 필수로 받는 약관 제7조가 이미 담당한다 — 등록할 때마다 같은 말을 다시 읽히면
             // 만들기 흐름만 길어진다. 아직 동의하지 않은 사람에게 묻는 **생체정보 체크는
             // 남긴다**(그건 고지가 아니라 실제로 받아야 하는 동의다).
+            // (상자를 그릴지는 `detailsSection` 이 정한다 — 여기 오면 늘 물을 것이 있다.)
             if needsBiometricConsent {
                 consentCheck(
                     isOn: $voiceBiometricAgreed,
