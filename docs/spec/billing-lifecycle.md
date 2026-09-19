@@ -285,13 +285,64 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   읽힌다. 무료가 된 앞 주인에게는 즉시 해지와 같이 목소리 보관 기한을 건다
   (`syncPaidVoiceRetention`; 이미 끝나 있던 행이면 다시 걸지 않는다 — 기한이 연장된다).
   영향받은 계정 전원에게 커밋 뒤 `plan_changed` 를 보낸다.
-- ⚠ **알려진 한계**: 앞 주인이 **멤버 있는 가족 그룹 소유자**면 그룹 해체가 워커
-  subrequest 한도(~50)를 넘는다(실측 81). 같은 해체를 타는 기존 경로 — 가족 소유자 본인의
-  개인 전환(실측 80) — 도 같다. 해체의 멤버별 왕복을 묶어야 풀린다
-  (`test/billing-apple-confirm-subrequests.test.ts` 의 `it.fails`).
+- 앞 주인이 **멤버 있는 가족 그룹 소유자**여도 한 요청에 들어간다 — 그룹 해체가 멤버
+  수와 무관하게 왕복 두 번이다(아래 「그룹 정리는 멤버 수와 무관하게 묶어서 보낸다」).
 - **선물(소모성)은 체인이 없다.** 보낸 트랜잭션 그대로 판정한다 — 이 절은 자동갱신 구독만
   다룬다. 환불(`revocationDate`) 갈래도 그대로다(「환불은 크론을 기다리지 않고…」).
 - 애플 호출이 한 번 늘어난다(트랜잭션 조회 + 체인 상태). 워커 서브리퀘스트 한도(50) 안이다.
+
+## 그룹 정리는 멤버 수와 무관하게 **묶어서** 보낸다 (2026-09-20)
+
+워커 한 실행의 subrequest 는 ~50 이고 **DB 왕복 하나·외부 호출(스토어·FCM·APNs) 하나가
+각각 하나**다. 그룹 전체가 바뀌는 결제 처리 — 해체(가족 → 개인, 만료, 환불, 체인 넘겨받기),
+정원 축소(가족 → 커플), 보류·복구 전파(매달 갱신 포함) — 는 예전에 멤버마다 조회·취소·강등·
+클론 반납·보관 기한을 따로 왕복해, 멤버 넷이면 한 요청이 80~120 을 썼다. 한도를 넘으면 쓰기
+트랜잭션이 롤백되고 **재시도해도 같은 자리에서 죽는다**(결제는 됐는데 권한이 안 붙거나,
+환불·만료가 영영 반영되지 않는다).
+
+- **멤버별 반복 대신 읽기 한 번 + 쓰기 한 번.** 해체(`disbandOwnedPlanGroup`)·이탈
+  (`leavePlanGroupMembers`)·보류/복구(`propagateGroupMemberPlans`)는 멤버 전원의 상태를 한
+  묶음으로 읽고, 쓰기 문장을 한 묶음으로 보낸다. 쓰기 문장과 순서는 멤버별 경로 그대로다.
+- **앞 문장의 결과에 기대는 판정은 SQL 로 실행 시점에 한다** — 보관 기한
+  (`retentionSyncStatements` = `syncPaidVoiceRetention`).
+- **커밋 뒤 알림은 한 묶음이다**(`notifyBillingStateChanged` → `sendBillingStateSignals`).
+  재조회 신호와 목소리 삭제 예고를 **토큰 조회 한 번·OAuth 한 번**으로 보낸다
+  (`getPushTargetsForUsers`). 안드로이드 예고 대상은 예고 짝(표시용 + data-only
+  `plan_changed`)만 받는다 — 신호를 또 보내지 않는다. iOS 는 예고 alert 와 무음 신호를 둘 다
+  받는다(alert 는 앱을 깨우지 못한다). **보이는 예고를 먼저** 싣는다 — 한도에 잘려도 되돌릴 수
+  없는 삭제의 예고는 나간다. 기기마다 보내는 발송 자체는 줄일 수 없다(FCM v1 은 메시지당
+  요청 하나).
+- ⚠ 토큰 행의 `users.id` 와 `google_id` 가 **같을 수 있다**(이메일 계정은 첫 로그인 때 로그인
+  id 를 PK 로 채운다). 한 행을 한 사람에게 두 번 넣으면 같은 기기에 두 통이 나간다.
+- **구글 구매 확인(acknowledge)은 알림보다 먼저.** 알림이 한도를 먼저 쓰면 확인에 닿지
+  못해 Play 가 3일 뒤 환불한다.
+- **커밋 뒤 알림 단계는 던지지 않는다**(`notifyVoiceDeletionScheduled` 의 조회까지 try 안).
+  이미 저장된 결제가 500 으로 보이면 앱이 실패로 읽는다.
+- 실측 고정: `test/billing-apple-confirm-subrequests.test.ts` — **푸시를 켜고** 사람마다 기기·
+  클론 하나, 초대 코드 사용 4회, OAuth 캐시 비움, 출시 전 애플(조회마다 2)로 잰다. 애플 확정
+  라우트: 첫 결제 16, 개인 넘겨받기 31, 가족(멤버 4명) 넘겨받기 42, 가족 갱신 29, 가족 → 개인
+  39(인증 미들웨어 2 별도). 예전에는 같은 조건에서 81~113 이었다. 결과 고정:
+  `test/group-disband-batch.test.ts`. 도입 때 예전 구현과 무작위 상태 500개 × 해체·보류·복구·
+  이탈 = 2,000회를 대조해 불일치 0 을 확인했다.
+
+## 크론은 **한 건에 막혀 나머지를 굶기지 않는다** (2026-09-20)
+
+크론(5분)은 한 실행에서 만료·보관 기한 스윕·계정 파기를 함께 돈다. 한 건이 매번 같은
+자리에서 실패하거나 자리를 차지하면 **그 뒤가 영영 돌지 않는다** — 만료가 안 되고, 보관
+기한이 지난 목소리가 안 지워지고(처리방침 약속), 탈퇴한 계정이 파기되지 않는다.
+
+- **만료 배치는 소유자가 살아 있는 그룹의 멤버 행을 뽑지 않는다**(수명은 소유자가 정한다).
+  **권한이 살아 있는 행을 먼저** 보고, 보류·미확인 행은 남는 자리에서 다시 본다. 예전에는
+  결제 보류 중인 가족 하나(소유자 + 멤버 넷)가 다섯 자리를 매 틱 다 써서, 한도와 무관하게
+  다른 사람의 만료가 돌지 않았다.
+- **보관 기한 스윕은 한 사람을 한 트랜잭션으로** 지운다. 문장마다 커밋하던 때는 중간에
+  끊기면 삭제 큐만 올라가고 행이 반쯤 남았고, 다음 틱의 큐 비우기가 "아직 참조 중" 으로 보고
+  큐 행을 버려 **파일이 영영 남았다.** 한 틱에 두 명, 기한이 먼저 온 순서로.
+  삭제 큐 적재는 파일마다가 아니라 묶어서(`enqueueExternalDeletionsBatch`) — 사전렌더 클립
+  (목소리당 21개)만으로 한도를 넘겼다.
+- **계정 파기는 계정마다 격리**하고 기한 순서로 고정한다. 한 계정이 실패해도 같은 틱의 다음
+  계정을 파기한다. 실패한 계정은 롤백돼 다음 틱이 처음부터 다시 한다.
+- 회귀 테스트: `test/cron-fairness.test.ts`, `test/scheduled-purge-isolation.test.ts`.
 
 ## 플랜 변경 — **스토어 시트가 시점을 정한다**
 
@@ -775,6 +826,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
+| 그룹 정리 묶음(해체·이탈·보류/복구) | `lib/billing-cancel.ts` `disbandOwnedPlanGroup`·`leavePlanGroupMembers`·`propagateGroupMemberPlans`·`memberDetachWrites`·`retentionSyncStatements`; `lib/fcm.ts` `getPushTargetsForUsers`; `test/group-disband-batch.test.ts`·`test/billing-apple-confirm-subrequests.test.ts` | — | — |
 | 애플 확정 — 체인의 현재 상태로 판정·소유자 결정 | `routes/billing-apple.ts` confirm(`fetchAppleSubscriptionStatus`) · `lib/store-billing.ts` `purchaserVerified` 이전; `test/billing-apple-chain-authority.test.ts`·`test/billing-apple-chain-transfer.test.ts` | — | `SubscriptionManager.syncWithBackend` (어느 트랜잭션을 올려도 같은 답) |
 | 다른 계정 소유 결제의 실패 안내 | confirm의 `TRANSACTION_OWNED_BY_OTHER_USER` | `MainViewModelBillingActions.billingFailureMessage` | `SubscriptionManager.syncWithBackend` → `ConfirmOutcome.rejection` → `purchase`; `SubscriptionConfirmationTests` |
 | 전환 — 그룹 이어받기 | `lib/store-billing.ts` `findOwnedGroupToCarryOver` · `lib/billing-cancel.ts` `preserveGroupId` | — | — |

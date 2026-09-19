@@ -17,7 +17,7 @@
  * Workers free plan 의 invocation 당 subrequest 상한(~50)을 고려해 배치 크기를
  * 보수적으로 제한한다 (cron 5분 주기라 누적 처리량은 충분).
  */
-import type { Client } from '@libsql/client/web';
+import type { Client, InStatement } from '@libsql/client/web';
 import type { Env } from '../types';
 import type { DbExecutor } from './transactions';
 import { ElevenLabsClient } from './elevenlabs';
@@ -65,13 +65,25 @@ export async function enqueueExternalDeletion(
   kind: ExternalDeletionKind,
   ref: string | null | undefined,
 ): Promise<void> {
+  const stmt = externalDeletionStatement(kind, ref);
+  if (stmt) await tx.execute(stmt);
+}
+
+/**
+ * 큐 적재 한 건을 **문장으로** 돌려준다 — 여러 쓰기를 `batch` 하나로 묶는 호출부용.
+ * 빈 참조는 `null`(적재할 것이 없다). `enqueueExternalDeletion` 도 이걸 쓴다.
+ */
+export function externalDeletionStatement(
+  kind: ExternalDeletionKind,
+  ref: string | null | undefined,
+): InStatement | null {
   const trimmed = ref?.trim();
-  if (!trimmed) return;
-  await tx.execute({
+  if (!trimmed) return null;
+  return {
     sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref)
           VALUES (?, ?, ?)`,
     args: [crypto.randomUUID(), kind, trimmed],
-  });
+  };
 }
 
 /**
@@ -92,17 +104,21 @@ export async function enqueueUserVoiceArtifacts(
           WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
     args: ownerIds,
   });
-  for (const row of voices.rows) {
-    await enqueueExternalDeletion(tx, 'elevenlabs_voice', row.elevenlabs_voice_id as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'elevenlabs_voice',
+    voices.rows.map((row) => row.elevenlabs_voice_id as string),
+  );
 
   const uploads = await tx.execute({
     sql: `SELECT object_key FROM voice_uploads WHERE user_id IN (${ph})`,
     args: ownerIds,
   });
-  for (const row of uploads.rows) {
-    await enqueueExternalDeletion(tx, 'r2_object', row.object_key as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    uploads.rows.map((row) => row.object_key as string),
+  );
 
   const generated = await tx.execute({
     sql: `SELECT audio_object_key FROM generated_audio_assets
@@ -111,9 +127,11 @@ export async function enqueueUserVoiceArtifacts(
                  OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph})))`,
     args: [...ownerIds, ...ownerIds],
   });
-  for (const row of generated.rows) {
-    await enqueueExternalDeletion(tx, 'r2_object', row.audio_object_key as string);
-  }
+  await enqueueExternalDeletionsBatch(
+    tx,
+    'r2_object',
+    generated.rows.map((row) => row.audio_object_key as string),
+  );
 
 }
 

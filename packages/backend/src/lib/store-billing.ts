@@ -15,7 +15,7 @@ import {
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
   syncPaidVoiceRetention,
-  leavePlanGroupMember,
+  leavePlanGroupMembers,
   propagateGroupMemberPlans,
   resolvePlanAfterSuspend,
 } from './billing-cancel';
@@ -176,7 +176,13 @@ export async function extendStoreGroupPeriod(
     false,
   );
   const members = [...new Set([...extended.rows.map((row) => String(row.user_id)), ...restored])];
-  for (const id of members) await clearPaidVoiceRetention(tx, id);
+  // 한 문장으로 — 멤버마다 왕복하면 가족 갱신 확정이 워커 subrequest 한도에 다가간다.
+  if (members.length) {
+    await tx.execute({
+      sql: `DELETE FROM paid_voice_retention WHERE user_id IN (${members.map(() => '?').join(', ')})`,
+      args: members,
+    });
+  }
   return members;
 }
 
@@ -582,18 +588,13 @@ async function enforceGroupCapacity(
   // 소유자가 한 자리를 쓰므로 멤버가 앉을 수 있는 자리는 정원 - 1.
   const memberSeats = Math.max(0, params.maxMembers - 1);
   const overflow = res.rows.slice(memberSeats);
-  const demoted: string[] = [];
-  for (const row of overflow) {
-    const memberUserPk = String(row.user_id);
-    // 자발적 이탈과 같은 정리를 태운다 — 그룹 구독 취소·plan 재정렬·음성 보관 유예·
-    // 초대 사용분 반환까지 한 벌로 들어 있다.
-    await leavePlanGroupMember(tx, {
-      userPk: memberUserPk,
-      planGroupId: params.planGroupId,
-      membershipId: String(row.id),
-      now: params.now,
-    });
-    demoted.push(memberUserPk);
-  }
-  return demoted;
+  // 자발적 이탈과 같은 정리를 태운다 — 그룹 구독 취소·plan 재정렬·음성 보관 유예·
+  // 초대 사용분 반환까지 한 벌로 들어 있다. **한 번에** 보낸다 — 사람마다 왕복하면 가족 →
+  // 커플(셋을 내보낸다)이 워커 subrequest 한도를 넘는다.
+  await leavePlanGroupMembers(tx, {
+    planGroupId: params.planGroupId,
+    members: overflow.map((row) => ({ userPk: String(row.user_id), membershipId: String(row.id) })),
+    now: params.now,
+  });
+  return overflow.map((row) => String(row.user_id));
 }

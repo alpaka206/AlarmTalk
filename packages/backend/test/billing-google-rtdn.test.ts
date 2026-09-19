@@ -368,7 +368,12 @@ describe('billing google RTDN', () => {
 
       expect(res.status).toBe(200);
       expect((await res.json()).ignored).toBe('stale_token');
-      expect(findCall("plan = 'free'")).toBeUndefined();
+      // 무료 강등은 문장 안의 리터럴이든 바인딩 값이든 없어야 한다(강등은 `plan = ?` + 'free' 로도 나간다).
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.includes('UPDATE users SET plan') && (c.sql.includes("plan = 'free'") || c.args[0] === 'free'),
+      ),
+    ).toBe(false);
     });
 
     it('entitle(RENEWED)은 게이트 제외 — 매핑 구독이 비활성이어도 부활시킨다', async () => {
