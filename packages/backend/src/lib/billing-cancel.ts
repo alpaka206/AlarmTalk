@@ -1,6 +1,6 @@
 import type { Client, InStatement } from '@libsql/client';
 import { issueVoucherCode } from './voucher-issue';
-import type { DbExecutor } from './transactions';
+import { withWriteTransaction, type DbExecutor } from './transactions';
 import {
   clonedVoiceReleaseStatements,
   deletePaidVoiceDataForUser,
@@ -249,6 +249,9 @@ async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<strin
  */
 export const PAID_VOICE_RETENTION_DAYS = 3;
 
+/** 보관 기한 스윕이 한 틱에 정리하는 사람 수 — 워커 subrequest 한도(~50) 안에 들게. */
+const SWEEP_BATCH_LIMIT = 2;
+
 /**
  * 유료 음성 보관 유예를 예약(upsert)한다. 반환값은 delete_after ISO 문자열
  * (응답 voice_retention_until 로 그대로 내려줄 수 있게).
@@ -383,34 +386,46 @@ export async function sweepPaidVoiceRetention(
   const voiceAccessRevokedUserIds = new Set<string>();
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
   // 클론 자체는 해지 시점에 이미 반납했다(`downgradeUserToFree` → `clonedVoiceReleaseStatements`).
+  // ⚠ **한 틱에 몇 명만, 기한이 먼저 온 순서로**(2026-09-20). 워커 한 실행의 subrequest 는
+  //   ~50 이고 한 사람을 지우는 데 스무 번 남짓 왕복한다 — 제한 없이 다 돌면 뒤 사람들과
+  //   이 크론의 나머지(알림)가 한도에 걸린다. 남은 사람은 다음 틱(5분)이 잇는다.
   const due = await db.execute({
-    sql: `SELECT user_id FROM paid_voice_retention WHERE delete_after <= ?`,
-    args: [now.toISOString()],
+    sql: `SELECT user_id FROM paid_voice_retention WHERE delete_after <= ?
+          ORDER BY delete_after, user_id LIMIT ?`,
+    args: [now.toISOString(), SWEEP_BATCH_LIMIT],
   });
   for (const row of due.rows) {
     const userPk = String(row.user_id);
-    // 삭제 직전에 '지금도 무료인가'를 다시 본다. 보관 행은 해지 시점에 깔리는데, 그 뒤
-    // 바우처 리딤·프로모 구독처럼 보관 행을 지우지 않고 권한만 살리는 경로가 있고,
-    // 그룹 탈퇴는 다른 유료 구독이 남아 있어도 보관을 걸 수 있다. 그대로 지우면 지금
-    // 돈을 내고 있는 사용자의 목소리를 영구 삭제하게 된다.
-    if (await hasActivePaidEntitlement(db, userPk)) {
-      await clearPaidVoiceRetention(db, userPk);
-      continue;
-    }
     // 한 사용자에서 실패해도 나머지를 버리지 않는다. 예외가 위로 새면 호출부가
     // notifyDowngradedAlarms 까지 못 가서, 이미 정리·마커 삭제까지 끝난 앞 사용자들의
     // 알림이 통째로 사라진다 — 마커가 없으니 다음 크론이 복구할 수도 없다.
-    // 실패한 사용자는 마커를 그대로 둬(아래 clear 를 건너뛴다) 다음 크론이 다시 시도한다.
+    // 실패한 사용자는 마커를 그대로 둬(트랜잭션이 통째로 롤백된다) 다음 크론이 다시 시도한다.
     try {
-      const revocation = await deleteSensitiveVoiceDataForUser(
-        db,
-        userPk,
-        await resolveUserLoginId(db, userPk),
-      );
+      // ⚠ **한 사람의 정리는 한 트랜잭션이다**(2026-09-20). 예전에는 문장마다 따로 커밋해,
+      //   중간에 끊기면 삭제 큐에는 올렸는데 행은 반쯤 남은 상태가 됐다 — 다음 틱의 큐 비우기가
+      //   "아직 참조 중" 으로 보고 큐 행만 지워, **파일이 영영 안 지워지고 큐에도 없는** 누수가
+      //   났다(실측: 24개 중 3개). 지금은 끊기면 전부 되돌아가 다음 틱이 처음부터 한다.
+      const revocation = await withWriteTransaction(db, async (tx) => {
+        // 삭제 직전에 '지금도 무료인가'를 다시 본다. 보관 행은 해지 시점에 깔리는데, 그 뒤
+        // 바우처 리딤·프로모 구독처럼 보관 행을 지우지 않고 권한만 살리는 경로가 있고,
+        // 그룹 탈퇴는 다른 유료 구독이 남아 있어도 보관을 걸 수 있다. 그대로 지우면 지금
+        // 돈을 내고 있는 사용자의 목소리를 영구 삭제하게 된다.
+        if (await hasActivePaidEntitlement(tx, userPk)) {
+          await clearPaidVoiceRetention(tx, userPk);
+          return null;
+        }
+        const result = await deleteSensitiveVoiceDataForUser(
+          tx,
+          userPk,
+          await resolveUserLoginId(tx, userPk),
+        );
+        await clearPaidVoiceRetention(tx, userPk);
+        return result;
+      });
+      if (!revocation) continue;
       for (const target of revocation.downgradedAlarms) downgraded.set(target.alarmId, target);
       for (const id of revocation.voiceAccessRevokedUserIds) voiceAccessRevokedUserIds.add(id);
       cleanedUserPks.push(userPk);
-      await clearPaidVoiceRetention(db, userPk);
     } catch (err) {
       logStructured('error', {
         at: 'billing.paid_voice_retention_sweep',
@@ -1409,13 +1424,28 @@ export async function processSubscriptionExpiry(
   now: Date = new Date(),
 ): Promise<void> {
   const notifyUserPks = new Set<string>();
+  // ⚠ **한 그룹이 배치를 통째로 차지하지 않게 고른다**(2026-09-20 실측). 예전에는 결제
+  //   보류 중인 가족 하나가 매 틱 다섯 자리를 다 썼다 — 보류 소유자 행은 `active` 인 채
+  //   만료가 지나 있어 소유자 우선 정렬로 맨 앞에 오고, 멤버 행 넷은 소유자가 살아 있어
+  //   건너뛰는데도 나머지 자리를 채웠다. 한도와 무관하게 **다른 사람의 만료가 영영 안 돌았다.**
+  //   - 소유자가 살아 있는 그룹의 멤버 행은 뽑지 않는다 — 수명은 소유자가 정하고, 뽑아도
+  //     `reconcileStoreBeforeExpiry` 가 곧바로 건너뛴다(같은 조건).
+  //   - 권한이 살아 있는 행을 먼저, 보류·미확인 행은 남는 자리에서 다시 본다. 보류는 스토어
+  //     재확인으로만 풀리므로 계속 보되, 새로 만료될 행을 밀어내지 않는다.
+  const memberOfLiveOwner = `EXISTS (
+    SELECT 1 FROM plan_groups g
+    JOIN subscriptions owner ON owner.plan_group_id = g.id AND owner.user_id = g.owner_user_id
+    WHERE g.id = s.plan_group_id AND s.user_id <> g.owner_user_id AND owner.status = 'active'
+  )`;
   const due = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.expires_at, p.plan_type
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.status = 'active' AND julianday(s.expires_at) <= julianday(?)
-          ORDER BY CASE WHEN EXISTS (
-            SELECT 1 FROM plan_groups g WHERE g.id = s.plan_group_id AND g.owner_user_id = s.user_id
-          ) THEN 0 ELSE 1 END, s.id
+            AND NOT ${memberOfLiveOwner}
+          ORDER BY CASE WHEN s.entitlement_state = 'entitled' THEN 0 ELSE 1 END,
+                   CASE WHEN EXISTS (
+                     SELECT 1 FROM plan_groups g WHERE g.id = s.plan_group_id AND g.owner_user_id = s.user_id
+                   ) THEN 0 ELSE 1 END, s.id
           LIMIT ?`,
     args: [now.toISOString(), EXPIRY_BATCH_LIMIT],
   });
