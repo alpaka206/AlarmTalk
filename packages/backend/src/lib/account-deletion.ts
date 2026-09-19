@@ -1,3 +1,4 @@
+import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { enqueueUserVoiceArtifacts } from './audio-retention';
@@ -226,6 +227,8 @@ export async function purgeUserAccount(
   }
   const revokedTargets: RevokedRecipientTarget[] = [];
   const voiceAccessRevokedUserIds: string[] = [];
+  // 결과를 읽지 않는 쓰기를 모아 두는 자리(아래 `tx.batch` 한 번으로 나간다).
+  const writes: InStatement[] = [];
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -288,7 +291,15 @@ export async function purgeUserAccount(
             )`,
       args: [...userIds, userPk],
     });
-    await tx.execute({
+    // ⚠ **여기부터는 결과를 읽지 않는 쓰기뿐이다 — 한 번에 묶어 보낸다**(2026-09-18).
+    //   DB 호출 하나가 곧 Workers subrequest 하나라, 문장마다 왕복하면 이 함수 하나로
+    //   37 왕복이 되어 한도(~50)를 넘겨 **계정 삭제가 500 으로 죽었다**(운영 실측).
+    //   `batch` 는 같은 트랜잭션 안에서 **적어 둔 순서 그대로** 실행되므로 의미는 같다.
+    //   ⚠ 순서에 의미가 있는 문장들이다(예: `apple_gift_deliveries` 는 `store_transactions`
+    //   를 하위질의로 읽으므로 그보다 **먼저** 와야 한다). 재배치하지 말 것.
+    //   ⚠ 결과를 읽어야 하는 문장은 여기 넣지 말 것 — `revokeDeletedVoices` 처럼 자기가
+    //   쓴 행을 되읽는 경로는 그대로 `execute` 로 둔다.
+    writes.push({
       sql: `DELETE FROM voucher_redemptions
             WHERE user_id = ?
                OR voucher_id IN (
@@ -296,52 +307,52 @@ export async function purgeUserAccount(
                )`,
       args: [userPk, userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `UPDATE voucher_codes
             SET redeemed_by_user_id = NULL
             WHERE redeemed_by_user_id = ?`,
       args: [userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voucher_codes WHERE issuer_user_id = ?`,
       args: [userPk],
     });
 
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM plan_group_members
             WHERE plan_group_id IN (SELECT id FROM plan_groups WHERE owner_user_id = ?)`,
       args: [userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM plan_groups WHERE owner_user_id = ?`,
       args: [userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM subscriptions WHERE user_id = ?`,
       args: [userPk],
     });
     // 결제 검증 원본(store_transactions)도 함께 파기한다. user_id(원본 식별자)가 남으면
     // 가명보존(retained_billing_records) 설계를 우회해 탈퇴자 직접식별자가 잔존한다
     // (개인정보보호법 제21조). 보존이 필요한 거래 사실은 위 가명보존 레코드가 담는다.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM store_transactions WHERE user_id IN (?, ?)`,
       args: [userPk, userLoginId],
     });
 
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
       args: [userPk],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
       args: [userPk],
     });
 
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM generated_audio_assets
             WHERE user_id IN (?, ?)
                OR voice_profile_id IN (
@@ -355,7 +366,7 @@ export async function purgeUserAccount(
     // **보낸이 식별자는 지운다** — 탈퇴자의 직접 식별자를 남기지 않는다(개인정보보호법
     // 제21조). 이 행 자체는 수신자 것이라 남는다. 철회 여부는 위에서 목소리 기준으로 이미
     // 정해졌으므로 여기서 `revoked` 는 건드리지 않는다.
-    await tx.execute({
+    writes.push({
       sql: `UPDATE alarm_recipient_state
                SET sender_user_id = NULL, updated_at = datetime('now')
              WHERE sender_user_id IN (?, ?)`,
@@ -366,7 +377,7 @@ export async function purgeUserAccount(
     // 남겨 두면 audio-retention 이 message_id 를 영구 사용 참조로 오인한다. 이미 전달된 알람은
     // ack 때 서버 행이 없어졌으므로 수신자 기기의 로컬 알람에는 영향이 없다.
     // `user_id` 갈래는 users FK 때문에도 반드시 필요하다.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM alarms
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
       args: [...userIds, ...userIds],
@@ -379,17 +390,17 @@ export async function purgeUserAccount(
       // 그대로 두면 `DELETE FROM voice_profiles` 가 FK 로 실패해 **탈퇴가 통째로 500** 이
       // 된다(paid-voice-cleanup 이 같은 순서로 지우는 이유다). message_library 가
       // messages 를 참조하므로 그쪽을 먼저 지운다.
-      await tx.execute({
+      writes.push({
         sql: `DELETE FROM message_library
               WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`,
         args: cloneIds,
       });
-      await tx.execute({
+      writes.push({
         sql: `DELETE FROM messages WHERE voice_profile_id IN (${cph})`,
         args: cloneIds,
       });
     }
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM message_library
             WHERE user_id IN (?, ?)
                OR message_id IN (
@@ -397,56 +408,56 @@ export async function purgeUserAccount(
                )`,
       args: [...userIds, ...userIds],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
       args: userIds,
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (?, ?)`,
       args: userIds,
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_draft_attempt_usage WHERE owner_user_id IN (?, ?)`,
       args: userIds,
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_profile_change_ledger WHERE owner_user_id IN (?, ?)`,
       args: userIds,
     });
     // 관계/호칭 행은 voice_profiles FK 라 프로필 삭제 전에 지운다 — 내 행과,
     // '내 프로필'을 참조하는 타인 행(공유 보이스 뷰어 호칭) 모두.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_profile_relationships
             WHERE user_id IN (?, ?)
                OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (?, ?))`,
       args: [...userIds, ...userIds],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM voice_profiles WHERE user_id IN (?, ?)`,
       args: userIds,
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM user_consents WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     // FK 는 없지만 사용자 식별자가 남는 테이블들 — 개인정보 파기 범위에 포함한다.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM alarm_recipient_state WHERE recipient_user_id IN (?, ?)`,
       args: userIds,
     });
     // 재전송 슬롯도 사용자 식별자를 **양쪽 다** 담는다(보낸 사람·받는 사람). FK 가 없어
     // 남겨 두면 떠난 계정의 id 가 그대로 남으므로 두 자리 모두에서 지운다. 슬롯이 사라지면
     // 다음 전송은 새 id 로 시작하는데, 그 상대는 이미 없는 계정이라 이어 붙일 것도 없다.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM targeted_alarm_slots
             WHERE sender_user_id IN (?, ?) OR recipient_user_id IN (?, ?)`,
       args: [...userIds, ...userIds],
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM promo_code_redemptions WHERE user_id IN (?, ?)`,
       args: userIds,
     });
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM paid_voice_retention WHERE user_id IN (?, ?)`,
       args: userIds,
     });
@@ -454,22 +465,25 @@ export async function purgeUserAccount(
     // 안 지우면 아래 `DELETE FROM users` 가 FK 로 던져 **탈퇴가 통째로 롤백된다** —
     // 마지막 기록이 1년을 채울 때까지 계정을 지울 수 없게 된다. 기록은 식별자만 담으므로
     // 남겨 둘 이유도 없다(파기 범위에 포함).
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM usage_events WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     // 인증 코드(이메일 키)는 users 행 삭제 전에 이메일을 역참조해 지운다.
-    await tx.execute({
+    writes.push({
       sql: `DELETE FROM email_verification_codes
             WHERE email IN (SELECT email FROM users WHERE id = ? OR google_id = ?)`,
       args: [userPk, userLoginId],
     });
   }
 
-  await tx.execute({
+  writes.push({
     sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
     args: [userPk ?? userLoginId, userLoginId],
   });
+
+  // 모아 둔 쓰기를 **한 번의 요청**으로 보낸다(위 주석 참조).
+  await tx.batch(writes);
 
   return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds };
 }

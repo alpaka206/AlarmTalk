@@ -180,14 +180,26 @@ export function createMockDB() {
       calls.push({ sql: query.sql, args: query.args });
       return takeNext();
     },
-    batch: async () => {},
+    // ⚠ **batch 도 실행으로 친다.** 실제 구현은 문장들을 **적어 둔 순서 그대로** 돌린다
+    //   (`lib/transactions.ts` 의 DbExecutor 주석 — Workers subrequest 한도 때문에 쓰기를
+    //   묶어 보낸다). 목이 이걸 버리면 `calls` 에 아무것도 안 남아, 순서를 단언하는 테스트가
+    //   "지우지 않았다" 로 잘못 통과하거나 실패한다.
+    batch: async (stmts: Array<{ sql: string; args: (string | number | null)[] }>) => {
+      const results = [];
+      for (const stmt of stmts ?? []) results.push(await client.execute(stmt));
+      return results;
+    },
     transaction: async () => {
       const tx = {
         closed: false,
         execute: async (query: { sql: string; args: (string | number | null)[] }) => {
           return client.execute(query);
         },
-        batch: async () => {},
+        batch: async (stmts: Array<{ sql: string; args: (string | number | null)[] }>) => {
+          const results = [];
+          for (const stmt of stmts ?? []) results.push(await client.execute(stmt));
+          return results;
+        },
         executeMultiple: async () => {},
         commit: async () => {
           transactions.commits++;

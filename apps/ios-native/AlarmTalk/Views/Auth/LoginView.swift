@@ -263,7 +263,11 @@ struct LoginView: View {
 
     private var verificationCodeRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            // ⚠ **아래로 정렬한다**(2026-09-17 실기기). 입력칸은 라벨('인증 코드')이 위에 붙은
+            // 세로 묶음이라 중앙 정렬이면 버튼이 라벨까지 포함한 높이의 가운데로 올라가
+            // **입력칸과 한 줄로 안 맞는다.** 높이도 입력칸과 같은 값(`AuthFieldHeight`)으로
+            // 고정해 두 상자의 위·아래가 맞물리게 한다.
+            HStack(alignment: .bottom, spacing: 8) {
                 VocaTextField(
                     title: "인증 코드",
                     text: $verificationCode,
@@ -291,7 +295,7 @@ struct LoginView: View {
                     Text("확인")
                         .font(theme.typography.labelLarge)
                         .foregroundStyle(confirmCodeEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
-                        .padding(.vertical, 16)
+                        .frame(height: AuthFieldHeight)
                         .padding(.horizontal, 18)
                         // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
                         .contentShape(Rectangle())
@@ -486,6 +490,10 @@ enum LoginMode: Hashable, Identifiable {
 
 // MARK: - Inputs
 
+/// 인증 화면 입력칸 한 줄의 높이. **옆에 붙는 버튼이 같은 값을 쓴다** — 따로 두면
+/// 글꼴 크기 설정에 따라 둘이 어긋난다(2026-09-17).
+let AuthFieldHeight: CGFloat = 46
+
 struct VocaTextField: View {
     @Environment(\.voiceAlarmTheme) private var theme
     // 라벨은 `LocalizedStringKey` — `String` 이면 번역이 죽는다(`GradientCta.title` 주석).
@@ -506,7 +514,7 @@ struct VocaTextField: View {
                 .disabled(!enabled)
                 .foregroundStyle(AuthSceneColors.text)
                 .tint(AuthSceneColors.accent)
-                .padding(.vertical, 12)
+                .frame(height: AuthFieldHeight)
                 .padding(.horizontal, 14)
                 // ⚠ 인증 화면은 고정 다크라 테마 `outline` 만 두면 남색 배경에서 테두리가
                 // 거의 안 보이고 입력칸이 어디부터인지 모른다. 안드로이드는 글라스 채움

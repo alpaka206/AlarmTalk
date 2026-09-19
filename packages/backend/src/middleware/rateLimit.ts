@@ -51,12 +51,16 @@ function createRateLimitMiddleware(options?: {
   windowMs?: number;
   maxRequests?: number;
   prefix?: string;
+  /** true 면 이 버킷에서 **세지도, 막지도** 않는다(다른 버킷이 맡는 요청). */
+  skip?: (c: Context) => boolean;
 }) {
   const windowMs = options?.windowMs ?? WINDOW_MS;
   const maxRequests = options?.maxRequests ?? MAX_REQUESTS;
   const prefix = options?.prefix ?? '';
+  const skip = options?.skip;
 
   return async function rateLimit(c: Context, next: Next) {
+    if (skip?.(c)) return next();
     cleanup();
 
     const key = `${prefix}${getKey(c)}`;
@@ -83,6 +87,12 @@ function createRateLimitMiddleware(options?: {
 
     await next();
   };
+}
+
+/** `GET /api/tts/messages/:id/audio` 인가 — 두 버킷이 **같은 판정**을 보게 한 곳에 둔다. */
+function isAudioDownload(c: Context): boolean {
+  if (c.req.method !== 'GET') return false;
+  return /^\/api\/tts\/messages\/[^/]+\/audio$/.test(new URL(c.req.url).pathname);
 }
 
 /**
@@ -124,6 +134,24 @@ export const ipRateLimitRefundMiddleware = async (c: Context, next: Next) => {
  */
 export const rateLimitMiddleware = createRateLimitMiddleware({
   maxRequests: 120,
+  // ⚠ **오디오 내려받기는 이 버킷에서 뺀다**(2026-09-17 실기기). 기본 목소리 선다운로드가
+  // 한 번에 76개(기기 언어 × 무료 테마)를 받고, 목소리를 등록하면 그 클론의 사전렌더
+  // 클립까지 이어 받는다 — 한 사람의 **정상 사용**이 1분 안에 120을 넘긴다. 그러면 같은
+  // 창에서 돌던 등록·동기화 요청이 429 를 맞아 "요청이 너무 많아요"·"처리 중 오류가
+  // 발생했어요" 로 뜬다. 내려받기는 아래 전용 버킷이 따로 조인다.
+  skip: isAudioDownload,
+});
+
+/**
+ * 미리 만들어 둔 오디오를 **내려받는** 요청(`GET /api/tts/messages/:id/audio`) 전용 버킷.
+ *
+ * 이 경로는 서버가 새로 만드는 일이 없다 — R2 에 이미 있는 바이트를 돌려줄 뿐이라, 다른
+ * 쓰기 요청과 같은 한도로 묶을 이유가 없다. 선다운로드가 4개씩 병렬로 받으므로 분당 600 이면
+ * 스톡 76 + 클론 21 을 연달아 받아도 남는다. 스크립트로 통째로 긁는 것은 여전히 막는다.
+ */
+export const audioDownloadRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 600,
+  prefix: 'audio:',
 });
 
 /**

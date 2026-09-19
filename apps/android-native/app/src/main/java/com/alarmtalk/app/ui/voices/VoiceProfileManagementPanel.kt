@@ -2098,23 +2098,26 @@ internal fun VoiceProfileManagementPanel(
                                     // 정하게 된다 — '다시 만들기' 로 버리면 그 답도 함께 사라진다.
                                     // 실제 등록은 이 화면의 '저장하기' 이므로, 남과 나눠 쓸지도
                                     // 여기서 정하는 것이 맞다.
-                                    Text(
-                                        text = stringResource(R.string.voices_step_sharing),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(top = 4.dp),
-                                    )
-                                    ShareVoiceToggleCard(
-                                        enabled = canShareVoice,
-                                        checked = shareVoice && canShareVoice,
-                                        title = stringResource(R.string.voices_sharing_shared_title),
-                                        description = if (canShareVoice) {
-                                            stringResource(R.string.voices_sharing_shared_desc_enabled)
-                                        } else {
-                                            stringResource(R.string.voices_sharing_shared_desc_disabled)
-                                        },
-                                        onCheckedChange = { shareVoice = it },
-                                    )
+                                    // ⚠ **공유할 수 없는 등급에는 이 칸을 아예 두지 않는다**
+                                    // (2026-09-17 지시). 개인 이용권은 혼자 쓰는 등급이라 공유가
+                                    // 성립하지 않는다 — 꺼진 스위치와 "커플/가족에서 쓸 수 있어요"
+                                    // 안내를 등록 화면에 깔아 두면, 만들기 흐름 한복판에서 못 쓰는
+                                    // 기능부터 읽게 된다. iOS `VoicePreviewConfirmView` 와 같다.
+                                    if (canShareVoice) {
+                                        Text(
+                                            text = stringResource(R.string.voices_step_sharing),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = 4.dp),
+                                        )
+                                        ShareVoiceToggleCard(
+                                            enabled = true,
+                                            checked = shareVoice,
+                                            title = stringResource(R.string.voices_sharing_shared_title),
+                                            description = stringResource(R.string.voices_sharing_shared_desc_enabled),
+                                            onCheckedChange = { shareVoice = it },
+                                        )
+                                    }
 
                                     // 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 —
                                     // 없으면 그냥 저장되므로 체크를 보여 줄 이유가 없다.
