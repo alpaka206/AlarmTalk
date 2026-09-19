@@ -431,177 +431,24 @@ struct VoiceCloneUploadFlow: View {
     private var detailsSection: some View {
         nameSection
         languageSection
-        consentSection
-    }
-
-    private var languageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("알람을 읽어줄 언어")
-                .font(.subheadline.weight(.semibold))
-            Picker("알람을 읽어줄 언어", selection: $previewLanguage) {
-                Text("한국어").tag("ko")
-                Text("English").tag("en")
-                Text("日本語").tag("ja")
-            }
-            .pickerStyle(.segmented)
+        // ⚠ **물을 것이 없으면 상자째 그리지 않는다**(2026-09-19 실기기: 언어 선택 아래에
+        //   빈 상자가 남았다). 예전에는 권리 고지 문구가 늘 들어 있어 상자가 비는 일이
+        //   없었는데, 그 문구를 동의 화면으로 옮긴 뒤로는 이미 동의한 사람에게 **내용 없는
+        //   배경만** 그려졌다. 판정은 `needsBiometricConsent` 하나다.
+        if needsBiometricConsent {
+            consentSection
         }
     }
 
-    private var creatingSection: some View {
-        VStack(spacing: 18) {
-            ProgressView()
-                .controlSize(.large)
-            Text("목소리를 만드는 중이에요")
-                .font(theme.typography.titleMedium)
-                .fontWeight(.semibold)
-            Text("잠시만 기다려 주세요.\n완성되면 바로 들려드릴게요.")
-                .font(theme.typography.bodyMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 72)
-    }
-
-    private var sourceModeSection: some View {
-        HStack(spacing: 8) {
-            ForEach(VoiceCloneSourceMode.allCases) { mode in
-                if sourceMode == mode {
-                    Button { sourceMode = mode } label: {
-                        Text(mode.label)
-                            .font(theme.typography.bodyMedium.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                    }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .tint(theme.palette.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                } else {
-                    Button { sourceMode = mode } label: {
-                        Text(mode.label)
-                            .font(theme.typography.bodyMedium.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                    }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .tint(theme.palette.primary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                }
-            }
-        }
-    }
-
-    private var fileSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button { fileImporterPresented = true } label: {
-                VStack(spacing: 10) {
-                    Image(systemName: "arrow.up.doc")
-                        .font(.system(size: selectedFileURL == nil ? 28 : 18))
-                    Text(selectedFileURL == nil ? "파일 또는 영상 업로드" : "재업로드")
-                        .font(theme.typography.bodyMedium)
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(theme.palette.onSurface)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, selectedFileURL == nil ? 22 : 12)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .background(theme.palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
-
-            if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
-                Text("12초 이상 2분 이하 구간을 선택해 주세요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                fileCropCard(url: url, durationMs: durationMs)
-                Text("한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            }
-
-            if let localError {
-                Text(localError)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(theme.palette.error)
-            }
-        }
-    }
-
-    private func fileCropCard(url: URL, durationMs: Int) -> some View {
-        let effectiveEndMs = min(cropEndMs, durationMs)
-        let effectiveDurationMs = max(0, effectiveEndMs - cropStartMs)
-        return VStack(alignment: .leading, spacing: 10) {
-            if durationMs >= VoiceProfileLimits.minDurationMs {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("구간 자르기")
-                            .font(theme.typography.labelLarge)
-                            .fontWeight(.semibold)
-                        Spacer()
-                        Text(HelperFormatters.audioTimeLabel(effectiveDurationMs))
-                            .font(theme.typography.labelMedium)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(theme.palette.onSecondaryContainer)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(theme.palette.secondaryContainer, in: Capsule())
-                    }
-                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 12~120초 구간을 직접 고른다.
-                    // (이전엔 시작점만 움직이고 길이는 항상 120초로 고정됐음).
-                    AudioCropRangeSlider(
-                        durationMs: durationMs,
-                        minDurationMs: VoiceProfileLimits.minDurationMs,
-                        maxDurationMs: VoiceProfileLimits.maxDurationMs,
-                        cropStartMs: $cropStartMs,
-                        cropEndMs: $cropEndMs
-                    )
-                }
-            }
-
-            VoiceSegmentPreviewPlayer(
-                title: "선택 구간 미리듣기",
-                subtitle: "\(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))",
-                audioURL: url,
-                startMs: cropStartMs,
-                endMs: effectiveEndMs,
-                onError: { localError = $0 }
-            )
-
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(theme.palette.surfaceVariant.opacity(0.38))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
-    }
-
-    /// 등록 직전 고지·동의. 생체정보 동의는 **전용 모달이 아니라 폼 안의 체크박스**로 받는다
-    /// — 등록하려는 흐름을 끊지 않고, 무엇에 동의하는지가 화면에 그대로 보인다.
-    /// (`VoiceConsentSheet` 는 폼 밖에서 호출된 경로를 위한 폴백이다.)
+    /// 아직 생체정보 동의를 안 한 사람에게만 뜨는 체크. 권리 고지 문구는 여기 두지 않는다
+    /// (2026-09-19 지시 — 동의를 받는 자리의 설명에 들어가 있다. 같은 말을 등록할 때마다
+    /// 다시 읽히면 "내가 뭘 잘못하고 있나" 로 읽힌다).
     private var consentSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // ⚠ **권리 고지 문구를 여기 두지 않는다**(2026-09-19 지시). 권리 보증은 가입 때
-            // 필수로 받는 약관 제7조가 이미 담당한다 — 등록할 때마다 같은 말을 다시 읽히면
-            // 만들기 흐름만 길어진다. 아직 동의하지 않은 사람에게 묻는 **생체정보 체크는
-            // 남긴다**(그건 고지가 아니라 실제로 받아야 하는 동의다).
-            if needsBiometricConsent {
-                consentCheck(
-                    isOn: $voiceBiometricAgreed,
-                    label: "음성 생체정보 처리에 동의해요",
-                    description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
-                )
-            }
-        }
+        consentCheck(
+            isOn: $voiceBiometricAgreed,
+            label: "음성 생체정보 처리에 동의해요",
+            description: "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요."
+        )
         .sectionSurface()
     }
 
