@@ -181,11 +181,10 @@ internal fun VoiceRegistrationAttestation(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = stringResource(R.string.voices_register_attest_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // ⚠ **권리 고지를 등록 화면에서 한 번 더 띄우지 않는다**(2026-09-19 지시).
+            // 같은 말을 두 번 읽히면 "내가 뭘 잘못하고 있나" 로 읽힌다. 문장은 **동의를 받는
+            // 자리**(가입 동의 화면의 생체정보 항목, 그리고 아직 동의 안 한 사람에게 뜨는
+            // 아래 체크)에 들어가 있다. iOS `VoiceCloneUploadFlow` 와 같은 규칙이다.
             if (showBiometricConsent) {
                 VoiceRegistrationCheck(
                     checked = biometricAgreed,
