@@ -31,7 +31,7 @@ import { PAID_VOICE_RETENTION_DAYS } from '../src/lib/billing-cancel';
 import billingMutation from '../src/routes/billing-mutation';
 import billingGoogle from '../src/routes/billing-google';
 import { cancelSubscriptionImmediate, sweepPaidVoiceRetention } from '../src/lib/billing-cancel';
-import { releaseClonedVoicesForUser } from '../src/lib/paid-voice-cleanup';
+import { clonedVoiceReleaseStatements } from '../src/lib/paid-voice-cleanup';
 import { applyStoreEntitlement } from '../src/lib/store-billing';
 
 const PLAY_ENV = {
@@ -448,7 +448,12 @@ describe('POST /billing/cancel — 스냅샷 단위 취소 (E1)', () => {
     expect(cancelCalls[0]!.args).toContain('sub-1');
     expect(cancelCalls[0]!.args).not.toContain('sub-new');
     // 남은 활성 구독이 유료(personal)이므로 free 강등·음성 접근 정리를 하지 않는다.
-    expect(findCall("plan = 'free'")).toBeUndefined();
+    // 무료 강등은 문장 안의 리터럴이든 바인딩 값이든 없어야 한다(강등은 `plan = ?` + 'free' 로도 나간다).
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.includes('UPDATE users SET plan') && (c.sql.includes("plan = 'free'") || c.args[0] === 'free'),
+      ),
+    ).toBe(false);
     expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
     expect(findCall('UPDATE voice_profiles')).toBeUndefined();
     expect(findCall('UPDATE alarms')).toBeUndefined();
@@ -485,7 +490,12 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
 
     await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
 
-    expect(findCall("plan = 'free'")).toBeUndefined();
+    // 무료 강등은 문장 안의 리터럴이든 바인딩 값이든 없어야 한다(강등은 `plan = ?` + 'free' 로도 나간다).
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.includes('UPDATE users SET plan') && (c.sql.includes("plan = 'free'") || c.args[0] === 'free'),
+      ),
+    ).toBe(false);
     expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
     // 여전히 유료이므로 is_shared 해제·타인 알람 강등을 하지 않는다.
     expect(findCall('UPDATE voice_profiles')).toBeUndefined();
@@ -499,51 +509,41 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
 
     await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
 
-    expect(findCall("plan = 'free'")).toBeDefined();
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free'),
+    ).toBe(true);
     expect(findCall('UPDATE voice_profiles')).toBeDefined();
     expect(findCall('UPDATE alarms')).toBeDefined();
   });
 });
 
 // ---------------------------------------------------------------------------
-// releaseClonedVoicesForUser — 해지 즉시 클론만 반납하고, 복구 표식을 남긴다
+// clonedVoiceReleaseStatements — 해지 즉시 클론만 반납하고, 복구 표식을 남긴다
 // ---------------------------------------------------------------------------
-describe('releaseClonedVoicesForUser (해지 시 클론 반납)', () => {
-  it('evicted_at 과 evicted_provider_voice_id 를 함께 남긴다 (재구독 복구 경로 조건)', async () => {
-    mockDB.pushResult([{ elevenlabs_voice_id: 'el-voice-1' }]); // 반납 대상 조회
-    mockDB.pushResult([], 1); // 제공자 보이스 삭제 큐 적재
-    mockDB.pushResult([], 1); // UPDATE voice_profiles
-
-    await releaseClonedVoicesForUser(mockDB.client as never, 'user-pk', 'login-id');
-
-    const update = findCall('UPDATE voice_profiles');
+describe('clonedVoiceReleaseStatements (해지 시 클론 반납)', () => {
+  it('evicted_at 과 evicted_provider_voice_id 를 함께 남기고, 제공자 보이스는 큐에 올린다', () => {
+    const stmts = clonedVoiceReleaseStatements(['user-pk', 'login-id'], ['el-voice-1']);
+    const sqlOf = (stmt: (typeof stmts)[number]) => (typeof stmt === 'string' ? stmt : stmt.sql);
+    const argsOf = (stmt: (typeof stmts)[number]) =>
+      typeof stmt === 'string' ? [] : ((stmt.args ?? []) as unknown[]);
+    const update = stmts.find((stmt) => sqlOf(stmt).includes('UPDATE voice_profiles'));
     expect(update).toBeDefined();
     // tts.ts 는 elevenlabs_voice_id IS NULL 이면서 evicted_at 이 있을 때만 재클론/캐시프로브
     // 경로를 탄다. 셋 중 하나라도 빠지면 유예 안에 재구독해도 NO_VOICE_ID 로 떨어진다.
-    expect(update!.sql).toContain('elevenlabs_voice_id = NULL');
-    expect(update!.sql).toContain('evicted_at = ');
-    expect(update!.sql).toContain('evicted_provider_voice_id = elevenlabs_voice_id');
+    expect(sqlOf(update!)).toContain('elevenlabs_voice_id = NULL');
+    expect(sqlOf(update!)).toContain('evicted_at = ');
+    expect(sqlOf(update!)).toContain('evicted_provider_voice_id = elevenlabs_voice_id');
     // 원본 업로드·생성 음성은 유예 동안 남는다(여기서 지우면 재클론할 원본이 사라진다).
-    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
-    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
-    // 제공자 보이스 자체는 즉시 반납한다.
-    const enqueued = findCall('INSERT OR IGNORE INTO pending_external_deletions');
-    expect(enqueued).toBeDefined();
-    expect(enqueued!.args).toContain('el-voice-1');
+    expect(stmts.some((stmt) => sqlOf(stmt).includes('DELETE'))).toBe(false);
+    // 제공자 보이스 자체는 즉시 반납한다 — 반납 표식보다 **먼저** 큐에 오른다.
+    const enqueue = stmts.findIndex((stmt) => sqlOf(stmt).includes('pending_external_deletions'));
+    expect(enqueue).toBeGreaterThanOrEqual(0);
+    expect(argsOf(stmts[enqueue]!)).toContain('el-voice-1');
+    expect(enqueue).toBeLessThan(stmts.indexOf(update!));
   });
 
-  it('evicted_provider_voice_id 컬럼이 아직 없어도 evicted_at 은 찍고 반납을 마친다', async () => {
-    mockDB.pushResult([{ elevenlabs_voice_id: 'el-voice-1' }]); // 반납 대상 조회
-    mockDB.pushResult([], 1); // 제공자 보이스 삭제 큐 적재
-    mockDB.pushError(new Error('SQLITE_ERROR: no such column: evicted_provider_voice_id'));
-    mockDB.pushResult([], 1); // 구 스키마 폴백 UPDATE
-
-    await releaseClonedVoicesForUser(mockDB.client as never, 'user-pk', 'login-id');
-
-    const updates = mockDB.calls.filter((c) => c.sql.includes('UPDATE voice_profiles'));
-    const fallback = updates[updates.length - 1]!;
-    expect(fallback.sql).toContain('evicted_at = ');
-    expect(fallback.sql).not.toContain('evicted_provider_voice_id');
+  it('주인 id 가 없으면 아무것도 쓰지 않는다', () => {
+    expect(clonedVoiceReleaseStatements([null, undefined], ['el-voice-1'])).toEqual([]);
   });
 });
 

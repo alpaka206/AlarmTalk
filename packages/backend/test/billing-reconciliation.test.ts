@@ -51,10 +51,35 @@ vi.mock('../src/lib/play-subscriptions', async (original) => ({
   googlePaymentAnchor: vi.fn().mockResolvedValue(new Date(Date.now() - 86400_000)),
   playRevokeSubscription: vi.fn().mockResolvedValue(undefined),
 }));
+// 커밋 뒤 알림은 이제 `sendBillingStateSignals` 한 번이다(재조회 신호 + 유예 행이 있는 사람의
+// 삭제 예고). 이 파일의 단언은 **누가 신호를 받고 누가 예고를 받는가** 를 본다 — 그 뜻을
+// 그대로 지키려고, 합친 호출을 예전 두 발송부의 관찰값으로 나눠 기록한다. 실제 메시지 구성
+// (안드로이드 중복 제거·예고 먼저)은 `billing-state-signals.test.ts` 가 따로 고정한다.
+const pushMocks = vi.hoisted(() => {
+  const sendPlanChangedPush = vi.fn().mockResolvedValue(undefined);
+  const sendVoiceDeletionWarningPush = vi.fn().mockResolvedValue(undefined);
+  const sendBillingStateSignals = vi.fn(
+    async (
+      db: unknown,
+      env: unknown,
+      p: { planChangedUserIds: readonly string[]; deletionWarningUserPks: readonly string[]; retentionDays: number },
+    ) => {
+      if (p.planChangedUserIds.length) await sendPlanChangedPush(db, env, [...p.planChangedUserIds]);
+      if (p.deletionWarningUserPks.length) {
+        await sendVoiceDeletionWarningPush(db, env, {
+          userPks: [...p.deletionWarningUserPks],
+          retentionDays: p.retentionDays,
+        });
+      }
+    },
+  );
+  return { sendPlanChangedPush, sendVoiceDeletionWarningPush, sendBillingStateSignals };
+});
 vi.mock('../src/lib/fcm', () => ({
   sendPaymentFailedPush: vi.fn().mockResolvedValue(undefined),
-  sendPlanChangedPush: vi.fn().mockResolvedValue(undefined),
-  sendVoiceDeletionWarningPush: vi.fn().mockResolvedValue(undefined),
+  sendPlanChangedPush: pushMocks.sendPlanChangedPush,
+  sendVoiceDeletionWarningPush: pushMocks.sendVoiceDeletionWarningPush,
+  sendBillingStateSignals: pushMocks.sendBillingStateSignals,
   notifyDowngradedAlarms: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));

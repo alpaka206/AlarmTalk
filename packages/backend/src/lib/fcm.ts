@@ -106,7 +106,10 @@ async function getPushTargetsForUsers(
   });
   for (const r of result.rows) {
     const target = { token: String(r.token), platform: String(r.platform) };
-    for (const key of [r.uid, r.gid]) {
+    // ⚠ **한 행을 한 사람에게 두 번 넣지 말 것.** 이메일 계정은 첫 로그인 때 로그인 id 를 PK 로
+    //   채우고(`auth.ts` 로그인), 옛 구글 계정도 PK 가 곧 로그인 id 라 `uid == gid` 인 행이
+    //   흔하다 — 둘을 따로 보면 같은 기기가 두 번 잡혀 알림이 두 통씩 나간다.
+    for (const key of new Set([r.uid, r.gid])) {
       if (typeof key === 'string' && byUser.has(key)) byUser.get(key)!.push(target);
     }
   }
@@ -647,6 +650,88 @@ export async function sendVoiceDeletionWarningPush(
       const results = await sendApnsNotifications(apnsMessages, config);
       await pruneDeadApnsTokens(db, results);
     }
+  }
+}
+
+/**
+ * **결제 상태 변화 알림을 한 번에** — 재조회 신호(`plan_changed`)와 목소리 삭제 예고를 같은
+ * 토큰 조회 한 번·같은 발송 묶음(OAuth 한 번)으로 보낸다.
+ *
+ * ⚠ **왜 합쳤나**(2026-09-20 실측). 둘을 따로 부르면 토큰 조회·OAuth 가 두 번이고, 안드로이드
+ *   기기는 같은 `plan_changed` 를 **두 번** 받는다 — 삭제 예고 짝(표시용 + data-only
+ *   `plan_changed`)에 이미 들어 있어서다. 가족 그룹이 통째로 바뀌는 처리에서 그 낭비만으로
+ *   워커 subrequest 한도(~50)를 넘겨 커밋 뒤 알림이 잘려 나갔다.
+ *
+ * 규칙(플랫폼별로 **받는 것은 예전과 같다** — 중복만 뺀다):
+ * - 안드로이드 · 예고 대상: 표시용 예고 + data-only `plan_changed`(짝). 따로 신호를 또 보내지 않는다.
+ * - 안드로이드 · 신호만: data-only `plan_changed`.
+ * - iOS: 신호 대상이면 무음 `plan_changed`(앱을 깨운다 — alert 는 깨우지 못한다), 예고 대상이면
+ *   표시용 alert 도.
+ * - **보이는 예고를 먼저** 싣는다. 한도에 걸려 뒤가 잘려도, 되돌릴 수 없는 삭제를 알리는
+ *   유일한 표시가 먼저 나간다(무음 신호는 앱을 열면 재조회로 따라잡는다).
+ */
+export async function sendBillingStateSignals(
+  db: Client,
+  env: SignalPushEnv,
+  params: {
+    planChangedUserIds: readonly string[];
+    deletionWarningUserPks: readonly string[];
+    retentionDays: number;
+  },
+): Promise<void> {
+  const signal = new Set(params.planChangedUserIds.filter(Boolean));
+  const warned = new Set(params.deletionWarningUserPks.filter(Boolean));
+  const recipients = Array.from(new Set([...warned, ...signal]));
+  if (recipients.length === 0) return;
+  const targetsOf = await getPushTargetsForUsers(db, recipients);
+
+  const title = '목소리가 곧 삭제돼요';
+  const body =
+    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
+    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
+  const fcmMessages: FcmMessage[] = [];
+  const apnsMessages: ApnsMessage[] = [];
+  // 1) 보이는 예고 먼저.
+  for (const userId of warned) {
+    for (const target of targetsOf.get(userId) ?? []) {
+      if (target.platform === 'ios') {
+        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+      } else {
+        fcmMessages.push({
+          token: target.token,
+          title,
+          body,
+          data: { type: 'voice_deletion_warning', channelId: SOCIAL_CHANNEL_ID },
+        });
+        // 워커 기동용 — title/body 가 비어야 onMessageReceived 가 온다. 이게 곧 재조회 신호다.
+        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+      }
+    }
+  }
+  // 2) 무음 재조회 신호 — 안드로이드 예고 대상은 위 짝으로 이미 받았다.
+  for (const userId of signal) {
+    for (const target of targetsOf.get(userId) ?? []) {
+      if (target.platform === 'ios') {
+        apnsMessages.push({
+          token: target.token,
+          title: '',
+          body: '',
+          data: { type: 'plan_changed' },
+          silent: true,
+        });
+      } else if (!warned.has(userId)) {
+        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+      }
+    }
+  }
+
+  if (fcmMessages.length > 0) {
+    await pruneStaleTokens(db, await sendPushNotifications(fcmMessages, env));
+  }
+  if (apnsMessages.length > 0) {
+    const config = apnsConfigFromEnv(env);
+    // 키가 없으면 조용히 건너뛴다 — 푸시가 없다고 강등·예약이 깨지면 안 된다.
+    if (config) await pruneDeadApnsTokens(db, await sendApnsNotifications(apnsMessages, config));
   }
 }
 

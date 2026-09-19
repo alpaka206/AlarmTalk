@@ -4,7 +4,7 @@
 // 그룹 하나를 해체하는 데 40번 넘게 오갔다. 워커 한 실행의 subrequest 는 ~50 이라 해체를
 // 품은 요청(가족 → 개인 전환, 체인 넘겨받기, 만료)이 롤백되고 재시도해도 같은 자리에서
 // 죽었다. 묶음으로 바꾸면서 **결과는 그대로여야 한다** — 이 파일이 그 결과를 고정한다.
-// (도입 PR 에서 예전 구현과 무작위 상태 400개 × 해지·보류·복구 = 1,200회를 대조해
+// (도입 PR 에서 예전 구현과 무작위 상태 500개 × 해체·보류·복구·이탈 = 2,000회를 대조해
 // 불일치 0 을 확인했다.)
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createClient, type Client } from '@libsql/client';

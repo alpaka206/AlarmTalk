@@ -8,11 +8,10 @@ import {
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
   findStoreTransactionsForSubscriptions,
-  notifyPlanChanged,
-  notifyVoiceDeletionScheduled,
   scheduleCancelAtPeriodEnd,
   syncPaidVoiceRetention,
   storeCancelProviderOf,
+  notifyBillingStateChanged,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
 import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from '../lib/store-billing';
@@ -812,9 +811,8 @@ billingMutation.post('/cancel', async (c) => {
     return syncPaidVoiceRetention(tx, userPk, now);
   });
   // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
-  await notifyPlanChanged(db, c.env, Array.from(cancelAffected));
   // 해지 직후가 예고를 보낼 자리다 — 3일 뒤 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.
-  await notifyVoiceDeletionScheduled(db, c.env, Array.from(cancelAffected));
+  await notifyBillingStateChanged(db, c.env, Array.from(cancelAffected));
   return c.json({
     success: true,
     mode,

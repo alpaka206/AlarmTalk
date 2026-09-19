@@ -5,7 +5,6 @@ import {
   clonedVoiceReleaseStatements,
   deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
-  releaseClonedVoicesForUser,
   type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
@@ -21,7 +20,7 @@ import {
   plannedMaxUses,
   isGroupPlanType,
 } from '../routes/billing-helpers';
-import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
+import { notifyDowngradedAlarms, sendBillingStateSignals, sendPlanChangedPush } from './fcm';
 import { sendVoiceDeletionWarningPush } from './fcm';
 import type { Env } from '../types';
 
@@ -383,7 +382,7 @@ export async function sweepPaidVoiceRetention(
   const cleanedUserPks: string[] = [];
   const voiceAccessRevokedUserIds = new Set<string>();
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
-  // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
+  // 클론 자체는 해지 시점에 이미 반납했다(`downgradeUserToFree` → `clonedVoiceReleaseStatements`).
   const due = await db.execute({
     sql: `SELECT user_id FROM paid_voice_retention WHERE delete_after <= ?`,
     args: [now.toISOString()],
@@ -432,23 +431,39 @@ export async function downgradeUserToFree(
   userPk: string,
   options: CancelCleanupOptions = {},
 ): Promise<void> {
-  await db.execute({
-    sql: `UPDATE users SET plan = 'free', updated_at = datetime('now') WHERE id = ?`,
-    args: [userPk],
-  });
   if (options.deleteVoiceData === true) {
+    await db.execute(setUserPlanStatement(userPk, 'free'));
     await deletePaidVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
     return;
   }
+  // ⚠ **읽기 한 번 + 쓰기 한 번**(2026-09-20). 예전에는 등급·로그인 id·클론 조회·클론마다
+  //   적재·반납·공유 해제·알람 강등을 한 문장씩 왕복해(7+), 해지·만료·환불 요청의 쓰기
+  //   트랜잭션이 워커 subrequest 한도(~50)에 다가갔다. 문장과 순서는 예전 그대로다 — 읽는
+  //   값(로그인 id·클론 id)은 이 쓰기가 바꾸지 않는다.
   // voice_profiles.user_id·alarms.user_id 는 로그인 id(google_id)로 저장되므로 PK(userPk)와
   // 로그인 id 를 모두 매칭한다(deletePaidVoiceDataForUser 와 동일 — 한쪽만 쓰면 일반 케이스를
   // 놓쳐 un-share·강등이 누락되고 취소된 목소리가 좀비로 계속 울린다).
-  const loginId = await resolveUserLoginId(db, userPk);
-  // 무료로 내려간 시점에 제공자 클론을 반납한다 — 유료 슬롯을 붙들고 있을 이유가 없다.
-  // 원본 업로드는 남으므로, 보관 유예 안에 재구독하면 재클론으로 그대로 돌아온다.
-  await releaseClonedVoicesForUser(db, userPk, loginId);
+  const [userRes, voiceRes] = await db.batch([
+    { sql: `SELECT google_id FROM users WHERE id = ? LIMIT 1`, args: [userPk] },
+    {
+      sql: `SELECT elevenlabs_voice_id FROM voice_profiles
+            WHERE elevenlabs_voice_id IS NOT NULL
+              AND (user_id = ? OR user_id = (SELECT google_id FROM users WHERE id = ?))`,
+      args: [userPk, userPk],
+    },
+  ]);
+  const loginId = (userRes!.rows[0]?.google_id as string | null | undefined) ?? null;
   const ownerIds = Array.from(new Set([userPk, loginId].filter((x): x is string => Boolean(x))));
-  for (const stmt of revokeVoiceAccessStatements(ownerIds)) await db.execute(stmt);
+  await db.batch([
+    setUserPlanStatement(userPk, 'free'),
+    // 무료로 내려간 시점에 제공자 클론을 반납한다 — 유료 슬롯을 붙들고 있을 이유가 없다.
+    // 원본 업로드는 남으므로, 보관 유예 안에 재구독하면 재클론으로 그대로 돌아온다.
+    ...clonedVoiceReleaseStatements(
+      ownerIds,
+      voiceRes!.rows.map((r) => r.elevenlabs_voice_id as string),
+    ),
+    ...revokeVoiceAccessStatements(ownerIds),
+  ]);
 }
 
 /**
@@ -812,7 +827,7 @@ async function disbandOwnedPlanGroup(
   //   값은 **이 해체가 건드리지 않는 것**(멤버의 다른 구독·로그인 id·클론 id)뿐이다. 앞 문장에
   //   기대는 판정(보관 기한)은 SQL 로 실행 시점에 한다(`retentionSyncStatements`).
   //   결과 고정 테스트: `test/group-disband-batch.test.ts`(도입 때 예전 구현과 무작위 상태
-  //   1,200회를 대조해 불일치 0 을 확인했다).
+  //   2,000회를 대조해 불일치 0 을 확인했다).
   const members = `SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id <> ?`;
   const [memberRes, subRes, userRes, voiceRes] = await db.batch([
     { sql: members, args: [planGroupId, ownerUserPk] },
@@ -1085,7 +1100,7 @@ export async function leavePlanGroupMembers(
     { sql: `SELECT id, google_id FROM users WHERE id IN (${ph})`, args: userPks },
     {
       // 클론의 주인 id 는 PK 이거나 로그인 id(google_id)다 — 둘 다 모은다.
-      // 사용자 행이 없어도 PK 로 적힌 클론은 모은다(예전 `releaseClonedVoicesForUser` 와 같다).
+      // 사용자 행이 없어도 PK 로 적힌 클론은 모은다(`downgradeUserToFree` 와 같다).
       sql: `SELECT user_id, elevenlabs_voice_id FROM voice_profiles
             WHERE elevenlabs_voice_id IS NOT NULL
               AND (user_id IN (${ph})
@@ -1342,14 +1357,40 @@ export async function notifyPlanChanged(
   }
 }
 
-/** 권한 변경과 그 변경으로 생긴 삭제 유예는 커밋 후 함께 통지한다. */
+/**
+ * 권한 변경과 그 변경으로 생긴 삭제 유예는 커밋 후 **한 번에** 통지한다
+ * (`sendBillingStateSignals` — 토큰 조회·OAuth 한 번, 안드로이드 중복 신호 없음).
+ *
+ * 예고는 **유예 행이 있는 사람만** 받는다 — 전원을 넘겨도 아직 유료인 사람은 알아서 빠진다.
+ * ⚠ **던지지 않는다.** 커밋 뒤에 돈다 — 여기서 던지면 저장된 결제·해지가 500 으로 보인다.
+ */
 export async function notifyBillingStateChanged(
   db: Client,
   env: ExpiryEnv | undefined,
   userIds: string[],
 ): Promise<void> {
-  await notifyPlanChanged(db, env, userIds);
-  await notifyVoiceDeletionScheduled(db, env, userIds);
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return;
+  const hasFirebase = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
+  if (!hasFirebase && !hasApns) return;
+  try {
+    const res = await db.execute({
+      sql: `SELECT user_id FROM paid_voice_retention WHERE user_id IN (${unique.map(() => '?').join(', ')})`,
+      args: unique,
+    });
+    await sendBillingStateSignals(db, env as ExpiryEnv, {
+      planChangedUserIds: unique,
+      deletionWarningUserPks: res.rows.map((r) => String(r.user_id)),
+      retentionDays: PAID_VOICE_RETENTION_DAYS,
+    });
+  } catch (err) {
+    logStructured('error', {
+      at: 'billing.notify_state_changed',
+      action: 'PUSH_FAILED',
+      error: String(err),
+    });
+  }
 }
 
 /**
@@ -1400,9 +1441,8 @@ export async function processSubscriptionExpiry(
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(RTDN 갈래와 같은 규칙) — 네트워크 I/O 이고,
   // 실패해도 흐름을 깨지 않는다. 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 맡는다.
-  await notifyPlanChanged(db, env, Array.from(notifyUserPks));
-  // 유예가 걸린 사람에게만 **눈에 보이는** 삭제 예고를 보낸다(위 신호는 전부 무음이다).
-  await notifyVoiceDeletionScheduled(db, env, Array.from(notifyUserPks));
+  // 유예가 걸린 사람에게는 **눈에 보이는** 삭제 예고를 함께 보낸다(나머지는 무음 신호).
+  await notifyBillingStateChanged(db, env, Array.from(notifyUserPks));
 
   // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
   // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.

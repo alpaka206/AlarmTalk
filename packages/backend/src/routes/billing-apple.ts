@@ -14,9 +14,7 @@ import {
   findActiveSubscriptionsByUserPk,
   hasActivePaidEntitlement,
   findStoreTransactionsForSubscriptions,
-  notifyPlanChanged,
   notifyBillingStateChanged,
-  notifyVoiceDeletionScheduled,
   schedulePaidVoiceRetention,
   storeRenewalProvidersOf,
   type ActiveSubscription,
@@ -736,14 +734,13 @@ async function revokeRefundedAppleSubscription(
   //   푸시까지 못 받았으면 **회수가 끝났는데도 유료 상태를 그대로 들고 있다.**
   //   통지는 즉시성만 담당하고 정확성은 클라의 재조회가 보장한다 — 최선 노력으로 둔다.
   try {
-    await notifyPlanChanged(db, env, ids);
     // ⚠ **`stillPaid` 로 통째로 막지 말 것**(코덱스 #733 7차). 그 값은 **소유자** 얘기다.
     //   그룹이 해체되면서 떨어져 나간 멤버들은 유예가 걸려 있는데, 소유자에게 다른 유료
     //   구독이 남아 있다는 이유로 예고를 통째로 건너뛰면 **그 멤버들은 아무 경고 없이
     //   목소리를 잃는다.**
-    //   `notifyVoiceDeletionScheduled` 는 **유예 행이 있는 사람만** 고르므로, 전원을 넘겨도
-    //   아직 유료인 소유자는 알아서 빠진다. 그게 이 헬퍼가 그렇게 만들어진 이유다.
-    await notifyVoiceDeletionScheduled(db, env, ids);
+    //   `notifyBillingStateChanged` 는 **유예 행이 있는 사람만** 예고하므로, 전원을 넘겨도
+    //   아직 유료인 소유자는 알아서 빠진다(신호만 받는다).
+    await notifyBillingStateChanged(db, env, ids);
   } catch (err) {
     logStructured('error', {
       at: 'billing.apple.confirm',

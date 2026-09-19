@@ -51,8 +51,8 @@ const cancelSubscriptionImmediate = vi.fn(async () => ['owner-pk', 'member-1']);
 const schedulePaidVoiceRetention = vi.fn(async () => undefined);
 /** 환불 뒤에도 유료 권한이 남아 있는가(다른 스토어 구독·프로모). */
 let stillPaid = false;
-const notifyPlanChanged = vi.fn(async () => undefined);
-const notifyVoiceDeletionScheduled = vi.fn(async () => undefined);
+/** 커밋 뒤 알림 — 재조회 신호와 삭제 예고(유예 행이 있는 사람만)를 한 번에 보낸다. */
+const notifyBillingStateChanged = vi.fn(async () => undefined);
 
 // ⚠ **조회 헬퍼는 진짜를 쓴다.** 라우트가 그걸로 SQL 을 날려야 아래 목 DB 시드가 뜻을
 // 갖는다 — 전부 목으로 덮으면 "무엇을 조회하는가" 를 검증할 수 없다. 파괴적인 것
@@ -61,8 +61,7 @@ vi.mock('../src/lib/billing-cancel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/lib/billing-cancel')>()),
   cancelSubscriptionImmediate: (...a: unknown[]) => cancelSubscriptionImmediate(...(a as [])),
   schedulePaidVoiceRetention: (...a: unknown[]) => schedulePaidVoiceRetention(...(a as [])),
-  notifyPlanChanged: (...a: unknown[]) => notifyPlanChanged(...(a as [])),
-  notifyVoiceDeletionScheduled: (...a: unknown[]) => notifyVoiceDeletionScheduled(...(a as [])),
+  notifyBillingStateChanged: (...a: unknown[]) => notifyBillingStateChanged(...(a as [])),
   hasActivePaidEntitlement: async () => stillPaid,
 }));
 
@@ -115,8 +114,7 @@ beforeEach(() => {
   stillPaid = false; // 기본은 만료 — 체인이 끝났으니 회수해도 된다.
   cancelSubscriptionImmediate.mockClear();
   schedulePaidVoiceRetention.mockClear();
-  notifyPlanChanged.mockClear();
-  notifyVoiceDeletionScheduled.mockClear();
+  notifyBillingStateChanged.mockClear();
 });
 
 describe('POST /billing/apple/confirm — 다른 스토어가 갱신 중', () => {
@@ -210,7 +208,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     expect(res.status).toBe(502);
     expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
     expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
-    expect(notifyPlanChanged).not.toHaveBeenCalled();
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
     expect(mockDB.transactions.rollbacks).toBe(1);
   });
 
@@ -254,8 +252,8 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
       ENV,
     );
 
-    expect(notifyPlanChanged.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
-    expect(notifyVoiceDeletionScheduled).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
   });
 
   it('조회 키로 originalTransactionId 와 transactionId 를 둘 다 쓴다', async () => {
@@ -286,7 +284,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
 
     expect(res.status).toBe(400);
     expect(cancelSubscriptionImmediate).not.toHaveBeenCalled();
-    expect(notifyPlanChanged).not.toHaveBeenCalled();
+    expect(notifyBillingStateChanged).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
@@ -378,7 +376,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
   it('통지가 실패해도 400 을 그대로 돌려준다 — 정리는 이미 커밋됐다', async () => {
     // ⚠ 여기서 던지면 라우트가 500 이 되고, 앱은 TRANSACTION_REVOKED 를 못 받아
     //   권위 상태를 다시 읽는 경로를 놓친다 — 회수가 끝났는데 유료 상태가 남는다.
-    notifyPlanChanged.mockRejectedValueOnce(new Error('FCM down'));
+    notifyBillingStateChanged.mockRejectedValueOnce(new Error('FCM down'));
     pushMappedSubscription();
 
     const res = await buildApp().request(
@@ -408,14 +406,14 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
 
     expect(cancelSubscriptionImmediate).toHaveBeenCalledTimes(1); // 회수 자체는 한다
     expect(schedulePaidVoiceRetention).not.toHaveBeenCalled();
-    expect(notifyPlanChanged).toHaveBeenCalledTimes(1); // 스냅샷 갱신은 여전히 알린다
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1); // 스냅샷 갱신은 여전히 알린다
   });
 
   it('소유자가 유료로 남아도 떨어져 나간 멤버에게는 삭제 예고를 보낸다', async () => {
     // ⚠ `stillPaid` 는 **소유자** 얘기다. 그룹이 해체되면서 떨어져 나간 멤버들은 유예가
     //   걸려 있는데, 소유자에게 다른 유료 구독이 남았다는 이유로 예고를 통째로 건너뛰면
     //   **그 멤버들은 아무 경고 없이 목소리를 잃는다**(코덱스 #733 7차).
-    //   `notifyVoiceDeletionScheduled` 는 유예 행이 있는 사람만 고르므로 전원을 넘긴다.
+    //   `notifyBillingStateChanged` 는 유예 행이 있는 사람에게만 예고하므로 전원을 넘긴다.
     stillPaid = true;
     pushMappedSubscription();
 
@@ -425,8 +423,8 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
       ENV,
     );
 
-    expect(notifyVoiceDeletionScheduled).toHaveBeenCalledTimes(1);
-    expect(notifyVoiceDeletionScheduled.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged.mock.calls[0]![2]).toEqual(['owner-pk', 'member-1']);
   });
 
   it('유료가 남지 않으면 예전대로 유예를 걸고 예고한다', async () => {
@@ -440,7 +438,7 @@ describe('POST /billing/apple/confirm — 환불된 트랜잭션', () => {
     );
 
     expect(schedulePaidVoiceRetention).toHaveBeenCalledTimes(1);
-    expect(notifyVoiceDeletionScheduled).toHaveBeenCalledTimes(1);
+    expect(notifyBillingStateChanged).toHaveBeenCalledTimes(1);
   });
 
   it('환불이 아니면 회수 경로를 타지 않는다', async () => {

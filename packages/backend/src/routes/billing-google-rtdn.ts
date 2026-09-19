@@ -12,7 +12,6 @@ import {
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
-  notifyPlanChanged,
   notifyBillingStateChanged,
   refreshCompetingAppleRenewalState,
 } from '../lib/billing-cancel';
@@ -332,11 +331,10 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
       });
     }
     // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
-    if (entitleResult.planChangedUserIds.length > 0) {
-      await notifyBillingStateChanged(db, c.env, entitleResult.planChangedUserIds);
-    }
+    //   소유자 본인의 신호(아래)와 **한 번에** 보낸다 — 따로 부르면 토큰 조회·OAuth 가 두 번이고,
+    //   소유자가 목록에 이미 있으면 같은 신호를 두 번 받는다.
+    await notifyBillingStateChanged(db, c.env, [...entitleResult.planChangedUserIds, userPk]);
     // 멤버 기간·권한은 applyStoreEntitlement 의 동일 트랜잭션에서 이미 복구했다.
-    await notifyPlanChanged(db, c.env, [userPk]);
     return c.json({ success: true, action: 'entitled' });
   }
 

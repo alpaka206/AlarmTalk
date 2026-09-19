@@ -305,16 +305,25 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   묶음으로 읽고, 쓰기 문장을 한 묶음으로 보낸다. 쓰기 문장과 순서는 멤버별 경로 그대로다.
 - **앞 문장의 결과에 기대는 판정은 SQL 로 실행 시점에 한다** — 보관 기한
   (`retentionSyncStatements` = `syncPaidVoiceRetention`).
-- **알림 대상의 푸시 토큰은 한 번에 조회한다**(`getPushTargetsForUsers`). 기기마다 보내는
-  발송 자체는 줄일 수 없다(FCM v1 은 메시지당 요청 하나).
+- **커밋 뒤 알림은 한 묶음이다**(`notifyBillingStateChanged` → `sendBillingStateSignals`).
+  재조회 신호와 목소리 삭제 예고를 **토큰 조회 한 번·OAuth 한 번**으로 보낸다
+  (`getPushTargetsForUsers`). 안드로이드 예고 대상은 예고 짝(표시용 + data-only
+  `plan_changed`)만 받는다 — 신호를 또 보내지 않는다. iOS 는 예고 alert 와 무음 신호를 둘 다
+  받는다(alert 는 앱을 깨우지 못한다). **보이는 예고를 먼저** 싣는다 — 한도에 잘려도 되돌릴 수
+  없는 삭제의 예고는 나간다. 기기마다 보내는 발송 자체는 줄일 수 없다(FCM v1 은 메시지당
+  요청 하나).
+- ⚠ 토큰 행의 `users.id` 와 `google_id` 가 **같을 수 있다**(이메일 계정은 첫 로그인 때 로그인
+  id 를 PK 로 채운다). 한 행을 한 사람에게 두 번 넣으면 같은 기기에 두 통이 나간다.
 - **구글 구매 확인(acknowledge)은 알림보다 먼저.** 알림이 한도를 먼저 쓰면 확인에 닿지
   못해 Play 가 3일 뒤 환불한다.
 - **커밋 뒤 알림 단계는 던지지 않는다**(`notifyVoiceDeletionScheduled` 의 조회까지 try 안).
   이미 저장된 결제가 500 으로 보이면 앱이 실패로 읽는다.
-- 실측 고정: `test/billing-apple-confirm-subrequests.test.ts`(애플 확정 — 첫 결제 16, 개인
-  넘겨받기 30, 가족(멤버 4명) 넘겨받기 33, 가족 갱신 22, 가족 → 개인 32). 결과 고정:
-  `test/group-disband-batch.test.ts`. 도입 때 예전 구현과 무작위 상태 400개 × 해체·보류·복구·
-  이탈 = 1,600회를 대조해 불일치 0 을 확인했다.
+- 실측 고정: `test/billing-apple-confirm-subrequests.test.ts` — **푸시를 켜고** 사람마다 기기·
+  클론 하나, 초대 코드 사용 4회, OAuth 캐시 비움, 출시 전 애플(조회마다 2)로 잰다. 애플 확정
+  라우트: 첫 결제 16, 개인 넘겨받기 31, 가족(멤버 4명) 넘겨받기 42, 가족 갱신 29, 가족 → 개인
+  39(인증 미들웨어 2 별도). 예전에는 같은 조건에서 81~113 이었다. 결과 고정:
+  `test/group-disband-batch.test.ts`. 도입 때 예전 구현과 무작위 상태 500개 × 해체·보류·복구·
+  이탈 = 2,000회를 대조해 불일치 0 을 확인했다.
 
 ## 플랜 변경 — **스토어 시트가 시점을 정한다**
 

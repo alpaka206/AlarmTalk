@@ -9,6 +9,7 @@ import {
   sendPushNotifications,
   sendAlarmPush,
   sendPlanChangedPush,
+  sendFamilyAlarmPush,
   pruneStaleTokens,
 } from '../src/lib/fcm';
 
@@ -74,6 +75,15 @@ describe('sendPlanChangedPush', () => {
     expect(tokenQueries).toHaveLength(1);
     // 중복을 뺀 두 사람이 PK·로그인 id 양쪽 자리에 한 번씩 들어간다.
     expect(tokenQueries[0].args).toEqual(['user-1', 'user-2', 'user-1', 'user-2']);
+  });
+
+  it('PK 와 로그인 id 가 같은 계정도 기기 하나에 한 통이다', async () => {
+    // 이메일 계정은 첫 로그인 뒤 users.id == users.google_id 가 된다 — 조회 행 하나가 두 키에
+    // 모두 걸린다. 두 번 넣으면 같은 기기에 두 통이 나간다(2026-09-20 검토에서 재현).
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockDB.pushResult([{ uid: 'email-u1', gid: 'email-u1', token: 'tok-email', platform: 'android' }]);
+    const results = await sendFamilyAlarmPush(mockDB.client as never, unconfiguredEnv, 'email-u1', 'alarm-1');
+    expect(results.map((r) => r.token)).toEqual(['tok-email']);
   });
 
   it('토큰이 하나도 없으면 전송하지 않는다(조기 반환)', async () => {
