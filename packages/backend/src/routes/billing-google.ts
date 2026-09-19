@@ -529,14 +529,12 @@ billingGoogle.post('/google/confirm', async (c) => {
     );
   }
 
-  // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
-  // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
-  // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
-  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
-
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
   // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가
   // 서버측 ack 재시도로 보강한다.
+  // ⚠ **알림보다 먼저 한다**(2026-09-20). 알림은 받을 사람·기기 수만큼 subrequest 를 쓰는데,
+  //   그 뒤에 두면 가족 그룹이 바뀌는 결제에서 한도(~50)가 알림 단계에서 먼저 다 떨어져
+  //   확인 처리에 닿지 못한다 — 권한은 줬는데 Play 가 3일 뒤 환불한다.
   if (subscription.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
     await acknowledgeGoogleSubscription({
       baseUrl,
@@ -545,6 +543,11 @@ billingGoogle.post('/google/confirm', async (c) => {
       accessToken,
     });
   }
+
+  // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
+  // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+  // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
+  await notifyBillingStateChanged(db, c.env, result.planChangedUserIds);
 
   return c.json({
     success: true,

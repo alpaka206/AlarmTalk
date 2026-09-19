@@ -6,7 +6,7 @@
  * `finally`에서 트랜잭션을 닫는다(libSQL write txn은 단일 writer 락이라 누수 시
  * 후속 쓰기를 막을 수 있어 반드시 닫는다).
  */
-import type { Client, InStatement } from '@libsql/client';
+import type { Client, InStatement, ResultSet } from '@libsql/client';
 
 /**
  * 트랜잭션·클라이언트 공통 실행기.
@@ -19,7 +19,8 @@ import type { Client, InStatement } from '@libsql/client';
  * 서로 결과를 참조하지 않는 쓰기는 `batch` 로 **한 번에** 보낸다 — 순서도 원자성도 그대로다.
  */
 export type DbExecutor = Pick<Client, 'execute'> & {
-  batch(stmts: InStatement[]): Promise<unknown>;
+  /** 문장마다 결과를 **적은 순서대로** 돌려준다 — 읽기를 모아 한 번에 보낼 때도 쓴다. */
+  batch(stmts: InStatement[]): Promise<ResultSet[]>;
 };
 
 export async function withWriteTransaction<T>(

@@ -12,7 +12,6 @@ import {
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
-  notifyPlanChanged,
   notifyBillingStateChanged,
   refreshCompetingAppleRenewalState,
 } from '../lib/billing-cancel';
@@ -318,13 +317,11 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
       });
       return c.json({ success: true, ignored: 'entitle_rejected' });
     }
-    // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
-    if (entitleResult.planChangedUserIds.length > 0) {
-      await notifyBillingStateChanged(db, c.env, entitleResult.planChangedUserIds);
-    }
     // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로
     // confirm 이 오지 않아도 RTDN(구매/갱신 알림)이 서버측 ack 재시도 경로가 된다
     // (미확인 시 3일 후 Play 자동 환불). confirm 과 동일한 ack 헬퍼를 재사용한다.
+    // ⚠ **알림보다 먼저 한다** — confirm 경로와 같은 이유(알림이 subrequest 를 먼저 다 쓰면
+    //   확인 처리에 닿지 못해 Play 가 환불한다).
     if (subscription.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
       await acknowledgeGoogleSubscription({
         baseUrl,
@@ -333,8 +330,11 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         accessToken,
       });
     }
+    // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
+    //   소유자 본인의 신호(아래)와 **한 번에** 보낸다 — 따로 부르면 토큰 조회·OAuth 가 두 번이고,
+    //   소유자가 목록에 이미 있으면 같은 신호를 두 번 받는다.
+    await notifyBillingStateChanged(db, c.env, [...entitleResult.planChangedUserIds, userPk]);
     // 멤버 기간·권한은 applyStoreEntitlement 의 동일 트랜잭션에서 이미 복구했다.
-    await notifyPlanChanged(db, c.env, [userPk]);
     return c.json({ success: true, action: 'entitled' });
   }
 
