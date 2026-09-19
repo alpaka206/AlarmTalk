@@ -65,7 +65,7 @@ struct VoicePreviewConfirmView: View {
                         .fontWeight(.semibold)
                         .foregroundStyle(theme.palette.onSurface)
 
-                    Text("저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.")
+                    Text("저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요.\n지워도 다음 달까지는 새로 만들 수 없어요.\n마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.")
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 
@@ -324,45 +324,88 @@ struct VoicePreviewConfirmView: View {
     /// ⚠ 예전에는 '다시 만들기' 가 `.plain` 글자 버튼이라 높이도 배경도 없었고, 주 버튼만
     /// `maxWidth: .infinity` 라 **두 버튼의 크기·세로 중심이 어긋나** 보였다. 폭은 1:2 로
     /// 나눠 주 버튼이 더 크되, 두 버튼 모두 같은 최소 높이(50)를 갖는다.
+    /// 하단 액션 — **두 버튼의 크기를 정확히 같게** 그린다(2026-09-19 지시).
+    ///
+    /// ⚠ **시스템 버튼 스타일을 섞지 말 것.** `.borderedProminent` 는 자기 여백·높이를
+    ///   따로 갖고 있어서, 옆의 `.plain` 버튼과 같은 `minHeight` 를 줘도 실제로는 다르게
+    ///   그려진다(실기기에서 두 번 어긋났다). 그래서 **둘 다 `.plain`** 으로 두고 배경·
+    ///   테두리·높이를 이 파일에서 직접 같은 값으로 그린다 — 다른 것은 **색뿐**이다.
     private var actions: some View {
-        HStack(spacing: 10) {
-            Button("다시 만들기") {
-                Task { await discard() }
-            }
-            .buttonStyle(.plain)
-            .font(theme.typography.bodyMedium.weight(.semibold))
-            .foregroundStyle(theme.palette.error)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(
-                theme.palette.surface,
-                in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
-            )
-            .disabled(busy)
+        // ⚠ **폭을 SwiftUI 분배에 맡기지 않는다**(2026-09-19 실기기: 높이도 폭도 어긋났다).
+        //   `maxWidth: .infinity` 는 글자 길이에 따라 두 버튼이 다르게 나뉠 수 있다.
+        //   남은 폭에서 간격을 빼고 **반으로 나눈 값**을 두 버튼에 그대로 준다.
+        GeometryReader { geo in
+            let gap: CGFloat = 10
+            let each = max((geo.size.width - gap) / 2, 0)
+            HStack(spacing: gap) {
+                actionButton(
+                title: "다시 만들기",
+                foreground: theme.palette.error,
+                    background: theme.palette.surface,
+                    border: theme.palette.outlineVariant,
+                    width: each,
+                    disabled: busy
+                ) { Task { await discard() } }
 
-            Button(saving ? "저장 중…" : "저장하기") {
-                Task { await promote() }
-            }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: theme.shapes.vocaButton))
-            .controlSize(.large)
-            .tint(theme.palette.primary)
-            .font(theme.typography.bodyMedium.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 50)
             // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
             // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
             //
             // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다. 서버가
             // 어차피 `VOICE_LIMIT_REACHED` 로 막으므로, 열어 두면 눌러도 실패하는
             // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
-            .disabled(busy || !listened || (registeredVoice != nil && !replaceExisting))
+                let saveDisabled = busy || !listened || (registeredVoice != nil && !replaceExisting)
+                actionButton(
+                    title: saving ? "저장 중…" : "저장하기",
+                    foreground: theme.palette.onPrimary,
+                    background: saveDisabled
+                        ? theme.palette.primary.opacity(0.4)
+                        : theme.palette.primary,
+                    border: .clear,
+                    width: each,
+                    disabled: saveDisabled
+                ) { Task { await promote() } }
+            }
         }
+        // GeometryReader 는 높이를 스스로 정하지 못한다 — 버튼 높이로 고정한다.
+        .frame(height: Self.actionButtonHeight)
         .padding(.horizontal, 20)
         .padding(.top, 10)
         .padding(.bottom, 16)
+    }
+
+    /// 하단 버튼 높이. 두 버튼이 **같은 값**을 쓰는 유일한 출처다.
+    private static let actionButtonHeight: CGFloat = 52
+
+    /// 두 하단 버튼이 **같은 자로** 그려지도록 모양을 한 곳에 둔다(위 주석 참조).
+    private func actionButton(
+        title: LocalizedStringKey,
+        foreground: Color,
+        background: Color,
+        border: Color,
+        width: CGFloat,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.typography.bodyMedium.weight(.semibold))
+                .foregroundStyle(foreground)
+                // 글자가 길어도 상자를 넓히지 않는다 — 두 버튼이 같은 폭이어야 한다.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: width, height: Self.actionButtonHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            background,
+            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(border, lineWidth: 1)
+        )
+        .disabled(disabled)
     }
 
     // MARK: - 동작
@@ -372,7 +415,12 @@ struct VoicePreviewConfirmView: View {
         busy = true
         defer { busy = false }
         errorMessage = nil
-        let outcome = await voice.playDraftPreview(draft: draft, session: auth.session)
+        let outcome = await voice.playDraftPreview(
+            draft: draft,
+            session: auth.session,
+            // 소리가 나기 시작할 때 글자도 같이 보인다(2026-09-19 지시).
+            onTextReady: { text in previewText = text }
+        )
         previewAttempted = true
         switch outcome {
         case .played(let text):

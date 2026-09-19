@@ -867,9 +867,8 @@
     <string name="auth_consent_continue">続ける</string>
     <string name="voice_consent_agree_continue">同意して続ける</string>
     <string name="onb_voice_title_failed">声を受け取れませんでした</string>
-    <string name="voices_register_attest_notice">本人の声、または許可と同意を得た方の声のみ登録できます。無断登録によって生じる責任は登録した方が負います（利用規約第7条）。</string>
     <string name="voices_register_biometric_consent">音声生体情報の処理に同意します</string>
-    <string name="voices_register_biometric_desc">声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。</string>
+    <string name="voices_register_biometric_desc">声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。\n登録できるのは、ご本人の声か、声の持ち主から許可を得た録音だけです(利用規約第7条)。</string>
     <string name="msg_consent_update_required">同意を進めるにはアプリの更新が必要です。</string>
     <string name="consent_withdraw_action">同意を撤回</string>
     <string name="consent_withdraw_voice_title">撤回すると登録した声がすべて削除されます</string>

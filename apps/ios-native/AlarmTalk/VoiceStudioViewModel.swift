@@ -328,7 +328,14 @@ final class VoiceStudioViewModel: ObservableObject {
     /// ⚠ **재생이 끝난 뒤에야 `preview-played` 를 부른다.** 시작하자마자 부르면 사용자가
     /// 안 듣고 넘어가도 저장이 열려, 이 스텝을 둔 이유(결과를 듣고 결정하게 하기)가
     /// 사라진다. 안드로이드도 `setOnCompletionListener` 안에서 부른다.
-    func playDraftPreview(draft: VoiceProfile, session: AuthSession?) async -> DraftPreviewOutcome {
+    /// - Parameter onTextReady: 합성 응답이 오는 **즉시**(재생 시작 전) 문구를 알려 준다.
+    ///   화면은 소리와 글자를 같이 보여 줘야 한다 — 다 듣고 나서야 글자가 뜨면 무슨 말을
+    ///   들었는지 확인할 방법이 없다(2026-09-19 지시).
+    func playDraftPreview(
+        draft: VoiceProfile,
+        session: AuthSession?,
+        onTextReady: ((String) -> Void)? = nil
+    ) async -> DraftPreviewOutcome {
         guard let token = session?.token else { return .failed("로그인이 필요해요.") }
         do {
             let response = try await api.generateTTS(
@@ -344,6 +351,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
+            // 재생보다 **먼저** 글자를 띄운다(위 파라미터 주석).
+            if !response.text.isEmpty { onTextReady?(response.text) }
             guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
                 return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
             }

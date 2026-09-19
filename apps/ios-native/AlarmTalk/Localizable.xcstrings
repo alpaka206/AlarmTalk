@@ -12982,6 +12982,38 @@
           }
         }
       }
+    },
+    "내 목소리를 알람에 쓰고 싶을 때만 필요해요.\n녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only needed if you want to use your own voice for alarms.\nRecorded or uploaded voices are used to build a voice profile, clone it, and generate speech, and are handled as biometric information that can identify or recreate a person.\nYou may register only your own voice, or one whose owner gave you permission (Terms of Service, Article 7).\nYou can skip this and still use alarms with the built-in voices; we'll ask again when you register a voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自分の声をアラームに使いたい場合にのみ必要です。\n録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として扱います。\n登録できるのは、ご本人の声か、声の持ち主から許可を得た録音だけです(利用規約第7条)。\n今同意しなくても基本の声のアラームはそのまま使え、声を登録するときにあらためてお伺いします。"
+          }
+        }
+      }
+    },
+    "목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요.\n본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요(이용약관 제7조).\n목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or recreate a person.\nYou may register only your own voice, or one whose owner gave you permission (Terms of Service, Article 7).\nDeleting the voice deletes it too, and you can withdraw consent anytime under More."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。\n登録できるのは、ご本人の声か、声の持ち主から許可を得た録音だけです(利用規約第7条)。\n声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
