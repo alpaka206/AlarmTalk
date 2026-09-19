@@ -14,6 +14,7 @@ import {
   cancelSubscriptionImmediate,
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
+  syncPaidVoiceRetention,
   leavePlanGroupMember,
   propagateGroupMemberPlans,
   resolvePlanAfterSuspend,
@@ -256,7 +257,12 @@ export async function applyStoreEntitlement(
             deleteVoiceData: false,
           })),
         );
+        // 즉시 해지와 같은 규칙 — 무료가 됐으면 목소리 보관 기한을 건다(멤버는 그룹 해체가
+        // 이미 걸었다). 남은 유료 권한이 있으면 기한을 지운다(`syncPaidVoiceRetention`).
+        await syncPaidVoiceRetention(tx, previousOwner, appliedAt);
       } else {
+        // ⚠ 여기서는 보관 기한을 다시 걸지 않는다 — 만료 크론이 이미 걸었고, 다시 부르면
+        //   기한이 오늘부터로 **연장**된다(스펙: 재조회로 유예를 연장하지 않는다).
         // 이미 끝난 행(만료 크론이 먼저 지나갔다)이다 — 등급만 남은 구독에서 다시 계산한다.
         const previousPlanType = await resolvePlanAfterSuspend(tx, previousOwner, []);
         await tx.execute({
