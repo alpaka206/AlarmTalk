@@ -185,7 +185,7 @@ beforeAll(async () => {
   signingKeyPem = `-----BEGIN PRIVATE KEY-----\n${b64.match(/.{1,64}/g)!.join('\n')}\n-----END PRIVATE KEY-----\n`;
   vi.stubGlobal('fetch', vi.fn(async (url: unknown) => {
     fetches += 1;
-    if (String(url).includes('oauth2.googleapis.com')) {
+    if (new URL(String(url)).hostname === 'oauth2.googleapis.com') {
       return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }), { status: 200 });
     }
     return new Response('{}', { status: 200 });
