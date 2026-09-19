@@ -79,20 +79,38 @@ interface PushTarget {
 }
 
 /**
- * 사용자의 푸시 토큰을 **플랫폼과 함께** 가져온다.
+ * 여러 사용자의 푸시 토큰을 **플랫폼과 함께**, **한 번에** 가져온다 — 사용자 id(PK 또는
+ * 로그인 id) → 토큰들.
  *
  * ⚠ iOS 는 FCM 이 아니라 **APNs 로 직접** 보낸다(`lib/apns.ts` 주석 참조). 그래서
  * 보내는 쪽이 플랫폼을 알아야 한다 — 섞어서 FCM 으로 보내면 iOS 토큰은 전부 조용히
  * 버려진다(FCM 은 등록되지 않은 토큰으로 보고 지운다).
+ *
+ * ⚠ **사람마다 조회하지 말 것.** 조회 하나가 워커 subrequest 하나라, 가족 그룹이 통째로
+ * 바뀌는 결제 처리(해체·보류·만료)에서 알림 대상 다섯 명 × 알림 두 종류만으로 10 을 쓴다
+ * — 그 요청이 이미 한도(~50) 근처라 커밋 뒤 알림 단계에서 500 이 났다(2026-09-20 실측).
  */
-async function getPushTargetsForUser(db: Client, userId: string): Promise<PushTarget[]> {
+async function getPushTargetsForUsers(
+  db: Client,
+  userIds: readonly string[],
+): Promise<Map<string, PushTarget[]>> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  const byUser = new Map<string, PushTarget[]>(unique.map((id) => [id, []]));
+  if (unique.length === 0) return byUser;
+  const ph = unique.map(() => '?').join(', ');
   const result = await db.execute({
-    sql: `SELECT pt.token, pt.platform FROM push_tokens pt
+    sql: `SELECT u.id AS uid, u.google_id AS gid, pt.token, pt.platform FROM push_tokens pt
           JOIN users u ON u.id = pt.user_id
-          WHERE u.id = ? OR u.google_id = ?`,
-    args: [userId, userId],
+          WHERE u.id IN (${ph}) OR u.google_id IN (${ph})`,
+    args: [...unique, ...unique],
   });
-  return result.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
+  for (const r of result.rows) {
+    const target = { token: String(r.token), platform: String(r.platform) };
+    for (const key of [r.uid, r.gid]) {
+      if (typeof key === 'string' && byUser.has(key)) byUser.get(key)!.push(target);
+    }
+  }
+  return byUser;
 }
 
 export async function getTokensForUser(db: Client, userId: string): Promise<string[]> {
@@ -238,8 +256,12 @@ async function sendSilentSignals(
 ): Promise<FcmSendResult[]> {
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
+  const targetsOf = await getPushTargetsForUsers(
+    db,
+    signals.map((signal) => signal.userId),
+  );
   for (const signal of signals) {
-    for (const target of await getPushTargetsForUser(db, signal.userId)) {
+    for (const target of targetsOf.get(signal.userId) ?? []) {
       if (target.platform === 'ios') {
         apnsMessages.push({
           token: target.token,
@@ -476,9 +498,14 @@ export async function sendPaymentFailedPush(
 ): Promise<void> {
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
+  // 대상 전원의 토큰을 한 번에 — 사람마다 조회하지 않는다(`getPushTargetsForUsers`).
+  const targetsOf = await getPushTargetsForUsers(db, [
+    ...(params.ownerUserPk ? [params.ownerUserPk] : []),
+    ...params.memberUserPks,
+  ]);
 
-  const push = async (userId: string, title: string, body: string) => {
-    for (const target of await getPushTargetsForUser(db, userId)) {
+  const push = (userId: string, title: string, body: string) => {
+    for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
         // iOS 는 APNs 로 직접 간다(`lib/apns.ts` 주석). FCM 에 섞어 보내면 조용히 버려진다.
         //
@@ -524,7 +551,7 @@ export async function sendPaymentFailedPush(
   };
 
   if (params.ownerUserPk) {
-    await push(
+    push(
       params.ownerUserPk,
       '결제가 확인되지 않았어요',
       '이용권이 잠시 멈췄어요. 결제 수단을 확인하면 바로 다시 쓸 수 있어요.',
@@ -533,7 +560,7 @@ export async function sendPaymentFailedPush(
   // 소유자가 멤버 목록에 섞여 들어와도 두 번 보내지 않는다.
   for (const memberPk of Array.from(new Set(params.memberUserPks))) {
     if (memberPk === params.ownerUserPk) continue;
-    await push(
+    push(
       memberPk,
       '함께 쓰는 이용권이 멈췄어요',
       '이용권 주인의 결제가 확인되지 않아 공유 기능이 잠시 잠겼어요.',
@@ -586,8 +613,10 @@ export async function sendVoiceDeletionWarningPush(
     `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
     '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
 
-  for (const userId of Array.from(new Set(params.userPks)).filter(Boolean)) {
-    for (const target of await getPushTargetsForUser(db, userId)) {
+  const recipients = Array.from(new Set(params.userPks)).filter(Boolean);
+  const targetsOf = await getPushTargetsForUsers(db, recipients);
+  for (const userId of recipients) {
+    for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
         apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
       } else {

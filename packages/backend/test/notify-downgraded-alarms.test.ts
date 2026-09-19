@@ -65,7 +65,7 @@ describe('buildDowngradeSignals 팬아웃', () => {
 describe('notifyDowngradedAlarms 플랫폼 라우팅', () => {
   it('iOS 토큰에는 FCM이 아니라 APNs background push를 보낸다', async () => {
     const mockDB = createMockDB();
-    mockDB.pushResult([{ token: 'ios-device-token', platform: 'ios' }]);
+    mockDB.pushResult([{ uid: 'recipient', gid: null, token: 'ios-device-token', platform: 'ios' }]);
 
     const keys = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
       'sign',

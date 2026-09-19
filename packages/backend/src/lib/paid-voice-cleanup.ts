@@ -1,5 +1,10 @@
+import type { InStatement } from '@libsql/client';
 import type { DbExecutor } from './transactions';
-import { enqueueExternalDeletion, enqueueUserVoiceArtifacts } from './audio-retention';
+import {
+  enqueueExternalDeletion,
+  enqueueUserVoiceArtifacts,
+  externalDeletionStatement,
+} from './audio-retention';
 import { revokeDeletedVoices, type VoiceRevocationNotifications } from './voice-revocation';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
@@ -251,15 +256,7 @@ export async function releaseClonedVoicesForUser(
   // UPDATE 의 우변은 갱신 전 행 값으로 평가되므로(SQLite 의미론) 같은 문장에서 기존 id 를
   // 안전하게 보관할 수 있다.
   try {
-    await db.execute({
-      sql: `UPDATE voice_profiles
-            SET evicted_provider_voice_id = elevenlabs_voice_id,
-                elevenlabs_voice_id = NULL,
-                evicted_at = datetime('now'),
-                updated_at = datetime('now')
-            WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
-      args: ids,
-    });
+    await db.execute(evictClonedVoicesStatement(ids));
   } catch (err) {
     // 배포 → 마이그레이션 순서라 #77 적용 전 짧은 창에서는 이 컬럼이 없다. 그 창에서 해지가
     // 실패하지 않도록 구 스키마 폴백으로 반납 자체는 진행한다(캐시 프로브만 포기).
@@ -274,6 +271,39 @@ export async function releaseClonedVoicesForUser(
       args: ids,
     });
   }
+}
+
+/** 클론 반납 표식을 찍는 문장 — `releaseClonedVoicesForUser` 와 묶음 경로가 **같은 문장**을 쓴다. */
+function evictClonedVoicesStatement(ownerIds: string[]): InStatement {
+  return {
+    sql: `UPDATE voice_profiles
+          SET evicted_provider_voice_id = elevenlabs_voice_id,
+              elevenlabs_voice_id = NULL,
+              evicted_at = datetime('now'),
+              updated_at = datetime('now')
+          WHERE user_id IN (${placeholders(ownerIds)}) AND elevenlabs_voice_id IS NOT NULL`,
+    args: ownerIds,
+  };
+}
+
+/**
+ * `releaseClonedVoicesForUser` 의 **쓰기만** 문장 목록으로 돌려준다.
+ *
+ * 여러 사람을 한 트랜잭션에서 내리는 호출부(그룹 해체)가 읽기(`providerVoiceIds`)를 미리
+ * 모아 두고 쓰기를 `batch` 하나로 보내려고 둔다 — 사람마다 왕복하면 멤버 넷에서 워커
+ * subrequest 한도(~50)를 넘는다. 문장과 순서는 그 함수와 같다.
+ * ⚠ 구 스키마 폴백(#77 이전 배포 창)은 없다 — 컬럼이 없으면 묶음이 통째로 실패한다(fail-closed).
+ */
+export function clonedVoiceReleaseStatements(
+  ownerIds: Array<string | null | undefined>,
+  providerVoiceIds: Array<string | null | undefined>,
+): InStatement[] {
+  const ids = uniqueIds(ownerIds);
+  if (ids.length === 0) return [];
+  const enqueues = providerVoiceIds
+    .map((ref) => externalDeletionStatement('elevenlabs_voice', ref))
+    .filter((stmt): stmt is InStatement => stmt !== null);
+  return [...enqueues, evictClonedVoicesStatement(ids)];
 }
 
 /**

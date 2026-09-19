@@ -1,7 +1,8 @@
-import type { Client } from '@libsql/client';
+import type { Client, InStatement } from '@libsql/client';
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import {
+  clonedVoiceReleaseStatements,
   deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
   releaseClonedVoicesForUser,
@@ -302,6 +303,39 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 }
 
 /**
+ * `syncPaidVoiceRetention` 을 **문장 둘**로 — 묶음(`batch`) 안에서 쓰려고 둔다.
+ *
+ * 유료 판정을 JS 가 아니라 **실행 시점의 SQL** 로 한다. 같은 묶음의 앞 문장(구독 취소·등급
+ * 변경)이 반영된 상태를 봐야 `syncPaidVoiceRetention` 과 같은 답이 나온다.
+ * 조건은 `hasActivePaidEntitlement` 와 **같아야 한다** — 한쪽만 고치지 말 것
+ * (`test/group-disband-batch.test.ts` 가 두 경로를 같은 상태에서 대조한다).
+ * 둘 중 정확히 하나만 적용된다: 유료면 기한을 지우고, 아니면 기한을 건다(upsert).
+ */
+export function retentionSyncStatements(userPk: string, now: Date): InStatement[] {
+  const paid = `((SELECT COUNT(*) FROM subscriptions
+                   WHERE user_id = ? AND status = 'active'
+                     AND datetime(expires_at) > datetime('now')) > 0
+                 OR (COALESCE((SELECT plan FROM users WHERE id = ?), 'free') <> 'free'
+                     AND trim(COALESCE((SELECT plan FROM users WHERE id = ?), 'free')) <> ''))`;
+  const deleteAfter = new Date(
+    now.getTime() + PAID_VOICE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  return [
+    {
+      sql: `DELETE FROM paid_voice_retention WHERE user_id = ? AND ${paid}`,
+      args: [userPk, userPk, userPk, userPk],
+    },
+    {
+      // INSERT … SELECT 에 upsert 를 붙일 때는 SELECT 에 WHERE 가 있어야 파싱이 모호하지 않다.
+      sql: `INSERT INTO paid_voice_retention (user_id, delete_after)
+            SELECT ?, ? WHERE NOT ${paid}
+            ON CONFLICT(user_id) DO UPDATE SET delete_after = excluded.delete_after`,
+      args: [userPk, deleteAfter, userPk, userPk, userPk],
+    },
+  ];
+}
+
+/**
  * 즉시 해지·그룹 해체·개별 이탈의 보관 상태는 같은 규칙이다.
  * 같은 쓰기 트랜잭션에서 구독 취소·plan 재계산 뒤 호출한다. 유료 계정에게 남은
  * 유예 행은 곧 거짓 삭제 예고가 되므로 스윕까지 기다리지 않고 지운다.
@@ -414,33 +448,44 @@ export async function downgradeUserToFree(
   // 원본 업로드는 남으므로, 보관 유예 안에 재구독하면 재클론으로 그대로 돌아온다.
   await releaseClonedVoicesForUser(db, userPk, loginId);
   const ownerIds = Array.from(new Set([userPk, loginId].filter((x): x is string => Boolean(x))));
+  for (const stmt of revokeVoiceAccessStatements(ownerIds)) await db.execute(stmt);
+}
+
+/**
+ * 무료가 된 사람의 **목소리 접근 정리** 두 문장 — `downgradeUserToFree` 와 묶음 경로(그룹
+ * 해체)가 같은 문장을 쓴다.
+ *
+ * 공유를 끄고, 그 목소리를 참조하던 '타인 소유' 알람을 sound-only 로 강등한다 — 취소된
+ * 목소리가 좀비로 계속 울리지 않도록. (클라는 재동기화 시 반영)
+ */
+function revokeVoiceAccessStatements(ownerIds: string[]): InStatement[] {
   const ph = ownerIds.map(() => '?').join(',');
-  await db.execute({
-    sql: `UPDATE voice_profiles SET is_shared = 0 WHERE user_id IN (${ph}) AND is_shared = 1`,
-    args: ownerIds,
-  });
-  // 공유가 해제되면(강등/RTDN 비활성) 그 목소리를 참조하던 '타인 소유' 알람은 접근권을 잃으므로
-  // sound-only 로 강등한다 — 취소된 목소리가 좀비로 계속 울리지 않도록. (클라는 재동기화 시 반영)
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only',
-              wake_mode = 'sound_then_voice',
-              message_id = NULL,
-              voice_profile_id = NULL
-          WHERE user_id NOT IN (${ph})
-            AND (
-              voice_profile_id IN (
-                SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-              )
-              OR message_id IN (
-                SELECT id FROM messages
-                WHERE voice_profile_id IN (
+  return [
+    {
+      sql: `UPDATE voice_profiles SET is_shared = 0 WHERE user_id IN (${ph}) AND is_shared = 1`,
+      args: ownerIds,
+    },
+    {
+      sql: `UPDATE alarms
+            SET mode = 'sound-only',
+                wake_mode = 'sound_then_voice',
+                message_id = NULL,
+                voice_profile_id = NULL
+            WHERE user_id NOT IN (${ph})
+              AND (
+                voice_profile_id IN (
                   SELECT id FROM voice_profiles WHERE user_id IN (${ph})
                 )
-              )
-            )`,
-    args: [...ownerIds, ...ownerIds, ...ownerIds],
-  });
+                OR message_id IN (
+                  SELECT id FROM messages
+                  WHERE voice_profile_id IN (
+                    SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+                  )
+                )
+              )`,
+      args: [...ownerIds, ...ownerIds, ...ownerIds],
+    },
+  ];
 }
 
 /** 반드시 쓰기 트랜잭션 안에서 호출한다. 활성 근거 없는 등급의 복구도 강등 전체를 수행한다. */
@@ -473,12 +518,12 @@ export async function repairOrphanedPaidPlan(
   return [...affected];
 }
 
-async function expireUnusedVouchersFor(db: DbExecutor, subscriptionId: string): Promise<void> {
-  await db.execute({
+function expireUnusedVouchersStatement(subscriptionId: string): InStatement {
+  return {
     sql: `UPDATE voucher_codes SET status = 'expired'
           WHERE issuer_subscription_id = ? AND status = 'issued'`,
     args: [subscriptionId],
-  });
+  };
 }
 
 async function releaseInviteUseForMember(
@@ -532,16 +577,30 @@ async function cancelOneSubscriptionRow(
    */
   keepVouchers = false,
 ): Promise<void> {
-  await db.execute({
-    sql: `UPDATE subscriptions
-          SET status = 'cancelled',
-              canceled_at = ?,
-              expires_at = ?,
-              updated_at = datetime('now')
-          WHERE id = ? AND status = 'active'`,
-    args: [now.toISOString(), now.toISOString(), subscriptionId],
-  });
-  if (!keepVouchers) await expireUnusedVouchersFor(db, subscriptionId);
+  for (const stmt of cancelSubscriptionRowStatements(subscriptionId, now, keepVouchers)) {
+    await db.execute(stmt);
+  }
+}
+
+/** `cancelOneSubscriptionRow` 의 문장들 — 묶음 경로(그룹 해체)도 같은 문장을 쓴다. */
+function cancelSubscriptionRowStatements(
+  subscriptionId: string,
+  now: Date,
+  keepVouchers = false,
+): InStatement[] {
+  const stmts: InStatement[] = [
+    {
+      sql: `UPDATE subscriptions
+            SET status = 'cancelled',
+                canceled_at = ?,
+                expires_at = ?,
+                updated_at = datetime('now')
+            WHERE id = ? AND status = 'active'`,
+      args: [now.toISOString(), now.toISOString(), subscriptionId],
+    },
+  ];
+  if (!keepVouchers) stmts.push(expireUnusedVouchersStatement(subscriptionId));
+  return stmts;
 }
 
 /**
@@ -655,56 +714,78 @@ export async function propagateGroupMemberPlans(
   ownerUserPk: string,
   suspend: boolean,
 ): Promise<string[]> {
-  const memberRes = await db.execute({
-    sql: `SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id != ?`,
-    args: [planGroupId, ownerUserPk],
-  });
+  // ⚠ **멤버 수와 무관하게 왕복 두 번이다**(2026-09-20). 예전에는 멤버마다 등급 조회 ×2 ·
+  //   구독 조회 · 보류 표식 · 재계산을 따로 왕복했다(멤버 넷이면 20번 넘게). 이 함수는
+  //   **가족 소유자의 갱신 확정마다** 돈다(`extendStoreGroupPeriod`) — 그 요청이 워커
+  //   subrequest 한도(~50)에 걸리면 롤백되고 재시도해도 같은 자리에서 죽는다.
+  //   결과는 예전과 같다: 쓰기 문장과 순서는 멤버별 경로(`resolvePlanAfterSuspend`)를
+  //   그대로 옮긴 것이고, 등급은 **같은 규칙**(`strongestPaidSubscription`)으로 이 쓰기가
+  //   만들 상태에서 계산한다. 미리 읽는 것은 멤버 자신의 행뿐이라 앞 멤버의 쓰기에 영향받지
+  //   않는다. 결과 고정 테스트: `test/group-disband-batch.test.ts`.
+  const members = `SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id != ?`;
+  const [memberRes, userRes, subRes] = await db.batch([
+    { sql: members, args: [planGroupId, ownerUserPk] },
+    { sql: `SELECT id, plan FROM users WHERE id IN (${members})`, args: [planGroupId, ownerUserPk] },
+    {
+      sql: `SELECT s.id, s.user_id, s.plan_group_id, s.entitlement_state, p.plan_type
+            FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.status = 'active' AND s.user_id IN (${members})
+            ORDER BY s.starts_at DESC`,
+      args: [planGroupId, ownerUserPk],
+    },
+  ]);
 
+  const planOf = new Map(userRes!.rows.map((r) => [String(r.id), String(r.plan ?? 'free')]));
+  const writes: InStatement[] = [];
   const affected: string[] = [];
-  for (const row of memberRes.rows) {
+  for (const row of memberRes!.rows) {
     const memberPk = String(row.user_id);
+    const planBefore = planOf.get(memberPk) ?? 'free';
+    const memberSubs = subRes!.rows.filter((r) => String(r.user_id) === memberPk);
+    const inGroup = (sub: (typeof memberSubs)[number]) =>
+      ((sub.plan_group_id as string | null) ?? null) === planGroupId;
 
-    const before = await db.execute({
-      sql: `SELECT plan FROM users WHERE id = ?`,
-      args: [memberPk],
-    });
-    const planBefore = before.rows.length > 0 ? String(before.rows[0]!.plan ?? 'free') : 'free';
-
-    // 보류: 이 그룹에 묶인 멤버 구독을 **제외**하고 재계산한다. 멤버가 자기 개인
-    // 구독을 따로 샀다면 그건 그대로 남는다.
+    // 보류: 이 그룹에 묶인 멤버 구독을 **제외**하고 재계산한다. 멤버가 자기 개인 구독을
+    // 따로 샀다면 그건 그대로 남는다. 한 멤버가 같은 그룹에 활성 구독을 둘 이상 갖는 일은
+    // 없지만, 있어도 **전부** 제외해야 한다 — 하나만 빼면 나머지가 유료로 남는다.
     // 복구: 이 그룹만 entitled로 되돌린다. 다른 구독에 남은 보류·미확인은 계속 제외한다.
     if (suspend) {
-      const memberSubRes = await db.execute({
-        sql: `SELECT id FROM subscriptions
-              WHERE user_id = ? AND status = 'active' AND plan_group_id = ?`,
-        args: [memberPk, planGroupId],
-      });
-      // 한 멤버가 같은 그룹에 활성 구독을 둘 이상 갖는 일은 없지만, 있어도 **전부**
-      // 제외해야 한다 — 하나만 빼면 나머지가 유료로 남아 강등이 안 된다.
-      // 행이 없으면 빈 배열이라 '제외 없이 재계산' 과 같은 뜻이 된다(방어적).
-      await resolvePlanAfterSuspend(
-        db,
-        memberPk,
-        memberSubRes.rows.map((r) => String(r.id)),
-      );
+      const groupSubIds = memberSubs.filter(inGroup).map((sub) => String(sub.id));
+      if (groupSubIds.length) {
+        writes.push({
+          sql: `UPDATE subscriptions SET entitlement_state = 'suspended', updated_at = datetime('now')
+                WHERE user_id = ? AND status = 'active' AND id IN (${groupSubIds.map(() => '?').join(', ')})`,
+          args: [memberPk, ...groupSubIds],
+        });
+      }
     } else {
-      await db.execute({
+      writes.push({
         sql: `UPDATE subscriptions SET entitlement_state = 'entitled', updated_at = datetime('now')
               WHERE user_id = ? AND plan_group_id = ? AND status = 'active'`,
         args: [memberPk, planGroupId],
       });
-      await resolvePlanAfterSuspend(db, memberPk, []);
     }
-
-    const after = await db.execute({
-      sql: `SELECT plan FROM users WHERE id = ?`,
-      args: [memberPk],
-    });
-    const planAfter = after.rows.length > 0 ? String(after.rows[0]!.plan ?? 'free') : 'free';
+    // 위 쓰기가 만들 상태에서 등급을 고른다(`resolvePlanAfterSuspend` 의 재계산).
+    const remaining = memberSubs
+      .filter((sub) => sub.plan_type !== null && sub.plan_type !== undefined)
+      .map((sub) => ({
+        planType: String(sub.plan_type),
+        entitlementState: inGroup(sub)
+          ? suspend
+            ? 'suspended'
+            : 'entitled'
+          : String(sub.entitlement_state ?? 'entitled'),
+      }));
+    const paid = strongestPaidSubscription(remaining);
+    const planNext = paid ? planTypeToUserPlan(paid.planType) : 'free';
+    writes.push(setUserPlanStatement(memberPk, planNext));
+    // 행이 없는 사용자는 갱신이 아무 일도 하지 않는다 — 예전처럼 'free' 로 읽는다.
+    const planAfter = planOf.has(memberPk) ? planNext : 'free';
     // ⚠ **바뀐 사람만 알린다.** 안 바뀐 멤버(자기 결제가 따로 있는 사람)에게
     // "결제가 실패했어요" 를 보내면 자기 카드에 문제가 생긴 줄 안다.
     if (planBefore !== planAfter) affected.push(memberPk);
   }
+  if (writes.length) await db.batch(writes);
   return affected;
 }
 
@@ -721,37 +802,144 @@ async function disbandOwnedPlanGroup(
   planGroupId: string,
   now: Date,
 ): Promise<string[]> {
+  // ⚠ **멤버 수와 무관하게 왕복 두 번이다 — 읽기 한 번, 쓰기 한 번**(2026-09-20).
+  //   예전에는 멤버마다 조회·취소·강등·클론 반납·보관 기한을 따로 왕복해, 멤버 넷인 가족
+  //   그룹 하나를 해체하는 데 40번 넘게 오갔다. 워커 한 실행의 subrequest 는 ~50 이라
+  //   해체를 품은 요청(가족 → 개인 전환, 체인 넘겨받기, 만료)이 한도에 걸려 **롤백되고,
+  //   재시도해도 같은 자리에서 죽었다.**
+  //   결과는 예전과 같다: 쓰기 문장과 그 순서는 멤버별 경로(`cancelOneSubscriptionRow` →
+  //   `syncUserPlanAfterCancel` → `syncPaidVoiceRetention`)를 그대로 옮긴 것이고, 미리 읽은
+  //   값은 **이 해체가 건드리지 않는 것**(멤버의 다른 구독·로그인 id·클론 id)뿐이다. 앞 문장에
+  //   기대는 판정(보관 기한)은 SQL 로 실행 시점에 한다(`retentionSyncStatements`).
+  //   결과 고정 테스트: `test/group-disband-batch.test.ts`(도입 때 예전 구현과 무작위 상태
+  //   1,200회를 대조해 불일치 0 을 확인했다).
+  const members = `SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id <> ?`;
+  const [memberRes, subRes, userRes, voiceRes] = await db.batch([
+    { sql: members, args: [planGroupId, ownerUserPk] },
+    {
+      // LEFT JOIN — 취소 대상은 플랜 행과 무관하게 전부다(예전 멤버별 조회에 JOIN 이 없었다).
+      // 등급 계산은 `findActiveSubscriptionsByUserPk` 처럼 플랜이 있는 행만 본다.
+      sql: `SELECT s.id AS sub_id, s.user_id, s.plan_group_id, s.entitlement_state, p.plan_type
+            FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.status = 'active' AND s.user_id IN (${members})
+            ORDER BY s.starts_at DESC`,
+      args: [planGroupId, ownerUserPk],
+    },
+    {
+      sql: `SELECT id, google_id FROM users WHERE id IN (${members})`,
+      args: [planGroupId, ownerUserPk],
+    },
+    {
+      // 클론의 주인 id 는 PK 이거나 로그인 id(google_id)다 — 둘 다 모은다.
+      sql: `SELECT user_id, elevenlabs_voice_id FROM voice_profiles
+            WHERE elevenlabs_voice_id IS NOT NULL
+              AND user_id IN (
+                SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id <> ?
+                UNION
+                SELECT u.google_id FROM users u
+                JOIN plan_group_members m ON m.user_id = u.id
+                WHERE m.plan_group_id = ? AND m.user_id <> ? AND u.google_id IS NOT NULL
+              )`,
+      args: [planGroupId, ownerUserPk, planGroupId, ownerUserPk],
+    },
+  ]);
+
+  const loginIdOf = new Map(
+    userRes!.rows.map((r) => [String(r.id), (r.google_id as string | null) ?? null]),
+  );
+  const writes: InStatement[] = [];
   const disbanded: string[] = [];
-  const memberRes = await db.execute({
-    sql: `SELECT user_id, role FROM plan_group_members WHERE plan_group_id = ?`,
-    args: [planGroupId],
-  });
-  for (const row of memberRes.rows) {
+  for (const row of memberRes!.rows) {
     const memberUserId = String(row.user_id);
     if (memberUserId === ownerUserPk) continue;
-
-    const memberSubRes = await db.execute({
-      sql: `SELECT id FROM subscriptions
-            WHERE user_id = ? AND status = 'active' AND plan_group_id = ?`,
-      args: [memberUserId, planGroupId],
-    });
-    for (const subRow of memberSubRes.rows) {
-      await cancelOneSubscriptionRow(db, String(subRow.id), now);
-    }
-    // 멤버 강등에는 소유자의 삭제 옵션(options)을 전파하지 않는다. 취소를 개시하지
-    // 않은 멤버의 알람·음성·메시지가 하드 삭제되는 것을 막기 위해 데이터는 보존한다
-    // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
-    // 실제로 개시한 소유자 본인에게만 국한한다.
-    await syncUserPlanAfterCancel(db, memberUserId, { deleteVoiceData: false });
-    await syncPaidVoiceRetention(db, memberUserId, now);
+    writes.push(
+      ...memberDetachWrites(
+        memberUserId,
+        {
+          subs: subRes!.rows.filter((r) => String(r.user_id) === memberUserId),
+          loginId: loginIdOf.get(memberUserId) ?? null,
+          voices: voiceRes!.rows,
+        },
+        planGroupId,
+        now,
+      ),
+    );
     disbanded.push(memberUserId);
   }
-
-  await db.execute({
+  writes.push({
     sql: `DELETE FROM plan_group_members WHERE plan_group_id = ?`,
     args: [planGroupId],
   });
+  await db.batch(writes);
   return disbanded;
+}
+
+/**
+ * 멤버 한 명을 그룹에서 떼어 낼 때의 **쓰기 문장** — 해체(`disbandOwnedPlanGroup`)와
+ * 이탈(`leavePlanGroupMembers`)이 같이 쓴다. 읽기는 호출부가 미리 모아 넘긴다
+ * (멤버의 활성 구독·로그인 id·클론 id — 이 쓰기가 바꾸지 않는 값들이다).
+ *
+ * 순서와 문장은 멤버별 경로 그대로다:
+ * 1) 이 그룹에 묶인 멤버 구독 취소(`cancelOneSubscriptionRow`)
+ * 2) 남은 구독으로 등급 재계산(`syncUserPlanAfterCancel`) — 무료면 클론 반납·공유 해제·타인
+ *    알람 강등(`downgradeUserToFree` 의 음성 보존 갈래). 멤버에게는 소유자의 삭제 옵션을
+ *    전파하지 않는다 — 취소를 개시하지 않은 멤버의 데이터는 보존한다.
+ * 3) 보관 기한(`syncPaidVoiceRetention`) — 앞 문장이 반영된 상태를 SQL 로 본다.
+ */
+function memberDetachWrites(
+  memberUserId: string,
+  snapshot: {
+    /** 멤버의 **활성** 구독(`sub_id`·`plan_group_id`·`entitlement_state`·`plan_type`). */
+    subs: Array<Record<string, unknown>>;
+    loginId: string | null;
+    /** 클론 행(`user_id`·`elevenlabs_voice_id`) — 다른 사람 것이 섞여 있어도 된다. */
+    voices: Array<Record<string, unknown>>;
+  },
+  planGroupId: string,
+  now: Date,
+): InStatement[] {
+  const writes: InStatement[] = [];
+  const inGroup = (sub: Record<string, unknown>) =>
+    ((sub.plan_group_id as string | null) ?? null) === planGroupId;
+  for (const sub of snapshot.subs) {
+    if (inGroup(sub)) writes.push(...cancelSubscriptionRowStatements(String(sub.sub_id), now));
+  }
+  // `findActiveSubscriptionsByUserPk` 처럼 플랜 행이 있는 것만 등급 계산에 넣는다.
+  const remaining = snapshot.subs
+    .filter((sub) => !inGroup(sub))
+    .filter((sub) => sub.plan_type !== null && sub.plan_type !== undefined)
+    .map((sub) => ({
+      planType: String(sub.plan_type),
+      entitlementState: String(sub.entitlement_state ?? 'entitled'),
+    }));
+  const paid = strongestPaidSubscription(remaining);
+  if (paid) {
+    writes.push(setUserPlanStatement(memberUserId, planTypeToUserPlan(paid.planType)));
+  } else if (remaining.some((sub) => PAID_PLAN_TYPES.has(sub.planType))) {
+    // 보류·미확인 구독은 회복 가능하다(`resolvePlanAfterSuspend(…, [])` 와 같은 결과 — 남은
+    // 것 중 권한 있는 유료가 없으니 free 다). 공유 구조는 정리하지 않는다.
+    writes.push(setUserPlanStatement(memberUserId, 'free'));
+  } else {
+    const ownerIds = Array.from(
+      new Set([memberUserId, snapshot.loginId].filter((x): x is string => Boolean(x))),
+    );
+    const providerVoiceIds = snapshot.voices
+      .filter((r) => ownerIds.includes(String(r.user_id)))
+      .map((r) => r.elevenlabs_voice_id as string);
+    writes.push(setUserPlanStatement(memberUserId, 'free'));
+    writes.push(...clonedVoiceReleaseStatements(ownerIds, providerVoiceIds));
+    writes.push(...revokeVoiceAccessStatements(ownerIds));
+  }
+  writes.push(...retentionSyncStatements(memberUserId, now));
+  return writes;
+}
+
+/** `downgradeUserToFree`·`syncUserPlanAfterCancel` 가 쓰는 것과 같은 등급 갱신 문장. */
+function setUserPlanStatement(userPk: string, plan: string): InStatement {
+  return {
+    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [plan, userPk],
+  };
 }
 
 // 결제 해지/만료 흐름의 기본은 "음성 보존"이다. 하드 삭제는 보관 유예(sweep)나
@@ -854,28 +1042,100 @@ export async function leavePlanGroupMember(
     now?: Date;
   },
 ): Promise<void> {
-  const now = params.now ?? new Date();
-
-  const subscriptionRes = await db.execute({
-    sql: `SELECT id FROM subscriptions
-          WHERE user_id = ? AND status = 'active' AND plan_group_id = ?`,
-    args: [params.userPk, params.planGroupId],
+  await leavePlanGroupMembers(db, {
+    planGroupId: params.planGroupId,
+    members: [{ userPk: params.userPk, membershipId: params.membershipId }],
+    now: params.now ?? new Date(),
   });
+}
 
-  await db.execute({
-    sql: `DELETE FROM plan_group_members WHERE id = ?`,
-    args: [params.membershipId],
-  });
-
-  for (const row of subscriptionRes.rows) {
-    await cancelOneSubscriptionRow(db, String(row.id), now);
+/**
+ * 멤버 여럿을 그룹에서 내보낸다 — **멤버 수와 무관하게 읽기 한 번 + 쓰기 한 번**.
+ *
+ * 정원 축소(가족 → 커플)가 멤버 셋을 한 요청에서 내보내는데, 예전에는 사람마다 이탈 정리를
+ * 따로 왕복해(멤버당 ~17) 워커 subrequest 한도(~50)를 넘겼다 — 결제 확정이 롤백되고
+ * 재시도해도 같은 자리에서 죽었다(2026-09-20 실측 106).
+ *
+ * 멤버마다 순서는 예전 이탈 그대로다: 멤버십 삭제 → 그룹 구독 취소·등급 재계산·보관 기한
+ * (`memberDetachWrites`) → 초대 사용분 반환(`releaseInviteUseForMember`). 그룹 구독 유무와
+ * 무관하게 남은 활성 구독 기준으로 plan 을 재정렬한다(다른 유료 구독이 남아 있으면 유지,
+ * 없으면 free 강등 + 음성 접근 정리).
+ */
+export async function leavePlanGroupMembers(
+  db: DbExecutor,
+  params: {
+    planGroupId: string;
+    members: Array<{ userPk: string; membershipId: string }>;
+    now: Date;
+  },
+): Promise<void> {
+  const { planGroupId, members, now } = params;
+  if (members.length === 0) return;
+  const userPks = Array.from(new Set(members.map((m) => m.userPk)));
+  const ph = userPks.map(() => '?').join(', ');
+  const [subRes, userRes, voiceRes, redemptionRes] = await db.batch([
+    {
+      // LEFT JOIN — 취소 대상은 플랜 행과 무관하게 전부다(예전 조회에 JOIN 이 없었다).
+      sql: `SELECT s.id AS sub_id, s.user_id, s.plan_group_id, s.entitlement_state, p.plan_type
+            FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.status = 'active' AND s.user_id IN (${ph})
+            ORDER BY s.starts_at DESC`,
+      args: userPks,
+    },
+    { sql: `SELECT id, google_id FROM users WHERE id IN (${ph})`, args: userPks },
+    {
+      // 클론의 주인 id 는 PK 이거나 로그인 id(google_id)다 — 둘 다 모은다.
+      // 사용자 행이 없어도 PK 로 적힌 클론은 모은다(예전 `releaseClonedVoicesForUser` 와 같다).
+      sql: `SELECT user_id, elevenlabs_voice_id FROM voice_profiles
+            WHERE elevenlabs_voice_id IS NOT NULL
+              AND (user_id IN (${ph})
+                   OR user_id IN (SELECT google_id FROM users WHERE id IN (${ph}) AND google_id IS NOT NULL))`,
+      args: [...userPks, ...userPks],
+    },
+    {
+      sql: `SELECT vr.id AS redemption_id, vr.voucher_id, vr.user_id
+            FROM voucher_redemptions vr
+            JOIN voucher_codes v ON v.id = vr.voucher_id
+            JOIN subscriptions s ON s.id = v.issuer_subscription_id
+            WHERE vr.user_id IN (${ph}) AND s.plan_group_id = ?`,
+      args: [...userPks, planGroupId],
+    },
+  ]);
+  const loginIdOf = new Map(
+    userRes!.rows.map((r) => [String(r.id), (r.google_id as string | null) ?? null]),
+  );
+  const writes: InStatement[] = [];
+  for (const member of members) {
+    writes.push({ sql: `DELETE FROM plan_group_members WHERE id = ?`, args: [member.membershipId] });
+    writes.push(
+      ...memberDetachWrites(
+        member.userPk,
+        {
+          subs: subRes!.rows.filter((r) => String(r.user_id) === member.userPk),
+          loginId: loginIdOf.get(member.userPk) ?? null,
+          voices: voiceRes!.rows,
+        },
+        planGroupId,
+        now,
+      ),
+    );
+    // 초대 사용분 반환(`releaseInviteUseForMember`) — 코드의 남은 사용 수는 실행 시점에 센다.
+    for (const r of redemptionRes!.rows.filter((row) => String(row.user_id) === member.userPk)) {
+      writes.push(
+        { sql: `DELETE FROM voucher_redemptions WHERE id = ?`, args: [String(r.redemption_id)] },
+        {
+          sql: `UPDATE voucher_codes
+                SET status = 'issued',
+                    used_at = NULL
+                WHERE id = ?
+                  AND status = 'used'
+                  AND (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = ?) < COALESCE(max_uses, 1)`,
+          args: [String(r.voucher_id), String(r.voucher_id)],
+        },
+      );
+    }
   }
-  // 그룹 구독 유무와 무관하게 남은 활성 구독 기준으로 plan 을 재정렬한다
-  // (다른 유료 구독이 남아 있으면 유지, 없으면 free 강등 + 음성 접근 정리).
-  await syncUserPlanAfterCancel(db, params.userPk, { deleteVoiceData: false });
-  await syncPaidVoiceRetention(db, params.userPk, now);
-
-  await releaseInviteUseForMember(db, params.userPk, params.planGroupId);
+  await db.batch(writes);
 }
 
 export async function scheduleCancelAtPeriodEnd(
@@ -1029,15 +1289,17 @@ export async function notifyVoiceDeletionScheduled(
   const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
   if (!hasFirebase && !hasApns) return;
 
-  const ph = unique.map(() => '?').join(', ');
-  const res = await db.execute({
-    sql: `SELECT user_id FROM paid_voice_retention WHERE user_id IN (${ph})`,
-    args: unique,
-  });
-  const scheduled = res.rows.map((r) => String(r.user_id));
-  if (scheduled.length === 0) return;
-
+  // ⚠ **조회까지 try 안에 둔다**(2026-09-20). 이 함수는 커밋 **뒤**에 돈다 — 여기서 던지면
+  //   이미 저장된 결제·해지가 500 으로 보이고, 앱은 실패로 읽어 다시 시도한다. 그 재시도는
+  //   바뀐 것이 없어 알림을 다시 보내지도 않는다. 알림은 즉시성일 뿐 정확성은 재조회가 맡는다.
   try {
+    const ph = unique.map(() => '?').join(', ');
+    const res = await db.execute({
+      sql: `SELECT user_id FROM paid_voice_retention WHERE user_id IN (${ph})`,
+      args: unique,
+    });
+    const scheduled = res.rows.map((r) => String(r.user_id));
+    if (scheduled.length === 0) return;
     await sendVoiceDeletionWarningPush(db, env as ExpiryEnv, {
       userPks: scheduled,
       retentionDays: PAID_VOICE_RETENTION_DAYS,

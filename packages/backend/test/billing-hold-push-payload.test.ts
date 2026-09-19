@@ -33,9 +33,9 @@ const ENV = {
   APPLE_BUNDLE_ID: 'com.alarmtalk.app',
 } as never;
 
-/** 한 사람의 기기 목록. `getPushTargetsForUser` 가 이 한 줄을 읽는다. */
-function pushTargets(rows: Array<{ token: string; platform: string }>) {
-  mockDB.pushResult(rows);
+/** 한 사람의 기기 목록. `getPushTargetsForUsers` 가 대상 전원의 토큰을 **한 번에** 읽는다. */
+function pushTargets(userId: string, rows: Array<{ token: string; platform: string }>) {
+  mockDB.pushResult(rows.map((row) => ({ uid: userId, gid: null, ...row })));
 }
 
 beforeEach(() => {
@@ -52,7 +52,7 @@ afterEach(() => {
 
 describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   it('iOS 는 알림 한 통과 **조용한 신호** 한 통을 받는다', async () => {
-    pushTargets([{ token: 'ios-tok', platform: 'ios' }]);
+    pushTargets('owner', [{ token: 'ios-tok', platform: 'ios' }]);
 
     await sendPaymentFailedPush(mockDB.client as never, ENV, {
       ownerUserPk: 'owner',
@@ -74,7 +74,7 @@ describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   });
 
   it('안드로이드도 같은 두 통이다 — 표시용은 소셜 채널로', async () => {
-    pushTargets([{ token: 'and-tok', platform: 'android' }]);
+    pushTargets('owner', [{ token: 'and-tok', platform: 'android' }]);
 
     await sendPaymentFailedPush(mockDB.client as never, ENV, {
       ownerUserPk: 'owner',
@@ -88,7 +88,7 @@ describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   it('ownerUserPk 가 null 이면 소유자에게는 보내지 않는다', async () => {
     // 크론이 같은 보류를 5분마다 다시 발견하므로, 소유자 플랜이 실제로 바뀐 회차에만
     // 소유자를 넣는다(`processSubscriptionExpiry` 의 `paymentHolds`).
-    pushTargets([{ token: 'member-ios', platform: 'ios' }]);
+    pushTargets('member-1', [{ token: 'member-ios', platform: 'ios' }]);
 
     await sendPaymentFailedPush(mockDB.client as never, ENV, {
       ownerUserPk: null,
@@ -105,7 +105,7 @@ describe('sendPaymentFailedPush — 표시용 + 신호용 두 통', () => {
   });
 
   it('소유자가 멤버 목록에 섞여 들어와도 두 번 보내지 않는다', async () => {
-    pushTargets([{ token: 'ios-tok', platform: 'ios' }]);
+    pushTargets('owner', [{ token: 'ios-tok', platform: 'ios' }]);
 
     await sendPaymentFailedPush(mockDB.client as never, ENV, {
       ownerUserPk: 'owner',

@@ -570,12 +570,20 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
     mockDB.pushResult([], 1); // UPDATE voice_profiles (소유자)
     mockDB.pushResult([], 1); // UPDATE alarms (소유자)
     mockDB.pushResult([{ owner_user_id: 'owner-pk' }]); // plan_groups — 소유자 본인
+    // 해체는 **읽기 한 번(묶음)** 으로 멤버 전원의 상태를 모은다(멤버 수와 무관한 왕복).
+    mockDB.pushResult([{ user_id: 'member-pk' }]); // 묶음 ①: 소유자를 뺀 멤버
     mockDB.pushResult([
-      { user_id: 'owner-pk', role: 'owner' },
-      { user_id: 'member-pk', role: 'member' },
-    ]); // plan_group_members
-    mockDB.pushResult([{ id: 'sub-member' }]); // 멤버의 그룹 구독
-    // 이후(멤버 취소·강등·보관 예약·그룹 삭제)는 기본 빈 결과로 진행.
+      {
+        sub_id: 'sub-member',
+        user_id: 'member-pk',
+        plan_group_id: 'group-1',
+        entitlement_state: 'entitled',
+        plan_type: 'family',
+      },
+    ]); // 묶음 ②: 멤버의 활성 구독 — 그룹 구독 하나뿐
+    mockDB.pushResult([{ id: 'member-pk', google_id: null }]); // 묶음 ③: 로그인 id
+    mockDB.pushResult([]); // 묶음 ④: 반납할 클론 — 없음
+    // 이후(멤버 취소·강등·보관 예약·그룹 삭제 — 쓰기 묶음)는 기본 빈 결과로 진행.
 
     const affected = await cancelSubscriptionImmediate(
       mockDB.client as never,
@@ -594,6 +602,12 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
       c.sql.includes('INSERT INTO paid_voice_retention'),
     );
     expect(retentionInserts.map((c) => c.args[0])).toContain('member-pk');
+    // 남은 유료 구독이 없으니 무료로 내리고 목소리 접근을 정리한다.
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free' && c.args[1] === 'member-pk',
+      ),
+    ).toBe(true);
     // 그룹 멤버십 정리는 유지된다.
     expect(findCall('DELETE FROM plan_group_members')).toBeDefined();
   });
