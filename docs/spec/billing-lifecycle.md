@@ -244,6 +244,55 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   있는 애플 구독자가 전원 무료로 강등된다.** 어느 환경도 안 열렸으면 일반 오류로
   던져서 `skip`(다음 크론 재시도)이 되게 한다 — fail-closed 다.
 
+## 애플 결제 확정 — **체인의 현재 상태**가 권위다 (2026-09-20)
+
+`POST /billing/apple/confirm` 은 **앱이 보낸 트랜잭션 한 건을 판정하지 않는다.** 그 id 는
+"어느 구독 체인인가" 를 찾는 열쇠로만 쓰고, 판정은 애플에 **그 체인의 지금 상태**를 물어서
+(`fetchAppleSubscriptionStatus`) 돌아온 **가장 최근 트랜잭션**으로 한다. 원칙 그대로다 —
+스토어가 진실이고, 앱이 물어다 준 것도 우리 DB 도 사본이다.
+
+⚠ **왜 바꿨나**(2026-09-19 운영 로그). 앱이 올리는 id 는 애플이 **재전달한 옛 갱신**일 수
+있다. 그 한 건만 보면 체인은 살아 있는데 `SUBSCRIPTION_EXPIRED`(400)로 거절하고, 늦게
+도착한 옛 갱신은 `last_paid_at` 역전으로 409 가 난다. 돈을 내고 있는 사용자가 "결제가
+한 번에 안 된다" 로 겪었다. 어느 트랜잭션이 올라오든 **답이 같아야** 한다.
+
+| 애플 상태 | 확정 결과 |
+| --- | --- |
+| `ACTIVE` | 최신 트랜잭션의 `expiresDate` 까지 권한 |
+| `IN_GRACE_PERIOD` | `gracePeriodExpiresDate` 까지 권한 |
+| `IN_BILLING_RETRY` · `EXPIRED` · `REVOKED` | 400 `SUBSCRIPTION_EXPIRED` — **지금 유료가 아니다.** 어느 상태였는지 로그에 남긴다 |
+| 알 수 없는 값 · 만료 시각을 못 읽음 · 조회 실패 | 502 `APPLE_VERIFICATION_FAILED` — 재시도 가능. **판정한 척하지 않는다** |
+| 체인을 못 찾음(`AppleTransactionNotFoundError`) | 앱이 보낸 트랜잭션으로 판정한다(예전 동작) |
+
+**소유자도 애플이 정한다 — 최신 트랜잭션의 `appAccountToken` 이다.** 우리 DB 의
+`store_transactions.user_id` 는 "마지막으로 본 주인" 일 뿐이다.
+
+| 최신 트랜잭션의 표식 | 결과 |
+| --- | --- |
+| 호출자 본인 | **호출자 것이다.** DB 에 다른 주인이 적혀 있어도, 그 주인의 기간이 남아 있어도 넘긴다 |
+| 살아 있는 다른 계정 | 403 `TRANSACTION_ACCOUNT_MISMATCH` — 그 계정의 구독이다 |
+| 이미 없는 계정 | 호출자가 이어받는다(탈퇴 뒤 재가입) |
+| 표식 없음 | 이미 우리 DB 에 묶인 체인의 재전송만 통과(기존 규칙) |
+
+- ⚠ **"앞 주인의 기간이 남았으면 막는다" 를 되살리지 말 것.** 그 기간은 **우리 DB 의 값**이다.
+  한 App Store 계정의 구독은 체인 하나(`originalTransactionId`)로 이어지므로, A 계정이
+  구독 중인 폰에서 B 계정이 상위 플랜을 사면 **B 의 표식이 박힌 결제가 같은 체인으로**
+  올라온다. 애플은 B 에게 청구했는데 우리가 DB 를 근거로 409 를 내면 **돈은 나가고 권한은
+  안 붙는다.** 표식은 그 App Store 계정으로 **결제해야만** 찍히므로 남의 구독을 가로채는
+  길이 아니다.
+- **앞 주인 쪽은 정상 해지로 정리한다**(`cancelSubscriptionImmediate`, 음성 보존). 행만
+  `cancelled` 로 바꾸면 소유 그룹과 멤버의 연동 구독이 남아, 지불 주체 없는 그룹이 유료로
+  읽힌다. 무료가 된 앞 주인에게는 즉시 해지와 같이 목소리 보관 기한을 건다
+  (`syncPaidVoiceRetention`; 이미 끝나 있던 행이면 다시 걸지 않는다 — 기한이 연장된다).
+  영향받은 계정 전원에게 커밋 뒤 `plan_changed` 를 보낸다.
+- ⚠ **알려진 한계**: 앞 주인이 **멤버 있는 가족 그룹 소유자**면 그룹 해체가 워커
+  subrequest 한도(~50)를 넘는다(실측 81). 같은 해체를 타는 기존 경로 — 가족 소유자 본인의
+  개인 전환(실측 80) — 도 같다. 해체의 멤버별 왕복을 묶어야 풀린다
+  (`test/billing-apple-confirm-subrequests.test.ts` 의 `it.fails`).
+- **선물(소모성)은 체인이 없다.** 보낸 트랜잭션 그대로 판정한다 — 이 절은 자동갱신 구독만
+  다룬다. 환불(`revocationDate`) 갈래도 그대로다(「환불은 크론을 기다리지 않고…」).
+- 애플 호출이 한 번 늘어난다(트랜잭션 조회 + 체인 상태). 워커 서브리퀘스트 한도(50) 안이다.
+
 ## 플랜 변경 — **스토어 시트가 시점을 정한다**
 
 ⚠ **'지금 변경 / 종료일에 변경' 을 우리가 묻는 UI 를 만들지 말 것.** 두 스토어 모두 전환을
@@ -726,6 +775,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
 | 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
+| 애플 확정 — 체인의 현재 상태로 판정·소유자 결정 | `routes/billing-apple.ts` confirm(`fetchAppleSubscriptionStatus`) · `lib/store-billing.ts` `purchaserVerified` 이전; `test/billing-apple-chain-authority.test.ts`·`test/billing-apple-chain-transfer.test.ts` | — | `SubscriptionManager.syncWithBackend` (어느 트랜잭션을 올려도 같은 답) |
 | 다른 계정 소유 결제의 실패 안내 | confirm의 `TRANSACTION_OWNED_BY_OTHER_USER` | `MainViewModelBillingActions.billingFailureMessage` | `SubscriptionManager.syncWithBackend` → `ConfirmOutcome.rejection` → `purchase`; `SubscriptionConfirmationTests` |
 | 전환 — 그룹 이어받기 | `lib/store-billing.ts` `findOwnedGroupToCarryOver` · `lib/billing-cancel.ts` `preserveGroupId` | — | — |
 | 전환 — 정원 축소 강등 통지 | `lib/store-billing.ts` `enforceGroupCapacity` → `demotedUserIds` → `notifyPlanChanged` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |

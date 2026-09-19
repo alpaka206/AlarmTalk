@@ -169,6 +169,50 @@ billingApple.post('/apple/confirm', async (c) => {
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
   }
 
+  // ⚠ **자동갱신 구독은 앱이 보낸 트랜잭션이 아니라 _체인의 현재 상태_ 로 판정한다**
+  //   (2026-09-20, `docs/spec/billing-lifecycle.md` 「애플 결제 확정」). 스토어가 진실이다.
+  //
+  //   앱이 올리는 id 는 애플이 **재전달한 옛 갱신**일 수 있다. 그 한 건만 보면 체인은 살아
+  //   있는데 만료(400)로 거절하고, 표식도 옛 주인 것을 읽는다 — 돈을 내고 있는 사용자가
+  //   "결제가 한 번에 안 된다" 로 겪었다(2026-09-19 운영 로그). 그래서 보낸 id 는 **어느
+  //   체인인지 찾는 열쇠**로만 쓰고, 표식·상품·만료는 전부 애플이 돌려준 **가장 최근
+  //   트랜잭션**에서 읽는다. 어느 트랜잭션이 올라오든 답이 같다.
+  //
+  //   선물(소모성)은 체인이 없다 — 보낸 트랜잭션 그대로 판정한다.
+  let effective: AppleTransactionInfo = info;
+  let chainStatus: number | null = null;
+  let chainGraceExpiresDate: number | undefined;
+  if (!isAppleGiftProductId(info.productId)) {
+    try {
+      const chain = await fetchAppleSubscriptionStatus(info.originalTransactionId, config);
+      effective = chain.latest;
+      chainStatus = chain.status;
+      chainGraceExpiresDate = chain.gracePeriodExpiresDate;
+    } catch (err) {
+      if (!(err instanceof AppleTransactionNotFoundError)) {
+        // 판정을 못 했으면 판정한 척하지 않는다 — 재시도 가능한 502.
+        logStructured('error', {
+          at: 'billing.apple.confirm',
+          step: 'chain_status',
+          error: String(err),
+        });
+        return c.json(
+          { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
+          502,
+        );
+      }
+      // 체인을 못 찾았다(방금 조회된 트랜잭션인데 상태 API 에만 없다) — 보낸 트랜잭션으로
+      // 판정한다. 예전 동작 그대로라 잃는 것이 없다.
+    }
+  }
+  const subscriptionPlanKey = applePlanKeyFromProductId(effective.productId);
+  if (!subscriptionPlanKey) {
+    return c.json(
+      { error: `Unknown Apple product id: ${effective.productId}`, error_code: 'UNKNOWN_PRODUCT' },
+      400,
+    );
+  }
+
   // ⚠ **이 결제가 이 계정 것인지 확인한다**(2026-08-18 Codex #697 P1).
   // 구글 갈래는 `obfuscatedExternalAccountId` 로 처음부터 이 검사를 했는데 애플에는
   // 없었다. 애플은 소모성·구독 모두 **끝내지 않은 트랜잭션을 재전달**하므로, 서버 확정에
@@ -177,7 +221,9 @@ billingApple.post('/apple/confirm', async (c) => {
   //
   // 대조 값은 클라가 구매 시 `appAccountToken` 에 실은 우리 쪽 사용자 id(UUID)다.
   // 구글이 해시를 쓰는 것과 달리 애플은 **UUID 만** 허용해 그대로 싣는다.
-  const appleAccountToken = info.appAccountToken?.trim().toLowerCase();
+  // ⚠ 표식은 **체인의 최신 트랜잭션**에서 읽는다(위 `effective`). 보낸 트랜잭션의 표식을
+  //   읽으면, 이미 다른 계정에게 넘어간 체인을 앞 주인이 옛 영수증으로 도로 가져간다.
+  const appleAccountToken = effective.appAccountToken?.trim().toLowerCase();
   // 스토어가 찍어 준 표식이 **호출자 본인**인가. 아래 검사를 통과한 뒤에도 쓴다.
   let purchaserVerified = false;
   if (appleAccountToken) {
@@ -342,14 +388,55 @@ billingApple.post('/apple/confirm', async (c) => {
 
   // 자동 갱신 구독은 expiresDate 가 반드시 있다. 없으면 우리가 파는 상품이 아니다
   // (소모품·비소모품). 만료를 모르면 언제까지 권한을 줄지도 모르므로 거절한다.
-  if (!info.expiresDate) {
+  if (!effective.expiresDate) {
     return c.json(
       { error: 'Transaction has no expiry', error_code: 'TRANSACTION_NOT_SUBSCRIPTION' },
       400,
     );
   }
-  const expiresAt = new Date(info.expiresDate);
-  if (expiresAt.getTime() <= Date.now()) {
+  // 권한의 끝 — 유예 중이면 결제된 기간의 끝이 아니라 **유예의 끝**이다(재조회와 같은 규칙).
+  const expiresAt = new Date(
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.IN_GRACE_PERIOD
+      ? (chainGraceExpiresDate ?? Number.NaN)
+      : effective.expiresDate,
+  );
+  // 애플이 말한 상태로 가른다. `null` 은 체인을 못 찾아 보낸 트랜잭션으로 판정하는 경우다.
+  const entitledByStore =
+    chainStatus === null ||
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.ACTIVE ||
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.IN_GRACE_PERIOD;
+  const endedByStore =
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.EXPIRED ||
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.REVOKED ||
+    chainStatus === APPLE_SUBSCRIPTION_STATUS.IN_BILLING_RETRY;
+  if (!entitledByStore && !endedByStore) {
+    // 모르는 상태값이다 — 권한 부여 근거도, 거절 근거도 아니다. 재시도 가능한 실패로 둔다.
+    logStructured('error', {
+      at: 'billing.apple.confirm',
+      step: 'chain_status',
+      error: `unknown Apple subscription status ${String(chainStatus)}`,
+    });
+    return c.json(
+      { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
+      502,
+    );
+  }
+  if (chainStatus !== null && entitledByStore) {
+    if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      // 애플은 유효하다는데 끝 시각을 못 읽었다 — 언제까지 줄지 모르는 채로 주지 않는다.
+      logStructured('error', {
+        at: 'billing.apple.confirm',
+        step: 'chain_status',
+        error: 'entitled status without a future expiry',
+        status: chainStatus,
+      });
+      return c.json(
+        { error: 'Apple verification failed', error_code: 'APPLE_VERIFICATION_FAILED' },
+        502,
+      );
+    }
+  }
+  if (endedByStore || expiresAt.getTime() <= Date.now()) {
     // ⚠ **어느 결제가 만료였는지 남긴다**(2026-09-19). 이 거절이 반복될 때 로그만 보고는
     //   "앱이 새 결제를 만든 것인가, 옛 갱신을 다시 올린 것인가" 를 가릴 수 없었다 —
     //   실기기에서 그 구분이 안 돼 원인을 좁히는 데 하루가 걸렸다. 결제 번호·만료 시각은
@@ -357,9 +444,12 @@ billingApple.post('/apple/confirm', async (c) => {
     logStructured('warn', {
       at: 'billing.apple.confirm',
       step: 'expired',
-      transaction_id: info.transactionId,
-      original_transaction_id: info.originalTransactionId,
-      expires_at: expiresAt.toISOString(),
+      // 앱이 올린 것과 애플이 말한 최신 것을 **둘 다** 남긴다 — 다르면 재전달된 옛 갱신이다.
+      sent_transaction_id: info.transactionId,
+      transaction_id: effective.transactionId,
+      original_transaction_id: effective.originalTransactionId,
+      apple_status: chainStatus,
+      expires_at: Number.isFinite(expiresAt.getTime()) ? expiresAt.toISOString() : null,
     });
     return c.json(
       { error: 'Subscription already expired', error_code: 'SUBSCRIPTION_EXPIRED' },
@@ -405,7 +495,7 @@ billingApple.post('/apple/confirm', async (c) => {
     );
   }
 
-  const plan = await loadPlanByKey(db, planKey);
+  const plan = await loadPlanByKey(db, subscriptionPlanKey);
   if (!plan) {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
@@ -417,20 +507,20 @@ billingApple.post('/apple/confirm', async (c) => {
       // ⚠ originalTransactionId 를 쓴다. transactionId 는 **갱신마다 바뀌므로**
       // 그걸 키로 삼으면 매달 새 구독이 생긴다. originalTransactionId 는 구독 수명 동안
       // 고정이라 구글의 purchaseToken 과 같은 역할을 한다.
-      providerTransactionId: info.originalTransactionId,
-      // 애플이 이 결제에 **호출자의 표식**을 찍었을 때만 true(위 계정 바인딩 검사 통과분).
-      // 끝난 체인의 소유권을 새 결제자에게 옮기는 근거다 — `lib/store-billing.ts` 주석.
+      providerTransactionId: effective.originalTransactionId,
+      // 애플이 **체인의 최신 결제**에 호출자의 표식을 찍었을 때만 true(위 계정 바인딩 검사
+      // 통과분). 체인의 소유권을 호출자에게 옮기는 근거다 — `lib/store-billing.ts` 주석.
       purchaserVerified,
-      productId: info.productId,
+      productId: effective.productId,
       plan,
-      startsAt: new Date(info.purchaseDate),
+      startsAt: new Date(effective.purchaseDate),
       // 애플은 이 트랜잭션의 결제 시각을 준다 — 서버 시각보다 정확하다.
-      lastPaidAt: new Date(info.purchaseDate),
+      lastPaidAt: new Date(effective.purchaseDate),
       expiresAt,
       rawPayload: JSON.stringify({
-        transactionId: info.transactionId,
-        type: info.type,
-        environment: info.environment ?? null,
+        transactionId: effective.transactionId,
+        type: effective.type,
+        environment: effective.environment ?? null,
       }),
     }),
   );
@@ -449,7 +539,7 @@ billingApple.post('/apple/confirm', async (c) => {
 
   return c.json({
     success: true,
-    plan_key: planKey,
+    plan_key: subscriptionPlanKey,
     subscription: result.subscription,
   });
 });

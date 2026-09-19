@@ -11,7 +11,10 @@ import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import {
   cancelActiveSubscriptionsForUser,
+  cancelSubscriptionImmediate,
   clearPaidVoiceRetention,
+  findActiveSubscriptionsByUserPk,
+  syncPaidVoiceRetention,
   leavePlanGroupMember,
   propagateGroupMemberPlans,
   resolvePlanAfterSuspend,
@@ -65,13 +68,19 @@ export interface StoreEntitlementInput {
   /** 감사/디버깅용 원본 페이로드 (민감정보 제외 권장). */
   rawPayload?: string;
   /**
-   * **스토어가 이 결제를 호출자 것으로 찍어 줬는가**(애플 `appAccountToken` 일치).
+   * **스토어가 이 체인의 _지금_ 결제를 호출자 것으로 찍어 줬는가**(애플: 체인의 가장 최근
+   * 트랜잭션의 `appAccountToken` 이 호출자).
    *
-   * true 일 때만, **앞 주인의 기간이 끝난** 구독 체인의 소유권을 호출자에게 옮긴다.
+   * true 면 구독 체인의 소유권을 호출자에게 옮긴다 — **우리 DB 에 누가 주인으로 적혀
+   * 있든, 그 기간이 남아 있든.** 주인은 스토어가 정하고 `store_transactions.user_id` 는
+   * "마지막으로 본 주인" 일 뿐이다(`docs/spec/billing-lifecycle.md` 「애플 결제 확정」).
    * 애플은 한 App Store 계정의 구독을 같은 체인(`originalTransactionId`)으로 잇기 때문에,
-   * A 계정의 구독이 끝난 뒤 같은 애플 계정으로 B 계정이 새로 결제하면 **B 의 표식이 박힌
-   * 새 트랜잭션이 옛 체인 id 로** 올라온다. 이 값이 없으면 B 는 영원히 409 를 받는다 —
-   * 돈은 나갔는데 권한이 안 붙는다(2026-09-19 운영 재현).
+   * 같은 애플 계정으로 B 계정이 결제하면 **B 의 표식이 박힌 트랜잭션이 옛 체인 id 로**
+   * 올라온다. 이걸 DB 를 근거로 막으면 돈은 나갔는데 권한이 안 붙는다(2026-09-19 운영 재현).
+   *
+   * ⚠ 호출부는 **앱이 보낸 트랜잭션이 아니라 스토어에 되물은 최신 트랜잭션**으로 이 값을
+   * 정해야 한다. 옛 트랜잭션의 표식으로 true 를 주면, 이미 다른 계정에게 넘어간 체인을
+   * 앞 주인이 옛 영수증으로 도로 가져간다.
    */
   purchaserVerified?: boolean;
 }
@@ -209,8 +218,9 @@ export async function applyStoreEntitlement(
   const lastPaidAtIso = (input.lastPaidAt ?? input.startsAt).toISOString();
   const appliedAt = input.appliedAt ?? new Date();
 
-  // 소유권을 넘겨받았다면 그 앞 주인 — 커밋 뒤 스냅샷을 다시 읽으라고 알릴 대상이다.
-  let transferredFrom: string | null = null;
+  // 소유권을 넘겨받으면서 권한이 바뀐 계정들(앞 주인 + 그 그룹 멤버) — 커밋 뒤 스냅샷을
+  // 다시 읽으라고 알릴 대상이다.
+  const transferAffected: string[] = [];
 
   const existing = await tx.execute({
     sql: `SELECT user_id, subscription_id, last_paid_at, expires_at,
@@ -223,32 +233,44 @@ export async function applyStoreEntitlement(
   if (existing.rows.length > 0) {
     const row = existing.rows[0]!;
     if (String(row.user_id) !== input.userPk) {
-      // ⚠ **앞 주인의 기간이 끝났고, 스토어가 이번 결제를 호출자 것으로 찍었으면 넘겨준다.**
-      //   (위 `purchaserVerified` 주석 참조.) 둘 중 하나라도 아니면 예전처럼 막는다 —
-      //   앞 주인이 아직 기간 안이면 두 계정이 같은 결제를 다투는 상황이다.
+      // ⚠ **스토어가 지금 결제를 호출자 것으로 찍었으면 넘겨준다 — 우리 DB 의 기간은 보지
+      //   않는다**(위 `purchaserVerified` 주석 참조). 예전에는 "앞 주인의 기간이 끝났을 때만"
+      //   이었는데, 그 기간은 **사본**이다: A 가 구독 중인 폰에서 B 가 상위 플랜을 사면
+      //   애플은 B 에게 청구하고 같은 체인으로 올려 보낸다. 거기서 409 를 내면 돈은 나가고
+      //   권한은 안 붙는다. 스토어가 호출자 것이라고 하지 않았으면 예전처럼 막는다.
       const previousOwner = String(row.user_id);
-      const lapsed =
-        !row.expires_at || Date.parse(String(row.expires_at)) <= appliedAt.getTime();
-      if (!(input.purchaserVerified === true && lapsed)) {
+      if (input.purchaserVerified !== true) {
         return { ok: false, status: 409, errorCode: 'TRANSACTION_OWNED_BY_OTHER_USER' };
       }
-      // 앞 주인의 그 구독 행만 정리한다(다른 스토어의 멀쩡한 구독은 건드리지 않는다).
+      // 앞 주인의 **그 구독만** 정리한다(다른 스토어의 멀쩡한 구독은 건드리지 않는다).
+      // 아직 살아 있는 행이면 정상 해지를 태운다 — 행만 `cancelled` 로 바꾸면 소유 그룹과
+      // 멤버의 연동 구독이 남아, 지불 주체 없는 그룹이 계속 유료로 읽힌다. 음성은 보존한다.
       const previousSubscriptionId = (row.subscription_id as string | null) ?? null;
-      if (previousSubscriptionId) {
+      const previousActive = previousSubscriptionId
+        ? (await findActiveSubscriptionsByUserPk(tx, previousOwner)).find(
+            (sub) => sub.subscriptionId === previousSubscriptionId,
+          )
+        : undefined;
+      if (previousActive) {
+        transferAffected.push(
+          ...(await cancelSubscriptionImmediate(tx, previousActive, appliedAt, {
+            deleteVoiceData: false,
+          })),
+        );
+        // 즉시 해지와 같은 규칙 — 무료가 됐으면 목소리 보관 기한을 건다(멤버는 그룹 해체가
+        // 이미 걸었다). 남은 유료 권한이 있으면 기한을 지운다(`syncPaidVoiceRetention`).
+        await syncPaidVoiceRetention(tx, previousOwner, appliedAt);
+      } else {
+        // ⚠ 여기서는 보관 기한을 다시 걸지 않는다 — 만료 크론이 이미 걸었고, 다시 부르면
+        //   기한이 오늘부터로 **연장**된다(스펙: 재조회로 유예를 연장하지 않는다).
+        // 이미 끝난 행(만료 크론이 먼저 지나갔다)이다 — 등급만 남은 구독에서 다시 계산한다.
+        const previousPlanType = await resolvePlanAfterSuspend(tx, previousOwner, []);
         await tx.execute({
-          sql: `UPDATE subscriptions
-                SET status = 'cancelled', canceled_at = COALESCE(canceled_at, ?),
-                    updated_at = datetime('now')
-                WHERE id = ? AND status = 'active'`,
-          args: [appliedAt.toISOString(), previousSubscriptionId],
+          sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+          args: [previousPlanType ? planTypeToUserPlan(previousPlanType) : 'free', previousOwner],
         });
+        transferAffected.push(previousOwner);
       }
-      const previousPlanType = await resolvePlanAfterSuspend(tx, previousOwner, []);
-      await tx.execute({
-        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-        args: [previousPlanType ? planTypeToUserPlan(previousPlanType) : 'free', previousOwner],
-      });
-      transferredFrom = previousOwner;
       // 아래 '새 구매' 갈래로 내려간다 — `INSERT OR REPLACE` 가 체인의 주인을 호출자로 바꾼다.
     } else {
     // 늦게 도착한 이전 결제가 새 상품·기간을 되돌리지 못하게 한다.
@@ -505,7 +527,7 @@ export async function applyStoreEntitlement(
       expires_at: expiresAtIso,
     },
     planChangedUserIds: [
-      ...new Set([...planChangedUserIds, ...(transferredFrom ? [transferredFrom] : [])]),
+      ...new Set([...planChangedUserIds, ...transferAffected]),
     ],
   };
 }
