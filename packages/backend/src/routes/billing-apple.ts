@@ -183,18 +183,46 @@ billingApple.post('/apple/confirm', async (c) => {
       .map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : ''))
       .filter((v) => v.length > 0);
     if (!candidates.includes(appleAccountToken)) {
+      // ⚠ **표식이 가리키는 계정이 이미 없으면 막지 않는다**(2026-09-19).
+      //
+      //   애플 구독은 **App Store 계정**에 달려 있고 앱 계정이 사라져도 자동 갱신이 계속된다.
+      //   그래서 탈퇴했다가 같은 사람이 다시 가입하면, 새 계정으로는 그 구독을 영원히
+      //   되찾을 수 없었다 — 결제 화면은 애플이 "이미 구독 중" 이라 새 결제를 만들어 주지
+      //   않고, 서버는 표식이 다르다며 403 으로 막는다. 사용자가 할 수 있는 일이 없다.
+      //   (2026-09-18 테스트에서 이 고리가 실제로 재현됐다.)
+      //
+      //   표식의 주인이 **살아 있을 때만** 막는 것이 이 검사의 본래 뜻이다 — 두 계정이
+      //   같은 결제를 다투는 상황 말이다. 주인이 없으면 다툴 상대가 없다.
+      //   ⚠ **선물(소모성)은 예외다.** 구독은 App Store 계정에 달려 있어 같은 사람이 되찾는
+      //     것이지만, 선물 코드는 **값을 새로 발행**하는 일이라 주인 없는 표식으로 넘겨주면
+      //     남의 결제로 코드를 받아 갈 수 있다. 그쪽은 기존대로 막는다
+      //     (회귀 테스트: `billing-apple-gift-refund.test.ts`).
+      const ownerAlive = isAppleGiftProductId(info.productId)
+        ? { rows: [{ 1: 1 }] }
+        : await db0.execute({
+            sql: `SELECT 1 FROM users WHERE lower(id) = ? OR lower(google_id) = ? LIMIT 1`,
+            args: [appleAccountToken, appleAccountToken],
+          });
+      if (ownerAlive.rows.length > 0) {
+        logStructured('warn', {
+          at: 'billing.apple.confirm',
+          step: 'account_binding',
+          error: 'appAccountToken mismatch',
+        });
+        return c.json(
+          {
+            error: 'Purchase is bound to another account',
+            error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
+          },
+          403,
+        );
+      }
+      // 주인 없는 표식이다 — 지금 계정이 이어받는다. 추적할 수 있게 기록은 남긴다.
       logStructured('warn', {
         at: 'billing.apple.confirm',
         step: 'account_binding',
-        error: 'appAccountToken mismatch',
+        error: 'appAccountToken points to a deleted account; adopting',
       });
-      return c.json(
-        {
-          error: 'Purchase is bound to another account',
-          error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
-        },
-        403,
-      );
     }
   } else {
     // 식별자가 없는 **최초 청구**는 거절한다(구글 갈래와 같은 규칙 — 유출 토큰
