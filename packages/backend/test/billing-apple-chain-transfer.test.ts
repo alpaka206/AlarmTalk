@@ -17,12 +17,17 @@ import { runMigrations } from '../src/lib/migrations';
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-chain-transfer-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
 let info: Record<string, unknown>;
+/** 애플이 말하는 **체인의 가장 최근 트랜잭션**. 비워 두면 앱이 보낸 것이 곧 최신이다. */
+let latest: Record<string, unknown> | null = null;
 vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 vi.mock('../src/lib/apple-storekit', async (original) => ({
   ...(await original<typeof import('../src/lib/apple-storekit')>()),
   appleStoreKitConfigFromEnv: () => ({ issuerId: 't', keyId: 't', privateKeyPem: 't', bundleId: 'com.alarmtalk.app' }),
   fetchAppleTransaction: vi.fn(async () => info),
-  fetchAppleSubscriptionStatus: vi.fn(async () => ({ status: 1, expiresDate: Date.now() + 30 * 86_400_000 })),
+  fetchAppleSubscriptionStatus: vi.fn(async () => {
+    const tx = latest ?? info;
+    return { status: 1, expiresDate: tx.expiresDate, productId: tx.productId, latest: tx };
+  }),
 }));
 import billingApple from '../src/routes/billing-apple';
 
@@ -58,6 +63,7 @@ async function seedChainOwnedByA(expiresAtIso: string) {
 beforeAll(async () => { await runMigrations(db); });
 beforeEach(async () => {
   vi.clearAllMocks();
+  latest = null;
   for (const table of ['store_transactions', 'subscriptions']) await db.execute(`DELETE FROM ${table}`);
   await db.execute({ sql: `DELETE FROM users WHERE id IN (?, ?)`, args: [A, B] });
   await db.execute({
@@ -73,7 +79,7 @@ beforeEach(async () => {
 });
 afterAll(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
 
-describe('끝난 애플 구독 체인의 소유권', () => {
+describe('애플 구독 체인의 소유권 — 주인은 애플이 정한다', () => {
   it('앞 주인의 기간이 끝났고 애플이 새 결제를 B 로 찍었으면 B 가 넘겨받는다', async () => {
     await seedChainOwnedByA(new Date(Date.now() - 86_400_000).toISOString());
     const res = await confirm(B);
@@ -85,12 +91,33 @@ describe('끝난 애플 구독 체인의 소유권', () => {
     expect(plans.rows.map((r) => `${String(r.id).slice(0, 1)}=${r.plan}`)).toEqual(['a=free', 'b=plus']);
   });
 
-  it('앞 주인이 아직 기간 안이면 그대로 막는다 — 두 계정이 같은 결제를 다투는 상황이다', async () => {
+  it('앞 주인의 기간이 DB 에 남아 있어도, 애플이 지금 결제를 B 로 찍었으면 B 것이다', async () => {
+    // ⚠ 예전에는 여기서 409 였다. 그 "남은 기간" 은 **우리 DB 의 사본**이다 — A 가 구독 중인
+    //   폰에서 B 가 상위 플랜을 사면 애플은 B 에게 청구하고 같은 체인으로 올려 보낸다.
+    //   DB 를 근거로 막으면 돈은 나가고 권한은 안 붙는다.
     await seedChainOwnedByA(new Date(Date.now() + 10 * 86_400_000).toISOString());
     const res = await confirm(B);
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error_code: 'TRANSACTION_OWNED_BY_OTHER_USER' });
+    expect(res.status).toBe(200);
+    const owners = await db.execute(`SELECT user_id FROM store_transactions WHERE provider_transaction_id = 'chain-1'`);
+    expect(owners.rows.map((r) => String(r.user_id))).toEqual([B]);
+    // 앞 주인의 그 구독은 **정상 해지**로 닫히고 등급이 내려간다(행만 바꾸면 그룹이 남는다).
+    const previous = await db.execute(`SELECT status FROM subscriptions WHERE id = 'sub-a'`);
+    expect(String(previous.rows[0]!.status)).not.toBe('active');
+    const plans = await db.execute({ sql: `SELECT id, plan FROM users WHERE id IN (?, ?) ORDER BY id`, args: [A, B] });
+    expect(plans.rows.map((r) => `${String(r.id).slice(0, 1)}=${r.plan}`)).toEqual(['a=free', 'b=plus']);
+  });
+
+  it('B 가 옛 영수증을 올려도, 애플의 최신 결제가 A 것이면 A 의 구독이다', async () => {
+    // 표식은 **체인의 최신 트랜잭션**에서 읽는다. 보낸 트랜잭션의 표식을 읽으면, 이미 A 에게
+    // 넘어간 체인을 B 가 예전에 자기가 샀던 영수증으로 도로 가져간다.
+    await seedChainOwnedByA(new Date(Date.now() + 10 * 86_400_000).toISOString());
+    latest = { ...info, transactionId: 'tx-latest-a', appAccountToken: A };
+    const res = await confirm(B);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error_code: 'TRANSACTION_ACCOUNT_MISMATCH' });
     const owners = await db.execute(`SELECT user_id FROM store_transactions WHERE provider_transaction_id = 'chain-1'`);
     expect(owners.rows.map((r) => String(r.user_id))).toEqual([A]);
+    const plan = await db.execute({ sql: `SELECT plan FROM users WHERE id = ?`, args: [A] });
+    expect(String(plan.rows[0]!.plan)).toBe('plus');
   });
 });
