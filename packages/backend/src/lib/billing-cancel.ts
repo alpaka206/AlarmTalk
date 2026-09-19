@@ -1090,6 +1090,16 @@ export async function notifyBillingStateChanged(
   await notifyVoiceDeletionScheduled(db, env, userIds);
 }
 
+/**
+ * 한 번의 워커 실행에서 처리할 만료 구독 수.
+ *
+ * ⚠ **상한이 없으면 subrequest 한도에 걸려 틱 전체가 죽는다**(2026-09-18). 만료 한 건마다
+ * 스토어 재조회(외부 fetch)와 여러 DB 왕복이 붙는데, 한 실행의 subrequest 는 ~50 개다.
+ * 밀린 건은 다음 틱(5분)이 이어서 처리한다 — 순서는 그룹 소유자 우선으로 고정돼 있어
+ * 나눠 처리해도 결과가 같다.
+ */
+const EXPIRY_BATCH_LIMIT = 5;
+
 export async function processSubscriptionExpiry(
   db: Client,
   env?: ExpiryEnv,
@@ -1102,8 +1112,9 @@ export async function processSubscriptionExpiry(
           WHERE s.status = 'active' AND julianday(s.expires_at) <= julianday(?)
           ORDER BY CASE WHEN EXISTS (
             SELECT 1 FROM plan_groups g WHERE g.id = s.plan_group_id AND g.owner_user_id = s.user_id
-          ) THEN 0 ELSE 1 END, s.id`,
-    args: [now.toISOString()],
+          ) THEN 0 ELSE 1 END, s.id
+          LIMIT ?`,
+    args: [now.toISOString(), EXPIRY_BATCH_LIMIT],
   });
   for (const row of due.rows) {
     const subscriptionId = String(row.sub_id);

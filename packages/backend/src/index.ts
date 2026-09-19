@@ -396,12 +396,16 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     // 즉시 삭제(`DELETE /user/me`)에는 이 처리가 있었는데 **앱이 실제로 쓰는 경로**는
     // 유예 삭제(`POST /user/me/deletion`)라, 정작 대부분의 탈퇴에서 빠져 있었다
     // (2026-08-18 Codex #697 P1).
+    // ⚠ **한 틱에 조금씩만 판다**(2026-09-18). 파기 한 건이 DB 를 여러 번 왕복하고
+    //   (purgeUserAccount), 애플 연결 해제·알림까지 같은 실행에서 돈다. 한 실행의
+    //   subrequest 는 ~50 개라 50 건을 한 번에 돌리면 틱 전체가 죽는다 — 실제로
+    //   DELETE /api/user/me 가 같은 이유로 500 이었다. 남은 건은 5분 뒤 틱이 잇는다.
     const due = await db.execute({
       sql: `SELECT id, google_id, apple_refresh_token FROM users
             WHERE deletion_status = 'pending_deletion'
               AND deletion_purge_at IS NOT NULL
               AND deletion_purge_at <= ?
-            LIMIT 50`,
+            LIMIT 2`,
       args: [now.toISOString()],
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
