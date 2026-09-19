@@ -264,7 +264,21 @@ final class SubscriptionManager: ObservableObject {
                 throw SubscriptionError.accountNotPurchasable
             }
             let options: Set<Product.PurchaseOption> = [.appAccountToken(accountToken)]
-            let result = try await product.purchase(options: options)
+            var result = try await product.purchase(options: options)
+            // ⚠ **만료된 옛 트랜잭션이 돌아오면 그건 결제가 아니다**(2026-09-19 운영 로그).
+            //   스토어에 끝나지 않은 옛 구독 트랜잭션이 남아 있으면 `purchase()` 가 결제 시트를
+            //   띄우지 않고 **그 옛것을 그대로** 돌려준다(로그: preflight→confirm 0.2초, 서버는
+            //   400 `SUBSCRIPTION_EXPIRED`). 사용자는 버튼을 눌렀는데 아무 일도 없이 무료로
+            //   남고, 한 번 더 눌러야 진짜 시트가 떴다 — "한 번에 안 된다" 의 정체다.
+            //   그래서 옛것은 **여기서 끝내고**(구독이라 잃는 것이 없다 — `mayFinish` 주석),
+            //   진짜 결제를 **한 번만** 다시 요청한다.
+            if plan.isSubscription,
+               case .success(let staleResult) = result,
+               let stale = try? checkVerified(staleResult),
+               let expiry = stale.expirationDate, expiry <= Date() {
+                await stale.finish()
+                result = try await product.purchase(options: options)
+            }
             switch result {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
@@ -288,6 +302,17 @@ final class SubscriptionManager: ObservableObject {
                     // 다시 물어다 주고 리스너가 재시도한다.
                     return .failure(
                         reason: "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요."
+                    )
+                }
+                // ⚠ **구독도 서버가 확정해야 '완료' 다**(2026-09-19 운영 로그). 예전에는 확정이
+                //   403/400 으로 막혀도 「결제가 완료되었어요」 를 띄웠다. 그런데 유료 기능은
+                //   서버의 `users.plan` 이 열어 주므로, 사용자는 성공 문구를 본 직후
+                //   「해당 기능은 유료 이용권에서 사용할 수 있어요」 를 만났다.
+                //   서버가 잠깐 못 받은 경우(네트워크·5xx)는 결제 자체는 유효하므로 그 사실을
+                //   말하고, 복원으로 다시 붙일 길을 알려 준다.
+                guard outcome.confirmed else {
+                    return .failure(
+                        reason: "결제는 됐지만 이용권을 아직 확인하지 못했어요. 잠시 후 '이전 구매 복원'을 눌러 주세요."
                     )
                 }
                 return .success(productID: plan.rawValue)
@@ -744,6 +769,23 @@ final class SubscriptionManager: ObservableObject {
             let message = String(
                 localized: "이 결제는 다른 계정에 이미 연결돼 있어요. 그 계정으로 로그인해 주세요"
             )
+            if surfacesError { self.lastError = message }
+            return ConfirmOutcome(confirmed: false, rejection: message)
+        } catch APIError.server(let status, _, let code) where status == 403
+            && code == "TRANSACTION_ACCOUNT_MISMATCH" {
+            // 이 결제는 **살아 있는 다른 계정**이 산 것이다(서버가 주인 없는 표식은 이어받는다).
+            // 재시도해도 결과가 같으니 무엇을 해야 하는지 말한다.
+            let message = String(
+                localized: "이 결제는 다른 계정으로 구매한 거예요. 그 계정으로 로그인해 주세요."
+            )
+            if surfacesError { self.lastError = message }
+            return ConfirmOutcome(confirmed: false, rejection: message)
+        } catch APIError.server(let status, _, let code) where (400...499).contains(status)
+            && status != 401 && status != 408 && status != 429 {
+            // 그 밖의 4xx 는 **서버가 이 결제를 받아들이지 않은 것**이다(만료·알 수 없는 상품 등).
+            // 예전에는 여기서 조용히 '미확정' 으로 접어, 호출부가 성공이라고 말했다.
+            let message = APIErrorMessages.message(for: code)
+                ?? String(localized: "결제를 확인하지 못했어요. '이전 구매 복원'을 눌러 다시 시도해 주세요.")
             if surfacesError { self.lastError = message }
             return ConfirmOutcome(confirmed: false, rejection: message)
         } catch {
