@@ -11,6 +11,7 @@ import {
   ipRateLimitMiddleware,
   ipRateLimitRefundMiddleware,
   authRateLimitMiddleware,
+  audioDownloadRateLimitMiddleware,
   eventLikeRateLimitMiddleware,
   eventClipRateLimitMiddleware,
 } from './middleware/rateLimit';
@@ -245,6 +246,8 @@ api.use('*', ipRateLimitRefundMiddleware);
 // 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
 // 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
 api.use('*', consentMiddleware);
+// 오디오 내려받기는 전용 버킷이 맡는다(일반 버킷은 이 경로를 세지 않는다 — rateLimit.ts).
+api.use('/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
 api.use('*', rateLimitMiddleware);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;

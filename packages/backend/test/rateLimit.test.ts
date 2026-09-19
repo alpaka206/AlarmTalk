@@ -4,6 +4,7 @@ import {
   rateLimitMiddleware,
   ipRateLimitMiddleware,
   ipRateLimitRefundMiddleware,
+  audioDownloadRateLimitMiddleware,
 } from '../src/middleware/rateLimit';
 
 function buildApp() {
@@ -208,5 +209,67 @@ describe('ipRateLimitMiddleware (인증 전 전역 IP 버킷 300req/분)', () =>
     const r1 = await app.request(pathReq('/x', ip));
     // 환불(무시됨) 후 카운트 1 → Remaining 299. 음수였다면 300 이상으로 표시된다.
     expect(r1.headers.get('X-RateLimit-Remaining')).toBe('299');
+  });
+});
+
+
+// ── 오디오 내려받기는 일반 버킷을 쓰지 않는다 ─────────────────────────────────
+//
+// 기본 목소리 선다운로드가 한 번에 76개를 받고, 목소리를 등록하면 그 클론 클립까지
+// 이어 받는다. 그 내려받기가 일반 버킷(120/분)을 먹으면 **같은 창의 등록·동기화 요청이**
+// 429 를 맞는다 — 실기기에서 "요청이 너무 많아요" 로 드러난 자리다(2026-09-17).
+function buildAudioApp() {
+  const app = new Hono();
+  app.use('/api/tts/messages/:id/audio', audioDownloadRateLimitMiddleware);
+  app.use('*', rateLimitMiddleware);
+  app.get('/api/tts/messages/:id/audio', (c) => c.json({ ok: true }));
+  app.get('/api/alarm', (c) => c.json({ ok: true }));
+  return app;
+}
+
+function audioReq(ip: string, id = 'm1') {
+  return new Request(`http://localhost/api/tts/messages/${id}/audio`, {
+    headers: { 'cf-connecting-ip': ip },
+  });
+}
+
+describe('오디오 내려받기 버킷', () => {
+  it('내려받기 200개를 받아도 다른 요청의 일반 한도는 그대로다', async () => {
+    const app = buildAudioApp();
+    const ip = '10.0.9.1';
+    for (let i = 0; i < 200; i++) {
+      const res = await app.request(audioReq(ip, `m${i}`));
+      expect(res.status).toBe(200);
+    }
+    // 일반 버킷은 한 번도 안 셌으므로 첫 요청의 남은 수가 119 여야 한다.
+    const other = await app.request(
+      new Request('http://localhost/api/alarm', { headers: { 'cf-connecting-ip': ip } }),
+    );
+    expect(other.status).toBe(200);
+    expect(other.headers.get('X-RateLimit-Remaining')).toBe('119');
+  });
+
+  it('내려받기도 자기 버킷(600/분)을 넘으면 429', async () => {
+    const app = buildAudioApp();
+    const ip = '10.0.9.2';
+    for (let i = 0; i < 600; i++) {
+      expect((await app.request(audioReq(ip, `m${i}`))).status).toBe(200);
+    }
+    const res = await app.request(audioReq(ip, 'm600'));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('RATE_LIMITED');
+  });
+
+  it('POST 는 내려받기가 아니다 — 일반 버킷이 센다', async () => {
+    const app = new Hono();
+    app.use('*', rateLimitMiddleware);
+    app.post('/api/tts/messages/:id/audio', (c) => c.json({ ok: true }));
+    const res = await app.request(
+      new Request('http://localhost/api/tts/messages/m1/audio', {
+        method: 'POST',
+        headers: { 'cf-connecting-ip': '10.0.9.3' },
+      }),
+    );
+    expect(res.headers.get('X-RateLimit-Remaining')).toBe('119');
   });
 });
