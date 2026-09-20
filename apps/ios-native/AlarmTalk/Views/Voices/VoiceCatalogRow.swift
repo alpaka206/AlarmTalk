@@ -222,11 +222,32 @@ struct VoicePrerenderStatusRow: View {
     let status: VoicePrerenderStatus
     let retrying: Bool
     let onRetry: () -> Void
+    /// 이 목소리의 클립을 **몇 개 중 몇 개 받았는가**. 생성이 끝난 뒤의 몫(50~100%)이다.
+    var downloadProgress: (done: Int, total: Int)?
 
-    /// 생성 0~100%. 안드로이드와 같은 계산(전체 대비 생성 개수).
+    /// 생성 0~50% + 다운로드 50~100% = **하나의 진행률**(`ClonePrerenderDrive.mergedPercent`).
+    ///
+    /// ⚠ **생성만 세지 말 것**(2026-09-21 정정). 예전에는 `generated/total` 을 그대로 100%
+    /// 로 썼고 `done` 이 되면 행이 통째로 사라졌다 — 실제로는 그때부터 **받는 중**인데
+    /// 화면에는 아무 표시가 없었다. 안드로이드는 처음부터 둘을 이어 붙인다.
     private var percent: Int {
-        guard status.total > 0 else { return 0 }
-        return min(100, max(0, Int((Double(status.generated) / Double(status.total)) * 100)))
+        ClonePrerenderDrive.mergedPercent(
+            generated: status.generated,
+            generationTotal: status.total,
+            downloaded: downloadProgress?.done ?? 0,
+            downloadTotal: downloadProgress?.total ?? 0,
+            phase: status.status == "done" ? .downloading : .generating
+        )
+    }
+
+    /// 아직 말할 것이 있는가 — 생성 중이거나, 생성은 끝났는데 덜 받았을 때.
+    private var isPreparing: Bool {
+        if status.status == "failed" { return true }
+        if status.status == "done" {
+            guard let progress = downloadProgress else { return false }
+            return progress.done < progress.total
+        }
+        return status.status == "pending" && status.total > 0
     }
 
     var body: some View {
@@ -243,7 +264,7 @@ struct VoicePrerenderStatusRow: View {
                     .disabled(retrying)
                 Spacer(minLength: 0)
             }
-        case "pending" where status.total > 0:
+        case _ where isPreparing:
             HStack(spacing: 8) {
                 ProgressView(value: Double(percent), total: 100)
                     .progressViewStyle(.linear)
@@ -255,7 +276,8 @@ struct VoicePrerenderStatusRow: View {
                 Spacer(minLength: 0)
             }
         default:
-            // "done"·"none" 과 **아직 전체 개수를 모르는 pending** 은 아무것도 그리지 않는다.
+            // 다 받았거나("done" + 빠진 클립 없음), 큐 행이 없거나("none"), **아직 전체 개수를
+            // 모르는 pending** 은 아무것도 그리지 않는다.
             // ⚠ 모르는 값을 catch-all 로 받아 진행률을 그리면 "준비 중 0%" 가 영영 남는다 —
             // 서버는 큐 행이 없을 때 `none` 을 돌려주는데 폴링은 그걸 pending 으로 치지
             // 않아 곧바로 멈추기 때문이다(안드로이드 Codex #673 P2 와 같은 함정).

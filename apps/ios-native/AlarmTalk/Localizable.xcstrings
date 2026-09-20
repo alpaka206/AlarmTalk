@@ -4429,23 +4429,6 @@
         }
       }
     },
-    "목소리 학습을 등록했어요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Your voice training has been submitted."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声の学習を登録しました。"
-          }
-        }
-      }
-    },
     "목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요." : {
       "extractionState" : "manual",
       "localizations" : {

@@ -19,6 +19,10 @@ struct ClipPreparationView: View {
     /// 그때 다운로드 루프가 조용히 죽어 그 문구가 거짓말이 된다.
     @EnvironmentObject private var prefetcher: StockClipPrefetcher
     @StateObject private var readiness = ClipReadinessModel()
+    /// 등록 직후 화면 전용 — **그 목소리 하나**의 생성(0~50%) + 다운로드(50~100%)를 이어 붙인
+    /// 하나의 진행률. 전체 준비도(`readiness`)는 시스템 목소리까지 함께 세므로, 방금 만든
+    /// 목소리가 매니페스트에 아직 없는 동안 100% 로 보인다 — 등록 화면은 그걸 쓰지 않는다.
+    @StateObject private var drive = ClonePrerenderDrive()
 
     /// 닫기(백그라운드에서 계속). nil 이면 닫기 줄을 그리지 않는다.
     var onDismiss: (() -> Void)?
@@ -39,10 +43,26 @@ struct ClipPreparationView: View {
                 standardPreparation
             }
         }
-        .task { await refresh() }
+        // 등록 직후에는 **그 목소리 하나**를 끝까지 민다 — 서버 생성을 앞당기고(advance),
+        // 끝나면 곧바로 받는다. 세는 것만으로는 만들어지지도 받아지지도 않는다.
+        .task(id: registrationStyle ? targetVoiceID : nil) {
+            guard registrationStyle, let targetVoiceID else { return }
+            drive.start(
+                voiceProfileID: targetVoiceID,
+                session: auth.session,
+                prefetcher: prefetcher,
+                ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+            )
+        }
+        // 다 되면 **아무 말 없이** 닫는다 — "다 됐어요" 를 또 띄우지 않는다(2026-09-21 지시).
+        .onChange(of: drive.phase) { _, phase in
+            if registrationStyle, phase == .done { onDismiss?() }
+        }
+        .task { if !registrationStyle { await refresh() } }
         // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 캐시 파일 검사라 값싸고,
         // 서버 렌더 상태만 네트워크를 탄다.
         .task {
+            guard !registrationStyle else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 if Task.isCancelled { break }
@@ -127,14 +147,22 @@ struct ClipPreparationView: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .multilineTextAlignment(.center)
                 Spacer().frame(height: 6)
-                if readiness.voices.isEmpty || readiness.isRefreshing {
-                    ProgressView()
-                        .frame(maxWidth: 280)
-                } else {
-                    ProgressView(value: Double(readiness.percent), total: 100)
-                        .tint(theme.palette.primary)
-                        .frame(maxWidth: 280)
-                }
+                // 생성과 다운로드를 **하나의 퍼센트**로 말한다(2026-09-21 지시).
+                // 숫자가 흔들리지 않게 — 폭이 변하면 시선이 튄다.
+                Text("\(drive.percent)%")
+                    .font(theme.typography.displaySmall)
+                    .foregroundStyle(theme.palette.onSurface)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.2), value: drive.percent)
+                // ⚠ **막대를 스피너와 번갈아 그리지 말 것**(2026-09-21 지적 "잠깐 깜박"). 예전에는
+                //   3초마다 도는 갱신 중에 원형 스피너로 바뀌었는데, 스피너는 제 크기라
+                //   막대(280)와 폭이 달라 **화면이 좁아졌다 넓어졌다** 했다. 전체 개수를 아직
+                //   모르는 동안에도 같은 자리에 같은 폭의 막대를 둔다.
+                ProgressView(value: Double(drive.percent), total: 100)
+                    .progressViewStyle(.linear)
+                    .tint(theme.palette.primary)
+                    .frame(maxWidth: .infinity)
                 Spacer().frame(height: 6)
                 if let onDismiss {
                     Button("백그라운드에서 계속") { onDismiss() }
@@ -146,6 +174,11 @@ struct ClipPreparationView: View {
             .padding(.horizontal, 24)
             Spacer(minLength: 0)
         }
+        // ⚠ **폭을 꽉 채운다.** 이게 없으면 자식 중 가로로 늘어나는 것이 하나도 없어(상단바는
+        //   뒤로가기가 없으면 제목 폭이다) 화면 전체가 내용 폭으로 줄고, 배경 그라데이션도
+        //   그만큼만 칠해져 **좌우가 비어 보인다**(2026-09-21 지적). 일반 준비 화면은 이미
+        //   같은 수식자를 쓰고 있었다.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .homeGradientBackground()
     }
 
@@ -195,9 +228,6 @@ struct ClipPreparationView: View {
             var targets = voiceStudio.ownedVoiceProfileIDs
             if let targetVoiceID, !targetVoiceID.isEmpty { targets.insert(targetVoiceID) }
             prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets)
-        }
-        if registrationStyle, readiness.isReady, !readiness.voices.isEmpty {
-            onDismiss?()
         }
     }
 

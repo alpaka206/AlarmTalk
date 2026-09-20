@@ -917,7 +917,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: language
             )
             selectedProfileID = profile.id
-            statusMessage = "목소리 학습을 등록했어요."
+            // ⚠ **'등록했어요' 같은 안내를 두지 말 것**(2026-09-21 지시). 이 문구는 다음
+            //   화면(미리듣기 → 진행률)이 이미 말하는 것을 한 번 더 말하는 데다, 아무도
+            //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서
+            //   배너를 비운다(`MainViewModel.createVoiceProfiles` 의 `message = null`).
+            statusMessage = nil
             await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
@@ -971,7 +975,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: language
             )
             selectedProfileID = profile.id
-            statusMessage = "목소리 학습을 등록했어요."
+            // ⚠ **'등록했어요' 같은 안내를 두지 말 것**(2026-09-21 지시). 이 문구는 다음
+            //   화면(미리듣기 → 진행률)이 이미 말하는 것을 한 번 더 말하는 데다, 아무도
+            //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서
+            //   배너를 비운다(`MainViewModel.createVoiceProfiles` 의 `message = null`).
+            statusMessage = nil
             await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {

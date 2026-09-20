@@ -102,6 +102,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
@@ -1911,6 +1912,14 @@ internal fun VoiceProfileManagementPanel(
                                         textAlign = TextAlign.Center,
                                     )
                                     Spacer(Modifier.height(6.dp))
+                                    // 퍼센트를 **숫자로도** 말한다(2026-09-21 지시 "하나의 퍼센트").
+                                    // 막대만으로는 얼마나 남았는지 읽기 어렵고, iOS 도 같은 자리에
+                                    // 같은 값을 보여 준다(`ClipPreparationView.registrationPreparation`).
+                                    Text(
+                                        text = "${(animatedProgress * 100).roundToInt()}%",
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                     if (target != null) {
                                         LinearProgressIndicator(
                                             progress = { animatedProgress },

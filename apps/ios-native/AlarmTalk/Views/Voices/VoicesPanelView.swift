@@ -20,7 +20,9 @@ enum VoicesRoute: Hashable {
 /// 목록은 탭 안에 두고, 등록·미리듣기·준비는 안드로이드의 전체화면 등록 다이얼로그처럼
 /// `fullScreenCover` 로 잇는다. 모든 자식은 동일한 `VoiceStudioViewModel` 을 공유한다.
 struct VoicesPanelView: View {
-    @State private var route: VoicesRoute = .management
+    @State private var route: VoicesRoute = UIPreviewSeed.opensVoicePreparation
+        ? .preparation("preview-voice")
+        : .management
 
     /// Phase 4-D1: PlanGate 시트에서 "결제 화면으로" 를 누르면 Root 의
     /// BillingPanel(auxiliaryScreen = .billing) 을 열도록 부모(MainTabsView) 가

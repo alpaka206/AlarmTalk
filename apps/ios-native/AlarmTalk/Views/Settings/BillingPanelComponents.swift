@@ -393,6 +393,13 @@ struct SubscriptionTermsFootnote: View {
     }
 }
 
+/// **개인 이용권 선물 안내 시트.**
+///
+/// ⚠ **시스템 `.sheet` + `presentationDetents` 로 되돌리지 말 것**(2026-09-21 시뮬레이터
+/// 캡처로 확인). 그러면 반투명한 시스템 시트 위에 이 내용이 **자기 배경을 깔고 한 겹 더**
+/// 떠서, 상자가 둘로 보인다("모달 뒤에 불필요한 박스"). 앱의 다른 모달과 같이
+/// `BottomSheetHost`(좌우 꽉 참·위 모서리만 둥금·드래그 핸들·스크림) 위에 올린다 —
+/// 표면은 껍데기가 그리므로 **여기서 배경을 칠하지 않는다**.
 struct PersonalGiftPassSheet: View {
     let onDismiss: () -> Void
     let onConfirm: () -> Void
@@ -432,7 +439,7 @@ struct PersonalGiftPassSheet: View {
             .foregroundStyle(AlarmTalkTheme.onPrimary)
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -464,20 +471,24 @@ struct VoucherShareSelectionSheet: View {
                 .accessibilityLabel("닫기")
             }
 
-            VStack(spacing: 10) {
-                ForEach(vouchers) { voucher in
-                    VoucherShareRow(voucher: voucher) {
-                        // 클립보드는 **코드만**, 설치 안내는 공유 본문에만
-                        // (안드로이드 `ui/billing/BillingPanels.kt` 의 `shareVoucher` 와 같다).
-                        UIPasteboard.general.string = voucher.code
-                        shareText = CodeShareText.forCode(voucher.code)
-                        isSharePresented = true
+            // ⚠ **목록은 스크롤 갈래로 감싼다.** 바텀시트는 높이 상한을 걸지 않으므로
+            //   (`BottomSheetHost` 주석), 코드가 여러 장이면 시트가 화면 밖으로 넘친다.
+            SheetScrollingContent {
+                VStack(spacing: 10) {
+                    ForEach(vouchers) { voucher in
+                        VoucherShareRow(voucher: voucher) {
+                            // 클립보드는 **코드만**, 설치 안내는 공유 본문에만
+                            // (안드로이드 `ui/billing/BillingPanels.kt` 의 `shareVoucher` 와 같다).
+                            UIPasteboard.general.string = voucher.code
+                            shareText = CodeShareText.forCode(voucher.code)
+                            isSharePresented = true
+                        }
                     }
                 }
             }
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $isSharePresented) {
             BillingActivityShareSheet(text: shareText)
                 .ignoresSafeArea()
@@ -558,3 +569,42 @@ func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
     .voiceAlarmPreviewEnvironment()
 }
 #endif
+
+// MARK: - 시트 표시
+
+extension View {
+    /// 선물 이용권 안내 시트를 붙인다.
+    ///
+    /// ⚠ **`.sheet` + `presentationDetents` 를 쓰지 말 것** — `PersonalGiftPassSheet` 주석의
+    /// '상자 둘' 문제. 쿠폰 입력 시트(`redeemCodeSheet`)와 같은 껍데기를 쓴다.
+    func personalGiftPassSheet(
+        isPresented: Binding<Bool>,
+        onConfirm: @escaping () -> Void
+    ) -> some View {
+        // 껍데기는 공용 `bottomSheet` 하나다 — 같은 모양을 두 벌로 만들지 않는다.
+        bottomSheet(isPresented: isPresented, onDismiss: { isPresented.wrappedValue = false }) {
+            PersonalGiftPassSheet(
+                onDismiss: { isPresented.wrappedValue = false },
+                onConfirm: onConfirm
+            )
+        }
+    }
+
+    /// 발급된 선물 코드 중 하나를 골라 공유하는 시트. 같은 껍데기를 쓴다.
+    func voucherShareSelectionSheet(
+        vouchers: Binding<[VoucherItem]>
+    ) -> some View {
+        bottomSheet(
+            isPresented: Binding(
+                get: { !vouchers.wrappedValue.isEmpty },
+                set: { if !$0 { vouchers.wrappedValue = [] } }
+            ),
+            onDismiss: { vouchers.wrappedValue = [] }
+        ) {
+            VoucherShareSelectionSheet(
+                vouchers: vouchers.wrappedValue,
+                onDismiss: { vouchers.wrappedValue = [] }
+            )
+        }
+    }
+}
