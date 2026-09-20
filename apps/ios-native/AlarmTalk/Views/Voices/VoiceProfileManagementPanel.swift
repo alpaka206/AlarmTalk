@@ -375,7 +375,11 @@ struct VoiceProfileManagementPanel: View {
                             VoicePrerenderStatusRow(
                                 status: status,
                                 retrying: retryingPrerenderIDs.contains(profile.id),
-                                onRetry: { Task { await retryPrerender(profile) } }
+                                onRetry: { Task { await retryPrerender(profile) } },
+                                // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
+                                downloadProgress: StockClipPrefetcher.cloneVoiceProgress(
+                                    voiceProfileID: profile.id
+                                )
                             )
                         }
                         // 말투 분석 실패 — 서버에 재시도 라우트가 있는데 부를 길이 없었다.
@@ -597,7 +601,7 @@ struct VoiceProfileManagementPanel: View {
                 if status.status == "pending" {
                     anyPending = true
                     // 앱이 열려 있는 동안은 cron 을 기다리지 않고 우리가 앞당긴다
-                    // (호출당 최대 3클립). 실패는 무시 — 다음 회차가 다시 시도한다.
+                    // (호출당 최대 2클립). 실패는 무시 — 다음 회차가 다시 시도한다.
                     _ = try? await AlarmTalkAPI.shared.advanceVoicePrerender(id: profile.id, token: token)
                 }
             }
