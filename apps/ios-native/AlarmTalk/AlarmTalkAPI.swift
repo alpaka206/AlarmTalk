@@ -388,7 +388,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.success
     }
 
-    /// 소유자 주도 사전렌더 전진(호출당 최대 3클립). 앱이 열려 있는 동안 cron 을 앞당긴다.
+    /// 소유자 주도 사전렌더 전진(호출당 최대 2클립). 앱이 열려 있는 동안 cron 을 앞당긴다.
     func advanceVoicePrerender(id: String, token: String) async throws -> VoicePrerenderAdvance {
         try await request("voice/\(id)/prerender/advance", method: "POST", token: token)
     }

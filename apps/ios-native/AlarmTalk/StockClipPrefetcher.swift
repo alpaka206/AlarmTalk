@@ -113,6 +113,20 @@ final class StockClipPrefetcher: ObservableObject {
         return (targets.count - missing, targets.count)
     }
 
+    /// 내가 등록한 **클론 한 개**의 클립을 몇 개 중 몇 개 받았는가. 등록 직후 진행률
+    /// (`ClonePrerenderDrive`)의 다운로드 구간이 본다.
+    ///
+    /// 대상은 `run` 이 실제로 받는 것과 **같다** — 그 목소리의 매니페스트 클립 전부다
+    /// (카테고리·언어로 거르지 않는다). 다르게 세면 진행률이 100% 에 닿지 않는다.
+    /// 매니페스트에 그 목소리가 아직 없으면 nil(= 서버가 만드는 중이라 셀 것이 없다).
+    static func cloneVoiceProgress(voiceProfileID: String) -> (done: Int, total: Int)? {
+        guard let manifest = StockClipManifestStore.load() else { return nil }
+        let targets = manifest.clips.filter { $0.voiceProfileId == voiceProfileID }
+        guard !targets.isEmpty else { return nil }
+        let missing = missingClips(targets).count
+        return (targets.count - missing, targets.count)
+    }
+
     /// 기본 목소리를 다 받아 **알람을 설정해도 되는가**(2026-09-17 지시: 다 받기 전에는 알람
     /// 설정 화면 자체를 막는다). 매니페스트가 비어 있으면(서버가 줄 것이 없다) 막지 않는다.
     static func defaultVoicesReady() -> Bool {

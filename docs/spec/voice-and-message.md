@@ -165,6 +165,20 @@
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
 
+- **진행률은 하나다 — 생성 0~50%, 다운로드 50~100%**(2026-09-21 지시). 사용자에게는 '서버가
+  만드는 중' 과 '폰이 받는 중' 이 두 가지 일이 아니라 "알람 음성이 준비되는 중" 하나다.
+  단계마다 n/21 을 따로 세면 생성이 끝나는 순간 100%에서 0%로 **뒤로 간다**. 마지막 단계와
+  목소리 목록의 행이 **같은 값**을 쓰고, 숫자와 막대를 함께 보여 준다.
+  - **세는 것만으로는 만들어지지도 받아지지도 않는다.** 등록 직후에는 앱이 서버 생성을
+    직접 민다(`POST voice/{id}/prerender/advance`) — 5분 크론을 기다리지 않는다. 그 응답의
+    `claim_stuck` 은 **'진행 없음' 이 아니다**(리스가 끝날 때까지 같은 개수가 온다). 무진전으로
+    세면 구동을 3회 만에 접어 생성이 크론으로 넘어간다.
+  - **막대를 스피너와 번갈아 그리지 않는다.** 폭이 달라 화면이 깜박이고, 좁아졌다 넓어진다.
+  - **화면은 좌우를 꽉 채운다**(배경도). 등록 마지막 화면만 그러지 않아 좌우가 비어 보였다.
+- **끝났다고 또 말하지 않는다**(2026-09-21 지시). 준비가 끝나면 **아무 말 없이** 목록으로
+  돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
+  다음 화면이 이미 말하는 것을 한 번 더 말하는 데다, 아무도 지우지 않아 목소리 탭 맨 위에
+  그대로 남아 있었다. (안드로이드도 성공 갈래에서 배너를 비운다.)
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
@@ -766,6 +780,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
+| 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |

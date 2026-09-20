@@ -73,6 +73,20 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 목소리 등록 **마지막 화면**(생성·다운로드 진행률)을 바로 연다 —
+    /// `-UIPreviewVoicePrep`. 화면 확인용.
+    ///
+    /// 왜 필요한가: 그 화면은 실제로 목소리를 등록해야만 나온다(녹음 12초 + 서버 클론).
+    /// 시뮬레이터를 스크립트로 조작할 방법이 없어 눈으로 볼 길이 없었다 — `-UIPreviewEditor`
+    /// 와 같은 이유의 진입점이다. 서버가 없으므로 진행률은 0% 에서 멈춘다(배치만 본다).
+    static var opensVoicePreparation: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-UIPreviewVoicePrep")
+        #else
+        return false
+        #endif
+    }
+
     /// **울림 확인용** — `-UIPreviewRingIn <초>` 면 그만큼 뒤에 울릴 알람을 하나 예약한다.
     ///
     /// 왜 필요한가: iOS 의 울림 화면은 **AlarmKit 이 그리는 시스템 alert** 이라 우리가

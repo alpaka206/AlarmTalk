@@ -462,11 +462,18 @@ struct VoicePrerenderStatus: Decodable, Equatable {
     var attempts: Int
 }
 
-/// `POST voice/{id}/prerender/advance` — 호출당 최대 3클립 전진.
+/// `POST voice/{id}/prerender/advance` — 호출당 최대 **2**클립 전진
+/// (`MAX_CLIPS_PER_CALL`. 3 이었다가 워커 subrequest 한도 때문에 낮췄다).
 struct VoicePrerenderAdvance: Decodable, Equatable {
     var done: Bool
     var generated: Int
     var total: Int
+    /// ⚠ **'클레임을 못 놓았다' 는 '진행이 없다' 와 다르다**(서버 `advance` 의 꼬리 주석).
+    /// 리스(2분)가 끝나기 전에는 몇 번을 물어도 같은 개수가 온다 — 무진전으로 세면
+    /// 구동을 3회 만에 접고 남은 생성이 15분 크론으로 넘어간다.
+    var claimStuck: Bool?
+    /// 다시 부르기까지 기다릴 시간(ms). `claim_stuck` 일 때만 0 보다 크다.
+    var retryAfterMs: Int?
 }
 
 struct VoiceProfileUpdateRequest: Encodable {

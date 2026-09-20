@@ -287,28 +287,11 @@ struct BillingPanel: View {
         } message: {
             Text("남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요. 그 안에 이용권을 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.")
         }
-        .sheet(isPresented: $showPersonalGiftSheet) {
-            PersonalGiftPassSheet(
-                onDismiss: { showPersonalGiftSheet = false },
-                onConfirm: {
-                    showPersonalGiftSheet = false
-                    Task { await giftPersonalPass() }
-                }
-            )
-            .presentationDetents([.medium])
+        .personalGiftPassSheet(isPresented: $showPersonalGiftSheet) {
+            showPersonalGiftSheet = false
+            Task { await giftPersonalPass() }
         }
-        .sheet(
-            isPresented: Binding(
-                get: { !voucherShareTargets.isEmpty },
-                set: { if !$0 { voucherShareTargets = [] } }
-            )
-        ) {
-            VoucherShareSelectionSheet(
-                vouchers: voucherShareTargets,
-                onDismiss: { voucherShareTargets = [] }
-            )
-            .presentationDetents([.medium])
-        }
+        .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
     }
 
     // MARK: - App Store 구독 관리
