@@ -132,6 +132,25 @@ internal fun sessionSurvivedForWrite(
     currentToken: String?,
 ): Boolean = currentGeneration == expectedGeneration && !currentToken.isNullOrBlank()
 
+/**
+ * **명시적 로그아웃이 진행 중인가** — 시각 하나로 판정한다.
+ *
+ * 왜 불리언이 아니라 시각인가: 이 표시는 prefs 에 남는다(아래 [AuthSessionStore.beginSignOut]
+ * 주석 참고). 불리언이면 로그아웃 도중 프로세스가 죽었을 때 **영원히 서 있는다** — 그 뒤로는
+ * 진짜 자동 만료(토큰 폐기)가 와도 `session_expired_owner` 를 못 남겨, 업데이트 후 재예약이
+ * 복원 대상을 잃고 이 기기의 알람이 조용히 안 울린다. 시작 시각을 적어 두면 창이 지난
+ * 뒤 **다음 실행이 알아서 회복**한다(별도 부팅 훅이 필요 없다).
+ *
+ * 시계가 튀는 경우는 둘 다 **오늘의 동작(표시 없음)** 으로 떨어진다: 앞으로 튀면 창이 일찍
+ * 닫히고, 뒤로 튀면 음수라 열리지 않는다. 표시가 없을 때의 결말은 이 수정 이전과 같으므로
+ * 새 실패 모드가 생기지 않는다.
+ */
+internal fun signOutWindowOpen(
+    startedAtMillis: Long,
+    nowMillis: Long,
+    windowMillis: Long,
+): Boolean = startedAtMillis > 0L && (nowMillis - startedAtMillis) in 0L until windowMillis
+
 class AuthSessionStore(context: Context) {
     private val prefs: SharedPreferences = run {
         val appContext = context.applicationContext
@@ -263,6 +282,12 @@ class AuthSessionStore(context: Context) {
         // 이 함수를 **두 번** 부르는데(떼어내기 안에서 한 번, 이어서 세션 정리에서 한 번),
         // 두 번째가 방금 적어 둔 목록을 지우면 프로세스가 죽은 뒤 그 알람이 되살아난다.
         val pendingDisables = prefs.getStringSet(KEY_PENDING_DISABLE_ALARM_IDS, null)?.toSet()
+        // ⚠ **로그아웃 진행 표시도 살린다.** 이 clear 는 로그아웃 흐름 **한가운데서** 불린다
+        // (`detachAlarmsOnSignOut` 안에서 한 번, 이어서 세션 정리에서 한 번). 표시가 여기서
+        // 쓸려 나가면 두 번째 clear 이후 구간이 다시 무방비가 돼, 그때 돌아온 워커의 401 이
+        // `session_expired_owner` 를 남긴다 — 방금 떼어낸 알람이 로그인 화면 뒤에서 되살아난다.
+        // (위 `pendingDisables` 와 같은 이유·같은 모양이다.)
+        val signOutStartedAt = prefs.getLong(KEY_SIGN_OUT_STARTED_AT, 0L)
         // 세션 세대를 올린다 — 이 값이 바뀌면 "그 사이 세션이 끝났다" 는 뜻이다.
         // 자세한 계약은 [sessionGeneration] 주석 참고.
         val nextGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L) + 1L
@@ -272,8 +297,44 @@ class AuthSessionStore(context: Context) {
             .putLong(KEY_SESSION_GENERATION, nextGeneration)
             .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
             .also { if (!pendingDisables.isNullOrEmpty()) it.putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, pendingDisables) }
+            .also { if (signOutStartedAt > 0L) it.putLong(KEY_SIGN_OUT_STARTED_AT, signOutStartedAt) }
             .apply()
     }
+
+    /**
+     * **명시적 로그아웃이 시작됐다**고 적는다(`MainViewModel.clearSignedInSession` 진입).
+     *
+     * ⚠ 왜 메모리 플래그(`signingOut`)로 부족한가: 그건 **전경 ViewModel 의 것**이고,
+     * 백그라운드 워커는 자기 프로세스 문맥에서 [AuthSessionStore] 인스턴스를 새로 만들어
+     * 본다. 로그아웃 창에서는 워커가 보던 **세대도 토큰도 아직 그대로**다 —
+     * `api.logout()` 이 서버 `token_epoch` 를 먼저 올리고, 로컬 세대는 맨 마지막
+     * [clear] 에서야 오르기 때문이다. 그 사이 떠 있던 요청이 401 로 돌아오면 세대·토큰
+     * 두 문을 모두 통과해 [markSessionExpired] 를 쓰고, 그 표시가 **떼어낸 알람을
+     * 되살린다**(비로그인 화면 뒤에서 울려 끌 수도 없다).
+     *
+     * 시작 **시각**을 적는 이유와 창이 스스로 닫히는 규칙은 [signOutWindowOpen] 참고.
+     * 쓰기는 세션 쓰기와 **같은 락**을 잡는다 — 이 표시와 [clear] 가 어긋나면 안 된다.
+     */
+    fun beginSignOut() = synchronized(sessionWriteLock) {
+        prefs.edit().putLong(KEY_SIGN_OUT_STARTED_AT, System.currentTimeMillis()).apply()
+    }
+
+    /** 로그아웃이 끝났다(성공·실패 무관). 남겨 두면 다음 자동 만료가 표시를 못 남긴다. */
+    fun endSignOut() = synchronized(sessionWriteLock) {
+        prefs.edit().remove(KEY_SIGN_OUT_STARTED_AT).apply()
+    }
+
+    /**
+     * 지금이 명시적 로그아웃 창인가. 자동 401 처리가 **자동 만료 표시를 남길지** 가르는 값이다.
+     *
+     * 창을 놓친 쪽(false)의 결말은 이 수정 이전과 같다 — 새로 잃는 것이 없다.
+     */
+    fun signOutInProgress(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        signOutWindowOpen(
+            startedAtMillis = prefs.getLong(KEY_SIGN_OUT_STARTED_AT, 0L),
+            nowMillis = nowMillis,
+            windowMillis = SIGN_OUT_WINDOW_MILLIS,
+        )
 
     /**
      * **자동으로 세션이 끊긴(토큰 만료·폐기) 계정.** 없으면 null.
@@ -685,6 +746,20 @@ class AuthSessionStore(context: Context) {
         private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
         private const val KEY_SESSION_EXPIRED_OWNER = "session_expired_owner_user_id"
         private const val KEY_PENDING_DISABLE_ALARM_IDS = "pending_disable_alarm_ids"
+
+        // 명시적 로그아웃이 시작된 시각(없으면 0). [clear] 가 지우지 않는 값 — 이유는
+        // [beginSignOut] 주석 참고.
+        private const val KEY_SIGN_OUT_STARTED_AT = "sign_out_started_at"
+
+        /**
+         * 로그아웃 표시가 유효한 시간. 표시를 세운 뒤 남은 일은 전부 **로컬**이다(알람
+         * 떼어내기·prefs 비우기·매니페스트 삭제) — 초 단위로 끝나므로 1분이면 충분히
+         * 넉넉하고, 프로세스가 중간에 죽어도 창이 이만큼만 열려 있다.
+         *
+         * 길게 잡을수록 그 사이의 **진짜** 자동 만료가 표시를 못 남길 확률이 오른다.
+         * 짧게 잡을수록 로그아웃 창이 다시 새기 시작한다. 이 값을 만질 때는 양쪽을 같이 본다.
+         */
+        private const val SIGN_OUT_WINDOW_MILLIS = 60_000L
         private const val KEY_SESSION_GENERATION = "session_generation"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"

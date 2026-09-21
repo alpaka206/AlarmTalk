@@ -12,6 +12,7 @@ import java.net.UnknownHostException
 import java.io.InterruptedIOException
 import javax.net.ssl.SSLException
 import kotlin.coroutines.cancellation.CancellationException
+import retrofit2.HttpException
 
 object AlarmTalkLog {
     const val TAG = "AlarmTalk"
@@ -51,7 +52,9 @@ object AlarmTalkLog {
      * 3. **FCM 재시도 가능 코드.** [FCM_RETRYABLE_MESSAGES].
      *
      * ⚠ HTTP 4xx 는 여기서 가르지 않는다. `errorBody` 는 한 번만 읽히므로 호출부가 코드를
-     * 볼 자리에서 결정한다(예: `RemoteAlarmSyncWorker` 의 `CONSENT_REQUIRED`).
+     * 볼 자리에서 결정한다(예: `sync/SyncWorkerFailure.kt` 의 `CONSENT_REQUIRED`).
+     * 유일한 예외가 **401** 인데, 그건 본문이 아니라 상태코드만 보면 되므로 [isHandledAuthFailure]
+     * 로 따로 갈라 두었다.
      */
     fun isExpectedTransientFailure(error: Throwable): Boolean {
         if (error is CancellationException) return true
@@ -79,18 +82,75 @@ object AlarmTalkLog {
         else -> false
     }
 
+    /**
+     * **중앙 401 처리기가 이미 맡은 실패인가.** 이슈가 아니라 브레드크럼이다.
+     *
+     * 이 앱에서 401 은 예외 없이 한 곳으로 수렴한다 — 전경은 okhttp `Authenticator`
+     * (`AlarmTalkApiClient.UnauthorizedHandler` → `MainViewModel.handleUnauthorized`),
+     * 백그라운드는 `sync/SyncWorkerFailure.kt` 의 `SESSION_EXPIRED` 갈래다. 둘 다 하는 일이
+     * 같다: 세션을 끊고 재로그인을 안내한다. **사용자에게 이미 닿은 사실**이라 그 위에 이슈를
+     * 또 쌓을 이유가 없고, 쌓으면 한 번의 만료가 **워커 재시도 횟수만큼** 올라간다
+     * (ANDROID-M — 401 을 받고도 `Result.retry()` 로 영원히 돌던 워커가 그랬다).
+     *
+     * ⚠ **상태코드만 본다 — `apiError`/`apiErrorCode` 를 부르지 말 것.** `errorBody` 는 한 번만
+     * 읽히므로, 여기서 본문을 읽으면 코드를 봐야 할 호출부가 빈 본문을 받는다.
+     * `HttpException.code()` 는 본문을 건드리지 않는다.
+     *
+     * ⚠ **401 만이다.** 403 은 동의·권한 상태라 호출부가 코드로 가르고(`CONSENT_REQUIRED`),
+     * 그 밖의 4xx 는 그대로 올라간다. 인증 헤더를 빼먹는 우리 쪽 결함이 401 로 나타나도
+     * 조용해지지 않는다 — 그 경로는 세션을 끊고 "다시 로그인해 주세요" 를 띄운다.
+     *
+     * iOS 짝은 `AlarmTalkLog.swift` 의 같은 이름 함수다 — **한쪽만 고치지 말 것.**
+     */
+    fun isHandledAuthFailure(error: Throwable): Boolean = httpStatusCode(error) == 401
+
+    /**
+     * 원인 사슬에서 처음 만나는 HTTP 상태코드. 도메인 예외로 한 번 감싼 실패도 같은 실패다
+     * (저장소·리포지토리가 흔히 감싼다). 사슬이 순환해도 멈추도록 본 것을 기억한다.
+     */
+    private fun httpStatusCode(error: Throwable): Int? {
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            (current as? HttpException)?.let { return it.code() }
+            current = current.cause
+        }
+        return null
+    }
+
+    /**
+     * 브레드크럼으로 낮출 실패인가. 낮춘다면 어떤 갈래인지(브레드크럼 category)를 돌려준다.
+     *
+     * 갈래를 남기는 이유: 브레드크럼은 **다음 진짜 이벤트의 맥락**인데, 그때 "네트워크가
+     * 나빴다" 와 "세션이 끊겼다" 는 전혀 다른 이야기다. 하나로 뭉치면 맥락이 사라진다.
+     *
+     * ⚠ **`private` 이 아니라 `internal` 인 이유는 테스트다.** 여기가 낮추는 범위이고,
+     * 술어([isExpectedTransientFailure]·[isHandledAuthFailure])만 고정해 두면 누가 이 함수를
+     * "4xx 면 전부 auth" 로 넓혀도 **기존 테스트가 전부 초록**이다 — 403·404·5xx 가 이슈
+     * 목록에서 조용히 사라지고, 그게 바로 이 판정이 막으려던 사고다. 경계는 결과물인
+     * category 로 고정한다(`TransientFailureClassificationTest` 의
+     * `onlyUnauthorizedAndTransientBecomeBreadcrumbs`, iOS 짝은
+     * `AlarmTalkLog.handledFailureCategory` 와 `test_401_외의_상태코드는_그대로_이슈다`).
+     */
+    internal fun breadcrumbCategoryFor(error: Throwable): String? = when {
+        isExpectedTransientFailure(error) -> "transient"
+        isHandledAuthFailure(error) -> "auth"
+        else -> null
+    }
+
     // 잡아서 처리한(비크래시) 오류의 개발자 채널: Logcat + Sentry.
     // 사용자에게는 userFacingError() 등으로 다듬은 문구만 보여주고,
     // 원인 파악에 필요한 상세(스택·컨텍스트)는 이 함수로만 흘려보낸다.
     // Sentry가 초기화되지 않은 경우(DSN 미설정) capture* 는 no-op 이라 안전하다.
     fun reportError(message: String, error: Throwable? = null) {
-        if (error != null && isExpectedTransientFailure(error)) {
+        val breadcrumbCategory = if (error != null) breadcrumbCategoryFor(error) else null
+        if (error != null && breadcrumbCategory != null) {
             // 이슈가 아니라 브레드크럼이다 — 다음 진짜 이벤트에 맥락으로 붙고, 그 자체로는
             // 아무것도 만들지 않는다. Logcat 도 e 가 아니라 w 로 낮춘다.
             Log.w(TAG, message, error)
             runCatching {
                 val crumb = Breadcrumb().apply {
-                    category = "transient"
+                    category = breadcrumbCategory
                     level = SentryLevel.WARNING
                     this.message = redactUserUris(message)
                     setData("exception", error.javaClass.name)

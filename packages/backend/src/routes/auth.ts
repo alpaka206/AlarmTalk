@@ -46,6 +46,22 @@ const auth = new Hono<{ Bindings: Env }>();
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 const EMAIL_VERIFICATION_PURPOSE_RESET = 'reset';
 
+/**
+ * 검증 실패가 **이메일 하나뿐**인가.
+ *
+ * 비밀번호 누락 같은 게 섞여 있으면 false 다 — 그때 이메일만 지목해 말하면 사용자는
+ * 멀쩡한 주소를 고쳐 치며 헤맨다. zod 의 `issue.path` 는 로그인 바디에선 최상위 키
+ * 한 칸짜리다(중첩 객체가 없다).
+ */
+function isEmailOnlyValidationFailure(
+  issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey> }>,
+): boolean {
+  return (
+    issues.length > 0 &&
+    issues.every((issue) => issue.path.length === 1 && issue.path[0] === 'email')
+  );
+}
+
 
 type EmailVerificationRow = {
   id: string;
@@ -516,11 +532,25 @@ auth.post('/login', async (c) => {
 
   const parsed = LoginRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json(errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+    // 틀린 게 **이메일뿐**이면 그렇게 말한다. 예전에는 로그인만 `issues` 도 없이
+    // `AUTH_VALIDATION_FAILED` 하나로 답해서(가입·비번재설정은 싣는다) 앱은 무엇이
+    // 틀렸는지 알 길이 없었고, 화면에는 "로그인에 실패했어요" 만 떴다.
+    //
+    // ⚠ **상태코드는 400 그대로 둔다.** 401 로 내리면 자격증명 불일치와 같은 칸에
+    // 놓여, 계정 열거를 막으려고 일부러 하나로 합쳐 둔 아래 갈래와 뒤섞인다.
+    if (isEmailOnlyValidationFailure(parsed.error.issues)) {
+      return c.json(errorBody('AUTH_EMAIL_INVALID', 'Invalid email address'), 400);
+    }
+    return c.json(
+      { ...errorBody('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      400,
+    );
   }
 
-  const { email, password } = parsed.data;
-  const normalizedEmail = email.toLowerCase().trim();
+  // 정규화(trim·소문자)는 `LoginRequestSchema` 가 **검증 전에** 끝낸다 — 여기서 다시
+  // 하지 않는다. 라우트가 검증 뒤에 하던 시절에는 공백 하나가 400 으로 먼저 잘려 나가
+  // 이 줄까지 오지도 못했다.
+  const { email: normalizedEmail, password } = parsed.data;
   const db = getDB(c.env);
 
   try {

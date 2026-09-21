@@ -4,7 +4,16 @@ import { R2VoiceStorage } from './r2-storage';
 import { sendVoiceShareChangedPush } from './fcm';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { extractDeliveryTags, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
+import {
+  extractDeliveryTags,
+  parseSpeechStyle,
+  prepareAlarmTextWithVertex,
+  generatePrerenderClipText,
+  alarmTextRejectionReasonOf,
+  TAG_BODY_PATTERN,
+  type SpeechStyle,
+  type AlarmTextRejectionReason,
+} from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
@@ -759,6 +768,26 @@ export async function markPrerenderFailed(
 }
 
 /**
+ * 실패한 사전렌더 클립이 **무엇이었는가**. 구조화 로그·Sentry 태그로 그대로 나간다.
+ *
+ * ⚠ **낭독 문구·seed 원문은 넣지 말 것** — 개인 목소리 콘텐츠다. 되짚을 수 있는 식별자만
+ * 싣는다(이 넷이면 `CLONE_CLIP_SEEDS` 에서 어떤 대사였는지 코드로 찾아갈 수 있다).
+ */
+export interface PrerenderClipFailure {
+  voiceProfileId: string;
+  category: string;
+  /** 같은 (보이스·카테고리·언어) 안의 0-based 문구 인덱스. */
+  variant: number;
+  language: string;
+  /**
+   * 내용 위반이면 그 사유 식별자, 전송·인가 실패 등 그 밖이면 null.
+   *
+   * ⚠ 둘은 **대응이 정반대다** — 전자는 프롬프트·가드를, 후자는 상류·쿼터·자격증명을 본다.
+   */
+  reason: AlarmTextRejectionReason | null;
+}
+
+/**
  * 사전렌더 큐를 한 번 드레인한다 — **cron 틱과 등록 직후가 같은 코드를 쓴다.**
  *
  * 예전에는 이 루프가 `index.ts` 의 cron 안에만 있었고, 등록은 큐에 넣고 **다음 틱(최대
@@ -778,8 +807,14 @@ export async function runPrerenderBatch(
     maxClips: number;
     /** 동시에 손댈 목소리 수 상한. */
     maxVoices?: number;
-    /** 클립 1개 실패를 관측자에게 알린다(cron 은 Sentry 로 보낸다). */
-    onClipError?: (error: unknown) => void;
+    /**
+     * 클립 1개 실패를 관측자에게 알린다(cron 은 Sentry 로 보낸다).
+     *
+     * ⚠ **두 번째 인자를 버리지 말 것.** 에러만 받으면 로그에 "무엇이 실패했는지" 가 없어
+     * 어느 목소리의 어느 클립인지 추적이 불가능하다 — 실제로 그래서 사고 1건의 대상을
+     * 끝내 특정하지 못했다(ALARMTALK-BACKEND-9).
+     */
+    onClipError?: (error: unknown, failure: PrerenderClipFailure) => void;
   },
 ): Promise<{ claimed: number; rendered: number }> {
   const maxClips = Math.max(1, Math.trunc(options.maxClips));
@@ -836,7 +871,13 @@ export async function runPrerenderBatch(
           superseded = true;
           break;
         }
-        options.onClipError?.(genErr);
+        options.onClipError?.(genErr, {
+          voiceProfileId: target.voiceProfileId,
+          category: target.category,
+          variant: target.variantIndex,
+          language: target.language,
+          reason: alarmTextRejectionReasonOf(genErr),
+        });
         voiceError = true;
         // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
         // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우

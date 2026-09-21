@@ -1,3 +1,5 @@
+import { normalizeEmail } from '@alarmtalk/shared';
+
 import type { Env } from '../types';
 
 export const EMAIL_VERIFICATION_TTL_SECONDS = 10 * 60;
@@ -8,9 +10,18 @@ export const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60;
 // 동일 이메일 1일 발급 상한(IP 와 무관). 초과 시 추가 발송하지 않는다.
 export const EMAIL_VERIFICATION_DAILY_CAP = 10;
 
-export function normalizeAuthEmail(email: string): string {
-  return email.toLowerCase().trim();
-}
+/**
+ * 이메일 정규화 — 규칙의 **유일 출처는 `@alarmtalk/shared` 의 `normalizeEmail`** 이다.
+ *
+ * ⚠ **여기에 자체 구현을 다시 두지 말 것.** 예전에는 `toLowerCase().trim()` 이 따로
+ * 박혀 있었다. 결과는 같았지만 출처가 둘이라, 한쪽만 고치면 조용히 갈라진다 —
+ * `EmailSchema`(요청 검증)와 이 함수(저장·조회 키·코드 해시 입력)가 다른 값을 내는
+ * 순간, 검증은 통과하는데 **가입 때 쓴 키와 로그인 때 만드는 키가 달라진다.**
+ * 앱의 짝도 같은 규칙이다(안드로이드 `normalizeAuthEmail`, iOS `AuthEmailFormat.normalize`).
+ *
+ * 이름은 그대로 둔다 — 라우트 5곳(`routes/auth.ts`)과 아래 코드 해시가 이 이름을 부른다.
+ */
+export const normalizeAuthEmail = normalizeEmail;
 
 export function generateEmailVerificationCode(): string {
   const values = new Uint32Array(1);

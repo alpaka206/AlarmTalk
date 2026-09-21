@@ -9,6 +9,11 @@ import XCTest
 ///   2. refreshInterval 이 Android 의 15 분 주기와 동일.
 ///   3. scheduleNext() 가 throw 없이 호출 가능 (시스템 호출 실패를 swallow).
 ///   4. cancelAll() 이 throw 없이 호출 가능.
+///
+/// ⚠ **런치 핸들러의 격리는 여기서 못 잡는다.** 이 클래스는 통째로 `@MainActor` 라,
+/// 메인 액터에서 부르면 격리 검사가 그냥 통과한다 — 실제 배달은 백그라운드 큐에서 온다.
+/// 그 축은 `BackgroundSyncTaskLaunchHandlerTests`(비격리 클래스)가 맡는다. 이 파일에
+/// 옮겨 담지 말 것.
 @MainActor
 final class BackgroundSyncTaskTests: XCTestCase {
 

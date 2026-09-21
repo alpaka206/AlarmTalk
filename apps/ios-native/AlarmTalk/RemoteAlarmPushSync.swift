@@ -161,6 +161,14 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
                     "알람 push 실패(\(record.remoteAlarmId == nil ? "create" : "update")): \(detail)",
                     error: error
                 )
+                // ⚠ **401 이면 회차를 끊는다**(2026-09-21 Sentry ALARMTALK-IOS-2, 700건).
+                // 토큰이 죽었으면 남은 후보도 **전부 같은 401** 로 떨어진다 — 미동기 알람이
+                // N개면 한 회차가 같은 보고를 N건 쏟는다. 중앙 처리기가 세션을 끊는 것은
+                // 알림 디바운스 뒤라 그 사이 루프가 끝까지 돌고, 건마다 `markSyncFailed` 까지
+                // 남겨 멀쩡한 행이 무더기로 '동기화 실패' 가 된다.
+                // 계정 변경 `break` 와 같은 뜻이다 — **지금 이 회차로는 못 올린다.** 남은 건은
+                // syncState 가 그대로라 다음 회차(재로그인 뒤)에 다시 걸린다.
+                if case APIError.server(401, _, _) = error { break }
             }
         }
 

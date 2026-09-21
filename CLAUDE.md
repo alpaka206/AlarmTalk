@@ -604,5 +604,42 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
   없어서 만든 진입점이다.
 
+### 시스템이 큐를 정하는 콜백에 **메인 액터 클로저**를 넘기지 않는다 (iOS, 회귀 방지)
+
+`BGTaskScheduler.register(..., using: nil) { task in ... }` 의 트레일링 클로저에 `@Sendable` 을
+안 붙이면 **감싸는 `@MainActor` 클래스의 격리를 물려받는다.** `using: nil` 은 헤더 문서대로
+"기본 **백그라운드** 큐" 라, Swift 6 이 클로저 진입부에 심는 동적 격리 검사가 배달 즉시 실패해
+`dispatch_assert_queue(main)` 으로 **프로세스가 죽는다**.
+
+- 2026-08-11~09-21 내내 그랬다(Sentry ALARMTALK-IOS-4, 6명·32건). **사용자 눈에는 안 보인다** —
+  시스템이 task 배달하려고 백그라운드로 띄운 프로세스라서. 대신 `runAndSchedule` 안의 것이
+  전부 죽은 코드였다(토큰 롤링 갱신·예약 회수·목소리 접근권 재확인·push/pull·리컨사일러).
+  **알람 자체는 AlarmKit 예약이라 울렸다** — 그래서 아무도 몰랐다.
+- 규칙: 그런 콜백은 `{ @Sendable ... }` 로 못 박고, 비-Sendable 인자는 `nonisolated(unsafe)` 지역
+  상수로 받아 `Task { @MainActor in }` 으로 넘긴다. `expirationHandler` 도 같다.
+- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint). 회귀 테스트는 **비격리 테스트
+  메서드**여야 한다 — `@MainActor` 클래스에 넣으면 이 버그를 구조적으로 못 잡는다
+  (`AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`).
+
+### 테스트가 Sentry 로 쏘지 않게 한다 (양 앱)
+
+로보렉트릭이 매니페스트의 `AlarmTalkApplication` 을 그대로 띄우고, iOS 유닛 테스트는 TEST_HOST 로
+호스트 앱을 launch 한다 — **둘 다 프로덕션 초기화 경로를 탄다.** 2026-09-21 기준 Sentry 이벤트의
+99%(안드로이드 두 이슈만 10,256건)가 이 맥의 유닛 테스트였다. 진짜 사고가 그 사이에 묻힌다.
+
+- 안드로이드: `app/src/test/resources/robolectric.properties` 의 `application=android.app.Application`
+  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차).
+- iOS: `AlarmTalkLog.shouldStartCrashReporting(dsn:isRunningTests:)`.
+- ⚠ **예외 이름·메시지로 거르지 말 것.** 실기기에서 올라오는 것은 무엇이든 그대로 올라가야 한다
+  (`WorkManager is not initialized` 는 실기기에서 나면 진짜 사고이고, 그 유일한 신호다).
+
+### UI 테스트는 CI 에서 돌지 않는다 — **낡은 줄 아무도 모른다** (iOS)
+
+`ios-build.yml` 은 유닛 테스트 + Release 빌드만 돌린다. `AlarmTalkUITests` 는 로컬에서만 도므로
+화면에서 없앤 행을 계속 찾는 테스트가 조용히 남는다. 실제로 같은 테스트가 두 번 낡았다 —
+'진동'(2026-08-17 삭제) → '다시 울림'(편집기에서 없앰) → 지금은 '목소리 크기'.
+**행 이름으로 검사할 때는 그 행이 지금 있는지, 어떤 조건에서 그려지는지 먼저 확인할 것**
+(예: '알람음' 행이 있는 '세부 설정' 카드는 `playMode != .voiceOnly` 일 때만 그려진다).
+
 ## 진행 중 작업 (세션 재개 시 먼저 읽을 것)
 현재 상태·폰 테스트 체크리스트·남은 follow-up: **[`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)**.

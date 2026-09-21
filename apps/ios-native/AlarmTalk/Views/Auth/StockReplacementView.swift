@@ -90,7 +90,11 @@ struct StockReplacementView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AlarmTalkTheme.background)
-        // 받는 동안 값이 움직인다. 캐시 파일 검사라 값싸다(`ClipPreparationView` 와 같은 주기).
+        // 받는 동안 값이 움직인다(`ClipPreparationView` 와 같은 주기).
+        // ⚠ **여기서 부르는 것이 값싸야 이 주기가 성립한다.** 한때 이 한 줄이 캐시 디렉터리를
+        // 클립 수 × 2 번 훑었고(76클립이면 152회), 그게 2초마다 **메인 액터에서** 돌았다.
+        // 지금은 한 번 물을 때 전량 스캔이 한 번이다(`AudioCacheStore.missingOrStaleCacheKeys`).
+        // 진행률이 보는 값을 늘릴 때는 그 함수에 얹을 것 — 여기서 클립마다 캐시를 묻지 말 것.
         .task {
             while !Task.isCancelled {
                 progress = StockClipPrefetcher.defaultVoiceProgress()

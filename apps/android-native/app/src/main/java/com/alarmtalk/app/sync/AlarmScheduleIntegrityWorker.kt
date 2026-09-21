@@ -47,8 +47,18 @@ class AlarmScheduleIntegrityWorker(
         Log.i(TAG, "Alarm schedule integrity check complete scheduled=$scheduled")
         Result.success()
     }.getOrElse { error ->
-        AlarmTalkLog.reportError("Alarm schedule integrity check failed", error)
-        Result.retry()
+        // ⚠ **이 워커는 네트워크를 타지 않는다** — 세션도 토큰도 쓰지 않으므로 401·403 이
+        // 올 수 없다. 그래서 갈래가 둘뿐이다. 그래도 [syncWorkerOutcome] 을 지나가는 이유는
+        // **취소를 되던지기 위해서**다: `ExistingWorkPolicy.REPLACE` 로 대체될 때마다
+        // `CancellationException` 이 나는데, 삼키고 `retry()` 를 돌려주면 WorkManager 는
+        // 무시하지만 그 사이 Sentry 에 "Job was cancelled" 가 한 건씩 쌓인다(2026-09-14).
+        when (syncWorkerOutcome(error)) {
+            SyncWorkerOutcome.RETHROW -> throw error
+            else -> {
+                AlarmTalkLog.reportError("Alarm schedule integrity check failed", error)
+                Result.retry()
+            }
+        }
     }
 }
 

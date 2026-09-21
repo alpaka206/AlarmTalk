@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import android.util.Patterns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
@@ -201,6 +200,9 @@ internal fun AuthScreen(
     emailVerified: String?,
     // 로그인/회원가입 실패 인라인 안내 — 전역 스낵바는 열려 있는 키보드에 가려 안 보여서 화면 안에 띄운다.
     loginError: String? = null,
+    // 그 실패의 **에러 코드**. 문구는 번역되므로 갈래 판정은 언제나 이 값으로 한다
+    // (`isEmailFormatErrorCode`). iOS `AuthViewModel.loginErrorCode` 와 같은 짝이다.
+    loginErrorCode: String? = null,
     registerError: String? = null,
     // 회원가입 → 로그인 자동 전환(이미 가입된 이메일) 때 로그인 화면에 남는 이유 안내.
     authNotice: String? = null,
@@ -221,8 +223,10 @@ internal fun AuthScreen(
     var emailCode by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
-    val normalizedEmail = email.trim().lowercase()
-    val emailLooksValid = Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()
+    // 형식 규칙의 단일 출처는 `ui/auth/AuthEmail.kt` — 서버 `@alarmtalk/shared` 의
+    // `EMAIL_PATTERN` 과 같은 값이다. 예전의 `Patterns.EMAIL_ADDRESS` 는 서버보다
+    // 좁아서(아포스트로피 거부) 정당한 주소를 가진 사람의 로그인을 막았다.
+    val normalizedEmail = normalizeAuthEmail(email)
     val passwordAtLeastMin = password.length >= 8
     val passwordUnderMax = password.length <= 128
     val passwordHasLetter = password.any { it.isLetter() }
@@ -234,19 +238,52 @@ internal fun AuthScreen(
     val passwordMatches = password.isNotBlank() && password == confirmPassword
     val isEmailVerified = mode == AuthMode.Login || emailVerified == normalizedEmail
     val codeSentForEmail = emailVerificationSentTo == normalizedEmail
+    // 서버가 이메일 형식을 지적한 것(`AUTH_EMAIL_INVALID`)인지 가른다.
+    //
+    // ⚠ **문구를 비교하지 말 것**(2026-09-21 리뷰). 예전에는
+    // `loginError == stringResource(R.string.auth_error_email_invalid)` 였다 — 문구를 한 글자
+    // 고치거나 다른 에러 코드가 같은 문구 자원을 가리키게 되는 순간 **아무 경고 없이**
+    // 갈래가 어긋나고, 형식 오류가 비밀번호 칸 아래로 내려간다. 판정은 코드 하나다.
+    val emailInvalidMessage = stringResource(R.string.auth_error_email_invalid)
+    val loginErrorIsEmailFormat = mode == AuthMode.Login && isEmailFormatErrorCode(loginErrorCode)
+    // 비밀번호 칸 아래에는 **이메일 형식이 아닌** 로그인 실패만 남는다.
+    val showPasswordLoginError =
+        mode == AuthMode.Login && loginError != null && !loginErrorIsEmailFormat
+
     // 로그인 실패 시 비밀번호만 비운다 — 오타 대부분이 비밀번호 쪽이고, 이메일까지 비우면
     // 맞게 입력한 이메일을 다시 치는 마찰만 생긴다(문구가 이메일 확인도 함께 안내).
-    LaunchedEffect(loginError) {
-        if (loginError != null) password = ""
+    //
+    // ⚠ **이메일 형식 오류에서는 비우지 않는다.** 서버가 비밀번호를 **보지도 않은**
+    // 실패라, 비우면 멀쩡한 비밀번호를 이메일 오타 때문에 다시 치게 된다.
+    // 여기서도 갈래는 코드로 가른다 — 문구 비교는 조용히 어긋난다.
+    LaunchedEffect(loginError, loginErrorCode) {
+        if (loginError != null && !isEmailFormatErrorCode(loginErrorCode)) password = ""
     }
 
     // 상한을 넘겨 치려 했는지. 값 자체는 30자에서 잘리므로 값만으로는 알 수 없다.
     var nameTooLong by remember { mutableStateOf(false) }
+    // 이메일을 보내는 버튼을 눌렀는데 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
+    // 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
+    // 서버도 같은 판정을 `AUTH_EMAIL_INVALID` 로 돌려주므로 문구는 한 벌뿐이다.
+    //
+    // ⚠ 로그인 전용이 아니다 — **가입의 '이메일 인증'·'계정 만들기' 도 같은 플래그**를 쓴다.
+    // 예전에는 가입 쪽만 `emailLooksValid` 로 버튼을 죽여 놓고 아무 말도 하지 않아서,
+    // 주소를 잘못 친 사람은 눌리지 않는 버튼 앞에서 이유를 알 수 없었다(죽은 버튼은
+    // 고장으로 읽힌다 — CLAUDE.md).
+    var emailFormatError by remember { mutableStateOf(false) }
+    // 모드가 바뀌면 형식 경고를 지운다. `email` 상태는 로그인↔가입을 오가도 그대로라,
+    // 안 지우면 로그인에서 띄운 경고가 가입에 다녀온 뒤에도 **아무것도 안 했는데** 살아
+    // 있다. iOS `Views/Auth/LoginView.swift` 의 `handleModeChange` 도 같이 지운다.
+    LaunchedEffect(mode) { emailFormatError = false }
+    // ⚠ **형식으로 버튼을 죽이지 않는다 — 두 모드 모두**(2026-09-21 리뷰).
+    // 가입 쪽에만 `emailLooksValid` 가 남아 있어서, 로그인은 눌러서 이유를 듣는데
+    // 가입은 같은 주소로 버튼이 죽어 있었다. 잠그는 것은 **보낼 것이 없을 때**뿐이고
+    // (빈 이름·미인증·비밀번호 규칙), 형식은 누른 뒤에 이메일 칸 아래로 말한다.
     val canSubmit = if (mode == AuthMode.Login) {
-        email.isNotBlank() && password.isNotBlank()
+        canSubmitLogin(email, password)
     } else {
         name.isNotBlank() &&
-            emailLooksValid &&
+            canRequestEmailCode(email) &&
             isEmailVerified &&
             passwordPolicyValid &&
             passwordMatches
@@ -344,19 +381,36 @@ internal fun AuthScreen(
                 }
             }
 
+            // 형식 오류는 **이메일 칸 아래**에 붙인다. 나머지 서버 실패(`loginError`)는
+            // 비밀번호 칸 아래지만, 이건 이메일을 고쳐야 하는 일이라 고칠 칸 옆에 있어야 한다.
+            //
+            // ⚠ **앱이 잡은 것과 서버가 잡은 것이 같은 자리에 뜬다.** 판정은 같은데
+            // 앱 갈래는 이메일 칸, 서버 갈래는 비밀번호 칸이면 사용자는 같은 말을 두
+            // 자리에서 보게 되고, 비밀번호 쪽에 뜬 회차에는 비밀번호부터 다시 친다.
+            //
+            // ⚠ **가입 모드에도 붙는다.** `emailFormatError` 는 '이메일 인증' 버튼을 누른
+            // 회차에도 켜지므로, 로그인에서만 그리면 가입 쪽은 눌러도 아무 말이 없다.
+            // 서버 갈래(`loginErrorIsEmailFormat`)는 로그인 응답이라 로그인 모드에서만 온다.
+            val showEmailFormatError = emailFormatError || loginErrorIsEmailFormat
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 AuthFieldLabel(stringResource(R.string.auth_label_email))
                 OutlinedTextField(
                     value = email,
                     onValueChange = {
                         email = it
+                        emailFormatError = false
                         onClearLoginError()
                     },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,
                     colors = authFieldColors(),
-                    isError = mode == AuthMode.Login && loginError != null,
+                    isError = showEmailFormatError || (mode == AuthMode.Login && loginError != null),
+                    supportingText = if (showEmailFormatError) {
+                        { Text(emailInvalidMessage, color = AuthErrorText) }
+                    } else {
+                        null
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next,
@@ -366,9 +420,17 @@ internal fun AuthScreen(
             }
 
             if (mode == AuthMode.Register) {
-                val verifyEnabled = !busy && emailLooksValid && !isEmailVerified
+                // ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다.
+                // 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친 사람은 눌리지
+                // 않는 '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.**
+                val verifyEnabled = !busy && canRequestEmailCode(email) && !isEmailVerified
                 OutlinedButton(
-                    onClick = { onRequestEmailVerification(email) },
+                    onClick = {
+                        when (authEmailSubmitOutcome(email)) {
+                            AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
+                            AuthEmailSubmitOutcome.Submit -> onRequestEmailVerification(email)
+                        }
+                    },
                     enabled = verifyEnabled,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -459,8 +521,10 @@ internal fun AuthScreen(
                     enabled = !busy,
                     shape = WakerInputShape,
                     colors = authFieldColors(),
-                    isError = mode == AuthMode.Login && loginError != null,
-                    supportingText = if (mode == AuthMode.Login && loginError != null) {
+                    // 이메일 형식 갈래는 **위 이메일 칸**이 맡는다 — 같은 문구를 두
+                    // 자리에 띄우지 않는다.
+                    isError = showPasswordLoginError,
+                    supportingText = if (showPasswordLoginError && loginError != null) {
                         { Text(loginError, color = AuthErrorText) }
                     } else {
                         null
@@ -543,8 +607,18 @@ internal fun AuthScreen(
                     else -> stringResource(R.string.auth_title_login)
                 },
                 onClick = {
-                    if (mode == AuthMode.Register) onRegister(email, password, name, emailCode)
-                    else onLogin(email, password)
+                    // ⚠ **버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜
+                    // 안 되는지 말한다. 이메일 형식은 서버에 물어볼 것도 없는 실패라
+                    // 네트워크를 타기 전에 여기서 끊는다(서버 판정과 같은 갈래 =
+                    // `AUTH_EMAIL_INVALID`). 판정은 **두 모드가 같은 함수**를 쓴다.
+                    when (authEmailSubmitOutcome(email)) {
+                        AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
+                        AuthEmailSubmitOutcome.Submit -> if (mode == AuthMode.Register) {
+                            onRegister(email, password, name, emailCode)
+                        } else {
+                            onLogin(email, password)
+                        }
+                    }
                 },
                 enabled = !busy && canSubmit,
             )

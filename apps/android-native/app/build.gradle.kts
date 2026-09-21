@@ -153,8 +153,11 @@ android {
         // 워커 취소·일시적 네트워크 실패를 Sentry 이슈로 올리던 것을 고친다(#749).
         // 28 = 1.2.8. 결제(애플 체인 소유권·확정 정직화)와 목소리 등록 진행률(생성+다운로드
         // 하나의 퍼센트)·등록 직후 목록 갱신 릴리스. iOS 와 같은 versionName 을 쓴다.
-        versionCode = 28
-        versionName = "1.2.8"
+        // 29 = 1.2.9. Sentry 후속: 유닛 테스트가 프로덕션 Application 을 띄워 이벤트를 1만 건
+        // 쏘던 것, 인증 워커가 폐기된 토큰으로 401 을 영원히 재시도하던 것, 로그인 이메일
+        // 형식 판정이 서버보다 빡빡해 정당한 주소가 막히던 것을 고친다.
+        versionCode = 29
+        versionName = "1.2.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

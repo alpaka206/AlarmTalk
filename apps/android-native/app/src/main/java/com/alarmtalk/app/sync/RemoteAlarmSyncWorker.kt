@@ -15,7 +15,6 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.SessionTokenRenewal
-import com.alarmtalk.app.network.apiErrorCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -31,6 +30,10 @@ class RemoteAlarmSyncWorker(
         // 세대 검사가 통과하는데 데이터는 A 것이다. 이 순서면 세대가 옛것이라 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 401 을 받았을 때 "내가 실제로 보낸 토큰" 이 무엇인지 알아야 한다 — 아래 갱신이
+        // 토큰을 굴리면 그 뒤의 pull 은 **새 토큰**으로 나가기 때문이다. 시작 토큰으로
+        // 굳혀 두면 굴러간 뒤의 401 을 '지나간 토큰' 으로 오판해 끊어야 할 세션을 못 끊는다.
+        var usedToken = session.token
         return runCatching {
             val api = AlarmTalkApiClient.create()
 
@@ -42,6 +45,7 @@ class RemoteAlarmSyncWorker(
 
             // 갱신됐을 수 있으니 저장소에서 다시 읽는다. 세션이 끝났으면 조용히 종료한다.
             val token = sessionStore.read()?.token ?: return@runCatching Result.success()
+            usedToken = token
             val result = AlarmAppContainer.repository(applicationContext)
                 .pullReceivedAlarms(api, token)
             Log.i(
@@ -54,13 +58,24 @@ class RemoteAlarmSyncWorker(
                 Result.success()
             }
         }.getOrElse { error ->
-            when (remoteAlarmSyncFailureOutcome(error)) {
-                RemoteAlarmSyncFailureOutcome.RETHROW -> throw error
-                RemoteAlarmSyncFailureOutcome.CONSENT_PENDING -> {
+            when (syncWorkerOutcome(error)) {
+                SyncWorkerOutcome.RETHROW -> throw error
+                SyncWorkerOutcome.SESSION_EXPIRED -> {
+                    // 재시도해 봐야 같은 토큰이 또 거절당한다 — 세션을 끊고 끝낸다.
+                    endSessionAfterWorkerUnauthorized(
+                        sessionStore = sessionStore,
+                        expectedGeneration = startGeneration,
+                        usedToken = usedToken,
+                        userId = session.user.id,
+                        workerName = "Remote alarm worker",
+                    )
+                    Result.success()
+                }
+                SyncWorkerOutcome.CONSENT_PENDING -> {
                     Log.i(TAG, "Remote alarm worker deferred: consent not settled yet")
                     Result.success()
                 }
-                RemoteAlarmSyncFailureOutcome.RETRY -> {
+                SyncWorkerOutcome.RETRY -> {
                     AlarmTalkLog.reportError("Remote alarm worker failed", error)
                     Result.retry()
                 }
@@ -124,29 +139,3 @@ class RemoteAlarmSyncWorker(
         }
     }
 }
-
-/**
- * `doWork` 의 `runCatching` 이 잡은 실패를 어떻게 마무리할지.
- *
- * - [RETHROW]: **취소는 오류가 아니다.** `CoroutineWorker` 가 멈추거나(`ExistingWorkPolicy.REPLACE`
- *   로 대체되는 앱 복귀 때마다) 나며, `runCatching` 은 이것까지 잡는다. 삼키고 `retry()` 를
- *   돌려주면 WorkManager 는 무시하지만 그 사이 Sentry 에 "Job was cancelled" 가 한 건씩
- *   쌓였다(2026-09-14, 실사용자 10명·17건). 되던져야 WorkManager 가 취소로 본다.
- * - [CONSENT_PENDING]: 로그인 직후 동의 전에는 서버가 모든 데이터 라우트를 403
- *   `CONSENT_REQUIRED` 로 막는다(`middleware/consent.ts`). 사용자가 동의를 마쳐야 풀리는
- *   상태라 백오프 재시도는 403 만 반복한다 — 한 사용자가 17분에 12건을 남겼다. 성공으로
- *   끝내고, 동의 뒤 알람 탭 진입의 `syncNow` 와 15분 주기가 다시 끌어온다. 전경 경로
- *   (`MainViewModelAuthActions` 의 `syncNow`)와 같은 판단이다.
- *   ⚠ 정확히 `CONSENT_REQUIRED` 만이다 — `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION`
- *   같은 실제 인증·동의 파손은 [RETRY] 로 가 모니터링에 남는다.
- * - [RETRY]: 그 밖의 실패. 보고하고 재시도한다(일시적 네트워크 실패는 `AlarmTalkLog` 가
- *   이슈 대신 브레드크럼으로 낮춘다).
- */
-internal enum class RemoteAlarmSyncFailureOutcome { RETHROW, CONSENT_PENDING, RETRY }
-
-internal fun remoteAlarmSyncFailureOutcome(error: Throwable): RemoteAlarmSyncFailureOutcome =
-    when {
-        error is CancellationException -> RemoteAlarmSyncFailureOutcome.RETHROW
-        apiErrorCode(error) == "CONSENT_REQUIRED" -> RemoteAlarmSyncFailureOutcome.CONSENT_PENDING
-        else -> RemoteAlarmSyncFailureOutcome.RETRY
-    }

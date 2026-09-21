@@ -1,10 +1,97 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import {
+  EMAIL_PATTERN,
+  EmailSchema,
   RegisterRequestSchema,
   LoginRequestSchema,
   DisplayNameSchema,
   clampDisplayName,
+  isValidEmailFormat,
+  normalizeEmail,
 } from '../src/index.js';
+
+/**
+ * **세 구현이 같은 답을 내야 하는 케이스 표.**
+ *
+ * 같은 표가 앱에도 있다 — 안드로이드 `core/AuthEmailFormatTest.kt`, iOS
+ * `AuthEmailFormatTests.swift`. 한 줄을 고치면 **셋을 같이 고친다.** 앱이 서버보다
+ * 느슨하면 서버가 거절하고, 빡빡하면 서버가 허용하는 주소를 쓸 수 없다.
+ */
+const EMAIL_CASES: ReadonlyArray<readonly [string, boolean, string]> = [
+  // ⚠ 이 줄이 이 표가 생긴 이유다. 서버는 받는데 앱 둘이 막아서, 이 주소로 가입한
+  // 사람은 **로그인 자체가 불가능**했다(CLAUDE.md 의 "O'Brien 은 정당한 이름이다").
+  ["o'brien@example.com", true, '아포스트로피'],
+  // 반대 방향. 앱 둘은 받았지만 서버가 거절해 왔다 — 이제 앱도 같이 거절한다.
+  ['user%tag@example.com', false, '퍼센트'],
+  ['  KIM@Example.COM  ', true, '앞뒤 공백 + 대문자'],
+  ['WITH-CAPS@DOMAIN.COM', true, '대문자'],
+  ['a.b+tag@sub.example.co', true, '점·플러스·서브도메인'],
+  ['no-at-sign', false, '@ 없음'],
+  ['a@example.c', false, 'TLD 1글자'],
+  ['@no-local.com', false, '로컬 파트 없음'],
+  ['space in@local.com', false, '가운데 공백'],
+  ['', false, '빈 문자열'],
+];
+
+describe('이메일 형식 규칙', () => {
+  it.each(EMAIL_CASES)('%s → %s (%s)', (input, expected) => {
+    expect(isValidEmailFormat(input)).toBe(expected);
+  });
+
+  // 같은 표를 스키마로도 돌린다 — 판정과 스키마가 갈라지면 앱이 통과시킨 값을
+  // 서버가 거절하는 원래 사고로 되돌아간다.
+  it.each(EMAIL_CASES)('스키마도 같은 답을 낸다: %s → %s (%s)', (input, expected) => {
+    expect(EmailSchema.safeParse(input).success).toBe(expected);
+    expect(
+      LoginRequestSchema.safeParse({ email: input, password: 'any-non-empty' }).success,
+    ).toBe(expected);
+  });
+
+  it('스키마가 돌려주는 값은 정규화된 값이다', () => {
+    expect(EmailSchema.parse('  KIM@Example.COM  ')).toBe('kim@example.com');
+    expect(normalizeEmail('  KIM@Example.COM \n')).toBe('kim@example.com');
+  });
+
+  /**
+   * ⚠ **좁히면 가입자가 로그인 불가가 된다.** 지금까지 실제로 가입을 받아 온 규칙은
+   * zod 의 `.email()` 기본 정규식이므로, 새 패턴은 **그것이 받던 것을 최소한 그대로
+   * 받아야 한다.** 케이스를 손으로 고르면 고른 사람이 생각 못 한 글자가 빠지므로,
+   * 로컬·도메인·TLD 조각을 곱해 만든 표를 통째로 대조한다.
+   *
+   * 조각에는 일부러 함정을 섞었다 — 점 연속·앞뒤 점·언더스코어 도메인·하이픈으로
+   * 시작하는 라벨처럼, 사람이 "당연히 되겠지" 하고 넘기는 경계들이다.
+   */
+  it('zod 의 기본 이메일 규칙보다 좁지 않다', () => {
+    const zodEmail = z.string().email();
+    const locals = ['a', 'A1', "o'brien", 'a.b', 'a..b', '.a', 'a.', '_', '+', '-', '%', 'a b', "'", '', 'a+b'];
+    const domains = ['example', 'ex-ample', '-example', 'example-', 'sub.example', 'ex_ample', '', 'e', 'EX'];
+    const tlds = ['com', 'c', '', 'co.kr', 'CO', 'c0m', '-com', 'museum'];
+
+    const candidates: string[] = [];
+    for (const local of locals) {
+      for (const domain of domains) {
+        for (const tld of tlds) candidates.push(`${local}@${domain}.${tld}`);
+      }
+      candidates.push(local, `${local}@example.com`, `  ${local}@EXAMPLE.COM  `);
+    }
+
+    const acceptedByZod = candidates.filter((c) => zodEmail.safeParse(normalizeEmail(c)).success);
+    // 표가 통째로 거절되고 있으면 이 검사는 아무것도 지키지 못한다.
+    expect(acceptedByZod.length).toBeGreaterThan(50);
+
+    const narrowed = acceptedByZod.filter((c) => !isValidEmailFormat(c));
+    expect(narrowed).toEqual([]);
+  });
+
+  it('패턴 상수는 앱이 베껴 쓰는 값 그대로다', () => {
+    // 앱 둘이 같은 문자열을 자기 언어로 적어 둔다. 여기서 바뀌면 앱도 같이 바꿔야
+    // 하므로, 값을 못 박아 "여기만 고치고 끝" 을 막는다.
+    expect(EMAIL_PATTERN).toBe(
+      "^(?:[A-Za-z0-9_'+-]+\\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\\.)+[A-Za-z]{2,}$",
+    );
+  });
+});
 
 describe('RegisterRequestSchema', () => {
   it('accepts a well-formed registration', () => {
@@ -66,6 +153,34 @@ describe('LoginRequestSchema', () => {
   });
   it('rejects empty password', () => {
     expect(() => LoginRequestSchema.parse({ email: 'kim@example.com', password: '' })).toThrow();
+  });
+
+  // ⚠ **정규화가 형식 검증보다 먼저**여야 한다. 순서가 뒤집히면 앞뒤 공백 하나로
+  // 로그인이 400 이 난다 — 자동완성·복사붙여넣기가 실제로 붙이는 값이다.
+  it('앞뒤 공백과 대문자를 검증 전에 정규화한다', () => {
+    const l = LoginRequestSchema.parse({
+      email: '  KIM@Example.COM \n',
+      password: 'any-non-empty',
+    });
+    expect(l.email).toBe('kim@example.com');
+  });
+
+  it('정규화해도 이메일이 아니면 거부한다', () => {
+    expect(() =>
+      LoginRequestSchema.parse({ email: '  not-an-email  ', password: 'any-non-empty' }),
+    ).toThrow();
+  });
+
+  // 서버가 이메일만 지목해 답하려면(`AUTH_EMAIL_INVALID`) issue 의 path 가 email 하나뿐
+  // 이어야 한다. 비밀번호까지 비어 있으면 두 개가 되고, 그때는 이메일만 고쳐도 통과하지
+  // 못하므로 백엔드가 기존 `AUTH_VALIDATION_FAILED` 로 되돌아간다.
+  it('이메일만 틀리면 issue 도 email 하나뿐이다', () => {
+    const bad = LoginRequestSchema.safeParse({ email: 'nope', password: 'any-non-empty' });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues.map((i) => i.path.join('.'))).toEqual(['email']);
+
+    const both = LoginRequestSchema.safeParse({ email: 'nope', password: '' });
+    expect(both.error?.issues.map((i) => i.path.join('.')).sort()).toEqual(['email', 'password']);
   });
 });
 

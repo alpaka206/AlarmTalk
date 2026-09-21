@@ -152,12 +152,29 @@ final class StockClipPrefetcher: ObservableObject {
     }
 
     /// 받을 목록 중 **아직 캐시에 없는(또는 낡은) 것**.
-    private static func missingClips(_ clips: [StockClip]) -> [StockClip] {
-        let cache = AudioCacheStore.shared
+    ///
+    /// ⚠ **클립마다 캐시를 따로 묻지 말 것**(2026-09-21). `cachedURL`·`isStale` 은 부를
+    /// 때마다 캐시 디렉터리를 통째로 훑어서, 클립 76개면 한 번 세는 데 전량 스캔이
+    /// **152회** 돌았다. 그걸 부르는 자리가 전부 **메인 액터**다 — 2초 폴링
+    /// (`Views/Auth/StockReplacementView`), 1.5초 폴링(`ClonePrerenderDrive`), 목소리 목록
+    /// 본문(`Views/Voices/VoiceProfileManagementPanel`), 그리고 아래 `run` 이 배치마다 하는
+    /// 진행률 갱신까지. 한 번에 물어 한 번만 훑는다(`AudioCacheStore.missingOrStaleCacheKeys`).
+    ///
+    /// ⚠ **`internal`인 이유는 회귀 테스트다**(`AlarmTalkTests/StockClipProgressScanTests`) —
+    /// 스캔 횟수를 세어 이 회귀가 다시 들어오는 것을 막는다. 앱에서는 이 파일 안에서만 쓴다.
+    static func missingClips(_ clips: [StockClip]) -> [StockClip] {
+        guard !clips.isEmpty else { return [] }
+        let missingKeys = AudioCacheStore.shared.missingOrStaleCacheKeys(
+            clips.map { clip -> (cacheKey: String, remoteAudioUri: String?) in
+                (
+                    cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId),
+                    remoteAudioUri: clip.audioUrl
+                )
+            }
+        )
+        guard !missingKeys.isEmpty else { return [] }
         return clips.filter {
-            let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
-            return cache.cachedURL(for: key) == nil
-                || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
+            missingKeys.contains(AudioCacheStore.stockCacheKey(messageId: $0.messageId))
         }
     }
 
