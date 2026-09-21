@@ -597,7 +597,14 @@ struct VoiceProfileManagementPanel: View {
                     askFailed = true
                     continue
                 }
+                let previous = prerenderStatuses[profile.id]?.status
                 prerenderStatuses[profile.id] = status
+                // ⚠ **생성이 끝난 순간 매니페스트를 다시 받는다**(2026-09-21). 새 클립은 그때
+                //   생긴다 — 앱이 든 목록을 안 고치면 편집기 관문이 "아직 준비 안 됨" 으로
+                //   판정해 방금 만든 목소리를 고를 수 없다(`hasCompleteBucket`).
+                if previous == "pending", status.status == "done" {
+                    _ = await voice.loadStockClips(session: auth.session, force: true)
+                }
                 if status.status == "pending" {
                     anyPending = true
                     // 앱이 열려 있는 동안은 cron 을 기다리지 않고 우리가 앞당긴다
