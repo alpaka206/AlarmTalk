@@ -151,8 +151,10 @@ android {
         // 26 = 1.2.6. 울림/구독 동기화 안정화 릴리스다.
         // 27 = 1.2.7. 로그인 직후 동의 전 백그라운드 알람 동기화가 403 만 반복하던 것과,
         // 워커 취소·일시적 네트워크 실패를 Sentry 이슈로 올리던 것을 고친다(#749).
-        versionCode = 27
-        versionName = "1.2.7"
+        // 28 = 1.2.8. 결제(애플 체인 소유권·확정 정직화)와 목소리 등록 진행률(생성+다운로드
+        // 하나의 퍼센트)·등록 직후 목록 갱신 릴리스. iOS 와 같은 versionName 을 쓴다.
+        versionCode = 28
+        versionName = "1.2.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
