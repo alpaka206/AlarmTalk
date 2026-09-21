@@ -55,8 +55,20 @@ struct ClipPreparationView: View {
             )
         }
         // 다 되면 **아무 말 없이** 닫는다 — "다 됐어요" 를 또 띄우지 않는다(2026-09-21 지시).
+        //
+        // ⚠ **닫기 전에 목록과 매니페스트를 다시 받는다**(2026-09-21 실기기 녹화). 등록은
+        //   서버 상태를 두 군데 바꾼다 — 목소리 목록(승격)과 클립 매니페스트(사전렌더). 둘 다
+        //   **이 화면이 도는 동안** 바뀌는데 아무도 다시 받지 않아, 돌아간 목소리 탭에는 방금
+        //   만든 목소리가 없고(다른 이유로 새로고침될 때까지), 편집기 관문은 옛 매니페스트로
+        //   "아직 준비 안 됨" 이라 판정해 **고른 목소리를 되돌렸다**(그때 준비 화면은 서버에서
+        //   새로 받아 100% 를 보여 줬다 — 두 화면이 서로 다른 목록을 본 것이다).
         .onChange(of: drive.phase) { _, phase in
-            if registrationStyle, phase == .done { onDismiss?() }
+            guard registrationStyle, phase == .done else { return }
+            Task {
+                await voiceStudio.loadStockClips(session: auth.session, force: true)
+                await voiceStudio.refresh(session: auth.session, force: true, successMessage: nil)
+                onDismiss?()
+            }
         }
         .task { if !registrationStyle { await refresh() } }
         // 받는 동안 값이 움직이므로 주기적으로 다시 센다. 캐시 파일 검사라 값싸고,
@@ -228,6 +240,13 @@ struct ClipPreparationView: View {
             var targets = voiceStudio.ownedVoiceProfileIDs
             if let targetVoiceID, !targetVoiceID.isEmpty { targets.insert(targetVoiceID) }
             prefetcher.start(session: auth.session, ownedVoiceProfileIDs: targets)
+        } else if let targetVoiceID,
+                  !voiceStudio.stockClips.contains(where: { $0.voiceProfileId == targetVoiceID }) {
+            // ⚠ **관문과 이 화면이 같은 목록을 보게 맞춘다**(2026-09-21). 이 화면은 서버에서
+            //   새로 받아 "준비됐어요" 라고 하는데, 관문(`hasCompleteBucket`)은 앱이 들고 있는
+            //   매니페스트를 본다 — 거기 이 목소리의 클립이 하나도 없으면 돌아가자마자 또 막고
+            //   고른 목소리를 되돌린다. 여기서 한 번 받아 두면 그 고리가 끊긴다.
+            await voiceStudio.loadStockClips(session: auth.session, force: true)
         }
     }
 
