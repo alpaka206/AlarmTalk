@@ -31,34 +31,131 @@ export class PersoSlotRace extends Error {
   }
 }
 
+/**
+ * Perso 가 비정상 상태로 답했다. `status` 로 호출자가 원인 갈래를 태그한다(`routes/event.ts`).
+ * 본문은 로그에만 — 키·내부 정보가 섞일 수 있다.
+ */
+export class PersoHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    method: string,
+    path: string,
+    detail: string,
+  ) {
+    super(`Perso ${method} ${path} → ${status}: ${detail}`);
+  }
+}
+
+/** 5xx·연결 실패 한 번은 다시 보낸다 — 상태를 바꾸는 요청도 슬롯 하나에 같은 글자를 다시 쓰는 것이라 멱등이다. */
+const PERSO_RETRY_DELAY_MS = 1_500;
+
+/**
+ * 이 요청에 남은 시간(epoch ms). 호출자가 준다 — 랜딩은 150초 뒤 요청을 끊으므로
+ * (`event-api.ts` 의 `CLIP_TIMEOUT_MS`), **그 안에 못 끝낼 재시도는 하지 않는다**(코덱스 #796).
+ * 예: 생성이 60초 만에 5xx 로 실패하면 남은 시간이 90초 상한보다 적어 다시 보내지 않는다 —
+ * 보내 봐야 브라우저는 이미 끊은 뒤다.
+ */
+export type PersoDeadline = { readonly at: number } | undefined;
+
+/** 마감을 넘겼다 — 더 기다려 봐야 받을 사람이 없다. */
+export class PersoDeadlineExceeded extends Error {
+  constructor() {
+    super('clip budget exhausted');
+  }
+}
+
+/** 이 상한으로 한 번 더 보낼 시간이 남았는가. 마감이 없으면(스크립트 등) 언제나 그렇다. */
+function hasTimeForRetry(deadline: PersoDeadline, timeoutMs: number): boolean {
+  if (!deadline) return true;
+  return Date.now() + PERSO_RETRY_DELAY_MS + timeoutMs <= deadline.at;
+}
+
+/**
+ * **한 번의 호출에 줄 상한** — 그 단계의 기본값과 남은 시간 중 작은 쪽이다(코덱스 #796 2차).
+ *
+ * 재시도 여부만 마감으로 가르면 부족하다: 앞 단계가 늦게 끝나도 **다음 단계는 자기 기본 상한을
+ * 통째로** 받아(생성 90초·미디어 120초) 마감을 훌쩍 넘길 수 있다. 남은 시간이 없으면 부르지 않고
+ * [PersoDeadlineExceeded] 를 던진다 — 이미 끊긴 요청을 위해 Perso 를 더 부르지 않는다.
+ */
+function budgetedTimeout(deadline: PersoDeadline, timeoutMs: number): number {
+  if (!deadline) return timeoutMs;
+  const left = deadline.at - Date.now();
+  if (left <= 0) throw new PersoDeadlineExceeded();
+  return Math.min(timeoutMs, left);
+}
+
 const STORE_TIMEOUT_MS = 20_000;
 const GENERATE_TIMEOUT_MS = 90_000;
 const LIST_TIMEOUT_MS = 20_000;
 // 재생·다운로드는 이 응답을 그대로 흘려보내므로 느린 폰이 다 받을 때까지 넉넉히.
 const MEDIA_TIMEOUT_MS = 120_000;
 
+/**
+ * Perso 호출 한 번. **5xx 와 연결 실패는 한 번 다시 보낸다**(2026-09-22, BACKEND-A — 여섯 클립이 22초
+ * 안에 전부 502 로 끝났는데 몇 분 뒤에는 전부 됐다). 시간초과는 다시 보내지 않는다 — 생성은 90초
+ * 상한이라 한 번 더 기다리면 클라의 150초를 넘긴다. 4xx 는 다시 보내도 같다.
+ * 세 요청 다 멱등이다: 목록 읽기, 슬롯에 같은 글자 저장, 저장된 글자로 생성.
+ */
 async function persoRequest(
   apiKey: string,
   method: 'GET' | 'POST' | 'PATCH',
   path: string,
   body: unknown,
   timeoutMs: number,
+  deadline?: PersoDeadline,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${PERSO_API_BASE}${path}`, {
-    method,
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: {
-      'XP-API-KEY': apiKey,
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt += 1) {
+    let res: Response;
+    try {
+      res = await fetch(`${PERSO_API_BASE}${path}`, {
+        method,
+        signal: AbortSignal.timeout(budgetedTimeout(deadline, timeoutMs)),
+        headers: {
+          'XP-API-KEY': apiKey,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (err) {
+      // 시간초과(TimeoutError/AbortError)는 그대로 던진다. 연결 실패(`fetch failed`)만 한 번 더.
+      if (attempt === 0 && !isAbort(err) && hasTimeForRetry(deadline, timeoutMs)) {
+        await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
+    }
+    if (res.ok) return (await res.json()) as Record<string, unknown>;
     // 본문은 로그에만(키·내부 정보가 섞일 수 있다). 호출자는 502 로 닫는다.
     const detail = (await res.text().catch(() => '')).slice(0, 300);
-    throw new Error(`Perso ${method} ${path} → ${res.status}: ${detail}`);
+    if (attempt === 0 && res.status >= 500 && hasTimeForRetry(deadline, timeoutMs)) {
+      console.warn(`[perso] ${method} ${path} → ${res.status}, retrying once`);
+      await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
+      continue;
+    }
+    throw new PersoHttpError(res.status, method, path, detail);
   }
-  return (await res.json()) as Record<string, unknown>;
+}
+
+function isAbort(err: unknown): boolean {
+  const name = typeof err === 'object' && err !== null && 'name' in err ? String((err as { name: unknown }).name) : '';
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/**
+ * 실패를 Sentry 태그·로그용 갈래로 — 사용자 글자는 넣지 않는다. 2026-09-22 전에는 `console.error`
+ * 한 줄뿐이라 BACKEND-A(502 ×7)가 왜 났는지 Sentry 에서 알 수 없었다.
+ */
+export function persoFailureReason(err: unknown): string {
+  if (err instanceof PersoDeadlineExceeded) return 'deadline';
+  if (err instanceof PersoSlotRace) return 'slot_race';
+  if (err instanceof PersoHttpError) return `perso_http_${err.status}`;
+  if (isAbort(err)) return 'timeout';
+  const message = err instanceof Error ? err.message : String(err);
+  if (/not an mp3/.test(message)) return 'bad_media';
+  if (/no translatedText|no file path/.test(message)) return 'bad_response';
+  if (/no slot succeeded/.test(message)) return 'no_slot';
+  if (/fetch failed|ECONNRESET|ECONNREFUSED/i.test(message)) return 'network';
+  return 'other';
 }
 
 /**
@@ -69,6 +166,7 @@ export async function listSentenceSeqs(
   apiKey: string,
   project: number,
   spaceSeq: number,
+  deadline?: PersoDeadline,
 ): Promise<number[]> {
   const seqs: number[] = [];
   let cursor: number | null = null;
@@ -81,6 +179,7 @@ export async function listSentenceSeqs(
       `/video-translator/api/v1/projects/${project}/spaces/${spaceSeq}/script?${qs}`,
       undefined,
       LIST_TIMEOUT_MS,
+      deadline,
     );
     const sentences = Array.isArray(json.sentences) ? (json.sentences as unknown[]) : [];
     for (const s of sentences) {
@@ -98,9 +197,17 @@ export async function generateSentenceAudio(
   apiKey: string,
   slot: PersoSlot,
   text: string,
+  deadline?: PersoDeadline,
 ): Promise<{ path: string }> {
   const base = `/video-translator/api/v1/project/${slot.project}/audio-sentence/${slot.sentence}`;
-  await persoRequest(apiKey, 'POST', `${base}/match-rewrite`, { targetText: text }, STORE_TIMEOUT_MS);
+  await persoRequest(
+    apiKey,
+    'POST',
+    `${base}/match-rewrite`,
+    { targetText: text },
+    STORE_TIMEOUT_MS,
+    deadline,
+  );
   const generated = (
     (await persoRequest(
       apiKey,
@@ -108,6 +215,7 @@ export async function generateSentenceAudio(
       `${base}/generate-audio`,
       { targetText: text },
       GENERATE_TIMEOUT_MS,
+      deadline,
     )) as { result?: Record<string, unknown> }
   ).result;
   if (typeof generated?.translatedText !== 'string') {
@@ -130,12 +238,19 @@ export function persoMediaUrl(path: string): string {
  * 저장소에서 파일을 받아 온다. `range` 를 주면 그대로 넘겨 206 을 받는다.
  * 저장소는 application/octet-stream 으로 주므로 호출자가 audio/mpeg 로 바꿔 단다.
  */
-export async function fetchPersoMedia(path: string, range?: string): Promise<Response> {
+export async function fetchPersoMedia(
+  path: string,
+  range?: string,
+  deadline?: PersoDeadline,
+): Promise<Response> {
   const res = await fetch(persoMediaUrl(path), {
-    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
+    signal: AbortSignal.timeout(budgetedTimeout(deadline, MEDIA_TIMEOUT_MS)),
     headers: range ? { range } : undefined,
   });
-  if (!res.ok && res.status !== 206) throw new Error(`Perso media ${res.status}`);
+  // 상태를 실어 던진다 — 저장소의 일시 장애(503)와 **깨진 바이트**(bad_media)는 다른 사고다(코덱스 #796).
+  if (!res.ok && res.status !== 206) {
+    throw new PersoHttpError(res.status, 'GET', 'media', await res.text().catch(() => '').then((t) => t.slice(0, 300)));
+  }
   return res;
 }
 

@@ -4,10 +4,11 @@
       {
         "id": "voice1",
         "name": { "ko": "voice 1", "en": "voice 1", "ja": "voice 1" },
-        "portrait": null,
+        "portrait": "/event/voice1.birthday.jpg",
+        "portraits": { "birthday": "/event/voice1.birthday.jpg", "chuseok": "/event/voice1.chuseok.jpg" },
         "perso": {
           "spaceSeq": 501031,
-          "ko": { "project": 413673, "reserved": [11135215, 11135216, 11135217] },
+          "ko": { "project": 415525, "reserved": [11162674, 11162675] },
           "en": { "project": 415525, "reserved": [11162674, 11162675] },
           "ja": { "project": 415525, "reserved": [11162674, 11162675] }
         }
