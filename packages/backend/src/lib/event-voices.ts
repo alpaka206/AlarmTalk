@@ -33,11 +33,16 @@ export const LEGACY_EVENT_MESSAGE_KINDS: Readonly<Record<string, EventMessageKin
   comfort: 'chuseok',
 };
 
-export function isEventMessageKind(v: unknown): v is EventMessageKind {
+/** 지금 종류만 — 내보내지 않는다. 요청 검증은 옛 이름까지 받는 `resolveEventMessageKind` 하나로 한다. */
+function isEventMessageKind(v: unknown): v is EventMessageKind {
   return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
 }
 
-/** 요청의 `kind` 를 지금 종류로 — 옛 이름이면 호환표로 바꾸고, 모르는 값이면 null. */
+/**
+ * 요청의 `kind` 를 지금 종류로 — 옛 이름이면 호환표로 바꾸고, 모르는 값이면 null.
+ * `routes/event.ts` 의 `POST /api/event/:eventId/clips` 는 **이것으로만** 검증한다 — 옛 번들의
+ * `comfort` 가 400 이 아니라 200 으로 읽히는 회귀 테스트가 `test/event-clips.test.ts` 에 있다.
+ */
 export function resolveEventMessageKind(v: unknown): EventMessageKind | null {
   if (isEventMessageKind(v)) return v;
   if (typeof v !== 'string') return null;
