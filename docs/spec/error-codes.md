@@ -76,6 +76,8 @@
 | **일시적 네트워크 실패**(DNS·시간초과·연결 거부·TLS) | 기기 네트워크 사정. 원인 사슬 어디에 있든 같다 | 로그 + 브레드크럼, 워커는 재시도 |
 | FCM 의 재시도 가능 코드(`SERVICE_NOT_AVAILABLE`·`INTERNAL_SERVER_ERROR`) | Firebase 문서가 재시도하라는 구글 쪽 장애 | 위와 같다 |
 | **중앙 401 처리기가 이미 끊은 세션의 401** | 토큰 만료·폐기는 세션 정리와 "다시 로그인해 주세요" 로 **이미 사용자에게 닿은 사실**이다. 그 위에 이슈까지 쌓으면 한 번의 만료가 재시도 횟수만큼 올라간다 | 로그 + 브레드크럼(category `auth`), 워커는 **재시도하지 않고** 세션을 끊는다 |
+| **HTTP/2 스트림·연결 리셋**(`stream was reset: CANCEL`, GOAWAY) | 엣지·프록시가 스트림을 끊은 것 — 일시적 네트워크 실패와 같은 부류인데 `IOException` 의 다른 하위 타입이라 빠져 있었다(2026-09-22 ANDROID-N) | 로그 + 브레드크럼(`transient`), 워커는 재시도 |
+| **Google 로그인이 사용자 행동으로 끝남**(12501 취소·12502 진행 중) | 뒤로가기·버튼 연타다. 화면이 상태별 문구를 이미 보여준다(2026-09-22 ANDROID-P). 네트워크(7)는 일시적 실패와 같다 | 로그 + 브레드크럼(`user`). **10(설정 오류)·12500(실패)은 그대로 이슈** — 우리가 고칠 것이 있다 |
 
 - ⚠ **`IOException` 전체가 아니다.** 파일 없음·디스크 가득참은 결함일 수 있어 그대로 올린다.
   iOS 도 `.badServerResponse`·`.cannotParseResponse` 는 뺀다.
@@ -188,9 +190,10 @@
 | 본문 크기 제한·소비 시점 | — | — | `middleware/bodyLimit.ts` · `test/bodyLimit.test.ts` |
 | 본문 초과의 서버 장애 오인 방지 | — | — | `lib/logger.ts`의 요청별 초과 표시 확인; 최종 413은 `middleware/errorCode.ts`에서 기록 |
 | 기록·경보 | — | — | `middleware/errorCode.ts` |
+| 경보의 **묶음 키는 에러 코드**(경로 아님) | — | — | `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])` · `test/error-code-middleware.test.ts`. Sentry 는 기본으로 스택으로 묶어 같은 미들웨어가 낸 예외는 코드가 달라도 한 이슈가 됐다(BACKEND-8 에 두 코드가 섞임, 2026-09-22) |
 | 라우트의 4xx 거절은 경보가 아님 | — | — | `routes/auth.ts` 의 `/google`·`/apple` catch · `test/auth-apple-route.test.ts` |
 | 중복 보고 방지 표시 | — | — | `lib/logger.ts` 의 `logRouteError` |
-| 앱의 이슈/브레드크럼 판정 | `core/AlarmTalkLog.kt` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTests` | — |
+| 앱의 이슈/브레드크럼 판정 | `core/AlarmTalkLog.kt` 의 `isExpectedTransientFailure`(HTTP/2 리셋 포함)·`isGoogleSignInUserAction` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isExpectedTransientFailure` · `TransientFailureClassificationTests` | — |
 | 401 은 이슈가 아니라 브레드크럼 | `core/AlarmTalkLog.kt` 의 `isHandledAuthFailure` · `TransientFailureClassificationTest` | `AlarmTalkLog.swift` 의 `isHandledAuthFailure` · `AlarmTalkTests/TransientFailureClassificationTests` | — |
 | 낮추는 **범위**(그 밖의 4xx·5xx 는 그대로 이슈) | `core/AlarmTalkLog.kt` 의 `breadcrumbCategoryFor` · `TransientFailureClassificationTest` 의 `onlyUnauthorizedAndTransientBecomeBreadcrumbs` | `AlarmTalkLog.swift` 의 `handledFailureCategory` · `AlarmTalkTests/TransientFailureClassificationTests` 의 `test_401_외의_상태코드는_그대로_이슈다` | — |
 | 동의 전 403 은 재시도가 아님 | `sync/SyncWorkerFailure.kt` 의 `syncWorkerOutcome` | `RemoteAlarmSyncViewModel` 의 `runFullSync` catch | `middleware/consent.ts` |

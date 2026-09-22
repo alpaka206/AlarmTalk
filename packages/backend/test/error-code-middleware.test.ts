@@ -15,7 +15,7 @@ function makeApp(sentry?: { captureException: ReturnType<typeof vi.fn> }) {
 }
 
 function makeSentry() {
-  return { captureException: vi.fn(), setTag: vi.fn(), setTags: vi.fn() };
+  return { captureException: vi.fn(), setTag: vi.fn(), setTags: vi.fn(), setFingerprint: vi.fn() };
 }
 
 describe('errorCodeMiddleware', () => {
@@ -85,6 +85,51 @@ describe('errorCodeMiddleware', () => {
 
     expect(sentry.captureException).toHaveBeenCalledOnce();
     expect(String(sentry.captureException.mock.calls[0][0])).toContain('MANUAL_TTS_QUOTA_EXCEEDED');
+  });
+
+  it('묶음 키는 코드다 — 경로가 아니라(2026-09-22, BACKEND-8 에 두 코드가 섞였다)', async () => {
+    // Sentry 는 기본으로 스택으로 묶는데 여기서 만드는 예외는 전부 같은 자리라, 제목에 코드를
+    // 둬도 한 이슈가 된다. 코드별 fingerprint 를 주고, 경로는 넣지 않는다(같은 장애가 라우트마다
+    // 흩어지면 규모를 못 본다).
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sentry = makeSentry();
+    const app = makeApp(sentry);
+    app.get('/alarm', (c) =>
+      c.json({ error: 'db', error_code: 'ACCOUNT_STATUS_UNVERIFIED' }, 503),
+    );
+    app.post('/push/register', (c) =>
+      c.json({ error: 'db', error_code: 'ACCOUNT_STATUS_UNVERIFIED' }, 503),
+    );
+    app.post('/voice/clone', (c) =>
+      c.json({ error: 'paid', error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN' }, 403),
+    );
+    app.get('/nocode', (c) => c.text('boom', 502));
+
+    await app.request('/alarm');
+    await app.request('/push/register', { method: 'POST' });
+    await app.request('/voice/clone', { method: 'POST' });
+    await app.request('/nocode');
+
+    const fingerprints = sentry.setFingerprint.mock.calls.map(([fp]) => fp);
+    expect(fingerprints).toEqual([
+      ['api_error', 'ACCOUNT_STATUS_UNVERIFIED'],
+      ['api_error', 'ACCOUNT_STATUS_UNVERIFIED'],
+      ['api_error', 'VOICE_FEATURE_REQUIRES_PAID_PLAN'],
+      ['api_error', 'HTTP_502'],
+    ]);
+    // fingerprint 는 captureException 보다 먼저 설정된다 — 순서가 뒤집히면 이벤트에 안 실린다.
+    const order = sentry.setFingerprint.mock.invocationCallOrder[0] < sentry.captureException.mock.invocationCallOrder[0];
+    expect(order).toBe(true);
+  });
+
+  it('setFingerprint 가 없는 클라이언트(테스트 목 등)에서도 보고는 된다', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sentry = { captureException: vi.fn() };
+    const app = makeApp(sentry);
+    app.get('/x', (c) => c.json({ error: 'quota', error_code: 'MANUAL_TTS_QUOTA_EXCEEDED' }, 429));
+    await app.request('/x');
+    expect(sentry.captureException).toHaveBeenCalledOnce();
   });
 
   it('5xx 는 보낸다 — 단 이미 보고했으면 두 번 보내지 않는다', async () => {

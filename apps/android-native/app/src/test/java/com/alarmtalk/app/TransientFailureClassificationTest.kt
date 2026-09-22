@@ -11,7 +11,12 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.ExecutionException
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Status
 import javax.net.ssl.SSLHandshakeException
+import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 import kotlin.coroutines.cancellation.CancellationException
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -61,6 +66,29 @@ class TransientFailureClassificationTest {
         assertTrue(AlarmTalkLog.isExpectedTransientFailure(SSLHandshakeException("captive portal")))
         // OkHttp 의 호출 시간초과는 부모 클래스로 온다.
         assertTrue(AlarmTalkLog.isExpectedTransientFailure(InterruptedIOException("timeout")))
+    }
+
+    @Test
+    fun http2ResetsAreTransient() {
+        // 2026-09-22 ANDROID-N: 엣지가 스트림을 끊은 `stream was reset: CANCEL` 이 이슈로 올라갔다.
+        // 워커는 어차피 재시도한다 — `IOException` 의 다른 하위 타입이라 목록에서 빠져 있었다.
+        assertTrue(AlarmTalkLog.isExpectedTransientFailure(StreamResetException(ErrorCode.CANCEL)))
+        assertTrue(AlarmTalkLog.isExpectedTransientFailure(ConnectionShutdownException()))
+        assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(StreamResetException(ErrorCode.REFUSED_STREAM)))
+    }
+
+    @Test
+    fun googleSignInUserActionsAreBreadcrumbsAndConfigErrorsStillReport() {
+        // 2026-09-22 ANDROID-P: 로보가 로그인 버튼을 연타한 12502 가 이슈로 올라갔다.
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(12501))))
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(12502))))
+        assertEquals("user", AlarmTalkLog.breadcrumbCategoryFor(IllegalStateException("wrapped", ApiException(Status(12501)))))
+        // 네트워크(7)는 일시적 실패와 같은 갈래.
+        assertEquals("transient", AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(7))))
+        // 설정 오류(10)·실패(12500)는 우리가 고칠 것이 있다 — 그대로 이슈.
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(10))))
+        assertNull(AlarmTalkLog.breadcrumbCategoryFor(ApiException(Status(12500))))
+        assertFalse(AlarmTalkLog.isGoogleSignInUserAction(ApiException(Status(10))))
     }
 
     @Test
