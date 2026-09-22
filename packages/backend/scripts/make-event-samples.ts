@@ -52,19 +52,34 @@ function readPersoKey(): string {
   return v;
 }
 
-function arg(name: string): string | undefined {
+/**
+ * `--name 값`. **값이 빠졌거나 목록에 없으면 그 자리에서 멈춘다**(코덱스 #797) — 오타 하나로
+ * "아무것도 굽지 않고 성공" 하거나(자동화는 0 을 보고 지나간다) `--voice` 값이 없어 **전부**
+ * 다시 구워지는 일이 없도록.
+ */
+function arg(name: string, allowed?: readonly string[]): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`--${name} 에 값이 없다 (가능한 값: ${allowed?.join(', ') ?? '자유 문자열'})`);
+  }
+  if (allowed && !allowed.includes(value)) {
+    throw new Error(`--${name}=${value} 는 목록에 없다 (가능한 값: ${allowed.join(', ')})`);
+  }
+  return value;
 }
 
 async function main(): Promise<void> {
   const apiKey = readPersoKey();
-  const onlyVoice = arg('voice');
-  const onlyLocale = arg('locale') as EventLocale | undefined;
+  const voiceIds = eventVoiceIds(EVENT_ID);
+  const onlyVoice = arg('voice', voiceIds);
+  const onlyLocale = arg('locale', EVENT_LOCALES) as EventLocale | undefined;
   mkdirSync(samplesDir, { recursive: true });
   const sentenceCache = new Map<number, number[]>();
+  let written = 0;
 
-  for (const voiceId of eventVoiceIds(EVENT_ID)) {
+  for (const voiceId of voiceIds) {
     if (onlyVoice && voiceId !== onlyVoice) continue;
     for (const locale of EVENT_LOCALES) {
       if (onlyLocale && locale !== onlyLocale) continue;
@@ -97,9 +112,12 @@ async function main(): Promise<void> {
       }
       const out = resolve(samplesDir, `${voiceId}.${locale}.mp3`);
       writeFileSync(out, bytes);
+      written += 1;
       console.log(`wrote ${out} (${bytes.byteLength} bytes) — "${message.display.replace(/\n/g, ' ')}"`);
     }
   }
+  // 아무것도 안 구웠는데 0 으로 끝나면, 오래된 샘플을 그대로 커밋하게 된다(코덱스 #797).
+  if (written === 0) throw new Error('구운 샘플이 없다 — --voice/--locale 조합을 확인할 것');
 }
 
 main().catch((err) => {

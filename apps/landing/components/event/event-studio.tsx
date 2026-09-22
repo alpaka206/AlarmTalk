@@ -752,26 +752,25 @@ function RotatingPortrait({
   name: string;
   reduced: boolean;
 }) {
-  const kinds = MESSAGE_KINDS.filter((k) => celebrity.portraits[k]);
+  /**
+   * 돌릴 사진들 — **모든 종류를 `portraitFor` 로 풀어** 중복을 없앤 것이다(코덱스 #797).
+   * 종류별 사진이 하나만 있고 나머지가 기본 사진(`portrait`)으로 떨어지는 카탈로그도 지원 대상이라,
+   * 종류별 사진이 있는 것만 세면 그런 목소리는 **가만히 있을 때만** 사진이 안 바뀌어 재생 중과 달라진다.
+   */
+  const srcs = [...new Set(MESSAGE_KINDS.map((k) => portraitFor(celebrity, k)).filter(Boolean))];
   const [tick, setTick] = useState(0);
-  const rotating = kinds.length > 1 && pinnedKind === null && !reduced;
+  const rotating = srcs.length > 1 && pinnedKind === null && !reduced;
   useEffect(() => {
     if (!rotating) return;
     const id = setInterval(() => setTick((n) => n + 1), PORTRAIT_ROTATE_MS);
     return () => clearInterval(id);
   }, [rotating]);
   // 붙들린 종류 → 그 사진. 아니면 순서대로 돌린다(붙들렸다 풀리면 그 자리부터 이어 간다).
-  const kind: MessageKind | null =
-    pinnedKind ?? (kinds.length > 0 ? kinds[tick % kinds.length] : null);
+  const active = pinnedKind
+    ? portraitFor(celebrity, pinnedKind)
+    : (srcs[tick % Math.max(1, srcs.length)] ?? portraitFor(celebrity, null));
   // 후보를 모두 넘긴다 — `Portrait` 가 겹쳐 두고 지금 것만 보인다(미리 받아 두려고).
-  return (
-    <Portrait
-      srcs={kinds.map((k) => portraitFor(celebrity, k))}
-      active={portraitFor(celebrity, kind)}
-      name={name}
-      reduced={reduced}
-    />
-  );
+  return <Portrait srcs={srcs} active={active} name={name} reduced={reduced} />;
 }
 
 /**
@@ -781,8 +780,10 @@ function RotatingPortrait({
  * 후보 사진을 **모두 겹쳐 두고** 지금 것만 보이게 한다(opacity). 두 가지 이유다(코덱스 #796):
  *  - 다음 사진이 처음부터 받아져 있어 전환할 때 **비는 순간이 없다**(바뀔 때 마운트하면 느린 망에서
  *    옛 사진이 사라진 뒤 새 사진이 아직 없다).
- *  - 대체 텍스트가 **바뀌지 않는다.** 이 카드는 `aria-live="polite"` 안이라, 5초마다 이름이 바뀌면
- *    화면 낭독기가 묻지도 않은 안내를 계속 읽는다. 보이지 않는 사진은 `aria-hidden` 이다.
+ *  - **접근성 트리가 흔들리지 않는다.** 이 카드는 `aria-live="polite"` 안이라, 5초마다 드러나는
+ *    노드가 바뀌면(대체 텍스트가 같아도) 낭독기가 묻지도 않은 안내를 되풀이한다(코덱스 #797).
+ *    그래서 **사진은 전부 장식**(`alt=""` + `aria-hidden`)이고, 이름은 감싼 요소가 `role="img"` 로
+ *    한 번만 갖는다 — 인물이 실제로 바뀔 때만 그 이름이 달라진다.
  *
  * 정적 HTML 의 img 는 React 가 붙기 전에 이미 실패해 있어 `onError` 가 안 온다. 그래서 붙은
  * 직후 `complete && naturalWidth === 0` 으로 한 번 더 확인한다.
@@ -836,16 +837,21 @@ function Portrait({
   // 모두 겹쳐 두고 지금 것만 보인다 — 다음 사진은 이미 받아져 있어 비는 순간이 없다.
   const shown = srcs.includes(src) ? srcs : [src, ...srcs];
   return (
-    <span ref={containerRef} className="relative block h-40 w-40 shrink-0">
+    <span
+      ref={containerRef}
+      role="img"
+      aria-label={name}
+      className="relative block h-40 w-40 shrink-0"
+    >
       {shown.map((candidate: string) => {
         const current = candidate === src;
         return (
           <img
             key={candidate}
+            // 사진은 전부 장식이다 — 이름은 감싼 요소가 갖는다(위 주석: 드러나는 노드가 바뀌면 낭독기가 읽는다).
+            alt=""
+            aria-hidden="true"
             src={candidate}
-            // 보이는 사진 하나만 이름을 갖는다 — 나머지는 낭독기에 없다(대체 텍스트가 바뀌지 않는다).
-            alt={current ? name : ""}
-            aria-hidden={current ? undefined : true}
             width={160}
             height={160}
             onError={() => setFailed((f) => ({ ...f, [candidate]: true }))}
