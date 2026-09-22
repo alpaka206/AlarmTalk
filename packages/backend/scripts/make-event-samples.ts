@@ -9,6 +9,8 @@
  * 사용 (packages/backend 에서):
  *   npm run samples:event                 # 이벤트 1 의 모든 목소리 × 세 언어
  *   npm run samples:event -- --voice voice1 --locale ko
+ *   ⚠ 옵션 이름·값을 목록과 대조하고, 모르는 옵션이 섞이거나 아무것도 굽지 않으면 **실패로 끝낸다**
+ *     — 오타 하나로 "성공했는데 옛 샘플 그대로" 거나 "전부 다시 구워짐" 이 되지 않도록.
  *
  * 키는 `.dev.vars.prod` 의 `PERSO_API_KEY` 를 읽는다(운영과 같은 Perso 프로젝트). 슬롯은 DB 커서 대신
  * 쓸 수 있는 문장 가운데 무작위로 고른다 — 운영 요청과 겹치면 서버와 같은 `PersoSlotRace` 로 잡혀
@@ -57,6 +59,30 @@ function readPersoKey(): string {
  * "아무것도 굽지 않고 성공" 하거나(자동화는 0 을 보고 지나간다) `--voice` 값이 없어 **전부**
  * 다시 구워지는 일이 없도록.
  */
+/** 이 스크립트가 아는 옵션 전부. 여기 없는 이름은 오타로 본다. */
+const KNOWN_FLAGS = ['--voice', '--locale'] as const;
+
+/**
+ * 모르는 옵션이 섞였으면 멈춘다(코덱스 #798). `--voiec voice1` 처럼 **이름을 잘못 적으면** 아래
+ * `arg` 가 그냥 못 찾고 필터 없이 돌아 **전부 다시 구워진다** — 막으려던 바로 그 상황이다.
+ * (`node` 가 스크립트 앞에 붙이는 인자 둘은 건너뛴다.)
+ */
+function rejectUnknownFlags(): void {
+  const rest = process.argv.slice(2);
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i]!;
+    if (!token.startsWith('--')) continue;
+    const name = token.split('=')[0]!;
+    if (!(KNOWN_FLAGS as readonly string[]).includes(name)) {
+      throw new Error(`모르는 옵션 ${token} (가능한 옵션: ${KNOWN_FLAGS.join(', ')})`);
+    }
+    if (token.includes('=')) {
+      throw new Error(`${name} 은 \`${name} 값\` 꼴로 준다 (등호는 읽지 않는다)`);
+    }
+    i += 1; // 값 하나를 건너뛴다
+  }
+}
+
 function arg(name: string, allowed?: readonly string[]): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   if (i < 0) return undefined;
@@ -71,6 +97,7 @@ function arg(name: string, allowed?: readonly string[]): string | undefined {
 }
 
 async function main(): Promise<void> {
+  rejectUnknownFlags();
   const apiKey = readPersoKey();
   const voiceIds = eventVoiceIds(EVENT_ID);
   const onlyVoice = arg('voice', voiceIds);
