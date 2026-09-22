@@ -18,7 +18,19 @@ import XCTest
 /// 통째로 `@MainActor` 라 이 버그를 못 잡았다 — 테스트가 메인 액터에서 부르면 격리 검사가
 /// 통과해 버린다. 여기서는 **비격리 테스트**가 `DispatchQueue.global` 로 부른다.
 /// 겸해서 `handleLaunch` 에 메인 액터 격리가 다시 붙으면 이 파일이 **컴파일부터** 막힌다.
+///
+/// ⚠ **`.background` QoS 로 부르지 말 것**(2026-09-22, CI 에서 매번 실패). 요지는 "메인 큐가
+/// 아니다" 이지 QoS 가 아니다. background QoS 블록은 CPU 가 바쁘면 몇 초씩 밀리는데(GitHub
+/// 러너는 시뮬레이터·xcodebuild 로 늘 그 상태다) 그러면 인계가 상한 안에 안 일어난다 — 로컬에서도
+/// CPU 를 꽉 채우고 돌리면 똑같이 실패한다. 격리 트랩은 큐가 메인이 아니기만 하면 잡힌다.
 final class BackgroundSyncTaskLaunchHandlerTests: XCTestCase {
+
+    /// 메인이 아닌 큐. 부하가 있어도 곧 도는 QoS 를 쓴다(위 주석).
+    private let offMainQueue = DispatchQueue.global(qos: .userInitiated)
+
+    /// 인계는 큐 하나를 건너는 일이라 정상은 밀리초다. 상한을 넉넉히 두는 것은 러너가 느릴 때
+    /// 거짓 실패를 막기 위해서지 그만큼 걸려도 된다는 뜻이 아니다.
+    private let handoffTimeout: TimeInterval = 20
 
     /// (a) 백그라운드 큐에서 불러도 트랩하지 않고 (b) 실행기는 메인 액터에서 인계받는다.
     func test_handleLaunch_백그라운드_큐에서_불려도_메인_액터로_인계한다() async {
@@ -38,11 +50,11 @@ final class BackgroundSyncTaskLaunchHandlerTests: XCTestCase {
 
         // ⚠ 이 줄이 회귀 감시자다. 시스템은 `using: nil` 로 등록한 핸들러를 **기본 백그라운드
         // 큐**에서 부른다. 메인 큐에서 부르도록 바꾸면 이 테스트는 버그를 다시 못 잡는다.
-        DispatchQueue.global(qos: .background).async {
+        offMainQueue.async {
             BackgroundSyncTask.handleLaunch(task)
         }
 
-        await fulfillment(of: [handedOff], timeout: 5)
+        await fulfillment(of: [handedOff], timeout: handoffTimeout)
         await MainActor.run { BackgroundSyncTask.clearRunnerOverrideForTesting() }
     }
 
@@ -52,13 +64,14 @@ final class BackgroundSyncTaskLaunchHandlerTests: XCTestCase {
         let task = LaunchTaskDouble()
         await MainActor.run { BackgroundSyncTask.overrideRunnerForTesting(nil) }
 
-        DispatchQueue.global(qos: .background).async {
+        offMainQueue.async {
             BackgroundSyncTask.handleLaunch(task)
         }
 
         // 인계는 메인 액터로 건너뛰는 한 번의 hop 뒤에 끝난다 — 그 hop 을 기다린다.
         var held = false
-        for _ in 0..<200 {
+        let deadline = Date().addingTimeInterval(handoffTimeout)
+        while Date() < deadline {
             let now = await MainActor.run { BackgroundSyncTask.pendingTaskForTesting === task }
             if now {
                 held = true
