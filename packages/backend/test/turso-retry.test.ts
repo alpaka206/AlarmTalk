@@ -86,6 +86,25 @@ describe('withTransientReadRetry', () => {
     expect(isReadStatement(undefined)).toBe(false);
   });
 
+  it('읽기 PRAGMA 와 CTE 도 읽기다 — 값을 정하는 PRAGMA 와 DML CTE 는 아니다(코덱스 #795)', () => {
+    // 스키마 조회(`alarm-helpers.ts`·`voice-profile.ts`·`stock-clips.ts`).
+    expect(isReadStatement({ sql: "PRAGMA table_info('alarms')", args: [] })).toBe(true);
+    expect(isReadStatement('PRAGMA user_version')).toBe(true);
+    expect(isReadStatement('PRAGMA foreign_keys=off')).toBe(false);
+    expect(isReadStatement('PRAGMA journal_mode = WAL')).toBe(false);
+    // `audio-retention.ts` 의 배치 조회.
+    expect(
+      isReadStatement(`WITH retry AS (SELECT id FROM pending_external_deletions WHERE attempts > 0 LIMIT ?)
+        SELECT id FROM retry UNION ALL SELECT id FROM pending_external_deletions WHERE attempts = 0`),
+    ).toBe(true);
+    // SQLite 는 CTE 뒤에 DML 을 허용한다 — 그건 쓰기다.
+    expect(isReadStatement('WITH x AS (SELECT 1) DELETE FROM t WHERE id IN (SELECT * FROM x)')).toBe(false);
+    expect(isReadStatement('WITH x AS (SELECT 1) UPDATE t SET a = 1')).toBe(false);
+    expect(isReadStatement('WITH x AS (SELECT 1) INSERT INTO t SELECT * FROM x')).toBe(false);
+    // 문자열 리터럴 속 낱말은 DML 이 아니다.
+    expect(isReadStatement("WITH x AS (SELECT 1) SELECT * FROM t WHERE note = 'delete me'")).toBe(true);
+  });
+
   it('SELECT 는 525 에서 다시 시도하고, INSERT 는 그대로 던진다 — 쓰기를 두 번 보내지 않는다', async () => {
     vi.useFakeTimers();
     const execute = vi

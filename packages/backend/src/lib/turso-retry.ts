@@ -41,7 +41,14 @@ export async function retryTransientTurso<T>(operation: () => Promise<T>): Promi
   }
 }
 
-/** `execute` 의 문장이 읽기(SELECT/EXPLAIN)인가 — 다시 보내도 부작용이 없는 것만 재시도한다. */
+/**
+ * `execute` 의 문장이 읽기인가 — 다시 보내도 부작용이 없는 것만 재시도한다.
+ *
+ * 읽기로 보는 형태(코덱스 #795): `SELECT`·`EXPLAIN` / **읽기 `PRAGMA`**(`PRAGMA table_info(...)`
+ * 같은 조회 — `=` 로 값을 정하는 `PRAGMA foreign_keys=off` 는 쓰기라 뺀다) / **CTE**(`WITH … SELECT`
+ * — SQLite 는 `WITH … INSERT/UPDATE/DELETE` 도 허용하므로 본문에 DML 동사가 없을 때만).
+ * 모르는 형태는 쓰기로 본다 — 틀려도 재시도를 안 하는 쪽이다.
+ */
 export function isReadStatement(statement: unknown): boolean {
   const sql =
     typeof statement === 'string'
@@ -49,7 +56,17 @@ export function isReadStatement(statement: unknown): boolean {
       : typeof statement === 'object' && statement !== null && 'sql' in statement
         ? String((statement as { sql: unknown }).sql)
         : '';
-  return /^\s*(?:SELECT|EXPLAIN)\b/i.test(sql);
+  if (/^\s*(?:SELECT|EXPLAIN)\b/i.test(sql)) return true;
+  if (/^\s*PRAGMA\b/i.test(sql)) return !/=/.test(sql);
+  if (/^\s*WITH\b/i.test(sql)) {
+    return !/\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i.test(stripStringLiterals(sql));
+  }
+  return false;
+}
+
+/** 문자열 리터럴 속의 낱말이 DML 로 읽히지 않게 지운다(`'delete me'` 같은 값). */
+function stripStringLiterals(sql: string): string {
+  return sql.replace(/'(?:[^']|'')*'/g, "''");
 }
 
 /**
