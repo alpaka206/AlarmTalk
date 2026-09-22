@@ -57,6 +57,11 @@ import {
 } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
+import {
+  fetchOpenMeteo,
+  WEATHER_FORECAST_CACHE_TTL_SECONDS,
+  WEATHER_GEOCODE_CACHE_TTL_SECONDS,
+} from '../lib/weather-fetch';
 
 const tts = new Hono<AppEnv>();
 // 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
@@ -444,9 +449,15 @@ async function loadWeatherSignalInput(args: {
   }
 
   try {
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 타임아웃·엣지 캐시·로그는 `lib/weather-fetch.ts` 한 곳에서. 타임아웃으로 거부되면 이
+    // try 가 잡아 null 로 돌아간다 — 저장 버튼이 이 응답을 기다리고 있으므로 500 으로 새면 안 된다.
+    // ⚠ 캐시는 URL 에 날짜가 실린 호출(`start_date=end_date=targetDate`)에만 건다. 날짜 없는
+    //   라이브 경로(`forecast_days=1`)를 캐시하면 자정을 넘긴 어제 예보가 TTL 동안 오늘로 나간다.
+    const response = await fetchOpenMeteo(
+      'forecast',
+      url,
+      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
+    );
     const json = await response
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
@@ -584,9 +595,14 @@ async function loadDustSignal(
   }
 
   try {
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 예보와 같은 TTL — 미세먼지도 같은 (좌표·날짜) 키로 하루 네 번만 오리진에 닿는다.
+    // 타임아웃이면 이 try 가 잡아 false(먼지 없음)로 돌아간다 — 예보는 이미 받았으므로 그것만으로 분류한다.
+    // 날짜 없는 호출은 예보와 같은 이유로 캐시하지 않는다.
+    const response = await fetchOpenMeteo(
+      'air',
+      url,
+      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
+    );
     const json = await response
       .json<AirQualityForecastResponse>()
       .catch(() => ({}) as AirQualityForecastResponse);
@@ -639,9 +655,10 @@ async function resolveWeatherLocation(args: {
     url.searchParams.set('count', '10');
     url.searchParams.set('language', 'ko');
     url.searchParams.set('format', 'json');
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 도시명 → 좌표는 바뀌지 않으니 7일 캐시. 타임아웃도 다른 실패와 같이 아래 catch 로 들어가
+    // 이 함수의 기존 규약(서울 좌표 폴백)을 탄다 — 여기서 null 을 새로 만들지 않는다. 라이브
+    // 생성(`/generate` 의 `loadWeatherSignal`)도 같은 함수를 쓰므로 폴백을 가르면 그쪽 문구가 사라진다.
+    const response = await fetchOpenMeteo('geocode', url, WEATHER_GEOCODE_CACHE_TTL_SECONDS);
     const json = await response
       .json<WeatherGeocodingResponse>()
       .catch(() => ({}) as WeatherGeocodingResponse);

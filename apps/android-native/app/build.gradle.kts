@@ -361,6 +361,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
+    // runTest 의 가상 시계 — 저장이 날씨 응답을 기다리는 상한(WeatherResolveTimeoutTest)을 8초
+    // 실제로 기다리지 않고 검증한다. 버전은 앱이 실제로 쓰는 coroutines-core(1.7.3 — lifecycle 2.8.7
+    // 이 요구하는 값)와 맞춘다. core 와 test 가 어긋나면 내부 API 가 갈려 테스트 러너가 깨진다.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     // Context/리소스가 필요한 라벨 함수의 단위 테스트용(앱 기본 로케일 = 한국어 리소스 로드).
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core-ktx:1.6.1")

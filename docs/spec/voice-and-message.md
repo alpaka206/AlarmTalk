@@ -399,6 +399,7 @@
 | | 무엇으로 고르나 | 언제 정하나 | 네트워크 |
 | --- | --- | --- | --- |
 | **날씨** | 그 도시·그 **발사 날짜**의 실제 예보(서버가 open-meteo 조회) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
+| 날씨 **대기 상한** | 저장은 그 응답을 **8초**까지만 기다린다(양 앱 같은 값) | 넘기면 **실패와 같다** — 미해결로 저장하고 뒤에서 받는다 | 저장 시 1회, 최대 8초 |
 | **운세** | **사주 + 발사 날짜**로 기기에서 결정적 계산 | 읽을 때마다(계산이라 저장 불필요) | 없음 |
 
 - 자리 번호는 **서버 클립의 `variant` 와 같은 축**이다(0 맑음 / 1 비 / 2 눈 / 3 미세먼지 /
@@ -407,6 +408,17 @@
   우산 얘기를 한다.
 - **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
   있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
+- **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
+  이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
+  (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
+  순차로 부르고 한 번의 상한이 5초다(`weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`) —
+  정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우까지는 받아 주고 그 이상은 기다리지 않는다.
+  **상한을 넘긴 결과는 실패와 정확히 같아야 한다**: 미해결(`null`)로 저장하고(새 알람은
+  `null`, 수정은 받아 둔 값 유지), 저장 직후 백그라운드 갱신(안드로이드 `runOnce` 워커 →
+  1시간 재시도, iOS `WeatherVariantRefreshService.refreshDue`)이 채운다. 타임아웃 뒤에 늦게
+  도착한 응답이 값을 덮어쓰지 않는다 — 취소가 요청까지 끊고, 조회 함수는 DB 에 쓰지 않는다.
+  ⚠ **상한을 실패와 다르게 다루지 말 것**(예: 알럿을 띄우거나 저장을 막는 것). 실패의
+  대가가 작아서(안내 클립·백그라운드 재시도) 상한을 둘 수 있었던 것이다.
 - **운세는 같은 사람·같은 날이면 두 기기가 같은 답을 내야 한다.** 네트워크 없이 각자
   계산하므로 산식이 조금만 달라도 조용히 갈라진다. 그래서 기대값 표를 **양 앱 테스트에
   똑같이 박아** 두었다(`FortuneThemeIndexTest` ↔ `BucketVariantResolverTests`).
@@ -840,6 +852,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
+| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
 | 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |
 | 클립 자리 = `variant` | `bindStockBucketClips`(sortedBy·distinctBy) | `AlarmEditorSheet.bucketClipKeys(forCategory:)`(같은 규칙) | `ORDER BY … variant ASC`, `StockClip.variant` |

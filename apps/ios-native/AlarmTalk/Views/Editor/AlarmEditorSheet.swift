@@ -1529,6 +1529,13 @@ struct AlarmEditorSheet: View {
     /// 실패(오프라인·위치 미상)하면 인덱스를 건드리지 않는다 — `nil` 은 '맑음' 이 아니라
     /// '아직 모른다' 이고, 0 으로 때우면 비 오는 날에 "하늘 한 번 올려다보세요" 가 나간다.
     /// 지역·발사날짜가 바뀌었으면 옛 값을 버린다(`shouldResetWeatherVariant`).
+    ///
+    /// ⚠ **기다리는 시간에 상한이 있다**(`WeatherVariantSaveLookup.timeoutSeconds`, 8초).
+    /// 서버가 open-meteo 를 세 번 순차로 부르는 동안 한 바이트도 오지 않으므로, 느린 망에서는
+    /// 세션의 60초 유휴 타임아웃까지 저장 버튼이 잠긴 채였다. 상한을 넘기면 위의 실패와
+    /// **같은 경로**다 — 미해결로 저장·예약하고 `WeatherVariantRefreshService.refreshDue` 가
+    /// 채운다. 늦게 온 응답이 값을 덮어쓰는 일은 없다: 조회는 한 번만 돌아오고, 그 뒤에는
+    /// 아무 콜백도 이 행을 건드리지 않는다.
     private func applyWeatherVariant(to record: inout LocalAlarmRecord, previous: LocalAlarmRecord?) async {
         let reset = BucketVariantResolver.shouldResetWeatherVariant(
             previous: previous,
@@ -1539,14 +1546,7 @@ struct AlarmEditorSheet: View {
         )
         var freshIndex: Int?
         if record.bucketId == "weather", let token = auth.session?.token {
-            freshIndex = try? await AlarmTalkAPI.shared.getPrerenderVariant(
-                context: "wake_weather",
-                country: record.voiceWeatherCountry,
-                city: record.voiceWeatherCity,
-                targetDate: BucketVariantResolver.localDateString(millis: record.fireAtMillis),
-                timezone: TimeZone.current.identifier,
-                token: token
-            )
+            freshIndex = await WeatherVariantSaveLookup.freshIndex(record: record, token: token)
         }
         let state = BucketVariantResolver.nextWeatherVariantState(
             nextBucketId: record.bucketId,
