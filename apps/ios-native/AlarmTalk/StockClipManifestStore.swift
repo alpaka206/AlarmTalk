@@ -134,16 +134,20 @@ final class StockClipManifestStorage: @unchecked Sendable {
         }
     }
 
-    /// 이 표보다 새 표의 응답이 **이 프로세스에서 공개된 적이 있는가.**
+    /// 이 표보다 새 표의 응답이 **이 프로세스에서 공개됐고, 그것이 가장 최근에 본 응답인가.**
     ///
     /// `.superseded` 를 받은 호출자가 디스크의 이긴 매니페스트를 '이 세션에 서버에서 새로 받은 것'
-    /// 으로 쳐도 되는지 정한다(코덱스 #789). 더 새 표가 공개됐으면 그 응답은 이 표보다 **나중에**
-    /// 요청된 것이라 신선하다. 반대로 `clear` 가 표를 무효화해 밀린 것이면 디스크 값은 지난 세션
-    /// 것일 수 있어 교체 확정의 근거가 못 된다(Codex #703 P1) — 그때는 false.
+    /// 으로 쳐도 되는지 정한다(코덱스 #789). 규칙은 `docs/spec/voice-and-message.md` 「공개 경합의
+    /// 규칙」. 두 조건이 다 필요하다:
+    /// - 공개된 표가 이 표보다 새 것 — `clear` 가 표를 무효화해 밀린 것이면 디스크 값은 지난 세션
+    ///   것일 수 있어 교체 확정의 근거가 못 된다(Codex #703 P1).
+    /// - 공개된 표가 **가장 최근에 본 표**(`seenRevision`)와 같다 — N+1 은 공개됐는데 더 새 N+2 의
+    ///   쓰기가 실패했으면 디스크(N+1)는 최신이 아니다. 그걸 신선하다고 치면 N+2 의 재시도가 오기
+    ///   전에 교체 세대를 확정한다(코덱스 #791). 그때는 false 라 다음 호출이 다시 받는다.
     func publishedNewerResponse(than ticket: Ticket) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return publishedRevision > ticket.revision
+        return publishedRevision > ticket.revision && publishedRevision == seenRevision
     }
 
     func load(ownerUserID: String?) -> StockClipListResponse? {
