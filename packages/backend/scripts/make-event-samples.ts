@@ -63,45 +63,55 @@ function readPersoKey(): string {
 const KNOWN_FLAGS = ['--voice', '--locale'] as const;
 
 /**
- * 모르는 옵션이 섞였으면 멈춘다(코덱스 #798). `--voiec voice1` 처럼 **이름을 잘못 적으면** 아래
- * `arg` 가 그냥 못 찾고 필터 없이 돌아 **전부 다시 구워진다** — 막으려던 바로 그 상황이다.
- * (`node` 가 스크립트 앞에 붙이는 인자 둘은 건너뛴다.)
+ * 인자를 **`--이름 값` 쌍으로만** 읽는다. 하나라도 그 꼴이 아니면 멈춘다(코덱스 #798).
+ *
+ * 왜 이렇게까지: 이 스크립트는 저장소에 커밋되는 샘플을 **덮어쓴다.** 무엇이든 조용히 지나가면
+ * 필터가 사라진 채 전부 다시 구워지고, 사람은 성공했다고 믿는다. 실제로 세 가지가 그랬다 —
+ * 모르는 이름(`--voiec voice1`), 등호 꼴(`--voice=voice1`), 그리고 표시를 빠뜨린 값(`locale ko`).
  */
-function rejectUnknownFlags(): void {
+function parseFlags(): Map<string, string> {
   const rest = process.argv.slice(2);
+  const out = new Map<string, string>();
   for (let i = 0; i < rest.length; i += 1) {
     const token = rest[i]!;
-    if (!token.startsWith('--')) continue;
-    const name = token.split('=')[0]!;
-    if (!(KNOWN_FLAGS as readonly string[]).includes(name)) {
-      throw new Error(`모르는 옵션 ${token} (가능한 옵션: ${KNOWN_FLAGS.join(', ')})`);
+    if (!token.startsWith('--')) {
+      throw new Error(`\`${token}\` 은 옵션이 아니다 — 인자는 \`--이름 값\` 쌍으로만 준다`);
     }
     if (token.includes('=')) {
-      throw new Error(`${name} 은 \`${name} 값\` 꼴로 준다 (등호는 읽지 않는다)`);
+      throw new Error(`${token} — 등호 꼴은 읽지 않는다. \`${token.split('=')[0]} 값\` 으로 준다`);
     }
-    i += 1; // 값 하나를 건너뛴다
+    if (!(KNOWN_FLAGS as readonly string[]).includes(token)) {
+      throw new Error(`모르는 옵션 ${token} (가능한 옵션: ${KNOWN_FLAGS.join(', ')})`);
+    }
+    const value = rest[i + 1];
+    if (!value || value.startsWith('--')) throw new Error(`${token} 에 값이 없다`);
+    if (out.has(token)) throw new Error(`${token} 이 두 번 있다`);
+    out.set(token, value);
+    i += 1;
   }
+  return out;
 }
 
-function arg(name: string, allowed?: readonly string[]): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i < 0) return undefined;
-  const value = process.argv[i + 1];
-  if (!value || value.startsWith('--')) {
-    throw new Error(`--${name} 에 값이 없다 (가능한 값: ${allowed?.join(', ') ?? '자유 문자열'})`);
-  }
+/** 파싱해 둔 쌍에서 값 하나. 목록이 있으면 거기 없는 값은 거절한다. */
+function arg(
+  flags: Map<string, string>,
+  name: string,
+  allowed?: readonly string[],
+): string | undefined {
+  const value = flags.get(`--${name}`);
+  if (value === undefined) return undefined;
   if (allowed && !allowed.includes(value)) {
-    throw new Error(`--${name}=${value} 는 목록에 없다 (가능한 값: ${allowed.join(', ')})`);
+    throw new Error(`--${name} ${value} 는 목록에 없다 (가능한 값: ${allowed.join(', ')})`);
   }
   return value;
 }
 
 async function main(): Promise<void> {
-  rejectUnknownFlags();
+  const flags = parseFlags();
   const apiKey = readPersoKey();
   const voiceIds = eventVoiceIds(EVENT_ID);
-  const onlyVoice = arg('voice', voiceIds);
-  const onlyLocale = arg('locale', EVENT_LOCALES) as EventLocale | undefined;
+  const onlyVoice = arg(flags, 'voice', voiceIds);
+  const onlyLocale = arg(flags, 'locale', EVENT_LOCALES) as EventLocale | undefined;
   mkdirSync(samplesDir, { recursive: true });
   const sentenceCache = new Map<number, number[]>();
   let written = 0;
