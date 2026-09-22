@@ -64,6 +64,22 @@ final class StockClipManifestStoreTests: XCTestCase {
         XCTAssertEqual(storage.save(manifest("old"), ticket: old), .superseded)
     }
 
+    func testNetworkFailureBeforeSaveKeepsOlderValidResponse() {
+        // 나중에 출발한 B 가 `save` 에 닿기 전에(네트워크에서) 실패하면, 먼저 출발한 A 의 응답은
+        // 그대로 공개된다 — 수위선은 시작이 아니라 **응답을 본 순간** 오른다(안드로이드와 같다).
+        // 여기서 A 를 버리면 아무도 공개하지 못해 '모른다' 상태가 되살아난다(파일 머리 주석).
+        let storage = makeStorage()
+        let old = storage.beginFetch(session: session("owner"))
+        _ = storage.beginFetch(session: session("owner")) // B: 표만 뽑고 응답 없이 실패
+        XCTAssertEqual(storage.save(manifest("old"), ticket: old), .published)
+        XCTAssertEqual(storage.load(ownerUserID: "owner")?.clips.first?.messageId, "old")
+        // B 의 재시도(더 새 표)가 성공하면 그것이 이긴다.
+        let retry = storage.beginFetch(session: session("owner"))
+        XCTAssertEqual(storage.save(manifest("retry"), ticket: retry), .published)
+        XCTAssertEqual(storage.save(manifest("old-again"), ticket: old), .superseded)
+        XCTAssertEqual(storage.load(ownerUserID: "owner")?.clips.first?.messageId, "retry")
+    }
+
     func testDiskReloadChecksOwnerAndRejectsUnownedLegacyManifest() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let fileURL = directory.appendingPathComponent("manifest.json")

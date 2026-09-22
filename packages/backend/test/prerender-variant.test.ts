@@ -121,6 +121,8 @@ function stubOpenMeteo(options?: {
   failKinds?: Set<'geocode' | 'forecast' | 'air'>;
   emptyGeocode?: boolean;
   geocodeStatus?: number;
+  /** 미세먼지 200 응답의 `hourly` 를 통째로 바꾼다(빈 계열·null 계열 등). */
+  airHourly?: Record<string, unknown[]>;
 }) {
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: FetchInit) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
@@ -163,7 +165,7 @@ function stubOpenMeteo(options?: {
         },
       });
     }
-    return openMeteoJson({ hourly: { pm10: [10, 12], pm2_5: [5, 6] } });
+    return openMeteoJson({ hourly: options?.airHourly ?? { pm10: [10, 12], pm2_5: [5, 6] } });
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -268,6 +270,29 @@ describe('GET /tts/prerender-variant — Open-Meteo 타임아웃', () => {
       const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
       expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
     }
+  });
+
+  it('미세먼지 200 인데 계열이 비었거나 전부 null 이어도 null — 받은 것이 아니다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const airHourly of [
+      { pm10: [], pm2_5: [] },
+      { pm10: [null, null], pm2_5: [null, null] },
+      // 한 계열만 있어도 판정하지 않는다 — 요청한 두 계열이 다 있어야 '받았다' 다.
+      { pm10: [10, 12] },
+      { pm10: [10, 12], pm2_5: [null] },
+    ]) {
+      stubOpenMeteo({ airHourly });
+      const res = await requestVariant(buildApp());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
+    }
+    // 정상 표본이면 그대로 분류한다(비 → rain; 먼지만 나쁜 날 → dust).
+    stubOpenMeteo({ airHourly: { pm10: [90], pm2_5: [10] } });
+    expect(await (await requestVariant(buildApp())).json()).toEqual({
+      context: 'wake_weather',
+      variant_index: idx('rain'),
+    });
   });
 
   it('미세먼지만 타임아웃이어도 null — 먼지 없음으로 굳혀 저장되게 두지 않는다', async () => {

@@ -78,6 +78,17 @@ final class StockClipManifestStorage: @unchecked Sendable {
     private let fileURL: URL
     private let lock = NSLock()
     private var nextRevision: UInt64 = 0
+    /// **여기까지의 응답은 이미 지나갔다**는 수위선. 안드로이드 `StockClipManifestStore.seenTicket` 과 같다.
+    ///
+    /// ⚠ **더 새 응답을 본 순간**(`save`) 올린다 — `beginFetch` 에서 올리지 않는다(코덱스 #788 3차에서
+    /// 일부러 남긴 결정). 시작 시점에 올리면 "나중에 출발한 B 가 **네트워크에서** 실패했을 때" 먼저
+    /// 출발한 A 의 멀쩡한 응답까지 버린다 — 그러면 아무도 공개하지 못해 이 파일 머리의 '모른다'
+    /// 상태(고를 수는 있는데 저장은 안 됨)가 되살아난다. 그 경우 A 를 공개해도 디스크는 B 가
+    /// 실패하지 않았을 때보다 나빠지지 않는다: B 는 목록을 받지 못했으니 새 세대의 바이트를
+    /// 내려받는 일도 없고, 캐시 대조가 '되살아난 옛 주소' 를 기준으로 삼을 새 다운로드가 없다.
+    /// 문제가 되는 것은 B 가 목록을 **받고 나서** 쓰기에 실패한 경우뿐이고, 그건 `save` 가
+    /// 성패와 무관하게 수위선을 올려 막는다(`testFailedPublicationStillRejectsOlderResponse`).
+    /// 회귀 테스트: `testNetworkFailureBeforeSaveKeepsOlderValidResponse`.
     private var seenRevision: UInt64 = 0
     private var cached: Envelope?
     private var quarantined = false

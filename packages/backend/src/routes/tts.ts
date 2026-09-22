@@ -639,16 +639,24 @@ async function loadDustSignal(
     if (!response.ok || !json.hourly) return null;
     const pm10Max = maxFinite(json.hourly.pm10);
     const pm25Max = maxFinite(json.hourly.pm2_5);
-    const pm10Bad = pm10Max != null && pm10Max > 80;
-    const pm25Bad = pm25Max != null && pm25Max > 35;
-    return pm10Bad || pm25Bad;
+    // 200 에 `hourly` 가 있어도 요청한 두 계열이 비어 있거나 전부 null 이면(예보 지평 밖·자료 없음)
+    // **받은 것이 아니다** — 여기서 false 로 뭉개면 사전렌더 경로가 그것을 '먼지 없음' 으로 굳힌다
+    // (코덱스 #788 3차). 두 계열 다 쓸 만한 표본이 있어야 판정한다.
+    if (pm10Max === null || pm25Max === null) return null;
+    return pm10Max > 80 || pm25Max > 35;
   } catch {
     return null;
   }
 }
 
+/**
+ * 계열의 최댓값. 쓸 만한 표본이 하나도 없으면 null.
+ * ⚠ `null` 표본을 `Number()` 로 읽으면 **0** 이 된다 — Open-Meteo 는 자료 없는 시각을 `null` 로
+ *   채우므로, 그대로 두면 전부 null 인 계열이 "pm 0 = 먼지 없음" 으로 읽힌다. 숫자(또는 숫자 문자열)만 센다.
+ */
 function maxFinite(values: unknown[] | undefined): number | null {
   const numbers = (values ?? [])
+    .filter((value) => typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value));
   return numbers.length > 0 ? Math.max(...numbers) : null;
