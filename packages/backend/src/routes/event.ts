@@ -93,6 +93,12 @@ event.post('/:eventId/likes/:subjectId', async (c) => {
 // 알리고 여기서 다음 문장으로 다시 시도한다. 로컬(wrangler dev)에는 DB 가 없어 순번은 무작위다.
 
 const MAX_SLOT_ATTEMPTS = 3;
+
+/**
+ * 이 요청에 쓸 수 있는 시간. 랜딩은 150초 뒤 요청을 끊으므로(`event-api.ts` 의 `CLIP_TIMEOUT_MS`),
+ * 그 안에 못 끝낼 재시도·다음 슬롯 시도는 하지 않는다(코덱스 #796). 여유 10초는 응답 전송 몫이다.
+ */
+const CLIP_BUDGET_MS = 140_000;
 /** 문장 목록을 isolate 안에서 들고 있는 시간. 문장을 새로 더하면 이만큼 뒤에 보인다. */
 const SENTENCES_TTL_MS = 10 * 60_000;
 
@@ -103,10 +109,14 @@ export function resetEventCaches(): void {
   sentenceCache.clear();
 }
 
-async function sentencesFor(apiKey: string, voice: VoiceProject): Promise<number[]> {
+async function sentencesFor(
+  apiKey: string,
+  voice: VoiceProject,
+  deadline?: { readonly at: number },
+): Promise<number[]> {
   const hit = sentenceCache.get(voice.project);
   if (hit && Date.now() - hit.at < SENTENCES_TTL_MS) return hit.seqs;
-  const seqs = await listSentenceSeqs(apiKey, voice.project, voice.spaceSeq);
+  const seqs = await listSentenceSeqs(apiKey, voice.project, voice.spaceSeq, deadline);
   sentenceCache.set(voice.project, { seqs, at: Date.now() });
   return seqs;
 }
@@ -158,18 +168,23 @@ event.post('/:eventId/clips', async (c) => {
 
   const message = renderMessage(kind, locale, name);
 
+  // 이 요청의 마감 — 남은 시간이 없으면 재시도도 다음 슬롯도 시도하지 않는다(`CLIP_BUDGET_MS`).
+  const deadline = { at: Date.now() + CLIP_BUDGET_MS };
+
   let bytes: Uint8Array;
   try {
-    const sentences = await sentencesFor(apiKey, voice);
+    const sentences = await sentencesFor(apiKey, voice, deadline);
     let persoPath: string | undefined;
     for (let attempt = 0; attempt < MAX_SLOT_ATTEMPTS; attempt++) {
       const slot = slotAt(voice, sentences, await nextSlotPosition(c.env, voice.project));
       try {
-        persoPath = (await generateSentenceAudio(apiKey, slot, message.tts)).path;
+        persoPath = (await generateSentenceAudio(apiKey, slot, message.tts, deadline)).path;
         break;
       } catch (err) {
         if (!(err instanceof PersoSlotRace) || attempt + 1 >= MAX_SLOT_ATTEMPTS) throw err;
         // 둘이 동시에 다시 시도하면 또 겹친다 — 조금씩 다르게 기다렸다가 다음 문장으로.
+        // 단 마감이 지났으면 그만둔다 — 브라우저가 이미 끊은 뒤에 만들어 봐야 받을 사람이 없다.
+        if (Date.now() >= deadline.at) throw err;
         console.warn('[event] slot race, retrying on the next sentence', slot);
         await new Promise((r) => setTimeout(r, 500 + Math.random() * 2500));
       }

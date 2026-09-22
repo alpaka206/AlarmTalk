@@ -49,6 +49,20 @@ export class PersoHttpError extends Error {
 /** 5xx·연결 실패 한 번은 다시 보낸다 — 상태를 바꾸는 요청도 슬롯 하나에 같은 글자를 다시 쓰는 것이라 멱등이다. */
 const PERSO_RETRY_DELAY_MS = 1_500;
 
+/**
+ * 이 요청에 남은 시간(epoch ms). 호출자가 준다 — 랜딩은 150초 뒤 요청을 끊으므로
+ * (`event-api.ts` 의 `CLIP_TIMEOUT_MS`), **그 안에 못 끝낼 재시도는 하지 않는다**(코덱스 #796).
+ * 예: 생성이 60초 만에 5xx 로 실패하면 남은 시간이 90초 상한보다 적어 다시 보내지 않는다 —
+ * 보내 봐야 브라우저는 이미 끊은 뒤다.
+ */
+export type PersoDeadline = { readonly at: number } | undefined;
+
+/** 이 상한으로 한 번 더 보낼 시간이 남았는가. 마감이 없으면(스크립트 등) 언제나 그렇다. */
+function hasTimeForRetry(deadline: PersoDeadline, timeoutMs: number): boolean {
+  if (!deadline) return true;
+  return Date.now() + PERSO_RETRY_DELAY_MS + timeoutMs <= deadline.at;
+}
+
 const STORE_TIMEOUT_MS = 20_000;
 const GENERATE_TIMEOUT_MS = 90_000;
 const LIST_TIMEOUT_MS = 20_000;
@@ -67,6 +81,7 @@ async function persoRequest(
   path: string,
   body: unknown,
   timeoutMs: number,
+  deadline?: PersoDeadline,
 ): Promise<Record<string, unknown>> {
   for (let attempt = 0; ; attempt += 1) {
     let res: Response;
@@ -82,7 +97,7 @@ async function persoRequest(
       });
     } catch (err) {
       // 시간초과(TimeoutError/AbortError)는 그대로 던진다. 연결 실패(`fetch failed`)만 한 번 더.
-      if (attempt === 0 && !isAbort(err)) {
+      if (attempt === 0 && !isAbort(err) && hasTimeForRetry(deadline, timeoutMs)) {
         await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
         continue;
       }
@@ -91,7 +106,7 @@ async function persoRequest(
     if (res.ok) return (await res.json()) as Record<string, unknown>;
     // 본문은 로그에만(키·내부 정보가 섞일 수 있다). 호출자는 502 로 닫는다.
     const detail = (await res.text().catch(() => '')).slice(0, 300);
-    if (attempt === 0 && res.status >= 500) {
+    if (attempt === 0 && res.status >= 500 && hasTimeForRetry(deadline, timeoutMs)) {
       console.warn(`[perso] ${method} ${path} → ${res.status}, retrying once`);
       await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
       continue;
@@ -114,7 +129,7 @@ export function persoFailureReason(err: unknown): string {
   if (err instanceof PersoHttpError) return `perso_http_${err.status}`;
   if (isAbort(err)) return 'timeout';
   const message = err instanceof Error ? err.message : String(err);
-  if (/not an mp3|Perso media/.test(message)) return 'bad_media';
+  if (/not an mp3/.test(message)) return 'bad_media';
   if (/no translatedText|no file path/.test(message)) return 'bad_response';
   if (/no slot succeeded/.test(message)) return 'no_slot';
   if (/fetch failed|ECONNRESET|ECONNREFUSED/i.test(message)) return 'network';
@@ -129,6 +144,7 @@ export async function listSentenceSeqs(
   apiKey: string,
   project: number,
   spaceSeq: number,
+  deadline?: PersoDeadline,
 ): Promise<number[]> {
   const seqs: number[] = [];
   let cursor: number | null = null;
@@ -141,6 +157,7 @@ export async function listSentenceSeqs(
       `/video-translator/api/v1/projects/${project}/spaces/${spaceSeq}/script?${qs}`,
       undefined,
       LIST_TIMEOUT_MS,
+      deadline,
     );
     const sentences = Array.isArray(json.sentences) ? (json.sentences as unknown[]) : [];
     for (const s of sentences) {
@@ -158,9 +175,17 @@ export async function generateSentenceAudio(
   apiKey: string,
   slot: PersoSlot,
   text: string,
+  deadline?: PersoDeadline,
 ): Promise<{ path: string }> {
   const base = `/video-translator/api/v1/project/${slot.project}/audio-sentence/${slot.sentence}`;
-  await persoRequest(apiKey, 'POST', `${base}/match-rewrite`, { targetText: text }, STORE_TIMEOUT_MS);
+  await persoRequest(
+    apiKey,
+    'POST',
+    `${base}/match-rewrite`,
+    { targetText: text },
+    STORE_TIMEOUT_MS,
+    deadline,
+  );
   const generated = (
     (await persoRequest(
       apiKey,
@@ -168,6 +193,7 @@ export async function generateSentenceAudio(
       `${base}/generate-audio`,
       { targetText: text },
       GENERATE_TIMEOUT_MS,
+      deadline,
     )) as { result?: Record<string, unknown> }
   ).result;
   if (typeof generated?.translatedText !== 'string') {
@@ -195,7 +221,10 @@ export async function fetchPersoMedia(path: string, range?: string): Promise<Res
     signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
     headers: range ? { range } : undefined,
   });
-  if (!res.ok && res.status !== 206) throw new Error(`Perso media ${res.status}`);
+  // 상태를 실어 던진다 — 저장소의 일시 장애(503)와 **깨진 바이트**(bad_media)는 다른 사고다(코덱스 #796).
+  if (!res.ok && res.status !== 206) {
+    throw new PersoHttpError(res.status, 'GET', 'media', await res.text().catch(() => '').then((t) => t.slice(0, 300)));
+  }
   return res;
 }
 

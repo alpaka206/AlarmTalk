@@ -383,7 +383,6 @@ export function EventStudio() {
                     celebrity={celebrity}
                     pinnedKind={pinnedKind}
                     name={nameOf(celebrity)}
-                    kindName={(k) => t(`studio.kinds.${k}.name`)}
                     reduced={reduced}
                   />
                 </motion.div>
@@ -740,13 +739,11 @@ function RotatingPortrait({
   celebrity,
   pinnedKind,
   name,
-  kindName,
   reduced,
 }: {
   celebrity: Celebrity;
   pinnedKind: MessageKind | null;
   name: string;
-  kindName: (kind: MessageKind) => string;
   reduced: boolean;
 }) {
   const kinds = MESSAGE_KINDS.filter((k) => celebrity.portraits[k]);
@@ -760,12 +757,12 @@ function RotatingPortrait({
   // 붙들린 종류 → 그 사진. 아니면 순서대로 돌린다(붙들렸다 풀리면 그 자리부터 이어 간다).
   const kind: MessageKind | null =
     pinnedKind ?? (kinds.length > 0 ? kinds[tick % kinds.length] : null);
-  const src = portraitFor(celebrity, kind);
+  // 후보를 모두 넘긴다 — `Portrait` 가 겹쳐 두고 지금 것만 보인다(미리 받아 두려고).
   return (
     <Portrait
-      src={src}
+      srcs={kinds.map((k) => portraitFor(celebrity, k))}
+      active={portraitFor(celebrity, kind)}
       name={name}
-      alt={kind ? `${name} — ${kindName(kind)}` : name}
       reduced={reduced}
     />
   );
@@ -774,71 +771,85 @@ function RotatingPortrait({
 /**
  * 인물 사진. 파일이 없거나 못 불러오면 이니셜 원으로 대신한다 — 깨진 이미지 아이콘을 두지
  * 않는다. 사진은 초상권 허락을 받은 것만 `public/event/` 에 넣는다(지금은 AI 로 만든 가상 인물).
- * `src` 가 바뀌면 같은 자리에서 겹쳐 페이드한다 — 레이아웃은 그대로.
+ *
+ * 후보 사진을 **모두 겹쳐 두고** 지금 것만 보이게 한다(opacity). 두 가지 이유다(코덱스 #796):
+ *  - 다음 사진이 처음부터 받아져 있어 전환할 때 **비는 순간이 없다**(바뀔 때 마운트하면 느린 망에서
+ *    옛 사진이 사라진 뒤 새 사진이 아직 없다).
+ *  - 대체 텍스트가 **바뀌지 않는다.** 이 카드는 `aria-live="polite"` 안이라, 5초마다 이름이 바뀌면
+ *    화면 낭독기가 묻지도 않은 안내를 계속 읽는다. 보이지 않는 사진은 `aria-hidden` 이다.
  *
  * 정적 HTML 의 img 는 React 가 붙기 전에 이미 실패해 있어 `onError` 가 안 온다. 그래서 붙은
  * 직후 `complete && naturalWidth === 0` 으로 한 번 더 확인한다.
  */
 function Portrait({
-  src,
+  srcs,
+  active,
   name,
-  alt,
   reduced,
 }: {
-  src: string;
+  srcs: string[];
+  active: string;
   name: string;
-  alt: string;
   reduced: boolean;
 }) {
-  const [failed, setFailed] = useState(false);
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const containerRef = useRef<HTMLSpanElement | null>(null);
   useEffect(() => {
-    // 사진이 바뀌면 실패 표시도 그 사진의 것으로 다시 본다.
-    setFailed(false);
-    const el = imgRef.current;
-    if (el && el.complete && el.naturalWidth === 0) setFailed(true);
-  }, [src]);
+    const el = containerRef.current;
+    if (!el) return;
+    const broken: Record<string, boolean> = {};
+    for (const img of Array.from(el.querySelectorAll("img"))) {
+      if (img.complete && img.naturalWidth === 0) broken[img.getAttribute("src") ?? ""] = true;
+    }
+    if (Object.keys(broken).length > 0) setFailed((f) => ({ ...f, ...broken }));
+  }, []);
+  const src = active;
   if (!src) {
     // 사진이 없는 목소리 — 누구를 연상시키는 이미지 없이 소리 결만.
     return (
       <span
         role="img"
-        aria-label={alt}
+        aria-label={name}
         className="grid h-40 w-40 shrink-0 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_30%,var(--color-accent-soft),var(--color-surface)_70%)] text-accent ring-1 ring-line"
       >
         <AudioLines className="h-16 w-16" strokeWidth={1.5} aria-hidden="true" />
       </span>
     );
   }
-  if (failed) {
+  if (failed[src]) {
     return (
       <span
         role="img"
-        aria-label={alt}
+        aria-label={name}
         className="grid h-40 w-40 shrink-0 place-items-center rounded-full bg-surface text-[48px] font-bold text-accent ring-1 ring-line"
       >
         {Array.from(name)[0] ?? ""}
       </span>
     );
   }
+  // 모두 겹쳐 두고 지금 것만 보인다 — 다음 사진은 이미 받아져 있어 비는 순간이 없다.
+  const shown = srcs.includes(src) ? srcs : [src, ...srcs];
   return (
-    <span className="relative block h-40 w-40 shrink-0">
-      <AnimatePresence initial={false}>
-        <motion.img
-          key={src}
-          ref={imgRef}
-          src={src}
-          alt={alt}
-          width={160}
-          height={160}
-          onError={() => setFailed(true)}
-          initial={reduced ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={reduced ? undefined : { opacity: 0 }}
-          transition={{ duration: 0.8, ease: "easeInOut" }}
-          className="absolute inset-0 h-40 w-40 rounded-full object-cover ring-1 ring-line"
-        />
-      </AnimatePresence>
+    <span ref={containerRef} className="relative block h-40 w-40 shrink-0">
+      {shown.map((candidate: string) => {
+        const current = candidate === src;
+        return (
+          <img
+            key={candidate}
+            src={candidate}
+            // 보이는 사진 하나만 이름을 갖는다 — 나머지는 낭독기에 없다(대체 텍스트가 바뀌지 않는다).
+            alt={current ? name : ""}
+            aria-hidden={current ? undefined : true}
+            width={160}
+            height={160}
+            onError={() => setFailed((f) => ({ ...f, [candidate]: true }))}
+            style={{ opacity: current ? 1 : 0 }}
+            className={`absolute inset-0 h-40 w-40 rounded-full object-cover ring-1 ring-line ${
+              reduced ? "" : "transition-opacity duration-[800ms] ease-in-out"
+            }`}
+          />
+        );
+      })}
     </span>
   );
 }

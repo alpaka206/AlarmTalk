@@ -407,6 +407,47 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     vi.useRealTimers();
   });
 
+  it('저장소가 5xx 로 답하면 태그가 perso_http_503 이다 — 깨진 바이트(bad_media)와 가른다(코덱스 #796)', async () => {
+    vi.useFakeTimers();
+    const { fetchSpy } = fakePerso();
+    const real = fetchSpy.getMockImplementation()!;
+    fetchSpy.mockImplementation(async (input, init) =>
+      String(input).startsWith('https://portal-media.perso.ai/')
+        ? new Response('gateway', { status: 503 })
+        : real(input, init),
+    );
+    cursorPositions(2);
+    const sentry = { setTag: vi.fn(), captureException: vi.fn() };
+    const pending = buildApp(undefined, sentry)('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    expect((await pending).status).toBe(502);
+    expect(sentry.setTag).toHaveBeenCalledWith('perso_reason', 'perso_http_503');
+    vi.useRealTimers();
+  });
+
+  it('마감이 가까우면 5xx 를 다시 보내지 않는다 — 브라우저가 이미 끊은 뒤다(코덱스 #796)', async () => {
+    // 랜딩은 150초에 끊는다(`CLIP_TIMEOUT_MS`). 생성이 **늦게** 5xx 로 실패하면 90초 상한으로 한 번
+    // 더 기다릴 시간이 없다 — 보내 봐야 받을 사람이 없다.
+    vi.useFakeTimers();
+    const { fetchSpy } = fakePerso();
+    const real = fetchSpy.getMockImplementation()!;
+    let generateCalls = 0;
+    fetchSpy.mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/generate-audio')) {
+        generateCalls += 1;
+        vi.advanceTimersByTime(100_000); // 100초를 쓰고 실패 → 남은 40초 < 1.5 + 90
+        return new Response('bad gateway', { status: 502 });
+      }
+      return real(input, init);
+    });
+    cursorPositions(1);
+    const pending = buildApp()('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    expect((await pending).status).toBe(502);
+    expect(generateCalls).toBe(1);
+    vi.useRealTimers();
+  });
+
   it('4xx 는 다시 보내지 않고 바로 502 — 같은 요청은 같은 답이다', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
