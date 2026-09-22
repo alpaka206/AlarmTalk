@@ -38,6 +38,12 @@ enum AlarmTalkLog {
         .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
         .secureConnectionFailed, .serverCertificateUntrusted,
         .internationalRoamingOff, .dataNotAllowed, .callIsActive,
+        // ⚠ **취소도 여기 있어야 한다**(2026-09-22). BG 워치독·시스템 만료가 전송 **도중**
+        //   `Task.cancel()` 을 부르면 이미 날아간 URLSession 요청은 `CancellationError` 가
+        //   아니라 `URLError(.cancelled)` 로 돌아온다(`UserFacingError.swift` 의 `isCancellation`).
+        //   이게 빠져 있어 BG 사이클의 모든 `reportError` 호출부(토큰 갱신·목소리 접근권·
+        //   push/pull·사용 기록)가 시간이 모자란 회차마다 허위 이슈를 만들 수 있었다.
+        .cancelled,
     ]
 
     /// Sentry 에 **이슈로 올리지 않는** 실패인가. 로그와 브레드크럼에만 남긴다.
@@ -47,7 +53,8 @@ enum AlarmTalkLog {
     /// 우리도 고칠 코드가 없는 실패를 이슈로 올리면 진짜 결함이 그 사이에 묻힌다
     /// (2026-09-14 안드로이드 1.2.6 출시 직후 미해결 11건 중 8건이 이 종류였다).
     ///
-    /// 1. **태스크 취소**(`CancellationError`). 오류가 아니라 흐름 제어다.
+    /// 1. **태스크 취소**(`CancellationError`, 그리고 전송 도중 취소된 요청의
+    ///    `URLError(.cancelled)`). 오류가 아니라 흐름 제어다.
     /// 2. **일시적 네트워크 실패**([transientURLErrorCodes]). `NSUnderlyingErrorKey` 사슬
     ///    어디에 있든 본다 — 도메인 오류로 한 번 감싼 것도 같은 실패다.
     ///

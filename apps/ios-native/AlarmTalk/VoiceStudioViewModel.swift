@@ -157,7 +157,7 @@ final class VoiceStudioViewModel: ObservableObject {
         return familyVoices.first { $0.id == selectedProfileID }
     }
 
-    func clearUserScopedRemoteState() {
+    func clearUserScopedRemoteState(preservingManifestFor ownerUserID: String? = nil) {
         // 화면 확인 모드에서는 시드를 지우지 않는다 — 세션 변화마다 목록이 비워진다.
         if UIPreviewSeed.isEnabled { return }
         activeUserID = nil
@@ -180,10 +180,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 목소리에 접근할 때 이유 없이 잠긴 채로 보인다 — 그 계정에는 풀어 줄 작업이 없다.
         unpersistedSuppressedProfileIDs = []
         replacementSuppressedProfileIDs = []
-        // 디스크 사본도 같이 지운다 — 매니페스트에는 **그 계정의 클론 클립**이 들어 있어
-        // 계정이 바뀌면 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로
-        // 오프라인 판정은 그때부터 정상으로 돌아온다.
-        StockClipManifestStore.clear()
+        StockClipManifestStore.clear(preservingOwnerUserID: ownerUserID)
         manifestFetchedThisSession = false
         selectedProfileID = nil
         defaultVoiceId = nil
@@ -584,7 +581,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // nil → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
         // 비행기모드 콜드스타트에서는 클립을 전부 받아 둔 기기도 알람을 못 만든다.
         // 자세한 것은 `StockClipManifestStore` 주석.
-        if stockClips.isEmpty, let cached = StockClipManifestStore.load() {
+        if stockClips.isEmpty, let cached = StockClipManifestStore.load(ownerUserID: session?.user.id) {
             stockClips = cached.clips
             expectedVariants = cached.expectedVariants
             legacyBucketHints = Dictionary(
@@ -596,7 +593,8 @@ final class VoiceStudioViewModel: ObservableObject {
         // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
         // 그걸 '신선함' 으로 읽으면 **교체 이전 스냅샷**(전부 rendered=true)으로 세대를
         // 확정한다 — 완료 푸시를 놓친 기기는 회수된 프리셋을 문 채 남는다.
-        guard let token = session?.token else { return false }
+        guard let session else { return false }
+        let token = session.token
         // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
         // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
         // 이번 세션에 이미 받았고 강제도 아니면 **새로 받은 것이 아니다.**
@@ -607,10 +605,12 @@ final class VoiceStudioViewModel: ObservableObject {
         // 안드로이드 짝은 `MainViewModel.stockClipManifestRevision`.
         manifestRevision &+= 1
         let revision = manifestRevision
+        let ticket = StockClipManifestStore.beginFetch(session: session)
         do {
             let manifest = try await api.getStockClipManifest(token: token)
             // 밀려난 응답은 공개하지 않으므로 '새로 받았다' 도 아니다.
-            guard revision == manifestRevision else { return false }
+            guard !Task.isCancelled, revision == manifestRevision,
+                  StockClipManifestStore.save(manifest, ticket: ticket) == .published else { return false }
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
             legacyBucketHints = Dictionary(
@@ -618,7 +618,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 uniquingKeysWith: { first, _ in first },
             )
             manifestFetchedThisSession = true
-            StockClipManifestStore.save(manifest)
             return true
         } catch {
             // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 화면은 그걸로 계속

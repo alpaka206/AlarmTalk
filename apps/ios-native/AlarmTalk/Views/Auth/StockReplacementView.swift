@@ -97,7 +97,7 @@ struct StockReplacementView: View {
         // 진행률이 보는 값을 늘릴 때는 그 함수에 얹을 것 — 여기서 클립마다 캐시를 묻지 말 것.
         .task {
             while !Task.isCancelled {
-                progress = StockClipPrefetcher.defaultVoiceProgress()
+                progress = await StockClipPrefetcher.progressOffMain()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }

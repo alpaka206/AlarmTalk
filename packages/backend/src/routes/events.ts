@@ -8,6 +8,7 @@
  * 「Real alarm」) 울림은 기기에 적기만 하고, 전송은 그 뒤 아무 때나 한다.
  */
 import { Hono } from 'hono';
+import type { InStatement } from '@libsql/client';
 import { UsageEventBatchSchema, type UsageEvent } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
@@ -94,19 +95,25 @@ events.post('/', async (c) => {
     //   함께 건너뛰는 것이 맞다.
     const messageEvents = list.filter((event: UsageEvent) => event.message_id);
     const alreadyStored = new Set<string>();
-    for (let i = 0; i < messageEvents.length; i += INSERT_CHUNK) {
-      const chunk = messageEvents.slice(i, i + INSERT_CHUNK);
-      const found = await tx.execute({
+    const lookups: InStatement[] = [];
+    for (let offset = 0; offset < messageEvents.length; offset += INSERT_CHUNK) {
+      const chunk = messageEvents.slice(offset, offset + INSERT_CHUNK);
+      lookups.push({
         sql: `SELECT id FROM usage_events WHERE id IN (${inPlaceholders(chunk)})`,
         args: chunk.map((event: UsageEvent) => event.id),
       });
-      for (const row of found.rows) alreadyStored.add(String(row.id));
+    }
+    if (lookups.length) {
+      for (const found of await tx.batch(lookups)) {
+        for (const row of found.rows) alreadyStored.add(String(row.id));
+      }
     }
 
-    for (let i = 0; i < list.length; i += INSERT_CHUNK) {
-      const chunk = list.slice(i, i + INSERT_CHUNK);
+    const writes: InStatement[] = [];
+    for (let offset = 0; offset < list.length; offset += INSERT_CHUNK) {
+      const chunk = list.slice(offset, offset + INSERT_CHUNK);
       const values = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
-      await tx.execute({
+      writes.push({
         sql: `INSERT OR IGNORE INTO usage_events
                 (id, user_id, type, occurred_at, alarm_id, voice_profile_id, message_id, detail)
               VALUES ${values}`,
@@ -136,16 +143,17 @@ events.post('/', async (c) => {
     // 조건으로 걸어야 한다 — 남의 문구를 비사용중으로 만들 수 있으면 그 오디오가
     // 정리 대상이 된다.
     for (const event of list) {
-      if (!event.message_id) continue;
       // 이미 저장돼 있던 사건이다 — 그때 같은 트랜잭션에서 갱신까지 끝났다.
       if (alreadyStored.has(event.id)) continue;
+      alreadyStored.add(event.id);
+      if (!event.message_id) continue;
       // ⚠ **남기는 것은 도착 순서가 아니라 더 최근 사실이다 — 붙임·해제 양쪽 다.**
       //   오프라인 큐는 며칠 밀릴 수 있고, 같은 문구(=같은 `message_id`)를 두 기기가
       //   함께 쓸 수 있다(캐시 히트가 같은 id 를 돌려준다). 그래서 두 갈래 모두
       //   `in_use_updated_at` 을 비교해 **더 최근 사실만** 남긴다 — 한쪽만 막으면
       //   뒤늦게 도착한 '붙임' 이 최신 '해제' 를 되돌린다.
       if (event.type === 'manual_message_attached') {
-        await tx.execute({
+        writes.push({
           sql: `UPDATE message_library
                    SET in_use = 1, in_use_updated_at = ?, last_used_at = ?
                  WHERE message_id = ? AND user_id = ?
@@ -159,7 +167,7 @@ events.post('/', async (c) => {
           ],
         });
       } else if (event.type === 'manual_message_released') {
-        await tx.execute({
+        writes.push({
           sql: `UPDATE message_library
                    SET in_use = 0, in_use_updated_at = ?
                  WHERE message_id = ? AND user_id = ?
@@ -168,6 +176,7 @@ events.post('/', async (c) => {
         });
       }
     }
+    await tx.batch(writes);
   });
 
   return c.json({ accepted: list.length });

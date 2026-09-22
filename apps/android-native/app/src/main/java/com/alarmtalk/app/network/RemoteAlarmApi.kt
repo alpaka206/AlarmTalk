@@ -45,6 +45,7 @@ data class RemoteAlarm(
     @SerializedName("bucket_id") val bucketId: String? = null,
     @SerializedName("delivery_version") val deliveryVersion: String? = null,
     @SerializedName("is_received_family_alarm") val isReceivedFamilyAlarm: Boolean? = null,
+    @SerializedName("creation_replayed") val creationReplayed: Boolean? = null,
 ) {
     // 두 필드를 합치면 신서버의 명시적인 false도 구형 표시 때문에 뒤집힐 수 있다.
     val isReceivedForPull: Boolean get() = isReceived ?: isReceivedFamilyAlarm ?: false
@@ -70,6 +71,7 @@ data class RemoteAlarmWriteRequest(
     @SerializedName("timezone") val timezone: String? = null,
     // 무료 버킷 회전 알람이 가리키는 버킷(예: "morning"). 회전 클립은 기기 로컬에서 해석한다.
     @SerializedName("bucket_id") val bucketId: String? = null,
+    @SerializedName("client_alarm_id") val clientAlarmId: String? = null,
 )
 
 interface RemoteAlarmApi {

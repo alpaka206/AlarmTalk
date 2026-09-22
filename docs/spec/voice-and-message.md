@@ -456,6 +456,11 @@
 `GET /voice/:id/prerender-status` 의 `total`). 앱은 그 목록과 **디스크에 실제로 있는 것**을
 비교해 **없는 것만** 받는다.
 
+매니페스트를 받는 전경·백그라운드 경로는 저장소 전역의 조회 세대와 계정 소유자를 공유한다.
+새 응답을 본 뒤 늦게 도착한 옛 응답은 저장하지 않는다. 로그아웃·계정 전환은 미완료 조회를
+무효화하며, 다른 계정 또는 소유자 미상의 디스크 목록은 시드하지 않는다. 진행률 조회의
+파일 읽기·메타데이터 해석은 메인 스레드의 반복 폴링에서 실행하지 않는다.
+
 제자리 교체는 message ID를 보존하므로 파일 존재만으로는 충분하지 않다. 매니페스트의
 `audio_url`을 캐시 메타데이터의 원격 주소와 비교하고, 다르면 같은 `stock_<messageId>` 파일을
 낡은 것으로 보아 다시 받는다. 서버는 교체 렌더마다 새 R2 주소를 게시하고, 전체 게시 완료 뒤
@@ -780,6 +785,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
+| 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore`의 세션 CAS | `GET /tts/stock-clips` |
+| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |

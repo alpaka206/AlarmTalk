@@ -52,7 +52,7 @@ def main() -> int:
 
     # 1) 상대 링크가 실재하는가
     for md in sorted(ROOT.rglob("*.md")):
-        if any(part in {"node_modules", "build", ".git", "Pods"} for part in md.parts):
+        if any(part in {"node_modules", "build", ".git", "Pods", "DerivedData"} for part in md.parts):
             continue
         for number, line in enumerate(md.read_text(errors="ignore").splitlines(), 1):
             for target in LINK.findall(line):
@@ -67,7 +67,7 @@ def main() -> int:
     # 2) 백틱으로 적은 docs 경로가 실재하고 **추적되는가**
     tracked = tracked_paths()
     for md in sorted(ROOT.rglob("*.md")):
-        if any(part in {"node_modules", "build", ".git", "Pods"} for part in md.parts):
+        if any(part in {"node_modules", "build", ".git", "Pods", "DerivedData"} for part in md.parts):
             continue
         for number, line in enumerate(md.read_text(errors="ignore").splitlines(), 1):
             for target in set(BACKTICK_DOCS.findall(line)):

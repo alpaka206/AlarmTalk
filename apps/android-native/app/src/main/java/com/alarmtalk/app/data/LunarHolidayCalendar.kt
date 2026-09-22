@@ -18,7 +18,7 @@ import java.time.LocalDate
  * 구조 결정(테스트 가능성): 순수 [LocalDate] 만 다루는 대체공휴일 규칙([KoreanHolidaySubstituteRules])과
  * 프레임워크 ICU 에 의존하는 음→양 변환([LunarConverter])을 분리한다. 전자는 JVM 단위 테스트로,
  * 후자는 instrumented 테스트(에뮬레이터/기기, 실제 framework ICU)로 검증한다.
- * desktop OpenJDK 에는 `android.icu.util.ChineseCalendar` 가 없어 순수 JVM 테스트로는 로드되지 않는다.
+ * desktop OpenJDK 에는 `android.icu.util.Calendar` 가 없어 순수 JVM 테스트로는 로드되지 않는다.
  */
 object LunarHolidayCalendar {
     /** 변환기 주입 지점. 기본은 framework ICU 기반. 테스트에서 교체 가능. */

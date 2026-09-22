@@ -22,6 +22,56 @@ import XCTest
 @MainActor
 final class AuthViewModelTests: XCTestCase {
 
+    func testBackgroundRenewalPublishesTheStoredTokenToMemory() async throws {
+        PendingSignOutStore.removeAll()
+        let api = MockAuthAPI()
+        let original = makeEmailSession()
+        var refreshedUser = original.user
+        refreshedUser.plan = "personal"
+        api.meResult = .success(refreshedUser)
+        api.meRolledToken = "rolled-token"
+        let model = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        model._setSessionForTesting(original)
+        try KeychainStore.saveSession(original)
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        await BackgroundSyncTask.renewSessionTokenIfNeeded(api: api, auth: model)
+
+        XCTAssertEqual(model.session?.token, "rolled-token")
+        XCTAssertEqual(model.session?.token, KeychainStore.readSession()?.token)
+        XCTAssertEqual(model.session?.user.plan, "personal")
+    }
+
+    func testLateUnauthorizedDoesNotDeleteBackgroundRenewedSession() async throws {
+        PendingSignOutStore.removeAll()
+        let api = MockAuthAPI()
+        let original = makeEmailSession()
+        let model = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        model._setSessionForTesting(original)
+        try KeychainStore.saveSession(AuthSession(token: "rolled-token", user: original.user))
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        NotificationCenter.default.post(name: AlarmTalkAPI.unauthorizedNotification, object: nil,
+            userInfo: [AlarmTalkAPI.unauthorizedTokenKey: original.token])
+        for _ in 0..<10 { await Task.yield() }
+
+        XCTAssertEqual(KeychainStore.readSession()?.token, "rolled-token")
+        XCTAssertEqual(model.session?.token, "rolled-token")
+    }
+
+    func testStoredSessionAdoptionDoesNotReviveExplicitSignOut() throws {
+        let original = makeEmailSession()
+        let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        model._setSessionForTesting(original)
+        try KeychainStore.saveSession(AuthSession(token: "rolled-token", user: original.user))
+        PendingSignOutStore.mark(original.user.id)
+        defer { PendingSignOutStore.removeAll(); KeychainStore.deleteSession() }
+
+        model.absorbStoredSession(from: original.token)
+
+        XCTAssertEqual(model.session?.token, original.token)
+    }
+
     /// ⚠ **동의 완료 캐시는 `UserDefaults.standard` 에 남는다 — 테스트마다 지운다**
     /// (Codex #703 P2). `checkConsentStatus` 가 그 저장소를 직접 만들어 쓰므로 주입할 자리가
     /// 없고, 키는 `<계정><정책버전>` 으로 고정이라 **이 클래스의 다른 테스트끼리도 서로

@@ -47,6 +47,7 @@ struct VoiceProfileManagementPanel: View {
     /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
     @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
     @State private var retryingPrerenderIDs: Set<String> = []
+    @State private var downloadProgress: [String: (done: Int, total: Int)] = [:]
     @State private var retryingSpeechStyleIDs: Set<String> = []
 
     /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
@@ -192,6 +193,18 @@ struct VoiceProfileManagementPanel: View {
         // 사전렌더 진행 폴링 — 준비 중인 목소리가 하나라도 있는 동안만 돈다.
         .task(id: ownVoices.map(\.id).joined(separator: ",")) {
             await pollPrerenderStatuses()
+        }
+        .task(id: "\(auth.session?.user.id ?? "-")|\(ownVoices.map(\.id).joined(separator: ","))") {
+            downloadProgress = [:]
+            while !Task.isCancelled, !ownVoices.isEmpty {
+                var next: [String: (done: Int, total: Int)] = [:]
+                for profile in ownVoices {
+                    next[profile.id] = await StockClipPrefetcher.progressOffMain(voiceProfileID: profile.id)
+                }
+                guard !Task.isCancelled else { return }
+                downloadProgress = next
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
         }
         // ⚠ **이름만 고친다.** 관계·호칭을 함께 보내면 서버가 409
         // `VOICE_PERSONA_LOCKED` 로 거절해(`voice-profile.ts:733-741`) **이름 변경조차
@@ -377,9 +390,7 @@ struct VoiceProfileManagementPanel: View {
                                 retrying: retryingPrerenderIDs.contains(profile.id),
                                 onRetry: { Task { await retryPrerender(profile) } },
                                 // 생성이 끝난 뒤의 몫 — 받는 중에도 진행률이 이어진다.
-                                downloadProgress: StockClipPrefetcher.cloneVoiceProgress(
-                                    voiceProfileID: profile.id
-                                )
+                                downloadProgress: downloadProgress[profile.id]
                             )
                         }
                         // 말투 분석 실패 — 서버에 재시도 라우트가 있는데 부를 길이 없었다.

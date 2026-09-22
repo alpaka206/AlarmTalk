@@ -107,6 +107,9 @@ jobs:
       - name: Check plan constants match across shared/Android/iOS/DB
         run: python3 scripts/check-plan-constants.py
 
+      - name: Check auth email contract
+        run: python3 scripts/check-auth-email-contract.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로

@@ -26,6 +26,7 @@ object RemoteAlarmMapper {
             targetUserId = null,
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),
+            clientAlarmId = alarm.id,
         )
     }
 

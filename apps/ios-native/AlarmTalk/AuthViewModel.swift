@@ -438,6 +438,13 @@ final class AuthViewModel: ObservableObject {
         session = saved
     }
 
+    func absorbStoredSession(from previousToken: String) {
+        guard let current = session, current.token == previousToken,
+              !PendingSignOutStore.isPending(current.user.id),
+              let stored = KeychainStore.readSession(), stored.user.id == current.user.id else { return }
+        session = stored
+    }
+
     func restoreSession() async {
         guard let saved = KeychainStore.readSession() else { return }
         session = saved
@@ -891,6 +898,10 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
     private func handleUnauthorized(failedToken: String?) {
         guard let current = session, let failedToken, failedToken == current.token else { return }
+        if let stored = KeychainStore.readSession(), stored.token != failedToken {
+            absorbStoredSession(from: failedToken)
+            return
+        }
         // ⚠ **그 401 이 지금 세션의 것일 때만 끊는다**(코덱스 #734 4차). A 의 요청이 날아가는
         //   사이 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이 여기까지 와서
         //   **방금 만든 B 의 세션을 끊는다.** 호출부에서 막아도 이 중앙 처리기가 남는다.

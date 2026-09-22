@@ -11,6 +11,18 @@ final class TransientFailureClassificationTests: XCTestCase {
         XCTAssertTrue(AlarmTalkLog.isExpectedTransientFailure(CancellationError()))
     }
 
+    func test_cancelledInFlightRequestIsNotAnErrorEither() {
+        // 전송 도중 취소된 URLSession 요청은 `CancellationError` 가 아니라 `URLError(.cancelled)`
+        // 로 돌아온다(BG 워치독·시스템 만료). 이게 목록에 없으면 BG 사이클의 모든 reportError
+        // 호출부가 시간이 모자란 회차마다 허위 이슈를 만든다(2026-09-22).
+        XCTAssertTrue(AlarmTalkLog.isExpectedTransientFailure(URLError(.cancelled)))
+        let wrapped = NSError(
+            domain: "AlarmTalk.Sync", code: 1,
+            userInfo: [NSUnderlyingErrorKey: URLError(.cancelled)]
+        )
+        XCTAssertTrue(AlarmTalkLog.isExpectedTransientFailure(wrapped))
+    }
+
     func test_transientNetworkFailuresAreBreadcrumbsNotIssues() {
         for code: URLError.Code in [
             .notConnectedToInternet, .timedOut, .cannotFindHost, .cannotConnectToHost,

@@ -17,6 +17,23 @@ import XCTest
 @MainActor
 final class BackgroundSyncTaskTests: XCTestCase {
 
+    func testConcurrentExpirationAndCompletionFinishOnlyOnce() {
+        let handle = CompletionTestHandle()
+        let completion = BackgroundTaskCompletion(handle)
+        DispatchQueue.concurrentPerform(iterations: 50) { _ in completion.finish(success: false) }
+        completion.finish(success: true)
+        XCTAssertEqual(handle.results, [false])
+    }
+
+    func testOptionalUploadTimeoutPreservesCompletedAlarmSync() {
+        let handle = CompletionTestHandle()
+        let completion = BackgroundTaskCompletion(handle)
+        completion.recordEssentialResult(success: true)
+        completion.finish()
+        completion.finish(success: false)
+        XCTAssertEqual(handle.results, [true])
+    }
+
     func test_taskIdentifier_matchesInfoPlistPermittedIdentifier() {
         // Info.plist 에 등록된 식별자와 일치해야만 BGTaskScheduler 에서 register 가 동작.
         XCTAssertEqual(
@@ -37,4 +54,10 @@ final class BackgroundSyncTaskTests: XCTestCase {
     func test_cancelAll_doesNotThrow() {
         XCTAssertNoThrow(BackgroundSyncTask.cancelAll())
     }
+}
+
+private final class CompletionTestHandle: BackgroundRefreshTaskHandle {
+    var expirationHandler: (() -> Void)?
+    var results: [Bool] = []
+    func setTaskCompleted(success: Bool) { results.append(success) }
 }

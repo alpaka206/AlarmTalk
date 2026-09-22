@@ -21,6 +21,30 @@ protocol BackgroundRefreshTaskHandle: AnyObject {
     func setTaskCompleted(success: Bool)
 }
 
+final class BackgroundTaskCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handle: (any BackgroundRefreshTaskHandle)?
+    private var essentialResult = false
+
+    init(_ handle: any BackgroundRefreshTaskHandle) { self.handle = handle }
+
+    func recordEssentialResult(success: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        essentialResult = success
+    }
+
+    func finish(success: Bool? = nil) {
+        lock.lock()
+        let task = handle
+        handle = nil
+        let result = success ?? essentialResult
+        lock.unlock()
+        task?.expirationHandler = nil
+        task?.setTaskCompleted(success: result)
+    }
+}
+
 #if canImport(BackgroundTasks)
 // 두 멤버는 `BGTask` 에 있다 — 상위에 한 번만 붙이면 `BGAppRefreshTask` 가 물려받는다.
 extension BGTask: BackgroundRefreshTaskHandle {}
@@ -220,6 +244,7 @@ final class BackgroundSyncTask {
     #if canImport(BackgroundTasks)
     func runAndSchedule(task: any BackgroundRefreshTaskHandle) async {
         scheduleNext()
+        let completion = BackgroundTaskCompletion(task)
 
         // ⚠ 등록부(`register`)가 이미 expirationHandler 로 Task 를 취소하도록 걸어 뒀다.
         // 여기서 덮어쓰면 그 취소가 사라지므로, 완료 통보만 **덧붙인다**.
@@ -228,10 +253,9 @@ final class BackgroundSyncTask {
         // 값이고 만료 핸들러는 시스템이 한 번 부르고 스스로 비운다(헤더). 그래서
         // `nonisolated(unsafe)` 로 받아 넘긴다.
         nonisolated(unsafe) let cancelWork = task.expirationHandler
-        nonisolated(unsafe) let handle = task
         task.expirationHandler = { @Sendable in
             cancelWork?()
-            handle.setTaskCompleted(success: false)
+            completion.finish()
         }
 
         let timeoutTask = Task { @MainActor in
@@ -254,7 +278,7 @@ final class BackgroundSyncTask {
             // 이어질 재시도 회차와 겹친다. 시스템 만료 경로(위 `expirationHandler`)는
             // 처음부터 취소하고 있었는데 우리 워치독만 안 했다.
             cancelWork?()
-            task.setTaskCompleted(success: false)
+            completion.finish()
         }
 
         do {
@@ -326,6 +350,10 @@ final class BackgroundSyncTask {
                 )
             }
             #endif
+            completion.recordEssentialResult(success: pullResult.failed == 0)
+            try Task.checkCancellation()
+            await UsageEventUploader.shared.flush(session: KeychainStore.readSession(), maxBatches: 1)
+            try Task.checkCancellation()
             timeoutTask.cancel()
 
             // Android `RemoteAlarmSyncWorker.doWork` 의 retry 조건과 동일:
@@ -337,16 +365,16 @@ final class BackgroundSyncTask {
             // 로 재예약하는 것이 가장 근접한 근사다(정확한 지수 백오프는 재현 불가).
             if pullResult.failed > 0 {
                 scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
-                task.setTaskCompleted(success: false)
+                completion.finish(success: false)
             } else {
-                task.setTaskCompleted(success: true)
+                completion.finish(success: true)
             }
         } catch {
             timeoutTask.cancel()
             // Android `RemoteAlarmSyncWorker` 의 외부 getOrElse { Result.retry() } 와 동일:
             // push/pull 이 예외를 던지면 표준 주기 대신 더 짧은 주기로 재시도를 유도한다.
             scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
-            task.setTaskCompleted(success: false)
+            completion.finish()
         }
     }
     #endif
@@ -359,11 +387,14 @@ final class BackgroundSyncTask {
     /// ⚠ **저장 직전에 Keychain 을 다시 읽는다.** 네트워크 왕복 중 로그아웃·계정 전환이
     /// 끼면 비운 저장소에 끝난 세션을 되쓰게 된다. 사용자 id 가 다르면 버린다
     /// (안드로이드는 같은 자리를 `saveTokenIfGeneration` 의 세션 세대로 막는다).
-    static func renewSessionTokenIfNeeded() async {
+    static func renewSessionTokenIfNeeded(
+        api: AuthAPIProviding = AlarmTalkAPI.shared,
+        auth: AuthViewModel = BackgroundDependencies.shared.auth
+    ) async {
         guard let session = KeychainStore.readSession(),
               SessionTokenRenewal.shouldRenew(token: session.token) else { return }
         do {
-            let (rolledToken, user) = try await AlarmTalkAPI.shared.me(token: session.token)
+            let (rolledToken, user) = try await api.me(token: session.token)
             // ⚠ **plan 도 반영한다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
             // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 예약·울림
             // 게이트가 읽는 값이 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 예약되거나,
@@ -377,15 +408,12 @@ final class BackgroundSyncTask {
             // 덮는다 — 계정 id 만 대조해서는 못 거른다(같은 id 다). 토큰 에폭까지 보는
             // `saveSessionIfCurrent` 로 원자적으로 바꾼다.
             // 세션과 판정 스냅샷을 **같은 잠금 안에서** 함께 바꾼다 — 문이 그 조합을 갖고 있다.
-            // 결과를 **일부러 버린다**(2026-09-02 리뷰에서 명시하기로 함). 거절은 '그 사이
-            // 로그아웃·재로그인이 있었다' 는 뜻인데, 이 함수는 여기서 끝나고 뒤따르는 상태
-            // 발행이 없다 — 그대로 두는 것이 맞다. 같은 파일의 다른 문 호출과 같은 처리다.
-            // (`AlarmTalkLog` 에는 오류 채널만 있어서, 이건 오류가 아니므로 남기지 않는다.)
-            _ = EntitlementWriter().renewSession(
+            let result = EntitlementWriter().renewSession(
                 AccessTicket(userID: session.user.id, token: session.token),
                 rolledToken: rolledToken,
                 plan: user.plan
             )
+            if result == .applied { auth.absorbStoredSession(from: session.token) }
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),
             // 다음 백그라운드 회차나 앱 오픈이 다시 시도한다.

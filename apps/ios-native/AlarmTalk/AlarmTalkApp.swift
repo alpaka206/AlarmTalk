@@ -302,9 +302,11 @@ struct AlarmTalkApp: App {
                         await rebindStockClipsIfNeeded()
                     }
                     .task(id: auth.session?.user.id) {
+                        stockClipPrefetcher.cancel()
                         remoteSync.clearUserScopedRemoteState()
-                        voiceStudio.clearUserScopedRemoteState()
+                        voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
+                        stockClipPrefetcher.start(session: auth.session)
                     }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
