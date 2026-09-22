@@ -51,6 +51,27 @@ describe('에러 코드 목록', () => {
     }
   });
 
+  it('결제 확정이 거절된 갈래는 경보로 올린다', () => {
+    // ⚠ 2026-09-19 사고에서 우리는 **증상만** 봤다(`VOICE_FEATURE_REQUIRES_PAID_PLAN` —
+    //   유료 사용자가 기능을 못 쓴다). 정작 원인인 확정 거절은 구조화 로그에만 남아 있어
+    //   Sentry 에는 한 줄도 없었고, 무엇 때문에 무료로 보이는지 끝내 못 짚었다.
+    //   사용자는 이미 돈을 냈고 고칠 수 있는 것은 우리뿐이라, 이 넷은 로그가 아니라 경보다.
+    //   (`SUBSCRIPTION_EXPIRED` 는 정상 만료에서도 흔해 **일부러 뺀다** — 넣으면 진짜
+    //   사고가 그 사이에 묻힌다.)
+    for (const code of [
+      'TRANSACTION_OWNED_BY_OTHER_USER',
+      'TRANSACTION_ACCOUNT_MISMATCH',
+      'CROSS_STORE_RENEWAL_ACTIVE',
+      'APPLE_VERIFICATION_FAILED',
+    ] as const) {
+      expect(ALERTING_ERROR_CODES, `${code} 가 목록에서 빠지면 다음 사고에서도 원인이 안 보인다`).toContain(code);
+    }
+    expect(
+      ALERTING_ERROR_CODES,
+      '정상 만료까지 경보로 올리면 진짜 사고가 묻힌다',
+    ).not.toContain('SUBSCRIPTION_EXPIRED');
+  });
+
   it('기기 큐를 영구히 막는 400 은 경보로 올린다', () => {
     // 두 앱 모두 2xx 가 아닌 배치를 큐에서 지우지 않는다 — 이 400 이 한 번 나면 그 기기는
     // 그 뒤로 사용 기록을 하나도 못 올린다. 구조화 로그에만 남기면 아무도 보지 못한다.

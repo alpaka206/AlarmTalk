@@ -360,6 +360,7 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     var bucketId: String?
     /// 같은 알람 id가 재전송으로 교체돼도 구버전 ACK가 새 행을 지우지 못하게 하는 전달 세대.
     var deliveryVersion: String? = nil
+    var creationReplayed: Bool? = nil
 }
 
 struct AlarmReceiptRequest: Encodable {
@@ -384,6 +385,7 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
+    var clientAlarmId: String? = nil
 }
 
 struct VoiceProfileListResponse: Decodable {

@@ -67,9 +67,32 @@ class UsageEventUploadWorker(
             if (sent > 0) Log.i(TAG, "Uploaded usage events count=$sent")
             Result.success()
         }.getOrElse { error ->
-            // ⚠ **큐를 지우지 않는다.** 다음 기회에 그대로 다시 보낸다(서버가 멱등이다).
-            AlarmTalkLog.reportError("Usage event upload failed", error)
-            Result.retry()
+            // ⚠ **어느 갈래로 가든 큐를 지우지 않는다.** 다음 기회에 그대로 다시 보낸다
+            // (서버가 클라 UUID 로 멱등 처리한다). 지우는 것은 성공한 배치뿐이다.
+            when (syncWorkerOutcome(error)) {
+                SyncWorkerOutcome.RETHROW -> throw error
+                SyncWorkerOutcome.SESSION_EXPIRED -> {
+                    // ⚠ **여기가 ANDROID-M 이었다.** 401 에도 `Result.retry()` 를 돌려줘,
+                    // 폐기된 토큰으로 같은 요청을 영원히 재시도하며 그 회차마다 이슈를 한 건씩
+                    // 올렸다. 재시도가 풀어 줄 수 있는 실패가 아니다 — 세션을 끊는다.
+                    endSessionAfterWorkerUnauthorized(
+                        sessionStore = sessionStore,
+                        expectedGeneration = startGeneration,
+                        usedToken = session.token,
+                        userId = session.user.id,
+                        workerName = "Usage event upload",
+                    )
+                    Result.success()
+                }
+                SyncWorkerOutcome.CONSENT_PENDING -> {
+                    Log.i(TAG, "Usage event upload deferred: consent not settled yet")
+                    Result.success()
+                }
+                SyncWorkerOutcome.RETRY -> {
+                    AlarmTalkLog.reportError("Usage event upload failed", error)
+                    Result.retry()
+                }
+            }
         }
     }
 

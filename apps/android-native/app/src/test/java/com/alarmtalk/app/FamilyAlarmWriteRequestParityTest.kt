@@ -25,17 +25,9 @@ import org.junit.Test
  * 받는 쪽은 무엇을 틀어야 할지 알 방법이 아예 없다.
  *
  * 그래서 **필드 단위로 비교**한다. 새 필드가 생기면 한쪽에만 넣는 순간 여기서 깨진다.
- *
- * 의도적으로 다른 것은 **둘뿐**이고 아래 KDoc 에 이유와 함께 적어 둔다. 새로 예외를
- * 만들 때는 **왜 달라야 하는지**를 같이 적을 것 — 이유 없이 늘리면 이 테스트는 그냥
- * 통과 도장이 된다.
  */
 class FamilyAlarmWriteRequestParityTest {
 
-    // 의도된 차이 둘(아래 비교에서 같은 값으로 눌러 둔다):
-    //  - `isActive`: 가족 알람은 보낼 때 항상 켠 채로 보낸다. 자기 알람은 저장된 `enabled`.
-    //  - `targetUserId`: 가족 알람만 채운다. 자기 알람은 언제나 null
-    //    (`docs/spec/family-alarm.md` 1절 — 보낸 사람은 가족 알람을 PATCH 하지 않는다).
     private val hour = 7
     private val minute = 5
     private val repeatMask = 0b0111110
@@ -117,8 +109,8 @@ class FamilyAlarmWriteRequestParityTest {
         // 필드를 훑을 필요도, 새 필드를 이 테스트에 등록할 필요도 없다.
         assertEquals(
             "빌더 두 벌이 갈라졌다. 한쪽에만 추가한 필드가 있는지 볼 것. 정말 달라야 하면 " +
-                "위 '의도된 차이' 주석에 **이유와 함께** 적고 아래 copy 에 넣을 것.",
-            fromEntity.copy(isActive = true, targetUserId = "recipient-789"),
+                "docs/spec/alarm-lifecycle.md와 family-alarm.md에 이유를 적고 아래 copy에 넣을 것.",
+            fromEntity.copy(isActive = true, targetUserId = "recipient-789", clientAlarmId = null),
             fromDraft,
         )
     }
@@ -136,5 +128,7 @@ class FamilyAlarmWriteRequestParityTest {
         // 자기 알람은 상대를 지정하지 않는다(보낸 사람이 가족 알람을 PATCH 하지 못하게).
         assertEquals(null, fromEntity.targetUserId)
         assertEquals("recipient-789", fromDraft.targetUserId)
+        assertEquals("alarm-1", fromEntity.clientAlarmId)
+        assertEquals(null, fromDraft.clientAlarmId)
     }
 }

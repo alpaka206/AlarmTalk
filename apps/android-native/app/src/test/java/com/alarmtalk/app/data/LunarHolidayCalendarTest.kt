@@ -12,7 +12,7 @@ import org.junit.Test
 /**
  * 음력 공휴일 엔진의 **순수 로직**(대체공휴일 규칙 + 변환기 통합)을 JVM 단위 테스트로 검증한다.
  *
- * 설계(risk #2 (c)안): `android.icu.util.ChineseCalendar` 는 Android 프레임워크 클래스라
+ * 설계(risk #2 (c)안): `android.icu.util.Calendar` 는 Android 프레임워크 클래스라
  * desktop OpenJDK 에서 로드되지 않는다. 따라서 여기서는 음→양 변환을 [FakeLunarConverter] 로 주입해
  * KASI(=시드) 공식 날짜를 고정 입력으로 주고, **대체공휴일 규칙과 통합 동작**만 검증한다.
  * 실제 ICU 변환(KST 보정 포함)은 instrumented 테스트(`LunarHolidayCalendarInstrumentedTest`)가 담당한다.

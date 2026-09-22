@@ -202,6 +202,7 @@ export const ERROR_CODES = [
   'AUTH_EMAIL_CODE_INVALID',
   'AUTH_EMAIL_CODE_SEND_FAILED',
   'AUTH_EMAIL_CODE_VERIFY_FAILED',
+  'AUTH_EMAIL_INVALID',
   'AUTH_EMAIL_SOCIAL',
   'AUTH_EMAIL_TAKEN',
   'AUTH_EMPTY_TOKEN',
@@ -322,6 +323,14 @@ export const ALERTING_ERROR_CODES: readonly ErrorCode[] = [
   'PERSO_FAILED',
   // 스키마 마이그레이션 창에 걸린 요청 — 배포 직후 잠깐이어야 하고, 계속 나오면 사고다.
   'ALARM_SCHEMA_UPGRADING',
+  // 결제 확정이 거절된 갈래. 2026-09-19 사고에서 우리는 증상(VOICE_FEATURE_REQUIRES_PAID_PLAN)만
+  // 보고 원인은 한 줄도 못 봤다 — 거절이 구조화 로그에만 남아 있었다. 사용자는 이미 돈을 냈는데
+  // 서버가 무료로 보는 상태이고, 고칠 수 있는 것은 우리뿐이다. (`SUBSCRIPTION_EXPIRED` 는 정상
+  // 만료에서도 흔해 넣지 않는다.)
+  'TRANSACTION_OWNED_BY_OTHER_USER',
+  'TRANSACTION_ACCOUNT_MISMATCH',
+  'CROSS_STORE_RENEWAL_ACTIVE',
+  'APPLE_VERIFICATION_FAILED',
   // ⚠ **이 400 은 그 기기의 사용 기록 큐를 영구히 막는다.** 두 앱 모두 2xx 가 아닌 배치를
   // 큐에서 지우지 않으므로(`UsageEventUploadWorker`·`UsageEventUploader`), 배치에 한 건이라도
   // 서버가 모르는 값이 섞이면 그 기기는 그 뒤로 **아무 기록도 올리지 못한다.** 오타가 아니라

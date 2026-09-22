@@ -1149,10 +1149,13 @@ internal fun AlarmTalkApp(
                   emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
                   emailVerified = viewModel.registerEmailVerified,
                   loginError = viewModel.loginError,
+                  // 갈래 판정은 번역된 문구가 아니라 이 코드로 한다(`isEmailFormatErrorCode`).
+                  loginErrorCode = viewModel.loginErrorCode,
                   registerError = viewModel.registerError,
                   authNotice = viewModel.authNotice,
                   onClearLoginError = {
                       viewModel.loginError = null
+                      viewModel.loginErrorCode = null
                       viewModel.registerError = null
                       viewModel.authNotice = null
                   },

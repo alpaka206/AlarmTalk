@@ -97,6 +97,9 @@ class RingingService : Service() {
     private var currentAlarm: AlarmEntity? = null
     private var ringingAlarmId: String? = null
 
+    /** 지금 게시된 울림 알림의 갈래. 승격(QUIET → ALERTING)이 두 번 가지 않게 기억한다. */
+    private var postedVariant: RingingNotificationFactory.Variant? = null
+
     /**
      * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
      *
@@ -226,7 +229,15 @@ class RingingService : Service() {
     }
 
     private fun startRinging(alarmId: String) {
-        val notification = RingingNotificationFactory(this).build(alarmId)
+        // 앱에 보이는 액티비티가 있는가 — 그것이 곧 우리가 울림 화면을 직접 띄울 수 있는가다
+        // (Android 14+ BAL). 없으면 시스템이 열어야 하므로 전체화면 인텐트를 실은 갈래로 올린다.
+        // ⚠ `ProcessLifecycleOwner` 로 읽지 말 것 — 마지막 액티비티가 멈춘 뒤 700ms 동안 STARTED
+        //   를 유지해, 알람 직전에 홈·전원을 누른 경우 '보인다' 로 잘못 읽는다(`VisibleActivityTracker`).
+        val appHasVisibleActivity = VisibleActivityTracker.hasVisibleActivity
+        val variant = RingingNotificationFactory.initialVariant(appHasVisibleActivity)
+        val notification = RingingNotificationFactory(this).build(alarmId, variant)
+        postedVariant = variant
+        Log.i(TAG, "Ringing notification variant=$variant appVisible=$appHasVisibleActivity id=$alarmId")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 RINGING_NOTIFICATION_ID,
@@ -600,27 +611,22 @@ class RingingService : Service() {
     }
 
     /**
-     * 울림 화면을 띄운다 — **기기 상태를 가리지 않는다**(2026-09-09 지시).
+     * 울림 화면을 **직접** 띄워 본다 — 되는 것은 앱에 보이는 액티비티가 있을 때뿐이다.
      *
-     * 예전에는 '화면 켜짐 + 잠금 해제 + 헤드업 가능' 이면 배너에 맡기고 이 화면을 띄우지
-     * 않았다. 그런데 **배너가 실제로 그려지는지는 앱이 알 수 없다** — 알림 권한·채널
-     * importance·DND 를 전부 통과해도 SM-A325N 에서는 알림창에만 쌓이고 위에 뜨지 않았다
-     * (2026-09-09 실기기. 같은 판정을 통과한 S23 Ultra 는 떴다). 판정이 "뜬다" 고 말한
-     * 기기에서 해제 UI 가 하나도 없었다는 뜻이라, 그 판정 자체를 버린다.
-     *
-     * ⚠ **'항상' 은 최선 노력이지 보장이 아니다.** 다른 앱이 전경일 때의 액티비티 시작은
-     *   OS 재량이고(`SYSTEM_ALERT_WINDOW` 를 안 쓴다), 막히면 예외도 없이 무시될 수 있다.
-     *   그래서 알림의 `setFullScreenIntent` 는 **폴백으로 그대로 둔다** — 그게 이 경로가
-     *   실패했을 때 남는 유일한 해제 표면이다.
-     * ⚠ 그 대가로 잠금 해제 상태에서는 배너가 이 화면 위에 잠깐 겹칠 수 있다. 겹침을
-     *   없애겠다고 **채널을 강등하거나 FSI 를 떼지 말 것** — 폴백이 통째로 사라진다.
+     * ⚠ **이 호출이 울림 화면의 주 경로가 아니다**(2026-09-22 실기기 반증). Android 14+ 는
+     *   앱에 보이는 액티비티가 없으면 포그라운드 서비스의 액티비티 시작을 예외 없이 막는다
+     *   (S23 Ultra / Android 16: `Background activity launch blocked! … callingUidProcState:
+     *   FOREGROUND_SERVICE … BAL_BLOCK`). 잠금 화면·다른 앱·홈에서는 전부 그 경우다.
+     *   그때 화면을 여는 것은 `startRinging` 이 처음부터 올리는 **ALERTING 알림의 전체화면
+     *   인텐트**(잠김 → 전체화면, 잠금 해제 → 배너)이고, 이 함수는 앱이 보이는 경우의
+     *   빠른 길 + 안 떴을 때의 배너 승격만 맡는다.
+     * ⚠ 2026-09-09 의 "언제나 직접 띄운다" 는 그 전제(직접 시작이 된다)가 틀렸던 것이다 —
+     *   그 설계로는 잠금 화면에서 소리만 나고 화면이 없었다(양 테스트폰 모두).
      */
     private fun openRingingActivity(alarmId: String) {
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                Intent.FLAG_ACTIVITY_NO_ANIMATION
+            flags = RingingNotificationFactory.RINGING_ACTIVITY_FLAGS
         }
         runCatching {
             startActivity(intent)
@@ -628,26 +634,37 @@ class RingingService : Service() {
             Log.w(TAG, "Direct ringing activity launch failed", error)
         }
         // ⚠ **떴는지 확인한다 — 예외가 없다고 뜬 것이 아니다**(코덱스 #729).
-        //   안드로이드는 백그라운드 액티비티 시작을 **조용히 무시**할 수 있다. 정상 채널은
-        //   `IMPORTANCE_LOW` 라 배너도 안 뜨므로, 그대로 두면 소리만 나고 **해제 UI 가
-        //   하나도 없는** 상태가 된다 — 이 변경 전체가 없애려던 바로 그 상태다.
-        //   그래서 화면이 안 떴으면 소리·전체화면 인텐트를 든 폴백 알림으로 올린다.
+        //   Android 14+ 는 앱에 보이는 액티비티가 없으면 이 `startActivity` 를 **조용히
+        //   막는다**(`BAL_BLOCK`, 2026-09-22 S23 Ultra logcat). 그 경우는 `startRinging` 이
+        //   이미 전체화면 인텐트를 실은 ALERTING 알림을 올렸으니 시스템이 화면을 연다.
+        //   여기서 승격이 필요한 것은 QUIET 로 시작했는데(앱이 보였다) 끝내 안 뜬 경우뿐이다 —
+        //   판정과 시작 사이에 사용자가 홈·전원을 누른 창이다.
+        //   ⚠ 같은 알림 id 의 **갱신**은 전체화면 인텐트를 발동시키지 못한다(SystemUI 는 새로
+        //   추가된 항목에만 검사한다 — 2026-09-22 실기기, 옛 '승격' 이 한 번도 뜨지 못한 이유).
+        //   그래서 승격은 **다른 id(`RINGING_PROMOTION_NOTIFICATION_ID`)의 새 알림**으로 올린다.
+        //   잠겨 있으면 시스템이 그 알림의 전체화면 인텐트로 화면을 열고, 잠금 해제면 배너다.
+        //   포그라운드 서비스 알림(1001)은 그대로 둔다 — 울림 화면이 뜨거나 알람이 끝나면 1002 는 지운다.
         serviceScope.launch {
             delay(ACTIVITY_LAUNCH_CHECK_MS)
             if (destroyed || ringingAlarmId != alarmId) return@launch
             if (RingingActivity.isShowing()) return@launch
-            Log.w(TAG, "Ringing screen never appeared; escalating to the fallback notification id=$alarmId")
+            if (postedVariant == RingingNotificationFactory.Variant.ALERTING) {
+                Log.w(TAG, "Ringing screen not showing; system owns the launch (alerting notification is posted) id=$alarmId")
+                return@launch
+            }
+            Log.w(TAG, "Ringing screen never appeared; posting a new alerting notification with a full-screen intent id=$alarmId")
             try {
                 NotificationManagerCompat.from(this@RingingService).notify(
-                    RINGING_NOTIFICATION_ID,
+                    RINGING_PROMOTION_NOTIFICATION_ID,
                     RingingNotificationFactory(this@RingingService)
-                        .build(alarmId, RingingNotificationFactory.Variant.ESCALATION),
+                        .build(alarmId, RingingNotificationFactory.Variant.ALERTING),
                 )
+                postedVariant = RingingNotificationFactory.Variant.ALERTING
             } catch (error: SecurityException) {
                 // runCatching과 동일하게 권한 회수 실패를 격리하되 lint가 검사할 수 있게 한다.
-                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to promote ringing notification id=$alarmId", error)
             } catch (error: Throwable) {
-                AlarmTalkLog.reportError("Failed to escalate ringing notification id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to promote ringing notification id=$alarmId", error)
             }
         }
     }
@@ -739,6 +756,7 @@ class RingingService : Service() {
         }
         stopMediaAndVibration()
         NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
+        NotificationManagerCompat.from(this).cancel(RINGING_PROMOTION_NOTIFICATION_ID)
         runCatching {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
@@ -910,6 +928,20 @@ class RingingService : Service() {
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001
+
+        /**
+         * 울림 화면이 끝내 안 떴을 때 올리는 **승격 알림**의 id. 1001 을 갱신하면 전체화면 인텐트가
+         * 발동하지 않으므로(SystemUI 는 새 항목에만 검사) 반드시 **다른 id** 여야 한다.
+         * 테스트 `RingingNotificationDismissTest` 가 두 값이 다른 것을 고정한다.
+         */
+        internal const val RINGING_PROMOTION_NOTIFICATION_ID = 1002
+
+        /** 울림 화면이 보이면 승격 알림은 할 일이 끝났다 — `RingingActivity.onStart` 가 부른다. */
+        fun cancelPromotionNotification(context: Context) {
+            runCatching {
+                NotificationManagerCompat.from(context).cancel(RINGING_PROMOTION_NOTIFICATION_ID)
+            }
+        }
         // ⚠ **반복은 커지지 않는다**(2026-08-27). 예전에는 두 번째 재생부터
         // 음량 증폭기로 +6dB 를 걸었다 — 삭제한 페이드인과 같은 커밋(ad23e67e)에서 근거 없이
         // 들어온 것이고 결과도 같은 종류다: 사용자가 맞춘 음량이 첫 회만 지켜지고 그 뒤로 더

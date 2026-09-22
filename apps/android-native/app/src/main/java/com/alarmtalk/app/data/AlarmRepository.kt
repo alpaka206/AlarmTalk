@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeoutOrNull
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -1648,6 +1649,20 @@ class AlarmRepository(
      *
      * 오프라인 등으로 실패하면 null 을 돌려주고 저장은 그대로 진행한다 — 22시 갱신과
      * 알람 전까지의 재시도가 채운다. 알람을 못 만들게 막지는 않는다.
+     *
+     * **기다리는 시간에는 상한이 있다**([WEATHER_RESOLVE_TIMEOUT_MILLIS]). 저장 버튼이 이
+     * 응답을 동기로 기다리므로, 서버(Open-Meteo)가 느리면 그만큼 저장이 붙잡힌다 — OkHttp 의
+     * 읽기 타임아웃(60초, `AlarmTalkApiClient`)까지 기다리게 둘 수는 없다. 상한을 넘기면
+     * **실패와 정확히 같은 결과**다: null 을 돌려줘 미해결로 저장되고, 저장 경로가 거는
+     * `DynamicVoiceRefreshScheduler.runOnce` → `DynamicVoiceRefreshWorker` →
+     * `scheduleRetryUntilFire` 가 뒤에서 채운다([ensureDynamicVoiceRefreshScheduled] —
+     * 날씨 알람이면 해결 여부와 무관하게 건다).
+     *
+     * 늦게 도착한 응답이 값을 덮어쓰는 경합은 없다. Retrofit 의 suspend 호출은
+     * `suspendCancellableCoroutine` + `invokeOnCancellation { call.cancel() }` 이라 타임아웃
+     * 취소가 OkHttp 요청까지 끊고(retrofit 2.11 `KotlinExtensions.await`), 설사 응답이 오더라도
+     * 이 함수는 DB 에 아무것도 쓰지 않는다 — 값은 반환값으로만 나가고, 그 반환은 이미 null 로
+     * 끝났다. 행을 고치는 다른 경로는 워커뿐이고 그게 의도한 재시도다.
      */
     suspend fun resolveWeatherVariantForDraft(
         api: AlarmTalkApi,
@@ -1675,16 +1690,35 @@ class AlarmRepository(
             .atZone(zone)
             .toLocalDate()
             .toString()
-        return runCatching {
-            api.getPrerenderVariant(
-                authorization = AlarmTalkApiClient.bearer(token),
-                context = "wake_weather",
-                country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
-                city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
-                targetDate = targetDate,
-                timezone = zone.id,
-            ).variantIndex
-        }.getOrElse { error ->
+        // 상한 안에서 끝난 결과(성공이든 실패든)는 Result 로 감싸 돌아오고, 상한을 넘기면
+        // 바깥 null 이다. 서버가 못 받아서 돌려주는 `variant_index: null` 은 Result 안의 null
+        // 이라 둘이 섞이지 않는다 — 로그가 어느 쪽인지 말할 수 있어야 한다.
+        // ⚠ runCatching 은 상한 안쪽에 둔다. 타임아웃 취소는 Retrofit 호출 안에서
+        // CancellationException 으로 깨어나는데, 그걸 여기서 잡아 값으로 돌려줘도
+        // withTimeoutOrNull 은 이미 취소된 코루틴의 반환값을 버리고 null 을 준다.
+        val outcome = withTimeoutOrNull(WEATHER_RESOLVE_TIMEOUT_MILLIS) {
+            runCatching {
+                api.getPrerenderVariant(
+                    authorization = AlarmTalkApiClient.bearer(token),
+                    context = "wake_weather",
+                    country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
+                    city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                    targetDate = targetDate,
+                    timezone = zone.id,
+                ).variantIndex
+            }
+        }
+        if (outcome == null) {
+            // 사용자 값(도시 등)은 싣지 않는다 — 어느 저장이었는지가 아니라 상한에 걸렸다는
+            // 사실만 남기면 된다.
+            Log.w(
+                TAG,
+                "Pre-save weather variant resolve timed out after ${WEATHER_RESOLVE_TIMEOUT_MILLIS}ms; " +
+                    "saving unresolved (will retry in background)",
+            )
+            return null
+        }
+        return outcome.getOrElse { error ->
             Log.w(TAG, "Pre-save weather variant resolve failed (will retry in background)", error)
             null
         }
@@ -2014,6 +2048,19 @@ private const val WEATHER_PREPARE_WINDOW_MILLIS = 48 * 60 * 60 * 1000L
 
 /** 이 발사분의 조건으로 인정하는 범위 — 발사 24시간 이내에 받은 값. */
 private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
+
+/**
+ * 저장이 날씨 조건 응답을 기다리는 상한. iOS 도 같은 8초다(`docs/spec/voice-and-message.md` 5-1).
+ *
+ * 8초인 이유: 서버는 Open-Meteo 를 세 번 순차로 부르고 한 번의 상한이 5초다
+ * (`packages/backend/src/lib/weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`). 정상 응답은
+ * 수백 ms 라, 한 번이 상한에 걸린 경우(5초 + 나머지 둘 + 왕복)까지는 받아 주고 그 이상은
+ * 기다리지 않는다. 서버 최악(세 번 모두 5초 = 15초)까지 기다리지 않는 것은 의도다 — 그때는
+ * 서버도 대개 `variant_index: null` 을 돌려주고, 저장 직후 `DynamicVoiceRefreshScheduler.runOnce`
+ * 가 뒤에서 마저 받는다. 사용자에게는 8초 넘게 붙잡힌 저장 버튼이 '고장' 으로 읽힌다.
+ * 테스트가 이 값을 가상 시계로 확인한다(`WeatherResolveTimeoutTest`).
+ */
+internal const val WEATHER_RESOLVE_TIMEOUT_MILLIS = 8_000L
 
 internal data class WeatherVariantState(
     val index: Int?,

@@ -19,10 +19,33 @@ export function isEventLocale(v: unknown): v is EventLocale {
   return typeof v === 'string' && (EVENT_LOCALES as readonly string[]).includes(v);
 }
 
-export const EVENT_MESSAGE_KINDS = ['birthday', 'comfort'] as const;
+/** 화면(랜딩 `MESSAGE_KINDS`)이 고를 수 있는 종류. */
+export const EVENT_MESSAGE_KINDS = ['birthday', 'chuseok'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
-export function isEventMessageKind(v: unknown): v is EventMessageKind {
-  return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
+
+/**
+ * 화면에서 뺐지만 **아직 받는** 종류 — 배포 창 호환용이다(코덱스 #788 2차·4차, 2026-09-22).
+ * 서버가 먼저 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 `kind: "comfort"` 를
+ * '위로 한마디' 라벨 아래에서 보낸다. 400 으로 거절하면 두 클립 중 하나가 실패하고 새로고침 전에는
+ * 재시도로도 못 살리며, 다른 문구(추석 인사)로 바꿔 읽어 주면 사용자가 고른 것과 다른 것이 나온다.
+ * 그래서 옛 종류는 **옛 문안 그대로** 읽어 준다(`EVENT_MESSAGES`). 새 번들이 다 퍼진 뒤(며칠)
+ * 이 목록과 그 문안을 함께 지운다 — `docs/qa/dev-test-handoff.md` 의 follow-up.
+ */
+export const LEGACY_EVENT_MESSAGE_KINDS = ['comfort'] as const;
+export type LegacyEventMessageKind = (typeof LEGACY_EVENT_MESSAGE_KINDS)[number];
+/** 서버가 읽어 줄 수 있는 종류 전부 = 화면의 것 + 옛 번들의 것. */
+export type RenderableEventMessageKind = EventMessageKind | LegacyEventMessageKind;
+
+/**
+ * 요청의 `kind` 를 읽어 줄 종류로 — 화면의 종류든 옛 번들의 종류든 그대로, 모르는 값이면 null.
+ * `routes/event.ts` 의 `POST /api/event/:eventId/clips` 는 **이것으로만** 검증한다 — 옛 번들의
+ * `comfort` 가 400 이 아니라 200 + 옛 문안으로 읽히는 회귀 테스트가 `test/event-clips.test.ts` 에 있다.
+ */
+export function resolveEventMessageKind(v: unknown): RenderableEventMessageKind | null {
+  if (typeof v !== 'string') return null;
+  if ((EVENT_MESSAGE_KINDS as readonly string[]).includes(v)) return v as EventMessageKind;
+  if ((LEGACY_EVENT_MESSAGE_KINDS as readonly string[]).includes(v)) return v as LegacyEventMessageKind;
+  return null;
 }
 
 export type VoiceProject = {
@@ -50,32 +73,39 @@ export function voiceProjectFor(
 }
 
 /**
- * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 ElevenLabs v3 감정
- * 태그라 소리에는 없고 화면에는 벗겨서 보여 준다(`renderMessage`). 줄바꿈은 화면의 문단이다.
- * 생일 문구 셋은 2026-09-16 에 사용자가 Perso 슬롯에 적어 둔 것을 그대로 옮겼다. 위로 문구는
- * 랜딩에 있던 문장에 같은 결의 태그만 얹은 것 — 바꾸려면 여기만 고친다.
+ * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 감정 태그라 소리에는
+ * 없고 화면에는 벗겨서 보여 준다(`renderMessage`). 줄바꿈은 화면의 문단이다.
+ * 2026-09-22 사용자 지시로 생일 문구를 새 문안으로 바꾸고, '위로 한마디' 를 '추석 인사' 로
+ * 갈아 끼웠다(한국어는 사용자 원문 그대로, 영어·일본어는 같은 결로 옮긴 것). 바꾸려면 여기만
+ * 고친다 — 랜딩은 종류 id(`MESSAGE_KINDS`)와 라벨(`messages/*.json` 의 `event.studio.kinds`)만 안다.
  */
-export const EVENT_MESSAGES: Record<EventMessageKind, Record<EventLocale, string>> = {
+export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLocale, string>> = {
   birthday: {
-    ko: `[warm, relaxed] {name}, [gently cheerful] 생일 너무너무 축하해!
-
-[gentle, sincere] 늘 응원해 줘서 너무 고마워.
-[warm, conversational] 오늘은 맛있는 것도 많이 먹고, 누구보다 행복한 하루 보냈으면 좋겠어.
-
-[lightly playful, affectionate] 우리 앞으로도 좋은 추억 많이 만들자!`,
+    ko: `[warm, relaxed] {name}, [gently cheerful] 생일 정말 축하해!
+[gentle, sincere] 늘 응원해 줘서 고마워.
+[warm, conversational] 오늘 누구보다 행복한 하루 보내고,
+[lightly playful, smiling] 우리 앞으로도 좋은 추억 많이 만들자!`,
     en: `[warm, relaxed] Hey, {name}. [gently cheerful] Happy birthday!
-
-[gentle, sincere] Thank you so much for always supporting me.
-[warm, conversational] Hope you get to enjoy lots of good food today and have the happiest birthday!
-
-[lightly playful, affectionate] Let’s keep making lots of great memories together!`,
+[gentle, sincere] Thank you for always cheering me on.
+[warm, conversational] I hope today is the happiest day of all for you,
+[lightly playful, smiling] and let's keep making great memories together!`,
     ja: `[warm, relaxed] {name}、[gently cheerful] お誕生日、本当におめでとう！
-
-[gentle, sincere] いつも応援してくれて、本当にありがとう。
-[warm, conversational] 今日はおいしいものいっぱい食べて、誰よりも幸せな一日を過ごしてね。
-
-[lightly playful, affectionate] これからも一緒に、楽しい思い出いっぱい作ろうね！`,
+[gentle, sincere] いつも応援してくれて、ありがとう。
+[warm, conversational] 今日は誰よりも幸せな一日を過ごしてね。
+[lightly playful, smiling] これからも一緒に、いい思い出をたくさん作ろうね！`,
   },
+  chuseok: {
+    ko: `[warm, relaxed] {name}, [gently cheerful] 즐거운 추석 보내!
+[warm, conversational] 맛있는 것도 많이 먹고, 이번 연휴엔 푹 쉬면서 편안하게 보내.
+[gentle, sincere] 늘 건강하고, 웃을 일도 가득했으면 좋겠어.`,
+    en: `[warm, relaxed] Hey, {name}. [gently cheerful] Happy Chuseok!
+[warm, conversational] Eat lots of good food, and take it easy and really rest this holiday.
+[gentle, sincere] Stay healthy, and I hope your days are full of things to smile about.`,
+    ja: `[warm, relaxed] {name}、[gently cheerful] 楽しいチュソクを過ごしてね！
+[warm, conversational] おいしいものをたくさん食べて、この連休はゆっくり休んで、のんびり過ごしてね。
+[gentle, sincere] いつも元気で、笑えることがいっぱいありますように。`,
+  },
+  // ⚠ 옛 번들 호환용 — 화면에는 없다(`LEGACY_EVENT_MESSAGE_KINDS`). 새 번들이 다 퍼지면 함께 지운다.
   comfort: {
     ko: `[warm, relaxed] {name}, [gentle, sincere] 오늘도 정말 고생했어.
 
@@ -154,7 +184,11 @@ export type RenderedMessage = {
   spoken: string;
 };
 
-export function renderMessage(kind: EventMessageKind, locale: EventLocale, name: string): RenderedMessage {
+export function renderMessage(
+  kind: RenderableEventMessageKind,
+  locale: EventLocale,
+  name: string,
+): RenderedMessage {
   const spoken = vocative(name, locale);
   const template = EVENT_MESSAGES[kind][locale];
   // 함수 치환 — 문자열 치환은 `$'`·`$&` 를 패턴으로 읽어 이름이 문장을 부풀릴 수 있다.

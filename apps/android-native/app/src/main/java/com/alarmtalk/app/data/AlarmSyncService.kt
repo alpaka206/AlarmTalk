@@ -6,6 +6,8 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.RemoteAlarm
+import com.alarmtalk.app.network.RemoteAlarmWriteRequest
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -71,15 +73,15 @@ internal class AlarmSyncService(
         var updated = 0
         var failed = 0
 
-        localAlarms.forEach { alarm ->
+        for (alarm in localAlarms) {
             val now = System.currentTimeMillis()
-            runCatching {
+            val attempt = runCatching {
                 val request = RemoteAlarmMapper.toWriteRequest(alarm)
                 if (alarm.remoteAlarmId == null) {
                     // 신규 생성: 서버가 발급한 remoteAlarmId 를 반드시 로컬에 커밋해야 다음 sync 에서
                     // 중복 생성되지 않는다. 응답 수신 후 커밋 구간이 코루틴 취소로 유실되면 remoteAlarmId
                     // 가 null 로 남아 재-create 되므로 NonCancellable 로 감싸 원자적으로 저장한다.
-                    val remoteAlarm = api.createAlarm(authorization, request).alarm
+                    val remoteAlarm = createAndReconcile(api, authorization, request)
                     created += 1
                     withContext(NonCancellable) {
                         // 동시 편집 방어(lost update): createAlarm 네트워크 왕복 중 사용자가 같은 알람을
@@ -115,7 +117,7 @@ internal class AlarmSyncService(
                     } catch (error: HttpException) {
                         if (error.code() != 404) throw error
                         Log.i(TAG, "Remote alarm missing; re-creating id=${alarm.id}")
-                        api.createAlarm(authorization, request).alarm to true
+                        createAndReconcile(api, authorization, request) to true
                     }
                     if (recreated) created += 1 else updated += 1
                     // 동시 편집 방어(lost update): 네트워크 구간에 사용자가 같은 알람을 편집하면
@@ -162,6 +164,7 @@ internal class AlarmSyncService(
                     updatedAtMillis = now,
                 )
             }
+            if (attempt.exceptionOrNull()?.let(AlarmTalkLog::isHandledAuthFailure) == true) break
         }
 
         Log.i(TAG, "Backend alarm sync complete total=${localAlarms.size} created=$created updated=$updated failed=$failed")
@@ -171,5 +174,18 @@ internal class AlarmSyncService(
             updated = updated,
             failed = failed,
         )
+    }
+
+    private suspend fun createAndReconcile(
+        api: AlarmTalkApi,
+        authorization: String,
+        request: RemoteAlarmWriteRequest,
+    ): RemoteAlarm {
+        val created = api.createAlarm(authorization, request).alarm
+        return if (created.creationReplayed == true) {
+            api.updateAlarm(authorization, created.id, request).alarm
+        } else {
+            created
+        }
     }
 }

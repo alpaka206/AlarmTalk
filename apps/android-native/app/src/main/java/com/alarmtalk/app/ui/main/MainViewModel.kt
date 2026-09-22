@@ -214,7 +214,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TAG, "Absorbed a session update written by a background worker")
     }
 
-    private fun handleUnauthorized(failedToken: String?) {
+    /**
+     * 세션이 끝났다는 신호를 받았을 때의 **유일한 종착점.** okhttp 인증기(401)가 부르고,
+     * `MainViewModelAuthActions` 의 세션 건강검진이 **파기된 계정의 404 `AUTH_USER_NOT_FOUND`**
+     * 로도 부른다(그 라우트만 404 다 — `docs/spec/error-codes.md`). `private` 이 아니라
+     * `internal` 인 이유가 그것이고, 두 갈래가 같은 결말을 쓰도록 **여기 하나로 모은다.**
+     *
+     * @param failedToken 그 응답을 받은 요청이 **실제로 보낸** 토큰. 그 사이 rolling refresh
+     *   로 굴러간 새 세션을 옛 응답이 끊지 못하게 아래에서 대조한다.
+     */
+    internal fun handleUnauthorized(failedToken: String?) {
         viewModelScope.launch {
             val session = authSession ?: return@launch
             if (signingOut) {
@@ -324,39 +333,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal suspend fun clearSignedInSession(departingUserId: String? = null) {
         // 로그아웃이 끝날 때까지 401 처리기를 잠근다 — 이유는 [signingOut] 주석 참고.
         signingOut = true
-        val signedOutUserId = departingUserId?.takeIf { it.isNotBlank() }
-            ?: authSession?.user?.id?.takeIf { it.isNotBlank() }
-        // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
-        // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
-        // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
-        runCatching { authSessionStore.clearSessionExpiredOwner() }
-            .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-out", error) }
-        // 세션 저장소 비우기를 **떼어내기와 같은 임계구역 안에서** 끝낸다. 락을 놓은 뒤에
-        // 비우면, 그 틈에 락을 잡은 복원(주기 워커 등)이 prefs 를 아직 '로그인됨' 으로 읽어
-        // 방금 취소한 예약을 전부 되살린다(Codex #666 P1).
-        runCatching {
-            repository.detachAlarmsOnSignOut(signedOutUserId) {
-                authSessionStore.clear()
-            }
-        }.onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
-        // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
-        // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
-        // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
-        // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
-        clearCurrentDefaultVoicePreferences()
-        // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
-        // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
-        // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
-        // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
-        // ⚠ **지우기와 표 무효화는 한 번에**(Codex #703 P1). 둘로 나누면 그 사이에 앞 계정의
-        // 저장이 끼어들어 지운 파일을 되살리고, 계정 B 가 A 의 클론 매니페스트(목소리 이름·
-        // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
-        // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
-        com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
-        stockClipManifestFetched = false
-        // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
-        // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
-        clearSessionKeepingAlarms()
+        // ⚠ **백그라운드 워커에는 그 플래그가 안 보인다.** 워커는 다른 문맥에서 저장소를
+        // 새로 열어 보므로, 로그아웃 창에서 401 을 받으면 세대·토큰 두 문을 모두 통과해
+        // `markSessionExpired` 를 남긴다 — `clear()` 가 그 표시를 보존하므로 **떼어낸 알람이
+        // 다음 재예약에서 되살아난다.** 그래서 같은 사실을 prefs 에도 적어 워커가 보게 한다
+        // (`AuthSessionStore.beginSignOut`).
+        //
+        // ⚠ **여기가 창의 시작은 아니다.** 호출부(`logout`·탈퇴·즉시 탈퇴)가 서버를 부르기
+        // 전에 이미 세워 둔다 — 서버가 토큰을 먼저 무효화하므로 그 await 구간이 진짜
+        // 시작점이다([markSignOutInProgress]). 여기서 다시 세우는 것은 **그 경로를 타지 않는
+        // 호출**(직접 부르는 자리)을 위한 것이고, 거듭 세워도 시작 시각만 다시 적힌다.
+        markSignOutInProgress()
+        try {
+            val signedOutUserId = departingUserId?.takeIf { it.isNotBlank() }
+                ?: authSession?.user?.id?.takeIf { it.isNotBlank() }
+            // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
+            // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
+            // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
+            runCatching { authSessionStore.clearSessionExpiredOwner() }
+                .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-out", error) }
+            // 세션 저장소 비우기를 **떼어내기와 같은 임계구역 안에서** 끝낸다. 락을 놓은 뒤에
+            // 비우면, 그 틈에 락을 잡은 복원(주기 워커 등)이 prefs 를 아직 '로그인됨' 으로 읽어
+            // 방금 취소한 예약을 전부 되살린다(Codex #666 P1).
+            runCatching {
+                repository.detachAlarmsOnSignOut(signedOutUserId) {
+                    authSessionStore.clear()
+                }
+            }.onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+            // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
+            // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
+            // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
+            // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
+            clearCurrentDefaultVoicePreferences()
+            // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
+            // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
+            // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
+            // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
+            // ⚠ **지우기와 표 무효화는 한 번에**(Codex #703 P1). 둘로 나누면 그 사이에 앞 계정의
+            // 저장이 끼어들어 지운 파일을 되살리고, 계정 B 가 A 의 클론 매니페스트(목소리 이름·
+            // 문구 포함)를 시드로 읽는다. WorkManager 요청은 세션과 무관하게 살아 있어 취소로는
+            // 못 막으므로, 표를 죽이는 것과 파일을 지우는 것이 같은 잠금 안이어야 한다.
+            com.alarmtalk.app.data.StockClipManifestStore.clearAndInvalidate(getApplication())
+            stockClipManifestFetched = false
+            // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
+            // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
+            clearSessionKeepingAlarms()
+        } finally {
+            // ⚠ **마지막 `clear()` 뒤에 내린다.** 여기까지 오면 세대가 올라 있어 뒤늦은 401 은
+            // 세대 문에서 걸린다 — 창을 더 열어 둘 이유가 없다. 반대로 여기서 안 내리면 다음
+            // **진짜** 자동 만료가 표시를 못 남겨(창이 닫힐 때까지) 그 기기의 알람이 업데이트 후
+            // 재예약에서 복원 대상을 잃는다.
+            //
+            // ⚠ **finally 인 이유**: 위 단계 중 하나가 예외로 빠져나가면(디스크 오류·취소)
+            // 표시가 선 채로 남는다. 60초 창이 회복하긴 하지만 그 사이의 자동 만료는 통째로
+            // 표시를 못 남기므로, 어떤 경로로 나가든 여기서 내린다.
+            endSignOutMarker()
+        }
     }
 
     /**
@@ -457,6 +489,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 이메일 로그인 실패 안내 — 전역 스낵바 대신 로그인 화면 안 인라인으로 보여준다.
     // (스낵바는 하단이라 로그인 직후 열려 있는 키보드에 가려 아무 피드백도 없는 것처럼 보인다.)
     var loginError by mutableStateOf<String?>(null)
+        internal set
+
+    // 그 실패의 **에러 코드**. 화면이 갈래를 가를 때(이메일 형식이냐 자격증명이냐) 쓰는 값이다.
+    //
+    // ⚠ **문구로 가르지 말 것.** 예전에는 화면이 `loginError` 를 번역된 문자열과 비교했다 —
+    // 문구를 한 글자 고치거나 다른 코드가 같은 문구 자원을 가리키게 되면 **아무 경고 없이**
+    // 갈래가 어긋난다. 판정은 `ui/auth/AuthEmail.kt` 의 `isEmailFormatErrorCode` 하나다.
+    // iOS 도 같은 방식이다(`AuthViewModel.loginErrorCode`).
+    var loginErrorCode by mutableStateOf<String?>(null)
         internal set
 
     // 회원가입 흐름(인증 요청·코드 확인·가입) 실패 안내 — 같은 이유로 회원가입 화면 인라인.

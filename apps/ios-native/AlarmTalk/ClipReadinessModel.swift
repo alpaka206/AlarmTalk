@@ -86,6 +86,8 @@ final class ClipReadinessModel: ObservableObject {
                 awaitingOwner.insert(selected)
             }
         }
+        let missing = Set((await StockClipPrefetcher.missingClipsOffMain(manifest.clips, audioCache: audioCache)).map(\.messageId))
+        guard !Task.isCancelled, KeychainStore.readSession()?.token == token else { return }
         awaitingOwnerVoiceIDs = awaitingOwner
 
         let targets = systemVoiceIDs.sorted() + ownedVoiceProfileIDs.sorted() + extraTargets
@@ -107,8 +109,8 @@ final class ClipReadinessModel: ObservableObject {
                     : all
             },
             renderState: { renderStates[$0] ?? (false, false) },
-            isCached: { [audioCache] clip in
-                audioCache.cachedURL(for: AudioCacheStore.stockCacheKey(messageId: clip.messageId)) != nil
+            isCached: { clip in
+                !missing.contains(clip.messageId)
             }
         )
     }

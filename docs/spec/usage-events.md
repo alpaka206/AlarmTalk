@@ -42,6 +42,10 @@
   알람이 본업이고 기록은 곁다리라, 모든 경로가 실패를 삼키고 로그만 남긴다.
 - 전송: 앱이 열릴 때·주기 워커가 배치로 보낸다.
 
+iOS도 BGTask에서 알람 정합화 이후 남은 실행 시간에 제한된 배치를 보낸다. 기록 전송 실패는
+알람 정합화의 성공을 뒤집지 않는다. 앱→서버 배치뿐 아니라 서버→DB 쓰기도 트랜잭션 내
+batch로 묶으며, 이벤트 순서·UUID 멱등·소유권 조건을 유지한다.
+
 ⚠ **iOS 는 울린 순간에 우리 코드가 돌지 않는다.** 안드로이드는 울림 서비스가 직접 울리므로
 그 자리에서 적지만, iOS 는 AlarmKit 이 울리고 우리는 **해제·다시 울림을 누를 때** 불린다.
 그래서 iOS 는 울림을 두 자리에서 적는다 — 앱이 살아 있으면 관찰자가(`AlarmKitViewModel`
@@ -210,6 +214,8 @@ iOS 의 `.unknown`(콜드 부팅)은 다시 울림 쪽이므로 **재무장이 �
 | 종류 목록 | `data/UsageEventRecorder.kt` 의 `UsageEvents` | `UsageEventQueue.swift` 의 `UsageEventType` | `packages/shared/src/schemas/usage-event.ts` |
 | 로컬 큐 | `data/UsageEventEntity.kt`(Room) | `UsageEventQueue.swift`(파일) | — |
 | 전송 | `sync/UsageEventUploadWorker.kt` | `UsageEventUploader.swift` | `routes/events.ts` |
+| 백그라운드 전송 예산 | WorkManager의 주기 전송 | `BackgroundSyncTask.runAndSchedule` → `flush(maxBatches: 1)`·`BackgroundTaskCompletion` | — |
+| 트랜잭션 내 DB 묶음 | — | — | `routes/events.ts`의 기존 UUID 조회 batch·순서 보존 쓰기 batch |
 | 울림 기록 | `alarm/RingingService.kt` 의 `startRinging` — 언제나 | `AlarmKitViewModel.swift` 의 `.alerting` 진입(표는 `ObservedRingMarkerStore.beginObservation` 으로 **동기로** 뽑고, 울림이 **적힌 뒤** 콜백이 `commit`), 관찰자가 못 봤으면 `Shared/AlarmIntents.swift` 의 `recordRingIfObserverMissedIt` | — |
 | 울림 중복 판정 | — (울림 서비스가 그 자리에서 적어 갈림길이 없다) | `ObservedRingMarkerStore.swift` 의 `beginObservation`·`commit`·`consume`·`staleAfter`(디스크 표시 = 벽시계)·`lateMarkWindow`(메모리 = 단조 시계 `monotonicNow`) | — (사건 `id` 가 달라 `INSERT OR IGNORE` 로는 안 걸린다) |
 | 알람 생성·수정·삭제 | `data/AlarmRepository.kt` 의 `recordAlarmEvent` | `Views/Editor/AlarmEditorSheet.swift` 의 `recordSaveUsageEvent`, `AlarmKitViewModel.deleteLocalAlarm` | — |

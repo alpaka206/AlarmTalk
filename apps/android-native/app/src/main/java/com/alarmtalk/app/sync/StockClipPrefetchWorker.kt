@@ -2,6 +2,7 @@ package com.alarmtalk.app.sync
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -13,6 +14,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.toPromptPreferences
@@ -39,6 +41,28 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 /**
+ * 실행 **도중 토큰이 굴러갔을 때** 이후 요청과 401 귀속에 함께 쓸 토큰.
+ *
+ * ⚠ **인증 헤더와 `usedToken` 은 한 덩어리로 움직인다.** 워커는 `GET /auth/me` 가 준 새
+ * 토큰을 [AuthSessionStore.saveTokenIfGeneration] 으로 저장소에 넣는데, 그 뒤가 어긋나면
+ * 양쪽으로 사고가 난다:
+ *  - 헤더만 옛 토큰으로 두고 귀속을 새 토큰으로 옮기면, **옛 토큰의 401 이 방금 갱신한
+ *    멀쩡한 세션을 지운다**(`workerMayEndSession` 이 저장소의 새 토큰과 맞다고 본다).
+ *  - 반대로 둘 다 시작 토큰에 묶어 두면, 굴린 뒤 **새 토큰으로 낸 요청의 401** 이
+ *    '지나간 토큰' 으로 판정돼 끊어야 할 세션을 못 끊는다 — 그 워커는 폐기된 세션으로
+ *    계속 돌고, 사용자는 재로그인 안내를 못 받는다.
+ * 그래서 호출부는 이 함수의 결과로 **인증 헤더와 `usedToken` 을 같이** 다시 만든다
+ * (`RemoteAlarmSyncWorker` 가 굴린 뒤 저장소에서 다시 읽어 쓰는 것과 같은 규칙이다).
+ *
+ * 저장이 거절되면(null — 그 사이 세션이 끝났거나 세대가 올랐다) 그 토큰은 우리 것이 아니다.
+ * 시작 토큰을 그대로 쓴다.
+ *
+ * `StockClipPrefetchWorker`·`PlanChangeSyncWorker` 가 함께 쓴다.
+ */
+internal fun tokenAfterRoll(previousToken: String, savedToken: String?): String =
+    savedToken?.takeIf { it.isNotBlank() } ?: previousToken
+
+/**
  * 기본(시스템) 목소리 알람 클립을 기기에 내려받는 워커.
  *
  * ViewModel 스코프에서 돌리던 것을 WorkManager 로 옮겼다. 예전에는 "이 화면을 닫아도
@@ -49,6 +73,43 @@ import kotlinx.coroutines.withContext
  * **로컬 파일 존재**로 한다 — 계정이 아니라 기기에 종속된 캐시라서, 로그아웃 후 다시
  * 로그인하면 재다운로드하지 않고 다른 기기로 로그인하면 그 기기가 새로 받는다.
  */
+/** 클립 하나를 못 받았을 때 그 실패를 어떻게 셀지. */
+internal enum class ClipFailure {
+    /** 401 — 세지 않고 위로 올린다. 재시도가 아니라 세션 종료가 답이다. */
+    SESSION_EXPIRED,
+
+    /** 다시 받아 봐야 같은 결과(404 등, 응답 형식 오류). */
+    PERMANENT,
+
+    /** 시간이 지나면 풀릴 수 있는 실패(네트워크·5xx·403 동의 전·408·429). */
+    TRANSIENT,
+}
+
+/**
+ * ⚠ **401 을 `isPermanentClipFailure` 보다 먼저 본다**(코덱스 #788). 401 은 4xx 라 영구로 읽히는데,
+ * 그렇게 세면 배치가 `failure` 로 조용히 끝나고 세션은 살아남는다. 판정은
+ * [syncWorkerOutcome] 과 같은 술어(`AlarmTalkLog.isHandledAuthFailure`)를 쓴다 — 워커 바깥
+ * 갈래와 같은 실패를 같은 눈으로 본다.
+ */
+internal fun classifyClipFailure(error: Throwable): ClipFailure = when {
+    syncWorkerOutcome(error) == SyncWorkerOutcome.SESSION_EXPIRED -> ClipFailure.SESSION_EXPIRED
+    isPermanentClipFailure(error) -> ClipFailure.PERMANENT
+    else -> ClipFailure.TRANSIENT
+}
+
+/**
+ * 다시 시도해도 결과가 같은 실패인지. 4xx 는 요청·상태 자체가 잘못된 것이라 재시도가
+ * 의미 없다(단 408 요청시간초과·429 요청과다는 시간이 지나면 풀리므로 제외).
+ * 파싱/디코딩 실패도 같은 응답을 다시 받아봐야 같은 결과다. 403 의 예외는 [StockClipPrefetchWorker]
+ * 의 `isPermanent` KDoc 참조.
+ */
+internal fun isPermanentClipFailure(error: Throwable): Boolean = when (error) {
+    is retrofit2.HttpException ->
+        error.code() in 400..499 && error.code() != 403 && error.code() != 408 && error.code() != 429
+    is IllegalArgumentException -> true // Base64.decode 등 응답 형식 오류
+    else -> false
+}
+
 class StockClipPrefetchWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -113,12 +174,19 @@ class StockClipPrefetchWorker(
         // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 401 을 받았을 때 "내가 실제로 보낸 토큰" 이 무엇인지 알아야 한다 — 아래 `/auth/me`
+        // 가 토큰을 굴리면 그 뒤의 요청은 **새 토큰**으로 나가기 때문이다. 시작 토큰으로
+        // 굳혀 두면 굴러간 뒤의 401 을 '지나간 토큰' 으로 오판해 끊어야 할 세션을 못 끊는다
+        // (`RemoteAlarmSyncWorker` 와 같은 방식, 규칙은 [tokenAfterRoll]).
+        var usedToken = session.token
         // 권한 스냅샷은 문 하나로만 쓴다(`EntitlementWriter`).
         val entitlement = EntitlementWriter(applicationContext)
         val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
             val api = AlarmTalkApiClient.create()
-            val auth = AlarmTalkApiClient.bearer(session.token)
+            // 토큰이 굴러가면 **헤더도 함께** 갈아 끼운다 — 굴린 뒤의 요청까지 옛 토큰으로
+            // 내보내면 그 만료가 가까워 401 이 나는데도 아무도 세션을 못 끊는다.
+            var auth = AlarmTalkApiClient.bearer(usedToken)
             val language = deviceVoiceLanguage()
             val audioStore = AlarmAudioStore(applicationContext)
 
@@ -216,7 +284,14 @@ class StockClipPrefetchWorker(
                     // **검사와 저장을 한 덩어리로** 한다 — 따로 하면 그 사이 로그아웃이
                     // 끼어들어 비운 저장소에 세션을 되쓴다(`PlanChangeSyncWorker` 와 같은 이유).
                     me.token?.takeIf { it.isNotBlank() }?.let { rolled ->
-                        sessionStore.saveTokenIfGeneration(startGeneration, rolled)
+                        // ⚠ **저장만 하고 끝내지 않는다**(2026-09-21 리뷰). 굴린 토큰으로
+                        // 이후 요청(`listVoiceProfiles`·클립 다운로드·재바인딩)과 401 귀속을
+                        // **함께** 옮긴다 — 둘이 갈라졌을 때의 두 갈래 사고는 [tokenAfterRoll].
+                        usedToken = tokenAfterRoll(
+                            previousToken = usedToken,
+                            savedToken = sessionStore.saveTokenIfGeneration(startGeneration, rolled)?.token,
+                        )
+                        auth = AlarmTalkApiClient.bearer(usedToken)
                     }
                     val snapshotStore = AccessSnapshotStore(applicationContext)
                     // ⚠ **받았으면 적는다**(2026-09-01 리뷰). 스펙이 "`/auth/me` 로 plan 을
@@ -428,9 +503,19 @@ class StockClipPrefetchWorker(
             val failures = java.util.concurrent.atomic.AtomicInteger(0)
             // 그중 **다시 해 볼 만한** 실패 수. 0 이면 재시도가 의미 없다(위 when 참조).
             val transientFailures = java.util.concurrent.atomic.AtomicInteger(0)
+            // ⚠ **401 은 클립별로 삼키지 않는다**(코덱스 #788). 매니페스트·프로필까지는 통과했는데
+            //   받는 도중 토큰이 죽으면 클립마다 401 이 온다. 예전에는 그것을 `isPermanent()` 가
+            //   영구 실패로 세어 배치가 끝난 뒤 `failure` 로 나갔고, 그 길은 아래 `getOrElse` 의
+            //   `syncWorkerOutcome` 을 지나지 않아 **세션을 끊지 못했다** — 이 워커의 API 클라이언트에는
+            //   401 핸들러가 없어, 죽은 세션이 다른 요청이 우연히 401 을 볼 때까지 살아 있었다.
+            //   형제 요청은 그대로 두고(격리), 처음 본 401 을 기억했다가 배치가 끝난 뒤 **되던져**
+            //   바깥의 SESSION_EXPIRED 갈래 한 곳이 끝낸다. 다음 배치는 시작하지 않는다 — 같은 토큰으로
+            //   보내 봐야 같은 401 이다.
+            val sessionExpired = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
             // 겹친다(서버·기기 부담을 감안해 4로 제한).
-            missing.chunked(PARALLELISM).forEach { batch ->
+            for (batch in missing.chunked(PARALLELISM)) {
+                if (sessionExpired.get() != null) break
                 coroutineScope {
                     batch.map { (clip, cacheKeys) ->
                         async(Dispatchers.IO) {
@@ -453,14 +538,23 @@ class StockClipPrefetchWorker(
                                     )
                                 }
                             }.onFailure { error ->
-                                failures.incrementAndGet()
-                                // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
-                                // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
-                                // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
-                                // '받는 중' 으로 남고 '다시 시도' 는 끝내 안 뜬다.
-                                // (바깥 catch 는 이미 `isPermanent()` 로 가르고 있었는데,
-                                // 클립별로 삼키면서 그 분류에 닿지 못했다.)
-                                if (!error.isPermanent()) transientFailures.incrementAndGet()
+                                when (classifyClipFailure(error)) {
+                                    ClipFailure.SESSION_EXPIRED -> {
+                                        sessionExpired.compareAndSet(null, error)
+                                        return@onFailure
+                                    }
+                                    // ⚠ **영구 실패는 종류까지 기억한다**(2026-09-01 리뷰). 개수만
+                                    // 세면 404 같은 재시도 불가 실패도 아래에서 `retry` 로 나가,
+                                    // 될 리 없는 요청을 15분쯤 반복하는 동안 준비 화면이 계속
+                                    // '받는 중' 으로 남고 '다시 시도' 는 끝내 안 뜬다.
+                                    // (바깥 catch 는 이미 `isPermanent()` 로 가르고 있었는데,
+                                    // 클립별로 삼키면서 그 분류에 닿지 못했다.)
+                                    ClipFailure.PERMANENT -> failures.incrementAndGet()
+                                    ClipFailure.TRANSIENT -> {
+                                        failures.incrementAndGet()
+                                        transientFailures.incrementAndGet()
+                                    }
+                                }
                                 AlarmTalkLog.reportError(
                                     "Stock clip download failed messageId=${clip.messageId}",
                                     error,
@@ -473,6 +567,8 @@ class StockClipPrefetchWorker(
                 publishProgress(done = done, total = clips.size)
             }
             rebind()
+            // 받은 것은 묶어 둔 채(부분 성공은 남는다) 401 을 바깥 한 곳으로 올린다.
+            sessionExpired.get()?.let { throw it }
             if (accountChangedDuringRun) return@runCatching Result.retry()
             // 하나라도 못 받았으면 이 회차는 끝난 것이 아니다 — 다음 회차가 나머지만 받는다
             // (이미 받은 파일은 캐시에 남아 `missing` 계산에서 빠진다).
@@ -492,37 +588,60 @@ class StockClipPrefetchWorker(
             }
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
-            AlarmTalkLog.reportError("Stock clip prefetch failed", error)
-            // 영구 실패(스테일 매니페스트가 없는 메시지를 가리킴, 재시도 불가 4xx 등)까지
-            // retry 로 돌리면 유니크 작업이 큐에 영원히 남아 네트워크만 먹고, 다운로드 화면이
-            // 기다리는 FAILED 상태가 끝내 오지 않아 '다시 시도' 버튼도 뜨지 않는다.
-            when {
-                error.isPermanent() -> Result.failure()
-                runAttemptCount >= MAX_RUN_ATTEMPTS -> Result.failure()
-                else -> Result.retry()
+            when (syncWorkerOutcome(error)) {
+                SyncWorkerOutcome.RETHROW -> throw error
+                SyncWorkerOutcome.SESSION_EXPIRED -> {
+                    // ⚠ **`success` 로 끝내지 않는다.** 이 워커의 결과는 준비 화면이 읽는다 —
+                    // 성공으로 내보내면 못 받은 클립이 있는데도 100% SUCCEEDED 가 되어
+                    // '다시 시도' 를 영영 못 띄운다(아래 종료 규칙과 같은 이유). 세션이
+                    // 끊겼으니 재시도도 무의미하다 — 재로그인 뒤 큐가 다시 걸린다.
+                    endSessionAfterWorkerUnauthorized(
+                        sessionStore = sessionStore,
+                        expectedGeneration = startGeneration,
+                        // 시작 토큰이 아니라 **이 요청이 실제로 보낸** 토큰이다([tokenAfterRoll]).
+                        usedToken = usedToken,
+                        userId = session.user.id,
+                        workerName = "Stock clip prefetch",
+                    )
+                    Result.failure()
+                }
+                SyncWorkerOutcome.CONSENT_PENDING -> {
+                    // ⚠ **이 워커만 재시도한다**(다른 워커는 success 로 접는다). 동의를 마친
+                    // 사용자가 곧바로 목소리 준비 화면에 도착하는데 여기서 접으면 '목소리를
+                    // 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도. 이슈로는 올리지 않는다.
+                    Log.i(TAG, "Stock clip prefetch deferred: consent not settled yet")
+                    if (runAttemptCount >= MAX_RUN_ATTEMPTS) Result.failure() else Result.retry()
+                }
+                SyncWorkerOutcome.RETRY -> {
+                    AlarmTalkLog.reportError("Stock clip prefetch failed", error)
+                    // 영구 실패(스테일 매니페스트가 없는 메시지를 가리킴, 재시도 불가 4xx 등)까지
+                    // retry 로 돌리면 유니크 작업이 큐에 영원히 남아 네트워크만 먹고, 다운로드 화면이
+                    // 기다리는 FAILED 상태가 끝내 오지 않아 '다시 시도' 버튼도 뜨지 않는다.
+                    when {
+                        error.isPermanent() -> Result.failure()
+                        runAttemptCount >= MAX_RUN_ATTEMPTS -> Result.failure()
+                        else -> Result.retry()
+                    }
+                }
             }
         }
     }
 
     /**
-     * 다시 시도해도 결과가 같은 실패인지. 4xx 는 요청·상태 자체가 잘못된 것이라 재시도가
-     * 의미 없다(단 408 요청시간초과·429 요청과다는 시간이 지나면 풀리므로 제외).
-     * 파싱/디코딩 실패도 같은 응답을 다시 받아봐야 같은 결과다.
-     */
-    /**
-     * 재시도해도 소용없는 실패인가.
+     * 재시도해도 소용없는 실패인가([isPermanentClipFailure] 의 자리 표기).
      *
      * 403 은 예외다. 로그인 직후에는 아직 동의 전이라 서버가 모든 데이터 라우트를
      * CONSENT_REQUIRED(403) 로 막는데, 이건 사용자가 동의를 마치면 곧 풀리는 **일시적**
      * 상태다. 영구 실패로 보면 워커가 즉시 포기해, 동의를 마치고 목소리 준비 화면에
      * 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다(네트워크는 멀쩡한데도).
+     *
+     * ⚠ 이 예외를 **지우지 말 것.** `CONSENT_REQUIRED` 는 이제 위에서
+     * [SyncWorkerOutcome.CONSENT_PENDING] 이 먼저 잡지만, 코드를 못 읽은 403(본문 없음 등)은
+     * 여기로 내려온다 — 그것까지 영구로 보면 같은 화면이 다시 막힌다. 401 도 여기 오지
+     * 않는다 — 바깥 갈래는 [SyncWorkerOutcome.SESSION_EXPIRED] 가, 클립별 갈래는
+     * [classifyClipFailure] 가 먼저 가져간다.
      */
-    private fun Throwable.isPermanent(): Boolean = when (this) {
-        is retrofit2.HttpException ->
-            code() in 400..499 && code() != 403 && code() != 408 && code() != 429
-        is IllegalArgumentException -> true // Base64.decode 등 응답 형식 오류
-        else -> false
-    }
+    private fun Throwable.isPermanent(): Boolean = isPermanentClipFailure(this)
 
     private fun deviceVoiceLanguage(): String {
         val locales = applicationContext.resources.configuration.locales

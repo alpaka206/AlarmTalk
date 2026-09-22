@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import android.util.Patterns
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -57,9 +56,15 @@ internal fun PasswordResetScreen(
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    // '인증 코드 받기' 를 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
+    // 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
+    // 로그인 화면(`AuthScreen` 의 `emailFormatError`)과 같은 규칙이다.
+    var emailFormatError by remember { mutableStateOf(false) }
 
-    val normalizedEmail = email.trim().lowercase()
-    val emailLooksValid = Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()
+    // 형식 규칙의 단일 출처는 `ui/auth/AuthEmail.kt` — 로그인 화면과 **같은 판정**이다.
+    // 여기만 `Patterns.EMAIL_ADDRESS` 로 두면 로그인은 되는데 비밀번호 재설정만 막히는
+    // 계정이 생긴다(아포스트로피가 든 주소가 실제로 그랬다).
+    val normalizedEmail = normalizeAuthEmail(email)
     val codeSent = codeSentTo != null && codeSentTo == normalizedEmail
     // 서버 정책(@alarmtalk/shared PasswordSchema)과 일치: 8~128자 + 영문·숫자 각 1자 이상.
     val passwordAtLeastMin = password.length >= 8
@@ -105,11 +110,22 @@ internal fun PasswordResetScreen(
                 AuthFieldLabel(stringResource(R.string.auth_label_email))
                 OutlinedTextField(
                     value = email,
-                    onValueChange = { email = it },
+                    onValueChange = {
+                        email = it
+                        // 고쳐 치기 시작하면 경고를 지운다 — 남겨 두면 이미 고친 값 아래에
+                        // 옛 경고가 붙어 있다(로그인 화면과 같은 시점).
+                        emailFormatError = false
+                    },
                     singleLine = true,
                     enabled = !busy && !codeSent,
                     shape = WakerInputShape,
                     colors = authFieldColors(),
+                    isError = emailFormatError,
+                    supportingText = if (emailFormatError) {
+                        { Text(stringResource(R.string.auth_error_email_invalid), color = AuthErrorText) }
+                    } else {
+                        null
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next,
@@ -118,14 +134,24 @@ internal fun PasswordResetScreen(
                 )
             }
 
+            // ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜
+            // 안 되는지 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서,
+            // 주소를 잘못 친 사람은 눌리지 않는 버튼 앞에서 이유를 들을 길이 없었다.
+            // 잠그는 것은 **보낼 것이 없을 때**(빈 칸)와 이미 보낸 뒤뿐이다.
+            val requestEnabled = !busy && canRequestEmailCode(email) && !codeSent
             OutlinedButton(
-                onClick = { onRequestCode(email) },
-                enabled = !busy && emailLooksValid && !codeSent,
+                onClick = {
+                    when (authEmailSubmitOutcome(email)) {
+                        AuthEmailSubmitOutcome.ShowEmailFormatError -> emailFormatError = true
+                        AuthEmailSubmitOutcome.Submit -> onRequestCode(email)
+                    }
+                },
+                enabled = requestEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 54.dp),
                 shape = WakerButtonShape,
-                border = authOutlinedButtonBorder(!busy && emailLooksValid && !codeSent),
+                border = authOutlinedButtonBorder(requestEnabled),
                 colors = authOutlinedButtonColors(),
             ) {
                 Text(

@@ -43,12 +43,19 @@ class PlanChangeSyncWorker(
         // 섞인 세션이 된다. 이 순서면 반대로 세대가 옛것이라 저장이 거부돼 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
         val session = sessionStore.read() ?: return Result.success()
+        // 401 을 받았을 때 "내가 실제로 보낸 토큰" 이 무엇인지 알아야 한다 — 아래 `/auth/me`
+        // 가 토큰을 굴리면 그 뒤의 요청은 **새 토큰**으로 나가야 하고, 귀속도 함께 옮겨야
+        // 한다(`RemoteAlarmSyncWorker` 와 같은 방식, 규칙은 [tokenAfterRoll]).
+        var usedToken = session.token
         // 권한 스냅샷은 **문 하나로만** 쓴다(`EntitlementWriter`). 표는 네트워크 전에 뜬다.
         val entitlement = EntitlementWriter(applicationContext)
         val ticket = AccessTicket(session.user.id, startGeneration)
         return runCatching {
             val api = AlarmTalkApiClient.create()
-            val auth = AlarmTalkApiClient.bearer(session.token)
+            // 토큰이 굴러가면 헤더도 **함께** 갈아 끼운다 — 아래에 요청을 더 붙일 때 옛
+            // 토큰으로 나가면 그 401 이 엉뚱한 세션을 끊거나(귀속만 새 토큰), 끊어야 할
+            // 세션을 못 끊는다([tokenAfterRoll]).
+            var auth = AlarmTalkApiClient.bearer(usedToken)
 
             // 최신 구독·플랜·가족 재조회(강등 확정 확인). 서버측 plan=free 는 /auth/me 로만 관찰
             // 가능하므로 billing·me 는 필수 — 둘 중 하나라도 실패하면 확정할 수 없으니 throw 시켜
@@ -92,9 +99,13 @@ class PlanChangeSyncWorker(
             // 되돌아가고 이어지는 무료 강등이 떼어낸 알람을 로그인 화면 뒤에서 다시 예약한다
             // (Codex #665 P1).
             val rolledToken = me.token?.takeIf { it.isNotBlank() } ?: current.token
-            if (sessionStore.saveTokenIfGeneration(startGeneration, rolledToken) == null) {
-                return@runCatching Result.success()
-            }
+            val savedSession = sessionStore.saveTokenIfGeneration(startGeneration, rolledToken)
+                ?: return@runCatching Result.success()
+            // ⚠ **저장만 하고 끝내지 않는다**(2026-09-21 리뷰). 굴린 토큰으로 이후 요청과
+            // 401 귀속을 **함께** 옮긴다 — 지금은 이 아래에 네트워크 요청이 없지만, 둘을
+            // 따로 두면 요청을 하나 더 붙이는 순간 조용히 어긋난다([tokenAfterRoll]).
+            usedToken = tokenAfterRoll(previousToken = usedToken, savedToken = savedSession.token)
+            auth = AlarmTalkApiClient.bearer(usedToken)
 
             // ⚠ **스냅샷은 세션 CAS 를 통과한 뒤에 쓴다**(2026-09-01 리뷰). 위 검사와 이 쓰기
             // 사이에 로그아웃→같은 계정 재로그인이 끼면, **옛 워커가 새 세션의 스냅샷을 덮는다**
@@ -184,8 +195,35 @@ class PlanChangeSyncWorker(
             }
             Result.success()
         }.getOrElse { error ->
-            AlarmTalkLog.reportError("plan_changed conversion worker failed", error)
-            Result.retry()
+            when (syncWorkerOutcome(error)) {
+                SyncWorkerOutcome.RETHROW -> throw error
+                SyncWorkerOutcome.SESSION_EXPIRED -> {
+                    // 폐기된 토큰으로는 구독·플랜을 확인할 수 없다. 확인 못 한 채로는
+                    // **아무것도 변환하지 않는다**(위 `genuinelyFree` 게이트) — 재시도만
+                    // 영원히 도는 대신 세션을 끊고, 다시 로그인하면 전경 조회와
+                    // 주기 폴백이 강등을 마저 맞춘다.
+                    endSessionAfterWorkerUnauthorized(
+                        sessionStore = sessionStore,
+                        expectedGeneration = startGeneration,
+                        // 시작 토큰이 아니라 **이 요청이 실제로 보낸** 토큰이다([tokenAfterRoll]).
+                        usedToken = usedToken,
+                        userId = session.user.id,
+                        workerName = "Plan change sync worker",
+                    )
+                    Result.success()
+                }
+                SyncWorkerOutcome.CONSENT_PENDING -> {
+                    android.util.Log.i(
+                        "PlanChangeSyncWorker",
+                        "Plan change sync deferred: consent not settled yet",
+                    )
+                    Result.success()
+                }
+                SyncWorkerOutcome.RETRY -> {
+                    AlarmTalkLog.reportError("plan_changed conversion worker failed", error)
+                    Result.retry()
+                }
+            }
         }
     }
 

@@ -157,7 +157,7 @@ final class VoiceStudioViewModel: ObservableObject {
         return familyVoices.first { $0.id == selectedProfileID }
     }
 
-    func clearUserScopedRemoteState() {
+    func clearUserScopedRemoteState(preservingManifestFor ownerUserID: String? = nil) {
         // 화면 확인 모드에서는 시드를 지우지 않는다 — 세션 변화마다 목록이 비워진다.
         if UIPreviewSeed.isEnabled { return }
         activeUserID = nil
@@ -180,10 +180,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 목소리에 접근할 때 이유 없이 잠긴 채로 보인다 — 그 계정에는 풀어 줄 작업이 없다.
         unpersistedSuppressedProfileIDs = []
         replacementSuppressedProfileIDs = []
-        // 디스크 사본도 같이 지운다 — 매니페스트에는 **그 계정의 클론 클립**이 들어 있어
-        // 계정이 바뀌면 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로
-        // 오프라인 판정은 그때부터 정상으로 돌아온다.
-        StockClipManifestStore.clear()
+        StockClipManifestStore.clear(preservingOwnerUserID: ownerUserID)
         manifestFetchedThisSession = false
         selectedProfileID = nil
         defaultVoiceId = nil
@@ -584,7 +581,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // nil → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
         // 비행기모드 콜드스타트에서는 클립을 전부 받아 둔 기기도 알람을 못 만든다.
         // 자세한 것은 `StockClipManifestStore` 주석.
-        if stockClips.isEmpty, let cached = StockClipManifestStore.load() {
+        if stockClips.isEmpty, let cached = StockClipManifestStore.load(ownerUserID: session?.user.id) {
             stockClips = cached.clips
             expectedVariants = cached.expectedVariants
             legacyBucketHints = Dictionary(
@@ -596,7 +593,8 @@ final class VoiceStudioViewModel: ObservableObject {
         // "매니페스트를 갖고 있는가" 라 디스크·메모리 폴백에도 true 였는데, 교체 확정 게이트가
         // 그걸 '신선함' 으로 읽으면 **교체 이전 스냅샷**(전부 rendered=true)으로 세대를
         // 확정한다 — 완료 푸시를 놓친 기기는 회수된 프리셋을 문 채 남는다.
-        guard let token = session?.token else { return false }
+        guard let session else { return false }
+        let token = session.token
         // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
         // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
         // 이번 세션에 이미 받았고 강제도 아니면 **새로 받은 것이 아니다.**
@@ -607,24 +605,53 @@ final class VoiceStudioViewModel: ObservableObject {
         // 안드로이드 짝은 `MainViewModel.stockClipManifestRevision`.
         manifestRevision &+= 1
         let revision = manifestRevision
+        let ticket = StockClipManifestStore.beginFetch(session: session)
         do {
             let manifest = try await api.getStockClipManifest(token: token)
-            // 밀려난 응답은 공개하지 않으므로 '새로 받았다' 도 아니다.
-            guard revision == manifestRevision else { return false }
-            stockClips = manifest.clips
-            expectedVariants = manifest.expectedVariants
-            legacyBucketHints = Dictionary(
-                (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
-                uniquingKeysWith: { first, _ in first },
-            )
-            manifestFetchedThisSession = true
-            StockClipManifestStore.save(manifest)
-            return true
+            // 이 뷰모델 안에서 뒤에 시작한 조회가 있으면 그쪽이 자기 결과를 싣는다.
+            guard !Task.isCancelled, revision == manifestRevision else { return false }
+            switch StockClipManifestStore.save(manifest, ticket: ticket) {
+            case .published:
+                adoptStockClipManifest(manifest)
+                manifestFetchedThisSession = true
+                return true
+            case .superseded:
+                // 더 새 표가 먼저 공개됐거나(프리페처 `start` 와의 콜드스타트 경합 — 늘 이 순서다),
+                // 표가 무효화됐다(계정 전환의 `clear`). 어느 쪽이든 **디스크의 이긴 매니페스트가
+                // 권위**라 그걸 메모리에 싣는다 — 안 실으면 `stockClips` 가 비거나 낡은 채로 남아
+                // 곧이어 도는 재바인딩(`AlarmTalkApp.rebindStockClipsIfNeeded`)이 옛 카탈로그로
+                // 돌고 테마가 계속 '준비 안 됨' 으로 보인다(코덱스 #789). 임자가 다르면 아무것도
+                // 없다(`load` 가 거른다).
+                guard let winner = StockClipManifestStore.load(ownerUserID: session.user.id) else {
+                    return false
+                }
+                adoptStockClipManifest(winner)
+                // '이번에 서버에서 새로 받았는가' 는 **더 새 응답이 이 세션에서 공개된 경우만**
+                // true 다 — 그 응답은 이 표보다 나중에 요청됐으니 신선하다. `clear` 로 밀린
+                // 경우의 디스크 값은 지난 세션 것일 수 있어 교체 확정의 근거가 못 된다
+                // (Codex #703 P1) — 그때는 다음 호출이 다시 받는다.
+                guard StockClipManifestStore.publishedNewerResponse(than: ticket) else { return false }
+                manifestFetchedThisSession = true
+                return true
+            case .failed:
+                // 디스크 권위가 되지 못한 응답은 판정의 권위도 아니다. 다음 호출이 다시 시도한다.
+                return false
+            }
         } catch {
             // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 화면은 그걸로 계속
             // 가지만, **새로 받은 것은 아니다.**
             return false
         }
+    }
+
+    /// 매니페스트를 메모리(화면·재바인딩의 권위)에 싣는다. 공개했든 이긴 쪽을 이어받았든 같은 자리.
+    private func adoptStockClipManifest(_ manifest: StockClipListResponse) {
+        stockClips = manifest.clips
+        expectedVariants = manifest.expectedVariants
+        legacyBucketHints = Dictionary(
+            (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+            uniquingKeysWith: { first, _ in first },
+        )
     }
 
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.

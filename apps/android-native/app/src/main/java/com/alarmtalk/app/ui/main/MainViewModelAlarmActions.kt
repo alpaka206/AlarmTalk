@@ -63,6 +63,12 @@ private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
  * 오프라인이면 조용히 미해결로 저장하고(알람 생성을 막지 않는다) 22시 갱신과 알람 전까지의
  * 1시간 재시도가 채운다.
  *
+ * **기다리는 시간에는 상한이 있다** — 내 알람의 저장 단계(`alarmSaving`)에서 타는 네트워크는
+ * 이 호출 하나라(가족 알람은 이 함수를 거치지 않는다), 인터넷이 느리면 그만큼 저장이 멈춘다. 상한(`WEATHER_RESOLVE_TIMEOUT_MILLIS`, 8초)은
+ * `AlarmRepository.resolveWeatherVariantForDraft` 안에 있고, 넘기면 실패와 같은 null 이라
+ * 이 함수는 두 경우를 가르지 않는다 — 드래프트를 그대로 돌려줘 미해결로 저장되고, 저장
+ * 경로가 거는 `runOnce` 워커가 뒤에서 채운다.
+ *
  * 운세는 이 경로가 필요 없다 — 사주+발사일자로 기기에서 결정적으로 계산한다(fortuneThemeIndex).
  */
 private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft): AlarmDraft {

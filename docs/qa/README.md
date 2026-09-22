@@ -4,6 +4,7 @@
 
 - 릴리스 전 실기기 회귀: `apps/android-native/README.md` 의 Physical Device Checklist
 - 지금 진행 중인 검증 항목: [`dev-test-handoff.md`](dev-test-handoff.md)
+- 2026-09-21 Sentry 후속·양 앱 정합성·요청 비용 검토와 수정/실행 결과: [`sentry-and-parity-audit-2026-09-21.md`](sentry-and-parity-audit-2026-09-21.md)
 - 2026-08-24 네이티브 출시 점검 결과: [`release-readiness-2026-08-24.md`](release-readiness-2026-08-24.md)
 - 자동 테스트: 백엔드 Vitest(+ in-memory libSQL), Android JUnit — CI 에서 돈다
 

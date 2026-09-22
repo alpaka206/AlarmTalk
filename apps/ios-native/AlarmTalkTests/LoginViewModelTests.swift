@@ -3,9 +3,11 @@ import XCTest
 
 /// Phase 3-C3 `LoginView` 에서 사용하는 검증 helper 의 단위 테스트.
 ///
-/// 실제 네트워크 호출은 하지 않고, 입력 검증 규칙만 격리해서 검사한다. UI 가
-/// disabled 처리하는 조건과 동일한 규칙을 사용하므로 본 테스트가 통과하면
-/// "버튼 활성 조건" 도 만족된다.
+/// 실제 네트워크 호출은 하지 않고, 입력 검증 규칙만 격리해서 검사한다.
+///
+/// ⚠ **이메일 형식은 더 이상 버튼을 죽이지 않는다** — 형식이 틀려도 누를 수 있고,
+/// 누르면 이유를 말한다. 그 동작과 형식 규칙 본체는 `AuthEmailFormatTests` 가
+/// 고정한다(여기 이메일 케이스는 그 표의 부분집합이다).
 final class LoginViewModelTests: XCTestCase {
     // MARK: - Email
 
@@ -13,6 +15,9 @@ final class LoginViewModelTests: XCTestCase {
         XCTAssertTrue(LoginValidator.isValidEmail("user@example.com"))
         XCTAssertTrue(LoginValidator.isValidEmail("a.b+tag@sub.example.co"))
         XCTAssertTrue(LoginValidator.isValidEmail("WITH-CAPS@DOMAIN.COM"))
+        // 서버(`@alarmtalk/shared` 의 `EMAIL_PATTERN`)가 받는 주소다. 예전 자체
+        // 정규식은 이걸 거부해서, 이 주소로 가입한 사람은 로그인이 불가능했다.
+        XCTAssertTrue(LoginValidator.isValidEmail("o'brien@example.com"))
     }
 
     func testInvalidEmailsAreRejected() {

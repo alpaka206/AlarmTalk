@@ -77,6 +77,24 @@ final class AuthViewModel: ObservableObject {
     /// (`ui/auth/AuthScreen.kt` 의 `loginError`).
     @Published var loginError: String?
 
+    /// 그 실패의 **에러 코드**. 화면이 갈래를 가를 때(이메일 형식이냐 자격증명이냐) 쓰는 값이다.
+    ///
+    /// ⚠ **문구로 가르지 말 것.** 예전에는 `LoginView` 가
+    /// `auth.loginError == APIErrorMessages.emailInvalid` 로 비교했다 — 문구를 한 글자
+    /// 고치거나 다른 코드가 같은 문장을 쓰게 되면 **아무 경고 없이** 갈래가 어긋난다.
+    /// 판정은 `AuthEmailFormat.isEmailFormatErrorCode` 하나다. 안드로이드도 같은 방식이다
+    /// (`ui/main/MainViewModel.kt` 의 `loginErrorCode`).
+    @Published private(set) var loginErrorCode: String?
+
+    /// 문구와 코드를 **함께** 지운다.
+    ///
+    /// ⚠ 둘 중 하나만 지우면 코드는 남고 문구만 사라져, 이메일 칸이 아무 문구도 없이
+    /// 빨갛게 남는다. 지우는 자리를 한 곳으로 모아 그 어긋남 자체를 없앤다.
+    func clearLoginError() {
+        loginError = nil
+        loginErrorCode = nil
+    }
+
     /// 진행 중인 **서버 쪽 로그아웃 뒷정리**. 로그인은 이게 끝난 뒤에 세션을 심는다.
     ///
     /// ⚠ 표시를 지우는 것으로는 **이미 날아간 요청을 취소하지 못한다**(Codex #699 P1).
@@ -420,6 +438,13 @@ final class AuthViewModel: ObservableObject {
         session = saved
     }
 
+    func absorbStoredSession(from previousToken: String) {
+        guard let current = session, current.token == previousToken,
+              !PendingSignOutStore.isPending(current.user.id),
+              let stored = KeychainStore.readSession(), stored.user.id == current.user.id else { return }
+        session = stored
+    }
+
     func restoreSession() async {
         guard let saved = KeychainStore.readSession() else { return }
         session = saved
@@ -567,7 +592,7 @@ final class AuthViewModel: ObservableObject {
     /// 이메일/비밀번호 로그인.
     private func performLoginWithEmail(email: String, password: String) async {
 
-        loginError = nil
+        clearLoginError()
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
@@ -601,6 +626,9 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **하단 `failStatus` 로 보내지 말 것** — 그 자리는 눈에 안 걸린다.
             // 판정과 문구는 `loginErrorMessage(for:)` 에 있다.
             loginError = Self.loginErrorMessage(for: error)
+            // ⚠ **코드도 함께 올린다.** 화면은 이메일 형식 갈래를 이 값으로 가른다 —
+            // 번역되는 문구로 가르면 문구 한 글자에 조용히 어긋난다.
+            loginErrorCode = (error as? APIError)?.serverErrorCode
         }
     }
 
@@ -763,7 +791,8 @@ final class AuthViewModel: ObservableObject {
         persistSession(AuthSession(token: current.token, user: user))
     }
 
-    /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
+    /// 세션이 끝난 것(401, 그리고 **파기된 계정의 404 `AUTH_USER_NOT_FOUND`**)만 세션 만료로
+    /// 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {
         _ = await refreshUserApplyingToken()
@@ -816,8 +845,17 @@ final class AuthViewModel: ObservableObject {
             guard !Task.isCancelled, session?.token == token,
                   accountRecoveryRevision == recoveryRevision else { return nil }
             switch apiError {
-            case .server(let status, _, _):
-                if status == 401 {
+            case .server(let status, _, let errorCode):
+                // ⚠ **계정이 파기되면 이 라우트만 404 다**(2026-09-21 Sentry ALARMTALK-IOS-2).
+                //   다른 라우트는 미들웨어가 401 로 돌려주지만(`middleware/auth.ts`),
+                //   `auth.get('/me')`(`routes/auth.ts`)는 사용자 행이 없으면
+                //   404 `AUTH_USER_NOT_FOUND` 를 낸다. 그래서 세션 건강검진만 그 갈래를 놓쳐
+                //   **죽은 세션이 그대로 남고**, 사용자에게는 "서버에 일시적으로 연결할 수
+                //   없어요" 만 반복해 뜬다 — 그동안 다른 요청은 401 을 쏟는다.
+                //   서버를 401 로 바꾸는 쪽은 하지 않는다: 스토어에 나간 구버전 앱이 그
+                //   상태코드로 분기하고 있을 수 있어, 이미 나간 계약을 고치는 셈이다
+                //   (`docs/spec/error-codes.md` §2 「코드는 바꾸지 않는다」와 같은 취지).
+                if status == 401 || (status == 404 && errorCode == "AUTH_USER_NOT_FOUND") {
                     // ⚠ **그 사이 세션이 바뀌었으면 로그아웃하지 않는다**(코덱스 #730 4차).
                     //   401 은 **이 요청에 쓴 옛 토큰**이 죽었다는 뜻이다 — 그 사이 새로
                     //   로그인했다면 방금 만든 멀쩡한 세션을 끊게 된다.
@@ -860,6 +898,10 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
     private func handleUnauthorized(failedToken: String?) {
         guard let current = session, let failedToken, failedToken == current.token else { return }
+        if let stored = KeychainStore.readSession(), stored.token != failedToken {
+            absorbStoredSession(from: failedToken)
+            return
+        }
         // ⚠ **그 401 이 지금 세션의 것일 때만 끊는다**(코덱스 #734 4차). A 의 요청이 날아가는
         //   사이 로그아웃하고 B 로 로그인하면, 뒤늦게 도착한 A 의 401 이 여기까지 와서
         //   **방금 만든 B 의 세션을 끊는다.** 호출부에서 막아도 이 중앙 처리기가 남는다.

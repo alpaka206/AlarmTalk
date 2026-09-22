@@ -55,9 +55,12 @@ class VoiceAccessSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
-        val session = sessionStore.read() ?: return Result.success()
         // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        // ⚠ 다른 워커와 같은 순서 — **세대를 세션보다 먼저 읽는다**. 순서가 반대면 두 줄
+        // 사이의 A→B 전환에서 **세션은 A, 세대는 B** 가 짝지어져 세대 검사가 통과하는데
+        // 데이터는 A 것이다. 이 순서면 세대가 옛것이라 안전하게 실패한다.
         val startGeneration = sessionStore.sessionGeneration()
+        val session = sessionStore.read() ?: return Result.success()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -290,8 +293,31 @@ class VoiceAccessSyncWorker(
                 Result.success()
             }
         }.getOrElse { error ->
-            AlarmTalkLog.reportError("voice_access_revoked handling failed", error)
-            Result.retry()
+            when (syncWorkerOutcome(error)) {
+                SyncWorkerOutcome.RETHROW -> throw error
+                SyncWorkerOutcome.SESSION_EXPIRED -> {
+                    // 목록 두 개를 못 받았으니 **강등도 확정도 하지 않았다**(위 주석 —
+                    // 오강등이 미강등보다 나쁘다). 폐기된 토큰으로 재시도해 봐야 같은 401
+                    // 이므로 세션을 끊는다. 다시 로그인하면 하루 주기 폴백과 앱 시작
+                    // refreshSocial 이 같은 대조를 다시 한다.
+                    endSessionAfterWorkerUnauthorized(
+                        sessionStore = sessionStore,
+                        expectedGeneration = startGeneration,
+                        usedToken = session.token,
+                        userId = session.user.id,
+                        workerName = "Voice access sync worker",
+                    )
+                    Result.success()
+                }
+                SyncWorkerOutcome.CONSENT_PENDING -> {
+                    Log.i(TAG, "Voice access sync deferred: consent not settled yet")
+                    Result.success()
+                }
+                SyncWorkerOutcome.RETRY -> {
+                    AlarmTalkLog.reportError("voice_access_revoked handling failed", error)
+                    Result.retry()
+                }
+            }
         }
     }
 

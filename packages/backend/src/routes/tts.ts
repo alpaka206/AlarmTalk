@@ -57,6 +57,11 @@ import {
 } from '../lib/dynamic-prompt-settings';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
+import {
+  fetchOpenMeteo,
+  WEATHER_FORECAST_CACHE_TTL_SECONDS,
+  WEATHER_GEOCODE_CACHE_TTL_SECONDS,
+} from '../lib/weather-fetch';
 
 const tts = new Hono<AppEnv>();
 // 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
@@ -399,21 +404,45 @@ async function loadWeatherSignal(args: {
   country?: unknown;
   city?: unknown;
 }): Promise<WeatherSignal | null> {
-  const input = await loadWeatherSignalInput(args);
+  // 라이브 생성: 그 자리에서 읽을 문장 하나라, 지오코딩·미세먼지를 못 받았다고 문장을 통째로 비우기보다
+  // 서울 좌표·먼지 없음으로 이어 가는 기존 규약을 지킨다. 저장되는 값이 아니라 다시 받을 기회도 없다.
+  const input = await loadWeatherSignalInput(args, 'fallback');
   return input ? buildWeatherSignal(input) : null;
 }
 
+/**
+ * 세 호출(지오코딩·예보·미세먼지) 가운데 하나를 못 받았을 때 어떻게 할지.
+ *
+ *  - `'unresolved'` — **null**. 사전렌더 인덱스(`GET /prerender-variant`)용. 그 인덱스는 클라가
+ *    '해결된 사실' 로 저장하고 발사 24시간 창 안에서 **다시 받지 않는다**(Android
+ *    `weatherVariantNeedsRefresh`, iOS `BucketVariantResolver`). 그래서 한 조각이라도 못 받은 값을
+ *    내보내면 그게 그 알람의 최종 조건이 된다 — 지오코딩만 타임아웃이면 서울 예보로 만든 인덱스가
+ *    부산 알람에 박혀 엉뚱한 날씨를 읽는다(코덱스 #788 P2). null 이면 클라는 미해결로 두고 시간당
+ *    재시도하며, 끝내 못 받으면 '못 알아봤어요' 안내 클립을 튼다(`docs/spec/voice-and-message.md` 5-1).
+ *  - `'fallback'` — 지오코딩 실패는 서울 좌표로, 미세먼지 실패는 '없음' 으로 이어 간다. 라이브
+ *    생성(`POST /generate`)용 — 저장되지 않는 문장 하나라 다시 받을 기회가 없고, 문장을 비우는 것보다
+ *    낫다고 본 기존 규약이다. 예보 자체를 못 받으면 여기서도 null(날씨 문장 생략).
+ */
+type WeatherFetchFailurePolicy = 'unresolved' | 'fallback';
+
 /** open-meteo 원시 데이터(코드·기온·강수·미세먼지)를 가져와 구조화 입력으로만 환원한다. */
-async function loadWeatherSignalInput(args: {
-  latitude?: unknown;
-  longitude?: unknown;
-  locationLabel?: unknown;
-  country?: unknown;
-  city?: unknown;
-  targetDate?: unknown;
-  timezone?: unknown;
-}): Promise<WeatherSignalInput | null> {
-  const location = await resolveWeatherLocation(args);
+export async function loadWeatherSignalInput(
+  args: {
+    latitude?: unknown;
+    longitude?: unknown;
+    locationLabel?: unknown;
+    country?: unknown;
+    city?: unknown;
+    targetDate?: unknown;
+    timezone?: unknown;
+  },
+  onFetchFailure: WeatherFetchFailurePolicy,
+): Promise<WeatherSignalInput | null> {
+  const resolved = await resolveWeatherLocation(args);
+  const location =
+    resolved.location ??
+    (onFetchFailure === 'fallback' ? { ...SEOUL_LOCATION, label: resolved.label } : null);
+  if (!location) return null;
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
@@ -444,9 +473,15 @@ async function loadWeatherSignalInput(args: {
   }
 
   try {
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 타임아웃·엣지 캐시·로그는 `lib/weather-fetch.ts` 한 곳에서. 타임아웃으로 거부되면 이
+    // try 가 잡아 null 로 돌아간다 — 저장 버튼이 이 응답을 기다리고 있으므로 500 으로 새면 안 된다.
+    // ⚠ 캐시는 URL 에 날짜가 실린 호출(`start_date=end_date=targetDate`)에만 건다. 날짜 없는
+    //   라이브 경로(`forecast_days=1`)를 캐시하면 자정을 넘긴 어제 예보가 TTL 동안 오늘로 나간다.
+    const response = await fetchOpenMeteo(
+      'forecast',
+      url,
+      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
+    );
     const json = await response
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
@@ -455,26 +490,29 @@ async function loadWeatherSignalInput(args: {
       ? (json.daily.time?.findIndex((value) => value === targetDate) ?? -1)
       : 0;
     if (targetIndex < 0) return null;
-    const code = Number(json.daily.weather_code?.[targetIndex]);
-    const maxTemp = Number(json.daily.temperature_2m_max?.[targetIndex]);
-    const minTemp = Number(json.daily.temperature_2m_min?.[targetIndex]);
-    const rainProbability = Number(json.daily.precipitation_probability_max?.[targetIndex]);
-    const precipitation = Number(json.daily.precipitation_sum?.[targetIndex]);
-    // 코드·기온·강수가 모두 없으면(전부 NaN) 분류 불가 → null. 이때만 클라가 마지막 인덱스를 유지하고
-    // 라이브는 generic 으로 떨어진다. 단 weather_code 만 없고 기온/강수가 있으면 그것으로 분류 가능하므로
-    // 통과시킨다 — buildWeatherSignal(라이브)의 우산·한파 멘트, resolvePrerenderWeatherIndex 의
-    // 비/더위/추위 인덱스는 code 없이도 산출된다. (code 만으로 null 반환하면 라이브 날씨멘트가 통째 사라짐)
-    if (
-      !Number.isFinite(code) &&
-      !Number.isFinite(maxTemp) &&
-      !Number.isFinite(minTemp) &&
-      !Number.isFinite(rainProbability) &&
-      !Number.isFinite(precipitation)
-    ) {
+    // ⚠ `Number(null)` 은 0 이다 — Open-Meteo 는 자료 없는 표본을 null 로 채우므로 그대로 읽으면
+    //   "기온 0도·강수 0" 이 되어 없는 자료가 '추위' 로 분류된다(코덱스 #788 4차). 없는 표본은 NaN.
+    const code = sampleOrNaN(json.daily.weather_code?.[targetIndex]);
+    const maxTemp = sampleOrNaN(json.daily.temperature_2m_max?.[targetIndex]);
+    const minTemp = sampleOrNaN(json.daily.temperature_2m_min?.[targetIndex]);
+    const rainProbability = sampleOrNaN(json.daily.precipitation_probability_max?.[targetIndex]);
+    const precipitation = sampleOrNaN(json.daily.precipitation_sum?.[targetIndex]);
+    const samples = [code, maxTemp, minTemp, rainProbability, precipitation];
+    if (onFetchFailure === 'unresolved') {
+      // 사전렌더 인덱스는 다섯 표본을 다 보고 고른다(눈·비·안개·흐림은 code, 더위·추위는 기온,
+      // 비는 강수). 하나라도 없으면 그 자리의 조건을 못 본 채 굳히는 것이라 **받은 것이 아니다.**
+      // 실측(2026-09-22): Open-Meteo 는 예보 범위 안의 날짜에 다섯 값을 모두 주고, 범위 밖은
+      // 200 이 아니라 400(`error: true`)이라 위 `!response.ok` 로 걸러진다.
+      if (samples.some((value) => !Number.isFinite(value))) return null;
+    } else if (samples.every((value) => !Number.isFinite(value))) {
+      // 라이브 문장: 코드·기온·강수가 모두 없을 때만 분류 불가 → null(문장 생략). weather_code 만
+      // 없고 기온/강수가 있으면 그것으로 분류한다 — buildWeatherSignal 의 우산·한파 멘트는 code 없이도
+      // 나온다(code 만으로 null 을 돌리면 라이브 날씨 멘트가 통째로 사라진다).
       return null;
     }
-    const hasDust = await loadDustSignal(location, targetDate, timezone);
-    return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust };
+    const dust = await loadDustSignal(location, targetDate, timezone);
+    if (dust === null && onFetchFailure === 'unresolved') return null;
+    return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust: dust ?? false };
   } catch {
     return null;
   }
@@ -566,11 +604,16 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   return idx('nice');
 }
 
+/**
+ * 미세먼지가 나쁜 날인가. **못 받았으면 `null`** — 타임아웃·불통·비정상 응답 모두. false 로 뭉개지
+ * 않는다: 사전렌더 인덱스는 먼지 여부가 곧 클립 번호라(`resolvePrerenderWeatherIndex` 의 dust),
+ * 못 받은 것을 '없음' 으로 굳히면 그 알람은 먼지 나쁜 날에 산책을 권한다. 폴백은 호출부가 정한다.
+ */
 async function loadDustSignal(
   location: { latitude: number; longitude: number },
   targetDate: string | null,
   timezone: string,
-): Promise<boolean> {
+): Promise<boolean | null> {
   const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
@@ -584,38 +627,71 @@ async function loadDustSignal(
   }
 
   try {
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 예보와 같은 TTL — 미세먼지도 같은 (좌표·날짜) 키로 하루 네 번만 오리진에 닿는다.
+    // 타임아웃이면 이 try 가 잡아 null(못 받음)로 돌아간다 — 폴백 여부는 `loadWeatherSignalInput` 이 정한다.
+    // 날짜 없는 호출은 예보와 같은 이유로 캐시하지 않는다.
+    const response = await fetchOpenMeteo(
+      'air',
+      url,
+      targetDate ? WEATHER_FORECAST_CACHE_TTL_SECONDS : null,
+    );
     const json = await response
       .json<AirQualityForecastResponse>()
       .catch(() => ({}) as AirQualityForecastResponse);
-    if (!response.ok || !json.hourly) return false;
+    if (!response.ok || !json.hourly) return null;
     const pm10Max = maxFinite(json.hourly.pm10);
     const pm25Max = maxFinite(json.hourly.pm2_5);
-    const pm10Bad = pm10Max != null && pm10Max > 80;
-    const pm25Bad = pm25Max != null && pm25Max > 35;
-    return pm10Bad || pm25Bad;
+    // 200 에 `hourly` 가 있어도 요청한 두 계열이 비어 있거나 전부 null 이면(예보 지평 밖·자료 없음)
+    // **받은 것이 아니다** — 여기서 false 로 뭉개면 사전렌더 경로가 그것을 '먼지 없음' 으로 굳힌다
+    // (코덱스 #788 3차). 두 계열 다 쓸 만한 표본이 있어야 판정한다.
+    if (pm10Max === null || pm25Max === null) return null;
+    return pm10Max > 80 || pm25Max > 35;
   } catch {
-    return false;
+    return null;
   }
 }
 
+/** 표본 하나를 숫자로. null·undefined·빈 문자열 등 자료가 없으면 NaN — `Number(null) === 0` 을 막는다. */
+function sampleOrNaN(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Number(value);
+  return Number.NaN;
+}
+
+/**
+ * 계열의 최댓값. 쓸 만한 표본이 하나도 없으면 null.
+ * ⚠ `null` 표본을 `Number()` 로 읽으면 **0** 이 된다 — Open-Meteo 는 자료 없는 시각을 `null` 로
+ *   채우므로, 그대로 두면 전부 null 인 계열이 "pm 0 = 먼지 없음" 으로 읽힌다. 숫자(또는 숫자 문자열)만 센다.
+ */
 function maxFinite(values: unknown[] | undefined): number | null {
   const numbers = (values ?? [])
+    .filter((value) => typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value));
   return numbers.length > 0 ? Math.max(...numbers) : null;
 }
 
+type WeatherLocation = { latitude: number; longitude: number; label: string };
+
+/** 도시가 없을 때의 기본 위치이자, 라이브 생성이 지오코딩 실패에 쓰는 폴백. */
+const SEOUL_LOCATION: WeatherLocation = { latitude: 37.5665, longitude: 126.978, label: '서울' };
+
+/**
+ * 어느 좌표의 예보를 볼지. 좌표가 오면 그대로, 도시가 없으면 서울(기본값), 도시가 있으면 지오코딩.
+ *
+ * 지오코딩을 시도했는데 못 했으면 **`location: null`** 이다 — 타임아웃·불통·비정상 응답·결과 없음
+ * 모두. 여기서 서울로 바꿔치기하지 않는다: 그 좌표로 받은 예보는 겉보기에 멀쩡한 '해결된 값' 이라
+ * 사전렌더 경로에서는 클라가 다시 받지 않고 서울 아닌 도시의 알람이 서울 날씨를 읽게 된다
+ * (코덱스 #788 P2). 폴백 여부는 호출부가 정한다(`WeatherFetchFailurePolicy`).
+ */
 async function resolveWeatherLocation(args: {
   latitude?: unknown;
   longitude?: unknown;
   locationLabel?: unknown;
   country?: unknown;
   city?: unknown;
-}): Promise<{ latitude: number; longitude: number; label: string }> {
-  const fallback = { latitude: 37.5665, longitude: 126.978, label: '서울' };
+}): Promise<{ location: WeatherLocation | null; label: string }> {
+  const fallback = SEOUL_LOCATION;
   const latitude = optionalNumber(args.latitude, -90, 90);
   const longitude = optionalNumber(args.longitude, -180, 180);
   const country = normalizeShortText(args.country, 30);
@@ -625,13 +701,13 @@ async function resolveWeatherLocation(args: {
     [country, city].filter(Boolean).join(' ').trim() ||
     fallback.label;
   if (latitude != null && longitude != null) {
-    return { latitude, longitude, label };
+    return { location: { latitude, longitude, label }, label };
   }
   if (!city && label !== fallback.label) {
-    return { ...fallback, label: fallback.label };
+    return { location: { ...fallback, label: fallback.label }, label: fallback.label };
   }
   if (!city) {
-    return { ...fallback, label };
+    return { location: { ...fallback, label }, label };
   }
   try {
     const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
@@ -639,13 +715,12 @@ async function resolveWeatherLocation(args: {
     url.searchParams.set('count', '10');
     url.searchParams.set('language', 'ko');
     url.searchParams.set('format', 'json');
-    const response = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-    });
+    // 도시명 → 좌표는 바뀌지 않으니 7일 캐시. 타임아웃은 다른 실패와 같이 아래 catch 로 들어간다.
+    const response = await fetchOpenMeteo('geocode', url, WEATHER_GEOCODE_CACHE_TTL_SECONDS);
     const json = await response
       .json<WeatherGeocodingResponse>()
       .catch(() => ({}) as WeatherGeocodingResponse);
-    if (!response.ok) return { ...fallback, label };
+    if (!response.ok) return { location: null, label };
     const results = json.results ?? [];
     const matched =
       results.find((item) => {
@@ -654,16 +729,16 @@ async function resolveWeatherLocation(args: {
       }) ?? results[0];
     const resolvedLatitude = optionalNumber(matched?.latitude, -90, 90);
     const resolvedLongitude = optionalNumber(matched?.longitude, -180, 180);
-    if (resolvedLatitude == null || resolvedLongitude == null) return { ...fallback, label };
+    if (resolvedLatitude == null || resolvedLongitude == null) return { location: null, label };
     const resolvedCity = typeof matched?.name === 'string' ? matched.name : city;
     const resolvedCountry = typeof matched?.country === 'string' ? matched.country : country;
+    const resolvedLabel = [resolvedCountry, resolvedCity].filter(Boolean).join(' ').trim() || label;
     return {
-      latitude: resolvedLatitude,
-      longitude: resolvedLongitude,
-      label: [resolvedCountry, resolvedCity].filter(Boolean).join(' ').trim() || label,
+      location: { latitude: resolvedLatitude, longitude: resolvedLongitude, label: resolvedLabel },
+      label: resolvedLabel,
     };
   } catch {
-    return { ...fallback, label };
+    return { location: null, label };
   }
 }
 
@@ -2129,14 +2204,19 @@ function expectedVariantCounts(): { system: Record<string, number>; clone: Recor
 tts.get('/prerender-variant', async (c) => {
   const context = c.req.query('context') ?? '';
   if (context === 'wake_weather') {
-    const input = await loadWeatherSignalInput({
-      country: c.req.query('country'),
-      city: c.req.query('city'),
-      targetDate: c.req.query('target_date'),
-      timezone: c.req.query('timezone'),
-    });
-    // 날씨 조회 실패(open-meteo 불통·위치 미상 등)면 null 을 돌려, 클라가 '맑음(index 0)'과
-    // '해결 실패'를 구분해 잘못된 스냅샷을 저장하지 않게 한다.
+    // 세 조회(지오코딩·예보·미세먼지) 중 하나라도 못 받으면 null — 이 인덱스는 클라가 '해결된 사실' 로
+    // 저장하고 발사 24시간 창 안에서 다시 받지 않으므로, 서울 좌표·먼지 없음 같은 폴백으로 만든 값을
+    // 내보내면 그게 그 알람의 최종 조건이 된다. null 이면 클라는 '맑음(0)' 과 구분해 미해결로 두고
+    // 시간당 재시도한다(`WeatherFetchFailurePolicy`).
+    const input = await loadWeatherSignalInput(
+      {
+        country: c.req.query('country'),
+        city: c.req.query('city'),
+        targetDate: c.req.query('target_date'),
+        timezone: c.req.query('timezone'),
+      },
+      'unresolved',
+    );
     return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : null });
   }
   // 운세는 클라가 사주+날짜로 온디바이스 결정(fortuneThemeIndex)한다. 그 외(love/medication 회전)도

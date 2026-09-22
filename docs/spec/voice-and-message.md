@@ -399,6 +399,7 @@
 | | 무엇으로 고르나 | 언제 정하나 | 네트워크 |
 | --- | --- | --- | --- |
 | **날씨** | 그 도시·그 **발사 날짜**의 실제 예보(서버가 open-meteo 조회) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
+| 날씨 **대기 상한** | 저장은 그 응답을 **8초**까지만 기다린다(양 앱 같은 값) | 넘기면 **실패와 같다** — 미해결로 저장하고 뒤에서 받는다 | 저장 시 1회, 최대 8초 |
 | **운세** | **사주 + 발사 날짜**로 기기에서 결정적 계산 | 읽을 때마다(계산이라 저장 불필요) | 없음 |
 
 - 자리 번호는 **서버 클립의 `variant` 와 같은 축**이다(0 맑음 / 1 비 / 2 눈 / 3 미세먼지 /
@@ -407,6 +408,24 @@
   우산 얘기를 한다.
 - **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
   있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
+- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22, 코덱스 #788). 인덱스는 세 조회(지오코딩·
+  예보·미세먼지)로 만드는데, 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
+  다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
+  좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
+  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 남는다
+  (저장되지 않는 문장 하나라 다시 받을 기회가 없다). 판정은 `routes/tts.ts` 의
+  `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` / `'fallback'`).
+- **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
+  이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
+  (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
+  순차로 부르고 한 번의 상한이 5초다(`weather-fetch.ts` 의 `WEATHER_FETCH_TIMEOUT_MS`) —
+  정상 응답은 수백 ms 라, 한 번이 상한에 걸린 경우까지는 받아 주고 그 이상은 기다리지 않는다.
+  **상한을 넘긴 결과는 실패와 정확히 같아야 한다**: 미해결(`null`)로 저장하고(새 알람은
+  `null`, 수정은 받아 둔 값 유지), 저장 직후 백그라운드 갱신(안드로이드 `runOnce` 워커 →
+  1시간 재시도, iOS `WeatherVariantRefreshService.refreshDue`)이 채운다. 타임아웃 뒤에 늦게
+  도착한 응답이 값을 덮어쓰지 않는다 — 취소가 요청까지 끊고, 조회 함수는 DB 에 쓰지 않는다.
+  ⚠ **상한을 실패와 다르게 다루지 말 것**(예: 알럿을 띄우거나 저장을 막는 것). 실패의
+  대가가 작아서(안내 클립·백그라운드 재시도) 상한을 둘 수 있었던 것이다.
 - **운세는 같은 사람·같은 날이면 두 기기가 같은 답을 내야 한다.** 네트워크 없이 각자
   계산하므로 산식이 조금만 달라도 조용히 갈라진다. 그래서 기대값 표를 **양 앱 테스트에
   똑같이 박아** 두었다(`FortuneThemeIndexTest` ↔ `BucketVariantResolverTests`).
@@ -455,6 +474,26 @@
 받아야 할 목록은 서버가 정한다(`GET /tts/stock-clips` 의 목록, 클론은
 `GET /voice/:id/prerender-status` 의 `total`). 앱은 그 목록과 **디스크에 실제로 있는 것**을
 비교해 **없는 것만** 받는다.
+
+매니페스트를 받는 전경·백그라운드 경로는 저장소 전역의 조회 세대와 계정 소유자를 공유한다.
+새 응답을 본 뒤 늦게 도착한 옛 응답은 저장하지 않는다. 로그아웃·계정 전환은 미완료 조회를
+무효화하며, 다른 계정 또는 소유자 미상의 디스크 목록은 시드하지 않는다. 진행률 조회의
+파일 읽기·메타데이터 해석은 메인 스레드의 반복 폴링에서 실행하지 않는다.
+
+**공개 경합의 규칙**(2026-09-22 정리, 코덱스 #789·#791). 조회는 **요청 전에** 표(ticket)를 뽑고,
+응답을 공개(`save`)할 때 표를 대조한다. 결과는 셋이고 뜻이 다르다:
+- **published** — 이 응답이 디스크 권위가 됐다. 메모리(화면·재바인딩)에도 싣는다.
+- **superseded** — 더 새 표가 이미 공개됐거나(정상 경합 — 콜드 스타트·로그인에서 프리페처와
+  `loadStockClips(force:)` 가 같은 엔드포인트를 거의 동시에 부른다) 로그아웃·계정 전환이 표를
+  무효화했다. **실패가 아니다** — 재시도 루프에 넣지 않는다. 디스크의 이긴 매니페스트(임자 대조)를
+  **메모리에 싣는다** — 안 실으면 물러난 회차 뒤의 재바인딩이 빈·낡은 카탈로그로 돈다.
+- **failed** — 디스크 쓰기 실패. 아무도 공개하지 못했으니 재시도한다.
+- 수위선은 **응답을 본 순간** 오른다(성패 무관). 시작 시점에 올리지 않는다 — 나중 요청이 네트워크에서
+  실패했을 때 먼저 출발한 멀쩡한 응답까지 버려 '모른다' 상태가 되살아난다.
+- **'이번 세션에 서버에서 새로 받았는가'**(교체 확정의 근거)는 published 이거나, superseded 인데
+  **가장 최근에 본 표의 응답이 실제로 공개된 경우**만 true 다. 무효화(`clear`)로 밀렸거나 가장
+  최근 응답의 공개가 실패했으면 false — 디스크 값이 지난 세션 것이거나 최신이 아닐 수 있어
+  교체 세대를 확정하면 안 된다(Codex #703 P1). 그때는 다음 호출이 다시 받는다.
 
 제자리 교체는 message ID를 보존하므로 파일 존재만으로는 충분하지 않다. 매니페스트의
 `audio_url`을 캐시 메타데이터의 원격 주소와 비교하고, 다르면 같은 `stock_<messageId>` 파일을
@@ -780,6 +819,10 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
+| 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
+| 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.loadStockClips`(재바인딩은 워커가 디스크를 읽으므로 메모리 갱신 불필요) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
+| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
+| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
@@ -833,6 +876,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
+| 날씨 조회 반쪽 값 금지(하나라도 못 받으면 `null`) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `loadWeatherSignalInput` 의 `WeatherFetchFailurePolicy` `'unresolved'`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
+| 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
 | 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |
 | 클립 자리 = `variant` | `bindStockBucketClips`(sortedBy·distinctBy) | `AlarmEditorSheet.bucketClipKeys(forCategory:)`(같은 규칙) | `ORDER BY … variant ASC`, `StockClip.variant` |

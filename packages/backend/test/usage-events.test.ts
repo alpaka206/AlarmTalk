@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -33,6 +33,49 @@ function event(overrides: Record<string, unknown> = {}) {
 
 describe('POST /events — 사용 기록 배치 수집', () => {
   beforeEach(() => mockDB.reset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('문구 이벤트 100건은 개별 DB 요청 없이 두 batch로 처리한다', async () => {
+    const transaction = await mockDB.client.transaction();
+    const execute = vi.spyOn(transaction, 'execute');
+    const batch = vi.spyOn(transaction, 'batch');
+    vi.spyOn(mockDB.client, 'transaction').mockResolvedValueOnce(transaction);
+
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: Array.from({ length: 100 }, () => event({
+        type: 'manual_message_attached', message_id: MESSAGE_ID,
+      })),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(execute).not.toHaveBeenCalled();
+    expect(batch).toHaveBeenCalledTimes(2);
+    expect(batch.mock.calls[0][0]).toHaveLength(4);
+    expect(batch.mock.calls[1][0]).toHaveLength(104);
+    expect(mockDB.transactions.commits).toBe(1);
+  });
+
+  it('같은 배치의 중복 UUID는 첫 사실만 보관함에 반영한다', async () => {
+    const attached = event({ type: 'manual_message_attached', message_id: MESSAGE_ID });
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [attached, { ...attached, type: 'manual_message_released' }],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockDB.calls.filter(call => call.sql.includes('UPDATE message_library'))).toHaveLength(1);
+    expect(mockDB.calls.some(call => call.sql.includes('SET in_use = 0'))).toBe(false);
+  });
+
+  it('batch 쓰기 실패는 전체 트랜잭션을 롤백한다', async () => {
+    mockDB.pushErrorFor('UPDATE message_library', new Error('write failed'));
+    const response = await buildApp().request(jsonReq('POST', '/events', {
+      events: [event({ type: 'manual_message_attached', message_id: MESSAGE_ID })],
+    }));
+
+    expect(response.status).toBe(500);
+    expect(mockDB.transactions.commits).toBe(0);
+    expect(mockDB.transactions.rollbacks).toBe(1);
+  });
 
   it('배치를 한 트랜잭션에서 INSERT OR IGNORE 로 넣는다(재전송 멱등)', async () => {
     const res = await buildApp('user-1').request(

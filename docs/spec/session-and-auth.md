@@ -55,6 +55,10 @@
 
 ## 세션을 끊는 경우
 
+백그라운드에서 갱신한 세션은 영속 저장소와 전경 메모리에 함께 수렴한다. 갱신 이후의
+push/pull은 새 토큰을 사용한다. 옛 요청의 401은 저장소에 이미 갱신된 세션을 지우지 않는다.
+인증 실패를 받은 일괄 전송은 그 회차를 멈추고, 아직 시도하지 않은 행을 실패로 표시하지 않는다.
+
 만료가 아니라 **명시적 사건**으로만 끊는다.
 
 | 사건 | 어떻게 |
@@ -121,6 +125,8 @@ iOS는 네트워크/5xx/응답 해석 실패와 구서버의 `NO_PENDING_DELETIO
 | rolling refresh | `routes/auth.ts` `GET /me` 의 `rolledToken` | `MainViewModel` 앱 오픈 경로 | `AuthViewModel.refreshUser` |
 | 갱신 판정(90일·못 읽으면 갱신) | — | `network/SessionTokenRenewal.kt` | `SessionTokenRenewal.swift` |
 | 백그라운드 갱신 | — | `sync/RemoteAlarmSyncWorker.renewSessionTokenIfNeeded` | `BackgroundSyncTask.renewSessionTokenIfNeeded` |
+| 저장·메모리 세션 수렴 | — | `MainViewModel`의 세션 저장소 관찰 | `AuthViewModel.absorbStoredSession`·`handleUnauthorized` |
+| 전경 push의 첫 인증 실패 중단 | — | `AlarmSyncService.syncWithBackend` | `RemoteAlarmPushSync.runOnce` |
 | 저장 경합 방지 | — | `AuthSessionStore.saveTokenIfGeneration` | `AuthViewModel` 의 출처 **토큰** 재확인(`refreshUser`·`applyRolledToken`·`applyFreshPlan`) |
 | 401 중앙 처리 | — | `UnauthorizedAuthenticator` | `AlarmTalkAPI.unauthorizedNotification`(**실패한 토큰을 싣는다**) → `AuthViewModel.handleUnauthorized` |
 | 즉시 폐기 | `authMiddleware` 의 `token_epoch` 비교 | — | — |

@@ -1233,7 +1233,67 @@ describe('POST /auth/login — 엣지 케이스', () => {
     const res = await app.request(jsonReq('POST', '/auth/login', {}), undefined, ENV);
     expect(res.status).toBe(400);
     const body = await res.json();
+    // 이메일·비밀번호가 **둘 다** 빠졌으니 이메일만 지목하지 않는다.
     expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
+  });
+
+  // ⚠ 앞뒤 공백은 자동완성·복사붙여넣기가 실제로 붙이는 값이다. 정규화가 검증 **뒤에**
+  // 있던 시절에는 이 요청이 DB 까지 가 보지도 못하고 400 으로 잘렸다.
+  it('앞뒤 공백이 섞인 이메일도 정규화해 조회한다', async () => {
+    const hash = await hashPassword('superSecret1', ENV.PASSWORD_PEPPER);
+    mockDB.pushResult([
+      { id: 'u-1', email: 'kim@test.com', password_hash: hash, name: '김규원', plan: 'free' },
+    ]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/login', {
+        email: '  KIM@Test.COM  ',
+        password: 'superSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(200);
+    // 조회 키까지 정규화됐는지 본다 — 200 만 보면 스키마가 통과시키고 라우트가 공백
+    // 붙은 값으로 조회하는 상태를 놓친다(그러면 실사용에선 401 이 난다).
+    const select = mockDB.calls.find((call) => call.sql.includes('FROM users WHERE email = ?'));
+    expect(select?.args).toEqual(['kim@test.com']);
+  });
+
+  it('이메일 형식만 틀리면 → 400 AUTH_EMAIL_INVALID', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/login', {
+        email: 'kim.test.com',
+        password: 'superSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+    // ⚠ 401 이 아니라 400 이다 — 401 로 내리면 자격증명 불일치와 한 칸에 놓여,
+    // 계정 열거를 막으려고 일부러 합쳐 둔 갈래와 뒤섞인다.
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_INVALID');
+    // 형식만 보고 답했으니 DB 는 건드리지 않는다.
+    expect(mockDB.calls).toHaveLength(0);
+  });
+
+  it('이메일이 틀려도 비밀번호까지 비면 → AUTH_VALIDATION_FAILED + issues', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/login', { email: 'kim.test.com', password: '' }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    // 이메일만 고쳐도 통과하지 못하므로 이메일을 지목하지 않는다.
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
+    // 가입·비번재설정과 같게 `issues` 를 싣는다 — 로그인만 빠져 있어서 앱이 무엇이
+    // 틀렸는지 알 길이 없었다.
+    expect(Array.isArray(body.issues)).toBe(true);
   });
 
   it('null plan 사용자 → plan "free" 반환', async () => {

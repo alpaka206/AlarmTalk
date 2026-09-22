@@ -21,6 +21,67 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.9 (versionCode 29)
+
+#788(+#790·#791). 마이그레이션은 없다. 사용자에게 보이는 것: 잠금 화면 울림 화면, 첫 알람 직후의
+'알람이 없어요', 날씨 테마 저장 대기, 날씨 조건을 반쪽만 받았을 때의 오재생. iOS 는 이 회차를
+스토어에 올리지 않는다(1.2.8 심사 중) — 문안은 Play 용이다.
+
+### ko-KR
+
+```
+• 화면이 잠긴 상태에서 알람이 울릴 때 소리만 나고 울림 화면이 뜨지 않던 문제를 고쳤습니다.
+• 첫 알람을 만든 직후 목록에 '알람이 없어요'로 보이던 문제를 고쳤습니다.
+• 인터넷이 느릴 때 날씨 테마 알람 저장이 오래 걸리던 것을 고쳤습니다. 날씨는 뒤에서 이어서 받습니다.
+• 날씨 정보를 일부만 받았을 때 엉뚱한 날씨로 저장되던 문제를 고쳤습니다.
+```
+
+### en-US
+
+```
+• Fixed the alarm screen not appearing (sound only) when the alarm went off on a locked phone.
+• Fixed the list showing "No alarms yet" right after creating your first alarm.
+• Saving a weather-themed alarm no longer stalls on a slow connection; the forecast is fetched in the background.
+• Fixed alarms being saved with the wrong weather when only part of the forecast was received.
+```
+
+### ja-JP
+
+```
+• 画面ロック中にアラームが鳴ったとき、音だけで画面が表示されない問題を修正しました。
+• 最初のアラームを作成した直後に「アラームがありません」と表示される問題を修正しました。
+• 通信が遅いときに天気テーマのアラーム保存に時間がかかる問題を修正しました。天気は後から取得します。
+• 天気情報の一部しか受け取れなかったときに誤った天気で保存される問題を修正しました。
+```
+
+## 1.2.8 (versionCode 28)
+
+#782 릴리스(2026-09-21 게재). 이 문안은 게재 당시 Play 에 올린 것을 옮겨 적은 것이다.
+
+### ko-KR
+
+```
+• 목소리를 등록할 때 만들기와 내려받기를 하나의 퍼센트로 보여 줍니다.
+• 목소리 등록 화면의 안내와 버튼 동작을 정리했습니다.
+• 결제 확인과 알림 처리를 더 안정적으로 고쳤습니다.
+```
+
+### en-US
+
+```
+• Voice registration now shows generation and download as a single percentage.
+• Tidied up the guidance and buttons on the voice registration screen.
+• More reliable purchase verification and notification handling.
+```
+
+### ja-JP
+
+```
+• 音声の登録時に、生成とダウンロードを1つのパーセンテージで表示します。
+• 音声登録画面の案内とボタンの動作を整理しました。
+• 購入確認と通知処理をより安定させました。
+```
+
 ## 1.2.7 (versionCode 27)
 
 #749 한 건. 마이그레이션은 없다(백엔드는 로그인 거절의 보고 수준만 낮췄다).

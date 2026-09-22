@@ -302,9 +302,26 @@ struct AlarmTalkApp: App {
                         await rebindStockClipsIfNeeded()
                     }
                     .task(id: auth.session?.user.id) {
+                        stockClipPrefetcher.cancel()
                         remoteSync.clearUserScopedRemoteState()
-                        voiceStudio.clearUserScopedRemoteState()
+                        voiceStudio.clearUserScopedRemoteState(preservingManifestFor: auth.session?.user.id)
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
+                        // 이 시점의 내 목소리 목록은 대개 비어 있다(방금 지웠고 서버 응답 전) —
+                        // 목록이 도착하면 아래 `onChange` 가 내 클론을 실어 다시 부른다.
+                        stockClipPrefetcher.start(
+                            session: auth.session,
+                            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                        )
+                    }
+                    // ⚠ **내 목소리 목록이 도착하면 선다운로드 대상을 넓힌다**(코덱스 #788 4차).
+                    //   위 두 `.task` 는 콜드 스타트·로그인에 목록이 오기 전에 돌아 기본 목소리만
+                    //   받는다. 목록이 온 뒤 다시 부르지 않으면 내 클론의 사전렌더 클립은 이 세션
+                    //   내내 안 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐). `start` 는
+                    //   대상이 넓어질 때만 도는 회차를 끊고 다시 시작한다(`shouldRestart`).
+                    //   안드로이드는 워커가 `listVoiceProfiles` 로 대상을 스스로 정한다.
+                    .onChange(of: voiceStudio.ownedVoiceProfileIDs) { _, owned in
+                        guard auth.session != nil, !owned.isEmpty else { return }
+                        stockClipPrefetcher.start(session: auth.session, ownedVoiceProfileIDs: owned)
                     }
                     // 목소리를 지우면 그 목소리로 걸어 둔 예약도 곧바로 걷어낸다 —
                     // 파기 대상 생체정보가 알람에 남아 있으면 안 된다.
