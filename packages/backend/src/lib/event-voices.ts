@@ -19,36 +19,33 @@ export function isEventLocale(v: unknown): v is EventLocale {
   return typeof v === 'string' && (EVENT_LOCALES as readonly string[]).includes(v);
 }
 
+/** 화면(랜딩 `MESSAGE_KINDS`)이 고를 수 있는 종류. */
 export const EVENT_MESSAGE_KINDS = ['birthday', 'chuseok'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
 
 /**
- * 화면에서 뺀 옛 종류 → 지금 종류. **배포 창 호환용**이다(코덱스 리뷰, 2026-09-22): 서버가 먼저
- * 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 `kind: "comfort"` 를 그대로 보낸다.
- * 그걸 400 으로 거절하면 두 클립 중 하나가 실패하고, 새로고침 전에는 재시도로도 못 살린다.
- * 옛 이름은 받되 지금 문구(추석 인사)로 읽어 준다 — '위로' 문안은 이미 지웠다.
- * 새 번들이 다 퍼진 뒤(며칠) 지워도 된다.
+ * 화면에서 뺐지만 **아직 받는** 종류 — 배포 창 호환용이다(코덱스 #788 2차·4차, 2026-09-22).
+ * 서버가 먼저 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 `kind: "comfort"` 를
+ * '위로 한마디' 라벨 아래에서 보낸다. 400 으로 거절하면 두 클립 중 하나가 실패하고 새로고침 전에는
+ * 재시도로도 못 살리며, 다른 문구(추석 인사)로 바꿔 읽어 주면 사용자가 고른 것과 다른 것이 나온다.
+ * 그래서 옛 종류는 **옛 문안 그대로** 읽어 준다(`EVENT_MESSAGES`). 새 번들이 다 퍼진 뒤(며칠)
+ * 이 목록과 그 문안을 함께 지운다 — `docs/qa/dev-test-handoff.md` 의 follow-up.
  */
-export const LEGACY_EVENT_MESSAGE_KINDS: Readonly<Record<string, EventMessageKind>> = {
-  comfort: 'chuseok',
-};
-
-/** 지금 종류만 — 내보내지 않는다. 요청 검증은 옛 이름까지 받는 `resolveEventMessageKind` 하나로 한다. */
-function isEventMessageKind(v: unknown): v is EventMessageKind {
-  return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
-}
+export const LEGACY_EVENT_MESSAGE_KINDS = ['comfort'] as const;
+export type LegacyEventMessageKind = (typeof LEGACY_EVENT_MESSAGE_KINDS)[number];
+/** 서버가 읽어 줄 수 있는 종류 전부 = 화면의 것 + 옛 번들의 것. */
+export type RenderableEventMessageKind = EventMessageKind | LegacyEventMessageKind;
 
 /**
- * 요청의 `kind` 를 지금 종류로 — 옛 이름이면 호환표로 바꾸고, 모르는 값이면 null.
+ * 요청의 `kind` 를 읽어 줄 종류로 — 화면의 종류든 옛 번들의 종류든 그대로, 모르는 값이면 null.
  * `routes/event.ts` 의 `POST /api/event/:eventId/clips` 는 **이것으로만** 검증한다 — 옛 번들의
- * `comfort` 가 400 이 아니라 200 으로 읽히는 회귀 테스트가 `test/event-clips.test.ts` 에 있다.
+ * `comfort` 가 400 이 아니라 200 + 옛 문안으로 읽히는 회귀 테스트가 `test/event-clips.test.ts` 에 있다.
  */
-export function resolveEventMessageKind(v: unknown): EventMessageKind | null {
-  if (isEventMessageKind(v)) return v;
+export function resolveEventMessageKind(v: unknown): RenderableEventMessageKind | null {
   if (typeof v !== 'string') return null;
-  return Object.prototype.hasOwnProperty.call(LEGACY_EVENT_MESSAGE_KINDS, v)
-    ? LEGACY_EVENT_MESSAGE_KINDS[v]!
-    : null;
+  if ((EVENT_MESSAGE_KINDS as readonly string[]).includes(v)) return v as EventMessageKind;
+  if ((LEGACY_EVENT_MESSAGE_KINDS as readonly string[]).includes(v)) return v as LegacyEventMessageKind;
+  return null;
 }
 
 export type VoiceProject = {
@@ -82,7 +79,7 @@ export function voiceProjectFor(
  * 갈아 끼웠다(한국어는 사용자 원문 그대로, 영어·일본어는 같은 결로 옮긴 것). 바꾸려면 여기만
  * 고친다 — 랜딩은 종류 id(`MESSAGE_KINDS`)와 라벨(`messages/*.json` 의 `event.studio.kinds`)만 안다.
  */
-export const EVENT_MESSAGES: Record<EventMessageKind, Record<EventLocale, string>> = {
+export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLocale, string>> = {
   birthday: {
     ko: `[warm, relaxed] {name}, [gently cheerful] 생일 정말 축하해!
 [gentle, sincere] 늘 응원해 줘서 고마워.
@@ -107,6 +104,21 @@ export const EVENT_MESSAGES: Record<EventMessageKind, Record<EventLocale, string
     ja: `[warm, relaxed] {name}、[gently cheerful] 楽しいチュソクを過ごしてね！
 [warm, conversational] おいしいものをたくさん食べて、この連休はゆっくり休んで、のんびり過ごしてね。
 [gentle, sincere] いつも元気で、笑えることがいっぱいありますように。`,
+  },
+  // ⚠ 옛 번들 호환용 — 화면에는 없다(`LEGACY_EVENT_MESSAGE_KINDS`). 새 번들이 다 퍼지면 함께 지운다.
+  comfort: {
+    ko: `[warm, relaxed] {name}, [gentle, sincere] 오늘도 정말 고생했어.
+
+[warm, conversational] 안 보이는 데서 애쓴 거 다 알아.
+[warm, sincere] 충분히 잘하고 있어.`,
+    en: `[warm, relaxed] Hey, {name}. [gentle, sincere] You worked so hard today.
+
+[warm, conversational] I see the effort nobody else does.
+[warm, sincere] You’re doing more than enough.`,
+    ja: `[warm, relaxed] {name}、[gentle, sincere] 今日も本当におつかれさま。
+
+[warm, conversational] 誰にも見えないところでがんばったの、知ってるよ。
+[warm, sincere] 十分やれてる。`,
   },
 };
 
@@ -172,7 +184,11 @@ export type RenderedMessage = {
   spoken: string;
 };
 
-export function renderMessage(kind: EventMessageKind, locale: EventLocale, name: string): RenderedMessage {
+export function renderMessage(
+  kind: RenderableEventMessageKind,
+  locale: EventLocale,
+  name: string,
+): RenderedMessage {
   const spoken = vocative(name, locale);
   const template = EVENT_MESSAGES[kind][locale];
   // 함수 치환 — 문자열 치환은 `$'`·`$&` 를 패턴으로 읽어 이름이 문장을 부풀릴 수 있다.

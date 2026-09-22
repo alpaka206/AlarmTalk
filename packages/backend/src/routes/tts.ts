@@ -490,22 +490,24 @@ export async function loadWeatherSignalInput(
       ? (json.daily.time?.findIndex((value) => value === targetDate) ?? -1)
       : 0;
     if (targetIndex < 0) return null;
-    const code = Number(json.daily.weather_code?.[targetIndex]);
-    const maxTemp = Number(json.daily.temperature_2m_max?.[targetIndex]);
-    const minTemp = Number(json.daily.temperature_2m_min?.[targetIndex]);
-    const rainProbability = Number(json.daily.precipitation_probability_max?.[targetIndex]);
-    const precipitation = Number(json.daily.precipitation_sum?.[targetIndex]);
-    // 코드·기온·강수가 모두 없으면(전부 NaN) 분류 불가 → null. 이때만 클라가 마지막 인덱스를 유지하고
-    // 라이브는 generic 으로 떨어진다. 단 weather_code 만 없고 기온/강수가 있으면 그것으로 분류 가능하므로
-    // 통과시킨다 — buildWeatherSignal(라이브)의 우산·한파 멘트, resolvePrerenderWeatherIndex 의
-    // 비/더위/추위 인덱스는 code 없이도 산출된다. (code 만으로 null 반환하면 라이브 날씨멘트가 통째 사라짐)
-    if (
-      !Number.isFinite(code) &&
-      !Number.isFinite(maxTemp) &&
-      !Number.isFinite(minTemp) &&
-      !Number.isFinite(rainProbability) &&
-      !Number.isFinite(precipitation)
-    ) {
+    // ⚠ `Number(null)` 은 0 이다 — Open-Meteo 는 자료 없는 표본을 null 로 채우므로 그대로 읽으면
+    //   "기온 0도·강수 0" 이 되어 없는 자료가 '추위' 로 분류된다(코덱스 #788 4차). 없는 표본은 NaN.
+    const code = sampleOrNaN(json.daily.weather_code?.[targetIndex]);
+    const maxTemp = sampleOrNaN(json.daily.temperature_2m_max?.[targetIndex]);
+    const minTemp = sampleOrNaN(json.daily.temperature_2m_min?.[targetIndex]);
+    const rainProbability = sampleOrNaN(json.daily.precipitation_probability_max?.[targetIndex]);
+    const precipitation = sampleOrNaN(json.daily.precipitation_sum?.[targetIndex]);
+    const samples = [code, maxTemp, minTemp, rainProbability, precipitation];
+    if (onFetchFailure === 'unresolved') {
+      // 사전렌더 인덱스는 다섯 표본을 다 보고 고른다(눈·비·안개·흐림은 code, 더위·추위는 기온,
+      // 비는 강수). 하나라도 없으면 그 자리의 조건을 못 본 채 굳히는 것이라 **받은 것이 아니다.**
+      // 실측(2026-09-22): Open-Meteo 는 예보 범위 안의 날짜에 다섯 값을 모두 주고, 범위 밖은
+      // 200 이 아니라 400(`error: true`)이라 위 `!response.ok` 로 걸러진다.
+      if (samples.some((value) => !Number.isFinite(value))) return null;
+    } else if (samples.every((value) => !Number.isFinite(value))) {
+      // 라이브 문장: 코드·기온·강수가 모두 없을 때만 분류 불가 → null(문장 생략). weather_code 만
+      // 없고 기온/강수가 있으면 그것으로 분류한다 — buildWeatherSignal 의 우산·한파 멘트는 code 없이도
+      // 나온다(code 만으로 null 을 돌리면 라이브 날씨 멘트가 통째로 사라진다).
       return null;
     }
     const dust = await loadDustSignal(location, targetDate, timezone);
@@ -647,6 +649,13 @@ async function loadDustSignal(
   } catch {
     return null;
   }
+}
+
+/** 표본 하나를 숫자로. null·undefined·빈 문자열 등 자료가 없으면 NaN — `Number(null) === 0` 을 막는다. */
+function sampleOrNaN(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Number(value);
+  return Number.NaN;
 }
 
 /**

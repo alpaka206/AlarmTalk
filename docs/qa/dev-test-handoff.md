@@ -15,6 +15,11 @@
 - [ ] iPhone 다운로드 화면의 Hangs/Time Profiler 측정. Watchdog는 원인 미확정 유지.
 - [ ] 새 서버와 새 앱 적용 후 Sentry·생성 재전송·이벤트 배치 지연·큐 대기 시간 관찰.
       운영 DB 변경/배포는 이번 작업에서 실행하지 않았다.
+- [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디) 호환 제거 — 새 랜딩 번들(생일/추석)이 게재되고
+      **며칠** 지나 옛 번들이 다 밀려난 뒤, 백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS`
+      와 `EVENT_MESSAGES.comfort` 를 함께 지운다(회귀 테스트 `event-clips.test.ts` 의 comfort 케이스도).
+      배포 창에서는 옛 번들이 그 id 를 '위로 한마디' 라벨로 보내므로 400 도, 다른 문구로 바꿔 읽기도
+      안 된다(코덱스 #788 2차·4차).
 
 
 ## iOS 첫 출시 — 2026-09-14

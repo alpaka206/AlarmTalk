@@ -123,6 +123,8 @@ function stubOpenMeteo(options?: {
   geocodeStatus?: number;
   /** 미세먼지 200 응답의 `hourly` 를 통째로 바꾼다(빈 계열·null 계열 등). */
   airHourly?: Record<string, unknown[]>;
+  /** 예보 200 응답의 `daily` 값을 덮어쓴다(예: `{ temperature_2m_max: [null] }`). */
+  dailyOverride?: Record<string, unknown[]>;
 }) {
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: FetchInit) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
@@ -162,6 +164,7 @@ function stubOpenMeteo(options?: {
           temperature_2m_min: [15],
           precipitation_probability_max: [80],
           precipitation_sum: [5],
+          ...(options?.dailyOverride ?? {}),
         },
       });
     }
@@ -270,6 +273,37 @@ describe('GET /tts/prerender-variant — Open-Meteo 타임아웃', () => {
       const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
       expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
     }
+  });
+
+  it('예보 200 인데 표본이 null 이면 null — Number(null)=0 으로 "추위" 가 되지 않는다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const allNull = {
+      weather_code: [null],
+      temperature_2m_max: [null],
+      temperature_2m_min: [null],
+      precipitation_probability_max: [null],
+      precipitation_sum: [null],
+    };
+    for (const dailyOverride of [
+      allNull,
+      // 한 표본만 없어도 사전렌더는 미해결이다 — 그 자리의 조건(더위·추위)을 못 본 채 굳힌다.
+      { temperature_2m_max: [null] },
+      { weather_code: [undefined] },
+    ]) {
+      stubOpenMeteo({ dailyOverride });
+      const res = await requestVariant(buildApp());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
+    }
+    // 라이브 문장은 예전 규약대로 — 전부 없을 때만 null, 일부만 없으면 있는 것으로 분류한다.
+    const liveArgs = { country: 'South Korea', city: CITY, targetDate: TARGET_DATE, timezone: 'Asia/Seoul' };
+    stubOpenMeteo({ dailyOverride: allNull });
+    expect(await loadWeatherSignalInput(liveArgs, 'fallback')).toBeNull();
+    stubOpenMeteo({ dailyOverride: { temperature_2m_max: [null], temperature_2m_min: [null] } });
+    const partial = await loadWeatherSignalInput(liveArgs, 'fallback');
+    expect(partial?.code).toBe(61);
+    expect(Number.isNaN(partial?.maxTemp)).toBe(true);
   });
 
   it('미세먼지 200 인데 계열이 비었거나 전부 null 이어도 null — 받은 것이 아니다', async () => {

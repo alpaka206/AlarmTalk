@@ -44,6 +44,9 @@ final class StockClipPrefetcher: ObservableObject {
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
+    /// 지금 도는 회차가 받기로 한 **내 목소리** id 들. `start` 가 더 넓은 대상을 가져오면 그
+    /// 회차를 끊고 넓은 대상으로 다시 시작한다(`shouldRestart`). 회차가 끝나거나 취소되면 비운다.
+    private(set) var runningOwnedVoiceProfileIDs: Set<String> = []
     /// `start` 마다 올리는 세대. **취소된 앞 회차가 뒤늦게 상태를 덮어쓰지 못하게** 한다 —
     /// 취소는 배치 경계에서만 확인되므로, 앞 회차가 마지막 배치를 끝내고 `.finished` 를
     /// 쓰면 새 회차가 받는 중인데도 받기 화면이 닫혔다.
@@ -67,13 +70,33 @@ final class StockClipPrefetcher: ObservableObject {
     ///   프리셋도 미리 받는다 — 등록은 서버 생성 + 다운로드가 끝나야 끝난 것이기 때문이다.
     ///   ⚠ **공유받은 목소리는 넣지 않는다.** 그룹원 수만큼 곱해져 용량이 커지는데 실제로
     ///   쓰는 것은 보통 하나다. 그건 알람에서 **고르는 순간** 받는다.
+    /// 이미 도는 회차가 있을 때 새 `start` 가 그 회차를 끊고 다시 시작해야 하는가 — 대상이
+    /// **넓어질 때만**이다(코덱스 #788 4차).
+    ///
+    /// 왜: 콜드 스타트·로그인에서는 내 목소리 목록이 아직 서버에서 오기 전이라 첫 `start` 는
+    /// 기본 목소리만 대상으로 돈다. 목록이 도착해 `AlarmTalkApp` 이 내 클론 id 를 실어 다시
+    /// 부를 때 "이미 돌고 있다" 로 무시하면, 그 클론의 사전렌더 클립은 **이 세션 내내** 안
+    /// 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐이다). 반대로 좁은 대상(빈 집합)으로
+    /// 온 호출이 넓은 회차를 끊으면 안 된다 — 같은 시점에 도는 계정 키 `.task` 가 그렇다.
+    /// 안드로이드는 워커 안에서 `listVoiceProfiles` 로 대상을 스스로 정하므로 이 문제가 없다.
+    static func shouldRestart(running: Set<String>, requested: Set<String>) -> Bool {
+        !requested.isSubset(of: running)
+    }
+
     func start(
         session: AuthSession?,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         ownedVoiceProfileIDs: Set<String> = []
     ) {
-        guard task == nil, let session else { return }
-        let owned = ownedVoiceProfileIDs
+        guard let session else { return }
+        var owned = ownedVoiceProfileIDs
+        if task != nil {
+            guard Self.shouldRestart(running: runningOwnedVoiceProfileIDs, requested: owned) else { return }
+            // 좁아지는 쪽으로는 끊지 않으니, 다시 시작하는 회차는 두 대상의 합이다.
+            owned.formUnion(runningOwnedVoiceProfileIDs)
+            cancel()
+        }
+        runningOwnedVoiceProfileIDs = owned
         generation += 1
         let gen = generation
         // 잡아 둔 세션은 재시도 회차가 그대로 쓴다 — 요청의 bearer 와 매니페스트 임자(user id)
@@ -94,7 +117,10 @@ final class StockClipPrefetcher: ObservableObject {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
                 }
             }
-            if self?.generation == gen { self?.task = nil }
+            if self?.generation == gen {
+                self?.task = nil
+                self?.runningOwnedVoiceProfileIDs = []
+            }
         }
     }
 
@@ -148,6 +174,7 @@ final class StockClipPrefetcher: ObservableObject {
     func cancel() {
         task?.cancel()
         task = nil
+        runningOwnedVoiceProfileIDs = []
         generation += 1
     }
 
