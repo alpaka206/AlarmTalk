@@ -32,6 +32,10 @@ class AlarmTalkApplication : Application() {
         //  프로세스가 즉시 종료되던 문제를 방지. 실패는 로그로만 남기고 계속 진행.)
         runCatching { initializeSentry() }
             .onFailure { AlarmTalkLog.reportError("Sentry init failed", it) }
+        // 울림 알림의 갈래("앱에 보이는 액티비티가 있는가")가 읽는 카운터. 콜백 등록은 실패할
+        // 일이 없지만 같은 모양으로 감싼다 — 실패해도 앱 진입을 막지 않는다.
+        runCatching { com.alarmtalk.app.alarm.VisibleActivityTracker.install(this) }
+            .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
         runCatching { NotificationChannels.ensure(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서

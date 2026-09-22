@@ -616,9 +616,11 @@ FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "�
   알림은 **처음부터** 갈래를 정해 올린다(`RingingNotificationFactory.initialVariant` — 판정은
   "앱에 보이는 액티비티가 있는가" 하나): 없으면 ALERTING(HIGH·무음·전체화면 인텐트),
   있으면 QUIET(LOW, 배너 없음 — 우리가 직접 띄우니 겹치면 안 된다).
-- ⚠ **"직접 띄워 보고 안 뜨면 승격" 으로 되돌리지 말 것.** 같은 알림 id 를 갱신하는 승격은
+  판정은 `VisibleActivityTracker` 로 한다 — `ProcessLifecycleOwner` 는 마지막 액티비티가 멈춘 뒤
+  700ms 동안 STARTED 라, 알람 직전에 홈·전원을 누른 경우를 '보인다' 로 잘못 읽는다(코덱스 #788).
+- ⚠ **"안 뜨면 같은 알림을 승격" 으로 되돌리지 말 것.** 같은 알림 id 를 갱신하는 승격은
   전체화면을 **한 번도 열지 못했다** — SystemUI 는 새로 추가된 알림에만 전체화면 인텐트를
-  검사한다. 승격 알림에 `ONLY_ALERT_ONCE` 까지 있어 배너도 안 떴다.
+  검사한다. 승격이 필요하면(QUIET 로 시작했는데 안 뜸) **다른 id(1002)의 새 알림**으로 올린다.
 - ⚠ **열기 인텐트에 `FLAG_ACTIVITY_CLEAR_TASK` 를 넣지 말 것.** 시스템과 우리가 같은 화면을
   연달아 열면 CLEAR_TASK 가 먼저 뜬 인스턴스를 파괴하고 그 `onStop` 이 '벗어났다' 로 읽혀
   알람이 2초 만에 꺼진다(2026-09-09 A32). `singleTask` + `onNewIntent` 가 답이다 —

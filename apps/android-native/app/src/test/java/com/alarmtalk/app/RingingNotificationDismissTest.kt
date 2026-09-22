@@ -6,7 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.alarm.NotificationChannels
 import com.alarmtalk.app.alarm.RingingNotificationFactory
 import com.alarmtalk.app.alarm.RingingNotificationFactory.Variant
+import com.alarmtalk.app.alarm.RingingService
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -99,6 +101,13 @@ class RingingNotificationDismissTest {
         val launched = shadowOf(notification.fullScreenIntent).savedIntent
         assertEquals(0, launched.flags and Intent.FLAG_ACTIVITY_CLEAR_TASK)
         assertTrue(launched.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test
+    fun promotionUsesADifferentNotificationIdSoTheFullScreenIntentIsEvaluated() {
+        // 같은 id(1001)를 갱신하면 SystemUI 가 전체화면 인텐트를 검사하지 않는다 — 옛 '승격' 이
+        // 잠금 화면에서 한 번도 뜨지 못한 이유. 승격은 반드시 **새 항목**이어야 한다.
+        assertNotEquals(1001, RingingService.RINGING_PROMOTION_NOTIFICATION_ID)
     }
 
     @Test

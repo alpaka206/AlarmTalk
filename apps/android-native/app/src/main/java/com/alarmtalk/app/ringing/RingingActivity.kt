@@ -334,6 +334,8 @@ class RingingActivity : ComponentActivity() {
         super.onStart()
         visibleCount += 1
         visibleSinceElapsedMs = SystemClock.elapsedRealtime()
+        // 화면이 떴으니 승격 알림(전체화면 인텐트를 들고 뜬 새 항목)은 할 일이 끝났다.
+        RingingService.cancelPromotionNotification(this)
         userLeaveHinted = false
         val sensorManager = getSystemService<SensorManager>() ?: return
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)

@@ -21,8 +21,29 @@ export function isEventLocale(v: unknown): v is EventLocale {
 
 export const EVENT_MESSAGE_KINDS = ['birthday', 'chuseok'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
+
+/**
+ * 화면에서 뺀 옛 종류 → 지금 종류. **배포 창 호환용**이다(코덱스 리뷰, 2026-09-22): 서버가 먼저
+ * 배포된 뒤에도 브라우저에 열려 있거나 캐시된 옛 랜딩 번들은 `kind: "comfort"` 를 그대로 보낸다.
+ * 그걸 400 으로 거절하면 두 클립 중 하나가 실패하고, 새로고침 전에는 재시도로도 못 살린다.
+ * 옛 이름은 받되 지금 문구(추석 인사)로 읽어 준다 — '위로' 문안은 이미 지웠다.
+ * 새 번들이 다 퍼진 뒤(며칠) 지워도 된다.
+ */
+export const LEGACY_EVENT_MESSAGE_KINDS: Readonly<Record<string, EventMessageKind>> = {
+  comfort: 'chuseok',
+};
+
 export function isEventMessageKind(v: unknown): v is EventMessageKind {
   return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
+}
+
+/** 요청의 `kind` 를 지금 종류로 — 옛 이름이면 호환표로 바꾸고, 모르는 값이면 null. */
+export function resolveEventMessageKind(v: unknown): EventMessageKind | null {
+  if (isEventMessageKind(v)) return v;
+  if (typeof v !== 'string') return null;
+  return Object.prototype.hasOwnProperty.call(LEGACY_EVENT_MESSAGE_KINDS, v)
+    ? LEGACY_EVENT_MESSAGE_KINDS[v]!
+    : null;
 }
 
 export type VoiceProject = {

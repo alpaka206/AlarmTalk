@@ -6,8 +6,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.ProcessLifecycleOwner
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -233,9 +231,9 @@ class RingingService : Service() {
     private fun startRinging(alarmId: String) {
         // 앱에 보이는 액티비티가 있는가 — 그것이 곧 우리가 울림 화면을 직접 띄울 수 있는가다
         // (Android 14+ BAL). 없으면 시스템이 열어야 하므로 전체화면 인텐트를 실은 갈래로 올린다.
-        // ⚠ `onStartCommand` 는 메인 스레드라 `ProcessLifecycleOwner` 를 읽어도 된다.
-        val appHasVisibleActivity =
-            ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        // ⚠ `ProcessLifecycleOwner` 로 읽지 말 것 — 마지막 액티비티가 멈춘 뒤 700ms 동안 STARTED
+        //   를 유지해, 알람 직전에 홈·전원을 누른 경우 '보인다' 로 잘못 읽는다(`VisibleActivityTracker`).
+        val appHasVisibleActivity = VisibleActivityTracker.hasVisibleActivity
         val variant = RingingNotificationFactory.initialVariant(appHasVisibleActivity)
         val notification = RingingNotificationFactory(this).build(alarmId, variant)
         postedVariant = variant
@@ -639,10 +637,13 @@ class RingingService : Service() {
         //   Android 14+ 는 앱에 보이는 액티비티가 없으면 이 `startActivity` 를 **조용히
         //   막는다**(`BAL_BLOCK`, 2026-09-22 S23 Ultra logcat). 그 경우는 `startRinging` 이
         //   이미 전체화면 인텐트를 실은 ALERTING 알림을 올렸으니 시스템이 화면을 연다.
-        //   여기서 승격이 필요한 것은 QUIET 로 시작했는데(앱이 보였다) 끝내 안 뜬 경우뿐이다.
-        //   ⚠ 같은 알림 id 의 **갱신**은 전체화면 인텐트를 발동시키지 못한다(SystemUI 는 새
-        //   항목에만 검사한다). 그래서 이 승격은 배너(HUN)까지만 기대할 수 있고, 잠긴 기기의
-        //   전체화면은 **처음부터** ALERTING 으로 올리는 것으로만 보장된다.
+        //   여기서 승격이 필요한 것은 QUIET 로 시작했는데(앱이 보였다) 끝내 안 뜬 경우뿐이다 —
+        //   판정과 시작 사이에 사용자가 홈·전원을 누른 창이다.
+        //   ⚠ 같은 알림 id 의 **갱신**은 전체화면 인텐트를 발동시키지 못한다(SystemUI 는 새로
+        //   추가된 항목에만 검사한다 — 2026-09-22 실기기, 옛 '승격' 이 한 번도 뜨지 못한 이유).
+        //   그래서 승격은 **다른 id(`RINGING_PROMOTION_NOTIFICATION_ID`)의 새 알림**으로 올린다.
+        //   잠겨 있으면 시스템이 그 알림의 전체화면 인텐트로 화면을 열고, 잠금 해제면 배너다.
+        //   포그라운드 서비스 알림(1001)은 그대로 둔다 — 울림 화면이 뜨거나 알람이 끝나면 1002 는 지운다.
         serviceScope.launch {
             delay(ACTIVITY_LAUNCH_CHECK_MS)
             if (destroyed || ringingAlarmId != alarmId) return@launch
@@ -651,10 +652,10 @@ class RingingService : Service() {
                 Log.w(TAG, "Ringing screen not showing; system owns the launch (alerting notification is posted) id=$alarmId")
                 return@launch
             }
-            Log.w(TAG, "Ringing screen never appeared; promoting the quiet notification to alerting id=$alarmId")
+            Log.w(TAG, "Ringing screen never appeared; posting a new alerting notification with a full-screen intent id=$alarmId")
             try {
                 NotificationManagerCompat.from(this@RingingService).notify(
-                    RINGING_NOTIFICATION_ID,
+                    RINGING_PROMOTION_NOTIFICATION_ID,
                     RingingNotificationFactory(this@RingingService)
                         .build(alarmId, RingingNotificationFactory.Variant.ALERTING),
                 )
@@ -755,6 +756,7 @@ class RingingService : Service() {
         }
         stopMediaAndVibration()
         NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
+        NotificationManagerCompat.from(this).cancel(RINGING_PROMOTION_NOTIFICATION_ID)
         runCatching {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
@@ -926,6 +928,20 @@ class RingingService : Service() {
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001
+
+        /**
+         * 울림 화면이 끝내 안 떴을 때 올리는 **승격 알림**의 id. 1001 을 갱신하면 전체화면 인텐트가
+         * 발동하지 않으므로(SystemUI 는 새 항목에만 검사) 반드시 **다른 id** 여야 한다.
+         * 테스트 `RingingNotificationDismissTest` 가 두 값이 다른 것을 고정한다.
+         */
+        internal const val RINGING_PROMOTION_NOTIFICATION_ID = 1002
+
+        /** 울림 화면이 보이면 승격 알림은 할 일이 끝났다 — `RingingActivity.onStart` 가 부른다. */
+        fun cancelPromotionNotification(context: Context) {
+            runCatching {
+                NotificationManagerCompat.from(context).cancel(RINGING_PROMOTION_NOTIFICATION_ID)
+            }
+        }
         // ⚠ **반복은 커지지 않는다**(2026-08-27). 예전에는 두 번째 재생부터
         // 음량 증폭기로 +6dB 를 걸었다 — 삭제한 페이드인과 같은 커밋(ad23e67e)에서 근거 없이
         // 들어온 것이고 결과도 같은 종류다: 사용자가 맞춘 음량이 첫 회만 지켜지고 그 뒤로 더

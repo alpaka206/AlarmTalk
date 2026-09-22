@@ -22,11 +22,15 @@ FOREGROUND_SERVICE … isPendingIntent: false … START … (BAL_BLOCK) result c
 에야 떴다, OS `usagestats` 기록). 잠긴 기기에서 화면을 여는 **유일한 공식 경로**는 HIGH
 채널 알림의 전체화면 인텐트다.
 
-⚠ **"직접 띄워 보고 안 뜨면 승격" 도 되살리지 말 것.** 같은 알림 id 를 HIGH 채널로 **갱신**하는
-승격은 전체화면을 한 번도 열지 못했다 — SystemUI 는 **새로 추가된 알림**에만 전체화면 인텐트를
-검사하고, 갱신은 배너 재판정만 한다. 그래서 알림은 **처음부터** 갈래를 정해 올린다
-(`RingingNotificationFactory.initialVariant`, 판정 하나: 앱에 보이는 액티비티가 있는가 =
-`ProcessLifecycleOwner` STARTED):
+⚠ **"직접 띄워 보고 안 뜨면 같은 알림을 승격" 도 되살리지 말 것.** 같은 알림 id 를 HIGH 채널로
+**갱신**하는 승격은 전체화면을 한 번도 열지 못했다 — SystemUI 는 **새로 추가된 알림**에만
+전체화면 인텐트를 검사하고, 갱신은 배너 재판정만 한다. 그래서 알림은 **처음부터** 갈래를 정해
+올린다(`RingingNotificationFactory.initialVariant`, 판정 하나: 앱에 보이는 액티비티가 있는가).
+그 판정은 `VisibleActivityTracker`(`onActivityStarted/Stopped` 를 지연 없이 센다)로 한다 —
+`ProcessLifecycleOwner` 는 마지막 액티비티가 멈춘 뒤 **700ms** 동안 STARTED 를 유지해, 알람
+직전에 홈·전원을 누른 경우 '보인다' 로 잘못 읽는다(코덱스 리뷰 #788). 그래도 판정과 시작 사이의
+창에서 화면이 안 떴으면 2.5초 뒤 **다른 id(1002)의 새 알림**으로 전체화면 인텐트를 올린다 —
+새 항목이라 시스템이 검사한다. 화면이 뜨거나 알람이 끝나면 그 알림은 지운다.
 
 - **ALERTING**(기본): `voice_alarm_ringing_v5` — `IMPORTANCE_HIGH`, 무음(소리는 서비스가 낸다),
   전체화면 인텐트 있음, `ONLY_ALERT_ONCE` 없음. 잠기면 전체화면, 다른 앱이면 배너.

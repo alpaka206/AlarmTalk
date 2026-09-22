@@ -5,6 +5,7 @@ import { createMockDB } from './helpers';
 import {
   EVENT_MESSAGES,
   renderMessage,
+  resolveEventMessageKind,
   sanitizeEventName,
   slotAt,
   stripEmotionTags,
@@ -231,6 +232,20 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     const res = await buildApp()('/event/1/clips', post(body));
     expect(res.status).toBe(400);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('화면에서 뺀 옛 종류(comfort)는 배포 창 동안 400 이 아니라 지금 문구(추석 인사)로 읽어 준다', async () => {
+    // 서버가 먼저 배포된 뒤에도 브라우저에 열려 있는 옛 랜딩 번들은 comfort 를 보낸다(코덱스 리뷰).
+    expect(resolveEventMessageKind('comfort')).toBe('chuseok');
+    expect(resolveEventMessageKind('wedding')).toBeNull();
+    const { stored } = fakePerso();
+    cursorPositions(3);
+    const res = await buildApp()('/event/1/clips', post({ ...ok, kind: 'comfort' }));
+    expect(res.status).toBe(200);
+    // 실제로 Perso 에 보낸 글자는 추석 인사다 — 지운 '위로' 문안이 아니다.
+    const sent = [...stored.values()].join('\n');
+    expect(sent).toContain('즐거운 추석 보내');
+    expect(sent).not.toContain('고생했어');
   });
 
   it('문장 목록 → 순번 슬롯에 match-rewrite → generate-audio → 파일 받기 → mp3 바이트를 그대로 응답', async () => {

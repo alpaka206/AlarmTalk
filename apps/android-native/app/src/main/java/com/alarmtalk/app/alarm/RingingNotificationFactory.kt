@@ -55,10 +55,13 @@ internal class RingingNotificationFactory(
          * 보이는 액티비티가 있으면 `startActivity` 가 통과하니 조용한 알림으로 충분하고,
          * 없으면(잠금 화면·다른 앱·홈) 시스템만 화면을 열 수 있으니 전체화면 인텐트를 실어야 한다.
          *
-         * ⚠ **"일단 직접 띄워 보고 안 뜨면 승격" 으로 되돌리지 말 것**(2026-09-22 실기기).
+         * ⚠ **"일단 직접 띄워 보고 안 뜨면 같은 알림을 승격" 으로 되돌리지 말 것**(2026-09-22 실기기).
          *   같은 알림 id 를 갱신하는 승격은 전체화면을 **한 번도 열지 못했다** — SystemUI 는
          *   새로 추가된 알림에만 전체화면 인텐트를 검사한다(`onEntryAdded`, 갱신은 배너 재판정만).
-         *   그 사이 잠금 화면에서는 소리만 나고 해제 UI 가 없었다.
+         *   그 사이 잠금 화면에서는 소리만 나고 해제 UI 가 없었다. 판정 뒤에 화면이 안 뜬 경우의
+         *   승격은 `RingingService` 가 **다른 id 의 새 알림**으로 올린다.
+         * ⚠ 판정 값은 `VisibleActivityTracker.hasVisibleActivity` 로 읽는다 — `ProcessLifecycleOwner`
+         *   는 700ms 지연이 있어 알람 직전에 홈·전원을 누른 경우를 '보인다' 로 잘못 읽는다.
          */
         fun initialVariant(appHasVisibleActivity: Boolean): Variant =
             if (appHasVisibleActivity) Variant.QUIET else Variant.ALERTING
