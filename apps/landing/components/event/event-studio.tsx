@@ -32,6 +32,7 @@ import {
   EVENT_ID,
   EVENT_NAME_MAX_LENGTH,
   MESSAGE_KINDS,
+  portraitFor,
   sampleSrc,
   sanitizeEventName,
   voiceName,
@@ -46,6 +47,11 @@ import { formatClock, probeDuration, useEventPlayer } from "./use-event-player";
  * 한 번에 여섯). 언어 버튼은 만든 것을 골라 듣는 자리다.
  *
  *   이름 입력 → 목소리 플레이어(미리 듣기, ⏮ ⏭, 좋아요) → 생성하기 → 언어 고르기 → 결과 두 줄(재생 · 다운로드)
+ *
+ * 카드의 사진은 종류별 사진 둘(생일 축하·추석 인사)이 **5초마다 자연스럽게 갈린다**(2026-09-22 지시,
+ * `RotatingPortrait`). 결과 클립이 재생 중이면 그 종류의 사진에 머문다. 미리 듣기는 종류가 아니라
+ * 미리 듣기만의 인사말(서버 `EVENT_PREVIEW_MESSAGES`, `public/event/samples` 의 정적 mp3 —
+ * `npm run samples:event` 로 굽는다)이라 사진은 계속 돈다.
  *
  * 소리는 서버가 문장 전체를 인물 목소리로 만들어 mp3 로 준다(`event-api.ts`). 만드는 데 10~30초
  * 걸리므로 여섯을 따로 불러 **오는 대로** 카드를 채운다. 카드는 트랙 한 줄이다 — 왼쪽 원형
@@ -121,6 +127,12 @@ export function EventStudio() {
   const hasResults = trimmed !== "" && started[bundleKey] === true;
   /** 미리 듣기 재생 id — 결과 클립 키와 겹치지 않게 접두사를 둔다. */
   const previewId = `preview:${celebrity.id}:${pageLocale}`;
+  /**
+   * 카드 사진을 붙들 종류 — 결과 클립이 재생 중이면 그 종류. 아니면 null 이고 `RotatingPortrait` 가
+   * 5초마다 돌린다(미리 듣기는 종류가 없는 인사말이라 붙들지 않는다).
+   */
+  const pinnedKind: MessageKind | null =
+    MESSAGE_KINDS.find((k) => activeId === clipKey(celebrity.id, trimmed, lang, k)) ?? null;
   /** 지금 화면이 보고 있는 (인물:이름:언어). 30초 뒤에 온 소리를 자동 재생해도 되는지 여기 대고 본다. */
   const viewRef = useRef(`${bundleKey}:${lang}`);
   viewRef.current = `${bundleKey}:${lang}`;
@@ -367,18 +379,21 @@ export function EventStudio() {
                   }}
                   className="flex flex-col items-center"
                 >
-                  <Portrait
-                    src={celebrity.portrait}
+                  <RotatingPortrait
+                    celebrity={celebrity}
+                    pinnedKind={pinnedKind}
                     name={nameOf(celebrity)}
-                    alt={nameOf(celebrity)}
+                    kindName={(k) => t(`studio.kinds.${k}.name`)}
+                    reduced={reduced}
                   />
                 </motion.div>
               </AnimatePresence>
             </div>
 
-            {/* 제목줄: 이름 왼쪽, 하트 오른쪽 — 플레이어의 즐겨찾기 자리. */}
-            <div className="mt-6 flex items-center justify-between gap-3">
-              <p className="t-h2 min-w-0 truncate text-text">{nameOf(celebrity)}</p>
+            {/* 제목줄: 이름은 가운데(사진 아래 축과 맞춘다, 2026-09-22 지시), 하트는 오른쪽 끝 — 플레이어의
+                즐겨찾기 자리. 하트가 이름을 밀지 않도록 절대 배치하고, 이름은 하트 폭만큼 좌우 여백을 둔다. */}
+            <div className="relative mt-6 flex items-center justify-center">
+              <p className="t-h2 min-w-0 truncate px-14 text-center text-text">{nameOf(celebrity)}</p>
               <LikeButton
                 count={likes[celebrity.id]}
                 label={t("studio.likeAria", { celebrity: nameOf(celebrity) })}
@@ -700,7 +715,7 @@ function LikeButton({
       aria-label={countLabel ? `${label}. ${countLabel}` : label}
       whileTap={reduced ? undefined : { scale: 0.9 }}
       transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-      className="mt-3 inline-flex h-10 items-center gap-1.5 rounded-[var(--radius-pill)] border border-line bg-surface px-3.5 text-[14px] font-semibold text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
+      className="absolute right-0 top-1/2 inline-flex h-10 -translate-y-1/2 items-center gap-1.5 rounded-[var(--radius-pill)] border border-line bg-surface px-3.5 text-[14px] font-semibold text-text transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-raised"
     >
       <Heart className="h-4 w-4 fill-accent text-accent" aria-hidden="true" />
       {count !== undefined ? (
@@ -712,20 +727,77 @@ function LikeButton({
   );
 }
 
+/** 사진이 다음 종류로 넘어가는 간격. */
+const PORTRAIT_ROTATE_MS = 5000;
+
+/**
+ * 종류별 사진을 5초마다 돌려 보여 준다(생일 축하 ↔ 추석 인사). `pinnedKind` 가 있으면 거기 머문다
+ * (그 종류의 소리가 나는 중). 종류별 사진이 하나뿐이거나 없으면 돌릴 것이 없다.
+ * 움직임 줄이기 설정이면 돌리지 않고 첫 사진에 머문다 — 자동으로 바뀌는 그림 자체가 그 설정이
+ * 막으려는 것이다.
+ */
+function RotatingPortrait({
+  celebrity,
+  pinnedKind,
+  name,
+  kindName,
+  reduced,
+}: {
+  celebrity: Celebrity;
+  pinnedKind: MessageKind | null;
+  name: string;
+  kindName: (kind: MessageKind) => string;
+  reduced: boolean;
+}) {
+  const kinds = MESSAGE_KINDS.filter((k) => celebrity.portraits[k]);
+  const [tick, setTick] = useState(0);
+  const rotating = kinds.length > 1 && pinnedKind === null && !reduced;
+  useEffect(() => {
+    if (!rotating) return;
+    const id = setInterval(() => setTick((n) => n + 1), PORTRAIT_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [rotating]);
+  // 붙들린 종류 → 그 사진. 아니면 순서대로 돌린다(붙들렸다 풀리면 그 자리부터 이어 간다).
+  const kind: MessageKind | null =
+    pinnedKind ?? (kinds.length > 0 ? kinds[tick % kinds.length] : null);
+  const src = portraitFor(celebrity, kind);
+  return (
+    <Portrait
+      src={src}
+      name={name}
+      alt={kind ? `${name} — ${kindName(kind)}` : name}
+      reduced={reduced}
+    />
+  );
+}
+
 /**
  * 인물 사진. 파일이 없거나 못 불러오면 이니셜 원으로 대신한다 — 깨진 이미지 아이콘을 두지
- * 않는다. 사진은 초상권 허락을 받은 것만 `public/event/` 에 넣는다.
+ * 않는다. 사진은 초상권 허락을 받은 것만 `public/event/` 에 넣는다(지금은 AI 로 만든 가상 인물).
+ * `src` 가 바뀌면 같은 자리에서 겹쳐 페이드한다 — 레이아웃은 그대로.
  *
  * 정적 HTML 의 img 는 React 가 붙기 전에 이미 실패해 있어 `onError` 가 안 온다. 그래서 붙은
  * 직후 `complete && naturalWidth === 0` 으로 한 번 더 확인한다.
  */
-function Portrait({ src, name, alt }: { src: string; name: string; alt: string }) {
+function Portrait({
+  src,
+  name,
+  alt,
+  reduced,
+}: {
+  src: string;
+  name: string;
+  alt: string;
+  reduced: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
   useEffect(() => {
+    // 사진이 바뀌면 실패 표시도 그 사진의 것으로 다시 본다.
+    setFailed(false);
     const el = imgRef.current;
     if (el && el.complete && el.naturalWidth === 0) setFailed(true);
-  }, []);
+  }, [src]);
   if (!src) {
     // 사진이 없는 목소리 — 누구를 연상시키는 이미지 없이 소리 결만.
     return (
@@ -750,14 +822,23 @@ function Portrait({ src, name, alt }: { src: string; name: string; alt: string }
     );
   }
   return (
-    <img
-      ref={imgRef}
-      src={src}
-      alt={alt}
-      width={160}
-      height={160}
-      onError={() => setFailed(true)}
-      className="h-40 w-40 shrink-0 rounded-full object-cover ring-1 ring-line"
-    />
+    <span className="relative block h-40 w-40 shrink-0">
+      <AnimatePresence initial={false}>
+        <motion.img
+          key={src}
+          ref={imgRef}
+          src={src}
+          alt={alt}
+          width={160}
+          height={160}
+          onError={() => setFailed(true)}
+          initial={reduced ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduced ? undefined : { opacity: 0 }}
+          transition={{ duration: 0.8, ease: "easeInOut" }}
+          className="absolute inset-0 h-40 w-40 rounded-full object-cover ring-1 ring-line"
+        />
+      </AnimatePresence>
+    </span>
   );
 }

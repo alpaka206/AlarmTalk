@@ -4,19 +4,23 @@ import catalog from "../../../../packages/shared/src/event-voices.json";
  * 이벤트 1 의 목록 — **어떤 목소리로, 어떤 메시지를**.
  *
  * 목소리 목록의 단일 출처는 `packages/shared/src/event-voices.json` 이다(백엔드도 같은 파일을 읽는다).
- * 목소리를 더하는 방법은 그 옆 `schemas/event-voices.ts` 머리 주석에 있다 — JSON 항목 하나와
- * 미리 듣기 샘플 mp3 셋(`public/event/samples/<id>.<locale>.mp3`)이면 끝난다. 여기서는 그 JSON 을
+ * 목소리를 더하는 방법은 그 옆 `schemas/event-voices.ts` 머리 주석에 있다 — JSON 항목 하나,
+ * 종류별 사진(`public/event/<id>.<kind>.jpg`), 미리 듣기 샘플 mp3 셋이면 끝난다. 여기서는 그 JSON 을
  * 화면이 쓰는 모양으로 옮길 뿐, 목소리를 손으로 적지 않는다.
  *
  * 메시지 종류 이름은 `event.studio.kinds.<kind>.name`. **읽힐 문장은 서버가 정한다**
  * (`packages/backend/src/lib/event-voices.ts`). 여기 종류 id 는 서버의 것과 같아야 한다.
  *
  * `portrait` 는 `public/` 아래 경로다. 빈 문자열이면 화면은 추상 아바타(소리 결 아이콘)를 그린다
- * (`event-studio.tsx` 의 `Portrait`). 실존 인물의 사진·이름은 쓰지 않는다(2026-09-17, 퍼블리시티권).
+ * (`event-studio.tsx` 의 `Portrait`). `portraits` 는 종류별 사진 — 그 종류의 소리가 재생될 때
+ * 사진이 바뀐다(`portraitFor`). 실존 인물의 사진·이름은 쓰지 않는다(2026-09-17, 퍼블리시티권) —
+ * 사진은 AI 로 만든 가상 인물이다.
  */
 export type Celebrity = {
   id: string;
   portrait: string;
+  /** 종류별 사진. 없는 종류는 `portrait`. */
+  portraits: Partial<Record<MessageKind, string>>;
   /** 언어별 라벨(JSON 의 name). */
   name: Record<string, string>;
 };
@@ -24,9 +28,19 @@ export type Celebrity = {
 /** 이 페이지의 이벤트 번호(`lib/events.ts`). 좋아요 카운터·클립 생성의 키다. */
 export const EVENT_ID = "1";
 
+/** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
+export const MESSAGE_KINDS = ["birthday", "chuseok"] as const;
+export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
 export const CELEBRITIES: readonly Celebrity[] = catalog[EVENT_ID].voices.map((v) => ({
   id: v.id,
   portrait: v.portrait ?? "",
+  portraits: Object.fromEntries(
+    MESSAGE_KINDS.flatMap((k) => {
+      const src = (v as { portraits?: Record<string, string> }).portraits?.[k];
+      return src ? [[k, src] as const] : [];
+    }),
+  ) as Partial<Record<MessageKind, string>>,
   name: v.name,
 }));
 
@@ -36,16 +50,20 @@ export function voiceName(c: Celebrity, locale: string): string {
 }
 
 /**
- * 미리 듣기 샘플 — 이 목소리로 예시 이름(`event.studio.sampleName`)을 부른 생일 메시지. 생성 전에
- * 목소리를 들어 보라고 두는 정적 파일이다: `public/event/samples/<id>.<locale>.mp3`.
+ * 미리 듣기 샘플 — 이 목소리로 예시 이름(`event.studio.sampleName`)을 부르는 **미리 듣기 전용 인사말**
+ * (서버 `EVENT_PREVIEW_MESSAGES`, 2026-09-22 지시: 생일 문안이 아니라 목소리를 들려주는 짧은 인사).
+ * 정적 파일이다: `public/event/samples/<id>.<locale>.mp3`.
+ * ⚠ 문안이나 목소리가 바뀌면 `packages/backend` 에서 `npm run samples:event` 로 다시 굽는다 —
+ * 옛 문안을 읽는 샘플은 곧 거짓말이다.
  */
 export function sampleSrc(celebrityId: string, locale: string): string {
   return `/event/samples/${celebrityId}.${locale}.mp3`;
 }
 
-/** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
-export const MESSAGE_KINDS = ["birthday", "chuseok"] as const;
-export type MessageKind = (typeof MESSAGE_KINDS)[number];
+/** 이 종류의 소리에 어울리는 사진. 종류별 사진이 없으면 기본 사진, 그것도 없으면 빈 문자열(추상 아바타). */
+export function portraitFor(c: Celebrity, kind: MessageKind | null): string {
+  return (kind ? c.portraits[kind] : undefined) ?? c.portrait;
+}
 
 /** 이름 상한. 영어 이름·성까지 들어가게 넉넉히(2026-09-15 지시). 한 문장의 호칭이라 닉네임(30)보다는 짧다. */
 export const EVENT_NAME_MAX_LENGTH = 20;

@@ -3,8 +3,10 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB } from './helpers';
 import {
+  EVENT_LOCALES,
   EVENT_MESSAGES,
   renderMessage,
+  renderPreviewMessage,
   resolveEventMessageKind,
   sanitizeEventName,
   slotAt,
@@ -21,7 +23,8 @@ vi.mock('../src/lib/db', () => ({
 
 import eventRoutes, { resetEventCaches } from '../src/routes/event';
 
-const WINTER_KO = voiceProjectFor('1', 'voice1', 'ko')!;
+/** 세 언어가 같은 Perso 프로젝트를 쓴다(2026-09-22) — 어느 언어로 읽어도 같은 값이다. */
+const VOICE = voiceProjectFor('1', 'voice1', 'ko')!;
 // 보이지 않는 글자는 코드포인트로 적는다 — 소스에 그대로 실리면 편집기·리뷰 도구에서 안 보인다.
 const ZERO_WIDTH = String.fromCodePoint(0x200b);
 const BELL = String.fromCodePoint(0x07);
@@ -35,11 +38,25 @@ const MP3_BYTES = (() => {
   return b;
 })();
 
-/** voice1 ko 프로젝트의 문장(슬롯) 흉내 — 홍보용 셋(reserved)을 포함해 여덟. */
-const KO_SENTENCES = [11135210, 11135211, 11135212, 11135213, 11135214, 11135215, 11135216, 11135217];
+/**
+ * voice1 프로젝트의 문장(슬롯) 흉내 — **쓸 수 있는 다섯 + 카탈로그의 홍보용(reserved)**.
+ * 홍보용 번호를 손으로 적지 않는다: 카탈로그가 바뀌면(2026-09-22 에 세 언어가 한 프로젝트로 합쳐졌다)
+ * 이 목록도 따라 바뀌어야 `slotAt` 이 무엇을 건너뛰는지 검사할 수 있다.
+ */
+const FREE_SENTENCES = [11162670, 11162671, 11162672, 11162673, 11162676];
+const SENTENCES = [...FREE_SENTENCES, ...VOICE.reserved].sort((a, b) => a - b);
 
-function buildApp(env: Record<string, unknown> = { PERSO_API_KEY: 'k' }) {
+function buildApp(
+  env: Record<string, unknown> = { PERSO_API_KEY: 'k' },
+  sentry?: { setTag: ReturnType<typeof vi.fn>; captureException: ReturnType<typeof vi.fn> },
+) {
   const app = new Hono<AppEnv>();
+  if (sentry) {
+    app.use('*', async (c, next) => {
+      c.set('sentry', sentry as unknown as AppEnv['Variables']['sentry']);
+      await next();
+    });
+  }
   app.route('/event', eventRoutes);
   return (path: string, init?: RequestInit) =>
     app.request(path, init, env, { waitUntil: () => {}, passThroughOnException: () => {} } as never);
@@ -68,8 +85,8 @@ function fakePerso(opts: { overwriteOnGenerate?: Set<number>; media?: Uint8Array
     if (script) {
       calls.push(`GET script ${script[1]} ${script[3]}`);
       const cursor = new URLSearchParams(script[3]).get('cursorId');
-      const half = Math.ceil(KO_SENTENCES.length / 2);
-      const page = cursor === null ? KO_SENTENCES.slice(0, half) : KO_SENTENCES.slice(half);
+      const half = Math.ceil(SENTENCES.length / 2);
+      const page = cursor === null ? SENTENCES.slice(0, half) : SENTENCES.slice(half);
       return Response.json({
         hasNext: cursor === null,
         nextCursorId: cursor === null ? page[page.length - 1] : null,
@@ -135,6 +152,30 @@ function cursorPositions(...positions: number[]) {
   for (const p of positions) mockDB.pushResultFor('event_slot_cursor', [{ position: p }], 1);
 }
 
+describe('event-voices — 미리 듣기 인사말', () => {
+  it('이름을 넣지 않고, 태그는 화면 글자에서 벗긴다', () => {
+    for (const locale of EVENT_LOCALES) {
+      const m = renderPreviewMessage(locale);
+      // 이름 자리가 없다 — 미리 듣기는 이름을 적기 전에 누르는 것이다(2026-09-22 지시).
+      expect(m.tts).not.toContain('{name}');
+      expect(m.display).not.toMatch(/\[[^\]]+\]/);
+      expect(m.tts).toMatch(/^\[[^\]]+\]/);
+      // 생일·추석 문안이 아니다 — 미리 듣기만의 인사말.
+      expect(m.tts).not.toContain('생일 정말 축하해');
+      expect(m.tts).not.toContain('Happy birthday!');
+    }
+  });
+
+  it('한 문장·태그 하나다 — 줄을 쪼개면 Perso 가 쉼으로 읽어 툭툭 끊긴다(2026-09-22 지적)', () => {
+    for (const locale of EVENT_LOCALES) {
+      const m = renderPreviewMessage(locale);
+      expect(m.tts).not.toContain('\n');
+      expect(m.tts.match(/\[[^\]]+\]/g)).toHaveLength(1);
+      expect(m.display.length).toBeLessThanOrEqual(40);
+    }
+  });
+});
+
 describe('event-voices — 문장·부르는 꼴·슬롯', () => {
   it('vocative: 한국어는 받침에 따라 아/야, 한글이 아니면 그대로, 영어·일본어는 그대로', () => {
     expect(vocative('지민', 'ko')).toBe('지민아');
@@ -179,18 +220,18 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
   });
 
   it('slotAt: 순번대로 돌고, 홍보용 문장은 건너뛴다', () => {
-    const usable = KO_SENTENCES.filter((s) => !WINTER_KO.reserved.includes(s));
-    expect(usable).toHaveLength(5);
-    expect(slotAt(WINTER_KO, KO_SENTENCES, 0).sentence).toBe(usable[0]);
-    expect(slotAt(WINTER_KO, KO_SENTENCES, 4).sentence).toBe(usable[4]);
-    expect(slotAt(WINTER_KO, KO_SENTENCES, 5).sentence).toBe(usable[0]);
-    expect(slotAt(WINTER_KO, KO_SENTENCES, 123456).sentence).toBe(usable[123456 % 5]);
-    for (const seq of KO_SENTENCES) {
+    const usable = SENTENCES.filter((s) => !VOICE.reserved.includes(s));
+    expect(usable).toEqual(FREE_SENTENCES);
+    expect(slotAt(VOICE, SENTENCES, 0).sentence).toBe(usable[0]);
+    expect(slotAt(VOICE, SENTENCES, 4).sentence).toBe(usable[4]);
+    expect(slotAt(VOICE, SENTENCES, 5).sentence).toBe(usable[0]);
+    expect(slotAt(VOICE, SENTENCES, 123456).sentence).toBe(usable[123456 % 5]);
+    for (const seq of SENTENCES) {
       for (let p = 0; p < 20; p++) {
-        if (WINTER_KO.reserved.includes(seq)) expect(slotAt(WINTER_KO, KO_SENTENCES, p).sentence).not.toBe(seq);
+        if (VOICE.reserved.includes(seq)) expect(slotAt(VOICE, SENTENCES, p).sentence).not.toBe(seq);
       }
     }
-    expect(() => slotAt(WINTER_KO, [11135215], 0)).toThrow();
+    expect(() => slotAt(VOICE, [VOICE.reserved[0]!], 0)).toThrow();
   });
 });
 
@@ -262,10 +303,11 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
 
     // 순번 7 → 쓸 수 있는 다섯 중 7 % 5 = 2번째. 순서가 곧 계약이다: 저장(match-rewrite) 없이
     // generate-audio 를 부르면 옛 글자가 읽힌다.
-    const slot = slotAt(WINTER_KO, KO_SENTENCES, 7);
+    const slot = slotAt(VOICE, SENTENCES, 7);
+    const half = Math.ceil(SENTENCES.length / 2);
     expect(calls).toEqual([
-      'GET script 413673 size=10000',
-      'GET script 413673 size=10000&cursorId=11135213',
+      `GET script ${VOICE.project} size=10000`,
+      `GET script ${VOICE.project} size=10000&cursorId=${SENTENCES[half - 1]}`,
       `POST ${slot.project}/${slot.sentence} match-rewrite`,
       `PATCH ${slot.project}/${slot.sentence} generate-audio`,
       `GET media /perso-storage/p-${slot.project}/윈터 클립_${slot.sentence}_1.mp3`,
@@ -275,7 +317,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     // 어디에도 남기지 않는다 — DB 에 간 것은 순번 카운터뿐이고 값은 바인딩.
     const writes = mockDB.calls.filter((q) => !q.sql.includes('event_slot_cursor'));
     expect(writes).toEqual([]);
-    expect(mockDB.calls[0]!.args).toEqual([WINTER_KO.project]);
+    expect(mockDB.calls[0]!.args).toEqual([VOICE.project]);
   });
 
   it('같은 이름을 두 번 만들면 두 번 만든다 — 아무것도 기억하지 않는다', async () => {
@@ -293,8 +335,8 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     const req = buildApp();
     await req('/event/1/clips', post(ok));
     await req('/event/1/clips', post({ ...ok, kind: 'chuseok' }));
-    const a = slotAt(WINTER_KO, KO_SENTENCES, 0);
-    const b = slotAt(WINTER_KO, KO_SENTENCES, 1);
+    const a = slotAt(VOICE, SENTENCES, 0);
+    const b = slotAt(VOICE, SENTENCES, 1);
     expect(a.sentence).not.toBe(b.sentence);
     expect(calls.filter((c) => c.startsWith('GET script'))).toHaveLength(2);
     expect(calls.filter((c) => c.includes('generate-audio'))).toEqual([
@@ -304,12 +346,12 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
   });
 
   it('슬롯이 겹쳐 남의 글자가 읽히면 다음 문장으로 다시 만든다', async () => {
-    const first = slotAt(WINTER_KO, KO_SENTENCES, 0);
+    const first = slotAt(VOICE, SENTENCES, 0);
     const { calls } = fakePerso({ overwriteOnGenerate: new Set([first.sentence]) });
     cursorPositions(0, 1);
     const res = await buildApp()('/event/1/clips', post(ok));
     expect(res.status).toBe(200);
-    const second = slotAt(WINTER_KO, KO_SENTENCES, 1);
+    const second = slotAt(VOICE, SENTENCES, 1);
     expect(calls.filter((c) => c.includes('generate-audio'))).toEqual([
       `PATCH ${first.project}/${first.sentence} generate-audio`,
       `PATCH ${second.project}/${second.sentence} generate-audio`,
@@ -324,10 +366,69 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     expect((await res.json()).error_code).toBe('PERSO_FAILED');
   });
 
-  it('Perso 가 실패하면 502', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }));
-    const res = await buildApp()('/event/1/clips', post(ok));
+  it('Perso 가 계속 5xx 면 502 — 한 번 더 보내 본 뒤에, 원인은 Sentry 태그로', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('nope', { status: 503 }));
+    const sentry = { setTag: vi.fn(), captureException: vi.fn() };
+    const pending = buildApp(undefined, sentry)('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    const res = await pending;
     expect(res.status).toBe(502);
     expect((await res.json()).error_code).toBe('PERSO_FAILED');
+    // 목록 읽기(GET script)를 두 번 보냈다 — 첫 5xx 뒤 1.5초 기다려 한 번 더.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // 2026-09-22 BACKEND-A: 502 ×7 의 이유를 Sentry 에서 알 수 없었다. 이제 갈래가 태그로 남는다.
+    expect(sentry.setTag).toHaveBeenCalledWith('perso_reason', 'perso_http_503');
+    vi.useRealTimers();
+  });
+
+  it('Perso 가 한 번 5xx 로 답하면 다시 보내 만든다 — 일시 장애가 502 로 새지 않는다', async () => {
+    vi.useFakeTimers();
+    const { fetchSpy } = fakePerso();
+    const real = fetchSpy.getMockImplementation()!;
+    let failed = false;
+    fetchSpy.mockImplementation(async (input, init) => {
+      // 생성(PATCH generate-audio)의 첫 시도만 502 — 그 뒤는 정상.
+      if (!failed && String(input).endsWith('/generate-audio')) {
+        failed = true;
+        return new Response('bad gateway', { status: 502 });
+      }
+      return real(input, init);
+    });
+    cursorPositions(3);
+    const pending = buildApp()('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    const res = await pending;
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect(failed).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('4xx 는 다시 보내지 않고 바로 502 — 같은 요청은 같은 답이다', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response('forbidden', { status: 403 }));
+    const sentry = { setTag: vi.fn(), captureException: vi.fn() };
+    const res = await buildApp(undefined, sentry)('/event/1/clips', post(ok));
+    expect(res.status).toBe(502);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(sentry.setTag).toHaveBeenCalledWith('perso_reason', 'perso_http_403');
+  });
+
+  it('슬롯 경합으로 끝내 실패하면 태그가 slot_race 다', async () => {
+    // 모든 문장이 남에게 덮인다 — 세 번 다 겹쳐서 502.
+    fakePerso({ overwriteOnGenerate: new Set(SENTENCES) });
+    cursorPositions(0);
+    const sentry = { setTag: vi.fn(), captureException: vi.fn() };
+    vi.useFakeTimers();
+    const pending = buildApp(undefined, sentry)('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    const res = await pending;
+    expect(res.status).toBe(502);
+    expect(sentry.setTag).toHaveBeenCalledWith('perso_reason', 'slot_race');
+    vi.useRealTimers();
   });
 });

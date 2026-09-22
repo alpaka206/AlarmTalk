@@ -122,6 +122,32 @@ export const EVENT_MESSAGES: Record<RenderableEventMessageKind, Record<EventLoca
   },
 };
 
+/**
+ * 랜딩 카드의 **미리 듣기** 문안 — 생성 전에 목소리만 들려주는 한마디(2026-09-22 지시).
+ *
+ * 세 가지가 생일·추석 문안과 다르다:
+ *  - **이름이 없다.** 미리 듣기는 아직 이름을 적기 전에 누르는 것이라 부를 이름이 없다.
+ *  - **한 문장이다.** 줄을 여러 개로 끊었더니 "툭툭 끊겨 자연스럽지 않다" 는 지적을 받았다
+ *    (2026-09-22). Perso 는 줄바꿈·말줄임표를 **쉼**으로 읽어서, 짧은 인사를 여러 줄로 쪼개면
+ *    말이 뚝뚝 끊긴다. 목소리를 들려주는 것이 목적이니 한 문장이면 충분하다.
+ *  - **태그는 문장 앞에 하나만.** 줄마다 태그를 바꾸면 그 자리마다 결이 바뀌어 더 끊긴다.
+ *
+ * 랜딩의 정적 샘플 mp3(`public/event/samples/<id>.<locale>.mp3`)는 이 문안을
+ * `scripts/make-event-samples.ts`(`npm run samples:event`)로 구운 것이다 — **여기를 바꾸면 다시 굽는다.**
+ * 서버 라우트는 이걸 만들지 않는다(요청으로 부를 수 있는 종류는 `EVENT_MESSAGE_KINDS` 뿐이다).
+ */
+export const EVENT_PREVIEW_MESSAGES: Record<EventLocale, string> = {
+  ko: `[warm, relaxed] 안녕, 내 목소리 어때?`,
+  en: `[warm, relaxed] Hi, how does my voice sound?`,
+  ja: `[warm, relaxed] こんにちは、わたしの声どうかな？`,
+};
+
+/** 미리 듣기 문안 — 이름이 없으므로 채울 자리도 없다. 화면 글자는 태그를 벗긴 것. */
+export function renderPreviewMessage(locale: EventLocale): { tts: string; display: string } {
+  const tts = EVENT_PREVIEW_MESSAGES[locale];
+  return { tts, display: stripEmotionTags(tts) };
+}
+
 /** 랜딩 `EVENT_NAME_MAX_LENGTH` 와 같다. 길면 이름이 아니라 문장을 인물 목소리로 읽히려는 것이다. */
 export const EVENT_NAME_MAX_LENGTH = 20;
 /** 이보다 긴 원문은 보지도 않고 거절한다 — 20자 상한을 재기 전에 25MiB 를 걷게 두지 않는다. */

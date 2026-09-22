@@ -18,6 +18,7 @@ import {
   looksLikeMp3,
   MIN_CLIP_BYTES,
   PersoSlotRace,
+  persoFailureReason,
 } from '../lib/perso';
 import { jsonError } from '../lib/api-error';
 
@@ -180,7 +181,11 @@ event.post('/:eventId/clips', async (c) => {
       throw new Error(`Perso media is not an mp3 (${bytes.byteLength} bytes)`);
     }
   } catch (err) {
-    console.error('[event] clip synthesis failed', err);
+    // 원인 갈래를 Sentry 태그로 남긴다 — 응답 코드(PERSO_FAILED)만으로는 슬롯 경합·Perso 5xx·
+    // 시간초과·깨진 파일을 가를 수 없었다(BACKEND-A). 사용자 글자·키는 태그에 넣지 않는다.
+    const reason = persoFailureReason(err);
+    console.error(`[event] clip synthesis failed reason=${reason} locale=${locale} kind=${kind}`, err);
+    c.get('sentry')?.setTag?.('perso_reason', reason);
     return jsonError(c, 502, 'PERSO_FAILED', 'synthesis failed');
   }
 

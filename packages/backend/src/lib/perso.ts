@@ -31,12 +31,36 @@ export class PersoSlotRace extends Error {
   }
 }
 
+/**
+ * Perso 가 비정상 상태로 답했다. `status` 로 호출자가 원인 갈래를 태그한다(`routes/event.ts`).
+ * 본문은 로그에만 — 키·내부 정보가 섞일 수 있다.
+ */
+export class PersoHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    method: string,
+    path: string,
+    detail: string,
+  ) {
+    super(`Perso ${method} ${path} → ${status}: ${detail}`);
+  }
+}
+
+/** 5xx·연결 실패 한 번은 다시 보낸다 — 상태를 바꾸는 요청도 슬롯 하나에 같은 글자를 다시 쓰는 것이라 멱등이다. */
+const PERSO_RETRY_DELAY_MS = 1_500;
+
 const STORE_TIMEOUT_MS = 20_000;
 const GENERATE_TIMEOUT_MS = 90_000;
 const LIST_TIMEOUT_MS = 20_000;
 // 재생·다운로드는 이 응답을 그대로 흘려보내므로 느린 폰이 다 받을 때까지 넉넉히.
 const MEDIA_TIMEOUT_MS = 120_000;
 
+/**
+ * Perso 호출 한 번. **5xx 와 연결 실패는 한 번 다시 보낸다**(2026-09-22, BACKEND-A — 여섯 클립이 22초
+ * 안에 전부 502 로 끝났는데 몇 분 뒤에는 전부 됐다). 시간초과는 다시 보내지 않는다 — 생성은 90초
+ * 상한이라 한 번 더 기다리면 클라의 150초를 넘긴다. 4xx 는 다시 보내도 같다.
+ * 세 요청 다 멱등이다: 목록 읽기, 슬롯에 같은 글자 저장, 저장된 글자로 생성.
+ */
 async function persoRequest(
   apiKey: string,
   method: 'GET' | 'POST' | 'PATCH',
@@ -44,21 +68,57 @@ async function persoRequest(
   body: unknown,
   timeoutMs: number,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${PERSO_API_BASE}${path}`, {
-    method,
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: {
-      'XP-API-KEY': apiKey,
-      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt += 1) {
+    let res: Response;
+    try {
+      res = await fetch(`${PERSO_API_BASE}${path}`, {
+        method,
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          'XP-API-KEY': apiKey,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (err) {
+      // 시간초과(TimeoutError/AbortError)는 그대로 던진다. 연결 실패(`fetch failed`)만 한 번 더.
+      if (attempt === 0 && !isAbort(err)) {
+        await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
+        continue;
+      }
+      throw err;
+    }
+    if (res.ok) return (await res.json()) as Record<string, unknown>;
     // 본문은 로그에만(키·내부 정보가 섞일 수 있다). 호출자는 502 로 닫는다.
     const detail = (await res.text().catch(() => '')).slice(0, 300);
-    throw new Error(`Perso ${method} ${path} → ${res.status}: ${detail}`);
+    if (attempt === 0 && res.status >= 500) {
+      console.warn(`[perso] ${method} ${path} → ${res.status}, retrying once`);
+      await new Promise((r) => setTimeout(r, PERSO_RETRY_DELAY_MS));
+      continue;
+    }
+    throw new PersoHttpError(res.status, method, path, detail);
   }
-  return (await res.json()) as Record<string, unknown>;
+}
+
+function isAbort(err: unknown): boolean {
+  const name = typeof err === 'object' && err !== null && 'name' in err ? String((err as { name: unknown }).name) : '';
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/**
+ * 실패를 Sentry 태그·로그용 갈래로 — 사용자 글자는 넣지 않는다. 2026-09-22 전에는 `console.error`
+ * 한 줄뿐이라 BACKEND-A(502 ×7)가 왜 났는지 Sentry 에서 알 수 없었다.
+ */
+export function persoFailureReason(err: unknown): string {
+  if (err instanceof PersoSlotRace) return 'slot_race';
+  if (err instanceof PersoHttpError) return `perso_http_${err.status}`;
+  if (isAbort(err)) return 'timeout';
+  const message = err instanceof Error ? err.message : String(err);
+  if (/not an mp3|Perso media/.test(message)) return 'bad_media';
+  if (/no translatedText|no file path/.test(message)) return 'bad_response';
+  if (/no slot succeeded/.test(message)) return 'no_slot';
+  if (/fetch failed|ECONNRESET|ECONNREFUSED/i.test(message)) return 'network';
+  return 'other';
 }
 
 /**
