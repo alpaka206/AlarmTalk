@@ -608,22 +608,50 @@ final class VoiceStudioViewModel: ObservableObject {
         let ticket = StockClipManifestStore.beginFetch(session: session)
         do {
             let manifest = try await api.getStockClipManifest(token: token)
-            // 밀려난 응답은 공개하지 않으므로 '새로 받았다' 도 아니다.
-            guard !Task.isCancelled, revision == manifestRevision,
-                  StockClipManifestStore.save(manifest, ticket: ticket) == .published else { return false }
-            stockClips = manifest.clips
-            expectedVariants = manifest.expectedVariants
-            legacyBucketHints = Dictionary(
-                (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
-                uniquingKeysWith: { first, _ in first },
-            )
-            manifestFetchedThisSession = true
-            return true
+            // 이 뷰모델 안에서 뒤에 시작한 조회가 있으면 그쪽이 자기 결과를 싣는다.
+            guard !Task.isCancelled, revision == manifestRevision else { return false }
+            switch StockClipManifestStore.save(manifest, ticket: ticket) {
+            case .published:
+                adoptStockClipManifest(manifest)
+                manifestFetchedThisSession = true
+                return true
+            case .superseded:
+                // 더 새 표가 먼저 공개됐거나(프리페처 `start` 와의 콜드스타트 경합 — 늘 이 순서다),
+                // 표가 무효화됐다(계정 전환의 `clear`). 어느 쪽이든 **디스크의 이긴 매니페스트가
+                // 권위**라 그걸 메모리에 싣는다 — 안 실으면 `stockClips` 가 비거나 낡은 채로 남아
+                // 곧이어 도는 재바인딩(`AlarmTalkApp.rebindStockClipsIfNeeded`)이 옛 카탈로그로
+                // 돌고 테마가 계속 '준비 안 됨' 으로 보인다(코덱스 #789). 임자가 다르면 아무것도
+                // 없다(`load` 가 거른다).
+                guard let winner = StockClipManifestStore.load(ownerUserID: session.user.id) else {
+                    return false
+                }
+                adoptStockClipManifest(winner)
+                // '이번에 서버에서 새로 받았는가' 는 **더 새 응답이 이 세션에서 공개된 경우만**
+                // true 다 — 그 응답은 이 표보다 나중에 요청됐으니 신선하다. `clear` 로 밀린
+                // 경우의 디스크 값은 지난 세션 것일 수 있어 교체 확정의 근거가 못 된다
+                // (Codex #703 P1) — 그때는 다음 호출이 다시 받는다.
+                guard StockClipManifestStore.publishedNewerResponse(than: ticket) else { return false }
+                manifestFetchedThisSession = true
+                return true
+            case .failed:
+                // 디스크 권위가 되지 못한 응답은 판정의 권위도 아니다. 다음 호출이 다시 시도한다.
+                return false
+            }
         } catch {
             // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 화면은 그걸로 계속
             // 가지만, **새로 받은 것은 아니다.**
             return false
         }
+    }
+
+    /// 매니페스트를 메모리(화면·재바인딩의 권위)에 싣는다. 공개했든 이긴 쪽을 이어받았든 같은 자리.
+    private func adoptStockClipManifest(_ manifest: StockClipListResponse) {
+        stockClips = manifest.clips
+        expectedVariants = manifest.expectedVariants
+        legacyBucketHints = Dictionary(
+            (manifest.legacyBucketHints ?? []).map { ($0.messageId, $0.category) },
+            uniquingKeysWith: { first, _ in first },
+        )
     }
 
     /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.

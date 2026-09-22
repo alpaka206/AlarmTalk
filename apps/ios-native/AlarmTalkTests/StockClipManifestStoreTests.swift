@@ -80,6 +80,45 @@ final class StockClipManifestStoreTests: XCTestCase {
         XCTAssertEqual(storage.load(ownerUserID: "owner")?.clips.first?.messageId, "retry")
     }
 
+    func testPublishedNewerResponseDistinguishesPublishFromClear() {
+        // `.superseded` 의 두 얼굴 — 더 새 응답이 공개됐는가(신선), 표가 무효화됐는가(모름).
+        let storage = makeStorage()
+        let old = storage.beginFetch(session: session("owner"))
+        let new = storage.beginFetch(session: session("owner"))
+        XCTAssertFalse(storage.publishedNewerResponse(than: old), "아직 아무것도 공개되지 않았다")
+        XCTAssertEqual(storage.save(manifest("new"), ticket: new), .published)
+        XCTAssertEqual(storage.save(manifest("old"), ticket: old), .superseded)
+        XCTAssertTrue(storage.publishedNewerResponse(than: old), "더 새 표의 응답이 공개됐다 — 이긴 매니페스트는 신선하다")
+        XCTAssertFalse(storage.publishedNewerResponse(than: new), "자기 자신보다 새 응답은 없다")
+
+        // `clear` 로 밀린 표: 수위선은 올랐지만 새로 공개된 것은 없다.
+        let pending = storage.beginFetch(session: session("owner"))
+        storage.clear(preservingOwnerUserID: "owner")
+        XCTAssertEqual(storage.save(manifest("late"), ticket: pending), .superseded)
+        XCTAssertFalse(storage.publishedNewerResponse(than: pending), "무효화로 밀린 것은 신선함의 근거가 아니다")
+    }
+
+    func testPublishedNewerResponseRequiresTheNewestSeenTicketToBePublished() throws {
+        // N 요청 중 → N+1 공개 → N+2 의 쓰기 실패(수위선은 N+2). 디스크(N+1)는 최신이 아니다 —
+        // N 의 `.superseded` 를 신선하다고 치면 N+2 의 재시도가 오기 전에 교체 세대를 확정한다.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let fileURL = directory.appendingPathComponent("manifest.json")
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let storage = StockClipManifestStorage(fileURL: fileURL)
+        let n = storage.beginFetch(session: session("owner"))
+        let n1 = storage.beginFetch(session: session("owner"))
+        let n2 = storage.beginFetch(session: session("owner"))
+        XCTAssertEqual(storage.save(manifest("n1"), ticket: n1), .published)
+        XCTAssertTrue(storage.publishedNewerResponse(than: n), "N+1 이 가장 최근이고 공개됐다")
+        // N+2 의 쓰기를 실패시킨다 — 파일 자리를 디렉터리로 막는다.
+        try FileManager.default.removeItem(at: fileURL)
+        try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: true)
+        XCTAssertEqual(storage.save(manifest("n2"), ticket: n2), .failed)
+        XCTAssertEqual(storage.save(manifest("n"), ticket: n), .superseded)
+        XCTAssertFalse(storage.publishedNewerResponse(than: n), "가장 최근 응답(N+2)의 공개가 실패했으면 신선하지 않다")
+        XCTAssertFalse(storage.publishedNewerResponse(than: n1))
+    }
+
     func testDiskReloadChecksOwnerAndRejectsUnownedLegacyManifest() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let fileURL = directory.appendingPathComponent("manifest.json")
