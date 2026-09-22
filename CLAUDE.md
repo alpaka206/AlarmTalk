@@ -295,7 +295,7 @@
 
 | 빠진 권한 | 실제 결과 | 어떻게 말하나 |
 | --- | --- | --- |
-| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작하며, 울림 화면은 **기기 상태와 무관하게 언제나** 띄운다(`openRingingActivity`) | "알람 알림이 뜨지 않아요" |
+| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작한다. 단 **잠금 화면의 울림 화면은 알림(전체화면 인텐트)이 연다** — 알림 권한이 없으면 잠긴 채로는 소리만 나고 화면이 안 뜬다(아래 「잠금 화면 울림 화면」 절) | "알람 알림이 뜨지 않아요" |
 | 정확한 알람 | `setAndAllowWhileIdle` 폴백으로 **울리되 수 분 늦을 수 있다** | "제때 울리지 않을 수 있어요" |
 | 잠금 화면 | 소리는 나되 **잠금 화면을 못 덮는다** | "잠금 화면에 뜨지 않아요" |
 
@@ -446,7 +446,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 
 | 스펙 | 다루는 것 |
 | --- | --- |
-| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **언제나 전체화면**, **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
+| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
 | [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
@@ -603,6 +603,30 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
   없어서 만든 진입점이다.
+
+### 잠금 화면 울림 화면은 **알림의 전체화면 인텐트**가 연다 (Android, 회귀 방지)
+
+서비스에서 `startActivity` 로 울림 화면을 띄우는 것은 **앱에 보이는 액티비티가 있을 때만**
+된다. Android 14+ 는 그 외(잠금 화면·다른 앱·홈)에서 예외 없이 조용히 막는다 — 2026-09-22
+S23 Ultra(Android 16) logcat: `Background activity launch blocked! … callingUidProcState:
+FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "언제나 직접 띄운다"
+설계로는 **잠금 화면에서 소리만 나고 화면이 없었다**(양 테스트폰, 사용자 보고와 일치).
+
+- 잠긴 기기에서 화면을 여는 **유일한 공식 경로**는 HIGH 채널 알림의 `setFullScreenIntent` 다.
+  알림은 **처음부터** 갈래를 정해 올린다(`RingingNotificationFactory.initialVariant` — 판정은
+  "앱에 보이는 액티비티가 있는가" 하나): 없으면 ALERTING(HIGH·무음·전체화면 인텐트),
+  있으면 QUIET(LOW, 배너 없음 — 우리가 직접 띄우니 겹치면 안 된다).
+- ⚠ **"직접 띄워 보고 안 뜨면 승격" 으로 되돌리지 말 것.** 같은 알림 id 를 갱신하는 승격은
+  전체화면을 **한 번도 열지 못했다** — SystemUI 는 새로 추가된 알림에만 전체화면 인텐트를
+  검사한다. 승격 알림에 `ONLY_ALERT_ONCE` 까지 있어 배너도 안 떴다.
+- ⚠ **열기 인텐트에 `FLAG_ACTIVITY_CLEAR_TASK` 를 넣지 말 것.** 시스템과 우리가 같은 화면을
+  연달아 열면 CLEAR_TASK 가 먼저 뜬 인스턴스를 파괴하고 그 `onStop` 이 '벗어났다' 로 읽혀
+  알람이 2초 만에 꺼진다(2026-09-09 A32). `singleTask` + `onNewIntent` 가 답이다 —
+  2026-09-22 A32 재확인: `START` 두 번, 인스턴스 하나, 자동 해제 없음.
+- ⚠ **채널 importance 는 만든 뒤 못 바꾼다** — id 를 새로 붙이고 옛 id 를 지운다
+  (`voice_alarm_ringing_v5` / `_quiet_v1`, 은퇴 목록은 `NotificationChannels`).
+- 회귀 테스트: `RingingNotificationDismissTest`(갈래별 채널·전체화면 인텐트·플래그). **잠금
+  화면에서 실제로 뜨는가는 실기기로만 확인된다** — `docs/spec/alarm-ringing.md` §1·「검증 방법」.
 
 ### 시스템이 큐를 정하는 콜백에 **메인 액터 클로저**를 넘기지 않는다 (iOS, 회귀 방지)
 

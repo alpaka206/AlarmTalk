@@ -151,13 +151,24 @@ internal fun signOutWindowOpen(
     windowMillis: Long,
 ): Boolean = startedAtMillis > 0L && (nowMillis - startedAtMillis) in 0L until windowMillis
 
-class AuthSessionStore(context: Context) {
-    private val prefs: SharedPreferences = run {
-        val appContext = context.applicationContext
-        createEncryptedPrefs(appContext).also { secure ->
-            migrateLegacyPlainPrefs(appContext, secure)
-        }
-    }
+class AuthSessionStore internal constructor(
+    /**
+     * ⚠ **프로세스에 하나뿐인 객체여야 한다** — [sharedPrefs] 가 준다. 테스트만 직접 넣는다.
+     *
+     * `EncryptedSharedPreferences` 는 변경 리스너를 **래퍼 인스턴스별로** 들고 있어서
+     * (`Editor.notifyListeners` 가 자기 `mListeners` 만 돈다 — 바이트코드로 확인, 2026-09-22),
+     * 다른 `AuthSessionStore` 인스턴스가 쓴 변경은 **절대 들리지 않는다.** 예전에는
+     * 인스턴스마다 `EncryptedSharedPreferences.create` 를 새로 불렀고, 그래서:
+     * - 로그인은 `MainViewModel.authSessionStore` 로 쓰는데 알람 목록 필터
+     *   (`AlarmRepository.observeAlarms` ← `AlarmAppContainer` 의 다른 인스턴스)는 그 변경을
+     *   못 들어 **첫 알람을 만들어도 "알람이 없어요"** 였다(2026-09-22 S23·A32 실기기 재현 —
+     *   앱을 5초 이상 배경에 뒀다 오면 `WhileSubscribed` 가 다시 구독하며 그제야 보였다).
+     * - 워커가 굴린 토큰을 ViewModel 이 `observeSession` 으로 받는 수리(Codex #665)도 같은
+     *   이유로 실제로는 동작한 적이 없다.
+     */
+    private val prefs: SharedPreferences,
+) {
+    constructor(context: Context) : this(sharedPrefs(context.applicationContext))
 
     internal fun registerChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -165,57 +176,6 @@ class AuthSessionStore(context: Context) {
 
     internal fun unregisterChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
-    }
-
-    /**
-     * JWT 등 세션 정보를 평문 SharedPreferences 가 아닌 EncryptedSharedPreferences 에 저장한다.
-     * 생성 실패(키스토어 손상 등) 시 평문 폴백 대신 prefs 파일을 초기화하고 재생성한다.
-     * 세션은 잃어 재로그인이 필요하지만, 토큰이 평문으로 남는 것보다 안전하다.
-     */
-    private fun createEncryptedPrefs(context: Context): SharedPreferences =
-        runCatching { buildEncryptedPrefs(context) }.getOrElse { error ->
-            Log.w(TAG, "EncryptedSharedPreferences creation failed; resetting secure auth prefs", error)
-            runCatching { context.deleteSharedPreferences(SECURE_PREFS_NAME) }
-            buildEncryptedPrefs(context)
-        }
-
-    private fun buildEncryptedPrefs(context: Context): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            SECURE_PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }
-
-    /**
-     * 구버전이 평문 prefs(voice_alarm_auth)에 남긴 세션을 1회 암호화 저장소로 옮기고 평문을 삭제한다.
-     * 암호화 prefs 에 이미 토큰이 있으면(이미 마이그레이션됨) 평문만 비운다.
-     */
-    private fun migrateLegacyPlainPrefs(context: Context, secure: SharedPreferences) {
-        val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
-        val legacyEntries = runCatching { legacy.all }.getOrDefault(emptyMap())
-        if (legacyEntries.isEmpty()) return
-        if (secure.getString(KEY_TOKEN, null).isNullOrBlank()) {
-            val editor = secure.edit()
-            legacyEntries.forEach { (key, value) ->
-                when (value) {
-                    is String -> editor.putString(key, value)
-                    is Boolean -> editor.putBoolean(key, value)
-                    is Int -> editor.putInt(key, value)
-                    is Long -> editor.putLong(key, value)
-                    is Float -> editor.putFloat(key, value)
-                }
-            }
-            editor.apply()
-            Log.i(TAG, "Migrated legacy plain auth prefs to encrypted storage")
-        }
-        legacy.edit().clear().apply()
-        runCatching { context.deleteSharedPreferences(LEGACY_PREFS_NAME) }
     }
 
     fun read(): AuthSession? {
@@ -722,6 +682,75 @@ class AuthSessionStore(context: Context) {
         const val PROVIDER_APP = "app"
         const val PROVIDER_GOOGLE = "google"
         private const val APP_JWT_ISSUER = "voice-alarm"
+
+        @Volatile
+        private var sharedPrefsInstance: SharedPreferences? = null
+        private val prefsInitLock = Any()
+
+        /**
+         * 세션 prefs 를 **프로세스에 하나만** 만든다. 이유는 [prefs] 주석 — 인스턴스가 다르면
+         * 변경 리스너가 서로 안 들린다. 첫 호출에서 암호화 저장소를 열고 평문 마이그레이션을
+         * 한 번만 한다.
+         */
+        private fun sharedPrefs(context: Context): SharedPreferences =
+            sharedPrefsInstance ?: synchronized(prefsInitLock) {
+                sharedPrefsInstance ?: createEncryptedPrefs(context).also { secure ->
+                    migrateLegacyPlainPrefs(context, secure)
+                    sharedPrefsInstance = secure
+                }
+            }
+
+        /**
+         * JWT 등 세션 정보를 평문 SharedPreferences 가 아닌 EncryptedSharedPreferences 에 저장한다.
+         * 생성 실패(키스토어 손상 등) 시 평문 폴백 대신 prefs 파일을 초기화하고 재생성한다.
+         * 세션은 잃어 재로그인이 필요하지만, 토큰이 평문으로 남는 것보다 안전하다.
+         */
+        private fun createEncryptedPrefs(context: Context): SharedPreferences =
+            runCatching { buildEncryptedPrefs(context) }.getOrElse { error ->
+                Log.w(TAG, "EncryptedSharedPreferences creation failed; resetting secure auth prefs", error)
+                runCatching { context.deleteSharedPreferences(SECURE_PREFS_NAME) }
+                buildEncryptedPrefs(context)
+            }
+
+        private fun buildEncryptedPrefs(context: Context): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                SECURE_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
+
+        /**
+         * 구버전이 평문 prefs(voice_alarm_auth)에 남긴 세션을 1회 암호화 저장소로 옮기고 평문을 삭제한다.
+         * 암호화 prefs 에 이미 토큰이 있으면(이미 마이그레이션됨) 평문만 비운다.
+         */
+        private fun migrateLegacyPlainPrefs(context: Context, secure: SharedPreferences) {
+            val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+            val legacyEntries = runCatching { legacy.all }.getOrDefault(emptyMap())
+            if (legacyEntries.isEmpty()) return
+            if (secure.getString(KEY_TOKEN, null).isNullOrBlank()) {
+                val editor = secure.edit()
+                legacyEntries.forEach { (key, value) ->
+                    when (value) {
+                        is String -> editor.putString(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Float -> editor.putFloat(key, value)
+                    }
+                }
+                editor.apply()
+                Log.i(TAG, "Migrated legacy plain auth prefs to encrypted storage")
+            }
+            legacy.edit().clear().apply()
+            runCatching { context.deleteSharedPreferences(LEGACY_PREFS_NAME) }
+        }
+
 
         /**
          * 세션을 **끝내는 쓰기**([clear])와 **되쓰는 쓰기**([saveSessionIfGeneration])의 상호배제.
