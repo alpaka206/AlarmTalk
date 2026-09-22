@@ -80,6 +80,24 @@ final class StockClipManifestStoreTests: XCTestCase {
         XCTAssertEqual(storage.load(ownerUserID: "owner")?.clips.first?.messageId, "retry")
     }
 
+    func testPublishedNewerResponseDistinguishesPublishFromClear() {
+        // `.superseded` 의 두 얼굴 — 더 새 응답이 공개됐는가(신선), 표가 무효화됐는가(모름).
+        let storage = makeStorage()
+        let old = storage.beginFetch(session: session("owner"))
+        let new = storage.beginFetch(session: session("owner"))
+        XCTAssertFalse(storage.publishedNewerResponse(than: old), "아직 아무것도 공개되지 않았다")
+        XCTAssertEqual(storage.save(manifest("new"), ticket: new), .published)
+        XCTAssertEqual(storage.save(manifest("old"), ticket: old), .superseded)
+        XCTAssertTrue(storage.publishedNewerResponse(than: old), "더 새 표의 응답이 공개됐다 — 이긴 매니페스트는 신선하다")
+        XCTAssertFalse(storage.publishedNewerResponse(than: new), "자기 자신보다 새 응답은 없다")
+
+        // `clear` 로 밀린 표: 수위선은 올랐지만 새로 공개된 것은 없다.
+        let pending = storage.beginFetch(session: session("owner"))
+        storage.clear(preservingOwnerUserID: "owner")
+        XCTAssertEqual(storage.save(manifest("late"), ticket: pending), .superseded)
+        XCTAssertFalse(storage.publishedNewerResponse(than: pending), "무효화로 밀린 것은 신선함의 근거가 아니다")
+    }
+
     func testDiskReloadChecksOwnerAndRejectsUnownedLegacyManifest() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let fileURL = directory.appendingPathComponent("manifest.json")

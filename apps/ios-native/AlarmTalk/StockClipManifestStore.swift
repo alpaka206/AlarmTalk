@@ -52,6 +52,12 @@ enum StockClipManifestStore {
         storage.load(ownerUserID: ownerUserID)
     }
 
+    /// `.superseded` 를 받은 표보다 **더 새 응답이 이 프로세스에서 실제로 공개됐는가.**
+    /// `clear` 로 밀린 것과 가른다 — 상세는 `StockClipManifestStorage.publishedNewerResponse`.
+    static func publishedNewerResponse(than ticket: StockClipManifestStorage.Ticket) -> Bool {
+        storage.publishedNewerResponse(than: ticket)
+    }
+
     static func clear(preservingOwnerUserID: String? = nil) {
         storage.clear(preservingOwnerUserID: preservingOwnerUserID)
     }
@@ -90,6 +96,10 @@ final class StockClipManifestStorage: @unchecked Sendable {
     /// 성패와 무관하게 수위선을 올려 막는다(`testFailedPublicationStillRejectsOlderResponse`).
     /// 회귀 테스트: `testNetworkFailureBeforeSaveKeepsOlderValidResponse`.
     private var seenRevision: UInt64 = 0
+    /// 마지막으로 **공개된**(`.published`) 표. `clear` 는 수위선(`seenRevision`)만 올리고 이 값은
+    /// 건드리지 않는다 — 그래서 `.superseded` 가 "더 새 응답이 공개됐다"(이 값이 표보다 크다)인지
+    /// "표가 무효화됐다"(작다)인지 가를 수 있다(`publishedNewerResponse`).
+    private var publishedRevision: UInt64 = 0
     private var cached: Envelope?
     private var quarantined = false
 
@@ -117,10 +127,23 @@ final class StockClipManifestStorage: @unchecked Sendable {
             try JSONEncoder().encode(envelope).write(to: fileURL, options: .atomic)
             cached = envelope
             quarantined = false
+            publishedRevision = ticket.revision
             return .published
         } catch {
             return .failed
         }
+    }
+
+    /// 이 표보다 새 표의 응답이 **이 프로세스에서 공개된 적이 있는가.**
+    ///
+    /// `.superseded` 를 받은 호출자가 디스크의 이긴 매니페스트를 '이 세션에 서버에서 새로 받은 것'
+    /// 으로 쳐도 되는지 정한다(코덱스 #789). 더 새 표가 공개됐으면 그 응답은 이 표보다 **나중에**
+    /// 요청된 것이라 신선하다. 반대로 `clear` 가 표를 무효화해 밀린 것이면 디스크 값은 지난 세션
+    /// 것일 수 있어 교체 확정의 근거가 못 된다(Codex #703 P1) — 그때는 false.
+    func publishedNewerResponse(than ticket: Ticket) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return publishedRevision > ticket.revision
     }
 
     func load(ownerUserID: String?) -> StockClipListResponse? {
