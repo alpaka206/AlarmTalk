@@ -1,6 +1,7 @@
 package com.alarmtalk.app.core
 
 import android.util.Log
+import com.google.android.gms.common.api.ApiException
 import io.sentry.Breadcrumb
 import io.sentry.Sentry
 import io.sentry.SentryLevel
@@ -12,6 +13,8 @@ import java.net.UnknownHostException
 import java.io.InterruptedIOException
 import javax.net.ssl.SSLException
 import kotlin.coroutines.cancellation.CancellationException
+import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.http2.StreamResetException
 import retrofit2.HttpException
 
 object AlarmTalkLog {
@@ -34,6 +37,16 @@ object AlarmTalkLog {
     private val FCM_RETRYABLE_MESSAGES = setOf("SERVICE_NOT_AVAILABLE", "INTERNAL_SERVER_ERROR")
 
     /**
+     * Google 로그인이 **사용자 행동**으로 끝난 상태코드 — 결함이 아니다(2026-09-22, ANDROID-P).
+     * 12501 `SIGN_IN_CANCELLED`(뒤로가기·시트 닫기), 12502 `SIGN_IN_CURRENTLY_IN_PROGRESS`(버튼 연타).
+     * 화면은 어차피 상태별 문구를 보여준다(`googleSignInErrorMessage`).
+     */
+    private val GOOGLE_SIGN_IN_USER_ACTION_CODES = setOf(12501, 12502)
+
+    /** Google 로그인의 `NETWORK_ERROR`(7) — 기기 네트워크 사정이라 일시적 실패와 같다. */
+    private const val GOOGLE_SIGN_IN_NETWORK_ERROR = 7
+
+    /**
      * Sentry 에 **이슈로 올리지 않는** 실패인가. Logcat 과 브레드크럼에만 남긴다.
      *
      * 기준은 백엔드와 같다 — `docs/spec/error-codes.md` §3 「기록은 전부, 경보는 골라서」.
@@ -50,6 +63,10 @@ object AlarmTalkLog {
      *    ⚠ `IOException` 전체가 아니다. `FileNotFoundException`·디스크 가득참은 결함일 수
      *    있어 그대로 올린다.
      * 3. **FCM 재시도 가능 코드.** [FCM_RETRYABLE_MESSAGES].
+     * 4. **HTTP/2 스트림·연결 리셋**(`StreamResetException`·`ConnectionShutdownException`).
+     *    엣지나 프록시가 스트림을 끊은 것이라 2 와 같은 부류인데 `IOException` 의 다른 하위
+     *    타입이라 빠져 있었다(2026-09-22, ANDROID-N — 워커는 재시도하는데 이슈만 쌓였다).
+     * 5. **Google 로그인의 네트워크 오류**(`ApiException` 7).
      *
      * ⚠ HTTP 4xx 는 여기서 가르지 않는다. `errorBody` 는 한 번만 읽히므로 호출부가 코드를
      * 볼 자리에서 결정한다(예: `sync/SyncWorkerFailure.kt` 의 `CONSENT_REQUIRED`).
@@ -76,10 +93,30 @@ object AlarmTalkLog {
         is SocketException,
         is SSLException,
         -> true
+        // HTTP/2 의 RST_STREAM·GOAWAY. 서버·엣지가 스트림을 끊은 것이지 요청이 잘못된 게 아니다.
+        is StreamResetException,
+        is ConnectionShutdownException,
+        -> true
         // OkHttp 의 호출 시간초과는 `InterruptedIOException("timeout")` 으로 온다
         // (`SocketTimeoutException` 의 부모 — 소켓이 아니라 호출 전체의 시간초과).
         is InterruptedIOException -> message == "timeout"
+        is ApiException -> statusCode == GOOGLE_SIGN_IN_NETWORK_ERROR
         else -> false
+    }
+
+    /**
+     * Google 로그인이 사용자 행동(취소·연타)으로 끝났는가. 이슈가 아니라 브레드크럼이다 —
+     * 상태코드 10(`DEVELOPER_ERROR`, SHA 지문·클라이언트 ID 설정)·12500(`SIGN_IN_FAILED`)은
+     * 우리가 고칠 것이 있으니 그대로 올라간다.
+     */
+    internal fun isGoogleSignInUserAction(error: Throwable): Boolean {
+        var current: Throwable? = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            if (current is ApiException && current.statusCode in GOOGLE_SIGN_IN_USER_ACTION_CODES) return true
+            current = current.cause
+        }
+        return false
     }
 
     /**
@@ -135,6 +172,7 @@ object AlarmTalkLog {
     internal fun breadcrumbCategoryFor(error: Throwable): String? = when {
         isExpectedTransientFailure(error) -> "transient"
         isHandledAuthFailure(error) -> "auth"
+        isGoogleSignInUserAction(error) -> "user"
         else -> null
     }
 

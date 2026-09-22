@@ -59,8 +59,14 @@ export async function errorCodeMiddleware(c: Context, next: Next) {
     ...(code ? { error_code: code } : {}),
   });
   if (uid) sentry.setTag?.('uid', uid);
-  // 던져진 예외가 아니라 **우리가 낸 판단**이다. Sentry 가 코드별로 묶도록 코드를 제목에 둔다.
-  sentry.captureException(new Error(`[${code ?? `HTTP_${status}`}] ${c.req.method} ${c.req.path}`));
+  const key = code ?? `HTTP_${status}`;
+  // 던져진 예외가 아니라 **우리가 낸 판단**이다. 제목에 코드를 두는 것만으로는 코드별로
+  // 묶이지 않는다 — Sentry 는 스택으로 묶고, 여기서 만드는 예외는 전부 같은 자리라 코드가
+  // 달라도 한 이슈가 됐다(BACKEND-8 에 두 코드가 섞임, 2026-09-22). 묶음 키를 코드로 준다.
+  // 경로는 넣지 않는다 — 같은 장애(예: DB 를 못 읽어 낸 ACCOUNT_STATUS_UNVERIFIED)가
+  // 라우트마다 다른 이슈로 흩어지면 규모를 못 본다. 경로는 태그(`route`)로 남는다.
+  sentry.setFingerprint?.(['api_error', key]);
+  sentry.captureException(new Error(`[${key}] ${c.req.method} ${c.req.path}`));
 }
 
 /**

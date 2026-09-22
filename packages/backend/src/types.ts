@@ -108,6 +108,13 @@ export interface SentryClient {
    */
   setTag?(key: string, value: string | number | boolean | null | undefined): void;
   setTags?(tags: Record<string, string | number | boolean | null | undefined>): void;
+  /**
+   * 이슈 묶음 키. Sentry 는 기본으로 **스택**으로 묶는데, `errorCodeMiddleware` 가 만드는
+   * 예외는 전부 같은 자리에서 나므로 코드가 달라도 한 이슈가 된다 — 실제로 BACKEND-8 에
+   * `VOICE_FEATURE_REQUIRES_PAID_PLAN` 과 `ACCOUNT_STATUS_UNVERIFIED` 가 함께 쌓였다
+   * (2026-09-22). 코드별로 가르려면 이걸로 묶음 키를 직접 준다. Toucan 은 Scope 라 있다.
+   */
+  setFingerprint?(fingerprint: string[]): void;
 }
 
 type AuthVariables = {
