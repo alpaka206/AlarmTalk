@@ -42,12 +42,23 @@ export async function retryTransientTurso<T>(operation: () => Promise<T>): Promi
 }
 
 /**
+ * 조회 전용 `PRAGMA` 화이트리스트(코덱스 #795 2차). "`=` 가 없으면 읽기" 로는 부족하다 —
+ * SQLite 는 `PRAGMA user_version(7)`·`PRAGMA foreign_keys(OFF)`·`PRAGMA incremental_vacuum(1)`
+ * 처럼 괄호로 값을 정하는 쓰기 형태도 받는다. 그래서 **이름을 세어** 둔다:
+ *  - 대상(테이블·인덱스)을 괄호로 받는 스키마 조회 — `table_info('alarms')` 등.
+ *  - 인자 없이 값을 읽는 것 — `user_version`·`journal_mode` 등(같은 이름에 `=`·괄호가 붙으면 쓰기).
+ */
+const READ_PRAGMA_WITH_TARGET =
+  /^\s*PRAGMA\s+(?:\w+\.)?(?:table_info|table_xinfo|index_list|index_info|index_xinfo|foreign_key_list)\s*\(\s*'?[\w.]+'?\s*\)\s*;?\s*$/i;
+const READ_PRAGMA_BARE =
+  /^\s*PRAGMA\s+(?:\w+\.)?(?:user_version|schema_version|page_count|freelist_count|journal_mode|integrity_check|quick_check|foreign_key_check|table_list|database_list|compile_options|pragma_list|collation_list|function_list|module_list)\s*;?\s*$/i;
+
+/**
  * `execute` 의 문장이 읽기인가 — 다시 보내도 부작용이 없는 것만 재시도한다.
  *
- * 읽기로 보는 형태(코덱스 #795): `SELECT`·`EXPLAIN` / **읽기 `PRAGMA`**(`PRAGMA table_info(...)`
- * 같은 조회 — `=` 로 값을 정하는 `PRAGMA foreign_keys=off` 는 쓰기라 뺀다) / **CTE**(`WITH … SELECT`
- * — SQLite 는 `WITH … INSERT/UPDATE/DELETE` 도 허용하므로 본문에 DML 동사가 없을 때만).
- * 모르는 형태는 쓰기로 본다 — 틀려도 재시도를 안 하는 쪽이다.
+ * 읽기로 보는 형태(코덱스 #795): `SELECT`·`EXPLAIN` / **화이트리스트의 `PRAGMA`**(위) / **CTE**
+ * (`WITH … SELECT` — SQLite 는 `WITH … INSERT/UPDATE/DELETE` 도 허용하므로 본문에 DML 동사가 없을
+ * 때만). 모르는 형태는 쓰기로 본다 — 틀려도 재시도를 안 하는 쪽이다.
  */
 export function isReadStatement(statement: unknown): boolean {
   const sql =
@@ -57,7 +68,9 @@ export function isReadStatement(statement: unknown): boolean {
         ? String((statement as { sql: unknown }).sql)
         : '';
   if (/^\s*(?:SELECT|EXPLAIN)\b/i.test(sql)) return true;
-  if (/^\s*PRAGMA\b/i.test(sql)) return !/=/.test(sql);
+  if (/^\s*PRAGMA\b/i.test(sql)) {
+    return READ_PRAGMA_WITH_TARGET.test(sql) || READ_PRAGMA_BARE.test(sql);
+  }
   if (/^\s*WITH\b/i.test(sql)) {
     return !/\b(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i.test(stripStringLiterals(sql));
   }

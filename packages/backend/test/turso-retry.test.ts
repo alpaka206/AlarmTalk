@@ -89,9 +89,18 @@ describe('withTransientReadRetry', () => {
   it('읽기 PRAGMA 와 CTE 도 읽기다 — 값을 정하는 PRAGMA 와 DML CTE 는 아니다(코덱스 #795)', () => {
     // 스키마 조회(`alarm-helpers.ts`·`voice-profile.ts`·`stock-clips.ts`).
     expect(isReadStatement({ sql: "PRAGMA table_info('alarms')", args: [] })).toBe(true);
+    expect(isReadStatement('PRAGMA main.table_info(users)')).toBe(true);
+    expect(isReadStatement('PRAGMA index_list(alarms);')).toBe(true);
     expect(isReadStatement('PRAGMA user_version')).toBe(true);
+    expect(isReadStatement('PRAGMA journal_mode')).toBe(true);
     expect(isReadStatement('PRAGMA foreign_keys=off')).toBe(false);
     expect(isReadStatement('PRAGMA journal_mode = WAL')).toBe(false);
+    // 괄호로 값을 정하는 쓰기 형태 — `=` 가 없어도 쓰기다(코덱스 #795 2차).
+    expect(isReadStatement('PRAGMA user_version(7)')).toBe(false);
+    expect(isReadStatement('PRAGMA foreign_keys(OFF)')).toBe(false);
+    expect(isReadStatement('PRAGMA incremental_vacuum(1)')).toBe(false);
+    expect(isReadStatement('PRAGMA optimize')).toBe(false);
+    expect(isReadStatement('PRAGMA wal_checkpoint(TRUNCATE)')).toBe(false);
     // `audio-retention.ts` 의 배치 조회.
     expect(
       isReadStatement(`WITH retry AS (SELECT id FROM pending_external_deletions WHERE attempts > 0 LIMIT ?)
