@@ -190,7 +190,7 @@ event.post('/:eventId/clips', async (c) => {
       }
     }
     if (!persoPath) throw new Error('no slot succeeded');
-    bytes = new Uint8Array(await (await fetchPersoMedia(persoPath)).arrayBuffer());
+    bytes = new Uint8Array(await (await fetchPersoMedia(persoPath, undefined, deadline)).arrayBuffer());
     // 빈 몸통이나 오류 페이지를 mp3 라고 내려보내지 않는다.
     if (bytes.byteLength < MIN_CLIP_BYTES || !looksLikeMp3(bytes)) {
       throw new Error(`Perso media is not an mp3 (${bytes.byteLength} bytes)`);

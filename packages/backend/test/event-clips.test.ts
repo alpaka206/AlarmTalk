@@ -448,6 +448,49 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     vi.useRealTimers();
   });
 
+  it('앞 단계가 늦으면 다음 단계의 상한도 남은 시간으로 줄어든다 — 마감을 넘겨 만들지 않는다(코덱스 #796 2차)', async () => {
+    // 재시도만 마감으로 가르면 부족하다: 목록 읽기가 120초를 써도 생성이 자기 상한 90초를 통째로
+    // 받으면 랜딩의 150초를 넘긴다. 각 호출의 `AbortSignal.timeout` 값이 남은 시간 이하여야 한다.
+    vi.useFakeTimers();
+    const timeouts: number[] = [];
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      timeouts.push(ms);
+      return AbortSignal.abort(new DOMException('stub', 'TimeoutError'));
+    });
+    const { fetchSpy } = fakePerso();
+    const real = fetchSpy.getMockImplementation()!;
+    fetchSpy.mockImplementation(async (input, init) => {
+      if (String(input).includes('/script?')) vi.advanceTimersByTime(120_000); // 목록에 120초
+      return real(input, init);
+    });
+    cursorPositions(1);
+    const pending = buildApp()('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    await pending;
+    // 첫 호출은 기본 상한(목록 20초), 그 뒤 호출은 남은 20초 이하로 줄어 있다.
+    expect(timeouts[0]).toBe(20_000);
+    for (const ms of timeouts.slice(1)) expect(ms).toBeLessThanOrEqual(20_000);
+    timeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('마감이 지나면 Perso 를 더 부르지 않는다 — 태그는 deadline', async () => {
+    vi.useFakeTimers();
+    const { fetchSpy } = fakePerso();
+    const real = fetchSpy.getMockImplementation()!;
+    fetchSpy.mockImplementation(async (input, init) => {
+      if (String(input).includes('/script?')) vi.advanceTimersByTime(141_000); // 예산(140초)을 넘긴다
+      return real(input, init);
+    });
+    cursorPositions(1);
+    const sentry = { setTag: vi.fn(), captureException: vi.fn() };
+    const pending = buildApp(undefined, sentry)('/event/1/clips', post(ok));
+    await vi.runAllTimersAsync();
+    expect((await pending).status).toBe(502);
+    expect(sentry.setTag).toHaveBeenCalledWith('perso_reason', 'deadline');
+    vi.useRealTimers();
+  });
+
   it('4xx 는 다시 보내지 않고 바로 502 — 같은 요청은 같은 답이다', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

@@ -130,9 +130,15 @@ export function EventStudio() {
   /**
    * 카드 사진을 붙들 종류 — 결과 클립이 재생 중이면 그 종류. 아니면 null 이고 `RotatingPortrait` 가
    * 5초마다 돌린다(미리 듣기는 종류가 없는 인사말이라 붙들지 않는다).
+   *
+   * ⚠ **지금 고른 언어(`lang`)로 키를 다시 만들어 맞추지 말 것**(코덱스 #796). 언어를 바꿔도 듣던
+   * 소리는 이어지는데(지시), 새 언어로 맞춰 보면 재생 중인 클립이 어느 종류에도 안 걸려 사진이
+   * 도로 돌기 시작한다. 재생 중인 id 에서 **직접** 읽는다 — 키의 마지막 조각이 종류다.
    */
   const pinnedKind: MessageKind | null =
-    MESSAGE_KINDS.find((k) => activeId === clipKey(celebrity.id, trimmed, lang, k)) ?? null;
+    activeId !== null && activeId.startsWith(`${bundleKey}:`)
+      ? (MESSAGE_KINDS.find((k) => activeId.endsWith(`:${k}`)) ?? null)
+      : null;
   /** 지금 화면이 보고 있는 (인물:이름:언어). 30초 뒤에 온 소리를 자동 재생해도 되는지 여기 대고 본다. */
   const viewRef = useRef(`${bundleKey}:${lang}`);
   viewRef.current = `${bundleKey}:${lang}`;

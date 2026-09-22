@@ -57,10 +57,31 @@ const PERSO_RETRY_DELAY_MS = 1_500;
  */
 export type PersoDeadline = { readonly at: number } | undefined;
 
+/** 마감을 넘겼다 — 더 기다려 봐야 받을 사람이 없다. */
+export class PersoDeadlineExceeded extends Error {
+  constructor() {
+    super('clip budget exhausted');
+  }
+}
+
 /** 이 상한으로 한 번 더 보낼 시간이 남았는가. 마감이 없으면(스크립트 등) 언제나 그렇다. */
 function hasTimeForRetry(deadline: PersoDeadline, timeoutMs: number): boolean {
   if (!deadline) return true;
   return Date.now() + PERSO_RETRY_DELAY_MS + timeoutMs <= deadline.at;
+}
+
+/**
+ * **한 번의 호출에 줄 상한** — 그 단계의 기본값과 남은 시간 중 작은 쪽이다(코덱스 #796 2차).
+ *
+ * 재시도 여부만 마감으로 가르면 부족하다: 앞 단계가 늦게 끝나도 **다음 단계는 자기 기본 상한을
+ * 통째로** 받아(생성 90초·미디어 120초) 마감을 훌쩍 넘길 수 있다. 남은 시간이 없으면 부르지 않고
+ * [PersoDeadlineExceeded] 를 던진다 — 이미 끊긴 요청을 위해 Perso 를 더 부르지 않는다.
+ */
+function budgetedTimeout(deadline: PersoDeadline, timeoutMs: number): number {
+  if (!deadline) return timeoutMs;
+  const left = deadline.at - Date.now();
+  if (left <= 0) throw new PersoDeadlineExceeded();
+  return Math.min(timeoutMs, left);
 }
 
 const STORE_TIMEOUT_MS = 20_000;
@@ -88,7 +109,7 @@ async function persoRequest(
     try {
       res = await fetch(`${PERSO_API_BASE}${path}`, {
         method,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(budgetedTimeout(deadline, timeoutMs)),
         headers: {
           'XP-API-KEY': apiKey,
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
@@ -125,6 +146,7 @@ function isAbort(err: unknown): boolean {
  * 한 줄뿐이라 BACKEND-A(502 ×7)가 왜 났는지 Sentry 에서 알 수 없었다.
  */
 export function persoFailureReason(err: unknown): string {
+  if (err instanceof PersoDeadlineExceeded) return 'deadline';
   if (err instanceof PersoSlotRace) return 'slot_race';
   if (err instanceof PersoHttpError) return `perso_http_${err.status}`;
   if (isAbort(err)) return 'timeout';
@@ -216,9 +238,13 @@ export function persoMediaUrl(path: string): string {
  * 저장소에서 파일을 받아 온다. `range` 를 주면 그대로 넘겨 206 을 받는다.
  * 저장소는 application/octet-stream 으로 주므로 호출자가 audio/mpeg 로 바꿔 단다.
  */
-export async function fetchPersoMedia(path: string, range?: string): Promise<Response> {
+export async function fetchPersoMedia(
+  path: string,
+  range?: string,
+  deadline?: PersoDeadline,
+): Promise<Response> {
   const res = await fetch(persoMediaUrl(path), {
-    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
+    signal: AbortSignal.timeout(budgetedTimeout(deadline, MEDIA_TIMEOUT_MS)),
     headers: range ? { range } : undefined,
   });
   // 상태를 실어 던진다 — 저장소의 일시 장애(503)와 **깨진 바이트**(bad_media)는 다른 사고다(코덱스 #796).
