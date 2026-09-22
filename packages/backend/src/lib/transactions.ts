@@ -7,6 +7,7 @@
  * 후속 쓰기를 막을 수 있어 반드시 닫는다).
  */
 import type { Client, InStatement, ResultSet } from '@libsql/client';
+import { retryTransientTurso } from './turso-retry';
 
 /**
  * 트랜잭션·클라이언트 공통 실행기.
@@ -30,12 +31,19 @@ export async function withWriteTransaction<T>(
   return withTransaction(db, 'write', fn);
 }
 
-/** 여러 SELECT 가 같은 커밋을 보도록 응답 스냅샷을 고정한다. */
+/**
+ * 여러 SELECT 가 같은 커밋을 보도록 응답 스냅샷을 고정한다.
+ *
+ * **통째로 다시 시도한다**(코덱스 #795 3차). `getDB` 의 읽기 재시도는 `execute` 에만 걸려 있어
+ * `transaction('read')` 로 나간 SELECT 는 게이트웨이 딸꾹질에 그대로 죽었다(`GET /billing/…` 의
+ * 구독 스냅샷). 읽기 트랜잭션은 부작용이 없으므로 콜백째 다시 돌려도 안전하다 — 대신 콜백은
+ * **읽기만** 해야 한다(그게 이 헬퍼의 계약이다). 쓰기 트랜잭션은 감싸지 않는다.
+ */
 export async function withReadTransaction<T>(
   db: Client,
   fn: (tx: DbExecutor) => Promise<T>,
 ): Promise<T> {
-  return withTransaction(db, 'read', fn);
+  return retryTransientTurso(() => withTransaction(db, 'read', fn));
 }
 
 async function withTransaction<T>(

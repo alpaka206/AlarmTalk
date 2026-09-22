@@ -190,7 +190,7 @@
 | 본문 크기 제한·소비 시점 | — | — | `middleware/bodyLimit.ts` · `test/bodyLimit.test.ts` |
 | 본문 초과의 서버 장애 오인 방지 | — | — | `lib/logger.ts`의 요청별 초과 표시 확인; 최종 413은 `middleware/errorCode.ts`에서 기록 |
 | 기록·경보 | — | — | `middleware/errorCode.ts` |
-| Turso 게이트웨이 일시 실패는 **읽기만** 다시 시도(5xx·전송 실패, 150·450ms, 최대 3회) | — | — | `lib/turso-retry.ts` 의 `isTransientTursoGatewayError`·`withTransientReadRetry`, `lib/db.ts` 의 `getDB` 가 두른다(HTTP·cron 공통) · `test/turso-retry.test.ts`. 2026-09-22 전에는 cron 만, 그것도 520 만 — 525(BACKEND-3)는 한 번도 재시도되지 않아 인증 조회가 그대로 503 `ACCOUNT_STATUS_UNVERIFIED` 였다 |
+| Turso 게이트웨이 일시 실패는 **읽기만** 다시 시도(5xx·전송 실패, 150·450ms, 최대 3회) | — | — | `lib/turso-retry.ts` 의 `isTransientTursoGatewayError`·`withTransientReadRetry`, `lib/db.ts` 의 `getDB` 가 두른다(HTTP·cron 공통); 읽기 트랜잭션은 `lib/transactions.ts` 의 `withReadTransaction` 이 통째로 다시 시도 · `test/turso-retry.test.ts`·`test/transactions.test.ts`. 2026-09-22 전에는 cron 만, 그것도 520 만 — 525(BACKEND-3)는 한 번도 재시도되지 않아 인증 조회가 그대로 503 `ACCOUNT_STATUS_UNVERIFIED` 였다 |
 | 경보의 **묶음 키는 에러 코드**(경로 아님) | — | — | `middleware/errorCode.ts` 의 `setFingerprint(['api_error', code])` · `test/error-code-middleware.test.ts`. Sentry 는 기본으로 스택으로 묶어 같은 미들웨어가 낸 예외는 코드가 달라도 한 이슈가 됐다(BACKEND-8 에 두 코드가 섞임, 2026-09-22) |
 | 라우트의 4xx 거절은 경보가 아님 | — | — | `routes/auth.ts` 의 `/google`·`/apple` catch · `test/auth-apple-route.test.ts` |
 | 중복 보고 방지 표시 | — | — | `lib/logger.ts` 의 `logRouteError` |
