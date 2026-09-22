@@ -408,6 +408,13 @@
   우산 얘기를 한다.
 - **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
   있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
+- ⚠ **서버도 반쪽 값을 내보내지 않는다**(2026-09-22, 코덱스 #788). 인덱스는 세 조회(지오코딩·
+  예보·미세먼지)로 만드는데, 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
+  다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
+  좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
+  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 남는다
+  (저장되지 않는 문장 하나라 다시 받을 기회가 없다). 판정은 `routes/tts.ts` 의
+  `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` / `'fallback'`).
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
   (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
@@ -852,6 +859,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
 | 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
+| 날씨 조회 반쪽 값 금지(하나라도 못 받으면 `null`) | — (받은 값을 해결로 저장, `weatherVariantNeedsRefresh`) | — (`BucketVariantResolver`) | `loadWeatherSignalInput` 의 `WeatherFetchFailurePolicy` `'unresolved'`(`routes/tts.ts`), 회귀 `prerender-variant.test.ts` |
 | 날씨 조회 대기 상한(8초) | `WEATHER_RESOLVE_TIMEOUT_MILLIS` + `withTimeoutOrNull`(`data/AlarmRepository.kt`, 회귀 `WeatherResolveTimeoutTest`) | `WeatherVariantSaveLookup.timeoutSeconds`(8초) + `withTimeout`(`AsyncTimeout.swift`) — `AlarmEditorSheet.applyWeatherVariant` 가 부른다, 회귀 `WeatherVariantSaveTimeoutTests` | `WEATHER_FETCH_TIMEOUT_MS`(한 fetch 5초, `lib/weather-fetch.ts`) |
 | 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
 | 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |

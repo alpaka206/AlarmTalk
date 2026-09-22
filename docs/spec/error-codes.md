@@ -104,6 +104,13 @@
     안 부르면 그만이고, 그때 증상은 테스트 실패가 아니라 **몇 달 뒤의 Sentry 그래프**다.
     그래서 CI lint 가 `sync/` 의 `CoroutineWorker` 를 훑어 `syncWorkerOutcome` 을 거치는지
     본다(위 `check-*.py` 들과 같은 종류의 그물이다).
+  - ⚠ **안쪽에서 삼킨 401 은 그 그물에 안 걸린다**(코덱스 #788). `StockClipPrefetchWorker` 는
+    클립별 `runCatching` 으로 형제 요청을 살리는데, 거기서 401 을 `isPermanent` 로만 보면 영구
+    실패로 세어져 배치가 `failure` 로 **조용히** 끝난다 — 바깥의 `syncWorkerOutcome` 을 지나지
+    않아 세션을 못 끊고, 그 워커의 API 클라이언트에는 401 핸들러가 없어 죽은 세션이 다른
+    요청이 우연히 401 을 볼 때까지 살아 있었다. 안쪽 격리는 `classifyClipFailure` 로 401 을
+    **세지 않고 기억했다가** 배치 뒤 되던져, 끝내는 자리를 바깥 한 곳으로 유지한다
+    (회귀 `StockClipFailureClassificationTest`). 새 워커가 요청을 격리할 때 같은 모양을 쓴다.
 - ⚠ **끊을 때는 세대와 토큰을 둘 다 본다.** 세대만 보면 rolling refresh 를 못 가른다 —
   `GET /auth/me` 가 같은 세션 안에서 토큰을 갈아 끼우므로, 옛 토큰의 뒤늦은 401 이 세대
   검사를 통과해 **방금 갱신한 멀쩡한 세션을 지운다**(`endSessionAfterWorkerUnauthorized`).

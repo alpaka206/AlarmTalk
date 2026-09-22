@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../src/routes/tts';
+import {
+  loadWeatherSignalInput,
+  resolvePrerenderWeatherIndex,
+  type WeatherSignalInput,
+} from '../src/routes/tts';
 import {
   CLONE_WEATHER_CONDITIONS,
   CLONE_FORTUNE_THEMES,
@@ -109,8 +113,15 @@ function openMeteoJson(body: unknown, cacheStatus = 'HIT'): Response {
   });
 }
 
-/** 세 엔드포인트에 정상 응답을 주는 스텁 — 비(rain) 로 분류되는 하루. */
-function stubOpenMeteo(options?: { failKinds?: Set<'geocode' | 'forecast' | 'air'> }) {
+/**
+ * 세 엔드포인트에 정상 응답을 주는 스텁 — 비(rain) 로 분류되는 하루.
+ * `failKinds` 는 타임아웃(거부), `emptyGeocode` 는 200 인데 결과 없음, `geocodeStatus` 는 비정상 상태코드.
+ */
+function stubOpenMeteo(options?: {
+  failKinds?: Set<'geocode' | 'forecast' | 'air'>;
+  emptyGeocode?: boolean;
+  geocodeStatus?: number;
+}) {
   const fetchMock = vi.fn(async (input: string | URL | Request, init?: FetchInit) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     const kind: 'geocode' | 'forecast' | 'air' =
@@ -125,6 +136,10 @@ function stubOpenMeteo(options?: { failKinds?: Set<'geocode' | 'forecast' | 'air
       throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     }
     if (kind === 'geocode') {
+      if (options?.geocodeStatus) {
+        return new Response('{}', { status: options.geocodeStatus });
+      }
+      if (options?.emptyGeocode) return openMeteoJson({ results: [] });
       return openMeteoJson({
         results: [
           {
@@ -215,18 +230,47 @@ describe('GET /tts/prerender-variant — Open-Meteo 타임아웃', () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect((init as FetchInit).signal).toBeInstanceOf(AbortSignal);
     }
-    // 지오코딩이 서울로 폴백한 뒤 예보까지 타임아웃 → 미세먼지는 부르지 않는다(예보가 없으면 분류할 게 없다).
+    // 지오코딩을 못 받았으면 거기서 끝이다 — 서울 좌표로 예보를 이어 받지 않는다(아래 "지오코딩만" 참조).
     const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
-    expect(kinds).toEqual(['geocoding-api.open-meteo.com', 'api.open-meteo.com']);
+    expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
     // 실패도 한 줄 남는다 — timedOut=true, 사용자 값 없음.
     const failed = structuredLines(warnSpy);
     expect(failed.map((entry) => [entry.kind, entry.timedOut, entry.status])).toEqual([
       ['geocode', true, null],
-      ['forecast', true, null],
     ]);
   });
 
-  it('미세먼지만 타임아웃이면 예보만으로 분류한다(먼지 없음으로 폴백)', async () => {
+  // ⚠ 아래 셋이 이 라우트의 핵심 계약이다(코덱스 #788 P2). 사전렌더 인덱스는 클라가 '해결된 사실' 로
+  //   저장하고 발사 24시간 창 안에서 다시 받지 않는다(Android `weatherVariantNeedsRefresh`). 그래서
+  //   지오코딩이 서울로 폴백한 값을 내보내면 부산 알람이 서울 날씨를 읽고, 먼지를 '없음' 으로 굳히면
+  //   먼지 나쁜 날 산책을 권한다 — 한 조각이라도 못 받았으면 null 이어야 클라가 다시 받는다.
+  it('지오코딩만 타임아웃이면 서울로 폴백하지 않고 null — 예보를 부르지도 않는다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = stubOpenMeteo({ failKinds: new Set(['geocode']) });
+
+    const res = await requestVariant(buildApp());
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
+    const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
+    expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
+  });
+
+  it('지오코딩이 비정상 응답(429)이거나 결과가 없어도 null — 서울 예보로 대신하지 않는다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const options of [{ geocodeStatus: 429 }, { emptyGeocode: true }]) {
+      const fetchMock = stubOpenMeteo(options);
+      const res = await requestVariant(buildApp());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
+      const kinds = fetchMock.mock.calls.map(([input]) => new URL(String(input)).hostname);
+      expect(kinds).toEqual(['geocoding-api.open-meteo.com']);
+    }
+  });
+
+  it('미세먼지만 타임아웃이어도 null — 먼지 없음으로 굳혀 저장되게 두지 않는다', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     stubOpenMeteo({ failKinds: new Set(['air']) });
@@ -234,7 +278,53 @@ describe('GET /tts/prerender-variant — Open-Meteo 타임아웃', () => {
     const res = await requestVariant(buildApp());
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: idx('rain') });
+    expect(await res.json()).toEqual({ context: 'wake_weather', variant_index: null });
+  });
+});
+
+describe('loadWeatherSignalInput — 라이브 생성(fallback)은 폴백을 유지한다', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const liveArgs = { country: 'South Korea', city: CITY, targetDate: TARGET_DATE, timezone: 'Asia/Seoul' };
+
+  it('지오코딩 타임아웃 → 서울 좌표로 예보를 이어 받는다(문장을 비우지 않는다)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = stubOpenMeteo({ failKinds: new Set(['geocode']) });
+
+    const input = await loadWeatherSignalInput(liveArgs, 'fallback');
+
+    expect(input).not.toBeNull();
+    expect(input?.code).toBe(61);
+    const forecastUrl = fetchMock.mock.calls
+      .map(([raw]) => new URL(String(raw)))
+      .find((url) => url.hostname === 'api.open-meteo.com');
+    expect(forecastUrl?.searchParams.get('latitude')).toBe('37.5665');
+    expect(forecastUrl?.searchParams.get('longitude')).toBe('126.978');
+  });
+
+  it('미세먼지 타임아웃 → 먼지 없음으로 이어 간다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubOpenMeteo({ failKinds: new Set(['air']) });
+
+    const input = await loadWeatherSignalInput(liveArgs, 'fallback');
+
+    expect(input).not.toBeNull();
+    expect(input?.hasDust).toBe(false);
+  });
+
+  it('같은 입력을 unresolved 로 부르면 둘 다 null 이다 — 정책만 다르고 조회는 같다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubOpenMeteo({ failKinds: new Set(['geocode']) });
+    expect(await loadWeatherSignalInput(liveArgs, 'unresolved')).toBeNull();
+    vi.unstubAllGlobals();
+    stubOpenMeteo({ failKinds: new Set(['air']) });
+    expect(await loadWeatherSignalInput(liveArgs, 'unresolved')).toBeNull();
   });
 });
 

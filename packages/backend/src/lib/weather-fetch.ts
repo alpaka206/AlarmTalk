@@ -46,7 +46,9 @@ export type WeatherFetchKind = 'geocode' | 'forecast' | 'air';
  *
  * - 타임아웃: `AbortSignal.timeout` 이 만료되면 `fetch` 가 거부된다(`lib/perso.ts` ·
  *   `lib/elevenlabs.ts` 와 같은 방식). **여기서 잡지 않고 다시 던진다** — 세 호출부가 각자
- *   try/catch 로 폴백(null / false / 서울 좌표)을 돌려주는 구조라, 삼키면 그 폴백 규약이 두 겹이 된다.
+ *   try/catch 로 '못 받음'(null)을 돌려주고, 그걸 폴백할지는 `routes/tts.ts` 의
+ *   `WeatherFetchFailurePolicy` 한 곳이 정한다(사전렌더 인덱스는 미해결, 라이브 문장은 폴백).
+ *   삼키면 그 규약이 두 겹이 된다.
  * - 엣지 캐시: `cf.cacheTtl` 은 오리진의 캐시 헤더와 무관하게 응답을 TTL 만큼 캐시하고,
  *   `cacheEverything` 은 확장자 없는 JSON 응답도 캐시 대상에 넣는다(둘 다 workers-types 의
  *   `RequestInitCfProperties` 주석). Workers 의 `fetch` 는 남의 오리진이라도 자기 존의 캐시를
