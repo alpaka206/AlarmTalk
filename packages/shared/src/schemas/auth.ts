@@ -18,24 +18,81 @@ export const EmailVerificationCodeSchema = z
   .string()
   .regex(/^\d{6}$/, '인증 코드는 6자리 숫자여야 합니다');
 
+/**
+ * 이메일 **형식 규칙의 단일 출처** — 서버·안드로이드·iOS 가 이 한 줄을 베껴 쓴다.
+ *
+ * 예전에는 규칙이 셋으로 갈라져 있었다: 서버는 zod 의 `.email()`, 안드로이드는
+ * `android.util.Patterns.EMAIL_ADDRESS`, iOS 는 화면 안에 박힌 자체 정규식이었다.
+ * 셋 다 "이메일처럼 생겼는가" 를 보지만 **받는 글자가 서로 달랐다.**
+ *  - 앱 둘은 로컬 파트에 **아포스트로피를 허용하지 않았다.** 서버는 허용한다 —
+ *    그래서 `o'brien@example.com` 으로 가입한 사람은 **앱에서 로그인 자체가
+ *    불가능**했다(계정 잠금). CLAUDE.md 「남기는 것: 따옴표·세미콜론·하이픈 —
+ *    "O'Brien" 은 정당한 이름이다」와 정면으로 어긋난다.
+ *  - 반대로 앱 둘은 `%` 를 허용했는데 서버는 거부한다 — 앱은 통과시키고 서버가
+ *    400 으로 잘라, 사용자는 왜 막히는지 모른 채 같은 주소를 다시 친다.
+ *
+ * ⚠ **이 값은 좁히면 안 된다.** 좁히는 순간 그 형태로 이미 가입한 사람이 로그인을
+ * 못 한다. 지금 값은 zod 4.6.2 의 `z.string().email()` 기본 정규식과 **동작이 같고**
+ * (`test/schemas.test.ts` 가 로컬·도메인·TLD 조각을 곱한 표로 대조해 고정한다),
+ * 이스케이프만 Java/ICU 에서도 같은 뜻이 되도록 `\-` → 클래스 맨 끝 `-` 로 바꿔 적었다.
+ *
+ * 앱의 짝(**같은 문자열**):
+ *  - 안드로이드 `ui/auth/AuthEmail.kt` 의 `AuthEmailPattern`
+ *  - iOS `AuthEmailFormat.swift` 의 `AuthEmailFormat.pattern`
+ */
+export const EMAIL_PATTERN =
+  "^(?:[A-Za-z0-9_'+-]+\\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\\.)+[A-Za-z]{2,}$";
+
+const EMAIL_RE = new RegExp(EMAIL_PATTERN);
+
+/**
+ * 형식을 보기 **전에** 거치는 정규화. 자동완성·복사붙여넣기가 붙이는 앞뒤 공백과
+ * 대문자를 여기서 걷어낸다 — 순서가 뒤집히면 공백 하나에 400 이 난다.
+ * 앱의 짝: 안드로이드 `normalizeAuthEmail`, iOS `AuthEmailFormat.normalize`.
+ */
+export function normalizeEmail(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+/** 정규화한 값이 [EMAIL_PATTERN] 에 맞는가. 세 구현이 같은 답을 내야 한다. */
+export function isValidEmailFormat(value: string): boolean {
+  return EMAIL_RE.test(normalizeEmail(value));
+}
+
+/**
+ * 이메일을 받는 **모든** 요청이 쓰는 스키마. 새 경로가 이메일을 받으면 자체
+ * `z.string().email()` 을 쓰지 말고 이걸 가져다 쓴다 — 같은 값에 규칙이 여러 개면
+ * 가장 느슨한 경로가 실질 규칙이 된다.
+ *
+ * `issue.path` 는 계속 필드 한 칸(`['email']`)이다 — 백엔드의
+ * `isEmailOnlyValidationFailure` 가 그걸 보고 `AUTH_EMAIL_INVALID` 로 답한다.
+ */
+export const EmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine((value) => EMAIL_RE.test(value), {
+    message: '이메일 주소 형식이 올바르지 않습니다',
+  });
+
 export const EmailVerificationRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
 });
 export type EmailVerificationRequest = z.infer<typeof EmailVerificationRequestSchema>;
 
 export const EmailVerificationConfirmRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   code: EmailVerificationCodeSchema,
 });
 export type EmailVerificationConfirmRequest = z.infer<typeof EmailVerificationConfirmRequestSchema>;
 
 export const PasswordResetRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
 });
 export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
 
 export const PasswordResetConfirmRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   code: EmailVerificationCodeSchema,
   password: PasswordSchema,
 });
@@ -106,15 +163,30 @@ export const DisplayNameSchema = z
   });
 
 export const RegisterRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   password: PasswordSchema,
   email_verification_code: EmailVerificationCodeSchema,
   name: DisplayNameSchema,
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 
+/**
+ * 로그인 요청.
+ *
+ * ⚠ **이메일은 형식을 보기 전에 정규화한다.** `trim()`·`toLowerCase()` 를 `.email()`
+ * **앞**에 두는 것이 전부지만, 순서가 뒤집히면 앞뒤 공백 하나에 400 이 난다. 예전에는
+ * 여기서 `z.string().email()` 만 보고 정규화는 라우트(`routes/auth.ts`)가 **검증 뒤에**
+ * 했다 — 그래서 자동완성·복사붙여넣기가 붙인 공백이나 대문자로 친 주소가 DB 까지
+ * 가 보지도 못하고 `AUTH_VALIDATION_FAILED` 로 잘렸다. 가입(`RegisterRequestSchema`)도
+ * 라우트에서 `normalizeAuthEmail` 로 같은 값을 만들므로, 저장된 행과 여기서 조회하는
+ * 키는 계속 일치한다. 정규화·형식 판정은 이제 [EmailSchema] 한 곳에 있다.
+ *
+ * 비밀번호는 **존재만 확인한다**(정책 재검증 금지). 로그인에 `PasswordSchema` 를 걸면
+ * 규칙을 올린 날 옛 비밀번호를 쓰던 사람이 로그인 자체를 못 하게 되고, 그건 사용자에게
+ * "비밀번호가 틀렸다" 로 읽힌다.
+ */
 export const LoginRequestSchema = z.object({
-  email: z.string().email(),
+  email: EmailSchema,
   password: z.string().min(1).max(128),
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;

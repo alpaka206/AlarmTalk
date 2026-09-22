@@ -1079,7 +1079,14 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
   // ⚠ 대괄호 태그는 이제 정상이다(C안). 막는 것은 **낭독돼 버리는 소괄호 지문**과
   // 저각성 지시뿐이다 — `（다정하게）` 는 ElevenLabs 가 태그로 안 읽고 글자로 읽는다.
   it('문구 안에 소괄호 지문이나 저각성 지시가 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    // ⚠ **세 회차 모두 답을 줘야 한다**(2026-09-21). 이 함수는 3회 재시도한다 — 한 개만
+    //   큐에 넣으면 2·3회차는 목이 "큐가 비었다" 로 **던져서**, 마지막 실패가 내용 위반이
+    //   아니라 전송 실패가 된다. 예전에는 마지막에 무조건 `AlarmTextPreparationInvalidError`
+    //   로 덮어써서 그 어긋남이 가려졌다(ALARMTALK-BACKEND-9 — 이제 원본을 그대로 올린다).
+    //   즉 이 테스트는 내내 **엉뚱한 실패**를 검사하고 있었다.
+    for (let i = 0; i < 3; i += 1) {
+      queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
+    }
     await expect(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);

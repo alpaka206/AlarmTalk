@@ -44,6 +44,9 @@ final class StockClipPrefetcher: ObservableObject {
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
+    /// 지금 도는 회차가 받기로 한 **내 목소리** id 들. `start` 가 더 넓은 대상을 가져오면 그
+    /// 회차를 끊고 넓은 대상으로 다시 시작한다(`shouldRestart`). 회차가 끝나거나 취소되면 비운다.
+    private(set) var runningOwnedVoiceProfileIDs: Set<String> = []
     /// `start` 마다 올리는 세대. **취소된 앞 회차가 뒤늦게 상태를 덮어쓰지 못하게** 한다 —
     /// 취소는 배치 경계에서만 확인되므로, 앞 회차가 마지막 배치를 끝내고 `.finished` 를
     /// 쓰면 새 회차가 받는 중인데도 받기 화면이 닫혔다.
@@ -67,28 +70,57 @@ final class StockClipPrefetcher: ObservableObject {
     ///   프리셋도 미리 받는다 — 등록은 서버 생성 + 다운로드가 끝나야 끝난 것이기 때문이다.
     ///   ⚠ **공유받은 목소리는 넣지 않는다.** 그룹원 수만큼 곱해져 용량이 커지는데 실제로
     ///   쓰는 것은 보통 하나다. 그건 알람에서 **고르는 순간** 받는다.
+    /// 이미 도는 회차가 있을 때 새 `start` 가 그 회차를 끊고 다시 시작해야 하는가 — 대상이
+    /// **넓어질 때만**이다(코덱스 #788 4차).
+    ///
+    /// 왜: 콜드 스타트·로그인에서는 내 목소리 목록이 아직 서버에서 오기 전이라 첫 `start` 는
+    /// 기본 목소리만 대상으로 돈다. 목록이 도착해 `AlarmTalkApp` 이 내 클론 id 를 실어 다시
+    /// 부를 때 "이미 돌고 있다" 로 무시하면, 그 클론의 사전렌더 클립은 **이 세션 내내** 안
+    /// 받아진다(다음 `start` 는 포그라운드 복귀·언어 변경뿐이다). 반대로 좁은 대상(빈 집합)으로
+    /// 온 호출이 넓은 회차를 끊으면 안 된다 — 같은 시점에 도는 계정 키 `.task` 가 그렇다.
+    /// 안드로이드는 워커 안에서 `listVoiceProfiles` 로 대상을 스스로 정하므로 이 문제가 없다.
+    static func shouldRestart(running: Set<String>, requested: Set<String>) -> Bool {
+        !requested.isSubset(of: running)
+    }
+
     func start(
         session: AuthSession?,
         language: String = VoiceStudioViewModel.appVoiceLanguage(),
         ownedVoiceProfileIDs: Set<String> = []
     ) {
-        guard task == nil, let token = session?.token else { return }
-        let owned = ownedVoiceProfileIDs
+        guard let session else { return }
+        var owned = ownedVoiceProfileIDs
+        if task != nil {
+            guard Self.shouldRestart(running: runningOwnedVoiceProfileIDs, requested: owned) else { return }
+            // 좁아지는 쪽으로는 끊지 않으니, 다시 시작하는 회차는 두 대상의 합이다.
+            owned.formUnion(runningOwnedVoiceProfileIDs)
+            cancel()
+        }
+        runningOwnedVoiceProfileIDs = owned
         generation += 1
         let gen = generation
+        // 잡아 둔 세션은 재시도 회차가 그대로 쓴다 — 요청의 bearer 와 매니페스트 임자(user id)
+        // 로만 쓰인다. ⚠ 공개 판정에 이 토큰을 대조하지 않는다(`StockClipManifestStore.save`
+        // 주석): 롤링 갱신으로 키체인 토큰이 바뀌면 회차마다 `.superseded` 가 반복돼 아무도
+        // 매니페스트를 공개하지 못했다. 계정 경계는 파일 임자 + `clear` 의 표 무효화가 지킨다.
         task = Task { [weak self] in
             // ⚠ **재시도가 없으면 한 번의 일시 실패가 영구가 된다.** 안드로이드는 WorkManager
             // 가 30초 백오프로 다시 돌리는데, iOS 에는 그 장치가 없어 콜드 스타트에서 한 번
             // 실패하면 그 실행 내내 테마 클립이 비어 있었다.
+            // 재시도하는 것은 `.failed`(네트워크·디스크 실패·다 못 받음)뿐이다 — 공개 경합에서
+            // 물러난 회차(`.superseded`)는 실패가 아니라 여기로 오지 않는다(`run` 주석).
             for attempt in 0..<Self.maxAttempts {
                 if Task.isCancelled { break }
-                await self?.run(token: token, language: language, ownedVoiceProfileIDs: owned, gen: gen)
+                await self?.run(session: session, language: language, ownedVoiceProfileIDs: owned, gen: gen)
                 guard await self?.state == .failed else { break }
                 if attempt < Self.maxAttempts - 1 {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
                 }
             }
-            if self?.generation == gen { self?.task = nil }
+            if self?.generation == gen {
+                self?.task = nil
+                self?.runningOwnedVoiceProfileIDs = []
+            }
         }
     }
 
@@ -142,6 +174,7 @@ final class StockClipPrefetcher: ObservableObject {
     func cancel() {
         task?.cancel()
         task = nil
+        runningOwnedVoiceProfileIDs = []
         generation += 1
     }
 
@@ -152,25 +185,122 @@ final class StockClipPrefetcher: ObservableObject {
     }
 
     /// 받을 목록 중 **아직 캐시에 없는(또는 낡은) 것**.
-    private static func missingClips(_ clips: [StockClip]) -> [StockClip] {
-        let cache = AudioCacheStore.shared
+    ///
+    /// ⚠ **클립마다 캐시를 따로 묻지 말 것**(2026-09-21). `cachedURL`·`isStale` 은 부를
+    /// 때마다 캐시 디렉터리를 통째로 훑어서, 클립 76개면 한 번 세는 데 전량 스캔이
+    /// **152회** 돌았다. 그걸 부르는 자리가 전부 **메인 액터**다 — 2초 폴링
+    /// (`Views/Auth/StockReplacementView`), 1.5초 폴링(`ClonePrerenderDrive`), 목소리 목록
+    /// 본문(`Views/Voices/VoiceProfileManagementPanel`), 그리고 아래 `run` 이 배치마다 하는
+    /// 진행률 갱신까지. 한 번에 물어 한 번만 훑는다(`AudioCacheStore.missingOrStaleCacheKeys`).
+    ///
+    /// ⚠ **`internal`인 이유는 회귀 테스트다**(`AlarmTalkTests/StockClipProgressScanTests`) —
+    /// 스캔 횟수를 세어 이 회귀가 다시 들어오는 것을 막는다. 앱에서는 이 파일 안에서만 쓴다.
+    static func missingClips(_ clips: [StockClip]) -> [StockClip] {
+        guard !clips.isEmpty else { return [] }
+        let missingKeys = AudioCacheStore.shared.missingOrStaleCacheKeys(
+            clips.map { clip -> (cacheKey: String, remoteAudioUri: String?) in
+                (
+                    cacheKey: AudioCacheStore.stockCacheKey(messageId: clip.messageId),
+                    remoteAudioUri: clip.audioUrl
+                )
+            }
+        )
+        guard !missingKeys.isEmpty else { return [] }
         return clips.filter {
-            let key = AudioCacheStore.stockCacheKey(messageId: $0.messageId)
-            return cache.cachedURL(for: key) == nil
-                || cache.isStale(cacheKey: key, remoteAudioUri: $0.audioUrl)
+            missingKeys.contains(AudioCacheStore.stockCacheKey(messageId: $0.messageId))
         }
+    }
+
+    static func missingClipsOffMain(
+        _ clips: [StockClip],
+        audioCache: AudioCacheStore = .shared
+    ) async -> [StockClip] {
+        let requests = clips.map {
+            (cacheKey: AudioCacheStore.stockCacheKey(messageId: $0.messageId), remoteAudioUri: $0.audioUrl)
+        }
+        let missing = await Task.detached(priority: .utility) {
+            audioCache.missingOrStaleCacheKeys(requests)
+        }.value
+        return clips.filter { missing.contains(AudioCacheStore.stockCacheKey(messageId: $0.messageId)) }
+    }
+
+    static func progressOffMain(
+        voiceProfileID: String? = nil,
+        language: String = VoiceStudioViewModel.appVoiceLanguage()
+    ) async -> (done: Int, total: Int)? {
+        let owner = KeychainStore.readSession()?.user.id
+        let manifest = await Task.detached(priority: .utility) {
+            StockClipManifestStore.load(ownerUserID: owner)
+        }.value
+        guard let manifest, !Task.isCancelled,
+              KeychainStore.readSession()?.user.id == owner else { return nil }
+        let targets = manifest.clips.filter {
+            if let voiceProfileID { return $0.voiceProfileId == voiceProfileID }
+            return isDefaultVoiceTarget($0, language: language)
+        }
+        if voiceProfileID != nil, targets.isEmpty { return nil }
+        let missing = await missingClipsOffMain(targets)
+        guard !Task.isCancelled, KeychainStore.readSession()?.user.id == owner else { return nil }
+        return (targets.count - missing.count, targets.count)
     }
 
     /// 한 회차 안에서 빠진 클립을 다시 받는 횟수. 동시에 같은 파일을 쓰다 실패한 것처럼
     /// 곧바로 다시 받으면 되는 실패를 30초 대기로 미루지 않는다.
     private static let passesPerRun = 3
 
-    private func run(token: String, language: String, ownedVoiceProfileIDs: Set<String> = [], gen: Int) async {
+    private func run(session: AuthSession, language: String, ownedVoiceProfileIDs: Set<String> = [], gen: Int) async {
         setState(.running(done: 0, total: 0), gen: gen)
+        let token = session.token
+        let ticket = StockClipManifestStore.beginFetch(session: session)
         do {
-            let manifest = try await api.getStockClipManifest(token: token)
+            let fetched = try await api.getStockClipManifest(token: token)
             // 알람 관문(`defaultVoiceProgress`)이 오프라인 콜드스타트에서도 같은 목록을 보게 남긴다.
-            StockClipManifestStore.save(manifest)
+            guard !Task.isCancelled, gen == generation else { return }
+            // 이 회차가 실제로 받을 목록. 공개에 이겼으면 방금 받은 것, 졌으면 **디스크의 권위**다.
+            let manifest: StockClipListResponse
+            // ⚠ **`.published` 가 아니면 전부 실패로 뭉치지 말 것**(2026-09-22 정정).
+            // 세 결과의 뜻이 다르다 — 안드로이드 `StockClipPrefetchWorker` 의 `when` 과 같은
+            // 세 갈래로 가른다.
+            switch StockClipManifestStore.save(fetched, ticket: ticket) {
+            case .published:
+                manifest = fetched
+            case .superseded:
+                // **더 새 매니페스트가 이미 공개됐다 — 정상 경합이지 실패가 아니다.**
+                // 실제로 늘 일어나는 순서다: 로그인·콜드스타트에서 `AlarmTalkApp` 의
+                // `.task(id: auth.session?.user.id)` 가 부르는 `start`(표 N)와
+                // `.task(id: stockClipLanguageKey)` → `loadStockClips(force: true)`(표 N+1)가
+                // 같은 엔드포인트를 거의 동시에 부르고, 등록 흐름에서는 `ClonePrerenderDrive` 가
+                // 다운로드 구간에 들어가는 순간 완료 푸시의 `loadStockClips(force: true)` 가
+                // 겹친다. 뒤 표가 먼저 공개되면 앞 표는 여기로 온다.
+                // 예전에는 이걸 `.failed` 로 뭉쳐서 바깥 루프가 30초를 자고 재시도했고, 그동안
+                // `VoiceSetupView` 는 「목소리를 받지 못했어요」+'다시 시도' 를 띄웠으며,
+                // 등록 진행률은 50% 에 30초 멈췄다(드라이브는 1.5초마다 `start` 를 부르지만
+                // `guard task == nil` 이라 자는 회차를 못 깨운다). 안드로이드 원본은
+                // SUPERSEDED 를 「물러난다 = 성공」으로 끝낸다.
+                // 물러나되 **받는 일은 이어 간다** — 안드로이드는 이긴 쪽이 워커를 다시 걸지만
+                // iOS 의 `loadStockClips` 는 공개만 하고 받지 않으므로, 여기서 이긴 매니페스트
+                // (디스크)를 다시 읽어 그 목록으로 받는다. 받는 목록과 진행률(`defaultVoiceProgress`
+                // 도 디스크를 읽는다)이 같은 권위를 보게 된다.
+                // 디스크에 아무것도 없으면(로그아웃으로 `clear` 됐거나 이긴 쪽의 쓰기가 실패해
+                // 아무도 공개하지 못했다) 받을 근거가 없으니 물러난다 — 실패가 아니므로
+                // 30초 재시도 루프를 돌리지 않는다. 다음 `start`(포그라운드 복귀·알람 관문)가
+                // 새 표로 다시 받아 온다.
+                let owner = session.user.id
+                let winner = await Task.detached(priority: .utility) {
+                    StockClipManifestStore.load(ownerUserID: owner)
+                }.value
+                guard !Task.isCancelled, gen == generation else { return }
+                guard let winner else {
+                    setState(.finished, gen: gen)
+                    return
+                }
+                manifest = winner
+            case .failed:
+                // **디스크 쓰기 실패만 실패다.** 아무도 새 권위를 공개하지 못한 상태라 재시도가
+                // 맞다(안드로이드는 `Result.retry()`).
+                setState(.failed, gen: gen)
+                return
+            }
             let clips = manifest.clips.filter { clip in
                 if isSystemVoiceId(clip.voiceProfileId) {
                     return Self.isDefaultVoiceTarget(clip, language: language)
@@ -183,7 +313,7 @@ final class StockClipPrefetcher: ObservableObject {
             }
             guard !clips.isEmpty else { setState(.finished, gen: gen); return }
 
-            var missing = Self.missingClips(clips)
+            var missing = await Self.missingClipsOffMain(clips)
             setState(.running(done: clips.count - missing.count, total: clips.count), gen: gen)
 
             // ⚠ **'하나라도 받았으면 끝' 으로 판정하지 말 것**(2026-09-17 실기기). 예전에는
@@ -203,6 +333,7 @@ final class StockClipPrefetcher: ObservableObject {
                                         id: clip.messageId,
                                         token: token
                                     )
+                                    try Task.checkCancellation()
                                     _ = try await AudioCacheStore.cacheStockClipOffMain(
                                         audio: response,
                                         messageId: clip.messageId,
@@ -217,11 +348,11 @@ final class StockClipPrefetcher: ObservableObject {
                         }
                     }
                     setState(
-                        .running(done: clips.count - Self.missingClips(clips).count, total: clips.count),
+                        .running(done: clips.count - (await Self.missingClipsOffMain(clips)).count, total: clips.count),
                         gen: gen
                     )
                 }
-                missing = Self.missingClips(clips)
+                missing = await Self.missingClipsOffMain(clips)
             }
             setState(missing.isEmpty ? .finished : .failed, gen: gen)
         } catch {

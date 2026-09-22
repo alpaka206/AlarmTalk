@@ -156,7 +156,8 @@ enum RemoteAlarmMapper {
             messageId: messageId,
             voiceProfileId: voiceProfileId,
             targetUserId: nil,
-            bucketId: trimmedOrNil(local.bucketId)
+            bucketId: trimmedOrNil(local.bucketId),
+            clientAlarmId: local.id
         )
     }
 

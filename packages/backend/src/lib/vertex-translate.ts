@@ -70,11 +70,54 @@ export class AlarmTextTranslationUnavailableError extends Error {
   }
 }
 
+/**
+ * 문구를 **왜** 거절했는가 — 사유 식별자. 구조화 로그·Sentry 태그로 그대로 나간다.
+ *
+ * ⚠ **낭독 문구 원문을 여기(또는 에러 메시지)에 담지 말 것.** 개인 목소리 콘텐츠라
+ * 관측 파이프라인으로 흘려보낼 값이 아니다 — 무엇에 걸렸는지를 가리키는 이름만 싣는다.
+ *
+ * `upstream_unavailable` 만 성격이 다르다: 모델이 **낸 내용**이 아니라 **전송이 실패**한
+ * 것이라 대응이 정반대다(프롬프트를 고칠 일이 아니라 상류·쿼터·자격증명을 본다).
+ */
+export type AlarmTextRejectionReason =
+  | 'unspecified'
+  /** Vertex 자격증명/설정이 없다 — 환경 문제. */
+  | 'vertex_not_configured'
+  /** 네트워크·인증·상류 5xx. 내용 위반이 아니다. */
+  | 'upstream_unavailable'
+  /** 태그를 벗기면 낭독할 말이 하나도 없다. */
+  | 'empty_spoken'
+  /** 'here is the json' 류의 메타 응답. */
+  | 'meta_json'
+  | 'too_long'
+  | 'language_mismatch'
+  /** 소괄호 지문 또는 저각성 태그 — 낭독돼 버리거나 기상을 방해한다. */
+  | 'stage_direction'
+  /** 청자 호칭을 우리가 준 것과 다르게 불렀다. */
+  | 'listener_address'
+  /** 관계 라벨('엄마')이 문장에 그대로 샜다. */
+  | 'relationship_leak';
+
 export class AlarmTextPreparationInvalidError extends Error {
-  constructor() {
-    super('Alarm text preparation returned invalid content.');
+  /**
+   * 무엇에 걸렸는가. **원문은 담지 않는다** — 식별자만이라 그대로 로그·태그로 내보낼 수 있다.
+   */
+  readonly reason: AlarmTextRejectionReason;
+
+  constructor(reason: AlarmTextRejectionReason = 'unspecified', options?: { cause?: unknown }) {
+    super(`Alarm text preparation returned invalid content (${reason}).`, options);
     this.name = 'AlarmTextPreparationInvalidError';
+    this.reason = reason;
   }
+}
+
+/**
+ * 이 실패가 **내용 위반**이면 그 사유, 아니면 null(= 전송·인가 등 그 밖의 실패).
+ *
+ * 관측 쪽(cron 캡처)이 둘을 갈라 보기 위한 유일한 판정이다 — 문자열 매칭으로 흉내 내지 말 것.
+ */
+export function alarmTextRejectionReasonOf(error: unknown): AlarmTextRejectionReason | null {
+  return error instanceof AlarmTextPreparationInvalidError ? error.reason : null;
 }
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
@@ -253,9 +296,12 @@ export async function prepareAlarmTextWithVertex(
       temperature: 0.15,
       maxOutputTokens: 256,
     });
-  } catch {
+  } catch (err) {
     if (shouldTranslate) {
-      throw new AlarmTextPreparationInvalidError();
+      // ⚠ **전송 실패다 — 내용 위반이 아니다.** 이 라우트의 502(`TEXT_PREPARATION_FAILED`)
+      // 계약은 그대로 둬야 해서 클래스는 바꾸지 않고, 사유와 `cause` 만 실어 보낸다.
+      // 그래야 Sentry 에서 "모델이 금지 문장을 낸다" 와 갈라 볼 수 있다.
+      throw new AlarmTextPreparationInvalidError('upstream_unavailable', { cause: err });
     }
     const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
     return {
@@ -275,7 +321,7 @@ export async function prepareAlarmTextWithVertex(
     (!parsed.parsedJson && isMetaJsonResponse(raw))
   ) {
     if (shouldTranslate) {
-      throw new AlarmTextPreparationInvalidError();
+      throw new AlarmTextPreparationInvalidError(!preparedText ? 'empty_spoken' : 'meta_json');
     }
     preparedText = fallbackText;
   }
@@ -1012,7 +1058,7 @@ export async function generatePrerenderClipText(
 ): Promise<{ text: string; tag: string }> {
   const targetLanguage = params.targetLanguage || 'ko';
   if (!hasGeminiConfiguration(env)) {
-    throw new AlarmTextPreparationInvalidError();
+    throw new AlarmTextPreparationInvalidError('vertex_not_configured');
   }
   // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
   // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
@@ -1067,19 +1113,12 @@ export async function generatePrerenderClipText(
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
-    if (
-      // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
-      // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
-      // 클립이 영구 저장된다.
-      !spoken ||
-      isMetaJsonResponse(text) ||
-      spoken.length > 200 ||
-      hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle) ||
-      hasDeliveryTagOrStageDirection(text) ||
-      hasUnsupportedListenerAddress(spoken, params.listenerTitle) ||
-      hasRelationshipLabelLeak(spoken, params.relationshipLabel, params.listenerTitle, targetLanguage)
-    ) {
-      lastError = new AlarmTextPreparationInvalidError();
+    // ⚠ **사유를 잃지 말 것**(2026-09-21, ALARMTALK-BACKEND-9). 예전에는 검사 일곱 개가
+    // 한 덩어리 `if` 였고 에러에는 아무것도 안 실려서, Sentry 에서 '길이 초과' 와 '관계
+    // 라벨 누출' 이 **같은 한 줄**로 보였다 — 무엇을 고쳐야 하는지 알 길이 없었다.
+    const reason = prerenderRejectionReason(spoken, text, targetLanguage, params);
+    if (reason) {
+      lastError = new AlarmTextPreparationInvalidError(reason);
       continue;
     }
     // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
@@ -1100,9 +1139,52 @@ export async function generatePrerenderClipText(
     }
     return { text, tag: primaryTag };
   }
-  throw lastError instanceof AlarmTextPreparationInvalidError
-    ? lastError
-    : new AlarmTextPreparationInvalidError();
+  // ⚠ **전송 실패를 내용 위반으로 둔갑시키지 말 것**(2026-09-21, ALARMTALK-BACKEND-9).
+  // 예전에는 세 회차가 전부 fetch 실패(타임아웃·상류 5xx·서브리퀘스트 소진)여도 마지막에
+  // `AlarmTextPreparationInvalidError` 를 **새로 만들어** 던졌다. 그 결과 둘이 망가졌다:
+  //  1. Sentry 에서 "모델이 금지 문장을 낸다" 와 "상류가 죽었다" 가 한 그룹이 됐다 —
+  //     전자는 프롬프트를, 후자는 쿼터·자격증명을 봐야 하는, 대응이 정반대인 문제다.
+  //  2. `runPrerenderBatch` 의 `String(genErr).includes('Too many subrequests')` 단축로가
+  //     **구조적으로 맞을 수 없었다** — 그 문자열이 덮여 사라진 뒤였다.
+  // 마지막 에러가 내용 위반이면 그대로, 아니면 **원본을 그대로** 올린다.
+  if (lastError !== null) throw lastError;
+  throw new AlarmTextPreparationInvalidError('unspecified');
+}
+
+/**
+ * 사전렌더 문구를 **왜** 거절했는가. 조건과 그 순서는 예전 한 덩어리 `if` 와 같다 —
+ * 판정을 바꾸는 변경이 아니라, 사유를 잃지 않게 하는 변경이다.
+ *
+ * ⚠ 반환값에 문구 원문을 섞지 말 것. 이 값은 그대로 Sentry 태그가 된다.
+ */
+function prerenderRejectionReason(
+  /** 태그를 벗긴 낭독 본문. 길이·언어·호칭·유출은 이걸로 잰다. */
+  spoken: string,
+  /** 모델이 준 원문(인라인 태그 포함). 형식·태그 검사만 이걸로 본다. */
+  text: string,
+  targetLanguage: string,
+  params: { listenerTitle?: string | null; relationshipLabel?: string | null },
+): AlarmTextRejectionReason | null {
+  // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
+  // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
+  // 클립이 영구 저장된다.
+  if (!spoken) return 'empty_spoken';
+  if (isMetaJsonResponse(text)) return 'meta_json';
+  if (spoken.length > 200) return 'too_long';
+  if (hasLanguageMismatch(spoken, targetLanguage, params.listenerTitle)) return 'language_mismatch';
+  if (hasDeliveryTagOrStageDirection(text)) return 'stage_direction';
+  if (hasUnsupportedListenerAddress(spoken, params.listenerTitle)) return 'listener_address';
+  if (
+    hasRelationshipLabelLeak(
+      spoken,
+      params.relationshipLabel,
+      params.listenerTitle,
+      targetLanguage,
+    )
+  ) {
+    return 'relationship_leak';
+  }
+  return null;
 }
 
 /**

@@ -8,6 +8,48 @@ import BackgroundTasks
 import AlarmKit
 #endif
 
+// MARK: - BackgroundRefreshTaskHandle
+//
+// 런치 핸들러가 받는 task 의 **최소 계약**. 핸들러와 사이클이 task 에게 실제로 시키는 일은
+// 두 가지뿐이다 — 만료 핸들러를 걸고, 끝났다고 알리는 것.
+//
+// 왜 프로토콜로 자르나: `BGAppRefreshTask` 는 **시스템만 만든다**(헤더에서 `init` 이
+// `NS_UNAVAILABLE`). 그래서 진짜 task 를 손에 쥘 수 없는 유닛 테스트는 런치 핸들러를
+// 아예 부를 수 없었고, 아래 격리 사고가 배포 전에 한 번도 걸리지 않았다.
+protocol BackgroundRefreshTaskHandle: AnyObject {
+    var expirationHandler: (() -> Void)? { get set }
+    func setTaskCompleted(success: Bool)
+}
+
+final class BackgroundTaskCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handle: (any BackgroundRefreshTaskHandle)?
+    private var essentialResult = false
+
+    init(_ handle: any BackgroundRefreshTaskHandle) { self.handle = handle }
+
+    func recordEssentialResult(success: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        essentialResult = success
+    }
+
+    func finish(success: Bool? = nil) {
+        lock.lock()
+        let task = handle
+        handle = nil
+        let result = success ?? essentialResult
+        lock.unlock()
+        task?.expirationHandler = nil
+        task?.setTaskCompleted(success: result)
+    }
+}
+
+#if canImport(BackgroundTasks)
+// 두 멤버는 `BGTask` 에 있다 — 상위에 한 번만 붙이면 `BGAppRefreshTask` 가 물려받는다.
+extension BGTask: BackgroundRefreshTaskHandle {}
+#endif
+
 // MARK: - BackgroundSyncTask
 //
 // Android `RemoteAlarmSyncScheduler` (WorkManager 15 분 주기 + initial run) 의
@@ -79,10 +121,10 @@ final class BackgroundSyncTask {
 
     /// 의존성이 준비되면 채워지는 **실행기**. 등록(아래 `registerLaunchHandler`)은 launch
     /// 중에 끝나야 하는데, 의존성(뷰모델들)은 그때 아직 없다 — 그래서 둘을 나눈다.
-    @MainActor private static var runner: ((BGAppRefreshTask) -> Void)?
+    @MainActor private static var runner: ((any BackgroundRefreshTaskHandle) -> Void)?
 
     /// 실행기가 준비되기 **전에** 시스템이 깨운 task. 준비되는 즉시 넘긴다.
-    @MainActor private static var pendingTask: BGAppRefreshTask?
+    @MainActor private static var pendingTask: (any BackgroundRefreshTaskHandle)?
 
     /// **launch 중에** 반드시 부른다(`didFinishLaunchingWithOptions`).
     ///
@@ -99,19 +141,47 @@ final class BackgroundSyncTask {
         #if canImport(BackgroundTasks)
         guard !didRegisterHandler else { return }
         didRegisterHandler = true
+        // ⚠ **`@Sendable` 을 지우지 말 것 — 지우면 이 핸들러는 배달되는 순간 트랩한다**
+        // (2026-09-21, Sentry ALARMTALK-IOS-4/-7/-8). `launchHandler` 는 SDK 에
+        // `void (^)(BGTask *)` 로 선언돼 있어 **Sendable 표기가 없는** 클로저다. 표기가
+        // 없으면 클로저가 감싸는 `@MainActor` 클래스의 격리를 그대로 물려받는데, `using: nil`
+        // 은 헤더 문서 그대로 **기본 백그라운드 큐**다 — Swift 6 이 클로저 진입부에 심는
+        // 동적 격리 검사가 거기서 즉시 실패한다(`dispatch_assert_queue(main)`).
+        // 잃은 것은 크래시 한 줄이 아니라 **백그라운드 사이클 전체**였다: 토큰 롤링 갱신·못
+        // 끊은 예약 회수·목소리 접근권 재확인·push/pull·날씨 variant·리컨사일러가 한 번도
+        // 돈 적이 없다(`runAndSchedule`).
+        // `@Sendable` 클로저는 격리를 물려받지 않으므로 그 검사가 아예 심기지 않는다.
+        // 메인 액터로의 이동은 아래 `handleLaunch` 가 **명시적으로** 한다.
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: taskIdentifier,
             using: nil
-        ) { task in
+        ) { @Sendable task in
             guard let refresh = task as? BGAppRefreshTask else {
                 task.setTaskCompleted(success: false)
                 return
             }
-            Task { @MainActor in
-                if let runner { runner(refresh) } else { pendingTask = refresh }
-            }
+            Self.handleLaunch(refresh)
         }
         #endif
+    }
+
+    /// 시스템이 **백그라운드 큐에서** 배달한 task 를 메인 액터의 실행기로 인계한다.
+    ///
+    /// ⚠ **`nonisolated` 를 지우지 말 것.** 이 함수에 메인 액터 격리가 붙으면 위 런치
+    /// 핸들러가 다시 메인 큐를 요구하게 되고 같은 트랩이 그대로 되돌아온다. 큐를 건너는
+    /// 일은 **여기 안의 `Task` 하나**로만 한다.
+    ///
+    /// 인자를 `BGAppRefreshTask` 가 아니라 프로토콜로 받는 이유는 테스트다 — 진짜 task 는
+    /// 시스템만 만든다(`BackgroundRefreshTaskHandle` 주석).
+    /// 회귀 테스트: `AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`.
+    nonisolated static func handleLaunch(_ task: some BackgroundRefreshTaskHandle) {
+        // task 는 Sendable 이 아니다. 시스템이 이 큐로 넘긴 뒤로는 아무도 건드리지 않으니
+        // 메인 액터로 옮기는 것이 안전한데, 컴파일러에 그 사실을 말해 줄 수단이
+        // `nonisolated(unsafe)` 뿐이다(없으면 `sending ... risks causing data races`).
+        nonisolated(unsafe) let handle = task
+        Task { @MainActor in
+            if let runner { runner(handle) } else { pendingTask = handle }
+        }
     }
 
     /// 실제 작업 실행기를 꽂는다. 의존성이 준비된 뒤(앱 화면 진입) 한 번 부른다.
@@ -127,7 +197,7 @@ final class BackgroundSyncTask {
         #if canImport(BackgroundTasks)
         // ⚠ 여기서 `BGTaskScheduler.register` 를 **다시 부르지 말 것** — 같은 식별자로 두 번
         // 등록하면 크래시한다. 등록은 `registerLaunchHandler` 가 launch 중에 끝냈다.
-        let run: @MainActor (BGAppRefreshTask) -> Void = { refresh in
+        let run: @MainActor (any BackgroundRefreshTaskHandle) -> Void = { refresh in
             // ⚠ Task 핸들을 잡아 둔다. 잡지 않으면 만료·타임아웃에서 `setTaskCompleted` 만
             // 부르고 **실행 중인 사이클은 그대로 살아 있다** — 앱이 서스펜드되면 await 가
             // 매달려 있다가 다음 포그라운드 복귀 때 재개돼, 그때 도는 foreground 사이클과
@@ -145,7 +215,11 @@ final class BackgroundSyncTask {
                 await runner.runAndSchedule(task: refresh)
             }
             // 시스템이 예산을 회수하면 실행 중인 사이클도 함께 접는다.
-            refresh.expirationHandler = { work.cancel() }
+            // ⚠ **`@Sendable` 을 명시한다.** 만료 핸들러도 시스템이 **어느 큐에서든** 부른다.
+            // 지금 본문은 `Task.cancel()`(Sendable) 하나뿐이라 표기가 없어도 컴파일되지만,
+            // 한 줄만 늘어나면 메인 액터 격리를 물려받은 채 백그라운드에서 불리는 —
+            // 위 런치 핸들러와 똑같은 — 덫이 된다.
+            refresh.expirationHandler = { @Sendable in work.cancel() }
         }
         Task { @MainActor in
             runner = run
@@ -168,15 +242,20 @@ final class BackgroundSyncTask {
     ///   3. push -> pull 순서로 실행 (로컬 변경을 먼저 서버에 올린 뒤 최신 상태를 내려받기)
     ///   4. setTaskCompleted: 성공/실패 모두 호출
     #if canImport(BackgroundTasks)
-    func runAndSchedule(task: BGAppRefreshTask) async {
+    func runAndSchedule(task: any BackgroundRefreshTaskHandle) async {
         scheduleNext()
+        let completion = BackgroundTaskCompletion(task)
 
         // ⚠ 등록부(`register`)가 이미 expirationHandler 로 Task 를 취소하도록 걸어 뒀다.
         // 여기서 덮어쓰면 그 취소가 사라지므로, 완료 통보만 **덧붙인다**.
-        let cancelWork = task.expirationHandler
-        task.expirationHandler = {
+        // ⚠ 여기도 `@Sendable` 을 명시한다(이유는 `registerLaunchHandler` 주석). 그러면
+        // 캡처 둘이 비-Sendable 이라 컴파일이 막히는데, 둘 다 **이 task 한 건에만** 묶인
+        // 값이고 만료 핸들러는 시스템이 한 번 부르고 스스로 비운다(헤더). 그래서
+        // `nonisolated(unsafe)` 로 받아 넘긴다.
+        nonisolated(unsafe) let cancelWork = task.expirationHandler
+        task.expirationHandler = { @Sendable in
             cancelWork?()
-            task.setTaskCompleted(success: false)
+            completion.finish()
         }
 
         let timeoutTask = Task { @MainActor in
@@ -199,7 +278,7 @@ final class BackgroundSyncTask {
             // 이어질 재시도 회차와 겹친다. 시스템 만료 경로(위 `expirationHandler`)는
             // 처음부터 취소하고 있었는데 우리 워치독만 안 했다.
             cancelWork?()
-            task.setTaskCompleted(success: false)
+            completion.finish()
         }
 
         do {
@@ -271,6 +350,10 @@ final class BackgroundSyncTask {
                 )
             }
             #endif
+            completion.recordEssentialResult(success: pullResult.failed == 0)
+            try Task.checkCancellation()
+            await UsageEventUploader.shared.flush(session: KeychainStore.readSession(), maxBatches: 1)
+            try Task.checkCancellation()
             timeoutTask.cancel()
 
             // Android `RemoteAlarmSyncWorker.doWork` 의 retry 조건과 동일:
@@ -282,16 +365,16 @@ final class BackgroundSyncTask {
             // 로 재예약하는 것이 가장 근접한 근사다(정확한 지수 백오프는 재현 불가).
             if pullResult.failed > 0 {
                 scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
-                task.setTaskCompleted(success: false)
+                completion.finish(success: false)
             } else {
-                task.setTaskCompleted(success: true)
+                completion.finish(success: true)
             }
         } catch {
             timeoutTask.cancel()
             // Android `RemoteAlarmSyncWorker` 의 외부 getOrElse { Result.retry() } 와 동일:
             // push/pull 이 예외를 던지면 표준 주기 대신 더 짧은 주기로 재시도를 유도한다.
             scheduleNext(earliestBeginDate: Date(timeIntervalSinceNow: Self.retryInterval))
-            task.setTaskCompleted(success: false)
+            completion.finish()
         }
     }
     #endif
@@ -304,11 +387,14 @@ final class BackgroundSyncTask {
     /// ⚠ **저장 직전에 Keychain 을 다시 읽는다.** 네트워크 왕복 중 로그아웃·계정 전환이
     /// 끼면 비운 저장소에 끝난 세션을 되쓰게 된다. 사용자 id 가 다르면 버린다
     /// (안드로이드는 같은 자리를 `saveTokenIfGeneration` 의 세션 세대로 막는다).
-    static func renewSessionTokenIfNeeded() async {
+    static func renewSessionTokenIfNeeded(
+        api: AuthAPIProviding = AlarmTalkAPI.shared,
+        auth: AuthViewModel = BackgroundDependencies.shared.auth
+    ) async {
         guard let session = KeychainStore.readSession(),
               SessionTokenRenewal.shouldRenew(token: session.token) else { return }
         do {
-            let (rolledToken, user) = try await AlarmTalkAPI.shared.me(token: session.token)
+            let (rolledToken, user) = try await api.me(token: session.token)
             // ⚠ **plan 도 반영한다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
             // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 예약·울림
             // 게이트가 읽는 값이 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 예약되거나,
@@ -322,15 +408,12 @@ final class BackgroundSyncTask {
             // 덮는다 — 계정 id 만 대조해서는 못 거른다(같은 id 다). 토큰 에폭까지 보는
             // `saveSessionIfCurrent` 로 원자적으로 바꾼다.
             // 세션과 판정 스냅샷을 **같은 잠금 안에서** 함께 바꾼다 — 문이 그 조합을 갖고 있다.
-            // 결과를 **일부러 버린다**(2026-09-02 리뷰에서 명시하기로 함). 거절은 '그 사이
-            // 로그아웃·재로그인이 있었다' 는 뜻인데, 이 함수는 여기서 끝나고 뒤따르는 상태
-            // 발행이 없다 — 그대로 두는 것이 맞다. 같은 파일의 다른 문 호출과 같은 처리다.
-            // (`AlarmTalkLog` 에는 오류 채널만 있어서, 이건 오류가 아니므로 남기지 않는다.)
-            _ = EntitlementWriter().renewSession(
+            let result = EntitlementWriter().renewSession(
                 AccessTicket(userID: session.user.id, token: session.token),
                 rolledToken: rolledToken,
                 plan: user.plan
             )
+            if result == .applied { auth.absorbStoredSession(from: session.token) }
         } catch {
             // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),
             // 다음 백그라운드 회차나 앱 오픈이 다시 시도한다.
@@ -383,4 +466,59 @@ final class BackgroundSyncTask {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
         #endif
     }
+
+    // MARK: - Testing support
+
+    #if DEBUG
+    /// 테스트가 잠시 밀어낸 **진짜 실행기**. 유닛 테스트는 호스트 앱 프로세스에서 돌아
+    /// launch 가 꽂아 둔 실행기가 이미 있다 — 테스트가 그걸 지운 채 끝내면 같은 프로세스의
+    /// 뒤따르는 테스트가 다른 상태를 본다.
+    @MainActor private static var runnerSavedByTest: ((any BackgroundRefreshTaskHandle) -> Void)?
+
+    /// 테스트가 밀어내기 **전에 이미 붙들려 있던 task**.
+    ///
+    /// 실행기와 **같이** 보관·복원해야 한다. 유닛 테스트는 호스트 앱 프로세스에서 돌고 그
+    /// 앱은 launch 에서 이미 런치 핸들러를 꽂았으므로, 테스트가 도는 중에도 시스템은 진짜
+    /// task 를 배달할 수 있다. 실행기가 아직 없어 보관 경로에 들어와 있던 그 task 를 주입구가
+    /// 그냥 `nil` 로 밀어 버리면 **그 회차가 통째로 사라진다** — 백그라운드로 깨어난 콜드
+    /// 실행에는 그 경로 말고 살 길이 없다.
+    @MainActor private static var pendingTaskSavedByTest: (any BackgroundRefreshTaskHandle)?
+    @MainActor private static var runnerOverriddenByTest = false
+
+    /// 테스트 전용 주입구(출시 빌드에는 없다). `handleLaunch` 가 메인이 아닌 큐에서 불려도
+    /// 메인 액터로 인계하는지 보려면 실행기가 있어야 하는데, 운영 경로(`register`)는 뷰모델
+    /// 일습을 요구해 유닛 테스트가 만들 수 없다. `nil` 을 주면 '실행기 없음'(보관 경로)이 된다.
+    @MainActor static func overrideRunnerForTesting(
+        _ handler: ((any BackgroundRefreshTaskHandle) -> Void)?
+    ) {
+        if !runnerOverriddenByTest {
+            runnerSavedByTest = runner
+            pendingTaskSavedByTest = pendingTask
+            runnerOverriddenByTest = true
+        }
+        runner = handler
+        // 보관 경로를 **비운 상태에서** 시작해야 테스트가 심은 task 만 보게 된다.
+        // 원래 있던 것은 위에서 챙겨 뒀고, 걷어낼 때 되돌린다.
+        pendingTask = nil
+    }
+
+    /// 주입을 걷어내고 앱이 launch 에서 꽂아 둔 실행기와 붙들려 있던 task 를 되돌린다.
+    ///
+    /// ⚠ **`pendingTask` 를 `nil` 로 밀어내지 말 것.** 치울 것은 **테스트가 심은 것**뿐이고,
+    /// 주입 전부터 있던 진짜 task 는 그대로 돌려놔야 한다. 저장해 둔 값이 있었다는 것은
+    /// 그때 실행기가 없었다는 뜻이므로(있었으면 `register` 가 이미 넘겼다), 실행기를 되돌리는
+    /// 것과 같은 짝으로 원래 상태가 복원된다.
+    @MainActor static func clearRunnerOverrideForTesting() {
+        guard runnerOverriddenByTest else { return }
+        runner = runnerSavedByTest
+        pendingTask = pendingTaskSavedByTest
+        runnerSavedByTest = nil
+        pendingTaskSavedByTest = nil
+        runnerOverriddenByTest = false
+    }
+
+    /// 실행기가 없을 때 붙들어 둔 task. 보관 경로가 사라지면 **백그라운드로 깨어난 콜드
+    /// 실행의 첫 회차**가 통째로 버려지므로 테스트가 이 값으로 고정한다.
+    @MainActor static var pendingTaskForTesting: (any BackgroundRefreshTaskHandle)? { pendingTask }
+    #endif
 }

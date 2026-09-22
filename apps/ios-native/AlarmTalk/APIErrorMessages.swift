@@ -17,6 +17,16 @@ import Foundation
 /// ⚠ **안드로이드 `network/ApiErrorMessages.kt` 와 같은 표다.** 한쪽에만 코드를 더하면
 /// 같은 실패가 두 앱에서 다르게 읽힌다 — 「iOS 는 안드로이드를 원본으로 삼는다」.
 enum APIErrorMessages {
+    /// 이메일 형식 오류 문구.
+    ///
+    /// **앱 1차 방어선과 서버 응답이 같은 말을 해야 한다** — `LoginView` 가 제출 전에
+    /// 잡을 때도, 서버가 `AUTH_EMAIL_INVALID` 로 돌려줄 때도 이 한 줄을 쓴다. 두 자리에
+    /// 리터럴을 따로 두면 번역 카탈로그 항목이 둘로 갈라진다(안드로이드는
+    /// `R.string.auth_error_email_invalid` 한 곳이다).
+    static var emailInvalid: String {
+        String(localized: "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요.")
+    }
+
     /// 이 코드에 정해 둔 문구. 없으면 nil — 부르는 쪽이 자기 폴백을 쓴다.
     ///
     /// ⚠ **모든 코드에 문구를 둘 필요는 없다.** `INVALID_JSON` 처럼 사용자가 할 수 있는 게
@@ -37,6 +47,11 @@ enum APIErrorMessages {
         // ── 로그인·계정 ───────────────────────────────────────────────────
         case "AUTH_INVALID_CREDENTIALS":
             return String(localized: "이메일 또는 비밀번호를 확인해 주세요.")
+        // 로그인 바디에서 **이메일만** 형식에 안 맞을 때. 예전에는 이것도
+        // `AUTH_VALIDATION_FAILED` 로 뭉뚱그려 와서 "로그인에 실패했어요" 로 읽혔고,
+        // 사용자는 멀쩡한 비밀번호를 계속 다시 쳤다.
+        case "AUTH_EMAIL_INVALID":
+            return emailInvalid
         case "AUTH_EMAIL_CODE_INVALID":
             return String(localized: "인증 코드가 맞지 않아요. 다시 확인해 주세요.")
         case "AUTH_EMAIL_CODE_EXPIRED":

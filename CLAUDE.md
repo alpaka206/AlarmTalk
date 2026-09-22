@@ -295,7 +295,7 @@
 
 | 빠진 권한 | 실제 결과 | 어떻게 말하나 |
 | --- | --- | --- |
-| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작하며, 울림 화면은 **기기 상태와 무관하게 언제나** 띄운다(`openRingingActivity`) | "알람 알림이 뜨지 않아요" |
+| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작한다. 단 **잠금 화면의 울림 화면은 알림(전체화면 인텐트)이 연다** — 알림 권한이 없으면 잠긴 채로는 소리만 나고 화면이 안 뜬다(아래 「잠금 화면 울림 화면」 절) | "알람 알림이 뜨지 않아요" |
 | 정확한 알람 | `setAndAllowWhileIdle` 폴백으로 **울리되 수 분 늦을 수 있다** | "제때 울리지 않을 수 있어요" |
 | 잠금 화면 | 소리는 나되 **잠금 화면을 못 덮는다** | "잠금 화면에 뜨지 않아요" |
 
@@ -446,7 +446,7 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
 
 | 스펙 | 다루는 것 |
 | --- | --- |
-| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **언제나 전체화면**, **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
+| [`docs/spec/alarm-ringing.md`](docs/spec/alarm-ringing.md) | **잠김=전체화면 / 앱 보임=전체화면 / 다른 앱=배너**(OS 가 가른다), **벗어나면=해제**, 스와이프=해제, 타임아웃 없음, 소리·음량, 권한별 사실 |
 | [`docs/spec/alarm-editor.md`](docs/spec/alarm-editor.md) | 편집기 — 타임휠(튕기면 굴러간다·숫자 탭은 **그 자리 입력**), 재생 방식 세그먼트, 모달 **세 형태** |
 | [`docs/spec/voice-and-message.md`](docs/spec/voice-and-message.md) | 재생 방식 2택, **문구 목록은 하나**(등급으로 안 자른다), 직전 선택 유지, 버킷 선다운로드 |
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
@@ -603,6 +603,69 @@ gainMb=600`)로 확인했고, 사용자가 맞춘 음량이 첫 회만 지켜지
   alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
   DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
   없어서 만든 진입점이다.
+
+### 잠금 화면 울림 화면은 **알림의 전체화면 인텐트**가 연다 (Android, 회귀 방지)
+
+서비스에서 `startActivity` 로 울림 화면을 띄우는 것은 **앱에 보이는 액티비티가 있을 때만**
+된다. Android 14+ 는 그 외(잠금 화면·다른 앱·홈)에서 예외 없이 조용히 막는다 — 2026-09-22
+S23 Ultra(Android 16) logcat: `Background activity launch blocked! … callingUidProcState:
+FOREGROUND_SERVICE … (BAL_BLOCK) result code=102`. 그래서 2026-09-09 의 "언제나 직접 띄운다"
+설계로는 **잠금 화면에서 소리만 나고 화면이 없었다**(양 테스트폰, 사용자 보고와 일치).
+
+- 잠긴 기기에서 화면을 여는 **유일한 공식 경로**는 HIGH 채널 알림의 `setFullScreenIntent` 다.
+  알림은 **처음부터** 갈래를 정해 올린다(`RingingNotificationFactory.initialVariant` — 판정은
+  "앱에 보이는 액티비티가 있는가" 하나): 없으면 ALERTING(HIGH·무음·전체화면 인텐트),
+  있으면 QUIET(LOW, 배너 없음 — 우리가 직접 띄우니 겹치면 안 된다).
+  판정은 `VisibleActivityTracker` 로 한다 — `ProcessLifecycleOwner` 는 마지막 액티비티가 멈춘 뒤
+  700ms 동안 STARTED 라, 알람 직전에 홈·전원을 누른 경우를 '보인다' 로 잘못 읽는다(코덱스 #788).
+- ⚠ **"안 뜨면 같은 알림을 승격" 으로 되돌리지 말 것.** 같은 알림 id 를 갱신하는 승격은
+  전체화면을 **한 번도 열지 못했다** — SystemUI 는 새로 추가된 알림에만 전체화면 인텐트를
+  검사한다. 승격이 필요하면(QUIET 로 시작했는데 안 뜸) **다른 id(1002)의 새 알림**으로 올린다.
+- ⚠ **열기 인텐트에 `FLAG_ACTIVITY_CLEAR_TASK` 를 넣지 말 것.** 시스템과 우리가 같은 화면을
+  연달아 열면 CLEAR_TASK 가 먼저 뜬 인스턴스를 파괴하고 그 `onStop` 이 '벗어났다' 로 읽혀
+  알람이 2초 만에 꺼진다(2026-09-09 A32). `singleTask` + `onNewIntent` 가 답이다 —
+  2026-09-22 A32 재확인: `START` 두 번, 인스턴스 하나, 자동 해제 없음.
+- ⚠ **채널 importance 는 만든 뒤 못 바꾼다** — id 를 새로 붙이고 옛 id 를 지운다
+  (`voice_alarm_ringing_v5` / `_quiet_v1`, 은퇴 목록은 `NotificationChannels`).
+- 회귀 테스트: `RingingNotificationDismissTest`(갈래별 채널·전체화면 인텐트·플래그). **잠금
+  화면에서 실제로 뜨는가는 실기기로만 확인된다** — `docs/spec/alarm-ringing.md` §1·「검증 방법」.
+
+### 시스템이 큐를 정하는 콜백에 **메인 액터 클로저**를 넘기지 않는다 (iOS, 회귀 방지)
+
+`BGTaskScheduler.register(..., using: nil) { task in ... }` 의 트레일링 클로저에 `@Sendable` 을
+안 붙이면 **감싸는 `@MainActor` 클래스의 격리를 물려받는다.** `using: nil` 은 헤더 문서대로
+"기본 **백그라운드** 큐" 라, Swift 6 이 클로저 진입부에 심는 동적 격리 검사가 배달 즉시 실패해
+`dispatch_assert_queue(main)` 으로 **프로세스가 죽는다**.
+
+- 2026-08-11~09-21 내내 그랬다(Sentry ALARMTALK-IOS-4, 6명·32건). **사용자 눈에는 안 보인다** —
+  시스템이 task 배달하려고 백그라운드로 띄운 프로세스라서. 대신 `runAndSchedule` 안의 것이
+  전부 죽은 코드였다(토큰 롤링 갱신·예약 회수·목소리 접근권 재확인·push/pull·리컨사일러).
+  **알람 자체는 AlarmKit 예약이라 울렸다** — 그래서 아무도 몰랐다.
+- 규칙: 그런 콜백은 `{ @Sendable ... }` 로 못 박고, 비-Sendable 인자는 `nonisolated(unsafe)` 지역
+  상수로 받아 `Task { @MainActor in }` 으로 넘긴다. `expirationHandler` 도 같다.
+- 강제: `scripts/check-bgtask-handler-isolation.py`(CI lint). 회귀 테스트는 **비격리 테스트
+  메서드**여야 한다 — `@MainActor` 클래스에 넣으면 이 버그를 구조적으로 못 잡는다
+  (`AlarmTalkTests/BackgroundSyncTaskLaunchHandlerTests`).
+
+### 테스트가 Sentry 로 쏘지 않게 한다 (양 앱)
+
+로보렉트릭이 매니페스트의 `AlarmTalkApplication` 을 그대로 띄우고, iOS 유닛 테스트는 TEST_HOST 로
+호스트 앱을 launch 한다 — **둘 다 프로덕션 초기화 경로를 탄다.** 2026-09-21 기준 Sentry 이벤트의
+99%(안드로이드 두 이슈만 10,256건)가 이 맥의 유닛 테스트였다. 진짜 사고가 그 사이에 묻힌다.
+
+- 안드로이드: `app/src/test/resources/robolectric.properties` 의 `application=android.app.Application`
+  (1차) + `AlarmTalkApplication.shouldInitializeSentry`(2차).
+- iOS: `AlarmTalkLog.shouldStartCrashReporting(dsn:isRunningTests:)`.
+- ⚠ **예외 이름·메시지로 거르지 말 것.** 실기기에서 올라오는 것은 무엇이든 그대로 올라가야 한다
+  (`WorkManager is not initialized` 는 실기기에서 나면 진짜 사고이고, 그 유일한 신호다).
+
+### UI 테스트는 CI 에서 돌지 않는다 — **낡은 줄 아무도 모른다** (iOS)
+
+`ios-build.yml` 은 유닛 테스트 + Release 빌드만 돌린다. `AlarmTalkUITests` 는 로컬에서만 도므로
+화면에서 없앤 행을 계속 찾는 테스트가 조용히 남는다. 실제로 같은 테스트가 두 번 낡았다 —
+'진동'(2026-08-17 삭제) → '다시 울림'(편집기에서 없앰) → 지금은 '목소리 크기'.
+**행 이름으로 검사할 때는 그 행이 지금 있는지, 어떤 조건에서 그려지는지 먼저 확인할 것**
+(예: '알람음' 행이 있는 '세부 설정' 카드는 `playMode != .voiceOnly` 일 때만 그려진다).
 
 ## 진행 중 작업 (세션 재개 시 먼저 읽을 것)
 현재 상태·폰 테스트 체크리스트·남은 follow-up: **[`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)**.

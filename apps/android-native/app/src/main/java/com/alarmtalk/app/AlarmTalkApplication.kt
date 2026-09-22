@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import android.app.Application
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -31,6 +32,10 @@ class AlarmTalkApplication : Application() {
         //  프로세스가 즉시 종료되던 문제를 방지. 실패는 로그로만 남기고 계속 진행.)
         runCatching { initializeSentry() }
             .onFailure { AlarmTalkLog.reportError("Sentry init failed", it) }
+        // 울림 알림의 갈래("앱에 보이는 액티비티가 있는가")가 읽는 카운터. 콜백 등록은 실패할
+        // 일이 없지만 같은 모양으로 감싼다 — 실패해도 앱 진입을 막지 않는다.
+        runCatching { com.alarmtalk.app.alarm.VisibleActivityTracker.install(this) }
+            .onFailure { AlarmTalkLog.reportError("VisibleActivityTracker install failed", it) }
         runCatching { NotificationChannels.ensure(this) }
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         // ⚠ **우리가 올려 둔 기기 알람 볼륨을 여기서도 되돌린다.** 울림은 서비스가 끝내면서
@@ -90,8 +95,8 @@ class AlarmTalkApplication : Application() {
 
     private fun initializeSentry() {
         val sentryDsn = BuildConfig.VOICE_ALARM_SENTRY_DSN.trim()
-        if (sentryDsn.isEmpty()) {
-            Log.i(TAG, "Sentry disabled; DSN is not configured")
+        if (!shouldInitializeSentry(sentryDsn, Build.FINGERPRINT)) {
+            Log.i(TAG, "Sentry disabled; dsnConfigured=${sentryDsn.isNotEmpty()} fingerprint=${Build.FINGERPRINT}")
             return
         }
 
@@ -122,3 +127,37 @@ class AlarmTalkApplication : Application() {
         }
     }
 }
+
+/**
+ * Robolectric 이 쓰는 `Build.FINGERPRINT` 값. 실기기 지문은
+ * `제조사/제품/기기:버전/빌드id/증분:타입/키` 꼴이라 이 값과 겹칠 수 없다.
+ * (android-all 의 `build.prop` 에 `ro.build.fingerprint=robolectric` 으로 박혀 있다.)
+ */
+internal const val ROBOLECTRIC_BUILD_FINGERPRINT = "robolectric"
+
+/**
+ * Sentry 를 **켤 것인가.**
+ *
+ * ⚠ **유닛 테스트에서는 켜지 않는다.** 이게 이 판정의 전부다 — 2026-09-21 기준 미해결
+ * ALARMTALK-ANDROID-2/-3 의 10,256건이 전부 JVM 테스트에서 올라온 것이었다. Robolectric 이
+ * 매니페스트의 [AlarmTalkApplication] 을 그대로 인스턴스화해 테스트마다 `onCreate()` 가
+ * 돌고, 그 첫 줄이 이 함수가 지키는 초기화다. 켜지고 나면 JVM 에 androidx.startup 도
+ * AndroidKeyStore 도 없어 WorkManager 예약과 `AuthSessionStore` 생성이 줄줄이 던지고,
+ * `onCreate` 의 `runCatching{}.onFailure{ reportError }` 가 그걸 전부 이슈로 올린다.
+ *
+ * ⚠ **막는 겹이 둘인 것은 일부러다.**
+ *  1. `app/src/test/resources/robolectric.properties` 의 `application=android.app.Application`
+ *     — 이 클래스가 아예 뜨지 않는다(프로덕션 코드 무변경).
+ *  2. 여기. 1번은 테스트가 `@Config(application = …)` 한 줄로 되돌릴 수 있고, 새로 만든
+ *     테스트 소스셋에는 딸려 가지도 않는다. **진짜 DSN 이 걸린 스위치**라 켜는 자리에서도
+ *     한 번 더 본다.
+ *
+ * ⚠ **메시지·예외 이름으로 거르지 말 것.** 실기기에서 WorkManager 초기화가 정말 깨졌을 때
+ * 우리에게 오는 **유일한 신호가 그 이벤트**다. 여기서 가르는 것은 "실행 환경이 테스트인가"
+ * 하나이고, 실기기에서 올라오는 것은 무엇이든 그대로 올린다.
+ *
+ * @param dsn `BuildConfig.VOICE_ALARM_SENTRY_DSN` 을 trim 한 값.
+ * @param buildFingerprint `Build.FINGERPRINT`.
+ */
+internal fun shouldInitializeSentry(dsn: String, buildFingerprint: String?): Boolean =
+    dsn.isNotEmpty() && buildFingerprint != ROBOLECTRIC_BUILD_FINGERPRINT

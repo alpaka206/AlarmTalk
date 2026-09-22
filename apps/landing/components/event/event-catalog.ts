@@ -44,7 +44,7 @@ export function sampleSrc(celebrityId: string, locale: string): string {
 }
 
 /** 메시지 종류. 순서가 곧 화면의 선택지 순서다. */
-export const MESSAGE_KINDS = ["birthday", "comfort"] as const;
+export const MESSAGE_KINDS = ["birthday", "chuseok"] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 
 /** 이름 상한. 영어 이름·성까지 들어가게 넉넉히(2026-09-15 지시). 한 문장의 호칭이라 닉네임(30)보다는 짧다. */

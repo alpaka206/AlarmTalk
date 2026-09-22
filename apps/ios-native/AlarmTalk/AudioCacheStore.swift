@@ -78,6 +78,51 @@ enum AudioCacheError: LocalizedError {
     }
 }
 
+#if DEBUG
+// MARK: - AudioCacheScanCounter
+/// **캐시 디렉터리를 통째로 훑은 횟수**(테스트 전용 계측, 출시 빌드에는 없다).
+///
+/// 선다운로드 진행률이 클립 하나당 디렉터리를 두 번씩 훑던 회귀를 테스트가 이 숫자로
+/// 고정한다(`AlarmTalkTests/StockClipProgressScanTests`). 스캔 자체가 syscall 덩어리라
+/// 잠금 한 번이 비용에 묻힌다.
+///
+/// ⚠ **전역 싱글턴으로 두지 말 것**(2026-09-21 정정). iOS 유닛 테스트는 **호스트 앱
+/// 프로세스**에서 돌고, 그 앱은 루트 뷰의 `.task` 에서 세션과 무관하게
+/// `Task.detached { audioCache.sweepStaleCache(...) }` 를 띄운다 — 그것도 같은 목록 함수를
+/// 부른다. 프로세스 전역 카운터였다면 초기화와 단언 **사이에 한 번만** 끼어들어도 테스트가
+/// 깨지는, 재현 안 되는 실패가 된다.
+///
+/// 그래서 관측자는 [current] 하나이고 **`@TaskLocal`** 이다 — 재는 쪽의 작업 범위 안에서
+/// 일어난 스캔만 센다. `Task.detached` 는 태스크 로컬을 **물려받지 않으므로** 그 청소는
+/// 여기 새지 않는다. 아무도 재고 있지 않으면 `nil` 이라 증가 비용도 없다.
+final class AudioCacheScanCounter: @unchecked Sendable {
+    /// 지금 재고 있는 관측자. 재는 쪽이 [measuringScans] 로 묶는 동안에만 채워진다.
+    @TaskLocal static var current: AudioCacheScanCounter?
+
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    fileprivate func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    /// `body` 를 돌리고, **그 안에서 일어난** 전량 스캔 횟수를 함께 돌려준다.
+    static func measuringScans<R>(_ body: () throws -> R) rethrows -> (result: R, scans: Int) {
+        let counter = AudioCacheScanCounter()
+        let result = try AudioCacheScanCounter.$current.withValue(counter, operation: body)
+        return (result, counter.count)
+    }
+}
+#endif
+
 // MARK: - AudioCacheKeyLocks
 /// **한 캐시키를 갈아끼우는 동안 다른 갈아끼우기가 끼어들지 못하게 한다**(Codex #703 P1).
 ///
@@ -466,7 +511,7 @@ final class AudioCacheStore {
     /// 콜드 스타트마다 다시 받으라고 하지 않기 위해서다(안드로이드도 캐시 개수로 본다).
     nonisolated var hasAnyStockClip: Bool {
         guard let directory = try? Self.audioDirectory() else { return false }
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = Self.listNames(in: directory)
         return files.contains { name in
             let (base, ext) = Self.splitName(name)
             return base.hasPrefix("stock_") && ext != "meta.json" && ext != "json"
@@ -499,6 +544,65 @@ final class AudioCacheStore {
     nonisolated func isStale(cacheKey: String, remoteAudioUri: String?) -> Bool {
         guard let url = cachedURL(for: cacheKey) else { return false }
         return Self.isStaleCachedFile(at: url, storedFor: cacheKey, incomingAudioUri: remoteAudioUri)
+    }
+
+    /// 캐시 디렉터리 파일 이름 목록. **전량 스캔이 일어나는 자리를 한 곳으로 모은다** —
+    /// 한 곳이라야 세어서 막을 수 있다(`AudioCacheScanCounter`).
+    private nonisolated static func listNames(in directory: URL) -> [String] {
+        #if DEBUG
+        // 재고 있는 쪽이 있을 때만 센다(`AudioCacheScanCounter.measuringScans`).
+        AudioCacheScanCounter.current?.increment()
+        #endif
+        return (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    }
+
+    /// 캐시 키 여러 개가 **없거나 낡았는지**를 디렉터리 **한 번**으로 답한다.
+    ///
+    /// 답은 키마다 `cachedURL(for:) == nil || isStale(cacheKey:remoteAudioUri:)` 를 부른
+    /// 것과 **같아야 한다** — 선다운로드 진행률과 완료 판정이 이 값을 그대로 쓰므로
+    /// 조금이라도 어긋나면 퍼센트가 뒤로 가거나 100% 에 닿지 않는다.
+    ///
+    /// ⚠ **왜 따로 두나**: `cachedURL(for:)` 은 부를 때마다 디렉터리를 통째로 훑는다.
+    /// `StockClipPrefetcher.missingClips` 는 클립 하나당 그걸 **두 번**(존재 확인 +
+    /// `isStale`) 불렀고, 그 함수를 2초 폴링(`Views/Auth/StockReplacementView`)·1.5초 폴링
+    /// (`ClonePrerenderDrive`)·목소리 목록 본문(`Views/Voices/VoiceProfileManagementPanel`)이
+    /// **메인 액터에서** 부른다 — 클립 76개면 한 번 물을 때마다 전량 스캔이 152회였다.
+    ///
+    /// ⚠ **목록을 메모리에 이고 있지 않는다.** 디스크가 진실이라 무효화할 것이 없고,
+    /// 그래서 방금 받은 클립이 **다음 질문에서 곧바로** 보인다. 여기에 memo 를 얹으면
+    /// 받는 중인 진행률이 그 자리에 멈춘다 — 회귀 테스트가 그것을 막는다.
+    nonisolated func missingOrStaleCacheKeys(
+        _ requests: [(cacheKey: String, remoteAudioUri: String?)]
+    ) -> Set<String> {
+        guard !requests.isEmpty else { return [] }
+        // 디렉터리를 못 열면 `cachedURL(for:)` 도 nil 을 준다 = 전부 '없음' 이다.
+        // (튜플에는 key path 를 못 쓴다 — 클로저로 뽑는다.)
+        guard let directory = try? Self.audioDirectory() else {
+            return Set(requests.map { $0.cacheKey })
+        }
+
+        var basesWithAudio: Set<String> = []
+        for name in Self.listNames(in: directory) {
+            let (base, ext) = Self.splitName(name)
+            guard ext != "meta.json", ext != "json" else { continue }
+            basesWithAudio.insert(base)
+        }
+
+        var result: Set<String> = []
+        for request in requests {
+            guard basesWithAudio.contains(Self.safeCacheKey(request.cacheKey)) else {
+                result.insert(request.cacheKey)
+                continue
+            }
+            // 여기부터는 `isStaleCachedFile` 과 같은 순서다 — 들고 온 주소가 없거나 저장된
+            // 주소가 없으면 **모르는 것이지 낡은 것이 아니다**(뒤집으면 알람마다 네트워크를
+            // 타고 오프라인에서는 아예 못 쓴다).
+            guard let incoming = request.remoteAudioUri, !incoming.isEmpty,
+                  let stored = readMetadata(cacheKey: request.cacheKey)?.rawAudioUri,
+                  !stored.isEmpty, stored != incoming else { continue }
+            result.insert(request.cacheKey)
+        }
+        return result
     }
 
     /// **세대 표식이 아예 없는 옛 캐시인가**(Codex #703 P1).
@@ -557,7 +661,7 @@ final class AudioCacheStore {
     nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = Self.listNames(in: directory)
         var candidates: [URL] = []
         for name in files {
             let (base, ext) = Self.splitName(name)
@@ -678,7 +782,7 @@ final class AudioCacheStore {
         let safeKey = Self.safeCacheKey(cacheKey)
         // 갈아끼우기와 같은 줄에 세운다 — 지우는 도중에 새 본체가 들어오면 메타만 남는다.
         Self.withCacheKeyLock(cacheKey) {
-            let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            let files = Self.listNames(in: directory)
             for name in files {
                 let (base, _) = Self.splitName(name)
                 if base == safeKey {
@@ -694,7 +798,7 @@ final class AudioCacheStore {
     func cascadeCleanup(activeCacheKeys: Set<String>) throws {
         let directory = try Self.audioDirectory()
         let active = Set(activeCacheKeys.map { Self.safeCacheKey($0) })
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = Self.listNames(in: directory)
         for name in files {
             let (base, _) = Self.splitName(name)
             if !active.contains(base) {
@@ -767,7 +871,7 @@ final class AudioCacheStore {
 
         guard let directory = try? Self.audioDirectory() else { return deleted }
         let fileManager = FileManager.default
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names = Self.listNames(in: directory)
         guard !names.isEmpty else { return deleted }
 
         let keep = Set(referencedKeys.union(liveKeys).map { Self.safeCacheKey($0) })
@@ -802,7 +906,7 @@ final class AudioCacheStore {
         guard !liveMessageIds.isEmpty else { return 0 }
         guard let directory = try? Self.legacyAudioDirectory() else { return 0 }
         let fileManager = FileManager.default
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names = Self.listNames(in: directory)
         guard !names.isEmpty else { return 0 }
         let stockIds = retiredStockAliasCandidates()
         var deleted = 0
@@ -831,7 +935,7 @@ final class AudioCacheStore {
     /// (`stock_preview_`)는 알람이 참조하지 않는 별개 갈래라 뺀다.
     private nonisolated func retiredStockAliasCandidates() -> Set<String> {
         guard let directory = try? Self.audioDirectory() else { return [] }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names = Self.listNames(in: directory)
         let previewPrefix = Self.safeCacheKey("stock_preview_")
         var ids: Set<String> = []
         for name in names {
@@ -848,7 +952,7 @@ final class AudioCacheStore {
     ) {
         guard let directory = try? Self.audioDirectory() else { return }
         let fileManager = FileManager.default
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names = Self.listNames(in: directory)
         guard !names.isEmpty else { return }
 
         let active = Set(activeCacheKeys.map { Self.safeCacheKey($0) })
@@ -1166,7 +1270,7 @@ final class AudioCacheStore {
         guard let directory = try? Self.audioDirectory() else { return }
         let safeKey = Self.safeCacheKey(cacheKey)
         let survivorName = survivor?.lastPathComponent
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = Self.listNames(in: directory)
         for name in files where name != survivorName {
             let (base, ext) = Self.splitName(name)
             if base == safeKey, ext != "meta.json", ext != "json" {

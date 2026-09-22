@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/.turbo/**',
       'apps/android-native/**/build/**',
+      'apps/ios-native/DerivedData/**',
       '**/.wrangler/**',
       '.ralph/**',
       '**/test/**',

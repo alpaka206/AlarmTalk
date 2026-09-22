@@ -5,6 +5,7 @@ import { createMockDB } from './helpers';
 import {
   EVENT_MESSAGES,
   renderMessage,
+  resolveEventMessageKind,
   sanitizeEventName,
   slotAt,
   stripEmotionTags,
@@ -147,7 +148,7 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
     const m = renderMessage('birthday', 'ko', '지민');
     expect(m.spoken).toBe('지민아');
     expect(m.tts).toContain('[warm, relaxed] 지민아, [gently cheerful] 생일');
-    expect(m.display.startsWith('지민아, 생일 너무너무 축하해!')).toBe(true);
+    expect(m.display.startsWith('지민아, 생일 정말 축하해!')).toBe(true);
     expect(m.display).not.toMatch(/\[/);
     expect(m.display.split('\n').length).toBe(4);
     expect(renderMessage('birthday', 'en', '지민').display).toContain('Hey, 지민. Happy birthday!');
@@ -233,6 +234,22 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('화면에서 뺀 옛 종류(comfort)는 배포 창 동안 400 이 아니라 **옛 문안 그대로** 읽어 준다', async () => {
+    // 서버가 먼저 배포된 뒤에도 브라우저에 열려 있는 옛 랜딩 번들은 '위로 한마디' 라벨로 comfort 를
+    // 보낸다(코덱스 #788 2차). 다른 문구(추석)로 바꿔 읽으면 고른 것과 다른 것이 나온다(4차).
+    expect(resolveEventMessageKind('comfort')).toBe('comfort');
+    expect(resolveEventMessageKind('chuseok')).toBe('chuseok');
+    expect(resolveEventMessageKind('wedding')).toBeNull();
+    const { stored } = fakePerso();
+    cursorPositions(3);
+    const res = await buildApp()('/event/1/clips', post({ ...ok, kind: 'comfort' }));
+    expect(res.status).toBe(200);
+    // 실제로 Perso 에 보낸 글자는 옛 '위로' 문안이다 — 추석 인사가 아니다.
+    const sent = [...stored.values()].join('\n');
+    expect(sent).toContain('고생했어');
+    expect(sent).not.toContain('즐거운 추석 보내');
+  });
+
   it('문장 목록 → 순번 슬롯에 match-rewrite → generate-audio → 파일 받기 → mp3 바이트를 그대로 응답', async () => {
     const { calls, stored } = fakePerso();
     cursorPositions(7);
@@ -275,7 +292,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     cursorPositions(0, 1);
     const req = buildApp();
     await req('/event/1/clips', post(ok));
-    await req('/event/1/clips', post({ ...ok, kind: 'comfort' }));
+    await req('/event/1/clips', post({ ...ok, kind: 'chuseok' }));
     const a = slotAt(WINTER_KO, KO_SENTENCES, 0);
     const b = slotAt(WINTER_KO, KO_SENTENCES, 1);
     expect(a.sentence).not.toBe(b.sentence);

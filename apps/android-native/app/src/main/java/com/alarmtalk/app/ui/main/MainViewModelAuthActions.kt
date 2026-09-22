@@ -33,6 +33,7 @@ internal fun MainViewModel.login(email: String, password: String) {
     viewModelScope.launch {
         authBusy = true
         loginError = null
+        loginErrorCode = null
         authNotice = null
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
@@ -45,10 +46,14 @@ internal fun MainViewModel.login(email: String, password: String) {
             // 스낵바(전역 message) 대신 로그인 화면 인라인 에러로 — 키보드가 열려 있어도 보인다.
             // 서버는 미가입/비밀번호 불일치를 구분하지 않고 AUTH_INVALID_CREDENTIALS 401 하나로
             // 응답한다(계정 존재 여부 노출 방지) — 안내 문구도 이메일·비밀번호를 함께 확인하게 쓴다.
-            val loginErrorCode = com.alarmtalk.app.network.apiError(error).code
-            loginError = when (loginErrorCode) {
+            // ⚠ **코드는 예외에서 한 번만 뽑는다**(`apiErrorMessage` 주석 — errorBody 는 한 번만
+            // 읽힌다). 뽑은 값을 문구와 **함께** 상태로 올려, 화면이 갈래를 가를 때 번역된
+            // 문구가 아니라 이 코드를 보게 한다.
+            val errorCode = com.alarmtalk.app.network.apiError(error).code
+            loginErrorCode = errorCode
+            loginError = when (errorCode) {
                 "AUTH_INVALID_CREDENTIALS" -> app.getString(R.string.auth_error_invalid_credentials)
-                else -> com.alarmtalk.app.network.apiErrorMessage(app, loginErrorCode)
+                else -> com.alarmtalk.app.network.apiErrorMessage(app, errorCode)
                     ?: userFacingError(error, app.getString(R.string.msg_login_failed))
             }
         }
@@ -314,11 +319,45 @@ private suspend fun MainViewModel.onSignedIn() {
         .onFailure { error -> AlarmTalkLog.reportError("Failed to reschedule alarms after sign-in", error) }
 }
 
+/**
+ * **명시적 로그아웃 창을 연다**(`AuthSessionStore.beginSignOut`).
+ *
+ * ⚠ 세션을 끝내는 **서버 호출보다 먼저** 부른다 — 로그아웃의 `token_epoch` 인상도, 즉시
+ * 탈퇴의 계정 삭제도 서버에서 먼저 일어나므로, 그 await 구간에 떠 있던 워커 요청이 401 로
+ * 돌아온다. 로컬 세대·토큰은 맨 마지막 `clear()` 까지 그대로라 워커의 두 문이 그 401 을
+ * 통과시키고, 그때 남은 '자동 만료' 마커가 **방금 떼어낸 알람을 되살린다**(로그인 화면
+ * 뒤라 끌 수도 없다). `MainViewModel.clearSignedInSession` 진입에서 세우는 것만으로는
+ * 이 앞 구간이 무방비다.
+ *
+ * 거듭 불러도 무해하다 — 시작 시각을 다시 적을 뿐이고, 창은 그로부터 60초 뒤 스스로 닫힌다.
+ */
+internal fun MainViewModel.markSignOutInProgress() {
+    runCatching { authSessionStore.beginSignOut() }
+        .onFailure { error -> Log.w(TAG, "Failed to mark sign-out in progress", error) }
+}
+
+/**
+ * 로그아웃 창을 닫는다. 세션 정리가 끝났을 때, 그리고 **서버 호출이 실패해 계속 로그인
+ * 상태로 남을 때**. 남겨 두면 그 사이의 진짜 자동 만료가 표시를 못 남긴다.
+ */
+internal fun MainViewModel.endSignOutMarker() {
+    runCatching { authSessionStore.endSignOut() }
+        .onFailure { error -> Log.w(TAG, "Failed to clear sign-out marker", error) }
+}
+
 internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
     val session = authSession
     val shouldSignOutGoogle = session?.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
+        // ⚠ **위험 구간은 `clearSignedInSession` 보다 앞에서 열린다.** 아래 `api.logout` 이
+        // 서버 `token_epoch` 를 먼저 올리는 순간부터, 그때 떠 있던 워커 요청이 401 로
+        // 돌아온다 — 로컬 세대·토큰은 맨 마지막 `clear()` 까지 그대로라 두 문을 **정상적으로**
+        // 통과하고, 그러면 '자동 만료' 마커가 남아 곧 떼어낼 알람이 로그인 화면 뒤에서
+        // 되살아난다(거기서는 끌 수도 없다). 그래서 표시는 **서버를 부르기 전에** 세운다.
+        // 내리는 것은 `clearSignedInSession` 의 finally 가 한다 — 거듭 세워도 무해하다
+        // (시작 시각을 다시 적을 뿐이고, 창은 60초 뒤 스스로 닫힌다).
+        markSignOutInProgress()
         // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED).
         // 네트워크 실패가 로컬 로그아웃을 막지 않도록 best-effort 로 처리한다.
         if (session != null) {
@@ -358,6 +397,11 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
+        // 유예 신청 자체는 `token_epoch` 를 올리지 않지만(user.ts), **성공하면 곧바로
+        // 아래 세션 정리로 들어간다** — 그 왕복 동안 워커가 받은 401 이 '자동 만료' 마커를
+        // 남기면 방금 떼어낸 알람이 되살아난다(로그아웃과 같은 사고). 요청이 실패해 사용자가
+        // 로그인 상태로 남는 경우에만 아래 catch 에서 표시를 도로 내린다.
+        markSignOutInProgress()
         try {
             api.requestAccountDeletion(authorization)
             // 삭제 신청이 '성공한 뒤에만' 이 기기 FCM 토큰을 제거한다(유예 기간 동안 push 방지). 신청이
@@ -375,6 +419,10 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
         } catch (error: Throwable) {
             AlarmTalkLog.reportError("Failed to request account deletion", error)
+            // 신청이 실패했으면 사용자는 그대로 로그인 상태다 — 표시를 남겨 두면 그 60초
+            // 동안의 **진짜** 자동 만료가 마커를 못 남겨, 업데이트 후 재예약이 이 기기의
+            // 알람을 복원하지 못한다. (성공 갈래는 `clearSignedInSession` 이 내린다.)
+            endSignOutMarker()
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed))
         } finally {
             authBusy = false
@@ -556,6 +604,10 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
     val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
+        // 즉시 탈퇴는 계정 행 자체를 지운다 — 그 순간부터 떠 있던 워커 요청이 전부 401 로
+        // 돌아온다(로그아웃의 `token_epoch` 와 같은 자리다). 서버를 부르기 전에 표시를 세워
+        // 그 401 들이 '자동 만료' 마커를 남기지 못하게 한다.
+        markSignOutInProgress()
         try {
             api.deleteAccount(authorization)
             val revokeError = if (shouldRevokeGoogle) {
@@ -576,6 +628,8 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
             }
         } catch (error: Throwable) {
             AlarmTalkLog.reportError("Failed to delete account", error)
+            // 삭제가 실패했으면 세션은 그대로다 — 위 유예 신청과 같은 이유로 표시를 내린다.
+            endSignOutMarker()
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_delete_failed))
         } finally {
             authBusy = false
@@ -1236,6 +1290,32 @@ internal fun MainViewModel.refreshAppSession() {
 }
 
 /**
+ * `GET /auth/me` 의 실패가 **계정이 파기됐다**는 뜻인가.
+ *
+ * ⚠ **이 라우트만 404 다.** 다른 라우트는 인증 미들웨어가 401 로 돌려주지만
+ * (`middleware/auth.ts`), `auth.get('/me')`(`routes/auth.ts`)는 토큰의 sub 에 해당하는
+ * 사용자 행이 없으면 404 `AUTH_USER_NOT_FOUND` 를 낸다. 그래서 **세션 건강검진만** 이
+ * 갈래를 놓치고, 놓치면 죽은 세션이 그대로 남아 이후 모든 요청이 401 을 쏟는 동안
+ * 사용자에게는 아무 안내도 가지 않는다(2026-09-21 Sentry ALARMTALK-IOS-2 의 안드로이드 짝).
+ * 서버를 401 로 바꾸는 쪽은 하지 않는다 — 이미 나간 계약이다(`docs/spec/error-codes.md` §2).
+ *
+ * ⚠ **404 전부가 아니라 그 코드일 때만이다.** 베이스 URL 오설정·라우팅 실패도 404 라,
+ * 상태코드만 보고 끊으면 **설정 실수 한 번이 전체 로그아웃**이 된다. iOS 에도 같은 경계가
+ * 있다(`AuthViewModel.refreshUserApplyingToken`).
+ *
+ * ⚠ **`errorBody` 는 한 번만 읽힌다.** 그래서 본문은 **404 일 때만** 연다 —
+ * `AlarmTalkLog.isHandledAuthFailure` 가 상태코드만 보는 것과 같은 규약이고, 이 판정을
+ * 쓰는 자리(`refreshAppSessionNow` 의 `onFailure`)는 본문을 달리 읽지 않는다.
+ * 감싼 예외를 풀지 않는 것도 `network/ApiErrors.kt` 의 `apiError` 와 같다 — 판정하는 자리가
+ * Retrofit 호출 바로 그 자리라 `HttpException` 이 맨 위에 온다.
+ */
+internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
+    val http = error as? retrofit2.HttpException ?: return false
+    if (http.code() != 404) return false
+    return com.alarmtalk.app.network.apiError(error).code == "AUTH_USER_NOT_FOUND"
+}
+
+/**
  * [refreshAppSession] 의 **기다릴 수 있는** 형태.
  *
  * ⚠ 결제 preflight 처럼 **그 결과를 보고 다음 행동을 정하는** 자리에서는 이걸 쓴다
@@ -1301,6 +1381,19 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
                 }
             }
         }.onFailure { error ->
+            // **파기된 계정은 401 과 같은 갈래로 보낸다.** 401 은 okhttp 인증기가 이미
+            // `handleUnauthorized` 로 수렴시키는데, 이 라우트의 404 `AUTH_USER_NOT_FOUND` 만
+            // 그 그물에 안 걸린다([isDestroyedAccountFailure] 주석). iOS 짝은
+            // `AuthViewModel.refreshUserApplyingToken` 의 `status == 401 || (status == 404 && …)` 다.
+            //
+            // 우리가 **실제로 보낸** 토큰을 넘긴다 — 응답을 기다리는 사이 rolling refresh 가
+            // 토큰을 굴렸거나 다른 계정이 들어왔으면 그쪽이 걸러 낸다(멀쩡한 새 세션을
+            // 옛 응답으로 끊지 않는다).
+            if (isDestroyedAccountFailure(error)) {
+                Log.i(TAG, "Auth refresh found the account destroyed; ending the session")
+                handleUnauthorized(session.token)
+                return@onFailure
+            }
             Log.w(TAG, "Auth refresh failed", error)
         }
     }

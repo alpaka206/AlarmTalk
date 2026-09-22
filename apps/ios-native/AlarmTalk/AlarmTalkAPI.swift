@@ -189,6 +189,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             token: token,
             body: requestBody
         )
+        if response.alarm.creationReplayed == true {
+            return try await updateAlarm(id: response.alarm.id, requestBody: requestBody, token: token)
+        }
         return response.alarm
     }
 

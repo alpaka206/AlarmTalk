@@ -9362,6 +9362,23 @@
         }
       }
     },
+    "이메일 주소 형식이 올바르지 않아요. 다시 확인해 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That email address doesn't look right. Please check and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メールアドレスの形式が正しくありません。ご確認ください。"
+          }
+        }
+      }
+    },
     "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요." : {
       "extractionState" : "manual",
       "localizations" : {

@@ -208,7 +208,7 @@ final class ClonePrerenderDrive: ObservableObject {
         prefetcher.start(session: session, ownedVoiceProfileIDs: targets)
 
         while !Task.isCancelled {
-            if let progress = StockClipPrefetcher.cloneVoiceProgress(voiceProfileID: voiceProfileID) {
+            if let progress = await StockClipPrefetcher.progressOffMain(voiceProfileID: voiceProfileID) {
                 totalKnown = true
                 percent = Self.mergedPercent(
                     generated: generationTotal,

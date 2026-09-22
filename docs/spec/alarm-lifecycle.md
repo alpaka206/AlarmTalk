@@ -152,6 +152,28 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
   **감추기만 할 뿐** 예약은 그대로다 — A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.
   행(`enabled`)은 건드리지 않는다: A 의 의도는 A 것이고, A 가 돌아오면 되살아나야 한다.
 
+### 본인 알람 서버 생성의 재전송
+
+양 앱은 본인 알람 POST에 영속적인 로컬 UUID를 `client_alarm_id`로 보낸다. 서버는 계정 PK와
+이 UUID를 함께 사용해 같은 서버 ID를 결정하고, 기존 행 확인과 생성을 쓰기 트랜잭션 안에서
+처리한다. 응답 유실·앱 재실행 뒤에도 같은 로컬 알람의 재시도는 서버 행을 늘리지 않는다.
+계정이 다르면 같은 로컬 UUID도 다른 서버 ID다. 구형 클라의 필드 없는 요청은 기존 생성 규칙을 따른다.
+
+이미 생성된 행이면 서버는 내용을 되덮지 않고 `creation_replayed = true`와 **같은 ID**를
+반환한다. 그때 응답 본문은 저장된 행이 아니라 **요청의 에코**다(`alarm-mutation.ts` 가
+`...body` 위에 `id`·`creation_replayed` 와 서버가 정한 몇 필드만 얹는다) — 앱은 본문을 행으로
+믿지 말고 `id`·`creation_replayed` 만 읽어(`AlarmSyncService.createAndReconcile` /
+`AlarmTalkAPI.createAlarm`), 그 ID에 현재 로컬 스냅샷을 PATCH한 뒤 동기화 완료로 기록한다.
+응답 유실 이후의 로컬 편집도 이 과정에서 반영한다. 가족 알람은 기존 수신 슬롯·delivery
+version 규칙을 유지한다.
+
+최초 생성에도 로컬의 켜짐 상태(`is_active`)를 그대로 저장한다. 꺼진 알람을 처음 동기화한다고
+서버 사본을 켜면 안 된다. **두 앱 모두 이 필드를 보낸다** — 스토어 구버전도 `RemoteAlarmMapper`
+가 `enabled` 를 `is_active` 로 실어 보낸다(안드로이드 `isActive = alarm.enabled`, iOS
+`isActive: local.enabled`). 안 보내는 호출(직접 API)만 켜짐이 기본값이며, 가족 전송은
+별도 수신 동작이므로 항상 켜진 상태로 생성한다. 응답 ID는 요청의 임의 필드가 아니라 실제
+저장한 서버 ID여야 한다.
+
 ### 1-3. 취소에 실패하면 **손잡이를 남기고, 반드시 다시 시도한다** (iOS)
 
 예약을 취소할 수 있는 것은 우리가 든 핸들(`alarmKitID`)뿐이다. 취소가 실패했는데 그 값을
@@ -292,10 +314,27 @@ Room/로컬 JSON의 첫 방출을 실제 데이터와 구분하는 규칙이다.
 
 ---
 
+## 한국 음력 공휴일의 로컬 계산
+
+한국 음력 공휴일의 계산 폴백은 양 앱 모두 ICU `dangi`(단기력)를 사용하고, 날짜 변환은
+`Asia/Seoul` 기준으로 한다. 중국 역법 `chinese`의 시간대만 서울로 바꿔도 음력 월 경계의
+천문 계산 기준은 한국 역법으로 바뀌지 않는다. 서버·번들 시드가 있어도 잘못 계산한 날짜를
+OR로 합치면 평일 알람을 건너뛸 수 있으므로 계산 폴백 자체가 같은 역법이어야 한다.
+
+기기 시간대가 UTC·서울·로스앤젤레스일 때도 같은 한국 음력 날짜를 반환해야 한다.
+서버/시드의 연휴·임시공휴일 보완과 기존 대체공휴일 규칙은 유지한다. 안드로이드에서는
+실제 framework ICU를 쓰는 계측 테스트로 검증하며 JVM 대역 테스트만으로 완료하지 않는다.
+
+근거: [ICU ChineseCalendar의 천문 기준](https://unicode-org.github.io/icu-docs/apidoc/dev/icu4j/com/ibm/icu/util/ChineseCalendar.html),
+[KASI 달력자료](https://astro.kasi.re.kr/life/post/calendarData). KASI의 2년 후 자료는 공식 월력요항
+발표 전 자료라는 표시도 함께 따른다.
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
+| 본인 알람 생성 재전송·초기 켜짐 상태 | `alarm-mutation.ts`·`ownAlarmIdentity`·`creation_replayed` | `RemoteAlarmMapper`·`AlarmSyncService.createAndReconcile` | `RemoteAlarmMapper`·`AlarmTalkAPI.createAlarm` |
+| 한국 음력 공휴일 폴백 | 서버 공휴일 동기화는 기존 경로 유지 | `IcuLunarConverter`의 ICU dangi | `KoreanLunarHolidayEngine.seoulLunar`의 ICU dangi |
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
 | 1-1 탈퇴는 내 행과 나를 향한 미전달 행을 지운다 | `lib/account-deletion.ts` 의 `DELETE FROM alarms WHERE user_id IN (…) OR target_user_id IN (…)` | — | — |
 | 1-1 목소리가 사라질 때 걷어내기 | `lib/voice-revocation.ts` 의 `revokeDeletedVoices`(탈퇴·목소리 삭제·플랜 강등 공용) | `VoiceAccessSyncWorker` | `PushNotificationCoordinator.onAuthoritativeRefresh` |

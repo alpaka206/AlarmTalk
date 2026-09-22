@@ -315,9 +315,27 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         environment: env.ENVIRONMENT || 'production',
       })
     : null;
-  const captureCron = (at: string, err: unknown): void => {
-    logStructured('error', { at, error: String(err) });
-    sentry?.captureException(err);
+  /**
+   * cron 오류 1건을 구조화 로그 + Sentry 로 올린다.
+   *
+   * `tags` 는 **그 한 건이 무엇에 대한 실패였는지**(대상 식별자·원인 갈래)다. 로그와
+   * Sentry 양쪽에 같은 값을 실어, 대시보드에서 거른 것을 로그에서 그대로 되짚게 한다.
+   * ⚠ 식별자만 넣는다 — 문구 원문 같은 사용자 콘텐츠는 관측 파이프라인에 올리지 않는다.
+   */
+  const captureCron = (at: string, err: unknown, tags?: Record<string, string>): void => {
+    logStructured('error', { at, error: String(err), ...tags });
+    if (!sentry) return;
+    if (!tags) {
+      sentry.captureException(err);
+      return;
+    }
+    // ⚠ **태그는 이 캡처에만 붙인다.** 바깥 스코프에 그대로 `setTag` 하면 같은 틱의
+    // 뒤따르는 캡처까지 남의 클립 식별자를 달고 올라가 원인 추적이 오히려 틀어진다.
+    const scopedTags = tags;
+    sentry.withScope((scope) => {
+      scope.setTags(scopedTags);
+      scope.captureException(err);
+    });
   };
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
@@ -515,7 +533,18 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     const result = await runPrerenderBatch(db, env, {
       maxClips: 10,
       maxVoices: 5,
-      onClipError: (genErr) => captureCron('scheduled.stock_clips.generate', genErr),
+      // ⚠ **어느 목소리의 어느 클립인지 함께 올린다.** 예전에는 에러만 보내서, Sentry 에
+      // 한 줄이 떠도 대상을 특정할 수 없었다(ALARMTALK-BACKEND-9 — 실제로 1건을 끝내
+      // 못 짚었다). `clip_failure` 는 원인 갈래다: 사유 식별자면 모델이 낸 **내용**이
+      // 걸린 것이고, `transport` 면 전송이 죽은 것이다 — 봐야 할 곳이 정반대라 갈라 둔다.
+      onClipError: (genErr, failure) =>
+        captureCron('scheduled.stock_clips.generate', genErr, {
+          voice_profile_id: failure.voiceProfileId,
+          clip_category: failure.category,
+          clip_variant: String(failure.variant),
+          clip_language: failure.language,
+          clip_failure: failure.reason ?? 'transport',
+        }),
     });
     if (result.rendered > 0) {
       logStructured('info', {

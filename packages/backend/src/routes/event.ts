@@ -4,7 +4,7 @@ import { getDB } from '../lib/db';
 import { eventVoiceIds } from '@alarmtalk/shared';
 import {
   isEventLocale,
-  isEventMessageKind,
+  resolveEventMessageKind,
   renderMessage,
   sanitizeEventName,
   slotAt,
@@ -140,16 +140,12 @@ event.post('/:eventId/clips', async (c) => {
   const b = (body ?? {}) as Record<string, unknown>;
   const celebrity = typeof b.celebrity === 'string' ? b.celebrity : '';
   const name = typeof b.name === 'string' ? sanitizeEventName(b.name) : null;
-  if (
-    !ID_RE.test(celebrity) ||
-    !isEventLocale(b.locale) ||
-    !isEventMessageKind(b.kind) ||
-    name === null
-  ) {
+  // 옛 번들의 `kind`(예: comfort)도 받는다 — `resolveEventMessageKind` 참조.
+  const kind = resolveEventMessageKind(b.kind);
+  if (!ID_RE.test(celebrity) || !isEventLocale(b.locale) || kind === null || name === null) {
     return jsonError(c, 400, 'INVALID_BODY', 'invalid body');
   }
   const locale = b.locale;
-  const kind = b.kind;
 
   const voice = voiceProjectFor(eventId, celebrity, locale);
   if (voice === null) return jsonError(c, 404, 'NOT_FOUND', 'unknown voice');

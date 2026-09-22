@@ -31,6 +31,10 @@ struct LoginView: View {
     @State private var verificationCode: String = ""
     /// 닉네임이 상한을 넘겨 잘렸는가 — 이유를 입력창 아래에 띄운다(말없이 자르지 않는다).
     @State private var nameTooLong = false
+    /// 로그인 제출을 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
+    /// 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
+    /// 안드로이드 `ui/auth/AuthScreen.kt` 의 `emailFormatError` 와 같은 규칙이다.
+    @State private var emailFormatError = false
     @State private var verificationSent: Bool = false
     @State private var verificationCompleted: Bool = false
     @State private var verifiedEmail: String = ""
@@ -46,12 +50,11 @@ struct LoginView: View {
         _mode = State(initialValue: initialMode)
     }
 
+    /// 형식 규칙의 단일 출처는 `AuthEmailFormat` — 서버 `@alarmtalk/shared` 의
+    /// `EMAIL_PATTERN` 과 같은 값이다. 예전의 자체 정규식은 서버보다 좁아서
+    /// (아포스트로피 거부) 정당한 주소를 가진 사람의 로그인을 막았다.
     private var normalizedEmail: String {
-        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private var emailLooksValid: Bool {
-        LoginValidator.isValidEmail(normalizedEmail)
+        AuthEmailFormat.normalize(email)
     }
 
     private var passwordAtLeastMin: Bool { password.count >= 8 }
@@ -70,10 +73,15 @@ struct LoginView: View {
     private var canSubmit: Bool {
         guard !auth.isBusy else { return false }
         if mode == .login {
-            return !email.isEmpty && !password.isEmpty
+            // ⚠ **형식으로 버튼을 죽이지 않는다** — 누를 수 있게 두고, 누르면
+            // `AuthEmailFormat.submitOutcome` 이 이유를 말한다.
+            return AuthEmailFormat.canSubmitLogin(email: email, password: password)
         }
+        // ⚠ **형식으로 버튼을 죽이지 않는다 — 가입 모드도 마찬가지**(2026-09-21 리뷰).
+        // 예전에는 여기에만 `emailLooksValid` 가 남아, 로그인은 눌러서 이유를 듣는데
+        // 가입은 같은 주소로 버튼이 죽어 있었다. 잠그는 것은 **보낼 것이 없을 때**뿐이다.
         return !name.isEmpty &&
-            emailLooksValid &&
+            AuthEmailFormat.canRequestEmailCode(email) &&
             isEmailVerifiedForCurrentInput &&
             passwordLengthValid &&
             passwordHasLetterAndDigit &&
@@ -175,11 +183,11 @@ struct LoginView: View {
         }
         // 고쳐 치기 시작하면 지운다 — 안드로이드의 `onClearLoginError`(입력창 onValueChange)와
         // 같은 시점이다. 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
-        .onChange(of: password) { _, _ in auth.loginError = nil }
-        .onChange(of: email) { _, _ in auth.loginError = nil }
+        .onChange(of: password) { _, _ in auth.clearLoginError() }
+        .onChange(of: email) { _, _ in auth.clearLoginError() }
         // 로그인↔가입을 오갈 때도 지운다(안드로이드는 `authRoute` 가 바뀔 때 지운다) —
         // 가입 화면에서는 이 자리에 비밀번호 규칙이 온다.
-        .onChange(of: mode) { _, _ in auth.loginError = nil }
+        .onChange(of: mode) { _, _ in auth.clearLoginError() }
     }
 
     // MARK: - Sections
@@ -220,30 +228,80 @@ struct LoginView: View {
         }
     }
 
+    /// 형식 오류는 **이메일 칸 아래**에 붙는다. 나머지 로그인 실패(`auth.loginError`)는
+    /// 비밀번호 칸 아래지만, 이건 이메일을 고쳐야 하는 일이라 고칠 칸 옆에 있어야 한다.
+    /// 앱이 잡은 것이든 서버가 잡은 것이든(`AUTH_EMAIL_INVALID`) 자리는 하나다.
+    /// 안드로이드도 같은 자리다(`ui/auth/AuthScreen.kt` 의 이메일 `supportingText`).
     private var emailField: some View {
-        VocaTextField(
-            title: "이메일",
-            text: $email,
-            keyboardType: .emailAddress,
-            submitLabel: .next,
-            enabled: !auth.isBusy
-        )
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .onChange(of: email) { _, _ in
-            // 이메일이 바뀌면 인증 상태를 초기화.
-            verificationSent = false
-            verificationCompleted = false
-            verificationCode = ""
-            verifiedEmail = ""
+        VStack(alignment: .leading, spacing: 6) {
+            VocaTextField(
+                title: "이메일",
+                text: $email,
+                keyboardType: .emailAddress,
+                submitLabel: .next,
+                enabled: !auth.isBusy,
+                isError: showsEmailFormatError
+            )
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onChange(of: email) { _, _ in
+                // 고쳐 치기 시작하면 형식 경고를 지운다(안드로이드의 `onValueChange` 와 같은 시점).
+                emailFormatError = false
+                // ⚠ **서버가 준 같은 경고도 함께 지운다.** 이 칸 아래에 떠 있는 말인데
+                // 고쳐 쳐도 안 사라지면, 사용자는 방금 고친 주소가 또 틀렸다고 읽는다.
+                // 지우는 것은 **이 칸이 맡은 갈래 하나**다 — 자격증명 실패는 비밀번호
+                // 칸의 말이라 건드리지 않는다(안드로이드는 `onClearLoginError`).
+                if loginErrorIsEmailFormat { auth.clearLoginError() }
+                // 이메일이 바뀌면 인증 상태를 초기화.
+                verificationSent = false
+                verificationCompleted = false
+                verificationCode = ""
+                verifiedEmail = ""
+            }
+            if showsEmailFormatError {
+                Text(APIErrorMessages.emailInvalid)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(AuthSceneColors.error)
+            }
         }
     }
 
+    /// ⚠ **앱이 잡은 것과 서버가 잡은 것이 같은 자리에 뜬다.** 판정은 같은데 앱 갈래는
+    /// 이메일 칸, 서버 갈래는 비밀번호 칸이면 사용자는 같은 말을 두 자리에서 보게 되고,
+    /// 비밀번호 쪽에 뜬 회차에는 비밀번호부터 다시 친다.
+    ///
+    /// ⚠ **가입 모드에도 붙는다.** `emailFormatError` 는 '이메일 인증' 을 누른 회차에도
+    /// 켜지므로, 로그인에서만 그리면 가입 쪽은 눌러도 아무 말이 없다. 서버 갈래
+    /// (`loginErrorIsEmailFormat`)는 로그인 응답이라 로그인 모드에서만 온다.
+    private var showsEmailFormatError: Bool {
+        emailFormatError || loginErrorIsEmailFormat
+    }
+
+    /// 서버가 이메일 형식을 지적한 것(`AUTH_EMAIL_INVALID`)인가.
+    ///
+    /// ⚠ **문구를 비교하지 말 것**(2026-09-21 리뷰). 예전에는
+    /// `auth.loginError == APIErrorMessages.emailInvalid` 였다 — 문구를 한 글자 고치거나
+    /// 다른 코드가 같은 문장을 쓰게 되는 순간 **아무 경고 없이** 갈래가 어긋나고,
+    /// 형식 오류가 비밀번호 칸 아래로 내려간다. 판정은 코드 하나다. 안드로이드도 같다
+    /// (`ui/auth/AuthScreen.kt` 의 `loginErrorIsEmailFormat`).
+    private var loginErrorIsEmailFormat: Bool {
+        mode == .login && AuthEmailFormat.isEmailFormatErrorCode(auth.loginErrorCode)
+    }
+
+    /// ⚠ **형식으로 죽이지 않는다** — 가입에서 실질적인 제출 버튼이 이것이다.
+    /// 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친 사람은 눌리지 않는
+    /// '이메일 인증' 앞에서 **무엇이 잘못됐는지 들을 길이 없었다.**
     private var verifyEmailRow: some View {
         AuthOutlinedButton(
             title: verificationLabel,
-            enabled: !auth.isBusy && emailLooksValid && !isEmailVerifiedForCurrentInput
+            enabled: !auth.isBusy
+                && AuthEmailFormat.canRequestEmailCode(email)
+                && !isEmailVerifiedForCurrentInput
         ) {
+            guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
+                emailFormatError = true
+                return
+            }
             Task {
                 // 발송이 성공했을 때만 코드 입력 단계를 노출한다. 중복 이메일(AUTH_EMAIL_TAKEN)
                 // 등으로 발송이 실패하면 verificationSent 가 켜지지 않아 6자리 코드 입력칸이
@@ -341,8 +399,10 @@ struct LoginView: View {
 
     /// 회원가입 모드에서는 이 자리에 비밀번호 **규칙**이 오므로 로그인 오류를 그리지 않는다
     /// (안드로이드도 `mode == AuthMode.Login` 일 때만 붙인다).
+    ///
+    /// 이메일 형식 갈래는 **위 이메일 칸**이 맡는다 — 같은 문구를 두 자리에 띄우지 않는다.
     private var showsLoginError: Bool {
-        mode == .login && auth.loginError != nil
+        mode == .login && auth.loginError != nil && !loginErrorIsEmailFormat
     }
 
     private var passwordRules: some View {
@@ -376,6 +436,14 @@ struct LoginView: View {
             enabled: canSubmit,
             loading: auth.isBusy
         ) {
+            // ⚠ **버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜 안 되는지
+            // 말한다. 이메일 형식은 서버에 물어볼 것도 없는 실패라 네트워크를 타기 전에
+            // 여기서 끊는다(서버 판정과 같은 갈래 = `AUTH_EMAIL_INVALID`).
+            // 판정은 **두 모드가 같은 함수**를 쓴다 — 안드로이드 `authEmailSubmitOutcome` 과 짝이다.
+            guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
+                emailFormatError = true
+                return
+            }
             Task {
                 if mode == .login {
                     await auth.loginWithEmail(email: normalizedEmail, password: password)
@@ -468,6 +536,11 @@ struct LoginView: View {
         // 으로만 들어오고 `.register` 진입은 DEBUG 프리뷰 플래그뿐이라, **이메일로 계정을
         // 만들 방법이 앱에 하나도 없었다**(애플 로그인만 가능했다).
         mode = next
+        // ⚠ **형식 경고는 모드가 바뀌면 지운다.** `email` 상태는 로그인↔가입을 오가도
+        // 그대로라, 안 지우면 로그인에서 띄운 경고가 가입에 다녀온 뒤에도 **아무것도
+        // 안 했는데** 살아 있다. 안드로이드 `ui/auth/AuthScreen.kt` 의
+        // `LaunchedEffect(mode)` 와 같은 자리다.
+        emailFormatError = false
         // 모드 전환 시 인증/오류 메시지를 살짝 리셋해 혼동을 줄인다.
         if next == .login {
             verificationSent = false
@@ -502,6 +575,9 @@ struct VocaTextField: View {
     var keyboardType: UIKeyboardType = .default
     var submitLabel: SubmitLabel = .next
     var enabled: Bool = true
+    // 테두리를 빨갛게 — `VocaSecureField` 와 같은 규칙이다. 안드로이드는
+    // `OutlinedTextField.isError` 가 같은 일을 한다(`ui/auth/AuthScreen.kt`).
+    var isError: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -525,7 +601,7 @@ struct VocaTextField: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(AuthSceneColors.line, lineWidth: 1)
+                        .stroke(isError ? AuthSceneColors.error : AuthSceneColors.line, lineWidth: 1)
                 )
         }
     }
@@ -603,13 +679,18 @@ private struct RuleRow: View {
 
 /// 본 화면이 직접 사용하는 작은 검증 helper. 테스트에서 재사용한다.
 enum LoginValidator {
-    /// Android `Patterns.EMAIL_ADDRESS` 와 호환되는 단순 검증. RFC 822 풀 검증
-    /// 대신 일반적인 이메일 모양 (`local@domain.tld`) 만 확인한다.
+    /// ⚠ **자체 정규식을 여기 다시 박지 말 것.** 형식 규칙의 단일 출처는
+    /// `AuthEmailFormat` 이고, 그 값은 서버 `@alarmtalk/shared` 의 `EMAIL_PATTERN`·
+    /// 안드로이드 `AuthEmailPattern` 과 **같은 문자열**이다.
+    ///
+    /// 예전에는 여기 `^[A-Z0-9._%+-]+@…` 가 박혀 있었다. 서버보다 좁아
+    /// **아포스트로피를 거부**했고(`o'brien@example.com` 으로 가입한 사람은 로그인
+    /// 자체가 불가능했다), 동시에 서버가 거부하는 `%` 는 통과시켰다.
+    ///
+    /// 화면들은 이제 `AuthEmailFormat` 을 직접 부른다 — 이 입구는 테스트가 "갈라지지
+    /// 않았다" 를 확인하는 자리로만 남는다.
     static func isValidEmail(_ value: String) -> Bool {
-        // RFC 5322 의 매우 완화된 ASCII 형태. 클라이언트 측 1차 검증이며,
-        // 최종은 서버가 RFC 검증을 다시 한다.
-        let pattern = #"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$"#
-        return value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        AuthEmailFormat.isValid(value)
     }
 
     /// 비밀번호 길이 정책. 본 함수는 LoginViewModelTests 가 사용한다.

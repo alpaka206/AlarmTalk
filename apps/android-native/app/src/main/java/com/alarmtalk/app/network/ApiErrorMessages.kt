@@ -34,6 +34,10 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
 
     // ── 로그인·계정 ───────────────────────────────────────────────────────
     "AUTH_INVALID_CREDENTIALS" to R.string.auth_error_invalid_credentials,
+    // 로그인 바디에서 **이메일만** 형식에 안 맞을 때. 예전에는 이것도
+    // `AUTH_VALIDATION_FAILED` 로 뭉뚱그려 와서 "로그인에 실패했어요" 로 읽혔고,
+    // 사용자는 멀쩡한 비밀번호를 계속 다시 쳤다.
+    "AUTH_EMAIL_INVALID" to R.string.auth_error_email_invalid,
     "AUTH_EMAIL_TAKEN" to R.string.msg_register_email_taken,
     "AUTH_EMAIL_SOCIAL" to R.string.msg_register_email_social_google,
     "AUTH_EMAIL_CODE_INVALID" to R.string.api_error_email_code_invalid,

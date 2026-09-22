@@ -26,6 +26,7 @@ import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 import { resolveAlarmVoiceRevocationSource } from '../lib/voice-revocation';
+import { ownAlarmIdentity } from '../lib/alarm-identity';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -256,8 +257,10 @@ alarmMutation.post('/', async (c) => {
   const db = getDB(c.env);
 
   const body = await c.req.json<{
+    client_alarm_id?: string;
     message_id?: string;
     time: string;
+    is_active?: boolean;
     repeat_days?: number[];
     snooze_minutes?: number;
     target_user_id?: string;
@@ -273,6 +276,9 @@ alarmMutation.post('/', async (c) => {
 
   if (!body.time) {
     return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
+  }
+  if (body.client_alarm_id != null && (typeof body.client_alarm_id !== 'string' || !UUID_RE.test(body.client_alarm_id))) {
+    return c.json({ error: 'Invalid client alarm ID', error_code: 'INVALID_ALARM_ID' }, 400);
   }
   const timezone = normalizeTimezone(body.timezone);
   // Two valid sources for what the alarm plays:
@@ -429,7 +435,9 @@ alarmMutation.post('/', async (c) => {
     }
   }
 
-  let alarmId = crypto.randomUUID();
+  const clientAlarmId = !targetUserIdForAlarm ? body.client_alarm_id : undefined;
+  let alarmId = clientAlarmId ? await ownAlarmIdentity(userPk, clientAlarmId) : crypto.randomUUID();
+  let creationReplayed = false;
   const deliveryVersionSupported = targetUserIdForAlarm
     ? await alarmDeliveryVersionSupported(db)
     : false;
@@ -449,13 +457,14 @@ alarmMutation.post('/', async (c) => {
   // 검증과 같은 시간대로 HH:mm 을 해석하게 한다(발신자 body.timezone 불신).
   // 본인 알람(비-target)은 기존대로 본인 기기 timezone(body)을 저장한다.
   const storedTimezone = targetUserIdForAlarm ? targetEffectiveTimezone : timezone;
+  const isActive = targetUserIdForAlarm ? true : (body.is_active ?? true);
   const insertAlarm = (executor: DbExecutor) =>
     executor.execute({
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id,
-             timezone, bucket_id${targetUserIdForAlarm ? ', delivery_version' : ''})
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${targetUserIdForAlarm ? ', ?' : ''})`,
+             timezone, bucket_id, is_active${targetUserIdForAlarm ? ', delivery_version' : ''})
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${targetUserIdForAlarm ? ', ?' : ''})`,
       args: [
         alarmId,
         userId,
@@ -470,6 +479,7 @@ alarmMutation.post('/', async (c) => {
         body.voice_profile_id ?? null,
         storedTimezone,
         body.bucket_id ?? null,
+        isActive ? 1 : 0,
         ...(targetUserIdForAlarm ? [deliveryVersion] : []),
       ],
     });
@@ -522,8 +532,18 @@ alarmMutation.post('/', async (c) => {
     return claimed.alarmId;
   };
   const inserted =
-    targetUserIdForAlarm || body.voice_profile_id || resolvedMessageId
+    targetUserIdForAlarm || body.voice_profile_id || resolvedMessageId || clientAlarmId
       ? await withWriteTransaction(db, async (tx) => {
+          if (clientAlarmId) {
+            const existing = await tx.execute({
+              sql: 'SELECT id FROM alarms WHERE id = ? AND user_id IN (?, ?) AND target_user_id IS NULL',
+              args: [alarmId, ...ownerIds],
+            });
+            if (existing.rows.length) {
+              creationReplayed = true;
+              return { status: 'ok' as const, result: null };
+            }
+          }
           if (
             body.voice_profile_id &&
             !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
@@ -568,8 +588,10 @@ alarmMutation.post('/', async (c) => {
   return c.json(
     {
       alarm: {
-        id: alarmId,
         ...body,
+        id: alarmId,
+        is_active: isActive,
+        ...(clientAlarmId ? { creation_replayed: creationReplayed } : {}),
         target_user_id: targetUserIdForAlarm,
         mode,
         vibration_pattern: vibPattern,

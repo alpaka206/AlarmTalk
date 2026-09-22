@@ -17,13 +17,15 @@ struct PasswordResetView: View {
     @State private var code: String = ""
     @State private var password: String = ""
     @State private var isPasswordVisible = false
+    /// '인증 코드 받기' 를 눌렀는데 이메일이 형식에 안 맞았는가 — **누른 뒤에만** 뜬다.
+    /// 치는 도중에 빨갛게 만들면 아직 다 치지도 않은 주소를 틀렸다고 하는 셈이다.
+    /// 안드로이드 `ui/auth/PasswordResetScreen.kt` 의 `emailFormatError` 와 같은 규칙이다.
+    @State private var emailFormatError = false
 
+    /// 정규화도 형식 규칙과 같은 출처를 쓴다 — 여기만 자체 `trimming`/`lowercased` 로
+    /// 두면 규칙이 갈라지고, 갈라진 줄 모른 채 한쪽만 고치게 된다.
     private var normalizedEmail: String {
-        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private var emailLooksValid: Bool {
-        LoginValidator.isValidEmail(normalizedEmail)
+        AuthEmailFormat.normalize(email)
     }
 
     /// 코드 발송 여부 — VM 의 `passwordResetCodeSentTo` 가 현재 입력 이메일과 같을 때만
@@ -55,6 +57,12 @@ struct PasswordResetView: View {
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 
                     emailField
+                    // 형식 오류는 **고쳐야 할 칸 바로 아래**에 붙는다(로그인 화면과 같은 자리).
+                    if emailFormatError {
+                        Text(APIErrorMessages.emailInvalid)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(AuthSceneColors.error)
+                    }
                     sendCodeButton
 
                     if codeSent {
@@ -112,17 +120,28 @@ struct PasswordResetView: View {
             title: "이메일",
             text: $email,
             keyboardType: .emailAddress,
-            enabled: !auth.isBusy && !codeSent
+            enabled: !auth.isBusy && !codeSent,
+            isError: emailFormatError
         )
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
+        // 고쳐 치기 시작하면 경고를 지운다 — 남겨 두면 이미 고친 값 아래에 옛 경고가 붙어 있다.
+        .onChange(of: email) { _, _ in emailFormatError = false }
     }
 
+    /// ⚠ **형식으로 버튼을 죽이지 않는다**(CLAUDE.md) — 누를 수는 있고, 누르면 왜 안 되는지
+    /// 이메일 칸 아래에 말한다. 예전에는 `emailLooksValid` 로 잠가 놔서, 주소를 잘못 친
+    /// 사람은 눌리지 않는 버튼 앞에서 이유를 들을 길이 없었다. 잠그는 것은 **보낼 것이
+    /// 없을 때**(빈 칸)와 이미 보낸 뒤뿐이다. 판정은 로그인·가입과 같은 함수다.
     private var sendCodeButton: some View {
         AuthOutlinedButton(
             title: codeSent ? "코드를 보냈어요" : "인증 코드 받기",
-            enabled: !auth.isBusy && emailLooksValid && !codeSent
+            enabled: !auth.isBusy && AuthEmailFormat.canRequestEmailCode(email) && !codeSent
         ) {
+            guard AuthEmailFormat.submitOutcome(email: email) == .submit else {
+                emailFormatError = true
+                return
+            }
             Task { await auth.requestPasswordReset(email: normalizedEmail) }
         }
     }

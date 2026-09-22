@@ -334,6 +334,8 @@ class RingingActivity : ComponentActivity() {
         super.onStart()
         visibleCount += 1
         visibleSinceElapsedMs = SystemClock.elapsedRealtime()
+        // 화면이 떴으니 승격 알림(전체화면 인텐트를 들고 뜬 새 항목)은 할 일이 끝났다.
+        RingingService.cancelPromotionNotification(this)
         userLeaveHinted = false
         val sensorManager = getSystemService<SensorManager>() ?: return
         proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY)
@@ -370,10 +372,13 @@ class RingingActivity : ComponentActivity() {
      * 화면이 꺼졌는데 기기가 덮여 있으면 계속 울린다(가방·주머니·플립커버).
      * 근접 센서가 없는 기기를 위해 [LEAVE_GRACE_MS] 를 두 번째 그물로 둔다.
      *
-     * ⚠ **`superseded` 를 빼지 말 것** — 같은 화면이 한 번 더 열리면(`CLEAR_TASK`) 먼저 뜬
- * 인스턴스가 파괴되며 `onStop` 을 부른다. 2026-09-09 SM-A325N 에서 알람이 **2초 만에 스스로
- * 꺼진** 원인이 정확히 이것이었다.
- *
+     * ⚠ **`superseded` 를 빼지 말 것** — 같은 화면이 한 번 더 열릴 때 먼저 뜬 인스턴스가
+     * 파괴되면 `onStop` 이 온다. 2026-09-09 SM-A325N 에서 알람이 **2초 만에 스스로 꺼진**
+     * 원인이 정확히 이것이었다(그때는 열기 인텐트에 `CLEAR_TASK` 가 있었다). 지금은 열기
+     * 플래그에서 CLEAR_TASK 를 뺐고(`RingingNotificationFactory.RINGING_ACTIVITY_FLAGS`)
+     * `singleTask` 라 두 번째 열기는 `onNewIntent` 로 들어오지만, 이 그물은 그대로 둔다 —
+     * OS 가 태스크를 새로 만드는 경우가 또 생기면 알람이 조용히 죽는 자리다.
+     *
  * ⚠ **`isChangingConfigurations` 를 빼지 말 것** — 설정 변경으로 액티비티가 다시 만들어지는
      * 동안에도 `onStop` 은 온다. 빼면 그 한 번이 알람을 끝낸다.
      */

@@ -107,12 +107,29 @@ jobs:
       - name: Check plan constants match across shared/Android/iOS/DB
         run: python3 scripts/check-plan-constants.py
 
+      - name: Check auth email contract
+        run: python3 scripts/check-auth-email-contract.py
+
       # 유닛 테스트가 호스트 앱 프로세스에서 도는 탓에, 저장 위치를 손으로 조립하면
       # **사용자가 쓰는 그 파일**을 잡는다. 실제로 기기에서 테스트를 돌릴 때마다
       # 로그인·알람·기본 목소리 클립이 지워지고 있었다(2026-08-19). 테스트는 초록으로
       # 통과하고 개발자 기기만 조용히 지워지므로 문법으로 잡는다.
       - name: Check iOS test isolation
         run: python3 scripts/check-test-isolation.py
+
+      # BGTask 콜백에 `@Sendable` 이 빠지면 `@MainActor` 격리를 물려받는데, 시스템은 그
+      # 콜백을 **기본 백그라운드 큐**에서 부른다 — 기기에서 배달되는 순간 트랩한다.
+      # 컴파일도 통과하고 시뮬레이터는 BGTask 를 배달하지 않아, 백그라운드 사이클이
+      # **한 번도 실행되지 않은 채** 여러 릴리스를 나갔다(2026-09-21 Sentry ALARMTALK-IOS-4/-7/-8).
+      - name: Check BGTask handler isolation
+        run: python3 scripts/check-bgtask-handler-isolation.py
+
+      # 백그라운드 워커가 401 에도 `Result.retry()` 를 돌려주면 폐기된 토큰으로 영원히
+      # 재시도하며 회차마다 Sentry 이슈를 한 건씩 남긴다(2026-09-14 ANDROID-M). 판정을
+      # `syncWorkerOutcome` 하나로 모았지만, 모으는 것만으로는 다음 워커가 빠지는 걸 못
+      # 막는다 — 실제로 1차 수정이 워커 6개 중 3개에만 닿았고 빠진 줄 아무도 몰랐다.
+      - name: Check sync workers route failures through syncWorkerOutcome
+        run: python3 scripts/check-sync-worker-unauthorized.py
 
   typecheck:
     runs-on: ubuntu-latest

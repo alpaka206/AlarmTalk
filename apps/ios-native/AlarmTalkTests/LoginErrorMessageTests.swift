@@ -21,6 +21,58 @@ final class LoginErrorMessageTests: XCTestCase {
         XCTAssertTrue(message.contains("비밀번호"), "비밀번호도 함께 확인하게 말해야 한다: \(message)")
     }
 
+    func test_이메일_형식_오류는_이메일만_지목해_말한다() {
+        // 서버는 로그인 바디에서 **이메일만** 형식에 안 맞으면 `AUTH_EMAIL_INVALID` 로
+        // 답한다(`packages/backend/src/routes/auth.ts`). 예전에는 이것도
+        // `AUTH_VALIDATION_FAILED` 로 뭉뚱그려 와서 "로그인에 실패했어요" 로 읽혔고,
+        // 사용자는 멀쩡한 비밀번호를 계속 다시 쳤다.
+        let message = AuthViewModel.loginErrorMessage(
+            for: APIError.server(status: 400, message: "Invalid email address", errorCode: "AUTH_EMAIL_INVALID")
+        )
+
+        // 표에 없으면 아래 '모르는 코드' 와 같은 폴백 문장이 나온다 — 그걸 못 박는다.
+        let fallback = AuthViewModel.loginErrorMessage(
+            for: APIError.server(status: 400, message: "Nope", errorCode: "SOME_CODE_WE_DO_NOT_MAP")
+        )
+        XCTAssertNotEqual(message, fallback, "이 코드에 정해 둔 문구가 없다: \(message)")
+
+        // 앱 1차 방어선(`LoginView` 제출 전 검사)과 **같은 문구**여야 한다. 앱이 먼저
+        // 잡든 서버가 잡든 같은 말을 해야 사용자가 두 번 헤매지 않는다.
+        XCTAssertEqual(message, APIErrorMessages.emailInvalid)
+
+        // ⚠ 자격증명 불일치와 같은 말을 하면 안 된다 — 서버는 비밀번호를 보지도 않았다.
+        let credentials = AuthViewModel.loginErrorMessage(
+            for: APIError.server(status: 401, message: "Unauthorized", errorCode: "AUTH_INVALID_CREDENTIALS")
+        )
+        XCTAssertNotEqual(message, credentials)
+    }
+
+    /// ⚠ **화면이 갈래를 가르는 값과 뷰모델이 싣는 값이 같아야 한다**(2026-09-21 리뷰).
+    /// `AuthViewModel.loginErrorCode` 는 `APIError.serverErrorCode` 를 그대로 싣고,
+    /// `LoginView` 는 그 값을 `AuthEmailFormat.isEmailFormatErrorCode` 로 가른다.
+    /// 예전에는 번역된 문구를 비교해서, 문구를 한 글자만 고쳐도 **아무 경고 없이**
+    /// 형식 오류가 비밀번호 칸 아래로 내려갔다.
+    func test_이메일_형식_갈래는_문구가_아니라_코드로_가른다() {
+        let error = APIError.server(
+            status: 400,
+            message: "Invalid email address",
+            errorCode: "AUTH_EMAIL_INVALID"
+        )
+
+        // 뷰모델이 싣는 값(= 화면이 보는 값).
+        XCTAssertTrue(AuthEmailFormat.isEmailFormatErrorCode(error.serverErrorCode))
+        // 그 코드의 문구는 앱 1차 방어선과 같은 한 줄이다 — 자리는 이메일 칸 하나뿐이다.
+        XCTAssertEqual(AuthViewModel.loginErrorMessage(for: error), APIErrorMessages.emailInvalid)
+
+        // 자격증명 실패는 이 갈래가 아니다 — 비밀번호 칸이 맡는다.
+        let credentials = APIError.server(
+            status: 401,
+            message: "Unauthorized",
+            errorCode: "AUTH_INVALID_CREDENTIALS"
+        )
+        XCTAssertFalse(AuthEmailFormat.isEmailFormatErrorCode(credentials.serverErrorCode))
+    }
+
     func test_공용표가_있는_코드는_표의_문구를_쓴다() {
         // 로그인은 rate limit 미들웨어 뒤에 있어 429 가 실제로 온다. 그 코드에 문구가
         // 정해져 있으면 **표가 이긴다** — 안드로이드 로그인 갈래와 같은 층 순서다.
