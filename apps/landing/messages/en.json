@@ -372,7 +372,7 @@
   "event": {
     "meta": {
       "title": "A voice message with your name, in a voice you like",
-      "description": "Type a name and hear an AI voice say it in a birthday wish and a word of comfort — in Korean, English and Japanese. AI voices, not real people."
+      "description": "Type a name and hear an AI voice say it in a birthday wish and a Chuseok greeting — in Korean, English and Japanese. AI voices, not real people."
     },
     "hero": {
       "headline": "Hear a voice message that says your name,\nin a voice you like!"
@@ -385,8 +385,8 @@
         "birthday": {
           "name": "Happy birthday"
         },
-        "comfort": {
-          "name": "A word of comfort"
+        "chuseok": {
+          "name": "Happy Chuseok"
         }
       },
       "generate": "Generate",
@@ -411,7 +411,7 @@
         "RATE_LIMITED": "Too many in a row. Try again in a moment."
       },
       "fileName": "AlarmTalk {celebrity} {kind} {language} {name}",
-      "sampleLine": "Hey, <b>{name}</b>. Happy birthday! Thank you so much for always supporting me.",
+      "sampleLine": "Hey, <b>{name}</b>. Happy birthday! Thank you for always cheering me on.",
       "downloadAria": "Download {kind}",
       "ready": "Ready.",
       "preview": "Preview",

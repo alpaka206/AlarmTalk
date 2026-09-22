@@ -19,7 +19,7 @@ export function isEventLocale(v: unknown): v is EventLocale {
   return typeof v === 'string' && (EVENT_LOCALES as readonly string[]).includes(v);
 }
 
-export const EVENT_MESSAGE_KINDS = ['birthday', 'comfort'] as const;
+export const EVENT_MESSAGE_KINDS = ['birthday', 'chuseok'] as const;
 export type EventMessageKind = (typeof EVENT_MESSAGE_KINDS)[number];
 export function isEventMessageKind(v: unknown): v is EventMessageKind {
   return typeof v === 'string' && (EVENT_MESSAGE_KINDS as readonly string[]).includes(v);
@@ -50,45 +50,37 @@ export function voiceProjectFor(
 }
 
 /**
- * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 ElevenLabs v3 감정
- * 태그라 소리에는 없고 화면에는 벗겨서 보여 준다(`renderMessage`). 줄바꿈은 화면의 문단이다.
- * 생일 문구 셋은 2026-09-16 에 사용자가 Perso 슬롯에 적어 둔 것을 그대로 옮겼다. 위로 문구는
- * 랜딩에 있던 문장에 같은 결의 태그만 얹은 것 — 바꾸려면 여기만 고친다.
+ * 읽힐 문장. `{name}` 자리에 부르는 꼴(`vocative`)이 들어간다. 대괄호는 감정 태그라 소리에는
+ * 없고 화면에는 벗겨서 보여 준다(`renderMessage`). 줄바꿈은 화면의 문단이다.
+ * 2026-09-22 사용자 지시로 생일 문구를 새 문안으로 바꾸고, '위로 한마디' 를 '추석 인사' 로
+ * 갈아 끼웠다(한국어는 사용자 원문 그대로, 영어·일본어는 같은 결로 옮긴 것). 바꾸려면 여기만
+ * 고친다 — 랜딩은 종류 id(`MESSAGE_KINDS`)와 라벨(`messages/*.json` 의 `event.studio.kinds`)만 안다.
  */
 export const EVENT_MESSAGES: Record<EventMessageKind, Record<EventLocale, string>> = {
   birthday: {
-    ko: `[warm, relaxed] {name}, [gently cheerful] 생일 너무너무 축하해!
-
-[gentle, sincere] 늘 응원해 줘서 너무 고마워.
-[warm, conversational] 오늘은 맛있는 것도 많이 먹고, 누구보다 행복한 하루 보냈으면 좋겠어.
-
-[lightly playful, affectionate] 우리 앞으로도 좋은 추억 많이 만들자!`,
+    ko: `[warm, relaxed] {name}, [gently cheerful] 생일 정말 축하해!
+[gentle, sincere] 늘 응원해 줘서 고마워.
+[warm, conversational] 오늘 누구보다 행복한 하루 보내고,
+[lightly playful, smiling] 우리 앞으로도 좋은 추억 많이 만들자!`,
     en: `[warm, relaxed] Hey, {name}. [gently cheerful] Happy birthday!
-
-[gentle, sincere] Thank you so much for always supporting me.
-[warm, conversational] Hope you get to enjoy lots of good food today and have the happiest birthday!
-
-[lightly playful, affectionate] Let’s keep making lots of great memories together!`,
+[gentle, sincere] Thank you for always cheering me on.
+[warm, conversational] I hope today is the happiest day of all for you,
+[lightly playful, smiling] and let's keep making great memories together!`,
     ja: `[warm, relaxed] {name}、[gently cheerful] お誕生日、本当におめでとう！
-
-[gentle, sincere] いつも応援してくれて、本当にありがとう。
-[warm, conversational] 今日はおいしいものいっぱい食べて、誰よりも幸せな一日を過ごしてね。
-
-[lightly playful, affectionate] これからも一緒に、楽しい思い出いっぱい作ろうね！`,
+[gentle, sincere] いつも応援してくれて、ありがとう。
+[warm, conversational] 今日は誰よりも幸せな一日を過ごしてね。
+[lightly playful, smiling] これからも一緒に、いい思い出をたくさん作ろうね！`,
   },
-  comfort: {
-    ko: `[warm, relaxed] {name}, [gentle, sincere] 오늘도 정말 고생했어.
-
-[warm, conversational] 안 보이는 데서 애쓴 거 다 알아.
-[warm, sincere] 충분히 잘하고 있어.`,
-    en: `[warm, relaxed] Hey, {name}. [gentle, sincere] You worked so hard today.
-
-[warm, conversational] I see the effort nobody else does.
-[warm, sincere] You’re doing more than enough.`,
-    ja: `[warm, relaxed] {name}、[gentle, sincere] 今日も本当におつかれさま。
-
-[warm, conversational] 誰にも見えないところでがんばったの、知ってるよ。
-[warm, sincere] 十分やれてる。`,
+  chuseok: {
+    ko: `[warm, relaxed] {name}, [gently cheerful] 즐거운 추석 보내!
+[warm, conversational] 맛있는 것도 많이 먹고, 이번 연휴엔 푹 쉬면서 편안하게 보내.
+[gentle, sincere] 늘 건강하고, 웃을 일도 가득했으면 좋겠어.`,
+    en: `[warm, relaxed] Hey, {name}. [gently cheerful] Happy Chuseok!
+[warm, conversational] Eat lots of good food, and take it easy and really rest this holiday.
+[gentle, sincere] Stay healthy, and I hope your days are full of things to smile about.`,
+    ja: `[warm, relaxed] {name}、[gently cheerful] 楽しいチュソクを過ごしてね！
+[warm, conversational] おいしいものをたくさん食べて、この連休はゆっくり休んで、のんびり過ごしてね。
+[gentle, sincere] いつも元気で、笑えることがいっぱいありますように。`,
   },
 };
 

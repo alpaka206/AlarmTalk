@@ -147,7 +147,7 @@ describe('event-voices — 문장·부르는 꼴·슬롯', () => {
     const m = renderMessage('birthday', 'ko', '지민');
     expect(m.spoken).toBe('지민아');
     expect(m.tts).toContain('[warm, relaxed] 지민아, [gently cheerful] 생일');
-    expect(m.display.startsWith('지민아, 생일 너무너무 축하해!')).toBe(true);
+    expect(m.display.startsWith('지민아, 생일 정말 축하해!')).toBe(true);
     expect(m.display).not.toMatch(/\[/);
     expect(m.display.split('\n').length).toBe(4);
     expect(renderMessage('birthday', 'en', '지민').display).toContain('Hey, 지민. Happy birthday!');
@@ -275,7 +275,7 @@ describe('POST /event/:id/clips — 메시지 클립 생성', () => {
     cursorPositions(0, 1);
     const req = buildApp();
     await req('/event/1/clips', post(ok));
-    await req('/event/1/clips', post({ ...ok, kind: 'comfort' }));
+    await req('/event/1/clips', post({ ...ok, kind: 'chuseok' }));
     const a = slotAt(WINTER_KO, KO_SENTENCES, 0);
     const b = slotAt(WINTER_KO, KO_SENTENCES, 1);
     expect(a.sentence).not.toBe(b.sentence);
