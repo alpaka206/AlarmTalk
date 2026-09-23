@@ -18,7 +18,7 @@
   - Google Play Billing: 稼働中 — 月額サブスクリプションのみ(個人・カップル・ファミリー)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
-SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、リポジトリに存在します。ただしまだ App Store には有りません。CI ワークフロー(`ios-build.yml` — ユニットテスト + Release ビルド)は 2026-09-08 に復旧しました。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。
+SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し、2026-09-22 に App Store でリリースされました。CI ワークフロー(`ios-build.yml` — ユニットテスト + Release ビルド)は 2026-09-08 に復旧しました。ビルドは XcodeGen(`project.yml` → `AlarmTalkNative.xcodeproj`)で行います。詳細は [`docs/ios/`](docs/ios/) を参照。
 
 ## 技術スタック
 
@@ -38,7 +38,7 @@ SwiftUI の iOS クライアント(`apps/ios-native`)は 2026-08-06 に復活し
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android アプリ
-│   ├── ios-native/       SwiftUI iOS アプリ (XcodeGen、未リリース)
+│   ├── ios-native/       SwiftUI iOS アプリ (XcodeGen)
 │   └── landing/          Next.js ランディングページ (静的 export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
