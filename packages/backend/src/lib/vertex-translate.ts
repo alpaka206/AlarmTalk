@@ -736,7 +736,8 @@ function alarmTextPrompt(args: {
   //   - **자리** — 2.5 가 `오늘은 [happy] 우리 딸 생일` 처럼 꾸밈말과 명사 사이에 넣었다.
   const tagInstruction = args.shouldTag
     ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.
-PLACEMENT: put a tag only at the start of a sentence or a clause, never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
+PLACEMENT: start the first sentence with a tag, and put tags only at the start of a sentence or a clause — never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). One tag per sentence unless the delivery really changes mid-sentence: if a sentence already starts with a tag, don't add another right after a name or comma ('[cheerfully] 엄마, [brightly] 일어날 시간이야' is wrong). A line of one or two sentences usually needs one or two tags. Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
+MATCH THE CONTENT: pacing tags such as [measured, deliberate] slow the voice down — fine, but never use them to calm down an urgent line ('일어나세요! [measured, deliberate] 회의 있어요' is wrong).
 THIS IS AN ALARM: it has to wake someone up. Never use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES} — unless the message itself is a good-night or wind-down message ('잘 자', '수고했어', 'good night', 'おやすみ'), where a calm delivery fits. Never use fear or panic directions either ([panicked], [scared], [terrified]) — urgency is fine, fear is not.`
     : 'Do not add or remove delivery tags.';
 
@@ -820,8 +821,9 @@ PHILOSOPHY
   rhythm. Idiomatic naturalness outranks literal fidelity.
 - A specific human beside the listener, not a script. Warm but restrained — caring, never
   saccharine, theatrical, poetic, or dramatic.
-- Soft-start. Open gently (the listener's title or a soft greeting), then ease into the point;
-  acknowledge the wake/sleep transition when natural. Never jarring, never alarming, never
+- Soft-start. Open gently with the listener's title or a short soft opener, then ease into the
+  point; acknowledge the wake/sleep transition when natural. Don't assume the time of day — no
+  morning greeting unless the intent is itself a greeting (an alarm can ring at any hour). Never jarring, never alarming, never
   fear/urgency.
 - Meaning over novelty. The value is a context-appropriate, kind line. Never announce whose voice
   this is or the listener's identity.
@@ -910,7 +912,9 @@ PARTICLES & SPACING (a writing rule, not a post-fix): keep subject/object partic
 '비가 올 수 있대요'(O) not '비 올 수 있대요'(X); '오늘은 비가 와요' reads warmer than '오늘 비 와요'.
 Drop redundant 나/너/내가 when obvious.
 REPORTED/SOFT endings for relayed weather/fortune: 해요체 '~대요/~래요/~다네요/~면 좋겠어요';
-반말 '~대/~래/~다네/~면 좋겠다'. Sounds like relaying, not asserting.
+반말 '~대/~래/~다네/~면 좋겠다'. Sounds like relaying, not asserting. Put them ONLY on the relayed fact
+itself — never on feelings, empathy or advice ('누워 있기 아까울 정도래요'(X)). Fortune stays a
+possibility ('풀릴지도 몰라'), never a promise ('술술 풀릴 거래'(X)).
 NUMBERS: never read raw numbers/units aloud — no 강수확률·기온·시각·날짜 ('강수확률 70%'(X), '최저 10도'(X),
 '7시 30분'(X)). Re-express softly instead ('비가 올 수 있대요'(O), '오늘은 좀 쌀쌀하대요'(O)).
 AVOID: exaggerated interjections(세상에/맙소사/오 마이 갓), news-anchor openers('예보에 따르면'),
@@ -947,7 +951,8 @@ warmth/intimacy, not grammar.
 - Elder/respectful or teacher: warm but a touch more composed — still contractions, no stiffness.
 - Romantic: tender, low-key intimate, never cheesy. 'Morning, you. Up you get… I've got you today.'
 Drop the subject when natural. One light opener/filler max (Hey/Alright/Okay). Address by the given
-title if provided, else a soft 'hey'/'morning'; never a guessed family title. Weather/fortune stays
+title if provided, else a soft 'hey'; never a guessed family title or pet name (love, honey, dear,
+sweetie) when no title is given. Weather/fortune stays
 casual and number-free. AVOID: weather-report numbers, exclamation spam, 'Please be advised',
 'rise and shine' clichés, over-sweet lines.`;
 
@@ -979,17 +984,17 @@ function activeLanguageBlock(targetLanguage: string): string {
 // 전부 무태그 `text` + `tag:"cheerfully"` 였다. 지시만 고치고 예시를 두면 또 무효가 된다.
 const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>> = {
   ko: [
-    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 좋은 아침이에요. [brightly] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
+    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 일어나실 시간이에요. [caring] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
     { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
     { context: 'wake_fortune, 중립', text: '[cheerfully] 좋은 아침이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해요.' },
   ],
   ja: [
-    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、おはよう。[brightly] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
+    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、起きる時間だよ。[caring] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
     { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[cheerfully] おはようございます。[warmly] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
     { context: 'wake_fortune, 중립/casual', text: '[playfully] おはよう。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
-    { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
+    { context: 'wake_weather, neutral, rain', text: '[warmly] Hey… time to get up. [caring] Looks like rain later, grab your umbrella before you head out.' },
     // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
     //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
     //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
@@ -1130,7 +1135,8 @@ function prerenderClipPrompt(params: {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.`;
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
+MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) take caring, apologetic or concerned tones — never playful, excited or bright ones. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. Start the first sentence with a tag. Avoid energy-dropping sounds such as [sighs] in a wake-up line.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -1179,11 +1185,16 @@ NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_
     childlikeInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
-    // ⚠ 길이를 숫자로 준다(2026-09-23). "한두 문장" 만으로는 3.5 Flash-Lite 가 영어에서 문장을
-    //   이어 붙여 200자 상한을 넘겼다(비교 평가 too_long ×7, 전부 영어).
-    params.targetLanguage === 'en'
-      ? 'LENGTH: at most 25 words of spoken text (tags do not count). Cut the extra clause rather than squeeze it in.'
-      : 'LENGTH: at most about 90 characters of spoken text (tags do not count). Cut the extra clause rather than squeeze it in.',
+    // ⚠ **완결성이 먼저, 길이는 그다음**(2026-09-23 블라인드 판정). 처음엔 "영어 25단어·90자" 로
+    //   묶었는데, 시드는 대부분 '사실 → 공감 → 권유' 세 마디라 **마지막 권유("이제 일어나자",
+    //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
+    //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
+    //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
+    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+      params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
+    } of spoken text (tags do not count).`,
+    'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — never for medication, which can ring at any hour. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
+    'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
       ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
@@ -1235,6 +1246,8 @@ export async function generatePrerenderClipText(
   // 그래서 **회차마다 제약을 더해** 다시 묻는다. 마지막 회차는 관계 낱말 자체를 금지한다.
   const MAX_ATTEMPTS = 3;
   let lastError: unknown = null;
+  /** 직전 회차가 내용 검사에서 걸린 사유 — 그 사유에 맞는 재시도 힌트를 준다. */
+  let lastReason: AlarmTextRejectionReason | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
     // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
@@ -1251,7 +1264,17 @@ export async function generatePrerenderClipText(
           : label
             ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
             : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
-    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
+    // ⚠ **길어서 걸렸으면 길이를 숫자로 다시 말한다**(2026-09-23 비교 평가). 첫 시도는
+    //   완결성을 앞세우므로(프롬프트 COMPLETENESS FIRST) 3.5 Flash-Lite 가 영어에서 200자를
+    //   넘기기도 한다. 일반 힌트('다르게 써 봐')로는 세 번 다 길게 써서 **영구 실패**했다
+    //   (엄마→sweetie 흐림·추위·응원). 넘친 경우에만 줄이게 해서 첫 시도의 완결성은 지킨다.
+    const lengthHint =
+      lastReason === 'too_long'
+        ? `The previous line was TOO LONG. Keep the spoken text well under 150 characters (${
+            targetLanguage === 'en' ? 'about 25 English words' : 'about 80 characters'
+          }): shrink the empathy to a few words and drop the greeting — but keep the closing action.`
+        : '';
+    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint, lengthHint]
       .filter(Boolean)
       .join('\n');
     let raw: string;
@@ -1283,6 +1306,7 @@ export async function generatePrerenderClipText(
     const reason = prerenderRejectionReason(spoken, text, targetLanguage, params);
     if (reason) {
       lastError = new AlarmTextPreparationInvalidError(reason);
+      lastReason = reason;
       continue;
     }
     // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다

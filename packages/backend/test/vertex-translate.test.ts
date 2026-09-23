@@ -375,6 +375,26 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI)).toHaveLength(1);
   });
 
+  it('사전렌더: 길어서 걸린 다음 회차에는 길이를 숫자로 다시 말한다', async () => {
+    const tooLong = `[warmly] Hey sweetie, ${'I know it is so tempting to stay under the covers today. '.repeat(4)}Come on, up you get.`;
+    queueContent(geminiText(JSON.stringify({ text: tooLong })));
+    queueContent(geminiText('{"text":"[warmly] Hey sweetie, gray out there. [encouraging] Open the curtains and let\'s get up."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '흐리다고 알리고 공감한 뒤 커튼부터 열고 일어나자고 한다.',
+      relationshipLabel: 'mom',
+      listenerTitle: 'sweetie',
+      targetLanguage: 'en',
+    });
+    expect(out.text).toContain('Open the curtains');
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain('TOO LONG');
+    expect(prompts[1]).toContain('TOO LONG');
+    expect(prompts[1]).toContain('about 25 English words');
+  });
+
   it('3.x 응답(답 part 에 thoughtSignature)도 그대로 문구로 쓴다', async () => {
     queueContent(
       candidateResponse({

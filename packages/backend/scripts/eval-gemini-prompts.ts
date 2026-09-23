@@ -180,7 +180,8 @@ function leaks(spoken: string, language: string): string[] {
   } else if (language === 'ja') {
     if (/[月火水木金土日]曜/.test(spoken)) found.push('weekday');
     if (/(東京|大阪|京都|福岡|日本|韓国|アメリカ)/.test(spoken)) found.push('place');
-    if (/(度|パーセント|%)/.test(spoken) && /[0-9０-９一二三四五六七八九十]+\s?(度|パーセント|%)/.test(spoken)) found.push('unit');
+    // 숫자 + 단위만 — 二度寝(다시 잠들기)·一度に(한꺼번에) 같은 관용구를 온도로 세지 않는다.
+    if (/[0-9０-９]+\s?(度|パーセント|%)/.test(spoken)) found.push('unit');
   } else {
     if (/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(spoken)) found.push('weekday');
     if (/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(spoken)) found.push('date');
