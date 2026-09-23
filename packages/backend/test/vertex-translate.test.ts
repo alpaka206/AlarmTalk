@@ -4,6 +4,7 @@ import {
   AlarmTextPreparationInvalidError,
   GeminiIncompleteResponseError,
   analyzeSpeechStyleWithVertex,
+  isWindDownText,
   buildGenerationConfig,
   deriveAlarmDisplayText,
   extractGeneratedText,
@@ -170,7 +171,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(config).not.toHaveProperty('temperature');
   });
 
-  it('워커가 2.5 · us-central1 이면 요청 주소와 설정이 지금과 같다', async () => {
+  // 2.x 의 **계열별 설정**(temperature · 호출부 상한 · thinkingBudget 0)과 주소는 그대로다. 응답
+  // 스키마는 프롬프트 개선(2026-09-23)으로 두 계열에 같이 붙었다 — 그건 모델과 무관한 변경이다.
+  it('워커가 2.5 · us-central1 이면 2.x 설정과 지금의 주소로 부른다', async () => {
     queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
     await prepareAlarmTextWithVertex(
       { ...ENV, GOOGLE_VERTEX_MODEL: 'gemini-2.5-flash', GOOGLE_VERTEX_LOCATION: 'us-central1' },
@@ -186,6 +189,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       maxOutputTokens: 256,
       responseMimeType: 'application/json',
       thinkingConfig: { thinkingBudget: 0 },
+      responseSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     });
   });
 
@@ -316,6 +320,59 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     );
     expect(style?.dialect).toBe('경상');
     expect(style?.strength).toBe('');
+  });
+
+  // --- 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것 ---
+  it('직접 입력: 깨우는 문구에 모델이 붙인 졸린 태그는 버린다', async () => {
+    queueContent(geminiText('{"text":"[gently] 약 먹을 시간이야. [cheerfully] 까먹지 말고!"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '약 먹을 시간이야. 까먹지 말고!', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toBe('약 먹을 시간이야. [cheerfully] 까먹지 말고!');
+    expect(prepared.tags).toEqual(['cheerfully']);
+  });
+
+  it('직접 입력: 졸린 태그만 있었으면 로컬 태깅(cheerfully)으로 — calm 으로 돌아가지 않는다', async () => {
+    queueContent(geminiText('{"text":"[calm] 약 먹을 시간이야."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '약 먹을 시간이야.', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toBe('[cheerfully] 약 먹을 시간이야.');
+  });
+
+  it('직접 입력: 잠들기 전·마무리 문구는 calm 을 그대로 둔다', async () => {
+    expect(isWindDownText('오늘도 수고했어, 잘 자')).toBe(true);
+    expect(isWindDownText('약 먹을 시간이야')).toBe(false);
+    queueContent(geminiText('{"text":"[calm] 오늘도 수고했어. 잘 자."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 수고했어. 잘 자.', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toContain('[calm]');
+  });
+
+  it('사전렌더: 졸린 태그는 거절하지 않고 지운다 — 문장은 살린다', async () => {
+    queueContent(geminiText('{"text":"[caring] 우리 딸, 약 먹을 시간이야. [gently] 알람 끄기 전에 얼른 먹자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알린다.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 딸',
+      targetLanguage: 'ko',
+    });
+    // 지우고 나면 선두 태그 하나만 남으므로, 기존 규칙대로 문장마다 다시 앞세운다(뒤 문장에서
+    // 톤이 풀리는 것을 막는 장치 — `applyDeliveryTagPerSentence`).
+    expect(out.text).toBe('[caring] 우리 딸, 약 먹을 시간이야. [caring] 알람 끄기 전에 얼른 먹자.');
+    expect(out.text).not.toContain('gently');
+    // 한 번에 끝난다 — 예전에는 여기서 다시 물었다.
+    expect(mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI)).toHaveLength(1);
   });
 
   it('3.x 응답(답 part 에 thoughtSignature)도 그대로 문구로 쓴다', async () => {

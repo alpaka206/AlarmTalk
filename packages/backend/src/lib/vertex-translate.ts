@@ -324,6 +324,9 @@ export async function prepareAlarmTextWithVertex(
     raw = await generateContentText(env, prompt, {
       temperature: 0.15,
       maxOutputTokens: 256,
+      // ⚠ 스키마 없이 JSON 만 요구하면 3.5 Flash-Lite 가 영어 문구의 12% 를 **배열**
+      //   `[{"text":…}]` 로 준다(2026-09-23 비교 평가). 파서가 받아 주긴 하지만 형식을 못박는다.
+      responseSchema: ALARM_TEXT_RESPONSE_SCHEMA,
     });
   } catch (err) {
     if (shouldTranslate) {
@@ -358,6 +361,14 @@ export async function prepareAlarmTextWithVertex(
   if (shouldTag && !shouldTranslate) {
     preparedText =
       normalizeSameLanguageTaggedText(preparedText, trimmed, parsed.tags) ?? fallbackText;
+  }
+  if (shouldTag && !isWindDownText(trimmed)) {
+    // 깨우는 알람이다 — 모델이 붙인 졸린 태그는 사전렌더·동적 경로와 같이 버린다. 사용자가
+    // 직접 친 태그는 여기 오지 않는다(`shouldTag` 가 거짓이다). 잠들기 전·마무리 문구
+    // (`isWindDownText`)는 calm 이 맞으므로 건드리지 않는다. 다 버려져 태그가 하나도 안
+    // 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
+    const withoutSleepy = dropLowArousalTags(preparedText);
+    preparedText = extractTags(withoutSleepy).length > 0 ? withoutSleepy : fallbackText;
   }
 
   const tags = extractTags(preparedText);
@@ -718,8 +729,15 @@ function alarmTextPrompt(args: {
   const action = args.shouldTranslate
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
+  // ⚠ 아래 태그 규칙 셋은 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것이다:
+  //   - **졸린 태그** — 이 경로만 저각성 금지가 없어서 3.5 Flash-Lite 가 25% 로 `[gentle]`·
+  //     `[softly]` 를 붙였다. 깨우는 알람이다. 서버도 걸러 낸다(아래 `dropLowArousalTags`).
+  //   - **띄어쓰기** — 3.5 가 `[warm, gentle]할머니` 처럼 붙여 썼다.
+  //   - **자리** — 2.5 가 `오늘은 [happy] 우리 딸 생일` 처럼 꾸밈말과 명사 사이에 넣었다.
   const tagInstruction = args.shouldTag
-    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.`
+    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.
+PLACEMENT: put a tag only at the start of a sentence or a clause, never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
+THIS IS AN ALARM: it has to wake someone up. Never use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES} — unless the message itself is a good-night or wind-down message ('잘 자', '수고했어', 'good night', 'おやすみ'), where a calm delivery fits. Never use fear or panic directions either ([panicked], [scared], [terrified]) — urgency is fine, fear is not.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -728,7 +746,9 @@ function alarmTextPrompt(args: {
     tagInstruction,
     'Do not add explanations, markdown, quotes, emojis, or extra fields.',
     'Keep the final text natural, spoken, and 200 characters or fewer.',
-    'Return strict JSON: {"text":"final text","tags":["tag names without brackets"]}.',
+    // 태그 목록은 받지 않는다 — `text` 안의 인라인 태그가 전부이고, 목록은 거기서 뽑는다
+    // (`extractTags`). 필요한 것만 받는다(2026-09-23).
+    'Return strict JSON with one field: {"text":"final text with the delivery tags inline"}.',
     '',
     args.text,
   ].join('\n');
@@ -825,7 +845,6 @@ REGISTER (one consistent register per line, matched to the relationship)
 DELIVERY TAG (ElevenLabs v3)
 - Write delivery tags INLINE inside "text", in square brackets, at each point where the delivery
   changes — including mid-line. Use as many as the line needs (typically 1 to 3).
-- Leave the separate "tag" field as "" — it is a legacy field the backend no longer reads.
 - For pauses/pacing use punctuation and ellipses (…) as well — the engine has no SSML breaks
   and a soft '…' or comma after the greeting is the soft-start.
 - If a line is very short (under ~20 characters), one tag is plenty; never stack tags on a
@@ -847,18 +866,30 @@ NEVER
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
 
-OUTPUT
-- Return STRICT JSON only, matching the schema: {"text": string, "tag": string}. "text" = the
-  final spoken line in the target language, WITH delivery tags written inline in square
-  brackets where the delivery changes. "tag" = "" (legacy field, no longer used).`;
+- Write exactly one space after every tag ('[warmly] 할머니', never '[warmly]할머니').
 
-// 구조화 출력(§4.7). responseMimeType/json·thinkingBudget:0 과 함께 1차 파서로 쓰고,
+OUTPUT
+- Return STRICT JSON only, matching the schema: {"text": string}. "text" = the final spoken line
+  in the target language, WITH delivery tags written inline in square brackets where the
+  delivery changes. No other fields.`;
+
+/** 직접 입력 태깅 응답. 태그는 `text` 안에 인라인으로만 받는다. */
+const ALARM_TEXT_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    text: { type: 'string' },
+  },
+  required: ['text'],
+} as const;
+
+// 구조화 출력(§4.7). responseMimeType/json 과 함께 1차 파서로 쓰고,
 // 간헐 빈응답 대비 brace-slice 파서를 최후 폴백으로 유지한다.
+// ⚠ **레거시 `tag` 필드는 받지 않는다**(2026-09-23). 백엔드가 읽지 않는 빈 필드를 매번
+//   요구하던 것이라 뺐다 — 필요한 것만 받는다. 파서는 여전히 `tag` 가 와도 읽는다.
 const DYNAMIC_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     text: { type: 'string' },
-    tag: { type: 'string' },
   },
   required: ['text'],
 } as const;
@@ -970,11 +1001,8 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
 function fewShotBlock(targetLanguage: string): string {
   const examples = DYNAMIC_FEW_SHOT[targetLanguage];
   if (!examples || examples.length === 0) return '';
-  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":""}`);
-  return [
-    'Few-shot examples — note the tags live INSIDE "text" and the "tag" field stays empty:',
-    ...lines,
-  ].join('\n');
+  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}"}`);
+  return ['Few-shot examples — note the tags live INSIDE "text":', ...lines].join('\n');
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
@@ -1034,8 +1062,7 @@ PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right 
 Use an ellipsis ("...") where the speaker would naturally pause or trail off before turning to the point ("그래도 이제... 슬슬 일어나 볼까?"). One or two per line at most — it is a breath, not a mannerism.
 SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge.
 ⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause, a tag, or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
-Leave the separate "tag" field as "" — it is legacy.`;
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -1060,7 +1087,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     tagAllowlistInstruction,
     fewShotBlock(context.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1103,8 +1130,7 @@ function prerenderClipPrompt(params: {
     .map((tag) => `[${tag}]`)
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
-Leave the separate "tag" field as "" — it is legacy.`;
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -1127,12 +1153,20 @@ Leave the separate "tag" field as "" — it is legacy.`;
   // 아이 목소리로 **판정된 경우에만** 켠다(SpeechStyle.childlike). 어른 목소리가 이렇게
   // 말하면 이상하므로 분석 쪽에서 보수적으로 판단하고, 여기서는 그 결과를 그대로 따른다.
   // 알람이라 알아들을 수 있어야 하므로 '늘어진 발음' 은 한두 낱말까지만 허용한다.
+  // ⚠ **아이 말투가 관계 어체 규칙을 이긴다**(2026-09-23). '딸→아빠' 는 KOREAN_NATIVE_RULES 에서
+  //   '자식→부모 = 존대 해요체' 로 묶여, 3.5 Flash-Lite 가 "일어나세요오", "술술 풀릴지도 몰라요"
+  //   처럼 **어른 존댓말과 아이 말투를 섞었다**(비교 평가). 아이는 부모에게 반말을 쓴다.
   const childlikeInstruction = params.speechStyle?.childlike
     ? [
-        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one.',
-        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses.',
+        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one. This OVERRIDES the relationship register rules above: a small child talks to a parent or grandparent in plain casual speech (Korean 반말 — no 요/세요/습니다; Japanese タメ口; simple English).',
+        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses, no reported-speech hedging (never "~ㄹ지도 몰라요", "~면 좋겠어요", "~지요?").',
         'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
         'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
+        params.targetLanguage === 'ko'
+          ? 'Child examples: "[excited] 아빠아, 일어나아! [giggles] 오늘 비 온대. 우산 꼭 챙겨!" / "[playfully] 엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
+          : params.targetLanguage === 'ja'
+            ? 'Child examples: "[excited] パパ、おきてー！[giggles] きょうはあめなんだって。かさもってってね！" / "[playfully] ママ、おくすりのじかんだよ。はやくのんでー！"'
+            : 'Child examples: "[excited] Daddy, wake uuup! [giggles] It\'s gonna rain, take your umbrella, okay?" / "[playfully] Mommy, medicine time! Take it now-now-now!"',
       ].join(' ')
     : '';
   return [
@@ -1145,6 +1179,11 @@ Leave the separate "tag" field as "" — it is legacy.`;
     childlikeInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
+    // ⚠ 길이를 숫자로 준다(2026-09-23). "한두 문장" 만으로는 3.5 Flash-Lite 가 영어에서 문장을
+    //   이어 붙여 200자 상한을 넘겼다(비교 평가 too_long ×7, 전부 영어).
+    params.targetLanguage === 'en'
+      ? 'LENGTH: at most 25 words of spoken text (tags do not count). Cut the extra clause rather than squeeze it in.'
+      : 'LENGTH: at most about 90 characters of spoken text (tags do not count). Cut the extra clause rather than squeeze it in.',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
       ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
@@ -1152,7 +1191,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel warm and human, not a robotic prerecorded template.',
     tagAllowlistInstruction,
     fewShotBlock(params.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1229,7 +1268,12 @@ export async function generatePrerenderClipText(
       continue;
     }
     const parsed = parseDynamicAlarmTextResult(raw);
-    const text = parsed.text.trim();
+    // ⚠ **졸린 태그는 거절하지 않고 지운다**(2026-09-23 — 동적 경로 `dropLowArousalTags` 와 같게).
+    //   예전에는 `[gently]` 하나만 있어도 문장 전체를 버리고 다시 물었다. 2.5 Flash 는 같은
+    //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
+    //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
+    //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
+    const text = dropLowArousalTags(parsed.text.trim());
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
@@ -1277,7 +1321,7 @@ export async function generatePrerenderClipText(
  *
  * ⚠ 반환값에 문구 원문을 섞지 말 것. 이 값은 그대로 Sentry 태그가 된다.
  */
-function prerenderRejectionReason(
+export function prerenderRejectionReason(
   /** 태그를 벗긴 낭독 본문. 길이·언어·호칭·유출은 이걸로 잰다. */
   spoken: string,
   /** 모델이 준 원문(인라인 태그 포함). 형식·태그 검사만 이걸로 본다. */
@@ -2320,7 +2364,7 @@ function containsNormalized(text: string, needle: string): boolean {
   return normalize(text).includes(normalize(needle));
 }
 
-function parseAlarmTextPreparation(raw: string): {
+export function parseAlarmTextPreparation(raw: string): {
   text: string;
   tags: string[];
   parsedJson: boolean;
@@ -2355,7 +2399,8 @@ function parseAlarmTextPreparation(raw: string): {
 
 // 동적 생성 응답 파서. responseSchema({text, tag})를 1차로 읽고, 간헐 빈응답/포맷이탈 대비
 // brace-slice를 최후 폴백으로 둔다(§4.7: 레거시 파서 유지).
-function parseDynamicAlarmTextResult(raw: string): {
+/** 내보내는 건 평가 스크립트(`scripts/eval-gemini-prompts.ts`)가 시도마다 같은 판정을 하려는 것이다. */
+export function parseDynamicAlarmTextResult(raw: string): {
   text: string;
   tag: string;
   parsedJson: boolean;
@@ -2400,7 +2445,7 @@ function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
   return env?.GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED === 'true';
 }
 
-function extractTags(text: string): string[] {
+export function extractTags(text: string): string[] {
   // ⚠ 정규식을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
   const matches = text.match(TAG_RE_GLOBAL) ?? [];
   return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
@@ -2511,23 +2556,26 @@ function pickApprovedTag(tags: string[]): string | null {
   return null;
 }
 
+/**
+ * 잠들기 전·하루 마무리 문구인가(잘 자 / 수고했어 / good night / おやすみ …). 이런 문구에서만
+ * 저각성 톤(calm 등)을 허용한다 — 그 밖의 알람은 깨우는 것이 일이다. 로컬 태거와 직접 입력
+ * 태깅의 저각성 거르기가 **같은 판정**을 쓴다.
+ */
+export function isWindDownText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ['잘 자', '잘자', '고생', '퇴근', '수고', 'night', 'sleep', 'おやすみ', 'お疲れ'].some((hint) =>
+    lower.includes(hint),
+  );
+}
+
 function tagAlarmTextLocally(text: string): string {
   if (TAG_RE.test(text)) return text;
-  const lower = text.toLowerCase();
   // 신 allowlist 기반 로컬 태깅(구 어휘 폐기). 모드 컨텍스트가 없는 preset/custom 경로라
   // 저각성 calm은 밤/마무리 뉘앙스에만 제한적으로 쓴다.
-  const tag =
-    lower.includes('잘 자') || lower.includes('night') || lower.includes('sleep')
-      ? '[calm]'
-      : lower.includes('사랑') || lower.includes('love')
-        ? '[cheerfully]'
-        : lower.includes('고생') || lower.includes('퇴근') || lower.includes('수고')
-          ? '[calm]'
-          : lower.includes('공부') || lower.includes('study') || lower.includes('힘')
-            ? '[cheerfully]'
-            : lower.includes('건강') || lower.includes('약') || lower.includes('물')
-              ? '[calm]'
-              : '[cheerfully]';
+  // ⚠ **약·건강 문구에 calm 을 붙이지 않는다**(2026-09-23). 예전에는 '약'·'건강'·'물' 이
+  //   calm 이었는데, 그건 위 주석(밤·마무리에만)과도 어긋나고 약 알람은 대개 **깨우는** 알람이다.
+  //   비교 평가에서 "약 먹을 시간이야" 가 `[calm]` 으로 나갔다.
+  const tag = isWindDownText(text) ? '[calm]' : '[cheerfully]';
   const tagged = `${tag} ${text}`;
   return tagged.length <= 200 ? tagged : text;
 }
