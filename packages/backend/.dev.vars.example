@@ -17,11 +17,12 @@ PASSWORD_PEPPER=
 ELEVENLABS_API_KEY=
 
 # Vertex Gemini (text tagging, clone prerender lines, speech-style analysis). Service-account JSON.
-# gemini-2.5-flash retires 2026-10-20 — use gemini-3.5-flash-lite. It runs only in global / us / eu
-# (NOT us-central1); `us` keeps ML processing in the United States, which the privacy policy states.
+# gemini-2.5-flash retires 2026-10-20 — use gemini-3.5-flash (NOT flash-lite: it lost blind quality
+# judging to 2.5 Flash; 3.5 Flash matched or beat it). `us` keeps ML processing in the United States,
+# which the privacy policy states (3.5 Flash-Lite does not run in us-central1 at all).
 GOOGLE_VERTEX_CREDENTIALS_JSON=
 GOOGLE_VERTEX_LOCATION=us
-GOOGLE_VERTEX_MODEL=gemini-3.5-flash-lite
+GOOGLE_VERTEX_MODEL=gemini-3.5-flash
 
 # === Optional: transactional email (Resend) ===
 RESEND_API_KEY=

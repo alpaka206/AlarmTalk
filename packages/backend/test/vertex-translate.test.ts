@@ -112,7 +112,8 @@ beforeEach(() => {
 });
 
 /**
- * ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다** — 대체는 `gemini-3.5-flash-lite`(Vertex 수명주기 표).
+ * ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다** — 대체는 `gemini-3.5-flash`(수명주기 표는 Flash-Lite 를
+ * 권하지만 블라인드 판정에서 Lite 가 2.5 에 졌다 — `vertex-translate.ts` 의 `DEFAULT_VERTEX_MODEL` 주석).
  * 코드를 먼저 배포하고 워커 시크릿(`GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`)을 나중에 바꾸므로,
  * **같은 코드가 두 계열을 모두** 맞게 불러야 한다. 2.x 요청은 한 글자도 바뀌면 안 되고(시크릿을
  * 바꾸기 전까지 동작 변화 0), 3.x 에는 3.x 의 설정을 보낸다. 2.5 에 `thinkingLevel` 을 보내면 400
@@ -197,7 +198,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     });
   });
 
-  it('시크릿이 비면 기본값 3.5 Flash-Lite · us 로 부른다', async () => {
+  it('시크릿이 비면 기본값 3.5 Flash · us 로 부른다', async () => {
     queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
     await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
       targetLanguage: 'ko',
@@ -207,7 +208,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     });
     const { url, body } = contentCall();
     expect(url).toBe(
-      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash:generateContent',
     );
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
     expect(body.generationConfig).not.toHaveProperty('temperature');
@@ -446,6 +447,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(tidyEllipsis('날씨를 못 봤어…. 창밖 한번 봐.')).toBe('날씨를 못 봤어… 창밖 한번 봐.');
     expect(tidyEllipsis('okay.... get up')).toBe('okay... get up');
     expect(tidyEllipsis('그래도… 일어나자.')).toBe('그래도… 일어나자.');
+    expect(tidyEllipsis('今日は空気がよくないみたい…、マスクしてね。')).toBe('今日は空気がよくないみたい…マスクしてね。');
+    expect(tidyEllipsis('Hey sweetie…, time to get up.')).toBe('Hey sweetie… time to get up.');
   });
 
   it('인사가 아닌 시드에서만 아침 인사를 막는다 — 시드가 아침을 말하면 허용', () => {
@@ -456,6 +459,14 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasAssumedMorning('할머니, 오늘은 운이 따라주는 날이래요.', fortune, 'ko')).toBe(false);
     expect(hasAssumedMorning('좋은 아침이에요. 잘 잤어요?', '다정하게 아침 인사를 하며 잘 잤는지 묻는다.', 'ko')).toBe(false);
     expect(hasAssumedMorning("Let's start the morning strong.", '그래도 아침은 힘차게 시작하자고 한다.', 'en')).toBe(false);
+    // 시드가 아침을 말하기만 하면 낱말은 두되, 인사·수면 안부는 여전히 막는다.
+    const dust = '미세먼지가 심하다고 알리고 그래도 아침은 힘차게 시작하자고 한다.';
+    expect(hasAssumedMorning('우리 손녀, 잘 잤니? 오늘 미세먼지가 심하대.', dust, 'ko')).toBe(true);
+    expect(hasAssumedMorning('Morning, babe. The air is bad today.', dust, 'en')).toBe(true);
+    expect(hasAssumedMorning('Hope you slept well. The air is bad today.', dust, 'en')).toBe(true);
+    expect(hasAssumedMorning('よく眠れた？今日は空気がよくないみたい。', dust, 'ja')).toBe(true);
+    expect(hasAssumedMorning('The air is bad, but let\'s start the morning strong.', dust, 'en')).toBe(false);
+    expect(hasAssumedMorning('Take your meds this morning.', '약 먹을 시간이라고 알린다.', 'en')).toBe(true);
   });
 
   it('축약 없는 영어는 두 번 이상일 때만 로봇 말투로 본다', () => {

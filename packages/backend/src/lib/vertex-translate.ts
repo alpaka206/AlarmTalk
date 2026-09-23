@@ -145,13 +145,19 @@ const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 // ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」,
 //   2026-09-22 갱신 — 대체 모델로 `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` 를 든다).
-//   기본값은 대체 모델로 둔다. 실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`
-//   이 정한다 — 이 값은 그게 비었을 때만 쓰인다.
+//   실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION` 이 정한다 — 이 값은
+//   그게 비었을 때만 쓰인다.
+// ⚠ **대체는 `gemini-3.5-flash` 다 — 표가 권하는 Flash-Lite 가 아니다**(2026-09-23 블라인드 판정,
+//   튜닝에 쓰지 않은 프로필, 같은 프롬프트). 3.5 Flash-Lite 는 2.5 Flash 에 69:108 로 졌고(한국어
+//   36%), 3.5 Flash 는 93:86·72:47 로 대등하거나 나았다(한국어·일본어 우세). 단가는 3.5 Flash 가
+//   약 4~5배(사전렌더 클립 한 개 약 $0.006)이고, 응답 꼬리가 길다(p90 수 초). 가격만 보고 Lite 로
+//   되돌리지 말 것 — 되돌리면 한국어 문구 품질이 눈에 띄게 떨어진다. 은퇴는 2027-05-19 이후.
 // ⚠ **지역은 `us` 다.** 3.5 Flash-Lite 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고
 //   (`us-central1` 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global`
-//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다.
+//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다. 3.5 Flash 도
+//   `us` 에서 실호출로 확인했다(2026-09-23).
 const DEFAULT_VERTEX_LOCATION = 'us';
-const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash-lite';
+const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash';
 /**
  * Gemini 3 계열의 출력 상한 하한. **사고 토큰이 `maxOutputTokens` 안에서 세어진다** — 사고에
  * 다 쓰면 `finishReason: MAX_TOKENS` 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측:
@@ -776,13 +782,13 @@ function koreanRegisterGuidance(relationshipLabel: string | null | undefined): s
   const peerOrIntimate = ['친구', ...SIBLING_RELATIONSHIPS];
 
   if (isGrandchildRelationship(label)) {
-    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 이제 일어나세요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
+    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 나가실 때 우산 챙기세요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
   if (isYoungerToElderRelationship(label)) {
     return ' Speaker is younger than the listener: write in warm, familiar 해요체 that still shows respect (e.g. "할아버지, 일어나실 시간이에요", "나가실 때 우산 꼭 챙기세요"). It should sound like an actual granddaughter/grandson or child speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
   if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) {
-    return ' Speaker is older than the listener: write in caring 반말, or soft 해요체 for the WHOLE line (e.g. "우리 딸, 일어날 시간이야", "오늘도 화이팅이야"). Avoid 합니다체.';
+    return ' Speaker is older than the listener: write in caring 반말, or soft 해요체 for the WHOLE line (e.g. "우리 딸, 오늘 비 온대", "오늘도 화이팅이야"). Avoid 합니다체.';
   }
   if (isRomanticRelationship(label)) {
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
@@ -908,10 +914,10 @@ relationship and hold it the whole line. NEVER 합니다체(~합니다/~하십�
 - Grandchild→grandparent (손녀/손자/손주) and child→elder (딸/아들/자식/며느리/사위/조카): warm
   familiar 해요체 WITH honorific verb stems(존대 동사). '할머니, 일어나실 시간이에요.' '나가실 때
   우산 꼭 챙기세요.' Never clipped lower-sounding forms to an elder ('일어날 시간이에요').
-  Honor the person, not things ('약 드실 시간이에요'(O), '시간이세요'(X)); use -(으)세요, not old-fashioned
-  -셔요 ('해 보세요'(O), '해보셔요'(X)); never imply the elder forgets or is slow ('금방 잊어버리시니까'(X) →
+  Honor the person, not things ('약 드실 시간이에요'(O), '시간이세요'(X)); use -(으)세요 instead of old-fashioned
+  -셔요 but KEEP the honorific -시- ('해 보세요'(O), '해보셔요'(X), '해 봐요'(X) to an elder); never imply the elder forgets or is slow ('금방 잊어버리시니까'(X) →
   '미루면 잊기 쉬우니까요'(O)).
-- Elder→younger (부모→자식 등): caring 반말. '우리 딸, 일어날 시간이야.' '오늘도 화이팅이야.' (A parent may use soft
+- Elder→younger (부모→자식 등): caring 반말. '우리 딸, 오늘 비 온대.' '오늘도 화이팅이야.' (A parent may use soft
   해요체 instead — but then for the WHOLE line. Never '흐리대요. … 열자' — one sentence 해요체, the next 반말.)
 - Sibling/friend (형제/자매/누나/언니/오빠/형/동생/친구): natural 반말. '일어났어?' Never 존댓말/해요체.
 - Romantic/spouse (연인/자기/여보/아내/남편): intimate 반말, warm and lightly heart-fluttering;
@@ -935,11 +941,11 @@ const JAPANESE_NATIVE_RULES = `JAPANESE — write like a native speaker. Do NOT 
 REGISTER — CRITICAL: Japanese family & intimate speech is CASUAL(タメ口), NOT honorific. Do NOT copy
 Korean's polite 해요체 into Japanese.
 - Grandchild→grandparent, child→parent, parent→child, sibling, friend, romantic partner: CASUAL
-  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、起きる時間だよ。今日は雨が降るみたい、傘忘れないでね。'
+  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、今日は雨が降るみたい、傘忘れないでね。'
   NOT 'おばあちゃん、起きる時間です。' Address おばあちゃん/おじいちゃん (familiar), never おばあさま,
   and only if it matches the listener title.
 - です・ます polite ONLY for distant/unknown/teacher/workplace or when no relationship is given:
-  '起きる時間ですよ。今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
+  '今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
   文語 (no お目覚めください, no 〜となっております).
 - Never mix politeness levels within one line.
 終助詞 (the core of natural warmth; choose to match intonation, don't stack): ね = empathy/shared
@@ -957,8 +963,8 @@ numbers — '雨が降るみたい' / '寒くなりそうだから上着があ�
 const ENGLISH_NATIVE_RULES = `ENGLISH — natural, warm, spoken (American-neutral), not formal writing. Contractions always
 (you're, it's, let's, don't). English has little grammatical register, so RELATIONSHIP changes
 warmth/intimacy, not grammar.
-- Most relationships: friendly, like a close person nudging you awake. 'Hey… time to get
-  up. Looks like rain later, grab your umbrella, okay?'
+- Most relationships: friendly, like a close person nudging you awake. 'Hey… looks like
+  rain later, grab your umbrella before you head out, okay?'
 - Elder/respectful or teacher: warm but a touch more composed — still contractions, no stiffness.
 - Romantic: tender, low-key intimate, never cheesy. 'Hey, you. Up you get… I've got you today.'
 Drop the subject when natural. One light opener/filler max (Hey/Alright/Okay). Address by the given
@@ -997,12 +1003,12 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
   ko: [
     { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 일어나실 시간이에요. [caring] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
     { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
-    { context: 'wake_fortune, 중립', text: '[cheerfully] 일어날 시간이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해 봐요.' },
+    { context: 'wake_fortune, 중립', text: '[curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해 봐요.' },
   ],
   ja: [
     { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、起きる時間だよ。[caring] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[warmly] 起きる時間ですよ。[caring] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
-    { context: 'wake_fortune, 중립/casual', text: '[playfully] ほら、起きて。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[warmly] 今日は冷えるみたいですよ。[caring] 一枚羽織ってから出かけてくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
     { context: 'wake_weather, neutral, rain', text: '[warmly] Hey… time to get up. [caring] Looks like rain later, grab your umbrella before you head out.' },
@@ -1010,7 +1016,7 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
     //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
     //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
     //   예시도 함께 바꾼다.
-    { context: 'cheer, neutral', text: "[warmly] Hey, time to get up. [caring] Lots on your plate — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
+    { context: 'cheer, neutral', text: "[caring] Lots on your plate — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 
@@ -1204,19 +1210,19 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
     //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
     //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
-    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
       params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
     } of spoken text (tags do not count).`,
-    'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — never for medication, which can ring at any hour. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
+    'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — and then DO open with it; skipping the greeting drops part of the intent. Never for medication, which can ring at any hour. Do not open medication or cheer lines with a wake-up call (\'일어나\', \'get up\', \'起きて\') unless the intent asks for it — the listener may already be up. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
     'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
     params.targetLanguage === 'ko'
       ? '어미를 시드에서 옮겨 오지 말 것: 반말 화자는 한 문장도 \'-요\'로 끝내지 않는다(\'흐리대요\'→\'흐리대\', \'날이래요\'→\'날이래\'). 한 줄 안에서 반말과 해요체를 섞지 않는다. 낱말: 바람은 \'쐬다\'(\'쬐다\' 아님 — 햇볕만 쬔다).'
       : // ⚠ 영어·일본어는 **한국어 메모를 번역하지 말 것**(2026-09-23 블라인드 판정 — 직역투가
         //   영어 패배의 절반). 시드 21개 전체에서 옮기기 까다로운 개념만 입말로 대응시켜 준다.
         params.targetLanguage === 'en'
-        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'heavy dust'); 재물운 → 'a little extra money might come your way' (never 'money luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'slow down a beat'; 깜빡하기 쉽다 → 'it's easy to forget'."
+        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'heavy dust'); 재물운 → 'a little extra money might come your way' (never 'money luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'slow down a beat'; 깜빡하기 쉽다 → 'it's easy to forget'; 건강하게 잘 보내 → 'take care of yourself today' (never 'have a healthy day'). The listener's own tasks are 'you', not 'we' (a daughter tells Dad 'take your time', not 'as long as we don't rush') — 'let's get up' is fine."
         : params.targetLanguage === 'ja'
-          ? '韓国語のメモを訳さず、日本語話者が実際に口にする言い方で。訳しにくい言葉: 미세먼지 → 「空気がよくない」「PM2.5が多い」(「微小粒子状物質」は使わない)、재물운 → 「ちょっと臨時収入があるかも」、운이 따라주는 날 → 「ツイてる日」、끼니 챙기기 → 「ちゃんとご飯食べてね」、한 박자 늦춰 → 「ひと呼吸おいて」。家族への言葉は普通体で、「〜ます」「〜です」「〜ますように」で終えない。'
+          ? '韓国語のメモを訳さず、日本語話者が実際に口にする言い方で。訳しにくい言葉: 미세먼지 → 「空気がよくない」「PM2.5が多い」(「微小粒子状物質」は使わない)、재물운 → 「ちょっと臨時収入があるかも」、운이 따라주는 날 → 「ツイてる日」、끼니 챙기기 → 「ちゃんとご飯食べてね」、한 박자 늦춰 → 「ひと呼吸おいて」、따뜻한 물 → 「お湯」(「温かいお水」とは言わない)。家族への言葉は普通体で、「〜ます」「〜です」「〜ますように」で終えない。'
           : '',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
@@ -1416,31 +1422,36 @@ export function prerenderRejectionReason(
 }
 
 /**
- * 말줄임표 뒤에 마침표가 또 붙은 것('못 봤어….', 'okay....')을 하나로 줄인다.
- * 3.5 Flash-Lite 가 문장 끝 '…' 뒤에 습관처럼 '.' 을 더 찍었다(2026-09-23 블라인드 판정 — 여러
- * 프로필의 날씨 미확인 클립). 낭독에서는 쉼이 두 번 겹쳐 끊겨 들린다. 생성 문구에만 쓴다 —
- * 사용자가 직접 친 문구(직접 입력 태깅)는 글자를 바꾸지 않는다.
+ * 말줄임표 뒤에 마침표·쉼표가 또 붙은 것('못 봤어….', 'okay....', 'みたい…、')을 하나로 줄인다.
+ * 3.5 모델들이 '…' 뒤에 습관처럼 '.'·'、' 을 더 찍었다(2026-09-23 블라인드 판정 — 여러 프로필의
+ * 날씨 클립). 낭독에서는 쉼이 두 번 겹쳐 끊겨 들린다. 생성 문구에만 쓴다 — 사용자가 직접 친
+ * 문구(직접 입력 태깅)는 글자를 바꾸지 않는다.
  */
 export function tidyEllipsis(text: string): string {
-  return text.replace(/(…|\.\.\.)\.+/g, '$1');
+  return text.replace(/(…|\.\.\.)[.,、。，]+/g, '$1');
 }
 
+/** 아침 인사·잠에서 깬 안부. 인사 시드가 아니면 어느 것도 쓰지 않는다. */
 const MORNING_GREETING: Record<string, RegExp> = {
-  ko: /좋은 아침|잘 잤|잘 주무셨|굿모닝/,
-  en: /\bmorning\b/i,
-  ja: /おはよう/,
+  ko: /좋은 아침|잘 잤|잘 주무셨|잘 일어나셨|굿모닝/,
+  en: /\bgood morning\b|(?:^|[.!?…]\s*)morning\b|\b(?:sleep|slept) well\b/i,
+  ja: /おはよう|よく眠れ/,
 };
 
 /**
- * 인사가 아닌 알람에 아침 인사를 넣었는가. 사전렌더 클립은 몇 시에 울릴지 모른다 — 밤 9시
- * 약 알람이 "좋은 아침이에요" 로 시작하면 안 된다. 프롬프트의 OPENER 규칙만으로는 3.5
- * Flash-Lite 가 25/210 줄에서 어겼다(2026-09-23 비교 평가). 시드가 아침을 스스로 말하면
- * ('아침 인사', '아침은 힘차게 시작하자') 허용한다.
+ * 인사가 아닌 알람에 아침 인사나 수면 안부를 넣었는가. 사전렌더 클립은 몇 시에 울릴지 모른다 —
+ * 밤 9시 약 알람이 "좋은 아침이에요" 로 시작하면 안 된다. 프롬프트의 OPENER 규칙만으로는 3.5
+ * Flash-Lite 가 25/210 줄에서 어겼다(2026-09-23 비교 평가).
+ *
+ * 인사 시드('아침 인사', '잘 잤는지')만 통째로 허용한다. 시드가 아침을 **말하기만** 하는 경우
+ * ('그래도 아침은 힘차게 시작하자')는 영어의 'morning' 낱말은 두되 인사·안부는 여전히 막는다 —
+ * 예전에는 이 경우를 통째로 풀어 "잘 잤니?" 가 새어 나갔다(2026-09-23 블라인드 판정).
  */
 export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: string): boolean {
-  if (/아침|잘 잤/.test(seed)) return false;
+  if (/아침 인사|잘 잤/.test(seed)) return false;
   const pattern = MORNING_GREETING[targetLanguage];
-  return pattern ? pattern.test(spoken) : false;
+  if (pattern?.test(spoken)) return true;
+  return targetLanguage === 'en' && !/아침/.test(seed) && /\bmorning\b/i.test(spoken);
 }
 
 const UNCONTRACTED_EN =
@@ -1928,7 +1939,7 @@ const FAMILY_TITLE_RE =
  * 아니라 지시가 흐릿한데 가드만 빡빡해서 났다 — 무엇을 쓰면 되는지 말해 주면 맞춘다.
  */
 function neutralAddressGuidance(): string {
-  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "일어날 시간이에요", "이제 일어나 볼까요?"), or use an affectionate title-free address. This is a hard requirement.';
+  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all — just start with the point (e.g. "오늘은 비 소식이 있대요…") — or use an affectionate title-free address. This is a hard requirement.';
 }
 
 function hasUnsupportedListenerAddress(

@@ -12,8 +12,8 @@
  *    표지(markers)가 전사에 실제로 있는가, 형식
  *
  * 사용 (packages/backend 에서):
- *   npm run eval:gemini                                   # 기본: 2.5-flash@us-central1 vs 3.5-flash-lite@us
- *   npm run eval:gemini -- --models gemini-3.5-flash-lite@us --suites A,F --reps 2
+ *   npm run eval:gemini                                   # 기본: 2.5-flash@us-central1 vs 3.5-flash@us
+ *   npm run eval:gemini -- --models gemini-3.5-flash@us,gemini-3.5-flash-lite@us --suites A,F --reps 2
  *   npm run eval:gemini -- --label after-prompt-v2
  * 결과: `.eval/gemini/<시각>-<label>/results.json`·`summary.md`(gitignore — 응답 원문이 들어 있다).
  *
@@ -62,7 +62,7 @@ function parseFlags(): Map<string, string> {
 }
 
 const flags = parseFlags();
-const MODELS = (flags.get('--models') ?? 'gemini-2.5-flash@us-central1,gemini-3.5-flash-lite@us')
+const MODELS = (flags.get('--models') ?? 'gemini-2.5-flash@us-central1,gemini-3.5-flash@us')
   .split(',')
   .map((spec) => {
     const [model, location] = spec.split('@');
@@ -75,12 +75,14 @@ const REPS = Number(flags.get('--reps') ?? '2');
 if (!Number.isInteger(REPS) || REPS < 1 || REPS > 5) throw new Error('--reps 는 1~5');
 const CONCURRENCY = Number(flags.get('--concurrency') ?? '6');
 const LABEL = (flags.get('--label') ?? 'baseline').replace(/[^a-z0-9._-]/gi, '-');
-/** 쉼표로 여러 개: core,holdout,fresh. 'all' = core,holdout(예전 호환). */
+/** 쉼표로 여러 개: core,holdout,fresh,fresh2. 'all' = core,holdout(예전 호환). */
 const DSETS = new Set(
   (flags.get('--dset') ?? 'core').split(',').flatMap((d) => (d === 'all' ? ['core', 'holdout'] : [d])),
 );
 for (const d of DSETS) {
-  if (!['core', 'holdout', 'fresh'].includes(d)) throw new Error('--dset 는 core|holdout|fresh|all (쉼표로 여러 개)');
+  if (!['core', 'holdout', 'fresh', 'fresh2'].includes(d)) {
+    throw new Error('--dset 는 core|holdout|fresh|fresh2|all (쉼표로 여러 개)');
+  }
 }
 
 // ---------------------------------------------------------------- 자격 증명(출력 금지)
@@ -120,6 +122,7 @@ type RawCall = {
   finishReason: string | null;
   text: string;
   latencyMs: number;
+  inputTokens: number | null;
   outputTokens: number | null;
   thoughtTokens: number | null;
   error: string | null;
@@ -136,7 +139,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = await res.clone().text();
     let j: {
       candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
-      usageMetadata?: { candidatesTokenCount?: number; thoughtsTokenCount?: number };
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
       error?: { message?: string };
     } = {};
     try {
@@ -153,6 +156,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
         .map((p) => p.text ?? '')
         .join(''),
       latencyMs: Date.now() - started,
+      inputTokens: j.usageMetadata?.promptTokenCount ?? null,
       outputTokens: j.usageMetadata?.candidatesTokenCount ?? null,
       thoughtTokens: j.usageMetadata?.thoughtsTokenCount ?? null,
       error: res.ok ? null : String(j.error?.message ?? res.status).slice(0, 200),
@@ -291,6 +295,7 @@ async function runA(m: (typeof MODELS)[number]) {
         fear: rawInlineTags.filter(isFear),
         tagWithoutSpace: rawParsed ? tagWithoutSpace(rawParsed.text) : false,
         latencyMs: calls[0]?.latencyMs ?? null,
+        inputTokens: calls[0]?.inputTokens ?? null,
         outputTokens: calls[0]?.outputTokens ?? null,
         thoughtTokens: calls[0]?.thoughtTokens ?? null,
       },
@@ -377,6 +382,41 @@ const D_FRESH_PROFILES: Profile[] = [
   { id: 'ja-dad-to-haruto', lang: 'ja', relationshipLabel: '父', listenerTitle: 'はると' },
   { id: 'ja-wife-to-kenta', lang: 'ja', relationshipLabel: '妻', listenerTitle: 'けんた' },
 ];
+/**
+ * v7 을 확인하려고 만든 세 번째 세트. fresh 는 v6 판정 코멘트를 보고 v7 을 고쳤으므로 다시 쓰지 않는다.
+ */
+const D_FRESH2_PROFILES: Profile[] = [
+  { id: 'ko-daughterinlaw-to-eomeonim', lang: 'ko', relationshipLabel: '며느리', listenerTitle: '어머님', expect: 'polite' },
+  { id: 'ko-grandpa-to-granddaughter', lang: 'ko', relationshipLabel: '할아버지', listenerTitle: '우리 손녀', expect: 'banmal' },
+  { id: 'ko-dongsaeng-to-hyeong', lang: 'ko', relationshipLabel: '동생', listenerTitle: '형', expect: 'banmal' },
+  { id: 'en-boyfriend-to-babe', lang: 'en', relationshipLabel: 'boyfriend', listenerTitle: 'babe' },
+  { id: 'en-grandpa-to-kiddo', lang: 'en', relationshipLabel: 'grandpa', listenerTitle: 'kiddo' },
+  { id: 'en-friend-to-alex', lang: 'en', relationshipLabel: 'friend', listenerTitle: 'Alex' },
+  { id: 'en-son-to-mom', lang: 'en', relationshipLabel: 'son', listenerTitle: 'Mom' },
+  { id: 'ja-grandpa-to-hinata', lang: 'ja', relationshipLabel: '祖父', listenerTitle: 'ひなた' },
+  { id: 'ja-sister-to-yuto', lang: 'ja', relationshipLabel: '姉', listenerTitle: 'ゆうと' },
+  { id: 'ja-boyfriend-to-misaki', lang: 'ja', relationshipLabel: '彼氏', listenerTitle: 'みさき' },
+];
+function fresh2Seeds() {
+  const pick = (category: string, index: number) => {
+    const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
+    return { category, index, seed: group.seeds[index]!, defaultTag: group.defaultTag };
+  };
+  return [
+    pick('greeting', 0),
+    pick('weather', 0),
+    pick('weather', 3),
+    pick('weather', 4),
+    pick('weather', 6),
+    pick('weather', 8),
+    pick('medication', 0),
+    pick('fortune', 0),
+    pick('fortune', 2),
+    pick('fortune', 4),
+    pick('cheer', 0),
+    pick('cheer', 1),
+  ];
+}
 function freshSeeds() {
   const pick = (category: string, index: number) => {
     const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
@@ -438,10 +478,12 @@ async function runD(m: (typeof MODELS)[number]) {
   ];
   const holdout = D_HOLDOUT_PROFILES.flatMap((p) => subsetSeeds().map((s) => ({ p, s })));
   const fresh = D_FRESH_PROFILES.flatMap((p) => freshSeeds().map((s) => ({ p, s })));
+  const fresh2 = D_FRESH2_PROFILES.flatMap((p) => fresh2Seeds().map((s) => ({ p, s })));
   const cases = [
     ...(DSETS.has('core') ? core : []),
     ...(DSETS.has('holdout') ? holdout : []),
     ...(DSETS.has('fresh') ? fresh : []),
+    ...(DSETS.has('fresh2') ? fresh2 : []),
   ];
   const jobs = cases.flatMap((c) => Array.from({ length: REPS }, (_, rep) => ({ ...c, rep })));
   return pool(jobs, CONCURRENCY, async ({ p, s, rep }) => {
@@ -496,7 +538,7 @@ async function runD(m: (typeof MODELS)[number]) {
       output: r?.text ?? null,
       error,
       attempts,
-      calls: calls.map((c) => ({ status: c.status, finishReason: c.finishReason, latencyMs: c.latencyMs, outputTokens: c.outputTokens, thoughtTokens: c.thoughtTokens, text: c.text })),
+      calls: calls.map((c) => ({ status: c.status, finishReason: c.finishReason, latencyMs: c.latencyMs, inputTokens: c.inputTokens, outputTokens: c.outputTokens, thoughtTokens: c.thoughtTokens, text: c.text })),
       final: r
         ? {
             length: spoken.length,
@@ -615,6 +657,8 @@ async function runF(m: (typeof MODELS)[number]) {
         extraKeys: shape.extraKeys,
         confidence: rawConfidence,
         latencyMs: calls[0]?.latencyMs ?? null,
+        inputTokens: calls[0]?.inputTokens ?? null,
+        outputTokens: calls[0]?.outputTokens ?? null,
       },
       score: s
         ? {
