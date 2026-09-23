@@ -412,9 +412,10 @@
   예보·미세먼지)로 만드는데, 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
   다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
   좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
-  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 남는다
-  (저장되지 않는 문장 하나라 다시 받을 기회가 없다). 판정은 `routes/tts.ts` 의
-  `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` / `'fallback'`).
+  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 있었다
+  (저장되지 않는 문장 하나라 다시 받을 기회가 없다) — 그 경로는 2026-09-23 부터 서버가 거절해
+  닿지 않는다. 판정은 `routes/tts.ts` 의 `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` /
+  `'fallback'` — `'fallback'` 은 라이브 생성 코드를 지울 때 함께 지운다).
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
   (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
@@ -458,7 +459,9 @@
 #### 무엇을 언제 받는가 (2026-08-18 확정)
 
 **목표: 알람을 만들 때 쓸 수 있는 클립은 전부 이미 폰에 있다.** 그래야 그 자리에서
-문구를 합성하는 **라이브 생성 폴백이 필요 없어진다** — 그 폴백이 있는 한 "사전렌더가
+문구를 합성하는 **라이브 생성 폴백이 필요 없어진다** — 실제로 없앴다: 앱은 2026-08-18, 서버는
+2026-09-23 부터 `random:true`(목소리 등록 미리듣기 제외)를 `400 RANDOM_TTS_RETIRED` 로 거절한다.
+그 폴백이 있는 한 "사전렌더가
 준비되기 전" 이라는 임시 상태가 계속 알람에 실린다.
 
 | 목소리 | 언제 받나 | 없으면 |
@@ -829,6 +832,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
 | 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
+| 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.playDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
 | 문구 변경 강제 | — | — | `STOCK_INVALIDATION_NAME`·`STOCK_FINGERPRINT_IN_NAME` (`lib/migrations.ts`, 지문은 **마이그레이션 이름 안에** 있다) |

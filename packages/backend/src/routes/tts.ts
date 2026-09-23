@@ -823,6 +823,25 @@ tts.post('/generate', async (c) => {
     );
   }
   const randomRequested = !draftPreviewRequested && body.random === true;
+  // ⚠ **라이브 랜덤 생성은 끝났다 — 서버가 거절한다**(2026-09-23, 핸드오프 「5. 알람 음성의
+  //   최종 목적지」 5단계). 알람 음성은 프리셋(사전렌더 클립) + 직접 입력 둘뿐이다.
+  //   - 앱은 2026-08-18(`3929214c`)에 이 요청을 끊었다. 그 커밋은 Android versionCode 25~29
+  //     와 배포된 iOS 빌드 1~6 전부에 들어 있고, Android `minSupported` 가 25 라 그 아래는
+  //     이미 차단 화면이다. 그래서 여기 닿는 정상 클라이언트는 없다.
+  //   - 열어 두면 **구멍**이었다: 무료 사용자가 기본 목소리 + `random_context:'preset'` +
+  //     매번 다른 `listener_title` 을 보내면 요금제 게이트를 통과하고(프리셋은 무료 허용),
+  //     호칭이 문장 앞에 붙어 캐시가 빗나가 요청마다 합성이 돌았다. 월 한도는
+  //     `isManualGeneration` 이 `!randomRequested` 라 세지 않았다.
+  //   ⚠ **자리는 반드시 여기다** — `randomRequested` 는 이미 `!draftPreviewRequested` 를 품는다.
+  //   iOS 목소리 등록 미리듣기(`playDraftPreview`)는 `random:true` + `draft_preview:true` 를 함께
+  //   보내므로, `body.random` 만 보고 거절하거나 위 draft 판정보다 앞에 두면 **새 목소리를 아예
+  //   등록할 수 없다.**
+  //   앱 문구 표(`ApiErrorMessages.kt`·`APIErrorMessages.swift`)에는 넣지 않았다 — 닿는 빌드가 없다.
+  //   이 아래의 `randomRequested` 갈래는 이제 닿지 않는 코드다. 지우는 것은 후속 PR 이다(초안
+  //   미리듣기와 같이 쓰는 헬퍼·사전렌더 검사의 테스트를 먼저 옮겨야 한다).
+  if (randomRequested) {
+    return jsonError(c, 400, 'RANDOM_TTS_RETIRED', 'Live random TTS generation has been retired.');
+  }
   const randomContext = randomRequested
     ? normalizeRandomContext(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
