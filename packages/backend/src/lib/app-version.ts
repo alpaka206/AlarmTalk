@@ -5,7 +5,7 @@
 //  - minSupported: 이 버전 미만은 강제 업데이트(앱이 차단 화면 표시). 평소 1 로 두어
 //    아무도 막지 않다가, 필수 기능(예: 동의)을 강제해야 할 때만 올린다.
 //  - latest: 권장 업데이트 기준(앱이 비차단 배너 표시).
-//  versionCode(Android) 정수 기준. (Android 전용 — iOS 는 운영하지 않는다.)
+//  Android 는 versionCode, iOS 는 빌드 번호(CFBundleVersion) 정수 기준 — 플랫폼별 정책은 아래에 따로 둔다.
 
 export interface AppVersionPolicy {
   minSupported: number;
@@ -52,9 +52,9 @@ const ANDROID: AppVersionPolicy = {
   // 하던** 문제를 고친다. 그 상태에서는 알람이 저장됐는지 확인할 방법조차 없다. 문구
   // 선택이 저장에서 사라지던 것도 같은 출시에 들어간다.
   //
-  // ⚠️ 배포 순서: **1.2.5(versionCode 25)가 Play 에 올라간 뒤** 이 변경을 main 에 머지할 것.
-  // 먼저 나가면 받을 것이 없는 업데이트 안내가 뜬다. 이번 회차는 `minSupported` 와 같은
-  // 값이라 배너가 아니라 **차단 화면**이 뜬다 — 순서를 어기면 앱이 벽돌이 된다.
+  // ⚠️ 배포 순서: 이 값은 **그 versionCode 가 Play 에 올라간 뒤** main 에 머지한다.
+  // 먼저 나가면 받을 것이 없는 업데이트 안내가 뜬다. 25 로 올린 회차(1.2.5)는 `minSupported` 와
+  // 같은 값이라 배너가 아니라 **차단 화면**이 떴다 — 그런 회차에 순서를 어기면 앱이 벽돌이 된다.
   //
   // 29 로 올리는 이유(2026-09-23, 코덱스 #799): **1.2.6~1.2.9 네 회차 동안 이 값이 25 에
   // 멈춰 있었다.** 그동안 25~28 설치본은 권장 업데이트 배너를 한 번도 못 봤다 —
@@ -90,8 +90,8 @@ const IOS: AppVersionPolicy = {
 };
 
 // platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.
-// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 운영 중인 클라이언트가
-// Android 뿐이라, 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
+// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 두 정책 중 더 엄격한 쪽이라,
+// 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
 export function appVersionPolicy(platform?: string | null): AppVersionPolicy {
   return platform?.toLowerCase() === 'ios' ? IOS : ANDROID;
 }

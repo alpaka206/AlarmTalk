@@ -41,7 +41,7 @@ struct CodeShareTextTests {
     }
 
     /// ⚠ 링크는 스토어 직링크가 아니라 랜딩이어야 한다 — 받는 사람이 어느 기기인지
-    /// 모르고, App Store 주소는 숫자 앱 ID 가 정해진 뒤에야 만들 수 있다.
+    /// 모르므로 두 스토어를 한곳에서 안내하는 랜딩으로 보낸다.
     @Test("설치 링크는 스토어 직링크가 아니라 랜딩이다")
     func installLinkIsLanding() {
         #expect(CodeShareText.installURL == "https://alarm-talk.com")

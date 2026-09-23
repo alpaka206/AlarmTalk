@@ -13,8 +13,8 @@
 
 ## 2. 설치 전 준비
 
-- Android 8.0 이상.
-- 이메일 계정 또는 Google 계정.
+- Android 8.0 이상, 또는 iOS 26 이상의 iPhone.
+- 이메일 계정, 또는 Google 계정(Android)·Apple 계정(iPhone).
 - 알림, 정확 알람, 풀스크린 권한.
 - 음성 녹음을 한다면 마이크 권한.
 

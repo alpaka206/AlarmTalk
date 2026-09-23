@@ -13,8 +13,8 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 
 ## 2. Before you install
 
-- Android 8.0 or newer.
-- An email account or a Google account.
+- Android 8.0 or newer, or an iPhone on iOS 26 or newer.
+- An email account, or a Google account (Android) / Apple ID (iPhone).
 - Notification, exact-alarm, and full-screen-intent permissions.
 - Microphone permission if you plan to record your own voice.
 

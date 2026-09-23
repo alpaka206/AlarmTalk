@@ -10,7 +10,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v1.2.5` (versionCode 25) — live on Google Play
+- **Stores**: live on Google Play and the App Store — current version per store in [`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md) (「스토어 상태」 section)
 - **Android** — the shipping client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
