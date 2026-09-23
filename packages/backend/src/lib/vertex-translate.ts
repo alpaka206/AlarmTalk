@@ -111,7 +111,13 @@ export type AlarmTextRejectionReason =
   /** 청자 호칭을 우리가 준 것과 다르게 불렀다. */
   | 'listener_address'
   /** 관계 라벨('엄마')이 문장에 그대로 샜다. */
-  | 'relationship_leak';
+  | 'relationship_leak'
+  /** 한국어 한 줄 안에서 반말과 존댓말이 섞였다(시드의 '-요' 어미를 옮겨 쓸 때 난다). */
+  | 'register_mixed'
+  /** 인사가 아닌 알람에 아침 인사를 넣었다 — 사전렌더 클립은 몇 시에 울릴지 모른다. */
+  | 'time_of_day'
+  /** 영어가 축약 없이 글말로 나왔다('let us', 'do not') — 낭독하면 로봇처럼 들린다. */
+  | 'uncontracted';
 
 export class AlarmTextPreparationInvalidError extends Error {
   /**
@@ -770,13 +776,13 @@ function koreanRegisterGuidance(relationshipLabel: string | null | undefined): s
   const peerOrIntimate = ['친구', ...SIBLING_RELATIONSHIPS];
 
   if (isGrandchildRelationship(label)) {
-    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 좋은 아침이에요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
+    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 이제 일어나세요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
   if (isYoungerToElderRelationship(label)) {
     return ' Speaker is younger than the listener: write in warm, familiar 해요체 that still shows respect (e.g. "할아버지, 일어나실 시간이에요", "나가실 때 우산 꼭 챙기세요"). It should sound like an actual granddaughter/grandson or child speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
   if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) {
-    return ' Speaker is older than the listener: write in caring 반말 or 해요체 mixed style (e.g. "우리 딸, 잘 잤어?", "오늘도 화이팅이야"). Avoid 합니다체.';
+    return ' Speaker is older than the listener: write in caring 반말, or soft 해요체 for the WHOLE line (e.g. "우리 딸, 일어날 시간이야", "오늘도 화이팅이야"). Avoid 합니다체.';
   }
   if (isRomanticRelationship(label)) {
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
@@ -902,7 +908,11 @@ relationship and hold it the whole line. NEVER 합니다체(~합니다/~하십�
 - Grandchild→grandparent (손녀/손자/손주) and child→elder (딸/아들/자식/며느리/사위/조카): warm
   familiar 해요체 WITH honorific verb stems(존대 동사). '할머니, 일어나실 시간이에요.' '나가실 때
   우산 꼭 챙기세요.' Never clipped lower-sounding forms to an elder ('일어날 시간이에요').
-- Elder→younger (부모→자식 등): caring 반말 or 반말/해요체 mix. '우리 딸, 잘 잤어?' '오늘도 화이팅이야.'
+  Honor the person, not things ('약 드실 시간이에요'(O), '시간이세요'(X)); use -(으)세요, not old-fashioned
+  -셔요 ('해 보세요'(O), '해보셔요'(X)); never imply the elder forgets or is slow ('금방 잊어버리시니까'(X) →
+  '미루면 잊기 쉬우니까요'(O)).
+- Elder→younger (부모→자식 등): caring 반말. '우리 딸, 일어날 시간이야.' '오늘도 화이팅이야.' (A parent may use soft
+  해요체 instead — but then for the WHOLE line. Never '흐리대요. … 열자' — one sentence 해요체, the next 반말.)
 - Sibling/friend (형제/자매/누나/언니/오빠/형/동생/친구): natural 반말. '일어났어?' Never 존댓말/해요체.
 - Romantic/spouse (연인/자기/여보/아내/남편): intimate 반말, warm and lightly heart-fluttering;
   never 해요체/합니다체 even for 아내/남편. '자기야, 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼.'
@@ -913,8 +923,9 @@ PARTICLES & SPACING (a writing rule, not a post-fix): keep subject/object partic
 Drop redundant 나/너/내가 when obvious.
 REPORTED/SOFT endings for relayed weather/fortune: 해요체 '~대요/~래요/~다네요/~면 좋겠어요';
 반말 '~대/~래/~다네/~면 좋겠다'. Sounds like relaying, not asserting. Put them ONLY on the relayed fact
-itself — never on feelings, empathy or advice ('누워 있기 아까울 정도래요'(X)). Fortune stays a
-possibility ('풀릴지도 몰라'), never a promise ('술술 풀릴 거래'(X)).
+itself — never on feelings, empathy or advice ('누워 있기 아까울 정도래요'(X)). Greetings, cheer and
+medication relay nothing — say them in your own voice ('좋은 하루가 될 거래요'(X), '바빠지기 마련이래요'(X)).
+Fortune stays a possibility ('풀릴지도 몰라'), never a promise ('술술 풀릴 거래'(X)).
 NUMBERS: never read raw numbers/units aloud — no 강수확률·기온·시각·날짜 ('강수확률 70%'(X), '최저 10도'(X),
 '7시 30분'(X)). Re-express softly instead ('비가 올 수 있대요'(O), '오늘은 좀 쌀쌀하대요'(O)).
 AVOID: exaggerated interjections(세상에/맙소사/오 마이 갓), news-anchor openers('예보에 따르면'),
@@ -924,11 +935,11 @@ const JAPANESE_NATIVE_RULES = `JAPANESE — write like a native speaker. Do NOT 
 REGISTER — CRITICAL: Japanese family & intimate speech is CASUAL(タメ口), NOT honorific. Do NOT copy
 Korean's polite 해요체 into Japanese.
 - Grandchild→grandparent, child→parent, parent→child, sibling, friend, romantic partner: CASUAL
-  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、おはよう。今日は雨が降るみたい、傘忘れないでね。'
+  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、起きる時間だよ。今日は雨が降るみたい、傘忘れないでね。'
   NOT 'おばあちゃん、起きる時間です。' Address おばあちゃん/おじいちゃん (familiar), never おばあさま,
   and only if it matches the listener title.
 - です・ます polite ONLY for distant/unknown/teacher/workplace or when no relationship is given:
-  'おはようございます。今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
+  '起きる時間ですよ。今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
   文語 (no お目覚めください, no 〜となっております).
 - Never mix politeness levels within one line.
 終助詞 (the core of natural warmth; choose to match intonation, don't stack): ね = empathy/shared
@@ -946,10 +957,10 @@ numbers — '雨が降るみたい' / '寒くなりそうだから上着があ�
 const ENGLISH_NATIVE_RULES = `ENGLISH — natural, warm, spoken (American-neutral), not formal writing. Contractions always
 (you're, it's, let's, don't). English has little grammatical register, so RELATIONSHIP changes
 warmth/intimacy, not grammar.
-- Most relationships: friendly, like a close person nudging you awake. 'Hey, morning… time to get
+- Most relationships: friendly, like a close person nudging you awake. 'Hey… time to get
   up. Looks like rain later, grab your umbrella, okay?'
 - Elder/respectful or teacher: warm but a touch more composed — still contractions, no stiffness.
-- Romantic: tender, low-key intimate, never cheesy. 'Morning, you. Up you get… I've got you today.'
+- Romantic: tender, low-key intimate, never cheesy. 'Hey, you. Up you get… I've got you today.'
 Drop the subject when natural. One light opener/filler max (Hey/Alright/Okay). Address by the given
 title if provided, else a soft 'hey'; never a guessed family title or pet name (love, honey, dear,
 sweetie) when no title is given. Weather/fortune stays
@@ -986,12 +997,12 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
   ko: [
     { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 일어나실 시간이에요. [caring] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
     { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
-    { context: 'wake_fortune, 중립', text: '[cheerfully] 좋은 아침이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해요.' },
+    { context: 'wake_fortune, 중립', text: '[cheerfully] 일어날 시간이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해 봐요.' },
   ],
   ja: [
     { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、起きる時間だよ。[caring] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[cheerfully] おはようございます。[warmly] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
-    { context: 'wake_fortune, 중립/casual', text: '[playfully] おはよう。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[warmly] 起きる時間ですよ。[caring] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '[playfully] ほら、起きて。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
     { context: 'wake_weather, neutral, rain', text: '[warmly] Hey… time to get up. [caring] Looks like rain later, grab your umbrella before you head out.' },
@@ -999,7 +1010,7 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>>
     //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
     //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
     //   예시도 함께 바꾼다.
-    { context: 'cheer, neutral', text: "[warmly] Morning. [caring] Big day ahead — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
+    { context: 'cheer, neutral', text: "[warmly] Hey, time to get up. [caring] Lots on your plate — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 
@@ -1123,7 +1134,9 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
     ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${params.relationshipLabel}가 깨우래", "${params.relationshipLabel}한테 부탁받아서", "${params.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
-    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}${
+        params.targetLanguage === 'ko' ? ' In Korean, use warm 해요체 for the WHOLE line — no 반말 sentence at all.' : ''
+      }`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
@@ -1166,6 +1179,7 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     ? [
         'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one. This OVERRIDES the relationship register rules above: a small child talks to a parent or grandparent in plain casual speech (Korean 반말 — no 요/세요/습니다; Japanese タメ口; simple English).',
         'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses, no reported-speech hedging (never "~ㄹ지도 몰라요", "~면 좋겠어요", "~지요?").',
+        'A child does not pass on the intent\'s reasons or explanations — say only the one thing the child wants the grown-up to do, in child words (for a child this overrides COMPLETENESS FIRST): not "미뤄 두면 까먹으니까 알람 끄기 전에 지금 바로 먹어" but "아빠, 지금 약 먹어, 응?".',
         'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
         'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
         params.targetLanguage === 'ko'
@@ -1190,11 +1204,20 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
     //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
     //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
-    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
       params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
     } of spoken text (tags do not count).`,
     'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — never for medication, which can ring at any hour. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
     'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
+    params.targetLanguage === 'ko'
+      ? '어미를 시드에서 옮겨 오지 말 것: 반말 화자는 한 문장도 \'-요\'로 끝내지 않는다(\'흐리대요\'→\'흐리대\', \'날이래요\'→\'날이래\'). 한 줄 안에서 반말과 해요체를 섞지 않는다. 낱말: 바람은 \'쐬다\'(\'쬐다\' 아님 — 햇볕만 쬔다).'
+      : // ⚠ 영어·일본어는 **한국어 메모를 번역하지 말 것**(2026-09-23 블라인드 판정 — 직역투가
+        //   영어 패배의 절반). 시드 21개 전체에서 옮기기 까다로운 개념만 입말로 대응시켜 준다.
+        params.targetLanguage === 'en'
+        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'heavy dust'); 재물운 → 'a little extra money might come your way' (never 'money luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'slow down a beat'; 깜빡하기 쉽다 → 'it's easy to forget'."
+        : params.targetLanguage === 'ja'
+          ? '韓国語のメモを訳さず、日本語話者が実際に口にする言い方で。訳しにくい言葉: 미세먼지 → 「空気がよくない」「PM2.5が多い」(「微小粒子状物質」は使わない)、재물운 → 「ちょっと臨時収入があるかも」、운이 따라주는 날 → 「ツイてる日」、끼니 챙기기 → 「ちゃんとご飯食べてね」、한 박자 늦춰 → 「ひと呼吸おいて」。家族への言葉は普通体で、「〜ます」「〜です」「〜ますように」で終えない。'
+          : '',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
       ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
@@ -1274,7 +1297,15 @@ export async function generatePrerenderClipText(
             targetLanguage === 'en' ? 'about 25 English words' : 'about 80 characters'
           }): shrink the empathy to a few words and drop the greeting — but keep the closing action.`
         : '';
-    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint, lengthHint]
+    const registerHint =
+      lastReason === 'register_mixed'
+        ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the one the relationship calls for (no relationship given → warm 해요체 throughout).'
+        : lastReason === 'time_of_day'
+          ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or a short wake-up phrase instead.'
+          : lastReason === 'uncontracted'
+            ? "The previous line sounded robotic — spoken English always contracts: it's, don't, let's, you're, I'm."
+            : '';
+    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint, lengthHint, registerHint]
       .filter(Boolean)
       .join('\n');
     let raw: string;
@@ -1296,7 +1327,7 @@ export async function generatePrerenderClipText(
     //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
     //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    const text = dropLowArousalTags(parsed.text.trim());
+    const text = tidyEllipsis(dropLowArousalTags(parsed.text.trim()));
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
@@ -1351,7 +1382,13 @@ export function prerenderRejectionReason(
   /** 모델이 준 원문(인라인 태그 포함). 형식·태그 검사만 이걸로 본다. */
   text: string,
   targetLanguage: string,
-  params: { listenerTitle?: string | null; relationshipLabel?: string | null },
+  params: {
+    /** 의미 시드. 인사 시드인지(아침 인사를 허용할지) 가를 때만 본다. */
+    seed?: string | null;
+    listenerTitle?: string | null;
+    relationshipLabel?: string | null;
+    speechStyle?: SpeechStyle | null;
+  },
 ): AlarmTextRejectionReason | null {
   // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
   // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
@@ -1372,7 +1409,85 @@ export function prerenderRejectionReason(
   ) {
     return 'relationship_leak';
   }
+  if (targetLanguage === 'ko' && hasMixedKoreanRegister(spoken, params)) return 'register_mixed';
+  if (params.seed && hasAssumedMorning(spoken, params.seed, targetLanguage)) return 'time_of_day';
+  if (targetLanguage === 'en' && isUncontractedEnglish(spoken)) return 'uncontracted';
   return null;
+}
+
+/**
+ * 말줄임표 뒤에 마침표가 또 붙은 것('못 봤어….', 'okay....')을 하나로 줄인다.
+ * 3.5 Flash-Lite 가 문장 끝 '…' 뒤에 습관처럼 '.' 을 더 찍었다(2026-09-23 블라인드 판정 — 여러
+ * 프로필의 날씨 미확인 클립). 낭독에서는 쉼이 두 번 겹쳐 끊겨 들린다. 생성 문구에만 쓴다 —
+ * 사용자가 직접 친 문구(직접 입력 태깅)는 글자를 바꾸지 않는다.
+ */
+export function tidyEllipsis(text: string): string {
+  return text.replace(/(…|\.\.\.)\.+/g, '$1');
+}
+
+const MORNING_GREETING: Record<string, RegExp> = {
+  ko: /좋은 아침|잘 잤|잘 주무셨|굿모닝/,
+  en: /\bmorning\b/i,
+  ja: /おはよう/,
+};
+
+/**
+ * 인사가 아닌 알람에 아침 인사를 넣었는가. 사전렌더 클립은 몇 시에 울릴지 모른다 — 밤 9시
+ * 약 알람이 "좋은 아침이에요" 로 시작하면 안 된다. 프롬프트의 OPENER 규칙만으로는 3.5
+ * Flash-Lite 가 25/210 줄에서 어겼다(2026-09-23 비교 평가). 시드가 아침을 스스로 말하면
+ * ('아침 인사', '아침은 힘차게 시작하자') 허용한다.
+ */
+export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: string): boolean {
+  if (/아침|잘 잤/.test(seed)) return false;
+  const pattern = MORNING_GREETING[targetLanguage];
+  return pattern ? pattern.test(spoken) : false;
+}
+
+const UNCONTRACTED_EN =
+  /\b(?:do not|does not|did not|is not|are not|was not|cannot|can not|will not|would not|let us|it is|that is|there is|you are|we are|I am|you will|I will)\b/gi;
+
+/**
+ * 영어가 축약 없이 글말로 나왔는가("it is easy… You do not have to… let us just…").
+ * 한 번은 강조로 쓸 수 있으니 **두 번 이상**일 때만 본다. 3.5 Flash-Lite 가 응원 시드에서 한 줄
+ * 전체를 이렇게 냈다(2026-09-23 블라인드 판정 — "로봇처럼 읽힌다").
+ */
+export function isUncontractedEnglish(spoken: string): boolean {
+  return (spoken.match(UNCONTRACTED_EN) ?? []).length >= 2;
+}
+
+/** 문장 끝 음절로 어체를 가른다. 명사로 끝나는 외침('화이팅!')처럼 어느 쪽도 아닌 것은 셈하지 않는다. */
+const KO_POLITE_END = /(요|니다|니까|죠)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라)$/;
+
+/**
+ * 한국어 한 줄 안에서 반말과 존댓말(해요체·합니다체)이 섞였는가. 시드는 존댓말 서술이라
+ * 3.5 Flash-Lite 가 '-대요/-래요' 를 그대로 옮겨 "우리 딸, 흐리대요. … 커튼 열자" 처럼 섞었다
+ * (2026-09-23 블라인드 판정 — 3.5 의 말투 지적 7건). 시스템 지시의 "한 줄에 한 어체" 를 코드로 지킨다.
+ * 반말만 써야 하는 관계(연인·형제·친구·아이)는 존댓말 문장이, 관계를 모르는 목소리는 반말 문장이
+ * 하나만 있어도 걸린다.
+ */
+export function hasMixedKoreanRegister(
+  spoken: string,
+  params: { relationshipLabel?: string | null; speechStyle?: SpeechStyle | null },
+): boolean {
+  const endings = spoken
+    .split(/(?<=[.!?！？])\s+/)
+    .map((s) => s.replace(/[\s.!?！？~…,]+$/u, ''))
+    .map((s) => s.match(/[가-힣]+$/u)?.[0] ?? '')
+    .filter(Boolean);
+  const polite = endings.filter((w) => KO_POLITE_END.test(w)).length;
+  const banmal = endings.filter((w) => !KO_POLITE_END.test(w) && KO_BANMAL_END.test(w)).length;
+  if (polite > 0 && banmal > 0) return true;
+  const label = params.relationshipLabel?.trim() ?? '';
+  const childlike = params.speechStyle?.childlike === true;
+  const banmalOnly =
+    childlike || isRomanticRelationship(label) || SIBLING_RELATIONSHIPS.includes(label) || label === '친구';
+  if (banmalOnly && polite > 0) return true;
+  // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
+  // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
+  // 그 사람 말투를 따르므로 걸지 않는다.
+  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
+  return !label && !childlike && !speakerIsCasual && banmal > 0;
 }
 
 /**
@@ -1813,7 +1928,7 @@ const FAMILY_TITLE_RE =
  * 아니라 지시가 흐릿한데 가드만 빡빡해서 났다 — 무엇을 쓰면 되는지 말해 주면 맞춘다.
  */
 function neutralAddressGuidance(): string {
-  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "좋은 아침이에요", "잘 잤어?"), or use an affectionate title-free address. This is a hard requirement.';
+  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "일어날 시간이에요", "이제 일어나 볼까요?"), or use an affectionate title-free address. This is a hard requirement.';
 }
 
 function hasUnsupportedListenerAddress(

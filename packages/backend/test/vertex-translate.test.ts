@@ -4,6 +4,10 @@ import {
   AlarmTextPreparationInvalidError,
   GeminiIncompleteResponseError,
   analyzeSpeechStyleWithVertex,
+  hasAssumedMorning,
+  hasMixedKoreanRegister,
+  isUncontractedEnglish,
+  tidyEllipsis,
   isWindDownText,
   buildGenerationConfig,
   deriveAlarmDisplayText,
@@ -393,6 +397,98 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(prompts[0]).not.toContain('TOO LONG');
     expect(prompts[1]).toContain('TOO LONG');
     expect(prompts[1]).toContain('about 25 English words');
+  });
+
+  it('한국어 한 줄 안의 반말·존댓말 섞임을 가른다 — 명사 외침은 셈하지 않는다', () => {
+    const mom = { relationshipLabel: '엄마' };
+    expect(hasMixedKoreanRegister('우리 딸, 오늘 하늘이 많이 흐리대요. 커튼부터 열자.', mom)).toBe(true);
+    expect(hasMixedKoreanRegister('우리 딸, 잘 잤어? 오늘도 화이팅이야.', mom)).toBe(false);
+    expect(hasMixedKoreanRegister('할머니, 일어나실 시간이에요. 오늘도 화이팅!', { relationshipLabel: '손녀' })).toBe(false);
+    expect(hasMixedKoreanRegister('자기야, 비 온대. 우산 챙겨.', { relationshipLabel: '남자친구' })).toBe(false);
+    // 반말만 써야 하는 관계는 존댓말 한 문장으로도 걸린다.
+    expect(hasMixedKoreanRegister('자기야, 오늘 비 온대요.', { relationshipLabel: '남자친구' })).toBe(true);
+    expect(
+      hasMixedKoreanRegister('아빠, 약 먹을 시간이에요.', {
+        relationshipLabel: '딸',
+        speechStyle: { dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: true },
+      }),
+    ).toBe(true);
+  });
+
+  it('사전렌더: 어체가 섞이면 다시 묻고, 다음 회차에 그 사유를 말한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 우리 딸, 오늘 하늘이 많이 흐리대요. [encouraging] 커튼부터 열고 일어나자."}'));
+    queueContent(geminiText('{"text":"[warmly] 우리 딸, 오늘 하늘이 많이 흐리대. [encouraging] 커튼부터 열고 일어나자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '흐리다고 알리고 커튼부터 열고 일어나자고 한다.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 딸',
+      targetLanguage: 'ko',
+    });
+    expect(out.text).toContain('흐리대.');
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('MIXED speech levels');
+  });
+
+  it('관계를 모르는 목소리의 반말은 섞임으로 본다 — 등록 녹음이 반말이면 그 말투를 따른다', () => {
+    expect(hasMixedKoreanRegister('미안해요, 날씨를 못 봤어요. 그래도 이제 일어나 봐요.', {})).toBe(false);
+    expect(hasMixedKoreanRegister('미안해, 인터넷이 먹통이라 날씨를 못 봤어… 이제 일어나서 시작해 보자!', {})).toBe(true);
+    expect(
+      hasMixedKoreanRegister('날씨를 못 봤어. 이제 일어나 보자!', {
+        speechStyle: { dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false },
+      }),
+    ).toBe(false);
+  });
+
+  it('말줄임표 뒤에 겹친 마침표만 줄인다', () => {
+    expect(tidyEllipsis('날씨를 못 봤어…. 창밖 한번 봐.')).toBe('날씨를 못 봤어… 창밖 한번 봐.');
+    expect(tidyEllipsis('okay.... get up')).toBe('okay... get up');
+    expect(tidyEllipsis('그래도… 일어나자.')).toBe('그래도… 일어나자.');
+  });
+
+  it('인사가 아닌 시드에서만 아침 인사를 막는다 — 시드가 아침을 말하면 허용', () => {
+    const fortune = '오늘은 운이 따라주는 날이라고 가볍게 재미로 전한다.';
+    expect(hasAssumedMorning('좋은 아침이에요. 오늘은 운이 좋은 날이래요.', fortune, 'ko')).toBe(true);
+    expect(hasAssumedMorning('Morning, sweetie. Luck is on your side today.', fortune, 'en')).toBe(true);
+    expect(hasAssumedMorning('おはよう。今日はツイてる日だよ。', fortune, 'ja')).toBe(true);
+    expect(hasAssumedMorning('할머니, 오늘은 운이 따라주는 날이래요.', fortune, 'ko')).toBe(false);
+    expect(hasAssumedMorning('좋은 아침이에요. 잘 잤어요?', '다정하게 아침 인사를 하며 잘 잤는지 묻는다.', 'ko')).toBe(false);
+    expect(hasAssumedMorning("Let's start the morning strong.", '그래도 아침은 힘차게 시작하자고 한다.', 'en')).toBe(false);
+  });
+
+  it('축약 없는 영어는 두 번 이상일 때만 로봇 말투로 본다', () => {
+    expect(isUncontractedEnglish('You do not have to get it all right away, so let us take it one step at a time.')).toBe(true);
+    expect(isUncontractedEnglish("I will always be here. Let's get up.")).toBe(false);
+    expect(isUncontractedEnglish("You don't have to do it all. Let's go.")).toBe(false);
+  });
+
+  it('사전렌더: 인사가 아닌 알람의 아침 인사는 다시 묻고, 다음 회차에 그 사유를 말한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] Morning, sweetie. [caring] Time for your meds, take them now."}'));
+    queueContent(geminiText('{"text":"[warmly] Sweetie, time for your meds. [caring] Take them now, okay?"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '엄마',
+      listenerTitle: 'sweetie',
+      targetLanguage: 'en',
+    });
+    expect(out.text).not.toMatch(/morning/i);
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('assumed it was morning');
+  });
+
+  it('사전렌더: 생성 문구의 겹친 마침표를 다듬어 저장한다', async () => {
+    queueContent(geminiText('{"text":"[apologetic] 미안해요, 날씨를 못 봤어요…. [caring] 나가기 전에 창밖 한번 봐 주세요."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '인터넷이 안 돼 오늘 날씨를 확인하지 못했다고 미안한 듯 알린다.',
+      targetLanguage: 'ko',
+    });
+    expect(out.text).toContain('못 봤어요… [caring]');
+    expect(out.text).not.toContain('….');
   });
 
   it('3.x 응답(답 part 에 thoughtSignature)도 그대로 문구로 쓴다', async () => {
@@ -1382,7 +1478,8 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
   });
 
   it('모델이 태그를 비우면 카테고리 기본 태그로 채운다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '오늘 비 온대. 나갈 때 우산 꼭 챙겨.', tag: '' })));
+    // 관계를 모르는 목소리는 해요체다(반말이면 `register_mixed` 로 다시 묻는다).
+    queueContent(geminiText(JSON.stringify({ text: '오늘 비 온대요. 나갈 때 우산 꼭 챙기세요.', tag: '' })));
     const out = await generatePrerenderClipText(ENV, {
       seed: '비 온다고 알리고 우산 챙기라고.',
       targetLanguage: 'ko',

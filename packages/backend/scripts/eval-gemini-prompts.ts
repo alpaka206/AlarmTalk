@@ -34,6 +34,7 @@ import {
   parseDynamicAlarmTextResult,
   prepareAlarmTextWithVertex,
   prerenderRejectionReason,
+  tidyEllipsis,
   type SpeechStyle,
 } from '../src/lib/vertex-translate.ts';
 import { CLONE_CLIP_SEEDS } from '../src/lib/stock-clips.ts';
@@ -41,7 +42,7 @@ import type { Env } from '../src/types.ts';
 
 // ---------------------------------------------------------------- 인자
 
-const KNOWN_FLAGS = ['--models', '--suites', '--reps', '--label', '--concurrency'] as const;
+const KNOWN_FLAGS = ['--models', '--suites', '--reps', '--label', '--concurrency', '--dset'] as const;
 
 function parseFlags(): Map<string, string> {
   const rest = process.argv.slice(2);
@@ -74,6 +75,13 @@ const REPS = Number(flags.get('--reps') ?? '2');
 if (!Number.isInteger(REPS) || REPS < 1 || REPS > 5) throw new Error('--reps 는 1~5');
 const CONCURRENCY = Number(flags.get('--concurrency') ?? '6');
 const LABEL = (flags.get('--label') ?? 'baseline').replace(/[^a-z0-9._-]/gi, '-');
+/** 쉼표로 여러 개: core,holdout,fresh. 'all' = core,holdout(예전 호환). */
+const DSETS = new Set(
+  (flags.get('--dset') ?? 'core').split(',').flatMap((d) => (d === 'all' ? ['core', 'holdout'] : [d])),
+);
+for (const d of DSETS) {
+  if (!['core', 'holdout', 'fresh'].includes(d)) throw new Error('--dset 는 core|holdout|fresh|all (쉼표로 여러 개)');
+}
 
 // ---------------------------------------------------------------- 자격 증명(출력 금지)
 
@@ -345,6 +353,48 @@ const D_SUBSET_PROFILES: Profile[] = [
   { id: 'ja-okan-kansai', lang: 'ja', relationshipLabel: 'おかん', listenerTitle: 'たろう', speechStyle: KANSAI, expect: 'dialect' },
   { id: 'en-no-relationship', lang: 'en', relationshipLabel: null, listenerTitle: null },
 ];
+/** 튜닝(v2~v5)에 한 번도 쓰지 않은 관계·호칭. 여기서도 좋아야 과적합이 아니다. */
+const D_HOLDOUT_PROFILES: Profile[] = [
+  { id: 'ko-dad-to-son', lang: 'ko', relationshipLabel: '아빠', listenerTitle: '우리 아들', expect: 'banmal' },
+  { id: 'ko-grandson-to-grandpa', lang: 'ko', relationshipLabel: '손자', listenerTitle: '할아버지', expect: 'polite' },
+  { id: 'ko-friend-to-minji', lang: 'ko', relationshipLabel: '친구', listenerTitle: '민지야', expect: 'banmal' },
+  { id: 'en-dad-to-buddy', lang: 'en', relationshipLabel: 'dad', listenerTitle: 'buddy' },
+  { id: 'ja-grandchild-to-grandma', lang: 'ja', relationshipLabel: '孫', listenerTitle: 'おばあちゃん' },
+  { id: 'ja-friend-to-saki', lang: 'ja', relationshipLabel: '友達', listenerTitle: 'さき' },
+];
+/**
+ * v6 이후에 만든 관계·호칭과 시드 조합. **튜닝 판정에 한 번도 쓰지 않았다** — 마지막 모델 비교
+ * (같은 프롬프트, 모델만 다르게)는 여기서 한다. 영어는 앞선 판정에서 가장 약했으므로 넉넉히 둔다.
+ */
+const D_FRESH_PROFILES: Profile[] = [
+  { id: 'ko-wife-to-yeobo', lang: 'ko', relationshipLabel: '아내', listenerTitle: '여보', expect: 'banmal' },
+  { id: 'ko-daughter-to-mom', lang: 'ko', relationshipLabel: '딸', listenerTitle: '엄마', expect: 'polite' },
+  { id: 'ko-unni-to-sujin', lang: 'ko', relationshipLabel: '언니', listenerTitle: '수진아', expect: 'banmal' },
+  { id: 'en-grandma-to-sam', lang: 'en', relationshipLabel: 'grandma', listenerTitle: 'Sam' },
+  { id: 'en-wife-to-honey', lang: 'en', relationshipLabel: 'wife', listenerTitle: 'honey' },
+  { id: 'en-sister-to-jake', lang: 'en', relationshipLabel: 'sister', listenerTitle: 'Jake' },
+  { id: 'en-daughter-to-dad', lang: 'en', relationshipLabel: 'daughter', listenerTitle: 'Dad' },
+  { id: 'ja-dad-to-haruto', lang: 'ja', relationshipLabel: '父', listenerTitle: 'はると' },
+  { id: 'ja-wife-to-kenta', lang: 'ja', relationshipLabel: '妻', listenerTitle: 'けんた' },
+];
+function freshSeeds() {
+  const pick = (category: string, index: number) => {
+    const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
+    return { category, index, seed: group.seeds[index]!, defaultTag: group.defaultTag };
+  };
+  return [
+    pick('greeting', 0),
+    pick('weather', 1),
+    pick('weather', 2),
+    pick('weather', 5),
+    pick('weather', 7),
+    pick('medication', 1),
+    pick('medication', 2),
+    pick('fortune', 1),
+    pick('fortune', 3),
+    pick('cheer', 2),
+  ];
+}
 function subsetSeeds() {
   const pick = (category: string, index: number) => {
     const group = CLONE_CLIP_SEEDS.find((g) => g.category === category)!;
@@ -382,9 +432,16 @@ function hasStretchedVowel(text: string): boolean {
 }
 
 async function runD(m: (typeof MODELS)[number]) {
-  const cases = [
+  const core = [
     ...D_FULL_PROFILES.flatMap((p) => allSeeds().map((s) => ({ p, s }))),
     ...D_SUBSET_PROFILES.flatMap((p) => subsetSeeds().map((s) => ({ p, s }))),
+  ];
+  const holdout = D_HOLDOUT_PROFILES.flatMap((p) => subsetSeeds().map((s) => ({ p, s })));
+  const fresh = D_FRESH_PROFILES.flatMap((p) => freshSeeds().map((s) => ({ p, s })));
+  const cases = [
+    ...(DSETS.has('core') ? core : []),
+    ...(DSETS.has('holdout') ? holdout : []),
+    ...(DSETS.has('fresh') ? fresh : []),
   ];
   const jobs = cases.flatMap((c) => Array.from({ length: REPS }, (_, rep) => ({ ...c, rep })));
   return pool(jobs, CONCURRENCY, async ({ p, s, rep }) => {
@@ -412,7 +469,7 @@ async function runD(m: (typeof MODELS)[number]) {
       if (c.error || c.status !== 200) return { reason: `http_${c.status}`, finishReason: c.finishReason };
       const parsed = parseDynamicAlarmTextResult(c.text);
       // 운영과 같게 — 졸린 태그는 거절하지 않고 지운 뒤 판정한다.
-      const text = dropLowArousalTags(parsed.text.trim());
+      const text = tidyEllipsis(dropLowArousalTags(parsed.text.trim()));
       const spoken = normalizeAlarmTextWithoutTags(text);
       const shape = rawJsonShape(c.text, ['text', 'tag']);
       return {
