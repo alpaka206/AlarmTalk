@@ -871,7 +871,9 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
 2. ~~iOS 편집기 하단 문구 정리~~ — **끝났다(2026-08-18).** 아래 「iOS 저장 사유 문구」 참조.
 3. ~~iOS `statusMessage` 유출 차단~~ — **끝났다(2026-08-18).** 같은 절.
-4. **5단계 앱 쪽 제거** ← **여기부터.** 착수 전 아래 「5단계 착수 전 실측」을 반드시 읽을 것.
+4. ~~**5단계 앱 쪽 제거**~~ — **끝났다(2026-08-18, `3929214c`).** 아래 「5단계 착수 전 실측」·
+   「5단계 (b)(c) 완료」 참조. 2026-09-23 확인: 그 커밋은 Android versionCode 25~29 와 배포된
+   iOS 빌드 1~6 전부에 들어 있다(`merge-base --is-ancestor`, ASC 빌드 목록).
    파생 결정은 **닫혔다(2026-08-18 지시)**:
    가족 알람의 날씨 variant 는 **받는 사람 위치**로 고른다 —
    규칙 전문은 [`docs/spec/family-alarm.md`](../spec/family-alarm.md) 4절.
@@ -879,7 +881,18 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
    `voiceRandomPrompt = true` 행을 테마 클립으로 재바인딩하는 마이그레이션 — 안 내면 그
    알람들이 매일 같은 문장이 되고 시각만 바꾸려 열어도 영영 못 고친다, (c) 양 앱의 라이브
    생성 경로 제거.
-5. 백엔드 정리 — 스토어 게재 후.
+5. ~~백엔드 정리~~ — **거절은 넣었다(2026-09-23).** `/tts/generate` 가 `random:true`(미리듣기 제외)를
+   `400 RANDOM_TTS_RETIRED` 로 거절한다(`routes/tts.ts` 의 `randomRequested` 바로 뒤). 전제였던
+   두 스토어 게재는 채워졌다(Android `minSupported` 25, iOS 첫 공개 1.2.8). 열어 두면 **구멍**이었다 —
+   무료 + 기본 목소리 + `random_context:'preset'` + 매번 다른 `listener_title` 이면 요금제 게이트를
+   통과하고, 호칭이 문장에 붙어 캐시가 빗나가 요청마다 합성이 돌았으며 월 한도도 세지 않았다.
+   - [ ] 남은 것: 닿지 않게 된 라이브 생성 코드 삭제(후속 PR). `tts.ts` 의 `randomRequested` 갈래·
+     동적 문장 블록·`'fallback'` 날씨 정책·`RANDOM_CATEGORY_REQUIRED`, `vertex-translate.ts` 의 동적
+     생성기, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`. ⚠ 초안 미리듣기와 같이 쓰는 헬퍼
+     (`presetTextWithListenerTitle`·`normalizeRelationshipLabel`·`findViewerRelationshipField`)와
+     사전렌더 검사는 남긴다 — 검사 테스트가 동적 생성기 테스트 안에 있어 먼저 옮겨야 한다.
+   - [ ] prod 배포 뒤 `api_error` 로그에서 `RANDOM_TTS_RETIRED` 를 본다. 나오면 모르던 옛 호출자다
+     (예: 버전 조회에 실패해 차단 화면을 못 본 versionCode 24 이하).
 
 조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
 `wy88mi9ha.output`(관문이 돌아야 할 자리 전수 + 저장 경로 추적),
@@ -1160,9 +1173,7 @@ dev 백엔드에는 클론 사전렌더 클립이 존재하지 않는다 → 클
 
 **검증 뒤 폰 상태는 원래대로 되돌렸다**(4행 전부 원값, A32 예약 `pending=1 scheduled=1`).
 
-⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.**
-
-⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.** 거부 판정은 정확히
+⚠ **백엔드 정리(5번)의 거절은 2026-09-23 에 넣었다**(위 「남은 작업 순서」 5번). 거부 판정은 정확히
 `!draftPreviewRequested && body.random === true` 자리여야 한다 — 앞당기면 iOS 목소리 등록이
 깨진다.
 
