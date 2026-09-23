@@ -15,17 +15,18 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 
 - Android 8.0 or newer, or an iPhone on iOS 26 or newer.
 - An email account, or a Google account (Android) / Apple ID (iPhone).
-- Notification, exact-alarm, and full-screen-intent permissions.
+- Permissions — Android: notifications, exact alarms, and full-screen alarms. iPhone: the alarm permission (without it, alarms are not scheduled); notification permission is optional.
 - Microphone permission if you plan to record your own voice.
 
 ## 3. First-time setup (5 minutes)
 
 1. **Sign up**
-   - Use email/password (8+ characters, letters and digits), or continue with Google.
+   - Use email/password (8+ characters, letters and digits).
+   - Or, on the login screen, use "Sign in with Google" (Android) or "Sign in with Apple" (iPhone). Your first sign-in creates the account.
 
 2. **Grant permissions**
-   - Three permission cards appear: notification, exact alarm, full-screen. Allow each one.
-   - All three are required so the alarm rings even on the lock screen.
+   - **Android**: allow notifications when asked. If a screen says "Allow exact alarm permission to set alarms" or "Allow lock screen permission to set alarms", tap "Allow" and turn it on in the settings screen that opens. All three (notifications, exact alarms, full-screen alarms) are needed before you can create, edit, or turn on alarms.
+   - **iPhone**: once you finish signing up and reach the app, AlarmTalk asks for notification permission — it is only used for notices such as an alarm a family member sent you. The alarm permission is asked when you create your first alarm. Allow it: without it, alarms are not scheduled and do not ring.
 
 3. **Create your first voice** (paid plans)
    - Voice profiles are a paid-plan feature. On the free plan, skip to step 4 and use the built-in voices.
@@ -48,12 +49,20 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 
 ## 4. If permissions aren't granted
 
+**Android**
+
 - **Notification**: Settings → Apps → AlarmTalk → Notifications → "Allow notifications".
 - **Exact alarm**: Settings → Apps → AlarmTalk → "Alarms & reminders" → enable. The menu path varies a little per manufacturer.
 - **Full-screen alerts**: On Android 14+ there is a dedicated menu — Settings → Apps → AlarmTalk → "Full-screen notification access".
 - **Battery optimization**: Some manufacturers (Samsung One UI, Xiaomi MIUI) require AlarmTalk to be excluded from battery optimization for reliable rings.
 
 If a permission is missing, the Alarm tab shows a banner above your alarm list saying which one it is; tapping it goes straight to that system setting.
+
+**iPhone**
+
+- **Alarm permission**: the only permission that decides whether alarms ring. Without it, alarms are not scheduled at all, and the Alarm tab shows "Without alarm permission, alarms won't be scheduled." above your alarms.
+- If you declined it, iOS does not ask again. When you try to create an alarm, AlarmTalk opens its page in the Settings app — turn the alarm permission back on there.
+- **Notifications**: optional. They are only used for notices such as an alarm a family member sent you; alarms ring without them.
 
 ## 5. Connecting family or a partner
 
@@ -80,8 +89,10 @@ If a permission is missing, the Alarm tab shows a banner above your alarm list s
 
 - **Be considerate**: don't test alarms at unsocial hours; neighbors hear them too.
 - **Heavy sleeper**: schedule three repeating alarms 5–10 minutes apart on weekdays.
-- **Volume**: each alarm has its own voice / tone volume in the alarm editor — set it there. AlarmTalk also raises the device Alarm-category volume for the duration of a ring if it is set lower, and restores it afterwards, so turning the system slider down will not quiet an alarm.
-- **Vibration**: "Default" for light sleep, "Strong" for deep sleep.
+- **Volume**
+  - Android: each alarm has its own voice / tone volume in the alarm editor — set it there. AlarmTalk also raises the device Alarm-category volume for the duration of a ring if it is set lower, and restores it afterwards, so turning the system slider down will not quiet an alarm.
+  - iPhone: set each alarm's "Voice volume" in the alarm editor. There is no tone volume setting — iOS plays the alarm sound itself.
+- **Vibration** (Android): "Basic" for light sleep, "Strong" for deep sleep. The iPhone app has no vibration setting.
 
 ## 7. Subscriptions and codes
 
@@ -91,7 +102,7 @@ If a permission is missing, the Alarm tab shows a banner above your alarm list s
 - **Personal**: your own voice profile plus custom alarm lines, within a monthly quota.
 - **Couple / Family**: everything in Personal, plus voice sharing across 2–5 members.
 
-Current prices and quotas are shown in the app under More → subscription.
+Current prices and quotas are shown in the app under More → "Pass" (Android) / "Plan" (iPhone).
 
 ### Codes
 
@@ -101,15 +112,17 @@ Current prices and quotas are shown in the app under More → subscription.
 
 ### Cancel
 
-- Payments renew monthly. More → subscription → "Cancel plan". There is no pause.
-- **Cancel at period end**: you keep everything until the next billing date, then drop to Free automatically.
-- **Cancel now**: the remaining period is refunded pro rata and the plan ends immediately. Your voices are kept for 3 days — re-register a plan within that window and they come back; after it they are deleted permanently.
+- Payments renew monthly. More → "Pass" (Android) / "Plan" (iPhone) → "Cancel pass". There is no pause.
+- **Paid through Google Play** — you choose when it ends:
+  - **Cancel on the end date**: you keep everything until the next billing date, then drop to Free automatically.
+  - **Cancel now**: the remaining period is refunded pro rata and the plan ends immediately. Your voices are kept for 3 days — re-register a plan within that window and they come back; after it they are deleted permanently.
+- **Paid through the App Store (iPhone)**: you cancel in Apple's subscription management — tapping "Cancel pass" on the iPhone opens it. You keep the period you already paid for; the app cannot "Cancel now" with a pro-rata refund.
 
 ## 8. FAQ
 
 ### Q. My alarm did not ring once.
-- Missing permissions do not stop the ring — the alarm still makes sound and vibrates. What they cost you is the notification (no heads-up alert), punctuality (an alarm without exact-alarm permission can be several minutes late), or the lock screen (sound plays but no full-screen alarm). Check the banner on the Alarm tab for which one is missing.
-- If it genuinely made no sound, exclude AlarmTalk from battery optimization and turn off "auto-close unused apps" in your manufacturer's settings.
+- **Android**: missing permissions do not stop the ring — the alarm still makes sound and vibrates. What they cost you is the notification (no heads-up alert), punctuality (an alarm without exact-alarm permission can be several minutes late), or the lock screen (sound plays but no full-screen alarm). Check the banner on the Alarm tab for which one is missing. If it genuinely made no sound, exclude AlarmTalk from battery optimization and turn off "auto-close unused apps" in your manufacturer's settings.
+- **iPhone**: without the alarm permission, alarms are not scheduled, so they really do not ring. If the Alarm tab shows "Without alarm permission, alarms won't be scheduled.", turn the permission back on (see section 4).
 - If it still does not ring, contact support.
 
 ### Q. If the server is down, do my alarms still ring?
@@ -123,8 +136,8 @@ Current prices and quotas are shown in the app under More → subscription.
 ### Q. What if a family member uses my voice in an unwanted way?
 - You can remove your voice profile from the group. If you need help, Settings → Support.
 
-### Q. Are there more built-in alarm tones?
-- The default tone is currently a single short pattern. More built-in tones come in a later update.
+### Q. Can I change the alarm tone?
+- Yes. With mode "Alarm", open "Alarm sound" in the alarm editor and pick one of the alarm sounds on your device.
 
 ## 9. Switching to a new device
 
@@ -137,7 +150,7 @@ Current prices and quotas are shown in the app under More → subscription.
 - Email: see `SECURITY.md` for security-only contact. For product support, use the support link inside the app.
 - When reporting an issue, please include:
   - App version (More tab, bottom of the list)
-  - Device manufacturer / model / Android version
+  - Device manufacturer / model / Android or iOS version
   - When the issue happened
   - Steps to reproduce, if possible
 
