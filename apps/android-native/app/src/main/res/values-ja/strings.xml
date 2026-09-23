@@ -840,20 +840,8 @@
     <string name="auth_consent_expand">項目を開く</string>
     <string name="auth_consent_collapse">項目を閉じる</string>
     <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時から午後9時までのみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
-    <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!
-
-招待コード: %1$s
-
-1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 登録してログイン
-3. 「その他」→「コードを登録」に上のコードを入力</string>
-    <string name="share_code_gift_body">AlarmTalkのプランを贈りました。
-
-コード: %1$s
-
-1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 登録してログイン
-3. 「その他」→「コードを登録」に上のコードを入力</string>
+    <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!\n\n招待コード: %1$s\n\n1. AlarmTalkをインストール https://alarm-talk.com/ja/\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力</string>
+    <string name="share_code_gift_body">AlarmTalkのプランを贈りました。\n\nコード: %1$s\n\n1. AlarmTalkをインストール https://alarm-talk.com/ja/\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力</string>
     <string name="welcome_promo_title">コードをお持ちですか？</string>
     <string name="welcome_promo_body_free">コードがなくても基本機能は無料で使えます。</string>
     <string name="welcome_promo_body_later">あとから「その他」の「コードを登録」でいつでも入力できます。</string>

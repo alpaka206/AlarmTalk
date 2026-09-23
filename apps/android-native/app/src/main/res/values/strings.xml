@@ -873,20 +873,8 @@
     <string name="auth_consent_expand">항목 펼치기</string>
     <string name="auth_consent_collapse">항목 접기</string>
     <string name="auth_consent_marketing_detail">새 기능, 이벤트, 혜택 소식을 앱 푸시나 이메일로 보내드려요. 동의하지 않아도 가입과 이용에 아무 제한이 없고, 언제든 더보기에서 끌 수 있어요. 광고는 오전 8시~오후 9시에만 보내고, 직접 맞춘 알람은 광고가 아니라서 설정한 시각에 그대로 울려요.</string>
-    <string name="share_code_invite_body">알람톡에서 내 목소리 알람을 같이 쓰자!
-
-초대 코드: %1$s
-
-1. 알람톡 설치 https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 가입하고 로그인
-3. 더보기 → 코드 등록에 위 코드 입력</string>
-    <string name="share_code_gift_body">알람톡 이용권을 보냈어요.
-
-이용권 코드: %1$s
-
-1. 알람톡 설치 https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 가입하고 로그인
-3. 더보기 → 코드 등록에 위 코드 입력</string>
+    <string name="share_code_invite_body">알람톡에서 내 목소리 알람을 같이 쓰자!\n\n초대 코드: %1$s\n\n1. 알람톡 설치 https://alarm-talk.com\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력</string>
+    <string name="share_code_gift_body">알람톡 이용권을 보냈어요.\n\n이용권 코드: %1$s\n\n1. 알람톡 설치 https://alarm-talk.com\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력</string>
     <string name="welcome_promo_title">코드가 있으신가요?</string>
     <string name="welcome_promo_body_free">코드가 없어도 기본 기능은 무료로 쓸 수 있어요.</string>
     <string name="welcome_promo_body_later">나중에 더보기의 코드 등록에서 언제든 넣을 수 있어요.</string>

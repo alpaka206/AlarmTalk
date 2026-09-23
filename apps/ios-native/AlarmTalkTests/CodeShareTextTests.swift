@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AlarmTalk
 
@@ -45,9 +46,25 @@ struct CodeShareTextTests {
     @Test("설치 링크는 스토어 직링크가 아니라 랜딩이다")
     func installLinkIsLanding() {
         #expect(CodeShareText.installURL == "https://alarm-talk.com")
-        let text = CodeShareText.invite(code: "INV-1")
-        #expect(!text.contains("play.google.com"))
-        #expect(!text.contains("apps.apple.com"))
+        for text in [CodeShareText.invite(code: "INV-1"), CodeShareText.gift(code: "GIFT-1")] {
+            #expect(!text.contains("play.google.com"))
+            #expect(!text.contains("apps.apple.com"))
+        }
+    }
+
+    /// ⚠ 랜딩 루트는 기기 언어와 상관없이 **한국어 페이지**다(정적 export — 언어 감지가 없다).
+    /// 영어·일본어 문구가 루트를 가리키면 받는 사람이 한국어 페이지에 떨어진다. 이 테스트는
+    /// `-testLanguage ko` 로 돌므로 번역은 앱 번들의 `<언어>.lproj` 를 직접 열어 확인한다.
+    /// 안드로이드 `values-en`·`values-ja` 의 `share_code_invite_body`·`share_code_gift_body` 와
+    /// **같은 주소**여야 한다(`ShareCodeTextTest`).
+    @Test("영어·일본어 문구는 그 언어의 랜딩을 가리킨다", arguments: [
+        ("en", "https://alarm-talk.com/en/"),
+        ("ja", "https://alarm-talk.com/ja/"),
+    ])
+    func installURLFollowsTextLanguage(language: String, expected: String) throws {
+        let path = try #require(Bundle.main.path(forResource: language, ofType: "lproj"))
+        let bundle = try #require(Bundle(path: path))
+        #expect(bundle.localizedString(forKey: "https://alarm-talk.com", value: nil, table: nil) == expected)
     }
 
     /// 서식 인자가 어긋나면 `%1$@` 가 그대로 남거나 자리가 바뀐다.

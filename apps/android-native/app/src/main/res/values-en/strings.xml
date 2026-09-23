@@ -832,20 +832,8 @@ Please update to the latest version.</string>
     <string name="auth_consent_expand">Expand item</string>
     <string name="auth_consent_collapse">Collapse item</string>
     <string name="auth_consent_marketing_detail">News about new features, events, and offers, sent by push or email. Declining changes nothing about signing up or using the app, and you can turn it off any time from the More tab. Promotional messages are only sent between 8am and 9pm; alarms you set yourself are not promotions and ring exactly when you scheduled them.</string>
-    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!
-
-Invite code: %1$s
-
-1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. Sign up and log in
-3. Enter the code under More → Register code</string>
-    <string name="share_code_gift_body">I sent you an AlarmTalk pass.
-
-Pass code: %1$s
-
-1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. Sign up and log in
-3. Enter the code under More → Register code</string>
+    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
+    <string name="share_code_gift_body">I sent you an AlarmTalk pass.\n\nPass code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
     <string name="welcome_promo_title">Have a code?</string>
     <string name="welcome_promo_body_free">Core features stay free even without a code.</string>
     <string name="welcome_promo_body_later">You can enter one later from Register code in More.</string>
