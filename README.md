@@ -18,7 +18,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
   - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
-The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives in this repository, but it is not on the App Store yet. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
+The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and shipped to the App Store on 2026-09-22. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
 
 ## Stack
 
@@ -38,7 +38,7 @@ The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives i
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android app
-│   ├── ios-native/       SwiftUI iOS app (XcodeGen; not yet released)
+│   ├── ios-native/       SwiftUI iOS app (XcodeGen)
 │   └── landing/          Next.js landing page (static export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
