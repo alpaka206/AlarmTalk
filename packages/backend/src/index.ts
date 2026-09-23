@@ -22,7 +22,6 @@ import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
-import { retryTransientTurso } from './lib/turso-retry';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -280,29 +279,9 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  const rawDb = getDB(env);
-  // 520 is a transient failure of Turso's HTTP gateway. Retry only read
-  // queries: retrying a write after an ambiguous HTTP failure can duplicate a
-  // side effect. Failed maintenance writes remain safe to resume next tick.
-  const db = new Proxy(rawDb, {
-    get(target, property) {
-      if (property === 'execute') {
-        return (...args: unknown[]) => {
-          const statement = args[0];
-          const sql =
-            typeof statement === 'string'
-              ? statement
-              : typeof statement === 'object' && statement !== null && 'sql' in statement
-                ? String(statement.sql)
-                : '';
-          const execute = () => Reflect.apply(target.execute, target, args);
-          return /^\s*(?:SELECT|EXPLAIN)\b/i.test(sql) ? retryTransientTurso(execute) : execute();
-        };
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
+  // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
+  // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
+  const db = getDB(env);
   const now = new Date(event.scheduledTime);
 
   // cron 은 HTTP 미들웨어(sentryMiddleware)를 타지 않으므로 Sentry 클라이언트를 직접

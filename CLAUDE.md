@@ -4,14 +4,16 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(develop 에 머지 완료, 아직 미출시).
+- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(develop 에 머지 완료).
   탭 구성·화면 구성 모두 안드로이드와 같다(알람/목소리/더보기) — 「iOS 는 안드로이드를
   원본으로 삼는다」 절 참조. 빌드·테스트는 XcodeGen(`project.yml`)으로
   `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
-  ⚠ 아직 App Store 에 없다. CI 는 2026-09-08 에 복구했다(`.github/workflows/ios-build.yml` —
-  유닛 테스트 + Release 빌드, **필수 체크는 아니다**). **Apple 개발자 계정은 이미 있다**
-  (Team `<팀 ID>` — `Local.xcconfig`, gitignore). 실기기 서명·설치는 지금도 된다.
-  남은 것은 스토어 제출이다 — 상세는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
+  **App Store 에 있다** — 1.2.8 이 2026-09-22 에 게재됐고, 1.2.9(빌드 6)는 2026-09-23 에
+  심사 제출했다. 스토어 상태는 여기 말고 [`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)
+  「스토어 상태」 절이 최신이다 — **회차마다 바뀌는 값을 이 파일에 베끼지 말 것.**
+  CI 는 2026-09-08 에 복구했다(`.github/workflows/ios-build.yml` — 유닛 테스트 + Release 빌드,
+  **필수 체크는 아니다**). **Apple 개발자 계정은 이미 있다**(Team `<팀 ID>` — `Local.xcconfig`,
+  gitignore). 제출 절차는 `docs/ios/APPLE-ACCOUNT-SETUP.md`.
 
 ## iOS 실기기 설치 (테스트 아이폰은 **WiFi** 로 붙는다)
 - **아이폰은 케이블이 아니라 WiFi 로 페어링돼 있다.** 목록·설치 모두 `devicectl` 로 한다:

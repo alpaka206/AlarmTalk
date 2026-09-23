@@ -1,7 +1,8 @@
 # Google Play 결제 — 상품 코드 plug-in 런북
 
 > **요약**: 코드는 이미 끝났다. Google Play Billing Library 연동·구매 플로우·서버 검증(confirm)·
-> RTDN 웹훅·요금제 시드까지 전부 구현되어 있다. **남은 건 "상품을 만들고 가격을 정하는" 운영 작업**뿐이다.
+> RTDN 웹훅·요금제 시드까지 전부 구현되어 있고, 구독 상품도 Play Console(`com.alarmtalk.app`)에 만들어져
+> 프로덕션에서 판매 중이다. 남은 콘솔 작업은 아래 6절에서 체크되지 않은 항목이다(RTDN 연결 등).
 > 이 문서는 그 plug-in 지점을 한 곳에 모은 체크리스트다.
 >
 > 가격 추천(원가·수수료·세금·지불의향 분석)은 루트의 **`PRICING.md`** 참고.
@@ -137,9 +138,9 @@ wrangler secret put GOOGLE_RTDN_VERIFICATION_TOKEN --env production
 
 ---
 
-## 6. 한눈에 보는 "출시 전 plug-in" 체크리스트
+## 6. 한눈에 보는 plug-in 체크리스트
 
-- [ ] Play Console에 `personal_monthly` / `couple_monthly` / `family_monthly` 구독 상품 생성·가격설정·활성화
+- [x] Play Console에 `personal_monthly` / `couple_monthly` / `family_monthly` 구독 상품 생성·가격설정·활성화 (`com.alarmtalk.app` 에 등록, 프로덕션 판매 중)
 - [ ] `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` / `ANDROID_PACKAGE_NAME` / `GOOGLE_RTDN_VERIFICATION_TOKEN` 시크릿 등록
 - [ ] RTDN Pub/Sub 토픽 + push 구독(URL에 token) 연결, test notification 200 확인
 - [ ] DB `price_krw`를 Play 가격과 일치(마이그레이션 추가)

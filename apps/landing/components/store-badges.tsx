@@ -89,9 +89,15 @@ function Badge({ href, live, glyph, eyebrow, label, ariaLive, ariaSoon }: BadgeP
 /**
  * 스토어 배지 두 개 — Google Play 와 App Store 를 **같은 무게로** 나란히 둔다.
  *
- * 앱은 안드로이드에 먼저 나왔고 iOS 는 심사 중이다(2026-09-15 제출). 배지는 둘 다 링크로
- * 그린다: 아이폰 사용자가 첫 화면에서 "나는 아니구나" 로 떠나지 않게, 그리고 게재 승인
- * 순간 페이지를 다시 만들지 않아도 되게. 내려야 하면 `APP_STORE_LIVE`(env `=0`) 로 끈다.
+ * 둘 다 게재됐다 — Google Play 는 먼저, App Store 는 2026-09-22(1.2.8). 배지는 둘 다 링크로
+ * 그린다. 스위치(`APP_STORE_LIVE`, env `=0`)는 남겨 둔다: 스토어에서 내려가는 사고가 나면
+ * 페이지를 다시 만들지 않고 '곧 출시' 로 되돌릴 수 있어야 한다.
+ *
+ * ⚠ **이 스위치가 고치는 것은 배지뿐이다.** '받을 수 있다' 고 말하는 자리가 페이지에 더 있고,
+ * 그쪽은 env 를 읽지 않는다. 그래서 FAQ '어떤 기기를 지원하나요' 답은 **스위치를 내려도 참인
+ * 문장**으로 쓴다 — 지원 기기와 최소 버전을 말하고, 받는 곳은 "이 페이지의 버튼" 으로 넘긴다
+ * (그 버튼이 이미 진짜 상태를 그린다). 내릴 때 **손으로 같이 고쳐야 하는 것은 `public/llms.txt`
+ * 하나다**(정적 파일이라 env 를 못 읽는다 — 머리말과 링크 줄).
  */
 export function StoreBadges({ className }: { className?: string }) {
   const t = useTranslations("store");

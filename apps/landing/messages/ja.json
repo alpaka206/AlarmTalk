@@ -98,7 +98,7 @@
       },
       {
         "q": "対応デバイスは?",
-        "a": "AndroidはGoogle Playで今すぐ入手できます。iOSはApp Storeでの公開を準備中で、公開され次第このページのApp Storeボタンから入手できます。"
+        "a": "Android 8.0以降と、iOS 26以降のiPhoneでご利用いただけます。入手はこのページのGoogle Play・App Storeボタンからどうぞ。"
       }
     ]
   },
@@ -397,7 +397,7 @@
       "stopAria": "{kind}を止める",
       "download": "ダウンロード",
       "failed": "いまは作れません。少し待ってもう一度押してください。",
-      "disclaimer": "実在の人物の声ではなく、AIで生成した声です。",
+      "disclaimer": "実在の人物ではなく、AIで生成した声と画像です。",
       "sampleName": "はるか",
       "prevVoice": "前の人物",
       "nextVoice": "次の人物",

@@ -98,7 +98,7 @@
       },
       {
         "q": "어떤 기기를 지원하나요?",
-        "a": "Android 는 Google Play 에서 바로 받을 수 있어요. iOS 는 App Store 출시를 준비하고 있고, 열리는 대로 이 페이지의 App Store 버튼으로 받을 수 있어요."
+        "a": "Android 8.0 이상, 그리고 iOS 26 이상의 iPhone 에서 쓸 수 있어요. 받는 곳은 이 페이지의 Google Play · App Store 버튼이에요."
       }
     ]
   },
@@ -397,7 +397,7 @@
       "stopAria": "{kind} 멈추기",
       "download": "다운로드",
       "failed": "지금은 만들 수 없어요. 잠시 후 다시 눌러 보세요.",
-      "disclaimer": "실제 인물의 음성이 아닌, AI 로 생성된 목소리입니다.",
+      "disclaimer": "실제 인물이 아닌, AI 로 생성한 목소리와 이미지입니다.",
       "sampleName": "지민",
       "prevVoice": "이전 인물",
       "nextVoice": "다음 인물",

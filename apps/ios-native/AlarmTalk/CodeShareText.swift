@@ -9,19 +9,29 @@ import Foundation
 /// (`values/strings.xml` 의 `share_code_invite_body`·`share_code_gift_body`) —
 /// 「iOS 는 안드로이드를 원본으로 삼는다」 규약대로 iOS 가 틀린 쪽이다.
 ///
-/// ⚠ **링크는 스토어가 아니라 랜딩(`alarm-talk.com`)으로 보낸다.** 안드로이드는 Play
-/// 주소를 직접 넣지만 iOS 는 그럴 수 없다:
+/// ⚠ **링크는 스토어가 아니라 랜딩(`alarm-talk.com`)으로 보낸다** — 두 앱 모두.
 ///   - 받는 사람이 어느 기기인지 모른다. iPhone 사용자가 보낸 코드를 Android 친구가
-///     받는 경우가 오히려 흔하다(가족 이용권이 그런 물건이다).
-///   - App Store 주소는 숫자 앱 ID 가 있어야 만들 수 있는데(`apps.apple.com/app/id…`),
-///     그 값은 앱이 스토어에 올라간 뒤에 정해진다. `lib/app-version.ts` 의 iOS
-///     `storeUrl` 이 아직 자리표시자인 것과 같은 이유다.
+///     받는 경우가 오히려 흔하다(가족 이용권이 그런 물건이다). 스토어 주소 하나를 넣으면
+///     다른 기기를 쓰는 사람에게는 열어도 설치할 수 없는 링크가 된다.
+///   - 안드로이드는 원래 Play 주소를 직접 넣었다. iOS 가 없던 때 정한 것이라, iOS 게재
+///     (2026-09-22) 뒤 안드로이드 사용자가 아이폰 가족을 초대하면 설치 단계에서 막혔다 —
+///     2026-09-23 에 안드로이드도 랜딩으로 옮겼다.
 /// 랜딩은 두 배지를 한 자리에서 관리하므로(`apps/landing/lib/site.ts` 의 `STORE_LINKS`),
-/// 출시 때 고칠 곳이 세 군데가 아니라 한 군데다.
+/// 스토어 주소가 바뀌어도 고칠 곳이 세 군데가 아니라 한 군데다.
 enum CodeShareText {
 
-    /// 설치 안내에 쓰는 주소. 랜딩 한 곳만 가리킨다 — 위 주석 참조.
-    static let installURL = "https://alarm-talk.com"
+    /// 설치 안내에 쓰는 주소 — 랜딩의 **문구와 같은 언어** 페이지다(위 주석 참조).
+    ///
+    /// ⚠ 루트(`alarm-talk.com`)는 기기 언어와 상관없이 **한국어 페이지**를 준다(정적 export 라
+    /// 언어 감지가 없다). 그래서 영어·일본어 문구에 루트를 넣으면 받는 사람이 한국어 페이지에
+    /// 떨어진다 — 문자열 카탈로그에서 en → `/en/`, ja → `/ja/` 로 번역한다. 안드로이드는 같은
+    /// 주소를 `values*/strings.xml` 의 `share_code_invite_body`·`share_code_gift_body` 에 둔다.
+    static var installURL: String {
+        String(
+            localized: "https://alarm-talk.com",
+            comment: "공유 문구의 설치 안내 주소. 언어별 랜딩 페이지로 번역한다(en → https://alarm-talk.com/en/, ja → https://alarm-talk.com/ja/)."
+        )
+    }
 
     /// 가족·커플 초대 코드 공유. 안드로이드 `share_code_invite_body` 대응.
     static func invite(code: String) -> String {
