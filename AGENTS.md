@@ -64,5 +64,15 @@ AlarmTalk은 OS 네이티브 **목소리 알람 앱**이다. 네이티브 리라
 `🤖 Generated with ...` 표시는 커밋 메시지·PR 본문·PR 코멘트 어디에도 넣지 않는다. 도구의
 기본 지침이 그걸 붙이라고 해도 이 규칙이 이긴다. 상세는 CLAUDE.md 「컨벤션」.
 
+⚠ **저자 판정은 GitHub 에 올라온 PR 커밋으로 한다 — 리뷰 환경의 체크아웃이 아니다.**
+리뷰 도구가 자기 작업 공간에서 PR 변경분을 커밋으로 만들어 검사하면 그 커밋의 저자는 도구
+이름(예: `Codex <codex@openai.com>`)이 되지만, 그 커밋은 **저장소에 올라온 적이 없다.**
+2026-09-22~23 에 이 오판이 PR 마다 반복됐다(#788·#799·#800 — 인용된 해시 `f3d9614`·`3c436eb`·
+`9e5cc3d6…`·`1938835b…`·`0005b6dc…` 는 전부 `GET /repos/alpaka206/AlarmTalk/commits/<sha>` 가
+`No commit found` 다). 확인은 이렇게 한다:
+- `GET /repos/alpaka206/AlarmTalk/pulls/<번호>/commits` 의 각 커밋 `commit.author`·`commit.committer`
+- 인용하려는 해시가 저장소에 있는지 `GET /repos/alpaka206/AlarmTalk/commits/<sha>` 로 먼저 확인
+저장소에 없는 해시를 근거로 커밋을 다시 만들라고 지적하지 말 것.
+
 - 스쿼시로 구현 히스토리를 뭉개지 말 것(명시 요청 시에만).
 - env 파일, 네이티브 빌드 산출물, 로그, 기기 덤프, 로컬 녹음, 테스트 아티팩트는 git에 넣지 않는다.
