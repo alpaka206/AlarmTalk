@@ -274,7 +274,9 @@ billingApple.post('/apple/confirm', async (c) => {
   } else {
     // 식별자가 없는 **최초 청구**는 거절한다(구글 갈래와 같은 규칙 — 유출 토큰
     // first-claim 구멍을 막는다). 이미 바인딩된 트랜잭션의 재전송은 통과시킨다.
-    // iOS 는 아직 App Store 에 없어 옛 클라 구매가 존재하지 않으므로 엄격해도 안전하다.
+    // iOS 는 첫 공개 빌드(1.2.8, 2026-09-22 게재)보다 앞선 2026-08-18 부터 모든 구매에
+    // appAccountToken 을 싣는다(`SubscriptionManager.purchase`) — 식별자 없는 옛 클라 구매가
+    // 존재하지 않으므로 엄격해도 안전하다.
     const boundRes = await db0.execute({
       sql: `SELECT user_id FROM store_transactions
             WHERE provider = 'apple' AND provider_transaction_id = ?`,
