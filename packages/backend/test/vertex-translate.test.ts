@@ -364,6 +364,26 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(prepared.text).toContain('[calm]');
   });
 
+  it('영어 마무리 판정은 낱말로 본다 — sleepyhead·oversleep·tonight 은 깨우는 문구다', () => {
+    expect(isWindDownText('Good night, sleep tight.')).toBe(true);
+    expect(isWindDownText('Time for bed, sweet dreams.')).toBe(true);
+    expect(isWindDownText("Hey sleepyhead, you've got a dentist appointment at 9.")).toBe(false);
+    expect(isWindDownText("Don't oversleep!")).toBe(false);
+    expect(isWindDownText('Take your meds tonight.')).toBe(false);
+  });
+
+  it('번역 중 졸린 태그만 왔으면 원문이 아니라 번역문에 태그를 붙인다', async () => {
+    queueContent(geminiText('{"text":"[softly] Wake up, it is time for school."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나, 학교 갈 시간이야.', {
+      targetLanguage: 'en',
+      sourceLanguage: 'ko',
+      translate: true,
+      autoTag: true,
+    });
+    expect(prepared.translated).toBe(true);
+    expect(prepared.text).toBe('[cheerfully] Wake up, it is time for school.');
+  });
+
   it('사전렌더: 졸린 태그는 거절하지 않고 지운다 — 문장은 살린다', async () => {
     queueContent(geminiText('{"text":"[caring] 우리 딸, 약 먹을 시간이야. [gently] 알람 끄기 전에 얼른 먹자."}'));
     const out = await generatePrerenderClipText(ENV, {

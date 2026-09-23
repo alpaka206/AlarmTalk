@@ -379,8 +379,15 @@ export async function prepareAlarmTextWithVertex(
     // 직접 친 태그는 여기 오지 않는다(`shouldTag` 가 거짓이다). 잠들기 전·마무리 문구
     // (`isWindDownText`)는 calm 이 맞으므로 건드리지 않는다. 다 버려져 태그가 하나도 안
     // 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
+    // ⚠ 번역 중이면 `fallbackText`(원문 언어)로 돌아가지 말고 **번역문에** 태그를 붙인다
+    //   (Codex #801 P1). 원문으로 돌아가면 `translated: true` 인 채 원문이 합성·저장된다.
     const withoutSleepy = dropLowArousalTags(preparedText);
-    preparedText = extractTags(withoutSleepy).length > 0 ? withoutSleepy : fallbackText;
+    preparedText =
+      extractTags(withoutSleepy).length > 0
+        ? withoutSleepy
+        : shouldTranslate
+          ? tagAlarmTextLocally(withoutSleepy)
+          : fallbackText;
   }
 
   const tags = extractTags(preparedText);
@@ -2712,11 +2719,14 @@ function pickApprovedTag(tags: string[]): string | null {
  * 태깅의 저각성 거르기가 **같은 판정**을 쓴다.
  */
 export function isWindDownText(text: string): boolean {
-  const lower = text.toLowerCase();
-  return ['잘 자', '잘자', '고생', '퇴근', '수고', 'night', 'sleep', 'おやすみ', 'お疲れ'].some((hint) =>
-    lower.includes(hint),
-  );
+  if (['잘 자', '잘자', '고생', '퇴근', '수고', 'おやすみ', 'お疲れ'].some((hint) => text.includes(hint))) return true;
+  // ⚠ 영어는 낱말 조각으로 보지 말 것(Codex #801) — 'sleep' 이 "Hey sleepyhead", "Don't oversleep"
+  //   같은 **깨우는** 문구에, 'night' 가 "tonight" 에 걸려 졸린 태그가 붙거나 남았다.
+  return WIND_DOWN_EN.test(text);
 }
+
+const WIND_DOWN_EN =
+  /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i;
 
 function tagAlarmTextLocally(text: string): string {
   if (TAG_RE.test(text)) return text;

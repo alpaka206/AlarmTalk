@@ -29,6 +29,7 @@ import {
   dropLowArousalTags,
   extractTags,
   generatePrerenderClipText,
+  isWindDownText,
   normalizeAlarmTextWithoutTags,
   parseAlarmTextPreparation,
   parseDynamicAlarmTextResult,
@@ -203,16 +204,29 @@ function leaks(spoken: string, language: string): string[] {
   return found;
 }
 
-function rawJsonShape(raw: string, allowed: string[]): { ok: boolean; extraKeys: string[]; keys: string[] } {
+type FieldType = 'string' | 'number' | 'boolean' | 'array';
+/**
+ * 응답이 **지금 스키마대로** 왔는가. 객체이기만 하면 통과시키면 `{}`·`{"text":123}` 도 형식 정답이
+ * 되어 모델 비교가 부풀려진다(Codex #801). 필수 필드는 타입까지 보고, 스키마에 없는 필드(옛 `tag`
+ * 포함)는 여분으로 센다.
+ */
+function rawJsonShape(
+  raw: string,
+  required: Record<string, FieldType>,
+): { ok: boolean; extraKeys: string[]; keys: string[] } {
   try {
     const parsed = JSON.parse(raw.trim());
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, extraKeys: [], keys: [] };
     const keys = Object.keys(parsed);
-    return { ok: true, keys, extraKeys: keys.filter((k) => !allowed.includes(k)) };
+    const typeOk = Object.entries(required).every(([k, t]) =>
+      t === 'array' ? Array.isArray(parsed[k]) : typeof parsed[k] === t,
+    );
+    return { ok: typeOk, keys, extraKeys: keys.filter((k) => !(k in required)) };
   } catch {
     return { ok: false, extraKeys: [], keys: [] };
   }
 }
+const TEXT_ONLY: Record<string, FieldType> = { text: 'string' };
 
 async function pool<T, R>(items: T[], n: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -268,11 +282,16 @@ async function runA(m: (typeof MODELS)[number]) {
     });
     const r = result as { text: string; tags: string[]; provider: string } | null;
     const raw = calls[0]?.text ?? '';
-    const shape = rawJsonShape(raw, ['text', 'tags']);
+    const shape = rawJsonShape(raw, TEXT_ONLY);
     const rawParsed = raw ? parseAlarmTextPreparation(raw) : null;
     const rawInlineTags = rawParsed ? extractTags(rawParsed.text) : [];
     const finalTags = r ? extractTags(r.text) : [];
     const spoken = r ? normalizeAlarmTextWithoutTags(r.text) : '';
+    // ⚠ 모델을 불렀어도 운영이 결과를 버리고 로컬 태깅으로 갈아 끼우면 provider 는 'vertex' 그대로다
+    //   (Codex #801). 결과가 로컬 태거의 모양이고 모델이 그걸 낸 게 아니면 폴백으로 센다.
+    const trimmedInput = input.text.trim();
+    const localTagged = `${isWindDownText(trimmedInput) ? '[calm]' : '[cheerfully]'} ${trimmedInput}`;
+    const fellBack = r?.provider === 'local' || (r?.text === localTagged && rawParsed?.text.trim() !== localTagged);
     return {
       suite: 'A',
       model: m.label,
@@ -300,7 +319,7 @@ async function runA(m: (typeof MODELS)[number]) {
         thoughtTokens: calls[0]?.thoughtTokens ?? null,
       },
       final: {
-        fallback: r?.provider === 'local',
+        fallback: fellBack,
         preserved: r ? spoken === normalizeAlarmTextWithoutTags(input.text) : false,
         tagCount: finalTags.length,
         tags: finalTags,
@@ -509,11 +528,13 @@ async function runD(m: (typeof MODELS)[number]) {
     // 시도마다 운영과 같은 판정을 다시 한다 — 어느 규칙이 몇 번째 시도에서 막혔는가.
     const attempts = calls.map((c) => {
       if (c.error || c.status !== 200) return { reason: `http_${c.status}`, finishReason: c.finishReason };
+      // 운영(`extractGeneratedText`)은 STOP 이 아니면 던지고 다시 묻는다 — 잘린 본문을 채점하지 않는다.
+      if (c.finishReason && c.finishReason !== 'STOP') return { reason: `finish_${c.finishReason}`, finishReason: c.finishReason };
       const parsed = parseDynamicAlarmTextResult(c.text);
       // 운영과 같게 — 졸린 태그는 거절하지 않고 지운 뒤 판정한다.
       const text = tidyEllipsis(dropLowArousalTags(parsed.text.trim()));
       const spoken = normalizeAlarmTextWithoutTags(text);
-      const shape = rawJsonShape(c.text, ['text', 'tag']);
+      const shape = rawJsonShape(c.text, TEXT_ONLY);
       return {
         reason: prerenderRejectionReason(spoken, text, p.lang, params) ?? 'ok',
         finishReason: c.finishReason,
@@ -535,6 +556,7 @@ async function runD(m: (typeof MODELS)[number]) {
       seedIndex: s.index,
       rep,
       seed: s.seed,
+      expect: p.expect ?? null,
       output: r?.text ?? null,
       error,
       attempts,
@@ -633,7 +655,15 @@ async function runF(m: (typeof MODELS)[number]) {
     });
     const s = style as SpeechStyle | null;
     const raw = calls[0]?.text ?? '';
-    const shape = rawJsonShape(raw, ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'confidence']);
+    const shape = rawJsonShape(raw, {
+      dialect: 'string',
+      strength: 'string',
+      register: 'string',
+      markers: 'array',
+      persona: 'string',
+      childlike: 'boolean',
+      confidence: 'number',
+    });
     let rawConfidence: number | null = null;
     try {
       rawConfidence = Number(JSON.parse(raw).confidence);
@@ -717,12 +747,15 @@ function summarize(rows: AnyRow[]): string {
         const prs = rs.filter((r) => r.profile === pid);
         const ok = prs.filter((r) => r.final);
         const f = ok.map((r) => r.final as AnyRow);
+        // 규칙은 프로필이 **선언한** expect 로 고른다 — id 조각으로 추측하면 새 프로필이 빠진다(Codex #801).
+        const expect = prs[0]?.expect as Profile['expect'] | null;
+        const leakRate = `누출 ${pct(f.filter((x) => (x.leaks as string[]).length).length, f.length)}`;
         const rule =
-          pid.includes('grandma') ? `존대 전 문장 ${pct(f.filter((x) => x.politeAllEndings).length, f.length)}` :
-          pid.includes('boyfriend') || pid === 'ko-mom-to-daughter' ? `반말(존대 어미 없음) ${pct(f.filter((x) => x.anyPoliteEnding === false).length, f.length)}` :
-          pid.includes('gyeongsang') || pid.includes('kansai') ? `사투리 표지 1개 이상 ${pct(f.filter((x) => ((x.dialectMarkers as string[]) ?? []).length).length, f.length)}` :
-          pid.includes('child') ? `아이 철자 ${pct(f.filter((x) => x.childSpelling).length, f.length)} · 존대 섞임 ${pct(f.filter((x) => x.childPolite).length, f.length)}` :
-          `누출 ${pct(f.filter((x) => (x.leaks as string[]).length).length, f.length)}`;
+          expect === 'polite' ? `존대 전 문장 ${pct(f.filter((x) => x.politeAllEndings).length, f.length)} · ${leakRate}` :
+          expect === 'banmal' ? `반말(존대 어미 없음) ${pct(f.filter((x) => x.anyPoliteEnding === false).length, f.length)} · ${leakRate}` :
+          expect === 'dialect' ? `사투리 표지 1개 이상 ${pct(f.filter((x) => ((x.dialectMarkers as string[]) ?? []).length).length, f.length)} · ${leakRate}` :
+          expect === 'child' ? `아이 철자 ${pct(f.filter((x) => x.childSpelling).length, f.length)} · 존대 섞임 ${pct(f.filter((x) => x.childPolite).length, f.length)} · ${leakRate}` :
+          leakRate;
         lines.push(`| ${m.label} | ${pid} | ${prs.length} | ${pct(ok.length, prs.length)} | ${rule} · 태그 붙여쓰기 ${pct(f.filter((x) => x.tagWithoutSpace).length, f.length)} · 평균 길이 ${avg(f.map((x) => x.length as number))} |`);
       }
     }
