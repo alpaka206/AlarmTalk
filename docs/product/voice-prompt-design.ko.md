@@ -7,7 +7,7 @@
 
 ## 1. 배경
 
-목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-2.5-flash`)로 생성하고 ElevenLabs `eleven_v3`로
+목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-3.5-flash-lite` — 2.5 Flash 는 2026-10-20 은퇴)로 생성하고 ElevenLabs `eleven_v3`로
 합성한다. 경쟁사 알라미가 게임/미션으로 "무조건 깨움"을 판다면 우리는 **음성** 경험으로 차별화한다.
 
 라이브 동적 생성은 현재 **기본 OFF**다(`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`). 켜지 않으면 스톡 클립/로컬

@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { logStructured } from './logger';
 
 type VertexServiceAccount = {
   client_email?: string;
@@ -15,12 +16,26 @@ type VertexTokenResponse = {
 
 type VertexGenerateContentResponse = {
   candidates?: Array<{
+    /** `STOP` 이 정상 종료다. 없으면 STOP 으로 본다(옛 응답·목). */
+    finishReason?: string;
     content?: {
       parts?: Array<{
         text?: string;
+        /** 사고 요약 part. `includeThoughts` 를 안 보내면 오지 않지만, 오면 답이 아니다. */
+        thought?: boolean;
+        /** Gemini 3 부터 답 part 에 붙는다. 한 턴짜리 호출이라 돌려보낼 일이 없다. */
+        thoughtSignature?: string;
       }>;
     };
   }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    /** 사고에 쓴 토큰 — `maxOutputTokens` 안에서 센다. */
+    thoughtsTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  modelVersion?: string;
 };
 
 export type AlarmTextPreparation = {
@@ -122,8 +137,22 @@ export function alarmTextRejectionReasonOf(error: unknown): AlarmTextRejectionRe
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
-const DEFAULT_VERTEX_LOCATION = 'global';
-const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
+// ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」,
+//   2026-09-22 갱신 — 대체 모델로 `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` 를 든다).
+//   기본값은 대체 모델로 둔다. 실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`
+//   이 정한다 — 이 값은 그게 비었을 때만 쓰인다.
+// ⚠ **지역은 `us` 다.** 3.5 Flash-Lite 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고
+//   (`us-central1` 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global`
+//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다.
+const DEFAULT_VERTEX_LOCATION = 'us';
+const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * Gemini 3 계열의 출력 상한 하한. **사고 토큰이 `maxOutputTokens` 안에서 세어진다** — 사고에
+ * 다 쓰면 `finishReason: MAX_TOKENS` 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측:
+ * 상한 16 에서 `{"text": "[cheerful] 엄마, 일`). 요금은 실제로 만든 토큰만 나가므로 상한을
+ * 올려도 비용은 그대로다.
+ */
+const GEMINI_3_MIN_OUTPUT_TOKENS = 1024;
 /// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
 /// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
 ///
@@ -535,16 +564,103 @@ async function generateContentText(
   const accessToken = await createAccessToken(credentials);
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
   const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  const endpoint =
-    `https://aiplatform.googleapis.com/v1/projects/${credentials.project_id}` +
-    `/locations/${location}/publishers/google/models/${model}:generateContent`;
-  return generateContentAtEndpoint(endpoint, prompt, config, {
-    authorization: `Bearer ${accessToken}`,
-  });
+  return generateContentAtEndpoint(
+    vertexGenerateContentEndpoint(credentials.project_id, location, model),
+    model,
+    prompt,
+    config,
+    { authorization: `Bearer ${accessToken}` },
+  );
+}
+
+/**
+ * Gemini 1·2 계열인가. **사고 설정의 이름이 계열마다 다르다**:
+ *  - 2.x 는 `thinkingBudget` 을 받고, `thinkingLevel` 을 보내면 **400** 이다
+ *    ("thinking_level is not supported by this model", 2026-09-23 실측).
+ *  - 3.x 문서는 "The raw numeric thinking_budget parameter is no longer supported across all
+ *    Gemini 3 models" 라고 한다(지금은 받아 주지만 기대지 않는다).
+ * 그래서 **모델 문자열로 가른다** — 일괄 치환하면 시크릿이 아직 2.5 인 워커가 전부 400 이 된다.
+ */
+export function isLegacyGeminiModel(model: string): boolean {
+  return /^gemini-[12]\./.test(model);
+}
+
+/**
+ * generateContent 주소. 멀티리전 `us`·`eu` 는 **전용 호스트**(`aiplatform.{loc}.rep.googleapis.com`)
+ * 를 쓴다(Vertex 「Locations」). 그 밖은 지금까지처럼 전역 호스트 + 경로의 location 이다.
+ */
+export function vertexGenerateContentEndpoint(
+  projectId: string,
+  location: string,
+  model: string,
+): string {
+  const host =
+    location === 'us' || location === 'eu'
+      ? `https://aiplatform.${location}.rep.googleapis.com`
+      : 'https://aiplatform.googleapis.com';
+  return (
+    `${host}/v1/projects/${projectId}` +
+    `/locations/${location}/publishers/google/models/${model}:generateContent`
+  );
+}
+
+/**
+ * 요청의 `generationConfig`. 계열마다 다르게 보낸다:
+ *  - 2.x: 지금까지와 **똑같다**(temperature · 호출부 상한 · `thinkingBudget: 0`). 코드를 먼저 배포하고
+ *    시크릿을 나중에 바꾸므로, 그 사이 2.5 워커의 동작이 바뀌면 안 된다.
+ *  - 3.x: `thinkingLevel: 'MINIMAL'`, 상한은 최소 `GEMINI_3_MIN_OUTPUT_TOKENS`, **temperature 는 뺀다** —
+ *    3.5 Flash-Lite 는 "Custom values for parameters like temperature, top-K, and top-P aren't
+ *    supported" 이고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은 이상 동작이 날 수 있다고 한다.
+ */
+export function buildGenerationConfig(
+  model: string,
+  config: GenerateContentConfig,
+): Record<string, unknown> {
+  const legacy = isLegacyGeminiModel(model);
+  return {
+    ...(legacy ? { temperature: config.temperature } : {}),
+    maxOutputTokens: legacy
+      ? config.maxOutputTokens
+      : Math.max(config.maxOutputTokens, GEMINI_3_MIN_OUTPUT_TOKENS),
+    responseMimeType: 'application/json',
+    thinkingConfig: legacy ? { thinkingBudget: 0 } : { thinkingLevel: 'MINIMAL' },
+    ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
+  };
+}
+
+/** 응답에서 끝까지 만들어지지 못한 결과. 문구 원문은 싣지 않는다(로그·Sentry 로 새지 않게). */
+export class GeminiIncompleteResponseError extends Error {
+  constructor(readonly finishReason: string) {
+    super(`Gemini generation incomplete (${finishReason})`);
+    this.name = 'GeminiIncompleteResponseError';
+  }
+}
+
+/**
+ * 응답에서 답 텍스트를 꺼낸다.
+ *  - **`finishReason` 이 `STOP` 이 아니면 던진다.** 상한에 걸리면 잘린 JSON 이 **HTTP 200** 으로 온다
+ *    (`{"text": "[cheerful] 엄마, 일` — 2026-09-23 실측). 받아 두면 JSON 파싱이 실패한 원문이 그대로
+ *    문구로 쓰여 **`{"text":"` 가 섞인 문장이 클립으로 합성·저장될** 수 있다. 던지면 호출부의 기존
+ *    폴백(로컬 태깅·고정 예문·재시도)으로 간다. 2.x 에도 같은 구멍이었다.
+ *  - **사고 part(`thought: true`)는 버리고** 나머지 텍스트 part 를 잇는다. `parts[0]` 만 읽으면
+ *    답이 여러 part 로 나뉘거나 사고 요약이 앞에 올 때 엉뚱한 것을 문구로 쓴다.
+ */
+export function extractGeneratedText(json: VertexGenerateContentResponse): string {
+  const candidate = json.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  if (finishReason && finishReason !== 'STOP') {
+    throw new GeminiIncompleteResponseError(finishReason);
+  }
+  return (candidate?.content?.parts ?? [])
+    .filter((part) => part.thought !== true && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
 }
 
 async function generateContentAtEndpoint(
   endpoint: string,
+  model: string,
   prompt: string,
   config: GenerateContentConfig,
   extraHeaders: Record<string, string> = {},
@@ -566,24 +682,28 @@ async function generateContentAtEndpoint(
       ...(config.systemInstruction
         ? { systemInstruction: { parts: [{ text: config.systemInstruction }] } }
         : {}),
-      generationConfig: {
-        temperature: config.temperature,
-        maxOutputTokens: config.maxOutputTokens,
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingBudget: 0,
-        },
-        ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
-      },
+      generationConfig: buildGenerationConfig(model, config),
     }),
   });
   const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
     .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
     .catch(() => ({}));
+  // 호출마다 한 줄 — 모델 교체 뒤 확인할 길이 이것뿐이다. 호출부 대부분(직접 입력 태깅·등록
+  // 미리듣기·말투 분석)이 실패를 삼키고 폴백하므로, 이 줄이 없으면 은퇴·설정 오류·잘림이
+  // 사용자에게도 Sentry 에도 드러나지 않는다. ⚠ 프롬프트·응답 **원문은 싣지 않는다.**
+  logStructured(response.ok ? 'info' : 'warn', {
+    at: 'vertex.generate',
+    model,
+    status: response.status,
+    finish_reason: json.candidates?.[0]?.finishReason ?? null,
+    model_version: json.modelVersion ?? null,
+    output_tokens: json.usageMetadata?.candidatesTokenCount ?? null,
+    thought_tokens: json.usageMetadata?.thoughtsTokenCount ?? null,
+  });
   if (!response.ok) {
     throw new Error(json.error?.message || `Gemini text preparation failed (${response.status})`);
   }
-  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  return extractGeneratedText(json);
 }
 
 function alarmTextPrompt(args: {
@@ -1231,7 +1351,13 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
     dialect: { type: 'STRING' },
-    strength: { type: 'STRING', enum: ['', 'low', 'medium', 'high'] },
+    // ⚠ **enum 을 두지 않는다 — 특히 빈 문자열을 enum 에 넣지 말 것.** Gemini 3 계열은
+    //   `enum: ['', 'low', 'medium', 'high']` 를 **400** 으로 거절한다("response_schema.properties
+    //   [strength].enum[0]: cannot be empty", 2026-09-23 실측 — us-central1·global·us 모두). 2.5 는
+    //   받아 줬다. 그런데 이 함수는 실패를 삼키고 null 을 돌려주므로, 모델만 바꿨으면 **사투리
+    //   분석이 아무 경보 없이 전부 꺼졌다.** 빈 값을 빼고 세 값만 두면 표준어 화자에게도 강도를
+    //   고르라고 떠미는 셈이라 enum 자체를 없앤다. 허용값 검증은 아래 파서가 한다(그 밖의 값은 '').
+    strength: { type: 'STRING' },
     register: { type: 'STRING' },
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
     persona: { type: 'STRING' },

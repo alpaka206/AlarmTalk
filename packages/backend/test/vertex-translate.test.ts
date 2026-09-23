@@ -2,11 +2,17 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
+  GeminiIncompleteResponseError,
+  analyzeSpeechStyleWithVertex,
+  buildGenerationConfig,
   deriveAlarmDisplayText,
+  extractGeneratedText,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   dropLowArousalTags,
+  isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
+  vertexGenerateContentEndpoint,
 } from '../src/lib/vertex-translate';
 
 const mockFetch = vi.fn();
@@ -98,6 +104,238 @@ beforeEach(() => {
     return next;
   });
   vi.stubGlobal('fetch', mockFetch);
+});
+
+/**
+ * ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다** — 대체는 `gemini-3.5-flash-lite`(Vertex 수명주기 표).
+ * 코드를 먼저 배포하고 워커 시크릿(`GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION`)을 나중에 바꾸므로,
+ * **같은 코드가 두 계열을 모두** 맞게 불러야 한다. 2.x 요청은 한 글자도 바뀌면 안 되고(시크릿을
+ * 바꾸기 전까지 동작 변화 0), 3.x 에는 3.x 의 설정을 보낸다. 2.5 에 `thinkingLevel` 을 보내면 400
+ * 이다(2026-09-23 실측) — 일괄 치환하면 전환 전에 운영이 깨진다.
+ */
+describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
+  function contentCall(): { url: string; body: { generationConfig: Record<string, unknown> } } {
+    const call = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
+    return { url: String(call?.[0]), body: JSON.parse(String(call?.[1]?.body)) };
+  }
+
+  function candidateResponse(candidate: Record<string, unknown>) {
+    return okJson({ candidates: [candidate] });
+  }
+
+  it('계열은 모델 문자열로 가른다', () => {
+    expect(isLegacyGeminiModel('gemini-2.5-flash')).toBe(true);
+    expect(isLegacyGeminiModel('gemini-2.0-flash')).toBe(true);
+    expect(isLegacyGeminiModel('gemini-1.5-pro-002')).toBe(true);
+    expect(isLegacyGeminiModel('gemini-3.5-flash-lite')).toBe(false);
+    expect(isLegacyGeminiModel('gemini-3.1-flash-lite')).toBe(false);
+  });
+
+  it('멀티리전 us·eu 는 전용 호스트, 그 밖은 전역 호스트다', () => {
+    expect(vertexGenerateContentEndpoint('p', 'us', 'gemini-3.5-flash-lite')).toBe(
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/p/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    );
+    expect(vertexGenerateContentEndpoint('p', 'eu', 'gemini-3.5-flash-lite')).toBe(
+      'https://aiplatform.eu.rep.googleapis.com/v1/projects/p/locations/eu/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    );
+    expect(vertexGenerateContentEndpoint('p', 'us-central1', 'gemini-2.5-flash')).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
+    );
+    expect(vertexGenerateContentEndpoint('p', 'global', 'gemini-3.5-flash-lite')).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    );
+  });
+
+  it('2.x 설정은 지금까지와 똑같다 — temperature·호출부 상한·thinkingBudget 0', () => {
+    expect(buildGenerationConfig('gemini-2.5-flash', { temperature: 0.15, maxOutputTokens: 256 })).toEqual({
+      temperature: 0.15,
+      maxOutputTokens: 256,
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingBudget: 0 },
+    });
+  });
+
+  it('3.x 설정은 thinkingLevel MINIMAL · 상한 최소 1024 · temperature 없음', () => {
+    const config = buildGenerationConfig('gemini-3.5-flash-lite', {
+      temperature: 0.15,
+      maxOutputTokens: 256,
+      responseSchema: { type: 'object' },
+    });
+    expect(config).toEqual({
+      maxOutputTokens: 1024,
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingLevel: 'MINIMAL' },
+      responseSchema: { type: 'object' },
+    });
+    expect(config).not.toHaveProperty('temperature');
+  });
+
+  it('워커가 2.5 · us-central1 이면 요청 주소와 설정이 지금과 같다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
+    await prepareAlarmTextWithVertex(
+      { ...ENV, GOOGLE_VERTEX_MODEL: 'gemini-2.5-flash', GOOGLE_VERTEX_LOCATION: 'us-central1' },
+      '오늘도 화이팅',
+      { targetLanguage: 'ko', sourceLanguage: 'ko', translate: false, autoTag: true },
+    );
+    const { url, body } = contentCall();
+    expect(url).toBe(
+      'https://aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent',
+    );
+    expect(body.generationConfig).toEqual({
+      temperature: 0.15,
+      maxOutputTokens: 256,
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingBudget: 0 },
+    });
+  });
+
+  it('시크릿이 비면 기본값 3.5 Flash-Lite · us 로 부른다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'));
+    await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    const { url, body } = contentCall();
+    expect(url).toBe(
+      'https://aiplatform.us.rep.googleapis.com/v1/projects/test-project/locations/us/publishers/google/models/gemini-3.5-flash-lite:generateContent',
+    );
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
+    expect(body.generationConfig).not.toHaveProperty('temperature');
+  });
+
+  it('답을 꺼낼 때 사고 part 는 버리고 나머지 텍스트 part 를 잇는다', () => {
+    expect(
+      extractGeneratedText({
+        candidates: [
+          {
+            finishReason: 'STOP',
+            content: {
+              parts: [
+                { thought: true, text: 'Let me think… {"text":"wrong"}' },
+                { text: '{"text":"[cheerfully] 오늘도 ' },
+                { text: '화이팅","tags":["cheerfully"]}', thoughtSignature: 'sig' },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toBe('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}');
+  });
+
+  it('finishReason 이 없으면 STOP 으로 본다(옛 응답·목)', () => {
+    expect(extractGeneratedText({ candidates: [{ content: { parts: [{ text: ' ok ' }] } }] })).toBe('ok');
+  });
+
+  it('MAX_TOKENS 로 잘린 응답은 던진다 — 원문은 오류 메시지에 싣지 않는다', () => {
+    let caught: unknown;
+    try {
+      extractGeneratedText({
+        candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"text": "[cheerful] 엄마, 일' }] } }],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(GeminiIncompleteResponseError);
+    expect((caught as Error).message).toBe('Gemini generation incomplete (MAX_TOKENS)');
+    expect((caught as Error).message).not.toContain('엄마');
+  });
+
+  it('직접 입력 태깅은 잘린 응답을 받으면 로컬 태깅으로 폴백한다 — `{"text":` 가 문구에 새지 않는다', async () => {
+    queueContent(
+      candidateResponse({
+        finishReason: 'MAX_TOKENS',
+        content: { parts: [{ text: '{"text": "[cheerful] 엄마, 일', thoughtSignature: 'sig' }] },
+      }),
+    );
+    const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).not.toContain('{');
+    expect(prepared.text).toContain('엄마, 일어날 시간이야.');
+  });
+
+  /** 스키마 안의 모든 enum 을 훑어 빈 문자열이 든 자리를 모은다. */
+  function emptyEnumPaths(node: unknown, path = 'responseSchema'): string[] {
+    if (!node || typeof node !== 'object') return [];
+    const found: string[] = [];
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key === 'enum' && Array.isArray(value) && value.some((v) => v === '')) found.push(`${path}.enum`);
+      else found.push(...emptyEnumPaths(value, `${path}.${key}`));
+    }
+    return found;
+  }
+
+  // ⚠ Gemini 3 계열은 enum 에 빈 문자열이 있으면 요청을 **400** 으로 거절한다("enum[0]: cannot be
+  // empty", 2026-09-23 실측). 말투 분석이 그랬고, 그 함수는 실패를 삼켜 null 을 돌려주므로 모델만
+  // 바꿨으면 사투리 분석이 **경보 없이** 전부 꺼졌다. 보내는 요청 본문으로 확인한다.
+  it('보내는 응답 스키마에 빈 문자열 enum 이 없다 — 말투 분석·사전렌더 문구', async () => {
+    queueContent(
+      geminiText(
+        '{"dialect":"경상","strength":"high","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"confidence":0.9}',
+      ),
+    );
+    const style = await analyzeSpeechStyleWithVertex(
+      ENV,
+      '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
+      'ko',
+    );
+    expect(style?.dialect).toBe('경상');
+    expect(style?.strength).toBe('high');
+    const speechSchema = contentCall().body.generationConfig.responseSchema;
+    expect(speechSchema).toBeTruthy();
+    expect(emptyEnumPaths(speechSchema)).toEqual([]);
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"[warmly] 우리 딸, 좋은 아침이에요.","tag":"warmly"}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '[warmly] 좋은 아침이에요.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 딸',
+      targetLanguage: 'ko',
+    }).catch(() => null);
+    const clipSchema = contentCall().body.generationConfig.responseSchema;
+    expect(clipSchema).toBeTruthy();
+    expect(emptyEnumPaths(clipSchema)).toEqual([]);
+  });
+
+  it('말투 분석은 enum 없이도 강도를 low·medium·high 로만 받는다(그 밖은 빈 값)', async () => {
+    queueContent(
+      geminiText(
+        '{"dialect":"경상","strength":"very strong","register":"banmal","markers":["~카이"],"persona":"","childlike":false,"confidence":0.9}',
+      ),
+    );
+    const style = await analyzeSpeechStyleWithVertex(
+      ENV,
+      '아이고 오늘은 날씨가 참 좋네예. 밥은 묵었나? 니도 밥 잘 챙겨 묵고 댕기래이.',
+      'ko',
+    );
+    expect(style?.dialect).toBe('경상');
+    expect(style?.strength).toBe('');
+  });
+
+  it('3.x 응답(답 part 에 thoughtSignature)도 그대로 문구로 쓴다', async () => {
+    queueContent(
+      candidateResponse({
+        finishReason: 'STOP',
+        content: {
+          parts: [{ text: '{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}', thoughtSignature: 'sig' }],
+        },
+      }),
+    );
+    const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toBe('[cheerfully] 오늘도 화이팅');
+    expect(prepared.provider).not.toBe('local');
+  });
 });
 
 describe('prepareAlarmTextWithVertex', () => {

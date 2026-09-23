@@ -14,6 +14,40 @@
     버전을 새로 만들 때마다 그 문장을 지우거나 영상을 다시 올려야 한다. 노트 상한은 4000자다.
 - [ ] 1.2.9 심사 결과 확인. 승인되면 `releaseType=AFTER_APPROVAL` 이라 자동 게재된다.
 
+## Gemini 2.5 Flash 은퇴 대응 — **기한 2026-10-20**
+
+`gemini-2.5-flash` 는 Vertex 에서 **2026-10-20 에 은퇴**한다(「Model versions and lifecycle」, 2026-09-22
+갱신 — "retirement timelines may be extended, they won't be moved to an earlier date"). 대체는
+**`gemini-3.5-flash-lite`(GA, 은퇴 2027-07-21 이후)**, 지역은 **`us`**(3.5 Flash-Lite 는 `global`·`us`·`eu`
+에서만 돈다 — `us-central1` 없음. 처리방침이 처리 국가를 '미국' 으로 적어 `global` 은 쓰지 않는다).
+지금 dev·prod 시크릿은 `gemini-2.5-flash` / `us-central1` 이다.
+
+**모델 이름만 바꾸면 깨지는 곳이 있었다**(2026-09-23 dev 자격 증명으로 실제 프롬프트 비교):
+- **등록 녹음 말투(사투리) 분석이 400** — 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 거절한다.
+  그 함수는 실패를 삼키고 null 을 돌려주므로 **경보 없이 사투리 분석이 전부 꺼졌을** 것이다. 고쳤다.
+- 2.x 에 `thinkingLevel` 을 보내면 400, 3.x 문서는 `thinkingBudget` 을 더 이상 지원하지 않는다 →
+  **모델 문자열로 설정을 가른다**(`isLegacyGeminiModel`). 3.x 는 temperature 를 무시한다.
+- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 전에는 그대로 문구로
+  받았다(2.5 에도 있던 구멍). 이제 던져서 기존 폴백으로 간다.
+- 직접 입력 태깅·사전렌더 문구는 두 모델이 비슷했다. 예비 후보 `gemini-3.1-flash-lite`(@`us`)도 정상.
+
+전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
+- [ ] 코드 PR 을 develop 에 머지 → dev 배포. 시크릿이 그대로라 동작 변화가 없어야 한다.
+- [ ] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash-lite`, `GOOGLE_VERTEX_LOCATION=us`
+      → `npm run secrets:sync:dev`. ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로 돌릴 수 없다.
+- [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
+      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다.
+- [ ] develop → main(prod 배포, 동작 변화 없음) 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 →
+      `npm run secrets:sync:prod`. 며칠 로그와 Sentry `clip_failure` 를 본다. **10/20 전에 끝낸다.**
+- 원복: 시크릿을 `gemini-2.5-flash` / `us-central1` 로 되돌리면 된다(10/20 전까지만). 그 뒤의 예비는
+  `gemini-3.1-flash-lite` / `us`.
+
+⚠ **법무 확인 필요(모델 교체와 별개)**: 개인정보 처리방침 71행은 "동적 문구·번역 기능을 사용하지 않으면
+이 전송은 발생하지 않습니다", 161행 표의 목적은 "동적 알람 문구 생성, 다국어 번역" 이다. 그런데 운영에서는
+**직접 입력 문구(태깅), 목소리 등록 미리듣기·클론 사전렌더 문구의 관계·호칭, 등록 녹음의 전사문(말투
+분석)** 이 Vertex 로 간다. 고치려면 처리방침 본문 개정 → `CURRENT_POLICY_VERSION` 순서 규칙(앱 먼저)을
+따라야 한다. 이번 교체에서는 손대지 않았다.
+
 ## Sentry 후속·동작 검토 — 2026-09-21
 
 수정 범위와 실제 실행 결과는 [후속 검토의 수정 후 상태](sentry-and-parity-audit-2026-09-21.md#7-수정-후-상태--2026-09-21)를 따른다.
