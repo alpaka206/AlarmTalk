@@ -98,7 +98,7 @@
       },
       {
         "q": "対応デバイスは?",
-        "a": "AndroidはGoogle Playで今すぐ入手できます。iOSはApp Storeでの公開を準備中で、公開され次第このページのApp Storeボタンから入手できます。"
+        "a": "AndroidはGoogle Play、iOSはApp Storeから今すぐ入手できます。Android 8.0以降、iPhoneはiOS 26以降が必要です。"
       }
     ]
   },

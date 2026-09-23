@@ -98,7 +98,7 @@
       },
       {
         "q": "Which devices are supported?",
-        "a": "Android is on Google Play now. The iOS app is being prepared for the App Store, and the App Store button on this page will open as soon as it’s live."
+        "a": "Android is on Google Play and iOS is on the App Store, both available now. Android 8.0 or later; iPhone requires iOS 26 or later."
       }
     ]
   },
