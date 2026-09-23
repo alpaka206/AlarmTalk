@@ -14,7 +14,7 @@ import {
   extractGeneratedText,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
-  dropLowArousalTags,
+  dropWakeUnsafeTags,
   isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
   vertexGenerateContentEndpoint,
@@ -268,6 +268,31 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(prepared.text).toContain('엄마, 일어날 시간이야.');
   });
 
+  it('호출 로그 수준은 생성이 끝났는가로 고른다 — HTTP 200 이어도 잘렸으면 warn', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      queueContent(candidateResponse({ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"text": "엄마' }] } }));
+      queueContent(geminiText('{"text":"[cheerfully] 엄마, 일어날 시간이야."}'));
+      for (let i = 0; i < 2; i += 1) {
+        await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
+          targetLanguage: 'ko',
+          sourceLanguage: 'ko',
+          translate: false,
+          autoTag: true,
+        });
+      }
+      const lines = (spy: typeof warn) =>
+        spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"vertex.generate"'));
+      expect(lines(warn)).toHaveLength(1);
+      expect(lines(warn)[0]).toContain('"finish_reason":"MAX_TOKENS"');
+      expect(lines(info)).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+    }
+  });
+
   /** 스키마 안의 모든 enum 을 훑어 빈 문자열이 든 자리를 모은다. */
   function emptyEnumPaths(node: unknown, path = 'responseSchema'): string[] {
     if (!node || typeof node !== 'object') return [];
@@ -428,6 +453,14 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('자기야, 비 온대. 우산 챙겨.', { relationshipLabel: '남자친구' })).toBe(false);
     // 반말만 써야 하는 관계는 존댓말 한 문장으로도 걸린다.
     expect(hasMixedKoreanRegister('자기야, 오늘 비 온대요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // '…' 로 끊긴 문장도 본다 — 단 '…' 앞의 이음 어미(-니까·-니·-면)는 어체로 세지 않는다.
+    expect(hasMixedKoreanRegister('우리 딸, 흐리대요… 이제 일어나자!', mom)).toBe(true);
+    expect(hasMixedKoreanRegister('비가 오니까… 우산 꼭 챙기세요.', {})).toBe(false);
+    expect(hasMixedKoreanRegister('할 일이 많으면… 하나씩 해 봐요.', {})).toBe(false);
+    expect(hasMixedKoreanRegister('그래도… 이제 일어나자!', mom)).toBe(false);
+    // '합니까/습니까' 만 존댓말이다 — 문장 끝 '오니까.' 는 아니다.
+    expect(hasMixedKoreanRegister('준비됐습니까? 이제 가자.', mom)).toBe(true);
+    expect(hasMixedKoreanRegister('비 오니까. 우산 챙겨.', mom)).toBe(false);
     expect(
       hasMixedKoreanRegister('아빠, 약 먹을 시간이에요.', {
         relationshipLabel: '딸',
@@ -641,13 +674,32 @@ describe('prepareAlarmTextWithVertex', () => {
 
   // ⚠ **저각성 차단은 유지한다**(C안의 단서). 천천히 말하는 것과 졸리게 말하는 것은 다르다.
   it('속도 지시는 허용하고 저각성 지시는 깨우는 경로에서 막는다', async () => {
-    expect(dropLowArousalTags('[measured, deliberate] 일어나!')).toBe(
+    expect(dropWakeUnsafeTags('[measured, deliberate] 일어나!')).toBe(
       '[measured, deliberate] 일어나!',
     );
-    expect(dropLowArousalTags('[quietly] 일어나!')).toBe('일어나!');
-    expect(dropLowArousalTags('[shouting] 일어나! [whispers] 지금.')).toBe(
+    expect(dropWakeUnsafeTags('[quietly] 일어나!')).toBe('일어나!');
+    expect(dropWakeUnsafeTags('[shouting] 일어나! [whispers] 지금.')).toBe(
       '[shouting] 일어나! 지금.',
     );
+  });
+
+  it('공포 태그는 언제나 지우고, 저각성 태그는 마무리 문구에서만 남긴다', () => {
+    expect(dropWakeUnsafeTags('[urgent] 일어나! [panicked] 늦었어!')).toBe('[urgent] 일어나! 늦었어!');
+    expect(dropWakeUnsafeTags('[scared] 지각이야')).toBe('지각이야');
+    expect(dropWakeUnsafeTags('[calm] 오늘도 수고했어. [terrified] 잘 자.', { allowLowArousal: true })).toBe(
+      '[calm] 오늘도 수고했어. 잘 자.',
+    );
+  });
+
+  it('직접 입력: 모델이 공포 태그를 붙이면 지운다 — 다 지워지면 로컬 태깅', async () => {
+    queueContent(geminiText('{"text":"[panicked] 야 일어나 지각한다!!"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '야 일어나 지각한다!!', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toBe('[cheerfully] 야 일어나 지각한다!!');
   });
 
   it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {

@@ -26,7 +26,7 @@ import { resolve } from 'node:path';
 
 import {
   analyzeSpeechStyleWithVertex,
-  dropLowArousalTags,
+  dropWakeUnsafeTags,
   extractTags,
   generatePrerenderClipText,
   isWindDownText,
@@ -134,8 +134,25 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (!url.includes(':generateContent')) return realFetch(input, init);
   const started = Date.now();
-  const res = await realFetch(input, init);
   const bucket = callLog.getStore();
+  let res: Response;
+  try {
+    res = await realFetch(input, init);
+  } catch (err) {
+    // 타임아웃(운영 클라이언트의 15초 abort)·네트워크 실패도 **시도 하나**로 남긴다(Codex #801) —
+    // 안 남기면 재시도 끝에 성공한 문구가 1회차 통과로 잡히고 지연 요약도 느린 쪽에 유리해진다.
+    bucket?.push({
+      status: 0,
+      finishReason: null,
+      text: '',
+      latencyMs: Date.now() - started,
+      inputTokens: null,
+      outputTokens: null,
+      thoughtTokens: null,
+      error: String(err).slice(0, 200),
+    });
+    throw err;
+  }
   if (bucket) {
     const body = await res.clone().text();
     let j: {
@@ -532,7 +549,7 @@ async function runD(m: (typeof MODELS)[number]) {
       if (c.finishReason && c.finishReason !== 'STOP') return { reason: `finish_${c.finishReason}`, finishReason: c.finishReason };
       const parsed = parseDynamicAlarmTextResult(c.text);
       // 운영과 같게 — 졸린 태그는 거절하지 않고 지운 뒤 판정한다.
-      const text = tidyEllipsis(dropLowArousalTags(parsed.text.trim()));
+      const text = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
       const spoken = normalizeAlarmTextWithoutTags(text);
       const shape = rawJsonShape(c.text, TEXT_ONLY);
       return {

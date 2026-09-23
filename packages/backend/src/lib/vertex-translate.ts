@@ -222,6 +222,17 @@ const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
   .map((word) => `[${word}]`)
   .join(', ');
 
+/**
+ * 공포·공황 지시. 깨우는 알람은 급할 수는 있어도 겁을 주면 안 된다 — 마무리 문구에서도 쓰지 않는다.
+ * 프롬프트가 금지해도 모델이 어기면 그대로 합성·저장되므로 서버가 지운다(Codex #801).
+ */
+const FEAR_WORDS = ['panic', 'scared', 'terrified', 'terror', 'frighten', 'horrified', 'afraid', 'fearful'];
+
+function isFearTag(tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  return !!normalized && FEAR_WORDS.some((word) => normalized.includes(word));
+}
+
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
 function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
@@ -257,17 +268,18 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
 function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
-  if (isLowArousalTag(approved)) return '';
+  if (isLowArousalTag(approved) || isFearTag(approved)) return '';
   return approved;
 }
 
-/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다.
-/// 저각성 태그만 지우고 나머지는 **위치까지 그대로** 남긴다 — 여러 개·중간 태그가 요점이다.
-export function dropLowArousalTags(text: string): string {
+/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다 — 공포 태그는 언제나, 저각성 태그는
+/// `allowLowArousal`(잠들기 전·마무리 문구)이 아닐 때 지운다. 나머지는 **위치까지 그대로**
+/// 남긴다 — 여러 개·중간 태그가 요점이다.
+export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: boolean } = {}): string {
   return text
     .replace(TAG_RE_GLOBAL, (match) => {
       const body = match.slice(1, -1);
-      return isLowArousalTag(body) ? '' : match;
+      return isFearTag(body) || (!options.allowLowArousal && isLowArousalTag(body)) ? '' : match;
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -374,20 +386,16 @@ export async function prepareAlarmTextWithVertex(
     preparedText =
       normalizeSameLanguageTaggedText(preparedText, trimmed, parsed.tags) ?? fallbackText;
   }
-  if (shouldTag && !isWindDownText(trimmed)) {
-    // 깨우는 알람이다 — 모델이 붙인 졸린 태그는 사전렌더·동적 경로와 같이 버린다. 사용자가
+  if (shouldTag) {
+    // 깨우는 알람이다 — 모델이 붙인 졸린 태그는 사전렌더 경로와 같이 버린다. 사용자가
     // 직접 친 태그는 여기 오지 않는다(`shouldTag` 가 거짓이다). 잠들기 전·마무리 문구
-    // (`isWindDownText`)는 calm 이 맞으므로 건드리지 않는다. 다 버려져 태그가 하나도 안
-    // 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
+    // (`isWindDownText`)는 calm 이 맞으므로 졸린 태그를 남긴다. 공포 태그는 어느 쪽이든 버린다.
+    // 다 버려져 태그가 하나도 안 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
     // ⚠ 번역 중이면 `fallbackText`(원문 언어)로 돌아가지 말고 **번역문에** 태그를 붙인다
     //   (Codex #801 P1). 원문으로 돌아가면 `translated: true` 인 채 원문이 합성·저장된다.
-    const withoutSleepy = dropLowArousalTags(preparedText);
+    const safe = dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) });
     preparedText =
-      extractTags(withoutSleepy).length > 0
-        ? withoutSleepy
-        : shouldTranslate
-          ? tagAlarmTextLocally(withoutSleepy)
-          : fallbackText;
+      extractTags(safe).length > 0 ? safe : shouldTranslate ? tagAlarmTextLocally(safe) : fallbackText;
   }
 
   const tags = extractTags(preparedText);
@@ -721,11 +729,18 @@ async function generateContentAtEndpoint(
   // 호출마다 한 줄 — 모델 교체 뒤 확인할 길이 이것뿐이다. 호출부 대부분(직접 입력 태깅·등록
   // 미리듣기·말투 분석)이 실패를 삼키고 폴백하므로, 이 줄이 없으면 은퇴·설정 오류·잘림이
   // 사용자에게도 Sentry 에도 드러나지 않는다. ⚠ 프롬프트·응답 **원문은 싣지 않는다.**
-  logStructured(response.ok ? 'info' : 'warn', {
+  // ⚠ 수준은 **생성이 끝났는가**로 고른다(Codex #801) — HTTP 200 이어도 MAX_TOKENS·SAFETY 로
+  //   잘렸거나 답이 비었으면 호출부가 곧바로 버리므로, 전환 뒤 감시가 봐야 할 것은 그쪽이다.
+  const finishReason = json.candidates?.[0]?.finishReason ?? null;
+  const hasAnswer = (json.candidates?.[0]?.content?.parts ?? []).some(
+    (part) => part.thought !== true && typeof part.text === 'string' && part.text.trim() !== '',
+  );
+  const complete = response.ok && (finishReason === null || finishReason === 'STOP') && hasAnswer;
+  logStructured(complete ? 'info' : 'warn', {
     at: 'vertex.generate',
     model,
     status: response.status,
-    finish_reason: json.candidates?.[0]?.finishReason ?? null,
+    finish_reason: finishReason,
     model_version: json.modelVersion ?? null,
     output_tokens: json.usageMetadata?.candidatesTokenCount ?? null,
     thought_tokens: json.usageMetadata?.thoughtsTokenCount ?? null,
@@ -750,7 +765,7 @@ function alarmTextPrompt(args: {
     : `Keep the user's alarm message in ${sourceName}.`;
   // ⚠ 아래 태그 규칙 셋은 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것이다:
   //   - **졸린 태그** — 이 경로만 저각성 금지가 없어서 3.5 Flash-Lite 가 25% 로 `[gentle]`·
-  //     `[softly]` 를 붙였다. 깨우는 알람이다. 서버도 걸러 낸다(아래 `dropLowArousalTags`).
+  //     `[softly]` 를 붙였다. 깨우는 알람이다. 서버도 걸러 낸다(`dropWakeUnsafeTags`).
   //   - **띄어쓰기** — 3.5 가 `[warm, gentle]할머니` 처럼 붙여 썼다.
   //   - **자리** — 2.5 가 `오늘은 [happy] 우리 딸 생일` 처럼 꾸밈말과 명사 사이에 넣었다.
   const tagInstruction = args.shouldTag
@@ -1271,7 +1286,7 @@ export async function generatePrerenderClipText(
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
-    return approved && !isLowArousalTag(approved) ? approved : '';
+    return approved && !isLowArousalTag(approved) && !isFearTag(approved) ? approved : '';
   };
 
   // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
@@ -1335,12 +1350,12 @@ export async function generatePrerenderClipText(
       continue;
     }
     const parsed = parseDynamicAlarmTextResult(raw);
-    // ⚠ **졸린 태그는 거절하지 않고 지운다**(2026-09-23 — 동적 경로 `dropLowArousalTags` 와 같게).
+    // ⚠ **졸린 태그는 거절하지 않고 지운다**(2026-09-23 — 직접 입력 경로와 같게 — `dropWakeUnsafeTags`).
     //   예전에는 `[gently]` 하나만 있어도 문장 전체를 버리고 다시 물었다. 2.5 Flash 는 같은
     //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
     //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    const text = tidyEllipsis(dropLowArousalTags(parsed.text.trim()));
+    const text = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
@@ -1474,8 +1489,40 @@ export function isUncontractedEnglish(spoken: string): boolean {
 }
 
 /** 문장 끝 음절로 어체를 가른다. 명사로 끝나는 외침('화이팅!')처럼 어느 쪽도 아닌 것은 셈하지 않는다. */
-const KO_POLITE_END = /(요|니다|니까|죠)$/;
+const KO_POLITE_END = /(요|니다|죠)$/;
 const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라)$/;
+/**
+ * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
+ * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
+ * -니까·-니·-게·-지 같은 이음 어미가 어체로 잘못 세진다.
+ */
+const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴)$/;
+
+/** '합니까/습니까' — ㅂ 받침 뒤 '니까' 만 존댓말이다('오니까' 는 이음 어미). */
+function isHapnikka(word: string): boolean {
+  if (!word.endsWith('니까') || word.length < 3) return false;
+  const code = word.charCodeAt(word.length - 3) - 0xac00;
+  return code >= 0 && code < 11172 && code % 28 === 17;
+}
+
+type KoEnding = 'polite' | 'banmal' | null;
+
+function koreanEnding(word: string, atPause: boolean): KoEnding {
+  if (KO_POLITE_END.test(word) || isHapnikka(word)) return 'polite';
+  return (atPause ? KO_BANMAL_END_AT_PAUSE : KO_BANMAL_END).test(word) ? 'banmal' : null;
+}
+
+/** 한 줄의 문장(과 '…' 로 끊긴 마디) 끝 어체들. */
+function koreanEndings(spoken: string): KoEnding[] {
+  const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
+  return spoken
+    .split(/(?<=[.!?！？])\s*/)
+    .flatMap((sentence) => {
+      const parts = sentence.split('…');
+      return parts.map((part, i) => koreanEnding(lastWord(part), i < parts.length - 1));
+    })
+    .filter((e): e is 'polite' | 'banmal' => e !== null);
+}
 
 /**
  * 한국어 한 줄 안에서 반말과 존댓말(해요체·합니다체)이 섞였는가. 시드는 존댓말 서술이라
@@ -1488,13 +1535,9 @@ export function hasMixedKoreanRegister(
   spoken: string,
   params: { relationshipLabel?: string | null; speechStyle?: SpeechStyle | null },
 ): boolean {
-  const endings = spoken
-    .split(/(?<=[.!?！？])\s+/)
-    .map((s) => s.replace(/[\s.!?！？~…,]+$/u, ''))
-    .map((s) => s.match(/[가-힣]+$/u)?.[0] ?? '')
-    .filter(Boolean);
-  const polite = endings.filter((w) => KO_POLITE_END.test(w)).length;
-  const banmal = endings.filter((w) => !KO_POLITE_END.test(w) && KO_BANMAL_END.test(w)).length;
+  const endings = koreanEndings(spoken);
+  const polite = endings.filter((e) => e === 'polite').length;
+  const banmal = endings.filter((e) => e === 'banmal').length;
   if (polite > 0 && banmal > 0) return true;
   const label = params.relationshipLabel?.trim() ?? '';
   const childlike = params.speechStyle?.childlike === true;
