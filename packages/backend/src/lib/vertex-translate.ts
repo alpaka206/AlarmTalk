@@ -277,9 +277,15 @@ function sanitizeDeliveryTag(tag: string): string {
 /// 남긴다 — 여러 개·중간 태그가 요점이다.
 export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: boolean } = {}): string {
   return text
-    .replace(TAG_RE_GLOBAL, (match) => {
+    .replace(TAG_RE_GLOBAL, (match, offset: number, whole: string) => {
       const body = match.slice(1, -1);
-      return isFearTag(body) || (!options.allowLowArousal && isLowArousalTag(body)) ? '' : match;
+      if (!isFearTag(body) && (options.allowLowArousal || !isLowArousalTag(body))) return match;
+      // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
+      //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
+      const before = whole[offset - 1] ?? '';
+      const after = whole[offset + match.length] ?? '';
+      const between = /\S/.test(before) && /\S/.test(after) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(before + after);
+      return between ? ' ' : '';
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -874,7 +880,7 @@ function koreanRegisterGuidance(relationshipLabel: string | null | undefined): s
   if (register === 'peer') {
     return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling. Never use 합니다체.';
   }
-  return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
+  return ' Use a warm conversational tone in 해요체 for the WHOLE line (no 반말 sentence, no stiff 합니다체). Sound like a real person, not an announcement.';
 }
 
 function isRomanticRelationship(relationshipLabel: string | null | undefined): boolean {
@@ -1627,7 +1633,9 @@ export function hasMixedKoreanRegister(
   // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
   // 그 사람 말투를 따르므로 걸지 않는다.
   const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
-  if (!label) return !childlike && !speakerIsCasual && banmal > 0;
+  // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다 — 라벨이 빈 경우만
+  // 보면 자유 입력 라벨의 반말이 그대로 저장된다(Codex #801).
+  if (relationship === 'neutral') return !childlike && !speakerIsCasual && banmal > 0;
   // 손주→조부모·자식→부모는 존대 해요체다(프롬프트 'younger than the listener'). 반말만 쓰는 관계와
   // 거울로, 반말 문장이 하나만 있어도 걸린다(Codex #801 — "할머니, 지금 일어나. 우산 챙겨." 가
   // 통과했다). 아이 목소리와, 등록 녹음이 반말인 화자는 그 말투를 따르므로 걸지 않는다.

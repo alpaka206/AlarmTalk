@@ -513,6 +513,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 자유 입력 라벨도 프롬프트와 같은 판정 — '친한 친구'·'큰언니' 는 반말 관계다.
     expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '친한 친구' })).toBe(true);
     expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '큰언니' })).toBe(true);
+    // 어느 갈래에도 안 드는 자유 입력 라벨('동료')은 관계 없음과 같이 해요체다.
+    expect(hasMixedKoreanRegister('오늘 비 온대. 우산 챙겨.', { relationshipLabel: '동료' })).toBe(true);
+    expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(false);
     // 부모 쪽이 앞선다 — '엄마친구' 는 해요체 한 줄도 허용되는 어른 말투다.
     expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '엄마친구' })).toBe(false);
     // 손주·자식 → 어르신은 반말 한 문장도 안 된다. 아이 목소리·반말로 녹음한 화자는 그 말투를 따른다.
@@ -779,6 +782,10 @@ describe('prepareAlarmTextWithVertex', () => {
     expect(dropWakeUnsafeTags('[calm] 오늘도 수고했어. [terrified] 잘 자.', { allowLowArousal: true })).toBe(
       '[calm] 오늘도 수고했어. 잘 자.',
     );
+    // 낱말 사이에 붙은 태그를 지워도 낱말이 붙지 않는다 — 일본어는 띄어 쓰지 않으므로 그대로.
+    expect(dropWakeUnsafeTags('[warmly] Good[softly]morning')).toBe('[warmly] Good morning');
+    expect(dropWakeUnsafeTags('할머니,[softly]일어나세요')).toBe('할머니, 일어나세요');
+    expect(dropWakeUnsafeTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
   });
 
   it('직접 입력: 모델이 공포 태그를 붙이면 지운다 — 다 지워지면 로컬 태깅', async () => {
