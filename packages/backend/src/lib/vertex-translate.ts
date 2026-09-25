@@ -1621,11 +1621,15 @@ function isVocativeOrInterjection(part: string): boolean {
     .filter(Boolean);
   if (words.length === 0) return true;
   const last = words[words.length - 1]!;
-  // ⚠ 부름말 꼴만 건너뛴다(Codex #801) — 두 낱말이면 무조건 부름말로 보던 때는 '오늘 휴일이야,' 같은
-  //   절이 버려져 섞임이 통과했다. 한 낱말('자기야'·'자'·'음')이거나 '우리/내 + ~아·야'('우리 아들아')만.
-  if (words.length === 1) return [...last].length <= 1 || /[아야여]$/u.test(last);
+  // ⚠ 부름말 꼴만 건너뛴다(Codex #801). '~아·야' 로 끝나는 한 낱말은 부름말('민지야')과 서술어('괜찮아')가
+  //   모양으로 구별되지 않는다 — 그래서 끝 음절로 가르지 않는다. 우리 문구의 부름말은 거의 청자 호칭이고
+  //   호칭은 `koreanEndings` 가 먼저 지우므로('자기야' → '야'), 한 낱말은 **한 글자**(남은 조사·'자'·'음')나
+  //   감탄사만 건너뛴다. 두 낱말은 '우리/내 + ~아·야'('우리 아들아')만.
+  if (words.length === 1) return [...last].length <= 1 || KO_INTERJECTIONS.has(last);
   return words.length === 2 && /^(우리|내|울|사랑하는)$/u.test(words[0]!) && /[아야여]$/u.test(last);
 }
+
+const KO_INTERJECTIONS = new Set(['자자', '아이고', '어머', '에이', '얘', '음음', '흠']);
 
 /**
  * 한 줄의 문장(과 '…'·',' 로 끊긴 마디) 끝 어체들. 청자 호칭은 먼저 지운다 — "할머니!" 처럼 호칭만

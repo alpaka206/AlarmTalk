@@ -593,6 +593,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('자, 이제 일어나 볼까요?', {})).toBe(false);
     // 짧아도 부름말이 아닌 절은 센다.
     expect(hasMixedKoreanRegister('오늘 휴일이야, 푹 쉬세요.', { relationshipLabel: '동료' })).toBe(true);
+    expect(hasMixedKoreanRegister('괜찮아, 천천히 시작하세요.', { relationshipLabel: '동료' })).toBe(true);
+    // 청자 호칭을 지우고 남은 부름 조사('자기야' → '야')는 건너뛴다.
+    expect(hasMixedKoreanRegister('자기야, 이제 일어나.', { relationshipLabel: '남자친구', listenerTitle: '자기' })).toBe(false);
     expect(hasMixedKoreanRegister('비가 오니까, 우산 꼭 챙기세요.', {})).toBe(false);
     // '-ㅂ시다' 는 존댓말이다 — 반말 전용 관계에서 걸린다.
     expect(hasMixedKoreanRegister('자기야, 이제 일어납시다.', { relationshipLabel: '남자친구' })).toBe(true);
