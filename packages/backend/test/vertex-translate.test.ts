@@ -566,6 +566,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('할머니, 같이 일어납시다.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(false);
     // 합쇼체 명령(-십시오)도 존댓말이다 — 반말 전용 관계에서 걸린다.
     expect(hasMixedKoreanRegister('자기야, 지금 일어나십시오.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 문장 끝 '-거든' 도 반말이다.
+    expect(hasMixedKoreanRegister('오늘 비가 오거든. 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(true);
     // '힘내'·'걱정 마' 도 반말이다.
     expect(hasMixedKoreanRegister('엄마, 오늘도 힘내. 약 드실 시간이에요.', { relationshipLabel: '딸', listenerTitle: '엄마' })).toBe(true);
     expect(hasMixedKoreanRegister('할머니, 걱정 마. 우산 챙기세요.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(true);

@@ -230,7 +230,8 @@ const isLowArousal = isLowArousalTag;
 /** 날짜·요일·시각·숫자·온도·지명 누출. 사전렌더 규칙이 금지하는 것들. */
 function leaks(spoken: string, language: string): string[] {
   const found: string[] = [];
-  if (/[0-9０-９]/.test(spoken)) found.push('digit');
+  // 'PM2.5' 는 수치가 아니라 이름이고, 일본어 프롬프트가 권하는 표현이다 — 숫자로 세지 않는다(Codex #801).
+  if (/[0-9０-９]/.test(spoken.replace(/PM\s?2[.．]5/giu, ''))) found.push('digit');
   if (language === 'ko') {
     if (/[월화수목금토일]요일/.test(spoken)) found.push('weekday');
     if (/(일|이|삼|사|오|육|칠|팔|구|십)+\s?월\s?(일|이|삼|사|오|육|칠|팔|구|십)+\s?일/.test(spoken)) found.push('date');
