@@ -282,11 +282,12 @@ export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: bo
       if (!isFearTag(body) && (options.allowLowArousal || !isLowArousalTag(body))) return match;
       // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
       //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
-      //   문장부호 앞('Wake up[softly]!')에는 공백을 남기지 않는다 — 양옆이 **글자·숫자**일 때만.
+      //   문장부호 **앞**('Wake up[softly]!')에는 남기지 않고, 쉼표·마침표 **뒤**('할머니,[softly]일어나세요')
+      //   에는 남긴다 — 뒤가 글자일 때만.
       const before = whole[offset - 1] ?? '';
       const after = whole[offset + match.length] ?? '';
       const isWordChar = (ch: string) => /[\p{L}\p{N}]/u.test(ch) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(ch);
-      return isWordChar(before) && isWordChar(after) ? ' ' : '';
+      return isWordChar(after) && (isWordChar(before) || /[,.!?…;:]/u.test(before)) ? ' ' : '';
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -1683,16 +1684,20 @@ export function hasMixedKoreanRegister(
   const endings = koreanEndings(spoken, params.listenerTitle);
   const polite = endings.filter((e) => e === 'polite').length;
   const banmal = endings.filter((e) => e === 'banmal').length;
+  // 확정 문구가 한 어체만 쓰면 **그 어체로** 고정한다 — 허용만 넓히면 배우자에게 해요체로 확정했는데
+  // 반말 클립이 통과하는 식으로 확정한 말투를 무시한다(Codex #801).
+  if (referencePolite) return banmal > 0;
+  if (referenceBanmal) return polite > 0;
   if (polite > 0 && banmal > 0) return true;
   const label = params.relationshipLabel?.trim() ?? '';
   const childlike = params.speechStyle?.childlike === true;
   const relationship = label ? koreanRelationshipRegister(label) : 'neutral';
   const banmalOnly = childlike || relationship === 'romantic' || relationship === 'peer';
-  if (banmalOnly && polite > 0 && !referencePolite) return true;
+  if (banmalOnly && polite > 0) return true;
   // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
   // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
   // 그 사람 말투를 따르므로 걸지 않는다.
-  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '') || referenceBanmal;
+  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
   // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다 — 라벨이 빈 경우만
   // 보면 자유 입력 라벨의 반말이 그대로 저장된다(Codex #801).
   if (relationship === 'neutral') return !childlike && !speakerIsCasual && banmal > 0;

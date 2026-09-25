@@ -614,12 +614,24 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(
       hasMixedKoreanRegister('자기야, 오늘 비 온대요. 우산 챙겨요.', {
         relationshipLabel: '아내',
+        listenerTitle: '자기',
         styleReference: '[warmly] 자기야, 일어날 시간이에요. 오늘도 힘내요.',
       }),
     ).toBe(false);
     expect(
       hasMixedKoreanRegister('오늘 비 온대. 우산 챙겨.', { relationshipLabel: '동료', styleReference: '일어나. 오늘도 힘내.' }),
     ).toBe(false);
+    // 확정 문구가 한 어체만 쓰면 그 어체로 고정한다 — 반대 어체는 걸린다.
+    expect(
+      hasMixedKoreanRegister('자기야, 오늘 비 온대. 우산 챙겨.', {
+        relationshipLabel: '아내',
+        listenerTitle: '자기',
+        styleReference: '[warmly] 자기야, 일어날 시간이에요. 오늘도 힘내요.',
+      }),
+    ).toBe(true);
+    expect(
+      hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '동료', styleReference: '일어나. 오늘도 힘내.' }),
+    ).toBe(true);
     // 확정 문구가 없으면 관계대로 — 배우자의 해요체는 걸린다.
     expect(hasMixedKoreanRegister('자기야, 오늘 비 온대요. 우산 챙겨요.', { relationshipLabel: '아내' })).toBe(true);
     // 평서 '-다' 는 반말이고, '-니다' 는 존댓말이다.
@@ -889,6 +901,8 @@ describe('prepareAlarmTextWithVertex', () => {
     // 낱말 사이에 붙은 태그를 지워도 낱말이 붙지 않는다 — 일본어는 띄어 쓰지 않으므로 그대로.
     expect(dropWakeUnsafeTags('[warmly] Good[softly]morning')).toBe('[warmly] Good morning');
     expect(dropWakeUnsafeTags('할머니 [softly]일어나세요')).toBe('할머니 일어나세요');
+    expect(dropWakeUnsafeTags('할머니,[softly]일어나세요')).toBe('할머니, 일어나세요');
+    expect(dropWakeUnsafeTags('おばあちゃん、[softly]起きて')).toBe('おばあちゃん、起きて');
     // 문장부호 앞에는 공백을 남기지 않는다.
     expect(dropWakeUnsafeTags('Wake up[softly]!')).toBe('Wake up!');
     expect(dropWakeUnsafeTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
