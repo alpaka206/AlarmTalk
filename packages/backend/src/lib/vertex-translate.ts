@@ -321,6 +321,9 @@ export async function prepareAlarmTextWithVertex(
     return { text: trimmed, translated: false, tags: [], provider: 'local' };
   }
 
+  // ⚠ 사용자가 **직접 쓴** 태그는 거르지 않는다(졸린 태그·공포 태그 모두). 알람 문구는 사용자가 쓴
+  //   글이고, '[panicked] 지각이다!!' 같은 장난 알람도 그 사람의 의도다 — 조용히 바꾸면 쓴 글과 다른
+  //   소리가 난다. 서버가 지우는 것은 **모델이 붙인** 태그뿐이다(아래 `dropWakeUnsafeTags`).
   if (!shouldTranslate && !shouldTag) {
     return {
       text: trimmed,
@@ -1540,8 +1543,13 @@ const MORNING_GREETING: Record<string, RegExp> = {
   fr: /\bbonjour\b|\bbon matin\b|\bbonne matinée\b|\bbien dormi\b/i,
   it: /\bbuon ?giorno\b|\bbuona mattinata\b|\bdormito bene\b/i,
 };
-/** 시드가 아침을 말하지 않는데 '아침' 낱말을 쓰면 시간을 가정한 것이다(한국어는 '아침밥' 과 헷갈려 두지 않는다). */
+/**
+ * 시드가 아침을 말하지 않는데 '아침' 낱말을 쓰면 시간을 가정한 것이다('朝のお薬', '아침 약' — 밤에도 울린다).
+ * 합성 언어 전부 둔다(Codex #801).
+ */
 const MORNING_WORD: Record<string, RegExp> = {
+  ko: /아침/,
+  ja: /朝/,
   en: /\bmorning\b/i,
   fr: /\bmatin(?:ée)?\b/i,
   it: /\bmattin[ao]\b|\bstamattina\b/i,
@@ -1583,10 +1591,11 @@ export function isUncontractedEnglish(spoken: string): boolean {
  *   가장 흔한 반말 명령문이 빠지지 않는다.
  */
 // '힘내'·'걱정 마'·'오거든'·'먹을까'·'좋군' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가
-// 먼저 지운다). '-까' 는 문장 끝에서만 센다 — '…' 앞의 '-니까' 는 이음 어미다. '합니까' 는 존댓말이 먼저 잡는다.
+// 먼저 지운다). '-까'·'-데'(오는데·좋던데) 는 문장 끝에서만 센다 — '…'·',' 앞의 '-니까'·'-는데' 는 이음
+// 어미다. '합니까' 는 존댓말이 먼저 잡는다.
 // 존댓말은 해요체(-요·-죠)와 합쇼체(-니다·-십시오/-시오) 둘 다다.
 const KO_POLITE_END = /(요|니다|죠|시오)$/;
-const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마|거든|까|군)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마|거든|까|군|데)$/;
 /**
  * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
  * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
@@ -2930,10 +2939,10 @@ export function isWindDownText(text: string): boolean {
 const WIND_DOWN_PHRASES = [
   // en
   /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i,
-  // fr
-  /\bbonne nuit\b|\bdors bien\b|\bbeaux r[êe]ves\b|\bva (?:te coucher|dormir)\b|\bau lit\b/i,
-  // it
-  /\bbuona ?notte\b|\bdormi bene\b|\bsogni d['’]oro\b|\bvai a (?:letto|dormire)\b|\ba letto\b/i,
+  // fr — '침대' 는 '자러 가' 명령일 때만('Ne reste pas au lit' 는 깨우는 말이다)
+  /\bbonne nuit\b|\bdors bien\b|\bbeaux r[êe]ves\b|\b(?:va|allez|file) (?:te coucher|vous coucher|dormir|au lit)\b/i,
+  // it — 같은 이유로 'a letto' 단독은 보지 않는다('Non restare a letto, alzati')
+  /\bbuona ?notte\b|\bdormi bene\b|\bsogni d['’]oro\b|\b(?:vai|andiamo|andate) a (?:letto|dormire)\b/i,
 ];
 
 function tagAlarmTextLocally(text: string): string {

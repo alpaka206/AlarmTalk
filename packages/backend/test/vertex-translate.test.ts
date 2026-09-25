@@ -460,6 +460,11 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(isWindDownText('Buonanotte, sogni d’oro.')).toBe(true);
     expect(isWindDownText('Réveille-toi, il est temps de se lever.')).toBe(false);
     expect(isWindDownText('Svegliati, è ora di alzarsi.')).toBe(false);
+    // '침대' 가 들어가도 깨우는 말이면 마무리가 아니다.
+    expect(isWindDownText('Ne reste pas au lit, lève-toi.')).toBe(false);
+    expect(isWindDownText('Non restare a letto, alzati.')).toBe(false);
+    expect(isWindDownText('Allez, va au lit.')).toBe(true);
+    expect(isWindDownText('Vai a letto, è tardi.')).toBe(true);
   });
 
   it('번역문이 태그뿐이면(태그를 지우면 말이 없으면) 번역 실패로 던진다', async () => {
@@ -605,6 +610,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 문장 끝 '-까'(먹을까?) 도 반말이다 — '합니까' 는 존댓말, '…' 앞 '-니까' 는 이음 어미.
     expect(hasMixedKoreanRegister('약 먹을까? 지금 챙겨 드세요.', { relationshipLabel: '동료' })).toBe(true);
     expect(hasMixedKoreanRegister('준비됐습니까? 이제 가시죠.', { relationshipLabel: '손자' })).toBe(false);
+    // 문장 끝 '-는데' 도 반말이다 — 쉼표 앞 '-는데' 는 이음 어미라 세지 않는다.
+    expect(hasMixedKoreanRegister('오늘 비가 오는데. 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(true);
+    expect(hasMixedKoreanRegister('오늘 비가 오는데, 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(false);
     // 문장 끝 '-거든' 도 반말이다.
     expect(hasMixedKoreanRegister('오늘 비가 오거든. 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(true);
     // '힘내'·'걱정 마' 도 반말이다.
@@ -727,6 +735,10 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasAssumedMorning('Hai dormito bene? È ora della medicina.', med, 'it')).toBe(true);
     expect(hasAssumedMorning('È ora della medicina.', med, 'it')).toBe(false);
     expect(hasAssumedMorning('Commençons la matinée en forme.', dust, 'fr')).toBe(false);
+    // 일본어·한국어 '아침' 낱말도 — 시드가 아침을 말하지 않으면.
+    expect(hasAssumedMorning('朝のお薬の時間ですよ。', med, 'ja')).toBe(true);
+    expect(hasAssumedMorning('아침 약 드실 시간이에요.', med, 'ko')).toBe(true);
+    expect(hasAssumedMorning('今日も元気に一日を始めよう。', dust, 'ja')).toBe(false);
   });
 
   it('축약 없는 영어는 두 번 이상일 때만 로봇 말투로 본다', () => {
@@ -906,6 +918,17 @@ describe('prepareAlarmTextWithVertex', () => {
     // 문장부호 앞에는 공백을 남기지 않는다.
     expect(dropWakeUnsafeTags('Wake up[softly]!')).toBe('Wake up!');
     expect(dropWakeUnsafeTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
+  });
+
+  it('직접 입력: 사용자가 직접 쓴 태그는 공포 태그여도 그대로 둔다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[panicked] 지각이다!! 일어나!!', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+    expect(prepared.text).toBe('[panicked] 지각이다!! 일어나!!');
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('직접 입력: 모델이 공포 태그를 붙이면 지운다 — 다 지워지면 로컬 태깅', async () => {
