@@ -612,15 +612,17 @@ async function generateContentText(
   prompt: string,
   config: GenerateContentConfig,
 ): Promise<string> {
-  const credentials = readVertexCredentials(env);
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
   const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  // ⚠ 토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
-  //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 자격 증명·
-  //   OAuth 장애가 통째로 안 보인다. 오류 메시지는 OAuth 응답(invalid_grant 등)이라 문구 원문이 없다.
+  // ⚠ 자격 증명 해석·토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
+  //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 시크릿이 깨졌거나
+  //   OAuth 가 죽으면 통째로 안 보인다. 오류 메시지는 `readVertexCredentials` 의 고정 문장이거나 OAuth
+  //   응답(invalid_grant 등)이라 비밀키·문구 원문이 없다.
   const authStarted = Date.now();
+  let credentials: ReturnType<typeof readVertexCredentials>;
   let accessToken: string;
   try {
+    credentials = readVertexCredentials(env);
     accessToken = await createAccessToken(credentials);
   } catch (err) {
     logStructured('warn', {
@@ -1572,7 +1574,8 @@ export function isUncontractedEnglish(spoken: string): boolean {
  *   가장 흔한 반말 명령문이 빠지지 않는다.
  */
 // '힘내'·'걱정 마' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가 먼저 지운다).
-const KO_POLITE_END = /(요|니다|죠)$/;
+// 존댓말은 해요체(-요·-죠)와 합쇼체(-니다·-십시오/-시오) 둘 다다.
+const KO_POLITE_END = /(요|니다|죠|시오)$/;
 const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마)$/;
 /**
  * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…

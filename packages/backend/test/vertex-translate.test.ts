@@ -293,6 +293,26 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     }
   });
 
+  it('자격 증명 JSON 이 깨져도 vertex.generate 를 warn(stage auth)으로 남긴다 — 비밀값은 싣지 않는다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const env = { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '{"private_key":"SECRET-KEY-BODY", broken' } as Env;
+      const prepared = await prepareAlarmTextWithVertex(env, '엄마, 일어날 시간이야.', {
+        targetLanguage: 'ko',
+        sourceLanguage: 'ko',
+        translate: false,
+        autoTag: true,
+      });
+      expect(prepared.provider).toBe('local');
+      const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
+      expect(line).toContain('"stage":"auth"');
+      expect(line).toContain('must be valid service account JSON');
+      expect(line).not.toContain('SECRET-KEY-BODY');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('토큰 발급이 실패해도 vertex.generate 를 warn(stage auth)으로 남긴다', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockFetch.mockImplementation(async () => new Response('{"error":"invalid_grant"}', { status: 400 }));
@@ -534,6 +554,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 어간과 합쳐진 반말(일어나·챙겨·마셔)도 반말이다.
     expect(hasMixedKoreanRegister('우리 딸, 오늘 비 온대요. 우산 챙겨.', mom)).toBe(true);
     expect(hasMixedKoreanRegister('자기야, 물 많이 마셔요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 합쇼체 명령(-십시오)도 존댓말이다 — 반말 전용 관계에서 걸린다.
+    expect(hasMixedKoreanRegister('자기야, 지금 일어나십시오.', { relationshipLabel: '남자친구' })).toBe(true);
     // '힘내'·'걱정 마' 도 반말이다.
     expect(hasMixedKoreanRegister('엄마, 오늘도 힘내. 약 드실 시간이에요.', { relationshipLabel: '딸', listenerTitle: '엄마' })).toBe(true);
     expect(hasMixedKoreanRegister('할머니, 걱정 마. 우산 챙기세요.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(true);
