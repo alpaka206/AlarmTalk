@@ -250,7 +250,8 @@ function leaks(spoken: string, language: string): string[] {
   return found;
 }
 
-type FieldType = 'string' | 'number' | 'boolean' | 'array';
+/** 'string[]' 은 원소 타입까지 본다(말투 분석 markers — 운영 파서는 문자열이 아닌 원소를 조용히 버린다). */
+type FieldType = 'string' | 'number' | 'boolean' | 'string[]';
 /**
  * 응답이 **지금 스키마대로** 왔는가. 객체이기만 하면 통과시키면 `{}`·`{"text":123}` 도 형식 정답이
  * 되어 모델 비교가 부풀려진다(Codex #801). 필수 필드는 타입까지 보고, 스키마에 없는 필드(옛 `tag`
@@ -265,7 +266,9 @@ function rawJsonShape(
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, extraKeys: [], keys: [] };
     const keys = Object.keys(parsed);
     const typeOk = Object.entries(required).every(([k, t]) =>
-      t === 'array' ? Array.isArray(parsed[k]) : typeof parsed[k] === t,
+      t === 'string[]'
+        ? Array.isArray(parsed[k]) && (parsed[k] as unknown[]).every((v) => typeof v === 'string')
+        : typeof parsed[k] === t,
     );
     return { ok: typeOk, keys, extraKeys: keys.filter((k) => !(k in required)) };
   } catch {
@@ -706,7 +709,7 @@ async function runF(m: (typeof MODELS)[number]) {
       dialect: 'string',
       strength: 'string',
       register: 'string',
-      markers: 'array',
+      markers: 'string[]',
       persona: 'string',
       childlike: 'boolean',
       confidence: 'number',
