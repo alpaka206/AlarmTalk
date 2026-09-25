@@ -397,6 +397,13 @@ export async function prepareAlarmTextWithVertex(
     preparedText =
       extractTags(safe).length > 0 ? safe : shouldTranslate ? tagAlarmTextLocally(safe) : fallbackText;
   }
+  // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). 위의 빈 문자열 검사는
+  //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
+  //   '번역 성공' 으로 합성·저장된다. 같은 언어면 `normalizeSameLanguageTaggedText` 가 이미 원문과
+  //   맞춰 보므로 여기 걸릴 일이 없다.
+  if (shouldTranslate && !normalizeAlarmTextWithoutTags(preparedText)) {
+    throw new AlarmTextPreparationInvalidError('empty_spoken');
+  }
 
   const tags = extractTags(preparedText);
 
@@ -2763,13 +2770,21 @@ function pickApprovedTag(tags: string[]): string | null {
  */
 export function isWindDownText(text: string): boolean {
   if (['잘 자', '잘자', '고생', '퇴근', '수고', 'おやすみ', 'お疲れ'].some((hint) => text.includes(hint))) return true;
-  // ⚠ 영어는 낱말 조각으로 보지 말 것(Codex #801) — 'sleep' 이 "Hey sleepyhead", "Don't oversleep"
-  //   같은 **깨우는** 문구에, 'night' 가 "tonight" 에 걸려 졸린 태그가 붙거나 남았다.
-  return WIND_DOWN_EN.test(text);
+  // ⚠ 영어·프랑스어·이탈리아어는 낱말 조각으로 보지 말 것(Codex #801) — 'sleep' 이 "Hey sleepyhead",
+  //   "Don't oversleep" 같은 **깨우는** 문구에, 'night' 가 "tonight" 에 걸려 졸린 태그가 붙거나 남았다.
+  //   합성 언어(`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it)마다 표현을 둔다 — 빠진 언어는 잠들기 전
+  //   문구에도 `[calm]` 을 지우고 `[cheerfully]` 를 붙인다.
+  return WIND_DOWN_PHRASES.some((pattern) => pattern.test(text));
 }
 
-const WIND_DOWN_EN =
-  /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i;
+const WIND_DOWN_PHRASES = [
+  // en
+  /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i,
+  // fr
+  /\bbonne nuit\b|\bdors bien\b|\bbeaux r[êe]ves\b|\bva (?:te coucher|dormir)\b|\bau lit\b/i,
+  // it
+  /\bbuona ?notte\b|\bdormi bene\b|\bsogni d['’]oro\b|\bvai a (?:letto|dormire)\b|\ba letto\b/i,
+];
 
 function tagAlarmTextLocally(text: string): string {
   if (TAG_RE.test(text)) return text;

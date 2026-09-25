@@ -75,6 +75,7 @@ for (const s of SUITES) if (!['A', 'D', 'F'].includes(s)) throw new Error(`--sui
 const REPS = Number(flags.get('--reps') ?? '2');
 if (!Number.isInteger(REPS) || REPS < 1 || REPS > 5) throw new Error('--reps 는 1~5');
 const CONCURRENCY = Number(flags.get('--concurrency') ?? '6');
+if (!Number.isInteger(CONCURRENCY) || CONCURRENCY < 1 || CONCURRENCY > 32) throw new Error('--concurrency 는 1~32');
 const LABEL = (flags.get('--label') ?? 'baseline').replace(/[^a-z0-9._-]/gi, '-');
 /** 쉼표로 여러 개: core,holdout,fresh,fresh2. 'all' = core,holdout(예전 호환). */
 const DSETS = new Set(

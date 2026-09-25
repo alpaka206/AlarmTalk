@@ -395,6 +395,23 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(isWindDownText("Hey sleepyhead, you've got a dentist appointment at 9.")).toBe(false);
     expect(isWindDownText("Don't oversleep!")).toBe(false);
     expect(isWindDownText('Take your meds tonight.')).toBe(false);
+    // 합성 언어 전부 — 프랑스어·이탈리아어 잠들기 전 문구도 calm 을 지키게.
+    expect(isWindDownText('Bonne nuit, dors bien.')).toBe(true);
+    expect(isWindDownText('Buonanotte, sogni d’oro.')).toBe(true);
+    expect(isWindDownText('Réveille-toi, il est temps de se lever.')).toBe(false);
+    expect(isWindDownText('Svegliati, è ora di alzarsi.')).toBe(false);
+  });
+
+  it('번역문이 태그뿐이면(태그를 지우면 말이 없으면) 번역 실패로 던진다', async () => {
+    queueContent(geminiText('{"text":"[softly]"}'));
+    await expect(
+      prepareAlarmTextWithVertex(ENV, '일어나, 학교 갈 시간이야.', {
+        targetLanguage: 'en',
+        sourceLanguage: 'ko',
+        translate: true,
+        autoTag: true,
+      }),
+    ).rejects.toMatchObject({ reason: 'empty_spoken' });
   });
 
   it('번역 중 졸린 태그만 왔으면 원문이 아니라 번역문에 태그를 붙인다', async () => {
