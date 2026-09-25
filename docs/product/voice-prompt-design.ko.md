@@ -7,7 +7,7 @@
 
 ## 1. 배경
 
-목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-2.5-flash`)로 생성하고 ElevenLabs `eleven_v3`로
+목소리 알람 앱. 짧은 알람 문구를 Vertex Gemini(`gemini-3.5-flash` — 2.5 Flash 는 2026-10-20 은퇴. Flash-Lite 는 블라인드 판정에서 품질이 떨어져 쓰지 않는다)로 생성하고 ElevenLabs `eleven_v3`로
 합성한다. 경쟁사 알라미가 게임/미션으로 "무조건 깨움"을 판다면 우리는 **음성** 경험으로 차별화한다.
 
 라이브 동적 생성은 현재 **기본 OFF**다(`GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`). 켜지 않으면 스톡 클립/로컬
@@ -35,7 +35,7 @@
 
 ### 4.1 아키텍처 — 언어-네이티브-우선 단발(single-call)
 
-호출 1회로 `{text, tag}` 를 함께 받는다(Worker 지연·비용). 과거의 "생성 → autoTag" 2차 Vertex 호출은
+호출 1회로 태그가 인라인된 `{text}` 를 받는다(Worker 지연·비용). 과거의 "생성 → autoTag" 2차 Vertex 호출은
 제거했다 — 생성 프롬프트가 인라인 브래킷을 금지하는데 직후 autoTag 가 태그를 붙여, 정상 출력이 서로
 모순으로 폐기되던 구조였다. 품질 **상한**은 프롬프트 콘텐츠 깊이(언어별 네이티브 규칙)로, **하한**은
 2단 검증·국소수리(§4.7)로 끌어올린다.
@@ -49,7 +49,8 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
 - 관계·호칭은 **레지스터를 고르는 데만** 쓰고 절대 발화하지 않는다. 한 줄 안에서 존댓/반말을 섞지 않는다.
 - 호칭은 준 값 그대로. 추정 가족호칭(할머니/엄마 등)으로 바꾸지 않는다.
 - 사용자가 쓰지 않은 원시값(기온·확률·시각·날짜·생년월일·지역명) 낭독 금지.
-- 출력은 `{"text": string, "tag": string}` STRICT JSON.
+- 출력은 `{"text": string}` STRICT JSON — 태그는 `text` 안에 대괄호로 인라인한다. 예전의 `tag` 필드는
+  2026-09-23 에 뺐다(백엔드가 읽지 않았다). 다시 넣지 말 것 — 평가 스크립트가 여분 필드로 센다.
 
 전문은 `vertex-translate.ts` 의 `DYNAMIC_SYSTEM_INSTRUCTION`.
 
@@ -85,16 +86,18 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
 - **v3 태그는 enum 이 아니다.** 공식 문서는 audio tag 를 "natural-language instructions" 로 규정하고 지원
   태그 목록을 공개하지 않는다. 효과는 보이스·문맥·stability 에 의존한다. 그래서 우리는 "v3 가 받는 enum"을
   맞추는 게 아니라 **예측가능성·알람 적합성·태그 낭독 방지**를 목표로 삼는다. 닫힌 허용목록은 없다 —
-  모델에게는 `TAG_EXAMPLES` 를 **예시로만** 주고(`vertex-translate.ts`), 실제로 막는 것은 저각성 태그뿐이다
-  (`isLowArousalTag`). `gentle` 은 그 목록에 걸려 막히지만 `warmly`·`encouraging` 은 스톡 대사가 지금도 쓴다.
+  모델에게는 `TAG_EXAMPLES` 를 **예시로만** 주고(`vertex-translate.ts`), 실제로 막는 것은 두 가지다 —
+  **저각성**(`isLowArousalTag`, 잠들기 전·마무리 문구(`isWindDownText`)만 예외)과 **공포·공황**(`isFearTag`,
+  언제나 — 급한 건 되지만 겁주면 안 된다). 둘 다 문장을 버리지 않고 태그만 지운다(`dropWakeUnsafeTags`).
+  `gentle` 은 저각성 목록에 걸려 막히지만 `warmly`·`encouraging` 은 스톡 대사가 지금도 쓴다.
 - **비언어 소리는 허용한다**: `[laughs]`·`[giggles]`·`[sighs]` 는 `TAG_EXAMPLES` 에 들어 있고 프롬프트가
-  직접 예시로 든다. 금지는 저각성 뜻을 가진 태그와 공식 문서가 든 오용 예(`[standing]`/`[music]` 류)뿐이다.
+  직접 예시로 든다. 금지는 저각성·공포 뜻을 가진 태그와 공식 문서가 든 오용 예(`[standing]`/`[music]` 류)뿐이다.
   페이싱은 SSML break 가 없으므로 `…`·쉼표로 만든다.
 - **저각성 태그**(`calm/tired/whispers/quietly`)는 취침 모드 전용이었는데 그 모드가 사라졌다. 남은 셋은
-  전부 깨우는 알람이라 `sanitizeDeliveryTag` 가 무조건 막는다.
+  전부 깨우는 알람이라 `sanitizeDeliveryTag` 가 무조건 막는다(공포 태그도 같이).
 - **배치**: 톤이 바뀌는 자리마다 **문장 안에 인라인**으로, 한 줄에 보통 1~3개(2026-08-13 C안).
   아주 짧은 줄(≈20자 미만)은 1개로 충분하고, 맞는 태그가 없으면 무태그로 둔다(태그가 소리 내어
-  읽히는 사고 방지). 별도 `tag` 필드는 옛 클라이언트 호환용 레거시라 빈 문자열로 남긴다.
+  읽히는 사고 방지). 별도 `tag` 필드는 2026-09-23 에 응답 스키마에서 뺐다 — 태그는 `text` 안에만 있다.
 - **voice_settings**(고쳐진 버그): 과거 `elevenlabs.ts` 의 역조건 때문에 유일 운영 모델인 v3 에 오히려
   voice_settings 를 안 보내 서버 디폴트가 적용됐고 태그가 약하게 실현됐다. 지금은 항상 전송한다
   (stability 0.5 Natural / similarity 0.8 / style 0.4). **Robust(0.7+) 금지** — 태그를 억제한다.
@@ -131,8 +134,9 @@ user prompt 에는 가변 데이터(모드·관계·언어 블록·날씨 신호
 
 ### 4.9 few-shot
 
-언어별 3~5개를 주입한다(`DYNAMIC_FEW_SHOT`). 출력 계약이 `{text, tag}` 이므로 예시의 태그도 tag 필드로
-분리해 넣는다. 예시는 **살아 있는 모드**의 것만 유지한다.
+언어별 3~5개를 주입한다(`DYNAMIC_FEW_SHOT`). 출력 계약이 `{text}`(태그 인라인)이므로 예시도 태그를 `text`
+안에 인라인으로 넣는다 — 모델은 지시문보다 **예시를** 따른다. 예시는 **살아 있는 모드**의 것만 유지하고,
+인사가 아닌 예시에는 시간대 인사('좋은 아침'·'Morning'·'おはよう')를 넣지 않는다.
 
 ## 5. Gemini 실반영 전 게이트
 

@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { logStructured } from './logger';
 
 type VertexServiceAccount = {
   client_email?: string;
@@ -15,12 +16,26 @@ type VertexTokenResponse = {
 
 type VertexGenerateContentResponse = {
   candidates?: Array<{
+    /** `STOP` 이 정상 종료다. 없으면 STOP 으로 본다(옛 응답·목). */
+    finishReason?: string;
     content?: {
       parts?: Array<{
         text?: string;
+        /** 사고 요약 part. `includeThoughts` 를 안 보내면 오지 않지만, 오면 답이 아니다. */
+        thought?: boolean;
+        /** Gemini 3 부터 답 part 에 붙는다. 한 턴짜리 호출이라 돌려보낼 일이 없다. */
+        thoughtSignature?: string;
       }>;
     };
   }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    /** 사고에 쓴 토큰 — `maxOutputTokens` 안에서 센다. */
+    thoughtsTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  modelVersion?: string;
 };
 
 export type AlarmTextPreparation = {
@@ -96,7 +111,13 @@ export type AlarmTextRejectionReason =
   /** 청자 호칭을 우리가 준 것과 다르게 불렀다. */
   | 'listener_address'
   /** 관계 라벨('엄마')이 문장에 그대로 샜다. */
-  | 'relationship_leak';
+  | 'relationship_leak'
+  /** 한국어 한 줄 안에서 반말과 존댓말이 섞였다(시드의 '-요' 어미를 옮겨 쓸 때 난다). */
+  | 'register_mixed'
+  /** 인사가 아닌 알람에 아침 인사를 넣었다 — 사전렌더 클립은 몇 시에 울릴지 모른다. */
+  | 'time_of_day'
+  /** 영어가 축약 없이 글말로 나왔다('let us', 'do not') — 낭독하면 로봇처럼 들린다. */
+  | 'uncontracted';
 
 export class AlarmTextPreparationInvalidError extends Error {
   /**
@@ -122,8 +143,28 @@ export function alarmTextRejectionReasonOf(error: unknown): AlarmTextRejectionRe
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
-const DEFAULT_VERTEX_LOCATION = 'global';
-const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
+// ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」,
+//   2026-09-22 갱신 — 대체 모델로 `gemini-3.5-flash-lite` / `gemini-3.1-flash-lite` 를 든다).
+//   실제 모델은 워커 시크릿 `GOOGLE_VERTEX_MODEL`·`GOOGLE_VERTEX_LOCATION` 이 정한다 — 이 값은
+//   그게 비었을 때만 쓰인다.
+// ⚠ **대체는 `gemini-3.5-flash` 다 — 표가 권하는 Flash-Lite 가 아니다**(2026-09-23 블라인드 판정,
+//   튜닝에 쓰지 않은 프로필, 같은 프롬프트). 3.5 Flash-Lite 는 2.5 Flash 에 69:108 로 졌고(한국어
+//   36%), 3.5 Flash 는 93:86·72:47 로 대등하거나 나았다(한국어·일본어 우세). 단가는 3.5 Flash 가
+//   약 4~5배(사전렌더 클립 한 개 약 $0.006)이고, 응답 꼬리가 길다(p90 수 초). 가격만 보고 Lite 로
+//   되돌리지 말 것 — 되돌리면 한국어 문구 품질이 눈에 띄게 떨어진다. 은퇴는 2027-05-19 이후.
+// ⚠ **지역은 `us` 다.** 3.5 Flash-Lite 가 도는 곳은 `global` 과 멀티리전 `us`·`eu` 뿐이고
+//   (`us-central1` 없음), 개인정보 처리방침은 Vertex 처리 국가를 '미국' 으로 적는다. `global`
+//   엔드포인트는 처리 지역을 고를 수도 알 수도 없다고 문서가 말하므로 쓰지 않는다. 3.5 Flash 도
+//   `us` 에서 실호출로 확인했다(2026-09-23).
+const DEFAULT_VERTEX_LOCATION = 'us';
+const DEFAULT_VERTEX_MODEL = 'gemini-3.5-flash';
+/**
+ * Gemini 3 계열의 출력 상한 하한. **사고 토큰이 `maxOutputTokens` 안에서 세어진다** — 사고에
+ * 다 쓰면 `finishReason: MAX_TOKENS` 로 잘린 JSON 이 HTTP 200 으로 온다(2026-09-23 실측:
+ * 상한 16 에서 `{"text": "[cheerful] 엄마, 일`). 요금은 실제로 만든 토큰만 나가므로 상한을
+ * 올려도 비용은 그대로다.
+ */
+const GEMINI_3_MIN_OUTPUT_TOKENS = 1024;
 /// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
 /// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
 ///
@@ -181,8 +222,19 @@ const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
   .map((word) => `[${word}]`)
   .join(', ');
 
+/**
+ * 공포·공황 지시. 깨우는 알람은 급할 수는 있어도 겁을 주면 안 된다 — 마무리 문구에서도 쓰지 않는다.
+ * 프롬프트가 금지해도 모델이 어기면 그대로 합성·저장되므로 서버가 지운다(Codex #801).
+ */
+const FEAR_WORDS = ['panic', 'scared', 'terrified', 'terror', 'frighten', 'horrified', 'afraid', 'fearful'];
+
+export function isFearTag(tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  return !!normalized && FEAR_WORDS.some((word) => normalized.includes(word));
+}
+
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
-function isLowArousalTag(tag: string): boolean {
+export function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
   if (!normalized) return false;
   return LOW_AROUSAL_WORDS.some((word) => normalized.includes(word));
@@ -216,17 +268,26 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
 function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
-  if (isLowArousalTag(approved)) return '';
+  if (isLowArousalTag(approved) || isFearTag(approved)) return '';
   return approved;
 }
 
-/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다.
-/// 저각성 태그만 지우고 나머지는 **위치까지 그대로** 남긴다 — 여러 개·중간 태그가 요점이다.
-export function dropLowArousalTags(text: string): string {
+/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다 — 공포 태그는 언제나, 저각성 태그는
+/// `allowLowArousal`(잠들기 전·마무리 문구)이 아닐 때 지운다. 나머지는 **위치까지 그대로**
+/// 남긴다 — 여러 개·중간 태그가 요점이다.
+export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: boolean } = {}): string {
   return text
-    .replace(TAG_RE_GLOBAL, (match) => {
+    .replace(TAG_RE_GLOBAL, (match, offset: number, whole: string) => {
       const body = match.slice(1, -1);
-      return isLowArousalTag(body) ? '' : match;
+      if (!isFearTag(body) && (options.allowLowArousal || !isLowArousalTag(body))) return match;
+      // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
+      //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
+      //   문장부호 **앞**('Wake up[softly]!')에는 남기지 않고, 쉼표·마침표 **뒤**('할머니,[softly]일어나세요')
+      //   에는 남긴다 — 뒤가 글자일 때만.
+      const before = whole[offset - 1] ?? '';
+      const after = whole[offset + match.length] ?? '';
+      const isWordChar = (ch: string) => /[\p{L}\p{N}]/u.test(ch) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(ch);
+      return isWordChar(after) && (isWordChar(before) || /[,.!?…;:]/u.test(before)) ? ' ' : '';
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -260,6 +321,9 @@ export async function prepareAlarmTextWithVertex(
     return { text: trimmed, translated: false, tags: [], provider: 'local' };
   }
 
+  // ⚠ 사용자가 **직접 쓴** 태그는 거르지 않는다(졸린 태그·공포 태그 모두). 알람 문구는 사용자가 쓴
+  //   글이고, '[panicked] 지각이다!!' 같은 장난 알람도 그 사람의 의도다 — 조용히 바꾸면 쓴 글과 다른
+  //   소리가 난다. 서버가 지우는 것은 **모델이 붙인** 태그뿐이다(아래 `dropWakeUnsafeTags`).
   if (!shouldTranslate && !shouldTag) {
     return {
       text: trimmed,
@@ -295,6 +359,9 @@ export async function prepareAlarmTextWithVertex(
     raw = await generateContentText(env, prompt, {
       temperature: 0.15,
       maxOutputTokens: 256,
+      // ⚠ 스키마 없이 JSON 만 요구하면 3.5 Flash-Lite 가 영어 문구의 12% 를 **배열**
+      //   `[{"text":…}]` 로 준다(2026-09-23 비교 평가). 파서가 받아 주긴 하지만 형식을 못박는다.
+      responseSchema: ALARM_TEXT_RESPONSE_SCHEMA,
     });
   } catch (err) {
     if (shouldTranslate) {
@@ -329,6 +396,24 @@ export async function prepareAlarmTextWithVertex(
   if (shouldTag && !shouldTranslate) {
     preparedText =
       normalizeSameLanguageTaggedText(preparedText, trimmed, parsed.tags) ?? fallbackText;
+  }
+  if (shouldTag) {
+    // 깨우는 알람이다 — 모델이 붙인 졸린 태그는 사전렌더 경로와 같이 버린다. 사용자가
+    // 직접 친 태그는 여기 오지 않는다(`shouldTag` 가 거짓이다). 잠들기 전·마무리 문구
+    // (`isWindDownText`)는 calm 이 맞으므로 졸린 태그를 남긴다. 공포 태그는 어느 쪽이든 버린다.
+    // 다 버려져 태그가 하나도 안 남으면 로컬 태깅(마무리 문구가 아니면 cheerfully)으로 돌아간다.
+    // ⚠ 번역 중이면 `fallbackText`(원문 언어)로 돌아가지 말고 **번역문에** 태그를 붙인다
+    //   (Codex #801 P1). 원문으로 돌아가면 `translated: true` 인 채 원문이 합성·저장된다.
+    const safe = dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) });
+    preparedText =
+      extractTags(safe).length > 0 ? safe : shouldTranslate ? tagAlarmTextLocally(safe) : fallbackText;
+  }
+  // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). 위의 빈 문자열 검사는
+  //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
+  //   '번역 성공' 으로 합성·저장된다. 같은 언어면 `normalizeSameLanguageTaggedText` 가 이미 원문과
+  //   맞춰 보므로 여기 걸릴 일이 없다.
+  if (shouldTranslate && !normalizeAlarmTextWithoutTags(preparedText)) {
+    throw new AlarmTextPreparationInvalidError('empty_spoken');
   }
 
   const tags = extractTags(preparedText);
@@ -531,24 +616,132 @@ async function generateContentText(
   prompt: string,
   config: GenerateContentConfig,
 ): Promise<string> {
-  const credentials = readVertexCredentials(env);
-  const accessToken = await createAccessToken(credentials);
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
   const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  const endpoint =
-    `https://aiplatform.googleapis.com/v1/projects/${credentials.project_id}` +
-    `/locations/${location}/publishers/google/models/${model}:generateContent`;
-  return generateContentAtEndpoint(endpoint, prompt, config, {
-    authorization: `Bearer ${accessToken}`,
-  });
+  // ⚠ 자격 증명 해석·토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
+  //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 시크릿이 깨졌거나
+  //   OAuth 가 죽으면 통째로 안 보인다. 오류 메시지는 `readVertexCredentials` 의 고정 문장이거나 OAuth
+  //   응답(invalid_grant 등)이라 비밀키·문구 원문이 없다.
+  const authStarted = Date.now();
+  let credentials: ReturnType<typeof readVertexCredentials>;
+  let accessToken: string;
+  try {
+    credentials = readVertexCredentials(env);
+    accessToken = await createAccessToken(credentials);
+  } catch (err) {
+    logStructured('warn', {
+      at: 'vertex.generate',
+      stage: 'auth',
+      model,
+      status: null,
+      error: err instanceof Error ? err.name : 'unknown',
+      detail: err instanceof Error ? err.message.slice(0, 120) : null,
+      elapsed_ms: Date.now() - authStarted,
+    });
+    throw err;
+  }
+  return generateContentAtEndpoint(
+    vertexGenerateContentEndpoint(credentials.project_id, location, model),
+    model,
+    prompt,
+    config,
+    { authorization: `Bearer ${accessToken}` },
+  );
+}
+
+/**
+ * Gemini 1·2 계열인가. **사고 설정의 이름이 계열마다 다르다**:
+ *  - 2.x 는 `thinkingBudget` 을 받고, `thinkingLevel` 을 보내면 **400** 이다
+ *    ("thinking_level is not supported by this model", 2026-09-23 실측).
+ *  - 3.x 문서는 "The raw numeric thinking_budget parameter is no longer supported across all
+ *    Gemini 3 models" 라고 한다(지금은 받아 주지만 기대지 않는다).
+ * 그래서 **모델 문자열로 가른다** — 일괄 치환하면 시크릿이 아직 2.5 인 워커가 전부 400 이 된다.
+ */
+export function isLegacyGeminiModel(model: string): boolean {
+  return /^gemini-[12]\./.test(model);
+}
+
+/**
+ * generateContent 주소. 멀티리전 `us`·`eu` 는 **전용 호스트**(`aiplatform.{loc}.rep.googleapis.com`)
+ * 를 쓴다(Vertex 「Locations」). 그 밖은 지금까지처럼 전역 호스트 + 경로의 location 이다.
+ */
+export function vertexGenerateContentEndpoint(
+  projectId: string,
+  location: string,
+  model: string,
+): string {
+  const host =
+    location === 'us' || location === 'eu'
+      ? `https://aiplatform.${location}.rep.googleapis.com`
+      : 'https://aiplatform.googleapis.com';
+  return (
+    `${host}/v1/projects/${projectId}` +
+    `/locations/${location}/publishers/google/models/${model}:generateContent`
+  );
+}
+
+/**
+ * 요청의 `generationConfig`. 계열마다 다르게 보낸다:
+ *  - 2.x: 지금까지와 **똑같다**(temperature · 호출부 상한 · `thinkingBudget: 0`). 코드를 먼저 배포하고
+ *    시크릿을 나중에 바꾸므로, 그 사이 2.5 워커의 동작이 바뀌면 안 된다.
+ *  - 3.x: `thinkingLevel: 'MINIMAL'`, 상한은 최소 `GEMINI_3_MIN_OUTPUT_TOKENS`, **temperature 는 뺀다** —
+ *    3.5 Flash-Lite 는 "Custom values for parameters like temperature, top-K, and top-P aren't
+ *    supported" 이고, Gemini 3 공통 안내는 1.0 미만이면 반복 같은 이상 동작이 날 수 있다고 한다.
+ */
+export function buildGenerationConfig(
+  model: string,
+  config: GenerateContentConfig,
+): Record<string, unknown> {
+  const legacy = isLegacyGeminiModel(model);
+  return {
+    ...(legacy ? { temperature: config.temperature } : {}),
+    maxOutputTokens: legacy
+      ? config.maxOutputTokens
+      : Math.max(config.maxOutputTokens, GEMINI_3_MIN_OUTPUT_TOKENS),
+    responseMimeType: 'application/json',
+    thinkingConfig: legacy ? { thinkingBudget: 0 } : { thinkingLevel: 'MINIMAL' },
+    ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
+  };
+}
+
+/** 응답에서 끝까지 만들어지지 못한 결과. 문구 원문은 싣지 않는다(로그·Sentry 로 새지 않게). */
+export class GeminiIncompleteResponseError extends Error {
+  constructor(readonly finishReason: string) {
+    super(`Gemini generation incomplete (${finishReason})`);
+    this.name = 'GeminiIncompleteResponseError';
+  }
+}
+
+/**
+ * 응답에서 답 텍스트를 꺼낸다.
+ *  - **`finishReason` 이 `STOP` 이 아니면 던진다.** 상한에 걸리면 잘린 JSON 이 **HTTP 200** 으로 온다
+ *    (`{"text": "[cheerful] 엄마, 일` — 2026-09-23 실측). 받아 두면 JSON 파싱이 실패한 원문이 그대로
+ *    문구로 쓰여 **`{"text":"` 가 섞인 문장이 클립으로 합성·저장될** 수 있다. 던지면 호출부의 기존
+ *    폴백(로컬 태깅·고정 예문·재시도)으로 간다. 2.x 에도 같은 구멍이었다.
+ *  - **사고 part(`thought: true`)는 버리고** 나머지 텍스트 part 를 잇는다. `parts[0]` 만 읽으면
+ *    답이 여러 part 로 나뉘거나 사고 요약이 앞에 올 때 엉뚱한 것을 문구로 쓴다.
+ */
+export function extractGeneratedText(json: VertexGenerateContentResponse): string {
+  const candidate = json.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  if (finishReason && finishReason !== 'STOP') {
+    throw new GeminiIncompleteResponseError(finishReason);
+  }
+  return (candidate?.content?.parts ?? [])
+    .filter((part) => part.thought !== true && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
 }
 
 async function generateContentAtEndpoint(
   endpoint: string,
+  model: string,
   prompt: string,
   config: GenerateContentConfig,
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
+  const started = Date.now();
   const response = await fetch(endpoint, {
     method: 'POST',
     signal: AbortSignal.timeout(15000),
@@ -566,24 +759,48 @@ async function generateContentAtEndpoint(
       ...(config.systemInstruction
         ? { systemInstruction: { parts: [{ text: config.systemInstruction }] } }
         : {}),
-      generationConfig: {
-        temperature: config.temperature,
-        maxOutputTokens: config.maxOutputTokens,
-        responseMimeType: 'application/json',
-        thinkingConfig: {
-          thinkingBudget: 0,
-        },
-        ...(config.responseSchema ? { responseSchema: config.responseSchema } : {}),
-      },
+      generationConfig: buildGenerationConfig(model, config),
     }),
+  }).catch((err: unknown) => {
+    // ⚠ **던져진 호출도 한 줄 남긴다**(Codex #801). 15초 타임아웃·DNS·네트워크 오류는 응답이 없어
+    //   아래 로그에 닿지 않는데, 호출부는 전부 이걸 삼키고 폴백·재시도한다 — 전환 뒤 감시가 가장
+    //   먼저 봐야 할 실패가 기록에서 빠진다. 원문은 싣지 않는다(오류 이름만).
+    logStructured('warn', {
+      at: 'vertex.generate',
+      stage: 'generate',
+      model,
+      status: null,
+      error: err instanceof Error ? err.name : 'unknown',
+      elapsed_ms: Date.now() - started,
+    });
+    throw err;
   });
   const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
     .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
     .catch(() => ({}));
+  // 호출마다 한 줄 — 모델 교체 뒤 확인할 길이 이것뿐이다. 호출부 대부분(직접 입력 태깅·등록
+  // 미리듣기·말투 분석)이 실패를 삼키고 폴백하므로, 이 줄이 없으면 은퇴·설정 오류·잘림이
+  // 사용자에게도 Sentry 에도 드러나지 않는다. ⚠ 프롬프트·응답 **원문은 싣지 않는다.**
+  // ⚠ 수준은 **생성이 끝났는가**로 고른다(Codex #801) — HTTP 200 이어도 MAX_TOKENS·SAFETY 로
+  //   잘렸거나 답이 비었으면 호출부가 곧바로 버리므로, 전환 뒤 감시가 봐야 할 것은 그쪽이다.
+  const finishReason = json.candidates?.[0]?.finishReason ?? null;
+  const hasAnswer = (json.candidates?.[0]?.content?.parts ?? []).some(
+    (part) => part.thought !== true && typeof part.text === 'string' && part.text.trim() !== '',
+  );
+  const complete = response.ok && (finishReason === null || finishReason === 'STOP') && hasAnswer;
+  logStructured(complete ? 'info' : 'warn', {
+    at: 'vertex.generate',
+    model,
+    status: response.status,
+    finish_reason: finishReason,
+    model_version: json.modelVersion ?? null,
+    output_tokens: json.usageMetadata?.candidatesTokenCount ?? null,
+    thought_tokens: json.usageMetadata?.thoughtsTokenCount ?? null,
+  });
   if (!response.ok) {
     throw new Error(json.error?.message || `Gemini text preparation failed (${response.status})`);
   }
-  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  return extractGeneratedText(json);
 }
 
 function alarmTextPrompt(args: {
@@ -598,8 +815,16 @@ function alarmTextPrompt(args: {
   const action = args.shouldTranslate
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
+  // ⚠ 아래 태그 규칙 셋은 2026-09-23 비교 평가(`scripts/eval-gemini-prompts.ts`)에서 나온 것이다:
+  //   - **졸린 태그** — 이 경로만 저각성 금지가 없어서 3.5 Flash-Lite 가 25% 로 `[gentle]`·
+  //     `[softly]` 를 붙였다. 깨우는 알람이다. 서버도 걸러 낸다(`dropWakeUnsafeTags`).
+  //   - **띄어쓰기** — 3.5 가 `[warm, gentle]할머니` 처럼 붙여 썼다.
+  //   - **자리** — 2.5 가 `오늘은 [happy] 우리 딸 생일` 처럼 꾸밈말과 명사 사이에 넣었다.
   const tagInstruction = args.shouldTag
-    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.`
+    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.
+PLACEMENT: start the first sentence with a tag, and put tags only at the start of a sentence or a clause — never between a modifier and the word it modifies ('오늘은 [happy] 우리 딸 생일' is wrong). One tag per sentence unless the delivery really changes mid-sentence: if a sentence already starts with a tag, don't add another right after a name or comma ('[cheerfully] 엄마, [brightly] 일어날 시간이야' is wrong). A line of one or two sentences usually needs one or two tags. Write exactly one space after every tag ('[cheerfully] 일어나', never '[cheerfully]일어나').
+MATCH THE CONTENT: pacing tags such as [measured, deliberate] slow the voice down — fine, but never use them to calm down an urgent line ('일어나세요! [measured, deliberate] 회의 있어요' is wrong).
+THIS IS AN ALARM: it has to wake someone up. Never use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES} — unless the message itself is a good-night or wind-down message ('잘 자', '수고했어', 'good night', 'おやすみ'), where a calm delivery fits. Never use fear or panic directions either ([panicked], [scared], [terrified]) — urgency is fine, fear is not.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -608,7 +833,9 @@ function alarmTextPrompt(args: {
     tagInstruction,
     'Do not add explanations, markdown, quotes, emojis, or extra fields.',
     'Keep the final text natural, spoken, and 200 characters or fewer.',
-    'Return strict JSON: {"text":"final text","tags":["tag names without brackets"]}.',
+    // 태그 목록은 받지 않는다 — `text` 안의 인라인 태그가 전부이고, 목록은 거기서 뽑는다
+    // (`extractTags`). 필요한 것만 받는다(2026-09-23).
+    'Return strict JSON with one field: {"text":"final text with the delivery tags inline"}.',
     '',
     args.text,
   ].join('\n');
@@ -622,28 +849,45 @@ const ELDER_TO_YOUNGER_RELATIONSHIPS = ['할머니', '할아버지', '엄마', '
 const GRANDCHILD_RELATIONSHIPS = ['손녀', '손자', '손주'];
 const SIBLING_RELATIONSHIPS = ['형제', '자매', '남매', '동생', '누나', '언니', '오빠', '형'];
 
+/**
+ * 관계 라벨이 한국어 어체를 어떻게 정하는가. 프롬프트(`koreanRegisterGuidance`)와 검사
+ * (`hasMixedKoreanRegister`)가 **같은 판정**을 쓴다 — 예전에는 검사가 라벨을 정확히 일치로만 봐서
+ * '친한 친구'·'큰언니' 처럼 자유 입력한 라벨은 프롬프트가 반말을 시키는데 검사는 존댓말을
+ * 통과시켰다(Codex #801). 순서가 곧 우선순위다('엄마친구' 는 엄마 쪽).
+ */
+type KoreanRelationshipRegister = 'grandchild' | 'younger_to_elder' | 'elder_to_younger' | 'romantic' | 'peer' | 'neutral';
+
+function koreanRelationshipRegister(label: string): KoreanRelationshipRegister {
+  if (isGrandchildRelationship(label)) return 'grandchild';
+  if (isYoungerToElderRelationship(label)) return 'younger_to_elder';
+  if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) return 'elder_to_younger';
+  if (isRomanticRelationship(label)) return 'romantic';
+  if (['친구', ...SIBLING_RELATIONSHIPS].some((k) => label.includes(k))) return 'peer';
+  return 'neutral';
+}
+
 function koreanRegisterGuidance(relationshipLabel: string | null | undefined): string {
   if (!relationshipLabel) return '';
   const label = relationshipLabel.trim();
   if (!label) return '';
-  const peerOrIntimate = ['친구', ...SIBLING_RELATIONSHIPS];
+  const register = koreanRelationshipRegister(label);
 
-  if (isGrandchildRelationship(label)) {
-    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 좋은 아침이에요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
+  if (register === 'grandchild') {
+    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 나가실 때 우산 챙기세요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
-  if (isYoungerToElderRelationship(label)) {
+  if (register === 'younger_to_elder') {
     return ' Speaker is younger than the listener: write in warm, familiar 해요체 that still shows respect (e.g. "할아버지, 일어나실 시간이에요", "나가실 때 우산 꼭 챙기세요"). It should sound like an actual granddaughter/grandson or child speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
-  if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) {
-    return ' Speaker is older than the listener: write in caring 반말 or 해요체 mixed style (e.g. "우리 딸, 잘 잤어?", "오늘도 화이팅이야"). Avoid 합니다체.';
+  if (register === 'elder_to_younger') {
+    return ' Speaker is older than the listener: write in caring 반말, or soft 해요체 for the WHOLE line (e.g. "우리 딸, 오늘 비 온대", "오늘도 화이팅이야"). Avoid 합니다체.';
   }
-  if (isRomanticRelationship(label)) {
+  if (register === 'romantic') {
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
   }
-  if (peerOrIntimate.some((k) => label.includes(k))) {
+  if (register === 'peer') {
     return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling. Never use 합니다체.';
   }
-  return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
+  return ' Use a warm conversational tone in 해요체 for the WHOLE line (no 반말 sentence, no stiff 합니다체). Sound like a real person, not an announcement.';
 }
 
 function isRomanticRelationship(relationshipLabel: string | null | undefined): boolean {
@@ -680,8 +924,9 @@ PHILOSOPHY
   rhythm. Idiomatic naturalness outranks literal fidelity.
 - A specific human beside the listener, not a script. Warm but restrained — caring, never
   saccharine, theatrical, poetic, or dramatic.
-- Soft-start. Open gently (the listener's title or a soft greeting), then ease into the point;
-  acknowledge the wake/sleep transition when natural. Never jarring, never alarming, never
+- Soft-start. Open gently with the listener's title or a short soft opener, then ease into the
+  point; acknowledge the wake/sleep transition when natural. Don't assume the time of day — no
+  morning greeting unless the intent is itself a greeting (an alarm can ring at any hour). Never jarring, never alarming, never
   fear/urgency.
 - Meaning over novelty. The value is a context-appropriate, kind line. Never announce whose voice
   this is or the listener's identity.
@@ -705,7 +950,6 @@ REGISTER (one consistent register per line, matched to the relationship)
 DELIVERY TAG (ElevenLabs v3)
 - Write delivery tags INLINE inside "text", in square brackets, at each point where the delivery
   changes — including mid-line. Use as many as the line needs (typically 1 to 3).
-- Leave the separate "tag" field as "" — it is a legacy field the backend no longer reads.
 - For pauses/pacing use punctuation and ellipses (…) as well — the engine has no SSML breaks
   and a soft '…' or comma after the greeting is the soft-start.
 - If a line is very short (under ~20 characters), one tag is plenty; never stack tags on a
@@ -727,18 +971,30 @@ NEVER
   English "Please be advised") for family, friends, or partners.
 - No markdown, emojis, quotes, explanations, or extra fields.
 
-OUTPUT
-- Return STRICT JSON only, matching the schema: {"text": string, "tag": string}. "text" = the
-  final spoken line in the target language, WITH delivery tags written inline in square
-  brackets where the delivery changes. "tag" = "" (legacy field, no longer used).`;
+- Write exactly one space after every tag ('[warmly] 할머니', never '[warmly]할머니').
 
-// 구조화 출력(§4.7). responseMimeType/json·thinkingBudget:0 과 함께 1차 파서로 쓰고,
+OUTPUT
+- Return STRICT JSON only, matching the schema: {"text": string}. "text" = the final spoken line
+  in the target language, WITH delivery tags written inline in square brackets where the
+  delivery changes. No other fields.`;
+
+/** 직접 입력 태깅 응답. 태그는 `text` 안에 인라인으로만 받는다. */
+const ALARM_TEXT_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    text: { type: 'string' },
+  },
+  required: ['text'],
+} as const;
+
+// 구조화 출력(§4.7). responseMimeType/json 과 함께 1차 파서로 쓰고,
 // 간헐 빈응답 대비 brace-slice 파서를 최후 폴백으로 유지한다.
+// ⚠ **레거시 `tag` 필드는 받지 않는다**(2026-09-23). 백엔드가 읽지 않는 빈 필드를 매번
+//   요구하던 것이라 뺐다 — 필요한 것만 받는다. 파서는 여전히 `tag` 가 와도 읽는다.
 const DYNAMIC_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     text: { type: 'string' },
-    tag: { type: 'string' },
   },
   required: ['text'],
 } as const;
@@ -749,7 +1005,11 @@ relationship and hold it the whole line. NEVER 합니다체(~합니다/~하십�
 - Grandchild→grandparent (손녀/손자/손주) and child→elder (딸/아들/자식/며느리/사위/조카): warm
   familiar 해요체 WITH honorific verb stems(존대 동사). '할머니, 일어나실 시간이에요.' '나가실 때
   우산 꼭 챙기세요.' Never clipped lower-sounding forms to an elder ('일어날 시간이에요').
-- Elder→younger (부모→자식 등): caring 반말 or 반말/해요체 mix. '우리 딸, 잘 잤어?' '오늘도 화이팅이야.'
+  Honor the person, not things ('약 드실 시간이에요'(O), '시간이세요'(X)); use -(으)세요 instead of old-fashioned
+  -셔요 but KEEP the honorific -시- ('해 보세요'(O), '해보셔요'(X), '해 봐요'(X) to an elder); never imply the elder forgets or is slow ('금방 잊어버리시니까'(X) →
+  '미루면 잊기 쉬우니까요'(O)).
+- Elder→younger (부모→자식 등): caring 반말. '우리 딸, 오늘 비 온대.' '오늘도 화이팅이야.' (A parent may use soft
+  해요체 instead — but then for the WHOLE line. Never '흐리대요. … 열자' — one sentence 해요체, the next 반말.)
 - Sibling/friend (형제/자매/누나/언니/오빠/형/동생/친구): natural 반말. '일어났어?' Never 존댓말/해요체.
 - Romantic/spouse (연인/자기/여보/아내/남편): intimate 반말, warm and lightly heart-fluttering;
   never 해요체/합니다체 even for 아내/남편. '자기야, 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼.'
@@ -759,7 +1019,10 @@ PARTICLES & SPACING (a writing rule, not a post-fix): keep subject/object partic
 '비가 올 수 있대요'(O) not '비 올 수 있대요'(X); '오늘은 비가 와요' reads warmer than '오늘 비 와요'.
 Drop redundant 나/너/내가 when obvious.
 REPORTED/SOFT endings for relayed weather/fortune: 해요체 '~대요/~래요/~다네요/~면 좋겠어요';
-반말 '~대/~래/~다네/~면 좋겠다'. Sounds like relaying, not asserting.
+반말 '~대/~래/~다네/~면 좋겠다'. Sounds like relaying, not asserting. Put them ONLY on the relayed fact
+itself — never on feelings, empathy or advice ('누워 있기 아까울 정도래요'(X)). Greetings, cheer and
+medication relay nothing — say them in your own voice ('좋은 하루가 될 거래요'(X), '바빠지기 마련이래요'(X)).
+Fortune stays a possibility ('풀릴지도 몰라'), never a promise ('술술 풀릴 거래'(X)).
 NUMBERS: never read raw numbers/units aloud — no 강수확률·기온·시각·날짜 ('강수확률 70%'(X), '최저 10도'(X),
 '7시 30분'(X)). Re-express softly instead ('비가 올 수 있대요'(O), '오늘은 좀 쌀쌀하대요'(O)).
 AVOID: exaggerated interjections(세상에/맙소사/오 마이 갓), news-anchor openers('예보에 따르면'),
@@ -769,11 +1032,11 @@ const JAPANESE_NATIVE_RULES = `JAPANESE — write like a native speaker. Do NOT 
 REGISTER — CRITICAL: Japanese family & intimate speech is CASUAL(タメ口), NOT honorific. Do NOT copy
 Korean's polite 해요체 into Japanese.
 - Grandchild→grandparent, child→parent, parent→child, sibling, friend, romantic partner: CASUAL
-  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、おはよう。今日は雨が降るみたい、傘忘れないでね。'
+  (だ/〜だよ/〜て/〜よっか/〜ね). e.g. 'おばあちゃん、今日は雨が降るみたい、傘忘れないでね。'
   NOT 'おばあちゃん、起きる時間です。' Address おばあちゃん/おじいちゃん (familiar), never おばあさま,
   and only if it matches the listener title.
 - です・ます polite ONLY for distant/unknown/teacher/workplace or when no relationship is given:
-  'おはようございます。今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
+  '今日は冷えるみたいなので、一枚羽織ってくださいね。' Avoid over-honorific/business
   文語 (no お目覚めください, no 〜となっております).
 - Never mix politeness levels within one line.
 終助詞 (the core of natural warmth; choose to match intonation, don't stack): ね = empathy/shared
@@ -791,12 +1054,13 @@ numbers — '雨が降るみたい' / '寒くなりそうだから上着があ�
 const ENGLISH_NATIVE_RULES = `ENGLISH — natural, warm, spoken (American-neutral), not formal writing. Contractions always
 (you're, it's, let's, don't). English has little grammatical register, so RELATIONSHIP changes
 warmth/intimacy, not grammar.
-- Most relationships: friendly, like a close person nudging you awake. 'Hey, morning… time to get
-  up. Looks like rain later, grab your umbrella, okay?'
+- Most relationships: friendly, like a close person nudging you awake. 'Hey… looks like
+  rain later, grab your umbrella before you head out, okay?'
 - Elder/respectful or teacher: warm but a touch more composed — still contractions, no stiffness.
-- Romantic: tender, low-key intimate, never cheesy. 'Morning, you. Up you get… I've got you today.'
+- Romantic: tender, low-key intimate, never cheesy. 'Hey, you. Up you get… I've got you today.'
 Drop the subject when natural. One light opener/filler max (Hey/Alright/Okay). Address by the given
-title if provided, else a soft 'hey'/'morning'; never a guessed family title. Weather/fortune stays
+title if provided, else a soft 'hey'; never a guessed family title or pet name (love, honey, dear,
+sweetie) when no title is given. Weather/fortune stays
 casual and number-free. AVOID: weather-report numbers, exclamation spam, 'Please be advised',
 'rise and shine' clichés, over-sweet lines.`;
 
@@ -828,33 +1092,30 @@ function activeLanguageBlock(targetLanguage: string): string {
 // 전부 무태그 `text` + `tag:"cheerfully"` 였다. 지시만 고치고 예시를 두면 또 무효가 된다.
 const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string }>> = {
   ko: [
-    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 좋은 아침이에요. [brightly] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
+    { context: 'wake_weather, 손녀→할아버지, rain', text: '[warmly] 할아버지, 일어나실 시간이에요. [caring] 오늘은 비가 올 수 있대요, 나가실 때 우산 꼭 챙기세요.' },
     { context: 'wake_weather, 연인, dust', text: '[playfully] 자기야, 일어나자. [lightly] 오늘 미세먼지 많대 — 마스크 꼭 챙겨, 알았지?' },
-    { context: 'wake_fortune, 중립', text: '[cheerfully] 좋은 아침이에요. [curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해요.' },
+    { context: 'wake_fortune, 중립', text: '[curious] 오늘은 작은 선택에 좋은 기운이 따른대요… [lighthearted] 가벼운 마음으로 시작해 봐요.' },
   ],
   ja: [
-    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、おはよう。[brightly] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
-    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[cheerfully] おはようございます。[warmly] 今日は冷えるみたいなので、一枚羽織ってくださいね。' },
-    { context: 'wake_fortune, 중립/casual', text: '[playfully] おはよう。[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
+    { context: 'wake_weather, 孫→祖母(タメ口), rain', text: '[warmly] おばあちゃん、起きる時間だよ。[caring] 今日は雨が降るみたい、出かけるとき傘忘れないでね。' },
+    { context: 'wake_weather, 距離/불명(です・ます), cold', text: '[warmly] 今日は冷えるみたいですよ。[caring] 一枚羽織ってから出かけてくださいね。' },
+    { context: 'wake_fortune, 중립/casual', text: '[curious] 今日はちょっといいことがありそうだよ… [lighthearted] 気楽にいこうね。' },
   ],
   en: [
-    { context: 'wake_weather, neutral, rain', text: '[warmly] Morning… time to get up. [brightly] Looks like rain later, grab your umbrella before you head out.' },
+    { context: 'wake_weather, neutral, rain', text: '[warmly] Hey… time to get up. [caring] Looks like rain later, grab your umbrella before you head out.' },
     // ⚠ **예시가 지시문을 이긴다**(2026-09-03 리뷰 4차). 이 자리는 `love, romantic, babe`
     //   였는데, 지시문만 응원으로 고치고 예시를 두면 모델은 **예시를 따라 연애 문구**를
     //   낸다(바로 아래 `fewShotBlock` 주석이 경고하는 그것). 카테고리 이름을 바꾸면
     //   예시도 함께 바꾼다.
-    { context: 'cheer, neutral', text: "[warmly] Morning. [caring] Big day ahead — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
+    { context: 'cheer, neutral', text: "[caring] Lots on your plate — you don't have to do it all at once. [encouraging] Just start with one thing, okay?" },
   ],
 };
 
 function fewShotBlock(targetLanguage: string): string {
   const examples = DYNAMIC_FEW_SHOT[targetLanguage];
   if (!examples || examples.length === 0) return '';
-  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}","tag":""}`);
-  return [
-    'Few-shot examples — note the tags live INSIDE "text" and the "tag" field stays empty:',
-    ...lines,
-  ].join('\n');
+  const lines = examples.map((ex) => `- (${ex.context}) -> {"text":"${ex.text}"}`);
+  return ['Few-shot examples — note the tags live INSIDE "text":', ...lines].join('\n');
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
@@ -914,8 +1175,7 @@ PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right 
 Use an ellipsis ("...") where the speaker would naturally pause or trail off before turning to the point ("그래도 이제... 슬슬 일어나 볼까?"). One or two per line at most — it is a breath, not a mannerism.
 SHAPE: acknowledge how the listener feels first, then turn to waking them. A line that only reports facts does not wake anyone; a line that only nags is unpleasant to hear every morning. Lead with the empathy, land on the nudge.
 ⚠ PRIORITY: the relationship and this speaker's own way of talking come FIRST. Everything above is shape, not a script — if a pause, a tag, or the empathy-then-nudge order would make this person sound like someone else, drop it and sound like them.
-NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.
-Leave the separate "tag" field as "" — it is legacy.`;
+NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up, and a low-arousal delivery works against that.`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -940,7 +1200,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     tagAllowlistInstruction,
     fewShotBlock(context.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -971,7 +1231,9 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
   const relationship = params.relationshipLabel?.trim()
     ? `The selected voice IS the user's "${params.relationshipLabel}" — speak as that person, in the first person. Referring to yourself in the third person the way that person naturally would ("엄마는 늘 네 편이야") is fine and often the most natural wording. Never break the illusion by describing the voice from outside ("${params.relationshipLabel} 목소리", "speaking as your ${params.relationshipLabel}") or by speaking as if that person were someone else ("${params.relationshipLabel}처럼", "${params.relationshipLabel} 대신"). You are also NOT a messenger carrying that person's words or running their errand — never "${params.relationshipLabel}가 깨우래", "${params.relationshipLabel}한테 부탁받아서", "${params.relationshipLabel}가 시켜서". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
-    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}${
+        params.targetLanguage === 'ko' ? ' In Korean, use warm 해요체 for the WHOLE line — no 반말 sentence at all.' : ''
+      }`;
   const romanticToneInstruction =
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
@@ -984,7 +1246,7 @@ function prerenderClipPrompt(params: {
     .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
 PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
 NEVER use sleepy or hushed directions — every one of these is rejected: ${LOW_AROUSAL_TAG_EXAMPLES}. This line has to wake someone up.
-Leave the separate "tag" field as "" — it is legacy.`;
+MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fine dust, fog, cold, a failed weather check) take caring, apologetic or concerned tones — never playful, excited or bright ones. A tone written in the intent ('미안한 듯', '가볍게', '다정하게') wins over the voice's usual mood. Start the first sentence with a tag. Avoid energy-dropping sounds such as [sighs] in a wake-up line.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -1007,12 +1269,21 @@ Leave the separate "tag" field as "" — it is legacy.`;
   // 아이 목소리로 **판정된 경우에만** 켠다(SpeechStyle.childlike). 어른 목소리가 이렇게
   // 말하면 이상하므로 분석 쪽에서 보수적으로 판단하고, 여기서는 그 결과를 그대로 따른다.
   // 알람이라 알아들을 수 있어야 하므로 '늘어진 발음' 은 한두 낱말까지만 허용한다.
+  // ⚠ **아이 말투가 관계 어체 규칙을 이긴다**(2026-09-23). '딸→아빠' 는 KOREAN_NATIVE_RULES 에서
+  //   '자식→부모 = 존대 해요체' 로 묶여, 3.5 Flash-Lite 가 "일어나세요오", "술술 풀릴지도 몰라요"
+  //   처럼 **어른 존댓말과 아이 말투를 섞었다**(비교 평가). 아이는 부모에게 반말을 쓴다.
   const childlikeInstruction = params.speechStyle?.childlike
     ? [
-        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one.',
-        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses.',
+        'CHILD SPEAKER: this voice is a young child talking to a grown-up they love. Write it as that child, not as an adult imitating one. This OVERRIDES the relationship register rules above: a small child talks to a parent or grandparent in plain casual speech (Korean 반말 — no 요/세요/습니다; Japanese タメ口; simple English).',
+        'Sound like a child: very short sentences, small everyday words, a bit of repetition, and eager affection. No polished adult phrasing, no advice-giving, no long clauses, no reported-speech hedging (never "~ㄹ지도 몰라요", "~면 좋겠어요", "~지요?").',
+        'A child does not pass on the intent\'s reasons or explanations — say only the one thing the child wants the grown-up to do, in child words (for a child this overrides COMPLETENESS FIRST): not "미뤄 두면 까먹으니까 알람 끄기 전에 지금 바로 먹어" but "아빠, 지금 약 먹어, 응?".',
         'REQUIRED — spell one or two words the way a small child actually says them, instead of textbook-correct spelling: stretch an ending ("주라아", "가자아"), soften a consonant ("힘드러어", "이러나아"), or repeat a word ("빨리빨리"). Exactly one or two such words per line — the rest stays normally spelled so the message is still clear enough to wake someone.',
         'Never write the whole line in broken spelling, and never break the word that carries the actual point (medicine, umbrella, waking up).',
+        params.targetLanguage === 'ko'
+          ? 'Child examples: "[excited] 아빠아, 일어나아! [giggles] 오늘 비 온대. 우산 꼭 챙겨!" / "[playfully] 엄마, 약 먹을 시간이야. 빨리빨리 먹어어!"'
+          : params.targetLanguage === 'ja'
+            ? 'Child examples: "[excited] パパ、おきてー！[giggles] きょうはあめなんだって。かさもってってね！" / "[playfully] ママ、おくすりのじかんだよ。はやくのんでー！"'
+            : 'Child examples: "[excited] Daddy, wake uuup! [giggles] It\'s gonna rain, take your umbrella, okay?" / "[playfully] Mommy, medicine time! Take it now-now-now!"',
       ].join(' ')
     : '';
   return [
@@ -1025,6 +1296,25 @@ Leave the separate "tag" field as "" — it is legacy.`;
     childlikeInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
+    // ⚠ **완결성이 먼저, 길이는 그다음**(2026-09-23 블라인드 판정). 처음엔 "영어 25단어·90자" 로
+    //   묶었는데, 시드는 대부분 '사실 → 공감 → 권유' 세 마디라 **마지막 권유("이제 일어나자",
+    //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
+    //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
+    //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
+    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings (unless the intent is itself a greeting) and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+      params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
+    } of spoken text (tags do not count).`,
+    'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — and then DO open with it; skipping the greeting drops part of the intent. Never for medication, which can ring at any hour. Do not open medication or cheer lines with a wake-up call (\'일어나\', \'get up\', \'起きて\') unless the intent asks for it — the listener may already be up. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
+    'The intent above is written as a neutral Korean description; its wording and politeness are NOT the output register — use the relationship\'s register (e.g. a mom speaking to her daughter never says "드실").',
+    params.targetLanguage === 'ko'
+      ? '어미를 시드에서 옮겨 오지 말 것: 반말 화자는 한 문장도 \'-요\'로 끝내지 않는다(\'흐리대요\'→\'흐리대\', \'날이래요\'→\'날이래\'). 한 줄 안에서 반말과 해요체를 섞지 않는다. 낱말: 바람은 \'쐬다\'(\'쬐다\' 아님 — 햇볕만 쬔다).'
+      : // ⚠ 영어·일본어는 **한국어 메모를 번역하지 말 것**(2026-09-23 블라인드 판정 — 직역투가
+        //   영어 패배의 절반). 시드 21개 전체에서 옮기기 까다로운 개념만 입말로 대응시켜 준다.
+        params.targetLanguage === 'en'
+        ? "Don't translate the Korean note — say it the way a native English speaker would say it out loud. Tricky ideas: 미세먼지 → 'the air's pretty bad today' (never 'heavy dust'); 재물운 → 'a little extra money might come your way' (never 'money luck'); 운이 따라주는 날 → 'luck's on your side today'; 끼니 챙기기 → 'don't skip meals'; 한 박자 늦춰 → 'slow down a beat'; 깜빡하기 쉽다 → 'it's easy to forget'; 건강하게 잘 보내 → 'take care of yourself today' (never 'have a healthy day'). The listener's own tasks are 'you', not 'we' (a daughter tells Dad 'take your time', not 'as long as we don't rush') — 'let's get up' is fine."
+        : params.targetLanguage === 'ja'
+          ? '韓国語のメモを訳さず、日本語話者が実際に口にする言い方で。訳しにくい言葉: 미세먼지 → 「空気がよくない」「PM2.5が多い」(「微小粒子状物質」は使わない)、재물운 → 「ちょっと臨時収入があるかも」、운이 따라주는 날 → 「ツイてる日」、끼니 챙기기 → 「ちゃんとご飯食べてね」、한 박자 늦춰 → 「ひと呼吸おいて」、따뜻한 물 → 「お湯」(「温かいお水」とは言わない)。家族への言葉は普通体で、「〜ます」「〜です」「〜ますように」で終えない。'
+          : '',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
       ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
@@ -1032,7 +1322,7 @@ Leave the separate "tag" field as "" — it is legacy.`;
     'Make it feel warm and human, not a robotic prerecorded template.',
     tagAllowlistInstruction,
     fewShotBlock(params.targetLanguage),
-    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets","tag":""}. The "tag" field is legacy — leave it empty.',
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, with delivery tags inline in square brackets"}. No other fields.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -1065,7 +1355,7 @@ export async function generatePrerenderClipText(
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
-    return approved && !isLowArousalTag(approved) ? approved : '';
+    return approved && !isLowArousalTag(approved) && !isFearTag(approved) ? approved : '';
   };
 
   // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
@@ -1076,6 +1366,8 @@ export async function generatePrerenderClipText(
   // 그래서 **회차마다 제약을 더해** 다시 묻는다. 마지막 회차는 관계 낱말 자체를 금지한다.
   const MAX_ATTEMPTS = 3;
   let lastError: unknown = null;
+  /** 직전 회차가 내용 검사에서 걸린 사유 — 그 사유에 맞는 재시도 힌트를 준다. */
+  let lastReason: AlarmTextRejectionReason | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
     // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
@@ -1092,7 +1384,28 @@ export async function generatePrerenderClipText(
           : label
             ? `RETRY (final): earlier attempts were rejected. Write the line WITHOUT using the word "${label}" anywhere — speak purely in the first person ("나는"/"내가") and keep it short.${retryTagHint}`
             : `RETRY (final): earlier attempts were rejected. Write a shorter, plainer line in the first person.${retryTagHint}`;
-    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint]
+    // ⚠ **길어서 걸렸으면 길이를 숫자로 다시 말한다**(2026-09-23 비교 평가). 첫 시도는
+    //   완결성을 앞세우므로(프롬프트 COMPLETENESS FIRST) 3.5 Flash-Lite 가 영어에서 200자를
+    //   넘기기도 한다. 일반 힌트('다르게 써 봐')로는 세 번 다 길게 써서 **영구 실패**했다
+    //   (엄마→sweetie 흐림·추위·응원). 넘친 경우에만 줄이게 해서 첫 시도의 완결성은 지킨다.
+    const lengthHint =
+      lastReason === 'too_long'
+        ? `The previous line was TOO LONG. Keep the spoken text well under 150 characters (${
+            targetLanguage === 'en' ? 'about 25 English words' : 'about 80 characters'
+          }): shrink the empathy to a few words${
+            // ⚠ 인사 시드는 인사가 곧 의도다 — '인사를 빼라' 고 하면 인사 없는 인사 클립이 저장된다(Codex #801).
+            isGreetingSeed(params.seed) ? ' but keep the greeting itself (it is the intent)' : ' and drop the greeting'
+          } — and keep the closing action.`
+        : '';
+    const registerHint =
+      lastReason === 'register_mixed'
+        ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the approved STYLE REFERENCE\'s level if one is given, otherwise the one the relationship calls for (no relationship given → warm 해요체 throughout).'
+        : lastReason === 'time_of_day'
+          ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or go straight to the point (medication and cheer lines also skip wake-up calls).'
+          : lastReason === 'uncontracted'
+            ? "The previous line sounded robotic — spoken English always contracts: it's, don't, let's, you're, I'm."
+            : '';
+    const prompt = [prerenderClipPrompt({ ...params, targetLanguage }), retryHint, lengthHint, registerHint]
       .filter(Boolean)
       .join('\n');
     let raw: string;
@@ -1109,7 +1422,12 @@ export async function generatePrerenderClipText(
       continue;
     }
     const parsed = parseDynamicAlarmTextResult(raw);
-    const text = parsed.text.trim();
+    // ⚠ **졸린 태그는 거절하지 않고 지운다**(2026-09-23 — 직접 입력 경로와 같게 — `dropWakeUnsafeTags`).
+    //   예전에는 `[gently]` 하나만 있어도 문장 전체를 버리고 다시 물었다. 2.5 Flash 는 같은
+    //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
+    //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
+    //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
+    const text = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
@@ -1119,6 +1437,7 @@ export async function generatePrerenderClipText(
     const reason = prerenderRejectionReason(spoken, text, targetLanguage, params);
     if (reason) {
       lastError = new AlarmTextPreparationInvalidError(reason);
+      lastReason = reason;
       continue;
     }
     // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
@@ -1157,13 +1476,20 @@ export async function generatePrerenderClipText(
  *
  * ⚠ 반환값에 문구 원문을 섞지 말 것. 이 값은 그대로 Sentry 태그가 된다.
  */
-function prerenderRejectionReason(
+export function prerenderRejectionReason(
   /** 태그를 벗긴 낭독 본문. 길이·언어·호칭·유출은 이걸로 잰다. */
   spoken: string,
   /** 모델이 준 원문(인라인 태그 포함). 형식·태그 검사만 이걸로 본다. */
   text: string,
   targetLanguage: string,
-  params: { listenerTitle?: string | null; relationshipLabel?: string | null },
+  params: {
+    /** 의미 시드. 인사 시드인지(아침 인사를 허용할지) 가를 때만 본다. */
+    seed?: string | null;
+    listenerTitle?: string | null;
+    relationshipLabel?: string | null;
+    speechStyle?: SpeechStyle | null;
+    styleReference?: string | null;
+  },
 ): AlarmTextRejectionReason | null {
   // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
   // 처럼 **태그만** 온 응답은 text 가 비지 않아 통과하고, 낭독할 말이 하나도 없는
@@ -1184,7 +1510,211 @@ function prerenderRejectionReason(
   ) {
     return 'relationship_leak';
   }
+  if (targetLanguage === 'ko' && hasMixedKoreanRegister(spoken, params)) return 'register_mixed';
+  if (params.seed && hasAssumedMorning(spoken, params.seed, targetLanguage)) return 'time_of_day';
+  if (targetLanguage === 'en' && isUncontractedEnglish(spoken)) return 'uncontracted';
   return null;
+}
+
+/**
+ * 말줄임표 뒤에 마침표·쉼표가 또 붙은 것('못 봤어….', 'okay....', 'みたい…、')을 하나로 줄인다.
+ * 3.5 모델들이 '…' 뒤에 습관처럼 '.'·'、' 을 더 찍었다(2026-09-23 블라인드 판정 — 여러 프로필의
+ * 날씨 클립). 낭독에서는 쉼이 두 번 겹쳐 끊겨 들린다. 생성 문구에만 쓴다 — 사용자가 직접 친
+ * 문구(직접 입력 태깅)는 글자를 바꾸지 않는다.
+ */
+export function tidyEllipsis(text: string): string {
+  return text.replace(/(…|\.\.\.)[.,、。，]+/g, '$1');
+}
+
+/** 이 시드가 아침 인사 자체인가(`CLONE_CLIP_SEEDS` 의 인사 시드). 아침 인사를 허용하고, 줄일 때도 인사를 남긴다. */
+function isGreetingSeed(seed: string | null | undefined): boolean {
+  return !!seed && /아침 인사|잘 잤/.test(seed);
+}
+
+/**
+ * 아침 인사·잠에서 깬 안부. 인사 시드가 아니면 어느 것도 쓰지 않는다. 합성 언어
+ * (`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it) 전부 둔다 — 빠진 언어는 검사 없이 통과한다(Codex #801).
+ * 프랑스어 bonjour·이탈리아어 buongiorno 는 낮 인사라 밤 약 알람에 어긋나므로 같이 막는다.
+ */
+const MORNING_GREETING: Record<string, RegExp> = {
+  ko: /좋은 아침|잘 잤|잘 주무셨|잘 일어나셨|굿모닝/,
+  en: /\bgood morning\b|(?:^|[.!?…]\s*)morning\b|\b(?:sleep|slept) well\b/i,
+  ja: /おはよう|よく眠れ/,
+  fr: /\bbonjour\b|\bbon matin\b|\bbonne matinée\b|\bbien dormi\b/i,
+  it: /\bbuon ?giorno\b|\bbuona mattinata\b|\bdormito bene\b/i,
+};
+/**
+ * 시드가 아침을 말하지 않는데 '아침' 낱말을 쓰면 시간을 가정한 것이다('朝のお薬', '아침 약' — 밤에도 울린다).
+ * 합성 언어 전부 둔다(Codex #801).
+ */
+const MORNING_WORD: Record<string, RegExp> = {
+  ko: /아침/,
+  ja: /朝/,
+  en: /\bmorning\b/i,
+  fr: /\bmatin(?:ée)?\b/i,
+  it: /\bmattin[ao]\b|\bstamattina\b/i,
+};
+
+/**
+ * 인사가 아닌 알람에 아침 인사나 수면 안부를 넣었는가. 사전렌더 클립은 몇 시에 울릴지 모른다 —
+ * 밤 9시 약 알람이 "좋은 아침이에요" 로 시작하면 안 된다. 프롬프트의 OPENER 규칙만으로는 3.5
+ * Flash-Lite 가 25/210 줄에서 어겼다(2026-09-23 비교 평가).
+ *
+ * 인사 시드('아침 인사', '잘 잤는지')만 통째로 허용한다. 시드가 아침을 **말하기만** 하는 경우
+ * ('그래도 아침은 힘차게 시작하자')는 영어의 'morning' 낱말은 두되 인사·안부는 여전히 막는다 —
+ * 예전에는 이 경우를 통째로 풀어 "잘 잤니?" 가 새어 나갔다(2026-09-23 블라인드 판정).
+ */
+export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: string): boolean {
+  if (isGreetingSeed(seed)) return false;
+  const pattern = MORNING_GREETING[targetLanguage];
+  if (pattern?.test(spoken)) return true;
+  const word = MORNING_WORD[targetLanguage];
+  return !!word && !/아침/.test(seed) && word.test(spoken);
+}
+
+const UNCONTRACTED_EN =
+  /\b(?:do not|does not|did not|is not|are not|was not|were not|have not|has not|had not|cannot|can not|could not|should not|must not|need not|might not|will not|would not|let us|it is|that is|there is|you are|we are|I am|you will|I will)\b/gi;
+
+/**
+ * 영어가 축약 없이 글말로 나왔는가("it is easy… You do not have to… let us just…").
+ * 한 번은 강조로 쓸 수 있으니 **두 번 이상**일 때만 본다. 3.5 Flash-Lite 가 응원 시드에서 한 줄
+ * 전체를 이렇게 냈다(2026-09-23 블라인드 판정 — "로봇처럼 읽힌다").
+ */
+export function isUncontractedEnglish(spoken: string): boolean {
+  return (spoken.match(UNCONTRACTED_EN) ?? []).length >= 2;
+}
+
+/**
+ * 문장 끝 음절로 어체를 가른다. 명사로 끝나는 외침('화이팅!')처럼 어느 쪽도 아닌 것은 셈하지 않는다.
+ * 평서 '-다'(해라체)도 반말 쪽이다 — '-니다' 는 존댓말 목록이 먼저 잡는다.
+ * ⚠ '-아/-어' 는 어간과 합쳐진 모양(일어나·가·와·챙겨·마셔·추워·돼)으로 더 자주 끝난다. 그것까지 둬야
+ *   가장 흔한 반말 명령문이 빠지지 않는다.
+ */
+// '힘내'·'걱정 마'·'오거든'·'먹을까'·'좋군' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가
+// 먼저 지운다). '-까'·'-데'(오는데·좋던데) 는 문장 끝에서만 센다 — '…'·',' 앞의 '-니까'·'-는데' 는 이음
+// 어미다. '합니까' 는 존댓말이 먼저 잡는다.
+// 존댓말은 해요체(-요·-죠)와 합쇼체(-니다·-십시오/-시오) 둘 다다.
+const KO_POLITE_END = /(요|니다|죠|시오)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마|거든|까|군|데)$/;
+/**
+ * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
+ * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
+ * -니까·-니·-게·-지 같은 이음 어미가 어체로 잘못 세진다.
+ */
+const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴|다|와|겨|셔|켜|쳐|워|돼|내)$/;
+
+/** '합니까/습니까' — ㅂ 받침 뒤 '니까' 만 존댓말이다('오니까' 는 이음 어미). */
+/** ㅂ 받침 음절 뒤에 `tail` 로 끝나는가 — '합니까/습니까', '합시다/먹읍시다' 만 존댓말이다('오니까' 는 이음 어미). */
+function endsAfterBieup(word: string, tail: string): boolean {
+  if (!word.endsWith(tail) || word.length <= tail.length) return false;
+  const code = word.charCodeAt(word.length - tail.length - 1) - 0xac00;
+  return code >= 0 && code < 11172 && code % 28 === 17;
+}
+
+type KoEnding = 'polite' | 'banmal' | null;
+
+function koreanEnding(word: string, atPause: boolean): KoEnding {
+  // '-ㅂ시다'(일어납시다) 는 '-다' 로 끝나도 존댓말이다 — 반말 목록보다 먼저 본다.
+  if (KO_POLITE_END.test(word) || endsAfterBieup(word, '니까') || endsAfterBieup(word, '시다')) return 'polite';
+  return (atPause ? KO_BANMAL_END_AT_PAUSE : KO_BANMAL_END).test(word) ? 'banmal' : null;
+}
+
+/**
+ * 문장 첫 마디가 부름말·감탄사인가('자기야,' '우리 아들아,' '자,' '음,'). 쉼표를 경계로 보면 이것들이
+ * 끝 음절(야·아·자)로 반말로 세져, 해요체로 말하는 부모의 "우리 아들아, 비 온대요" 가 섞임으로 걸린다.
+ */
+function isVocativeOrInterjection(part: string): boolean {
+  const words = part
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^가-힣]/gu, ''))
+    .filter(Boolean);
+  if (words.length === 0) return true;
+  const last = words[words.length - 1]!;
+  // ⚠ 부름말 꼴만 건너뛴다(Codex #801). '~아·야' 로 끝나는 한 낱말은 부름말('민지야')과 서술어('괜찮아')가
+  //   모양으로 구별되지 않는다 — 그래서 끝 음절로 가르지 않는다. 우리 문구의 부름말은 거의 청자 호칭이고
+  //   호칭은 `koreanEndings` 가 먼저 지우므로('자기야' → '야'), 한 낱말은 **한 글자**(남은 조사·'자'·'음')나
+  //   감탄사만 건너뛴다. 두 낱말은 '우리/내 + ~아·야'('우리 아들아')만.
+  if (words.length === 1) return [...last].length <= 1 || KO_INTERJECTIONS.has(last);
+  return words.length === 2 && /^(우리|내|울|사랑하는)$/u.test(words[0]!) && /[아야여]$/u.test(last);
+}
+
+const KO_INTERJECTIONS = new Set(['자자', '아이고', '어머', '에이', '얘', '음음', '흠']);
+
+/**
+ * 한 줄의 문장(과 '…'·',' 로 끊긴 마디) 끝 어체들. 청자 호칭은 먼저 지운다 — "할머니!" 처럼 호칭만
+ * 외친 문장이 끝 음절('니')로 반말로 세지면 안 된다. 쉼표로 이은 두 절의 어체가 다른 것
+ * ("비 온대요, 우산 챙겨")도 잡는다(Codex #801) — 쉼표 앞은 '…' 앞처럼 이음 어미와 헷갈리지 않는
+ * 끝만 세고, 문장 첫 마디의 부름말·감탄사는 건너뛴다.
+ */
+function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[] {
+  const title = listenerTitle?.trim();
+  const withoutTitle = title ? spoken.split(title).join(' ') : spoken;
+  const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
+  return withoutTitle
+    .split(/(?<=[.!?！？])\s*/)
+    .flatMap((sentence) => {
+      const parts = sentence.split(/[…,，]/u);
+      return parts.map((part, i) => {
+        if (i === 0 && parts.length > 1 && isVocativeOrInterjection(part)) return null;
+        return koreanEnding(lastWord(part), i < parts.length - 1);
+      });
+    })
+    .filter((e): e is 'polite' | 'banmal' => e !== null);
+}
+
+/**
+ * 한국어 한 줄 안에서 반말과 존댓말(해요체·합니다체)이 섞였는가. 시드는 존댓말 서술이라
+ * 3.5 Flash-Lite 가 '-대요/-래요' 를 그대로 옮겨 "우리 딸, 흐리대요. … 커튼 열자" 처럼 섞었다
+ * (2026-09-23 블라인드 판정 — 3.5 의 말투 지적 7건). 시스템 지시의 "한 줄에 한 어체" 를 코드로 지킨다.
+ * 반말만 써야 하는 관계(연인·형제·친구·아이)는 존댓말 문장이, 관계를 모르는 목소리와 손아랫사람→
+ * 어르신(손주·자식)은 반말 문장이 하나만 있어도 걸린다.
+ */
+export function hasMixedKoreanRegister(
+  spoken: string,
+  params: {
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    speechStyle?: SpeechStyle | null;
+    /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구. 프롬프트는 이 어체를 관계보다 앞세운다. */
+    styleReference?: string | null;
+  },
+): boolean {
+  // ⚠ **확정 문구의 어체가 관계보다 앞선다**(Codex #801). 프롬프트(STYLE REFERENCE)가 그 어체를 따르라고
+  //   하는데 검사가 관계만 보면, 배우자에게 해요체로 고쳐 확정한 사용자의 클립이 세 번 다 거절돼 **영구
+  //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구가 쓰는 어체는 허용하고,
+  //   확정 문구 자체가 섞여 있으면 섞임도 문제 삼지 않는다.
+  const reference = params.styleReference?.trim()
+    ? koreanEndings(normalizeAlarmTextWithoutTags(params.styleReference), params.listenerTitle)
+    : [];
+  const referencePolite = reference.includes('polite');
+  const referenceBanmal = reference.includes('banmal');
+  if (referencePolite && referenceBanmal) return false;
+  const endings = koreanEndings(spoken, params.listenerTitle);
+  const polite = endings.filter((e) => e === 'polite').length;
+  const banmal = endings.filter((e) => e === 'banmal').length;
+  // 확정 문구가 한 어체만 쓰면 **그 어체로** 고정한다 — 허용만 넓히면 배우자에게 해요체로 확정했는데
+  // 반말 클립이 통과하는 식으로 확정한 말투를 무시한다(Codex #801).
+  if (referencePolite) return banmal > 0;
+  if (referenceBanmal) return polite > 0;
+  if (polite > 0 && banmal > 0) return true;
+  const label = params.relationshipLabel?.trim() ?? '';
+  const childlike = params.speechStyle?.childlike === true;
+  const relationship = label ? koreanRelationshipRegister(label) : 'neutral';
+  const banmalOnly = childlike || relationship === 'romantic' || relationship === 'peer';
+  if (banmalOnly && polite > 0) return true;
+  // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
+  // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
+  // 그 사람 말투를 따르므로 걸지 않는다.
+  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
+  // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다 — 라벨이 빈 경우만
+  // 보면 자유 입력 라벨의 반말이 그대로 저장된다(Codex #801).
+  if (relationship === 'neutral') return !childlike && !speakerIsCasual && banmal > 0;
+  // 손주→조부모·자식→부모는 존대 해요체다(프롬프트 'younger than the listener'). 반말만 쓰는 관계와
+  // 거울로, 반말 문장이 하나만 있어도 걸린다(Codex #801 — "할머니, 지금 일어나. 우산 챙겨." 가
+  // 통과했다). 아이 목소리와, 등록 녹음이 반말인 화자는 그 말투를 따르므로 걸지 않는다.
+  const politeOnly = relationship === 'grandchild' || relationship === 'younger_to_elder';
+  return politeOnly && !childlike && !speakerIsCasual && banmal > 0;
 }
 
 /**
@@ -1231,7 +1761,13 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
     dialect: { type: 'STRING' },
-    strength: { type: 'STRING', enum: ['', 'low', 'medium', 'high'] },
+    // ⚠ **enum 을 두지 않는다 — 특히 빈 문자열을 enum 에 넣지 말 것.** Gemini 3 계열은
+    //   `enum: ['', 'low', 'medium', 'high']` 를 **400** 으로 거절한다("response_schema.properties
+    //   [strength].enum[0]: cannot be empty", 2026-09-23 실측 — us-central1·global·us 모두). 2.5 는
+    //   받아 줬다. 그런데 이 함수는 실패를 삼키고 null 을 돌려주므로, 모델만 바꿨으면 **사투리
+    //   분석이 아무 경보 없이 전부 꺼졌다.** 빈 값을 빼고 세 값만 두면 표준어 화자에게도 강도를
+    //   고르라고 떠미는 셈이라 enum 자체를 없앤다. 허용값 검증은 아래 파서가 한다(그 밖의 값은 '').
+    strength: { type: 'STRING' },
     register: { type: 'STRING' },
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
     persona: { type: 'STRING' },
@@ -1619,7 +2155,7 @@ const FAMILY_TITLE_RE =
  * 아니라 지시가 흐릿한데 가드만 빡빡해서 났다 — 무엇을 쓰면 되는지 말해 주면 맞춘다.
  */
 function neutralAddressGuidance(): string {
-  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all (e.g. "좋은 아침이에요", "잘 잤어?"), or use an affectionate title-free address. This is a hard requirement.';
+  return 'No listener title was provided, and the relationship label does NOT tell you who the listener is — never guess a family title (mom, dad, grandmother, grandfather, son, daughter, grandson, granddaughter). Open warmly without any title at all — just start with the point (e.g. "오늘은 비 소식이 있대요…") — or use an affectionate title-free address. This is a hard requirement.';
 }
 
 function hasUnsupportedListenerAddress(
@@ -2194,7 +2730,7 @@ function containsNormalized(text: string, needle: string): boolean {
   return normalize(text).includes(normalize(needle));
 }
 
-function parseAlarmTextPreparation(raw: string): {
+export function parseAlarmTextPreparation(raw: string): {
   text: string;
   tags: string[];
   parsedJson: boolean;
@@ -2229,7 +2765,8 @@ function parseAlarmTextPreparation(raw: string): {
 
 // 동적 생성 응답 파서. responseSchema({text, tag})를 1차로 읽고, 간헐 빈응답/포맷이탈 대비
 // brace-slice를 최후 폴백으로 둔다(§4.7: 레거시 파서 유지).
-function parseDynamicAlarmTextResult(raw: string): {
+/** 내보내는 건 평가 스크립트(`scripts/eval-gemini-prompts.ts`)가 시도마다 같은 판정을 하려는 것이다. */
+export function parseDynamicAlarmTextResult(raw: string): {
   text: string;
   tag: string;
   parsedJson: boolean;
@@ -2274,7 +2811,7 @@ function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
   return env?.GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED === 'true';
 }
 
-function extractTags(text: string): string[] {
+export function extractTags(text: string): string[] {
   // ⚠ 정규식을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
   const matches = text.match(TAG_RE_GLOBAL) ?? [];
   return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
@@ -2385,23 +2922,37 @@ function pickApprovedTag(tags: string[]): string | null {
   return null;
 }
 
+/**
+ * 잠들기 전·하루 마무리 문구인가(잘 자 / 수고했어 / good night / おやすみ …). 이런 문구에서만
+ * 저각성 톤(calm 등)을 허용한다 — 그 밖의 알람은 깨우는 것이 일이다. 로컬 태거와 직접 입력
+ * 태깅의 저각성 거르기가 **같은 판정**을 쓴다.
+ */
+export function isWindDownText(text: string): boolean {
+  if (['잘 자', '잘자', '고생', '퇴근', '수고', 'おやすみ', 'お疲れ'].some((hint) => text.includes(hint))) return true;
+  // ⚠ 영어·프랑스어·이탈리아어는 낱말 조각으로 보지 말 것(Codex #801) — 'sleep' 이 "Hey sleepyhead",
+  //   "Don't oversleep" 같은 **깨우는** 문구에, 'night' 가 "tonight" 에 걸려 졸린 태그가 붙거나 남았다.
+  //   합성 언어(`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it)마다 표현을 둔다 — 빠진 언어는 잠들기 전
+  //   문구에도 `[calm]` 을 지우고 `[cheerfully]` 를 붙인다.
+  return WIND_DOWN_PHRASES.some((pattern) => pattern.test(text));
+}
+
+const WIND_DOWN_PHRASES = [
+  // en
+  /\bgood\s?night\b|\bnight[- ]night\b|\bsleep (?:well|tight)\b|\bsweet dreams\b|\b(?:go|off) to (?:bed|sleep)\b|\b(?:time for|get some) (?:bed|sleep|rest)\b/i,
+  // fr — '침대' 는 '자러 가' 명령일 때만('Ne reste pas au lit' 는 깨우는 말이다)
+  /\bbonne nuit\b|\bdors bien\b|\bbeaux r[êe]ves\b|\b(?:va|allez|file) (?:te coucher|vous coucher|dormir|au lit)\b/i,
+  // it — 같은 이유로 'a letto' 단독은 보지 않는다('Non restare a letto, alzati')
+  /\bbuona ?notte\b|\bdormi bene\b|\bsogni d['’]oro\b|\b(?:vai|andiamo|andate) a (?:letto|dormire)\b/i,
+];
+
 function tagAlarmTextLocally(text: string): string {
   if (TAG_RE.test(text)) return text;
-  const lower = text.toLowerCase();
   // 신 allowlist 기반 로컬 태깅(구 어휘 폐기). 모드 컨텍스트가 없는 preset/custom 경로라
   // 저각성 calm은 밤/마무리 뉘앙스에만 제한적으로 쓴다.
-  const tag =
-    lower.includes('잘 자') || lower.includes('night') || lower.includes('sleep')
-      ? '[calm]'
-      : lower.includes('사랑') || lower.includes('love')
-        ? '[cheerfully]'
-        : lower.includes('고생') || lower.includes('퇴근') || lower.includes('수고')
-          ? '[calm]'
-          : lower.includes('공부') || lower.includes('study') || lower.includes('힘')
-            ? '[cheerfully]'
-            : lower.includes('건강') || lower.includes('약') || lower.includes('물')
-              ? '[calm]'
-              : '[cheerfully]';
+  // ⚠ **약·건강 문구에 calm 을 붙이지 않는다**(2026-09-23). 예전에는 '약'·'건강'·'물' 이
+  //   calm 이었는데, 그건 위 주석(밤·마무리에만)과도 어긋나고 약 알람은 대개 **깨우는** 알람이다.
+  //   비교 평가에서 "약 먹을 시간이야" 가 `[calm]` 으로 나갔다.
+  const tag = isWindDownText(text) ? '[calm]' : '[cheerfully]';
   const tagged = `${tag} ${text}`;
   return tagged.length <= 200 ? tagged : text;
 }

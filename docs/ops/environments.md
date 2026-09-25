@@ -58,7 +58,8 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 
 #### Vertex / Gemini 동적 문구
 
-- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 번역과 동적 문구 생성 경로가 쓴다.
+- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 운영에서 실제로 쓰는 경로는 직접 입력 문구 태깅·목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다).
+- ⚠ **`gemini-2.5-flash` 는 2026-10-20 에 은퇴한다**(Vertex 「Model versions and lifecycle」). 값은 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us` 다. 수명주기 표는 Flash-Lite 를 대체로 권하지만 **블라인드 판정에서 3.5 Flash-Lite 는 2.5 Flash 에 졌고(69:108, 한국어 36%) 3.5 Flash 는 대등하거나 나았다**(93:86·72:47) — 단가는 약 4~5배다. 경위는 `docs/qa/dev-test-handoff.md` 「Gemini 2.5 Flash 은퇴 대응」. 처리방침이 Vertex 처리 국가를 '미국' 으로 적으므로 `global` 대신 `us` 를 쓴다(3.5 Flash-Lite 는 `us-central1` 에 없고, 3.5 Flash 는 `us` 에서 실호출로 확인했다). 코드는 두 계열을 모두 부를 수 있어 **시크릿만 바꾸면 전환·원복된다**(`lib/vertex-translate.ts` 의 `isLegacyGeminiModel`). 호출마다 `at:"vertex.generate"` 로그(모델·HTTP·`finish_reason`·사고 토큰)가 남는다 — 대부분의 호출부가 실패를 삼키므로 전환 뒤에는 이 로그로 확인한다.
 - `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
 - 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
 
