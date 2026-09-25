@@ -282,10 +282,11 @@ export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: bo
       if (!isFearTag(body) && (options.allowLowArousal || !isLowArousalTag(body))) return match;
       // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
       //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
+      //   문장부호 앞('Wake up[softly]!')에는 공백을 남기지 않는다 — 양옆이 **글자·숫자**일 때만.
       const before = whole[offset - 1] ?? '';
       const after = whole[offset + match.length] ?? '';
-      const between = /\S/.test(before) && /\S/.test(after) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(before + after);
-      return between ? ' ' : '';
+      const isWordChar = (ch: string) => /[\p{L}\p{N}]/u.test(ch) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(ch);
+      return isWordChar(before) && isWordChar(after) ? ' ' : '';
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -1389,7 +1390,7 @@ export async function generatePrerenderClipText(
         : '';
     const registerHint =
       lastReason === 'register_mixed'
-        ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the one the relationship calls for (no relationship given → warm 해요체 throughout).'
+        ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the approved STYLE REFERENCE\'s level if one is given, otherwise the one the relationship calls for (no relationship given → warm 해요체 throughout).'
         : lastReason === 'time_of_day'
           ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or a short wake-up phrase instead.'
           : lastReason === 'uncontracted'
@@ -1478,6 +1479,7 @@ export function prerenderRejectionReason(
     listenerTitle?: string | null;
     relationshipLabel?: string | null;
     speechStyle?: SpeechStyle | null;
+    styleReference?: string | null;
   },
 ): AlarmTextRejectionReason | null {
   // ⚠ `!text` 가 아니라 `!spoken` 이다(Codex #701 P2) — `{"text":"[happy] [excited]"}`
@@ -1569,14 +1571,15 @@ export function isUncontractedEnglish(spoken: string): boolean {
  * ⚠ '-아/-어' 는 어간과 합쳐진 모양(일어나·가·와·챙겨·마셔·추워·돼)으로 더 자주 끝난다. 그것까지 둬야
  *   가장 흔한 반말 명령문이 빠지지 않는다.
  */
+// '힘내'·'걱정 마' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가 먼저 지운다).
 const KO_POLITE_END = /(요|니다|죠)$/;
-const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마)$/;
 /**
  * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
  * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
  * -니까·-니·-게·-지 같은 이음 어미가 어체로 잘못 세진다.
  */
-const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴|다|와|겨|셔|켜|쳐|워|돼)$/;
+const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴|다|와|겨|셔|켜|쳐|워|돼|내)$/;
 
 /** '합니까/습니까' — ㅂ 받침 뒤 '니까' 만 존댓말이다('오니까' 는 이음 어미). */
 function isHapnikka(word: string): boolean {
@@ -1618,8 +1621,24 @@ function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[
  */
 export function hasMixedKoreanRegister(
   spoken: string,
-  params: { relationshipLabel?: string | null; listenerTitle?: string | null; speechStyle?: SpeechStyle | null },
+  params: {
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    speechStyle?: SpeechStyle | null;
+    /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구. 프롬프트는 이 어체를 관계보다 앞세운다. */
+    styleReference?: string | null;
+  },
 ): boolean {
+  // ⚠ **확정 문구의 어체가 관계보다 앞선다**(Codex #801). 프롬프트(STYLE REFERENCE)가 그 어체를 따르라고
+  //   하는데 검사가 관계만 보면, 배우자에게 해요체로 고쳐 확정한 사용자의 클립이 세 번 다 거절돼 **영구
+  //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구가 쓰는 어체는 허용하고,
+  //   확정 문구 자체가 섞여 있으면 섞임도 문제 삼지 않는다.
+  const reference = params.styleReference?.trim()
+    ? koreanEndings(normalizeAlarmTextWithoutTags(params.styleReference), params.listenerTitle)
+    : [];
+  const referencePolite = reference.includes('polite');
+  const referenceBanmal = reference.includes('banmal');
+  if (referencePolite && referenceBanmal) return false;
   const endings = koreanEndings(spoken, params.listenerTitle);
   const polite = endings.filter((e) => e === 'polite').length;
   const banmal = endings.filter((e) => e === 'banmal').length;
@@ -1628,11 +1647,11 @@ export function hasMixedKoreanRegister(
   const childlike = params.speechStyle?.childlike === true;
   const relationship = label ? koreanRelationshipRegister(label) : 'neutral';
   const banmalOnly = childlike || relationship === 'romantic' || relationship === 'peer';
-  if (banmalOnly && polite > 0) return true;
+  if (banmalOnly && polite > 0 && !referencePolite) return true;
   // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
   // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
   // 그 사람 말투를 따르므로 걸지 않는다.
-  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
+  const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '') || referenceBanmal;
   // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다 — 라벨이 빈 경우만
   // 보면 자유 입력 라벨의 반말이 그대로 저장된다(Codex #801).
   if (relationship === 'neutral') return !childlike && !speakerIsCasual && banmal > 0;

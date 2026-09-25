@@ -534,6 +534,21 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 어간과 합쳐진 반말(일어나·챙겨·마셔)도 반말이다.
     expect(hasMixedKoreanRegister('우리 딸, 오늘 비 온대요. 우산 챙겨.', mom)).toBe(true);
     expect(hasMixedKoreanRegister('자기야, 물 많이 마셔요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // '힘내'·'걱정 마' 도 반말이다.
+    expect(hasMixedKoreanRegister('엄마, 오늘도 힘내. 약 드실 시간이에요.', { relationshipLabel: '딸', listenerTitle: '엄마' })).toBe(true);
+    expect(hasMixedKoreanRegister('할머니, 걱정 마. 우산 챙기세요.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(true);
+    // 확정 문구(styleReference)의 어체가 관계보다 앞선다.
+    expect(
+      hasMixedKoreanRegister('자기야, 오늘 비 온대요. 우산 챙겨요.', {
+        relationshipLabel: '아내',
+        styleReference: '[warmly] 자기야, 일어날 시간이에요. 오늘도 힘내요.',
+      }),
+    ).toBe(false);
+    expect(
+      hasMixedKoreanRegister('오늘 비 온대. 우산 챙겨.', { relationshipLabel: '동료', styleReference: '일어나. 오늘도 힘내.' }),
+    ).toBe(false);
+    // 확정 문구가 없으면 관계대로 — 배우자의 해요체는 걸린다.
+    expect(hasMixedKoreanRegister('자기야, 오늘 비 온대요. 우산 챙겨요.', { relationshipLabel: '아내' })).toBe(true);
     // 평서 '-다' 는 반말이고, '-니다' 는 존댓말이다.
     expect(hasMixedKoreanRegister('우리 딸, 오늘은 날씨가 좋다. 우산 챙기세요.', mom)).toBe(true);
     expect(hasMixedKoreanRegister('준비됐습니다. 이제 가세요.', { relationshipLabel: '손자' })).toBe(false);
@@ -568,6 +583,20 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain('MIXED speech levels');
+  });
+
+  it('사전렌더: 확정 문구가 해요체면 배우자 목소리의 해요체 클립도 통과한다(영구 실패 방지)', async () => {
+    queueContent(geminiText('{"text":"[warmly] 자기야, 오늘 비 온대요. [caring] 나갈 때 우산 꼭 챙겨요."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '비가 온다고 알리고 우산을 챙기라고 한다.',
+      relationshipLabel: '아내',
+      listenerTitle: '자기야',
+      targetLanguage: 'ko',
+      styleReference: '[warmly] 자기야, 일어날 시간이에요. 오늘도 힘내요.',
+    });
+    expect(out.text).toContain('챙겨요');
+    const prompts = mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI);
+    expect(prompts).toHaveLength(1);
   });
 
   it('관계를 모르는 목소리의 반말은 섞임으로 본다 — 등록 녹음이 반말이면 그 말투를 따른다', () => {
@@ -784,7 +813,9 @@ describe('prepareAlarmTextWithVertex', () => {
     );
     // 낱말 사이에 붙은 태그를 지워도 낱말이 붙지 않는다 — 일본어는 띄어 쓰지 않으므로 그대로.
     expect(dropWakeUnsafeTags('[warmly] Good[softly]morning')).toBe('[warmly] Good morning');
-    expect(dropWakeUnsafeTags('할머니,[softly]일어나세요')).toBe('할머니, 일어나세요');
+    expect(dropWakeUnsafeTags('할머니 [softly]일어나세요')).toBe('할머니 일어나세요');
+    // 문장부호 앞에는 공백을 남기지 않는다.
+    expect(dropWakeUnsafeTags('Wake up[softly]!')).toBe('Wake up!');
     expect(dropWakeUnsafeTags('おばあちゃん[softly]起きて')).toBe('おばあちゃん起きて');
   });
 
