@@ -606,9 +606,27 @@ async function generateContentText(
   config: GenerateContentConfig,
 ): Promise<string> {
   const credentials = readVertexCredentials(env);
-  const accessToken = await createAccessToken(credentials);
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
   const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
+  // ⚠ 토큰 발급 실패도 호출 한 번으로 남긴다(Codex #801). 생성 요청 앞에서 던지므로 아래
+  //   `generateContentAtEndpoint` 의 로그에 닿지 않는데, 호출부는 이것도 삼키고 폴백한다 — 자격 증명·
+  //   OAuth 장애가 통째로 안 보인다. 오류 메시지는 OAuth 응답(invalid_grant 등)이라 문구 원문이 없다.
+  const authStarted = Date.now();
+  let accessToken: string;
+  try {
+    accessToken = await createAccessToken(credentials);
+  } catch (err) {
+    logStructured('warn', {
+      at: 'vertex.generate',
+      stage: 'auth',
+      model,
+      status: null,
+      error: err instanceof Error ? err.name : 'unknown',
+      detail: err instanceof Error ? err.message.slice(0, 120) : null,
+      elapsed_ms: Date.now() - authStarted,
+    });
+    throw err;
+  }
   return generateContentAtEndpoint(
     vertexGenerateContentEndpoint(credentials.project_id, location, model),
     model,
@@ -736,6 +754,7 @@ async function generateContentAtEndpoint(
     //   먼저 봐야 할 실패가 기록에서 빠진다. 원문은 싣지 않는다(오류 이름만).
     logStructured('warn', {
       at: 'vertex.generate',
+      stage: 'generate',
       model,
       status: null,
       error: err instanceof Error ? err.name : 'unknown',
@@ -1490,11 +1509,23 @@ export function tidyEllipsis(text: string): string {
   return text.replace(/(…|\.\.\.)[.,、。，]+/g, '$1');
 }
 
-/** 아침 인사·잠에서 깬 안부. 인사 시드가 아니면 어느 것도 쓰지 않는다. */
+/**
+ * 아침 인사·잠에서 깬 안부. 인사 시드가 아니면 어느 것도 쓰지 않는다. 합성 언어
+ * (`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it) 전부 둔다 — 빠진 언어는 검사 없이 통과한다(Codex #801).
+ * 프랑스어 bonjour·이탈리아어 buongiorno 는 낮 인사라 밤 약 알람에 어긋나므로 같이 막는다.
+ */
 const MORNING_GREETING: Record<string, RegExp> = {
   ko: /좋은 아침|잘 잤|잘 주무셨|잘 일어나셨|굿모닝/,
   en: /\bgood morning\b|(?:^|[.!?…]\s*)morning\b|\b(?:sleep|slept) well\b/i,
   ja: /おはよう|よく眠れ/,
+  fr: /\bbonjour\b|\bbon matin\b|\bbonne matinée\b|\bbien dormi\b/i,
+  it: /\bbuon ?giorno\b|\bbuona mattinata\b|\bdormito bene\b/i,
+};
+/** 시드가 아침을 말하지 않는데 '아침' 낱말을 쓰면 시간을 가정한 것이다(한국어는 '아침밥' 과 헷갈려 두지 않는다). */
+const MORNING_WORD: Record<string, RegExp> = {
+  en: /\bmorning\b/i,
+  fr: /\bmatin(?:ée)?\b/i,
+  it: /\bmattin[ao]\b|\bstamattina\b/i,
 };
 
 /**
@@ -1510,7 +1541,8 @@ export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: 
   if (/아침 인사|잘 잤/.test(seed)) return false;
   const pattern = MORNING_GREETING[targetLanguage];
   if (pattern?.test(spoken)) return true;
-  return targetLanguage === 'en' && !/아침/.test(seed) && /\bmorning\b/i.test(spoken);
+  const word = MORNING_WORD[targetLanguage];
+  return !!word && !/아침/.test(seed) && word.test(spoken);
 }
 
 const UNCONTRACTED_EN =
@@ -1525,15 +1557,20 @@ export function isUncontractedEnglish(spoken: string): boolean {
   return (spoken.match(UNCONTRACTED_EN) ?? []).length >= 2;
 }
 
-/** 문장 끝 음절로 어체를 가른다. 명사로 끝나는 외침('화이팅!')처럼 어느 쪽도 아닌 것은 셈하지 않는다. */
+/**
+ * 문장 끝 음절로 어체를 가른다. 명사로 끝나는 외침('화이팅!')처럼 어느 쪽도 아닌 것은 셈하지 않는다.
+ * 평서 '-다'(해라체)도 반말 쪽이다 — '-니다' 는 존댓말 목록이 먼저 잡는다.
+ * ⚠ '-아/-어' 는 어간과 합쳐진 모양(일어나·가·와·챙겨·마셔·추워·돼)으로 더 자주 끝난다. 그것까지 둬야
+ *   가장 흔한 반말 명령문이 빠지지 않는다.
+ */
 const KO_POLITE_END = /(요|니다|죠)$/;
-const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼)$/;
 /**
  * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
  * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
  * -니까·-니·-게·-지 같은 이음 어미가 어체로 잘못 세진다.
  */
-const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴)$/;
+const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴|다|와|겨|셔|켜|쳐|워|돼)$/;
 
 /** '합니까/습니까' — ㅂ 받침 뒤 '니까' 만 존댓말이다('오니까' 는 이음 어미). */
 function isHapnikka(word: string): boolean {
@@ -1549,10 +1586,15 @@ function koreanEnding(word: string, atPause: boolean): KoEnding {
   return (atPause ? KO_BANMAL_END_AT_PAUSE : KO_BANMAL_END).test(word) ? 'banmal' : null;
 }
 
-/** 한 줄의 문장(과 '…' 로 끊긴 마디) 끝 어체들. */
-function koreanEndings(spoken: string): KoEnding[] {
+/**
+ * 한 줄의 문장(과 '…' 로 끊긴 마디) 끝 어체들. 청자 호칭은 먼저 지운다 — "할머니!" 처럼 호칭만
+ * 외친 문장이 끝 음절('니')로 반말로 세지면 안 된다.
+ */
+function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[] {
+  const title = listenerTitle?.trim();
+  const withoutTitle = title ? spoken.split(title).join(' ') : spoken;
   const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
-  return spoken
+  return withoutTitle
     .split(/(?<=[.!?！？])\s*/)
     .flatMap((sentence) => {
       const parts = sentence.split('…');
@@ -1565,14 +1607,14 @@ function koreanEndings(spoken: string): KoEnding[] {
  * 한국어 한 줄 안에서 반말과 존댓말(해요체·합니다체)이 섞였는가. 시드는 존댓말 서술이라
  * 3.5 Flash-Lite 가 '-대요/-래요' 를 그대로 옮겨 "우리 딸, 흐리대요. … 커튼 열자" 처럼 섞었다
  * (2026-09-23 블라인드 판정 — 3.5 의 말투 지적 7건). 시스템 지시의 "한 줄에 한 어체" 를 코드로 지킨다.
- * 반말만 써야 하는 관계(연인·형제·친구·아이)는 존댓말 문장이, 관계를 모르는 목소리는 반말 문장이
- * 하나만 있어도 걸린다.
+ * 반말만 써야 하는 관계(연인·형제·친구·아이)는 존댓말 문장이, 관계를 모르는 목소리와 손아랫사람→
+ * 어르신(손주·자식)은 반말 문장이 하나만 있어도 걸린다.
  */
 export function hasMixedKoreanRegister(
   spoken: string,
-  params: { relationshipLabel?: string | null; speechStyle?: SpeechStyle | null },
+  params: { relationshipLabel?: string | null; listenerTitle?: string | null; speechStyle?: SpeechStyle | null },
 ): boolean {
-  const endings = koreanEndings(spoken);
+  const endings = koreanEndings(spoken, params.listenerTitle);
   const polite = endings.filter((e) => e === 'polite').length;
   const banmal = endings.filter((e) => e === 'banmal').length;
   if (polite > 0 && banmal > 0) return true;
@@ -1585,7 +1627,12 @@ export function hasMixedKoreanRegister(
   // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
   // 그 사람 말투를 따르므로 걸지 않는다.
   const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
-  return !label && !childlike && !speakerIsCasual && banmal > 0;
+  if (!label) return !childlike && !speakerIsCasual && banmal > 0;
+  // 손주→조부모·자식→부모는 존대 해요체다(프롬프트 'younger than the listener'). 반말만 쓰는 관계와
+  // 거울로, 반말 문장이 하나만 있어도 걸린다(Codex #801 — "할머니, 지금 일어나. 우산 챙겨." 가
+  // 통과했다). 아이 목소리와, 등록 녹음이 반말인 화자는 그 말투를 따르므로 걸지 않는다.
+  const politeOnly = relationship === 'grandchild' || relationship === 'younger_to_elder';
+  return politeOnly && !childlike && !speakerIsCasual && banmal > 0;
 }
 
 /**

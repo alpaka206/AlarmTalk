@@ -293,6 +293,26 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     }
   });
 
+  it('토큰 발급이 실패해도 vertex.generate 를 warn(stage auth)으로 남긴다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch.mockImplementation(async () => new Response('{"error":"invalid_grant"}', { status: 400 }));
+    try {
+      const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
+        targetLanguage: 'ko',
+        sourceLanguage: 'ko',
+        translate: false,
+        autoTag: true,
+      });
+      expect(prepared.provider).toBe('local');
+      const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
+      expect(line).toContain('"stage":"auth"');
+      expect(line).toContain('invalid_grant');
+      expect(line).not.toContain('엄마');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('호출이 던져도(타임아웃·네트워크) vertex.generate 를 warn 으로 한 줄 남긴다', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -495,6 +515,25 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '큰언니' })).toBe(true);
     // 부모 쪽이 앞선다 — '엄마친구' 는 해요체 한 줄도 허용되는 어른 말투다.
     expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '엄마친구' })).toBe(false);
+    // 손주·자식 → 어르신은 반말 한 문장도 안 된다. 아이 목소리·반말로 녹음한 화자는 그 말투를 따른다.
+    expect(hasMixedKoreanRegister('할머니, 지금 일어나. 우산 챙겨.', { relationshipLabel: '손녀' })).toBe(true);
+    expect(hasMixedKoreanRegister('엄마, 일어나실 시간이에요. 우산 챙기세요.', { relationshipLabel: '딸' })).toBe(false);
+    expect(
+      hasMixedKoreanRegister('할머니, 지금 일어나. 우산 챙겨.', {
+        relationshipLabel: '손녀',
+        speechStyle: { dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false },
+      }),
+    ).toBe(false);
+    // 호칭만 외친 문장('할머니!')은 어체로 세지 않는다.
+    expect(
+      hasMixedKoreanRegister('할머니! 일어나실 시간이에요.', { relationshipLabel: '손녀', listenerTitle: '할머니' }),
+    ).toBe(false);
+    // 어간과 합쳐진 반말(일어나·챙겨·마셔)도 반말이다.
+    expect(hasMixedKoreanRegister('우리 딸, 오늘 비 온대요. 우산 챙겨.', mom)).toBe(true);
+    expect(hasMixedKoreanRegister('자기야, 물 많이 마셔요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 평서 '-다' 는 반말이고, '-니다' 는 존댓말이다.
+    expect(hasMixedKoreanRegister('우리 딸, 오늘은 날씨가 좋다. 우산 챙기세요.', mom)).toBe(true);
+    expect(hasMixedKoreanRegister('준비됐습니다. 이제 가세요.', { relationshipLabel: '손자' })).toBe(false);
     // '…' 로 끊긴 문장도 본다 — 단 '…' 앞의 이음 어미(-니까·-니·-면)는 어체로 세지 않는다.
     expect(hasMixedKoreanRegister('우리 딸, 흐리대요… 이제 일어나자!', mom)).toBe(true);
     expect(hasMixedKoreanRegister('비가 오니까… 우산 꼭 챙기세요.', {})).toBe(false);
@@ -562,6 +601,15 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasAssumedMorning('よく眠れた？今日は空気がよくないみたい。', dust, 'ja')).toBe(true);
     expect(hasAssumedMorning('The air is bad, but let\'s start the morning strong.', dust, 'en')).toBe(false);
     expect(hasAssumedMorning('Take your meds this morning.', '약 먹을 시간이라고 알린다.', 'en')).toBe(true);
+    // 합성 언어 전부 — 프랑스어·이탈리아어도 막는다.
+    const med = '약 먹을 시간이라고 알린다.';
+    expect(hasAssumedMorning("Bonjour ma chérie, c'est l'heure de ton médicament.", med, 'fr')).toBe(true);
+    expect(hasAssumedMorning("Tu as bien dormi ? C'est l'heure du médicament.", med, 'fr')).toBe(true);
+    expect(hasAssumedMorning("C'est l'heure de ton médicament.", med, 'fr')).toBe(false);
+    expect(hasAssumedMorning('Buongiorno! È ora della medicina.', med, 'it')).toBe(true);
+    expect(hasAssumedMorning('Hai dormito bene? È ora della medicina.', med, 'it')).toBe(true);
+    expect(hasAssumedMorning('È ora della medicina.', med, 'it')).toBe(false);
+    expect(hasAssumedMorning('Commençons la matinée en forme.', dust, 'fr')).toBe(false);
   });
 
   it('축약 없는 영어는 두 번 이상일 때만 로봇 말투로 본다', () => {

@@ -130,11 +130,38 @@ type RawCall = {
   outputTokens: number | null;
   thoughtTokens: number | null;
   error: string | null;
+  /** 'auth' = OAuth 토큰 발급 실패(생성 요청까지 가지 못했다). */
+  stage?: 'auth';
 };
 const callLog = new AsyncLocalStorage<RawCall[]>();
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
+  if (url.includes('oauth2.googleapis.com/token')) {
+    // 토큰 발급 **실패**도 시도 하나로 센다(Codex #801) — 안 세면 인증 장애 중 시도 수·지연이 0 으로 잡힌다.
+    // 성공한 발급은 생성 시도가 아니라서 남기지 않는다.
+    const started = Date.now();
+    const fail = (status: number, error: string) =>
+      callLog.getStore()?.push({
+        status,
+        finishReason: null,
+        text: '',
+        latencyMs: Date.now() - started,
+        inputTokens: null,
+        outputTokens: null,
+        thoughtTokens: null,
+        error,
+        stage: 'auth',
+      });
+    try {
+      const res = await realFetch(input, init);
+      if (!res.ok) fail(res.status, `auth ${res.status}`);
+      return res;
+    } catch (err) {
+      fail(0, String(err).slice(0, 200));
+      throw err;
+    }
+  }
   if (!url.includes(':generateContent')) return realFetch(input, init);
   const started = Date.now();
   const bucket = callLog.getStore();
@@ -546,6 +573,7 @@ async function runD(m: (typeof MODELS)[number]) {
     const r = result as { text: string; tag: string } | null;
     // 시도마다 운영과 같은 판정을 다시 한다 — 어느 규칙이 몇 번째 시도에서 막혔는가.
     const attempts = calls.map((c) => {
+      if (c.stage === 'auth') return { reason: `auth_${c.status}`, finishReason: null };
       if (c.error || c.status !== 200) return { reason: `http_${c.status}`, finishReason: c.finishReason };
       // 운영(`extractGeneratedText`)은 STOP 이 아니면 던지고 다시 묻는다 — 잘린 본문을 채점하지 않는다.
       if (c.finishReason && c.finishReason !== 'STOP') return { reason: `finish_${c.finishReason}`, finishReason: c.finishReason };
