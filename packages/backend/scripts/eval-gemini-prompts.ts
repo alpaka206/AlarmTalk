@@ -29,6 +29,8 @@ import {
   dropWakeUnsafeTags,
   extractTags,
   generatePrerenderClipText,
+  isFearTag,
+  isLowArousalTag,
   isWindDownText,
   normalizeAlarmTextWithoutTags,
   parseAlarmTextPreparation,
@@ -194,10 +196,9 @@ console.log = (...args: unknown[]) => {
 
 /** 태그 뒤에 띄어쓰기가 없다(`[warmly]할머니`). */
 const tagWithoutSpace = (text: string) => /\[[a-z][a-z ,-]{1,48}\](?=[^\s[])/i.test(text);
-const FEAR = ['panic', 'scared', 'terrified', 'afraid', 'frighten'];
-const isFear = (tag: string) => FEAR.some((w) => tag.toLowerCase().includes(w));
-const LOW_AROUSAL = ['tired', 'sleepy', 'drowsy', 'yawn', 'whisper', 'quiet', 'soft', 'hushed', 'calm', 'soothing', 'gentle', 'mumbl', 'murmur'];
-const isLowArousal = (tag: string) => LOW_AROUSAL.some((w) => tag.toLowerCase().includes(w));
+// 운영 판정을 그대로 쓴다 — 목록을 따로 두면 채점과 실제 거르기가 어긋난다(Codex #801).
+const isFear = isFearTag;
+const isLowArousal = isLowArousalTag;
 
 /** 날짜·요일·시각·숫자·온도·지명 누출. 사전렌더 규칙이 금지하는 것들. */
 function leaks(spoken: string, language: string): string[] {

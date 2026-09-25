@@ -293,6 +293,26 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     }
   });
 
+  it('호출이 던져도(타임아웃·네트워크) vertex.generate 를 warn 으로 한 줄 남긴다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // 큐가 비어 있으면 목 fetch 가 던진다 — 응답 없는 실패와 같은 경로다.
+      const prepared = await prepareAlarmTextWithVertex(ENV, '엄마, 일어날 시간이야.', {
+        targetLanguage: 'ko',
+        sourceLanguage: 'ko',
+        translate: false,
+        autoTag: true,
+      });
+      expect(prepared.provider).toBe('local');
+      const line = warn.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"vertex.generate"'));
+      expect(line).toContain('"status":null');
+      expect(line).toContain('"elapsed_ms"');
+      expect(line).not.toContain('엄마');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   /** 스키마 안의 모든 enum 을 훑어 빈 문자열이 든 자리를 모은다. */
   function emptyEnumPaths(node: unknown, path = 'responseSchema'): string[] {
     if (!node || typeof node !== 'object') return [];
@@ -470,6 +490,11 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('자기야, 비 온대. 우산 챙겨.', { relationshipLabel: '남자친구' })).toBe(false);
     // 반말만 써야 하는 관계는 존댓말 한 문장으로도 걸린다.
     expect(hasMixedKoreanRegister('자기야, 오늘 비 온대요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 자유 입력 라벨도 프롬프트와 같은 판정 — '친한 친구'·'큰언니' 는 반말 관계다.
+    expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '친한 친구' })).toBe(true);
+    expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '큰언니' })).toBe(true);
+    // 부모 쪽이 앞선다 — '엄마친구' 는 해요체 한 줄도 허용되는 어른 말투다.
+    expect(hasMixedKoreanRegister('오늘 비 온대요. 우산 챙기세요.', { relationshipLabel: '엄마친구' })).toBe(false);
     // '…' 로 끊긴 문장도 본다 — 단 '…' 앞의 이음 어미(-니까·-니·-면)는 어체로 세지 않는다.
     expect(hasMixedKoreanRegister('우리 딸, 흐리대요… 이제 일어나자!', mom)).toBe(true);
     expect(hasMixedKoreanRegister('비가 오니까… 우산 꼭 챙기세요.', {})).toBe(false);

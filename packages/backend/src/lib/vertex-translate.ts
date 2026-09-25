@@ -228,13 +228,13 @@ const LOW_AROUSAL_TAG_EXAMPLES = LOW_AROUSAL_WORDS.filter(
  */
 const FEAR_WORDS = ['panic', 'scared', 'terrified', 'terror', 'frighten', 'horrified', 'afraid', 'fearful'];
 
-function isFearTag(tag: string): boolean {
+export function isFearTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
   return !!normalized && FEAR_WORDS.some((word) => normalized.includes(word));
 }
 
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
-function isLowArousalTag(tag: string): boolean {
+export function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
   if (!normalized) return false;
   return LOW_AROUSAL_WORDS.some((word) => normalized.includes(word));
@@ -710,6 +710,7 @@ async function generateContentAtEndpoint(
   config: GenerateContentConfig,
   extraHeaders: Record<string, string> = {},
 ): Promise<string> {
+  const started = Date.now();
   const response = await fetch(endpoint, {
     method: 'POST',
     signal: AbortSignal.timeout(15000),
@@ -729,6 +730,18 @@ async function generateContentAtEndpoint(
         : {}),
       generationConfig: buildGenerationConfig(model, config),
     }),
+  }).catch((err: unknown) => {
+    // ⚠ **던져진 호출도 한 줄 남긴다**(Codex #801). 15초 타임아웃·DNS·네트워크 오류는 응답이 없어
+    //   아래 로그에 닿지 않는데, 호출부는 전부 이걸 삼키고 폴백·재시도한다 — 전환 뒤 감시가 가장
+    //   먼저 봐야 할 실패가 기록에서 빠진다. 원문은 싣지 않는다(오류 이름만).
+    logStructured('warn', {
+      at: 'vertex.generate',
+      model,
+      status: null,
+      error: err instanceof Error ? err.name : 'unknown',
+      elapsed_ms: Date.now() - started,
+    });
+    throw err;
   });
   const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
     .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
@@ -804,25 +817,42 @@ const ELDER_TO_YOUNGER_RELATIONSHIPS = ['할머니', '할아버지', '엄마', '
 const GRANDCHILD_RELATIONSHIPS = ['손녀', '손자', '손주'];
 const SIBLING_RELATIONSHIPS = ['형제', '자매', '남매', '동생', '누나', '언니', '오빠', '형'];
 
+/**
+ * 관계 라벨이 한국어 어체를 어떻게 정하는가. 프롬프트(`koreanRegisterGuidance`)와 검사
+ * (`hasMixedKoreanRegister`)가 **같은 판정**을 쓴다 — 예전에는 검사가 라벨을 정확히 일치로만 봐서
+ * '친한 친구'·'큰언니' 처럼 자유 입력한 라벨은 프롬프트가 반말을 시키는데 검사는 존댓말을
+ * 통과시켰다(Codex #801). 순서가 곧 우선순위다('엄마친구' 는 엄마 쪽).
+ */
+type KoreanRelationshipRegister = 'grandchild' | 'younger_to_elder' | 'elder_to_younger' | 'romantic' | 'peer' | 'neutral';
+
+function koreanRelationshipRegister(label: string): KoreanRelationshipRegister {
+  if (isGrandchildRelationship(label)) return 'grandchild';
+  if (isYoungerToElderRelationship(label)) return 'younger_to_elder';
+  if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) return 'elder_to_younger';
+  if (isRomanticRelationship(label)) return 'romantic';
+  if (['친구', ...SIBLING_RELATIONSHIPS].some((k) => label.includes(k))) return 'peer';
+  return 'neutral';
+}
+
 function koreanRegisterGuidance(relationshipLabel: string | null | undefined): string {
   if (!relationshipLabel) return '';
   const label = relationshipLabel.trim();
   if (!label) return '';
-  const peerOrIntimate = ['친구', ...SIBLING_RELATIONSHIPS];
+  const register = koreanRelationshipRegister(label);
 
-  if (isGrandchildRelationship(label)) {
+  if (register === 'grandchild') {
     return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 나가실 때 우산 챙기세요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
-  if (isYoungerToElderRelationship(label)) {
+  if (register === 'younger_to_elder') {
     return ' Speaker is younger than the listener: write in warm, familiar 해요체 that still shows respect (e.g. "할아버지, 일어나실 시간이에요", "나가실 때 우산 꼭 챙기세요"). It should sound like an actual granddaughter/grandson or child speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
-  if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) {
+  if (register === 'elder_to_younger') {
     return ' Speaker is older than the listener: write in caring 반말, or soft 해요체 for the WHOLE line (e.g. "우리 딸, 오늘 비 온대", "오늘도 화이팅이야"). Avoid 합니다체.';
   }
-  if (isRomanticRelationship(label)) {
+  if (register === 'romantic') {
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
   }
-  if (peerOrIntimate.some((k) => label.includes(k))) {
+  if (register === 'peer') {
     return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling. Never use 합니다체.';
   }
   return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
@@ -1548,8 +1578,8 @@ export function hasMixedKoreanRegister(
   if (polite > 0 && banmal > 0) return true;
   const label = params.relationshipLabel?.trim() ?? '';
   const childlike = params.speechStyle?.childlike === true;
-  const banmalOnly =
-    childlike || isRomanticRelationship(label) || SIBLING_RELATIONSHIPS.includes(label) || label === '친구';
+  const relationship = label ? koreanRelationshipRegister(label) : 'neutral';
+  const banmalOnly = childlike || relationship === 'romantic' || relationship === 'peer';
   if (banmalOnly && polite > 0) return true;
   // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
   // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
