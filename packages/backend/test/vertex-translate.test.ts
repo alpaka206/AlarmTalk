@@ -566,6 +566,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(hasMixedKoreanRegister('할머니, 같이 일어납시다.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(false);
     // 합쇼체 명령(-십시오)도 존댓말이다 — 반말 전용 관계에서 걸린다.
     expect(hasMixedKoreanRegister('자기야, 지금 일어나십시오.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 문장 끝 '-까'(먹을까?) 도 반말이다 — '합니까' 는 존댓말, '…' 앞 '-니까' 는 이음 어미.
+    expect(hasMixedKoreanRegister('약 먹을까? 지금 챙겨 드세요.', { relationshipLabel: '동료' })).toBe(true);
+    expect(hasMixedKoreanRegister('준비됐습니까? 이제 가시죠.', { relationshipLabel: '손자' })).toBe(false);
     // 문장 끝 '-거든' 도 반말이다.
     expect(hasMixedKoreanRegister('오늘 비가 오거든. 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(true);
     // '힘내'·'걱정 마' 도 반말이다.
@@ -682,6 +685,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(isUncontractedEnglish('You do not have to get it all right away, so let us take it one step at a time.')).toBe(true);
     expect(isUncontractedEnglish("I will always be here. Let's get up.")).toBe(false);
     expect(isUncontractedEnglish("You don't have to do it all. Let's go.")).toBe(false);
+    // 조동사 부정도 센다.
+    expect(isUncontractedEnglish('You have not failed. You should not carry this alone.')).toBe(true);
   });
 
   it('사전렌더: 인사가 아닌 알람의 아침 인사는 다시 묻고, 다음 회차에 그 사유를 말한다', async () => {

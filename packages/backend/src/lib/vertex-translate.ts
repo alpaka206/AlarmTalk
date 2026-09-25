@@ -1556,7 +1556,7 @@ export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: 
 }
 
 const UNCONTRACTED_EN =
-  /\b(?:do not|does not|did not|is not|are not|was not|cannot|can not|will not|would not|let us|it is|that is|there is|you are|we are|I am|you will|I will)\b/gi;
+  /\b(?:do not|does not|did not|is not|are not|was not|were not|have not|has not|had not|cannot|can not|could not|should not|must not|need not|might not|will not|would not|let us|it is|that is|there is|you are|we are|I am|you will|I will)\b/gi;
 
 /**
  * 영어가 축약 없이 글말로 나왔는가("it is easy… You do not have to… let us just…").
@@ -1573,10 +1573,11 @@ export function isUncontractedEnglish(spoken: string): boolean {
  * ⚠ '-아/-어' 는 어간과 합쳐진 모양(일어나·가·와·챙겨·마셔·추워·돼)으로 더 자주 끝난다. 그것까지 둬야
  *   가장 흔한 반말 명령문이 빠지지 않는다.
  */
-// '힘내'·'걱정 마'·'오거든' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가 먼저 지운다).
+// '힘내'·'걱정 마'·'오거든'·'먹을까'·'좋군' 처럼 흔한 반말도 둔다('엄마!' 같은 호칭은 `koreanEndings` 가
+// 먼저 지운다). '-까' 는 문장 끝에서만 센다 — '…' 앞의 '-니까' 는 이음 어미다. '합니까' 는 존댓말이 먼저 잡는다.
 // 존댓말은 해요체(-요·-죠)와 합쇼체(-니다·-십시오/-시오) 둘 다다.
 const KO_POLITE_END = /(요|니다|죠|시오)$/;
-const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마|거든)$/;
+const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|봐|렴|라|다|나|가|와|겨|셔|려|켜|쳐|워|돼|내|마|거든|까|군)$/;
 /**
  * '…' 앞에서는 **이음 어미와 헷갈리지 않는 끝만** 센다. '…' 는 문장을 끝내기도 하지만("흐리대요…
  * 이제 일어나자") 절 사이 쉼으로도 쓰여서("비 오니까… 우산 챙기세요"), 문장 끝 목록을 그대로 쓰면
