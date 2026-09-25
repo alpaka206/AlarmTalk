@@ -716,7 +716,9 @@ async function runF(m: (typeof MODELS)[number]) {
     });
     let rawConfidence: number | null = null;
     try {
-      rawConfidence = Number(JSON.parse(raw).confidence);
+      // 숫자가 아니면(빠졌거나 문자열) 형식 실패로만 세고 평균에는 넣지 않는다 — NaN 이 평균 칸 전체를 먹는다.
+      const value = JSON.parse(raw).confidence;
+      rawConfidence = typeof value === 'number' && Number.isFinite(value) ? value : null;
     } catch {
       /* */
     }
@@ -823,7 +825,7 @@ function summarize(rows: AnyRow[]): string {
     lines.push('## F 말투 분석', '', '| 모델 | n | 결과 있음 | HTTP 오류 | 사투리 정답 | 어체 정답 | 아이 판정 정답 | 표지 원문 일치 | 평균 확신 | 여분 필드 |', '|---|---|---|---|---|---|---|---|---|---|');
     for (const { m, rs } of byModel('F')) {
       const sc = rs.filter((r) => r.score).map((r) => r.score as AnyRow);
-      lines.push(`| ${m.label} | ${rs.length} | ${pct(sc.length, rs.length)} | ${pct(rs.filter((r) => (r.raw as AnyRow).status !== 200).length, rs.length)} | ${pct(sc.filter((x) => x.dialect).length, rs.length)} | ${pct(sc.filter((x) => x.register).length, rs.length)} | ${pct(sc.filter((x) => x.childlike).length, rs.length)} | ${avg(sc.filter((x) => x.markersVerbatim !== null).map((x) => (x.markersVerbatim as number) * 100))}% | ${avg(rs.map((r) => ((r.raw as AnyRow).confidence as number) ?? 0))} | ${pct(rs.filter((r) => ((r.raw as AnyRow).extraKeys as string[]).length).length, rs.length)} |`);
+      lines.push(`| ${m.label} | ${rs.length} | ${pct(sc.length, rs.length)} | ${pct(rs.filter((r) => (r.raw as AnyRow).status !== 200).length, rs.length)} | ${pct(sc.filter((x) => x.dialect).length, rs.length)} | ${pct(sc.filter((x) => x.register).length, rs.length)} | ${pct(sc.filter((x) => x.childlike).length, rs.length)} | ${avg(sc.filter((x) => x.markersVerbatim !== null).map((x) => (x.markersVerbatim as number) * 100))}% | ${avg(rs.map((r) => (r.raw as AnyRow).confidence).filter((v): v is number => typeof v === 'number'))} | ${pct(rs.filter((r) => ((r.raw as AnyRow).extraKeys as string[]).length).length, rs.length)} |`);
     }
     lines.push('', '### F 오답 목록', '');
     for (const { m, rs } of byModel('F')) {

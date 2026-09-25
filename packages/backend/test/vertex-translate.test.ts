@@ -554,6 +554,16 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 어간과 합쳐진 반말(일어나·챙겨·마셔)도 반말이다.
     expect(hasMixedKoreanRegister('우리 딸, 오늘 비 온대요. 우산 챙겨.', mom)).toBe(true);
     expect(hasMixedKoreanRegister('자기야, 물 많이 마셔요.', { relationshipLabel: '남자친구' })).toBe(true);
+    // 쉼표로 이은 두 절의 어체가 다르면 걸린다.
+    expect(hasMixedKoreanRegister('오늘 비 온대요, 우산 챙겨.', { relationshipLabel: '남자친구' })).toBe(true);
+    expect(hasMixedKoreanRegister('오늘 비 온대, 우산 챙기세요.', { relationshipLabel: '동료' })).toBe(true);
+    // 쉼표 앞 부름말·감탄사와 이음 어미는 세지 않는다.
+    expect(hasMixedKoreanRegister('우리 아들아, 오늘 비 온대요. 우산 챙겨요.', { relationshipLabel: '엄마' })).toBe(false);
+    expect(hasMixedKoreanRegister('자, 이제 일어나 볼까요?', {})).toBe(false);
+    expect(hasMixedKoreanRegister('비가 오니까, 우산 꼭 챙기세요.', {})).toBe(false);
+    // '-ㅂ시다' 는 존댓말이다 — 반말 전용 관계에서 걸린다.
+    expect(hasMixedKoreanRegister('자기야, 이제 일어납시다.', { relationshipLabel: '남자친구' })).toBe(true);
+    expect(hasMixedKoreanRegister('할머니, 같이 일어납시다.', { relationshipLabel: '손녀', listenerTitle: '할머니' })).toBe(false);
     // 합쇼체 명령(-십시오)도 존댓말이다 — 반말 전용 관계에서 걸린다.
     expect(hasMixedKoreanRegister('자기야, 지금 일어나십시오.', { relationshipLabel: '남자친구' })).toBe(true);
     // '힘내'·'걱정 마' 도 반말이다.

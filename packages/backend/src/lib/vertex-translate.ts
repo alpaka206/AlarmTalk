@@ -1585,22 +1585,38 @@ const KO_BANMAL_END = /(어|아|야|지|자|래|대|네|니|냐|게|걸|해|줘|
 const KO_BANMAL_END_AT_PAUSE = /(어|아|야|자|래|대|네|해|줘|봐|렴|다|와|겨|셔|켜|쳐|워|돼|내)$/;
 
 /** '합니까/습니까' — ㅂ 받침 뒤 '니까' 만 존댓말이다('오니까' 는 이음 어미). */
-function isHapnikka(word: string): boolean {
-  if (!word.endsWith('니까') || word.length < 3) return false;
-  const code = word.charCodeAt(word.length - 3) - 0xac00;
+/** ㅂ 받침 음절 뒤에 `tail` 로 끝나는가 — '합니까/습니까', '합시다/먹읍시다' 만 존댓말이다('오니까' 는 이음 어미). */
+function endsAfterBieup(word: string, tail: string): boolean {
+  if (!word.endsWith(tail) || word.length <= tail.length) return false;
+  const code = word.charCodeAt(word.length - tail.length - 1) - 0xac00;
   return code >= 0 && code < 11172 && code % 28 === 17;
 }
 
 type KoEnding = 'polite' | 'banmal' | null;
 
 function koreanEnding(word: string, atPause: boolean): KoEnding {
-  if (KO_POLITE_END.test(word) || isHapnikka(word)) return 'polite';
+  // '-ㅂ시다'(일어납시다) 는 '-다' 로 끝나도 존댓말이다 — 반말 목록보다 먼저 본다.
+  if (KO_POLITE_END.test(word) || endsAfterBieup(word, '니까') || endsAfterBieup(word, '시다')) return 'polite';
   return (atPause ? KO_BANMAL_END_AT_PAUSE : KO_BANMAL_END).test(word) ? 'banmal' : null;
 }
 
 /**
- * 한 줄의 문장(과 '…' 로 끊긴 마디) 끝 어체들. 청자 호칭은 먼저 지운다 — "할머니!" 처럼 호칭만
- * 외친 문장이 끝 음절('니')로 반말로 세지면 안 된다.
+ * 문장 첫 마디가 부름말·감탄사인가('자기야,' '우리 아들아,' '자,' '음,'). 쉼표를 경계로 보면 이것들이
+ * 끝 음절(야·아·자)로 반말로 세져, 해요체로 말하는 부모의 "우리 아들아, 비 온대요" 가 섞임으로 걸린다.
+ */
+function isVocativeOrInterjection(part: string): boolean {
+  const words = part.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const last = words[words.length - 1]!.replace(/[^가-힣]/gu, '');
+  if (words.length === 1 && [...last].length <= 1) return true;
+  return words.length <= 2 && /[아야여]$/u.test(last);
+}
+
+/**
+ * 한 줄의 문장(과 '…'·',' 로 끊긴 마디) 끝 어체들. 청자 호칭은 먼저 지운다 — "할머니!" 처럼 호칭만
+ * 외친 문장이 끝 음절('니')로 반말로 세지면 안 된다. 쉼표로 이은 두 절의 어체가 다른 것
+ * ("비 온대요, 우산 챙겨")도 잡는다(Codex #801) — 쉼표 앞은 '…' 앞처럼 이음 어미와 헷갈리지 않는
+ * 끝만 세고, 문장 첫 마디의 부름말·감탄사는 건너뛴다.
  */
 function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[] {
   const title = listenerTitle?.trim();
@@ -1609,8 +1625,11 @@ function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[
   return withoutTitle
     .split(/(?<=[.!?！？])\s*/)
     .flatMap((sentence) => {
-      const parts = sentence.split('…');
-      return parts.map((part, i) => koreanEnding(lastWord(part), i < parts.length - 1));
+      const parts = sentence.split(/[…,，]/u);
+      return parts.map((part, i) => {
+        if (i === 0 && parts.length > 1 && isVocativeOrInterjection(part)) return null;
+        return koreanEnding(lastWord(part), i < parts.length - 1);
+      });
     })
     .filter((e): e is 'polite' | 'banmal' => e !== null);
 }
