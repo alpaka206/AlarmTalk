@@ -1297,7 +1297,7 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     //   "지금 먹자")가 잘려** 알람이 깨우지를 못했다(시드 누락 지적 72건, 2.5 영어는 새 프롬프트가
     //   10:20 으로 졌다). 그래서 무엇을 먼저 버릴지(인사·호칭 반복)를 정해 주고 상한은 넉넉히 둔다.
     //   3.5 Flash-Lite 가 영어에서 200자를 넘기던 것은 이 상한으로 막는다.
-    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
+    `COMPLETENESS FIRST: say every part of the intent — the fact, the empathy, the reason, and above all its closing action (get up now, take it now, look outside). If you must shorten, drop greetings (unless the intent is itself a greeting) and repeated titles first, never the closing action. Never say the same thing twice ('시작해 보자, 일어나자'). Add nothing the intent does not say: no invented circumstances ('I left a glass of water for you', 'traffic will be bad') — the clip is replayed on other days — and no piled-up adjectives ('a really healthy, wonderful day'). Use the shortest line that carries all of it: usually two short sentences, at most three — ${
       params.targetLanguage === 'en' ? 'at most about 30 English words' : 'at most about 110 characters'
     } of spoken text (tags do not count).`,
     'OPENER: do not assume the time of day. Use a morning greeting (좋은 아침, 잘 잤어, good morning, おはよう) only when the intent itself is a greeting — and then DO open with it; skipping the greeting drops part of the intent. Never for medication, which can ring at any hour. Do not open medication or cheer lines with a wake-up call (\'일어나\', \'get up\', \'起きて\') unless the intent asks for it — the listener may already be up. Otherwise start with the listener\'s title (or a short soft opener) and get straight to the point, and vary the opener.',
@@ -1388,13 +1388,16 @@ export async function generatePrerenderClipText(
       lastReason === 'too_long'
         ? `The previous line was TOO LONG. Keep the spoken text well under 150 characters (${
             targetLanguage === 'en' ? 'about 25 English words' : 'about 80 characters'
-          }): shrink the empathy to a few words and drop the greeting — but keep the closing action.`
+          }): shrink the empathy to a few words${
+            // ⚠ 인사 시드는 인사가 곧 의도다 — '인사를 빼라' 고 하면 인사 없는 인사 클립이 저장된다(Codex #801).
+            isGreetingSeed(params.seed) ? ' but keep the greeting itself (it is the intent)' : ' and drop the greeting'
+          } — and keep the closing action.`
         : '';
     const registerHint =
       lastReason === 'register_mixed'
         ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the approved STYLE REFERENCE\'s level if one is given, otherwise the one the relationship calls for (no relationship given → warm 해요체 throughout).'
         : lastReason === 'time_of_day'
-          ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or a short wake-up phrase instead.'
+          ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or go straight to the point (medication and cheer lines also skip wake-up calls).'
           : lastReason === 'uncontracted'
             ? "The previous line sounded robotic — spoken English always contracts: it's, don't, let's, you're, I'm."
             : '';
@@ -1519,6 +1522,11 @@ export function tidyEllipsis(text: string): string {
   return text.replace(/(…|\.\.\.)[.,、。，]+/g, '$1');
 }
 
+/** 이 시드가 아침 인사 자체인가(`CLONE_CLIP_SEEDS` 의 인사 시드). 아침 인사를 허용하고, 줄일 때도 인사를 남긴다. */
+function isGreetingSeed(seed: string | null | undefined): boolean {
+  return !!seed && /아침 인사|잘 잤/.test(seed);
+}
+
 /**
  * 아침 인사·잠에서 깬 안부. 인사 시드가 아니면 어느 것도 쓰지 않는다. 합성 언어
  * (`SUPPORTED_SYNTHESIS_LANGUAGES`: ko·en·ja·fr·it) 전부 둔다 — 빠진 언어는 검사 없이 통과한다(Codex #801).
@@ -1548,7 +1556,7 @@ const MORNING_WORD: Record<string, RegExp> = {
  * 예전에는 이 경우를 통째로 풀어 "잘 잤니?" 가 새어 나갔다(2026-09-23 블라인드 판정).
  */
 export function hasAssumedMorning(spoken: string, seed: string, targetLanguage: string): boolean {
-  if (/아침 인사|잘 잤/.test(seed)) return false;
+  if (isGreetingSeed(seed)) return false;
   const pattern = MORNING_GREETING[targetLanguage];
   if (pattern?.test(spoken)) return true;
   const word = MORNING_WORD[targetLanguage];
@@ -1606,11 +1614,17 @@ function koreanEnding(word: string, atPause: boolean): KoEnding {
  * 끝 음절(야·아·자)로 반말로 세져, 해요체로 말하는 부모의 "우리 아들아, 비 온대요" 가 섞임으로 걸린다.
  */
 function isVocativeOrInterjection(part: string): boolean {
-  const words = part.trim().split(/\s+/).filter(Boolean);
+  const words = part
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^가-힣]/gu, ''))
+    .filter(Boolean);
   if (words.length === 0) return true;
-  const last = words[words.length - 1]!.replace(/[^가-힣]/gu, '');
-  if (words.length === 1 && [...last].length <= 1) return true;
-  return words.length <= 2 && /[아야여]$/u.test(last);
+  const last = words[words.length - 1]!;
+  // ⚠ 부름말 꼴만 건너뛴다(Codex #801) — 두 낱말이면 무조건 부름말로 보던 때는 '오늘 휴일이야,' 같은
+  //   절이 버려져 섞임이 통과했다. 한 낱말('자기야'·'자'·'음')이거나 '우리/내 + ~아·야'('우리 아들아')만.
+  if (words.length === 1) return [...last].length <= 1 || /[아야여]$/u.test(last);
+  return words.length === 2 && /^(우리|내|울|사랑하는)$/u.test(words[0]!) && /[아야여]$/u.test(last);
 }
 
 /**

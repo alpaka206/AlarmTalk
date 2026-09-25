@@ -522,6 +522,37 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(prompts[1]).toContain('about 25 English words');
   });
 
+  it('사전렌더: 인사 클립이 길면 인사는 남기라고 하고, 인사가 아니면 빼라고 한다', async () => {
+    const long = `[warmly] 우리 딸, 좋은 아침. ${'오늘도 정말 기분 좋게 시작하자. '.repeat(14)}`;
+    queueContent(geminiText(JSON.stringify({ text: long })));
+    queueContent(geminiText('{"text":"[warmly] 우리 딸, 좋은 아침. 잘 잤어? 오늘도 기분 좋게 시작하자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.',
+      relationshipLabel: '엄마',
+      listenerTitle: '우리 딸',
+      targetLanguage: 'ko',
+    });
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts[1]).toContain('keep the greeting itself');
+    expect(prompts[1]).not.toContain('drop the greeting');
+  });
+
+  it('사전렌더: 아침 인사로 걸린 재시도는 기상 문구를 권하지 않는다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 좋은 아침이에요. [caring] 약 드실 시간이에요."}'));
+    queueContent(geminiText('{"text":"[warmly] 약 드실 시간이에요. [caring] 지금 바로 챙겨 드세요."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 드실 시간이라고 알리며 지금 챙겨 드시라고 한다.',
+      targetLanguage: 'ko',
+    });
+    const prompts = mockFetch.mock.calls
+      .filter((c) => String(c[0]) !== TOKEN_URI)
+      .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
+    expect(prompts[1]).toContain('assumed it was morning');
+    expect(prompts[1]).not.toContain('wake-up phrase');
+  });
+
   it('한국어 한 줄 안의 반말·존댓말 섞임을 가른다 — 명사 외침은 셈하지 않는다', () => {
     const mom = { relationshipLabel: '엄마' };
     expect(hasMixedKoreanRegister('우리 딸, 오늘 하늘이 많이 흐리대요. 커튼부터 열자.', mom)).toBe(true);
@@ -560,6 +591,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     // 쉼표 앞 부름말·감탄사와 이음 어미는 세지 않는다.
     expect(hasMixedKoreanRegister('우리 아들아, 오늘 비 온대요. 우산 챙겨요.', { relationshipLabel: '엄마' })).toBe(false);
     expect(hasMixedKoreanRegister('자, 이제 일어나 볼까요?', {})).toBe(false);
+    // 짧아도 부름말이 아닌 절은 센다.
+    expect(hasMixedKoreanRegister('오늘 휴일이야, 푹 쉬세요.', { relationshipLabel: '동료' })).toBe(true);
     expect(hasMixedKoreanRegister('비가 오니까, 우산 꼭 챙기세요.', {})).toBe(false);
     // '-ㅂ시다' 는 존댓말이다 — 반말 전용 관계에서 걸린다.
     expect(hasMixedKoreanRegister('자기야, 이제 일어납시다.', { relationshipLabel: '남자친구' })).toBe(true);
