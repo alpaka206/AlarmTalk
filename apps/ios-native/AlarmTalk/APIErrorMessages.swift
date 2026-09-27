@@ -101,6 +101,10 @@ enum APIErrorMessages {
             return String(localized: "목소리는 한 달에 1번만 바꿀 수 있어요. 다음 달에 다시 시도해 주세요.")
         case "VOICE_PREVIEW_REQUIRED":
             return String(localized: "문구가 바뀌었어요. 새 문구를 끝까지 들어본 뒤 저장해 주세요.")
+        // 목소리 느낌(결)이 '' · 'lively' · 'calm' 이 아니다. 앱은 세그먼트 값만 보내므로
+        // 정상 흐름에서는 나지 않는다 — 나면 다시 고르게 하는 것 말고 할 수 있는 게 없다.
+        case "INVALID_VOICE_ENERGY":
+            return String(localized: "목소리 느낌을 확인하지 못했어요. 다시 골라 주세요.")
         case "CONSENT_REQUIRED":
             return String(localized: "목소리를 만들려면 음성 정보 활용 동의가 필요해요. 더보기 → 약관 및 동의에서 다시 동의해 주세요.")
 
