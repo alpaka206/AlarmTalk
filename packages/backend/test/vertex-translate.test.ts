@@ -8,6 +8,7 @@ import {
   hasMixedKoreanRegister,
   isUncontractedEnglish,
   tidyEllipsis,
+  withVoiceEnergy,
   isWindDownText,
   buildGenerationConfig,
   deriveAlarmDisplayText,
@@ -15,6 +16,8 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   dropWakeUnsafeTags,
+  fallbackTagForEnergy,
+  modernizeKoreanHonorific,
   isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
   vertexGenerateContentEndpoint,
@@ -675,7 +678,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       .filter((c) => String(c[0]) !== TOKEN_URI)
       .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain('MIXED speech levels');
+    // 무엇이 틀렸는지 낱말로 짚어 준다 — '어체를 맞춰라' 만으로는 같은 '-요' 를 되풀이했다.
+    expect(prompts[1]).toContain('WRONG speech level');
+    expect(prompts[1]).toContain("'흐리대요'");
   });
 
   it('사전렌더: 확정 문구가 해요체면 배우자 목소리의 해요체 클립도 통과한다(영구 실패 방지)', async () => {
@@ -690,6 +695,114 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(out.text).toContain('챙겨요');
     const prompts = mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI);
     expect(prompts).toHaveLength(1);
+  });
+
+  it('목소리의 결: 사용자가 고른 값이 분석값보다 앞서고, 고르지 않으면 분석값을 둔다', () => {
+    const analyzed = { dialect: '경상', strength: 'low' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false, energy: 'lively' as const };
+    expect(withVoiceEnergy(analyzed, 'calm')).toEqual({ ...analyzed, energy: 'calm' });
+    expect(withVoiceEnergy(analyzed, '')).toBe(analyzed);
+    expect(withVoiceEnergy(analyzed, null)).toBe(analyzed);
+    expect(withVoiceEnergy(null, 'lively')?.energy).toBe('lively');
+    expect(withVoiceEnergy(null, 'weird')).toBeNull();
+  });
+
+  it('사전렌더 프롬프트: 결과 사람이 쓴 본보기를 싣는다 — 진중한 결은 들뜬 태그를 금지한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 자기야, 약 먹을 시간이야. [sincerely] 지금 바로 챙겨 먹자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm' },
+      humanReference: '[warmly] 약 먹을 시간이에요. [encouraging] 알람 끄기 전에 지금 바로 챙겨 먹어요.',
+    });
+    const body = JSON.stringify(contentRequestBody());
+    expect(body).toContain('VOICE ENERGY');
+    expect(body).toContain('CALM');
+    expect(body).toContain('HUMAN-WRITTEN REFERENCE');
+    expect(body).toContain('REWRITE EVERY ENDING');
+  });
+
+  // ⚠ **차분은 프롬프트만으로 지켜지지 않는다**(Codex #802). 모델이 들뜬 태그를 붙이거나 태그를 아예
+  // 안 붙여 카테고리 기본값(`cheerfully`·`playfully`)이 입혀지면, 차분을 고른 목소리가 영구히
+  // 밝게 튀는 클립을 문다. 서버가 지우고, 기본값은 `warmly` 로 바꾼다.
+  it('사전렌더: 차분한 목소리는 들뜬 태그를 지우고 기본 태그도 차분하게 입힌다', async () => {
+    const calm = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm' as const };
+    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야. [laughs] 지금 바로 [excited] 챙겨 먹자."}'));
+    const tagged = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: calm,
+    });
+    expect(tagged.text).not.toMatch(/playful|laugh|excite|cheerful/);
+    expect(tagged.text).toContain('[warmly]');
+    expect(tagged.tag).toBe('warmly');
+
+    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자.","tag":"cheerfully"}'));
+    const untagged = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: calm,
+    });
+    expect(untagged.text).toBe('[warmly] 자기야, 약 먹을 시간이야. [warmly] 지금 바로 챙겨 먹자.');
+
+    // 경쾌·자동 목소리는 그대로 — 들뜬 태그가 그 결의 요점이다.
+    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야! [laughs] 지금 바로 챙겨 먹자."}'));
+    const lively = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: { ...calm, energy: 'lively' },
+    });
+    expect(lively.text).toContain('[playfully]');
+    expect(lively.text).toContain('[laughs]');
+  });
+
+  it('차분한 목소리의 기본 태그·인라인 태그 거르기', () => {
+    expect(fallbackTagForEnergy('cheerfully', 'calm')).toBe('warmly');
+    expect(fallbackTagForEnergy('playfully', 'calm')).toBe('warmly');
+    expect(fallbackTagForEnergy('encouraging', 'calm')).toBe('encouraging');
+    expect(fallbackTagForEnergy('cheerfully', 'lively')).toBe('cheerfully');
+    expect(fallbackTagForEnergy('cheerfully', '')).toBe('cheerfully');
+    expect(dropWakeUnsafeTags('[giggles] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
+    expect(dropWakeUnsafeTags('[giggles] 일어나!', {})).toBe('[giggles] 일어나!');
+    // 밝은 태그도 차분에서는 모델 출력·기본값 어느 경로든 똑같이 막힌다.
+    expect(dropWakeUnsafeTags('[cheerfully] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
+  });
+
+  it('사전렌더: 예스러운 -셔요 는 -세요 로 고쳐 저장한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 할아버지, 이제 슬슬 일어나 보셔요. [caring] 우산 꼭 챙기셔요."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '비가 온다고 알리고 일어나 우산을 챙기라고 한다.',
+      relationshipLabel: '손녀',
+      listenerTitle: '할아버지',
+      targetLanguage: 'ko',
+    });
+    expect(out.text).toContain('일어나 보세요');
+    expect(out.text).toContain('챙기세요');
+    expect(out.text).not.toContain('셔요');
+  });
+
+  // ⚠ **존대 `-시-` 가 붙은 줄기만 고친다**(Codex #802). 줄기가 원래 `시` 로 끝나는 낱말까지 바꾸면
+  // 뜻이 깨진다 — 특히 `마셔요`→`마세요` 는 '마시다' 가 '하지 마세요' 가 된다.
+  it('-셔요 현대화는 존대 줄기에만 — 눈부셔요·적셔요·마셔요·모셔요는 그대로', () => {
+    expect(modernizeKoreanHonorific('할아버지, 일어나 보셔요. 우산 챙기셔요. 약 드셔요.')).toBe(
+      '할아버지, 일어나 보세요. 우산 챙기세요. 약 드세요.',
+    );
+    expect(modernizeKoreanHonorific('잠깐 앉으셔요. 푹 주무셔요? 이제 일어나셔요!')).toBe(
+      '잠깐 앉으세요. 푹 주무세요? 이제 일어나세요!',
+    );
+    for (const kept of ['햇살이 눈부셔요.', '비가 옷을 적셔요.', '물 한 잔 마셔요.', '부모님을 모셔요.']) {
+      expect(modernizeKoreanHonorific(kept)).toBe(kept);
+    }
   });
 
   it('관계를 모르는 목소리의 반말은 섞임으로 본다 — 등록 녹음이 반말이면 그 말투를 따른다', () => {

@@ -76,7 +76,7 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE voice_profiles (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT, elevenlabs_voice_id TEXT,
       status TEXT DEFAULT 'ready', is_system INTEGER DEFAULT 0, is_draft INTEGER DEFAULT 0,
-      deleted_at TEXT
+      speech_style_status TEXT, updated_at TEXT, deleted_at TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, voice_profile_id TEXT NOT NULL,
@@ -87,13 +87,14 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE voice_prerender_queue (
       voice_profile_id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, language TEXT DEFAULT 'ko',
       status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-      claimed_at TEXT, claim_token TEXT, updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0
+      claimed_at TEXT, claim_token TEXT, updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0,
+      requested_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE generated_audio_assets (
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
       provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
       request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-      audio_format TEXT, mime_type TEXT
+      audio_format TEXT, mime_type TEXT, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE user_consents (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, consent_type TEXT NOT NULL,
@@ -189,6 +190,33 @@ describe('사전렌더 — 렌더 중에 교체가 한 번 더 일어나면', ()
       );
       expect(String(queue.rows[0]!.status), '큐를 done 으로 끝내면 새 회차가 영영 안 돈다').toBe('pending');
       expect(String(queue.rows[0]!.claim_token)).toBe('TOKEN-2');
+    } finally {
+      cleanup(db, path);
+    }
+  });
+
+  // ⚠ **말투 재렌더가 같은 문장을 내도 끝나야 한다**(Codex #802). 같은 보이스·같은 문구면 해시가 같아
+  // 대장 INSERT 가 무시됐고, 게시 시각이 다시 굽기 요청보다 앞선 채 남아 이 클립이 영영 '빠진 것' 이었다.
+  it('다시 굽기에서 같은 해시를 다시 게시하면 대장의 게시 시각을 올린다', async () => {
+    const { db, path } = await prerenderDb();
+    try {
+      const sameVoiceTarget = { ...(inFlightTarget as Record<string, unknown>) } as never;
+      await generateStockClip(db as never, ENV, sameVoiceTarget);
+      // 말투가 늦게 도착했다 — 다시 굽기 요청(밀리초 시각)이 첫 게시 뒤에 찍힌다.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await db.execute(
+        "UPDATE voice_prerender_queue SET requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE voice_profile_id = 'vp1'",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await generateStockClip(db as never, ENV, sameVoiceTarget);
+
+      const ledger = await db.execute(`
+        SELECT COUNT(*) AS n,
+               MAX(CASE WHEN julianday(ga.created_at) > julianday(q.requested_at) THEN 1 ELSE 0 END) AS fresh
+          FROM generated_audio_assets ga
+          JOIN voice_prerender_queue q ON q.voice_profile_id = ga.voice_profile_id`);
+      expect(Number(ledger.rows[0]!.n), '같은 해시는 대장 행 하나다').toBe(1);
+      expect(Number(ledger.rows[0]!.fresh), '다시 굽기 뒤 게시로 세어지지 않는다 — 큐가 끝나지 않는다').toBe(1);
     } finally {
       cleanup(db, path);
     }

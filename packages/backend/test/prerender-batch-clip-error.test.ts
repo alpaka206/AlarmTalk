@@ -80,7 +80,8 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT, elevenlabs_voice_id TEXT,
       status TEXT DEFAULT 'ready', is_system INTEGER DEFAULT 0, is_draft INTEGER DEFAULT 0,
       relationship_label TEXT DEFAULT '', listener_title TEXT DEFAULT '',
-      preview_text TEXT, speech_style TEXT, deleted_at TEXT
+      preview_text TEXT, speech_style TEXT, voice_energy TEXT, speech_style_status TEXT,
+      updated_at TEXT, deleted_at TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, voice_profile_id TEXT NOT NULL,
@@ -98,7 +99,7 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
       provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
       request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-      audio_format TEXT, mime_type TEXT
+      audio_format TEXT, mime_type TEXT, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE user_consents (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, consent_type TEXT NOT NULL,

@@ -7,6 +7,7 @@ import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-pro
 import {
   extractDeliveryTags,
   parseSpeechStyle,
+  withVoiceEnergy,
   prepareAlarmTextWithVertex,
   generatePrerenderClipText,
   alarmTextRejectionReasonOf,
@@ -189,6 +190,21 @@ export const STOCK_CLIP_PRESETS = [
 const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
   love: 'cheer',
 };
+
+/**
+ * 클론 시드(`CLONE_CLIP_SEEDS`)와 **같은 의도**를 사람이 직접 쓴 기본 목소리 대사. 두 목록은 카테고리와
+ * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·태그 거는 법을
+ * 본보기로 삼는다. 짝이 없으면(인사·약 3번째 등) null.
+ *
+ * ⚠ 인사(greeting)는 짝이 아니다 — 기본 목소리의 인사는 '목소리 소개' 이고 클론 인사 시드는 '아침 인사' 다.
+ */
+export function stockReferenceLine(category: string, index: number, language: string): string | null {
+  const key = normalizeStockCategory(category);
+  if (key === STOCK_GREETING_CATEGORY) return null;
+  const preset = STOCK_CLIP_PRESETS.find((p) => p.category === key);
+  const texts = preset?.texts[language as (typeof STOCK_CLIP_LANGUAGES)[number]] as readonly string[] | undefined;
+  return texts?.[index] ?? null;
+}
 
 /** 옛 카테고리 이름을 현재 이름으로 접는다. 모르는 값은 그대로 돌려준다(검증은 호출부 몫). */
 export function normalizeStockCategory(category: string): string {
@@ -452,7 +468,10 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style
+    // ⚠ voice_energy 는 마이그레이션 #122 의 새 컬럼이다. 배포 직후 마이그레이션 전 창에는 이 조회가
+    //   실패해 그 회차가 건너뛰어지고 cron 이 다음 주기에 다시 잡는다(fail-closed — 결 없이 만든
+    //   클립을 영구 저장하지 않는다). 그러려면 호출자가 **잡은 임대를 풀고** 던져야 한다(drain·advance).
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -471,7 +490,7 @@ export async function listReadyCloneVoices(
     const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
-    const speechStyle = parseSpeechStyle(row.speech_style);
+    const speechStyle = withVoiceEnergy(parseSpeechStyle(row.speech_style), row.voice_energy);
     out.push({
       id,
       name: String(row.name),
@@ -514,10 +533,21 @@ export async function findMissingStockTargets(
   const ph = voiceIds.map(() => '?').join(',');
   const existing = await db.execute({
     sql: `SELECT m.voice_profile_id, m.category, m.language, m.variant,
-                 ga.provider_voice_id AS published_provider_voice_id
+                 ga.provider_voice_id AS published_provider_voice_id,
+                 -- 다시 굽는 회차는 그 요청 뒤에 게시된 것만 최신이다(아래 refreshExisting 필터).
+                 -- 둘 다 밀리초까지 남기고 **엄격한 >** 로 본다: 같은 순간이면 다시 굽는 쪽으로 기운다
+                 -- (한 번 더 굽는 것은 괜찮고, 옛 결이 섞이는 것은 안 된다).
+                 CASE WHEN q.requested_at IS NULL
+                        OR julianday(ga.created_at) > julianday(q.requested_at) THEN 1 ELSE 0 END
+                   AS published_after_refresh
           FROM messages m
+          -- 대장은 해시(보이스+문구)마다 한 행이라, 두 프리셋이 우연히 같은 문장이면 한 행을 **나눠 쓴다** —
+          -- 먼저 기록한 메시지에만 묶여 있다. 그래서 '이 메시지가 지금 틀고 있는 렌더' 는 같은 보이스의
+          -- 같은 음원으로 찾는다(Codex #802). message_id 갈래는 보이스 id 가 비어 있을 수 있는 옛 행용이다.
           LEFT JOIN generated_audio_assets ga
-            ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+            ON (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+           AND ga.audio_url = m.audio_url
+          LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
             -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.
             -- ⚠ **여기에는 배포 창 가드를 붙이지 말 것**(2026-09-08 감사). 이건 목록이
@@ -539,7 +569,12 @@ export async function findMissingStockTargets(
         const voice = voiceById.get(String(row.voice_profile_id));
         // 교체 배치는 여러 cron/advance 호출에 걸친다. 지금 프로필의 새 provider 로 이미
         // 게시된 행만 완료로 세야 앞쪽 클립을 매번 다시 만드는 무한 루프가 생기지 않는다.
-        return voice?.elevenlabsVoiceId === String(row.published_provider_voice_id ?? '');
+        // ⚠ **보이스 대조만으로는 부족하다**(Codex #802). 말투 분석이 늦게 도착해 **같은 보이스로**
+        // 다시 굽는 회차는 옛 클립도 보이스가 같다 — 그 요청(`requested_at`) 뒤에 게시된 것만 센다.
+        return (
+          voice?.elevenlabsVoiceId === String(row.published_provider_voice_id ?? '') &&
+          Number(row.published_after_refresh ?? 1) === 1
+        );
       })
       .map(
       (row) =>
@@ -655,6 +690,60 @@ export async function enqueuePrerender(
   });
 }
 
+/**
+ * 말투 분석(`speech_style_status = 'pending'`)을 기다려 주는 최대 시간 — SQLite `datetime` 수정자.
+ *
+ * ⚠ **분석보다 먼저 구우면 그 클립은 영영 말투·결 없이 남는다**(Codex #802). 결을 '자동' 으로 두면
+ * 결은 등록 녹음 전사 분석(`speech_style.energy`)에서만 오고, 분석은 등록 응답 뒤 `waitUntil` 로 돈다.
+ * 승격이 그보다 빠르면 사전렌더가 빈 말투로 21개를 만들어 게시하고, 뒤늦은 분석은 그걸 되돌리지
+ * 못한다(같은 provider 보이스라 `refresh_existing` 도 '이미 있다' 로 센다). 그래서 **분석이 도는 동안은
+ * 굽지 않고 기다린다** — cron claim(`claimPendingPrerenderVoices`)과 소유자 주도 전진
+ * (`POST /voice/:id/prerender/advance`) 두 곳 모두.
+ *
+ * 상한을 두는 이유: `waitUntil` 이 잘리면 상태가 'pending' 인 채 영영 남는다. 그 목소리를 영영
+ * 굽지 않는 것보다 말투 없이 굽는 게 낫다. 기준 시각은 프로필의 `updated_at`(분석 시작·승격 때 갱신)이다.
+ */
+export const SPEECH_STYLE_ANALYSIS_WAIT_SQL = '-10 minutes';
+
+/**
+ * 등록 첫 미리듣기가 말투 분석을 기다리는 간격(ms). 첫 조회는 곧바로 한다. 합계 ≈ 10초, DB 조회 최대 6번 —
+ * `POST /tts/generate` 의 서브리퀘스트 예산(Vertex·합성·R2·DB)을 넘기지 않는 선이다.
+ */
+export const SPEECH_STYLE_PREVIEW_WAIT_DELAYS_MS: readonly number[] = [0, 1000, 1500, 2000, 2500, 3000];
+
+/**
+ * 말투 분석이 끝날 때까지 잠깐 기다린다 — **등록 첫 미리듣기**용(Codex #802).
+ *
+ * 등록 화면은 클론을 만든 즉시 미리듣기를 부르고, 분석은 그 응답 뒤 `waitUntil` 로 돈다. 기다리지 않으면
+ * 첫 미리듣기가 말투·자동 결 없이 생성·영속되고(`preview_text`), 사용자는 그걸 듣고 확정한다 — 알람
+ * 클립(분석을 기다려 굽는다)과 다른 결을 승인하는 셈이다. 그 문구는 클립의 스타일 레퍼런스도 된다.
+ *
+ * 돌려주는 것: 끝났으면 `{ settled: true, speechStyle }`(분석 원문 — 실패했거나 대상이 아니면 그 행의 값),
+ * 상한까지 안 끝났으면 `{ settled: false }`. 호출자는 그때 **생성하지 않고** 고정 예문으로 떨어진다 —
+ * 영속하지 않으므로 다음 미리듣기가 분석 뒤에 다시 만들고, 이대로 확정해도 재생은 같은 고정 예문이다.
+ */
+export async function waitForSpeechStyleAnalysis(
+  db: Pick<Client, 'execute'>,
+  voiceProfileId: string,
+  delaysMs: readonly number[] = SPEECH_STYLE_PREVIEW_WAIT_DELAYS_MS,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<{ settled: true; speechStyle: unknown } | { settled: false }> {
+  for (const delay of delaysMs) {
+    if (delay > 0) await sleep(delay);
+    const res = await db.execute({
+      sql: `SELECT speech_style,
+                   CASE WHEN speech_style_status = 'pending'
+                         AND datetime(updated_at) > datetime('now', ?) THEN 1 ELSE 0 END AS analysis_pending
+            FROM voice_profiles WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+      args: [SPEECH_STYLE_ANALYSIS_WAIT_SQL, voiceProfileId],
+    });
+    const row = res.rows[0];
+    if (!row) return { settled: true, speechStyle: null };
+    if (Number(row.analysis_pending ?? 0) !== 1) return { settled: true, speechStyle: row.speech_style ?? null };
+  }
+  return { settled: false };
+}
+
 /** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
 export async function claimPendingPrerenderVoices(
   db: Client,
@@ -669,13 +758,20 @@ export async function claimPendingPrerenderVoices(
             FROM voice_prerender_queue
             WHERE status = 'pending'
               AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
+              -- 말투 분석이 도는 중인 목소리는 건너뛴다(SPEECH_STYLE_ANALYSIS_WAIT_SQL 주석).
+              AND NOT EXISTS (
+                SELECT 1 FROM voice_profiles spv
+                WHERE spv.id = voice_prerender_queue.voice_profile_id
+                  AND spv.speech_style_status = 'pending'
+                  AND datetime(spv.updated_at) > datetime('now', ?)
+              )
             ORDER BY requested_at ASC
             LIMIT ?
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
           RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing`,
-    args: [claimToken, Math.max(1, Math.min(Math.trunc(limit), 50))],
+    args: [claimToken, SPEECH_STYLE_ANALYSIS_WAIT_SQL, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
   return res.rows.map((row) => ({
     voiceProfileId: String(row.voice_profile_id),
@@ -821,7 +917,17 @@ export async function runPrerenderBatch(
   const claimed = await claimPendingPrerenderVoices(db, Math.max(1, Math.trunc(options.maxVoices ?? 5)));
   if (claimed.length === 0) return { claimed: 0, rendered: 0 };
 
-  const cloneVoices = await listReadyCloneVoices(db, claimed);
+  let cloneVoices: PrerenderVoice[];
+  try {
+    cloneVoices = await listReadyCloneVoices(db, claimed);
+  } catch (lookupError) {
+    // 배포 창(#122 전)에는 이 조회가 던진다 — fail-closed 는 맞지만 **잡은 임대는 풀고** 던진다.
+    // 안 풀면 스키마가 준비된 뒤에도 15분(cron 세 틱) 동안 이 행들을 아무도 못 잡는다(Codex #802).
+    for (const request of claimed) {
+      await releasePrerenderClaim(db, request.voiceProfileId, request.claimToken).catch(() => undefined);
+    }
+    throw lookupError;
+  }
   const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
   // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
   const readyIds = new Set(cloneVoices.map((v) => v.id));
@@ -1242,6 +1348,7 @@ export async function generateStockClip(
       defaultTag: target.defaultTag,
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
+      humanReference: stockReferenceLine(target.category, target.variantIndex, language),
     });
     // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
     // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나
@@ -1495,15 +1602,19 @@ export async function generateStockClip(
         if ((replaced.rowsAffected ?? 0) === 0) {
           return { superseded: true as const, publishedAudioUrl: String(row.audio_url ?? '') };
         }
-        // 오디오 대장에도 새 렌더를 남긴다. `request_hash` 가 UNIQUE 라 같은 해시가 이미
-        // 있으면(같은 목소리·같은 문구) 무시된다 — 교체는 provider voice id 가 달라
-        // 해시가 반드시 갈라지므로 정상적으로 새 행이 생긴다.
+        // 오디오 대장에도 새 렌더를 남긴다. 교체는 provider voice id 가 달라 해시가 반드시 갈라지므로
+        // 새 행이 생긴다. `created_at` 은 밀리초까지 — 다시 굽는 회차가 '요청 뒤에 게시된 것' 을 같은 초
+        // 안에서도 가른다.
+        // ⚠ **같은 해시면 게시 시각만 올린다**(Codex #802). 말투 재렌더는 보이스가 같아, 모델이 우연히 같은
+        // 문장을 내면 해시가 같다 — 무시하면 대장의 게시 시각이 요청 전 그대로라 이 클립이 영영 '빠진 것'
+        // 으로 세어지고 매 회차 다시 합성된다(큐가 끝나지 않는다). 연결(`message_id`)은 건드리지 않는다.
         await tx.execute({
-          sql: `INSERT OR IGNORE INTO generated_audio_assets
+          sql: `INSERT INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 audio_url, audio_object_key, audio_format, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
+                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1543,8 +1654,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,

@@ -2944,6 +2944,19 @@ export const migrations: Migration[] = [
         WHERE redemption_group = 'welcome' AND is_active = 1`,
     ],
   },
+  {
+    // 121(웰컴 코드 비활성)보다 먼저 dev 에 적용됐다 — 실행기는 id 집합으로 적용 여부를 보므로
+    // 순서가 바뀌어 적용돼도 된다.
+    id: 122,
+    name: 'voice-profiles-voice-energy',
+    atomic: true,
+    statements: [
+      // 등록할 때 사용자가 고른 목소리의 결('lively'|'calm', NULL/'' = 자동). 알람 문구 생성이 이 결에
+      // 맞춰 문장 에너지와 딜리버리 태그를 고른다(lib/vertex-translate.ts `withVoiceEnergy`).
+      // 관계·호칭처럼 초안 단계에서만 바뀐다(routes/voice-profile.ts PATCH /:id/relationship).
+      `ALTER TABLE voice_profiles ADD COLUMN voice_energy TEXT`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with
