@@ -239,6 +239,9 @@ export function isFearTag(tag: string): boolean {
  * 사용자가 '차분' 을 고른 목소리가 영구히 들뜬 클립을 문다(Codex #802). 그래서 서버가 지운다.
  */
 const CALM_INCOMPATIBLE_WORDS = [
+  // 밝게 튀는 결 — 경쾌한 목소리의 대표 태그다(스펙 §4-2). 기본값 폴백만 막고 모델 출력은 통과시키면
+  // 같은 태그가 경로에 따라 금지였다 허용이었다 한다(Codex #802).
+  'cheer',
   'playful',
   'excite',
   'giggl',
@@ -264,9 +267,7 @@ const CALM_FALLBACK_TAG = 'warmly';
 /// 모델이 태그를 안 붙였을 때 입힐 기본 태그 — 차분한 목소리면 들뜬 기본값을 `warmly` 로 바꾼다.
 export function fallbackTagForEnergy(defaultTag: string, energy: string | null | undefined): string {
   if (energy !== 'calm' || !defaultTag) return defaultTag;
-  return isCalmIncompatibleTag(defaultTag) || normalizeTag(defaultTag).includes('cheer')
-    ? CALM_FALLBACK_TAG
-    : defaultTag;
+  return isCalmIncompatibleTag(defaultTag) ? CALM_FALLBACK_TAG : defaultTag;
 }
 
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
@@ -1313,7 +1314,7 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     speechStyle?.energy === 'lively'
       ? 'VOICE ENERGY — this voice is bright and LIVELY. Let the line bounce: short upbeat sentences, a light exclamation or a small laugh where it fits ([cheerfully], [playfully], [laughs], [excited], [brightly]). Never flat, solemn or preachy. Cautions and apologies stay caring, just warm and quick rather than heavy.'
       : speechStyle?.energy === 'calm'
-        ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady sentences, few or no exclamation marks, no giggles or teasing, and none of [playfully], [excited], [giggles], [laughs]. Use tags like [warmly], [sincerely], [reassuring], [caring], [steady], [measured, deliberate]. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act, and never uses sleepy or hushed tags. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말). This overrides the tag examples listed below.'
+        ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady sentences, few or no exclamation marks, no giggles or teasing, and none of [cheerfully], [playfully], [excited], [giggles], [laughs]. Use tags like [warmly], [sincerely], [reassuring], [caring], [steady], [measured, deliberate]. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act, and never uses sleepy or hushed tags. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말). This overrides the tag examples listed below.'
         : '';
   const speechStyleInstruction =
     speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)

@@ -741,7 +741,7 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(tagged.text).toContain('[warmly]');
     expect(tagged.tag).toBe('warmly');
 
-    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자."}'));
+    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자.","tag":"cheerfully"}'));
     const untagged = await generatePrerenderClipText(ENV, {
       seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
       relationshipLabel: '남자친구',
@@ -774,6 +774,8 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(fallbackTagForEnergy('cheerfully', '')).toBe('cheerfully');
     expect(dropWakeUnsafeTags('[giggles] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
     expect(dropWakeUnsafeTags('[giggles] 일어나!', {})).toBe('[giggles] 일어나!');
+    // 밝은 태그도 차분에서는 모델 출력·기본값 어느 경로든 똑같이 막힌다.
+    expect(dropWakeUnsafeTags('[cheerfully] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
   });
 
   it('사전렌더: 예스러운 -셔요 는 -세요 로 고쳐 저장한다', async () => {
