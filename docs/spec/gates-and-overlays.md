@@ -32,15 +32,20 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 **언제 뜨나 — 셋 다 참일 때**
 1. **이번 진입에서 새로 받은** 이 계정의 계정 응답(`/auth/me`, 로그인으로 들어온 진입이면 그
-   로그인·가입 응답의 `user`)에 `personal_promo` 가 있다.
+   로그인·가입 응답의 `user`)에 `personal_promo` 가 있다. (iOS 는 로그인·가입 응답도 표를 떠 이번
+   진입의 답으로 적는다. 안드로이드는 로그인 응답을 적지 않고 로그인 직후의 `checkAccountStatus`
+   를 기다린다 — 같은 진입 안이라 결과는 같고, 안내가 그 왕복만큼 늦을 뿐이다.)
 2. 기기 시각이 `notice_from ≤ 지금 < ends_at` 이다(둘 다 서버 값 — 앱에 날짜를 두지 않는다).
 3. 이 계정이 **이 `ends_at` 에** '다시 보지 않기' 를 누른 적이 없다.
 
 **'들어온다' = 콜드 스타트, 또는 백그라운드에서 전경으로 돌아옴 — 이것뿐이다.**
 - Android: 프로세스 수명주기 `ON_START`(`AppSignals.appEntries`).
-- iOS: `scenePhase` 가 **`.background` → `.active`** 로 바뀔 때. ⚠ **`.inactive` → `.active` 는
-  진입이 아니다** — 제어 센터·알림 센터·시스템 알럿(권한 요청 포함)·Face ID·전화 배너를 닫을
-  때마다 그렇게 바뀐다. `.active` 전환만 보면 그때마다 안내가 다시 뜬다(리뷰).
+- iOS: `scenePhase` 가 **`.background` → `.active`** 로 바뀔 때(콜드 스타트의 첫 활성 포함). ⚠
+  **`.inactive` → `.active` 는 진입이 아니다** — 제어 센터·알림 센터·시스템 알럿(권한 요청 포함)·
+  Face ID·전화 배너를 닫을 때마다 그렇게 바뀐다. `.active` 전환만 보면 그때마다 안내가 다시
+  뜬다(리뷰). ⚠ **진입은 한 곳에서만 센다** — 앱 장면의 `scenePhase`(`AlarmTalkApp` →
+  `AppEntrySignal.shared`)가 유일한 출처이고 화면(`RootView`)은 읽기만 한다. 둘이 따로 세면 한
+  번의 복귀가 두 진입이 되어, 복귀의 `/auth/me` 가 앞 번호로 찍혀 '이 진입의 답' 이 영영 오지 않는다.
 - 화면·탭 이동, 재구성(recomposition), 같은 진입 안의 재판정으로는 다시 뜨지 않는다.
 
 **판정 시점 — 이번 진입의 계정 응답이 온 뒤에만**
@@ -49,13 +54,33 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   진입의 `/auth/me`(또는 같은 값을 주는 계정 응답)가 도착한 뒤에만** 판정한다 — 진입마다 새로
   세우는 '이번 진입의 계정 응답' 신호가 준비 신호다(계정 단위 `accountStatusChecked` 는 진입마다
   다시 세워지지 않아 이 역할을 못 한다).
-- 그 응답이 **실패**하면 이번 진입은 띄우지 않는다(옛 값으로 판정하지 않는다). 반복 안내라
-  다음 진입이 다시 판정한다 — 준비 신호의 '실패도 도착' 원칙과 다르게 두는 이유는, 이 안내는
-  빠뜨려도 다음 진입이 있지만 틀린 안내는 되돌릴 수 없어서다.
+- 그 응답이 **실패**하면 옛 값으로 판정하지 않는다. 반복 안내라 다음 진입이 다시 판정한다 —
+  준비 신호의 '실패도 도착' 원칙과 다르게 두는 이유는, 이 안내는 빠뜨려도 다음 진입이 있지만
+  틀린 안내는 되돌릴 수 없어서다.
+  - ⚠ **실패 뒤 같은 진입의 성공 응답을 어떻게 보느냐는 두 앱이 아직 다르다.** iOS 는 이 진입의
+    **첫 결과**를 적고(`AccountEntryAnswer` — `answered`·`failed`) 실패면 그 진입을 끝낸다
+    (`PersonalPromoNotice.Decision.nothingToShow`) — iOS 는 `.inactive → .active`(제어 센터를
+    닫을 때 등)마다 `/auth/me` 를 다시 불러, 실패한 진입의 뒤 성공으로 판정하면 세션 한가운데서
+    안내가 뜬다(리뷰). 안드로이드는 **성공만** 적으므로(`recordAccountAnswer`) 실패한 진입에서도
+    같은 진입에 보낸 뒤 성공 응답(쿠폰·결제 뒤의 `refreshAppSessionNow` 등)이 오면 그걸로 판정한다
+    — 안드로이드에는 진입 안에서 `/auth/me` 를 다시 부르는 자리가 그것뿐이라 드물다. 어느 쪽으로
+    맞출지 정하지 않았다(열린 문제).
 - **'이번 진입의 응답' = 이번 진입에 보낸 요청이 이번 진입에 도착한 것.** 앞 진입에 보낸 요청이
   백그라운드를 건너 늦게 도착한 것은 세지 않는다(그 사이 다른 기기에서 결제했을 수 있다). 순서가
-  뒤집혀 늦게 온 옛 요청의 응답은 새 응답을 덮지 않는다(안드로이드 `accountAnswerEntryFor`·
-  `recordAccountAnswer` 의 순번).
+  뒤집혀 늦게 온 옛 요청의 응답은 새 응답을 덮지 않는다.
+  - 요청을 **보내기 직전에** 표(보낸 진입·순번)를 뜨고 응답까지 들고 간다 — 안드로이드
+    `beginAccountRequest` → `AccountRequest`(`PersonalPromoLedger`), iOS
+    `AuthViewModel.beginAccountRequest` → `AuthViewModel.AccountRequest`. 도착했을 때의 진입이 보낸
+    진입과 같을 때만 그 진입의 답이다(안드로이드 `accountAnswerEntryFor`, iOS
+    `AppEntryCounter.entryForRequest` — 백그라운드에서 보낸 요청은 어느 진입의 답도 아니다).
+  - 옛 순번의 응답은 버린다 — 안드로이드 `PersonalPromoLedger.recordAccountAnswer`, iOS
+    `AuthViewModel.applyFreshPlan(…request:)` 과 `/auth/me` 반영(더 새 답이 이미 반영됐으면 그
+    plan·프로모 짝을 지킨다 — 굴린 토큰·탈퇴 유예는 그대로 반영한다).
+  - 세션 밖에서 계정 답을 받는 경로(iOS `SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)도 같은
+    표를 받는다(`SocialFeatureViewModel.beginAccountRequest` → `onFreshPlan`).
+  - 계정이 바뀌면(세션 정리) 진입 기록을 지우고 떠 있던 요청의 순번을 앞지른다 — 앞 계정의 응답이
+    새 계정의 판정이 되지 않게(안드로이드 `PersonalPromoLedger.resetForAccountSwitch`, iOS
+    `AuthViewModel` 세션 정리).
 - **판정은 진입마다 한 번이다.** 이번 진입의 응답으로 판정해 **띄울 것이 없으면**(프로모 없음·기간
   밖·'다시 보지 않기') 이번 진입은 그걸로 끝난다 — 같은 진입의 뒤 계정 응답(`plan_changed`·결제
   신호·iOS 의 `.inactive → .active` 새로고침 등)으로 다시 판정하지 않는다. 안 그러면 제어 센터를
@@ -81,6 +106,16 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   보이지 않는 채 '띄운 것' 으로 남아 다음 진입의 안내까지 삼키면 안 된다. 이번 진입에 띄우지
   못하고 진입이 끝나면(앱이 다시 백그라운드로 가면) 대기를 **지우고** 다음 진입에 다시
   판정한다. '이번 진입에 띄웠다' 는 표시는 **실제로 화면에 나온 뒤에만** 남긴다.
+  - 안드로이드: 떠 있는 안내 위로 다른 창·게이트·권한 창이 올라오면 안내를 걷고 이 진입을 '판정
+    전' 으로 되돌린다(`PersonalPromoLedger.deferEndNotice`) — 가린 것이 닫히면 같은 진입에서 다시 뜬다.
+  - iOS: `show` 판정은 진입을 끝내지 않는다. 표시(`marker`)는 알럿이 **화면에 보인 것을 확인한 뒤**
+    (`RootView.verifyShownNoticeIsVisible`) 또는 사용자가 닫을 때(`RootView.closePersonalPromoNotice`)
+    적는다. SwiftUI 가 같은 프레임의 다른 시트 때문에 알럿을 조용히 건너뛰면 표시 없이 걷어, 그 창이
+    닫힌 뒤 같은 진입에서 다시 뜬다. 한 진입에서 **세 번**(`maxUnseenPromoNotices`) 보이지 않으면
+    그 진입은 포기한다(감지가 빗나가도 1초마다 깜빡이지 않게 — `noteUnseenPromoNotice`).
+- 떠 있는 안내는 **새 계정 응답에 맞춘다** — 같은 종료 시각이면 새 값(삭제 문장 갈래가 바뀌었을 수
+  있다), 프로모가 사라졌거나(결제·쿠폰) 끝났거나 종료 시각이 바뀌었으면 닫는다(안드로이드
+  `reconcileShownPersonalPromoNotice`, iOS `PersonalPromoNotice.reconcileShown`).
 
 **모양**: 버튼 둘 — `다시 보지 않기` · `확인`. Android 는 `IosAlertDialog`(버튼 2개 = 가로),
 iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이번 진입만 닫힘). **아이콘은 없다**
@@ -114,13 +149,14 @@ iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이�
 | 준비 신호 | `MainViewModel.consentChecked` / `versionChecked` / `accountStatusChecked` · `sync/StockReplacementStatus.kt` 의 `checkedUserId`(`AlarmTalkApp.kt` 의 `stockReplacementChecked`) | `AuthViewModel.consentStatusChecked` / `AppVersionGate.checked` · `StockReplacementStatus.isChecked(for:)`(`RootView.blockingGateActive`) |
 | 차단 게이트 집합 | `AlarmTalkApp.kt` 의 `blockingGateActive` | `RootView.blockingGateActive` |
 | 판정 키(재실행 트리거) | `LaunchedEffect(...)` 키 목록 | `RootView.promoGateKey`(강등 안내·종료 안내가 공유) |
-| 종료 안내 — 진입 감지 | `core/AppSignals.kt` `AppSignals.appEntries`(`ON_START`) · `personalPromoNoticePendingForEntry` | `PersonalPromoNotice.swift` `AppEntryCounter`(`.background` → `.active` 만) |
-| 종료 안내 — 판정·준비 신호·다른 창 | `AlarmTalkApp.kt` 의 종료 안내 이펙트 · `ui/billing/PersonalPromo.kt` `PersonalPromoNoticeGates` · `MainViewModel.maybeShowPersonalPromoEndNotice`·`recordAccountStatusPromo` | `RootView.evaluatePersonalPromoNotice` · `PersonalPromoNotice.shouldShow` |
-| 종료 안내 — 기간·날짜(`lastDay`·`nextDay`) | `ui/billing/PersonalPromo.kt` `isPersonalPromoEndNoticeDue` · `personalPromoLastDay` · `formatPersonalPromoDay` | `PersonalPromoNotice.dayLabels` · `PersonalPromo.dayLabel` |
-| 종료 안내 — '다시 보지 않기'(계정 + `ends_at`) | `PersonalPromoNoticeStore`(`ui/billing/PersonalPromo.kt`) · `MainViewModel.dismissPersonalPromoEndNotice` | `PersonalPromoNoticeStore`(`PersonalPromoNotice.swift`) |
-| 종료 안내 — 문구 | `res/values*/strings.xml` `personal_promo_end_notice_*` · 확인 `auth_confirm` | `Localizable.xcstrings`(ko·en·ja) |
-| 종료 안내 — 회귀 테스트 | `PersonalPromoNoticeTest` | `PersonalPromoTests` · `PersonalPromoNoticeUITests` |
-| 세션 정리 | `clearUserScopedRemoteState` | `AuthViewModel` 세션 정리 |
+| 종료 안내 — 진입 감지 | `core/AppSignals.kt` `AppSignals.appEntries`(`ON_START`) · `personalPromoNoticePendingForEntry` | `PersonalPromoNotice.swift` `AppEntrySignal`(`AlarmTalkApp` 의 `scenePhase` 한 곳이 센다) · `AppEntryCounter`(`.background` → `.active` 만) |
+| 종료 안내 — 이번 진입의 계정 응답(보낸 진입 = 도착 진입 · 옛 순번 버림) | `ui/billing/PersonalPromoLedger.kt` `AccountRequest` · `PersonalPromoLedger.beginAccountRequest`·`recordAccountAnswer`·`accountAnsweredEntry`·`latestAccountPromo` · `ui/billing/PersonalPromo.kt` `accountAnswerEntryFor` · 부르는 자리 `MainViewModelAuthActions` 의 `checkAccountStatus`·`refreshAppSessionNow`(`MainViewModel` 이 같은 이름으로 위임) | `AuthViewModel.beginAccountRequest`·`AuthViewModel.AccountRequest`·`accountEntryAnswer`(`AccountEntryAnswer` — 첫 결과만)·`appEntryState`·`applyFreshPlan(userID:from:plan:personalPromo:request:)` · `AppEntryCounter.entryForRequest` · `PersonalPromoNotice.entryAnswer(_:entry:)`·`PersonalPromoNotice.EntryAnswer` · `SocialFeatureViewModel.beginAccountRequest`·`onFreshPlan` |
+| 종료 안내 — 판정·준비 신호·다른 창 | `AlarmTalkApp.kt` 의 종료 안내 이펙트 · `ui/billing/PersonalPromo.kt` `PersonalPromoNoticeGates`·`decidePersonalPromoEndNotice`(`PersonalPromoNoticeDecision` — `NotNow`·`NothingToShow`·`Show`)·`reconcileShownPersonalPromoNotice` · `PersonalPromoLedger.maybeShowEndNotice`·`deferEndNotice`(`MainViewModel.maybeShowPersonalPromoEndNotice`·`deferPersonalPromoEndNotice`·`personalPromoEndNotice`) · 다른 창: `ui/components/OpenModalRegistry.kt` `TrackOpenModal`·`OpenModalRegistry`(강제 `scripts/check-open-modal-tracking.py`) | `RootView.runOverlayNotices`·`verifyShownNoticeIsVisible`·`noteUnseenPromoNotice`(`maxUnseenPromoNotices`) · `PersonalPromoNotice.decide`(`PersonalPromoNotice.Decision` — `skip`·`nothingToShow`·`wait`·`show`)·`shouldShow`·`reconcileShown` · 다른 창: `ForegroundModalState.swift` `ModalPresentationProbe`·`SystemPermissionPrompts` |
+| 종료 안내 — 기간·날짜(`lastDay`·`nextDay`) | `ui/billing/PersonalPromo.kt` `isPersonalPromoEndNoticeDue` · `personalPromoLastDay`·`personalPromoFreeFromDay` · `formatPersonalPromoDay` | `PersonalPromoNotice.dayLabels` · `PersonalPromo.dayLabel`·`lastFreeDate`·`isInEndNoticeWindow` |
+| 종료 안내 — '다시 보지 않기'(계정 + `ends_at`) | `PersonalPromoNoticeStore`(`ui/billing/PersonalPromo.kt`) · `MainViewModel.dismissPersonalPromoEndNotice`(`PersonalPromoLedger.dismissEndNotice`) | `PersonalPromoNoticeStore`(`PersonalPromoNotice.swift`) · `RootView.closePersonalPromoNotice` |
+| 종료 안내 — 문구(삭제 문장 갈래) | `res/values*/strings.xml` `personal_promo_end_notice_*` · 확인 `auth_confirm` · `personalPromoDeletesVoicesAtEnd` | `Localizable.xcstrings`(ko·en·ja) · `PersonalPromo.deletesVoicesAtEnd` |
+| 종료 안내 — 회귀 테스트 | `PersonalPromoNoticeTest` · `PersonalPromoLedgerTest`(옛 순번 버림·계정 전환·다른 창에 밀린 안내·띄울 것 없음으로 진입 끝·앞 진입 응답) | `PersonalPromoTests`(진입·응답·판정) · `AuthViewModelTests`(계정 요청 표·순번) · `PersonalPromoNoticeUITests` |
+| 세션 정리 | `clearUserScopedRemoteState`(→ `PersonalPromoLedger.resetForAccountSwitch`) | `AuthViewModel` 세션 정리(`accountEntryAnswer` 를 지우고 순번을 앞지른다) |
 
 ⚠ iOS 의 차단 게이트에는 **목소리 받기 화면**(`voiceSetupDone != true`)도 들어간다.
 빼 두면 신규 가입 100% 에서 다운로드 화면 위에 안내가 얹혀 '다시 시도' 를 가린다.

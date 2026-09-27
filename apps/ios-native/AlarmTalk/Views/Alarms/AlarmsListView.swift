@@ -12,6 +12,7 @@ struct AlarmsListView: View {
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
     @State private var actionMessage: String?
     /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
     @State private var wakeTargetSheetOpen = false
@@ -102,6 +103,20 @@ struct AlarmsListView: View {
                 member.email != currentEmail &&
                 member.allowFamilyAlarms == true
         }
+    }
+
+    /// 기간 한정 개인 플랜 중의 **보류 규칙**(스펙 D9)이 상대 알람을 막는가 — 규칙이 걸려 있고
+    /// 등급(`PlanTier.bestKnown(user:)` — 스토어·계산값)이 커플 미만이면, 결제 보류로 남은 그룹의
+    /// 구성원이 있어도 「누구를 깨울까요?」 를 묻지 않는다. 안드로이드 `AlarmTalkApp` 의
+    /// `canCreateFamilyAlarm`(`hasCoupleOrFamilyAccess` + `personalPromoTierHold`)과 같은 답이다.
+    private var familyAlarmHeldByPromo: Bool {
+        let user = auth.session?.user
+        guard PlanTier.personalPromoHoldActive(user: user) else { return false }
+        return !PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            user: user
+        ).meetsOrExceeds(.couple)
     }
 
     /// 인라인 액션 메시지(alarmKit 유래) 우선, 없으면 동기화 상태 메시지. 둘 중 하나만.
@@ -358,7 +373,7 @@ struct AlarmsListView: View {
     /// **선택지가 하나면 묻지 않는다** — 탭을 한 번 더 받을 뿐 아무것도 결정하지 않는다.
     @MainActor
     private func presentCreateEntry() {
-        if familyRecipients.isEmpty {
+        if familyRecipients.isEmpty || familyAlarmHeldByPromo {
             openEditor(.create())
         } else {
             wakeTargetSheetOpen = true

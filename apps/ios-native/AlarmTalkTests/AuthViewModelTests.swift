@@ -204,7 +204,7 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(PersonalPromoNotice.entryAnswer(vm.accountEntryAnswer, entry: 3), .pending)
     }
 
-    /// 회귀(2026-09-27 리뷰 2차, 안드로이드 `accountAnswerSeq`): **먼저 보낸 요청의 응답이 늦게
+    /// 회귀(2026-09-27 리뷰 2차, 안드로이드 `PersonalPromoLedger.recordAccountAnswer` 의 순번): **먼저 보낸 요청의 응답이 늦게
     /// 오면 방금 반영한 새 답을 덮지 않는다.** 결제 직후 갱신이 프로모를 걷어 냈는데, 그보다
     /// 먼저 떠난 전경 복귀의 `/auth/me` 가 뒤늦게 옛 프로모를 되살리면 결제한 사람에게 "곧
     /// 끝나요" 가 다시 뜬다.

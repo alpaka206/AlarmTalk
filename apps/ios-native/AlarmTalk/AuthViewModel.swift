@@ -235,7 +235,7 @@ final class AuthViewModel: ObservableObject {
     @Published private(set) var accountEntryAnswer: AccountEntryAnswer?
 
     /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
-    /// 안드로이드 `MainViewModel.AccountRequest` 와 같은 모양이다.
+    /// 안드로이드 `AccountRequest`(`ui/billing/PersonalPromoLedger.kt`)와 같은 모양이다.
     struct AccountRequest: Equatable {
         /// 보낸 순서. 늦게 도착한 옛 응답이 새 응답을 덮지 않게 한다.
         let seq: Int
@@ -921,7 +921,7 @@ final class AuthViewModel: ObservableObject {
                   session?.user.id == merged.id,
                   accountRecoveryRevision == recoveryRevision else { return nil }
             // ⚠ **늦게 도착한 옛 응답이 새 응답의 plan·프로모를 덮지 않는다**(2026-09-27 리뷰 2차,
-            //   안드로이드 `accountAnswerSeq`). 전경 복귀·결제·쿠폰·푸시·배경 갱신이 저마다
+            //   안드로이드 `PersonalPromoLedger.recordAccountAnswer` 의 순번). 전경 복귀·결제·쿠폰·푸시·배경 갱신이 저마다
             //   `/auth/me` 를 부르므로 둘이 겹칠 수 있다 — 먼저 보낸 요청이 나중에 오면 방금 반영한
             //   프로모를 옛 값으로 되돌린다(결제한 사람에게 "무료 이용이 곧 끝나요" 가 다시 뜬다).
             //   더 새 답이 이미 반영됐으면 **그 짝(plan·프로모)은 지킨다.** 나머지(굴린 토큰·탈퇴
@@ -1938,7 +1938,8 @@ final class AuthViewModel: ObservableObject {
         consentStatusChecked = false
         // 계정 응답의 진입 기록도 계정별이다 — 앞 계정의 응답으로 새 계정의 종료 안내를
         // 판정하지 않는다. 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
-        // (안드로이드 `clearUserScopedRemoteState` 의 `accountAnswerSeq = accountRequestSeq + 1`).
+        // (안드로이드 `clearUserScopedRemoteState` → `PersonalPromoLedger.resetForAccountSwitch` 의
+        // `answerSeq = requestSeq + 1`).
         accountEntryAnswer = nil
         accountAnswerSeq = accountRequestSeq
         // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.

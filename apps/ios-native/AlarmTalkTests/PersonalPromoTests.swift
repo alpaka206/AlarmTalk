@@ -289,6 +289,69 @@ final class PersonalPromoTests: XCTestCase {
         )
     }
 
+    /// 회귀(스펙 D9 — 안드로이드 `personalPromoTierHoldOf` 미러): 기간 중에는 **남은 가족 그룹**
+    /// 으로도 커플·가족 기능을 열지 않는다. 결제 보류는 그룹을 남긴 채 plan 만 회수하므로, 그룹의
+    /// 멤버 수로 공유 토글을 열면 서버가 원시값으로 막는 공유를 켜게 된다. 프로모가 낡으면(끝 전에
+    /// 계산된 답이 끝을 넘김) 예전 규칙 그대로 그룹이 연다.
+    func test_promoHold_groupMembersDoNotUnlockSharingDuringPromo() {
+        let user = promoUser(promo: promo)
+        let session = AuthSession(token: "t", user: user)
+        let beforeEnd = end.addingTimeInterval(-60)
+        let retainedGroup = FamilyGroupCurrentResponse(
+            group: FamilyGroup(
+                id: "group-1", ownerUserId: "owner-1", planId: "plan-1",
+                maxMembers: 5, createdAt: "2026-01-01T00:00:00Z"
+            ),
+            role: "member",
+            members: [
+                FamilyGroupMember(
+                    id: "m-1", userId: "owner-1", role: "owner",
+                    joinedAt: "2026-01-01T00:00:00Z", email: "owner@example.com", name: "Owner"
+                ),
+                FamilyGroupMember(
+                    id: "m-2", userId: user.id, role: "member",
+                    joinedAt: "2026-01-01T00:00:00Z", email: user.email, name: "Me"
+                ),
+            ]
+        )
+
+        XCTAssertTrue(PlanTier.personalPromoHoldActive(user: user, now: beforeEnd))
+        XCTAssertFalse(
+            canShareVoiceWithOthers(
+                subscriptionResponse: noSubscription,
+                familyGroup: retainedGroup,
+                authSession: session,
+                now: beforeEnd
+            ),
+            "기간 중 보류 계정은 남은 그룹의 멤버로 공유 토글이 열리지 않는다"
+        )
+        XCTAssertTrue(
+            canShareVoiceWithOthers(
+                subscriptionResponse: noSubscription,
+                familyGroup: retainedGroup,
+                authSession: session,
+                storeTier: .family,
+                now: beforeEnd
+            ),
+            "스토어 등급은 보류 규칙 아래에서도 연다"
+        )
+
+        // 끝 전에 계산된 답이 끝을 넘기면 낡은 캐시다 — 보류 규칙이 풀리고 예전 규칙(그룹)이다.
+        XCTAssertFalse(PlanTier.personalPromoHoldActive(user: user, now: end))
+        XCTAssertTrue(
+            canShareVoiceWithOthers(
+                subscriptionResponse: noSubscription,
+                familyGroup: retainedGroup,
+                authSession: session,
+                now: end
+            ),
+            "낡은 프로모에서는 그룹 멤버가 예전처럼 연다"
+        )
+
+        // 프로모가 없는 계정은 규칙이 없다.
+        XCTAssertFalse(PlanTier.personalPromoHoldActive(user: promoUser(plan: "family", promo: nil), now: beforeEnd))
+    }
+
     /// 편집기(`bestKnown(user:)`)와 판정기(`PaidVoiceGate`)가 **같은 계정에 같은 답**을 낸다.
     func test_editorTierAndGateAgreeForPromoUser() {
         let user = promoUser(promo: promo)

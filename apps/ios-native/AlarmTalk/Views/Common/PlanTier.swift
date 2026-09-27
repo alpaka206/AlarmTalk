@@ -149,4 +149,17 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         let computed = PlanTier.from(user?.plan)
         return (tierOrder[computed] ?? 0) > (tierOrder[storeTier] ?? 0) ? computed : storeTier
     }
+
+    /// 기간 한정 개인 플랜의 **보류 규칙**이 지금 걸려 있는가(스펙 D2·D9) — 세션 사용자에게
+    /// 프로모가 있고 낡지 않았다(`PersonalPromo.isStale`).
+    ///
+    /// 걸려 있으면 커플·가족 기능(상대 알람·목소리 공유)은 **등급**(`bestKnown(user:)` — 스토어와
+    /// 계산값)으로만 열린다. 가족 그룹·그 멤버 수 같은 **다른 근거로 열지 않는다** — 결제 보류는
+    /// 그룹을 남긴 채 plan 만 회수하므로, 그룹으로 열면 서버가 원시값으로 거절할 액션을 앱이
+    /// 연다. 안드로이드 `personalPromoTierHoldOf` 가 null 이 아닌 경우와 같은 답이다.
+    /// 프로모가 없거나 끝난 뒤의 낡은 캐시면 false — 예전 규칙(그룹도 연다) 그대로다.
+    static func personalPromoHoldActive(user: AuthUser?, now: Date = Date()) -> Bool {
+        guard let promo = user?.personalPromo else { return false }
+        return !promo.isStale(at: now)
+    }
 }

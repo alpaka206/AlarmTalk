@@ -28,7 +28,10 @@ freeVoiceTier = 로그인함 && !유료
 ([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」). 서버가 `plan` 을
 계산값(`plus`)으로 주므로 앱은 **그대로 소비**한다. 기기 시계를 보는 예외는 하나뿐이다 —
 **끝 전에 받아 둔 낡은 캐시**가 끝을 넘기면 무료로 읽는다(같은 절의 D1: 끝 뒤에 받은 답은
-그대로 권위이고, 살아 있는 구독 행이 언제나 이긴다). '로그인 + 무료' 갈래는 지우지 않는다:
+그대로 권위이고, 살아 있는 구독 행이 언제나 이긴다. '받은 시각' 은 서버가 계산한 시각
+`computed_at` 이 우선이고(D7), 받은 시각이 아예 없는 캐시는 끝 전의 답으로 본다). 기간 중에는
+보류 규칙도 그대로다 — 남은 구독 행·가족 그룹이 커플·가족을 열지 못한다(D9). '로그인 + 무료'
+갈래는 지우지 않는다:
 기간이 끝나면 같은 계정이 곧바로 그 갈래로 돌아온다.
 
 ### 유료가 닿던 길은 **막혔다** — 갈래는 방어값으로 남긴다
@@ -99,8 +102,9 @@ freeVoiceTier = 로그인함 && !유료
 | 세 상태 열거 | `VoiceGateReason` (`ui/editor/AlarmEditorScreen.kt`) | `PlanAccess` (`Views/Editor/AlarmEditorSheet.swift`) | — |
 | 게이트 표시 | `PlanGateDialog` (`ui/components/PlanGateDialog.kt`) | `showVoicePlanLockedAlert` (`AlarmEditorSheet.swift`) | — |
 | 유료 판정 — **유일 출처** | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` | `isPaidVoicePlan` |
-| 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) | — |
-| 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` | — |
+| 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` · 커플·가족은 `hasCoupleOrFamilyAccess`(기간 한정 개인 플랜 중 보류 규칙 `MainViewModel.personalPromoTierHold` — `billing-lifecycle.md` D9) | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다 — 기간 중에는 `bestKnown(user:)`) · 그룹으로 여는 자리는 `PlanTier.personalPromoHoldActive`(D9) | — |
+| 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` · 낡은 프로모 갈래는 이번 진입의 plan 반영 뒤에만(`freePlanLockMayApply`) | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`(그 대기는 아직 없다 — 후속) | — |
+| 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 쿠폰 등록 | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` / `promo-redemption.ts` |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 

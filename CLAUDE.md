@@ -235,6 +235,7 @@
   개인 플랜 종료 안내가 "다른 창이 떠 있나" 를 이 등록부로 보고 기다린다 — 창이 스스로 적지
   않으면 그 창 **위로** 안내가 겹쳐 뜬다. 껍데기(`IosAlertDialog`·`WakerSelectionSheet`·
   `WakerFormSheet`)는 이미 부른다. 규칙은 `docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」.
+  강제: `scripts/check-open-modal-tracking.py`(CI lint — 파일마다 직접 연 창 수 ≤ `TrackOpenModal()` 수).
 - **iOS**: `KeyboardDismissGesture` — 창에 단 UIKit 탭 인식기가 **터치가 입력 컨트롤 위인지**를
   델리게이트에서 가른다(`cancelsTouchesInView = false`).
   ⚠ **`simultaneousGesture` 로 만들지 말 것** — 모든 탭에 함께 발화해 방금 focus 된 칸을
