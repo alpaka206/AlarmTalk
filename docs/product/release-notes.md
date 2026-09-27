@@ -21,6 +21,41 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.10 (versionCode 30 / iOS 빌드 7)
+
+#801·#802·#803(+#795~#800). 마이그레이션 #121(웰컴 그룹 코드 끄기)·#122(`voice_profiles.voice_energy`).
+
+**두 스토어의 문안이 같다** — 이번 회차의 사용자 변화는 두 앱에 똑같이 들어갔다. 기간 한정 개인
+플랜 줄은 서버 스위치(`PERSONAL_PROMO_STARTS_AT`)가 켜져 있을 때만 보이므로 "무료로 쓸 수 있을 때"
+로 조건을 적는다(스위치는 iOS 1.2.10 게재 뒤에 켠다 — `billing-lifecycle.md` 「운영」).
+
+### ko-KR
+
+```
+• 목소리를 등록할 때 '목소리 느낌'(자동·경쾌·차분)을 고를 수 있습니다. 알람 문구의 말투와 톤을 그 느낌에 맞춥니다.
+• 등록한 목소리로 만드는 알람 문구가 사람이 말하듯 더 자연스러워졌습니다.
+• 기간 한정으로 개인 플랜을 무료로 쓸 수 있을 때, 이용권 화면에 이용 기간을 보여 주고 끝나기 1주 전부터 알려 드립니다.
+• 처음 실행할 때 뜨던 코드 안내 창을 없앴습니다. 코드는 더보기에서 그대로 등록할 수 있습니다.
+```
+
+### en-US
+
+```
+• When registering a voice, you can now choose its Voice feel (Auto, Lively, Calm). Alarm lines match that feel in wording and tone.
+• Alarm lines made with your registered voice now sound more natural, like a person talking.
+• When the Personal plan is free for a limited time, the plan screen shows how long it lasts, with a reminder a week before it ends.
+• Removed the code prompt on first launch. You can still register codes from More.
+```
+
+### ja-JP
+
+```
+• 声を登録するときに「声の雰囲気」(自動・明るい・落ち着いた)を選べるようになりました。アラーム文言の話し方とトーンをその雰囲気に合わせます。
+• 登録した声で作るアラーム文言が、人が話すようにより自然になりました。
+• パーソナルプランを期間限定で無料で使えるとき、プラン画面に利用期間を表示し、終了の1週間前からお知らせします。
+• 初回起動時に表示されていたコード案内を削除しました。コードは「その他」から引き続き登録できます。
+```
+
 ## 1.2.9 (versionCode 29 / iOS 빌드 6)
 
 #788(+#790·#791). 마이그레이션은 없다.
