@@ -28,7 +28,7 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 끝나기 전에 알린다. 약관 제10조의 '무료 전환으로 지워지는 데이터는 전환 전에 앱 안에서
 안내한다' 를 지키는 자리다. 1회성이 아니라 **반복** 안내라 소진 플래그는 없지만, 차단
 게이트 위에 겹치거나 옛 값으로 뜨는 사고는 같은 모양이라 같은 규약을 따른다.
-두 앱이 **똑같이** 구현한다(아래 전부 — 스펙의 D3·D4).
+두 앱이 **똑같이** 구현한다(아래 전부 — 스펙의 D3·D4·D11).
 
 **언제 뜨나 — 셋 다 참일 때**
 1. **이번 진입에서 새로 받은** 이 계정의 계정 응답(`/auth/me`, 로그인으로 들어온 진입이면 그
@@ -54,17 +54,20 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
   진입의 `/auth/me`(또는 같은 값을 주는 계정 응답)가 도착한 뒤에만** 판정한다 — 진입마다 새로
   세우는 '이번 진입의 계정 응답' 신호가 준비 신호다(계정 단위 `accountStatusChecked` 는 진입마다
   다시 세워지지 않아 이 역할을 못 한다).
-- 그 응답이 **실패**하면 옛 값으로 판정하지 않는다. 반복 안내라 다음 진입이 다시 판정한다 —
-  준비 신호의 '실패도 도착' 원칙과 다르게 두는 이유는, 이 안내는 빠뜨려도 다음 진입이 있지만
-  틀린 안내는 되돌릴 수 없어서다.
-  - ⚠ **실패 뒤 같은 진입의 성공 응답을 어떻게 보느냐는 두 앱이 아직 다르다.** iOS 는 이 진입의
-    **첫 결과**를 적고(`AccountEntryAnswer` — `answered`·`failed`) 실패면 그 진입을 끝낸다
-    (`PersonalPromoNotice.Decision.nothingToShow`) — iOS 는 `.inactive → .active`(제어 센터를
-    닫을 때 등)마다 `/auth/me` 를 다시 불러, 실패한 진입의 뒤 성공으로 판정하면 세션 한가운데서
-    안내가 뜬다(리뷰). 안드로이드는 **성공만** 적으므로(`recordAccountAnswer`) 실패한 진입에서도
-    같은 진입에 보낸 뒤 성공 응답(쿠폰·결제 뒤의 `refreshAppSessionNow` 등)이 오면 그걸로 판정한다
-    — 안드로이드에는 진입 안에서 `/auth/me` 를 다시 부르는 자리가 그것뿐이라 드물다. 어느 쪽으로
-    맞출지 정하지 않았다(열린 문제).
+- 그 응답이 **실패**하면 이번 진입은 띄우지 않는다(옛 값으로 판정하지 않는다). 반복 안내라
+  다음 진입이 다시 판정한다 — 준비 신호의 '실패도 도착' 원칙과 다르게 두는 이유는, 이 안내는
+  빠뜨려도 다음 진입이 있지만 틀린 안내는 되돌릴 수 없어서다.
+  - **D11 — 이 진입의 첫 결과가 이 진입을 끝낸다(성공이든 실패든, 두 앱 같은 규칙).** 이번 진입에
+    보낸 계정 요청의 결과 중 **먼저 도착한 것** 하나가 이 진입의 판정을 정한다. 실패가 먼저면 같은
+    진입에 뒤따라 오는 성공 응답(쿠폰·결제 뒤의 재조회, `plan_changed` 신호, 결제 권한 재확인,
+    iOS 의 `.inactive → .active` 새로고침)으로 다시 판정하지 않는다 — 그러면 세션 한가운데서 안내가
+    뜬다(리뷰). 안드로이드는 요청의 진입에 실패를 적고(`PersonalPromoLedger`), iOS 는
+    `AccountEntryAnswer`(`answered`·`failed` — 첫 결과만)가 같은 일을 한다. 실패로 끝난 진입은
+    `PersonalPromoNoticeDecision.NothingToShow` / `PersonalPromoNotice.Decision.nothingToShow` 와 같다.
+  - **결과는 어느 경로로 반영되든, 버려지든 적는다.** 이번 진입에 보낸 요청의 답이 세션 밖 경로로
+    반영되거나(iOS `SocialFeatureViewModel` 의 `/auth/me` → `applyFreshPlan(…request:)`), 이 계정의
+    토큰이 그 사이 굴러 응답 본문을 버리는 경우에도 **이 진입의 결과**는 적는다 — 안 적으면 진입이
+    '대기' 로 남아, 같은 진입의 나중 응답이 첫 결과가 되어 세션 한가운데서 판정한다(리뷰).
 - **'이번 진입의 응답' = 이번 진입에 보낸 요청이 이번 진입에 도착한 것.** 앞 진입에 보낸 요청이
   백그라운드를 건너 늦게 도착한 것은 세지 않는다(그 사이 다른 기기에서 결제했을 수 있다). 순서가
   뒤집혀 늦게 온 옛 요청의 응답은 새 응답을 덮지 않는다.
@@ -73,9 +76,11 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
     `AuthViewModel.beginAccountRequest` → `AuthViewModel.AccountRequest`. 도착했을 때의 진입이 보낸
     진입과 같을 때만 그 진입의 답이다(안드로이드 `accountAnswerEntryFor`, iOS
     `AppEntryCounter.entryForRequest` — 백그라운드에서 보낸 요청은 어느 진입의 답도 아니다).
-  - 옛 순번의 응답은 버린다 — 안드로이드 `PersonalPromoLedger.recordAccountAnswer`, iOS
-    `AuthViewModel.applyFreshPlan(…request:)` 과 `/auth/me` 반영(더 새 답이 이미 반영됐으면 그
-    plan·프로모 짝을 지킨다 — 굴린 토큰·탈퇴 유예는 그대로 반영한다).
+  - 옛 순번의 응답은 버린다 — 안내 판정뿐 아니라 **plan·프로모 쓰기**(세션 plan · 판정 스냅샷의
+    plan 과 프로모 표지 · 이번 진입의 plan 반영 표시)에서도 두 앱 모두(안드로이드 `PersonalPromoLedger`
+    의 순번 판정 — `recordAccountAnswer` 의 결과를 버리지 않고 쓴다, iOS `AuthViewModel.applyFreshPlan(…request:)`
+    과 `/auth/me` 반영). 더 새 답이 이미 반영됐으면 그 plan·프로모 짝을 지킨다 — 굴린 토큰·탈퇴 유예는
+    그대로 반영한다. 규칙 전문은 [`billing-lifecycle.md`](billing-lifecycle.md) 「앱」의 순번 가드.
   - 세션 밖에서 계정 답을 받는 경로(iOS `SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)도 같은
     표를 받는다(`SocialFeatureViewModel.beginAccountRequest` → `onFreshPlan`).
   - 계정이 바뀌면(세션 정리) 진입 기록을 지우고 떠 있던 요청의 순번을 앞지른다 — 앞 계정의 응답이

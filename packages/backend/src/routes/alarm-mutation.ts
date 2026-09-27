@@ -100,6 +100,10 @@ async function usesOnlySystemStockVoice(
  *
  * 넓히더라도 타인 메시지 id 를 알람에 끼워 넣는 IDOR 은 계속 막는다 — 접근 근거는 언제나
  * '그 목소리를 쓸 수 있는가' 이고, 초안(is_draft) 보이스의 메시지는 어느 갈래로도 못 지난다.
+ *
+ * 부르는 자리: POST 는 언제나, PATCH 는 `message_id` 가 **저장된 값에서 바뀔 때만**(스펙 D13 —
+ * [voiceProfileBelongsToCaller] 의 D8 과 같은 규칙). 그대로 보낸 값은 새 참조가 아니다. 허용 갈래
+ * 자체는 이 조건과 무관하게 오디오 라우트와 같다.
  */
 async function messageBelongsToCaller(
   db: DbExecutor,
@@ -805,23 +809,32 @@ alarmMutation.patch('/:id', async (c) => {
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
   // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
   const ownerIds = callerOwnerIds(c) as [string, string];
-  // ⚠ **목소리는 저장된 값에서 바뀔 때만 다시 본다**(스펙 D8 — `docs/spec/billing-lifecycle.md`
-  // 「기간 한정 개인 플랜」 공유 목소리 표). 안드로이드 동기화는 켜기·끄기·시각만 고쳐도
-  // `voice_profile_id` 를 **매번 그대로** 보낸다. 공유 목소리 주인이 결제 보류(원시 free)가 되면
-  // 소유권 게이트가 그 목소리를 막으므로, 그대로 보낸 값까지 보면 토글마다 404 → 생성 폴백도 404
-  // → 알람이 동기화 실패로 남는다(리뷰). 바뀌지 않은 값은 새 참조를 만들지 않는다 — 이미 이 알람에
-  // 있던 값이고, 알람 소유는 위 조회가 확인했다. 새 목소리로 **바꾸는** PATCH 와 POST 는 언제나
-  // 본다. (`message_id` 는 보낼 때마다 본다 — 기존 규칙 그대로다.)
+  // ⚠ **목소리·문구는 저장된 값에서 바뀔 때만 다시 본다**(스펙 D8·D13 —
+  // `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 공유 목소리 표). 안드로이드 동기화
+  // (`RemoteAlarmMapper.toWriteRequest`)는 켜기·끄기·시각만 고쳐도 `voice_profile_id` 와
+  // `message_id` 를 **매번 그대로** 보낸다. 공유 목소리 주인이 결제 보류(원시 free)가 되면 소유권
+  // 게이트가 그 목소리와 그 주인의 프리셋 클립을 막으므로, 그대로 보낸 값까지 보면 토글마다 404 →
+  // 생성 폴백도 404 → 알람이 동기화 실패로 남는다(리뷰). 바뀌지 않은 값은 새 참조를 만들지 않는다
+  // — 이미 이 알람에 있던 값이고, 알람 소유는 위 조회가 확인했다. 새 값으로 **바꾸는** PATCH 와
+  // POST 는 언제나 본다.
+  // ⚠ 이건 `messageBelongsToCaller` ↔ 오디오 라우트 **쌍 규칙을 넓히지 않는다** — 허용 갈래는 그대로이고,
+  //   보류 주인의 클립 재생은 `GET /tts/messages/:id/audio` 가 여전히 `VOICE_LOCKED_FREE_PLAN` 으로 막는다.
+  //   살리는 것은 이미 있던 알람의 동기화뿐이다.
   const changedVoiceProfileId =
     body.voice_profile_id !== undefined &&
     body.voice_profile_id !== null &&
     body.voice_profile_id !== current.voice_profile_id
       ? body.voice_profile_id
       : null;
-  if (
+  const changedMessageId =
     body.message_id !== undefined &&
     body.message_id !== null &&
-    !(await messageBelongsToCaller(db, body.message_id, ownerIds))
+    body.message_id !== current.message_id
+      ? body.message_id
+      : null;
+  if (
+    changedMessageId !== null &&
+    !(await messageBelongsToCaller(db, changedMessageId, ownerIds))
   ) {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
@@ -917,8 +930,9 @@ alarmMutation.patch('/:id', async (c) => {
       sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
       args,
     });
+  // 트랜잭션 안의 재확인(TOCTOU)도 바깥 게이트와 같은 조건이다 — 바뀌는 값만 본다(D8·D13).
   const updateResult =
-    changedVoiceProfileId !== null || (body.message_id !== undefined && body.message_id !== null)
+    changedVoiceProfileId !== null || changedMessageId !== null
       ? await withWriteTransaction(db, async (tx) => {
           if (
             changedVoiceProfileId !== null &&
@@ -927,9 +941,8 @@ alarmMutation.patch('/:id', async (c) => {
             return { status: 'voice_not_found' as const, result: null };
           }
           if (
-            body.message_id !== undefined &&
-            body.message_id !== null &&
-            !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
+            changedMessageId !== null &&
+            !(await messageBelongsToCaller(tx, changedMessageId, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
           }
