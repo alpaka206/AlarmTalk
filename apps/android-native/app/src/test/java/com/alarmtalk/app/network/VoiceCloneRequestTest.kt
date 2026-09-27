@@ -33,7 +33,7 @@ class VoiceCloneRequestTest {
     fun 자동은_빈_값으로_voiceEnergy_를_보낸다() {
         val parts = sendClone(draft(voiceEnergy = VoiceEnergy.AUTO))
 
-        // 파트 자체가 있어야 한다 — 없으면 서버는 '결을 모르는 구버전 앱' 으로 읽는다.
+        // 자동도 파트가 있어야 한다 — 서버 결과는 같지만, 조립에서 필드가 빠지는 회귀를 여기서 잡는다.
         assertTrue("voiceEnergy 파트가 없다: ${parts.keys}", "voiceEnergy" in parts)
         assertEquals("", parts["voiceEnergy"])
     }
