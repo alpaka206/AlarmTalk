@@ -444,11 +444,22 @@ internal fun MainViewModel.checkAccountStatus() {
             pendingDeletion = response.user.deletionStatus == "pending_deletion"
             // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
             // (`MainViewModel.latestAccountPromo`). 그 사이 계정이 바뀌었으면 남의 값이라 적지 않는다.
-            if (authSession?.user?.id == session.user.id) {
-                recordAccountAnswer(accountRequest, response.user.personalPromo)
+            // 더 새 계정 응답이 이미 적혔으면 장부가 이 옛 답을 버린다(탈퇴 유예는 위에서 그대로 반영).
+            if (authSession?.user?.id == session.user.id &&
+                !recordAccountAnswer(accountRequest, response.user.personalPromo)
+            ) {
+                Log.i(TAG, "Account status answer superseded by a later account answer")
             }
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
+            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 같은 진입의
+            // 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)으로 세션 한가운데 뜨지 않게 실패도 적는다.
+            // 계정이 바뀌었으면 적지 않는다. 401 로 세션이 끝나는 중이면 적혀도 곧 세션 정리가 장부를
+            // 비우고(`PersonalPromoLedger.resetForAccountSwitch`), 정리가 먼저 끝났으면 앞지른 순번이
+            // 이 실패를 버린다.
+            if (!signingOut && authSession?.user?.id == session.user.id) {
+                recordAccountFailure(accountRequest)
+            }
         }
         // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
         // 영영 안 뜬다 — 계정 상태를 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
@@ -1376,6 +1387,20 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
+            // **나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 이 답은 쓰지 않는다**
+            // (`PersonalPromoLedger.claimPlanAnswer` — iOS `AuthViewModel.applyFreshPlan` 의 순번 가드).
+            // 진입 갱신이 떠 있는 동안 쿠폰·결제·`plan_changed` 뒤의 갱신이 먼저 돌아오면, 늦게 온
+            // 진입 갱신의 옛 plan·프로모가 세션과 스냅샷의 표지를 되살린다 — 보류 규칙(D9)이 방금
+            // 가족이 된 사람의 가족 기능을 닫고, 옛 plan 으로 `planAnsweredEntry` 까지 세워 잠금
+            // 대기를 풀어 버린다. 버리는 것은 세션·스냅샷 쓰기와 plan 반영 표시 전부다 — 더 새 답이
+            // 모든 필드를 이미 새로 적었다. 이 답이 굴려 준 토큰도 버린다(무상태 JWT 라 지금 토큰이
+            // 그대로 유효하다). 계정 응답(종료 안내)도 이미 더 새 답이 적었다.
+            // ⚠ **쓰기 전에** 잡는다 — 이 블록은 멈추지 않고 메인 스레드에서 끝까지 돌아, 잡은 뒤
+            //   다른 응답이 끼어들지 못한다.
+            if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
+                Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
+                return@onSuccess
+            }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
             // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
             // **안 주면(구버전 서버·재발급 실패) 저장소의 현재 토큰을 지킨다** — 시작할 때
@@ -1401,7 +1426,12 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             authSession = saved
             // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
             // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
-            recordAccountAnswer(accountRequest, saved.user.personalPromo)
+            // plan 쓰기(위의 순번)와 순번이 따로다: 나중에 보낸 `checkAccountStatus` 의 답이 먼저
+            // 적혔으면 이 답은 종료 안내에는 옛 답이지만, plan 에는 여전히 가장 새 답이다
+            // (`checkAccountStatus` 는 plan 을 쓰지 않는다 — `PersonalPromoLedger` 의 `planAnswerSeq`).
+            if (!recordAccountAnswer(accountRequest, saved.user.personalPromo)) {
+                Log.i(TAG, "Auth refresh account answer superseded by a later account answer")
+            }
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
@@ -1441,6 +1471,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                 return@onFailure
             }
             Log.w(TAG, "Auth refresh failed", error)
+            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11 —
+            // `MainViewModel.recordAccountFailure`). 계정이 바뀌었으면 적지 않는다. 401 은 인증기가
+            // 세션을 정리하고 그 정리가 장부를 비운다 — 정리가 먼저 끝났으면 앞지른 순번이 이 실패를
+            // 버린다(`PersonalPromoLedger.resetForAccountSwitch`).
+            if (!signingOut && authSession?.user?.id == session.user.id) {
+                recordAccountFailure(accountRequest)
+            }
         }
     }
     return applied

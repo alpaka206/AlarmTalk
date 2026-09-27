@@ -121,7 +121,7 @@ class PersonalPromoNoticeTest {
         assertEquals(
             PersonalPromoNoticeDecision.NotNow,
             decidePersonalPromoEndNotice(
-                entry = 2, handledEntry = 1, answeredEntry = 1,
+                entry = 2, handledEntry = 1, entryAnswer = answered(1),
                 latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
             ),
         )
@@ -129,7 +129,7 @@ class PersonalPromoNoticeTest {
         assertEquals(
             PersonalPromoNoticeDecision.Show(promo),
             decidePersonalPromoEndNotice(
-                entry = 2, handledEntry = 1, answeredEntry = 2,
+                entry = 2, handledEntry = 1, entryAnswer = answered(2),
                 latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
             ),
         )
@@ -137,7 +137,36 @@ class PersonalPromoNoticeTest {
         assertEquals(
             PersonalPromoNoticeDecision.NotNow,
             decidePersonalPromoEndNotice(
-                entry = 2, handledEntry = 2, answeredEntry = 2,
+                entry = 2, handledEntry = 2, entryAnswer = answered(2),
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+    }
+
+    @Test
+    fun aFailedFirstAnswerEndsTheEntryWithNothingToShow() {
+        // 이 진입의 첫 계정 응답이 실패했다(오프라인) — 옛 값으로 판정하지 않고 이 진입을 끝낸다(D11).
+        // `NotNow` 로 두면 같은 진입의 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)이 세션 한가운데 안내를 띄운다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NothingToShow,
+            decidePersonalPromoEndNotice(
+                entry = 2, handledEntry = 1, entryAnswer = failed(2),
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+        // 지난 진입의 실패는 이 진입의 결과가 아니다 — 이 진입의 응답을 기다린다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NotNow,
+            decidePersonalPromoEndNotice(
+                entry = 3, handledEntry = 2, entryAnswer = failed(2),
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+        // 아직 아무 결과도 없다 — 기다린다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NotNow,
+            decidePersonalPromoEndNotice(
+                entry = 1, handledEntry = 0, entryAnswer = null,
                 latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
             ),
         )
@@ -150,7 +179,7 @@ class PersonalPromoNoticeTest {
         assertEquals(
             PersonalPromoNoticeDecision.NothingToShow,
             decidePersonalPromoEndNotice(
-                entry = 1, handledEntry = 0, answeredEntry = 1,
+                entry = 1, handledEntry = 0, entryAnswer = answered(1),
                 latestPromo = null, nowMillis = from, optedOutEndsAt = null,
             ),
         )
@@ -158,14 +187,14 @@ class PersonalPromoNoticeTest {
         assertEquals(
             PersonalPromoNoticeDecision.NothingToShow,
             decidePersonalPromoEndNotice(
-                entry = 1, handledEntry = 0, answeredEntry = 1,
+                entry = 1, handledEntry = 0, entryAnswer = answered(1),
                 latestPromo = promo, nowMillis = from - 1, optedOutEndsAt = null,
             ),
         )
         assertEquals(
             PersonalPromoNoticeDecision.NothingToShow,
             decidePersonalPromoEndNotice(
-                entry = 1, handledEntry = 0, answeredEntry = 1,
+                entry = 1, handledEntry = 0, entryAnswer = answered(1),
                 latestPromo = promo, nowMillis = from, optedOutEndsAt = endsAt,
             ),
         )
@@ -188,6 +217,10 @@ class PersonalPromoNoticeTest {
         assertEquals(keepVoices, reconcileShownPersonalPromoNotice(showing = promo, latestPromo = keepVoices, nowMillis = from))
         assertNull(reconcileShownPersonalPromoNotice(showing = null, latestPromo = promo, nowMillis = from))
     }
+
+    private fun answered(entry: Long) = AccountEntryAnswer(entry, AccountEntryAnswer.Outcome.Answered)
+
+    private fun failed(entry: Long) = AccountEntryAnswer(entry, AccountEntryAnswer.Outcome.Failed)
 
     // ── 준비 신호·차단 ────────────────────────────────────────────────────────────
 

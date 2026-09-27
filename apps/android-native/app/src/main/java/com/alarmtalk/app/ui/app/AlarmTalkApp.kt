@@ -419,17 +419,20 @@ internal fun AlarmTalkApp(
     // 스타트·백그라운드에서 복귀). 화면 이동으로는 다시 뜨지 않는다: 진입 번호는
     // `AppSignals.appEntries`(프로세스 ON_START)이고, 같은 번호에서는 두 번 판정하지 않는다.
     //
-    // ⚠ **그 진입의 새 `/auth/me` 응답이 온 뒤에만 판정한다**(`viewModel.accountAnsweredEntry`).
+    // ⚠ **그 진입의 새 `/auth/me` 응답이 온 뒤에만 판정한다**(`viewModel.accountEntryAnswer`).
     //   진입마다 뷰모델이 새로 받는다(`MainViewModel` init 의 진입 구독). 저장된 세션의 promo 로
-    //   판정하면 그 사이 결제·쿠폰을 등록한 사람에게도 "곧 끝나요" 가 뜬다.
+    //   판정하면 그 사이 결제·쿠폰을 등록한 사람에게도 "곧 끝나요" 가 뜬다. 그 진입의 **첫 결과가
+    //   실패면** 그 진입은 띄우지 않는다 — 같은 진입의 뒤 성공(쿠폰·`plan_changed`·결제 신호 뒤의
+    //   갱신)으로 세션 한가운데 뜨지 않게(D11).
     // ⚠ **소진 플래그는 아니지만 준비 신호는 똑같이 지킨다**(`docs/spec/gates-and-overlays.md`).
     //   응답 전 기본값 `false` 는 '아니오' 가 아니다 — 그 틈에 뜨면 뒤늦게 온 차단 화면
     //   (업데이트·동의·탈퇴 유예·교체)과 겹친다.
     // ⚠ **다른 모달·시스템 권한 창 위에는 띄우지 않는다.** 권한 게이트·목소리 받기 화면·강등
     //   안내·민감 동의, 그리고 창을 여는 모든 모달(`OpenModalRegistry` — 목소리 등록 창·시트·
     //   알럿)과 시스템 권한 창(요청 중 신호 + 화면이 RESUMED 가 아님)을 기다린다. 떠 있는 동안
-    //   그중 하나가 올라오면 안내를 걷고 다시 기다린다(`deferPersonalPromoEndNotice`) — 대기
-    //   중인 안내는 다른 안내를 막지 않는다.
+    //   그중 하나가 올라오면 안내를 걷고 다시 기다린다 — 대기 중인 안내는 다른 안내를 막지 않는다.
+    //   갈래(막혔으면 걷기·열렸으면 판정)는 장부에 있다(`PersonalPromoLedger.evaluateEndNotice` —
+    //   `MainViewModel.evaluatePersonalPromoEndNotice`). 이 이펙트는 게이트를 모아 넘기기만 한다.
     // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
     val appEntry by com.alarmtalk.app.core.AppSignals.appEntries.collectAsStateWithLifecycle()
     val lifecycleState = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -460,7 +463,7 @@ internal fun AlarmTalkApp(
         stockReplacementPending,
         downgradeNotice,
         viewModel.pendingSensitiveConsent,
-        viewModel.accountAnsweredEntry,
+        viewModel.accountEntryAnswer,
         viewModel.latestAccountPromo,
         viewModel.personalPromoEndNotice,
         systemPermissionPromptOpen,
@@ -487,11 +490,7 @@ internal fun AlarmTalkApp(
             systemPermissionPromptOpen = systemPermissionPromptOpen,
             activityResumed = activityResumed,
         )
-        if (!gates.ready()) {
-            viewModel.deferPersonalPromoEndNotice()
-            return@LaunchedEffect
-        }
-        viewModel.maybeShowPersonalPromoEndNotice(appEntry)
+        viewModel.evaluatePersonalPromoEndNotice(gates, appEntry)
     }
 
     // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
@@ -618,8 +617,6 @@ internal fun AlarmTalkApp(
         // **스토어 신호가 하나 더 들어온다**: Play 가 유효한 구독을 확인해 주면 서버 스냅샷이
         // 무엇이든 잠그지 않는다(「스토어가 권위다」). 자동갱신 직후 서버 반영이 늦은 사이
         // 돈을 내는 사용자의 알람이 영구 강등되던 구멍이 이걸로 막힌다.
-        val plan = authSession?.user?.plan
-        val access = viewModel.paidVoiceAccess()
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, viewModel.personalPromoTierHold())
@@ -630,47 +627,50 @@ internal fun AlarmTalkApp(
         // `PlanChangeSyncWorker` 는 처음부터 이 조건을 함께 봤는데 전경 경로만 빠져 있었다 —
         // 그래서 앱을 한 번 열면 회복 가능한 보류가 영구 강등으로 굳었다.
         val subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse)
-        when {
-            // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `access.isDefinitelyFree()` 를
-            // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
-            // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
-            // 만료돼 있으면 그 순간 영구 강등이 걸린다.
-            //
-            // ⚠ **기간 한정 개인 플랜의 오프라인 차단 때문만인 무료는 이 진입의 답을 기다린다**
-            //   (`freePlanLockMayApply`). 콜드 스타트·복귀 직후의 plan 은 지난 실행의 캐시라, 그
-            //   사이 다른 기기에서 쿠폰·iOS 결제·가족 합류로 원시 유료가 된 사람도 종료 시각만
-            //   지나면 여기서 잠기고 강등 안내가 적힌다 — Play 조회가 `/auth/me` 보다 먼저 끝나면
-            //   그렇게 된다. 기다리는 동안은 아무 갈래도 타지 않는다(아래 갈래의 토큰을 굴리는
-            //   `refreshAppSession()` 도 부르지 않는다 — 진입마다의 갱신이 이미 나가 있다).
-            //   답이 오면 바로 아래의 이펙트가 다시 본다.
-            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive -> {
-                if (
-                    freePlanLockMayApply(
-                        freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
-                        planAnsweredEntry = viewModel.planAnsweredEntry,
-                        entry = appEntry,
-                    )
-                ) {
-                    viewModel.applyFreePlanVoiceLock()
-                }
-            }
-            // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(2026-09-01 리뷰). 이 갈래가 없어서
-            // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
-            // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
-            // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
-            //
-            // ⚠ **`storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
-            // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
-            // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
-            // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
-            authSession != null &&
-                viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled ->
-                viewModel.restorePaidVoiceAlarmsIfLocked()
-            // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
-            // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
-            // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
-            // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
-            billingNotEntitled -> viewModel.refreshAppSession()
+        // 갈래의 순서·조건은 `foregroundPlanLockAction`(`ui/billing/PersonalPromoLedger.kt`)이 정한다 —
+        // 이펙트는 입력을 모아 넘기고 답대로만 움직인다(단위 테스트 `PersonalPromoLedgerTest`).
+        //
+        // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `paidVoiceAccess().isDefinitelyFree()` 를
+        // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
+        // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
+        // 만료돼 있으면 그 순간 영구 강등이 걸린다.
+        //
+        // ⚠ **기간 한정 개인 플랜의 오프라인 차단 때문만인 무료는 이 진입의 답을 기다린다**
+        //   (`freePlanLockMayApply` → `WaitForEntryPlan`). 콜드 스타트·복귀 직후의 plan 은 지난
+        //   실행의 캐시라, 그 사이 다른 기기에서 쿠폰·iOS 결제·가족 합류로 원시 유료가 된 사람도
+        //   종료 시각만 지나면 여기서 잠기고 강등 안내가 적힌다 — Play 조회가 `/auth/me` 보다 먼저
+        //   끝나면 그렇게 된다. 기다리는 동안은 아무 갈래도 타지 않는다(토큰을 굴리는
+        //   `refreshAppSession()` 도 부르지 않는다 — 진입마다의 갱신이 이미 나가 있다).
+        //   답이 오면 바로 아래의 이펙트가 다시 본다.
+        //
+        // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(`Restore`, 2026-09-01 리뷰). 이 갈래가 없어서
+        // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
+        // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
+        // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
+        // ⚠ **복원에 `storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
+        // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
+        // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
+        // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
+        //
+        // `RefreshPlan`: billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중
+        // 만료 시 refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
+        // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
+        // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
+        val action = foregroundPlanLockAction(
+            signedIn = authSession != null,
+            definitelyFree = viewModel.isDefinitelyFreePlan(),
+            subscriptionRowAlive = subscriptionRowAlive,
+            freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
+            planAnsweredEntry = viewModel.planAnsweredEntry,
+            entry = appEntry,
+            paidEntitled = viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled,
+            billingNotEntitled = billingNotEntitled,
+        )
+        when (action) {
+            ForegroundPlanLockAction.Lock -> viewModel.applyFreePlanVoiceLock()
+            ForegroundPlanLockAction.Restore -> viewModel.restorePaidVoiceAlarmsIfLocked()
+            ForegroundPlanLockAction.RefreshPlan -> viewModel.refreshAppSession()
+            ForegroundPlanLockAction.WaitForEntryPlan, ForegroundPlanLockAction.None -> Unit
         }
     }
 
@@ -680,9 +680,16 @@ internal fun AlarmTalkApp(
     // ⚠ **이 값을 위 이펙트의 키에 넣지 말 것.** 진입마다 바뀌는 값이라, 넣으면 위의 다른 갈래
     //   (잠금 복원, 토큰을 굴리는 `refreshAppSession()`)까지 복귀할 때마다 다시 돈다.
     LaunchedEffect(viewModel.planAnsweredEntry) {
-        if (authSession == null || viewModel.planAnsweredEntry != appEntry) return@LaunchedEffect
-        if (!viewModel.isFreeOnlyByPromoLapse()) return@LaunchedEffect
-        if (viewModel.isDefinitelyFreePlan() && !hasPaidVoiceAccess(subscriptionResponse)) {
+        if (
+            deferredPromoLapseLockDue(
+                signedIn = authSession != null,
+                planAnsweredEntry = viewModel.planAnsweredEntry,
+                entry = appEntry,
+                freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
+                definitelyFree = viewModel.isDefinitelyFreePlan(),
+                subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse),
+            )
+        ) {
             viewModel.applyFreePlanVoiceLock()
         }
     }

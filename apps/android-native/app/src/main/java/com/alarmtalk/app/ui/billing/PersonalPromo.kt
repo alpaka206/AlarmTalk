@@ -268,12 +268,33 @@ internal fun personalPromoNoticePendingForEntry(entry: Long, handledEntry: Long)
 internal fun accountAnswerEntryFor(requestEntry: Long, currentEntry: Long): Long? =
     requestEntry.takeIf { it > 0L && it == currentEntry }
 
+/**
+ * 한 진입에 보낸 계정 요청(`/auth/me`)의 **첫 결과**(iOS `AccountEntryAnswer` 와 같은 모양).
+ *
+ * 종료 안내의 준비 신호다. **첫 결과가 그 진입의 판정을 끝낸다 — 성공이든 실패든**(D11):
+ * 실패가 먼저면 이 진입은 옛 값으로도, 같은 진입의 뒤 성공(쿠폰·`plan_changed`·결제 신호 뒤의
+ * 갱신)으로도 판정하지 않는다. 뒤 성공으로 판정하면 세션 한가운데서 안내가 튀어나온다 —
+ * 다음 진입이 다시 판정한다.
+ */
+internal data class AccountEntryAnswer(val entry: Long, val outcome: Outcome) {
+    enum class Outcome {
+        /** 이 진입의 첫 응답이 왔다 — 가장 최근 계정 응답의 값으로 판정한다. */
+        Answered,
+
+        /** 이 진입의 첫 응답이 실패했다 — 이 진입은 띄우지 않는다. */
+        Failed,
+    }
+}
+
 /** [decidePersonalPromoEndNotice] 의 답. */
 internal sealed interface PersonalPromoNoticeDecision {
     /** 지금은 판정하지 않는다 — 이미 이 진입을 판정했거나, 이 진입의 계정 응답을 기다린다. */
     data object NotNow : PersonalPromoNoticeDecision
 
-    /** 이 진입의 판정은 끝났다 — 띄울 것이 없다. */
+    /**
+     * 이 진입의 판정은 끝났다 — 띄울 것이 없다(프로모 없음·기간 밖·'다시 보지 않기'·이 진입의 첫
+     * 계정 응답이 실패). 같은 진입의 뒤 계정 응답으로 다시 판정하지 않는다.
+     */
     data object NothingToShow : PersonalPromoNoticeDecision
 
     /** 띄운다. */
@@ -284,23 +305,27 @@ internal sealed interface PersonalPromoNoticeDecision {
  * 이번 진입에서 종료 안내를 띄울지. **준비 신호·차단 게이트는 부르는 쪽이 본다**
  * ([PersonalPromoNoticeGates]). 여기서는 진입·응답·기간·'다시 보지 않기' 만 본다.
  *
- * ⚠ **이 진입의 새 계정 응답이 온 뒤에만 판정한다**([answeredEntry] == [entry]).
+ * ⚠ **이 진입의 새 계정 응답이 온 뒤에만 판정한다**([entryAnswer] 가 [entry] 의 것일 때).
  *   저장된 세션의 promo 는 지난 실행의 것이다 — 그 사이 다른 기기에서 결제했거나 쿠폰을
- *   등록했으면 이미 끝난 프로모의 안내를 띄우게 된다. 응답이 오지 않으면(오프라인) 이 진입은
- *   띄우지 않고, 다음 진입이 다시 판정한다 — 기다리는 동안 다른 안내를 막지도 않는다.
+ *   등록했으면 이미 끝난 프로모의 안내를 띄우게 된다. 기다리는 동안 다른 안내를 막지도 않는다.
+ * ⚠ **이 진입의 첫 결과가 실패면 띄우지 않고 이 진입을 끝낸다**(D11 — [AccountEntryAnswer]).
+ *   옛 값으로 판정하지 않고, 같은 진입의 뒤 성공으로도 다시 판정하지 않는다. 다음 진입이 다시
+ *   판정한다.
  *
+ * @param entryAnswer 이 진입에 보낸 계정 요청의 첫 결과. 다른 진입의 것이면 아직 안 온 것이다.
  * @param latestPromo 이 계정의 **가장 최근** 계정 응답의 `personal_promo`.
  */
 internal fun decidePersonalPromoEndNotice(
     entry: Long,
     handledEntry: Long,
-    answeredEntry: Long,
+    entryAnswer: AccountEntryAnswer?,
     latestPromo: PersonalPromo?,
     nowMillis: Long,
     optedOutEndsAt: String?,
 ): PersonalPromoNoticeDecision {
     if (!personalPromoNoticePendingForEntry(entry, handledEntry)) return PersonalPromoNoticeDecision.NotNow
-    if (answeredEntry != entry) return PersonalPromoNoticeDecision.NotNow
+    if (entryAnswer == null || entryAnswer.entry != entry) return PersonalPromoNoticeDecision.NotNow
+    if (entryAnswer.outcome == AccountEntryAnswer.Outcome.Failed) return PersonalPromoNoticeDecision.NothingToShow
     val promo = activePersonalPromoOf(sessionPromo = latestPromo, billingPromo = null, nowMillis = nowMillis)
         ?: return PersonalPromoNoticeDecision.NothingToShow
     if (!isPersonalPromoEndNoticeDue(promo, nowMillis, optedOutEndsAt)) {
