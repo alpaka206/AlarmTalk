@@ -83,7 +83,7 @@ enum UIPreviewSeed {
             endsAt: iso.string(from: end),
             noticeFrom: iso.string(from: from),
             deletesVoicesAtEnd: !args.contains("-UIPreviewPromoKeepsVoices"),
-            receivedAt: Date()
+            fetchedAt: Date()
         )
         #else
         return nil

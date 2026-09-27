@@ -446,7 +446,17 @@ struct AlarmTalkApp: App {
                 scheme: AlarmTalkThemeMode.normalized(themeModeRaw).preferredColorScheme
             ))
         }
+        // **앱에 들어온 것을 센다** — 진입 번호의 유일한 출처(`AppEntrySignal`). 콜드 스타트의
+        // 첫 값도 받아야 하므로 `initial` 이다. 아래 전경 복귀 처리도 같은 값을 먼저 넘긴다 —
+        // 두 번 받아도 한 번이다(멱등).
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            AppEntrySignal.shared.observe(phase)
+        }
         .onChange(of: scenePhase) { _, newPhase in
+            // ⚠ **계정 요청보다 먼저 센다.** 아래 `/auth/me` 는 보낼 때 진입 번호를 받아 가는데
+            //   (`AuthViewModel.beginAccountRequest`), 두 `onChange` 의 순서는 보장되지 않는다.
+            //   늦게 세면 복귀의 응답이 앞 진입의 것으로 찍혀 이번 진입의 종료 안내가 영영 안 뜬다.
+            AppEntrySignal.shared.observe(newPhase)
             switch newPhase {
             case .active:
                 Task {
@@ -901,8 +911,9 @@ struct AlarmTalkApp: App {
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan,
-            // 받은 시각까지 함께 실린다 — 끝 **뒤에** 받은 답(서버가 이미 계산했다)이면 기기
-            // 시계가 앞서 있어도 낡은 것으로 보지 않는다. 방금 받은 답으로 잠그지 않는다.
+            // 계산 시각(`PersonalPromo.fetchedAt` — 서버의 `computed_at`)까지 함께 실린다.
+            // 서버가 끝 **뒤에** 계산한 답이면 낡은 것으로 보지 않는다 — 방금 받은 서버 답을
+            // 기기 시계로 뒤집어 잠그지 않는다.
             personalPromo: auth.session?.user.personalPromo
         ))
         // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서

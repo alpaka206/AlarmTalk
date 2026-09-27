@@ -176,7 +176,7 @@ enum PaidVoiceGate {
     /// 준다('지금 유효' 라는 뜻이다).
     ///
     /// ⚠ **`userPlan` 을 빼지 말 것.** 그룹보다 먼저 보는 값이라, 빼면 결제 보류(그룹은 남고
-    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야(받은 시각까지) 끝난
+    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야(계산 시각까지) 끝난
     /// 뒤의 낡은 캐시를 가른다.
     static func liveSnapshot(
         subscriptionResponse: BillingSubscriptionResponse?,

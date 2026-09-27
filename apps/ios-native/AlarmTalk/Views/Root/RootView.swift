@@ -31,16 +31,26 @@ struct RootView: View {
     // 더보기의 코드 등록(`CodeRegisterRow`)과 유료 게이트의 '쿠폰이 있어요'(`RedeemCodeSheet`).
     @State private var downgradeNotice: DowngradeNoticeStore.Notice?
 
-    /// 이 프로세스에서 앱에 들어온 횟수(콜드 스타트 = 1, 백그라운드 → 활성마다 +1).
-    @State private var appEntries = AppEntryCounter()
-    /// 이번 진입 **직전**(나가 있던 동안)의 `auth.accountResponseCount`. 그보다 커져야 **이 진입의**
-    /// 계정 응답이 온 것이다. 콜드 스타트는 0 이다 — 이 프로세스의 응답은 전부 이번 진입의 것이다.
-    @State private var accountResponsesAtEntry = 0
-    /// 종료 안내를 이미 판정·표시한 진입 — `PersonalPromoNotice.marker`. 같은 진입에서 두 번
-    /// 띄우지 않는다.
+    /// 이 프로세스에서 앱에 들어온 횟수(콜드 스타트 = 1, 백그라운드 → 활성마다 +1). **읽기만
+    /// 한다** — 세는 곳은 앱의 `scenePhase` 하나다(`AppEntrySignal` 주석).
+    @ObservedObject private var appEntrySignal = AppEntrySignal.shared
+    /// 종료 안내의 판정을 **끝낸** 진입 — `PersonalPromoNotice.marker`. 같은 진입에서 두 번
+    /// 판정하지 않는다. 적는 때는 셋뿐이다: 띄울 것이 없다고 판정했을 때(`nothingToShow`),
+    /// 띄운 안내가 **화면에 나온 것을 확인했을 때**, 사용자가 닫았을 때.
     @State private var personalPromoNoticeHandled: String?
     /// 떠 있는 기간 한정 개인 플랜 종료 안내. nil 이면 없음.
     @State private var personalPromoNotice: ShownPromoNotice?
+    /// 띄웠는데 **화면에 나오지 않은** 횟수(진입·계정 `marker` 별). 다른 창과 같은 순간에 겹쳐
+    /// 조용히 건너뛰어진 것이라 그 창이 닫히면 다시 띄운다 — 다만 끝없이 되풀이하지 않도록
+    /// 상한(`maxUnseenPromoNotices`)에서 그 진입을 끝낸다.
+    @State private var unseenPromoNotice: UnseenPromoNotice?
+    /// 한 진입에서 '띄웠는데 안 보임' 을 몇 번까지 다시 해 보는가.
+    private static let maxUnseenPromoNotices = 3
+
+    private struct UnseenPromoNotice: Equatable {
+        var marker: String
+        var count: Int
+    }
     /// 시스템 권한 팝업이 떠 있거나 곧 뜰 수 있는가 — 그 위·아래에 안내를 겹치지 않는다.
     @ObservedObject private var permissionPrompts = SystemPermissionPrompts.shared
 
@@ -170,26 +180,10 @@ struct RootView: View {
         .task(id: auth.session?.user.id) {
             refreshOnboardingCompletion()
         }
-        // **앱에 들어온 것을 센다** — 콜드 스타트, 그리고 **백그라운드에서** 돌아올 때
-        // (`.background → .active`). 화면 이동은 여기에 닿지 않고, 알림 센터·제어 센터·시스템
-        // 알럿이 만드는 `inactive → active` 는 `AppEntryCounter` 가 거른다. 기간 한정 개인 플랜
-        // 종료 안내가 이 축으로 뜬다.
-        .onChange(of: scenePhase, initial: true) { _, phase in
-            switch phase {
-            case .active: appEntries.observe(.active)
-            case .background: appEntries.observe(.background)
-            default: appEntries.observe(.inactive)
-            }
-            // **다음 진입의 계정 응답 기준을 나가 있는 동안 잡는다**(`.background`, 그리고 돌아오는
-            // 길의 `.inactive`). `.active` 에서 잡으면 늦을 수 있다 — 전경 복귀의 `/auth/me` 는
-            // 앱 쪽 `scenePhase` 가 `.active` 가 되는 순간 떠나는데(`AlarmTalkApp`), 그 답이
-            // 이 뷰의 `.active` 보다 먼저 돌아오면 기준에 먹혀 이번 진입의 안내가 영영 안 뜬다
-            // (화면 확인 모드에서 실제로 그랬다 — 답이 곧바로 온다).
-            // 콜드 스타트는 0 그대로 둔다 — 세션 복원의 `/auth/me` 도 이번 진입의 답이다.
-            if phase != .active, appEntries.isAwayAfterEntry {
-                accountResponsesAtEntry = auth.accountResponseCount
-            }
-        }
+        // ⚠ **여기서 진입을 세지 말 것**(2026-09-27 리뷰 2차). 세는 곳은 앱의 `scenePhase`
+        //   하나다(`AlarmTalkApp` → `AppEntrySignal`) — 계정 요청이 보낼 때 진입 번호를 받아
+        //   가므로, 뷰가 따로 세면 한 번의 복귀가 두 진입이 되어 복귀의 `/auth/me` 가 영영 이
+        //   진입의 답이 되지 못한다.
         // 안내 둘(강등·프로모 종료)은 **한 태스크에서 순서대로** 판정한다 — 따로 돌리면
         // 두 알럿이 같은 순간에 서로를 밀어내고 하나가 조용히 사라진다. 강등 안내가 먼저다
         // (할 수 있는 일이 걸린 안내다). 판정 조건은 둘 다 **차단 게이트가 없을 때**다:
@@ -235,10 +229,10 @@ struct RootView: View {
         ) { shown in
             Button("다시 보지 않기") {
                 PersonalPromoNoticeStore().optOut(userID: shown.userID, promo: shown.promo)
-                personalPromoNotice = nil
+                closePersonalPromoNotice(shown)
             }
             Button("확인", role: .cancel) {
-                personalPromoNotice = nil
+                closePersonalPromoNotice(shown)
             }
         } message: { shown in
             if let days = PersonalPromoNotice.dayLabels(for: shown.promo) {
@@ -312,7 +306,8 @@ struct RootView: View {
 
     /// 안내 두 개(강등·프로모 종료)의 재판정 키. 준비 신호에 더해:
     ///  - **진입 횟수** — 프로모 종료 안내는 앱에 들어올 때마다 다시 판정한다.
-    ///  - **계정 응답 수** — 이 진입의 `/auth/me` 가 도착하면 그때 판정한다(그 전에는 안 본다).
+    ///  - **이 진입의 계정 응답** — 이 진입에 보낸 `/auth/me` 가 오거나 실패하면 그때 판정한다
+    ///    (그 전에는 안 본다 — `auth.accountEntryAnswer`).
     ///  - **프로모 값** — 세션이 새 값을 받으면(시작·연장·종료·삭제 대상 여부) 다시 본다.
     ///  - **떠 있는 안내** — 하나가 닫혀야 다른 하나를 띄운다(한 번에 알럿 하나).
     ///  - **민감 동의 시트** — 그 위에 겹쳐 띄우지 않는다. 닫히면 다시 본다.
@@ -321,8 +316,8 @@ struct RootView: View {
     private var overlayKey: String {
         [
             promoGateKey,
-            String(appEntries.entry),
-            String(auth.accountResponseCount),
+            String(appEntrySignal.counter.entry),
+            auth.accountEntryAnswer.map { "answer-\($0.entry)-\($0.outcome)" } ?? "no-answer",
             auth.session?.user.personalPromo?.endsAt ?? "-",
             auth.session?.user.personalPromo?.noticeFrom ?? "-",
             auth.session?.user.personalPromo.map { $0.deletesVoicesAtEnd ? "deletes" : "keeps" } ?? "-",
@@ -340,8 +335,9 @@ struct RootView: View {
     /// 한 줄만 남기고 조용히 건너뛴다. 그러면 상태는 '떠 있음' 인데 화면에는 없어, 그 상태가
     /// 다른 안내까지 막고(서로 `== nil` 을 기다린다) 다음 진입도 삼켰다(2026-09-27 리뷰).
     /// 그래서 ① 다른 모달이 떠 있으면 **띄우지 않고 걷힐 때까지 기다리고**, ② 띄웠는데 보이지
-    /// 않으면 **걷는다**(프로모 안내는 그 진입을 끝낸 것으로 두고 다음 진입에 다시 본다 —
-    /// 강등 안내는 대기표라 저장소에 남아 다시 뜬다).
+    /// 않으면 **걷는다** — 프로모 안내는 이 진입을 끝내지 않은 채 걷어, 가린 창이 닫히면 같은
+    /// 진입 안에서 다시 뜬다(안드로이드 `deferPersonalPromoEndNotice`). 강등 안내는 대기표라
+    /// 저장소에 남아 다시 뜬다.
     private func runOverlayNotices() async {
         if downgradeNotice != nil || personalPromoNotice != nil {
             await verifyShownNoticeIsVisible()
@@ -354,17 +350,34 @@ struct RootView: View {
             switch personalPromoDecision() {
             case .skip:
                 promoWaiting = false
+            case .nothingToShow(let marker):
+                // 이 진입의 판정은 끝났다 — 같은 진입에 뒤늦게 오는 계정 응답(제어 센터를 닫을
+                // 때의 재조회·결제 뒤 갱신)이 세션 한가운데서 안내를 띄우지 않게 적는다.
+                personalPromoNoticeHandled = marker
+                promoWaiting = false
             case .wait:
                 promoWaiting = true
-            case .show(let promo, let marker):
+            case .show(let promo, _):
                 guard let userID = auth.session?.user.id else { return }
-                personalPromoNoticeHandled = marker
+                // ⚠ **여기서 진입을 끝내지 않는다**(2026-09-27 리뷰 2차). 띄운다고 적은 것이
+                //   화면에 나온다는 보장이 없다 — 같은 프레임에 시트가 올라오면 SwiftUI 가 조용히
+                //   건너뛴다. 끝내는 것은 보인 것을 확인한 뒤다(`verifyShownNoticeIsVisible`).
                 personalPromoNotice = ShownPromoNotice(promo: promo, userID: userID)
                 return
             }
             guard downgradeWaiting || promoWaiting else { return }
             try? await Task.sleep(for: .milliseconds(500))
         }
+    }
+
+    /// 사용자가 종료 안내를 닫았다 — 본 것이므로 **이 진입을 끝낸다.** 확인 단계(1초)보다 먼저
+    /// 닫혀도 여기서 적는다 — 안 적으면 같은 진입에 곧바로 또 뜬다.
+    private func closePersonalPromoNotice(_ shown: ShownPromoNotice) {
+        let entry = appEntrySignal.counter.entry
+        if entry > 0 {
+            personalPromoNoticeHandled = PersonalPromoNotice.marker(entry: entry, userID: shown.userID)
+        }
+        personalPromoNotice = nil
     }
 
     /// 떠 있다고 적힌 안내를 확인한다 — 남의 것이면 걷고, 화면에 없으면 걷는다.
@@ -392,36 +405,55 @@ struct RootView: View {
         // 표시는 다음 갱신에서 일어난다 — 넉넉히 기다린 뒤 본다.
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled, downgradeNotice != nil || personalPromoNotice != nil else { return }
+        let entry = appEntrySignal.counter.entry
         guard ModalPresentationProbe.isShowingAlert else {
+            // 안 보였다 — 걷는다. 프로모 안내는 **이 진입을 끝내지 않는다**: 가린 창이 닫히면
+            // 같은 진입 안에서 다시 뜬다(스펙 「다른 창 위에 띄우지 않는다」). 끝없이 되풀이하지
+            // 않도록 상한에서만 끝낸다.
+            if let shown = personalPromoNotice, entry > 0 {
+                noteUnseenPromoNotice(marker: PersonalPromoNotice.marker(entry: entry, userID: shown.userID))
+            }
             downgradeNotice = nil
             personalPromoNotice = nil
             return
         }
-        // 앞 진입에서 띄운 안내가 아직 떠 있으면 이번 진입도 그걸로 본 것으로 친다 —
-        // 안 그러면 닫자마자 같은 안내가 또 뜬다.
-        if let shown = personalPromoNotice, appEntries.entry > 0 {
-            personalPromoNoticeHandled = PersonalPromoNotice.marker(entry: appEntries.entry, userID: shown.userID)
+        // **보인 것을 확인했다 — 이 진입을 끝낸다.** 앞 진입에서 띄운 안내가 아직 떠 있어도
+        // 이번 진입은 그걸로 본 것으로 친다 — 안 그러면 닫자마자 같은 안내가 또 뜬다.
+        if let shown = personalPromoNotice, entry > 0 {
+            personalPromoNoticeHandled = PersonalPromoNotice.marker(entry: entry, userID: shown.userID)
+        }
+    }
+
+    /// '띄웠는데 안 보임' 을 센다. 상한에 닿으면 그 진입을 끝낸다 — 무엇이 가리는지 모르는 채
+    /// 1초마다 띄웠다 걷기를 되풀이하지 않는다(다음 진입이 다시 본다).
+    private func noteUnseenPromoNotice(marker: String) {
+        let count = unseenPromoNotice?.marker == marker ? (unseenPromoNotice?.count ?? 0) + 1 : 1
+        unseenPromoNotice = UnseenPromoNotice(marker: marker, count: count)
+        if count >= Self.maxUnseenPromoNotices {
+            personalPromoNoticeHandled = marker
         }
     }
 
     /// 기간 한정 개인 플랜 종료 안내를 띄울지 판정한다(규칙은 `PersonalPromoNotice.decide`).
-    /// 조건이 하나라도 어긋나면 조용히 넘어간다 — **이번 진입을 소진하지 않고** 다음 키 변화에서
-    /// 다시 본다.
-    ///  - **확인 응답이 다 도착했을 것** — 동의(`consentStatusChecked`)·버전(`versionGate.checked`),
-    ///    그리고 **이 진입의 계정 응답**(`auth.accountResponseCount` 가 진입 때보다 커졌다).
+    ///  - **확인 응답이 다 도착했을 것** — 동의(`consentStatusChecked`)·버전(`versionGate.checked`).
+    ///    아니면 이번 진입을 끝내지 않고 다음 키 변화에서 다시 본다(`skip`).
+    ///  - **이 진입의 계정 응답**(`auth.accountEntryAnswer`) — 오기 전에는 `skip`, 실패했으면 이
+    ///    진입은 띄우지 않고 끝낸다(`nothingToShow`).
     ///  - 차단 게이트가 없을 것(업데이트 강제·동의·탈퇴 유예·목소리 받기·교체)
     ///  - 서버가 준 창 `[notice_from, ends_at)` 안이고 이 계정이 '다시 보지 않기' 를 안 눌렀을 것
+    ///    — 아니면 이 진입은 끝난다(`nothingToShow`)
     ///  - 강등 안내·민감 동의 시트·다른 모달·시스템 권한 팝업이 없을 것 — 있으면 **기다린다**
     private func personalPromoDecision() -> PersonalPromoNotice.Decision {
         let user = auth.session?.user
         let promo = user?.personalPromo
+        let entry = appEntrySignal.counter.entry
         return PersonalPromoNotice.decide(
             PersonalPromoNotice.Inputs(
                 gatesClear: auth.consentStatusChecked && versionGate.checked && !blockingGateActive,
-                entry: appEntries.entry,
+                entry: entry,
                 userID: user?.id,
                 promo: promo,
-                accountResponseArrived: auth.accountResponseCount > accountResponsesAtEntry,
+                accountAnswer: PersonalPromoNotice.entryAnswer(auth.accountEntryAnswer, entry: entry),
                 handledMarker: personalPromoNoticeHandled,
                 optedOut: PersonalPromoNoticeStore().isOptedOut(userID: user?.id, promo: promo),
                 otherNoticeOpen: downgradeNotice != nil || auth.pendingSensitiveConsent != nil,

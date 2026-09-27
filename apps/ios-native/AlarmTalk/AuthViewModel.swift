@@ -221,19 +221,62 @@ final class AuthViewModel: ObservableObject {
     /// 계정별 신호이므로 세션 정리에서 되돌린다.
     @Published private(set) var consentStatusChecked = false
 
-    /// 이 프로세스에서 **계정 응답을 받은 횟수** — `/auth/me` 성공, 로그인·가입 응답.
+    /// **이 진입에 보낸** 계정 요청(`/auth/me`, 로그인·가입)의 **첫 결과**. 다른 진입의 것이거나
+    /// nil 이면 이 진입의 응답은 아직이다.
     ///
-    /// 앱에 들어올 때마다 뜨는 안내(개인 플랜 종료 안내)가 "**이 진입의** 계정 응답이 왔는가"
-    /// 를 가르는 축이다(`RootView` 가 진입할 때의 값을 적어 두고, 이 값이 그보다 커지면 판정한다).
-    /// 앞 진입에서 캐시한 세션으로 판정하면, 그 사이 다른 기기에서 결제한 사람에게도 "무료
-    /// 이용이 곧 끝나요" 가 뜬다(2026-09-27 리뷰).
+    /// 앱에 들어올 때마다 뜨는 안내(개인 플랜 종료 안내)의 준비 신호다
+    /// (`PersonalPromoNotice.entryAnswer`). 앞 진입에서 캐시한 세션으로 판정하면, 그 사이 다른
+    /// 기기에서 결제한 사람에게도 "무료 이용이 곧 끝나요" 가 뜬다(2026-09-27 리뷰).
     ///
-    /// ⚠ **실패는 세지 않는다.** 답을 못 받았으면 그 진입에서는 판정하지 않는다 — 안내는
-    /// 소진 플래그가 아니라 다음 진입이 다시 본다(`docs/spec/gates-and-overlays.md`).
-    @Published private(set) var accountResponseCount = 0
+    /// - **보낸 진입과 도착한 진입이 같을 때만** 적는다 — 앞 진입에 보낸 요청이 백그라운드를
+    ///   건너 늦게 도착한 것은 이 진입의 답이 아니다(안드로이드 `accountAnswerEntryFor`).
+    /// - **첫 결과만** 적는다. 실패가 먼저면 그 진입은 실패로 끝난다 — 제어 센터를 닫을 때의
+    ///   재조회가 뒤늦게 성공해도 세션 한가운데서 안내를 띄우지 않는다(다음 진입이 다시 본다).
+    @Published private(set) var accountEntryAnswer: AccountEntryAnswer?
 
-    private func noteAccountResponse() {
-        accountResponseCount &+= 1
+    /// 계정 요청 하나의 표 — `/auth/me`·로그인을 **보내기 직전에** 뜬다(`beginAccountRequest`).
+    /// 안드로이드 `MainViewModel.AccountRequest` 와 같은 모양이다.
+    struct AccountRequest: Equatable {
+        /// 보낸 순서. 늦게 도착한 옛 응답이 새 응답을 덮지 않게 한다.
+        let seq: Int
+        /// 보낸 진입(`AppEntryCounter.entryForRequest`). 백그라운드에서 보냈으면 nil.
+        let entry: Int?
+    }
+
+    /// 지금까지 뜬 계정 요청 표의 순번.
+    private var accountRequestSeq = 0
+    /// 세션에 반영한 가장 새 계정 응답의 순번 — 이보다 먼저 보낸 요청의 응답은 세션을 덮지 않는다.
+    private var accountAnswerSeq = 0
+
+    /// 지금 진입 상태. 테스트가 바꿔 끼운다 — 운영은 `AppEntrySignal.shared` 하나다.
+    var appEntryState: @MainActor () -> AppEntryCounter = { AppEntrySignal.shared.counter }
+
+    /// `/auth/me`·로그인을 보내기 **직전에** 표를 뜬다. 보낸 진입·순번을 응답까지 들고 간다.
+    /// 세션 밖의 경로(`SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)도 이걸로 표를 받아
+    /// `applyFreshPlan` 에 돌려준다 — 한 순번 위에서 누가 더 새 답인지 가른다.
+    func beginAccountRequest() -> AccountRequest {
+        accountRequestSeq &+= 1
+        return AccountRequest(seq: accountRequestSeq, entry: appEntryState().entryForRequest)
+    }
+
+    /// 이 요청보다 **나중에 보낸** 요청의 응답이 이미 세션에 반영됐는가.
+    private func isSuperseded(_ request: AccountRequest) -> Bool {
+        request.seq <= accountAnswerSeq
+    }
+
+    /// 성공한 계정 응답을 적는다 — 세션에 반영했거나(순번을 올린다), 더 새 답이 이미 반영돼
+    /// 건너뛰었어도 **이 진입의 응답이 왔다는 사실**은 같다.
+    private func recordAccountAnswer(_ request: AccountRequest) {
+        if request.seq > accountAnswerSeq { accountAnswerSeq = request.seq }
+        noteEntryOutcome(request, .answered)
+    }
+
+    /// 이 진입에 보낸 요청의 결과를 적는다 — 첫 결과만(`accountEntryAnswer` 주석).
+    private func noteEntryOutcome(_ request: AccountRequest, _ outcome: AccountEntryAnswer.Outcome) {
+        guard let entry = request.entry,
+              entry == appEntryState().entryForRequest,
+              accountEntryAnswer?.entry != entry else { return }
+        accountEntryAnswer = AccountEntryAnswer(entry: entry, outcome: outcome)
     }
 
     /// 동의 화면을 띄워야 하는가.
@@ -379,7 +422,7 @@ final class AuthViewModel: ObservableObject {
             consentStatusChecked = true
             // 심어 둔 세션이 곧 계정 응답이다(콜드 스타트 진입의 몫). 전경 복귀는
             // `refreshUserApplyingToken` 의 화면 확인 모드 갈래가 센다.
-            accountResponseCount = 1
+            accountEntryAnswer = AccountEntryAnswer(entry: 1, outcome: .answered)
         }
         #endif
 
@@ -514,6 +557,8 @@ final class AuthViewModel: ObservableObject {
     ) async {
 
         do {
+            // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
+            let accountRequest = beginAccountRequest()
             var nextSession = try await AlarmTalkAPI.shared.loginWithApple(
                 idToken: idToken,
                 name: name,
@@ -550,7 +595,7 @@ final class AuthViewModel: ObservableObject {
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            noteAccountResponse()
+            recordAccountAnswer(accountRequest)
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -614,6 +659,8 @@ final class AuthViewModel: ObservableObject {
 
         clearLoginError()
         do {
+            // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
+            let accountRequest = beginAccountRequest()
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
             // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
@@ -638,7 +685,7 @@ final class AuthViewModel: ObservableObject {
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
             // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
-            noteAccountResponse()
+            recordAccountAnswer(accountRequest)
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -663,6 +710,8 @@ final class AuthViewModel: ObservableObject {
     ) async {
 
         do {
+            // 보낸 진입·순번을 응답까지 들고 간다(`recordAccountAnswer`).
+            let accountRequest = beginAccountRequest()
             let nextSession = try await AlarmTalkAPI.shared.register(
                 email: email,
                 password: password,
@@ -692,7 +741,7 @@ final class AuthViewModel: ObservableObject {
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
             // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
-            noteAccountResponse()
+            recordAccountAnswer(accountRequest)
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
@@ -802,16 +851,30 @@ final class AuthViewModel: ObservableObject {
     /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
     /// 계정을 대조해 남의 값이 박히지 않게 한다. 기간 한정 개인 플랜은 plan 의 짝이라 같이 바꾼다
     /// (계산값 `plus` 만 바뀌고 프로모가 옛 값이면 이용권 화면과 종료 안내가 어긋난다).
-    func applyFreshPlan(userID: String, from previous: String, plan: String, personalPromo: PersonalPromo?) {
+    ///
+    /// - Parameter request: 그 응답을 보내기 **직전에** 뜬 표(`beginAccountRequest`). 있으면
+    ///   세션의 다른 계정 응답과 순번으로 가른다 — 더 나중에 보낸 요청의 답이 이미 반영됐으면
+    ///   이 값은 버린다(늦게 도착한 옛 프로모가 새 답을 덮지 않게).
+    func applyFreshPlan(
+        userID: String,
+        from previous: String,
+        plan: String,
+        personalPromo: PersonalPromo?,
+        request: AccountRequest? = nil
+    ) {
         let personalPromo = PersonalPromo.normalized(personalPromo)
         // ⚠ **`applyRolledToken` 과 같은 에폭 가드가 필요하다**(2026-09-01 리뷰). 같은 계정으로
         // 로그아웃→재로그인하면 id 는 그대로라, 로그아웃 **전** 토큰으로 인가된 응답의 plan 이
         // 새 세션에 박힌다 — 옛 free 가 유료 게이트를 잠그거나 옛 유료가 무료 잠금을 막는다.
         guard let current = session,
               current.user.id == userID,
-              current.token == previous,
-              current.user.plan != plan || current.user.personalPromo != personalPromo
+              current.token == previous
         else { return }
+        if let request {
+            guard !isSuperseded(request) else { return }
+            accountAnswerSeq = request.seq
+        }
+        guard current.user.plan != plan || current.user.personalPromo != personalPromo else { return }
         var user = current.user
         user.plan = plan
         user.personalPromo = personalPromo
@@ -827,10 +890,13 @@ final class AuthViewModel: ObservableObject {
 
     private func refreshUserApplyingToken() async -> String? {
         guard let token else { return nil }
+        // ⚠ **표는 보내기 전에 뜬다.** 응답이 올 때 뜨면 앞 진입에 보낸 요청이 백그라운드를
+        //   건너 늦게 도착해도 이번 진입의 답으로 읽힌다(2026-09-27 리뷰 2차).
+        let accountRequest = beginAccountRequest()
         // 화면 확인 모드는 서버 없이 돈다 — 심어 둔 세션이 곧 받은 답이다. 네트워크를 타면
         // 401 이 돌아오고(가짜 토큰), 그 답을 기다리는 안내가 네트워크 속도에 매인다.
         if UIPreviewSeed.isEnabled {
-            noteAccountResponse()
+            recordAccountAnswer(accountRequest)
             return nil
         }
         let recoveryRevision = accountRecoveryRevision
@@ -854,6 +920,16 @@ final class AuthViewModel: ObservableObject {
             guard !Task.isCancelled, session?.token == token,
                   session?.user.id == merged.id,
                   accountRecoveryRevision == recoveryRevision else { return nil }
+            // ⚠ **늦게 도착한 옛 응답이 새 응답의 plan·프로모를 덮지 않는다**(2026-09-27 리뷰 2차,
+            //   안드로이드 `accountAnswerSeq`). 전경 복귀·결제·쿠폰·푸시·배경 갱신이 저마다
+            //   `/auth/me` 를 부르므로 둘이 겹칠 수 있다 — 먼저 보낸 요청이 나중에 오면 방금 반영한
+            //   프로모를 옛 값으로 되돌린다(결제한 사람에게 "무료 이용이 곧 끝나요" 가 다시 뜬다).
+            //   더 새 답이 이미 반영됐으면 **그 짝(plan·프로모)은 지킨다.** 나머지(굴린 토큰·탈퇴
+            //   유예)는 예전처럼 반영한다 — 응답 전체를 버리면 그 갱신까지 한 회차 잃는다.
+            if isSuperseded(accountRequest), let current = session {
+                merged.plan = current.user.plan
+                merged.personalPromo = current.user.personalPromo
+            }
             let wasPendingDeletion = pendingDeletion || session?.user.isPendingDeletion == true
             if wasPendingDeletion, merged.deletionStatus != "active", !merged.isPendingDeletion {
                 throw APIError.invalidResponse
@@ -872,7 +948,7 @@ final class AuthViewModel: ObservableObject {
                 pendingDeletion = merged.isPendingDeletion
             }
             lastNetworkError = nil
-            noteAccountResponse()
+            recordAccountAnswer(accountRequest)
             // 이 조회가 적용한 rolling token만 호출자에게 넘긴다. 외부 교체는 nil이다.
             return nextToken
         } catch let apiError as APIError {
@@ -912,16 +988,20 @@ final class AuthViewModel: ObservableObject {
             case .invalidResponse:
                 lastNetworkError = "서버 응답을 해석하지 못했어요."
             }
+            // 세션이 끝났으면(401) 적지 않는다 — 그 진입의 안내는 이미 대상이 없다.
+            if session?.token == token { noteEntryOutcome(accountRequest, .failed) }
         } catch is URLError {
             guard !Task.isCancelled, session?.token == token,
                   accountRecoveryRevision == recoveryRevision else { return nil }
             // 네트워크 끊김, 타임아웃 등 — 세션 보존
             lastNetworkError = "네트워크 연결을 확인해 주세요."
+            noteEntryOutcome(accountRequest, .failed)
         } catch {
             guard !Task.isCancelled, session?.token == token,
                   accountRecoveryRevision == recoveryRevision else { return nil }
             // 알 수 없는 에러 — 보수적으로 세션 보존
             lastNetworkError = "잠시 후 다시 시도해 주세요."
+            noteEntryOutcome(accountRequest, .failed)
         }
         return nil
     }
@@ -1856,6 +1936,11 @@ final class AuthViewModel: ObservableObject {
         consentSensitiveMissing = []
         consentIsReconsent = false
         consentStatusChecked = false
+        // 계정 응답의 진입 기록도 계정별이다 — 앞 계정의 응답으로 새 계정의 종료 안내를
+        // 판정하지 않는다. 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
+        // (안드로이드 `clearUserScopedRemoteState` 의 `accountAnswerSeq = accountRequestSeq + 1`).
+        accountEntryAnswer = nil
+        accountAnswerSeq = accountRequestSeq
         // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
         // Android `clearUserScopedRemoteState` 와 동등.
         passwordResetCodeSentTo = nil
