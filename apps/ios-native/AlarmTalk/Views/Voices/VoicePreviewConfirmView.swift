@@ -148,8 +148,7 @@ struct VoicePreviewConfirmView: View {
             subscriptionResponse: socialFeatures.subscription,
             familyGroup: socialFeatures.familyGroup,
             authSession: auth.session,
-            storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.planAsOf()
+            storeTier: subscriptions.currentTier
         )
     }
 

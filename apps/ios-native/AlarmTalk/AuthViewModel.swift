@@ -221,6 +221,21 @@ final class AuthViewModel: ObservableObject {
     /// 계정별 신호이므로 세션 정리에서 되돌린다.
     @Published private(set) var consentStatusChecked = false
 
+    /// 이 프로세스에서 **계정 응답을 받은 횟수** — `/auth/me` 성공, 로그인·가입 응답.
+    ///
+    /// 앱에 들어올 때마다 뜨는 안내(개인 플랜 종료 안내)가 "**이 진입의** 계정 응답이 왔는가"
+    /// 를 가르는 축이다(`RootView` 가 진입할 때의 값을 적어 두고, 이 값이 그보다 커지면 판정한다).
+    /// 앞 진입에서 캐시한 세션으로 판정하면, 그 사이 다른 기기에서 결제한 사람에게도 "무료
+    /// 이용이 곧 끝나요" 가 뜬다(2026-09-27 리뷰).
+    ///
+    /// ⚠ **실패는 세지 않는다.** 답을 못 받았으면 그 진입에서는 판정하지 않는다 — 안내는
+    /// 소진 플래그가 아니라 다음 진입이 다시 본다(`docs/spec/gates-and-overlays.md`).
+    @Published private(set) var accountResponseCount = 0
+
+    private func noteAccountResponse() {
+        accountResponseCount &+= 1
+    }
+
     /// 동의 화면을 띄워야 하는가.
     ///
     /// ⚠ **`needsConsent` 만 보면 안 된다.** 선택 유형만 재수집하는 경우
@@ -362,6 +377,9 @@ final class AuthViewModel: ObservableObject {
             // 서버가 없으니 동의 확인이 60초 타임아웃까지 매달린다 — 화면 확인 모드에서는
             // 그 사이 로딩 게이트가 화면을 덮어 아무것도 못 본다.
             consentStatusChecked = true
+            // 심어 둔 세션이 곧 계정 응답이다(콜드 스타트 진입의 몫). 전경 복귀는
+            // `refreshUserApplyingToken` 의 화면 확인 모드 갈래가 센다.
+            accountResponseCount = 1
         }
         #endif
 
@@ -531,6 +549,8 @@ final class AuthViewModel: ObservableObject {
             }
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
+            // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
+            noteAccountResponse()
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -617,6 +637,8 @@ final class AuthViewModel: ObservableObject {
             }
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
+            // 로그인 응답의 user 도 계정 응답이다(plan·기간 한정 개인 플랜이 실려 온다).
+            noteAccountResponse()
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -669,6 +691,8 @@ final class AuthViewModel: ObservableObject {
             }
             // 확정이 끝난 뒤에 세션을 공개한다.
             persistSession(nextSession)
+            // 가입 응답이 곧 서버 값이다 — 가입 경로는 `/auth/me` 를 따로 부르지 않는다.
+            noteAccountResponse()
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
@@ -803,6 +827,12 @@ final class AuthViewModel: ObservableObject {
 
     private func refreshUserApplyingToken() async -> String? {
         guard let token else { return nil }
+        // 화면 확인 모드는 서버 없이 돈다 — 심어 둔 세션이 곧 받은 답이다. 네트워크를 타면
+        // 401 이 돌아오고(가짜 토큰), 그 답을 기다리는 안내가 네트워크 속도에 매인다.
+        if UIPreviewSeed.isEnabled {
+            noteAccountResponse()
+            return nil
+        }
         let recoveryRevision = accountRecoveryRevision
         do {
             let (rolledToken, user) = try await api.me(token: token)
@@ -842,6 +872,7 @@ final class AuthViewModel: ObservableObject {
                 pendingDeletion = merged.isPendingDeletion
             }
             lastNetworkError = nil
+            noteAccountResponse()
             // 이 조회가 적용한 rolling token만 호출자에게 넘긴다. 외부 교체는 nil이다.
             return nextToken
         } catch let apiError as APIError {

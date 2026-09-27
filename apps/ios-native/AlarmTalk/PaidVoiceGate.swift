@@ -92,9 +92,11 @@ enum PaidVoiceGate {
     ///    (`docs/spec/billing-lifecycle.md` 「스토어가 권위다」). 자동갱신은 스토어에서 먼저
     ///    일어나고 서버 반영이 늦을 수 있는데, 그때 옛 만료시각으로 막으면 **돈을 내는
     ///    사용자가 잠긴다** — 스펙이 더 나쁘다고 못박은 방향이다.
-    /// 2. 서버가 내 구독을 알면 그 상태·만료로 가른다.
-    /// 3. 서버가 '구독 없음' 이라 답했으면 그룹 접근을 본다.
-    /// 4. 스냅샷이 없으면 **모른다** — 무료가 아니다.
+    /// 2. 서버가 `users.plan = free` 라고 하면 무료다(남은 구독 행보다 위 — 보류).
+    /// 3. 서버가 내 구독을 알면 그 상태·만료로 가른다.
+    /// 4. 서버가 '구독 없음' 이라 답했으면 남은 `users.plan` → 그룹 접근 순으로 본다.
+    ///    그 plan 이 **끝난 기간 한정 개인 플랜의 낡은 계산값**이면 무료다.
+    /// 5. 스냅샷이 없으면 **모른다** — 무료가 아니다(끝난 프로모의 낡은 캐시만 예외).
     static func resolve(snapshot: AccessSnapshot, now: Date = Date()) -> PaidVoiceAccess {
         // ⚠ **기한이 지난 스토어 신호는 없는 것으로 본다.** 기한 없이 믿으면 한 번 유료였던
         // 기기가 영구 통행증을 갖는다 — 전경 갱신 없이 배경 예약만 도는 사이 만료돼도
@@ -104,12 +106,7 @@ enum PaidVoiceGate {
            Date(timeIntervalSince1970: Double(untilMillis) / 1000) > now {
             return .entitled
         }
-        // ⚠ **끝난 기간 한정 개인 플랜은 걷어낸 값으로 본다.** 프로모 기간의 `userPlan` 은
-        // 서버 계산값(`plus`)이라, 다음 `/auth/me` 전까지는 끝난 뒤에도 그 값이 남는다 —
-        // 오프라인 기기가 계속 클론 목소리를 예약하게 된다. 구독 행의 `expires_at` 을 보는
-        // 것과 같은 방식으로 서버가 준 `ends_at` 이후에는 free 로 읽는다.
-        let plan = PersonalPromo.planAsOf(snapshot.userPlan, promo: snapshot.personalPromo, now: now)?
-            .trimmingCharacters(in: .whitespaces).lowercased()
+        let plan = snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased()
         // ⚠ **서버가 free 라고 말하면 남아 있는 구독 행보다도, '모름' 보다도 먼저다.**
         // ① 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
         //    는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
@@ -122,12 +119,28 @@ enum PaidVoiceGate {
         // 신규 결제는 막지 않는다 — 서버가 행과 **같은 트랜잭션에서** plan 을 올리고,
         // 산 직후는 어차피 위의 스토어 신호가 잡는다.
         if plan == "free" { return .notEntitled }
+        // **기간 한정 개인 플랜이 끝난 뒤의 낡은 캐시**(`PersonalPromo.isStale`) — 끝 **전에**
+        // 받아 둔 계산값 `plus` 다. 원시 plan 은 free 였으니 위의 '아는 free' 와 같은 무게라,
+        // 스냅샷이 없어도 '모름' 으로 미루지 않는다.
+        //
+        // ⚠ **이 값으로 plan 을 free 로 덮어쓰지 말 것**(2026-09-27 리뷰). 덮어쓰면 바로 위
+        // 2단에 걸려 **활성 구독 행보다 먼저** 무료가 된다 — 프로모 뒤에 다른 기기에서 결제한
+        // 사람이 오프라인에서 잠긴다. 순서는 안드로이드 `resolvePaidVoiceAccess` 와 같다:
+        // 구독 행(3단)이 먼저 답하고, **행이 없을 때만** 낡은 프로모로 자른다.
+        // 끝 **뒤에** 받은 답은 낡지 않았다(서버가 그때 계산했다) — 기기 시계가 앞서 있어도
+        // 방금 받은 답으로 잠그지 않는다.
+        let promoLapsed = snapshot.personalPromo?.isStale(at: now) == true
         // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
-        guard let response = snapshot.subscriptionResponse else { return .unknown }
+        guard let response = snapshot.subscriptionResponse else {
+            return promoLapsed ? .notEntitled : .unknown
+        }
         guard let subscription = response.subscription else {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
             // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
             switch plan {
+            case .some(let plan) where !plan.isEmpty && promoLapsed:
+                // 구독 행이 없다 — 여기까지 온 `plus` 는 끝난 프로모의 계산값이다.
+                return .notEntitled
             case .some(let plan) where PaidPlans.userPlans.contains(plan):
                 return .entitled
             default:
@@ -141,6 +154,7 @@ enum PaidVoiceGate {
                     ? .entitled : .notEntitled
             }
         }
+        // 활성 구독 행은 끝난 프로모보다 위다 — 진짜 구독자는 프로모 날짜로 잠기지 않는다.
         return isSubscriptionActive(subscription, now: now) ? .entitled : .notEntitled
     }
 
@@ -162,7 +176,8 @@ enum PaidVoiceGate {
     /// 준다('지금 유효' 라는 뜻이다).
     ///
     /// ⚠ **`userPlan` 을 빼지 말 것.** 그룹보다 먼저 보는 값이라, 빼면 결제 보류(그룹은 남고
-    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야 끝난 뒤 걷어낸다.
+    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야(받은 시각까지) 끝난
+    /// 뒤의 낡은 캐시를 가른다.
     static func liveSnapshot(
         subscriptionResponse: BillingSubscriptionResponse?,
         familyGroup: FamilyGroupCurrentResponse?,

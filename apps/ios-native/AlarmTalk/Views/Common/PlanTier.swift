@@ -86,8 +86,9 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     /// 제출·이용권 화면은 무료로 그렸다. 구독 행 없이 `users.plan` 으로 유료를 주는 계정
     /// (기간 한정 개인 플랜 등)이 전부 그 틈에 빠진다.
     ///
-    /// - Parameter userPlan: **지금 시각 기준**의 plan 을 넘긴다(`AuthUser.planAsOf()` —
-    ///   끝난 프로모를 걷어낸 값). 편하게 `bestKnown(serverSubscription:storeTier:user:)` 를 쓴다.
+    /// - Parameter userPlan: 서버가 준 `users.plan`. 세션 사용자가 있으면
+    ///   `bestKnown(serverSubscription:storeTier:user:)` 를 쓴다 — 기간 한정 개인 플랜이
+    ///   붙은 계정은 이 값만으로 보류 규칙을 지킬 수 없다(계산값 `plus` 라서).
     static func bestKnown(
         serverSubscription: BillingSubscriptionResponse?,
         storeTier: PlanTier = .free,
@@ -116,8 +117,18 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         } ?? .free
     }
 
-    /// 세션 사용자로 등급을 본다 — **끝난 기간 한정 개인 플랜은 걷어낸다**(`planAsOf`).
-    /// 편집기·목소리 공유처럼 **쓸 수 있는가** 를 묻는 자리가 쓴다.
+    /// 세션 사용자로 등급을 본다. 편집기·목소리 공유처럼 **쓸 수 있는가** 를 묻는 자리가 쓴다.
+    ///
+    /// 기간 한정 개인 플랜(`personalPromo`)이 붙은 계정은 두 규칙을 더 지킨다:
+    ///  - **기간 중에는 보류 규칙을 그대로 둔다**(2026-09-27 리뷰). 프로모가 있다 = 원시
+    ///    plan 이 free 다. 결제 보류(ON_HOLD·PAUSED) 그룹의 소유자·멤버는 그룹·구독 행이
+    ///    남아 있어, 계산값 `plus` 로 `suspended` 를 풀어 버리면 **남은 행이 등급을 커플·
+    ///    가족으로 올린다** — 서버는 그 기능을 원시값으로 막는다(`docs/spec/billing-lifecycle.md`
+    ///    「무엇이 계산값을 보고, 무엇이 원시값을 보나」). 그래서 행은 보지 않고 스토어와
+    ///    계산값(개인)만 후보다.
+    ///  - **끝난 뒤의 낡은 캐시**(`PersonalPromo.isStale`)는 계산값 `plus` 를 버리고, **활성
+    ///    구독 행이 이긴다** — 판정기(`PaidVoiceGate.resolve`)와 같은 순서다. 프로모 뒤에
+    ///    결제한 사람을 프로모 날짜로 잠그지 않는다.
     ///
     /// ⚠ 이용권 화면(**무엇을 샀는가**)은 이걸 쓰지 않는다 — `purchasedPlan` 을 넘긴다
     /// (`BillingPanel.currentTier`). 프로모는 산 이용권이 아니다.
@@ -127,10 +138,15 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         user: AuthUser?,
         now: Date = Date()
     ) -> PlanTier {
-        bestKnown(
-            serverSubscription: serverSubscription,
-            storeTier: storeTier,
-            userPlan: user?.planAsOf(now)
-        )
+        guard let promo = user?.personalPromo else {
+            return bestKnown(serverSubscription: serverSubscription, storeTier: storeTier, userPlan: user?.plan)
+        }
+        if promo.isStale(at: now) {
+            // 계산값은 끝났다 — plan 을 모르는 것으로 두면 활성 행이 있으면 행이, 없으면 무료다.
+            return bestKnown(serverSubscription: serverSubscription, storeTier: storeTier, userPlan: nil)
+        }
+        // 기간 중 — 원시 free 라 남은 행으로 올리지 않는다(보류 규칙). 계산값만 후보다.
+        let computed = PlanTier.from(user?.plan)
+        return (tierOrder[computed] ?? 0) > (tierOrder[storeTier] ?? 0) ? computed : storeTier
     }
 }

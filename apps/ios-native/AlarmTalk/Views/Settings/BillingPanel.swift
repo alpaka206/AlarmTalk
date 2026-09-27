@@ -321,16 +321,14 @@ struct BillingPanel: View {
         .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
     }
 
+    /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
+    /// 문구도 그쪽이 원본이다(ko·en·ja).
     private func personalPromoLine(lastDay: String) -> some View {
-        Label {
-            Text("개인 플랜 무료 이용 중 · \(lastDay)까지")
-        } icon: {
-            Image(systemName: "gift")
-        }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(AlarmTalkTheme.primary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
+        Text("개인 플랜 무료 이용 중 · \(lastDay)까지")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(AlarmTalkTheme.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
     }
 
     // MARK: - App Store 구독 관리

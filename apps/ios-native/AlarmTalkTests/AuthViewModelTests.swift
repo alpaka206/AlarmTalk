@@ -48,7 +48,11 @@ final class AuthViewModelTests: XCTestCase {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()
         let original = makeEmailSession()
-        let promo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z")
+        let promo = PersonalPromo(
+            endsAt: "2026-10-31T15:00:00Z",
+            noticeFrom: "2026-10-24T15:00:00Z",
+            receivedAt: Date(timeIntervalSince1970: 1_790_000_000)
+        )
         var refreshedUser = original.user
         refreshedUser.plan = "plus"
         refreshedUser.personalPromo = promo
@@ -70,6 +74,10 @@ final class AuthViewModelTests: XCTestCase {
         let snapshot = AccessSnapshotStore().read(userID: original.user.id)
         XCTAssertEqual(snapshot.userPlan, "plus")
         XCTAssertEqual(snapshot.personalPromo, promo, "예약 게이트가 읽는 스냅샷에도 짝으로 적는다")
+        XCTAssertEqual(
+            snapshot.personalPromo?.receivedAt, promo.receivedAt,
+            "받은 시각도 함께 저장된다 — 낡은 캐시인지 가르는 근거다"
+        )
     }
 
     /// 기간 중 결제하면 plan 은 `plus` 그대로인데 프로모만 사라진다 — 그것도 반영해야 한다
@@ -78,7 +86,9 @@ final class AuthViewModelTests: XCTestCase {
         let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
         var session = makeEmailSession()
         session.user.plan = "plus"
-        session.user.personalPromo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z")
+        session.user.personalPromo = PersonalPromo(
+            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z", receivedAt: Date()
+        )
         model._setSessionForTesting(session)
         addTeardownBlock { KeychainStore.deleteSession() }
 
@@ -87,6 +97,55 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(model.session?.user.plan, "plus")
         XCTAssertNil(model.session?.user.personalPromo)
         XCTAssertEqual(model.session?.user.purchasedPlan, "plus")
+    }
+
+    /// 내용이 같은 프로모라도 **새로 받은 시각**은 반영한다. 안 그러면 끝 **뒤에** 받은 답
+    /// (서버가 이미 계산했다)이 옛 시각에 묶여 낡은 캐시로 읽히고, 기기 시계가 앞선 기기에서
+    /// 방금 받은 답으로 무료 잠금이 걸린다.
+    func testFreshPlanRecordsNewReceiptTimeForSamePromo() throws {
+        let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        let end = try XCTUnwrap(PaidVoiceGate.parseTimestamp("2026-10-31T15:00:00Z"))
+        var session = makeEmailSession()
+        session.user.plan = "plus"
+        session.user.personalPromo = PersonalPromo(
+            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z",
+            receivedAt: end.addingTimeInterval(-3_600)
+        )
+        model._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        XCTAssertEqual(model.session?.user.personalPromo?.isStale(at: end.addingTimeInterval(60)), true)
+
+        let fresh = PersonalPromo(
+            endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z",
+            receivedAt: end.addingTimeInterval(30)
+        )
+        model.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: fresh)
+
+        XCTAssertEqual(model.session?.user.personalPromo?.receivedAt, fresh.receivedAt)
+        XCTAssertEqual(model.session?.user.personalPromo?.isStale(at: end.addingTimeInterval(60)), false)
+    }
+
+    /// 종료 안내는 **이 진입의 계정 응답**을 받은 뒤에만 판정한다 — 그 축이 이 수다.
+    /// 답을 받았을 때만 오르고, 실패(오프라인·5xx)로는 오르지 않는다.
+    func testAccountResponseCountRisesOnlyOnReceivedAnswers() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let session = makeEmailSession()
+        vm._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+        XCTAssertEqual(vm.accountResponseCount, 0)
+
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountResponseCount, 0, "답을 못 받았다")
+
+        api.meResult = .failure(.server(status: 503, message: "", errorCode: nil))
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountResponseCount, 0, "5xx 도 답이 아니다")
+
+        api.meResult = .success(session.user)
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountResponseCount, 1)
     }
 
     func testLateUnauthorizedDoesNotDeleteBackgroundRenewedSession() async throws {

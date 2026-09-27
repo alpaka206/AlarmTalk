@@ -250,7 +250,10 @@ final class AlarmKitViewModel: ObservableObject {
         if UIPreviewSeed.isEnabled { return }
         #if canImport(AlarmKit)
         do {
-            let state = try await AlarmManager.shared.requestAuthorization()
+            // 시스템 팝업이 떠 있는 동안에는 우리 안내 알럿을 올리지 않는다(`SystemPermissionPrompts`).
+            let state = try await SystemPermissionPrompts.shared.track {
+                try await AlarmManager.shared.requestAuthorization()
+            }
             applyAuthorizationState(state)
             if alarmAuthorized {
             } else if permissionRecoveryNeeded {
@@ -975,7 +978,9 @@ final class AlarmKitViewModel: ObservableObject {
         #if canImport(AlarmKit)
         do {
             if AlarmManager.shared.authorizationState != .authorized {
-                let state = try await AlarmManager.shared.requestAuthorization()
+                let state = try await SystemPermissionPrompts.shared.track {
+                    try await AlarmManager.shared.requestAuthorization()
+                }
                 applyAuthorizationState(state)
                 guard state == .authorized else {
                     statusMessage = "알람 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요."
