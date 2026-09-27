@@ -97,7 +97,10 @@ enum PaidVoiceGate {
     /// 4. 서버가 '구독 없음' 이라 답했으면 남은 `users.plan` → 그룹 접근 순으로 본다.
     ///    그 plan 이 **끝난 기간 한정 개인 플랜의 낡은 계산값**이면 무료다.
     /// 5. 스냅샷이 없으면 **모른다** — 무료가 아니다(끝난 프로모의 낡은 캐시만 예외).
-    static func resolve(snapshot: AccessSnapshot, now: Date = Date()) -> PaidVoiceAccess {
+    /// - Parameter promoAt: 기간 한정 개인 플랜이 **그 시각에도** 덮는지 볼 시각 — 기본은 `now`.
+    ///   예약은 알람이 **울릴 시각**을 넘긴다(`effectiveRecordForScheduling`). 구독 행·스토어 신호의
+    ///   만료는 여기에 넣지 않는다 — 자동 갱신 구독을 울릴 시각 기준으로 미리 끊으면 결제자가 잠긴다.
+    static func resolve(snapshot: AccessSnapshot, now: Date = Date(), promoAt: Date? = nil) -> PaidVoiceAccess {
         // ⚠ **기한이 지난 스토어 신호는 없는 것으로 본다.** 기한 없이 믿으면 한 번 유료였던
         // 기기가 영구 통행증을 갖는다 — 전경 갱신 없이 배경 예약만 도는 사이 만료돼도
         // 클론 오디오가 계속 예약된다(2026-08-31 리뷰).
@@ -129,7 +132,7 @@ enum PaidVoiceGate {
         // 구독 행(3단)이 먼저 답하고, **행이 없을 때만** 낡은 프로모로 자른다.
         // 끝 **뒤에** 받은 답은 낡지 않았다(서버가 그때 계산했다) — 기기 시계가 앞서 있어도
         // 방금 받은 답으로 잠그지 않는다.
-        let promoLapsed = snapshot.personalPromo?.isStale(at: now) == true
+        let promoLapsed = snapshot.personalPromo?.isStale(at: promoAt ?? now) == true
         // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
         guard let response = snapshot.subscriptionResponse else {
             return promoLapsed ? .notEntitled : .unknown
@@ -159,8 +162,8 @@ enum PaidVoiceGate {
     }
 
     /// **모르면 잠그지 않는다.** 예약 강등 판단이 쓴다 — 이 파일 맨 위의 fail-open 원칙 그대로다.
-    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
-        resolve(snapshot: snapshot, now: now) != .notEntitled
+    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date(), promoAt: Date? = nil) -> Bool {
+        resolve(snapshot: snapshot, now: now, promoAt: promoAt) != .notEntitled
     }
 
     /// 무료 판정이 **기간 한정 개인 플랜의 오프라인 차단(D1) 때문만**인가 — 끝 전에 받아 둔 낡은
@@ -232,15 +235,23 @@ enum PaidVoiceGate {
     /// **본인 소유(`localOwned`) 알람만 대상이다.** 공유받은 알람(`receivedRemote`)은
     /// 보낸 사람의 구독으로 성립하는 것이라 받는 쪽 구독으로 판단하지 않는다.
     /// 무료 시스템 보이스는 애초에 강등 대상이 아니다.
+    /// - Parameter fireAt: 알람이 울릴 시각. 기간 한정 개인 플랜만으로 열린 목소리는 **그 시각에도**
+    ///   프로모가 덮어야 한다(`resolve` 의 `promoAt`). ⚠ iOS 는 울릴 때 앱 코드가 돌지 않는다
+    ///   (AlarmKit 이 예약 때 받은 소리를 그대로 튼다) — 안드로이드처럼 울릴 때 다시 볼 수 없으니,
+    ///   끝 뒤에 울릴 예약은 **예약할 때** 기본 알람음으로 건다(Codex #803). 이미 예약된 반복 알람은
+    ///   다음 리컨사일(앱 열기·백그라운드 새로고침·`plan_changed` 푸시)에서 다음 울림이 끝 뒤가 되는
+    ///   순간 바뀐다.
     static func shouldDowngrade(
         record: LocalAlarmRecord,
         snapshot: AccessSnapshot,
-        now: Date = Date()
+        now: Date = Date(),
+        fireAt: Date? = nil
     ) -> Bool {
         guard record.originEnum == .localOwned else { return false }
         guard !usesFreeSystemVoice(record) else { return false }
         guard usesPaidVoice(record) else { return false }
-        return !isEntitled(snapshot: snapshot, now: now)
+        let promoAt = fireAt.map { max($0, now) }
+        return !isEntitled(snapshot: snapshot, now: now, promoAt: promoAt)
     }
 
     /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.

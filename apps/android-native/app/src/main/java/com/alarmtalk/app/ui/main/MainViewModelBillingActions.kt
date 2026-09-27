@@ -506,6 +506,9 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
     // 같은 잠금 안에서 수행한다. 이후 Play 조회는 새 구매를 정상 반영할 수 있다.
     if (!responseStillBelongsToRequester(ticket.userId, ticket.epoch) ||
         ticket.userId != session.user.id) return@withLock R.string.msg_gb_billing_info_load_failed
+    // 이 응답의 `user_plan`·`personal_promo` 도 plan 답이다 — `/auth/me` 와 **같은 순번**으로 가른다
+    // (`PersonalPromoLedger.claimPlanAnswer`, Codex #803). 표는 보내기 직전에 뜬다.
+    val planRequest = beginAccountRequest()
     val fresh = try {
         api.getSubscription(AlarmTalkApiClient.bearer(session.token), refreshStore = "1")
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -514,11 +517,20 @@ private suspend fun MainViewModel.crossStoreRenewalBlocked(
         AlarmTalkLog.reportError("Failed to preflight cross-store renewal", error)
         return@withLock R.string.msg_gb_billing_info_load_failed
     }
-    // 구독과 plan 을 한 번에 저장해야 시트 취소·프로세스 종료 뒤에도 같은 판정이 남는다.
-    if (fresh.userPlan == null || fresh.storeRenewalProviders == null ||
-        saveSubscriptionSnapshot(ticket, fresh) != EntitlementWrite.Applied) {
+    if (fresh.userPlan == null || fresh.storeRenewalProviders == null) {
         return@withLock R.string.msg_gb_billing_info_load_failed
     }
+    // ⚠ **plan 은 순번을 잡은 답만 쓴다**(Codex #803). 먼저 보낸 `/auth/me` 가 늦게 도착해도 이 답을
+    // 덮지 못하게 순번을 앞당기고, 반대로 더 새 계정 답이 이미 plan 을 차지했으면 이 답의 plan 은
+    // 버리고 구독만 쓴다(방금 산·공유받은 기능이 옛 plan 으로 닫히지 않게). plan·프로모 도장은
+    // `user_plan` 이 있을 때만 쓰이므로(`AccessSnapshot.withBillingResponse`) 그것만 비운다.
+    val planClaimed = personalPromoLedger.claimPlanAnswer(planRequest)
+    val toSave = if (planClaimed) fresh else fresh.copy(userPlan = null)
+    // 구독과 plan 을 한 번에 저장해야 시트 취소·프로세스 종료 뒤에도 같은 판정이 남는다.
+    if (saveSubscriptionSnapshot(ticket, toSave) != EntitlementWrite.Applied) {
+        return@withLock R.string.msg_gb_billing_info_load_failed
+    }
+    if (planClaimed) personalPromoLedger.recordPlanApplied(planRequest)
     subscriptionResponse = fresh
     if (fresh.storeRenewalProviders.any { it != "google" })
         R.string.msg_cross_store_renewal_active else null

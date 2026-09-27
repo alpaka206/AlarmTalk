@@ -474,6 +474,54 @@ final class PersonalPromoTests: XCTestCase {
         )
     }
 
+    /// ⚠ **iOS 는 울릴 때 앱 코드가 돌지 않는다**(AlarmKit 이 예약 때 받은 소리를 튼다 — Codex #803).
+    /// 그래서 기간 한정 개인 플랜만으로 열린 목소리는 **울릴 시각에도** 프로모가 덮는지 보고 예약한다 —
+    /// 끝 뒤에 울릴 예약은 끝 전이라도 기본 알람음으로 건다. 구독 행·만료는 울릴 시각으로 당기지 않는다.
+    func test_schedulingGate_promoOnlyVoiceUsesFireTime() {
+        let beforeEnd = end.addingTimeInterval(-6 * 3_600)
+        let createdAt = Int64(from.timeIntervalSince1970 * 1000)
+        func record(firingAt fire: Date) -> LocalAlarmRecord {
+            var record = LocalAlarmRecord(
+                id: "alarm-1", label: "아침", hour: 7, minute: 0, fireAtMillis: Int64(fire.timeIntervalSince1970 * 1000),
+                origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: createdAt, updatedAtMillis: createdAt
+            )
+            record.playMode = AlarmPlayMode.voiceOnly.rawValue
+            record.voiceProfileId = "clone-1"
+            return record
+        }
+        let promoOnly = snapshot(noSubscription, promo: promo)
+        let afterEnd = record(firingAt: end.addingTimeInterval(3_600))
+        let beforeEndFire = record(firingAt: end.addingTimeInterval(-3_600))
+
+        XCTAssertTrue(
+            PaidVoiceGate.shouldDowngrade(record: afterEnd, snapshot: promoOnly, now: beforeEnd, fireAt: afterEnd.nextFireDate),
+            "끝 뒤에 울릴 예약은 끝 전에 걸어도 기본 알람음이다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: beforeEndFire, snapshot: promoOnly, now: beforeEnd, fireAt: beforeEndFire.nextFireDate),
+            "끝 전에 울리면 목소리 그대로"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: afterEnd, snapshot: promoOnly, now: beforeEnd),
+            "울릴 시각을 안 넘기면 예전처럼 지금 기준(울릴 때 보는 폴백 재생 경로)"
+        )
+        // 지난 울림 시각(반복 알람의 옛 값)은 지금으로 본다.
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: beforeEndFire, snapshot: promoOnly, now: beforeEnd, fireAt: from)
+        )
+        // 활성 구독 행이 있으면(결제자·보류) 울릴 시각과 무관하다 — 자동 갱신 구독을 미리 끊지 않는다.
+        let payer = snapshot(response(subscription(expiresAt: "2026-11-01T00:00:00Z")), promo: promo)
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: afterEnd, snapshot: payer, now: beforeEnd, fireAt: afterEnd.nextFireDate),
+            "행의 만료는 울릴 시각이 아니라 지금으로 본다"
+        )
+        // 프로모가 없는 원시 유료는 영향이 없다.
+        let rawPaid = snapshot(response(subscription()), promo: nil)
+        XCTAssertFalse(
+            PaidVoiceGate.shouldDowngrade(record: afterEnd, snapshot: rawPaid, now: beforeEnd, fireAt: afterEnd.nextFireDate)
+        )
+    }
+
     /// 스토어가 유효하다고 하면 끝난 프로모로도 뒤집지 않는다(「스토어가 권위다」).
     func test_gate_storeSignalBeatsEndedPromo() {
         var cached = snapshot(nil, promo: promo)

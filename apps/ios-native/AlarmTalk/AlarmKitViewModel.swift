@@ -1122,7 +1122,9 @@ final class AlarmKitViewModel: ObservableObject {
     /// 어긋난 것으로 읽혀 `AlarmScheduleReconciler` 가 무한히 다시 예약한다.
     func effectiveRecordForScheduling(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
         let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
-        return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
+        // 울릴 시각을 넘긴다 — 기간 한정 개인 플랜만으로 열린 목소리는 끝 뒤에 울릴 예약이면 기본 알람음으로
+        // 건다(`PaidVoiceGate.shouldDowngrade` 의 `fireAt`). 지난 시각이면 지금으로 본다.
+        return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot, fireAt: record.nextFireDate)
             ? PaidVoiceGate.downgraded(record)
             : record
     }

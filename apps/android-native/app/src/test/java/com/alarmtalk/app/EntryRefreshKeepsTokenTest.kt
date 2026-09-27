@@ -171,10 +171,35 @@ class EntryRefreshKeepsTokenTest {
         }
     }
 
+    /**
+     * **결제 전 조회의 plan 도 `/auth/me` 와 같은 순번으로 가른다**(Codex #803). 안 그러면 먼저 보낸
+     * `/auth/me` 가 늦게 도착해 결제 전 조회가 쓴 더 새 plan·프로모를 덮는다.
+     */
+    @Test
+    fun billingPreflightTakesAPlanTicketBeforeItsRequestAndClaimsBeforeWriting() {
+        val body = bodyOf(billingActions, "private suspend fun MainViewModel.crossStoreRenewalBlocked(")
+        val ticket = body.indexOf("val planRequest = beginAccountRequest()")
+        val send = body.indexOf("api.getSubscription(")
+        val claim = body.indexOf("personalPromoLedger.claimPlanAnswer(planRequest)")
+        val save = body.indexOf("saveSubscriptionSnapshot(ticket, toSave)")
+        val applied = body.indexOf("personalPromoLedger.recordPlanApplied(planRequest)")
+        assertTrue("결제 전 조회가 요청 전에 plan 표를 뜨지 않는다.", ticket >= 0 && send >= 0 && ticket < send)
+        assertTrue("결제 전 조회가 쓰기 전에 plan 순번을 잡지 않는다.", claim > send && save > claim)
+        assertTrue("잡은 답만 plan 반영으로 적어야 한다.", applied > save)
+        assertTrue(
+            "순번을 못 잡은 답은 plan 을 비우고 써야 한다(`fresh.copy(userPlan = null)`).",
+            body.contains("if (planClaimed) fresh else fresh.copy(userPlan = null)"),
+        )
+    }
+
     // ── 소스 읽기(`SignOutWindowOpensBeforeServerCallTest` 와 같은 방식) ─────────────────
 
     private val authActions: String by lazy {
         readSource("src/main/java/com/alarmtalk/app/ui/main/MainViewModelAuthActions.kt")
+    }
+
+    private val billingActions: String by lazy {
+        readSource("src/main/java/com/alarmtalk/app/ui/main/MainViewModelBillingActions.kt")
     }
 
     private val viewModel: String by lazy {

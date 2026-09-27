@@ -874,7 +874,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | --- | --- |
 | `/auth/register`·`/auth/login`·`/auth/google`·`/auth/apple`·`/auth/me` 의 `user` | `plan` = **계산값**(가입의 `'free'` 리터럴 포함) · `personal_promo` = `{ ends_at, notice_from, deletes_voices_at_end, computed_at }` 또는 `null` |
 | `GET /billing/subscription` | `user_plan`(`refresh_store=1` 일 때만) = 계산값 · 최상위 `personal_promo` 같은 모양 · `subscription` 은 **`null` 그대로** |
-| `GET /tts/manual-quota` | 기간 중 원시 free 는 `plan_key: personal`, `limit: 30` |
+| `GET /tts/manual-quota` | 기간 중 원시 free 는 `plan_key: personal`, `limit: 30` — **보류된 커플·가족 그룹의 살아 있는 행이 있어도** 개인 풀이다(`resolveManualTtsPool` 의 `promoOnly` + 보류 행 제외, Codex #803). 생성의 한도 차감도 같은 풀이다 |
 
 - `personal_promo` 는 **원시 plan 이 free 이고 기간 안일 때만** 값이 있다. 결제자에게는 `null`.
   `ends_at` = 끝(배타), `notice_from` = 끝 − `PERSONAL_PROMO.noticeDays`(7)일.
@@ -1071,6 +1071,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   행만 보므로(D15) 이 경보도 그 코호트의 행만 본다.
 - **스윕 실패**(`…sweep_batch`, 태그 `size`·`uids`): 묶음이 롤백될 때.
 - **전환 실패**(`…transition_user`, 태그 `uid`): 격리 재시도까지 실패한 사람.
+- **실행 통째 실패**(`scheduled.personal_promo_end` — 단계 밖에서 던진 것, 예: DB 장애): 로그는 매번,
+  경보는 같은 시간당 자리에서만(`index.ts` — Codex #803). 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
 - ⚠ **셋 다 매시 첫 크론 주기에만 Sentry 로 올린다**(`isPromoEndAlertSlot`·`PROMO_END_HOURLY_ALERT_STAGES`
   — 상태·새 표 없이 갈래마다 시간당 최대 한 번). 1분 크론이라 늘 실패하는 행·사람 하나가 하루
   1,440건씩(폴백까지 더하면 + 288건) 같은 경보를 쌓았다(리뷰 — D10, 전환 실패는 D14).
@@ -1099,6 +1101,14 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   기기 시계로 다시 판정하지 않는다.
 - 그래서 **받은 시각을 답과 함께 저장한다**(plan · `personal_promo` · 받은 시각을 같은 응답에서,
   같은 문으로 — 「권한 스냅샷은 문 하나로만 쓴다」).
+- ⚠ **iOS 는 울릴 때 이 판정을 다시 할 수 없다**(AlarmKit 이 예약 때 받은 소리를 그대로 튼다 — 의도된
+  플랫폼 차이). 안드로이드는 울릴 때 판정한다. 그래서 iOS 는 **예약할 때 울릴 시각으로** 프로모를 본다
+  (`PaidVoiceGate.shouldDowngrade(…fireAt:)` ← `AlarmKitViewModel.effectiveRecordForScheduling`) —
+  프로모만으로 열린 목소리가 끝 뒤에 울릴 예약이면 끝 전이라도 기본 알람음으로 건다. **프로모만**이다:
+  구독 행·스토어 신호의 만료는 울릴 시각으로 당기지 않는다(자동 갱신 구독을 미리 끊으면 결제자가
+  잠긴다). 이미 예약된 반복 알람은 다음 리컨사일(앱 열기·백그라운드 새로고침·전환 크론의
+  `plan_changed` 푸시)에서 다음 울림이 끝 뒤가 되는 순간 바뀐다 — 셋 다 없는 기기는 앱이 다시 돌
+  때까지 목소리로 운다(모든 구독 만료에 있는 AlarmKit 의 같은 한계다).
 - **D7 — '받은 시각' 은 서버 시계로.** 응답의 `personal_promo.computed_at`(서버가 계산한 시각)이
   **있으면 그것을** 받은 시각으로 저장한다. 없으면(이 키가 없는 서버·읽을 수 없는 값) 응답을 받은
   순간의 기기 시계를 쓴다. 기기 시계만 쓰면, 서버보다 Δ 만큼 빠른 기기가 끝 직전에 계산된 답을 끝
@@ -1182,9 +1192,10 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
     (`isTokenRolledWithinSignIn` — 로그아웃 전에 뜬 표는 `signedOutRequestSeq` 로 가른다).
   - 모양 차이(동작은 같다): 안드로이드는 세션을 **세대**로 가르므로(`saveSessionIfAlive`) 토큰이
     굴러도 응답 전체를 반영하고, iOS 는 토큰 에폭으로 가르므로 굴렀을 때 짝만 반영한다.
-  - 남은 구멍(후속, 핸드오프): 안드로이드 결제 전 조회(`refresh_store=1`)의 `user_plan` 스냅샷 쓰기는
-    `/auth/me` 와 순번이 없다 — 결제 전 조회보다 먼저 보낸 `/auth/me` 가 뒤에 오면 그 짝을 덮을 수 있다.
-    iOS 는 결제 전 조회도 표를 뜬다.
+  - 결제 전 조회(`refresh_store=1`)의 `user_plan`·`personal_promo` 도 plan 답이라 **같은 순번**이다 —
+    안드로이드 `crossStoreRenewalBlocked` 가 보내기 직전에 표를 뜨고 쓰기 전에 `claimPlanAnswer` 로
+    잡는다(Codex #803). 더 새 계정 답이 이미 plan 을 차지했으면 plan 은 비우고(`user_plan` 없이) 구독만
+    쓴다. iOS 는 결제 전 조회도 표를 뜬다.
 
 **D2 — `deletes_voices_at_end`.** 위 「API 가 내보내는 것」. `false` 면 종료 안내에서 삭제 문장을
 뺀다. `personal_promo` 가 **있으면** 원시 plan 이 free 다 — 구독 행·그룹으로 커플·가족을 열지

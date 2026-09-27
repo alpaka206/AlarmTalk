@@ -333,7 +333,15 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         },
       });
     } catch (err) {
-      captureCron('scheduled.personal_promo_end', err);
+      // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
+      // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
+      // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
+      const alertSlot = await import('./lib/personal-promo-end')
+        .then((module) => module.isPromoEndAlertSlot(now))
+        .catch(() => true);
+      // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
+      if (alertSlot) captureCron('scheduled.personal_promo_end', err);
+      else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
     }
     return;
   }

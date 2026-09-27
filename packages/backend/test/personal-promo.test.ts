@@ -417,6 +417,25 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         );
       });
 
+      // ⚠ **보류된 커플·가족 그룹의 행이 살아 있어도 개인 플랜 풀이다**(Codex #803). 보류는 행(활성·미만료)을
+      // 남기고 `users.plan` 만 회수한다 — 풀 판정이 그 행부터 보면 개인 플랜 사용자가 보류 그룹의 한도·풀을
+      // 쓰고 소비한다. 끝 뒤에는 계산값이 free 라 0 이다(행이 남아 있어도 원시 free 다).
+      it('직접 입력 한도 — 보류 그룹의 살아 있는 행이 있어도 원시 free 는 개인 플랜 한도·개인 풀', async () => {
+        await db.batch([
+          `INSERT OR IGNORE INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-live', NULL, 'hl@t.test', '보류 커플', 'free')`,
+          `INSERT OR IGNORE INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('pp-group-live', 'pp-hold-live', '${FAMILY}', 5)`,
+          `INSERT OR IGNORE INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-hl', 'pp-group-live', 'pp-hold-live', 'owner')`,
+          `INSERT OR IGNORE INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at, entitlement_state)
+           VALUES ('sub-hold-live', 'pp-hold-live', '${FAMILY}', 'pp-group-live', 'active', '2026-08-01T00:00:00Z', '2099-01-01T00:00:00Z', 'suspended')`,
+        ]);
+        atMoment(moment.at);
+        const held = await call({ pk: 'pp-hold-live' }, 'GET', '/tts/manual-quota');
+        expect(held.status).toBe(200);
+        expect(held.body).toMatchObject(
+          moment.open ? { plan_key: 'personal', limit: 30 } : { plan_key: null, limit: 0 },
+        );
+      });
+
       it('직접 입력 한도 — 원시 free 는 30 → 0, 원시 유료는 그대로 30', async () => {
         atMoment(moment.at);
         const free = await call(FREE, 'GET', '/tts/manual-quota');

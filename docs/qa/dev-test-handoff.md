@@ -56,9 +56,10 @@
   더했다. 이게 없으면 세션 밖 갱신이 먼저 실패한 진입에서 뒤의 `refreshUser` 성공이 안내를 판정해
   D11 이 iOS 에서만 느슨했다)도 이 진입의 결과로 적는다.
 - 리뷰 3차 뒤 **남은 후속**(이 PR 에서 하지 않았다):
-  - 안드로이드 결제 전 조회(`refresh_store=1`)의 `user_plan` 스냅샷 쓰기(`saveSubscriptionSnapshot`)는
-    `/auth/me` 와 순번이 없다 — 결제 전 조회보다 먼저 보낸 `/auth/me` 가 뒤에 도착하면 그 plan·프로모
-    표지를 덮을 수 있다(iOS 는 결제 전 조회도 표를 뜬다). 고치려면 결제 경로에도 장부 표가 필요하다.
+  - (해결) 안드로이드 결제 전 조회의 plan 쓰기도 `/auth/me` 와 같은 순번이다(`crossStoreRenewalBlocked` —
+    `claimPlanAnswer`). iOS 는 예약할 때 울릴 시각으로 프로모를 본다(AlarmKit — `billing-lifecycle.md` D1).
+  - [ ] iOS 실기기: 끝 직전에 다음날 한 번 울릴 클론 알람을 맞추면 기본 알람음으로 예약되는지, 반복 알람은
+    끝 뒤 앱을 열거나 백그라운드 새로고침이 돈 뒤 기본 알람음으로 바뀌는지.
   - 안드로이드 닉네임 수정(`updateNickname` → `saveSessionPreservingCurrentToken`)은 PATCH 를 시작할 때
     잡은 세션 사용자(plan·`personal_promo`·받은 시각 포함)를 그대로 쓴다 — 그 사이 `/auth/me` 가 오면
     세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아간다(기존 문제, 판정 스냅샷은 영향 없음).

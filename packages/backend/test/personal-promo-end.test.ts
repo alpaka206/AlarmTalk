@@ -902,6 +902,19 @@ describe('전용 크론 배선', () => {
     expect(src).toContain('event.cron === PERSONAL_PROMO_END_CRON');
   });
 
+  // 1분마다 도는 실행의 **통째 실패**(DB 장애 등)도 경보는 시간당 한 번이다(Codex #803) — 단계별 경보와 같은
+  // 자리(`isPromoEndAlertSlot`). 로그는 매번 남는다.
+  it('index.ts 의 전용 크론 통째 실패는 시간당 자리에서만 경보하고, 나머지는 로그만 남긴다', () => {
+    const src = readFileSync(join(__dirname, '../src/index.ts'), 'utf-8');
+    const start = src.indexOf('event.cron === PERSONAL_PROMO_END_CRON');
+    const block = src.slice(start, src.indexOf('return;', start));
+    expect(block).toContain('isPromoEndAlertSlot(now)');
+    expect(block).toMatch(/if \(alertSlot\) captureCron\('scheduled\.personal_promo_end', err\);/);
+    expect(block).toMatch(/else logStructured\('error', \{ at: 'scheduled\.personal_promo_end'/);
+    expect(isPromoEndAlertSlot(new Date('2026-11-01T01:00:30Z'))).toBe(true);
+    expect(isPromoEndAlertSlot(new Date('2026-11-01T01:01:30Z'))).toBe(false);
+  });
+
   it('끝 전·스위치 꺼짐이면 DB 를 부르지 않는다(기간 내내 1분마다 도는 실행이다)', async () => {
     const raw = await freshDb('idle');
     const db = counted(raw);

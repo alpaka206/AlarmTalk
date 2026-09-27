@@ -927,6 +927,9 @@ tts.post('/generate', async (c) => {
   const promo = resolvePersonalPromo(c.env);
   const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
   const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
+  // 유료 접근이 기간 한정 개인 플랜에서만 오는가 — 직접 입력 한도 풀을 고를 때 보류 그룹을 건너뛴다
+  // (`resolveManualTtsPool` 의 `promoOnly`).
+  const callerPromoOnly = callerUserPlan !== rawCallerUserPlan;
 
   const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
@@ -1583,7 +1586,9 @@ tts.post('/generate', async (c) => {
         // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
         // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
         if (isManualGeneration) {
-          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+            promoOnly: callerPromoOnly,
+          });
           const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
           if (!reservation.ok) {
             return jsonError(
@@ -1693,7 +1698,9 @@ tts.post('/generate', async (c) => {
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
     if (isManualGeneration) {
-      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+        promoOnly: callerPromoOnly,
+      });
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
         return jsonError(
@@ -1975,7 +1982,9 @@ tts.get('/manual-quota', async (c) => {
   // 생성 라우트와 같은 계산값 — 기간 한정 개인 플랜이면 개인 한도(30)가 보인다.
   const callerUserPlan = computedUserPlan(rawCallerUserPlan, resolvePersonalPromo(c.env));
 
-  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+    promoOnly: callerUserPlan !== rawCallerUserPlan,
+  });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
   return c.json({
     plan_key: pool.planKey,
