@@ -1,6 +1,7 @@
 import type { AppEnv } from '../types';
 import type { Context } from 'hono';
 import { getDB } from '../lib/db';
+import { computedUserPlan, type PersonalPromoState } from '../lib/personal-promo';
 import {
   PAID_PLAN_TYPES as SHARED_PAID_PLAN_TYPES,
   PAID_USER_PLANS as SHARED_PAID_USER_PLANS,
@@ -51,8 +52,31 @@ export function plannedMaxUses(planType: string, maxMembers: number): number {
   return 1;
 }
 
+/**
+ * **원시** `users.plan` 이 유료인가 — 기간 한정 개인 플랜을 **반영하지 않는다.**
+ *
+ * 쓰는 자리: 커플·가족 기능(공유 목소리 프리셋 갈래 `messageBelongsToCaller` ↔ 오디오
+ * 라우트의 남의 목소리, 보낸 알람·가족 알람 발신자). 결제 보류(ON_HOLD/PAUSED) 그룹은
+ * 소유자 `users.plan` 만 free 로 회수하고 그룹·`is_shared` 를 그대로 두므로, 여기를 계산값으로
+ * 바꾸면 기간 동안 보류 그룹의 공유 목소리·가족 알람이 되살아난다.
+ * 내 개인 기능은 [hasPersonalVoiceAccess] 를 쓴다. 스펙: `docs/spec/billing-lifecycle.md`
+ * 「기간 한정 개인 플랜」의 계산값/원시값 표.
+ */
 export function isPaidVoicePlan(plan: unknown): boolean {
   return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
+}
+
+/**
+ * **내 개인 목소리 기능**을 쓸 수 있는가 — 원시 `users.plan` 에 기간 한정 개인 플랜을
+ * 반영해 판정한다(원시 free 이고 구간 안이면 개인).
+ *
+ * 쓰는 자리: 클론 등록·초안 승격·제자리 교체, 음성 업로드, `/tts/generate` 의 무료 제한,
+ * 내 알람 저장·수정의 목소리 게이트, 오디오 라우트의 **본인 목소리** 갈래.
+ * ⚠ 커플·가족 갈래에는 쓰지 말 것 — [isPaidVoicePlan] 주석.
+ */
+export function hasPersonalVoiceAccess(plan: unknown, promo: PersonalPromoState): boolean {
+  if (typeof plan !== 'string') return false;
+  return isPaidVoicePlan(computedUserPlan(plan, promo));
 }
 
 export async function resolveUserPk(c: Context<AppEnv>): Promise<string | null> {

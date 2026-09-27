@@ -110,7 +110,7 @@ describe('그룹 해체 — 멤버마다 남은 권한으로 다시 정한다', 
     await personalSub('m1', 'entitled');
     await run(`INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, is_shared) VALUES ('vp1', 'm1', 'v', 'el-1', 1)`);
     await run(`INSERT INTO paid_voice_retention (user_id, delete_after) VALUES ('m1', '2026-09-21T00:00:00.000Z')`);
-    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW));
+    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     expect((await one<{ plan: string }>(`SELECT plan FROM users WHERE id = 'm1'`))!.plan).toBe('plus');
     expect(await one(`SELECT elevenlabs_voice_id, is_shared FROM voice_profiles WHERE id = 'vp1'`)).toMatchObject({ elevenlabs_voice_id: 'el-1', is_shared: 1 });
     // 여전히 유료라 보관 기한을 지운다(거짓 삭제 예고가 되지 않게).
@@ -121,7 +121,7 @@ describe('그룹 해체 — 멤버마다 남은 권한으로 다시 정한다', 
     await seedGroup(['m1']);
     await personalSub('m1', 'suspended');
     await run(`INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, is_shared) VALUES ('vp1', 'm1', 'v', 'el-1', 1)`);
-    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW));
+    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     expect((await one<{ plan: string }>(`SELECT plan FROM users WHERE id = 'm1'`))!.plan).toBe('free');
     expect(await one(`SELECT elevenlabs_voice_id, is_shared FROM voice_profiles WHERE id = 'vp1'`)).toMatchObject({ elevenlabs_voice_id: 'el-1', is_shared: 1 });
     // 살아 있는 구독 행(보류)이 있으니 보관 기한을 걸지 않는다 — `hasActivePaidEntitlement` 규칙.
@@ -142,7 +142,7 @@ describe('그룹 해체 — 멤버마다 남은 권한으로 다시 정한다', 
        VALUES ('vc1', 'C1', 'H1', ?, 'm1', 'sub-m1', '2026-10-01T00:00:00.000Z')`,
       [FAMILY],
     );
-    const affected = await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW));
+    const affected = await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     expect(affected).toEqual(expect.arrayContaining([OWNER, 'm1']));
     expect((await one<{ plan: string }>(`SELECT plan FROM users WHERE id = 'm1'`))!.plan).toBe('free');
     expect(await one(`SELECT status, canceled_at FROM subscriptions WHERE id = 'sub-m1'`)).toMatchObject({ status: 'cancelled', canceled_at: NOW.toISOString() });
@@ -159,14 +159,14 @@ describe('그룹 해체 — 멤버마다 남은 권한으로 다시 정한다', 
 
   it('멤버가 하나든 넷이든 해체의 왕복 수는 같다', async () => {
     await seedGroup(['m1']);
-    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW));
+    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     const withOne = roundTrips;
     await run('PRAGMA foreign_keys = OFF');
     for (const table of ['plan_group_members', 'subscriptions', 'plan_groups', 'users']) await run(`DELETE FROM ${table}`);
     await run('PRAGMA foreign_keys = ON');
     roundTrips = 0;
     await seedGroup(['m1', 'm2', 'm3', 'm4']);
-    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW));
+    await withWriteTransaction(counted, (tx) => cancelSubscriptionImmediate(tx, OWNER_SUB, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     expect(roundTrips).toBe(withOne);
   });
 });
@@ -199,12 +199,14 @@ describe('보류·복구 전파 — 멤버 수와 무관하게 왕복 두 번', 
 
 describe('보관 기한 문장 = syncPaidVoiceRetention', () => {
   // 묶음 안에서는 JS 판정을 못 끼우니 SQL 로 옮겼다. 같은 상태에서 두 경로가 같아야 한다.
+  // 기간 한정 개인 플랜(`promo`)은 JS 에서 푼 불리언을 SQL 에 바인딩한다 — 그 축도 같이 대조한다.
   const plans = ['free', 'plus', 'family', null] as const;
   const subs = ['none', 'active-future', 'active-past', 'cancelled-future', 'suspended-future'] as const;
+  for (const promo of [false, true]) {
   for (const plan of plans) {
     for (const sub of subs) {
       for (const existing of [false, true]) {
-        it(`plan=${plan} sub=${sub} 기존행=${existing}`, async () => {
+        it(`promo=${promo} plan=${plan} sub=${sub} 기존행=${existing}`, async () => {
           const snapshot = async (via: 'fn' | 'sql') => {
             await run('PRAGMA foreign_keys = OFF');
             for (const table of ['paid_voice_retention', 'subscriptions', 'users']) await run(`DELETE FROM ${table}`);
@@ -224,14 +226,18 @@ describe('보관 기한 문장 = syncPaidVoiceRetention', () => {
             }
             if (existing) await run(`INSERT INTO paid_voice_retention (user_id, delete_after) VALUES ('u', '2026-09-21T00:00:00.000Z')`);
             await withWriteTransaction(raw, async (tx) => {
-              if (via === 'fn') await syncPaidVoiceRetention(tx, 'u', NOW);
-              else await tx.batch(retentionSyncStatements('u', NOW));
+              if (via === 'fn') await syncPaidVoiceRetention(tx, 'u', NOW, promo);
+              else await tx.batch(retentionSyncStatements('u', NOW, promo));
             });
             return (await raw.execute(`SELECT user_id, delete_after FROM paid_voice_retention`)).rows.map((r) => ({ ...r }));
           };
-          expect(await snapshot('sql')).toEqual(await snapshot('fn'));
+          const viaSql = await snapshot('sql');
+          expect(viaSql).toEqual(await snapshot('fn'));
+          // 프로모가 덮는 원시 free 는 **보관 행이 없어야 한다**(있던 것도 푼다). null 은 덮지 않는다.
+          if (promo && plan === 'free') expect(viaSql).toEqual([]);
         });
       }
     }
+  }
   }
 });

@@ -390,6 +390,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   try {
     const { purgeUserAccount, pseudonymizeBillingForRetention } =
       await import('./lib/account-deletion');
+    const { personalPromoCoversFree } = await import('./lib/personal-promo');
     const { withWriteTransaction } = await import('./lib/transactions');
     // ⚠ **`apple_refresh_token` 을 함께 읽는다.** 파기하면 읽을 곳이 없어져 영영 폐기하지
     // 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이 남는다(애플 심사 5.1.1(v)).
@@ -445,7 +446,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         try {
           const purged = await withWriteTransaction(db, async (tx) => {
             await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-            return purgeUserAccount(tx, userPk, userId);
+            return purgeUserAccount(tx, userPk, userId, personalPromoCoversFree(env, now));
           });
           revokedTargets.push(...purged.downgradedAlarms);
           voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);

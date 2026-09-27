@@ -48,7 +48,8 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
+import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
   type DynamicPromptSettings,
@@ -916,10 +917,14 @@ tts.post('/generate', async (c) => {
   }
 
   // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
-  const callerUserPlan = (user.rows[0]!.plan as string) ?? null;
+  // ⚠ **페이월과 한도는 같은 값을 봐야 한다** — 기간 한정 개인 플랜(계산값)을 둘 다에
+  //   반영한다. 한쪽만 반영하면 게이트는 열렸는데 한도가 0 이라 직접 입력이 전부 429 가 된다.
+  const promo = resolvePersonalPromo(c.env);
+  const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
+  const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
   // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
   // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-  const freePlanRestricted = !isPaidVoicePlan(callerUserPlan);
+  const freePlanRestricted = !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
 
   const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
@@ -1889,8 +1894,10 @@ tts.get('/manual-quota', async (c) => {
     sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
-  const callerUserPlan =
+  const rawCallerUserPlan =
     userRow.rows.length > 0 && userRow.rows[0]!.plan != null ? String(userRow.rows[0]!.plan) : null;
+  // 생성 라우트와 같은 계산값 — 기간 한정 개인 플랜이면 개인 한도(30)가 보인다.
+  const callerUserPlan = computedUserPlan(rawCallerUserPlan, resolvePersonalPromo(c.env));
 
   const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
@@ -1984,6 +1991,7 @@ tts.get('/messages/:id/audio', async (c) => {
                  messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
                  messages.category,
                  COALESCE(vp.is_system, 0) AS is_system,
+                 owner.id AS owner_id,
                  owner.plan AS owner_plan
           FROM messages
           JOIN voice_profiles vp
@@ -2033,6 +2041,7 @@ tts.get('/messages/:id/audio', async (c) => {
     audio_url: string | null;
     category: string | null;
     is_system: number | null;
+    owner_id: string | null;
     owner_plan: string | null;
   }>(result.rows[0]!);
 
@@ -2040,8 +2049,17 @@ tts.get('/messages/:id/audio', async (c) => {
   // 내려준다. 소유자가 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기며, 소유자
   // 본인은 물론 공유받은 대상에게도 서버가 오디오를 주지 않는다(삭제된 것과 동일하게 사라짐).
   // 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
+  //
+  // ⚠ **기간 한정 개인 플랜은 목소리 주인이 호출자일 때만 반영한다**(계산값). 남의 목소리
+  //   (공유 프리셋·받은 알람)는 주인의 **원시** plan 을 본다 — `messageBelongsToCaller` 의 공유
+  //   갈래와 한 쌍이다(CLAUDE.md). 여기만 계산값으로 넓히면 결제 보류 그룹의 공유 목소리가
+  //   기간 동안 되살아나고, 쓰기(알람 저장)는 막혀 '들리는데 저장이 안 되는' 알람이 생긴다.
   const isSystemVoice = Number(message.is_system ?? 0) === 1;
-  if (!isSystemVoice && !isPaidVoicePlan(message.owner_plan)) {
+  const ownerIsCaller = message.owner_id != null && ownerIds.includes(message.owner_id);
+  const ownerHasVoiceAccess = ownerIsCaller
+    ? hasPersonalVoiceAccess(message.owner_plan, resolvePersonalPromo(c.env))
+    : isPaidVoicePlan(message.owner_plan);
+  if (!isSystemVoice && !ownerHasVoiceAccess) {
     return c.json(
       {
         error: 'This voice is locked on the free plan.',

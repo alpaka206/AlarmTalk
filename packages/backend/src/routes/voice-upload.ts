@@ -6,7 +6,8 @@ import { callerOwnerIds } from '../lib/caller-ids';
 import { getFormFile } from '../lib/db-types';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess } from './billing-helpers';
+import { resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 
 function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
@@ -35,7 +36,11 @@ async function hasPaidVoiceAccess(c: Context<AppEnv>): Promise<boolean> {
     sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
     args: ownerIds,
   });
-  return result.rows.length > 0 && isPaidVoicePlan(result.rows[0]!.plan);
+  // 기간 한정 개인 플랜 반영(계산값) — 음성 업로드는 내 개인 기능이다.
+  return (
+    result.rows.length > 0 &&
+    hasPersonalVoiceAccess(result.rows[0]!.plan, resolvePersonalPromo(c.env))
+  );
 }
 
 function paidVoiceRequired(c: Context<AppEnv>) {

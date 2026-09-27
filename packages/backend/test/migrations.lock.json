@@ -458,5 +458,9 @@
   "120": {
     "name": "event-slot-cursor",
     "sha": "45744c3601654e26"
+  },
+  "121": {
+    "name": "promo-welcome-group-deactivate",
+    "sha": "258aebae16eae740"
   }
 }

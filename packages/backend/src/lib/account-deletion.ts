@@ -210,6 +210,11 @@ export async function purgeUserAccount(
   // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
   // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
   userLoginId: string,
+  /**
+   * 기간 한정 개인 플랜이 지금 원시 free 를 덮는가(`personalPromoCoversFree(env)`). 탈퇴자가
+   * 소유한 그룹을 해체할 때 떨어져 나가는 **멤버**의 보관 판정에 쓴다.
+   */
+  promoCoversFree: boolean,
 ): Promise<AccountPurgeNotifications> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
   // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
@@ -237,7 +242,10 @@ export async function purgeUserAccount(
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
-    await cancelActiveSubscriptionsForUser(tx, userPk);
+    await cancelActiveSubscriptionsForUser(tx, userPk, new Date(), {
+      deleteVoiceData: false,
+      promoCoversFree,
+    });
 
     // **파기할 내 클론 목록.** 탈퇴가 남에게 미치는 영향은 전부 이 목록에서 나온다.
     // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.

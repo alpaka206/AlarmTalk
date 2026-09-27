@@ -267,6 +267,9 @@ familyAlarm.post('/alarms/voice', async (c) => {
       sql: 'SELECT plan FROM users WHERE id = ?',
       args: [senderPk],
     });
+    // ⚠ **원시값이다** — 가족 알람은 커플·가족 기능이라 기간 한정 개인 플랜을 반영하지 않는다
+    //   (보류 그룹의 원시 free 발신자가 기간 동안 되살아나지 않게). 스펙:
+    //   `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
     if (!isPaidVoicePlan(senderPlan.rows[0]?.plan)) return null;
     await tx.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)

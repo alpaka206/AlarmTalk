@@ -48,29 +48,25 @@ export interface RedeemedPromoResult {
   };
 }
 
+interface RedeemPromoParams {
+  userPk: string;
+  rawCode: string;
+  now?: Date;
+  /**
+   * 기간 한정 개인 플랜이 지금 원시 free 를 덮는가(`personalPromoCoversFree(env)`). 기존 구독을
+   * 정리할 때 떨어져 나가는 사람의 보관 판정에 쓴다. ⚠ 이 값은 **쿠폰 등록 가부와 무관하다** —
+   * `ACTIVE_SUBSCRIPTION_EXISTS` 는 원시 구독 행만 본다. 프로모 기간에도 쿠폰은 그대로 등록된다.
+   */
+  promoCoversFree: boolean;
+}
+
 function normalizePromoCode(raw: string): string {
   return raw.trim();
 }
 
-/**
- * 웰컴 그룹 이름과 '이름 기반' 폴백에 쓰는 #72 시드 시절 구이름 목록. 현행 운영 코드는
- * redemption_group 컬럼으로만 웰컴 판정한다 — 실코드명은 공개 레포 소스에 두지 않고
- * /admin/promo 로 발급·관리한다(#78 에서 시드 폐기). 구이름은 레거시 창(컬럼 없음/
- * 백필 전 갭)에서 사전 존재 동명 코드가 규칙을 우회하지 못하게 하는 용도로만 남긴다.
- */
-const WELCOME_GROUP_NAME = 'welcome';
-const WELCOME_GROUP_CODES: readonly string[] = [
-  'WELCOME_PERSONAL',
-  'WELCOME_COUPLE',
-  'WELCOME_FAMILY',
-];
-// IN 절 플레이스홀더는 목록 길이에서 파생(개발자 고정 조각) — 개수 하드코딩이 목록 변경과
-// 어긋나 args 개수 불일치로 조용히 깨지는 사고를 막는다.
-const WELCOME_CODE_PLACEHOLDERS = WELCOME_GROUP_CODES.map(() => '?').join(', ');
-
 async function redeemPromoInTransaction(
   db: DbExecutor,
-  params: { userPk: string; rawCode: string; now?: Date },
+  params: RedeemPromoParams,
 ): Promise<RedeemedPromoResult> {
   const code = normalizePromoCode(params.rawCode);
   if (!code) {
@@ -80,10 +76,9 @@ async function redeemPromoInTransaction(
   // 코드 매칭은 대소문자 무시(발급 시 UNIQUE 도 NOCASE).
   // deploy-backend.yml 이 배포 '후' 마이그레이션을 돌리므로, redemption_group(#72) 컬럼이
   // 아직 없는 창에서도 리딤이 500 나지 않게 레거시 스키마로 폴백한다(Codex #574 P1).
-  // 폴백 중에는 컬럼 기반 그룹 게이트 대신 아래의 '이름 기반' 웰컴 게이트가 대신 선다
-  // (Codex #575 — 마이그레이션 전에 발급돼 있던 WELCOME_* 동명 코드까지 커버).
+  // 폴백 중에는 그룹 컬럼이 없으니 그룹 규칙도 없다(코드별 1회만). dev/prod 는 #72 를 지난 지
+  // 오래라 이 갈래는 방어용이다.
   let promoRes;
-  let legacySchema = false;
   try {
     promoRes = await db.execute({
       sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
@@ -94,7 +89,6 @@ async function redeemPromoInTransaction(
   } catch (err) {
     // SELECT 는 "no such column", INSERT 는 "has no column named" — admin.ts 와 동일 판별.
     if (!/no such column|has no column named/i.test(String(err))) throw err;
-    legacySchema = true;
     promoRes = await db.execute({
       sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
                    is_active
@@ -145,29 +139,18 @@ async function redeemPromoInTransaction(
     );
   }
 
-  // 리딤 그룹(예: 웰컴 3종) 규칙: 같은 group 의 어떤 코드든 이미 사용한 계정은 다른 코드도
-  // 사용할 수 없다 — 개인/커플/가족 웰컴을 갈아타며 무한 연장하는 것을 막는다. 여기는
-  // 사용자 친화 에러 목적의 사전 검사이고, 최종 판정은 아래 원자 claim 이 담당한다.
+  // 리딤 그룹 규칙: 같은 group 의 어떤 코드든 이미 사용한 계정은 다른 코드도 사용할 수 없다 —
+  // 한 행사의 개인/커플/가족 코드를 갈아타며 무한 연장하는 것을 막는다. 여기는 사용자 친화
+  // 에러 목적의 사전 검사이고, 최종 판정은 아래 원자 claim 이 담당한다.
   //
-  // 웰컴 판정은 항상 '그룹 컬럼 OR 이름' 결합으로 본다 — 마이그레이션 수명주기의 세 구간
-  // (① #72 이전: 컬럼 없음 → 이름만, ② #72~#73 사이: 사전 존재 동명 코드의 group 이 아직
-  // NULL → 이름이 보완, ③ #73 이후: 컬럼이 정답, 이름은 동치) 모두에서 웰컴 1회 규칙이
-  // 끊기지 않는다(Codex #574~#575 배포 창 계열 지적의 최종 형태).
+  // 판정은 **`redemption_group` 컬럼 하나**다(2026-09-27). 예전에는 'welcome' 그룹에만 #72 시드
+  // 구이름(WELCOME_*)으로도 묶는 이름 폴백이 있었다 — #72~#73 배포 창을 위한 것이었고 dev/prod
+  // 는 그 창을 지난 지 오래다. 웰컴 그룹 코드는 마이그레이션 #121 로 전부 비활성이라 그룹 검사에
+  // 닿기 전에 CODE_INACTIVE 로 끝난다. 그룹 이름이 'welcome' 인 행도 이 일반 갈래가 똑같이 막는다.
   const redemptionGroup = (promo.redemption_group as string | null | undefined) ?? null;
-  const isWelcomeCode =
-    redemptionGroup === WELCOME_GROUP_NAME ||
-    WELCOME_GROUP_CODES.includes(String(promo.code).toUpperCase());
-  let groupCond: { sql: string; args: string[] } | null = null;
-  if (isWelcomeCode) {
-    groupCond = legacySchema
-      ? { sql: `UPPER(pg.code) IN (${WELCOME_CODE_PLACEHOLDERS})`, args: [...WELCOME_GROUP_CODES] }
-      : {
-          sql: `(pg.redemption_group = ? OR UPPER(pg.code) IN (${WELCOME_CODE_PLACEHOLDERS}))`,
-          args: [WELCOME_GROUP_NAME, ...WELCOME_GROUP_CODES],
-        };
-  } else if (redemptionGroup) {
-    groupCond = { sql: `pg.redemption_group = ?`, args: [redemptionGroup] };
-  }
+  const groupCond: { sql: string; args: string[] } | null = redemptionGroup
+    ? { sql: `pg.redemption_group = ?`, args: [redemptionGroup] }
+    : null;
   if (groupCond) {
     const groupDupRes = await db.execute({
       sql: `SELECT 1 FROM promo_code_redemptions r
@@ -239,8 +222,8 @@ async function redeemPromoInTransaction(
 
   // 원자 claim: 활성·유효창·총 상한·사용자당 1회·(그룹 코드면) 그룹당 1회 를 한 문장으로
   // gate 한다. SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
-  // 그룹 절은 위 사전 검사와 동일한 groupCond(웰컴=컬럼 OR 이름 결합)를 그대로 쓴다 —
-  // 조건 없는 일반 코드는 절 자체가 빠져 배포 창에서 컬럼을 참조하지 않는다.
+  // 그룹 절은 위 사전 검사와 동일한 groupCond 를 그대로 쓴다 — 조건 없는 일반 코드는 절
+  // 자체가 빠져 배포 창에서 컬럼을 참조하지 않는다.
   const redemptionId = crypto.randomUUID();
   const groupClause = groupCond
     ? `AND NOT EXISTS (
@@ -283,7 +266,10 @@ async function redeemPromoInTransaction(
   }
 
   // 기존 활성 구독 정리(음성 데이터 보존) 후 새 구독 생성(가족이면 그룹/초대 포함).
-  await cancelActiveSubscriptionsForUser(db, params.userPk, now, { deleteVoiceData: false });
+  await cancelActiveSubscriptionsForUser(db, params.userPk, now, {
+    deleteVoiceData: false,
+    promoCoversFree: params.promoCoversFree,
+  });
   const subscriptionId = await createNewSubscriptionForPlan(db, {
     userPk: params.userPk,
     planId,
@@ -326,7 +312,7 @@ async function redeemPromoInTransaction(
 
 export async function redeemPromoCode(
   db: Client,
-  params: { userPk: string; rawCode: string; now?: Date },
+  params: RedeemPromoParams,
 ): Promise<RedeemedPromoResult> {
   return withWriteTransaction(db, (tx) => redeemPromoInTransaction(tx, params));
 }

@@ -18,6 +18,7 @@ import {
 } from '../lib/billing-reconciliation';
 import { withReadTransaction, withWriteTransaction } from '../lib/transactions';
 import { jsonError } from '../lib/api-error';
+import { computedUserPlan, personalPromoField, resolvePersonalPromo } from '../lib/personal-promo';
 
 const billingQuery = new Hono<AppEnv>();
 
@@ -63,6 +64,8 @@ billingQuery.get('/vouchers', async (c) => {
 billingQuery.get('/subscription', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
+  // 기간 한정 개인 플랜 — 이 요청의 시각으로 한 번 푼다(`docs/spec/billing-lifecycle.md`).
+  const promo = resolvePersonalPromo(c.env);
 
   const refreshStoreState = c.req.query('refresh_store') === '1';
   if (refreshStoreState) {
@@ -78,7 +81,11 @@ billingQuery.get('/subscription', async (c) => {
       );
     }
     // 스토어·공유 구독을 모두 처리한 뒤, 활성 근거 자체가 사라진 계정만 정리한다.
-    const repaired = await withWriteTransaction(db, (tx) => repairOrphanedPaidPlan(tx, userId));
+    // 복구 조건은 원시 plan 이다 — 프로모는 DB 에 쓰지 않으므로 여기 닿지 않는다. 보관 기한만
+    // 프로모를 반영한다(기간 중 복구된 계정에 거짓 삭제 예고를 걸지 않게).
+    const repaired = await withWriteTransaction(db, (tx) =>
+      repairOrphanedPaidPlan(tx, userId, promo.now, promo.active),
+    );
     await notifyBillingStateChanged(db, c.env, repaired);
   }
 
@@ -107,12 +114,19 @@ billingQuery.get('/subscription', async (c) => {
       activeSubscriptions.map((s) => s.subscriptionId),
     );
     // plan 과 구독은 한 DB 스냅샷이다. 앱도 한 번의 권한 쓰기로 저장한다.
-    const userPlan = refreshStoreState
-      ? String(
-          (await tx.execute({ sql: 'SELECT plan FROM users WHERE id = ?', args: [userId] })).rows[0]
-            ?.plan ?? 'free',
-        )
-      : undefined;
+    // ⚠ **`user_plan` 은 계산값이다**(기간 한정 개인 플랜). `subscription` 은 원시 구독 행이라
+    //   프로모 사용자는 `null` 그대로다 — **가짜 구독 객체를 만들지 않는다**(구버전 앱에 해지
+    //   버튼이 뜨고 `/billing/cancel` 은 404 를 낸다). 원시 plan 은 `refresh_store=1` 이거나
+    //   프로모가 켜져 있을 때만 읽는다 — 평상시 조회에 DB 왕복을 더하지 않는다.
+    const rawPlanRow =
+      refreshStoreState || promo.active
+        ? (await tx.execute({ sql: 'SELECT plan FROM users WHERE id = ?', args: [userId] }))
+            .rows[0]
+        : undefined;
+    const rawPlan =
+      rawPlanRow?.plan === null || rawPlanRow?.plan === undefined ? null : String(rawPlanRow.plan);
+    const userPlan = refreshStoreState ? (computedUserPlan(rawPlan, promo) ?? 'free') : undefined;
+    const personalPromo = personalPromoField(rawPlan, promo);
     // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
     //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
     //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
@@ -137,6 +151,7 @@ billingQuery.get('/subscription', async (c) => {
     if (!r) {
       return c.json({
         user_plan: userPlan,
+        personal_promo: personalPromo,
         subscription: null,
         plan: null,
         next_plan: null,
@@ -160,6 +175,7 @@ billingQuery.get('/subscription', async (c) => {
 
     return c.json({
       user_plan: userPlan,
+      personal_promo: personalPromo,
       store_renewal_providers: storeRenewalProviders,
       subscription: {
         // 'apple' | 'google' | null. null 은 스토어 결제가 아니라는 뜻이다

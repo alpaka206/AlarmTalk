@@ -96,6 +96,19 @@ export interface Env {
    * 503. 프로젝트·문장 슬롯은 비밀이 아니라 코드에 있다(`lib/event-voices.ts`).
    */
   PERSO_API_KEY?: string;
+  /**
+   * **기간 한정 개인 플랜의 시작**(ISO 8601, 시간대 포함 — 예 `2026-10-05T00:00:00+09:00`).
+   * 제품 상수가 아니라 **운영 스위치**다 — iOS 1.2.10 게재 뒤에 넣는다. 없음·빈 값·해석 불가·
+   * 끝보다 늦음이면 프로모는 **꺼짐**(fail-closed). 끝은 `@alarmtalk/shared` 의
+   * `PERSONAL_PROMO.endsAt` 한 곳이다. 규칙: `docs/spec/billing-lifecycle.md`
+   * 「기간 한정 개인 플랜」. ⚠ 종료 전환 크론도 이 값이 있어야 돈다 — 정리 PR 전까지 지우지 말 것.
+   */
+  PERSONAL_PROMO_STARTS_AT?: string;
+  /**
+   * **dev·테스트 리허설 전용** 끝 덮어쓰기. `ENVIRONMENT = production` 이면 읽지 않는다
+   * (`lib/personal-promo.ts`), prod 시크릿 동기화도 이 키를 거절한다(`scripts/worker-secret-keys.ts`).
+   */
+  PERSONAL_PROMO_ENDS_AT?: string;
 }
 
 export interface SentryClient {

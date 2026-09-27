@@ -20,7 +20,8 @@ import {
   type VibrationPattern,
   type WakeMode,
 } from './alarm-helpers';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
+import { resolvePersonalPromo } from '../lib/personal-promo';
 import { enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
@@ -158,6 +159,9 @@ async function messageBelongsToCaller(
   });
   if (shared.rows.length === 0) return false;
   // 판정은 오디오 라우트와 같은 헬퍼로 한다 — 유료 플랜 목록을 SQL 에 베껴 두면 둘이 갈라진다.
+  // ⚠ **원시값이다 — 기간 한정 개인 플랜을 반영하지 않는다.** 공유 목소리는 커플·가족 기능이고,
+  //   보류 그룹 소유자는 원시 free 라 계산값으로 보면 기간 동안 공유가 되살아난다. 오디오 라우트의
+  //   남의 목소리 갈래도 원시값이다(`docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」).
   return isPaidVoicePlan(shared.rows[0]!.owner_plan);
 }
 
@@ -383,8 +387,15 @@ alarmMutation.post('/', async (c) => {
     });
     creatorPlanValue = creatorPlan.rows[0]?.plan;
   }
+  // 내 알람은 **계산값**(기간 한정 개인 플랜 반영), 남에게 보내는 알람은 **원시값**이다 —
+  // 보내는 알람은 커플·가족 기능이라, 보류 그룹의 원시 free 발신자가 기간 동안 목소리 알람을
+  // 보내게 되면 안 된다(가족 알람 발신자 게이트 `family-alarm.ts` 와 같은 규칙).
   const creatorHasPaidVoice =
-    !resolvedUserPk || creatorPlanValue === undefined || isPaidVoicePlan(creatorPlanValue);
+    !resolvedUserPk ||
+    creatorPlanValue === undefined ||
+    (alarmOwner === userId
+      ? hasPersonalVoiceAccess(creatorPlanValue, resolvePersonalPromo(c.env))
+      : isPaidVoicePlan(creatorPlanValue));
   if (
     !creatorHasPaidVoice &&
     alarmUsesPaidVoice(body) &&
@@ -680,8 +691,12 @@ alarmMutation.patch('/:id', async (c) => {
     );
   }
   const resolvedUserPk = c.get('userIdPK');
+  // 보낸 알람은 위에서 409 로 끝났다 — 여기는 언제나 **내 알람**이라 계산값(기간 한정 개인
+  // 플랜 반영)으로 본다.
   const creatorHasPaidVoice =
-    !resolvedUserPk || current.user_plan === undefined || isPaidVoicePlan(current.user_plan);
+    !resolvedUserPk ||
+    current.user_plan === undefined ||
+    hasPersonalVoiceAccess(current.user_plan, resolvePersonalPromo(c.env));
   const effectiveVoiceFields = {
     mode: body.mode !== undefined ? body.mode : current.mode,
     wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,

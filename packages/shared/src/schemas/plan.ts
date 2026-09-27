@@ -64,3 +64,80 @@ export function isPaidUserPlan(plan: string | null | undefined): boolean {
 export function isGroupPlanType(planType: string | null | undefined): boolean {
   return planType != null && (GROUP_PLAN_TYPES as readonly string[]).includes(planType);
 }
+
+/**
+ * **기간 한정 개인 플랜** — 원시 `users.plan` 이 `'free'` 인 계정을 기간 동안 개인
+ * 플랜으로 **읽는다**(DB 에는 쓰지 않는다). 규칙 전문: `docs/spec/billing-lifecycle.md`
+ * 「기간 한정 개인 플랜」.
+ *
+ * ⚠ **끝 시각은 여기 한 곳에만 둔다.** 앱·CLAUDE.md·다른 문서에 베끼지 않는다 — 앱은 API 가
+ * 준 `personal_promo.ends_at` 만 표시한다. 시작은 제품 상수가 아니라 **운영 스위치**(워커
+ * 바인딩 `PERSONAL_PROMO_STARTS_AT`)라 여기 없다.
+ *
+ * - `endsAt` 은 **배타** 비교다 — 그 시각부터 무료다(한국 시간 자정 = 전날 15:00Z, 마이그레이션
+ *   #74 와 같은 관례).
+ * - `planKey`·`userPlan` 은 개인 플랜의 두 축 이름이다(위 표 — 상품 키 `personal`, 등급 `plus`).
+ * - `noticeDays` 는 종료 안내를 띄우기 시작하는 날수다(`notice_from = endsAt − noticeDays`).
+ */
+export const PERSONAL_PROMO = {
+  planKey: 'personal',
+  userPlan: 'plus',
+  endsAt: '2026-10-31T15:00:00Z',
+  noticeDays: 7,
+} as const;
+
+/** 프로모가 켜져 있는 구간 `[startsAt, endsAt)`. 서버가 운영 스위치에서 풀어 만든다. */
+export interface PersonalPromoWindow {
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/**
+ * `now` 가 구간 안인가. 구간이 없거나(꺼짐) 시각이 해석 불가(`NaN`)면 **아니다**(fail-closed).
+ * 시작은 포함, 끝은 배타다.
+ */
+export function isPersonalPromoActive(
+  window: PersonalPromoWindow | null | undefined,
+  now: Date,
+): boolean {
+  if (!window) return false;
+  const start = window.startsAt.getTime();
+  const end = window.endsAt.getTime();
+  const at = now.getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(at)) return false;
+  return start <= at && at < end;
+}
+
+/**
+ * 원시 `users.plan` 을 **읽을 때** 프로모를 반영한 값. 원시가 정확히 `'free'` 이고 구간 안이면
+ * `'plus'`, 그 밖에는 원시 그대로다 — `null`·빈 값·유료는 손대지 않는다(행이 없는 계정을
+ * 개인으로 올리지 않는다).
+ *
+ * ⚠ 이 값은 **표시와 내 개인 기능 게이트**용이다. `users.plan` 에 쓰는 경로·커플/가족 기능은
+ * 원시값을 본다(스펙의 계산값/원시값 표).
+ */
+export function userPlanWithPromo<P extends string | null | undefined>(
+  rawPlan: P,
+  window: PersonalPromoWindow | null | undefined,
+  now: Date,
+): P | typeof PERSONAL_PROMO.userPlan {
+  if (rawPlan === 'free' && isPersonalPromoActive(window, now)) return PERSONAL_PROMO.userPlan;
+  return rawPlan;
+}
+
+/** 종료 안내를 띄우기 시작하는 시각 — `endsAt − noticeDays`일. */
+export function personalPromoNoticeFrom(endsAt: Date): Date {
+  return new Date(endsAt.getTime() - PERSONAL_PROMO.noticeDays * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * API 의 `personal_promo` 조각 — 계정 응답의 `user` 와 `GET /billing/subscription` 최상위에
+ * 실린다. 원시 plan 이 free 이고 구간 안일 때만 값이 있고, 그 밖에는 `null`(구서버는 필드
+ * 자체가 없다 — 그래서 optional·nullable 이다). 시각은 초 단위 UTC ISO 8601(`…T15:00:00Z`).
+ */
+export const PersonalPromoSchema = z.object({
+  ends_at: z.iso.datetime(),
+  notice_from: z.iso.datetime(),
+});
+export type PersonalPromo = z.infer<typeof PersonalPromoSchema>;
+export const PersonalPromoFieldSchema = PersonalPromoSchema.nullable().optional();
