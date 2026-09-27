@@ -73,8 +73,21 @@ final class SocialFeatureViewModel: ObservableObject {
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
      * 기간 한정 개인 플랜(`personalPromo`)은 plan 의 **짝**이라 함께 넘긴다 — 같은 응답에서
      * 온 값이고, 떨어뜨리면 계산값 `plus` 만 남아 끝난 뒤에도 걷어낼 근거가 없다.
+     *
+     * 마지막 인자는 그 요청을 보내기 **직전에** `beginAccountRequest` 로 받은 표다 — 받는 쪽이
+     * 다른 계정 응답과 순번으로 갈라, 늦게 도착한 옛 답이 새 답을 덮지 않게 한다.
      */
-    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String, _ personalPromo: PersonalPromo?) -> Void)?
+    var onFreshPlan: ((
+        _ userID: String,
+        _ from: String,
+        _ plan: String,
+        _ personalPromo: PersonalPromo?,
+        _ request: AuthViewModel.AccountRequest?
+    ) -> Void)?
+
+    /// 세션 주인에게서 계정 요청 표(순번·진입)를 받는다 — `/auth/me`·결제 전 조회를 보내기
+    /// **직전에** 부른다(`AuthViewModel.beginAccountRequest`). 없으면(테스트) 표 없이 넘긴다.
+    var beginAccountRequest: (() -> AuthViewModel.AccountRequest?)?
 
     // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
@@ -201,6 +214,8 @@ final class SocialFeatureViewModel: ObservableObject {
             var freshPromo: PersonalPromo?
             var planOK = false
             var rolledToken: String?
+            // 표는 보내기 전에 뜬다 — 늦게 도착한 옛 답이 새 답을 덮지 않게(`onFreshPlan`).
+            let accountRequest = beginAccountRequest?()
             do {
                 let me = try await api.me(token: token)
                 freshPlan = me.user.plan
@@ -226,7 +241,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
             // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
             // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
-            if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo) }
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo, accountRequest) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
@@ -335,6 +350,8 @@ final class SocialFeatureViewModel: ObservableObject {
               accessTicket.userID == userID, accessTicket.token == token else {
             return nil
         }
+        // 표는 보내기 전에 뜬다 — 이 응답의 `user_plan` 도 세션의 plan·프로모를 바꾼다.
+        let accountRequest = beginAccountRequest?()
         do {
             let nextSubscription = try await api.getSubscription(
                 token: token,
@@ -360,7 +377,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
             if let plan = nextSubscription.userPlan {
-                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo)
+                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo, accountRequest)
             }
             return nextSubscription
         } catch {

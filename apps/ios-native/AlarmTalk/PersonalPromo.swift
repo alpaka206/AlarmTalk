@@ -18,9 +18,9 @@ import Foundation
 /// ## 앱이 이 값으로 하는 일은 넷뿐이다
 ///
 /// 1. **낡은 캐시의 오프라인 컷오프**(`isStale`). 서버는 `endsAt` 에 곧바로 free 로 돌아가지만,
-///    앱은 다음 `/auth/me` 전까지 캐시된 `plus` 를 들고 있다. **끝 전에 받아 둔** 답이 끝을
-///    넘기면 그 `plus` 는 믿지 않는다. 끝 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로
-///    믿는다 — 기기 시계가 앞서 있어도 방금 받은 답으로 잠그지 않기 위해서다.
+///    앱은 다음 `/auth/me` 전까지 캐시된 `plus` 를 들고 있다. **끝 전에 계산된** 답이 끝을
+///    넘기면 그 `plus` 는 믿지 않는다. 끝 **뒤에** 계산된 답은 서버가 이미 그 시각에 판단한
+///    것이라 그대로 믿는다. 계산 시각은 서버 시계(`computed_at`)가 우선이다(`fetchedAt`).
 /// 2. 이용권 화면의 한 줄(무료 이용 중 · 언제까지).
 /// 3. 종료 전 안내(`noticeFrom` 부터, 앱에 들어올 때마다 — `PersonalPromoNotice`).
 /// 4. 보류 규칙 — 위 계약의 '이 값이 있다 = 원시 free'.
@@ -36,24 +36,29 @@ struct PersonalPromo: Codable, Equatable {
     /// 구버전 서버처럼 **키가 없으면 true** 로 읽는다 — 삭제될 목소리를 안내하지 않는 쪽이
     /// 더 나쁘다(약관 제10조의 '전환 전에 앱 안에서 안내한다').
     var deletesVoicesAtEnd: Bool
-    /// 이 값을 **서버에서 받은 시각**(기기 시계). 서버 계약에는 없는 앱 로컬 값이다.
+    /// **이 답이 계산된 시각** — 오프라인 컷오프(`isStale`)가 "끝 전의 낡은 답인가" 를 가르는
+    /// 근거라 **답과 함께 저장한다**(키체인 세션·권한 스냅샷).
     ///
-    /// 컷오프가 "끝 전에 받아 둔 낡은 답인가" 를 가르는 근거라 **답과 함께 저장한다**(키체인
-    /// 세션·권한 스냅샷). nil 은 '모름' 이고, 모르면 컷오프하지 않는다(fail-open).
-    var receivedAt: Date?
+    /// 출처(스펙 D7 — 안드로이드와 같은 규칙):
+    ///  1. 서버가 준 `computed_at`(서버 시계, 그 plan 을 계산한 순간). 서버의 `ends_at` 과 같은
+    ///     시계라, 기기 시계가 어긋나도 끝 전에 계산된 답은 끝 전의 답으로 읽힌다.
+    ///  2. 없으면(구버전 서버) **응답을 받은 순간**의 기기 시계.
+    ///  3. 저장본에 이 값이 없으면(이 필드 전의 개발 빌드가 남긴 캐시) nil — **끝 전에 받은
+    ///     것으로 본다**(fail-closed, `isStale`).
+    var fetchedAt: Date?
 
     init(
         endsAt: String?,
         noticeFrom: String?,
         deletesVoicesAtEnd: Bool = true,
-        receivedAt: Date?
+        fetchedAt: Date?
     ) {
         self.endsAt = endsAt.nilIfBlank
         self.noticeFrom = noticeFrom.nilIfBlank
         self.deletesVoicesAtEnd = deletesVoicesAtEnd
         // 저장은 밀리초 정수라, 처음부터 밀리초로 맞춰 둔다 — 저장본을 다시 읽은 값과 메모리의
         // 값이 1ms 미만 차이로 '다른 프로모' 가 되지 않게.
-        self.receivedAt = receivedAt.map {
+        self.fetchedAt = fetchedAt.map {
             Date(timeIntervalSince1970: ($0.timeIntervalSince1970 * 1000).rounded() / 1000)
         }
     }
@@ -62,18 +67,28 @@ struct PersonalPromo: Codable, Equatable {
         case endsAt
         case noticeFrom
         case deletesVoicesAtEnd
-        /// 앱 로컬 — 서버는 보내지 않는다. 저장본(기본 인코더)에만 있다.
+        /// 서버 계약(선택) — 그 plan 을 계산한 서버 시각. 구버전 서버는 보내지 않는다.
+        case computedAt
+        /// 앱 로컬 — `fetchedAt` 의 저장 키. 서버는 보내지 않고 저장본(기본 인코더)에만 있다.
+        /// ⚠ 이름은 옛 필드(`receivedAt`)의 것이다 — 바꾸면 이미 저장된 캐시를 못 읽는다.
         case receivedAtMillis
     }
+
+    /// 서버 응답을 읽는 디코더(`AlarmTalkAPI.makeResponseDecoder`)만 켜는 표시. 켜져 있으면
+    /// `computed_at` 이 없을 때 **디코딩하는 순간**(= 받은 순간)을 `fetchedAt` 으로 찍는다.
+    static let stampsReceiptKey = CodingUserInfoKey(rawValue: "PersonalPromo.stampsReceipt")!
 
     /// ⚠ **모양이 어긋나도 던지지 않는다.** 이 값은 **로그인 응답의 user 안**에 실린다 —
     /// 여기서 던지면 표시용 필드 하나 때문에 로그인·`/auth/me` 가 통째로 실패한다.
     /// 읽을 수 없는 값은 없는 것으로 친다(날짜가 없으면 아래 판정이 전부 '아무것도 안 함' 이다).
     ///
-    /// ⚠ **받은 시각은 여기서 찍는다.** 서버 응답에는 `receivedAtMillis` 가 없으므로 디코딩하는
-    /// 순간이 곧 받은 순간이다 — 로그인·`/auth/me`·결제 전 조회·배경 갱신 어느 경로로 오든
-    /// 빠짐없이 찍힌다(경로마다 손으로 찍으면 하나가 빠진다). 저장본에는 그 값이 실려 있어
-    /// 다시 읽어도 처음 받은 시각이 유지된다.
+    /// ⚠ **계산 시각은 여기서 정한다** — 로그인·`/auth/me`·결제 전 조회·배경 갱신 어느 경로로
+    /// 오든 빠짐없이 같은 규칙을 탄다(경로마다 손으로 찍으면 하나가 빠진다). 순서는 저장본의
+    /// 값 → 서버의 `computed_at` → (서버 응답일 때만) 받은 순간이다.
+    /// ⚠ **저장본을 읽을 때 지금 시각을 찍지 말 것.** 예전에는 저장 키가 없으면 무조건 `Date()`
+    /// 를 넣어, 옛 캐시가 **읽을 때마다 방금 받은 답**이 되어 끝난 뒤에도 영영 낡지 않았다
+    /// (2026-09-27 리뷰 — 안드로이드는 같은 경우를 끝 전의 답으로 본다). 저장본을 읽는
+    /// 디코더(키체인·스냅샷)는 표시를 켜지 않으므로 여기서 nil 이 된다.
     init(from decoder: Decoder) throws {
         let container = try? decoder.container(keyedBy: CodingKeys.self)
         func string(_ key: CodingKeys) -> String? {
@@ -83,12 +98,14 @@ struct PersonalPromo: Codable, Equatable {
         }
         let deletes: Bool?? = try? container?.decodeIfPresent(Bool.self, forKey: .deletesVoicesAtEnd)
         let millis: Int64?? = try? container?.decodeIfPresent(Int64.self, forKey: .receivedAtMillis)
-        let storedReceivedAt = (millis ?? nil).map { Date(timeIntervalSince1970: Double($0) / 1000) }
+        let stored = (millis ?? nil).map { Date(timeIntervalSince1970: Double($0) / 1000) }
+        let computed = string(.computedAt).flatMap(PaidVoiceGate.parseTimestamp)
+        let receipt = decoder.userInfo[Self.stampsReceiptKey] as? Bool == true ? Date() : nil
         self.init(
             endsAt: string(.endsAt),
             noticeFrom: string(.noticeFrom),
             deletesVoicesAtEnd: (deletes ?? nil) ?? true,
-            receivedAt: storedReceivedAt ?? Date()
+            fetchedAt: stored ?? computed ?? receipt
         )
     }
 
@@ -98,7 +115,7 @@ struct PersonalPromo: Codable, Equatable {
         try container.encodeIfPresent(noticeFrom, forKey: .noticeFrom)
         try container.encode(deletesVoicesAtEnd, forKey: .deletesVoicesAtEnd)
         try container.encodeIfPresent(
-            receivedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
+            fetchedAt.map { Int64(($0.timeIntervalSince1970 * 1000).rounded()) },
             forKey: .receivedAtMillis
         )
     }
@@ -120,19 +137,20 @@ struct PersonalPromo: Codable, Equatable {
         return now >= end
     }
 
-    /// **이 캐시가 낡았는가** — 끝 **전에** 받아 둔 답이고, 지금은 끝이 지났다.
+    /// **이 캐시가 낡았는가** — 끝 **전에** 계산된 답이고, 지금은 끝이 지났다
+    /// (안드로이드 `personalPromoLapsed` 와 같은 규칙).
     ///
     /// 그때의 계산값 `plus` 는 더는 사실이 아니다(서버는 끝부터 원시 free 를 준다). 그래서
     /// 판정기는 이 답의 `plus` 를 무료로 읽는다 — **단 활성 구독 행은 이긴다**(`PaidVoiceGate`).
     ///
-    /// 낡지 **않은** 경우:
-    ///  - 아직 끝 전이다.
-    ///  - 끝 **뒤에** 받은 답이다 — 서버가 그 시각에 이미 계산했다. 기기 시계가 앞서 있어
-    ///    끝이 지난 것처럼 보여도 방금 받은 답으로 잠그지 않는다(되돌릴 수 없는 잠금이 이걸 본다).
-    ///  - 받은 시각을 모른다, 또는 종료 시각을 못 읽는다 — 모르면 회수하지 않는다(fail-open).
+    /// - 계산 시각(`fetchedAt`)이 끝 **뒤**면 낡지 않았다 — 서버가 그 시각에 이미 계산했다.
+    /// - 계산 시각을 **모르면 끝 전의 답으로 본다**(fail-closed, 스펙 D7). 모르는 답을 끝 뒤의
+    ///   답으로 치면 오프라인 기기가 끝난 프로모의 클론 목소리를 기한 없이 들고 간다.
+    /// - 종료 시각을 못 읽으면 자르지 않는다 — 서버 게이트가 제 시각에 스스로 닫힌다.
     func isStale(at now: Date) -> Bool {
-        guard let end = endsAtDate, now >= end, let receivedAt else { return false }
-        return receivedAt < end
+        guard let end = endsAtDate, now >= end else { return false }
+        guard let fetchedAt else { return true }
+        return fetchedAt < end
     }
 
     /// 종료 안내를 띄울 창 안인가 — `[noticeFrom, endsAt)`. 날짜 하나라도 못 읽으면 띄우지 않는다
