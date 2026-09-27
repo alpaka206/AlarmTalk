@@ -93,6 +93,7 @@ import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.normalizePersonalPromo
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -379,6 +380,8 @@ internal fun VoiceProfileManagementPanel(
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
+        // plan 과 같은 세션 응답의 짝이다.
+        userPlanPromoEndsAt = normalizePersonalPromo(authSession?.user?.personalPromo)?.endsAt,
     )
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).

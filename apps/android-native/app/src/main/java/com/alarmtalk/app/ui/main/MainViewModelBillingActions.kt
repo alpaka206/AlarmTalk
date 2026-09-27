@@ -355,7 +355,7 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
         "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
         "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
-        // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
+        // 리딤 그룹(`redemption_group`) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
         "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
         "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
         "ACTIVE_SUBSCRIPTION_EXISTS" -> context.getString(R.string.msg2_promo_fail_active_subscription)
@@ -369,10 +369,10 @@ private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Bo
  * 코드(바우처·초대·프로모) 등록.
  *
  * [onResult] 는 **결과를 기다려야 하는 호출부**만 넘긴다 — null 이면 성공, 문자열이면 실패 사유다.
- * 웰컴 프로모처럼 '계정당 1회' 로 소진되는 자리는 실패했는데 화면이 먼저 닫히면 사용자가 코드를
- * 고쳐 넣을 방법이 영영 없어진다(Codex #660). 그래서 실패 문구를 스낵바 대신 호출부로 돌려주고,
- * 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는 그 뒤로 가린다).
- * 넘기지 않으면 지금처럼 스낵바로만 알린다.
+ * 모달 안에서 코드를 받는 자리(유료 게이트의 '쿠폰이 있어요')는 실패했는데 화면이 먼저 닫히면
+ * 사용자가 코드를 고쳐 넣을 곳을 잃는다(Codex #660). 그래서 실패 문구를 스낵바 대신 호출부로
+ * 돌려주고, 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는
+ * 그 뒤로 가린다). 넘기지 않으면 지금처럼 스낵바로만 알린다.
  */
 /**
  * 코드 등록(초대·선물·프로모 공용).

@@ -20,6 +20,7 @@ import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.normalizePersonalPromo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -118,11 +119,11 @@ class PlanChangeSyncWorker(
             // 남긴 채 `users.plan` 만 회수하므로, 옛 유료가 남아 있으면 판정기가 남은 행을
             // 보고 유료라고 답한다(판정 2단이 그래서 plan 을 먼저 본다).
             val published = entitlement.write(ticket, "plan_changed worker") {
+                // plan 과 프로모 종료 시각은 한 쌍이다(`AccessSnapshot.withServerUser`).
                 it.copy(
                     subscriptionResponse = billing,
                     familyGroup = familyGroup,
-                    userPlan = freshUser.plan,
-                )
+                ).withServerUser(freshUser)
             }
             if (published != EntitlementWrite.Applied) return@runCatching Result.success()
 
@@ -132,6 +133,7 @@ class PlanChangeSyncWorker(
             // 사용자의 클론 목소리 알람이 **영구 변환**된다(안드로이드는 되돌리지 않는다).
             // 「스토어가 권위다」가 여기에도 걸려야 하는 이유다.
             val plan = freshUser.plan
+            val planPromoEndsAt = normalizePersonalPromo(freshUser.personalPromo)?.endsAt
             val now = System.currentTimeMillis()
             val access = resolvePaidVoiceAccess(
                 subscriptionResponse = billing,
@@ -139,6 +141,7 @@ class PlanChangeSyncWorker(
                 userPlan = plan,
                 storeEntitled = entitlement.read(ticket).storeSignalStillValid(now),
                 nowMillis = now,
+                userPlanPromoEndsAt = planPromoEndsAt,
             )
             // ⚠ **남아 있는 구독 행을 한 번 더 본다.** 판정기는 `users.plan = free` 를 행보다
             // 위로 보므로(보류를 잡기 위한 규칙) 그것만으로 참이 되는데, 보류는 **회복형**이라
@@ -158,6 +161,7 @@ class PlanChangeSyncWorker(
                 userPlan = plan,
                 storeEntitled = false,
                 nowMillis = now,
+                userPlanPromoEndsAt = planPromoEndsAt,
             ).isDefinitelyFree()
             if (serverSaysFree) {
                 // 앞의 발행을 통과했다고 그 권한이 계속 유효한 게 아니다 — 그 사이 재로그인한

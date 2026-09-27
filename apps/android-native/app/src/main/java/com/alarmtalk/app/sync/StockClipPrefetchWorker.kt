@@ -30,6 +30,7 @@ import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.normalizePersonalPromo
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -202,7 +203,7 @@ class StockClipPrefetchWorker(
                 withContext(Dispatchers.IO) { api.getStockClips(auth) }
             } catch (error: Throwable) {
                 // ⚠ **판정은 못 해도 '시도는 끝났다' 는 남긴다**(2026-09-03 리뷰 22차).
-                //   준비 신호를 안 세우면 오프라인·서버 오류에서 웰컴 프로모·첫 권한 안내가
+                //   준비 신호를 안 세우면 오프라인·서버 오류에서 첫 권한 안내·개인 플랜 종료 안내가
                 //   **영영 안 뜬다** — 판정을 못 한 것과 시도가 안 끝난 것은 다르다.
                 //   `manifestFetched = false` 라 앞 판정은 그대로 지켜진다.
                 StockReplacementStatus.report(
@@ -219,7 +220,7 @@ class StockClipPrefetchWorker(
                     //   곳(`loadStockClips`·`VoiceAccessSyncWorker`)에 `report` 가 없다.
                     //   게다가 그쪽이 같이 건 `enqueue` 는 **이 실행이 아직 안 끝나** `KEEP`
                     //   에 버려지므로, 여기서 조용히 성공하면 `checkedUserId` 가 그 세션 내내
-                    //   null 로 남아 웰컴 프로모·첫 권한 안내가 **영영 안 뜬다** — 위 조회
+                    //   null 로 남아 첫 권한 안내·개인 플랜 종료 안내가 **영영 안 뜬다** — 위 조회
                     //   실패 갈래와 같은 이유다(`docs/spec/gates-and-overlays.md`
                     //   「준비 신호는 성공·실패 모두 true」).
                     // ⚠ **`manifestFetched` 를 true 로 바꾸지 말 것.** false 라야 앞 판정이
@@ -305,7 +306,8 @@ class StockClipPrefetchWorker(
                     //   안 보면 문이 버린 값이 그대로 선다운로드 여부를 정한다.
                     //   낙관 기본값으로 물러난다 — 선다운로드는 더 받아도 손해가 없고,
                     //   덜 받으면 오프라인에서 소리가 안 난다.
-                    if (entitlement.write(ticket, "prefetch plan") { it.copy(userPlan = plan) }
+                    // plan 과 프로모 종료 시각은 한 쌍이다(`AccessSnapshot.withServerUser`).
+                    if (entitlement.write(ticket, "prefetch plan") { it.withServerUser(me.user) }
                         != EntitlementWrite.Applied
                     ) {
                         return@runCatching true
@@ -318,6 +320,7 @@ class StockClipPrefetchWorker(
                         userPlan = plan,
                         storeEntitled = snapshot.storeSignalStillValid(now),
                         nowMillis = now,
+                        userPlanPromoEndsAt = normalizePersonalPromo(me.user.personalPromo)?.endsAt,
                     ).isEntitledOptimistic()
                 }.getOrDefault(true)
             }

@@ -121,7 +121,8 @@ class RemoteAlarmSyncWorker(
                 //   나중에 알 길이 없다.
                 val renewed = EntitlementWriter(applicationContext)
                     .write(AccessTicket(userId, startGeneration), "background session renewal") {
-                        it.copy(userPlan = me.user.plan)
+                        // plan 과 프로모 종료 시각은 한 쌍이다(`AccessSnapshot.withServerUser`).
+                        it.withServerUser(me.user)
                     }
                 if (renewed != EntitlementWrite.Applied) {
                     Log.i(TAG, "Background plan renewal skipped: session changed mid-run")

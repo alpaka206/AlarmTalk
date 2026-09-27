@@ -1,6 +1,10 @@
 package com.alarmtalk.app.core
 
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * 프로세스 전역 신호 버스 — FCM 서비스(비 Compose)가 UI 계층(MainViewModel)에 새로고침을
@@ -25,5 +29,25 @@ object AppSignals {
 
     fun emitPlanChanged() {
         planChanged.tryEmit(Unit)
+    }
+
+    private val appEntryCount = MutableStateFlow(0L)
+
+    /**
+     * **앱에 들어온 횟수**(프로세스 기준). 콜드 스타트와 백그라운드에서 돌아온 순간마다 1씩
+     * 오른다 — `ProcessLifecycleOwner` 의 ON_START(`AlarmTalkApplication`).
+     *
+     * 화면 이동·회전으로는 오르지 않는다: 액티비티 수명이 아니라 **프로세스** 수명을 보고,
+     * 그 수명은 마지막 화면이 내려간 뒤 잠깐의 유예를 두고서야 멈춤으로 넘어간다.
+     * '진입할 때마다' 뜨는 안내(기간 한정 개인 플랜 종료 안내)가 이 번호를 기준으로
+     * 진입 한 번에 한 번만 뜬다. 0 은 '아직 진입하지 않았다' 다.
+     *
+     * ⚠ 컴포지션에서 옵저버를 직접 걸지 말 것 — 회전으로 다시 걸리는 순간 이미 STARTED 인
+     *   수명이 ON_START 를 곧바로 한 번 더 보내 **회전이 진입으로 세어진다.**
+     */
+    val appEntries: StateFlow<Long> = appEntryCount.asStateFlow()
+
+    fun markAppEntered() {
+        appEntryCount.update { it + 1 }
     }
 }

@@ -223,10 +223,18 @@ internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
  * 3. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
  *    미로그인 스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
  * 4. 남은 `users.plan` 으로 가른다. **그룹보다 위다** — 위 2단과 같은 이유다.
+ *    단 그 plan 이 **기간 한정 개인 플랜으로 계산된 값**이고 그 기간이 끝났으면 무료다
+ *    ([userPlanPromoEndsAt]).
  * 5. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
  *
  * @param storeEntitled 스토어(Play/StoreKit)가 지금 유효한 구독을 확인해 줬는가. 모르면 false —
  *   **거짓이라고 단정하는 값이 아니라 '확인 못 했다' 는 뜻**이라 2단 이하로 내려갈 뿐이다.
+ * @param userPlanPromoEndsAt [userPlan] 과 **같은 응답에서 온** `personal_promo.ends_at`.
+ *   서버는 기간 동안 원시 free 를 `plus` 로 계산해 주는데, 앱에는 그 `plus` 가 캐시로 남는다.
+ *   종료 시각이 지나면 그 캐시는 원시 free 로 읽어야 한다 — 안 그러면 종료 뒤 앱을 안 연
+ *   기기(특히 울림 경로)가 클론 목소리를 계속 쓴다. **plan 과 짝으로만 넘길 것** —
+ *   다른 응답의 종료 시각을 붙이면 쿠폰으로 진짜 유료가 된 사용자가 그 시각에 잠긴다.
+ *   진짜 구독(3단)은 이 값과 무관하다. 프로모가 아니면 null.
  */
 internal fun resolvePaidVoiceAccess(
     subscriptionResponse: BillingSubscriptionResponse?,
@@ -234,6 +242,7 @@ internal fun resolvePaidVoiceAccess(
     userPlan: String?,
     storeEntitled: Boolean,
     nowMillis: Long,
+    userPlanPromoEndsAt: String?,
 ): PaidVoiceAccess {
     if (storeEntitled) return PaidVoiceAccess.Entitled
     val plan = userPlan?.trim()?.lowercase()
@@ -244,8 +253,12 @@ internal fun resolvePaidVoiceAccess(
     // 되돌릴 수 없는 잠금은 이것만으로 걸리지 않는다 — `isDefinitelyFreePlan()` 이
     // `storeEntitlementChecked` 를 함께 요구한다(스토어에 물어보기 전에는 안 잠근다).
     if (plan == "free") return PaidVoiceAccess.NotEntitled
+    // 기간 한정 개인 플랜이 끝났다 = 그 plan 은 **끝난 계산값**이고 원시는 free 다.
+    // 위의 '아는 free' 와 같은 무게라 스냅샷이 없어도 모름으로 미루지 않는다.
+    val promoLapsed = personalPromoLapsed(userPlanPromoEndsAt, nowMillis)
     // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
-    val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
+    val snapshot = subscriptionResponse
+        ?: return if (promoLapsed) PaidVoiceAccess.NotEntitled else PaidVoiceAccess.Unknown
     val subscription = snapshot.subscription
     if (subscription != null) {
         if (!hasPaidVoiceAccess(snapshot)) return PaidVoiceAccess.NotEntitled
@@ -263,6 +276,9 @@ internal fun resolvePaidVoiceAccess(
         plan == null || plan.isBlank() ->
             if (hasCoupleOrFamilyAccess(snapshot, familyGroup)) PaidVoiceAccess.Entitled
             else PaidVoiceAccess.NotEntitled
+        // ⚠ **구독 행이 있으면 위(3단)에서 이미 끝났다** — 진짜 구독자는 이 줄에 닿지 않는다.
+        //   여기까지 온 `plus` 는 구독 없이 plan 만 유료인 경우라, 프로모 계산값이면 기간으로 자른다.
+        promoLapsed -> PaidVoiceAccess.NotEntitled
         plan in PaidUserPlans -> PaidVoiceAccess.Entitled
         else -> PaidVoiceAccess.NotEntitled
     }

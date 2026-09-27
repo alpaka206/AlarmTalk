@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -397,58 +398,62 @@ internal fun AlarmTalkApp(
         }
     }
 
-    // 웰컴 코드 안내(계정 1회, 무료 플랜 한정). 권한 게이트와 같은 레이어에 쌓이면 하나가
-    // 다른 하나를 가리므로 **권한 모달이 없을 때만** 띄운다. 권한 모달이 닫히면 이 효과가
-    // 다시 돌아 그때 뜬다. 동의·목소리 준비 화면을 다 지난 뒤라야 홈 위에서 보인다.
-    // `consentChecked` 를 반드시 함께 본다. 첫 로그인 순간엔 needsConsent 가 아직 기본값
-    // false 라, 동의 확인 응답이 오기 전에 이 효과가 먼저 돌면 프로모가 뜨면서 1회 플래그까지
-    // 태운다 — 그 뒤 응답이 와서 동의 화면이 열리면 프로모가 그 위를 덮는다(Codex #660).
-    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
-    // 즉시 true 가 되는데, 버전 응답은 아직 오지 않아 updateRequired 는 기본값 false 다.
-    // 그 틈에 프로모가 떠 1회 플래그를 태우고, 뒤늦게 응답이 와 업데이트 차단 화면이 깔리면
-    // 그 위에 다이얼로그만 남는다 — 업데이트하고 돌아와도 프로모는 이미 소진된 뒤다.
-    // 탈퇴 유예 계정도 같은 종류의 레이스다. checkAccountStatus 응답 전에는 pendingDeletion 이
-    // 기본값 false 라, 그 틈에 프로모가 떠 1회 플래그를 태우고 뒤늦게 복구 화면이 깔리면
-    // 가려진다 — 거기서 로그아웃하거나 프로세스가 죽으면 본 적도 없이 소진된다(Codex #660).
+    // 기간 한정 개인 플랜 **종료 안내** — 안내 기간 동안 **앱에 진입할 때마다** 한 번(콜드
+    // 스타트·백그라운드에서 복귀). 화면 이동으로는 다시 뜨지 않는다: 진입 번호는
+    // `AppSignals.appEntries`(프로세스 ON_START)이고, 같은 번호에서는 두 번 띄우지 않는다.
+    //
+    // ⚠ **소진 플래그는 아니지만 준비 신호는 똑같이 지킨다**(`docs/spec/gates-and-overlays.md`).
+    //   응답 전 기본값 `false` 는 '아니오' 가 아니다 — 그 틈에 뜨면 뒤늦게 온 차단 화면
+    //   (업데이트·동의·탈퇴 유예·교체)과 겹친다. plan·프로모가 담긴 `/auth/me` 응답
+    //   (`accountStatusChecked`)도 기다린다. 권한 게이트·목소리 받기 화면·다른 모달이 떠
+    //   있으면 그게 닫힌 뒤에 뜬다(키에 있으므로 닫히는 순간 다시 판정된다).
+    // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+    val appEntry by com.alarmtalk.app.core.AppSignals.appEntries.collectAsStateWithLifecycle()
     LaunchedEffect(
+        appEntry,
         sessionRouteKey,
         viewModel.permissionGateRequest,
         viewModel.showVoiceSetup,
         viewModel.showConsentScreen,
-        viewModel.consentChecked,
         viewModel.consentStatusChecked,
         viewModel.versionChecked,
         viewModel.updateRequired,
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
-        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
         stockReplacementChecked,
         stockReplacementPending,
+        downgradeNotice,
+        viewModel.pendingSensitiveConsent,
+        authSession?.user?.personalPromo,
+        subscriptionResponse?.personalPromo,
     ) {
-        if (sessionRouteKey == null) return@LaunchedEffect
-        if (!viewModel.versionChecked) return@LaunchedEffect
-        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
-        if (!viewModel.accountStatusChecked) return@LaunchedEffect
-        if (viewModel.pendingDeletion) return@LaunchedEffect
-        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
-        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
-        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
-        // ⚠ **프로모는 1회성이다.** 교체 판정이 오기 전에 띄우면 소진 플래그를 태우고, 뒤늦게
-        //   온 차단 화면이 그 위를 덮어 사용자는 본 적도 없이 잃는다(2026-09-03 리뷰 22차 —
-        //   21차에 권한 효과에만 넣고 여기를 빠뜨렸다).
-        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
-        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
-        if (viewModel.showVoiceSetup) return@LaunchedEffect
-        viewModel.maybeShowWelcomePromo()
+        val gates = PersonalPromoNoticeGates(
+            signedIn = sessionRouteKey != null,
+            versionChecked = viewModel.versionChecked,
+            updateRequired = viewModel.updateRequired,
+            consentUnsupported = viewModel.consentUnsupported,
+            accountStatusChecked = viewModel.accountStatusChecked,
+            pendingDeletion = viewModel.pendingDeletion,
+            consentStatusChecked = viewModel.consentStatusChecked,
+            showConsentScreen = viewModel.showConsentScreen,
+            stockReplacementChecked = stockReplacementChecked,
+            stockReplacementPending = stockReplacementPending,
+            permissionGateOpen = viewModel.permissionGateRequest != null,
+            showVoiceSetup = viewModel.showVoiceSetup,
+            otherModalOpen = downgradeNotice != null || viewModel.pendingSensitiveConsent != null,
+        )
+        if (!gates.ready()) return@LaunchedEffect
+        viewModel.maybeShowPersonalPromoEndNotice(appEntry)
     }
 
     // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
     //
-    // ⚠ 준비 신호를 위 프로모와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
+    // ⚠ 준비 신호를 첫 권한 안내와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
     // 겹쳐 뜨면 읽을 수 없다 — `docs/spec/gates-and-overlays.md`.
-    // 다만 성질은 프로모와 다르다: 이건 **소진 플래그가 아니라 대기표**라, 못 보고 지나가도
+    // 다만 성질은 소진 플래그와 다르다: 이건 **대기표**라, 못 보고 지나가도
     // 지워지지 않는다(지우는 건 '확인' 뿐). 그래서 잘못 떠서 잃을 것이 없다.
+    // 개인 플랜 종료 안내가 먼저 떠 있으면 그게 닫힌 뒤에 뜬다 — 알럿 두 장을 겹치지 않는다.
     LaunchedEffect(
         sessionRouteKey,
         viewModel.permissionGateRequest,
@@ -460,6 +465,7 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        viewModel.personalPromoEndNotice,
         alarms,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
@@ -470,6 +476,7 @@ internal fun AlarmTalkApp(
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
+        if (viewModel.personalPromoEndNotice != null) return@LaunchedEffect
         downgradeNotice = downgradeNoticeStore.read(authSession?.user?.id)
     }
 
@@ -905,8 +912,8 @@ internal fun AlarmTalkApp(
     // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
     // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
     // ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
-    //   권한 모달·웰컴 프로모·민감 동의 시트가 그대로 겹쳐 뜬다 — 특히 프로모는 **1회성이라
-    //   소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
+    //   권한 모달·개인 플랜 종료 안내·민감 동의 시트가 그대로 겹쳐 뜬다 — 1회성 안내라면
+    //   **소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
     val blockingGateActive =
         viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion ||
             stockReplacementPending
@@ -933,29 +940,37 @@ internal fun AlarmTalkApp(
         )
     }
 
-    if (viewModel.showWelcomePromo && !blockingGateActive) {
-        // 다이얼로그가 닫히면 함께 사라지는 로컬 상태다 — 뷰모델에 실패 전용 상태를 만들 이유가 없다.
-        var promoError by remember { mutableStateOf<String?>(null) }
-        WelcomePromoDialog(
-            busy = billingBusy,
-            // **성공했을 때만 닫는다.** 예전에는 결과를 기다리지 않고 즉시 닫았는데, 이 안내는
-            // 계정당 1회라 오타·만료·네트워크 실패면 스낵바 한 줄만 보고 다시 열 방법이
-            // 없었다(Codex #660). 실패는 다이얼로그 안에 인라인으로 보여 주고 열어 둔다.
-            errorText = promoError,
-            onSubmitCode = { code ->
-                promoError = null
-                viewModel.registerCode(code) { error ->
-                    if (error == null) viewModel.dismissWelcomePromo() else promoError = error
-                }
-            },
-            onDismiss = viewModel::dismissWelcomePromo,
-            onOpenInstagram = {
-                // 코드를 어디서 받는지 알려주는 자리. 앱 안에 코드를 박아 두지 않는다
-                // (레포가 공개라 실코드가 소스에 들어가면 안 된다).
-                viewModel.message = context.getString(R.string.welcome_promo_instagram_hint)
-                context.openWebUrl("https://instagram.com/alarmtalk.app")
-            },
-        )
+    // 기간 한정 개인 플랜 종료 안내. 날짜는 전부 서버 값(`ends_at`)을 기기 로케일로 그린다 —
+    // "…까지" 는 `ends_at − 1초` 의 날, "…부터" 는 `ends_at` 의 날(`ui/billing/PersonalPromo.kt`).
+    // 버튼 둘은 가로로 놓인다(`IosAlertDialog` 규칙). '확인' 이 주 액션이고, 바깥 탭·뒤로가기도
+    // '확인' 과 같다 — 다음 진입에 다시 뜬다. 멈추는 것은 '다시 보지 않기' 뿐이다.
+    viewModel.personalPromoEndNotice?.takeIf { !blockingGateActive }?.let { promo ->
+        val zone = java.time.ZoneId.systemDefault()
+        val locale = LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault()
+        val lastDay = personalPromoLastDay(promo, zone)
+        val freeFrom = personalPromoFreeFromDay(promo, zone)
+        if (lastDay != null && freeFrom != null) {
+            IosAlertDialog(
+                title = stringResource(R.string.personal_promo_end_notice_title),
+                message = stringResource(
+                    R.string.personal_promo_end_notice_message,
+                    formatPersonalPromoDay(lastDay, locale),
+                    formatPersonalPromoDay(freeFrom, locale),
+                ),
+                onDismiss = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = false) },
+                actions = listOf(
+                    IosAlertAction(
+                        label = stringResource(R.string.personal_promo_end_notice_dont_show_again),
+                        onClick = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = true) },
+                    ),
+                    IosAlertAction(
+                        label = stringResource(R.string.auth_confirm),
+                        emphasized = true,
+                        onClick = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = false) },
+                    ),
+                ),
+            )
+        }
     }
 
     // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.

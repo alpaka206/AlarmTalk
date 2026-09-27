@@ -68,6 +68,9 @@ class AlarmTalkApplication : Application() {
             ProcessLifecycleOwner.get().lifecycle.addObserver(
                 object : DefaultLifecycleObserver {
                     override fun onStart(owner: LifecycleOwner) {
+                        // 세션과 무관하게 **먼저** 센다 — '진입할 때마다' 뜨는 안내의 기준이다
+                        // (`AppSignals.appEntries`). 아래 동기화가 실패해도 진입은 진입이다.
+                        com.alarmtalk.app.core.AppSignals.markAppEntered()
                         runCatching {
                             if (AuthSessionStore(this@AlarmTalkApplication).read() != null) {
                                 RemoteAlarmSyncScheduler.runOnceThrottled(this@AlarmTalkApplication)

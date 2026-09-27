@@ -440,6 +440,12 @@ internal fun MainViewModel.checkAccountStatus() {
             api.me(authorization)
         }.onSuccess { response ->
             pendingDeletion = response.user.deletionStatus == "pending_deletion"
+            // 기간 한정 개인 플랜 종료 안내는 이 응답을 준비 신호로 기다린다 — 그러니 판정도 이
+            // 응답의 값으로 한다(`MainViewModel.accountStatusPromo`). 그 사이 계정이 바뀌었으면
+            // 남의 값이라 적지 않는다.
+            if (authSession?.user?.id == session.user.id) {
+                recordAccountStatusPromo(response.user.personalPromo)
+            }
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
         }
@@ -718,7 +724,7 @@ internal fun MainViewModel.checkConsentStatus() {
             consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
             // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
             // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
-            // 권한·웰컴 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
+            // 첫 권한 안내 같은 1회성 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
             // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
             // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
             // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
@@ -1369,14 +1375,18 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
+                // plan 과 그 프로모 종료 시각은 **한 쌍으로** 적는다(`AccessSnapshot.withServerUser`).
+                var persisted: AccessSnapshot? = null
                 val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
-                    it.copy(userPlan = saved.user.plan)
+                    it.withServerUser(saved.user).also { snapshot -> persisted = snapshot }
                 }
                 // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
                 // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
                 // 메모리가 갈라진다 — 그리고 갈라졌을 때 이기는 쪽이 **거절된 값**이다.
                 if (planWrite == EntitlementWrite.Applied) {
-                    storeSnapshotUserPlan = saved.user.plan
+                    val snapshot = checkNotNull(persisted)
+                    storeSnapshotUserPlan = snapshot.userPlan
+                    storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
                     applied = true
                 }
             }
