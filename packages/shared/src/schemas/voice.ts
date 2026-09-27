@@ -22,3 +22,14 @@ export const VoicePreviewTextUpdateSchema = z.object({
     .refine((text) => !/[[\]]/.test(text), { message: 'Brackets are not allowed' }),
 });
 export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema>;
+
+/**
+ * 목소리의 결 — 등록할 때 사용자가 고른다(관계·호칭과 같이 초안 단계에서만 바꿀 수 있다).
+ * '' = 자동: 등록 녹음 전사로 추정한 값(`speech_style.energy`)을 쓰고, 그것도 없으면 결을 따로 정하지 않는다.
+ * 알람 문구의 문장 에너지와 딜리버리 태그가 이 결을 따른다 — 경쾌한 목소리가 굳은 문장을 읽거나
+ * 진중한 목소리가 깔깔대면 그 목소리의 핵심이 깨진다.
+ *
+ * ⚠ 음향은 보지 않는다. 음성 파일을 Vertex 로 보내려면 처리방침·동의부터 바꿔야 해서 사용자 선택으로 정했다.
+ */
+export const VoiceEnergySchema = z.enum(['', 'lively', 'calm']);
+export type VoiceEnergy = z.infer<typeof VoiceEnergySchema>;

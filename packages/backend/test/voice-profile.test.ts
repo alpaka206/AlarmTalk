@@ -505,6 +505,42 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     );
   });
 
+  it('초안에서 목소리의 결(voice_energy)을 관계·호칭과 함께 저장하고, 미리듣기를 비운다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '남자친구', listener_title: '자기', voice_energy: 'calm' }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).profile.voice_energy).toBe('calm');
+    const update = mockDB.calls.find((call) => call.sql.includes('UPDATE voice_profiles'));
+    expect(update?.sql).toContain('voice_energy = ?');
+    expect(update?.sql).toContain('preview_text = NULL');
+    expect(update?.args).toContain('calm');
+  });
+
+  it('결을 보내지 않은 구버전 앱 요청은 voice_energy 컬럼을 건드리지 않는다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '엄마', listener_title: '우리 딸' }),
+    );
+    expect(res.status).toBe(200);
+    const update = mockDB.calls.find((call) => call.sql.includes('UPDATE voice_profiles'));
+    expect(update?.sql).not.toContain('voice_energy');
+  });
+
+  it('모르는 결 값은 400 INVALID_VOICE_ENERGY — 조용히 자동으로 바꾸지 않는다', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '엄마', voice_energy: 'loud' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_ENERGY');
+  });
+
   it('정식 등록 후 관계와 호칭은 프리셋 정합성을 위해 변경할 수 없다', async () => {
     mockDB.pushResult([{ id: V1, is_draft: 0, previewed_at: '2026-07-14 00:00:00' }]);
 
@@ -557,6 +593,35 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '엄마 목소리'));
     expect(res.status).toBe(201);
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+  });
+
+  it('초안을 만들 때 목소리의 결(voiceEnergy)을 받아 함께 저장한다 — 안 보내면 컬럼을 건드리지 않는다', async () => {
+    pushPaidPlan();
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-energy' });
+    const withEnergy = cloneForm(new Uint8Array([1, 2]), '남친 목소리');
+    const form = await withEnergy.formData();
+    form.append('voiceEnergy', 'lively');
+    const res = await req(buildApp(), new Request('http://localhost/vp/clone', { method: 'POST', body: form }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).profile.voice_energy).toBe('lively');
+    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO voice_profiles'));
+    expect(insert?.sql).toContain('voice_energy');
+    expect(insert?.args).toContain('lively');
+  });
+
+  it('초안 결 값이 이상하면 400 INVALID_VOICE_ENERGY', async () => {
+    pushPaidPlan();
+    const bad = cloneForm(new Uint8Array([1, 2]), '엄마 목소리');
+    const form = await bad.formData();
+    form.append('voiceEnergy', 'loud');
+    const res = await req(buildApp(), new Request('http://localhost/vp/clone', { method: 'POST', body: form }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_ENERGY');
   });
 
   // ⚠ **남은 초안은 거절 사유가 아니라 버릴 것이다**(2026-08-25 지시).
@@ -1253,7 +1318,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       (call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?'),
     );
     // 인자 순서는 SET 절과 같다: name, voice, relationship, listener, preview_text,
-    // preview_language, speech_style, speech_style_status, is_shared, id.
+    // preview_language, speech_style, speech_style_status, is_shared, voice_energy, id.
     expect(profileReplace?.args[8], '확정 화면의 공유 선택이 교체된 프로필에 반영되지 않았다').toBe(1);
     expect(
       profileReplace?.sql,
@@ -1263,6 +1328,10 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       profileReplace?.sql,
       '푸시를 놓친 기기가 스스로 알아챌 표식이 없다',
     ).toContain('custom_audio_invalidated_at = ');
+    expect(
+      profileReplace?.sql,
+      '초안에서 고른 목소리의 결이 교체된 프로필로 옮겨 오지 않는다(Codex #802)',
+    ).toContain('voice_energy = ?');
 
     const alarmUpdate = mockDB.calls.find(
       (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),

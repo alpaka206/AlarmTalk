@@ -17,7 +17,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
 import { CURRENT_POLICY_VERSION, SENSITIVE_REQUIRED_CONSENTS } from '../src/lib/consent';
-import { replaceVoiceInPlace } from '../src/routes/voice-profile';
+import {
+  replaceVoiceInPlace,
+  SPEECH_STYLE_RESULT_TARGET_SQL,
+  speechStyleResultTargetArgs,
+} from '../src/routes/voice-profile';
 
 async function migratedDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -108,6 +112,9 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
   it('교체 트랜잭션이 원본 승계·custom 철회·재렌더 예약을 함께 커밋한다', async () => {
     const { db, path } = await replacementDb();
     try {
+      // 초안에서 고른 결(차분)이 현역 프로필의 옛 결(경쾌)을 덮어야 한다 — 재렌더가 그 결로 돈다.
+      await db.execute("UPDATE voice_profiles SET voice_energy = 'lively' WHERE id = 'vp1'");
+      await db.execute("UPDATE voice_profiles SET voice_energy = 'calm' WHERE id = 'vp2'");
       const result = await replaceVoiceInPlace(db as never, {
         targetUserIds: ['u1'],
         draftProfileId: 'vp2',
@@ -180,15 +187,82 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       expect(String(renderer.rows[0]!.language)).toBe('ja');
 
       const replacedRow = await db.execute(
-        `SELECT speech_style, speech_style_status, custom_audio_invalidated_at, updated_at
+        `SELECT speech_style, speech_style_status, custom_audio_invalidated_at, updated_at, voice_energy
            FROM voice_profiles WHERE id = 'vp1'`,
       );
+      // 결은 관계·호칭과 같은 페르소나라 초안과 함께 옮겨 온다(Codex #802) — 안 옮기면 초안과 함께
+      // 지워지고 재렌더 큐가 옛 결로 클립을 다시 만든다.
+      expect(String(replacedRow.rows[0]!.voice_energy)).toBe('calm');
       // 말투 분석 결과와 그 상태는 한 쌍이다 — 하나만 옮기면 실패한 분석이 완료로 보인다.
       expect(String(replacedRow.rows[0]!.speech_style_status)).toBe('failed');
       expect(replacedRow.rows[0]!.speech_style).toBeNull();
       // 푸시를 놓친 기기가 스스로 알아챌 표식. 이게 없으면 폴백 경로가 없다.
       expect(replacedRow.rows[0]!.custom_audio_invalidated_at).not.toBeNull();
       expect(replacedRow.rows[0]!.updated_at).not.toBeNull();
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  // ⚠ **분석 도중 교체되면 결과가 현역 프로필로 가야 한다**(Codex #802). 초안의 말투 분석은 응답 뒤
+  // `waitUntil` 로 돈다. 그 사이 교체가 확정되면 초안은 지워지고 'pending' 이 현역으로 옮겨 간다 —
+  // 초안 id 로만 쓰면 0행이라 현역이 영영 pending 이고, 사전렌더는 대기 상한만큼 멈췄다가 말투 없이 굽는다.
+  it('교체 뒤 끝난 말투 분석은 같은 provider 보이스를 넘겨받은 현역 프로필에 기록된다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute("UPDATE voice_profiles SET speech_style_status = 'pending' WHERE id = 'vp2'");
+      const result = await replaceVoiceInPlace(db as never, {
+        targetUserIds: ['u1'],
+        draftProfileId: 'vp2',
+        language: 'ko',
+        ownerPk: 'u1',
+        loginId: 'g1',
+      });
+      expect(result.ok).toBe(true);
+      const moved = await db.execute("SELECT speech_style_status FROM voice_profiles WHERE id = 'vp1'");
+      expect(String(moved.rows[0]!.speech_style_status)).toBe('pending');
+
+      // 분석이 초안 id(vp2)와 그 녹음의 provider 보이스로 결과를 쓴다.
+      const written = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = ?, speech_style_status = 'done'
+              WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: ['{"energy":"calm"}', ...speechStyleResultTargetArgs('vp2', { providerVoiceId: 'eleven-new' })],
+      });
+      expect(written.rowsAffected).toBe(1);
+      const target = await db.execute(
+        "SELECT speech_style, speech_style_status FROM voice_profiles WHERE id = 'vp1'",
+      );
+      expect(String(target.rows[0]!.speech_style_status)).toBe('done');
+      expect(String(target.rows[0]!.speech_style)).toBe('{"energy":"calm"}');
+
+      // 이미 끝난(pending 아닌) 현역은 건드리지 않는다 — 늦게 온 옛 분석이 새 결과를 덮지 않게.
+      const again = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style_status = 'failed' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp2', { providerVoiceId: 'eleven-new' }),
+      });
+      expect(again.rowsAffected).toBe(0);
+
+      // ⚠ **옛 녹음의 분석은 제자리 교체된 현역을 덮지 않는다**(Codex #802). vp1 은 id 가 그대로지만 이제
+      // 새 녹음(up-new)·새 보이스(eleven-new)를 뜻한다. 교체 전에 옛 녹음(up-old)으로 시작한 재시도,
+      // 옛 보이스(eleven-old)로 시작한 등록 분석은 둘 다 0행이어야 한다.
+      await db.execute("UPDATE voice_profiles SET speech_style_status = 'pending' WHERE id = 'vp1'");
+      const staleRetry = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'old' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { sourceObjectKey: 'uploads/old.wav' }),
+      });
+      expect(staleRetry.rowsAffected).toBe(0);
+      const staleClone = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'old' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { providerVoiceId: 'eleven-old' }),
+      });
+      expect(staleClone.rowsAffected).toBe(0);
+      // 지금 녹음으로 시작한 재시도는 그대로 쓴다(LRU 복구로 보이스만 바뀌어도 녹음이 같으면 같은 목소리다).
+      const currentRetry = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'new' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { sourceObjectKey: 'uploads/new.wav' }),
+      });
+      expect(currentRetry.rowsAffected).toBe(1);
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });

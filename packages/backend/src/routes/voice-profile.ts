@@ -6,6 +6,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
+import { jsonError } from '../lib/api-error';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
@@ -24,6 +25,7 @@ import {
   PrerenderSupersededError,
   releasePrerenderClaim,
   retiredIsNullClause,
+  SPEECH_STYLE_ANALYSIS_WAIT_SQL,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
@@ -36,6 +38,7 @@ import {
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import {
+  VoiceEnergySchema,
   VoicePreviewTextUpdateSchema,
   VOICE_NAME_MAX_LENGTH,
   normalizeDisplayName,
@@ -416,6 +419,8 @@ const CLONE_PRERENDER_TOTAL = CLONE_CLIP_SEEDS.reduce((sum, group) => sum + grou
  * 다시 물어 같은 개수를 받고 '진행 없음' 으로 판단해 화면을 닫는다.
  */
 const PRERENDER_CLAIM_LEASE_SQL = '-2 minutes';
+/** 말투 분석을 기다리는 동안 전진 호출에 돌려주는 재시도 대기 — 분석은 보통 수 초면 끝난다. */
+const SPEECH_STYLE_ANALYSIS_RETRY_MS = 5_000;
 const PRERENDER_CLAIM_LEASE_MS = 2 * 60 * 1000;
 
 /** speech_style_status 기록. NULL=대상 아님, pending=진행중, done=완료, failed=실패(재시도 가능). */
@@ -429,6 +434,42 @@ async function setSpeechStyleStatus(
           WHERE id = ? AND deleted_at IS NULL`,
     args: [status, profileId],
   });
+}
+
+/**
+ * 말투 분석 결과(성공·실패)를 쓸 행 — 인자는 `speechStyleResultTargetArgs`.
+ *
+ * 1. **이 프로필** — 단 분석을 시작할 때 본 것과 **같은 녹음**을 아직 뜻할 때만(Codex #802). 제자리 교체는
+ *    id 를 그대로 두고 provider 보이스·원본을 갈아 끼우므로, id 만 보면 옛 녹음의 분석이 새 목소리의 말투를
+ *    덮고 클립까지 다시 굽게 된다. 무엇으로 묶는지는 경로마다 다르다:
+ *    - 등록(초안): 방금 만든 **provider 보이스**. 원본 저장이 best-effort 라 녹음 키가 없을 수 있다.
+ *    - 재시도: 읽은 **원본 녹음 키**(`voice_uploads.object_key`). provider 보이스로 묶으면 안 된다 —
+ *      LRU 회수 뒤 복구는 같은 녹음으로 보이스만 다시 만들어, 결과가 버려지고 상태가 'pending' 에 갇힌다.
+ * 2. 초안이 분석 도중 교체로 **소비됐으면**, 같은 provider 보이스를 넘겨받은 현역 프로필 — 분석을 기다리는
+ *    (pending) 행만. 교체는 한 트랜잭션이라 초안과 현역이 동시에 살아 있지 않다.
+ */
+function speechStyleResultTargetSql(handoffStatus: 'pending' | 'done'): string {
+  return `deleted_at IS NULL AND (
+      (id = ?
+        AND (? IS NULL OR elevenlabs_voice_id = ?)
+        AND (? IS NULL OR EXISTS (
+          SELECT 1 FROM voice_uploads su
+          WHERE su.voice_profile_id = voice_profiles.id AND su.object_key = ?)))
+      OR (? IS NOT NULL AND elevenlabs_voice_id = ? AND COALESCE(is_draft, 0) = 0
+        AND speech_style_status = '${handoffStatus}'))`;
+}
+
+export const SPEECH_STYLE_RESULT_TARGET_SQL = speechStyleResultTargetSql('pending');
+/** 결과를 **쓴 뒤** 같은 행을 가리킬 때 — 넘겨받은 현역 행의 상태는 이제 'done' 이다. */
+const SPEECH_STYLE_RESULT_WRITTEN_SQL = speechStyleResultTargetSql('done');
+
+export function speechStyleResultTargetArgs(
+  profileId: string,
+  bind: { providerVoiceId?: string | null; sourceObjectKey?: string | null },
+): (string | null)[] {
+  const provider = bind.providerVoiceId ?? null;
+  const source = bind.sourceObjectKey ?? null;
+  return [profileId, provider, provider, source, source, provider, provider];
 }
 
 /**
@@ -447,9 +488,24 @@ async function runSpeechStyleAnalysis(
     fileName?: string | null;
     language: string;
     ownerPk: string;
+    /**
+     * 이 녹음으로 만든 provider 보이스 — 분석 결과가 **목소리를 따라가게** 한다(Codex #802).
+     * 초안이 분석 도중 교체(`replaceVoiceInPlace`)로 소비되면 초안 행은 지워지고 말투·상태(pending)는
+     * 현역 프로필로 옮겨 간다. 초안 id 로만 쓰면 0행이라 현역이 영영 'pending' 에 남고, 사전렌더는
+     * 분석 대기 상한(10분)만큼 멈췄다가 말투 없이 굽는다. 같은 provider 보이스를 문 현역 행을 함께 고친다.
+     */
+    providerVoiceId?: string | null;
+    /** 재시도가 읽은 원본 녹음 키 — 결과를 그 녹음을 아직 문 프로필에만 쓴다(`SPEECH_STYLE_RESULT_TARGET_SQL`). */
+    sourceObjectKey?: string | null;
   },
-): Promise<{ ok: true } | { ok: false; error: unknown }> {
+): Promise<{ ok: true; written: boolean } | { ok: false; error: unknown }> {
   const db = getDB(env);
+  const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
+  const providerVoiceId = options.providerVoiceId ?? null;
+  const targetArgs = speechStyleResultTargetArgs(profileId, {
+    providerVoiceId,
+    sourceObjectKey: options.sourceObjectKey ?? null,
+  });
   try {
     // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
     const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -475,16 +531,50 @@ async function runSpeechStyleAnalysis(
     if (missingBeforeSave) {
       throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
-    await db.execute({
-      sql: `UPDATE voice_profiles
-            SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
-            WHERE id = ? AND deleted_at IS NULL`,
-      args: [JSON.stringify(style), profileId],
-    });
-    return { ok: true };
+    const written = await db.batch(
+      [
+        {
+          sql: `UPDATE voice_profiles
+                SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
+                WHERE ${targetClause}`,
+          args: [JSON.stringify(style), ...targetArgs],
+        },
+        // ⚠ **이미 구운 클립은 다시 굽는다**(Codex #802). 정식 등록된 목소리라면 사전렌더가 이 분석 없이
+        // 돌았을 수 있다 — 분석이 대기 상한을 넘겼거나, 실패했다가 재시도(`/:id/speech-style/retry`)로
+        // 살아난 경우다. 교체 회차와 같은 `refresh_existing` 이고, `requested_at` 을 지금으로 올려
+        // '이 요청 뒤에 만든 클립만 최신' 으로 센다(`findMissingStockTargets` — 같은 provider 보이스라
+        // 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어진다). 진행 중이던 claim 은 풀어 새 회차가
+        // 처음부터 다시 돈다(옛 결과 새 결이 섞이지 않게). 큐 행이 없으면(아직 초안) 아무 일도 없다.
+        // 말투 저장과 한 batch 라 둘 중 하나만 남지 않는다.
+        // 대상은 **방금 이 말투를 받은 행**이다(같은 대상 조건 + 방금 쓴 값) — 위 UPDATE 가 묶음 조건에
+        // 걸려 0행이면 여기서도 아무것도 다시 굽지 않는다. `requested_at` 은 밀리초까지 남긴다 — 같은 초에
+        // 게시된 옛 클립을 새 것으로 세지 않도록(`findMissingStockTargets` 가 엄격한 `>` 로 비교한다).
+        {
+          sql: `UPDATE voice_prerender_queue
+                SET status = 'pending', attempts = 0, refresh_existing = 1,
+                    requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
+                    claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
+                WHERE voice_profile_id IN (
+                  SELECT id FROM voice_profiles
+                  WHERE COALESCE(is_draft, 0) = 0
+                    AND speech_style_status = 'done' AND speech_style = ?
+                    AND ${SPEECH_STYLE_RESULT_WRITTEN_SQL}
+                )`,
+          args: [JSON.stringify(style), ...targetArgs],
+        },
+      ],
+      'write',
+    );
+    // 0행 = 분석하는 사이 이 녹음을 뜻하던 행이 사라졌다(제자리 교체 등) — 낡은 회차다. 호출자가 가른다.
+    return { ok: true, written: (written[0]?.rowsAffected ?? 0) > 0 };
   } catch (error) {
     try {
-      await setSpeechStyleStatus(db, profileId, 'failed');
+      // 실패도 목소리를 따라간다 — 현역이 'pending' 에 남으면 재시도 버튼(`failed` 만 받는다)도 못 쓴다.
+      await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style_status = ?, updated_at = datetime('now')
+              WHERE ${targetClause}`,
+        args: ['failed', ...targetArgs],
+      });
     } catch {
       // 상태 기록까지 실패해도 분석 실패 자체는 아래 error 로 호출자가 로깅한다.
     }
@@ -853,8 +943,8 @@ export async function replaceVoiceInPlace(
     // 게이트 판정과 쓰기가 같은 스냅샷이 된다.
     const draftRes = await tx.execute({
       sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
-                   preview_text, preview_language, speech_style, speech_style_status, is_shared,
-                   previewed_at
+                   voice_energy, preview_text, preview_language, speech_style, speech_style_status,
+                   is_shared, previewed_at
             FROM voice_profiles
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1
@@ -918,10 +1008,14 @@ export async function replaceVoiceInPlace(
       // 표식이다. 푸시를 놓친 기기가 다음 목록 조회에서 스스로 알아채는 유일한 근거다
       // (프로필 id 는 그대로라 접근권 대조로는 영원히 안 걸린다). #106 배포 창에는 컬럼이
       // 없어 이 트랜잭션이 통째로 롤백된다 — 재시도하면 되고, 그게 옳다.
+      //
+      // ⚠ `voice_energy`(목소리의 결)도 관계·호칭과 같은 **페르소나**다. 안 옮기면 초안에서 고른
+      // 결이 초안과 함께 지워지고, 교체된 프로필은 옛 결(또는 없음)로 아래 재렌더 큐를 돈다
+      // (Codex #802). #122 배포 창에는 위 SELECT 가 던져 롤백된다 — 같은 이유로 그게 옳다.
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
                 preview_text = ?, preview_language = ?, speech_style = ?, speech_style_status = ?,
-                is_shared = ?, status = 'ready',
+                is_shared = ?, voice_energy = ?, status = 'ready',
                 custom_audio_invalidated_at = datetime('now'),
                 updated_at = datetime('now')
             WHERE id = ?`,
@@ -935,6 +1029,7 @@ export async function replaceVoiceInPlace(
         draft.speech_style ?? null,
         draft.speech_style_status ?? null,
         finalIsShared ? 1 : 0,
+        draft.voice_energy ?? null,
         targetId,
       ],
     });
@@ -1593,12 +1688,24 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    voice_energy?: unknown;
+    voiceEnergy?: unknown;
   };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
+
+  // 목소리의 결(경쾌/차분) — 관계·호칭과 같은 '페르소나' 라 초안에서만 받는다. 보내지 않으면 그대로 둔다
+  // (구버전 앱은 이 필드를 모른다). 모르는 값은 거절한다 — 조용히 '자동' 으로 바꾸면 고른 결이 사라진다.
+  const rawEnergy = body.voice_energy ?? body.voiceEnergy;
+  const hasVoiceEnergy = rawEnergy !== undefined && rawEnergy !== null;
+  const energyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(rawEnergy) : null;
+  if (energyParsed && !energyParsed.success) {
+    return jsonError(c, 400, 'INVALID_VOICE_ENERGY', "voice_energy must be '', 'lively' or 'calm'");
+  }
+  const voiceEnergy = energyParsed?.success ? energyParsed.data : null;
 
   const relationshipLabel = normalizeRelationshipLabel(
     body.relationship_label ?? body.relationshipLabel,
@@ -1643,15 +1750,19 @@ voiceProfile.patch('/:id/relationship', async (c) => {
         409,
       );
     }
+    // 결을 보냈을 때만 그 컬럼을 쓴다 — 안 보낸 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    // 결이 바뀌면 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
     const updated = await db.execute({
       sql: `UPDATE voice_profiles
-            SET relationship_label = ?, listener_title = ?, previewed_at = NULL,
+            SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
                 preview_claimed_at = NULL, preview_claim_token = NULL,
                 preview_text = NULL, preview_tag = NULL,
                 updated_at = datetime('now')
             WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1`,
-      args: [relationshipLabel, listenerTitle, id, userPk, userId],
+      args: hasVoiceEnergy
+        ? [relationshipLabel, listenerTitle, voiceEnergy || null, id, userPk, userId]
+        : [relationshipLabel, listenerTitle, id, userPk, userId],
     });
     if ((updated.rowsAffected ?? 0) === 0) {
       return c.json(
@@ -1687,6 +1798,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       id,
       relationship_label: relationshipLabel,
       listener_title: listenerTitle,
+      ...(hasVoiceEnergy && owned.rows.length > 0 ? { voice_energy: voiceEnergy ?? '' } : {}),
     },
   });
 });
@@ -1775,6 +1887,15 @@ voiceProfile.post('/clone', async (c) => {
       normalizeRelationshipLabel(
         formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
       ) ?? '';
+    // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 받는다(PATCH /:id/relationship 과 같은 규칙).
+    // 보내지 않은 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    const rawVoiceEnergy = formData.get('voiceEnergy') ?? formData.get('voice_energy');
+    const hasVoiceEnergy = rawVoiceEnergy !== null && rawVoiceEnergy !== undefined;
+    const voiceEnergyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(String(rawVoiceEnergy)) : null;
+    if (voiceEnergyParsed && !voiceEnergyParsed.success) {
+      return jsonError(c, 400, 'INVALID_VOICE_ENERGY', "voice_energy must be '', 'lively' or 'calm'");
+    }
+    const voiceEnergy = voiceEnergyParsed?.success ? voiceEnergyParsed.data : '';
 
     // 한도 검사: non-draft 는 MAX_VOICE_PROFILES, draft 는 MAX_DRAFT_VOICE_PROFILES.
     // draft 도 즉시 실제 ElevenLabs 보이스를 생성하므로 반드시 상한을 둬야 무제한
@@ -1920,8 +2041,10 @@ voiceProfile.post('/clone', async (c) => {
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
       await tx.execute({
         sql: `INSERT INTO voice_profiles
-              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language)
-              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?)`,
+              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language${
+                hasVoiceEnergy ? ', voice_energy' : ''
+              })
+              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?${hasVoiceEnergy ? ', ?' : ''})`,
         args: [
           profileId,
           userId,
@@ -1931,6 +2054,7 @@ voiceProfile.post('/clone', async (c) => {
           relationshipLabel,
           listenerTitle,
           previewLanguage,
+          ...(hasVoiceEnergy ? [voiceEnergy || null] : []),
         ],
       });
       return { status: 'ok' as const, ledgerId: null };
@@ -2108,6 +2232,7 @@ voiceProfile.post('/clone', async (c) => {
             fileName: analysisFileName,
             language: previewLanguage,
             ownerPk: userPk,
+            providerVoiceId: voiceId,
           }).then((analysis) => {
             if (!analysis.ok) logRouteError(c, analysis.error);
           }),
@@ -2138,6 +2263,7 @@ voiceProfile.post('/clone', async (c) => {
           is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
+          ...(hasVoiceEnergy ? { voice_energy: voiceEnergy } : {}),
         },
       },
       201,
@@ -2344,11 +2470,18 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
   // 원자적 상태 점유(H): failed 일 때만 pending 으로 클레임한다 — 동시 재시도가 겹치면
   // 한 요청만 실행되고 나머지는 409 로 떨어져 중복 전사/분석(외부 호출 비용)을 차단한다.
   // 이미 pending(진행 중)이거나 done/NULL(재시도 대상 아님)이어도 같은 409.
+  // ⚠ **읽은 녹음에 묶는다**(Codex #802). 원본을 읽은 뒤 이 클레임 전에 제자리 교체가 끼면 id 는 같은데
+  // 새 목소리(새 녹음)다 — id 만 보면 새 목소리를 'pending' 으로 잡아 놓고, 결과 기록(녹음에 묶임)은 0행이라
+  // 영영 'pending' 에 갇힌다(재시도는 'failed' 만 받으니 다시 못 누른다).
   const claimed = await db.execute({
     sql: `UPDATE voice_profiles
           SET speech_style_status = 'pending', updated_at = datetime('now')
-          WHERE id = ? AND speech_style_status = 'failed' AND deleted_at IS NULL`,
-    args: [id],
+          WHERE id = ? AND speech_style_status = 'failed' AND deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM voice_uploads su
+              WHERE su.voice_profile_id = voice_profiles.id AND su.object_key = ?
+            )`,
+    args: [id, String(upload!.object_key)],
   });
   if ((claimed.rowsAffected ?? 0) === 0) {
     return c.json(
@@ -2369,6 +2502,8 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
     fileName: (upload!.original_name as string | null) ?? stored.meta.originalName ?? null,
     language,
     ownerPk: userPk,
+    // 이 녹음을 아직 뜻하는 프로필에만 쓴다 — 분석 도중 제자리 교체되면 옛 녹음의 말투가 새 목소리를 덮는다.
+    sourceObjectKey: String(upload!.object_key),
   });
   if (!result.ok) {
     logRouteError(c, result.error);
@@ -2379,6 +2514,16 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
         status: 'failed',
       },
       502,
+    );
+  }
+  if (!result.written) {
+    // 분석하는 사이 목소리가 바뀌었다(제자리 교체) — 옛 녹음의 결과는 버렸다. '완료' 라고 답하면 새
+    // 목소리가 분석된 줄 안다. 새 목소리의 상태는 교체가 옮겨 온 그대로다.
+    return jsonError(
+      c,
+      409,
+      'SPEECH_STYLE_RETRY_CONFLICT',
+      'The voice changed while it was being analyzed. Refresh and try again.',
     );
   }
   return c.json({ success: true, status: 'done' });
@@ -2431,8 +2576,10 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
                  COALESCE(q.refresh_existing, 0) = 0
                  OR EXISTS (
                    SELECT 1 FROM generated_audio_assets ga
-                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                    WHERE (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                      AND ga.audio_url = m.audio_url
                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                      AND julianday(ga.created_at) > julianday(q.requested_at)
                  )
                )`
     : '';
@@ -2542,11 +2689,16 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
 
   const ph = ids.map(() => '?').join(',');
   const profileRes = await db.execute({
-    sql: `SELECT id, preview_language FROM voice_profiles
+    // `style_analysis_pending` — 말투 분석이 아직 도는 중인가(`SPEECH_STYLE_ANALYSIS_WAIT_SQL` 주석).
+    sql: `SELECT id, preview_language,
+                 CASE WHEN speech_style_status = 'pending'
+                       AND datetime(updated_at) > datetime('now', ?) THEN 1 ELSE 0 END
+                   AS style_analysis_pending
+          FROM voice_profiles
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
             AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
             AND status = 'ready'`,
-    args: [id, ...ids],
+    args: [SPEECH_STYLE_ANALYSIS_WAIT_SQL, id, ...ids],
   });
   if (profileRes.rows.length === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
@@ -2578,15 +2730,21 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     Number(
       (
         await db.execute({
+          // 다시 굽는 회차(`refresh_existing`)는 그 요청 **뒤에** 만든 클립만 센다 — 말투가 늦게 도착해
+          // 같은 보이스로 다시 굽는 경우 보이스 대조만으로는 옛 클립이 다 된 것으로 보인다.
           sql: `SELECT COUNT(DISTINCT m.id) AS count
                   FROM messages m
                   JOIN voice_profiles vp ON vp.id = m.voice_profile_id
                   JOIN generated_audio_assets ga
-                    ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+                    ON (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                   AND ga.audio_url = m.audio_url
+                  LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
                  WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
                    AND m.retired_at IS NULL
                    AND m.audio_url IS NOT NULL
-                   AND ga.provider_voice_id = vp.elevenlabs_voice_id`,
+                   AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   AND (COALESCE(q.refresh_existing, 0) = 0
+                     OR julianday(ga.created_at) > julianday(q.requested_at))`,
           args: [id],
         })
       ).rows[0]?.count ?? 0,
@@ -2601,6 +2759,21 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     args: [id],
   });
   await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
+
+  // ⚠ **말투 분석이 끝나기 전에는 굽지 않는다**(Codex #802). 결을 '자동' 으로 둔 목소리는 결이
+  // 그 분석에서만 오는데, 지금 구우면 21개가 빈 말투로 게시되고 뒤늦은 분석은 그걸 되돌리지 못한다
+  // (`SPEECH_STYLE_ANALYSIS_WAIT_SQL` 주석). 큐는 위에서 이미 살려 뒀으니 cron 도 분석 뒤에 이어받는다.
+  // 답은 `claim_stuck` 모양으로 준다 — 두 앱이 그걸 '무진전' 으로 세지 않고 말한 만큼 기다렸다가
+  // 다시 민다. 분석은 보통 수 초라 짧게 부른다.
+  if (Number(profileRes.rows[0]!.style_analysis_pending ?? 0) === 1) {
+    return c.json({
+      done: false,
+      generated: await countGenerated(),
+      total: CLONE_PRERENDER_TOTAL,
+      claim_stuck: true,
+      retry_after_ms: SPEECH_STYLE_ANALYSIS_RETRY_MS,
+    });
+  }
 
   // 클레임 규칙 (Codex #609 P1 — 동시 advance 가 서로의 claim 을 덮어써 유료 합성이 중복되는
   // 것 방지):
@@ -2641,9 +2814,17 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const language = String(claimed.rows[0]!.language ?? 'ko');
   const refreshExisting = Number(claimed.rows[0]!.refresh_existing ?? 0) === 1;
 
-  const voices = await listReadyCloneVoices(db, [
-    { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
-  ]);
+  let voices: Awaited<ReturnType<typeof listReadyCloneVoices>>;
+  try {
+    voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
+    ]);
+  } catch (lookupError) {
+    // 배포 창(#122 전)에는 이 조회가 던진다 — fail-closed 는 맞지만 **잡은 임대는 풀고** 던진다.
+    // 안 풀면 2분 동안 모든 전진이 '진행 없음' 만 받아 앱이 구동을 접는다(Codex #802).
+    await releasePrerenderClaim(db, id, claimToken).catch(() => undefined);
+    throw lookupError;
+  }
   const voice = voices[0];
   if (!voice) {
     await releasePrerenderClaim(db, id, claimToken);

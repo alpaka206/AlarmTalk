@@ -34,6 +34,8 @@ export const ERROR_CODES = [
   'INVALID_LISTENER_TITLE',
   'INVALID_PREVIEW_TOKEN',
   'INVALID_RELATIONSHIP_LABEL',
+  /** 목소리의 결(voice_energy)이 '' · 'lively' · 'calm' 이 아니다. */
+  'INVALID_VOICE_ENERGY',
   'INVALID_VOICE_TRANSITION',
   'JSON_BODY_REQUIRED',
   'NAME_TOO_LONG',

@@ -42,6 +42,9 @@ struct VoiceCloneUploadFlow: View {
     @State private var relationshipSelection = VoiceRelationshipSelection()
     /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
+    /// 목소리 느낌(결). 선택 입력이라 기본은 '자동' 이고, 등록 조건에 들지 않는다.
+    /// 관계·호칭처럼 이 흐름의 상태라 음원 ↔ 세부 정보 단계를 오가도 그대로 남는다.
+    @State private var voiceEnergy: VoiceEnergy = .defaultValue
     @State private var previewLanguage: String = VoiceStudioViewModel.appVoiceLanguage()
     @State private var submitted: Bool = false
     /// 음성 생체정보 동의 인라인 체크. 가입 화면에서 **거절한 사람에게만** 뜬다
@@ -430,12 +433,36 @@ struct VoiceCloneUploadFlow: View {
     @ViewBuilder
     private var detailsSection: some View {
         nameSection
+        voiceEnergySection
         languageSection
         // ⚠ **물을 것이 없으면 상자째 그리지 않는다**(2026-09-19 실기기: 언어 선택 아래에
         //   빈 상자가 남았다). 권리 고지 문구를 동의 화면으로 옮긴 뒤로는, 이미 동의한
         //   사람에게 **내용 없는 배경만** 그려졌다. 판정은 `needsBiometricConsent` 하나다.
         if needsBiometricConsent {
             consentSection
+        }
+    }
+
+    /// 목소리 느낌(결) — 알람 문구의 말투와 딜리버리 태그가 이 결을 따른다
+    /// (`docs/spec/voice-and-message.md` §4-2). 자리는 호칭 다음·문구 언어 앞이고, 모양은
+    /// 바로 아래 언어 선택과 같은 세그먼트다(안드로이드 `EditorSegmentedSelector`).
+    private var voiceEnergySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("목소리 느낌")
+                .font(.subheadline.weight(.semibold))
+            // 안내 한 줄은 세그먼트에 붙인다 — 섹션 간격만큼 떨어뜨리면 아래 '언어' 제목과
+            // 거리가 비슷해져 어느 쪽 설명인지 읽히지 않는다.
+            VStack(alignment: .leading, spacing: 6) {
+                Picker("목소리 느낌", selection: $voiceEnergy) {
+                    ForEach(VoiceEnergy.allCases) { energy in
+                        Text(energy.label).tag(energy)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("알람 문구의 말투와 톤을 이 느낌에 맞춰요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
         }
     }
 
@@ -739,6 +766,7 @@ struct VoiceCloneUploadFlow: View {
                 isShared: false,
                 relationshipLabel: trimmedRelationship,
                 listenerTitle: trimmedListener,
+                voiceEnergy: voiceEnergy,
                 language: previewLanguage
             )
         case .file:
@@ -753,6 +781,7 @@ struct VoiceCloneUploadFlow: View {
                     uploadFileName: prepared.uploadFileName,
                     relationshipLabel: trimmedRelationship,
                     listenerTitle: trimmedListener,
+                    voiceEnergy: voiceEnergy,
                     language: previewLanguage
                 )
             } catch {

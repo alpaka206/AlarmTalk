@@ -31,7 +31,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
@@ -81,7 +80,7 @@ internal fun AlarmListScreen(
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
+    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
     sensitiveConsentMissing: List<String> = emptyList(),
