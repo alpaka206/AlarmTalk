@@ -24,7 +24,12 @@ import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
-import { computedUserPlan, personalPromoField, resolvePersonalPromo } from '../lib/personal-promo';
+import {
+  computedUserPlan,
+  loadPersonalPromoField,
+  personalPromoField,
+  resolvePersonalPromo,
+} from '../lib/personal-promo';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
@@ -508,7 +513,8 @@ auth.post('/register', async (c) => {
           email: normalizedEmail,
           name,
           plan: computedUserPlan('free' as const, promo),
-          personal_promo: personalPromoField('free', promo),
+          // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
+          personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
           allow_family_alarms: false,
           // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
           // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
@@ -619,6 +625,7 @@ auth.post('/login', async (c) => {
       row as unknown as Record<string, unknown>,
     );
     const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
     return c.json({
       token,
       user: {
@@ -627,7 +634,7 @@ auth.post('/login', async (c) => {
         name: row.name ?? '',
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(row.plan, promo) ?? 'free',
-        personal_promo: personalPromoField(row.plan, promo),
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -769,6 +776,7 @@ auth.post('/google', async (c) => {
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
     return c.json({
       token,
       user: {
@@ -777,7 +785,7 @@ auth.post('/google', async (c) => {
         name: effectiveName,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(rawPlan, promo) ?? 'free',
-        personal_promo: personalPromoField(rawPlan, promo),
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -982,6 +990,7 @@ auth.post('/apple', async (c) => {
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
     return c.json({
       token,
       user: {
@@ -990,7 +999,7 @@ auth.post('/apple', async (c) => {
         name: effectiveName,
         // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
         plan: computedUserPlan(rawPlan, promo) ?? 'free',
-        personal_promo: personalPromoField(rawPlan, promo),
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -1092,6 +1101,7 @@ auth.get('/me', async (c) => {
       c.env.JWT_SECRET,
     ).catch(() => null);
     const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
     return c.json({
       ...(rolledToken ? { token: rolledToken } : {}),
       user: {
@@ -1101,7 +1111,7 @@ auth.get('/me', async (c) => {
         // ⚠ **계산값**(기간 한정 개인 플랜). 앱의 판정기·울림 캐시가 이 값을 `users.plan` 으로
         //   적는다 — 구버전 앱도 이것만으로 개인 기능이 열린다. 끝나면 곧바로 'free' 가 된다.
         plan: computedUserPlan(row.plan, promo) ?? 'free',
-        personal_promo: personalPromoField(row.plan, promo),
+        personal_promo: personalPromo,
         // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,

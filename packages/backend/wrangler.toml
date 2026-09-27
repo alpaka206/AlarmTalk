@@ -30,7 +30,10 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices"
 
 [env.dev.triggers]
-crons = ["*/5 * * * *"]
+# 5분 틱이 본체다. "* * * * *" 는 기간 한정 개인 플랜 종료(전환·보관 스윕) 전용 —
+# src/lib/personal-promo.ts 의 PERSONAL_PROMO_END_CRON 과 같은 문자열이어야 한다.
+# 끝 시각 전과 끝 + 4일 뒤에는 DB 를 부르지 않고 끝난다. 정리 PR 에서 함께 뺀다.
+crons = ["*/5 * * * *", "* * * * *"]
 
 [env.production]
 name = "voice-alarm-api"
@@ -48,7 +51,8 @@ binding = "VOICE_BUCKET"
 bucket_name = "voice-alarm-voices-prod"
 
 [env.production.triggers]
-crons = ["*/5 * * * *"]
+# dev 와 같다 — "* * * * *" 는 기간 한정 개인 플랜 종료 전용(PERSONAL_PROMO_END_CRON).
+crons = ["*/5 * * * *", "* * * * *"]
 
 # Set real values with `wrangler secret put <KEY> --env <dev|production>`
 # or `wrangler secret bulk --env <dev|production>`.

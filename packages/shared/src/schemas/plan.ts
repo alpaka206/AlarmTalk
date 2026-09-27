@@ -134,10 +134,18 @@ export function personalPromoNoticeFrom(endsAt: Date): Date {
  * API 의 `personal_promo` 조각 — 계정 응답의 `user` 와 `GET /billing/subscription` 최상위에
  * 실린다. 원시 plan 이 free 이고 구간 안일 때만 값이 있고, 그 밖에는 `null`(구서버는 필드
  * 자체가 없다 — 그래서 optional·nullable 이다). 시각은 초 단위 UTC ISO 8601(`…T15:00:00Z`).
+ *
+ * - 값이 있다 = **원시 plan 이 free 다.** 앱은 이걸로 '구독 행이 커플·가족 등급을 올리지 못하는
+ *   보류 상태' 를 안다 — 그래서 결제 보류 계정에도 `null` 로 두지 않는다.
+ * - `deletes_voices_at_end` = 지금 끝나면 이 계정이 **종료 전환 대상**인가(원시 free **이고**
+ *   `status = 'active'` 구독 행이 없다). 결제 보류(ON_HOLD·PAUSED)처럼 행이 남아 있으면 `false`
+ *   — 목소리는 삭제 예약되지 않으므로 앱은 종료 안내에서 "등록한 목소리는 3일 보관 후
+ *   삭제돼요" 문장을 뺀다. 구버전 앱은 이 키를 모르고 무시한다.
  */
 export const PersonalPromoSchema = z.object({
   ends_at: z.iso.datetime(),
   notice_from: z.iso.datetime(),
+  deletes_voices_at_end: z.boolean(),
 });
 export type PersonalPromo = z.infer<typeof PersonalPromoSchema>;
 export const PersonalPromoFieldSchema = PersonalPromoSchema.nullable().optional();

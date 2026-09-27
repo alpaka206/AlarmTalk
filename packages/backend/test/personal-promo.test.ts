@@ -5,11 +5,14 @@
 //      prod 설정 잠금(wrangler.toml·시크릿 동기화).
 //   2. **계산값 자리마다 끝 1초 전(열림) / 끝 시각(닫힘)** — 원시 free 가 통과했다가 거절된다.
 //      원시 유료는 양쪽 다 그대로다. 경계는 **운영 상수 그대로**(production 모드)로 잰다.
-//   3. 결제 보류 그룹의 소유자 — 개인 기능은 열리고, 공유 갈래·보낸 알람은 원시값이라 닫힌다
-//      (`messageBelongsToCaller` ↔ 오디오 라우트가 같은 답).
-//   4. 직접 입력 한도 30 → 0, `/billing/subscription` 의 계산값·`personal_promo`.
+//   3. 결제 보류 그룹 — 소유자 본인의 개인 기능은 열리고, **공유 목소리(생성·알람 저장·오디오)와
+//      보낸 알람은 원시값이라 닫힌다**(`messageBelongsToCaller` ↔ 오디오 라우트, `/tts/generate` ↔
+//      `voiceProfileBelongsToCaller` 가 같은 답). 살아 있는 그룹의 공유는 그대로 열린다.
+//   4. 직접 입력 한도 30 → 0, `/billing/subscription` 의 계산값·`personal_promo`
+//      (`deletes_voices_at_end` 포함).
 //   5. 기간 중 쿠폰 등록이 되고, 그 구독이 기간 중 끝나도 보관이 걸리지 않는다.
-//   6. 종료 전환 크론 — 대상만·배치 상한·멱등·`delete_after` 고정, 기간 중 스윕은 풀어만 준다.
+//   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일 이하, 기간 중 스윕은 풀어만 준다.
+//      (대량·예산·굶김은 `test/personal-promo-end.test.ts`.)
 //
 // ⚠ 시계는 **JS `Date` 만** 가짜로 돌린다(`toFake: ['Date']`). SQL 의 `datetime('now')` 는 실제
 //   시각이라, 여기 픽스처의 구독 만료는 실제·가짜 시각 어느 쪽으로 봐도 같은 쪽에 오게 둔다.
@@ -35,8 +38,10 @@ const { default: codeRoutes } = await import('../src/routes/code');
 const { resolvePersonalPromo, resolvePersonalPromoWindow, personalPromoField, computedUserPlan } =
   await import('../src/lib/personal-promo');
 const { hasPersonalVoiceAccess, isPaidVoicePlan } = await import('../src/routes/billing-helpers');
-const { processSubscriptionExpiry, sweepPaidVoiceRetention, transitionPersonalPromoEnd } =
+const { processSubscriptionExpiry, sweepPaidVoiceRetention } =
   await import('../src/lib/billing-cancel');
+const { transitionPersonalPromoEnd, runPersonalPromoEnd, promoEndDeleteAfter } =
+  await import('../src/lib/personal-promo-end');
 const { selectWorkerSecrets, DEV_ONLY_SECRET_KEYS, WORKER_SECRET_KEYS } =
   await import('../scripts/worker-secret-keys');
 
@@ -194,12 +199,20 @@ describe('스위치 해석 — 꺼짐은 fail-closed, production 은 리허설 �
     expect(computedUserPlan('free', off)).toBe('free');
     expect(computedUserPlan('family', on)).toBe('family');
     expect(computedUserPlan(null, on)).toBeNull();
-    expect(personalPromoField('free', on)).toEqual({
+    const noRow = { hasActiveSubscriptionRow: false };
+    expect(personalPromoField('free', on, noRow)).toEqual({
       ends_at: '2026-10-31T15:00:00Z',
       notice_from: '2026-10-24T15:00:00Z',
+      deletes_voices_at_end: true,
     });
-    expect(personalPromoField('plus', on)).toBeNull();
-    expect(personalPromoField('free', off)).toBeNull();
+    // 결제 보류(원시 free + active 행): 값은 남고 삭제 문장만 빠진다.
+    expect(personalPromoField('free', on, { hasActiveSubscriptionRow: true })).toEqual({
+      ends_at: '2026-10-31T15:00:00Z',
+      notice_from: '2026-10-24T15:00:00Z',
+      deletes_voices_at_end: false,
+    });
+    expect(personalPromoField('plus', on, noRow)).toBeNull();
+    expect(personalPromoField('free', off, noRow)).toBeNull();
     expect(hasPersonalVoiceAccess('free', on)).toBe(true);
     expect(hasPersonalVoiceAccess('free', off)).toBe(false);
     expect(hasPersonalVoiceAccess(null, on)).toBe(false);
@@ -241,6 +254,10 @@ const FREE_NEW = { pk: 'pp-free-new' };
 const PAID = { pk: 'pp-paid' };
 const HOLD_OWNER = { pk: 'pp-hold-owner' };
 const HOLD_MEMBER = { pk: 'pp-hold-member' };
+/** 보류 그룹에 남아 있지만 **따로** 개인 결제를 하는 멤버 — 원시 유료. */
+const HOLD_PAID_MEMBER = { pk: 'pp-hold-paid-member' };
+/** 결제가 살아 있는 가족 그룹 — 공유 목소리가 그대로 열려야 한다(원시 게이트의 대조군). */
+const LIVE_MEMBER = { pk: 'pp-live-member' };
 const COUPON_USER = { pk: 'pp-coupon' };
 const VP_FREE = '11111111-1111-4111-8111-000000000001';
 const VP_FREE_DRAFT = '11111111-1111-4111-8111-000000000002';
@@ -251,6 +268,8 @@ const MSG_FREE = '22222222-2222-4222-8222-000000000001';
 const MSG_PAID = '22222222-2222-4222-8222-000000000002';
 const MSG_HOLD_PRESET = '22222222-2222-4222-8222-000000000003';
 const MSG_HOLD_OWN = '22222222-2222-4222-8222-000000000004';
+const VP_LIVE = '11111111-1111-4111-8111-000000000006';
+const MSG_LIVE_PRESET = '22222222-2222-4222-8222-000000000005';
 
 describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
   beforeAll(async () => {
@@ -292,6 +311,23 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
       `INSERT INTO messages (id, user_id, voice_profile_id, text, category, is_preset, audio_url)
        VALUES ('${MSG_HOLD_OWN}', 'pp-hold-owner', '${VP_HOLD}', '일어나', 'custom', 0, NULL)`,
       `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active) VALUES ('pp-plain', 'PP_PLAIN', '${PERSONAL}', 30, 1)`,
+      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-hold-paid-member', NULL, 'hpm@t.test', '따로 결제', 'plus')`,
+      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-hpm', 'pp-group', 'pp-hold-paid-member', 'member')`,
+      `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+       VALUES ('sub-hpm', 'pp-hold-paid-member', '${PERSONAL}', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
+      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-live-owner', NULL, 'lo@t.test', '가족 주인', 'family')`,
+      `INSERT INTO users (id, google_id, email, name, plan) VALUES ('pp-live-member', NULL, 'lm@t.test', '가족 멤버', 'family')`,
+      `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members) VALUES ('pp-live', 'pp-live-owner', '${FAMILY}', 5)`,
+      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-lo', 'pp-live', 'pp-live-owner', 'owner')`,
+      `INSERT INTO plan_group_members (id, plan_group_id, user_id, role) VALUES ('pgm-lm', 'pp-live', 'pp-live-member', 'member')`,
+      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
+       VALUES ('sub-lo', 'pp-live-owner', '${FAMILY}', 'pp-live', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
+      `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
+       VALUES ('sub-lm', 'pp-live-member', '${FAMILY}', 'pp-live', 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
+      `INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft, is_shared, previewed_at, preview_language)
+       VALUES ('${VP_LIVE}', 'pp-live-owner', '가족 공유 목소리', 'ready', 'el-live', 0, 1, datetime('now'), 'ko')`,
+      `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+       VALUES ('${MSG_LIVE_PRESET}', 'pp-live-owner', '${VP_LIVE}', '좋은 아침', 'weather', 'ko', 0, 1, NULL)`,
     ]);
   });
 
@@ -436,14 +472,43 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
           timezone: 'Asia/Seoul',
           message_id: MSG_HOLD_PRESET,
         });
-        // 열림: 멤버 본인은 개인이라 목소리 게이트는 지나지만 공유 갈래(원시)가 거절 — 404.
-        // 닫힘: 멤버 본인의 목소리 게이트에서 403. 어느 쪽이든 저장되지 않는다.
-        if (moment.open) {
-          expect(save.status).toBe(404);
-          expect(save.body.error_code).toBe('MESSAGE_NOT_FOUND');
-        } else {
-          expectGate(save, false);
-        }
+        // 원시 free 멤버가 남의 목소리(공유)를 쓰는 알람 — 계산값으로 열린 목소리 게이트를 공유
+        // 갈래는 원시값으로 다시 본다. 기간 전과 **같은 답**(403)이다.
+        expectGate(save, false);
+        const saveByVoice = await call(HOLD_MEMBER, 'POST', '/alarms', {
+          time: '07:40',
+          timezone: 'Asia/Seoul',
+          mode: 'tts',
+          voice_profile_id: VP_HOLD,
+        });
+        expectGate(saveByVoice, false);
+
+        // 공유 목소리로 **생성**(`/tts/generate`) — 보류 그룹의 클론·is_shared 가 남아 있어도
+        // 원시 free 멤버는 기간 중에도 닫힌다(예전에는 계산값이라 기간 동안 되살아났다).
+        const gen = await call(HOLD_MEMBER, 'POST', '/tts/generate', {
+          voice_profile_id: VP_HOLD,
+          text: '일어나',
+          category: 'custom',
+        });
+        expectGate(gen, false);
+
+        // 따로 결제하는 멤버: 본인은 원시 유료지만 **주인이 원시 free**(보류)라 공유가 멈춰 있다 —
+        // 오디오 라우트·`messageBelongsToCaller` 와 같은 답.
+        const paidGen = await call(HOLD_PAID_MEMBER, 'POST', '/tts/generate', {
+          voice_profile_id: VP_HOLD,
+          text: '일어나',
+          category: 'custom',
+        });
+        expect(paidGen.status).toBe(403);
+        expect(paidGen.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+        const paidSave = await call(HOLD_PAID_MEMBER, 'POST', '/alarms', {
+          time: '07:50',
+          timezone: 'Asia/Seoul',
+          mode: 'tts',
+          voice_profile_id: VP_HOLD,
+        });
+        expect(paidSave.status).toBe(404);
+        expect(paidSave.body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
 
         // 보낸 알람(가족): 발신자 게이트는 원시값 — 열림 시점에도 거절.
         const sent = await call(HOLD_OWNER, 'POST', '/alarms', {
@@ -455,6 +520,30 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         expectGate(sent, false);
       });
 
+      it('살아 있는 가족 그룹의 공유 목소리는 원시 게이트를 그대로 지난다(대조군)', async () => {
+        atMoment(moment.at);
+        const save = await call(LIVE_MEMBER, 'POST', '/alarms', {
+          time: '06:30',
+          timezone: 'Asia/Seoul',
+          message_id: MSG_LIVE_PRESET,
+        });
+        expect(save.status).toBe(201);
+        const byVoice = await call(LIVE_MEMBER, 'POST', '/alarms', {
+          time: '06:40',
+          timezone: 'Asia/Seoul',
+          mode: 'tts',
+          voice_profile_id: VP_LIVE,
+        });
+        expect(byVoice.status).toBe(201);
+        // 생성은 플랜 게이트를 지나 다음 게이트(생체정보 동의 — 픽스처에 없다)에서 멈춘다.
+        const gen = await call(LIVE_MEMBER, 'POST', '/tts/generate', {
+          voice_profile_id: VP_LIVE,
+          text: '일어나',
+          category: 'custom',
+        });
+        expect(gen.body.error_code).toBe('CONSENT_REQUIRED');
+      });
+
       it('/billing/subscription — user_plan 계산값, personal_promo, 가짜 구독 없음', async () => {
         atMoment(moment.at);
         const plainRes = await call(FREE, 'GET', '/billing/subscription');
@@ -463,7 +552,23 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         expect(plainRes.body).not.toHaveProperty('user_plan');
         expect(plainRes.body.personal_promo).toEqual(
           moment.open
-            ? { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z' }
+            ? {
+                ends_at: '2026-10-31T15:00:00Z',
+                notice_from: '2026-10-24T15:00:00Z',
+                deletes_voices_at_end: true,
+              }
+            : null,
+        );
+        // 결제 보류 소유자: 원시 free 라 값이 있고(앱의 보류 규칙), 종료 전환 대상이 아니라
+        // 삭제 문장은 빠진다.
+        const holdRes = await call(HOLD_OWNER, 'GET', '/billing/subscription');
+        expect(holdRes.body.personal_promo).toEqual(
+          moment.open
+            ? {
+                ends_at: '2026-10-31T15:00:00Z',
+                notice_from: '2026-10-24T15:00:00Z',
+                deletes_voices_at_end: false,
+              }
             : null,
         );
         const refreshed = await call(FREE, 'GET', '/billing/subscription?refresh_store=1');
@@ -538,7 +643,7 @@ async function retentionOf(client: Client, userId: string): Promise<string | nul
 }
 
 describe('만료 크론 — 기간 중에는 보관을 걸지 않고, 끝나면 전환이 건다', () => {
-  it('기간 중 끝난 쿠폰 구독: 강등은 원시로 일어나되 보관 행이 없다 → 끝 뒤 전환이 끝 + 3일로 건다', async () => {
+  it('기간 중 끝난 쿠폰 구독: 강등은 원시로 일어나되 보관 행이 없다 → 끝 뒤 전환이 끝 + 3일 안으로 건다', async () => {
     db = await freshDb('expiry');
     await seedUser(db, 'c1', 'plus');
     await seedUser(db, 'c2', 'plus');
@@ -563,20 +668,24 @@ describe('만료 크론 — 기간 중에는 보관을 걸지 않고, 끝나면 
       (await db.execute("SELECT COUNT(*) AS n FROM voice_profiles WHERE id = 'vp-c1'")).rows[0]!.n,
     ).toBe(1);
 
-    // 끝 뒤 — c2 의 만료(원시 규칙: 실행 시각 + 3일)와 c1 의 종료 전환(끝 + 3일 고정)이 같은 틱에 돈다.
+    // 끝 뒤 — c2 의 만료(원시 규칙: 실행 시각 + 3일)와 c1 의 종료 전환이 같은 틱에 돈다.
+    // 전환은 만료 크론 안이 아니라 `runPersonalPromoEnd`(5분 틱 폴백·1분 전용 크론)가 한다.
     await db.execute(
       "UPDATE subscriptions SET expires_at = '2026-09-01T00:00:00Z' WHERE id = 'sub-c2'",
     );
     const after = new Date(END.getTime() + 60 * 60 * 1000);
     await processSubscriptionExpiry(db, PROD_ENV, after);
-    expect(await retentionOf(db, 'c1')).toBe('2026-11-03T15:00:00.000Z');
+    expect(await retentionOf(db, 'c1')).toBeNull();
+    await runPersonalPromoEnd(db, PROD_ENV, after, { role: 'main' });
+    // 대상 한 명 — 약속 시각(끝 + 3일) − (스윕 한 번 여유 + 한 시간)을 정시로 내린 값.
+    expect(await retentionOf(db, 'c1')).toBe('2026-11-03T13:00:00.000Z');
     expect(await retentionOf(db, 'c2')).toBe(
       new Date(after.getTime() + 3 * 86_400_000).toISOString(),
     );
   });
 });
 
-describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 배치 상한, 멱등, delete_after 고정', () => {
+describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한, 멱등, delete_after ≤ 끝 + 3일', () => {
   const WINDOW = { startsAt: new Date('2026-09-30T15:00:00Z'), endsAt: END };
   const AFTER = new Date(END.getTime() + 2 * 60 * 60 * 1000);
 
@@ -620,23 +729,32 @@ describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 배치 상한
     expect((await db.execute('SELECT COUNT(*) AS n FROM paid_voice_retention')).rows[0]!.n).toBe(1);
   });
 
-  it('틱마다 3명씩, 끝 + 3일 고정, 다 돌면 멈춘다', async () => {
-    const first = await transitionPersonalPromoEnd(db, WINDOW, AFTER);
-    expect(first).toEqual(['t1', 't2', 't3']);
+  it('묶음마다 상한만큼, 끝 + 3일 안의 정시, 다 돌면 멈춘다', async () => {
+    // 기준점 '' = id 순서 맨 앞부터(운영은 실행마다 무작위 기준점이다).
+    const opts = { limit: 3, pivot: '', notifyMessages: null } as const;
+    const first = await transitionPersonalPromoEnd(db, WINDOW, AFTER, opts);
+    expect(first.map((t) => t.userPk)).toEqual(['t1', 't2', 't3']);
     const second = await transitionPersonalPromoEnd(
       db,
       WINDOW,
       new Date(AFTER.getTime() + 5 * 60_000),
+      opts,
     );
-    expect(second).toEqual(['t4', 't5']);
+    expect(second.map((t) => t.userPk)).toEqual(['t4', 't5']);
     expect(
-      await transitionPersonalPromoEnd(db, WINDOW, new Date(AFTER.getTime() + 10 * 60_000)),
+      await transitionPersonalPromoEnd(db, WINDOW, new Date(AFTER.getTime() + 10 * 60_000), opts),
     ).toEqual([]);
 
-    for (const id of ['t1', 't2', 't3', 't4', 't5']) {
-      // 실행 시각과 무관하게 끝 + 3일이다.
-      expect(await retentionOf(db, id)).toBe('2026-11-03T15:00:00.000Z');
+    for (const t of [...first, ...second]) {
+      // 약속 시각(끝 + 3일)을 넘지 않고, 푸시가 적는 시각(돌려준 값)과 행이 같다.
+      expect(t.deleteAfter.getTime()).toBeLessThanOrEqual(Date.parse('2026-11-03T15:00:00.000Z'));
+      expect(await retentionOf(db, t.userPk)).toBe(t.deleteAfter.toISOString());
     }
+    // 남은 대상이 적을 때의 기한 = 약속 시각 − (스윕 한 번 여유 + 한 시간)을 정시로 내린 값.
+    expect(first[0]!.deleteAfter.toISOString()).toBe(
+      promoEndDeleteAfter(WINDOW, AFTER, 5).toISOString(),
+    );
+    expect(first[0]!.deleteAfter.toISOString()).toBe('2026-11-03T13:00:00.000Z');
     for (const id of ['n-novoice', 'n-draft', 'n-deleted', 'n-paid', 'n-hold']) {
       expect(await retentionOf(db, id)).toBeNull();
     }

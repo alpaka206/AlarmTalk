@@ -7,6 +7,7 @@ import {
   type PersonalPromoWindow,
 } from '@alarmtalk/shared';
 import type { Env } from '../types';
+import type { DbExecutor } from './transactions';
 
 /**
  * **기간 한정 개인 플랜 — 서버 쪽 계산층.** 규칙 전문: `docs/spec/billing-lifecycle.md`
@@ -61,6 +62,13 @@ export function resolvePersonalPromoWindow(env: PromoEnv | undefined): PersonalP
   return { startsAt, endsAt };
 }
 
+/**
+ * **종료 전환·종료 스윕 전용 크론**(1분) — `wrangler.toml` 의 두 환경과 `index.ts` 의 분기가 이
+ * 문자열을 본다(`test/personal-promo-end.test.ts` 가 셋을 대조한다). 여기 두는 이유: 크론 분기는
+ * 매 실행 도는데, 구현(`lib/personal-promo-end.ts`)은 그 분기에 들어섰을 때만 불러오려고.
+ */
+export const PERSONAL_PROMO_END_CRON = '* * * * *';
+
 /** 요청·크론 실행마다 **한 번** 풀어 판정 자리들에 넘기는 값. */
 export interface PersonalPromoState {
   window: PersonalPromoWindow | null;
@@ -106,16 +114,57 @@ function isoSeconds(date: Date): string {
 }
 
 /**
+ * **`status = 'active'` 구독 행이 있는가** — SQL 조각(`userPkExpr` 는 개발자 고정 식별자만).
+ *
+ * 종료 전환 대상(`PROMO_END_TARGET`)과 응답의 `deletes_voices_at_end` 가 **같은 조건**을 봐야
+ * 한다 — 둘이 갈라지면 앱은 "목소리는 3일 보관 후 삭제돼요" 라고 말했는데 서버는 지우지 않거나,
+ * 반대로 말없이 지운다. 만료 시각은 보지 않는다: 결제 보류(ON_HOLD·PAUSED)는 행을 `active`
+ * 로 남긴 채 `users.plan` 만 회수하고, 보류는 회복형이라 보관을 걸지 않는다.
+ */
+export function activeSubscriptionRowExistsSql(userPkExpr: string): string {
+  return `EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = ${userPkExpr} AND s.status = 'active')`;
+}
+
+/**
  * API 의 `personal_promo` 조각. **원시 plan 이 free 이고 구간 안일 때만** 값이 있다 —
  * 결제자·꺼짐·끝난 뒤에는 `null`.
+ *
+ * 결제 보류 계정(원시 free + `active` 구독 행)에도 값이 **있다** — 앱은 이 값의 존재로 "원시
+ * plan 이 free 다" 를 알고, 남은 구독 행으로 커플·가족 등급을 올리지 않는다(보류 규칙). 대신
+ * `deletes_voices_at_end` 가 `false` 라 종료 안내가 삭제를 말하지 않는다.
  */
 export function personalPromoField(
   rawPlan: string | null | undefined,
   promo: PersonalPromoState,
+  standing: {
+    /** `status = 'active'` 구독 행이 있는가 — [activeSubscriptionRowExistsSql] 과 같은 조건. */
+    hasActiveSubscriptionRow: boolean;
+  },
 ): PersonalPromo | null {
   if (rawPlan !== 'free' || !promo.active || !promo.window) return null;
   return {
     ends_at: isoSeconds(promo.window.endsAt),
     notice_from: isoSeconds(personalPromoNoticeFrom(promo.window.endsAt)),
+    deletes_voices_at_end: !standing.hasActiveSubscriptionRow,
   };
+}
+
+/**
+ * [personalPromoField] 를 DB 에서 구독 행 여부를 읽어 채운다. **원시 free 이고 구간 안일 때만**
+ * 한 번 읽는다 — 결제자·평상시 응답에는 DB 왕복을 더하지 않는다.
+ */
+export async function loadPersonalPromoField(
+  db: Pick<DbExecutor, 'execute'>,
+  userPk: string,
+  rawPlan: string | null | undefined,
+  promo: PersonalPromoState,
+): Promise<PersonalPromo | null> {
+  if (rawPlan !== 'free' || !promo.active || !promo.window) return null;
+  const res = await db.execute({
+    sql: `SELECT ${activeSubscriptionRowExistsSql('?')} AS has_row`,
+    args: [userPk],
+  });
+  return personalPromoField(rawPlan, promo, {
+    hasActiveSubscriptionRow: Number(res.rows[0]?.has_row ?? 0) === 1,
+  });
 }

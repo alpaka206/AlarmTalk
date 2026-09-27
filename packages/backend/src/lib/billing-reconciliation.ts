@@ -422,7 +422,7 @@ async function terminateSubscription(
     });
   } else if (!(await hasActivePaidEntitlement(tx, active.userPk, promoCoversFree))) {
     // 기간 한정 개인 플랜이 덮는 동안에는 걸지 않는다 — 기간 중 구독이 끝나도 목소리를
-    // 잃지 않는다. 종료 뒤에는 `transitionPersonalPromoEnd` 가 건다.
+    // 잃지 않는다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가 건다.
     await schedulePaidVoiceRetention(tx, active.userPk, now);
   }
   return ids;

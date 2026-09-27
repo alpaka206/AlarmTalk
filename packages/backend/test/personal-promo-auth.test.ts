@@ -24,7 +24,11 @@ import { hashEmailVerificationCode } from '../src/lib/email-verification';
 import { signAppJwt } from '../src/lib/jwt';
 
 const END = new Date(PERSONAL_PROMO.endsAt);
-const PROMO = { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z' };
+const PROMO = {
+  ends_at: '2026-10-31T15:00:00Z',
+  notice_from: '2026-10-24T15:00:00Z',
+  deletes_voices_at_end: true,
+};
 
 const ENV = {
   ELEVENLABS_API_KEY: 'x',
@@ -243,6 +247,51 @@ for (const moment of MOMENTS) {
     });
   });
 }
+
+describe('personal_promo.deletes_voices_at_end — 종료 전환 대상과 같은 조건', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(END.getTime() - 1000));
+  });
+
+  it('원시 free 인데 active 구독 행이 남아 있으면(결제 보류) false — 값 자체는 남는다', async () => {
+    // 보류 계정도 personal_promo 가 있어야 앱이 "원시 plan 이 free" 를 안다(보류 규칙).
+    mockDB.pushResultFor("s.status = 'active'", [{ has_row: 1 }]);
+    const user = await me(ENV, 'free');
+    expect(user.plan).toBe('plus');
+    expect(user.personal_promo).toEqual({ ...PROMO, deletes_voices_at_end: false });
+    const query = mockDB.calls.find((c) => c.sql.includes("s.status = 'active'"));
+    expect(query?.args).toEqual(['u-1']);
+  });
+
+  it('로그인·구글·애플도 같은 조회로 채운다', async () => {
+    mockDB.pushResultFor("s.status = 'active'", [{ has_row: 1 }]);
+    expect((await login(ENV, 'free')).personal_promo).toEqual({
+      ...PROMO,
+      deletes_voices_at_end: false,
+    });
+    mockDB.reset();
+    mockDB.pushResultFor("s.status = 'active'", [{ has_row: 1 }]);
+    expect((await google(ENV, 'free')).personal_promo).toEqual({
+      ...PROMO,
+      deletes_voices_at_end: false,
+    });
+    mockDB.reset();
+    mockDB.pushResultFor("s.status = 'active'", [{ has_row: 1 }]);
+    expect((await apple(ENV, 'free')).personal_promo).toEqual({
+      ...PROMO,
+      deletes_voices_at_end: false,
+    });
+  });
+
+  it('결제자·스위치 꺼짐에는 조회를 더하지 않는다', async () => {
+    await me(ENV, 'plus');
+    expect(mockDB.calls.some((c) => c.sql.includes("s.status = 'active'"))).toBe(false);
+    mockDB.reset();
+    await me(ENV_OFF, 'free');
+    expect(mockDB.calls.some((c) => c.sql.includes("s.status = 'active'"))).toBe(false);
+  });
+});
 
 describe('계정 응답 — 스위치를 안 켠 운영(오늘의 prod)', () => {
   it('기간 안 시각이어도 원시값 그대로다', async () => {

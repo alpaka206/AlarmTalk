@@ -583,6 +583,51 @@ export async function sendPaymentFailedPush(
   }
 }
 
+const VOICE_DELETION_WARNING_TITLE = '목소리가 곧 삭제돼요';
+
+/** 이용권이 끝나 보관 유예가 걸렸을 때의 본문 — 기한은 '지금부터 n일' 이다. */
+function voiceDeletionWarningBody(retentionDays: number): string {
+  return (
+    `이용권이 끝나 목소리를 ${retentionDays}일간만 보관해요. ` +
+    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
+  );
+}
+
+/**
+ * **기간 한정 개인 플랜이 끝나** 보관 유예가 걸렸을 때의 본문(`lib/personal-promo-end.ts`).
+ *
+ * 기본 문구("이용권이 끝나 … n일간만 보관")를 쓰지 않는 이유 둘:
+ * - 이 사람들은 **이용권을 산 적이 없다** — "다시 등록하면" 은 틀린 말이다.
+ * - 기한이 '지금부터 3일' 이 아니라 **사람마다 정해진 시각**(끝 + 3일을 넘지 않게 나눠 건
+ *   `delete_after`)이다. 전환이 늦게 닿은 사람에게 "3일간" 이라고 하면 실제보다 길게 말한다.
+ *
+ * 시각은 한국 시간(문구가 한국어라 기기 시간대를 알 수 없다)으로, **정시 단위**로 적는다 —
+ * 전환이 `delete_after` 를 정시로 내려 잡으므로 적힌 시각이 곧 삭제 시작 시각이다.
+ */
+export function personalPromoEndWarningBody(deleteAfter: Date, now: Date = new Date()): string {
+  // 기한이 한 시간도 안 남았으면(끝 + 3일을 넘겨 늦게 전환된 사람) 시각을 적지 않는다 — 이미
+  // 지난 시각이나 몇 분 뒤를 "…까지 보관" 이라고 쓰면 틀린 약속이 된다.
+  if (deleteAfter.getTime() - now.getTime() < 60 * 60 * 1000) {
+    return (
+      '기간 한정 개인 플랜이 끝나 목소리가 곧 영구 삭제돼요. ' +
+      '삭제 전에 이용권을 시작하면 그대로 쓸 수 있어요.'
+    );
+  }
+  return (
+    `기간 한정 개인 플랜이 끝나 목소리를 ${formatKstHour(deleteAfter)}까지만 보관해요. ` +
+    '그 전에 이용권을 시작하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
+  );
+}
+
+/** `11월 3일 오후 2시` — 한국 시간(UTC+9, 서머타임 없음). 분은 버린다. */
+export function formatKstHour(at: Date): string {
+  const kst = new Date(at.getTime() + 9 * 60 * 60 * 1000);
+  const hour = kst.getUTCHours();
+  const period = hour < 12 ? '오전' : '오후';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${period} ${hour12}시`;
+}
+
 /**
  * **목소리가 곧 영구 삭제된다고 알린다.** 유료 접근을 잃어 보관 유예가 걸린 순간 보낸다.
  *
@@ -611,10 +656,8 @@ export async function sendVoiceDeletionWarningPush(
 ): Promise<void> {
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
-  const title = '목소리가 곧 삭제돼요';
-  const body =
-    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
-    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
+  const title = VOICE_DELETION_WARNING_TITLE;
+  const body = voiceDeletionWarningBody(params.retentionDays);
 
   const recipients = Array.from(new Set(params.userPks)).filter(Boolean);
   const targetsOf = await getPushTargetsForUsers(db, recipients);
@@ -677,6 +720,11 @@ export async function sendBillingStateSignals(
     planChangedUserIds: readonly string[];
     deletionWarningUserPks: readonly string[];
     retentionDays: number;
+    /**
+     * 사람마다 **다른 본문**이 필요할 때만 — 기간 한정 개인 플랜 종료 전환은 이용권이 끝난 것이
+     * 아니고 기한도 고정 시각이라 [personalPromoEndWarningBody] 를 넘긴다. 없으면 기본 문구.
+     */
+    warningBodyFor?: (userPk: string) => string;
   },
 ): Promise<void> {
   const signal = new Set(params.planChangedUserIds.filter(Boolean));
@@ -685,14 +733,13 @@ export async function sendBillingStateSignals(
   if (recipients.length === 0) return;
   const targetsOf = await getPushTargetsForUsers(db, recipients);
 
-  const title = '목소리가 곧 삭제돼요';
-  const body =
-    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
-    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
+  const title = VOICE_DELETION_WARNING_TITLE;
+  const defaultBody = voiceDeletionWarningBody(params.retentionDays);
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
   // 1) 보이는 예고 먼저.
   for (const userId of warned) {
+    const body = params.warningBodyFor?.(userId) ?? defaultBody;
     for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
         apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
