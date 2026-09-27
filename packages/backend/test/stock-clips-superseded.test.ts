@@ -87,13 +87,14 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
     CREATE TABLE voice_prerender_queue (
       voice_profile_id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, language TEXT DEFAULT 'ko',
       status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
-      claimed_at TEXT, claim_token TEXT, updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0
+      claimed_at TEXT, claim_token TEXT, updated_at TEXT, refresh_existing INTEGER NOT NULL DEFAULT 0,
+      requested_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE generated_audio_assets (
       id TEXT PRIMARY KEY, user_id TEXT, voice_profile_id TEXT, message_id TEXT,
       provider TEXT, provider_voice_id TEXT, model_id TEXT, language TEXT,
       request_hash TEXT UNIQUE, text TEXT, audio_url TEXT, audio_object_key TEXT,
-      audio_format TEXT, mime_type TEXT
+      audio_format TEXT, mime_type TEXT, created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE user_consents (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, consent_type TEXT NOT NULL,

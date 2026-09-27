@@ -1065,11 +1065,11 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
-  // 미리듣기의 기본 태그. 차분을 고른 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
-  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 고른 결과 반대로 들리면 안 된다.
-  // ⚠ 사용자가 **고른** 결(`voice_energy`)만 본다. 분석값(`speech_style.energy`)은 확정 뒤에도
-  // 늦게 채워질 수 있어, 그걸 보면 같은 확정 미리듣기의 재생 태그가 바뀌어 캐시를 빗나간다.
-  // 고른 결은 바뀌면 PATCH 가 `previewed_at` 을 함께 지우므로 재생 중에는 고정이다.
+  // 미리듣기의 기본 태그. 차분한 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
+  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 결과 반대로 들리면 안 된다. 여기서는 사용자가
+  // **고른** 결만 본다. 분석이 끝나 추정 결을 알게 되면 생성 갈래가 그걸로 다시 정한다(아래).
+  // ⚠ 고정 예문으로 합성한 태그는 claim 이 `preview_tag` 에 남긴다 — 확정 뒤 재생은 그 값을 쓴다.
+  //   다시 계산하면 확정 뒤에 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다.
   const draftPreviewDefaultTag = fallbackTagForEnergy('cheerfully', String(vp.voice_energy ?? ''));
   let draftPreviewTag = draftPreviewDefaultTag;
 
@@ -1097,7 +1097,14 @@ tts.post('/generate', async (c) => {
         // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
         // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
         // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
+        // 태그는 그때 합성한 값(claim 이 남긴 `preview_tag`)을 쓴다. 없으면(이 규칙 이전) 기본값.
+        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
+        if (storedTag) draftPreviewTag = storedTag;
       } else {
+        // 생성이 어디서 실패하든 합성은 **영속된 문구 아니면 고정 예문** 둘 중 하나여야 한다 — 생성만 되고
+        // 영속되지 않은 문구로 합성하면, 그대로 확정했을 때 재생(고정 예문)이 캐시를 빗나간다.
+        const fixedPreviewText = requestText;
+        let fixedPreviewTag = draftPreviewDefaultTag;
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
           // ⚠ **말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 여기로 오고 분석은
@@ -1110,6 +1117,15 @@ tts.post('/generate', async (c) => {
             const waited = await waitForSpeechStyleAnalysis(db, body.voice_profile_id);
             analysisSettled = waited.settled;
             if (waited.settled) analyzedSpeechStyle = waited.speechStyle;
+          }
+          // 분석이 끝났으면 폴백 태그도 실제 결(고른 값 > 추정값)을 따른다 — 생성이 실패해 고정 예문으로
+          // 떨어져도 차분으로 추정된 목소리가 `cheerfully` 로 들리지 않게(Codex #802).
+          if (analysisSettled) {
+            fixedPreviewTag = fallbackTagForEnergy(
+              'cheerfully',
+              withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy)?.energy,
+            );
+            draftPreviewTag = fixedPreviewTag;
           }
           if (greetingSeed && analysisSettled) {
             const generated = await generatePrerenderClipText(c.env, {
@@ -1186,7 +1202,9 @@ tts.post('/generate', async (c) => {
             }
           }
         } catch {
-          // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
+          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문과 그 태그로 되돌린다.
+          requestText = fixedPreviewText;
+          draftPreviewTag = fixedPreviewTag;
         }
       }
     }
@@ -1452,8 +1470,11 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
       const claimed = await db.execute({
+        // 영속된 문구가 없으면(고정 예문으로 합성) 합성하는 태그를 `preview_tag` 에 남긴다 — 확정 뒤 재생이
+        // 같은 태그로 캐시를 맞힌다. 영속된 문구가 있으면 그 태그를 그대로 둔다.
         sql: `UPDATE voice_profiles
               SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
+                  preview_tag = CASE WHEN COALESCE(preview_text, '') = '' THEN ? ELSE preview_tag END,
                   updated_at = datetime('now')
               WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
@@ -1463,6 +1484,7 @@ tts.post('/generate', async (c) => {
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
         args: [
           previewClaimToken,
+          draftPreviewTag,
           body.voice_profile_id,
           userPk,
           userLoginId,

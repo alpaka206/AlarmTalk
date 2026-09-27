@@ -533,10 +533,15 @@ export async function findMissingStockTargets(
   const ph = voiceIds.map(() => '?').join(',');
   const existing = await db.execute({
     sql: `SELECT m.voice_profile_id, m.category, m.language, m.variant,
-                 ga.provider_voice_id AS published_provider_voice_id
+                 ga.provider_voice_id AS published_provider_voice_id,
+                 -- 다시 굽는 회차는 그 요청 뒤에 게시된 것만 최신이다(아래 refreshExisting 필터).
+                 CASE WHEN q.requested_at IS NULL
+                        OR datetime(ga.created_at) >= datetime(q.requested_at) THEN 1 ELSE 0 END
+                   AS published_after_refresh
           FROM messages m
           LEFT JOIN generated_audio_assets ga
             ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+          LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
             -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.
             -- ⚠ **여기에는 배포 창 가드를 붙이지 말 것**(2026-09-08 감사). 이건 목록이
@@ -558,7 +563,12 @@ export async function findMissingStockTargets(
         const voice = voiceById.get(String(row.voice_profile_id));
         // 교체 배치는 여러 cron/advance 호출에 걸친다. 지금 프로필의 새 provider 로 이미
         // 게시된 행만 완료로 세야 앞쪽 클립을 매번 다시 만드는 무한 루프가 생기지 않는다.
-        return voice?.elevenlabsVoiceId === String(row.published_provider_voice_id ?? '');
+        // ⚠ **보이스 대조만으로는 부족하다**(Codex #802). 말투 분석이 늦게 도착해 **같은 보이스로**
+        // 다시 굽는 회차는 옛 클립도 보이스가 같다 — 그 요청(`requested_at`) 뒤에 게시된 것만 센다.
+        return (
+          voice?.elevenlabsVoiceId === String(row.published_provider_voice_id ?? '') &&
+          Number(row.published_after_refresh ?? 1) === 1
+        );
       })
       .map(
       (row) =>

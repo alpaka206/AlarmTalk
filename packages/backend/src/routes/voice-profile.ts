@@ -499,12 +499,36 @@ async function runSpeechStyleAnalysis(
     if (missingBeforeSave) {
       throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
-    await db.execute({
-      sql: `UPDATE voice_profiles
-            SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
-            WHERE ${targetClause}`,
-      args: [JSON.stringify(style), ...targetArgs],
-    });
+    await db.batch(
+      [
+        {
+          sql: `UPDATE voice_profiles
+                SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
+                WHERE ${targetClause}`,
+          args: [JSON.stringify(style), ...targetArgs],
+        },
+        // ⚠ **이미 구운 클립은 다시 굽는다**(Codex #802). 정식 등록된 목소리라면 사전렌더가 이 분석 없이
+        // 돌았을 수 있다 — 분석이 대기 상한을 넘겼거나, 실패했다가 재시도(`/:id/speech-style/retry`)로
+        // 살아난 경우다. 교체 회차와 같은 `refresh_existing` 이고, `requested_at` 을 지금으로 올려
+        // '이 요청 뒤에 만든 클립만 최신' 으로 센다(`findMissingStockTargets` — 같은 provider 보이스라
+        // 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어진다). 진행 중이던 claim 은 풀어 새 회차가
+        // 처음부터 다시 돈다(옛 결과 새 결이 섞이지 않게). 큐 행이 없으면(아직 초안) 아무 일도 없다.
+        // 말투 저장과 한 batch 라 둘 중 하나만 남지 않는다.
+        {
+          sql: `UPDATE voice_prerender_queue
+                SET status = 'pending', attempts = 0, refresh_existing = 1,
+                    requested_at = datetime('now'), claimed_at = NULL, claim_token = NULL,
+                    updated_at = datetime('now')
+                WHERE voice_profile_id IN (
+                  SELECT id FROM voice_profiles
+                  WHERE deleted_at IS NULL AND COALESCE(is_draft, 0) = 0
+                    AND (id = ? OR (? IS NOT NULL AND elevenlabs_voice_id = ?))
+                )`,
+          args: targetArgs,
+        },
+      ],
+      'write',
+    );
     return { ok: true };
   } catch (error) {
     try {
@@ -2498,6 +2522,7 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
                    SELECT 1 FROM generated_audio_assets ga
                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                      AND datetime(ga.created_at) >= datetime(q.requested_at)
                  )
                )`
     : '';
@@ -2648,15 +2673,20 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     Number(
       (
         await db.execute({
+          // 다시 굽는 회차(`refresh_existing`)는 그 요청 **뒤에** 만든 클립만 센다 — 말투가 늦게 도착해
+          // 같은 보이스로 다시 굽는 경우 보이스 대조만으로는 옛 클립이 다 된 것으로 보인다.
           sql: `SELECT COUNT(DISTINCT m.id) AS count
                   FROM messages m
                   JOIN voice_profiles vp ON vp.id = m.voice_profile_id
                   JOIN generated_audio_assets ga
                     ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+                  LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
                  WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
                    AND m.retired_at IS NULL
                    AND m.audio_url IS NOT NULL
-                   AND ga.provider_voice_id = vp.elevenlabs_voice_id`,
+                   AND ga.provider_voice_id = vp.elevenlabs_voice_id
+                   AND (COALESCE(q.refresh_existing, 0) = 0
+                     OR datetime(ga.created_at) >= datetime(q.requested_at))`,
           args: [id],
         })
       ).rows[0]?.count ?? 0,

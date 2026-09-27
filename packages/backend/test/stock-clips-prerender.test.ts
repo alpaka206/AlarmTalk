@@ -66,7 +66,8 @@ async function setupDb() {
       id TEXT PRIMARY KEY,
       message_id TEXT NOT NULL,
       provider_voice_id TEXT NOT NULL,
-      audio_url TEXT
+      audio_url TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
     );
   `);
   return db;
@@ -244,6 +245,31 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
 
     expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
     expect(targets.find((t) => t.category === 'greeting' && t.variantIndex === 0)).toBeUndefined();
+  });
+
+  // ⚠ **같은 보이스로 다시 굽는 회차**(Codex #802) — 말투 분석이 늦게 도착하면 보이스는 그대로라
+  // 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어져 아무것도 다시 굽지 않는다. 요청 뒤에 게시된 것만 센다.
+  it('말투 재렌더 회차는 요청 전에 게시된 같은 보이스 클립을 다시 굽고, 요청 뒤 것은 건너뛴다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready', voiceId: 'el-same' });
+    await db.execute(`INSERT INTO messages
+              (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
+            VALUES ('m-old', 'owner-1', 'clone-ready', 'weather', 'ko', 0, 1, 'r2://old'),
+                   ('m-new', 'owner-1', 'clone-ready', 'weather', 'ko', 1, 1, 'r2://new')`);
+    await db.execute(`INSERT INTO generated_audio_assets (id, message_id, provider_voice_id, audio_url, created_at)
+            VALUES ('ga-old', 'm-old', 'el-same', 'r2://old', datetime('now', '-1 hour')),
+                   ('ga-new', 'm-new', 'el-same', 'r2://new', datetime('now', '+1 minute'))`);
+    await db.execute(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, refresh_existing, requested_at)
+            VALUES ('clone-ready', 'owner-1', 'ko', 1, datetime('now'))`);
+
+    const targets = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-same' })], true);
+    expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 0)).toBeDefined();
+    expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 1)).toBeUndefined();
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
+
+    // 다시 굽는 회차가 아니면 게시 시각은 보지 않는다(평소 회차는 있는 것을 건너뛴다).
+    const normal = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-same' })], false);
+    expect(normal).toHaveLength(CLONE_TOTAL_SEEDS - 2);
   });
 
   it('다른 보이스의 기존 클립은 이 보이스 스코프에 영향 없음(전유저 스캔 아님)', async () => {

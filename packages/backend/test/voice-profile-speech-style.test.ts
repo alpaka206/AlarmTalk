@@ -432,6 +432,15 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(doneCall).toBeDefined();
     expect(doneCall!.args).toContain(JSON.stringify(SAMPLE_STYLE));
     expect(doneCall!.args).toContain(V1);
+    // ⚠ 재시도로 살아난 말투는 **이미 구운 클립에도** 반영돼야 한다(Codex #802) — 정식 목소리면 사전렌더
+    // 큐를 '다시 굽기' 로 되돌리고, 요청 시각을 올려 그 뒤에 만든 클립만 최신으로 센다.
+    const requeue = mockDB.calls.find(
+      (call) => call.sql.includes('UPDATE voice_prerender_queue') && call.sql.includes('refresh_existing = 1'),
+    );
+    expect(requeue, '말투 재시도 성공이 사전렌더를 다시 굽게 하지 않는다').toBeDefined();
+    expect(requeue!.sql).toContain("requested_at = datetime('now')");
+    expect(requeue!.sql).toContain('COALESCE(is_draft, 0) = 0');
+    expect(requeue!.args).toContain(V1);
   });
 
   it('동시 재시도 경쟁: 클레임(failed→pending) 0행이면 409 + 분석 미실행', async () => {
