@@ -3,11 +3,27 @@
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
-## 스토어 상태 — 2026-09-27
+## 스토어 상태 — 2026-09-28
 
-- **Play**: 프로덕션 `29 (1.2.9)` 게재(2026-09-22). 1.2.10 은 versionCode 30.
-- **App Store**: `1.2.9`(빌드 6) 게재 완료(2026-09-23T18:31Z, `READY_FOR_SALE` — 제출 약 18시간 뒤).
-  열린 심사 제출 없음. 1.2.10 은 빌드 7.
+- **Play**: 프로덕션 `30 (1.2.10)` **심사 중**(2026-09-27 commit, `status: completed` — 승인되면 곧바로 100%).
+  그때까지 `29 (1.2.9)` 가 게재 상태다.
+- **App Store**: `1.2.10`(빌드 7) **심사 대기**(`WAITING_FOR_REVIEW`, 2026-09-27T15:04Z 제출,
+  `releaseType=AFTER_APPROVAL` — 승인되면 자동 게재). 게재 중인 것은 `1.2.9`(빌드 6, 2026-09-23T18:31Z).
+  심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
+  켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
+- **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
+  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). `PERSONAL_PROMO_STARTS_AT` 은
+  아직 없다(스위치 꺼짐). 웰컴 코드는 이제 `CODE_INACTIVE` 다 — 스위치를 켤 때까지 웰컴 코드를 나눠 주지
+  않는다.
+- [ ] 두 스토어 심사 결과 확인(Play 30·App Store 1.2.10).
+- [ ] iOS 1.2.10 게재 뒤: dev 리허설(스펙 `billing-lifecycle.md` 「운영」 1 — 종료 안내·잠금 대기 실기기) →
+      prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고 `npm run secrets:sync:prod`.
+- [ ] Play 30 이 100% 게재된 뒤: `app-version.ts` 의 Android `latest` 를 30 으로(순서 규칙은 파일 주석).
+- 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
+  (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
+  클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
+  validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
+  'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → Play 30 이 100% 게재된 뒤 `app-version.ts` Android
