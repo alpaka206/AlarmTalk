@@ -71,6 +71,8 @@ internal fun WakerSelectionSheet(
     val dismiss: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
     }
+    // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
+    TrackOpenModal()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -141,6 +143,8 @@ internal fun WakerFormSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
+    TrackOpenModal()
     ModalBottomSheet(
         onDismissRequest = onCancel,
         sheetState = sheetState,

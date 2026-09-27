@@ -30,7 +30,7 @@ import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.normalizePersonalPromo
+import com.alarmtalk.app.freshPlanPromoStamp
 import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -306,8 +306,9 @@ class StockClipPrefetchWorker(
                     //   안 보면 문이 버린 값이 그대로 선다운로드 여부를 정한다.
                     //   낙관 기본값으로 물러난다 — 선다운로드는 더 받아도 손해가 없고,
                     //   덜 받으면 오프라인에서 소리가 안 난다.
-                    // plan 과 프로모 종료 시각은 한 쌍이다(`AccessSnapshot.withServerUser`).
-                    if (entitlement.write(ticket, "prefetch plan") { it.withServerUser(me.user) }
+                    // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
+                    val fetchedAt = System.currentTimeMillis()
+                    if (entitlement.write(ticket, "prefetch plan") { it.withServerUser(me.user, fetchedAt) }
                         != EntitlementWrite.Applied
                     ) {
                         return@runCatching true
@@ -320,7 +321,8 @@ class StockClipPrefetchWorker(
                         userPlan = plan,
                         storeEntitled = snapshot.storeSignalStillValid(now),
                         nowMillis = now,
-                        userPlanPromoEndsAt = normalizePersonalPromo(me.user.personalPromo)?.endsAt,
+                        // 방금 받은 답이다 — 기기 시계로 뒤집지 않는다(`freshPlanPromoStamp`).
+                        userPlanPromo = freshPlanPromoStamp(me.user, now),
                     ).isEntitledOptimistic()
                 }.getOrDefault(true)
             }

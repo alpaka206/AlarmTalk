@@ -896,5 +896,6 @@ Please update to the latest version.</string>
     <string name="personal_promo_plan_line">Personal plan free until %1$s</string>
     <string name="personal_promo_end_notice_title">Your free Personal plan ends soon</string>
     <string name="personal_promo_end_notice_message">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan, and voices you registered will be kept for 3 days and then deleted.</string>
+    <string name="personal_promo_end_notice_message_keep_voices">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan.</string>
     <string name="personal_promo_end_notice_dont_show_again">Don\'t show again</string>
 </resources>

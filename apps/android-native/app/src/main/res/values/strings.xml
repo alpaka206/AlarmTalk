@@ -927,9 +927,11 @@
     <string name="voices_not_ready_message">알람에 쓸 기본 목소리를 다 받아야 알람을 설정할 수 있어요.\n인터넷에 연결된 상태에서 잠시 기다려 주세요.</string>
     <string name="voices_default_download_progress">받는 중 %1$d%%</string>
     <!-- 기간 한정 개인 플랜(personal_promo). ⚠ 날짜를 문구에 박지 말 것 — 서버 ends_at 을 기기 로케일로 그려 넣는다.
-         "…까지" 는 ends_at − 1초의 날, "…부터" 는 ends_at 의 날이다. -->
+         "…까지" 는 ends_at − 1초의 기기 날짜, "…부터" 는 그 다음 달력 날이다(한국 밖 기기에서도 하루 차이로 읽힌다). -->
     <string name="personal_promo_plan_line">개인 플랜 무료 이용 중 · %1$s까지</string>
     <string name="personal_promo_end_notice_title">개인 플랜 무료 이용이 곧 끝나요</string>
     <string name="personal_promo_end_notice_message">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요.</string>
+    <!-- 종료 전환 대상이 아닌 계정(deletes_voices_at_end = false, 예: 결제 보류로 활성 구독 행이 남음). 삭제 문장만 뺀다. -->
+    <string name="personal_promo_end_notice_message_keep_voices">%1$s까지 개인 플랜을 무료로 쓸 수 있어요. %2$s부터는 무료 플랜으로 돌아가요.</string>
     <string name="personal_promo_end_notice_dont_show_again">다시 보지 않기</string>
 </resources>

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -56,28 +57,40 @@ internal data class AccessSnapshot(
      * 옛 버전이 쓴 스냅샷에는 없다(null) — 그때는 예전처럼 plan 만으로 판정한다.
      */
     val userPlanPromoEndsAt: String? = null,
+    /**
+     * [userPlan] 을 **서버에서 받은 시각**(기기 시계, epoch millis). 모르면 null.
+     *
+     * 오프라인 차단은 **낡은 캐시만** 자른다 — 종료 **전에** 받은 `plus` 만 종료 뒤에 무료로
+     * 읽고, 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 믿는다([personalPromoLapsed]).
+     * 그 둘을 가르는 것이 이 값이다. [userPlan]·[userPlanPromoEndsAt] 과 **한 벌로만** 쓴다.
+     */
+    val userPlanFetchedAtMillis: Long? = null,
 ) {
     /**
-     * 서버가 준 plan 과 그 plan 의 프로모 종료 시각을 **함께** 적는다.
+     * 서버가 준 plan 과 그 plan 의 프로모 종료 시각·받은 시각을 **함께** 적는다.
      * `/auth/me` 로 plan 을 받은 경로는 전부 이걸 쓴다 — `copy(userPlan = …)` 만 쓰면
      * 앞 응답의 종료 시각이 새 plan 에 붙는다.
      */
-    fun withUserPlan(plan: String?, promoEndsAt: String?): AccessSnapshot =
-        copy(userPlan = plan, userPlanPromoEndsAt = promoEndsAt)
+    fun withUserPlan(plan: String?, promoEndsAt: String?, fetchedAtMillis: Long?): AccessSnapshot =
+        copy(userPlan = plan, userPlanPromoEndsAt = promoEndsAt, userPlanFetchedAtMillis = fetchedAtMillis)
 
-    /** [withUserPlan] 의 `/auth/me` 응답용 모양. */
-    fun withServerUser(user: AuthUser): AccessSnapshot =
-        withUserPlan(user.plan, normalizePersonalPromo(user.personalPromo)?.endsAt)
+    /** [withUserPlan] 의 `/auth/me` 응답용 모양. [fetchedAtMillis] 는 그 응답을 받은 시각이다. */
+    fun withServerUser(user: AuthUser, fetchedAtMillis: Long): AccessSnapshot =
+        withUserPlan(user.plan, normalizePersonalPromo(user.personalPromo)?.endsAt, fetchedAtMillis)
+
+    /** 캐시된 plan 답의 프로모 표지(`resolvePaidVoiceAccess` 의 `userPlanPromo`). */
+    fun userPlanPromoStamp(): PlanPromoStamp? =
+        userPlanPromoEndsAt?.takeIf { it.isNotBlank() }?.let { PlanPromoStamp(it, userPlanFetchedAtMillis) }
 
     /**
-     * 판정에 넘길 **(plan, 프로모 종료) 한 쌍**. 스냅샷에 plan 이 있으면 그 짝을, 없으면
-     * 세션의 짝을 쓴다 — 한쪽에서 plan 을, 다른 쪽에서 종료 시각을 가져오면 짝이 어긋난다.
+     * 판정에 넘길 **(plan, 프로모 표지) 한 쌍**. 스냅샷에 plan 이 있으면 그 짝을, 없으면
+     * 세션의 짝을 쓴다 — 한쪽에서 plan 을, 다른 쪽에서 표지를 가져오면 짝이 어긋난다.
      */
-    fun userPlanWithPromo(sessionUser: AuthUser?): Pair<String?, String?> =
+    fun userPlanWithPromo(session: AuthSession?): Pair<String?, PlanPromoStamp?> =
         if (userPlan != null) {
-            userPlan to userPlanPromoEndsAt
+            userPlan to userPlanPromoStamp()
         } else {
-            sessionUser?.plan to normalizePersonalPromo(sessionUser?.personalPromo)?.endsAt
+            session?.user?.plan to session?.planPromoStamp()
         }
 
     /**
@@ -85,10 +98,12 @@ internal data class AccessSnapshot(
      * user_plan은 스토어 재조회 성공 응답에만 있다. 그 free를 40일 TTL이 뒤집으면 안 된다.
      * 일상 조회(필드 없음)나 유료 응답은 독립적인 스토어 신호를 보존한다.
      *
-     * plan 을 새로 받았을 때만 프로모 종료 시각도 **같은 응답의 것으로** 바꾼다 — 일상 조회는
-     * plan 을 안 주므로 옛 짝을 그대로 둔다.
+     * plan 을 새로 받았을 때만 프로모 종료 시각·받은 시각도 **같은 응답의 것으로** 바꾼다 —
+     * 일상 조회는 plan 을 안 주므로 옛 짝을 그대로 둔다.
+     *
+     * @param fetchedAtMillis 이 응답을 받은 시각. plan 이 실려 있을 때만 쓰인다.
      */
-    fun withBillingResponse(response: BillingSubscriptionResponse?): AccessSnapshot {
+    fun withBillingResponse(response: BillingSubscriptionResponse?, fetchedAtMillis: Long): AccessSnapshot {
         val invalidateStoreSignal = response?.userPlan?.trim()?.lowercase() == "free"
         val freshPlan = response?.userPlan
         return copy(
@@ -99,6 +114,7 @@ internal data class AccessSnapshot(
             } else {
                 userPlanPromoEndsAt
             },
+            userPlanFetchedAtMillis = if (freshPlan != null) fetchedAtMillis else userPlanFetchedAtMillis,
             storePlanKey = if (invalidateStoreSignal) null else storePlanKey,
             storeEntitlementUntilMillis = if (invalidateStoreSignal) null else storeEntitlementUntilMillis,
         )

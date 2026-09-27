@@ -5,12 +5,14 @@ import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog
+import com.alarmtalk.app.core.AppSignals
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -641,11 +643,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     /**
-     * [storeSnapshotUserPlan] 과 **짝인** 기간 한정 개인 플랜 종료 시각(`AccessSnapshot.userPlanPromoEndsAt`).
+     * [storeSnapshotUserPlan] 과 **짝인** 프로모 표지(`AccessSnapshot.userPlanPromoStamp` —
+     * 종료 시각과 그 답을 받은 시각).
      * ⚠ plan 을 바꾸는 자리에서 **항상 함께** 바꾼다 — 짝이 어긋나면 진짜 유료 사용자가 옛
      * 종료 시각에 잠긴다.
      */
-    var storeSnapshotUserPlanPromoEndsAt by mutableStateOf<String?>(initialAccessSnapshot.userPlanPromoEndsAt)
+    internal var storeSnapshotUserPlanPromo by mutableStateOf<PlanPromoStamp?>(initialAccessSnapshot.userPlanPromoStamp())
         internal set
 
     /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
@@ -689,14 +692,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         get() = storeSnapshotUserPlan ?: authSession?.user?.plan
 
     /**
-     * [effectiveUserPlan] 과 **같은 출처의** 프로모 종료 시각. plan 을 스냅샷에서 읽었으면
+     * [effectiveUserPlan] 과 **같은 출처의** 프로모 표지. plan 을 스냅샷에서 읽었으면
      * 스냅샷의 짝을, 세션에서 읽었으면 세션의 짝을 쓴다 — 섞으면 짝이 어긋난다.
      */
-    private val effectiveUserPlanPromoEndsAt: String?
+    private val effectiveUserPlanPromo: PlanPromoStamp?
         get() = if (storeSnapshotUserPlan != null) {
-            storeSnapshotUserPlanPromoEndsAt
+            storeSnapshotUserPlanPromo
         } else {
-            com.alarmtalk.app.network.normalizePersonalPromo(authSession?.user?.personalPromo)?.endsAt
+            authSession?.planPromoStamp()
         }
 
     internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
@@ -706,7 +709,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
-            userPlanPromoEndsAt = effectiveUserPlanPromoEndsAt,
+            userPlanPromo = effectiveUserPlanPromo,
         )
 
     /**
@@ -882,66 +885,108 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
     /**
-     * 지금 살아 있는 **기간 한정 개인 플랜**(`personal_promo`). 없거나 끝났으면 null.
-     *
-     * 규칙은 [activePersonalPromoOf] 하나다(이용권 화면도 같은 함수를 쓴다).
-     */
-    internal fun activePersonalPromo(nowMillis: Long = System.currentTimeMillis()): PersonalPromo? =
-        activePersonalPromoOf(
-            sessionPromo = authSession?.user?.personalPromo,
-            billingPromo = subscriptionResponse?.personalPromo,
-            nowMillis = nowMillis,
-        )
-
-    /**
      * 떠 있는 **기간 한정 개인 플랜 종료 안내**. null 이면 닫혀 있다.
      *
      * 소진 플래그가 아니다 — 안내 기간(`notice_from ≤ now < ends_at`) 동안 **앱에 진입할
-     * 때마다** 한 번씩 뜬다. 멈추는 방법은 '다시 보지 않기'(계정별 저장) 하나다.
+     * 때마다** 한 번씩 뜬다. 멈추는 방법은 '다시 보지 않기'(계정별·종료 시각별 저장) 하나다.
      */
     var personalPromoEndNotice by mutableStateOf<PersonalPromo?>(null)
         internal set
 
-    /** 안내를 이미 띄운 진입 번호(`AppSignals.appEntries`). 같은 진입에서 두 번 띄우지 않는다. */
+    /** 판정을 끝낸 진입 번호(`AppSignals.appEntries`). 같은 진입에서 두 번 판정하지 않는다. */
     private var personalPromoEndNoticeEntry: Long = 0L
 
     internal val personalPromoNoticeStore = PersonalPromoNoticeStore(application)
 
     /**
-     * 이 계정의 **계정 상태 확인(`/auth/me`) 응답**이 준 `personal_promo`.
-     * [accountStatusPromoKnown] 이 false 면 응답을 못 받은 것이다(아직 · 실패).
+     * 이 계정의 **가장 최근 계정 응답**(`/auth/me`)이 준 `personal_promo`. 응답 전이면 null.
      *
-     * 종료 안내는 `accountStatusChecked` 를 준비 신호로 기다리는데, 그 응답은 세션에 저장되지
-     * 않는다(`checkAccountStatus` 는 탈퇴 상태만 본다). 그래서 응답이 왔으면 **그 응답의 값**으로
-     * 판정한다 — 저장된 세션의 promo 는 지난 실행의 것이라, 그 사이 다른 기기에서 결제했으면
-     * 이미 끝난 프로모의 안내를 한 번 띄우게 된다. 응답을 못 받았으면(오프라인) 세션 값으로 판정한다.
+     * 종료 안내는 저장된 세션이 아니라 **이 값**으로 판정한다 — 세션의 promo 는 지난 실행의
+     * 것이라, 그 사이 다른 기기에서 결제했으면 이미 끝난 프로모의 안내를 띄우게 된다.
+     * `/auth/me` 를 받는 **모든** 자리(진입마다의 갱신·`checkAccountStatus`·결제·쿠폰 뒤
+     * `refreshAppSessionNow`)가 [recordAccountAnswer] 로 적는다 — 한 자리만 적으면 쿠폰을
+     * 등록한 뒤에도 옛 응답의 안내가 남는다(리뷰 지적).
      */
-    internal var accountStatusPromo: PersonalPromo? = null
-        private set
-    internal var accountStatusPromoKnown: Boolean = false
+    var latestAccountPromo by mutableStateOf<PersonalPromo?>(null)
         private set
 
-    internal fun recordAccountStatusPromo(promo: PersonalPromo?) {
-        accountStatusPromo = com.alarmtalk.app.network.normalizePersonalPromo(promo)
-        accountStatusPromoKnown = true
+    /**
+     * 계정 응답이 **어느 진입의 몫으로** 도착했는가(`AppSignals.appEntries`). 0 = 아직.
+     * 종료 안내는 이 값이 지금 진입과 같을 때만 판정한다([decidePersonalPromoEndNotice]) —
+     * 응답이 안 오면(오프라인) 그 진입은 띄우지 않고 다음 진입이 다시 판정한다.
+     */
+    var accountAnsweredEntry by mutableLongStateOf(0L)
+        private set
+
+    /** 계정 응답 요청의 순번 — 늦게 도착한 옛 응답이 새 응답을 덮지 않게 한다. */
+    private var accountRequestSeq: Long = 0L
+    private var accountAnswerSeq: Long = 0L
+
+    /** `/auth/me` 를 **보내기 직전에** 뜬다. 보낸 진입·순번을 응답까지 들고 간다. */
+    internal data class AccountRequest(val seq: Long, val entry: Long)
+
+    internal fun beginAccountRequest(): AccountRequest =
+        AccountRequest(seq = ++accountRequestSeq, entry = AppSignals.appEntries.value)
+
+    /**
+     * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
+     *
+     * - 늦게 도착한 옛 요청의 응답은 버린다(순번).
+     * - 보낸 진입과 도착한 진입이 같을 때만 그 진입의 응답으로 센다([accountAnswerEntryFor]).
+     * - 떠 있는 안내가 새 응답과 맞지 않으면 닫는다 — 쿠폰·결제로 원시 유료가 됐으면
+     *   `personal_promo` 가 사라진다([reconcileShownPersonalPromoNotice]).
+     */
+    internal fun recordAccountAnswer(
+        request: AccountRequest,
+        promo: PersonalPromo?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        if (request.seq < accountAnswerSeq) return
+        accountAnswerSeq = request.seq
+        val normalized = com.alarmtalk.app.network.normalizePersonalPromo(promo)
+        latestAccountPromo = normalized
+        accountAnswerEntryFor(request.entry, AppSignals.appEntries.value)?.let { accountAnsweredEntry = it }
+        if (personalPromoEndNotice != null) {
+            personalPromoEndNotice = reconcileShownPersonalPromoNotice(personalPromoEndNotice, normalized, nowMillis)
+        }
     }
 
     /**
      * 이번 진입에서 종료 안내를 띄울지 판정한다. **준비 신호·차단 게이트는 부르는 쪽이 본다**
-     * (`AlarmTalkApp` 의 `PersonalPromoNoticeGates`). 여기서는 진입·기간·'다시 보지 않기' 만 본다.
+     * (`AlarmTalkApp` 의 `PersonalPromoNoticeGates`). 규칙은 [decidePersonalPromoEndNotice] 하나다.
      */
     internal fun maybeShowPersonalPromoEndNotice(entry: Long, nowMillis: Long = System.currentTimeMillis()) {
-        if (!personalPromoNoticePendingForEntry(entry, personalPromoEndNoticeEntry)) return
         if (personalPromoEndNotice != null) return
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        val promo = if (accountStatusPromoKnown) {
-            activePersonalPromoOf(sessionPromo = accountStatusPromo, billingPromo = null, nowMillis = nowMillis)
-        } else {
-            activePersonalPromo(nowMillis)
-        } ?: return
-        if (!isPersonalPromoEndNoticeDue(promo, nowMillis, personalPromoNoticeStore.optedOutEndsAt(userId))) return
-        personalPromoEndNoticeEntry = entry
-        personalPromoEndNotice = promo
+        val decision = decidePersonalPromoEndNotice(
+            entry = entry,
+            handledEntry = personalPromoEndNoticeEntry,
+            answeredEntry = accountAnsweredEntry,
+            latestPromo = latestAccountPromo,
+            nowMillis = nowMillis,
+            optedOutEndsAt = personalPromoNoticeStore.optedOutEndsAt(userId),
+        )
+        when (decision) {
+            PersonalPromoNoticeDecision.NotNow -> Unit
+            PersonalPromoNoticeDecision.NothingToShow -> personalPromoEndNoticeEntry = entry
+            is PersonalPromoNoticeDecision.Show -> {
+                personalPromoEndNoticeEntry = entry
+                personalPromoEndNotice = decision.promo
+            }
+        }
+    }
+
+    /**
+     * 떠 있는 안내 위로 **다른 모달·게이트·시스템 권한 창이 올라왔다** — 안내를 걷고 이 진입을
+     * 다시 '판정 전' 으로 돌린다. 가린 것이 닫히면 같은 진입 안에서 다시 뜬다.
+     *
+     * 안내를 들고 기다리지 않는 이유: 떠 있는 동안에는 강등 안내가 뒤에서 기다린다. 가려진 채
+     * 들고 있으면 그 기다림이 끝없이 길어진다 — 대기 중인 안내가 다른 안내를 막으면 안 된다.
+     */
+    internal fun deferPersonalPromoEndNotice() {
+        if (personalPromoEndNotice == null) return
+        personalPromoEndNotice = null
+        personalPromoEndNoticeEntry = 0L
     }
 
     /**
@@ -1307,7 +1352,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
         storeSnapshotUserPlan = snapshot.userPlan
-        storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
+        storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
         // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
         storeEntitlementChecked = false
     }
@@ -1324,13 +1369,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): EntitlementWrite {
         var persisted: AccessSnapshot? = null
         val result = entitlementWriter.write(ticket, "subscription snapshot") {
-            it.withBillingResponse(response).also { snapshot -> persisted = snapshot }
+            it.withBillingResponse(response, System.currentTimeMillis()).also { snapshot -> persisted = snapshot }
         }
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
             // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
             val snapshot = checkNotNull(persisted)
             storeSnapshotUserPlan = snapshot.userPlan
-            storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
+            storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
             storePlanKey = snapshot.storePlanKey
             storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         }
@@ -1423,8 +1468,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 새 계정은 이번 진입에서 자기 기준으로 한 번 판정받는다.
         personalPromoEndNotice = null
         personalPromoEndNoticeEntry = 0L
-        accountStatusPromo = null
-        accountStatusPromoKnown = false
+        latestAccountPromo = null
+        accountAnsweredEntry = 0L
+        // 떠 있던 요청의 응답은 앞 계정의 것이다 — 순번을 앞질러 버린다.
+        accountAnswerSeq = accountRequestSeq + 1
         pendingDeletion = false
         accountStatusChecked = false
         consentStatusChecked = false
@@ -1516,7 +1563,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
         }
-        refreshAppSession()
+        // **앱에 들어올 때마다**(콜드 스타트·백그라운드에서 복귀) `/auth/me` 를 새로 받는다.
+        // 예전에는 콜드 스타트에 한 번만 불렀다 — 그 자리를 이것이 대신한다(StateFlow 라 이미
+        // 들어와 있는 진입도 곧바로 한 번 받는다. 진입 전(0)이면 첫 ON_START 를 기다린다).
+        // 기간 한정 개인 플랜 종료 안내는 **그 진입의 새 응답**이 온 뒤에만 판정한다
+        // (`docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」) — 복귀할 때 받지 않으면
+        // 지난 실행의 프로모로 판정해, 그 사이 결제한 사람에게도 "곧 끝나요" 를 띄운다.
+        // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다). 복귀할
+        //   때마다 굴리면 토큰을 키로 쓰는 효과가 전부 다시 돌아 앱 전체를 다시 불러온다
+        //   (`refreshAppSessionNow` 의 `rollToken`).
+        viewModelScope.launch {
+            var firstEntryRefresh = true
+            AppSignals.appEntries.collect { entry ->
+                if (entry <= 0L) return@collect
+                refreshAppSession(rollToken = firstEntryRefresh)
+                firstEntryRefresh = false
+            }
+        }
     }
 
     override fun onCleared() {

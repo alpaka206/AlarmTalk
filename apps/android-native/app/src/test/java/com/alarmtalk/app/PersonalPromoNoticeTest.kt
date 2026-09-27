@@ -1,20 +1,25 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.network.AuthMeResponse
+import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.PersonalPromo
 import com.google.gson.Gson
+import com.google.gson.stream.JsonToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.StringReader
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * 기간 한정 개인 플랜 **종료 안내**의 판정 — 기간·'다시 보지 않기'·진입당 한 번·준비 신호.
+ * 기간 한정 개인 플랜 **종료 안내**의 판정 — 기간·'다시 보지 않기'·진입당 한 번·이 진입의
+ * 새 응답·준비 신호·문구 갈래·관대한 파싱.
  *
  * 날짜는 전부 서버 값이다. 여기 쓴 시각은 테스트 픽스처일 뿐 앱 코드에는 없다.
  */
@@ -51,16 +56,21 @@ class PersonalPromoNoticeTest {
     }
 
     @Test
-    fun lastDayIsTheDayBeforeTheExclusiveEnd() {
+    fun lastDayIsTheDayBeforeTheExclusiveEndAndNextDayFollowsIt() {
         // 2026-11-01 00:00 KST(배타) → "10월 31일까지", "11월 1일부터".
         val seoul = ZoneId.of("Asia/Seoul")
         assertEquals(LocalDate.of(2026, 10, 31), personalPromoLastDay(promo, seoul))
         assertEquals(LocalDate.of(2026, 11, 1), personalPromoFreeFromDay(promo, seoul))
-        // 다른 시간대 기기는 그 기기의 날짜로 읽는다 — 날짜를 앱에 박지 않는 이유다.
+        // 한국 밖 기기: `ends_at` 을 그대로 날짜로 바꾸면 두 날짜가 같은 날이 된다(UTC 10/31 15:00).
+        // "…부터" 는 언제나 마지막 날의 **다음 날**이다.
         val utc = ZoneId.of("UTC")
         assertEquals(LocalDate.of(2026, 10, 31), personalPromoLastDay(promo, utc))
-        assertEquals(LocalDate.of(2026, 10, 31), personalPromoFreeFromDay(promo, utc))
+        assertEquals(LocalDate.of(2026, 11, 1), personalPromoFreeFromDay(promo, utc))
+        val losAngeles = ZoneId.of("America/Los_Angeles")
+        assertEquals(LocalDate.of(2026, 10, 31), personalPromoLastDay(promo, losAngeles))
+        assertEquals(LocalDate.of(2026, 11, 1), personalPromoFreeFromDay(promo, losAngeles))
         assertNull(personalPromoLastDay(PersonalPromo(endsAt = "nope"), seoul))
+        assertNull(personalPromoFreeFromDay(PersonalPromo(endsAt = "nope"), seoul))
     }
 
     @Test
@@ -93,6 +103,94 @@ class PersonalPromoNoticeTest {
         assertTrue(personalPromoNoticePendingForEntry(entry = 2, handledEntry = 1))
     }
 
+    // ── 이 진입의 새 계정 응답 ─────────────────────────────────────────────────────
+
+    @Test
+    fun anAnswerCountsOnlyForTheEntryItWasRequestedAndReceivedIn() {
+        assertEquals(3L, accountAnswerEntryFor(requestEntry = 3, currentEntry = 3))
+        // 앞 진입에 보낸 요청이 백그라운드를 건너 늦게 도착했다 — 이번 진입의 새 응답이 아니다.
+        assertNull(accountAnswerEntryFor(requestEntry = 2, currentEntry = 3))
+        // 진입 전(콜드 스타트 ON_START 전)에 보낸 요청은 어느 진입의 몫도 아니다.
+        assertNull(accountAnswerEntryFor(requestEntry = 0, currentEntry = 0))
+        assertNull(accountAnswerEntryFor(requestEntry = 0, currentEntry = 1))
+    }
+
+    @Test
+    fun decisionWaitsForThisEntrysFreshAnswer() {
+        // 지난 진입(1)의 응답만 있다 — 이번 진입(2)은 새 응답을 기다린다. 판정을 소진하지 않는다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NotNow,
+            decidePersonalPromoEndNotice(
+                entry = 2, handledEntry = 1, answeredEntry = 1,
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+        // 응답이 오면 뜬다.
+        assertEquals(
+            PersonalPromoNoticeDecision.Show(promo),
+            decidePersonalPromoEndNotice(
+                entry = 2, handledEntry = 1, answeredEntry = 2,
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+        // 같은 진입에서 이미 판정했으면 다시 띄우지 않는다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NotNow,
+            decidePersonalPromoEndNotice(
+                entry = 2, handledEntry = 2, answeredEntry = 2,
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+    }
+
+    @Test
+    fun theFreshAnswerDecidesNotTheCachedSession() {
+        // 그 사이 다른 기기에서 결제·쿠폰 → 새 응답에는 personal_promo 가 없다. 저장된 세션의
+        // 옛 promo 로 띄우면 이미 결제한 사람에게 "곧 끝나요" 가 뜬다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NothingToShow,
+            decidePersonalPromoEndNotice(
+                entry = 1, handledEntry = 0, answeredEntry = 1,
+                latestPromo = null, nowMillis = from, optedOutEndsAt = null,
+            ),
+        )
+        // 안내 기간 전이거나 '다시 보지 않기' 를 눌렀으면 이 진입은 띄울 것이 없다.
+        assertEquals(
+            PersonalPromoNoticeDecision.NothingToShow,
+            decidePersonalPromoEndNotice(
+                entry = 1, handledEntry = 0, answeredEntry = 1,
+                latestPromo = promo, nowMillis = from - 1, optedOutEndsAt = null,
+            ),
+        )
+        assertEquals(
+            PersonalPromoNoticeDecision.NothingToShow,
+            decidePersonalPromoEndNotice(
+                entry = 1, handledEntry = 0, answeredEntry = 1,
+                latestPromo = promo, nowMillis = from, optedOutEndsAt = endsAt,
+            ),
+        )
+    }
+
+    @Test
+    fun aShownNoticeFollowsTheLatestAnswer() {
+        // 떠 있는 동안 쿠폰을 등록해 원시 유료가 됐다 → 새 응답에 promo 없음 → 닫는다.
+        assertNull(reconcileShownPersonalPromoNotice(showing = promo, latestPromo = null, nowMillis = from))
+        // 종료 시각이 바뀌었다(연장) → 옛 날짜의 안내는 닫는다(다음 진입이 새 날짜로 판정).
+        assertNull(
+            reconcileShownPersonalPromoNotice(
+                showing = promo,
+                latestPromo = PersonalPromo(endsAt = "2026-11-30T15:00:00Z", noticeFrom = "2026-11-23T15:00:00Z"),
+                nowMillis = from,
+            ),
+        )
+        // 같은 종료면 새 값(문구 갈래가 바뀌었을 수 있다)으로 갈아 끼운다.
+        val keepVoices = promo.copy(deletesVoicesAtEnd = false)
+        assertEquals(keepVoices, reconcileShownPersonalPromoNotice(showing = promo, latestPromo = keepVoices, nowMillis = from))
+        assertNull(reconcileShownPersonalPromoNotice(showing = null, latestPromo = promo, nowMillis = from))
+    }
+
+    // ── 준비 신호·차단 ────────────────────────────────────────────────────────────
+
     private val allClear = PersonalPromoNoticeGates(
         signedIn = true,
         versionChecked = true,
@@ -107,6 +205,8 @@ class PersonalPromoNoticeTest {
         permissionGateOpen = false,
         showVoiceSetup = false,
         otherModalOpen = false,
+        systemPermissionPromptOpen = false,
+        activityResumed = true,
     )
 
     @Test
@@ -126,29 +226,105 @@ class PersonalPromoNoticeTest {
             "교체 미완료" to allClear.copy(stockReplacementPending = true),
             "권한 게이트" to allClear.copy(permissionGateOpen = true),
             "목소리 받기 화면" to allClear.copy(showVoiceSetup = true),
+            // 목소리 등록 창·시트·다른 알럿 — 문서 선택기에서 돌아온 진입에도 열려 있다.
             "다른 모달" to allClear.copy(otherModalOpen = true),
+            // 우리가 띄운 시스템 권한 창(요청 ~ 결과) — 같은 프레임의 첫 권한 요청과 겹치지 않는다.
+            "시스템 권한 창" to allClear.copy(systemPermissionPromptOpen = true),
+            // 시스템 창·다른 앱의 창이 위에 있어 화면이 멈췄다.
+            "화면이 RESUMED 아님" to allClear.copy(activityResumed = false),
         )
         blocked.forEach { (label, gates) -> assertFalse(label, gates.ready()) }
+    }
+
+    // ── 문구 갈래 ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun voiceDeletionSentenceFollowsTheServerFlag() {
+        // 종료 전환 대상이면(또는 이 키를 주지 않던 서버면) 삭제를 말한다.
+        assertTrue(personalPromoDeletesVoicesAtEnd(promo))
+        assertTrue(personalPromoDeletesVoicesAtEnd(promo.copy(deletesVoicesAtEnd = true)))
+        // 대상이 아니면(결제 보류로 활성 구독 행이 남은 계정 등) 삭제를 말하지 않는다.
+        assertFalse(personalPromoDeletesVoicesAtEnd(promo.copy(deletesVoicesAtEnd = false)))
+    }
+
+    // ── 파싱 — 표시용 필드 하나가 로그인을 깨면 안 된다 ────────────────────────────
+
+    private val gson = Gson()
+
+    /** Retrofit `GsonResponseBodyConverter` 와 같은 방식 — 끝까지 다 읽었는지도 본다. */
+    private fun <T> parseLikeRetrofit(json: String, type: Class<T>): T {
+        val reader = gson.newJsonReader(StringReader(json))
+        val value = gson.getAdapter(type).read(reader)
+        assertEquals(JsonToken.END_DOCUMENT, reader.peek())
+        return value
     }
 
     @Test
     fun unknownPersonalPromoKeysAndAbsentFieldsParse() {
         // 구버전 서버(필드 없음)와 새 서버(필드 + 모르는 키) 모두 로그인이 깨지지 않아야 한다.
-        val gson = Gson()
         val legacy = gson.fromJson("""{"id":"u","email":"e","plan":"free"}""", AuthUser::class.java)
         assertNull(legacy.personalPromo)
         val fresh = gson.fromJson(
             """{"id":"u","email":"e","plan":"plus","future_field":{"x":1},
-                "personal_promo":{"ends_at":"$endsAt","notice_from":"$noticeFrom","extra":true}}""",
+                "personal_promo":{"ends_at":"$endsAt","notice_from":"$noticeFrom","extra":{"a":[1,2]},
+                "deletes_voices_at_end":false}}""",
             AuthUser::class.java,
         )
         assertEquals("plus", fresh.plan)
-        assertEquals(promo, fresh.personalPromo)
+        assertEquals(promo.copy(deletesVoicesAtEnd = false), fresh.personalPromo)
         val billing = gson.fromJson(
             """{"subscription":null,"plan":null,"personal_promo":null,"user_plan":"plus"}""",
             BillingSubscriptionResponse::class.java,
         )
         assertNull(billing.personalPromo)
         assertNull(billing.subscription)
+    }
+
+    @Test
+    fun malformedPersonalPromoNeverFailsLoginMeOrBilling() {
+        listOf("\"soon\"", "[]", "[{\"ends_at\":\"$endsAt\"}]", "42", "true").forEach { bad ->
+            val login = parseLikeRetrofit(
+                """{"token":"t","user":{"id":"u","email":"e","plan":"plus","personal_promo":$bad,
+                    "name":"n"}}""",
+                AuthTokenResponse::class.java,
+            )
+            assertEquals(bad, "plus", login.user.plan)
+            assertEquals(bad, "n", login.user.name)
+            assertNull(bad, login.user.personalPromo)
+
+            val me = parseLikeRetrofit(
+                """{"user":{"id":"u","email":"e","plan":"plus","personal_promo":$bad},"token":"t2"}""",
+                AuthMeResponse::class.java,
+            )
+            assertNull(bad, me.user.personalPromo)
+            assertEquals(bad, "t2", me.token)
+
+            val billing = parseLikeRetrofit(
+                """{"subscription":null,"personal_promo":$bad,"user_plan":"plus"}""",
+                BillingSubscriptionResponse::class.java,
+            )
+            assertNull(bad, billing.personalPromo)
+            assertEquals(bad, "plus", billing.userPlan)
+        }
+    }
+
+    @Test
+    fun wronglyTypedPromoFieldsAreDroppedOneByOne() {
+        val parsed = gson.fromJson(
+            """{"ends_at":"$endsAt","notice_from":17,"deletes_voices_at_end":"no"}""",
+            PersonalPromo::class.java,
+        )
+        assertEquals(PersonalPromo(endsAt = endsAt, noticeFrom = null, deletesVoicesAtEnd = null), parsed)
+        val noEnd = gson.fromJson("""{"ends_at":{"at":1},"notice_from":"$noticeFrom"}""", PersonalPromo::class.java)
+        assertNull(noEnd.endsAt)
+        // 끝을 모르는 프로모는 없는 것이다.
+        assertNull(com.alarmtalk.app.network.normalizePersonalPromo(noEnd))
+    }
+
+    @Test
+    fun promoSurvivesTheSnapshotCacheRoundTrip() {
+        val original = promo.copy(deletesVoicesAtEnd = false)
+        assertEquals(original, gson.fromJson(gson.toJson(original), PersonalPromo::class.java))
+        assertEquals(promo, gson.fromJson(gson.toJson(promo), PersonalPromo::class.java))
     }
 }

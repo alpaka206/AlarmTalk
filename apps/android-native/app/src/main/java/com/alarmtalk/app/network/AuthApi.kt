@@ -1,5 +1,6 @@
 package com.alarmtalk.app.network
 
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -46,13 +47,28 @@ data class DynamicPromptSettingsState(
  *   `endsAt − 1초` 의 기기 날짜다([personalPromoLastDay]).
  * - 필드가 없는 구버전 서버는 이 객체를 주지 않는다 — 그때는 표시만 안 한다.
  *
- * 둘 다 nullable 인 이유: Gson 은 Kotlin 기본값을 무시하고 JSON 에 없는 필드를 null 로
- * 채운다. 그래서 non-null 로 선언해도 null 이 들어온다 — 쓰는 쪽이 파싱에 실패하면 없는
- * 것으로 본다.
+ * 전부 nullable 인 이유: 서버가 빠뜨리거나 모양이 틀린 필드는 없는 것으로 읽는다 — 쓰는
+ * 쪽이 파싱에 실패하면 없는 것으로 본다.
+ *
+ * ⚠ **파싱은 [PersonalPromoJsonAdapter] 가 한다 — 관대하게.** 표시·안내에만 쓰는 필드 하나가
+ *   객체가 아닌 값(문자열·배열)으로 오면 Gson 기본 어댑터는 예외를 던지고, 그러면 **로그인·
+ *   `/auth/me`·구독 조회 응답 전체가** 실패한다. 그때는 이 값만 null 로 읽는다(iOS 의
+ *   `PersonalPromo.init(from:)` 이 던지지 않는 것과 같은 규칙).
  */
+@JsonAdapter(PersonalPromoJsonAdapter::class)
 data class PersonalPromo(
     @SerializedName("ends_at") val endsAt: String? = null,
     @SerializedName("notice_from") val noticeFrom: String? = null,
+    /**
+     * 끝나는 순간 이 계정이 **종료 전환 대상**인가(원시 free · 활성 구독 행 없음) —
+     * 대상이면 등록한 목소리가 3일 보관 후 삭제된다. 결제 보류(ON_HOLD·PAUSED)처럼 활성 행이
+     * 남은 계정은 false 다.
+     *
+     * 종료 안내가 이 값으로 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이
+     * 아닌 사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구
+     * 그대로 true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     */
+    @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
 )
 
 data class AuthUser(
@@ -61,11 +77,15 @@ data class AuthUser(
     val name: String = "",
     /**
      * 서버가 **계산한** plan. 기간 한정 개인 플랜 동안은 원시 free 도 `plus` 로 온다 —
-     * 그때는 [personalPromo] 가 함께 오고, 그 종료 시각이 지나면 이 값은 낡은 것이다
-     * (`resolvePaidVoiceAccess` 의 `userPlanPromoEndsAt`).
+     * 그때는 [personalPromo] 가 함께 온다. 종료 **전에** 받은 이 값을 종료 **뒤에** 캐시로
+     * 읽으면 낡은 것이다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
      */
     val plan: String = "free",
-    /** 위 [plan] 이 기간 한정 개인 플랜으로 계산된 값이면 그 기간. 아니면 null. */
+    /**
+     * 기간 한정 개인 플랜. **원시 plan 이 free 인 계정에는 기간 내내 붙는다** — 위 [plan] 이
+     * 개인 플랜으로 계산됐다는 뜻이고, 앱은 이 값이 있으면 원시 plan 이 free 라고 안다.
+     * 기간이 아니거나 결제자면 null.
+     */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
     @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),

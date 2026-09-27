@@ -904,5 +904,6 @@
     <string name="personal_promo_plan_line">パーソナルプラン無料利用中 · %1$sまで</string>
     <string name="personal_promo_end_notice_title">パーソナルプランの無料利用がまもなく終了します</string>
     <string name="personal_promo_end_notice_message">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
+    <string name="personal_promo_end_notice_message_keep_voices">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
     <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
 </resources>

@@ -435,16 +435,17 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
+    val accountRequest = beginAccountRequest()
     viewModelScope.launch {
         runCatching {
             api.me(authorization)
         }.onSuccess { response ->
             pendingDeletion = response.user.deletionStatus == "pending_deletion"
-            // 기간 한정 개인 플랜 종료 안내는 이 응답을 준비 신호로 기다린다 — 그러니 판정도 이
-            // 응답의 값으로 한다(`MainViewModel.accountStatusPromo`). 그 사이 계정이 바뀌었으면
-            // 남의 값이라 적지 않는다.
+            // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
+            // (`MainViewModel.latestAccountPromo`). 그 사이 계정이 바뀌었으면 남의 값이라 적지 않는다.
             if (authSession?.user?.id == session.user.id) {
-                recordAccountStatusPromo(response.user.personalPromo)
+                recordAccountAnswer(accountRequest, response.user.personalPromo)
             }
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
@@ -1284,6 +1285,8 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
         provider = updated.provider,
         // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
         rolledToken = null,
+        // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
+        userFetchedAtMillis = updated.userFetchedAtMillis,
     )
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
@@ -1291,8 +1294,8 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
     return saved
 }
 
-internal fun MainViewModel.refreshAppSession() {
-    viewModelScope.launch { refreshAppSessionNow() }
+internal fun MainViewModel.refreshAppSession(rollToken: Boolean = true) {
+    viewModelScope.launch { refreshAppSessionNow(rollToken) }
 }
 
 /**
@@ -1329,12 +1332,19 @@ internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
  * 그 뒤 코드는 **plan 이 아직 옛 값인 상태로** 진행한다 — 구독이 없어진 것을 확인해도
  * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
  *
+ * @param rollToken 서버가 굴려 준 새 토큰으로 갈아 끼우는가. **백그라운드에서 돌아올 때마다**
+ *   부르는 갱신(`MainViewModel` init 의 진입 구독)은 false 다 — 토큰이 바뀌면 토큰을 키로 쓰는
+ *   효과가 전부 다시 돈다(동의·계정·목소리 준비 확인과 목소리·클립·구독 선로드). 복귀할 때마다
+ *   앱 전체를 다시 불러오게 되므로, 토큰은 예전처럼 콜드 스타트·워커(`SessionTokenRenewal`)가
+ *   굴리고 복귀 때는 plan·프로모만 새로 받는다. 서버 토큰은 무상태 JWT 라 버려도 잃는 것이 없다.
  * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
  */
-internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
+internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = true): Boolean {
     val session = authSession ?: return false
     // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
     val startGeneration = authSessionStore.sessionGeneration()
+    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
+    val accountRequest = beginAccountRequest()
     var applied = false
     run {
         runCatching {
@@ -1361,24 +1371,31 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
             //
             // 세대 확인도 저장소가 쓰기와 같은 락 안에서 한다. 여기서 따로 보면 확인 뒤
             // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
+            // 받은 시각을 plan·프로모와 **한 벌로** 적는다 — 기간 한정 개인 플랜의 오프라인
+            // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
+            val fetchedAt = System.currentTimeMillis()
             val saved = authSessionStore.saveSessionIfAlive(
                 expectedGeneration = startGeneration,
                 user = me.user,
                 provider = session.provider,
-                rolledToken = me.token,
+                rolledToken = if (rollToken) me.token else null,
+                userFetchedAtMillis = fetchedAt,
             )
             if (saved == null) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
             authSession = saved
+            // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
+            // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
+            recordAccountAnswer(accountRequest, saved.user.personalPromo)
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
-                // plan 과 그 프로모 종료 시각은 **한 쌍으로** 적는다(`AccessSnapshot.withServerUser`).
+                // plan 과 그 프로모 종료 시각·받은 시각은 **한 벌로** 적는다(`AccessSnapshot.withServerUser`).
                 var persisted: AccessSnapshot? = null
                 val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
-                    it.withServerUser(saved.user).also { snapshot -> persisted = snapshot }
+                    it.withServerUser(saved.user, fetchedAt).also { snapshot -> persisted = snapshot }
                 }
                 // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
                 // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
@@ -1386,7 +1403,7 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
                 if (planWrite == EntitlementWrite.Applied) {
                     val snapshot = checkNotNull(persisted)
                     storeSnapshotUserPlan = snapshot.userPlan
-                    storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
+                    storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
                     applied = true
                 }
             }

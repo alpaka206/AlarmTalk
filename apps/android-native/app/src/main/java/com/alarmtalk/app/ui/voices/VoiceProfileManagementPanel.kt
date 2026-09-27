@@ -93,7 +93,6 @@ import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
-import com.alarmtalk.app.network.normalizePersonalPromo
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -380,8 +379,8 @@ internal fun VoiceProfileManagementPanel(
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
-        // plan 과 같은 세션 응답의 짝이다.
-        userPlanPromoEndsAt = normalizePersonalPromo(authSession?.user?.personalPromo)?.endsAt,
+        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
+        userPlanPromo = authSession?.planPromoStamp(),
     )
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
@@ -1586,6 +1585,10 @@ internal fun VoiceProfileManagementPanel(
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
             selectedFileUri != null &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
+        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
+        // 녹음 파일을 고르러 문서 선택기에 다녀오면 **진입**으로 세어지는데, 그때 이 창이
+        // 열려 있다 — 여기서 빠지면 개인 플랜 종료 안내가 등록 창 위에 겹쳐 뜬다.
+        TrackOpenModal()
         Dialog(
             onDismissRequest = {
                 when {
