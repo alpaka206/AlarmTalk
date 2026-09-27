@@ -32,9 +32,10 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 **언제 뜨나 — 셋 다 참일 때**
 1. **이번 진입에서 새로 받은** 이 계정의 계정 응답(`/auth/me`, 로그인으로 들어온 진입이면 그
-   로그인·가입 응답의 `user`)에 `personal_promo` 가 있다. (iOS 는 로그인·가입 응답도 표를 떠 이번
-   진입의 답으로 적는다. 안드로이드는 로그인 응답을 적지 않고 로그인 직후의 `checkAccountStatus`
-   를 기다린다 — 같은 진입 안이라 결과는 같고, 안내가 그 왕복만큼 늦을 뿐이다.)
+   로그인·가입 응답의 `user`)에 `personal_promo` 가 있다. 두 앱 모두 로그인·가입(구글 포함) **성공**
+   응답을 이번 진입의 답으로 적는다(안드로이드 `recordSignInAnswer`, iOS `recordAccountAnswer`) — 뒤이은
+   `checkAccountStatus`·`refreshUser` 는 더 옛 순번이 되어 버려진다. 로그인·가입 **실패**는 진입 결과가
+   아니다 — 계정이 아직 없고, 같은 진입에서 다시 시도해 성공하면 그게 첫 결과여야 한다.
 2. 기기 시각이 `notice_from ≤ 지금 < ends_at` 이다(둘 다 서버 값 — 앱에 날짜를 두지 않는다).
 3. 이 계정이 **이 `ends_at` 에** '다시 보지 않기' 를 누른 적이 없다.
 
@@ -67,15 +68,17 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
     - '계정 요청' = 이 계정의 plan·`personal_promo` 를 싣는 요청이다 — 보내기 직전에 표(아래
       `beginAccountRequest`)를 뜨고, 성공과 실패를 **둘 다** 이 진입의 결과로 적는다. 안드로이드:
       `checkAccountStatus`·`refreshAppSessionNow` 의 `/auth/me`(성공 `recordAccountAnswer`, 실패
-      `recordAccountFailure`). iOS: `refreshUser` 의 `/auth/me`·로그인·가입 응답, 세션 밖의
+      `recordAccountFailure`)와 로그인·가입의 성공 응답(`recordSignInAnswer`). iOS: `refreshUser` 의
+      `/auth/me`·로그인·가입의 성공 응답, 세션 밖의
       `SocialFeatureViewModel` `/auth/me`·결제 전 조회(`refresh_store=1` — iOS 는 이 응답의 `user_plan`
       도 세션에 쓴다; 성공 `applyFreshPlan`, 실패 `onAccountRequestFailed` →
       `AuthViewModel.noteAccountRequestFailure`). iOS 의 조용한 구독 조회는 표를 뜨지만 plan 을 싣지
       않아 계정 요청이 아니다 — 결과로 세지 않는다.
     - **세션이 끝나는 실패**(401·파기된 계정의 404)와 **계정이 바뀐 뒤·로그아웃 중**의 실패는 이 계정의
-      진입 결과가 아니다 — 적지 않거나(iOS 전부, 안드로이드의 404·계정 전환·로그아웃 중), 적혀도 곧
-      세션 정리가 진입 기록을 지운다(안드로이드 401 — 인증기가 세션을 정리하고, 정리가 먼저 끝났으면
-      앞지른 순번이 그 실패를 버린다). 옛 순번(더 새 답이 이미 적힌 요청·계정 전환 전에 뜬 요청)의
+      진입 결과가 아니다 — 적지 않거나(iOS `refreshUser`·로그인·가입, 안드로이드의 404·계정 전환·
+      로그아웃 중), 적혀도 곧 세션 정리가 진입 기록을 지운다(안드로이드 401 — 인증기가 세션을 정리하고,
+      정리가 먼저 끝났으면 앞지른 순번이 그 실패를 버린다. iOS 세션 밖 `SocialFeatureViewModel` 의
+      401·404 — `handleUnauthorized` 가 뒤이어 로그아웃하며 지운다). 옛 순번(더 새 답이 이미 적힌 요청·계정 전환 전에 뜬 요청)의
       실패도 버린다.
     - 안내만 끝난다 — 같은 진입의 뒤 성공은 '가장 최근 계정 응답'(떠 있는 안내 맞추기)과 plan 반영
       (전경 잠금의 기다림 — [`billing-lifecycle.md`](billing-lifecycle.md) D12)으로는 그대로 쓴다.

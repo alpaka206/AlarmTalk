@@ -40,6 +40,7 @@ internal fun MainViewModel.login(email: String, password: String) {
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
             onSignedIn()
+            recordSignInAnswer(response.user)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             val app = getApplication<android.app.Application>()
@@ -172,6 +173,7 @@ internal fun MainViewModel.register(
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             onSignedIn()
+            recordSignInAnswer(response.user)
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
@@ -259,6 +261,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
             onSignedIn()
+            recordSignInAnswer(response.user)
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)
@@ -282,6 +285,18 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * 애초에 들어오지 않는다 — 사용자가 직접 켜야 돌아온다. 예전 이 주석은 "행은 켜진 채로
  * 둔다" 를 재예약이 필요한 근거로 댔는데, 그 전제가 뒤집혔다.
  */
+/**
+ * **로그인·가입 응답도 이 진입의 계정 응답이다**(D11 — iOS `AuthViewModel` 의 로그인·가입이
+ * `recordAccountAnswer` 로 적는 것과 같다). 안 적으면 이 진입의 첫 결과가 로그인 뒤의
+ * `checkAccountStatus` 가 되어, 로그인은 됐는데 그 조회가 실패한 진입에서 안드로이드만 종료 안내를
+ * 건너뛴다. 로그인 **실패**는 적지 않는다 — 계정이 아직 없고, 같은 진입에서 다시 시도해 성공하면
+ * 그게 첫 결과여야 한다. 뒤이은 `checkAccountStatus` 는 더 옛 순번이라 장부가 버린다.
+ */
+private fun MainViewModel.recordSignInAnswer(user: com.alarmtalk.app.network.AuthUser) {
+    if (authSession?.user?.id != user.id) return
+    recordAccountAnswer(beginAccountRequest(), user.personalPromo)
+}
+
 private suspend fun MainViewModel.onSignedIn() {
     // 로그아웃 잠금을 푼다 — 다시 로그인했으니 이후의 401 은 정상적으로 처리해야 한다.
     signingOut = false

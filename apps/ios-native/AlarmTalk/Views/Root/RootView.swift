@@ -336,7 +336,7 @@ struct RootView: View {
     /// 다른 안내까지 막고(서로 `== nil` 을 기다린다) 다음 진입도 삼켰다(2026-09-27 리뷰).
     /// 그래서 ① 다른 모달이 떠 있으면 **띄우지 않고 걷힐 때까지 기다리고**, ② 띄웠는데 보이지
     /// 않으면 **걷는다** — 프로모 안내는 이 진입을 끝내지 않은 채 걷어, 가린 창이 닫히면 같은
-    /// 진입 안에서 다시 뜬다(안드로이드 `deferPersonalPromoEndNotice`). 강등 안내는 대기표라
+    /// 진입 안에서 다시 뜬다(안드로이드 `PersonalPromoLedger.deferEndNotice` — `evaluateEndNotice` 가 부른다). 강등 안내는 대기표라
     /// 저장소에 남아 다시 뜬다.
     private func runOverlayNotices() async {
         if downgradeNotice != nil || personalPromoNotice != nil {

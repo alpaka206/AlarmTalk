@@ -107,6 +107,66 @@ class EntryRefreshKeepsTokenTest {
         )
     }
 
+    /**
+     * **늦게 온 옛 계정 응답은 아무것도 쓰지 않는다**(순번 가드). 장부 테스트(`PersonalPromoLedgerTest`)는
+     * 규칙만 본다 — 여기서는 그 규칙이 **쓰기보다 먼저** 걸려 있는지를 고정한다. 순서가 뒤집히면 옛 답이
+     * 세션 plan·프로모 도장을 되돌려, 방금 가족 구독자가 된 사람의 가족 기능이 닫힌다(D9).
+     */
+    @Test
+    fun refreshAppSessionNowClaimsThePlanAnswerBeforeWritingAnything() {
+        val body = bodyOf(authActions, "internal suspend fun MainViewModel.refreshAppSessionNow(")
+        val claim = body.indexOf("if (!personalPromoLedger.claimPlanAnswer(accountRequest))")
+        assertTrue("refreshAppSessionNow 가 plan 답을 `claimPlanAnswer` 로 먼저 잡지 않는다.", claim >= 0)
+        val bail = body.indexOf("return@onSuccess", claim)
+        val save = body.indexOf("authSessionStore.saveSessionIfAlive(")
+        val write = body.indexOf("entitlementWriter.write(")
+        val applied = body.indexOf("personalPromoLedger.recordPlanApplied(accountRequest)")
+        assertTrue("세션 저장을 못 찾았다 — 이름이 바뀌었으면 이 테스트도 고칠 것.", save >= 0 && write >= 0 && applied >= 0)
+        assertTrue("옛 답이면 쓰기 전에 빠져나가야 한다(`return@onSuccess`).", bail in (claim + 1) until save)
+        assertTrue("`claimPlanAnswer` 가 세션 저장보다 뒤에 있다.", claim < save && claim < write && claim < applied)
+    }
+
+    /** **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 실패도 적어야 한다. */
+    @Test
+    fun bothEntryAccountRequestsRecordTheirFailures() {
+        for (header in listOf(
+            "internal suspend fun MainViewModel.refreshAppSessionNow(",
+            "internal fun MainViewModel.checkAccountStatus(",
+        )) {
+            val body = bodyOf(authActions, header)
+            val failure = body.indexOf(".onFailure")
+            assertTrue("$header 의 실패 갈래를 못 찾았다.", failure >= 0)
+            assertTrue(
+                "$header 가 실패를 `recordAccountFailure(accountRequest)` 로 적지 않는다 — 같은 진입의 뒤 성공이 " +
+                    "세션 한가운데 종료 안내를 띄운다.",
+                body.indexOf("recordAccountFailure(accountRequest)", failure) >= 0,
+            )
+        }
+    }
+
+    /** 로그인·가입 응답도 이 진입의 계정 응답이다(D11 — iOS 와 같다). 실패는 적지 않는다. */
+    @Test
+    fun signInResponsesAreThisEntrysAccountAnswer() {
+        for (header in listOf(
+            "internal fun MainViewModel.login(",
+            "internal fun MainViewModel.register(",
+            "internal fun MainViewModel.finishGoogleLogin(",
+        )) {
+            val body = bodyOf(authActions, header)
+            val signedIn = body.indexOf("onSignedIn()")
+            assertTrue("$header 에서 `onSignedIn()` 을 못 찾았다.", signedIn >= 0)
+            assertTrue(
+                "$header 가 로그인 응답을 `recordSignInAnswer(response.user)` 로 적지 않는다.",
+                body.indexOf("recordSignInAnswer(response.user)", signedIn) >= 0,
+            )
+            val failure = body.indexOf(".onFailure")
+            assertTrue(
+                "$header 가 로그인 **실패**를 계정 결과로 적는다 — 같은 진입의 재시도 성공이 첫 결과여야 한다.",
+                failure < 0 || !body.substring(failure).contains("recordAccountFailure"),
+            )
+        }
+    }
+
     // ── 소스 읽기(`SignOutWindowOpensBeforeServerCallTest` 와 같은 방식) ─────────────────
 
     private val authActions: String by lazy {
