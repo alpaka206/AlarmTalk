@@ -17,8 +17,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     ) {
         self.baseURL = baseURL
         self.session = session
-        decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder = Self.makeResponseDecoder()
         encoder = AlarmTalkAPI.makeJSONEncoder()
     }
 
@@ -28,6 +27,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         return encoder
+    }
+
+    /// **서버 응답**을 읽는 디코더. 저장본(키체인·스냅샷)을 읽는 기본 디코더와 다른 점은 둘:
+    /// 스네이크 키, 그리고 기간 한정 개인 플랜의 계산 시각을 받은 순간으로 찍어도 된다는 표시
+    /// (`PersonalPromo.stampsReceiptKey` — 서버가 `computed_at` 을 안 줄 때만 쓰인다).
+    /// 테스트도 서버 응답을 흉내 낼 때 이걸 쓴다.
+    static func makeResponseDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.userInfo[PersonalPromo.stampsReceiptKey] = true
+        return decoder
     }
 
     /// 모든 요청에 60초 타임아웃을 건다. Android `AlarmTalkApiClient` 의

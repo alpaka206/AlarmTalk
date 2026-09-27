@@ -183,8 +183,17 @@ final class BackgroundDependencies {
             auth?.applyRolledToken(userID: userID, from: from, to: to)
         }
         // 코드 등록으로 서버 plan 이 올라가도 세션이 free 그대로면 게이트가 잠긴 채 남는다.
-        socialFeatures.onFreshPlan = { [weak auth] userID, from, plan in
-            auth?.applyFreshPlan(userID: userID, from: from, plan: plan)
+        socialFeatures.onFreshPlan = { [weak auth] userID, from, plan, personalPromo, request in
+            auth?.applyFreshPlan(userID: userID, from: from, plan: plan, personalPromo: personalPromo, request: request)
+        }
+        // 세션 밖의 `/auth/me`·결제 전 조회도 세션과 **한 순번** 위에서 가른다 — 늦게 도착한
+        // 옛 답이 방금 반영한 프로모를 되돌리지 않게.
+        socialFeatures.beginAccountRequest = { [weak auth] in auth?.beginAccountRequest() }
+        // 세션이 옛 답으로 거절한 plan·프로모를 권한 스냅샷에만 남기지 않는다(같은 순번).
+        socialFeatures.isPlanAnswerCurrent = { [weak auth] request in auth?.isPlanAnswerCurrent(request) ?? true }
+        // 실패도 이 진입의 결과다 — 첫 결과가 성공이든 실패든 종료 안내 판정을 끝낸다(D11).
+        socialFeatures.onAccountRequestFailed = { [weak auth] userID, request in
+            auth?.noteAccountRequestFailure(userID: userID, request: request)
         }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()

@@ -35,10 +35,15 @@ internal fun MainViewModel.login(email: String, password: String) {
         loginError = null
         loginErrorCode = null
         authNotice = null
+        // 표는 **보내기 직전에** 뜬다 — 응답이 다음 진입에 도착하면 그 진입의 답으로 세지 않게(D11).
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            // 세션을 올리는 순간 로그인 뒤 계정 조회(`checkAccountStatus`)가 뜬다 — 멈추는 로그인 뒤 정리
+            // (`onSignedIn`)보다 **먼저** 적어야 이 응답이 이번 진입의 첫 결과다(Codex #803).
+            recordSignInAnswer(response.user, accountRequest)
             onSignedIn()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
@@ -158,6 +163,7 @@ internal fun MainViewModel.register(
     viewModelScope.launch {
         authBusy = true
         registerError = null
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.register(
                 RegisterRequest(
@@ -171,6 +177,7 @@ internal fun MainViewModel.register(
             authSession = authSessionStore.saveAppSession(response)
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
+            recordSignInAnswer(response.user, accountRequest)
             onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
@@ -254,10 +261,12 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
+            recordSignInAnswer(response.user, accountRequest)
             onSignedIn()
             message = null
         }.onFailure { error ->
@@ -282,6 +291,25 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * 애초에 들어오지 않는다 — 사용자가 직접 켜야 돌아온다. 예전 이 주석은 "행은 켜진 채로
  * 둔다" 를 재예약이 필요한 근거로 댔는데, 그 전제가 뒤집혔다.
  */
+/**
+ * **로그인·가입 응답도 이 진입의 계정 응답이다**(D11 — iOS `AuthViewModel` 의 로그인·가입이
+ * `recordAccountAnswer` 로 적는 것과 같다). 안 적으면 이 진입의 첫 결과가 로그인 뒤의
+ * `checkAccountStatus` 가 되어, 로그인은 됐는데 그 조회가 실패한 진입에서 안드로이드만 종료 안내를
+ * 건너뛴다. 로그인 **실패**는 적지 않는다 — 계정이 아직 없고, 같은 진입에서 다시 시도해 성공하면
+ * 그게 첫 결과여야 한다. 뒤이은 `checkAccountStatus` 는 더 옛 순번이라 장부가 버린다.
+ */
+private fun MainViewModel.recordSignInAnswer(
+    user: com.alarmtalk.app.network.AuthUser,
+    request: AccountRequest,
+) {
+    if (authSession?.user?.id != user.id) return
+    // 표는 요청을 **보내기 직전에** 뜬 것이다(Codex #803) — 느린 로그인 중에 앱을 내렸다 올리면 응답은
+    // 다음 진입에 도착한다. 도착해서 표를 뜨면 앞 진입의 요청이 이번 진입의 답이 된다(장부가 보낸 진입과
+    // 도착한 진입을 대조한다 — `accountAnswerEntryFor`). 세션 정리(`resetForAccountSwitch`)는 로그아웃
+    // 쪽에만 있어 로그인 전에 뜬 표가 앞질러지지 않는다.
+    recordAccountAnswer(request, user.personalPromo)
+}
+
 private suspend fun MainViewModel.onSignedIn() {
     // 로그아웃 잠금을 푼다 — 다시 로그인했으니 이후의 401 은 정상적으로 처리해야 한다.
     signingOut = false
@@ -435,13 +463,31 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
+    val accountRequest = beginAccountRequest()
     viewModelScope.launch {
         runCatching {
             api.me(authorization)
         }.onSuccess { response ->
             pendingDeletion = response.user.deletionStatus == "pending_deletion"
+            // 기간 한정 개인 플랜 종료 안내는 **가장 최근 계정 응답**으로 판정한다
+            // (`MainViewModel.latestAccountPromo`). 그 사이 계정이 바뀌었으면 남의 값이라 적지 않는다.
+            // 더 새 계정 응답이 이미 적혔으면 장부가 이 옛 답을 버린다(탈퇴 유예는 위에서 그대로 반영).
+            if (authSession?.user?.id == session.user.id &&
+                !recordAccountAnswer(accountRequest, response.user.personalPromo)
+            ) {
+                Log.i(TAG, "Account status answer superseded by a later account answer")
+            }
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
+            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11) — 같은 진입의
+            // 뒤 성공(쿠폰·`plan_changed` 뒤의 갱신)으로 세션 한가운데 뜨지 않게 실패도 적는다.
+            // 계정이 바뀌었으면 적지 않는다. 401 로 세션이 끝나는 중이면 적혀도 곧 세션 정리가 장부를
+            // 비우고(`PersonalPromoLedger.resetForAccountSwitch`), 정리가 먼저 끝났으면 앞지른 순번이
+            // 이 실패를 버린다.
+            if (!signingOut && authSession?.user?.id == session.user.id) {
+                recordAccountFailure(accountRequest)
+            }
         }
         // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
         // 영영 안 뜬다 — 계정 상태를 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
@@ -718,7 +764,7 @@ internal fun MainViewModel.checkConsentStatus() {
             consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
             // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
             // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
-            // 권한·웰컴 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
+            // 첫 권한 안내 같은 1회성 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
             // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
             // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
             // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
@@ -1278,6 +1324,8 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
         provider = updated.provider,
         // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
         rolledToken = null,
+        // plan·프로모는 들고 있던 세션의 것을 그대로 복사했다 — 받은 시각도 그 답의 것이다.
+        userFetchedAtMillis = updated.userFetchedAtMillis,
     )
     if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
@@ -1285,9 +1333,21 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
     return saved
 }
 
-internal fun MainViewModel.refreshAppSession() {
-    viewModelScope.launch { refreshAppSessionNow() }
+internal fun MainViewModel.refreshAppSession(rollToken: Boolean = true) {
+    viewModelScope.launch { refreshAppSessionNow(rollToken) }
 }
+
+/**
+ * `/auth/me` 응답으로 **저장할 토큰** — 저장소의 `saveSessionIfAlive` 에 넘길 `rolledToken`.
+ *
+ * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신)이면 null 이다.
+ *   저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.** 토큰이 바뀌면 토큰을 키로 쓰는
+ *   효과가 전부 다시 돌아 복귀할 때마다 앱 전체를 다시 불러오게 된다.
+ * - 굴리는 갱신이어도 서버가 새 토큰을 주지 않으면(구버전 서버·재발급 실패) null 이다 — 시작할 때
+ *   잡아 둔 토큰으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
+ */
+internal fun sessionTokenToSave(rollToken: Boolean, serverToken: String?): String? =
+    if (rollToken) serverToken?.takeIf { it.isNotBlank() } else null
 
 /**
  * `GET /auth/me` 의 실패가 **계정이 파기됐다**는 뜻인가.
@@ -1323,12 +1383,19 @@ internal fun isDestroyedAccountFailure(error: Throwable): Boolean {
  * 그 뒤 코드는 **plan 이 아직 옛 값인 상태로** 진행한다 — 구독이 없어진 것을 확인해도
  * 캐시된 유료 plan 이 남아 `resolvePaidVoiceAccess` 가 계속 유료로 답한다.
  *
+ * @param rollToken 서버가 굴려 준 새 토큰으로 갈아 끼우는가. **백그라운드에서 돌아올 때마다**
+ *   부르는 갱신(`MainViewModel` init 의 진입 구독)은 false 다 — 토큰이 바뀌면 토큰을 키로 쓰는
+ *   효과가 전부 다시 돈다(동의·계정·목소리 준비 확인과 목소리·클립·구독 선로드). 복귀할 때마다
+ *   앱 전체를 다시 불러오게 되므로, 토큰은 예전처럼 콜드 스타트·워커(`SessionTokenRenewal`)가
+ *   굴리고 복귀 때는 plan·프로모만 새로 받는다. 서버 토큰은 무상태 JWT 라 버려도 잃는 것이 없다.
  * @return plan 까지 실제로 반영했으면 true. 네트워크 실패·세션 종료·문 거절이면 false.
  */
-internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
+internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = true): Boolean {
     val session = authSession ?: return false
     // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
     val startGeneration = authSessionStore.sessionGeneration()
+    // 보낸 진입·순번을 응답까지 들고 간다(`MainViewModel.recordAccountAnswer`).
+    val accountRequest = beginAccountRequest()
     var applied = false
     run {
         runCatching {
@@ -1348,6 +1415,20 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
+            // **나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 이 답은 쓰지 않는다**
+            // (`PersonalPromoLedger.claimPlanAnswer` — iOS `AuthViewModel.applyFreshPlan` 의 순번 가드).
+            // 진입 갱신이 떠 있는 동안 쿠폰·결제·`plan_changed` 뒤의 갱신이 먼저 돌아오면, 늦게 온
+            // 진입 갱신의 옛 plan·프로모가 세션과 스냅샷의 표지를 되살린다 — 보류 규칙(D9)이 방금
+            // 가족이 된 사람의 가족 기능을 닫고, 옛 plan 으로 `planAnsweredEntry` 까지 세워 잠금
+            // 대기를 풀어 버린다. 버리는 것은 세션·스냅샷 쓰기와 plan 반영 표시 전부다 — 더 새 답이
+            // 모든 필드를 이미 새로 적었다. 이 답이 굴려 준 토큰도 버린다(무상태 JWT 라 지금 토큰이
+            // 그대로 유효하다). 계정 응답(종료 안내)도 이미 더 새 답이 적었다.
+            // ⚠ **쓰기 전에** 잡는다 — 이 블록은 멈추지 않고 메인 스레드에서 끝까지 돌아, 잡은 뒤
+            //   다른 응답이 끼어들지 못한다.
+            if (!personalPromoLedger.claimPlanAnswer(accountRequest)) {
+                Log.i(TAG, "Dropping superseded /auth/me result: a later request's answer is already applied")
+                return@onSuccess
+            }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
             // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
             // **안 주면(구버전 서버·재발급 실패) 저장소의 현재 토큰을 지킨다** — 시작할 때
@@ -1355,28 +1436,51 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
             //
             // 세대 확인도 저장소가 쓰기와 같은 락 안에서 한다. 여기서 따로 보면 확인 뒤
             // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
+            // 받은 시각을 plan·프로모와 **한 벌로** 적는다 — 기간 한정 개인 플랜의 오프라인
+            // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
+            // 응답이 계산 시각(`computed_at`)을 실었으면 저장소가 그것으로 바꿔 적는다(D7).
+            val receivedAt = System.currentTimeMillis()
             val saved = authSessionStore.saveSessionIfAlive(
                 expectedGeneration = startGeneration,
                 user = me.user,
                 provider = session.provider,
-                rolledToken = me.token,
+                rolledToken = sessionTokenToSave(rollToken, me.token),
+                userFetchedAtMillis = receivedAt,
             )
             if (saved == null) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
             authSession = saved
+            // 종료 안내가 판정에 쓰는 '이 계정의 가장 최근 응답'. 쿠폰·결제 뒤의 갱신도 여기로
+            // 와서, 떠 있는 옛 안내를 걷는다(리뷰 지적 — 예전에는 `checkAccountStatus` 만 적었다).
+            // plan 쓰기(위의 순번)와 순번이 따로다: 나중에 보낸 `checkAccountStatus` 의 답이 먼저
+            // 적혔으면 이 답은 종료 안내에는 옛 답이지만, plan 에는 여전히 가장 새 답이다
+            // (`checkAccountStatus` 는 plan 을 쓰지 않는다 — `PersonalPromoLedger` 의 `planAnswerSeq`).
+            if (!recordAccountAnswer(accountRequest, saved.user.personalPromo)) {
+                Log.i(TAG, "Auth refresh account answer superseded by a later account answer")
+            }
             // 울림 경로는 이 값을 캐시에서만 읽는다 — `/auth/me` 가 plan 을 갱신하는 바로
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
+                // plan 과 그 프로모 종료 시각·받은 시각은 **한 벌로** 적는다(`AccessSnapshot.withServerUser`).
+                // ⚠ 받은 시각은 **세션에 적힌 값**을 넘긴다. `saved.user` 는 정규화돼 `computed_at` 이
+                //   빠져 있어, 기기 시각을 넘기면 세션(서버 계산 시각)과 스냅샷(기기 시각)이 갈라진다.
+                val answeredAt = saved.userFetchedAtMillis ?: receivedAt
+                var persisted: AccessSnapshot? = null
                 val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
-                    it.copy(userPlan = saved.user.plan)
+                    it.withServerUser(saved.user, answeredAt).also { snapshot -> persisted = snapshot }
                 }
                 // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
                 // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
                 // 메모리가 갈라진다 — 그리고 갈라졌을 때 이기는 쪽이 **거절된 값**이다.
                 if (planWrite == EntitlementWrite.Applied) {
-                    storeSnapshotUserPlan = saved.user.plan
+                    val snapshot = checkNotNull(persisted)
+                    storeSnapshotUserPlan = snapshot.userPlan
+                    storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
+                    // 판정기가 읽는 plan 이 **이 진입의 답**이 됐다 — 전경 무료 잠금의 오프라인 차단
+                    // 갈래가 이걸 기다린다(`freePlanLockMayApply`).
+                    personalPromoLedger.recordPlanApplied(accountRequest)
                     applied = true
                 }
             }
@@ -1395,6 +1499,13 @@ internal suspend fun MainViewModel.refreshAppSessionNow(): Boolean {
                 return@onFailure
             }
             Log.w(TAG, "Auth refresh failed", error)
+            // **이 진입의 첫 결과가 실패면 이 진입은 종료 안내를 띄우지 않는다**(D11 —
+            // `MainViewModel.recordAccountFailure`). 계정이 바뀌었으면 적지 않는다. 401 은 인증기가
+            // 세션을 정리하고 그 정리가 장부를 비운다 — 정리가 먼저 끝났으면 앞지른 순번이 이 실패를
+            // 버린다(`PersonalPromoLedger.resetForAccountSwitch`).
+            if (!signingOut && authSession?.user?.id == session.user.id) {
+                recordAccountFailure(accountRequest)
+            }
         }
     }
     return applied

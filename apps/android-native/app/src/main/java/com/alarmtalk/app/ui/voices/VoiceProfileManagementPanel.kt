@@ -238,6 +238,12 @@ internal fun VoiceProfileManagementPanel(
     authSession: AuthSession?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
+    /**
+     * 기간 한정 개인 플랜 중의 보류 규칙(`MainViewModel.personalPromoTierHold`). 있으면 남은 구독
+     * 행·그룹 멤버로 공유 토글을 열지 않는다. 기본값을 두지 않는다 — 빠뜨리면 보류 계정에 서버가
+     * 막는 공유 토글이 보인다.
+     */
+    personalPromoTierHold: PersonalPromoTierHold?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 두 번째 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
@@ -383,6 +389,8 @@ internal fun VoiceProfileManagementPanel(
         userPlan = authSession?.user?.plan,
         storeEntitled = storeEntitledNow,
         nowMillis = System.currentTimeMillis(),
+        // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
+        userPlanPromo = authSession?.planPromoStamp(),
     )
     // **표시와 생성 게이트를 함께 움직인다** — 목록만 숨기고 '생성 가능 n/m회' 와 등록
     // 흐름을 열어 두면 교체 대상이 비어 버려 확정에서 거절당한다(2026-08-31 리뷰).
@@ -435,7 +443,7 @@ internal fun VoiceProfileManagementPanel(
     // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
-    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
+    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession, personalPromoTierHold)
     val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
@@ -1584,6 +1592,10 @@ internal fun VoiceProfileManagementPanel(
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
             selectedFileUri != null &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
+        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
+        // 녹음 파일을 고르러 문서 선택기에 다녀오면 **진입**으로 세어지는데, 그때 이 창이
+        // 열려 있다 — 여기서 빠지면 개인 플랜 종료 안내가 등록 창 위에 겹쳐 뜬다.
+        TrackOpenModal()
         Dialog(
             onDismissRequest = {
                 when {

@@ -10,7 +10,8 @@ import { jsonError } from '../lib/api-error';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess } from './billing-helpers';
+import { resolvePersonalPromo, type PersonalPromoState } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import {
@@ -932,9 +933,14 @@ export async function replaceVoiceInPlace(
     ownerPk: string;
     /** 토큰의 로그인 식별자(구 토큰이면 google_id) — 플랜 조회 보조 매칭(승격과 같은 조건). */
     loginId?: string;
+    /**
+     * 기간 한정 개인 플랜 — 요청 가장자리에서 `resolvePersonalPromo(c.env)` 로 푼 값.
+     * 교체는 **내 개인 기능**이라 승격과 같은 계산값 게이트(`hasPersonalVoiceAccess`)를 쓴다.
+     */
+    promo: PersonalPromoState;
   },
 ): Promise<ReplaceResult> {
-  const { targetUserIds, draftProfileId, language, isShared, ownerPk, loginId } = params;
+  const { targetUserIds, draftProfileId, language, isShared, ownerPk, loginId, promo } = params;
   const ph = targetUserIds.map(() => '?').join(',');
 
   const replacementState = await withWriteTransaction(db, async (tx) => {
@@ -987,7 +993,7 @@ export async function replaceVoiceInPlace(
       sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
       args: [ownerPk, loginId ?? ownerPk],
     });
-    if (plan.rows.length === 0 || !isPaidVoicePlan(plan.rows[0]!.plan)) {
+    if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
       return { status: 'paid_required' as const };
     }
     const missingConsent = await missingConsentType(tx, ownerPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -1486,6 +1492,7 @@ voiceProfile.patch('/:id', async (c) => {
         isShared: isSharedUpdate,
         ownerPk: userPk,
         loginId: userId,
+        promo: resolvePersonalPromo(c.env),
       });
       if (!replaced.ok) {
         return c.json(
@@ -1564,13 +1571,15 @@ voiceProfile.patch('/:id', async (c) => {
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL ${extraWhere}`,
       args,
     });
+  const promo = resolvePersonalPromo(c.env);
   const updateRes = promotesDraftToOfficial
     ? await withWriteTransaction(db, async (tx) => {
         const plan = await tx.execute({
           sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
           args: [userPk, userId],
         });
-        if (plan.rows.length === 0 || !isPaidVoicePlan(plan.rows[0]!.plan)) {
+        // 기간 한정 개인 플랜 반영(계산값) — 승격은 내 개인 기능이다.
+        if (plan.rows.length === 0 || !hasPersonalVoiceAccess(plan.rows[0]!.plan, promo)) {
           return { status: 'paid_required' as const, rowsAffected: 0 };
         }
         const missingConsent = await missingConsentType(tx, userPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -1837,7 +1846,11 @@ voiceProfile.post('/clone', async (c) => {
       sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
       args: [userPk, userId],
     });
-    if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
+    // 기간 한정 개인 플랜 반영(계산값) — 클론 등록은 내 개인 기능이다.
+    if (
+      userPlan.rows.length === 0 ||
+      !hasPersonalVoiceAccess(userPlan.rows[0]!.plan, resolvePersonalPromo(c.env))
+    ) {
       return c.json(
         {
           error: 'Voice features require a paid plan.',

@@ -253,6 +253,40 @@
     "%@%%" : {
 
     },
+    "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can use the Personal plan for free until %1$@. From %2$@, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@までパーソナルプランを無料でご利用いただけます。%2$@からは無料プランに戻り、登録した声は3日間保管した後に削除されます。"
+          }
+        }
+      }
+    },
+    "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can use the Personal plan for free until %1$@. From %2$@, you'll return to the Free plan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@までパーソナルプランを無料でご利用いただけます。%2$@からは無料プランに戻ります。"
+          }
+        }
+      }
+    },
     "%lld/%lld명" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1104,6 +1138,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "パーソナル利用券をプレゼント"
+          }
+        }
+      }
+    },
+    "개인 플랜 무료 이용 중 · %@까지" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal plan free until %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナルプラン無料利用中 · %@まで"
+          }
+        }
+      }
+    },
+    "개인 플랜 무료 이용이 곧 끝나요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your free Personal plan ends soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナルプランの無料利用がまもなく終了します"
           }
         }
       }
@@ -3123,6 +3191,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "作り直す"
+          }
+        }
+      }
+    },
+    "다시 보지 않기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't show again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今後表示しない"
           }
         }
       }
@@ -11598,23 +11683,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "コードが外部に漏れた場合は再発行して既存のコードを無効にできます。"
-          }
-        }
-      }
-    },
-    "코드가 있으신가요?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Have a code?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コードをお持ちですか？"
           }
         }
       }

@@ -31,6 +31,7 @@ import {
 import { sendPaymentFailedPush } from './fcm';
 import { logStructured } from './logger';
 import { planTypeToUserPlan } from '../routes/billing-helpers';
+import { personalPromoCoversFree } from './personal-promo';
 
 export class BillingStateUnavailableError extends Error {
   constructor(
@@ -214,6 +215,8 @@ export async function reconcileStoreSubscription(
   subscriptionId: string,
   now = new Date(),
 ): Promise<'applied' | 'not_store'> {
+  // 보관 판정의 기간 한정 개인 플랜 인자 — 이 실행의 시각으로 한 번 푼다.
+  const promoCoversFree = personalPromoCoversFree(env, now);
   const before = await readSubscription(db, subscriptionId);
   if (!before || before.status !== 'active') return 'not_store';
   const transactions = await readTransactions(db, subscriptionId);
@@ -294,6 +297,7 @@ export async function reconcileStoreSubscription(
         appliedAt: now,
         lastPaidAt: entitled.paidAt,
         expiresAt: entitled.expiresAt!,
+        promoCoversFree,
       });
       if (!result.ok) throw new BillingStateUnavailableError(result.errorCode, false);
       const newId = result.subscription.id;
@@ -332,7 +336,7 @@ export async function reconcileStoreSubscription(
         },
       };
     }
-    const changed = await terminateSubscription(tx, before, now);
+    const changed = await terminateSubscription(tx, before, now, promoCoversFree);
     return { changed, hold: null };
   });
   await notifyBillingStateChanged(db, env, notifications.changed);
@@ -356,6 +360,8 @@ export async function expireSubscriptionIfDue(
   id: string,
   expectedExpiry: string,
   now: Date,
+  /** 보관 판정의 기간 한정 개인 플랜 인자 — `personalPromoCoversFree(env, now)`. */
+  promoCoversFree: boolean,
   allowStore = true,
 ): Promise<string[]> {
   return withWriteTransaction(db, async (tx) => {
@@ -377,17 +383,25 @@ export async function expireSubscriptionIfDue(
     }
     if (!allowStore && (await readTransactions(tx, id)).length)
       throw new BillingStateChangedError();
-    return terminateSubscription(tx, current, now);
+    return terminateSubscription(tx, current, now, promoCoversFree);
   });
 }
 
 /** 로컬/스토어 종료가 공유하는 후속 전환. 만기 전 환불은 예약 플랜을 당겨 주지 않는다. */
-async function terminateSubscription(tx: DbExecutor, current: Row, now: Date): Promise<string[]> {
+async function terminateSubscription(
+  tx: DbExecutor,
+  current: Row,
+  now: Date,
+  promoCoversFree: boolean,
+): Promise<string[]> {
   const active = asActive(current);
   const due =
     Number.isFinite(Date.parse(String(current.expires_at))) &&
     new Date(String(current.expires_at)) <= now;
-  const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
+  const ids = await cancelSubscriptionImmediate(tx, active, now, {
+    deleteVoiceData: false,
+    promoCoversFree,
+  });
   const nextPlan =
     due && Number(current.cancel_at_period_end) === 1 && current.next_plan_id
       ? (
@@ -406,7 +420,9 @@ async function terminateSubscription(tx: DbExecutor, current: Row, now: Date): P
       maxMembers: Number(nextPlan.max_members),
       now,
     });
-  } else if (!(await hasActivePaidEntitlement(tx, active.userPk))) {
+  } else if (!(await hasActivePaidEntitlement(tx, active.userPk, promoCoversFree))) {
+    // 기간 한정 개인 플랜이 덮는 동안에는 걸지 않는다 — 기간 중 구독이 끝나도 목소리를
+    // 잃지 않는다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가 건다.
     await schedulePaidVoiceRetention(tx, active.userPk, now);
   }
   return ids;
@@ -419,6 +435,7 @@ export async function reconcileBillingPreflight(
   userPk: string,
   now = new Date(),
 ): Promise<void> {
+  const promoCoversFree = personalPromoCoversFree(env, now);
   const candidates = await db.execute({
     sql: `SELECT s.id FROM subscriptions s
           LEFT JOIN plan_groups g ON g.id = s.plan_group_id
@@ -433,7 +450,7 @@ export async function reconcileBillingPreflight(
     if ((await reconcileStoreSubscription(db, env, id, now)) === 'applied') continue;
     const current = await readSubscription(db, id);
     const affected = current
-      ? await expireSubscriptionIfDue(db, id, String(current.expires_at), now, false)
+      ? await expireSubscriptionIfDue(db, id, String(current.expires_at), now, promoCoversFree, false)
       : [];
     await notifyBillingStateChanged(db, env, affected);
   }

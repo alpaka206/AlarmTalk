@@ -71,8 +71,38 @@ final class SocialFeatureViewModel: ObservableObject {
      * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
      *
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+     * 기간 한정 개인 플랜(`personalPromo`)은 plan 의 **짝**이라 함께 넘긴다 — 같은 응답에서
+     * 온 값이고, 떨어뜨리면 계산값 `plus` 만 남아 끝난 뒤에도 걷어낼 근거가 없다.
+     *
+     * 마지막 인자는 그 요청을 보내기 **직전에** `beginAccountRequest` 로 받은 표다 — 받는 쪽이
+     * 다른 계정 응답과 순번으로 갈라, 늦게 도착한 옛 답이 새 답을 덮지 않게 한다.
      */
-    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
+    var onFreshPlan: ((
+        _ userID: String,
+        _ from: String,
+        _ plan: String,
+        _ personalPromo: PersonalPromo?,
+        _ request: AuthViewModel.AccountRequest?
+    ) -> Void)?
+
+    /// 세션 주인에게서 계정 요청 표(순번·진입)를 받는다 — `/auth/me`·결제 전 조회를 보내기
+    /// **직전에** 부른다(`AuthViewModel.beginAccountRequest`). 없으면(테스트) 표 없이 넘긴다.
+    var beginAccountRequest: (() -> AuthViewModel.AccountRequest?)?
+
+    /// 이 표의 plan 답을 권한 스냅샷에 써도 되는가(`AuthViewModel.isPlanAnswerCurrent`) — 세션이 옛 답으로
+    /// 거절한 plan·프로모를 스냅샷에만 남기지 않게(Codex #803). 없으면(테스트) 쓴다.
+    var isPlanAnswerCurrent: ((AuthViewModel.AccountRequest?) -> Bool)?
+
+    /**
+     * 표를 뜬 계정 요청(`/auth/me`·결제 전 조회)이 **실패했다**는 것을 세션 주인에게 알린다
+     * (`AuthViewModel.noteAccountRequestFailure`).
+     *
+     * 성공은 `onFreshPlan` 이 이 진입의 답으로 적는다. 실패도 적어야 한다 — 이 진입의 **첫 결과**가
+     * 성공이든 실패든 그 진입의 종료 안내 판정을 끝낸다(스펙 D11, 안드로이드
+     * `MainViewModel.recordAccountFailure`). 안 적으면 실패가 먼저 온 진입에서 같은 진입의 뒤 성공이
+     * 첫 결과가 되어 세션 한가운데서 안내가 뜬다.
+     */
+    var onAccountRequestFailed: ((_ userID: String, _ request: AuthViewModel.AccountRequest?) -> Void)?
 
     // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
@@ -195,11 +225,16 @@ final class SocialFeatureViewModel: ObservableObject {
             // 예약된 채 남긴다. 못 받았으면 **적지 않고**(마지막으로 확인된 값을 남긴다)
             // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
             var freshPlan: String?
+            // `freshPlan` 과 **같은 응답**의 기간 한정 개인 플랜 — 둘은 늘 함께 적는다.
+            var freshPromo: PersonalPromo?
             var planOK = false
             var rolledToken: String?
+            // 표는 보내기 전에 뜬다 — 늦게 도착한 옛 답이 새 답을 덮지 않게(`onFreshPlan`).
+            let accountRequest = beginAccountRequest?()
             do {
                 let me = try await api.me(token: token)
                 freshPlan = me.user.plan
+                freshPromo = me.user.personalPromo
                 planOK = true
                 rolledToken = me.token?.nilIfBlank
             } catch {
@@ -221,7 +256,9 @@ final class SocialFeatureViewModel: ObservableObject {
             // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
             // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
             // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
-            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo, accountRequest) }
+            // 실패도 이 진입의 결과다(D11 — `onAccountRequestFailed`). 취소는 결과가 아니다.
+            if !planOK, !Task.isCancelled { onAccountRequestFailed?(userID, accountRequest) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
@@ -246,12 +283,15 @@ final class SocialFeatureViewModel: ObservableObject {
             }
             guard subscriptionWrite == .applied else { return }
             subscription = resolvedSubscription
-            if let freshPlan {
+            // ⚠ **세션이 옛 답으로 거절한 plan 은 스냅샷에도 쓰지 않는다**(Codex #803) — 더 나중에 보낸 계정
+            // 요청의 답이 이미 반영됐으면(`isPlanAnswerCurrent`) 이 plan·프로모는 옛 것이다.
+            if let freshPlan, isPlanAnswerCurrent?(accountRequest) ?? true {
                 // ⚠ 위 두 쓰기와 **같은 규칙**이다 — 문이 거절하면 그 뒤도 전부 옛 세션의
                 // 것이므로 반영하지 않는다(2026-09-02 리뷰). 결과를 버리면 구독은 새 값인데
                 // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
                 let planWrite = entitlementWriter.write(accessTicket, "auth/me plan") {
                     $0.userPlan = freshPlan
+                    $0.personalPromo = freshPromo
                 }
                 guard planWrite == .applied else { return }
                 // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
@@ -329,6 +369,8 @@ final class SocialFeatureViewModel: ObservableObject {
               accessTicket.userID == userID, accessTicket.token == token else {
             return nil
         }
+        // 표는 보내기 전에 뜬다 — 이 응답의 `user_plan` 도 세션의 plan·프로모를 바꾼다.
+        let accountRequest = beginAccountRequest?()
         do {
             let nextSubscription = try await api.getSubscription(
                 token: token,
@@ -341,17 +383,31 @@ final class SocialFeatureViewModel: ObservableObject {
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
             guard activeUserID == userID, generation == refreshGeneration,
                   preflightRevision == billingPreflightRevision else { return nil }
+            // 더 나중에 보낸 계정 요청의 답이 이미 반영됐으면 이 plan·프로모는 옛 것이다 — 구독만 쓴다(Codex #803).
+            let planCurrent = isPlanAnswerCurrent?(accountRequest) ?? true
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
-                if let plan = nextSubscription.userPlan { $0.userPlan = plan }
+                // plan 과 프로모는 **같은 응답에서 온 짝**이다 — plan 을 받아 온 회차에만,
+                // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
+                if let plan = nextSubscription.userPlan, planCurrent {
+                    $0.userPlan = plan
+                    $0.personalPromo = nextSubscription.personalPromo
+                }
             }
             guard silentWrite == .applied else { return nil }
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
-            if let plan = nextSubscription.userPlan { onFreshPlan?(userID, token, plan) }
+            if let plan = nextSubscription.userPlan {
+                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo, accountRequest)
+            }
             return nextSubscription
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
+            // 결제 전 조회(`user_plan` 을 싣는 계정 응답)의 실패는 이 진입의 결과로 적는다(D11 —
+            // 성공은 `onFreshPlan` 이 적는다). 조용한 구독 조회는 plan 을 싣지 않아 계정 응답이 아니다.
+            if refreshStoreState, !Task.isCancelled, activeUserID == userID {
+                onAccountRequestFailed?(userID, accountRequest)
+            }
             return nil
         }
     }

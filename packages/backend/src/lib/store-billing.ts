@@ -83,6 +83,12 @@ export interface StoreEntitlementInput {
    * 앞 주인이 옛 영수증으로 도로 가져간다.
    */
   purchaserVerified?: boolean;
+  /**
+   * **기간 한정 개인 플랜이 지금 원시 free 를 덮는가** — 호출부가 `personalPromoCoversFree(env,
+   * appliedAt)` 로 푼 값. 이 결제로 무료가 되는 사람(앞 주인·내보내진 멤버)의 보관 판정에 쓴다.
+   * ⚠ 필수다 — 빠뜨려 원시로 판정되면 기간 중에 거짓 삭제 예고가 나간다.
+   */
+  promoCoversFree: boolean;
 }
 
 export type StoreEntitlementResult =
@@ -261,11 +267,12 @@ export async function applyStoreEntitlement(
         transferAffected.push(
           ...(await cancelSubscriptionImmediate(tx, previousActive, appliedAt, {
             deleteVoiceData: false,
+            promoCoversFree: input.promoCoversFree,
           })),
         );
         // 즉시 해지와 같은 규칙 — 무료가 됐으면 목소리 보관 기한을 건다(멤버는 그룹 해체가
         // 이미 걸었다). 남은 유료 권한이 있으면 기한을 지운다(`syncPaidVoiceRetention`).
-        await syncPaidVoiceRetention(tx, previousOwner, appliedAt);
+        await syncPaidVoiceRetention(tx, previousOwner, appliedAt, input.promoCoversFree);
       } else {
         // ⚠ 여기서는 보관 기한을 다시 걸지 않는다 — 만료 크론이 이미 걸었고, 다시 부르면
         //   기한이 오늘부터로 **연장**된다(스펙: 재조회로 유예를 연장하지 않는다).
@@ -389,6 +396,7 @@ export async function applyStoreEntitlement(
   const canceledUserIds = await cancelActiveSubscriptionsForUser(tx, input.userPk, appliedAt, {
     deleteVoiceData: false,
     preserveGroupId: carryOver?.planGroupId ?? null,
+    promoCoversFree: input.promoCoversFree,
   });
 
   const subscriptionId = crypto.randomUUID();
@@ -410,6 +418,7 @@ export async function applyStoreEntitlement(
           ownerUserPk: input.userPk,
           maxMembers: input.plan.max_members,
           now: appliedAt,
+          promoCoversFree: input.promoCoversFree,
         })),
       );
       // ⚠ **남은 멤버의 구독 행도 새 플랜으로 옮긴다**(코덱스 #730 3차). 위에서 고친 것은
@@ -577,7 +586,13 @@ async function findOwnedGroupToCarryOver(
  */
 async function enforceGroupCapacity(
   tx: DbExecutor,
-  params: { planGroupId: string; ownerUserPk: string; maxMembers: number; now: Date },
+  params: {
+    planGroupId: string;
+    ownerUserPk: string;
+    maxMembers: number;
+    now: Date;
+    promoCoversFree: boolean;
+  },
 ): Promise<string[]> {
   const res = await tx.execute({
     sql: `SELECT id, user_id FROM plan_group_members
@@ -595,6 +610,7 @@ async function enforceGroupCapacity(
     planGroupId: params.planGroupId,
     members: overflow.map((row) => ({ userPk: String(row.user_id), membershipId: String(row.id) })),
     now: params.now,
+    promoCoversFree: params.promoCoversFree,
   });
   return overflow.map((row) => String(row.user_id));
 }

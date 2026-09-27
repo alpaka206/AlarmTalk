@@ -25,6 +25,12 @@ import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
+  computedUserPlan,
+  loadPersonalPromoField,
+  personalPromoField,
+  resolvePersonalPromo,
+} from '../lib/personal-promo';
+import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
 } from '../lib/dynamic-prompt-settings';
@@ -495,6 +501,10 @@ auth.post('/register', async (c) => {
       c.env.JWT_SECRET,
     );
 
+    // ⚠ **`plan` 은 계산값이다**(기간 한정 개인 플랜 — `docs/spec/billing-lifecycle.md`).
+    //   신규 가입자의 원시 plan 은 언제나 'free' 이고, 기간 안이면 'plus' 로 읽힌다. 원시
+    //   'free' 리터럴을 그대로 내보내면 구버전 앱이 가입 직후 무료로 판정해 잠근다.
+    const promo = resolvePersonalPromo(c.env);
     return c.json(
       {
         token,
@@ -502,7 +512,9 @@ auth.post('/register', async (c) => {
           id,
           email: normalizedEmail,
           name,
-          plan: 'free' as const,
+          plan: computedUserPlan('free' as const, promo),
+          // 방금 만든 계정이라 구독 행이 없다 — 끝나면 종료 전환 대상이다.
+          personal_promo: personalPromoField('free', promo, { hasActiveSubscriptionRow: false }),
           allow_family_alarms: false,
           // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
           // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
@@ -612,13 +624,17 @@ auth.post('/login', async (c) => {
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(
       row as unknown as Record<string, unknown>,
     );
+    const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
     return c.json({
       token,
       user: {
         id: row.id,
         email: row.email,
         name: row.name ?? '',
-        plan: row.plan ?? 'free',
+        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
+        plan: computedUserPlan(row.plan, promo) ?? 'free',
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -672,7 +688,9 @@ auth.post('/google', async (c) => {
     });
 
     let userId: string;
-    let plan: 'free' | 'plus' | 'family';
+    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
+    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    let rawPlan: 'free' | 'plus' | 'family' | null;
     let tokenEpoch = 0;
     // DB 에 쓰는 이름과 응답·JWT 에 담는 이름은 **같은 값이어야 한다.** 갈라지면 로그인
     // 직후엔 구글 이름이 보이다가 새로고침하면 저장된 닉네임으로 바뀐다.
@@ -690,7 +708,7 @@ auth.post('/google', async (c) => {
         } & Record<string, unknown>
       >(existing.rows[0]!);
       userId = row.id;
-      plan = row.plan ?? 'free';
+      rawPlan = row.plan;
       tokenEpoch = Number(row.token_epoch ?? 0);
       // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
       //
@@ -714,7 +732,7 @@ auth.post('/google', async (c) => {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
       // 삼아 users.id 가 외부 식별자였는데, 그러면 내부 관계 키가 provider 에 종속된다.
       userId = crypto.randomUUID();
-      plan = 'free';
+      rawPlan = 'free';
       await db.execute({
         // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
         // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
@@ -757,13 +775,17 @@ auth.post('/google', async (c) => {
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
+    const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
     return c.json({
       token,
       user: {
         id: userId,
         email,
         name: effectiveName,
-        plan,
+        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
+        plan: computedUserPlan(rawPlan, promo) ?? 'free',
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -852,7 +874,9 @@ auth.post('/apple', async (c) => {
     });
 
     let userId: string;
-    let plan: 'free' | 'plus' | 'family';
+    // 원시 `users.plan` — 응답에는 계산값을 싣는다(아래). `null` 은 계산에서도 `null` 이라
+    // 개인으로 올리지 않고, 응답에서만 예전처럼 'free' 로 읽는다.
+    let rawPlan: 'free' | 'plus' | 'family' | null;
     let tokenEpoch = 0;
     let effectiveName = name;
     // ⚠ **저장된 진짜 이메일이 이긴다**(코덱스 #730 3차). 애플은 재로그인 때 이메일을 안
@@ -873,7 +897,7 @@ auth.post('/apple', async (c) => {
         } & Record<string, unknown>
       >(existing.rows[0]!);
       userId = row.id;
-      plan = row.plan ?? 'free';
+      rawPlan = row.plan;
       tokenEpoch = Number(row.token_epoch ?? 0);
       // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
       // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
@@ -894,7 +918,7 @@ auth.post('/apple', async (c) => {
       });
     } else {
       userId = crypto.randomUUID();
-      plan = 'free';
+      rawPlan = 'free';
       await db.execute({
         // ⚠ 위 두 INSERT 와 같은 이유로 `family_alarm_quiet_windows` 를 명시한다 —
         // 생략하면 컬럼 DEFAULT(평일 09:00-18:30)가 박힌다.
@@ -965,13 +989,17 @@ auth.post('/apple', async (c) => {
         ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
         : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
+    const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, userId, rawPlan, promo);
     return c.json({
       token,
       user: {
         id: userId,
         email: effectiveEmail,
         name: effectiveName,
-        plan,
+        // 계산값(기간 한정 개인 플랜) — 원시 plan 은 DB 에 그대로다.
+        plan: computedUserPlan(rawPlan, promo) ?? 'free',
+        personal_promo: personalPromo,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -1072,13 +1100,18 @@ auth.get('/me', async (c) => {
       },
       c.env.JWT_SECRET,
     ).catch(() => null);
+    const promo = resolvePersonalPromo(c.env);
+    const personalPromo = await loadPersonalPromoField(db, String(row.id), row.plan, promo);
     return c.json({
       ...(rolledToken ? { token: rolledToken } : {}),
       user: {
         id: row.id,
         email: row.email,
         name: row.name ?? '',
-        plan: row.plan ?? 'free',
+        // ⚠ **계산값**(기간 한정 개인 플랜). 앱의 판정기·울림 캐시가 이 값을 `users.plan` 으로
+        //   적는다 — 구버전 앱도 이것만으로 개인 기능이 열린다. 끝나면 곧바로 'free' 가 된다.
+        plan: computedUserPlan(row.plan, promo) ?? 'free',
+        personal_promo: personalPromo,
         // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,

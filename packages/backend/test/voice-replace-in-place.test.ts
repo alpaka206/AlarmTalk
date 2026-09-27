@@ -22,6 +22,10 @@ import {
   SPEECH_STYLE_RESULT_TARGET_SQL,
   speechStyleResultTargetArgs,
 } from '../src/routes/voice-profile';
+import { resolvePersonalPromo } from '../src/lib/personal-promo';
+
+// 기간 한정 개인 플랜 꺼짐 — 이 파일은 평상 규칙(원시 plan)을 본다.
+const PROMO_OFF = resolvePersonalPromo({});
 
 async function migratedDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -121,6 +125,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         language: 'ko',
         ownerPk: 'u1',
         loginId: 'g1',
+        promo: PROMO_OFF,
       });
 
       expect(result.ok).toBe(true);
@@ -218,6 +223,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         language: 'ko',
         ownerPk: 'u1',
         loginId: 'g1',
+        promo: PROMO_OFF,
       });
       expect(result.ok).toBe(true);
       const moved = await db.execute("SELECT speech_style_status FROM voice_profiles WHERE id = 'vp1'");
@@ -280,6 +286,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       language: 'ko',
       ownerPk: 'u1',
       loginId: 'g1',
+      promo: PROMO_OFF,
     });
 
   // ⚠ **새 원본이 없어도 옛 원본은 지운다**(Codex #703 P1).
@@ -298,6 +305,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
         language: 'ko',
         ownerPk: 'u1',
         loginId: 'g1',
+        promo: PROMO_OFF,
       });
       expect(result.ok).toBe(true);
 

@@ -137,6 +137,11 @@ async function redeemVoucherCodeInTransaction(
     userPk: string;
     rawCode: string;
     now?: Date;
+    /**
+     * 기간 한정 개인 플랜이 지금 원시 free 를 덮는가(`personalPromoCoversFree(env)`). 기존
+     * 구독을 정리할 때 떨어져 나가는 사람의 보관 판정에 쓴다.
+     */
+    promoCoversFree: boolean;
   },
 ): Promise<VoucherRedemptionTxResult> {
   const code = params.rawCode.trim().toUpperCase();
@@ -294,7 +299,10 @@ async function redeemVoucherCodeInTransaction(
     redeemedAt: startsAt.toISOString(),
   });
 
-  await cancelActiveSubscriptionsForUser(db, params.userPk, startsAt, { deleteVoiceData: false });
+  await cancelActiveSubscriptionsForUser(db, params.userPk, startsAt, {
+    deleteVoiceData: false,
+    promoCoversFree: params.promoCoversFree,
+  });
 
   const planGroupId = await (async () => {
     try {
@@ -398,6 +406,11 @@ export async function redeemVoucherCode(
     userPk: string;
     rawCode: string;
     now?: Date;
+    /**
+     * 기간 한정 개인 플랜이 지금 원시 free 를 덮는가(`personalPromoCoversFree(env)`). 기존
+     * 구독을 정리할 때 떨어져 나가는 사람의 보관 판정에 쓴다.
+     */
+    promoCoversFree: boolean;
   },
 ): Promise<RedeemedVoucherResult> {
   const result = await withWriteTransaction(db, (tx) =>

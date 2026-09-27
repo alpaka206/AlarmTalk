@@ -8,8 +8,8 @@ import Foundation
 /// 그 순간 안내를 띄워 봐야 볼 사람이 없으니, 여기 적어 두고 앱이 **보여줄 수 있는
 /// 상태가 됐을 때** 모달로 띄운다.
 ///
-/// ⚠ **소진 플래그가 아니라 대기표다.** `PromoPromptStore` 는 "떴다" 를 기록하므로 차단
-/// 화면 아래에서 잘못 뜨면 **본 적도 없이 소진**된다(`docs/spec/gates-and-overlays.md`).
+/// ⚠ **소진 플래그가 아니라 대기표다.** 소진 플래그는 "떴다" 를 기록하므로 차단 화면
+/// 아래에서 잘못 뜨면 **본 적도 없이 소진**된다(`docs/spec/gates-and-overlays.md`).
 /// 여기는 반대로 **'확인' 을 눌러야 지운다** — 못 보고 지나가면 다음에 또 뜬다.
 struct DowngradeNoticeStore {
     /// ⚠ **선언 순서가 곧 우선순위다**(앞이 셈). 안드로이드 `DowngradeNoticeStore.Cause` 와

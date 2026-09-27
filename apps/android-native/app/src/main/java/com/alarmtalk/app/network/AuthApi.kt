@@ -1,5 +1,6 @@
 package com.alarmtalk.app.network
 
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -36,11 +37,67 @@ data class DynamicPromptSettingsState(
     @SerializedName("fortune_ready") val fortuneReady: Boolean = false,
 )
 
+/**
+ * **기간 한정 개인 플랜**(`personal_promo`) — 서버가 원시 `users.plan = free` 인 계정을
+ * 기간 동안 개인 플랜(`plus`)으로 **계산해서** 내려 줄 때만 붙는다. 그 밖에는 null 이다.
+ *
+ * - 날짜는 **서버 값만** 쓴다. 앱에 종료일을 박지 않는다 — 연장·조기 종료가 서버 배포만으로
+ *   끝나야 한다(원본은 `packages/shared` 의 `PERSONAL_PROMO`).
+ * - [endsAt] 은 **배타**다. 그 순간부터 무료다. 그래서 "…까지" 로 보여 줄 날은
+ *   `endsAt − 1초` 의 기기 날짜다([personalPromoLastDay]).
+ * - 필드가 없는 구버전 서버는 이 객체를 주지 않는다 — 그때는 표시만 안 한다.
+ *
+ * 전부 nullable 인 이유: 서버가 빠뜨리거나 모양이 틀린 필드는 없는 것으로 읽는다 — 쓰는
+ * 쪽이 파싱에 실패하면 없는 것으로 본다.
+ *
+ * ⚠ **파싱은 [PersonalPromoJsonAdapter] 가 한다 — 관대하게.** 표시·안내에만 쓰는 필드 하나가
+ *   객체가 아닌 값(문자열·배열)으로 오면 Gson 기본 어댑터는 예외를 던지고, 그러면 **로그인·
+ *   `/auth/me`·구독 조회 응답 전체가** 실패한다. 그때는 이 값만 null 로 읽는다(iOS 의
+ *   `PersonalPromo.init(from:)` 이 던지지 않는 것과 같은 규칙).
+ */
+@JsonAdapter(PersonalPromoJsonAdapter::class)
+data class PersonalPromo(
+    @SerializedName("ends_at") val endsAt: String? = null,
+    @SerializedName("notice_from") val noticeFrom: String? = null,
+    /**
+     * 끝나는 순간 이 계정이 **종료 전환 대상**인가(원시 free · 활성 구독 행 없음) —
+     * 대상이면 등록한 목소리가 3일 보관 후 삭제된다. 결제 보류(ON_HOLD·PAUSED)처럼 활성 행이
+     * 남은 계정은 false 다.
+     *
+     * 종료 안내가 이 값으로 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이
+     * 아닌 사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구
+     * 그대로 true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     */
+    @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
+    /**
+     * 서버가 이 plan 을 **계산한 순간**(ISO, 서버 시계). 이 키를 주지 않는 서버에서는 null.
+     *
+     * 오프라인 차단(D1)의 '받은 시각' 은 이 값이 있으면 이것이다(D7, `planAnswerStampMillis`).
+     * 기기 시계로 찍으면 기기가 서버보다 Δ 만큼 빠를 때 종료 직전에 계산된 답이 '끝난 뒤에 받은 답'
+     * 으로 찍혀 **기한 없이** 권위가 된다 — 끝나기 전의 답인지는 서버 시계로 가려야 한다.
+     *
+     * ⚠ **받는 자리에서 받은 시각으로 바뀌고 저장되지 않는다**([normalizePersonalPromo] 가 뺀다).
+     * 응답마다 값이 달라, 들고 있으면 같은 프로모가 응답마다 '다른 값' 이 된다.
+     */
+    @SerializedName("computed_at") val computedAt: String? = null,
+)
+
 data class AuthUser(
     val id: String,
     val email: String,
     val name: String = "",
+    /**
+     * 서버가 **계산한** plan. 기간 한정 개인 플랜 동안은 원시 free 도 `plus` 로 온다 —
+     * 그때는 [personalPromo] 가 함께 온다. 종료 **전에** 받은 이 값을 종료 **뒤에** 캐시로
+     * 읽으면 낡은 것이다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
+     */
     val plan: String = "free",
+    /**
+     * 기간 한정 개인 플랜. **원시 plan 이 free 인 계정에는 기간 내내 붙는다** — 위 [plan] 이
+     * 개인 플랜으로 계산됐다는 뜻이고, 앱은 이 값이 있으면 원시 plan 이 free 라고 안다.
+     * 기간이 아니거나 결제자면 null.
+     */
+    @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
     @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",

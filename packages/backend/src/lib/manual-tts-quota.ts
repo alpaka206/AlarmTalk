@@ -59,7 +59,20 @@ export async function resolveManualTtsPool(
   ownerIds: string[],
   fallbackPoolKey: string,
   fallbackUserPlan: string | null | undefined,
+  options: {
+    /**
+     * 유료 접근이 **기간 한정 개인 플랜에서만** 온다(원시 plan 은 free 인데 계산값이 개인 플랜).
+     * 그러면 아래 그룹·개인 구독 행은 **보류(ON_HOLD·PAUSED)로 남은 행뿐**이다 — 보류는 행을 살려 두고
+     * `users.plan` 만 회수한다. 그 행을 따르면 개인 플랜 사용자가 보류된 커플·가족 그룹의 한도·풀을
+     * 쓰고 소비한다(Codex #803). 계산값(개인 플랜 30회·개인 풀)으로 곧장 간다.
+     */
+    promoOnly?: boolean;
+  } = {},
 ): Promise<ManualTtsPool> {
+  if (options.promoOnly) {
+    const promoKey = fallbackUserPlan ? USER_PLAN_TO_KEY[fallbackUserPlan] ?? null : null;
+    return { poolKey: fallbackPoolKey, planKey: promoKey, limit: manualTtsMonthlyLimit(promoKey) };
+  }
   const ph = ownerIds.map(() => '?').join(',');
 
   // 1) 공유 그룹(couple/family) — 그룹에 활성·미만료 구독이 붙어 있어야 유효.
@@ -72,6 +85,9 @@ export async function resolveManualTtsPool(
           JOIN subscriptions s ON s.plan_group_id = pg.id
             AND s.status = 'active'
             AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
+            -- 보류(ON_HOLD·PAUSED)된 행은 권한이 아니다 — 행은 남고 users.plan 만 회수된다(Codex #803).
+            -- 'unverified'(스토어 재검증 대기)는 여전히 결제 중일 수 있어 빼지 않는다.
+            AND s.entitlement_state != 'suspended'
           WHERE m.user_id IN (${ph})
           ORDER BY pg.id
           LIMIT 1`,
@@ -94,6 +110,7 @@ export async function resolveManualTtsPool(
           WHERE s.user_id IN (${ph})
             AND s.status = 'active'
             AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
+            AND s.entitlement_state != 'suspended'
           ORDER BY s.expires_at DESC
           LIMIT 1`,
     args: ownerIds,

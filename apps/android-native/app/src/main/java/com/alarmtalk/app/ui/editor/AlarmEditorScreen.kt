@@ -225,6 +225,8 @@ internal fun AlarmEditorScreen(
             userPlan = authSession.user.plan,
             storeEntitled = storeEntitledNow,
             nowMillis = System.currentTimeMillis(),
+            // plan 과 같은 세션 응답의 짝이다(종료 시각 + 그 응답을 받은 시각).
+            userPlanPromo = authSession.planPromoStamp(),
         ).isEntitledOptimistic()
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
@@ -2106,6 +2108,8 @@ internal fun AlarmEditorScreen(
     // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
     // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
     preparationVoiceId?.let { targetVoiceId ->
+        // 자기 창을 여는 모달 — 진입 안내가 이 위에 겹치지 않게 적어 둔다(`OpenModalRegistry`).
+        TrackOpenModal()
         androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
             androidx.compose.material3.Surface(
                 shape = WakerDialogShape,

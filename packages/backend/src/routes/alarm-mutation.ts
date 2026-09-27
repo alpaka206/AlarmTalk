@@ -20,7 +20,8 @@ import {
   type VibrationPattern,
   type WakeMode,
 } from './alarm-helpers';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
+import { resolvePersonalPromo } from '../lib/personal-promo';
 import { enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
@@ -99,6 +100,10 @@ async function usesOnlySystemStockVoice(
  *
  * 넓히더라도 타인 메시지 id 를 알람에 끼워 넣는 IDOR 은 계속 막는다 — 접근 근거는 언제나
  * '그 목소리를 쓸 수 있는가' 이고, 초안(is_draft) 보이스의 메시지는 어느 갈래로도 못 지난다.
+ *
+ * 부르는 자리: POST 는 언제나, PATCH 는 `message_id` 가 **저장된 값에서 바뀔 때만**(스펙 D13 —
+ * [voiceProfileBelongsToCaller] 의 D8 과 같은 규칙). 그대로 보낸 값은 새 참조가 아니다. 허용 갈래
+ * 자체는 이 조건과 무관하게 오디오 라우트와 같다.
  */
 async function messageBelongsToCaller(
   db: DbExecutor,
@@ -158,6 +163,9 @@ async function messageBelongsToCaller(
   });
   if (shared.rows.length === 0) return false;
   // 판정은 오디오 라우트와 같은 헬퍼로 한다 — 유료 플랜 목록을 SQL 에 베껴 두면 둘이 갈라진다.
+  // ⚠ **원시값이다 — 기간 한정 개인 플랜을 반영하지 않는다.** 공유 목소리는 커플·가족 기능이고,
+  //   보류 그룹 소유자는 원시 free 라 계산값으로 보면 기간 동안 공유가 되살아난다. 오디오 라우트의
+  //   남의 목소리 갈래도 원시값이다(`docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」).
   return isPaidVoicePlan(shared.rows[0]!.owner_plan);
 }
 
@@ -182,11 +190,18 @@ async function voiceProfileBelongsToCaller(
   });
   if (owned.rows.length > 0) return true;
 
-  // 가족/그룹 공유 보이스(is_shared=1, non-draft): 소유자가 호출자와 같은 plan group 이면
-  // 허용한다. tts.ts findUsableVoiceProfile 의 접근 모델과 일치시켜, 공유 음성으로 만든
-  // 알람의 POST/PATCH 가 404 로 막히지 않게 한다(무관한 타인 비공개 프로필은 계속 차단).
+  // 가족/그룹 공유 보이스(is_shared=1, non-draft): 소유자가 호출자와 같은 plan group 이고
+  // **소유자가 원시 유료일 때만** 허용한다. tts.ts findUsableVoiceProfile 의 접근 모델과
+  // 일치시켜, 공유 음성으로 만든 알람의 POST/PATCH 가 404 로 막히지 않게 한다(무관한 타인
+  // 비공개 프로필은 계속 차단).
+  //
+  // ⚠ **소유자 플랜은 원시값이다**(`messageBelongsToCaller` 의 공유 갈래·오디오 라우트의 남의
+  //   목소리·`/tts/generate` 와 같은 규칙). 결제 보류(ON_HOLD·PAUSED) 그룹은 그룹·`is_shared` 를
+  //   남긴 채 소유자 `users.plan` 만 free 로 회수한다 — 플랜을 안 보면 멈춘 공유 목소리를
+  //   가리키는 알람이 저장된다. 기간 한정 개인 플랜(계산값)으로 보면 그 공유가 기간 동안
+  //   되살아난다.
   const shared = await db.execute({
-    sql: `SELECT u.id AS owner_pk
+    sql: `SELECT u.id AS owner_pk, u.plan AS owner_plan
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
@@ -200,7 +215,54 @@ async function voiceProfileBelongsToCaller(
     typeof shared.rows[0]!.owner_pk === 'string' ? (shared.rows[0]!.owner_pk as string) : null;
   const viewerPk = ownerIds[0];
   if (!ownerPk || !viewerPk || viewerPk === ownerPk) return false;
+  if (!isPaidVoicePlan(shared.rows[0]!.owner_plan)) return false;
   return assertSameGroup(db, viewerPk, ownerPk);
+}
+
+/**
+ * 이 알람이 **같은 그룹이 공유한 남의 목소리**를 쓰는가 — `voice_profile_id` 로 직접, 또는
+ * `message_id`(내가 만든 문구·프리셋 클립)를 만든 목소리로.
+ *
+ * 쓰는 자리는 하나다: 내 알람의 목소리 게이트가 **기간 한정 개인 플랜(계산값)으로만** 열린
+ * 경우(원시 free) 남의 목소리는 원시값으로 다시 막는다 — 공유 목소리는 커플·가족 기능이다
+ * (`docs/spec/billing-lifecycle.md` 「무엇이 계산값을 보고, 무엇이 원시값을 보나」).
+ *
+ * ⚠ **호출자가 볼 수 있는 공유 목소리만** 참이다(같은 그룹 + `is_shared` + 내 것이거나 프리셋인
+ *   문구). 소유권 게이트(`messageBelongsToCaller`·`voiceProfileBelongsToCaller`)보다 **먼저**
+ *   돌기 때문에, 남의 비공개 id 에 참을 내면 404 대신 403 이 나가 그 id 의 존재가 에러 코드로
+ *   샌다 — 그런 id 는 거짓으로 흘려보내 뒤의 소유권 게이트가 404 를 내게 한다.
+ */
+async function alarmUsesSharedVoice(
+  db: DbExecutor,
+  fields: { message_id?: string | null; voice_profile_id?: string | null },
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const voiceProfileId = fields.voice_profile_id ?? null;
+  const messageId = fields.message_id ?? null;
+  if (!voiceProfileId && !messageId) return false;
+  const res = await db.execute({
+    sql: `SELECT 1
+          FROM voice_profiles vp
+          JOIN users owner ON owner.id = vp.user_id OR owner.google_id = vp.user_id
+          JOIN plan_group_members pgm_owner ON pgm_owner.user_id = owner.id
+          JOIN plan_group_members pgm_me ON pgm_me.plan_group_id = pgm_owner.plan_group_id
+          WHERE COALESCE(vp.is_system, 0) = 0
+            AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
+            AND vp.deleted_at IS NULL
+            AND vp.user_id NOT IN (?, ?)
+            AND pgm_me.user_id = ?
+            AND (
+              vp.id = ?
+              OR vp.id IN (
+                SELECT m.voice_profile_id FROM messages m
+                WHERE m.id = ? AND (m.user_id IN (?, ?) OR COALESCE(m.is_preset, 0) = 1)
+              )
+            )
+          LIMIT 1`,
+    args: [...ownerIds, ownerIds[0], voiceProfileId, messageId, ...ownerIds],
+  });
+  return res.rows.length > 0;
 }
 
 /**
@@ -383,12 +445,29 @@ alarmMutation.post('/', async (c) => {
     });
     creatorPlanValue = creatorPlan.rows[0]?.plan;
   }
+  // 내 알람은 **계산값**(기간 한정 개인 플랜 반영), 남에게 보내는 알람은 **원시값**이다 —
+  // 보내는 알람은 커플·가족 기능이라, 보류 그룹의 원시 free 발신자가 기간 동안 목소리 알람을
+  // 보내게 되면 안 된다(가족 알람 발신자 게이트 `family-alarm.ts` 와 같은 규칙).
   const creatorHasPaidVoice =
-    !resolvedUserPk || creatorPlanValue === undefined || isPaidVoicePlan(creatorPlanValue);
+    !resolvedUserPk ||
+    creatorPlanValue === undefined ||
+    (alarmOwner === userId
+      ? hasPersonalVoiceAccess(creatorPlanValue, resolvePersonalPromo(c.env))
+      : isPaidVoicePlan(creatorPlanValue));
+  // 계산값으로**만** 열렸다(원시 free + 기간 한정 개인 플랜) — 남의 목소리(공유)는 원시값으로
+  // 다시 본다. 기간 전과 같은 답(403 VOICE_FEATURE_REQUIRES_PAID_PLAN)이 나간다.
+  const openedOnlyByPromo =
+    creatorHasPaidVoice &&
+    !!resolvedUserPk &&
+    creatorPlanValue !== undefined &&
+    !isPaidVoicePlan(creatorPlanValue);
   if (
-    !creatorHasPaidVoice &&
-    alarmUsesPaidVoice(body) &&
-    !(await usesOnlySystemStockVoice(db, body))
+    (!creatorHasPaidVoice &&
+      alarmUsesPaidVoice(body) &&
+      !(await usesOnlySystemStockVoice(db, body))) ||
+    (openedOnlyByPromo &&
+      alarmUsesPaidVoice(body) &&
+      (await alarmUsesSharedVoice(db, body, ownerIds)))
   ) {
     return c.json(
       {
@@ -680,8 +759,12 @@ alarmMutation.patch('/:id', async (c) => {
     );
   }
   const resolvedUserPk = c.get('userIdPK');
+  // 보낸 알람은 위에서 409 로 끝났다 — 여기는 언제나 **내 알람**이라 계산값(기간 한정 개인
+  // 플랜 반영)으로 본다.
   const creatorHasPaidVoice =
-    !resolvedUserPk || current.user_plan === undefined || isPaidVoicePlan(current.user_plan);
+    !resolvedUserPk ||
+    current.user_plan === undefined ||
+    hasPersonalVoiceAccess(current.user_plan, resolvePersonalPromo(c.env));
   const effectiveVoiceFields = {
     mode: body.mode !== undefined ? body.mode : current.mode,
     wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,
@@ -689,10 +772,19 @@ alarmMutation.patch('/:id', async (c) => {
     voice_profile_id:
       body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
   };
+  // POST 와 같다 — 계산값으로만 열린 원시 free 는 남의 목소리(공유)를 원시값으로 다시 본다.
+  const patchOpenedOnlyByPromo =
+    creatorHasPaidVoice &&
+    !!resolvedUserPk &&
+    current.user_plan !== undefined &&
+    !isPaidVoicePlan(current.user_plan);
   if (
-    !creatorHasPaidVoice &&
-    alarmUsesPaidVoice(effectiveVoiceFields) &&
-    !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))
+    (!creatorHasPaidVoice &&
+      alarmUsesPaidVoice(effectiveVoiceFields) &&
+      !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))) ||
+    (patchOpenedOnlyByPromo &&
+      alarmUsesPaidVoice(effectiveVoiceFields) &&
+      (await alarmUsesSharedVoice(db, effectiveVoiceFields, patchOwnerIds)))
   ) {
     return c.json(
       {
@@ -717,17 +809,38 @@ alarmMutation.patch('/:id', async (c) => {
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
   // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
   const ownerIds = callerOwnerIds(c) as [string, string];
-  if (
+  // ⚠ **목소리·문구는 저장된 값에서 바뀔 때만 다시 본다**(스펙 D8·D13 —
+  // `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 공유 목소리 표). 안드로이드 동기화
+  // (`RemoteAlarmMapper.toWriteRequest`)는 켜기·끄기·시각만 고쳐도 `voice_profile_id` 와
+  // `message_id` 를 **매번 그대로** 보낸다. 공유 목소리 주인이 결제 보류(원시 free)가 되면 소유권
+  // 게이트가 그 목소리와 그 주인의 프리셋 클립을 막으므로, 그대로 보낸 값까지 보면 토글마다 404 →
+  // 생성 폴백도 404 → 알람이 동기화 실패로 남는다(리뷰). 바뀌지 않은 값은 새 참조를 만들지 않는다
+  // — 이미 이 알람에 있던 값이고, 알람 소유는 위 조회가 확인했다. 새 값으로 **바꾸는** PATCH 와
+  // POST 는 언제나 본다.
+  // ⚠ 이건 `messageBelongsToCaller` ↔ 오디오 라우트 **쌍 규칙을 넓히지 않는다** — 허용 갈래는 그대로이고,
+  //   보류 주인의 클립 재생은 `GET /tts/messages/:id/audio` 가 여전히 `VOICE_LOCKED_FREE_PLAN` 으로 막는다.
+  //   살리는 것은 이미 있던 알람의 동기화뿐이다.
+  const changedVoiceProfileId =
+    body.voice_profile_id !== undefined &&
+    body.voice_profile_id !== null &&
+    body.voice_profile_id !== current.voice_profile_id
+      ? body.voice_profile_id
+      : null;
+  const changedMessageId =
     body.message_id !== undefined &&
     body.message_id !== null &&
-    !(await messageBelongsToCaller(db, body.message_id, ownerIds))
+    body.message_id !== current.message_id
+      ? body.message_id
+      : null;
+  if (
+    changedMessageId !== null &&
+    !(await messageBelongsToCaller(db, changedMessageId, ownerIds))
   ) {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
   if (
-    body.voice_profile_id !== undefined &&
-    body.voice_profile_id !== null &&
-    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+    changedVoiceProfileId !== null &&
+    !(await voiceProfileBelongsToCaller(db, changedVoiceProfileId, ownerIds))
   ) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
@@ -817,21 +930,19 @@ alarmMutation.patch('/:id', async (c) => {
       sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
       args,
     });
+  // 트랜잭션 안의 재확인(TOCTOU)도 바깥 게이트와 같은 조건이다 — 바뀌는 값만 본다(D8·D13).
   const updateResult =
-    (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
-    (body.message_id !== undefined && body.message_id !== null)
+    changedVoiceProfileId !== null || changedMessageId !== null
       ? await withWriteTransaction(db, async (tx) => {
           if (
-            body.voice_profile_id !== undefined &&
-            body.voice_profile_id !== null &&
-            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+            changedVoiceProfileId !== null &&
+            !(await voiceProfileBelongsToCaller(tx, changedVoiceProfileId, ownerIds))
           ) {
             return { status: 'voice_not_found' as const, result: null };
           }
           if (
-            body.message_id !== undefined &&
-            body.message_id !== null &&
-            !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
+            changedMessageId !== null &&
+            !(await messageBelongsToCaller(tx, changedMessageId, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
           }

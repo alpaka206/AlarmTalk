@@ -8,8 +8,7 @@ final class VoiceShareAccessTests: XCTestCase {
                 subscriptionResponse: nil,
                 familyGroup: nil,
                 authSession: session,
-                storeTier: .couple,
-                userPlan: nil
+                storeTier: .couple
             )
         )
     }
@@ -20,8 +19,7 @@ final class VoiceShareAccessTests: XCTestCase {
                 subscriptionResponse: nil,
                 familyGroup: group(members: [selfMember, otherMember]),
                 authSession: session,
-                storeTier: .personal,
-                userPlan: nil
+                storeTier: .personal
             )
         )
     }
@@ -32,8 +30,7 @@ final class VoiceShareAccessTests: XCTestCase {
                 subscriptionResponse: nil,
                 familyGroup: group(members: [selfMember]),
                 authSession: session,
-                storeTier: .personal,
-                userPlan: nil
+                storeTier: .personal
             )
         )
     }
@@ -44,8 +41,7 @@ final class VoiceShareAccessTests: XCTestCase {
                 subscriptionResponse: subscription(planKey: "family", planType: "family"),
                 familyGroup: nil,
                 authSession: session,
-                storeTier: .free,
-                userPlan: nil
+                storeTier: .free
             )
         )
     }

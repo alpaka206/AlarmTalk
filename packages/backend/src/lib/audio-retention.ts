@@ -49,14 +49,20 @@ export async function enqueueExternalDeletionsBatch(
     new Set(refs.map((r) => r?.trim()).filter((r): r is string => Boolean(r))),
   );
   const CHUNK = 40;
+  const statements: InStatement[] = [];
   for (let i = 0; i < unique.length; i += CHUNK) {
     const chunk = unique.slice(i, i + CHUNK);
     const values = chunk.map(() => '(?, ?, ?)').join(', ');
-    await tx.execute({
+    statements.push({
       sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref) VALUES ${values}`,
       args: chunk.flatMap((ref) => [crypto.randomUUID(), kind, ref]),
     });
   }
+  if (statements.length === 0) return;
+  // 청크가 여럿이어도 **왕복 한 번**이다 — 여러 사람을 묶어 지우는 보관 스윕
+  // (`lib/personal-promo-end.ts`)은 파일이 수백 개라 청크마다 왕복하면 그것만으로 한도를 넘는다.
+  if (statements.length === 1) await tx.execute(statements[0]!);
+  else await tx.batch(statements);
 }
 
 /** 큐 적재 — 트랜잭션 내부에서 호출 가능. 동일 (kind, ref) 는 무시(idempotent). */

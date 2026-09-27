@@ -49,6 +49,7 @@ class PaidVoiceAccessTest {
             userPlan = "free",
             storeEntitled = true,
             nowMillis = now,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Entitled, access)
     }
@@ -61,6 +62,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.NotEntitled, access)
     }
@@ -73,6 +75,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Entitled, access)
     }
@@ -87,6 +90,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Unknown, access)
         assertEquals(true, access.isEntitledOptimistic())
@@ -100,17 +104,17 @@ class PaidVoiceAccessTest {
         // 유료 전용 컨트롤이 열린다 — 눌러 봐야 서버가 거절한다.
         assertEquals(
             PaidVoiceAccess.NotEntitled,
-            resolvePaidVoiceAccess(null, null, "free", false, now),
+            resolvePaidVoiceAccess(null, null, "free", false, now, null),
         )
         // 스토어가 유효하다고 하면 여전히 그게 위다.
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(null, null, "free", true, now),
+            resolvePaidVoiceAccess(null, null, "free", true, now, null),
         )
         // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
         assertEquals(
             PaidVoiceAccess.Unknown,
-            resolvePaidVoiceAccess(null, null, null, false, now),
+            resolvePaidVoiceAccess(null, null, null, false, now, null),
         )
     }
 
@@ -120,7 +124,7 @@ class PaidVoiceAccessTest {
         // 여기는 서버가 "본인 구독 없음" 이라고 **답했고** 그룹도 없다 — 근거가 다 모인 무료다.
         // 모름으로 접으면 낙관 규칙에 걸려 무료 사용자의 유료 목소리가 영영 강등되지 않는다.
         val empty = BillingSubscriptionResponse(subscription = null, plan = null)
-        val access = resolvePaidVoiceAccess(empty, null, null, false, now)
+        val access = resolvePaidVoiceAccess(empty, null, null, false, now, null)
         assertEquals(PaidVoiceAccess.NotEntitled, access)
         assertEquals(true, access.isDefinitelyFree())
     }
@@ -134,18 +138,18 @@ class PaidVoiceAccessTest {
         val retained = sub("active", "2026-09-30T00:00:00Z")
         assertEquals(
             PaidVoiceAccess.NotEntitled,
-            resolvePaidVoiceAccess(retained, null, "free", false, now),
+            resolvePaidVoiceAccess(retained, null, "free", false, now, null),
         )
         // 같은 행이라도 plan 이 살아 있으면 그대로 유료다(정상 구독을 막지 않는다).
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(retained, null, "personal", false, now),
+            resolvePaidVoiceAccess(retained, null, "personal", false, now, null),
         )
         // 그리고 **스토어는 여전히 위다** — 보류가 풀려 결제가 통과했는데 서버 반영이 늦은
         // 경우, 서버의 free 로 막으면 돈 내는 사용자가 잠긴다.
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(retained, null, "free", true, now),
+            resolvePaidVoiceAccess(retained, null, "free", true, now, null),
         )
     }
 
@@ -154,11 +158,11 @@ class PaidVoiceAccessTest {
         val empty = BillingSubscriptionResponse(subscription = null, plan = null)
         assertEquals(
             PaidVoiceAccess.NotEntitled,
-            resolvePaidVoiceAccess(empty, null, "free", false, now),
+            resolvePaidVoiceAccess(empty, null, "free", false, now, null),
         )
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(empty, null, "family", false, now),
+            resolvePaidVoiceAccess(empty, null, "family", false, now, null),
         )
     }
 
@@ -174,6 +178,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = storeStillValid,
             nowMillis = now,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.NotEntitled, access)
     }
@@ -185,5 +190,237 @@ class PaidVoiceAccessTest {
         assertEquals(false, PaidVoiceAccess.Unknown.isDefinitelyFree())
         assertEquals(false, PaidVoiceAccess.NotEntitled.isEntitledOptimistic())
         assertEquals(true, PaidVoiceAccess.NotEntitled.isDefinitelyFree())
+    }
+
+    // ── 기간 한정 개인 플랜(personal_promo) ──────────────────────────────────────────
+    //
+    // 서버는 기간 동안 원시 free 를 `plus` 로 **계산해서** 준다(구독 행은 없다). 앱은 그
+    // `plus` 를 캐시해 두고 오프라인·울림 경로에서 읽는다 — **종료 전에 받은** 그 캐시는 종료
+    // 뒤에 원시 free 로 읽어야 한다. 단 **종료 뒤에 받은 답은 권위**이고, **활성 구독 행은
+    // 언제나 위다**(양 앱 공통 규칙).
+
+    private val promoEndsAt = "2026-10-31T15:00:00Z"
+    private val promoEnd = Instant.parse(promoEndsAt).toEpochMilli()
+    private val noSubscription = BillingSubscriptionResponse(subscription = null, plan = null)
+
+    /** 종료 한 시간 전에 받은 답 — 전형적인 '낡은 캐시'. */
+    private val staleStamp = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd - 60 * 60_000L)
+
+    @Test
+    fun promoPlusWithoutSubscriptionIsEntitledUntilItsEnd() {
+        // 개인 기능이 열려야 하는 기간 — 구독 행이 없어도 계산된 plus 로 유료다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd - 1, staleStamp),
+        )
+        // 종료는 배타다 — 그 순간부터 낡은 캐시는 무료.
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd, staleStamp),
+        )
+        assertEquals(
+            true,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60_000, staleStamp)
+                .isDefinitelyFree(),
+        )
+    }
+
+    @Test
+    fun lapsedPromoWithoutSnapshotIsKnownFreeNotUnknown() {
+        // 울림 경로의 전형: 구독 스냅샷이 없는 기기에 캐시된 plus 만 남아 있다.
+        // 여기서 Unknown 이면 낙관 규칙에 걸려 **종료 뒤에도 클론 목소리가 계속 울린다.**
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd, staleStamp),
+        )
+        // 기간 중에는 예전 규칙 그대로다(스냅샷 없음 = 모름).
+        assertEquals(
+            PaidVoiceAccess.Unknown,
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd - 1, staleStamp),
+        )
+    }
+
+    @Test
+    fun anAnswerFetchedAtOrAfterTheEndIsAuthoritative() {
+        // 기기 시계가 서버보다 빠르면, 기기 기준 종료 뒤에 받은 응답에도 서버는 아직 plus 를 준다.
+        // 서버가 이미 계산한 답이다 — 기기 시계로 자르면 서버가 방금 열어 준 것을 앱이 닫는다.
+        val fetchedAtEnd = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd)
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60 * 60_000L, fetchedAtEnd),
+        )
+        val fetchedAfter = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd + 5_000)
+        assertEquals(
+            PaidVoiceAccess.Unknown,
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd + 60_000, fetchedAfter),
+        )
+        // 받은 시각을 모르는 옛 캐시는 종료 전에 받은 것으로 본다(예전 동작).
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd, PlanPromoStamp(promoEndsAt, null)),
+        )
+    }
+
+    @Test
+    fun aFreshAnswerNeverLocksOnTheDeviceClock() {
+        // `PlanChangeSyncWorker` 처럼 **방금 받은 답**으로 되돌릴 수 없는 강등을 거는 자리.
+        // 기기 시계가 종료를 넘겨 있어도(시계가 빠름·경계에 걸침) 서버가 준 plus 로 판정한다.
+        val user = com.alarmtalk.app.network.AuthUser(
+            id = "u1",
+            email = "u1@example.test",
+            plan = "plus",
+            personalPromo = com.alarmtalk.app.network.PersonalPromo(endsAt = promoEndsAt),
+        )
+        listOf(promoEnd, promoEnd + 1, promoEnd + 24 * 60 * 60_000L).forEach { deviceNow ->
+            val access = resolvePaidVoiceAccess(
+                noSubscription, null, user.plan, false, deviceNow, freshPlanPromoStamp(user, deviceNow),
+            )
+            assertEquals("now=$deviceNow", PaidVoiceAccess.Entitled, access)
+            assertEquals(false, access.isDefinitelyFree())
+        }
+        // 프로모가 아닌 답에는 표지가 없다.
+        assertEquals(null, freshPlanPromoStamp(user.copy(personalPromo = null), promoEnd))
+    }
+
+    @Test
+    fun lapsedPromoNeverOverridesARealSubscription() {
+        // 진짜 구독 행이 살아 있으면 그 만료가 답이다 — 프로모 종료 시각과 무관하다.
+        val live = sub("active", "2026-12-01T00:00:00Z")
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(live, null, "plus", false, promoEnd + 60_000, staleStamp),
+        )
+        // 스토어가 유효하다고 하면 그것도 위다(기간 중에 Play 로 산 사람).
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", true, promoEnd + 60_000, staleStamp),
+        )
+    }
+
+    @Test
+    fun paidPlanWithoutPromoIsUntouchedAfterThePromoEnds() {
+        // 짝이 null = 그 plan 은 프로모 계산값이 아니다(원시 유료). 종료 시각이 지나도 그대로다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60_000, null),
+        )
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "family", false, promoEnd + 60_000, null),
+        )
+    }
+
+    @Test
+    fun unreadablePromoEndDoesNotLockAnyone() {
+        // 끝을 모르면 자르지 않는다 — 서버 게이트가 제 시각에 스스로 닫힌다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(
+                noSubscription, null, "plus", false, promoEnd + 60_000, PlanPromoStamp("not-a-date", null),
+            ),
+        )
+    }
+
+    // ── 기간 중의 보류 규칙(D9) — 남은 구독 행·그룹은 커플·가족을 열지 못한다 ──────────────────
+    //
+    // 결제 보류(ON_HOLD·PAUSED)는 구독 행과 그룹을 **남긴 채** `users.plan` 만 회수한다. 기간 중에는
+    // 서버가 그 free 를 plus 로 계산해 주므로 plan 만 보면 보류인지 모른다 — `personal_promo` 가
+    // 있다는 것이 원시 free 의 신호다. iOS `PlanTier.bestKnown(user:)` 의 `suspended` 와 같은 답.
+
+    private val retainedFamilyRow = BillingSubscriptionResponse(
+        subscription = BillingSubscription(
+            id = "retained",
+            planId = "family",
+            status = "active",
+            startsAt = "2026-10-01T00:00:00Z",
+            expiresAt = "2026-12-01T00:00:00Z",
+        ),
+        plan = BillingPlan(
+            id = "family",
+            key = "family",
+            name = "가족",
+            planType = "family",
+            periodDays = 30,
+            maxMembers = 5,
+            priceKrw = 9900,
+        ),
+    )
+
+    private val retainedGroup = com.alarmtalk.app.network.FamilyGroupCurrentResponse(
+        group = com.alarmtalk.app.network.FamilyGroup(
+            id = "g1",
+            ownerUserId = "owner",
+            planId = "family",
+            maxMembers = 5,
+            createdAt = "2026-10-01T00:00:00Z",
+        ),
+        role = "member",
+        members = listOf(
+            com.alarmtalk.app.network.FamilyGroupMember(
+                id = "m1",
+                userId = "owner",
+                role = "owner",
+                joinedAt = "2026-10-01T00:00:00Z",
+                email = "owner@example.test",
+            ),
+        ),
+    )
+
+    private val memberSession = com.alarmtalk.app.network.AuthSession(
+        token = "t",
+        provider = com.alarmtalk.app.network.AuthSessionStore.PROVIDER_APP,
+        user = com.alarmtalk.app.network.AuthUser(id = "me", email = "me@example.test", plan = "plus"),
+    )
+
+    @Test
+    fun duringThePromoARetainedRowOrGroupDoesNotLiftCoupleOrFamily() {
+        val duringPromo = promoEnd - 60_000
+        val hold = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = duringPromo)
+        assertEquals(PersonalPromoTierHold(storePlanKey = null, computedPlan = "plus"), hold)
+        // 보류 그룹의 멤버·소유자 — 행도 그룹도 남아 있지만 서버는 원시값으로 막는다.
+        assertEquals(false, hasCoupleOrFamilyAccess(retainedFamilyRow, retainedGroup, hold))
+        assertEquals(false, hasCoupleOrFamilyAccess(null, retainedGroup, hold))
+        assertEquals(false, canShareVoiceWithOthers(retainedFamilyRow, retainedGroup, memberSession, hold))
+        // 판정기의 plan 없는 갈래도 같은 규칙이다.
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(noSubscription, retainedGroup, null, false, duringPromo, staleStamp),
+        )
+        // 유료 목소리(개인 기능)는 계산값 plus 로 그대로 열린다 — 보류 규칙은 커플·가족만의 것이다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(retainedFamilyRow, retainedGroup, "plus", false, duringPromo, staleStamp),
+        )
+    }
+
+    @Test
+    fun duringThePromoOnlyTheStoreOrTheComputedPlanOpensCoupleOrFamily() {
+        val duringPromo = promoEnd - 60_000
+        // Play 가 지금 가족 구독을 확인해 줬다(「스토어가 권위다」).
+        val storeFamily = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = "family", nowMillis = duringPromo)
+        assertEquals(true, hasCoupleOrFamilyAccess(null, null, storeFamily))
+        assertEquals(true, canShareVoiceWithOthers(null, null, memberSession, storeFamily))
+        // 개인 스토어 등급은 커플·가족을 열지 않는다.
+        val storePersonal = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = "personal", nowMillis = duringPromo)
+        assertEquals(false, hasCoupleOrFamilyAccess(retainedFamilyRow, retainedGroup, storePersonal))
+    }
+
+    @Test
+    fun outsideThePromoTheOldRulesStand() {
+        // 프로모가 아닌 답(표지 없음) — 규칙이 걸리지 않는다. 행·그룹이 예전처럼 연다.
+        assertEquals(null, personalPromoTierHoldOf("family", null, storePlanKeyValidNow = null, nowMillis = now))
+        assertEquals(true, hasCoupleOrFamilyAccess(retainedFamilyRow, null, null))
+        assertEquals(true, hasCoupleOrFamilyAccess(null, retainedGroup, null))
+        assertEquals(true, canShareVoiceWithOthers(retainedFamilyRow, null, memberSession, null))
+        // 끝난 뒤의 낡은 캐시(D1)도 규칙 밖이다 — 활성 행이 끝난 프로모보다 이긴다(판정기와 같은 순서).
+        assertEquals(null, personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = promoEnd))
+        assertEquals(
+            true,
+            hasCoupleOrFamilyAccess(
+                retainedFamilyRow,
+                retainedGroup,
+                personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = promoEnd + 60_000),
+            ),
+        )
     }
 }

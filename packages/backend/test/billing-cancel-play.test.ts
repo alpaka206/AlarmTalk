@@ -488,7 +488,7 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
     ]); // 남은 활성 구독 조회
     mockDB.pushResult([], 1); // UPDATE users SET plan = ? (유지)
 
-    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false, promoCoversFree: false });
 
     // 무료 강등은 문장 안의 리터럴이든 바인딩 값이든 없어야 한다(강등은 `plan = ?` + 'free' 로도 나간다).
     expect(
@@ -507,7 +507,7 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
     mockDB.pushResult([], 1); // 미사용 코드 만료
     mockDB.pushResult([]); // 남은 활성 구독 없음
 
-    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date(), { deleteVoiceData: false, promoCoversFree: false });
 
     expect(
       mockDB.calls.some((c) => c.sql.includes('UPDATE users SET plan') && c.args[0] === 'free'),
@@ -589,6 +589,7 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
       mockDB.client as never,
       OWNER_SUB,
       new Date(),
+      { deleteVoiceData: false, promoCoversFree: false },
     );
 
     // 반환값: 취소 당사자(소유자) + 해체로 강등되는 멤버 → 호출부의 plan_changed 통지 대상.

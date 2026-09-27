@@ -2,60 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { REQUIRED_SECRET_KEYS, selectWorkerSecrets } from './worker-secret-keys.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(SCRIPT_DIR, '..');
-
-const WORKER_SECRET_KEYS = [
-  'ELEVENLABS_API_KEY',
-  'TURSO_DATABASE_URL',
-  'TURSO_AUTH_TOKEN',
-  'GOOGLE_CLIENT_ID',
-  'GOOGLE_VERTEX_CREDENTIALS_JSON',
-  'GOOGLE_VERTEX_LOCATION',
-  'GOOGLE_VERTEX_MODEL',
-  'RESEND_API_KEY',
-  'AUTH_EMAIL_FROM',
-  'AUTH_EMAIL_REPLY_TO',
-  'JWT_SECRET',
-  'PASSWORD_PEPPER',
-  'INIT_DB_SECRET',
-  'SENTRY_DSN',
-  'FIREBASE_PROJECT_ID',
-  // 푸시(FCM) 서비스계정 + 결제(Google Play) + 공휴일(KR).
-  // 백엔드가 읽는데 sync 목록에서 빠져 있어 추가. 빈 값은 위 루프(115행)에서 자동 skip.
-  'FIREBASE_SERVICE_ACCOUNT_JSON',
-  'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
-  'ANDROID_PACKAGE_NAME',
-  'GOOGLE_RTDN_VERIFICATION_TOKEN',
-  'ADMIN_SECRET',
-  'KASI_SERVICE_KEY',
-  // Apple — **세 갈래이고 키가 서로 다르다.** 빈 값은 자동 skip.
-  //  1) 로그인 검증: APPLE_BUNDLE_ID 하나(애플 공개키 JWKS 검증이라 비밀키 불필요)
-  //  2) 탈퇴 시 연결 해제: APPLE_TEAM_ID + APPLE_SIGNIN_* (Sign in with Apple 키)
-  //  3) 결제 검증: APPLE_ISSUER_ID + APPLE_KEY_ID + APPLE_PRIVATE_KEY
-  //     (App Store Server API 키 — 2)와 **다른 키**다. 한 이름에 몰면 결제가 죽는다.)
-  'APPLE_BUNDLE_ID',
-  'APPLE_TEAM_ID',
-  'APPLE_SIGNIN_KEY_ID',
-  'APPLE_SIGNIN_PRIVATE_KEY',
-  'APPLE_ISSUER_ID',
-  'APPLE_KEY_ID',
-  'APPLE_PRIVATE_KEY',
-  //  4) 푸시(APNs): APNS_KEY_ID + APNS_PRIVATE_KEY (+ APPLE_TEAM_ID 재사용)
-  'APNS_KEY_ID',
-  'APNS_PRIVATE_KEY',
-  // Perso(랜딩 이벤트 메시지 클립). 비어 있으면 그 라우트만 503.
-  'PERSO_API_KEY',
-] as const;
-
-const REQUIRED_SECRET_KEYS = [
-  'TURSO_DATABASE_URL',
-  'TURSO_AUTH_TOKEN',
-  'GOOGLE_CLIENT_ID',
-  'JWT_SECRET',
-  'PASSWORD_PEPPER',
-] as const;
 
 function parseArgs(argv: string[]): { envName: 'dev' | 'production'; envFile: string } {
   let envName: string | undefined;
@@ -140,11 +90,8 @@ function main(): void {
     throw new Error('CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required.');
   }
 
-  const secrets: Record<string, string> = {};
-  for (const key of WORKER_SECRET_KEYS) {
-    const value = values[key];
-    if (value?.trim()) secrets[key] = value;
-  }
+  // 키 목록과 dev 전용 키 거절은 `worker-secret-keys.ts` 한 곳이다(테스트가 잠근다).
+  const secrets = selectWorkerSecrets(args.envName, values);
 
   const command = process.platform === 'win32' ? 'cmd.exe' : 'npx';
   const commandArgs =
