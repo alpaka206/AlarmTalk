@@ -23,7 +23,7 @@ struct FormSheet<Content: View>: View {
     let title: String
     var saveTitle: String = "저장"
     /// 좌측 액션 라벨. 기본은 `취소` 지만 **되돌릴 것이 없는 모달은 `닫기`** 가 맞다
-    /// (웰컴 코드 안내처럼 입력을 취소하는 게 아니라 안내를 지나치는 경우).
+    /// (쿠폰 입력 시트처럼 입력을 취소하는 게 아니라 안내를 지나치는 경우).
     /// 안드로이드 `WakerFormSheet` 의 `cancelLabel` 짝이다 — 한쪽만 고정하면 같은 모달의
     /// 왼쪽 글자가 두 앱에서 달라진다.
     var cancelTitle: String = "취소"

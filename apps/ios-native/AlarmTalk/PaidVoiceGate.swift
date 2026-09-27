@@ -104,7 +104,12 @@ enum PaidVoiceGate {
            Date(timeIntervalSince1970: Double(untilMillis) / 1000) > now {
             return .entitled
         }
-        let plan = snapshot.userPlan?.trimmingCharacters(in: .whitespaces).lowercased()
+        // ⚠ **끝난 기간 한정 개인 플랜은 걷어낸 값으로 본다.** 프로모 기간의 `userPlan` 은
+        // 서버 계산값(`plus`)이라, 다음 `/auth/me` 전까지는 끝난 뒤에도 그 값이 남는다 —
+        // 오프라인 기기가 계속 클론 목소리를 예약하게 된다. 구독 행의 `expires_at` 을 보는
+        // 것과 같은 방식으로 서버가 준 `ends_at` 이후에는 free 로 읽는다.
+        let plan = PersonalPromo.planAsOf(snapshot.userPlan, promo: snapshot.personalPromo, now: now)?
+            .trimmingCharacters(in: .whitespaces).lowercased()
         // ⚠ **서버가 free 라고 말하면 남아 있는 구독 행보다도, '모름' 보다도 먼저다.**
         // ① 보류(ON_HOLD·결제 재시도)는 **행을 남긴다** — 서버의 `propagateGroupMemberPlans`
         //    는 멤버의 그룹 연동 구독을 취소하지 않고 재계산에서 제외만 하므로, 행은
@@ -142,6 +147,37 @@ enum PaidVoiceGate {
     /// **모르면 잠그지 않는다.** 예약 강등 판단이 쓴다 — 이 파일 맨 위의 fail-open 원칙 그대로다.
     static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
         resolve(snapshot: snapshot, now: now) != .notEntitled
+    }
+
+    /// 화면이 **지금 들고 있는 값**으로 판정할 스냅샷을 만든다(저장된 캐시가 아니다).
+    ///
+    /// ⚠ **화면마다 손으로 조립하지 말 것.** 목소리 탭 입구와 등록 제출이 서로 다른 판정기를
+    /// 쓰고 있었다 — 입구는 이 판정기, 제출은 `PlanTier.bestKnown` 이라, 서버가 `users.plan`
+    /// 으로만 유료를 준 계정은 **녹음을 다 마치고 제출에서** "유료 이용권에서 사용할 수
+    /// 있어요" 로 막혔다. 둘 다 이걸 거친다.
+    ///
+    /// ⚠ **살아 있는 StoreKit 신호에는 기한을 붙이지 않는다**(2026-08-31 리뷰). 이 스냅샷은
+    /// 캐시가 아니라 **지금 방금 읽은 값**이라 신선도를 의심할 이유가 없다. 기한을 비워 두면
+    /// 판정기가 기한을 함께 요구하므로 **살아 있는 신호가 한 번도 이기지 못한다** — 먼 미래를
+    /// 준다('지금 유효' 라는 뜻이다).
+    ///
+    /// ⚠ **`userPlan` 을 빼지 말 것.** 그룹보다 먼저 보는 값이라, 빼면 결제 보류(그룹은 남고
+    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야 끝난 뒤 걷어낸다.
+    static func liveSnapshot(
+        subscriptionResponse: BillingSubscriptionResponse?,
+        familyGroup: FamilyGroupCurrentResponse?,
+        storeTier: PlanTier,
+        user: AuthUser?
+    ) -> AccessSnapshot {
+        let storeEntitled = storeTier.meetsOrExceeds(.personal)
+        return AccessSnapshot(
+            subscriptionResponse: subscriptionResponse,
+            familyGroup: familyGroup,
+            storePlanKey: storeEntitled ? storeTier.rawValue : nil,
+            storeEntitlementUntilMillis: storeEntitled ? Int64.max : nil,
+            userPlan: user?.plan,
+            personalPromo: user?.personalPromo
+        )
     }
 
     /// 예약 시점에 이 알람의 유료 목소리를 기본 톤으로 강등해야 하는가.

@@ -7,7 +7,7 @@ import SwiftUI
 /// 기회도 사라진다 — 안드로이드 `PlanGateDialog` 은 처음부터 `redeemErrorText` 를 필드 밑에
 /// 그리고 있었고, 그 주석이 바로 그 이유를 적어 두었다.
 /// 같은 판단을 이미 두 번 했다: 코드 등록 행(`CodeRegisterRow`, 2026-08-13 지시 — "오류는
-/// 입력창 바로 밑")과 웰컴 코드 안내(`WelcomePromoSheet`, 2026-08-18).
+/// 입력창 바로 밑")과 웰컴 코드 안내 시트(2026-08-18, 2026-09-27 폐지).
 ///
 /// ⚠ **이 껍데기를 화면마다 새로 만들지 말 것.** 2026-08-18 전에는 같은 알럿이 **두 벌**
 /// (`VoiceProfileManagementPanel` · `AlarmEditorSheet`)로 복사돼 있었고, 편집기 쪽에만
@@ -15,8 +15,7 @@ import SwiftUI
 /// 등록하면 공백이 그대로 서버로 갔다.
 ///
 /// 확정(`등록`)이 **본문이 아니라 상단바**에 있는 것은 `FormSheet` 규칙 그대로다.
-/// 웰컴 안내만 본문 채움 버튼을 쓰는데, 그건 액션이 셋이라(닫기·코드 받기·등록) 셋을 같은
-/// 자리에 둘 수 없어서다.
+/// 키보드가 올라와도 입력창과 확정이 가려지지 않는지는 `RedeemCodeKeyboardUITests` 가 본다.
 struct RedeemCodeSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -34,7 +33,7 @@ struct RedeemCodeSheet: View {
         FormSheet(
             title: "쿠폰 입력",
             saveTitle: busy ? "등록 중…" : "등록",
-            // 되돌릴 입력이 아니라 지나치는 안내다 — 웰컴 안내와 같은 말.
+            // 되돌릴 입력이 아니라 지나치는 안내다 — '취소' 가 아니라 '닫기'.
             cancelTitle: "닫기",
             saveEnabled: !busy && !trimmed.isEmpty,
             onCancel: onClose,

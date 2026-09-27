@@ -253,6 +253,23 @@
     "%@%%" : {
 
     },
+    "%@까지 개인 플랜을 무료로 쓸 수 있어요. %@부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can use the Personal plan for free until %1$@. From %2$@, you'll be back on the free plan, and voices you registered will be kept for 3 days and then deleted."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@までパーソナルプランを無料でご利用いただけます。%2$@からは無料プランに戻り、登録した声は3日間保管された後に削除されます。"
+          }
+        }
+      }
+    },
     "%lld/%lld명" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11500,23 +11517,6 @@
         }
       }
     },
-    "코드가 있으신가요?" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Have a code?"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コードをお持ちですか？"
-          }
-        }
-      }
-    },
     "코드를 등록했어요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12580,6 +12580,40 @@
     "日本語" : {
 
     },
+    "개인 플랜 무료 이용 중 · %@까지" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal plan free · until %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナルプラン無料利用中 · %@まで"
+          }
+        }
+      }
+    },
+    "개인 플랜 무료 이용이 곧 끝나요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your free Personal plan ends soon"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パーソナルプランの無料利用がまもなく終了します"
+          }
+        }
+      }
+    },
     "등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13013,6 +13047,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自分の声をアラームに使いたい場合にのみ必要です。\n録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として扱います。\n登録できるのは、ご本人の声か、声の持ち主から許可を得た録音だけです(利用規約第7条)。\n今同意しなくても基本の声のアラームはそのまま使え、声を登録するときにあらためてお伺いします。"
+          }
+        }
+      }
+    },
+    "다시 보지 않기" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't show again"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今後表示しない"
           }
         }
       }

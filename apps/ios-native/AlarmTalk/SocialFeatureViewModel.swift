@@ -71,8 +71,10 @@ final class SocialFeatureViewModel: ObservableObject {
      * (그 규칙 자체는 보류를 잡기 위해 필요하다 — 고칠 것은 **plan 의 신선도**다.)
      *
      * **plan 만 넘긴다.** 프로필 전체를 넘기면 전경에서 방금 바꾼 닉네임이 되돌아간다.
+     * 기간 한정 개인 플랜(`personalPromo`)은 plan 의 **짝**이라 함께 넘긴다 — 같은 응답에서
+     * 온 값이고, 떨어뜨리면 계산값 `plus` 만 남아 끝난 뒤에도 걷어낼 근거가 없다.
      */
-    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String) -> Void)?
+    var onFreshPlan: ((_ userID: String, _ from: String, _ plan: String, _ personalPromo: PersonalPromo?) -> Void)?
 
     // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
@@ -195,11 +197,14 @@ final class SocialFeatureViewModel: ObservableObject {
             // 예약된 채 남긴다. 못 받았으면 **적지 않고**(마지막으로 확인된 값을 남긴다)
             // 스냅샷을 미완으로 표시해 다음 갱신을 기다린다.
             var freshPlan: String?
+            // `freshPlan` 과 **같은 응답**의 기간 한정 개인 플랜 — 둘은 늘 함께 적는다.
+            var freshPromo: PersonalPromo?
             var planOK = false
             var rolledToken: String?
             do {
                 let me = try await api.me(token: token)
                 freshPlan = me.user.plan
+                freshPromo = me.user.personalPromo
                 planOK = true
                 rolledToken = me.token?.nilIfBlank
             } catch {
@@ -221,7 +226,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 에폭 가드로 쓰는데, 토큰을 먼저 굴리면 그 뒤 `applyFreshPlan` 의
             // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
             // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
-            if let freshPlan { onFreshPlan?(userID, token, freshPlan) }
+            if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
@@ -252,6 +257,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
                 let planWrite = entitlementWriter.write(accessTicket, "auth/me plan") {
                     $0.userPlan = freshPlan
+                    $0.personalPromo = freshPromo
                 }
                 guard planWrite == .applied else { return }
                 // ⚠ **서버가 무료를 확정하면 캐시된 StoreKit 신호도 끊는다**(2026-09-01 리뷰,
@@ -343,12 +349,19 @@ final class SocialFeatureViewModel: ObservableObject {
                   preflightRevision == billingPreflightRevision else { return nil }
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
-                if let plan = nextSubscription.userPlan { $0.userPlan = plan }
+                // plan 과 프로모는 **같은 응답에서 온 짝**이다 — plan 을 받아 온 회차에만,
+                // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
+                if let plan = nextSubscription.userPlan {
+                    $0.userPlan = plan
+                    $0.personalPromo = nextSubscription.personalPromo
+                }
             }
             guard silentWrite == .applied else { return nil }
             if refreshStoreState { billingPreflightRevision &+= 1 }
             subscription = nextSubscription
-            if let plan = nextSubscription.userPlan { onFreshPlan?(userID, token, plan) }
+            if let plan = nextSubscription.userPlan {
+                onFreshPlan?(userID, token, plan, nextSubscription.personalPromo)
+            }
             return nextSubscription
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
