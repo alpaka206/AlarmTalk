@@ -186,11 +186,18 @@ async function voiceProfileBelongsToCaller(
   });
   if (owned.rows.length > 0) return true;
 
-  // 가족/그룹 공유 보이스(is_shared=1, non-draft): 소유자가 호출자와 같은 plan group 이면
-  // 허용한다. tts.ts findUsableVoiceProfile 의 접근 모델과 일치시켜, 공유 음성으로 만든
-  // 알람의 POST/PATCH 가 404 로 막히지 않게 한다(무관한 타인 비공개 프로필은 계속 차단).
+  // 가족/그룹 공유 보이스(is_shared=1, non-draft): 소유자가 호출자와 같은 plan group 이고
+  // **소유자가 원시 유료일 때만** 허용한다. tts.ts findUsableVoiceProfile 의 접근 모델과
+  // 일치시켜, 공유 음성으로 만든 알람의 POST/PATCH 가 404 로 막히지 않게 한다(무관한 타인
+  // 비공개 프로필은 계속 차단).
+  //
+  // ⚠ **소유자 플랜은 원시값이다**(`messageBelongsToCaller` 의 공유 갈래·오디오 라우트의 남의
+  //   목소리·`/tts/generate` 와 같은 규칙). 결제 보류(ON_HOLD·PAUSED) 그룹은 그룹·`is_shared` 를
+  //   남긴 채 소유자 `users.plan` 만 free 로 회수한다 — 플랜을 안 보면 멈춘 공유 목소리를
+  //   가리키는 알람이 저장된다. 기간 한정 개인 플랜(계산값)으로 보면 그 공유가 기간 동안
+  //   되살아난다.
   const shared = await db.execute({
-    sql: `SELECT u.id AS owner_pk
+    sql: `SELECT u.id AS owner_pk, u.plan AS owner_plan
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
@@ -204,7 +211,54 @@ async function voiceProfileBelongsToCaller(
     typeof shared.rows[0]!.owner_pk === 'string' ? (shared.rows[0]!.owner_pk as string) : null;
   const viewerPk = ownerIds[0];
   if (!ownerPk || !viewerPk || viewerPk === ownerPk) return false;
+  if (!isPaidVoicePlan(shared.rows[0]!.owner_plan)) return false;
   return assertSameGroup(db, viewerPk, ownerPk);
+}
+
+/**
+ * 이 알람이 **같은 그룹이 공유한 남의 목소리**를 쓰는가 — `voice_profile_id` 로 직접, 또는
+ * `message_id`(내가 만든 문구·프리셋 클립)를 만든 목소리로.
+ *
+ * 쓰는 자리는 하나다: 내 알람의 목소리 게이트가 **기간 한정 개인 플랜(계산값)으로만** 열린
+ * 경우(원시 free) 남의 목소리는 원시값으로 다시 막는다 — 공유 목소리는 커플·가족 기능이다
+ * (`docs/spec/billing-lifecycle.md` 「무엇이 계산값을 보고, 무엇이 원시값을 보나」).
+ *
+ * ⚠ **호출자가 볼 수 있는 공유 목소리만** 참이다(같은 그룹 + `is_shared` + 내 것이거나 프리셋인
+ *   문구). 소유권 게이트(`messageBelongsToCaller`·`voiceProfileBelongsToCaller`)보다 **먼저**
+ *   돌기 때문에, 남의 비공개 id 에 참을 내면 404 대신 403 이 나가 그 id 의 존재가 에러 코드로
+ *   샌다 — 그런 id 는 거짓으로 흘려보내 뒤의 소유권 게이트가 404 를 내게 한다.
+ */
+async function alarmUsesSharedVoice(
+  db: DbExecutor,
+  fields: { message_id?: string | null; voice_profile_id?: string | null },
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const voiceProfileId = fields.voice_profile_id ?? null;
+  const messageId = fields.message_id ?? null;
+  if (!voiceProfileId && !messageId) return false;
+  const res = await db.execute({
+    sql: `SELECT 1
+          FROM voice_profiles vp
+          JOIN users owner ON owner.id = vp.user_id OR owner.google_id = vp.user_id
+          JOIN plan_group_members pgm_owner ON pgm_owner.user_id = owner.id
+          JOIN plan_group_members pgm_me ON pgm_me.plan_group_id = pgm_owner.plan_group_id
+          WHERE COALESCE(vp.is_system, 0) = 0
+            AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
+            AND vp.deleted_at IS NULL
+            AND vp.user_id NOT IN (?, ?)
+            AND pgm_me.user_id = ?
+            AND (
+              vp.id = ?
+              OR vp.id IN (
+                SELECT m.voice_profile_id FROM messages m
+                WHERE m.id = ? AND (m.user_id IN (?, ?) OR COALESCE(m.is_preset, 0) = 1)
+              )
+            )
+          LIMIT 1`,
+    args: [...ownerIds, ownerIds[0], voiceProfileId, messageId, ...ownerIds],
+  });
+  return res.rows.length > 0;
 }
 
 /**
@@ -396,10 +450,20 @@ alarmMutation.post('/', async (c) => {
     (alarmOwner === userId
       ? hasPersonalVoiceAccess(creatorPlanValue, resolvePersonalPromo(c.env))
       : isPaidVoicePlan(creatorPlanValue));
+  // 계산값으로**만** 열렸다(원시 free + 기간 한정 개인 플랜) — 남의 목소리(공유)는 원시값으로
+  // 다시 본다. 기간 전과 같은 답(403 VOICE_FEATURE_REQUIRES_PAID_PLAN)이 나간다.
+  const openedOnlyByPromo =
+    creatorHasPaidVoice &&
+    !!resolvedUserPk &&
+    creatorPlanValue !== undefined &&
+    !isPaidVoicePlan(creatorPlanValue);
   if (
-    !creatorHasPaidVoice &&
-    alarmUsesPaidVoice(body) &&
-    !(await usesOnlySystemStockVoice(db, body))
+    (!creatorHasPaidVoice &&
+      alarmUsesPaidVoice(body) &&
+      !(await usesOnlySystemStockVoice(db, body))) ||
+    (openedOnlyByPromo &&
+      alarmUsesPaidVoice(body) &&
+      (await alarmUsesSharedVoice(db, body, ownerIds)))
   ) {
     return c.json(
       {
@@ -704,10 +768,19 @@ alarmMutation.patch('/:id', async (c) => {
     voice_profile_id:
       body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
   };
+  // POST 와 같다 — 계산값으로만 열린 원시 free 는 남의 목소리(공유)를 원시값으로 다시 본다.
+  const patchOpenedOnlyByPromo =
+    creatorHasPaidVoice &&
+    !!resolvedUserPk &&
+    current.user_plan !== undefined &&
+    !isPaidVoicePlan(current.user_plan);
   if (
-    !creatorHasPaidVoice &&
-    alarmUsesPaidVoice(effectiveVoiceFields) &&
-    !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))
+    (!creatorHasPaidVoice &&
+      alarmUsesPaidVoice(effectiveVoiceFields) &&
+      !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))) ||
+    (patchOpenedOnlyByPromo &&
+      alarmUsesPaidVoice(effectiveVoiceFields) &&
+      (await alarmUsesSharedVoice(db, effectiveVoiceFields, patchOwnerIds)))
   ) {
     return c.json(
       {

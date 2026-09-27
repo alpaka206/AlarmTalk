@@ -24,20 +24,31 @@
 - 서버는 **스위치가 꺼진 채** 배포된다 — `PERSONAL_PROMO_STARTS_AT` 이 없으면 오늘과 같다.
   마이그레이션 #121 은 배포 때 돈다(웰컴 그룹 코드 비활성화 — 되돌릴 수 없는 데이터 UPDATE 라
   dev 에서 먼저 본다).
+- 2026-09-27 리뷰 수정(백엔드): 종료 전환·보관 스윕은 **1분 전용 크론**(`wrangler.toml` 두 환경에
+  `"* * * * *"` 추가)이 묶음으로 하고, `delete_after` 는 끝 + 3일에서 거꾸로 나눠 건다 — 2,500명
+  시뮬레이션에서 전원이 약속 전에 지워진다(`test/personal-promo-end.test.ts`). 공유 목소리는 원시
+  게이트(보류 그룹 부활 차단), 응답에 `personal_promo.deletes_voices_at_end` 추가, 삭제 예고 푸시는
+  개인 플랜 종료 전용 문구, 전역 클론 상한 200 → 500.
+- [ ] 배포 전: Cloudflare 계정의 **크론 트리거 한도**가 워커마다 하나 더(두 환경 합쳐 넷) 허용하는지
+      확인한다. ElevenLabs 요금제의 **보이스 슬롯이 500 이상**인지 확인한다 — 작으면 요금제를 올리거나
+      `MAX_PROVIDER_CLONE_VOICES`(`lib/voice-slots.ts`)를 요금제에 맞춰 내린다.
 - [ ] 배포 전: `/admin/promo` 에서 그룹명이 정확히 `welcome` 이 **아닌** 웰컴 계열 코드(대소문자·
       변형)가 있는지 보고, 있으면 토글로 끈다. #121 은 `welcome` 만 잡는다.
 - [ ] dev 리허설: `.dev.vars.dev` 에 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
       (지금 + 10분)을 넣고 `npm run secrets:sync:dev` → 무료+목소리 / 무료 / 개인 결제 / 가족
       소유자+멤버 / 쿠폰 계정으로 개인 기능이 열리는지(안드로이드 2대·아이폰) → 끝 시각 뒤
-      `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일)·푸시·앱 잠금과 안내 → 끝을 미래로
-      되돌려 다시 열리는지.
+      `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일 **이하의 정시**)·푸시 문구("기간 한정 개인
+      플랜이 끝나 … M월 D일 오후 H시까지만 보관")·1분 크론 로그·앱 잠금과 안내 → 끝을 미래로
+      되돌려 다시 열리는지. 보류 그룹 멤버로 공유 목소리 생성이 403 인지도 본다.
       ⚠ **리허설 값을 지우려면 `npx wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev`.**
       동기화 스크립트는 빈 값을 건너뛰므로 파일에서 지우는 것만으로는 워커에서 사라지지 않는다.
 - [ ] iOS 1.2.10(앱 PR) **게재 뒤** `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고
       `npm run secrets:sync:prod`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
       거절한다(워커도 production 에서는 읽지 않는다).
-- [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 대상 수를 센다 — 틱당 3명(`PROMO_END_BATCH_LIMIT`)
-      이라 3일에 약 2,500명이다. 모자라면 값을 올리는 PR.
+- [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 대상 수를 센다(**베타 계정 등 기간 전부터 무료였던
+      계정도 목소리가 있으면 대상이다** — 제품 결정). 1분 전용 크론 기준 약 2만 명까지 끝 + 3일
+      약속을 지킨다(`promoEndDeleteAfter` — 2,500명이면 가장 이른 삭제가 끝 + 약 2일 14시간).
+      그보다 많으면 묶음 상수(`lib/personal-promo-end.ts`)를 다시 재는 PR.
       ```sql
       SELECT COUNT(*) FROM users u
       WHERE u.plan = 'free'
@@ -48,12 +59,16 @@
                       AND vp.deleted_at IS NULL AND COALESCE(vp.is_system, 0) = 0
                       AND COALESCE(vp.is_draft, 0) = 0);
       ```
-- [ ] 끝 시각 모니터링(`billing.personal_promo_end` 로그), 끝 + 3일에 스윕 확인. 유료 게이트
-      에러 코드의 `api_error` 증가는 정상이다.
+- [ ] 끝 시각 모니터링: `billing.personal_promo_end` 로그(전환은 끝 + 몇 시간 안에 끝난다),
+      Sentry `scheduled.personal_promo_end.transition_user`·`.sweep_batch`·`.retention_overdue` 경보,
+      끝 + 3일 전에 `paid_voice_retention` 이 0 이 되는지. 유료 게이트 에러 코드의 `api_error`
+      증가는 정상이다.
 - ⚠ 정리 PR(11월 중순) 전까지 `PERSONAL_PROMO_STARTS_AT` 을 지우지 말 것 — 지우면 종료 전환도
-  멈춘다(꺼짐 = 프로모가 없었던 것).
-- 알려진 한계: 삭제 예고 푸시 문구가 "이용권이 끝나 …"(`lib/fcm.ts`) 그대로 나간다. 기간 중
-  전원이 클론을 등록할 수 있어 전역 클론 상한(200)의 LRU 반납이 유료자에게도 닿을 수 있다.
+  멈춘다(꺼짐 = 프로모가 없었던 것). 정리 PR 에서 1분 크론(`wrangler.toml`·`index.ts` 분기)도 뺀다.
+- 알려진 한계: 스윕이 삭제 큐에 넣은 **외부 파일**(R2 오디오 — 목소리당 사전렌더 21개 — 와
+  ElevenLabs 보이스)은 5분 틱의 `drainExternalDeletions` 가 틱당 10건씩 지운다. 2,500명이면 큐가
+  수만 건이라 DB 행이 약속 안에 지워져도 파일 삭제는 며칠~몇 주 더 걸린다. `pending_external_deletions`
+  를 지켜보고, 필요하면 드레인 용량을 따로 늘리는 PR.
 
 ## Gemini 2.5 Flash 은퇴 대응 — **기한 2026-10-20**
 

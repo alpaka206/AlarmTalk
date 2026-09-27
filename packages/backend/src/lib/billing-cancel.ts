@@ -1,5 +1,4 @@
 import type { Client, InStatement } from '@libsql/client';
-import type { PersonalPromoWindow } from '@alarmtalk/shared';
 import { issueVoucherCode } from './voucher-issue';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import {
@@ -44,7 +43,7 @@ type ExpiryEnv = PlayEnv &
       | 'APNS_KEY_ID'
       | 'APNS_PRIVATE_KEY'
       | 'APPLE_TEAM_ID'
-      // 기간 한정 개인 플랜 — 보관 판정·종료 전환(`transitionPersonalPromoEnd`).
+      // 기간 한정 개인 플랜 — 보관 판정(`promoCoversFree`).
       | 'PERSONAL_PROMO_STARTS_AT'
       | 'PERSONAL_PROMO_ENDS_AT'
     >
@@ -282,13 +281,25 @@ export async function schedulePaidVoiceRetention(
   const deleteAfter = new Date(
     now.getTime() + PAID_VOICE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  await db.execute({
+  await db.execute(paidVoiceRetentionUpsertStatement(userPk, deleteAfter));
+  return deleteAfter;
+}
+
+/**
+ * 보관 기한을 **정해진 시각으로** 거는(upsert) 문장 — `schedulePaidVoiceRetention` 과 기간 한정
+ * 개인 플랜 종료 전환(`lib/personal-promo-end.ts`, 기한을 끝 + 3일 안쪽으로 미리 정한다)이
+ * 같은 문장을 쓴다.
+ */
+export function paidVoiceRetentionUpsertStatement(
+  userPk: string,
+  deleteAfterIso: string,
+): InStatement {
+  return {
     sql: `INSERT INTO paid_voice_retention (user_id, delete_after)
           VALUES (?, ?)
           ON CONFLICT(user_id) DO UPDATE SET delete_after = excluded.delete_after`,
-    args: [userPk, deleteAfter],
-  });
-  return deleteAfter;
+    args: [userPk, deleteAfterIso],
+  };
 }
 
 /**
@@ -298,7 +309,7 @@ export async function schedulePaidVoiceRetention(
  *
  * **기간 한정 개인 플랜도 유료로 친다**(`promoCoversFree`) — 원시 plan 이 정확히 `'free'` 인
  * 계정만 덮는다(행 없음·`null` 은 덮지 않는다). 기간 중에는 새 보관이 걸리지 않고, 시작 전부터
- * 걸려 있던 보관은 스윕이 지우지 않고 풀어 준다. 종료 뒤에는 `transitionPersonalPromoEnd` 가
+ * 걸려 있던 보관은 스윕이 지우지 않고 풀어 준다. 종료 뒤에는 `transitionPersonalPromoEnd`(`lib/personal-promo-end.ts`)가
  * 다시 건다. SQL 짝(`retentionSyncStatements`)과 **같은 답**이어야 한다.
  */
 export async function hasActivePaidEntitlement(
@@ -306,15 +317,30 @@ export async function hasActivePaidEntitlement(
   userPk: string,
   promoCoversFree: boolean,
 ): Promise<boolean> {
-  const res = await db.execute({
+  const res = await db.execute(paidEntitlementStatement(userPk));
+  return isPaidEntitlementRow(res.rows[0], promoCoversFree);
+}
+
+/**
+ * [hasActivePaidEntitlement] 의 **조회 문장** — 여러 사람을 한 묶음(`batch`)으로 물을 때
+ * (보관 스윕 묶음, `lib/personal-promo-end.ts`) 같은 문장을 쓴다. 판정은 [isPaidEntitlementRow].
+ */
+export function paidEntitlementStatement(userPk: string): InStatement {
+  return {
     sql: `SELECT
             (SELECT COUNT(*) FROM subscriptions
               WHERE user_id = ? AND status = 'active'
                 AND datetime(expires_at) > datetime('now')) AS active_subs,
             (SELECT plan FROM users WHERE id = ?) AS plan`,
     args: [userPk, userPk],
-  });
-  const row = res.rows[0];
+  };
+}
+
+/** [paidEntitlementStatement] 결과 행 하나로 유료 여부를 판정한다(행이 없으면 무료). */
+export function isPaidEntitlementRow(
+  row: Record<string, unknown> | undefined,
+  promoCoversFree: boolean,
+): boolean {
   if (!row) return false;
   const activeSubs = Number(row.active_subs ?? 0);
   const rawPlan = row.plan as string | null;
@@ -511,17 +537,33 @@ export async function downgradeUserToFree(
     },
   ]);
   const loginId = (userRes!.rows[0]?.google_id as string | null | undefined) ?? null;
+  await db.batch(
+    freeDowngradeWrites(
+      userPk,
+      loginId,
+      voiceRes!.rows.map((r) => r.elevenlabs_voice_id as string),
+    ),
+  );
+}
+
+/**
+ * `downgradeUserToFree` 의 **음성 보존 갈래 쓰기 문장** — 읽기(로그인 id·클론 id)는 호출부가
+ * 미리 모아 넘긴다. 여러 사람을 한 묶음으로 내리는 경로(기간 한정 개인 플랜 종료 전환 —
+ * `lib/personal-promo-end.ts`)가 **같은 문장**을 쓴다.
+ */
+export function freeDowngradeWrites(
+  userPk: string,
+  loginId: string | null,
+  providerVoiceIds: Array<string | null | undefined>,
+): InStatement[] {
   const ownerIds = Array.from(new Set([userPk, loginId].filter((x): x is string => Boolean(x))));
-  await db.batch([
+  return [
     setUserPlanStatement(userPk, 'free'),
     // 무료로 내려간 시점에 제공자 클론을 반납한다 — 유료 슬롯을 붙들고 있을 이유가 없다.
     // 원본 업로드는 남으므로, 보관 유예 안에 재구독하면 재클론으로 그대로 돌아온다.
-    ...clonedVoiceReleaseStatements(
-      ownerIds,
-      voiceRes!.rows.map((r) => r.elevenlabs_voice_id as string),
-    ),
+    ...clonedVoiceReleaseStatements(ownerIds, providerVoiceIds),
     ...revokeVoiceAccessStatements(ownerIds),
-  ]);
+  ];
 }
 
 /**
@@ -1492,97 +1534,6 @@ export async function notifyBillingStateChanged(
  */
 const EXPIRY_BATCH_LIMIT = 5;
 
-/**
- * 기간 한정 개인 플랜 **종료 전환**이 한 틱에 처리하는 사람 수.
- *
- * 사람마다 쓰기 트랜잭션 하나(재확인 1 · 강등 읽기 1 · 강등 쓰기 1 · 보관 1 + BEGIN/COMMIT)라
- * DB 왕복이 5~6이고, 같은 실행에서 만료(틱당 5건 — 건마다 스토어 조회 포함)와 보관 스윕(한 사람에
- * 스무 번 남짓)이 워커 subrequest(~50)를 나눠 쓴다. 그래서 작게 둔다 — 틱당 3명이면 3일
- * (보관 기한) 동안 약 2,500명이다. 종료 1주 전에 prod 대상 수를 세어 모자라면 올린다
- * (`docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」).
- */
-const PROMO_END_BATCH_LIMIT = 3;
-
-/**
- * 종료 전환 대상 — `u` 는 `users` 별칭. **보관 행이 생기면 스스로 빠진다**(멱등, 새 표·컬럼 없음).
- *
- * - 원시 `plan = 'free'` — 결제자는 대상이 아니다.
- * - `status = 'active'` 구독 행이 **하나도 없다** — 만료 시각은 보지 않는다. 결제 보류(ON_HOLD·
- *   애플 재시도)는 행을 `active` 로 남긴 채 `users.plan` 만 회수하는데, 보류는 회복형이라 원래
- *   보관을 걸지 않는다(`resolvePlanAfterSuspend`). 만료가 지났는데 아직 안 끝난 행은 만료 크론이
- *   끝내면서 보관을 건다. `repairOrphanedPaidPlan` 의 활성 구독 조건과 같다.
- * - 삭제·시스템·초안이 아닌 목소리가 있다 — 지울 것이 없는 사람은 건드리지도, 알리지도 않는다.
- *   목소리의 주인 id 는 PK 이거나 로그인 id(google_id)다.
- * - 보관 행이 없다.
- */
-const PROMO_END_TARGET = `u.plan = 'free'
-  AND NOT EXISTS (
-    SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active'
-  )
-  AND NOT EXISTS (SELECT 1 FROM paid_voice_retention r WHERE r.user_id = u.id)
-  AND EXISTS (
-    SELECT 1 FROM voice_profiles vp
-    WHERE (vp.user_id = u.id OR (u.google_id IS NOT NULL AND vp.user_id = u.google_id))
-      AND vp.deleted_at IS NULL
-      AND COALESCE(vp.is_system, 0) = 0
-      AND COALESCE(vp.is_draft, 0) = 0
-  )`;
-
-/**
- * **기간 한정 개인 플랜 종료 전환.** 끝 시각이 지나면 서버 게이트는 곧바로 원시값으로 돌아가지만
- * (시각 비교), 기간 중 목소리를 만든 원시 무료 계정에는 **보관 행이 없다**(기간 중 보관 판정이
- * 프로모를 유료로 쳤다). 그대로 두면 처리방침의 '유료가 끝나면 3일 보관 후 파기' 가 지켜지지
- * 않으므로, 여기서 나눠 건다.
- *
- * 사람마다 한 쓰기 트랜잭션 — 대상 조건을 안에서 **다시 본다**(조회와 쓰기 사이에 결제·쿠폰
- * 등록이 끼어들 수 있다). 강등은 음성 보존 갈래(`downgradeUserToFree` — 클론 반납·공유 해제·
- * 남의 알람 강등)이고, ⚠ **`delete_after` 는 실행 시각이 아니라 끝 + 3일로 고정**한다 — 틱이
- * 밀려도 '3일간만 보관' 을 넘기지 않는다.
- *
- * 구간이 없으면(시작 스위치가 꺼져 있으면) 아무것도 하지 않는다 — 프로모가 없었던 것이다.
- * @returns 전환한 사용자들 — 호출부가 커밋 뒤 `plan_changed` + 삭제 예고를 보낸다.
- */
-export async function transitionPersonalPromoEnd(
-  db: Client,
-  window: PersonalPromoWindow | null,
-  now: Date,
-): Promise<string[]> {
-  if (!window || now.getTime() < window.endsAt.getTime()) return [];
-  const due = await db.execute({
-    sql: `SELECT u.id FROM users u WHERE ${PROMO_END_TARGET} ORDER BY u.id LIMIT ?`,
-    args: [PROMO_END_BATCH_LIMIT],
-  });
-  const transitioned: string[] = [];
-  for (const row of due.rows) {
-    const userPk = String(row.id);
-    // 한 사람이 실패해도 다음 사람으로 간다 — 실패한 사람은 통째로 롤백돼 다음 틱이 다시 한다.
-    try {
-      const done = await withWriteTransaction(db, async (tx) => {
-        const still = await tx.execute({
-          sql: `SELECT 1 FROM users u WHERE u.id = ? AND ${PROMO_END_TARGET} LIMIT 1`,
-          args: [userPk],
-        });
-        if (still.rows.length === 0) return false;
-        await downgradeUserToFree(tx, userPk, { deleteVoiceData: false });
-        await schedulePaidVoiceRetention(tx, userPk, window.endsAt);
-        return true;
-      });
-      if (done) transitioned.push(userPk);
-    } catch (err) {
-      logStructured('error', {
-        at: 'billing.personal_promo_end',
-        action: 'TRANSITION_FAILED',
-        uid: userPk,
-        error: String(err),
-      });
-    }
-  }
-  if (transitioned.length > 0) {
-    logStructured('info', { at: 'billing.personal_promo_end', transitioned: transitioned.length });
-  }
-  return transitioned;
-}
-
 export async function processSubscriptionExpiry(
   db: Client,
   env?: ExpiryEnv,
@@ -1637,17 +1588,9 @@ export async function processSubscriptionExpiry(
     for (const id of affected) notifyUserPks.add(id);
   }
 
-  // 기간 한정 개인 플랜 종료 전환 — 만료 **뒤**, 스윕 **앞**. 이 단계가 통째로 실패해도 스윕과
-  // 알림은 돈다(보관 기한이 지난 목소리를 지우는 것이 처리방침의 약속이다).
-  try {
-    for (const id of await transitionPersonalPromoEnd(db, promo.window, now)) notifyUserPks.add(id);
-  } catch (err) {
-    logStructured('error', {
-      at: 'billing.personal_promo_end',
-      action: 'STEP_FAILED',
-      error: String(err),
-    });
-  }
+  // 기간 한정 개인 플랜 **종료 전환**은 여기서 하지 않는다 — 전용 크론과 5분 틱의 폴백이
+  // `lib/personal-promo-end.ts` 의 `runPersonalPromoEnd` 로 한다(`index.ts`). 대상이 수천 명이라
+  // 이 틱의 subrequest 로는 끝 + 3일 약속을 지킬 수 없었다.
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
   // 기간 중에는 원시 free 의 보관 행을 지우지 않고 풀어 준다(`promo.active`).

@@ -355,8 +355,10 @@ async function findUsableVoiceProfile(
   });
   if (system.rows.length > 0) return system.rows[0] as Record<string, unknown>;
 
+  // 공유 갈래는 **주인의 원시 plan**(`owner_plan`)도 함께 읽는다 — 호출부가 커플·가족 기능의
+  // 원시값 게이트에 쓴다(`isPaidVoicePlan`). 기간 한정 개인 플랜을 반영하지 않는다.
   const shared = await db.execute({
-    sql: `SELECT vp.*, u.id AS owner_pk
+    sql: `SELECT vp.*, u.id AS owner_pk, u.plan AS owner_plan
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
@@ -922,14 +924,25 @@ tts.post('/generate', async (c) => {
   const promo = resolvePersonalPromo(c.env);
   const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
   const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
-  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-  const freePlanRestricted = !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
 
   const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
+  // **남의 목소리**(같은 그룹이 공유한 클론)를 쓰는가 — 공유 갈래만 `owner_pk` 를 싣는다.
+  const usingSharedVoice =
+    typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
+  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
+  //
+  // ⚠ **공유 목소리는 원시값이다**(기간 한정 개인 플랜을 반영하지 않는다). 커플·가족 기능이라,
+  //   계산값으로 보면 결제 보류(ON_HOLD·PAUSED) 그룹의 원시 free 멤버가 기간 동안 주인의 공유
+  //   클론으로 생성할 수 있게 된다 — 그룹·`is_shared`·주인의 클론은 보류 중에도 남아 있다.
+  //   내 목소리·스톡 목소리는 **계산값**(내 개인 기능). 스펙: `docs/spec/billing-lifecycle.md`
+  //   「무엇이 계산값을 보고, 무엇이 원시값을 보나」.
+  const freePlanRestricted = usingSharedVoice
+    ? !isPaidVoicePlan(rawCallerUserPlan)
+    : !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
 
   if (vp.status !== 'ready') {
     return c.json(
@@ -1000,6 +1013,18 @@ tts.post('/generate', async (c) => {
       {
         error: 'Voice features require a paid plan.',
         error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
+  // 공유 목소리는 **주인이 원시 유료일 때만** 쓴다 — 오디오 라우트의 남의 목소리 갈래·
+  // `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 와 같은 규칙이다. 보류 그룹의 주인은
+  // 원시 free 라 여기서 막힌다(호출자가 따로 유료여도 — 주인의 공유는 멈춘 상태다).
+  if (usingSharedVoice && !isPaidVoicePlan(vp.owner_plan)) {
+    return c.json(
+      {
+        error: 'This voice is locked on the free plan.',
+        error_code: 'VOICE_LOCKED_FREE_PLAN',
       },
       403,
     );

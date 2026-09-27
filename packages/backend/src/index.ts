@@ -22,6 +22,7 @@ import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
+import { PERSONAL_PROMO_END_CRON } from './lib/personal-promo';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -277,7 +278,8 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
-// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
+// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *", "* * * * *"].
+// 5분 틱이 본체이고, 1분 크론은 기간 한정 개인 플랜 종료 전용이다(아래 첫 분기).
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
   // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
@@ -316,6 +318,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       scope.captureException(err);
     });
   };
+
+  // ── 기간 한정 개인 플랜 종료 전용 크론(1분) ─────────────────────────────────────
+  // 이 실행은 **이 일만** 한다 — 실행마다 subrequest(~50)를 따로 받는 것이 전용 크론을 둔 이유다
+  // (`lib/personal-promo-end.ts`). 끝 전이거나 스위치가 꺼져 있으면 DB 를 부르지 않고 끝난다.
+  if (event.cron === PERSONAL_PROMO_END_CRON) {
+    try {
+      const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+      await runPersonalPromoEnd(db, env, now, {
+        role: 'dedicated',
+        hooks: {
+          onError: (stage, err, tags) =>
+            captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+        },
+      });
+    } catch (err) {
+      captureCron('scheduled.personal_promo_end', err);
+    }
+    return;
+  }
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
@@ -383,6 +404,21 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     await processSubscriptionExpiry(db, env, now);
   } catch (err) {
     captureCron('scheduled.subscription_expiry', err);
+  }
+
+  // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
+  // 전용 크론이 빠져 있어도 전환이 멈추지 않게 둔다. 끝 전이면 DB 를 부르지 않는다.
+  try {
+    const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+    await runPersonalPromoEnd(db, env, now, {
+      role: 'main',
+      hooks: {
+        onError: (stage, err, tags) =>
+          captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+      },
+    });
+  } catch (err) {
+    captureCron('scheduled.personal_promo_end', err);
   }
 
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은

@@ -28,38 +28,68 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 끝나기 전에 알린다. 약관 제10조의 '무료 전환으로 지워지는 데이터는 전환 전에 앱 안에서
 안내한다' 를 지키는 자리다. 1회성이 아니라 **반복** 안내라 소진 플래그는 없지만, 차단
 게이트 위에 겹치거나 옛 값으로 뜨는 사고는 같은 모양이라 같은 규약을 따른다.
+두 앱이 **똑같이** 구현한다(아래 전부 — 스펙의 D3·D4).
 
 **언제 뜨나 — 셋 다 참일 때**
-1. 이 계정의 최신 계정 응답(`/auth/me`·로그인 응답의 `user`)에 `personal_promo` 가 있다.
+1. **이번 진입에서 새로 받은** 이 계정의 계정 응답(`/auth/me`, 로그인으로 들어온 진입이면 그
+   로그인·가입 응답의 `user`)에 `personal_promo` 가 있다.
 2. 기기 시각이 `notice_from ≤ 지금 < ends_at` 이다(둘 다 서버 값 — 앱에 날짜를 두지 않는다).
-3. 이 계정이 '다시 보지 않기' 를 누른 적이 없다.
+3. 이 계정이 **이 `ends_at` 에** '다시 보지 않기' 를 누른 적이 없다.
 
-**얼마나 자주**: **앱에 들어올 때마다 한 번**이다. '들어온다' = 콜드 스타트, 또는
-백그라운드에서 **전경으로 돌아옴**(Android 프로세스 수명주기 ON_START, iOS `scenePhase`
-`.active` 전환). 화면·탭 이동, 재구성(recomposition), 같은 진입 안의 재판정으로는 다시 뜨지
-않는다. 한 진입 안에서 차단 게이트가 늦게 풀리면 **그 진입의 몫으로** 그때 뜬다.
+**'들어온다' = 콜드 스타트, 또는 백그라운드에서 전경으로 돌아옴 — 이것뿐이다.**
+- Android: 프로세스 수명주기 `ON_START`(`AppSignals.appEntries`).
+- iOS: `scenePhase` 가 **`.background` → `.active`** 로 바뀔 때. ⚠ **`.inactive` → `.active` 는
+  진입이 아니다** — 제어 센터·알림 센터·시스템 알럿(권한 요청 포함)·Face ID·전화 배너를 닫을
+  때마다 그렇게 바뀐다. `.active` 전환만 보면 그때마다 안내가 다시 뜬다(리뷰).
+- 화면·탭 이동, 재구성(recomposition), 같은 진입 안의 재판정으로는 다시 뜨지 않는다.
 
-**준비 신호 — 전부 끝난 뒤에만 판정한다**(아래 표의 신호 + 이 절)
-- 세션이 있고, **이 계정의** 계정 상태 응답이 도착했다(`accountStatusChecked` /
-  `/auth/me` 반영). 응답 전 기본값 `personal_promo = 없음` 을 '안내할 것 없음' 으로 읽고
-  그 진입을 끝내지 말 것 — 응답이 오면 다시 판정한다(키에 넣는다).
-- 최소지원버전 확인이 끝났고 강제 업데이트가 아니다(`versionChecked`).
-- 동의 확인이 끝났고 동의 화면이 떠 있지 않다(`consentChecked`).
-- 탈퇴 유예·목소리 받기 화면·기본 목소리 교체·**알람 권한 게이트**가 떠 있지 않다
-  (`blockingGateActive` + Android `permissionGateRequest == null`). 권한 게이트는 알람 기능만
-  막는 게이트지만 모달이라 겹치면 둘 다 못 읽는다.
-- 강등 안내·민감 동의 같은 **다른 모달이 떠 있으면 기다렸다가** 닫힌 뒤 뜬다.
+**판정 시점 — 이번 진입의 계정 응답이 온 뒤에만**
+- 백그라운드에서 돌아오면 세션에는 **지난번** `personal_promo` 가 남아 있다. 그 값으로 판정하면
+  다른 기기에서 결제·쿠폰 등록을 마친 사람에게 "무료 이용이 곧 끝나요" 가 뜬다. 그래서 **이번
+  진입의 `/auth/me`(또는 같은 값을 주는 계정 응답)가 도착한 뒤에만** 판정한다 — 진입마다 새로
+  세우는 '이번 진입의 계정 응답' 신호가 준비 신호다(계정 단위 `accountStatusChecked` 는 진입마다
+  다시 세워지지 않아 이 역할을 못 한다).
+- 그 응답이 **실패**하면 이번 진입은 띄우지 않는다(옛 값으로 판정하지 않는다). 반복 안내라
+  다음 진입이 다시 판정한다 — 준비 신호의 '실패도 도착' 원칙과 다르게 두는 이유는, 이 안내는
+  빠뜨려도 다음 진입이 있지만 틀린 안내는 되돌릴 수 없어서다.
+
+**다른 창 위에 띄우지 않는다 — 기다렸다가, 막히면 버린다**
+- 판정이 참이어도 **다른 모달·다이얼로그·시트·전체화면 커버·시스템 권한 요청**이 떠 있으면
+  띄우지 않고 **대기**한다. 대기 중인 안내는 그 창이 닫히면 뜬다(같은 진입 안에서).
+  - 차단 게이트(강제 업데이트·동의·탈퇴 유예·목소리 받기 화면·기본 목소리 교체·알람 권한
+    게이트)와 다른 모달(강등 안내·민감 동의·목소리 등록 창·쿠폰 입력 시트·편집기 시트 등)이 다
+    여기 든다. 앱 밖 화면(문서 선택기·설정·브라우저)에서 돌아온 것도 진입이므로, 돌아온 자리에
+    열려 있던 창이 먼저다.
+  - iOS 는 첫 알림 권한 요청이 메인 탭이 뜨는 순간 함께 나가므로, 그 요청이 끝난 뒤에 판정한다.
+- ⚠ **대기가 걸린 채로 남으면 안 된다.** 대기 중인 안내가 다른 안내(강등 안내 등)를 막거나,
+  보이지 않는 채 '띄운 것' 으로 남아 다음 진입의 안내까지 삼키면 안 된다. 이번 진입에 띄우지
+  못하고 진입이 끝나면(앱이 다시 백그라운드로 가면) 대기를 **지우고** 다음 진입에 다시
+  판정한다. '이번 진입에 띄웠다' 는 표시는 **실제로 화면에 나온 뒤에만** 남긴다.
 
 **모양**: 버튼 둘 — `다시 보지 않기` · `확인`. Android 는 `IosAlertDialog`(버튼 2개 = 가로),
-iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이번 진입만 닫힘).
-- `다시 보지 않기` → **계정별로 영구 저장**(키에 계정 id). 로그아웃해도 지우지 않는다 —
-  같은 사람이 다시 로그인하면 또 묻지 않는다. 옛 `promo_prompted_*` 키를 재사용하지 않는다.
-- 문구(ko — en·ja 는 같은 뜻으로):
-  - 제목 "개인 플랜 무료 이용이 곧 끝나요"
-  - 본문 "10월 31일까지 개인 플랜을 무료로 쓸 수 있어요. 11월 1일부터는 무료 플랜으로
-    돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요."
-  - ⚠ **두 날짜는 리터럴이 아니다.** 앞의 날짜 = `ends_at − 1초`, 뒤의 날짜 = `ends_at` 를
-    **기기 로케일·시간대**로 그린 월·일이다. 문자열 리소스에는 자리표시자만 둔다.
+iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이번 진입만 닫힘). **아이콘은 없다**
+(양 앱 — 이용권 화면 한 줄도 같다).
+- `다시 보지 않기` → **계정별 + 그 `ends_at` 별로** 저장(키에 계정 id, 값에 `ends_at`). 서버가
+  기간을 늘려 `ends_at` 이 바뀌면 새 종료를 한 번 더 알린다 — 사용자가 끈 것은 "이 종료 안내" 다.
+  로그아웃해도 지우지 않는다 — 같은 사람이 다시 로그인하면 또 묻지 않는다. 옛
+  `promo_prompted_*` 키를 재사용하지 않는다.
+- 문구(안드로이드 리소스가 원본, iOS 카탈로그는 ko·en·ja 모두 **글자까지** 같게):
+
+| | 제목 | 본문(`deletes_voices_at_end = true`) | 본문(`false` — 삭제 문장을 뺀다) |
+| --- | --- | --- | --- |
+| ko | 개인 플랜 무료 이용이 곧 끝나요 | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가고, 등록한 목소리는 3일 보관 후 삭제돼요. | {lastDay}까지 개인 플랜을 무료로 쓸 수 있어요. {nextDay}부터는 무료 플랜으로 돌아가요. |
+| en | Your free Personal plan ends soon | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan, and voices you registered will be kept for 3 days and then deleted. | You can use the Personal plan for free until {lastDay}. From {nextDay}, you'll return to the Free plan. |
+| ja | パーソナルプランの無料利用がまもなく終了します | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻り、登録した声は3日間保管した後に削除されます。 | {lastDay}までパーソナルプランを無料でご利用いただけます。{nextDay}からは無料プランに戻ります。 |
+
+  - 버튼: ko `다시 보지 않기` · `확인` / en `Don't show again` · `Confirm` / ja `今後表示しない` ·
+    `確認`(확인은 안드로이드 `auth_confirm` 과 같은 문구).
+  - ⚠ **두 날짜는 리터럴이 아니다.** `lastDay` = `ends_at − 1초` 를 **기기 시간대**의 날짜로,
+    `nextDay` = `lastDay` 의 **다음 달력일**. 둘 다 기기 로케일의 월·일이다. `nextDay` 를 `ends_at`
+    의 날짜로 그리면 한국이 아닌 시간대에서 두 날짜가 같은 날로 읽힌다("10월 31일까지 … 10월
+    31일부터"). 문자열 리소스에는 자리표시자만 둔다.
+  - `deletes_voices_at_end` 가 `false` 인 사람(결제 보류 — `active` 구독 행이 남아 있다)은 끝에
+    목소리가 삭제 예약되지 않는다. 그 문장을 보여 주면 틀린 삭제 예고다. 키가 없으면(구서버)
+    `true` 로 읽는다 — 예전 안내 그대로다.
 
 ## 구현 지도
 
@@ -68,7 +98,12 @@ iOS 는 시스템 `.alert`. 바깥 탭·뒤로가기는 `확인` 과 같다(이�
 | 준비 신호 | `MainViewModel.consentChecked` / `versionChecked` / `accountStatusChecked` · `sync/StockReplacementStatus.kt` 의 `checkedUserId`(`AlarmTalkApp.kt` 의 `stockReplacementChecked`) | `AuthViewModel.consentStatusChecked` / `AppVersionGate.checked` · `StockReplacementStatus.isChecked(for:)`(`RootView.blockingGateActive`) |
 | 차단 게이트 집합 | `AlarmTalkApp.kt` 의 `blockingGateActive` | `RootView.blockingGateActive` |
 | 판정 키(재실행 트리거) | `LaunchedEffect(...)` 키 목록 | `RootView.promoGateKey`(강등 안내·종료 안내가 공유) |
-| 종료 안내 — 진입 감지·'다시 보지 않기' 저장 | `AlarmTalkApp.kt` 의 종료 안내 이펙트 | `RootView` 의 종료 안내 판정 |
+| 종료 안내 — 진입 감지 | `core/AppSignals.kt` `AppSignals.appEntries`(`ON_START`) · `personalPromoNoticePendingForEntry` | `PersonalPromoNotice.swift` `AppEntryCounter`(`.background` → `.active` 만) |
+| 종료 안내 — 판정·준비 신호·다른 창 | `AlarmTalkApp.kt` 의 종료 안내 이펙트 · `ui/billing/PersonalPromo.kt` `PersonalPromoNoticeGates` · `MainViewModel.maybeShowPersonalPromoEndNotice`·`recordAccountStatusPromo` | `RootView.evaluatePersonalPromoNotice` · `PersonalPromoNotice.shouldShow` |
+| 종료 안내 — 기간·날짜(`lastDay`·`nextDay`) | `ui/billing/PersonalPromo.kt` `isPersonalPromoEndNoticeDue` · `personalPromoLastDay` · `formatPersonalPromoDay` | `PersonalPromoNotice.dayLabels` · `PersonalPromo.dayLabel` |
+| 종료 안내 — '다시 보지 않기'(계정 + `ends_at`) | `PersonalPromoNoticeStore`(`ui/billing/PersonalPromo.kt`) · `MainViewModel.dismissPersonalPromoEndNotice` | `PersonalPromoNoticeStore`(`PersonalPromoNotice.swift`) |
+| 종료 안내 — 문구 | `res/values*/strings.xml` `personal_promo_end_notice_*` · 확인 `auth_confirm` | `Localizable.xcstrings`(ko·en·ja) |
+| 종료 안내 — 회귀 테스트 | `PersonalPromoNoticeTest` | `PersonalPromoTests` · `PersonalPromoNoticeUITests` |
 | 세션 정리 | `clearUserScopedRemoteState` | `AuthViewModel` 세션 정리 |
 
 ⚠ iOS 의 차단 게이트에는 **목소리 받기 화면**(`voiceSetupDone != true`)도 들어간다.

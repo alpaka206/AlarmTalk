@@ -74,7 +74,11 @@ describe('personal_promo 조각', () => {
   });
 
   it('초 단위 UTC 를 받고, 계정 응답에서는 없어도·null 이어도 된다', () => {
-    const value = { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z' };
+    const value = {
+      ends_at: '2026-10-31T15:00:00Z',
+      notice_from: '2026-10-24T15:00:00Z',
+      deletes_voices_at_end: true,
+    };
     expect(PersonalPromoSchema.parse(value)).toEqual(value);
     expect(PersonalPromoFieldSchema.parse(null)).toBeNull();
     expect(PersonalPromoFieldSchema.parse(undefined)).toBeUndefined();
@@ -86,5 +90,16 @@ describe('personal_promo 조각', () => {
     expect(User.safeParse({ plan: 'plus' }).success).toBe(true);
     expect(User.safeParse({ plan: 'plus', personal_promo: null }).success).toBe(true);
     expect(User.safeParse({ plan: 'plus', personal_promo: value }).success).toBe(true);
+  });
+
+  it('deletes_voices_at_end 는 불리언이고 빠지면 안 된다 — 결제 보류 계정은 false', () => {
+    const base = { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z' };
+    expect(PersonalPromoSchema.safeParse({ ...base, deletes_voices_at_end: false }).success).toBe(
+      true,
+    );
+    expect(PersonalPromoSchema.safeParse(base).success).toBe(false);
+    expect(PersonalPromoSchema.safeParse({ ...base, deletes_voices_at_end: 'yes' }).success).toBe(
+      false,
+    );
   });
 });

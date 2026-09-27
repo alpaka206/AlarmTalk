@@ -18,7 +18,7 @@ import {
 } from '../lib/billing-reconciliation';
 import { withReadTransaction, withWriteTransaction } from '../lib/transactions';
 import { jsonError } from '../lib/api-error';
-import { computedUserPlan, personalPromoField, resolvePersonalPromo } from '../lib/personal-promo';
+import { computedUserPlan, loadPersonalPromoField, resolvePersonalPromo } from '../lib/personal-promo';
 
 const billingQuery = new Hono<AppEnv>();
 
@@ -126,7 +126,8 @@ billingQuery.get('/subscription', async (c) => {
     const rawPlan =
       rawPlanRow?.plan === null || rawPlanRow?.plan === undefined ? null : String(rawPlanRow.plan);
     const userPlan = refreshStoreState ? (computedUserPlan(rawPlan, promo) ?? 'free') : undefined;
-    const personalPromo = personalPromoField(rawPlan, promo);
+    // 결제 보류 계정(원시 free + `active` 행)도 값이 있다 — `deletes_voices_at_end` 만 false 다.
+    const personalPromo = await loadPersonalPromoField(tx, userId, rawPlan, promo);
     // ⚠ **해지 예약된 구독은 갱신 주인이 아니다**(코덱스 #733 6차). `cancel_at_period_end = 1`
     //   은 "아직 유료지만 다음 갱신은 없다" 는 뜻이라, 그걸 세면 **안내대로 Play 에서 해지한
     //   사용자가 남은 기간 내내 애플로 못 산다** — 우리가 하라고 한 일을 했는데 막힌다.
