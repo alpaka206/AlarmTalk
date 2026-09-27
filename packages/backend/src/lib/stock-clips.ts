@@ -1598,16 +1598,19 @@ export async function generateStockClip(
         if ((replaced.rowsAffected ?? 0) === 0) {
           return { superseded: true as const, publishedAudioUrl: String(row.audio_url ?? '') };
         }
-        // 오디오 대장에도 새 렌더를 남긴다. `request_hash` 가 UNIQUE 라 같은 해시가 이미
-        // 있으면(같은 목소리·같은 문구) 무시된다 — 교체는 provider voice id 가 달라
-        // 해시가 반드시 갈라지므로 정상적으로 새 행이 생긴다.
+        // 오디오 대장에도 새 렌더를 남긴다. 교체는 provider voice id 가 달라 해시가 반드시 갈라지므로
+        // 새 행이 생긴다. `created_at` 은 밀리초까지 — 다시 굽는 회차가 '요청 뒤에 게시된 것' 을 같은 초
+        // 안에서도 가른다.
+        // ⚠ **같은 해시면 게시 시각만 올린다**(Codex #802). 말투 재렌더는 보이스가 같아, 모델이 우연히 같은
+        // 문장을 내면 해시가 같다 — 무시하면 대장의 게시 시각이 요청 전 그대로라 이 클립이 영영 '빠진 것'
+        // 으로 세어지고 매 회차 다시 합성된다(큐가 끝나지 않는다). 연결(`message_id`)은 건드리지 않는다.
         await tx.execute({
-          // `created_at` 은 밀리초까지 — 다시 굽는 회차가 '요청 뒤에 게시된 것' 을 같은 초 안에서도 가른다.
-          sql: `INSERT OR IGNORE INTO generated_audio_assets
+          sql: `INSERT INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
                  audio_url, audio_object_key, audio_format, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
+                ON CONFLICT(request_hash) DO UPDATE SET created_at = excluded.created_at`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,

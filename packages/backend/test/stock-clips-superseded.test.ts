@@ -195,6 +195,33 @@ describe('사전렌더 — 렌더 중에 교체가 한 번 더 일어나면', ()
     }
   });
 
+  // ⚠ **말투 재렌더가 같은 문장을 내도 끝나야 한다**(Codex #802). 같은 보이스·같은 문구면 해시가 같아
+  // 대장 INSERT 가 무시됐고, 게시 시각이 다시 굽기 요청보다 앞선 채 남아 이 클립이 영영 '빠진 것' 이었다.
+  it('다시 굽기에서 같은 해시를 다시 게시하면 대장의 게시 시각을 올린다', async () => {
+    const { db, path } = await prerenderDb();
+    try {
+      const sameVoiceTarget = { ...(inFlightTarget as Record<string, unknown>) } as never;
+      await generateStockClip(db as never, ENV, sameVoiceTarget);
+      // 말투가 늦게 도착했다 — 다시 굽기 요청(밀리초 시각)이 첫 게시 뒤에 찍힌다.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await db.execute(
+        "UPDATE voice_prerender_queue SET requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE voice_profile_id = 'vp1'",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await generateStockClip(db as never, ENV, sameVoiceTarget);
+
+      const ledger = await db.execute(`
+        SELECT COUNT(*) AS n,
+               MAX(CASE WHEN julianday(ga.created_at) > julianday(q.requested_at) THEN 1 ELSE 0 END) AS fresh
+          FROM generated_audio_assets ga
+          JOIN voice_prerender_queue q ON q.voice_profile_id = ga.voice_profile_id`);
+      expect(Number(ledger.rows[0]!.n), '같은 해시는 대장 행 하나다').toBe(1);
+      expect(Number(ledger.rows[0]!.fresh), '다시 굽기 뒤 게시로 세어지지 않는다 — 큐가 끝나지 않는다').toBe(1);
+    } finally {
+      cleanup(db, path);
+    }
+  });
+
   it('클레임이 그대로여도 provider 보이스가 갈렸으면 게시하지 않는다', async () => {
     const { db, path } = await prerenderDb();
     try {
