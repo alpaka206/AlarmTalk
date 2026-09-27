@@ -503,6 +503,61 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertEqual(PaidVoiceGate.resolve(snapshot: paid, now: end.addingTimeInterval(86_400)), .entitled)
     }
 
+    /// D12(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse`): 전경 무료 잠금이 기다리는 갈래는
+    /// **무료의 근거가 낡은 프로모 하나뿐**일 때다. 서버가 free 라고 답했거나 구독 행이 만료된
+    /// 무료는 프로모를 빼도 무료라 기다리지 않는다.
+    func test_freeOnlyByPromoLapse_onlyWhenTheStalePromoIsTheReason() {
+        let later = end.addingTimeInterval(86_400)
+        XCTAssertTrue(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(noSubscription, promo: promo), now: later),
+            "구독 없음 + 낡은 plus — 프로모만 빼면 유료로 읽힌다"
+        )
+        XCTAssertTrue(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(nil, promo: promo), now: later),
+            "콜드 스타트(구독 스냅샷 전)도 같다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(noSubscription, promo: promo), now: end.addingTimeInterval(-1)),
+            "끝 전에는 낡지 않았다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(noSubscription, promo: promo(fetchedAt: end.addingTimeInterval(30))), now: later),
+            "끝 뒤에 계산된 답은 권위다 — 애초에 무료가 아니다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(
+                snapshot: snapshot(response(subscription(expiresAt: "2026-11-01T00:00:00Z")), promo: promo), now: later
+            ),
+            "구독 행도 만료됐으면 프로모를 빼도 무료다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(noSubscription, userPlan: "free", promo: promo), now: later),
+            "서버가 free 라고 답했다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(response(subscription()), promo: promo), now: later),
+            "활성 구독 행이 이기면 무료가 아니다"
+        )
+        XCTAssertFalse(PaidVoiceGate.isFreeOnlyByPromoLapse(snapshot: snapshot(noSubscription, promo: nil), now: later))
+    }
+
+    /// D12(안드로이드 `freePlanLockMayApply`): 낡은 프로모 때문만인 무료는 **이 진입의 plan 반영
+    /// 뒤에만** 잠근다. 다른 무료는 기다리지 않는다.
+    func test_freePlanLockMayApply_waitsForThisEntrysPlanAnswer() {
+        XCTAssertTrue(PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: false, planAnsweredEntry: 0, entry: 0))
+        XCTAssertTrue(PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: false, planAnsweredEntry: 1, entry: 3))
+        XCTAssertFalse(PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: true, planAnsweredEntry: 0, entry: 1))
+        XCTAssertFalse(
+            PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: true, planAnsweredEntry: 1, entry: 2),
+            "지난 진입의 답은 이번 진입의 답이 아니다"
+        )
+        XCTAssertFalse(
+            PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: true, planAnsweredEntry: 0, entry: 0),
+            "들어오기 전에는 잠그지 않는다"
+        )
+        XCTAssertTrue(PaidVoiceGate.freePlanLockMayApply(freeOnlyByPromoLapse: true, planAnsweredEntry: 2, entry: 2))
+    }
+
     // MARK: - 4. 이용권 화면: 산 것만 '현재 이용권'
 
     func test_purchasedPlan_excludesPromo() {
