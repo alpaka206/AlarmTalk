@@ -49,7 +49,7 @@ class PaidVoiceAccessTest {
             userPlan = "free",
             storeEntitled = true,
             nowMillis = now,
-            userPlanPromoEndsAt = null,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Entitled, access)
     }
@@ -62,7 +62,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
-            userPlanPromoEndsAt = null,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.NotEntitled, access)
     }
@@ -75,7 +75,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
-            userPlanPromoEndsAt = null,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Entitled, access)
     }
@@ -90,7 +90,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = false,
             nowMillis = now,
-            userPlanPromoEndsAt = null,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.Unknown, access)
         assertEquals(true, access.isEntitledOptimistic())
@@ -178,7 +178,7 @@ class PaidVoiceAccessTest {
             userPlan = null,
             storeEntitled = storeStillValid,
             nowMillis = now,
-            userPlanPromoEndsAt = null,
+            userPlanPromo = null,
         )
         assertEquals(PaidVoiceAccess.NotEntitled, access)
     }
@@ -195,28 +195,32 @@ class PaidVoiceAccessTest {
     // ── 기간 한정 개인 플랜(personal_promo) ──────────────────────────────────────────
     //
     // 서버는 기간 동안 원시 free 를 `plus` 로 **계산해서** 준다(구독 행은 없다). 앱은 그
-    // `plus` 를 캐시해 두고 오프라인·울림 경로에서 읽는다 — 종료 시각이 지나면 그 캐시는
-    // 원시 free 로 읽어야 한다. 단 **진짜 구독자는 절대 건드리지 않는다.**
+    // `plus` 를 캐시해 두고 오프라인·울림 경로에서 읽는다 — **종료 전에 받은** 그 캐시는 종료
+    // 뒤에 원시 free 로 읽어야 한다. 단 **종료 뒤에 받은 답은 권위**이고, **활성 구독 행은
+    // 언제나 위다**(양 앱 공통 규칙).
 
     private val promoEndsAt = "2026-10-31T15:00:00Z"
     private val promoEnd = Instant.parse(promoEndsAt).toEpochMilli()
     private val noSubscription = BillingSubscriptionResponse(subscription = null, plan = null)
+
+    /** 종료 한 시간 전에 받은 답 — 전형적인 '낡은 캐시'. */
+    private val staleStamp = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd - 60 * 60_000L)
 
     @Test
     fun promoPlusWithoutSubscriptionIsEntitledUntilItsEnd() {
         // 개인 기능이 열려야 하는 기간 — 구독 행이 없어도 계산된 plus 로 유료다.
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd - 1, promoEndsAt),
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd - 1, staleStamp),
         )
-        // 종료는 배타다 — 그 순간부터 무료.
+        // 종료는 배타다 — 그 순간부터 낡은 캐시는 무료.
         assertEquals(
             PaidVoiceAccess.NotEntitled,
-            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd, promoEndsAt),
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd, staleStamp),
         )
         assertEquals(
             true,
-            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60_000, promoEndsAt)
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60_000, staleStamp)
                 .isDefinitelyFree(),
         )
     }
@@ -227,13 +231,55 @@ class PaidVoiceAccessTest {
         // 여기서 Unknown 이면 낙관 규칙에 걸려 **종료 뒤에도 클론 목소리가 계속 울린다.**
         assertEquals(
             PaidVoiceAccess.NotEntitled,
-            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd, promoEndsAt),
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd, staleStamp),
         )
         // 기간 중에는 예전 규칙 그대로다(스냅샷 없음 = 모름).
         assertEquals(
             PaidVoiceAccess.Unknown,
-            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd - 1, promoEndsAt),
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd - 1, staleStamp),
         )
+    }
+
+    @Test
+    fun anAnswerFetchedAtOrAfterTheEndIsAuthoritative() {
+        // 기기 시계가 서버보다 빠르면, 기기 기준 종료 뒤에 받은 응답에도 서버는 아직 plus 를 준다.
+        // 서버가 이미 계산한 답이다 — 기기 시계로 자르면 서버가 방금 열어 준 것을 앱이 닫는다.
+        val fetchedAtEnd = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd)
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60 * 60_000L, fetchedAtEnd),
+        )
+        val fetchedAfter = PlanPromoStamp(promoEndsAt, fetchedAtMillis = promoEnd + 5_000)
+        assertEquals(
+            PaidVoiceAccess.Unknown,
+            resolvePaidVoiceAccess(null, null, "plus", false, promoEnd + 60_000, fetchedAfter),
+        )
+        // 받은 시각을 모르는 옛 캐시는 종료 전에 받은 것으로 본다(예전 동작).
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd, PlanPromoStamp(promoEndsAt, null)),
+        )
+    }
+
+    @Test
+    fun aFreshAnswerNeverLocksOnTheDeviceClock() {
+        // `PlanChangeSyncWorker` 처럼 **방금 받은 답**으로 되돌릴 수 없는 강등을 거는 자리.
+        // 기기 시계가 종료를 넘겨 있어도(시계가 빠름·경계에 걸침) 서버가 준 plus 로 판정한다.
+        val user = com.alarmtalk.app.network.AuthUser(
+            id = "u1",
+            email = "u1@example.test",
+            plan = "plus",
+            personalPromo = com.alarmtalk.app.network.PersonalPromo(endsAt = promoEndsAt),
+        )
+        listOf(promoEnd, promoEnd + 1, promoEnd + 24 * 60 * 60_000L).forEach { deviceNow ->
+            val access = resolvePaidVoiceAccess(
+                noSubscription, null, user.plan, false, deviceNow, freshPlanPromoStamp(user, deviceNow),
+            )
+            assertEquals("now=$deviceNow", PaidVoiceAccess.Entitled, access)
+            assertEquals(false, access.isDefinitelyFree())
+        }
+        // 프로모가 아닌 답에는 표지가 없다.
+        assertEquals(null, freshPlanPromoStamp(user.copy(personalPromo = null), promoEnd))
     }
 
     @Test
@@ -242,12 +288,12 @@ class PaidVoiceAccessTest {
         val live = sub("active", "2026-12-01T00:00:00Z")
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(live, null, "plus", false, promoEnd + 60_000, promoEndsAt),
+            resolvePaidVoiceAccess(live, null, "plus", false, promoEnd + 60_000, staleStamp),
         )
         // 스토어가 유효하다고 하면 그것도 위다(기간 중에 Play 로 산 사람).
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(noSubscription, null, "plus", true, promoEnd + 60_000, promoEndsAt),
+            resolvePaidVoiceAccess(noSubscription, null, "plus", true, promoEnd + 60_000, staleStamp),
         )
     }
 
@@ -269,7 +315,9 @@ class PaidVoiceAccessTest {
         // 끝을 모르면 자르지 않는다 — 서버 게이트가 제 시각에 스스로 닫힌다.
         assertEquals(
             PaidVoiceAccess.Entitled,
-            resolvePaidVoiceAccess(noSubscription, null, "plus", false, promoEnd + 60_000, "not-a-date"),
+            resolvePaidVoiceAccess(
+                noSubscription, null, "plus", false, promoEnd + 60_000, PlanPromoStamp("not-a-date", null),
+            ),
         )
     }
 }

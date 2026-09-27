@@ -174,9 +174,15 @@ internal fun AlarmTalkApp(
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
     val initialPermissionPromptStore = remember(context) { InitialPermissionPromptStore(context) }
+    // 우리가 띄운 **시스템 권한 창**이 떠 있는가(요청 ~ 결과 콜백). 개인 플랜 종료 안내가 그
+    // 창과 한꺼번에 뜨지 않게 기다리는 신호다. 액티비티가 멈추는 것(PAUSED)만 보면 첫 진입에서
+    // 권한 요청과 안내 판정이 **같은 프레임**에 돌 때 창이 뜨기 전 틈을 놓친다 — 요청하는 순간
+    // 먼저 세운다.
+    var systemPermissionPromptOpen by remember { mutableStateOf(false) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
+        systemPermissionPromptOpen = false
         permissionState.refresh()
         // 영구 거부(사용자가 이전에 거부해 시스템이 다이얼로그를 더 이상 띄우지 않는 상태) 감지.
         // 이 경우 launch() 는 다이얼로그 없이 즉시 거부로 돌아온다 → 모달의 '허용하기' 만으론
@@ -196,11 +202,22 @@ internal fun AlarmTalkApp(
         }
     }
 
+    fun launchRuntimePermission(permission: String) {
+        systemPermissionPromptOpen = true
+        try {
+            runtimePermissionLauncher.launch(arrayOf(permission))
+        } catch (error: RuntimeException) {
+            // 창이 안 떴으면 결과 콜백도 안 온다 — 세워 둔 신호가 남으면 안내가 영영 못 뜬다.
+            systemPermissionPromptOpen = false
+            throw error
+        }
+    }
+
     fun requestPermission(target: PermissionTarget) {
         when (target) {
             PermissionTarget.Notifications -> {
                 if (context.shouldRequestNotificationRuntimePermission()) {
-                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                    launchRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
                     context.openNotificationSettings()
                 }
@@ -208,7 +225,7 @@ internal fun AlarmTalkApp(
             PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
             PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
             PermissionTarget.RecordAudio -> {
-                runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                launchRuntimePermission(Manifest.permission.RECORD_AUDIO)
             }
         }
         permissionState.refresh()
@@ -252,7 +269,7 @@ internal fun AlarmTalkApp(
         }
         if (runtimePermission != null && isFirstRuntimeAsk(runtimePermission)) {
             initialPermissionPromptStore.markPrompted(runtimePermission)
-            runtimePermissionLauncher.launch(arrayOf(runtimePermission))
+            launchRuntimePermission(runtimePermission)
             return
         }
 
@@ -400,15 +417,33 @@ internal fun AlarmTalkApp(
 
     // 기간 한정 개인 플랜 **종료 안내** — 안내 기간 동안 **앱에 진입할 때마다** 한 번(콜드
     // 스타트·백그라운드에서 복귀). 화면 이동으로는 다시 뜨지 않는다: 진입 번호는
-    // `AppSignals.appEntries`(프로세스 ON_START)이고, 같은 번호에서는 두 번 띄우지 않는다.
+    // `AppSignals.appEntries`(프로세스 ON_START)이고, 같은 번호에서는 두 번 판정하지 않는다.
     //
+    // ⚠ **그 진입의 새 `/auth/me` 응답이 온 뒤에만 판정한다**(`viewModel.accountAnsweredEntry`).
+    //   진입마다 뷰모델이 새로 받는다(`MainViewModel` init 의 진입 구독). 저장된 세션의 promo 로
+    //   판정하면 그 사이 결제·쿠폰을 등록한 사람에게도 "곧 끝나요" 가 뜬다.
     // ⚠ **소진 플래그는 아니지만 준비 신호는 똑같이 지킨다**(`docs/spec/gates-and-overlays.md`).
     //   응답 전 기본값 `false` 는 '아니오' 가 아니다 — 그 틈에 뜨면 뒤늦게 온 차단 화면
-    //   (업데이트·동의·탈퇴 유예·교체)과 겹친다. plan·프로모가 담긴 `/auth/me` 응답
-    //   (`accountStatusChecked`)도 기다린다. 권한 게이트·목소리 받기 화면·다른 모달이 떠
-    //   있으면 그게 닫힌 뒤에 뜬다(키에 있으므로 닫히는 순간 다시 판정된다).
+    //   (업데이트·동의·탈퇴 유예·교체)과 겹친다.
+    // ⚠ **다른 모달·시스템 권한 창 위에는 띄우지 않는다.** 권한 게이트·목소리 받기 화면·강등
+    //   안내·민감 동의, 그리고 창을 여는 모든 모달(`OpenModalRegistry` — 목소리 등록 창·시트·
+    //   알럿)과 시스템 권한 창(요청 중 신호 + 화면이 RESUMED 가 아님)을 기다린다. 떠 있는 동안
+    //   그중 하나가 올라오면 안내를 걷고 다시 기다린다(`deferPersonalPromoEndNotice`) — 대기
+    //   중인 안내는 다른 안내를 막지 않는다.
     // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
     val appEntry by com.alarmtalk.app.core.AppSignals.appEntries.collectAsStateWithLifecycle()
+    val lifecycleState = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        .currentStateFlow.collectAsState()
+    // 파생 상태로 읽는다 — 루트 컴포저블이라, 원본을 그대로 읽으면 수명주기가 한 칸 움직이거나
+    // 모달이 하나 열릴 때마다 앱 전체가 다시 그려진다. 여기서 필요한 것은 참/거짓 하나다.
+    val activityResumed by remember(lifecycleState) {
+        androidx.compose.runtime.derivedStateOf {
+            lifecycleState.value.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        }
+    }
+    val anyModalOpen by remember {
+        androidx.compose.runtime.derivedStateOf { OpenModalRegistry.openCount > 0 }
+    }
     LaunchedEffect(
         appEntry,
         sessionRouteKey,
@@ -425,8 +460,12 @@ internal fun AlarmTalkApp(
         stockReplacementPending,
         downgradeNotice,
         viewModel.pendingSensitiveConsent,
-        authSession?.user?.personalPromo,
-        subscriptionResponse?.personalPromo,
+        viewModel.accountAnsweredEntry,
+        viewModel.latestAccountPromo,
+        viewModel.personalPromoEndNotice,
+        systemPermissionPromptOpen,
+        activityResumed,
+        anyModalOpen,
     ) {
         val gates = PersonalPromoNoticeGates(
             signedIn = sessionRouteKey != null,
@@ -441,9 +480,17 @@ internal fun AlarmTalkApp(
             stockReplacementPending = stockReplacementPending,
             permissionGateOpen = viewModel.permissionGateRequest != null,
             showVoiceSetup = viewModel.showVoiceSetup,
-            otherModalOpen = downgradeNotice != null || viewModel.pendingSensitiveConsent != null,
+            // 종료 안내 자신은 세지 않는다(`IosAlertDialog` 의 `tracksAsOpenModal = false`).
+            otherModalOpen = downgradeNotice != null || viewModel.pendingSensitiveConsent != null ||
+                anyModalOpen,
+            // 같은 프레임에 먼저 돈 권한 요청이 세운 값을 놓치지 않게 **지금** 읽는다.
+            systemPermissionPromptOpen = systemPermissionPromptOpen,
+            activityResumed = activityResumed,
         )
-        if (!gates.ready()) return@LaunchedEffect
+        if (!gates.ready()) {
+            viewModel.deferPersonalPromoEndNotice()
+            return@LaunchedEffect
+        }
         viewModel.maybeShowPersonalPromoEndNotice(appEntry)
     }
 
@@ -940,8 +987,8 @@ internal fun AlarmTalkApp(
         )
     }
 
-    // 기간 한정 개인 플랜 종료 안내. 날짜는 전부 서버 값(`ends_at`)을 기기 로케일로 그린다 —
-    // "…까지" 는 `ends_at − 1초` 의 날, "…부터" 는 `ends_at` 의 날(`ui/billing/PersonalPromo.kt`).
+    // 기간 한정 개인 플랜 종료 안내. 날짜는 전부 서버 값(`ends_at`)을 기기 시간대·로케일로 그린다 —
+    // "…까지" 는 `ends_at − 1초` 의 날, "…부터" 는 그 **다음 날**(`ui/billing/PersonalPromo.kt`).
     // 버튼 둘은 가로로 놓인다(`IosAlertDialog` 규칙). '확인' 이 주 액션이고, 바깥 탭·뒤로가기도
     // '확인' 과 같다 — 다음 진입에 다시 뜬다. 멈추는 것은 '다시 보지 않기' 뿐이다.
     viewModel.personalPromoEndNotice?.takeIf { !blockingGateActive }?.let { promo ->
@@ -950,13 +997,22 @@ internal fun AlarmTalkApp(
         val lastDay = personalPromoLastDay(promo, zone)
         val freeFrom = personalPromoFreeFromDay(promo, zone)
         if (lastDay != null && freeFrom != null) {
+            // 종료 전환 대상이 아닌 계정(결제 보류로 활성 구독 행이 남은 계정 등)에게는 목소리
+            // 삭제를 말하지 않는다 — 서버가 `deletes_voices_at_end: false` 로 알려 준다.
+            val messageRes = if (personalPromoDeletesVoicesAtEnd(promo)) {
+                R.string.personal_promo_end_notice_message
+            } else {
+                R.string.personal_promo_end_notice_message_keep_voices
+            }
             IosAlertDialog(
                 title = stringResource(R.string.personal_promo_end_notice_title),
                 message = stringResource(
-                    R.string.personal_promo_end_notice_message,
+                    messageRes,
                     formatPersonalPromoDay(lastDay, locale),
                     formatPersonalPromoDay(freeFrom, locale),
                 ),
+                // 자기를 '다른 모달' 로 세면 떠 있는 자기 때문에 스스로 걷힌다.
+                tracksAsOpenModal = false,
                 onDismiss = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = false) },
                 actions = listOf(
                     IosAlertAction(

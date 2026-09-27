@@ -18,6 +18,18 @@ data class AuthSession(
     val token: String,
     val provider: String,
     val user: AuthUser,
+    /**
+     * [user] 를 **서버에서 받은 시각**(기기 시계, epoch millis). 모르면 null.
+     *
+     * 기간 한정 개인 플랜의 오프라인 차단이 이 값을 본다(`resolvePaidVoiceAccess` 의
+     * `userPlanPromo`) — 캐시된 계산값 `plus` 는 **종료 전에 받은 것**일 때만, 종료가 지나면
+     * 무료로 읽는다. 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로 믿는다.
+     *
+     * 서버 응답을 저장하는 자리(로그인·`/auth/me`)가 새로 찍고, 프로필만 고쳐 다시 저장하는
+     * 자리는 **들고 있던 값을 그대로** 넘긴다 — plan·프로모와 함께 복사된 옛 답이므로 받은
+     * 시각도 그 답의 것이어야 한다.
+     */
+    val userFetchedAtMillis: Long? = null,
 )
 
 /**
@@ -206,6 +218,7 @@ class AuthSessionStore internal constructor(
                 dynamicPromptSettings = readDynamicPromptSettings(),
                 personalPromo = readPersonalPromo(),
             ),
+            userFetchedAtMillis = prefs.getLong(KEY_USER_FETCHED_AT, 0L).takeIf { it > 0L },
         )
     }
 
@@ -214,6 +227,8 @@ class AuthSessionStore internal constructor(
             token = response.token,
             provider = PROVIDER_APP,
             user = response.user,
+            // 방금 받은 응답이다.
+            userFetchedAtMillis = System.currentTimeMillis(),
         )
 
     fun saveGoogleSession(response: AuthTokenResponse): AuthSession =
@@ -221,6 +236,7 @@ class AuthSessionStore internal constructor(
             token = response.token,
             provider = PROVIDER_GOOGLE,
             user = response.user,
+            userFetchedAtMillis = System.currentTimeMillis(),
         )
 
     fun clear() = synchronized(sessionWriteLock) {
@@ -464,6 +480,8 @@ class AuthSessionStore internal constructor(
      * @param rolledToken 서버가 이번 응답으로 **새로 준** 토큰. 없으면(null·공백) 저장소의
      *   현재 토큰을 지킨다 — 호출부가 시작할 때 잡아 둔 토큰으로 되돌리면 안 된다. 그 사이
      *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다.
+     * @param userFetchedAtMillis [user] 를 서버에서 받은 시각([AuthSession.userFetchedAtMillis]).
+     *   `/auth/me` 응답이면 지금, 들고 있던 세션의 프로필만 고친 것이면 **그 세션의 값**이다.
      *
      * 저장하지 않는 경우(모두 null 반환):
      *  - 시작할 때의 세션이 이미 끝났다([sessionSurvivedForWrite]).
@@ -475,6 +493,7 @@ class AuthSessionStore internal constructor(
         user: AuthUser,
         provider: String,
         rolledToken: String?,
+        userFetchedAtMillis: Long?,
     ): AuthSession? = synchronized(sessionWriteLock) {
         val storedToken = prefs.getString(KEY_TOKEN, null)
         val alive = sessionSurvivedForWrite(
@@ -488,13 +507,24 @@ class AuthSessionStore internal constructor(
             token = rolledToken?.takeIf { it.isNotBlank() } ?: storedToken.orEmpty(),
             provider = provider,
             user = user,
+            userFetchedAtMillis = userFetchedAtMillis,
         )
     }
 
     fun save(session: AuthSession): AuthSession =
-        save(token = session.token, provider = session.provider, user = session.user)
+        save(
+            token = session.token,
+            provider = session.provider,
+            user = session.user,
+            userFetchedAtMillis = session.userFetchedAtMillis,
+        )
 
-    private fun save(token: String, provider: String, user: AuthUser): AuthSession {
+    private fun save(
+        token: String,
+        provider: String,
+        user: AuthUser,
+        userFetchedAtMillis: Long?,
+    ): AuthSession {
         val normalizedUser = normalizeUser(user)
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
@@ -512,11 +542,13 @@ class AuthSessionStore internal constructor(
             .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
             .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
             // ⚠ **없으면 지운다.** 남겨 두면 기간이 끝났거나 결제한 뒤에도 옛 프로모가 되살아나
-            //   plan 과 짝이 어긋난다(`resolvePaidVoiceAccess` 의 `userPlanPromoEndsAt`).
+            //   plan 과 짝이 어긋난다(`resolvePaidVoiceAccess` 의 `userPlanPromo`).
             .also { editor ->
                 val promo = normalizedUser.personalPromo
                 if (promo == null) {
-                    editor.remove(KEY_PERSONAL_PROMO_ENDS_AT).remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
+                    editor.remove(KEY_PERSONAL_PROMO_ENDS_AT)
+                        .remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
+                        .remove(KEY_PERSONAL_PROMO_DELETES_VOICES)
                 } else {
                     editor.putString(KEY_PERSONAL_PROMO_ENDS_AT, promo.endsAt)
                     if (promo.noticeFrom == null) {
@@ -524,10 +556,28 @@ class AuthSessionStore internal constructor(
                     } else {
                         editor.putString(KEY_PERSONAL_PROMO_NOTICE_FROM, promo.noticeFrom)
                     }
+                    val deletes = promo.deletesVoicesAtEnd
+                    if (deletes == null) {
+                        editor.remove(KEY_PERSONAL_PROMO_DELETES_VOICES)
+                    } else {
+                        editor.putBoolean(KEY_PERSONAL_PROMO_DELETES_VOICES, deletes)
+                    }
+                }
+                // plan·프로모와 **한 벌로** 적는다 — 받은 시각이 다른 답에 붙으면 오프라인 차단이
+                //   엉뚱한 답을 자른다([AuthSession.userFetchedAtMillis]).
+                if (userFetchedAtMillis == null || userFetchedAtMillis <= 0L) {
+                    editor.remove(KEY_USER_FETCHED_AT)
+                } else {
+                    editor.putLong(KEY_USER_FETCHED_AT, userFetchedAtMillis)
                 }
             }
             .apply()
-        return AuthSession(token = token, provider = provider, user = normalizedUser)
+        return AuthSession(
+            token = token,
+            provider = provider,
+            user = normalizedUser,
+            userFetchedAtMillis = userFetchedAtMillis?.takeIf { it > 0L },
+        )
     }
 
     /**
@@ -540,6 +590,11 @@ class AuthSessionStore internal constructor(
         return PersonalPromo(
             endsAt = endsAt,
             noticeFrom = prefs.getString(KEY_PERSONAL_PROMO_NOTICE_FROM, null)?.takeIf { it.isNotBlank() },
+            deletesVoicesAtEnd = if (prefs.contains(KEY_PERSONAL_PROMO_DELETES_VOICES)) {
+                prefs.getBoolean(KEY_PERSONAL_PROMO_DELETES_VOICES, true)
+            } else {
+                null
+            },
         )
     }
 
@@ -831,6 +886,8 @@ class AuthSessionStore internal constructor(
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
         private const val KEY_PERSONAL_PROMO_ENDS_AT = "personal_promo_ends_at"
         private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
+        private const val KEY_PERSONAL_PROMO_DELETES_VOICES = "personal_promo_deletes_voices_at_end"
+        private const val KEY_USER_FETCHED_AT = "user_fetched_at_millis"
         // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
         private const val MAX_QUIET_WINDOWS = 2
     }
@@ -846,7 +903,8 @@ internal fun normalizePersonalPromo(promo: PersonalPromo?): PersonalPromo? {
     val endsAt = runCatching { promo?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
         ?: return null
     val noticeFrom = runCatching { promo?.noticeFrom }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
-    return PersonalPromo(endsAt = endsAt, noticeFrom = noticeFrom)
+    val deletesVoicesAtEnd = runCatching { promo?.deletesVoicesAtEnd }.getOrNull()
+    return PersonalPromo(endsAt = endsAt, noticeFrom = noticeFrom, deletesVoicesAtEnd = deletesVoicesAtEnd)
 }
 
 internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): DynamicPromptSettings {
