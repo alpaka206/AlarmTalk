@@ -595,6 +595,35 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
   });
 
+  it('초안을 만들 때 목소리의 결(voiceEnergy)을 받아 함께 저장한다 — 안 보내면 컬럼을 건드리지 않는다', async () => {
+    pushPaidPlan();
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-energy' });
+    const withEnergy = cloneForm(new Uint8Array([1, 2]), '남친 목소리');
+    const form = await withEnergy.formData();
+    form.append('voiceEnergy', 'lively');
+    const res = await req(buildApp(), new Request('http://localhost/vp/clone', { method: 'POST', body: form }));
+    expect(res.status).toBe(201);
+    expect((await res.json()).profile.voice_energy).toBe('lively');
+    const insert = mockDB.calls.find((call) => call.sql.includes('INSERT INTO voice_profiles'));
+    expect(insert?.sql).toContain('voice_energy');
+    expect(insert?.args).toContain('lively');
+  });
+
+  it('초안 결 값이 이상하면 400 INVALID_VOICE_ENERGY', async () => {
+    pushPaidPlan();
+    const bad = cloneForm(new Uint8Array([1, 2]), '엄마 목소리');
+    const form = await bad.formData();
+    form.append('voiceEnergy', 'loud');
+    const res = await req(buildApp(), new Request('http://localhost/vp/clone', { method: 'POST', body: form }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_ENERGY');
+  });
+
   // ⚠ **남은 초안은 거절 사유가 아니라 버릴 것이다**(2026-08-25 지시).
   // 초안은 저장하지 않으면 없는 것이고, 남아 있다는 건 앱이 죽었다는 뜻이지 사용자가
   // 결정을 미뤘다는 뜻이 아니다 — 새로 시작하는 것을 '옛 초안을 버린다' 로 읽는다.

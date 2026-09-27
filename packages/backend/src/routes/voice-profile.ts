@@ -1796,6 +1796,18 @@ voiceProfile.post('/clone', async (c) => {
       normalizeRelationshipLabel(
         formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
       ) ?? '';
+    // 목소리의 결 — 관계·호칭과 같이 초안을 만들 때 받는다(PATCH /:id/relationship 과 같은 규칙).
+    // 보내지 않은 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    const rawVoiceEnergy = formData.get('voiceEnergy') ?? formData.get('voice_energy');
+    const hasVoiceEnergy = rawVoiceEnergy !== null && rawVoiceEnergy !== undefined;
+    const voiceEnergyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(String(rawVoiceEnergy)) : null;
+    if (voiceEnergyParsed && !voiceEnergyParsed.success) {
+      return c.json(
+        { error: "voice_energy must be '', 'lively' or 'calm'", error_code: 'INVALID_VOICE_ENERGY' },
+        400,
+      );
+    }
+    const voiceEnergy = voiceEnergyParsed?.success ? voiceEnergyParsed.data : '';
 
     // 한도 검사: non-draft 는 MAX_VOICE_PROFILES, draft 는 MAX_DRAFT_VOICE_PROFILES.
     // draft 도 즉시 실제 ElevenLabs 보이스를 생성하므로 반드시 상한을 둬야 무제한
@@ -1941,8 +1953,10 @@ voiceProfile.post('/clone', async (c) => {
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
       await tx.execute({
         sql: `INSERT INTO voice_profiles
-              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language)
-              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?)`,
+              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language${
+                hasVoiceEnergy ? ', voice_energy' : ''
+              })
+              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?${hasVoiceEnergy ? ', ?' : ''})`,
         args: [
           profileId,
           userId,
@@ -1952,6 +1966,7 @@ voiceProfile.post('/clone', async (c) => {
           relationshipLabel,
           listenerTitle,
           previewLanguage,
+          ...(hasVoiceEnergy ? [voiceEnergy || null] : []),
         ],
       });
       return { status: 'ok' as const, ledgerId: null };
@@ -2159,6 +2174,7 @@ voiceProfile.post('/clone', async (c) => {
           is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
+          ...(hasVoiceEnergy ? { voice_energy: voiceEnergy } : {}),
         },
       },
       201,
