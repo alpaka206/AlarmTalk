@@ -237,6 +237,12 @@ internal fun VoiceProfileManagementPanel(
     authSession: AuthSession?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
+    /**
+     * 기간 한정 개인 플랜 중의 보류 규칙(`MainViewModel.personalPromoTierHold`). 있으면 남은 구독
+     * 행·그룹 멤버로 공유 토글을 열지 않는다. 기본값을 두지 않는다 — 빠뜨리면 보류 계정에 서버가
+     * 막는 공유 토글이 보인다.
+     */
+    personalPromoTierHold: PersonalPromoTierHold?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
@@ -433,7 +439,7 @@ internal fun VoiceProfileManagementPanel(
     // promote 직후 사전렌더 진행 화면 — 등록이 끝나도 다이얼로그를 유지해야
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
-    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
+    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession, personalPromoTierHold)
     val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {

@@ -114,6 +114,62 @@ class PersonalPromoPersistenceTest {
     }
 
     @Test
+    fun theSessionStampsTheServersComputedAtAndDoesNotKeepTheRawValue() {
+        val store = AuthSessionStore(
+            context.getSharedPreferences("personal-promo-session-test", Context.MODE_PRIVATE),
+        )
+        val computedAt = "2026-10-31T14:59:30Z"
+        val computedMillis = java.time.Instant.parse(computedAt).toEpochMilli()
+        // 기기 시계가 서버보다 빠르다 — 기기 기준 종료 10초 뒤에 받았다.
+        val deviceReceipt = java.time.Instant.parse("2026-10-31T15:00:10Z").toEpochMilli()
+
+        // 로그인 응답도 같은 문(`save`)을 지난다.
+        val login = store.saveAppSession(
+            com.alarmtalk.app.network.AuthTokenResponse(
+                token = "t1",
+                user = AuthUser(
+                    id = "u1",
+                    email = "u1@example.test",
+                    plan = "plus",
+                    personalPromo = promo.copy(computedAt = computedAt),
+                ),
+            ),
+        )
+        assertEquals(computedMillis, login.userFetchedAtMillis)
+
+        // `/auth/me` 응답 — 호출부는 기기가 받은 시각만 넘긴다.
+        store.saveSessionIfAlive(
+            expectedGeneration = store.sessionGeneration(),
+            user = AuthUser(
+                id = "u1",
+                email = "u1@example.test",
+                plan = "plus",
+                personalPromo = promo.copy(computedAt = computedAt),
+            ),
+            provider = login.provider,
+            rolledToken = null,
+            userFetchedAtMillis = deviceReceipt,
+        )
+        val restored = checkNotNull(store.read())
+        assertEquals(computedMillis, restored.userFetchedAtMillis)
+        // 응답마다 달라지는 값은 들고 있지 않는다 — 같은 프로모가 응답마다 '다른 값' 이 되지 않게.
+        assertEquals(promo, restored.user.personalPromo)
+        assertNull(restored.user.personalPromo?.computedAt)
+        // 종료 전에 계산된 답이다 — 종료 뒤에는 낡은 캐시로 잘린다(기기가 앞서 있어도).
+        assertTrue(personalPromoLapsed(restored.planPromoStamp(), deviceReceipt + 60_000L))
+
+        // 프로필만 고쳐 다시 저장 — 정규화된 user 라 계산 시각이 없어, 들고 있던 값이 그대로 남는다.
+        store.saveSessionIfAlive(
+            expectedGeneration = store.sessionGeneration(),
+            user = restored.user.copy(name = "새 이름"),
+            provider = restored.provider,
+            rolledToken = null,
+            userFetchedAtMillis = restored.userFetchedAtMillis,
+        )
+        assertEquals(computedMillis, store.read()?.userFetchedAtMillis)
+    }
+
+    @Test
     fun promoWithoutEndIsDropped() {
         val store = AuthSessionStore(
             context.getSharedPreferences("personal-promo-session-test", Context.MODE_PRIVATE),

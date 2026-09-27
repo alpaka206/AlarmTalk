@@ -69,6 +69,17 @@ data class PersonalPromo(
      * 그대로 true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
      */
     @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
+    /**
+     * 서버가 이 plan 을 **계산한 순간**(ISO, 서버 시계). 이 키를 주지 않는 서버에서는 null.
+     *
+     * 오프라인 차단(D1)의 '받은 시각' 은 이 값이 있으면 이것이다(D7, `planAnswerStampMillis`).
+     * 기기 시계로 찍으면 기기가 서버보다 Δ 만큼 빠를 때 종료 직전에 계산된 답이 '끝난 뒤에 받은 답'
+     * 으로 찍혀 **기한 없이** 권위가 된다 — 끝나기 전의 답인지는 서버 시계로 가려야 한다.
+     *
+     * ⚠ **받는 자리에서 받은 시각으로 바뀌고 저장되지 않는다**([normalizePersonalPromo] 가 뺀다).
+     * 응답마다 값이 달라, 들고 있으면 같은 프로모가 응답마다 '다른 값' 이 된다.
+     */
+    @SerializedName("computed_at") val computedAt: String? = null,
 )
 
 data class AuthUser(

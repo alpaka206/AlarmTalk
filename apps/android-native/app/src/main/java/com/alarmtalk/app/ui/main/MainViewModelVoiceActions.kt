@@ -555,7 +555,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_login_required)
         return
     }
-    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
+    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
         return
     }

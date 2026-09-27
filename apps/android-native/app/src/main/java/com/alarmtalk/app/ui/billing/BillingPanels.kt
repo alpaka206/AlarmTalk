@@ -82,7 +82,8 @@ internal fun SubscriptionPanel(
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     onRestorePurchases: () -> Unit,
     /**
-     * 지금 살아 있는 기간 한정 개인 플랜(`activePersonalPromoOf`). 있으면 맨 위에 한 줄만 보인다.
+     * 지금 살아 있는 기간 한정 개인 플랜 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
+     * (`planScreenPersonalPromoOf`). 있으면 맨 위에 한 줄만 보인다.
      *
      * ⚠ **구독처럼 그리지 말 것.** 서버가 구독 객체를 만들지 않으므로(`subscription` 은 null)
      * 해지 버튼도 '현재' 표시도 바꾸지 않는다 — 원시 plan 은 여전히 무료이고, 개인 결제도

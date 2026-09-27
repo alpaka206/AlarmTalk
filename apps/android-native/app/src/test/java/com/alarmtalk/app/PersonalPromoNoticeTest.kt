@@ -322,6 +322,31 @@ class PersonalPromoNoticeTest {
     }
 
     @Test
+    fun computedAtParsesLenientlyAndIsDroppedOnNormalize() {
+        val parsed = gson.fromJson(
+            """{"ends_at":"$endsAt","notice_from":"$noticeFrom","computed_at":"2026-10-31T14:59:30Z"}""",
+            PersonalPromo::class.java,
+        )
+        assertEquals("2026-10-31T14:59:30Z", parsed.computedAt)
+        assertEquals(
+            Instant.parse("2026-10-31T14:59:30Z").toEpochMilli(),
+            planAnswerStampMillis(parsed, receivedAtMillis = 1L),
+        )
+        // 모양이 틀리면 그 필드만 없는 것이다 — 로그인이 깨지지 않는다.
+        val wrongType = gson.fromJson(
+            """{"ends_at":"$endsAt","computed_at":1790000000}""",
+            PersonalPromo::class.java,
+        )
+        assertNull(wrongType.computedAt)
+        assertEquals(1L, planAnswerStampMillis(wrongType, receivedAtMillis = 1L))
+        // 저장·비교에 쓰는 모양에는 싣지 않는다 — 받는 자리에서 답의 시각으로 바뀐다.
+        assertNull(com.alarmtalk.app.network.normalizePersonalPromo(parsed)?.computedAt)
+        assertEquals(promo, com.alarmtalk.app.network.normalizePersonalPromo(parsed))
+        // 캐시(구독 응답 스냅샷)는 그대로 왕복한다.
+        assertEquals(parsed, gson.fromJson(gson.toJson(parsed), PersonalPromo::class.java))
+    }
+
+    @Test
     fun promoSurvivesTheSnapshotCacheRoundTrip() {
         val original = promo.copy(deletesVoicesAtEnd = false)
         assertEquals(original, gson.fromJson(gson.toJson(original), PersonalPromo::class.java))

@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -713,6 +712,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
     /**
+     * 무료 판정이 **기간 한정 개인 플랜의 오프라인 차단(D1) 때문만**인가 — 판정에 쓰는 plan 이
+     * 종료 전에 받은 프로모 계산값이라 무료로 읽혔고, 그 표지를 빼고 다시 판정하면 무료가 아니다.
+     *
+     * 전경 무료 잠금이 이 갈래를 **이 진입의 `/auth/me` 가 plan 에 반영될 때까지** 미룬다
+     * ([freePlanLockMayApply]).
+     */
+    internal fun isFreeOnlyByPromoLapse(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (!personalPromoLapsed(effectiveUserPlanPromo, nowMillis)) return false
+        val withoutLapse = resolvePaidVoiceAccess(
+            subscriptionResponse = subscriptionResponse,
+            familyGroup = familyGroup,
+            userPlan = effectiveUserPlan,
+            storeEntitled = isStoreEntitledNow(nowMillis),
+            nowMillis = nowMillis,
+            userPlanPromo = null,
+        )
+        return withoutLapse != PaidVoiceAccess.NotEntitled
+    }
+
+    /**
+     * 커플·가족 기능의 **보류 규칙**(D9) — 기간 한정 개인 플랜이 살아 있는 동안 남은 구독 행·그룹이
+     * 커플·가족을 열지 못하게 한다([personalPromoTierHoldOf]). 프로모 밖이면 null(예전 그대로).
+     *
+     * plan 과 **같은 출처의** 프로모 표지를 쓴다([effectiveUserPlanPromo]) — 섞으면 짝이 어긋난다.
+     * 스토어 등급은 **지금 유효한** 것만 넘긴다(기한 지난 키를 믿지 않는다).
+     */
+    internal fun personalPromoTierHold(nowMillis: Long = System.currentTimeMillis()): PersonalPromoTierHold? =
+        personalPromoTierHoldOf(
+            userPlan = effectiveUserPlan,
+            userPlanPromo = effectiveUserPlanPromo,
+            storePlanKeyValidNow = storePlanKey?.takeIf { isStoreEntitledNow(nowMillis) },
+            nowMillis = nowMillis,
+        )
+
+    /**
      * 스토어 신호가 **지금** 유효한가 — 화면에 넘길 때는 언제나 이 값을 쓴다.
      * 원시 `storePlanKey` 를 넘기면 기한이 지난 키를 그대로 믿게 된다(2026-08-31 리뷰).
      */
@@ -885,16 +919,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
     /**
+     * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답의 진입·순번, 종료 안내, 이용권 화면 한 줄.
+     * 규칙은 전부 [PersonalPromoLedger] 에 있고 아래 멤버는 그 위임이다(뷰모델을 단위 테스트에서
+     * 세울 수 없어 규칙을 떼어 두었다 — `PersonalPromoLedgerTest`).
+     */
+    internal val personalPromoLedger = PersonalPromoLedger(currentEntry = { AppSignals.appEntries.value })
+
+    /**
      * 떠 있는 **기간 한정 개인 플랜 종료 안내**. null 이면 닫혀 있다.
      *
      * 소진 플래그가 아니다 — 안내 기간(`notice_from ≤ now < ends_at`) 동안 **앱에 진입할
      * 때마다** 한 번씩 뜬다. 멈추는 방법은 '다시 보지 않기'(계정별·종료 시각별 저장) 하나다.
      */
-    var personalPromoEndNotice by mutableStateOf<PersonalPromo?>(null)
-        internal set
-
-    /** 판정을 끝낸 진입 번호(`AppSignals.appEntries`). 같은 진입에서 두 번 판정하지 않는다. */
-    private var personalPromoEndNoticeEntry: Long = 0L
+    val personalPromoEndNotice: PersonalPromo?
+        get() = personalPromoLedger.shownEndNotice
 
     internal val personalPromoNoticeStore = PersonalPromoNoticeStore(application)
 
@@ -907,48 +945,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * `refreshAppSessionNow`)가 [recordAccountAnswer] 로 적는다 — 한 자리만 적으면 쿠폰을
      * 등록한 뒤에도 옛 응답의 안내가 남는다(리뷰 지적).
      */
-    var latestAccountPromo by mutableStateOf<PersonalPromo?>(null)
-        private set
+    val latestAccountPromo: PersonalPromo?
+        get() = personalPromoLedger.latestAccountPromo
 
     /**
      * 계정 응답이 **어느 진입의 몫으로** 도착했는가(`AppSignals.appEntries`). 0 = 아직.
      * 종료 안내는 이 값이 지금 진입과 같을 때만 판정한다([decidePersonalPromoEndNotice]) —
      * 응답이 안 오면(오프라인) 그 진입은 띄우지 않고 다음 진입이 다시 판정한다.
      */
-    var accountAnsweredEntry by mutableLongStateOf(0L)
-        private set
+    val accountAnsweredEntry: Long
+        get() = personalPromoLedger.accountAnsweredEntry
 
-    /** 계정 응답 요청의 순번 — 늦게 도착한 옛 응답이 새 응답을 덮지 않게 한다. */
-    private var accountRequestSeq: Long = 0L
-    private var accountAnswerSeq: Long = 0L
+    /**
+     * 이 진입의 계정 응답이 **plan 스냅샷에 반영된** 진입 번호(`refreshAppSessionNow`). 0 = 아직.
+     * 전경 무료 잠금의 오프라인 차단 갈래가 이 값을 기다린다([freePlanLockMayApply]).
+     */
+    val planAnsweredEntry: Long
+        get() = personalPromoLedger.planAnsweredEntry
 
     /** `/auth/me` 를 **보내기 직전에** 뜬다. 보낸 진입·순번을 응답까지 들고 간다. */
-    internal data class AccountRequest(val seq: Long, val entry: Long)
-
-    internal fun beginAccountRequest(): AccountRequest =
-        AccountRequest(seq = ++accountRequestSeq, entry = AppSignals.appEntries.value)
+    internal fun beginAccountRequest(): AccountRequest = personalPromoLedger.beginAccountRequest()
 
     /**
      * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
-     *
-     * - 늦게 도착한 옛 요청의 응답은 버린다(순번).
-     * - 보낸 진입과 도착한 진입이 같을 때만 그 진입의 응답으로 센다([accountAnswerEntryFor]).
-     * - 떠 있는 안내가 새 응답과 맞지 않으면 닫는다 — 쿠폰·결제로 원시 유료가 됐으면
-     *   `personal_promo` 가 사라진다([reconcileShownPersonalPromoNotice]).
+     * 규칙(늦게 온 옛 응답 버리기·이 진입의 몫인지·떠 있는 안내 맞추기)은
+     * [PersonalPromoLedger.recordAccountAnswer].
      */
     internal fun recordAccountAnswer(
         request: AccountRequest,
         promo: PersonalPromo?,
         nowMillis: Long = System.currentTimeMillis(),
     ) {
-        if (request.seq < accountAnswerSeq) return
-        accountAnswerSeq = request.seq
-        val normalized = com.alarmtalk.app.network.normalizePersonalPromo(promo)
-        latestAccountPromo = normalized
-        accountAnswerEntryFor(request.entry, AppSignals.appEntries.value)?.let { accountAnsweredEntry = it }
-        if (personalPromoEndNotice != null) {
-            personalPromoEndNotice = reconcileShownPersonalPromoNotice(personalPromoEndNotice, normalized, nowMillis)
-        }
+        personalPromoLedger.recordAccountAnswer(request, promo, nowMillis)
     }
 
     /**
@@ -958,35 +986,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun maybeShowPersonalPromoEndNotice(entry: Long, nowMillis: Long = System.currentTimeMillis()) {
         if (personalPromoEndNotice != null) return
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        val decision = decidePersonalPromoEndNotice(
+        personalPromoLedger.maybeShowEndNotice(
             entry = entry,
-            handledEntry = personalPromoEndNoticeEntry,
-            answeredEntry = accountAnsweredEntry,
-            latestPromo = latestAccountPromo,
-            nowMillis = nowMillis,
             optedOutEndsAt = personalPromoNoticeStore.optedOutEndsAt(userId),
+            nowMillis = nowMillis,
         )
-        when (decision) {
-            PersonalPromoNoticeDecision.NotNow -> Unit
-            PersonalPromoNoticeDecision.NothingToShow -> personalPromoEndNoticeEntry = entry
-            is PersonalPromoNoticeDecision.Show -> {
-                personalPromoEndNoticeEntry = entry
-                personalPromoEndNotice = decision.promo
-            }
-        }
     }
 
     /**
      * 떠 있는 안내 위로 **다른 모달·게이트·시스템 권한 창이 올라왔다** — 안내를 걷고 이 진입을
-     * 다시 '판정 전' 으로 돌린다. 가린 것이 닫히면 같은 진입 안에서 다시 뜬다.
-     *
-     * 안내를 들고 기다리지 않는 이유: 떠 있는 동안에는 강등 안내가 뒤에서 기다린다. 가려진 채
-     * 들고 있으면 그 기다림이 끝없이 길어진다 — 대기 중인 안내가 다른 안내를 막으면 안 된다.
+     * 다시 '판정 전' 으로 돌린다. 가린 것이 닫히면 같은 진입 안에서 다시 뜬다
+     * ([PersonalPromoLedger.deferEndNotice]).
      */
     internal fun deferPersonalPromoEndNotice() {
-        if (personalPromoEndNotice == null) return
-        personalPromoEndNotice = null
-        personalPromoEndNoticeEntry = 0L
+        personalPromoLedger.deferEndNotice()
     }
 
     /**
@@ -994,13 +1007,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 바깥 탭·뒤로가기는 '확인' 과 같다 — 다음 진입에 다시 뜬다.
      */
     internal fun dismissPersonalPromoEndNotice(dontShowAgain: Boolean) {
-        val promo = personalPromoEndNotice
-        personalPromoEndNotice = null
+        val promo = personalPromoLedger.dismissEndNotice()
         if (!dontShowAgain) return
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         val endsAt = promo?.endsAt?.takeIf { it.isNotBlank() } ?: return
         personalPromoNoticeStore.optOut(userId, endsAt)
     }
+
+    /**
+     * 이용권 화면 한 줄의 프로모 — 계정 응답과 구독 응답 중 **나중에 받은 답**의 것
+     * ([PersonalPromoLedger.planScreenPromo]). 방금 결제·쿠폰 등록으로 새 계정 응답에 promo 가
+     * 없으면, 결제 전에 캐시된 구독 응답의 promo 가 대신 보이지 않는다.
+     */
+    internal fun planScreenPersonalPromo(nowMillis: Long = System.currentTimeMillis()): PersonalPromo? =
+        personalPromoLedger.planScreenPromo(
+            sessionPromo = authSession?.user?.personalPromo,
+            billingPromo = subscriptionResponse?.personalPromo,
+            nowMillis = nowMillis,
+        )
 
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
@@ -1369,8 +1393,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ): EntitlementWrite {
         var persisted: AccessSnapshot? = null
         val result = entitlementWriter.write(ticket, "subscription snapshot") {
-            it.withBillingResponse(response, System.currentTimeMillis()).also { snapshot -> persisted = snapshot }
+            it.withBillingResponse(response, receivedAtMillis = System.currentTimeMillis())
+                .also { snapshot -> persisted = snapshot }
         }
+        // 부르는 쪽은 문을 통과하면 곧바로 화면 사본(`subscriptionResponse`)을 이 응답으로 바꾼다 —
+        // 이용권 화면 한 줄이 '나중에 받은 답' 을 고를 수 있게 순서를 적는다.
+        if (result == EntitlementWrite.Applied) personalPromoLedger.recordBillingAnswer()
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
             // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
             val snapshot = checkNotNull(persisted)
@@ -1464,14 +1492,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
         sensitiveConsentMissing = emptyList()
         pendingSensitiveConsent = null
-        // 종료 안내도 계정별 상태다. 앞 계정의 안내가 새 계정 화면에 남으면 안 되고,
-        // 새 계정은 이번 진입에서 자기 기준으로 한 번 판정받는다.
-        personalPromoEndNotice = null
-        personalPromoEndNoticeEntry = 0L
-        latestAccountPromo = null
-        accountAnsweredEntry = 0L
-        // 떠 있던 요청의 응답은 앞 계정의 것이다 — 순번을 앞질러 버린다.
-        accountAnswerSeq = accountRequestSeq + 1
+        // 종료 안내·계정 응답 장부도 계정별 상태다. 앞 계정의 안내가 새 계정 화면에 남으면
+        // 안 되고, 떠 있던 요청의 응답은 앞 계정의 것이라 순번을 앞질러 버린다
+        // ([PersonalPromoLedger.resetForAccountSwitch]).
+        personalPromoLedger.resetForAccountSwitch()
         pendingDeletion = false
         accountStatusChecked = false
         consentStatusChecked = false
