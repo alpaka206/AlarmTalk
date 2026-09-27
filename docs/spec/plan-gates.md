@@ -135,3 +135,7 @@ freeVoiceTier = 로그인함 && !유료
 
 그룹당 1회 규칙(`CODE_GROUP_ALREADY_REDEEMED`)과 다른 쿠폰 에러 코드는 계약이라 이름을
 바꾸거나 지우지 않는다(`error-codes.md`). 꺼진 웰컴 코드를 넣으면 `CODE_INACTIVE` 다.
+⚠ **웰컴 그룹은 켜져 있어도 런타임이 `CODE_INACTIVE` 로 막는다**(`PROMO_WELCOME_REDEMPTION_GROUP`,
+`lib/promo-redemption.ts`). 배포가 마이그레이션보다 먼저 돌아 #121 이 끄기 전의 창(과 #121 이 실패한
+채 새 워커가 떠 있는 동안)에도 웰컴 코드로 유료 이용권이 나가지 않게 한다. 새로 발급한 웰컴 그룹
+코드도 같다 — 행사 코드는 다른 그룹명으로 발급한다.

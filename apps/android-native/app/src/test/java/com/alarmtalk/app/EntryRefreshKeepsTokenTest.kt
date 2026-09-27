@@ -153,11 +153,15 @@ class EntryRefreshKeepsTokenTest {
             "internal fun MainViewModel.finishGoogleLogin(",
         )) {
             val body = bodyOf(authActions, header)
+            // 표는 **요청을 보내기 전에** 뜬다 — 도착해서 뜨면 앞 진입의 요청이 이번 진입의 답이 된다(Codex #803).
+            val ticket = body.indexOf("val accountRequest = beginAccountRequest()")
+            val send = body.indexOf("runCatching {")
+            assertTrue("$header 가 요청 전에 표를 뜨지 않는다.", ticket >= 0 && send >= 0 && ticket < send)
             val signedIn = body.indexOf("onSignedIn()")
             assertTrue("$header 에서 `onSignedIn()` 을 못 찾았다.", signedIn >= 0)
             assertTrue(
-                "$header 가 로그인 응답을 `recordSignInAnswer(response.user)` 로 적지 않는다.",
-                body.indexOf("recordSignInAnswer(response.user)", signedIn) >= 0,
+                "$header 가 로그인 응답을 보낼 때 뜬 표로 적지 않는다(`recordSignInAnswer(response.user, accountRequest)`).",
+                body.indexOf("recordSignInAnswer(response.user, accountRequest)", signedIn) >= 0,
             )
             val failure = body.indexOf(".onFailure")
             assertTrue(

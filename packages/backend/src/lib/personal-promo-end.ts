@@ -421,6 +421,12 @@ export async function notifyPromoEndTransitioned(
   env: Parameters<typeof sendBillingStateSignals>[1] | undefined,
   transitioned: readonly PromoEndTransitioned[],
   now: Date = new Date(),
+  /**
+   * 이 회차의 알림 메시지 상한 — 전환 묶음을 고른 그 예산(`notifyMessages`)이다. 묶음은 기기가 예산보다
+   * 많은 **첫 사람도** 받아들인다(안 받으면 그 사람은 영영 전환되지 않는다) — 그 사람의 알림을 여기서
+   * 예산까지로 자른다(Codex #803). 잘린 기기는 다음 진입의 `/auth/me` 로 따라잡는다.
+   */
+  maxMessages?: number | null,
 ): Promise<void> {
   if (!env || transitioned.length === 0) return;
   const hasFirebase = Boolean(env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT_JSON);
@@ -434,6 +440,7 @@ export async function notifyPromoEndTransitioned(
       deletionWarningUserPks: userPks,
       retentionDays: PAID_VOICE_RETENTION_DAYS,
       warningBodyFor: (userPk) => personalPromoEndWarningBody(deleteAfterOf.get(userPk)!, now),
+      maxMessages: maxMessages ?? undefined,
     });
   } catch (err) {
     logStructured('error', {
@@ -695,6 +702,8 @@ export async function runPersonalPromoEnd(
         pushConfigured ? pushEnv : undefined,
         sweep.targets,
         sweep.voiceAccessRevokedUserIds,
+        // 묶음은 기기가 예산보다 많은 첫 사람도 받아들인다 — 알림을 예산까지로 자른다(Codex #803).
+        { maxMessages: PROMO_END_SWEEP_NOTIFY_MESSAGES },
       );
       return result;
     }
@@ -714,6 +723,6 @@ export async function runPersonalPromoEnd(
     isolate,
     hooks,
   });
-  await notifyPromoEndTransitioned(db, pushEnv, result.transitioned, now);
+  await notifyPromoEndTransitioned(db, pushEnv, result.transitioned, now, notifyMessages);
   return result;
 }

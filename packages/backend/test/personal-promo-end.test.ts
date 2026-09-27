@@ -436,6 +436,49 @@ describe('전용 크론 한 실행의 subrequest — 푸시를 켠 운영 조건
     raw.close();
   });
 
+  // ⚠ **기기가 예산보다 많은 첫 사람**(Codex #803). 묶음은 그 사람도 받아들인다 — 안 받으면 영영 전환·삭제되지
+  // 않는다. 대신 알림을 예산까지로 잘라 한 실행이 상한을 넘지 않는다(잘린 기기는 다음 진입에 따라잡는다).
+  it('전환: 기기 40대인 한 사람도 전환되고, 알림을 잘라 상한 안이다', async () => {
+    const raw = await freshDb('budget-transition-many-devices');
+    await insertMany(raw, seedPromoUser('many', { devices: 40 }));
+    const db = counted(raw);
+    fcmBodies.length = 0;
+    counts.db = 0;
+    counts.fetch = 0;
+    const run = await runPersonalPromoEnd(db, pushEnv(), new Date(END.getTime() + MINUTE), {
+      role: 'dedicated',
+    });
+    const used = counts.db + counts.fetch;
+    console.log('기기 40대 전환 한 실행 subrequests =', used);
+    expect(run.transitioned.map((t) => t.userPk)).toEqual(['many']);
+    expect(used).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
+    // 예고(보이는 것)가 먼저 만들어지므로 잘려도 예고는 나간다.
+    expect(fcmBodies.length).toBeGreaterThan(0);
+    raw.close();
+  });
+
+  it('스윕: 기기 40대인 한 사람도 지워지고, 알림을 잘라 상한 안이다', async () => {
+    const raw = await freshDb('budget-sweep-many-devices');
+    await insertMany(raw, [
+      ...seedPromoUser('many', { clips: 21, devices: 40 }),
+      {
+        sql: 'INSERT INTO paid_voice_retention (user_id, delete_after) VALUES (?, ?)',
+        args: ['many', DEADLINE.toISOString()],
+      },
+    ]);
+    const db = counted(raw);
+    counts.db = 0;
+    counts.fetch = 0;
+    const run = await runPersonalPromoEnd(db, pushEnv(), new Date(DEADLINE.getTime() + MINUTE), {
+      role: 'dedicated',
+    });
+    const used = counts.db + counts.fetch;
+    console.log('기기 40대 스윕 한 실행 subrequests =', used);
+    expect(run.sweep?.cleanedUserPks).toEqual(['many']);
+    expect(used).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
+    raw.close();
+  });
+
   it('스윕 묶음: 지금 유료인 사람은 보관 행만 풀고 데이터는 남긴다', async () => {
     const raw = await freshDb('bulk-sweep-paid');
     await insertMany(raw, [

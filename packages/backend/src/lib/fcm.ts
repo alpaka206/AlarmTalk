@@ -256,9 +256,10 @@ async function sendSilentSignals(
   db: Client,
   env: SignalPushEnv,
   signals: readonly SilentSignal[],
+  /** 메시지 수 상한(만든 순서대로 자른다) — `sendBillingStateSignals` 의 `maxMessages` 와 같다. */
+  maxMessages?: number,
 ): Promise<FcmSendResult[]> {
-  const fcmMessages: FcmMessage[] = [];
-  const apnsMessages: ApnsMessage[] = [];
+  const outbox = new PushOutbox();
   const targetsOf = await getPushTargetsForUsers(
     db,
     signals.map((signal) => signal.userId),
@@ -266,7 +267,7 @@ async function sendSilentSignals(
   for (const signal of signals) {
     for (const target of targetsOf.get(signal.userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({
+        outbox.apns({
           token: target.token,
           title: '',
           body: '',
@@ -274,10 +275,11 @@ async function sendSilentSignals(
           silent: true,
         });
       } else {
-        fcmMessages.push({ token: target.token, title: '', body: '', data: signal.data });
+        outbox.fcm({ token: target.token, title: '', body: '', data: signal.data });
       }
     }
   }
+  const { fcmMessages, apnsMessages } = outbox.take(maxMessages);
 
   let results: FcmSendResult[] = [];
   if (fcmMessages.length > 0) {
@@ -445,8 +447,11 @@ export async function notifyDowngradedAlarms(
    * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
    */
   voiceAccessRevokedUserIds: string[] = [],
-  /** 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. */
-  options: { replacedVoiceProfileId?: string; replacedGeneration?: string } = {},
+  /**
+   * 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. `maxMessages` 는 메시지 수 상한
+   * (기간 한정 개인 플랜 종료 스윕이 서브리퀘스트 예산 안에 머물게 준다).
+   */
+  options: { replacedVoiceProfileId?: string; replacedGeneration?: string; maxMessages?: number } = {},
 ): Promise<void> {
   if (!env) return;
   if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
@@ -455,7 +460,7 @@ export async function notifyDowngradedAlarms(
   const signals = buildDowngradeSignals(targets, voiceAccessRevokedUserIds, options);
   if (signals.length === 0) return;
   try {
-    await sendSilentSignals(db, env, signals);
+    await sendSilentSignals(db, env, signals, options.maxMessages);
   } catch (err) {
     // 삼켜도 되는 이유: 즉시성만 잃는다. 정확성은 하루 주기 재확인과 앱 시작 재조회가 맡는다.
     logStructured('error', {
@@ -725,6 +730,40 @@ export async function sendVoiceDeletionWarningPush(
  * - **보이는 예고를 먼저** 싣는다. 한도에 걸려 뒤가 잘려도, 되돌릴 수 없는 삭제를 알리는
  *   유일한 표시가 먼저 나간다(무음 신호는 앱을 열면 재조회로 따라잡는다).
  */
+/**
+ * 플랫폼별 메시지를 **만든 순서 그대로** 모았다가, 상한이 있으면 그 순서로 앞에서부터 자른다.
+ * FCM·APNs 를 따로 모으면 '앞의 N 통' 이 어느 쪽인지 잃어버린다 — 예고(보이는 것)를 먼저 만들므로
+ * 자를 때도 예고가 남아야 한다.
+ */
+class PushOutbox {
+  private readonly order: Array<'fcm' | 'apns'> = [];
+  private readonly fcmList: FcmMessage[] = [];
+  private readonly apnsList: ApnsMessage[] = [];
+
+  fcm(message: FcmMessage): void {
+    this.order.push('fcm');
+    this.fcmList.push(message);
+  }
+
+  apns(message: ApnsMessage): void {
+    this.order.push('apns');
+    this.apnsList.push(message);
+  }
+
+  take(maxMessages?: number): { fcmMessages: FcmMessage[]; apnsMessages: ApnsMessage[] } {
+    if (maxMessages === undefined || this.order.length <= maxMessages) {
+      return { fcmMessages: this.fcmList, apnsMessages: this.apnsList };
+    }
+    let fcmCount = 0;
+    let apnsCount = 0;
+    for (const kind of this.order.slice(0, Math.max(0, maxMessages))) {
+      if (kind === 'fcm') fcmCount += 1;
+      else apnsCount += 1;
+    }
+    return { fcmMessages: this.fcmList.slice(0, fcmCount), apnsMessages: this.apnsList.slice(0, apnsCount) };
+  }
+}
+
 export async function sendBillingStateSignals(
   db: Client,
   env: SignalPushEnv,
@@ -737,6 +776,12 @@ export async function sendBillingStateSignals(
      * 아니고 기한도 고정 시각이라 [personalPromoEndWarningBody] 를 넘긴다. 없으면 기본 문구.
      */
     warningBodyFor?: (userPk: string) => string;
+    /**
+     * 이 호출이 보낼 메시지 수의 상한 — **만든 순서대로** 자른다(보이는 예고가 먼저, 무음 신호가 뒤).
+     * 크론 한 회차가 워커 서브리퀘스트 예산을 넘지 않게 부르는 쪽이 준다(기간 한정 개인 플랜 종료 전환).
+     * 잘린 기기는 다음 진입의 `/auth/me` 로 따라잡는다. 없으면 자르지 않는다.
+     */
+    maxMessages?: number;
   },
 ): Promise<void> {
   const signal = new Set(params.planChangedUserIds.filter(Boolean));
@@ -747,23 +792,22 @@ export async function sendBillingStateSignals(
 
   const title = VOICE_DELETION_WARNING_TITLE;
   const defaultBody = voiceDeletionWarningBody(params.retentionDays);
-  const fcmMessages: FcmMessage[] = [];
-  const apnsMessages: ApnsMessage[] = [];
+  const outbox = new PushOutbox();
   // 1) 보이는 예고 먼저.
   for (const userId of warned) {
     const body = params.warningBodyFor?.(userId) ?? defaultBody;
     for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+        outbox.apns({ token: target.token, title, body, data: { type: 'plan_changed' } });
       } else {
-        fcmMessages.push({
+        outbox.fcm({
           token: target.token,
           title,
           body,
           data: { type: 'voice_deletion_warning', channelId: SOCIAL_CHANNEL_ID },
         });
         // 워커 기동용 — title/body 가 비어야 onMessageReceived 가 온다. 이게 곧 재조회 신호다.
-        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+        outbox.fcm({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
       }
     }
   }
@@ -771,7 +815,7 @@ export async function sendBillingStateSignals(
   for (const userId of signal) {
     for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({
+        outbox.apns({
           token: target.token,
           title: '',
           body: '',
@@ -779,10 +823,11 @@ export async function sendBillingStateSignals(
           silent: true,
         });
       } else if (!warned.has(userId)) {
-        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+        outbox.fcm({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
       }
     }
   }
+  const { fcmMessages, apnsMessages } = outbox.take(params.maxMessages);
 
   if (fcmMessages.length > 0) {
     await pruneStaleTokens(db, await sendPushNotifications(fcmMessages, env));

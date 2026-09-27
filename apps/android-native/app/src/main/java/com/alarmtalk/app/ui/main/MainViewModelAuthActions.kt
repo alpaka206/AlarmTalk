@@ -35,12 +35,14 @@ internal fun MainViewModel.login(email: String, password: String) {
         loginError = null
         loginErrorCode = null
         authNotice = null
+        // 표는 **보내기 직전에** 뜬다 — 응답이 다음 진입에 도착하면 그 진입의 답으로 세지 않게(D11).
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
             onSignedIn()
-            recordSignInAnswer(response.user)
+            recordSignInAnswer(response.user, accountRequest)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             val app = getApplication<android.app.Application>()
@@ -159,6 +161,7 @@ internal fun MainViewModel.register(
     viewModelScope.launch {
         authBusy = true
         registerError = null
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.register(
                 RegisterRequest(
@@ -173,7 +176,7 @@ internal fun MainViewModel.register(
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             onSignedIn()
-            recordSignInAnswer(response.user)
+            recordSignInAnswer(response.user, accountRequest)
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
@@ -256,12 +259,13 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        val accountRequest = beginAccountRequest()
         runCatching {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
             onSignedIn()
-            recordSignInAnswer(response.user)
+            recordSignInAnswer(response.user, accountRequest)
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)
@@ -292,9 +296,16 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * 건너뛴다. 로그인 **실패**는 적지 않는다 — 계정이 아직 없고, 같은 진입에서 다시 시도해 성공하면
  * 그게 첫 결과여야 한다. 뒤이은 `checkAccountStatus` 는 더 옛 순번이라 장부가 버린다.
  */
-private fun MainViewModel.recordSignInAnswer(user: com.alarmtalk.app.network.AuthUser) {
+private fun MainViewModel.recordSignInAnswer(
+    user: com.alarmtalk.app.network.AuthUser,
+    request: AccountRequest,
+) {
     if (authSession?.user?.id != user.id) return
-    recordAccountAnswer(beginAccountRequest(), user.personalPromo)
+    // 표는 요청을 **보내기 직전에** 뜬 것이다(Codex #803) — 느린 로그인 중에 앱을 내렸다 올리면 응답은
+    // 다음 진입에 도착한다. 도착해서 표를 뜨면 앞 진입의 요청이 이번 진입의 답이 된다(장부가 보낸 진입과
+    // 도착한 진입을 대조한다 — `accountAnswerEntryFor`). 세션 정리(`resetForAccountSwitch`)는 로그아웃
+    // 쪽에만 있어 로그인 전에 뜬 표가 앞질러지지 않는다.
+    recordAccountAnswer(request, user.personalPromo)
 }
 
 private suspend fun MainViewModel.onSignedIn() {

@@ -171,13 +171,20 @@ describe('마이그레이션 #78 — 폐기 동작', () => {
       sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
       args: ['cont-u', 'cont-u', 'cont@test'],
     });
-    // #78 전에 구이름 시드를 실제로 사용한 계정이 있는 상태
+    // #78 전에 구이름 시드를 실제로 사용한 계정이 있는 상태. 새 워커는 웰컴 그룹을 런타임에서도 막으므로
+    // (`PROMO_WELCOME_REDEMPTION_GROUP`) 그 시절 이력은 그룹명을 잠시 바꿔 받은 뒤 되돌려 만든다.
+    await contDb.execute(
+      `UPDATE promo_codes SET redemption_group = 'legacy-seed' WHERE code = 'WELCOME_PERSONAL'`,
+    );
     const before = await redeemPromoCode(contDb, {
       userPk: 'cont-u',
       rawCode: 'WELCOME_PERSONAL',
       ...RAW,
     });
     expect(before.plan.key).toBe('personal');
+    await contDb.execute(
+      `UPDATE promo_codes SET redemption_group = 'welcome' WHERE code = 'WELCOME_PERSONAL'`,
+    );
     await runMigrationsRange(contDb, 78, 78);
 
     // 사용된 개인용 행은 남되 비활성(id 보존 — DELETE 하면 리딤 기록이 고아가 된다),
@@ -194,14 +201,15 @@ describe('마이그레이션 #78 — 폐기 동작', () => {
       redeemPromoCode(contDb, { userPk: 'cont-u', rawCode: 'WELCOME_PERSONAL', ...RAW }),
       'CODE_INACTIVE',
     );
-    // 웰컴 1회 이력은 그대로 — 이후 admin 발급형(그룹 지정) 새 코드도 **컬럼 규칙으로** 차단된다.
+    // 이후 새로 발급한 웰컴 그룹 코드는 웰컴 폐지(2026-09-27) 뒤로 **그룹 규칙에 닿기 전에** 막힌다 —
+    // 켜져 있어도 CODE_INACTIVE 다(Codex #803). 그룹 규칙 자체는 위 「리딤 그룹 계정당 1회 규칙」이 본다.
     await contDb.execute(
       `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active, redemption_group)
        SELECT 'ops-new', 'OPS_WELCOME_NEW', id, 30, 1, 'welcome' FROM plans WHERE key = 'personal'`,
     );
     await expectPromoError(
       redeemPromoCode(contDb, { userPk: 'cont-u', rawCode: 'OPS_WELCOME_NEW', ...RAW }),
-      'CODE_GROUP_ALREADY_REDEEMED',
+      'CODE_INACTIVE',
     );
     contDb.close();
   });
@@ -354,8 +362,19 @@ describe('마이그레이션 #121 — 웰컴 그룹 코드 비활성화(웰컴 �
         args: [u, u, `${u}@test`],
       });
     }
-    // #121 전에 웰컴 코드를 받아 구독이 살아 있는 계정.
+    // #121 전(옛 워커 시절)에 웰컴 코드를 받아 구독이 살아 있는 계정. 새 워커는 웰컴 그룹을 런타임에서도
+    // 막으므로(`PROMO_WELCOME_REDEMPTION_GROUP`), 그 시절의 이력은 다른 그룹으로 받은 뒤 그룹명을 되돌려 만든다.
+    await d.execute(`UPDATE promo_codes SET redemption_group = 'legacy-seed' WHERE id = 'w-used'`);
     await redeemPromoCode(d, { userPk: 'm-a', rawCode: 'OPS_WELCOME_USED', ...RAW });
+    await d.execute(
+      `UPDATE promo_codes SET redemption_group = 'welcome', updated_at = '2026-01-01 00:00:00' WHERE id = 'w-used'`,
+    );
+
+    // ⚠ **배포 창**(Codex #803): 새 워커가 떴는데 #121 은 아직 — 켜져 있는 웰컴 코드도 런타임이 막는다.
+    await expectPromoError(
+      redeemPromoCode(d, { userPk: 'm-b', rawCode: 'OPS_WELCOME_OPEN', ...RAW }),
+      'CODE_INACTIVE',
+    );
 
     await runMigrationsRange(d, 121, 121);
 

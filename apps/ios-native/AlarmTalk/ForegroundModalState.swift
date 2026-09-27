@@ -52,11 +52,19 @@ enum ModalPresentationProbe {
     }
 
     /// 떠 있는 것 중에 알럿이 있는가 — 방금 띄운 안내가 **실제로 보이는지** 확인할 때 쓴다.
-    static var isShowingAlert: Bool {
+    /// `title` 을 주면 **그 제목의** 알럿만 센다.
+    ///
+    /// ⚠ 프로모 종료 안내는 제목으로 가려야 한다(Codex #803). 안내를 세운 직후 다른 알럿이 먼저 뜨면
+    /// SwiftUI 는 안내를 조용히 버리는데, '아무 알럿' 만 보면 그 남의 알럿을 안내가 보인 것으로 읽고
+    /// 이 진입을 끝낸다 — 사용자는 안내를 한 번도 못 봤다. SwiftUI `.alert` 는 제목을 그대로
+    /// `UIAlertController.title` 에 싣는다.
+    static func isShowingAlert(titled title: String? = nil) -> Bool {
         guard let root = rootViewController() else { return false }
         var current = firstPresented(from: root)
         while let presented = current {
-            if presented is UIAlertController { return true }
+            if let alert = presented as? UIAlertController, title == nil || alert.title == title {
+                return true
+            }
             current = presented.presentedViewController
         }
         return false

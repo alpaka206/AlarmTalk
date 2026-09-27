@@ -14,6 +14,10 @@ import { cancelActiveSubscriptionsForUser, createNewSubscriptionForPlan } from '
  * 원자 claim(promo_code_redemptions 조건부 INSERT)으로 상한 초과/중복 사용/경합을 막고,
  * 전체를 트랜잭션으로 감싸 claim 이후 구독 생성이 실패하면 함께 롤백된다.
  */
+
+/** 폐지된 웰컴 코드 그룹 — 마이그레이션 #121 이 끄는 그룹과 같은 이름이다. */
+export const PROMO_WELCOME_REDEMPTION_GROUP = 'welcome';
+
 export class PromoRedemptionError extends Error {
   constructor(
     readonly status: number,
@@ -108,6 +112,13 @@ async function redeemPromoInTransaction(
   if (!isActive) {
     throw new PromoRedemptionError(409, 'CODE_INACTIVE', 'Promo code is not active');
   }
+  // ⚠ **웰컴 그룹은 폐지됐다 — 런타임에서도 막는다**(2026-09-27, Codex #803). 마이그레이션 #121 이
+  // 코드를 끄지만 배포가 마이그레이션보다 먼저 돈다 — 그 창(과 마이그레이션이 실패한 채 새 워커가 떠
+  // 있는 동안)에 남은 웰컴 코드로 유료 이용권이 나간다. 그룹명 판정은 #121 과 같다(정확히 'welcome').
+  // 레거시 스키마 폴백(그룹 컬럼 없음)에서는 값이 없어 이 검사를 건너뛴다 — 그 창에는 #121 도 없다.
+  if (promo.redemption_group === PROMO_WELCOME_REDEMPTION_GROUP) {
+    throw new PromoRedemptionError(409, 'CODE_INACTIVE', 'Promo code is not active');
+  }
   if (durationDays <= 0) {
     throw new PromoRedemptionError(409, 'CODE_MISCONFIGURED', 'Promo code is misconfigured');
   }
@@ -145,8 +156,8 @@ async function redeemPromoInTransaction(
   //
   // 판정은 **`redemption_group` 컬럼 하나**다(2026-09-27). 예전에는 'welcome' 그룹에만 #72 시드
   // 구이름(WELCOME_*)으로도 묶는 이름 폴백이 있었다 — #72~#73 배포 창을 위한 것이었고 dev/prod
-  // 는 그 창을 지난 지 오래다. 웰컴 그룹 코드는 마이그레이션 #121 로 전부 비활성이라 그룹 검사에
-  // 닿기 전에 CODE_INACTIVE 로 끝난다. 그룹 이름이 'welcome' 인 행도 이 일반 갈래가 똑같이 막는다.
+  // 는 그 창을 지난 지 오래다. 웰컴 그룹 코드는 마이그레이션 #121 로 전부 비활성이고, 그 전(배포 창)
+  // 에도 위의 폐지 검사가 CODE_INACTIVE 로 끝낸다 — 그룹 검사에 닿지 않는다.
   const redemptionGroup = (promo.redemption_group as string | null | undefined) ?? null;
   const groupCond: { sql: string; args: string[] } | null = redemptionGroup
     ? { sql: `pg.redemption_group = ?`, args: [redemptionGroup] }

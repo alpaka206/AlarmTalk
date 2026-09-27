@@ -220,7 +220,7 @@ struct RootView: View {
         // 액션은 둘: '다시 보지 않기'(이 계정·이 종료 시각에 다시 안 띄움) · '확인'(이번만 닫음).
         // 문구는 안드로이드(`personal_promo_end_notice_*`)가 원본이다 — ko·en·ja 모두 같게 둔다.
         .alert(
-            "개인 플랜 무료 이용이 곧 끝나요",
+            Self.personalPromoNoticeTitleKey,
             isPresented: Binding(
                 get: { personalPromoNotice != nil },
                 set: { if !$0 { personalPromoNotice = nil } }
@@ -380,6 +380,13 @@ struct RootView: View {
         personalPromoNotice = nil
     }
 
+    /// 종료 안내의 제목 — 알럿과 '보였는가' 확인(`verifyShownNoticeIsVisible`)이 같은 값을 쓴다.
+    /// 알럿은 번역 카탈로그 키로, 확인은 그 키를 번역한 문자열로 본다(`.alert` 가 싣는 제목과 같다).
+    private static var personalPromoNoticeTitleKey: LocalizedStringKey { "개인 플랜 무료 이용이 곧 끝나요" }
+    private static var personalPromoNoticeTitle: String {
+        String(localized: "개인 플랜 무료 이용이 곧 끝나요")
+    }
+
     /// 떠 있다고 적힌 안내를 확인한다 — 남의 것이면 걷고, 화면에 없으면 걷는다.
     private func verifyShownNoticeIsVisible() async {
         if let shown = personalPromoNotice {
@@ -406,7 +413,11 @@ struct RootView: View {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled, downgradeNotice != nil || personalPromoNotice != nil else { return }
         let entry = appEntrySignal.counter.entry
-        guard ModalPresentationProbe.isShowingAlert else {
+        // 프로모 안내는 **그 제목의** 알럿이 떠야 보인 것이다 — 남의 알럿을 안내로 읽지 않는다.
+        let visible = personalPromoNotice != nil
+            ? ModalPresentationProbe.isShowingAlert(titled: Self.personalPromoNoticeTitle)
+            : ModalPresentationProbe.isShowingAlert()
+        guard visible else {
             // 안 보였다 — 걷는다. 프로모 안내는 **이 진입을 끝내지 않는다**: 가린 창이 닫히면
             // 같은 진입 안에서 다시 뜬다(스펙 「다른 창 위에 띄우지 않는다」). 끝없이 되풀이하지
             // 않도록 상한에서만 끝낸다.
