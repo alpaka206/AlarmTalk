@@ -9,10 +9,13 @@
 //      보낸 알람은 원시값이라 닫힌다**(`messageBelongsToCaller` ↔ 오디오 라우트, `/tts/generate` ↔
 //      `voiceProfileBelongsToCaller` 가 같은 답). 살아 있는 그룹의 공유는 그대로 열린다.
 //   4. 직접 입력 한도 30 → 0, `/billing/subscription` 의 계산값·`personal_promo`
-//      (`deletes_voices_at_end` 포함).
+//      (`deletes_voices_at_end`·`computed_at` 포함).
 //   5. 기간 중 쿠폰 등록이 되고, 그 구독이 기간 중 끝나도 보관이 걸리지 않는다.
-//   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일 이하, 기간 중 스윕은 풀어만 준다.
+//   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일(더 이르지 않다), 기간 중 스윕은
+//      풀어만 준다.
 //      (대량·예산·굶김은 `test/personal-promo-end.test.ts`.)
+//   7. 보류 주인의 공유 목소리 — 알람 PATCH 는 `voice_profile_id` 가 **바뀔 때만** 소유권을 본다(D8):
+//      그대로 보내는 토글은 통과, 그 목소리로 바꾸는 PATCH 는 POST 처럼 404.
 //
 // ⚠ 시계는 **JS `Date` 만** 가짜로 돌린다(`toFake: ['Date']`). SQL 의 `datetime('now')` 는 실제
 //   시각이라, 여기 픽스처의 구독 만료는 실제·가짜 시각 어느 쪽으로 봐도 같은 쪽에 오게 둔다.
@@ -200,17 +203,24 @@ describe('스위치 해석 — 꺼짐은 fail-closed, production 은 리허설 �
     expect(computedUserPlan('family', on)).toBe('family');
     expect(computedUserPlan(null, on)).toBeNull();
     const noRow = { hasActiveSubscriptionRow: false };
+    // `computed_at` = 계산에 쓴 서버 시각(초 단위로 내림) — 앱의 낡은 캐시 판정(D1·D7)이 받은
+    // 시각으로 쓴다. 조각은 구간 안에서만 실리므로 언제나 `ends_at` 보다 이르다.
     expect(personalPromoField('free', on, noRow)).toEqual({
       ends_at: '2026-10-31T15:00:00Z',
       notice_from: '2026-10-24T15:00:00Z',
       deletes_voices_at_end: true,
+      computed_at: '2026-10-31T14:59:59Z',
     });
     // 결제 보류(원시 free + active 행): 값은 남고 삭제 문장만 빠진다.
     expect(personalPromoField('free', on, { hasActiveSubscriptionRow: true })).toEqual({
       ends_at: '2026-10-31T15:00:00Z',
       notice_from: '2026-10-24T15:00:00Z',
       deletes_voices_at_end: false,
+      computed_at: '2026-10-31T14:59:59Z',
     });
+    // 소수 초는 올리지 않고 버린다 — 끝 1ms 전에 계산한 답이 끝 시각으로 찍히지 않는다.
+    const lastMs = resolvePersonalPromo(PROD_ENV, new Date(END.getTime() - 1));
+    expect(personalPromoField('free', lastMs, noRow)?.computed_at).toBe('2026-10-31T14:59:59Z');
     expect(personalPromoField('plus', on, noRow)).toBeNull();
     expect(personalPromoField('free', off, noRow)).toBeNull();
     expect(hasPersonalVoiceAccess('free', on)).toBe(true);
@@ -520,6 +530,57 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
         expectGate(sent, false);
       });
 
+      it('따로 결제하는 멤버의 PATCH — 공유 목소리를 그대로 보내면 통과, 그 목소리로 바꾸면 404(D8)', async () => {
+        atMoment(moment.at);
+        // 주인이 유료일 때 저장된 알람(공유 목소리)과 목소리 없는 알람 — 보류가 온 뒤의 모습.
+        const suffix = moment.open ? '1' : '2';
+        const kept = `33333333-3333-4333-8333-00000000000${suffix}`;
+        const plain = `33333333-3333-4333-8333-00000000001${suffix}`;
+        await db.batch([
+          {
+            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id)
+                  VALUES (?, 'pp-hold-paid-member', '07:55', 'tts', ?)`,
+            args: [kept, VP_HOLD],
+          },
+          {
+            sql: `INSERT INTO alarms (id, user_id, time, mode)
+                  VALUES (?, 'pp-hold-paid-member', '08:05', 'sound-only')`,
+            args: [plain],
+          },
+        ]);
+        // 안드로이드 동기화처럼 켜기·끄기·시각만 고치면서 목소리를 **그대로** 보낸다 — 주인이
+        // 보류라 그 목소리를 새로 고를 수는 없지만, 이미 있던 값이라 토글은 막지 않는다.
+        const toggle = await call(HOLD_PAID_MEMBER, 'PATCH', `/alarms/${kept}`, {
+          time: '07:56',
+          is_active: false,
+          mode: 'tts',
+          voice_profile_id: VP_HOLD,
+        });
+        expect(toggle.status).toBe(200);
+        const row = await db.execute({
+          sql: 'SELECT time, is_active, voice_profile_id FROM alarms WHERE id = ?',
+          args: [kept],
+        });
+        expect(row.rows[0]).toMatchObject({
+          time: '07:56',
+          is_active: 0,
+          voice_profile_id: VP_HOLD,
+        });
+
+        // 그 목소리로 **바꾸는** PATCH 는 POST 와 같이 막힌다 — 멈춘 공유를 새로 심지 못한다.
+        const switchTo = await call(HOLD_PAID_MEMBER, 'PATCH', `/alarms/${plain}`, {
+          mode: 'tts',
+          voice_profile_id: VP_HOLD,
+        });
+        expect(switchTo.status).toBe(404);
+        expect(switchTo.body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
+        const untouched = await db.execute({
+          sql: 'SELECT mode, voice_profile_id FROM alarms WHERE id = ?',
+          args: [plain],
+        });
+        expect(untouched.rows[0]).toMatchObject({ mode: 'sound-only', voice_profile_id: null });
+      });
+
       it('살아 있는 가족 그룹의 공유 목소리는 원시 게이트를 그대로 지난다(대조군)', async () => {
         atMoment(moment.at);
         const save = await call(LIVE_MEMBER, 'POST', '/alarms', {
@@ -556,6 +617,7 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
                 ends_at: '2026-10-31T15:00:00Z',
                 notice_from: '2026-10-24T15:00:00Z',
                 deletes_voices_at_end: true,
+                computed_at: '2026-10-31T14:59:59Z',
               }
             : null,
         );
@@ -568,6 +630,7 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
                 ends_at: '2026-10-31T15:00:00Z',
                 notice_from: '2026-10-24T15:00:00Z',
                 deletes_voices_at_end: false,
+                computed_at: '2026-10-31T14:59:59Z',
               }
             : null,
         );
@@ -643,7 +706,7 @@ async function retentionOf(client: Client, userId: string): Promise<string | nul
 }
 
 describe('만료 크론 — 기간 중에는 보관을 걸지 않고, 끝나면 전환이 건다', () => {
-  it('기간 중 끝난 쿠폰 구독: 강등은 원시로 일어나되 보관 행이 없다 → 끝 뒤 전환이 끝 + 3일 안으로 건다', async () => {
+  it('기간 중 끝난 쿠폰 구독: 강등은 원시로 일어나되 보관 행이 없다 → 끝 뒤 전환이 끝 + 3일로 건다', async () => {
     db = await freshDb('expiry');
     await seedUser(db, 'c1', 'plus');
     await seedUser(db, 'c2', 'plus');
@@ -677,15 +740,15 @@ describe('만료 크론 — 기간 중에는 보관을 걸지 않고, 끝나면 
     await processSubscriptionExpiry(db, PROD_ENV, after);
     expect(await retentionOf(db, 'c1')).toBeNull();
     await runPersonalPromoEnd(db, PROD_ENV, after, { role: 'main' });
-    // 대상 한 명 — 약속 시각(끝 + 3일) − (스윕 한 번 여유 + 한 시간)을 정시로 내린 값.
-    expect(await retentionOf(db, 'c1')).toBe('2026-11-03T13:00:00.000Z');
+    // 종료 전환 대상 — 약속 시각(끝 + 3일) 그대로다. 그보다 먼저 지우지 않는다(D6).
+    expect(await retentionOf(db, 'c1')).toBe('2026-11-03T15:00:00.000Z');
     expect(await retentionOf(db, 'c2')).toBe(
       new Date(after.getTime() + 3 * 86_400_000).toISOString(),
     );
   });
 });
 
-describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한, 멱등, delete_after ≤ 끝 + 3일', () => {
+describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한, 멱등, delete_after = 끝 + 3일', () => {
   const WINDOW = { startsAt: new Date('2026-09-30T15:00:00Z'), endsAt: END };
   const AFTER = new Date(END.getTime() + 2 * 60 * 60 * 1000);
 
@@ -729,7 +792,7 @@ describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한
     expect((await db.execute('SELECT COUNT(*) AS n FROM paid_voice_retention')).rows[0]!.n).toBe(1);
   });
 
-  it('묶음마다 상한만큼, 끝 + 3일 안의 정시, 다 돌면 멈춘다', async () => {
+  it('묶음마다 상한만큼, 끝 + 3일 그대로, 다 돌면 멈춘다', async () => {
     // 기준점 '' = id 순서 맨 앞부터(운영은 실행마다 무작위 기준점이다).
     const opts = { limit: 3, pivot: '', notifyMessages: null } as const;
     const first = await transitionPersonalPromoEnd(db, WINDOW, AFTER, opts);
@@ -746,15 +809,14 @@ describe('종료 전환(transitionPersonalPromoEnd) — 대상만, 묶음 상한
     ).toEqual([]);
 
     for (const t of [...first, ...second]) {
-      // 약속 시각(끝 + 3일)을 넘지 않고, 푸시가 적는 시각(돌려준 값)과 행이 같다.
-      expect(t.deleteAfter.getTime()).toBeLessThanOrEqual(Date.parse('2026-11-03T15:00:00.000Z'));
+      // 전원 약속 시각(끝 + 3일) 그대로 — 먼저 전환된 사람도 3일을 채운다(D6). 푸시가 적는
+      // 시각(돌려준 값)과 행이 같다.
+      expect(t.deleteAfter.toISOString()).toBe('2026-11-03T15:00:00.000Z');
       expect(await retentionOf(db, t.userPk)).toBe(t.deleteAfter.toISOString());
     }
-    // 남은 대상이 적을 때의 기한 = 약속 시각 − (스윕 한 번 여유 + 한 시간)을 정시로 내린 값.
     expect(first[0]!.deleteAfter.toISOString()).toBe(
-      promoEndDeleteAfter(WINDOW, AFTER, 5).toISOString(),
+      promoEndDeleteAfter(WINDOW, AFTER).toISOString(),
     );
-    expect(first[0]!.deleteAfter.toISOString()).toBe('2026-11-03T13:00:00.000Z');
     for (const id of ['n-novoice', 'n-draft', 'n-deleted', 'n-paid', 'n-hold']) {
       expect(await retentionOf(db, id)).toBeNull();
     }

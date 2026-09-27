@@ -28,6 +28,8 @@ const PROMO = {
   ends_at: '2026-10-31T15:00:00Z',
   notice_from: '2026-10-24T15:00:00Z',
   deletes_voices_at_end: true,
+  // 서버가 계산한 시각(열린 순간 = 끝 1초 전) — 앱의 낡은 캐시 판정이 받은 시각으로 쓴다(D7).
+  computed_at: '2026-10-31T14:59:59Z',
 };
 
 const ENV = {

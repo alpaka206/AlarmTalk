@@ -598,15 +598,16 @@ function voiceDeletionWarningBody(retentionDays: number): string {
  *
  * 기본 문구("이용권이 끝나 … n일간만 보관")를 쓰지 않는 이유 둘:
  * - 이 사람들은 **이용권을 산 적이 없다** — "다시 등록하면" 은 틀린 말이다.
- * - 기한이 '지금부터 3일' 이 아니라 **사람마다 정해진 시각**(끝 + 3일을 넘지 않게 나눠 건
- *   `delete_after`)이다. 전환이 늦게 닿은 사람에게 "3일간" 이라고 하면 실제보다 길게 말한다.
+ * - 기한이 '지금부터 3일' 이 아니라 **정해진 시각**(`delete_after` — 끝 + 3일, 그보다 늦게
+ *   전환된 사람은 전환 + 24시간)이다. 전환이 끝 하루 뒤에 닿은 사람에게 "3일간" 이라고 하면
+ *   실제보다 길게 말한다.
  *
  * 시각은 한국 시간(문구가 한국어라 기기 시간대를 알 수 없다)으로, **정시 단위**로 적는다 —
- * 전환이 `delete_after` 를 정시로 내려 잡으므로 적힌 시각이 곧 삭제 시작 시각이다.
+ * 전환이 `delete_after` 를 정시로 올려 잡으므로 적힌 시각이 곧 삭제 시작 시각이다.
  */
 export function personalPromoEndWarningBody(deleteAfter: Date, now: Date = new Date()): string {
-  // 기한이 한 시간도 안 남았으면(끝 + 3일을 넘겨 늦게 전환된 사람) 시각을 적지 않는다 — 이미
-  // 지난 시각이나 몇 분 뒤를 "…까지 보관" 이라고 쓰면 틀린 약속이 된다.
+  // 기한이 한 시간도 안 남았으면 시각을 적지 않는다 — 몇 분 뒤를 "…까지 보관" 이라고 쓰면 틀린
+  // 약속이 된다. (기한은 늘 약속 시각이나 전환 + 24시간이라 정상 경로에서는 오지 않는 갈래다.)
   if (deleteAfter.getTime() - now.getTime() < 60 * 60 * 1000) {
     return (
       '기간 한정 개인 플랜이 끝나 목소리가 곧 영구 삭제돼요. ' +
@@ -619,10 +620,20 @@ export function personalPromoEndWarningBody(deleteAfter: Date, now: Date = new D
   );
 }
 
-/** `11월 3일 오후 2시` — 한국 시간(UTC+9, 서머타임 없음). 분은 버린다. */
+/**
+ * `11월 3일 오후 2시` — 한국 시간(UTC+9, 서머타임 없음). 분은 버린다.
+ *
+ * ⚠ **자정은 그 전날의 `밤 12시` 로 적는다**(`11월 3일 밤 12시`). 종료 전환의 기한(끝 + 3일)이
+ * 한국 시간 자정이라 거의 모든 예고가 이 갈래다 — "11월 4일 오전 12시" 는 낮 12시로 읽히기
+ * 쉽고, 그렇게 읽으면 실제보다 12시간 길게 보관한다고 믿게 된다(되돌릴 수 없는 쪽으로 틀린다).
+ */
 export function formatKstHour(at: Date): string {
   const kst = new Date(at.getTime() + 9 * 60 * 60 * 1000);
   const hour = kst.getUTCHours();
+  if (hour === 0) {
+    const previousDay = new Date(kst.getTime() - 24 * 60 * 60 * 1000);
+    return `${previousDay.getUTCMonth() + 1}월 ${previousDay.getUTCDate()}일 밤 12시`;
+  }
   const period = hour < 12 ? '오전' : '오후';
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${period} ${hour12}시`;

@@ -1,13 +1,15 @@
-// 기간 한정 개인 플랜 **종료** — 전환·보관 스윕이 처리방침의 약속(끝 + 3일)을 지키는가.
-// 스펙: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 → 「종료」.
+// 기간 한정 개인 플랜 **종료** — 전환·보관 스윕이 약속("끝 + 3일 보관한 뒤 삭제")을 지키는가.
+// 스펙: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」 → 「종료」(D6·D10).
 //
 // 지키는 것:
-//   1. `delete_after` 는 약속 시각(끝 + 3일)을 넘지 않고, 정시로 내려 잡히며, 늦게 전환된 사람일수록
-//      늦다(스윕이 기한 순서로 지우므로 몰리지 않는다).
-//   2. **2,500명**을 실제 크론 주기(전용 1분 + 5분 틱)로 끝부터 끝 + 3일까지 돌려, 전원이 약속 전에
-//      지워지고, 누구도 자기 `delete_after`(푸시가 적은 시각) 전에 지워지지 않으며, 전용 크론의 한
-//      실행이 subrequest 상한을 넘지 않는다 — **푸시를 켠 채로**(기기마다 FCM 요청, OAuth 캐시 비움).
-//   3. 매번 실패하는 사람이 전환·스윕을 멈추지 않고, 경보가 올라간다.
+//   1. `delete_after` 는 약속 시각(끝 + 3일)보다 **이르지 않다** — 약속 시각 전에 전환된 사람은
+//      약속 시각 그대로, 넘겨 전환된 사람은 전환 + 24시간(정시로 올림)이다.
+//   2. **2,500명**을 실제 크론 주기(전용 1분 + 5분 틱)로 끝부터 삭제가 끝날 때까지 돌려, 누구도 약속
+//      시각 전에 지워지지 않고, 약속 시각 뒤 몇 시간 안에(기한 초과 경보 문턱 전에) 전원 지워지며,
+//      전용 크론의 한 실행이 subrequest 상한을 넘지 않는다 — **푸시를 켠 채로**(기기마다 FCM 요청,
+//      OAuth 캐시 비움).
+//   3. 매번 실패하는 사람이 전환·스윕을 멈추지 않는다 — 늘 실패하는 보관 행 하나가 기한이 온 채
+//      남아 있어도 전용 크론은 같은 실행에서 전환으로 넘어가고, 그 경보는 시간당 한 번이다.
 //   4. 전용 크론 문자열이 `wrangler.toml` 두 환경·`index.ts` 분기와 같고, 끝 전에는 DB 를 부르지 않는다.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClient, type Client, type InStatement } from '@libsql/client';
@@ -22,6 +24,7 @@ import {
   PROMO_END_RUN_BUDGET,
   PROMO_END_SWEEP_BATCH,
   PROMO_END_TRANSITION_BATCH,
+  isPromoEndAlertSlot,
   promoEndDeleteAfter,
   promoEndRetentionDeadline,
   runPersonalPromoEnd,
@@ -52,7 +55,7 @@ const BASE_ENV = {
 } as const;
 
 // ── subrequest 계수 ─────────────────────────────────────────────────────────
-// DB 왕복 하나 = subrequest 하나(트랜잭션은 문장·묶음마다 + 커밋 한 번). FCM·OAuth 도 하나씩.
+// DB 왕복 하나 = subrequest 하나(트랜잭션은 문장·묶음마다 + 커밋·롤백 한 번). FCM·OAuth 도 하나씩.
 const counts = { db: 0, fetch: 0 };
 function counted(raw: Client): Client {
   return new Proxy(raw, {
@@ -68,7 +71,7 @@ function counted(raw: Client): Client {
           const tx = await target.transaction(mode);
           return new Proxy(tx, {
             get(t, p) {
-              if (p === 'execute' || p === 'batch' || p === 'commit') {
+              if (p === 'execute' || p === 'batch' || p === 'commit' || p === 'rollback') {
                 return async (...args: unknown[]) => {
                   counts.db += 1;
                   return (t[p] as (...a: unknown[]) => unknown).apply(t, args);
@@ -224,44 +227,51 @@ async function retentionOf(db: Client, userId: string): Promise<string | null> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('promoEndDeleteAfter — 약속 시각을 넘지 않게 거꾸로 나눠 건다', () => {
-  const at = new Date(END.getTime() + 5 * MINUTE);
-
-  it('언제나 약속 시각(끝 + 3일) 이하, 정시', () => {
-    for (const remaining of [1, 10, 11, 250, 2500, 5000]) {
-      const d = promoEndDeleteAfter(WINDOW, at, remaining);
-      expect(d.getTime()).toBeLessThanOrEqual(DEADLINE.getTime());
-      expect(d.getTime() % HOUR).toBe(0);
-    }
+describe('promoEndDeleteAfter — 약속 시각(끝 + 3일)보다 이르지 않다', () => {
+  it('약속 시각 전에 전환되면 누구든 약속 시각 그대로다 — 먼저 전환된 사람도 3일을 채운다', () => {
     expect(DEADLINE.toISOString()).toBe('2026-11-03T15:00:00.000Z');
-  });
-
-  it('남은 대상이 줄수록(나중에 전환될수록) 늦다 — 스윕이 기한 순서로 지우면 몰리지 않는다', () => {
-    let previous = 0;
-    for (let remaining = 2500; remaining >= 1; remaining -= 15) {
-      const d = promoEndDeleteAfter(WINDOW, at, remaining).getTime();
-      expect(d).toBeGreaterThanOrEqual(previous);
-      previous = d;
+    for (const at of [
+      END,
+      new Date(END.getTime() + 5 * MINUTE),
+      new Date(END.getTime() + 23 * HOUR),
+      new Date(DEADLINE.getTime() - HOUR),
+      new Date(DEADLINE.getTime() - 1),
+    ]) {
+      expect(promoEndDeleteAfter(WINDOW, at).getTime()).toBe(DEADLINE.getTime());
     }
-    // 마지막 사람도 약속 시각보다 최소 한 시간은 먼저다.
-    expect(promoEndDeleteAfter(WINDOW, at, 1).getTime()).toBe(DEADLINE.getTime() - HOUR - HOUR);
   });
 
-  it('2,500명이면 가장 이른 사람도 끝 + 2.5일 뒤다(보관을 크게 줄이지 않는다)', () => {
-    const earliest = promoEndDeleteAfter(WINDOW, at, 2500);
-    expect(earliest.getTime() - END.getTime()).toBeGreaterThanOrEqual(2.5 * DAY);
+  it('약속 시각을 넘겨 전환되면 지금 + 24시간을 정시로 올린 값 — 예고 푸시가 삭제보다 먼저다', () => {
+    const at = new Date(DEADLINE.getTime() + 90 * MINUTE);
+    const late = promoEndDeleteAfter(WINDOW, at);
+    expect(late.getTime()).toBe(DEADLINE.getTime() + 26 * HOUR);
+    expect(late.getTime()).toBeGreaterThanOrEqual(at.getTime() + DAY);
+    expect(promoEndDeleteAfter(WINDOW, DEADLINE).getTime()).toBe(DEADLINE.getTime() + DAY);
   });
 
-  it('약속을 지킬 수 없을 만큼 많거나 이미 지났으면 — 지금 이후 첫 정시, 그래도 약속 시각을 넘지 않는다', () => {
-    const huge = promoEndDeleteAfter(WINDOW, at, 1_000_000);
-    expect(huge.getTime()).toBe(Math.ceil(at.getTime() / HOUR) * HOUR);
-    const late = promoEndDeleteAfter(WINDOW, new Date(DEADLINE.getTime() + 2 * HOUR), 1);
-    expect(late.getTime()).toBe(DEADLINE.getTime());
+  it('언제나 정시다 — 리허설 끝이 정시가 아니어도 올리는 쪽이라 약속보다 이르지 않다', () => {
+    const rehearsal = {
+      startsAt: new Date('2026-09-27T00:00:00Z'),
+      endsAt: new Date('2026-09-27T10:17:00Z'),
+    };
+    const d = promoEndDeleteAfter(rehearsal, new Date('2026-09-27T10:20:00Z'));
+    expect(d.toISOString()).toBe('2026-09-30T11:00:00.000Z');
+    expect(d.getTime()).toBeGreaterThanOrEqual(promoEndRetentionDeadline(rehearsal).getTime());
+  });
+});
+
+describe('경보 창 — 시간당 한 번(상태 없이)', () => {
+  it('매시 첫 크론 주기에만 참이다', () => {
+    expect(isPromoEndAlertSlot(END)).toBe(true);
+    expect(isPromoEndAlertSlot(new Date(END.getTime() + 30_000))).toBe(true);
+    expect(isPromoEndAlertSlot(new Date(END.getTime() + MINUTE))).toBe(false);
+    expect(isPromoEndAlertSlot(new Date(END.getTime() + 59 * MINUTE))).toBe(false);
+    expect(isPromoEndAlertSlot(new Date(END.getTime() + HOUR))).toBe(true);
   });
 });
 
 describe('삭제 예고 문구 — 개인 플랜 종료는 이용권 문구를 쓰지 않는다', () => {
-  it('사람마다 자기 기한을 한국 시간 정시로 적는다', () => {
+  it('자기 기한을 한국 시간 정시로 적는다', () => {
     const deleteAfter = new Date('2026-11-03T05:00:00Z');
     expect(formatKstHour(deleteAfter)).toBe('11월 3일 오후 2시');
     const body = personalPromoEndWarningBody(deleteAfter, new Date('2026-11-01T00:00:00Z'));
@@ -269,6 +279,15 @@ describe('삭제 예고 문구 — 개인 플랜 종료는 이용권 문구를 �
     expect(body).toContain('11월 3일 오후 2시까지만 보관');
     expect(body).not.toContain('이용권이 끝나');
     expect(body).not.toContain('다시 등록');
+  });
+
+  it('약속 시각(한국 시간 자정)은 전날 "밤 12시" 로 적는다 — "오전 12시" 는 낮으로 읽힌다', () => {
+    expect(formatKstHour(DEADLINE)).toBe('11월 3일 밤 12시');
+    expect(formatKstHour(new Date('2026-11-03T15:59:00Z'))).toBe('11월 3일 밤 12시');
+    expect(formatKstHour(new Date('2026-11-03T16:00:00Z'))).toBe('11월 4일 오전 1시');
+    expect(formatKstHour(new Date('2026-11-04T03:00:00Z'))).toBe('11월 4일 오후 12시');
+    const body = personalPromoEndWarningBody(DEADLINE, new Date(END.getTime() + HOUR));
+    expect(body).toContain('11월 3일 밤 12시까지만 보관');
   });
 
   it('기한이 한 시간도 안 남았으면 시각을 약속하지 않는다', () => {
@@ -309,9 +328,9 @@ describe('전용 크론 한 실행의 subrequest — 푸시를 켠 운영 조건
     expect(used).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
     expect(fcmBodies.length).toBeGreaterThan(0);
     for (const body of fcmBodies) expect(body).toContain('기간 한정 개인 플랜이 끝나');
-    // 전환된 사람: 원시 free · 클론 반납 · 보관 행(약속 시각 이하).
+    // 전환된 사람: 원시 free · 클론 반납 · 보관 행(약속 시각 그대로).
     const first = run.transitioned[0]!;
-    expect(first.deleteAfter.getTime()).toBeLessThanOrEqual(DEADLINE.getTime());
+    expect(first.deleteAfter.getTime()).toBe(DEADLINE.getTime());
     expect(await retentionOf(raw, first.userPk)).toBe(first.deleteAfter.toISOString());
     const vp = await raw.execute({
       sql: 'SELECT elevenlabs_voice_id, evicted_provider_voice_id FROM voice_profiles WHERE id = ?',
@@ -414,8 +433,8 @@ describe('전용 크론 한 실행의 subrequest — 푸시를 켠 운영 조건
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('2,500명 — 실제 크론 주기로 끝부터 끝 + 3일까지', () => {
-  it('전원이 약속 전에, 자기 기한 뒤에 지워지고, 전용 크론 한 실행은 상한 안이다', async () => {
+describe('2,500명 — 실제 크론 주기로 끝부터 삭제가 끝날 때까지', () => {
+  it('누구도 약속 시각 전에 지워지지 않고, 그 뒤 몇 시간 안에 전원 지워지며, 한 실행은 상한 안이다', async () => {
     const raw = await freshDb('simulation');
     const N = 2500;
     const targets: string[] = [];
@@ -460,8 +479,12 @@ describe('2,500명 — 실제 크론 주기로 끝부터 끝 + 3일까지', () =
     let transitionDoneAt: number | null = null;
     const errors: string[] = [];
     const hooks = { onError: (stage: string) => void errors.push(stage) };
+    let sweepFailures = 0;
 
-    for (let t = END.getTime(); t <= DEADLINE.getTime() + 30 * MINUTE; t += MINUTE) {
+    // 약속 시각에 전원의 기한이 한꺼번에 온다 — 거기서 기한 초과 경보 문턱(6시간)까지 돌린다.
+    const horizon = DEADLINE.getTime() + 6 * HOUR;
+    let drainedAt: number | null = null;
+    for (let t = END.getTime(); t <= horizon && drainedAt === null; t += MINUTE) {
       const at = new Date(t);
       counts.db = 0;
       counts.fetch = 0;
@@ -469,6 +492,8 @@ describe('2,500명 — 실제 크론 주기로 끝부터 끝 + 3일까지', () =
       maxDedicated = Math.max(maxDedicated, counts.db + counts.fetch);
       for (const tr of run.transitioned) deleteAfterOf.set(tr.userPk, tr.deleteAfter.getTime());
       for (const id of run.sweep?.cleanedUserPks ?? []) cleanedAt.set(id, t);
+      // 스윕 실패 경보는 시간당 한 번이라 훅만 보면 놓친다 — 실행마다 결과로 센다.
+      if (run.sweep?.failed) sweepFailures += 1;
 
       if ((t - END.getTime()) % (5 * MINUTE) === 0) {
         // 5분 틱: 전환 폴백 + 사람마다 스윕(예전부터 있던 그물).
@@ -478,31 +503,38 @@ describe('2,500명 — 실제 크론 주기로 끝부터 끝 + 3일까지', () =
         for (const id of swept.cleanedUserPks) cleanedAt.set(id, t);
       }
       if (transitionDoneAt === null && deleteAfterOf.size === N) transitionDoneAt = t;
+      if (cleanedAt.size === N) drainedAt = t;
     }
 
+    const earliest = Math.min(...cleanedAt.values());
+    const latest = Math.max(...cleanedAt.values());
     console.log(
       'simulation: 전용 크론 최대 subrequests =',
       maxDedicated,
       '/ 전원 전환까지(분) =',
       transitionDoneAt === null ? null : (transitionDoneAt - END.getTime()) / MINUTE,
-      '/ 가장 이른 삭제(끝부터 시간) =',
-      (Math.min(...cleanedAt.values()) - END.getTime()) / HOUR,
-      '/ 가장 늦은 삭제(약속 전 분) =',
-      (DEADLINE.getTime() - Math.max(...cleanedAt.values())) / MINUTE,
+      '/ 가장 이른 삭제(약속 시각 기준 분) =',
+      (earliest - DEADLINE.getTime()) / MINUTE,
+      '/ 가장 늦은 삭제(약속 시각 기준 분) =',
+      (latest - DEADLINE.getTime()) / MINUTE,
     );
+    // 경보 없음 — 전환 실패·스윕 실패·기한 초과(정상 적체는 문턱 아래다).
     expect(errors).toEqual([]);
+    expect(sweepFailures).toBe(0);
     expect(maxDedicated).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
-    // 전원 전환 — 끝 뒤 하루 안에(실제로는 몇 시간).
+    // 전원 전환 — 끝 뒤 하루 안에(실제로는 몇 시간). 기한은 전원 약속 시각 그대로다.
     expect(deleteAfterOf.size).toBe(N);
     expect(transitionDoneAt! - END.getTime()).toBeLessThan(DAY);
-    // 전원 삭제 — 약속 시각 전에, 그리고 푸시가 적은 자기 기한 전에는 아니게.
+    // 전원 삭제 — 약속 시각 **전에는 아무도**, 그 뒤 경보 문턱(6시간) 안에 전원.
+    expect(drainedAt).not.toBeNull();
     for (const id of targets) {
       const at = cleanedAt.get(id);
       expect(at, id).toBeDefined();
-      expect(at!).toBeLessThanOrEqual(DEADLINE.getTime());
-      expect(at!).toBeGreaterThanOrEqual(deleteAfterOf.get(id)!);
-      expect(deleteAfterOf.get(id)!).toBeLessThanOrEqual(DEADLINE.getTime());
+      expect(deleteAfterOf.get(id)!).toBe(DEADLINE.getTime());
+      expect(at!).toBeGreaterThanOrEqual(DEADLINE.getTime());
     }
+    expect(earliest).toBe(DEADLINE.getTime());
+    expect(latest - DEADLINE.getTime()).toBeLessThan(6 * HOUR);
     const left = await raw.execute(
       `SELECT COUNT(*) AS n FROM voice_profiles WHERE id LIKE 'vp-u%'`,
     );
@@ -576,6 +608,88 @@ describe('매번 실패하는 사람이 멈추게 하지 않는다', () => {
     }
     expect(await retentionOf(raw, 'a-bad')).toBeNull();
     expect(alerts.every((a) => a.uid === 'a-bad')).toBe(true);
+    raw.close();
+  });
+
+  it('보관 행 하나가 늘 실패해도 전용 크론의 전환은 멈추지 않는다 — 같은 실행에서 넘어가고, 경보는 시간당 한 번', async () => {
+    const raw = await freshDb('starve-dedicated');
+    const seed: InStatement[] = [];
+    // 'a-bad': 끝 전에 끝난 보통 보관 행(기한이 끝 − 7시간 → 처음부터 6시간 넘게 밀려 있다). 목소리를
+    // 사전렌더 21클립까지 들고 있어 삭제 문장을 전부 돈 뒤 **마지막 문장에서** 실패한다(최악의 비용).
+    seed.push(...seedPromoUser('a-bad', { clips: 21, devices: 1 }), {
+      sql: 'INSERT INTO paid_voice_retention (user_id, delete_after) VALUES (?, ?)',
+      args: ['a-bad', new Date(END.getTime() - 7 * HOUR).toISOString()],
+    });
+    const targets = Array.from({ length: 40 }, (_, i) => `t${String(i).padStart(2, '0')}`);
+    for (const [i, id] of targets.entries()) {
+      seed.push(...seedPromoUser(id, { devices: 1, googleLogin: i % 2 === 0 }));
+    }
+    await insertMany(raw, seed);
+    await raw.execute(`CREATE TRIGGER fail_bad_retention BEFORE DELETE ON paid_voice_retention
+      WHEN OLD.user_id = 'a-bad' BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+    const db = counted(raw);
+    const alerts: Array<{ stage: string; at: number; uid?: string }> = [];
+    const transitioned = new Set<string>();
+    let maxRun = 0;
+    // 끝(정시)부터 90분 — 정시 경보 창이 두 번(끝, 끝 + 1시간) 들어간다.
+    for (let t = END.getTime(); t <= END.getTime() + 90 * MINUTE; t += MINUTE) {
+      counts.db = 0;
+      counts.fetch = 0;
+      const run = await runPersonalPromoEnd(db, pushEnv(), new Date(t), {
+        role: 'dedicated',
+        hooks: {
+          onError: (stage, _err, tags) => void alerts.push({ stage, at: t, uid: tags?.uid }),
+        },
+      });
+      maxRun = Math.max(maxRun, counts.db + counts.fetch);
+      // 스윕은 늘 그 한 사람을 뽑아 실패한다 — 그래도 같은 실행에서 전환이 이어진다.
+      expect(run.sweep?.attempted).toEqual(['a-bad']);
+      expect(run.sweep?.failed).toBe(true);
+      for (const tr of run.transitioned) transitioned.add(tr.userPk);
+      if (transitioned.size < targets.length) expect(run.transitioned.length).toBeGreaterThan(0);
+    }
+    console.log('스윕 실패 + 전환 한 실행 최대 subrequests =', maxRun);
+    expect(maxRun).toBeLessThanOrEqual(PROMO_END_RUN_BUDGET);
+    expect([...transitioned].sort()).toEqual(targets);
+    expect(await retentionOf(raw, 'a-bad')).not.toBeNull();
+    // 경보는 정시 창에서만 — 스윕 실패·기한 초과가 각각 두 번(끝·끝 + 1시간), 전환 실패는 없다.
+    // 기한 초과 경보는 가장 이른 행의 사람을 싣는다 — 늘 실패하는 행이 거기 남는다.
+    const byStage = (stage: string) => alerts.filter((a) => a.stage === stage);
+    expect(byStage('sweep_batch').map((a) => a.at)).toEqual([END.getTime(), END.getTime() + HOUR]);
+    expect(byStage('retention_overdue').map((a) => [a.at, a.uid])).toEqual([
+      [END.getTime(), 'a-bad'],
+      [END.getTime() + HOUR, 'a-bad'],
+    ]);
+    expect(
+      alerts.filter((a) => a.stage !== 'sweep_batch' && a.stage !== 'retention_overdue'),
+    ).toEqual([]);
+    raw.close();
+  });
+
+  it('스윕이 전원 유료라 풀어 주기만 해도(지운 사람 0) 같은 실행에서 전환한다', async () => {
+    const raw = await freshDb('sweep-released-then-transition');
+    await insertMany(raw, [
+      ...seedPromoUser('payer', { devices: 1 }),
+      { sql: `UPDATE users SET plan = 'plus' WHERE id = 'payer'`, args: [] },
+      {
+        sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+              VALUES ('sub-payer', 'payer', ?, 'active', '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')`,
+        args: [PERSONAL],
+      },
+      {
+        sql: 'INSERT INTO paid_voice_retention (user_id, delete_after) VALUES (?, ?)',
+        args: ['payer', new Date(END.getTime() - HOUR).toISOString()],
+      },
+      ...seedPromoUser('t1', { devices: 1 }),
+      ...seedPromoUser('t2', { devices: 1 }),
+    ]);
+    const run = await runPersonalPromoEnd(raw, pushEnv(), new Date(END.getTime() + MINUTE), {
+      role: 'dedicated',
+    });
+    expect(run.sweep?.attempted).toEqual(['payer']);
+    expect(run.sweep?.cleanedUserPks).toEqual([]);
+    expect(await retentionOf(raw, 'payer')).toBeNull();
+    expect(run.transitioned.map((t) => t.userPk).sort()).toEqual(['t1', 't2']);
     raw.close();
   });
 

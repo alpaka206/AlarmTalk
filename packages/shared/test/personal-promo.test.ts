@@ -92,6 +92,23 @@ describe('personal_promo 조각', () => {
     expect(User.safeParse({ plan: 'plus', personal_promo: value }).success).toBe(true);
   });
 
+  it('computed_at 은 optional 이다 — 있으면 초 단위 UTC, 없는 서버 응답도 읽힌다', () => {
+    const base = {
+      ends_at: '2026-10-31T15:00:00Z',
+      notice_from: '2026-10-24T15:00:00Z',
+      deletes_voices_at_end: true,
+    };
+    const stamped = { ...base, computed_at: '2026-10-31T14:59:59Z' };
+    expect(PersonalPromoSchema.parse(stamped)).toEqual(stamped);
+    // 이 키가 없는 응답(이전 서버·테스트 픽스처)도 그대로 읽힌다.
+    expect(PersonalPromoSchema.parse(base)).toEqual(base);
+    expect(PersonalPromoSchema.parse(base)).not.toHaveProperty('computed_at');
+    expect(PersonalPromoSchema.safeParse({ ...base, computed_at: '방금' }).success).toBe(false);
+    expect(PersonalPromoSchema.safeParse({ ...base, computed_at: 1_793_000_000 }).success).toBe(
+      false,
+    );
+  });
+
   it('deletes_voices_at_end 는 불리언이고 빠지면 안 된다 — 결제 보류 계정은 false', () => {
     const base = { ends_at: '2026-10-31T15:00:00Z', notice_from: '2026-10-24T15:00:00Z' };
     expect(PersonalPromoSchema.safeParse({ ...base, deletes_voices_at_end: false }).success).toBe(
