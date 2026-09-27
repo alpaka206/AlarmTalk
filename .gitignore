@@ -119,3 +119,6 @@ qa-shots/
 
 # 랜딩 「미리 들어보기」 — 기본 목소리 인사말 4개(제품 그 자체의 소리라 저장소에 둔다, 총 ~550KB)
 !apps/landing/public/audio/*.mp3
+
+# 프롬프트·모델 평가 결과(packages/backend/scripts/eval-gemini-prompts.ts) — 모델 응답 원문이 들어 있다.
+packages/backend/.eval/

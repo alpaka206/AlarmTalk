@@ -1257,8 +1257,8 @@ tts.post('/generate', async (c) => {
     //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),
-    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 [tag] +text 를 직접 조립한다.
+    // 동적 모드는 생성 단계에서 이미 태그가 인라인된 {text} 를 한 호출로 받았으므로(순환 모순 제거),
+    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 그 문구를 그대로 쓴다.
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
