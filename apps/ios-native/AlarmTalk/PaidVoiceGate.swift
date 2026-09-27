@@ -163,6 +163,38 @@ enum PaidVoiceGate {
         resolve(snapshot: snapshot, now: now) != .notEntitled
     }
 
+    /// 무료 판정이 **기간 한정 개인 플랜의 오프라인 차단(D1) 때문만**인가 — 끝 전에 받아 둔 낡은
+    /// 프로모(`PersonalPromo.isStale`)가 무료로 읽혔고, 그 프로모를 빼고 다시 판정하면 무료가
+    /// 아니다(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse` 와 같은 규칙).
+    ///
+    /// 전경 무료 잠금이 이 갈래를 **이 진입의 계정 응답이 세션 plan 에 반영될 때까지** 미룬다
+    /// (`freePlanLockMayApply`). 구독 행이 만료됐거나 서버가 free 라고 답한 무료는 이 갈래가
+    /// 아니다 — 프로모를 빼도 무료다. 무료가 아니면(활성 구독 행이 낡은 프로모를 이긴다) 당연히
+    /// false 다 — 안드로이드는 무료로 판정된 자리에서만 부르고, 여기서는 그 전제를 함께 본다.
+    static func isFreeOnlyByPromoLapse(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
+        guard snapshot.personalPromo?.isStale(at: now) == true,
+              resolve(snapshot: snapshot, now: now) == .notEntitled else { return false }
+        var withoutLapse = snapshot
+        withoutLapse.personalPromo = nil
+        return resolve(snapshot: withoutLapse, now: now) != .notEntitled
+    }
+
+    /// 전경 무료 잠금(`AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`)을 **지금** 걸어도 되는가
+    /// (안드로이드 `freePlanLockMayApply` 와 같은 규칙, 스펙 D1·D12).
+    ///
+    /// 무료 판정이 낡은 프로모 **때문만**이면(`isFreeOnlyByPromoLapse`) **이 진입의 계정 응답이
+    /// 세션 plan 에 반영된 뒤에만**(`AuthViewModel.planAnsweredEntry == entry`) 건다. 그 전의 plan
+    /// 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 쿠폰·결제·가족 합류로 원시 유료가 된 사람도
+    /// 종료 시각만 지나면 잠기고, 잠금은 새 답이 오면 풀리지만 이미 적힌 강등 안내
+    /// (`DowngradeNoticeStore`)가 결제자에게 "무료 이용권으로 바뀌었어요" 를 말한다. 콜드 스타트에는
+    /// 저장된 구독 스냅샷(`SocialFeatureViewModel.restoreAccessSnapshot`)과 StoreKit 이 `/auth/me`
+    /// 보다 먼저 준비되므로 이 자리가 실제로 먼저 돈다.
+    ///
+    /// - Parameter entry: 지금 진입 번호(`AppEntryCounter.entry`). 0 이면 아직 들어오지 않았다.
+    static func freePlanLockMayApply(freeOnlyByPromoLapse: Bool, planAnsweredEntry: Int, entry: Int) -> Bool {
+        !freeOnlyByPromoLapse || (entry > 0 && planAnsweredEntry == entry)
+    }
+
     /// 화면이 **지금 들고 있는 값**으로 판정할 스냅샷을 만든다(저장된 캐시가 아니다).
     ///
     /// ⚠ **화면마다 손으로 조립하지 말 것.** 목소리 탭 입구와 등록 제출이 서로 다른 판정기를
