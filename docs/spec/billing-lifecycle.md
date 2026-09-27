@@ -863,9 +863,10 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 - **종료 전환 단계**가 만료 크론 안에서 돈다 — `processSubscriptionExpiry` 의 만료 처리
   **뒤**, 보관 스윕 **앞**(`transitionPersonalPromoEnd`). 시작이 설정돼 있고 지금이 끝
   이후일 때만 돈다.
-  - 대상: 원시 `plan = 'free'` · 기간 안의 활성 구독 행이 없음(보류 포함 — 보류는 원래 보관을
-    걸지 않는다) · 삭제·시스템·초안이 아닌 `voice_profiles` 가 있음 · `paid_voice_retention`
-    행이 없음.
+  - 대상: 원시 `plan = 'free'` · `status = 'active'` 구독 행이 **하나도 없음**(만료 시각은 보지
+    않는다 — 결제 보류 행은 `active` 로 남으며 보류는 원래 보관을 걸지 않는다. 만료가 지났는데
+    아직 안 끝난 행은 만료 크론이 끝내며 건다. `repairOrphanedPaidPlan` 과 같은 조건) · 삭제·
+    시스템·초안이 아닌 `voice_profiles` 가 있음 · `paid_voice_retention` 행이 없음.
   - 처리(사람마다 한 쓰기 트랜잭션 — 조건을 안에서 다시 본다): `downgradeUserToFree`
     (음성 보존 갈래 — 클론 반납·공유 해제·남의 알람 강등) → 보관 예약.
   - ⚠ **`delete_after` 는 실행 시각이 아니라 끝 + 3일로 고정한다.** 틱이 밀려도 처리방침의
@@ -879,6 +880,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
     대상 수를 읽기 전용으로 세어 모자라면 이 값을 조정한다.
   - 한 사람이 실패해도 다음 사람으로 간다(롤백된 사람은 다음 틱이 다시 한다). 단계가 통째로
     실패해도 스윕·알림은 돈다.
+  - 대상 조건은 **원시 free** 라 끝난 뒤에만 의미가 있다 — 기간 중에 돌면 모든 목소리 보유
+    무료 계정에 삭제를 예약하게 된다. 그래서 `지금 ≥ 끝` 이 첫 줄이다.
   - ⚠ **`PERSONAL_PROMO_STARTS_AT` 을 지우면 이 단계도 멈춘다**(꺼짐 = 프로모 없음). 정리
     PR 이 이 분기를 지울 때까지 운영 값은 그대로 둔다.
 - 기간 중 목소리를 등록한 적 없어도 **예전부터 보관 행 없이 목소리를 든 무료 계정**(베타
@@ -917,7 +920,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 보관 판정의 프로모 인자 | `lib/billing-cancel.ts` `hasActivePaidEntitlement` · `retentionSyncStatements` · `syncPaidVoiceRetention` · `sweepPaidVoiceRetention`(호출부가 `personalPromoCoversFree` 로 푼 값을 넘긴다) | — | — |
 | 종료 전환 | `lib/billing-cancel.ts` `transitionPersonalPromoEnd`(`processSubscriptionExpiry` 안, 스윕 앞) | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 이용권 화면 한 줄 · 종료 안내 | — | 앱 작업 | 앱 작업 |
-| 회귀 테스트 | `test/personal-promo.test.ts` · `test/group-disband-batch.test.ts` · `packages/shared/test/schemas.test.ts` | — | — |
+| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹·한도·쿠폰·크론·설정 잠금) · `test/personal-promo-auth.test.ts`(계정 응답 5종) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조, 프로모 축 포함) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | — | — |
 
 ## 구현 지도
 
