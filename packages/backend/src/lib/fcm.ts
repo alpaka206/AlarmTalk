@@ -793,7 +793,9 @@ export async function sendBillingStateSignals(
   const title = VOICE_DELETION_WARNING_TITLE;
   const defaultBody = voiceDeletionWarningBody(params.retentionDays);
   const outbox = new PushOutbox();
-  // 1) 보이는 예고 먼저.
+  // 1) 보이는 예고 **전부** 먼저. ⚠ 안드로이드의 무음 짝을 예고 바로 뒤에 넣지 말 것(Codex #803) —
+  //    `maxMessages` 로 자를 때 앞부분의 절반이 무음이 되어, 예산 안에 다 들어갈 예고도 뒤 기기는
+  //    못 받는다. 되돌릴 수 없는 삭제를 알리는 것은 예고이고, 재조회는 다음 진입의 `/auth/me` 가 맡는다.
   for (const userId of warned) {
     const body = params.warningBodyFor?.(userId) ?? defaultBody;
     for (const target of targetsOf.get(userId) ?? []) {
@@ -806,7 +808,14 @@ export async function sendBillingStateSignals(
           body,
           data: { type: 'voice_deletion_warning', channelId: SOCIAL_CHANNEL_ID },
         });
-        // 워커 기동용 — title/body 가 비어야 onMessageReceived 가 온다. 이게 곧 재조회 신호다.
+      }
+    }
+  }
+  // 1b) 안드로이드 예고 대상의 워커 기동용 짝 — title/body 가 비어야 onMessageReceived 가 온다.
+  //     이게 곧 재조회 신호다.
+  for (const userId of warned) {
+    for (const target of targetsOf.get(userId) ?? []) {
+      if (target.platform !== 'ios') {
         outbox.fcm({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
       }
     }

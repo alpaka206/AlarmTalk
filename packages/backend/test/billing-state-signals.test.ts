@@ -79,6 +79,23 @@ describe('sendBillingStateSignals', () => {
     expect(fcmSent[0]!.data?.type).toBe('voice_deletion_warning');
   });
 
+  // ⚠ **자를 때도 예고가 먼저다**(Codex #803). 안드로이드 무음 짝을 예고 바로 뒤에 넣으면 상한의 절반이
+  // 무음이 되어, 상한 안에 다 들어갈 예고도 뒤 기기는 못 받는다 — 기기 20대·상한 37 이면 19대만 받았다.
+  it('상한으로 자르면 보이는 예고를 전부 먼저 보내고 무음 짝은 남는 만큼만 보낸다', async () => {
+    mockDB.pushResult(
+      Array.from({ length: 20 }, (_, i) => ({ uid: 'warned', gid: null, token: `and-${i}`, platform: 'android' })),
+    );
+    await sendBillingStateSignals(mockDB.client as never, ENV, {
+      planChangedUserIds: ['warned'],
+      deletionWarningUserPks: ['warned'],
+      retentionDays: 3,
+      maxMessages: 37,
+    });
+    expect(fcmSent).toHaveLength(37);
+    expect(fcmSent.filter((m) => m.data?.type === 'voice_deletion_warning')).toHaveLength(20);
+    expect(fcmSent.filter((m) => m.data?.type === 'plan_changed')).toHaveLength(17);
+  });
+
   it('iOS 는 예고 alert 와 앱을 깨우는 무음 신호를 둘 다 받는다(alert 는 앱을 깨우지 못한다)', async () => {
     mockDB.pushResult([{ uid: 'ios-user', gid: null, token: 'ios-tok', platform: 'ios' }]);
     await sendBillingStateSignals(mockDB.client as never, ENV, {
