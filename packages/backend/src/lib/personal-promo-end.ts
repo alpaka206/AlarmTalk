@@ -32,21 +32,23 @@ import type { Env } from '../types';
  * 1. **전환** — 대상마다 음성 보존 강등(클론 반납·공유 해제·남의 알람 강등) + 보관 행.
  * 2. **스윕** — 보관 기한이 온 사람을 묶어서 지운다.
  *
- * ⚠ **처리방침 약속은 "끝 + 3일을 넘기지 않는다" 다.** 대상은 수천 명일 수 있고 워커 한 실행의
- * subrequest 는 ~50 이다 — 예전 설계(틱당 전환 3명·스윕 2명, 전원 `delete_after = 끝 + 3일`)는
- * 2,500명이면 마지막 삭제가 약속보다 4일 넘게 늦었다. 그래서:
+ * ⚠ **약속은 "끝 + 3일 동안 보관한 뒤 삭제" 다**(앱의 종료 안내·처리방침·제품 결정 — 스펙 D6).
+ * 그래서 `delete_after` 는 **끝 + 3일보다 이르지 않다**([promoEndDeleteAfter]). 삭제는 그 시각에
+ * 시작해 subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — 2,500명이면 몇 시간). 예전에는 끝 +
+ * 3일 **전에** 다 지우려고 기한을 앞당겨 나눠 걸었는데, 그러면 먼저 전환된 사람이 3일을 못 채우고
+ * 지워졌다(2,500명이면 끝 + 62시간, 2만 명이면 끝 + 4시간 — 리뷰). 3일째에 이용권을 시작하려던
+ * 사람에게는 되돌릴 수 없는 약속 위반이다.
  * - **전용 크론**([PERSONAL_PROMO_END_CRON], 1분)이 이 일만 한다 — 실행마다 subrequest 를 따로
  *   받는다. 5분 틱은 전환 폴백(틱당 3명)만 한다.
  * - 전환·스윕 모두 **묶음**이다 — 사람 수와 무관하게 왕복 몇 번(`freeDowngradeWrites`·
  *   `deleteSensitiveVoiceDataForOwners` 가 사람마다와 같은 문장을 쓴다).
- * - `delete_after` 는 **끝 + 3일에서 거꾸로** 잡는다 — 남은 대상 수를 스윕 속도로 나눈 만큼(여유 2배)
- *   앞당겨, 전원이 끝 + 3일 전에 지워지게 한다([promoEndDeleteAfter]). 정시로 내려 잡아 푸시가
- *   적는 시각과 같게 한다.
+ * - 한 사람의 실패가 나머지를 굶기지 않는다 — 스윕이 아무도 못 지운 실행은 같은 실행에서 전환으로
+ *   넘어가고(D10), 스윕 실패·기한 초과 경보는 시간당 한 번만 올린다([isPromoEndAlertSlot]).
  */
 
 export { PERSONAL_PROMO_END_CRON };
 
-/** 전용 크론의 주기 — 스윕 속도 계산의 단위([PERSONAL_PROMO_END_CRON] 과 짝). */
+/** 전용 크론의 주기([PERSONAL_PROMO_END_CRON] 과 짝) — 경보 창([isPromoEndAlertSlot])의 폭이다. */
 const PROMO_END_CRON_PERIOD_MS = 60_000;
 
 /**
@@ -56,7 +58,7 @@ const PROMO_END_CRON_PERIOD_MS = 60_000;
 export const PROMO_END_RUN_BUDGET = 45;
 
 /**
- * 전용 크론의 전환 묶음 상한(사람). 전환 DB 왕복은 묶음 크기와 무관하게 다섯이고, 나머지는
+ * 전용 크론의 전환 묶음 상한(사람). 전환 DB 왕복은 묶음 크기와 무관하게 넷이고, 나머지는
  * 알림이다(기기마다 두 통 — 보이는 예고 + 재조회 신호). 그래서 사람 수가 아니라 **기기 수**로
  * 자른다([PROMO_END_NOTIFY_MESSAGES]) — 이 값은 기기가 없는 사람만 이어질 때의 상한이다.
  */
@@ -66,19 +68,40 @@ export const PROMO_END_TRANSITION_BATCH = 15;
 export const PROMO_END_TRANSITION_BATCH_MAIN = 3;
 
 /**
- * 전환 알림에 쓸 수 있는 메시지 수 — [PROMO_END_RUN_BUDGET] 에서 그 실행의 DB 왕복(스윕 확인 1 ·
- * 후보 1 · 남은 수 1 · 트랜잭션 3)·토큰 조회(1)·OAuth(1)·죽은 토큰 정리(1)를 뺀 값. 묶음은
- * `2 × 기기 수` 의 합이 이걸 넘지 않게 자른다(최소 한 명은 한다). 실측: 기기 18대 · 14명 = 44.
+ * 전환 한 번의 **알림 메시지 밖** 비용 — DB 왕복(후보 1 · 트랜잭션 3)·토큰 조회(1)·OAuth(1)·죽은
+ * 토큰 정리(1).
  */
-const PROMO_END_NOTIFY_MESSAGES = PROMO_END_RUN_BUDGET - 9;
+const PROMO_END_TRANSITION_OVERHEAD = 7;
+
+/**
+ * 전환 알림에 쓸 수 있는 메시지 수 — [PROMO_END_RUN_BUDGET] 에서 스윕 확인(1)과 전환의 나머지
+ * 비용([PROMO_END_TRANSITION_OVERHEAD])을 뺀 값. 묶음은 `2 × 기기 수` 의 합이 이걸 넘지 않게
+ * 자른다(최소 한 명은 한다). 실측은 `test/personal-promo-end.test.ts` 의 로그.
+ */
+const PROMO_END_NOTIFY_MESSAGES = PROMO_END_RUN_BUDGET - 1 - PROMO_END_TRANSITION_OVERHEAD;
+
+/**
+ * 묶음 스윕 한 번의 DB 왕복 상한 — 실측 28(사람 수와 무관하다) + 실패했을 때의 롤백 1. 스윕이
+ * 아무도 못 지운 실행이 전환으로 넘어갈 때([PROMO_END_NOTIFY_MESSAGES_AFTER_SWEEP]) 스윕이 이미
+ * 쓴 몫으로 뺀다 — 실패 지점을 모르니 최악으로 잡는다.
+ */
+const PROMO_END_SWEEP_DB_MAX = 29;
+
+/**
+ * 스윕이 아무도 못 지운 실행(실패·전원 유료)이 **이어서** 하는 전환의 알림 메시지 수 — 같은
+ * 실행이라 스윕 몫([PROMO_END_SWEEP_DB_MAX])을 먼저 뺀다. 작지만(기기 하나인 사람 넷) 0 이 아니다
+ * — 늘 실패하는 보관 행 하나가 전환을 통째로 멈추지 못한다(D10).
+ */
+const PROMO_END_NOTIFY_MESSAGES_AFTER_SWEEP =
+  PROMO_END_RUN_BUDGET - PROMO_END_SWEEP_DB_MAX - PROMO_END_TRANSITION_OVERHEAD;
 
 /** 묶음 전환이 실패했을 때 한 사람씩(격리) 다시 해 보는 인원 — 사람마다 왕복 다섯. */
 const PROMO_END_TRANSITION_FALLBACK = 3;
 
 /**
  * 전용 크론의 스윕 묶음(사람). 묶음 스윕의 DB 왕복은 사람 수와 거의 무관하고(실측 28), 나머지는
- * 지워진 목소리를 들고 있던 기기에 보내는 무음 신호다(사람마다 기기 수만큼).
- * [promoEndDeleteAfter] 가 이 속도를 전제로 기한을 나눠 건다 — 줄이면 거기도 같이 본다.
+ * 지워진 목소리를 들고 있던 기기에 보내는 무음 신호다(사람마다 기기 수만큼). 이 속도(분당 약
+ * 10명)가 끝 + 3일 이후 삭제가 끝나는 시간을 정한다 — 2,500명이면 네 시간 남짓.
  */
 export const PROMO_END_SWEEP_BATCH = 10;
 
@@ -96,11 +119,11 @@ const PROMO_END_SWEEP_NOTIFY_MESSAGES = PROMO_END_RUN_BUDGET - 31;
  */
 const PROMO_END_SWEEP_WINDOW_FACTOR = 10;
 
-/** 기한 계산의 여유 — 스윕이 이 배수만큼 느려도 끝 + 3일을 넘기지 않는다. */
-const PROMO_END_SWEEP_SAFETY = 2;
-
-/** 가장 늦게 전환된 사람도 끝 + 3일보다 이만큼은 먼저 지울 기회를 둔다. */
-const PROMO_END_MIN_LEAD_MS = 60 * 60 * 1000;
+/**
+ * 끝 + 3일을 **넘겨** 전환된 사람의 보관 — 지금부터 이만큼(정시로 올림). 약속 시각을 그대로 걸면
+ * 이미 지난 시각이라 삭제 예고 푸시보다 삭제가 먼저 온다.
+ */
+const PROMO_END_LATE_NOTICE_MS = 24 * 60 * 60 * 1000;
 
 /** 전용 크론의 전환은 끝부터 이만큼만 한다 — 뒤늦게 대상이 된 사람은 5분 틱 폴백이 잇는다. */
 const PROMO_END_DEDICATED_TRANSITION_MS = 24 * 60 * 60 * 1000;
@@ -108,8 +131,21 @@ const PROMO_END_DEDICATED_TRANSITION_MS = 24 * 60 * 60 * 1000;
 /** 전용 크론은 약속 시각(끝 + 3일)에서 이만큼 지나면 멈춘다 — 남은 건 5분 틱 스윕이 잇는다. */
 const PROMO_END_DEDICATED_TAIL_MS = 24 * 60 * 60 * 1000;
 
-/** 기한이 이만큼 지난 보관 행이 남아 있으면 경보한다(스윕이 밀리고 있다는 뜻). */
-const RETENTION_OVERDUE_ALERT_MS = 30 * 60 * 1000;
+/**
+ * 기한이 이만큼 지난 보관 행이 남아 있으면 경보한다(스윕이 밀리거나 막혔다는 뜻). 끝 + 3일에는
+ * 대상 전원의 기한이 한꺼번에 오고 스윕이 몇 시간에 걸쳐 지우므로(2,500명이면 네 시간 남짓),
+ * 그 정상 적체로는 울리지 않게 둔다.
+ */
+const RETENTION_OVERDUE_ALERT_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * 시간당 한 번만 올리는 경보 갈래 — 전용 크론은 1분마다 돌아서, 늘 실패하는 행 하나가 하루
+ * 1,440건씩 같은 경보를 쌓는다(리뷰). 로그는 매번 남는다.
+ */
+const PROMO_END_HOURLY_ALERT_STAGES: ReadonlySet<string> = new Set([
+  'sweep_batch',
+  'retention_overdue',
+]);
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -136,34 +172,49 @@ const PROMO_END_TARGET = `u.plan = 'free'
       AND COALESCE(vp.is_draft, 0) = 0
   )`;
 
-/** 처리방침의 약속 시각 — 끝 + 보관 일수. 어떤 종료 전환 대상도 이보다 늦게 지워지지 않는다. */
+/**
+ * 약속 시각 — 끝 + 보관 일수(3일). 종료 전환 대상의 목소리는 **이보다 먼저 지우지 않는다**(D6).
+ */
 export function promoEndRetentionDeadline(window: PersonalPromoWindow): Date {
   return new Date(window.endsAt.getTime() + PAID_VOICE_RETENTION_DAYS * 24 * HOUR_MS);
 }
 
 /**
- * 종료 전환이 거는 `delete_after`.
+ * 종료 전환이 거는 `delete_after` — **약속 시각(끝 + 3일)보다 이르지 않다**(D6).
  *
- * `약속 시각 − (여유 × ⌈남은 대상 ÷ 스윕 묶음⌉ × 크론 주기 + 최소 앞당김)` 을 **정시로 내린다.**
- * - 먼저 전환된 사람일수록(남은 대상이 많을 때) 일찍, 나중일수록 약속 시각에 가깝다. 스윕은 기한
- *   순서로 지우므로, 이렇게 나눠 걸면 스윕이 여유 배수만큼 느려도 마지막 사람까지 약속 시각 전에
- *   끝난다 — 전원을 약속 시각 한 점에 몰면 그때부터 지우기 시작해 반드시 늦는다.
- * - 정시로 내리는 것은 푸시 문구("11월 3일 오후 2시까지")가 실제 삭제 시작과 같게 하려는 것이다.
- *   내리는 쪽이라 약속보다 늦어지는 일은 없다.
- * - 대상이 아주 많아 앞당김이 지금보다 앞이면 지금 이후 첫 정시로 둔다 — 그때는 약속을 지킬 수
- *   없다는 뜻이고, 스윕의 기한 초과 경보가 드러낸다(스펙의 용량 한계 참조).
+ * - 약속 시각 전에 전환된 사람: 약속 시각 그대로. 앱의 종료 안내("3일 보관 후 삭제")·처리방침과
+ *   같은 시각이고, 스윕은 그때부터 지운다.
+ * - 약속 시각을 **넘겨** 전환된 사람(전용 크론이 빠져 폴백만 돈 경우 등): 지금 + 24시간. 약속
+ *   시각을 그대로 걸면 이미 지난 시각이라 삭제 예고 푸시보다 삭제가 먼저 온다.
+ * - 둘 다 **정시로 올린다** — 푸시가 적는 시각(분을 버린 한국 시간)이 실제 삭제 시작과 같게.
+ *   운영의 끝은 정시라 약속 시각은 그대로이고, 올리는 쪽이라 약속보다 이르지 않다.
  */
-export function promoEndDeleteAfter(
-  window: PersonalPromoWindow,
-  now: Date,
-  remainingTargets: number,
-): Date {
+export function promoEndDeleteAfter(window: PersonalPromoWindow, now: Date): Date {
   const deadline = promoEndRetentionDeadline(window).getTime();
-  const runs = Math.ceil(Math.max(remainingTargets, 1) / PROMO_END_SWEEP_BATCH);
-  const lead = PROMO_END_SWEEP_SAFETY * runs * PROMO_END_CRON_PERIOD_MS + PROMO_END_MIN_LEAD_MS;
-  const floored = Math.floor((deadline - lead) / HOUR_MS) * HOUR_MS;
-  const earliest = Math.ceil(now.getTime() / HOUR_MS) * HOUR_MS;
-  return new Date(Math.min(Math.max(floored, earliest), deadline));
+  const at = now.getTime() < deadline ? deadline : now.getTime() + PROMO_END_LATE_NOTICE_MS;
+  return new Date(Math.ceil(at / HOUR_MS) * HOUR_MS);
+}
+
+/**
+ * 경보 창 — **매시 첫 크론 주기**에만 참이다. 상태(표·기억) 없이 경보 갈래마다 시간당 최대 한
+ * 번을 보장한다([PROMO_END_HOURLY_ALERT_STAGES]). 늘 실패하는 행은 다음 정시에 다시 잡히고,
+ * 스윕 묶음에 드물게 끼는 행은 기한 초과 경보(가장 이른 행의 `uid`)가 드러낸다.
+ */
+export function isPromoEndAlertSlot(now: Date): boolean {
+  return now.getTime() % HOUR_MS < PROMO_END_CRON_PERIOD_MS;
+}
+
+/** [PROMO_END_HOURLY_ALERT_STAGES] 를 경보 창 밖에서 삼키는 훅. 나머지 갈래는 그대로 올린다. */
+function hourlyAlertHooks(hooks: PromoEndHooks | undefined, now: Date): PromoEndHooks | undefined {
+  const onError = hooks?.onError;
+  if (!onError) return hooks;
+  const open = isPromoEndAlertSlot(now);
+  return {
+    onError: (stage, err, tags) => {
+      if (!open && PROMO_END_HOURLY_ALERT_STAGES.has(stage)) return;
+      onError(stage, err, tags);
+    },
+  };
 }
 
 export interface PromoEndTransitioned {
@@ -202,11 +253,14 @@ export async function transitionPersonalPromoEnd(
     notifyMessages?: number | null;
     pivot?: string;
     exclude?: Set<string>;
+    /** 묶음이 실패했을 때 한 사람씩 다시 해 볼 인원 — 기본 [PROMO_END_TRANSITION_FALLBACK]. */
+    isolate?: number;
     hooks?: PromoEndHooks;
   } = {},
 ): Promise<PromoEndTransitioned[]> {
   if (!window || now.getTime() < window.endsAt.getTime()) return [];
   const limit = options.limit ?? PROMO_END_TRANSITION_BATCH_MAIN;
+  const isolate = options.isolate ?? PROMO_END_TRANSITION_FALLBACK;
   const exclude = options.exclude ?? new Set<string>();
   const pivot = options.pivot ?? crypto.randomUUID();
   const notifyMessages =
@@ -241,12 +295,8 @@ export async function transitionPersonalPromoEnd(
   }
   if (batch.length === 0) return [];
 
-  const remaining = await db.execute(`SELECT COUNT(*) AS n FROM users u WHERE ${PROMO_END_TARGET}`);
-  const deleteAfter = promoEndDeleteAfter(
-    window,
-    now,
-    Number(remaining.rows[0]?.n ?? batch.length),
-  );
+  // 남은 대상 수를 세지 않는다 — 기한은 사람 수와 무관하게 약속 시각이다(D6).
+  const deleteAfter = promoEndDeleteAfter(window, now);
   const deleteAfterIso = deleteAfter.toISOString();
 
   try {
@@ -306,7 +356,7 @@ export async function transitionPersonalPromoEnd(
   // 묶음이 실패했다 — 앞의 몇 명만 한 사람씩(격리) 다시 한다. 실패한 사람은 이 실행에서 빼고
   // 경보한다. 나머지는 다음 실행이 다른 기준점에서 다시 고른다.
   const transitioned: PromoEndTransitioned[] = [];
-  for (const userPk of batch.slice(0, PROMO_END_TRANSITION_FALLBACK)) {
+  for (const userPk of batch.slice(0, isolate)) {
     try {
       const done = await withWriteTransaction(db, async (tx) => {
         const still = await tx.execute({
@@ -369,11 +419,15 @@ export async function notifyPromoEndTransitioned(
 export interface BulkSweepResult {
   /** 이번에 묶음으로 시도한 사람들(실패해도 채운다). */
   attempted: string[];
+  /** 묶음 트랜잭션이 실패해 통째로 롤백됐는가. */
+  failed: boolean;
   cleanedUserPks: string[];
   targets: DowngradedAlarm[];
   voiceAccessRevokedUserIds: string[];
   /** 기한이 가장 먼저 온 보관 행의 기한 — 밀림 경보에 쓴다. 없으면 null. */
   oldestDueAt: string | null;
+  /** 그 행의 사람(PK) — 경보에 식별자로 싣는다. 늘 실패하는 행은 언제나 여기 남는다. */
+  oldestDueUserPk: string | null;
 }
 
 /**
@@ -407,10 +461,12 @@ export async function sweepDueRetentionInBulk(
     options.notifyMessages === undefined ? PROMO_END_SWEEP_NOTIFY_MESSAGES : options.notifyMessages;
   const empty: BulkSweepResult = {
     attempted: [],
+    failed: false,
     cleanedUserPks: [],
     targets: [],
     voiceAccessRevokedUserIds: [],
     oldestDueAt: null,
+    oldestDueUserPk: null,
   };
   const due = await db.execute({
     sql: `SELECT r.user_id, r.delete_after,
@@ -421,6 +477,7 @@ export async function sweepDueRetentionInBulk(
   });
   if (due.rows.length === 0) return empty;
   const oldestDueAt = String(due.rows[0]!.delete_after);
+  const oldestDueUserPk = String(due.rows[0]!.user_id);
   const pool = due.rows.map((r) => ({ id: String(r.user_id), devices: Number(r.devices ?? 0) }));
   // 피셔–예이츠 — 가장 급한 창 안에서 순서를 섞는다.
   for (let i = 0; i < pool.length - 1; i++) {
@@ -477,10 +534,12 @@ export async function sweepDueRetentionInBulk(
     );
     return {
       attempted: batch,
+      failed: false,
       cleanedUserPks: outcome.unpaid,
       targets: outcome.revocation.downgradedAlarms,
       voiceAccessRevokedUserIds: revokedUserIds,
       oldestDueAt,
+      oldestDueUserPk,
     };
   } catch (err) {
     logStructured('error', {
@@ -494,7 +553,7 @@ export async function sweepDueRetentionInBulk(
       // 식별자만 — 어느 묶음이 실패했는지 되짚을 수 있게(앞 몇 명).
       uids: batch.slice(0, 5).join(','),
     });
-    return { ...empty, attempted: batch, oldestDueAt };
+    return { ...empty, attempted: batch, failed: true, oldestDueAt, oldestDueUserPk };
   }
 }
 
@@ -521,11 +580,16 @@ export interface PromoEndRunResult {
 /**
  * 크론 한 실행 몫.
  *
- * - `dedicated`(전용 1분 크론): 기한이 온 보관 행이 있으면 **스윕만**, 없으면 전환 한 묶음. 한
- *   실행에 둘 다 하지 않는다 — 각각이 subrequest 를 거의 다 쓴다. 전환은 끝부터 하루 동안만,
- *   실행 전체는 약속 시각 + 하루까지만 한다(그 뒤는 5분 틱이 잇는다).
+ * - `dedicated`(전용 1분 크론): 기한이 온 보관 행이 있으면 **스윕 먼저**. 스윕이 누군가를 지웠으면
+ *   그 실행은 거기서 끝이다(스윕이 subrequest 를 거의 다 쓴다). 스윕이 **아무도 못 지웠으면**(묶음
+ *   실패·전원 유료라 풀어 주기만 함) 같은 실행에서 전환으로 넘어간다 — 스윕이 쓴 몫을 빼고 작은
+ *   묶음으로(D10). 예전에는 "스윕 또는 전환" 이라, 늘 실패하는 보관 행 **하나**가 기한이 온 채
+ *   남아 있으면 매 실행 스윕만 시도하다 실패해 전용 크론의 전환이 통째로 멈췄다(리뷰).
+ *   전환은 끝부터 하루 동안만, 실행 전체는 약속 시각 + 하루까지만 한다(그 뒤는 5분 틱이 잇는다).
  * - `main`(5분 틱): 전환 폴백(틱당 3명). 전용 크론이 빠져 있어도 전환은 멈추지 않는다 — 스윕은
  *   원래 있던 사람마다 스윕이 한다.
+ * - 스윕 실패(`sweep_batch`)·기한 초과(`retention_overdue`) 경보는 **매시 한 번**만 올린다
+ *   ([isPromoEndAlertSlot]) — 로그는 매 실행 남긴다.
  *
  * 끝 전이거나 스위치가 꺼져 있으면 **DB 를 부르지 않는다**(기간 내내 1분마다 도는 실행이다).
  */
@@ -539,11 +603,14 @@ export async function runPersonalPromoEnd(
   const window = resolvePersonalPromo(env, now).window;
   if (!window || now.getTime() < window.endsAt.getTime()) return result;
   const sinceEnd = now.getTime() - window.endsAt.getTime();
+  const hooks = hourlyAlertHooks(options.hooks, now);
   const pushEnv = env ?? {};
   const pushConfigured = Boolean(
     (pushEnv.FIREBASE_PROJECT_ID && pushEnv.FIREBASE_SERVICE_ACCOUNT_JSON) ||
     (pushEnv.APNS_KEY_ID && pushEnv.APNS_PRIVATE_KEY && pushEnv.APPLE_TEAM_ID),
   );
+  let notifyMessages: number | null = pushConfigured ? PROMO_END_NOTIFY_MESSAGES : null;
+  let isolate = PROMO_END_TRANSITION_FALLBACK;
 
   if (options.role === 'dedicated') {
     if (now.getTime() > promoEndRetentionDeadline(window).getTime() + PROMO_END_DEDICATED_TAIL_MS) {
@@ -552,20 +619,28 @@ export async function runPersonalPromoEnd(
     const sweep = await sweepDueRetentionInBulk(db, now, {
       promoCoversFree: false,
       notifyMessages: pushConfigured ? PROMO_END_SWEEP_NOTIFY_MESSAGES : null,
-      hooks: options.hooks,
+      hooks,
     });
     result.sweep = sweep;
     if (sweep.oldestDueAt) {
       const overdue = now.getTime() - Date.parse(sweep.oldestDueAt);
       if (overdue > RETENTION_OVERDUE_ALERT_MS) {
-        options.hooks?.onError?.(
+        const overdueMinutes = String(Math.round(overdue / 60_000));
+        const uid = sweep.oldestDueUserPk ?? '';
+        logStructured('warn', {
+          at: 'billing.personal_promo_end',
+          action: 'RETENTION_OVERDUE',
+          overdue_minutes: overdueMinutes,
+          uid,
+        });
+        hooks?.onError?.(
           'retention_overdue',
-          new Error(`paid_voice_retention overdue by ${Math.round(overdue / 60_000)} min`),
-          { overdue_minutes: String(Math.round(overdue / 60_000)) },
+          new Error(`paid_voice_retention overdue by ${overdueMinutes} min`),
+          { overdue_minutes: overdueMinutes, uid },
         );
       }
     }
-    if (sweep.attempted.length > 0) {
+    if (sweep.cleanedUserPks.length > 0) {
       await notifyDowngradedAlarms(
         db,
         pushConfigured ? pushEnv : undefined,
@@ -575,13 +650,20 @@ export async function runPersonalPromoEnd(
       return result;
     }
     if (sinceEnd > PROMO_END_DEDICATED_TRANSITION_MS) return result;
+    if (sweep.attempted.length > 0) {
+      // 스윕이 아무도 못 지웠다 — 그 몫(최악)을 빼고 작은 묶음으로 전환을 잇는다(D10). 격리 재시도도
+      // 한 사람만: 스윕 실패 뒤 전환 묶음까지 실패하면 남은 subrequest 가 거의 없다.
+      notifyMessages = pushConfigured ? PROMO_END_NOTIFY_MESSAGES_AFTER_SWEEP : null;
+      isolate = 1;
+    }
   }
 
   result.transitioned = await transitionPersonalPromoEnd(db, window, now, {
     limit:
       options.role === 'dedicated' ? PROMO_END_TRANSITION_BATCH : PROMO_END_TRANSITION_BATCH_MAIN,
-    notifyMessages: pushConfigured ? PROMO_END_NOTIFY_MESSAGES : null,
-    hooks: options.hooks,
+    notifyMessages,
+    isolate,
+    hooks,
   });
   await notifyPromoEndTransitioned(db, pushEnv, result.transitioned, now);
   return result;

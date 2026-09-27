@@ -805,6 +805,19 @@ alarmMutation.patch('/:id', async (c) => {
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
   // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
   const ownerIds = callerOwnerIds(c) as [string, string];
+  // ⚠ **목소리는 저장된 값에서 바뀔 때만 다시 본다**(스펙 D8 — `docs/spec/billing-lifecycle.md`
+  // 「기간 한정 개인 플랜」 공유 목소리 표). 안드로이드 동기화는 켜기·끄기·시각만 고쳐도
+  // `voice_profile_id` 를 **매번 그대로** 보낸다. 공유 목소리 주인이 결제 보류(원시 free)가 되면
+  // 소유권 게이트가 그 목소리를 막으므로, 그대로 보낸 값까지 보면 토글마다 404 → 생성 폴백도 404
+  // → 알람이 동기화 실패로 남는다(리뷰). 바뀌지 않은 값은 새 참조를 만들지 않는다 — 이미 이 알람에
+  // 있던 값이고, 알람 소유는 위 조회가 확인했다. 새 목소리로 **바꾸는** PATCH 와 POST 는 언제나
+  // 본다. (`message_id` 는 보낼 때마다 본다 — 기존 규칙 그대로다.)
+  const changedVoiceProfileId =
+    body.voice_profile_id !== undefined &&
+    body.voice_profile_id !== null &&
+    body.voice_profile_id !== current.voice_profile_id
+      ? body.voice_profile_id
+      : null;
   if (
     body.message_id !== undefined &&
     body.message_id !== null &&
@@ -813,9 +826,8 @@ alarmMutation.patch('/:id', async (c) => {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
   if (
-    body.voice_profile_id !== undefined &&
-    body.voice_profile_id !== null &&
-    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+    changedVoiceProfileId !== null &&
+    !(await voiceProfileBelongsToCaller(db, changedVoiceProfileId, ownerIds))
   ) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
@@ -906,13 +918,11 @@ alarmMutation.patch('/:id', async (c) => {
       args,
     });
   const updateResult =
-    (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
-    (body.message_id !== undefined && body.message_id !== null)
+    changedVoiceProfileId !== null || (body.message_id !== undefined && body.message_id !== null)
       ? await withWriteTransaction(db, async (tx) => {
           if (
-            body.voice_profile_id !== undefined &&
-            body.voice_profile_id !== null &&
-            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+            changedVoiceProfileId !== null &&
+            !(await voiceProfileBelongsToCaller(tx, changedVoiceProfileId, ownerIds))
           ) {
             return { status: 'voice_not_found' as const, result: null };
           }

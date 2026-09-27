@@ -287,7 +287,7 @@ export async function schedulePaidVoiceRetention(
 
 /**
  * 보관 기한을 **정해진 시각으로** 거는(upsert) 문장 — `schedulePaidVoiceRetention` 과 기간 한정
- * 개인 플랜 종료 전환(`lib/personal-promo-end.ts`, 기한을 끝 + 3일 안쪽으로 미리 정한다)이
+ * 개인 플랜 종료 전환(`lib/personal-promo-end.ts`, 기한을 끝 + 3일로 미리 정한다)이
  * 같은 문장을 쓴다.
  */
 export function paidVoiceRetentionUpsertStatement(

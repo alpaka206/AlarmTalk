@@ -132,6 +132,10 @@ export function activeSubscriptionRowExistsSql(userPkExpr: string): string {
  * 결제 보류 계정(원시 free + `active` 구독 행)에도 값이 **있다** — 앱은 이 값의 존재로 "원시
  * plan 이 free 다" 를 알고, 남은 구독 행으로 커플·가족 등급을 올리지 않는다(보류 규칙). 대신
  * `deletes_voices_at_end` 가 `false` 라 종료 안내가 삭제를 말하지 않는다.
+ *
+ * `computed_at` 은 **이 계산에 쓴 시각**(`promo.now` — 요청마다 한 번 푼 서버 시계)이다. 계산값
+ * `plan` 도 같은 `promo` 로 풀므로 둘은 같은 순간의 답이다. 앱은 이걸 낡은 캐시 판정의 '받은
+ * 시각' 으로 쓴다(스펙 D1·D7) — 초 단위로 **내리므로** 끝 직전의 답이 끝 뒤로 찍히지 않는다.
  */
 export function personalPromoField(
   rawPlan: string | null | undefined,
@@ -140,12 +144,13 @@ export function personalPromoField(
     /** `status = 'active'` 구독 행이 있는가 — [activeSubscriptionRowExistsSql] 과 같은 조건. */
     hasActiveSubscriptionRow: boolean;
   },
-): PersonalPromo | null {
+): Required<PersonalPromo> | null {
   if (rawPlan !== 'free' || !promo.active || !promo.window) return null;
   return {
     ends_at: isoSeconds(promo.window.endsAt),
     notice_from: isoSeconds(personalPromoNoticeFrom(promo.window.endsAt)),
     deletes_voices_at_end: !standing.hasActiveSubscriptionRow,
+    computed_at: isoSeconds(promo.now),
   };
 }
 
@@ -158,7 +163,7 @@ export async function loadPersonalPromoField(
   userPk: string,
   rawPlan: string | null | undefined,
   promo: PersonalPromoState,
-): Promise<PersonalPromo | null> {
+): Promise<Required<PersonalPromo> | null> {
   if (rawPlan !== 'free' || !promo.active || !promo.window) return null;
   const res = await db.execute({
     sql: `SELECT ${activeSubscriptionRowExistsSql('?')} AS has_row`,

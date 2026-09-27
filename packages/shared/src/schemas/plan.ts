@@ -141,11 +141,17 @@ export function personalPromoNoticeFrom(endsAt: Date): Date {
  *   `status = 'active'` 구독 행이 없다). 결제 보류(ON_HOLD·PAUSED)처럼 행이 남아 있으면 `false`
  *   — 목소리는 삭제 예약되지 않으므로 앱은 종료 안내에서 "등록한 목소리는 3일 보관 후
  *   삭제돼요" 문장을 뺀다. 구버전 앱은 이 키를 모르고 무시한다.
+ * - `computed_at` = 서버가 이 답(계산값 `plan` 과 이 조각)을 **계산한 시각** — 서버 시계, 초
+ *   단위로 내린 값. 앱은 이걸 낡은 캐시 판정(스펙 D1)의 '받은 시각' 으로 쓴다 — 기기 시계가
+ *   서버보다 빠르면 끝 직전에 계산된 답이 끝 뒤에 받은 것으로 찍혀 영영 권위로 남기 때문이다.
+ *   이 조각은 구간 안에서만 실리므로 값은 언제나 `ends_at` 보다 이르다. **optional** 이다 —
+ *   이 키가 없는 서버·테스트 응답도 읽혀야 한다(없으면 앱은 받은 순간의 기기 시계를 쓴다).
  */
 export const PersonalPromoSchema = z.object({
   ends_at: z.iso.datetime(),
   notice_from: z.iso.datetime(),
   deletes_voices_at_end: z.boolean(),
+  computed_at: z.iso.datetime().optional(),
 });
 export type PersonalPromo = z.infer<typeof PersonalPromoSchema>;
 export const PersonalPromoFieldSchema = PersonalPromoSchema.nullable().optional();

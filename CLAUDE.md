@@ -108,7 +108,7 @@
 - **페이지네이션 상한**: `limit`/`offset`은 `Math.min(...,100)`/`Math.max(...,0)`로 클램프 후 바인딩(신규 리스트 엔드포인트 필수).
 - **요청 입력 검증**: 바디는 `@alarmtalk/shared` zod 스키마로 `safeParse`, 경로/쿼리 파라미터도 검증·바운드.
 - **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 `*BelongsToCaller` 헬퍼). 예: `alarm-mutation.ts`의 `voiceProfileBelongsToCaller`/`messageBelongsToCaller`.
-- ⚠ **`messageBelongsToCaller`(쓰기 허용)와 `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다 — 항상 같이 고친다.** 어긋나면 양방향으로 사고가 난다: 쓰기가 좁으면 **들리는데 저장이 안 되고**(공유 클론 프리셋 갈래 누락, 2026-08-05 실기기 재현 — 알람이 로컬에만 남고 서버 sync 가 계속 404), 쓰기가 넓으면 **저장은 되는데 받을 수 없는** 알람이 생긴다(소유자 플랜 게이트 누락, Codex #685). 현재 허용 갈래 셋: 본인 소유 / 시스템 스톡 프리셋 / 같은 플랜 그룹이 공유한 목소리의 프리셋 클립. 마지막 갈래는 **소유자가 유료일 때만** — `ON_HOLD/PAUSED` 는 회복형이라 그룹·`is_shared` 를 그대로 두고 `users.plan` 만 회수하므로(`resolvePlanAfterSuspend`), 플랜을 안 보면 오디오 라우트가 `VOICE_LOCKED_FREE_PLAN` 으로 막을 클립을 알람에 심게 된다. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로 — **목소리 주인이 호출자 본인이면 계산값**(`hasPersonalVoiceAccess` — 기간 한정 개인 플랜 반영), **남의 목소리(공유 갈래)는 주인의 원시값**(`isPaidVoicePlan`)이다. ⚠ 둘을 한 헬퍼로 통일 하지 말 것 — 공유 갈래를 계산값으로 바꾸면 결제 보류(ON_HOLD/PAUSED) 그룹의 공유 목소리가 기간 동안 되살아난다(그룹·`is_shared`·주인 클론이 보류 중에도 남는다). 같은 원시 규칙을 `/tts/generate` 의 공유 갈래(`findUsableVoiceProfile` → 호출자·주인 원시)와 `voiceProfileBelongsToCaller` 도 따른다 — 넷 중 하나만 고치지 말 것. 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
+- ⚠ **`messageBelongsToCaller`(쓰기 허용)와 `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다 — 항상 같이 고친다.** 어긋나면 양방향으로 사고가 난다: 쓰기가 좁으면 **들리는데 저장이 안 되고**(공유 클론 프리셋 갈래 누락, 2026-08-05 실기기 재현 — 알람이 로컬에만 남고 서버 sync 가 계속 404), 쓰기가 넓으면 **저장은 되는데 받을 수 없는** 알람이 생긴다(소유자 플랜 게이트 누락, Codex #685). 현재 허용 갈래 셋: 본인 소유 / 시스템 스톡 프리셋 / 같은 플랜 그룹이 공유한 목소리의 프리셋 클립. 마지막 갈래는 **소유자가 유료일 때만** — `ON_HOLD/PAUSED` 는 회복형이라 그룹·`is_shared` 를 그대로 두고 `users.plan` 만 회수하므로(`resolvePlanAfterSuspend`), 플랜을 안 보면 오디오 라우트가 `VOICE_LOCKED_FREE_PLAN` 으로 막을 클립을 알람에 심게 된다. 판정은 SQL 에 목록을 베끼지 말고 헬퍼로 — **목소리 주인이 호출자 본인이면 계산값**(`hasPersonalVoiceAccess` — 기간 한정 개인 플랜 반영), **남의 목소리(공유 갈래)는 주인의 원시값**(`isPaidVoicePlan`)이다. ⚠ 둘을 한 헬퍼로 통일 하지 말 것 — 공유 갈래를 계산값으로 바꾸면 결제 보류(ON_HOLD/PAUSED) 그룹의 공유 목소리가 기간 동안 되살아난다(그룹·`is_shared`·주인 클론이 보류 중에도 남는다). 같은 원시 규칙을 `/tts/generate` 의 공유 갈래(`findUsableVoiceProfile` → 호출자·주인 원시)와 `voiceProfileBelongsToCaller` 도 따른다 — 넷 중 하나만 고치지 말 것. 단 `PATCH /alarm` 은 `voice_profile_id` 가 **저장된 값에서 바뀔 때만** `voiceProfileBelongsToCaller` 를 본다(POST 는 언제나) — 안드로이드 동기화는 토글마다 그 값을 그대로 보내서, 다 보면 보류 주인의 공유 목소리 알람이 켜고 끌 때마다 404 로 동기화에 실패한다. "IDOR 검사를 빠짐없이" 로 되돌리지 말 것(스펙 D8). 상세: `docs/spec/billing-lifecycle.md` 「기간 한정 개인 플랜」.
 - **R2 object key**: 사용자 파생 세그먼트는 `encodeURIComponent`+새니타이즈 또는 JWT `sub`+`crypto.randomUUID()`로 생성(경로 조작 차단).
 - **길이 상한은 서버에도 둔다.** 클라의 `take(n)` 은 앱을 거칠 때만 유효하다 — 직접 호출하면
   거대한 문자열이 조회·쓰기 트랜잭션까지 그대로 흘러간다(`POST /code/register` 가 실제로 그랬다).
@@ -230,6 +230,11 @@
   `VoiceProfileManagementPanel` 의 목소리 등록 `Dialog`(같은 이유 — 자기 창이다).
   ⚠ **새 `Dialog`·`ModalBottomSheet` 에 입력칸을 넣으면 거기에도 걸어야 한다.** 창이 다르면
   본체 제스처가 닿지 않는다 — 판정은 "그 입력칸이 본체 창 안에 있는가" 하나다.
+  ⚠ **`Dialog`·`ModalBottomSheet` 를 직접 새로 만들면 입력칸이 없어도 `TrackOpenModal()` 을
+  부른다**(`ui/components/OpenModalRegistry.kt`, 창을 여는 같은 조건 블록 안에서). 진입마다 뜨는
+  개인 플랜 종료 안내가 "다른 창이 떠 있나" 를 이 등록부로 보고 기다린다 — 창이 스스로 적지
+  않으면 그 창 **위로** 안내가 겹쳐 뜬다. 껍데기(`IosAlertDialog`·`WakerSelectionSheet`·
+  `WakerFormSheet`)는 이미 부른다. 규칙은 `docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」.
 - **iOS**: `KeyboardDismissGesture` — 창에 단 UIKit 탭 인식기가 **터치가 입력 컨트롤 위인지**를
   델리게이트에서 가른다(`cancelsTouchesInView = false`).
   ⚠ **`simultaneousGesture` 로 만들지 말 것** — 모든 탭에 함께 발화해 방금 focus 된 칸을
