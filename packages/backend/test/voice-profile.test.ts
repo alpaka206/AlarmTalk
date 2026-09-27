@@ -505,6 +505,42 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     );
   });
 
+  it('초안에서 목소리의 결(voice_energy)을 관계·호칭과 함께 저장하고, 미리듣기를 비운다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '남자친구', listener_title: '자기', voice_energy: 'calm' }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).profile.voice_energy).toBe('calm');
+    const update = mockDB.calls.find((call) => call.sql.includes('UPDATE voice_profiles'));
+    expect(update?.sql).toContain('voice_energy = ?');
+    expect(update?.sql).toContain('preview_text = NULL');
+    expect(update?.args).toContain('calm');
+  });
+
+  it('결을 보내지 않은 구버전 앱 요청은 voice_energy 컬럼을 건드리지 않는다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '엄마', listener_title: '우리 딸' }),
+    );
+    expect(res.status).toBe(200);
+    const update = mockDB.calls.find((call) => call.sql.includes('UPDATE voice_profiles'));
+    expect(update?.sql).not.toContain('voice_energy');
+  });
+
+  it('모르는 결 값은 400 INVALID_VOICE_ENERGY — 조용히 자동으로 바꾸지 않는다', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/relationship`, { relationship_label: '엄마', voice_energy: 'loud' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_ENERGY');
+  });
+
   it('정식 등록 후 관계와 호칭은 프리셋 정합성을 위해 변경할 수 없다', async () => {
     mockDB.pushResult([{ id: V1, is_draft: 0, previewed_at: '2026-07-14 00:00:00' }]);
 

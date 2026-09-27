@@ -7,6 +7,7 @@ import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-pro
 import {
   extractDeliveryTags,
   parseSpeechStyle,
+  withVoiceEnergy,
   prepareAlarmTextWithVertex,
   generatePrerenderClipText,
   alarmTextRejectionReasonOf,
@@ -189,6 +190,21 @@ export const STOCK_CLIP_PRESETS = [
 const RENAMED_STOCK_CATEGORIES: Readonly<Record<string, string>> = {
   love: 'cheer',
 };
+
+/**
+ * 클론 시드(`CLONE_CLIP_SEEDS`)와 **같은 의도**를 사람이 직접 쓴 기본 목소리 대사. 두 목록은 카테고리와
+ * 순서가 맞물려 있다(날씨 9·운세 5·응원 3, 약은 앞의 2개). 문구 생성이 리듬·쉼·태그 거는 법을
+ * 본보기로 삼는다. 짝이 없으면(인사·약 3번째 등) null.
+ *
+ * ⚠ 인사(greeting)는 짝이 아니다 — 기본 목소리의 인사는 '목소리 소개' 이고 클론 인사 시드는 '아침 인사' 다.
+ */
+export function stockReferenceLine(category: string, index: number, language: string): string | null {
+  const key = normalizeStockCategory(category);
+  if (key === STOCK_GREETING_CATEGORY) return null;
+  const preset = STOCK_CLIP_PRESETS.find((p) => p.category === key);
+  const texts = preset?.texts[language as (typeof STOCK_CLIP_LANGUAGES)[number]] as readonly string[] | undefined;
+  return texts?.[index] ?? null;
+}
 
 /** 옛 카테고리 이름을 현재 이름으로 접는다. 모르는 값은 그대로 돌려준다(검증은 호출부 몫). */
 export function normalizeStockCategory(category: string): string {
@@ -452,7 +468,10 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style
+    // ⚠ voice_energy 는 마이그레이션 #122 의 새 컬럼이다. 배포 직후 마이그레이션 전 창에는 이 조회가
+    //   실패해 그 회차가 건너뛰어지고 cron 이 다음 주기에 다시 잡는다(fail-closed — 결 없이 만든
+    //   클립을 영구 저장하지 않는다).
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -471,7 +490,7 @@ export async function listReadyCloneVoices(
     const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
-    const speechStyle = parseSpeechStyle(row.speech_style);
+    const speechStyle = withVoiceEnergy(parseSpeechStyle(row.speech_style), row.voice_energy);
     out.push({
       id,
       name: String(row.name),
@@ -1242,6 +1261,7 @@ export async function generateStockClip(
       defaultTag: target.defaultTag,
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
+      humanReference: stockReferenceLine(target.category, target.variantIndex, language),
     });
     // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
     // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나

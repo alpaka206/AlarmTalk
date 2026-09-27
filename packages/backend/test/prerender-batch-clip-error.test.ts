@@ -80,7 +80,7 @@ async function prerenderDb(): Promise<{ db: Client; path: string }> {
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT, elevenlabs_voice_id TEXT,
       status TEXT DEFAULT 'ready', is_system INTEGER DEFAULT 0, is_draft INTEGER DEFAULT 0,
       relationship_label TEXT DEFAULT '', listener_title TEXT DEFAULT '',
-      preview_text TEXT, speech_style TEXT, deleted_at TEXT
+      preview_text TEXT, speech_style TEXT, voice_energy TEXT, deleted_at TEXT
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, user_id TEXT NOT NULL, voice_profile_id TEXT NOT NULL,

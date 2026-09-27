@@ -458,5 +458,9 @@
   "120": {
     "name": "event-slot-cursor",
     "sha": "45744c3601654e26"
+  },
+  "122": {
+    "name": "voice-profiles-voice-energy",
+    "sha": "38e454e725fa771a"
   }
 }

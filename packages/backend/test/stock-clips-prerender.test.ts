@@ -32,6 +32,7 @@ async function setupDb() {
       listener_title TEXT DEFAULT '',
       preview_text TEXT,
       speech_style TEXT,
+      voice_energy TEXT,
       deleted_at TEXT
     );
     CREATE TABLE messages (
@@ -287,6 +288,22 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     const targets = await findMissingStockTargets(db, voices);
     expect(targets.length).toBeGreaterThan(0);
     expect(targets.every((t) => t.styleReference === '딸, 좋은 아침이야. 오늘도 잘 보내자.')).toBe(true);
+  });
+
+  it('등록 때 고른 목소리의 결(voice_energy)이 말투 분석보다 앞서 모든 톤 적응 대상에 실린다', async () => {
+    const db = await setupDb();
+    await db.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status, is_system, is_draft, relationship_label, listener_title, speech_style, voice_energy)
+            VALUES ('clone-calm', 'owner-1', 'clone-calm', 'el_z', 'ready', 0, 0, '남자친구', '자기', ?, 'calm')`,
+      args: [JSON.stringify({ dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'lively' })],
+    });
+    const voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: 'clone-calm', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c3' },
+    ]);
+    expect(voices[0]!.speechStyle?.energy).toBe('calm');
+    expect(voices[0]!.speechStyle?.register).toBe('banmal');
+    const targets = await findMissingStockTargets(db, voices);
+    expect(targets.every((t) => t.speechStyle?.energy === 'calm')).toBe(true);
   });
 });
 

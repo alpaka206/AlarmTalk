@@ -36,6 +36,7 @@ import {
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import {
+  VoiceEnergySchema,
   VoicePreviewTextUpdateSchema,
   VOICE_NAME_MAX_LENGTH,
   normalizeDisplayName,
@@ -1593,12 +1594,27 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    voice_energy?: unknown;
+    voiceEnergy?: unknown;
   };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
+
+  // 목소리의 결(경쾌/차분) — 관계·호칭과 같은 '페르소나' 라 초안에서만 받는다. 보내지 않으면 그대로 둔다
+  // (구버전 앱은 이 필드를 모른다). 모르는 값은 거절한다 — 조용히 '자동' 으로 바꾸면 고른 결이 사라진다.
+  const rawEnergy = body.voice_energy ?? body.voiceEnergy;
+  const hasVoiceEnergy = rawEnergy !== undefined && rawEnergy !== null;
+  const energyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(rawEnergy) : null;
+  if (energyParsed && !energyParsed.success) {
+    return c.json(
+      { error: "voice_energy must be '', 'lively' or 'calm'", error_code: 'INVALID_VOICE_ENERGY' },
+      400,
+    );
+  }
+  const voiceEnergy = energyParsed?.success ? energyParsed.data : null;
 
   const relationshipLabel = normalizeRelationshipLabel(
     body.relationship_label ?? body.relationshipLabel,
@@ -1643,15 +1659,19 @@ voiceProfile.patch('/:id/relationship', async (c) => {
         409,
       );
     }
+    // 결을 보냈을 때만 그 컬럼을 쓴다 — 안 보낸 구버전 앱 요청은 새 컬럼(#122)을 건드리지 않는다.
+    // 결이 바뀌면 관계·호칭처럼 미리듣기를 비워 새 결로 다시 만든다.
     const updated = await db.execute({
       sql: `UPDATE voice_profiles
-            SET relationship_label = ?, listener_title = ?, previewed_at = NULL,
+            SET relationship_label = ?, listener_title = ?,${hasVoiceEnergy ? ' voice_energy = ?,' : ''} previewed_at = NULL,
                 preview_claimed_at = NULL, preview_claim_token = NULL,
                 preview_text = NULL, preview_tag = NULL,
                 updated_at = datetime('now')
             WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1`,
-      args: [relationshipLabel, listenerTitle, id, userPk, userId],
+      args: hasVoiceEnergy
+        ? [relationshipLabel, listenerTitle, voiceEnergy || null, id, userPk, userId]
+        : [relationshipLabel, listenerTitle, id, userPk, userId],
     });
     if ((updated.rowsAffected ?? 0) === 0) {
       return c.json(
@@ -1687,6 +1707,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       id,
       relationship_label: relationshipLabel,
       listener_title: listenerTitle,
+      ...(hasVoiceEnergy && owned.rows.length > 0 ? { voice_energy: voiceEnergy ?? '' } : {}),
     },
   });
 });

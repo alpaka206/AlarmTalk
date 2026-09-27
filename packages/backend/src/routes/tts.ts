@@ -27,6 +27,7 @@ import {
   deriveAlarmDisplayText,
   normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
+  withVoiceEnergy,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -1098,8 +1099,9 @@ tts.post('/generate', async (c) => {
               listenerTitle: draftPreviewListenerTitle,
               targetLanguage: storedPreviewLanguage,
               defaultTag: greetingSeed.defaultTag,
-              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
-              speechStyle: parseSpeechStyle(vp.speech_style),
+              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
+              // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
+              speechStyle: withVoiceEnergy(parseSpeechStyle(vp.speech_style), vp.voice_energy),
             });
             // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
             // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를

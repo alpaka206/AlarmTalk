@@ -8,6 +8,7 @@ import {
   hasMixedKoreanRegister,
   isUncontractedEnglish,
   tidyEllipsis,
+  withVoiceEnergy,
   isWindDownText,
   buildGenerationConfig,
   deriveAlarmDisplayText,
@@ -675,7 +676,9 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
       .filter((c) => String(c[0]) !== TOKEN_URI)
       .map((c) => JSON.parse(String(c[1]?.body)).contents[0].parts[0].text as string);
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain('MIXED speech levels');
+    // 무엇이 틀렸는지 낱말로 짚어 준다 — '어체를 맞춰라' 만으로는 같은 '-요' 를 되풀이했다.
+    expect(prompts[1]).toContain('WRONG speech level');
+    expect(prompts[1]).toContain("'흐리대요'");
   });
 
   it('사전렌더: 확정 문구가 해요체면 배우자 목소리의 해요체 클립도 통과한다(영구 실패 방지)', async () => {
@@ -690,6 +693,45 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(out.text).toContain('챙겨요');
     const prompts = mockFetch.mock.calls.filter((c) => String(c[0]) !== TOKEN_URI);
     expect(prompts).toHaveLength(1);
+  });
+
+  it('목소리의 결: 사용자가 고른 값이 분석값보다 앞서고, 고르지 않으면 분석값을 둔다', () => {
+    const analyzed = { dialect: '경상', strength: 'low' as const, register: 'banmal', markers: ['~카이'], persona: '', childlike: false, energy: 'lively' as const };
+    expect(withVoiceEnergy(analyzed, 'calm')).toEqual({ ...analyzed, energy: 'calm' });
+    expect(withVoiceEnergy(analyzed, '')).toBe(analyzed);
+    expect(withVoiceEnergy(analyzed, null)).toBe(analyzed);
+    expect(withVoiceEnergy(null, 'lively')?.energy).toBe('lively');
+    expect(withVoiceEnergy(null, 'weird')).toBeNull();
+  });
+
+  it('사전렌더 프롬프트: 결과 사람이 쓴 본보기를 싣는다 — 진중한 결은 들뜬 태그를 금지한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 자기야, 약 먹을 시간이야. [sincerely] 지금 바로 챙겨 먹자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm' },
+      humanReference: '[warmly] 약 먹을 시간이에요. [encouraging] 알람 끄기 전에 지금 바로 챙겨 먹어요.',
+    });
+    const body = JSON.stringify(contentRequestBody());
+    expect(body).toContain('VOICE ENERGY');
+    expect(body).toContain('CALM');
+    expect(body).toContain('HUMAN-WRITTEN REFERENCE');
+    expect(body).toContain('REWRITE EVERY ENDING');
+  });
+
+  it('사전렌더: 예스러운 -셔요 는 -세요 로 고쳐 저장한다', async () => {
+    queueContent(geminiText('{"text":"[warmly] 할아버지, 이제 슬슬 일어나 보셔요. [caring] 우산 꼭 챙기셔요."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '비가 온다고 알리고 일어나 우산을 챙기라고 한다.',
+      relationshipLabel: '손녀',
+      listenerTitle: '할아버지',
+      targetLanguage: 'ko',
+    });
+    expect(out.text).toContain('일어나 보세요');
+    expect(out.text).toContain('챙기세요');
+    expect(out.text).not.toContain('셔요');
   });
 
   it('관계를 모르는 목소리의 반말은 섞임으로 본다 — 등록 녹음이 반말이면 그 말투를 따른다', () => {

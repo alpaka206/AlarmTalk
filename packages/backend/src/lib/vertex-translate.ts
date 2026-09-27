@@ -1221,6 +1221,8 @@ function prerenderClipPrompt(params: {
   styleReference?: string | null;
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리·존댓말·특징 어미). styleReference 가 우선. */
   speechStyle?: SpeechStyle | null;
+  /** 같은 의도를 사람이 직접 쓴 기본 목소리 대사(`STOCK_CLIP_PRESETS`). 리듬·쉼·태그 거는 법의 본보기. */
+  humanReference?: string | null;
 }): string {
   const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
   const listenerTitle = params.listenerTitle?.trim();
@@ -1251,7 +1253,22 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
     : '';
+  // ⚠ **사람이 쓴 같은 의도의 대사를 본보기로 준다**(2026-09-27 사용자 지시 — "기본 목소리 대사처럼
+  //   사람이 말하는 것처럼"). 시드는 의도를 설명한 글이라 모델이 설명문처럼 옮기기 쉽다. 본보기는
+  //   중립 화자의 존댓말이므로 **리듬·쉼·공감→권유 흐름·태그 거는 법만** 가져오고, 문장과 어체는
+  //   이 목소리의 관계·호칭·말투로 새로 쓰게 한다.
+  const humanReference = params.humanReference?.trim();
+  const humanReferenceInstruction = humanReference
+    ? `HUMAN-WRITTEN REFERENCE for this same intent (a script line written by a person for a neutral narrator in polite speech): "${humanReference}". This is how a real person says it — match its natural rhythm, short sentence shapes, pauses (…), its empathy-then-nudge flow, and how each tag follows its own sentence's feeling. But re-voice it completely for THIS speaker (relationship register, title, dialect, energy); do not copy its sentences. Its endings are polite (해요체/です・ます) because the narrator is neutral — REWRITE EVERY ENDING into this speaker's register (e.g. for 반말: '온대요'→'온대', '볼까요?'→'볼까?', '챙겨요'→'챙겨'); never let one sentence keep the reference's register.`
+    : '';
   const speechStyle = params.speechStyle;
+  // 목소리의 결(경쾌/진중)이 문장 에너지와 태그를 정한다 — 결과 어긋나면 그 목소리의 핵심이 깨진다.
+  const energyInstruction =
+    speechStyle?.energy === 'lively'
+      ? 'VOICE ENERGY — this voice is bright and LIVELY. Let the line bounce: short upbeat sentences, a light exclamation or a small laugh where it fits ([cheerfully], [playfully], [laughs], [excited], [brightly]). Never flat, solemn or preachy. Cautions and apologies stay caring, just warm and quick rather than heavy.'
+      : speechStyle?.energy === 'calm'
+        ? 'VOICE ENERGY — this voice is low-key, CALM and sincere. Keep the line composed and grounded: steady sentences, few or no exclamation marks, no giggles or teasing, and none of [playfully], [excited], [giggles], [laughs]. Use tags like [warmly], [sincerely], [reassuring], [caring], [steady], [measured, deliberate]. Calm is not sleepy — the line still ends with a clear, firm nudge to get up or act, and never uses sleepy or hushed tags. Calm is not formal either — a calm partner, friend or parent still speaks the relationship\'s own register (반말 stays 반말). This overrides the tag examples listed below.'
+        : '';
   const speechStyleInstruction =
     speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
       ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
@@ -1293,8 +1310,10 @@ MATCH EACH TAG TO ITS SENTENCE: apologies, cautions and bad news (rain, snow, fi
     relationship,
     romanticToneInstruction,
     speechStyleInstruction,
+    energyInstruction,
     childlikeInstruction,
     styleReferenceInstruction,
+    humanReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
     // ⚠ **완결성이 먼저, 길이는 그다음**(2026-09-23 블라인드 판정). 처음엔 "영어 25단어·90자" 로
     //   묶었는데, 시드는 대부분 '사실 → 공감 → 권유' 세 마디라 **마지막 권유("이제 일어나자",
@@ -1344,6 +1363,8 @@ export async function generatePrerenderClipText(
     styleReference?: string | null;
     /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등) — 문구를 그 말투로 작성. */
     speechStyle?: SpeechStyle | null;
+    /** 같은 의도를 사람이 쓴 기본 목소리 대사 — 리듬·태그의 본보기(`stockReferenceLine`). */
+    humanReference?: string | null;
   },
 ): Promise<{ text: string; tag: string }> {
   const targetLanguage = params.targetLanguage || 'ko';
@@ -1368,6 +1389,8 @@ export async function generatePrerenderClipText(
   let lastError: unknown = null;
   /** 직전 회차가 내용 검사에서 걸린 사유 — 그 사유에 맞는 재시도 힌트를 준다. */
   let lastReason: AlarmTextRejectionReason | null = null;
+  /** 직전 회차에서 어체가 틀린 낱말들(register_mixed 일 때). */
+  let lastWrongEndings: string[] = [];
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const label = params.relationshipLabel?.trim();
     // ⚠ 재시도 힌트에 **태그 제약을 다시 말한다.** 실측(2026-08-21): 영어 안개 시드 ×
@@ -1399,7 +1422,9 @@ export async function generatePrerenderClipText(
         : '';
     const registerHint =
       lastReason === 'register_mixed'
-        ? 'The previous line MIXED speech levels — a sentence ending in \'-요\' next to 반말 ones. Hold ONE level for the whole line: the approved STYLE REFERENCE\'s level if one is given, otherwise the one the relationship calls for (no relationship given → warm 해요체 throughout).'
+        ? `The previous line used the WRONG speech level${
+            lastWrongEndings.length > 0 ? ` in: ${lastWrongEndings.map((w) => `'${w}'`).join(', ')}` : ''
+          }. Hold ONE level for the whole line: the approved STYLE REFERENCE's level if one is given, otherwise the one the relationship calls for (romantic partner, sibling, friend or child → 반말 with no '-요' at all; grandchild→grandparent, child→parent or no relationship → warm 해요체 throughout).`
         : lastReason === 'time_of_day'
           ? 'The previous line assumed it was morning. This alarm can ring at any hour — no morning greeting (좋은 아침, 잘 잤어, morning, おはよう); open with the listener\'s title or go straight to the point (medication and cheer lines also skip wake-up calls).'
           : lastReason === 'uncontracted'
@@ -1427,7 +1452,8 @@ export async function generatePrerenderClipText(
     //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
     //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    const text = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
+    const tidied = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
+    const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
     const spoken = normalizeAlarmTextWithoutTags(text);
@@ -1438,6 +1464,8 @@ export async function generatePrerenderClipText(
     if (reason) {
       lastError = new AlarmTextPreparationInvalidError(reason);
       lastReason = reason;
+      lastWrongEndings =
+        reason === 'register_mixed' ? (koreanRegisterViolation(spoken, params)?.wrong ?? []).slice(0, 4) : [];
       continue;
     }
     // 모델이 태그를 스스로 배치했으면 그대로 둔다. 아예 없거나 선두 하나뿐이면 문장마다
@@ -1524,6 +1552,15 @@ export function prerenderRejectionReason(
  */
 export function tidyEllipsis(text: string): string {
   return text.replace(/(…|\.\.\.)[.,、。，]+/g, '$1');
+}
+
+/**
+ * 예스러운 존대 '-셔요' 를 '-세요' 로 고친다('해 보셔요' → '해 보세요'). 뜻이 같은 옛 꼴이라 글자만
+ * 바꿔도 안전하다. 프롬프트로 금지해도 3.5 Flash 가 손주→조부모 문구에서 계속 냈다(2026-09-27 실측).
+ * 생성 문구에만 쓴다 — 사용자가 직접 친 문구는 바꾸지 않는다.
+ */
+export function modernizeKoreanHonorific(text: string): string {
+  return text.replace(/셔요/g, '세요');
 }
 
 /** 이 시드가 아침 인사 자체인가(`CLONE_CLIP_SEEDS` 의 인사 시드). 아침 인사를 허용하고, 줄일 때도 인사를 남긴다. */
@@ -1647,7 +1684,10 @@ const KO_INTERJECTIONS = new Set(['자자', '아이고', '어머', '에이', '�
  * ("비 온대요, 우산 챙겨")도 잡는다(Codex #801) — 쉼표 앞은 '…' 앞처럼 이음 어미와 헷갈리지 않는
  * 끝만 세고, 문장 첫 마디의 부름말·감탄사는 건너뛴다.
  */
-function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[] {
+type KoEndingEntry = { word: string; kind: 'polite' | 'banmal' };
+
+/** `koreanEndings` 와 같지만 끝 낱말도 함께 — 재시도 힌트에 **틀린 낱말을 그대로** 짚어 주려고. */
+function koreanEndingEntries(spoken: string, listenerTitle?: string | null): KoEndingEntry[] {
   const title = listenerTitle?.trim();
   const withoutTitle = title ? spoken.split(title).join(' ') : spoken;
   const lastWord = (s: string) => s.replace(/[\s.!?！？~…,]+$/u, '').match(/[가-힣]+$/u)?.[0] ?? '';
@@ -1655,12 +1695,18 @@ function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[
     .split(/(?<=[.!?！？])\s*/)
     .flatMap((sentence) => {
       const parts = sentence.split(/[…,，]/u);
-      return parts.map((part, i) => {
+      return parts.map((part, i): KoEndingEntry | null => {
         if (i === 0 && parts.length > 1 && isVocativeOrInterjection(part)) return null;
-        return koreanEnding(lastWord(part), i < parts.length - 1);
+        const word = lastWord(part);
+        const kind = koreanEnding(word, i < parts.length - 1);
+        return kind ? { word, kind } : null;
       });
     })
-    .filter((e): e is 'polite' | 'banmal' => e !== null);
+    .filter((e): e is KoEndingEntry => e !== null);
+}
+
+function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[] {
+  return koreanEndingEntries(spoken, listenerTitle).map((e) => e.kind);
 }
 
 /**
@@ -1670,51 +1716,57 @@ function koreanEndings(spoken: string, listenerTitle?: string | null): KoEnding[
  * 반말만 써야 하는 관계(연인·형제·친구·아이)는 존댓말 문장이, 관계를 모르는 목소리와 손아랫사람→
  * 어르신(손주·자식)은 반말 문장이 하나만 있어도 걸린다.
  */
-export function hasMixedKoreanRegister(
-  spoken: string,
-  params: {
-    relationshipLabel?: string | null;
-    listenerTitle?: string | null;
-    speechStyle?: SpeechStyle | null;
-    /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구. 프롬프트는 이 어체를 관계보다 앞세운다. */
-    styleReference?: string | null;
-  },
-): boolean {
+type KoreanRegisterParams = {
+  relationshipLabel?: string | null;
+  listenerTitle?: string | null;
+  speechStyle?: SpeechStyle | null;
+  /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구. 프롬프트는 이 어체를 관계보다 앞세운다. */
+  styleReference?: string | null;
+};
+
+export function hasMixedKoreanRegister(spoken: string, params: KoreanRegisterParams): boolean {
+  return koreanRegisterViolation(spoken, params) !== null;
+}
+
+/**
+ * 어체 규칙을 어겼으면 **틀린 쪽 낱말들**, 아니면 null. 재시도 힌트가 "어체를 맞춰라" 만 말하면 모델이
+ * 같은 '-요' 를 되풀이한다(2026-09-27 실측 — 진중한 목소리의 여자친구→오빠가 세 번 다 "비가 온대요").
+ * 무엇이 틀렸는지 낱말로 짚어 준다.
+ */
+export function koreanRegisterViolation(spoken: string, params: KoreanRegisterParams): { wrong: string[] } | null {
   // ⚠ **확정 문구의 어체가 관계보다 앞선다**(Codex #801). 프롬프트(STYLE REFERENCE)가 그 어체를 따르라고
   //   하는데 검사가 관계만 보면, 배우자에게 해요체로 고쳐 확정한 사용자의 클립이 세 번 다 거절돼 **영구
-  //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구가 쓰는 어체는 허용하고,
-  //   확정 문구 자체가 섞여 있으면 섞임도 문제 삼지 않는다.
+  //   실패**한다 — 같은 확정 문구가 그 목소리의 클립 전부에 실린다. 확정 문구 자체가 섞여 있으면 섞임도
+  //   문제 삼지 않는다.
   const reference = params.styleReference?.trim()
     ? koreanEndings(normalizeAlarmTextWithoutTags(params.styleReference), params.listenerTitle)
     : [];
   const referencePolite = reference.includes('polite');
   const referenceBanmal = reference.includes('banmal');
-  if (referencePolite && referenceBanmal) return false;
-  const endings = koreanEndings(spoken, params.listenerTitle);
-  const polite = endings.filter((e) => e === 'polite').length;
-  const banmal = endings.filter((e) => e === 'banmal').length;
-  // 확정 문구가 한 어체만 쓰면 **그 어체로** 고정한다 — 허용만 넓히면 배우자에게 해요체로 확정했는데
-  // 반말 클립이 통과하는 식으로 확정한 말투를 무시한다(Codex #801).
-  if (referencePolite) return banmal > 0;
-  if (referenceBanmal) return polite > 0;
-  if (polite > 0 && banmal > 0) return true;
+  if (referencePolite && referenceBanmal) return null;
+  const entries = koreanEndingEntries(spoken, params.listenerTitle);
+  const politeWords = entries.filter((e) => e.kind === 'polite').map((e) => e.word);
+  const banmalWords = entries.filter((e) => e.kind === 'banmal').map((e) => e.word);
+  const wrong = (words: string[]) => (words.length > 0 ? { wrong: words } : null);
+  // 확정 문구가 한 어체만 쓰면 **그 어체로** 고정한다(Codex #801).
+  if (referencePolite) return wrong(banmalWords);
+  if (referenceBanmal) return wrong(politeWords);
   const label = params.relationshipLabel?.trim() ?? '';
   const childlike = params.speechStyle?.childlike === true;
   const relationship = label ? koreanRelationshipRegister(label) : 'neutral';
   const banmalOnly = childlike || relationship === 'romantic' || relationship === 'peer';
-  if (banmalOnly && polite > 0) return true;
-  // 관계를 모르면 해요체다(KOREAN_NATIVE_RULES 'Neutral/unknown'). 3.5 Flash-Lite 가 "미안해… 시작해
-  // 보자!" 처럼 모르는 사람에게 반말을 했다(2026-09-23 블라인드 판정). 등록 녹음이 반말이었으면
-  // 그 사람 말투를 따르므로 걸지 않는다.
+  if (banmalOnly) return wrong(politeWords);
+  // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다(Codex #801).
+  // 손주→조부모·자식→부모도 존대 해요체다. 등록 녹음이 반말인 화자는 그 말투를 따르므로 걸지 않는다.
   const speakerIsCasual = /banmal|casual|반말/i.test(params.speechStyle?.register ?? '');
-  // 관계를 모르거나 자유 입력 라벨이 어느 갈래에도 안 들면('동료'·'선생님') 해요체다 — 라벨이 빈 경우만
-  // 보면 자유 입력 라벨의 반말이 그대로 저장된다(Codex #801).
-  if (relationship === 'neutral') return !childlike && !speakerIsCasual && banmal > 0;
-  // 손주→조부모·자식→부모는 존대 해요체다(프롬프트 'younger than the listener'). 반말만 쓰는 관계와
-  // 거울로, 반말 문장이 하나만 있어도 걸린다(Codex #801 — "할머니, 지금 일어나. 우산 챙겨." 가
-  // 통과했다). 아이 목소리와, 등록 녹음이 반말인 화자는 그 말투를 따르므로 걸지 않는다.
-  const politeOnly = relationship === 'grandchild' || relationship === 'younger_to_elder';
-  return politeOnly && !childlike && !speakerIsCasual && banmal > 0;
+  const politeOnly =
+    relationship === 'neutral' || relationship === 'grandchild' || relationship === 'younger_to_elder';
+  if (politeOnly && !speakerIsCasual) return wrong(banmalWords);
+  // 부모→자식처럼 둘 다 되는 관계: 한 줄 안에서 섞였을 때만 — 적은 쪽이 튄 것이다.
+  if (politeWords.length > 0 && banmalWords.length > 0) {
+    return { wrong: politeWords.length <= banmalWords.length ? politeWords : banmalWords };
+  }
+  return null;
 }
 
 /**
@@ -1755,6 +1807,15 @@ export interface SpeechStyle {
    * ElevenLabs STT 로 텍스트만 얻으므로 그 신호가 존재하지 않는다.
    */
   childlike: boolean;
+  /**
+   * 목소리의 결 — 'lively'(밝고 경쾌) / 'calm'(차분·진중) / ''(모름). 알람 문구의 문장 에너지와
+   * 딜리버리 태그를 이 결에 맞춘다: 경쾌한 목소리가 굳은 문장을 읽거나, 진중한 목소리가 깔깔대면
+   * 그 목소리의 핵심이 깨진다(2026-09-27 사용자 지시).
+   *
+   * ⚠ 판단 근거는 **전사 텍스트**다(오디오 음향은 보지 않는다 — 전사만 Vertex 로 간다). 옛 행에는
+   * 없으므로 `parseSpeechStyle` 이 '' 로 채운다.
+   */
+  energy?: '' | 'lively' | 'calm';
 }
 
 const SPEECH_STYLE_RESPONSE_SCHEMA = {
@@ -1772,9 +1833,10 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
     persona: { type: 'STRING' },
     childlike: { type: 'BOOLEAN' },
+    energy: { type: 'STRING' },
     confidence: { type: 'NUMBER' },
   },
-  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'confidence'],
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'childlike', 'energy', 'confidence'],
 } as const;
 
 function speechStylePrompt(transcript: string, language: string): string {
@@ -1788,7 +1850,8 @@ function speechStylePrompt(transcript: string, language: string): string {
     'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
     dialectGuide,
     'Also decide "childlike": is this speaker a young child (roughly preschool to early elementary)? Judge ONLY from how the transcript reads — very short simple sentences, a small everyday vocabulary, childish word choice or mispronunciations written out, talking about school/toys/parents from a child\'s position. A short or casual line from an adult is NOT enough. Default to false: only set true when the transcript would read as a child to any reader. Getting this wrong is worse than leaving it off, because it makes an adult voice speak like a toddler.',
-    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","childlike":true or false,"confidence":0.0-1.0}.',
+    'Also decide "energy" — the overall feel of this voice as the transcript shows it: "lively" = bright, animated, playful (exclamations, laughter, bouncy or teasing endings, fast upbeat phrasing); "calm" = low-key, composed, sincere or serious (steady measured sentences, few exclamations, gentle or reassuring or formal tone); "" when the transcript does not clearly show either. Every alarm line in this voice will be written and delivered in this energy, so only commit when it is clear.',
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","childlike":true or false,"energy":"lively|calm or empty","confidence":0.0-1.0}.',
     'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
     `TRANSCRIPT (${language}):`,
     transcript.slice(0, 2000),
@@ -1847,15 +1910,31 @@ export async function analyzeSpeechStyleWithVertex(
         ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
         : '';
     const childlike = (parsed as { childlike?: unknown }).childlike === true;
-    if (!dialect && !register && markers.length === 0 && !persona && !childlike) return null;
+    const energyRaw = String((parsed as { energy?: unknown }).energy ?? '').trim();
+    const energy = (energyRaw === 'lively' || energyRaw === 'calm' ? energyRaw : '') as SpeechStyle['energy'];
+    if (!dialect && !register && markers.length === 0 && !persona && !childlike && !energy) return null;
     // 표준어인데 사투리 강도만 있는 모순 정리.
-    return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike };
+    return { dialect, strength: dialect ? strength : '', register, markers, persona, childlike, energy };
   } catch {
     return null;
   }
 }
 
 /** voice_profiles.speech_style JSON 컬럼 → SpeechStyle (없거나 깨졌으면 null). */
+/**
+ * 사용자가 고른 목소리의 결(`voice_profiles.voice_energy`)을 말투 분석 위에 얹는다 — **사용자 선택이
+ * 전사 추정보다 앞선다.** 고르지 않았으면('' / NULL) 분석값을 그대로 둔다. 분석이 없어도 결만으로
+ * 말투 객체를 만든다(문구 생성이 결을 받게).
+ */
+export function withVoiceEnergy(style: SpeechStyle | null, voiceEnergy: unknown): SpeechStyle | null {
+  const chosen = voiceEnergy === 'lively' || voiceEnergy === 'calm' ? voiceEnergy : '';
+  if (!chosen) return style;
+  return {
+    ...(style ?? { dialect: '', strength: '', register: '', markers: [], persona: '', childlike: false }),
+    energy: chosen,
+  };
+}
+
 export function parseSpeechStyle(value: unknown): SpeechStyle | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -1872,6 +1951,8 @@ export function parseSpeechStyle(value: unknown): SpeechStyle | null {
       persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
       // 옛 행에는 이 필드가 없다 — 없으면 false(아이 말투를 켜지 않는다)가 안전한 기본이다.
       childlike: parsed.childlike === true,
+      // 옛 행에는 없다 — '' 이면 문구 에너지를 따로 정하지 않는다.
+      energy: parsed.energy === 'lively' || parsed.energy === 'calm' ? parsed.energy : '',
     };
   } catch {
     return null;

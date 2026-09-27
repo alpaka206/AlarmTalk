@@ -160,7 +160,7 @@
 | 단계 | 화면에 두는 것 | 다음 조건 |
 | --- | --- | --- |
 | 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원 |
-| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭은 선택 |
+| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, **목소리의 결(자동/경쾌/차분)**, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭·결은 선택(결 기본 = 자동) |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
@@ -367,6 +367,27 @@
   쓰면 무엇을 세는지, 남은 횟수인지 사용한 횟수인지 알 수 없다. `n` 은 이번 달(KST)
   정식 등록 원장의 남은 횟수라 앱에 `1/1` 을 박아 추정하지 않는다. 다만 목소리 목록·초안과
   독립인 조회이므로 새로고침을 시작할 때 함께 병렬로 요청해 추가 왕복을 만들지 않는다.
+
+## 4-2. 클론 문구는 **목소리의 결**과 **사람이 쓴 대사**를 따른다
+
+유료 클론의 사전렌더·등록 미리듣기 문구는 Gemini 가 시드(의도 설명)에서 만든다. 두 가지를 더 싣는다
+(2026-09-27 지시 — "기본 목소리 대사처럼 사람이 말하는 것처럼, 올라온 목소리의 말투·태그를 고려해서").
+
+- **사람이 쓴 본보기**: 같은 의도의 기본 목소리 대사(`STOCK_CLIP_PRESETS`, 카테고리·순번이 클론 시드와
+  맞물린다)를 함께 준다. 리듬·쉼(…)·공감→권유 흐름·태그 거는 법만 따르고, 문장과 **어체는 그 목소리의
+  관계로 새로 쓴다**(본보기는 중립 화자의 해요체다). 인사는 짝이 없다(기본 목소리 인사는 '목소리 소개').
+- **목소리의 결**: `lively`(경쾌) / `calm`(차분·진중) / 자동.
+  - 경쾌: 짧고 통통 튀는 문장, `[cheerfully]`·`[playfully]`·`[laughs]` 류, 무겁지 않게.
+  - 차분: 차분하고 진심 어린 문장, 느낌표 거의 없음, `[playfully]`·`[giggles]`·`[excited]` 금지,
+    `[warmly]`·`[sincerely]`·`[reassuring]`·`[measured, deliberate]` 류. **차분은 졸림이 아니다** — 끝은
+    분명하게 깨우고 졸린 태그는 여전히 금지. **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
+  - **정하는 곳은 사용자 선택이 먼저다.** 등록 '세부 정보' 단계에서 고른 값(`voice_profiles.voice_energy`)이
+    등록 녹음 전사로 추정한 값(`speech_style.energy`)보다 앞선다. 자동이면 추정값을 쓰고, 그것도 없으면
+    결을 따로 정하지 않는다.
+  - ⚠ **음향은 보지 않는다.** 목소리 높낮이·속도를 보려면 음성 파일을 Vertex 로 보내야 하는데, 처리방침·
+    동의는 전사 글자까지만 다룬다. 그래서 사용자가 고르게 했다.
+  - 관계·호칭처럼 **초안에서만 바뀐다**(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`). 초안에서 결을 바꾸면
+    미리듣기 문구를 비워 새 결로 다시 만든다. 결을 보내지 않은 구버전 앱의 요청은 그 값을 건드리지 않는다.
 
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
@@ -827,6 +848,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
+| 클론 문구의 결·사람이 쓴 본보기 | (결 선택 UI 추가 예정 — 등록 '세부 정보' 단계) | (결 선택 UI 추가 예정) | `PATCH voice/:id/relationship` 의 `voice_energy` → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
