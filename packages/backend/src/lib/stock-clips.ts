@@ -541,8 +541,12 @@ export async function findMissingStockTargets(
                         OR julianday(ga.created_at) > julianday(q.requested_at) THEN 1 ELSE 0 END
                    AS published_after_refresh
           FROM messages m
+          -- 대장은 해시(보이스+문구)마다 한 행이라, 두 프리셋이 우연히 같은 문장이면 한 행을 **나눠 쓴다** —
+          -- 먼저 기록한 메시지에만 묶여 있다. 그래서 '이 메시지가 지금 틀고 있는 렌더' 는 같은 보이스의
+          -- 같은 음원으로 찾는다(Codex #802). message_id 갈래는 보이스 id 가 비어 있을 수 있는 옛 행용이다.
           LEFT JOIN generated_audio_assets ga
-            ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+            ON (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+           AND ga.audio_url = m.audio_url
           LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1 AND m.audio_url IS NOT NULL
             -- 은퇴한 행은 '있다' 로 세지 않는다 → 새 대사가 **새 id 로** 다시 구워진다.

@@ -65,6 +65,7 @@ async function setupDb() {
     CREATE TABLE generated_audio_assets (
       id TEXT PRIMARY KEY,
       message_id TEXT NOT NULL,
+      voice_profile_id TEXT,
       provider_voice_id TEXT NOT NULL,
       audio_url TEXT,
       created_at TEXT DEFAULT (datetime('now'))
@@ -270,6 +271,27 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     // 다시 굽는 회차가 아니면 게시 시각은 보지 않는다(평소 회차는 있는 것을 건너뛴다).
     const normal = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-same' })], false);
     expect(normal).toHaveLength(CLONE_TOTAL_SEEDS - 2);
+  });
+
+  // ⚠ **대장은 해시마다 한 행이다**(Codex #802). 두 프리셋이 우연히 같은 문장이면 같은 음원·같은 대장 행을
+  // 나눠 쓰고, 그 행은 먼저 기록한 메시지에만 묶인다. message_id 로만 찾으면 나머지 하나는 영영 '빠진 것' 이라
+  // 다시 굽기 회차가 끝나지 않는다.
+  it('같은 음원을 나눠 쓰는 두 프리셋은 대장 행 하나로 둘 다 게시된 것으로 센다', async () => {
+    const db = await setupDb();
+    await insertVoice(db, { id: 'clone-ready', voiceId: 'el-same' });
+    await db.execute(`INSERT INTO messages
+              (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
+            VALUES ('m-a', 'owner-1', 'clone-ready', 'weather', 'ko', 0, 1, 'r2://shared'),
+                   ('m-b', 'owner-1', 'clone-ready', 'weather', 'ko', 1, 1, 'r2://shared')`);
+    await db.execute(`INSERT INTO generated_audio_assets
+              (id, message_id, voice_profile_id, provider_voice_id, audio_url, created_at)
+            VALUES ('ga-shared', 'm-a', 'clone-ready', 'el-same', 'r2://shared', datetime('now', '+1 minute'))`);
+    await db.execute(`INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language, refresh_existing, requested_at)
+            VALUES ('clone-ready', 'owner-1', 'ko', 1, datetime('now'))`);
+
+    const targets = await findMissingStockTargets(db, [cloneVoice({ elevenlabsVoiceId: 'el-same' })], true);
+    expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 0)).toBeUndefined();
+    expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 1)).toBeUndefined();
   });
 
   it('다른 보이스의 기존 클립은 이 보이스 스코프에 영향 없음(전유저 스캔 아님)', async () => {

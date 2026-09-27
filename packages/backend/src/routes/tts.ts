@@ -2150,7 +2150,8 @@ async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
                    WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
                    WHEN EXISTS (
                      SELECT 1 FROM generated_audio_assets ga
-                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                     WHERE (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                       AND ga.audio_url = m.audio_url
                        AND ga.provider_voice_id = vp.elevenlabs_voice_id
                    ) THEN 1
                    ELSE 0

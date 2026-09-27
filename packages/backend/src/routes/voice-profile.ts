@@ -2576,7 +2576,8 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
                  COALESCE(q.refresh_existing, 0) = 0
                  OR EXISTS (
                    SELECT 1 FROM generated_audio_assets ga
-                    WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                    WHERE (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                      AND ga.audio_url = m.audio_url
                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
                       AND julianday(ga.created_at) > julianday(q.requested_at)
                  )
@@ -2735,7 +2736,8 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
                   FROM messages m
                   JOIN voice_profiles vp ON vp.id = m.voice_profile_id
                   JOIN generated_audio_assets ga
-                    ON ga.message_id = m.id AND ga.audio_url = m.audio_url
+                    ON (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                   AND ga.audio_url = m.audio_url
                   LEFT JOIN voice_prerender_queue q ON q.voice_profile_id = m.voice_profile_id
                  WHERE m.voice_profile_id = ? AND COALESCE(m.is_preset, 0) = 1
                    AND m.retired_at IS NULL
