@@ -949,12 +949,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         get() = personalPromoLedger.latestAccountPromo
 
     /**
-     * 계정 응답이 **어느 진입의 몫으로** 도착했는가(`AppSignals.appEntries`). 0 = 아직.
-     * 종료 안내는 이 값이 지금 진입과 같을 때만 판정한다([decidePersonalPromoEndNotice]) —
-     * 응답이 안 오면(오프라인) 그 진입은 띄우지 않고 다음 진입이 다시 판정한다.
+     * 이 진입(`AppSignals.appEntries`)에 보낸 계정 요청의 **첫 결과**([AccountEntryAnswer]).
+     * 종료 안내는 이 값이 지금 진입의 것일 때만 판정한다([decidePersonalPromoEndNotice]) —
+     * 응답이 안 오면 기다리고, 첫 결과가 실패면(오프라인) 그 진입은 띄우지 않는다. 같은 진입의
+     * 뒤 성공으로 다시 판정하지 않는다(D11). 다음 진입이 다시 판정한다.
      */
-    val accountAnsweredEntry: Long
-        get() = personalPromoLedger.accountAnsweredEntry
+    internal val accountEntryAnswer: AccountEntryAnswer?
+        get() = personalPromoLedger.accountEntryAnswer
 
     /**
      * 이 진입의 계정 응답이 **plan 스냅샷에 반영된** 진입 번호(`refreshAppSessionNow`). 0 = 아직.
@@ -968,38 +969,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
-     * 규칙(늦게 온 옛 응답 버리기·이 진입의 몫인지·떠 있는 안내 맞추기)은
+     * 규칙(늦게 온 옛 응답 버리기·이 진입의 첫 결과인지·떠 있는 안내 맞추기)은
      * [PersonalPromoLedger.recordAccountAnswer].
+     *
+     * @return 적었으면 true, 더 새 계정 응답이 이미 적혀 버렸으면 false.
      */
     internal fun recordAccountAnswer(
         request: AccountRequest,
         promo: PersonalPromo?,
         nowMillis: Long = System.currentTimeMillis(),
-    ) {
-        personalPromoLedger.recordAccountAnswer(request, promo, nowMillis)
-    }
+    ): Boolean = personalPromoLedger.recordAccountAnswer(request, promo, nowMillis)
 
     /**
-     * 이번 진입에서 종료 안내를 띄울지 판정한다. **준비 신호·차단 게이트는 부르는 쪽이 본다**
-     * (`AlarmTalkApp` 의 `PersonalPromoNoticeGates`). 규칙은 [decidePersonalPromoEndNotice] 하나다.
+     * 계정 요청이 실패했다 — 그 진입의 첫 결과면 그 진입은 종료 안내를 띄우지 않는다(D11).
+     * **지금 이 계정의 요청일 때만** 부르고, 세션이 끝난 실패(401·파기된 계정)에서는 부르지
+     * 않는다. 규칙은 [PersonalPromoLedger.recordAccountFailure].
+     *
+     * @return 적었으면 true, 옛 요청이라 버렸으면 false.
      */
-    internal fun maybeShowPersonalPromoEndNotice(entry: Long, nowMillis: Long = System.currentTimeMillis()) {
-        if (personalPromoEndNotice != null) return
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        personalPromoLedger.maybeShowEndNotice(
+    internal fun recordAccountFailure(request: AccountRequest): Boolean =
+        personalPromoLedger.recordAccountFailure(request)
+
+    /**
+     * 종료 안내 이펙트(`AlarmTalkApp`)의 한 번 — 준비 신호·다른 창이 막혀 있으면 떠 있는 안내를
+     * 걷고 기다리고, 열려 있으면 이번 진입을 판정한다([PersonalPromoLedger.evaluateEndNotice]).
+     * 로그인한 계정이 없으면 막힌 것으로 본다('다시 보지 않기' 는 계정별이다).
+     */
+    internal fun evaluatePersonalPromoEndNotice(
+        gates: PersonalPromoNoticeGates,
+        entry: Long,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        val ready = userId != null && gates.ready()
+        personalPromoLedger.evaluateEndNotice(
+            gatesReady = ready,
             entry = entry,
-            optedOutEndsAt = personalPromoNoticeStore.optedOutEndsAt(userId),
+            // 막혀 있으면 판정하지 않으니 저장소를 읽을 까닭이 없다.
+            optedOutEndsAt = if (ready) userId?.let { personalPromoNoticeStore.optedOutEndsAt(it) } else null,
             nowMillis = nowMillis,
         )
-    }
-
-    /**
-     * 떠 있는 안내 위로 **다른 모달·게이트·시스템 권한 창이 올라왔다** — 안내를 걷고 이 진입을
-     * 다시 '판정 전' 으로 돌린다. 가린 것이 닫히면 같은 진입 안에서 다시 뜬다
-     * ([PersonalPromoLedger.deferEndNotice]).
-     */
-    internal fun deferPersonalPromoEndNotice() {
-        personalPromoLedger.deferEndNotice()
     }
 
     /**
@@ -1397,8 +1406,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .also { snapshot -> persisted = snapshot }
         }
         // 부르는 쪽은 문을 통과하면 곧바로 화면 사본(`subscriptionResponse`)을 이 응답으로 바꾼다 —
-        // 이용권 화면 한 줄이 '나중에 받은 답' 을 고를 수 있게 순서를 적는다.
-        if (result == EntitlementWrite.Applied) personalPromoLedger.recordBillingAnswer()
+        // 이용권 화면 한 줄이 '나중에 받은 답' 을 고를 수 있게 순서를 적는다(문을 지난 응답만 —
+        // 장부가 결과를 보고 가른다).
+        personalPromoLedger.recordBillingAnswer(result)
         if (result == EntitlementWrite.Applied && response?.userPlan != null) {
             // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
             val snapshot = checkNotNull(persisted)

@@ -11,14 +11,15 @@ import com.alarmtalk.app.network.normalizePersonalPromo
 internal data class AccountRequest(val seq: Long, val entry: Long)
 
 /**
- * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답(`/auth/me`)이 어느 진입의 몫인가, 이 진입에
- * 종료 안내를 판정했는가·띄웠는가, 이용권 화면 한 줄이 어느 답을 따르는가.
+ * 기간 한정 개인 플랜의 **진입별 장부** — 계정 응답(`/auth/me`)이 어느 진입의 몫인가(그 진입의
+ * 첫 결과가 성공인가 실패인가), 어느 응답이 plan 을 써도 되는가, 이 진입에 종료 안내를
+ * 판정했는가·띄웠는가, 이용권 화면 한 줄이 어느 답을 따르는가.
  *
  * `MainViewModel` 이 하나 들고 같은 이름의 멤버로 위임한다(`recordAccountAnswer`·
- * `maybeShowPersonalPromoEndNotice`·`deferPersonalPromoEndNotice` …). 규칙을 여기 모은 이유는
+ * `recordAccountFailure`·`evaluatePersonalPromoEndNotice` …). 규칙을 여기 모은 이유는
  * **테스트**다 — 뷰모델은 암호화 저장소·Room·워커를 통째로 물고 있어 단위 테스트에서 세울 수
- * 없는데, 이 규칙들(늦게 온 옛 응답 버리기·계정 전환·다른 창에 밀린 안내 다시 띄우기)은
- * 상태를 거쳐야만 드러난다(`PersonalPromoLedgerTest`).
+ * 없는데, 이 규칙들(늦게 온 옛 응답 버리기·계정 전환·다른 창에 밀린 안내 다시 띄우기·실패한
+ * 진입 끝내기)은 상태를 거쳐야만 드러난다(`PersonalPromoLedgerTest`).
  *
  * 값은 스냅샷 상태라 `AlarmTalkApp` 의 `LaunchedEffect` 키로 그대로 쓴다.
  *
@@ -36,16 +37,20 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
         private set
 
     /**
-     * 계정 응답이 **어느 진입의 몫으로** 도착했는가. 0 = 아직. 종료 안내는 이 값이 지금 진입과
-     * 같을 때만 판정한다([decidePersonalPromoEndNotice]).
+     * 이 진입에 보낸 계정 요청의 **첫 결과**([AccountEntryAnswer]). null 이거나 다른 진입의 것이면
+     * 이 진입의 결과는 아직이다. 종료 안내는 이 값이 지금 진입의 것일 때만 판정하고, 실패면 그
+     * 진입은 띄우지 않는다([decidePersonalPromoEndNotice] — D11).
+     *
+     * ⚠ **첫 결과만 적는다.** 실패한 진입의 뒤 성공(쿠폰·`plan_changed`·결제 신호 뒤의 갱신)으로
+     *   덮으면 세션 한가운데서 안내가 뜬다. 뒤 성공의 값은 [latestAccountPromo] 에만 들어간다.
      */
-    var accountAnsweredEntry by mutableLongStateOf(0L)
+    var accountEntryAnswer by mutableStateOf<AccountEntryAnswer?>(null)
         private set
 
     /**
      * 이 진입의 계정 응답이 **plan 스냅샷에 반영된** 진입 번호. 0 = 아직.
      *
-     * [accountAnsweredEntry] 와 따로 두는 이유: 계정 응답은 두 경로로 온다 — `checkAccountStatus`
+     * [accountEntryAnswer] 와 따로 두는 이유: 계정 응답은 두 경로로 온다 — `checkAccountStatus`
      * 는 탈퇴 유예·프로모만 적고 **plan 은 건드리지 않는다.** 그 응답이 먼저 오면 이 진입의
      * 답이 온 것처럼 보이는데 판정기는 아직 지난 실행의 plan 을 읽고 있다. 전경 무료 잠금의
      * 오프라인 차단 갈래([freePlanLockMayApply])는 **판정기가 읽는 plan** 이 이 진입의 것일 때만
@@ -63,7 +68,18 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
 
     /** 계정 응답 요청의 순번 — 늦게 도착한 옛 응답이 새 응답을 덮지 않게 한다. */
     private var requestSeq: Long = 0L
+
+    /** [latestAccountPromo] 에 적은 가장 새 계정 응답의 순번. */
     private var answerSeq: Long = 0L
+
+    /**
+     * plan(세션·권한 스냅샷의 plan 과 프로모 표지)에 쓴 가장 새 `/auth/me` 응답의 순번([claimPlanAnswer]).
+     *
+     * [answerSeq] 와 따로 두는 이유: `checkAccountStatus` 의 응답은 계정 응답으로는 세지만 plan 을
+     * 쓰지 않는다. 한 순번으로 두면 그 응답이 먼저 온 것만으로 먼저 보낸 `refreshAppSessionNow` 의
+     * 답이 버려져, 세션에는 **지난 실행의** plan 이 남는다(더 새 답이 아니라 더 옛 캐시가 이긴다).
+     */
+    private var planAnswerSeq: Long = 0L
 
     /**
      * 이 프로세스에서 계정 응답·구독 응답을 **받은 순서**(이용권 화면 한 줄 — [planScreenPromo]).
@@ -80,7 +96,8 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
      * 계정 응답을 적는다. **지금 이 계정의 응답일 때만** 부른다(부르는 쪽이 세션·세대를 본다).
      *
      * - 늦게 도착한 옛 요청의 응답은 버린다(순번).
-     * - 보낸 진입과 도착한 진입이 같을 때만 그 진입의 응답으로 센다([accountAnswerEntryFor]).
+     * - 보낸 진입과 도착한 진입이 같을 때만 그 진입의 결과로 센다([accountAnswerEntryFor]) — 그
+     *   진입의 **첫 결과**일 때만([accountEntryAnswer]).
      * - 떠 있는 안내가 새 응답과 맞지 않으면 닫는다 — 쿠폰·결제로 원시 유료가 됐으면
      *   `personal_promo` 가 사라진다([reconcileShownPersonalPromoNotice]).
      *
@@ -92,20 +109,73 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
         val normalized = normalizePersonalPromo(promo)
         latestAccountPromo = normalized
         accountAnswerOrder = ++answerOrder
-        accountAnswerEntryFor(request.entry, currentEntry())?.let { accountAnsweredEntry = it }
+        noteEntryOutcome(request, AccountEntryAnswer.Outcome.Answered)
         if (shownEndNotice != null) {
             shownEndNotice = reconcileShownPersonalPromoNotice(shownEndNotice, normalized, nowMillis)
         }
         return true
     }
 
-    /** [request] 의 응답이 **plan 스냅샷에 반영됐다**([planAnsweredEntry]). */
+    /**
+     * 계정 요청이 **실패했다**(네트워크·5xx 등 — 세션이 끝난 실패는 부르지 않는다). 그 요청을 보낸
+     * 진입의 첫 결과면 그 진입의 종료 안내 판정은 '띄울 것 없음' 으로 끝난다(D11 — iOS
+     * `AccountEntryAnswer.failed` 와 같다). 값은 없으므로 [latestAccountPromo] 는 그대로다.
+     *
+     * 옛 순번(더 새 답이 이미 적혔거나, 계정 전환 전에 뜬 요청)의 실패는 버린다 — 앞 계정의 요청이
+     * 새 계정의 진입을 끝내면 안 된다.
+     *
+     * @return 적었으면 true, 옛 요청이라 버렸으면 false.
+     */
+    fun recordAccountFailure(request: AccountRequest): Boolean {
+        if (request.seq < answerSeq) return false
+        noteEntryOutcome(request, AccountEntryAnswer.Outcome.Failed)
+        return true
+    }
+
+    /** 이 진입에 보낸 요청의 결과를 적는다 — **첫 결과만**([accountEntryAnswer]). */
+    private fun noteEntryOutcome(request: AccountRequest, outcome: AccountEntryAnswer.Outcome) {
+        val entry = accountAnswerEntryFor(request.entry, currentEntry()) ?: return
+        if (accountEntryAnswer?.entry == entry) return
+        accountEntryAnswer = AccountEntryAnswer(entry, outcome)
+    }
+
+    /**
+     * [request] 의 `/auth/me` 응답으로 **plan 을 써도 되는가**(세션의 plan·프로모와 권한 스냅샷의
+     * plan·프로모 표지). 나중에 보낸 요청의 답이 이미 plan 에 쓰였으면 false — 늦게 도착한 옛 답이
+     * 새 답을 되돌리면 안 된다(iOS `AuthViewModel.applyFreshPlan` 의 순번 가드와 같다).
+     *
+     * 예: 진입 갱신이 떠 있는 동안 쿠폰·결제 뒤의 갱신이 먼저 돌아와 가족·프로모 없음을 적었는데,
+     * 진입 갱신의 옛 `plus`·프로모가 뒤에 도착해 표지를 되살리면 보류 규칙(D9)이 방금 가족이 된
+     * 사람의 가족 기능을 닫고, 옛 plan 으로 [planAnsweredEntry] 까지 세워 잠금 대기를 풀어 버린다.
+     *
+     * ⚠ **쓰기 전에** 부른다. true 면 그 순번을 잡는다 — 쓰기가 뒤에 문에서 거절돼도 옛 답이 그
+     * 자리를 차지하지 못한다.
+     */
+    fun claimPlanAnswer(request: AccountRequest): Boolean {
+        if (request.seq < planAnswerSeq) return false
+        planAnswerSeq = request.seq
+        return true
+    }
+
+    /**
+     * [request] 의 응답이 **plan 스냅샷에 반영됐다**([planAnsweredEntry]). [claimPlanAnswer] 를 지난
+     * 답만 부른다 — 그래도 한 번 더 본다: 더 새 답이 plan 을 차지했으면 옛 답은 이 진입의 plan 이
+     * 아니다(옛 plan 으로 잠금 대기를 풀면 안 된다).
+     */
     fun recordPlanApplied(request: AccountRequest) {
+        if (request.seq < planAnswerSeq) return
         accountAnswerEntryFor(request.entry, currentEntry())?.let { planAnsweredEntry = it }
     }
 
-    /** 구독 응답(`/billing/subscription`)을 받아 화면 사본에 반영했다 — 이용권 화면 한 줄의 순서. */
-    fun recordBillingAnswer() {
+    /**
+     * 구독 응답(`/billing/subscription`)을 스냅샷에 쓴 결과 — 이용권 화면 한 줄의 순서.
+     *
+     * **문을 지났을 때만**([EntitlementWrite.Applied]) 센다. 부르는 쪽은 그때만 화면 사본
+     * (`subscriptionResponse`)을 이 응답으로 바꾸므로, 문이 거절한 응답(그 사이 로그아웃·계정 전환)을
+     * 세면 화면에 없는 답이 '나중에 받은 답' 으로 이겨 계정 응답의 한 줄을 가린다.
+     */
+    fun recordBillingAnswer(result: EntitlementWrite) {
+        if (result != EntitlementWrite.Applied) return
         billingAnswerOrder = ++answerOrder
     }
 
@@ -125,8 +195,24 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
         )
 
     /**
+     * 종료 안내 이펙트(`AlarmTalkApp`)가 **입력이 바뀔 때마다** 부른다 — 준비 신호·다른 창
+     * (`PersonalPromoNoticeGates.ready`)이 막혀 있으면 떠 있는 안내를 걷고 이 진입을 '판정 전' 으로
+     * 되돌리고([deferEndNotice]), 열려 있으면 판정한다([maybeShowEndNotice]).
+     *
+     * 이펙트 안에 이 갈래를 두지 않고 여기 두는 이유는 테스트다 — 목소리 등록 창·권한 창이 떴다
+     * 닫히는 순서를 장부만으로 재현할 수 있다(`PersonalPromoLedgerTest`).
+     */
+    fun evaluateEndNotice(gatesReady: Boolean, entry: Long, optedOutEndsAt: String?, nowMillis: Long) {
+        if (!gatesReady) {
+            deferEndNotice()
+            return
+        }
+        maybeShowEndNotice(entry, optedOutEndsAt, nowMillis)
+    }
+
+    /**
      * 이번 진입에서 종료 안내를 띄울지 판정한다. **준비 신호·차단 게이트는 부르는 쪽이 본다**
-     * (`AlarmTalkApp` 의 `PersonalPromoNoticeGates`). 규칙은 [decidePersonalPromoEndNotice] 하나다.
+     * ([evaluateEndNotice]). 규칙은 [decidePersonalPromoEndNotice] 하나다.
      */
     fun maybeShowEndNotice(entry: Long, optedOutEndsAt: String?, nowMillis: Long) {
         if (shownEndNotice != null) return
@@ -134,7 +220,7 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
             val decision = decidePersonalPromoEndNotice(
                 entry = entry,
                 handledEntry = handledEntry,
-                answeredEntry = accountAnsweredEntry,
+                entryAnswer = accountEntryAnswer,
                 latestPromo = latestAccountPromo,
                 nowMillis = nowMillis,
                 optedOutEndsAt = optedOutEndsAt,
@@ -181,9 +267,10 @@ internal class PersonalPromoLedger(private val currentEntry: () -> Long) {
         shownEndNotice = null
         handledEntry = 0L
         latestAccountPromo = null
-        accountAnsweredEntry = 0L
+        accountEntryAnswer = null
         planAnsweredEntry = 0L
         answerSeq = requestSeq + 1
+        planAnswerSeq = requestSeq + 1
         accountAnswerOrder = 0L
         billingAnswerOrder = 0L
     }
@@ -228,3 +315,77 @@ internal fun planScreenPersonalPromoOf(
  */
 internal fun freePlanLockMayApply(freeOnlyByPromoLapse: Boolean, planAnsweredEntry: Long, entry: Long): Boolean =
     !freeOnlyByPromoLapse || (entry > 0L && planAnsweredEntry == entry)
+
+/** 전경 잠금 이펙트(`AlarmTalkApp`)가 **이번에** 할 일([foregroundPlanLockAction]). */
+internal enum class ForegroundPlanLockAction {
+    /** 유료 목소리 알람을 기본 알람으로 바꾼다(`MainViewModel.applyFreePlanVoiceLock`). */
+    Lock,
+
+    /**
+     * 확실히 무료지만 근거가 낡은 프로모 하나라 **이 진입의 plan 반영을 기다린다**
+     * ([freePlanLockMayApply]). 아무 갈래도 타지 않는다 — 토큰을 굴리는 plan 재조회도 부르지
+     * 않는다(진입마다의 갱신이 이미 나가 있다). 답이 오면 [deferredPromoLapseLockDue] 가 다시 본다.
+     */
+    WaitForEntryPlan,
+
+    /** 유료로 확정됐다 — 잠근 것을 되돌린다(`MainViewModel.restorePaidVoiceAlarmsIfLocked`). */
+    Restore,
+
+    /** 구독 응답은 무권한인데 plan 이 아직 유료일 수 있다 — `/auth/me` 로 plan 을 다시 받는다. */
+    RefreshPlan,
+
+    /** 할 일 없다. */
+    None,
+}
+
+/**
+ * 전경 잠금 이펙트의 갈래 — 이펙트는 입력을 모아 이걸 부르고 답대로만 움직인다.
+ *
+ * 순서가 규칙이다: **확실한 무료가 먼저**(살아 있는 구독 행이 있으면 보류라 잠그지 않는다),
+ * 그다음 유료 확정이면 복원, 그다음 구독 응답과 plan 이 어긋나면 plan 재조회.
+ *
+ * @param definitelyFree `MainViewModel.isDefinitelyFreePlan` — 스토어 확인이 끝났고 판정기가 무료.
+ * @param subscriptionRowAlive 구독 응답에 유료 행이 살아 있다(보류 — 되돌릴 수 없는 잠금 금지).
+ * @param freeOnlyByPromoLapse `MainViewModel.isFreeOnlyByPromoLapse`.
+ * @param paidEntitled 판정기가 유료로 확정했다(`PaidVoiceAccess.Entitled`).
+ * @param billingNotEntitled 구독 응답이 무권한이고 커플·가족 접근도 없다.
+ */
+internal fun foregroundPlanLockAction(
+    signedIn: Boolean,
+    definitelyFree: Boolean,
+    subscriptionRowAlive: Boolean,
+    freeOnlyByPromoLapse: Boolean,
+    planAnsweredEntry: Long,
+    entry: Long,
+    paidEntitled: Boolean,
+    billingNotEntitled: Boolean,
+): ForegroundPlanLockAction = when {
+    signedIn && definitelyFree && !subscriptionRowAlive ->
+        if (freePlanLockMayApply(freeOnlyByPromoLapse, planAnsweredEntry, entry)) {
+            ForegroundPlanLockAction.Lock
+        } else {
+            ForegroundPlanLockAction.WaitForEntryPlan
+        }
+    signedIn && paidEntitled -> ForegroundPlanLockAction.Restore
+    billingNotEntitled -> ForegroundPlanLockAction.RefreshPlan
+    else -> ForegroundPlanLockAction.None
+}
+
+/**
+ * [ForegroundPlanLockAction.WaitForEntryPlan] 으로 **미뤄 둔 잠금을 지금 걸 때인가** — 이 진입의
+ * `/auth/me` 가 plan 에 반영된 순간(`planAnsweredEntry` 가 바뀔 때 — `AlarmTalkApp` 의 재확인
+ * 이펙트) 다시 본다. 답이 plan 을 바꾸지 않아도(여전히 `plus`) 다시 봐야 해서 따로 둔다.
+ *
+ * 미뤄 둔 갈래(무료의 근거가 낡은 프로모 하나)만 여기서 건다 — 다른 갈래는 위 이펙트가 이미
+ * 곧바로 처리했다. 진입 전(0)의 답은 어느 진입의 답도 아니다([freePlanLockMayApply]).
+ */
+internal fun deferredPromoLapseLockDue(
+    signedIn: Boolean,
+    planAnsweredEntry: Long,
+    entry: Long,
+    freeOnlyByPromoLapse: Boolean,
+    definitelyFree: Boolean,
+    subscriptionRowAlive: Boolean,
+): Boolean =
+    signedIn && freeOnlyByPromoLapse && definitelyFree && !subscriptionRowAlive &&
+        freePlanLockMayApply(freeOnlyByPromoLapse = true, planAnsweredEntry = planAnsweredEntry, entry = entry)
