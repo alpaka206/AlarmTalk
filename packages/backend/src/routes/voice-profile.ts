@@ -437,13 +437,40 @@ async function setSpeechStyleStatus(
 }
 
 /**
- * 말투 분석 결과(성공·실패)를 쓸 행 — 인자 `[profileId, providerVoiceId, providerVoiceId]`.
- * 이 프로필(초안이든 현역이든), 또는 초안이 분석 도중 교체로 소비됐으면 같은 provider 보이스를 넘겨받은
- * 현역 프로필 — 단 분석을 기다리는(pending) 행만. 교체는 한 트랜잭션이라 둘이 동시에 살아 있지 않다.
+ * 말투 분석 결과(성공·실패)를 쓸 행 — 인자는 `speechStyleResultTargetArgs`.
+ *
+ * 1. **이 프로필** — 단 분석을 시작할 때 본 것과 **같은 녹음**을 아직 뜻할 때만(Codex #802). 제자리 교체는
+ *    id 를 그대로 두고 provider 보이스·원본을 갈아 끼우므로, id 만 보면 옛 녹음의 분석이 새 목소리의 말투를
+ *    덮고 클립까지 다시 굽게 된다. 무엇으로 묶는지는 경로마다 다르다:
+ *    - 등록(초안): 방금 만든 **provider 보이스**. 원본 저장이 best-effort 라 녹음 키가 없을 수 있다.
+ *    - 재시도: 읽은 **원본 녹음 키**(`voice_uploads.object_key`). provider 보이스로 묶으면 안 된다 —
+ *      LRU 회수 뒤 복구는 같은 녹음으로 보이스만 다시 만들어, 결과가 버려지고 상태가 'pending' 에 갇힌다.
+ * 2. 초안이 분석 도중 교체로 **소비됐으면**, 같은 provider 보이스를 넘겨받은 현역 프로필 — 분석을 기다리는
+ *    (pending) 행만. 교체는 한 트랜잭션이라 초안과 현역이 동시에 살아 있지 않다.
  */
-export const SPEECH_STYLE_RESULT_TARGET_SQL = `deleted_at IS NULL AND (id = ? OR (
-      ? IS NOT NULL AND elevenlabs_voice_id = ? AND COALESCE(is_draft, 0) = 0
-      AND speech_style_status = 'pending'))`;
+function speechStyleResultTargetSql(handoffStatus: 'pending' | 'done'): string {
+  return `deleted_at IS NULL AND (
+      (id = ?
+        AND (? IS NULL OR elevenlabs_voice_id = ?)
+        AND (? IS NULL OR EXISTS (
+          SELECT 1 FROM voice_uploads su
+          WHERE su.voice_profile_id = voice_profiles.id AND su.object_key = ?)))
+      OR (? IS NOT NULL AND elevenlabs_voice_id = ? AND COALESCE(is_draft, 0) = 0
+        AND speech_style_status = '${handoffStatus}'))`;
+}
+
+export const SPEECH_STYLE_RESULT_TARGET_SQL = speechStyleResultTargetSql('pending');
+/** 결과를 **쓴 뒤** 같은 행을 가리킬 때 — 넘겨받은 현역 행의 상태는 이제 'done' 이다. */
+const SPEECH_STYLE_RESULT_WRITTEN_SQL = speechStyleResultTargetSql('done');
+
+export function speechStyleResultTargetArgs(
+  profileId: string,
+  bind: { providerVoiceId?: string | null; sourceObjectKey?: string | null },
+): (string | null)[] {
+  const provider = bind.providerVoiceId ?? null;
+  const source = bind.sourceObjectKey ?? null;
+  return [profileId, provider, provider, source, source, provider, provider];
+}
 
 /**
  * 등록 녹음 전사(ElevenLabs Scribe) → Vertex 말투 분석 → speech_style 저장.
@@ -468,12 +495,17 @@ async function runSpeechStyleAnalysis(
      * 분석 대기 상한(10분)만큼 멈췄다가 말투 없이 굽는다. 같은 provider 보이스를 문 현역 행을 함께 고친다.
      */
     providerVoiceId?: string | null;
+    /** 재시도가 읽은 원본 녹음 키 — 결과를 그 녹음을 아직 문 프로필에만 쓴다(`SPEECH_STYLE_RESULT_TARGET_SQL`). */
+    sourceObjectKey?: string | null;
   },
 ): Promise<{ ok: true } | { ok: false; error: unknown }> {
   const db = getDB(env);
   const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
   const providerVoiceId = options.providerVoiceId ?? null;
-  const targetArgs = [profileId, providerVoiceId, providerVoiceId];
+  const targetArgs = speechStyleResultTargetArgs(profileId, {
+    providerVoiceId,
+    sourceObjectKey: options.sourceObjectKey ?? null,
+  });
   try {
     // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
     const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -514,17 +546,21 @@ async function runSpeechStyleAnalysis(
         // 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어진다). 진행 중이던 claim 은 풀어 새 회차가
         // 처음부터 다시 돈다(옛 결과 새 결이 섞이지 않게). 큐 행이 없으면(아직 초안) 아무 일도 없다.
         // 말투 저장과 한 batch 라 둘 중 하나만 남지 않는다.
+        // 대상은 **방금 이 말투를 받은 행**이다(같은 대상 조건 + 방금 쓴 값) — 위 UPDATE 가 묶음 조건에
+        // 걸려 0행이면 여기서도 아무것도 다시 굽지 않는다. `requested_at` 은 밀리초까지 남긴다 — 같은 초에
+        // 게시된 옛 클립을 새 것으로 세지 않도록(`findMissingStockTargets` 가 엄격한 `>` 로 비교한다).
         {
           sql: `UPDATE voice_prerender_queue
                 SET status = 'pending', attempts = 0, refresh_existing = 1,
-                    requested_at = datetime('now'), claimed_at = NULL, claim_token = NULL,
-                    updated_at = datetime('now')
+                    requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now'),
+                    claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
                 WHERE voice_profile_id IN (
                   SELECT id FROM voice_profiles
-                  WHERE deleted_at IS NULL AND COALESCE(is_draft, 0) = 0
-                    AND (id = ? OR (? IS NOT NULL AND elevenlabs_voice_id = ?))
+                  WHERE COALESCE(is_draft, 0) = 0
+                    AND speech_style_status = 'done' AND speech_style = ?
+                    AND ${SPEECH_STYLE_RESULT_WRITTEN_SQL}
                 )`,
-          args: targetArgs,
+          args: [JSON.stringify(style), ...targetArgs],
         },
       ],
       'write',
@@ -2458,6 +2494,8 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
     fileName: (upload!.original_name as string | null) ?? stored.meta.originalName ?? null,
     language,
     ownerPk: userPk,
+    // 이 녹음을 아직 뜻하는 프로필에만 쓴다 — 분석 도중 제자리 교체되면 옛 녹음의 말투가 새 목소리를 덮는다.
+    sourceObjectKey: String(upload!.object_key),
   });
   if (!result.ok) {
     logRouteError(c, result.error);
@@ -2522,7 +2560,7 @@ voiceProfile.get('/:id/prerender-status', async (c) => {
                    SELECT 1 FROM generated_audio_assets ga
                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
                       AND ga.provider_voice_id = vp.elevenlabs_voice_id
-                      AND datetime(ga.created_at) >= datetime(q.requested_at)
+                      AND julianday(ga.created_at) > julianday(q.requested_at)
                  )
                )`
     : '';
@@ -2686,7 +2724,7 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
                    AND m.audio_url IS NOT NULL
                    AND ga.provider_voice_id = vp.elevenlabs_voice_id
                    AND (COALESCE(q.refresh_existing, 0) = 0
-                     OR datetime(ga.created_at) >= datetime(q.requested_at))`,
+                     OR julianday(ga.created_at) > julianday(q.requested_at))`,
           args: [id],
         })
       ).rows[0]?.count ?? 0,

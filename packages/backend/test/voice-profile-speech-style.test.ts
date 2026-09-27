@@ -343,7 +343,10 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
 
   /** 소스 조회가 프로필 연결본만 대상으로 하는지 (C10 — '사용자 최신 1건' 폴백 제거). */
   function expectProfileScopedSourceQuery() {
-    const sourceQueries = mockDB.calls.filter((call) => call.sql.includes('FROM voice_uploads'));
+    // 원본을 **고르는** 조회만 본다 — 결과 기록 UPDATE 도 녹음 대조 서브쿼리로 voice_uploads 를 언급한다.
+    const sourceQueries = mockDB.calls.filter(
+      (call) => call.sql.trimStart().startsWith('SELECT') && call.sql.includes('FROM voice_uploads'),
+    );
     expect(sourceQueries.length).toBeGreaterThan(0);
     for (const call of sourceQueries) {
       expect(call.sql).toContain('voice_profile_id = ?');
@@ -438,7 +441,12 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
       (call) => call.sql.includes('UPDATE voice_prerender_queue') && call.sql.includes('refresh_existing = 1'),
     );
     expect(requeue, '말투 재시도 성공이 사전렌더를 다시 굽게 하지 않는다').toBeDefined();
-    expect(requeue!.sql).toContain("requested_at = datetime('now')");
+    // 밀리초까지 — 같은 초에 게시된 옛 클립을 새 것으로 세지 않게.
+    expect(requeue!.sql).toContain("requested_at = strftime('%Y-%m-%d %H:%M:%f', 'now')");
+    // 결과는 읽은 **그 녹음**을 아직 문 프로필에만 쓴다 — 분석 도중 제자리 교체되면 옛 녹음의 말투가
+    // 새 목소리를 덮는다(Codex #802).
+    expect(doneCall!.sql).toContain('su.object_key = ?');
+    expect(doneCall!.args).toContain(meta.objectKey);
     expect(requeue!.sql).toContain('COALESCE(is_draft, 0) = 0');
     expect(requeue!.args).toContain(V1);
   });

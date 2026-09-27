@@ -535,8 +535,10 @@ export async function findMissingStockTargets(
     sql: `SELECT m.voice_profile_id, m.category, m.language, m.variant,
                  ga.provider_voice_id AS published_provider_voice_id,
                  -- 다시 굽는 회차는 그 요청 뒤에 게시된 것만 최신이다(아래 refreshExisting 필터).
+                 -- 둘 다 밀리초까지 남기고 **엄격한 >** 로 본다: 같은 순간이면 다시 굽는 쪽으로 기운다
+                 -- (한 번 더 굽는 것은 괜찮고, 옛 결이 섞이는 것은 안 된다).
                  CASE WHEN q.requested_at IS NULL
-                        OR datetime(ga.created_at) >= datetime(q.requested_at) THEN 1 ELSE 0 END
+                        OR julianday(ga.created_at) > julianday(q.requested_at) THEN 1 ELSE 0 END
                    AS published_after_refresh
           FROM messages m
           LEFT JOIN generated_audio_assets ga
@@ -1600,11 +1602,12 @@ export async function generateStockClip(
         // 있으면(같은 목소리·같은 문구) 무시된다 — 교체는 provider voice id 가 달라
         // 해시가 반드시 갈라지므로 정상적으로 새 행이 생긴다.
         await tx.execute({
+          // `created_at` 은 밀리초까지 — 다시 굽는 회차가 '요청 뒤에 게시된 것' 을 같은 초 안에서도 가른다.
           sql: `INSERT OR IGNORE INTO generated_audio_assets
                 (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                  model_id, language, request_hash, text,
-                 audio_url, audio_object_key, audio_format)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 audio_url, audio_object_key, audio_format, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
           args: [
             crypto.randomUUID(),
             target.ownerUserId,
@@ -1644,8 +1647,8 @@ export async function generateStockClip(
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
              model_id, language, request_hash, text,
-             audio_url, audio_object_key, audio_format)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             audio_url, audio_object_key, audio_format, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'))`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,

@@ -17,7 +17,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
 import { CURRENT_POLICY_VERSION, SENSITIVE_REQUIRED_CONSENTS } from '../src/lib/consent';
-import { replaceVoiceInPlace, SPEECH_STYLE_RESULT_TARGET_SQL } from '../src/routes/voice-profile';
+import {
+  replaceVoiceInPlace,
+  SPEECH_STYLE_RESULT_TARGET_SQL,
+  speechStyleResultTargetArgs,
+} from '../src/routes/voice-profile';
 
 async function migratedDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -223,7 +227,7 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       const written = await db.execute({
         sql: `UPDATE voice_profiles SET speech_style = ?, speech_style_status = 'done'
               WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
-        args: ['{"energy":"calm"}', 'vp2', 'eleven-new', 'eleven-new'],
+        args: ['{"energy":"calm"}', ...speechStyleResultTargetArgs('vp2', { providerVoiceId: 'eleven-new' })],
       });
       expect(written.rowsAffected).toBe(1);
       const target = await db.execute(
@@ -235,9 +239,30 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       // 이미 끝난(pending 아닌) 현역은 건드리지 않는다 — 늦게 온 옛 분석이 새 결과를 덮지 않게.
       const again = await db.execute({
         sql: `UPDATE voice_profiles SET speech_style_status = 'failed' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
-        args: ['vp2', 'eleven-new', 'eleven-new'],
+        args: speechStyleResultTargetArgs('vp2', { providerVoiceId: 'eleven-new' }),
       });
       expect(again.rowsAffected).toBe(0);
+
+      // ⚠ **옛 녹음의 분석은 제자리 교체된 현역을 덮지 않는다**(Codex #802). vp1 은 id 가 그대로지만 이제
+      // 새 녹음(up-new)·새 보이스(eleven-new)를 뜻한다. 교체 전에 옛 녹음(up-old)으로 시작한 재시도,
+      // 옛 보이스(eleven-old)로 시작한 등록 분석은 둘 다 0행이어야 한다.
+      await db.execute("UPDATE voice_profiles SET speech_style_status = 'pending' WHERE id = 'vp1'");
+      const staleRetry = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'old' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { sourceObjectKey: 'uploads/old.wav' }),
+      });
+      expect(staleRetry.rowsAffected).toBe(0);
+      const staleClone = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'old' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { providerVoiceId: 'eleven-old' }),
+      });
+      expect(staleClone.rowsAffected).toBe(0);
+      // 지금 녹음으로 시작한 재시도는 그대로 쓴다(LRU 복구로 보이스만 바뀌어도 녹음이 같으면 같은 목소리다).
+      const currentRetry = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = 'new' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: speechStyleResultTargetArgs('vp1', { sourceObjectKey: 'uploads/new.wav' }),
+      });
+      expect(currentRetry.rowsAffected).toBe(1);
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
