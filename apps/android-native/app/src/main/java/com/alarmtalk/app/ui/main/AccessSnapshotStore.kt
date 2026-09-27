@@ -58,7 +58,9 @@ internal data class AccessSnapshot(
      */
     val userPlanPromoEndsAt: String? = null,
     /**
-     * [userPlan] 을 **서버에서 받은 시각**(기기 시계, epoch millis). 모르면 null.
+     * [userPlan] 을 **서버에서 받은 시각**(epoch millis). 모르면 null. 서버가 준 계산 시각
+     * (`personal_promo.computed_at`, 서버 시계)이 있으면 그것이고, 없으면 기기가 받은 시각이다
+     * (D7 — [withServerUser]·[withBillingResponse] 가 `planAnswerStampMillis` 로 바꿔 적는다).
      *
      * 오프라인 차단은 **낡은 캐시만** 자른다 — 종료 **전에** 받은 `plus` 만 종료 뒤에 무료로
      * 읽고, 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 믿는다([personalPromoLapsed]).
@@ -74,9 +76,16 @@ internal data class AccessSnapshot(
     fun withUserPlan(plan: String?, promoEndsAt: String?, fetchedAtMillis: Long?): AccessSnapshot =
         copy(userPlan = plan, userPlanPromoEndsAt = promoEndsAt, userPlanFetchedAtMillis = fetchedAtMillis)
 
-    /** [withUserPlan] 의 `/auth/me` 응답용 모양. [fetchedAtMillis] 는 그 응답을 받은 시각이다. */
-    fun withServerUser(user: AuthUser, fetchedAtMillis: Long): AccessSnapshot =
-        withUserPlan(user.plan, normalizePersonalPromo(user.personalPromo)?.endsAt, fetchedAtMillis)
+    /**
+     * [withUserPlan] 의 `/auth/me` 응답용 모양. [receivedAtMillis] 는 기기가 그 응답을 받은 시각이다 —
+     * 응답이 계산 시각(`computed_at`)을 실었으면 그것이 대신 적힌다(`planAnswerStampMillis`).
+     */
+    fun withServerUser(user: AuthUser, receivedAtMillis: Long): AccessSnapshot =
+        withUserPlan(
+            user.plan,
+            normalizePersonalPromo(user.personalPromo)?.endsAt,
+            planAnswerStampMillis(user.personalPromo, receivedAtMillis),
+        )
 
     /** 캐시된 plan 답의 프로모 표지(`resolvePaidVoiceAccess` 의 `userPlanPromo`). */
     fun userPlanPromoStamp(): PlanPromoStamp? =
@@ -101,9 +110,10 @@ internal data class AccessSnapshot(
      * plan 을 새로 받았을 때만 프로모 종료 시각·받은 시각도 **같은 응답의 것으로** 바꾼다 —
      * 일상 조회는 plan 을 안 주므로 옛 짝을 그대로 둔다.
      *
-     * @param fetchedAtMillis 이 응답을 받은 시각. plan 이 실려 있을 때만 쓰인다.
+     * @param receivedAtMillis 기기가 이 응답을 받은 시각. plan 이 실려 있을 때만 쓰인다 — 응답이
+     *   계산 시각(`personal_promo.computed_at`)을 실었으면 그것이 대신 적힌다(`planAnswerStampMillis`).
      */
-    fun withBillingResponse(response: BillingSubscriptionResponse?, fetchedAtMillis: Long): AccessSnapshot {
+    fun withBillingResponse(response: BillingSubscriptionResponse?, receivedAtMillis: Long): AccessSnapshot {
         val invalidateStoreSignal = response?.userPlan?.trim()?.lowercase() == "free"
         val freshPlan = response?.userPlan
         return copy(
@@ -114,7 +124,11 @@ internal data class AccessSnapshot(
             } else {
                 userPlanPromoEndsAt
             },
-            userPlanFetchedAtMillis = if (freshPlan != null) fetchedAtMillis else userPlanFetchedAtMillis,
+            userPlanFetchedAtMillis = if (freshPlan != null) {
+                planAnswerStampMillis(response?.personalPromo, receivedAtMillis)
+            } else {
+                userPlanFetchedAtMillis
+            },
             storePlanKey = if (invalidateStoreSignal) null else storePlanKey,
             storeEntitlementUntilMillis = if (invalidateStoreSignal) null else storeEntitlementUntilMillis,
         )

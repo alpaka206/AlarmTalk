@@ -622,7 +622,7 @@ internal fun AlarmTalkApp(
         val access = viewModel.paidVoiceAccess()
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
-            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, viewModel.personalPromoTierHold())
         // ⚠ **보류(ON_HOLD/PAUSED)에서는 잠그지 않는다**(2026-09-01 리뷰).
         // 서버는 회복을 위해 구독 행을 **남긴 채** `users.plan` 만 회수하므로, 판정기는
         // (의도대로) '무료' 라고 답한다 — 울림·예약은 그걸로 막으면 되고 결제가 복구되면
@@ -635,8 +635,25 @@ internal fun AlarmTalkApp(
             // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
             // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
             // 만료돼 있으면 그 순간 영구 강등이 걸린다.
-            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive ->
-                viewModel.applyFreePlanVoiceLock()
+            //
+            // ⚠ **기간 한정 개인 플랜의 오프라인 차단 때문만인 무료는 이 진입의 답을 기다린다**
+            //   (`freePlanLockMayApply`). 콜드 스타트·복귀 직후의 plan 은 지난 실행의 캐시라, 그
+            //   사이 다른 기기에서 쿠폰·iOS 결제·가족 합류로 원시 유료가 된 사람도 종료 시각만
+            //   지나면 여기서 잠기고 강등 안내가 적힌다 — Play 조회가 `/auth/me` 보다 먼저 끝나면
+            //   그렇게 된다. 기다리는 동안은 아무 갈래도 타지 않는다(아래 갈래의 토큰을 굴리는
+            //   `refreshAppSession()` 도 부르지 않는다 — 진입마다의 갱신이 이미 나가 있다).
+            //   답이 오면 바로 아래의 이펙트가 다시 본다.
+            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive -> {
+                if (
+                    freePlanLockMayApply(
+                        freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
+                        planAnsweredEntry = viewModel.planAnsweredEntry,
+                        entry = appEntry,
+                    )
+                ) {
+                    viewModel.applyFreePlanVoiceLock()
+                }
+            }
             // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(2026-09-01 리뷰). 이 갈래가 없어서
             // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
             // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
@@ -654,6 +671,19 @@ internal fun AlarmTalkApp(
             // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
             // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
             billingNotEntitled -> viewModel.refreshAppSession()
+        }
+    }
+
+    // 위 이펙트가 **오프라인 차단 때문에 미뤄 둔** 무료 잠금 — 이 진입의 `/auth/me` 가 plan 에
+    // 반영되면(`planAnsweredEntry`) 그때 다시 본다. 답이 plan 을 바꾸지 않아도(여전히 `plus`)
+    // 다시 봐야 해서 따로 둔다.
+    // ⚠ **이 값을 위 이펙트의 키에 넣지 말 것.** 진입마다 바뀌는 값이라, 넣으면 위의 다른 갈래
+    //   (잠금 복원, 토큰을 굴리는 `refreshAppSession()`)까지 복귀할 때마다 다시 돈다.
+    LaunchedEffect(viewModel.planAnsweredEntry) {
+        if (authSession == null || viewModel.planAnsweredEntry != appEntry) return@LaunchedEffect
+        if (!viewModel.isFreeOnlyByPromoLapse()) return@LaunchedEffect
+        if (viewModel.isDefinitelyFreePlan() && !hasPaidVoiceAccess(subscriptionResponse)) {
+            viewModel.applyFreePlanVoiceLock()
         }
     }
 
@@ -775,8 +805,10 @@ internal fun AlarmTalkApp(
     // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
     // 가족 알람 자격이 있으면 '누구를 깨울까요?' 시트에서 대상을 먼저 고른다.
     val alarmTargetRecipients = familyAlarmRecipients(familyGroup, authSession)
+    // 기간 한정 개인 플랜 중에는 보류 규칙이 먼저다 — 결제 보류로 남은 구독 행·그룹으로는 열지
+    // 않는다(`PersonalPromoTierHold`).
     val canCreateFamilyAlarm = authSession != null &&
-        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
+        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, viewModel.personalPromoTierHold()) &&
         alarmTargetRecipients.isNotEmpty()
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
     // 선다운로드 워커의 진행(받는 중일 때만). 목소리 탭 '기본 목소리' 헤더 옆에 뜬다.
@@ -1480,6 +1512,8 @@ internal fun AlarmTalkApp(
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
                           storeEntitledNow = viewModel.isStoreEntitledNow(),
+                          personalPromoTierHold = viewModel.personalPromoTierHold(),
+                          planScreenPersonalPromo = viewModel.planScreenPersonalPromo(),
                       )
                   }
               }

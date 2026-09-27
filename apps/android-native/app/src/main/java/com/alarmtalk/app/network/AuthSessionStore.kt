@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.planAnswerStampMillis
 import java.util.Base64
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.callbackFlow
@@ -19,7 +20,9 @@ data class AuthSession(
     val provider: String,
     val user: AuthUser,
     /**
-     * [user] 를 **서버에서 받은 시각**(기기 시계, epoch millis). 모르면 null.
+     * [user] 를 **서버에서 받은 시각**(epoch millis). 모르면 null.
+     * 서버가 `personal_promo.computed_at` 을 줬으면 그 시각(서버 시계)이고, 아니면 기기가 받은
+     * 시각이다(D7 — `planAnswerStampMillis`, 이 저장소의 `save` 가 바꿔 적는다).
      *
      * 기간 한정 개인 플랜의 오프라인 차단이 이 값을 본다(`resolvePaidVoiceAccess` 의
      * `userPlanPromo`) — 캐시된 계산값 `plus` 는 **종료 전에 받은 것**일 때만, 종료가 지나면
@@ -227,7 +230,7 @@ class AuthSessionStore internal constructor(
             token = response.token,
             provider = PROVIDER_APP,
             user = response.user,
-            // 방금 받은 응답이다.
+            // 방금 받은 응답이다(서버가 계산 시각을 줬으면 `save` 가 그것으로 바꿔 적는다).
             userFetchedAtMillis = System.currentTimeMillis(),
         )
 
@@ -525,6 +528,12 @@ class AuthSessionStore internal constructor(
         user: AuthUser,
         userFetchedAtMillis: Long?,
     ): AuthSession {
+        // 서버가 계산 시각(`personal_promo.computed_at`)을 줬으면 그것이 이 답의 시각이다(D7).
+        // **정규화 전에** 읽는다 — 정규화가 그 키를 뺀다. 프로필만 고친 저장은 이미 정규화된
+        // user 라 키가 없어, 들고 있던 값이 그대로 남는다.
+        val answeredAtMillis = userFetchedAtMillis?.let { received ->
+            planAnswerStampMillis(runCatching { user.personalPromo }.getOrNull(), received)
+        }
         val normalizedUser = normalizeUser(user)
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
@@ -565,10 +574,10 @@ class AuthSessionStore internal constructor(
                 }
                 // plan·프로모와 **한 벌로** 적는다 — 받은 시각이 다른 답에 붙으면 오프라인 차단이
                 //   엉뚱한 답을 자른다([AuthSession.userFetchedAtMillis]).
-                if (userFetchedAtMillis == null || userFetchedAtMillis <= 0L) {
+                if (answeredAtMillis == null || answeredAtMillis <= 0L) {
                     editor.remove(KEY_USER_FETCHED_AT)
                 } else {
-                    editor.putLong(KEY_USER_FETCHED_AT, userFetchedAtMillis)
+                    editor.putLong(KEY_USER_FETCHED_AT, answeredAtMillis)
                 }
             }
             .apply()
@@ -576,7 +585,7 @@ class AuthSessionStore internal constructor(
             token = token,
             provider = provider,
             user = normalizedUser,
-            userFetchedAtMillis = userFetchedAtMillis?.takeIf { it > 0L },
+            userFetchedAtMillis = answeredAtMillis?.takeIf { it > 0L },
         )
     }
 
@@ -898,6 +907,11 @@ class AuthSessionStore internal constructor(
  * 끝을 모르는 프로모는 표시할 날짜도, 오프라인 차단 기준도 없다.
  *
  * Gson 은 JSON 에 없는 필드를 non-null 선언과 무관하게 null 로 채우므로 필드마다 감싼다.
+ *
+ * `computed_at` 은 **싣지 않는다** — 그 값은 받는 자리에서 답의 시각으로 바뀌어
+ * [AuthSession.userFetchedAtMillis]·`AccessSnapshot.userPlanFetchedAtMillis` 에 적힌다
+ * (`planAnswerStampMillis`). 응답마다 달라지는 값을 들고 있으면 같은 프로모가 응답마다
+ * '다른 값' 이 되어, 저장본을 다시 읽은 값과도 어긋난다.
  */
 internal fun normalizePersonalPromo(promo: PersonalPromo?): PersonalPromo? {
     val endsAt = runCatching { promo?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }

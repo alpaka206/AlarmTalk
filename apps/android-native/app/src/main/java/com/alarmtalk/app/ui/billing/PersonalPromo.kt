@@ -34,15 +34,36 @@ internal fun parseServerInstantMillis(value: String?): Long? {
 // ── 오프라인 차단 — **낡은 캐시만** 자른다 ────────────────────────────────────────────
 
 /**
+ * 계정·구독 응답의 **답한 시각** — 오프라인 차단(D1)이 '그 답을 받은 시각' 으로 적는 값(D7).
+ *
+ * 서버가 `personal_promo.computed_at`(서버 시계로 plan 을 계산한 순간)을 주면 **그것**을,
+ * 없으면(그 키를 모르는 서버·프로모가 없는 답·못 읽는 값) 기기가 받은 시각([receivedAtMillis])을 쓴다.
+ *
+ * 왜 서버 시계인가: 비교 대상인 `ends_at` 이 서버 시계다. 기기 시계로 찍으면 기기가 서버보다 Δ
+ * 만큼 빠를 때, 종료 직전에 계산된 답을 종료 Δ 안에 받으면 '종료 뒤에 받은 답' 으로 찍혀
+ * [personalPromoLapsed] 가 **기한 없이** 권위로 믿는다 — 울림 경로가 다음 `/auth/me` 까지 클론
+ * 목소리를 계속 쓴다.
+ *
+ * ⚠ **받는 자리는 전부 이 한 곳을 지난다** — 세션 저장(`AuthSessionStore` 의 `save`), 스냅샷의
+ *   `AccessSnapshot.withServerUser`·`withBillingResponse`. 호출부는 기기가 받은 시각만 넘긴다.
+ *   `computed_at` 은 정규화에서 빠지므로(`normalizePersonalPromo`) 한 번 바뀐 값에 다시 걸어도
+ *   그대로다.
+ * ⚠ **되돌릴 수 없는 경로는 이걸 쓰지 않는다** — 방금 받은 답은 [freshPlanPromoStamp] 다.
+ */
+internal fun planAnswerStampMillis(promo: PersonalPromo?, receivedAtMillis: Long): Long =
+    parseServerInstantMillis(runCatching { promo?.computedAt }.getOrNull()) ?: receivedAtMillis
+
+/**
  * 캐시된 plan 답에 붙은 **프로모 표지** — 그 plan 이 기간 한정 개인 플랜으로 계산된 값일 때,
- * 그 답의 종료 시각([endsAt])과 그 답을 **받은 시각**([fetchedAtMillis], 기기 시계).
+ * 그 답의 종료 시각([endsAt])과 그 답의 **시각**([fetchedAtMillis] — 서버가 준 `computed_at`,
+ * 없으면 기기가 받은 시각. [planAnswerStampMillis]).
  *
  * plan 과 **같은 응답**에서 만든다. 다른 응답의 표지를 붙이면 쿠폰으로 진짜 유료가 된
  * 사용자가 옛 종료 시각에 잠긴다(`AccessSnapshot.userPlanPromoStamp`).
  */
 internal data class PlanPromoStamp(
     val endsAt: String,
-    /** 모르면 null — 그때는 종료 전에 받은 답으로 본다(옛 캐시). */
+    /** 모르면 null — 그때는 종료 전에 받은 답으로 본다(옛 캐시, fail-closed — D7). */
     val fetchedAtMillis: Long?,
 )
 
@@ -73,6 +94,7 @@ internal fun freshPlanPromoStamp(user: AuthUser, nowMillis: Long): PlanPromoStam
  * 3. 그 답을 **종료 전에** 받았다. 종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 권위다 —
  *    기기 시계가 서버보다 빠르면 끝난 뒤에도 `plus` 가 올 수 있고, 그걸 기기 시계로 자르면
  *    서버가 방금 열어 준 것을 앱이 닫는다. 받은 시각을 모르면(옛 캐시) 종료 전에 받은 것으로 본다.
+ *    '받은 시각' 은 서버가 계산한 시각(`computed_at`)이 있으면 그것이다([planAnswerStampMillis]).
  *
  * 진짜 구독 행은 이 규칙과 무관하다 — 판정기가 행을 먼저 본다(`resolvePaidVoiceAccess`).
  */
@@ -95,9 +117,11 @@ internal fun isPersonalPromoActive(promo: PersonalPromo?, nowMillis: Long): Bool
 }
 
 /**
- * 지금 살아 있는 프로모 — **세션(마지막 `/auth/me`·로그인 응답)을 먼저**, 없으면 구독 응답을 본다.
- * 둘 다 서버가 같은 규칙으로 계산한 값이라 어느 쪽이든 날짜는 같다. 끝났거나 못 읽으면 null.
- * 앱을 켜 둔 채 기간이 끝나도 기기 시계로 다시 재므로 표시가 스스로 사라진다.
+ * 지금 살아 있는 프로모 — [sessionPromo] 를 먼저, 없으면 [billingPromo] 를 본다. 끝났거나 못
+ * 읽으면 null. 앱을 켜 둔 채 기간이 끝나도 기기 시계로 다시 재므로 표시가 스스로 사라진다.
+ *
+ * ⚠ 이용권 화면 한 줄은 이걸 직접 쓰지 않는다 — 두 응답 중 **나중에 받은 답**을 고르는
+ *   `planScreenPersonalPromoOf` 를 쓴다(OR 로 보면 결제 직후에도 옛 구독 응답의 promo 가 남는다).
  */
 internal fun activePersonalPromoOf(
     sessionPromo: PersonalPromo?,

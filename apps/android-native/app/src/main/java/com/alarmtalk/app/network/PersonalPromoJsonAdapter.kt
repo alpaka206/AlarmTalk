@@ -32,12 +32,14 @@ class PersonalPromoJsonAdapter : TypeAdapter<PersonalPromo>() {
         var endsAt: String? = null
         var noticeFrom: String? = null
         var deletesVoicesAtEnd: Boolean? = null
+        var computedAt: String? = null
         reader.beginObject()
         while (reader.hasNext()) {
             when (reader.nextName()) {
                 KEY_ENDS_AT -> endsAt = reader.stringOrNull()
                 KEY_NOTICE_FROM -> noticeFrom = reader.stringOrNull()
                 KEY_DELETES_VOICES_AT_END -> deletesVoicesAtEnd = reader.booleanOrNull()
+                KEY_COMPUTED_AT -> computedAt = reader.stringOrNull()
                 else -> reader.skipValue()
             }
         }
@@ -46,6 +48,7 @@ class PersonalPromoJsonAdapter : TypeAdapter<PersonalPromo>() {
             endsAt = endsAt,
             noticeFrom = noticeFrom,
             deletesVoicesAtEnd = deletesVoicesAtEnd,
+            computedAt = computedAt,
         )
     }
 
@@ -58,6 +61,7 @@ class PersonalPromoJsonAdapter : TypeAdapter<PersonalPromo>() {
         value.endsAt?.let { out.name(KEY_ENDS_AT).value(it) }
         value.noticeFrom?.let { out.name(KEY_NOTICE_FROM).value(it) }
         value.deletesVoicesAtEnd?.let { out.name(KEY_DELETES_VOICES_AT_END).value(it) }
+        value.computedAt?.let { out.name(KEY_COMPUTED_AT).value(it) }
         out.endObject()
     }
 
@@ -81,5 +85,6 @@ class PersonalPromoJsonAdapter : TypeAdapter<PersonalPromo>() {
         const val KEY_ENDS_AT = "ends_at"
         const val KEY_NOTICE_FROM = "notice_from"
         const val KEY_DELETES_VOICES_AT_END = "deletes_voices_at_end"
+        const val KEY_COMPUTED_AT = "computed_at"
     }
 }

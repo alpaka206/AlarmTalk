@@ -232,14 +232,82 @@ class BillingPreflightSnapshotTest {
         // 그 답은 서버가 이미 계산한 것이다 — 기기 시계로 자르지 않는다.
         val lateFetch = AccessSnapshot(
             subscriptionResponse = response("""{"subscription":null,"store_renewal_providers":[]}"""),
-        ).withServerUser(promoUser(), fetchedAtMillis = afterPromo)
+        ).withServerUser(promoUser(), receivedAtMillis = afterPromo)
         assertEquals(PaidVoiceAccess.Entitled, accessAt(lateFetch, afterPromo + 60_000))
         // 같은 답을 종료 전에 받았다면 그 캐시는 종료 뒤에 무료로 읽힌다.
-        val earlyFetch = lateFetch.withServerUser(promoUser(), fetchedAtMillis = beforePromoEnd)
+        val earlyFetch = lateFetch.withServerUser(promoUser(), receivedAtMillis = beforePromoEnd)
         assertEquals(PaidVoiceAccess.NotEntitled, accessAt(earlyFetch, afterPromo))
         // 받은 시각을 모르는 옛 캐시는 종료 전에 받은 것으로 본다.
         val legacy = earlyFetch.copy(userPlanFetchedAtMillis = null)
         assertEquals(PaidVoiceAccess.NotEntitled, accessAt(legacy, afterPromo))
+    }
+
+    // ── D7 — 답의 시각은 서버가 계산한 시각이다 ─────────────────────────────────────────
+
+    private val computedJustBeforeEnd = "2026-10-31T14:59:30Z"
+    private val computedJustBeforeEndMillis = java.time.Instant.parse(computedJustBeforeEnd).toEpochMilli()
+
+    private fun promoUserComputedAt(computedAt: String): com.alarmtalk.app.network.AuthUser = gson.fromJson(
+        """{"id":"u1","email":"u1@example.test","plan":"plus",
+            "personal_promo":{"ends_at":"$promoEndsAt","notice_from":"2026-10-24T15:00:00Z",
+            "computed_at":"$computedAt"}}""",
+        com.alarmtalk.app.network.AuthUser::class.java,
+    )
+
+    @Test
+    fun theServersComputedAtIsTheAnswerTimeNotTheDeviceClock() {
+        // 기기 시계가 서버보다 빠르다 — 서버가 종료 30초 전에 계산한 plus 를, 기기 기준 종료 1분 뒤에 받았다.
+        // 기기 시계로 찍으면 '종료 뒤에 받은 답' 이 되어 **기한 없이** 권위가 된다(울림 경로가 다음
+        // `/auth/me` 까지 클론 목소리를 쓴다). 서버 시계로 찍으면 종료 전의 답 — 낡은 캐시로 잘린다.
+        val snapshot = AccessSnapshot(
+            subscriptionResponse = response("""{"subscription":null,"store_renewal_providers":[]}"""),
+        ).withServerUser(promoUserComputedAt(computedJustBeforeEnd), receivedAtMillis = afterPromo)
+        assertEquals(computedJustBeforeEndMillis, snapshot.userPlanFetchedAtMillis)
+        assertEquals(PaidVoiceAccess.NotEntitled, accessAt(snapshot, afterPromo + 60_000))
+        // 기간 안에 읽으면 그대로 유료다.
+        assertEquals(PaidVoiceAccess.Entitled, accessAt(snapshot, promoEnd - 1))
+
+        // 결제 전 조회(구독 응답의 user_plan)도 같은 문을 지난다.
+        val viaPreflight = AccessSnapshot().withBillingResponse(
+            response(
+                """{"subscription":null,"user_plan":"plus","store_renewal_providers":[],
+                    "personal_promo":{"ends_at":"$promoEndsAt","computed_at":"$computedJustBeforeEnd"}}""",
+            ),
+            receivedAtMillis = afterPromo,
+        )
+        assertEquals(computedJustBeforeEndMillis, viaPreflight.userPlanFetchedAtMillis)
+        // 직렬화(재시작·울림이 읽는 캐시)를 지나도 그 시각이다.
+        val restored = gson.fromJson(gson.toJson(viaPreflight), AccessSnapshot::class.java)
+        assertEquals(computedJustBeforeEndMillis, restored.userPlanFetchedAtMillis)
+    }
+
+    @Test
+    fun withoutAReadableComputedAtTheDeviceReceiptStands() {
+        // 이 키를 모르는 서버(옛 서버·테스트)면 예전처럼 기기가 받은 시각이다.
+        val legacy = AccessSnapshot().withServerUser(promoUser(), receivedAtMillis = beforePromoEnd)
+        assertEquals(beforePromoEnd, legacy.userPlanFetchedAtMillis)
+        // 못 읽는 값도 없는 것이다.
+        val garbled = AccessSnapshot().withServerUser(promoUserComputedAt("soon"), receivedAtMillis = beforePromoEnd)
+        assertEquals(beforePromoEnd, garbled.userPlanFetchedAtMillis)
+        assertEquals(beforePromoEnd, planAnswerStampMillis(null, beforePromoEnd))
+    }
+
+    @Test
+    fun aFreshAnswerStillNeverLocksOnTheDeviceClockEvenWithComputedAt() {
+        // 되돌릴 수 없는 경로(`PlanChangeSyncWorker`)는 계산 시각이 있어도 '방금 받은 답' 으로 판정한다(D1).
+        val user = promoUserComputedAt(computedJustBeforeEnd)
+        val deviceNow = afterPromo
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(
+                response("""{"subscription":null,"store_renewal_providers":[]}"""),
+                null,
+                user.plan,
+                false,
+                deviceNow,
+                freshPlanPromoStamp(user, deviceNow),
+            ),
+        )
     }
 
     @Test
@@ -257,7 +325,7 @@ class BillingPreflightSnapshotTest {
                     "store_renewal_providers":["google"]
                 }""",
             ),
-        ).withServerUser(promoUser(), fetchedAtMillis = beforePromoEnd)
+        ).withServerUser(promoUser(), receivedAtMillis = beforePromoEnd)
         assertEquals(PaidVoiceAccess.Entitled, accessAt(onHold, afterPromo))
     }
 

@@ -320,4 +320,107 @@ class PaidVoiceAccessTest {
             ),
         )
     }
+
+    // ── 기간 중의 보류 규칙(D9) — 남은 구독 행·그룹은 커플·가족을 열지 못한다 ──────────────────
+    //
+    // 결제 보류(ON_HOLD·PAUSED)는 구독 행과 그룹을 **남긴 채** `users.plan` 만 회수한다. 기간 중에는
+    // 서버가 그 free 를 plus 로 계산해 주므로 plan 만 보면 보류인지 모른다 — `personal_promo` 가
+    // 있다는 것이 원시 free 의 신호다. iOS `PlanTier.bestKnown(user:)` 의 `suspended` 와 같은 답.
+
+    private val retainedFamilyRow = BillingSubscriptionResponse(
+        subscription = BillingSubscription(
+            id = "retained",
+            planId = "family",
+            status = "active",
+            startsAt = "2026-10-01T00:00:00Z",
+            expiresAt = "2026-12-01T00:00:00Z",
+        ),
+        plan = BillingPlan(
+            id = "family",
+            key = "family",
+            name = "가족",
+            planType = "family",
+            periodDays = 30,
+            maxMembers = 5,
+            priceKrw = 9900,
+        ),
+    )
+
+    private val retainedGroup = com.alarmtalk.app.network.FamilyGroupCurrentResponse(
+        group = com.alarmtalk.app.network.FamilyGroup(
+            id = "g1",
+            ownerUserId = "owner",
+            planId = "family",
+            maxMembers = 5,
+            createdAt = "2026-10-01T00:00:00Z",
+        ),
+        role = "member",
+        members = listOf(
+            com.alarmtalk.app.network.FamilyGroupMember(
+                id = "m1",
+                userId = "owner",
+                role = "owner",
+                joinedAt = "2026-10-01T00:00:00Z",
+                email = "owner@example.test",
+            ),
+        ),
+    )
+
+    private val memberSession = com.alarmtalk.app.network.AuthSession(
+        token = "t",
+        provider = com.alarmtalk.app.network.AuthSessionStore.PROVIDER_APP,
+        user = com.alarmtalk.app.network.AuthUser(id = "me", email = "me@example.test", plan = "plus"),
+    )
+
+    @Test
+    fun duringThePromoARetainedRowOrGroupDoesNotLiftCoupleOrFamily() {
+        val duringPromo = promoEnd - 60_000
+        val hold = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = duringPromo)
+        assertEquals(PersonalPromoTierHold(storePlanKey = null, computedPlan = "plus"), hold)
+        // 보류 그룹의 멤버·소유자 — 행도 그룹도 남아 있지만 서버는 원시값으로 막는다.
+        assertEquals(false, hasCoupleOrFamilyAccess(retainedFamilyRow, retainedGroup, hold))
+        assertEquals(false, hasCoupleOrFamilyAccess(null, retainedGroup, hold))
+        assertEquals(false, canShareVoiceWithOthers(retainedFamilyRow, retainedGroup, memberSession, hold))
+        // 판정기의 plan 없는 갈래도 같은 규칙이다.
+        assertEquals(
+            PaidVoiceAccess.NotEntitled,
+            resolvePaidVoiceAccess(noSubscription, retainedGroup, null, false, duringPromo, staleStamp),
+        )
+        // 유료 목소리(개인 기능)는 계산값 plus 로 그대로 열린다 — 보류 규칙은 커플·가족만의 것이다.
+        assertEquals(
+            PaidVoiceAccess.Entitled,
+            resolvePaidVoiceAccess(retainedFamilyRow, retainedGroup, "plus", false, duringPromo, staleStamp),
+        )
+    }
+
+    @Test
+    fun duringThePromoOnlyTheStoreOrTheComputedPlanOpensCoupleOrFamily() {
+        val duringPromo = promoEnd - 60_000
+        // Play 가 지금 가족 구독을 확인해 줬다(「스토어가 권위다」).
+        val storeFamily = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = "family", nowMillis = duringPromo)
+        assertEquals(true, hasCoupleOrFamilyAccess(null, null, storeFamily))
+        assertEquals(true, canShareVoiceWithOthers(null, null, memberSession, storeFamily))
+        // 개인 스토어 등급은 커플·가족을 열지 않는다.
+        val storePersonal = personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = "personal", nowMillis = duringPromo)
+        assertEquals(false, hasCoupleOrFamilyAccess(retainedFamilyRow, retainedGroup, storePersonal))
+    }
+
+    @Test
+    fun outsideThePromoTheOldRulesStand() {
+        // 프로모가 아닌 답(표지 없음) — 규칙이 걸리지 않는다. 행·그룹이 예전처럼 연다.
+        assertEquals(null, personalPromoTierHoldOf("family", null, storePlanKeyValidNow = null, nowMillis = now))
+        assertEquals(true, hasCoupleOrFamilyAccess(retainedFamilyRow, null, null))
+        assertEquals(true, hasCoupleOrFamilyAccess(null, retainedGroup, null))
+        assertEquals(true, canShareVoiceWithOthers(retainedFamilyRow, null, memberSession, null))
+        // 끝난 뒤의 낡은 캐시(D1)도 규칙 밖이다 — 활성 행이 끝난 프로모보다 이긴다(판정기와 같은 순서).
+        assertEquals(null, personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = promoEnd))
+        assertEquals(
+            true,
+            hasCoupleOrFamilyAccess(
+                retainedFamilyRow,
+                retainedGroup,
+                personalPromoTierHoldOf("plus", staleStamp, storePlanKeyValidNow = null, nowMillis = promoEnd + 60_000),
+            ),
+        )
+    }
 }

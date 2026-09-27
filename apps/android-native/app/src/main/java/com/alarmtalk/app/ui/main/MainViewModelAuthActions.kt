@@ -1299,6 +1299,18 @@ internal fun MainViewModel.refreshAppSession(rollToken: Boolean = true) {
 }
 
 /**
+ * `/auth/me` 응답으로 **저장할 토큰** — 저장소의 `saveSessionIfAlive` 에 넘길 `rolledToken`.
+ *
+ * - 굴리지 않는 갱신(`rollToken = false` — 백그라운드에서 돌아올 때마다의 갱신)이면 null 이다.
+ *   저장소는 null 을 받으면 **지금 들고 있는 토큰을 지킨다.** 토큰이 바뀌면 토큰을 키로 쓰는
+ *   효과가 전부 다시 돌아 복귀할 때마다 앱 전체를 다시 불러오게 된다.
+ * - 굴리는 갱신이어도 서버가 새 토큰을 주지 않으면(구버전 서버·재발급 실패) null 이다 — 시작할 때
+ *   잡아 둔 토큰으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
+ */
+internal fun sessionTokenToSave(rollToken: Boolean, serverToken: String?): String? =
+    if (rollToken) serverToken?.takeIf { it.isNotBlank() } else null
+
+/**
  * `GET /auth/me` 의 실패가 **계정이 파기됐다**는 뜻인가.
  *
  * ⚠ **이 라우트만 404 다.** 다른 라우트는 인증 미들웨어가 401 로 돌려주지만
@@ -1373,13 +1385,14 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
             // 받은 시각을 plan·프로모와 **한 벌로** 적는다 — 기간 한정 개인 플랜의 오프라인
             // 차단은 '종료 전에 받은 답' 만 자른다(`AuthSession.userFetchedAtMillis`).
-            val fetchedAt = System.currentTimeMillis()
+            // 응답이 계산 시각(`computed_at`)을 실었으면 저장소가 그것으로 바꿔 적는다(D7).
+            val receivedAt = System.currentTimeMillis()
             val saved = authSessionStore.saveSessionIfAlive(
                 expectedGeneration = startGeneration,
                 user = me.user,
                 provider = session.provider,
-                rolledToken = if (rollToken) me.token else null,
-                userFetchedAtMillis = fetchedAt,
+                rolledToken = sessionTokenToSave(rollToken, me.token),
+                userFetchedAtMillis = receivedAt,
             )
             if (saved == null) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
@@ -1393,9 +1406,12 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
             // 이 자리에서 함께 적어야 강등이 오프라인에서도 반영된다(2026-08-31 리뷰).
             saved.user.id.takeIf { it.isNotBlank() }?.let { id ->
                 // plan 과 그 프로모 종료 시각·받은 시각은 **한 벌로** 적는다(`AccessSnapshot.withServerUser`).
+                // ⚠ 받은 시각은 **세션에 적힌 값**을 넘긴다. `saved.user` 는 정규화돼 `computed_at` 이
+                //   빠져 있어, 기기 시각을 넘기면 세션(서버 계산 시각)과 스냅샷(기기 시각)이 갈라진다.
+                val answeredAt = saved.userFetchedAtMillis ?: receivedAt
                 var persisted: AccessSnapshot? = null
                 val planWrite = entitlementWriter.write(AccessTicket(id, startGeneration), "auth/me plan") {
-                    it.withServerUser(saved.user, fetchedAt).also { snapshot -> persisted = snapshot }
+                    it.withServerUser(saved.user, answeredAt).also { snapshot -> persisted = snapshot }
                 }
                 // ⚠ **메모리 사본도 문을 지난 뒤에만 맞춘다**(2026-09-02 리뷰). 판정은 이 값을
                 // 먼저 보므로(`effectiveUserPlan`), 문이 거절한 등급을 여기만 심으면 캐시와
@@ -1404,6 +1420,9 @@ internal suspend fun MainViewModel.refreshAppSessionNow(rollToken: Boolean = tru
                     val snapshot = checkNotNull(persisted)
                     storeSnapshotUserPlan = snapshot.userPlan
                     storeSnapshotUserPlanPromo = snapshot.userPlanPromoStamp()
+                    // 판정기가 읽는 plan 이 **이 진입의 답**이 됐다 — 전경 무료 잠금의 오프라인 차단
+                    // 갈래가 이걸 기다린다(`freePlanLockMayApply`).
+                    personalPromoLedger.recordPlanApplied(accountRequest)
                     applied = true
                 }
             }
