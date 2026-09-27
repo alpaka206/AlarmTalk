@@ -773,6 +773,155 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   앱은 서버에 물어보고 `STORE_CANCEL_UNSUPPORTED` 를 받으면 관리 시트로 보낸다 —
   안드로이드가 원래 그 하나만 쓴다.
 
+## 기간 한정 개인 플랜 — **쓰지 않고, 읽을 때 계산한다** (2026-09-27)
+
+원시 `users.plan` 이 `'free'` 인 **모든** 계정이 기간 동안 **개인 플랜**(`plans.key`
+`personal` / `users.plan` `plus`)으로 읽힌다. 신규 가입자도 자동으로 들어온다. 돈을 낸
+사용자(개인·커플·가족 결제, 쿠폰·이용권·스토어 구독)는 **아무것도 바뀌지 않는다.**
+
+⚠ **DB 에 쓰지 않는다.** `users.plan`·`subscriptions` 는 그대로 두고, 서버가 읽을 때
+"원시 free 이고 지금이 기간 안이면 plus" 로 계산한다. 다른 방법은 기존 규칙과 부딪힌다:
+
+| 대안 | 무엇과 부딪히나 |
+| --- | --- |
+| 모든 무료 계정에 개인 구독 행을 깐다 | 쿠폰이 `ACTIVE_SUBSCRIPTION_EXISTS` 로 기간 내내 막힌다 · 두 앱에 해지 버튼이 뜨고 누르면 즉시 강등 · 이용권·스토어 결제가 그 행을 취소한다 · 종료일에 만료 크론(틱당 5건)이 며칠 밀린다 · 5년 보관 결제 기록이 오염된다 |
+| `users.plan` 만 `plus` 로 백필 | 결제 직전 조회의 `repairOrphanedPaidPlan` 이 곧바로 free 로 되돌리고 **3일 뒤 삭제**까지 예약한다 |
+| 날짜를 앱에 둔다 | 스토어에 나간 구버전이 못 받는다. 연장·조기 종료에 두 스토어 릴리스가 필요하다 |
+
+### 기간 — 날짜는 **shared 한 곳**에만
+
+| 경계 | 어디서 오나 | 규칙 |
+| --- | --- | --- |
+| 시작 | 워커 바인딩 `PERSONAL_PROMO_STARTS_AT`(ISO 8601, 시간대 포함) | **운영 스위치**다. 없음·빈 값·해석 불가·끝보다 늦음이면 **꺼짐**(fail-closed). iOS 1.2.10 이 게재된 뒤 켠다 — 그 전 iOS 출시본은 구독 응답(`subscription:null`)을 보면 `users.plan` 을 믿지 않는 화면이 있어 반만 열린다 |
+| 끝 | `@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` | **배타** 비교(그 시각부터 무료). 제품 상수라 앱·CLAUDE.md·다른 문서에 **베끼지 않는다** — 앱은 API 가 준 값만 표시한다 |
+| 끝(리허설용) | 워커 바인딩 `PERSONAL_PROMO_ENDS_AT` | dev·테스트 전용. **production 은 이 값을 읽지 않는다**(`ENVIRONMENT = production` 이면 무시). prod 시크릿 동기화는 이 키가 있으면 거절한다 — `test/personal-promo.test.ts` 가 잠근다. 값이 있는데 해석 불가면 꺼짐 |
+
+- 경계 판정은 순수 함수 둘이 유일 출처다: `isPersonalPromoActive(window, now)` ·
+  `userPlanWithPromo(raw, window, now)`. `null` 은 `null` 그대로다(fail-closed) — 행이 없는
+  계정을 개인으로 올리지 않는다.
+- 판정은 요청마다·크론 실행마다 **한 번** 풀어서(`resolvePersonalPromo`) 아래 자리들에 넘긴다.
+
+### 무엇이 계산값을 보고, 무엇이 원시값을 보나
+
+**내 개인 기능은 계산값, 쓰기와 커플·가족 기능은 원시값**이다.
+
+| 쓰는 값 | 자리 |
+| --- | --- |
+| **계산값** (`hasPersonalVoiceAccess`) | 목소리 클론 등록·초안 승격·제자리 교체 · 음성 업로드 · `/tts/generate` 의 무료 제한 · 내 알람 저장·수정의 목소리 게이트 · `/tts/messages/:id/audio` 의 **본인 목소리** 갈래 · 직접 입력 월 한도(3단 폴백 → 개인 30) · 보관 판정(아래) |
+| **원시값** (`isPaidVoicePlan`) | `users.plan` 에 쓰는 모든 경로(`createNewSubscriptionForPlan` · `syncUserPlanAfterCancel` · `downgradeUserToFree` · `resolvePlanAfterSuspend` · `propagateGroupMemberPlans`) · `repairOrphanedPaidPlan` 의 복구 조건 · 쿠폰의 `ACTIVE_SUBSCRIPTION_EXISTS` · 스토어 교차 가드 · 등급 변경 감지(`plan_changed` 대상 고르기) |
+| **원시값** — 커플·가족 기능 | **공유 목소리 프리셋 갈래**(`messageBelongsToCaller` ↔ 오디오 라우트의 남의 목소리 갈래) · **보낸 알람**(가족 알람 발신자, `POST /alarm` 의 `target_user_id` 경로) |
+
+⚠ **커플·가족 갈래를 계산값으로 두지 말 것.** 결제 보류(ON_HOLD/PAUSED) 그룹은 소유자의
+`users.plan` 만 free 로 회수하고 그룹·`is_shared` 를 그대로 둔다(「결제 실패」 절). 계산값을
+쓰면 기간 동안 **보류 그룹의 공유 목소리와 가족 알람이 되살아난다** — 개인 플랜보다 넓게
+열린다. 보류 소유자 **본인의** 개인 기능은 열린다(원시 free 라서).
+
+⚠ **오디오 라우트와 `messageBelongsToCaller` 는 한 쌍이다**(CLAUDE.md). 오디오 라우트는
+**목소리 주인이 호출자일 때만** 계산값을 쓰고, 남의 목소리(공유 프리셋·받은 알람)는 주인의
+원시값을 본다. `messageBelongsToCaller` 의 공유 갈래도 원시값이라 둘이 같은 답을 낸다.
+
+- 기존 `isPaidVoicePlan(raw)` 은 **원시 의미 그대로** 둔다. 기본 인자로 한꺼번에 바꾸지
+  않는다 — 호출부마다 어느 질문인지 이름으로 드러난다.
+
+### API 가 내보내는 것
+
+| 응답 | 필드 |
+| --- | --- |
+| `/auth/register`·`/auth/login`·`/auth/google`·`/auth/apple`·`/auth/me` 의 `user` | `plan` = **계산값**(가입의 `'free'` 리터럴 포함) · `personal_promo` = `{ ends_at, notice_from }` 또는 `null` |
+| `GET /billing/subscription` | `user_plan`(`refresh_store=1` 일 때만) = 계산값 · 최상위 `personal_promo` 같은 모양 · `subscription` 은 **`null` 그대로** |
+| `GET /tts/manual-quota` | 기간 중 원시 free 는 `plan_key: personal`, `limit: 30` |
+
+- `personal_promo` 는 **원시 plan 이 free 이고 기간 안일 때만** 값이 있다. 결제자에게는 `null`.
+  `ends_at` = 끝(배타), `notice_from` = 끝 − `PERSONAL_PROMO.noticeDays`(7)일.
+  둘 다 초 단위 UTC(`2026-…T15:00:00Z` 꼴, 소수 초 없음)다. shared zod 에서는 optional·nullable.
+- ⚠ **가짜 구독 객체를 만들지 말 것.** 만들면 구버전 앱에 해지 버튼이 뜨고
+  `/billing/cancel` 은 404 를 낸다.
+- 새 에러 코드는 없다. JWT 에는 plan 이 없어 토큰을 폐기할 일도 없다.
+- 구버전 앱은 `plan` 만으로 열린다 — 안드로이드 판정기 4단(구독이 없으면 `users.plan`)과
+  울림 캐시(`RingingService.isPaidVoiceEntitledFromCache`)가 그 값을 읽는다.
+
+### 기간 중 보관 — **프로모도 유료로 친다**
+
+보관 판정(`hasActivePaidEntitlement` 와 SQL 짝 `retentionSyncStatements`)은 "지금 프로모가
+원시 free 를 덮는가" 를 인자로 받는다(SQL 에는 JS 에서 푼 불리언을 `?` 로 바인딩한다).
+두 쪽은 계속 **같은 답**이어야 한다(`test/group-disband-batch.test.ts`).
+
+- 기간 중에 실제 구독이 끝나거나 그룹에서 떨어져 나가도 **새 보관 행을 걸지 않는다** —
+  "목소리가 곧 삭제돼요" 가 나가지 않는다. 쓰기(강등·클론 반납·공유 해제)는 원시 그대로
+  일어난다. 반납된 클론은 다음 생성 때 재클론된다(지연·비용만 든다).
+- 시작 전부터 걸려 있던 보관 행은 **스윕이 지우지 않고 풀어 준다**(삭제 직전 재확인이
+  프로모를 유료로 본다). 종료 때 아래 전환이 다시 건다.
+- 이 인자는 **호출부가 반드시 넘긴다**(타입이 요구한다). 빠뜨려 원시로 판정되면 거짓 삭제
+  예고가 나간다 — 데이터는 스윕의 재확인이 지키지만 사용자는 이미 놀란 뒤다.
+
+### 종료 — **배치가 아니라 시각 비교**, 보관은 크론이 나눠 건다
+
+- 끝 시각부터 모든 서버 게이트가 원시값으로 돌아간다 — **즉시**다. 원시 free 는
+  `VOICE_FEATURE_REQUIRES_PAID_PLAN` 등으로 거절되고, 직접 입력 한도는 0, `/auth/me` 는
+  `'free'`·`personal_promo: null` 을 준다. 원시 유료자는 변화가 없다(기간 중 등록한 쿠폰
+  구독은 자기 `expires_at` 대로 간다).
+- **종료 전환 단계**가 만료 크론 안에서 돈다 — `processSubscriptionExpiry` 의 만료 처리
+  **뒤**, 보관 스윕 **앞**(`transitionPersonalPromoEnd`). 시작이 설정돼 있고 지금이 끝
+  이후일 때만 돈다.
+  - 대상: 원시 `plan = 'free'` · `status = 'active'` 구독 행이 **하나도 없음**(만료 시각은 보지
+    않는다 — 결제 보류 행은 `active` 로 남으며 보류는 원래 보관을 걸지 않는다. 만료가 지났는데
+    아직 안 끝난 행은 만료 크론이 끝내며 건다. `repairOrphanedPaidPlan` 과 같은 조건) · 삭제·
+    시스템·초안이 아닌 `voice_profiles` 가 있음 · `paid_voice_retention` 행이 없음.
+  - 처리(사람마다 한 쓰기 트랜잭션 — 조건을 안에서 다시 본다): `downgradeUserToFree`
+    (음성 보존 갈래 — 클론 반납·공유 해제·남의 알람 강등) → 보관 예약.
+  - ⚠ **`delete_after` 는 실행 시각이 아니라 끝 + 3일로 고정한다.** 틱이 밀려도 처리방침의
+    '3일간만 보관' 을 넘기지 않는다.
+  - 커밋 뒤 `plan_changed` + 삭제 예고(`notifyBillingStateChanged`) — **목소리를 가진
+    사람에게만** 간다. 목소리가 없는 무료 사용자는 푸시하지 않는다(앱을 열면 `/auth/me` 가
+    free 를 준다).
+  - **멱등**: 보관 행이 생기면 대상에서 빠진다. 새 표·컬럼이 없다. 한 틱에
+    `PROMO_END_BATCH_LIMIT`(3)명 — 사람당 DB 왕복이 5~6이고, 같은 실행에서 만료·스윕이 워커
+    subrequest(~50)를 나눠 쓴다. 틱당 3명이면 3일에 약 2,500명이다. 종료 1주 전에 prod 에서
+    대상 수를 읽기 전용으로 세어 모자라면 이 값을 조정한다.
+  - 한 사람이 실패해도 다음 사람으로 간다(롤백된 사람은 다음 틱이 다시 한다). 단계가 통째로
+    실패해도 스윕·알림은 돈다.
+  - 대상 조건은 **원시 free** 라 끝난 뒤에만 의미가 있다 — 기간 중에 돌면 모든 목소리 보유
+    무료 계정에 삭제를 예약하게 된다. 그래서 `지금 ≥ 끝` 이 첫 줄이다.
+  - ⚠ **`PERSONAL_PROMO_STARTS_AT` 을 지우면 이 단계도 멈춘다**(꺼짐 = 프로모 없음). 정리
+    PR 이 이 분기를 지울 때까지 운영 값은 그대로 둔다.
+- 기간 중 목소리를 등록한 적 없어도 **예전부터 보관 행 없이 목소리를 든 무료 계정**(베타
+  계정 등)이 있으면 같이 대상이 된다 — 무료 계정의 목소리는 3일 보관 후 삭제라는 처리방침과
+  같은 결론이다. 종료 전에 규모를 센다.
+
+### 앱 — 날짜는 서버 값으로만
+
+- **이용권 화면**: `personal_promo` 가 있으면 작은 한 줄("개인 플랜 무료 이용 중 · 10월 31일까지"
+  꼴)을 보인다. 날짜는 `ends_at − 1초` 를 **기기 로케일**로 그린다(그대로 그리면 한국 기기에서
+  다음 날로 보인다). 가짜 구독·해지 버튼은 없다.
+- **종료 안내**: `notice_from ≤ 지금 < ends_at` 동안 앱에 **들어올 때마다** 알럿을 띄운다.
+  준비 신호·차단 게이트 규칙은 [gates-and-overlays.md](gates-and-overlays.md)
+  「개인 플랜 종료 안내」가 유일 출처다.
+- 판정기(`resolvePaidVoiceAccess` / `PaidVoiceGate`)는 계산된 `plan` 을 그대로 소비한다 —
+  앱에 날짜 규칙을 두지 않는다.
+
+### 운영
+
+1. 백엔드 배포(스위치 꺼짐) → dev 에서 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
+   (지금 + 10분)으로 리허설: 게이트 열림 → 끝 이후 `/auth/me`·게이트·보관 행·푸시 → 끝을 미래로
+   되돌려 다시 열림 → 리허설 값 제거.
+2. iOS 1.2.10 게재 뒤 prod 에 `PERSONAL_PROMO_STARTS_AT` 을 넣는다(`secrets:sync:prod`).
+3. 종료 1주 전: 대상 수 집계(원시 free · 목소리 보유 · 보관 행 없음).
+4. 종료 당일 모니터링, 끝 + 3일에 스윕 확인. 유료 게이트 에러 코드의 `api_error` 증가는 정상이다.
+
+### 구현 지도 — 기간 한정 개인 플랜
+
+| 규칙 | 백엔드 | 안드로이드 | iOS |
+| --- | --- | --- | --- |
+| 날짜·판정 — 유일 출처 | `packages/shared/src/schemas/plan.ts` 의 `PERSONAL_PROMO` · `isPersonalPromoActive` · `userPlanWithPromo` · `PersonalPromoSchema` | API 값만 소비 | API 값만 소비 |
+| 스위치·리허설 값 해석 | `lib/personal-promo.ts` `resolvePersonalPromoWindow` · `resolvePersonalPromo`; prod 동기화 거절은 `scripts/worker-secret-keys.ts` | — | — |
+| 계산값 게이트 | `routes/billing-helpers.ts` `hasPersonalVoiceAccess` → `voice-profile.ts`(등록·승격·교체) · `voice-upload.ts` · `tts.ts`(generate·본인 오디오·manual-quota) · `alarm-mutation.ts`(내 알람 POST·PATCH) | — | — |
+| 원시값 게이트(커플·가족) | `isPaidVoicePlan` → `alarm-mutation.ts` `messageBelongsToCaller` 공유 갈래·보낸 알람 · `tts.ts` 오디오의 남의 목소리 · `family-alarm.ts` 발신자 | — | — |
+| 응답 필드 | `routes/auth.ts`(5종) · `routes/billing-query.ts` — `computedUserPlan` · `personalPromoField` | 계정·구독 응답 파싱 | 계정·구독 응답 파싱 |
+| 보관 판정의 프로모 인자 | `lib/billing-cancel.ts` `hasActivePaidEntitlement` · `retentionSyncStatements` · `syncPaidVoiceRetention` · `sweepPaidVoiceRetention`(호출부가 `personalPromoCoversFree` 로 푼 값을 넘긴다) | — | — |
+| 종료 전환 | `lib/billing-cancel.ts` `transitionPersonalPromoEnd`(`processSubscriptionExpiry` 안, 스윕 앞) | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
+| 이용권 화면 한 줄 · 종료 안내 | — | 앱 작업 | 앱 작업 |
+| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹·한도·쿠폰·크론·설정 잠금) · `test/personal-promo-auth.test.ts`(계정 응답 5종) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조, 프로모 축 포함) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | — | — |
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -812,7 +961,7 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 미완료 결제 재전송 — 진입점 **둘** | — | — | `SubscriptionManager.replayUnfinishedTransactions`(`bootstrap` · 계정 변경 `.task`) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
-| **유료 판정 — 유일 출처** | `isPaidVoicePlan`(users.plan) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
+| **유료 판정 — 유일 출처** | `isPaidVoicePlan`(원시 users.plan) · `hasPersonalVoiceAccess`(기간 한정 개인 플랜 반영 — 위 절) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
 | 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(`isDefinitelyFreePlan`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) |

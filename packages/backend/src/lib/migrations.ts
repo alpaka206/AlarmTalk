@@ -2925,6 +2925,25 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 121,
+    name: 'promo-welcome-group-deactivate',
+    atomic: true,
+    statements: [
+      // 웰컴 코드 안내를 폐지하면서(2026-09-27, `docs/spec/plan-gates.md` 「웰컴 코드 안내 —
+      // 폐지」) 운영자가 /admin/promo 로 발급해 둔 웰컴 그룹 코드를 **끈다.**
+      // - ⚠ **DELETE 하지 않는다.** `promo_code_redemptions` 가 이 행을 참조한다 — 지우면 받은
+      //   사람의 사용 기록이 고아가 된다. 꺼진 코드를 넣으면 CODE_INACTIVE 다.
+      // - 코드명을 여기 적지 않는다(공개 저장소 — #78 과 같은 규칙). 그룹으로만 고른다.
+      // - 이미 받은 웰컴 구독은 건드리지 않는다 — 자기 만료일까지 간다.
+      // - 그룹명이 정확히 'welcome' 이 아닌 변형(대소문자·다른 이름)은 잡지 않는다 — 배포 전에
+      //   운영자가 관리자 화면에서 확인해 토글로 끈다.
+      // 새 코드는 이 결과에 기대지 않는다(데이터 UPDATE) — 배포→마이그레이션 창 문제가 없다.
+      `UPDATE promo_codes
+          SET is_active = 0, updated_at = datetime('now')
+        WHERE redemption_group = 'welcome' AND is_active = 1`,
+    ],
+  },
 ];
 // Errors that mean the statement was already applied — safe to ignore so
 // we can recover databases whose `_migrations` ledger is out of sync with

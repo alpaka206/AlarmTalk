@@ -14,6 +14,47 @@
     버전을 새로 만들 때마다 그 문장을 지우거나 영상을 다시 올려야 한다. 노트 상한은 4000자다.
 - [ ] 1.2.9 심사 결과 확인. 승인되면 `releaseType=AFTER_APPROVAL` 이라 자동 게재된다.
 
+## 기간 한정 개인 플랜 + 웰컴 코드 안내 폐지 — 2026-09-27 (백엔드)
+
+규칙은 스펙이 유일 출처다: [`billing-lifecycle.md`](../spec/billing-lifecycle.md) 「기간 한정 개인
+플랜」 · [`plan-gates.md`](../spec/plan-gates.md) 「웰컴 코드 안내 — 폐지」 ·
+[`gates-and-overlays.md`](../spec/gates-and-overlays.md) 「개인 플랜 종료 안내」. 끝 시각은
+`@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` 한 곳이다(여기 베끼지 않는다).
+
+- 서버는 **스위치가 꺼진 채** 배포된다 — `PERSONAL_PROMO_STARTS_AT` 이 없으면 오늘과 같다.
+  마이그레이션 #121 은 배포 때 돈다(웰컴 그룹 코드 비활성화 — 되돌릴 수 없는 데이터 UPDATE 라
+  dev 에서 먼저 본다).
+- [ ] 배포 전: `/admin/promo` 에서 그룹명이 정확히 `welcome` 이 **아닌** 웰컴 계열 코드(대소문자·
+      변형)가 있는지 보고, 있으면 토글로 끈다. #121 은 `welcome` 만 잡는다.
+- [ ] dev 리허설: `.dev.vars.dev` 에 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
+      (지금 + 10분)을 넣고 `npm run secrets:sync:dev` → 무료+목소리 / 무료 / 개인 결제 / 가족
+      소유자+멤버 / 쿠폰 계정으로 개인 기능이 열리는지(안드로이드 2대·아이폰) → 끝 시각 뒤
+      `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일)·푸시·앱 잠금과 안내 → 끝을 미래로
+      되돌려 다시 열리는지.
+      ⚠ **리허설 값을 지우려면 `npx wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev`.**
+      동기화 스크립트는 빈 값을 건너뛰므로 파일에서 지우는 것만으로는 워커에서 사라지지 않는다.
+- [ ] iOS 1.2.10(앱 PR) **게재 뒤** `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고
+      `npm run secrets:sync:prod`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
+      거절한다(워커도 production 에서는 읽지 않는다).
+- [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 대상 수를 센다 — 틱당 3명(`PROMO_END_BATCH_LIMIT`)
+      이라 3일에 약 2,500명이다. 모자라면 값을 올리는 PR.
+      ```sql
+      SELECT COUNT(*) FROM users u
+      WHERE u.plan = 'free'
+        AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active')
+        AND NOT EXISTS (SELECT 1 FROM paid_voice_retention r WHERE r.user_id = u.id)
+        AND EXISTS (SELECT 1 FROM voice_profiles vp
+                    WHERE (vp.user_id = u.id OR vp.user_id = u.google_id)
+                      AND vp.deleted_at IS NULL AND COALESCE(vp.is_system, 0) = 0
+                      AND COALESCE(vp.is_draft, 0) = 0);
+      ```
+- [ ] 끝 시각 모니터링(`billing.personal_promo_end` 로그), 끝 + 3일에 스윕 확인. 유료 게이트
+      에러 코드의 `api_error` 증가는 정상이다.
+- ⚠ 정리 PR(11월 중순) 전까지 `PERSONAL_PROMO_STARTS_AT` 을 지우지 말 것 — 지우면 종료 전환도
+  멈춘다(꺼짐 = 프로모가 없었던 것).
+- 알려진 한계: 삭제 예고 푸시 문구가 "이용권이 끝나 …"(`lib/fcm.ts`) 그대로 나간다. 기간 중
+  전원이 클론을 등록할 수 있어 전역 클론 상한(200)의 LRU 반납이 유료자에게도 닿을 수 있다.
+
 ## Sentry 후속·동작 검토 — 2026-09-21
 
 수정 범위와 실제 실행 결과는 [후속 검토의 수정 후 상태](sentry-and-parity-audit-2026-09-21.md#7-수정-후-상태--2026-09-21)를 따른다.

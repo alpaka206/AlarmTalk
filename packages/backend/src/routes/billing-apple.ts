@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import {
   cancelSubscriptionImmediate,
   findActiveSubscriptionsByUserPk,
@@ -522,6 +523,7 @@ billingApple.post('/apple/confirm', async (c) => {
         type: effective.type,
         environment: effective.environment ?? null,
       }),
+      promoCoversFree: personalPromoCoversFree(c.env),
     }),
   );
 
@@ -710,13 +712,18 @@ async function revokeRefundedAppleSubscription(
       // 환불 회수는 이 값을 보지 않는다 — 어차피 지금 끊는다.
       cancelAtPeriodEnd: false,
     };
-    const ids = await cancelSubscriptionImmediate(tx, mapped, now, { deleteVoiceData: false });
+    const promoCoversFree = personalPromoCoversFree(env, now);
+    const ids = await cancelSubscriptionImmediate(tx, mapped, now, {
+      deleteVoiceData: false,
+      promoCoversFree,
+    });
     // ⚠ **아직 유료면 보관 유예를 걸지 않는다**(코덱스 #733 6차). 환불된 애플 구독이 이
     //   계정의 **여러 활성 구독 중 하나**일 수 있다(구글 구독·프로모가 남아 있는 경우) —
     //   `cancelSubscriptionImmediate` 는 살아남은 유료 플랜을 일부러 보존한다. 그런데
     //   유예 행을 무조건 깔면, 돈을 내고 있는 사용자에게 **"목소리가 3일 뒤 삭제돼요"**
     //   가 나간다. 스윕이 나중에 취소해 주긴 하지만, 그때는 이미 놀란 뒤다.
-    const stillPaid = await hasActivePaidEntitlement(tx, mapped.userPk);
+    //   기간 한정 개인 플랜이 덮는 원시 free 도 '아직 유료' 다(`promoCoversFree`).
+    const stillPaid = await hasActivePaidEntitlement(tx, mapped.userPk, promoCoversFree);
     if (!stillPaid) await schedulePaidVoiceRetention(tx, mapped.userPk, now);
     return { mapped, ids, stillPaid };
   });

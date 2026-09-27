@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import { resolveUserPk } from '../lib/family-helpers';
 import { PlanGroupCapacityError, repairFamilyPlanGroupForUser } from '../lib/plan-groups';
 import { leavePlanGroupMember } from '../lib/billing-cancel';
@@ -151,6 +152,7 @@ familyGroup.post('/groups/:groupId/leave', async (c) => {
       userPk,
       planGroupId: groupId,
       membershipId: String(memberRes.rows[0]!.id),
+      promoCoversFree: personalPromoCoversFree(c.env),
     }),
   );
 
@@ -282,6 +284,7 @@ familyGroup.delete('/groups/:groupId/members/:userId', async (c) => {
       userPk: targetUserId,
       planGroupId: groupId,
       membershipId: String(targetRes.rows[0]!.id),
+      promoCoversFree: personalPromoCoversFree(c.env),
     }),
   );
 

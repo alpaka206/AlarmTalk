@@ -301,7 +301,7 @@ admin.get('/promo', async (c) => {
   <h1>프로모 쿠폰 관리</h1>
   <form method="post" action="/admin/logout" style="margin:0"><button type="submit">로그아웃</button></form>
 </div>
-<p class="muted">코드를 발급하면 사용자가 <code>POST /api/billing/promo/redeem</code> 로 등록해 해당 플랜을 지정 기간만큼 받습니다. (결제 없이 부여되므로 유효창·사용상한을 신중히 설정하세요.)</p>
+<p class="muted">코드를 발급하면 사용자가 앱의 코드 등록(<code>POST /api/code/register</code>)으로 등록해 해당 플랜을 지정 기간만큼 받습니다. (결제 없이 부여되므로 유효창·사용상한을 신중히 설정하세요.)</p>
 ${renderMsg(c)}
 <h2>새 코드 발급</h2>
 <form class="create" method="post" action="/admin/promo">
@@ -326,7 +326,7 @@ ${renderMsg(c)}
   <input type="hidden" name="valid_from">
   <input type="hidden" name="valid_until">
   <label>리딤 그룹(빈칸=없음)
-    <input name="redemption_group" placeholder="예: welcome" maxlength="64" autocomplete="off">
+    <input name="redemption_group" placeholder="예: autumn-event" maxlength="64" autocomplete="off">
   </label>
   <label class="full">메모(관리용)
     <input name="note" placeholder="예: 6월 런칭 프로모" maxlength="200">
@@ -370,7 +370,7 @@ admin.post('/promo', async (c) => {
     const validFrom = String(form.valid_from ?? '').trim() || null;
     const validUntil = String(form.valid_until ?? '').trim() || null;
     const note = String(form.note ?? '').trim() || null;
-    // 리딤 그룹: 같은 그룹의 코드는 계정당 통틀어 1회만 사용 가능(예: 웰컴 3종).
+    // 리딤 그룹: 같은 그룹의 코드는 계정당 통틀어 1회만 사용 가능(예: 한 행사의 개인·커플·가족 코드).
     const redemptionGroup = String(form.redemption_group ?? '').trim() || null;
 
     if (!code) return c.redirect('/admin/promo?err=' + encodeURIComponent('코드를 입력하세요'), 303);

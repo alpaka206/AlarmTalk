@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
@@ -298,6 +299,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         lastPaidAt,
         expiresAt: new Date(expiryMs),
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
+        promoCoversFree: personalPromoCoversFree(c.env),
       }),
     );
     // ⚠ **권한을 못 준 채로 구매를 확인 처리하지 않는다**(코덱스 #733 7차).
