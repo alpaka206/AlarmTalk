@@ -108,6 +108,9 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
   it('교체 트랜잭션이 원본 승계·custom 철회·재렌더 예약을 함께 커밋한다', async () => {
     const { db, path } = await replacementDb();
     try {
+      // 초안에서 고른 결(차분)이 현역 프로필의 옛 결(경쾌)을 덮어야 한다 — 재렌더가 그 결로 돈다.
+      await db.execute("UPDATE voice_profiles SET voice_energy = 'lively' WHERE id = 'vp1'");
+      await db.execute("UPDATE voice_profiles SET voice_energy = 'calm' WHERE id = 'vp2'");
       const result = await replaceVoiceInPlace(db as never, {
         targetUserIds: ['u1'],
         draftProfileId: 'vp2',
@@ -180,9 +183,12 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       expect(String(renderer.rows[0]!.language)).toBe('ja');
 
       const replacedRow = await db.execute(
-        `SELECT speech_style, speech_style_status, custom_audio_invalidated_at, updated_at
+        `SELECT speech_style, speech_style_status, custom_audio_invalidated_at, updated_at, voice_energy
            FROM voice_profiles WHERE id = 'vp1'`,
       );
+      // 결은 관계·호칭과 같은 페르소나라 초안과 함께 옮겨 온다(Codex #802) — 안 옮기면 초안과 함께
+      // 지워지고 재렌더 큐가 옛 결로 클립을 다시 만든다.
+      expect(String(replacedRow.rows[0]!.voice_energy)).toBe('calm');
       // 말투 분석 결과와 그 상태는 한 쌍이다 — 하나만 옮기면 실패한 분석이 완료로 보인다.
       expect(String(replacedRow.rows[0]!.speech_style_status)).toBe('failed');
       expect(replacedRow.rows[0]!.speech_style).toBeNull();

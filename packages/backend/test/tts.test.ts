@@ -244,6 +244,8 @@ describe('POST /tts/generate — TTS 생성', () => {
     const claimCall = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
     expect(claimCall?.sql).toContain("COALESCE(relationship_label, '') = ?");
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
+    // 목소리의 결도 페르소나다 — 결만 바뀐 PATCH 뒤의 낡은 요청이 claim 을 잡지 못해야 한다(Codex #802).
+    expect(claimCall?.sql).toContain("COALESCE(voice_energy, '') = ?");
   });
 
   // ⚠ iOS `playDraftPreview` 는 **`random:true` 와 `draft_preview:true` 를 함께** 보낸다
@@ -424,6 +426,63 @@ describe('POST /tts/generate — TTS 생성', () => {
       // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
       expect(body.text).toBe(winnerText);
       expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘 하루도 힘내자.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // ⚠ **결만 바꾼 PATCH 도 생성 왕복을 낡게 만든다**(Codex #802). 첫 미리듣기가 Gemini 를 기다리는
+  // 사이 사용자가 결을 '차분' 으로 바꾸면 PATCH 가 preview_text 를 비운다. 이 요청은 옛 결로 만든
+  // 문구를 들고 있으므로 **저장도 합성도 하면 안 된다** — 저장하면 이후 미리듣기가 그 문구를 재사용한다.
+  it('생성 왕복 중 목소리의 결이 바뀌면 옛 결 문구를 저장하지도 합성하지도 않는다', async () => {
+    const staleText = '우리 아들, 잘 잤어? 오늘도 신나게 시작하자!';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return geminiText(JSON.stringify({ text: staleText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+          voice_energy: 'lively',
+        },
+      ]);
+      mockDB.pushResult([], 0); // 영속 실패 — PATCH 가 결을 바꿨다
+      mockDB.pushResult([{ preview_text: null, preview_tag: null }]); // 승자 없음(PATCH 가 비웠다)
+      mockDB.pushResult([], 0); // claim 실패 — 결이 달라 잡지 못한다
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error_code).toBe('VOICE_PREVIEW_IN_PROGRESS');
+      expect(mockTextToSpeech).not.toHaveBeenCalled();
+      const persist = mockDB.calls.find((call) => call.sql.includes('SET preview_text'));
+      expect(persist!.sql).toContain("COALESCE(voice_energy, '') = ?");
+      // 비교 값은 요청이 읽은 그 결이다.
+      expect(persist!.args.at(-1)).toBe('lively');
+      const claim = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
+      expect(claim!.args.at(-1)).toBe('lively');
     } finally {
       vi.unstubAllGlobals();
     }

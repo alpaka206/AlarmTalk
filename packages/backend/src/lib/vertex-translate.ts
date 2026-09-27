@@ -233,6 +233,42 @@ export function isFearTag(tag: string): boolean {
   return !!normalized && FEAR_WORDS.some((word) => normalized.includes(word));
 }
 
+/**
+ * 차분한 목소리(`energy = 'calm'`)와 맞지 않는 들뜬 지시 — 스펙 §4-2 의 금지 목록(`[playfully]`·
+ * `[giggles]`·`[excited]`·`[laughs]`)과 그 변형. 프롬프트로만 막으면 모델이 어겨도 그대로 합성·저장되고,
+ * 사용자가 '차분' 을 고른 목소리가 영구히 들뜬 클립을 문다(Codex #802). 그래서 서버가 지운다.
+ */
+const CALM_INCOMPATIBLE_WORDS = [
+  'playful',
+  'excite',
+  'giggl',
+  'laugh',
+  'chuckl',
+  'teasing',
+  'mischiev',
+  'cheeky',
+  'giddy',
+  'bouncy',
+  'squeal',
+];
+
+export function isCalmIncompatibleTag(tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  return !!normalized && CALM_INCOMPATIBLE_WORDS.some((word) => normalized.includes(word));
+}
+
+/// 차분한 목소리의 **대체 기본 태그**. 카테고리 기본값(`cheerfully`·`playfully`)은 들뜬 결이라,
+/// 모델이 태그를 안 붙였을 때 그걸 입히면 차분을 고른 목소리가 밝게 튄다.
+const CALM_FALLBACK_TAG = 'warmly';
+
+/// 모델이 태그를 안 붙였을 때 입힐 기본 태그 — 차분한 목소리면 들뜬 기본값을 `warmly` 로 바꾼다.
+export function fallbackTagForEnergy(defaultTag: string, energy: string | null | undefined): string {
+  if (energy !== 'calm' || !defaultTag) return defaultTag;
+  return isCalmIncompatibleTag(defaultTag) || normalizeTag(defaultTag).includes('cheer')
+    ? CALM_FALLBACK_TAG
+    : defaultTag;
+}
+
 /// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
 export function isLowArousalTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
@@ -273,13 +309,23 @@ function sanitizeDeliveryTag(tag: string): string {
 }
 
 /// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다 — 공포 태그는 언제나, 저각성 태그는
-/// `allowLowArousal`(잠들기 전·마무리 문구)이 아닐 때 지운다. 나머지는 **위치까지 그대로**
-/// 남긴다 — 여러 개·중간 태그가 요점이다.
-export function dropWakeUnsafeTags(text: string, options: { allowLowArousal?: boolean } = {}): string {
+/// `allowLowArousal`(잠들기 전·마무리 문구)이 아닐 때 지운다. `calmVoice`(차분을 고른 목소리)면
+/// 들뜬 태그(`isCalmIncompatibleTag`)도 지운다. 나머지는 **위치까지 그대로** 남긴다 — 여러 개·
+/// 중간 태그가 요점이다.
+export function dropWakeUnsafeTags(
+  text: string,
+  options: { allowLowArousal?: boolean; calmVoice?: boolean } = {},
+): string {
   return text
     .replace(TAG_RE_GLOBAL, (match, offset: number, whole: string) => {
       const body = match.slice(1, -1);
-      if (!isFearTag(body) && (options.allowLowArousal || !isLowArousalTag(body))) return match;
+      if (
+        !isFearTag(body) &&
+        (options.allowLowArousal || !isLowArousalTag(body)) &&
+        !(options.calmVoice && isCalmIncompatibleTag(body))
+      ) {
+        return match;
+      }
       // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
       //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
       //   문장부호 **앞**('Wake up[softly]!')에는 남기지 않고, 쉼표·마침표 **뒤**('할머니,[softly]일어나세요')
@@ -1374,9 +1420,12 @@ export async function generatePrerenderClipText(
   // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
   // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
+  // 차분을 고른 목소리면 들뜬 태그도 여기서 막는다 — 인라인·`tag` 필드·기본값 세 갈래 모두(스펙 §4-2).
+  const calmVoice = params.speechStyle?.energy === 'calm';
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
-    return approved && !isLowArousalTag(approved) && !isFearTag(approved) ? approved : '';
+    if (!approved || isLowArousalTag(approved) || isFearTag(approved)) return '';
+    return calmVoice && isCalmIncompatibleTag(approved) ? '' : approved;
   };
 
   // ⚠ **한 번 던지고 끝내지 말 것**(2026-08-20). 예전에는 1회 호출 뒤 검증에 걸리면 곧바로
@@ -1452,7 +1501,7 @@ export async function generatePrerenderClipText(
     //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
     //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    const tidied = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim()));
+    const tidied = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim(), { calmVoice }));
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.
@@ -1477,7 +1526,7 @@ export async function generatePrerenderClipText(
     const primaryTag =
       sanitizePrerenderTag(inlineTags[0] ?? '') ||
       sanitizePrerenderTag(parsed.tag) ||
-      sanitizePrerenderTag(params.defaultTag ?? '');
+      sanitizePrerenderTag(fallbackTagForEnergy(params.defaultTag ?? '', params.speechStyle?.energy));
     if (inlineTags.length === 0 || onlyLeadingTag) {
       return {
         text: primaryTag ? applyDeliveryTagPerSentence(primaryTag, spoken) : spoken,

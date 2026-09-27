@@ -6,6 +6,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError, logStructured } from '../lib/logger';
+import { jsonError } from '../lib/api-error';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
@@ -854,8 +855,8 @@ export async function replaceVoiceInPlace(
     // 게이트 판정과 쓰기가 같은 스냅샷이 된다.
     const draftRes = await tx.execute({
       sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
-                   preview_text, preview_language, speech_style, speech_style_status, is_shared,
-                   previewed_at
+                   voice_energy, preview_text, preview_language, speech_style, speech_style_status,
+                   is_shared, previewed_at
             FROM voice_profiles
             WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1
@@ -919,10 +920,14 @@ export async function replaceVoiceInPlace(
       // 표식이다. 푸시를 놓친 기기가 다음 목록 조회에서 스스로 알아채는 유일한 근거다
       // (프로필 id 는 그대로라 접근권 대조로는 영원히 안 걸린다). #106 배포 창에는 컬럼이
       // 없어 이 트랜잭션이 통째로 롤백된다 — 재시도하면 되고, 그게 옳다.
+      //
+      // ⚠ `voice_energy`(목소리의 결)도 관계·호칭과 같은 **페르소나**다. 안 옮기면 초안에서 고른
+      // 결이 초안과 함께 지워지고, 교체된 프로필은 옛 결(또는 없음)로 아래 재렌더 큐를 돈다
+      // (Codex #802). #122 배포 창에는 위 SELECT 가 던져 롤백된다 — 같은 이유로 그게 옳다.
       sql: `UPDATE voice_profiles
             SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
                 preview_text = ?, preview_language = ?, speech_style = ?, speech_style_status = ?,
-                is_shared = ?, status = 'ready',
+                is_shared = ?, voice_energy = ?, status = 'ready',
                 custom_audio_invalidated_at = datetime('now'),
                 updated_at = datetime('now')
             WHERE id = ?`,
@@ -936,6 +941,7 @@ export async function replaceVoiceInPlace(
         draft.speech_style ?? null,
         draft.speech_style_status ?? null,
         finalIsShared ? 1 : 0,
+        draft.voice_energy ?? null,
         targetId,
       ],
     });
@@ -1609,10 +1615,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   const hasVoiceEnergy = rawEnergy !== undefined && rawEnergy !== null;
   const energyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(rawEnergy) : null;
   if (energyParsed && !energyParsed.success) {
-    return c.json(
-      { error: "voice_energy must be '', 'lively' or 'calm'", error_code: 'INVALID_VOICE_ENERGY' },
-      400,
-    );
+    return jsonError(c, 400, 'INVALID_VOICE_ENERGY', "voice_energy must be '', 'lively' or 'calm'");
   }
   const voiceEnergy = energyParsed?.success ? energyParsed.data : null;
 
@@ -1802,10 +1805,7 @@ voiceProfile.post('/clone', async (c) => {
     const hasVoiceEnergy = rawVoiceEnergy !== null && rawVoiceEnergy !== undefined;
     const voiceEnergyParsed = hasVoiceEnergy ? VoiceEnergySchema.safeParse(String(rawVoiceEnergy)) : null;
     if (voiceEnergyParsed && !voiceEnergyParsed.success) {
-      return c.json(
-        { error: "voice_energy must be '', 'lively' or 'calm'", error_code: 'INVALID_VOICE_ENERGY' },
-        400,
-      );
+      return jsonError(c, 400, 'INVALID_VOICE_ENERGY', "voice_energy must be '', 'lively' or 'calm'");
     }
     const voiceEnergy = voiceEnergyParsed?.success ? voiceEnergyParsed.data : '';
 

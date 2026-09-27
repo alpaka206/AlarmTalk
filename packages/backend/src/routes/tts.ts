@@ -1114,8 +1114,11 @@ tts.post('/generate', async (c) => {
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
             // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
-            // 페르소나 predicate(관계/호칭, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭이
-            // 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가 재사용).
+            // 페르소나 predicate(관계/호칭/결, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭·
+            // 목소리의 결이 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가
+            // 재사용). 결은 `vp` 를 읽은 그 값과 비교한다 — PATCH 가 결만 바꿔도 이 요청은 낡은 생성이다(Codex #802).
+            // #122 배포 창에는 컬럼이 없어 이 UPDATE 가 던지고, 아래 claim 도 같은 컬럼을 봐 500 으로 끝난다 —
+            // 재시도하면 되고, 옛 결로 만든 문구가 남지 않는다.
             // previewed_at/claim 가드: 다른 요청이 이미 확정했거나(폴백 문구로 합성됐을 수 있음)
             // 활성 claim 으로 합성 중이면 저장하지 않는다 — 늦은 영속이 '실제 합성된 문구'와 다른
             // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
@@ -1126,6 +1129,7 @@ tts.post('/generate', async (c) => {
                       AND COALESCE(is_draft, 0) = 1
                       AND COALESCE(relationship_label, '') = ?
                       AND COALESCE(listener_title, '') = ?
+                      AND COALESCE(voice_energy, '') = ?
                       AND COALESCE(preview_text, '') = ''
                       AND previewed_at IS NULL
                       AND (preview_claimed_at IS NULL
@@ -1141,6 +1145,7 @@ tts.post('/generate', async (c) => {
                 userLoginId,
                 String(vp.relationship_label ?? ''),
                 String(vp.listener_title ?? ''),
+                String(vp.voice_energy ?? ''),
               ],
             });
             if ((persisted.rowsAffected ?? 0) === 0) {
@@ -1435,6 +1440,7 @@ tts.post('/generate', async (c) => {
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
                 AND COALESCE(relationship_label, '') = ?
                 AND COALESCE(listener_title, '') = ?
+                AND COALESCE(voice_energy, '') = ?
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
         args: [
           previewClaimToken,
@@ -1443,6 +1449,8 @@ tts.post('/generate', async (c) => {
           userLoginId,
           String(vp.relationship_label ?? ''),
           String(vp.listener_title ?? ''),
+          // 결도 페르소나다 — 생성 왕복 중 PATCH 로 결이 바뀌었으면 옛 결로 만든 문구를 합성하지 않는다.
+          String(vp.voice_energy ?? ''),
         ],
       });
       if ((claimed.rowsAffected ?? 0) === 0) {

@@ -1318,7 +1318,7 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       (call) => call.sql.includes('SET name = ?') && call.sql.includes('is_shared = ?'),
     );
     // 인자 순서는 SET 절과 같다: name, voice, relationship, listener, preview_text,
-    // preview_language, speech_style, speech_style_status, is_shared, id.
+    // preview_language, speech_style, speech_style_status, is_shared, voice_energy, id.
     expect(profileReplace?.args[8], '확정 화면의 공유 선택이 교체된 프로필에 반영되지 않았다').toBe(1);
     expect(
       profileReplace?.sql,
@@ -1328,6 +1328,10 @@ describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profi
       profileReplace?.sql,
       '푸시를 놓친 기기가 스스로 알아챌 표식이 없다',
     ).toContain('custom_audio_invalidated_at = ');
+    expect(
+      profileReplace?.sql,
+      '초안에서 고른 목소리의 결이 교체된 프로필로 옮겨 오지 않는다(Codex #802)',
+    ).toContain('voice_energy = ?');
 
     const alarmUpdate = mockDB.calls.find(
       (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),

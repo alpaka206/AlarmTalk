@@ -16,6 +16,7 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   dropWakeUnsafeTags,
+  fallbackTagForEnergy,
   isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
   vertexGenerateContentEndpoint,
@@ -719,6 +720,59 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(body).toContain('CALM');
     expect(body).toContain('HUMAN-WRITTEN REFERENCE');
     expect(body).toContain('REWRITE EVERY ENDING');
+  });
+
+  // ⚠ **차분은 프롬프트만으로 지켜지지 않는다**(Codex #802). 모델이 들뜬 태그를 붙이거나 태그를 아예
+  // 안 붙여 카테고리 기본값(`cheerfully`·`playfully`)이 입혀지면, 차분을 고른 목소리가 영구히
+  // 밝게 튀는 클립을 문다. 서버가 지우고, 기본값은 `warmly` 로 바꾼다.
+  it('사전렌더: 차분한 목소리는 들뜬 태그를 지우고 기본 태그도 차분하게 입힌다', async () => {
+    const calm = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm' as const };
+    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야. [laughs] 지금 바로 [excited] 챙겨 먹자."}'));
+    const tagged = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: calm,
+    });
+    expect(tagged.text).not.toMatch(/playful|laugh|excite|cheerful/);
+    expect(tagged.text).toContain('[warmly]');
+    expect(tagged.tag).toBe('warmly');
+
+    queueContent(geminiText('{"text":"자기야, 약 먹을 시간이야. 지금 바로 챙겨 먹자."}'));
+    const untagged = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: calm,
+    });
+    expect(untagged.text).toBe('[warmly] 자기야, 약 먹을 시간이야. [warmly] 지금 바로 챙겨 먹자.');
+
+    // 경쾌·자동 목소리는 그대로 — 들뜬 태그가 그 결의 요점이다.
+    queueContent(geminiText('{"text":"[playfully] 자기야, 약 먹을 시간이야! [laughs] 지금 바로 챙겨 먹자."}'));
+    const lively = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+      speechStyle: { ...calm, energy: 'lively' },
+    });
+    expect(lively.text).toContain('[playfully]');
+    expect(lively.text).toContain('[laughs]');
+  });
+
+  it('차분한 목소리의 기본 태그·인라인 태그 거르기', () => {
+    expect(fallbackTagForEnergy('cheerfully', 'calm')).toBe('warmly');
+    expect(fallbackTagForEnergy('playfully', 'calm')).toBe('warmly');
+    expect(fallbackTagForEnergy('encouraging', 'calm')).toBe('encouraging');
+    expect(fallbackTagForEnergy('cheerfully', 'lively')).toBe('cheerfully');
+    expect(fallbackTagForEnergy('cheerfully', '')).toBe('cheerfully');
+    expect(dropWakeUnsafeTags('[giggles] 일어나![warmly] 가자.', { calmVoice: true })).toBe('일어나![warmly] 가자.');
+    expect(dropWakeUnsafeTags('[giggles] 일어나!', {})).toBe('[giggles] 일어나!');
   });
 
   it('사전렌더: 예스러운 -셔요 는 -세요 로 고쳐 저장한다', async () => {
