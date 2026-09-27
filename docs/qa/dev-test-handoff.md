@@ -25,7 +25,7 @@
       플랜」 절의 리허설 항목을 돈다. iOS 는 `AFTER_APPROVAL` 이라 승인되면 곧바로 게재된다 — 리허설에서
       앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
 - [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
-      넣고 `npm run secrets:sync:prod`.
+      넣고 `npm run secrets:sync:prod --workspace=backend`.
 - [ ] Play 30 이 100% 게재된 뒤: `app-version.ts` 의 Android `latest` 를 30 으로(순서 규칙은 파일 주석).
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
@@ -118,7 +118,7 @@
       변형)가 있는지 보고, 있으면 토글로 끈다. #121 은 `welcome` 만 잡는다.
       (2026-09-28 prod 조회: 3행 전부 `welcome`·비활성, 변형 그룹 없음.)
 - [ ] dev 리허설: `.dev.vars.dev` 에 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
-      (지금 + 10분)을 넣고 `npm run secrets:sync:dev` → 무료+목소리 / 무료 / 개인 결제 / 가족
+      (지금 + 10분)을 넣고 `npm run secrets:sync:dev --workspace=backend` → 무료+목소리 / 무료 / 개인 결제 / 가족
       소유자+멤버 / 쿠폰 계정으로 개인 기능이 열리는지(안드로이드 2대·아이폰) → 끝 시각 뒤
       `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일을 **정시로 올린 값** — 그보다 이르면 안
       된다)·푸시 문구("기간 한정 개인 플랜이 끝나 … M월 D일 오전/오후 H시까지만 보관", 자정이면
@@ -129,7 +129,7 @@
       ⚠ **리허설 값을 지우려면 `npx wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev`.**
       동기화 스크립트는 빈 값을 건너뛰므로 파일에서 지우는 것만으로는 워커에서 사라지지 않는다.
 - [ ] iOS 1.2.10(앱 PR) **게재 뒤** `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고
-      `npm run secrets:sync:prod`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
+      `npm run secrets:sync:prod --workspace=backend`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
       거절한다(워커도 production 에서는 읽지 않는다).
 - [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 **대상 수와 그들의 기기(push 토큰) 수**를 센다(**베타
       계정 등 기간 전부터 무료였던 계정도 목소리가 있으면 대상이다** — 제품 결정). 삭제는 인원과 무관하게
@@ -225,13 +225,13 @@ v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도
 전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
 - [x] 코드 PR 을 develop 에 머지 → dev 배포(#801, 2026-09-27).
 - [x] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
-      → `npm run secrets:sync:dev`(2026-09-27). ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로
+      → `npm run secrets:sync:dev --workspace=backend`(2026-09-27). ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로
       돌릴 수 없다.
 - [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
       직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다. **아직 워커 로그로는 못 봤다** —
       같은 자격 증명·모델·지역의 호출은 평가 스크립트(`npm run eval:gemini`, 702건)로만 확인했다. 위 dev
       리허설 때 함께 본다.
-- [x] develop → main 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 → `npm run secrets:sync:prod`
+- [x] develop → main 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 → `npm run secrets:sync:prod --workspace=backend`
       (#797 배포 뒤, 2026-09-27 — 이전 값 `gemini-2.5-flash`/`us-central1`).
 - [ ] prod 모니터링: 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다. 전환 직후는 새벽이라
       호출이 없어 아직 한 건도 못 봤다.
