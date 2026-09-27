@@ -89,6 +89,10 @@ final class SocialFeatureViewModel: ObservableObject {
     /// **직전에** 부른다(`AuthViewModel.beginAccountRequest`). 없으면(테스트) 표 없이 넘긴다.
     var beginAccountRequest: (() -> AuthViewModel.AccountRequest?)?
 
+    /// 이 표의 plan 답을 권한 스냅샷에 써도 되는가(`AuthViewModel.isPlanAnswerCurrent`) — 세션이 옛 답으로
+    /// 거절한 plan·프로모를 스냅샷에만 남기지 않게(Codex #803). 없으면(테스트) 쓴다.
+    var isPlanAnswerCurrent: ((AuthViewModel.AccountRequest?) -> Bool)?
+
     /**
      * 표를 뜬 계정 요청(`/auth/me`·결제 전 조회)이 **실패했다**는 것을 세션 주인에게 알린다
      * (`AuthViewModel.noteAccountRequestFailure`).
@@ -279,7 +283,9 @@ final class SocialFeatureViewModel: ObservableObject {
             }
             guard subscriptionWrite == .applied else { return }
             subscription = resolvedSubscription
-            if let freshPlan {
+            // ⚠ **세션이 옛 답으로 거절한 plan 은 스냅샷에도 쓰지 않는다**(Codex #803) — 더 나중에 보낸 계정
+            // 요청의 답이 이미 반영됐으면(`isPlanAnswerCurrent`) 이 plan·프로모는 옛 것이다.
+            if let freshPlan, isPlanAnswerCurrent?(accountRequest) ?? true {
                 // ⚠ 위 두 쓰기와 **같은 규칙**이다 — 문이 거절하면 그 뒤도 전부 옛 세션의
                 // 것이므로 반영하지 않는다(2026-09-02 리뷰). 결과를 버리면 구독은 새 값인데
                 // plan 만 옛 값인 **반쪽 스냅샷**이 남는다.
@@ -377,11 +383,13 @@ final class SocialFeatureViewModel: ObservableObject {
             // 여기도 같은 경합을 탄다 — 늦게 끝난 옛 응답이 방금 받은 것을 덮는다.
             guard activeUserID == userID, generation == refreshGeneration,
                   preflightRevision == billingPreflightRevision else { return nil }
+            // 더 나중에 보낸 계정 요청의 답이 이미 반영됐으면 이 plan·프로모는 옛 것이다 — 구독만 쓴다(Codex #803).
+            let planCurrent = isPlanAnswerCurrent?(accountRequest) ?? true
             let silentWrite = entitlementWriter.write(accessTicket, "silent subscription") {
                 $0.subscriptionResponse = nextSubscription
                 // plan 과 프로모는 **같은 응답에서 온 짝**이다 — plan 을 받아 온 회차에만,
                 // 둘을 함께 적는다(`user_plan` 은 결제 전 조회에서만 온다).
-                if let plan = nextSubscription.userPlan {
+                if let plan = nextSubscription.userPlan, planCurrent {
                     $0.userPlan = plan
                     $0.personalPromo = nextSubscription.personalPromo
                 }

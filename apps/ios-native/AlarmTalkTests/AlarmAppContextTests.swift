@@ -118,6 +118,16 @@ final class AlarmAppContextTests: XCTestCase {
         noPromo.personalPromo = nil
         let noPromoStop = await stop(noPromo)
         XCTAssertTrue(noPromoStop.isEmpty)
+
+        // ⚠ **끝 직전에 울린 회차를 끝 뒤에 꺼도** 다시 맞춘다(Codex #803) — 그때는 이미 못 듣는 상태다.
+        var justEnded = promoOnly
+        justEnded.personalPromo = PersonalPromo(
+            endsAt: ISO8601DateFormatter().string(from: fixedNow.addingTimeInterval(-60)),
+            noticeFrom: nil,
+            fetchedAt: fixedNow.addingTimeInterval(-3_600)
+        )
+        let afterCutoff = await stop(justEnded)
+        XCTAssertEqual(afterCutoff.count, 1, "끝을 막 넘긴 정지도 다음 회차를 기본 알람음으로 다시 건다")
     }
 
     // MARK: - Snooze

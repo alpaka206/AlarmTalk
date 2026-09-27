@@ -270,8 +270,12 @@ final class AuthViewModelTests: XCTestCase {
         vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil, request: newer)
         vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo, request: older)
         XCTAssertNil(vm.session?.user.personalPromo, "먼저 보낸 요청의 답은 버린다")
+        // 권한 스냅샷도 같은 순번으로 가른다(Codex #803) — 반영한 자기 답은 여전히 최신, 옛 답은 아니다.
+        XCTAssertTrue(vm.isPlanAnswerCurrent(newer), "방금 반영한 자기 답은 최신이다(경계 `>=`)")
+        XCTAssertFalse(vm.isPlanAnswerCurrent(older), "세션이 거절한 옛 답을 스냅샷에 쓰지 않는다")
 
         let latest = vm.beginAccountRequest()
+        XCTAssertTrue(vm.isPlanAnswerCurrent(latest), "아직 반영 전이어도 더 새 요청이면 최신이다")
         vm.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: promo, request: latest)
         XCTAssertEqual(vm.session?.user.personalPromo, promo, "나중에 보낸 요청의 답은 반영한다")
     }

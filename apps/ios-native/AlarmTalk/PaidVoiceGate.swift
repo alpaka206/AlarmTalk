@@ -254,8 +254,8 @@ enum PaidVoiceGate {
         return !isEntitled(snapshot: snapshot, now: now, promoAt: promoAt)
     }
 
-    /// 이 알람의 유료 목소리가 **기간 한정 개인 플랜 덕에만** 열려 있고 그 끝이 아직 안 왔는가 —
-    /// 지금은 들을 수 있지만 끝 뒤의 회차는 못 듣는 알람이다.
+    /// 이 알람의 유료 목소리가 **기간 한정 개인 플랜 덕에만** 열려 있는가 — 끝 뒤의 회차는 못 듣는 알람이다
+    /// (끝을 막 넘긴 뒤에도 참이다 — 아래).
     ///
     /// ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 예약할 때
     /// 울릴 시각을 봐도(`shouldDowngrade` 의 `fireAt`) 다음 회차가 끝 전이면 목소리로 걸리고, 그 설정이
@@ -270,10 +270,12 @@ enum PaidVoiceGate {
         guard record.originEnum == .localOwned,
               !usesFreeSystemVoice(record),
               usesPaidVoice(record),
-              let ends = snapshot.personalPromo?.endsAt.flatMap(parseTimestamp),
-              ends > now else { return false }
-        return isEntitled(snapshot: snapshot, now: now)
-            && !isEntitled(snapshot: snapshot, now: now, promoAt: ends)
+              let ends = snapshot.personalPromo?.endsAt.flatMap(parseTimestamp) else { return false }
+        // ⚠ **끝을 막 넘긴 정지도 포함한다**(Codex #803). 끝 직전에 울린 회차를 끝 **뒤에** 끄면 지금은 이미
+        // 못 듣는 상태라, '지금 들을 수 있는가' 를 조건에 두면 이 갈래가 빠지고 주간 반복 설정이 목소리로
+        // 남는다. 판정은 '끝(또는 지금, 더 늦은 쪽)에 못 듣는가' 하나다 — 결제자(활성 구독 행)는 언제나 듣는다.
+        // 리컨사일러는 예약 판정이 바뀔 때만 다시 예약하므로 넓게 불러도 해가 없다.
+        return !isEntitled(snapshot: snapshot, now: now, promoAt: max(ends, now))
     }
 
     /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.

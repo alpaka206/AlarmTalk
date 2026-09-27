@@ -232,6 +232,52 @@ final class BillingPreflightTests: XCTestCase {
     }
 }
 
+extension BillingPreflightTests {
+    /// ⚠ **세션이 옛 답으로 거절한 plan·프로모는 권한 스냅샷에도 쓰지 않는다**(Codex #803). 스냅샷은
+    /// AlarmKit 예약·백그라운드 판정이 읽는다 — 거기 옛 짝이 남으면 끝난 프로모를 되살리거나 결제자를 강등한다.
+    func test_preflightDoesNotPersistASupersededPlanAnswer() async throws {
+        let userID = UUID().uuidString
+        let current = session(token: UUID().uuidString, userID: userID)
+        let host = "\(UUID().uuidString.lowercased()).billing.example.test"
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(current)
+        PreflightURLProtocol.configure(host: host) { request in
+            let url = request.url!
+            if url.path.hasSuffix("billing/subscription") {
+                return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[],"user_plan":"plus","personal_promo":{"ends_at":"2026-10-31T15:00:00Z","notice_from":"2026-10-24T15:00:00Z","deletes_voices_at_end":true}}"#.utf8))
+            }
+            return (200, Data(#"{"vouchers":[]}"#.utf8))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PreflightURLProtocol.self]
+        let urlSession = URLSession(configuration: config)
+        defer {
+            urlSession.invalidateAndCancel()
+            PreflightURLProtocol.configure(host: host, handler: nil)
+            AccessSnapshotStore().clear(userID: userID)
+            if let previous { try? KeychainStore.saveSession(previous) }
+            else { KeychainStore.deleteSession() }
+        }
+        let vm = SocialFeatureViewModel(api: AlarmTalkAPI(
+            baseURL: URL(string: "https://\(host)/api/")!, session: urlSession
+        ))
+        let tickets = AccountTicketLog()
+        vm.beginAccountRequest = { tickets.begin() }
+
+        vm.isPlanAnswerCurrent = { _ in false }
+        _ = await vm.refreshSubscriptionForPurchase(session: current)
+        let stale = AccessSnapshotStore().read(userID: userID)
+        XCTAssertNil(stale.userPlan, "옛 답의 plan 은 스냅샷에 쓰지 않는다")
+        XCTAssertNil(stale.personalPromo, "옛 답의 프로모도 쓰지 않는다")
+
+        vm.isPlanAnswerCurrent = { _ in true }
+        _ = await vm.refreshSubscriptionForPurchase(session: current)
+        let fresh = AccessSnapshotStore().read(userID: userID)
+        XCTAssertEqual(fresh.userPlan, "plus")
+        XCTAssertEqual(fresh.personalPromo?.endsAt, "2026-10-31T15:00:00Z")
+    }
+}
+
 /// 세션 밖 계정 요청의 표를 뜨고, 실패로 돌려받은 표를 모은다(`AuthViewModel` 대역).
 @MainActor
 private final class AccountTicketLog {

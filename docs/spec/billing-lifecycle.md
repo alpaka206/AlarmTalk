@@ -1110,7 +1110,8 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   - ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 그래서
     프로모에만 기댄 목소리의 주간 반복 알람은 **정지할 때마다 다시 맞춘다**
     (`AlarmAppContext.reconcileAfterStop` ← `PaidVoiceGate.dependsOnPromoCutover` — 무료 테마 회전과
-    같은 경로). 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다 — 정지 인텐트에서
+    같은 경로). 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다 — 끝 직전에 울린
+    회차를 끝 **뒤에** 꺼도 같다(판정은 '끝에 못 듣는가' 하나 — 지금 들을 수 있는지는 보지 않는다). 정지 인텐트에서
     도는 앱 코드라 네트워크·화면이 필요 없다. 그 밖에 리컨사일(앱 열기·백그라운드 새로고침·전환 크론의
     `plan_changed` 푸시)도 같은 판정을 한다.
   - **남기는 틈(의도)**: 끝 **전에** 울려 끝 **뒤로** 미룬 다시 울림 한 번은 목소리로 운다. 다시 울림은
@@ -1205,6 +1206,10 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
     안드로이드 `crossStoreRenewalBlocked` 가 보내기 직전에 표를 뜨고 쓰기 전에 `claimPlanAnswer` 로
     잡는다(Codex #803). 더 새 계정 답이 이미 plan 을 차지했으면 plan 은 비우고(`user_plan` 없이) 구독만
     쓴다. iOS 는 결제 전 조회도 표를 뜬다.
+  - **권한 스냅샷도 같은 순번이다**(두 앱). 세션이 옛 답으로 거절한 plan·프로모를 스냅샷에만 쓰면 AlarmKit
+    예약·백그라운드 판정(스냅샷을 읽는다)이 끝난 프로모를 되살리거나 결제자를 강등한다 — iOS
+    `SocialFeatureViewModel` 의 두 스냅샷 쓰기(`refreshAll`·결제 전 조회)는 `AuthViewModel.isPlanAnswerCurrent`
+    가 참일 때만 plan·프로모를 쓴다(자기 답을 막 반영한 요청도 최신 — 경계가 `isSuperseded` 와 다르다).
 
 **D2 — `deletes_voices_at_end`.** 위 「API 가 내보내는 것」. `false` 면 종료 안내에서 삭제 문장을
 뺀다. `personal_promo` 가 **있으면** 원시 plan 이 free 다 — 구독 행·그룹으로 커플·가족을 열지

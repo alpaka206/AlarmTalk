@@ -280,6 +280,16 @@ final class AuthViewModel: ObservableObject {
         request.seq <= accountAnswerSeq
     }
 
+    /// 이 표의 plan 답이 **지금 세션의 짝이거나 그보다 새로운가** — 세션 밖에서 권한 스냅샷에 plan·프로모를
+    /// 쓰기 전에 본다(Codex #803). 더 나중에 보낸 요청의 답이 이미 반영됐으면 이 답은 옛 것이라, 세션은
+    /// 거절했는데 스냅샷에만 옛 plan·프로모가 남는다 — AlarmKit 예약·백그라운드 판정이 그 스냅샷을 읽어
+    /// 끝난 프로모를 되살리거나 결제자를 강등한다.
+    /// ⚠ `isSuperseded` 와 경계가 다르다(`>=`): 방금 **자기 답**을 반영했으면 순번이 같아 여전히 최신이다.
+    func isPlanAnswerCurrent(_ request: AccountRequest?) -> Bool {
+        guard let request else { return true }
+        return !isFromEndedSignIn(request) && request.seq >= accountAnswerSeq
+    }
+
     /// 끝난 로그인(로그아웃 전)에 뜬 표인가(`signedOutRequestSeq`).
     private func isFromEndedSignIn(_ request: AccountRequest) -> Bool {
         request.seq <= signedOutRequestSeq
