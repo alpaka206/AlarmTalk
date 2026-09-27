@@ -781,13 +781,19 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
+    /// ⚠ **입구(`VoiceProfileManagementPanel.paidVoiceEntitledNow`)와 같은 판정기다 — 갈라 두지
+    /// 말 것**(2026-09-27). 예전에는 입구가 `PaidVoiceGate`, 여기가 `PlanTier.bestKnown` 이었다.
+    /// 둘의 답이 다르면 사용자는 입구를 통과해 **녹음을 다 마친 뒤 제출에서** "유료 이용권에서
+    /// 사용할 수 있어요" 를 받는다 — 구독 행 없이 `users.plan` 으로 유료인 계정(기간 한정 개인
+    /// 플랜 등)이 정확히 그랬다. 여기도 등록을 여는 게이트라 **모르면 잠그지 않는다**
+    /// (서버가 제출을 다시 판정한다).
     private var hasPaidVoiceAccess: Bool {
-        PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
+        PaidVoiceGate.isEntitled(snapshot: PaidVoiceGate.liveSnapshot(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
             storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
-        )
-        .meetsOrExceeds(.personal)
+            user: auth.session?.user
+        ))
     }
 
     /// ⚠ **슬롯 한도를 여기서 보지 말 것**(2026-08-12 확정). 이미 목소리가 있어도 등록을

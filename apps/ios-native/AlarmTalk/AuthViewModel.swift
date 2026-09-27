@@ -776,18 +776,21 @@ final class AuthViewModel: ObservableObject {
     /// 배경 갱신이 받아 온 **지금 plan** 을 세션에 반영한다(2026-09-01 리뷰).
     ///
     /// ⚠ **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 전경에서 방금 바꾼 닉네임이 되돌아간다.
-    /// 계정을 대조해 남의 값이 박히지 않게 한다.
-    func applyFreshPlan(userID: String, from previous: String, plan: String) {
+    /// 계정을 대조해 남의 값이 박히지 않게 한다. 기간 한정 개인 플랜은 plan 의 짝이라 같이 바꾼다
+    /// (계산값 `plus` 만 바뀌고 프로모가 옛 값이면 이용권 화면과 종료 안내가 어긋난다).
+    func applyFreshPlan(userID: String, from previous: String, plan: String, personalPromo: PersonalPromo?) {
+        let personalPromo = PersonalPromo.normalized(personalPromo)
         // ⚠ **`applyRolledToken` 과 같은 에폭 가드가 필요하다**(2026-09-01 리뷰). 같은 계정으로
         // 로그아웃→재로그인하면 id 는 그대로라, 로그아웃 **전** 토큰으로 인가된 응답의 plan 이
         // 새 세션에 박힌다 — 옛 free 가 유료 게이트를 잠그거나 옛 유료가 무료 잠금을 막는다.
         guard let current = session,
               current.user.id == userID,
               current.token == previous,
-              current.user.plan != plan
+              current.user.plan != plan || current.user.personalPromo != personalPromo
         else { return }
         var user = current.user
         user.plan = plan
+        user.personalPromo = personalPromo
         persistSession(AuthSession(token: current.token, user: user))
     }
 

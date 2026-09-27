@@ -14,6 +14,12 @@ struct AccessSnapshot: Codable, Equatable {
     /// 재시도)는 **그룹을 남긴 채 이 값만 회수**하므로(`resolvePlanAfterSuspend`), 그룹만
     /// 보면 소유자 결제가 밀린 멤버 전원이 계속 유료로 읽힌다(2026-08-31 리뷰).
     var userPlan: String?
+    /// 위 `userPlan` 과 **같은 응답에서** 받은 기간 한정 개인 플랜(`personal_promo`).
+    ///
+    /// ⚠ **`userPlan` 을 적는 자리에서 늘 함께 적는다.** 프로모 기간의 `userPlan` 은 계산값
+    /// `plus` 라, 짝 없이 남으면 **끝난 뒤에도** 예약 게이트가 유료로 읽는다 — 이 값이
+    /// 판정기의 오프라인 컷오프 근거다(`PersonalPromo.planAsOf`). 옛 스냅샷에는 없다(nil).
+    var personalPromo: PersonalPromo? = nil
 
     static let empty = AccessSnapshot(
         subscriptionResponse: nil,

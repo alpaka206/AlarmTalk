@@ -100,12 +100,15 @@ struct EntitlementWriter {
      * (`NSLock` 은 재진입이 아니다). 그래서 조합을 문 안쪽으로 올렸다.
      *
      * **plan 만 갈아 끼운다** — 프로필 전체를 덮으면 그 사이 바꾼 닉네임이 되돌아간다.
+     * 기간 한정 개인 플랜은 plan 의 짝이라 **같은 응답의 값을 함께** 적는다 — 계산값 `plus` 만
+     * 적히면 끝난 뒤에 걷어낼 근거(`ends_at`)가 스냅샷에 없다.
      */
     @discardableResult
     func renewSession(
         _ ticket: AccessTicket,
         rolledToken: String?,
-        plan: String
+        plan: String,
+        personalPromo: PersonalPromo?
     ) -> EntitlementWrite {
         let applied = (try? KeychainStore.saveSessionIfCurrent(
             expectedUserID: ticket.userID,
@@ -113,11 +116,15 @@ struct EntitlementWriter {
             transform: { current in
                 var next = current
                 next.user.plan = plan
+                next.user.personalPromo = personalPromo
                 if let rolledToken, !rolledToken.isEmpty { next.token = rolledToken }
                 return next
             },
             onSaved: { saved in
-                snapshots.patchWithoutOwnershipCheck(saved.user.id) { $0.userPlan = plan }
+                snapshots.patchWithoutOwnershipCheck(saved.user.id) {
+                    $0.userPlan = plan
+                    $0.personalPromo = personalPromo
+                }
             }
         )) ?? false
         return applied ? .applied : .superseded

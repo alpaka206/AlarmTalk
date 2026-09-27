@@ -55,7 +55,8 @@ enum CodeRegistrationError {
         "CODE_INACTIVE": "지금은 사용할 수 없는 프로모 코드예요",
         "CODE_NOT_IN_WINDOW": "아직 사용 기간이 아니거나 종료된 프로모 코드예요",
         "CODE_EXHAUSTED": "사용 가능 횟수가 모두 소진된 프로모 코드예요",
-        // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
+        // 리딤 그룹(운영자가 `redemption_group` 으로 묶은 코드들) — 같은 계열 코드를 이미
+        // 썼으면 다른 코드도 불가. 코드 이름을 바꾸지 말 것 — 계약이다.
         "CODE_GROUP_ALREADY_REDEEMED":
             "이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요",
         "OWNS_ACTIVE_GROUP": "이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요",

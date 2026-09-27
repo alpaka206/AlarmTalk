@@ -89,11 +89,12 @@ final class FunctionalE2EUITests: XCTestCase {
         }
         shot("03-로그인직후")
 
-        // 로그인 뒤 앱은 온보딩 → 웰컴 프로모를 차례로 띄운다. 홈까지 밀어 준다.
+        // 로그인 뒤 앱은 목소리 받기 화면과 안내(강등·프로모 종료 알럿)를 띄울 수 있다.
+        // 홈까지 밀어 준다.
         for _ in 0..<8 {
             if app.tabBars.buttons.element(boundBy: 0).exists { break }
             var acted = false
-            for label in ["건너뛰기", "닫기", "다음", "시작하기"] {
+            for label in ["건너뛰기", "닫기", "다음", "시작하기", "확인"] {
                 let b = app.buttons[label]
                 if b.exists && b.isHittable { b.tap(); acted = true; break }
             }

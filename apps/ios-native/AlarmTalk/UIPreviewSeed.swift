@@ -64,6 +64,25 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 기간 한정 개인 플랜을 쓰는 계정으로 띄운다 — `-UIPreviewPersonalPromo <남은 일수>`.
+    ///
+    /// 서버 없이 이용권 화면의 '무료 이용 중' 한 줄과 **종료 안내 알럿**을 보려고 둔다. 종료는
+    /// 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격). 남은 일수를
+    /// 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
+    static var previewPersonalPromo: PersonalPromo? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-UIPreviewPersonalPromo"), i + 1 < args.count,
+              let days = Double(args[i + 1]) else { return nil }
+        let end = Date().addingTimeInterval(days * 86_400)
+        let from = end.addingTimeInterval(-7 * 86_400)
+        let iso = ISO8601DateFormatter()
+        return PersonalPromo(endsAt: iso.string(from: end), noticeFrom: iso.string(from: from))
+        #else
+        return nil
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG
@@ -128,13 +147,16 @@ enum UIPreviewSeed {
 
     /// 화면을 채울 가짜 세션.
     static func makeSession() -> AuthSession {
-        AuthSession(
+        let promo = previewPersonalPromo
+        return AuthSession(
             token: "ui-preview-token",
             user: AuthUser(
                 id: "ui-preview-user",
                 email: "preview@alarm-talk.com",
                 name: "김규원",
-                plan: previewPlan
+                // 프로모 계정은 서버가 계산값 `plus` 를 준다 — 원시 plan 은 free 다.
+                plan: promo == nil ? previewPlan : "plus",
+                personalPromo: promo
             )
         )
     }

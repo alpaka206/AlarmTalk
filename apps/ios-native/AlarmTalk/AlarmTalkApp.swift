@@ -865,7 +865,12 @@ struct AlarmTalkApp: App {
             // ⚠ **`users.plan` 도 키다**(2026-09-01 리뷰). 보류는 구독 id·status·plan 을
             // **그대로 두고** 이 값만 free 로 바꾼다 — 키에 없으면 `/auth/me` 가 갱신해도
             // 키가 같아 이 태스크가 **다시 돌지 않고**, 판정기에 새 입력을 넣은 의미가 없다.
-            auth.session?.user.plan ?? "no-user-plan"
+            auth.session?.user.plan ?? "no-user-plan",
+            // 기간 한정 개인 플랜의 끝도 판정 입력이다 — 끝난 프로모는 판정기가 free 로 읽는다.
+            // 원래 값이 아니라 **지금 시각 기준의 plan** 을 넣어, 화면이 다시 그려질 때 끝이
+            // 지났으면 키가 바뀌도록 한다(서버 갱신을 못 받는 오프라인 기기).
+            auth.session?.user.planAsOf() ?? "no-user-plan",
+            auth.session?.user.personalPromo?.endsAt ?? "no-personal-promo"
         ].joined(separator: "|")
     }
 
@@ -882,10 +887,10 @@ struct AlarmTalkApp: App {
             return
         }
         // ⚠ **판정은 `PaidVoiceGate.resolve` 하나로 한다**(2026-09-01 리뷰).
-        // `PlanTier.bestKnown` 은 구독 응답이 **있으면** `userPlan` 을 아예 보지 않는다
-        // (`serverSubscription == nil` 일 때만 후보에 넣는다). 결제 보류에서 서버는 구독
-        // 행을 남긴 채 plan 만 회수하므로, 그 조합이면 이 자리가 유료로 읽혀 **잠그지 않을
-        // 뿐 아니라 아래 복원 갈래로 빠져 이미 잠긴 알람까지 되돌린다.**
+        // `PlanTier.bestKnown` 은 **등급**(표시·게이트용, 만료를 안 본다)이지 판정이 아니다 —
+        // 예전에는 구독 응답이 있으면 `userPlan` 을 아예 안 봐서, 결제 보류(서버가 구독 행을
+        // 남긴 채 plan 만 회수)에서 이 자리가 유료로 읽혀 **잠그지 않을 뿐 아니라 아래 복원
+        // 갈래로 빠져 이미 잠긴 알람까지 되돌렸다.** 되돌릴 수 없는 판단은 판정기가 한다.
         // 스토어는 지금 StoreKit 이 들고 있는 값이 곧 1단이라 따로 본다(기한 불필요).
         let storeSaysPaid = subscriptions.currentTier.meetsOrExceeds(.personal)
         let access = PaidVoiceGate.resolve(snapshot: AccessSnapshot(
@@ -893,7 +898,8 @@ struct AlarmTalkApp: App {
             familyGroup: socialFeatures.familyGroup,
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
-            userPlan: auth.session?.user.plan
+            userPlan: auth.session?.user.plan,
+            personalPromo: auth.session?.user.personalPromo
         ))
         // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서
         // `hasLoadedEntitlements` 를 빼면서 `guard ... else` 하나로 묶어 뒀는데, 그러면

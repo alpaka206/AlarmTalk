@@ -1793,7 +1793,7 @@ struct AlarmEditorSheet: View {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
+            user: auth.session?.user
         )
     }
 

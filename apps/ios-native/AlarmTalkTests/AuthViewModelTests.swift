@@ -42,6 +42,53 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(model.session?.user.plan, "personal")
     }
 
+    /// 기간 한정 개인 플랜은 plan 의 **짝**이다 — 배경 갱신이 plan(계산값 `plus`)만 적고
+    /// 프로모를 흘리면, 끝난 뒤 예약 게이트가 캐시된 `plus` 를 걷어낼 근거(`ends_at`)가 없다.
+    func testBackgroundRenewalCarriesPersonalPromoWithPlan() async throws {
+        PendingSignOutStore.removeAll()
+        let api = MockAuthAPI()
+        let original = makeEmailSession()
+        let promo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z")
+        var refreshedUser = original.user
+        refreshedUser.plan = "plus"
+        refreshedUser.personalPromo = promo
+        api.meResult = .success(refreshedUser)
+        api.meRolledToken = "rolled-token"
+        let model = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        model._setSessionForTesting(original)
+        try KeychainStore.saveSession(original)
+        addTeardownBlock {
+            KeychainStore.deleteSession()
+            AccessSnapshotStore().clear(userID: original.user.id)
+        }
+
+        await BackgroundSyncTask.renewSessionTokenIfNeeded(api: api, auth: model)
+
+        XCTAssertEqual(model.session?.user.plan, "plus")
+        XCTAssertEqual(model.session?.user.personalPromo, promo)
+        XCTAssertEqual(KeychainStore.readSession()?.user.personalPromo, promo)
+        let snapshot = AccessSnapshotStore().read(userID: original.user.id)
+        XCTAssertEqual(snapshot.userPlan, "plus")
+        XCTAssertEqual(snapshot.personalPromo, promo, "예약 게이트가 읽는 스냅샷에도 짝으로 적는다")
+    }
+
+    /// 기간 중 결제하면 plan 은 `plus` 그대로인데 프로모만 사라진다 — 그것도 반영해야 한다
+    /// (안 그러면 이용권 화면이 방금 산 개인 이용권을 '현재' 로 못 그린다).
+    func testFreshPlanAppliesPromoChangeEvenWhenPlanIsUnchanged() throws {
+        let model = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        var session = makeEmailSession()
+        session.user.plan = "plus"
+        session.user.personalPromo = PersonalPromo(endsAt: "2026-10-31T15:00:00Z", noticeFrom: "2026-10-24T15:00:00Z")
+        model._setSessionForTesting(session)
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        model.applyFreshPlan(userID: session.user.id, from: session.token, plan: "plus", personalPromo: nil)
+
+        XCTAssertEqual(model.session?.user.plan, "plus")
+        XCTAssertNil(model.session?.user.personalPromo)
+        XCTAssertEqual(model.session?.user.purchasedPlan, "plus")
+    }
+
     func testLateUnauthorizedDoesNotDeleteBackgroundRenewedSession() async throws {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()
