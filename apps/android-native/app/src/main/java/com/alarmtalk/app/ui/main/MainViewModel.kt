@@ -26,6 +26,7 @@ import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.RegisterRequest
@@ -639,6 +640,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var storeSnapshotUserPlan by mutableStateOf<String?>(initialAccessSnapshot.userPlan)
         internal set
 
+    /**
+     * [storeSnapshotUserPlan] 과 **짝인** 기간 한정 개인 플랜 종료 시각(`AccessSnapshot.userPlanPromoEndsAt`).
+     * ⚠ plan 을 바꾸는 자리에서 **항상 함께** 바꾼다 — 짝이 어긋나면 진짜 유료 사용자가 옛
+     * 종료 시각에 잠긴다.
+     */
+    var storeSnapshotUserPlanPromoEndsAt by mutableStateOf<String?>(initialAccessSnapshot.userPlanPromoEndsAt)
+        internal set
+
     /** [storePlanKey] 의 유효기한(epoch millis). 지나면 없는 것으로 본다. */
     var storeEntitlementUntilMillis by mutableStateOf<Long?>(initialAccessSnapshot.storeEntitlementUntilMillis)
         internal set
@@ -679,6 +688,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val effectiveUserPlan: String?
         get() = storeSnapshotUserPlan ?: authSession?.user?.plan
 
+    /**
+     * [effectiveUserPlan] 과 **같은 출처의** 프로모 종료 시각. plan 을 스냅샷에서 읽었으면
+     * 스냅샷의 짝을, 세션에서 읽었으면 세션의 짝을 쓴다 — 섞으면 짝이 어긋난다.
+     */
+    private val effectiveUserPlanPromoEndsAt: String?
+        get() = if (storeSnapshotUserPlan != null) {
+            storeSnapshotUserPlanPromoEndsAt
+        } else {
+            com.alarmtalk.app.network.normalizePersonalPromo(authSession?.user?.personalPromo)?.endsAt
+        }
+
     internal fun paidVoiceAccess(nowMillis: Long = System.currentTimeMillis()): PaidVoiceAccess =
         resolvePaidVoiceAccess(
             subscriptionResponse = subscriptionResponse,
@@ -686,6 +706,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             userPlan = effectiveUserPlan,
             storeEntitled = isStoreEntitledNow(nowMillis),
             nowMillis = nowMillis,
+            userPlanPromoEndsAt = effectiveUserPlanPromoEndsAt,
         )
 
     /**
@@ -860,29 +881,80 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
 
-    // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
-    var showWelcomePromo by mutableStateOf(false)
-        internal set
-
-    internal val promoPromptStore = PromoPromptStore(application)
+    /**
+     * 지금 살아 있는 **기간 한정 개인 플랜**(`personal_promo`). 없거나 끝났으면 null.
+     *
+     * 규칙은 [activePersonalPromoOf] 하나다(이용권 화면도 같은 함수를 쓴다).
+     */
+    internal fun activePersonalPromo(nowMillis: Long = System.currentTimeMillis()): PersonalPromo? =
+        activePersonalPromoOf(
+            sessionPromo = authSession?.user?.personalPromo,
+            billingPromo = subscriptionResponse?.personalPromo,
+            nowMillis = nowMillis,
+        )
 
     /**
-     * 웰컴 코드 안내를 띄울지 판정한다. 조건이 하나라도 어긋나면 조용히 넘어간다.
-     *  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
-     *  - 이 계정에 아직 안 띄웠을 것
-     * 노출과 동시에 '봤음'을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
+     * 떠 있는 **기간 한정 개인 플랜 종료 안내**. null 이면 닫혀 있다.
+     *
+     * 소진 플래그가 아니다 — 안내 기간(`notice_from ≤ now < ends_at`) 동안 **앱에 진입할
+     * 때마다** 한 번씩 뜬다. 멈추는 방법은 '다시 보지 않기'(계정별 저장) 하나다.
      */
-    internal fun maybeShowWelcomePromo() {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
-        if (showWelcomePromo) return
-        if (authSession?.user?.plan?.lowercase() != "free") return
-        if (promoPromptStore.hasPrompted(userId)) return
-        promoPromptStore.markPrompted(userId)
-        showWelcomePromo = true
+    var personalPromoEndNotice by mutableStateOf<PersonalPromo?>(null)
+        internal set
+
+    /** 안내를 이미 띄운 진입 번호(`AppSignals.appEntries`). 같은 진입에서 두 번 띄우지 않는다. */
+    private var personalPromoEndNoticeEntry: Long = 0L
+
+    internal val personalPromoNoticeStore = PersonalPromoNoticeStore(application)
+
+    /**
+     * 이 계정의 **계정 상태 확인(`/auth/me`) 응답**이 준 `personal_promo`.
+     * [accountStatusPromoKnown] 이 false 면 응답을 못 받은 것이다(아직 · 실패).
+     *
+     * 종료 안내는 `accountStatusChecked` 를 준비 신호로 기다리는데, 그 응답은 세션에 저장되지
+     * 않는다(`checkAccountStatus` 는 탈퇴 상태만 본다). 그래서 응답이 왔으면 **그 응답의 값**으로
+     * 판정한다 — 저장된 세션의 promo 는 지난 실행의 것이라, 그 사이 다른 기기에서 결제했으면
+     * 이미 끝난 프로모의 안내를 한 번 띄우게 된다. 응답을 못 받았으면(오프라인) 세션 값으로 판정한다.
+     */
+    internal var accountStatusPromo: PersonalPromo? = null
+        private set
+    internal var accountStatusPromoKnown: Boolean = false
+        private set
+
+    internal fun recordAccountStatusPromo(promo: PersonalPromo?) {
+        accountStatusPromo = com.alarmtalk.app.network.normalizePersonalPromo(promo)
+        accountStatusPromoKnown = true
     }
 
-    internal fun dismissWelcomePromo() {
-        showWelcomePromo = false
+    /**
+     * 이번 진입에서 종료 안내를 띄울지 판정한다. **준비 신호·차단 게이트는 부르는 쪽이 본다**
+     * (`AlarmTalkApp` 의 `PersonalPromoNoticeGates`). 여기서는 진입·기간·'다시 보지 않기' 만 본다.
+     */
+    internal fun maybeShowPersonalPromoEndNotice(entry: Long, nowMillis: Long = System.currentTimeMillis()) {
+        if (!personalPromoNoticePendingForEntry(entry, personalPromoEndNoticeEntry)) return
+        if (personalPromoEndNotice != null) return
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        val promo = if (accountStatusPromoKnown) {
+            activePersonalPromoOf(sessionPromo = accountStatusPromo, billingPromo = null, nowMillis = nowMillis)
+        } else {
+            activePersonalPromo(nowMillis)
+        } ?: return
+        if (!isPersonalPromoEndNoticeDue(promo, nowMillis, personalPromoNoticeStore.optedOutEndsAt(userId))) return
+        personalPromoEndNoticeEntry = entry
+        personalPromoEndNotice = promo
+    }
+
+    /**
+     * 종료 안내를 닫는다. [dontShowAgain] 이면 이 계정·이 종료 시각에 대해 다시 띄우지 않는다.
+     * 바깥 탭·뒤로가기는 '확인' 과 같다 — 다음 진입에 다시 뜬다.
+     */
+    internal fun dismissPersonalPromoEndNotice(dontShowAgain: Boolean) {
+        val promo = personalPromoEndNotice
+        personalPromoEndNotice = null
+        if (!dontShowAgain) return
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        val endsAt = promo?.endsAt?.takeIf { it.isNotBlank() } ?: return
+        personalPromoNoticeStore.optOut(userId, endsAt)
     }
 
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
@@ -1235,6 +1307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         // plan 도 계정에 묶인다 — 안 바꾸면 앞 사람의 등급으로 판정한다([effectiveUserPlan]).
         storeSnapshotUserPlan = snapshot.userPlan
+        storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
         // 새 계정으로는 아직 물어본 적이 없다 — 확인 전에는 영구 잠금을 하지 않는다.
         storeEntitlementChecked = false
     }
@@ -1257,6 +1330,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 화면과 울림이 같은 결과를 보도록, 문을 통과한 스냅샷에서만 사본을 발행한다.
             val snapshot = checkNotNull(persisted)
             storeSnapshotUserPlan = snapshot.userPlan
+            storeSnapshotUserPlanPromoEndsAt = snapshot.userPlanPromoEndsAt
             storePlanKey = snapshot.storePlanKey
             storeEntitlementUntilMillis = snapshot.storeEntitlementUntilMillis
         }
@@ -1345,8 +1419,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
         sensitiveConsentMissing = emptyList()
         pendingSensitiveConsent = null
-        // 웰컴 코드 안내도 계정별 상태다. 계정이 바뀌면 새 계정 기준으로 다시 판정한다.
-        showWelcomePromo = false
+        // 종료 안내도 계정별 상태다. 앞 계정의 안내가 새 계정 화면에 남으면 안 되고,
+        // 새 계정은 이번 진입에서 자기 기준으로 한 번 판정받는다.
+        personalPromoEndNotice = null
+        personalPromoEndNoticeEntry = 0L
+        accountStatusPromo = null
+        accountStatusPromoKnown = false
         pendingDeletion = false
         accountStatusChecked = false
         consentStatusChecked = false

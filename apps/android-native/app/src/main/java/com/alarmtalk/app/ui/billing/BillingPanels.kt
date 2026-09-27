@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -60,6 +61,7 @@ import com.alarmtalk.app.network.BillingPlanSummary
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
+import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoucherItem
 import kotlinx.coroutines.launch
 
@@ -79,6 +81,14 @@ internal fun SubscriptionPanel(
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     onRestorePurchases: () -> Unit,
+    /**
+     * 지금 살아 있는 기간 한정 개인 플랜(`activePersonalPromoOf`). 있으면 맨 위에 한 줄만 보인다.
+     *
+     * ⚠ **구독처럼 그리지 말 것.** 서버가 구독 객체를 만들지 않으므로(`subscription` 은 null)
+     * 해지 버튼도 '현재' 표시도 바꾸지 않는다 — 원시 plan 은 여전히 무료이고, 개인 결제도
+     * 그대로 열려 있다. 날짜는 서버 `ends_at − 1초` 의 기기 날짜다.
+     */
+    personalPromo: PersonalPromo? = null,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -178,6 +188,23 @@ internal fun SubscriptionPanel(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // 기간 한정 개인 플랜 — "개인 플랜 무료 이용 중 · 10월 31일까지" 한 줄. 날짜는 서버 값.
+        // 글자 결은 현재 카드의 상태 문구(`currentStatusText`)와 같다 — 같은 종류의 정보다.
+        val promoLastDay = personalPromoLastDay(personalPromo, java.time.ZoneId.systemDefault())
+        if (promoLastDay != null) {
+            val locale = LocalConfiguration.current.locales[0]
+                ?: java.util.Locale.getDefault()
+            Text(
+                text = stringResource(
+                    R.string.personal_promo_plan_line,
+                    formatPersonalPromoDay(promoLastDay, locale),
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
         val statusContext = LocalContext.current
         val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)

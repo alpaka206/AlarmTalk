@@ -417,6 +417,11 @@ internal fun AlarmListScreen(
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
                         onRestorePurchases = onRestorePurchases,
+                        personalPromo = activePersonalPromoOf(
+                            sessionPromo = authSession?.user?.personalPromo,
+                            billingPromo = subscriptionResponse?.personalPromo,
+                            nowMillis = System.currentTimeMillis(),
+                        ),
                     )
                 }
             }

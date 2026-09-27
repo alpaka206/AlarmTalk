@@ -413,6 +413,10 @@ class RingingService : Service() {
         // ⚠ **스토어 신호에도 기한이 있다.** 기한 없이 믿으면 한 번 유료였던 기기가 영구
         // 통행증을 갖는다 — 만료 뒤에도 클론 목소리가 계속 울린다.
         val storeStillValid = snapshot.storeSignalStillValid(now)
+        // plan 과 그 프로모 종료 시각은 **같은 출처에서 한 쌍으로** 꺼낸다 — 스냅샷에 plan 이
+        // 있으면 스냅샷의 짝을, 없으면 세션의 짝을. 기간 한정 개인 플랜이 끝났는데 앱을 안 연
+        // 기기에서 캐시의 `plus` 로 클론 목소리를 계속 울리지 않게 하는 것이 이 짝의 몫이다.
+        val (cachedPlan, cachedPlanPromoEndsAt) = snapshot.userPlanWithPromo(session.user)
         resolvePaidVoiceAccess(
             subscriptionResponse = snapshot.subscriptionResponse,
             familyGroup = snapshot.familyGroup,
@@ -423,9 +427,10 @@ class RingingService : Service() {
             // '구독 없음 + 그룹 없음' 스냅샷이 `Unknown` 이 되어 낙관 통과한다 — 업데이트
             // 직후 UI 를 한 번도 안 열고 알람이 울리면, 예전 코드가 무료로 보던 것을
             // 유료로 보게 된다. 세션 저장소의 plan 으로 메운다.
-            userPlan = snapshot.userPlan ?: session.user.plan,
+            userPlan = cachedPlan,
             storeEntitled = storeStillValid,
             nowMillis = now,
+            userPlanPromoEndsAt = cachedPlanPromoEndsAt,
         ).isEntitledOptimistic()
     }.getOrDefault(true)
 

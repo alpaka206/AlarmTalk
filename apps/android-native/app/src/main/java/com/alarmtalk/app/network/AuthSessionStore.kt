@@ -204,6 +204,7 @@ class AuthSessionStore internal constructor(
                     ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
                 familyAlarmQuietWindows = quietWindows,
                 dynamicPromptSettings = readDynamicPromptSettings(),
+                personalPromo = readPersonalPromo(),
             ),
         )
     }
@@ -510,8 +511,36 @@ class AuthSessionStore internal constructor(
             .putString(KEY_FAMILY_ALARM_QUIET_END, firstQuietWindow.end)
             .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
             .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
+            // ⚠ **없으면 지운다.** 남겨 두면 기간이 끝났거나 결제한 뒤에도 옛 프로모가 되살아나
+            //   plan 과 짝이 어긋난다(`resolvePaidVoiceAccess` 의 `userPlanPromoEndsAt`).
+            .also { editor ->
+                val promo = normalizedUser.personalPromo
+                if (promo == null) {
+                    editor.remove(KEY_PERSONAL_PROMO_ENDS_AT).remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
+                } else {
+                    editor.putString(KEY_PERSONAL_PROMO_ENDS_AT, promo.endsAt)
+                    if (promo.noticeFrom == null) {
+                        editor.remove(KEY_PERSONAL_PROMO_NOTICE_FROM)
+                    } else {
+                        editor.putString(KEY_PERSONAL_PROMO_NOTICE_FROM, promo.noticeFrom)
+                    }
+                }
+            }
             .apply()
         return AuthSession(token = token, provider = provider, user = normalizedUser)
+    }
+
+    /**
+     * 세션과 함께 저장한 기간 한정 개인 플랜. **plan 과 한 쌍이다** — 같은 응답에서 온 값만
+     * 함께 저장되고, plan 을 새로 쓸 때 같이 덮인다([save]).
+     */
+    private fun readPersonalPromo(): PersonalPromo? {
+        val endsAt = prefs.getString(KEY_PERSONAL_PROMO_ENDS_AT, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return PersonalPromo(
+            endsAt = endsAt,
+            noticeFrom = prefs.getString(KEY_PERSONAL_PROMO_NOTICE_FROM, null)?.takeIf { it.isNotBlank() },
+        )
     }
 
     private fun readQuietDays(): List<Int> =
@@ -635,6 +664,7 @@ class AuthSessionStore internal constructor(
             ),
             deletionStatus = runCatching { user.deletionStatus }.getOrNull()
                 ?.takeIf { it.isNotBlank() } ?: "active",
+            personalPromo = normalizePersonalPromo(runCatching { user.personalPromo }.getOrNull()),
         )
     }
 
@@ -799,9 +829,24 @@ class AuthSessionStore internal constructor(
         private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
         private const val KEY_FAMILY_ALARM_QUIET_WINDOWS = "family_alarm_quiet_windows"
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
+        private const val KEY_PERSONAL_PROMO_ENDS_AT = "personal_promo_ends_at"
+        private const val KEY_PERSONAL_PROMO_NOTICE_FROM = "personal_promo_notice_from"
         // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
         private const val MAX_QUIET_WINDOWS = 2
     }
+}
+
+/**
+ * 서버가 준 `personal_promo` 를 저장할 모양으로 다듬는다. **종료 시각이 없으면 없는 것이다** —
+ * 끝을 모르는 프로모는 표시할 날짜도, 오프라인 차단 기준도 없다.
+ *
+ * Gson 은 JSON 에 없는 필드를 non-null 선언과 무관하게 null 로 채우므로 필드마다 감싼다.
+ */
+internal fun normalizePersonalPromo(promo: PersonalPromo?): PersonalPromo? {
+    val endsAt = runCatching { promo?.endsAt }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+        ?: return null
+    val noticeFrom = runCatching { promo?.noticeFrom }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
+    return PersonalPromo(endsAt = endsAt, noticeFrom = noticeFrom)
 }
 
 internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): DynamicPromptSettings {

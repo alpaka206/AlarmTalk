@@ -9,7 +9,7 @@ import org.junit.Test
 /**
  * **판정을 못 한 회차도 준비 신호는 세운다** 회귀 가드.
  *
- * 1회성 오버레이(웰컴 프로모·첫 권한 안내)는 `checkedUserId` 를 기다린다
+ * 1회성 오버레이(첫 권한 안내)와 진입 안내(개인 플랜 종료 안내)는 `checkedUserId` 를 기다린다
  * (`ui/app/AlarmTalkApp.kt` 의 두 `LaunchedEffect`). 그런데 그 신호를 세우는 곳은
  * `StockClipPrefetchWorker` **하나뿐**이다 — 매니페스트를 받는 다른 두 곳
  * (`loadStockClips`·`VoiceAccessSyncWorker`)에는 `report` 가 없고, 그쪽이 같이 건

@@ -36,11 +36,37 @@ data class DynamicPromptSettingsState(
     @SerializedName("fortune_ready") val fortuneReady: Boolean = false,
 )
 
+/**
+ * **기간 한정 개인 플랜**(`personal_promo`) — 서버가 원시 `users.plan = free` 인 계정을
+ * 기간 동안 개인 플랜(`plus`)으로 **계산해서** 내려 줄 때만 붙는다. 그 밖에는 null 이다.
+ *
+ * - 날짜는 **서버 값만** 쓴다. 앱에 종료일을 박지 않는다 — 연장·조기 종료가 서버 배포만으로
+ *   끝나야 한다(원본은 `packages/shared` 의 `PERSONAL_PROMO`).
+ * - [endsAt] 은 **배타**다. 그 순간부터 무료다. 그래서 "…까지" 로 보여 줄 날은
+ *   `endsAt − 1초` 의 기기 날짜다([personalPromoLastDay]).
+ * - 필드가 없는 구버전 서버는 이 객체를 주지 않는다 — 그때는 표시만 안 한다.
+ *
+ * 둘 다 nullable 인 이유: Gson 은 Kotlin 기본값을 무시하고 JSON 에 없는 필드를 null 로
+ * 채운다. 그래서 non-null 로 선언해도 null 이 들어온다 — 쓰는 쪽이 파싱에 실패하면 없는
+ * 것으로 본다.
+ */
+data class PersonalPromo(
+    @SerializedName("ends_at") val endsAt: String? = null,
+    @SerializedName("notice_from") val noticeFrom: String? = null,
+)
+
 data class AuthUser(
     val id: String,
     val email: String,
     val name: String = "",
+    /**
+     * 서버가 **계산한** plan. 기간 한정 개인 플랜 동안은 원시 free 도 `plus` 로 온다 —
+     * 그때는 [personalPromo] 가 함께 오고, 그 종료 시각이 지나면 이 값은 낡은 것이다
+     * (`resolvePaidVoiceAccess` 의 `userPlanPromoEndsAt`).
+     */
     val plan: String = "free",
+    /** 위 [plan] 이 기간 한정 개인 플랜으로 계산된 값이면 그 기간. 아니면 null. */
+    @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
     @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",

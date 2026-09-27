@@ -82,6 +82,7 @@ import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyGroupMember
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.normalizePersonalPromo
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
@@ -225,6 +226,8 @@ internal fun AlarmEditorScreen(
             userPlan = authSession.user.plan,
             storeEntitled = storeEntitledNow,
             nowMillis = System.currentTimeMillis(),
+            // plan 과 같은 세션 응답의 짝이다.
+            userPlanPromoEndsAt = normalizePersonalPromo(authSession.user.personalPromo)?.endsAt,
         ).isEntitledOptimistic()
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능

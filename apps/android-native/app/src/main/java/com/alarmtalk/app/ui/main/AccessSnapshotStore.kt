@@ -4,8 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.network.AuthUser
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
+import com.alarmtalk.app.network.normalizePersonalPromo
 
 internal data class AccessSnapshot(
     val subscriptionResponse: BillingSubscriptionResponse? = null,
@@ -40,17 +42,63 @@ internal data class AccessSnapshot(
      * 이 값만 회수하므로, 그룹만 봐서도 안 된다.
      */
     val userPlan: String? = null,
+    /**
+     * [userPlan] 과 **같은 응답에서 온** `personal_promo.ends_at`(ISO). 그 plan 이 기간 한정
+     * 개인 플랜으로 계산된 값이 아니면 null.
+     *
+     * ⚠ **[userPlan] 과 한 쌍으로만 쓴다**([withUserPlan]). 따로 두면 쿠폰을 등록해 진짜
+     * 유료가 된 뒤에도 옛 종료 시각이 남아, 그 시각이 지나는 순간 **유료 사용자가 잠긴다.**
+     *
+     * 이 값이 있는 이유는 **오프라인 차단**이다. 서버는 종료 시각에 게이트를 즉시 닫지만,
+     * 울림 경로(`RingingService`)는 캐시만 읽는다 — 이 값이 없으면 종료 뒤 앱을 안 연 기기가
+     * 캐시의 `plus` 를 믿고 클론 목소리를 계속 울린다.
+     *
+     * 옛 버전이 쓴 스냅샷에는 없다(null) — 그때는 예전처럼 plan 만으로 판정한다.
+     */
+    val userPlanPromoEndsAt: String? = null,
 ) {
+    /**
+     * 서버가 준 plan 과 그 plan 의 프로모 종료 시각을 **함께** 적는다.
+     * `/auth/me` 로 plan 을 받은 경로는 전부 이걸 쓴다 — `copy(userPlan = …)` 만 쓰면
+     * 앞 응답의 종료 시각이 새 plan 에 붙는다.
+     */
+    fun withUserPlan(plan: String?, promoEndsAt: String?): AccessSnapshot =
+        copy(userPlan = plan, userPlanPromoEndsAt = promoEndsAt)
+
+    /** [withUserPlan] 의 `/auth/me` 응답용 모양. */
+    fun withServerUser(user: AuthUser): AccessSnapshot =
+        withUserPlan(user.plan, normalizePersonalPromo(user.personalPromo)?.endsAt)
+
+    /**
+     * 판정에 넘길 **(plan, 프로모 종료) 한 쌍**. 스냅샷에 plan 이 있으면 그 짝을, 없으면
+     * 세션의 짝을 쓴다 — 한쪽에서 plan 을, 다른 쪽에서 종료 시각을 가져오면 짝이 어긋난다.
+     */
+    fun userPlanWithPromo(sessionUser: AuthUser?): Pair<String?, String?> =
+        if (userPlan != null) {
+            userPlan to userPlanPromoEndsAt
+        } else {
+            sessionUser?.plan to normalizePersonalPromo(sessionUser?.personalPromo)?.endsAt
+        }
+
     /**
      * 결제 전 조회는 플랜·구독과 오래된 Play 증거를 함께 정합화한다.
      * user_plan은 스토어 재조회 성공 응답에만 있다. 그 free를 40일 TTL이 뒤집으면 안 된다.
      * 일상 조회(필드 없음)나 유료 응답은 독립적인 스토어 신호를 보존한다.
+     *
+     * plan 을 새로 받았을 때만 프로모 종료 시각도 **같은 응답의 것으로** 바꾼다 — 일상 조회는
+     * plan 을 안 주므로 옛 짝을 그대로 둔다.
      */
     fun withBillingResponse(response: BillingSubscriptionResponse?): AccessSnapshot {
         val invalidateStoreSignal = response?.userPlan?.trim()?.lowercase() == "free"
+        val freshPlan = response?.userPlan
         return copy(
             subscriptionResponse = response,
-            userPlan = response?.userPlan ?: userPlan,
+            userPlan = freshPlan ?: userPlan,
+            userPlanPromoEndsAt = if (freshPlan != null) {
+                normalizePersonalPromo(response?.personalPromo)?.endsAt
+            } else {
+                userPlanPromoEndsAt
+            },
             storePlanKey = if (invalidateStoreSignal) null else storePlanKey,
             storeEntitlementUntilMillis = if (invalidateStoreSignal) null else storeEntitlementUntilMillis,
         )
