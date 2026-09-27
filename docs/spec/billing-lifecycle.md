@@ -1131,10 +1131,13 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   잠금 이펙트, iOS `applyFreePlanVoiceLockIfNeeded`)은 캐시의 받은 시각(D7 — `computed_at`)으로
   판정하므로 끝 **뒤에** 계산된 답은 권위로 믿고, 끝 직전에 계산된 답은 위의 Δ 창에서 일찍 잠글
   수 있다(되돌릴 수 있다).
-- **D12 — 전경 무료 잠금: 무료의 근거가 낡은 프로모 하나면 이번 진입의 답을 기다린다**(두 앱).
-  무료 판정의 근거가 D1 의 오프라인 차단 하나뿐이면(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse`),
-  이번 진입의 `/auth/me` 가 **plan 스냅샷에 반영된 뒤에만** 잠근다(안드로이드 `freePlanLockMayApply` —
-  `planAnsweredEntry == appEntry`; iOS `applyFreePlanVoiceLockIfNeeded` 도 같은 조건으로 기다린다).
+- **D12 — 전경 무료 잠금: 무료의 근거가 낡은 프로모 하나면 이번 진입의 답을 기다린다**(두 앱 같은
+  규칙). 무료 판정의 근거가 D1 의 오프라인 차단 하나뿐이면 — 낡은 프로모를 빼고 다시 판정하면 무료가
+  아니면(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse`, iOS `PaidVoiceGate.isFreeOnlyByPromoLapse`) —
+  이번 진입에 보낸 계정 요청의 plan 이 **세션·판정 스냅샷에 반영된 뒤에만** 잠근다(두 앱 모두
+  `freePlanLockMayApply` — `planAnsweredEntry == 지금 진입`, 진입 전(0)이면 잠그지 않는다: 안드로이드
+  `PersonalPromoLedger.planAnsweredEntry`, iOS `AuthViewModel.planAnsweredEntry`). 기다리는 동안은 아무
+  갈래도 타지 않는다(토큰을 굴리는 plan 재조회도 부르지 않는다 — 진입마다의 갱신이 이미 나가 있다).
   그 전의 plan 은 지난 실행의 캐시라, 그 사이 다른 기기에서 쿠폰·스토어 결제·가족 합류로 원시 유료가
   된 사람도 잠기고, 잠금은 새 답이 풀지만 이미 적힌 강등 안내(`무료 이용권으로 바뀌었어요`)가
   결제자에게 "바뀌었어요" 를 말한다(리뷰). 콜드 스타트에서는 스냅샷·스토어가 로컬에서 먼저 차므로
@@ -1143,17 +1146,41 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
   - '답이 왔다' 는 계정 응답이 아니라 **이번 진입에 보낸 요청의 plan 이 반영된 것**으로 센다 —
     안드로이드 `checkAccountStatus` 는 계정 응답을 적지만 plan 은 건드리지 않는다. **순번에 밀린 옛
     응답**(뒤에 보낸 요청의 답이 먼저 반영됨)은 plan 을 쓰지 않으므로 반영으로 세지 않는다(아래 순번
-    가드 — 두 앱).
+    가드 — 두 앱. iOS 는 밀린 답을 이 진입의 결과로 적으면서 plan 반영 번호도 함께 적지만, 그 번호는
+    먼저 반영된 더 새 답이 이미 적은 같은 진입의 것이라 결과가 같다). 이 진입의 첫 결과가 실패였어도(D11 — 안내는 그 진입에 띄우지 않는다) 같은 진입의
+    뒤 성공은 plan 반영으로 **센다** — 실패한 진입에서 잠금을 영영 미루지 않게.
   - 이번 진입의 답이 반영된 뒤에도 그 답이 여전히 낡은 프로모면(D7 의 Δ 창 — 기기 시계가 앞선 기기)
     잠근다. 기다림은 "지난 실행의 캐시로는 잠그지 않는다" 이지 "잠그지 않는다" 가 아니다.
+  - 답이 반영되면 **다시 판정한다**(반영된 답이 plan 을 바꾸지 않아도 — 여전히 낡은 `plus` 면 그때
+    잠근다). 안드로이드는 `planAnsweredEntry` 를 키로 둔 재확인 이펙트(`deferredPromoLapseLockDue`),
+    iOS 는 같은 잠금 태스크의 키(`freePlanVoiceLockKey` 의 `promoLapseLockWaitKey` — 캐시된 프로모가
+    낡았을 때만 움직인다)다. 모양만 다르고 동작은 같다 — iOS 는 `.task(id:)` 가 앞 회차를 취소하므로
+    잠금이 두 태스크에서 겹쳐 강등 안내의 개수를 두 번 세지 않는다. 진입 번호를 그 키에 늘 넣지 않는
+    이유는 두 앱이 같다(복귀할 때마다 복원·재조회 갈래까지 다시 돈다).
 - **plan·프로모 쓰기의 순번 가드 — 두 앱.** 한 계정에 `/auth/me` 가 여럿 떠 있을 수 있다(진입의
   새로고침과 `plan_changed`·쿠폰·결제 신호의 재조회). 늦게 도착한 **옛 순번**의 응답은 세션 plan·
   판정 스냅샷의 plan·프로모 표지(받은 시각)를 덮지 않고, '이번 진입의 plan 반영' 도 적지 않는다 —
   안 그러면 방금 커플·가족이 된 사람의 답을 결제 전의 `plus` + `personal_promo` 가 덮어 D9 보류
   규칙이 되살아나고(공유·가족 알람이 닫힌다), 옛 plan 이 '이번 진입의 plan 반영' 으로 적혀 D12 의
-  기다림이 옛 답으로 끝난다(리뷰). 굴린 토큰·탈퇴
-  유예처럼 순번과 무관한 값은 그대로 반영한다. 안드로이드는 `PersonalPromoLedger` 의 계정 요청 순번
-  판정을, iOS 는 `AuthViewModel.applyFreshPlan(…request:)` 의 순번 판정을 쓴다.
+  기다림이 옛 답으로 끝난다(리뷰). 탈퇴 유예처럼 순번과 무관한 값은 그대로 반영한다.
+  - 안드로이드: `refreshAppSessionNow` 가 세션을 쓰기 **전에** `PersonalPromoLedger.claimPlanAnswer`
+    로 순번을 잡고, 밀렸으면 세션·스냅샷 쓰기와 `recordPlanApplied` 를 통째로 건너뛴다(그 답이 굴려 준
+    토큰도 버린다 — 무상태 JWT 라 지금 토큰이 그대로 유효하다). plan 순번(`planAnswerSeq`)은 계정 응답
+    순번과 **따로**다 — `checkAccountStatus` 는 계정 응답만 적고 plan 을 쓰지 않으므로, 한 순번이면 그
+    답이 먼저 온 것만으로 먼저 보낸 갱신의 plan 이 버려져 지난 실행의 plan 이 남는다.
+    `recordPlanApplied` 도 밀린 요청을 다시 거른다. 계정 응답 쪽은 `recordAccountAnswer` 의 결과
+    (`Boolean`)를 부르는 쪽이 쓴다.
+  - iOS: `AuthViewModel.applyFreshPlan(…request:)`(세션 밖 `/auth/me`·결제 전 조회)와
+    `refreshUserApplyingToken` 이 같은 순번(`accountAnswerSeq`)으로 가른다. 밀린 답은 plan·프로모 짝을
+    쓰지 않지만 **이 진입의 결과**로는 센다(D11 — 같은 진입의 더 새 답이 이미 plan 을 썼다).
+    `refreshUserApplyingToken` 의 답이 **이 계정의 토큰만 굴러**(같은 로그인 안) 에폭 가드에 걸리면
+    짝은 순번 가드를 지나 반영하고 토큰·프로필·탈퇴 유예는 건드리지 않는다
+    (`isTokenRolledWithinSignIn` — 로그아웃 전에 뜬 표는 `signedOutRequestSeq` 로 가른다).
+  - 모양 차이(동작은 같다): 안드로이드는 세션을 **세대**로 가르므로(`saveSessionIfAlive`) 토큰이
+    굴러도 응답 전체를 반영하고, iOS 는 토큰 에폭으로 가르므로 굴렀을 때 짝만 반영한다.
+  - 남은 구멍(후속, 핸드오프): 안드로이드 결제 전 조회(`refresh_store=1`)의 `user_plan` 스냅샷 쓰기는
+    `/auth/me` 와 순번이 없다 — 결제 전 조회보다 먼저 보낸 `/auth/me` 가 뒤에 오면 그 짝을 덮을 수 있다.
+    iOS 는 결제 전 조회도 표를 뜬다.
 
 **D2 — `deletes_voices_at_end`.** 위 「API 가 내보내는 것」. `false` 면 종료 안내에서 삭제 문장을
 뺀다. `personal_promo` 가 **있으면** 원시 plan 이 free 다 — 구독 행·그룹으로 커플·가족을 열지
@@ -1269,16 +1296,16 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 알람 PATCH 는 목소리·클립이 바뀔 때만 소유권을 본다(D8·D13) | `routes/alarm-mutation.ts` PATCH 의 `changedVoiceProfileId` → `voiceProfileBelongsToCaller` · `changedMessageId` → `messageBelongsToCaller`(바깥 게이트·트랜잭션 재확인 둘 다; POST 는 언제나) | `network/RemoteAlarmApi.kt` `RemoteAlarmWriteRequest`(매번 그대로 보낸다 — 앱은 바꾸지 않는다) | — |
 | 보류 규칙 — 기간 중 커플·가족은 스토어·계산값만(D2·D9) | — | `ui/util/PlatformAndLabelUtils.kt` `PersonalPromoTierHold`(`allowsCoupleOrFamily`)·`personalPromoTierHoldOf` → `MainViewModel.personalPromoTierHold` → `hasCoupleOrFamilyAccess`·`canShareVoiceWithOthers`(필수 인자 `promoHold`) · 판정기 plan 공백 갈래(`resolvePaidVoiceAccess`) · `AlarmTalkApp` 잠금 이펙트·`canCreateFamilyAlarm` · `AlarmListScreen`·`VoiceProfileManagementPanel` 의 `personalPromoTierHold` · `MainViewModelVoiceActions`(공유 설정)·`MainViewModelAlarmActions`(가족 알람) | `PlanTier.bestKnown(user:)` 의 기간 중 갈래 · `PlanTier.personalPromoHoldActive` → `canShareVoiceWithOthers`(`VoiceShareAccess.swift`) · `AlarmEditorSheet.familyAlarmLocked` · `AlarmsListView` 의 「누구를 깨울까요?」(`familyAlarmHeldByPromo`) |
 | 응답 필드(`deletes_voices_at_end`·`computed_at` 포함) | `lib/personal-promo.ts` `personalPromoField`(`computed_at` = `promo.now`)·`loadPersonalPromoField`·`activeSubscriptionRowExistsSql` → `routes/auth.ts`(5종) · `routes/billing-query.ts`; shared `PersonalPromoSchema.computed_at`(optional) | `network/AuthApi.kt` `PersonalPromo`(`computedAt` 포함) · `AuthUser.personalPromo` · `network/BillingApi.kt` `BillingSubscriptionResponse.personalPromo` · `network/PersonalPromoJsonAdapter.kt`(관대한 파싱 — D5) · `network/AuthSessionStore.kt` `normalizePersonalPromo`(`computedAt` 은 벗긴다) | `PersonalPromo.swift` `PersonalPromo`(`init(from:)` 은 던지지 않는다 — D5, `computedAt` 을 읽는다) · `AlarmTalkAPIModels.swift` `AuthUser.personalPromo`·`BillingSubscriptionResponse.personalPromo` |
-| 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow` | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)` · `AccessSnapshot.personalPromo` |
+| 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow`(쓰기 전 순번 가드 `PersonalPromoLedger.claimPlanAnswer` — 밀린 답은 세션·스냅샷·`recordPlanApplied` 를 건너뛴다) | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)`(→ `applyAccountPlanAnswer` — 순번 가드) · `refreshUserApplyingToken`(토큰만 구른 답은 `isTokenRolledWithinSignIn` → `applyAccountPlanAnswer`) · `AccessSnapshot.personalPromo` |
 | 오프라인 차단(D1 — 받은 시각이 없으면 끝 전의 답) | — | `resolvePaidVoiceAccess`(`ui/util/PlatformAndLabelUtils.kt`) · `personalPromoLapsed`·`PlanPromoStamp`(`ui/billing/PersonalPromo.kt`) · 파괴적 경로 `sync/PlanChangeSyncWorker`(`freshPlanPromoStamp`) | `PaidVoiceGate.resolve` · `PersonalPromo.isStale` · `PlanTier.bestKnown(user:)` · 파괴적 경로 `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
-| 전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 plan 반영 뒤에(D1) | — | `ui/billing/PersonalPromoLedger.kt` `freePlanLockMayApply` · `MainViewModel.isFreeOnlyByPromoLapse`·`planAnsweredEntry`(`PersonalPromoLedger.recordPlanApplied` ← `refreshAppSessionNow`) · `AlarmTalkApp` 잠금 이펙트와 `planAnsweredEntry` 재확인 이펙트 | **아직 없다**(후속) — `applyFreePlanVoiceLockIfNeeded` 는 기다리지 않는다 |
+| 전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 plan 반영 뒤에(D1·D12) | — | `ui/billing/PersonalPromoLedger.kt` `freePlanLockMayApply` · `foregroundPlanLockAction`(`ForegroundPlanLockAction` — `Lock`·`WaitForEntryPlan`·`Restore`·`RefreshPlan`·`None`) · `deferredPromoLapseLockDue` · `MainViewModel.isFreeOnlyByPromoLapse`·`planAnsweredEntry`(`PersonalPromoLedger.recordPlanApplied` ← `refreshAppSessionNow`, `claimPlanAnswer` 를 지난 답만) · `AlarmTalkApp` 잠금 이펙트와 `planAnsweredEntry` 재확인 이펙트 | `PaidVoiceGate.freePlanLockMayApply` · `PaidVoiceGate.isFreeOnlyByPromoLapse` · `AuthViewModel.planAnsweredEntry`(`recordAccountAnswer` ← `refreshUserApplyingToken` · 로그인·가입 · `applyFreshPlan`; `signOut` 이 지운다) · `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` · 재확인은 `freePlanVoiceLockKey` 의 `promoLapseLockWaitKey`(진입 번호는 `AlarmTalkApp.appEntrySignal` 이 `AppEntrySignal.shared` 를 읽는다) |
 | 보관 판정의 프로모 인자 | `lib/billing-cancel.ts` `hasActivePaidEntitlement` · `retentionSyncStatements` · `syncPaidVoiceRetention` · `sweepPaidVoiceRetention`(호출부가 `personalPromoCoversFree` 로 푼 값을 넘긴다) | — | — |
 | 종료 전환·스윕(D6·D10·D14~D16) | `lib/personal-promo-end.ts` `runPersonalPromoEnd`(스윕이 아무도 못 지우면 같은 실행에서 전환 · 첫날 뒤에는 전환 대상의 행만, 고정 꼬리 없음) · `transitionPersonalPromoEnd` · `promoEndDeleteAfter`(`max(약속 시각, 전환 + 24시간)` 정시 — `PROMO_END_MIN_NOTICE_MS`) · `promoEndRetentionDeadline` · `sweepDueRetentionInBulk`(`dueFrom` · `BulkSweepResult.failed`·`oldestDueUserPk`) · 묶음·예산 `PROMO_END_SWEEP_BATCH`·`PROMO_END_SWEEP_NOTIFY_MESSAGES`·`PROMO_END_RUN_BUDGET` · 경보 `isPromoEndAlertSlot`·`alertSlotOpenFor`·`PROMO_END_HOURLY_ALERT_STAGES`(셋 다 시간당 한 번, 맡은 크론만) · `notifyPromoEndTransitioned`; `index.ts` 의 `PERSONAL_PROMO_END_CRON` 분기 + 5분 틱 폴백; `wrangler.toml` 두 환경; 문장 공유 `billing-cancel.ts` `freeDowngradeWrites`·`paidVoiceRetentionUpsertStatement`·`paidEntitlementStatement`, `paid-voice-cleanup.ts` `deleteSensitiveVoiceDataForOwners` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 삭제 예고 문구 | `lib/fcm.ts` `personalPromoEndWarningBody` · `formatKstHour` → `sendBillingStateSignals(warningBodyFor)` | 기존 `voice_deletion_warning` 표시 | 기존 APNs alert |
 | 전역 클론 상한 500 | `lib/voice-slots.ts` `MAX_PROVIDER_CLONE_VOICES` | — | — |
-| 이용권 화면 한 줄(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer`) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
+| 이용권 화면 한 줄(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer(result)` — 문을 지난 `EntitlementWrite.Applied` 만, `MainViewModel.saveSubscriptionSnapshot` 이 부른다) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정) · `AuthViewModelTests`(계정 요청 표·순번) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
+| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱·첫 결과 실패) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·잠금 갈래 `foregroundPlanLockAction`·미룬 잠금 `deferredPromoLapseLockDue`·plan 순번 `claimPlanAnswer`·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정·D12 `isFreeOnlyByPromoLapse`·`freePlanLockMayApply`) · `AuthViewModelTests`(계정 요청 표·순번·진입 결과·`planAnsweredEntry`·토큰만 구른 답) · `BillingPreflightTests`(세션 밖 요청 실패의 표) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
 
 ## 구현 지도
 
@@ -1320,10 +1347,10 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | `MainViewModelBillingActions.refreshStoreEntitlement` (시작·전경 진입) | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | **유료 판정 — 유일 출처** | `isPaidVoicePlan`(원시 users.plan) · `hasPersonalVoiceAccess`(기간 한정 개인 플랜 반영 — 위 절) · `hasActivePaidEntitlement`(삭제 직전) | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` |
-| 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(`isDefinitelyFreePlan` · 기간 한정 개인 플랜의 낡은 프로모 갈래는 `freePlanLockMayApply`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
+| 판정 소비 — 잠금(파괴적) | — | `AlarmTalkApp` 잠금 이펙트(갈래 `foregroundPlanLockAction` — `isDefinitelyFreePlan` · 기간 한정 개인 플랜의 낡은 프로모 갈래는 `freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue`) · `sync/PlanChangeSyncWorker` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`(낡은 프로모 갈래는 `PaidVoiceGate.freePlanLockMayApply` 로 기다린다 — D12) |
 | 판정 소비 — 울림·프리페치 | — | `alarm/RingingService` · `sync/StockClipPrefetchWorker` | `PaidVoiceGate.shouldDowngrade`(예약 시점) |
 | 판정 소비 — 표시·게이트 | — | `MainViewModel.isPaidVoiceEntitledOptimistic` · 커플·가족은 `hasCoupleOrFamilyAccess`(기간 한정 개인 플랜 중에는 `MainViewModel.personalPromoTierHold` — D9) | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다 — 기간 한정 개인 플랜 중에는 `personal_promo` 가 있는 것이 원시 free 의 신호 · 그룹으로 여는 자리는 `PlanTier.personalPromoHoldActive`) |
-| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me`의 `user.plan` · 결제 전 응답의 `user_plan` | `MainViewModelAuthActions` · `sync/PlanChangeSyncWorker` · `saveSubscriptionSnapshot` — 방금 받은 값만 | `SocialFeatureViewModel.refreshAll` · `refreshSubscriptionSilently` |
+| 판정 스냅샷 — `users.plan` 쓰기 | `/auth/me`의 `user.plan` · 결제 전 응답의 `user_plan` | `MainViewModelAuthActions`(`refreshAppSessionNow` — 순번 가드 `PersonalPromoLedger.claimPlanAnswer`) · `sync/PlanChangeSyncWorker` · `saveSubscriptionSnapshot` — 방금 받은 값만 | `SocialFeatureViewModel.refreshAll` · `refreshSubscriptionSilently`(세션 쪽은 `AuthViewModel.applyFreshPlan` 의 순번 가드) |
 | 무료 preflight의 Play TTL 캐시 무효화 | `refresh_store=1` 성공 응답의 `user_plan` | `AccessSnapshot.withBillingResponse` · `saveSubscriptionSnapshot` · `crossStoreRenewalBlocked`(Play 조회 잠금 공유); 회귀 `BillingPreflightSnapshotTest` | 해당 40일 TTL 없음(StoreKit 실제 만료 사용) |
 | 판정 스냅샷 — **쓰기 문(유일)** | — | `EntitlementWriter`(`ui/main/EntitlementWriter.kt`) | `EntitlementWriter.swift` |
 | 문의 원자성 근거 | — | `AuthSessionStore.runIfGeneration`(세션 쓰기와 같은 락) | `KeychainStore.runIfCurrentSession`(세션 쓰기와 같은 락) |

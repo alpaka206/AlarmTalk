@@ -89,6 +89,17 @@ final class SocialFeatureViewModel: ObservableObject {
     /// **직전에** 부른다(`AuthViewModel.beginAccountRequest`). 없으면(테스트) 표 없이 넘긴다.
     var beginAccountRequest: (() -> AuthViewModel.AccountRequest?)?
 
+    /**
+     * 표를 뜬 계정 요청(`/auth/me`·결제 전 조회)이 **실패했다**는 것을 세션 주인에게 알린다
+     * (`AuthViewModel.noteAccountRequestFailure`).
+     *
+     * 성공은 `onFreshPlan` 이 이 진입의 답으로 적는다. 실패도 적어야 한다 — 이 진입의 **첫 결과**가
+     * 성공이든 실패든 그 진입의 종료 안내 판정을 끝낸다(스펙 D11, 안드로이드
+     * `MainViewModel.recordAccountFailure`). 안 적으면 실패가 먼저 온 진입에서 같은 진입의 뒤 성공이
+     * 첫 결과가 되어 세션 한가운데서 안내가 뜬다.
+     */
+    var onAccountRequestFailed: ((_ userID: String, _ request: AuthViewModel.AccountRequest?) -> Void)?
+
     // `isCurrentSessionToken` 은 없앴다 — `EntitlementWriter` 가 그 판단을 갖는다(2026-09-02).
     /// 갱신 세대. **같은 계정 안에서도 나중에 시작한 갱신이 이긴다**(2026-09-01 리뷰).
     ///
@@ -242,6 +253,8 @@ final class SocialFeatureViewModel: ObservableObject {
             // `current.token == previous` 가 **항상 거짓**이 되어 plan 이 영영 반영되지 않는다
             // (27차에 넣은 에폭 가드가 26차 수정을 통째로 무력화하고 있었다).
             if let freshPlan { onFreshPlan?(userID, token, freshPlan, freshPromo, accountRequest) }
+            // 실패도 이 진입의 결과다(D11 — `onAccountRequestFailed`). 취소는 결과가 아니다.
+            if !planOK, !Task.isCancelled { onAccountRequestFailed?(userID, accountRequest) }
             if let rolledToken, rolledToken != token {
                 onRolledToken?(userID, token, rolledToken)
                 // 우리가 굴렸으니 표도 옮긴다 — 안 옮기면 이후 쓰기가 전부 거절된다.
@@ -382,6 +395,11 @@ final class SocialFeatureViewModel: ObservableObject {
             return nextSubscription
         } catch {
             // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
+            // 결제 전 조회(`user_plan` 을 싣는 계정 응답)의 실패는 이 진입의 결과로 적는다(D11 —
+            // 성공은 `onFreshPlan` 이 적는다). 조용한 구독 조회는 plan 을 싣지 않아 계정 응답이 아니다.
+            if refreshStoreState, !Task.isCancelled, activeUserID == userID {
+                onAccountRequestFailed?(userID, accountRequest)
+            }
             return nil
         }
     }

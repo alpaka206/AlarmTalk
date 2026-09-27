@@ -176,6 +176,72 @@ final class BillingPreflightTests: XCTestCase {
     func test_failedPreflightDoesNotInvalidatePendingFullRefresh() async throws {
         try await checkOverlappingRefresh(preflightFails: true)
     }
+
+    /// 회귀(2026-09-27 리뷰 3차 통합, D11): 세션 밖의 계정 요청(`refreshAll` 의 `/auth/me`·결제 전
+    /// 조회)이 실패하면 그 표를 세션 주인에게 돌려준다 — 이 진입의 첫 결과가 실패면 종료 안내 판정이
+    /// 끝난다(`AuthViewModel.noteAccountRequestFailure`). 조용한 구독 조회는 plan 을 싣지 않아 계정
+    /// 응답이 아니므로 알리지 않는다.
+    func test_failedAccountRequestsReportTheirTicket() async throws {
+        let userID = UUID().uuidString
+        let current = session(token: UUID().uuidString, userID: userID)
+        let host = "\(UUID().uuidString.lowercased()).billing.example.test"
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(current)
+        let unavailable = Data(#"{"error":"unavailable"}"#.utf8)
+        PreflightURLProtocol.configure(host: host) { request in
+            let url = request.url!
+            if url.path.hasSuffix("auth/me") { return (503, unavailable) }
+            if url.path.hasSuffix("billing/subscription") {
+                return (200, Data(#"{"subscription":null,"plan":null,"next_plan":null,"store_renewal_providers":[]}"#.utf8))
+            }
+            if url.path.hasSuffix("billing/vouchers") { return (200, Data(#"{"vouchers":[]}"#.utf8)) }
+            return (200, Data(#"{"group":null,"role":null,"members":[]}"#.utf8))
+        }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [PreflightURLProtocol.self]
+        let urlSession = URLSession(configuration: config)
+        defer {
+            urlSession.invalidateAndCancel()
+            PreflightURLProtocol.configure(host: host, handler: nil)
+            AccessSnapshotStore().clear(userID: userID)
+            if let previous { try? KeychainStore.saveSession(previous) }
+            else { KeychainStore.deleteSession() }
+        }
+        let vm = SocialFeatureViewModel(api: AlarmTalkAPI(
+            baseURL: URL(string: "https://\(host)/api/")!, session: urlSession
+        ))
+        let tickets = AccountTicketLog()
+        vm.beginAccountRequest = { tickets.begin() }
+        vm.onAccountRequestFailed = { failedUserID, request in
+            XCTAssertEqual(failedUserID, userID)
+            tickets.failed.append(request)
+        }
+
+        await vm.refreshAll(session: current)
+        XCTAssertEqual(tickets.failed, [AuthViewModel.AccountRequest(seq: 1, entry: 1)], "`/auth/me` 실패는 표를 돌려준다")
+
+        // 이제 구독 조회도 실패한다.
+        PreflightURLProtocol.configure(host: host) { _ in (503, unavailable) }
+        let silentApplied = await vm.refreshSubscriptionSilently(session: current)
+        XCTAssertFalse(silentApplied)
+        XCTAssertEqual(tickets.failed.count, 1, "조용한 구독 조회는 계정 응답이 아니다")
+
+        let preflight = await vm.refreshSubscriptionForPurchase(session: current)
+        XCTAssertNil(preflight)
+        XCTAssertEqual(tickets.failed.last, AuthViewModel.AccountRequest(seq: 3, entry: 1), "결제 전 조회 실패도 표를 돌려준다")
+    }
+}
+
+/// 세션 밖 계정 요청의 표를 뜨고, 실패로 돌려받은 표를 모은다(`AuthViewModel` 대역).
+@MainActor
+private final class AccountTicketLog {
+    private var seq = 0
+    var failed: [AuthViewModel.AccountRequest?] = []
+
+    func begin() -> AuthViewModel.AccountRequest? {
+        seq += 1
+        return AuthViewModel.AccountRequest(seq: seq, entry: 1)
+    }
 }
 
 private final class PreflightResponseGate: @unchecked Sendable {

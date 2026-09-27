@@ -460,6 +460,54 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.planAnsweredEntry, 0)
     }
 
+    /// 회귀(2026-09-27 리뷰 3차 통합, D11): 세션 밖의 계정 요청(`SocialFeatureViewModel` 의
+    /// `/auth/me`·결제 전 조회)이 **먼저 실패**하면 그 진입은 실패로 끝난다 — 같은 진입의 뒤 성공
+    /// (`refreshUser`)으로 종료 안내를 판정하지 않는다(안드로이드 `recordAccountFailure` 와 같다).
+    /// plan 반영(`planAnsweredEntry`)은 뒤 성공도 적는다. 다른 계정·더 새 답이 반영된 요청·끝난
+    /// 로그인의 실패는 적지 않는다.
+    func testSocialRequestFailureEndsThisEntry() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let entries = EntryCounterBox()
+        entries.enter()
+        vm.appEntryState = { entries.counter }
+        let base = makeEmailSession()
+        vm._setSessionForTesting(base)
+        addTeardownBlock { KeychainStore.deleteSession() }
+
+        let othersRequest = vm.beginAccountRequest()
+        vm.noteAccountRequestFailure(userID: "someone-else", request: othersRequest)
+        XCTAssertNil(vm.accountEntryAnswer, "다른 계정의 실패는 이 계정의 진입을 끝내지 않는다")
+
+        let social = vm.beginAccountRequest()
+        vm.noteAccountRequestFailure(userID: base.user.id, request: social)
+        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .failed))
+
+        api.meResult = .success(base.user)
+        await vm.refreshUser()
+        XCTAssertEqual(
+            vm.accountEntryAnswer, AccountEntryAnswer(entry: 1, outcome: .failed),
+            "첫 결과가 실패면 같은 진입의 뒤 성공으로 다시 판정하지 않는다"
+        )
+        XCTAssertEqual(vm.planAnsweredEntry, 1, "plan 반영은 뒤 성공도 적는다")
+
+        // 다음 진입 — 더 새 답이 이미 반영된 요청의 실패는 적지 않는다.
+        entries.leaveAndReturn()
+        let older = vm.beginAccountRequest()
+        await vm.refreshUser()
+        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .answered))
+        vm.noteAccountRequestFailure(userID: base.user.id, request: older)
+        XCTAssertEqual(vm.accountEntryAnswer, AccountEntryAnswer(entry: 2, outcome: .answered))
+
+        // 로그아웃 전에 뜬 표의 실패는 같은 계정으로 다시 로그인한 세션의 진입을 끝내지 않는다.
+        entries.leaveAndReturn()
+        let beforeSignOut = vm.beginAccountRequest()
+        vm.signOut(revokeOnServer: false)
+        vm._setSessionForTesting(AuthSession(token: "relogin-token", user: base.user))
+        vm.noteAccountRequestFailure(userID: base.user.id, request: beforeSignOut)
+        XCTAssertNil(vm.accountEntryAnswer)
+    }
+
     func testLateUnauthorizedDoesNotDeleteBackgroundRenewedSession() async throws {
         PendingSignOutStore.removeAll()
         let api = MockAuthAPI()

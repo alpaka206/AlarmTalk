@@ -43,9 +43,38 @@
   남은 전환 대상의 행이 없어질 때까지 돈다(D15 — 지울 것이 없으면 분당 조회 하나). 모든 전환의
   기한 = max(끝 + 3일, 전환 + 24시간) 정시(D16 — 약속 직전 전환도 시각이 적힌 예고와 하루). 2,500명
   재측정: 기기 평균 1.06대 → 가장 늦은 삭제 끝 + 3일 + 4시간 1분, 기기 2대 → + 5시간 39분, 둘 다 약속
-  시각 전 삭제 0·한 실행 최대 subrequest 43. 앱 규칙(스펙만 이 커밋): 종료 안내는 이 진입의 **첫 결과**
-  (실패 포함)가 진입을 끝낸다(D11 — 두 앱 같게), 낡은 프로모 하나로만 무료인 전경 잠금은 iOS 도 이번
-  진입의 plan 반영을 기다린다(D12), plan·프로모 쓰기의 순번 가드는 두 앱 모두.
+  시각 전 삭제 0·한 실행 최대 subrequest 43. 앱 규칙: 종료 안내는 이 진입의 **첫 결과**(실패 포함)가
+  진입을 끝낸다(D11 — 두 앱 같게), 낡은 프로모 하나로만 무료인 전경 잠금은 iOS 도 이번 진입의 plan
+  반영을 기다린다(D12), plan·프로모 쓰기의 순번 가드는 두 앱 모두.
+- 2026-09-27 리뷰 3차 앱 구현(통합 브랜치 `wf/promo-r3-integrated`): 안드로이드 — 계정 요청 실패를
+  장부에 적는다(`PersonalPromoLedger.recordAccountFailure`, `AccountEntryAnswer`), `/auth/me` 의 plan·세션
+  쓰기 전에 순번을 잡는다(`claimPlanAnswer` — 밀린 답은 세션·스냅샷·plan 반영 표시를 건너뛴다), 이펙트
+  갈래를 순수 함수로(`foregroundPlanLockAction`·`deferredPromoLapseLockDue`·`evaluateEndNotice`).
+  iOS — 전경 잠금의 낡은 프로모 대기(`PaidVoiceGate.freePlanLockMayApply`·`isFreeOnlyByPromoLapse`,
+  `AuthViewModel.planAnsweredEntry`), 세션 밖 `/auth/me` 의 답·토큰만 구른 답·세션 밖 요청의 **실패**
+  (`SocialFeatureViewModel.onAccountRequestFailed` → `AuthViewModel.noteAccountRequestFailure` — 통합 때
+  더했다. 이게 없으면 세션 밖 갱신이 먼저 실패한 진입에서 뒤의 `refreshUser` 성공이 안내를 판정해
+  D11 이 iOS 에서만 느슨했다)도 이 진입의 결과로 적는다.
+- 리뷰 3차 뒤 **남은 후속**(이 PR 에서 하지 않았다):
+  - 안드로이드 결제 전 조회(`refresh_store=1`)의 `user_plan` 스냅샷 쓰기(`saveSubscriptionSnapshot`)는
+    `/auth/me` 와 순번이 없다 — 결제 전 조회보다 먼저 보낸 `/auth/me` 가 뒤에 도착하면 그 plan·프로모
+    표지를 덮을 수 있다(iOS 는 결제 전 조회도 표를 뜬다). 고치려면 결제 경로에도 장부 표가 필요하다.
+  - 안드로이드 닉네임 수정(`updateNickname` → `saveSessionPreservingCurrentToken`)은 PATCH 를 시작할 때
+    잡은 세션 사용자(plan·`personal_promo`·받은 시각 포함)를 그대로 쓴다 — 그 사이 `/auth/me` 가 오면
+    세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아간다(기존 문제, 판정 스냅샷은 영향 없음).
+  - Compose 배선은 단위 테스트가 없다 — 종료 안내 이펙트의 키(`accountEntryAnswer`·`anyModalOpen`·
+    `activityResumed`·`systemPermissionPromptOpen`)와 `planAnsweredEntry` 재확인 이펙트의 호출 자리.
+    iOS 도 `promoLapseLockWaitKey` 가 실제 콜드 스타트에서 잠금을 다시 돌리는지는 순수 함수 테스트뿐이다.
+    아래 실기기 확인 항목으로 본다.
+  - 백엔드: 전용 크론이 빠진 배포면 첫날의 전환 실패는 로그로만 남는다(D14 — 경보는 전용 크론이 맡는다).
+    끝부터 정리 PR 까지 한가한 전용 크론은 분당 조회 하나(D15 — `paid_voice_retention` 에 `delete_after`
+    인덱스가 없어 작은 표를 훑는다). 실행 전체가 잡히지 않은 예외로 죽는 경우(`captureCron(
+    'scheduled.personal_promo_end', …)` — DB 장애 등)는 시간당 한 번으로 묶이지 않았다.
+  - 그대로 남은 확인: 크론 트리거 한도·ElevenLabs 슬롯 500·외부 파일 삭제 드레인(아래 체크리스트),
+    정리 PR 의 1분 크론 제거.
+  - 의도적으로 두는 차이(후속 아님): iOS 알럿 버튼 순서는 플랫폼 표준 그대로, 안드로이드는 로그인·가입
+    응답을 계정 응답으로 적지 않는다(로그인 직후의 `checkAccountStatus` 를 기다린다 — 같은 진입이라 결과가
+    같다), 푸시 문구의 자정은 "밤 12시".
 - [ ] 배포 전: Cloudflare 계정의 **크론 트리거 한도**가 워커마다 하나 더(두 환경 합쳐 넷) 허용하는지
       확인한다. ElevenLabs 요금제의 **보이스 슬롯이 500 이상**인지 확인한다 — 작으면 요금제를 올리거나
       `MAX_PROVIDER_CLONE_VOICES`(`lib/voice-slots.ts`)를 요금제에 맞춰 내린다.
@@ -105,7 +134,8 @@
       ```
 - [ ] 앱(리뷰 3차 — D11·D12, 실기기·에뮬레이터 확인 기록 없음): (1) 비행기 모드로 진입해 `/auth/me`
       를 실패시킨 뒤 같은 진입에서 쿠폰 등록·`plan_changed` 푸시·결제 권한 재확인이 와도 종료 안내가
-      **뜨지 않는지**(다음 진입에서는 뜬다) — 안드로이드 2대·아이폰. (2) 끝 뒤 콜드 스타트, 다른 기기에서
+      **뜨지 않는지**(다음 진입에서는 뜬다) — 안드로이드 2대·아이폰. 아이폰은 제어 센터를 열었다 닫는
+      새로고침으로도 뜨지 않아야 한다. (2) 끝 뒤 콜드 스타트, 다른 기기에서
       쿠폰·스토어 결제·가족 합류로 원시 유료가 된 계정: 이번 진입의 답이 오기 전에 목소리 알람이 잠기거나
       `무료 이용권으로 바뀌었어요` 가 적히지 않는지 — 특히 **아이폰**(D12 로 새로 맞췄다). (3) 진입
       새로고침이 떠 있는 동안 쿠폰으로 커플·가족이 된 뒤 늦게 온 옛 답이 공유·가족 알람을 다시 닫지

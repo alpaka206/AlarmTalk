@@ -937,6 +937,22 @@ final class AuthViewModel: ObservableObject {
         if let request { recordAccountAnswer(request) }
     }
 
+    /// 세션 밖에서 표를 뜬 계정 요청(`SocialFeatureViewModel` 의 `/auth/me`·결제 전 조회)이
+    /// **실패했다** — 그 진입의 첫 결과면 그 진입의 종료 안내 판정은 '띄울 것 없음' 으로 끝난다
+    /// (D11, 안드로이드 `PersonalPromoLedger.recordAccountFailure`). 성공은 `applyFreshPlan` 이 적는다.
+    ///
+    /// - 다른 계정·끝난 로그인·더 새 답이 이미 반영된 요청의 실패는 적지 않는다 — 앞 계정의 요청이
+    ///   새 계정의 진입을 끝내면 안 되고, 더 새 답이 있으면 그 진입의 결과는 이미 적혔다.
+    /// - 토큰은 보지 않는다 — 그 사이 이 계정의 토큰이 굴렀어도 같은 로그인의 요청이다
+    ///   (`isFromEndedSignIn` 이 로그아웃을 가른다).
+    func noteAccountRequestFailure(userID: String, request: AccountRequest?) {
+        guard let request,
+              let current = session, current.user.id == userID,
+              !isFromEndedSignIn(request),
+              !isSuperseded(request) else { return }
+        noteEntryOutcome(request, .failed)
+    }
+
     /// 응답을 기다리는 사이 **같은 로그인 안에서 이 계정의 토큰만 굴렀는가** — 다른 경로의
     /// `/auth/me`(`SocialFeatureViewModel` 의 갱신·배경 갱신)가 새 토큰으로 갈아 끼웠다.
     ///

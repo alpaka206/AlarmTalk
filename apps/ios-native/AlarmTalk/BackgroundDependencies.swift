@@ -189,6 +189,10 @@ final class BackgroundDependencies {
         // 세션 밖의 `/auth/me`·결제 전 조회도 세션과 **한 순번** 위에서 가른다 — 늦게 도착한
         // 옛 답이 방금 반영한 프로모를 되돌리지 않게.
         socialFeatures.beginAccountRequest = { [weak auth] in auth?.beginAccountRequest() }
+        // 실패도 이 진입의 결과다 — 첫 결과가 성공이든 실패든 종료 안내 판정을 끝낸다(D11).
+        socialFeatures.onAccountRequestFailed = { [weak auth] userID, request in
+            auth?.noteAccountRequestFailure(userID: userID, request: request)
+        }
         push = PushNotificationCoordinator()
         voiceStudio = VoiceStudioViewModel()
     }
