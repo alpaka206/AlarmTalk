@@ -1060,9 +1060,12 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
     넘긴다. iOS 는 `PersonalPromo.init(from:)` 이 저장본의 값 → `computed_at` → (서버 응답을 읽는
     디코더일 때만) 디코드하는 순간 순으로 `PersonalPromo.fetchedAt` 을 정한다 — 서버 응답 디코더
     (`AlarmTalkAPI.makeResponseDecoder`)만 `PersonalPromo.stampsReceiptKey` 를 켠다.
-  - 결과로 생기는 것(받아들인 동작): 기기 시계가 서버보다 앞선 기기는 끝 직전에 계산된 `plus` 를
-    끝의 Δ 전부터 낡은 것으로 읽는다(캐시를 읽는 표시·울림 경로). 되돌릴 수 있고(다음 응답이 복원),
-    진짜 끝 뒤의 서버 답은 어차피 `free` 다. 되돌릴 수 없는 경로는 아래 규칙이 막는다.
+  - 결과로 생기는 것(받아들인 동작): 기기 시계가 서버보다 Δ 앞선 기기는 끝 직전에 계산된 `plus` 를
+    끝의 Δ 전부터 낡은 것으로 읽는다 — 캐시를 읽는 표시·울림 경로와 **전경 무료 잠금**(안드로이드
+    잠금 이펙트, iOS `applyFreePlanVoiceLockIfNeeded`)이 최대 Δ 일찍 걸릴 수 있다. 전경 잠금은
+    되돌릴 수 있고(다음 유료 판정이 복원 — 안드로이드 `restorePaidVoiceAlarmsIfLocked`, iOS
+    `SocialFeatureViewModel.restorePaidVoiceAlarms`), 진짜 끝 뒤의 서버 답은 어차피 `free` 다.
+    안드로이드 `PlanChangeSyncWorker` 는 이 창에서도 잠그지 않는다(아래).
 - **받은 시각이 아예 없는 캐시**(받은 시각을 저장하기 전 개발 빌드가 남긴 것)는 **끝 전에 받은
   것으로 본다**(fail-closed — 안드로이드 `personalPromoLapsed`, iOS `PersonalPromo.isStale` 의
   `fetchedAt == nil`). 끝이 지났으면 낡은 답이다.
@@ -1073,10 +1076,13 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
 - **`active` 구독 행은 끝난 프로모보다 언제나 이긴다**(안드로이드의 순서). 낡은 프로모 판정은
   4단(남은 `users.plan`)에서만 무료로 바뀐다 — 2단("서버가 free 라고 함")으로 올리지 않는다. 그건
   서버의 답이 아니라 기기의 추론이라, 살아 있는 구독 행(3단)을 덮으면 결제자가 잠긴다.
-- **파괴적 경로는 방금 받은 서버 답 위에서 기기 시계로 잠그지 않는다** — 안드로이드
-  `PlanChangeSyncWorker` 의 잠금(`freshPlanPromoStamp` — 방금 받은 답은 낡을 수 없다), iOS 의 무료
-  목소리 잠금(`applyFreePlanVoiceLockIfNeeded`). 방금 `/auth/me` 가 `plus` 를 줬다면(시계가 끝에
-  걸쳐 어긋나도) 잠그지 않는다 — 서버가 끝을 넘겨 계산하면 다음 응답이 `free` 를 준다.
+- **파괴적 경로는 서버가 끝 뒤에 계산한 답을 기기 시계로 뒤집어 잠그지 않는다.** 안드로이드
+  `PlanChangeSyncWorker` 는 방금 받은 답을 **받은 순간의 표지**로 판정한다(`freshPlanPromoStamp` —
+  방금 받은 답은 낡을 수 없다). 방금 `/auth/me` 가 `plus` 를 줬다면(시계가 끝에 걸쳐 어긋나도)
+  잠그지 않는다 — 서버가 끝을 넘겨 계산하면 다음 응답이 `free` 를 준다. 전경 무료 잠금(안드로이드
+  잠금 이펙트, iOS `applyFreePlanVoiceLockIfNeeded`)은 캐시의 받은 시각(D7 — `computed_at`)으로
+  판정하므로 끝 **뒤에** 계산된 답은 권위로 믿고, 끝 직전에 계산된 답은 위의 Δ 창에서 일찍 잠글
+  수 있다(되돌릴 수 있다).
 - **전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 답을 기다린다**(안드로이드). 무료
   판정의 근거가 D1 의 오프라인 차단 하나뿐이면(`MainViewModel.isFreeOnlyByPromoLapse`), 이번
   진입의 `/auth/me` 가 **plan 스냅샷에 반영된 뒤에만** 잠근다(`freePlanLockMayApply` —
