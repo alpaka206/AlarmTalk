@@ -159,10 +159,14 @@ class EntryRefreshKeepsTokenTest {
             assertTrue("$header 가 요청 전에 표를 뜨지 않는다.", ticket >= 0 && send >= 0 && ticket < send)
             val signedIn = body.indexOf("onSignedIn()")
             assertTrue("$header 에서 `onSignedIn()` 을 못 찾았다.", signedIn >= 0)
+            val recorded = body.indexOf("recordSignInAnswer(response.user, accountRequest)")
             assertTrue(
                 "$header 가 로그인 응답을 보낼 때 뜬 표로 적지 않는다(`recordSignInAnswer(response.user, accountRequest)`).",
-                body.indexOf("recordSignInAnswer(response.user, accountRequest)", signedIn) >= 0,
+                recorded >= 0,
             )
+            // 세션을 올리면 로그인 뒤 계정 조회가 곧바로 뜬다 — 멈추는 `onSignedIn()` 보다 **먼저** 적어야
+            // 이 응답이 이번 진입의 첫 결과다(Codex #803).
+            assertTrue("$header 가 `onSignedIn()` 뒤에 로그인 응답을 적는다.", recorded < signedIn)
             val failure = body.indexOf(".onFailure")
             assertTrue(
                 "$header 가 로그인 **실패**를 계정 결과로 적는다 — 같은 진입의 재시도 성공이 첫 결과여야 한다.",

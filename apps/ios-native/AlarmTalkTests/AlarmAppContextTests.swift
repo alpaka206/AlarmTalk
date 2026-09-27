@@ -70,6 +70,57 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(updated.snoozeCount, 0)
     }
 
+    /// ⚠ **기간 한정 개인 플랜만으로 열린 목소리의 주간 반복 알람은 정지마다 다시 맞춘다**(Codex #803) —
+    /// AlarmKit 이 한 번 받은 설정을 끝 뒤 회차까지 다시 쓰므로, 끝 전 마지막 회차를 끄는 순간이 다시 걸
+    /// 유일한 로컬 기회다. 결제자(활성 구독 행)·끝이 지난 뒤·한 번 알람은 부르지 않는다.
+    func test_handleAlarmStopped_promoOnlyWeeklyVoiceAlarmReconcilesOnStop() async throws {
+        var reconciled: [String] = []
+        ctx.reconcileAfterStop = { reconciled.append($0) }
+        let ends = fixedNow.addingTimeInterval(3 * 86_400)
+        let endsISO = ISO8601DateFormatter().string(from: ends)
+        var promoOnly = AccessSnapshot.empty
+        promoOnly.userPlan = "plus"
+        promoOnly.subscriptionResponse = BillingSubscriptionResponse(subscription: nil, plan: nil, nextPlan: nil)
+        promoOnly.personalPromo = PersonalPromo(endsAt: endsISO, noticeFrom: nil, fetchedAt: fixedNow)
+
+        func stop(_ snapshot: AccessSnapshot, weekly: Bool = true) async -> [String] {
+            reconciled = []
+            ctx.accessSnapshot = { snapshot }
+            let kitID = UUID().uuidString
+            var record = makeArmedRecord(alarmKitID: kitID)
+            record.repeatDaysMask = weekly ? RepeatDay.monday.mask : 0
+            record.playMode = AlarmPlayMode.voiceOnly.rawValue
+            record.voiceProfileId = "clone-1"
+            store.upsert(record)
+            await ctx.handleAlarmStopped(alarmKitIDString: kitID)
+            return reconciled
+        }
+
+        let promoWeekly = await stop(promoOnly)
+        XCTAssertEqual(promoWeekly.count, 1, "프로모에만 기댄 주간 목소리 알람은 정지 때 다시 맞춘다")
+        let promoOnce = await stop(promoOnly, weekly: false)
+        XCTAssertTrue(promoOnce.isEmpty, "한 번 알람은 예약할 때 울릴 시각으로 이미 본다")
+
+        var payer = promoOnly
+        payer.subscriptionResponse = BillingSubscriptionResponse(
+            subscription: BillingSubscription(
+                id: "sub-1", planId: "p", planGroupId: nil, status: "active",
+                startsAt: "2026-01-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z",
+                cancelAtPeriodEnd: nil, canceledAt: nil, nextPlanId: nil
+            ),
+            plan: BillingPlan(id: "p", key: "personal", name: "personal", planType: "personal", periodDays: 30, maxMembers: 1, priceKrw: 0),
+            nextPlan: nil
+        )
+        let payerStop = await stop(payer)
+        XCTAssertTrue(payerStop.isEmpty, "활성 구독 행이 있으면 프로모와 무관하다")
+
+        var noPromo = promoOnly
+        noPromo.personalPromo = nil
+        let noPromoStop = await stop(noPromo)
+        XCTAssertTrue(noPromoStop.isEmpty)
+    }
+
+    // MARK: - Snooze
     // MARK: - Snooze
 
     func test_handleAlarmSnoozed_advancesFireAndIncrementsCount() async throws {

@@ -169,7 +169,7 @@ struct AlarmTalkApp: App {
                             // 무료 테마 회전 — 울린 뒤 다음 클립으로 다시 예약한다.
                             // AlarmKit 은 사운드를 **예약할 때** 받아 가므로, 다시 예약하지
                             // 않으면 인덱스만 올라가고 소리는 지난 회차 그대로다.
-                            ctx.rescheduleForNextBucketClip = { [weak alarmKit, weak alarmStore] _ in
+                            ctx.reconcileAfterStop = { [weak alarmKit, weak alarmStore] _ in
                                 guard let alarmKit, let alarmStore else { return }
                                 // ⚠ 예전에는 여기서 `schedule` 만 불렀다 — **옛 핸들을 취소하지
                                 // 않아** 예약이 하나씩 늘었다(같은 시각에 옛 클립과 새 클립이

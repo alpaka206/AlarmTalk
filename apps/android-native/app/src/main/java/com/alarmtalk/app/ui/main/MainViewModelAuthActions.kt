@@ -41,8 +41,10 @@ internal fun MainViewModel.login(email: String, password: String) {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
-            onSignedIn()
+            // 세션을 올리는 순간 로그인 뒤 계정 조회(`checkAccountStatus`)가 뜬다 — 멈추는 로그인 뒤 정리
+            // (`onSignedIn`)보다 **먼저** 적어야 이 응답이 이번 진입의 첫 결과다(Codex #803).
             recordSignInAnswer(response.user, accountRequest)
+            onSignedIn()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             val app = getApplication<android.app.Application>()
@@ -175,8 +177,8 @@ internal fun MainViewModel.register(
             authSession = authSessionStore.saveAppSession(response)
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
-            onSignedIn()
             recordSignInAnswer(response.user, accountRequest)
+            onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
@@ -264,8 +266,8 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
-            onSignedIn()
             recordSignInAnswer(response.user, accountRequest)
+            onSignedIn()
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)

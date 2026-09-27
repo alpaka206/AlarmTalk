@@ -920,7 +920,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |
 | 낡은 재렌더 폐기 | — | — | `generateStockClip`(claim·provider 보이스 가드) + `PrerenderSupersededError` |
-| 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
+| 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.reconcileAfterStop` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |

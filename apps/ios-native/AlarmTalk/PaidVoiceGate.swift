@@ -254,6 +254,28 @@ enum PaidVoiceGate {
         return !isEntitled(snapshot: snapshot, now: now, promoAt: promoAt)
     }
 
+    /// 이 알람의 유료 목소리가 **기간 한정 개인 플랜 덕에만** 열려 있고 그 끝이 아직 안 왔는가 —
+    /// 지금은 들을 수 있지만 끝 뒤의 회차는 못 듣는 알람이다.
+    ///
+    /// ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 예약할 때
+    /// 울릴 시각을 봐도(`shouldDowngrade` 의 `fireAt`) 다음 회차가 끝 전이면 목소리로 걸리고, 그 설정이
+    /// 끝 뒤 회차까지 간다. 그래서 이런 알람은 **정지할 때마다 다시 맞춘다**(`AlarmAppContext` — 무료
+    /// 테마 회전과 같은 경로) — 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다.
+    /// 앱 코드는 정지 인텐트에서 돌므로 네트워크도 화면도 필요 없다.
+    static func dependsOnPromoCutover(
+        record: LocalAlarmRecord,
+        snapshot: AccessSnapshot,
+        now: Date = Date()
+    ) -> Bool {
+        guard record.originEnum == .localOwned,
+              !usesFreeSystemVoice(record),
+              usesPaidVoice(record),
+              let ends = snapshot.personalPromo?.endsAt.flatMap(parseTimestamp),
+              ends > now else { return false }
+        return isEntitled(snapshot: snapshot, now: now)
+            && !isEntitled(snapshot: snapshot, now: now, promoAt: ends)
+    }
+
     /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.
     ///
     /// ⚠ 이 값을 store 에 쓰지 **않는다.** 예약에 쓸 사운드를 고르기 위한 일시적 형태일 뿐이고,
