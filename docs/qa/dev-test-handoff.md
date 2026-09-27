@@ -1,13 +1,37 @@
-# Dev 테스트 핸드오프 (갱신 2026-09-27)
+# Dev 테스트 핸드오프 (갱신 2026-09-28)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
-## 스토어 상태 — 2026-09-27
+## 스토어 상태 — 2026-09-28
 
-- **Play**: 프로덕션 `29 (1.2.9)` 게재(2026-09-22). 1.2.10 은 versionCode 30.
-- **App Store**: `1.2.9`(빌드 6) 게재 완료(2026-09-23T18:31Z, `READY_FOR_SALE` — 제출 약 18시간 뒤).
-  열린 심사 제출 없음. 1.2.10 은 빌드 7.
+- **Play**: 프로덕션 `30 (1.2.10)` **심사 중**(2026-09-27 commit, `status: completed` — 승인되면 곧바로 100%).
+  그때까지 `29 (1.2.9)` 가 게재 상태다.
+- **App Store**: `1.2.10`(빌드 7) **심사 대기**(`WAITING_FOR_REVIEW`, 2026-09-27T15:04Z 제출,
+  `releaseType=AFTER_APPROVAL` — 승인되면 자동 게재). 게재 중인 것은 `1.2.9`(빌드 6, 2026-09-23T18:31Z).
+  심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
+  켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
+- **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
+  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). `PERSONAL_PROMO_STARTS_AT` 은
+  아직 없다(스위치 꺼짐).
+- **웰컴 코드는 영구히 막혔다** — `welcome` 그룹은 런타임(`PROMO_WELCOME_REDEMPTION_GROUP`)이 늘
+  `CODE_INACTIVE` 로 거절하고, `PERSONAL_PROMO_STARTS_AT` 을 켜도 **되살아나지 않는다**(프로모 스위치와
+  무관한 규칙). 웰컴 코드는 더 나눠 주지 않는다 — 행사 코드가 필요하면 다른 그룹명으로 발급한다.
+  2026-09-28 prod 조회: `promo_codes` 는 3행뿐이고 전부 `welcome` 그룹·비활성 — 대소문자·이름이 다른
+  웰컴 계열 그룹은 없다.
+- [ ] 두 스토어 심사 결과 확인(Play 30·App Store 1.2.10).
+- [ ] **dev 리허설을 iOS 게재 전에** 한다(스펙 `billing-lifecycle.md` 「운영」 순서 — 백엔드 배포 → dev
+      리허설 → iOS 게재 → prod 스위치). 1.2.10 dev 빌드(안드로이드 2대·아이폰)로 아래 「기간 한정 개인
+      플랜」 절의 리허설 항목을 돈다. iOS 는 `AFTER_APPROVAL` 이라 승인되면 곧바로 게재된다 — 리허설에서
+      앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
+- [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
+      넣고 `npm run secrets:sync:prod --workspace=backend`.
+- [ ] Play 30 이 100% 게재된 뒤: `app-version.ts` 의 Android `latest` 를 30 으로(순서 규칙은 파일 주석).
+- 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
+  (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
+  클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
+  validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
+  'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
   게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → Play 30 이 100% 게재된 뒤 `app-version.ts` Android
@@ -90,10 +114,11 @@
       (2026-09-27 조회: 계정의 워커는 `voice-alarm-api`·`voice-alarm-api-dev` 둘, 크론은 지금 3개 → prod
       배포 뒤 4개 — 계정 한도 무료 5·유료 250 안. ElevenLabs 는 두 환경이 같은 enterprise 계정, `voice_limit`
       20000 중 10307 사용.)
-- [ ] 배포 전: `/admin/promo` 에서 그룹명이 정확히 `welcome` 이 **아닌** 웰컴 계열 코드(대소문자·
+- [x] 배포 전: `/admin/promo` 에서 그룹명이 정확히 `welcome` 이 **아닌** 웰컴 계열 코드(대소문자·
       변형)가 있는지 보고, 있으면 토글로 끈다. #121 은 `welcome` 만 잡는다.
+      (2026-09-28 prod 조회: 3행 전부 `welcome`·비활성, 변형 그룹 없음.)
 - [ ] dev 리허설: `.dev.vars.dev` 에 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
-      (지금 + 10분)을 넣고 `npm run secrets:sync:dev` → 무료+목소리 / 무료 / 개인 결제 / 가족
+      (지금 + 10분)을 넣고 `npm run secrets:sync:dev --workspace=backend` → 무료+목소리 / 무료 / 개인 결제 / 가족
       소유자+멤버 / 쿠폰 계정으로 개인 기능이 열리는지(안드로이드 2대·아이폰) → 끝 시각 뒤
       `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일을 **정시로 올린 값** — 그보다 이르면 안
       된다)·푸시 문구("기간 한정 개인 플랜이 끝나 … M월 D일 오전/오후 H시까지만 보관", 자정이면
@@ -104,7 +129,7 @@
       ⚠ **리허설 값을 지우려면 `npx wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev`.**
       동기화 스크립트는 빈 값을 건너뛰므로 파일에서 지우는 것만으로는 워커에서 사라지지 않는다.
 - [ ] iOS 1.2.10(앱 PR) **게재 뒤** `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고
-      `npm run secrets:sync:prod`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
+      `npm run secrets:sync:prod --workspace=backend`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
       거절한다(워커도 production 에서는 읽지 않는다).
 - [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 **대상 수와 그들의 기기(push 토큰) 수**를 센다(**베타
       계정 등 기간 전부터 무료였던 계정도 목소리가 있으면 대상이다** — 제품 결정). 삭제는 인원과 무관하게
@@ -164,7 +189,7 @@
 `gemini-2.5-flash` 는 Vertex 에서 **2026-10-20 에 은퇴**한다(「Model versions and lifecycle」, 2026-09-22
 갱신 — "retirement timelines may be extended, they won't be moved to an earlier date"). 대체는
 **`gemini-3.5-flash`(GA, 은퇴 2027-05-19 이후)**, 지역은 **`us`**(처리방침이 처리 국가를 '미국' 으로 적어
-`global` 은 쓰지 않는다). 지금 dev·prod 시크릿은 `gemini-2.5-flash` / `us-central1` 이다.
+`global` 은 쓰지 않는다). **2026-09-27 에 dev·prod 모두 `gemini-3.5-flash` / `us` 로 바꿨다**(아래 순서).
 
 **표가 권하는 Flash-Lite 가 아니라 Flash 로 가는 이유**(2026-09-23 블라인드 판정 — 원어민 판정자에게
 어느 쪽이 어느 모델인지 가리고, 튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
@@ -198,13 +223,18 @@ v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도
 - 예비 후보 `gemini-3.1-flash-lite`(@`us`)도 호출은 정상이다(품질 판정은 하지 않았다).
 
 전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
-- [ ] 코드 PR 을 develop 에 머지 → dev 배포. 시크릿이 그대로라 모델은 2.5 그대로다(프롬프트만 새것).
-- [ ] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
-      → `npm run secrets:sync:dev`. ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로 돌릴 수 없다.
+- [x] 코드 PR 을 develop 에 머지 → dev 배포(#801, 2026-09-27).
+- [x] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
+      → `npm run secrets:sync:dev --workspace=backend`(2026-09-27). ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로
+      돌릴 수 없다.
 - [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
-      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다.
-- [ ] develop → main(prod 배포, 동작 변화 없음) 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 →
-      `npm run secrets:sync:prod`. 며칠 로그와 Sentry `clip_failure` 를 본다. **10/20 전에 끝낸다.**
+      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다. **아직 워커 로그로는 못 봤다** —
+      같은 자격 증명·모델·지역의 호출은 평가 스크립트(`npm run eval:gemini`, 702건)로만 확인했다. 위 dev
+      리허설 때 함께 본다.
+- [x] develop → main 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 → `npm run secrets:sync:prod --workspace=backend`
+      (#797 배포 뒤, 2026-09-27 — 이전 값 `gemini-2.5-flash`/`us-central1`).
+- [ ] prod 모니터링: 며칠 로그(`vertex.generate`)와 Sentry `clip_failure` 를 본다. 전환 직후는 새벽이라
+      호출이 없어 아직 한 건도 못 봤다.
 - 원복: 시크릿을 `gemini-2.5-flash` / `us-central1` 로 되돌리면 된다(10/20 전까지만). 그 뒤의 예비는
   `gemini-3.5-flash-lite` / `us` — 품질이 떨어지는 것을 알고 쓰는 비상용이다(위 표).
 - 후속(막지 않음): 3.5 Flash 문구가 길다 — 영어 길이 상한 조정 검토. 판정이 짚은 나머지(문장 중간 태그,
