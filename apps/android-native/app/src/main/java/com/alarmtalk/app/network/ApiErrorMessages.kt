@@ -76,6 +76,10 @@ private val API_ERROR_MESSAGES: Map<String, Int> = mapOf(
     "VOICE_MONTHLY_CHANGE_LIMIT_REACHED" to R.string.msg_voice_monthly_change_limit,
     "VOICE_PREVIEW_REQUIRED" to R.string.msg_voice_preview_required,
     "CONSENT_REQUIRED" to R.string.msg_voice_consent_required,
+    // 목소리 느낌(결)이 '' · lively · calm 밖이다. 화면은 그 셋만 고를 수 있어 정상 경로에서는
+    // 나지 않는다 — 그래도 폴백의 "목소리를 만들지 못했어요" 로 떨어지면 녹음을 탓하게 되니,
+    // 무엇을 다시 하면 되는지(느낌을 다시 고르기)만 차분히 말한다.
+    "INVALID_VOICE_ENERGY" to R.string.api_error_invalid_voice_energy,
 
     // ── 알람·문구 ─────────────────────────────────────────────────────────
     "ALARM_NOT_FOUND" to R.string.api_error_alarm_not_found,
