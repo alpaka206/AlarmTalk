@@ -176,6 +176,10 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     );
     expect(doneCall).toBeDefined();
     expect(doneCall!.args).toContain(JSON.stringify(SAMPLE_STYLE));
+    // 결과는 목소리를 따라간다 — 분석 도중 초안이 교체로 소비되면 같은 provider 보이스를 넘겨받은
+    // 현역 행에 써야 한다(Codex #802). 그 열쇠가 이 provider 보이스 id 다.
+    expect(doneCall!.sql).toContain('elevenlabs_voice_id = ?');
+    expect(doneCall!.args).toContain('elv-ok');
     expect(mockAnalyzeSpeechStyle).toHaveBeenCalledWith(
       expect.anything(),
       '마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마',

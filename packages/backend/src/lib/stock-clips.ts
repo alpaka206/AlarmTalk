@@ -470,7 +470,7 @@ export async function listReadyCloneVoices(
   const res = await db.execute({
     // ⚠ voice_energy 는 마이그레이션 #122 의 새 컬럼이다. 배포 직후 마이그레이션 전 창에는 이 조회가
     //   실패해 그 회차가 건너뛰어지고 cron 이 다음 주기에 다시 잡는다(fail-closed — 결 없이 만든
-    //   클립을 영구 저장하지 않는다).
+    //   클립을 영구 저장하지 않는다). 그러려면 호출자가 **잡은 임대를 풀고** 던져야 한다(drain·advance).
     sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style, voice_energy
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
@@ -689,6 +689,45 @@ export async function enqueuePrerender(
  */
 export const SPEECH_STYLE_ANALYSIS_WAIT_SQL = '-10 minutes';
 
+/**
+ * 등록 첫 미리듣기가 말투 분석을 기다리는 간격(ms). 첫 조회는 곧바로 한다. 합계 ≈ 10초, DB 조회 최대 6번 —
+ * `POST /tts/generate` 의 서브리퀘스트 예산(Vertex·합성·R2·DB)을 넘기지 않는 선이다.
+ */
+export const SPEECH_STYLE_PREVIEW_WAIT_DELAYS_MS: readonly number[] = [0, 1000, 1500, 2000, 2500, 3000];
+
+/**
+ * 말투 분석이 끝날 때까지 잠깐 기다린다 — **등록 첫 미리듣기**용(Codex #802).
+ *
+ * 등록 화면은 클론을 만든 즉시 미리듣기를 부르고, 분석은 그 응답 뒤 `waitUntil` 로 돈다. 기다리지 않으면
+ * 첫 미리듣기가 말투·자동 결 없이 생성·영속되고(`preview_text`), 사용자는 그걸 듣고 확정한다 — 알람
+ * 클립(분석을 기다려 굽는다)과 다른 결을 승인하는 셈이다. 그 문구는 클립의 스타일 레퍼런스도 된다.
+ *
+ * 돌려주는 것: 끝났으면 `{ settled: true, speechStyle }`(분석 원문 — 실패했거나 대상이 아니면 그 행의 값),
+ * 상한까지 안 끝났으면 `{ settled: false }`. 호출자는 그때 **생성하지 않고** 고정 예문으로 떨어진다 —
+ * 영속하지 않으므로 다음 미리듣기가 분석 뒤에 다시 만들고, 이대로 확정해도 재생은 같은 고정 예문이다.
+ */
+export async function waitForSpeechStyleAnalysis(
+  db: Pick<Client, 'execute'>,
+  voiceProfileId: string,
+  delaysMs: readonly number[] = SPEECH_STYLE_PREVIEW_WAIT_DELAYS_MS,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<{ settled: true; speechStyle: unknown } | { settled: false }> {
+  for (const delay of delaysMs) {
+    if (delay > 0) await sleep(delay);
+    const res = await db.execute({
+      sql: `SELECT speech_style,
+                   CASE WHEN speech_style_status = 'pending'
+                         AND datetime(updated_at) > datetime('now', ?) THEN 1 ELSE 0 END AS analysis_pending
+            FROM voice_profiles WHERE id = ? AND deleted_at IS NULL LIMIT 1`,
+      args: [SPEECH_STYLE_ANALYSIS_WAIT_SQL, voiceProfileId],
+    });
+    const row = res.rows[0];
+    if (!row) return { settled: true, speechStyle: null };
+    if (Number(row.analysis_pending ?? 0) !== 1) return { settled: true, speechStyle: row.speech_style ?? null };
+  }
+  return { settled: false };
+}
+
 /** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
 export async function claimPendingPrerenderVoices(
   db: Client,
@@ -862,7 +901,17 @@ export async function runPrerenderBatch(
   const claimed = await claimPendingPrerenderVoices(db, Math.max(1, Math.trunc(options.maxVoices ?? 5)));
   if (claimed.length === 0) return { claimed: 0, rendered: 0 };
 
-  const cloneVoices = await listReadyCloneVoices(db, claimed);
+  let cloneVoices: PrerenderVoice[];
+  try {
+    cloneVoices = await listReadyCloneVoices(db, claimed);
+  } catch (lookupError) {
+    // 배포 창(#122 전)에는 이 조회가 던진다 — fail-closed 는 맞지만 **잡은 임대는 풀고** 던진다.
+    // 안 풀면 스키마가 준비된 뒤에도 15분(cron 세 틱) 동안 이 행들을 아무도 못 잡는다(Codex #802).
+    for (const request of claimed) {
+      await releasePrerenderClaim(db, request.voiceProfileId, request.claimToken).catch(() => undefined);
+    }
+    throw lookupError;
+  }
   const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
   // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
   const readyIds = new Set(cloneVoices.map((v) => v.id));

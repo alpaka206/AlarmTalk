@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runMigrations } from '../src/lib/migrations';
 import { CURRENT_POLICY_VERSION, SENSITIVE_REQUIRED_CONSENTS } from '../src/lib/consent';
-import { replaceVoiceInPlace } from '../src/routes/voice-profile';
+import { replaceVoiceInPlace, SPEECH_STYLE_RESULT_TARGET_SQL } from '../src/routes/voice-profile';
 
 async function migratedDb(): Promise<Client> {
   const db = createClient({ url: ':memory:' });
@@ -195,6 +195,49 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
       // 푸시를 놓친 기기가 스스로 알아챌 표식. 이게 없으면 폴백 경로가 없다.
       expect(replacedRow.rows[0]!.custom_audio_invalidated_at).not.toBeNull();
       expect(replacedRow.rows[0]!.updated_at).not.toBeNull();
+    } finally {
+      db.close();
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });
+    }
+  });
+
+  // ⚠ **분석 도중 교체되면 결과가 현역 프로필로 가야 한다**(Codex #802). 초안의 말투 분석은 응답 뒤
+  // `waitUntil` 로 돈다. 그 사이 교체가 확정되면 초안은 지워지고 'pending' 이 현역으로 옮겨 간다 —
+  // 초안 id 로만 쓰면 0행이라 현역이 영영 pending 이고, 사전렌더는 대기 상한만큼 멈췄다가 말투 없이 굽는다.
+  it('교체 뒤 끝난 말투 분석은 같은 provider 보이스를 넘겨받은 현역 프로필에 기록된다', async () => {
+    const { db, path } = await replacementDb();
+    try {
+      await db.execute("UPDATE voice_profiles SET speech_style_status = 'pending' WHERE id = 'vp2'");
+      const result = await replaceVoiceInPlace(db as never, {
+        targetUserIds: ['u1'],
+        draftProfileId: 'vp2',
+        language: 'ko',
+        ownerPk: 'u1',
+        loginId: 'g1',
+      });
+      expect(result.ok).toBe(true);
+      const moved = await db.execute("SELECT speech_style_status FROM voice_profiles WHERE id = 'vp1'");
+      expect(String(moved.rows[0]!.speech_style_status)).toBe('pending');
+
+      // 분석이 초안 id(vp2)와 그 녹음의 provider 보이스로 결과를 쓴다.
+      const written = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style = ?, speech_style_status = 'done'
+              WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: ['{"energy":"calm"}', 'vp2', 'eleven-new', 'eleven-new'],
+      });
+      expect(written.rowsAffected).toBe(1);
+      const target = await db.execute(
+        "SELECT speech_style, speech_style_status FROM voice_profiles WHERE id = 'vp1'",
+      );
+      expect(String(target.rows[0]!.speech_style_status)).toBe('done');
+      expect(String(target.rows[0]!.speech_style)).toBe('{"energy":"calm"}');
+
+      // 이미 끝난(pending 아닌) 현역은 건드리지 않는다 — 늦게 온 옛 분석이 새 결과를 덮지 않게.
+      const again = await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style_status = 'failed' WHERE ${SPEECH_STYLE_RESULT_TARGET_SQL}`,
+        args: ['vp2', 'eleven-new', 'eleven-new'],
+      });
+      expect(again.rowsAffected).toBe(0);
     } finally {
       db.close();
       for (const suffix of ['', '-shm', '-wal']) rmSync(`${path}${suffix}`, { force: true });

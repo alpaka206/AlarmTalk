@@ -17,6 +17,7 @@ import {
   generatePrerenderClipText,
   dropWakeUnsafeTags,
   fallbackTagForEnergy,
+  modernizeKoreanHonorific,
   isLegacyGeminiModel,
   prepareAlarmTextWithVertex,
   vertexGenerateContentEndpoint,
@@ -786,6 +787,20 @@ describe('Gemini 모델 계열별 요청·응답(2.5 은퇴 대비)', () => {
     expect(out.text).toContain('일어나 보세요');
     expect(out.text).toContain('챙기세요');
     expect(out.text).not.toContain('셔요');
+  });
+
+  // ⚠ **존대 `-시-` 가 붙은 줄기만 고친다**(Codex #802). 줄기가 원래 `시` 로 끝나는 낱말까지 바꾸면
+  // 뜻이 깨진다 — 특히 `마셔요`→`마세요` 는 '마시다' 가 '하지 마세요' 가 된다.
+  it('-셔요 현대화는 존대 줄기에만 — 눈부셔요·적셔요·마셔요·모셔요는 그대로', () => {
+    expect(modernizeKoreanHonorific('할아버지, 일어나 보셔요. 우산 챙기셔요. 약 드셔요.')).toBe(
+      '할아버지, 일어나 보세요. 우산 챙기세요. 약 드세요.',
+    );
+    expect(modernizeKoreanHonorific('잠깐 앉으셔요. 푹 주무셔요? 이제 일어나셔요!')).toBe(
+      '잠깐 앉으세요. 푹 주무세요? 이제 일어나세요!',
+    );
+    for (const kept of ['햇살이 눈부셔요.', '비가 옷을 적셔요.', '물 한 잔 마셔요.', '부모님을 모셔요.']) {
+      expect(modernizeKoreanHonorific(kept)).toBe(kept);
+    }
   });
 
   it('관계를 모르는 목소리의 반말은 섞임으로 본다 — 등록 녹음이 반말이면 그 말투를 따른다', () => {

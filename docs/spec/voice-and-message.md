@@ -397,6 +397,12 @@
     구우면 21개가 말투·결 없이 게시되고 뒤늦은 분석은 되돌리지 못한다. 분석이 `pending` 인 동안 cron 은
     건너뛰고, 소유자 주도 전진은 `claim_stuck` 으로 "잠깐 뒤 다시" 를 답한다. **상한 10분** — 분석이
     죽어 `pending` 이 남아도 그 뒤에는 말투 없이 굽는다(영영 안 굽는 것보다 낫다).
+  - ⚠ **등록 첫 미리듣기도 분석을 기다린다**(최대 ≈10초). 등록 화면은 클론 직후 곧바로 미리듣기를 부르는데,
+    안 기다리면 결 없이 만든 문구가 영속되고 사용자가 그걸 듣고 확정한다 — 알람 클립과 다른 결을 승인하는
+    셈이다. 그래도 안 끝나면 **생성하지 않고** 고정 예문으로 들려주고 영속하지 않는다(다음 미리듣기가 분석 뒤에
+    다시 만든다. 그대로 확정해도 재생은 같은 고정 예문이다).
+  - 분석 결과는 **목소리를 따라간다** — 분석 도중 초안이 교체로 소비되면 같은 provider 보이스를 넘겨받은
+    현역 프로필에 기록한다(초안 id 로만 쓰면 현역이 영영 `pending` 에 남는다).
 
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
@@ -857,7 +863,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
-| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`). 회귀 `voice-prerender-style-wait.test.ts` |
+| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |

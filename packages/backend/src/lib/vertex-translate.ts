@@ -1609,8 +1609,17 @@ export function tidyEllipsis(text: string): string {
  * 생성 문구에만 쓴다 — 사용자가 직접 친 문구는 바꾸지 않는다.
  */
 export function modernizeKoreanHonorific(text: string): string {
-  return text.replace(/셔요/g, '세요');
+  return text.replace(HONORIFIC_SYEOYO_RE, '$1세요');
 }
+
+/**
+ * 고쳐도 되는 `-(으)셔요` — **존대 `-시-` 가 붙은 줄기만.** 모든 `셔요` 를 바꾸면 줄기가 원래 `시` 로 끝나는
+ * 낱말이 깨진다(Codex #802): `눈부셔요`→`눈부세요`, `적셔요`→`적세요`, `마셔요`→`마세요`(마시다 → '하지 마세요'
+ * 가 된다), `모셔요`→`모세요`. 그래서 앞 음절을 **줄기 끝으로 확인된 것만** 받는다 — `으`(`-으시-` 는 언제나
+ * 존대), 그리고 `시다` 로 끝나는 제 낱말이 없는 줄기 끝(보·가·오·하·드·주무·계·챙기·일어나·일어서·주·쉬·두·
+ * 타·내·끄·지키·켜·마치·내리·고르·가지·도우). 목록에 없는 존대형은 옛 모양 그대로 남는다 — 어색할 뿐 뜻은 맞다.
+ */
+const HONORIFIC_SYEOYO_RE = /(으|보|가|오|하|드|무|계|기|나|서|주|쉬|두|타|내|끄|키|켜|치|리|르|지|우)셔요/g;
 
 /** 이 시드가 아침 인사 자체인가(`CLONE_CLIP_SEEDS` 의 인사 시드). 아침 인사를 허용하고, 줄일 때도 인사를 남긴다. */
 function isGreetingSeed(seed: string | null | undefined): boolean {

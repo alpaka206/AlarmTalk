@@ -43,6 +43,7 @@ import {
   retiredIsNullClause,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
+  waitForSpeechStyleAnalysis,
 } from '../lib/stock-clips';
 import {
   readManualTtsUsage,
@@ -1099,7 +1100,18 @@ tts.post('/generate', async (c) => {
       } else {
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
-          if (greetingSeed) {
+          // ⚠ **말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 여기로 오고 분석은
+          // 그 뒤에 돈다 — 안 기다리면 첫 미리듣기가 말투·자동 결 없이 만들어져 영속되고, 사용자는 알람
+          // 클립(분석 뒤에 굽는다)과 다른 결을 듣고 확정한다. 상한까지 안 끝나면 **생성하지 않는다** —
+          // 고정 예문(영속 안 함)으로 떨어져, 다음 미리듣기가 분석 뒤에 다시 만든다.
+          let analyzedSpeechStyle: unknown = vp.speech_style;
+          let analysisSettled = true;
+          if (vp.speech_style_status === 'pending') {
+            const waited = await waitForSpeechStyleAnalysis(db, body.voice_profile_id);
+            analysisSettled = waited.settled;
+            if (waited.settled) analyzedSpeechStyle = waited.speechStyle;
+          }
+          if (greetingSeed && analysisSettled) {
             const generated = await generatePrerenderClipText(c.env, {
               seed: greetingSeed.seeds[0]!,
               relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
@@ -1108,7 +1120,7 @@ tts.post('/generate', async (c) => {
               defaultTag: greetingSeed.defaultTag,
               // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
               // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
-              speechStyle: withVoiceEnergy(parseSpeechStyle(vp.speech_style), vp.voice_energy),
+              speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
             });
             // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
             // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를

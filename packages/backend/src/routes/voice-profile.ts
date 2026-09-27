@@ -437,6 +437,15 @@ async function setSpeechStyleStatus(
 }
 
 /**
+ * 말투 분석 결과(성공·실패)를 쓸 행 — 인자 `[profileId, providerVoiceId, providerVoiceId]`.
+ * 이 프로필(초안이든 현역이든), 또는 초안이 분석 도중 교체로 소비됐으면 같은 provider 보이스를 넘겨받은
+ * 현역 프로필 — 단 분석을 기다리는(pending) 행만. 교체는 한 트랜잭션이라 둘이 동시에 살아 있지 않다.
+ */
+export const SPEECH_STYLE_RESULT_TARGET_SQL = `deleted_at IS NULL AND (id = ? OR (
+      ? IS NOT NULL AND elevenlabs_voice_id = ? AND COALESCE(is_draft, 0) = 0
+      AND speech_style_status = 'pending'))`;
+
+/**
  * 등록 녹음 전사(ElevenLabs Scribe) → Vertex 말투 분석 → speech_style 저장.
  * 결과와 무관하게 speech_style_status 를 반드시 기록한다('done' | 'failed') — 실패를 조용히
  * 삼키면 클라가 알 길이 없다. 클론 등록의 waitUntil 경로와 재시도 엔드포인트(동기)가 공유한다.
@@ -452,9 +461,19 @@ async function runSpeechStyleAnalysis(
     fileName?: string | null;
     language: string;
     ownerPk: string;
+    /**
+     * 이 녹음으로 만든 provider 보이스 — 분석 결과가 **목소리를 따라가게** 한다(Codex #802).
+     * 초안이 분석 도중 교체(`replaceVoiceInPlace`)로 소비되면 초안 행은 지워지고 말투·상태(pending)는
+     * 현역 프로필로 옮겨 간다. 초안 id 로만 쓰면 0행이라 현역이 영영 'pending' 에 남고, 사전렌더는
+     * 분석 대기 상한(10분)만큼 멈췄다가 말투 없이 굽는다. 같은 provider 보이스를 문 현역 행을 함께 고친다.
+     */
+    providerVoiceId?: string | null;
   },
 ): Promise<{ ok: true } | { ok: false; error: unknown }> {
   const db = getDB(env);
+  const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
+  const providerVoiceId = options.providerVoiceId ?? null;
+  const targetArgs = [profileId, providerVoiceId, providerVoiceId];
   try {
     // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
     const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
@@ -483,13 +502,18 @@ async function runSpeechStyleAnalysis(
     await db.execute({
       sql: `UPDATE voice_profiles
             SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
-            WHERE id = ? AND deleted_at IS NULL`,
-      args: [JSON.stringify(style), profileId],
+            WHERE ${targetClause}`,
+      args: [JSON.stringify(style), ...targetArgs],
     });
     return { ok: true };
   } catch (error) {
     try {
-      await setSpeechStyleStatus(db, profileId, 'failed');
+      // 실패도 목소리를 따라간다 — 현역이 'pending' 에 남으면 재시도 버튼(`failed` 만 받는다)도 못 쓴다.
+      await db.execute({
+        sql: `UPDATE voice_profiles SET speech_style_status = ?, updated_at = datetime('now')
+              WHERE ${targetClause}`,
+        args: ['failed', ...targetArgs],
+      });
     } catch {
       // 상태 기록까지 실패해도 분석 실패 자체는 아래 error 로 호출자가 로깅한다.
     }
@@ -2147,6 +2171,7 @@ voiceProfile.post('/clone', async (c) => {
             fileName: analysisFileName,
             language: previewLanguage,
             ownerPk: userPk,
+            providerVoiceId: voiceId,
           }).then((analysis) => {
             if (!analysis.ok) logRouteError(c, analysis.error);
           }),
@@ -2701,9 +2726,17 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   const language = String(claimed.rows[0]!.language ?? 'ko');
   const refreshExisting = Number(claimed.rows[0]!.refresh_existing ?? 0) === 1;
 
-  const voices = await listReadyCloneVoices(db, [
-    { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
-  ]);
+  let voices: Awaited<ReturnType<typeof listReadyCloneVoices>>;
+  try {
+    voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
+    ]);
+  } catch (lookupError) {
+    // 배포 창(#122 전)에는 이 조회가 던진다 — fail-closed 는 맞지만 **잡은 임대는 풀고** 던진다.
+    // 안 풀면 2분 동안 모든 전진이 '진행 없음' 만 받아 앱이 구동을 접는다(Codex #802).
+    await releasePrerenderClaim(db, id, claimToken).catch(() => undefined);
+    throw lookupError;
+  }
   const voice = voices[0];
   if (!voice) {
     await releasePrerenderClaim(db, id, claimToken);

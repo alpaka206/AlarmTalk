@@ -13,7 +13,11 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
-import { claimPendingPrerenderVoices, enqueuePrerender } from '../src/lib/stock-clips';
+import {
+  claimPendingPrerenderVoices,
+  enqueuePrerender,
+  waitForSpeechStyleAnalysis,
+} from '../src/lib/stock-clips';
 
 const directory = mkdtempSync(join(tmpdir(), 'alarmtalk-style-wait-'));
 const db = createClient({ url: `file:${join(directory, 'test.db')}` });
@@ -104,5 +108,25 @@ describe('사전렌더는 말투 분석을 기다린다', () => {
     await enqueuePrerender(db, VOICE, USER, 'ko');
     await setAnalysis('pending', '-11 minutes');
     expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+  });
+
+  it('미리듣기 대기: 분석이 끝나면 그 결과를, 상한까지 안 끝나면 settled:false 를 돌려준다', async () => {
+    const naps: number[] = [];
+    const sleep = async (ms: number) => { naps.push(ms); };
+    await setAnalysis('pending', '-1 seconds');
+    expect(await waitForSpeechStyleAnalysis(db, VOICE, [0, 10, 20], sleep)).toEqual({ settled: false });
+    expect(naps).toEqual([10, 20]);
+
+    await db.execute({
+      sql: `UPDATE voice_profiles SET speech_style = ?, speech_style_status = 'done' WHERE id = ?`,
+      args: ['{"energy":"calm"}', VOICE],
+    });
+    expect(await waitForSpeechStyleAnalysis(db, VOICE, [0, 10], sleep)).toEqual({
+      settled: true,
+      speechStyle: '{"energy":"calm"}',
+    });
+    // 죽은 분석(상한 초과 pending)은 기다리지 않는다.
+    await setAnalysis('pending', '-11 minutes');
+    expect((await waitForSpeechStyleAnalysis(db, VOICE, [0, 10], sleep)).settled).toBe(true);
   });
 });
