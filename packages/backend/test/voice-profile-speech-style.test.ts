@@ -411,6 +411,8 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
       { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
     ]);
     mockDB.pushResult([], 1); // 원자적 클레임(failed → pending) 성공
+    mockDB.pushResult([], 1); // 말투 기록 — 이 녹음을 뜻하는 행 1개
+    mockDB.pushResult([], 1); // 다시 굽기 요청
     mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
     mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
 
@@ -429,6 +431,9 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     const claims = retryClaimCalls();
     expect(claims).toHaveLength(1);
     expect(claims[0]!.args).toContain(V1);
+    // 클레임도 읽은 녹음에 묶는다 — 그 사이 제자리 교체된 새 목소리를 'pending' 에 가두지 않게(Codex #802).
+    expect(claims[0]!.sql).toContain('su.object_key = ?');
+    expect(claims[0]!.args).toContain(meta.objectKey);
     const doneCall = mockDB.calls.find((call) =>
       call.sql.includes("speech_style_status = 'done'"),
     );
@@ -449,6 +454,26 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(doneCall!.args).toContain(meta.objectKey);
     expect(requeue!.sql).toContain('COALESCE(is_draft, 0) = 0');
     expect(requeue!.args).toContain(V1);
+  });
+
+  // 클레임 뒤, 기록 전에 제자리 교체가 끼면 결과 기록은 0행이다 — '완료' 라고 답하면 새 목소리가 분석된
+  // 줄 안다(Codex #802).
+  it('분석 도중 목소리가 바뀌어 결과를 버렸으면 done 이 아니라 409 로 답한다', async () => {
+    const meta = await storeSourceUpload();
+    mockDB.pushResult([{ id: V1, preview_language: 'ko' }]);
+    mockDB.pushResult([
+      { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
+    ]);
+    mockDB.pushResult([], 1); // 클레임 성공
+    mockDB.pushResult([], 0); // 말투 기록 0행 — 그 사이 녹음이 바뀌었다
+    mockDB.pushResult([], 0); // 다시 굽기 요청도 0행
+    mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
+    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+
+    const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('SPEECH_STYLE_RETRY_CONFLICT');
   });
 
   it('동시 재시도 경쟁: 클레임(failed→pending) 0행이면 409 + 분석 미실행', async () => {
@@ -490,6 +515,8 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
       { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
     ]);
     mockDB.pushResult([], 1); // 원자적 클레임 성공
+    mockDB.pushResult([], 1); // 말투 기록
+    mockDB.pushResult([], 1); // 다시 굽기 요청
     mockSpeechToText.mockResolvedValue('関西弁でほんまに元気よく話す文字起こしテキストやで');
     mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
 

@@ -498,7 +498,7 @@ async function runSpeechStyleAnalysis(
     /** 재시도가 읽은 원본 녹음 키 — 결과를 그 녹음을 아직 문 프로필에만 쓴다(`SPEECH_STYLE_RESULT_TARGET_SQL`). */
     sourceObjectKey?: string | null;
   },
-): Promise<{ ok: true } | { ok: false; error: unknown }> {
+): Promise<{ ok: true; written: boolean } | { ok: false; error: unknown }> {
   const db = getDB(env);
   const targetClause = SPEECH_STYLE_RESULT_TARGET_SQL;
   const providerVoiceId = options.providerVoiceId ?? null;
@@ -531,7 +531,7 @@ async function runSpeechStyleAnalysis(
     if (missingBeforeSave) {
       throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
-    await db.batch(
+    const written = await db.batch(
       [
         {
           sql: `UPDATE voice_profiles
@@ -565,7 +565,8 @@ async function runSpeechStyleAnalysis(
       ],
       'write',
     );
-    return { ok: true };
+    // 0행 = 분석하는 사이 이 녹음을 뜻하던 행이 사라졌다(제자리 교체 등) — 낡은 회차다. 호출자가 가른다.
+    return { ok: true, written: (written[0]?.rowsAffected ?? 0) > 0 };
   } catch (error) {
     try {
       // 실패도 목소리를 따라간다 — 현역이 'pending' 에 남으면 재시도 버튼(`failed` 만 받는다)도 못 쓴다.
@@ -2469,11 +2470,18 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
   // 원자적 상태 점유(H): failed 일 때만 pending 으로 클레임한다 — 동시 재시도가 겹치면
   // 한 요청만 실행되고 나머지는 409 로 떨어져 중복 전사/분석(외부 호출 비용)을 차단한다.
   // 이미 pending(진행 중)이거나 done/NULL(재시도 대상 아님)이어도 같은 409.
+  // ⚠ **읽은 녹음에 묶는다**(Codex #802). 원본을 읽은 뒤 이 클레임 전에 제자리 교체가 끼면 id 는 같은데
+  // 새 목소리(새 녹음)다 — id 만 보면 새 목소리를 'pending' 으로 잡아 놓고, 결과 기록(녹음에 묶임)은 0행이라
+  // 영영 'pending' 에 갇힌다(재시도는 'failed' 만 받으니 다시 못 누른다).
   const claimed = await db.execute({
     sql: `UPDATE voice_profiles
           SET speech_style_status = 'pending', updated_at = datetime('now')
-          WHERE id = ? AND speech_style_status = 'failed' AND deleted_at IS NULL`,
-    args: [id],
+          WHERE id = ? AND speech_style_status = 'failed' AND deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM voice_uploads su
+              WHERE su.voice_profile_id = voice_profiles.id AND su.object_key = ?
+            )`,
+    args: [id, String(upload!.object_key)],
   });
   if ((claimed.rowsAffected ?? 0) === 0) {
     return c.json(
@@ -2506,6 +2514,16 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
         status: 'failed',
       },
       502,
+    );
+  }
+  if (!result.written) {
+    // 분석하는 사이 목소리가 바뀌었다(제자리 교체) — 옛 녹음의 결과는 버렸다. '완료' 라고 답하면 새
+    // 목소리가 분석된 줄 안다. 새 목소리의 상태는 교체가 옮겨 온 그대로다.
+    return jsonError(
+      c,
+      409,
+      'SPEECH_STYLE_RETRY_CONFLICT',
+      'The voice changed while it was being analyzed. Refresh and try again.',
     );
   }
   return c.json({ success: true, status: 'done' });
