@@ -381,6 +381,10 @@
   - 차분: 차분하고 진심 어린 문장, 느낌표 거의 없음, `[playfully]`·`[giggles]`·`[excited]` 금지,
     `[warmly]`·`[sincerely]`·`[reassuring]`·`[measured, deliberate]` 류. **차분은 졸림이 아니다** — 끝은
     분명하게 깨우고 졸린 태그는 여전히 금지. **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
+  - ⚠ **차분의 금지 태그는 서버가 지운다** — 프롬프트만으로는 모델이 어겨도 그대로 저장된다. 태그가
+    하나도 없을 때 입히는 카테고리 기본값(`cheerfully`·`playfully`)도 차분이면 `warmly` 로 바꾼다.
+    등록 미리듣기가 생성에 실패해 고정 예문으로 떨어져도 같다(그때는 **사용자가 고른** 결만 본다 —
+    분석값은 확정 뒤에도 늦게 채워질 수 있어, 보면 같은 미리듣기의 재생 태그가 바뀐다).
   - **정하는 곳은 사용자 선택이 먼저다.** 등록 '세부 정보' 단계에서 고른 값(`voice_profiles.voice_energy`)이
     등록 녹음 전사로 추정한 값(`speech_style.energy`)보다 앞선다. 자동이면 추정값을 쓰고, 그것도 없으면
     결을 따로 정하지 않는다.
@@ -388,6 +392,11 @@
     동의는 전사 글자까지만 다룬다. 그래서 사용자가 고르게 했다.
   - 관계·호칭처럼 **초안에서만 바뀐다**(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`). 초안에서 결을 바꾸면
     미리듣기 문구를 비워 새 결로 다시 만든다. 결을 보내지 않은 구버전 앱의 요청은 그 값을 건드리지 않는다.
+    목소리 **교체**(`replace_existing`)도 초안의 결을 현역 프로필로 옮긴다.
+  - ⚠ **사전렌더는 말투 분석을 기다린다.** 분석은 등록 응답 뒤에 돌아서 승격이 더 빠를 수 있는데, 그때
+    구우면 21개가 말투·결 없이 게시되고 뒤늦은 분석은 되돌리지 못한다. 분석이 `pending` 인 동안 cron 은
+    건너뛰고, 소유자 주도 전진은 `claim_stuck` 으로 "잠깐 뒤 다시" 를 답한다. **상한 10분** — 분석이
+    죽어 `pending` 이 남아도 그 뒤에는 말투 없이 굽는다(영영 안 굽는 것보다 낫다).
 
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
@@ -848,7 +857,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
-| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` |
+| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |

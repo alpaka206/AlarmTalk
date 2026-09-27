@@ -33,6 +33,8 @@ async function setupDb() {
       preview_text TEXT,
       speech_style TEXT,
       voice_energy TEXT,
+      speech_style_status TEXT,
+      updated_at TEXT,
       deleted_at TEXT
     );
     CREATE TABLE messages (

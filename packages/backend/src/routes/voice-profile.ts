@@ -25,6 +25,7 @@ import {
   PrerenderSupersededError,
   releasePrerenderClaim,
   retiredIsNullClause,
+  SPEECH_STYLE_ANALYSIS_WAIT_SQL,
 } from '../lib/stock-clips';
 import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import { revokeDeletedVoices } from '../lib/voice-revocation';
@@ -418,6 +419,8 @@ const CLONE_PRERENDER_TOTAL = CLONE_CLIP_SEEDS.reduce((sum, group) => sum + grou
  * 다시 물어 같은 개수를 받고 '진행 없음' 으로 판단해 화면을 닫는다.
  */
 const PRERENDER_CLAIM_LEASE_SQL = '-2 minutes';
+/** 말투 분석을 기다리는 동안 전진 호출에 돌려주는 재시도 대기 — 분석은 보통 수 초면 끝난다. */
+const SPEECH_STYLE_ANALYSIS_RETRY_MS = 5_000;
 const PRERENDER_CLAIM_LEASE_MS = 2 * 60 * 1000;
 
 /** speech_style_status 기록. NULL=대상 아님, pending=진행중, done=완료, failed=실패(재시도 가능). */
@@ -2579,11 +2582,16 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
 
   const ph = ids.map(() => '?').join(',');
   const profileRes = await db.execute({
-    sql: `SELECT id, preview_language FROM voice_profiles
+    // `style_analysis_pending` — 말투 분석이 아직 도는 중인가(`SPEECH_STYLE_ANALYSIS_WAIT_SQL` 주석).
+    sql: `SELECT id, preview_language,
+                 CASE WHEN speech_style_status = 'pending'
+                       AND datetime(updated_at) > datetime('now', ?) THEN 1 ELSE 0 END
+                   AS style_analysis_pending
+          FROM voice_profiles
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
             AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
             AND status = 'ready'`,
-    args: [id, ...ids],
+    args: [SPEECH_STYLE_ANALYSIS_WAIT_SQL, id, ...ids],
   });
   if (profileRes.rows.length === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
@@ -2638,6 +2646,21 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
     args: [id],
   });
   await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
+
+  // ⚠ **말투 분석이 끝나기 전에는 굽지 않는다**(Codex #802). 결을 '자동' 으로 둔 목소리는 결이
+  // 그 분석에서만 오는데, 지금 구우면 21개가 빈 말투로 게시되고 뒤늦은 분석은 그걸 되돌리지 못한다
+  // (`SPEECH_STYLE_ANALYSIS_WAIT_SQL` 주석). 큐는 위에서 이미 살려 뒀으니 cron 도 분석 뒤에 이어받는다.
+  // 답은 `claim_stuck` 모양으로 준다 — 두 앱이 그걸 '무진전' 으로 세지 않고 말한 만큼 기다렸다가
+  // 다시 민다. 분석은 보통 수 초라 짧게 부른다.
+  if (Number(profileRes.rows[0]!.style_analysis_pending ?? 0) === 1) {
+    return c.json({
+      done: false,
+      generated: await countGenerated(),
+      total: CLONE_PRERENDER_TOTAL,
+      claim_stuck: true,
+      retry_after_ms: SPEECH_STYLE_ANALYSIS_RETRY_MS,
+    });
+  }
 
   // 클레임 규칙 (Codex #609 P1 — 동시 advance 가 서로의 claim 을 덮어써 유료 합성이 중복되는
   // 것 방지):

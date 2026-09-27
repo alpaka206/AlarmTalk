@@ -28,6 +28,7 @@ import {
   normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   withVoiceEnergy,
+  fallbackTagForEnergy,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -1063,7 +1064,13 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
-  let draftPreviewTag = 'cheerfully';
+  // 미리듣기의 기본 태그. 차분을 고른 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
+  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 고른 결과 반대로 들리면 안 된다.
+  // ⚠ 사용자가 **고른** 결(`voice_energy`)만 본다. 분석값(`speech_style.energy`)은 확정 뒤에도
+  // 늦게 채워질 수 있어, 그걸 보면 같은 확정 미리듣기의 재생 태그가 바뀌어 캐시를 빗나간다.
+  // 고른 결은 바뀌면 PATCH 가 `previewed_at` 을 함께 지우므로 재생 중에는 고정이다.
+  const draftPreviewDefaultTag = fallbackTagForEnergy('cheerfully', String(vp.voice_energy ?? ''));
+  let draftPreviewTag = draftPreviewDefaultTag;
 
   try {
     const requestedLanguage = draftPreviewRequested
@@ -1162,7 +1169,7 @@ tts.post('/generate', async (c) => {
                 requestText = winnerText;
                 const winnerTag =
                   typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
-                draftPreviewTag = winnerTag || 'cheerfully';
+                draftPreviewTag = winnerTag || draftPreviewDefaultTag;
               }
             }
           }
@@ -1269,7 +1276,7 @@ tts.post('/generate', async (c) => {
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
-      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
+      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 태그(`draftPreviewDefaultTag` — 차분이면 warmly)를 쓴다.
       // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
       // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
       // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로

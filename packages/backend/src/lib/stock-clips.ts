@@ -674,6 +674,21 @@ export async function enqueuePrerender(
   });
 }
 
+/**
+ * 말투 분석(`speech_style_status = 'pending'`)을 기다려 주는 최대 시간 — SQLite `datetime` 수정자.
+ *
+ * ⚠ **분석보다 먼저 구우면 그 클립은 영영 말투·결 없이 남는다**(Codex #802). 결을 '자동' 으로 두면
+ * 결은 등록 녹음 전사 분석(`speech_style.energy`)에서만 오고, 분석은 등록 응답 뒤 `waitUntil` 로 돈다.
+ * 승격이 그보다 빠르면 사전렌더가 빈 말투로 21개를 만들어 게시하고, 뒤늦은 분석은 그걸 되돌리지
+ * 못한다(같은 provider 보이스라 `refresh_existing` 도 '이미 있다' 로 센다). 그래서 **분석이 도는 동안은
+ * 굽지 않고 기다린다** — cron claim(`claimPendingPrerenderVoices`)과 소유자 주도 전진
+ * (`POST /voice/:id/prerender/advance`) 두 곳 모두.
+ *
+ * 상한을 두는 이유: `waitUntil` 이 잘리면 상태가 'pending' 인 채 영영 남는다. 그 목소리를 영영
+ * 굽지 않는 것보다 말투 없이 굽는 게 낫다. 기준 시각은 프로필의 `updated_at`(분석 시작·승격 때 갱신)이다.
+ */
+export const SPEECH_STYLE_ANALYSIS_WAIT_SQL = '-10 minutes';
+
 /** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
 export async function claimPendingPrerenderVoices(
   db: Client,
@@ -688,13 +703,20 @@ export async function claimPendingPrerenderVoices(
             FROM voice_prerender_queue
             WHERE status = 'pending'
               AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
+              -- 말투 분석이 도는 중인 목소리는 건너뛴다(SPEECH_STYLE_ANALYSIS_WAIT_SQL 주석).
+              AND NOT EXISTS (
+                SELECT 1 FROM voice_profiles spv
+                WHERE spv.id = voice_prerender_queue.voice_profile_id
+                  AND spv.speech_style_status = 'pending'
+                  AND datetime(spv.updated_at) > datetime('now', ?)
+              )
             ORDER BY requested_at ASC
             LIMIT ?
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
           RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing`,
-    args: [claimToken, Math.max(1, Math.min(Math.trunc(limit), 50))],
+    args: [claimToken, SPEECH_STYLE_ANALYSIS_WAIT_SQL, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
   return res.rows.map((row) => ({
     voiceProfileId: String(row.voice_profile_id),

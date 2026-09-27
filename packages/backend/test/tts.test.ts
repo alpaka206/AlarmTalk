@@ -248,6 +248,51 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(claimCall?.sql).toContain("COALESCE(voice_energy, '') = ?");
   });
 
+  // ⚠ **생성이 실패해 고정 예문으로 떨어져도 고른 결을 지킨다**(Codex #802). 차분을 고른 목소리에
+  // 기본 `cheerfully` 를 입히면 사용자가 바로 그 미리듣기를 듣고 확정한다 — 고른 결과 반대로.
+  it('차분을 고른 draft 의 고정 예문 미리듣기는 warmly 로 합성한다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        listener_title: '우리 아들',
+        voice_energy: 'calm',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      listener_title: '우리 아들',
+      voice_energy: 'calm',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+    expect(body.synthesis_text).toBe(
+      '[warmly] 우리 아들, 좋은 아침이야. [warmly] 오늘도 기분 좋게 일어나자.',
+    );
+  });
+
   // ⚠ iOS `playDraftPreview` 는 **`random:true` 와 `draft_preview:true` 를 함께** 보낸다
   // (`VoiceStudioViewModel`). 라이브 랜덤 거절(`RANDOM_TTS_RETIRED`)이 `body.random` 만 보거나
   // draft 판정보다 앞에 오면 이 요청이 400 이 되어 **새 목소리를 아예 등록할 수 없다.**
