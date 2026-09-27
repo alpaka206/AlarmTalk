@@ -31,7 +31,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
@@ -77,11 +76,18 @@ internal fun AlarmListScreen(
     subscriptionResponse: BillingSubscriptionResponse?,
     /** 스토어가 **지금** 유효하다고 확인해 준 상태인가(기한까지 반영된 값). */
     storeEntitledNow: Boolean,
+    /** 기간 한정 개인 플랜 중의 커플·가족 보류 규칙(`MainViewModel.personalPromoTierHold`). */
+    personalPromoTierHold: PersonalPromoTierHold?,
+    /**
+     * 이용권 화면 한 줄의 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
+     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것.
+     */
+    planScreenPersonalPromo: com.alarmtalk.app.network.PersonalPromo?,
     voiceDraftQuotaExhausted: Boolean = false,
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
+    onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
     sensitiveConsentMissing: List<String> = emptyList(),
@@ -303,6 +309,7 @@ internal fun AlarmListScreen(
                         prerenderDrive = prerenderDrive,
                         onStartPrerenderDrive = onStartPrerenderDrive,
                         storeEntitledNow = storeEntitledNow,
+                        personalPromoTierHold = personalPromoTierHold,
                     )
                 }
             }
@@ -417,6 +424,7 @@ internal fun AlarmListScreen(
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
                         onRestorePurchases = onRestorePurchases,
+                        personalPromo = planScreenPersonalPromo,
                     )
                 }
             }

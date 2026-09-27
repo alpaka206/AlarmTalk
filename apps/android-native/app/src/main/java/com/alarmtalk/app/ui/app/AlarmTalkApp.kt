@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -173,9 +174,15 @@ internal fun AlarmTalkApp(
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
     val initialPermissionPromptStore = remember(context) { InitialPermissionPromptStore(context) }
+    // 우리가 띄운 **시스템 권한 창**이 떠 있는가(요청 ~ 결과 콜백). 개인 플랜 종료 안내가 그
+    // 창과 한꺼번에 뜨지 않게 기다리는 신호다. 액티비티가 멈추는 것(PAUSED)만 보면 첫 진입에서
+    // 권한 요청과 안내 판정이 **같은 프레임**에 돌 때 창이 뜨기 전 틈을 놓친다 — 요청하는 순간
+    // 먼저 세운다.
+    var systemPermissionPromptOpen by remember { mutableStateOf(false) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
+        systemPermissionPromptOpen = false
         permissionState.refresh()
         // 영구 거부(사용자가 이전에 거부해 시스템이 다이얼로그를 더 이상 띄우지 않는 상태) 감지.
         // 이 경우 launch() 는 다이얼로그 없이 즉시 거부로 돌아온다 → 모달의 '허용하기' 만으론
@@ -195,11 +202,22 @@ internal fun AlarmTalkApp(
         }
     }
 
+    fun launchRuntimePermission(permission: String) {
+        systemPermissionPromptOpen = true
+        try {
+            runtimePermissionLauncher.launch(arrayOf(permission))
+        } catch (error: RuntimeException) {
+            // 창이 안 떴으면 결과 콜백도 안 온다 — 세워 둔 신호가 남으면 안내가 영영 못 뜬다.
+            systemPermissionPromptOpen = false
+            throw error
+        }
+    }
+
     fun requestPermission(target: PermissionTarget) {
         when (target) {
             PermissionTarget.Notifications -> {
                 if (context.shouldRequestNotificationRuntimePermission()) {
-                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                    launchRuntimePermission(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
                     context.openNotificationSettings()
                 }
@@ -207,7 +225,7 @@ internal fun AlarmTalkApp(
             PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
             PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
             PermissionTarget.RecordAudio -> {
-                runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                launchRuntimePermission(Manifest.permission.RECORD_AUDIO)
             }
         }
         permissionState.refresh()
@@ -251,7 +269,7 @@ internal fun AlarmTalkApp(
         }
         if (runtimePermission != null && isFirstRuntimeAsk(runtimePermission)) {
             initialPermissionPromptStore.markPrompted(runtimePermission)
-            runtimePermissionLauncher.launch(arrayOf(runtimePermission))
+            launchRuntimePermission(runtimePermission)
             return
         }
 
@@ -397,58 +415,91 @@ internal fun AlarmTalkApp(
         }
     }
 
-    // 웰컴 코드 안내(계정 1회, 무료 플랜 한정). 권한 게이트와 같은 레이어에 쌓이면 하나가
-    // 다른 하나를 가리므로 **권한 모달이 없을 때만** 띄운다. 권한 모달이 닫히면 이 효과가
-    // 다시 돌아 그때 뜬다. 동의·목소리 준비 화면을 다 지난 뒤라야 홈 위에서 보인다.
-    // `consentChecked` 를 반드시 함께 본다. 첫 로그인 순간엔 needsConsent 가 아직 기본값
-    // false 라, 동의 확인 응답이 오기 전에 이 효과가 먼저 돌면 프로모가 뜨면서 1회 플래그까지
-    // 태운다 — 그 뒤 응답이 와서 동의 화면이 열리면 프로모가 그 위를 덮는다(Codex #660).
-    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
-    // 즉시 true 가 되는데, 버전 응답은 아직 오지 않아 updateRequired 는 기본값 false 다.
-    // 그 틈에 프로모가 떠 1회 플래그를 태우고, 뒤늦게 응답이 와 업데이트 차단 화면이 깔리면
-    // 그 위에 다이얼로그만 남는다 — 업데이트하고 돌아와도 프로모는 이미 소진된 뒤다.
-    // 탈퇴 유예 계정도 같은 종류의 레이스다. checkAccountStatus 응답 전에는 pendingDeletion 이
-    // 기본값 false 라, 그 틈에 프로모가 떠 1회 플래그를 태우고 뒤늦게 복구 화면이 깔리면
-    // 가려진다 — 거기서 로그아웃하거나 프로세스가 죽으면 본 적도 없이 소진된다(Codex #660).
+    // 기간 한정 개인 플랜 **종료 안내** — 안내 기간 동안 **앱에 진입할 때마다** 한 번(콜드
+    // 스타트·백그라운드에서 복귀). 화면 이동으로는 다시 뜨지 않는다: 진입 번호는
+    // `AppSignals.appEntries`(프로세스 ON_START)이고, 같은 번호에서는 두 번 판정하지 않는다.
+    //
+    // ⚠ **그 진입의 새 `/auth/me` 응답이 온 뒤에만 판정한다**(`viewModel.accountEntryAnswer`).
+    //   진입마다 뷰모델이 새로 받는다(`MainViewModel` init 의 진입 구독). 저장된 세션의 promo 로
+    //   판정하면 그 사이 결제·쿠폰을 등록한 사람에게도 "곧 끝나요" 가 뜬다. 그 진입의 **첫 결과가
+    //   실패면** 그 진입은 띄우지 않는다 — 같은 진입의 뒤 성공(쿠폰·`plan_changed`·결제 신호 뒤의
+    //   갱신)으로 세션 한가운데 뜨지 않게(D11).
+    // ⚠ **소진 플래그는 아니지만 준비 신호는 똑같이 지킨다**(`docs/spec/gates-and-overlays.md`).
+    //   응답 전 기본값 `false` 는 '아니오' 가 아니다 — 그 틈에 뜨면 뒤늦게 온 차단 화면
+    //   (업데이트·동의·탈퇴 유예·교체)과 겹친다.
+    // ⚠ **다른 모달·시스템 권한 창 위에는 띄우지 않는다.** 권한 게이트·목소리 받기 화면·강등
+    //   안내·민감 동의, 그리고 창을 여는 모든 모달(`OpenModalRegistry` — 목소리 등록 창·시트·
+    //   알럿)과 시스템 권한 창(요청 중 신호 + 화면이 RESUMED 가 아님)을 기다린다. 떠 있는 동안
+    //   그중 하나가 올라오면 안내를 걷고 다시 기다린다 — 대기 중인 안내는 다른 안내를 막지 않는다.
+    //   갈래(막혔으면 걷기·열렸으면 판정)는 장부에 있다(`PersonalPromoLedger.evaluateEndNotice` —
+    //   `MainViewModel.evaluatePersonalPromoEndNotice`). 이 이펙트는 게이트를 모아 넘기기만 한다.
+    // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
+    val appEntry by com.alarmtalk.app.core.AppSignals.appEntries.collectAsStateWithLifecycle()
+    val lifecycleState = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        .currentStateFlow.collectAsState()
+    // 파생 상태로 읽는다 — 루트 컴포저블이라, 원본을 그대로 읽으면 수명주기가 한 칸 움직이거나
+    // 모달이 하나 열릴 때마다 앱 전체가 다시 그려진다. 여기서 필요한 것은 참/거짓 하나다.
+    val activityResumed by remember(lifecycleState) {
+        androidx.compose.runtime.derivedStateOf {
+            lifecycleState.value.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        }
+    }
+    val anyModalOpen by remember {
+        androidx.compose.runtime.derivedStateOf { OpenModalRegistry.openCount > 0 }
+    }
     LaunchedEffect(
+        appEntry,
         sessionRouteKey,
         viewModel.permissionGateRequest,
         viewModel.showVoiceSetup,
         viewModel.showConsentScreen,
-        viewModel.consentChecked,
         viewModel.consentStatusChecked,
         viewModel.versionChecked,
         viewModel.updateRequired,
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
-        // ⚠ **가드만 넣지 말고 키에도 넣어야** 판정이 온 뒤 효과가 다시 돈다.
         stockReplacementChecked,
         stockReplacementPending,
+        downgradeNotice,
+        viewModel.pendingSensitiveConsent,
+        viewModel.accountEntryAnswer,
+        viewModel.latestAccountPromo,
+        viewModel.personalPromoEndNotice,
+        systemPermissionPromptOpen,
+        activityResumed,
+        anyModalOpen,
     ) {
-        if (sessionRouteKey == null) return@LaunchedEffect
-        if (!viewModel.versionChecked) return@LaunchedEffect
-        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
-        if (!viewModel.accountStatusChecked) return@LaunchedEffect
-        if (viewModel.pendingDeletion) return@LaunchedEffect
-        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
-        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
-        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
-        // ⚠ **프로모는 1회성이다.** 교체 판정이 오기 전에 띄우면 소진 플래그를 태우고, 뒤늦게
-        //   온 차단 화면이 그 위를 덮어 사용자는 본 적도 없이 잃는다(2026-09-03 리뷰 22차 —
-        //   21차에 권한 효과에만 넣고 여기를 빠뜨렸다).
-        if (!stockReplacementChecked || stockReplacementPending) return@LaunchedEffect
-        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
-        if (viewModel.showVoiceSetup) return@LaunchedEffect
-        viewModel.maybeShowWelcomePromo()
+        val gates = PersonalPromoNoticeGates(
+            signedIn = sessionRouteKey != null,
+            versionChecked = viewModel.versionChecked,
+            updateRequired = viewModel.updateRequired,
+            consentUnsupported = viewModel.consentUnsupported,
+            accountStatusChecked = viewModel.accountStatusChecked,
+            pendingDeletion = viewModel.pendingDeletion,
+            consentStatusChecked = viewModel.consentStatusChecked,
+            showConsentScreen = viewModel.showConsentScreen,
+            stockReplacementChecked = stockReplacementChecked,
+            stockReplacementPending = stockReplacementPending,
+            permissionGateOpen = viewModel.permissionGateRequest != null,
+            showVoiceSetup = viewModel.showVoiceSetup,
+            // 종료 안내 자신은 세지 않는다(`IosAlertDialog` 의 `tracksAsOpenModal = false`).
+            otherModalOpen = downgradeNotice != null || viewModel.pendingSensitiveConsent != null ||
+                anyModalOpen,
+            // 같은 프레임에 먼저 돈 권한 요청이 세운 값을 놓치지 않게 **지금** 읽는다.
+            systemPermissionPromptOpen = systemPermissionPromptOpen,
+            activityResumed = activityResumed,
+        )
+        viewModel.evaluatePersonalPromoEndNotice(gates, appEntry)
     }
 
     // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
     //
-    // ⚠ 준비 신호를 위 프로모와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
+    // ⚠ 준비 신호를 첫 권한 안내와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
     // 겹쳐 뜨면 읽을 수 없다 — `docs/spec/gates-and-overlays.md`.
-    // 다만 성질은 프로모와 다르다: 이건 **소진 플래그가 아니라 대기표**라, 못 보고 지나가도
+    // 다만 성질은 소진 플래그와 다르다: 이건 **대기표**라, 못 보고 지나가도
     // 지워지지 않는다(지우는 건 '확인' 뿐). 그래서 잘못 떠서 잃을 것이 없다.
+    // 개인 플랜 종료 안내가 먼저 떠 있으면 그게 닫힌 뒤에 뜬다 — 알럿 두 장을 겹치지 않는다.
     LaunchedEffect(
         sessionRouteKey,
         viewModel.permissionGateRequest,
@@ -460,6 +511,7 @@ internal fun AlarmTalkApp(
         viewModel.consentUnsupported,
         viewModel.accountStatusChecked,
         viewModel.pendingDeletion,
+        viewModel.personalPromoEndNotice,
         alarms,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
@@ -470,6 +522,7 @@ internal fun AlarmTalkApp(
         if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
+        if (viewModel.personalPromoEndNotice != null) return@LaunchedEffect
         downgradeNotice = downgradeNoticeStore.read(authSession?.user?.id)
     }
 
@@ -564,11 +617,9 @@ internal fun AlarmTalkApp(
         // **스토어 신호가 하나 더 들어온다**: Play 가 유효한 구독을 확인해 주면 서버 스냅샷이
         // 무엇이든 잠그지 않는다(「스토어가 권위다」). 자동갱신 직후 서버 반영이 늦은 사이
         // 돈을 내는 사용자의 알람이 영구 강등되던 구멍이 이걸로 막힌다.
-        val plan = authSession?.user?.plan
-        val access = viewModel.paidVoiceAccess()
         val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
-            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, viewModel.personalPromoTierHold())
         // ⚠ **보류(ON_HOLD/PAUSED)에서는 잠그지 않는다**(2026-09-01 리뷰).
         // 서버는 회복을 위해 구독 행을 **남긴 채** `users.plan` 만 회수하므로, 판정기는
         // (의도대로) '무료' 라고 답한다 — 울림·예약은 그걸로 막으면 되고 결제가 복구되면
@@ -576,30 +627,70 @@ internal fun AlarmTalkApp(
         // `PlanChangeSyncWorker` 는 처음부터 이 조건을 함께 봤는데 전경 경로만 빠져 있었다 —
         // 그래서 앱을 한 번 열면 회복 가능한 보류가 영구 강등으로 굳었다.
         val subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse)
-        when {
-            // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `access.isDefinitelyFree()` 를
-            // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
-            // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
-            // 만료돼 있으면 그 순간 영구 강등이 걸린다.
-            authSession != null && viewModel.isDefinitelyFreePlan() && !subscriptionRowAlive ->
-                viewModel.applyFreePlanVoiceLock()
-            // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(2026-09-01 리뷰). 이 갈래가 없어서
-            // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
-            // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
-            // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
-            //
-            // ⚠ **`storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
-            // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
-            // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
-            // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
-            authSession != null &&
-                viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled ->
-                viewModel.restorePaidVoiceAlarmsIfLocked()
-            // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
-            // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
-            // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
-            // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
-            billingNotEntitled -> viewModel.refreshAppSession()
+        // 갈래의 순서·조건은 `foregroundPlanLockAction`(`ui/billing/PersonalPromoLedger.kt`)이 정한다 —
+        // 이펙트는 입력을 모아 넘기고 답대로만 움직인다(단위 테스트 `PersonalPromoLedgerTest`).
+        //
+        // ⚠ **`isDefinitelyFreePlan()` 을 써야 한다** — `paidVoiceAccess().isDefinitelyFree()` 를
+        // 직접 부르면 `storeEntitlementChecked` 가 **키 역할만 하고 실제 변환은 못 막는다**
+        // (2026-08-31 리뷰). 시작 직후 Play 조회가 아직 끝나기 전, 캐시된 서버 구독이
+        // 만료돼 있으면 그 순간 영구 강등이 걸린다.
+        //
+        // ⚠ **기간 한정 개인 플랜의 오프라인 차단 때문만인 무료는 이 진입의 답을 기다린다**
+        //   (`freePlanLockMayApply` → `WaitForEntryPlan`). 콜드 스타트·복귀 직후의 plan 은 지난
+        //   실행의 캐시라, 그 사이 다른 기기에서 쿠폰·iOS 결제·가족 합류로 원시 유료가 된 사람도
+        //   종료 시각만 지나면 여기서 잠기고 강등 안내가 적힌다 — Play 조회가 `/auth/me` 보다 먼저
+        //   끝나면 그렇게 된다. 기다리는 동안은 아무 갈래도 타지 않는다(토큰을 굴리는
+        //   `refreshAppSession()` 도 부르지 않는다 — 진입마다의 갱신이 이미 나가 있다).
+        //   답이 오면 바로 아래의 이펙트가 다시 본다.
+        //
+        // ⚠ **유료로 돌아오면 잠근 것을 되돌린다**(`Restore`, 2026-09-01 리뷰). 이 갈래가 없어서
+        // `restorePaidVoiceAlarmsIfLocked` 는 **정의만 있고 호출되지 않는 죽은 코드**였다 —
+        // 한 번 잠긴 알람은 재결제해도 영영 알람음으로 남았다(iOS 는 처음부터
+        // `applyFreePlanVoiceLockIfNeeded` 의 유료 갈래에서 복원한다).
+        // ⚠ **복원에 `storeEntitlementChecked` 를 요구하지 말 것**(2026-09-01 리뷰 2차 정정).
+        // 임자를 알 수 없는 레거시 구매만 있는 계정은 그 플래그를 **일부러 세우지 않는다** —
+        // 요구하면 서버가 유료라고 확인해 줘도 잘못 잠긴 알람이 영영 안 풀린다.
+        // 복원은 되돌릴 수 있는 방향이라 **서버가 유료로 확정한 것만으로 충분하다.**
+        //
+        // `RefreshPlan`: billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중
+        // 만료 시 refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
+        // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
+        // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
+        val action = foregroundPlanLockAction(
+            signedIn = authSession != null,
+            definitelyFree = viewModel.isDefinitelyFreePlan(),
+            subscriptionRowAlive = subscriptionRowAlive,
+            freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
+            planAnsweredEntry = viewModel.planAnsweredEntry,
+            entry = appEntry,
+            paidEntitled = viewModel.paidVoiceAccess() == PaidVoiceAccess.Entitled,
+            billingNotEntitled = billingNotEntitled,
+        )
+        when (action) {
+            ForegroundPlanLockAction.Lock -> viewModel.applyFreePlanVoiceLock()
+            ForegroundPlanLockAction.Restore -> viewModel.restorePaidVoiceAlarmsIfLocked()
+            ForegroundPlanLockAction.RefreshPlan -> viewModel.refreshAppSession()
+            ForegroundPlanLockAction.WaitForEntryPlan, ForegroundPlanLockAction.None -> Unit
+        }
+    }
+
+    // 위 이펙트가 **오프라인 차단 때문에 미뤄 둔** 무료 잠금 — 이 진입의 `/auth/me` 가 plan 에
+    // 반영되면(`planAnsweredEntry`) 그때 다시 본다. 답이 plan 을 바꾸지 않아도(여전히 `plus`)
+    // 다시 봐야 해서 따로 둔다.
+    // ⚠ **이 값을 위 이펙트의 키에 넣지 말 것.** 진입마다 바뀌는 값이라, 넣으면 위의 다른 갈래
+    //   (잠금 복원, 토큰을 굴리는 `refreshAppSession()`)까지 복귀할 때마다 다시 돈다.
+    LaunchedEffect(viewModel.planAnsweredEntry) {
+        if (
+            deferredPromoLapseLockDue(
+                signedIn = authSession != null,
+                planAnsweredEntry = viewModel.planAnsweredEntry,
+                entry = appEntry,
+                freeOnlyByPromoLapse = viewModel.isFreeOnlyByPromoLapse(),
+                definitelyFree = viewModel.isDefinitelyFreePlan(),
+                subscriptionRowAlive = hasPaidVoiceAccess(subscriptionResponse),
+            )
+        ) {
+            viewModel.applyFreePlanVoiceLock()
         }
     }
 
@@ -721,8 +812,10 @@ internal fun AlarmTalkApp(
     // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
     // 가족 알람 자격이 있으면 '누구를 깨울까요?' 시트에서 대상을 먼저 고른다.
     val alarmTargetRecipients = familyAlarmRecipients(familyGroup, authSession)
+    // 기간 한정 개인 플랜 중에는 보류 규칙이 먼저다 — 결제 보류로 남은 구독 행·그룹으로는 열지
+    // 않는다(`PersonalPromoTierHold`).
     val canCreateFamilyAlarm = authSession != null &&
-        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
+        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, viewModel.personalPromoTierHold()) &&
         alarmTargetRecipients.isNotEmpty()
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
     // 선다운로드 워커의 진행(받는 중일 때만). 목소리 탭 '기본 목소리' 헤더 옆에 뜬다.
@@ -905,8 +998,8 @@ internal fun AlarmTalkApp(
     // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
     // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
     // ⚠ **교체 게이트도 여기 들어와야 한다**(2026-09-03 리뷰 20차). 빠뜨리면 그 화면 위로
-    //   권한 모달·웰컴 프로모·민감 동의 시트가 그대로 겹쳐 뜬다 — 특히 프로모는 **1회성이라
-    //   소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
+    //   권한 모달·개인 플랜 종료 안내·민감 동의 시트가 그대로 겹쳐 뜬다 — 1회성 안내라면
+    //   **소진 플래그까지 태우고** 사용자는 본 적도 없이 잃는다(CLAUDE.md 「1회성 오버레이」).
     val blockingGateActive =
         viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion ||
             stockReplacementPending
@@ -933,29 +1026,46 @@ internal fun AlarmTalkApp(
         )
     }
 
-    if (viewModel.showWelcomePromo && !blockingGateActive) {
-        // 다이얼로그가 닫히면 함께 사라지는 로컬 상태다 — 뷰모델에 실패 전용 상태를 만들 이유가 없다.
-        var promoError by remember { mutableStateOf<String?>(null) }
-        WelcomePromoDialog(
-            busy = billingBusy,
-            // **성공했을 때만 닫는다.** 예전에는 결과를 기다리지 않고 즉시 닫았는데, 이 안내는
-            // 계정당 1회라 오타·만료·네트워크 실패면 스낵바 한 줄만 보고 다시 열 방법이
-            // 없었다(Codex #660). 실패는 다이얼로그 안에 인라인으로 보여 주고 열어 둔다.
-            errorText = promoError,
-            onSubmitCode = { code ->
-                promoError = null
-                viewModel.registerCode(code) { error ->
-                    if (error == null) viewModel.dismissWelcomePromo() else promoError = error
-                }
-            },
-            onDismiss = viewModel::dismissWelcomePromo,
-            onOpenInstagram = {
-                // 코드를 어디서 받는지 알려주는 자리. 앱 안에 코드를 박아 두지 않는다
-                // (레포가 공개라 실코드가 소스에 들어가면 안 된다).
-                viewModel.message = context.getString(R.string.welcome_promo_instagram_hint)
-                context.openWebUrl("https://instagram.com/alarmtalk.app")
-            },
-        )
+    // 기간 한정 개인 플랜 종료 안내. 날짜는 전부 서버 값(`ends_at`)을 기기 시간대·로케일로 그린다 —
+    // "…까지" 는 `ends_at − 1초` 의 날, "…부터" 는 그 **다음 날**(`ui/billing/PersonalPromo.kt`).
+    // 버튼 둘은 가로로 놓인다(`IosAlertDialog` 규칙). '확인' 이 주 액션이고, 바깥 탭·뒤로가기도
+    // '확인' 과 같다 — 다음 진입에 다시 뜬다. 멈추는 것은 '다시 보지 않기' 뿐이다.
+    viewModel.personalPromoEndNotice?.takeIf { !blockingGateActive }?.let { promo ->
+        val zone = java.time.ZoneId.systemDefault()
+        val locale = LocalConfiguration.current.locales[0] ?: java.util.Locale.getDefault()
+        val lastDay = personalPromoLastDay(promo, zone)
+        val freeFrom = personalPromoFreeFromDay(promo, zone)
+        if (lastDay != null && freeFrom != null) {
+            // 종료 전환 대상이 아닌 계정(결제 보류로 활성 구독 행이 남은 계정 등)에게는 목소리
+            // 삭제를 말하지 않는다 — 서버가 `deletes_voices_at_end: false` 로 알려 준다.
+            val messageRes = if (personalPromoDeletesVoicesAtEnd(promo)) {
+                R.string.personal_promo_end_notice_message
+            } else {
+                R.string.personal_promo_end_notice_message_keep_voices
+            }
+            IosAlertDialog(
+                title = stringResource(R.string.personal_promo_end_notice_title),
+                message = stringResource(
+                    messageRes,
+                    formatPersonalPromoDay(lastDay, locale),
+                    formatPersonalPromoDay(freeFrom, locale),
+                ),
+                // 자기를 '다른 모달' 로 세면 떠 있는 자기 때문에 스스로 걷힌다.
+                tracksAsOpenModal = false,
+                onDismiss = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = false) },
+                actions = listOf(
+                    IosAlertAction(
+                        label = stringResource(R.string.personal_promo_end_notice_dont_show_again),
+                        onClick = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = true) },
+                    ),
+                    IosAlertAction(
+                        label = stringResource(R.string.auth_confirm),
+                        emphasized = true,
+                        onClick = { viewModel.dismissPersonalPromoEndNotice(dontShowAgain = false) },
+                    ),
+                ),
+            )
+        }
     }
 
     // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
@@ -1409,6 +1519,8 @@ internal fun AlarmTalkApp(
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
                           storeEntitledNow = viewModel.isStoreEntitledNow(),
+                          personalPromoTierHold = viewModel.personalPromoTierHold(),
+                          planScreenPersonalPromo = viewModel.planScreenPersonalPromo(),
                       )
                   }
               }

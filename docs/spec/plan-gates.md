@@ -24,6 +24,16 @@ freeVoiceTier = 로그인함 && !유료
 
 판정은 **세 갈래 열거형**으로 한다 — 불리언 하나로 세 상태를 표현할 수 없다.
 
+⚠ **기간 한정 개인 플랜 동안에는 원시 무료 계정도 '로그인 + 유료'(개인)다**
+([`billing-lifecycle.md`](billing-lifecycle.md) 「기간 한정 개인 플랜」). 서버가 `plan` 을
+계산값(`plus`)으로 주므로 앱은 **그대로 소비**한다. 기기 시계를 보는 예외는 하나뿐이다 —
+**끝 전에 받아 둔 낡은 캐시**가 끝을 넘기면 무료로 읽는다(같은 절의 D1: 끝 뒤에 받은 답은
+그대로 권위이고, 살아 있는 구독 행이 언제나 이긴다. '받은 시각' 은 서버가 계산한 시각
+`computed_at` 이 우선이고(D7), 받은 시각이 아예 없는 캐시는 끝 전의 답으로 본다). 기간 중에는
+보류 규칙도 그대로다 — 남은 구독 행·가족 그룹이 커플·가족을 열지 못한다(D9). '로그인 + 무료'
+갈래는 지우지 않는다:
+기간이 끝나면 같은 계정이 곧바로 그 갈래로 돌아온다.
+
 ### 유료가 닿던 길은 **막혔다** — 갈래는 방어값으로 남긴다
 
 ⚠ **2026-09-02 정정.** 그전에는 여기에 「유료가 게이트에 닿는 길은 실재한다 — 기본
@@ -72,10 +82,18 @@ freeVoiceTier = 로그인함 && !유료
 - 소비는 두 규칙뿐이다: **모르면 잠그지 않는다**(표시·울림·저장) /
   **확실히 무료일 때만**(되돌릴 수 없는 잠금·강등).
 
-⚠ **쿠폰 종류에 따라 유료가 되는 방식이 다르다.**
+**쿠폰은 종류와 무관하게 구독 행을 만든다**(2026-09-27 정정 — 예전 문장은 코드와 달랐다).
 - **이용권 코드(INV-/GIFT-)** → `subscriptions` 행을 만들고 `users.plan` 도 올린다 →
   유료 판정 통과
-- **프로모 코드** → `promo_code_redemptions` 만 남긴다 → 그것만으로는 유료가 **아니다**
+- **프로모 코드** → 사용 기록(`promo_code_redemptions`)을 원자적으로 남긴 뒤 **같은 방식으로**
+  `subscriptions` 행과 `users.plan` 을 만든다(`createNewSubscriptionForPlan`) → 유료 판정 통과.
+  예전에는 "기록만 남고 유료가 아니다" 라고 적혀 있었는데 `promo-redemption.ts` 는 처음부터
+  구독을 만들었다.
+- 둘 다 **활성 유료 구독이 이미 있으면 거절**한다(프로모는 `ACTIVE_SUBSCRIPTION_EXISTS`) —
+  쿠폰이 남은 유료 기간을 취소·대체해 날리지 않게.
+- ⚠ **기간 한정 개인 플랜은 구독이 아니다.** 원시 무료 계정은 기간 중에도 쿠폰을 그대로
+  등록할 수 있다(그 검사는 원시 구독 행만 본다). 등록한 쿠폰 구독은 자기 `expires_at` 대로
+  가고, 기간과 겹치는 날은 그냥 소진된다.
 
 ## 구현 지도
 
@@ -84,8 +102,9 @@ freeVoiceTier = 로그인함 && !유료
 | 세 상태 열거 | `VoiceGateReason` (`ui/editor/AlarmEditorScreen.kt`) | `PlanAccess` (`Views/Editor/AlarmEditorSheet.swift`) | — |
 | 게이트 표시 | `PlanGateDialog` (`ui/components/PlanGateDialog.kt`) | `showVoicePlanLockedAlert` (`AlarmEditorSheet.swift`) | — |
 | 유료 판정 — **유일 출처** | `resolvePaidVoiceAccess` (`ui/util/PlatformAndLabelUtils.kt`) | `PaidVoiceGate.resolve` | `isPaidVoicePlan` |
-| 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다) | — |
-| 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` | — |
+| 판정 소비 — 표시·게이트 | `MainViewModel.isPaidVoiceEntitledOptimistic` · 커플·가족은 `hasCoupleOrFamilyAccess`(기간 한정 개인 플랜 중 보류 규칙 `MainViewModel.personalPromoTierHold` — `billing-lifecycle.md` D9) | `PlanTier.bestKnown`(보류면 남은 행으로 등급을 올리지 않는다 — 기간 중에는 `bestKnown(user:)`) · 그룹으로 여는 자리는 `PlanTier.personalPromoHoldActive`(D9) | — |
+| 판정 소비 — 되돌릴 수 없는 잠금 | `MainViewModel.isDefinitelyFreePlan` · 갈래 `foregroundPlanLockAction` · 낡은 프로모 갈래는 이번 진입의 plan 반영 뒤에만(`freePlanLockMayApply` → `WaitForEntryPlan`, 재확인 `deferredPromoLapseLockDue` — `billing-lifecycle.md` D12) | `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` · 낡은 프로모 갈래는 이번 진입의 plan 반영 뒤에만(`PaidVoiceGate.freePlanLockMayApply`·`isFreeOnlyByPromoLapse`, `AuthViewModel.planAnsweredEntry`, 재확인 `promoLapseLockWaitKey` — D12) | — |
+| 기간 한정 개인 플랜 — 낡은 캐시만 무료로(D1·D7: 받은 시각 = `computed_at`, 없으면 끝 전의 답) | `personalPromoLapsed`·`planAnswerStampMillis`(`ui/billing/PersonalPromo.kt`) | `PersonalPromo.isStale`·`PersonalPromo.fetchedAt` | `personalPromoField` 의 `computed_at` |
 | 쿠폰 등록 | `CodeRedeemField` → `POST /api/code/register` | 같은 라우트 | `routes/code.ts` → `voucher-redemption.ts` / `promo-redemption.ts` |
 | 구독 조회 | `subscriptionResponse` | `socialFeatures.subscription` | `routes/billing-query.ts` |
 
@@ -96,24 +115,27 @@ freeVoiceTier = 로그인함 && !유료
 - **알람 권한** 게이트는 이것과 별개다(무료·유료 무관) → `CLAUDE.md` 「알람 권한 3종」
 
 
-## 웰컴 코드 안내는 **바텀시트**다 (2026-08-18 결정)
+## 웰컴 코드 안내 — **폐지** (2026-09-27)
 
-첫 진입 + 무료 등급에게 **계정당 1회** 뜨는 코드 안내(`WelcomePromoSheet` /
-`WelcomePromoDialog.kt`)는 **양 앱 모두 바텀시트**다.
+첫 진입 + 무료 등급에게 계정당 1회 뜨던 코드 안내 시트(2026-08-18 결정, 양 앱 바텀시트)는
+**지웠다.** 기간 한정 개인 플랜([`billing-lifecycle.md`](billing-lifecycle.md))이 같은 자리를
+대신하고, 운영 중이던 웰컴 그룹 코드(`redemption_group = 'welcome'`)는 마이그레이션 121 로
+비활성화했다(이력 보존 — `DELETE` 하지 않는다). 서버의 웰컴 전용 이름 폴백도 지웠다 — 그룹당
+1회 규칙은 `redemption_group` 컬럼 하나로 모든 그룹에 똑같이 걸린다.
 
-⚠ **알럿(가운데 뜨는 카드)으로 되돌리지 말 것.** 세 가지가 알럿과 맞지 않는다:
-1. **닫아도 되는 안내**다. 알럿은 "지금 답하라" 는 무게이고, 시트는 쓸어내려 닫는 게
-   표준이라 성격이 맞는다.
-2. 액션이 **셋**이라 알럿에서는 구분선으로 똑같이 쌓여 **주행동('등록')이 묻힌다**
-   (실기기 캡처로 확인).
-3. **실패 사유를 그 안에 보여야 한다** — 계정당 1회라 실패하면 고쳐 넣을 기회가 끝난다.
-   시스템 알럿에는 그 자리가 없어서, 예전에는 알럿을 **흉내 낸 자체 카드**를 썼다.
+⚠ **되살릴 때 옛 소진 플래그(`promo_prompted_*`)를 재사용하지 말 것.** 기존 계정은 이미
+`true` 라 새 안내가 영영 뜨지 않는다.
 
-**배치**: 보조 액션 둘(`닫기` 좌 · `코드 받기` 우)은 **상단바**, 주행동(`등록`)만 본문 아래
-채움 버튼. 운세 정보 입력 시트와 같은 골격이다(iOS `NavigationStack`+toolbar,
-안드로이드 `WakerFormSheet`).
-⚠ 툴바 액션은 **짧아야** 한다 — '코드 받으러 가기' 를 그대로 쓰면 제목을 밀어내 셋이 한
-줄에서 다툰다(실기기 확인). 그래서 `코드 받기`(`welcome_promo_where_short`)를 쓴다.
+**쿠폰 입력은 그대로 남는다** — 전부 `POST /api/code/register` 한 라우트로 간다:
 
-회귀 테스트: iOS `PromoKeyboardUITests` — 시트에 입력이 있으면 키보드가 가릴 수 있어서,
-키보드가 올라온 뒤에도 입력창과 '등록' 이 닿는지 확인한다.
+| 입구 | Android | iOS |
+| --- | --- | --- |
+| 더보기(가족·연결 화면)의 코드 등록 | `FamilyConnectionPanel` 의 `CodeRedeemField` | `PeoplePanel` 의 `CodeRegisterRow` |
+| 이용권 게이트의 '쿠폰이 있어요'(§2 — 로그인 + 무료에서만) | `PlanGateDialog` | `AlarmEditorSheet`·`VoiceProfileManagementPanel` → `RedeemCodeSheet` |
+
+그룹당 1회 규칙(`CODE_GROUP_ALREADY_REDEEMED`)과 다른 쿠폰 에러 코드는 계약이라 이름을
+바꾸거나 지우지 않는다(`error-codes.md`). 꺼진 웰컴 코드를 넣으면 `CODE_INACTIVE` 다.
+⚠ **웰컴 그룹은 켜져 있어도 런타임이 `CODE_INACTIVE` 로 막는다**(`PROMO_WELCOME_REDEMPTION_GROUP`,
+`lib/promo-redemption.ts`). 배포가 마이그레이션보다 먼저 돌아 #121 이 끄기 전의 창(과 #121 이 실패한
+채 새 워커가 떠 있는 동안)에도 웰컴 코드로 유료 이용권이 나가지 않게 한다. 새로 발급한 웰컴 그룹
+코드도 같다 — 행사 코드는 다른 그룹명으로 발급한다.

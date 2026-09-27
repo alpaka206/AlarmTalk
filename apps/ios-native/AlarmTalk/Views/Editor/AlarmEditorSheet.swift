@@ -1785,15 +1785,22 @@ struct AlarmEditorSheet: View {
         freeVoiceTier || voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
+    /// 상대 알람을 보낼 수 없는가 — 가족 그룹도, 커플·가족 등급도 없다.
+    ///
+    /// ⚠ 기간 한정 개인 플랜 중에는 보류 규칙이 먼저다(스펙 D9, `PlanTier.personalPromoHoldActive`):
+    /// 결제 보류로 남은 그룹만으로는 열지 않는다 — 서버는 보낸 알람을 원시값으로 막는다.
+    /// 안드로이드 `hasCoupleOrFamilyAccess` 의 `promoHold` 갈래와 같은 답이다.
     var familyAlarmLocked: Bool {
-        socialFeatures.familyGroup?.group == nil && !currentPlan.meetsOrExceeds(.couple)
+        let groupUnlocks = socialFeatures.familyGroup?.group != nil
+            && !PlanTier.personalPromoHoldActive(user: auth.session?.user)
+        return !groupUnlocks && !currentPlan.meetsOrExceeds(.couple)
     }
 
     var currentPlan: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
+            user: auth.session?.user
         )
     }
 

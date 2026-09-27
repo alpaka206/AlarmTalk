@@ -256,9 +256,10 @@ async function sendSilentSignals(
   db: Client,
   env: SignalPushEnv,
   signals: readonly SilentSignal[],
+  /** 메시지 수 상한(만든 순서대로 자른다) — `sendBillingStateSignals` 의 `maxMessages` 와 같다. */
+  maxMessages?: number,
 ): Promise<FcmSendResult[]> {
-  const fcmMessages: FcmMessage[] = [];
-  const apnsMessages: ApnsMessage[] = [];
+  const outbox = new PushOutbox();
   const targetsOf = await getPushTargetsForUsers(
     db,
     signals.map((signal) => signal.userId),
@@ -266,7 +267,7 @@ async function sendSilentSignals(
   for (const signal of signals) {
     for (const target of targetsOf.get(signal.userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({
+        outbox.apns({
           token: target.token,
           title: '',
           body: '',
@@ -274,10 +275,11 @@ async function sendSilentSignals(
           silent: true,
         });
       } else {
-        fcmMessages.push({ token: target.token, title: '', body: '', data: signal.data });
+        outbox.fcm({ token: target.token, title: '', body: '', data: signal.data });
       }
     }
   }
+  const { fcmMessages, apnsMessages } = outbox.take(maxMessages);
 
   let results: FcmSendResult[] = [];
   if (fcmMessages.length > 0) {
@@ -445,8 +447,11 @@ export async function notifyDowngradedAlarms(
    * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
    */
   voiceAccessRevokedUserIds: string[] = [],
-  /** 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. */
-  options: { replacedVoiceProfileId?: string; replacedGeneration?: string } = {},
+  /**
+   * 제자리 교체일 때만 — `buildDowngradeSignals` 주석 참조. `maxMessages` 는 메시지 수 상한
+   * (기간 한정 개인 플랜 종료 스윕이 서브리퀘스트 예산 안에 머물게 준다).
+   */
+  options: { replacedVoiceProfileId?: string; replacedGeneration?: string; maxMessages?: number } = {},
 ): Promise<void> {
   if (!env) return;
   if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
@@ -455,7 +460,7 @@ export async function notifyDowngradedAlarms(
   const signals = buildDowngradeSignals(targets, voiceAccessRevokedUserIds, options);
   if (signals.length === 0) return;
   try {
-    await sendSilentSignals(db, env, signals);
+    await sendSilentSignals(db, env, signals, options.maxMessages);
   } catch (err) {
     // 삼켜도 되는 이유: 즉시성만 잃는다. 정확성은 하루 주기 재확인과 앱 시작 재조회가 맡는다.
     logStructured('error', {
@@ -583,6 +588,63 @@ export async function sendPaymentFailedPush(
   }
 }
 
+const VOICE_DELETION_WARNING_TITLE = '목소리가 곧 삭제돼요';
+
+/** 이용권이 끝나 보관 유예가 걸렸을 때의 본문 — 기한은 '지금부터 n일' 이다. */
+function voiceDeletionWarningBody(retentionDays: number): string {
+  return (
+    `이용권이 끝나 목소리를 ${retentionDays}일간만 보관해요. ` +
+    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
+  );
+}
+
+/**
+ * **기간 한정 개인 플랜이 끝나** 보관 유예가 걸렸을 때의 본문(`lib/personal-promo-end.ts`).
+ *
+ * 기본 문구("이용권이 끝나 … n일간만 보관")를 쓰지 않는 이유 둘:
+ * - 이 사람들은 **이용권을 산 적이 없다** — "다시 등록하면" 은 틀린 말이다.
+ * - 기한이 '지금부터 3일' 이 아니라 **정해진 시각**(`delete_after` — 끝 + 3일, 그 하루 안쪽이나
+ *   뒤에 전환된 사람은 전환 + 24시간 — D16)이다. 전환이 끝 하루 뒤에 닿은 사람에게 "3일간" 이라고
+ *   하면 실제보다 길게 말한다.
+ *
+ * 시각은 한국 시간(문구가 한국어라 기기 시간대를 알 수 없다)으로, **정시 단위**로 적는다 —
+ * 전환이 `delete_after` 를 정시로 올려 잡으므로 적힌 시각이 곧 삭제 시작 시각이다.
+ */
+export function personalPromoEndWarningBody(deleteAfter: Date, now: Date = new Date()): string {
+  // 기한이 한 시간도 안 남았으면 시각을 적지 않는다 — 몇 분 뒤를 "…까지 보관" 이라고 쓰면 틀린
+  // 약속이 된다. (종료 전환의 기한은 언제나 전환 + 24시간 이상이라(스펙 D16 — `promoEndDeleteAfter`)
+  // 그 경로에서는 오지 않는 갈래다. 방어로만 둔다.)
+  if (deleteAfter.getTime() - now.getTime() < 60 * 60 * 1000) {
+    return (
+      '기간 한정 개인 플랜이 끝나 목소리가 곧 영구 삭제돼요. ' +
+      '삭제 전에 이용권을 시작하면 그대로 쓸 수 있어요.'
+    );
+  }
+  return (
+    `기간 한정 개인 플랜이 끝나 목소리를 ${formatKstHour(deleteAfter)}까지만 보관해요. ` +
+    '그 전에 이용권을 시작하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.'
+  );
+}
+
+/**
+ * `11월 3일 오후 2시` — 한국 시간(UTC+9, 서머타임 없음). 분은 버린다.
+ *
+ * ⚠ **자정은 그 전날의 `밤 12시` 로 적는다**(`11월 3일 밤 12시`). 종료 전환의 기한(끝 + 3일)이
+ * 한국 시간 자정이라 거의 모든 예고가 이 갈래다 — "11월 4일 오전 12시" 는 낮 12시로 읽히기
+ * 쉽고, 그렇게 읽으면 실제보다 12시간 길게 보관한다고 믿게 된다(되돌릴 수 없는 쪽으로 틀린다).
+ */
+export function formatKstHour(at: Date): string {
+  const kst = new Date(at.getTime() + 9 * 60 * 60 * 1000);
+  const hour = kst.getUTCHours();
+  if (hour === 0) {
+    const previousDay = new Date(kst.getTime() - 24 * 60 * 60 * 1000);
+    return `${previousDay.getUTCMonth() + 1}월 ${previousDay.getUTCDate()}일 밤 12시`;
+  }
+  const period = hour < 12 ? '오전' : '오후';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${period} ${hour12}시`;
+}
+
 /**
  * **목소리가 곧 영구 삭제된다고 알린다.** 유료 접근을 잃어 보관 유예가 걸린 순간 보낸다.
  *
@@ -611,10 +673,8 @@ export async function sendVoiceDeletionWarningPush(
 ): Promise<void> {
   const fcmMessages: FcmMessage[] = [];
   const apnsMessages: ApnsMessage[] = [];
-  const title = '목소리가 곧 삭제돼요';
-  const body =
-    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
-    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
+  const title = VOICE_DELETION_WARNING_TITLE;
+  const body = voiceDeletionWarningBody(params.retentionDays);
 
   const recipients = Array.from(new Set(params.userPks)).filter(Boolean);
   const targetsOf = await getPushTargetsForUsers(db, recipients);
@@ -670,6 +730,40 @@ export async function sendVoiceDeletionWarningPush(
  * - **보이는 예고를 먼저** 싣는다. 한도에 걸려 뒤가 잘려도, 되돌릴 수 없는 삭제를 알리는
  *   유일한 표시가 먼저 나간다(무음 신호는 앱을 열면 재조회로 따라잡는다).
  */
+/**
+ * 플랫폼별 메시지를 **만든 순서 그대로** 모았다가, 상한이 있으면 그 순서로 앞에서부터 자른다.
+ * FCM·APNs 를 따로 모으면 '앞의 N 통' 이 어느 쪽인지 잃어버린다 — 예고(보이는 것)를 먼저 만들므로
+ * 자를 때도 예고가 남아야 한다.
+ */
+class PushOutbox {
+  private readonly order: Array<'fcm' | 'apns'> = [];
+  private readonly fcmList: FcmMessage[] = [];
+  private readonly apnsList: ApnsMessage[] = [];
+
+  fcm(message: FcmMessage): void {
+    this.order.push('fcm');
+    this.fcmList.push(message);
+  }
+
+  apns(message: ApnsMessage): void {
+    this.order.push('apns');
+    this.apnsList.push(message);
+  }
+
+  take(maxMessages?: number): { fcmMessages: FcmMessage[]; apnsMessages: ApnsMessage[] } {
+    if (maxMessages === undefined || this.order.length <= maxMessages) {
+      return { fcmMessages: this.fcmList, apnsMessages: this.apnsList };
+    }
+    let fcmCount = 0;
+    let apnsCount = 0;
+    for (const kind of this.order.slice(0, Math.max(0, maxMessages))) {
+      if (kind === 'fcm') fcmCount += 1;
+      else apnsCount += 1;
+    }
+    return { fcmMessages: this.fcmList.slice(0, fcmCount), apnsMessages: this.apnsList.slice(0, apnsCount) };
+  }
+}
+
 export async function sendBillingStateSignals(
   db: Client,
   env: SignalPushEnv,
@@ -677,6 +771,17 @@ export async function sendBillingStateSignals(
     planChangedUserIds: readonly string[];
     deletionWarningUserPks: readonly string[];
     retentionDays: number;
+    /**
+     * 사람마다 **다른 본문**이 필요할 때만 — 기간 한정 개인 플랜 종료 전환은 이용권이 끝난 것이
+     * 아니고 기한도 고정 시각이라 [personalPromoEndWarningBody] 를 넘긴다. 없으면 기본 문구.
+     */
+    warningBodyFor?: (userPk: string) => string;
+    /**
+     * 이 호출이 보낼 메시지 수의 상한 — **만든 순서대로** 자른다(보이는 예고가 먼저, 무음 신호가 뒤).
+     * 크론 한 회차가 워커 서브리퀘스트 예산을 넘지 않게 부르는 쪽이 준다(기간 한정 개인 플랜 종료 전환).
+     * 잘린 기기는 다음 진입의 `/auth/me` 로 따라잡는다. 없으면 자르지 않는다.
+     */
+    maxMessages?: number;
   },
 ): Promise<void> {
   const signal = new Set(params.planChangedUserIds.filter(Boolean));
@@ -685,26 +790,33 @@ export async function sendBillingStateSignals(
   if (recipients.length === 0) return;
   const targetsOf = await getPushTargetsForUsers(db, recipients);
 
-  const title = '목소리가 곧 삭제돼요';
-  const body =
-    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
-    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
-  const fcmMessages: FcmMessage[] = [];
-  const apnsMessages: ApnsMessage[] = [];
-  // 1) 보이는 예고 먼저.
+  const title = VOICE_DELETION_WARNING_TITLE;
+  const defaultBody = voiceDeletionWarningBody(params.retentionDays);
+  const outbox = new PushOutbox();
+  // 1) 보이는 예고 **전부** 먼저. ⚠ 안드로이드의 무음 짝을 예고 바로 뒤에 넣지 말 것(Codex #803) —
+  //    `maxMessages` 로 자를 때 앞부분의 절반이 무음이 되어, 예산 안에 다 들어갈 예고도 뒤 기기는
+  //    못 받는다. 되돌릴 수 없는 삭제를 알리는 것은 예고이고, 재조회는 다음 진입의 `/auth/me` 가 맡는다.
   for (const userId of warned) {
+    const body = params.warningBodyFor?.(userId) ?? defaultBody;
     for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+        outbox.apns({ token: target.token, title, body, data: { type: 'plan_changed' } });
       } else {
-        fcmMessages.push({
+        outbox.fcm({
           token: target.token,
           title,
           body,
           data: { type: 'voice_deletion_warning', channelId: SOCIAL_CHANNEL_ID },
         });
-        // 워커 기동용 — title/body 가 비어야 onMessageReceived 가 온다. 이게 곧 재조회 신호다.
-        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+      }
+    }
+  }
+  // 1b) 안드로이드 예고 대상의 워커 기동용 짝 — title/body 가 비어야 onMessageReceived 가 온다.
+  //     이게 곧 재조회 신호다.
+  for (const userId of warned) {
+    for (const target of targetsOf.get(userId) ?? []) {
+      if (target.platform !== 'ios') {
+        outbox.fcm({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
       }
     }
   }
@@ -712,7 +824,7 @@ export async function sendBillingStateSignals(
   for (const userId of signal) {
     for (const target of targetsOf.get(userId) ?? []) {
       if (target.platform === 'ios') {
-        apnsMessages.push({
+        outbox.apns({
           token: target.token,
           title: '',
           body: '',
@@ -720,10 +832,11 @@ export async function sendBillingStateSignals(
           silent: true,
         });
       } else if (!warned.has(userId)) {
-        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+        outbox.fcm({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
       }
     }
   }
+  const { fcmMessages, apnsMessages } = outbox.take(params.maxMessages);
 
   if (fcmMessages.length > 0) {
     await pruneStaleTokens(db, await sendPushNotifications(fcmMessages, env));

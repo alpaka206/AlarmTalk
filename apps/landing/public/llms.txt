@@ -4,8 +4,8 @@
 > 목소리, 앱이 기본으로 제공하는 목소리 중에서 고르고, 무슨 말을 할지도 정할 수 있다.
 > 흔들기·계산·사진 같은 강제 기상 미션은 없다.
 
-한국어가 기본 언어이며 영어·일본어를 지원한다. Android 는 Google Play 에 출시되어 있고,
-iOS 는 App Store 심사 중이다(홈의 App Store 버튼은 스토어 페이지로 연결되며, 게재 승인 뒤 받을 수 있다).
+한국어가 기본 언어이며 영어·일본어를 지원한다. Android 는 Google Play 에, iOS 는 App Store 에
+출시되어 있다(두 스토어 모두 홈의 배지에서 바로 받을 수 있다).
 
 ## 이 앱이 다른 알람 앱과 다른 점
 
@@ -55,7 +55,7 @@ iOS 는 App Store 심사 중이다(홈의 App Store 버튼은 스토어 페이�
 
 - 홈: https://alarm-talk.com/
 - Google Play: https://play.google.com/store/apps/details?id=com.alarmtalk.app
-- App Store: https://apps.apple.com/app/id6799711245 (심사 중 — 게재 승인 뒤 다운로드 가능)
+- App Store: https://apps.apple.com/app/id6799711245
 - 이벤트 목록: https://alarm-talk.com/event/ (1: 응원 메시지 https://alarm-talk.com/event/1/)
 - 요금: https://alarm-talk.com/pricing/
 - 자주 묻는 질문: https://alarm-talk.com/faq/

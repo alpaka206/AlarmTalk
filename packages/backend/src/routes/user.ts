@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser, type DowngradedAlarm } from '../lib/paid-voice-cleanup';
 import { notifyDowngradedAlarms } from '../lib/fcm';
@@ -288,7 +289,7 @@ user.delete('/me', async (c) => {
       if (userPk) {
         await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
       }
-      return purgeUserAccount(tx, userPk, userLoginId);
+      return purgeUserAccount(tx, userPk, userLoginId, personalPromoCoversFree(c.env));
     });
 
     // 내 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull 신호로

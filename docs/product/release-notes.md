@@ -21,11 +21,54 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
-## 1.2.9 (versionCode 29)
+## 1.2.10 (versionCode 30 / iOS 빌드 7)
 
-#788(+#790·#791). 마이그레이션은 없다. 사용자에게 보이는 것: 잠금 화면 울림 화면, 첫 알람 직후의
-'알람이 없어요', 날씨 테마 저장 대기, 날씨 조건을 반쪽만 받았을 때의 오재생. iOS 는 이 회차를
-스토어에 올리지 않는다(1.2.8 심사 중) — 문안은 Play 용이다.
+#801·#802·#803(+#795~#800). 마이그레이션 #121(웰컴 그룹 코드 끄기)·#122(`voice_profiles.voice_energy`).
+
+**두 스토어의 문안이 같다** — 이번 회차의 사용자 변화는 두 앱에 똑같이 들어갔다. 기간 한정 개인
+플랜 줄은 서버 스위치(`PERSONAL_PROMO_STARTS_AT`)가 켜져 있을 때만 보이므로 "무료로 쓸 수 있을 때"
+로 조건을 적는다(스위치는 iOS 1.2.10 게재 뒤에 켠다 — `billing-lifecycle.md` 「운영」).
+
+### ko-KR
+
+```
+• 목소리를 등록할 때 '목소리 느낌'(자동·경쾌·차분)을 고를 수 있습니다. 알람 문구의 말투와 톤을 그 느낌에 맞춥니다.
+• 등록한 목소리로 만드는 알람 문구가 사람이 말하듯 더 자연스러워졌습니다.
+• 기간 한정으로 개인 플랜을 무료로 쓸 수 있을 때, 이용권 화면에 이용 기간을 보여 주고 끝나기 1주 전부터 알려 드립니다.
+• 처음 실행할 때 뜨던 코드 안내 창을 없앴습니다. 코드는 더보기에서 그대로 등록할 수 있습니다.
+```
+
+### en-US
+
+```
+• When registering a voice, you can now choose its Voice feel (Auto, Lively, Calm). Alarm lines match that feel in wording and tone.
+• Alarm lines made with your registered voice now sound more natural, like a person talking.
+• When the Personal plan is free for a limited time, the plan screen shows how long it lasts, with a reminder a week before it ends.
+• Removed the code prompt on first launch. You can still register codes from More.
+```
+
+### ja-JP
+
+```
+• 声を登録するときに「声の雰囲気」(自動・明るい・落ち着いた)を選べるようになりました。アラーム文言の話し方とトーンをその雰囲気に合わせます。
+• 登録した声で作るアラーム文言が、人が話すようにより自然になりました。
+• パーソナルプランを期間限定で無料で使えるとき、プラン画面に利用期間を表示し、終了の1週間前からお知らせします。
+• 初回起動時に表示されていたコード案内を削除しました。コードは「その他」から引き続き登録できます。
+```
+
+## 1.2.9 (versionCode 29 / iOS 빌드 6)
+
+#788(+#790·#791). 마이그레이션은 없다.
+
+**두 스토어의 문안이 다르다.** 이 회차의 수정은 플랫폼마다 걸친 자리가 달라서다 — 잠금 화면
+울림 화면과 '알람이 없어요' 는 안드로이드 전용이고(iOS 는 울림 화면을 AlarmKit 이 그린다),
+백그라운드 사이클 복구와 매니페스트 경합은 iOS 전용이다. 날씨 두 건만 공통이다.
+아래 첫 세 블록이 Play, 뒤 세 블록이 App Store 용이다.
+
+### Play (Android 29, 2026-09-22 게재)
+
+사용자에게 보이는 것: 잠금 화면 울림 화면, 첫 알람 직후의 '알람이 없어요', 날씨 테마 저장
+대기, 날씨 조건을 반쪽만 받았을 때의 오재생.
 
 ### ko-KR
 
@@ -52,6 +95,39 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 • 最初のアラームを作成した直後に「アラームがありません」と表示される問題を修正しました。
 • 通信が遅いときに天気テーマのアラーム保存に時間がかかる問題を修正しました。天気は後から取得します。
 • 天気情報の一部しか受け取れなかったときに誤った天気で保存される問題を修正しました。
+```
+
+### App Store (iOS 1.2.9 빌드 6, 2026-09-23 심사 제출)
+
+1.2.8 이 2026-09-22 에 게재된 뒤 올린 첫 회차다. iOS 에서만 보이는 것: 배달되자마자 죽어
+있던 백그라운드 사이클(로그인 갱신·알람/목소리 동기화, `BGTaskScheduler` 핸들러 격리 —
+CLAUDE.md 「시스템이 큐를 정하는 콜백에…」)과 목소리 등록 직후의 매니페스트 경합(#791).
+
+### ko-KR
+
+```
+• 앱을 한동안 열지 않아도 로그인 상태와 목소리·알람 동기화가 백그라운드에서 계속 이어지도록 고쳤습니다.
+• 인터넷이 느릴 때 날씨 테마 알람 저장이 오래 걸리던 것을 고쳤습니다. 날씨는 뒤에서 이어서 받습니다.
+• 날씨 정보를 일부만 받았을 때 엉뚱한 날씨로 저장되던 문제를 고쳤습니다.
+• 목소리를 등록한 직후 최신 문구 목록을 놓치던 문제를 고쳤습니다.
+```
+
+### en-US
+
+```
+• Background sync now keeps your sign-in, voices, and alarms up to date even if you do not open the app for a while.
+• Saving a weather-themed alarm no longer stalls on a slow connection; the forecast is fetched in the background.
+• Fixed alarms being saved with the wrong weather when only part of the forecast was received.
+• Fixed the newest message list being missed right after you register a voice.
+```
+
+### ja-JP
+
+```
+• アプリをしばらく開かなくても、ログイン状態と声・アラームの同期がバックグラウンドで続くように修正しました。
+• 通信が遅いときに天気テーマのアラーム保存に時間がかかる問題を修正しました。天気は後から取得します。
+• 天気情報の一部しか受け取れなかったときに誤った天気で保存される問題を修正しました。
+• 声を登録した直後に最新のメッセージ一覧を取得できないことがある問題を修正しました。
 ```
 
 ## 1.2.8 (versionCode 28)

@@ -107,8 +107,8 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
     /// 존재한 적이 없다:
     ///   - 그 포맷의 수명은 `7c9fcd7f`(2026-05-19 04:48) ~ `e350ee63`(같은 날 14:09), 9시간 남짓.
     ///   - 호환 디코더와 그 테스트는 포맷을 갈아엎은 `e350ee63` 이 **동시에** 만든 투기적 호환이었다.
-    ///   - 당시 워크스페이스가 Windows 라 iOS 는 컴파일조차 되지 않았고, 지금도 App Store
-    ///     출시 이력이 0이다. 그 포맷으로 저장된 기기는 세상에 없다.
+    ///   - 당시 워크스페이스가 Windows 라 iOS 는 컴파일조차 되지 않았고, 첫 App Store
+    ///     게재(1.2.8, 2026-09-22)보다 넉 달 앞서 사라진 포맷이다. 그 포맷으로 저장된 기기는 세상에 없다.
     ///
     /// 아래는 그 삭제 이후에도 **현행 디코더에 남아 있는** 보정만 지킨다.
     func test_partialJSON_playModeAlias_syncStateBackfill_fireAtFallback() throws {

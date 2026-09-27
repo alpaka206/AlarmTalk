@@ -147,7 +147,13 @@ struct MainTabsView: View {
             .task {
                 // 알림 권한은 **로그인·약관 동의·목소리 받기가 다 끝난 뒤** 여기서 처음 묻는다
                 // (2026-09-17 실기기: 로그인 직후 동의 화면보다 먼저 떴다). 이미 답했으면 no-op.
-                await SocialNotificationTracker.requestAuthorizationIfNeeded()
+                // ⚠ **끝났다고 알린다** — 이 요청이 끝나기 전에는 루트의 안내 알럿(개인 플랜
+                // 종료 안내)이 기다린다. 게이트가 풀리는 같은 순간 둘 다 판정되어 시스템
+                // 팝업과 우리 알럿이 함께 떴다(`SystemPermissionPrompts` 주석).
+                await SystemPermissionPrompts.shared.track {
+                    await SocialNotificationTracker.requestAuthorizationIfNeeded()
+                }
+                SystemPermissionPrompts.shared.markNotificationRequestSettled()
             }
             .alert("목소리를 아직 받는 중이에요", isPresented: $voicesNotReadyAlert) {
                 // 받기는 막는 순간 이미 다시 걸었다 — 누를 버튼을 따로 두지 않는다.

@@ -6,18 +6,26 @@ import catalogJson from '../event-voices.json';
  *
  * 백엔드(`packages/backend/src/lib/event-voices.ts`)는 여기서 Perso 프로젝트·좋아요 대상 id 를
  * 읽고, 랜딩(`apps/landing/components/event/event-catalog.ts`)은 같은 JSON 을 직접 읽어 순서·
- * 이름·사진을 그린다. 그래서 **목소리를 더하는 일은 JSON 항목 하나 + 샘플 mp3 셋**이다:
+ * 이름·사진을 그린다. 그래서 **목소리를 더하는 일은 JSON 항목 하나 + 사진 + 샘플 mp3**다:
  *
  *   1. `event-voices.json` 의 `"<이벤트 id>".voices` 에 항목을 더한다(배열 순서 = 화면 순서, `?celeb=2`
  *      같은 번호 링크의 순번). `id` 는 소문자 슬러그이고 주소·좋아요 행·파일 이름에 그대로 쓰인다.
  *      `name` 은 세 언어 라벨(익명이면 "voice 2" 처럼), `portrait` 는 `public/` 경로이거나 null
- *      (null 이면 추상 아바타). `perso` 는 언어별 더빙 프로젝트 번호 — 같은 프로젝트를 여러 언어가
- *      나눠 써도 되고, `reserved` 는 돌리면 안 되는 문장(홍보용) 번호다.
- *   2. 미리 듣기 샘플을 `apps/landing/public/event/samples/<id>.<locale>.mp3` 로 넣는다(세 언어).
- *   3. 끝. 좋아요 행은 첫 좋아요 때 서버가 만들고, 슬롯 순번은 프로젝트별로 자동이다.
+ *      (null 이면 추상 아바타). `portraits` 는 **메시지 종류별** 사진(`birthday`·`chuseok` → 경로) —
+ *      그 종류의 소리가 재생될 때 화면이 그 사진으로 바꿔 보여 준다(없는 종류는 `portrait`).
+ *      `perso` 는 언어별 더빙 프로젝트 번호 — 같은 프로젝트를 여러 언어가 나눠 써도 되고,
+ *      `reserved` 는 돌리면 안 되는 문장(홍보용) 번호다.
+ *   2. 사진을 `apps/landing/public/event/<id>.<kind>.jpg` 로 넣는다(정사각 640px 이면 충분하다 — 화면은
+ *      160px 원이고, 종류별 사진이 5초마다 갈린다).
+ *   3. 미리 듣기 샘플을 굽는다 — `packages/backend` 에서 `npm run samples:event -- --voice <id>`
+ *      (`scripts/make-event-samples.ts`, 문안은 `EVENT_PREVIEW_MESSAGES`). 세 언어 mp3 가
+ *      `apps/landing/public/event/samples/<id>.<locale>.mp3` 에 떨어진다. 문안이 바뀌면 다시 굽는다
+ *      (옛 문안을 읽는 샘플은 거짓말이 된다).
+ *   4. 끝. 좋아요 행은 첫 좋아요 때 서버가 만들고, 슬롯 순번은 프로젝트별로 자동이다.
  *
  * ⚠ 실존 인물의 이름·사진·목소리를 넣지 않는다(2026-09-17 결정 — 부정경쟁방지법 타목). 목소리는
- * 본인 동의를 받은 사람의 것이어야 하고, 라벨·아바타는 누구를 연상시키지 않아야 한다.
+ * 본인 동의를 받은 사람의 것이어야 하고, 라벨·사진은 누구를 연상시키지 않아야 한다 — 사진은
+ * AI 로 만든 가상 인물이다(화면의 고지 문구가 그렇게 말한다).
  */
 export const EVENT_VOICE_LOCALES = ['ko', 'en', 'ja'] as const;
 export type EventVoiceLocale = (typeof EVENT_VOICE_LOCALES)[number];
@@ -36,6 +44,8 @@ export const EventVoiceSchema = z.object({
   name: z.object({ ko: z.string().min(1), en: z.string().min(1), ja: z.string().min(1) }),
   /** `public/` 아래 경로. null 이면 사진 없이 추상 아바타. */
   portrait: z.string().startsWith('/').nullable(),
+  /** 메시지 종류별 사진(`birthday`·`chuseok` → `public/` 경로). 없는 종류는 `portrait` 로 그린다. */
+  portraits: z.record(z.string(), z.string().startsWith('/')).optional(),
   perso: z.object({
     /** 프로젝트가 속한 Perso 스페이스(`GET /portal/api/v1/spaces`). 문장 목록을 읽을 때 필요하다. */
     spaceSeq: z.number().int().positive(),

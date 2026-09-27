@@ -2,7 +2,7 @@
 
 이 문서는 Play Console 제출 전 개인정보 표시를 맞추기 위한 운영 체크리스트입니다. 실제 제출 시점의 SDK, 서버, 국가, 요금제, 결제 제공자에 맞게 최종 확인해야 합니다.
 
-> ⚠ iOS 앱(App Store)은 준비 중이며 아직 제출된 적이 없습니다. App Store 제출 시에는 이 문서와 별도로 **App Privacy(영양성분표) 항목**을 작성해야 하고, 항목 구분이 Play Data safety 와 다릅니다(예: Apple 은 'Data Used to Track You' 를 따로 묻습니다). 아래 §2 는 Play 기준이므로 그대로 옮겨 쓰지 말 것.
+> ⚠ iOS 앱은 2026-09-22 에 App Store 에 게재됐습니다. App Store 의 개인정보 표시는 이 문서가 아니라 App Store Connect 의 **App Privacy(영양성분표)** 에 게시돼 있고(2026-09-14 게시), 항목 구분이 Play Data safety 와 다릅니다(예: Apple 은 'Data Used to Track You' 를 따로 묻습니다). 아래 §2 는 Play 기준이므로 그대로 옮겨 쓰지 말 것. **수집·공유 항목을 바꾸면 Play Data safety 와 App Privacy 를 함께 고칩니다** — 한쪽만 고치면 두 스토어가 같은 앱을 다르게 신고하게 됩니다.
 
 ## 1. 공개 URL
 

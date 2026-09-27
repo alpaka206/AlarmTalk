@@ -156,8 +156,10 @@ android {
         // 29 = 1.2.9. Sentry 후속: 유닛 테스트가 프로덕션 Application 을 띄워 이벤트를 1만 건
         // 쏘던 것, 인증 워커가 폐기된 토큰으로 401 을 영원히 재시도하던 것, 로그인 이메일
         // 형식 판정이 서버보다 빡빡해 정당한 주소가 막히던 것을 고친다.
-        versionCode = 29
-        versionName = "1.2.9"
+        // 30 = 1.2.10. 기간 한정 개인 플랜(서버 계산 plan·종료 안내)과 웰컴 코드 안내 폐지,
+        // 목소리 등록의 '목소리 느낌'(자동·경쾌·차분) 선택 릴리스. iOS 와 같은 versionName 을 쓴다.
+        versionCode = 30
+        versionName = "1.2.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

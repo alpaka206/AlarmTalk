@@ -5,7 +5,7 @@
 //  - minSupported: 이 버전 미만은 강제 업데이트(앱이 차단 화면 표시). 평소 1 로 두어
 //    아무도 막지 않다가, 필수 기능(예: 동의)을 강제해야 할 때만 올린다.
 //  - latest: 권장 업데이트 기준(앱이 비차단 배너 표시).
-//  versionCode(Android) 정수 기준. (Android 전용 — iOS 는 운영하지 않는다.)
+//  Android 는 versionCode, iOS 는 빌드 번호(CFBundleVersion) 정수 기준 — 플랫폼별 정책은 아래에 따로 둔다.
 
 export interface AppVersionPolicy {
   minSupported: number;
@@ -52,33 +52,46 @@ const ANDROID: AppVersionPolicy = {
   // 하던** 문제를 고친다. 그 상태에서는 알람이 저장됐는지 확인할 방법조차 없다. 문구
   // 선택이 저장에서 사라지던 것도 같은 출시에 들어간다.
   //
-  // ⚠️ 배포 순서: **1.2.5(versionCode 25)가 Play 에 올라간 뒤** 이 변경을 main 에 머지할 것.
-  // 먼저 나가면 받을 것이 없는 업데이트 안내가 뜬다. 이번 회차는 `minSupported` 와 같은
-  // 값이라 배너가 아니라 **차단 화면**이 뜬다 — 순서를 어기면 앱이 벽돌이 된다.
-  latest: 25,
+  // ⚠️ 배포 순서: 이 값은 **그 versionCode 가 Play 에 올라간 뒤** main 에 머지한다.
+  // 먼저 나가면 받을 것이 없는 업데이트 안내가 뜬다. 25 로 올린 회차(1.2.5)는 `minSupported` 와
+  // 같은 값이라 배너가 아니라 **차단 화면**이 떴다 — 그런 회차에 순서를 어기면 앱이 벽돌이 된다.
+  //
+  // 29 로 올리는 이유(2026-09-23, 코덱스 #799): **1.2.6~1.2.9 네 회차 동안 이 값이 25 에
+  // 멈춰 있었다.** 그동안 25~28 설치본은 권장 업데이트 배너를 한 번도 못 봤다 —
+  // `MainViewModelAuthActions` 가 `updateRecommended` 를 설치 버전 < latest 일 때만 켜기
+  // 때문이다. 특히 1.2.9 는 **잠금 화면에서 소리만 나고 울림 화면이 안 뜨던** 것을 고치는데,
+  // 알람 앱에서 그 증상은 "안 울린다" 로 읽힌다. 받아 갈 길을 열어 둔다.
+  //
+  // ⚠️ 위 순서 규칙은 이번에도 지켰다 — Play 프로덕션이 **29 (1.2.9), status=completed**
+  // (2026-09-22 게재)인 것을 Play Developer API 로 확인하고 올렸다. `minSupported`(25)보다
+  // 높으므로 차단 화면이 아니라 배너다.
+  latest: 29,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
 const IOS: AppVersionPolicy = {
-  // iOS 는 아직 아무도 안 쓴다 — App Store 에 올라간 적이 없다. 막을 사용자가 없으므로
-  // 하한은 1 로 시작한다. Android 정책(21)을 그대로 물려주면 iOS 빌드번호(CFBundleVersion,
-  // 현재 project.yml 의 CURRENT_PROJECT_VERSION = 1)가 즉시 강제 업데이트 차단 화면에 걸린다.
+  // 하한은 1 이다 — 막을 사용자가 없다. 첫 공개 릴리스가 **1.2.8(빌드 5, 2026-09-22 게재)**
+  // 이라 그보다 낮은 설치본은 TestFlight 뿐이고, Android 정책(25)을 그대로 물려주면
+  // iOS 빌드번호(CFBundleVersion)가 즉시 강제 업데이트 차단 화면에 걸린다.
   //
   // 올릴 시점은 Android 와 같은 기준이다 — 서버가 요구하는 필수 계약(예: 동의
   // document_version)을 못 보내는 빌드를 잘라내야 할 때만. 그전에는 1 로 둔다.
   minSupported: 1,
-  // 권장 업데이트 기준. 첫 릴리스 전이라 latest 도 1 이다(= 아무 배너도 뜨지 않는다).
+  // ⚠ **iOS 는 이 값을 읽는 클라가 없다.** `AppVersionGate.checkAppVersion()` 은
+  // `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
+  // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다. 그래서 게재
+  // 뒤에도 1 로 둔다. 올리는 것은 **앱에 권장 업데이트 배너를 만든 다음**이다 —
+  // 지금 올려 봐야 아무 일도 일어나지 않고, 나중에 배너를 붙이는 사람이 "이미 올라가
+  // 있으니 맞겠지" 로 읽는 것이 더 위험하다.
   latest: 1,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
-  // 아직 심사 전이라 이 주소는 게재 뒤에야 열리지만, 자리표시자(`id0000000000`)로 두는
-  // 것보다 낫다 — 위 minSupported/latest 를 올리는 순간 곧바로 쓰이는 값이라, 그때
-  // 고치는 걸 잊으면 사용자가 존재하지 않는 페이지로 간다.
+  // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',
 };
 
 // platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.
-// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 운영 중인 클라이언트가
-// Android 뿐이라, 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
+// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 두 정책 중 더 엄격한 쪽이라,
+// 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
 export function appVersionPolicy(platform?: string | null): AppVersionPolicy {
   return platform?.toLowerCase() === 'ios' ? IOS : ANDROID;
 }

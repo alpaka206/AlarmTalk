@@ -10,7 +10,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v1.2.5` (versionCode 25) — live on Google Play
+- **Stores**: live on Google Play and the App Store — current version per store in [`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md) (「스토어 상태」 section)
 - **Android** — the shipping client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
@@ -18,7 +18,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
   - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
-The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives in this repository, but it is not on the App Store yet. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
+The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and shipped to the App Store on 2026-09-22. Its CI workflow (`ios-build.yml` — unit tests + Release build) was restored on 2026-09-08. Build it with XcodeGen (`project.yml` → `AlarmTalkNative.xcodeproj`); see [`docs/ios/`](docs/ios/).
 
 ## Stack
 
@@ -38,7 +38,7 @@ The SwiftUI iOS client (`apps/ios-native`) was revived on 2026-08-06 and lives i
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android app
-│   ├── ios-native/       SwiftUI iOS app (XcodeGen; not yet released)
+│   ├── ios-native/       SwiftUI iOS app (XcodeGen)
 │   └── landing/          Next.js landing page (static export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API

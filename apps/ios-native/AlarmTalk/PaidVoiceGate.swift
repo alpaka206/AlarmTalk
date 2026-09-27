@@ -92,10 +92,15 @@ enum PaidVoiceGate {
     ///    (`docs/spec/billing-lifecycle.md` 「스토어가 권위다」). 자동갱신은 스토어에서 먼저
     ///    일어나고 서버 반영이 늦을 수 있는데, 그때 옛 만료시각으로 막으면 **돈을 내는
     ///    사용자가 잠긴다** — 스펙이 더 나쁘다고 못박은 방향이다.
-    /// 2. 서버가 내 구독을 알면 그 상태·만료로 가른다.
-    /// 3. 서버가 '구독 없음' 이라 답했으면 그룹 접근을 본다.
-    /// 4. 스냅샷이 없으면 **모른다** — 무료가 아니다.
-    static func resolve(snapshot: AccessSnapshot, now: Date = Date()) -> PaidVoiceAccess {
+    /// 2. 서버가 `users.plan = free` 라고 하면 무료다(남은 구독 행보다 위 — 보류).
+    /// 3. 서버가 내 구독을 알면 그 상태·만료로 가른다.
+    /// 4. 서버가 '구독 없음' 이라 답했으면 남은 `users.plan` → 그룹 접근 순으로 본다.
+    ///    그 plan 이 **끝난 기간 한정 개인 플랜의 낡은 계산값**이면 무료다.
+    /// 5. 스냅샷이 없으면 **모른다** — 무료가 아니다(끝난 프로모의 낡은 캐시만 예외).
+    /// - Parameter promoAt: 기간 한정 개인 플랜이 **그 시각에도** 덮는지 볼 시각 — 기본은 `now`.
+    ///   예약은 알람이 **울릴 시각**을 넘긴다(`effectiveRecordForScheduling`). 구독 행·스토어 신호의
+    ///   만료는 여기에 넣지 않는다 — 자동 갱신 구독을 울릴 시각 기준으로 미리 끊으면 결제자가 잠긴다.
+    static func resolve(snapshot: AccessSnapshot, now: Date = Date(), promoAt: Date? = nil) -> PaidVoiceAccess {
         // ⚠ **기한이 지난 스토어 신호는 없는 것으로 본다.** 기한 없이 믿으면 한 번 유료였던
         // 기기가 영구 통행증을 갖는다 — 전경 갱신 없이 배경 예약만 도는 사이 만료돼도
         // 클론 오디오가 계속 예약된다(2026-08-31 리뷰).
@@ -117,12 +122,28 @@ enum PaidVoiceGate {
         // 신규 결제는 막지 않는다 — 서버가 행과 **같은 트랜잭션에서** plan 을 올리고,
         // 산 직후는 어차피 위의 스토어 신호가 잡는다.
         if plan == "free" { return .notEntitled }
+        // **기간 한정 개인 플랜이 끝난 뒤의 낡은 캐시**(`PersonalPromo.isStale`) — 끝 **전에**
+        // 받아 둔 계산값 `plus` 다. 원시 plan 은 free 였으니 위의 '아는 free' 와 같은 무게라,
+        // 스냅샷이 없어도 '모름' 으로 미루지 않는다.
+        //
+        // ⚠ **이 값으로 plan 을 free 로 덮어쓰지 말 것**(2026-09-27 리뷰). 덮어쓰면 바로 위
+        // 2단에 걸려 **활성 구독 행보다 먼저** 무료가 된다 — 프로모 뒤에 다른 기기에서 결제한
+        // 사람이 오프라인에서 잠긴다. 순서는 안드로이드 `resolvePaidVoiceAccess` 와 같다:
+        // 구독 행(3단)이 먼저 답하고, **행이 없을 때만** 낡은 프로모로 자른다.
+        // 끝 **뒤에** 받은 답은 낡지 않았다(서버가 그때 계산했다) — 기기 시계가 앞서 있어도
+        // 방금 받은 답으로 잠그지 않는다.
+        let promoLapsed = snapshot.personalPromo?.isStale(at: promoAt ?? now) == true
         // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
-        guard let response = snapshot.subscriptionResponse else { return .unknown }
+        guard let response = snapshot.subscriptionResponse else {
+            return promoLapsed ? .notEntitled : .unknown
+        }
         guard let subscription = response.subscription else {
             // ⚠ **`users.plan` 이 그룹보다 위다.** 결제 보류는 그룹을 남긴 채 이 값만
             // 회수하므로, 그룹만 보면 소유자 결제가 밀린 멤버가 계속 유료로 읽힌다.
             switch plan {
+            case .some(let plan) where !plan.isEmpty && promoLapsed:
+                // 구독 행이 없다 — 여기까지 온 `plus` 는 끝난 프로모의 계산값이다.
+                return .notEntitled
             case .some(let plan) where PaidPlans.userPlans.contains(plan):
                 return .entitled
             default:
@@ -136,12 +157,77 @@ enum PaidVoiceGate {
                     ? .entitled : .notEntitled
             }
         }
+        // 활성 구독 행은 끝난 프로모보다 위다 — 진짜 구독자는 프로모 날짜로 잠기지 않는다.
         return isSubscriptionActive(subscription, now: now) ? .entitled : .notEntitled
     }
 
     /// **모르면 잠그지 않는다.** 예약 강등 판단이 쓴다 — 이 파일 맨 위의 fail-open 원칙 그대로다.
-    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
-        resolve(snapshot: snapshot, now: now) != .notEntitled
+    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date(), promoAt: Date? = nil) -> Bool {
+        resolve(snapshot: snapshot, now: now, promoAt: promoAt) != .notEntitled
+    }
+
+    /// 무료 판정이 **기간 한정 개인 플랜의 오프라인 차단(D1) 때문만**인가 — 끝 전에 받아 둔 낡은
+    /// 프로모(`PersonalPromo.isStale`)가 무료로 읽혔고, 그 프로모를 빼고 다시 판정하면 무료가
+    /// 아니다(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse` 와 같은 규칙).
+    ///
+    /// 전경 무료 잠금이 이 갈래를 **이 진입의 계정 응답이 세션 plan 에 반영될 때까지** 미룬다
+    /// (`freePlanLockMayApply`). 구독 행이 만료됐거나 서버가 free 라고 답한 무료는 이 갈래가
+    /// 아니다 — 프로모를 빼도 무료다. 무료가 아니면(활성 구독 행이 낡은 프로모를 이긴다) 당연히
+    /// false 다 — 안드로이드는 무료로 판정된 자리에서만 부르고, 여기서는 그 전제를 함께 본다.
+    static func isFreeOnlyByPromoLapse(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
+        guard snapshot.personalPromo?.isStale(at: now) == true,
+              resolve(snapshot: snapshot, now: now) == .notEntitled else { return false }
+        var withoutLapse = snapshot
+        withoutLapse.personalPromo = nil
+        return resolve(snapshot: withoutLapse, now: now) != .notEntitled
+    }
+
+    /// 전경 무료 잠금(`AlarmTalkApp.applyFreePlanVoiceLockIfNeeded`)을 **지금** 걸어도 되는가
+    /// (안드로이드 `freePlanLockMayApply` 와 같은 규칙, 스펙 D1·D12).
+    ///
+    /// 무료 판정이 낡은 프로모 **때문만**이면(`isFreeOnlyByPromoLapse`) **이 진입의 계정 응답이
+    /// 세션 plan 에 반영된 뒤에만**(`AuthViewModel.planAnsweredEntry == entry`) 건다. 그 전의 plan
+    /// 은 지난 실행의 캐시다 — 그 사이 다른 기기에서 쿠폰·결제·가족 합류로 원시 유료가 된 사람도
+    /// 종료 시각만 지나면 잠기고, 잠금은 새 답이 오면 풀리지만 이미 적힌 강등 안내
+    /// (`DowngradeNoticeStore`)가 결제자에게 "무료 이용권으로 바뀌었어요" 를 말한다. 콜드 스타트에는
+    /// 저장된 구독 스냅샷(`SocialFeatureViewModel.restoreAccessSnapshot`)과 StoreKit 이 `/auth/me`
+    /// 보다 먼저 준비되므로 이 자리가 실제로 먼저 돈다.
+    ///
+    /// - Parameter entry: 지금 진입 번호(`AppEntryCounter.entry`). 0 이면 아직 들어오지 않았다.
+    static func freePlanLockMayApply(freeOnlyByPromoLapse: Bool, planAnsweredEntry: Int, entry: Int) -> Bool {
+        !freeOnlyByPromoLapse || (entry > 0 && planAnsweredEntry == entry)
+    }
+
+    /// 화면이 **지금 들고 있는 값**으로 판정할 스냅샷을 만든다(저장된 캐시가 아니다).
+    ///
+    /// ⚠ **화면마다 손으로 조립하지 말 것.** 목소리 탭 입구와 등록 제출이 서로 다른 판정기를
+    /// 쓰고 있었다 — 입구는 이 판정기, 제출은 `PlanTier.bestKnown` 이라, 서버가 `users.plan`
+    /// 으로만 유료를 준 계정은 **녹음을 다 마치고 제출에서** "유료 이용권에서 사용할 수
+    /// 있어요" 로 막혔다. 둘 다 이걸 거친다.
+    ///
+    /// ⚠ **살아 있는 StoreKit 신호에는 기한을 붙이지 않는다**(2026-08-31 리뷰). 이 스냅샷은
+    /// 캐시가 아니라 **지금 방금 읽은 값**이라 신선도를 의심할 이유가 없다. 기한을 비워 두면
+    /// 판정기가 기한을 함께 요구하므로 **살아 있는 신호가 한 번도 이기지 못한다** — 먼 미래를
+    /// 준다('지금 유효' 라는 뜻이다).
+    ///
+    /// ⚠ **`userPlan` 을 빼지 말 것.** 그룹보다 먼저 보는 값이라, 빼면 결제 보류(그룹은 남고
+    /// plan 만 free)에서 그룹 폴백이 유료로 답한다. 프로모도 같이 실어야(계산 시각까지) 끝난
+    /// 뒤의 낡은 캐시를 가른다.
+    static func liveSnapshot(
+        subscriptionResponse: BillingSubscriptionResponse?,
+        familyGroup: FamilyGroupCurrentResponse?,
+        storeTier: PlanTier,
+        user: AuthUser?
+    ) -> AccessSnapshot {
+        let storeEntitled = storeTier.meetsOrExceeds(.personal)
+        return AccessSnapshot(
+            subscriptionResponse: subscriptionResponse,
+            familyGroup: familyGroup,
+            storePlanKey: storeEntitled ? storeTier.rawValue : nil,
+            storeEntitlementUntilMillis: storeEntitled ? Int64.max : nil,
+            userPlan: user?.plan,
+            personalPromo: user?.personalPromo
+        )
     }
 
     /// 예약 시점에 이 알람의 유료 목소리를 기본 톤으로 강등해야 하는가.
@@ -149,15 +235,47 @@ enum PaidVoiceGate {
     /// **본인 소유(`localOwned`) 알람만 대상이다.** 공유받은 알람(`receivedRemote`)은
     /// 보낸 사람의 구독으로 성립하는 것이라 받는 쪽 구독으로 판단하지 않는다.
     /// 무료 시스템 보이스는 애초에 강등 대상이 아니다.
+    /// - Parameter fireAt: 알람이 울릴 시각. 기간 한정 개인 플랜만으로 열린 목소리는 **그 시각에도**
+    ///   프로모가 덮어야 한다(`resolve` 의 `promoAt`). ⚠ iOS 는 울릴 때 앱 코드가 돌지 않는다
+    ///   (AlarmKit 이 예약 때 받은 소리를 그대로 튼다) — 안드로이드처럼 울릴 때 다시 볼 수 없으니,
+    ///   끝 뒤에 울릴 예약은 **예약할 때** 기본 알람음으로 건다(Codex #803). 이미 예약된 반복 알람은
+    ///   다음 리컨사일(앱 열기·백그라운드 새로고침·`plan_changed` 푸시)에서 다음 울림이 끝 뒤가 되는
+    ///   순간 바뀐다.
     static func shouldDowngrade(
         record: LocalAlarmRecord,
         snapshot: AccessSnapshot,
-        now: Date = Date()
+        now: Date = Date(),
+        fireAt: Date? = nil
     ) -> Bool {
         guard record.originEnum == .localOwned else { return false }
         guard !usesFreeSystemVoice(record) else { return false }
         guard usesPaidVoice(record) else { return false }
-        return !isEntitled(snapshot: snapshot, now: now)
+        let promoAt = fireAt.map { max($0, now) }
+        return !isEntitled(snapshot: snapshot, now: now, promoAt: promoAt)
+    }
+
+    /// 이 알람의 유료 목소리가 **기간 한정 개인 플랜 덕에만** 열려 있는가 — 끝 뒤의 회차는 못 듣는 알람이다
+    /// (끝을 막 넘긴 뒤에도 참이다 — 아래).
+    ///
+    /// ⚠ **주간 반복 알람은 AlarmKit 이 한 번 받은 설정을 모든 회차에 다시 쓴다**(Codex #803). 예약할 때
+    /// 울릴 시각을 봐도(`shouldDowngrade` 의 `fireAt`) 다음 회차가 끝 전이면 목소리로 걸리고, 그 설정이
+    /// 끝 뒤 회차까지 간다. 그래서 이런 알람은 **정지할 때마다 다시 맞춘다**(`AlarmAppContext` — 무료
+    /// 테마 회전과 같은 경로) — 끝 전 마지막 회차를 끄는 순간 다음 회차(끝 뒤)가 기본 알람음으로 걸린다.
+    /// 앱 코드는 정지 인텐트에서 돌므로 네트워크도 화면도 필요 없다.
+    static func dependsOnPromoCutover(
+        record: LocalAlarmRecord,
+        snapshot: AccessSnapshot,
+        now: Date = Date()
+    ) -> Bool {
+        guard record.originEnum == .localOwned,
+              !usesFreeSystemVoice(record),
+              usesPaidVoice(record),
+              let ends = snapshot.personalPromo?.endsAt.flatMap(parseTimestamp) else { return false }
+        // ⚠ **끝을 막 넘긴 정지도 포함한다**(Codex #803). 끝 직전에 울린 회차를 끝 **뒤에** 끄면 지금은 이미
+        // 못 듣는 상태라, '지금 들을 수 있는가' 를 조건에 두면 이 갈래가 빠지고 주간 반복 설정이 목소리로
+        // 남는다. 판정은 '끝(또는 지금, 더 늦은 쪽)에 못 듣는가' 하나다 — 결제자(활성 구독 행)는 언제나 듣는다.
+        // 리컨사일러는 예약 판정이 바뀔 때만 다시 예약하므로 넓게 불러도 해가 없다.
+        return !isEntitled(snapshot: snapshot, now: now, promoAt: max(ends, now))
     }
 
     /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.

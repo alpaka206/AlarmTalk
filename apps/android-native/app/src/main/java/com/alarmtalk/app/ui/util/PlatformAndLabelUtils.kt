@@ -146,10 +146,62 @@ internal fun vibrationLabel(context: Context, pattern: String): String = when (p
 internal fun userFacingError(error: Throwable, fallback: String): String =
     error.message?.takeIf { it.any { char -> char in '\uAC00'..'\uD7A3' } } ?: fallback
 
+/**
+ * 기간 한정 개인 플랜 중의 **보류 규칙**(D2·D9) — 커플·가족 기능을 무엇이 열 수 있는가.
+ *
+ * `personal_promo` 가 있다 = 그 답을 준 서버에서 **원시 plan 이 free** 다. 결제 보류(ON_HOLD·
+ * PAUSED)는 회복을 위해 구독 행과 그룹을 **남긴 채** `users.plan` 만 회수하는데, 기간 중에는
+ * 서버가 그 free 를 `plus` 로 계산해 주므로 plan 만 보면 보류인지 알 수 없다. 그래서 프로모가
+ * 살아 있는(낡지 않은 — D1) 동안에는 **남은 구독 행·가족 그룹이 커플·가족을 열지 못하고**,
+ * 스토어(Play 가 지금 확인해 준 등급)와 서버 계산값만 연다 — iOS `PlanTier.bestKnown(user:)` 의
+ * `suspended` 와 같은 답. 서버도 커플·가족 기능은 원시값으로 막는다(`docs/spec/billing-lifecycle.md`
+ * 「무엇이 계산값을 보고, 무엇이 원시값을 보나」).
+ *
+ * 이 값이 null 이면 규칙이 걸리지 않는다(프로모 밖·끝난 뒤의 낡은 캐시) — 예전 그대로다.
+ */
+internal data class PersonalPromoTierHold(
+    /** Play 가 **지금** 유효하다고 확인해 준 등급(기한 지난 것은 null). */
+    val storePlanKey: String?,
+    /** 서버가 계산한 plan(기간 중 원시 free 는 `plus`). */
+    val computedPlan: String?,
+) {
+    /** 보류 규칙 아래에서 커플·가족을 여는 것은 이 둘뿐이다. */
+    fun allowsCoupleOrFamily(): Boolean = isCoupleOrFamilyKey(storePlanKey) || isCoupleOrFamilyKey(computedPlan)
+}
+
+private fun isCoupleOrFamilyKey(value: String?): Boolean =
+    value?.trim()?.lowercase().let { it == "couple" || it == "family" }
+
+/**
+ * 지금 보류 규칙이 걸리는가 — 걸리면 그 규칙, 아니면 null.
+ *
+ * @param userPlan·userPlanPromo **같은 출처의** plan 과 그 프로모 표지(`resolvePaidVoiceAccess` 와
+ *   같은 한 쌍). 표지가 있고 낡지 않았으면([personalPromoLapsed]) 원시 free 다.
+ * @param storePlanKeyValidNow 기한까지 반영한 스토어 등급(없으면 null).
+ */
+internal fun personalPromoTierHoldOf(
+    userPlan: String?,
+    userPlanPromo: PlanPromoStamp?,
+    storePlanKeyValidNow: String?,
+    nowMillis: Long,
+): PersonalPromoTierHold? {
+    if (userPlanPromo == null || personalPromoLapsed(userPlanPromo, nowMillis)) return null
+    return PersonalPromoTierHold(storePlanKey = storePlanKeyValidNow, computedPlan = userPlan)
+}
+
+/**
+ * 커플·가족 기능을 쓸 수 있는가(가족 알람·목소리 공유·판정기의 plan 없는 갈래).
+ *
+ * @param promoHold 기간 한정 개인 플랜 중의 보류 규칙([personalPromoTierHoldOf]). **호출부가 반드시
+ *   넘긴다** — 기본값을 두면 빠뜨린 자리에서 보류 계정의 남은 행·그룹이 다시 커플·가족을 연다.
+ *   null 이면 예전 규칙(구독 plan·그룹) 그대로다.
+ */
 internal fun hasCoupleOrFamilyAccess(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
+    promoHold: PersonalPromoTierHold?,
 ): Boolean {
+    if (promoHold != null) return promoHold.allowsCoupleOrFamily()
     val plan = subscriptionResponse?.plan
     return familyGroup?.group != null ||
         plan?.key == "family" ||
@@ -161,11 +213,15 @@ internal fun hasCoupleOrFamilyAccess(
 // 음성 공유 토글을 노출할지 판단한다. 개인 플랜이고 가족·커플 그룹에 본인 외 멤버가
 // 0명이면 공유 대상이 없으므로 토글을 숨긴다. family/couple 플랜이거나 그룹에
 // 다른 멤버가 1명이라도 있으면 노출한다.
+// ⚠ 기간 한정 개인 플랜 중에는 보류 규칙([PersonalPromoTierHold])이 먼저다 — 남은 구독 행·그룹
+//   멤버로는 열지 않는다(서버가 원시값으로 막는 공유를 켜는 토글이 된다).
 internal fun canShareVoiceWithOthers(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
+    promoHold: PersonalPromoTierHold?,
 ): Boolean {
+    if (promoHold != null) return promoHold.allowsCoupleOrFamily()
     val plan = subscriptionResponse?.plan
     val isFamilyOrCouplePlan = plan?.key == "family" || plan?.key == "couple" ||
         plan?.planType == "family" || plan?.planType == "couple"
@@ -223,10 +279,20 @@ internal enum class PaidVoiceAccess { Entitled, NotEntitled, Unknown }
  * 3. 서버가 내 구독을 알고 있으면 **만료 시각으로** 가른다. 스토어가 침묵할 때(그룹 멤버·
  *    미로그인 스토어 등) 이 값이 스스로 신선도를 말한다 — 별도의 '신선도' 필드가 필요 없다.
  * 4. 남은 `users.plan` 으로 가른다. **그룹보다 위다** — 위 2단과 같은 이유다.
+ *    단 그 plan 이 **기간 한정 개인 플랜으로 계산된 값**이고, 종료 **전에** 받은 그 답을
+ *    종료 **뒤에** 읽고 있으면 무료다([userPlanPromo]).
  * 5. 스냅샷 자체가 없으면 **모른다.** 무료가 아니다.
  *
  * @param storeEntitled 스토어(Play/StoreKit)가 지금 유효한 구독을 확인해 줬는가. 모르면 false —
  *   **거짓이라고 단정하는 값이 아니라 '확인 못 했다' 는 뜻**이라 2단 이하로 내려갈 뿐이다.
+ * @param userPlanPromo [userPlan] 과 **같은 응답에서 온** 프로모 표지(종료 시각 + 그 답을 받은 시각).
+ *   서버는 기간 동안 원시 free 를 `plus` 로 계산해 주는데, 앱에는 그 `plus` 가 캐시로 남는다.
+ *   **종료 전에 받은** 그 캐시를 종료 뒤에 읽으면 원시 free 로 읽어야 한다 — 안 그러면 종료 뒤
+ *   앱을 안 연 기기(특히 울림 경로)가 클론 목소리를 계속 쓴다([personalPromoLapsed]).
+ *   종료 **뒤에** 받은 답은 서버가 이미 계산한 것이라 그대로 믿는다 — 방금 받은 답을 쓰는
+ *   되돌릴 수 없는 경로는 [freshPlanPromoStamp] 로 넘겨 기기 시계로 잠그는 일을 없앤다.
+ *   **plan 과 짝으로만 넘길 것** — 다른 응답의 표지를 붙이면 쿠폰으로 진짜 유료가 된 사용자가
+ *   그 시각에 잠긴다. **활성 구독 행(3단)은 언제나 이 값보다 위다.** 프로모가 아니면 null.
  */
 internal fun resolvePaidVoiceAccess(
     subscriptionResponse: BillingSubscriptionResponse?,
@@ -234,6 +300,7 @@ internal fun resolvePaidVoiceAccess(
     userPlan: String?,
     storeEntitled: Boolean,
     nowMillis: Long,
+    userPlanPromo: PlanPromoStamp?,
 ): PaidVoiceAccess {
     if (storeEntitled) return PaidVoiceAccess.Entitled
     val plan = userPlan?.trim()?.lowercase()
@@ -244,8 +311,12 @@ internal fun resolvePaidVoiceAccess(
     // 되돌릴 수 없는 잠금은 이것만으로 걸리지 않는다 — `isDefinitelyFreePlan()` 이
     // `storeEntitlementChecked` 를 함께 요구한다(스토어에 물어보기 전에는 안 잠근다).
     if (plan == "free") return PaidVoiceAccess.NotEntitled
+    // 기간 한정 개인 플랜이 끝났다 = 그 plan 은 **끝나기 전에 받은 계산값**이고 원시는 free 다.
+    // 위의 '아는 free' 와 같은 무게라 스냅샷이 없어도 모름으로 미루지 않는다.
+    val promoLapsed = personalPromoLapsed(userPlanPromo, nowMillis)
     // 스냅샷도 없고 plan 도 모르면 그때가 진짜 '모름' 이다.
-    val snapshot = subscriptionResponse ?: return PaidVoiceAccess.Unknown
+    val snapshot = subscriptionResponse
+        ?: return if (promoLapsed) PaidVoiceAccess.NotEntitled else PaidVoiceAccess.Unknown
     val subscription = snapshot.subscription
     if (subscription != null) {
         if (!hasPaidVoiceAccess(snapshot)) return PaidVoiceAccess.NotEntitled
@@ -260,9 +331,23 @@ internal fun resolvePaidVoiceAccess(
         // 상태(위의 `subscriptionResponse == null`)의 뜻이다. 여기는 서버가 "본인 구독
         // 없음" 이라고 **답했고** 그룹 접근도 없는 상태라 근거가 다 모인 무료다 — 모름으로
         // 접으면 낙관 규칙에 걸려 **무료 사용자의 유료 목소리가 영영 강등되지 않는다.**
+        //   기간 한정 개인 플랜 중이면 남은 행·그룹으로 열지 않는다(보류 규칙 — 스토어는 1단이 이미 봤다).
         plan == null || plan.isBlank() ->
-            if (hasCoupleOrFamilyAccess(snapshot, familyGroup)) PaidVoiceAccess.Entitled
-            else PaidVoiceAccess.NotEntitled
+            if (
+                hasCoupleOrFamilyAccess(
+                    snapshot,
+                    familyGroup,
+                    promoHold = personalPromoTierHoldOf(plan, userPlanPromo, storePlanKeyValidNow = null, nowMillis),
+                )
+            ) {
+                PaidVoiceAccess.Entitled
+            } else {
+                PaidVoiceAccess.NotEntitled
+            }
+        // ⚠ **구독 행이 있으면 위(3단)에서 이미 끝났다** — 진짜 구독자는 이 줄에 닿지 않는다.
+        //   활성 구독 행은 끝난 프로모보다 **언제나** 위다(양 앱 공통 순서). 여기까지 온 `plus` 는
+        //   구독 없이 plan 만 유료인 경우라, 종료 전에 받은 프로모 계산값이면 기간으로 자른다.
+        promoLapsed -> PaidVoiceAccess.NotEntitled
         plan in PaidUserPlans -> PaidVoiceAccess.Entitled
         else -> PaidVoiceAccess.NotEntitled
     }

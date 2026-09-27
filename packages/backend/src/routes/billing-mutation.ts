@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { ErrorCode } from '@alarmtalk/shared';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import {
   cancelActiveSubscriptionsForUser,
   cancelSubscriptionImmediate,
@@ -323,7 +324,10 @@ billingMutation.post('/checkout', async (c) => {
       };
     }
 
-    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, { deleteVoiceData: false });
+    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, {
+      deleteVoiceData: false,
+      promoCoversFree: personalPromoCoversFree(c.env, startsAt),
+    });
 
     return createPaidSubscriptionArtifacts(tx, {
       userPk,
@@ -792,6 +796,8 @@ billingMutation.post('/cancel', async (c) => {
   }
 
   const cancelAffected = new Set<string>();
+  // 기간 한정 개인 플랜이 덮는 동안에는 무료가 돼도 보관을 걸지 않는다(응답 기한도 null).
+  const promoCoversFree = personalPromoCoversFree(c.env, now);
   const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
     // 트랜잭션 안에서 '사용자 전체 활성 구독'을 다시 조회해 취소하지 않는다 — Play
     // 호출 동안 새 결제 confirm 으로 생긴 활성 구독은 위 revoke 대상이 아니었으므로
@@ -801,6 +807,7 @@ billingMutation.post('/cancel', async (c) => {
     for (const subscription of activeSubscriptions) {
       const ids = await cancelSubscriptionImmediate(tx, subscription, now, {
         deleteVoiceData: false,
+        promoCoversFree,
       });
       for (const id of ids) cancelAffected.add(id);
     }
@@ -808,7 +815,7 @@ billingMutation.post('/cancel', async (c) => {
     // '지금 삭제'는 /voice-data/delete-now 로 분리.
     // 새 결제가 살아남으면 유예·응답 기한도 없다. 스윕까지 기다리면 그 전에 거짓
     // 삭제 예고가 나가므로 plan 재계산과 같은 트랜잭션에서 보관 상태를 결정한다.
-    return syncPaidVoiceRetention(tx, userPk, now);
+    return syncPaidVoiceRetention(tx, userPk, now, promoCoversFree);
   });
   // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
   // 해지 직후가 예고를 보낼 자리다 — 3일 뒤 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.

@@ -54,12 +54,33 @@ struct BillingPanel: View {
         var id: String { rawValue }
     }
 
+    /// **산 이용권**의 등급 — 기간 한정 개인 플랜은 여기 들어가지 않는다(`purchasedPlan`).
+    ///
+    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 '현재 이용권' 뱃지, 결제
+    /// 버튼의 '결제하기/이용권 변경', 전환 문구('남은 기간은 새 이용권 기준으로 환산돼요'),
+    /// 결제 차단 판정(`purchaseBlockReason`)이 쓴다. 프로모를 산 이용권으로 치면 개인 카드에서
+    /// 결제 버튼이 사라지고, 다른 카드는 환산할 기간도 없는데 환산한다고 말한다. 프로모는
+    /// 카드 위의 한 줄(`personalPromoLine`)로만 말한다 — 안드로이드도 구독 행으로만 현재 카드를
+    /// 고른다(`BillingPanels.kt`).
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
+            userPlan: auth.session?.user.purchasedPlan
         )
+    }
+
+    /// 기간 한정 개인 플랜을 쓰는 중이면 그 사실과 **마지막 날**. 끝났거나 없으면 nil.
+    ///
+    /// 날짜는 서버 값(`ends_at − 1초`)을 기기 로케일로 찍는다 — 앱에 날짜를 두지 않는다.
+    /// 근거는 **세션 하나**다 — `/auth/me` 와 결제 전 조회가 plan 과 짝으로 갱신한다
+    /// (`applyFreshPlan`). 구독 응답의 사본을 따로 보면 결제 직후 둘이 잠깐 어긋난다.
+    private var personalPromoLastDay: String? {
+        let now = Date()
+        guard let promo = auth.session?.user.personalPromo,
+              !promo.hasEnded(at: now),
+              let last = promo.lastFreeDate else { return nil }
+        return PersonalPromo.dayLabel(last)
     }
 
     private var isSharedMember: Bool {
@@ -78,6 +99,12 @@ struct BillingPanel: View {
             // 안드로이드에도 그 카드가 없다.
             //
             // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
+
+            // 기간 한정 개인 플랜 — **한 줄만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
+            // (해지할 구독이 없다. 서버도 `subscription: null` 이다).
+            if let lastDay = personalPromoLastDay {
+                personalPromoLine(lastDay: lastDay)
+            }
 
             if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
                 // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
@@ -292,6 +319,16 @@ struct BillingPanel: View {
             Task { await giftPersonalPass() }
         }
         .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
+    }
+
+    /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
+    /// 문구도 그쪽이 원본이다(ko·en·ja).
+    private func personalPromoLine(lastDay: String) -> some View {
+        Text("개인 플랜 무료 이용 중 · \(lastDay)까지")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(AlarmTalkTheme.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
     }
 
     // MARK: - App Store 구독 관리

@@ -105,6 +105,7 @@ class RemoteAlarmSyncWorker(
         if (!SessionTokenRenewal.shouldRenew(token, System.currentTimeMillis())) return
         runCatching {
             val me = withContext(Dispatchers.IO) { api.me(AlarmTalkApiClient.bearer(token)) }
+            val fetchedAt = System.currentTimeMillis()
             // ⚠ **plan 도 적는다**(2026-09-01 리뷰). `plan_changed` 를 놓친 기기에서는 이
             // 갱신이 **유일하게 성공한 `/auth/me`** 일 수 있는데, 토큰만 저장하면 울림 게이트가
             // 읽는 값은 옛 등급 그대로다 — 보류·환불 뒤에도 클론이 계속 울리거나, 회복됐는데
@@ -121,7 +122,8 @@ class RemoteAlarmSyncWorker(
                 //   나중에 알 길이 없다.
                 val renewed = EntitlementWriter(applicationContext)
                     .write(AccessTicket(userId, startGeneration), "background session renewal") {
-                        it.copy(userPlan = me.user.plan)
+                        // plan 과 프로모 종료 시각·받은 시각은 한 벌이다(`AccessSnapshot.withServerUser`).
+                        it.withServerUser(me.user, fetchedAt)
                     }
                 if (renewed != EntitlementWrite.Applied) {
                     Log.i(TAG, "Background plan renewal skipped: session changed mid-run")

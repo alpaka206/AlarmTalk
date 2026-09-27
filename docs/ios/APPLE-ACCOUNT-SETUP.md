@@ -3,9 +3,10 @@
 이 문서는 키·인증서가 어디서 나와 어디에 들어가는지의 참조다. 값이 등록돼 있다는 사실만으로
 실제 구매·푸시·심사 준비 완료를 보장하지 않는다. 누락된 값은 명시적으로 실패한다(fail-closed).
 
-> **2026-09-14 실제 출시 준비 현황은 [출시 기록](../qa/ios-release-preparation-2026-09-14.md) 참조.**
-> dev·운영 Apple 시크릿, 배포 서명·IPA·스토어 문구·스크린샷을 준비했다.
-> 유료 앱 계약·사업자 정보, Play 25 게재 후 서버 배포, 실기기 결제 검증이 남아 있다.
+> **iOS 는 2026-09-22 에 App Store 에 게재됐다(1.2.8).** 지금 스토어 상태는
+> [`dev-test-handoff.md`](../qa/dev-test-handoff.md) 「스토어 상태」 절, 출시 준비 과정(2026-09-14)은
+> [출시 기록](../qa/ios-release-preparation-2026-09-14.md) 참조. 남은 확인(스토어 빌드로 실구매·복원·
+> APNs 검증 등)은 같은 핸드오프 문서의 「iOS 첫 출시」 절에 있다.
 
 > ✅ **가입은 이미 끝났다(2026-09-08 이 맥에서 재확인).** 서명 인증서
 > `Apple Development: <이름>`(`security find-identity -v -p codesigning`), 팀
@@ -275,12 +276,11 @@ APNs 인증은 App Store Server API 와 똑같은 ES256 JWT 라, SDK·`GoogleSer
 `node:http2` 가 필요한 건 **로컬에서 Node 로 찔러 볼 때뿐**이다 — Node 의 `fetch`(undici)는
 HTTP/1.1 이라 APNs 가 거절한다.
 
-> ⚠ **미해결(2026-08-10)**: `.dev.vars.dev` 의 APNs 키가 양쪽 호스트에서
-> `InvalidProviderToken` 이다. Key ID 는 `3CNKCBLC5U` 인데 짝이 되는 `.p8` 이
-> 아니거나 그 키가 폐기된 것으로 보인다(`.secrets/` 에 그 파일이 남아 있지 않다).
-> **prod 는 정상이라 출시에는 영향이 없고, 막히는 건 dev 워커 푸시뿐이다.**
-> 해결은 둘 중 하나 — ① `3CNKCBLC5U` 의 `.p8` 을 다시 받아 넣는다,
-> ② 두 환경 모두 되는 키 하나를 새로 발급해 dev·prod 양쪽에 같은 값을 넣는다.
+> ✅ **해결(2026-09-14)**: 2026-08-10 에 `.dev.vars.dev` 의 APNs 키(`3CNKCBLC5U`)가 양쪽 호스트에서
+> `InvalidProviderToken` 이었다 — 그 키는 Developer Portal 에 남아 있지 않았다. dev 워커에는 새
+> Sandbox APNs 키를 넣었고, 더미 토큰 요청이 `400 BadDeviceToken`(인증 통과)까지 확인됐다.
+> 운영 키는 Production 전용이라 dev 에 재사용하지 않았다. dev 실기기 배달은 따로 확인할 것
+> ([출시 준비 기록](../qa/ios-release-preparation-2026-09-14.md)).
 
 ---
 

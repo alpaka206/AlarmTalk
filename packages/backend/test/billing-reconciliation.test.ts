@@ -1542,7 +1542,7 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
     const cancelled = (await findActiveSubscriptionsByUserPk(db, 'member')).find(
       (sub) => sub.subscriptionId === 'cancel-personal',
     )!;
-    await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+    await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW, { deleteVoiceData: false, promoCoversFree: false }));
     expect((await rows("SELECT plan FROM users WHERE id='member'"))[0]!.plan).toBe('family');
     expect(
       (await rows("SELECT status FROM subscriptions WHERE id='keep-personal'"))[0]!.status,
@@ -1585,7 +1585,7 @@ describe('스토어 정합화 — 실제 DB 상태 전이', () => {
         const cancelled = (await findActiveSubscriptionsByUserPk(db, user)).find(
           (sub) => sub.subscriptionId === `personal-${user}`,
         )!;
-        await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW));
+        await withWriteTransaction(db, (tx) => cancelSubscriptionImmediate(tx, cancelled, NOW, { deleteVoiceData: false, promoCoversFree: false }));
         // 별도 요청의 재계산에도 지난 보류가 남아 있어야 한다.
         await withWriteTransaction(db, (tx) => resolvePlanAfterSuspend(tx, user, []));
         expect((await rows('SELECT plan FROM users WHERE id=?', [user]))[0]!.plan).toBe('free');

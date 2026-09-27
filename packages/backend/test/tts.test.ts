@@ -3,7 +3,6 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
-import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const M1 = '10000000-0000-4000-8000-000000000001';
@@ -174,15 +173,6 @@ beforeEach(() => {
   mockTextToSpeech.mockReset();
 });
 
-// #87 이후 preset 문구의 단일 출처. 테스트가 문장을 복사해 두면 문구가 바뀔 때 조용히 갈리므로
-// 실제 상수에서 뽑아 쓴다.
-/** 표시용 문구는 [tag] 가 벗겨진 형태다(합성용 synthesis_text 에만 태그가 남는다). */
-const stripDeliveryTags = (text: string) =>
-  text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim();
-const GREETING_KO_RAW = STOCK_CLIP_PRESETS.find((p) => p.category === 'greeting')!.texts.ko[0]!;
-/** 약은 문구가 2개라 무작위로 하나가 뽑힌다 — 특정 인덱스를 단언하면 깨진다. */
-const MEDICATION_EN_RAW = STOCK_CLIP_PRESETS.find((p) => p.category === 'medication')!.texts.en!;
-
 describe('POST /tts/generate — TTS 생성', () => {
   it('draft 음성은 명시적인 미리듣기 요청 외 일반 TTS에 사용할 수 없다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
@@ -254,6 +244,102 @@ describe('POST /tts/generate — TTS 생성', () => {
     const claimCall = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
     expect(claimCall?.sql).toContain("COALESCE(relationship_label, '') = ?");
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
+    // 목소리의 결도 페르소나다 — 결만 바뀐 PATCH 뒤의 낡은 요청이 claim 을 잡지 못해야 한다(Codex #802).
+    expect(claimCall?.sql).toContain("COALESCE(voice_energy, '') = ?");
+  });
+
+  // ⚠ **생성이 실패해 고정 예문으로 떨어져도 고른 결을 지킨다**(Codex #802). 차분을 고른 목소리에
+  // 기본 `cheerfully` 를 입히면 사용자가 바로 그 미리듣기를 듣고 확정한다 — 고른 결과 반대로.
+  it('차분을 고른 draft 의 고정 예문 미리듣기는 warmly 로 합성한다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        listener_title: '우리 아들',
+        voice_energy: 'calm',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      listener_title: '우리 아들',
+      voice_energy: 'calm',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+    expect(body.synthesis_text).toBe(
+      '[warmly] 우리 아들, 좋은 아침이야. [warmly] 오늘도 기분 좋게 일어나자.',
+    );
+  });
+
+  // ⚠ iOS `playDraftPreview` 는 **`random:true` 와 `draft_preview:true` 를 함께** 보낸다
+  // (`VoiceStudioViewModel`). 라이브 랜덤 거절(`RANDOM_TTS_RETIRED`)이 `body.random` 만 보거나
+  // draft 판정보다 앞에 오면 이 요청이 400 이 되어 **새 목소리를 아예 등록할 수 없다.**
+  it('iOS 미리듣기 모양(random:true + draft_preview:true)은 거절되지 않고 미리듣기로 합성한다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        listener_title: '우리 아들',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text: '',
+        category: 'morning',
+        language: 'ko',
+        translate: false,
+        random: true,
+        listener_title: '우리 아들',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+    expect(body.random_context ?? null).toBeNull();
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-draft', body.synthesis_text, expect.any(Object));
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO message_library'))).toBe(false);
   });
 
   it('draft 미리듣기는 Vertex 설정 시 관계·호칭 톤 적응 문구로 합성한다', async () => {
@@ -329,6 +415,152 @@ describe('POST /tts/generate — TTS 생성', () => {
     }
   });
 
+  // ⚠ **첫 미리듣기는 말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 미리듣기를
+  // 부르고 분석은 그 뒤에 돈다 — 안 기다리면 결 없이 만든 문구가 영속되고 사용자가 그걸 확정한다.
+  it('첫 미리듣기는 분석이 끝나기를 기다렸다가 그 말투·결로 만든다', async () => {
+    const calmStyle = JSON.stringify({
+      dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm',
+    });
+    const prompts: string[] = [];
+    const mockFetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      prompts.push(String(init?.body ?? ''));
+      return geminiText(JSON.stringify({ text: '우리 아들, 이제 일어날 시간이야. 천천히 시작하자.', tag: 'warmly' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1, user_id: 'user-1', status: 'ready', is_draft: 1, elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마', listener_title: '우리 아들',
+          speech_style_status: 'pending', speech_style: null,
+        },
+      ]);
+      mockDB.pushResult([{ speech_style: calmStyle, analysis_pending: 0 }]); // 분석 대기 — 곧바로 끝나 있다
+      mockDB.pushResult([], 1); // preview_text 영속
+      mockDB.pushResult([], 1); // preview claim
+      mockDB.pushResult([]);
+      pushPublicationVoice({ is_draft: 1, elevenlabs_voice_id: 'el-draft', relationship_label: '엄마', listener_title: '우리 아들' });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+      expect(res.status).toBe(201);
+      const waitCall = mockDB.calls.find((call) => call.sql.includes('AS analysis_pending'));
+      expect(waitCall).toBeDefined();
+      // 방금 끝난 분석의 결(차분)이 생성 프롬프트에 실린다 — 스냅샷(`speech_style: null`)이 아니라.
+      expect(prompts.some((body) => body.includes('VOICE ENERGY') && body.includes('CALM'))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // 분석을 기다려 결을 알게 됐으면, 생성이 실패해 고정 예문으로 떨어져도 그 결을 따른다(Codex #802).
+  // 합성한 태그는 claim 이 `preview_tag` 에 남겨 확정 뒤 재생이 같은 태그로 캐시를 맞힌다.
+  it('분석으로 차분이 추정되면 생성이 실패해도 고정 예문을 warmly 로 합성하고 그 태그를 남긴다', async () => {
+    const calmStyle = JSON.stringify({
+      dialect: '', strength: '', register: 'banmal', markers: [], persona: '', childlike: false, energy: 'calm',
+    });
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), { status: 200 });
+      }
+      return new Response('upstream down', { status: 503 });
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1, user_id: 'user-1', status: 'ready', is_draft: 1, elevenlabs_voice_id: 'el-draft',
+          listener_title: '우리 아들', speech_style_status: 'pending',
+        },
+      ]);
+      mockDB.pushResult([{ speech_style: calmStyle, analysis_pending: 0 }]);
+      mockDB.pushResult([], 1); // preview claim
+      mockDB.pushResult([]);
+      pushPublicationVoice({ is_draft: 1, elevenlabs_voice_id: 'el-draft', listener_title: '우리 아들' });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.synthesis_text).toBe('[warmly] 우리 아들, 좋은 아침이야. [warmly] 오늘도 기분 좋게 일어나자.');
+      const claim = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
+      expect(claim!.sql).toContain("preview_tag = CASE WHEN COALESCE(preview_text, '') = ''");
+      expect(claim!.args[1]).toBe('warmly');
+      expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('분석이 상한까지 안 끝나면 생성하지 않고 고정 예문으로 들려주며 영속하지 않는다', async () => {
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), { status: 200 });
+      }
+      throw new Error('analysis still pending — must not call Vertex');
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1, user_id: 'user-1', status: 'ready', is_draft: 1, elevenlabs_voice_id: 'el-draft',
+          listener_title: '우리 아들', speech_style_status: 'pending',
+        },
+      ]);
+      for (let i = 0; i < 6; i += 1) mockDB.pushResult([{ speech_style: null, analysis_pending: 1 }]);
+      mockDB.pushResult([], 1); // preview claim
+      mockDB.pushResult([]);
+      pushPublicationVoice({ is_draft: 1, elevenlabs_voice_id: 'el-draft', listener_title: '우리 아들' });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const pending = buildApp().request(
+        jsonReq('POST', '/tts/generate', { voice_profile_id: V1, language: 'ko', draft_preview: true }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+      for (let i = 0; i < 8; i += 1) await vi.advanceTimersByTimeAsync(3_000);
+      const res = await pending;
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+      expect(mockDB.calls.filter((call) => call.sql.includes('AS analysis_pending'))).toHaveLength(6);
+      // 영속하지 않아야 다음 미리듣기가 분석 뒤에 다시 만든다. 확정돼도 재생은 같은 고정 예문이다.
+      expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
+      expect(mockFetch.mock.calls.some((call) => String(call[0]) !== TOKEN_URI)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('동시 첫-미리듣기 레이스에서 진 쪽은 승자의 preview_text 를 재사용한다', async () => {
     const loserText = '우리 아들, 오늘도 상쾌하게 일어나 볼까?';
     const winnerText = '우리 아들, 잘 잤어? 오늘 하루도 힘내자.';
@@ -385,6 +617,63 @@ describe('POST /tts/generate — TTS 생성', () => {
       // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
       expect(body.text).toBe(winnerText);
       expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘 하루도 힘내자.');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // ⚠ **결만 바꾼 PATCH 도 생성 왕복을 낡게 만든다**(Codex #802). 첫 미리듣기가 Gemini 를 기다리는
+  // 사이 사용자가 결을 '차분' 으로 바꾸면 PATCH 가 preview_text 를 비운다. 이 요청은 옛 결로 만든
+  // 문구를 들고 있으므로 **저장도 합성도 하면 안 된다** — 저장하면 이후 미리듣기가 그 문구를 재사용한다.
+  it('생성 왕복 중 목소리의 결이 바뀌면 옛 결 문구를 저장하지도 합성하지도 않는다', async () => {
+    const staleText = '우리 아들, 잘 잤어? 오늘도 신나게 시작하자!';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return geminiText(JSON.stringify({ text: staleText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+          voice_energy: 'lively',
+        },
+      ]);
+      mockDB.pushResult([], 0); // 영속 실패 — PATCH 가 결을 바꿨다
+      mockDB.pushResult([{ preview_text: null, preview_tag: null }]); // 승자 없음(PATCH 가 비웠다)
+      mockDB.pushResult([], 0); // claim 실패 — 결이 달라 잡지 못한다
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error_code).toBe('VOICE_PREVIEW_IN_PROGRESS');
+      expect(mockTextToSpeech).not.toHaveBeenCalled();
+      const persist = mockDB.calls.find((call) => call.sql.includes('SET preview_text'));
+      expect(persist!.sql).toContain("COALESCE(voice_energy, '') = ?");
+      // 비교 값은 요청이 읽은 그 결이다.
+      expect(persist!.args.at(-1)).toBe('lively');
+      const claim = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
+      expect(claim!.args.at(-1)).toBe('lively');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -771,9 +1060,9 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('blocks system voice TTS when overseas_transfer consent is missing', async () => {
     mockDB.setConsentMissing(true);
-    // F2: 기본(시스템) 목소리는 프리셋도 '날씨+약'만 허용되므로(화이트리스트), 동의 강제를
-    // 검증하려면 허용 카테고리(medication) 프리셋 요청을 쓴다. 문구는 STOCK_CLIP_PRESETS 의 ko
-    // 문장이라 요청 기본 언어(ko)와 일치해(언어 불일치 게이트 회피) 합성 직전 게이트에 도달한다.
+    // 기본(시스템) 목소리로 합성하는 요청은 이제 **유료 직접 입력** 하나다(라이브 랜덤 프리셋은
+    // `RANDOM_TTS_RETIRED` 로 거절된다). 유료(plus)라 `manualTextOnSystemVoice` 갈래로 합성 직전
+    // 동의 게이트에 도달한다. 문구는 ko 라 요청 기본 언어와 맞아 언어 불일치 게이트도 피한다.
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       { id: V1, status: 'ready', is_system: 1, elevenlabs_voice_id: 'el-system-1' },
@@ -784,9 +1073,7 @@ describe('POST /tts/generate — edge cases', () => {
       buildApp(),
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
-        category: 'medication',
-        random: true,
-        random_context: 'preset',
+        text: '약 먹을 시간이야',
       }),
     );
 
@@ -1132,78 +1419,15 @@ describe('POST /tts/generate — edge cases', () => {
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
-  it('random=true 면 스톡 프리셋 문구를 골라 TTS를 생성한다', async () => {
-    // 문구 출처는 DB(tts_presets, #87 에서 삭제)가 아니라 stock-clips.ts 의 STOCK_CLIP_PRESETS 다.
-    // greeting 은 문구가 하나뿐이라 어떤 문장이 뽑혔는지 단언할 수 있다.
-    mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
-    pushPublicationVoice();
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-
-    const app = buildApp();
+  // ⚠ **라이브 랜덤 생성은 서버가 거절한다**(핸드오프 「5. 알람 음성의 최종 목적지」 5단계).
+  // 이 요청 모양이 막으려던 구멍이다: 무료 + 기본 목소리 + 프리셋 + 매번 다른 호칭이면 요금제
+  // 게이트를 통과하고(프리셋은 무료 허용), 호칭이 문장 앞에 붙어 캐시가 빗나가 요청마다 합성이
+  // 돌았으며, 월 한도(`isManualGeneration`)도 세지 않았다. 앞서 이 모양은 201 로 굳어 있었다.
+  it('random=true 는 400 RANDOM_TTS_RETIRED — 무료 기본 목소리 + 호칭으로도 합성·저장하지 않는다', async () => {
     const res = await reqWithEnv(
-      app,
+      buildApp(),
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
-        // 기본값 문구 요청은 클라가 category='morning' 으로 보낸다(레거시 분류 이름).
-        // 서버가 stockPresetCategory 로 greeting 문구에 이어 붙인다.
-        category: 'morning',
-        random: true,
-      }),
-    );
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    // 표시 문구에는 delivery 태그가 남으면 안 된다 — 사전렌더 클립(stripDeliveryTags)과 같은 결과다.
-    expect(body.original_text).toBe(stripDeliveryTags(GREETING_KO_RAW));
-    expect(body.original_text).not.toMatch(/\[[a-z][a-z -]*\]/i);
-    expect(body.text).toBe(body.original_text);
-    // 합성 문구에는 태그가 그대로 남는다(태그는 음성 연출용이라 벗기면 안 된다).
-    expect(body.synthesis_text).toMatch(/\[[a-z][a-z -]*\]/i);
-    expect(stripDeliveryTags(body.synthesis_text)).toContain(body.original_text);
-    // 태그는 문구에 박힌 [tag] 에서 뽑힌다 — 문구가 바뀌면 같이 따라가도록 원문에서 유도한다.
-    expect(body.tags).toEqual([...GREETING_KO_RAW.matchAll(/\[([a-z][a-z -]*)\]/gi)].map((m) => m[1]));
-    expect(mockTextToSpeech).toHaveBeenCalledWith(
-      'el-voice-1',
-      body.synthesis_text,
-      expect.any(Object),
-    );
-    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
-    expect(inserted!.args[3]).toBe(body.original_text);
-    expect(inserted!.args[4]).toBe(body.synthesis_text);
-    expect(inserted!.args[5]).toBe(JSON.stringify(body.tags));
-    expect(inserted!.args[6]).toBe('morning');
-  });
-
-  it('applies listener_title to preset TTS before synthesis', async () => {
-    mockDB.pushResult([{ plan: 'free' }]);
-    mockDB.pushResult([
-      {
-        id: V1,
-        status: 'ready',
-        is_system: 1,
-        elevenlabs_voice_id: 'el-system-1',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
-    pushPublicationVoice({
-      is_system: 1,
-      elevenlabs_voice_id: 'el-system-1',
-    });
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-
-    const app = buildApp();
-    const res = await reqWithEnv(
-      app,
-      jsonReq('POST', '/tts/generate', {
-        voice_profile_id: V1,
-        // F2 화이트리스트: 시스템 보이스 프리셋은 날씨/약만 허용 → medication 으로 요청
-        // (preset 메시지·listener_title 적용 로직은 카테고리와 무관하게 동일).
         category: 'medication',
         language: 'en',
         random: true,
@@ -1212,147 +1436,53 @@ describe('POST /tts/generate — edge cases', () => {
       }),
     );
 
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    const expectedTexts = MEDICATION_EN_RAW.map((t) => `Buddy, ${stripDeliveryTags(t)}`);
-    expect(expectedTexts).toContain(body.original_text);
-    expect(body.original_text).not.toMatch(/\[[a-z][a-z -]*\]/i);
-    expect(body.text).toBe(body.original_text);
-    // 호칭은 선두 delivery 태그 **뒤**에 들어간다 — 앞에 붙이면 태그가 문장 중간으로 밀려
-    // 호칭만 톤 지시 없이 읽힌다.
-    expect(body.synthesis_text).toMatch(/^\[[a-z][a-z -]*\]\s*Buddy, /i);
-    expect(stripDeliveryTags(body.synthesis_text)).toContain(body.original_text);
-    expect(mockTextToSpeech).toHaveBeenCalledWith(
-      'el-system-1',
-      expect.any(String),
-      expect.any(Object),
-    );
-    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
-    expect(inserted!.args[3]).toBe(body.original_text);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('RANDOM_TTS_RETIRED');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+    // 어떤 조회보다 먼저 거절한다 — 요금제·목소리 조회도, 메시지·오디오 기록도 없다.
+    expect(mockDB.calls.some((c) => /\bplan\b/.test(c.sql))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('voice_profiles'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('generated_audio_assets'))).toBe(false);
   });
 
-  it('random_context=wake_fortune creates a dynamic relationship-aware prompt', async () => {
-    mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([
-      {
-        id: V1,
-        status: 'ready',
-        elevenlabs_voice_id: 'el-voice-1',
-        relationship_label: '손녀',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
-    pushPublicationVoice({ relationship_label: '손녀' });
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-
-    const app = buildApp();
-    const res = await reqWithEnv(
-      app,
-      jsonReq('POST', '/tts/generate', {
-        voice_profile_id: V1,
-        category: 'morning',
-        random: true,
-        random_context: 'wake_fortune',
-        fortune_gender: '여성',
-        fortune_birth_date: '1950-05-19',
-        fortune_birth_time: '07:30',
-      }),
-    );
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.random_context).toBe('wake_fortune');
-    expect(body.original_text).toContain('일어나실 시간');
-    expect(body.original_text).not.toContain('손녀 목소리');
-    expect(body.original_text).not.toContain('생년월일');
-    expect(body.original_text).not.toContain('태어난 시간');
-    expect(
-      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
-    ).toContain(body.original_text);
-    expect(mockTextToSpeech).toHaveBeenCalledWith(
-      'el-voice-1',
-      body.synthesis_text,
-      expect.any(Object),
-    );
-  });
-
-  it('random_context=wake_fortune uses local fallback even when Vertex is configured', async () => {
-    const mockFetch = vi.fn(async (url: unknown) => {
-      if (String(url) === TOKEN_URI) {
-        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      throw new Error('dynamic Gemini text should not be called');
+  it('random_context=wake_fortune 도 400 RANDOM_TTS_RETIRED — Vertex·날씨 조회·합성 없음', async () => {
+    const mockFetch = vi.fn(async () => {
+      throw new Error('live random generation must not reach any provider');
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
-      mockDB.pushResult([{ plan: 'plus' }]);
-      mockDB.pushResult([
-        {
-          id: V1,
-          status: 'ready',
-          elevenlabs_voice_id: 'el-voice-1',
-          relationship_label: '여자친구',
-        },
-      ]);
-      mockDB.pushResult([
-        {
-          id: 'user-1',
-          dynamic_prompt_settings_json: JSON.stringify({
-            fortune: { gender: '남성', birth_date: '1995-05-20', birth_time: '07:30' },
-          }),
-        },
-      ]);
-      mockDB.pushResult([]);
-      mockDB.pushResult([]);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
-      pushPublicationVoice({ relationship_label: '여자친구' });
-      mockDB.pushResult([], 1);
-      mockDB.pushResult([], 1);
-
-      const app = buildApp();
-      const res = await app.request(
+      const res = await buildApp().request(
         jsonReq('POST', '/tts/generate', {
           voice_profile_id: V1,
           category: 'morning',
           random: true,
           random_context: 'wake_fortune',
-          target_user_id: 'user-1',
-          fortune_gender: '   ',
-          fortune_birth_date: '',
-          fortune_birth_time: '   ',
-          listener_title: '자기야',
+          fortune_gender: '여성',
+          fortune_birth_date: '1950-05-19',
+          fortune_birth_time: '07:30',
         }),
         undefined,
         { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
       );
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error_code).toBe('RANDOM_TTS_RETIRED');
       expect(mockFetch).not.toHaveBeenCalled();
-      const body = await res.json();
-      expect(body.original_text).toContain('작은 행운');
-      expect(
-      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
-    ).toContain(body.original_text);
-      expect(body.tags).toEqual(['playfully']);
+      expect(mockTextToSpeech).not.toHaveBeenCalled();
+      expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it('random=true 에 custom category 면 400', async () => {
+  it('random=true 에 custom category 도 400 RANDOM_TTS_RETIRED — 거절이 카테고리 검사보다 앞이다', async () => {
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, random: true, category: 'custom' }),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('RANDOM_CATEGORY_REQUIRED');
+    expect((await res.json()).error_code).toBe('RANDOM_TTS_RETIRED');
   });
 
   it('text 정확히 200자면 허용', async () => {

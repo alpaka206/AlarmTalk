@@ -98,7 +98,7 @@
       },
       {
         "q": "Which devices are supported?",
-        "a": "Android is on Google Play now. The iOS app is being prepared for the App Store, and the App Store button on this page will open as soon as it’s live."
+        "a": "It runs on Android 8.0 or later and on iPhone with iOS 26 or later. The Google Play and App Store buttons on this page are where you get it."
       }
     ]
   },
@@ -397,7 +397,7 @@
       "stopAria": "Stop {kind}",
       "download": "Download",
       "failed": "Can’t make it right now. Try again in a moment.",
-      "disclaimer": "An AI-generated voice, not a real person’s.",
+      "disclaimer": "The voice and the image are AI-generated, not a real person.",
       "sampleName": "Jamie",
       "prevVoice": "Previous",
       "nextVoice": "Next",

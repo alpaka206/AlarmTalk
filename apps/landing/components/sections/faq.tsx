@@ -1,10 +1,17 @@
 import { useTranslations } from "next-intl";
 import { Reveal } from "../motion/reveal";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
+import { StoreBadges } from "../store-badges";
 
 /**
  * 자주 묻는 질문 — 홈에서 떼어 낸 별도 페이지의 본문(2026-09-15 지시). 페이지 제목이라
  * h1 이고, 질문 하나하나가 h3 인 위계는 그대로다(h2 는 없다 — 목록 하나뿐이라 사이 단계가 없다).
+ *
+ * 목록 아래 스토어 배지는 **'어떤 기기를 지원하나요' 답이 가리키는 버튼**이다. 그 답은 받는
+ * 곳을 "이 페이지의 Google Play · App Store 버튼" 으로 넘긴다(스토어가 내려가도 참인 문장 —
+ * `store-badges.tsx` 주석). 그런데 이 페이지에는 원래 배지가 없었다: 헤더의 배지는
+ * `MobileMenu` 안에만 있고 그 메뉴는 `lg:hidden` 이라, **데스크톱에서는 가리킬 버튼이 없는
+ * 답**이 됐다(코덱스 #799). 그래서 배지를 이 컴포넌트에 둔다 — 답과 버튼이 늘 같이 다닌다.
  */
 export function Faq() {
   const t = useTranslations("faq");
@@ -58,6 +65,10 @@ export function Faq() {
             </RevealItem>
           ))}
         </RevealGroup>
+
+        <Reveal className="mt-12">
+          <StoreBadges />
+        </Reveal>
       </div>
     </section>
   );

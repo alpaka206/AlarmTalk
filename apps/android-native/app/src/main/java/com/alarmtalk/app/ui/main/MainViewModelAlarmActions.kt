@@ -144,7 +144,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         message = getApplication<Application>().getString(R.string.msg_family_alarm_login_required)
         return
     }
-    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
+    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<Application>().getString(R.string.msg_family_alarm_couple_family_only)
         return
     }

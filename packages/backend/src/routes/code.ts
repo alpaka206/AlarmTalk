@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import { redeemVoucherCode, VoucherRedemptionError } from '../lib/voucher-redemption';
 import { isValidVoucherCodeFormat } from '../lib/vouchers';
 import { redeemPromoCode, PromoRedemptionError } from '../lib/promo-redemption';
@@ -50,7 +51,11 @@ codeRoutes.post('/register', async (c) => {
   // 1) 이용권(voucher) — INV-/GIFT- 4-4-4 포맷일 때만 시도.
   if (isValidVoucherCodeFormat(upper)) {
     try {
-      const result = await redeemVoucherCode(db, { userPk, rawCode: raw });
+      const result = await redeemVoucherCode(db, {
+        userPk,
+        rawCode: raw,
+        promoCoversFree: personalPromoCoversFree(c.env),
+      });
       return c.json(result);
     } catch (error) {
       if (!(error instanceof VoucherRedemptionError)) throw error;
@@ -67,7 +72,11 @@ codeRoutes.post('/register', async (c) => {
 
   // 2) 프로모 쿠폰 — 자유 문자열, 대소문자 무시. 여기서도 없으면 최종 CODE_NOT_FOUND.
   try {
-    const result = await redeemPromoCode(db, { userPk, rawCode: raw });
+    const result = await redeemPromoCode(db, {
+      userPk,
+      rawCode: raw,
+      promoCoversFree: personalPromoCoversFree(c.env),
+    });
     return c.json(result);
   } catch (error) {
     if (error instanceof PromoRedemptionError) {

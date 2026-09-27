@@ -20,7 +20,7 @@ const CONTENT = {
       "앱에서 직접 회원 탈퇴를 진행하거나, 앱에 접근할 수 없는 경우 개인정보 담당자에게 삭제 요청을 보낼 수 있습니다.",
     appTitle: "앱에서 삭제",
     appBody:
-      "AlarmTalk 앱을 열고 설정 > 계정 > 회원 탈퇴를 선택하세요. 탈퇴가 완료되면 서버에 저장된 계정 데이터가 삭제 또는 비식별화됩니다.",
+      "AlarmTalk 앱을 열고 더보기 탭에서 회원 탈퇴를 선택하세요. 탈퇴가 완료되면 서버에 저장된 계정 데이터가 삭제 또는 비식별화됩니다.",
     requestTitle: "웹에서 요청",
     requestBody:
       "앱에 로그인할 수 없거나 기기를 사용할 수 없다면 아래 이메일로 삭제 요청을 보내주세요. 본인 확인 후 처리 결과를 안내합니다.",
@@ -52,7 +52,7 @@ const CONTENT = {
       "You can delete your account in the app, or email our privacy contact if you cannot access the app.",
     appTitle: "Delete in the app",
     appBody:
-      "Open AlarmTalk and go to Settings > Account > Delete account. After deletion, account data stored on our servers is deleted or anonymized.",
+      "Open AlarmTalk and tap Delete account on the More tab. After deletion, account data stored on our servers is deleted or anonymized.",
     requestTitle: "Request on the web",
     requestBody:
       "If you cannot sign in to the app or no longer have access to your device, send a deletion request by email. We will verify ownership and reply with the result.",
@@ -84,7 +84,7 @@ const CONTENT = {
       "アプリ内でアカウント削除を行うか、アプリにアクセスできない場合はプライバシー窓口へ削除依頼を送信できます。",
     appTitle: "アプリで削除",
     appBody:
-      "AlarmTalk アプリを開き、設定 > アカウント > アカウント削除を選択してください。削除後、サーバー上のアカウントデータは削除または匿名化されます。",
+      "AlarmTalk アプリを開き、「その他」タブの「退会」を選択してください。削除後、サーバー上のアカウントデータは削除または匿名化されます。",
     requestTitle: "Web から依頼",
     requestBody:
       "アプリにログインできない場合や端末を利用できない場合は、下記メールアドレスに削除依頼を送ってください。本人確認後、処理結果をご案内します。",

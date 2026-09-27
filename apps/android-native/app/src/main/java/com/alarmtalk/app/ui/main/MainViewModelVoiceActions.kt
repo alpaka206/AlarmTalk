@@ -8,7 +8,6 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.delay
 import java.util.Locale
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
@@ -18,6 +17,7 @@ import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
+import com.alarmtalk.app.network.createVoiceCloneDraft
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -25,8 +25,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 
 internal fun MainViewModel.loadVoiceProfiles() {
     fetchVoiceProfiles(showMessage = true)
@@ -131,28 +129,15 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
 /** 계정 전환으로 등록을 중단했다는 내부 신호. 사용자에게 보일 실패가 아니다. */
 private class VoiceCreateAbortedException : Exception("voice creation aborted: session changed")
 
+/**
+ * 등록 화면 한 건. 화면이 [VoiceProfileCreationDraft] 를 **이름 붙인 인자로** 만들어 넘긴다 —
+ * 예전에는 문자열 네 개(관계·호칭·언어…)를 자리 순서로 넘겼는데, 필드가 늘면 두 문자열이
+ * 자리를 바꿔도 컴파일이 통과한다.
+ */
 internal fun MainViewModel.createVoiceProfile(
-    name: String,
-    audio: CachedAlarmAudio,
-    shared: Boolean,
-    relationshipLabel: String,
-    listenerTitle: String,
-    language: String,
+    draft: VoiceProfileCreationDraft,
     consentAgreedInline: Boolean,
-): Boolean =
-    createVoiceProfiles(
-        listOf(
-            VoiceProfileCreationDraft(
-                name = name,
-                audio = audio,
-                shared = shared,
-                relationshipLabel = relationshipLabel,
-                listenerTitle = listenerTitle,
-                language = language,
-            ),
-        ),
-        consentAgreedInline = consentAgreedInline,
-    )
+): Boolean = createVoiceProfiles(listOf(draft), consentAgreedInline = consentAgreedInline)
 
 /**
  * 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
@@ -189,6 +174,7 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
+    // 목소리의 결도 선택이지만 기본값(자동 = 빈 값)이 있어 여기서 막을 일이 없다.
     //
     // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
     // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
@@ -263,19 +249,13 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
-                    api.createVoiceClone(
+                    // 폼 필드(관계·호칭·목소리의 결·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
+                    api.createVoiceCloneDraft(
                         authorization = AlarmTalkApiClient.bearer(session.token),
+                        draft = draft,
                         audio = voiceUploadPart(draft.audio),
-                        name = draft.name.toRequestBody("text/plain".toMediaType()),
-                        isShared = draft.shared.toString().toRequestBody("text/plain".toMediaType()),
-                        relationshipLabel = draft.relationshipLabel.takeIf { it.isNotBlank() }
-                            ?.toRequestBody("text/plain".toMediaType()),
-                        listenerTitle = draft.listenerTitle.takeIf { it.isNotBlank() }
-                            ?.toRequestBody("text/plain".toMediaType()),
-                        durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
-                        isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
-                        language = (draft.language ?: deviceAppVoiceLanguage()).toRequestBody("text/plain".toMediaType()),
-                    ).profile
+                        fallbackLanguage = deviceAppVoiceLanguage(),
+                    )
                 }
             }
         }.onSuccess { profiles ->
@@ -555,7 +535,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_login_required)
         return
     }
-    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
+    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup, personalPromoTierHold())) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
         return
     }

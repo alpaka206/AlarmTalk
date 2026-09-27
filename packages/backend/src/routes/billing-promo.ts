@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { personalPromoCoversFree } from '../lib/personal-promo';
 import { logRouteError } from '../lib/logger';
 import { resolveUserPk } from './billing-helpers';
 import { redeemPromoCode, PromoRedemptionError } from '../lib/promo-redemption';
@@ -25,7 +26,11 @@ billingPromo.post('/promo/redeem', async (c) => {
   }
 
   try {
-    const result = await redeemPromoCode(getDB(c.env), { userPk, rawCode });
+    const result = await redeemPromoCode(getDB(c.env), {
+      userPk,
+      rawCode,
+      promoCoversFree: personalPromoCoversFree(c.env),
+    });
     return c.json(result);
   } catch (err) {
     if (err instanceof PromoRedemptionError) {

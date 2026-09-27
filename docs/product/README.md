@@ -59,9 +59,9 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 - **FCM instant delivery for family alarms**: data-only push on alarm creation plus pull-on-app-resume; used for delivery only — ringing stays 100% local (`AlarmManager`)
 - **Google Play Billing**: subscription purchase code complete (confirm + RTDN); Toss Payments dropped
 
-### Before public launch
+### After launch — open items
 
-- Google Play Console external setup, then real-payment E2E verification
+- Real-payment E2E verification on both stores (Google Play and App Store) — see [`docs/qa/dev-test-handoff.md`](../qa/dev-test-handoff.md)
 - ⚠ **Prod DB reset was cancelled (2026-08-01)** — beta testers have real data. Schema changes must be in-place, append-only migrations. See `CLAUDE.md` deployment section.
 - Physical-device verification of the current dev build (alarm ring paths, bucket rotation, clone pre-render playback)
 

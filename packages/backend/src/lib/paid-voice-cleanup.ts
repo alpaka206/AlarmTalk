@@ -278,7 +278,23 @@ export async function deleteSensitiveVoiceDataForUser(
   userPk: string,
   userLoginId?: string | null,
 ): Promise<VoiceRevocationNotifications> {
-  const ids = uniqueIds([userPk, userLoginId]);
+  return deleteSensitiveVoiceDataForOwners(db, [userPk, userLoginId]);
+}
+
+/**
+ * [deleteSensitiveVoiceDataForUser] 의 본체 — **주인 id 집합**(여러 사람의 PK·로그인 id)을 한 번에
+ * 받는다. 모든 문장이 `IN (주인 id…)` 집합 조건이라 한 사람을 넘기든 여럿을 넘기든 **같은 문장**
+ * 이고, 여럿이면 사람마다 돌린 것의 합집합과 같은 결과다(삭제·강등·tombstone·알림 대상).
+ *
+ * 여럿을 넘기는 곳은 보관 기한 스윕의 묶음(`lib/personal-promo-end.ts`)뿐이다 — 사람마다 스무 번
+ * 남짓 왕복하던 것을 묶음마다로 줄인다(워커 subrequest ~50). 한 문장이 실패하면 묶음 전체가
+ * 롤백된다(호출부가 한 트랜잭션으로 감싼다).
+ */
+export async function deleteSensitiveVoiceDataForOwners(
+  db: DbExecutor,
+  ownerUserIds: Array<string | null | undefined>,
+): Promise<VoiceRevocationNotifications> {
+  const ids = uniqueIds(ownerUserIds);
   if (ids.length === 0) return { downgradedAlarms: [], voiceAccessRevokedUserIds: [] };
   const ph = placeholders(ids);
   const downgraded = new Map<string, DowngradedAlarm>();

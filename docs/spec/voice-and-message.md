@@ -160,7 +160,7 @@
 | 단계 | 화면에 두는 것 | 다음 조건 |
 | --- | --- | --- |
 | 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원 |
-| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭은 선택 |
+| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, **목소리의 결(자동/경쾌/차분)**, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭·결은 선택(결 기본 = 자동) |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
@@ -368,6 +368,50 @@
   정식 등록 원장의 남은 횟수라 앱에 `1/1` 을 박아 추정하지 않는다. 다만 목소리 목록·초안과
   독립인 조회이므로 새로고침을 시작할 때 함께 병렬로 요청해 추가 왕복을 만들지 않는다.
 
+## 4-2. 클론 문구는 **목소리의 결**과 **사람이 쓴 대사**를 따른다
+
+유료 클론의 사전렌더·등록 미리듣기 문구는 Gemini 가 시드(의도 설명)에서 만든다. 두 가지를 더 싣는다
+(2026-09-27 지시 — "기본 목소리 대사처럼 사람이 말하는 것처럼, 올라온 목소리의 말투·태그를 고려해서").
+
+- **사람이 쓴 본보기**: 같은 의도의 기본 목소리 대사(`STOCK_CLIP_PRESETS`, 카테고리·순번이 클론 시드와
+  맞물린다)를 함께 준다. 리듬·쉼(…)·공감→권유 흐름·태그 거는 법만 따르고, 문장과 **어체는 그 목소리의
+  관계로 새로 쓴다**(본보기는 중립 화자의 해요체다). 인사는 짝이 없다(기본 목소리 인사는 '목소리 소개').
+- **목소리의 결**: `lively`(경쾌) / `calm`(차분·진중) / 자동.
+  - 경쾌: 짧고 통통 튀는 문장, `[cheerfully]`·`[playfully]`·`[laughs]` 류, 무겁지 않게.
+  - 차분: 차분하고 진심 어린 문장, 느낌표 거의 없음, `[cheerfully]`·`[playfully]`·`[giggles]`·`[excited]`·`[laughs]` 금지,
+    `[warmly]`·`[sincerely]`·`[reassuring]`·`[measured, deliberate]` 류. **차분은 졸림이 아니다** — 끝은
+    분명하게 깨우고 졸린 태그는 여전히 금지. **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
+  - ⚠ **차분의 금지 태그는 서버가 지운다** — 프롬프트만으로는 모델이 어겨도 그대로 저장된다. 태그가
+    하나도 없을 때 입히는 카테고리 기본값(`cheerfully`·`playfully`)도 차분이면 `warmly` 로 바꾼다.
+    등록 미리듣기가 생성에 실패해 고정 예문으로 떨어져도 같다 — 분석을 기다려 결을 알았으면 그 결(고른 값 >
+    추정값)을, 모르면 고른 결만 본다. 고정 예문으로 합성한 태그는 `preview_tag` 에 남겨 확정 뒤 재생이 같은
+    태그를 쓴다(다시 계산하면 확정 뒤 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다).
+  - **정하는 곳은 사용자 선택이 먼저다.** 등록 '세부 정보' 단계에서 고른 값(`voice_profiles.voice_energy`)이
+    등록 녹음 전사로 추정한 값(`speech_style.energy`)보다 앞선다. 자동이면 추정값을 쓰고, 그것도 없으면
+    결을 따로 정하지 않는다.
+  - ⚠ **음향은 보지 않는다.** 목소리 높낮이·속도를 보려면 음성 파일을 Vertex 로 보내야 하는데, 처리방침·
+    동의는 전사 글자까지만 다룬다. 그래서 사용자가 고르게 했다.
+  - 관계·호칭처럼 **초안에서만 바뀐다**(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`). 초안에서 결을 바꾸면
+    미리듣기 문구를 비워 새 결로 다시 만든다. 결을 보내지 않은 구버전 앱의 요청은 그 값을 건드리지 않는다.
+    목소리 **교체**(`replace_existing`)도 초안의 결을 현역 프로필로 옮긴다.
+  - ⚠ **사전렌더는 말투 분석을 기다린다.** 분석은 등록 응답 뒤에 돌아서 승격이 더 빠를 수 있는데, 그때
+    구우면 21개가 말투·결 없이 게시되고 뒤늦은 분석은 되돌리지 못한다. 분석이 `pending` 인 동안 cron 은
+    건너뛰고, 소유자 주도 전진은 `claim_stuck` 으로 "잠깐 뒤 다시" 를 답한다. **상한 10분** — 분석이
+    죽어 `pending` 이 남아도 그 뒤에는 말투 없이 굽는다(영영 안 굽는 것보다 낫다).
+  - ⚠ **등록 첫 미리듣기도 분석을 기다린다**(최대 ≈10초). 등록 화면은 클론 직후 곧바로 미리듣기를 부르는데,
+    안 기다리면 결 없이 만든 문구가 영속되고 사용자가 그걸 듣고 확정한다 — 알람 클립과 다른 결을 승인하는
+    셈이다. 그래도 안 끝나면 **생성하지 않고** 고정 예문으로 들려주고 영속하지 않는다(다음 미리듣기가 분석 뒤에
+    다시 만든다. 그대로 확정해도 재생은 같은 고정 예문이다).
+  - 분석 결과는 **목소리를 따라간다** — 분석 도중 초안이 교체로 소비되면 같은 provider 보이스를 넘겨받은
+    현역 프로필에 기록한다(초안 id 로만 쓰면 현역이 영영 `pending` 에 남는다). 거꾸로 **분석을 시작할 때의
+    녹음을 더는 뜻하지 않는 행에는 쓰지 않는다** — 제자리 교체는 id 를 그대로 두므로, 등록 분석은 그 provider
+    보이스로, 재시도는 읽은 원본 녹음 키로 묶는다(재시도를 보이스로 묶으면 LRU 복구 뒤 결과가 버려진다).
+  - ⚠ **분석이 정식 목소리에 늦게 도착하면 클립을 다시 굽는다**(대기 상한을 넘겼거나, 실패했다가 재시도로
+    살아난 경우). 사전렌더 큐를 교체 회차와 같은 '다시 굽기'(`refresh_existing`)로 돌리고 `requested_at` 을 그
+    시각으로 올린다 — 같은 provider 보이스라 보이스 대조만으로는 옛 클립이 '이미 있다' 로 세어지므로, 다시 굽는
+    회차는 **그 요청 뒤에 게시된 클립만** 최신으로 센다(대상 고르기·진행률 둘 다). 두 시각은 밀리초까지 남기고
+    엄격한 `>` 로 비교한다 — 같은 순간이면 한 번 더 굽는 쪽으로 기운다(옛 결이 섞이는 것보다 낫다).
+
 ## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
 테마 하나에 클립이 여럿이고, 알람이 울릴 때마다 순서대로 넘어간다. 같은 테마라도
@@ -412,9 +456,10 @@
   예보·미세먼지)로 만드는데, 클라는 받은 인덱스를 **해결된 사실**로 저장하고 발사 24시간 창 안에서
   다시 받지 않는다. 그래서 **하나라도 못 받았으면 `null`** 이다 — 지오코딩만 타임아웃일 때 서울
   좌표로 예보를 이어 받으면 부산 알람에 서울 날씨가 박히고, 미세먼지만 못 받았을 때 '없음' 으로
-  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 남는다
-  (저장되지 않는 문장 하나라 다시 받을 기회가 없다). 판정은 `routes/tts.ts` 의
-  `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` / `'fallback'`).
+  굳히면 먼지 나쁜 날 산책을 권한다. 서울 폴백·먼지 없음 폴백은 **라이브 생성 문장에만** 있었다
+  (저장되지 않는 문장 하나라 다시 받을 기회가 없다) — 그 경로는 2026-09-23 부터 서버가 거절해
+  닿지 않는다. 판정은 `routes/tts.ts` 의 `WeatherFetchFailurePolicy` 한 곳(`'unresolved'` /
+  `'fallback'` — `'fallback'` 은 라이브 생성 코드를 지울 때 함께 지운다).
 - **저장이 날씨 응답을 기다리는 시간에는 상한이 있다 — 8초, 양 앱 같은 값**(2026-09-22).
   이 조회가 저장 버튼을 붙잡는 유일한 네트워크라, 인터넷이 느리면 그만큼 저장이 멈췄다
   (안드로이드는 OkHttp 읽기 타임아웃 60초까지). 8초인 이유: 서버는 Open-Meteo 를 세 번
@@ -458,7 +503,9 @@
 #### 무엇을 언제 받는가 (2026-08-18 확정)
 
 **목표: 알람을 만들 때 쓸 수 있는 클립은 전부 이미 폰에 있다.** 그래야 그 자리에서
-문구를 합성하는 **라이브 생성 폴백이 필요 없어진다** — 그 폴백이 있는 한 "사전렌더가
+문구를 합성하는 **라이브 생성 폴백이 필요 없어진다** — 실제로 없앴다: 앱은 2026-08-18, 서버는
+2026-09-23 부터 `random:true`(목소리 등록 미리듣기 제외)를 `400 RANDOM_TTS_RETIRED` 로 거절한다.
+그 폴백이 있는 한 "사전렌더가
 준비되기 전" 이라는 임시 상태가 계속 알람에 실린다.
 
 | 목소리 | 언제 받나 | 없으면 |
@@ -824,11 +871,13 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
+| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
 | 목록 자르기(클립 유무) | `freeBucketsFor` + `availableContexts` | `availableFreeBuckets` + `availableContexts` | `GET /tts/stock-clips` |
 | 직접 입력 잠금(등급) | `manualLocked = freeVoiceTier` | `manualLocked: freeVoiceTier` | `tts.ts` manual-tts-quota |
+| 라이브 랜덤 생성 없음 — 서버가 거절(목소리 등록 미리듣기만 예외) | `AlarmEditorScreen` 의 `/tts/generate` 요청 `random = false` 고정 · 등록 미리듣기(`VoiceProfileManagementPanel`)는 random 을 싣지 않는다 | `AlarmEditorSheet.saveFlow` 의 `randomPrompt` 가드(클립에 묶거나 준비 화면) · 예외 `VoiceStudioViewModel.playDraftPreview`(random:true + draftPreview:true) | `routes/tts.ts` `randomRequested`(= `!draftPreviewRequested && body.random === true`) → 400 `RANDOM_TTS_RETIRED` |
 | 스톡 클립 사용(OR) | `usesStockClips` (`ui/editor/AlarmEditorScreen.kt`) | `usesStockClips` (`Views/Editor/AlarmEditorSheet.swift`) | `tts.ts` 무료 등급 게이트 |
 | 상태 강제 | `LaunchedEffect(usesStockClips, …)` | `coerceFreeVoiceTierConstraints` | — |
 | 문구 변경 강제 | — | — | `STOCK_INVALIDATION_NAME`·`STOCK_FINGERPRINT_IN_NAME` (`lib/migrations.ts`, 지문은 **마이그레이션 이름 안에** 있다) |
@@ -871,7 +920,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 푸시를 놓쳐도 수렴 | `VoiceReplacementMarkerStore` + `reconcileInaccessibleVoiceAlarms` | `VoiceReplacementMarkerStore` + `onAuthoritativeRefresh` | `voice_profiles.custom_audio_invalidated_at` (마이그레이션 #106) |
 | 직접 입력 판정(로컬) | `AlarmEntity.usesCustomMessageVoice()` | `LocalAlarmRecord.usesCustomMessageVoice` | `messages.category = 'custom'` |
 | 낡은 재렌더 폐기 | — | — | `generateStockClip`(claim·provider 보이스 가드) + `PrerenderSupersededError` |
-| 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
+| 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.reconcileAfterStop` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
 | 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |

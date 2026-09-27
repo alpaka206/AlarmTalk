@@ -9,7 +9,7 @@ SwiftUI + AlarmKit. **더 이상 PoC 가 아니다** — 실기기(iPhone 14 Pro
 `com.alarmtalk.app` 로 설치·로그인·알람 예약까지 확인했다(2026-08-07).
 
 빌드는 XcodeGen 으로 `project.yml` → `AlarmTalkNative.xcodeproj` 를 만든 뒤 돌린다.
-상세는 [`docs/ios/`](../../docs/ios/). **아직 App Store 에 없다.** CI 는 `.github/workflows/ios-build.yml` 이 돈다(필수 체크는 아니다).
+상세는 [`docs/ios/`](../../docs/ios/). **App Store 에 있다**(1.2.8, 2026-09-22 게재). 지금 어느 버전이 어느 상태인지는 [`docs/qa/dev-test-handoff.md`](../../docs/qa/dev-test-handoff.md) 「스토어 상태」 절을 본다. CI 는 `.github/workflows/ios-build.yml` 이 돈다(필수 체크는 아니다).
 
 ## Scope
 

@@ -528,6 +528,11 @@
     <string name="voices_prerender_ready_title">この声でアラーム文言を作っています</string>
     <string name="voices_prerender_ready_body">閉じても作成は続きます。
 でき次第アラームで使えます。</string>
+    <string name="voices_energy_label">声の雰囲気</string>
+    <string name="voices_energy_auto">自動</string>
+    <string name="voices_energy_lively">明るい</string>
+    <string name="voices_energy_calm">落ち着いた</string>
+    <string name="voices_energy_hint">アラーム文言の話し方とトーンをこの雰囲気に合わせます。</string>
     <string name="voices_language_label">アラームを読み上げる言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
@@ -840,27 +845,8 @@
     <string name="auth_consent_expand">項目を開く</string>
     <string name="auth_consent_collapse">項目を閉じる</string>
     <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時から午後9時までのみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
-    <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!
-
-招待コード: %1$s
-
-1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 登録してログイン
-3. 「その他」→「コードを登録」に上のコードを入力</string>
-    <string name="share_code_gift_body">AlarmTalkのプランを贈りました。
-
-コード: %1$s
-
-1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. 登録してログイン
-3. 「その他」→「コードを登録」に上のコードを入力</string>
-    <string name="welcome_promo_title">コードをお持ちですか？</string>
-    <string name="welcome_promo_body_free">コードがなくても基本機能は無料で使えます。</string>
-    <string name="welcome_promo_body_later">あとから「その他」の「コードを登録」でいつでも入力できます。</string>
-    <string name="welcome_promo_highlight_free">無料</string>
-    <string name="welcome_promo_highlight_where">「その他」の「コードを登録」</string>
-    <string name="welcome_promo_where_short">コードを取得</string>
-    <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
+    <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!\n\n招待コード: %1$s\n\n1. AlarmTalkをインストール https://alarm-talk.com/ja/\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力</string>
+    <string name="share_code_gift_body">AlarmTalkのプランを贈りました。\n\nコード: %1$s\n\n1. AlarmTalkをインストール https://alarm-talk.com/ja/\n2. 登録してログイン\n3. 「その他」→「コードを登録」に上のコードを入力</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
     <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
     <string name="tts_consent_title">アラーム文言の作成には同意が必要です</string>
@@ -914,10 +900,16 @@
     <string name="api_error_voice_limit_reached">登録できる声をすべて使いました。使わない声を削除してください。</string>
     <string name="api_error_voice_not_ready">声をまだ作成しています。しばらくしてからもう一度お試しください。</string>
     <string name="api_error_voice_cloning_failed">声を作成できませんでした。静かな場所でもう一度録音してください。</string>
+    <string name="api_error_invalid_voice_energy">声の雰囲気を確認できませんでした。もう一度選んでください。</string>
     <string name="api_error_alarm_not_found">このアラームはすでに削除されています。</string>
     <string name="api_error_tts_generation_failed">音声を作成できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="voices_not_ready_title">声をダウンロード中です</string>
     <string name="voices_not_ready_message_progress">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。(%1$d%%)\n進み具合は「声」タブで確認できます。</string>
     <string name="voices_not_ready_message">アラームに使う基本の声のダウンロードが終わると、アラームを設定できます。\nインターネットに接続したまま少しお待ちください。</string>
     <string name="voices_default_download_progress">ダウンロード中 %1$d%%</string>
+    <string name="personal_promo_plan_line">パーソナルプラン無料利用中 · %1$sまで</string>
+    <string name="personal_promo_end_notice_title">パーソナルプランの無料利用がまもなく終了します</string>
+    <string name="personal_promo_end_notice_message">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻り、登録した声は3日間保管した後に削除されます。</string>
+    <string name="personal_promo_end_notice_message_keep_voices">%1$sまでパーソナルプランを無料でご利用いただけます。%2$sからは無料プランに戻ります。</string>
+    <string name="personal_promo_end_notice_dont_show_again">今後表示しない</string>
 </resources>

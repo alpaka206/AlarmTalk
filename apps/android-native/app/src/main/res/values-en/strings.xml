@@ -520,6 +520,11 @@
     <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
     <string name="voices_prerender_ready_body">You can close this. It keeps going.
 They become available as they finish.</string>
+    <string name="voices_energy_label">Voice feel</string>
+    <string name="voices_energy_auto">Auto</string>
+    <string name="voices_energy_lively">Lively</string>
+    <string name="voices_energy_calm">Calm</string>
+    <string name="voices_energy_hint">Alarm lines match this feel in wording and tone.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
@@ -832,27 +837,8 @@ Please update to the latest version.</string>
     <string name="auth_consent_expand">Expand item</string>
     <string name="auth_consent_collapse">Collapse item</string>
     <string name="auth_consent_marketing_detail">News about new features, events, and offers, sent by push or email. Declining changes nothing about signing up or using the app, and you can turn it off any time from the More tab. Promotional messages are only sent between 8am and 9pm; alarms you set yourself are not promotions and ring exactly when you scheduled them.</string>
-    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!
-
-Invite code: %1$s
-
-1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. Sign up and log in
-3. Enter the code under More → Register code</string>
-    <string name="share_code_gift_body">I sent you an AlarmTalk pass.
-
-Pass code: %1$s
-
-1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
-2. Sign up and log in
-3. Enter the code under More → Register code</string>
-    <string name="welcome_promo_title">Have a code?</string>
-    <string name="welcome_promo_body_free">Core features stay free even without a code.</string>
-    <string name="welcome_promo_body_later">You can enter one later from Register code in More.</string>
-    <string name="welcome_promo_highlight_free">free</string>
-    <string name="welcome_promo_highlight_where">Register code in More</string>
-    <string name="welcome_promo_where_short">Get a code</string>
-    <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
+    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!\n\nInvite code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
+    <string name="share_code_gift_body">I sent you an AlarmTalk pass.\n\nPass code: %1$s\n\n1. Install AlarmTalk https://alarm-talk.com/en/\n2. Sign up and log in\n3. Enter the code under More → Register code</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
@@ -906,10 +892,16 @@ Pass code: %1$s
     <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
+    <string name="api_error_invalid_voice_energy">We couldn\'t apply that voice feel. Please choose it again.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
     <string name="voices_not_ready_title">Still downloading voices</string>
     <string name="voices_not_ready_message_progress">You can set alarms once the default voices finish downloading. (%1$d%%)\nYou can check progress in the Voices tab.</string>
     <string name="voices_not_ready_message">You can set alarms once the default voices finish downloading.\nPlease stay connected to the internet for a moment.</string>
     <string name="voices_default_download_progress">Downloading %1$d%%</string>
+    <string name="personal_promo_plan_line">Personal plan free until %1$s</string>
+    <string name="personal_promo_end_notice_title">Your free Personal plan ends soon</string>
+    <string name="personal_promo_end_notice_message">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan, and voices you registered will be kept for 3 days and then deleted.</string>
+    <string name="personal_promo_end_notice_message_keep_voices">You can use the Personal plan for free until %1$s. From %2$s, you\'ll return to the Free plan.</string>
+    <string name="personal_promo_end_notice_dont_show_again">Don\'t show again</string>
 </resources>

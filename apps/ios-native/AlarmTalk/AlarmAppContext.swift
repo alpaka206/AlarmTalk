@@ -124,13 +124,27 @@ final class AlarmAppContext {
            (record.bucketClipKeys?.count ?? 0) > 1,
            record.repeatDaysMask != 0,
            !record.isHolidayOffRecurring {
-            await rescheduleForNextBucketClip(record.id)
+            await reconcileAfterStop(record.id)
+        } else if let record = recordBeforeStop,
+                  record.repeatDaysMask != 0,
+                  !record.isHolidayOffRecurring,
+                  PaidVoiceGate.dependsOnPromoCutover(record: record, snapshot: accessSnapshot(), now: nowProvider()) {
+            // ⚠ **기간 한정 개인 플랜만으로 열린 목소리의 주간 반복 알람도 정지마다 다시 맞춘다**(Codex #803).
+            // AlarmKit 은 주간 반복에 한 번 받은 소리를 끝 뒤 회차까지 다시 쓴다 — 끝 전 마지막 회차를 끄는
+            // 순간 다음 회차(끝 뒤)를 기본 알람음으로 다시 건다(`PaidVoiceGate.dependsOnPromoCutover`).
+            // 리컨사일러는 예약 판정이 바뀌었을 때만 다시 예약하므로 끝 전의 정지는 아무것도 바꾸지 않는다.
+            await reconcileAfterStop(record.id)
         }
     }
 
-    /// 회전한 클립으로 알람을 다시 예약한다. `AlarmTalkApp` 이 `AlarmKitViewModel` 로 잇는다.
-    /// 기본은 no-op 이라 테스트·콜드부팅에서 안전하다.
-    var rescheduleForNextBucketClip: (String) async -> Void = { _ in }
+    /// 정지 뒤 이 알람의 예약을 다시 맞춘다 — 회전한 무료 테마 클립, 또는 기간 한정 개인 플랜의 끝을 넘는
+    /// 다음 회차. `AlarmTalkApp` 이 리컨사일러로 잇는다. 기본은 no-op 이라 테스트·콜드부팅에서 안전하다.
+    var reconcileAfterStop: (String) async -> Void = { _ in }
+
+    /// 예약 판정에 쓰는 권한 스냅샷 — 예약(`AlarmKitViewModel.effectiveRecordForScheduling`)과 같은 곳에서 읽는다.
+    var accessSnapshot: () -> AccessSnapshot = {
+        KeychainStore.readSession().map { AccessSnapshotStore().read(userID: $0.user.id) } ?? .empty
+    }
 
     /// 인스턴스가 없어도 같은 규칙을 쓰게 하는 진입점.
     /// `AlarmKitViewModel` 의 disappearance 루프가 `AlarmAppContext.shared == nil` 인

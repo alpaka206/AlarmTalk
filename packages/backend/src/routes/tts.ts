@@ -27,6 +27,8 @@ import {
   deriveAlarmDisplayText,
   normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
+  withVoiceEnergy,
+  fallbackTagForEnergy,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -41,6 +43,7 @@ import {
   retiredIsNullClause,
   STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
+  waitForSpeechStyleAnalysis,
 } from '../lib/stock-clips';
 import {
   readManualTtsUsage,
@@ -48,7 +51,8 @@ import {
   reserveManualTtsQuota,
   resolveManualTtsPool,
 } from '../lib/manual-tts-quota';
-import { isPaidVoicePlan } from './billing-helpers';
+import { hasPersonalVoiceAccess, isPaidVoicePlan } from './billing-helpers';
+import { computedUserPlan, resolvePersonalPromo } from '../lib/personal-promo';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
   type DynamicPromptSettings,
@@ -354,8 +358,10 @@ async function findUsableVoiceProfile(
   });
   if (system.rows.length > 0) return system.rows[0] as Record<string, unknown>;
 
+  // 공유 갈래는 **주인의 원시 plan**(`owner_plan`)도 함께 읽는다 — 호출부가 커플·가족 기능의
+  // 원시값 게이트에 쓴다(`isPaidVoicePlan`). 기간 한정 개인 플랜을 반영하지 않는다.
   const shared = await db.execute({
-    sql: `SELECT vp.*, u.id AS owner_pk
+    sql: `SELECT vp.*, u.id AS owner_pk, u.plan AS owner_plan
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
@@ -823,6 +829,25 @@ tts.post('/generate', async (c) => {
     );
   }
   const randomRequested = !draftPreviewRequested && body.random === true;
+  // ⚠ **라이브 랜덤 생성은 끝났다 — 서버가 거절한다**(2026-09-23, 핸드오프 「5. 알람 음성의
+  //   최종 목적지」 5단계). 알람 음성은 프리셋(사전렌더 클립) + 직접 입력 둘뿐이다.
+  //   - 앱은 2026-08-18(`3929214c`)에 이 요청을 끊었다. 그 커밋은 Android versionCode 25~29
+  //     와 배포된 iOS 빌드 1~6 전부에 들어 있고, Android `minSupported` 가 25 라 그 아래는
+  //     이미 차단 화면이다. 그래서 여기 닿는 정상 클라이언트는 없다.
+  //   - 열어 두면 **구멍**이었다: 무료 사용자가 기본 목소리 + `random_context:'preset'` +
+  //     매번 다른 `listener_title` 을 보내면 요금제 게이트를 통과하고(프리셋은 무료 허용),
+  //     호칭이 문장 앞에 붙어 캐시가 빗나가 요청마다 합성이 돌았다. 월 한도는
+  //     `isManualGeneration` 이 `!randomRequested` 라 세지 않았다.
+  //   ⚠ **자리는 반드시 여기다** — `randomRequested` 는 이미 `!draftPreviewRequested` 를 품는다.
+  //   iOS 목소리 등록 미리듣기(`playDraftPreview`)는 `random:true` + `draft_preview:true` 를 함께
+  //   보내므로, `body.random` 만 보고 거절하거나 위 draft 판정보다 앞에 두면 **새 목소리를 아예
+  //   등록할 수 없다.**
+  //   앱 문구 표(`ApiErrorMessages.kt`·`APIErrorMessages.swift`)에는 넣지 않았다 — 닿는 빌드가 없다.
+  //   이 아래의 `randomRequested` 갈래는 이제 닿지 않는 코드다. 지우는 것은 후속 PR 이다(초안
+  //   미리듣기와 같이 쓰는 헬퍼·사전렌더 검사의 테스트를 먼저 옮겨야 한다).
+  if (randomRequested) {
+    return jsonError(c, 400, 'RANDOM_TTS_RETIRED', 'Live random TTS generation has been retired.');
+  }
   const randomContext = randomRequested
     ? normalizeRandomContext(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
@@ -897,15 +922,33 @@ tts.post('/generate', async (c) => {
   }
 
   // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
-  const callerUserPlan = (user.rows[0]!.plan as string) ?? null;
-  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-  const freePlanRestricted = !isPaidVoicePlan(callerUserPlan);
+  // ⚠ **페이월과 한도는 같은 값을 봐야 한다** — 기간 한정 개인 플랜(계산값)을 둘 다에
+  //   반영한다. 한쪽만 반영하면 게이트는 열렸는데 한도가 0 이라 직접 입력이 전부 429 가 된다.
+  const promo = resolvePersonalPromo(c.env);
+  const rawCallerUserPlan = (user.rows[0]!.plan as string) ?? null;
+  const callerUserPlan = computedUserPlan(rawCallerUserPlan, promo);
+  // 유료 접근이 기간 한정 개인 플랜에서만 오는가 — 직접 입력 한도 풀을 고를 때 보류 그룹을 건너뛴다
+  // (`resolveManualTtsPool` 의 `promoOnly`).
+  const callerPromoOnly = callerUserPlan !== rawCallerUserPlan;
 
   const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
+  // **남의 목소리**(같은 그룹이 공유한 클론)를 쓰는가 — 공유 갈래만 `owner_pk` 를 싣는다.
+  const usingSharedVoice =
+    typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
+  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
+  //
+  // ⚠ **공유 목소리는 원시값이다**(기간 한정 개인 플랜을 반영하지 않는다). 커플·가족 기능이라,
+  //   계산값으로 보면 결제 보류(ON_HOLD·PAUSED) 그룹의 원시 free 멤버가 기간 동안 주인의 공유
+  //   클론으로 생성할 수 있게 된다 — 그룹·`is_shared`·주인의 클론은 보류 중에도 남아 있다.
+  //   내 목소리·스톡 목소리는 **계산값**(내 개인 기능). 스펙: `docs/spec/billing-lifecycle.md`
+  //   「무엇이 계산값을 보고, 무엇이 원시값을 보나」.
+  const freePlanRestricted = usingSharedVoice
+    ? !isPaidVoicePlan(rawCallerUserPlan)
+    : !hasPersonalVoiceAccess(rawCallerUserPlan, promo);
 
   if (vp.status !== 'ready') {
     return c.json(
@@ -980,6 +1023,18 @@ tts.post('/generate', async (c) => {
       403,
     );
   }
+  // 공유 목소리는 **주인이 원시 유료일 때만** 쓴다 — 오디오 라우트의 남의 목소리 갈래·
+  // `messageBelongsToCaller`·`voiceProfileBelongsToCaller` 와 같은 규칙이다. 보류 그룹의 주인은
+  // 원시 free 라 여기서 막힌다(호출자가 따로 유료여도 — 주인의 공유는 멈춘 상태다).
+  if (usingSharedVoice && !isPaidVoicePlan(vp.owner_plan)) {
+    return c.json(
+      {
+        error: 'This voice is locked on the free plan.',
+        error_code: 'VOICE_LOCKED_FREE_PLAN',
+      },
+      403,
+    );
+  }
   if (presetOnlyRestricted) {
     // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
     const presetOnlyCode: ErrorCode = freePlanRestricted
@@ -1043,7 +1098,13 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
-  let draftPreviewTag = 'cheerfully';
+  // 미리듣기의 기본 태그. 차분한 목소리면 들뜬 `cheerfully` 대신 `warmly` 다(Codex #802) —
+  // 생성이 실패해 고정 예문으로 떨어지는 갈래에서도 결과 반대로 들리면 안 된다. 여기서는 사용자가
+  // **고른** 결만 본다. 분석이 끝나 추정 결을 알게 되면 생성 갈래가 그걸로 다시 정한다(아래).
+  // ⚠ 고정 예문으로 합성한 태그는 claim 이 `preview_tag` 에 남긴다 — 확정 뒤 재생은 그 값을 쓴다.
+  //   다시 계산하면 확정 뒤에 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다.
+  const draftPreviewDefaultTag = fallbackTagForEnergy('cheerfully', String(vp.voice_energy ?? ''));
+  let draftPreviewTag = draftPreviewDefaultTag;
 
   try {
     const requestedLanguage = draftPreviewRequested
@@ -1069,18 +1130,46 @@ tts.post('/generate', async (c) => {
         // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
         // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
         // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
+        // 태그는 그때 합성한 값(claim 이 남긴 `preview_tag`)을 쓴다. 없으면(이 규칙 이전) 기본값.
+        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
+        if (storedTag) draftPreviewTag = storedTag;
       } else {
+        // 생성이 어디서 실패하든 합성은 **영속된 문구 아니면 고정 예문** 둘 중 하나여야 한다 — 생성만 되고
+        // 영속되지 않은 문구로 합성하면, 그대로 확정했을 때 재생(고정 예문)이 캐시를 빗나간다.
+        const fixedPreviewText = requestText;
+        let fixedPreviewTag = draftPreviewDefaultTag;
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
-          if (greetingSeed) {
+          // ⚠ **말투 분석을 잠깐 기다린다**(Codex #802). 등록 화면은 클론 직후 곧바로 여기로 오고 분석은
+          // 그 뒤에 돈다 — 안 기다리면 첫 미리듣기가 말투·자동 결 없이 만들어져 영속되고, 사용자는 알람
+          // 클립(분석 뒤에 굽는다)과 다른 결을 듣고 확정한다. 상한까지 안 끝나면 **생성하지 않는다** —
+          // 고정 예문(영속 안 함)으로 떨어져, 다음 미리듣기가 분석 뒤에 다시 만든다.
+          let analyzedSpeechStyle: unknown = vp.speech_style;
+          let analysisSettled = true;
+          if (vp.speech_style_status === 'pending') {
+            const waited = await waitForSpeechStyleAnalysis(db, body.voice_profile_id);
+            analysisSettled = waited.settled;
+            if (waited.settled) analyzedSpeechStyle = waited.speechStyle;
+          }
+          // 분석이 끝났으면 폴백 태그도 실제 결(고른 값 > 추정값)을 따른다 — 생성이 실패해 고정 예문으로
+          // 떨어져도 차분으로 추정된 목소리가 `cheerfully` 로 들리지 않게(Codex #802).
+          if (analysisSettled) {
+            fixedPreviewTag = fallbackTagForEnergy(
+              'cheerfully',
+              withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy)?.energy,
+            );
+            draftPreviewTag = fixedPreviewTag;
+          }
+          if (greetingSeed && analysisSettled) {
             const generated = await generatePrerenderClipText(c.env, {
               seed: greetingSeed.seeds[0]!,
               relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
               listenerTitle: draftPreviewListenerTitle,
               targetLanguage: storedPreviewLanguage,
               defaultTag: greetingSeed.defaultTag,
-              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
-              speechStyle: parseSpeechStyle(vp.speech_style),
+              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로. 사용자가 고른
+              // 목소리의 결(voice_energy)이 있으면 그게 앞선다(`SELECT *` 라 컬럼이 없던 창에도 안전).
+              speechStyle: withVoiceEnergy(parseSpeechStyle(analyzedSpeechStyle), vp.voice_energy),
             });
             // ⚠ **여기 들어오는 문구는 태그를 벗겨서 쓴다**(2026-08-20).
             // `generatePrerenderClipText` 는 이제 딜리버리 태그가 인라인으로 박힌 문구를
@@ -1093,8 +1182,11 @@ tts.post('/generate', async (c) => {
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
             // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
-            // 페르소나 predicate(관계/호칭, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭이
-            // 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가 재사용).
+            // 페르소나 predicate(관계/호칭/결, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭·
+            // 목소리의 결이 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가
+            // 재사용). 결은 `vp` 를 읽은 그 값과 비교한다 — PATCH 가 결만 바꿔도 이 요청은 낡은 생성이다(Codex #802).
+            // #122 배포 창에는 컬럼이 없어 이 UPDATE 가 던지고, 아래 claim 도 같은 컬럼을 봐 500 으로 끝난다 —
+            // 재시도하면 되고, 옛 결로 만든 문구가 남지 않는다.
             // previewed_at/claim 가드: 다른 요청이 이미 확정했거나(폴백 문구로 합성됐을 수 있음)
             // 활성 claim 으로 합성 중이면 저장하지 않는다 — 늦은 영속이 '실제 합성된 문구'와 다른
             // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
@@ -1105,6 +1197,7 @@ tts.post('/generate', async (c) => {
                       AND COALESCE(is_draft, 0) = 1
                       AND COALESCE(relationship_label, '') = ?
                       AND COALESCE(listener_title, '') = ?
+                      AND COALESCE(voice_energy, '') = ?
                       AND COALESCE(preview_text, '') = ''
                       AND previewed_at IS NULL
                       AND (preview_claimed_at IS NULL
@@ -1120,6 +1213,7 @@ tts.post('/generate', async (c) => {
                 userLoginId,
                 String(vp.relationship_label ?? ''),
                 String(vp.listener_title ?? ''),
+                String(vp.voice_energy ?? ''),
               ],
             });
             if ((persisted.rowsAffected ?? 0) === 0) {
@@ -1136,12 +1230,14 @@ tts.post('/generate', async (c) => {
                 requestText = winnerText;
                 const winnerTag =
                   typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
-                draftPreviewTag = winnerTag || 'cheerfully';
+                draftPreviewTag = winnerTag || draftPreviewDefaultTag;
               }
             }
           }
         } catch {
-          // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
+          // 고정 예문 폴백 — 생성 뒤 영속 단계에서 던졌어도 고정 예문과 그 태그로 되돌린다.
+          requestText = fixedPreviewText;
+          draftPreviewTag = fixedPreviewTag;
         }
       }
     }
@@ -1238,12 +1334,12 @@ tts.post('/generate', async (c) => {
     //   이미 더 빡빡하므로(원시 길이) 이 검사는 더해 주는 것이 없었다.
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),
-    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 [tag] +text 를 직접 조립한다.
+    // 동적 모드는 생성 단계에서 이미 태그가 인라인된 {text} 를 한 호출로 받았으므로(순환 모순 제거),
+    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 그 문구를 그대로 쓴다.
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
-      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
+      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 태그(`draftPreviewDefaultTag` — 차분이면 warmly)를 쓴다.
       // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
       // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
       // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로
@@ -1407,21 +1503,28 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
       const claimed = await db.execute({
+        // 영속된 문구가 없으면(고정 예문으로 합성) 합성하는 태그를 `preview_tag` 에 남긴다 — 확정 뒤 재생이
+        // 같은 태그로 캐시를 맞힌다. 영속된 문구가 있으면 그 태그를 그대로 둔다.
         sql: `UPDATE voice_profiles
               SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
+                  preview_tag = CASE WHEN COALESCE(preview_text, '') = '' THEN ? ELSE preview_tag END,
                   updated_at = datetime('now')
               WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
                 AND COALESCE(relationship_label, '') = ?
                 AND COALESCE(listener_title, '') = ?
+                AND COALESCE(voice_energy, '') = ?
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
         args: [
           previewClaimToken,
+          draftPreviewTag,
           body.voice_profile_id,
           userPk,
           userLoginId,
           String(vp.relationship_label ?? ''),
           String(vp.listener_title ?? ''),
+          // 결도 페르소나다 — 생성 왕복 중 PATCH 로 결이 바뀌었으면 옛 결로 만든 문구를 합성하지 않는다.
+          String(vp.voice_energy ?? ''),
         ],
       });
       if ((claimed.rowsAffected ?? 0) === 0) {
@@ -1483,7 +1586,9 @@ tts.post('/generate', async (c) => {
         // 초과면 여기서도 429 다. 앱이 저장 전에 남은 횟수를 먼저 보지만(불필요한 왕복을
         // 줄이려는 것뿐) **강제는 여기 하나뿐**이다 — 다른 기기가 그 사이 다 써 버렸을 수 있다.
         if (isManualGeneration) {
-          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+          const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+            promoOnly: callerPromoOnly,
+          });
           const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
           if (!reservation.ok) {
             return jsonError(
@@ -1593,7 +1698,9 @@ tts.post('/generate', async (c) => {
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
     if (isManualGeneration) {
-      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+        promoOnly: callerPromoOnly,
+      });
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
         return jsonError(
@@ -1870,10 +1977,14 @@ tts.get('/manual-quota', async (c) => {
     sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
-  const callerUserPlan =
+  const rawCallerUserPlan =
     userRow.rows.length > 0 && userRow.rows[0]!.plan != null ? String(userRow.rows[0]!.plan) : null;
+  // 생성 라우트와 같은 계산값 — 기간 한정 개인 플랜이면 개인 한도(30)가 보인다.
+  const callerUserPlan = computedUserPlan(rawCallerUserPlan, resolvePersonalPromo(c.env));
 
-  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan, {
+    promoOnly: callerUserPlan !== rawCallerUserPlan,
+  });
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
   return c.json({
     plan_key: pool.planKey,
@@ -1965,6 +2076,7 @@ tts.get('/messages/:id/audio', async (c) => {
                  messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
                  messages.category,
                  COALESCE(vp.is_system, 0) AS is_system,
+                 owner.id AS owner_id,
                  owner.plan AS owner_plan
           FROM messages
           JOIN voice_profiles vp
@@ -2014,6 +2126,7 @@ tts.get('/messages/:id/audio', async (c) => {
     audio_url: string | null;
     category: string | null;
     is_system: number | null;
+    owner_id: string | null;
     owner_plan: string | null;
   }>(result.rows[0]!);
 
@@ -2021,8 +2134,17 @@ tts.get('/messages/:id/audio', async (c) => {
   // 내려준다. 소유자가 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기며, 소유자
   // 본인은 물론 공유받은 대상에게도 서버가 오디오를 주지 않는다(삭제된 것과 동일하게 사라짐).
   // 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
+  //
+  // ⚠ **기간 한정 개인 플랜은 목소리 주인이 호출자일 때만 반영한다**(계산값). 남의 목소리
+  //   (공유 프리셋·받은 알람)는 주인의 **원시** plan 을 본다 — `messageBelongsToCaller` 의 공유
+  //   갈래와 한 쌍이다(CLAUDE.md). 여기만 계산값으로 넓히면 결제 보류 그룹의 공유 목소리가
+  //   기간 동안 되살아나고, 쓰기(알람 저장)는 막혀 '들리는데 저장이 안 되는' 알람이 생긴다.
   const isSystemVoice = Number(message.is_system ?? 0) === 1;
-  if (!isSystemVoice && !isPaidVoicePlan(message.owner_plan)) {
+  const ownerIsCaller = message.owner_id != null && ownerIds.includes(message.owner_id);
+  const ownerHasVoiceAccess = ownerIsCaller
+    ? hasPersonalVoiceAccess(message.owner_plan, resolvePersonalPromo(c.env))
+    : isPaidVoicePlan(message.owner_plan);
+  if (!isSystemVoice && !ownerHasVoiceAccess) {
     return c.json(
       {
         error: 'This voice is locked on the free plan.',
@@ -2080,7 +2202,8 @@ async function renderedForCurrentVoiceSelect(db: DbExecutor): Promise<string> {
                    WHEN COALESCE(q.refresh_existing, 0) = 0 THEN 1
                    WHEN EXISTS (
                      SELECT 1 FROM generated_audio_assets ga
-                     WHERE ga.message_id = m.id AND ga.audio_url = m.audio_url
+                     WHERE (ga.message_id = m.id OR ga.voice_profile_id = m.voice_profile_id)
+                       AND ga.audio_url = m.audio_url
                        AND ga.provider_voice_id = vp.elevenlabs_voice_id
                    ) THEN 1
                    ELSE 0

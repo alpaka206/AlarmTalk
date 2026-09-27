@@ -22,7 +22,7 @@ import { sentryMiddleware } from './middleware/sentry';
 import { errorCodeMiddleware } from './middleware/errorCode';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
-import { retryTransientTurso } from './lib/turso-retry';
+import { PERSONAL_PROMO_END_CRON } from './lib/personal-promo';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -278,31 +278,12 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error', error_code: 'INTERNAL_ERROR' }, 500);
 });
 
-// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
+// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *", "* * * * *"].
+// 5분 틱이 본체이고, 1분 크론은 기간 한정 개인 플랜 종료 전용이다(아래 첫 분기).
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  const rawDb = getDB(env);
-  // 520 is a transient failure of Turso's HTTP gateway. Retry only read
-  // queries: retrying a write after an ambiguous HTTP failure can duplicate a
-  // side effect. Failed maintenance writes remain safe to resume next tick.
-  const db = new Proxy(rawDb, {
-    get(target, property) {
-      if (property === 'execute') {
-        return (...args: unknown[]) => {
-          const statement = args[0];
-          const sql =
-            typeof statement === 'string'
-              ? statement
-              : typeof statement === 'object' && statement !== null && 'sql' in statement
-                ? String(statement.sql)
-                : '';
-          const execute = () => Reflect.apply(target.execute, target, args);
-          return /^\s*(?:SELECT|EXPLAIN)\b/i.test(sql) ? retryTransientTurso(execute) : execute();
-        };
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
+  // 읽기 재시도는 `getDB` 가 두른다(`withTransientReadRetry`) — 여기서 또 감싸면 3×3 회가 된다.
+  // 실패한 유지보수 쓰기는 다음 틱에 재개되므로 그대로 둔다.
+  const db = getDB(env);
   const now = new Date(event.scheduledTime);
 
   // cron 은 HTTP 미들웨어(sentryMiddleware)를 타지 않으므로 Sentry 클라이언트를 직접
@@ -337,6 +318,33 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       scope.captureException(err);
     });
   };
+
+  // ── 기간 한정 개인 플랜 종료 전용 크론(1분) ─────────────────────────────────────
+  // 이 실행은 **이 일만** 한다 — 실행마다 subrequest(~50)를 따로 받는 것이 전용 크론을 둔 이유다
+  // (`lib/personal-promo-end.ts`). 끝 전이거나 스위치가 꺼져 있으면 DB 를 부르지 않고 끝난다.
+  if (event.cron === PERSONAL_PROMO_END_CRON) {
+    try {
+      const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+      await runPersonalPromoEnd(db, env, now, {
+        role: 'dedicated',
+        hooks: {
+          onError: (stage, err, tags) =>
+            captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+        },
+      });
+    } catch (err) {
+      // ⚠ **이 실행은 1분마다 돈다**(Codex #803) — DB 장애처럼 계속되는 실패를 매번 Sentry 로 올리면 하루
+      // 1,440건이 되어 다른 사고가 묻힌다. 로그는 매번 남기고, 경보는 단계별 경보와 같은 시간당 자리
+      // (`isPromoEndAlertSlot`)에서만 올린다. 모듈을 못 불렀으면(배포 사고) 그대로 올린다.
+      const alertSlot = await import('./lib/personal-promo-end')
+        .then((module) => module.isPromoEndAlertSlot(now))
+        .catch(() => true);
+      // `captureCron` 도 같은 줄을 로그로 남긴다 — 경보 자리가 아니면 로그만.
+      if (alertSlot) captureCron('scheduled.personal_promo_end', err);
+      else logStructured('error', { at: 'scheduled.personal_promo_end', error: String(err) });
+    }
+    return;
+  }
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
@@ -406,11 +414,27 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.subscription_expiry', err);
   }
 
+  // 기간 한정 개인 플랜 종료 전환 — **폴백**(틱당 3명). 본 처리는 위의 전용 크론이 하고, 이건
+  // 전용 크론이 빠져 있어도 전환이 멈추지 않게 둔다. 끝 전이면 DB 를 부르지 않는다.
+  try {
+    const { runPersonalPromoEnd } = await import('./lib/personal-promo-end');
+    await runPersonalPromoEnd(db, env, now, {
+      role: 'main',
+      hooks: {
+        onError: (stage, err, tags) =>
+          captureCron(`scheduled.personal_promo_end.${stage}`, err, tags),
+      },
+    });
+  } catch (err) {
+    captureCron('scheduled.personal_promo_end', err);
+  }
+
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
   // 전자상거래법(5년) 보존을 위해 가명처리해 분리 테이블로 옮긴다.
   try {
     const { purgeUserAccount, pseudonymizeBillingForRetention } =
       await import('./lib/account-deletion');
+    const { personalPromoCoversFree } = await import('./lib/personal-promo');
     const { withWriteTransaction } = await import('./lib/transactions');
     // ⚠ **`apple_refresh_token` 을 함께 읽는다.** 파기하면 읽을 곳이 없어져 영영 폐기하지
     // 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이 남는다(애플 심사 5.1.1(v)).
@@ -466,7 +490,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         try {
           const purged = await withWriteTransaction(db, async (tx) => {
             await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-            return purgeUserAccount(tx, userPk, userId);
+            return purgeUserAccount(tx, userPk, userId, personalPromoCoversFree(env, now));
           });
           revokedTargets.push(...purged.downgradedAlarms);
           voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);

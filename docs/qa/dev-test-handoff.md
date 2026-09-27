@@ -1,7 +1,220 @@
-# Dev 테스트 핸드오프 (갱신 2026-09-21)
+# Dev 테스트 핸드오프 (갱신 2026-09-27)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
 > 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
+
+## 스토어 상태 — 2026-09-27
+
+- **Play**: 프로덕션 `29 (1.2.9)` 게재(2026-09-22). 1.2.10 은 versionCode 30.
+- **App Store**: `1.2.9`(빌드 6) 게재 완료(2026-09-23T18:31Z, `READY_FOR_SALE` — 제출 약 18시간 뒤).
+  열린 심사 제출 없음. 1.2.10 은 빌드 7.
+- **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
+  마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
+  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → Play 30 이 100% 게재된 뒤 `app-version.ts` Android
+  `latest` 30. 앱을 먼저 내면 옛 서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한
+  목소리의 선택이 영구히 사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
+  기간)이 생긴다 — 그동안 웰컴 코드를 나눠 주지 않는다(필요하면 `welcome` 이 아닌 그룹명으로 발급).
+- ⚠ **앱 빌드 전에 prod 배포를 눈으로 확인한다.** #797 머지 푸시는 main 에 없던 백엔드 변경을 전부
+  싣고 있어 `deploy-backend.yml` 의 `packages/backend/**` 필터에 걸리지만, 가정하지 말고 main 의 Deploy
+  Backend 실행이 **성공**했고 로그에 `production migration 121/122`·`122/122` 가 적용으로 찍혔는지,
+  `GET /api/app/version?platform=android` 가 `latest` 29 인지 본다. 실패했거나 안 돌았으면
+  `workflow_dispatch` 로 다시 돌리고, 성공하기 전에는 앱을 빌드·제출하지 않는다.
+- 새 버전 레코드에는 **심사 첨부 영상이 따라오지 않는다**(`appStoreReviewAttachments` 빈 목록) —
+  노트에 "영상이 첨부돼 있다" 를 적지 않거나 영상을 다시 올린다. 노트 상한은 4000자다. 1.2.9 노트는
+  "유지보수·버그 수정만" 머리말이라 1.2.10(새 기능·서버가 켜는 프로모)에는 새로 쓴다.
+
+## 기간 한정 개인 플랜 + 웰컴 코드 안내 폐지 — 2026-09-27 (백엔드)
+
+규칙은 스펙이 유일 출처다: [`billing-lifecycle.md`](../spec/billing-lifecycle.md) 「기간 한정 개인
+플랜」 · [`plan-gates.md`](../spec/plan-gates.md) 「웰컴 코드 안내 — 폐지」 ·
+[`gates-and-overlays.md`](../spec/gates-and-overlays.md) 「개인 플랜 종료 안내」. 끝 시각은
+`@alarmtalk/shared` 의 `PERSONAL_PROMO.endsAt` 한 곳이다(여기 베끼지 않는다).
+
+- 서버는 **스위치가 꺼진 채** 배포된다 — `PERSONAL_PROMO_STARTS_AT` 이 없으면 오늘과 같다.
+  마이그레이션 #121 은 배포 때 돈다(웰컴 그룹 코드 비활성화 — 되돌릴 수 없는 데이터 UPDATE 라
+  dev 에서 먼저 본다).
+- 2026-09-27 리뷰 수정(백엔드): 종료 전환·보관 스윕은 **1분 전용 크론**(`wrangler.toml` 두 환경에
+  `"* * * * *"` 추가)이 묶음으로 한다. 공유 목소리는 원시 게이트(보류 그룹 부활 차단), 응답에
+  `personal_promo.deletes_voices_at_end` 추가, 삭제 예고 푸시는 개인 플랜 종료 전용 문구, 전역 클론
+  상한 200 → 500.
+- 2026-09-27 리뷰 2차(백엔드, 스펙 D6~D10): `delete_after` 는 **끝 + 3일보다 이르지 않다**(앞당겨
+  나눠 걸던 공식을 걷어냄 — 먼저 전환된 사람이 3일을 못 채웠다). 2,500명 시뮬레이션: 가장 이른
+  삭제 = 끝 + 3일 정각, 가장 늦은 삭제 = 끝 + 3일 + 4시간 1분, 약속 시각 전 삭제 0. 약속 시각을
+  넘겨 전환된 사람은 전환 + 24시간. 응답에 `personal_promo.computed_at`(서버 계산 시각 — 앱의 낡은
+  캐시 판정용), 알람 PATCH 는 `voice_profile_id` 가 **바뀔 때만** 소유권을 본다(보류 주인의 공유
+  목소리 알람 토글이 404 로 동기화 실패하던 것), 스윕이 아무도 못 지운 실행은 같은 실행에서 전환으로
+  넘어가고 스윕 실패·기한 초과 경보는 시간당 한 번. 푸시의 약속 시각(한국 시간 자정)은 "M월 D일
+  밤 12시" 꼴로 적는다("오전 12시" 는 낮으로 읽힌다).
+- 2026-09-27 리뷰 3차(백엔드·스펙, 스펙 D11~D16): 알람 PATCH 는 `message_id` 도 **바뀔 때만** 소유권을
+  본다(D13 — 안드로이드는 토글마다 주인의 공유 프리셋 클립 id 를 그대로 보내서, 보류 주인의 클립을 쓰는
+  멤버 알람이 여전히 404 로 동기화에 실패했다. 재생은 오디오 라우트가 계속 403). 전환 실패 경보도
+  시간당 한 번(D14 — 정시에 두 크론 중 맡은 쪽만). 전용 크론의 삭제는 약속 시각 + 하루 꼬리 없이
+  남은 전환 대상의 행이 없어질 때까지 돈다(D15 — 지울 것이 없으면 분당 조회 하나). 모든 전환의
+  기한 = max(끝 + 3일, 전환 + 24시간) 정시(D16 — 약속 직전 전환도 시각이 적힌 예고와 하루). 2,500명
+  재측정: 기기 평균 1.06대 → 가장 늦은 삭제 끝 + 3일 + 4시간 1분, 기기 2대 → + 5시간 39분, 둘 다 약속
+  시각 전 삭제 0·한 실행 최대 subrequest 43. 앱 규칙: 종료 안내는 이 진입의 **첫 결과**(실패 포함)가
+  진입을 끝낸다(D11 — 두 앱 같게), 낡은 프로모 하나로만 무료인 전경 잠금은 iOS 도 이번 진입의 plan
+  반영을 기다린다(D12), plan·프로모 쓰기의 순번 가드는 두 앱 모두.
+- 2026-09-27 리뷰 3차 앱 구현(통합 브랜치 `wf/promo-r3-integrated`): 안드로이드 — 계정 요청 실패를
+  장부에 적는다(`PersonalPromoLedger.recordAccountFailure`, `AccountEntryAnswer`), `/auth/me` 의 plan·세션
+  쓰기 전에 순번을 잡는다(`claimPlanAnswer` — 밀린 답은 세션·스냅샷·plan 반영 표시를 건너뛴다), 이펙트
+  갈래를 순수 함수로(`foregroundPlanLockAction`·`deferredPromoLapseLockDue`·`evaluateEndNotice`).
+  iOS — 전경 잠금의 낡은 프로모 대기(`PaidVoiceGate.freePlanLockMayApply`·`isFreeOnlyByPromoLapse`,
+  `AuthViewModel.planAnsweredEntry`), 세션 밖 `/auth/me` 의 답·토큰만 구른 답·세션 밖 요청의 **실패**
+  (`SocialFeatureViewModel.onAccountRequestFailed` → `AuthViewModel.noteAccountRequestFailure` — 통합 때
+  더했다. 이게 없으면 세션 밖 갱신이 먼저 실패한 진입에서 뒤의 `refreshUser` 성공이 안내를 판정해
+  D11 이 iOS 에서만 느슨했다)도 이 진입의 결과로 적는다.
+- 리뷰 3차 뒤 **남은 후속**(이 PR 에서 하지 않았다):
+  - (해결) 안드로이드 결제 전 조회의 plan 쓰기도 `/auth/me` 와 같은 순번이다(`crossStoreRenewalBlocked` —
+    `claimPlanAnswer`). iOS 는 예약할 때 울릴 시각으로 프로모를 본다(AlarmKit — `billing-lifecycle.md` D1).
+  - [ ] iOS 실기기: 끝 직전에 다음날 한 번 울릴 클론 알람을 맞추면 기본 알람음으로 예약되는지, 반복 알람은
+    끝 뒤 앱을 열거나 백그라운드 새로고침이 돈 뒤 기본 알람음으로 바뀌는지.
+  - 안드로이드 닉네임 수정(`updateNickname` → `saveSessionPreservingCurrentToken`)은 PATCH 를 시작할 때
+    잡은 세션 사용자(plan·`personal_promo`·받은 시각 포함)를 그대로 쓴다 — 그 사이 `/auth/me` 가 오면
+    세션의 plan·프로모가 다음 `/auth/me` 까지 되돌아간다(기존 문제, 판정 스냅샷은 영향 없음).
+  - Compose 배선은 단위 테스트가 없다 — 종료 안내 이펙트의 키(`accountEntryAnswer`·`anyModalOpen`·
+    `activityResumed`·`systemPermissionPromptOpen`)와 `planAnsweredEntry` 재확인 이펙트의 호출 자리.
+    iOS 도 `promoLapseLockWaitKey` 가 실제 콜드 스타트에서 잠금을 다시 돌리는지는 순수 함수 테스트뿐이다.
+    아래 실기기 확인 항목으로 본다.
+  - 백엔드: 전용 크론이 빠진 배포면 첫날의 전환 실패는 로그로만 남는다(D14 — 경보는 전용 크론이 맡는다).
+    끝부터 정리 PR 까지 한가한 전용 크론은 분당 조회 하나(D15 — `paid_voice_retention` 에 `delete_after`
+    인덱스가 없어 작은 표를 훑는다). 실행 전체가 잡히지 않은 예외로 죽는 경우(`captureCron(
+    'scheduled.personal_promo_end', …)` — DB 장애 등)는 시간당 한 번으로 묶이지 않았다.
+  - 그대로 남은 확인: 크론 트리거 한도·ElevenLabs 슬롯 500·외부 파일 삭제 드레인(아래 체크리스트),
+    정리 PR 의 1분 크론 제거.
+  - 의도적으로 두는 차이(후속 아님): iOS 알럿 버튼 순서는 플랫폼 표준 그대로, 푸시 문구의 자정은 "밤 12시".
+    (로그인·가입 성공 응답은 이제 두 앱 모두 이번 진입의 계정 응답으로 적는다 — 안드로이드 `recordSignInAnswer`.)
+- [x] 배포 전: Cloudflare 계정의 **크론 트리거 한도**가 워커마다 하나 더(두 환경 합쳐 넷) 허용하는지
+      확인한다. ElevenLabs 요금제의 **보이스 슬롯이 500 이상**인지 확인한다 — 작으면 요금제를 올리거나
+      `MAX_PROVIDER_CLONE_VOICES`(`lib/voice-slots.ts`)를 요금제에 맞춰 내린다.
+      (2026-09-27 조회: 계정의 워커는 `voice-alarm-api`·`voice-alarm-api-dev` 둘, 크론은 지금 3개 → prod
+      배포 뒤 4개 — 계정 한도 무료 5·유료 250 안. ElevenLabs 는 두 환경이 같은 enterprise 계정, `voice_limit`
+      20000 중 10307 사용.)
+- [ ] 배포 전: `/admin/promo` 에서 그룹명이 정확히 `welcome` 이 **아닌** 웰컴 계열 코드(대소문자·
+      변형)가 있는지 보고, 있으면 토글로 끈다. #121 은 `welcome` 만 잡는다.
+- [ ] dev 리허설: `.dev.vars.dev` 에 `PERSONAL_PROMO_STARTS_AT`(과거)·`PERSONAL_PROMO_ENDS_AT`
+      (지금 + 10분)을 넣고 `npm run secrets:sync:dev` → 무료+목소리 / 무료 / 개인 결제 / 가족
+      소유자+멤버 / 쿠폰 계정으로 개인 기능이 열리는지(안드로이드 2대·아이폰) → 끝 시각 뒤
+      `/auth/me`·게이트·`paid_voice_retention`(끝 + 3일을 **정시로 올린 값** — 그보다 이르면 안
+      된다)·푸시 문구("기간 한정 개인 플랜이 끝나 … M월 D일 오전/오후 H시까지만 보관", 자정이면
+      "…밤 12시")·1분 크론 로그·앱 잠금과 안내 → 끝을 미래로 되돌려 다시 열리는지. 열려 있는 동안
+      `/auth/me` 의 `personal_promo.computed_at` 이 서버 시각으로 오는지, 보류 그룹 멤버로 공유 목소리
+      생성이 403 인지, 따로 결제하는 멤버가 보류 주인의 공유 목소리 알람 — **그 주인의 사전렌더 클립을
+      쓰는 알람 포함**(D13) — 을 켜고 끌 수 있는지(PATCH 200, 클립 재생은 403)도 본다.
+      ⚠ **리허설 값을 지우려면 `npx wrangler secret delete PERSONAL_PROMO_ENDS_AT --env dev`.**
+      동기화 스크립트는 빈 값을 건너뛰므로 파일에서 지우는 것만으로는 워커에서 사라지지 않는다.
+- [ ] iOS 1.2.10(앱 PR) **게재 뒤** `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을 넣고
+      `npm run secrets:sync:prod`. prod 파일에 `PERSONAL_PROMO_ENDS_AT` 이 있으면 스크립트가
+      거절한다(워커도 production 에서는 읽지 않는다).
+- [ ] 종료 1주 전: prod 읽기 전용으로 종료 전환 **대상 수와 그들의 기기(push 토큰) 수**를 센다(**베타
+      계정 등 기간 전부터 무료였던 계정도 목소리가 있으면 대상이다** — 제품 결정). 삭제는 인원과 무관하게
+      끝 + 3일에 **시작**한다. 스윕 묶음이 사람 10명·기기 합 14대 중 먼저 닿는 쪽에서 잘리므로 분당 삭제
+      ≈ `min(10, 14 ÷ (기기 ÷ 대상))` 명 — 기기 하나면 2,500명 ≈ 4시간, 둘이면 ≈ 6시간(시뮬레이션 5시간
+      39분). 걸리는 시간이 6시간을 넘으면(대략 기기 하나 3,600명·둘 2,500명 초과) 기한 초과 경보가
+      울린다 — 삭제는 계속되지만(D15), 그 전에 **묶음·예산 상수**(`lib/personal-promo-end.ts` 의
+      `PROMO_END_SWEEP_BATCH`·`PROMO_END_RUN_BUDGET` — 계정의 실행당 subrequest 한도 안에서)를 다시 재고
+      시뮬레이션을 그 규모로 돌리는 PR. `RETENTION_OVERDUE_ALERT_MS`(6시간)는 D6 으로 고정이라 올리지
+      않는다. 산식·근거는 스펙 [`billing-lifecycle.md`](../spec/billing-lifecycle.md) 「운영」 4.
+      ```sql
+      SELECT COUNT(*) AS targets,
+             COALESCE(SUM((SELECT COUNT(*) FROM push_tokens pt WHERE pt.user_id = u.id)), 0) AS devices
+      FROM users u
+      WHERE u.plan = 'free'
+        AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active')
+        AND NOT EXISTS (SELECT 1 FROM paid_voice_retention r WHERE r.user_id = u.id)
+        AND EXISTS (SELECT 1 FROM voice_profiles vp
+                    WHERE (vp.user_id = u.id OR vp.user_id = u.google_id)
+                      AND vp.deleted_at IS NULL AND COALESCE(vp.is_system, 0) = 0
+                      AND COALESCE(vp.is_draft, 0) = 0);
+      ```
+- [ ] 끝 시각 모니터링: `billing.personal_promo_end` 로그(전환은 끝 + 몇 시간 안에 끝난다),
+      Sentry `scheduled.personal_promo_end.transition_user`·`.sweep_batch`·`.retention_overdue` 경보
+      (셋 다 매시 정각에만 온다 — 로그는 매 실행). 유료 게이트 에러 코드의 `api_error` 증가는 정상이다.
+- [ ] 끝 + 3일부터 몇 시간: **전환 대상의 행**(기한이 끝 + 3일 이후) 중 **기한이 이미 지난** 것이 줄어
+      0 이 되는지 본다(전용 크론이 첫날 뒤에 지우는 것과 같은 조건 — D15).
+      ⚠ **`paid_voice_retention` 전체를 세지 말 것** — 끝 뒤에 끝난 보통 구독의 보관 행은 자기 기한
+      (그 시각 + 3일)대로 남아 표가 0 이 되지 않는다. 그걸 스윕 실패로 읽으면 안 된다. 늦게 전환된
+      사람(전환 + 24시간 — D16)의 행도 기한 전까지는 남는 게 맞다.
+      ```sql
+      -- 전환 대상의 행 중 기한이 지났는데 남은 것 — 끝 + 3일 뒤 (규모 산정의 걸리는 시간) 안에 0.
+      SELECT COUNT(*) FROM paid_voice_retention
+      WHERE delete_after >= '<끝 + 3일 — PERSONAL_PROMO.endsAt + 3일, ISO 8601>'
+        AND delete_after <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
+      -- 기한을 6시간 넘긴 행(기한 초과 경보와 같은 조건) — 걸리는 시간이 6시간 안이면 언제 봐도 0.
+      SELECT COUNT(*) FROM paid_voice_retention
+      WHERE delete_after <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-6 hours');
+      ```
+- [ ] 앱(리뷰 3차 — D11·D12, 실기기·에뮬레이터 확인 기록 없음): (1) 비행기 모드로 진입해 `/auth/me`
+      를 실패시킨 뒤 같은 진입에서 쿠폰 등록·`plan_changed` 푸시·결제 권한 재확인이 와도 종료 안내가
+      **뜨지 않는지**(다음 진입에서는 뜬다) — 안드로이드 2대·아이폰. 아이폰은 제어 센터를 열었다 닫는
+      새로고침으로도 뜨지 않아야 한다. (2) 끝 뒤 콜드 스타트, 다른 기기에서
+      쿠폰·스토어 결제·가족 합류로 원시 유료가 된 계정: 이번 진입의 답이 오기 전에 목소리 알람이 잠기거나
+      `무료 이용권으로 바뀌었어요` 가 적히지 않는지 — 특히 **아이폰**(D12 로 새로 맞췄다). (3) 진입
+      새로고침이 떠 있는 동안 쿠폰으로 커플·가족이 된 뒤 늦게 온 옛 답이 공유·가족 알람을 다시 닫지
+      않는지(순번 가드) — 느린 네트워크에서.
+- ⚠ 정리 PR(11월 중순) 전까지 `PERSONAL_PROMO_STARTS_AT` 을 지우지 말 것 — 지우면 종료 전환도
+  멈춘다(꺼짐 = 프로모가 없었던 것). 정리 PR 에서 1분 크론(`wrangler.toml`·`index.ts` 분기)도 뺀다.
+- 알려진 한계: 스윕이 삭제 큐에 넣은 **외부 파일**(R2 오디오 — 목소리당 사전렌더 21개 — 와
+  ElevenLabs 보이스)은 5분 틱의 `drainExternalDeletions` 가 틱당 10건씩 지운다. 2,500명이면 큐가
+  수만 건이라 DB 행이 끝 + 3일 뒤 몇 시간 안에 지워져도 파일 삭제는 며칠~몇 주 더 걸린다. `pending_external_deletions`
+  를 지켜보고, 필요하면 드레인 용량을 따로 늘리는 PR.
+
+## Gemini 2.5 Flash 은퇴 대응 — **기한 2026-10-20**
+
+`gemini-2.5-flash` 는 Vertex 에서 **2026-10-20 에 은퇴**한다(「Model versions and lifecycle」, 2026-09-22
+갱신 — "retirement timelines may be extended, they won't be moved to an earlier date"). 대체는
+**`gemini-3.5-flash`(GA, 은퇴 2027-05-19 이후)**, 지역은 **`us`**(처리방침이 처리 국가를 '미국' 으로 적어
+`global` 은 쓰지 않는다). 지금 dev·prod 시크릿은 `gemini-2.5-flash` / `us-central1` 이다.
+
+**표가 권하는 Flash-Lite 가 아니라 Flash 로 가는 이유**(2026-09-23 블라인드 판정 — 원어민 판정자에게
+어느 쪽이 어느 모델인지 가리고, 튜닝에 쓰지 않은 관계·호칭 프로필로, 같은 프롬프트에서 모델만 바꿔 비교):
+
+| 비교(같은 프롬프트) | 합계 | 한국어 | 영어 | 일본어 |
+| --- | --- | --- | --- | --- |
+| 3.5 Flash-Lite vs 2.5 Flash | **69:108 (39%)** | 21:37 | 30:49 | 18:22 |
+| 3.5 Flash vs 2.5 Flash (세트 2) | 93:86 (52%) | 34:25 | 38:42 | 21:19 |
+| 3.5 Flash vs 2.5 Flash (세트 3) | **72:47 (61%)** | 24:12 | 23:24 | 25:11 |
+
+- Lite 는 부자연·번역투가 2.5 의 세 배였다. 프롬프트를 여러 번 고쳐도 새 프로필에서 따라잡지 못했다.
+- 3.5 Flash 는 시드 누락·존대 실수가 2.5 보다 적은 대신 **20~30% 길다**(영어 중앙값 33단어).
+- 비용(목록가): 3.5 Flash $1.50/$9.00, 2.5 Flash·3.5 Flash-Lite $0.30/$2.50(입력/출력 100만 토큰).
+  실측 토큰으로 사전렌더 클립 한 개 약 $0.006(2.5 는 $0.0012), 유료 클론 한 목소리(22클립) 약 $0.13.
+  직접 입력 태깅 한 번 약 $0.0013.
+- 응답 시간: p50 1.4~1.6초(2.5 는 0.8~1.0초), **p90 7~8초**. 사전렌더는 cron 이라 괜찮지만 직접 입력
+  태깅은 저장 경로다 — dev 전환 뒤 체감 확인할 것.
+
+**프롬프트도 같이 바뀐다(2.5 에도 적용된다)** — 이 PR 을 머지하면 시크릿을 바꾸기 전에도 2.5 가 새 프롬프트로
+돈다. 같은 판정에서 새 프롬프트(v7)는 이전 커밋 프롬프트(v4)를 79:33(71%, 한국어 27:6)으로 이겼고,
+v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도구: `packages/backend/scripts/eval-gemini-prompts.ts`
+(`npm run eval:gemini`, 결과는 gitignore 된 `.eval/`).
+
+**모델 이름만 바꾸면 깨지는 곳이 있었다**(2026-09-23 dev 자격 증명으로 실제 프롬프트 비교):
+- **등록 녹음 말투(사투리) 분석이 400** — 응답 스키마 enum 에 빈 문자열이 있으면 Gemini 3 가 거절한다.
+  그 함수는 실패를 삼키고 null 을 돌려주므로 **경보 없이 사투리 분석이 전부 꺼졌을** 것이다. 고쳤다.
+- 2.x 에 `thinkingLevel` 을 보내면 400, 3.x 문서는 `thinkingBudget` 을 더 이상 지원하지 않는다 →
+  **모델 문자열로 설정을 가른다**(`isLegacyGeminiModel`). 3.x 는 temperature 를 무시한다.
+- 상한에 걸리면 **잘린 JSON 이 HTTP 200** 으로 온다(`finishReason: MAX_TOKENS`) — 전에는 그대로 문구로
+  받았다(2.5 에도 있던 구멍). 이제 던져서 기존 폴백으로 간다.
+- 예비 후보 `gemini-3.1-flash-lite`(@`us`)도 호출은 정상이다(품질 판정은 하지 않았다).
+
+전환 순서(코드가 두 계열을 모두 부르므로 **시크릿만 바꾸면 전환·원복**된다):
+- [ ] 코드 PR 을 develop 에 머지 → dev 배포. 시크릿이 그대로라 모델은 2.5 그대로다(프롬프트만 새것).
+- [ ] dev 전환: `.dev.vars.dev` 에 `GOOGLE_VERTEX_MODEL=gemini-3.5-flash`, `GOOGLE_VERTEX_LOCATION=us`
+      → `npm run secrets:sync:dev`. ⚠ 동기화 스크립트는 빈 값을 건너뛴다 — 값을 지워 기본값으로 돌릴 수 없다.
+- [ ] dev 확인: `wrangler tail` 에서 `at:"vertex.generate"` 로그가 `status 200`·`finish_reason STOP` 인지,
+      직접 입력 태깅·등록 미리듣기·클론 사전렌더·말투 분석을 한 번씩 돌려 본다.
+- [ ] develop → main(prod 배포, 동작 변화 없음) 뒤 **prod 전환**: `.dev.vars.prod` 같은 두 값 →
+      `npm run secrets:sync:prod`. 며칠 로그와 Sentry `clip_failure` 를 본다. **10/20 전에 끝낸다.**
+- 원복: 시크릿을 `gemini-2.5-flash` / `us-central1` 로 되돌리면 된다(10/20 전까지만). 그 뒤의 예비는
+  `gemini-3.5-flash-lite` / `us` — 품질이 떨어지는 것을 알고 쓰는 비상용이다(위 표).
+- 후속(막지 않음): 3.5 Flash 문구가 길다 — 영어 길이 상한 조정 검토. 판정이 짚은 나머지(문장 중간 태그,
+  내용과 안 맞는 태그 일부)는 v4·2.5 에도 같은 정도로 있었다.
+
+⚠ **법무 확인 필요(모델 교체와 별개)**: 개인정보 처리방침 71행은 "동적 문구·번역 기능을 사용하지 않으면
+이 전송은 발생하지 않습니다", 161행 표의 목적은 "동적 알람 문구 생성, 다국어 번역" 이다. 그런데 운영에서는
+**직접 입력 문구(태깅), 목소리 등록 미리듣기·클론 사전렌더 문구의 관계·호칭, 등록 녹음의 전사문(말투
+분석)** 이 Vertex 로 간다. 고치려면 처리방침 본문 개정 → `CURRENT_POLICY_VERSION` 순서 규칙(앱 먼저)을
+따라야 한다. 이번 교체에서는 손대지 않았다.
 
 ## Sentry 후속·동작 검토 — 2026-09-21
 
@@ -27,13 +240,13 @@
 산출물·스토어 설정·검증 결과는 [출시 준비 기록](ios-release-preparation-2026-09-14.md)에 있다.
 
 - [ ] 대한민국 세금 양식 `대기 중` 처리 확인(나머지 계약·은행·미국 세금·한국 규정은 활성화)
-- [ ] 공개 이용약관·개인정보처리방침을 버전 4 → 저장소 버전 5로 배포·재확인
+- 공개 이용약관·개인정보처리방침 버전 5 배포 완료(2026-09-15 확인, 2026-09-23 재확인)
 - 국가(EU 제외 148곳)·prod 심사 계정/전화·콘텐츠 권한·App Privacy 게시·아이폰 목업 5장 등록 완료
-- [ ] Google Play 25 production 초안을 실제 게재한 뒤 최신 서버를 main으로 배포
-- [ ] 심사 초안에 연결된 iOS 1.2.5(2)로 TestFlight 구매·복원·APNs·실기기 알람 검증
+- [ ] 스토어에 나간 iOS 빌드(1.2.8 게재 / 1.2.9 심사 중)로 구매·복원·APNs·실기기 알람 검증
 - [ ] #742의 같은 상품 복구 P2 수정 머지 후 #730 원본 지적 해결 확인
 
-**Play는 현재 공개 24 / 준비한 초안 25다. 서버 최소 버전 25·문서 5를 먼저 올리지 않는다.**
+지금 어느 스토어에 무엇이 나가 있는지는 맨 위 「스토어 상태」 절이 최신이다. 이 절에 있던
+"Play 공개 24 / 초안 25" 와 "25 게재 뒤 main 배포" 는 끝난 절차라 지웠다(Play 는 29 까지 게재).
 
 ## #730 — #740 머지 후 P1 3건·P2 1건
 
@@ -241,7 +454,8 @@ develop은 보호 브랜치이므로 별도 수정 PR을 통해 #730에 반영�
 - [ ] 양 플랫폼: 결제 전 조회 실패/재로그인/시트 취소 후 오프라인 재시작, 보류→복구·환불→가족 강등 확인
 - [ ] Android 실기기: 잠금/백그라운드/비행기 모드 울림과 알림 권한 회수 시 폴백 회귀 확인
 - [ ] 마이그레이션 114 전 `last_paid_at` 없는 원장과 이미 분리 보존한 과거 원장의 날짜 점검
-- [ ] #730의 기존 출시 순서 유지: Play v25 게재 → main 반영 → 마이그레이션 → stock 240개 게시 → Apple/APNs 시크릿 확인
+- [ ] #730 출시 순서 중 남은 것: prod `#111` 마이그레이션·stock 240개 게시 확인(아래 §0-A 체크리스트).
+      Play 게재(29 까지)·`main` 반영(2026-09-14)·Apple/APNs 시크릿 등록(2026-09-14)은 끝났다.
 
 이 점검에서는 #734/#730을 머지하거나 운영 데이터를 변경하지 않았다.
 
@@ -293,10 +507,10 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 를 매핑해 미리듣기에서 서버 클립보다 **우선**한다. 구버전이 남으면 목록 이름은 시우,
 미리듣기는 Adam, 실제 알람은 Krys 가 된다.
 
-`minSupported` 는 이미 **25** 로 올려 두었다(`latest` 도 25 — 배너가 아니라 **차단
-화면**이다). 그래서 순서를 어기면 **받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.**
-`app/build.gradle.kts` 의 `versionCode = 25` / `versionName = "1.2.5"` 와 서버의
-`app-version.ts` 가 같은 숫자를 가리키고 있어야 한다.
+`minSupported` 는 **25** 로 올라가 있다(2026-09-14 `main` 반영 — 그 미만은 배너가 아니라 **차단
+화면**이다). 그래서 순서를 어기면 **받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다** —
+`minSupported`·`latest` 는 그 `versionCode` 가 스토어에 게재된 뒤에만 올린다. 지금 값은
+`app/build.gradle.kts` 와 서버의 `app-version.ts` 에서 본다.
 
 ⚠⚠ **`#110` 이 도는 순간부터 게시가 끝날 때까지 prod 에는 기본 목소리 4종의 살아 있는
 프리셋이 0개다.** 은퇴 서브쿼리가 문구를 가리지 않아 전부 걸린다. **cron 은 그 자리를
@@ -314,8 +528,8 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
   확인했다. dev 는 게시까지 끝났다. 그래서 prod 게시는 사실상 **행 INSERT** 다 — 키가
   결정론적이라 스크립트가 같은 자리에 같은 바이트를 다시 PUT 하는 것뿐이다.
 
-- [ ] 1.2.5(versionCode 25) 를 **스토어에 먼저** 올린다
-- [ ] 게재 확인 뒤 `main` 에 머지한다(= 배포 + 마이그레이션)
+- `minSupported`(25) 이상 빌드의 스토어 게재와 `main` 머지(= 배포 + 마이그레이션, 2026-09-14)는
+  끝났다 — Play 는 29 까지 게재됐다.
 - [ ] **`#111` 이 돌았는지 확인한다** — Deploy Backend 로그에
       `production migration 111/112: replace-system-voices-2026-09-03` 이 찍혔는지 본다.
       못 미더우면 `npm run migrate:prod` 를 다시 돌린다(멱등 — 이미 끝났으면
@@ -351,12 +565,12 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **미리듣기 클립**은 안드로이드가 목소리를 눌렀을 때 트는 그 파일이다
   (`res/raw/voice_greeting_<voice>_<lang>.mp3` → `apps/landing/public/audio/<voice>-greeting.<lang>.mp3`,
   `.gitignore` 에 예외). **앱의 인사말을 바꾸면 이 복사본도 같이 바꾼다.**
-- **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 게재 전에는 '곧 출시' 로 죽은 링크
-  대신 서 있고, **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=1`** 을 켜면 링크가 산다
-  (`lib/site.ts`). JSON-LD `operatingSystem`·FAQ 기기 답변·`llms.txt` 도 'iOS 준비 중' 으로.
+- **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 기본으로 링크가 산다(2026-09-15 부터 —
+  2026-09-22 게재로 실제로 열린다). 스토어에서 내려가면 **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=0`**
+  으로 '곧 출시' 로 되돌린다(`lib/site.ts`). FAQ 기기 답변·`llms.txt` 는 게재 전까지 'iOS 준비 중' 이었고, **2026-09-22 게재로 두 스토어 모두 '지금 받을 수 있다' 로 바꿨다**(세 언어 + `llms.txt`).
 - **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 추석 인사 — 2026-09-22 에 위로 한마디를 갈아 끼움) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
   `generateVoiceMessage` **한 곳** — 지금은 브라우저 음성 합성으로 흐름만 흉내 내고(만드는 시간 1.1초 지연), Perso 로 인물 목소리를
-  만드는 서버가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다(그때 다운로드 버튼이 산다). 좋아요는 localStorage, 숫자는 서버가 줄 때만. 인물 목록·톤·사진 경로는 `event-catalog.ts`(사진은 `public/event/<id>.jpg`, 없으면 이니셜 원),
+  만드는 서버가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다(그때 다운로드 버튼이 산다). 좋아요는 localStorage, 숫자는 서버가 줄 때만. 인물 목록·톤·사진 경로는 `event-catalog.ts`(사진은 `public/event/<id>.<kind>.jpg` — 종류별로 5초마다 갈리고 재생 중인 종류에 머문다; 없으면 이니셜 원. 미리듣기 샘플은 2026-09-22 에 **새 문안으로 다시 만들었다** — 문안을 바꾸면 샘플도 다시 만든다),
   이름·문장은 `messages/*.json` 의 `event.celebrities` / `event.studio.kinds`. 이름 정리는 앱 `sanitizeDisplayName`
   과 같은 글자 규칙(12자). "실제 목소리가 아닌 AI 목소리" 는 히어로 칩과 카드 아래 각주 두 곳.
 - **디자인 토큰 정렬**: 반경을 앱 `Waker*Shape` 값 그대로(12/14/18/22/24/28/999), 어두운
@@ -398,7 +612,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
   `resume()` 한다 — 코드는 있고 실기기 확인만 남았다).
 - 응원 페이지의 브라우저 목소리 품질은 기기마다 다르다 — 전용 생성 경로가 붙기 전까지의
   임시 소리다. 카드 이름·문장은 자리 표시용이라 실제 목록이 오면 JSON 만 바꾼다.
-- App Store 배지는 2026-09-15 부터 **기본 링크 활성**(심사 제출과 함께). 게재 전에 내려야 하면 Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=0` 추가 후 재배포.
+- App Store 배지는 2026-09-15 부터 **기본 링크 활성**(심사 제출과 함께)이고, 2026-09-22 게재로 그 링크가 실제로 산다. 스토어에서 내려가는 사고가 나면 Vercel 에 `NEXT_PUBLIC_APP_STORE_LIVE=0` 추가 후 재배포하고, **`public/llms.txt` 는 손으로 같이 고친다**(정적 파일이라 env 를 못 읽는다). FAQ 기기 답변은 스위치를 내려도 참인 문장으로 써 뒀으므로 건드릴 것이 없다(코덱스 #799).
 - `apps/landing/skills-lock.json` 은 apple-design 스킬 설치가 남긴 파일이라 커밋하지 않았다
   (스킬 본체는 `.claude/` 로 무시된다).
 
@@ -660,16 +874,13 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 결제 검증 키, 프로덕션 APNs 키(`8S2AH3937P`). 상품 ID 4종이 콘솔 =
 `apple-storekit.ts` = `StoreKitConfiguration.storekit` 로 일치함을 대조했다.
 
-- [ ] **dev 워커 APNs 키를 되살린다.** `.dev.vars.dev` 의 키가 양쪽 호스트에서
-      `InvalidProviderToken` 이다(Key ID `3CNKCBLC5U` 와 짝이 아니거나 폐기됨).
-      **prod 는 정상이라 출시에는 영향 없고, 막히는 건 dev 워커 푸시뿐이다.**
-      ① `3CNKCBLC5U` 의 `.p8` 재확보 또는 ② 두 환경 모두 되는 키 하나 발급 후
-      dev·prod 양쪽에 같은 값. 자세한 판정표는
-      [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
-- [ ] **시크릿을 워커로 올린다** — `npm run secrets:sync:dev` / `:prod`.
-      (아직 안 올렸다. 배포는 PR 이후이므로 그때 함께.)
-- [ ] 실기기에서 **가격이 스토어에서 내려오는지** 확인. 상품 상태가 "제출 준비 중" 이라
-      **1.0 빌드와 함께 제출해야** 조회된다.
+- [ ] dev 워커 푸시의 **실기기 배달** 확인. 키 문제는 2026-09-14 에 끝났다 — 옛 키(`3CNKCBLC5U`)는
+      Developer Portal 에 없어 버리고 dev 워커에 새 Sandbox APNs 키를 넣었고, 더미 토큰 요청이
+      `400 BadDeviceToken`(인증 통과)까지 확인됐다. 남은 건 실제 기기 배달뿐이다
+      ([출시 준비 기록](ios-release-preparation-2026-09-14.md)).
+- [ ] 실기기에서 **가격이 스토어에서 내려오는지** 확인. 상품은 앱 버전과 함께 심사에 제출돼야
+      조회된다 — 1.2.8 이 2026-09-22 게재됐으니 스토어 빌드로 확인하고, 안 내려오면 App Store
+      Connect 에서 상품 상태부터 본다.
       - ⚠ **dev 빌드에서는 애초에 안 내려온다**(2026-08-11 로그로 확인). 안드로이드 dev 는
         패키지명이 `com.alarmtalk.app.dev` 라 Play 에게는 **다른 앱**이고, 상품은
         `com.alarmtalk.app` 에 등록돼 있다. 조회는 **성공**하고 상품이 0개로 돌아온다
@@ -679,8 +890,9 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
         `FallbackPlanPriceKrw`(안드) / `FallbackPlanPrice`(iOS) 와 **함께** 고쳐야 한다.
       - ⚠ 폴백은 **한국 기준**이라 해외 사용자에게는 틀릴 수 있다. 스토어 가격이 내려오기
         시작하면 이 표가 실제로 쓰이지 않는지 확인할 것.
-- [ ] 첫 제출 후 결제 검증 키의 **프로덕션 401 이 풀리는지** 확인. 지금 401 인 건
-      키 문제가 아니라 앱이 아직 프로덕션에 없어서다 — 고칠 것 없다.
+- [ ] 결제 검증 키의 **프로덕션 401 이 풀렸는지** 확인. 앱이 2026-09-22 부터 프로덕션에 있으므로
+      이제 401 을 '미출시' 로 설명할 수 없다 — 더미 ID 로 400 이 나오는지 보고, 첫 실제
+      `/billing/apple/confirm` 을 지켜본다(판정표는 [`APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md)).
 
 ### ⓗ 성능 — 찾았지만 **고치지 않은** 것 (2026-08-10)
 
@@ -711,21 +923,22 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 
 ## 1-D. 릴리스 때 **반드시 같이** 해야 하는 것 (2026-08-11 추가)
 
-- [ ] ⚠ **버전 5 를 번들한 앱을 스토어에 먼저 올리고, 그 뒤에 서버 상수 5 를 main 에
-  머지한다**(`packages/backend/src/lib/consent.ts`의 `CURRENT_POLICY_VERSION`).
-  main 은 아직 **4** 이고 5 는 develop 에만 있다. 순서를 뒤집으면 `POST /user/consents` 가
+- 버전 5 순서는 끝났다 — 서버 상수 5 는 2026-09-14 에 `main` 에 올라갔고(#730,
+  `packages/backend/src/lib/consent.ts`의 `CURRENT_POLICY_VERSION`), 5 를 번들한 앱이 양 스토어에
+  나가 있다(Android 25 이상, iOS 1.2.8 부터). 다음 번호도 순서는 같다 — 새 문서를 번들한 앱을
+  **스토어에 먼저** 올리고 서버 상수를 `main` 에 머지한다. 뒤집으면 `POST /user/consents` 가
   전부 **409 POLICY_VERSION_MISMATCH** 로 막혀 **신규 가입과 재동의가 통째로 멈춘다.**
-  - iOS·안드로이드를 같이 올리므로 그 릴리스에서 한 번에 처리한다.
-  - ⚠ **번호를 6 으로 올리지 않는다**(2026-08-26 확정, `193a9204`). 5 는 main 에 올라간
-    적이 없어 **그 본문으로 동의한 사람이 0명**이므로, 5 의 내용이 바뀌면 제자리에서
-    고친다(`docs/legal/README.md`). 한 번 6 을 태웠다가 되돌린 이력이 있다.
-- [ ] ⚠ **그 릴리스에서 `CONSENT_MIN_POLICY_VERSION.privacy` 를 3 → 5 로 올릴지 정한다
+  - ⚠ **5 는 이제 동의자가 있다 — 본문을 고치려면 6 을 태운다**(`docs/legal/README.md`).
+    2026-08-26 에는 5 가 `main` 에 없어 동의자가 0명이라 제자리에서 고쳤다(`193a9204`).
+    한 번 6 을 태웠다가 되돌린 이력이 있다.
+- [ ] ⚠ **`CONSENT_MIN_POLICY_VERSION.privacy` 를 3 → 5 로 올릴지 정한다
   (법무 판단, 사람이 확인할 것).** 버전 5 본문이 그 사이 **넓어졌다** — 「유료 이용권 종료 시
   목소리 3일 보관 후 파기」에 더해 **서비스 이용 기록**(알람 울림·해제·다시 알림·문구 사용
   이력, 새 이용 목적, 보관 1년)이 들어갔다(`docs/legal/privacy-policy.ko.md` 1·3장,
-  `docs/spec/usage-events.md`). 지금 사용자 동의 기록은 전부 **3** 이라, 올리지 않으면 그
-  본문을 **한 번도 못 본 채** 기기가 기록을 올리기 시작한다. 올리면 재동의 화면이 뜨므로
-  **버전 5 앱이 스토어에 게재된 뒤**여야 한다(구버전 앱은 화면은 떠도 제출이 409 로 막힌다).
+  `docs/spec/usage-events.md`). 2026-09-14 전에 동의한 사용자의 기록은 **3** 이다 — 그 사용자의
+  이용 기록은 `POST /events` 가 `USAGE_EVENT_MIN_PRIVACY_VERSION`(5) 으로 받지 않는다.
+  올리면 재동의 화면이 뜨므로 **버전 5 앱이 두 스토어에 게재된 뒤**여야 하는데(구버전 앱은 화면은
+  떠도 제출이 409 로 막힌다), 그 조건은 2026-09-22 iOS 게재로 채워졌다. 남은 것은 올릴지의 판단이다.
 
 ## 1-H. 교체 표식을 **시계 없이** 판정한다 (2026-09-07 리뷰 28차, 후속)
 
@@ -860,7 +1073,9 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
 2. ~~iOS 편집기 하단 문구 정리~~ — **끝났다(2026-08-18).** 아래 「iOS 저장 사유 문구」 참조.
 3. ~~iOS `statusMessage` 유출 차단~~ — **끝났다(2026-08-18).** 같은 절.
-4. **5단계 앱 쪽 제거** ← **여기부터.** 착수 전 아래 「5단계 착수 전 실측」을 반드시 읽을 것.
+4. ~~**5단계 앱 쪽 제거**~~ — **끝났다(2026-08-18, `3929214c`).** 아래 「5단계 착수 전 실측」·
+   「5단계 (b)(c) 완료」 참조. 2026-09-23 확인: 그 커밋은 Android versionCode 25~29 와 배포된
+   iOS 빌드 1~6 전부에 들어 있다(`merge-base --is-ancestor`, ASC 빌드 목록).
    파생 결정은 **닫혔다(2026-08-18 지시)**:
    가족 알람의 날씨 variant 는 **받는 사람 위치**로 고른다 —
    규칙 전문은 [`docs/spec/family-alarm.md`](../spec/family-alarm.md) 4절.
@@ -868,7 +1083,18 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
    `voiceRandomPrompt = true` 행을 테마 클립으로 재바인딩하는 마이그레이션 — 안 내면 그
    알람들이 매일 같은 문장이 되고 시각만 바꾸려 열어도 영영 못 고친다, (c) 양 앱의 라이브
    생성 경로 제거.
-5. 백엔드 정리 — 스토어 게재 후.
+5. ~~백엔드 정리~~ — **거절은 넣었다(2026-09-23).** `/tts/generate` 가 `random:true`(미리듣기 제외)를
+   `400 RANDOM_TTS_RETIRED` 로 거절한다(`routes/tts.ts` 의 `randomRequested` 바로 뒤). 전제였던
+   두 스토어 게재는 채워졌다(Android `minSupported` 25, iOS 첫 공개 1.2.8). 열어 두면 **구멍**이었다 —
+   무료 + 기본 목소리 + `random_context:'preset'` + 매번 다른 `listener_title` 이면 요금제 게이트를
+   통과하고, 호칭이 문장에 붙어 캐시가 빗나가 요청마다 합성이 돌았으며 월 한도도 세지 않았다.
+   - [ ] 남은 것: 닿지 않게 된 라이브 생성 코드 삭제(후속 PR). `tts.ts` 의 `randomRequested` 갈래·
+     동적 문장 블록·`'fallback'` 날씨 정책·`RANDOM_CATEGORY_REQUIRED`, `vertex-translate.ts` 의 동적
+     생성기, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`. ⚠ 초안 미리듣기와 같이 쓰는 헬퍼
+     (`presetTextWithListenerTitle`·`normalizeRelationshipLabel`·`findViewerRelationshipField`)와
+     사전렌더 검사는 남긴다 — 검사 테스트가 동적 생성기 테스트 안에 있어 먼저 옮겨야 한다.
+   - [ ] prod 배포 뒤 `api_error` 로그에서 `RANDOM_TTS_RETIRED` 를 본다. 나오면 모르던 옛 호출자다
+     (예: 버전 조회에 실패해 차단 화면을 못 본 versionCode 24 이하).
 
 조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
 `wy88mi9ha.output`(관문이 돌아야 할 자리 전수 + 저장 경로 추적),
@@ -1149,9 +1375,7 @@ dev 백엔드에는 클론 사전렌더 클립이 존재하지 않는다 → 클
 
 **검증 뒤 폰 상태는 원래대로 되돌렸다**(4행 전부 원값, A32 예약 `pending=1 scheduled=1`).
 
-⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.**
-
-⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.** 거부 판정은 정확히
+⚠ **백엔드 정리(5번)의 거절은 2026-09-23 에 넣었다**(위 「남은 작업 순서」 5번). 거부 판정은 정확히
 `!draftPreviewRequested && body.random === true` 자리여야 한다 — 앞당기면 iOS 목소리 등록이
 깨진다.
 

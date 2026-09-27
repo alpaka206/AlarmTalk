@@ -208,6 +208,11 @@ struct AuthUser: Codable, Equatable, Identifiable {
     /// 백엔드 `/auth/me` 가 `deletion_status` 키로 전달한다. legacy 세션(키 없음)
     /// 호환을 위해 기본값 `"active"`. Android `AuthApi.kt:53`.
     var deletionStatus: String = "active"
+    /// **기간 한정 개인 플랜**(`personal_promo`). 원시 plan 이 free 이고 프로모가 켜져 있을 때만
+    /// 서버가 준다 — 그때 `plan` 은 이미 계산값(`plus`)이다. 구버전 서버·옛 세션에는 없다.
+    /// 등급은 `PlanTier.bestKnown(user:)`·판정은 `PaidVoiceGate`, 이용권 화면은 `purchasedPlan` 을
+    /// 쓴다(`PersonalPromo.swift`).
+    var personalPromo: PersonalPromo? = nil
 
     /// 30일 유예 탈퇴 진행 중인지. RootView 게이팅에 사용. Android `pendingDeletion`.
     var isPendingDeletion: Bool { deletionStatus == "pending_deletion" }
@@ -224,7 +229,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
         familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil,
         appleUserId: String? = nil,
         dynamicPromptSettings: DynamicPromptSettings? = nil,
-        deletionStatus: String = "active"
+        deletionStatus: String = "active",
+        personalPromo: PersonalPromo? = nil
     ) {
         let legacyDays = Self.normalizedQuietDays(familyAlarmQuietDays)
         let legacyStart = Self.normalizedQuietTime(familyAlarmQuietStart, fallback: "09:00")
@@ -246,6 +252,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
         let trimmedDeletion = deletionStatus.trimmingCharacters(in: .whitespacesAndNewlines)
         self.deletionStatus = trimmedDeletion.isEmpty ? "active" : trimmedDeletion
+        self.personalPromo = PersonalPromo.normalized(personalPromo)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -261,6 +268,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         case appleUserId
         case dynamicPromptSettings
         case deletionStatus
+        case personalPromo
     }
 
     init(from decoder: Decoder) throws {
@@ -277,7 +285,10 @@ struct AuthUser: Codable, Equatable, Identifiable {
             familyAlarmQuietWindows: try container.decodeIfPresent([FamilyAlarmQuietWindow].self, forKey: .familyAlarmQuietWindows),
             appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
             dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings),
-            deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active"
+            deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active",
+            // ⚠ **`try?` 로 받는다.** 표시·컷오프용 추가 필드라, 모양이 어긋났다고 로그인
+            // 응답 전체를 버리면 안 된다(`PersonalPromo.init(from:)` 도 던지지 않는다).
+            personalPromo: try? container.decodeIfPresent(PersonalPromo.self, forKey: .personalPromo)
         )
     }
 
@@ -497,12 +508,47 @@ struct VoiceProfileUpdateRequest: Encodable {
     }
 }
 
-/// `PATCH /voice/:id/relationship` 의 body. 공유받은 음성 viewer 가 자신의
-/// 관계/호칭을 등록할 때 사용. 두 값 모두 필수.
+/// 목소리의 결 — 등록 '세부 정보' 단계에서 사용자가 고른다(`voice_profiles.voice_energy`).
+/// 유료 클론의 사전렌더·미리듣기 문구가 이 결을 따라 문장 에너지와 딜리버리 태그를 고른다
+/// (`docs/spec/voice-and-message.md` §4-2). 서버 계약은 `@alarmtalk/shared` 의 `VoiceEnergySchema`.
+///
+/// - `rawValue` 가 곧 전송 값이다: 자동 = `""`, 경쾌 = `"lively"`, 차분 = `"calm"`.
+///   다른 값은 서버가 400 `INVALID_VOICE_ENERGY` 로 거절한다.
+/// - 관계·호칭처럼 **초안에서만** 바뀐다(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`).
+/// - ⚠ 음향은 보지 않는다 — 음성 파일을 분석에 보내려면 처리방침·동의부터 바꿔야 해서
+///   사용자가 고르게 했다. '자동' 이면 서버가 등록 녹음 전사로 추정한 값을 쓴다.
+enum VoiceEnergy: String, CaseIterable, Identifiable {
+    case auto = ""
+    case lively
+    case calm
+
+    var id: String { rawValue }
+
+    /// 기본값은 자동이다 — 고르지 않아도 다음으로 넘어갈 수 있는 선택 입력이다.
+    static let defaultValue: VoiceEnergy = .auto
+
+    /// 세그먼트 라벨. 좌→우 순서는 `allCases`(자동 · 경쾌 · 차분)이고 안드로이드와 같다.
+    var label: String {
+        switch self {
+        case .auto: return String(localized: "자동")
+        case .lively: return String(localized: "경쾌")
+        case .calm: return String(localized: "차분")
+        }
+    }
+}
+
+/// `PATCH /voice/:id/relationship` 의 body. 관계/호칭 두 값은 필수.
+///
+/// 지금 iOS 에서 이 라우트를 부르는 곳은 **공유받은 음성 viewer** 의 관계/호칭 등록뿐이다
+/// (내 초안의 관계·호칭·결은 클론 요청 `POST voice/clone` 에 실어 보낸다).
 /// Android `VoiceProfileApi.kt:61-64`.
 struct VoiceProfileRelationshipUpdateRequest: Encodable {
     var relationshipLabel: String
     var listenerTitle: String
+    /// 목소리의 결(`voice_energy`). **내 초안**의 페르소나를 고칠 때만 싣는다.
+    /// nil 이면 키가 아예 안 나가서 서버는 그 컬럼을 건드리지 않는다 — viewer 경로는
+    /// 늘 nil 이다(결은 목소리 주인이 정하는 것이지 받은 사람의 것이 아니다).
+    var voiceEnergy: String? = nil
 }
 
 /// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.
@@ -831,7 +877,12 @@ struct BillingSubscriptionResponse: Codable, Equatable {
      */
     var storeRenewalProviders: [String]?
     /// 결제 전 조회에서 구독과 같은 DB 스냅샷으로 받은 users.plan.
+    /// 프로모 기간에는 **계산값**(원시 free → `plus`)이다 — `personalPromo` 가 그 표시다.
     var userPlan: String? = nil
+    /// 기간 한정 개인 플랜(`personal_promo`). `userPlan` 과 **같은 응답에서** 온 값이라
+    /// 스냅샷에 적을 때도 둘을 함께 적는다(`SocialFeatureViewModel`).
+    /// ⚠ 이게 있어도 `subscription` 은 null 이다 — 가짜 구독을 만들지 않는다(해지 버튼 없음).
+    var personalPromo: PersonalPromo? = nil
 }
 
 struct BillingSubscription: Codable, Identifiable, Equatable {
