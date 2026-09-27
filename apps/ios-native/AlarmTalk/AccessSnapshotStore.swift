@@ -18,7 +18,8 @@ struct AccessSnapshot: Codable, Equatable {
     ///
     /// ⚠ **`userPlan` 을 적는 자리에서 늘 함께 적는다.** 프로모 기간의 `userPlan` 은 계산값
     /// `plus` 라, 짝 없이 남으면 **끝난 뒤에도** 예약 게이트가 유료로 읽는다 — 이 값이
-    /// 판정기의 오프라인 컷오프 근거다(`PersonalPromo.planAsOf`). 옛 스냅샷에는 없다(nil).
+    /// 판정기의 오프라인 컷오프 근거다(`PersonalPromo.isStale` — 받은 시각이 함께 실린다).
+    /// 옛 스냅샷에는 없다(nil).
     var personalPromo: PersonalPromo? = nil
 
     static let empty = AccessSnapshot(

@@ -866,11 +866,13 @@ struct AlarmTalkApp: App {
             // **그대로 두고** 이 값만 free 로 바꾼다 — 키에 없으면 `/auth/me` 가 갱신해도
             // 키가 같아 이 태스크가 **다시 돌지 않고**, 판정기에 새 입력을 넣은 의미가 없다.
             auth.session?.user.plan ?? "no-user-plan",
-            // 기간 한정 개인 플랜의 끝도 판정 입력이다 — 끝난 프로모는 판정기가 free 로 읽는다.
-            // 원래 값이 아니라 **지금 시각 기준의 plan** 을 넣어, 화면이 다시 그려질 때 끝이
-            // 지났으면 키가 바뀌도록 한다(서버 갱신을 못 받는 오프라인 기기).
-            auth.session?.user.planAsOf() ?? "no-user-plan",
-            auth.session?.user.personalPromo?.endsAt ?? "no-personal-promo"
+            // 기간 한정 개인 플랜의 끝도 판정 입력이다 — 끝 **전에** 받아 둔 낡은 캐시는 판정기가
+            // (활성 구독 행이 없으면) free 로 읽는다. 원래 값이 아니라 **지금 시각 기준으로 낡았는가**
+            // 를 넣어, 화면이 다시 그려질 때 끝이 지났으면 키가 바뀌도록 한다(서버 갱신을 못 받는
+            // 오프라인 기기). 끝 뒤에 새 답을 받으면 다시 '낡지 않음' 이 되어 복원 갈래가 돈다.
+            auth.session?.user.personalPromo.map { $0.isStale(at: Date()) ? "promo-stale" : "promo-live" }
+                ?? "no-personal-promo",
+            auth.session?.user.personalPromo?.endsAt ?? "no-personal-promo-end"
         ].joined(separator: "|")
     }
 
@@ -899,6 +901,8 @@ struct AlarmTalkApp: App {
             storePlanKey: nil,
             storeEntitlementUntilMillis: nil,
             userPlan: auth.session?.user.plan,
+            // 받은 시각까지 함께 실린다 — 끝 **뒤에** 받은 답(서버가 이미 계산했다)이면 기기
+            // 시계가 앞서 있어도 낡은 것으로 보지 않는다. 방금 받은 답으로 잠그지 않는다.
             personalPromo: auth.session?.user.personalPromo
         ))
         // ⚠ **세 갈래를 분명히 가른다**(2026-09-01 리뷰 2차 정정). 31차에 입구 가드에서

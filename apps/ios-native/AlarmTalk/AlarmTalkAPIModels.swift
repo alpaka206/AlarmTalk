@@ -210,7 +210,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
     var deletionStatus: String = "active"
     /// **기간 한정 개인 플랜**(`personal_promo`). 원시 plan 이 free 이고 프로모가 켜져 있을 때만
     /// 서버가 준다 — 그때 `plan` 은 이미 계산값(`plus`)이다. 구버전 서버·옛 세션에는 없다.
-    /// 등급 판정은 `planAsOf()`, 이용권 화면은 `purchasedPlan` 을 쓴다(`PersonalPromo.swift`).
+    /// 등급은 `PlanTier.bestKnown(user:)`·판정은 `PaidVoiceGate`, 이용권 화면은 `purchasedPlan` 을
+    /// 쓴다(`PersonalPromo.swift`).
     var personalPromo: PersonalPromo? = nil
 
     /// 30일 유예 탈퇴 진행 중인지. RootView 게이팅에 사용. Android `pendingDeletion`.

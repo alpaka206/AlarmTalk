@@ -55,6 +55,7 @@
 		254DC5E9869912CC8334F718 /* RedeemCodeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F60FB34BFE756CACC6149C2 /* RedeemCodeSheet.swift */; };
 		263DD7997155CB06A55FB379 /* ClipReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6591AF9B9A7B055141D618C9 /* ClipReadinessTests.swift */; };
 		264D6E637762E760BCB4CBC8 /* WeatherVariantRefreshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2294522549805A842471167A /* WeatherVariantRefreshService.swift */; };
+		26AC086BD9C40ADCAC7C7D09 /* ForegroundModalState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D168CB442A2ED0C8153B0785 /* ForegroundModalState.swift */; };
 		27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */; };
 		27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */; };
 		2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7F732DF290FB6337B9E693 /* AppGroup.swift */; };
@@ -707,6 +708,7 @@
 		D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmAppContextTests.swift; sourceTree = "<group>"; };
 		D0566D160B2FEFDE2C69235C /* PersonalPromoNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalPromoNotice.swift; sourceTree = "<group>"; };
 		D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialNotificationTracker.swift; sourceTree = "<group>"; };
+		D168CB442A2ED0C8153B0785 /* ForegroundModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForegroundModalState.swift; sourceTree = "<group>"; };
 		D27AF1639158440548C96717 /* VoiceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSetupView.swift; sourceTree = "<group>"; };
 		D312421EFADBCC201A632B63 /* voice_greeting_dohyun_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_dohyun_ko.mp3; sourceTree = "<group>"; };
 		D4DDC997AA7D7D7BA47AC3C8 /* landing_voice_preview.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = landing_voice_preview.mp3; sourceTree = "<group>"; };
@@ -1318,6 +1320,7 @@
 				64EFCF9DA00FC88DC309A963 /* DuplicateAlarmReplacement.swift */,
 				CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */,
 				0175911A2374269E498617FF /* EntitlementWriter.swift */,
+				D168CB442A2ED0C8153B0785 /* ForegroundModalState.swift */,
 				E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */,
 				6E362F291A9E83445BE588E2 /* Info.plist */,
 				DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */,
@@ -1700,6 +1703,7 @@
 				D627C8977052E9D7CD56A916 /* EntitlementWriter.swift in Sources */,
 				ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */,
 				0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */,
+				26AC086BD9C40ADCAC7C7D09 /* ForegroundModalState.swift in Sources */,
 				9F9C6F5F430DFB5B94C6984B /* FormSheet.swift in Sources */,
 				80DF2F14CA7B8F775875874E /* FortunePromptInputFields.swift in Sources */,
 				28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */,

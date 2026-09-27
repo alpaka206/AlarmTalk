@@ -69,6 +69,8 @@ enum UIPreviewSeed {
     /// 서버 없이 이용권 화면의 '무료 이용 중' 한 줄과 **종료 안내 알럿**을 보려고 둔다. 종료는
     /// 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격). 남은 일수를
     /// 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
+    /// `-UIPreviewPromoKeepsVoices` 를 함께 주면 종료 전환 대상이 아닌 계정
+    /// (`deletes_voices_at_end: false` — 보류 중인 구독 행이 남은 계정)으로 심는다.
     static var previewPersonalPromo: PersonalPromo? {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
@@ -77,7 +79,12 @@ enum UIPreviewSeed {
         let end = Date().addingTimeInterval(days * 86_400)
         let from = end.addingTimeInterval(-7 * 86_400)
         let iso = ISO8601DateFormatter()
-        return PersonalPromo(endsAt: iso.string(from: end), noticeFrom: iso.string(from: from))
+        return PersonalPromo(
+            endsAt: iso.string(from: end),
+            noticeFrom: iso.string(from: from),
+            deletesVoicesAtEnd: !args.contains("-UIPreviewPromoKeepsVoices"),
+            receivedAt: Date()
+        )
         #else
         return nil
         #endif
