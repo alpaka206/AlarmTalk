@@ -824,28 +824,35 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 | --- | --- | --- |
 | `/tts/generate`(`findUsableVoiceProfile` 의 공유 갈래) | 원시 유료여야 한다 — 아니면 403 `VOICE_FEATURE_REQUIRES_PAID_PLAN`(기간 전과 같은 코드) | 원시 유료여야 한다 — 아니면 403 `VOICE_LOCKED_FREE_PLAN` |
 | 알람 저장·수정 — 목소리로(`voiceProfileBelongsToCaller`) | 원시 유료(목소리 게이트 — 계산값으로**만** 열렸으면 `alarmUsesSharedVoice` 가 원시로 다시 본다 → 403) | 원시 유료 — 아니면 404 `VOICE_PROFILE_NOT_FOUND`. **POST 는 언제나, PATCH 는 저장된 값에서 바뀔 때만** 본다(D8, 아래) |
-| 알람 저장·수정 — 프리셋 클립으로(`messageBelongsToCaller`) | 같다(403) | 원시 유료 — 아니면 404 `MESSAGE_NOT_FOUND`. POST·PATCH 모두 **보낼 때마다** 본다(기존 규칙) |
+| 알람 저장·수정 — 프리셋 클립으로(`messageBelongsToCaller`) | 같다(403) | 원시 유료 — 아니면 404 `MESSAGE_NOT_FOUND`. **POST 는 언제나, PATCH 는 저장된 값에서 바뀔 때만** 본다(D13, 아래) |
 | `/tts/messages/:id/audio` 의 남의 목소리 갈래 | 보지 않는다(읽기) | 원시 유료 — 아니면 403 `VOICE_LOCKED_FREE_PLAN` |
 
-**D8 — 보류 주인의 공유 목소리와 알람 PATCH.** 주인이 결제 보류(원시 free)가 되면 그 공유 목소리는
-위 표대로 막힌다. 그런데 안드로이드 동기화(`RemoteAlarmWriteRequest`)는 켜기·끄기·시각만 고쳐도
-`voice_profile_id` 를 **매번 그대로** 보낸다. 그 값까지 소유권 게이트로 보면 **따로 결제하는
-멤버**(원시 유료)의 평범한 토글이 404 → 생성 폴백도 404 → 알람이 동기화 실패(`FAILED`)로 남고
-동기화마다 Sentry 에 오른다(리뷰). 그래서:
+**D8·D13 — 보류 주인의 공유 목소리와 알람 PATCH.** 주인이 결제 보류(원시 free)가 되면 그 공유
+목소리와 그 주인의 프리셋 클립은 위 표대로 막힌다. 그런데 안드로이드 동기화
+(`RemoteAlarmMapper.toWriteRequest` → `RemoteAlarmWriteRequest`)는 켜기·끄기·시각만 고쳐도
+`voice_profile_id` 와 `message_id` 를 **매번 그대로** 보낸다. 멤버 알람의 가장 흔한 모양(주인의 공유
+클론 + 그 주인의 사전렌더·버킷 클립)에서는 `message_id` 가 **주인의 프리셋 클립**이다. 그 값까지
+소유권 게이트로 보면 **따로 결제하는 멤버**(원시 유료)의 평범한 토글이 404 → 생성 폴백도 404 →
+알람이 동기화 실패(`FAILED`)로 남고 동기화마다 Sentry 에 오른다(리뷰). 그래서 두 값 모두 같은
+규칙이다 — `voice_profile_id` 는 D8, `message_id` 는 D13(2026-09-27 — 처음엔 목소리에만 걸어서
+클립을 쓰는 알람은 여전히 토글마다 404 였다):
 
-| 요청 | `voice_profile_id` 소유권 게이트 |
+| 요청 | `voice_profile_id`(`voiceProfileBelongsToCaller`) · `message_id`(`messageBelongsToCaller`) 소유권 게이트 |
 | --- | --- |
-| `POST /alarm` | **언제나** 본다 — 보류 주인의 공유 목소리로 새 알람을 만들 수 없다(404) |
+| `POST /alarm` | **언제나** 본다 — 보류 주인의 공유 목소리·클립으로 새 알람을 만들 수 없다(404) |
 | `PATCH /alarm/:id` — 값이 저장된 알람의 값과 **같다**(토글·시각 수정) | **보지 않는다** — 새 참조를 만들지 않는다. 이미 그 알람에 있던 값이고, 알람 소유는 조회 조건이 확인한다 |
-| `PATCH /alarm/:id` — 값이 **바뀐다**(다른 목소리로 교체) | 본다 — 보류 주인의 공유 목소리로 **바꾸는** PATCH 는 404 |
+| `PATCH /alarm/:id` — 값이 **바뀐다**(다른 목소리·클립으로 교체, 비어 있던 클립을 채움) | 본다 — 보류 주인의 공유 목소리·클립으로 **바꾸는** PATCH 는 404 |
 
-- 목소리 **재생**은 여전히 막혀 있다(오디오 라우트 403) — D8 은 동기화를 살릴 뿐 공유를 되살리지 않는다.
+- 두 값은 **따로** 판정한다 — 목소리는 그대로인데 클립만 바뀌면 클립만 본다(그 역도 같다).
+- 목소리·클립 **재생**은 여전히 막혀 있다(오디오 라우트 403 `VOICE_LOCKED_FREE_PLAN`) — D8·D13 은
+  동기화를 살릴 뿐 공유를 되살리지 않는다. `messageBelongsToCaller` ↔ 오디오 라우트 **쌍 규칙은
+  그대로다**(CLAUDE.md) — 허용 갈래는 바뀌지 않았고, 달라진 것은 PATCH 가 **새 참조일 때만** 묻는다는
+  것뿐이다.
 - 트랜잭션 안의 재확인(TOCTOU)도 같은 조건이다(바뀔 때만).
-- ⚠ **`message_id` 는 이 예외가 없다**(기존 규칙 — 보낼 때마다 본다). 공유 목소리의 **프리셋 클립**을
-  쓰는 알람은 주인이 보류인 동안 PATCH 가 404 `MESSAGE_NOT_FOUND` 로 실패한다(보류 전부터 그랬다 —
-  Codex #685 이후).
-- 회귀 테스트: `test/personal-promo.test.ts` 「따로 결제하는 멤버의 PATCH」(그대로 보내는 토글 200 ·
-  그 목소리로 바꾸는 PATCH 404 · 위의 POST 404).
+- 회귀 테스트: `test/personal-promo.test.ts` 「따로 결제하는 멤버의 PATCH」 둘 — 목소리만(D8: 그대로
+  보내는 토글 200 · 그 목소리로 바꾸는 PATCH 404 · POST 404)과 **안드로이드 실제 페이로드**(D13: 목소리 +
+  주인의 공유 프리셋 클립 · 버킷 — 토글 200 · 그 클립을 새로 채우거나 그 목소리·클립으로 바꾸는 PATCH
+  404 `MESSAGE_NOT_FOUND` · POST 404 · 오디오 403).
 
 ⚠ **공유 갈래를 계산값으로 두지 말 것.** 결제 보류(ON_HOLD/PAUSED) 그룹은 소유자·멤버의
 `users.plan` 만 free 로 회수하고 그룹·`is_shared`·주인의 ElevenLabs 클론을 그대로 둔다(「결제
@@ -919,8 +926,11 @@ entitlement 가 기기에 남은 채 지금은 Play 구독을 쓰는 사용자�
 **약속**(D6): 종료 전환 대상의 목소리는 **끝 + 3일(약속 시각)까지 보관하고, 그 뒤에 지운다.**
 앱의 종료 안내("등록한 목소리는 3일 보관 후 삭제돼요")·처리방침('3일간 보관한 뒤 영구 삭제 … 그
 3일 안에 이용권을 다시 등록하면 삭제되지 않고')·제품 결정이 모두 이 한 문장이다. 그래서
-**`delete_after` 는 약속 시각보다 이르지 않다** — 대상이 몇 명이든. 삭제는 약속 시각에 시작해
-subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effort, 2,500명이면 네 시간 남짓).
+**`delete_after` 는 약속 시각보다 이르지 않다** — 대상이 몇 명이든. 그리고 **전환에서 24시간보다
+가깝지도 않다**(D16) — 누구든 시각이 적힌 예고를 받고 하루는 이용권을 시작할 수 있다. 삭제는 기한에
+시작해 subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effort, 2,500명·기기 하나면 네 시간
+남짓, 기기 둘이면 여섯 시간 가까이). 약속 시각 뒤 **고정 꼬리로 끊지 않는다**(D15) — 남은 사람이
+있는 동안 전용 크론이 계속 지운다.
 
 - 끝 시각부터 모든 서버 게이트가 원시값으로 돌아간다 — **즉시**다. 원시 free 는
   `VOICE_FEATURE_REQUIRES_PAID_PLAN` 등으로 거절되고, 직접 입력 한도는 0, `/auth/me` 는
@@ -950,10 +960,14 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
 사람마다 스윕(틱당 2명)으로는 며칠이 걸린다.
 
 - 1분 크론은 **이 일만** 한다(`index.ts` 의 첫 분기 → `runPersonalPromoEnd(role: 'dedicated')`).
-  실행마다 subrequest 를 따로 받는 것이 전용 크론의 이유다. 끝 전·스위치 꺼짐·약속 시각 + 하루
-  뒤에는 **DB 를 부르지 않고** 끝난다 — 기간 내내 1분마다 도는 실행이다.
-- 한 실행에 **스윕 먼저**: 기한이 온 보관 행이 있으면 묶음 스윕을 하고, 누군가를 **지웠으면** 그
-  실행은 거기서 끝이다(스윕이 subrequest 를 거의 다 쓴다). 스윕이 **아무도 못 지웠으면**(묶음
+  실행마다 subrequest 를 따로 받는 것이 전용 크론의 이유다. 끝 전·스위치 꺼짐에는 **DB 를 부르지
+  않고** 끝난다 — 기간 내내 1분마다 도는 실행이다.
+- 끝 뒤 매 실행의 첫 왕복은 스윕의 조회 — "기한이 온 보관 행이 남았나"(첫날 뒤에는 전환 대상의
+  행만 — 아래)다. 없으면 **그 왕복 하나로** 끝난다. 그래서 끝부터 정리 PR 이 이 크론을 지울 때까지
+  한가한 실행은 분당 조회 하나다(D15 — 예전의 '약속 시각 + 하루 뒤에는 DB 를 부르지 않는다' 는 그
+  고정 꼬리와 함께 없앴다).
+- 첫날(끝부터 하루 — 전환하는 동안)에는 한 실행에 **스윕 먼저**: 기한이 온 보관 행이 있으면 묶음
+  스윕을 하고, 누군가를 **지웠으면** 그 실행은 거기서 끝이다(스윕이 subrequest 를 거의 다 쓴다). 스윕이 **아무도 못 지웠으면**(묶음
   실패, 또는 전원이 지금 유료라 풀어 주기만 함) **같은 실행에서 전환으로 넘어간다**(D10) — 스윕이
   쓴 몫(최악 29왕복)을 빼고 작은 묶음으로(기기 하나인 사람 넷 남짓), 격리 재시도도 한 사람만.
   ⚠ 예전에는 "스윕 **또는** 전환" 이라, 늘 실패하는 보관 행 **하나**(프로모와 무관한 보통 행이어도)가
@@ -962,10 +976,20 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
 - 전환은 끝부터 하루 동안만 하고, 그 뒤 늦게 대상이 된 사람은 5분 틱의 **폴백 전환**(틱당 3명,
   `role: 'main'`)이 잇는다 — 전용 크론이 빠져 있어도 전환은 멈추지 않는다. 5분 틱의 사람마다
   스윕(`sweepPaidVoiceRetention`, 틱당 2명)도 그대로 돈다.
+- **첫날 뒤의 전용 크론은 전환 대상의 보관 행만 지운다**(D15 — `sweepDueRetentionInBulk` 의
+  `dueFrom` = 약속 시각). 전환 대상의 행은 기한이 언제나 약속 시각 이후라(`promoEndDeleteAfter`)
+  "기한이 약속 시각 이후이고 이미 지났다" 가 그 코호트의 모양이다. **고정 꼬리가 없다** — 남아
+  있는 동안 약속 시각 + 며칠이 지나도 같은 속도로 지운다. 예전에는 약속 시각 + 하루에 멈춰, 그때까지
+  못 지운 사람(분당 약 10명 × 하루 ≈ 1만 4천 명 초과분)이 사람마다 스윕(하루 576명)으로 떨어져
+  며칠씩 남았다('지체 없이' 위반 — 리뷰). 늦게 전환된 사람의 행(D16 — 전환 + 24시간)도 기한이 오면
+  같은 속도로 지운다.
+  - 약속 시각 **전에** 기한이 온 보통 행(끝 전에 끝난 구독 등)은 첫날 뒤에는 원래대로 5분 틱의
+    사람마다 스윕이 지운다 — 늘 실패하는 보통 행 하나가 전용 크론을 끝없이 붙들지 않는다. 약속
+    시각 **이후**에 기한이 온 보통 행은 구분할 수 없어 함께 지운다(같은 재확인·같은 문장이라 해가 없다).
 - 실행 하나의 상한은 `PROMO_END_RUN_BUDGET`(45) — 로깅·재시도 여유를 남긴 값. 묶음은 **기기 수로
   자른다**(알림이 기기마다 나가서): 전환은 `2 × 기기` 의 합이 37 이하(최대 15명), 스윕은 기기 합이
   14 이하(최대 10명), 스윕 실패 뒤 전환은 9 이하. 실측(푸시 켬·OAuth 캐시 비움): 전환 한 실행
-  43(14명) · 스윕 한 실행 43~44(10명·사전렌더 21클립씩 — 묶음이 무작위라 기기 수에 따라) · 스윕
+  43(14명) · 스윕 한 실행 42~44(10명·사전렌더 21클립씩 — 묶음이 무작위라 기기 수에 따라) · 스윕
   실패 + 전환 한 실행 42(보관 행 삭제의 마지막 문장에서 실패하는 최악) —
   `test/personal-promo-end.test.ts`.
 
@@ -975,24 +999,29 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
   통과한 사람마다 `downgradeUserToFree` 의 음성 보존 갈래와 **같은 문장**(`freeDowngradeWrites` —
   클론 반납·공유 해제·남의 알람 강등) + 보관 행(`paidVoiceRetentionUpsertStatement`)을 한 묶음으로
   쓴다.
-- ⚠ **`delete_after` = 약속 시각(끝 + 3일)**(`promoEndDeleteAfter`) — 언제 전환됐든, 몇 명이든 같다.
-  남은 대상 수를 세지 않는다.
-  - **약속 시각을 넘겨** 전환된 사람(전용 크론이 빠져 폴백만 돈 경우 등)은 **전환 시각 + 24시간**이다.
-    약속 시각을 그대로 걸면 이미 지난 시각이라 스윕이 삭제 예고 푸시보다 먼저 지운다.
-  - 둘 다 **정시로 올린다** — 푸시 문구(분을 버린 한국 시간)가 실제 삭제 시작과 같게. 운영의 끝은
-    정시라 약속 시각은 그대로이고, 올리는 쪽이라 약속보다 이르지 않다(리허설 끝이 정시가 아니어도).
+- ⚠ **D16 — `delete_after` = `max(약속 시각(끝 + 3일), 전환 시각 + 24시간)` 을 정시로 올린 값**
+  (`promoEndDeleteAfter`) — **모든 전환**이 같은 식이다. 남은 대상 수를 세지 않는다.
+  - 약속 시각 하루 전보다 먼저 전환된 사람(전용 크론의 첫날 — 사실상 전원)은 약속 시각 그대로다.
+  - 약속 시각 **하루 안쪽이나 그 뒤에** 전환된 사람(전용 크론이 빠져 폴백만 돈 경우, 뒤늦게 대상이 된
+    사람 등)은 **전환 시각 + 24시간**이다. 예전에는 약속 시각을 **넘긴** 전환에만 +24시간이라, 약속
+    한 시간 전에 전환된 사람은 시각 없는 "곧 영구 삭제" 푸시를 받고 한 시간 뒤 지워졌다(리뷰). 이제
+    누구든 **시각이 적힌 예고와 적어도 하루**를 받는다.
+  - **정시로 올린다** — 푸시 문구(분을 버린 한국 시간)가 실제 삭제 시작과 같게. 운영의 끝은 정시라
+    약속 시각은 그대로이고, 올리는 쪽이라 두 하한보다 이르지 않다(리허설 끝이 정시가 아니어도).
 - ⚠ **한 사람이 전환을 멈추지 않게**(리뷰): 예전에는 `ORDER BY u.id LIMIT 3` 이라 매번 실패하는
   사람이 매 틱 같은 자리를 먹었다(셋이면 전환이 통째로 멈춘다). 지금은 후보를 **실행마다 무작위
   기준점**부터 id 순으로(끝에 닿으면 처음으로) 고르고, 묶음이 실패하면 앞의 세 명만 한 사람씩
   (격리) 다시 한다. 실패한 사람은 그 실행에서 빼고 **경보**한다(`scheduled.personal_promo_end.
-  transition_user`, 태그 `uid`) — 같은 사람이 계속 실패하면 같은 경보가 반복돼 드러난다.
+  transition_user`, 태그 `uid`) — 같은 사람이 계속 실패하면 매시 정각 경보로 드러난다(시간당 한 번 —
+  아래 「경보」, D14). 로그(`TRANSITION_FAILED`)는 매번 남긴다.
 - 커밋 뒤 `plan_changed` + 삭제 예고(`notifyPromoEndTransitioned`) — **목소리를 가진 사람에게만**
   간다(대상 조건). 목소리가 없는 무료 사용자는 푸시하지 않는다(앱을 열면 `/auth/me` 가 free 를
   준다). **문구는 이용권 문구가 아니다**(`personalPromoEndWarningBody`): "기간 한정 개인 플랜이 끝나
   목소리를 {한국 시간 M월 D일 오전/오후 H시}까지만 보관해요. 그 전에 이용권을 시작하면 그대로 쓸 수
   있고, 지나면 영구 삭제돼요." — 이 사람들은 이용권을 산 적이 없고("다시 등록" 이 틀린 말),
   기한은 '지금부터 3일' 이 아니라 **그 사람의 `delete_after`** 다. 한 시간도 안 남았으면 시각을
-  약속하지 않고 "곧 영구 삭제돼요" 라고 쓴다.
+  약속하지 않고 "곧 영구 삭제돼요" 라고 쓴다 — D16 이후 전환의 기한은 언제나 24시간 이상 뒤라 이
+  갈래는 방어로만 남는다.
   - ⚠ **자정은 전날의 `밤 12시` 로 적는다**(`formatKstHour` — "M월 D일 밤 12시까지만 보관"). 약속
     시각이 한국 시간 자정이라 거의 모든 예고가 이 갈래다. 다음 날짜의 "오전 12시" 는 낮 12시로
     읽히기 쉽고, 그렇게 읽으면 실제보다 12시간 길게 보관한다고 믿는다.
@@ -1016,20 +1045,38 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
   모든 묶음을 망치지 않는다(상태를 남기지 않는 회피). 실패한 묶음은 통째로 롤백되고 로그를 남긴다
   (`billing.paid_voice_retention_bulk_sweep`). 5분 틱의 사람마다 스윕이 한 사람씩 격리하는 그물로
   남는다.
-- 약속 시각에 대상 전원의 기한이 한꺼번에 온다 — 스윕이 분당 약 10명씩 지운다. **2,500명
-  시뮬레이션: 가장 이른 삭제 = 약속 시각 정각, 가장 늦은 삭제 = 약속 시각 + 4시간 1분**, 약속
-  시각 전에 지워진 사람 0(`test/personal-promo-end.test.ts`).
+- 약속 시각에 대상 전원의 기한이 한꺼번에 온다. 묶음은 **사람 10명과 기기 합 14대 중 먼저 닿는
+  쪽**에서 잘리므로 분당 삭제는 **`min(10, 14 ÷ 평균 기기 수)` 명**이다(+ 5분 틱의 사람마다 스윕 분당
+  0.4명) — 기기 하나면 10명, 둘이면 7명. **2,500명 시뮬레이션**(`test/personal-promo-end.test.ts`,
+  2026-09-27 재측정 — D15·D16 반영, 푸시 켬):
 
-**경보 — 기록은 매번, 경보는 시간당 한 번**(D10)
+  | 대상의 기기 | 가장 이른 삭제 | 가장 늦은 삭제 | 약속 시각 전 삭제 | 전용 크론 한 실행 최대 | 경보 |
+  | --- | --- | --- | --- | --- | --- |
+  | 평균 1.06대(대부분 하나 · 열에 하나는 둘 · 쉰에 하나는 없음) | 약속 시각 정각 | 약속 시각 + 4시간 1분 | 0 | 42~43 | 없음 |
+  | 모두 2대 | 약속 시각 정각 | 약속 시각 + 5시간 39분 | 0 | 43 | 없음(6시간 문턱 아래) |
+
+**경보 — 기록은 매번, 경보는 시간당 한 번**(D10·D14)
 
 - **기한 초과**(`…retention_overdue`, 태그 `overdue_minutes`·`uid`): 전용 크론이 본 가장 이른 보관
-  행이 기한을 **6시간** 넘겼으면 올린다. 약속 시각 뒤의 정상 적체(2,500명이면 네 시간 남짓)로는
-  울리지 않는다. `uid` 는 그 가장 이른 행의 사람이다 — 늘 실패하는 행은 지워지지 않아 언제나 거기
-  남으므로, 스윕 묶음에 드물게 끼는 행도 이 경보로 드러난다. 로그(`RETENTION_OVERDUE`)는 매 실행 남긴다.
+  행이 기한을 **6시간** 넘겼으면 올린다(`RETENTION_OVERDUE_ALERT_MS` — **D6 으로 6시간 고정**이다.
+  대상이 많다고 올리지 않는다). 약속 시각 뒤의 정상 적체(2,500명이면 기기 하나 네 시간 남짓·기기 둘
+  여섯 시간 가까이)로는 울리지 않는다. 대상이 커서 적체가 6시간을 넘기면 울리지만 **삭제는 계속된다**
+  (D15) — 규모는 종료 1주 전에 재고 묶음·예산 상수로 맞춘다(「운영」 4). `uid` 는 그 가장 이른 행의
+  사람이다 — 늘 실패하는 행은 지워지지 않아 언제나 거기 남으므로, 스윕 묶음에 드물게 끼는 행도 이
+  경보로 드러난다. 로그(`RETENTION_OVERDUE`)는 매 실행 남긴다. 첫날 뒤에는 전용 크론이 전환 대상의
+  행만 보므로(D15) 이 경보도 그 코호트의 행만 본다.
 - **스윕 실패**(`…sweep_batch`, 태그 `size`·`uids`): 묶음이 롤백될 때.
-- ⚠ **둘 다 매시 첫 크론 주기에만 Sentry 로 올린다**(`isPromoEndAlertSlot` — 상태·새 표 없이 갈래마다
-  시간당 최대 한 번). 1분 크론이라 늘 실패하는 행 하나가 하루 1,440건씩 같은 경보를 쌓았다(리뷰).
-  전환 실패(`…transition_user`)는 사람마다 한 번씩 그대로 올린다(첫날에만 돈다).
+- **전환 실패**(`…transition_user`, 태그 `uid`): 격리 재시도까지 실패한 사람.
+- ⚠ **셋 다 매시 첫 크론 주기에만 Sentry 로 올린다**(`isPromoEndAlertSlot`·`PROMO_END_HOURLY_ALERT_STAGES`
+  — 상태·새 표 없이 갈래마다 시간당 최대 한 번). 1분 크론이라 늘 실패하는 행·사람 하나가 하루
+  1,440건씩(폴백까지 더하면 + 288건) 같은 경보를 쌓았다(리뷰 — D10, 전환 실패는 D14).
+  - 정시에는 전용 크론과 5분 틱이 함께 돈다 — 둘 다 올리면 시간당 두 번이 된다. 그래서 **그 시각의
+    갈래를 맡은 크론만** 올린다(`alertSlotOpenFor`): 첫날(전용 크론이 전환하는 동안)은 전용 크론이
+    셋 다, 그 뒤 전환 실패는 폴백(5분 틱)이, 스윕 실패·기한 초과는 전용 크론이(폴백은 묶음 스윕을
+    하지 않는다). 첫날 폴백의 전환 실패는 로그로만 남는다 — 전용 크론이 같은 사람을 열두 배 자주
+    만난다.
+  - 드물게 뽑히는 사람(첫날 초반 — 대상이 많아 무작위 묶음에 가끔 낀다)은 정시 실행에 안 끼면 그
+    시간의 경보가 없다. 대상이 줄어 매 실행 뽑히게 되면 매시 정각에 드러난다. 로그는 매번 남는다.
 - 남는 한계(이 절 밖): 스윕이 삭제 큐에 넣은 **외부 파일(R2 오디오·ElevenLabs 보이스)** 은 5분
   틱의 `drainExternalDeletions` 가 틱당 10건씩 지운다. 목소리당 사전렌더 클립이 21개라 2,500명이면
   큐가 수만 건이다 — DB 행은 약속 시각 뒤 몇 시간 안에 지워지지만 파일 삭제는 그보다 오래 걸린다.
@@ -1037,7 +1084,8 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
 
 ### 앱 — 날짜는 서버 값으로, 기기 시계는 **낡은 캐시에만**
 
-두 앱이 **똑같이** 구현한다(iOS 는 안드로이드를 원본으로 삼는다). 아래 D1~D5 가 규칙 전문이다.
+두 앱이 **똑같이** 구현한다(iOS 는 안드로이드를 원본으로 삼는다). 아래 D1~D5(와 그 안의 D7·D9·D12·
+순번 가드)가 규칙 전문이다. 종료 안내의 진입 규칙(D3·D11)은 [gates-and-overlays.md](gates-and-overlays.md).
 
 **D1 — 오프라인 차단은 낡은 캐시에만.** 판정기(`resolvePaidVoiceAccess` / `PaidVoiceGate`)는
 서버가 계산한 `plan` 을 소비한다. 다만 앱을 오래 열지 않은 채 끝을 넘긴 기기는 캐시에 옛 `plus`
@@ -1083,16 +1131,29 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
   잠금 이펙트, iOS `applyFreePlanVoiceLockIfNeeded`)은 캐시의 받은 시각(D7 — `computed_at`)으로
   판정하므로 끝 **뒤에** 계산된 답은 권위로 믿고, 끝 직전에 계산된 답은 위의 Δ 창에서 일찍 잠글
   수 있다(되돌릴 수 있다).
-- **전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 답을 기다린다**(안드로이드). 무료
-  판정의 근거가 D1 의 오프라인 차단 하나뿐이면(`MainViewModel.isFreeOnlyByPromoLapse`), 이번
-  진입의 `/auth/me` 가 **plan 스냅샷에 반영된 뒤에만** 잠근다(`freePlanLockMayApply` —
-  `planAnsweredEntry == appEntry`). 그 전의 plan 은 지난 실행의 캐시라, 그 사이 다른 기기에서
-  쿠폰·iOS 결제·가족 합류로 원시 유료가 된 사람도 잠기고, 잠금은 새 답이 풀지만 이미 적힌 강등
-  안내가 결제자에게 "바뀌었어요" 를 말한다(리뷰). 서버가 `free` 라고 답한 무료·구독 만료 같은 다른
-  갈래는 기다리지 않는다. '답이 왔다' 는 계정 응답이 아니라 **plan 반영**으로 센다 —
-  `checkAccountStatus` 는 계정 응답을 적지만 plan 은 건드리지 않는다.
-  ⚠ **iOS 는 아직 이 대기가 없다**(`applyFreePlanVoiceLockIfNeeded` 는 낡은 캐시로도 곧바로
-  잠근다) — 후속으로 맞춘다. 잠금은 되돌릴 수 있어 사고의 크기는 잘못 적힌 강등 안내 하나다.
+- **D12 — 전경 무료 잠금: 무료의 근거가 낡은 프로모 하나면 이번 진입의 답을 기다린다**(두 앱).
+  무료 판정의 근거가 D1 의 오프라인 차단 하나뿐이면(안드로이드 `MainViewModel.isFreeOnlyByPromoLapse`),
+  이번 진입의 `/auth/me` 가 **plan 스냅샷에 반영된 뒤에만** 잠근다(안드로이드 `freePlanLockMayApply` —
+  `planAnsweredEntry == appEntry`; iOS `applyFreePlanVoiceLockIfNeeded` 도 같은 조건으로 기다린다).
+  그 전의 plan 은 지난 실행의 캐시라, 그 사이 다른 기기에서 쿠폰·스토어 결제·가족 합류로 원시 유료가
+  된 사람도 잠기고, 잠금은 새 답이 풀지만 이미 적힌 강등 안내(`무료 이용권으로 바뀌었어요`)가
+  결제자에게 "바뀌었어요" 를 말한다(리뷰). 콜드 스타트에서는 스냅샷·스토어가 로컬에서 먼저 차므로
+  `/auth/me` 보다 잠금 판정이 먼저 돌 수 있다 — 그래서 기다리는 쪽이 판정이다. 서버가 `free` 라고 답한
+  무료·구독 만료 같은 다른 갈래는 기다리지 않는다.
+  - '답이 왔다' 는 계정 응답이 아니라 **이번 진입에 보낸 요청의 plan 이 반영된 것**으로 센다 —
+    안드로이드 `checkAccountStatus` 는 계정 응답을 적지만 plan 은 건드리지 않는다. **순번에 밀린 옛
+    응답**(뒤에 보낸 요청의 답이 먼저 반영됨)은 plan 을 쓰지 않으므로 반영으로 세지 않는다(아래 순번
+    가드 — 두 앱).
+  - 이번 진입의 답이 반영된 뒤에도 그 답이 여전히 낡은 프로모면(D7 의 Δ 창 — 기기 시계가 앞선 기기)
+    잠근다. 기다림은 "지난 실행의 캐시로는 잠그지 않는다" 이지 "잠그지 않는다" 가 아니다.
+- **plan·프로모 쓰기의 순번 가드 — 두 앱.** 한 계정에 `/auth/me` 가 여럿 떠 있을 수 있다(진입의
+  새로고침과 `plan_changed`·쿠폰·결제 신호의 재조회). 늦게 도착한 **옛 순번**의 응답은 세션 plan·
+  판정 스냅샷의 plan·프로모 표지(받은 시각)를 덮지 않고, '이번 진입의 plan 반영' 도 적지 않는다 —
+  안 그러면 방금 커플·가족이 된 사람의 답을 결제 전의 `plus` + `personal_promo` 가 덮어 D9 보류
+  규칙이 되살아나고(공유·가족 알람이 닫힌다), 옛 plan 이 '이번 진입의 plan 반영' 으로 적혀 D12 의
+  기다림이 옛 답으로 끝난다(리뷰). 굴린 토큰·탈퇴
+  유예처럼 순번과 무관한 값은 그대로 반영한다. 안드로이드는 `PersonalPromoLedger` 의 계정 요청 순번
+  판정을, iOS 는 `AuthViewModel.applyFreshPlan(…request:)` 의 순번 판정을 쓴다.
 
 **D2 — `deletes_voices_at_end`.** 위 「API 가 내보내는 것」. `false` 면 종료 안내에서 삭제 문장을
 뺀다. `personal_promo` 가 **있으면** 원시 plan 이 free 다 — 구독 행·그룹으로 커플·가족을 열지
@@ -1153,23 +1214,46 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
    늘어난다(워커마다 5분 + 1분). ElevenLabs 요금제의 **보이스 슬롯이 500 이상**인지 확인한다
    (`MAX_PROVIDER_CLONE_VOICES`).
 3. iOS 1.2.10 게재 뒤 prod 에 `PERSONAL_PROMO_STARTS_AT` 을 넣는다(`secrets:sync:prod`).
-4. 종료 1주 전: 대상 수 집계(원시 free · `active` 구독 행 없음 · 목소리 보유 · 보관 행 없음 — 베타
-   계정 포함). 삭제는 대상 수와 무관하게 약속 시각에 **시작**하고, 스윕이 분당 약 10명씩 지운다 —
-   2,500명이면 약속 시각 뒤 약 4시간. **약 3,500명을 넘으면** 적체가 기한 초과 경보 문턱(6시간)을
-   넘겨 경보가 울린다 — 그 전에 문턱(`RETENTION_OVERDUE_ALERT_MS`)이나 묶음 상수를 다시 잰다.
-   전환은 첫날 분당 약 15명(하루 2만 명 남짓)이고, 그 뒤는 5분 틱 폴백이 잇는다.
-5. 종료 당일 모니터링: 전환(끝 + 몇 시간 안에 끝난다), `…transition_user`·`…sweep_batch`·
-   `…retention_overdue` 경보(뒤 둘은 매시 정각에만 온다), 그 뒤 삭제 큐(`pending_external_deletions`)가
-   줄어드는지. 유료 게이트 에러 코드의 `api_error` 증가는 정상이다.
-6. 약속 시각부터 몇 시간: **기한이 약속 시각 이하이고 이미 지난** 보관 행이 줄어 0 이 되는지 본다.
-   ⚠ **표 전체를 세지 말 것** — 끝 뒤에 끝난 보통 구독(만료·해지·환불)의 보관 행은 자기 기한(그
-   시각 + 3일)대로 남아 있어 표가 0 이 되지 않는다. 그걸 스윕 실패로 읽으면 안 된다.
+4. 종료 1주 전: **대상 수와 그들의 기기(push 토큰) 수**를 센다(원시 free · `active` 구독 행 없음 ·
+   목소리 보유 · 보관 행 없음 — 베타 계정 포함). 삭제는 대상 수와 무관하게 약속 시각에 **시작**하고,
+   스윕 묶음이 **사람 10명과 기기 합 14대 중 먼저 닿는 쪽**에서 잘리므로 속도는 기기 수에 달렸다:
+   - 분당 삭제 ≈ `min(10, 14 ÷ (기기 ÷ 대상))` 명(+ 5분 틱 0.4명), 걸리는 시간 ≈ 대상 ÷ 그 값.
+     기기 하나면 분당 10명(2,500명 ≈ 4시간), 둘이면 7명(2,500명 ≈ 6시간 — 시뮬레이션 5시간 39분).
+   - 기한 초과 경보(6시간 — D6 으로 고정)는 걸리는 시간이 6시간을 넘을 때 울린다 — 대략 **대상 >
+     360 × 분당 삭제**(기기 하나 ≈ 3,600명, 둘 ≈ 2,500명). 울려도 **삭제는 계속된다**(D15 — 고정 꼬리
+     없음). 넘길 것 같으면 **문턱이 아니라 묶음·예산 상수**(`PROMO_END_SWEEP_BATCH` ·
+     `PROMO_END_RUN_BUDGET` — 스윕 알림 몫 `PROMO_END_SWEEP_NOTIFY_MESSAGES` 가 여기서 나온다)를
+     계정의 실행당 subrequest 한도 안에서 다시 재는 PR 을 내고, 시뮬레이션을 그 규모로 다시 돌린다.
+     `RETENTION_OVERDUE_ALERT_MS` 는 올리지 않는다.
+   - 전환은 첫날 분당 최대 15명(`2 × 기기` 합 37 — 기기 하나면 15명, 둘이면 9명)이고, 그 뒤는 5분 틱
+     폴백이 잇는다. 2,500명 시뮬레이션: 기기 하나 160분, 둘 260분.
    ```sql
-   -- 종료 전환 코호트 중 기한이 지났는데 남은 행 — 약속 시각 뒤 몇 시간 안에 0 이어야 한다.
+   -- 종료 전환 대상 수와 그들의 기기(push 토큰) 수 — 스윕 묶음은 기기 합으로 잘린다.
+   SELECT COUNT(*) AS targets,
+          COALESCE(SUM((SELECT COUNT(*) FROM push_tokens pt WHERE pt.user_id = u.id)), 0) AS devices
+   FROM users u
+   WHERE u.plan = 'free'
+     AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active')
+     AND NOT EXISTS (SELECT 1 FROM paid_voice_retention r WHERE r.user_id = u.id)
+     AND EXISTS (SELECT 1 FROM voice_profiles vp
+                 WHERE (vp.user_id = u.id OR vp.user_id = u.google_id)
+                   AND vp.deleted_at IS NULL AND COALESCE(vp.is_system, 0) = 0
+                   AND COALESCE(vp.is_draft, 0) = 0);
+   ```
+5. 종료 당일 모니터링: 전환(끝 + 몇 시간 안에 끝난다), `…transition_user`·`…sweep_batch`·
+   `…retention_overdue` 경보(셋 다 매시 정각에만 온다 — 로그는 매 실행), 그 뒤 삭제 큐
+   (`pending_external_deletions`)가 줄어드는지. 유료 게이트 에러 코드의 `api_error` 증가는 정상이다.
+6. 약속 시각부터 몇 시간: **전환 대상의 행**(기한이 약속 시각 이후) 중 **기한이 이미 지난** 것이
+   줄어 0 이 되는지 본다 — 전용 크론이 첫날 뒤에 지우는 것과 같은 조건이다(D15).
+   ⚠ **표 전체를 세지 말 것** — 끝 뒤에 끝난 보통 구독(만료·해지·환불)의 보관 행은 자기 기한(그
+   시각 + 3일)대로 남아 있어 표가 0 이 되지 않는다. 그걸 스윕 실패로 읽으면 안 된다. 늦게 전환된
+   사람(D16 — 전환 + 24시간)의 행은 기한이 오기 전까지 남아 있는 것이 맞다.
+   ```sql
+   -- 전환 대상의 행 중 기한이 지났는데 남은 것 — 약속 시각 뒤 (4번의 걸리는 시간) 안에 0 이어야 한다.
    SELECT COUNT(*) FROM paid_voice_retention
-   WHERE delete_after <= '<약속 시각 — PERSONAL_PROMO.endsAt + 3일, ISO 8601>'
+   WHERE delete_after >= '<약속 시각 — PERSONAL_PROMO.endsAt + 3일, ISO 8601>'
      AND delete_after <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now');
-   -- 언제 봐도 0 이어야 하는 것 — 기한을 6시간 넘긴 행(기한 초과 경보와 같은 조건).
+   -- 기한을 6시간 넘긴 행(기한 초과 경보와 같은 조건) — 4번의 걸리는 시간이 6시간 안이면 언제 봐도 0.
    SELECT COUNT(*) FROM paid_voice_retention
    WHERE delete_after <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-6 hours');
    ```
@@ -1182,19 +1266,19 @@ subrequest 가 허락하는 만큼 빨리 끝낸다(지체 없이 — best effor
 | 스위치·리허설 값 해석 | `lib/personal-promo.ts` `resolvePersonalPromoWindow` · `resolvePersonalPromo`; prod 동기화 거절은 `scripts/worker-secret-keys.ts` | — | — |
 | 계산값 게이트 | `routes/billing-helpers.ts` `hasPersonalVoiceAccess` → `voice-profile.ts`(등록·승격·교체) · `voice-upload.ts` · `tts.ts`(generate 의 내 목소리·본인 오디오·manual-quota) · `alarm-mutation.ts`(내 알람 POST·PATCH) | — | — |
 | 원시값 게이트 — 남의 목소리·보낸 알람 | `isPaidVoicePlan` → `tts.ts` `findUsableVoiceProfile`(주인 `owner_plan`)·generate 의 `usingSharedVoice` · `alarm-mutation.ts` `voiceProfileBelongsToCaller`·`messageBelongsToCaller`·`alarmUsesSharedVoice`·보낸 알람 · `tts.ts` 오디오의 남의 목소리 · `family-alarm.ts` 발신자 | — | — |
-| 알람 PATCH 는 목소리가 바뀔 때만 소유권을 본다(D8) | `routes/alarm-mutation.ts` PATCH 의 `changedVoiceProfileId` → `voiceProfileBelongsToCaller`(바깥 게이트·트랜잭션 재확인 둘 다) | `network/RemoteAlarmApi.kt` `RemoteAlarmWriteRequest`(매번 그대로 보낸다 — 앱은 바꾸지 않는다) | — |
+| 알람 PATCH 는 목소리·클립이 바뀔 때만 소유권을 본다(D8·D13) | `routes/alarm-mutation.ts` PATCH 의 `changedVoiceProfileId` → `voiceProfileBelongsToCaller` · `changedMessageId` → `messageBelongsToCaller`(바깥 게이트·트랜잭션 재확인 둘 다; POST 는 언제나) | `network/RemoteAlarmApi.kt` `RemoteAlarmWriteRequest`(매번 그대로 보낸다 — 앱은 바꾸지 않는다) | — |
 | 보류 규칙 — 기간 중 커플·가족은 스토어·계산값만(D2·D9) | — | `ui/util/PlatformAndLabelUtils.kt` `PersonalPromoTierHold`(`allowsCoupleOrFamily`)·`personalPromoTierHoldOf` → `MainViewModel.personalPromoTierHold` → `hasCoupleOrFamilyAccess`·`canShareVoiceWithOthers`(필수 인자 `promoHold`) · 판정기 plan 공백 갈래(`resolvePaidVoiceAccess`) · `AlarmTalkApp` 잠금 이펙트·`canCreateFamilyAlarm` · `AlarmListScreen`·`VoiceProfileManagementPanel` 의 `personalPromoTierHold` · `MainViewModelVoiceActions`(공유 설정)·`MainViewModelAlarmActions`(가족 알람) | `PlanTier.bestKnown(user:)` 의 기간 중 갈래 · `PlanTier.personalPromoHoldActive` → `canShareVoiceWithOthers`(`VoiceShareAccess.swift`) · `AlarmEditorSheet.familyAlarmLocked` · `AlarmsListView` 의 「누구를 깨울까요?」(`familyAlarmHeldByPromo`) |
 | 응답 필드(`deletes_voices_at_end`·`computed_at` 포함) | `lib/personal-promo.ts` `personalPromoField`(`computed_at` = `promo.now`)·`loadPersonalPromoField`·`activeSubscriptionRowExistsSql` → `routes/auth.ts`(5종) · `routes/billing-query.ts`; shared `PersonalPromoSchema.computed_at`(optional) | `network/AuthApi.kt` `PersonalPromo`(`computedAt` 포함) · `AuthUser.personalPromo` · `network/BillingApi.kt` `BillingSubscriptionResponse.personalPromo` · `network/PersonalPromoJsonAdapter.kt`(관대한 파싱 — D5) · `network/AuthSessionStore.kt` `normalizePersonalPromo`(`computedAt` 은 벗긴다) | `PersonalPromo.swift` `PersonalPromo`(`init(from:)` 은 던지지 않는다 — D5, `computedAt` 을 읽는다) · `AlarmTalkAPIModels.swift` `AuthUser.personalPromo`·`BillingSubscriptionResponse.personalPromo` |
 | 판정 스냅샷 — plan·프로모(·받은 시각, D1·D7) 같은 응답에서 | `/auth/me` · 결제 전 `user_plan` · 받은 시각의 원본 `personal_promo.computed_at` | 받은 시각: `ui/billing/PersonalPromo.kt` `planAnswerStampMillis` ← `AuthSessionStore` 의 `save`(`AuthSession.userFetchedAtMillis`) · `AccessSnapshot.withServerUser(user, receivedAtMillis)`·`withBillingResponse(response, receivedAtMillis)`(`userPlanPromoEndsAt`·`userPlanFetchedAtMillis`); 문: `EntitlementWriter` · `MainViewModelAuthActions` `refreshAppSessionNow` | 받은 시각: `PersonalPromo.fetchedAt`(저장 키 `receivedAtMillis`) ← `PersonalPromo.init(from:)` · `AlarmTalkAPI.makeResponseDecoder`(`PersonalPromo.stampsReceiptKey`); 문: `EntitlementWriter.renewSession` · `SocialFeatureViewModel.refreshAll` · `AuthViewModel.applyFreshPlan(userID:from:plan:personalPromo:request:)` · `AccessSnapshot.personalPromo` |
 | 오프라인 차단(D1 — 받은 시각이 없으면 끝 전의 답) | — | `resolvePaidVoiceAccess`(`ui/util/PlatformAndLabelUtils.kt`) · `personalPromoLapsed`·`PlanPromoStamp`(`ui/billing/PersonalPromo.kt`) · 파괴적 경로 `sync/PlanChangeSyncWorker`(`freshPlanPromoStamp`) | `PaidVoiceGate.resolve` · `PersonalPromo.isStale` · `PlanTier.bestKnown(user:)` · 파괴적 경로 `AlarmTalkApp.applyFreePlanVoiceLockIfNeeded` |
 | 전경 무료 잠금 — 무료의 근거가 낡은 프로모 하나면 이번 진입의 plan 반영 뒤에(D1) | — | `ui/billing/PersonalPromoLedger.kt` `freePlanLockMayApply` · `MainViewModel.isFreeOnlyByPromoLapse`·`planAnsweredEntry`(`PersonalPromoLedger.recordPlanApplied` ← `refreshAppSessionNow`) · `AlarmTalkApp` 잠금 이펙트와 `planAnsweredEntry` 재확인 이펙트 | **아직 없다**(후속) — `applyFreePlanVoiceLockIfNeeded` 는 기다리지 않는다 |
 | 보관 판정의 프로모 인자 | `lib/billing-cancel.ts` `hasActivePaidEntitlement` · `retentionSyncStatements` · `syncPaidVoiceRetention` · `sweepPaidVoiceRetention`(호출부가 `personalPromoCoversFree` 로 푼 값을 넘긴다) | — | — |
-| 종료 전환·스윕(D6·D10) | `lib/personal-promo-end.ts` `runPersonalPromoEnd`(스윕이 아무도 못 지우면 같은 실행에서 전환) · `transitionPersonalPromoEnd` · `promoEndDeleteAfter`(약속 시각보다 이르지 않다) · `promoEndRetentionDeadline` · `sweepDueRetentionInBulk`(`BulkSweepResult.failed`·`oldestDueUserPk`) · `isPromoEndAlertSlot`(경보 시간당 한 번) · `notifyPromoEndTransitioned`; `index.ts` 의 `PERSONAL_PROMO_END_CRON` 분기 + 5분 틱 폴백; `wrangler.toml` 두 환경; 문장 공유 `billing-cancel.ts` `freeDowngradeWrites`·`paidVoiceRetentionUpsertStatement`·`paidEntitlementStatement`, `paid-voice-cleanup.ts` `deleteSensitiveVoiceDataForOwners` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
+| 종료 전환·스윕(D6·D10·D14~D16) | `lib/personal-promo-end.ts` `runPersonalPromoEnd`(스윕이 아무도 못 지우면 같은 실행에서 전환 · 첫날 뒤에는 전환 대상의 행만, 고정 꼬리 없음) · `transitionPersonalPromoEnd` · `promoEndDeleteAfter`(`max(약속 시각, 전환 + 24시간)` 정시 — `PROMO_END_MIN_NOTICE_MS`) · `promoEndRetentionDeadline` · `sweepDueRetentionInBulk`(`dueFrom` · `BulkSweepResult.failed`·`oldestDueUserPk`) · 묶음·예산 `PROMO_END_SWEEP_BATCH`·`PROMO_END_SWEEP_NOTIFY_MESSAGES`·`PROMO_END_RUN_BUDGET` · 경보 `isPromoEndAlertSlot`·`alertSlotOpenFor`·`PROMO_END_HOURLY_ALERT_STAGES`(셋 다 시간당 한 번, 맡은 크론만) · `notifyPromoEndTransitioned`; `index.ts` 의 `PERSONAL_PROMO_END_CRON` 분기 + 5분 틱 폴백; `wrangler.toml` 두 환경; 문장 공유 `billing-cancel.ts` `freeDowngradeWrites`·`paidVoiceRetentionUpsertStatement`·`paidEntitlementStatement`, `paid-voice-cleanup.ts` `deleteSensitiveVoiceDataForOwners` | 기존 `plan_changed` 처리 | 기존 `plan_changed` 처리 |
 | 삭제 예고 문구 | `lib/fcm.ts` `personalPromoEndWarningBody` · `formatKstHour` → `sendBillingStateSignals(warningBodyFor)` | 기존 `voice_deletion_warning` 표시 | 기존 APNs alert |
 | 전역 클론 상한 500 | `lib/voice-slots.ts` `MAX_PROVIDER_CLONE_VOICES` | — | — |
 | 이용권 화면 한 줄(D4 — 나중에 받은 답) | — | `ui/billing/BillingPanels.kt`(`personal_promo_plan_line`) · `planScreenPersonalPromoOf`·`PersonalPromoLedger.planScreenPromo`(`recordBillingAnswer`) → `MainViewModel.planScreenPersonalPromo` → `AlarmListScreen` 의 `planScreenPersonalPromo` · `activePersonalPromoOf` | `BillingPanel.personalPromoLine`·`personalPromoLastDay`(세션 하나 — `applyFreshPlan` 의 순번 가드) |
 | 종료 안내(D3·D4) | — | [gates-and-overlays.md](gates-and-overlays.md) 구현 지도 | 같은 곳 |
-| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리 PATCH(D8)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 — 약속 시각 전 삭제 0**·실행당 subrequest·굶김(스윕 실패 뒤 전환·시간당 경보)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정) · `AuthViewModelTests`(계정 요청 표·순번) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
+| 회귀 테스트 | `test/personal-promo.test.ts`(경계·게이트·보류 그룹 공유 목소리·**보류 주인 목소리·클립 PATCH(D8·D13 — 안드로이드 실제 페이로드)**·대조군·한도·쿠폰·전환) · `test/personal-promo-end.test.ts`(**2,500명 크론 시뮬레이션 두 가지(기기 평균 1.06대·2대) — 약속 시각 전 삭제 0**·실행당 subrequest·기한 = max(약속 시각, 전환 + 24시간)(D16)·고정 꼬리 없는 삭제(D15)·굶김(스윕 실패 뒤 전환·전환 실패 포함 시간당 경보 — D14)·자정 문구·배선) · `test/personal-promo-auth.test.ts`(계정 응답 5종·`deletes_voices_at_end`·`computed_at`) · `test/group-disband-batch.test.ts`(보관 판정 JS↔SQL 대조) · `test/promo-welcome-group.test.ts`(#121) · `packages/shared/test/personal-promo.test.ts` | `PaidVoiceAccessTest`(D9 보류 규칙) · `PersonalPromoNoticeTest`(`computed_at` 파싱) · `PersonalPromoPersistenceTest`(D7) · `BillingPreflightSnapshotTest`(D7) · `PersonalPromoLedgerTest`(잠금 대기·이용권 한 줄) · `EntryRefreshKeepsTokenTest` | `PersonalPromoTests`(D7·D9·종료 안내 판정) · `AuthViewModelTests`(계정 요청 표·순번) · `VoiceShareAccessTests` · `PersonalPromoNoticeUITests` |
 
 ## 구현 지도
 

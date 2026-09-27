@@ -14,8 +14,9 @@
 //   6. 종료 전환 — 대상만·묶음·멱등·`delete_after` 는 끝 + 3일(더 이르지 않다), 기간 중 스윕은
 //      풀어만 준다.
 //      (대량·예산·굶김은 `test/personal-promo-end.test.ts`.)
-//   7. 보류 주인의 공유 목소리 — 알람 PATCH 는 `voice_profile_id` 가 **바뀔 때만** 소유권을 본다(D8):
-//      그대로 보내는 토글은 통과, 그 목소리로 바꾸는 PATCH 는 POST 처럼 404.
+//   7. 보류 주인의 공유 목소리 — 알람 PATCH 는 `voice_profile_id`·`message_id` 가 **바뀔 때만**
+//      소유권을 본다(D8·D13): 안드로이드 실제 페이로드(목소리 + 주인의 공유 프리셋 클립)를 그대로
+//      보내는 토글은 통과, 그 목소리·클립으로 바꾸는 PATCH 는 POST 처럼 404. 클립 재생은 여전히 403.
 //
 // ⚠ 시계는 **JS `Date` 만** 가짜로 돌린다(`toFake: ['Date']`). SQL 의 `datetime('now')` 는 실제
 //   시각이라, 여기 픽스처의 구독 만료는 실제·가짜 시각 어느 쪽으로 봐도 같은 쪽에 오게 둔다.
@@ -579,6 +580,108 @@ describe('계산값 자리 — 끝 1초 전 열림 / 끝 시각 닫힘', () => {
           args: [plain],
         });
         expect(untouched.rows[0]).toMatchObject({ mode: 'sound-only', voice_profile_id: null });
+      });
+
+      it('따로 결제하는 멤버의 PATCH — 안드로이드 실제 페이로드(목소리 + 주인의 공유 프리셋 클립): 토글 200, 그 클립으로 바꾸면 404(D13)', async () => {
+        atMoment(moment.at);
+        // 주인이 유료일 때 저장된 사전렌더 버킷 알람(공유 목소리 + 주인의 프리셋 클립) — 안드로이드
+        // 멤버 알람의 가장 흔한 모양. 그리고 같은 목소리지만 클립이 아직 없는 알람, 목소리 없는 알람.
+        const suffix = moment.open ? '1' : '2';
+        const clipAlarm = `44444444-4444-4444-8444-00000000000${suffix}`;
+        const voiceOnly = `44444444-4444-4444-8444-00000000001${suffix}`;
+        const plain = `44444444-4444-4444-8444-00000000002${suffix}`;
+        await db.batch([
+          {
+            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id, message_id, bucket_id)
+                  VALUES (?, 'pp-hold-paid-member', '06:10', 'tts', ?, ?, 'weather')`,
+            args: [clipAlarm, VP_HOLD, MSG_HOLD_PRESET],
+          },
+          {
+            sql: `INSERT INTO alarms (id, user_id, time, mode, voice_profile_id)
+                  VALUES (?, 'pp-hold-paid-member', '06:20', 'tts', ?)`,
+            args: [voiceOnly, VP_HOLD],
+          },
+          {
+            sql: `INSERT INTO alarms (id, user_id, time, mode)
+                  VALUES (?, 'pp-hold-paid-member', '06:30', 'sound-only')`,
+            args: [plain],
+          },
+        ]);
+        // `RemoteAlarmMapper.toWriteRequest` 가 만드는 본문 그대로(Gson 은 null 을 빼고 보낸다) —
+        // 켜기·끄기·시각만 바뀌어도 `message_id` 와 `voice_profile_id` 를 **매번** 싣는다.
+        const androidPayload = (overrides: Record<string, unknown>) => ({
+          time: '06:10',
+          repeat_days: [1, 2, 3, 4, 5],
+          snooze_minutes: 5,
+          mode: 'tts',
+          vibration_pattern: 'default',
+          wake_mode: 'voice_only',
+          is_active: true,
+          message_id: MSG_HOLD_PRESET,
+          voice_profile_id: VP_HOLD,
+          timezone: 'Asia/Seoul',
+          bucket_id: 'weather',
+          ...overrides,
+        });
+
+        // 전제: 그 클립은 지금 막혀 있다 — 오디오(읽기)도, 새로 심는 POST(쓰기)도.
+        const audio = await call(HOLD_PAID_MEMBER, 'GET', `/tts/messages/${MSG_HOLD_PRESET}/audio`);
+        expect(audio.status).toBe(403);
+        expect(audio.body.error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+        const create = await call(
+          HOLD_PAID_MEMBER,
+          'POST',
+          '/alarms',
+          androidPayload({ client_alarm_id: `44444444-4444-4444-8444-00000000003${suffix}` }),
+        );
+        expect(create.status).toBe(404);
+
+        // 토글·시각 수정 — 저장된 값 그대로라 소유권 게이트를 다시 보지 않는다(D8·D13).
+        const toggle = await call(
+          HOLD_PAID_MEMBER,
+          'PATCH',
+          `/alarms/${clipAlarm}`,
+          androidPayload({ time: '06:11', is_active: false, client_alarm_id: clipAlarm }),
+        );
+        expect(toggle.status).toBe(200);
+        const toggled = await db.execute({
+          sql: 'SELECT time, is_active, message_id, voice_profile_id, bucket_id FROM alarms WHERE id = ?',
+          args: [clipAlarm],
+        });
+        expect(toggled.rows[0]).toMatchObject({
+          time: '06:11',
+          is_active: 0,
+          message_id: MSG_HOLD_PRESET,
+          voice_profile_id: VP_HOLD,
+          bucket_id: 'weather',
+        });
+
+        // 그 클립으로 **바꾸는** PATCH 는 예전처럼 404 — 목소리는 같아도 클립이 새 참조다.
+        const addClip = await call(
+          HOLD_PAID_MEMBER,
+          'PATCH',
+          `/alarms/${voiceOnly}`,
+          androidPayload({ time: '06:20', client_alarm_id: voiceOnly }),
+        );
+        expect(addClip.status).toBe(404);
+        expect(addClip.body.error_code).toBe('MESSAGE_NOT_FOUND');
+        // 목소리 없는 알람을 그 목소리·클립으로 바꾸는 PATCH 도 404.
+        const switchTo = await call(
+          HOLD_PAID_MEMBER,
+          'PATCH',
+          `/alarms/${plain}`,
+          androidPayload({ time: '06:30', client_alarm_id: plain }),
+        );
+        expect(switchTo.status).toBe(404);
+        expect(switchTo.body.error_code).toBe('MESSAGE_NOT_FOUND');
+        const untouched = await db.execute({
+          sql: `SELECT id, mode, message_id, voice_profile_id FROM alarms WHERE id IN (?, ?) ORDER BY id`,
+          args: [voiceOnly, plain],
+        });
+        expect(untouched.rows.map((r) => ({ ...r }))).toEqual([
+          { id: voiceOnly, mode: 'tts', message_id: null, voice_profile_id: VP_HOLD },
+          { id: plain, mode: 'sound-only', message_id: null, voice_profile_id: null },
+        ]);
       });
 
       it('살아 있는 가족 그룹의 공유 목소리는 원시 게이트를 그대로 지난다(대조군)', async () => {
