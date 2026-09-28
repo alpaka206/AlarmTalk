@@ -26,7 +26,14 @@
       앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
 - [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
       넣고 `npm run secrets:sync:prod --workspace=backend`.
-- [ ] Play 30 이 100% 게재된 뒤: `app-version.ts` 의 Android `latest` 를 30 으로(순서 규칙은 파일 주석).
+- [ ] **강제 업데이트 — 두 앱 모두 1.2.10**(#806, 준비만 해 두고 머지하지 않았다): `app-version.ts` 의
+      `minSupported`·`latest` 를 Android 30·30, iOS 7·7 로. **머지 조건: 두 스토어 게재를 API 로 확인한
+      뒤** — Play 는 Play Developer API 프로덕션 트랙의 30 만으로는 모자란다(commit 직후 심사 중에도
+      `status: completed` 였다) — 심사 통과·게재까지 확인하고(구버전 기기의 인앱 업데이트가 30 을 받는가),
+      App Store 는 ASC API 의 1.2.10 appStoreVersion 이 `READY_FOR_SALE`. 먼저 나가면 받을 것 없는 차단
+      화면으로 앱이 벽돌이 된다. 머지 경로: #806 → develop, 이어서 develop→main(main 푸시가 prod 배포).
+      ⚠ #806 이 develop 에 들어간 뒤에는 조건 전에 develop 을 main 으로 올리지 않는다 — 그래서 #806 은
+      조건이 채워진 뒤에 develop 에 넣고 곧바로 main 으로 올린다.
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
@@ -34,8 +41,8 @@
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
-  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → Play 30 이 100% 게재된 뒤 `app-version.ts` Android
-  `latest` 30. 앱을 먼저 내면 옛 서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한
+  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → 두 스토어 게재 뒤 강제 업데이트(#806 — Android 30·
+  iOS 7). 앱을 먼저 내면 옛 서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한
   목소리의 선택이 영구히 사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
   기간)이 생긴다 — 그동안 웰컴 코드를 나눠 주지 않는다(필요하면 `welcome` 이 아닌 그룹명으로 발급).
 - ⚠ **앱 빌드 전에 prod 배포를 눈으로 확인한다.** #797 머지 푸시는 main 에 없던 백엔드 변경을 전부

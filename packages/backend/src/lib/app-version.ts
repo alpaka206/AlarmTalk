@@ -39,7 +39,21 @@ const ANDROID: AppVersionPolicy = {
   // 강제로 끊고 나면 뒤따르는 것이 하나 더 있다: 새 앱은 첫 실행에서 **새 클립을 전부
   // 받고 → 기존 알람을 갈아 끼우고 → 옛 오디오 파일을 지운다**. 옛 설치본을 남겨 두면
   // 그 교체가 영영 안 일어나는 기기가 생긴다.
-  minSupported: 25,
+  //
+  // 30 으로 올리는 이유(2026-09-28) — **1.2.10 은 두 스토어 모두 강제다**(iOS 도 같은
+  // 변경에서 7 로 올린다, 아래). 1.2.10 에만 있는 것이 둘이다:
+  //   - **개인 플랜 종료 안내**(`gates-and-overlays.md` 「개인 플랜 종료 안내」). 약관 제10조의
+  //     '무료 전환으로 지워지는 데이터는 전환 전에 앱 안에서 안내한다' 를 지키는 자리라,
+  //     구버전에 남은 사람은 기간이 끝나면 목소리가 지워진다는 것을 앱 안에서 못 본다.
+  //   - **목소리 느낌**(자동·경쾌·차분) 선택. 구버전의 등록 요청은 결을 보내지 않아 서버가
+  //     그 값을 건드리지 않는다 — 막히지는 않지만 고를 길이 없다.
+  //
+  // ⚠️ **이 변경은 Play 30 과 App Store 1.2.10(빌드 7)이 둘 다 게재된 것을 스토어 API 로
+  // 확인한 뒤에만 main 에 머지한다**(두 플랫폼을 한 변경으로 올렸다). 먼저 나가면 29 이하
+  // 설치본이 차단 화면을 보는데 스토어에는 받을 30 이 없다 — 앱이 벽돌이 된다.
+  // ⚠️ Play Developer API 의 트랙 `status: completed` 만으로는 게재가 아니다 — 30 은 commit
+  // 직후 심사 중에도 `completed` 로 보였다(`dev-test-handoff.md` 「스토어 상태」).
+  minSupported: 30,
   // 권장 업데이트 기준(비차단). 미만이면 클라가 FLEXIBLE 인앱 업데이트를 띄운다
   // (`InAppUpdateManager` — 백그라운드 다운로드 후 재시작 안내). minSupported 보다
   // 낮으면 "필수 버전이 최신 버전보다 높다" 는 모순이라 함께 올린다.
@@ -65,33 +79,49 @@ const ANDROID: AppVersionPolicy = {
   // ⚠️ 위 순서 규칙은 이번에도 지켰다 — Play 프로덕션이 **29 (1.2.9), status=completed**
   // (2026-09-22 게재)인 것을 Play Developer API 로 확인하고 올렸다. `minSupported`(25)보다
   // 높으므로 차단 화면이 아니라 배너다.
-  latest: 29,
+  //
+  // 30(2026-09-28): `minSupported` 를 30 으로 올리므로 함께 올린다. 이번 회차는 배너가 아니라
+  // **차단 화면**이다 — 순서 규칙은 위 `minSupported` 주석.
+  latest: 30,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
 const IOS: AppVersionPolicy = {
-  // 하한은 1 이다 — 막을 사용자가 없다. 첫 공개 릴리스가 **1.2.8(빌드 5, 2026-09-22 게재)**
-  // 이라 그보다 낮은 설치본은 TestFlight 뿐이고, Android 정책(25)을 그대로 물려주면
-  // iOS 빌드번호(CFBundleVersion)가 즉시 강제 업데이트 차단 화면에 걸린다.
+  // 7 = 1.2.10(빌드 7). 2026-09-28 에 1 에서 올린다 — Android 30 과 같은 회차의 강제
+  // 업데이트다. 이유는 Android 쪽 둘(종료 안내·목소리 느낌 — 두 앱 모두 1.2.10 에만 있다)에
+  // iOS 만의 하나가 더 있다:
+  //   - **기간 한정 개인 플랜에서 구버전 iOS 는 반만 열린다.** 서버는 원시 free 계정의
+  //     `plan` 을 기간 중 계산값으로 올려 내려주지만 구독 응답은 `subscription:null` 이고,
+  //     1.2.10 전의 iOS 출시본에는 그걸 보면 `users.plan` 을 믿지 않는 화면이 있다
+  //     (`billing-lifecycle.md` 「기간 한정 개인 플랜」 기간 표의 '시작' 행). 안드로이드
+  //     구버전은 `plan` 만으로 열려 이 문제가 없다.
   //
-  // 올릴 시점은 Android 와 같은 기준이다 — 서버가 요구하는 필수 계약(예: 동의
-  // document_version)을 못 보내는 빌드를 잘라내야 할 때만. 그전에는 1 로 둔다.
-  minSupported: 1,
-  // ⚠ **iOS 는 이 값을 읽는 클라가 없다.** `AppVersionGate.checkAppVersion()` 은
-  // `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
-  // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다. 그래서 게재
-  // 뒤에도 1 로 둔다. 올리는 것은 **앱에 권장 업데이트 배너를 만든 다음**이다 —
-  // 지금 올려 봐야 아무 일도 일어나지 않고, 나중에 배너를 붙이는 사람이 "이미 올라가
-  // 있으니 맞겠지" 로 읽는 것이 더 위험하다.
-  latest: 1,
+  // 막히는 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
+  // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
+  //
+  // ⚠ **App Store 에 1.2.10(빌드 7)이 게재된 것을 확인한 뒤에만 main 에 머지한다**(Play 30
+  // 게재와 **둘 다** — 두 플랫폼을 한 변경으로 올렸다). ASC API 의 appStoreVersion 이
+  // `READY_FOR_SALE` 인지 본다. 먼저 나가면 빌드 5·6 이 차단 화면(`UpdateRequiredView`)을
+  // 보는데 스토어에는 받을 7 이 없다.
+  minSupported: 7,
+  // ⚠ **iOS 는 이 값을 읽는 클라가 없다**(1.2.10 도 그렇다). `AppVersionGate.checkAppVersion()`
+  // 은 `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
+  // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다(`AppVersionResponse`
+  // 에 필드조차 없다).
+  //
+  // 7 인 이유: 하한을 7 로 올리면서 1 로 두면 "필수 버전이 최신 버전보다 높다" 는 모순이
+  // 된다. 그래서 **`minSupported` 와 같은 값**으로만 둔다 — 게재본을 따라가는 권장 기준이
+  // 아니다. 다음 iOS 릴리스가 나가도 이 값이 저절로 맞는 값이 되지 않으니, 권장 업데이트
+  // 배너를 만드는 사람은 그때의 게재 빌드로 다시 맞춘다.
+  latest: 7,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
   // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',
 };
 
 // platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.
-// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 두 정책 중 더 엄격한 쪽이라,
-// 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
+// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — iOS 하한(빌드 번호 7)을 주면
+// versionCode 7~29 의 구버전 Android 가 차단을 빠져나간다.
 export function appVersionPolicy(platform?: string | null): AppVersionPolicy {
   return platform?.toLowerCase() === 'ios' ? IOS : ANDROID;
 }
