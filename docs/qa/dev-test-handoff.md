@@ -29,11 +29,14 @@
       업데이트(#806)를 먼저** prod 에 내보낸 뒤 켠다 — 구버전 iOS(빌드 5·6)는 스위치가 켜진 동안 반만
       열리는데 #806 이 그 빌드들을 막는다. Play 가 아직이면 스위치는 기다리지 않는다(받아들인 틈 — #806 이
       나가면 닫힌다. 근거는 `app-version.ts` 의 iOS 주석). Play 가 오래 막히면 #806 의 iOS 반쪽만 떼어 먼저 낸다.
+- [ ] ⚠ **#806 은 develop 에 먼저 머지했다(2026-09-28, 두 스토어 게재 전).** develop 에 강제 업데이트
+      값이 있다는 것은 게재됐다는 뜻이 아니다 — **두 스토어 게재를 확인하기 전에는 어떤 develop→main 도
+      하지 않는다**(급한 서버 수정은 main 에서 갈라 따로 낸다).
 - [ ] 강제 업데이트(#806 — Android 30·iOS 7) develop→main 배포 뒤 prod 확인:
       `GET /api/app/version?platform=android` 가 `min_supported_version`·`latest_version` 30,
       `?platform=ios` 가 7 인지, 29 기기에서 차단 화면(과 IMMEDIATE 인앱 업데이트)이 뜨는지 본다.
       머지 조건(두 스토어 게재 — Play 는 API 의 `completed` 가 아니라 Console 게시 개요·Play 스토어 앱으로
-      본다)과 경로(develop 에 넣는 것이 문턱)는 `app-version.ts` 주석이 유일 출처다.
+      본다)과 경로(develop→main 이 문턱)는 `app-version.ts` 주석이 유일 출처다.
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·

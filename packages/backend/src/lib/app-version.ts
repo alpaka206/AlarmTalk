@@ -59,18 +59,19 @@ const ANDROID: AppVersionPolicy = {
   // 요청은 결을 보내지 않아 서버가 그 값을 건드리지 않는다 — 막히지는 않고 고를 길이 없을
   // 뿐이라 이것만으로는 강제 사유가 아니다(위 머리말).
   //
-  // ⚠️ **이 변경은 Play 30 과 App Store 1.2.10(빌드 7)이 둘 다 게재된 것을 확인한 뒤에만
-  // develop 에 넣고, 넣으면 곧바로 main 으로 올린다**(두 플랫폼을 한 변경으로 올렸다).
-  // 문턱은 main 이 아니라 **develop** 이다 — develop→main 이 릴리스 경로라, 조건 전에
-  // develop 에 들어가면 그 뒤의 어느 develop→main 에든 딸려 prod 로 나간다. 먼저 나가면
-  // 29 이하 설치본이 차단 화면을 보는데 스토어에는 받을 30 이 없다 — 앱이 벽돌이 된다.
+  // ⚠️ **이 값이 prod 에 나가는 것(develop→main)은 Play 30 과 App Store 1.2.10(빌드 7)이
+  // 둘 다 게재된 것을 확인한 뒤에만이다**(두 플랫폼을 한 변경으로 올렸다). develop 에는 게재
+  // 전(2026-09-28)에 먼저 넣었다 — 그래서 **develop 에 이 값이 있다는 것은 게재됐다는 뜻이
+  // 아니다.** 그 사이에는 어떤 develop→main 도 하지 않는다(딸려 prod 로 나간다). 급한 서버
+  // 수정이 생기면 main 에서 갈라 따로 낸다. 먼저 나가면 29 이하 설치본이 차단 화면을 보는데
+  // 스토어에는 받을 30 이 없다 — 앱이 벽돌이 된다.
   // ⚠️ Play 게재 확인법: Play Developer API 의 트랙 `status: completed` 는 게재가 아니다 —
   // 30 은 commit 직후 심사 중에도 `completed` 로 보였다(`dev-test-handoff.md` 「스토어 상태」).
   // **Play Console 게시 개요**에서 30 이 '검토 중' 이 아니라 게시됐는지 보고, 29 가 깔린
   // 기기의 **Play 스토어 앱** 알람톡 상세에 '업데이트' 가 뜨는지 본다. ⚠ 구버전 앱의
   // **인앱 업데이트로는 확인할 수 없다** — 29 는 서버가 `updateRequired`·`updateRecommended`
   // 를 켜야만 인앱 업데이트를 띄우는데(`InAppUpdateManager`), 29 에서 그걸 켜는 것이 바로
-  // 이 변경이다. 머지 전에는 30 이 게재돼 있어도 아무것도 뜨지 않는다.
+  // 이 변경이다. 이 값이 prod 에 나가기 전에는 30 이 게재돼 있어도 아무것도 뜨지 않는다.
   minSupported: 30,
   // 권장 업데이트 기준(비차단). 미만이면 클라가 FLEXIBLE 인앱 업데이트를 띄운다
   // (`InAppUpdateManager` — 백그라운드 다운로드 후 재시작 안내). minSupported 보다
@@ -123,9 +124,9 @@ const IOS: AppVersionPolicy = {
   // 막히는 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
   // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
   //
-  // ⚠ **App Store 에 1.2.10(빌드 7)이 게재된 것을 확인한 뒤에만 develop 에 넣는다**(Play 30
-  // 게재와 **둘 다** — 두 플랫폼을 한 변경으로 올렸다). 문턱이 main 이 아니라 develop 인
-  // 이유는 Android `minSupported` 주석과 같다(develop→main 이 릴리스 경로다). ASC API 의
+  // ⚠ **prod 에 나가는 것(develop→main)은 App Store 에 1.2.10(빌드 7)이 게재된 것을 확인한
+  // 뒤에만이다**(Play 30 게재와 **둘 다** — 두 플랫폼을 한 변경으로 올렸다). develop 에 먼저
+  // 들어가 있다는 것과 그 사이 규칙은 Android `minSupported` 주석과 같다. ASC API 의
   // appStoreVersion 이 `READY_FOR_SALE` 인지 본다. 먼저 나가면 빌드 5·6 이 차단
   // 화면(`UpdateRequiredView`)을 보는데 스토어에는 받을 7 이 없다.
   minSupported: 7,
