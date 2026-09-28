@@ -59,16 +59,16 @@ const ANDROID: AppVersionPolicy = {
   // 요청은 결을 보내지 않아 서버가 그 값을 건드리지 않는다 — 막히지는 않고 고를 길이 없을
   // 뿐이라 이것만으로는 강제 사유가 아니다(위 머리말).
   //
-  // ⚠️ **이 값이 prod 에 나가는 것(develop→main)은 Play 30 과 App Store 1.2.10(빌드 7)이
-  // 둘 다 게재된 것을 확인한 뒤에만이다**(두 플랫폼을 한 변경으로 올렸다). develop 에는 게재
-  // 전(2026-09-28)에 먼저 넣었다 — 그래서 **develop 에 이 값이 있다는 것은 게재됐다는 뜻이
-  // 아니다.** 그 사이에는 어떤 develop→main 도 하지 않는다(딸려 prod 로 나간다). 급한 서버
-  // 수정이 생기면 main 에서 갈라 따로 낸다. 먼저 나가면 29 이하 설치본이 차단 화면을 보는데
-  // 스토어에는 받을 30 이 없다 — 앱이 벽돌이 된다.
+  // ⚠️ **이 값은 Play 30 이 게재된 것을 확인한 뒤에만 prod 에 나간다**(prod = develop→main).
+  // 먼저 나가면 29 이하 설치본이 차단 화면을 보는데 스토어에는 받을 30 이 없다 — 앱이 벽돌이
+  // 된다. 2026-09-28: Play 30 을 운영자가 게시했고 Play Developer API `releases.list` 의
+  // `releaseLifecycleState` 가 `PUBLISHED` 인 것을 확인한 뒤 **Android 만 먼저** 냈다 — iOS 는
+  // App Store 심사 중이라 같이 낼 수 없었다(아래 iOS 주석).
   // ⚠️ Play 게재 확인법: Play Developer API 의 트랙 `status: completed` 는 게재가 아니다 —
-  // 30 은 commit 직후 심사 중에도 `completed` 로 보였다(`dev-test-handoff.md` 「스토어 상태」).
-  // **Play Console 게시 개요**에서 30 이 '검토 중' 이 아니라 게시됐는지 보고, 29 가 깔린
-  // 기기의 **Play 스토어 앱** 알람톡 상세에 '업데이트' 가 뜨는지 본다. ⚠ 구버전 앱의
+  // 30 은 commit 직후 심사 중에도, 승인 뒤 게시 대기 중에도 `completed` 로 보였다(관리형 게시).
+  // `releases.list` 의 `releaseLifecycleState` 를 본다 — `APPROVED_NOT_PUBLISHED` 는 승인만
+  // 된 것이고 `PUBLISHED` 여야 게재다. **Play Console 게시 개요**·29 가 깔린 기기의 **Play 스토어
+  // 앱** 알람톡 상세의 '업데이트' 로도 볼 수 있다. ⚠ 구버전 앱의
   // **인앱 업데이트로는 확인할 수 없다** — 29 는 서버가 `updateRequired`·`updateRecommended`
   // 를 켜야만 인앱 업데이트를 띄우는데(`InAppUpdateManager`), 29 에서 그걸 켜는 것이 바로
   // 이 변경이다. 이 값이 prod 에 나가기 전에는 30 이 게재돼 있어도 아무것도 뜨지 않는다.
@@ -106,7 +106,14 @@ const ANDROID: AppVersionPolicy = {
 };
 
 const IOS: AppVersionPolicy = {
-  // 7 = 1.2.10(빌드 7). 2026-09-28 에 1 에서 올린다 — Android 30 과 같은 회차의 강제
+  // ⚠ **지금은 1 이다 — 7 로 올리는 것은 App Store 에 1.2.10(빌드 7)이 게재된 뒤다.**
+  // 2026-09-28 에 Android 30 과 한 변경(#806)으로 7 을 넣었다가, Play 30 이 먼저 게시되고
+  // App Store 는 심사 대기라 **iOS 만 1 로 되돌려** Android 를 먼저 냈다. 7 이 먼저 나가면 빌드
+  // 5·6(1.2.8·1.2.9) 사용자 전원이 차단 화면(`UpdateRequiredView`)을 보는데 스토어에는 받을
+  // 7 이 없다. 게재를 확인하면(ASC API 의 appStoreVersion 이 `READY_FOR_SALE`) 두 값을 7 로
+  // 올린다 — 올릴 사유는 아래에 그대로 둔다.
+  //
+  // 7 = 1.2.10(빌드 7) — Android 30 과 같은 회차의 강제
   // 업데이트다. Android 의 출발점(잠금 화면 울림 화면)은 **iOS 에는 없던 결함**이다 — iOS 는
   // 울림 화면을 AlarmKit 이 그린다. iOS 의 사유는 개인 플랜 종료 안내(두 앱 모두 1.2.10 에만
   // 있다)와 iOS 만의 하나다:
@@ -124,30 +131,24 @@ const IOS: AppVersionPolicy = {
   // 막히는 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
   // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
   //
-  // ⚠ **prod 에 나가는 것(develop→main)은 App Store 에 1.2.10(빌드 7)이 게재된 것을 확인한
-  // 뒤에만이다**(Play 30 게재와 **둘 다** — 두 플랫폼을 한 변경으로 올렸다). develop 에 먼저
-  // 들어가 있다는 것과 그 사이 규칙은 Android `minSupported` 주석과 같다. ASC API 의
-  // appStoreVersion 이 `READY_FOR_SALE` 인지 본다. 먼저 나가면 빌드 5·6 이 차단
-  // 화면(`UpdateRequiredView`)을 보는데 스토어에는 받을 7 이 없다.
-  minSupported: 7,
+  minSupported: 1,
   // ⚠ **iOS 는 이 값을 읽는 클라가 없다**(1.2.10 도 그렇다). `AppVersionGate.checkAppVersion()`
   // 은 `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
   // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다(`AppVersionResponse`
   // 에 필드조차 없다).
   //
-  // 7 인 이유: 하한을 7 로 올리면서 1 로 두면 "필수 버전이 최신 버전보다 높다" 는 모순이
-  // 된다. 그래서 **`minSupported` 와 같은 값**으로만 둔다 — 게재본을 따라가는 권장 기준이
-  // 아니다. 다음 iOS 릴리스가 나가도 이 값이 저절로 맞는 값이 되지 않으니, 권장 업데이트
-  // 배너를 만드는 사람은 그때의 게재 빌드로 다시 맞춘다.
-  latest: 7,
+  // **`minSupported` 와 같은 값**으로만 둔다(지금 1, 하한을 7 로 올릴 때 같이 7) — 1 로 둔 채
+  // 하한만 올리면 "필수 버전이 최신 버전보다 높다" 는 모순이 된다. 게재본을 따라가는 권장
+  // 기준이 아니다. 권장 업데이트 배너를 만드는 사람은 그때의 게재 빌드로 다시 맞춘다.
+  latest: 1,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
   // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',
 };
 
 // platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.
-// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — iOS 하한(빌드 번호 7)을 주면
-// versionCode 7~29 의 구버전 Android 가 차단을 빠져나간다.
+// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — iOS 하한(빌드 번호 수열)을 주면
+// 그보다 큰 versionCode 의 구버전 Android 가 차단을 빠져나간다.
 export function appVersionPolicy(platform?: string | null): AppVersionPolicy {
   return platform?.toLowerCase() === 'ios' ? IOS : ANDROID;
 }

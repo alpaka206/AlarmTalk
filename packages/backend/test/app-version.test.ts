@@ -40,8 +40,8 @@ it('대소문자 무시', () => {
     expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(30);
   });
 
-  // 1.2.10 강제 업데이트(2026-09-28). 개인 플랜 종료 안내·목소리 느낌은 1.2.10 에만 있다 —
-  // 이유와 머지 조건(Play 30·App Store 빌드 7 이 둘 다 게재된 뒤)은 app-version.ts 주석.
+  // 1.2.10 강제 업데이트(2026-09-28). 잠금 화면 울림 화면(26~28)·개인 플랜 종료 안내 —
+  // 이유와 순서(Play 30 게재 뒤)는 app-version.ts 주석.
   // 차단이 목적이라 권장 기준(latest)이 아니라 하한을 고정한다.
   it('android minSupported 는 1.2.10(30) 이상이다 — 강제 업데이트', () => {
     const p = appVersionPolicy('android');
@@ -58,12 +58,11 @@ it('대소문자 무시', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // 1.2.10 강제 업데이트(2026-09-28) — 빌드 5(1.2.8)·6(1.2.9)을 막는다. 구버전 iOS 는
-  // 기간 한정 개인 플랜에서 반만 열리고, 종료 안내·목소리 느낌이 없다(app-version.ts 주석).
-  // iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한(30)을 물려주면 1.2.10 까지
-  // 막힌다 — 하한은 정확히 1.2.10 의 빌드 번호다.
-  it('ios minSupported 는 1.2.10 의 빌드 번호(7)다 — 강제 업데이트', () => {
-    expect(appVersionPolicy('ios').minSupported).toBe(7);
+  // App Store 1.2.10(빌드 7)은 아직 심사 중이다(2026-09-28) — 하한을 7 로 올리면 빌드
+  // 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 게재를 확인하면 이 단언을 7 로
+  // 바꾼다(그때 iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한을 물려주지 않는다).
+  it('ios minSupported 는 App Store 1.2.10 게재 전까지 1 이다', () => {
+    expect(appVersionPolicy('ios').minSupported).toBe(1);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이
@@ -81,8 +80,8 @@ it('대소문자 무시', () => {
     expect(appVersionPolicy('IOS')).toEqual(appVersionPolicy('ios'));
   });
 
-  // 모르는 플랫폼에 iOS 정책(빌드 번호 하한 7)이 새면 차단이 필요한 구버전 Android
-  // (versionCode 7~29)가 빠져나간다. 폴백은 반드시 Android 여야 한다.
+  // 모르는 플랫폼에 iOS 정책(빌드 번호 수열의 하한)이 새면 차단이 필요한 구버전 Android 가
+  // 빠져나간다. 폴백은 반드시 Android 여야 한다.
   it('모르는 플랫폼이 ios 정책으로 새지 않는다', () => {
     expect(appVersionPolicy('windows')).not.toEqual(appVersionPolicy('ios'));
     expect(appVersionPolicy(undefined)).not.toEqual(appVersionPolicy('ios'));
