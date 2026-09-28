@@ -24,12 +24,12 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260918.1",
+    "@cloudflare/workers-types": "^5.20260925.1",
     "@types/bcryptjs": "^3.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1",
-    "wrangler": "^4.135.0"
+    "vitest": "^5.0.2",
+    "wrangler": "^4.140.0"
   },
   "dependencies": {
     "@alarmtalk/shared": "*",
