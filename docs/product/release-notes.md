@@ -25,6 +25,9 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 #801·#802·#803(+#795~#800). 마이그레이션 #121(웰컴 그룹 코드 끄기)·#122(`voice_profiles.voice_energy`).
 
+제출: Play `30 (1.2.10)` 2026-09-27 프로덕션 commit(심사 중), App Store 1.2.10 빌드 7 2026-09-27T15:04Z
+심사 제출. 두 스토어 모두 아래 세 블록을 그대로 넣었다(길이 ko 240 · en 441 · ja 218).
+
 **두 스토어의 문안이 같다** — 이번 회차의 사용자 변화는 두 앱에 똑같이 들어갔다. 기간 한정 개인
 플랜 줄은 서버 스위치(`PERSONAL_PROMO_STARTS_AT`)가 켜져 있을 때만 보이므로 "무료로 쓸 수 있을 때"
 로 조건을 적는다(스위치는 iOS 1.2.10 게재 뒤에 켠다 — `billing-lifecycle.md` 「운영」).

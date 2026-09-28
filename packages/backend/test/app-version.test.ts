@@ -36,8 +36,17 @@ it('대소문자 무시', () => {
   // 24 → 29 (2026-09-23): 장치가 **네 회차 동안 말이 없었다.** 하한이 24 라 25 에 멈춘
   // 값도 통과했고, 1.2.6~1.2.9 사용자는 배너를 한 번도 못 봤다. 하한은 게재된 최신
   // versionCode 와 같이 올린다 — 낮게 두면 이 테스트가 다시 조용해진다.
-  it('latest 는 출시된 versionCode(29) 이상이다 — 안 올리면 안내가 안 뜬다', () => {
-    expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(29);
+  it('latest 는 출시된 versionCode(30) 이상이다 — 안 올리면 안내가 안 뜬다', () => {
+    expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(30);
+  });
+
+  // 1.2.10 강제 업데이트(2026-09-28). 잠금 화면 울림 화면(26~28)·개인 플랜 종료 안내 —
+  // 이유와 순서(Play 30 게재 뒤)는 app-version.ts 주석.
+  // 차단이 목적이라 권장 기준(latest)이 아니라 하한을 고정한다.
+  it('android minSupported 는 1.2.10(30) 이상이다 — 강제 업데이트', () => {
+    const p = appVersionPolicy('android');
+    expect(p.minSupported).toBeGreaterThanOrEqual(30);
+    expect(p.latest).toBeGreaterThanOrEqual(p.minSupported);
   });
 
   // --- iOS ---
@@ -49,20 +58,21 @@ it('대소문자 무시', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // iOS 는 2026-09-22 에 1.2.8(빌드 5)로 게재됐지만 하한은 그대로 1 이다 — 그보다 낮은
-  // 설치본은 TestFlight 뿐이라 막을 사용자가 없고, Android 하한(25)을 물려주면 iOS
-  // 빌드번호(CFBundleVersion)가 즉시 강제 업데이트 차단 화면에 걸려 앱을 아예 못 쓴다.
-  // 올리는 것은 필수 계약을 못 보내는 빌드를 잘라내야 할 때뿐이다.
-  it('ios minSupported 는 1 이다 — 아무도 막지 않는다', () => {
+  // App Store 1.2.10(빌드 7)은 아직 심사 중이다(2026-09-28) — 하한을 7 로 올리면 빌드
+  // 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 게재를 확인하면 이 단언을 7 로
+  // 바꾼다(그때 iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한을 물려주지 않는다).
+  it('ios minSupported 는 App Store 1.2.10 게재 전까지 1 이다', () => {
     expect(appVersionPolicy('ios').minSupported).toBe(1);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이
   // `min_supported_version` 만 보고 `updateRequired` 를 정한다(FLEXIBLE 인앱 업데이트에
-  // 해당하는 것이 iOS 에 없다). 게재됐다는 이유로 여기를 올리면 **아무 일도 일어나지
-  // 않는데 올라가 있는 값**이 남아, 나중에 배너를 붙이는 사람이 이미 맞는 값으로 읽는다.
-  it('ios latest 는 1 이다 — 읽는 클라가 없으므로 앱이 먼저다', () => {
-    expect(appVersionPolicy('ios').latest).toBe(1);
+  // 해당하는 것이 iOS 에 없다). 그래서 게재본을 따라 올리지 않고, 하한과의 모순("필수가
+  // 최신보다 높다")만 없애도록 **하한과 같은 값**으로 둔다. 권장 배너를 만들 때 이 단언을
+  // 게재 빌드 기준으로 바꾼다.
+  it('ios latest 는 minSupported 와 같다 — 읽는 클라가 없으므로 모순만 없앤다', () => {
+    const ios = appVersionPolicy('ios');
+    expect(ios.latest).toBe(ios.minSupported);
   });
 
   it('ios 도 대소문자를 무시한다', () => {
@@ -70,7 +80,7 @@ it('대소문자 무시', () => {
     expect(appVersionPolicy('IOS')).toEqual(appVersionPolicy('ios'));
   });
 
-  // 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)이 새면 차단이 필요한 구버전 Android 가
+  // 모르는 플랫폼에 iOS 정책(빌드 번호 수열의 하한)이 새면 차단이 필요한 구버전 Android 가
   // 빠져나간다. 폴백은 반드시 Android 여야 한다.
   it('모르는 플랫폼이 ios 정책으로 새지 않는다', () => {
     expect(appVersionPolicy('windows')).not.toEqual(appVersionPolicy('ios'));
