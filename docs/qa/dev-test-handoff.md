@@ -12,29 +12,31 @@
   심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
   켜는 기간 한정 개인 플랜은 심사 중 꺼져 있음**·첫 실행 코드 안내 제거). 첨부 없음.
 - **prod 서버**: #797 머지(d604b08e)로 배포·마이그레이션 #121·#122 적용 확인(2026-09-27). prod Gemini 는
-  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응). `PERSONAL_PROMO_STARTS_AT` 은
-  아직 없다(스위치 꺼짐).
+  `gemini-3.5-flash`/`us` 로 전환했다(시크릿 동기화 — 2.5 은퇴 10/20 대응).
+- **기간 한정 개인 플랜 스위치 켜짐** — prod `PERSONAL_PROMO_STARTS_AT=2026-09-28T11:05:00+09:00`
+  (`secrets:sync:prod`). **운영자 결정으로 iOS 1.2.10 게재·dev 리허설 전에 켰다** — 스펙 「운영」 3 의 원래
+  순서와 다르다. 켠 뒤 확인: 원시 free 계정(rec3) `/auth/me` 가 `plan: plus` + `personal_promo.ends_at`
+  `2026-10-31T15:00:00Z`, 유료 계정은 그대로, 1분 크론 `ok`. 받아들인 것 둘: ① App Store 심사 노트에 "심사 중
+  꺼져 있음" 이라 적었는데 심사 중에 켜졌다(심사 계정이 무료면 열린 화면을 본다) ② iOS 하한이 7 로 나갈
+  때까지 빌드 5·6 은 반만 열린다(`app-version.ts` iOS 주석).
 - **웰컴 코드는 영구히 막혔다** — `welcome` 그룹은 런타임(`PROMO_WELCOME_REDEMPTION_GROUP`)이 늘
   `CODE_INACTIVE` 로 거절하고, `PERSONAL_PROMO_STARTS_AT` 을 켜도 **되살아나지 않는다**(프로모 스위치와
   무관한 규칙). 웰컴 코드는 더 나눠 주지 않는다 — 행사 코드가 필요하면 다른 그룹명으로 발급한다.
   2026-09-28 prod 조회: `promo_codes` 는 3행뿐이고 전부 `welcome` 그룹·비활성 — 대소문자·이름이 다른
   웰컴 계열 그룹은 없다.
 - [ ] App Store 1.2.10 심사 결과 확인(Play 30 은 게재됐다).
-- [ ] **dev 리허설을 iOS 게재 전에** 한다(스펙 `billing-lifecycle.md` 「운영」 순서 — 백엔드 배포 → dev
-      리허설 → iOS 게재 → prod 스위치). 1.2.10 dev 빌드(안드로이드 2대·아이폰)로 아래 「기간 한정 개인
-      플랜」 절의 리허설 항목을 돈다. iOS 는 `AFTER_APPROVAL` 이라 승인되면 곧바로 게재된다 — 리허설에서
-      앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
-- [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
-      넣고 `npm run secrets:sync:prod --workspace=backend`. 그 전에 **iOS 강제 업데이트(하한 1 → 7)를 먼저**
-      prod 에 내보낸다 — 구버전 iOS(빌드 5·6)는 스위치가 켜진 동안 반만 열리는데 하한 7 이 그 빌드들을
-      막는다(근거는 `app-version.ts` 의 iOS 주석).
+- [ ] **dev 리허설**(스위치가 먼저 켜졌으니 이제는 **종료 전에**): 1.2.10 dev 빌드(안드로이드 2대·아이폰)로
+      아래 「기간 한정 개인 플랜」 절의 리허설 항목 — 특히 **끝 이후**(잠김·종료 안내·보관 행·푸시 문구·1분 크론)를
+      돈다. 결함이 나오면 끝(10/31 KST 24시) 전에 고쳐 내야 한다.
 - [ ] 강제 업데이트 — **Android 는 먼저 낸다**(2026-09-28, Play 30 게재 확인 뒤 하한·latest 30). #806 이
       두 플랫폼을 한 변경으로 올렸지만 App Store 가 심사 대기라 iOS 는 하한 1 로 되돌려 두었다. prod 확인:
       `GET /api/app/version?platform=android` 가 `min_supported_version`·`latest_version` 30,
       `?platform=ios` 가 아직 1 인지, 29 기기에서 차단 화면(과 IMMEDIATE 인앱 업데이트)이 뜨는지 본다.
 - [ ] **App Store 1.2.10 게재 뒤 iOS 하한·latest 1 → 7**(ASC API 의 appStoreVersion `READY_FOR_SALE` 확인 뒤
-      develop→main). 먼저 나가면 빌드 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 순서 규칙은
-      `app-version.ts` 주석이 유일 출처다.
+      develop→main). 먼저 나가면 빌드 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 스위치가 이미
+      켜져 있어 이것이 반쪽 열림을 닫는다 — 단 옛 iOS 는 버전을 **실행 때만** 확인하므로(`.active` 에서는
+      다시 안 본다) 떠 있던 프로세스는 다시 켤 때까지 열린 채다(코덱스 #808). 순서 규칙은 `app-version.ts`
+      주석이 유일 출처다.
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
@@ -44,8 +46,8 @@
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
-  게재와 dev 리허설 뒤 iOS 강제 업데이트(하한 7) → `PERSONAL_PROMO_STARTS_AT`. Android 강제
-  업데이트(30)는 Play 30 게재 뒤 먼저 냈다(2026-09-28). 앱을 먼저 내면 옛
+  게재 뒤 iOS 강제 업데이트(하한 7). 실제로는 Android 강제 업데이트(30)를 Play 30 게재 뒤 먼저 냈고
+  `PERSONAL_PROMO_STARTS_AT` 은 운영자 결정으로 iOS 게재 전에 켰다(둘 다 2026-09-28). 앱을 먼저 내면 옛
   서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한 목소리의 선택이 영구히
   사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
   기간)이 생긴다 — 그동안 웰컴 코드를 나눠 주지 않는다(필요하면 `welcome` 이 아닌 그룹명으로 발급).
