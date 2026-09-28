@@ -31,7 +31,10 @@ settings:
     # 사용자에게 보이는 버전이 두 앱에서 다르면 "무슨 버전 쓰세요?" 가 통하지 않는다.
     # ⚠ 반대로 **빌드 번호(CURRENT_PROJECT_VERSION)는 맞추지 말 것** — 스토어마다 단조
     # 증가해야 하는 별개 수열이고, 서버 강제 업데이트 게이트가 보는 값도 그쪽이다
-    # (`packages/backend/src/lib/app-version.ts` 의 IOS.minSupported = 1).
+    # (`packages/backend/src/lib/app-version.ts` 의 `IOS.minSupported` — 값은 거기서 본다).
+    # ⚠ 빌드 7(1.2.10)은 **강제 업데이트 하한**이 된다(`IOS.minSupported` 를 7 로 올려 빌드
+    # 5·6 을 막는다). 하한이 되는 빌드는 App Store 게재를 확인하기 전에 서버를 올리면 안 된다
+    # — 받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다.
     MARKETING_VERSION: "1.2.10"
     CURRENT_PROJECT_VERSION: "7"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.

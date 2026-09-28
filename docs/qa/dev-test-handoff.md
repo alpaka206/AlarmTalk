@@ -25,24 +25,32 @@
       플랜」 절의 리허설 항목을 돈다. iOS 는 `AFTER_APPROVAL` 이라 승인되면 곧바로 게재된다 — 리허설에서
       앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
 - [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
-      넣고 `npm run secrets:sync:prod --workspace=backend`.
-- [ ] Play 30 이 100% 게재된 뒤: `app-version.ts` 의 Android `latest` 를 30 으로(순서 규칙은 파일 주석).
+      넣고 `npm run secrets:sync:prod --workspace=backend`. 그때 Play 30 도 게재돼 있으면 **강제
+      업데이트(#806)를 먼저** prod 에 내보낸 뒤 켠다 — 구버전 iOS(빌드 5·6)는 스위치가 켜진 동안 반만
+      열리는데 #806 이 그 빌드들을 막는다. Play 가 아직이면 스위치는 기다리지 않는다(받아들인 틈 — #806 이
+      나가면 닫힌다. 근거는 `app-version.ts` 의 iOS 주석). Play 가 오래 막히면 #806 의 iOS 반쪽만 떼어 먼저 낸다.
+- [ ] ⚠ **#806 은 develop 에 먼저 머지했다(2026-09-28, 두 스토어 게재 전).** develop 에 강제 업데이트
+      값이 있다는 것은 게재됐다는 뜻이 아니다 — **두 스토어 게재를 확인하기 전에는 어떤 develop→main 도
+      하지 않는다**(급한 서버 수정은 main 에서 갈라 따로 낸다).
+- [ ] 강제 업데이트(#806 — Android 30·iOS 7) develop→main 배포 뒤 prod 확인:
+      `GET /api/app/version?platform=android` 가 `min_supported_version`·`latest_version` 30,
+      `?platform=ios` 가 7 인지, 29 기기에서 차단 화면(과 IMMEDIATE 인앱 업데이트)이 뜨는지 본다.
+      머지 조건(두 스토어 게재 — Play 는 API 의 `completed` 가 아니라 Console 게시 개요·Play 스토어 앱으로
+      본다)과 경로(develop→main 이 문턱)는 `app-version.ts` 주석이 유일 출처다.
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
+  서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
+  마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
-  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → Play 30 이 100% 게재된 뒤 `app-version.ts` Android
-  `latest` 30. 앱을 먼저 내면 옛 서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한
-  목소리의 선택이 영구히 사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
+  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → 두 스토어 게재 뒤 강제 업데이트(#806 — Android 30·
+  iOS 7. 스위치를 켤 때 두 스토어가 이미 게재돼 있으면 #806 을 스위치보다 먼저). 앱을 먼저 내면 옛
+  서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한 목소리의 선택이 영구히
+  사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
   기간)이 생긴다 — 그동안 웰컴 코드를 나눠 주지 않는다(필요하면 `welcome` 이 아닌 그룹명으로 발급).
-- ⚠ **앱 빌드 전에 prod 배포를 눈으로 확인한다.** #797 머지 푸시는 main 에 없던 백엔드 변경을 전부
-  싣고 있어 `deploy-backend.yml` 의 `packages/backend/**` 필터에 걸리지만, 가정하지 말고 main 의 Deploy
-  Backend 실행이 **성공**했고 로그에 `production migration 121/122`·`122/122` 가 적용으로 찍혔는지,
-  `GET /api/app/version?platform=android` 가 `latest` 29 인지 본다. 실패했거나 안 돌았으면
-  `workflow_dispatch` 로 다시 돌리고, 성공하기 전에는 앱을 빌드·제출하지 않는다.
 - 새 버전 레코드에는 **심사 첨부 영상이 따라오지 않는다**(`appStoreReviewAttachments` 빈 목록) —
   노트에 "영상이 첨부돼 있다" 를 적지 않거나 영상을 다시 올린다. 노트 상한은 4000자다. 1.2.9 노트는
   "유지보수·버그 수정만" 머리말이라 1.2.10(새 기능·서버가 켜는 프로모)에는 새로 쓴다.
@@ -537,7 +545,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 를 매핑해 미리듣기에서 서버 클립보다 **우선**한다. 구버전이 남으면 목록 이름은 시우,
 미리듣기는 Adam, 실제 알람은 Krys 가 된다.
 
-`minSupported` 는 **25** 로 올라가 있다(2026-09-14 `main` 반영 — 그 미만은 배너가 아니라 **차단
+`minSupported` 는 이 교체 때 **25** 로 올렸다(2026-09-14 `main` 반영 — 그 미만은 배너가 아니라 **차단
 화면**이다). 그래서 순서를 어기면 **받을 것이 없는 강제 업데이트로 앱이 벽돌이 된다** —
 `minSupported`·`latest` 는 그 `versionCode` 가 스토어에 게재된 뒤에만 올린다. 지금 값은
 `app/build.gradle.kts` 와 서버의 `app-version.ts` 에서 본다.
