@@ -5,8 +5,8 @@
 
 ## 스토어 상태 — 2026-09-28
 
-- **Play**: 프로덕션 `30 (1.2.10)` **심사 중**(2026-09-27 commit, `status: completed` — 승인되면 곧바로 100%).
-  그때까지 `29 (1.2.9)` 가 게재 상태다.
+- **Play**: 프로덕션 `30 (1.2.10)` **게재**(2026-09-28 — 승인 뒤 관리형 게시로 대기하다 운영자가 게시, `releases.list`
+  의 `releaseLifecycleState: PUBLISHED`. ⚠ 트랙 `status: completed` 는 심사 중·게시 대기 중에도 그랬다).
 - **App Store**: `1.2.10`(빌드 7) **심사 대기**(`WAITING_FOR_REVIEW`, 2026-09-27T15:04Z 제출,
   `releaseType=AFTER_APPROVAL` — 승인되면 자동 게재). 게재 중인 것은 `1.2.9`(빌드 6, 2026-09-23T18:31Z).
   심사 노트는 "WHAT'S NEW IN 1.2.10" 머리말로 새로 썼다(3,950자 — 목소리 느낌·자연스러운 문구·**서버가
@@ -19,24 +19,22 @@
   무관한 규칙). 웰컴 코드는 더 나눠 주지 않는다 — 행사 코드가 필요하면 다른 그룹명으로 발급한다.
   2026-09-28 prod 조회: `promo_codes` 는 3행뿐이고 전부 `welcome` 그룹·비활성 — 대소문자·이름이 다른
   웰컴 계열 그룹은 없다.
-- [ ] 두 스토어 심사 결과 확인(Play 30·App Store 1.2.10).
+- [ ] App Store 1.2.10 심사 결과 확인(Play 30 은 게재됐다).
 - [ ] **dev 리허설을 iOS 게재 전에** 한다(스펙 `billing-lifecycle.md` 「운영」 순서 — 백엔드 배포 → dev
       리허설 → iOS 게재 → prod 스위치). 1.2.10 dev 빌드(안드로이드 2대·아이폰)로 아래 「기간 한정 개인
       플랜」 절의 리허설 항목을 돈다. iOS 는 `AFTER_APPROVAL` 이라 승인되면 곧바로 게재된다 — 리허설에서
       앱 결함이 나오면 그 전에 버전 출시 방식을 수동(MANUAL)으로 돌리는 것을 검토한다.
 - [ ] iOS 1.2.10 게재 **그리고** 리허설 통과 뒤: prod `.dev.vars.prod` 에 `PERSONAL_PROMO_STARTS_AT` 을
-      넣고 `npm run secrets:sync:prod --workspace=backend`. 그때 Play 30 도 게재돼 있으면 **강제
-      업데이트(#806)를 먼저** prod 에 내보낸 뒤 켠다 — 구버전 iOS(빌드 5·6)는 스위치가 켜진 동안 반만
-      열리는데 #806 이 그 빌드들을 막는다. Play 가 아직이면 스위치는 기다리지 않는다(받아들인 틈 — #806 이
-      나가면 닫힌다. 근거는 `app-version.ts` 의 iOS 주석). Play 가 오래 막히면 #806 의 iOS 반쪽만 떼어 먼저 낸다.
-- [ ] ⚠ **#806 은 develop 에 먼저 머지했다(2026-09-28, 두 스토어 게재 전).** develop 에 강제 업데이트
-      값이 있다는 것은 게재됐다는 뜻이 아니다 — **두 스토어 게재를 확인하기 전에는 어떤 develop→main 도
-      하지 않는다**(급한 서버 수정은 main 에서 갈라 따로 낸다).
-- [ ] 강제 업데이트(#806 — Android 30·iOS 7) develop→main 배포 뒤 prod 확인:
+      넣고 `npm run secrets:sync:prod --workspace=backend`. 그 전에 **iOS 강제 업데이트(하한 1 → 7)를 먼저**
+      prod 에 내보낸다 — 구버전 iOS(빌드 5·6)는 스위치가 켜진 동안 반만 열리는데 하한 7 이 그 빌드들을
+      막는다(근거는 `app-version.ts` 의 iOS 주석).
+- [ ] 강제 업데이트 — **Android 는 먼저 낸다**(2026-09-28, Play 30 게재 확인 뒤 하한·latest 30). #806 이
+      두 플랫폼을 한 변경으로 올렸지만 App Store 가 심사 대기라 iOS 는 하한 1 로 되돌려 두었다. prod 확인:
       `GET /api/app/version?platform=android` 가 `min_supported_version`·`latest_version` 30,
-      `?platform=ios` 가 7 인지, 29 기기에서 차단 화면(과 IMMEDIATE 인앱 업데이트)이 뜨는지 본다.
-      머지 조건(두 스토어 게재 — Play 는 API 의 `completed` 가 아니라 Console 게시 개요·Play 스토어 앱으로
-      본다)과 경로(develop→main 이 문턱)는 `app-version.ts` 주석이 유일 출처다.
+      `?platform=ios` 가 아직 1 인지, 29 기기에서 차단 화면(과 IMMEDIATE 인앱 업데이트)이 뜨는지 본다.
+- [ ] **App Store 1.2.10 게재 뒤 iOS 하한·latest 1 → 7**(ASC API 의 appStoreVersion `READY_FOR_SALE` 확인 뒤
+      develop→main). 먼저 나가면 빌드 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 순서 규칙은
+      `app-version.ts` 주석이 유일 출처다.
 - 릴리스 방법(다음에 또 쓴다): 스크립트는 저장소에 없다 — Android 는 `:app:bundleProdRelease` → AAB 확인
   (⚠ Gradle 캐시의 bundletool jar 는 Main-Class 가 없어 `java -jar` 가 실패한다 — `BundleToolMain` 을
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
@@ -46,8 +44,8 @@
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
   마이그레이션 #121·#122 → main 에서 두 앱 빌드·제출 → prod Gemini 시크릿 전환(10/20 전) → iOS 1.2.10
-  게재와 dev 리허설 뒤 `PERSONAL_PROMO_STARTS_AT` → 두 스토어 게재 뒤 강제 업데이트(#806 — Android 30·
-  iOS 7. 스위치를 켤 때 두 스토어가 이미 게재돼 있으면 #806 을 스위치보다 먼저). 앱을 먼저 내면 옛
+  게재와 dev 리허설 뒤 iOS 강제 업데이트(하한 7) → `PERSONAL_PROMO_STARTS_AT`. Android 강제
+  업데이트(30)는 Play 30 게재 뒤 먼저 냈다(2026-09-28). 앱을 먼저 내면 옛
   서버가 1.2.10 의 목소리 느낌(`voiceEnergy`)을 조용히 버려 그 사이 등록한 목소리의 선택이 영구히
   사라진다. 서버를 먼저 내면 웰컴 코드가 꺼지고 프로모는 아직 꺼진 공백(약 심사
   기간)이 생긴다 — 그동안 웰컴 코드를 나눠 주지 않는다(필요하면 `welcome` 이 아닌 그룹명으로 발급).
