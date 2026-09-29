@@ -2001,10 +2001,10 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
   });
 
   // Codex #830: 프롬프트가 `[laughs]` 만 쓰라고 해도 모델이 어기면 그대로 합성된다.
-  it('모델이 낸 웃음 태그([chuckles]·[giggles])는 [laughs] 로 맞춘다 — [soft laugh] 는 예전처럼 지운다', async () => {
+  it('모델이 낸 웃음 태그([chuckles]·[giggles])는 [laughs] 로 맞추고 한 번만 남긴다 — [soft laugh] 는 예전처럼 지운다', async () => {
     queueContent(geminiText('{"text":"[cheerfully] 일어나! [chuckles] 오늘도 [giggles] 힘내자."}'));
     const prepared = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 힘내자.', LAUGH_OPTIONS);
-    expect(prepared.text).toBe('[cheerfully] 일어나! [laughs] 오늘도 [laughs] 힘내자.');
+    expect(prepared.text).toBe('[cheerfully] 일어나! [laughs] 오늘도 힘내자.');
 
     queueContent(geminiText('{"text":"[cheerfully] 일어나! [soft laugh] 오늘도 힘내자."}'));
     const soft = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 힘내자.', LAUGH_OPTIONS);
@@ -2092,6 +2092,23 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
     expect(prepared.text).toBe("[cheerfully] Wake up [laughs], it's already 8.");
   });
 
+  it('사용자가 여러 번 웃었으면 그 수만큼은 남긴다 — 한 번 제한은 모델이 스스로 넣는 웃음에만', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 [laughs] 벌써 8시야. [excited] 늦었어 [laughs]"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야. 늦었어 ㅎㅎ', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야. [excited] 늦었어 [laughs]');
+  });
+
+  // Codex #830: 번역은 원문 자리를 맞춰 볼 수 없다 — 빠뜨리면 '웃었다' 는 것만이라도 되살린다.
+  it('번역이 사용자의 웃음을 빠뜨리면 선두 톤 뒤에 한 번 되살린다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] Wake up, it is already 8."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(prepared.text).toBe('[cheerfully] [laughs] Wake up, it is already 8.');
+  });
+
   it('번역할 때도 원문의 [laughs] 를 번역문의 같은 자리에 두라고 한다', async () => {
     queueContent(geminiText(`{"text":"[cheerfully] Wake up [laughs], it's already 8."}`));
     await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
@@ -2138,6 +2155,18 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
       speechStyle: { ...style, energy: 'lively' },
     });
     expect(out.text).toBe('[playfully] 자기야! [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자.');
+  });
+
+  it('모델이 여러 번 웃으면(글자 웃음 포함) 한 번만 남긴다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야 ㅋㅋ 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자 [chuckles]"}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(out.text).toBe('[playfully] 자기야 [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자');
   });
 
   it('모델이 웃음을 글자로 쓰면 [laughs] 로 바꾸고, 차분한 목소리면 그 웃음도 지운다', async () => {

@@ -16,8 +16,9 @@
  * 건드리지 않는 것:
  * - 이미 소리 나는 낱말(하하하·호호·크크·히히) — 하하하는 세 모델 모두 웃음으로 났다.
  * - 다른 자모와 붙은 ㅋ·ㅎ(ㅇㅋ·ㅎㅇ·ㅎㄷㄷ·ㅋㅋㅠㅠ) — 웃음이 아니거나 웃음만이 아니다.
- * - 낱말 속 글자(Lolita·work·笑顔·微笑)와 주소(www.example.com·lol.com).
- * - 대괄호 안(사용자가 친 `[haha]`·`[after lunch]`).
+ * - 낱말 속 글자(Lolita·work·笑顔·微笑).
+ * - 대괄호 안(사용자가 친 `[haha]`·`[after lunch]`)·주소(`https://example.com/lol`·`www.예시.한국`·`lol.com`)·
+ *   메일 주소(`lol@example.com`).
  */
 
 /** 이 모듈이 만드는 유일한 태그. */
@@ -64,6 +65,9 @@ const LAUGH_PATTERNS = [
   STANDALONE_W,
 ];
 
+/** 웃음을 찾지 않는 구간 — 대괄호 · `http(s)://`·`www.` 로 시작하는 주소 · 메일 주소. */
+const PROTECTED_SPANS = /(\[[^\]]*\]|(?:https?:\/\/|www\.)\S+|[^\s@]+@[^\s@]+\.[^\s@]+)/i;
+
 /**
  * 글자 웃음을 `[laughs]` 로 바꾼다. 웃음이 없으면 **입력을 한 글자도 바꾸지 않고** 돌려준다 —
  * 웃음 없는 문구의 합성 글자(곧 캐시 키)가 이 변환 때문에 바뀌면 안 된다.
@@ -73,11 +77,14 @@ const LAUGH_PATTERNS = [
  */
 export function typedLaughterToTags(text: string): string {
   let changed = false;
-  // ⚠ **대괄호 안은 건드리지 않는다.** 사용자가 친 태그(`[haha]`·`[lol]`)나 대괄호 글(`[after lunch]`)은 그대로
-  //   두는 규칙이다 — 그 안을 바꾸면 `[ [laughs] ]` 같은 깨진 지시가 제공자로 간다(Codex #830).
-  //   `split` 의 캡처 그룹이라 대괄호 구간은 홀수 자리에 온다.
+  // ⚠ **대괄호 안·주소·메일 주소는 통째로 건너뛴다**(Codex #830).
+  //   - 사용자가 친 태그(`[haha]`·`[lol]`)나 대괄호 글(`[after lunch]`)은 그대로 두는 규칙이다 — 그 안을 바꾸면
+  //     `[ [laughs] ]` 같은 깨진 지시가 제공자로 간다.
+  //   - 주소 경로·메일 앞부분이 웃음 글자와 같을 수 있다(`https://example.com/lol`·`lol@example.com`·
+  //     `www.예시.한국`). 뒤 글자만 보는 `NOT_URL_OR_WORD` 로는 못 가린다.
+  //   `split` 의 캡처 그룹이라 건너뛸 구간은 홀수 자리에 온다.
   const converted = text
-    .split(/(\[[^\]]*\])/)
+    .split(PROTECTED_SPANS)
     .map((part, index) => {
       if (index % 2 === 1) return part;
       let out = part;

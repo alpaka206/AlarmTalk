@@ -312,13 +312,28 @@ function countLaughterTags(text: string): number {
  * 다른 언어로 합성된 적이 있다(`OWN_LAUGH_INSTRUCTION`). 졸린 태그 거르기(`dropWakeUnsafeTags`) **뒤에**
  * 부른다 — `[soft laugh]` 는 예전처럼 지워지고, 차분한 목소리는 웃음이 이미 다 지워진 뒤다.
  *
+ * 웃음은 `maxLaughs` 번까지만 남긴다(앞에서부터) — 모델이 스스로 넣는 웃음은 **한 줄에 한 번**이다(스펙 §9).
+ * 직접 입력은 사용자가 친 웃음 수만큼(그 웃음은 `normalizeSameLanguageTaggedText` 가 원문 자리로 맞춘 뒤다),
+ * 사용자가 웃지 않았으면 1이다(Codex #830 — 프롬프트만 믿으면 `[chuckles] … [giggles]` 가 두 번 웃는다).
+ *
  * ⚠ **사용자가 친 태그에는 쓰지 않는다** — 모델이 태그를 붙인 문구(`shouldTag`·사전렌더)에만 부른다.
  */
-function canonicalizeLaughterTags(text: string): string {
-  const canonical = text.replace(TAG_RE_GLOBAL, (match) => (isLaughterTag(match) ? LAUGH_TAG : match));
-  return canonical === text
-    ? text
-    : canonical.replace(/\[laughs\](?:\s*\[laughs\])+/g, LAUGH_TAG);
+function canonicalizeLaughterTags(text: string, maxLaughs: number): string {
+  const canonical = text
+    .replace(TAG_RE_GLOBAL, (match) => (isLaughterTag(match) ? LAUGH_TAG : match))
+    .replace(/\[laughs\](?:\s*\[laughs\])+/g, LAUGH_TAG);
+  let seen = 0;
+  const limited = canonical.replace(/\[laughs\]/g, (match) => {
+    seen += 1;
+    return seen <= maxLaughs ? match : ' ';
+  });
+  return limited === text ? text : limited.replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+/// 번역문에 사용자의 웃음이 하나도 안 남았을 때 — 선두 톤 태그 뒤에 한 번 넣는다(`prepareAlarmTextWithVertex`).
+function withLeadingLaugh(text: string): string {
+  const leading = text.match(new RegExp(`^(?:\\s*\\[${TAG_BODY_PATTERN}\\])*`, 'i'))?.[0] ?? '';
+  return `${leading.trim()} ${LAUGH_TAG} ${text.slice(leading.length).trim()}`.trim();
 }
 
 /**
@@ -525,6 +540,11 @@ export async function prepareAlarmTextWithVertex(
     preparedText = fallbackText;
   }
 
+  if (shouldTranslate) {
+    // 번역문에 모델이 옮겨 쓴 글자 웃음(haha·www)도 소리로 — 웃음 수를 맞추기(아래 `canonicalizeLaughterTags`)
+    // 전에 바꾼다. 같은 언어 경로는 `source` 에서 이미 바꿨다.
+    preparedText = speak(preparedText);
+  }
   if (shouldTag && !shouldTranslate) {
     // 모델이 받은 글(`source` — 웃음이 `[laughs]` 로 바뀐 것)과 맞춰 본다. 원문(`trimmed`)과 맞추면
     // ㅋㅋ 가 사라진 모델 출력이 '글자를 바꿨다' 로 읽혀 매번 로컬 태깅으로 떨어진다.
@@ -541,6 +561,7 @@ export async function prepareAlarmTextWithVertex(
     // ⚠ '태그가 남았는가' 는 **톤 태그**로 센다 — 사용자의 웃음(`[laughs]`)만 남았으면 톤은 다 버려진 것이다.
     const safe = canonicalizeLaughterTags(
       dropWakeUnsafeTags(preparedText, { allowLowArousal: isWindDownText(trimmed) }),
+      Math.max(countLaughterTags(source), 1),
     );
     preparedText = extractTags(safe).some((tag) => !isLaughterTag(tag))
       ? safe
@@ -548,9 +569,10 @@ export async function prepareAlarmTextWithVertex(
         ? tagAlarmTextLocally(safe)
         : fallbackText;
   }
-  if (shouldTranslate) {
-    // 번역문에 모델이 옮겨 쓴 글자 웃음(haha·www)도 소리로 — 같은 언어 경로는 `source` 에서 이미 바꿨다.
-    preparedText = speak(preparedText);
+  if (shouldTranslate && countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
+    // ⚠ 번역이 사용자의 웃음을 빠뜨렸으면 선두 톤 뒤에 한 번 되살린다(Codex #830). 번역은 어순이 바뀌어 원문
+    //   자리로 되돌릴 수 없다 — 자리·개수 대신 '사용자가 웃었다' 는 것만 지킨다(스펙 §9).
+    preparedText = withLeadingLaugh(preparedText);
   }
   // ⚠ 번역문은 **태그를 벗긴 뒤에도** 낭독할 말이 있어야 한다(Codex #801). 위의 빈 문자열 검사는
   //   `{"text":"[softly]"}` 를 통과시키고, 태그를 지우면 `[cheerfully] ` 만 남아 말 없는 클립이
@@ -1621,6 +1643,7 @@ export async function generatePrerenderClipText(
     const tidied = tidyEllipsis(
       canonicalizeLaughterTags(
         dropWakeUnsafeTags(speakTypedLaughter(parsed.text.trim()), { calmVoice }),
+        1,
       ),
     );
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;

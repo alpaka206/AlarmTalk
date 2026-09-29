@@ -65,6 +65,9 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
       'Time to work', // work 의 w
       'Check www.example.com today', // 주소
       'Visit lol.com or hahaha.net', // 주소 속 lol·haha
+      'https://example.com/lol 에 들어가 봐', // 주소 경로
+      'www.예시.한국 확인', // 한글 도메인
+      'lol@example.com 으로 보내', // 메일 주소
       '笑顔で起きよう', // 笑顔
       '微笑むあなたへ', // 微笑む
       'おはよう、苦笑', // 苦笑(앞이 한자)
