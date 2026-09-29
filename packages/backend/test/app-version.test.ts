@@ -58,11 +58,11 @@ it('대소문자 무시', () => {
     expect(ios.latest).toBeGreaterThanOrEqual(ios.minSupported);
   });
 
-  // App Store 1.2.10(빌드 7)은 아직 심사 중이다(2026-09-28) — 하한을 7 로 올리면 빌드
-  // 5·6 사용자 전원이 받을 것이 없는 차단 화면에 갇힌다. 게재를 확인하면 이 단언을 7 로
-  // 바꾼다(그때 iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한을 물려주지 않는다).
-  it('ios minSupported 는 App Store 1.2.10 게재 전까지 1 이다', () => {
-    expect(appVersionPolicy('ios').minSupported).toBe(1);
+  // 1.2.10 강제 업데이트(2026-09-29, App Store 게재 확인 뒤) — 빌드 5(1.2.8)·6(1.2.9)을 막는다.
+  // iOS 빌드 번호는 versionCode 와 다른 수열이라 Android 하한(30)을 물려주면 1.2.10 까지
+  // 막힌다 — 하한은 정확히 1.2.10 의 빌드 번호다. 이유는 app-version.ts 주석.
+  it('ios minSupported 는 1.2.10 의 빌드 번호(7)다 — 강제 업데이트', () => {
+    expect(appVersionPolicy('ios').minSupported).toBe(7);
   });
 
   // iOS 클라는 `latest` 를 읽지 않는다 — `AppVersionGate.checkAppVersion()` 이
