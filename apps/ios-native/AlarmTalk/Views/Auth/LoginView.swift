@@ -4,7 +4,7 @@ import UIKit
 
 /// `LandingView` -> `LoginView` 흐름에서 로그인/회원가입 단일 화면.
 ///
-/// Android `apps/android-native/.../ui/auth/AuthScreen.kt:48-323` 의 2-mode UI 를
+/// Android `apps/android-native/.../ui/auth/AuthScreen.kt` 의 `AuthScreen`(2-mode UI)을
 /// 1:1 포팅했다. mode segmented control + 폼 + 인증코드 + Apple 버튼을 한 화면에
 /// 담아 마찰을 최소화한다.
 ///
@@ -105,7 +105,7 @@ struct LoginView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:215-232) — 화면 안에
+                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:212-229) — 화면 안에
                     // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
                     // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
                     Text(mode == .login ? "로그인" : "회원가입")
@@ -144,7 +144,7 @@ struct LoginView: View {
 
                     submitButton
 
-                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:314-355).
+                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:311-352).
                     if mode == .login {
                         findPasswordRow
                         appleSignInRow
@@ -460,7 +460,7 @@ struct LoginView: View {
         .padding(.top, 4)
     }
 
-    /// 로그인 ↔ 회원가입 전환 — 안드로이드 `AuthScreen.kt:533-553` 의 하단 행.
+    /// 로그인 ↔ 회원가입 전환 — 안드로이드 `AuthScreen.kt:530-550` 의 하단 행.
     private var modeSwitchRow: some View {
         HStack(spacing: 2) {
             Spacer(minLength: 0)
@@ -478,7 +478,7 @@ struct LoginView: View {
         .padding(.top, 6)
     }
 
-    /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:314-328`.
+    /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:311-325`.
     private var findPasswordRow: some View {
         HStack(spacing: 4) {
             Text("비밀번호를 잊으셨나요?")
@@ -594,7 +594,7 @@ struct VocaTextField: View {
                 .padding(.horizontal, 14)
                 // ⚠ 인증 화면은 고정 다크라 테마 `outline` 만 두면 남색 배경에서 테두리가
                 // 거의 안 보이고 입력칸이 어디부터인지 모른다. 안드로이드는 글라스 채움
-                // (`AuthFieldGlass`) + `AuthLine` 테두리다(`AuthScreen.kt:61-64`).
+                // (`AuthFieldGlass`) + `AuthLine` 테두리다(`AuthScreen.kt:58-61`).
                 .background(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                         .fill(AuthSceneColors.fieldGlass)

@@ -18,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.alarmtalk.app.R
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
@@ -37,13 +36,9 @@ internal data class PermissionSnapshot(
     val exactAlarms: Boolean,
     val notifications: Boolean,
     val fullScreenIntent: Boolean,
-    val recordAudio: Boolean,
 ) {
     val alarmReady: Boolean
         get() = exactAlarms && notifications && fullScreenIntent
-
-    val allStartupGranted: Boolean
-        get() = alarmReady && recordAudio
 
     fun firstMissingAlarmTarget(): PermissionTarget? = when {
         !notifications -> PermissionTarget.Notifications
@@ -67,15 +62,11 @@ internal data class PermissionSnapshot(
             val notifications = notificationRuntimeGranted && notificationManager.areNotificationsEnabled()
             val fullScreenIntent = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
                 platformNotificationManager.canUseFullScreenIntent()
-            val recordAudio =
-                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED
 
             return PermissionSnapshot(
                 exactAlarms = exactAlarms,
                 notifications = notifications,
                 fullScreenIntent = fullScreenIntent,
-                recordAudio = recordAudio,
             )
         }
     }

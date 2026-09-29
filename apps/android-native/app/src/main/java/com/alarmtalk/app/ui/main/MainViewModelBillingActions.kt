@@ -9,12 +9,10 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
-import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
 import com.alarmtalk.app.network.VoucherItem
-import com.alarmtalk.app.R
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -796,9 +794,6 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
     }
 }
 
-private fun com.alarmtalk.app.network.BillingPlan.isSharedPassPlan(): Boolean =
-    key in setOf("couple", "family") || planType in setOf("couple", "family")
-
 // 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.
 // 502(PLAY_*) / 409(STORE_CANCEL_UNSUPPORTED) 모두 서버·앱 상태 무변경 → 안내 다이얼로그만 띄운다.
 private val STORE_MANAGE_REQUIRED_CODES = setOf(
@@ -889,7 +884,6 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     // `restoreMutex` 를 기다리는 사이 계정이 바뀌면, A 의 판정으로 B 의 잠긴 알람을
     // 목소리로 되살린다 — B 는 새 세션이라 무료 잠금이 아직 안 돌았을 수 있다.
     val ownerUserId = authSession?.user?.id
-    val ownerTicket = accessTicket()
     DowngradeNoticeStore(getApplication())
         .clear(ownerUserId, DowngradeNoticeStore.Cause.FREE_PLAN)
     viewModelScope.launch {

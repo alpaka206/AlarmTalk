@@ -111,7 +111,7 @@ struct MainTabsView: View {
             }
             // ＋FAB — 알람 탭에서 **알람이 하나라도 있을 때만**. 비어 있을 때는 빈 상태
             // 카드의 '새 알람 만들기' 가 이미 그 일을 하고, 둘이 같이 뜨면 오른쪽 아래에서
-            // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:855-873`).
+            // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:852-870`).
             .overlay(alignment: .bottomTrailing) {
                 // 선택 모드에서는 숨긴다 — 삭제 바와 ＋가 함께 있으면 오른쪽 아래에서
                 // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
@@ -168,7 +168,7 @@ struct MainTabsView: View {
             }
             .background(theme.homeGradient)
             // ⚠ **상단 바를 두지 않는다.** 안드로이드에는 앱 전체에 TopAppBar 가 하나도
-            // 없다(`AlarmListScreen.kt:178-180`). large title 을 켜면 '알람' 대제목과
+            // 없다(`AlarmListScreen.kt:174-176`). large title 을 켜면 '알람' 대제목과
             // 네비바 머티리얼이 그라데이션 위에 얹혀 배경이 두 겹으로 갈린다.
             .toolbar(.hidden, for: .navigationBar)
             // ⚠ **상단 프로필 드롭다운을 되살리지 말 것.** 여기 있던 항목(코드 등록·

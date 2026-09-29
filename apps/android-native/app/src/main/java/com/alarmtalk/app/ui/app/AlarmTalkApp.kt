@@ -4,7 +4,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.res.stringResource
 import android.Manifest
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.core.app.ActivityCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -57,7 +56,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -171,7 +169,6 @@ internal fun AlarmTalkApp(
     val sessionEffectKey = remember(authSession) {
         com.alarmtalk.app.network.sessionEffectKey(authSession, viewModel.authSessionStore.sessionGeneration())
     }
-    val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
         alarms.count { alarm ->
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
@@ -1433,9 +1430,6 @@ internal fun AlarmTalkApp(
               done = prefetchDone,
               total = prefetchTotal,
               failed = prefetchInfo?.state == androidx.work.WorkInfo.State.FAILED,
-              // 판정 규칙은 stockPrefetchStalled 에 있다(회귀 테스트로 고정 — 갇히는 조합을
-              // 두 번 놓쳤다).
-              stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
               // 아직 끝나지 않은 워커일 때만 '백그라운드에서 계속 받기' 라고 말한다.
               // 상태를 모르면(null) 계속된다고 단정하지 않는다 — 모르면 약속하지 않는다.
               // ⚠ **모르는 상태(null)를 '끝난 것' 으로 읽지 말 것**(Codex #701 P2).
@@ -1506,7 +1500,6 @@ internal fun AlarmTalkApp(
                           voiceDraftQuota = viewModel.voiceDraftQuota,
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
-                          onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                           sensitiveConsentMissing = viewModel.sensitiveConsentMissing,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
@@ -1534,7 +1527,6 @@ internal fun AlarmTalkApp(
                           onCacheVoiceClips = { voiceId, clips, onProgress ->
                               viewModel.cacheVoiceClips(voiceId, clips, onProgress)
                           },
-                          onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
@@ -1570,7 +1562,6 @@ internal fun AlarmTalkApp(
                               }
                           },
                           onDeleteAlarm = viewModel::deleteAlarm,
-                          onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                           onRequestAlarmPermission = ::requestPermission,
                           storeEntitledNow = viewModel.isStoreEntitledNow(),
                           personalPromoTierHold = viewModel.personalPromoTierHold(),

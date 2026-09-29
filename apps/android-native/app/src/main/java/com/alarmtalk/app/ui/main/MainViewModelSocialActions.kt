@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.async

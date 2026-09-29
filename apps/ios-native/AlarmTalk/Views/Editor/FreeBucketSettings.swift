@@ -44,7 +44,7 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     /// **순서가 아니라 조건으로** 클립을 고르는 테마. 회전을 전진시키지 않는다.
     ///
     /// 날씨는 그날 날씨에, 운세는 그날 운세에 맞는 클립을 골라야 한다 — 순서를 돌리면
-    /// 비 오는 날 맑음 문구가 나온다. 안드로이드 `AlarmRepository.MATCHING_BUCKET_IDS`
+    /// 비 오는 날 맑음 문구가 나온다. 안드로이드 `data.MatchingBucketIds`
     /// 와 같은 집합이다. (2026-09-02 정정: 예전 주석은 "운세는 유료 클론 전용이라 이
     /// 열거형에는 없다" 고 적었는데, 문구 목록을 합치면서 `fortune` 이 이 열거형에 들어왔다.)
     static let matchingBucketIDs: Set<String> = ["weather", "fortune"]

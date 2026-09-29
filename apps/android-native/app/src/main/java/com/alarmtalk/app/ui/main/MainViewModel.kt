@@ -2,13 +2,9 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AppSignals
@@ -16,40 +12,26 @@ import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.bundledSystemVoiceProfiles
-import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.observeSession
 import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.PersonalPromo
 import com.alarmtalk.app.network.VoiceDraftQuotaResponse
-import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.TtsGenerateResponse
-import com.alarmtalk.app.network.TtsMessage
-import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
-import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -1228,7 +1210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 차단 화면이 돌아와 사용자의 선택이 무시된다. 다운로드는 어차피 워커가 계속하고,
      * 그래도 비어 있으면 알람 편집기가 쓰려는 순간 받아 온다.
      *
-     * hasChosen(기본 목소리 저장)은 보지 않는다 — 이 브랜치에서 그 값의 뜻이 '마지막에 쓴
+     * 저장된 목소리 값(`defaultVoiceStore.read`)은 보지 않는다 — 그 값의 뜻이 '마지막에 쓴
      * 목소리'로 바뀌어 다운로드 완료 여부와 무관해졌다.
      */
     fun checkVoiceSetupFor(userId: String) {

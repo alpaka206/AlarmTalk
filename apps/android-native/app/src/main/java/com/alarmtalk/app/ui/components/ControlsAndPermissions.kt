@@ -24,22 +24,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Fullscreen
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -49,8 +40,6 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -59,14 +48,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerTileShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,7 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmStates
-import com.alarmtalk.app.data.AlarmSyncStates
 import kotlin.math.roundToInt
 
 @Composable
@@ -141,78 +125,6 @@ internal fun AlarmTalkCheckbox(
     )
 }
 
-@Composable
-internal fun PermissionPanel(
-    permissions: PermissionSnapshot,
-    onRequestPermission: (PermissionTarget) -> Unit,
-    onRequestAllPermissions: () -> Unit,
-    showHeader: Boolean = true,
-) {
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            if (showHeader) {
-                Text(
-                    text = stringResource(R.string.common_permission_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (!permissions.allStartupGranted) {
-                Button(
-                    onClick = onRequestAllPermissions,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.common_permission_allow_all))
-                }
-            }
-            PermissionRow(
-                icon = Icons.Outlined.Alarm,
-                label = stringResource(R.string.common_permission_exact_alarm_label),
-                granted = permissions.exactAlarms,
-                actionLabel = stringResource(R.string.common_permission_allow_action),
-                onAction = { onRequestPermission(PermissionTarget.ExactAlarms) },
-            )
-            PermissionRow(
-                icon = Icons.Outlined.Notifications,
-                label = stringResource(R.string.common_permission_notifications_label),
-                granted = permissions.notifications,
-                actionLabel = stringResource(R.string.common_permission_allow_action),
-                onAction = { onRequestPermission(PermissionTarget.Notifications) },
-            )
-            PermissionRow(
-                icon = Icons.Outlined.Fullscreen,
-                label = stringResource(R.string.common_permission_full_screen_label),
-                granted = permissions.fullScreenIntent,
-                actionLabel = stringResource(R.string.common_permission_allow_action),
-                onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
-            )
-            PermissionRow(
-                // 마이크는 하단바 '목소리' 탭과 같은 글리프다 — 이제 둘 다 머티리얼
-                // `Icons.Outlined.Mic` 이다(2026-08-17 "글리프는 각 OS 것").
-                iconPainter = rememberVectorPainter(Icons.Outlined.Mic),
-                label = stringResource(R.string.common_permission_mic_label),
-                granted = permissions.recordAudio,
-                actionLabel = stringResource(R.string.common_permission_allow_action),
-                onAction = { onRequestPermission(PermissionTarget.RecordAudio) },
-            )
-        }
-    }
-}
-
-/**
- * 알람 홈용 슬림 권한 경고 배너. 이미 알람이 있는데 알람 권한이 없어 '조용히 안 울릴' 수 있을 때만
- * 노출한다(큰 PermissionPanel 카드 대신 한 줄). 탭하면 권한 게이트 모달이 열려 바로 요청/설정으로 잇는다.
- */
-
 /**
  * 알람 홈용 슬림 권한 경고 배너. 탭하면 권한 게이트가 열려 바로 요청/설정으로 잇는다.
  *
@@ -246,79 +158,6 @@ internal fun AlarmPermissionWarningBanner(
                 text = stringResource(textResId),
                 style = MaterialTheme.typography.bodyMedium,
             )
-        }
-    }
-}
-
-@Composable
-internal fun PermissionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    /** 벡터 대신 그릴 리소스 아이콘. 마이크처럼 앱 전용 글리프가 있는 항목이 쓴다. */
-    iconPainter: androidx.compose.ui.graphics.painter.Painter? = null,
-    label: String,
-    granted: Boolean,
-    actionLabel: String,
-    onAction: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Surface(
-                modifier = Modifier.size(38.dp),
-                shape = WakerTileShape,
-                color = if (granted) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                contentColor = if (granted) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    when {
-                        iconPainter != null -> Icon(
-                            painter = iconPainter,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                    }
-                }
-            }
-            Column {
-                Text(text = label, fontWeight = FontWeight.Medium)
-                Text(
-                    text = if (granted) {
-                        stringResource(R.string.common_permission_granted)
-                    } else {
-                        stringResource(R.string.common_permission_required)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (granted) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                )
-            }
-        }
-        if (granted) {
-            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        } else {
-            TextButton(onClick = onAction, shape = WakerButtonShape) {
-                Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(actionLabel)
-            }
         }
     }
 }
@@ -648,8 +487,8 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     // 걸면 안내가 영영 사라지지 않는다 — 해당 알람마다 매번 보인다.
     //
     // 그리고 **이미 1회성 안내가 있다**: 잠그는 순간 `applyFreePlanVoiceLock` 이
-    // `msg_gb_free_plan_voice_alarms_locked`("무료 이용권으로 전환되어 목소리 알람이
-    // 잠겼어요. 다시 이용권을 등록하면 복구돼요.")를 띄운다. 같은 말을 두 번, 그것도
+    // `DowngradeNoticeStore` 대기표에 적고, 앱이 그걸 1회성 모달
+    // (`downgrade_notice_free_message`)로 띄운다. 같은 말을 두 번, 그것도
     // 한쪽은 영구로 하고 있었다. iOS 에는 이 행 배지가 아예 없다.
     //
     // 공유 목소리 해제도 **여기서 알리지 않는다**(2026-08-11). 이제 두 경우 모두

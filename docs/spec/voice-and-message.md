@@ -962,7 +962,7 @@ cron 이 한 자리를 먼저 커밋하면 게시는 그 자리를 '이미 있�
 
 ⚠ **"다시 등록하면 복구돼요" 라고만 쓰지 말 것.** 유예가 지나면 거짓이 된다. 사용자에게
 말할 때는 **기한과 결과를 함께** 말한다("3일 안에 …, 지나면 영구 삭제돼요").
-구현: `downgrade_notice_free_message`·`msg_gb_free_plan_voice_alarms_locked`(안드),
+구현: `downgrade_notice_free_message`(안드 — `DowngradeNoticeStore` 대기표 → 1회성 모달),
 `RootView` 강등 모달·`SocialFeatureViewModel`(iOS).
 
 ⚠ **예고는 눈에 보여야 한다.** 강등 신호(`family_alarm`·`voice_access_revoked`·

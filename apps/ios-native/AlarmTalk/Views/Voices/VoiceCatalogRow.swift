@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 목소리 목록의 한 행 — **내 목소리·공유받은 목소리·기본 목소리를 같은 모양으로** 세운다.
 ///
-/// 안드로이드 `ui/voices/VoiceProfileRowComponents.kt:341-424` 의 `VoiceCatalogRow`.
+/// 안드로이드 `ui/voices/VoiceProfileRowComponents.kt:318-401` 의 `VoiceCatalogRow`.
 /// 그 주석이 이 컴포넌트가 생긴 이유를 못박는다: 셋 다 "알람에 쓸 수 있는 목소리" 라는
 /// 같은 종류인데 예전에는 섹션과 시트로 흩어져 있어서, **무료 사용자에겐 정작 쓸 수 있는
 /// 기본 목소리 4개가 시트를 열기 전까진 보이지 않았다.**
@@ -185,7 +185,7 @@ struct VoiceSectionCard<Content: View>: View {
     }
 }
 
-/// 사전렌더(알람 음성 준비) 진행·실패 표시. 안드로이드 `VoiceProfileRowComponents.kt:484-508`.
+/// 사전렌더(알람 음성 준비) 진행·실패 표시. 안드로이드 `VoiceProfileRowComponents.kt:461-485`.
 ///
 /// ⚠ **iOS 에는 이게 아예 없었다.** 유료 클론을 등록하면 21개 클립이 서버에서 렌더되는
 /// 동안 알람에 쓸 수 없는데, 화면에는 아무 표시도 없어 "만들었는데 안 쓰인다" 로 보였다.

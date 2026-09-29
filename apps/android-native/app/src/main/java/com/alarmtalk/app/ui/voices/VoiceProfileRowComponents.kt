@@ -1,14 +1,9 @@
 package com.alarmtalk.app
 
 import androidx.annotation.StringRes
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -32,7 +26,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -55,12 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 
@@ -198,8 +188,8 @@ internal fun ShareVoiceToggleCard(
     }
 }
 
-// label 은 백엔드에 저장되고 parseRelationshipLabel 로 다시 preset 으로 복원되는
-// 정규(canonical) 값이라 로케일과 무관하게 고정한다. labelRes 는 드롭다운 표시용 번역 리소스.
+// label 은 백엔드에 저장되는 정규(canonical) 값이라 로케일과 무관하게 고정한다.
+// labelRes 는 드롭다운 표시용 번역 리소스.
 internal enum class RelationshipPreset(val label: String, @StringRes val labelRes: Int) {
     Mom("엄마", R.string.voices2_relationship_mom),
     Dad("아빠", R.string.voices2_relationship_dad),
@@ -229,19 +219,6 @@ internal data class RelationshipSelection(
             RelationshipPreset.Custom -> customLabel.trim()
             else -> preset.label
         }
-}
-
-internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
-    val trimmed = raw?.trim().orEmpty()
-    if (trimmed.isEmpty()) return RelationshipSelection()
-    val match = RelationshipPreset.entries.firstOrNull {
-        it != RelationshipPreset.Custom && it.label == trimmed
-    }
-    return if (match != null) {
-        RelationshipSelection(preset = match)
-    } else {
-        RelationshipSelection(preset = RelationshipPreset.Custom, customLabel = trimmed)
-    }
 }
 
 /** 유료 클론 목소리의 알람 음성 준비 상태(서버 사전렌더 + 로컬 다운로드) 표시용. */

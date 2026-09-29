@@ -34,8 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.network.ConsentRecord
 
 // 약관 및 개인정보 처리 동의 — 토스 패턴: 항목별로 '동의한 날짜'를 보여주고 문서로 드릴인.

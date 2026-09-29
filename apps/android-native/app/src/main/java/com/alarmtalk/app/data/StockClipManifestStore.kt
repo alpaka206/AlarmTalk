@@ -201,6 +201,11 @@ object StockClipManifestStore {
      */
     private const val QUARANTINE_KEY = "needs_clear"
 
+    /**
+     * 계정이 바뀔 때 지운다. 매니페스트에는 **그 계정의 클론 클립**이 들어 있어, 안 지우면
+     * 다음 사람에게 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로 오프라인
+     * 판정은 그때부터 정상으로 돌아온다.
+     */
     fun clearAndInvalidate(context: Context) {
         synchronized(revisionLock) {
             seenTicket = nextFetchTicket + 1
@@ -359,15 +364,4 @@ object StockClipManifestStore {
             null
         }
     }
-
-    /**
-     * 계정이 바뀔 때 지운다. 매니페스트에는 **그 계정의 클론 클립**이 들어 있어, 안 지우면
-     * 다음 사람에게 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로 오프라인
-     * 판정은 그때부터 정상으로 돌아온다.
-     */
-    @Deprecated(
-        "표를 무효화하지 않아 앞 계정의 늦은 저장이 파일을 되살린다. clearAndInvalidate 를 쓸 것.",
-        ReplaceWith("clearAndInvalidate(context)"),
-    )
-    fun clear(context: Context) = clearAndInvalidate(context)
 }

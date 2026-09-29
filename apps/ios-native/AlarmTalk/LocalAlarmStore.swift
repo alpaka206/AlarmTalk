@@ -468,7 +468,7 @@ final class LocalAlarmStore: ObservableObject {
     ///
     /// ⚠ **날씨·운세는 전진시키지 않는다.** 그 둘은 순서가 아니라 **조건**으로 클립을
     /// 고른다(비 오는 날엔 비 문구, 오늘 운세엔 오늘 것). 돌려 버리면 조건과 무관한
-    /// 문구가 나온다 — 안드로이드 `MATCHING_BUCKET_IDS` 와 같은 이유다.
+    /// 문구가 나온다 — 안드로이드 `MatchingBucketIds` 와 같은 이유다.
     static func advancedBucketRotationIndex(_ record: LocalAlarmRecord) -> Int? {
         guard let bucketId = record.bucketId,
               let keys = record.bucketClipKeys, keys.count > 1,

@@ -11,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingProducts
 import java.time.Instant
 import java.time.ZoneId

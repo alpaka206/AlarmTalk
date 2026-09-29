@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.wasVoiceAlarmConvertedBySystem
@@ -90,7 +89,6 @@ internal fun AlarmListScreen(
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
-    onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
     sensitiveConsentMissing: List<String> = emptyList(),
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
@@ -121,7 +119,6 @@ internal fun AlarmListScreen(
     onUpdateVoicePreviewText: suspend (String, String) -> String,
     onPromoteVoiceDraft: (String, Boolean, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
-    onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
@@ -141,7 +138,6 @@ internal fun AlarmListScreen(
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
-    onRequestAlarmPermissions: () -> Unit,
     /** 배너에서 곧장 그 권한 요청/설정으로 보낸다(모달을 거치지 않는다). */
     onRequestAlarmPermission: (PermissionTarget) -> Unit = {},
     // 선택 모드 진입/이탈을 알린다 — 상위 Scaffold 가 ＋ FAB 를 감추는 데 쓴다.
@@ -290,7 +286,6 @@ internal fun AlarmListScreen(
                         familyGroup = familyGroup,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
-                        onCreateVoiceProfiles = onCreateVoiceProfiles,
                         sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,

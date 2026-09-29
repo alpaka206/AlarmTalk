@@ -151,7 +151,6 @@ data class EmailVerificationRequest(
 
 data class EmailVerificationResponse(
     val success: Boolean,
-    @SerializedName("expires_in_seconds") val expiresInSeconds: Int? = null,
     @SerializedName("debug_code") val debugCode: String? = null,
 )
 

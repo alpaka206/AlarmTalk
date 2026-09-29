@@ -644,33 +644,33 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("user/me", method: "DELETE", token: token)
     }
 
-    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:197`.
+    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:196`.
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse {
         try await request("user/me/deletion", method: "POST", token: token)
     }
 
-    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:202`.
+    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:201`.
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
         try await request("user/me/deletion", method: "DELETE", token: token)
     }
 
-    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:206`.
+    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:205`.
     func consentStatus(token: String) async throws -> ConsentStatusResponse {
         try await request("user/consents/status", token: token)
     }
 
-    /// 약관 동의 기록. Android `AuthApi.kt:248-252`.
+    /// 약관 동의 기록. Android `AuthApi.kt:247-251`.
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         try await request("user/consents", method: "POST", token: token, body: requestBody)
     }
 
     /// 유형별 최신 동의 기록 목록 조회. 설정 화면의 마케팅(광고성 정보 수신) 토글이
-    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:245-246`, 백엔드 user.ts:401.
+    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:244-245`, 백엔드 user.ts:401.
     func listConsents(token: String) async throws -> ConsentListResponse {
         try await request("user/consents", token: token)
     }
 
-    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:215` (`platform` 만 ios).
+    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:214` (`platform` 만 ios).
     func appVersion(platform: String = "ios") async throws -> AppVersionResponse {
         try await request("app/version?platform=\(platform)")
     }
@@ -844,7 +844,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     // MARK: - 비밀번호 재설정
 
     /// 비밀번호 재설정 코드 발송. 계정 존재 여부를 노출하지 않으므로(비번 계정에만 발송)
-    /// 응답은 항상 성공이다. Android `AuthApi.kt:200-201`, 백엔드 auth.ts:280.
+    /// 응답은 항상 성공이다. Android `AuthApi.kt:199-200`, 백엔드 auth.ts:280.
     func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse {
         try await request(
             "auth/password-reset",
@@ -854,7 +854,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 비밀번호 재설정 확정 — 6자리 코드 검증 후 새 비밀번호로 교체. 성공 시 서버가
-    /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:203-206`,
+    /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:202-205`,
     /// 백엔드 auth.ts:359.
     func confirmPasswordReset(
         email: String,

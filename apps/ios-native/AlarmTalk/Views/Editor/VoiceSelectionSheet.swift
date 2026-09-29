@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 알람이 쓸 목소리 하나를 고르는 시트.
 ///
-/// 안드로이드 `ui/editor/VoiceAudioCard.kt:525-547` 의 `WakerSelectionSheet`.
+/// 안드로이드 `ui/editor/VoiceAudioCard.kt:495-517` 의 `WakerSelectionSheet`.
 ///
 /// ⚠ **인라인 목록으로 되돌리지 말 것.** 편집기 본문에 목소리를 전부 펼치면, 목소리가
 /// 여럿인 사용자에게는 시간·반복보다 목소리 목록이 화면을 더 차지한다. 요약 행 하나가

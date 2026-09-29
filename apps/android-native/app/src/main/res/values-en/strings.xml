@@ -24,7 +24,7 @@
     <string name="auth_email_verify">Verify email</string>
     <string name="auth_email_verify_done">Email verified</string>
     <string name="auth_email_verify_resend">Resend code</string>    <string name="auth_find_password">Reset password</string>
-    <string name="auth_forgot_password">Forgot your password?</string>    <string name="auth_or">or</string>
+    <string name="auth_forgot_password">Forgot your password?</string>
     <string name="auth_social_divider">Quick sign-in</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
@@ -131,20 +131,11 @@
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
     <string name="common_google_continue">Continue with Google</string>
     <string name="common_google_login">Sign in with Google</string>
-    <string name="common_permission_allow_action">Allow</string>
-    <string name="common_permission_allow_all">Allow all required permissions</string>
-    <string name="common_permission_exact_alarm_label">Exact alarms</string>
-    <string name="common_permission_full_screen_label">Full-screen alarms</string>
     <string name="common_permission_gate_allow_action">Allow</string>
     <string name="common_permission_gate_exact_alarm_title">Allow exact alarm permission to set alarms</string>
     <string name="common_permission_gate_full_screen_title">Allow lock screen permission to set alarms</string>
     <string name="common_permission_gate_mic_title">Microphone permission needed</string>
     <string name="common_permission_gate_notifications_title">Allow notification permission to set alarms</string>
-    <string name="common_permission_granted">Granted</string>
-    <string name="common_permission_mic_label">Microphone</string>
-    <string name="common_permission_notifications_label">Notifications</string>
-    <string name="common_permission_required">Required</string>
-    <string name="common_permission_title">Permissions</string>
     <string name="common_tab_billing">Plan</string>
     <string name="common_tab_code_register">Register code</string>
     <string name="common_voice_capture_mode_file">File</string>
@@ -197,11 +188,7 @@
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
-    <string name="editor_holiday_show_title">Upcoming holidays</string>
-    <string name="editor_holiday_cold_cache">Loading…</string>
     <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
-    <string name="editor_minute_label">min</string>
-    <string name="editor_minutes">%1$d min</string>
     <string name="editor_no_voice_profile">You don\'t have any voices to use yet.</string>
     <string name="editor_off">Off</string>
     <string name="editor_plan_gate_login_title">Sign in required</string>
@@ -353,7 +340,6 @@
     <string name="msg_gb_code_register_failed">Couldn\'t register the code.</string>
     <string name="msg_gb_code_registered">Code registered</string>
     <string name="msg_gb_promo_redeemed">Promo code applied</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">Your voice alarms are locked on the free pass. Subscribe again within 3 days to restore them; after that the voices are deleted permanently.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
@@ -445,8 +431,6 @@
     <string name="rd_audio_open_failed">We couldn\'t open the selected audio file.</string>
     <string name="rd_audio_over_limit_trim_failed">We couldn\'t automatically trim a file longer than %1$d sec. Please reselect in m4a/aac/mp4 format.</string>
     <string name="rd_audio_trim_failed">We couldn\'t trim the selected section into an audio file. Try adjusting the start point a little, or use a different file.</string>
-    <string name="rd_copied_alarm_label">Copied alarm</string>
-    <string name="rd_copied_alarm_label_suffix">%1$s copy</string>
     <string name="rd_default_alarm_label">Alarm</string>
     <string name="rd_duplicate_alarm_time_message">You already have an alarm at this time. Please choose a different time.</string>
     <string name="rd_slide_to_dismiss">Slide to dismiss</string>
@@ -569,7 +553,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_reupload">Re-upload</string>
     <string name="voices_select_file_first">Please select a file.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
-    <string name="voices_sharing_shared_desc_disabled">Sharing is available with a Couple or Family plan.</string>
     <string name="voices_sharing_shared_desc_enabled">Your family or partner can use the voice you register, too.</string>
     <string name="voices_sharing_shared_title">Allow sharing with family or partner</string>
     <string name="voices_step_sharing">Sharing settings</string>
@@ -623,9 +606,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="label_vibration_sos">SOS</string>
     <string name="label_vibration_off">Off</string>
     <string name="label_vibration_basic_call">Basic</string>
-    <string name="editor2_cat_morning">Wake up</string>
-    <string name="editor2_cat_love">Love</string>
-    <string name="editor2_cat_medication">Medication</string>
     <string name="editor2_ctx_wake_weather">Weather</string>
     <string name="editor2_ctx_wake_fortune">Fortune</string>
     <string name="editor2_ctx_love">Encouragement</string>
@@ -656,8 +636,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_quiet_days_weekend">Weekends</string>
     <string name="editor2_quiet_days_everyday">Every day</string>
     <string name="editor2_fortune_time_unknown">Unknown</string>
-    <string name="editor2_weather_location_prompt">Please enter your city.</string>
-    <string name="editor2_fortune_info_prompt">Please enter your gender, date of birth, and time of birth.</string>
     <string name="voices2_audio_duration_unknown">We couldn\'t check the audio length.</string>
     <string name="voices2_record_min_duration">Please record for at least 12 seconds.</string>
     <string name="voices2_register_under_two_minutes">You can register voice that is 2 minutes or less.</string>
@@ -775,11 +753,6 @@ Please update to the latest version.</string>
     <string name="r3dlg_pending_deletion_processing">Processing…</string>
     <string name="r3dlg_pending_deletion_recover">Cancel deletion and keep using</string>
     <string name="r3dlg_pending_deletion_logout">Log out</string>
-    <string name="r3ed_time_until_days">Rings in about %1$d days</string>
-    <string name="r3ed_time_until_days_hours">Rings in about %1$d days %2$d hours</string>
-    <string name="r3ed_time_until_minutes">Rings in %1$d minutes</string>
-    <string name="r3ed_time_until_hours">Rings in %1$d hours</string>
-    <string name="r3ed_time_until_hours_minutes">Rings in %1$d hours %2$d minutes</string>
     <string name="r3ed_google_signin_error_config">Your Google sign-in settings don\'t match. Please check the package name and SHA-1 of your Android OAuth client.</string>
     <string name="r3ed_google_signin_error_network">Please check your network connection and try again.</string>
     <string name="r3ed_google_signin_error_failed">Google sign-in failed.</string>
@@ -796,7 +769,6 @@ Please update to the latest version.</string>
     <string name="r3misc_consent_required">Required consent is needed to continue.</string>
     <string name="r3misc_login_required_generic">Available after signing in</string>
     <string name="r3misc_google_signin_unavailable">Google sign-in isn\'t available right now. Please sign in with your email.</string>
-    <string name="r3misc_google_signin_failed">Google sign-in failed</string>
 
     <string name="r3misc_notif_received_alarm_sent">%1$s sent you an alarm.</string>
     <string name="r3misc_notif_received_alarm_sent_other">Someone sent you an alarm.</string>

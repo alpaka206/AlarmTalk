@@ -3,7 +3,7 @@ import UIKit
 
 /// 비밀번호 재설정 — 가입한 이메일로 6자리 코드를 받고, 코드 + 새 비밀번호로 변경한다.
 ///
-/// Android `apps/android-native/.../ui/auth/PasswordResetScreen.kt:46-201` 를 1:1 포팅했다.
+/// Android `apps/android-native/.../ui/auth/PasswordResetScreen.kt:44-199` 를 1:1 포팅했다.
 /// 코드 발송 후(`auth.passwordResetCodeSentTo` == 입력 이메일) 코드·새 비밀번호 입력이
 /// 노출되며, 확정은 단일 호출(`confirmPasswordReset`)로 검증 + 변경을 한 번에 처리한다.
 ///

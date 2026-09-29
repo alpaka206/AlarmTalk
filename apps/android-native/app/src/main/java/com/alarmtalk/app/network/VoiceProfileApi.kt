@@ -33,7 +33,6 @@ data class VoiceDraftQuotaResponse(
     val remaining: Int = 0,
     // 이번 달 '정식 등록' 쿼터 — 목소리는 한 달에 1개. 위 limit(초안 재시도 여유 3회)와 다르다.
     @SerializedName("registration_limit") val registrationLimit: Int = 0,
-    @SerializedName("registration_used") val registrationUsed: Int = 0,
     @SerializedName("registration_remaining") val registrationRemaining: Int = 0,
 )
 
@@ -43,12 +42,6 @@ data class VoiceUploadResponse(
 
 data class VoiceUpload(
     val id: String,
-    val objectKey: String? = null,
-    val mimeType: String? = null,
-    val sizeBytes: Long? = null,
-    val durationMs: Long? = null,
-    val originalName: String? = null,
-    val createdAt: String? = null,
 )
 
 data class VoiceProfileUpdateRequest(
@@ -93,7 +86,6 @@ data class VoicePrerenderStatusResponse(
     val status: String? = null,
     val total: Int = 0,
     val generated: Int = 0,
-    val attempts: Int = 0,
 )
 
 /** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 2클립). */
@@ -157,7 +149,6 @@ data class FamilyVoiceProfile(
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
-    @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
     /**
      * 공유받은 목소리의 **직접 입력 음원 무효 시각**. 내 목소리와 같은 규약이다
      * ([VoiceProfile.customAudioInvalidatedAt]) — 공유받은 사람도 그 목소리로 자기 직접

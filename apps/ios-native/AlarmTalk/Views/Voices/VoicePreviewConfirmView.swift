@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 등록 직후 **'이 목소리로 저장할까요?'** 확인 스텝.
 ///
-/// 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt:1838-1976` 의 Preview 스텝.
+/// 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt:1830-1968` 의 Preview 스텝.
 ///
 /// ⚠ **iOS 에는 이 스텝이 통째로 없었다.** 등록이 성공하면 곧바로 목록으로 돌아가,
 /// 사용자는 자기 목소리가 어떻게 들리는지 **한 번도 못 들어보고** 이번 달 등록 횟수를
@@ -46,7 +46,7 @@ struct VoicePreviewConfirmView: View {
     /// 공유 여부는 초안 입력 단계가 아니라 실제로 저장하는 이 단계에서 고른다.
     @State private var isShared = false
     /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
-    /// (안드로이드 `VoiceProfileManagementPanel.kt:2141` `draftExitWarningOpen`).
+    /// (안드로이드 `VoiceProfileManagementPanel.kt:2133` `draftExitWarningOpen`).
     @State private var exitWarningOpen = false
 
     var body: some View {

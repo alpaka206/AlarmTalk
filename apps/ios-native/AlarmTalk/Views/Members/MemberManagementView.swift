@@ -3,7 +3,7 @@ import UIKit
 
 /// 가족/커플 그룹 멤버 관리 화면.
 ///
-/// Android `apps/android-native/.../ui/members/MemberManagementScreen.kt:48-332` 의
+/// Android `apps/android-native/.../ui/members/MemberManagementScreen.kt` 의 `MemberManagementScreen` 의
 /// 모든 동작을 1:1 포팅했다.
 ///
 /// 기능 요약

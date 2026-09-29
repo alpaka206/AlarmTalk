@@ -31,7 +31,7 @@ struct SettingsView: View {
         var id: String { rawValue }
     }
 
-    /// Android `SettingsScreen.kt:150,156` 의 약관/방침 외부 링크.
+    /// Android `SettingsScreen.kt:142,156` 의 약관/방침 외부 링크.
     private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
     private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
 
@@ -50,7 +50,7 @@ struct SettingsView: View {
                 // `onClose` 는 로그아웃 뒤 화면을 뜨는 데만 남는다.
 
                 // ⚠ **'테마' 행을 여기 다시 넣지 말 것.** 테마는 더보기 탭에서만 바꾼다
-                // (안드로이드 `SettingsScreen.kt:98-107` 주석: "테마·앱 언어는 전체 탭에서
+                // (안드로이드 `SettingsScreen.kt:90-99` 주석: "테마·앱 언어는 전체 탭에서
                 // 관리한다"). 양쪽에 두면 같은 값을 바꾸는 자리가 둘이 되어, 한쪽만
                 // 고쳤을 때 다른 쪽이 옛 값을 보여준다.
                 VStack(alignment: .leading, spacing: 0) {
@@ -102,7 +102,7 @@ struct SettingsView: View {
                 // 어느 쪽이 진짜인지 알 수 없다(안드로이드는 더보기에만 둔다).
 
                 // 법적 정보 — 처리방침·약관 접근과 오픈소스 고지는 스토어·법적 요구라
-                // 앱 안에 유지해야 한다(안드로이드 `SettingsScreen.kt:154-171`).
+                // 앱 안에 유지해야 한다(안드로이드 `SettingsScreen.kt:146-163`).
                 // ⚠ 예전에는 여기 웹 `Link` 두 개뿐이었다 — 외부 Safari 로 나가는 데다
                 // **동의 내역(생체정보 철회) 경로가 앱에 아예 없었다.**
                 VStack(alignment: .leading, spacing: 0) {
@@ -258,7 +258,7 @@ struct SettingsView: View {
     }
 }
 
-/// 라벨 + (선택) 값 + chevron 클릭 행. Android `SettingsRow`(SettingsScreenComponents.kt:77-110)
+/// 라벨 + (선택) 값 + chevron 클릭 행. Android `SettingsRow`(SettingsScreenComponents.kt:66-99)
 /// 와 동일하게 선행 아이콘은 두지 않는다.
 /// 라벨 + (선택) 값 + chevron 행. 설정·더보기 두 화면이 함께 쓴다.
 struct SettingsValueButton: View {
@@ -278,7 +278,7 @@ struct SettingsValueButton: View {
                 if let value {
                     // ⚠ **값은 primary 로 강조한다.** 라벨과 값이 둘 다 무채색이면
                     // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드
-                    // `SettingsScreenComponents.kt:111-121` 도 primary + SemiBold).
+                    // `SettingsScreenComponents.kt:100-110` 도 primary + SemiBold).
                     Text(value)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(theme.palette.primary)

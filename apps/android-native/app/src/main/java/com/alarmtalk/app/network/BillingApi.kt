@@ -42,13 +42,10 @@ data class BillingSubscriptionResponse(
 data class BillingSubscription(
     val id: String,
     @SerializedName("plan_id") val planId: String,
-    @SerializedName("plan_group_id") val planGroupId: String? = null,
     val status: String,
     @SerializedName("starts_at") val startsAt: String,
     @SerializedName("expires_at") val expiresAt: String,
     @SerializedName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
-    @SerializedName("canceled_at") val canceledAt: String? = null,
-    @SerializedName("next_plan_id") val nextPlanId: String? = null,
 )
 
 data class BillingPlan(

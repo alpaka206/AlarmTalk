@@ -2,7 +2,6 @@ package com.alarmtalk.app
 
 import android.app.AlarmManager
 import android.app.Activity
-import android.app.Application
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -10,10 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.network.AuthSession

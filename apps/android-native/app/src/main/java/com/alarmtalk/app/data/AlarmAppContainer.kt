@@ -38,7 +38,7 @@ object AlarmAppContainer {
             repository ?: AlarmRepository(
                 alarmDao = AlarmDatabase.getInstance(context).alarmDao(),
                 holidayCalendarStore = HolidayCalendarStore(AlarmDatabase.getInstance(context).holidayDao()),
-                holidayCountryPreferenceStore = holidayCountryPreferenceStore(context),
+                holidayCountryPreferenceStore = HolidayCountryPreferenceStore(context.applicationContext),
                 alarmScheduler = AlarmScheduler(context.applicationContext),
                 alarmAudioStore = AlarmAudioStore(context.applicationContext),
                 context = context.applicationContext,
@@ -62,9 +62,6 @@ object AlarmAppContainer {
             ).also { repository = it }
         }
 
-    /** Room 인스턴스 — 사용 기록 큐처럼 저장소를 직접 쓰는 곳이 쓴다. */
-    fun database(context: Context): AlarmDatabase = AlarmDatabase.getInstance(context)
-
     /**
      * 사용 기록 기록기. **전역 하나**다 — 여러 개면 큐 상한 정리가 서로를 덮어쓴다.
      *
@@ -74,12 +71,8 @@ object AlarmAppContainer {
     fun usageEventRecorder(context: Context): UsageEventRecorder =
         usageEventRecorder ?: synchronized(this) {
             usageEventRecorder ?: UsageEventRecorder(
-                dao = database(context).usageEventDao(),
+                dao = AlarmDatabase.getInstance(context).usageEventDao(),
                 currentUserId = { authSessionStore(context).read()?.user?.id },
             ).also { usageEventRecorder = it }
         }
-
-    /** 앱 전역 공휴일 국가 설정 — 설정 화면과 알람 편집기가 공유한다. */
-    fun holidayCountryPreferenceStore(context: Context): HolidayCountryPreferenceStore =
-        HolidayCountryPreferenceStore(context.applicationContext)
 }

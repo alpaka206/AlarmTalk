@@ -397,7 +397,6 @@ class AlarmEditorStateTest {
     fun freshTtsAudioFallsBackToStoredListenerTitle() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceRandomPrompt = false
-        editor.voiceCategory = "custom"
         editor.voiceLanguage = "ko"
         editor.voiceListenerTitleOverride = "kiddo"
 
