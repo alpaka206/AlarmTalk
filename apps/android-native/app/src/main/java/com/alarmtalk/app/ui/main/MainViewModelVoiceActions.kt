@@ -870,7 +870,8 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
  *
  *  ⚠ 매니페스트를 여기서 직접 받지 않는다(효율 감사 M1). 예전에는 표 없이 받아 `stockClips` 를
  *  덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 새 목록을 되돌릴 수 있었다.
- *  @return 빠진 것 없이 다 받았는가. 매니페스트를 못 받았으면 false. */
+ *  @return 빠진 것 없이 다 받았는가. 매니페스트를 못 받았거나(이긴 것을 확인하지 못한 경우 포함)
+ *  그 목소리의 클립이 목록에 없으면 false. */
 internal suspend fun MainViewModel.downloadAllPresetClips(
     voiceProfileId: String,
     onProgress: (Int, Int) -> Unit,
@@ -881,7 +882,8 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
     // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
     // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
     val clips = stockClips.filter { it.voiceProfileId == voiceProfileId }
-    if (clips.isEmpty()) return true
+    // 생성이 끝났는데 목록에 한 개도 없으면 받은 게 아니다 — '다 받았다' 로 답하지 않는다.
+    if (clips.isEmpty()) return false
     return cacheVoiceClips(voiceProfileId, clips, onProgress)
 }
 
@@ -1085,16 +1087,24 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
             ManifestFlightOutcome.PUBLISHED
         }
         com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED -> {
-            // 더 새 매니페스트가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
+            // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
             // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다.
             // 대신 **디스크의 이긴 매니페스트**(임자 대조)를 싣는다 — 준비도·클론 다운로드가
             // 메모리를 읽으므로, 안 실으면 물러난 회차 뒤에 낡은 목록으로 돈다(스펙 「공개 경합의 규칙」).
+            // ⚠ 단 **이긴 것이 실제로 공개됐을 때만**이다(Codex #825). 더 새 표의 쓰기가 실패했거나
+            // 표가 무효화됐으면 디스크는 비었거나 옛 목록이라, 싣지도 '받았다' 로 세지도 않는다 —
+            // 실패로 돌려 준비도는 앞 값을 지키고, 클론 다운로드는 목소리 탭 폴링에 넘긴다.
             val winner = withContext(Dispatchers.IO) {
-                com.alarmtalk.app.data.StockClipManifestStore.load(app, owner.userId, requireOwner = true)
+                if (!com.alarmtalk.app.data.StockClipManifestStore.latestSeenResponseWasPublished()) {
+                    null
+                } else {
+                    com.alarmtalk.app.data.StockClipManifestStore.load(app, owner.userId, requireOwner = true)
+                }
             }
-            if (winner != null && responseStillBelongsToRequester(owner.userId, owner.generation)) {
-                applyStockClipManifest(winner)
+            if (winner == null || !responseStillBelongsToRequester(owner.userId, owner.generation)) {
+                return ManifestFlightOutcome.FAILED
             }
+            applyStockClipManifest(winner)
             ManifestFlightOutcome.SUPERSEDED
         }
         // 디스크에 못 남겼다 — 아무도 공개하지 못했으니 판정의 권위도 아니다. 다음 호출이 다시 받는다.

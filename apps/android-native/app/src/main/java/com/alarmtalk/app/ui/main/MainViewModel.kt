@@ -621,6 +621,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var familyVoicesLoadedFresh: Boolean = false
         internal set
 
+    /**
+     * 지금 [familyVoices] 가 **이 세션에 서버에서 한 번이라도 받은 목록**인가. [familyVoicesLoadedFresh]
+     * 와 다르다 — 그쪽은 조회를 시작할 때마다 내려가고 실패하면 내려간 채지만, 목록 자체는 앞서
+     * 받은 서버 목록 그대로 남는다(`refreshSocialData`). 공유 목록이 바뀌었을 때 매니페스트를
+     * **신호 뒤** 로 받을지(서버에서 바뀌었다) **창** 으로 받을지(세션 첫 목록 — 이제 안 것)를 이걸로
+     * 가른다(Codex #825). 세션이 끝날 때만 내린다.
+     */
+    internal var familyVoicesFromServer: Boolean = false
+
     // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
     // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
     internal var voiceProfilesLoadedFresh: Boolean = false
@@ -1490,6 +1499,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
         // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
         familyVoicesLoadedFresh = false
+        familyVoicesFromServer = false
         subscriptionResponse = null
         // ⚠ **스토어 신호는 계정 것이다.** 안 지우면 유료 A 가 로그아웃한 뒤 무료 B 가
         // 로그인했을 때(액티비티 재생성 없이) B 가 A 의 등급을 물려받아 모든 게이트를 통과한다.

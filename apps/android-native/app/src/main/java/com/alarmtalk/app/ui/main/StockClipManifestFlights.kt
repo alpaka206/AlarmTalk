@@ -32,7 +32,11 @@ internal enum class ManifestFlightOutcome {
     /** 이 응답이 디스크 권위가 됐고 메모리에도 실렸다. */
     PUBLISHED,
 
-    /** 더 새 표가 이미 공개됐다(또는 표가 무효화됐다). 실패는 아니다. */
+    /**
+     * 더 새 표의 응답이 **이미 공개됐고**, 그 이긴 매니페스트를 메모리에 실었다. 실패는 아니다 —
+     * 이긴 것은 이 요청보다 **뒤에** 출발했으므로 신선도로도 센다. (이긴 것이 공개됐는지 확인하지
+     * 못하면 [FAILED] 다.)
+     */
     SUPERSEDED,
 
     /** 받지 못했거나 디스크에 못 남겼거나, 그사이 계정이 바뀌었다. */
@@ -53,8 +57,10 @@ internal enum class ManifestFlightOutcome {
  *    출발했으므로 그 뒤에 **한 번만** 줄을 세우고, 그사이 들어온 LATEST 는 전부 그 줄을 나눠 쓴다.
  *
  * ⚠ **요청 자체([run])는 언제나 표·세대 가드를 거친다**(`StockClipManifestStore.beginFetch`/`save`).
- * 이 클래스는 **몇 번** 받을지만 정한다 — 무엇을 공개할지는 표가 정한다. 신선도는 **공개된**
- * 응답만 센다. 물러났거나(SUPERSEDED) 실패한 회차는 다음 호출이 다시 받는다.
+ * 이 클래스는 **몇 번** 받을지만 정한다 — 무엇을 공개할지는 표가 정한다. 신선도는 **공개가
+ * 확인된** 응답만 센다([ManifestFlightOutcome.PUBLISHED], 또는 이긴 것이 공개된
+ * [ManifestFlightOutcome.SUPERSEDED] — 스펙 「공개 경합의 규칙」의 '새로 받았는가'). 실패한
+ * 회차는 다음 호출이 다시 받는다.
  *
  * ⚠ 워커(`StockClipPrefetchWorker`·`VoiceAccessSyncWorker`)의 조회는 여기 묶지 않는다. 뷰모델이
  * 없는 프로세스에서도 돌고, 교체 확정 판단에 **그 회차가 직접 받은** 매니페스트가 필요하다(의도).
@@ -142,7 +148,8 @@ internal class StockClipManifestFlights<Owner : Any>(
                 } catch (error: Exception) {
                     ManifestFlightOutcome.FAILED
                 }
-                if (outcome == ManifestFlightOutcome.PUBLISHED) {
+                // 이긴 것(SUPERSEDED)은 이 요청보다 뒤에 출발했다 — 이 요청의 출발 시각으로 세면 보수적이다.
+                if (outcome == ManifestFlightOutcome.PUBLISHED || outcome == ManifestFlightOutcome.SUPERSEDED) {
                     freshOwner = owner
                     freshIssuedAt = issuedAt
                 }

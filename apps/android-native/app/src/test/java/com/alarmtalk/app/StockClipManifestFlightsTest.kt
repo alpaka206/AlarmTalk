@@ -146,20 +146,24 @@ class StockClipManifestFlightsTest {
     }
 
     @Test
-    fun onlyPublishedResponsesCountAsFresh() = runTest {
+    fun onlyConfirmedPublicationsCountAsFresh() = runTest {
         val clock = Clock()
         val flights = flights(clock)
         val requests = FakeRequests()
 
-        // 물러난 회차(더 새 표가 이미 공개됨)는 신선도로 세지 않는다 — 다음 호출이 다시 받는다.
-        requests.outcome = ManifestFlightOutcome.SUPERSEDED
-        assertEquals(ManifestFlightOutcome.SUPERSEDED, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
+        // 실패(쓰기 실패·확인 못 한 superseded 포함)는 신선도로 세지 않는다 — 다음 호출이 다시 받는다.
         requests.outcome = ManifestFlightOutcome.FAILED
+        assertEquals(ManifestFlightOutcome.FAILED, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
         assertEquals(ManifestFlightOutcome.FAILED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
-        requests.outcome = ManifestFlightOutcome.PUBLISHED
-        assertEquals(ManifestFlightOutcome.PUBLISHED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
+        assertEquals(2, requests.issued)
+
+        // 이긴 것이 공개된 superseded 는 '받았다' 다(스펙 「공개 경합의 규칙」) — 이긴 것은 뒤에 출발했다.
+        requests.outcome = ManifestFlightOutcome.SUPERSEDED
+        assertEquals(ManifestFlightOutcome.SUPERSEDED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
         assertEquals(3, requests.issued)
         assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
+        assertEquals(ManifestFlightOutcome.FRESH, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
+        assertEquals(3, requests.issued)
     }
 
     @Test

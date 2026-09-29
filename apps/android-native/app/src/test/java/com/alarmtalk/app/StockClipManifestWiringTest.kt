@@ -85,11 +85,41 @@ class StockClipManifestWiringTest {
     }
 
     @Test
+    fun aSupersededFetchTrustsTheWinnerOnlyWhenItWasPublished() {
+        val body = functionBody(voiceActions, "private suspend fun MainViewModel.fetchAndPublishStockClips(")
+        val superseded = body.substring(body.indexOf("PublishResult.SUPERSEDED ->"))
+        val check = superseded.indexOf("latestSeenResponseWasPublished()")
+        val load = superseded.indexOf("StockClipManifestStore.load(")
+        assertTrue(
+            "물러난 회차가 이긴 것이 공개됐는지 보지 않고 디스크를 싣는다(Codex #825) — 더 새 표의 " +
+                "쓰기가 실패했으면 디스크는 옛 목록이다.",
+            check in 0 until load,
+        )
+        assertTrue(
+            "이긴 것을 확인하지 못한 superseded 가 실패로 돌아가지 않는다.",
+            superseded.substring(0, superseded.indexOf("ManifestFlightOutcome.SUPERSEDED"))
+                .contains("return ManifestFlightOutcome.FAILED"),
+        )
+    }
+
+    @Test
+    fun aSharedListChangeUsesTheServerProvenanceNotTheLatestRefreshFlag() {
+        val social = withoutLineComments(readSource("ui/main/MainViewModelSocialActions.kt"))
+        assertTrue(
+            "공유 목록 변화의 '신호 뒤' 판정이 앞 목록의 출처(`familyVoicesFromServer`)를 보지 않는다 — " +
+                "중간 조회가 실패하면 신선도 창이 바뀌기 전의 매니페스트를 다시 쓴다(Codex #825).",
+            social.contains("if (comparedAgainstServerList) ManifestNeed.LATEST else ManifestNeed.RECENT"),
+        )
+        assertTrue(social.contains("val comparedAgainstServerList = familyVoicesFromServer"))
+        assertFalse(social.contains("hadFreshSharedList"))
+    }
+
+    @Test
     fun manifestDiskReadsAndWritesStayOffTheMainThread() {
         val offenders = uiSources.flatMap { (path, code) ->
             Regex("""StockClipManifestStore\s*\.\s*(save|load)\(""").findAll(code).mapNotNull { match ->
-                // 여는 `withContext(Dispatchers.IO) {` 가 바로 앞(같은 블록)에 있어야 한다.
-                val before = code.substring(maxOf(0, match.range.first - 160), match.range.first)
+                // 여는 `withContext(Dispatchers.IO) {` 가 바로 앞(같은 블록, 몇 줄 안)에 있어야 한다.
+                val before = code.substring(maxOf(0, match.range.first - 400), match.range.first)
                 if (before.contains("withContext(Dispatchers.IO)")) null else "$path: ${match.value}"
             }.toList()
         }
@@ -145,6 +175,58 @@ class StockClipManifestWiringTest {
         assertNull(StockClipManifestStore.load(context, null, requireOwner = true))
         // 임자 대조를 요구하지 않는 시드 경로는 예전 그대로다.
         assertNotNull(StockClipManifestStore.load(context, "u2"))
+    }
+
+    @Test
+    fun aSupersededFetchCanTellAPublishedWinnerFromAFailedOrInvalidatedOne() {
+        fun manifest(id: String) = StockClipListResponse(
+            clips = listOf(
+                StockClip(
+                    messageId = id,
+                    voiceProfileId = "v1",
+                    category = "weather",
+                    language = "ko",
+                    variant = 0,
+                    text = "맑아요",
+                    audioUrl = "https://r2.example/$id.mp3",
+                ),
+            ),
+        )
+        val published = StockClipManifestStore.PublishResult.PUBLISHED
+        val superseded = StockClipManifestStore.PublishResult.SUPERSEDED
+
+        // 1) 뒤에 출발한 쪽(워커)이 먼저 공개 → 앞 요청은 물러나고, 이긴 것은 공개됐다.
+        val older = StockClipManifestStore.beginFetch()
+        val newer = StockClipManifestStore.beginFetch()
+        assertEquals(published, StockClipManifestStore.save(context, manifest("new"), newer, "u1"))
+        assertEquals(superseded, StockClipManifestStore.save(context, manifest("old"), older, "u1"))
+        assertTrue(StockClipManifestStore.latestSeenResponseWasPublished())
+
+        // 2) 뒤에 출발한 쪽의 **쓰기가 실패** → 수위선은 올랐지만 디스크는 앞 목록이다.
+        val older2 = StockClipManifestStore.beginFetch()
+        val newer2 = StockClipManifestStore.beginFetch()
+        val tmp = File(context.filesDir, "stock-clip-manifest.json.tmp").apply { mkdirs() }
+        try {
+            assertEquals(
+                StockClipManifestStore.PublishResult.FAILED,
+                StockClipManifestStore.save(context, manifest("newer-but-failed"), newer2, "u1"),
+            )
+        } finally {
+            tmp.deleteRecursively()
+        }
+        assertEquals(superseded, StockClipManifestStore.save(context, manifest("old2"), older2, "u1"))
+        assertFalse(
+            "더 새 표의 쓰기가 실패했는데 '이긴 것이 공개됐다' 고 답했다 — 옛 목록을 새것으로 싣는다.",
+            StockClipManifestStore.latestSeenResponseWasPublished(),
+        )
+
+        // 3) 로그아웃·계정 전환의 무효화도 '공개된 이긴 것' 이 아니다.
+        val beforeSignOut = StockClipManifestStore.beginFetch()
+        assertEquals(published, StockClipManifestStore.save(context, manifest("fresh"), StockClipManifestStore.beginFetch(), "u1"))
+        assertTrue(StockClipManifestStore.latestSeenResponseWasPublished())
+        StockClipManifestStore.invalidateOutstandingTickets()
+        assertEquals(superseded, StockClipManifestStore.save(context, manifest("late"), beforeSignOut, "u1"))
+        assertFalse(StockClipManifestStore.latestSeenResponseWasPublished())
     }
 
     @Test

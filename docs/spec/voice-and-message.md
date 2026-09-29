@@ -631,8 +631,13 @@
 
   45초는 탭 새로고침 스로틀(60초)보다 짧게 잡았다 — 알람·목소리 탭을 오가는 사이 같은 목록을
   두 번 받지 않을 만큼이면 된다. 서버가 바뀐 것을 **아는** 자리는 창을 쓰지 않는다.
-- 신선도는 **공개된** 응답만 센다. 물러난(superseded) 회차는 디스크의 이긴 매니페스트를 **임자
-  대조로** 메모리에 싣되 신선도로 세지 않는다 — 다음 호출이 다시 받는다. 실패도 마찬가지다.
+- 신선도는 **공개가 확인된** 응답만 센다. 물러난(superseded) 회차는 **가장 최근에 본 표의 응답이
+  실제로 공개됐을 때만**(위 '새로 받았는가' 와 같은 판정) 디스크의 이긴 매니페스트를 **임자 대조로**
+  메모리에 싣고 받은 것으로 센다 — 이긴 것은 이 요청보다 뒤에 출발했다. 확인하지 못하면(더 새
+  표의 쓰기 실패·로그아웃 무효화) 디스크는 비었거나 옛 목록이라 **실패로 본다** — 싣지도 세지도
+  않고, 준비도는 앞 값을 지키며, 다음 호출이 다시 받는다(Codex #825).
+- 공유 목록 변화가 '신호 뒤' 인지는 **비교한 앞 목록이 이 세션에 서버에서 받은 것인가**로 가른다.
+  중간 조회가 실패해도 앞 목록은 서버 목록 그대로 남으므로 '이번 조회가 신선한가' 로 가르지 않는다.
 - 디스크 공개(직렬화·파일 교체·prefs `commit()`)와 읽기(파싱)는 **메인 밖**에서 한다 — 워커와 같은
   잠금을 잡으므로 메인에서 부르면 워커가 쓰는 동안 화면이 멎는다. 순서는 그대로다: **공개가
   확인된 뒤에** 메모리에 싣는다. 디스크 시드는 그사이 서버 응답이 실렸으면 버린다.
@@ -979,7 +984,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 매니페스트 조회 한 번에 하나·신선도 창(45초)·신호 뒤 조회 | `StockClipManifestFlights`(`ManifestNeed`) ← `MainViewModelVoiceActions.ensureStockClipManifest`(앱 시작·탭·준비도 `refreshClipReadiness`·클론 `downloadAllPresetClips`·공유 변경); 회귀 `StockClipManifestFlightsTest`·`StockClipManifestWiringTest` | — (별도 항목) | `GET /tts/stock-clips` |
 | 매니페스트 디스크 읽기·쓰기 = 메인 밖 · Gson 하나 | `fetchAndPublishStockClips`·`seedStockClipsFromDisk`(`withContext(Dispatchers.IO)`), `StockClipManifestStore` 의 `gson` | — | — |
 | 클론 클립 받기 — 목소리마다 한 벌 · 병렬 4 · 클립마다 한 번 묻기 · 구동 중 탭 폴링 제외 | `VoiceClipDownloads` ← `MainViewModel.cacheVoiceClips`(구동 `downloadAllPresetClips`·목소리 탭 `downloadCloneBuckets`), 행 진행률 `PrerenderDriveState.overallFraction`; 회귀 `VoiceClipDownloadsTest` | — | `GET /tts/messages/:id/audio` |
-| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
+| '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | `StockClipManifestStore.latestSeenResponseWasPublished` ← `fetchAndPublishStockClips`(확인 못 한 superseded 는 실패); 회귀 `StockClipManifestWiringTest` | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |

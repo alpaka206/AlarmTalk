@@ -57,6 +57,21 @@ object StockClipManifestStore {
      */
     private var seenTicket: Long = 0
 
+    /** 마지막으로 **실제로 공개된** 응답의 표. 쓰기에 실패한 응답은 여기 오르지 않는다. */
+    private var publishedTicket: Long = 0
+
+    /**
+     * **가장 최근에 본 표의 응답이 실제로 공개됐는가** — 물러난(SUPERSEDED) 회차가 디스크의 이긴
+     * 매니페스트를 믿어도 되는지 가른다(스펙 「공개 경합의 규칙」, iOS `publishedNewerResponse`).
+     *
+     * ⚠ 물러났다는 것만으로는 **더 새 매니페스트가 디스크에 있다는 보장이 없다**(Codex #825).
+     * 더 새 표의 쓰기가 실패해도 수위선은 오르고(위 [seenTicket] 주석), 로그아웃·계정 전환의
+     * 무효화도 수위선을 올린다. 그 둘이면 디스크는 비었거나 **옛 목록**이다 — 이긴 것으로 싣거나
+     * '받았다' 로 세면 준비도·클론 다운로드가 낡은 목록으로 돈다.
+     */
+    fun latestSeenResponseWasPublished(): Boolean =
+        synchronized(revisionLock) { seenTicket > 0 && publishedTicket == seenTicket }
+
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }
 
@@ -193,6 +208,7 @@ object StockClipManifestStore {
             seenTicket = fetchTicket
             // 쓰기가 실패하면 **공개되지 않았다**고 답한다. 호출자가 다시 시도한다.
             if (!writeManifest(context, response)) return PublishResult.FAILED
+            publishedTicket = fetchTicket
             // 파일과 임자는 **같은 임계구역에서** 함께 남긴다. 방금 이 계정의 내용으로
             // 갈아 끼웠으므로 격리 표시도 함께 내린다 — 지우지 못했던 파일이 **덮여** 없어진
             // 것이라, 계속 세워 두면 멀쩡한 파일을 영영 못 읽는다.
