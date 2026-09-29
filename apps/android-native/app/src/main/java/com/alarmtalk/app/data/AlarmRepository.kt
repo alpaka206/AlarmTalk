@@ -354,7 +354,7 @@ class AlarmRepository(
             currentResolvedAtMillis = current.contextResolvedAtMillis,
             draftResolvedNow = draft.contextResolvedNow,
         )
-        val updated = current.copy(
+        val edited = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
             minute = draft.minute,
@@ -402,6 +402,7 @@ class AlarmRepository(
             // 남아, 재구독 시 unlockPaidAlarmTalks 가 사용자의 편집을 덮어써 목소리로 되살린다.
             // 무료 상태로 남아 편집 결과가 여전히 유료 목소리면, 다음 앱 시작의 재잠금이 실제
             // playMode 기준으로 올바른 새 스냅샷을 다시 만든다.
+            // ⚠ 단 **목소리를 그대로 둔 저장은 잠금을 잇는다** — 아래 `lockSurvivesSave`.
             preLockPlayMode = null,
             // 잠금 보관본도 같은 이유로 비운다 — 남으면 재결제 때 복원이 편집 결과를 옛 유료
             // 목소리로 덮는다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
@@ -415,6 +416,15 @@ class AlarmRepository(
             state = AlarmStates.SCHEDULED,
             updatedAtMillis = now,
         )
+        // ⚠ **시각·이름만 고친 잠긴 알람은 잠금을 잇는다**(2026-09-29). 예전에는 어떤 편집이든 비워,
+        // 시각만 옮긴 알람이 재결제해도 원래 목소리로 돌아오지 않았다. 목소리·재생 방식·오디오를 바꾼
+        // 저장만 편집으로 친다 — 판정은 iOS 와 같은 `lockSurvivesSave` 하나(billing-lifecycle.md 「목소리를
+        // 못 쓰게 되면」).
+        val updated = if (lockSurvivesSave(saved = edited, editing = current)) {
+            edited.copy(preLockPlayMode = current.preLockPlayMode, preLockVoiceJson = current.preLockVoiceJson)
+        } else {
+            edited
+        }
 
         alarmScheduler.cancel(alarmId)
         alarmScheduler.schedule(updated)

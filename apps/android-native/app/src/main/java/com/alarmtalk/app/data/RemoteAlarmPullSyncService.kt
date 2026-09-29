@@ -953,10 +953,25 @@ internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
  * 참조 카운트를 보고 지운다(`deleteCachedAudioIfUnreferenced`).
  */
 internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity =
-    alarm.copy(
+    alarm.withSenderVoiceReplacedByMina(
+        AlarmPlayModes.normalize(alarm.preLockPlayMode?.takeIf { it.isNotBlank() } ?: alarm.playMode),
+    ).copy(
         label = context.getString(com.alarmtalk.app.R.string.rd_default_alarm_label),
-        playMode = AlarmPlayModes.normalize(alarm.preLockPlayMode?.takeIf { it.isNotBlank() } ?: alarm.playMode),
-        // 무료 잠금 복원용 스냅샷도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+        updatedAtMillis = System.currentTimeMillis(),
+    )
+
+/**
+ * 받은 알람의 목소리를 **미나로** 바꾼다 — 오디오·문구·테마 없는 기본 목소리 알람이라 울릴 때
+ * `RingingService` 가 미나의 내장 인사말을 튼다. 보낸 사람이 고른 테마·클립은 받은 쪽이 다시 묶을
+ * 근거가 없어 비운다. 라벨·시각·동기 필드는 건드리지 않는다(부르는 쪽이 정한다 — pull 이 다시 지은
+ * 행은 `updatedAtMillis == lastSyncedAtMillis` 를 지켜야 한다).
+ *
+ * 무료 잠금 복원용 표시(`preLockPlayMode` — 받은 알람에서는 옛 버그의 잠금 표시)도 비운다 — 남겨
+ * 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+ */
+private fun AlarmEntity.withSenderVoiceReplacedByMina(playMode: String): AlarmEntity =
+    copy(
+        playMode = playMode,
         preLockPlayMode = null,
         localAudioUri = null,
         audioCacheKey = null,
@@ -970,8 +985,30 @@ internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity
         bucketId = null,
         bucketClipKeysJson = null,
         bucketClipTextsJson = null,
-        updatedAtMillis = System.currentTimeMillis(),
     )
+
+/**
+ * 이 전달은 **보낸 사람 목소리를 더는 받을 수 없는 목소리 알람**인가 — 그러면 알람음이 아니라 미나로
+ * 운다(2026-09-29 사용자 결정 — `docs/spec/billing-lifecycle.md` 「목소리를 잃은 알람」).
+ *
+ *  - **서버가 걷어냈다**: 수신 확인 전에 보낸 사람이 목소리를 지웠거나 공유가 끊겼다 —
+ *    `voice-revocation.ts` 가 살아 있는 행의 `message_id`·`voice_profile_id` 를 비운다. 이 기기의 행은
+ *    목소리 알람이었다([preserveFrom] — 재전송이면 없다).
+ *  - **음원이 없어졌다**: 문구는 있는데 받을 주소가 없다(제자리 교체된 직접 입력 — 서버가
+ *    `messages.audio_url` 을 비운다). 수신 확인이 바로 나가 다시 받을 길이 없다.
+ *
+ * ⚠ 다운로드가 **실패**한 것은 여기 들지 않는다 — 수신 확인을 미뤄 다음 pull 이 다시 받는다. 그 사이는
+ * 알람음 강제([withToneForcedOn])이고, 편집된 자리표시 행의 복구(`linkRecoveredLegacyRemoteAudio`)가 그
+ * 모양을 본다.
+ */
+internal fun senderVoiceNoLongerAvailable(
+    remote: RemoteAlarm,
+    cachedAudio: CachedAlarmAudio?,
+    preserveFrom: AlarmEntity?,
+): Boolean =
+    cachedAudio == null &&
+        !shouldDownloadRemoteMessageAudio(remote) &&
+        (!remote.messageId.isNullOrBlank() || preserveFrom?.wasReceivedVoiceAlarm() == true)
 
 /**
  * 목소리 알람이던 받은 행인가 — 옛 버그로 '알람' 모드에 잠금 표시만 남은 행도 목소리로 본다.
@@ -1067,9 +1104,12 @@ internal fun buildReceivedAlarmRow(
     }
     val lockState = resolveReceivedLockState(computedPlayMode, existing)
     val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
-    // 목소리 알람이어야 할 행이 '알람' 모드로 선다 — 목소리 전달인데 음성을 못 받았거나, 목소리
-    // 알람이던 행에서 서버가 목소리를 걷어냈다(`paid-voice-cleanup.ts`). 둘 다 시스템 사정이라
-    // 알람음을 켠다([withToneForcedOn]). 원래 '알람' 전달이면 수신자의 스위치를 그대로 둔다.
+    // 보낸 사람 목소리를 더는 받을 수 없는 목소리 알람 — 미나로 운다([senderVoiceNoLongerAvailable]).
+    // 예전에는 아래 알람음 강제로 떨어졌다(2026-09-29 사용자 결정으로 바꿈).
+    val senderVoiceGone = senderVoiceNoLongerAvailable(remote, cachedAudio, preserveFrom)
+    // 목소리 알람이어야 할 행이 '알람' 모드로 선다 — 목소리 전달인데 음성을 못 받았다(다운로드 실패 —
+    // 다음 pull 이 다시 받는다). 시스템 사정이라 알람음을 켠다([withToneForcedOn]). 원래 '알람' 전달이면
+    // 수신자의 스위치를 그대로 둔다.
     val voiceRemovedBySystem = lockState.playMode == AlarmPlayModes.ALARM_ONLY &&
         (!remote.messageId.isNullOrBlank() || existing?.wasReceivedVoiceAlarm() == true)
 
@@ -1141,7 +1181,11 @@ internal fun buildReceivedAlarmRow(
         preLockPlayMode = lockState.preLockPlayMode,
         ownerUserId = resolveReceivedOwner(existing, currentUserId),
     )
-    return if (voiceRemovedBySystem) row.withToneForcedOn() else row
+    return when {
+        senderVoiceGone -> row.withSenderVoiceReplacedByMina(AlarmPlayModes.VOICE_ONLY)
+        voiceRemovedBySystem -> row.withToneForcedOn()
+        else -> row
+    }
 }
 
 private fun parseTime(value: String?): Pair<Int, Int>? {

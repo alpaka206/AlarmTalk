@@ -137,6 +137,31 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: reAudio, editing: hydrated))
     }
 
+    /// 기본 인사말 알람은 **테마 없이** 잠긴다 — 편집기는 그 알람을 열면 기본 목소리에 줄 수 있는 첫 테마를
+    /// **스스로** 붙이고(`applyPendingFreeBucketIfNeeded`) 저장할 때 그 클립을 묶는다. 시각만 고친 저장이
+    /// 그걸로 보관본을 버리면 재결제해도 원래 목소리가 영영 안 돌아온다(2026-09-29). 안드로이드
+    /// `DefaultVoiceLockRepositoryTest.theEditorsOwnFirstThemeOnAGreetingLockIsNotAnEdit` 짝.
+    func test_테마_없이_잠긴_행에_편집기가_붙인_첫_테마는_편집이_아니다() {
+        let locked = DefaultVoiceSubstitute.locked(cloneAlarm(), voiceID: systemVoice, binding: nil, nowMillis: 1)
+        XCTAssertNil(locked.bucketId, "전제 — 기본 목소리의 greeting 은 테마가 아니다")
+        XCTAssertNil(locked.audioCacheKey, "전제 — 오디오 없이 잠겼다")
+
+        var autoThemed = locked
+        autoThemed.hour = 6
+        autoThemed.bucketId = "cheer"
+        autoThemed.audioCacheKey = "stock_\(systemVoice)-cheer-0"
+        autoThemed.bucketClipKeys = (0..<3).map { "stock_\(systemVoice)-cheer-\($0)" }
+        XCTAssertTrue(DefaultVoiceSubstitute.saveKeepsLock(saved: autoThemed, editing: locked))
+
+        // 목소리나 재생 방식을 바꿨으면 여전히 편집이다.
+        var otherVoice = autoThemed
+        otherVoice.voiceProfileId = bundledSystemVoiceProfiles()[1].id
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: otherVoice, editing: locked))
+        var alarmMode = autoThemed
+        alarmMode.playMode = AlarmPlayMode.alarmOnly.rawValue
+        XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: alarmMode, editing: locked))
+    }
+
     /// 잠금·복원은 **켜진 알람만** 다시 예약한다(Codex #820). `AlarmKitViewModel.schedule` 은
     /// `markScheduled` 로 `enabled = true` 를 박으므로, 꺼 둔 옛 모양 잠금을 옮기면서 예약하면 사용자가
     /// 끈 알람이 되살아난다. 안드로이드 `if (updated.enabled) alarmScheduler.schedule(updated)` 짝.

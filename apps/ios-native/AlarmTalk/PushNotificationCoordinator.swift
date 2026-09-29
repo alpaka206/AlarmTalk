@@ -577,7 +577,7 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             }
             // ⚠ **조용히 바꾸지 말 것.** 이 경로는 화면이 없을 때 도는 일이 많다(주기
             // 사이클·백그라운드 푸시). 알려 주지 않으면 사용자는 어느 날 알람이 기본
-            // 알람음으로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
+            // 목소리로 바뀐 것만 발견한다. 대기표에 적어 두면 `RootView` 가 보여줄 수
             // 있을 때 모달로 말한다 — 안드로이드 `VoiceAccessSyncWorker` 도 같은 자리에서
             // `SHARED_RELEASED` 를 기록한다(2026-08-18 Codex #697 P2).
             // 원인이 **공유 해제**인 이유: 이 판정은 목록에 없는 목소리를 걸러낸 것이라

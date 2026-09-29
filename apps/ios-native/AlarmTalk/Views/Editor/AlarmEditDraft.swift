@@ -467,7 +467,7 @@ struct AlarmEditDraft: Equatable {
         record.preLockPlayMode = existing.preLockPlayMode
         // 무료 잠금 보관본(원래 유료 목소리)은 **목소리를 그대로 둔 저장**(시각·이름만 고침)에서만
         // 이어받는다. 목소리·문구를 바꿔 저장했으면 그 편집이 이긴다 — 이어받으면 재결제 때 복원이
-        // 사용자의 편집을 옛 유료 목소리로 덮는다(안드로이드는 어떤 편집이든 잠금을 비운다 —
+        // 사용자의 편집을 옛 유료 목소리로 덮는다(안드로이드 `lockSurvivesSave` 와 같은 규칙 —
         // `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
         if existing.preLockVoice != nil {
             if DefaultVoiceSubstitute.saveKeepsLock(saved: record, editing: existing) {

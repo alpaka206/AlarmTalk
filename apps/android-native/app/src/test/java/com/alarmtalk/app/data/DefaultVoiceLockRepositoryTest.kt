@@ -446,4 +446,104 @@ class DefaultVoiceLockRepositoryTest {
 
         assertTrue("보관 기간 안이면 복원할 수 있어야 한다", dao.getById("rehearsal-1")!!.hasLockedPaidVoice())
     }
+
+    // ------------------------------------------------------------ 잠긴 알람을 편집기로 저장
+
+    private fun clipAudio(key: String) = CachedAlarmAudio(
+        localAudioUri = "file:///audio/$key.mp3",
+        rawAudioUri = null,
+        displayName = key,
+        durationMillis = 3_000L,
+        cacheKey = key,
+    )
+
+    /**
+     * **시각만 고친 잠긴 알람은 잠금을 잇는다**(2026-09-29). 예전에는 안드로이드만 어떤 편집이든 잠금을
+     * 비워, 시각을 옮긴 알람이 재결제해도 원래 목소리로 돌아오지 않았다(iOS 는 이어받았다).
+     */
+    @Test
+    fun editingOnlyTheTimeOfALockedAlarmKeepsTheLock() = runBlocking {
+        dao.upsert(rehearsalCloneAlarm())
+        repository.lockPaidAlarmTalks()
+        val locked = dao.getById("rehearsal-1")!!
+
+        val editor = com.alarmtalk.app.AlarmEditorState.from(locked).apply {
+            hour = 7
+            minute = 5
+        }
+        repository.updateAlarm(locked.id, editor.toDraft())
+
+        val saved = dao.getById("rehearsal-1")!!
+        assertEquals(7, saved.hour)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, saved.voiceProfileId)
+        assertEquals("보관본을 버리지 않는다", locked.preLockVoiceJson, saved.preLockVoiceJson)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, saved.preLockPlayMode)
+
+        // 재결제하면 원래 목소리로 — 고친 시각은 그대로.
+        assertEquals(1, repository.unlockPaidAlarmTalks(expectedOwnerUserId = "user-a"))
+        val restored = dao.getById("rehearsal-1")!!
+        assertEquals(TEST_CLONE_VOICE_ID, restored.voiceProfileId)
+        assertEquals(7, restored.hour)
+        assertEquals(5, restored.minute)
+    }
+
+    /**
+     * 기본 인사말 알람은 테마 없이 잠긴다 — 편집기는 그 알람을 열면 기본 목소리에 줄 수 있는 첫 테마를
+     * **스스로** 붙이고 저장할 때 클립을 묶는다. 그건 사용자의 편집이 아니다 — 시각만 고쳤으면 잠금을 잇는다.
+     */
+    @Test
+    fun theEditorsOwnFirstThemeOnAGreetingLockIsNotAnEdit() = runBlocking {
+        manifest = null
+        dao.upsert(rehearsalCloneAlarm(bucketId = "greeting", voiceRandomContext = "preset"))
+        repository.lockPaidAlarmTalks()
+        val locked = dao.getById("rehearsal-1")!!
+        assertNull("전제 — 오디오·테마 없이 잠겼다", locked.bucketId)
+
+        val cheerKeys = (0..2).map { "stock_$SUBSTITUTE_SYSTEM_VOICE_ID-cheer-$it" }
+        val editor = com.alarmtalk.app.AlarmEditorState.from(locked).apply {
+            hour = 6
+            setBucketAudio(
+                audio = clipAudio(cheerKeys[0]),
+                profileId = SUBSTITUTE_SYSTEM_VOICE_ID,
+                messageId = "$SUBSTITUTE_SYSTEM_VOICE_ID-cheer-0",
+                text = "응원 0",
+                language = "ko",
+                bucket = "cheer",
+                clipKeys = cheerKeys,
+            )
+        }
+        repository.updateAlarm(locked.id, editor.toDraft())
+
+        val saved = dao.getById("rehearsal-1")!!
+        assertEquals("cheer", saved.bucketId)
+        assertTrue("재결제하면 원래 목소리로 돌아와야 한다", saved.hasLockedPaidVoice())
+    }
+
+    /** 목소리를 바꿔 저장했으면 그 편집이 이긴다 — 남기면 재결제 때 복원이 편집을 옛 목소리로 덮는다. */
+    @Test
+    fun changingTheVoiceOfALockedAlarmDropsTheLock() = runBlocking {
+        dao.upsert(rehearsalCloneAlarm())
+        repository.lockPaidAlarmTalks()
+        val locked = dao.getById("rehearsal-1")!!
+
+        val otherKeys = (0..8).map { "stock_$TEST_SYSTEM_VOICE_ID-weather-$it" }
+        val editor = com.alarmtalk.app.AlarmEditorState.from(locked).apply {
+            setBucketAudio(
+                audio = clipAudio(otherKeys[0]),
+                profileId = TEST_SYSTEM_VOICE_ID,
+                messageId = "$TEST_SYSTEM_VOICE_ID-weather-0",
+                text = "날씨 0",
+                language = "ko",
+                bucket = "weather",
+                clipKeys = otherKeys,
+            )
+        }
+        repository.updateAlarm(locked.id, editor.toDraft())
+
+        val saved = dao.getById("rehearsal-1")!!
+        assertEquals(TEST_SYSTEM_VOICE_ID, saved.voiceProfileId)
+        assertFalse(saved.hasLockedPaidVoice())
+        assertNull(saved.preLockPlayMode)
+        assertEquals(0, repository.unlockPaidAlarmTalks(expectedOwnerUserId = "user-a"))
+    }
 }

@@ -288,6 +288,51 @@ class DefaultVoiceFallbackTest {
         assertEquals(legacy.syncState, restored.syncState)
     }
 
+    /**
+     * **시각만 고친 저장은 잠금을 잇는다**(2026-09-29 — 예전에는 안드로이드만 어떤 편집이든 비워, 시각을
+     * 옮긴 잠긴 알람이 재결제해도 원래 목소리로 돌아오지 않았다). iOS `saveKeepsLock` 과 같은 표다.
+     */
+    @Test
+    fun aSaveThatKeepsTheVoiceKeepsTheLock() {
+        val weather = rehearsalCloneAlarm().lockedToDefaultVoice(SUBSTITUTE_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+        assertNull("전제 — 오디오 없이 잠겼다", weather.audioCacheKey)
+        assertEquals("전제 — 테마는 남았다", "weather", weather.bucketId)
+
+        val timeOnly = weather.copy(hour = 8, minute = 30, label = "새 이름")
+        assertTrue(lockSurvivesSave(saved = timeOnly, editing = weather))
+
+        // 편집기가 저장하며 같은 테마의 기본 목소리 클립을 채웠다 — 편집이 아니다(Codex #820).
+        val hydrated = timeOnly.copy(
+            audioCacheKey = "stock_$SUBSTITUTE_SYSTEM_VOICE_ID-weather-0",
+            bucketClipKeysJson = encodeBucketClipKeys((0..8).map { "stock_$SUBSTITUTE_SYSTEM_VOICE_ID-weather-$it" }),
+        )
+        assertTrue(lockSurvivesSave(saved = hydrated, editing = weather))
+        assertFalse("테마를 바꾼 것은 편집이다", lockSurvivesSave(hydrated.copy(bucketId = "cheer"), weather))
+        assertFalse(lockSurvivesSave(hydrated.copy(voiceProfileId = TEST_SYSTEM_VOICE_ID), weather))
+        assertFalse(lockSurvivesSave(timeOnly.copy(playMode = AlarmPlayModes.ALARM_ONLY), weather))
+
+        // 테마 없이 잠근 행(기본 인사말)은 편집기가 첫 테마를 스스로 붙인다 — 그것도 편집이 아니다.
+        val greeting = rehearsalCloneAlarm(bucketId = "greeting", voiceRandomContext = "preset")
+            .lockedToDefaultVoice(SUBSTITUTE_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+        assertNull("전제 — 기본 목소리에는 greeting 테마가 없다", greeting.bucketId)
+        val autoThemed = greeting.copy(
+            hour = 6,
+            audioCacheKey = "stock_$SUBSTITUTE_SYSTEM_VOICE_ID-cheer-0",
+            bucketId = "cheer",
+        )
+        assertTrue(lockSurvivesSave(saved = autoThemed, editing = greeting))
+
+        // 이미 클립이 묶인 잠금에서 오디오가 바뀌면 편집이다(예전 규칙 그대로).
+        assertFalse(
+            lockSurvivesSave(
+                saved = hydrated.copy(audioCacheKey = "stock_$SUBSTITUTE_SYSTEM_VOICE_ID-weather-3"),
+                editing = hydrated.copy(preLockVoiceJson = weather.preLockVoiceJson),
+            ),
+        )
+        // 잠기지 않은 행에는 이을 잠금이 없다.
+        assertFalse(lockSurvivesSave(saved = rehearsalCloneAlarm(), editing = rehearsalCloneAlarm()))
+    }
+
     @Test
     fun finalizingKeepsTheDefaultVoice() {
         val locked = rehearsalCloneAlarm().lockedToDefaultVoice(TEST_SYSTEM_VOICE_ID, "weather", "ko", boundClips(), 5_000L)

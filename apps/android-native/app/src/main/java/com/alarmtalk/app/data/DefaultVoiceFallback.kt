@@ -377,6 +377,33 @@ fun AlarmEntity.restoredFromLock(nowMillis: Long): AlarmEntity {
 }
 
 /**
+ * **이 저장이 무료 잠금을 이어받는가** — 잠긴 알람을 편집기로 저장할 때(`AlarmRepository.updateAlarm`).
+ *
+ * 목소리를 그대로 둔 저장(시각·이름·요일만 고침)은 잠금(보관본·표시)을 잇고, 목소리·재생 방식·오디오를
+ * 바꾼 저장은 비운다 — 명시적 편집이 이긴다(남기면 재결제 때 복원이 그 편집을 옛 유료 목소리로 덮는다).
+ * 예전에는 안드로이드만 **어떤 편집이든** 비워, 시각만 고친 잠긴 알람이 재결제해도 원래 목소리로 돌아오지
+ * 않았다(2026-09-29). iOS `DefaultVoiceSubstitute.saveKeepsLock` 과 같은 규칙이다 — 한쪽만 고치지 말 것.
+ *
+ *  - 목소리(`voiceProfileId`)나 재생 방식이 바뀌었으면 편집이다.
+ *  - 오디오(`audioCacheKey`)가 그대로면 잇는다.
+ *  - ⚠ **오디오 없이 잠긴 행에 편집기가 저장하며 클립을 채운 것은 편집이 아니다**(Codex #820). 테마를
+ *    남긴 행은 **같은 테마**의 클립일 때 잇는다(테마가 바뀌었으면 사용자가 고친 것이다). 테마 없이 잠근
+ *    행(기본 인사말·직접 입력)은 편집기가 기본 목소리에 줄 수 있는 첫 테마를 **스스로** 붙이므로
+ *    (voice-and-message.md §2) 어느 테마든 잇는다 — 그 행에서는 사용자가 고른 테마와 편집기가 붙인
+ *    테마를 행만 보고 가를 수 없다. 시각만 고친 저장이 원래 목소리를 영영 잃는 쪽을 막는다(그 대가로
+ *    재결제 때 복원이 그 테마를 원래 문구로 되돌린다).
+ */
+fun lockSurvivesSave(saved: AlarmEntity, editing: AlarmEntity): Boolean {
+    if (!editing.hasLockedPaidVoice()) return false
+    if (saved.voiceProfileId != editing.voiceProfileId) return false
+    if (AlarmPlayModes.normalize(saved.playMode) != AlarmPlayModes.normalize(editing.playMode)) return false
+    if (saved.audioCacheKey == editing.audioCacheKey) return true
+    if (!editing.audioCacheKey.isNullOrBlank()) return false
+    val theme = editing.bucketId?.takeIf { it.isNotBlank() } ?: return true
+    return saved.bucketId == theme
+}
+
+/**
  * 잠금을 **확정**한다 — 보관 기간이 지나 원래 목소리가 지워졌다. 보관본과 표시를 버리고
  * 지금의 기본 목소리 알람으로 남긴다. 알람음으로 내리지 않는다.
  */
