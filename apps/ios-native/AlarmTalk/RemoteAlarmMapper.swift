@@ -158,9 +158,13 @@ enum RemoteAlarmMapper {
             targetUserId: nil,
             bucketId: trimmedOrNil(local.bucketId),
             clientAlarmId: local.id,
-            // 무료 잠금으로 기본 목소리가 된 알람은 비어 있는 문구·테마를 서버에서도 지운다 —
-            // 안 지우면 클론의 message_id·bucket_id 가 기본 목소리 옆에 남는다(Codex #820).
+            // 기본 목소리로 바꿔 둔 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼 알람)은 비어
+            // 있는 문구·테마를 서버에서도 지운다 — 안 지우면 클론의 message_id·bucket_id 가 기본 목소리
+            // 옆에 남는다(Codex #820). 기본 목소리 + 클론 `greeting` 테마는 토글마다 400 `INVALID_BUCKET_ID` 다.
+            // 잠금 확정·미나 전환 뒤에는 보관본이 없어 `hasLockedPaidVoice` 만으로는 못 가린다.
+            // 안드로이드 `RemoteAlarmMapper.toWriteRequest` 미러.
             clearsMissingVoiceReferences: local.hasLockedPaidVoice
+                || (local.voiceSourceEnum != .localAudio && isSystemVoiceId(local.voiceProfileId))
         )
     }
 

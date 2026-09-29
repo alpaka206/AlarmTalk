@@ -41,19 +41,19 @@
         }
       }
     },
-    "'%@' 목소리를 삭제할까요?\n이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요." : {
+    "'%@' 목소리를 삭제할까요?\n이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete the voice '%@'?\nAlarms using this voice will switch to the default alarm sound, and the saved audio files will be deleted too."
+            "value" : "Delete the voice '%@'?\nAlarms using this voice will switch to a default voice, and the saved audio files will be deleted too."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」の声を削除しますか？\nこの声を使うアラームは既定のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。"
+            "value" : "「%@」の声を削除しますか？\nこの声を使うアラームは基本の声に変わります。保存された音源ファイルも一緒に削除されます。"
           }
         }
       }
@@ -1624,19 +1624,19 @@
         }
       }
     },
-    "공유받던 목소리가 끊겨서 알람 %lld개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요." : {
+    "공유받던 목소리가 끊겨서 알람 %lld개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The shared voice was released, so %lld alarm(s) switched to the default alarm sound. To use it again, register a pass or get a new invite code."
+            "value" : "The shared voice was released, so %lld alarm(s) switched to a default voice. To use it again, register a pass or get a new invite code."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共有されていた声が切れたため、アラーム%lld件が標準のアラーム音に変わりました。もう一度使うには利用券の登録か新しい招待コードが必要です。"
+            "value" : "共有されていた声が切れたため、アラーム%lld件が基本の声に変わりました。もう一度使うには利用券の登録か新しい招待コードが必要です。"
           }
         }
       }
@@ -4633,19 +4633,19 @@
         }
       }
     },
-    "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %lld개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요." : {
+    "목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %lld개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Registering a new voice turned %lld alarm(s) with custom text back into the default alarm sound. Create those messages again with the new voice."
+            "value" : "Registering a new voice switched %lld alarm(s) with custom text to a default voice. Create those messages again with the new voice."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "声を新しく登録したため、自由入力の文章で作ったアラーム%lld件が標準のアラーム音に戻りました。新しい声で文章を作り直してください。"
+            "value" : "声を新しく登録したため、自由入力の文章で作ったアラーム%lld件が基本の声に変わりました。新しい声で文章を作り直してください。"
           }
         }
       }
@@ -9122,19 +9122,19 @@
         }
       }
     },
-    "이 목소리로 만든 알람은 기본 알람음으로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요." : {
+    "이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alarms using this voice go back to the default alarm sound, and the saved audio is deleted too. This cannot be undone. You will not be able to create a new voice until next month."
+            "value" : "Alarms using this voice switch to a default voice, and the saved audio is deleted too. This cannot be undone. You will not be able to create a new voice until next month."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この声で作ったアラームは基本のアラーム音に戻り、保存された音声も一緒に削除されます。元に戻せません。今月は新しい声を作れず、来月から作成できます。"
+            "value" : "この声で作ったアラームは基本の声に変わり、保存された音声も一緒に削除されます。元に戻せません。今月は新しい声を作れず、来月から作成できます。"
           }
         }
       }
@@ -9856,8 +9856,21 @@
         }
       }
     },
-    "이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 알람음으로 바뀌어요." : {
-
+    "이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your previously saved voice will be deleted. Alarms you set with your own typed message will switch to a default voice."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前に保存した声は削除されます。直接入力で設定したアラームも基本の声になります。"
+          }
+        }
+      }
     },
     "인증 코드" : {
       "extractionState" : "manual",
@@ -10916,19 +10929,19 @@
         }
       }
     },
-    "지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 알람음으로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요." : {
+    "지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 목소리로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your voices, original recordings, generated audio, and saved alarm messages are deleted right away and can’t be restored. Alarms that used this voice, including ones you shared with family, switch to the default alarm sound. To use it again you’ll have to record from scratch."
+            "value" : "Your voices, original recordings, generated audio, and saved alarm messages are deleted right away and can’t be restored. Alarms that used this voice, including ones you shared with family, switch to a default voice. To use it again you’ll have to record from scratch."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "これまでに作成した声と録音した元の音声、生成された音声ファイル、保存したアラーム文がすぐに削除され、元に戻せません。この声で鳴っていたアラームは、家族に共有したものも含めて標準のアラーム音に変わります。もう一度使うには、最初から録音し直す必要があります。"
+            "value" : "これまでに作成した声と録音した元の音声、生成された音声ファイル、保存したアラーム文がすぐに削除され、元に戻せません。この声で鳴っていたアラームは、家族に共有したものも含めて基本の声に変わります。もう一度使うには、最初から録音し直す必要があります。"
           }
         }
       }

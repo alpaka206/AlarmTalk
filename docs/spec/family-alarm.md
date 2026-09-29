@@ -126,7 +126,9 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
   (`upsertPreservingServerSyncFields`). 이 불변식이 깨지면 판정이 통째로 뒤집힌다.
 - `syncState` 로는 못 한다 — 받은 알람은 항상 `synced` 로 파생된다(`nextLocalSyncState`).
 - **예외는 목소리 철회뿐이다.** 발신자가 탈퇴하면 고친 행에서도 목소리를 걷어낸다
-  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`).
+  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`). 걷어낸 알람은 같은
+  시각에 **기본 목소리(미나)** 로 운다 — 재생 방식은 받은 사람이 둔 값 그대로다(2026-09-29 — 그전에는
+  '알람' 모드로 내렸다. [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」).
 
 ### ⚠ 보낸 알람은 **절대** 수정할 수 없다 (서버가 강제한다)
 

@@ -44,28 +44,16 @@ class DefaultVoiceFallbackTest {
 
     @Test
     fun keepsTheAlarmsOwnSystemVoice() {
-        assertEquals(
-            TEST_SECOND_SYSTEM_VOICE_ID,
-            pickDefaultSystemVoiceId(alarmVoiceId = TEST_SECOND_SYSTEM_VOICE_ID, lastUsedVoiceId = TEST_SYSTEM_VOICE_ID),
-        )
+        // 시우 알람은 시우 그대로다 — 미나로 바꿀 이유가 없다(제자리 교체로 낡은 것은 오디오뿐이다).
+        assertEquals(TEST_SYSTEM_VOICE_ID, pickDefaultSystemVoiceId(alarmVoiceId = TEST_SYSTEM_VOICE_ID))
     }
 
+    /** 대체 목소리는 **미나 하나**다(2026-09-29 "미나로 통일도 해") — 마지막에 쓴 기본 목소리를 보지 않는다. */
     @Test
-    fun usesTheLastUsedSystemVoiceForACloneAlarm() {
-        assertEquals(
-            TEST_SECOND_SYSTEM_VOICE_ID,
-            pickDefaultSystemVoiceId(alarmVoiceId = TEST_CLONE_VOICE_ID, lastUsedVoiceId = TEST_SECOND_SYSTEM_VOICE_ID),
-        )
-    }
-
-    @Test
-    fun skipsALastUsedCloneAndFallsBackToTheFirstSystemVoice() {
-        // 마지막에 쓴 것이 바로 그 클론이다 — 그걸 못 쓰게 돼서 여기 왔다.
-        assertEquals(
-            TEST_SYSTEM_VOICE_ID,
-            pickDefaultSystemVoiceId(alarmVoiceId = TEST_CLONE_VOICE_ID, lastUsedVoiceId = TEST_CLONE_VOICE_ID),
-        )
-        assertEquals(TEST_SYSTEM_VOICE_ID, pickDefaultSystemVoiceId(alarmVoiceId = null, lastUsedVoiceId = null))
+    fun everyOtherAlarmGetsMina() {
+        assertEquals("미나", bundledSystemVoiceProfiles().first { it.id == SUBSTITUTE_SYSTEM_VOICE_ID }.name)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, pickDefaultSystemVoiceId(alarmVoiceId = TEST_CLONE_VOICE_ID))
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, pickDefaultSystemVoiceId(alarmVoiceId = null))
     }
 
     // ------------------------------------------------------------ 어느 테마

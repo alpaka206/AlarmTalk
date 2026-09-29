@@ -17,23 +17,24 @@ import com.google.gson.annotations.SerializedName
  * 2026-09-29 dev 리허설(SM-A325N): 기간 한정 개인 플랜이 끝난 뒤 클론 목소리 알람이 **아무 소리
  * 없이** 울렸다. 잠금이 그 알람을 '알람' 모드로 내렸고, '알람' 모드는 목소리 알람이라 한 번도
  * 쓰이지 않던 알람음 스위치(꺼짐)를 봤다. 그래서 이제 잠금·울림 강등은 '알람' 모드가 아니라
- * **기본 목소리**로 간다.
+ * **기본 목소리**로 간다. 목소리를 **잃은** 알람(삭제·공유 해제·제자리 교체된 직접 입력)도 같은
+ * 모양으로 바뀐다([lostVoiceReplacedByDefault] — 같은 날 사용자 결정). 대체 목소리는 어느 경로든
+ * **미나** 하나다([SUBSTITUTE_SYSTEM_VOICE_ID]).
  *
  * iOS 짝은 `DefaultVoiceSubstitute.swift` — 한쪽만 고치지 말 것.
  */
 
 /**
- * 대체할 **기본(시스템) 목소리**를 고른다.
+ * 대체할 **기본(시스템) 목소리**를 고른다 — 잠금 · 울릴 때 대체 · 목소리를 잃은 알람이 모두 이것을 쓴다.
  *
- *  1. 알람이 이미 기본 목소리면 그 목소리(목소리를 바꿀 이유가 없다).
- *  2. 그 계정이 마지막에 쓴 목소리가 기본 목소리면 그것(`DefaultVoicePreferenceStore` —
- *     클론이면 건너뛴다. 그 목소리를 못 쓰게 돼서 여기 왔다).
- *  3. 둘 다 아니면 기본 목소리 목록의 첫 값.
+ *  1. 알람이 이미 기본 목소리면 그 목소리(목소리를 바꿀 이유가 없다 — 제자리 교체로 낡은 것은 오디오뿐이다).
+ *  2. 아니면 **미나**([SUBSTITUTE_SYSTEM_VOICE_ID]).
+ *
+ * ⚠ **마지막에 쓴 목소리(`DefaultVoicePreferenceStore`)를 보지 말 것**(2026-09-29 "미나로 통일도 해").
+ * 예전에는 잠금만 그 기억값을 따라, 같은 계정의 알람이 잠금이면 시우·삭제면 미나처럼 경로마다 달랐다.
  */
-fun pickDefaultSystemVoiceId(alarmVoiceId: String?, lastUsedVoiceId: String?): String =
-    alarmVoiceId?.takeIf { isSystemVoiceId(it) }
-        ?: lastUsedVoiceId?.takeIf { isSystemVoiceId(it) }
-        ?: bundledSystemVoiceProfiles().first().id
+fun pickDefaultSystemVoiceId(alarmVoiceId: String?): String =
+    alarmVoiceId?.takeIf { isSystemVoiceId(it) } ?: SUBSTITUTE_SYSTEM_VOICE_ID
 
 /**
  * 기본 목소리로 틀 **무료 테마(버킷)** — 알람이 고른 문구 종류에서 유도한다.
@@ -235,9 +236,9 @@ fun AlarmEntity.hasVoiceResources(): Boolean =
  * **이 버전 전에 잠긴 옛 모양**인가 — `alarm_only` 로 내리고 원래 모드를 `preLockPlayMode` 에
  * 담았지만 보관본은 없고, 클론 참조가 행에 그대로 남아 있다.
  *
- * 목소리 삭제 강등(`degradeMatchingLocalOwnedVoiceAlarms`)도 같은 표시를 남기지만 그쪽은
- * 목소리 참조를 **비운다** — 그래서 [hasVoiceResources] 로 갈린다. 다음 잠금 실행이 이 모양을
- * 새 모양으로 옮기고, 그 전에 울리면 울림 경로가 기본 목소리로 대신한다.
+ * 옛 버전의 목소리 삭제 강등(`degradeMatchingLocalOwnedVoiceAlarms` — 지금은 기본 목소리로 바꾼다)도 같은
+ * 표시를 남겼지만 그쪽은 목소리 참조를 **비웠다** — 그래서 [hasVoiceResources] 로 갈린다. 다음 잠금
+ * 실행이 이 모양을 새 모양으로 옮기고, 그 전에 울리면 울림 경로가 기본 목소리로 대신한다.
  */
 fun AlarmEntity.isLegacyPlanLock(): Boolean =
     origin == AlarmOrigins.LOCAL_OWNED &&
@@ -249,11 +250,13 @@ fun AlarmEntity.isLegacyPlanLock(): Boolean =
         !copy(playMode = AlarmPlayModes.normalize(preLockPlayMode)).usesFreeSystemVoiceAlarm()
 
 /**
- * **시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행**인가 — 목소리 삭제·공유 해제 강등이
- * 남긴 표시(`preLockPlayMode` 가 목소리 모드)나 옛 모양 잠금.
+ * **시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행**인가 — 옛 버전의 목소리 삭제·공유 해제·제자리
+ * 교체 강등이 남긴 표시(`preLockPlayMode` 가 목소리 모드 — 지금 강등은 기본 목소리로 바꿔 이 표시를
+ * 새로 남기지 않는다)나 옛 모양 잠금.
  *
  * 이런 행의 알람음 스위치는 목소리 알람 시절에 한 번도 쓰이지 않던 값이라, 꺼져 있어도
- * **사용자가 고른 무음이 아니다** — 울릴 때 알람음을 강제한다(alarm-ringing.md §4).
+ * **사용자가 고른 무음이 아니다** — 울릴 때 알람음을 강제한다(alarm-ringing.md §4). 단 목소리 크기
+ * 0 은 사용자가 고른 무음이다(`decideRingSound`).
  */
 fun AlarmEntity.wasVoiceAlarmConvertedBySystem(): Boolean =
     !preLockPlayMode.isNullOrBlank() &&
@@ -379,3 +382,35 @@ fun AlarmEntity.restoredFromLock(nowMillis: Long): AlarmEntity {
  */
 fun AlarmEntity.finalizedLock(nowMillis: Long): AlarmEntity =
     copy(preLockPlayMode = null, preLockVoiceJson = null, updatedAtMillis = nowMillis)
+
+/**
+ * 목소리를 잃은 알람을 **기본 목소리 알람으로 영구히** 바꾼다(순수 — 행을 쓰는 것은 호출부).
+ *
+ * 잠금([lockedToDefaultVoice])과 같은 모양 — 재생 방식은 그대로, 테마가 있으면 그 테마, 클립이 다
+ * 있으면 묶고 없으면 오디오 없이 두어 울릴 때 그 목소리의 클립·내장 인사말을 찾는다. 다만 되돌릴
+ * 목소리가 없으니 보관본·표시를 남기지 않는다([finalizedLock]). 예전에는 '알람' 모드로 내려
+ * 목록·편집기에서 그냥 기본 알람이 됐다 — 2026-09-29 사용자 결정으로 기본 목소리(미나 —
+ * [pickDefaultSystemVoiceId])로 바꾼다.
+ * 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. iOS 짝은 `DefaultVoiceSubstitute.replacedLostVoice`.
+ */
+fun AlarmEntity.lostVoiceReplacedByDefault(
+    systemVoiceId: String,
+    bucket: String?,
+    language: String?,
+    clips: List<DefaultVoiceClip>?,
+    nowMillis: Long,
+): AlarmEntity =
+    lockedToDefaultVoice(systemVoiceId, bucket, language, clips, nowMillis).finalizedLock(nowMillis)
+
+/**
+ * 이 알람이 **자기 목소리 오디오**를 들고 있는가 — 파일·캐시 키·원본 URL·서버 문구 중 하나라도.
+ *
+ * 제자리 교체의 직접 입력 강등이 본다: 오디오가 하나도 없는 행(기본 목소리로 바꿔 둔 행)에는 낡을
+ * 소리가 없다. 안 보면 그 기본 목소리의 교체 표식이 올 때마다 같은 행을 다시 '강등' 으로 세어
+ * 없는 변화를 안내한다.
+ */
+fun AlarmEntity.hasOwnVoiceAudio(): Boolean =
+    !localAudioUri.isNullOrBlank() ||
+        !audioCacheKey.isNullOrBlank() ||
+        !rawAudioUri.isNullOrBlank() ||
+        !ttsMessageId.isNullOrBlank()

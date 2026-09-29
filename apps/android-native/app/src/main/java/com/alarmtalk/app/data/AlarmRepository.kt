@@ -868,7 +868,8 @@ class AlarmRepository(
 
     /**
      * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
-     * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
+     * 음성 알람을 **기본 목소리(미나)** 로 바꾼다(`lostVoiceReplacedByDefault` — 알람음으로 내리지 않는다).
+     * [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
      * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
      * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
      * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
@@ -892,14 +893,15 @@ class AlarmRepository(
         }
 
     // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
-    // 무관하게 삭제 확정 정보로 바로 기본 알람으로 변환한다.
+    // 무관하게 삭제 확정 정보로 바로 기본 목소리(미나) 알람으로 바꾼다.
     suspend fun degradeAlarmsUsingVoiceProfile(voiceProfileId: String): Int =
         degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId = null) { alarm ->
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
     /**
-     * **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람으로 내린다.
+     * **제자리 교체된 목소리의 직접 입력 알람만** 기본 목소리 알람으로 바꾼다(교체된 목소리가 기본
+     * 목소리면 그 목소리, 클론이면 미나 — `pickDefaultSystemVoiceId`).
      *
      * 삭제와 다른 점이 하나 있다: **프리셋(버킷) 알람은 살린다.** 서버가 같은 message id 로
      * 새 목소리를 다시 만들어 게시하므로(`voice_prerender_queue.refresh_existing`) 여기서
@@ -954,6 +956,9 @@ class AlarmRepository(
             alarm.voiceProfileId == voiceProfileId &&
                 (allowSystemVoice || !isSystemVoiceId(alarm.voiceProfileId)) &&
                 alarm.usesCustomMessageVoice() &&
+                // 오디오가 하나도 없는 행(이미 기본 목소리로 바꿔 둔 직접 입력 알람)에는 낡을 소리가 없다 —
+                // 기본 목소리의 교체 표식마다 같은 행을 다시 세어 없는 변화를 안내하지 않는다.
+                alarm.hasOwnVoiceAudio() &&
                 // 표식보다 나중에 **만든 오디오**는 이미 새 목소리다.
                 (
                     invalidatedBeforeMillis == null ||
@@ -999,9 +1004,9 @@ class AlarmRepository(
         }
         // 무료 잠금으로 기본 목소리가 된 행은 지금 목소리가 기본 목소리라 아래 대조에 안 걸린다.
         // 대신 **보관본의 원래 목소리**가 대상이면(보관 기간이 지나 지워짐·공유 해제 등) 잠금을
-        // **확정**한다 — 보관본과 표시를 버리고 기본 목소리 알람으로 남긴다. 알람음으로 내리지
-        // 않고, 소리가 바뀌지 않았으니 강등 개수에도 넣지 않는다. 안 그러면 재결제 때 복원이
-        // 지워진 목소리를 되살려, 다음 강등이 그 알람을 알람음으로 내린다.
+        // **확정**한다 — 보관본과 표시를 버리고 지금의 기본 목소리 알람으로 남긴다(미나로 바꾸지도
+        // 않는다 — 이미 기본 목소리로 울고 있다). 소리가 바뀌지 않았으니 강등 개수에도 넣지 않는다.
+        // 안 그러면 재결제 때 복원이 지워진 목소리를 되살려, 다음 강등이 그 알람을 또 바꾼다.
         // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
         val lockCheckedAt = System.currentTimeMillis()
         // 이 회차를 시작할 때 잠겨 있던 행 — 아래 강등 후보에서 **뺀다**(위 확정으로 방금 풀린 행 포함).
@@ -1010,6 +1015,7 @@ class AlarmRepository(
         // `usesCustomMessageVoice` 가 참이고 오디오 시각이 0 이라, 그 기본 목소리의 **제자리 교체
         // 표식**(`allowSystemVoice = true`)에 낡은 직접 입력 알람으로 잡혀 알람음으로 내려가고
         // "직접 입력 알람이 기본 알람음으로 바뀌었어요" 가 떴다 — 낡은 오디오가 하나도 없는데.
+        // (지금은 교체 강등이 오디오 없는 행을 아예 보지 않는다 — `hasOwnVoiceAudio`. 이 제외는 그대로 둔다.)
         // 다른 강등(삭제·접근권 상실)은 시스템 목소리를 보지 않으므로 이 행에 닿지 않는다.
         // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
         val lockedAtStart = alarmDao.getAllAlarms().filter { it.hasLockedPaidVoice() }
@@ -1045,41 +1051,45 @@ class AlarmRepository(
                 match(alarm)
         }
         var degraded = 0
+        // 잃은 목소리가 붙든 오디오 — 대표 클립과 클립 세트 전부(확정과 같은 규칙). 행을 다 고친 뒤에 센다.
+        val lostKeys = LinkedHashSet<String>()
+        val lostKeylessUris = LinkedHashSet<String>()
         for (current in candidates) {
-            val cacheKey = current.audioCacheKey
-            val updated = current.copy(
-                playMode = AlarmPlayModes.ALARM_ONLY,
-                // '기본 알람으로 변환됨' 마커 — 무료 강등과 동일하게 리스트 배지·목소리 숨김에 쓴다.
-                // 복원은 하지 않으므로(영구 변환) 순수 표시용 마커다.
-                preLockPlayMode = current.preLockPlayMode ?: current.playMode,
-                voiceSource = VoiceSources.LOCAL_AUDIO,
-                voiceProfileId = null,
-                localAudioUri = null,
-                audioCacheKey = null,
-                rawAudioUri = null,
-                ttsMessageId = null,
-                voiceText = null,
-                voiceListenerTitle = null,
-                voiceCategory = null,
-                voiceLanguage = null,
-                voiceRandomPrompt = false,
-                // 클론 버킷 알람도 여기서 강등되므로 버킷 상태를 함께 비운다(존재하지 않는 클립/캐시 참조 방지).
-                bucketId = null,
-                bucketClipKeysJson = null,
-                bucketRotationIndex = 0,
-                contextVariantIndex = null,
+            // ⚠ **'알람' 모드로 내리지 말 것**(2026-09-29 사용자 결정). 예전에는 여기서 알람음으로 내려
+            // 목록·편집기에서 그냥 기본 알람이 됐다. 이제 **기본 목소리**(이미 기본 목소리면 그 목소리,
+            // 아니면 미나)로 바꾼다 — 무료 잠금과 같은 모양이되 되돌릴 목소리가 없으니 보관본은 없다.
+            // (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」)
+            val voiceId = pickDefaultSystemVoiceId(current.voiceProfileId)
+            val binding = runCatching { defaultVoiceClipSource.lockBinding(current, voiceId, currentUser) }
+                .onFailure { AlarmTalkLog.reportError("Failed to bind default voice clips while degrading", it) }
+                .getOrNull()
+            val updated = current.lostVoiceReplacedByDefault(
+                systemVoiceId = voiceId,
+                bucket = binding?.bucket,
+                language = binding?.language,
+                clips = binding?.clips,
+                nowMillis = System.currentTimeMillis(),
+            ).copy(
                 // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
-                // 이 로컬 정리는 push 하지 않는다(SYNCED). 기본 Gson 은 null 필드를 PATCH 에서 누락시켜
-                // 서버 voice 참조를 못 지우고 오히려 stale 상태를 만들 수 있어(PR #536 P2), 로컬 캐시만 정리.
+                // 이 로컬 정리는 push 하지 않는다(SYNCED). 뒤에 켜기·끄기가 올리면 기본 목소리 + 비운
+                // 문구·테마를 명시적 null 로 싣는다(`RemoteAlarmMapper.toWriteRequest` 의 `clearsMissingVoiceReferences`).
                 syncState = AlarmSyncStates.SYNCED,
-                updatedAtMillis = System.currentTimeMillis(),
             )
             if (updated.enabled) alarmScheduler.schedule(updated)
             alarmDao.upsertPreservingServerSyncFields(updated)
-            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            current.audioCacheKey?.takeIf { it.isNotBlank() }?.let(lostKeys::add)
+            lostKeys.addAll(current.bucketClipKeys())
+            if (current.audioCacheKey.isNullOrBlank()) {
+                current.localAudioUri?.takeIf { it.isNotBlank() }?.let(lostKeylessUris::add)
+            }
             degraded++
-            Log.i(TAG, "Degraded alarm id=${current.id}: voice ${current.voiceProfileId} no longer accessible")
+            Log.i(
+                TAG,
+                "Degraded alarm id=${current.id} to default voice $voiceId: voice ${current.voiceProfileId} " +
+                    "no longer usable bucket=${binding?.bucket}",
+            )
         }
+        deleteAudioNoAlarmUses(lostKeys, lostKeylessUris)
         return degraded
     }
 
@@ -1233,7 +1243,7 @@ class AlarmRepository(
             // 처음 잠그는 행만 센다 — 옛 모양(preLockPlayMode 만 있는 행)을 새 모양으로 옮기는 것은
             // 이미 알린 알람이라 강등 안내 개수에 다시 넣지 않는다(안내가 매번 뜨지 않게).
             val newlyLocked = alarm.preLockPlayMode == null
-            val voiceId = defaultVoiceClipSource.voiceIdFor(alarm, currentUser)
+            val voiceId = defaultVoiceClipSource.voiceIdFor(alarm)
             val binding = runCatching { defaultVoiceClipSource.lockBinding(alarm, voiceId, currentUser) }
                 .onFailure { AlarmTalkLog.reportError("Failed to bind default voice clips while locking", it) }
                 .getOrNull()

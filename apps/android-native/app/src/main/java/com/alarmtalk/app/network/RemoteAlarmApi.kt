@@ -87,11 +87,12 @@ data class RemoteAlarmWriteRequest(
      * 본문에는 실리지 않는다(`@Transient`) — [RemoteAlarmWriteRequestAdapterFactory] 가 읽는다.
      *
      * 기본 직렬화는 null 필드를 **빼고**, 서버 `PATCH /alarm` 은 빠진 필드를 **그대로 둔다.**
-     * 그래서 무료 잠금이 오디오 없이 기본 목소리로 바꾼 알람(`hasLockedPaidVoice`)을 켜고 끄면
-     * 새 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에 남는다 — 기본
-     * 인사말 알람은 `greeting` 테마가 기본 목소리와 짝이 안 맞아 토글마다 `INVALID_BUCKET_ID`
-     * 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820). 이 알람에서만 켠다 — 다른
-     * 알람은 예전처럼 빠진 필드를 서버가 지키게 둔다(`RemoteAlarmMapper.toWriteRequest`).
+     * 그래서 오디오 없이 기본 목소리로 바꾼 알람(무료 잠금 · 잠금 확정 · 목소리를 잃어 미나로 바꾼
+     * 알람)을 켜고 끄면 새 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에
+     * 남는다 — 기본 인사말 알람은 `greeting` 테마가 기본 목소리와 짝이 안 맞아 토글마다
+     * `INVALID_BUCKET_ID` 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820). 잠긴 알람과
+     * 기본 목소리 알람에서만 켠다 — 다른 알람(클론·녹음)은 예전처럼 빠진 필드를 서버가 지키게
+     * 둔다(`RemoteAlarmMapper.toWriteRequest`).
      */
     @Transient val clearsMissingVoiceReferences: Boolean = false,
 )

@@ -20,9 +20,6 @@ class DefaultVoiceClipSource(
     private val manifest: (userId: String?) -> StockClipListResponse? = { userId ->
         StockClipManifestStore.load(context, userId)
     },
-    private val lastUsedVoiceId: (userId: String?) -> String? = { userId ->
-        DefaultVoicePreferenceStore(context).read(userId)
-    },
     private val deviceVoiceLanguage: () -> String = {
         val locales = context.resources.configuration.locales
         appVoiceLanguageOf((if (!locales.isEmpty) locales[0] else null)?.language)
@@ -34,12 +31,8 @@ class DefaultVoiceClipSource(
     /** 잠금이 행에 묶을 클립 한 벌. */
     data class Binding(val bucket: String, val language: String, val clips: List<DefaultVoiceClip>)
 
-    /** 이 알람을 대신할 기본 목소리 id — [pickDefaultSystemVoiceId]. */
-    fun voiceIdFor(alarm: AlarmEntity, userId: String?): String =
-        pickDefaultSystemVoiceId(
-            alarmVoiceId = alarm.voiceProfileId,
-            lastUsedVoiceId = runCatching { lastUsedVoiceId(alarm.ownerUserId ?: userId) }.getOrNull(),
-        )
+    /** 이 알람을 대신할 기본 목소리 id — 이미 기본 목소리면 그 목소리, 아니면 미나([pickDefaultSystemVoiceId]). */
+    fun voiceIdFor(alarm: AlarmEntity): String = pickDefaultSystemVoiceId(alarm.voiceProfileId)
 
     /**
      * 잠금이 행에 묶을 클립 — 알람의 테마로 (목소리 · 언어)의 세트가 **완전하고 전부** 캐시에 있을 때만.
@@ -64,10 +57,10 @@ class DefaultVoiceClipSource(
      *     [completeDefaultVoiceClips]). 회전 테마는
      *     그 자리가 없으면 받아 둔 아무 클립이나 쓴다(`resolveBucketClipSelection` 과 같은 폴백).
      *  2. 그 목소리의 **내장 인사말**(APK `res/raw/voice_greeting_*`) — 네트워크 없이 언제나 있다.
-     *     새 기본 목소리라 내장본이 없으면 목록 첫 목소리의 인사말.
+     *     새 기본 목소리라 내장본이 없으면 대체 목소리(미나 — [SUBSTITUTE_SYSTEM_VOICE_ID])의 인사말.
      */
     fun ringUri(alarm: AlarmEntity, userId: String?): String? {
-        val voiceId = voiceIdFor(alarm, userId)
+        val voiceId = voiceIdFor(alarm)
         val languages = languagesFor(alarm)
         val bucket = defaultVoiceBucketFor(alarm.bucketId, alarm.voiceRandomContext)
         if (bucket != null) {
@@ -78,7 +71,7 @@ class DefaultVoiceClipSource(
         }
         val language = languages.first()
         return bundledGreetingUri(voiceId, language)
-            ?: bundledGreetingUri(bundledSystemVoiceProfiles().first().id, language)
+            ?: bundledGreetingUri(SUBSTITUTE_SYSTEM_VOICE_ID, language)
     }
 
     private fun clipUriFor(

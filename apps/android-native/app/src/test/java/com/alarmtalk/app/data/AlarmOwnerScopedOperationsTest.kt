@@ -165,11 +165,11 @@ class AlarmOwnerScopedOperationsTest {
         val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null)
 
         assertEquals("B 의 접근 불가 목소리만 강등된다", 1, degraded)
-        assertNull(voiceOf("b-1"))
+        assertEquals("잃은 목소리는 기본 목소리(미나)로 바뀐다", SUBSTITUTE_SYSTEM_VOICE_ID, voiceOf("b-1"))
         assertEquals("A 의 알람은 그대로", "clone-a", voiceOf("a-1"))
-        // 강등 마커(목록 배지)도 남아야 한다.
-        assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("b-1")?.playMode)
-        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("b-1")?.preLockPlayMode)
+        // '알람' 모드로 내리지 않는다 — 목록·편집기에서 그냥 기본 알람이 되면 안 된다(2026-09-29).
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("b-1")?.playMode)
+        assertNull("되돌릴 목소리가 없으니 표시도 남기지 않는다", dao.getById("b-1")?.preLockPlayMode)
     }
 
     @Test
@@ -181,7 +181,7 @@ class AlarmOwnerScopedOperationsTest {
         pendingOwner = null
 
         assertEquals(1, repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null))
-        assertNull(voiceOf("legacy-1"))
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, voiceOf("legacy-1"))
     }
 
     @Test
@@ -234,7 +234,7 @@ class AlarmOwnerScopedOperationsTest {
 
         assertEquals(1, repository.degradeAlarmsUsingVoiceProfile("clone-x"))
 
-        assertNull(voiceOf("b-1"))
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, voiceOf("b-1"))
         assertEquals("clone-x", voiceOf("a-1"))
     }
 

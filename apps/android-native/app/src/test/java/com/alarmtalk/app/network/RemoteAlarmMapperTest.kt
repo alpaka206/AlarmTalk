@@ -6,6 +6,7 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmStates
 import com.alarmtalk.app.data.AlarmSyncStates
 import com.alarmtalk.app.data.DefaultAlarmSounds
+import com.alarmtalk.app.data.SUBSTITUTE_SYSTEM_VOICE_ID
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.google.gson.Gson
@@ -94,6 +95,26 @@ class RemoteAlarmMapperTest {
 
         assertEquals("system-weather-0", body.get("message_id").asString)
         assertEquals("weather", body.get("bucket_id").asString)
+    }
+
+    /**
+     * 잠금이 **확정**됐거나 목소리를 잃어 **미나**로 바꾼 알람에는 보관본이 없다 — 보관본으로만 가리면
+     * 그 알람의 켜기·끄기가 기본 목소리 id 만 올려 클론의 `greeting` 테마 옆에 앉히고, 서버는 토글마다
+     * `INVALID_BUCKET_ID` 로 거절한다. 기본 목소리 알람이면 빈 문구·테마를 지운다.
+     */
+    @Test
+    fun aDefaultVoiceAlarmWithoutASnapshotStillClearsTheServersMessageAndTheme() {
+        val converted = alarm(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            voiceSource = VoiceSources.TTS_PROFILE,
+            voiceProfileId = SUBSTITUTE_SYSTEM_VOICE_ID,
+        )
+
+        val body = sentBody(converted)
+
+        assertTrue(body.has("message_id") && body.get("message_id").isJsonNull)
+        assertTrue(body.has("bucket_id") && body.get("bucket_id").isJsonNull)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, body.get("voice_profile_id").asString)
     }
 
     @Test

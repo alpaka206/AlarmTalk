@@ -1138,11 +1138,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// (`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」, 안드로이드 `RingingService` 의 `decideRingSound`).
     /// 받아 둔 클립만 쓴다 — 없으면 `AlarmSoundResolver.plan` 이 그 목소리의 내장 인사말을 싣는다.
     func defaultVoiceSubstitute(for record: LocalAlarmRecord) -> LocalAlarmRecord {
-        let userID = KeychainStore.readSession()?.user.id
-        let voiceID = DefaultVoiceSubstitute.pickVoiceID(
-            alarmVoiceID: record.voiceProfileId,
-            lastUsedVoiceID: DefaultVoicePreferenceStore().lastUsedVoiceId(userID: record.ownerUserId ?? userID)
-        )
+        let voiceID = DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId)
         let loaded = StockClipManifestStore.load()
         let binding = DefaultVoiceSubstitute.binding(
             for: record,

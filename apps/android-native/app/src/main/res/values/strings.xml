@@ -370,8 +370,8 @@
     <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**이라 행마다 경고를
          붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다.
          ⚠ 무료 잠금은 2026-09-29 부터 **기본 목소리**로 바꾼다(알람음이 아니다 —
-         docs/spec/billing-lifecycle.md 「목소리를 못 쓰게 되면」). free 문구만 그렇고, 공유 해제·
-         제자리 교체는 목소리가 없어져 여전히 알람음으로 바뀐다. -->
+         docs/spec/billing-lifecycle.md 「목소리를 못 쓰게 되면」). 목소리를 잃은 알람(삭제·공유 해제·
+         제자리 교체된 직접 입력)도 같은 날부터 기본 목소리(미나)로 바뀐다 — 셋 다 "기본 목소리로". -->
     <!-- ⚠ **"돌아와요" 만 말하지 말 것.** 보관은 3일뿐이고 지나면 서버가 목소리 프로필·
          원본·생성 음성을 **영구 삭제**한다(`sweepPaidVoiceRetention` →
          `deleteSensitiveVoiceDataForUser`). 기한을 빼면 기다리면 되는 줄 알고 잃는다.
@@ -380,10 +380,10 @@
     <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 목소리로 바뀌었어요. 3일 안에 이용권을 다시 등록하면 내 목소리가 돌아오고, 지나면 영구 삭제돼요.</string>
     <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
     <string name="downgrade_notice_replaced_title">새 목소리로 바뀌었어요</string>
-    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 알람음으로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
+    <string name="downgrade_notice_replaced_message">목소리를 새로 등록하면서 직접 입력한 문구로 만든 알람 %1$d개가 기본 목소리로 바뀌었어요. 새 목소리로 문구를 다시 만들어 주세요.</string>
     <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
          무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다. -->
-    <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
+    <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 목소리로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
     <string name="downgrade_notice_open_billing">이용권 보기</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_billing_info_load_failed">이용권 정보를 불러오지 못했어요</string>
@@ -610,10 +610,10 @@
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
-    <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 알람음으로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
+    <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 목소리로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
-    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
+    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 목소리로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
     <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
@@ -892,13 +892,13 @@
     <string name="msg_consent_update_required">앱을 업데이트해야 동의를 진행할 수 있어요.</string>
     <string name="consent_withdraw_action">동의 철회</string>
     <string name="consent_withdraw_voice_title">철회하면 등록한 목소리가 모두 삭제돼요</string>
-    <string name="consent_withdraw_voice_body">지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 알람음으로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.</string>
+    <string name="consent_withdraw_voice_body">지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 목소리로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.</string>
     <string name="consent_withdraw_voice_confirm">철회하고 삭제</string>
     <string name="consent_overseas_withdraw_notice">국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.</string>
     <string name="msg_voice_consent_withdrawn">음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.</string>
     <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
     <string name="voices_replace_existing_title">‘%1$s’ 대신 이 목소리를 써요</string>
-    <string name="voices_replace_existing_desc">이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 알람음으로 바뀌어요.</string>
+    <string name="voices_replace_existing_desc">이전에 저장한 목소리는 삭제돼요. 직접 입력 문구로 만든 알람도 기본 목소리로 바뀌어요.</string>
     <string name="misc2_theme_mode_system_short">시스템</string>
     <string name="misc2_theme_mode_light_short">밝게</string>
     <string name="misc2_theme_mode_dark_short">어둡게</string>

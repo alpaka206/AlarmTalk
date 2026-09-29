@@ -66,11 +66,13 @@ final class DefaultVoiceSubstituteTests: XCTestCase {
 
     // MARK: - 어느 목소리 · 어느 테마
 
-    func test_pickVoice_keepsSystemVoice_thenLastUsed_thenFirst() {
-        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: secondSystemVoice, lastUsedVoiceID: firstSystemVoice), secondSystemVoice)
-        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: "clone-a", lastUsedVoiceID: secondSystemVoice), secondSystemVoice)
-        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: "clone-a", lastUsedVoiceID: "clone-a"), firstSystemVoice)
-        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: nil, lastUsedVoiceID: nil), firstSystemVoice)
+    /// 대체 목소리는 **미나 하나**다(2026-09-29 "미나로 통일도 해") — 알람이 이미 기본 목소리면 그 목소리,
+    /// 아니면 미나. 마지막에 쓴 기본 목소리는 보지 않는다. 안드로이드 `DefaultVoiceFallbackTest` 짝.
+    func test_pickVoice_keepsSystemVoice_otherwiseMina() {
+        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: firstSystemVoice), firstSystemVoice)
+        XCTAssertEqual(bundledSystemVoiceProfiles().first { $0.id == substituteSystemVoiceID }?.name, "미나")
+        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: "clone-a"), substituteSystemVoiceID)
+        XCTAssertEqual(DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: nil), substituteSystemVoiceID)
     }
 
     func test_bucket_followsTheme_andHasNoneForGreetingOrManual() {

@@ -221,11 +221,14 @@ HOME 을 가로챌 수 없다 — 유일한 수단인 화면 고정(`startLockTa
     실패 → 알람음 강제.
   - 시스템이 목소리 알람을 '알람' 모드로 바꿔 둔 행(잠금·강등 표시 `preLockPlayMode` 가 목소리
     모드)은 알람음 스위치가 꺼져 있어도 **강제한다** — 그 스위치는 목소리 알람 시절에 한 번도
-    쓰이지 않던 값이라 사용자가 고른 무음이 아니다.
+    쓰이지 않던 값이라 사용자가 고른 무음이 아니다. 단 그 행의 **목소리 크기가 0** 이면 사용자가 고른
+    무음이다(Codex #820 — 위 0 규칙과 같다). 지금은 목소리를 잃은 알람도 '알람' 모드로 내리지 않고
+    **미나**로 바꾸므로(billing-lifecycle.md 「목소리를 잃은 알람」) 이 모양은 이 버전 전에 내려 둔 옛 행뿐이다.
   - **받은 알람**(안드로이드)은 표시가 아니라 **행을 고친다** — 시스템이 받은 목소리 알람을 '알람'
-    모드로 바꾸는 두 자리(보낸 사람 탈퇴로 목소리를 걷어낼 때 `withVoiceRevoked`, 목소리 전달인데
-    음성을 못 받았거나 서버가 목소리를 걷어내 '알람' 모드로 다시 지을 때 `buildReceivedAlarmRow`)는
-    알람음 스위치를 **켜고** 크기를 강제 알람음과 같은 값(위 규칙)으로 둔다. 받은 알람의
+    모드로 바꾸는 자리(목소리 전달인데 음성을 못 받았거나 서버가 목소리를 걷어내 '알람' 모드로 다시
+    지을 때 `buildReceivedAlarmRow`)는 알람음 스위치를 **켜고** 크기를 강제 알람음과 같은 값(위 규칙)으로
+    둔다. 보낸 사람 탈퇴로 목소리를 걷어낼 때(`withVoiceRevoked`)는 '알람' 모드로 내리지 않고 **미나**로
+    바꾼다(재생 방식은 수신자가 둔 값 그대로 — 2026-09-29). 받은 알람의
     `preLockPlayMode` 는 옛 버그의 잠금 표시라 풀려 버리므로 강등 표시로 쓰지 않는다. 수신자가
     직접 '알람' 모드로 바꿔 둔 행과 처음부터 '알람' 인 전달은 스위치를 그대로 둔다.
   - 리허설에서 이 규칙이 없어 클론 목소리 알람이 **아무 소리 없이** 울렸다. logcat 원문:
@@ -374,7 +377,7 @@ iOS 에서 그 문구를 지우면 안 울릴 알람을 울릴 것처럼 보여 
 | 예약 | `alarm/AlarmScheduler.kt` | `AlarmManager.shared.schedule` (`AlarmKitViewModel.swift`) | — |
 | 소리 끄기(소유권 확인) | `RingingService.ringingTeardownBelongsToCurrentAlarm` → `stopRingingOutputs` | `AlarmAppContext.stopVoiceIfOwnedStatic` (끄기·다시울림·사라짐 셋 다 여기로) | — |
 | 기기 볼륨 원복 | `alarm/AlarmStreamVolume.kt` | 해당 없음 | — |
-| 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` · 받은 알람을 '알람' 모드로 바꿀 때 알람음 켬 `data/RemoteAlarmPullSyncService.kt` `withToneForcedOn`(← `withVoiceRevoked`·`buildReceivedAlarmRow`) — 테스트 `RingSoundDecisionTest`·`RemoteAlarmPullSyncServiceTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` — 테스트 `DefaultVoiceSubstituteTests` | — |
+| 조용한 알람은 사용자가 고른 것뿐 · 유료 목소리를 못 쓰면 기본 목소리(§4) | `alarm/RingSoundDecision.kt` `decideRingSound`·`ringSoundFactsFor`·`ringTimePaidVoiceUnusable`·`forcedTonePercent` → `RingingService.startRingingAudio`(`startAlarmToneLoop(forced)`) · 기본 목소리 소리 `data/DefaultVoiceClipSource.kt` `ringUri` · 받은 알람을 '알람' 모드로 바꿀 때 알람음 켬 `data/RemoteAlarmPullSyncService.kt` `withToneForcedOn`(← `buildReceivedAlarmRow`) · 목소리를 걷어낸 받은 알람은 미나 `withVoiceRevoked` — 테스트 `RingSoundDecisionTest`·`RemoteAlarmPullSyncServiceTest` | 예약 때 `AlarmKitViewModel.effectiveRecordForScheduling` → `defaultVoiceSubstitute` · 오디오 없는 기본 목소리 알람은 `AlarmSoundResolver.plan`(1b) → `DefaultVoiceSubstitute.fallbackClip` · 목소리를 걷어낸 받은 알람은 미나 `RemoteAlarmPullSync.withVoiceRevoked` — 테스트 `DefaultVoiceSubstituteTests`·`RemoteAlarmPullSyncTests` | — |
 | 재부팅/시간대 변경 재무장 | `alarm/BootCompletedReceiver.kt` | `observeTimeAndTimezoneChanges` (`AlarmTalkApp.swift`) | — |
 
 ## 검증 방법

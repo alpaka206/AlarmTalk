@@ -470,11 +470,13 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals("시각은 그대로", received.hour, stripped.hour)
         assertEquals(received.repeatDaysMask, stripped.repeatDaysMask)
         assertTrue("알람은 계속 울린다", stripped.enabled)
-        assertEquals(AlarmPlayModes.ALARM_ONLY, stripped.playMode)
+        // 알람음이 아니라 **기본 목소리(미나)** 로 운다 — 2026-09-29 사용자 결정.
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, stripped.voiceProfileId)
+        assertEquals(VoiceSources.TTS_PROFILE, stripped.voiceSource)
         assertNull("잠금 복원 스냅샷도 비운다", stripped.preLockPlayMode)
         assertNull(stripped.localAudioUri)
         assertNull(stripped.audioCacheKey)
-        assertNull(stripped.voiceProfileId)
         assertNull(stripped.voiceText)
         assertNull(stripped.ttsMessageId)
         assertFalse("보낸 사람 이름도 지운다", stripped.label.contains("김규원"))
@@ -557,13 +559,13 @@ class RemoteAlarmPullSyncServiceTest {
         )
 
     @Test
-    fun revokedVoiceAlarmIsNeverSilent() {
+    fun revokedVoiceAlarmRingsTheDefaultVoiceNotSilence() {
         val stripped = withVoiceRevoked(receivedVoiceAlarmWithHiddenSwitchOff(), context)
 
-        assertEquals(AlarmPlayModes.ALARM_ONLY, stripped.playMode)
-        assertTrue("목소리 시절의 숨은 스위치를 믿지 않는다", stripped.alarmSoundEnabled)
-        assertEquals("강제 알람음과 같은 크기 — 목소리 크기와 숨은 알람음 크기 중 큰 값", 80, stripped.alarmVolumePercent)
-        assertTrue(ringSoundOf(stripped) is RingSound.Tone)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        // 목소리 알람으로 남으니 숨은 알람음 스위치(꺼짐)는 울림에 쓰이지 않는다 — 미나가 운다.
+        val sound = decideRingSound(ringSoundFactsFor(stripped, stripped.localAudioUri) { false }) { "greeting://mina" }
+        assertEquals(RingSound.DefaultVoice("greeting://mina"), sound)
     }
 
     @Test
@@ -573,8 +575,24 @@ class RemoteAlarmPullSyncServiceTest {
 
         val stripped = withVoiceRevoked(chosen, context)
 
+        assertEquals("재생 방식은 수신자가 둔 값 그대로", AlarmPlayModes.ALARM_ONLY, stripped.playMode)
         assertFalse(stripped.alarmSoundEnabled)
         assertEquals(RingSound.Silent, ringSoundOf(stripped))
+    }
+
+    @Test
+    fun revocationRestoresTheVoiceModeOfAnOldBugLock() {
+        // 옛 버그로 '알람' 모드에 잠금 표시만 남은 받은 알람 — 원래 목소리 알람이었다.
+        val oldBugLock = receivedVoiceAlarmWithHiddenSwitchOff().copy(
+            playMode = AlarmPlayModes.ALARM_ONLY,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
+        )
+
+        val stripped = withVoiceRevoked(oldBugLock, context)
+
+        assertEquals(AlarmPlayModes.VOICE_ONLY, stripped.playMode)
+        assertNull(stripped.preLockPlayMode)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, stripped.voiceProfileId)
     }
 
     @Test

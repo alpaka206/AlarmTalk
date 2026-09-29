@@ -1361,7 +1361,7 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 실패한 조회로 알람을 강등하지 않기 위한 게이트다.
     private(set) var accessibleVoicesAreAuthoritative = false
 
-    /// **접근권을 잃은 목소리를 쓰는 내 알람을 기본 알람음으로 내린다.**
+    /// **접근권을 잃은 목소리를 쓰는 내 알람을 기본 목소리(미나)로 바꾼다.**
     ///
     /// 안드로이드 `MainViewModel.reconcileInaccessibleVoiceAlarms` 의 짝이다 — iOS 에는
     /// 이 경로가 아예 없어서, `voice_access_revoked`·`voice_share_changed` 푸시를 받아도
@@ -1448,7 +1448,8 @@ final class VoiceStudioViewModel: ObservableObject {
         return targets.count
     }
 
-    /// **제자리 교체된 목소리의 직접 입력 알람만** 기본 알람음으로 내린다.
+    /// **제자리 교체된 목소리의 직접 입력 알람만** 기본 목소리 알람으로 바꾼다(교체된 목소리가 기본
+    /// 목소리면 그 목소리, 클론이면 미나 — `DefaultVoiceSubstitute.pickVoiceID`).
     ///
     /// 교체는 옛 프로필 **행을 재사용**한다(id 가 그대로다). 그래서
     /// `reconcileInaccessibleVoiceAlarms` 의 '접근 가능 목록 대조' 로는 영원히 안 걸리고,
@@ -1511,7 +1512,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 let created = Date(timeIntervalSince1970: Double(createdMillis) / 1000)
                 guard created < invalidatedBefore else { return false }
             }
-            return record.usesCustomMessageVoice
+            // 오디오가 하나도 없는 행(이미 기본 목소리로 바꿔 둔 직접 입력 알람)에는 낡을 소리가 없다 —
+            // 기본 목소리의 교체 표식마다 같은 행을 다시 세어 없는 변화를 안내하지 않는다.
+            return record.usesCustomMessageVoice && record.hasOwnVoiceAudio
         }
         // ⚠ **이 회차를 시작할 때 잠겨 있던 행은 강등하지 않는다**(아래 확정으로 막 풀린 행 포함).
         // 그 행의 지금 목소리는 잠금이 넣은 **대체 기본 목소리**이고 자기 오디오가 없다. 그런데
@@ -1537,7 +1540,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 로컬 알람의 voice 메타를 비우고 sound-only 로 강등 + 더 이상 참조되지 않는 캐시 정리.
+    /// 지운 목소리를 쓰던 로컬 알람을 기본 목소리(미나)로 바꾸고 더 이상 참조되지 않는 캐시를 정리한다.
     private func cascadeAlarmsAfterVoiceDeletion(
         profileID: String,
         alarmStore: LocalAlarmStore,
@@ -1589,7 +1592,14 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 주어진 **행들**을 알람음으로 내리고, 더 이상 참조되지 않는 캐시를 정리한다.
+    /// 주어진 **행들**을 **기본 목소리 알람**으로 바꾸고(이미 기본 목소리면 그 목소리, 아니면 미나),
+    /// 더 이상 참조되지 않는 캐시를 정리한다.
+    ///
+    /// ⚠ **'알람' 모드로 내리지 말 것**(2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본
+    /// 목소리로, 미나로 해 그냥"). 예전에는 알람음으로 내려 목록·편집기에서 그냥 기본 알람이 됐다. 무료
+    /// 잠금과 같은 모양이되 되돌릴 목소리가 없으니 보관본은 없다(`DefaultVoiceSubstitute.replacedLostVoice`).
+    /// 안드로이드 `AlarmRepository.degradeMatchingLocalOwnedVoiceAlarms` 와 같다.
+    /// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」.
     ///
     /// ⚠ 대상 선정은 **호출자 책임**이다. 여기서 다시 넓히지 말 것 — 예전에는 이 일이
     /// profileId 로 재조회하는 형태라, 좁혀서 부른 호출자의 조건이 무의미해졌다.
@@ -1601,29 +1611,39 @@ final class VoiceStudioViewModel: ObservableObject {
         let affected = records
         guard !affected.isEmpty else { return }
 
+        // 잃은 목소리가 붙든 오디오 — 대표 클립과 클립 세트 전부(잠금 확정과 같은 규칙).
         var releasedKeys: Set<String> = []
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let loadedManifest = StockClipManifestStore.load()
+        let deviceLanguage = Self.appVoiceLanguage()
         for record in affected {
-            if let key = record.audioCacheKey { releasedKeys.insert(key) }
-            var updated = record
-            updated.playMode = AlarmPlayMode.alarmOnly.rawValue
-            updated.voiceProfileId = nil
-            updated.voiceText = nil
-            updated.voiceCategory = nil
-            updated.voiceLanguage = nil
-            updated.voiceSource = VoiceSource.localAudio.rawValue
-            updated.localAudioUri = nil
-            updated.audioCacheKey = nil
-            updated.ttsMessageId = nil
+            releasedKeys.formUnion([record.audioCacheKey?.nilIfBlank].compactMap { $0 })
+            releasedKeys.formUnion((record.bucketClipKeys ?? []).compactMap(\.nilIfBlank))
+            let voiceID = DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId)
+            let binding = DefaultVoiceSubstitute.binding(
+                for: record,
+                voiceID: voiceID,
+                manifest: loadedManifest?.clips,
+                expectedVariants: loadedManifest?.expectedVariants,
+                languages: DefaultVoiceSubstitute.languages(for: record, deviceLanguage: deviceLanguage),
+                cachedURL: { audioCache?.cachedURL(for: $0) }
+            )
+            var updated = DefaultVoiceSubstitute.replacedLostVoice(
+                record,
+                voiceID: voiceID,
+                binding: binding,
+                nowMillis: now
+            )
             updated.syncState = AlarmSyncState.dirty.rawValue
-            updated.updatedAtMillis = now
             _ = alarmStore.upsert(updated)
         }
 
         if let audioCache, !releasedKeys.isEmpty {
-            // 무료 잠금 보관본이 붙든 원래 오디오도 참조로 센다 — 지우면 재결제 때 복원할 소리가 없다.
+            // 참조로 세는 것: 대표 클립, **목소리로 우는** 알람의 클립 세트(알람 모드 행은 틀지 않는다),
+            // 무료 잠금 보관본이 붙든 원래 오디오 — 지우면 재결제 때 복원할 소리가 없다.
             let stillReferenced = Set(
                 alarmStore.alarms.compactMap { $0.audioCacheKey }
+                    + alarmStore.alarms.filter { $0.playModeEnum != .alarmOnly }.flatMap { $0.bucketClipKeys ?? [] }
                     + alarmStore.alarms.flatMap { $0.preLockVoice?.referencedCacheKeys ?? [] }
             )
             let toRemove = releasedKeys.subtracting(stillReferenced)
@@ -1637,7 +1657,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 AlarmSoundStaging.clearStagedSound(forKey: key)
             }
         }
-        // 행을 톤으로 내렸으니 예약도 따라가야 한다. 예약은 async 라 여기(sync)서 못 부르고,
+        // 행의 소리를 바꿨으니 예약도 따라가야 한다. 예약은 async 라 여기(sync)서 못 부르고,
         // 리컨사일러가 지문 불일치를 보고 다음 관문에서 맞춘다 — 그때까지는 옛 소리가
         // 예약돼 있으므로, **호출자는 되도록 곧바로 reconcile 을 돌린다.**
         needsScheduleReconcile = true

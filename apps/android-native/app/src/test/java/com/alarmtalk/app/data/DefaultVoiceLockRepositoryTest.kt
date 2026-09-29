@@ -34,7 +34,6 @@ class DefaultVoiceLockRepositoryTest {
     private lateinit var db: AlarmDatabase
     private lateinit var dao: AlarmDao
     private var currentUser: String? = "user-a"
-    private var lastUsedVoice: String? = TEST_SECOND_SYSTEM_VOICE_ID
     private var manifest: List<StockClip>? = null
     private var expectedVariants: ExpectedVariantCounts? = ExpectedVariantCounts(system = mapOf("weather" to 9))
 
@@ -50,7 +49,6 @@ class DefaultVoiceLockRepositoryTest {
             )
         },
         manifest = { manifest?.let { StockClipListResponse(clips = it, expectedVariants = expectedVariants) } },
-        lastUsedVoiceId = { lastUsedVoice },
         deviceVoiceLanguage = { "ko" },
     )
 
@@ -101,7 +99,7 @@ class DefaultVoiceLockRepositoryTest {
 
         val locked = dao.getById("rehearsal-1")!!
         assertEquals("목록·편집기에서 기본 알람이 되지 않는다", AlarmPlayModes.VOICE_ONLY, locked.playMode)
-        assertEquals("마지막에 쓴 기본 목소리", TEST_SECOND_SYSTEM_VOICE_ID, locked.voiceProfileId)
+        assertEquals("대체 기본 목소리는 미나", SUBSTITUTE_SYSTEM_VOICE_ID, locked.voiceProfileId)
         assertEquals("weather", locked.bucketId)
         assertEquals(
             (0..8).map { "stock_$TEST_SECOND_SYSTEM_VOICE_ID-weather-$it" },
@@ -361,6 +359,82 @@ class DefaultVoiceLockRepositoryTest {
         assertEquals(TEST_SYSTEM_VOICE_ID, after.voiceProfileId)
         assertFalse("낡은 원래 오디오는 되살리지 않는다", after.hasLockedPaidVoice())
         assertNull(after.preLockPlayMode)
+    }
+
+    /**
+     * 대체 목소리는 **미나 하나**다(2026-09-29 "미나로 통일도 해") — 그 계정이 마지막에 쓴 기본
+     * 목소리(시우)를 따르지 않는다. 예전에는 잠금만 그 기억값을 따라, 같은 계정의 알람이 잠금이면
+     * 시우·삭제면 미나처럼 경로마다 다른 목소리가 됐다.
+     */
+    @Test
+    fun lockIgnoresTheLastUsedDefaultVoiceAndUsesMina() = runBlocking {
+        DefaultVoicePreferenceStore(context).set("user-a", TEST_SYSTEM_VOICE_ID)
+        dao.upsert(rehearsalCloneAlarm())
+
+        assertEquals(1, repository.lockPaidAlarmTalks(expectedOwnerUserId = "user-a"))
+
+        val locked = dao.getById("rehearsal-1")!!
+        assertEquals("미나", bundledSystemVoiceProfiles().first { it.id == locked.voiceProfileId }.name)
+        assertEquals("$SUBSTITUTE_SYSTEM_VOICE_ID-weather-0", locked.ttsMessageId)
+    }
+
+    /**
+     * 목소리를 **잃은** 알람(삭제·공유 해제)은 알람음이 아니라 **미나**로 운다(2026-09-29 사용자 결정 —
+     * "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥"). 마지막에 쓴 기본 목소리(시우)를
+     * 따르지 않는다. 테마·조건 자리는 그대로이고, 미나의 클립이 다 있으면 편집기와 같은 모양으로 묶는다.
+     */
+    @Test
+    fun deletingTheVoiceTurnsItsAlarmIntoAMinaAlarmWithTheSameTheme() = runBlocking {
+        DefaultVoicePreferenceStore(context).set("user-a", TEST_SYSTEM_VOICE_ID)
+        val store = AlarmAudioStore(context)
+        val cloneKeys = (0..2).map { "stock_clone-weather-$it" }
+        cloneKeys.forEach { key ->
+            store.cacheGeneratedAudio(byteArrayOf(1, 2, 3), "mp3", rawAudioUri = null, cacheKey = key)
+        }
+        dao.upsert(rehearsalCloneAlarm(audioCacheKey = cloneKeys[0], bucketClipKeysJson = encodeBucketClipKeys(cloneKeys)))
+
+        assertEquals(1, repository.degradeAlarmsUsingVoiceProfile(TEST_CLONE_VOICE_ID))
+
+        val after = dao.getById("rehearsal-1")!!
+        assertEquals("미나", bundledSystemVoiceProfiles().first { it.id == after.voiceProfileId }.name)
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, after.voiceProfileId)
+        assertEquals("'알람' 모드로 내리지 않는다", AlarmPlayModes.VOICE_ONLY, after.playMode)
+        assertEquals("weather", after.bucketId)
+        assertEquals("미나의 날씨 클립을 묶는다", "$SUBSTITUTE_SYSTEM_VOICE_ID-weather-0", after.ttsMessageId)
+        assertEquals(9, after.bucketClipKeys().size)
+        assertEquals("날씨 조건 자리는 그대로", 1, after.contextVariantIndex)
+        assertNull("되돌릴 목소리가 없으니 표시·보관본을 남기지 않는다", after.preLockPlayMode)
+        assertFalse(after.hasLockedPaidVoice())
+        assertTrue("잃은 목소리의 클립은 전부 지운다", cloneKeys.all { store.getCachedAudio(it) == null })
+    }
+
+    /**
+     * 기본 인사말·직접 입력 종류는 기본 목소리 테마가 없다 — 오디오 없는 미나 알람으로 두고, 울릴 때
+     * 미나의 내장 인사말이 운다. 그 행은 낡을 오디오가 없으니 교체 표식이 다시 세지 않는다.
+     */
+    @Test
+    fun aGreetingAlarmWhoseSharedVoiceWentAwayBecomesAnAudiolessMinaAlarm() = runBlocking {
+        manifest = null
+        dao.upsert(rehearsalCloneAlarm(bucketId = "greeting", voiceRandomContext = "preset"))
+
+        assertEquals(
+            1,
+            repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-other"), expectedOwnerUserId = "user-a"),
+        )
+
+        val after = dao.getById("rehearsal-1")!!
+        assertEquals(SUBSTITUTE_SYSTEM_VOICE_ID, after.voiceProfileId)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, after.playMode)
+        assertNull("기본 목소리에는 greeting 테마가 없다", after.bucketId)
+        assertFalse(after.hasOwnVoiceAudio())
+        assertEquals(
+            0,
+            repository.degradeCustomMessageAlarmsUsingVoiceProfile(
+                voiceProfileId = SUBSTITUTE_SYSTEM_VOICE_ID,
+                expectedOwnerUserId = "user-a",
+                allowSystemVoice = true,
+            ),
+        )
     }
 
     @Test

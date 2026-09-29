@@ -943,31 +943,35 @@ internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
  *
  * 복제 목소리는 그 사람의 생체정보라 파기 대상이다. 보낸 사람 이름이 든 라벨도 마찬가지다.
  * 반면 **시각·요일은 수신자가 기대고 자는 자기 정보**라, 통째로 지우면 그날 못 일어난다.
- * 그래서 알람음만 남긴 채(ALARM_ONLY) 같은 시각에 그대로 울린다.
+ * 그래서 목소리만 **기본 목소리(미나)** 로 바꿔 같은 시각에 그대로 울린다 — 오디오 없는 기본 목소리
+ * 알람이라 울릴 때 `RingingService` 가 미나의 클립·내장 인사말을 찾는다. 예전에는 '알람' 모드로
+ * 내렸다(2026-09-29 사용자 결정으로 바꿈 — `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
+ * 재생 방식은 수신자가 둔 값 그대로다(옛 버그의 잠금 표시면 그 원래 값) — '알람' 모드로 둔 행은
+ * 목소리만 바뀌고 계속 알람음으로 운다.
  *
  * 음성 **파일**은 이 함수가 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어, 호출한 쪽이
  * 참조 카운트를 보고 지운다(`deleteCachedAudioIfUnreferenced`).
  */
-internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity {
-    val stripped = alarm.copy(
+internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity =
+    alarm.copy(
         label = context.getString(com.alarmtalk.app.R.string.rd_default_alarm_label),
-        playMode = AlarmPlayModes.ALARM_ONLY,
+        playMode = AlarmPlayModes.normalize(alarm.preLockPlayMode?.takeIf { it.isNotBlank() } ?: alarm.playMode),
         // 무료 잠금 복원용 스냅샷도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
         preLockPlayMode = null,
         localAudioUri = null,
         audioCacheKey = null,
         rawAudioUri = null,
-        voiceSource = VoiceSources.LOCAL_AUDIO,
-        voiceProfileId = null,
+        voiceSource = VoiceSources.TTS_PROFILE,
+        voiceProfileId = SUBSTITUTE_SYSTEM_VOICE_ID,
         voiceListenerTitle = null,
         voiceText = null,
         voiceCategory = null,
         ttsMessageId = null,
         bucketId = null,
+        bucketClipKeysJson = null,
+        bucketClipTextsJson = null,
         updatedAtMillis = System.currentTimeMillis(),
     )
-    return if (alarm.wasReceivedVoiceAlarm()) stripped.withToneForcedOn() else stripped
-}
 
 /**
  * 목소리 알람이던 받은 행인가 — 옛 버그로 '알람' 모드에 잠금 표시만 남은 행도 목소리로 본다.

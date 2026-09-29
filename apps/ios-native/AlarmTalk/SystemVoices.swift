@@ -30,6 +30,16 @@ func isSystemVoice(_ profile: VoiceProfile) -> Bool {
     profile.isSystem == true || isSystemVoiceId(profile.id)
 }
 
+/// 유료 목소리를 못 쓰게 된 알람이 넘어갈 **대체 기본 목소리 — 미나**. 대체는 전부 이 하나다:
+/// 무료 잠금 · 예약 때 대체 · 목소리를 **잃은** 알람(삭제 · 공유 해제 · 발신자 철회 · 제자리 교체된
+/// 직접 입력). 알람이 이미 기본 목소리면 그 목소리를 그대로 둔다(`DefaultVoiceSubstitute.pickVoiceID`).
+///
+/// 2026-09-29 사용자 결정 — "삭제했거나 공유가 해제된 알람은 기본 목소리로, 미나로 해 그냥", 이어서
+/// "미나로 통일도 해". 그전 무료 잠금은 **마지막에 쓴 기본 목소리**를 골라, 같은 계정의 알람이 경로마다
+/// 다른 목소리로 바뀌었다. 기억값을 보지 말 것 — 한 목소리로 정해 둔다.
+/// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. 안드로이드 `SUBSTITUTE_SYSTEM_VOICE_ID`.
+let substituteSystemVoiceID = systemVoiceIDPrefix + "000000000102"
+
 /// 기본(시스템) 목소리의 **번들 인사말 클립** 이름. 없으면 nil.
 ///
 /// 안드로이드 `data/SystemVoices.kt:76-108` `bundledSystemGreetingRes` 대응.

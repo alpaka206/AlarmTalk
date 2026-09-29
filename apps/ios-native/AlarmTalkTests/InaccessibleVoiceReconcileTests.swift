@@ -1,7 +1,7 @@
 import XCTest
 @testable import AlarmTalk
 
-/// **접근권을 잃은 목소리를 쓰는 알람은 알람음으로 내려야 한다** — 그런데 그 판단이
+/// **접근권을 잃은 목소리를 쓰는 알람은 기본 목소리(미나)로 바꿔야 한다** — 그런데 그 판단이
 /// 실패한 조회로 돌면 멀쩡한 알람을 되돌릴 수 없게 부순다.
 ///
 /// 안드로이드는 처음부터 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 보고
@@ -125,8 +125,13 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         )
 
         XCTAssertEqual(degraded, 1)
-        XCTAssertEqual(store.record(id: "mine")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
-        XCTAssertNil(store.record(id: "mine")?.voiceProfileId)
+        // 알람음이 아니라 **미나**로 운다 — 목록·편집기에서 그냥 기본 알람이 되지 않는다(2026-09-29).
+        let mine = store.record(id: "mine")
+        XCTAssertEqual(mine?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(mine?.voiceProfileId, substituteSystemVoiceID)
+        XCTAssertNil(mine?.preLockPlayMode, "되돌릴 목소리가 없으니 표시도 남기지 않는다")
+        XCTAssertNil(mine?.preLockVoice)
+        XCTAssertEqual(mine?.syncState, AlarmSyncState.dirty.rawValue)
     }
 
     /// 아직 접근 가능한 목소리는 건드리지 않는다.
@@ -156,7 +161,7 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
             voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
             1
         )
-        XCTAssertEqual(store.record(id: "mine")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        XCTAssertEqual(store.record(id: "mine")?.voiceProfileId, substituteSystemVoiceID)
         XCTAssertEqual(store.record(id: "recv")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
         XCTAssertEqual(store.record(id: "recv")?.voiceProfileId, "shared-1")
     }

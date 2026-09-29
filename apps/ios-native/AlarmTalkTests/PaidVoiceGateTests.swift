@@ -230,7 +230,7 @@ final class PaidVoiceGateTests: XCTestCase {
 
         let substitute = DefaultVoiceSubstitute.substitutedForScheduling(
             record,
-            voiceID: DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId, lastUsedVoiceID: nil),
+            voiceID: DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId),
             binding: nil
         )
 

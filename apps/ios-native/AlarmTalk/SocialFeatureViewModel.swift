@@ -733,7 +733,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         var locked = 0
-        let voicePreferences = DefaultVoicePreferenceStore()
         let loadedManifest = StockClipManifestStore.load()
         let manifest = loadedManifest?.clips
         let expectedVariants = loadedManifest?.expectedVariants
@@ -750,10 +749,7 @@ final class SocialFeatureViewModel: ObservableObject {
             // 이미 알린 알람이라 강등 안내 개수에 다시 넣지 않는다. 보관본은 처음 한 번만 적는다
             // (`DefaultVoiceSubstitute.locked` 가 이미 있는 값을 덮지 않는다).
             let needsLock = FreePlanLockSelection.isNewLock(record)
-            let voiceID = DefaultVoiceSubstitute.pickVoiceID(
-                alarmVoiceID: record.voiceProfileId,
-                lastUsedVoiceID: voicePreferences.lastUsedVoiceId(userID: record.ownerUserId ?? expectedOwnerUserId)
-            )
+            let voiceID = DefaultVoiceSubstitute.pickVoiceID(alarmVoiceID: record.voiceProfileId)
             let binding = DefaultVoiceSubstitute.binding(
                 for: record,
                 voiceID: voiceID,

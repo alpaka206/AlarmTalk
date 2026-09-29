@@ -71,8 +71,13 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         )
 
         XCTAssertEqual(degraded, ["custom"], "내린 행 id 를 돌려줘야 호출자가 예약까지 확인한다")
-        XCTAssertNil(store.record(id: "custom")?.voiceProfileId)
-        XCTAssertEqual(store.record(id: "custom")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        // 알람음이 아니라 **기본 목소리(미나)** 로 바뀐다 — 낡은 오디오·문구 참조는 버린다(2026-09-29).
+        let custom = store.record(id: "custom")
+        XCTAssertEqual(custom?.voiceProfileId, substituteSystemVoiceID)
+        XCTAssertEqual(custom?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertNil(custom?.ttsMessageId)
+        XCTAssertNil(custom?.audioCacheKey)
+        XCTAssertNil(custom?.preLockPlayMode, "되돌릴 목소리가 없으니 표시도 남기지 않는다")
         XCTAssertEqual(
             store.record(id: "bucket")?.voiceProfileId, "clone-1",
             "프리셋 알람은 새 목소리로 다시 만들어진다 — 벗기면 되돌릴 수 없다"
@@ -226,6 +231,51 @@ final class VoiceReplacementCascadeTests: XCTestCase {
         XCTAssertNil(cache.cachedURL(for: cloneKeys[0]), "대표 클립")
         XCTAssertNil(cache.cachedURL(for: cloneKeys[1]), "대표가 아닌 세트 클립도 지운다")
         XCTAssertNotNil(cache.cachedURL(for: cloneKeys[2]), "목소리로 우는 다른 알람이 쓰는 클립은 남긴다")
+    }
+
+    /// 교체된 것이 **기본 목소리**면 그 목소리는 그대로 쓸 수 있다 — 미나로 바꾸지 않고 낡은 오디오만 버린다.
+    /// 안드로이드 `VoiceReplacementCascadeTest` 의 기본 목소리 직접 입력 갈래 짝.
+    func test_교체된_기본_목소리의_직접_입력은_그_목소리로_남고_오디오만_버린다() {
+        let store = makeStore()
+        let systemID = systemVoiceIDPrefix + "000000000101"
+        store.upsert(alarm(id: "manual", voiceProfileId: systemID, cacheKey: "tts-manual-1"))
+        let voice = VoiceStudioViewModel()
+
+        let degraded = voice.degradeCustomMessageAlarms(
+            forProfileID: systemID, alarmStore: store, audioCache: nil, ownerUserId: "owner-1",
+            allowSystemVoice: true
+        )
+
+        XCTAssertEqual(degraded, ["manual"])
+        let after = store.record(id: "manual")
+        XCTAssertEqual(after?.voiceProfileId, systemID)
+        XCTAssertEqual(after?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertNil(after?.ttsMessageId)
+        XCTAssertNil(after?.audioCacheKey)
+    }
+
+    /// 이미 기본 목소리로 바꿔 둔 직접 입력 알람에는 **낡을 오디오가 없다** — 그 기본 목소리의 교체
+    /// 표식이 올 때마다 같은 행을 다시 '강등' 으로 세면 없는 변화를 안내한다. 안드로이드
+    /// `VoiceReplacementCascadeTest.anAlarmWithoutAnyAudioIsNotDegradedAgainByAReplacementMarker` 짝.
+    func test_오디오가_없는_행은_교체_표식에_다시_세지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "custom", voiceProfileId: "clone-1"))
+        let voice = VoiceStudioViewModel()
+        XCTAssertEqual(
+            voice.degradeCustomMessageAlarms(
+                forProfileID: "clone-1", alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
+            ),
+            ["custom"]
+        )
+        XCTAssertEqual(store.record(id: "custom")?.voiceProfileId, substituteSystemVoiceID)
+
+        XCTAssertTrue(
+            voice.degradeCustomMessageAlarms(
+                forProfileID: substituteSystemVoiceID, alarmStore: store, audioCache: nil,
+                ownerUserId: "owner-1", allowSystemVoice: true
+            ).isEmpty,
+            "강등 안내에 다시 세지 않는다"
+        )
     }
 
     func test_기본_목소리는_대상이_아니다() {

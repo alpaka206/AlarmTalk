@@ -6,6 +6,8 @@ import Foundation
 // 목소리로 운다** — 알람음이 아니다. 규칙의 유일 출처는 `docs/spec/billing-lifecycle.md`
 // 「목소리를 못 쓰게 되면 — 기본 목소리로 울고, 절대 조용하지 않다」다.
 //
+// 대체 목소리는 어느 경로든 **미나** 하나다(`substituteSystemVoiceID` — 2026-09-29 "미나로 통일도 해").
+//
 // 안드로이드 `data/DefaultVoiceFallback.kt` 미러다(`pickDefaultSystemVoiceId` ·
 // `defaultVoiceBucketFor` · `lockedToDefaultVoice` · `restoredFromLock` · `finalizedLock`).
 // 한쪽만 고치지 말 것.
@@ -66,6 +68,16 @@ struct LockedPaidVoice: Codable, Equatable, Hashable {
 extension LocalAlarmRecord {
     /// 새 모양(기본 목소리로 고쳐 쓰고 원래 목소리를 보관)으로 잠긴 행인가.
     var hasLockedPaidVoice: Bool { preLockVoice != nil }
+
+    /// 이 알람이 **자기 목소리 오디오**를 들고 있는가 — 파일·캐시 키·원본 URL·서버 문구 중 하나라도.
+    /// 제자리 교체의 직접 입력 강등이 본다: 오디오가 하나도 없는 행(기본 목소리로 바꿔 둔 행)에는 낡을
+    /// 소리가 없다. 안드로이드 `hasOwnVoiceAudio` 미러.
+    var hasOwnVoiceAudio: Bool {
+        localAudioUri?.nilIfBlank != nil
+            || audioCacheKey?.nilIfBlank != nil
+            || rawAudioUri?.nilIfBlank != nil
+            || ttsMessageId?.nilIfBlank != nil
+    }
 }
 
 enum DefaultVoiceSubstitute {
@@ -81,12 +93,15 @@ enum DefaultVoiceSubstitute {
         let firstLocalFileName: String?
     }
 
-    /// 대체할 **기본 목소리**. 안드로이드 `pickDefaultSystemVoiceId` 와 같은 순서다:
-    /// 알람이 이미 기본 목소리면 그 목소리 → 마지막에 쓴 목소리가 기본 목소리면 그것 → 목록 첫 값.
-    static func pickVoiceID(alarmVoiceID: String?, lastUsedVoiceID: String?) -> String {
+    /// 대체할 **기본 목소리** — 잠금 · 예약 때 대체 · 목소리를 잃은 알람이 모두 이것을 쓴다. 안드로이드
+    /// `pickDefaultSystemVoiceId` 미러: 알람이 이미 기본 목소리면 그 목소리(제자리 교체로 낡은 것은 오디오뿐이다),
+    /// 아니면 **미나**(`substituteSystemVoiceID`).
+    ///
+    /// ⚠ **마지막에 쓴 목소리(`DefaultVoicePreferenceStore`)를 보지 말 것**(2026-09-29 "미나로 통일도 해").
+    /// 예전에는 잠금만 그 기억값을 따라, 같은 계정의 알람이 잠금이면 시우·삭제면 미나처럼 경로마다 달랐다.
+    static func pickVoiceID(alarmVoiceID: String?) -> String {
         if let alarmVoiceID, isSystemVoiceId(alarmVoiceID) { return alarmVoiceID }
-        if let lastUsedVoiceID, isSystemVoiceId(lastUsedVoiceID) { return lastUsedVoiceID }
-        return bundledSystemVoiceProfiles()[0].id
+        return substituteSystemVoiceID
     }
 
     /// 기본 목소리로 틀 **무료 테마**. 안드로이드 `defaultVoiceBucketFor` 미러 — 테마가 붙어 있으면
@@ -298,6 +313,22 @@ enum DefaultVoiceSubstitute {
         return next
     }
 
+    /// 목소리를 잃은 알람을 **기본 목소리 알람으로 영구히** 바꾼다(순수 — 행을 쓰는 것은 호출부).
+    /// 안드로이드 `lostVoiceReplacedByDefault` 미러.
+    ///
+    /// 잠금(`locked`)과 같은 모양 — 재생 방식은 그대로, 테마가 있으면 그 테마, 클립이 다 있으면 묶고 없으면
+    /// 오디오 없이 두어 예약 때 `AlarmSoundResolver` 가 그 목소리의 클립·내장 인사말을 싣는다. 다만 되돌릴
+    /// 목소리가 없으니 보관본·표시를 남기지 않는다(`finalized`). 예전에는 '알람' 모드로 내려 목록·편집기에서
+    /// 그냥 기본 알람이 됐다 — 2026-09-29 사용자 결정으로 기본 목소리(미나 — `pickVoiceID`)로 바꾼다.
+    static func replacedLostVoice(
+        _ record: LocalAlarmRecord,
+        voiceID: String,
+        binding: Binding?,
+        nowMillis: Int64
+    ) -> LocalAlarmRecord {
+        finalized(locked(record, voiceID: voiceID, binding: binding, nowMillis: nowMillis), nowMillis: nowMillis)
+    }
+
     /// **예약에 실을** 대체 행 — 저장하지 않는다. 목소리만 기본 목소리로 바꾸고 보관본·표시·시각은
     /// 원래 행 그대로 둔다(예약 지문이 원래 행과 같은 입력에서 계산되게).
     static func substitutedForScheduling(
@@ -363,9 +394,9 @@ enum DefaultVoiceSubstitute {
     }
 
     /// 앱 번들에 실린 그 목소리의 **내장 인사말**(안드로이드 `res/raw/voice_greeting_*` 를 그대로
-    /// 싣는다 — `project.yml`). 새 기본 목소리라 내장본이 없으면 목록 첫 목소리의 인사말.
+    /// 싣는다 — `project.yml`). 새 기본 목소리라 내장본이 없으면 대체 목소리(미나 — `substituteSystemVoiceID`)의 인사말.
     static func greetingURL(voiceID: String?, language: String, bundle: Bundle = .main) -> URL? {
-        let candidates = [voiceID, bundledSystemVoiceProfiles()[0].id]
+        let candidates = [voiceID, substituteSystemVoiceID]
         for candidate in candidates {
             if let resource = bundledSystemGreetingResource(voiceProfileId: candidate, appLanguage: language),
                let url = bundle.url(forResource: resource, withExtension: "mp3") {

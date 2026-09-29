@@ -1273,23 +1273,33 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// 발신자가 탈퇴해 목소리가 철회된 받은 알람 — 목소리만 걷어내고 알람은 남긴다.
     /// 보낸 사람 이름이 든 라벨도 파기 대상이라 기본 라벨로 되돌린다.
-    /// 알람음만 남긴 채(`alarmOnly`) 같은 시각에 그대로 울린다.
+    ///
+    /// 목소리는 **기본 목소리(미나 — `substituteSystemVoiceID`)** 로 바꿔 같은 시각에 그대로 울린다 —
+    /// 오디오 없는 기본 목소리 알람이라 예약 때 `AlarmSoundResolver.plan` 의 1b 갈래가 미나의 클립·내장
+    /// 인사말을 싣는다. 예전에는 '알람' 모드로 내렸다(2026-09-29 사용자 결정으로 바꿈 —
+    /// `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」). 재생 방식은 수신자가 둔 값 그대로다
+    /// (옛 버그의 잠금 표시면 그 원래 값) — '알람' 모드로 둔 행은 목소리만 바뀌고 계속 알람음으로 운다.
+    /// 안드로이드 `withVoiceRevoked` 미러.
     ///
     /// 음성 **파일**은 여기서 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어,
     /// 호출한 쪽이 참조 수를 보고 지운다.
     static func withVoiceRevoked(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
         var next = record
         next.label = "알람"
-        next.playMode = AlarmPlayMode.alarmOnly.rawValue
+        next.playMode = AlarmPlayMode.decode(record.preLockPlayMode?.nilIfBlank ?? record.playMode).rawValue
+        // 무료 잠금 복원용 표시도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+        next.preLockPlayMode = nil
         next.localAudioUri = nil
         next.audioCacheKey = nil
         next.rawAudioUri = nil
-        next.voiceSource = VoiceSource.localAudio.rawValue
-        next.voiceProfileId = nil
+        next.voiceSource = VoiceSource.ttsProfile.rawValue
+        next.voiceProfileId = substituteSystemVoiceID
         next.voiceListenerTitle = nil
         next.voiceText = nil
         next.voiceCategory = nil
         next.ttsMessageId = nil
+        next.bucketId = nil
+        next.bucketClipKeys = nil
         next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         return next
     }
