@@ -206,6 +206,9 @@ final class MessageContextMemoryTests: XCTestCase {
         XCTAssertTrue(unusable())
         // 무료 플랜에서 잠긴 목소리 → 막는다(준비돼 있어도).
         XCTAssertTrue(unusable(locked: true, ready: true))
+        // ⚠ 잠금은 기존 음원 재사용으로도 풀리지 않는다 — 서버 `PATCH /alarm` 이 저장된 값
+        // 그대로의 유료 목소리도 403 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가 막는다.
+        XCTAssertTrue(unusable(locked: true, audio: true))
         // 준비된 목소리, 또는 기존 알람 음원을 그대로 쓸 수 있으면 막지 않는다.
         XCTAssertFalse(unusable(ready: true))
         XCTAssertFalse(unusable(audio: true))

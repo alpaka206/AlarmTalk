@@ -305,6 +305,7 @@ struct AlarmEditDraft: Equatable {
     /// - **정리 중인 교체 목소리**도 아니다 — 곧 풀리는 상태라 "아직 준비 중" 으로 따로 말한다.
     /// - 테마(스톡 클립)를 골랐으면 목소리 음원이 아니라 클립이 울리므로 막지 않는다.
     /// - 기존 알람의 음원을 그대로 쓸 수 있으면 막지 않는다 — 시각만 고치는 재저장이 그렇다.
+    ///   (삭제·미준비 목소리에만 해당한다. 무료 플랜 잠금은 음원이 있어도 막는다 — 아래 주석.)
     ///
     /// 뷰 밖에 두는 것은 테스트에서 입력별로 부르기 위해서다(`MessageContextMemoryTests`).
     static func selectedVoiceUnusable(
@@ -319,6 +320,10 @@ struct AlarmEditDraft: Equatable {
     ) -> Bool {
         guard playMode != .alarmOnly, voiceSource == .ttsProfile else { return false }
         guard profileID.nilIfBlank != nil, !settling else { return false }
+        // ⚠ **플랜 잠금은 음원 재사용으로 풀리지 않는다** — 시각만 고치는 재저장도 막는다.
+        // 서버 `PATCH /alarm` 이 저장된 값 그대로의 유료 목소리도 403
+        // `VOICE_FEATURE_REQUIRES_PAID_PLAN` 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가
+        // 편집기 판정 뒤에서 막는다. 여기서 통과시키면 저장을 눌러 서버 실패를 기다리게 될 뿐이다.
         if lockedByPlan { return true }
         if themeSelected { return false }
         return !profileReady && !hasUsableAudio()
