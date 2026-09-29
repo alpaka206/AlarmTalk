@@ -1117,7 +1117,7 @@ internal fun VoiceProfileManagementPanel(
         }
         val total = allClips.size
         var done = allClips.count {
-            audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+            audioStore.hasCachedAudio("stock_${it.messageId}", it.audioUrl)
         }
         if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         CloneAlarmBucketCategories.forEach { category ->
@@ -1129,7 +1129,7 @@ internal fun VoiceProfileManagementPanel(
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"
-                    if (audioStore.getCachedAudio(cacheKey, clip.audioUrl) == null) {
+                    if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
                         runCatching {
                             val response = onDownloadStockAudio(clip.messageId)
                             audioStore.cacheGeneratedAudio(
@@ -1168,7 +1168,7 @@ internal fun VoiceProfileManagementPanel(
                         (it.language ?: "ko") == clipLanguage
                 }
                 .all {
-                    audioStore.getCachedAudio("stock_${it.messageId}", it.audioUrl) != null
+                    audioStore.hasCachedAudio("stock_${it.messageId}", it.audioUrl)
                 }
         }
     }
@@ -1590,7 +1590,7 @@ internal fun VoiceProfileManagementPanel(
         // 내 목소리·공유받은 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
             // 기본 목소리 받기 진행은 **헤더 옆**에 둔다(2026-09-17 지시, iOS 와 같은 자리).
-            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.defaultVoicesReadyOrExplain`) 그 이유가
+            // 받는 동안 알람 설정이 막히므로(`AlarmTalkApp.whenDefaultVoicesReady`) 그 이유가
             // 섹션을 접어 둬도 보여야 한다 — 목록 아래에 두면 접었을 때 사라진다.
             val downloadProgress = voicePrefetchProgress
                 ?.takeIf { (done, total) -> total > 0 && done < total }

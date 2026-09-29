@@ -619,28 +619,41 @@ internal fun AlarmEditorScreen(
         if (clips.isEmpty()) return false
         val keys = mutableListOf<String>()
         val texts = mutableListOf<String>()
-        val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
-        clips.forEach { clip ->
-            val cacheKey = "stock_${clip.messageId}"
-            val cached = audioStore.getCachedAudio(cacheKey, clip.audioUrl) ?: run {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    audioStore.cacheGeneratedAudio(
-                        bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = cacheKey,
-                        cacheKey = cacheKey,
-                        messageId = clip.messageId,
-                    )
-                }
+        var representativeAudio: CachedAlarmAudio? = null
+        suspend fun download(clip: StockClip, cacheKey: String): CachedAlarmAudio {
+            val response = onDownloadStockAudio(clip.messageId)
+            return withContext(Dispatchers.IO) {
+                audioStore.cacheGeneratedAudio(
+                    bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                    format = response.audioFormat,
+                    rawAudioUri = response.audioUrl,
+                    displayName = cacheKey,
+                    cacheKey = cacheKey,
+                    messageId = clip.messageId,
+                )
             }
-            keys.add(cached.cacheKey ?: cacheKey)
+        }
+        clips.forEachIndexed { index, clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            // ⚠ **캐시 확인은 IO 에서 한다**(2026-09-29). 이 함수는 테마를 누르는 순간 메인에서
+            //   불린다 — 클립마다 파일을 뒤지면 그동안 화면이 멎는다.
+            // 길이는 **대표(첫 클립)만** 잰다 — 편집기에 박히는 오디오는 대표 하나이고, 나머지는
+            // 회전용 **키**만 쓴다. 길이 측정은 파일마다 수십 ms 다.
+            val cacheKeyUsed = if (index == 0) {
+                val audio = withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey, clip.audioUrl) }
+                    ?: download(clip, cacheKey)
+                representativeAudio = audio
+                audio.cacheKey
+            } else if (withContext(Dispatchers.IO) { audioStore.hasCachedAudio(cacheKey, clip.audioUrl) }) {
+                cacheKey
+            } else {
+                download(clip, cacheKey).cacheKey
+            }
+            keys.add(cacheKeyUsed ?: cacheKey)
             // 잠금화면이 발사 variant 의 문구를 보여줄 수 있도록 keys 와 같은 순서로 텍스트도 저장.
             texts.add(clip.text)
-            cachedClips.add(cached)
         }
-        val representative = cachedClips.firstOrNull() ?: return false
+        val representative = representativeAudio ?: return false
         val first = clips.first()
         editor.setBucketAudio(
             audio = representative,
@@ -1356,6 +1369,8 @@ internal fun AlarmEditorScreen(
      * 판정은 저장 경로와 **같은 두 단계**다(`saveEditor` 의 `resolveTtsInput` → `getCachedAudio`):
      * 입력 별칭이 있어도 **파일이 없으면 없는 것**이다. 별칭 파일은 오디오와 이름이 달라
      * 함께 지워지지 않으므로, 별칭만 보고 판단하면 "있다" 고 착각한다.
+     * 두 번째 단계는 `getCachedAudio != null` 과 답이 같은 `hasCachedAudio` 로 묻는다 — 이 함수는
+     * 저장 사유(`editorSaveBlockReason`)를 셀 때 **콤포지션마다** 불리므로 길이를 재지 않는다.
      *
      * 가족 알람은 제외한다 — 서버가 수신자별로 만들어야 해서 내 캐시로는 대신할 수 없다.
      */
@@ -1374,7 +1389,7 @@ internal fun AlarmEditorScreen(
                 listenerTitle = resolvedVoiceListenerTitle(profileId, text),
             ),
         ) ?: return false
-        return audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri) != null
+        return audioStore.hasCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)
     }
 
     // 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 하단 바에
