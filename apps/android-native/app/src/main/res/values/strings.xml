@@ -556,11 +556,6 @@
     <string name="voices_name_label">목소리 이름</string>
     <string name="voices_prerender_ready_title">이 목소리로 알람 문구를 만들고 있어요</string>
     <string name="voices_prerender_ready_body">준비되는 대로 알람에서 쓸 수 있어요.</string>
-    <string name="voices_energy_label">목소리 느낌</string>
-    <string name="voices_energy_auto">자동</string>
-    <string name="voices_energy_lively">경쾌</string>
-    <string name="voices_energy_calm">차분</string>
-    <string name="voices_energy_hint">알람 문구의 말투와 톤을 이 느낌에 맞춰요.</string>
     <string name="voices_language_label">알람을 읽어줄 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>
@@ -573,7 +568,7 @@
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
     <string name="voices_confirm_new_title">이 목소리로 저장할까요?</string>
-    <string name="voices_confirm_new_body">저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요.</string>
+    <string name="voices_confirm_replace_body">저장하면 이전 목소리는 삭제돼요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">저장하기</string>
     <string name="voices_confirm_new_keep_saving">저장 중…</string>
@@ -583,7 +578,7 @@
 완성되면 바로 들려드릴게요.</string>
     <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
     <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
-    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요.</string>
+    <string name="voices_preview_edit_hint">말투를 원하는 대로 바꿔 보세요.</string>
     <string name="voices_preview_edit_action">문구 수정</string>
     <string name="voices_preview_edit_save">재생성</string>
     <string name="voices_preview_edit_saving">재생성 중…</string>
@@ -928,7 +923,6 @@
     <string name="api_error_voice_limit_reached">등록할 수 있는 목소리를 다 채웠어요. 쓰지 않는 목소리를 지워 주세요.</string>
     <string name="api_error_voice_not_ready">목소리를 아직 만들고 있어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="api_error_voice_cloning_failed">목소리를 만들지 못했어요. 조용한 곳에서 다시 녹음해 주세요.</string>
-    <string name="api_error_invalid_voice_energy">목소리 느낌을 확인하지 못했어요. 다시 골라 주세요.</string>
     <string name="api_error_alarm_not_found">이미 사라진 알람이에요.</string>
     <string name="api_error_tts_generation_failed">음성을 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_not_ready_title">목소리를 아직 받는 중이에요</string>

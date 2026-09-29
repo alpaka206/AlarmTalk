@@ -64,9 +64,16 @@ data class PersonalPromo(
      * 대상이면 등록한 목소리가 3일 보관 후 삭제된다. 결제 보류(ON_HOLD·PAUSED)처럼 활성 행이
      * 남은 계정은 false 다.
      *
-     * 종료 안내가 이 값으로 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이
-     * 아닌 사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구
-     * 그대로 true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     * 이 값을 읽는 곳은 둘이다:
+     * - 종료 안내가 "등록한 목소리는 3일 보관 후 삭제돼요" 를 넣을지 가른다 — 대상이 아닌
+     *   사람에게 삭제를 말하면 거짓 안내다. 이 키를 주지 않던 서버(null)는 예전 문구 그대로
+     *   true 로 읽는다([personalPromoDeletesVoicesAtEnd]).
+     * - 이용권 화면이 **보류 행 신호**로 쓴다 — `false` 면 원시 free 인데 `active` 구독 행이 남은
+     *   계정(결제 보류 등)이라 개인 카드를 '현재 이용권' 으로 올리지 않고 프로모 문구를 카드 위
+     *   한 줄로 둔다(`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf` 에 넘기는
+     *   `hasHeldSubscriptionRow = deletesVoicesAtEnd == false`, 스펙 billing-lifecycle D4).
+     *   보류 행은 구독 응답에 실리지 않아 이 값이 아니면 프로모만 쓰는 계정과 구별되지 않는다.
+     *   null(키를 모르는 서버)은 보류가 아닌 것으로 읽는다.
      */
     @SerializedName("deletes_voices_at_end") val deletesVoicesAtEnd: Boolean? = null,
     /**

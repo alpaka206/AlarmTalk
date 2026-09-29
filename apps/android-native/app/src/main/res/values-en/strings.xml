@@ -520,11 +520,6 @@
     <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
     <string name="voices_prerender_ready_body">You can close this. It keeps going.
 They become available as they finish.</string>
-    <string name="voices_energy_label">Voice feel</string>
-    <string name="voices_energy_auto">Auto</string>
-    <string name="voices_energy_lively">Lively</string>
-    <string name="voices_energy_calm">Calm</string>
-    <string name="voices_energy_hint">Alarm lines match this feel in wording and tone.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
@@ -534,7 +529,7 @@ They become available as they finish.</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_confirm_new_title">Save this voice?</string>
-    <string name="voices_confirm_new_body">Saving uses up the voice you can create this month. Deleting it later will not free that up until next month, so if you are not happy with it, make another one before you save.</string>
+    <string name="voices_confirm_replace_body">Saving will delete your previous voice.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Save</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
@@ -544,7 +539,7 @@ They become available as they finish.</string>
 We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
-    <string name="voices_preview_edit_hint">Shape the line however you like.\nYour daily morning lines will follow this tone.</string>
+    <string name="voices_preview_edit_hint">Shape the line however you like.</string>
     <string name="voices_preview_edit_action">Edit line</string>
     <string name="voices_preview_edit_save">Regenerate</string>
     <string name="voices_preview_edit_saving">Regenerating…</string>
@@ -892,7 +887,6 @@ Please update to the latest version.</string>
     <string name="api_error_voice_limit_reached">You\'ve used all your voice slots. Delete a voice you no longer need.</string>
     <string name="api_error_voice_not_ready">This voice is still being created. Please try again in a moment.</string>
     <string name="api_error_voice_cloning_failed">We could not create that voice. Please record again somewhere quiet.</string>
-    <string name="api_error_invalid_voice_energy">We couldn\'t apply that voice feel. Please choose it again.</string>
     <string name="api_error_alarm_not_found">This alarm no longer exists.</string>
     <string name="api_error_tts_generation_failed">We could not create the audio. Please try again in a moment.</string>
     <string name="voices_not_ready_title">Still downloading voices</string>

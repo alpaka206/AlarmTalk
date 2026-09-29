@@ -903,7 +903,6 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
@@ -942,7 +941,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 token: token,
                 relationshipLabel: fields.relationshipLabel,
                 listenerTitle: fields.listenerTitle,
-                voiceEnergy: voiceEnergy,
                 language: language
             )
             selectedProfileID = profile.id
@@ -969,7 +967,6 @@ final class VoiceStudioViewModel: ObservableObject {
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceEnergy: VoiceEnergy = .defaultValue,
         language: String = VoiceStudioViewModel.appVoiceLanguage()
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
@@ -1002,7 +999,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
                 listenerTitle: fields.listenerTitle,
-                voiceEnergy: voiceEnergy,
                 language: language
             )
             selectedProfileID = profile.id
@@ -1041,7 +1037,6 @@ final class VoiceStudioViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            // 목소리의 결(`voiceEnergy`)은 싣지 않는다 — 결은 목소리 주인이 등록 초안에서 정한다.
             _ = try await api.updateVoiceProfileRelationship(
                 profileId: profileId,
                 relationshipLabel: fields.relationshipLabel,

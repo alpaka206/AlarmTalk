@@ -1230,23 +1230,6 @@
     "결제하기" : {
 
     },
-    "경쾌" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lively"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "明るい"
-          }
-        }
-      }
-    },
     "계속 만들기" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3994,19 +3977,19 @@
         }
       }
     },
-    "말투를 원하는 대로 바꿔 보세요.\n매일 아침 문구가 이 말투로 만들어져요." : {
+    "말투를 원하는 대로 바꿔 보세요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Adjust the speaking style however you like.\nEvery morning's phrase will be created in this style."
+            "value" : "Shape the line however you like."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "話し方を好みに合わせて変えてみましょう。\n毎朝のフレーズがこの話し方で作られます。"
+            "value" : "話し方は自由に変えられます。"
           }
         }
       }
@@ -4323,40 +4306,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "声を共有"
-          }
-        }
-      }
-    },
-    "목소리 느낌" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice feel"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声の雰囲気"
-          }
-        }
-      }
-    },
-    "목소리 느낌을 확인하지 못했어요. 다시 골라 주세요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We couldn't apply that voice feel. Please choose it again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "声の雰囲気を確認できませんでした。もう一度選んでください。"
           }
         }
       }
@@ -7417,23 +7366,6 @@
         }
       }
     },
-    "알람 문구의 말투와 톤을 이 느낌에 맞춰요." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alarm lines match this feel in wording and tone."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アラーム文言の話し方とトーンをこの雰囲気に合わせます。"
-          }
-        }
-      }
-    },
     "알람 받지 않을 시간" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10165,23 +10097,6 @@
         }
       }
     },
-    "자동" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動"
-          }
-        }
-      }
-    },
     "작성" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10556,19 +10471,19 @@
         }
       }
     },
-    "저장하면 이번 달에 만들 수 있는 목소리를 다 쓰게 돼요. 지워도 다음 달까지는 새로 만들 수 없으니, 마음에 들지 않으면 저장하기 전에 다시 만들어 보세요." : {
+    "저장하면 이전 목소리는 삭제돼요." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saving uses up the voice you can create this month. Deleting it later will not free that up until next month, so if you are not happy with it, make another one before you save."
+            "value" : "Saving will delete your previous voice."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存すると今月作れる声を使い切ります。削除しても翌月までは新しく作れないので、気に入らなければ保存する前に作り直してください。"
+            "value" : "保存すると以前の声は削除されます。"
           }
         }
       }
@@ -11156,23 +11071,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "バイブレーションパターン"
-          }
-        }
-      }
-    },
-    "차분" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Calm"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "落ち着いた"
           }
         }
       }

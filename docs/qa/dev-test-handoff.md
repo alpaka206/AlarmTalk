@@ -37,6 +37,9 @@
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
+  **다음 App Store 버전부터 Copyright(`appStoreVersions` 의 `copyright`)는 `© 2026 vailen`** 이다(2026-09-29
+  사용자 결정). 판매자 이름은 개인 법적 이름 그대로 둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자
+  이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때 copyright 가 이 값인지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
@@ -49,6 +52,19 @@
 - 새 버전 레코드에는 **심사 첨부 영상이 따라오지 않는다**(`appStoreReviewAttachments` 빈 목록) —
   노트에 "영상이 첨부돼 있다" 를 적지 않거나 영상을 다시 올린다. 노트 상한은 4000자다. 1.2.9 노트는
   "유지보수·버그 수정만" 머리말이라 1.2.10(새 기능·서버가 켜는 프로모)에는 새로 쓴다.
+- **다음 릴리스(미정)에 실을 사용자 변화** — `docs/product/release-notes.md` 에는 아직 미출시 칸이 없어
+  여기 적어 두고, 그 회차의 출시 노트(ko/en/ja)를 쓸 때 옮긴다:
+  - 목소리 등록 '세부 정보' 의 **'목소리 느낌'(자동·경쾌·차분) 선택을 뺐다**(2026-09-29 사용자 결정,
+    `feat/remove-voice-feel`). 알람 문구의 말투·톤은 서버가 등록 녹음 **전사**로 추정한 말투를 따른다 —
+    Gemini 는 음성이 아니라 전사 글자만 본다(`docs/spec/voice-and-message.md` 4-2). 1.2.10 은 이 선택지를
+    "새 기능" 으로 광고했으니 출시 노트에 없어졌다고 한 줄 적는다(예: "목소리를 등록할 때 고르던 '목소리
+    느낌'을 없앴습니다. 알람 문구는 등록한 녹음의 말투를 따릅니다.").
+- [ ] **서버의 목소리 느낌 받는 처리 정리** — 선택지를 뺀 릴리스가 두 스토어에 게재되고 두 플랫폼의
+      `minSupported`(`app-version.ts`)가 그 릴리스로 오른 **뒤에만**: `POST voice/clone` 의
+      `voiceEnergy`/`voice_energy` 와 `PATCH voice/:id/relationship` 의 `voice_energy` 받는 처리, 400
+      `INVALID_VOICE_ENERGY` 를 지운다(에러 코드는 나간 코드라 목록에서 지우는 것도 그때다). 먼저 지우면
+      1.2.10 의 선택지가 아무것도 하지 않는 죽은 컨트롤이 된다. 이미 저장된 `voice_profiles.voice_energy` 를
+      계속 따를지(`withVoiceEnergy`)는 그때 정한다.
 
 ## 기간 한정 개인 플랜 + 웰컴 코드 안내 폐지 — 2026-09-27 (백엔드)
 
@@ -257,11 +273,32 @@ v4 는 그 전 운영 프롬프트를 2.5 에서 84:25 로 이겼다. 평가 도
 - [ ] iPhone 다운로드 화면의 Hangs/Time Profiler 측정. Watchdog는 원인 미확정 유지.
 - [ ] 새 서버와 새 앱 적용 후 Sentry·생성 재전송·이벤트 배치 지연·큐 대기 시간 관찰.
       운영 DB 변경/배포는 이번 작업에서 실행하지 않았다.
-- [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디) 호환 제거 — 새 랜딩 번들(생일/추석)이 게재되고
-      **며칠** 지나 옛 번들이 다 밀려난 뒤, 백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS`
-      와 `EVENT_MESSAGES.comfort` 를 함께 지운다(회귀 테스트 `event-clips.test.ts` 의 comfort 케이스도).
-      배포 창에서는 옛 번들이 그 id 를 '위로 한마디' 라벨로 보내므로 400 도, 다른 문구로 바꿔 읽기도
-      안 된다(코덱스 #788 2차·4차).
+- [ ] ⚠ **prod 게재 순서 — 사랑 한마디(`love`)는 백엔드가 prod 에 먼저 떠 있어야 한다**(코드로 못 막는다 —
+      그래서 PR 을 **둘로 나눴다**: 백엔드 `feat/event-love-backend` / 랜딩 #815 `feat/landing-event-love`).
+      랜딩(Vercel)과 백엔드(Workers)는 `main` 머지 한 번으로 **함께** prod 에 나가고, 랜딩은 기본으로 prod API 를
+      부른다(`apps/landing/lib/site.ts` 의 `API_BASE`). Vercel 정적 빌드가 `deploy-backend.yml`(npm ci → typecheck →
+      wrangler → migrate)보다 먼저 끝나면 새 번들의 `kind: "love"` 를 옛 prod 서버가 **400 `INVALID_BODY`** 로
+      거절한다 — 두 번째 클립이 실패로 뜨고, '다시 시도' 도 워커가 올라오기 전에는 또 실패한다. 반대 순서(서버 먼저)는
+      옛 번들의 `chuseok` 을 `LEGACY_EVENT_MESSAGE_KINDS` 가 받으므로 안전하다. `main` 은 `develop` 에서만 받으니
+      **두 PR 을 두 번의 릴리스로** 올린다:
+      1. **백엔드 PR**(`feat/event-love-backend` — `packages/backend/src/lib/event-voices.ts`·
+         `packages/backend/test/event-clips.test.ts`)을 develop 에 머지하고 develop → main 으로 prod 에 올린다.
+         혼자 나가도 안전하다 — `love` 를 더할 뿐이고 `chuseok` 은 옛 종류로 계속 받는다.
+      2. Deploy Backend(main)가 초록인지 보고, prod 가 `love` 를 받는지 한 줄로 확인한다 — 없는 목소리 id 라
+         종류 검사 **다음**(목소리 조회)에서 멈추므로 Perso 를 부르지 않는다:
+         `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.alarm-talk.com/api/event/1/clips -H 'content-type: application/json' -d '{"celebrity":"no-such-voice","locale":"ko","kind":"love","name":"확인"}'`
+         → 새 서버 **404**, 옛 서버 **400**(2026-09-29 dev 실측: 옛 서버에서 `love` 400 · `birthday` 404).
+      3. 그다음에야 **랜딩 PR #815**(`apps/landing/**`·`packages/shared/src/event-voices.json` — 백엔드는 카탈로그의
+         `portraits` 를 읽지 않으니 랜딩 쪽에 두었다)를 develop 에 머지하고 develop → main.
+         ⚠ #815 를 1단계 릴리스 **전에** develop 에 머지하면 다음 develop → main 한 번에 둘이 같이 나가 이 순서가
+         깨진다 — 2단계 확인 전에는 develop 에도 머지하지 않는다.
+- [ ] 랜딩 이벤트의 옛 종류 `comfort`(위로 한마디)·`chuseok`(추석 인사) 호환 제거 — 새 랜딩 번들
+      (생일/사랑, #815 `feat/landing-event-love`)이 게재되고 **며칠** 지나 옛 번들이 다 밀려난 뒤,
+      백엔드 `lib/event-voices.ts` 의 `LEGACY_EVENT_MESSAGE_KINDS` 와 `EVENT_MESSAGES.comfort`·
+      `EVENT_MESSAGES.chuseok` 을 함께 지운다(회귀 테스트 `event-clips.test.ts` 의 comfort·chuseok
+      케이스도). 추석 사진 `apps/landing/public/event/voice1.chuseok.jpg` 도 그때 지운다(카탈로그에서는
+      #815 가 빼고, 그 뒤로는 옛 번들만 그 경로를 부른다). 배포 창에서는 옛 번들이 그 id 를 옛 라벨로
+      보내므로 400 도, 다른 문구로 바꿔 읽기도 안 된다(코덱스 #788 2차·4차).
 
 
 ## iOS 첫 출시 — 2026-09-14
@@ -597,7 +634,7 @@ cron 의 시스템 스톡 드레인은 **껐다**(`index.ts` 의 `scheduled` —
 - **App Store 배지**: Google Play 옆에 같은 무게로 그린다. 기본으로 링크가 산다(2026-09-15 부터 —
   2026-09-22 게재로 실제로 열린다). 스토어에서 내려가면 **Vercel 환경변수 `NEXT_PUBLIC_APP_STORE_LIVE=0`**
   으로 '곧 출시' 로 되돌린다(`lib/site.ts`). FAQ 기기 답변·`llms.txt` 는 게재 전까지 'iOS 준비 중' 이었고, **2026-09-22 게재로 두 스토어 모두 '지금 받을 수 있다' 로 바꿨다**(세 언어 + `llms.txt`).
-- **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 추석 인사 — 2026-09-22 에 위로 한마디를 갈아 끼움) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
+- **이벤트 1 · 내 이름 음성 메시지 `/event/1/`**(2026-09-15 에 `/cheer/` 에서 개명·재기획, `/event/` 는 번호순 목록 — 옛 주소는 vercel.json 308): 이름 입력 → 메시지 종류(생일 축하 / 사랑 한마디 — 2026-09-22 에 위로 한마디를 추석 인사로, 2026-09-29 에 추석 인사를 사랑 한마디로 갈아 끼움) → 인물 카드(윈터·나나미)에서 만들기 → 듣기·좋아요·다운로드(먼저 앱 권유 모달). 생성 경로는 `event-api.ts` 의
   `generateVoiceMessage` **한 곳** — 지금은 브라우저 음성 합성으로 흐름만 흉내 내고(만드는 시간 1.1초 지연), Perso 로 인물 목소리를
   만드는 서버가 붙으면 그 함수만 `url` 을 돌려주게 바꾼다(그때 다운로드 버튼이 산다). 좋아요는 localStorage, 숫자는 서버가 줄 때만. 인물 목록·톤·사진 경로는 `event-catalog.ts`(사진은 `public/event/<id>.<kind>.jpg` — 종류별로 5초마다 갈리고 재생 중인 종류에 머문다; 없으면 이니셜 원. 미리듣기 샘플은 2026-09-22 에 **새 문안으로 다시 만들었다** — 문안을 바꾸면 샘플도 다시 만든다),
   이름·문장은 `messages/*.json` 의 `event.celebrities` / `event.studio.kinds`. 이름 정리는 앱 `sanitizeDisplayName`

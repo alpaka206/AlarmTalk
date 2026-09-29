@@ -67,7 +67,14 @@ struct PlanCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
+    /// '현재 이용권' 뱃지·강조. 결제 버튼과는 **따로** 정한다(`showsPurchase`).
     let isCurrent: Bool
+    /// 결제 버튼을 그리는가(`PlanScreenCurrent.showsPurchase`). 산 이용권의 현재 카드엔 없고,
+    /// 프로모로 현재가 된 개인 카드엔 있다 — `isCurrent` 로 대신하지 말 것.
+    let showsPurchase: Bool
+    /// 현재 카드의 상태 한 줄 — 지금은 기간 한정 개인 플랜의 "개인 플랜 무료 이용 중 · …까지" 뿐이다
+    /// (안드로이드 `SubscriptionPlanCard` 의 `currentStatusText` 자리 — 가격 바로 아래).
+    let statusText: String?
     /// 지금 **유료 이용권을 쓰는 중인가**. 다른 플랜 카드의 버튼 라벨이 이걸 본다 —
     /// 쓰는 중이면 '결제하기' 가 아니라 '이용권 변경' 이다(안드로이드 `BillingPanels.kt`
     /// 의 `hasActiveSubscription` 과 같은 축). 초대로 들어온 공유 멤버도 포함이다.
@@ -121,6 +128,14 @@ struct PlanCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // 상태 한 줄은 **가격 바로 아래**다(안드로이드와 같은 자리·같은 결 — 강조색 semibold).
+            if isCurrent, let statusText {
+                Text(statusText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.palette.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 // `LocalizedStringKey` 는 Hashable 이 아니라 `id: \.self` 를 못 쓴다.
                 // 목록이 고정 순서라 인덱스를 id 로 삼아도 안전하다.
@@ -168,6 +183,11 @@ struct PlanCard: View {
                     lineWidth: 1
                 )
         )
+        // 카드 한 장을 컨테이너로 묶는다 — 안의 글자·버튼은 각자 그대로 읽힌다(`.contain`).
+        // UI 테스트가 '현재 이용권' 뱃지·결제 버튼·상태 문구가 **어느 카드에** 있는지 가리는 자리다
+        // (`PersonalPromoNoticeUITests`). 카드마다 같은 글자가 있어 화면 전체로는 특정할 수 없다.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("planCard.\(tier.apiKey)")
     }
 
     /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
@@ -180,11 +200,16 @@ struct PlanCard: View {
 
     @ViewBuilder
     private func priceButton(for plan: SubscriptionProduct) -> some View {
-        // ⚠ **현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
-        // `BillingPanels.kt` 의 `if (option.key != "free" && !isCurrent)` 와 같다).
+        // ⚠ **산 현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
+        // `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`)의 `if (showsPurchase)` —
+        // 판정은 양쪽 다 `PlanScreenCurrent.showsPurchase` 다).
         // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서
         // **누를 수 있는 것처럼** 보인다 — 카드 위쪽 '현재 이용권' 뱃지가 이미 같은 말을 한다.
-        if isCurrent {
+        //
+        // ⚠ **`isCurrent` 로 되돌리지 말 것**(2026-09-29). 프로모만 쓰는 계정은 개인 카드가 '현재'
+        // 인데 산 이용권이 아니라 결제 버튼이 남아야 한다 — 끝난 뒤 이어 쓰려면 사야 하고, 버튼을
+        // 숨기면 살 길이 사라진다(`PlanScreenCurrent.showsPurchase`).
+        if !showsPurchase {
             EmptyView()
         } else if subscriptions.product(for: plan) != nil {
             Button {

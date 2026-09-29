@@ -80,8 +80,9 @@ internal fun AlarmListScreen(
     /** 기간 한정 개인 플랜 중의 커플·가족 보류 규칙(`MainViewModel.personalPromoTierHold`). */
     personalPromoTierHold: PersonalPromoTierHold?,
     /**
-     * 이용권 화면 한 줄의 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
-     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것.
+     * 이용권 화면에 보일 프로모(`MainViewModel.planScreenPersonalPromo`) — 계정 응답과 구독 응답 중
+     * **나중에 받은 답**의 것. 여기서 세션·구독 응답을 OR 로 다시 고르지 말 것. 개인 카드에 앉을지
+     * 카드 위 한 줄일지는 이용권 화면이 정한다(`planScreenCurrentOf`).
      */
     planScreenPersonalPromo: com.alarmtalk.app.network.PersonalPromo?,
     voiceDraftQuotaExhausted: Boolean = false,

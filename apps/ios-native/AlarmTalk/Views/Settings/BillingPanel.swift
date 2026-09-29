@@ -25,8 +25,10 @@ import UIKit
 /// 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**
 /// (업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). Apple 확인 시트가 그걸 문장으로
 /// 알려 주므로, 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다.
-/// 지금 플랜 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
+/// **산** 이용권의 현재 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
 /// 눌리되 라벨이 '이용권 변경' 인 게 그 경로다 — 결제가 아니라 전환이라는 뜻이다.
+/// 단 기간 한정 개인 플랜만 쓰는 계정은 개인 카드가 '현재 이용권' 이어도 '결제하기' 가 남는다 —
+/// 프로모는 산 이용권이 아니다(`PlanScreenCurrent.showsPurchase`, 스펙 D4).
 /// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -56,12 +58,14 @@ struct BillingPanel: View {
 
     /// **산 이용권**의 등급 — 기간 한정 개인 플랜은 여기 들어가지 않는다(`purchasedPlan`).
     ///
-    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 '현재 이용권' 뱃지, 결제
-    /// 버튼의 '결제하기/이용권 변경', 전환 문구('남은 기간은 새 이용권 기준으로 환산돼요'),
-    /// 결제 차단 판정(`purchaseBlockReason`)이 쓴다. 프로모를 산 이용권으로 치면 개인 카드에서
-    /// 결제 버튼이 사라지고, 다른 카드는 환산할 기간도 없는데 환산한다고 말한다. 프로모는
-    /// 카드 위의 한 줄(`personalPromoLine`)로만 말한다 — 안드로이드도 구독 행으로만 현재 카드를
-    /// 고른다(`BillingPanels.kt`).
+    /// ⚠ **`bestKnown(user:)` 로 바꾸지 말 것**(2026-09-27). 이 값은 결제 버튼의 '결제하기/이용권
+    /// 변경', 전환 문구('남은 기간은 새 이용권 기준으로 환산돼요'), 결제 차단 판정
+    /// (`purchaseBlockReason`)이 쓴다. 프로모를 산 이용권으로 치면 개인 카드에서 결제 버튼이
+    /// 사라지고, 다른 카드는 환산할 기간도 없는데 환산한다고 말한다.
+    ///
+    /// '현재 이용권' **뱃지**는 이 값에서 한 번 더 간다(`planScreen` — 2026-09-29): 프로모만 쓰는
+    /// 계정은 개인 카드가 현재이고 문구가 그 카드에 앉는다. 산 이용권으로 치는 것은 아니다 —
+    /// 결제·전환은 계속 이 값으로만 가른다(안드로이드 `planScreenCurrentOf` 와 같은 규칙, 스펙 D4).
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
@@ -87,6 +91,20 @@ struct BillingPanel: View {
         socialFeatures.familyGroup?.role == "member" && socialFeatures.familyGroup?.group != nil
     }
 
+    /// '현재 이용권' 카드와 프로모 문구의 자리 — 규칙은 `PlanScreenCurrent.resolve` 한 곳이다(스펙 D4).
+    /// 결제·전환은 이걸 보지 않는다 — `currentTier`(산 이용권)다.
+    ///
+    /// `promoActive` 는 부르는 쪽이 **같은 순간에 읽은** `personalPromoLastDay` 로 넘긴다 — 따로 읽으면
+    /// 끝 시각 경계에서 '개인 카드에 앉는다' 와 '문구가 없다' 가 한 프레임 어긋날 수 있다.
+    private func planScreen(promoActive: Bool) -> PlanScreenCurrent {
+        PlanScreenCurrent.resolve(
+            purchasedTier: currentTier,
+            isSharedMember: isSharedMember,
+            promoActive: promoActive,
+            hasHeldSubscriptionRow: auth.session?.user.personalPromo?.deletesVoicesAtEnd == false
+        )
+    }
+
     private var sharedGroupID: String? {
         socialFeatures.familyGroup?.group?.id
     }
@@ -100,18 +118,31 @@ struct BillingPanel: View {
             //
             // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
 
-            // 기간 한정 개인 플랜 — **한 줄만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
+            // 기간 한정 개인 플랜 — **한 번만** 말한다. 가짜 구독 카드·해지 버튼을 만들지 않는다
             // (해지할 구독이 없다. 서버도 `subscription: null` 이다).
-            if let lastDay = personalPromoLastDay {
-                personalPromoLine(lastDay: lastDay)
+            // 프로모만 쓰는 계정은 개인 카드의 상태 문구로 말하고(`planScreen.promoOnPersonalCard`),
+            // 산 이용권·공유 멤버·보류 행이 있는 계정만 예전처럼 카드 위 한 줄이다.
+            let promoLastDay = personalPromoLastDay
+            let screen = planScreen(promoActive: promoLastDay != nil)
+            // 플랜 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가
+            // 한 장도 없다. ⚠ 그때 개인 카드에 앉을 문구를 그냥 두면 **어디에도 안 보인다**(오프라인
+            // 첫 진입 등) — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
+            let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
+            let showsFetchError = subscriptions.products.isEmpty
+                && subscriptions.productFetchFailed
+                && subscriptions.hasAttemptedProductFetch
+            let cardsVisible = !showsSkeleton && !showsFetchError
+            if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
+                personalPromoLine(lastDay: promoLastDay)
             }
+            let personalCardStatus: String? = screen.promoOnPersonalCard
+                ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
+                : nil
 
-            if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
+            if showsSkeleton {
                 // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
                 BillingPlansSkeleton()
-            } else if subscriptions.products.isEmpty
-                && subscriptions.productFetchFailed
-                && subscriptions.hasAttemptedProductFetch {
+            } else if showsFetchError {
                 // 가져오기 실패(일시적 blip)로 제품이 비어버린 경우 — 영구 비활성
                 // 대신 "다시 시도" 로 재요청할 수 있게 한다.
                 BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
@@ -125,7 +156,11 @@ struct BillingPanel: View {
                     )
                     PlanCard(
                         tier: tier,
-                        isCurrent: tier == currentTier,
+                        isCurrent: screen.isCurrent(tier),
+                        // ⚠ '현재' 와 따로 본다 — 프로모로 현재가 된 개인 카드에도 결제 버튼이 남는다.
+                        showsPurchase: screen.showsPurchase(tier),
+                        statusText: tier == .personal ? personalCardStatus : nil,
+                        // 버튼 라벨('결제하기'/'이용권 변경')은 **산 이용권**으로만 가른다.
                         hasActivePlan: currentTier != .free,
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
@@ -321,10 +356,18 @@ struct BillingPanel: View {
         .voucherShareSelectionSheet(vouchers: $voucherShareTargets)
     }
 
+    /// "개인 플랜 무료 이용 중 · {lastDay}까지" — 카드 위 한 줄과 개인 카드의 상태 문구가 **같은 글자**를
+    /// 쓰도록 한 곳에서 만든다. 문구는 안드로이드 `personal_promo_plan_line` 이 원본이다(ko·en·ja).
+    nonisolated static func personalPromoLineText(lastDay: String) -> String {
+        String(localized: "개인 플랜 무료 이용 중 · \(lastDay)까지")
+    }
+
+    /// 카드 위 한 줄 — 산 이용권·공유 멤버·보류 행이 있는 계정, 그리고 프로모만 쓰는 계정이라도 플랜
+    /// 카드가 아직·끝내 그려지지 않은 동안(스켈레톤·가져오기 실패)이다
+    /// (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`).
     /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
-    /// 문구도 그쪽이 원본이다(ko·en·ja).
     private func personalPromoLine(lastDay: String) -> some View {
-        Text("개인 플랜 무료 이용 중 · \(lastDay)까지")
+        Text(Self.personalPromoLineText(lastDay: lastDay))
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(AlarmTalkTheme.primary)
             .frame(maxWidth: .infinity, alignment: .leading)

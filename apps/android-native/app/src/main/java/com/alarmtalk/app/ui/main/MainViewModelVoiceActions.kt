@@ -174,7 +174,6 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
-    // 목소리의 결도 선택이지만 기본값(자동 = 빈 값)이 있어 여기서 막을 일이 없다.
     //
     // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
     // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
@@ -249,7 +248,7 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
-                    // 폼 필드(관계·호칭·목소리의 결·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
+                    // 폼 필드(관계·호칭·언어…)는 `createVoiceCloneDraft` 한 곳에서 조립한다.
                     api.createVoiceCloneDraft(
                         authorization = AlarmTalkApiClient.bearer(session.token),
                         draft = draft,

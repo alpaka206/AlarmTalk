@@ -278,92 +278,41 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertNil(fields["speechFormality"])
     }
 
-    // MARK: - 목소리의 결(voice_energy)
+    // MARK: - 목소리의 결(voice_energy) — 보내지 않는다
 
-    /// 세그먼트 순서·기본값·전송 값은 서버 계약(`VoiceEnergySchema` = '' | 'lively' | 'calm')과
-    /// 안드로이드 세그먼트(자동 · 경쾌 · 차분)에 묶여 있다.
-    func test_voiceEnergy_orderDefaultAndWireValues() {
-        XCTAssertEqual(VoiceEnergy.allCases, [.auto, .lively, .calm])
-        XCTAssertEqual(VoiceEnergy.allCases.map(\.rawValue), ["", "lively", "calm"])
-        XCTAssertEqual(VoiceEnergy.defaultValue, .auto)
-        XCTAssertEqual(VoiceEnergy.allCases.map(\.label), ["자동", "경쾌", "차분"])
-    }
-
-    /// 초안을 만드는 클론 요청은 결을 **항상** 싣는다 — 자동은 빈 값이다.
-    /// 필드 이름은 관계·호칭과 같은 camelCase(`voiceEnergy`)다(서버는 `voice_energy` 도 받는다).
-    func test_voiceCloneMultipartFields_carryVoiceEnergy() {
-        let automatic = AlarmTalkAPI.voiceCloneMultipartFields(
-            name: "Draft",
-            isShared: false,
-            durationMs: 60_000
-        )
-        XCTAssertEqual(automatic["voiceEnergy"], "")
-        XCTAssertNil(automatic["voice_energy"])
-
-        let lively = AlarmTalkAPI.voiceCloneMultipartFields(
-            name: "Draft",
-            isShared: false,
-            durationMs: 60_000,
-            voiceEnergy: .lively
-        )
-        XCTAssertEqual(lively["voiceEnergy"], "lively")
-
-        let calm = AlarmTalkAPI.voiceCloneMultipartFields(
+    /// '목소리 느낌' 선택을 뺐다(2026-09-29 사용자 결정). 클론 요청은 결을 **어떤 이름으로도**
+    /// 싣지 않는다 — 서버는 필드가 없으면 등록 녹음 전사로 추정한 말투를 쓴다(예전의 '자동').
+    /// 안드로이드 `VoiceCloneRequestTest` 와 짝이다.
+    func test_voiceCloneMultipartFields_omitVoiceEnergy() {
+        let fields = AlarmTalkAPI.voiceCloneMultipartFields(
             name: "Draft",
             isShared: false,
             durationMs: 60_000,
             relationshipLabel: "엄마",
             listenerTitle: "우리 딸",
-            voiceEnergy: .calm,
             language: "ko"
         )
-        XCTAssertEqual(calm["voiceEnergy"], "calm")
-        // 결을 실어도 나머지 페르소나 필드는 그대로다.
-        XCTAssertEqual(calm["relationshipLabel"], "엄마")
-        XCTAssertEqual(calm["listenerTitle"], "우리 딸")
-        XCTAssertEqual(calm["isDraft"], "true")
+        XCTAssertNil(fields["voiceEnergy"])
+        XCTAssertNil(fields["voice_energy"])
+        // 나머지 페르소나 필드는 그대로다.
+        XCTAssertEqual(fields["relationshipLabel"], "엄마")
+        XCTAssertEqual(fields["listenerTitle"], "우리 딸")
+        XCTAssertEqual(fields["isDraft"], "true")
     }
 
     /// `PATCH voice/:id/relationship` 바디 — 실제 요청과 같은 인코더(snake_case)로 본다.
-    /// 결을 넘기면 `voice_energy` 로 나가고, 안 넘기면(viewer 경로) 키가 아예 없어야
-    /// 서버가 그 컬럼을 건드리지 않는다.
-    func test_voiceRelationshipUpdateBody_voiceEnergyKey() throws {
-        func encoded(_ energy: VoiceEnergy?) throws -> [String: Any] {
-            let body = AlarmTalkAPI.voiceRelationshipUpdateBody(
-                relationshipLabel: " 엄마 ",
-                listenerTitle: " 우리 딸 ",
-                voiceEnergy: energy
-            )
-            let data = try AlarmTalkAPI.makeJSONEncoder().encode(body)
-            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        }
+    /// 관계·호칭 두 키만 나간다 — `voice_energy` 가 없어야 서버가 그 컬럼을 건드리지 않는다.
+    func test_voiceRelationshipUpdateBody_sendsOnlyPersonaKeys() throws {
+        let body = AlarmTalkAPI.voiceRelationshipUpdateBody(
+            relationshipLabel: " 엄마 ",
+            listenerTitle: " 우리 딸 "
+        )
+        let data = try AlarmTalkAPI.makeJSONEncoder().encode(body)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        let calm = try encoded(.calm)
-        XCTAssertEqual(calm["voice_energy"] as? String, "calm")
-        XCTAssertEqual(calm["relationship_label"] as? String, "엄마")
-        XCTAssertEqual(calm["listener_title"] as? String, "우리 딸")
-        XCTAssertNil(calm["voiceEnergy"])
-
-        XCTAssertEqual(try encoded(.lively)["voice_energy"] as? String, "lively")
-        // 자동은 **빈 값으로 보낸다** — 키를 빼면 '안 바꿈' 이 되어 고른 '자동' 이 무시된다.
-        XCTAssertEqual(try encoded(.auto)["voice_energy"] as? String, "")
-
-        let viewer = try encoded(nil)
-        XCTAssertNil(viewer["voice_energy"])
-        XCTAssertEqual(viewer.keys.sorted(), ["listener_title", "relationship_label"])
-    }
-
-    /// 모르는 결은 서버가 400 `INVALID_VOICE_ENERGY` 로 거절한다. 공용 표가 받고,
-    /// 코드가 본문에만 박혀 온 경우에도 폴백 목록으로 찾아낸다.
-    func test_invalidVoiceEnergy_hasCalmMessage() {
-        let expected = "목소리 느낌을 확인하지 못했어요. 다시 골라 주세요."
-        XCTAssertEqual(APIErrorMessages.message(for: "INVALID_VOICE_ENERGY"), expected)
-        XCTAssertEqual(VoiceStudioViewModel.localizedVoiceMessage(forCode: "INVALID_VOICE_ENERGY"), expected)
-        XCTAssertTrue(VoiceStudioViewModel.knownErrorCodes.contains("INVALID_VOICE_ENERGY"))
-
-        let vm = VoiceStudioViewModel()
-        let raw = "{\"error\":\"voice_energy must be '', 'lively' or 'calm'\",\"error_code\":\"INVALID_VOICE_ENERGY\"}"
-        XCTAssertEqual(vm.mapVoiceError(APIError.server(status: 400, message: raw, errorCode: nil)), expected)
+        XCTAssertEqual(json.keys.sorted(), ["listener_title", "relationship_label"])
+        XCTAssertEqual(json["relationship_label"] as? String, "엄마")
+        XCTAssertEqual(json["listener_title"] as? String, "우리 딸")
     }
 
     func test_voiceDraftPromotionCarriesSharingChoice() throws {

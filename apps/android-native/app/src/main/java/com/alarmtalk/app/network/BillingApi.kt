@@ -32,7 +32,9 @@ data class BillingSubscriptionResponse(
      *
      * ⚠ **이 계정의 [subscription] 은 그대로 null 이다.** 서버는 가짜 구독 객체를 만들지
      * 않는다 — 만들면 해지 버튼이 뜨고 `/billing/cancel` 은 404 를 낸다. 이용권 화면은
-     * 이 필드로 '무료 이용 중' 한 줄만 보여 준다.
+     * 이 필드로 '무료 이용 중' 문구만 보여 준다 — 프로모만 쓰는 계정은 개인 카드('현재 이용권')의
+     * 상태 문구, 산 이용권·공유 멤버·보류 행이 있는 계정은 카드 목록 위 한 줄이다
+     * (`ui/billing/BillingPanels.kt` 의 `planScreenCurrentOf`, 스펙 billing-lifecycle D4).
      */
     @SerializedName("personal_promo") val personalPromo: PersonalPromo? = null,
 )

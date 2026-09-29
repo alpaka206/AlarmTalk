@@ -164,11 +164,13 @@
 | 단계 | 화면에 두는 것 | 다음 조건 |
 | --- | --- | --- |
 | 음원 준비 | 녹음/파일 2택, 녹음 카드 또는 파일 자르기·미리듣기, 접힌 예시 대본 | 12초 이상 2분 이하 음원 |
-| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, **목소리의 결(자동/경쾌/차분)**, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭·결은 선택(결 기본 = 자동) |
+| 세부 정보 | 목소리 이름, 관계, 나를 부를 호칭, 알람 문구 언어, 필요한 생체정보 동의 | **이름만 필수**. 관계·호칭은 선택 |
 | 생성 중 | 진행 표시와 설명만 | 서버 초안 생성 완료 |
 | 미리듣기·확정 | 생성된 목소리 듣기·문구 수정, 공유 설정, 기존 목소리 교체 확인 | 끝까지 들어본 뒤 저장 또는 삭제 |
 | 오프라인 준비 | 서버 생성과 기기 다운로드를 합친 진행률 | 나가도 백그라운드에서 계속 |
 
+- **목소리의 결(경쾌/차분)은 묻지 않는다**(2026-09-29 — 1.2.10 의 '목소리 느낌' 선택을 뺐다).
+  결은 서버가 등록 녹음 전사로 추정한다(§4-2). 되살리지 말 것.
 - **진행률은 하나다 — 생성 0~50%, 다운로드 50~100%**(2026-09-21 지시). 사용자에게는 '서버가
   만드는 중' 과 '폰이 받는 중' 이 두 가지 일이 아니라 "알람 음성이 준비되는 중" 하나다.
   단계마다 n/21 을 따로 세면 생성이 끝나는 순간 100%에서 0%로 **뒤로 간다**. 마지막 단계와
@@ -183,6 +185,14 @@
   돌아간다 — "다 됐어요" 팝업도, 등록 직후의 '등록했어요' 안내도 두지 않는다. 그 문구는
   다음 화면이 이미 말하는 것을 한 번 더 말하는 데다, 아무도 지우지 않아 목소리 탭 맨 위에
   그대로 남아 있었다. (안드로이드도 성공 갈래에서 배너를 비운다.)
+- **확정 화면의 본문은 교체일 때만 한 줄이다**(2026-09-29 지시). 제목 `이 목소리로 저장할까요?`
+  아래에는 이미 등록된 목소리가 있어 이 저장이 **교체**일 때만 `저장하면 이전 목소리는 삭제돼요.`
+  를 둔다. 그 경우 저장은 교체 체크를 켜야 열리므로 이 화면의 저장은 곧 교체다 — 체크 여부로
+  가르지 않는다(체크할 때마다 맨 위 줄이 생겼다 사라지면 화면이 밀린다). 교체가 아니면 본문
+  없이 곧바로 미리듣기 카드다. **월 등록 한도 경고**("이번 달에 만들 수 있는 목소리를 다 쓰게
+  돼요…")는 사용자 승인으로 뺐다 — 남은 횟수는 목소리 탭 머리의 `생성 가능 n/m회` 가 말한다.
+- **미리듣기 카드 아래 안내는 `말투를 원하는 대로 바꿔 보세요.` 한 문장이다**(2026-09-29 지시).
+  "매일 아침 문구가 이 말투로 만들어져요." 는 뺐다.
 - **공유 설정은 확정 단계에서 고른다.** 아직 버릴 수 있는 초안의 입력 폼에서 묻지 않는다.
   승격 요청은 그 선택을 함께 저장하며, 기존 목소리를 제자리 교체하는 갈래에서도 동일하다.
   일반 공유 on/off는 커밋 직후 알린다. 단 제자리 교체로 공유 목소리의 실체가 바뀌면 모든
@@ -340,10 +350,16 @@
   이 값이 미리듣기와 매일 사전렌더 문구의 언어가 된다.
 - 생성 중·미리듣기에서 그냥 나가면 임시 목소리가 남거나 사라진 이유를 알 수 없다.
   생성 중에는 이탈을 막고, 미리듣기에서는 삭제 결과를 명시한 확인을 거친다.
-- 다섯 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다.
+- 앞의 네 단계는 양쪽 모두 **공용 상단바 + 스크롤 본문 + 고정 하단 행동** 골격을 쓴다.
   상단바는 `목소리 만들기`를 가운데 두고, 음원 준비에서는 목록으로 나가며 세부 정보에서는
   음원 준비로 돌아간다. 생성 중에는 뒤로가기를 숨기고, 미리듣기·확정에서는 초안 삭제 경고를
   거친다. 같은 일을 하는 하단 `이전`이나 별도 X를 함께 두지 않는다.
+- ⚠ **마지막 단계(오프라인 준비)는 그 골격을 쓰지 않는다**(2026-09-29 지시). 상단바 제목
+  `목소리 만들기` 를 두지 않고(뒤로가기도 없는 자리라 제목만 떠 있었다), 제목·안내·퍼센트·막대
+  블록을 화면 **한가운데**(가로·세로)에, `백그라운드에서 계속` 을 화면 **맨 아래**(내비게이션
+  바·홈 인디케이터 위)에 둔다. 블록 위아래를 아래 버튼 줄만큼 똑같이 비워, 정확히 가운데에
+  두면서 글자가 커져도 버튼과 겹치지 않게 한다. 버튼이 하는 일(화면만 닫고 생성·다운로드는
+  계속)과 뒤로가기 동작은 바뀌지 않았다.
 - ⚠ **초안은 저장하지 않으면 없는 것이다**(2026-08-25 확정). 등록 화면을 나가면 경고를 거쳐
   **삭제**한다 — 양 앱 모두. 그러니 "결정을 안 끝낸 초안" 이라는 상태를 **사용자에게 보여
   주지 않는다.**
@@ -380,24 +396,34 @@
 - **사람이 쓴 본보기**: 같은 의도의 기본 목소리 대사(`STOCK_CLIP_PRESETS`, 카테고리·순번이 클론 시드와
   맞물린다)를 함께 준다. 리듬·쉼(…)·공감→권유 흐름·태그 거는 법만 따르고, 문장과 **어체는 그 목소리의
   관계로 새로 쓴다**(본보기는 중립 화자의 해요체다). 인사는 짝이 없다(기본 목소리 인사는 '목소리 소개').
-- **목소리의 결**: `lively`(경쾌) / `calm`(차분·진중) / 자동.
+- **목소리의 결**: `lively`(경쾌) / `calm`(차분·진중) / 정하지 않음.
   - 경쾌: 짧고 통통 튀는 문장, `[cheerfully]`·`[playfully]`·`[laughs]` 류, 무겁지 않게.
   - 차분: 차분하고 진심 어린 문장, 느낌표 거의 없음, `[cheerfully]`·`[playfully]`·`[giggles]`·`[excited]`·`[laughs]` 금지,
     `[warmly]`·`[sincerely]`·`[reassuring]`·`[measured, deliberate]` 류. **차분은 졸림이 아니다** — 끝은
     분명하게 깨우고 졸린 태그는 여전히 금지. **차분은 존댓말도 아니다** — 연인·친구의 반말은 반말이다.
   - ⚠ **차분의 금지 태그는 서버가 지운다** — 프롬프트만으로는 모델이 어겨도 그대로 저장된다. 태그가
     하나도 없을 때 입히는 카테고리 기본값(`cheerfully`·`playfully`)도 차분이면 `warmly` 로 바꾼다.
-    등록 미리듣기가 생성에 실패해 고정 예문으로 떨어져도 같다 — 분석을 기다려 결을 알았으면 그 결(고른 값 >
-    추정값)을, 모르면 고른 결만 본다. 고정 예문으로 합성한 태그는 `preview_tag` 에 남겨 확정 뒤 재생이 같은
-    태그를 쓴다(다시 계산하면 확정 뒤 채워진 분석값 때문에 태그가 바뀌어 재생이 캐시를 빗나간다).
-  - **정하는 곳은 사용자 선택이 먼저다.** 등록 '세부 정보' 단계에서 고른 값(`voice_profiles.voice_energy`)이
-    등록 녹음 전사로 추정한 값(`speech_style.energy`)보다 앞선다. 자동이면 추정값을 쓰고, 그것도 없으면
-    결을 따로 정하지 않는다.
+    등록 미리듣기가 생성에 실패해 고정 예문으로 떨어져도 같다 — 분석을 기다려 결을 알았으면 그 결(1.2.10 이
+    고른 값 > 추정값)을, 모르면 고른 결만 본다(새 앱의 초안은 고른 결이 없다). 고정 예문으로 합성한 태그는
+    `preview_tag` 에 남겨 확정 뒤 재생이 같은 태그를 쓴다(다시 계산하면 확정 뒤 채워진 분석값 때문에 태그가
+    바뀌어 재생이 캐시를 빗나간다).
+  - **정하는 곳은 등록 녹음 전사다**(2026-09-29 사용자 결정 — "목소리 느낌 그거 그냥 없애야 할거같아 …
+    말투라도 보고 진행해봐"). 두 앱 모두 '세부 정보' 단계에 결을 고르는 칸이 **없고** 클론 요청에 결을 싣지
+    않는다. 서버가 전사로 추정한 값(`speech_style.energy`)을 쓰고, 전사가 어느 쪽도 분명히 보여 주지 않으면
+    결을 따로 정하지 않는다(말투 분석의 다른 값 — 사투리·어체·말버릇·페르소나 — 는 그대로 쓴다).
+    - **1.2.10 앱만 예외다.** 그 앱은 아직 '목소리 느낌'(자동/경쾌/차분)을 그리고 고른 값을 보낸다
+      (`voiceEnergy`, 자동 = 빈 값). 서버는 그 값을 계속 받아(`voice_profiles.voice_energy`) 추정값보다
+      앞세운다 — 무시하면 그 앱의 컨트롤이 아무것도 하지 않는 죽은 컨트롤이 된다. 이미 저장된 고른 값도
+      그대로 따른다. 받는 처리는 두 스토어의 `minSupported`(`lib/app-version.ts`)가 선택지를 뺀 릴리스를
+      넘긴 뒤에 지운다(그때 `INVALID_VOICE_ENERGY` 도 — 앱 문구 표에서는 이미 뺐다. 받을 길이 없다).
   - ⚠ **음향은 보지 않는다.** 목소리 높낮이·속도를 보려면 음성 파일을 Vertex 로 보내야 하는데, 처리방침·
-    동의는 전사 글자까지만 다룬다. 그래서 사용자가 고르게 했다.
+    동의는 전사 글자까지만 다룬다. Gemini 가 받는 것은 **전사(글자)** 뿐이라, 추정하는 결도 목소리 톤이
+    아니라 **말투**(느낌표·웃음·어미·문장 길이)에서 읽힌 것이다. 1.2.10 은 그래서 사용자가 고르게 했지만,
+    등록 단계에 칸을 하나 더 둘 만큼의 차이가 아니라고 보고 뺐다(2026-09-29).
   - 관계·호칭처럼 **초안에서만 바뀐다**(정식 등록 뒤에는 `VOICE_PERSONA_LOCKED`). 초안에서 결을 바꾸면
-    미리듣기 문구를 비워 새 결로 다시 만든다. 결을 보내지 않은 구버전 앱의 요청은 그 값을 건드리지 않는다.
-    목소리 **교체**(`replace_existing`)도 초안의 결을 현역 프로필로 옮긴다.
+    미리듣기 문구를 비워 새 결로 다시 만든다. 결을 보내지 않은 요청(1.2.10 전 앱·1.2.10 다음 앱)은 그 값을
+    건드리지 않는다. 목소리 **교체**(`replace_existing`)도 초안의 결을 현역 프로필로 옮긴다 — 새 앱의
+    초안은 결이 비어 있으므로 교체하면 옛 목소리에서 고른 결도 비고, 새 녹음의 전사 추정을 따른다.
   - ⚠ **사전렌더는 말투 분석을 기다린다.** 분석은 등록 응답 뒤에 돌아서 승격이 더 빠를 수 있는데, 그때
     구우면 21개가 말투·결 없이 게시되고 뒤늦은 분석은 되돌리지 못한다. 분석이 `pending` 인 동안 cron 은
     건너뛰고, 소유자 주도 전진은 `claim_stuck` 으로 "잠깐 뒤 다시" 를 답한다. **상한 10분** — 분석이
@@ -875,7 +901,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
 | 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
-| 클론 문구의 결·사람이 쓴 본보기 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 의 '목소리 느낌'(`data/VoiceEnergy.kt`, 기본 자동) → `VoiceProfileCreationDraft.voiceEnergy` → `network/VoiceCloneRequest.kt` `createVoiceCloneDraft`(`voiceEnergy` 폼 필드, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(관계·호칭·결을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest` | `Views/Voices/VoiceCloneUploadFlow.swift` `voiceEnergySection`(`VoiceEnergy`, `AlarmTalkAPIModels.swift`, 기본 자동) → `AlarmTalkAPI.voiceCloneMultipartFields`(`voiceEnergy`, 자동 = 빈 값). 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH 는 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests` | `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy` · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
+| 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
 | 옛 값 정규화 | `AlarmPlayModes.normalize` | `AlarmPlayMode.decode` | — |
 | 문구 목록(하나) | `EditorMessageContexts` → `FreeBucketOrder` (`ui/editor/AlarmEditorControls.kt`) | `MessageSettingsPane.options` → `FreeBucket.order` | `STOCK_CLIP_PRESETS` → `FREE_BUCKET_CATEGORIES` |
@@ -904,6 +930,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 편집기 목소리 프리셀렉트 | `AlarmEditorScreen` 화면 스코프 | `AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded` | — |
 | 목소리 등록 5단계 | `VoiceProfileManagementPanel.VoiceRegistrationStep` | `VoicesRoute` + `VoiceCloneUploadFlow.RegistrationStep` | 초안 생성·승격·사전렌더 큐 |
 | 등록 언어·선택 페르소나 | `VoiceProfileManagementPanel` Details | `VoiceCloneUploadFlow.detailsSection` | `POST /voice/clone` |
+| 확정 본문 = 교체일 때만 한 줄 · 월 한도 경고 없음 · 말투 안내 한 문장 | `VoiceProfileManagementPanel` Preview(`replaceTargetVoice` → `voices_confirm_replace_body`, `voices_preview_edit_hint`); `VoiceRegistrationCopyTest` | `VoicePreviewConfirmView`(`registeredVoice`) · `Localizable.xcstrings` | — |
+| 오프라인 준비 배치 — 제목 없음 · 블록 가운데 · '백그라운드에서 계속' 맨 아래 | `VoiceProfileManagementPanel.kt` `VoiceClipPreparationStep` | `ClipPreparationView.registrationPreparation`; `AlarmTalkUITests/VoicePreparationScreenshotUITests` | — |
 | 확정 단계 공유 | `VoiceProfileManagementPanel` Preview | `VoicePreviewConfirmView` | 일반 승격은 `scheduleVoiceShareChangedPush`, 제자리 교체는 `notifySharedVoicePrerenderComplete`(공유 해제만 즉시) |
 | 제자리 교체 원자성·원본 승계 | — | — | `replaceVoiceInPlace` + `voice_uploads` + `voice_prerender_queue` |
 | 교체도 같은 등록 게이트 | — | — | `replaceVoiceInPlace`(플랜·동의·`voice_profile_change_ledger`) |
