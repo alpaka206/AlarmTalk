@@ -195,6 +195,18 @@ struct PlanScreenCurrent: Equatable {
         tier != .free && (!isCurrent(tier) || promoOnPersonalCard)
     }
 
+    /// 프로모 문구를 카드 목록 **위에** 그리는가 — 플랜 카드가 지금 그려지는지(`cardsVisible`)까지 본다.
+    ///
+    /// iOS 는 스토어 상품을 기다리는 동안(`BillingPlansSkeleton`)과 가져오기에 실패한 동안
+    /// (`BillingProductsErrorState` — 오프라인 등)에는 플랜 카드를 **한 장도** 그리지 않는다. 그때
+    /// `promoOnPersonalCard` 만 보면 문구가 앉을 개인 카드가 없어 **어디에도 보이지 않는다** — 그래서
+    /// 카드가 없는 동안은 카드 위 한 줄로 되돌린다. 카드가 그려지면 다시 개인 카드의 상태 문구다
+    /// (두 자리에 동시에 보이지 않는다). 안드로이드는 카드를 언제나 그려서 이 갈래가 없다
+    /// (`SubscriptionPanel` 의 `options.forEach`) — 스펙 D4.
+    func drawsPromoLineAboveList(cardsVisible: Bool) -> Bool {
+        promoLineAboveList || (promoOnPersonalCard && !cardsVisible)
+    }
+
     /// - Parameters:
     ///   - purchasedTier: 산 이용권 — 예전에 현재 카드를 고르던 값 그대로(`BillingPanel.currentTier`).
     ///   - isSharedMember: 가족·커플 그룹의 멤버(`familyGroup.role == "member"`, 그룹 있음).

@@ -183,6 +183,11 @@ struct PlanCard: View {
                     lineWidth: 1
                 )
         )
+        // 카드 한 장을 컨테이너로 묶는다 — 안의 글자·버튼은 각자 그대로 읽힌다(`.contain`).
+        // UI 테스트가 '현재 이용권' 뱃지·결제 버튼·상태 문구가 **어느 카드에** 있는지 가리는 자리다
+        // (`PersonalPromoNoticeUITests`). 카드마다 같은 글자가 있어 화면 전체로는 특정할 수 없다.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("planCard.\(tier.apiKey)")
     }
 
     /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
@@ -195,8 +200,9 @@ struct PlanCard: View {
 
     @ViewBuilder
     private func priceButton(for plan: SubscriptionProduct) -> some View {
-        // ⚠ **현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
-        // `BillingPanels.kt` 의 `if (option.key != "free" && !isCurrent)` 와 같다).
+        // ⚠ **산 현재 이용권 카드에는 버튼을 그리지 않는다**(2026-08-24 지시, 안드로이드
+        // `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`)의 `if (showsPurchase)` —
+        // 판정은 양쪽 다 `PlanScreenCurrent.showsPurchase` 다).
         // 예전에는 비활성 '사용 중' 버튼을 그렸는데, 누를 수 없는 버튼은 자리를 차지하면서
         // **누를 수 있는 것처럼** 보인다 — 카드 위쪽 '현재 이용권' 뱃지가 이미 같은 말을 한다.
         //

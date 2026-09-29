@@ -737,6 +737,37 @@ final class PersonalPromoTests: XCTestCase {
         }
     }
 
+    /// iOS 는 스켈레톤·가져오기 실패 동안 플랜 카드를 한 장도 그리지 않는다 — 그때 개인 카드에 앉을
+    /// 문구는 **카드 위 한 줄로** 되돌아와야 한다. 예전에는 그 상태(오프라인 첫 진입 등)에서 문구가
+    /// 어디에도 없었다. 카드가 그려지면 다시 개인 카드에만 있다.
+    func test_planScreen_promoLineFallsBackAboveListWhileCardsAreHidden() {
+        let promoOnly = planScreen()
+        XCTAssertTrue(promoOnly.drawsPromoLineAboveList(cardsVisible: false), "카드가 없는데 문구가 사라졌다")
+        XCTAssertFalse(promoOnly.drawsPromoLineAboveList(cardsVisible: true), "카드가 있으면 개인 카드에만 말한다")
+
+        // 모든 입력 조합에서: 프로모가 있으면 **정확히 한 자리**(개인 카드 또는 카드 위)에 보이고,
+        // 없으면 어디에도 없다. 카드가 보이면 예전 규칙(`promoLineAboveList`)과 같다.
+        for purchased in PlanTier.allCases {
+            for member in [false, true] {
+                for promoActive in [false, true] {
+                    for held in [false, true] {
+                        for cardsVisible in [false, true] {
+                            let screen = planScreen(purchased: purchased, member: member, promoActive: promoActive, held: held)
+                            let label = "\(purchased)/\(member)/\(promoActive)/\(held)/cards=\(cardsVisible)"
+                            let onCard = screen.promoOnPersonalCard && cardsVisible
+                            let above = screen.drawsPromoLineAboveList(cardsVisible: cardsVisible)
+                            XCTAssertFalse(onCard && above, "두 자리에 동시에 말했다 — \(label)")
+                            XCTAssertEqual(onCard || above, promoActive, "보여야 할 문구가 없다(또는 반대) — \(label)")
+                            if cardsVisible {
+                                XCTAssertEqual(above, screen.promoLineAboveList, label)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// 카드 위 한 줄과 개인 카드의 상태 문구는 **같은 카탈로그 키**에서 나온다 — 날짜가 자리에 들어간다.
     func test_personalPromoLineText_fillsTheDay() {
         let text = BillingPanel.personalPromoLineText(lastDay: "10월 31일")

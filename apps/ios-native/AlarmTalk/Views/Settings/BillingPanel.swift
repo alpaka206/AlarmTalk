@@ -25,8 +25,10 @@ import UIKit
 /// 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**
 /// (업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). Apple 확인 시트가 그걸 문장으로
 /// 알려 주므로, 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다.
-/// 지금 플랜 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
+/// **산** 이용권의 현재 카드에는 **버튼이 아예 없고**(안드로이드와 같다), 나머지 카드는 그대로
 /// 눌리되 라벨이 '이용권 변경' 인 게 그 경로다 — 결제가 아니라 전환이라는 뜻이다.
+/// 단 기간 한정 개인 플랜만 쓰는 계정은 개인 카드가 '현재 이용권' 이어도 '결제하기' 가 남는다 —
+/// 프로모는 산 이용권이 아니다(`PlanScreenCurrent.showsPurchase`, 스펙 D4).
 /// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -122,19 +124,25 @@ struct BillingPanel: View {
             // 산 이용권·공유 멤버·보류 행이 있는 계정만 예전처럼 카드 위 한 줄이다.
             let promoLastDay = personalPromoLastDay
             let screen = planScreen(promoActive: promoLastDay != nil)
-            if screen.promoLineAboveList, let promoLastDay {
+            // 플랜 카드가 **그려지는가** — 첫 로딩(스켈레톤)과 가져오기 실패(다시 시도)에는 카드가
+            // 한 장도 없다. ⚠ 그때 개인 카드에 앉을 문구를 그냥 두면 **어디에도 안 보인다**(오프라인
+            // 첫 진입 등) — 카드가 없는 동안은 카드 위 한 줄로 되돌린다(`drawsPromoLineAboveList`).
+            let showsSkeleton = subscriptions.isLoadingProducts && subscriptions.products.isEmpty
+            let showsFetchError = subscriptions.products.isEmpty
+                && subscriptions.productFetchFailed
+                && subscriptions.hasAttemptedProductFetch
+            let cardsVisible = !showsSkeleton && !showsFetchError
+            if screen.drawsPromoLineAboveList(cardsVisible: cardsVisible), let promoLastDay {
                 personalPromoLine(lastDay: promoLastDay)
             }
             let personalCardStatus: String? = screen.promoOnPersonalCard
                 ? promoLastDay.map { Self.personalPromoLineText(lastDay: $0) }
                 : nil
 
-            if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
+            if showsSkeleton {
                 // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
                 BillingPlansSkeleton()
-            } else if subscriptions.products.isEmpty
-                && subscriptions.productFetchFailed
-                && subscriptions.hasAttemptedProductFetch {
+            } else if showsFetchError {
                 // 가져오기 실패(일시적 blip)로 제품이 비어버린 경우 — 영구 비활성
                 // 대신 "다시 시도" 로 재요청할 수 있게 한다.
                 BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
@@ -354,7 +362,9 @@ struct BillingPanel: View {
         String(localized: "개인 플랜 무료 이용 중 · \(lastDay)까지")
     }
 
-    /// 카드 위 한 줄 — 산 이용권·공유 멤버·보류 행이 있는 계정만(`PlanScreenCurrent.promoLineAboveList`).
+    /// 카드 위 한 줄 — 산 이용권·공유 멤버·보류 행이 있는 계정, 그리고 프로모만 쓰는 계정이라도 플랜
+    /// 카드가 아직·끝내 그려지지 않은 동안(스켈레톤·가져오기 실패)이다
+    /// (`PlanScreenCurrent.drawsPromoLineAboveList(cardsVisible:)`).
     /// 글자만 둔다 — 안드로이드(`BillingPanels.kt` 의 `personal_promo_plan_line`)에 아이콘이 없다.
     private func personalPromoLine(lastDay: String) -> some View {
         Text(Self.personalPromoLineText(lastDay: lastDay))

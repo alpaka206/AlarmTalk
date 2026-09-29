@@ -8,7 +8,8 @@ import com.google.gson.stream.JsonWriter
 /**
  * `personal_promo` 를 **관대하게** 읽는 Gson 어댑터([PersonalPromo] 에 `@JsonAdapter` 로 붙는다).
  *
- * 왜 따로 두는가: 이 값은 이용권 화면의 한 줄과 종료 안내에만 쓰는 **표시용** 필드인데, Gson
+ * 왜 따로 두는가: 이 값은 이용권 화면(프로모 문구와 '현재 이용권' 카드의 자리 — 개인 카드의 상태
+ * 문구 또는 카드 목록 위 한 줄, `planScreenCurrentOf`)과 종료 안내에 쓰는 **표시용** 필드인데, Gson
  * 기본(리플렉션) 어댑터는 객체 자리에 문자열·배열·숫자가 오면 `JsonSyntaxException` 을 던진다.
  * 그 예외는 이 필드가 아니라 **응답 전체**의 파싱을 깨뜨린다 — 로그인·가입·`/auth/me`·구독
  * 조회가 통째로 실패한다. 표시용 필드 하나 때문에 로그인이 막히면 안 되므로:

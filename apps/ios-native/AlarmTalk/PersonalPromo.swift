@@ -21,7 +21,10 @@ import Foundation
 ///    앱은 다음 `/auth/me` 전까지 캐시된 `plus` 를 들고 있다. **끝 전에 계산된** 답이 끝을
 ///    넘기면 그 `plus` 는 믿지 않는다. 끝 **뒤에** 계산된 답은 서버가 이미 그 시각에 판단한
 ///    것이라 그대로 믿는다. 계산 시각은 서버 시계(`computed_at`)가 우선이다(`fetchedAt`).
-/// 2. 이용권 화면의 한 줄(무료 이용 중 · 언제까지).
+/// 2. 이용권 화면의 프로모 문구(무료 이용 중 · 언제까지)와 '현재 이용권' 카드 — 프로모만 쓰는
+///    계정은 개인 카드가 현재이고 문구는 그 카드의 상태 한 줄, 산 이용권·공유 멤버·보류 행
+///    (`deletesVoicesAtEnd == false`)이 있는 계정은 카드 목록 위 한 줄이다
+///    (`PlanScreenCurrent.resolve`, 스펙 billing-lifecycle D4).
 /// 3. 종료 전 안내(`noticeFrom` 부터, 앱에 들어올 때마다 — `PersonalPromoNotice`).
 /// 4. 보류 규칙 — 위 계약의 '이 값이 있다 = 원시 free'.
 struct PersonalPromo: Codable, Equatable {
@@ -30,8 +33,15 @@ struct PersonalPromo: Codable, Equatable {
     /// 종료 안내를 띄우기 시작하는 시각(ISO 8601).
     var noticeFrom: String?
     /// 지금 끝나면 이 계정의 목소리가 **3일 보관 후 삭제 대상인가**(서버의 종료 전환 대상 —
-    /// 원시 free 이고 활성 구독 행이 없음). 보류(ON_HOLD) 계정처럼 대상이 아니면 false 라
-    /// 종료 안내에서 삭제 문장을 뺀다.
+    /// 원시 free 이고 활성 구독 행이 없음). 보류(ON_HOLD) 계정처럼 대상이 아니면 false 다.
+    ///
+    /// 이 값을 읽는 곳은 둘이다:
+    /// - 종료 안내 — false 면 삭제 문장을 뺀다.
+    /// - 이용권 화면의 **보류 행 신호** — false 면 원시 free 인데 `active` 구독 행이 남은 계정(결제
+    ///   보류 등)이라 개인 카드를 '현재 이용권' 으로 올리지 않고 프로모 문구를 카드 위 한 줄로 둔다
+    ///   (`BillingPanel.planScreen` 이 `PlanScreenCurrent.resolve` 에 넘기는 `hasHeldSubscriptionRow`,
+    ///   스펙 billing-lifecycle D4 — 안드로이드 `planScreenCurrentOf` 와 같은 입력). 보류 행은 구독
+    ///   응답에 실리지 않아 이 값이 아니면 프로모만 쓰는 계정과 구별되지 않는다.
     ///
     /// 구버전 서버처럼 **키가 없으면 true** 로 읽는다 — 삭제될 목소리를 안내하지 않는 쪽이
     /// 더 나쁘다(약관 제10조의 '전환 전에 앱 안에서 안내한다').
@@ -130,7 +140,8 @@ struct PersonalPromo: Codable, Equatable {
     var endsAtDate: Date? { endsAt.flatMap(PaidVoiceGate.parseTimestamp) }
     var noticeFromDate: Date? { noticeFrom.flatMap(PaidVoiceGate.parseTimestamp) }
 
-    /// 기기 시계로 끝났는가 — **표시**(이용권 화면의 한 줄)만 쓴다. 권한 판정은 `isStale` 이다.
+    /// 기기 시계로 끝났는가 — **표시**(이용권 화면의 프로모 문구와 '현재 이용권' 카드)만 쓴다.
+    /// 권한 판정은 `isStale` 이다.
     /// 종료 시각을 못 읽으면 끝나지 않은 것으로 본다.
     func hasEnded(at now: Date) -> Bool {
         guard let end = endsAtDate else { return false }

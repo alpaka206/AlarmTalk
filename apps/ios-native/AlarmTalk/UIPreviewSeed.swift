@@ -66,11 +66,12 @@ enum UIPreviewSeed {
 
     /// 기간 한정 개인 플랜을 쓰는 계정으로 띄운다 — `-UIPreviewPersonalPromo <남은 일수>`.
     ///
-    /// 서버 없이 이용권 화면의 '무료 이용 중' 한 줄과 **종료 안내 알럿**을 보려고 둔다. 종료는
-    /// 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격). 남은 일수를
-    /// 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
+    /// 서버 없이 이용권 화면의 '무료 이용 중' 문구(개인 카드 또는 카드 위 한 줄)와 **종료 안내 알럿**을
+    /// 보려고 둔다. 종료는 지금부터 그 일수 뒤, 안내 시작은 그 7일 전이다(서버 계약과 같은 간격).
+    /// 남은 일수를 7 이하로 주면 실행하자마자 안내가 뜬다. 이때 plan 은 서버가 주는 계산값(`plus`)이다.
     /// `-UIPreviewPromoKeepsVoices` 를 함께 주면 종료 전환 대상이 아닌 계정
-    /// (`deletes_voices_at_end: false` — 보류 중인 구독 행이 남은 계정)으로 심는다.
+    /// (`deletes_voices_at_end: false` — 보류 중인 구독 행이 남은 계정)으로 심는다 — 이용권 화면은
+    /// 그 계정의 문구를 카드 위 한 줄로 두고 '현재 이용권' 은 무료 카드다(스펙 D4).
     static var previewPersonalPromo: PersonalPromo? {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
