@@ -24,12 +24,18 @@ export const VoicePreviewTextUpdateSchema = z.object({
 export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema>;
 
 /**
- * 목소리의 결 — 등록할 때 사용자가 고른다(관계·호칭과 같이 초안 단계에서만 바꿀 수 있다).
- * '' = 자동: 등록 녹음 전사로 추정한 값(`speech_style.energy`)을 쓰고, 그것도 없으면 결을 따로 정하지 않는다.
- * 알람 문구의 문장 에너지와 딜리버리 태그가 이 결을 따른다 — 경쾌한 목소리가 굳은 문장을 읽거나
- * 진중한 목소리가 깔깔대면 그 목소리의 핵심이 깨진다.
+ * 목소리의 결(경쾌/차분) — ⚠ **1.2.10 앱 호환용으로만 남은 계약이다.**
+ * 1.2.10 만 등록 '세부 정보' 단계에서 '목소리 느낌'(자동/경쾌/차분)을 고르게 하고 이 값을 보낸다
+ * (`POST voice/clone` 의 `voiceEnergy`, `PATCH voice/:id/relationship` 의 `voice_energy`, '' = 자동).
+ * 그다음 앱은 선택지를 뺐고(2026-09-29) 이 값을 보내지 않는다 — 그러면 서버는 등록 녹음 전사로 추정한
+ * 말투(`speech_style.energy`)를 쓰고, 그것도 없으면 결을 따로 정하지 않는다. 이미 저장된 고른 값은
+ * 추정값보다 앞선다(`withVoiceEnergy`). 알람 문구의 문장 에너지와 딜리버리 태그가 이 결을 따른다.
  *
- * ⚠ 음향은 보지 않는다. 음성 파일을 Vertex 로 보내려면 처리방침·동의부터 바꿔야 해서 사용자 선택으로 정했다.
+ * 받는 처리(와 이 스키마)는 두 스토어의 `minSupported`(`lib/app-version.ts`)가 선택지를 뺀 릴리스를
+ * 넘긴 뒤에 지운다 — `docs/spec/voice-and-message.md` 4-2, `docs/qa/dev-test-handoff.md`
+ * 「서버의 목소리 느낌 받는 처리 정리」. 먼저 지우면 1.2.10 의 선택지가 죽은 컨트롤이 된다.
+ *
+ * ⚠ 음향은 보지 않는다. Gemini 가 받는 것은 전사(글자)뿐이라, 추정하는 결도 목소리 톤이 아니라 말투다.
  */
 export const VoiceEnergySchema = z.enum(['', 'lively', 'calm']);
 export type VoiceEnergy = z.infer<typeof VoiceEnergySchema>;

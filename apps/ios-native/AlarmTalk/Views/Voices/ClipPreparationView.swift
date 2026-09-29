@@ -144,54 +144,76 @@ struct ClipPreparationView: View {
         .background(theme.palette.surface)
     }
 
+    /// ⚠ **등록 폼 골격(상단바 + 본문 + 하단 행)을 쓰지 않는다**(2026-09-29 지시).
+    ///  - 상단바 제목 '목소리 만들기' 를 두지 않는다 — 뒤로가기도 없는 자리라 제목만 떠 있었다.
+    ///  - 제목·안내·퍼센트·막대 블록은 화면 **한가운데**(가로·세로)다. 위아래를 아래 버튼 줄만큼
+    ///    **똑같이** 비워, 정확히 가운데에 두면서도 글자가 커졌을 때 버튼과 겹치지 않게 한다.
+    ///  - '백그라운드에서 계속' 은 화면 **맨 아래**(홈 인디케이터 위)다.
+    /// 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 의 `VoiceClipPreparationStep` 과 같은 배치다.
     private var registrationPreparation: some View {
-        VStack(spacing: 0) {
-            WakerTopBar(title: "목소리 만들기", onBack: nil)
-                .padding(.top, 18)
-            Spacer(minLength: 0)
-            VStack(spacing: 12) {
-                Text("이 목소리로 알람 문구를 만들고 있어요")
-                    .font(theme.typography.titleMedium)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(theme.palette.onSurface)
-                Text("준비되는 대로 알람에서 쓸 수 있어요.")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-                Spacer().frame(height: 6)
-                // 생성과 다운로드를 **하나의 퍼센트**로 말한다(2026-09-21 지시).
-                // 숫자가 흔들리지 않게 — 폭이 변하면 시선이 튄다.
-                Text("\(drive.percent)%")
-                    .font(theme.typography.displaySmall)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.2), value: drive.percent)
-                // ⚠ **막대를 스피너와 번갈아 그리지 말 것**(2026-09-21 지적 "잠깐 깜박"). 예전에는
-                //   3초마다 도는 갱신 중에 원형 스피너로 바뀌었는데, 스피너는 제 크기라
-                //   막대(280)와 폭이 달라 **화면이 좁아졌다 넓어졌다** 했다. 전체 개수를 아직
-                //   모르는 동안에도 같은 자리에 같은 폭의 막대를 둔다.
-                ProgressView(value: Double(drive.percent), total: 100)
-                    .progressViewStyle(.linear)
-                    .tint(theme.palette.primary)
-                    .frame(maxWidth: .infinity)
-                Spacer().frame(height: 6)
-                if let onDismiss {
-                    Button("백그라운드에서 계속") { onDismiss() }
-                        .buttonStyle(.plain)
+        VStack(spacing: 12) {
+            Text("이 목소리로 알람 문구를 만들고 있어요")
+                .font(theme.typography.titleMedium)
+                .fontWeight(.semibold)
+                .foregroundStyle(theme.palette.onSurface)
+                .multilineTextAlignment(.center)
+            Text("준비되는 대로 알람에서 쓸 수 있어요.")
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+            Spacer().frame(height: 6)
+            // 생성과 다운로드를 **하나의 퍼센트**로 말한다(2026-09-21 지시).
+            // 숫자가 흔들리지 않게 — 폭이 변하면 시선이 튄다.
+            Text("\(drive.percent)%")
+                .font(theme.typography.displaySmall)
+                .foregroundStyle(theme.palette.onSurface)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.2), value: drive.percent)
+            // ⚠ **막대를 스피너와 번갈아 그리지 말 것**(2026-09-21 지적 "잠깐 깜박"). 예전에는
+            //   3초마다 도는 갱신 중에 원형 스피너로 바뀌었는데, 스피너는 제 크기라
+            //   막대(280)와 폭이 달라 **화면이 좁아졌다 넓어졌다** 했다. 전체 개수를 아직
+            //   모르는 동안에도 같은 자리에 같은 폭의 막대를 둔다.
+            ProgressView(value: Double(drive.percent), total: 100)
+                .progressViewStyle(.linear)
+                .tint(theme.palette.primary)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 24)
+        // 아래 버튼 줄만큼 **위아래를 똑같이** 비운다 — 블록은 정확히 가운데에 있고,
+        // 글자가 커져도 버튼 자리를 침범하지 않는다.
+        .padding(.vertical, onDismiss == nil ? 0 : Self.bottomActionReserve)
+        // ⚠ **폭을 꽉 채운다.** 이게 없으면 자식 중 가로로 늘어나는 것이 하나도 없어 화면
+        //   전체가 내용 폭으로 줄고, 배경 그라데이션도 그만큼만 칠해져 **좌우가 비어
+        //   보인다**(2026-09-21 지적). 높이도 채워야 블록이 세로 가운데에 선다.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 안전 영역 안의 맨 아래 — 홈 인디케이터를 피한다(오버레이는 안전 영역을 따른다).
+        .overlay(alignment: .bottom) {
+            if let onDismiss {
+                Button {
+                    onDismiss()
+                } label: {
+                    Text("백그라운드에서 계속")
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: Self.bottomActionHeight)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .padding(.top, Self.bottomActionTopGap)
+                .padding(.bottom, Self.bottomActionBottomGap)
             }
-            .padding(.horizontal, 24)
-            Spacer(minLength: 0)
         }
-        // ⚠ **폭을 꽉 채운다.** 이게 없으면 자식 중 가로로 늘어나는 것이 하나도 없어(상단바는
-        //   뒤로가기가 없으면 제목 폭이다) 화면 전체가 내용 폭으로 줄고, 배경 그라데이션도
-        //   그만큼만 칠해져 **좌우가 비어 보인다**(2026-09-21 지적). 일반 준비 화면은 이미
-        //   같은 수식자를 쓰고 있었다.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .homeGradientBackground()
+    }
+
+    /// 등록 준비 화면 아래 버튼 줄의 치수. 블록을 가운데에 두는 여백이 이 합을 쓴다.
+    private static let bottomActionTopGap: CGFloat = 10
+    private static let bottomActionHeight: CGFloat = 44
+    private static let bottomActionBottomGap: CGFloat = 12
+    private static var bottomActionReserve: CGFloat {
+        bottomActionTopGap + bottomActionHeight + bottomActionBottomGap
     }
 
     private var headline: String {

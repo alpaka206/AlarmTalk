@@ -37,6 +37,9 @@
   클래스패스로 돌린다) → Play Developer API edits(`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) 로 업로드·트랙·
   validate·commit. iOS 는 xcodegen → archive(`Local.xcconfig`) → export(수동 서명 plist — 자동은
   'No Accounts') → `altool` 검증·업로드 → ASC API 로 버전·whatsNew·빌드 연결·심사 노트·reviewSubmissions.
+  **다음 App Store 버전부터 Copyright(`appStoreVersions` 의 `copyright`)는 `© 2026 vailen`** 이다(2026-09-29
+  사용자 결정). 판매자 이름은 개인 법적 이름 그대로 둔다 — 애플 계정이 개인(개인사업자) 계정이라 판매자
+  이름은 계정 명의를 따른다. 새 버전 레코드를 만들 때 copyright 가 이 값인지 확인한다.
   서버를 먼저 내는 회차는 빌드 전에 main 의 Deploy Backend 실행이 **성공**했고 로그에 그 회차의
   마이그레이션이 적용으로 찍혔는지 눈으로 본다(가정하지 않는다 — 안 돌았으면 `workflow_dispatch`).
 - **1.2.10 순서**(2026-09-27 결정 — 서버 먼저): 버전 올림 → #797(develop→main) 머지로 prod 배포·
@@ -49,6 +52,19 @@
 - 새 버전 레코드에는 **심사 첨부 영상이 따라오지 않는다**(`appStoreReviewAttachments` 빈 목록) —
   노트에 "영상이 첨부돼 있다" 를 적지 않거나 영상을 다시 올린다. 노트 상한은 4000자다. 1.2.9 노트는
   "유지보수·버그 수정만" 머리말이라 1.2.10(새 기능·서버가 켜는 프로모)에는 새로 쓴다.
+- **다음 릴리스(미정)에 실을 사용자 변화** — `docs/product/release-notes.md` 에는 아직 미출시 칸이 없어
+  여기 적어 두고, 그 회차의 출시 노트(ko/en/ja)를 쓸 때 옮긴다:
+  - 목소리 등록 '세부 정보' 의 **'목소리 느낌'(자동·경쾌·차분) 선택을 뺐다**(2026-09-29 사용자 결정,
+    `feat/remove-voice-feel`). 알람 문구의 말투·톤은 서버가 등록 녹음 **전사**로 추정한 말투를 따른다 —
+    Gemini 는 음성이 아니라 전사 글자만 본다(`docs/spec/voice-and-message.md` 4-2). 1.2.10 은 이 선택지를
+    "새 기능" 으로 광고했으니 출시 노트에 없어졌다고 한 줄 적는다(예: "목소리를 등록할 때 고르던 '목소리
+    느낌'을 없앴습니다. 알람 문구는 등록한 녹음의 말투를 따릅니다.").
+- [ ] **서버의 목소리 느낌 받는 처리 정리** — 선택지를 뺀 릴리스가 두 스토어에 게재되고 두 플랫폼의
+      `minSupported`(`app-version.ts`)가 그 릴리스로 오른 **뒤에만**: `POST voice/clone` 의
+      `voiceEnergy`/`voice_energy` 와 `PATCH voice/:id/relationship` 의 `voice_energy` 받는 처리, 400
+      `INVALID_VOICE_ENERGY` 를 지운다(에러 코드는 나간 코드라 목록에서 지우는 것도 그때다). 먼저 지우면
+      1.2.10 의 선택지가 아무것도 하지 않는 죽은 컨트롤이 된다. 이미 저장된 `voice_profiles.voice_energy` 를
+      계속 따를지(`withVoiceEnergy`)는 그때 정한다.
 
 ## 기간 한정 개인 플랜 + 웰컴 코드 안내 폐지 — 2026-09-27 (백엔드)
 

@@ -50,17 +50,4 @@ class ApiErrorMessagesTest {
             apiErrorMessage(context, "AUTH_EMAIL_INVALID"),
         )
     }
-
-    /**
-     * 목소리 느낌(결)이 서버 계약 밖일 때(`INVALID_VOICE_ENERGY`). 등록 화면의 `when` 이 맡지
-     * 않아 이 표로 떨어진다 — 비어 있으면 폴백 "목소리를 만들지 못했어요" 가 되어 사용자가
-     * 멀쩡한 녹음을 다시 한다. iOS `APIErrorMessages.swift` 와 짝이다.
-     */
-    @Test
-    fun 목소리_느낌_오류에는_문구가_있다() {
-        assertEquals(
-            context.getString(R.string.api_error_invalid_voice_energy),
-            apiErrorMessage(context, "INVALID_VOICE_ENERGY"),
-        )
-    }
 }
