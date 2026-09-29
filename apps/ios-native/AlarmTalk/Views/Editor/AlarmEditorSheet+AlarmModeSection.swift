@@ -67,12 +67,21 @@ extension AlarmEditorSheet {
                     voiceLocked: voiceModeBlocked,
                     onLockedVoiceClick: showVoicePlanLockedAlert
                 )
-                    .onChange(of: draft.playMode) { _, newMode in
+                    .onChange(of: draft.playMode) { oldMode, newMode in
                         voiceStudio.preparedAlarm = nil
                         if newMode == .alarmOnly {
                             draft.voiceRepeat = true
                             draft.voiceVolumePercent = 100
                         } else {
+                            if oldMode == .alarmOnly {
+                                // ⚠ **알람 전용 알람에는 문구도 목소리 소스도 없다** — 저장할 때
+                                // 소스를 '직접 녹음' 으로, 문구 필드를 비워 둔다(`toRecord`).
+                                // 그대로 두면 녹음 카드가 뜨고, 목소리를 고르면 **빈 직접 입력**
+                                // 이 된다(2026-09-29 실기기 보고). 안드로이드 `applyAlarmOutput`
+                                // 처럼 목소리(TTS)로 되돌리고, 문구가 비어 있으면 직전 선택을 잇는다.
+                                switchVoiceSource(to: .ttsProfile)
+                                adoptLastMessageChoiceIfUnset()
+                            }
                             selectDefaultVoiceProfileIfNeeded()
                             // 무료 등급은 음성 모드 진입 시 4-값 잠금을 재확인한다.
                             coerceFreeVoiceTierConstraints()

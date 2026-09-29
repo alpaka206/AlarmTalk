@@ -11041,6 +11041,40 @@
         }
       }
     },
+    "직접 입력 문구가 비어 있어요" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your custom message is empty"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直接入力の文言が空です"
+          }
+        }
+      }
+    },
+    "알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type the message your alarm should read, or pick another message type on the message screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アラームが読み上げる文言を入力するか、文章の画面で別の種類を選んでください。"
+          }
+        }
+      }
+    },
     "진동" : {
       "extractionState" : "manual",
       "localizations" : {

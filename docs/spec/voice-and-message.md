@@ -122,6 +122,45 @@
 - **기록 시점은 알람 저장 성공 시 한 곳뿐.** 편집기에서 눌러만 보고 취소한 것은
   기억하지 않는다.
 - **적용 대상은 새 알람뿐.** 기존 알람을 열 때는 저장된 자기 값만 쓴다.
+  - **예외 하나 — 문구가 없던 알람을 목소리 문구로 옮기는 순간**(2026-09-29 실기기 보고).
+    알람 전용·직접 녹음 알람은 저장할 때 문구 필드를 비운다(안드로이드는 종류·테마·문장
+    **전부**, iOS 알람 전용은 테마만 남긴다 — 아래 ⚠). 그 모양이 곧 '직접 입력' 판정식이라, 재생 방식을 '알람' → '목소리' 로 바꾸거나 직접
+    녹음에서 목소리로 옮기면 **빈 직접 입력**으로 보였다 — 저장도 못 하고, 고치려면 한도가
+    걸린 직접 입력을 새로 쳐야 했다. 그때는 **새 알람과 같은 규칙으로** 직전 선택을 잇는다:
+    직접 입력이 마지막이면 그 문구까지, 아니면 마지막 종류, 그것도 없으면 **기본 인사말**.
+  - 문구가 **하나라도 있으면**(종류·테마·친 문장) 아무것도 바꾸지 않는다 — 목소리 알람을
+    '알람' 으로 바꿨다가 되돌린 경우가 그렇다. 여는 것만으로 문구가 바뀌지 않는다는 규칙은
+    그대로다(여는 게 아니라 사용자가 재생 방식을 바꾼 것이다).
+  - ⚠ **직접 녹음 → 목소리는 판정을 목소리를 바꾸기 _전에_, 잇기는 _뒤에_ 한다**(2026-09-29
+    리뷰). 기본 목소리로 바꾸면 편집기가 랜덤·문구·테마를 비운다(안드로이드 `selectVoiceProfile`).
+    그 뒤에 판정하면 녹음을 거쳐 온 **테마 알람**도 '비었다' 로 읽혀 계정의 직전 선택으로
+    덮인다 — 직전 선택이 직접 입력이면 폰에 없는 음성이라 저장 때 서버를 부르고 한도가 깎인다.
+    잇기가 뒤인 것은 먼저 이으면 이은 직접 입력 문구를 그 비우기가 지우기 때문이다.
+    목소리 선택 관문(클립 준비)도 **이을 값**으로 판정한다 — 잇기 전에 도는 관문이 지금 값
+    (랜덤 꺼짐)으로 물으면 클립이 필요한 상태를 통과시킨다. 그리고 소스 전환·잇기는 관문과
+    확인(공유 목소리 호칭 입력·기본 목소리 확인)을 다 지나 선택이 **확정될 때만** 한다 — 먼저
+    바꿔 두면, 준비 화면·시트·알럿을 닫았을 때 고르지 않은 선택이 녹음 카드를 걷어 내고 다른
+    목소리·이은 문구로 남는다(2026-09-29 리뷰, iOS 가 그랬다).
+  - ⚠ **이은 직접 입력 문구는 테마가 덮지 않는다**(2026-09-29 리뷰). 유료 사용자가 기본
+    목소리를 고른 채 직전 선택으로 직접 입력 문구를 이으면, 스톡 클립 목소리의 테마 이어받기가
+    옛 테마를 붙여 이은 문구를 말없이 대신했다(iOS). 직접 입력을 쳐 둔 유료 사용자는 테마
+    이어받기도 기본 인사말 고정도 건드리지 않는다 — 잠긴 등급(무료)은 예전 그대로 강제한다.
+    **편집기가 비어 있는 목소리를 대신 고를 때도 문구를 지우지 않는다** — 알람 전용 알람은
+    목소리가 비어 저장되므로 잇기가 먼저 돌고 목소리 자동 선택이 뒤에 온다. 기본 목소리로
+    '바꾸면' 문구를 비우는 규칙은 사용자가 "문구가 사라져요" 를 확인한 **교체**의 것이다
+    (안드로이드는 자동 선택이 그 규칙을 타서 이은 문구를 비웠다).
+  - ⚠ **iOS 는 알람 전용 저장에 테마를 남긴다 — 두 앱의 결과가 한 갈래 다르다.**
+    `AlarmEditDraft.toRecord` 가 `bucketId`·클립 키를 알람 전용일 때도 이어받는다
+    (`carryOverNonEditableFields`). 무료 잠금으로 알람 전용이 된 테마 알람을 편집해 저장한 뒤
+    재결제로 복원되면 음원이 **버킷 키에서만** 나오기 때문이다(알람 전용 저장은 `audioCacheKey`
+    를 비우고, `AlarmSoundResolver` 는 `rotatedBucketClipKey ?? audioCacheKey`). 그래서 테마
+    알람을 '알람' 으로 저장했다가 '목소리' 로 되돌리면 안드로이드는 **계정의 직전 선택**을,
+    iOS 는 **그 알람의 옛 테마**를 되살린다 — 둘 다 빈 직접 입력은 아니다. 맞추려고 iOS 에서
+    테마만 비우면 잠금 중 편집한 테마 알람이 복원 뒤 목소리 없이 알람음으로 운다.
+  - ⚠ **빈 직접 입력으로 저장을 누르면 서버를 부르기 전에 막고 그 이유를 말한다**
+    (`MANUAL_TEXT_MISSING`). '문구를 준비하고 있어요' 로 뭉개지 말 것 — 그건 스톡 클립이
+    붙기 전 **과도기**의 말이라 기다리면 풀리지만, 빈 직접 입력은 기다려도 안 풀린다.
+    (스톡 클립 목소리의 빈 문구는 여전히 과도기다 — 그쪽은 '준비 중' 그대로.)
 - **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선.** 그룹을 먼저 보면 클론을 가진
   사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키는 알람별 상태라 따라가지 않는다.
@@ -634,6 +673,15 @@ AlarmKit 예약을 다시 만들 수 있다.
   **전부 캐시에 있는가.** 기대 개수표(`expected_variants`)로 세지 않는다 — 서버가 아직 못 만든
   몫까지 세면 받을 수 없는 몫 때문에 관문이 영영 안 열린다. 매니페스트가 비어 있으면(줄 것이
   없다) 막지 않는다.
+- ⚠ **세는 값은 싸야 한다 — 한 번 세는 데 캐시 디렉터리를 한 번만 읽고, 길이는 재지 않는다**(양 앱).
+  클립마다 캐시를 따로 물으면(디렉터리 전량 읽기 + 오디오 길이 측정) 76개에 1초를 넘긴다 —
+  2026-09-29 A32 에서 ＋ 한 번에 관문이 **메인 스레드에서 두 번** 돌아 3.5초, 연타하면 판정이
+  쌓여 15.8초 멎었다. 안드로이드는 관문을 **IO 에서, 탭 하나에 한 번** 돌리고(막히면 센 값
+  그대로 알럿 퍼센트를 쓴다), **도는 동안 들어온 탭은 버린다**(쌓지 않는다). 세는 사이 다른
+  화면이나 다른 계정으로 옮겼으면 **결과도 버린다** — 편집기를 열지도, 알럿을 띄우지도 않는다
+  (옛 탭의 결과가 새 화면 위에 뜨면 안 된다). iOS 는 메인에서 곧바로 세므로 그 틈이 없다.
+  답은 클립마다 물은 것과 같아야 하고, 방금 받은 클립이 다음 질문에서 곧바로 보여야 한다
+  (목록을 들고 있지 않는다).
 - **매니페스트를 한 번도 못 받았으면(모른다) 막는다.** 받기 화면이 그 상태로 메인을 열어 두지
   않으므로, 이 갈래는 새로 깔고 곧바로 오프라인이 된 경우다. 대신 받은 매니페스트는 디스크에
   남긴다 — 다 받아 둔 기기는 오프라인 콜드스타트에서도 열린다.
@@ -899,7 +947,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 매니페스트 조회 세대·소유자 | `StockClipManifestStore`의 저장소 전역 티켓·소유자 | `StockClipManifestStorage`·`StockClipManifestStore` 의 표(revision)·파일 임자 | `GET /tts/stock-clips` |
 | 공개 경합 — superseded 는 실패가 아니고 이긴 매니페스트를 싣는다 | `StockClipPrefetchWorker`(SUPERSEDED = 물러남) · `MainViewModelVoiceActions.loadStockClips`(재바인딩은 워커가 디스크를 읽으므로 메모리 갱신 불필요) | `StockClipPrefetcher.run`(디스크 권위로 이어 받음, `StockClipPrefetcherSupersededTests`) · `VoiceStudioViewModel.loadStockClips`(이긴 매니페스트 적재, `VoiceStudioLoadStockClipsSupersededTests`) | — |
 | '새로 받았는가' 는 가장 최근 표의 응답이 공개됐을 때만 | — (뷰모델은 PUBLISHED 만 true) | `StockClipManifestStorage.publishedNewerResponse(than:)` · `StockClipManifestStoreTests.testPublishedNewerResponseDistinguishesPublishFromClear` | — |
-| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
+| 진행률 파일 확인의 실행 위치 | `StockClipPrefetchWorker`의 IO 작업 · 알람 관문 `DefaultVoiceGate`(IO) | `StockClipPrefetcher.progressOffMain`·`missingClipsOffMain` | — |
+| 한 번 세는 데 디렉터리 1회·길이 측정 없음 | `AlarmAudioStore.missingOrStaleCacheKeys`·`snapshot`(단건은 이름으로 찾는 `findCachedFile`, 있는지만은 `hasCachedAudio`); 회귀 `AlarmAudioStoreProbeCountTest` | `AudioCacheStore.missingOrStaleCacheKeys`; 회귀 `StockClipProgressScanTests` | — |
 | 등록 진행률(생성 0~50 + 다운로드 50~100) · 완료 안내 없음 | `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Prerendering`·`CloneVoiceReadiness` | `ClonePrerenderDrive`·`ClipPreparationView.registrationPreparation`·`VoicePrerenderStatusRow`; `AlarmTalkTests/ClonePrerenderProgressTests` | `routes/voice-profile.ts` 의 `prerender/advance`·`prerender-status` |
 | 클론 문구의 결·사람이 쓴 본보기 | 결을 고르지도 보내지도 않는다 — `ui/voices/VoiceProfileManagementPanel.kt` `VoiceRegistrationStep.Details` 에 칸이 없고, `network/VoiceCloneRequest.kt` `createVoiceCloneDraft` 가 `voiceEnergy` 파트를 싣지 않는다(2026-09-29 '목소리 느낌' 제거). 초안 페르소나 PATCH 는 없다(관계·호칭을 초안 생성에만 싣는다). 회귀 `VoiceCloneRequestTest`(결 파트 없음) | 결을 고르지도 보내지도 않는다 — `Views/Voices/VoiceCloneUploadFlow.swift` `detailsSection` 에 칸이 없고, `AlarmTalkAPI.voiceCloneMultipartFields` 가 `voiceEnergy` 를 싣지 않는다. 초안 페르소나 PATCH 는 없다(공유 목소리 뷰어의 관계 PATCH `voiceRelationshipUpdateBody` 도 결을 싣지 않는다). 회귀 `VoiceStudioViewModelTests`(결 필드 없음) | 전사 추정 `analyzeSpeechStyleWithVertex`(`speech_style.energy`, `runSpeechStyleAnalysis`) · **1.2.10 호환**: `POST voice/clone` 의 `voiceEnergy`/`voice_energy`(초안 생성) · `PATCH voice/:id/relationship` 의 `voice_energy`(초안만) → `voice_profiles.voice_energy`(#122) · `withVoiceEnergy`(고른 값 > 추정값 — `minSupported` 가 선택지 없는 릴리스를 넘기면 받는 처리를 지운다) · `stockReferenceLine` → `generatePrerenderClipText(humanReference)` · 차분 태그 거르기 `isCalmIncompatibleTag`·`fallbackTagForEnergy`(`lib/vertex-translate.ts`, 미리듣기 `routes/tts.ts` `draftPreviewDefaultTag`) · 교체 `replaceVoiceInPlace` · 분석 대기 `SPEECH_STYLE_ANALYSIS_WAIT_SQL`(`claimPendingPrerenderVoices`, `POST voice/:id/prerender/advance`, 첫 미리듣기 `waitForSpeechStyleAnalysis`) · 결과 기록 대상 `SPEECH_STYLE_RESULT_TARGET_SQL`(`runSpeechStyleAnalysis`). 회귀 `voice-prerender-style-wait.test.ts` |
 | 재생 방식 2택 | `PlayModeCard` (`ui/editor/AlarmEditorControls.kt`) | `VoicePlayModePicker` | `wake_mode` (`voice_only` / `sound_then_voice`) |
@@ -915,6 +964,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
+| 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인·공유 목소리 호칭 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
+| 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |
 | 은퇴 행을 빼는 곳 **전부** | — | — | `findMissingStockTargets` · `GET /tts/stock-clips`(`retiredIsNullClause`) · `generateStockClip` 의 INSERT 가드와 게시본 조회 · `deleteStockClips` · `voice-profile.ts` 의 `GET /:id/prerender-status`(진행률)와 `POST /:id/prerender/advance`(게시 개수) (**일곱 곳** = `retired_at IS NULL` 가드 전부) |
@@ -922,7 +973,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 스톡 게시 | — | — | `scripts/prerender-stock-preview.ts` → `scripts/publish-stock-clips.ts`. cron(`index.ts` 의 `scheduled`)의 **시스템 드레인은 꺼져 있다** — 클론 드레인만 산다 |
 | 재바인딩이 편집을 안 덮는다 | `applyClipFields` (`sync/StockClipLanguageRebinder.kt`) | `applyClipFields` (`StockClipLanguageRebinder.swift`) | — |
 | 재바인딩 뒤 서버 반영 | `nextLocalSyncState` (`data/AlarmEntity.kt`) | `nextLocalSyncState(for:)` (`LocalAlarmStore.swift`) | — |
-| 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.defaultVoicesReadyOrExplain`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
+| 기본 목소리 다 받아야 알람 설정 | `StockClipPrefetchWorker.defaultVoicesReady` → `AlarmTalkApp.whenDefaultVoicesReady`(`requestCreateAlarm`·`startCreateAlarm`·`onEditAlarm`) ← `DefaultVoiceGate`(IO·탭당 1회·도는 중 탭은 버림·화면/계정이 바뀌면 결과 버림, 회귀 `DefaultVoiceGateTest`) | `StockClipPrefetcher.defaultVoicesReady` → `MainTabsView.openEditorIfVoicesReady` | `GET /tts/stock-clips` |
 | 교체 화면 퍼센트 | `StockReplacementScreen(progress)` ← 워커 진행 또는 `defaultVoiceProgress` | `StockReplacementView` 의 `defaultVoiceProgress` 폴링 | — |
 | 받기 진행 = 헤더 옆 | `VoiceProfileManagementPanel` 기본 목소리 `VoiceCatalogSectionHeader(trailing)` ← 워커 진행 | `VoiceProfileManagementPanel.defaultVoiceDownloadBadge` ← `StockClipPrefetcher.state` | — |
 | 받기 화면 완료 = 빠진 것 0 | 워커가 실패 0일 때만 `success` | `StockClipPrefetcher.run` 이 캐시를 다시 세어 판정 | — |

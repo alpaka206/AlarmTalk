@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -354,7 +355,7 @@ internal fun AlarmTalkApp(
     }
 
     // 첫 로그인 시 메인에서 뜨던 일괄 권한 팝업(LoginPermissionGate)은 제거했다.
-    // 권한은 실제로 필요한 시점에만 요청한다: 알람 만들기(startCreateAlarm → 권한 없으면
+    // 권한은 실제로 필요한 시점에만 요청한다: 알람 만들기(openCreateAlarm → 권한 없으면
     // '필요' 안내+요청+생성 차단), 목소리 녹음(RECORD_AUDIO 온디맨드). 알람이 이미 있는데
     // 권한이 없어 조용히 안 울리는 경우만 알람 홈에 경고 패널을 남긴다(AlarmListScreen).
 
@@ -847,26 +848,45 @@ internal fun AlarmTalkApp(
     // 기본 목소리를 다 받기 전에 알람 설정을 열려고 했다 — 그 이유를 말하는 알럿.
     var voicesNotReadyOpen by remember { mutableStateOf(false) }
     var voicesNotReadyProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val defaultVoiceGateScope = rememberCoroutineScope()
+    val defaultVoiceGate = remember(defaultVoiceGateScope) { DefaultVoiceGate(defaultVoiceGateScope) }
 
     /**
-     * 알람 설정 화면(새로 만들기·고치기)을 열어도 되는가 — **기본 목소리를 다 받았을 때만.**
+     * 알람 설정 화면(새로 만들기·고치기)을 연다 — **기본 목소리를 다 받았을 때만.**
      *
      * 2026-09-17 지시: 다 받기 전에는 설정 화면 자체를 막는다. 받다 만 상태로 들어가면 문구
      * 행이 「문구를 준비하고 있어요」 에 머물고, 저장해도 테마 회전이 비어 운다. 막았으면
      * 받기부터 다시 건다(유니크 작업이라 돌고 있으면 그대로 둔다).
      * 규칙은 `docs/spec/voice-and-message.md` 「기본 목소리를 다 받아야 알람을 설정한다」.
+     *
+     * ⚠ **탭 하나에 한 번, 메인 밖에서 센다**([DefaultVoiceGate] — 2026-09-29 A32 에서 메인에서
+     * 두 번 세다 3.5초, 연타로 15.8초 멎었다). [onReady] 는 판정이 끝난 뒤 메인에서 불린다.
+     * 판정이 도는 동안 들어온 탭은 버린다. 세는 사이 다른 화면(백스택 항목)이나 다른 계정으로
+     * 옮겼으면 결과를 버린다 — 새 화면 위에 편집기·알럿이 뜨면 안 된다.
      */
-    fun defaultVoicesReadyOrExplain(): Boolean {
+    fun whenDefaultVoicesReady(onReady: () -> Unit) {
         val userId = authSession?.user?.id
-        if (com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoicesReady(context, userId)) return true
-        voicesNotReadyProgress = com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
-        com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
-        voicesNotReadyOpen = true
-        return false
+        val requestedEntryId = navController.currentBackStackEntry?.id
+        defaultVoiceGate.request(
+            progress = {
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.defaultVoiceProgress(context, userId)
+            },
+            // 캡처한 `authSession` 은 탭한 순간 값이라, 지금 값은 뷰모델 상태에서 다시 읽는다.
+            isStillCurrent = {
+                navController.currentBackStackEntry?.id == requestedEntryId &&
+                    viewModel.authSession?.user?.id == userId
+            },
+            onReady = onReady,
+            onBlocked = { progress ->
+                voicesNotReadyProgress = progress
+                com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context)
+                voicesNotReadyOpen = true
+            },
+        )
     }
 
-    fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
-        if (!defaultVoicesReadyOrExplain()) return
+    /** 관문을 **이미 통과한 뒤** 편집기를 연다(권한이 모자라면 권한 게이트부터). */
+    fun openCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
         if (!permissions.alarmReady) {
             // 권한 게이트로 넘어가되, 허용 완료 후 이 알람 추가를 이어서 편집 페이지로 진입시킨다.
             pendingCreateAlarmAfterPermission = familyTargetMode to targetUserId
@@ -877,12 +897,21 @@ internal fun AlarmTalkApp(
             )
         }
     }
+
+    /** 「누구를 깨울까요?」 에서 대상을 고른 탭 — 그 탭도 관문을 한 번 지난다. */
+    fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
+        whenDefaultVoicesReady { openCreateAlarm(familyTargetMode, targetUserId) }
+    }
+
     fun requestCreateAlarm() {
-        if (!defaultVoicesReadyOrExplain()) return
-        if (canCreateFamilyAlarm) {
-            alarmTargetSheetVisible = true
-        } else {
-            startCreateAlarm(familyTargetMode = false)
+        whenDefaultVoicesReady {
+            if (canCreateFamilyAlarm) {
+                alarmTargetSheetVisible = true
+            } else {
+                // ⚠ `startCreateAlarm` 을 부르지 않는다 — 방금 센 결과를 다시 세는 것이다(예전에는
+                // ＋ 한 번에 관문이 두 번 돌았다).
+                openCreateAlarm(familyTargetMode = false)
+            }
         }
     }
 
@@ -1189,7 +1218,7 @@ internal fun AlarmTalkApp(
                     fadeOut(animationSpec = tween(120)),
             ) {
                 FloatingActionButton(
-                    onClick = ::requestCreateAlarm,
+                    onClick = { requestCreateAlarm() },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shape = CircleShape,
@@ -1492,7 +1521,7 @@ internal fun AlarmTalkApp(
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           onRestorePurchases = viewModel::restorePurchases,
                           permissions = permissions,
-                          onCreateAlarm = ::requestCreateAlarm,
+                          onCreateAlarm = { requestCreateAlarm() },
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
@@ -1506,13 +1535,14 @@ internal fun AlarmTalkApp(
                               }
                           },
                           // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
-                          onEditAlarm = {
-                              if (!defaultVoicesReadyOrExplain()) {
-                                  // 막힌 이유는 알럿이 말한다(`defaultVoicesReadyOrExplain`).
-                              } else if (permissions.alarmReady) {
-                                  navController.navigate(AppRoute.alarmEdit(it.id))
-                              } else {
-                                  requestFirstMissingAlarmPermission()
+                          onEditAlarm = { alarm ->
+                              // 막히면 이유는 알럿이 말한다(`whenDefaultVoicesReady`).
+                              whenDefaultVoicesReady {
+                                  if (permissions.alarmReady) {
+                                      navController.navigate(AppRoute.alarmEdit(alarm.id))
+                                  } else {
+                                      requestFirstMissingAlarmPermission()
+                                  }
                               }
                           },
                           onDeleteAlarm = viewModel::deleteAlarm,
@@ -1537,8 +1567,8 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
-                  // 직전 선택은 **새 알람 경로에만** 넘긴다. 기존 알람 편집(아래 라우트)에는
-                  // 넘기지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 되기 때문이다.
+                  // 새 알람은 직전 선택으로 **연다.** 기존 알람 편집(아래 라우트)도 같은 값을
+                  // 받지만 여는 데는 쓰지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 된다.
                   // 계정이 바뀌면 다시 읽는다(저장소가 계정별 키라 값도 계정별이다).
                   val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
                   val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
@@ -1597,6 +1627,13 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
                   val currentAlarm = alarms.firstOrNull { it.id == alarmId }
+                  // ⚠ **기존 알람도 직전 선택을 받는다 — 여는 데는 쓰지 않는다.** 알람 전용·직접
+                  // 녹음 알람에는 문구가 없어서, 목소리 문구로 옮기는 순간 이 값이 없으면 **빈
+                  // 직접 입력**으로 보이고 저장도 못 한다(2026-09-29 실기기 보고). 편집기는 문구가
+                  // 비어 있을 때만 이걸 잇는다(`AlarmEditorState.adoptLastMessageChoiceIfUnset`).
+                  val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
+                  val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
+                  val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
                   if (currentAlarm == null) {
                       LaunchedEffect(alarmId) {
                           navController.popBackStackOrHome()
@@ -1625,6 +1662,9 @@ internal fun AlarmTalkApp(
                           onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
                           onPrepareClipsFor = { viewModel.refreshClipReadinessAsync(it) },
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
+                          lastMessageContext = lastMessageContext,
+                          lastFreeBucket = lastFreeBucket,
+                          lastManualText = lastManualText,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },

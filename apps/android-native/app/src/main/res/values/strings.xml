@@ -182,6 +182,8 @@
     <string name="editor_block_offline_message">이 문구의 음성이 아직 이 기기에 없어요. 연결되면 다시 저장해 주세요.</string>
     <string name="editor_block_preparing_title">문구를 준비하고 있어요</string>
     <string name="editor_block_preparing_message">목소리 파일을 아직 받는 중이에요. 잠시 뒤에 다시 저장해 주세요.</string>
+    <string name="editor_block_manual_text_title">직접 입력 문구가 비어 있어요</string>
+    <string name="editor_block_manual_text_message">알람이 읽어 줄 문구를 입력하거나, 문구 화면에서 다른 종류를 골라 주세요.</string>
     <string name="editor_error_family_alarm_lead_title">조금 더 뒤로 설정해 주세요</string>
     <string name="editor_error_family_alarm_unavailable_title">받을 수 없는 시간이에요</string>
     <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대 기기에 전달될 시간이 조금 필요해요.</string>
