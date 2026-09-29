@@ -729,10 +729,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if Task.isCancelled { return 0 }
             let restored = FreePlanLockSelection.unlocked(record)
             _ = alarmStore.upsert(restored)
-            if await alarmKit.schedule(record: restored, store: alarmStore),
-               record.alarmKitID != nil {
-                await alarmKit.cancelScheduledAlarm(record: record)
-            }
+            await Self.rescheduleIfEnabled(restored, replacing: record, alarmKit: alarmKit, store: alarmStore)
         }
 
         var locked = 0
@@ -773,17 +770,9 @@ final class SocialFeatureViewModel: ObservableObject {
             if Task.isCancelled { return locked }
             _ = alarmStore.upsert(updated)
             // 기본 목소리로 **다시 예약한다**(옛 모양을 옮긴 행도 소리가 바뀌므로 다시 건다).
-            // 재예약을 빠뜨리면 행과 실제 소리가 갈라진다.
-            //
-            // ⚠ **옛 핸들을 반드시 취소한다.** 예전에는 schedule 만 불러서, 유료
-            // 목소리로 걸어 둔 예약이 OS 에 그대로 남았다 — 무료로 떨어진 사용자가
-            // 계속 클론 목소리를 듣고 같은 시각에 알람이 둘 울렸다. 게이트가 막았다고
-            // 믿는 바로 그 자리에서 샌 것이다.
-            let previous = record
-            if await alarmKit.schedule(record: updated, store: alarmStore),
-               previous.alarmKitID != nil {
-                await alarmKit.cancelScheduledAlarm(record: previous)
-            }
+            // 재예약을 빠뜨리면 행과 실제 소리가 갈라진다. 켜진 알람만 — 꺼진 알람을 예약하면
+            // 다시 켜진다. 옛 핸들 취소도 거기서 한다(`rescheduleIfEnabled`).
+            await Self.rescheduleIfEnabled(updated, replacing: record, alarmKit: alarmKit, store: alarmStore)
             if needsLock { locked += 1 }
         }
 
@@ -829,17 +818,36 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = alarmStore.upsert(updated)
             // 잠글 때 걸어 둔 톤 예약을 **취소하고** 목소리로 다시 건다. 안 그러면 둘 다
             // 남아 한 알람이 두 번 운다(잠금 경로와 같은 이유).
-            let previous = record
-            if await alarmKit.schedule(record: updated, store: alarmStore),
-               previous.alarmKitID != nil {
-                await alarmKit.cancelScheduledAlarm(record: previous)
-            }
+            await Self.rescheduleIfEnabled(updated, replacing: record, alarmKit: alarmKit, store: alarmStore)
             restored += 1
         }
         if restored > 0 {
             statusMessage = "이용권이 확인되어 목소리 알람을 다시 켰어요."
         }
         return restored
+    }
+
+    /// 소리가 바뀐 행을 **켜져 있을 때만** 다시 예약하고, 새 예약이 서면 옛 핸들을 취소한다.
+    ///
+    /// ⚠ **꺼진 알람을 예약하지 말 것**(Codex #820). `AlarmKitViewModel.schedule` 은 끝에서
+    /// `LocalAlarmStore.markScheduled` 로 `enabled = true` 를 박으므로, 잠금·복원이 소리를 바꾸려고
+    /// 예약하면 사용자가 끈 알람이 **조용히 다시 켜진다.** 안드로이드 `lockPaidAlarmTalks`·
+    /// `unlockPaidAlarmTalks` 의 `if (updated.enabled) alarmScheduler.schedule(updated)` 와 같다.
+    /// 꺼진 행은 행만 고쳐 두면 켤 때 새 소리로 예약된다.
+    ///
+    /// ⚠ **옛 핸들을 반드시 취소한다.** 예전에는 schedule 만 불러서, 유료 목소리로 걸어 둔 예약이
+    /// OS 에 그대로 남았다 — 무료로 떨어진 사용자가 계속 클론 목소리를 듣고 같은 시각에 알람이 둘
+    /// 울렸다(복원이면 톤 예약과 목소리 예약이 둘 다 남는다).
+    private static func rescheduleIfEnabled(
+        _ updated: LocalAlarmRecord,
+        replacing previous: LocalAlarmRecord,
+        alarmKit: AlarmKitViewModel,
+        store: LocalAlarmStore
+    ) async {
+        guard FreePlanLockSelection.reschedules(updated) else { return }
+        if await alarmKit.schedule(record: updated, store: store), previous.alarmKitID != nil {
+            await alarmKit.cancelScheduledAlarm(record: previous)
+        }
     }
 
     func clearPaidVoiceState(lockedAlarmCount: Int = 0) {
@@ -895,6 +903,10 @@ struct FreePlanLockSelection {
         restored.preLockPlayMode = nil
         return restored
     }
+
+    /// 잠금·복원이 고친 행을 **다시 예약하는가** — 켜진 알람만(`SocialFeatureViewModel.rescheduleIfEnabled`).
+    /// 꺼진 알람을 예약하면 `markScheduled` 가 `enabled = true` 를 박아 사용자가 끈 알람이 되살아난다.
+    static func reschedules(_ record: LocalAlarmRecord) -> Bool { record.enabled }
 
     /// **처음** 잠그는 행인가 — 강등 안내 개수는 이것만 센다. 옛 모양을 새 모양으로 옮기는 것은
     /// 이미 알린 알람이라 다시 세지 않는다(세면 앱을 열 때마다 강등 모달이 뜬다 — 2026-08-11).

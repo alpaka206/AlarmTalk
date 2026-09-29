@@ -137,6 +137,26 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: reAudio, editing: hydrated))
     }
 
+    /// 잠금·복원은 **켜진 알람만** 다시 예약한다(Codex #820). `AlarmKitViewModel.schedule` 은
+    /// `markScheduled` 로 `enabled = true` 를 박으므로, 꺼 둔 옛 모양 잠금을 옮기면서 예약하면 사용자가
+    /// 끈 알람이 되살아난다. 안드로이드 `if (updated.enabled) alarmScheduler.schedule(updated)` 짝.
+    func test_꺼진_알람은_잠금이_다시_예약하지_않는다() {
+        var legacy = record("legacy-off", playMode: .alarmOnly)
+        legacy.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        legacy.enabled = false
+        let migrated = DefaultVoiceSubstitute.locked(legacy, voiceID: systemVoice, binding: nil, nowMillis: 1)
+
+        XCTAssertFalse(migrated.enabled, "옮기는 것만으로 켜지지 않는다")
+        XCTAssertFalse(FreePlanLockSelection.reschedules(migrated))
+        XCTAssertFalse(FreePlanLockSelection.reschedules(DefaultVoiceSubstitute.restored(migrated, nowMillis: 2)))
+
+        var on = legacy
+        on.enabled = true
+        XCTAssertTrue(FreePlanLockSelection.reschedules(
+            DefaultVoiceSubstitute.locked(on, voiceID: systemVoice, binding: nil, nowMillis: 1)
+        ))
+    }
+
     // MARK: - 한 번의 잠금 실행이 건드리는 행 (`FreePlanLockSelection` — `applyFreePlanVoiceLock` 의 선별)
 
     private func record(
