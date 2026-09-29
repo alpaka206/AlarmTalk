@@ -1,13 +1,18 @@
 package com.alarmtalk.app
 
 import android.app.Application
-import com.alarmtalk.app.core.AlarmTalkLog
+import android.util.Log
+import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.ClipReadiness
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
-import androidx.lifecycle.viewModelScope
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -31,31 +36,45 @@ import kotlinx.coroutines.withContext
 internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: String? = null) {
     val session = authSession ?: return
     val auth = AlarmTalkApiClient.bearer(session.token)
-
-    val response = runCatching { withContext(Dispatchers.IO) { api.getStockClips(auth) } }
-        .getOrElse {
-            // 못 물어봤다고 '준비 안 됨' 으로 뒤집지 않는다 — 이미 계산해 둔 값을 유지한다.
-            AlarmTalkLog.reportError("Clip manifest unavailable; keeping the previous readiness", it)
-            return
-        }
-    val clips = response.clips
-    stockClips = clips
-    response.expectedVariants?.let { expectedVariants = it }
-
     val owned = voiceProfiles.map { it.id }.filterNot { isSystemVoiceId(it) }
 
-    // 클론은 서버가 아직 만드는 중일 수 있다. 매니페스트에는 없지만 **기다려야 하는 몫**이라
-    // 진행률에 반영해야 한다 — 빼면 '0개 중 0개' 라 100% 로 보인다.
-    val renderStates = owned.associateWith { voiceId ->
-        val status = runCatching {
-            withContext(Dispatchers.IO) { api.getVoicePrerenderStatus(auth, voiceId) }
-        }.getOrNull()?.status
-        when (status) {
-            "pending" -> true to false
-            "failed" -> false to true
-            else -> false to false
+    val renderStates = coroutineScope {
+        // 클론은 서버가 아직 만드는 중일 수 있다. 매니페스트에는 없지만 **기다려야 하는 몫**이라
+        // 진행률에 반영해야 한다 — 빼면 '0개 중 0개' 라 100% 로 보인다.
+        // 목소리마다 **동시에** 묻는다(효율 감사 M1) — 서로 독립이라 차례로 기다릴 이유가 없고,
+        // 매니페스트 조회와도 겹친다.
+        val statuses = owned.map { voiceId ->
+            async {
+                val status = try {
+                    withContext(Dispatchers.IO) { api.getVoicePrerenderStatus(auth, voiceId) }.status
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    null
+                }
+                voiceId to when (status) {
+                    "pending" -> true to false
+                    "failed" -> false to true
+                    else -> false to false
+                }
+            }
         }
-    }
+        // ⚠ **매니페스트를 여기서 직접 받지 않는다**(효율 감사 M1). 예전에는 표 없이 받아
+        // `stockClips` 를 덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 공개된
+        // 새 목록을 되돌리고, 그 스냅샷으로 준비도를 셌다. 공유 조회를 쓰고, 신선도 창 안이면
+        // 받지 않는다(준비 화면을 여는 순간과 관문이 본 목록이 같다).
+        if (ensureStockClipManifest(ManifestNeed.RECENT) == ManifestFlightOutcome.FAILED) {
+            // 못 물어봤다고 '준비 안 됨' 으로 뒤집지 않는다 — 이미 계산해 둔 값을 유지한다.
+            // (조회 실패는 조회가 이미 기록했다.)
+            Log.i(TAG, "Clip manifest unavailable; keeping the previous readiness")
+            statuses.forEach { it.cancel() }
+            return@coroutineScope null
+        }
+        statuses.awaitAll().toMap()
+    } ?: return
+    // 기다리는 사이 계정이 바뀌었으면 이 계산은 앞 계정의 것이다.
+    if (authSession?.user?.id != session.user.id) return
+    val clips = stockClips
 
     val audioStore = AlarmAudioStore(getApplication<Application>())
     val systemVoiceIds = clips.map { it.voiceProfileId }.filter { isSystemVoiceId(it) }.distinct().sorted()

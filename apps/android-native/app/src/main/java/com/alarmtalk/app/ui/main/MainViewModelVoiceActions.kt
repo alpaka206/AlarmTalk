@@ -729,7 +729,7 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
  */
 private val INLINE_COVERED_CONSENTS = setOf("voice_biometric")
 
-private const val PREFETCH_PARALLELISM = 4
+private const val PREFETCH_PARALLELISM = VoiceClipDownloads.DEFAULT_PARALLELISM
 
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
     // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
@@ -848,13 +848,15 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
             prerenderDrive = prerenderDrive?.let {
                 PrerenderDriveState(it.voiceId, 0, it.total, downloading = true)
             }
-            runCatching {
+            val complete = runCatching {
                 downloadAllPresetClips(voiceId) { done, total ->
                     prerenderDrive = PrerenderDriveState(voiceId, done, total, downloading = true)
                 }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Voice preset clip download failed", error)
-            }
+            }.getOrDefault(false)
+            // 빠진 것은 목소리 탭 폴링이 이어받는다 — 드라이브가 끝나면 그쪽이 다시 센다.
+            if (!complete) Log.w(TAG, "Voice preset clips incomplete after the drive voice=$voiceId")
         } finally {
             // 종료(완료/실패/취소) 시 진행 표시를 걷는다 — 열려 있던 '생성 중' 화면은 닫힌다.
             prerenderDrive = null
@@ -863,27 +865,54 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
 }
 
 /** 방금 생성된 클론 preset 클립 전체를 기기에 내려받아 캐시한다(비행기모드 알람 대비).
- *  스톡 매니페스트를 새로 받아 방금 생성분까지 포함하고, 이미 캐시된 클립은 건너뛴다. */
+ *  매니페스트는 **생성이 끝난 뒤에 출발한** 것을 쓴다([ManifestNeed.LATEST]) — 그래야 방금
+ *  생성분이 들어 있다. 이미 캐시된 클립은 건너뛴다.
+ *
+ *  ⚠ 매니페스트를 여기서 직접 받지 않는다(효율 감사 M1). 예전에는 표 없이 받아 `stockClips` 를
+ *  덮어 **Codex #703 가드를 우회**했다 — 교체 전에 출발한 응답이 새 목록을 되돌릴 수 있었다.
+ *  @return 빠진 것 없이 다 받았는가. 매니페스트를 못 받았으면 false. */
 internal suspend fun MainViewModel.downloadAllPresetClips(
     voiceProfileId: String,
     onProgress: (Int, Int) -> Unit,
-) {
-    val session = authSession ?: return
-    withContext(Dispatchers.IO) {
-        val response = api.getStockClips(AlarmTalkApiClient.bearer(session.token))
-        val manifest = response.clips
-        stockClips = manifest
-        response.expectedVariants?.let { expectedVariants = it }
-        // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
-        // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
-        val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
-        if (clips.isEmpty()) return@withContext
-        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-        var done = 0
-        onProgress(0, clips.size)
-        clips.forEach { clip ->
-            val cacheKey = "stock_${clip.messageId}"
-            if (!audioStore.hasCachedAudio(cacheKey, clip.audioUrl)) {
+): Boolean {
+    if (authSession == null) return false
+    // 실패 갈래는 조회가 이미 기록했다("Failed to load stock clips"). 목소리 탭 폴링이 이어받는다.
+    if (ensureStockClipManifest(ManifestNeed.LATEST) == ManifestFlightOutcome.FAILED) return false
+    // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
+    // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
+    val clips = stockClips.filter { it.voiceProfileId == voiceProfileId }
+    if (clips.isEmpty()) return true
+    return cacheVoiceClips(voiceProfileId, clips, onProgress)
+}
+
+/**
+ * 목소리 하나의 클립을 캐시한다 — **목소리마다 한 벌만** 돈다(드라이브와 목소리 탭이 나눠 쓴다,
+ * 효율 감사 M4). 빠진 것은 디렉터리를 **한 번** 읽어 고르고, 동시에 4개씩 받는다.
+ *
+ * @return 빠진 것 없이 다 캐시됐는가.
+ */
+internal suspend fun MainViewModel.cacheVoiceClips(
+    voiceProfileId: String,
+    clips: List<com.alarmtalk.app.network.StockClip>,
+    onProgress: (Int, Int) -> Unit,
+): Boolean = withContext(Dispatchers.IO) {
+    val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+    voiceClipDownloads.cache(
+        voiceId = voiceProfileId,
+        clips = clips,
+        missing = { list ->
+            // 판정은 `hasCachedAudio` 와 같다(`AlarmAudioStore.snapshot` 주석) — 디렉터리만 한 번 읽는다.
+            val cache = audioStore.snapshot()
+            list.filter { clip ->
+                cache.isMissingOrStale(
+                    "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}",
+                    clip.audioUrl,
+                )
+            }
+        },
+        download = { clip ->
+            val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
+            try {
                 val response = downloadTtsMessageAudio(clip.messageId)
                 audioStore.cacheGeneratedAudio(
                     bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
@@ -893,11 +922,16 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
                     cacheKey = cacheKey,
                     messageId = clip.messageId,
                 )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // 그 클립만 실패다 — 나머지는 계속 받고, 다음 회차가 빠진 것만 다시 받는다.
+                Log.w(TAG, "Failed to cache voice clip voice=$voiceProfileId message=${clip.messageId}", error)
+                throw error
             }
-            done += 1
-            onProgress(done, clips.size)
-        }
-    }
+        },
+        onProgress = onProgress,
+    )
 }
 
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
@@ -944,109 +978,180 @@ internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: Stri
     }
 }
 
-internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
+/**
+ * 스톡 클립 매니페스트를 [need] 만큼 새것으로 채운다(기다리지 않는다).
+ *
+ * - [ManifestNeed.SESSION](앱 시작): 이번 세션에 받았으면 다시 받지 않는다.
+ * - [ManifestNeed.RECENT](탭 새로고침): 유료 클론 클립은 확정 후 cron 이 세션 중에 만들 수 있어
+ *   탭에 들어올 때 다시 본다. 다만 신선도 창 안에 받은 게 있으면 그걸 쓴다.
+ * - [ManifestNeed.LATEST](공유 변경 푸시·생성 완료): 신호 **뒤에** 출발한 요청이어야 한다.
+ *
+ * ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
+ * 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
+ * null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
+ * 자세한 것은 `StockClipManifestStore` 주석. 읽기는 메인 밖에서 한다(효율 감사 M2).
+ */
+internal fun MainViewModel.loadStockClips(need: ManifestNeed = ManifestNeed.SESSION) {
     val session = authSession ?: return
-    // stockClips 는 세션 전용 in-memory 캐시라 한번 채우면 재조회 안 함. 유료 클론 클립은 확정 후
-    // cron 이 세션 중에 만들 수 있으므로, 클론 편집 진입 시 forceReload=true 로 매니페스트를 새로 받는다.
-    // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
-    // 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
-    // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
-    // 자세한 것은 `StockClipManifestStore` 주석.
-    if (stockClips.isEmpty()) {
+    if (stockClips.isEmpty()) seedStockClipsFromDisk(session.user.id)
+    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다([ManifestNeed.SESSION]). 디스크에서
+    // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
+    viewModelScope.launch { ensureStockClipManifest(need) }
+}
+
+/**
+ * 디스크 사본으로 메모리를 채운다 — 파싱(약 168KB)은 메인 밖에서.
+ *
+ * 그사이 서버 응답이 이미 실렸으면 버린다: 디스크 사본은 그보다 오래됐거나 같다.
+ */
+private fun MainViewModel.seedStockClipsFromDisk(userId: String) {
+    if (stockClipSeedJob?.isActive == true) return
+    val appliedBefore = stockClipManifestApplyCount
+    stockClipSeedJob = viewModelScope.launch {
         // 계정 id 를 함께 넘긴다 — 지우지 못해 격리된 파일은 **임자 본인에게만** 열린다
         // (Codex #703 P1, `StockClipManifestStore.load` 주석).
-        com.alarmtalk.app.data.StockClipManifestStore
-            .load(getApplication(), authSession?.user?.id)?.let { cached ->
-            stockClips = cached.clips
-            cached.expectedVariants?.let { expectedVariants = it }
-        }
+        val cached = withContext(Dispatchers.IO) {
+            com.alarmtalk.app.data.StockClipManifestStore.load(getApplication(), userId)
+        } ?: return@launch
+        if (stockClipManifestApplyCount != appliedBefore) return@launch
+        if (authSession?.user?.id != userId || stockClips.isNotEmpty()) return@launch
+        applyStockClipManifest(cached)
     }
-    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
-    // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
-    if (!forceReload && stockClipManifestFetched) return
-    // 이 조회의 세대. 뒤에 시작한 조회가 세대를 올리면 이 응답은 **공개하지도 저장하지도**
-    // 않는다 — 옛 매니페스트로 되돌리면 캐시 대조의 기준 자체가 뒤로 간다.
-    stockClipManifestRevision += 1
-    val manifestRevision = stockClipManifestRevision
-    // 디스크 권위의 표. **프로세스 전역**이라 프리페치 워커와도 순서가 맞는다
-    // (`stockClipManifestRevision` 은 이 뷰모델 안의 순서만 본다).
-    val manifestTicket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
-    viewModelScope.launch {
-        runCatching {
-            api.getStockClips(AlarmTalkApiClient.bearer(session.token))
-        }.onSuccess { response ->
-            if (manifestRevision != stockClipManifestRevision) return@onSuccess
-            if (authSession?.user?.id != session.user.id) return@onSuccess
+}
+
+/** 메모리(화면·판정의 권위)에 싣는다. 디스크 권위가 받아 준 것만 여기로 온다. */
+private fun MainViewModel.applyStockClipManifest(manifest: com.alarmtalk.app.network.StockClipListResponse) {
+    stockClips = manifest.clips
+    manifest.expectedVariants?.let { expectedVariants = it }
+    stockClipManifestApplyCount += 1
+}
+
+/**
+ * 매니페스트를 [need] 만큼 새것으로 만든 뒤 돌아온다 — **받는 곳은 여기 하나다**(뷰모델 안).
+ * 떠 있는 요청을 나눠 쓰고, 신선도 창 안이면 요청을 내지 않는다(`StockClipManifestFlights`).
+ * 돌아온 뒤에는 `stockClips`·`expectedVariants` 를 읽으면 된다.
+ *
+ * ⚠ 준비도(`refreshClipReadiness`)·클론 다운로드(`downloadAllPresetClips`)도 이걸 쓴다. 예전에는
+ * 둘이 매니페스트를 직접 받아 표 없이 `stockClips` 를 덮었다 — Codex #703 가드의 우회로였다.
+ */
+internal suspend fun MainViewModel.ensureStockClipManifest(need: ManifestNeed): ManifestFlightOutcome {
+    val session = authSession ?: return ManifestFlightOutcome.FAILED
+    val owner = com.alarmtalk.app.network.sessionEffectKey(session, authSessionStore.sessionGeneration())
+        ?: return ManifestFlightOutcome.FAILED
+    return stockClipManifestFlights.ensure(owner, need) { fetchAndPublishStockClips(owner) }
+}
+
+/**
+ * 요청 한 번: 표 뽑기 → 조회 → 디스크 공개 → 메모리 반영. [StockClipManifestFlights] 만 부른다.
+ */
+private suspend fun MainViewModel.fetchAndPublishStockClips(
+    owner: com.alarmtalk.app.network.SessionEffectKey,
+): ManifestFlightOutcome {
+    // 줄 서 있던 사이 로그아웃·계정 전환이 있었으면 요청을 내지 않는다.
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    val token = authSession?.token ?: return ManifestFlightOutcome.FAILED
+    val app = getApplication<Application>()
+    // 디스크 권위의 표. **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다. **프로세스
+    // 전역**이라 프리페치 워커와도 순서가 맞는다.
+    val ticket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
+    val response = try {
+        api.getStockClips(AlarmTalkApiClient.bearer(token))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AlarmTalkLog.reportError("Failed to load stock clips", error)
+        return ManifestFlightOutcome.FAILED
+    }
+    // 응답을 기다리는 사이 세션이 끝났으면 공개하지 않는다(표도 무효화돼 있지만 먼저 거른다).
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    // 직렬화·파일 교체·prefs `commit()` 은 메인 밖에서(효율 감사 M2). 워커와 같은 잠금을 잡으므로
+    // 메인에서 부르면 워커가 쓰는 동안 화면이 멎는다.
+    val published = withContext(Dispatchers.IO) {
+        com.alarmtalk.app.data.StockClipManifestStore.save(app, response, ticket, owner.userId)
+    }
+    if (!responseStillBelongsToRequester(owner.userId, owner.generation)) return ManifestFlightOutcome.FAILED
+    return when (published) {
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED -> {
             // ⚠ **디스크 권위가 받아 준 응답만 화면·판정의 권위가 된다**(Codex #703 P1).
-            // 표가 거절됐다 = **더 새 매니페스트가 이미 나왔다.** 그런데도 이 응답으로
-            // `stockClips` 를 덮으면, 준비 판정이 **교체 이전 스냅샷**(전부 rendered=true)을
-            // 보고 세대를 확정해 버린다 — 완료 푸시를 놓치면 되돌릴 폴백이 없다.
-            // 거절이든 실패든, **디스크 권위가 되지 못한 응답은 판정의 권위도 아니다.**
-            if (com.alarmtalk.app.data.StockClipManifestStore.save(
-                    getApplication(),
-                    response,
-                    manifestTicket,
-                    session.user.id,
-                ) != com.alarmtalk.app.data.StockClipManifestStore.PublishResult.PUBLISHED
-            ) {
-                return@onSuccess
-            }
-            val clips = response.clips
-            stockClips = clips
-            response.expectedVariants?.let { expectedVariants = it }
-            stockClipManifestFetched = true
-            // 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를
-            // 계속 쓰므로, 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다.
-            withContext(Dispatchers.IO) {
-                val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-                val stale = clips.mapNotNull { clip ->
-                    val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
-                        .filter { key ->
-                            audioStore.isCachedAudioStale(key, clip.audioUrl) ||
-                                // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
-                                // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
-                                audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
-                        }
-                    keys.takeIf { it.isNotEmpty() }?.let { clip to it }
-                }
-                stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
-                    kotlinx.coroutines.coroutineScope {
-                        batch.map { (clip, cacheKeys) ->
-                            async {
-                                try {
-                                    val audio = downloadTtsMessageAudio(clip.messageId)
-                                    val bytes = android.util.Base64.decode(
-                                        audio.audioBase64,
-                                        android.util.Base64.DEFAULT,
-                                    )
-                                    cacheKeys.forEach { key ->
-                                        audioStore.cacheGeneratedAudio(
-                                            bytes = bytes,
-                                            format = audio.audioFormat,
-                                            rawAudioUri = audio.audioUrl,
-                                            displayName = key,
-                                            cacheKey = key,
-                                            messageId = clip.messageId,
-                                        )
-                                    }
-                                } catch (error: kotlin.coroutines.cancellation.CancellationException) {
-                                    throw error
-                                } catch (error: Exception) {
-                                    AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
-                                }
-                            }
-                        }.awaitAll()
-                    }
-                }
-            }
+            // 순서: 공개가 확인된 **뒤에** 싣는다.
+            applyStockClipManifest(response)
+            repairReplacedStockClips(response.clips)
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->
                 pendingPrefetchVoiceId = null
                 prefetchFreeBucketClips(voiceId)
             }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to load stock clips", error)
+            ManifestFlightOutcome.PUBLISHED
+        }
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.SUPERSEDED -> {
+            // 더 새 매니페스트가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
+            // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다.
+            // 대신 **디스크의 이긴 매니페스트**(임자 대조)를 싣는다 — 준비도·클론 다운로드가
+            // 메모리를 읽으므로, 안 실으면 물러난 회차 뒤에 낡은 목록으로 돈다(스펙 「공개 경합의 규칙」).
+            val winner = withContext(Dispatchers.IO) {
+                com.alarmtalk.app.data.StockClipManifestStore.load(app, owner.userId, requireOwner = true)
+            }
+            if (winner != null && responseStillBelongsToRequester(owner.userId, owner.generation)) {
+                applyStockClipManifest(winner)
+            }
+            ManifestFlightOutcome.SUPERSEDED
+        }
+        // 디스크에 못 남겼다 — 아무도 공개하지 못했으니 판정의 권위도 아니다. 다음 호출이 다시 받는다.
+        com.alarmtalk.app.data.StockClipManifestStore.PublishResult.FAILED -> ManifestFlightOutcome.FAILED
+    }
+}
+
+/**
+ * 제자리 목소리 교체는 message ID를 보존한다. 파일 존재만 보면 옛 목소리를 계속 쓰므로,
+ * 새 매니페스트의 audio_url과 다른 캐시만 다시 받는다. **표식과 무관하게** 공개마다 돈다
+ * (스펙 「교체 확정 시점」 — 안드로이드는 여기서 프리셋을 고친다).
+ *
+ * 매니페스트를 기다리는 쪽을 붙잡지 않게 따로 돈다. 더 새 매니페스트가 공개되면 앞 회차를 끊는다 —
+ * 새 목록이 권위이고, 이미 받은 것은 다음 회차가 낡지 않은 것으로 본다.
+ */
+private fun MainViewModel.repairReplacedStockClips(clips: List<com.alarmtalk.app.network.StockClip>) {
+    replacedClipRepairJob?.cancel()
+    replacedClipRepairJob = viewModelScope.launch(Dispatchers.IO) {
+        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+        val stale = clips.mapNotNull { clip ->
+            val keys = com.alarmtalk.app.data.AlarmAudioStore.messageCacheKeys(clip.messageId)
+                .filter { key ->
+                    audioStore.isCachedAudioStale(key, clip.audioUrl) ||
+                        // 세대 표식이 없는 옛 캐시도 **한 번은** 다시 받는다 —
+                        // 비교할 값이 없어 낡음 판정을 영영 통과하지 못한다.
+                        audioStore.cachedAudioNeedsRevisionRefresh(key, clip.audioUrl)
+                }
+            keys.takeIf { it.isNotEmpty() }?.let { clip to it }
+        }
+        stale.chunked(PREFETCH_PARALLELISM).forEach { batch ->
+            kotlinx.coroutines.coroutineScope {
+                batch.map { (clip, cacheKeys) ->
+                    async {
+                        try {
+                            val audio = downloadTtsMessageAudio(clip.messageId)
+                            val bytes = android.util.Base64.decode(
+                                audio.audioBase64,
+                                android.util.Base64.DEFAULT,
+                            )
+                            cacheKeys.forEach { key ->
+                                audioStore.cacheGeneratedAudio(
+                                    bytes = bytes,
+                                    format = audio.audioFormat,
+                                    rawAudioUri = audio.audioUrl,
+                                    displayName = key,
+                                    cacheKey = key,
+                                    messageId = clip.messageId,
+                                )
+                            }
+                        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            AlarmTalkLog.reportError("Failed to refresh replaced voice clip", error)
+                        }
+                    }
+                }.awaitAll()
+            }
         }
     }
 }

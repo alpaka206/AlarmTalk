@@ -106,6 +106,9 @@ internal fun AlarmListScreen(
     onRetryVoicePrerender: suspend (String) -> Boolean = { false },
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     onReloadStockClips: () -> Unit = {},
+    // 목소리 하나의 클립 캐시 — 목소리마다 한 벌만 돈다(드라이브와 나눠 쓴다).
+    onCacheVoiceClips: suspend (String, List<com.alarmtalk.app.network.StockClip>, (Int, Int) -> Unit) -> Boolean =
+        { _, _, _ -> false },
     // promote 직후 사전렌더 드라이브(ViewModel 스코프) 진행/시작.
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
@@ -307,6 +310,7 @@ internal fun AlarmListScreen(
                         onRetryVoicePrerender = onRetryVoicePrerender,
                         onRetryVoiceSpeechStyle = onRetryVoiceSpeechStyle,
                         onReloadStockClips = onReloadStockClips,
+                        onCacheVoiceClips = onCacheVoiceClips,
                         prerenderDrive = prerenderDrive,
                         onStartPrerenderDrive = onStartPrerenderDrive,
                         storeEntitledNow = storeEntitledNow,

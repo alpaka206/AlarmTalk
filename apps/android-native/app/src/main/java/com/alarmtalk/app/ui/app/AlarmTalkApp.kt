@@ -584,7 +584,8 @@ internal fun AlarmTalkApp(
         if (authSession == null) return@LaunchedEffect
         com.alarmtalk.app.core.AppSignals.voiceShareChanged.collect {
             viewModel.refreshSocial()
-            viewModel.loadStockClips(forceReload = true)
+            // 서버가 바뀌었다는 신호다 — 그 **뒤에** 출발한 매니페스트여야 한다(신선도 창을 쓰지 않는다).
+            viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.LATEST)
         }
     }
     // 플랜 변경(plan_changed push) — 앱이 살아 있는 채로 구독이 만료·강등되면 워커는 SharedPreferences
@@ -732,8 +733,10 @@ internal fun AlarmTalkApp(
         when (tab) {
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
-                // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 강제 재조회.
-                viewModel.loadStockClips(forceReload = true)
+                // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 다시 본다.
+                // 신선도 창(45초) 안에 받은 게 있으면 그걸 쓴다 — 탭을 오갈 때마다 받지 않게
+                // (`StockClipManifestFlights`, 효율 감사 M1).
+                viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.RECENT)
                 viewModel.preloadSocial()
             }
             // 알람 홈: 히어로와 '누구를 깨울까요?' 시트가 구독/가족 데이터를 쓰므로 함께 갱신한다.
@@ -742,8 +745,9 @@ internal fun AlarmTalkApp(
                 viewModel.refreshBilling()
                 viewModel.refreshSocial()
                 // 편집기가 이 탭에서 열리고, cron 이 세션 중 만든 클론 클립을 오프라인 버킷 판정
-                // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 새로 받아야 한다.
-                viewModel.loadStockClips(forceReload = true)
+                // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 다시 봐야 한다(신선도 창 안이면
+                // 받지 않는다 — 콜드 스타트엔 앱 시작의 조회를 나눠 쓴다).
+                viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.RECENT)
             }
             NativeTab.People -> {
                 viewModel.refreshSocial()
@@ -1524,7 +1528,12 @@ internal fun AlarmTalkApp(
                           prerenderDrive = viewModel.prerenderDrive,
                           onStartPrerenderDrive = viewModel::startPrerenderDrive,
                           onRetryVoiceSpeechStyle = viewModel::retryVoiceSpeechStyleAnalysis,
-                          onReloadStockClips = { viewModel.loadStockClips(forceReload = true) },
+                          // 목소리 탭이 '서버는 다 만들었는데 목록에 없다' 를 볼 때 부른다 — 그 뒤에
+                          // 출발한 매니페스트여야 한다.
+                          onReloadStockClips = { viewModel.loadStockClips(com.alarmtalk.app.ManifestNeed.LATEST) },
+                          onCacheVoiceClips = { voiceId, clips, onProgress ->
+                              viewModel.cacheVoiceClips(voiceId, clips, onProgress)
+                          },
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,

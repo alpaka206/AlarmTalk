@@ -28,6 +28,12 @@ object StockClipManifestStore {
     private fun file(context: Context) = File(context.filesDir, FILE_NAME)
 
     /**
+     * 직렬화·파싱에 쓰는 Gson **하나**(효율 감사 M2). 호출마다 새로 만들면 약 168KB 파일을 다룰
+     * 때마다 어댑터를 다시 짓는다. Gson 은 스레드 안전하다.
+     */
+    private val gson = Gson()
+
+    /**
      * 이 파일의 **권위 세대**. 조회를 시작할 때 표를 뽑고([beginFetch]), 저장할 때 그 표를
      * 낸다([save]) — 뒤처진 표는 거절된다.
      *
@@ -165,6 +171,9 @@ object StockClipManifestStore {
     enum class PublishResult { PUBLISHED, SUPERSEDED, FAILED }
 
     /**
+     * ⚠ **메인 스레드에서 부르지 말 것**(효율 감사 M2). 약 168KB 를 직렬화해 파일을 갈아 끼우고
+     * prefs 를 `commit()` 한다 — 그것도 워커와 같은 잠금 안에서라, 워커가 쓰는 동안 메인이 멎는다.
+     *
      * @param ownerUserId 이 매니페스트를 받은 계정. **공개하는 쪽이 반드시 준다** —
      *   따로 찍게 두면 한 경로만 빠져도(실제로 프리페치 워커가 그랬다) 임자가 null 로 남아
      *   다른 계정이 그 파일을 시드한다(Codex #703 P1).
@@ -203,7 +212,7 @@ object StockClipManifestStore {
             // 매니페스트를 못 읽고, 그러면 이 파일을 둔 이유가 그대로 사라진다.
             val target = file(context)
             val tmp = File(context.filesDir, "$FILE_NAME.tmp")
-            tmp.writeText(Gson().toJson(response))
+            tmp.writeText(gson.toJson(response))
             if (!tmp.renameTo(target)) {
                 target.writeText(tmp.readText())
                 tmp.delete()
@@ -216,10 +225,18 @@ object StockClipManifestStore {
     /**
      * 디스크에 남은 매니페스트. 없거나 깨졌으면 null.
      *
+     * ⚠ **메인 스레드에서 부르지 말 것**(효율 감사 M2) — 약 168KB 를 읽어 파싱한다.
+     *
      * @param currentUserId 지금 로그인한 계정. **격리된 파일을 읽을 수 있는지**를 이걸로 가른다
      *   (아래). 모르면 null 을 넘긴다 — 그때는 격리 중 읽지 않는다(fail-closed).
+     * @param requireOwner true 면 **임자가 [currentUserId] 인 파일만** 읽는다. 공개 경합에서 물러난
+     *   회차가 이긴 매니페스트를 이어받을 때 쓴다(스펙 「공개 경합의 규칙」 — 임자 대조).
      */
-    fun load(context: Context, currentUserId: String? = null): StockClipListResponse? {
+    fun load(
+        context: Context,
+        currentUserId: String? = null,
+        requireOwner: Boolean = false,
+    ): StockClipListResponse? {
         // ⚠ **지우지 못한 파일은 남에게 읽히지 않는다**(Codex #703 P1 — 위 `QUARANTINE_KEY`).
         // 그 표시가 서 있는 동안 파일은 **지우기로 한 계정의 것**이라, 다른 계정이 읽으면
         // 그 계정의 클론 이름·문구가 남의 화면에 시드된다.
@@ -229,6 +246,10 @@ object StockClipManifestStore {
         // — 관문은 '막지 않음', 저장은 '불완전' 으로 정반대로 답한다)로 오프라인 사용자가
         // 그대로 돌아간다. 임자는 `save` 가 조회한 계정으로만 찍히므로 믿을 수 있다.
         val prefs = ownerPrefs(context)
+        if (requireOwner) {
+            val me = currentUserId?.takeIf { it.isNotBlank() } ?: return null
+            if (prefs.getString(OWNER_KEY, null) != me) return null
+        }
         if (prefs.getBoolean(QUARANTINE_KEY, false)) {
             val owner = prefs.getString(OWNER_KEY, null)
             val me = currentUserId?.takeIf { it.isNotBlank() }
@@ -237,7 +258,7 @@ object StockClipManifestStore {
         val target = file(context)
         if (!target.exists()) return null
         return runCatching {
-            Gson().fromJson(target.readText(), StockClipListResponse::class.java)
+            gson.fromJson(target.readText(), StockClipListResponse::class.java)
         }.getOrElse {
             // 깨진 파일은 지운다 — 남겨 두면 매번 파싱에 실패하며 같은 로그만 쌓인다.
             AlarmTalkLog.reportError("Discarding an unreadable stock clip manifest", it)

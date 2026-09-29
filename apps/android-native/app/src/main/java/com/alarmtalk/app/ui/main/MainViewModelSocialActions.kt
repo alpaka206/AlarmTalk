@@ -29,6 +29,8 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     val startGeneration = authSessionStore.sessionGeneration()
     val socialTicket = accessTicket()
     socialBusy = true
+    // 내리기 **전에** 적어 둔다 — 공유 목록이 바뀌었을 때 매니페스트를 얼마나 새로 받을지 가른다.
+    val hadFreshSharedList = familyVoicesLoadedFresh
     // 새 소셜 로드 시작 — 신선-로드 플래그를 내려, 로드 완료 전 fetchVoiceProfiles 가 옛 상태로
     // 강등 판단하지 않게 한다(성공 시 snapshot.familyVoicesFresh 로 다시 설정).
     familyVoicesLoadedFresh = false
@@ -67,7 +69,14 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                     snapshot.familyVoices.map { it.id }.toSet() != familyVoices.map { it.id }.toSet()
                 familyVoices = snapshot.familyVoices
                 familyVoicesLoadedFresh = snapshot.familyVoicesFresh
-                if (sharedIdsChanged) loadStockClips(forceReload = true)
+                // 앞 목록도 서버에서 받은 것이었으면 **서버에서 바뀐 것**이다 — 그 뒤에 출발한
+                // 매니페스트가 필요하다. 앞 목록을 몰랐으면(세션 첫 조회) 바뀐 게 아니라 이제 안
+                // 것이고, 거의 같은 때 받은 매니페스트가 같은 상태를 담고 있다 — 신선도 창 안이면
+                // 그걸 쓴다(콜드 스타트마다 한 번 더 받지 않게, 효율 감사 M1). 실제 공유 변경은
+                // `voice_share_changed` 푸시가 따로 LATEST 로 깨운다.
+                if (sharedIdsChanged) {
+                    loadStockClips(if (hadFreshSharedList) ManifestNeed.LATEST else ManifestNeed.RECENT)
+                }
                 // 접근권 잃은 목소리 알람 강등 — 내 음성·공유 목소리 두 로드 중 늦게 끝난 쪽에서
                 // 실행되도록 헬퍼로 위임한다(한쪽이 먼저 끝나 스킵돼도 재실행됨).
                 // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
