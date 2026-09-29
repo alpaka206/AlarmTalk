@@ -156,7 +156,47 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         }
     }
 
+    /// 회귀(코덱스 #823 2차): 목소리 갱신에는 세대 가드가 없어 `force` 가 진행 중인 갱신과 겹쳐 돈다.
+    /// 앞서 받아들인 진입 갱신이 뒤의 `force` 갱신(반쪽으로 끝남)보다 **늦게** 끝나도 창을 다시 열면
+    /// 안 된다 — 열면 다음 진입이 그 반쪽을 메울 재시도를 건너뛴다.
+    func test_뒤에_시작한_force_갱신이_반쪽이면_늦게_끝난_앞_갱신이_창을_열지_못한다() async throws {
+        let clock = TestClock(now: t0)
+        let gate = ResponseGate()
+        let olderListArrived = expectation(description: "앞 갱신의 목록 요청이 서버에 닿았다")
+        let olderQuotaAnswered = expectation(description: "앞 갱신의 한도 요청이 답을 받았다")
+        let profiles = Data(#"{"profiles":[]}"#.utf8)
+        try await withVoiceViewModel(clock: clock, handler: { path, ordinal, reply in
+            switch (path, ordinal) {
+            case ("voice", 1):
+                olderListArrived.fulfill()
+                gate.hold { reply(200, profiles) }
+            case ("voice/draft-quota", 1):
+                reply(200, Self.quotaBody)
+                olderQuotaAnswered.fulfill()
+            case ("voice/draft-quota", _):
+                // 뒤의 force 갱신은 한도를 못 받아 반쪽으로 끝난다.
+                reply(503, Data(#"{"error":"unavailable"}"#.utf8))
+            default:
+                reply(200, profiles)
+            }
+        }) { vm, current, listCalls in
+            let older = Task { await vm.refreshOnEntry(session: current) }
+            await fulfillment(of: [olderListArrived, olderQuotaAnswered], timeout: 5)
+            await vm.refresh(session: current, force: true)
+            gate.release()
+            await older.value
+            XCTAssertEqual(listCalls(), 2)
+
+            await vm.refreshOnEntry(session: current)
+            XCTAssertEqual(listCalls(), 3, "가장 최근에 받아들인 갱신이 반쪽이었으니 창은 닫혀 있다 — 진입이 다시 받는다")
+        }
+    }
+
     // MARK: - 픽스처
+
+    nonisolated private static let quotaBody = Data(
+        #"{"limit":1,"used":0,"remaining":1,"registration_limit":1,"registration_used":0,"registration_remaining":1}"#.utf8
+    )
 
     private func withSocialViewModel(
         clock: TestClock,
@@ -173,7 +213,7 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         let me = try JSONSerialization.data(withJSONObject: [
             "user": ["id": userID, "email": "entry@example.test", "name": "Test", "plan": "family", "deletion_status": "active"]
         ])
-        EntryRefreshURLProtocol.configure(host: host) { path in
+        EntryRefreshURLProtocol.configureSync(host: host) { path in
             switch path {
             case "auth/me":
                 onMe()
@@ -202,21 +242,26 @@ final class EntryRefreshFreshnessTests: XCTestCase {
         clock: TestClock,
         quotaFails: LockedFlag = LockedFlag(),
         onList: @escaping @Sendable () -> Void = {},
+        handler: EntryRefreshURLProtocol.Handler? = nil,
         _ body: (VoiceStudioViewModel, AuthSession, @escaping @Sendable () -> Int) async throws -> Void
     ) async throws {
         let current = AuthSession(token: UUID().uuidString, user: AuthUser(id: UUID().uuidString, email: "entry@example.test"))
         let host = "\(UUID().uuidString.lowercased()).entry-refresh.example.test"
-        EntryRefreshURLProtocol.configure(host: host) { path in
-            switch path {
-            case "voice/draft-quota":
-                if quotaFails.value { return (503, Data(#"{"error":"unavailable"}"#.utf8)) }
-                return (200, Data(#"{"limit":1,"used":0,"remaining":1,"registration_limit":1,"registration_used":0,"registration_remaining":1}"#.utf8))
-            case "voice":
-                onList()
-                return (200, Data(#"{"profiles":[]}"#.utf8))
-            default:
-                // `voice/family` — 공유받은 목소리도 없다.
-                return (200, Data(#"{"profiles":[]}"#.utf8))
+        if let handler {
+            EntryRefreshURLProtocol.configure(host: host, handler: handler)
+        } else {
+            EntryRefreshURLProtocol.configureSync(host: host) { path in
+                switch path {
+                case "voice/draft-quota":
+                    if quotaFails.value { return (503, Data(#"{"error":"unavailable"}"#.utf8)) }
+                    return (200, Self.quotaBody)
+                case "voice":
+                    onList()
+                    return (200, Data(#"{"profiles":[]}"#.utf8))
+                default:
+                    // `voice/family` — 공유받은 목소리도 없다.
+                    return (200, Data(#"{"profiles":[]}"#.utf8))
+                }
             }
         }
         let urlSession = Self.stubbedSession()
@@ -266,9 +311,34 @@ private final class LockedFlag: @unchecked Sendable {
     }
 }
 
+/// 응답을 붙들었다가 풀어 주는 문 — 앞 요청을 뒤 요청보다 늦게 끝나게 한다.
+private final class ResponseGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: (@Sendable () -> Void)?
+    private var released = false
+
+    func hold(_ completion: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if released { lock.unlock(); completion(); return }
+        pending = completion
+        lock.unlock()
+    }
+
+    func release() {
+        lock.lock()
+        released = true
+        let completion = pending
+        pending = nil
+        lock.unlock()
+        completion?()
+    }
+}
+
 /// 호스트별로 응답을 고르고 **경로별 호출 수**를 센다. 경로는 `/api/` 뒤(`auth/me`, `voice` …).
+/// 핸들러는 그 경로의 몇 번째 호출인지(1부터)를 함께 받고, 답은 나중에 보내도 된다.
 private final class EntryRefreshURLProtocol: URLProtocol, @unchecked Sendable {
-    typealias Handler = @Sendable (String) -> (Int, Data)
+    typealias Reply = @Sendable (Int, Data) -> Void
+    typealias Handler = @Sendable (_ path: String, _ ordinal: Int, _ reply: @escaping Reply) -> Void
     private static let lock = NSLock()
     nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
     nonisolated(unsafe) private static var counts: [String: [String: Int]] = [:]
@@ -278,6 +348,13 @@ private final class EntryRefreshURLProtocol: URLProtocol, @unchecked Sendable {
         defer { lock.unlock() }
         handlers[host] = handler
         if handler == nil { counts[host] = nil }
+    }
+
+    static func configureSync(host: String, _ handler: @escaping @Sendable (String) -> (Int, Data)) {
+        configure(host: host) { path, _, reply in
+            let (status, data) = handler(path)
+            reply(status, data)
+        }
     }
 
     static func count(host: String, path: String) -> Int {
@@ -300,19 +377,24 @@ private final class EntryRefreshURLProtocol: URLProtocol, @unchecked Sendable {
         let path = url.path.components(separatedBy: "/api/").last ?? url.path
         Self.lock.lock()
         let handler = Self.handlers[host]
-        if handler != nil { Self.counts[host, default: [:]][path, default: 0] += 1 }
+        var ordinal = 0
+        if handler != nil {
+            ordinal = (Self.counts[host]?[path] ?? 0) + 1
+            Self.counts[host, default: [:]][path] = ordinal
+        }
         Self.lock.unlock()
         guard let handler else {
             client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
             return
         }
-        let (status, data) = handler(path)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(
-            url: url, statusCode: status, httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
-        )!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        handler(path, ordinal) { [self] status, data in
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     override func stopLoading() {}

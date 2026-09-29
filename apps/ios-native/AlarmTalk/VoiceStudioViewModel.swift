@@ -123,6 +123,13 @@ final class VoiceStudioViewModel: ObservableObject {
     private var greetingPreviewRequestId = 0
     /// 화면 진입 갱신(`refreshOnEntry`)의 신선도 창 — 규칙은 `EntryRefreshFreshness`.
     private var entryFreshness = EntryRefreshFreshness()
+    /// 신선도 창의 세대 — **마지막에 받아들인 갱신만** 창을 연다(코덱스 #823 2차).
+    ///
+    /// ⚠ 이 뷰모델의 목록 갱신에는 세대 가드가 없어서(`force` 는 진행 중인 갱신과 겹쳐 돈다),
+    ///   앞서 받아들인 진입 갱신이 뒤에 시작한 `force` 갱신보다 늦게 끝날 수 있다. 그 `force` 가
+    ///   실패·반쪽이면 창은 닫혀 있어야 하는데, 늦게 끝난 앞 갱신이 창을 다시 열면 다음 진입이
+    ///   재시도를 건너뛴다. `SocialFeatureViewModel` 은 `refreshGeneration` 으로 같은 일을 막는다.
+    private var entryFreshnessGeneration = 0
     /// 신선도 창이 보는 지금(진입 번호·시각). 테스트가 바꿔 끼운다.
     var entryRefreshClock: EntryRefreshClock = { (AppEntrySignal.shared.counter.entry, Date()) }
 
@@ -165,7 +172,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 화면 확인 모드에서는 시드를 지우지 않는다 — 세션 변화마다 목록이 비워진다.
         if UIPreviewSeed.isEnabled { return }
         activeUserID = nil
-        entryFreshness.reset()
+        closeEntryFreshness()
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         recorder.clearLatest()
@@ -198,7 +205,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     func clearPaidVoiceState() {
         // 목록을 손으로 깎았으니 다음 진입은 서버에서 다시 받는다.
-        entryFreshness.reset()
+        closeEntryFreshness()
         greetingPreviewRequestId += 1
         previewPlayer.stop()
         // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리" — 유료 음성만 제거하고 시스템 음성은 남긴다.
@@ -433,6 +440,14 @@ final class VoiceStudioViewModel: ObservableObject {
         return normalized.isEmpty ? nil : normalized
     }
 
+    /// 신선도 창을 닫고 세대를 올린다 — 그 전에 받아들인 갱신은 창을 다시 열지 못한다.
+    @discardableResult
+    private func closeEntryFreshness() -> Int {
+        entryFreshness.reset()
+        entryFreshnessGeneration &+= 1
+        return entryFreshnessGeneration
+    }
+
     /// **화면 진입 갱신** — 같은 계정의 완결된 갱신이 같은 앱 진입 안에서 60초 안에 있었으면
     /// 다시 받지 않는다(`EntryRefreshFreshness`, 규칙은 `docs/spec/plan-gates.md` §4).
     ///
@@ -469,7 +484,7 @@ final class VoiceStudioViewModel: ObservableObject {
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
         // 신선도 창은 이 갱신이 끝까지 성공해야 다시 열린다 — 실패하면 다음 진입이 받는다.
-        entryFreshness.reset()
+        let freshnessGeneration = closeEntryFreshness()
         // 창에 적을 진입·시각은 보내기 전에 잡는다(코덱스 #823 — `SocialFeatureViewModel.refreshAll` 과 같다).
         let admitted = entryRefreshClock()
         let shouldManageBusy = !isRefreshing
@@ -545,7 +560,8 @@ final class VoiceStudioViewModel: ObservableObject {
             // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
             if let quotaResult { draftQuota = quotaResult }
             // 목록·공유 목소리·한도를 **다** 받았을 때만 창을 연다(반쪽이면 다음 진입이 다시 받는다).
-            if familyAuthoritative, quotaResult != nil {
+            // 뒤에 받아들인 갱신이 있으면 그쪽이 창을 정한다(`entryFreshnessGeneration`).
+            if familyAuthoritative, quotaResult != nil, freshnessGeneration == entryFreshnessGeneration {
                 entryFreshness.record(.init(userID: userID, entry: admitted.entry, at: admitted.now))
             }
             if let selectedProfileID,
