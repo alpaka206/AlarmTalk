@@ -16,11 +16,9 @@ import SwiftUI
 /// ⚠ **인라인 컨트롤로 되돌리지 말 것.** iOS 편집기는 스누즈 간격·반복 횟수를 전부 본문에
 /// 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리 선택과 같은
 /// 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
-enum AlarmSettingsPane: String, Identifiable, Hashable {
+enum AlarmSettingsPane: Hashable {
     case alarmSound
     case voiceOutput
-
-    var id: String { rawValue }
 
     var title: String {
         switch self {

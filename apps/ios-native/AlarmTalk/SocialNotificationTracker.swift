@@ -1,8 +1,6 @@
 import Foundation
 
-#if canImport(UserNotifications)
 import UserNotifications
-#endif
 
 struct SocialNotificationRequest: Equatable {
     var noteID: String
@@ -14,17 +12,14 @@ enum SocialNotificationTracker {
     static func requestAuthorizationIfNeeded() async {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(시뮬레이터엔 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
-        #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-        #endif
     }
 
     static func notifyReceivedAlarm(alarmID: String, title: String, time: String) async {
         let request = receivedAlarmRequest(alarmID: alarmID, title: title, time: time)
-        #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard canPostNotifications(status: settings.authorizationStatus) else { return }
@@ -40,7 +35,6 @@ enum SocialNotificationTracker {
             trigger: nil
         )
         try? await center.add(notification)
-        #endif
     }
 
     static func receivedAlarmRequest(alarmID: String, title: String, time: String) -> SocialNotificationRequest {
@@ -54,7 +48,6 @@ enum SocialNotificationTracker {
         )
     }
 
-    #if canImport(UserNotifications)
     private static func canPostNotifications(status: UNAuthorizationStatus) -> Bool {
         switch status {
         case .authorized, .provisional, .ephemeral:
@@ -65,5 +58,4 @@ enum SocialNotificationTracker {
             return false
         }
     }
-    #endif
 }

@@ -1,12 +1,8 @@
 import Foundation
 
-#if canImport(BackgroundTasks)
 import BackgroundTasks
-#endif
 
-#if canImport(AlarmKit)
 import AlarmKit
-#endif
 
 // MARK: - BackgroundRefreshTaskHandle
 //
@@ -45,10 +41,8 @@ final class BackgroundTaskCompletion: @unchecked Sendable {
     }
 }
 
-#if canImport(BackgroundTasks)
 // 두 멤버는 `BGTask` 에 있다 — 상위에 한 번만 붙이면 `BGAppRefreshTask` 가 물려받는다.
 extension BGTask: BackgroundRefreshTaskHandle {}
-#endif
 
 // MARK: - BackgroundSyncTask
 //
@@ -138,7 +132,6 @@ final class BackgroundSyncTask {
     /// 의존성은 아직 없으므로 **깨어난 task 를 붙들어 두고**, `register(...)` 가 실행기를
     /// 채우는 순간 넘긴다.
     static func registerLaunchHandler() {
-        #if canImport(BackgroundTasks)
         guard !didRegisterHandler else { return }
         didRegisterHandler = true
         // ⚠ **`@Sendable` 을 지우지 말 것 — 지우면 이 핸들러는 배달되는 순간 트랩한다**
@@ -162,7 +155,6 @@ final class BackgroundSyncTask {
             }
             Self.handleLaunch(refresh)
         }
-        #endif
     }
 
     /// 시스템이 **백그라운드 큐에서** 배달한 task 를 메인 액터의 실행기로 인계한다.
@@ -194,7 +186,6 @@ final class BackgroundSyncTask {
         alarmKit: AlarmKitViewModel? = nil,
         voiceStudio: VoiceStudioViewModel? = nil
     ) {
-        #if canImport(BackgroundTasks)
         // ⚠ 여기서 `BGTaskScheduler.register` 를 **다시 부르지 말 것** — 같은 식별자로 두 번
         // 등록하면 크래시한다. 등록은 `registerLaunchHandler` 가 launch 중에 끝냈다.
         let run: @MainActor (any BackgroundRefreshTaskHandle) -> Void = { refresh in
@@ -229,7 +220,6 @@ final class BackgroundSyncTask {
                 run(waiting)
             }
         }
-        #endif
     }
 
     // MARK: Execution
@@ -241,7 +231,6 @@ final class BackgroundSyncTask {
     ///   2. expirationHandler 설치: 시스템이 cancel 하면 setTaskCompleted(false)
     ///   3. push -> pull 순서로 실행 (로컬 변경을 먼저 서버에 올린 뒤 최신 상태를 내려받기)
     ///   4. setTaskCompleted: 성공/실패 모두 호출
-    #if canImport(BackgroundTasks)
     func runAndSchedule(task: any BackgroundRefreshTaskHandle) async {
         scheduleNext()
         let completion = BackgroundTaskCompletion(task)
@@ -341,7 +330,6 @@ final class BackgroundSyncTask {
             // 스테일 one-shot 을 여기서 다음 비공휴일 회차로 재무장한다 (Android WorkManager
             // + boot receiver parity). best-effort — BG 실행이 발화 전에 보장되지 않으므로
             // dismiss 경로 + foreground recovery 가 1차. 25s executionTimeout 안에서 동작.
-            #if canImport(AlarmKit)
             if let store, let alarmKit, store.hasLoadedFromDisk {
                 await alarmKit.recoverScheduledAlarms(
                     store: store,
@@ -349,7 +337,6 @@ final class BackgroundSyncTask {
                     ownerUserId: KeychainStore.readSession()?.user.id
                 )
             }
-            #endif
             completion.recordEssentialResult(success: pullResult.failed == 0)
             try Task.checkCancellation()
             await UsageEventUploader.shared.flush(session: KeychainStore.readSession(), maxBatches: 1)
@@ -377,7 +364,6 @@ final class BackgroundSyncTask {
             completion.finish()
         }
     }
-    #endif
 
     /// 만료가 가까울 때만 `GET /auth/me` 로 토큰을 굴려 Keychain 에 다시 넣는다.
     ///
@@ -428,7 +414,6 @@ final class BackgroundSyncTask {
     }
 
     static func scheduleNext(earliestBeginDate: Date? = nil) {
-        #if canImport(BackgroundTasks)
         // BGTaskScheduler 는 identifier 당 pending 요청을 하나만 유지한다. 이미 pending 인
         // 요청이 있으면 submit 이 throw 하고(아래 catch 가 swallow), 기존 요청이 유지된다.
         // 그 결과 runAndSchedule:115 의 초기 15분 예약이 살아남아 153/163 의 5분 재시도
@@ -458,14 +443,11 @@ final class BackgroundSyncTask {
             fallback.earliestBeginDate = Date(timeIntervalSinceNow: refreshInterval)
             try? BGTaskScheduler.shared.submit(fallback)
         }
-        #endif
     }
 
     /// 등록된 모든 pending task 를 취소. 로그아웃 시 호출.
     static func cancelAll() {
-        #if canImport(BackgroundTasks)
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
-        #endif
     }
 
     // MARK: - Testing support

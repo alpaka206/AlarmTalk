@@ -13,16 +13,13 @@ struct PreparedAlarmTalk {
     var listenerTitle: String?
 }
 
-/// AlarmTalk 의 목소리 슬롯 / 길이 정책 상수.
+/// AlarmTalk 의 목소리 길이 정책 상수.
 ///
-/// Android 의 `VoiceProfileAudioLimits` 와 `MAX_VOICE_PROFILES` 를 그대로 옮긴다.
+/// Android 의 `VoiceProfileAudioLimits` 를 그대로 옮긴다.
 /// 본 상수는 ViewModel 과 View 가 동일한 기준으로 다이얼로그/에러 메시지를 만들기 위해
-/// 존재한다.
+/// 존재한다. (사용자당 목소리 개수 상한은 서버 `voice-profile.ts` 의 `MAX_VOICE_PROFILES` 가
+/// 막는다 — 앱에 사본을 두지 않는다.)
 enum VoiceProfileLimits {
-    /// 사용자당 최대 목소리 프로필 수. Android `MAX_VOICE_PROFILES`(=1) 및
-    /// 백엔드 voice-profile.ts `MAX_VOICE_PROFILES`(=1) 와 동일해야 한다.
-    /// (5 였을 때 UI 는 5칸을 보여줬으나 서버가 2번째부터 거부해 불일치였음.)
-    static let maxProfiles = 1
     /// 클로닝에 허용되는 최소 음성 길이 (ms).
     /// 클론 최소 녹음 길이. ⚠ **60초가 아니다.** 안드로이드(`AlarmAudioStore.kt:33`)와
     /// 서버 게이트(`voice-profile.ts:50 MIN_CLONE_DURATION_MS`) 모두 12초다. 60초는
@@ -46,8 +43,8 @@ final class VoiceStudioViewModel: ObservableObject {
         return bundledSystemVoiceProfiles()
     }()
     @Published var familyVoices: [FamilyVoiceProfile] = []
-    /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
-    /// 에디터의 StockClipPicker 가 사용. 세션당 1회 로드한다.
+    /// 기본 제공(스톡) 알람 클립 카탈로그. 편집기의 테마 클립 선택·재바인딩·준비 화면이
+    /// 쓴다. 세션당 1회 로드한다.
     @Published var stockClips: [StockClip] = []
 
     /// 목소리를 지워 알람을 톤으로 내렸다 — **예약을 맞춰야 한다**는 신호.
@@ -73,9 +70,6 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 영원히 옛 대사·옛 목소리로 운다. 서버가 `GET /tts/stock-clips` 에 실어 준다.
     @Published var legacyBucketHints: [String: String] = [:]
     @Published var selectedProfileID: String?
-    /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
-    /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
-    @Published var defaultVoiceId: String?
     /// 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
     @Published var defaultListenerTitle: String?
     /// 온보딩/목소리 탭에서 "들어보기"(greeting) 재생 중인 시스템 음성 id. nil 이면 정지 상태.
@@ -193,9 +187,7 @@ final class VoiceStudioViewModel: ObservableObject {
         unpersistedSuppressedProfileIDs = []
         replacementSuppressedProfileIDs = []
         StockClipManifestStore.clear(preservingOwnerUserID: ownerUserID)
-        manifestFetchedThisSession = false
         selectedProfileID = nil
-        defaultVoiceId = nil
         defaultListenerTitle = nil
         previewingGreetingVoiceId = nil
         statusMessage = nil
@@ -418,21 +410,9 @@ final class VoiceStudioViewModel: ObservableObject {
             (fortuneBirthTime).nilIfBlank != nil
     }
 
-    /// 슬롯이 가득 찼는지 — VoiceProfileManagementPanel 의 슬롯 카드/추가 버튼 비활성에 사용.
-    var usedProfileSlots: Int {
-        profiles.filter { !isSystemVoice($0) }.count
-    }
-
     func isSystemVoiceProfile(id: String?) -> Bool {
         guard let id else { return false }
         return profiles.first { $0.id == id }.map(isSystemVoice) ?? isSystemVoiceId(id)
-    }
-
-    var isProfileLimitReached: Bool { usedProfileSlots >= VoiceProfileLimits.maxProfiles }
-
-    /// 남은 등록 슬롯.
-    var remainingProfileSlots: Int {
-        max(0, VoiceProfileLimits.maxProfiles - usedProfileSlots)
     }
 
     private func normalizedUserID(_ userID: String?) -> String? {
@@ -461,14 +441,12 @@ final class VoiceStudioViewModel: ObservableObject {
         await refresh(session: session)
     }
 
+    /// ⚠ **성공을 알리지 않는다.** 이 새로고침은 사용자가 누른 것이 아니라 화면 진입에서
+    /// 자동으로 돈다. 성공은 목록이 이미 보여 주므로, 문구를 세우면 목소리 탭에 들어갈 때마다
+    /// "불러왔어요" 가 떠 있게 된다.
     func refresh(
         session: AuthSession?,
-        force: Bool = false,
-        // ⚠ **기본값은 nil 이다 — 성공을 알리지 않는다.** 이 새로고침은 사용자가 누른
-        // 것이 아니라 화면 진입에서 자동으로 돈다. 성공은 목록이 이미 보여 주므로,
-        // 문구를 세우면 목소리 탭에 들어갈 때마다 "불러왔어요" 가 떠 있게 된다.
-        // (알릴 값이 있는 호출부가 생기면 그때 명시적으로 넘긴다.)
-        successMessage: String? = nil
+        force: Bool = false
     ) async {
         // 화면 확인 모드는 서버가 없다 — 실패 메시지로 목록을 덮지 않는다.
         if UIPreviewSeed.isEnabled { return }
@@ -478,8 +456,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return
         }
         activeUserID = userID
-        // 기본 목소리/호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
-        defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: userID)
+        // 기본 목소리 호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
         // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
         guard force || !isRefreshing else { return }
@@ -586,10 +563,6 @@ final class VoiceStudioViewModel: ObservableObject {
                     profiles.first?.id ??
                     familyVoices.first(where: { $0.status == "ready" })?.id ??
                     familyVoices.first?.id
-            }
-            if let successMessage {
-                guard activeUserID == userID else { return }
-                statusMessage = successMessage
             }
             // 목록이 확정됐으니 접근권을 잃은 알람을 내린다(훅 주석 참조).
             // 권위가 없는 회차에는 훅 안의 판정이 스스로 물러서므로 여기서 또 가르지 않는다.
@@ -999,7 +972,7 @@ final class VoiceStudioViewModel: ObservableObject {
             //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서
             //   배너를 비운다(`MainViewModel.createVoiceProfiles` 의 `message = null`).
             statusMessage = nil
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -1057,7 +1030,7 @@ final class VoiceStudioViewModel: ObservableObject {
             //   지우지 않아 **목소리 탭 맨 위에 그대로 남았다.** 안드로이드도 성공 갈래에서
             //   배너를 비운다(`MainViewModel.createVoiceProfiles` 의 `message = null`).
             statusMessage = nil
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -1094,7 +1067,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 token: token
             )
             statusMessage = "공유 음성 정보를 저장했어요."
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -1246,7 +1219,7 @@ final class VoiceStudioViewModel: ObservableObject {
             if triggerSuccessHaptic {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
             return prepared
         } catch {
             statusMessage = mapVoiceError(error)
@@ -1319,12 +1292,12 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             try await api.deleteVoiceProfile(id: profile.id, token: token, force: force)
             handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
             return true
         } catch {
             if isNotFoundError(error) {
                 handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
-                await refresh(session: session, force: true, successMessage: nil)
+                await refresh(session: session, force: true)
                 return true
             }
             statusMessage = mapVoiceError(error)
@@ -1790,7 +1763,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 listenerTitle: nil,
                 token: token
             )
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -1808,7 +1781,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             _ = try await api.updateVoiceProfile(id: profile.id, name: nil, isShared: isShared, token: token)
             statusMessage = isShared ? "공유를 켰어요." : "공유를 껐어요."
-            await refresh(session: session, force: true, successMessage: nil)
+            await refresh(session: session, force: true)
         } catch {
             statusMessage = mapVoiceError(error)
         }

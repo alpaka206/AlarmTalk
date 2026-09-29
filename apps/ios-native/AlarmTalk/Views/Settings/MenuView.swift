@@ -93,7 +93,6 @@ struct MenuView: View {
         .bottomSheet(isPresented: $themeDialogOpen, onDismiss: { themeDialogOpen = false }) {
             ThemeModePickerSheet(
                 current: currentThemeMode,
-                onDismiss: { themeDialogOpen = false },
                 onSelect: { mode in
                     themeModeRaw = mode.rawValue
                     themeDialogOpen = false

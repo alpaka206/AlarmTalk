@@ -638,7 +638,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 // MARK: - Validation
 // Android `AlarmRepository.kt:471-484` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
 enum LocalAlarmValidationError: LocalizedError, Equatable {
-    case alarmNotFound
     case invalidHour
     case invalidMinute
     case invalidRepeatDaysMask
@@ -654,7 +653,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .alarmNotFound: return "알람을 찾지 못했어요."
         case .invalidHour: return "시는 0~23 사이여야 해요."
         case .invalidMinute: return "분은 0~59 사이여야 해요."
         case .invalidRepeatDaysMask: return "반복 요일 비트가 유효하지 않아요."

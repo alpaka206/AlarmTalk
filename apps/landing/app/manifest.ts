@@ -24,10 +24,12 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#ffffff",
     theme_color: "#ffffff",
     categories: ["lifestyle", "productivity"],
+    // ⚠ `sizes` 는 파일의 실제 픽셀과 같아야 한다. `public/brand-icon.png` 는 256px 라
+    // 512 로 적으면 브라우저가 그 파일을 512 자리에 늘려 쓴다 — 512 는 `app/icon.png` 다.
     icons: [
       { src: "/icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
       {
-        src: "/brand-icon.png",
+        src: "/icon.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

@@ -34,10 +34,6 @@ struct FamilyAlarmQuietTimeDialog: View {
         ("매일", [0, 1, 2, 3, 4, 5, 6]),
     ]
 
-    private var isValid: Bool {
-        !drafts.isEmpty && drafts.allSatisfy { $0.isValid }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -134,7 +130,9 @@ struct FamilyAlarmQuietTimeDialog: View {
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
             .frame(maxWidth: .infinity)
-            .disabled(!isValid)
+            // 시·분은 DatePicker 성분이거나 `parse` 가 이미 범위로 자른 값이고, 요일은
+            // 프리셋 또는 평일 폴백이라 비지 않는다 — 막을 것은 onAppear 전 첫 프레임뿐이다.
+            .disabled(drafts.isEmpty)
         }
         .padding(20)
         .background(AlarmTalkTheme.surface)
@@ -216,14 +214,6 @@ private struct QuietWindowDraft: Equatable {
         startMinute = start.minute
         endHour = end.hour
         endMinute = end.minute
-    }
-
-    var isValid: Bool {
-        !days.isEmpty &&
-            (0...23).contains(startHour) &&
-            (0...59).contains(startMinute) &&
-            (0...23).contains(endHour) &&
-            (0...59).contains(endMinute)
     }
 
     func toWindow() -> FamilyAlarmQuietWindow {

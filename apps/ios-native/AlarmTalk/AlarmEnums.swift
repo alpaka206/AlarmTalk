@@ -151,15 +151,6 @@ enum RepeatDay: Int, CaseIterable, Sendable {
     case saturday = 6
 
     var mask: Int { 1 << rawValue }
-
-    /// `Calendar.current.weekday` 는 1=Sun..7=Sat 이므로 -1 변환.
-    static func fromCalendarWeekday(_ value: Int) -> RepeatDay? {
-        let index = value - 1
-        return RepeatDay(rawValue: index)
-    }
-
-    /// iOS `Locale.Weekday` (.sunday/.monday/...) 1..7 매핑.
-    var localeWeekdayInt: Int { rawValue + 1 }
 }
 
 extension Int {

@@ -30,8 +30,6 @@ final class ClonePrerenderDrive: ObservableObject {
     @Published private(set) var phase: Phase = .generating
     /// 0~100. 생성과 다운로드를 이어 붙인 **하나의** 값.
     @Published private(set) var percent: Int = 0
-    /// 아직 전체 개수를 모른다(첫 조회 전). 막대를 미확정으로 그릴지 정한다.
-    @Published private(set) var totalKnown = false
 
     private let api: AlarmTalkAPI
     private var task: Task<Void, Never>?
@@ -133,7 +131,6 @@ final class ClonePrerenderDrive: ObservableObject {
                         // ⚠ **무진전으로 세지 않는다.** 서버가 클레임을 못 놓은 회차라, 리스가
                         //   끝나기 전에는 몇 번을 물어도 같은 개수가 온다(모델 주석 참조).
                         //   말한 만큼 기다렸다가 같은 자리에서 다시 민다.
-                        if generationTotal > 0 { totalKnown = true }
                         percent = Self.mergedPercent(
                             generated: generated,
                             generationTotal: generationTotal,
@@ -166,7 +163,6 @@ final class ClonePrerenderDrive: ObservableObject {
                 }
             }
 
-            if generationTotal > 0 { totalKnown = true }
             phase = .generating
             percent = Self.mergedPercent(
                 generated: generated,
@@ -224,7 +220,6 @@ final class ClonePrerenderDrive: ObservableObject {
                 voiceProfileID: voiceProfileID,
                 manifestDepartedAfter: generationFinishedAt
             ) {
-                totalKnown = true
                 percent = Self.mergedPercent(
                     generated: generationTotal,
                     generationTotal: generationTotal,

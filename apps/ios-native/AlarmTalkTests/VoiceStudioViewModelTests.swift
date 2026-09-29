@@ -177,7 +177,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
     // MARK: - VoiceProfileLimits
 
     func test_profileLimits_constants() {
-        XCTAssertEqual(VoiceProfileLimits.maxProfiles, 1)
         // ⚠ 12초다. 안드로이드(`AlarmAudioStore.kt:33`)·서버(`voice-profile.ts:50`)와 같은 값.
         // 60초는 `POST /voice/upload` 전용 상수(`voice-upload.ts:19`)지 클론 값이 아니다.
         XCTAssertEqual(VoiceProfileLimits.minDurationMs, 12_000)
@@ -200,25 +199,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(settings.fortune.gender, "여성")
         XCTAssertEqual(settings.fortune.birthDate, "1996-05-20")
         XCTAssertEqual(settings.fortune.birthTime, "07:30")
-    }
-
-    /// 목소리 프로필 상한은 **1개**다. 단일 출처는 서버이고
-    /// (`packages/backend/src/routes/voice-profile.ts` 의 `MAX_VOICE_PROFILES = 1`),
-    /// 안드로이드도 같은 값을 쓴다(`NavigationModels.kt` 의 `MAX_VOICE_PROFILES = 1`).
-    /// 이 테스트는 원래 5를 기대했는데 그건 구현·서버·안드로이드 어느 쪽과도 맞지 않는
-    /// 묵은 기대값이었다. 구현(`VoiceProfileLimits.maxProfiles = 1`)이 옳다.
-    func test_isProfileLimitReached_andRemainingSlots() {
-        let vm = VoiceStudioViewModel()
-        vm.profiles = []
-        XCTAssertFalse(vm.isProfileLimitReached)
-        XCTAssertEqual(vm.remainingProfileSlots, VoiceProfileLimits.maxProfiles)
-
-        vm.profiles = Array(
-            repeating: VoiceProfile(id: "x", name: "x", status: "ready", createdAt: nil, isShared: nil),
-            count: VoiceProfileLimits.maxProfiles
-        )
-        XCTAssertTrue(vm.isProfileLimitReached)
-        XCTAssertEqual(vm.remainingProfileSlots, 0)
     }
 
     // MARK: - APIError 보조
@@ -252,7 +232,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
             name: "Draft",
             isShared: false,
             durationMs: 60_000,
-            noiseRemoval: true,
             relationshipLabel: nil,
             listenerTitle: "   ",
             language: "ja"

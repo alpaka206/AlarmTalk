@@ -48,21 +48,18 @@ final class PersonalPromoTests: XCTestCase {
 
     private func subscription(status: String = "active", expiresAt: String = "2099-01-01T00:00:00Z") -> BillingSubscription {
         BillingSubscription(
-            id: "sub-1", planId: "plan-1", planGroupId: nil, status: status,
-            startsAt: "2026-01-01T00:00:00Z", expiresAt: expiresAt,
-            cancelAtPeriodEnd: nil, canceledAt: nil, nextPlanId: nil
+            id: "sub-1", planId: "plan-1", status: status, expiresAt: expiresAt
         )
     }
 
     private func plan(key: String, type: String) -> BillingPlan {
-        BillingPlan(id: "p-\(key)", key: key, name: key, planType: type, periodDays: 30, maxMembers: 1, priceKrw: 0)
+        BillingPlan(id: "p-\(key)", key: key, name: key, planType: type, maxMembers: 1)
     }
 
     private func response(_ subscription: BillingSubscription?, key: String = "personal", type: String = "personal") -> BillingSubscriptionResponse {
         BillingSubscriptionResponse(
             subscription: subscription,
-            plan: subscription == nil ? nil : plan(key: key, type: type),
-            nextPlan: nil
+            plan: subscription == nil ? nil : plan(key: key, type: type)
         )
     }
 
@@ -632,7 +629,7 @@ final class PersonalPromoTests: XCTestCase {
         XCTAssertEqual(tier, .free)
         XCTAssertNil(BillingPanel.purchaseBlockReason(currentTier: tier, response: nil))
         let noSubscription = BillingSubscriptionResponse(
-            subscription: nil, plan: nil, nextPlan: nil, storeRenewalProviders: [], userPlan: "plus",
+            subscription: nil, plan: nil, storeRenewalProviders: [], userPlan: "plus",
             personalPromo: promo
         )
         XCTAssertNil(BillingPanel.purchaseBlockReason(currentTier: tier, response: noSubscription))

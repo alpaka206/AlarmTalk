@@ -2109,8 +2109,3 @@ final class AuthViewModel: ObservableObject {
         session = value
     }
 }
-
-// MARK: - Helper for blank-check on Optional<String>
-//
-// `AlarmTalkAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
-// 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.

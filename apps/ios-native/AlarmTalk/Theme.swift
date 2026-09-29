@@ -1,7 +1,5 @@
 import SwiftUI
-#if canImport(UIKit)
 import UIKit
-#endif
 
 extension Color {
     /// light/dark 두 팔레트 색을 현재 trait collection(밝게/어둡게)에 따라 자동 전환하는
@@ -12,13 +10,9 @@ extension Color {
     /// 같은 상수 하나가 밝게/어둡게에서 각각 올바른 색을 낸다. 이 덕분에 레거시
     /// `AlarmTalkTheme.*` 호출부(앱 전반 ~430곳)를 수정하지 않고도 다크모드가 정상 동작한다.
     static func dynamicScheme(light: Color, dark: Color) -> Color {
-        #if canImport(UIKit)
         return Color(UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
         })
-        #else
-        return light
-        #endif
     }
 }
 

@@ -1,8 +1,6 @@
 import Foundation
 
-#if canImport(AVFoundation)
 import AVFoundation
-#endif
 
 // MARK: - AlarmSoundStaging
 //
@@ -34,7 +32,6 @@ enum AlarmSoundStagingError: Error, LocalizedError {
     case unsupportedFormat(String)
     case durationExceedsLimit
     case writeFailed(String)
-    case avfoundationUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -44,8 +41,6 @@ enum AlarmSoundStagingError: Error, LocalizedError {
             return "AlarmKit staging: audio exceeds 30s limit."
         case .writeFailed(let reason):
             return "AlarmKit staging: write failed (\(reason))."
-        case .avfoundationUnavailable:
-            return "AlarmKit staging: AVFoundation unavailable."
         }
     }
 }
@@ -95,7 +90,6 @@ enum AlarmSoundStaging {
         // 음량이 100 이 아니면 **원본을 그대로 복사할 수 없다** — 샘플값을 줄여야 하므로
         // 포맷과 무관하게 LPCM 으로 다시 쓴다.
         if gainPercent != 100 {
-            #if canImport(AVFoundation)
             let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
@@ -104,9 +98,6 @@ enum AlarmSoundStaging {
                 }
             }
             return baseName
-            #else
-            throw AlarmSoundStagingError.avfoundationUnavailable
-            #endif
         }
 
         // 30초 초과 클립은 passthrough 도 캡(.caf 30s)을 강제한다 — Apple 의 30초 커스텀
@@ -128,7 +119,6 @@ enum AlarmSoundStaging {
                 }
             }
         } else if isTranscodableFormat(sourceExt) || (isPassthroughFormat(sourceExt) && sourceTooLong) {
-            #if canImport(AVFoundation)
             stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             if !isUsableStagedFile(stagedURL) {
                 try? fm.removeItem(at: stagedURL)
@@ -136,9 +126,6 @@ enum AlarmSoundStaging {
                     try transcodeToCAF(from: sourceURL, to: tmp)
                 }
             }
-            #else
-            throw AlarmSoundStagingError.avfoundationUnavailable
-            #endif
         } else {
             throw AlarmSoundStagingError.unsupportedFormat(sourceExt)
         }
@@ -151,8 +138,8 @@ enum AlarmSoundStaging {
     /// ⚠ **이게 이 파일에서 가장 중요한 규약이다.** 예전에는 `copyItem`·`AVAssetWriter` 가
     /// 최종 경로에 곧바로 썼다. 둘 다 원자적이지 않아서, 쓰는 도중 앱이 죽으면 **잘린 파일이
     /// 최종 이름으로** 남는다. 그런데 재사용 판정이 `fileExists` 하나뿐이라 그 파일이
-    /// 영원히 쓰였고, `.bundledNamed` 는 `requiresInAppFallback == false` 라 인앱 폴백조차
-    /// 돌지 않는다 — 결과는 **알람이 뜨는데 소리가 안 나는** 것이고 스스로 복구되지 않는다.
+    /// 영원히 쓰였고, `.bundledNamed` 는 인앱 재생 대상이 아니라(`.cachedAudio` 만 인앱으로 튼다)
+    /// 인앱 폴백조차 돌지 않는다 — 결과는 **알람이 뜨는데 소리가 안 나는** 것이고 스스로 복구되지 않는다.
     /// 같은 디렉터리 안의 rename 은 원자적이라, 이제 최종 이름이 보이면 완성된 파일이다.
     private static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
         let fm = FileManager.default
@@ -190,14 +177,10 @@ enum AlarmSoundStaging {
         let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
         guard size > minimumUsableBytes else { return false }
 
-        #if canImport(AVFoundation)
         let asset = AVURLAsset(url: url)
         let duration = asset.duration
         guard !duration.isIndefinite else { return false }
         return CMTimeGetSeconds(duration) > 0
-        #else
-        return true
-        #endif
     }
 
     /// 헤더만 있고 오디오가 없는 파일을 거르는 하한. CAF/WAV 헤더는 수십 바이트다.
@@ -206,7 +189,6 @@ enum AlarmSoundStaging {
     /// 소스가 30초(+tolerance)를 넘는지. 측정 불가/AVFoundation 미가용 시 false 로 보아
     /// passthrough 를 막지 않는다(트림은 cacheBytes 단계에서 이미 시도됐을 수 있음).
     private static func isLongerThanLimit(_ url: URL) -> Bool {
-        #if canImport(AVFoundation)
         let asset = AVURLAsset(url: url)
         let duration = asset.duration
         guard !duration.isIndefinite else { return false }
@@ -214,9 +196,6 @@ enum AlarmSoundStaging {
         guard seconds.isFinite, seconds > 0 else { return false }
         let limitSeconds = Double(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) / 1000.0
         return seconds > limitSeconds
-        #else
-        return false
-        #endif
     }
 
     /// `Library/Sounds` 에 실제로 놓인 **파일 이름(확장자 포함)** 을 돌려준다.
@@ -293,7 +272,6 @@ enum AlarmSoundStaging {
         }
     }
 
-    #if canImport(AVFoundation)
     /// source → `.caf`(LPCM) 변환. 30초(AlarmKit 한도)로 자른다.
     ///
     /// ⚠ **`AVAssetExportSession` 으로는 안 된다.** 예전에는
@@ -493,5 +471,4 @@ enum AlarmSoundStaging {
         func get() -> Value { lock.lock(); defer { lock.unlock() }; return value }
         func set(_ newValue: Value) { lock.lock(); value = newValue; lock.unlock() }
     }
-    #endif
 }

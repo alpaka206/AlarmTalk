@@ -157,20 +157,3 @@ final class SegmentPlayerController: ObservableObject {
         if progress >= 1.0 { stop() }
     }
 }
-
-#if DEBUG
-#Preview("Segment player") {
-    if let url = Bundle.main.url(forResource: "preview", withExtension: "m4a") {
-        VoiceSegmentPreviewPlayer(
-            title: "목소리 1",
-            subtitle: "0:00 – 0:20 · 미리듣기",
-            audioURL: url,
-            startMs: 0,
-            endMs: 20_000
-        )
-        .padding()
-    } else {
-        Text("Preview audio missing")
-    }
-}
-#endif
