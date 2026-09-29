@@ -133,9 +133,10 @@
     덮인다 — 직전 선택이 직접 입력이면 폰에 없는 음성이라 저장 때 서버를 부르고 한도가 깎인다.
     잇기가 뒤인 것은 먼저 이으면 이은 직접 입력 문구를 그 비우기가 지우기 때문이다.
     목소리 선택 관문(클립 준비)도 **이을 값**으로 판정한다 — 잇기 전에 도는 관문이 지금 값
-    (랜덤 꺼짐)으로 물으면 클립이 필요한 상태를 통과시킨다. 그리고 관문은 **아무것도 바꾸기
-    전에** 돈다 — 소스를 바꾸고 이은 뒤에 거절하면, 준비 화면을 닫았을 때 거절당한 선택이
-    녹음 카드를 걷어 내고 다른 목소리·이은 문구로 남는다(2026-09-29 리뷰, iOS 가 그랬다).
+    (랜덤 꺼짐)으로 물으면 클립이 필요한 상태를 통과시킨다. 그리고 소스 전환·잇기는 관문과
+    확인(공유 목소리 호칭 입력·기본 목소리 확인)을 다 지나 선택이 **확정될 때만** 한다 — 먼저
+    바꿔 두면, 준비 화면·시트·알럿을 닫았을 때 고르지 않은 선택이 녹음 카드를 걷어 내고 다른
+    목소리·이은 문구로 남는다(2026-09-29 리뷰, iOS 가 그랬다).
   - ⚠ **이은 직접 입력 문구는 테마가 덮지 않는다**(2026-09-29 리뷰). 유료 사용자가 기본
     목소리를 고른 채 직전 선택으로 직접 입력 문구를 이으면, 스톡 클립 목소리의 테마 이어받기가
     옛 테마를 붙여 이은 문구를 말없이 대신했다(iOS). 직접 입력을 쳐 둔 유료 사용자는 테마
@@ -923,7 +924,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 재렌더 준비 신호 | `StockClip.renderedForCurrentVoice` (`network/TtsApi.kt`) | `StockClip.isRenderedForCurrentVoice` (`AlarmTalkAPIModels.swift`) | `rendered_for_current_voice` (`routes/tts.ts` `/stock-clips`) |
 | 아직이면 확정 안 함 | `notReadyVoiceIds` → `Result.retry()` (`sync/VoiceAccessSyncWorker.kt`) | `StockCacheRefreshOutcome.settled` → `presetWorkSettled` (`PushNotificationCoordinator.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
-| 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`selectVoiceOption`(잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다, 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 한 번, 잇기 뒤 `.onChange` 가 같은 식으로 한 번). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
+| 문구 없던 알람 → 목소리 문구 = 직전 선택 잇기 | `AlarmEditorState.applyAlarmOutput` → `enterVoiceModeFromAlarmOnly`·`adoptLastMessageChoiceIfUnset`(`hasNoMessageChoice`) ← `AlarmEditorScreen.applyAlarmOutput`. 직접 녹음 → 목소리는 `AlarmEditorState.selectTtsVoice`(판정은 목소리 교체 **전**, 잇기는 **뒤**) ← `VoiceAudioCard`, 그 관문은 `needsClipPreparationForVoicePick`(이을 값으로 판정). 목소리 자동 선택은 `AlarmEditorState.preselectVoiceProfile`(이은 직접 입력 문구를 비우지 않는다). 기존 알람 라우트도 직전 선택을 받는다(`AlarmTalkApp`). 알람 전용 저장은 테마까지 비운다(`toDraft`). 회귀 `AlarmEditorStateTest` | `AlarmEditorSheet.adoptLastMessageChoiceIfUnset`(`AlarmEditDraft.hasNoMessageChoice`·`lastMessageChoice`) ← 재생 방식 `.onChange`(`AlarmEditorSheet+AlarmModeSection.swift`)·`commitVoiceSelection`(직접 녹음 → 목소리의 소스 전환·잇기는 선택을 **확정할 때만** — 바로 고름·기본 목소리 확인·공유 목소리 호칭 확인이 모두 여기로 오고, 닫으면 아무것도 안 바뀐다. 잇기가 목소리 적용 **전**이고 녹음 전환이 테마를 안 지워 순서 문제가 없다. 관문은 소스를 바꾸기 **전에** `recordingExitNeedsClipPreparation`(이을 값 `AlarmEditDraft.randomContextAdoptedByTtsPick`)으로 — `selectVoiceOption` 과 확정에서 — 보고, 잇기 뒤 `.onChange` 가 같은 식으로 한 번 더). 이은 직접 입력은 테마 이어받기가 덮지 않는다(`applyPendingFreeBucketIfNeeded` ← `AlarmEditDraft.keepsPaidTypedManualText`, 안드로이드는 `AlarmEditorScreen` 스톡 클립 `LaunchedEffect` 의 `manualChosen` 가드). 알람 전용 저장은 **테마를 남긴다**(`AlarmEditDraft.carryOverNonEditableFields` — 위 ⚠). 회귀 `MessageContextMemoryTests`·`AlarmEditDraftTests.test_toRecord_alarmOnlyKeepsThemeSoVoiceSwitchRestoresIt` | — |
 | 빈 직접 입력은 요청 전에 막는다 | `SaveBlockReason.MANUAL_TEXT_MISSING` ← `emptyMessageBlockReason`(판정 `hasNoMessageChoice`, 저장 버튼이 `saveEditor()` **전에** 판정) | `AlarmEditDraft.manualTextMissing` ← `AlarmEditorSheet.manualTextMissing` — `saveFlow` 첫머리(권한·한도 조회·생성 앞), 버튼은 살려 둔다 | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 대사 교체 = 은퇴 | — | — | `messages.retired_at` (마이그레이션 #110) |

@@ -611,8 +611,9 @@ struct AlarmEditorSheet: View {
                             listenerTitle: listener,
                             session: auth.session
                         )
-                        voiceStudio.selectedProfileID = target.id
-                        voiceStudio.preparedAlarm = nil
+                        // 직접 녹음에서 왔으면 소스 전환·직전 선택 잇기도 **여기서** 한다 —
+                        // 호칭 시트를 닫으면(취소) 아무것도 바뀌지 않아야 한다(`commitVoiceSelection`).
+                        commitVoiceSelection(target.id)
                         // 미리듣기가 재생 중일 수 있으므로 확정 시에도 정지한다.
                         voiceStudio.previewPlayer.stop()
                         sharedVoiceSetupTarget = nil
@@ -1200,25 +1201,16 @@ struct AlarmEditorSheet: View {
             switchVoiceSource(to: .localAudio)
             return
         }
-        // ⚠ **잇기 전에** 구한다 — 아래에서 이어받은 문구를 '잃을 문구' 로 읽어 확인 알럿을
+        // ⚠ **잇기 전에** 구한다 — 확정할 때 이어받은 문구를 '잃을 문구' 로 읽어 확인 알럿을
         // 띄우면 안 된다. (둘은 겹치지 않는다: 잇기는 문구가 비었을 때만, 경고는 문구가
         // 있을 때만 돈다.)
         let losesText = losesManualText(switchingTo: option)
-        if voiceSourceMode != .ttsProfile {
-            // ⚠ **관문 1/3 을 바꾸기 _전에_ 본다**(2026-09-29 리뷰, 안드로이드 `VoiceAudioCard`
-            // 의 `applyVoiceSelection` 과 같은 순서). 관문(`selectedProfileID` 의 `onChange`)은
-            // 아래에서 목소리를 적용한 **뒤에** 돌고, 거절하면 목소리 id 만 되돌린다 — 그 전에
-            // 소스를 바꾸고 직전 선택을 이어 두면, 준비 화면을 닫았을 때 사용자가 거절당한
-            // 선택이 녹음 카드를 걷어 내고 다른 목소리·이은 문구로 남는다.
-            if recordingExitNeedsClipPreparation(profileID: option.id) {
-                preparationVoiceID = option.id
-                return
-            }
-            switchVoiceSource(to: .ttsProfile)
-            // 직접 녹음 → 목소리. 녹음 알람에는 문구가 없어 그대로 두면 **빈 직접 입력**으로
-            // 보인다. 비어 있을 때만 직전 선택을 잇는다 — 알람 전용 → 목소리와 같은 규칙
-            // (안드로이드 `VoiceAudioCard` 의 `onAdoptLastMessageChoice`).
-            adoptLastMessageChoiceIfUnset()
+        // ⚠ **관문 1/3 을 무엇이든 묻기 _전에_ 본다**(2026-09-29 리뷰, 안드로이드 `VoiceAudioCard`
+        // 의 `applyVoiceSelection` 과 같은 순서) — 호칭을 다 받아 놓고 준비 화면으로 보내지 않게.
+        // 확정(`commitVoiceSelection`)도 같은 관문을 한 번 더 본다.
+        if voiceSourceMode != .ttsProfile, recordingExitNeedsClipPreparation(profileID: option.id) {
+            preparationVoiceID = option.id
+            return
         }
         // 공유받은 목소리는 '나를 부를 호칭' 이 없으면 먼저 받는다 — 없이 저장하면
         // 서버가 호칭 자리를 비운 문장을 만든다.
@@ -1235,7 +1227,30 @@ struct AlarmEditorSheet: View {
     }
 
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
-        voiceStudio.selectedProfileID = option.id
+        commitVoiceSelection(option.id)
+    }
+
+    /// 목소리(TTS) 선택을 **확정**한다 — 바로 고른 것, '기본 목소리로 바꿀까요?' 확인, 공유
+    /// 목소리 호칭 입력 확인이 모두 여기로 온다.
+    ///
+    /// ⚠ **직접 녹음에서 오면 소스 전환과 직전 선택 잇기도 여기서, 확정할 때만 한다**(2026-09-29
+    /// 리뷰). 예전에는 `selectVoiceOption` 이 묻기 전에 바꿔 두어서, 호칭 시트·확인 알럿·준비
+    /// 화면을 닫으면 고르지도 않은 목소리 갈래와 이은 문구가 녹음 카드를 걷어 낸 채 남았다.
+    /// 녹음 알람에는 문구가 없어 잇지 않으면 **빈 직접 입력**으로 보인다 — 알람 전용 → 목소리와
+    /// 같은 규칙(안드로이드 `AlarmEditorState.selectTtsVoice`).
+    ///
+    /// 관문 1/3 은 바꾸기 **전에** 이을 값으로 본다(`recordingExitNeedsClipPreparation`) —
+    /// 관문(`selectedProfileID` 의 `onChange`)이 거절하면 목소리 id 만 되돌리기 때문이다.
+    func commitVoiceSelection(_ profileID: String) {
+        if voiceSourceMode != .ttsProfile {
+            if recordingExitNeedsClipPreparation(profileID: profileID) {
+                preparationVoiceID = profileID
+                return
+            }
+            switchVoiceSource(to: .ttsProfile)
+            adoptLastMessageChoiceIfUnset()
+        }
+        voiceStudio.selectedProfileID = profileID
         voiceStudio.preparedAlarm = nil
     }
 
