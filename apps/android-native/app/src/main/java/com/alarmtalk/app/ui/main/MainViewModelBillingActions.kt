@@ -624,6 +624,21 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
  */
 internal enum class PurchaseConfirmOrigin { UserPurchase, UserRestore, AutoReconcile }
 
+/**
+ * 확인이 성공한 뒤의 `/auth/me` 갱신이 **토큰을 굴리는가**(`refreshAppSession(rollToken = …)`).
+ *
+ * ⚠ **자동 정합화([PurchaseConfirmOrigin.AutoReconcile])는 굴리지 않는다**(효율 감사 H4).
+ * 정합화는 사용자가 누른 것이 아니라 앱 시작·알람 탭 진입마다 도는 `refreshBilling` →
+ * `refreshStoreEntitlement` → `restorePurchases` 에서 온다. 그 끝에서 토큰을 굴리면 토큰을
+ * 키로 쓰던 탭 효과가 다시 돌아 `refreshBilling` 을 또 부르고 — Play 로 결제한 사용자가 홈에
+ * 있는 동안 3~5초마다 요청 15건 이상과 서버의 Google API 호출이 되풀이됐다. 탭 효과의 키는
+ * 이제 토큰이 아니지만(`SessionEffectKey`), 이 자리에서 굴릴 이유도 없다 — plan 반영은
+ * 굴리든 말든 같은 `/auth/me` 응답으로 된다.
+ * 사용자가 누른 구매·복원은 그대로 굴린다(예전 동작).
+ */
+internal fun purchaseConfirmRollsToken(origin: PurchaseConfirmOrigin): Boolean =
+    origin != PurchaseConfirmOrigin.AutoReconcile
+
 internal fun MainViewModel.confirmGooglePurchase(
     purchaseToken: String,
     productId: String,
@@ -679,7 +694,7 @@ internal fun MainViewModel.confirmGooglePurchase(
                     message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
                 }
                 refreshBillingAfterMutation(authorization, "google play confirm", ownerTicket)
-                refreshAppSession()
+                refreshAppSession(rollToken = purchaseConfirmRollsToken(origin))
                 refreshSocial()
                 // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
                 // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.

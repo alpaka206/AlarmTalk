@@ -1567,9 +1567,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             authSessionStore.observeSession().collect(::absorbStoredSession)
         }
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
-        if (authSession != null) {
-            RemoteAlarmSyncScheduler.runOnce(application)
-        }
+        // ⚠ **여기서 즉시 pull(`RemoteAlarmSyncScheduler.runOnce`)을 걸지 않는다**(효율 감사).
+        //   뷰모델은 `MainActivity.onCreate` 에서 만들어지고, 곧이어 오는 프로세스 `ON_START`
+        //   (`AlarmTalkApplication` 의 `runOnceThrottled`)가 같은 유니크 작업을 `REPLACE` 로 다시
+        //   건다 — 여기서 건 것은 돌기도 전에 취소되고 요청만 한 번 더 나갔다. 그 `ON_START` 가
+        //   스로틀(60초)에 걸리거나 오지 않는 경우(다른 액티비티가 이미 떠 있던 프로세스)도 알람
+        //   탭 진입의 `syncNow` 가 push·pull 을 한다.
         viewModelScope.launch {
             runCatching {
                 repository.reschedulePendingAlarms()
@@ -1603,9 +1606,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 기간 한정 개인 플랜 종료 안내는 **그 진입의 새 응답**이 온 뒤에만 판정한다
         // (`docs/spec/gates-and-overlays.md` 「개인 플랜 종료 안내」) — 복귀할 때 받지 않으면
         // 지난 실행의 프로모로 판정해, 그 사이 결제한 사람에게도 "곧 끝나요" 를 띄운다.
-        // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다). 복귀할
-        //   때마다 굴리면 토큰을 키로 쓰는 효과가 전부 다시 돌아 앱 전체를 다시 불러온다
-        //   (`refreshAppSessionNow` 의 `rollToken`).
+        // ⚠ 토큰은 **이 뷰모델의 첫 갱신에서만** 굴린다(예전 콜드 스타트 한 번과 같다 —
+        //   `docs/spec/session-and-auth.md` 「앱 오픈 갱신」). 복귀할 때마다 굴려도 얻는 것이 없다
+        //   (`refreshAppSessionNow` 의 `rollToken`). 굴러간 토큰이 화면 효과를 다시 부르지 않는
+        //   것은 효과의 키가 토큰이 아니라서다(`SessionEffectKey`).
         viewModelScope.launch {
             var firstEntryRefresh = true
             AppSignals.appEntries.collect { entry ->

@@ -148,6 +148,29 @@ internal fun sessionSurvivedForWrite(
 ): Boolean = currentGeneration == expectedGeneration && !currentToken.isNullOrBlank()
 
 /**
+ * 화면이 "세션이 바뀌었나" 를 가르는 키 — **계정 + 세션 세대**. 토큰은 넣지 않는다.
+ *
+ * 앱 루트(`AlarmTalkApp`)의 세션 효과(계정·동의·목소리 준비 확인, 목소리·클립·구독 선로드,
+ * 푸시 신호 구독)와 탭 새로고침 스로틀이 이 값을 키로 쓴다.
+ *
+ * ⚠ **토큰을 키로 쓰지 말 것**(2026-09-29 효율 감사 H3). `GET /auth/me` 의 rolling refresh 는
+ * 같은 세션 안에서 토큰을 갈아 끼운다 — 콜드 스타트의 진입 갱신, 워커의 갱신, 결제·쿠폰 뒤의
+ * 갱신이 전부 그렇다. 토큰을 키로 두면 굴러갈 때마다 효과가 전부 다시 돌아, 콜드 스타트
+ * 한 번에 요청이 57건까지 불었다(필요한 것은 그 절반 이하). Play 구독자는 자동 정합화가
+ * 토큰을 굴리고 → 탭 효과가 다시 돌아 → 다시 정합화하는 고리까지 생겼다(H4).
+ *
+ * ⚠ **계정 id 만으로도 부족하다.** 로그아웃 뒤 **같은 계정**으로 다시 로그인하면 id 가 같아
+ * 효과가 다시 돌지 않는다 — 로그아웃이 비운 동의·계정 상태를 아무도 다시 묻지 않는다.
+ * 세대는 세션이 끝날 때만 오르므로([AuthSessionStore.sessionGeneration]) 그 경우를 가른다.
+ * [sessionSurvivedForWrite] 가 세대로 가르는 것과 같은 이유다.
+ */
+data class SessionEffectKey(val userId: String, val generation: Long)
+
+/** [session] 이 없으면(비로그인) null. 순수 함수 — 판정만 고정해 두려고 뗐다. */
+fun sessionEffectKey(session: AuthSession?, generation: Long): SessionEffectKey? =
+    session?.let { SessionEffectKey(userId = it.user.id, generation = generation) }
+
+/**
  * **명시적 로그아웃이 진행 중인가** — 시각 하나로 판정한다.
  *
  * 왜 불리언이 아니라 시각인가: 이 표시는 prefs 에 남는다(아래 [AuthSessionStore.beginSignOut]
