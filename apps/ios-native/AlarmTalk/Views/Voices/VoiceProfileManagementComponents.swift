@@ -9,13 +9,7 @@ func normalizedStatus(_ raw: String?) -> String {
 // VoiceProfileManagementPanel 에서 분리한 행/다이얼로그 하위 컴포넌트.
 // 동작/디자인 변경 없음 — internal 가시성만 조정.
 
-// MARK: - Row
-
-// MARK: - Edit dialog
-
-// MARK: - Delete dialog
-
-/// 삭제 확인 다이얼로그. force 토글 + 영향받는 알람 수 안내.
+/// 공유받은 목소리가 나를 부를 관계·호칭을 정하는 다이얼로그.
 struct SharedVoiceViewerInfoDialog: View {
     let profileName: String
     let sharedFromLabel: String

@@ -11,13 +11,8 @@ final class PurchaseBlockReasonTests: XCTestCase {
         BillingSubscription(
             id: "sub-1",
             planId: "plan-1",
-            planGroupId: nil,
             status: "active",
-            startsAt: "2026-09-01T00:00:00.000Z",
             expiresAt: "2026-10-01T00:00:00.000Z",
-            cancelAtPeriodEnd: false,
-            canceledAt: nil,
-            nextPlanId: nil,
             storeProvider: storeProvider
         )
     }
@@ -30,7 +25,6 @@ final class PurchaseBlockReasonTests: XCTestCase {
         BillingSubscriptionResponse(
             subscription: hasSubscription ? subscription(storeProvider: storeProvider) : nil,
             plan: nil,
-            nextPlan: nil,
             storeRenewalProviders: renewalProviders
         )
     }

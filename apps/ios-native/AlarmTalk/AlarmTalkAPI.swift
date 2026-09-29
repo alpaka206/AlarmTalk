@@ -231,8 +231,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.profiles
     }
 
-    /// noiseRemoval 파라미터는 호출부 소스 호환을 위해 유지하지만 더 이상 multipart 로
-    /// 전송하지 않는다. Android 는 이 필드를 보내지 않고, 백엔드도 읽지 않는다(stale).
+    /// ⚠ `noiseRemoval` 은 보내지 않는다 — 안드로이드도 보내지 않고, 백엔드도 읽지 않는다.
     ///
     /// ⚠ `voiceGender`/`speechFormality` 는 **보내지 않는다.** 두 컬럼은 마이그레이션 #83 이
     /// DROP 했고, 대체재인 `speech_style` 은 등록 녹음 전사를 서버가 **자동 분석**해 채운다
@@ -242,13 +241,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
         name: String,
         isShared: Bool,
         durationMs: Int,
-        noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         isDraft: Bool = true,
         language: String = "ko"
     ) -> [String: String] {
-        _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
         let fields: [String: String] = [
             "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
             "isShared": isShared ? "true" : "false",
@@ -275,7 +272,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         isShared: Bool,
         durationMs: Int,
         token: String,
-        noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
@@ -286,7 +282,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             name: name,
             isShared: isShared,
             durationMs: durationMs,
-            noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
             isDraft: isDraft,
@@ -553,16 +548,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/generate", method: "POST", token: token, body: requestBody)
     }
 
-    /// 기본 제공(스톡) 알람 클립 카탈로그 조회. 서버는 모든 인증 사용자에게 동일한
-    /// 전역 목록을 주며, 쿼리 파라미터를 받지 않는다(tts.ts:1287-1313). 언어/카테고리
-    /// 필터·정렬은 클라이언트(StockClipPicker)가 담당한다. 미리듣기/선택 시 음원은
-    /// 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
-    func getStockClips(token: String) async throws -> [StockClip] {
-        try await getStockClipManifest(token: token).clips
-    }
-
-    /// 클립 목록 + **카테고리별 완전한 세트 크기**. 완전성 판정에 그 크기가 필요하다
+    /// 기본 제공(스톡) 알람 클립 카탈로그 조회 — 클립 목록 + **카테고리별 완전한 세트 크기**.
+    /// 완전성 판정에 그 크기가 필요하다
     /// (`ExpectedVariantCounts` 주석 참조 — 기본/등록 목소리의 개수가 다르다).
+    /// 음원은 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
     func getStockClipManifest(token: String) async throws -> StockClipListResponse {
         try await request("tts/stock-clips", token: token)
     }
@@ -621,7 +610,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// `RemoteAlarmPullSync` 가 신규 수신 알람의 음원을 캐싱할 때 호출.
     func getTtsAudio(messageId: String, token: String) async throws -> DecodedTtsAudio {
         let response = try await getTTSMessageAudio(id: messageId, token: token)
-        // 0바이트 방어 — `AudioCacheStore.cache(tts:)` 주석 참조.
+        // 0바이트 방어 — `AudioCacheStore.cache(tts:cacheKey:)` 주석 참조.
         guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
             throw APIError.invalidResponse
         }

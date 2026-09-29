@@ -31,7 +31,7 @@ struct SettingsView: View {
         var id: String { rawValue }
     }
 
-    /// Android `SettingsScreen.kt:142,156` 의 약관/방침 외부 링크.
+    /// 약관/방침 외부 링크. Android 는 `AlarmTalkApp.kt` 의 `LegalDocumentScreen` 라우트가 같은 주소를 쓴다.
     private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
     private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
 
@@ -183,7 +183,6 @@ struct SettingsView: View {
         .bottomSheet(isPresented: $holidayDialogOpen, onDismiss: { holidayDialogOpen = false }) {
             HolidayCountryPickerSheet(
                 current: holidayStore.selectedCountryCode,
-                onDismiss: { holidayDialogOpen = false },
                 onSelect: { code in
                     holidayStore.selectedCountryCode = code
                     holidayDialogOpen = false
@@ -258,9 +257,8 @@ struct SettingsView: View {
     }
 }
 
-/// 라벨 + (선택) 값 + chevron 클릭 행. Android `SettingsRow`(SettingsScreenComponents.kt:66-99)
-/// 와 동일하게 선행 아이콘은 두지 않는다.
 /// 라벨 + (선택) 값 + chevron 행. 설정·더보기 두 화면이 함께 쓴다.
+/// Android `SettingsRow`(`ui/settings/SettingsScreenComponents.kt`)와 같이 선행 아이콘은 두지 않는다.
 struct SettingsValueButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -296,19 +294,12 @@ struct SettingsValueButton: View {
     }
 }
 
-/// 라벨 + 설명 + 스위치 토글 행.
-/// (⚠ 안드로이드에 `SettingsToggleRow` 라는 이름은 없다 — 옛 주석이 틀렸다.
-///  같은 모양의 행은 `ui/settings/ConsentHistoryScreen.kt` 의 `ConsentToggleRow` 다.)
-/// '마케팅 수신' 카드. Android `ui/settings/SettingsScreen.kt` 의 3-상태(로드 완료·로드 실패·로드 전)를
-/// 이식한다. AuthViewModel 의 `loadMarketingConsent`/`updateMarketingConsent` 를 호출하며,
-/// 로드 완료 여부(`loaded`)와 쓰기 진행 여부(`busy`)는 화면 로컬 상태로 추적한다.
 /// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(`ui/settings/SettingsScreen.kt`)
 /// 의 라디오 목록을 이식 — 행을 누르면 즉시 적용하고 닫는다.
 /// 선택 시트는 공용 껍데기(`SelectionSheet`)를 쓴다 — 라디오 원·'선택됨' 알약을
 /// 화면마다 새로 만들지 않는다(자세한 이유는 `SelectionSheet` 주석).
 private struct HolidayCountryPickerSheet: View {
     let current: String
-    let onDismiss: () -> Void
     let onSelect: (String) -> Void
 
     private struct CountryCode: Identifiable { let id: String }
@@ -326,10 +317,9 @@ private struct HolidayCountryPickerSheet: View {
     }
 }
 
-/// 테마 선택 — 공용 시트를 쓴다(아이콘 + 제목 + 설명 라벨).
+/// 테마 선택 — 공용 시트를 쓴다(아이콘 + 제목).
 struct ThemeModePickerSheet: View {
     let current: AlarmTalkThemeMode
-    let onDismiss: () -> Void
     let onSelect: (AlarmTalkThemeMode) -> Void
 
     var body: some View {

@@ -78,7 +78,7 @@ final class AudioCacheStoreTests: XCTestCase {
             provider: "test"
         )
 
-        let cached = try AudioCacheStore.cache(tts: response)
+        let cached = try AudioCacheStore.cache(tts: response, cacheKey: nil)
 
         XCTAssertEqual(cached.cacheKey, "server-cache-key")
         XCTAssertNotNil(AudioCacheStore.shared.cachedURL(for: cached.cacheKey))
@@ -101,7 +101,7 @@ final class AudioCacheStoreTests: XCTestCase {
         XCTAssertEqual(response.remoteAudioURI, "r2://tts/msg-r2-key.mp3")
     }
 
-    func test_cacheBytes_writesFileAndMetadata_andCascadeCleanupRespectsActiveKeys() throws {
+    func test_cacheBytes_writesFileAndMetadata() throws {
         let store = AudioCacheStore()
         let payload = Data([0x49, 0x44, 0x33] + Array(repeating: UInt8(0x20), count: 64)) // ID3 흉내
         let key1 = AudioCacheStore.computeCacheKey(payload)
@@ -128,24 +128,6 @@ final class AudioCacheStoreTests: XCTestCase {
         XCTAssertEqual(meta?.mimeType, "audio/mpeg")
         XCTAssertEqual(meta?.durationMs, 10_000)
         XCTAssertEqual(meta?.messageId, "msg-1")
-
-        // 다른 키 하나 더.
-        let payload2 = Data("other".utf8)
-        let key2 = AudioCacheStore.computeCacheKey(payload2)
-        _ = try store.cacheBytes(
-            payload2,
-            cacheKey: key2,
-            mimeType: "audio/mpeg",
-            source: "tts",
-            durationOverrideMs: 5_000,
-            enforceMaxDuration: false
-        )
-        XCTAssertNotNil(store.cachedURL(for: key2))
-
-        // key1 만 활성으로 cascade → key2 삭제.
-        try store.cascadeCleanup(activeCacheKeys: [key1])
-        XCTAssertNotNil(store.cachedURL(for: key1))
-        XCTAssertNil(store.cachedURL(for: key2))
     }
 
     func test_cacheBytes_throwsWhenDurationExceedsLimit() {

@@ -1,8 +1,6 @@
 import SwiftUI
 
-#if canImport(UIKit)
 import UIKit
-#endif
 
 @main
 struct AlarmTalkApp: App {
@@ -58,10 +56,6 @@ struct AlarmTalkApp: App {
         api: AlarmTalkAPI.shared,
         authProvider: { KeychainStore.readSession() }
     )
-
-    /// `BackgroundSyncTask.register` 는 앱 launch 단계에서 1 회만 호출해야 한다.
-    /// SwiftUI App 의 view init 은 여러 번 호출될 수 있으므로 boostrap helper 가
-    /// 단 한 번만 BGTaskScheduler 에 핸들러를 꽂는다.
 
     var body: some Scene {
         WindowGroup {
@@ -871,9 +865,7 @@ struct AlarmTalkApp: App {
         let kit = alarmKit
 
         var names: [Notification.Name] = [.NSSystemTimeZoneDidChange]
-        #if canImport(UIKit)
         names.append(UIApplication.significantTimeChangeNotification)
-        #endif
 
         // 루프 본문을 `@MainActor` 메서드로 빼 둔다. 인라인 `group.addTask { @MainActor in ... }`
         // 로 쓰면 Swift 6.3 의 region-based isolation checker 가
@@ -1047,14 +1039,6 @@ struct AlarmTalkApp: App {
         DowngradeNoticeStore().record(userID: ownerID, cause: .freePlan, count: locked)
     }
 }
-
-// MARK: - Bootstrap
-
-/// `BackgroundSyncTask.register` 는 BGTaskScheduler 에 핸들러를 꽂는 호출로
-/// process 당 1 회만 허용된다. 두 번 호출하면 crash 한다. `@State` 박스로
-/// 인스턴스 수명을 view 와 동기화해 한 번만 등록한다.
-@MainActor
-
 
 /// `nil` 이면 **아무것도 붙이지 않는** `preferredColorScheme`.
 ///

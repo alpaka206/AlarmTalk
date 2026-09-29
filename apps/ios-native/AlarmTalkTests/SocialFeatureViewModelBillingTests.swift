@@ -132,11 +132,8 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
                 key: planKey,
                 name: planKey,
                 planType: planType,
-                periodDays: 30,
-                maxMembers: 2,
-                priceKrw: 0
-            ),
-            nextPlan: nil
+                maxMembers: 2
+            )
         )
     }
 

@@ -325,13 +325,8 @@ struct VoicePreviewConfirmView: View {
         }
     }
 
-    /// 하단 액션 — **'다시 만들기'(보조) · '저장하기'(주)** 를 같은 높이·같은 모서리로
-    /// 나란히 둔다(2026-09-17 지시).
-    ///
-    /// ⚠ 예전에는 '다시 만들기' 가 `.plain` 글자 버튼이라 높이도 배경도 없었고, 주 버튼만
-    /// `maxWidth: .infinity` 라 **두 버튼의 크기·세로 중심이 어긋나** 보였다. 폭은 1:2 로
-    /// 나눠 주 버튼이 더 크되, 두 버튼 모두 같은 최소 높이(50)를 갖는다.
-    /// 하단 액션 — **두 버튼의 크기를 정확히 같게** 그린다(2026-09-19 지시).
+    /// 하단 액션 — **'다시 만들기'(보조) · '저장하기'(주)** 두 버튼의 크기를 정확히 같게
+    /// 그린다(2026-09-19 지시).
     ///
     /// ⚠ **시스템 버튼 스타일을 섞지 말 것.** `.borderedProminent` 는 자기 여백·높이를
     ///   따로 갖고 있어서, 옆의 `.plain` 버튼과 같은 `minHeight` 를 줘도 실제로는 다르게
@@ -545,7 +540,7 @@ struct VoicePreviewConfirmView: View {
                     }
                 }
             }
-            await voice.refresh(session: auth.session, force: true, successMessage: nil)
+            await voice.refresh(session: auth.session, force: true)
             // 교체 갈래는 draft id 가 아니라 기존 공식 프로필 id 를 반환한다. 준비 페이지가
             // 삭제된 draft 를 기다리지 않도록 서버가 돌려준 실제 id 를 넘긴다.
             onSaved(promoted.id)
@@ -560,7 +555,7 @@ struct VoicePreviewConfirmView: View {
         defer { busy = false }
         // 실패해도 되돌아간다 — 초안은 서버가 정리하고, 여기 갇히는 게 더 나쁘다.
         try? await AlarmTalkAPI.shared.deleteVoiceDraft(id: draft.id, token: token)
-        await voice.refresh(session: auth.session, force: true, successMessage: nil)
+        await voice.refresh(session: auth.session, force: true)
         onDiscarded()
     }
 }

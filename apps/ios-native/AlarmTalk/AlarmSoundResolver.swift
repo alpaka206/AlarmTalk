@@ -1,9 +1,7 @@
 import Foundation
 
-#if canImport(AlarmKit)
 import AlarmKit
 import ActivityKit
-#endif
 
 // MARK: - AlarmSoundResolution
 //
@@ -20,21 +18,6 @@ enum AlarmSoundResolution: Equatable {
     case systemDefault
     case bundledNamed(String)
     case cachedAudio(URL, Int64)
-
-    /// in-app fallback (AVAudioPlayer) 가 필요한지 여부.
-    var requiresInAppFallback: Bool {
-        if case .cachedAudio = self { return true }
-        return false
-    }
-
-    /// 상태 메시지용 디버그 라벨.
-    var debugLabel: String {
-        switch self {
-        case .systemDefault: return "systemDefault"
-        case .bundledNamed(let name): return "bundledNamed(\(name))"
-        case .cachedAudio(_, let ms): return "cachedAudio(\(ms)ms)"
-        }
-    }
 }
 
 /// "이 알람은 무엇을 울리는가" 의 **정체**. 파일을 만들기 전 단계라 값 비교가 싸다.
@@ -224,7 +207,6 @@ enum AlarmSoundResolver {
         AlarmSoundStaging.stagedFileName(forBaseName: baseName) ?? baseName
     }
 
-    #if canImport(AlarmKit)
     /// 결정된 resolution 을 AlarmKit 의 `AlertConfiguration.AlertSound` 로 변환한다.
     /// `.cachedAudio` 는 in-app 폴백 경로이므로 OS 알람음은 `.default` 로 둔다.
     /// `nonisolated` — 순수 변환 함수라서 enum 의 @MainActor 격리에 묶일 필요가 없고,
@@ -239,5 +221,4 @@ enum AlarmSoundResolver {
             return .default
         }
     }
-    #endif
 }

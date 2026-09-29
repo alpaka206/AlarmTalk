@@ -1,6 +1,4 @@
-import AVFoundation
 import SwiftUI
-import UniformTypeIdentifiers
 
 // AlarmEditorSheet 에서 분리한 에디터 하위 컴포넌트/헬퍼 모음.
 // 동작/디자인 변경 없음 — 동일 모듈 내 internal 로 가시성만 조정해 파일만 분리.
@@ -20,7 +18,6 @@ enum LocalAlarmAudioError: LocalizedError {
     case missingSource
     case tooShort
     case tooLong
-    case invalidDuration
 
     var errorDescription: String? {
         switch self {
@@ -30,36 +27,17 @@ enum LocalAlarmAudioError: LocalizedError {
             return "1초 이상 들리는 음성이 필요해요."
         case .tooLong:
             return "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요."
-        case .invalidDuration:
-            return "오디오 길이를 확인하지 못했어요."
         }
     }
 }
 
-/// 알람에 붙일 오디오의 입력 방식.
-///
-/// ⚠ **`file` 을 되살리지 말 것** — 알람 편집기에는 파일 업로드가 없다(위 주석 참조).
-/// 값이 하나뿐이지만 열거형을 남겨 두는 이유는 저장된 옛 값(`"file"`)을 읽을 때
-/// 조용히 깨지지 않게 하기 위해서다.
-enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
-    case record
-
-    var id: String { rawValue }
-}
-
 struct LocalAlarmAudioEditor: View {
-    @Binding var mode: AlarmLocalAudioInputMode
     let isRecording: Bool
     let elapsedMs: Int
     let hasRecording: Bool
     let existingAudioLabel: String?
-    let fileName: String?
-    let fileDurationMs: Int?
-    @Binding var cropStartMs: Int
-    @Binding var cropEndMs: Int
     let isPreviewing: Bool
     let message: String?
-    let onModeChange: (AlarmLocalAudioInputMode) -> Void
     let onRecord: () -> Void
     let onPreview: () -> Void
     let onClear: () -> Void
@@ -67,33 +45,30 @@ struct LocalAlarmAudioEditor: View {
     private var sourceReady: Bool { hasRecording || existingAudioLabel != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
-            // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고, iOS 에만
-            // '녹음/파일' 세그먼트가 남아 있었다.
-            //
-            // ⚠ **녹음 카드를 여기서 다시 그리지 말 것** — `RecordingCard` 하나를
-            // 목소리 등록 화면과 함께 쓴다(2026-08-16 정리).
-            RecordingCard(
-                isRecording: isRecording,
-                elapsedMs: elapsedMs,
-                maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
-                hasRecording: sourceReady,
-                isPreviewing: isPreviewing,
-                // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
-                // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
-                note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
-                onRecord: onRecord,
-                onPreview: onPreview,
-                onRedo: onClear
-            )
-        }
+        // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
+        // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고, iOS 에만
+        // '녹음/파일' 세그먼트가 남아 있었다. 입력 방식·파일·크롭 상태도 그때 함께 걷어냈다.
+        //
+        // ⚠ **녹음 카드를 여기서 다시 그리지 말 것** — `RecordingCard` 하나를
+        // 목소리 등록 화면과 함께 쓴다(2026-08-16 정리).
+        RecordingCard(
+            isRecording: isRecording,
+            elapsedMs: elapsedMs,
+            maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
+            hasRecording: sourceReady,
+            isPreviewing: isPreviewing,
+            // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
+            // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
+            note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
+            onRecord: onRecord,
+            onPreview: onPreview,
+            onRedo: onClear
+        )
     }
 
     /// 알람에 이미 붙어 있는 오디오 이름 — 방금 녹음한 것이 없을 때만 알린다.
     private var existingNote: String? {
-        guard !hasRecording, let existingAudioLabel else { return nil }
-        return existingAudioLabel
+        hasRecording ? nil : existingAudioLabel
     }
 }
 

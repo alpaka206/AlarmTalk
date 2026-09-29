@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(AlarmKit)
 import AlarmKit
-#endif
 
 // MARK: - AlarmAppContext
 //
@@ -75,9 +73,7 @@ final class AlarmAppContext {
     /// OS 는 스스로 다시 걸지 않는다(`AlarmKitViewModel.makeConfiguration`).
     /// 테스트가 갈아 끼운다(실제 AlarmKit 알람을 예약할 수 없다) — 갈아 끼웠으면 되돌릴 것.
     static var rearmCountdown: (UUID) throws -> Void = { uuid in
-        #if canImport(AlarmKit)
         try AlarmManager.shared.countdown(id: uuid)
-        #endif
     }
 
     init(store: LocalAlarmStore) {
@@ -150,7 +146,6 @@ final class AlarmAppContext {
     /// `AlarmKitViewModel` 의 disappearance 루프가 `AlarmAppContext.shared == nil` 인
     /// 경로에서도 소유권 확인을 건너뛰지 않도록 static 으로 둔다.
     static func stopVoiceIfOwnedStatic(by recordID: String?) {
-        #if ALARMTALK_APP
         guard let recordID else {
             AlarmVoicePlayer.shared.stop()
             return
@@ -159,7 +154,6 @@ final class AlarmAppContext {
             || AlarmVoicePlayer.shared.currentRecordID == recordID {
             AlarmVoicePlayer.shared.stop()
         }
-        #endif
     }
 
     /// 지금 재생 중인 목소리가 **이 알람의 것일 때만** 끈다.

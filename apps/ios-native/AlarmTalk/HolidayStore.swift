@@ -178,6 +178,24 @@ enum LocalHolidayCalendar {
     }
 }
 
+/// 국가 flag emoji 헬퍼. region 코드(ISO-3166 alpha-2) → regional indicator symbol.
+enum HolidayCountryFlag {
+    static func emoji(for regionCode: String) -> String {
+        let code = regionCode.uppercased()
+        guard code.count == 2 else { return "🏳️" }
+        var scalarView = String.UnicodeScalarView()
+        let base: UInt32 = 0x1F1E6  // 🇦
+        for ascii in code.unicodeScalars {
+            guard ascii.value >= 65, ascii.value <= 90,
+                  let scalar = Unicode.Scalar(base + (ascii.value - 65)) else {
+                return "🏳️"
+            }
+            scalarView.append(scalar)
+        }
+        return String(scalarView)
+    }
+}
+
 // MARK: - HolidayStore
 /// Android `HolidayCalendarStore` 의 메모리 캐시 + DB 영속 동작을 JSON 파일로 이식.
 /// 메인 스레드에서 호출하므로 디스크 I/O 는 actor 로 격리.
@@ -270,27 +288,6 @@ final class HolidayStore: ObservableObject {
                 h.epochDay == epochDay
         }
         return inCache || LocalHolidayCalendar.isHoliday(year: y, month: m, day: d, countryCode: cc)
-    }
-
-    /// Android `HolidayCalendarStore.upcomingHolidays` / DAO `getUpcoming` 동등.
-    /// from(기본 오늘) 이후 가장 가까운 공휴일 count(기본 5)개. 상한 날짜 없음(LIMIT 만) —
-    /// 370일 ceiling 으로 자르지 않아 Android 와 개수/윈도 시맨틱이 일치한다.
-    func upcomingHolidays(countryCode: String? = nil,
-                          from: Date = Date(),
-                          count: Int = 5,
-                          timeZone: TimeZone = .current) -> [HolidayEntity] {
-        let cc = countryCode ?? selectedCountryCode
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = timeZone
-        let c = cal.dateComponents([.year, .month, .day], from: from)
-        let startEpoch = KoreanLunarHolidayEngine.epochDay(
-            year: c.year ?? 1970, month: c.month ?? 1, day: c.day ?? 1
-        )
-        return holidays
-            .filter { $0.countryCode.uppercased() == cc.uppercased() && $0.epochDay >= startEpoch }
-            .sorted { $0.epochDay < $1.epochDay }
-            .prefix(count)
-            .map { $0 }
     }
 
     /// Android `holidayPredicate` 와 동일 의미. AlarmTimeCalculator 에 주입.

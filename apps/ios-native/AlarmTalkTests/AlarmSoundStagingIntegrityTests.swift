@@ -5,7 +5,7 @@ import XCTest
 /// ⚠ **이 파일이 답하는 질문: 망가진 staged 파일이 알람에 채택되는가.**
 ///
 /// `AlarmSoundStaging.stage` 가 낸 이름은 `AlertConfiguration.AlertSound.named(_)` 로
-/// AlarmKit 에 박히고, 그 경로는 `requiresInAppFallback == false` 라 **인앱 폴백이 돌지
+/// AlarmKit 에 박히고, `.bundledNamed` 는 인앱 재생 대상이 아니라 **인앱 폴백이 돌지
 /// 않는다.** 그래서 잘리거나 빈 파일이 한 번 채택되면 알람은 뜨는데 **소리가 없고**,
 /// 재사용 판정이 파일 존재 하나뿐이라 **스스로 복구되지도 않는다.**
 ///

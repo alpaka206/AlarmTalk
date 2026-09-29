@@ -94,24 +94,16 @@ final class VoiceShareAccessTests: XCTestCase {
             subscription: BillingSubscription(
                 id: "subscription-1",
                 planId: "plan-1",
-                planGroupId: nil,
                 status: "active",
-                startsAt: "2026-01-01T00:00:00Z",
-                expiresAt: "2026-02-01T00:00:00Z",
-                cancelAtPeriodEnd: false,
-                canceledAt: nil,
-                nextPlanId: nil
+                expiresAt: "2026-02-01T00:00:00Z"
             ),
             plan: BillingPlan(
                 id: "plan-1",
                 key: planKey,
                 name: planKey,
                 planType: planType,
-                periodDays: 30,
-                maxMembers: 6,
-                priceKrw: 9_900
-            ),
-            nextPlan: nil
+                maxMembers: 6
+            )
         )
     }
 }

@@ -247,11 +247,7 @@ struct LoginView: View {
             .onChange(of: email) { _, _ in
                 // 고쳐 치기 시작하면 형식 경고를 지운다(안드로이드의 `onValueChange` 와 같은 시점).
                 emailFormatError = false
-                // ⚠ **서버가 준 같은 경고도 함께 지운다.** 이 칸 아래에 떠 있는 말인데
-                // 고쳐 쳐도 안 사라지면, 사용자는 방금 고친 주소가 또 틀렸다고 읽는다.
-                // 지우는 것은 **이 칸이 맡은 갈래 하나**다 — 자격증명 실패는 비밀번호
-                // 칸의 말이라 건드리지 않는다(안드로이드는 `onClearLoginError`).
-                if loginErrorIsEmailFormat { auth.clearLoginError() }
+                // 서버가 준 로그인 오류는 화면 바깥 `.onChange(of: email)` 이 지운다.
                 // 이메일이 바뀌면 인증 상태를 초기화.
                 verificationSent = false
                 verificationCompleted = false
