@@ -251,9 +251,15 @@ struct AlarmTalkApp: App {
                         //   않으므로, **앱을 껐다 켜기 전까지 결제만 되고 선물이 안 나간다.**
                         // 로그아웃 중에 받아 둔 환불 통보를 먼저 민다(적어 둔 이유가
                         // "그때 로그인돼 있지 않아서" 라, 로그인하는 순간이 그 자리다).
-                        await subscriptions.flushPendingRevocations()
-                        await subscriptions.replayUnfinishedTransactions()
-                        await subscriptions.refreshPurchasedProducts()
+                        //
+                        // ⚠ **알람 동기화는 이 복구를 기다리지 않는다**(코덱스 #823 5차). 재전송은
+                        //   미완료 트랜잭션마다 서버 확정을 **차례로** 부를 수 있어 느리거나 오프라인이면
+                        //   오래 걸린다 — 그 뒤에 동기화를 두면 앱 시작의 사이클이 가족 알람의 최소 여유
+                        //   (5분)를 넘겨 밀릴 수 있다. 예전에는 부트스트랩 `.task` 가 따로 한 번 돌아
+                        //   가려져 있었다. 둘은 서로 기다릴 이유가 없어 나란히 돌리고, 이 태스크가 끝나기
+                        //   전에 복구도 끝낸다(계정이 바뀌어 태스크가 접히면 함께 취소된다).
+                        let subscriptionManager = subscriptions
+                        async let storeRecovery: Void = Self.recoverStoreKitForAccount(subscriptionManager)
                         // ⚠ **알림 권한은 여기서 묻지 않는다**(2026-09-17 실기기). 로그인 직후라
                         // 약관 동의·목소리 받기보다 **먼저** 팝업이 떴다. 메인 화면이 처음 뜰 때
                         // 묻는다(`MainTabsView`) — 그 전에는 동의 전이라 서버가 동기화를 막으므로
@@ -295,6 +301,7 @@ struct AlarmTalkApp: App {
                         push.start()
                         await remoteSync.runFullSync()
                         await refreshWeatherVariantsAndReconcile()
+                        await storeRecovery
                         BackgroundSyncTask.scheduleNext()
                     }
                     // ⚠ **언어를 키에 넣는다.** 예전에는 선다운로드가 온보딩
@@ -540,6 +547,14 @@ struct AlarmTalkApp: App {
                 break
             }
         }
+    }
+
+    /// 계정이 정해졌을 때의 StoreKit 복구 — 로그아웃 중 받아 둔 환불 통보 → 미완료 트랜잭션
+    /// 재전송 → 등급 다시 읽기, 이 순서다. 계정 키 `.task` 가 알람 동기화와 **나란히** 돌린다.
+    private static func recoverStoreKitForAccount(_ subscriptions: SubscriptionManager) async {
+        await subscriptions.flushPendingRevocations()
+        await subscriptions.replayUnfinishedTransactions()
+        await subscriptions.refreshPurchasedProducts()
     }
 
     /// **새 스톡 클립으로 갈아타고, 다 끝났으면 옛 파일을 지운다.**
