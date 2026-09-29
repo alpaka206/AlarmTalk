@@ -260,11 +260,12 @@ struct AlarmsListView: View {
     /// 있으면 그걸 우선한다 — 목록에서 "엄마 목소리" 로 읽히는 게 사람 이름보다 낫다.
     private func voiceName(for alarm: LocalAlarmRecord) -> String? {
         guard let id = alarm.voiceProfileId, !id.isEmpty else { return nil }
-        // ⚠ **잠긴 알람에는 목소리 이름을 보여주지 않는다.** 무료 강등은 재생 방식만
-        // 알람음으로 바꾸고 `voiceProfileId` 는 남기므로, 이 게이트가 없으면 행에
-        // 목소리 이름이 그대로 보이는데 실제로는 알람음이 울린다 — 왜 목소리가 안
-        // 나오는지 알 방법이 없다. 대신 행 아래 안내(`AlarmRow.rowNotice`)가 이유를 말한다.
-        guard alarm.preLockPlayMode == nil else { return nil }
+        // ⚠ **옛 모양으로 잠긴 알람에는 목소리 이름을 보여주지 않는다.** 2026-09-29 전의 무료
+        // 강등은 재생 방식만 알람음으로 바꾸고 `voiceProfileId` 는 남겼으므로, 이 게이트가 없으면
+        // 행에 목소리 이름이 그대로 보이는데 실제로는 알람음이 울린다.
+        // 지금의 잠금은 행을 **기본 목소리 알람**으로 고쳐 쓰므로(`DefaultVoiceSubstitute.locked`)
+        // 그 기본 목소리 이름이 보여야 한다 — 보관본(`preLockVoice`)이 있으면 막지 않는다.
+        guard alarm.preLockPlayMode == nil || alarm.preLockVoice != nil else { return nil }
 
         func label(_ name: String, _ relationship: String?) -> String {
             let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""

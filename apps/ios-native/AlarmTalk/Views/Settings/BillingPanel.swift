@@ -252,11 +252,15 @@ struct BillingPanel: View {
         // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
         // 세로로 늘어놓는다.
         .task {
-            // 시트 진입 시 fresh 한 제품 정보 + entitlement 동기화 보장.
+            // 시트 진입 시 제품 정보 + 이용권 동기화.
             if subscriptions.products.isEmpty {
                 await subscriptions.fetchProducts()
             }
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // 진입 갱신이다 — 같은 앱 진입 안에서 1분 안에 끝난 갱신이 있으면 다시 받지 않는다
+            // (`refreshOnEntry`, 스펙 plan-gates §4). 예전에는 `force` 라 더보기 탭이 막 받은
+            // 것을 또 받았고, 진행 중인 갱신과 겹쳐 두 벌이 나갔다. 결제 직전에는 창과 무관하게
+            // 권위 응답을 다시 받는다(`confirmAndPurchase` 의 결제 전 조회).
+            await socialFeatures.refreshOnEntry(session: auth.session)
         }
         .alert("공유 이용권에서 나가기", isPresented: $showLeaveSharedPassConfirm) {
             Button("나가기", role: .destructive) {
@@ -496,9 +500,10 @@ struct BillingPanel: View {
             do {
                 try await AppStore.showManageSubscriptions(in: scene)
                 // 시트에서 해지했을 수 있다 — 닫히면 서버 상태를 다시 읽는다.
+                // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다 — 끝까지 갔으면
+                // 그 `/auth/me` 가 plan 을 이미 넣었다(`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
                 await subscriptions.resyncEntitlements()
-                await auth.refreshUser()
-                await socialFeatures.refreshAll(session: auth.session, force: true)
+                await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 return
             } catch {
                 // 시트를 못 띄웠다 — 아래 URL 폴백으로 이어진다.
@@ -519,10 +524,10 @@ struct BillingPanel: View {
             Task {
                 let result = await subscriptions.restorePurchases()
                 // 복원이 성공한 경우에만 백엔드 entitlement 재동기화 + 상태 새로고침.
+                // 사용자 새로고침은 위 해지 시트 닫힘과 같은 규칙이다(`refreshAllThenUserIfIncomplete`).
                 if result.isSuccess {
                     await subscriptions.resyncEntitlements()
-                    await auth.refreshUser()
-                    await socialFeatures.refreshAll(session: auth.session, force: true)
+                    await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
                 }
                 // 복원됨 N건 / 복원할 구매 없음 / 오류 를 구분해 안내한다.
                 purchaseFeedback = result.userMessage
@@ -591,8 +596,9 @@ struct BillingPanel: View {
         purchaseFeedback = result.userMessage
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
-            await auth.refreshUser()
-            await socialFeatures.refreshAll(session: auth.session, force: true)
+            // 사용자 새로고침은 이용권 새로고침이 끝까지 못 갔을 때만 부른다
+            // (`refreshAllThenUserIfIncomplete`, 스펙 plan-gates §4).
+            await socialFeatures.refreshAllThenUserIfIncomplete(auth: auth)
         }
     }
 

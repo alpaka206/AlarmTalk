@@ -567,6 +567,43 @@ extension AlarmEditDraftTests {
         XCTAssertEqual(saved.preLockPlayMode, AlarmPlayMode.voiceOnly.rawValue)
     }
 
+    /// 기본 목소리로 잠긴 알람의 시각만 고쳐 저장해도 **잠금 보관본**(원래 유료 목소리)이 남아야 한다 —
+    /// 사라지면 재결제해도 그 알람만 원래 목소리로 돌아오지 않는다(billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+    func test_toRecord_keepsDefaultVoiceLockSnapshotOnTimeOnlyEdit() {
+        let original = Self.makeRecord { $0.voiceProfileId = "clone-a" }
+        let locked = DefaultVoiceSubstitute.locked(
+            original,
+            voiceID: bundledSystemVoiceProfiles()[0].id,
+            binding: nil,
+            nowMillis: 400
+        )
+        var draft = AlarmEditDraft(from: locked)
+        draft.hour = 7
+
+        let saved = draft.toRecord(existing: locked, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertEqual(saved.preLockVoice?.voiceProfileId, "clone-a")
+        XCTAssertEqual(saved.preLockPlayMode, locked.preLockPlayMode)
+    }
+
+    /// 재생 방식을 바꿔 저장하면 그 편집이 이긴다 — 보관본을 남기면 재결제 때 복원이 편집을 덮는다.
+    func test_toRecord_dropsDefaultVoiceLockWhenTheVoiceEditChangesIt() {
+        let original = Self.makeRecord { $0.voiceProfileId = "clone-a" }
+        let locked = DefaultVoiceSubstitute.locked(
+            original,
+            voiceID: bundledSystemVoiceProfiles()[0].id,
+            binding: nil,
+            nowMillis: 400
+        )
+        var draft = AlarmEditDraft(from: locked)
+        draft.playMode = .alarmOnly
+
+        let saved = draft.toRecord(existing: locked, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertNil(saved.preLockVoice)
+        XCTAssertNil(saved.preLockPlayMode)
+    }
+
     /// 소유자를 잃으면 계정 전환 시 남의 알람으로 취급된다.
     func test_toRecord_keepsOwnerUserId() {
         let owned = Self.makeRecord { $0.ownerUserId = "user-1" }

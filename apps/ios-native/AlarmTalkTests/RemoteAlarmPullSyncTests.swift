@@ -730,19 +730,36 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(revoked.id, record.id)
         XCTAssertEqual(revoked.remoteAlarmId, record.remoteAlarmId)
 
-        // 목소리와 발신자 흔적은 전부 사라진다.
-        XCTAssertEqual(revoked.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        // 목소리와 발신자 흔적은 전부 사라진다 — 알람음이 아니라 **기본 목소리(미나)** 로 운다(2026-09-29).
+        XCTAssertEqual(revoked.playMode, AlarmPlayMode.voiceOnly.rawValue)
         XCTAssertNil(revoked.audioCacheKey)
         XCTAssertNil(revoked.localAudioUri)
         XCTAssertNil(revoked.rawAudioUri)
-        XCTAssertNil(revoked.voiceProfileId)
+        XCTAssertEqual(revoked.voiceProfileId, substituteSystemVoiceID)
         XCTAssertNil(revoked.ttsMessageId)
         XCTAssertNil(revoked.voiceText)
         XCTAssertNil(revoked.voiceCategory)
         // 보낸 사람 이름이 든 라벨·호칭도 파기 대상이다.
         XCTAssertNil(revoked.voiceListenerTitle)
         XCTAssertEqual(revoked.label, "알람")
-        XCTAssertEqual(revoked.voiceSource, VoiceSource.localAudio.rawValue)
+        XCTAssertEqual(revoked.voiceSource, VoiceSource.ttsProfile.rawValue)
+    }
+
+    /// 재생 방식은 수신자가 둔 값 그대로다 — '알람' 모드로 둔 행은 목소리만 바뀌고 계속 알람음으로 운다.
+    /// 옛 버그로 '알람' 모드에 잠금 표시만 남은 행은 원래 목소리 모드로 돌린다(표시도 비운다).
+    /// 안드로이드 `RemoteAlarmPullSyncServiceTest.revocationRestoresTheVoiceModeOfAnOldBugLock` 짝.
+    func test_withVoiceRevoked_keepsTheRecipientsModeAndUndoesAnOldBugLock() {
+        var chosen = makeReceivedRemote(remoteID: "r7")
+        chosen.playMode = AlarmPlayMode.alarmOnly.rawValue
+        chosen.audioCacheKey = "remote-message-msg-7"
+        XCTAssertEqual(RemoteAlarmPullSync.withVoiceRevoked(chosen).playMode, AlarmPlayMode.alarmOnly.rawValue)
+
+        var oldBugLock = chosen
+        oldBugLock.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        let revoked = RemoteAlarmPullSync.withVoiceRevoked(oldBugLock)
+        XCTAssertEqual(revoked.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertNil(revoked.preLockPlayMode)
+        XCTAssertEqual(revoked.voiceProfileId, substituteSystemVoiceID)
     }
 
     // MARK: - 서버가 표현하지 못하는 값은 merge 가 지킨다

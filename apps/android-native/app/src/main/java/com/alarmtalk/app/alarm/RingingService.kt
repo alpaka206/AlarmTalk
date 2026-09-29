@@ -34,14 +34,14 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.data.AlarmAppContainer
+import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.UsageEvents
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
+import com.alarmtalk.app.data.DefaultVoiceClipSource
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
-import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.hasCoupleOrFamilyAccess
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
@@ -314,78 +314,55 @@ class RingingService : Service() {
                 voiceUriOverride != null,
             )
         }
-        val rawVoiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        val rawPlayMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
-        // 무료 전환/구독 만료가 아직 로컬 DB 잠금(preLockPlayMode)으로 반영되지 않았어도(앱 미실행·
-        // 오프라인이라 billing 재조회를 못 한 창), 울림 시점에 로컬 영속 구독으로 유료 권한을 재확인해
-        // 유료 목소리를 기본 톤으로 강등한다. 알람 자체는 그대로 울리고(톤/진동/화면). 본인 소유
-        // (LOCAL_OWNED) 알람만 대상 — 공유받은(RECEIVED_REMOTE) 알람은 소유자 구독으로 판단하지
-        // 않는다. 무료 시스템 보이스(버킷 등)는 강등 대상이 아니라 제외.
-        val downgradePaidVoice = alarm != null &&
-            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
-            !alarm.usesFreeSystemVoiceAlarm() &&
-            alarmUsesPaidVoice(alarm) &&
-            !isPaidVoiceEntitledFromCache()
-        if (downgradePaidVoice) {
-            Log.i(TAG, "Free plan at ring time — downgrading paid voice to alarm tone id=${alarm?.id}")
+        val ownVoiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }
+        val playMode = AlarmPlayModes.normalize(alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY)
+        // 무료 전환/구독 만료가 아직 로컬 잠금으로 반영되지 않았어도(앱 미실행·오프라인이라 billing
+        // 재조회를 못 한 창), 울림 시점에 로컬 영속 구독으로 유료 권한을 재확인한다(본인 목소리
+        // 알람만 — `ringTimePaidVoiceUnusable`).
+        // ⚠ **강등 = 기본 목소리다 — '알람' 모드로 내리지 말 것**(2026-09-29 dev 리허설, SM-A325N).
+        //   예전에는 여기서 재생 방식을 alarm_only 로 바꿨고, 그 모드는 **알람음 스위치**를 봤다.
+        //   목소리 알람의 그 스위치는 한 번도 쓰이지 않던 값(꺼짐)이라 알람이 아무 소리 없이 울렸다
+        //   (logcat `Free plan at ring time — downgrading paid voice to alarm tone` → `Alarm tone off
+        //   (soundEnabled=false, volume=10)`). 판정은 `decideRingSound` 한 곳이다.
+        val facts = ringSoundFactsFor(alarm, ownVoiceUri) { isPaidVoiceEntitledFromCache() }
+        if (facts.paidVoiceUnusable) {
+            Log.i(TAG, "Free plan at ring time — ringing a default voice instead of the paid voice id=${alarm?.id}")
         }
-        val voiceUri = if (downgradePaidVoice) null else rawVoiceUri
-        val playMode = AlarmPlayModes.normalize(if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode)
-        val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
-        val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
-        // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
-        // 화면·진동·음성(설정 시)으로 계속 울린다. 음성 실패/부재 폴백도 이 값으로 게이트한다.
-        val alarmToneAllowed = isAlarmToneAllowed(alarm)
-        if (playMode == AlarmPlayModes.ALARM_ONLY && !alarmToneAllowed) {
-            stopMediaOnly()
-            Log.i(TAG, "Alarm tone off (soundEnabled=${alarm?.alarmSoundEnabled}, volume=$alarmVolumePercent) id=${alarm?.id}")
-            return
+        if (facts.legacyPlanLock) {
+            Log.i(TAG, "Alarm locked before default-voice locking — ringing a default voice id=${alarm?.id}")
         }
+        val sound = decideRingSound(facts) { alarm?.let(::defaultVoiceUriFor) }
         Log.i(
             TAG,
-            "Starting ringing audio playMode=$playMode hasVoiceAudio=${voiceUri != null} alarmVolume=$alarmVolumePercent voiceVolume=$voiceVolumePercent",
+            "Starting ringing audio sound=${sound.javaClass.simpleName} playMode=$playMode " +
+                "hasVoiceAudio=${ownVoiceUri != null} alarmVolume=${alarm?.alarmVolumePercent} " +
+                "voiceVolume=${alarm?.voiceVolumePercent} id=${alarm?.id}",
         )
-        when {
-            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null && voiceVolumePercent > 0 -> {
-                startVoiceLoop(voiceUri, alarm)
-            }
-
-            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
+        when (sound) {
+            is RingSound.OwnVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
+            is RingSound.DefaultVoice -> startVoiceLoop(Uri.parse(sound.uri), alarm)
+            is RingSound.Tone -> startAlarmToneLoop(alarm, forced = sound.forced)
+            RingSound.Silent -> {
                 stopMediaOnly()
-                Log.i(TAG, "Voice-only alarm muted by per-voice volume id=${alarm?.id}")
+                Log.i(
+                    TAG,
+                    "Silent by the user's own setting (soundEnabled=${alarm?.alarmSoundEnabled}, " +
+                        "voiceVolume=${alarm?.voiceVolumePercent}) id=${alarm?.id}",
+                )
             }
-
-            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
-                // 음성이 없어도 알람음을 끈 사용자에겐 톤을 강제하지 않는다(진동·화면은 계속 울린다).
-                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Voice-only alarm has no local voice audio")
-            }
-
-            else -> startToneFallbackOrSilent(alarm, alarmToneAllowed, "Ringing audio fallback")
         }
     }
 
     /**
-     * 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정.
-     *
-     * ⚠ **'목소리만' 알람은 톤 폴백을 막지 않는다.** 그 모드를 고른 사용자는 알람음을
-     * 거부한 게 아니라 목소리를 고른 것이다. 목소리를 못 틀 때(유료 만료·프로필 삭제·캐시
-     * 유실)까지 톤을 막으면 진동만 남아 **소리가 하나도 안 난다** — 위 강등 주석이 약속한
-     * "알람 자체는 그대로 울린다" 를 어긴다. 옛 행에는 그 조합이 저장돼 있으므로 여기서 받는다.
+     * 이 알람 대신 틀 **기본 목소리** 소리 — 기기 안의 클립·내장 인사말만 본다(네트워크 없음).
+     * 절대 던지지 않는다 — 못 찾으면 null 이고, 그때 판정은 알람음을 강제한다.
      */
-    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean {
-        if (alarm?.playMode == AlarmPlayModes.VOICE_ONLY) {
-            return (alarm.alarmVolumePercent) > 0
-        }
-        return (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
-    }
-
-    /** 유료(무료 강등 대상) 목소리를 쓰는 알람인지 — lockPaidAlarmTalks 의 usesVoice 기준과 동일. */
-    // ⚠ 재생 방식은 조건이 아니다 — `AlarmRepository.lockPaidAlarmTalks` 의 usesVoice 주석 참조.
-    private fun alarmUsesPaidVoice(alarm: AlarmEntity): Boolean =
-        !alarm.localAudioUri.isNullOrBlank() ||
-            !alarm.rawAudioUri.isNullOrBlank() ||
-            !alarm.voiceProfileId.isNullOrBlank() ||
-            !alarm.ttsMessageId.isNullOrBlank()
+    private fun defaultVoiceUriFor(alarm: AlarmEntity): String? = runCatching {
+        val userId = AuthSessionStore(applicationContext).read()?.user?.id
+        DefaultVoiceClipSource(applicationContext, AlarmAudioStore(applicationContext)).ringUri(alarm, userId)
+    }.onFailure { error ->
+        AlarmTalkLog.reportError("Failed to resolve a default voice for a downgraded alarm", error)
+    }.getOrNull()
 
     /**
      * 울림 시점에 로컬 영속 구독으로 유료 목소리 권한을 재확인한다(오프라인·앱 미실행 안전).
@@ -436,20 +413,10 @@ class RingingService : Service() {
     }.getOrDefault(true)
 
     /**
-     * 음성이 없거나 재생 실패해 톤으로 폴백해야 하는 경로. 단 알람음이 켜져 있을 때만(alarmToneAllowed)
-     * 번들 톤을 재생하고, 꺼져 있으면 톤을 강제하지 않고 무음으로 둔다(진동·전체화면은 별도로 계속).
+     * @param forced 알람음 스위치를 무시하고 [forcedTonePercent] 크기로 튼다 — 목소리를 틀 수
+     *   없거나 시스템이 목소리 알람을 바꿔 둔 경우라, 꺼진 스위치는 사용자가 고른 무음이 아니다.
      */
-    private fun startToneFallbackOrSilent(alarm: AlarmEntity?, alarmToneAllowed: Boolean, reason: String) {
-        if (alarmToneAllowed) {
-            Log.w(TAG, "$reason; falling back to bundled alarm tone")
-            startAlarmToneLoop(alarm)
-        } else {
-            stopMediaOnly()
-            Log.i(TAG, "$reason but alarm tone is off; staying silent (vibration/screen only) id=${alarm?.id}")
-        }
-    }
-
-    private fun startAlarmToneLoop(alarm: AlarmEntity?) {
+    private fun startAlarmToneLoop(alarm: AlarmEntity?, forced: Boolean) {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
@@ -462,7 +429,13 @@ class RingingService : Service() {
             return
         }
         mediaPlayer = player?.apply {
-            applyAlarmVolume(alarm)
+            if (forced) {
+                val percent = forcedTonePercent(alarm)
+                Log.w(TAG, "Forcing an audible alarm tone volume=$percent id=${alarm?.id}")
+                setVolume(percent / 100f, percent / 100f)
+            } else {
+                applyAlarmVolume(alarm)
+            }
             isLooping = true
             start()
         }
@@ -508,8 +481,9 @@ class RingingService : Service() {
         }
         if (mediaPlayer == null) {
             AlarmTalkLog.reportError("Failed to create voice MediaPlayer")
-            // 알람음을 끈 사용자에겐 실패 시에도 톤을 강제하지 않는다(무음, 진동·화면은 계속).
-            startToneFallbackOrSilent(alarm, isAlarmToneAllowed(alarm), "voice MediaPlayer creation failed")
+            // 목소리를 못 틀었다 — 사용자가 고른 무음이 아니므로 알람음을 강제한다(alarm-ringing.md §4).
+            // ⚠ 알람음 스위치를 보지 말 것: 목소리 알람의 그 값은 한 번도 쓰이지 않던 값이다.
+            startAlarmToneLoop(alarm, forced = true)
         }
     }
 

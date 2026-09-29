@@ -27,6 +27,11 @@
 **로컬 행을 만들지 않는다**(`createFamilyTargetAlarm`). 그래서 보낸 사람에게는 고칠 화면
 자체가 없다 — 이게 위 표를 지키는 방식이다.
 
+⚠ **서버가 받았으면 곧바로 닫는다 — 새로고침을 기다리지 않는다**(2026-09-29). 안드로이드는
+처음부터 `onSuccess { onDone() }` 였다. 보낸 사람 기기에는 반영할 행이 없으니(바로 위) pull 이
+가져올 것이 없고, 보내기로 바뀌는 이용권 정보도 없다. iOS 는 예전에 알람 pull 과 이용권
+새로고침(직렬 4~5 왕복)을 **기다린 뒤에** 닫아, 저장을 누르고 편집기가 몇 초씩 멈춰 있었다.
+
 ### 1-1. 받은 뒤에는 **전부** 받은 사람 것이다
 
 「자기 기기에서 자유롭게」는 시각만이 아니다. **시각·요일·스누즈·재생 방식·목소리·문구·
@@ -126,7 +131,9 @@ ack 한다. 로컬 행과 음원이 있어도 AlarmManager/AlarmKit 예약이 �
   (`upsertPreservingServerSyncFields`). 이 불변식이 깨지면 판정이 통째로 뒤집힌다.
 - `syncState` 로는 못 한다 — 받은 알람은 항상 `synced` 로 파생된다(`nextLocalSyncState`).
 - **예외는 목소리 철회뿐이다.** 발신자가 탈퇴하면 고친 행에서도 목소리를 걷어낸다
-  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`).
+  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`). 걷어낸 알람은 같은
+  시각에 **기본 목소리(미나)** 로 운다 — 재생 방식은 받은 사람이 둔 값 그대로다(2026-09-29 — 그전에는
+  '알람' 모드로 내렸다. [billing-lifecycle.md](billing-lifecycle.md) 「목소리를 잃은 알람」).
 
 ### ⚠ 보낸 알람은 **절대** 수정할 수 없다 (서버가 강제한다)
 
@@ -444,7 +451,7 @@ offset은 동시 삭제·재정렬에서 누락을 완전히 막을 수 없으�
 
 | 규칙 | Android | iOS | 백엔드 |
 | --- | --- | --- | --- |
-| 보내기(로컬 행 없음) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
+| 보내기(로컬 행 없음 · 성공하면 새로고침 없이 닫는다) | `MainViewModelAlarmActions.createFamilyTargetAlarm` | `AlarmEditorSheet.createFamilyTargetAlarm` | `routes/family-alarm.ts` |
 | 음성 업로드 발신자의 유료 권한 | 기존 API 소비 | 기존 API 소비 | `family-alarm.ts` 쓰기 트랜잭션 → `isPaidVoicePlan` |
 | 받는 사람 고르기 | 「누구를 깨울까요?」 시트 | `WakeTargetSheet` | — |
 | 저장 버튼 라벨 | `editor_save_for`(`저장 · %1$s`) | `AlarmEditorSheet.saveButtonTitle` | — |

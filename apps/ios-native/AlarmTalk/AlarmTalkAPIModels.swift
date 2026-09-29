@@ -397,6 +397,51 @@ struct RemoteAlarmWriteRequest: Encodable {
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
     var clientAlarmId: String? = nil
+    /// `messageId`·`bucketId` 가 비어 있으면 **빼지 않고 `null` 로 실어** 서버 값을 지운다.
+    /// 본문에는 실리지 않는다(`encode(to:)` 가 읽기만 한다). 안드로이드
+    /// `RemoteAlarmWriteRequest.clearsMissingVoiceReferences` 미러.
+    ///
+    /// 합성 인코딩은 nil 을 빼고(`encodeIfPresent`), 서버 `PATCH /alarm` 은 빠진 필드를 **그대로 둔다.**
+    /// 그래서 무료 잠금이 오디오 없이 기본 목소리로 바꾼 알람(`preLockVoice != nil`)을 켜고 끄면 새
+    /// 기본 목소리 id 만 올라가고 클론의 `message_id`·`bucket_id` 는 서버에 남는다 — 기본 인사말
+    /// 알람은 토글마다 `INVALID_BUCKET_ID` 로 거절되고, 나머지는 반쯤 바뀐 서버 행이 된다(Codex #820).
+    var clearsMissingVoiceReferences: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case time, repeatDays, snoozeMinutes, mode, vibrationPattern, wakeMode, isActive, messageId
+        case voiceProfileId, targetUserId, bucketId, timezone, clientAlarmId
+    }
+
+    /// 합성 인코딩과 같다(nil 은 뺀다) — 단 `clearsMissingVoiceReferences` 면 `messageId`·`bucketId`
+    /// 의 nil 을 `null` 로 싣는다. 키 이름은 인코더의 `convertToSnakeCase` 가 만든다.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(time, forKey: .time)
+        try container.encode(repeatDays, forKey: .repeatDays)
+        try container.encode(snoozeMinutes, forKey: .snoozeMinutes)
+        try container.encode(mode, forKey: .mode)
+        try container.encode(vibrationPattern, forKey: .vibrationPattern)
+        try container.encode(wakeMode, forKey: .wakeMode)
+        try container.encodeIfPresent(isActive, forKey: .isActive)
+        try encodeClearable(messageId, forKey: .messageId, in: &container)
+        try container.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
+        try container.encodeIfPresent(targetUserId, forKey: .targetUserId)
+        try encodeClearable(bucketId, forKey: .bucketId, in: &container)
+        try container.encodeIfPresent(timezone, forKey: .timezone)
+        try container.encodeIfPresent(clientAlarmId, forKey: .clientAlarmId)
+    }
+
+    private func encodeClearable(
+        _ value: String?,
+        forKey key: CodingKeys,
+        in container: inout KeyedEncodingContainer<CodingKeys>
+    ) throws {
+        if let value {
+            try container.encode(value, forKey: key)
+        } else if clearsMissingVoiceReferences {
+            try container.encodeNil(forKey: key)
+        }
+    }
 }
 
 struct VoiceProfileListResponse: Decodable {

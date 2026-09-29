@@ -428,6 +428,9 @@ struct StockClipLanguageRebinder {
         for alarm in alarms {
             referenced.formUnion(alarm.bucketClipKeys ?? [])
             if let key = alarm.audioCacheKey, !key.isEmpty { referenced.insert(key) }
+            // 무료 잠금 보관본이 붙든 원래 목소리 클립도 남긴다 — 재결제 때 복원할 소리다
+            // (billing-lifecycle.md 「목소리를 못 쓰게 되면」).
+            referenced.formUnion(alarm.preLockVoice?.referencedCacheKeys ?? [])
             // 옛 별칭 디렉터리는 파일 **이름**으로 참조된다(`<messageId>.<ext>`).
             if let uri = alarm.localAudioUri, !uri.isEmpty {
                 referencedFileNames.insert((uri as NSString).lastPathComponent)

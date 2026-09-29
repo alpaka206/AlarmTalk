@@ -154,6 +154,31 @@ enum AlarmSoundResolver {
             )
         }
 
+        // 1b) **기본 목소리 알람인데 받아 둔 오디오가 없다** — 그 목소리의 클립·내장 인사말.
+        //
+        // 알람음으로 떨어뜨리지 않는다(`docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」).
+        // 무료 잠금·유료 목소리 대체(`DefaultVoiceSubstitute`)가 테마 없이 묶은 행이 이 갈래를 탄다.
+        // 안드로이드 `RingingService` 의 `decideRingSound`(기본 목소리 + 오디오 없음 → 기본 목소리)와
+        // 같은 결과다.
+        if record.playModeEnum != .alarmOnly, isSystemVoiceId(record.voiceProfileId) {
+            let loaded = StockClipManifestStore.load()
+            if let fallback = DefaultVoiceSubstitute.fallbackClip(
+                for: record,
+                manifest: loaded?.clips,
+                expectedVariants: loaded?.expectedVariants,
+                deviceLanguage: VoiceStudioViewModel.appVoiceLanguage(),
+                cachedURL: { audioCache.cachedURL(for: $0) }
+            ) {
+                return .voiceClip(
+                    cacheKey: fallback.key,
+                    url: fallback.url,
+                    durationMs: audioCache.readMetadata(cacheKey: fallback.key)?.durationMs ?? 0,
+                    volumePercent: record.voiceVolumePercent,
+                    revision: nil
+                )
+            }
+        }
+
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
         if let url = fileURL(forStoredURI: record.alarmSoundUri),
            FileManager.default.fileExists(atPath: url.path) {

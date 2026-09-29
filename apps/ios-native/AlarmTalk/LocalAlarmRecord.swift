@@ -76,6 +76,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// "내일 아침 알람이 없어졌다" 가 됐다(2026-08-07 수정).
     var preLockPlayMode: String?
 
+    /// **무료 잠금 보관본** — 잠그기 전의 유료 목소리 필드.
+    ///
+    /// 2026-09-29 부터 잠금은 재생 방식을 `alarm_only` 로 내리지 않고 행을 **기본 목소리 알람**으로
+    /// 고쳐 쓴다(`DefaultVoiceSubstitute.locked`). 원래 목소리는 여기 두었다가 다시 유료가 되면
+    /// 되돌린다(`DefaultVoiceSubstitute.restored`). 이 값이 있으면 '새 모양으로 잠겼다' 는 뜻이다.
+    /// 규칙: `docs/spec/billing-lifecycle.md` 「목소리를 못 쓰게 되면」. 안드로이드 짝은
+    /// `AlarmEntity.preLockVoiceJson`.
+    var preLockVoice: LockedPaidVoice?
+
     /// 이 알람을 만든 계정. 무료 전환 잠금이 **다른 계정 알람까지 건드리지 않게** 하는 가드.
     /// 안드로이드 `AlarmEntity.ownerUserId` 미러.
     var ownerUserId: String?
@@ -425,6 +434,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         // 건드리지 않게 막는 가드도 늘 통과했다(ownerUserId).
         // **새 필드를 추가할 때는 여기와 디코더·인코더 세 곳을 함께 고칠 것.**
         case preLockPlayMode
+        case preLockVoice
         case ownerUserId
         case bucketId
         case bucketClipKeys
@@ -524,6 +534,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
         self.scheduledSoundFingerprint = try c.decodeIfPresent(String.self, forKey: .scheduledSoundFingerprint)
         self.preLockPlayMode = try c.decodeIfPresent(String.self, forKey: .preLockPlayMode)
+        // 깨진 보관본 하나 때문에 알람 목록 전체를 못 읽으면 안 된다 — 못 읽으면 없는 것으로 본다.
+        self.preLockVoice = (try? c.decodeIfPresent(LockedPaidVoice.self, forKey: .preLockVoice)) ?? nil
         self.ownerUserId = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
         self.bucketId = try c.decodeIfPresent(String.self, forKey: .bucketId)
         self.bucketClipKeys = try c.decodeIfPresent([String].self, forKey: .bucketClipKeys)
@@ -597,6 +609,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
         try c.encodeIfPresent(scheduledSoundFingerprint, forKey: .scheduledSoundFingerprint)
         try c.encodeIfPresent(preLockPlayMode, forKey: .preLockPlayMode)
+        try c.encodeIfPresent(preLockVoice, forKey: .preLockVoice)
         try c.encodeIfPresent(ownerUserId, forKey: .ownerUserId)
         try c.encodeIfPresent(bucketId, forKey: .bucketId)
         try c.encodeIfPresent(bucketClipKeys, forKey: .bucketClipKeys)
