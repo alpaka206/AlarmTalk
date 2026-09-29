@@ -126,7 +126,12 @@ final class PersonalPromoNoticeUITests: XCTestCase {
 
     // MARK: - 이용권 화면(스펙 billing-lifecycle D4 「이용권 화면의 프로모 문구」)
 
-    private let promoText = NSPredicate(format: "label BEGINSWITH %@", "개인 플랜 무료 이용 중")
+    /// 이용권 화면의 프로모 문구 앞머리.
+    /// ⚠ 술어(`NSPredicate`)를 저장 프로퍼티로 두지 말 것 — Sendable 이 아니라 Swift 6 동시성 검사가
+    /// "sending 'self.promoText' risks causing data races" 로 UI 테스트 타깃 컴파일을 막는다(그러면
+    /// 같은 스킴의 유닛 테스트까지 못 돈다). 문자열만 두고 술어는 쓰는 자리에서 새로 만든다
+    /// (`ScreenSweepUITests.test_sweep_menuSubscreens` 와 같은 이유).
+    private let promoPrefix = "개인 플랜 무료 이용 중"
 
     /// 더보기 → 이용권. 프로모 문구가 **어딘가에** 보일 때까지 기다린다 — 카드가 아직 없어도
     /// (스켈레톤·가져오기 실패) 문구는 카드 위 한 줄로 보여야 한다(`drawsPromoLineAboveList`).
@@ -142,7 +147,7 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         billing.tap()
 
         XCTAssertTrue(
-            app.staticTexts.matching(promoText).firstMatch.waitForExistence(timeout: 10),
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.waitForExistence(timeout: 10),
             "이용권 화면에 프로모 문구가 없다"
         )
         XCTAssertFalse(app.buttons["이용권 해지"].exists, "해지할 구독이 없는데 해지 버튼이 떴다")
@@ -156,7 +161,7 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         let card = app.otherElements["planCard.\(key)"]
         guard card.waitForExistence(timeout: 15) else {
             XCTAssertEqual(
-                app.staticTexts.matching(promoText).count, 1,
+                app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1,
                 "카드가 없는 동안 프로모 문구가 카드 위 한 줄로 보이지 않는다"
             )
             shot("03-이용권-카드-없음")
@@ -177,11 +182,11 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         XCTAssertTrue(personal.staticTexts["현재 이용권"].exists, "'현재 이용권' 뱃지가 개인 카드에 없다")
         XCTAssertFalse(free.staticTexts["현재 이용권"].exists, "무료 카드가 여전히 '현재 이용권' 이다")
         XCTAssertTrue(
-            personal.staticTexts.matching(promoText).firstMatch.exists,
+            personal.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.exists,
             "프로모 문구가 개인 카드의 상태 한 줄이 아니다"
         )
         XCTAssertEqual(
-            app.staticTexts.matching(promoText).count, 1,
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1,
             "프로모 문구를 두 번 말했다 — 카드 위 한 줄이 남았다"
         )
         // 상품을 못 받아도 버튼은 비활성 '결제하기' 로 그려진다 — 있기만 하면 된다. 가격을 받는 동안의
@@ -204,10 +209,10 @@ final class PersonalPromoNoticeUITests: XCTestCase {
         XCTAssertTrue(free.staticTexts["현재 이용권"].exists, "보류 행 계정인데 무료 카드가 '현재 이용권' 이 아니다")
         XCTAssertFalse(personal.staticTexts["현재 이용권"].exists, "보류 행 계정인데 개인 카드가 '현재 이용권' 이다")
         XCTAssertFalse(
-            personal.staticTexts.matching(promoText).firstMatch.exists,
+            personal.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).firstMatch.exists,
             "보류 행 계정인데 프로모 문구가 개인 카드에 앉았다"
         )
-        XCTAssertEqual(app.staticTexts.matching(promoText).count, 1, "프로모 문구는 카드 위에 한 번만")
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", promoPrefix)).count, 1, "프로모 문구는 카드 위에 한 번만")
         shot("07-이용권-보류-행")
     }
 }
