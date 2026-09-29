@@ -7,6 +7,8 @@
 
 export const WORKER_SECRET_KEYS = [
   'ELEVENLABS_API_KEY',
+  // 합성 모델 id — 비워 둔다(= eleven_v3). 바꾸려면 재렌더 계획이 먼저다(`lib/voice-provider.ts` 의 `ttsModelId`).
+  'ELEVENLABS_TTS_MODEL_ID',
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',
   'GOOGLE_CLIENT_ID',

@@ -1377,6 +1377,8 @@ tts.post('/generate', async (c) => {
         sourceLanguage,
         translate: shouldTranslate,
         autoTag: true,
+        // 사용자가 친 ㅋㅋ·haha·www 를 글자로 읽지 않고 웃음소리(`[laughs]`)로 — 프리셋은 우리 대사라 켜지 않는다.
+        speakTypedLaughter: !presetTextUsed,
       });
     }
     const synthesisText = prepared.text;
@@ -1389,9 +1391,19 @@ tts.post('/generate', async (c) => {
     // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
     // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
     // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
+    //
+    // ⚠ **같은 언어의 직접 입력은 사용자가 친 글에서 만든다**(합성 문구가 아니라). 합성 문구의 `[laughs]` 는
+    //   사용자가 친 ㅋㅋ·haha 를 소리로 바꾼 것이라, 합성 문구에서 태그를 벗기면 그 웃음이 화면에서 사라진다.
+    //   같은 언어면 합성 문구의 글자는 원문과 같다(`normalizeSameLanguageTaggedText` 가 맞춰 본다) — 다른 건
+    //   태그와 웃음뿐이다. 번역은 합성 문구(번역문)에서 만든다.
+    const typedSameLanguage =
+      !draftPreviewRequested && !dynamicGenerated && !presetTextUsed && !prepared.translated;
     const messageText = dynamicGenerated
       ? dynamicGenerated.text
-      : deriveAlarmDisplayText(synthesisText, presetTextUsed ? '' : requestText);
+      : deriveAlarmDisplayText(
+          typedSameLanguage ? requestText : synthesisText,
+          presetTextUsed ? '' : requestText,
+        );
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.

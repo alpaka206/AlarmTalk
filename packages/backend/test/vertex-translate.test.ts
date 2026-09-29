@@ -1940,3 +1940,186 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
   });
 });
+
+function sentPromptText(): string {
+  return contentRequestBody().contents[0]!.parts[0]!.text;
+}
+
+// 직접 입력의 글자 웃음(ㅋㅋ·haha·www)은 합성 글자에서만 `[laughs]` 로 바뀐다(스펙 §9). 웃음은 톤이 아니다 —
+// 톤 태깅 여부·'모델이 톤을 붙였는가'·문장마다 앞세울 태그 어디에도 웃음을 세지 않는다.
+describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
+  const LAUGH_OPTIONS = {
+    targetLanguage: 'ko',
+    sourceLanguage: 'ko',
+    translate: false,
+    autoTag: true,
+    speakTypedLaughter: true,
+  } as const;
+
+  it('모델은 [laughs] 가 박힌 글과 "지우지 말라" 는 지시를 받고, 톤을 얹은 결과를 그대로 쓴다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 [laughs] 벌써 8시야"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야', LAUGH_OPTIONS);
+    const prompt = sentPromptText();
+    expect(prompt).toContain('일어나 [laughs] 벌써 8시야');
+    expect(prompt).not.toContain('ㅋㅋㅋ');
+    expect(prompt).toContain("every [laughs] already in the message is the user's own laughter");
+    expect(prompt).toContain('never [chuckles] or [soft laugh]');
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야');
+    expect(prepared.tags).toEqual(['cheerfully', 'laughs']);
+  });
+
+  it('톤 태깅 여부는 원문 대괄호로 정한다 — 바꾼 [laughs] 때문에 태깅이 꺼지지 않는다', async () => {
+    // 모델이 톤을 하나도 안 붙였다(원문 [laughs] 만 있다) → '태그가 있다' 로 읽지 않고 톤을 입힌다.
+    queueContent(geminiText('{"text":"일어나 [laughs] 벌써 8시야"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야');
+  });
+
+  it('모델이 사용자의 웃음을 빼먹으면 원문 배치 위에 톤만 다시 입힌다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 벌써 8시야. [excited] 늦었어."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야. 늦었어.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야. [cheerfully] 늦었어.');
+  });
+
+  it('모델이 스스로 넣은 웃음은 예전처럼 모델 배치로 센다 — 톤 하나 + 웃음이면 그대로 둔다', async () => {
+    queueContent(geminiText('{"text":"[shouting] 일어나! [laughs] 오늘도 힘내자."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나! 오늘도 힘내자.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[shouting] 일어나! [laughs] 오늘도 힘내자.');
+  });
+
+  it('선두 톤 하나뿐이면 문장마다 톤을 다시 앞세우되 웃음은 제자리에 한 번만', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 [laughs]. 벌써 8시야."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ. 벌써 8시야.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs]. [cheerfully] 벌써 8시야.');
+  });
+
+  it('웃음을 톤으로 고르지 않는다 — 모델이 [laughs] 하나로만 시작하면 매 문장 웃지 않고 로컬 톤으로', async () => {
+    queueContent(geminiText('{"text":"[laughs] 일어나. 늦었어."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나. 늦었어.', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나. 늦었어.');
+  });
+
+  it('모델이 졸린 톤만 붙였으면(지우고 나면 웃음만 남으면) 로컬 톤으로 돌아간다', async () => {
+    queueContent(geminiText('{"text":"[gently] 일어나 [laughs] 벌써 8시야"}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야', LAUGH_OPTIONS);
+    expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야');
+  });
+
+  it('Vertex 가 실패해도(로컬 태깅) 웃음은 소리로 바뀐다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // 큐가 비어 있으면 목 fetch 가 던진다 — 타임아웃·네트워크 실패와 같은 경로다.
+      const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋㅋ 벌써 8시야', LAUGH_OPTIONS);
+      expect(prepared.provider).toBe('local');
+      expect(prepared.text).toBe('[cheerfully] 일어나 [laughs] 벌써 8시야');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('Vertex 설정이 없어도 웃음은 소리로 바뀐다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(
+      { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '' },
+      'おはよう www もう8時だよ',
+      { ...LAUGH_OPTIONS, targetLanguage: 'ja', sourceLanguage: 'ja' },
+    );
+    expect(prepared.text).toBe('[cheerfully] おはよう [laughs] もう8時だよ');
+  });
+
+  it('사용자가 대괄호를 쳤으면(태깅 없음) 웃음만 바꾼다 — 사용자의 태그는 그대로', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[excited] 일어나 ㅋㅋㅋ', LAUGH_OPTIONS);
+    expect(prepared.provider).toBe('local');
+    expect(prepared.text).toBe('[excited] 일어나 [laughs]');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('웃음만 있는 문구는 바꾸지 않는다 — 태그뿐인 합성 요청이 된다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(
+      { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: '' },
+      'ㅋㅋㅋ',
+      LAUGH_OPTIONS,
+    );
+    expect(prepared.text).toBe('[cheerfully] ㅋㅋㅋ');
+  });
+
+  it('옵션을 켜지 않으면(스톡 문구) 글자를 그대로 둔다', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[brightly] 하하, 일어나요 ㅋㅋ', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: false,
+    });
+    expect(prepared.text).toBe('[brightly] 하하, 일어나요 ㅋㅋ');
+  });
+
+  it('번역문에 모델이 옮겨 쓴 글자 웃음도 소리로 바꾼다', async () => {
+    queueContent(geminiText(`{"text":"[cheerfully] Wake up haha, it's already 8."}`));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(prepared.translated).toBe(true);
+    expect(prepared.text).toBe("[cheerfully] Wake up [laughs], it's already 8.");
+  });
+
+  it('번역할 때도 원문의 [laughs] 를 번역문의 같은 자리에 두라고 한다', async () => {
+    queueContent(geminiText(`{"text":"[cheerfully] Wake up [laughs], it's already 8."}`));
+    await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    const prompt = sentPromptText();
+    expect(prompt).toContain('일어나 [laughs] 벌써 8시야');
+    expect(prompt).toContain('where it is in the translation');
+  });
+
+  it('웃음이 없으면 프롬프트에 웃음 보존 지시를 싣지 않는다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] 일어나 벌써 8시야"}'));
+    await prepareAlarmTextWithVertex(ENV, '일어나 벌써 8시야', LAUGH_OPTIONS);
+    expect(sentPromptText()).not.toContain("user's own laughter");
+  });
+});
+
+describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9)', () => {
+  const style = { dialect: '', strength: '' as const, register: 'banmal', markers: [], persona: '', childlike: false };
+
+  it('모델이 [laughs] 하나로만 시작하면 톤(기본값)을 문장마다 앞세우고 웃음은 한 번만 — 돌려주는 tag 도 톤이다', async () => {
+    queueContent(geminiText('{"text":"[laughs] 자기야, 오늘 운세 좋대. 얼른 일어나 보자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'playfully',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(out.tag).toBe('playfully');
+    expect(out.text).toBe('[playfully] [laughs] 자기야, 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
+  });
+
+  it('웃음 규칙(이름 하나·한 번·가벼운 문장)을 싣고, 차분한 목소리에는 싣지 않는다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야, 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(sentPromptText()).toContain('LAUGHTER: a laugh is a sound, not a tone');
+    expect(sentPromptText()).toContain('never [chuckles] or [soft laugh]');
+
+    mockFetch.mockClear();
+    queueContent(geminiText('{"text":"[warmly] 자기야, 약 먹을 시간이야. [sincerely] 지금 바로 챙겨 먹자."}'));
+    await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 알리고 지금 바로 챙겨 먹으라고 당부한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'calm' },
+    });
+    expect(sentPromptText()).not.toContain('LAUGHTER:');
+  });
+});

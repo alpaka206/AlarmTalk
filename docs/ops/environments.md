@@ -56,6 +56,10 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
   `npm run migrate:{dev,prod}` 가 통과한다(`.github/workflows/deploy-backend.yml`).
   안 맞으면 404 로 죽는다.
 
+#### ElevenLabs 합성 모델
+
+- `ELEVENLABS_TTS_MODEL_ID` 는 선택 값이고 **설정하지 않는다**(비우면 `eleven_v3`). 게시된 클립(시스템 스톡·클론 사전렌더)은 전부 v3 로 구웠고, 모델만 바꾸면 **다시 굽지 않는다** — 새로 만드는 직접 입력·새 클론만 새 모델이 되어 한 사람의 알람에 두 모델 소리가 섞인다. 바꾸려면 재렌더 계획(스톡 게시 스크립트의 `MODEL_ID`, 클론 사전렌더 다시 굽기, v3 급마감 보완 `withClosingBreath`·`appendMp3TrailingSilence` 재검토)이 먼저다. 2026-09-29 v4 비교와 판단은 `docs/spec/voice-and-message.md` 「합성 모델」.
+
 #### Vertex / Gemini 동적 문구
 
 - `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 운영에서 실제로 쓰는 경로는 직접 입력 문구 태깅·목소리 등록 미리듣기 문구·유료 클론 사전렌더 문구·등록 녹음 말투 분석이다(번역·동적 문구는 앱에서 쓰지 않는다).

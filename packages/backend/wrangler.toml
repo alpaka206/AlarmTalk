@@ -67,6 +67,7 @@ crons = ["*/5 * * * *", "* * * * *"]
 #
 # Optional:
 # INIT_DB_SECRET
+# ELEVENLABS_TTS_MODEL_ID          (비우면 eleven_v3 — 설정하지 않는다. 바꾸려면 재렌더 계획이 먼저: lib/voice-provider.ts ttsModelId)
 # GOOGLE_VERTEX_CREDENTIALS_JSON
 # GOOGLE_VERTEX_LOCATION
 # GOOGLE_VERTEX_MODEL

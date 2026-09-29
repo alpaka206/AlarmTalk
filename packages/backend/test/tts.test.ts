@@ -1358,6 +1358,40 @@ describe('POST /tts/generate — edge cases', () => {
     expect(ttsOptions).not.toHaveProperty('speed');
   });
 
+  // 스펙 §9: 글자 웃음(ㅋㅋ)은 합성 글자에서만 `[laughs]` 로 바뀐다 — 화면·저장 문구는 사용자가 친 그대로다.
+  // 화면 문구를 합성 문구에서 태그를 벗겨 만들면 사용자가 친 ㅋㅋ 가 사라진다.
+  it('직접 입력의 ㅋㅋ 는 [laughs] 로 합성하고, 화면 문구는 친 글 그대로 둔다', async () => {
+    const text = '일어나 ㅋㅋㅋ 벌써 8시야';
+    const synthesis = '[cheerfully] 일어나 [laughs] 벌써 8시야';
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
+    pushManualQuotaFlow();
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([4]).buffer);
+    pushPublicationVoice();
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.original_text).toBe(text);
+    expect(body.synthesis_text).toBe(synthesis);
+    expect(body.tags).toEqual(['cheerfully', 'laughs']);
+    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
+    expect(inserted!.args[3]).toBe(text);
+    expect(inserted!.args[4]).toBe(synthesis);
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      synthesis,
+      expect.objectContaining({ language_code: 'ko' }),
+    );
+  });
+
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
     // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).
