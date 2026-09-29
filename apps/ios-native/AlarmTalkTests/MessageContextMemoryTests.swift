@@ -209,6 +209,8 @@ final class MessageContextMemoryTests: XCTestCase {
         // ⚠ 잠금은 기존 음원 재사용으로도 풀리지 않는다 — 서버 `PATCH /alarm` 이 저장된 값
         // 그대로의 유료 목소리도 403 으로 거절하고, 안드로이드도 `voiceAlarmAllowed` 가 막는다.
         XCTAssertTrue(unusable(locked: true, audio: true))
+        // ⚠ 테마로도 풀리지 않는다 — 클론에 붙은 테마 클립은 그 유료 목소리의 클립이다(Codex #826).
+        XCTAssertTrue(unusable(locked: true, theme: true))
         // 준비된 목소리, 또는 기존 알람 음원을 그대로 쓸 수 있으면 막지 않는다.
         XCTAssertFalse(unusable(ready: true))
         XCTAssertFalse(unusable(audio: true))

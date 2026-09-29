@@ -1029,7 +1029,11 @@ struct AlarmEditorSheet: View {
             voiceSource: voiceSourceMode,
             profileID: profileID,
             settling: profileID.map { voiceStudio.isReplacementSettling($0) } ?? false,
-            lockedByPlan: planAccess == .free && !usesFreeSystemVoiceSelection,
+            // ⚠ **잠금은 고른 목소리 자체로 판정한다** — `usesFreeSystemVoiceSelection` 을 쓰지
+            // 말 것. 그건 테마만 골라도 참이라, 무료 플랜에서 클론에 테마를 붙인 알람이 잠금을
+            // 빠져나가 서버 `PATCH /alarm` 의 403 으로 간다(Codex #826). 안드로이드
+            // `usesFreeSystemVoiceAlarm` 도 테마와 무관하게 `isSystemVoiceId` 부터 본다.
+            lockedByPlan: planAccess == .free && !voiceStudio.isSystemVoiceProfile(id: profileID),
             themeSelected: selectedFreeBucket != nil,
             profileReady: profileReady,
             hasUsableAudio: (profileID != nil && voiceStudio.preparedAlarm?.voiceProfileID == profileID) ||
