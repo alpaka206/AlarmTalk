@@ -302,8 +302,15 @@ enum DefaultVoiceSubstitute {
         next.bucketId = snapshot.bucketId
         next.bucketClipKeys = snapshot.bucketClipKeys
         next.bucketRotationIndex = snapshot.bucketRotationIndex
-        next.contextVariantIndex = snapshot.contextVariantIndex
-        next.contextResolvedAtMillis = snapshot.contextResolvedAtMillis
+        // ⚠ **날씨 조건 자리는 보관본에서 되살리지 않는다**(Codex #828, 안드로이드 `restoredFromLock` 과 같다).
+        // 조건 자리는 목소리와 무관하다(클론·기본 목소리 variant 축이 같다). 잠긴 동안 시각·지역을 고쳐
+        // 저장했으면(잠금은 이어진다 — `saveKeepsLock`) 지금 행의 자리는 그 날짜·지역으로 다시 받았거나
+        // 비워져 있는데, 보관본의 옛 자리·받은 시각을 되살리면 재결제한 알람이 옛 지역의 날씨를 말한다.
+        let keepsCurrentWeather = snapshot.bucketId == "weather" && record.bucketId == "weather"
+        if !keepsCurrentWeather {
+            next.contextVariantIndex = snapshot.contextVariantIndex
+            next.contextResolvedAtMillis = snapshot.contextResolvedAtMillis
+        }
         next.dynamicVoicePreparedForFireAtMillis = snapshot.dynamicVoicePreparedForFireAtMillis
         return next
     }

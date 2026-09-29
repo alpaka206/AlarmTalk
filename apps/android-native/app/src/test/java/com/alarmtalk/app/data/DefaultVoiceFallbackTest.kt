@@ -277,6 +277,29 @@ class DefaultVoiceFallbackTest {
         assertEquals(AlarmSyncStates.DIRTY, restored.syncState)
     }
 
+    /**
+     * 잠긴 동안 지역을 고쳐 저장해도 잠금은 이어진다 — 그때 복원이 보관본의 옛 조건 자리·받은 시각을 되살리면
+     * 재결제한 알람이 **옛 지역의 날씨**를 말한다(Codex #828). 조건 자리는 목소리와 무관하니 지금 값을 둔다.
+     */
+    @Test
+    fun restoringKeepsTheCurrentWeatherCondition() {
+        val locked = rehearsalCloneAlarm().lockedToDefaultVoice(SUBSTITUTE_SYSTEM_VOICE_ID, null, null, null, 5_000L)
+        assertEquals("전제 — 보관본의 옛 자리", 1, locked.lockedPaidVoice()?.contextVariantIndex)
+        val edited = locked.copy(voiceWeatherCity = "Busan", contextVariantIndex = 4, contextResolvedAtMillis = 9_000L)
+
+        val restored = edited.restoredFromLock(nowMillis = 10_000L)
+
+        assertEquals(TEST_CLONE_VOICE_ID, restored.voiceProfileId)
+        assertEquals("Busan", restored.voiceWeatherCity)
+        assertEquals(4, restored.contextVariantIndex)
+        assertEquals(9_000L, restored.contextResolvedAtMillis)
+
+        // 편집이 조건을 비웠으면(날짜·지역이 바뀌어 다시 받아야 한다) 빈 채로 둔다 — 갱신이 다시 받는다.
+        val reset = locked.copy(contextVariantIndex = null, contextResolvedAtMillis = null).restoredFromLock(10_000L)
+        assertNull(reset.contextVariantIndex)
+        assertNull(reset.contextResolvedAtMillis)
+    }
+
     @Test
     fun restoringAnOldShapeLockOnlyRestoresThePlayMode() {
         val legacy = rehearsalCloneAlarm(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)

@@ -348,6 +348,12 @@ fun AlarmEntity.restoredFromLock(nowMillis: Long): AlarmEntity {
     val mode = preLockPlayMode?.takeIf { it.isNotBlank() } ?: playMode
     val snapshot = lockedPaidVoice()
         ?: return copy(playMode = mode, preLockPlayMode = null, preLockVoiceJson = null, updatedAtMillis = nowMillis)
+    // ⚠ **날씨 조건 자리는 보관본에서 되살리지 않는다**(Codex #828). 조건 자리는 목소리와 무관하다 — 클론과
+    // 기본 목소리는 variant 축이 같다(백엔드 `STOCK_CLIP_PRESETS` ↔ `CLONE_CLIP_SEEDS`). 잠긴 동안 시각·
+    // 지역을 고쳐 저장했으면(잠금은 이어진다 — [lockSurvivesSave]) 지금 행의 자리는 그 날짜·지역으로 다시
+    // 받았거나 비워져 있는데, 보관본의 옛 자리·받은 시각을 되살리면 재결제한 알람이 **옛 지역의 날씨**를
+    // 말하고 옛 받은 시각 때문에 다시 받는 것도 늦어진다. 둘 다 날씨 테마일 때만 지금 값을 둔다.
+    val keepsCurrentWeather = snapshot.bucketId == "weather" && bucketId == "weather"
     return copy(
         playMode = mode,
         preLockPlayMode = null,
@@ -368,8 +374,8 @@ fun AlarmEntity.restoredFromLock(nowMillis: Long): AlarmEntity {
         bucketRotationIndex = snapshot.bucketRotationIndex ?: 0,
         bucketClipKeysJson = snapshot.bucketClipKeysJson,
         bucketClipTextsJson = snapshot.bucketClipTextsJson,
-        contextVariantIndex = snapshot.contextVariantIndex,
-        contextResolvedAtMillis = snapshot.contextResolvedAtMillis,
+        contextVariantIndex = if (keepsCurrentWeather) contextVariantIndex else snapshot.contextVariantIndex,
+        contextResolvedAtMillis = if (keepsCurrentWeather) contextResolvedAtMillis else snapshot.contextResolvedAtMillis,
         dynamicVoicePreparedForFireAtMillis = snapshot.dynamicVoicePreparedForFireAtMillis,
         syncState = nextLocalSyncState(),
         updatedAtMillis = nowMillis,

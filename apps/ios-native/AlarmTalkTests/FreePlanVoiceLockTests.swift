@@ -137,6 +137,37 @@ final class FreePlanVoiceLockTests: XCTestCase {
         XCTAssertFalse(DefaultVoiceSubstitute.saveKeepsLock(saved: reAudio, editing: hydrated))
     }
 
+    /// 잠긴 동안 지역을 고쳐 저장해도 잠금은 이어진다 — 그때 복원이 보관본의 옛 조건 자리·받은 시각을 되살리면
+    /// 재결제한 알람이 **옛 지역의 날씨**를 말한다(Codex #828). 조건 자리는 목소리와 무관하니 지금 값을 둔다.
+    /// 안드로이드 `DefaultVoiceFallbackTest.restoringKeepsTheCurrentWeatherCondition` 짝.
+    func test_복원은_지금의_날씨_조건_자리를_둔다() {
+        var weather = cloneAlarm()
+        weather.bucketId = "weather"
+        weather.voiceRandomContext = RandomPromptContext.wakeWeather.rawValue
+        weather.contextVariantIndex = 1
+        weather.contextResolvedAtMillis = 100
+        let locked = DefaultVoiceSubstitute.locked(weather, voiceID: systemVoice, binding: nil, nowMillis: 1)
+        XCTAssertEqual(locked.preLockVoice?.contextVariantIndex, 1, "전제 — 보관본의 옛 자리")
+
+        var edited = locked
+        edited.voiceWeatherCity = "부산"
+        edited.contextVariantIndex = 4
+        edited.contextResolvedAtMillis = 900
+        let restored = DefaultVoiceSubstitute.restored(edited, nowMillis: 1_000)
+
+        XCTAssertEqual(restored.voiceProfileId, "clone-a")
+        XCTAssertEqual(restored.voiceWeatherCity, "부산")
+        XCTAssertEqual(restored.contextVariantIndex, 4)
+        XCTAssertEqual(restored.contextResolvedAtMillis, 900)
+
+        // 날씨가 아닌 보관본은 예전처럼 보관본 값을 되살린다.
+        var greeting = cloneAlarm()
+        greeting.contextVariantIndex = 2
+        var greetingLocked = DefaultVoiceSubstitute.locked(greeting, voiceID: systemVoice, binding: nil, nowMillis: 1)
+        greetingLocked.contextVariantIndex = nil
+        XCTAssertEqual(DefaultVoiceSubstitute.restored(greetingLocked, nowMillis: 2).contextVariantIndex, 2)
+    }
+
     /// 기본 인사말 알람은 **테마 없이** 잠긴다 — 편집기는 그 알람을 열면 기본 목소리에 줄 수 있는 첫 테마를
     /// **스스로** 붙이고(`applyPendingFreeBucketIfNeeded`) 저장할 때 그 클립을 묶는다. 시각만 고친 저장이
     /// 그걸로 보관본을 버리면 재결제해도 원래 목소리가 영영 안 돌아온다(2026-09-29). 안드로이드
