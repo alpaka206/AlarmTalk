@@ -2154,6 +2154,45 @@ describe('직접 입력의 글자 웃음 → [laughs] (§9)', () => {
     expect(own.text).toBe('[chuckles] Wake up, it is already 8.');
   });
 
+  // Codex #830: 사용자의 태그 이름을 통째로 빼 주면 모델이 같은 이름으로 더한 웃음도 빠져 두 번 웃는다.
+  it('사용자가 친 웃음 태그는 친 수만큼만 사용자 것이다 — 모델이 같은 이름으로 더한 웃음은 지운다', async () => {
+    queueContent(geminiText('{"text":"[chuckles] Wake up, it is already 8 [chuckles]."}'));
+    const extra = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(extra.text).toBe('[chuckles] Wake up, it is already 8.');
+
+    // 사용자가 두 번 쳤으면 두 번까지는 사용자 것이다.
+    queueContent(geminiText('{"text":"[chuckles] Wake up. [chuckles] It is already 8 [chuckles]."}'));
+    const twice = await prepareAlarmTextWithVertex(ENV, '[chuckles] 일어나. [chuckles] 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(twice.text).toBe('[chuckles] Wake up. [chuckles] It is already 8.');
+  });
+
+  // Codex #830: 지운 웃음 자리에 공백을 남기면 'Wake up .'·'Hello , now' 가 합성·저장된다.
+  it('넘치는 웃음을 지운 자리에는 문장부호 앞 공백을 남기지 않는다', async () => {
+    queueContent(geminiText('{"text":"[cheerfully] Wake up [laughs], it is already 8 [chuckles]."}'));
+    const prepared = await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(prepared.text).toBe('[cheerfully] Wake up [laughs], it is already 8.');
+
+    queueContent(geminiText('{"text":"[cheerfully] Hello [laughs], now go [chuckles]!"}'));
+    const own = await prepareAlarmTextWithVertex(ENV, '안녕 이제 가자', {
+      ...LAUGH_OPTIONS,
+      targetLanguage: 'en',
+      translate: true,
+    });
+    expect(own.text).toBe('[cheerfully] Hello [laughs], now go!');
+  });
+
   it('번역할 때도 원문의 [laughs] 를 번역문의 같은 자리에 두라고 한다', async () => {
     queueContent(geminiText(`{"text":"[cheerfully] Wake up [laughs], it's already 8."}`));
     await prepareAlarmTextWithVertex(ENV, '일어나 ㅋㅋ 벌써 8시야', {
@@ -2188,6 +2227,56 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
     });
     expect(out.tag).toBe('playfully');
     expect(out.text).toBe('[playfully] [laughs] 자기야, 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
+  });
+
+  // Codex #830: 웃음 하나만 문장 가운데 있으면 '모델이 태그를 배치했다' 가 아니다 — 톤이 없는 것이다.
+  it('모델이 웃음만 문장 가운데 넣었어도(톤 없음) 톤을 문장마다 앞세운다 — 웃음은 제자리에', async () => {
+    queueContent(geminiText('{"text":"자기야, [laughs] 오늘 운세 좋대. 얼른 일어나 보자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'playfully',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(out.tag).toBe('playfully');
+    expect(out.text).toBe('[playfully] 자기야, [laughs] 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
+  });
+
+  it('선두 톤 하나 + 웃음이면 톤을 문장마다 앞세우고, 웃음 뒤 문장부호 앞에 공백을 두지 않는다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야, 오늘 운세 좋대 [laughs]. 얼른 일어나 보자."}'));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(out.text).toBe('[playfully] 자기야, 오늘 운세 좋대 [laughs]. [playfully] 얼른 일어나 보자.');
+  });
+
+  // Codex #830: 넘치는 웃음·차분한 목소리의 웃음을 지운 자리에 공백이 남으면 '보자 !'·'자기야 ,' 가 된다.
+  it('넘치는 웃음·차분한 목소리의 웃음을 지운 자리에는 문장부호 앞 공백을 남기지 않는다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야 [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자 [chuckles]!"}'));
+    const extra = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(extra.text).toBe('[playfully] 자기야 [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자!');
+
+    queueContent(geminiText('{"text":"[warmly] 자기야 [laughs], 오늘 운세 좋대. [sincerely] 얼른 일어나 보자."}'));
+    const calm = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'calm' },
+    });
+    expect(calm.text).toBe('[warmly] 자기야, 오늘 운세 좋대. [sincerely] 얼른 일어나 보자.');
   });
 
   it('모델이 낸 [giggles]·[chuckles] 는 [laughs] 로 맞춘다', async () => {

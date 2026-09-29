@@ -176,6 +176,33 @@ const GEMINI_3_MIN_OUTPUT_TOKENS = 1024;
 export const TAG_BODY_PATTERN = '[a-z][a-z ,-]{1,48}';
 const TAG_RE = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'i');
 const TAG_RE_GLOBAL = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi');
+/// 태그 하나를 **양옆 공백까지** 잡는다 — 지운 자리를 메울 때 공백을 한 번에 본다(`tagGapFill`).
+const TAG_WITH_GAP_RE_GLOBAL = new RegExp(`[ \\t]*\\[${TAG_BODY_PATTERN}\\][ \\t]*`, 'gi');
+/// 문구 **첫머리의** 태그 묶음(`[warmly] [laughs] …` 의 앞부분).
+const LEADING_TAGS_RE = new RegExp(`^(?:\\s*\\[${TAG_BODY_PATTERN}\\])*`, 'i');
+
+/// 띄어 쓰는 글자인가 — 일본어·중국어는 띄어 쓰지 않으므로 빼고 본다.
+function isSpacedWordChar(ch: string): boolean {
+  return /[\p{L}\p{N}]/u.test(ch) && !/[぀-ヿ一-鿿]/.test(ch);
+}
+
+/**
+ * 지운 태그 자리를 무엇으로 메울까 — `TAG_WITH_GAP_RE_GLOBAL` 로 잡은 조각(태그 + 양옆 공백)과 그 자리를 본다.
+ *
+ * - 문구 처음·끝, 또는 **문장부호 앞**이면 아무것도 남기지 않는다. 공백을 남기면 `Wake up [laughs].` 가
+ *   `Wake up .`, `Hello [laughs], now` 가 `Hello , now` 가 된다(Codex #830).
+ * - 공백이 있었으면 한 칸 — `일어나 [laughs] 자기야` → `일어나 자기야`.
+ * - 붙어 있었으면 양옆이 낱말일 때만 한 칸이다. 빈 문자열로 지우면 `Good[softly]morning` 의 두 낱말이
+ *   붙는다(Codex #801). 쉼표·마침표 **뒤**(`할머니,[softly]일어나세요`)도 뒤가 낱말이면 한 칸이다.
+ *   일본어·중국어는 띄어 쓰지 않으므로 붙인다.
+ */
+function tagGapFill(piece: string, offset: number, whole: string): string {
+  const before = whole[offset - 1] ?? '';
+  const after = whole[offset + piece.length] ?? '';
+  if (!before || !after || /[,.!?…;:~〜、。，．！？；：)）」』]/u.test(after)) return '';
+  if (/^[ \t]|[ \t]$/.test(piece)) return ' ';
+  return isSpacedWordChar(after) && (isSpacedWordChar(before) || /[,.!?…;:]/u.test(before)) ? ' ' : '';
+}
 // ElevenLabs v3 태그는 고정 enum이 아니라 대괄호 안 자연어 지시이며, 실제 효과는 보이스·문맥·
 // stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증).
 //
@@ -290,19 +317,34 @@ export function isLaughterTag(tag: string): boolean {
   return !!normalized && ['laugh', 'giggl', 'chuckl'].some((word) => normalized.includes(word));
 }
 
-/// 톤 태그만 벗기고 웃음 태그는 **제자리에** 남긴다. 웃음이 없으면 `normalizeAlarmTextWithoutTags` 와 같다.
+/// 톤 태그만 벗기고 웃음 태그는 **제자리에** 남긴다. 사전렌더는 이걸 합성 글자의 바탕으로 쓰고
+/// (`generatePrerenderClipText`), 직접 입력은 사용자의 웃음 자리를 대조하는 데 쓴다(`normalizeSameLanguageTaggedText`).
+///
+/// 지운 톤 자리는 `tagGapFill` 로 메우고, 웃음 뒤 문장부호 앞에는 공백을 두지 않는다 — `typedLaughterToTags` 와
+/// 같은 모양('좋아 [laughs].')이다. 예전처럼 웃음 양옆에 공백을 붙이기만 하면 `좋아 [laughs] .` 이 합성·저장된다
+/// (Codex #830).
 function withoutToneTags(text: string): string {
   return text
-    .replace(new RegExp(`\\s*\\[${TAG_BODY_PATTERN}\\]\\s*`, 'gi'), (match) => {
-      const tag = match.trim();
-      return isLaughterTag(tag) ? ` ${tag} ` : ' ';
-    })
+    .replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) =>
+      isLaughterTag(piece.trim()) ? ` ${piece.trim()} ` : tagGapFill(piece, offset, whole),
+    )
     .replace(/\s+/g, ' ')
+    .replace(/\] (?=[,.!?…;:~〜、。，．！？；：])/gu, ']')
     .trim();
 }
 
 function countLaughterTags(text: string): number {
   return (text.match(TAG_RE_GLOBAL) ?? []).filter(isLaughterTag).length;
+}
+
+/// 글에 든 웃음 태그를 이름별로 센다(`[chuckles]` 두 번 → `chuckles: 2`).
+function laughterTagCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const tag of (text.match(TAG_RE_GLOBAL) ?? []).filter(isLaughterTag)) {
+    const name = normalizeTag(tag);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
@@ -315,31 +357,47 @@ function countLaughterTags(text: string): number {
  * 웃음은 `maxLaughs` 번까지만 남긴다(앞에서부터) — 모델이 스스로 넣는 웃음은 **한 줄에 한 번**이다(스펙 §9).
  * 직접 입력은 사용자가 친 웃음 수만큼(그 웃음은 `normalizeSameLanguageTaggedText` 가 원문 자리로 맞춘 뒤다),
  * 사용자가 웃지 않았으면 1이다(Codex #830 — 프롬프트만 믿으면 `[chuckles] … [giggles]` 가 두 번 웃는다).
+ * 붙어 있는 웃음(`[chuckles] [giggles]`)은 한 번으로 본다. 지운 자리는 `tagGapFill` 로 메운다 — 문장부호
+ * 앞에 공백을 남기지 않는다.
  *
- * ⚠ **사용자가 친 태그에는 쓰지 않는다** — 모델이 태그를 붙인 문구(`shouldTag`·사전렌더)에만 부른다.
+ * ⚠ **사용자가 친 태그는 친 수만큼만 사용자 것이다**(`userTags`, Codex #830). 이름으로 통째로 빼 주면
+ *   번역 모델이 사용자의 `[chuckles]` 를 지키면서 `[chuckles]` 를 하나 더 써도 그것까지 빠져 두 번 웃는다.
+ *   앞에서부터 친 수만큼은 철자 그대로 두고 `maxLaughs` 에서 먼저 떼며, 나머지는 모델 웃음으로 맞추고 센다.
  */
 function canonicalizeLaughterTags(
   text: string,
+  /** 남길 웃음 수 — 사용자 것까지 합친 수다. */
   maxLaughs: number,
-  /** 사용자가 대괄호로 직접 친 태그(정규화한 이름) — 맞추지도 세지도 않는다. */
-  userTags: ReadonlySet<string> = new Set(),
+  /** 사용자가 대괄호로 직접 친 웃음 태그(정규화한 이름 → 친 수, `laughterTagCounts`). */
+  userTags: ReadonlyMap<string, number> = new Map(),
 ): string {
-  const canonical = text
-    .replace(TAG_RE_GLOBAL, (match) =>
-      isLaughterTag(match) && !userTags.has(normalizeTag(match)) ? LAUGH_TAG : match,
-    )
-    .replace(/\[laughs\](?:\s*\[laughs\])+/g, LAUGH_TAG);
-  let seen = 0;
-  const limited = canonical.replace(/\[laughs\]/g, (match) => {
-    seen += 1;
-    return seen <= maxLaughs ? match : ' ';
+  const userLeft = new Map(userTags);
+  const userOwned = (text.match(TAG_RE_GLOBAL) ?? []).filter(isLaughterTag).map((tag) => {
+    const left = userLeft.get(normalizeTag(tag)) ?? 0;
+    if (left > 0) userLeft.set(normalizeTag(tag), left - 1);
+    return left > 0;
+  });
+  const modelBudget = Math.max(0, maxLaughs - userOwned.filter(Boolean).length);
+  let index = 0;
+  let modelLaughs = 0;
+  let lastLaughEnd = -1;
+  const limited = text.replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) => {
+    if (!isLaughterTag(piece.trim())) return piece;
+    const owned = userOwned[index++];
+    const adjacent = offset === lastLaughEnd;
+    lastLaughEnd = offset + piece.length;
+    if (owned) return piece;
+    if (!adjacent && ++modelLaughs <= modelBudget) {
+      return piece.replace(TAG_RE, LAUGH_TAG);
+    }
+    return tagGapFill(piece, offset, whole);
   });
   return limited === text ? text : limited.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /// 번역문에 사용자의 웃음이 하나도 안 남았을 때 — 선두 톤 태그 뒤에 한 번 넣는다(`prepareAlarmTextWithVertex`).
 function withLeadingLaugh(text: string): string {
-  const leading = text.match(new RegExp(`^(?:\\s*\\[${TAG_BODY_PATTERN}\\])*`, 'i'))?.[0] ?? '';
+  const leading = text.match(LEADING_TAGS_RE)?.[0] ?? '';
   return `${leading.trim()} ${LAUGH_TAG} ${text.slice(leading.length).trim()}`.trim();
 }
 
@@ -416,23 +474,19 @@ export function dropWakeUnsafeTags(
   options: { allowLowArousal?: boolean; calmVoice?: boolean } = {},
 ): string {
   return text
-    .replace(TAG_RE_GLOBAL, (match, offset: number, whole: string) => {
-      const body = match.slice(1, -1);
+    .replace(TAG_WITH_GAP_RE_GLOBAL, (piece: string, offset: number, whole: string) => {
+      const body = normalizeTag(piece.trim());
       if (
         !isFearTag(body) &&
         (options.allowLowArousal || !isLowArousalTag(body)) &&
         !(options.calmVoice && isCalmIncompatibleTag(body))
       ) {
-        return match;
+        return piece;
       }
-      // ⚠ 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로 지우면 두 낱말이 붙는다(Codex #801).
-      //   양옆이 글자면 공백을 남긴다 — 단 일본어·중국어는 띄어 쓰지 않으므로 그대로 붙인다.
-      //   문장부호 **앞**('Wake up[softly]!')에는 남기지 않고, 쉼표·마침표 **뒤**('할머니,[softly]일어나세요')
-      //   에는 남긴다 — 뒤가 글자일 때만.
-      const before = whole[offset - 1] ?? '';
-      const after = whole[offset + match.length] ?? '';
-      const isWordChar = (ch: string) => /[\p{L}\p{N}]/u.test(ch) && !/[\u3040-\u30ff\u4e00-\u9fff]/.test(ch);
-      return isWordChar(after) && (isWordChar(before) || /[,.!?…;:]/u.test(before)) ? ' ' : '';
+      // ⚠ 지운 자리는 `tagGapFill` 로 메운다 — 낱말 사이에 붙은 태그('Good[softly]morning')를 빈 문자열로
+      //   지우면 두 낱말이 붙고(Codex #801), 문장부호 앞의 태그('Wake up [laughs].')를 공백으로 지우면
+      //   'Wake up .' 이 된다(Codex #830).
+      return tagGapFill(piece, offset, whole);
     })
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
@@ -588,13 +642,13 @@ export async function prepareAlarmTextWithVertex(
   }
   if (shouldTranslate && !shouldTag) {
     // 사용자가 대괄호를 쳐서 톤 태깅을 안 하는 번역도 모델이 웃음 태그를 바꿀 수 있다(`[laughs]` → `[chuckles]`,
-    // Codex #830). 사용자가 직접 친 태그는 그대로 두고, 나머지 웃음만 `[laughs]` 로 맞춘다.
-    const userTags = new Set(extractTags(trimmed));
+    // Codex #830). 사용자가 직접 친 웃음 태그는 **친 수만큼** 철자 그대로 두고, 나머지 웃음은 `[laughs]` 로 맞춘다 —
+    // 모델이 사용자의 `[chuckles]` 옆에 `[chuckles]` 를 하나 더 써도 그건 모델 웃음이다.
     preparedText = canonicalizeLaughterTags(
       preparedText,
-      // 원문에 있던 `[laughs]`(사용자가 친 ㅋㅋ 를 바꾼 것 + 사용자가 직접 친 것) 수만큼 — 모델이 더한 웃음은 지운다.
-      (source.match(/\[laughs\]/gi) ?? []).length,
-      userTags,
+      // 원문에 있던 웃음(사용자가 친 ㅋㅋ 를 바꾼 `[laughs]` + 사용자가 직접 친 웃음 태그) 수만큼 — 모델이 더한 웃음은 지운다.
+      countLaughterTags(source),
+      laughterTagCounts(trimmed),
     );
   }
   if (shouldTranslate && countLaughterTags(source) > 0 && countLaughterTags(preparedText) === 0) {
@@ -1708,16 +1762,18 @@ export async function generatePrerenderClipText(
     // ⚠ **웃음은 톤이 아니다**(`isLaughterTag`). 문장마다 앞세울 태그(= 돌려주는 `tag`, 등록 미리듣기도
     //   문장마다 입힌다)로 웃음을 고르지 않는다 — 고르면 `[laughs]` 하나로 시작한 문구가 **매 문장 웃는다.**
     //   그때는 톤(모델의 `tag`·카테고리 기본값)을 앞세우고, 모델이 넣은 웃음은 제자리에 한 번만 남긴다.
+    //   '톤을 몇 개 배치했는가' 도 **톤 태그로만** 센다 — 웃음 하나만 문장 가운데 있는 줄(`자기야, [laughs] 일어나`)
+    //   을 '모델이 배치했다' 로 읽으면 톤 없이 저장되고 `tag` 만 톤을 주장한다(Codex #830).
     const inlineTags = extractTags(text);
-    const onlyLeadingTag =
-      inlineTags.length === 1 && text.trimStart().startsWith(`[${inlineTags[0]!}]`);
+    const toneTags = inlineTags.filter((tag) => !isLaughterTag(tag));
+    const onlyLeadingTone =
+      toneTags.length === 1 && extractTags(text.match(LEADING_TAGS_RE)?.[0] ?? '').includes(toneTags[0]!);
     const sanitizeToneTag = (raw: string) => (isLaughterTag(raw) ? '' : sanitizePrerenderTag(raw));
     const primaryTag =
-      sanitizeToneTag(inlineTags.find((tag) => !isLaughterTag(tag)) ?? '') ||
+      sanitizeToneTag(toneTags[0] ?? '') ||
       sanitizeToneTag(parsed.tag) ||
       sanitizeToneTag(fallbackTagForEnergy(params.defaultTag ?? '', params.speechStyle?.energy));
-    if (inlineTags.length === 0 || onlyLeadingTag) {
-      // 웃음이 없으면 `spoken` 과 같다.
+    if (toneTags.length === 0 || onlyLeadingTone) {
       const base = withoutToneTags(text);
       return {
         text: primaryTag ? applyDeliveryTagPerSentence(primaryTag, base) : base,
