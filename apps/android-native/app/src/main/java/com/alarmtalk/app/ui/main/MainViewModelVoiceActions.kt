@@ -1123,7 +1123,9 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
     val app = getApplication<Application>()
     // 디스크 권위의 표. **요청 전에** 뽑는다 — 그래야 늦게 끝난 옛 요청이 거절된다. **프로세스
     // 전역**이라 프리페치 워커와도 순서가 맞는다.
-    val ticket = com.alarmtalk.app.data.StockClipManifestStore.beginFetch()
+    // 표는 메인 밖에서 뽑는다 — 워커가 공개(쓰기)하는 동안 같은 잠금을 잡고 있어, 메인에서 뽑으면
+    // 그동안 화면이 멎는다(Codex #825).
+    val ticket = withContext(Dispatchers.IO) { com.alarmtalk.app.data.StockClipManifestStore.beginFetch() }
     val response = try {
         api.getStockClips(AlarmTalkApiClient.bearer(token))
     } catch (error: CancellationException) {
@@ -1147,11 +1149,18 @@ private suspend fun MainViewModel.fetchAndPublishStockClips(
             // 싣기는 표 순서로만(`applyStockClipManifest`) — 공개하고 메인으로 돌아오는 사이 구독이
             // 더 새 공개본을 먼저 실었으면 이 응답은 버린다.
             if (applyStockClipManifest(response, ticket)) afterStockClipManifestApplied(response)
-            // ⚠ 그 사이 워커가 더 새 것을 공개했으면(워커는 메모리를 고치지 않는다) 지금 따라간다(Codex #825)
-            // — 기다리던 준비도·클론 다운로드가 곧바로 메모리를 읽는다. 이 뒤의 공개는 구독이 따라간다.
-            val newer = com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket()
-            if (newer != null && newer > ticket) syncStockClipsToPublished(owner)
-            ManifestFlightOutcome.PUBLISHED
+            // ⚠ 공개 상태를 **지금** 다시 본다(Codex #825) — 공개하고 돌아오는 사이 워커가 움직였을 수 있다.
+            val latest = com.alarmtalk.app.data.StockClipManifestStore.latestPublishedTicket()
+            when {
+                latest == ticket -> ManifestFlightOutcome.PUBLISHED
+                // 더 새 것이 공개됐다(워커는 메모리를 고치지 않는다) — 지금 따라간다. 기다리던
+                // 준비도·클론 다운로드가 곧바로 메모리를 읽는다. 이 뒤의 공개는 구독이 따라간다.
+                latest != null && latest > ticket ->
+                    if (syncStockClipsToPublished(owner)) ManifestFlightOutcome.PUBLISHED else ManifestFlightOutcome.UNCONFIRMED
+                // 더 새 표를 봤는데 그 쓰기가 실패했다(디스크는 여전히 이 응답). 쓸 수는 있지만
+                // '마지막을 받았다' 로 세지 않는다 — 다음 호출이 다시 받는다.
+                else -> ManifestFlightOutcome.UNCONFIRMED
+            }
         }
         // 더 새 표가 이미 나왔다(콜드 스타트엔 프리페치 워커와 거의 동시에 받는다).
         // 이 응답으로 덮으면 준비 판정이 **교체 이전 스냅샷**을 보고 세대를 확정해 버린다 — 대신 디스크의

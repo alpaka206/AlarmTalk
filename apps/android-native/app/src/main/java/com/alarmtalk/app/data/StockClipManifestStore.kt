@@ -99,18 +99,28 @@ object StockClipManifestStore {
      * 무효화도 수위선을 올린다. 그 둘이면 디스크는 비었거나 **옛 목록**이다 — 이긴 것으로 싣거나
      * '받았다' 로 세면 준비도·클론 다운로드가 낡은 목록으로 돈다.
      *
-     * ⚠ **확인과 읽기를 한 임계구역에서** 한다(Codex #825). 둘을 나누면 그 틈에 더 새 표의 쓰기가
-     * 실패해 수위선만 오르고, 이미 '공개됨' 으로 확인한 뒤라 옛 목록을 이긴 것으로 읽는다. 읽은 뒤에
-     * 더 새 공개가 오면 [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
+     * ⚠ **읽은 것이 확인한 그 공개본이어야 한다**(Codex #825). 확인만 하고 읽으면 그 틈에 더 새 표의
+     * 쓰기가 실패해 수위선만 오르거나 파일이 갈려, 옛 목록을 이긴 것으로 싣는다. 그렇다고 잠근 채
+     * 읽으면(약 168KB 읽기·파싱) 같은 잠금을 잡는 쪽이 그동안 멎는다. 그래서 **확인 → 잠금 밖에서
+     * 읽기 → 잠금 안에서 다시 확인**하고, 그 사이 공개 상태가 바뀌었으면 다시 읽는다(파일 교체는
+     * 잠금 안에서만 일어나므로, 앞뒤 확인이 같으면 읽은 것이 그 공개본이다). 읽은 뒤에 더 새 공개가
+     * 오면 [publishedTickets] 가 다시 알린다 — 표가 함께 오므로 싣는 쪽이 순서를 지킨다.
      *
      * 메인 스레드에서 부르지 말 것 — [load] 와 같다.
      */
-    fun loadPublishedWinner(context: Context, userId: String): PublishedManifest? =
-        synchronized(revisionLock) {
-            if (seenTicket <= 0 || publishedTicket != seenTicket) return null
-            val response = load(context, userId, requireOwner = true) ?: return null
-            PublishedManifest(publishedTicket, response)
+    fun loadPublishedWinner(context: Context, userId: String): PublishedManifest? {
+        repeat(MAX_WINNER_READS) {
+            val ticket = latestPublishedTicket() ?: return null
+            val response = load(context, userId, requireOwner = true)
+            val unchanged = synchronized(revisionLock) { seenTicket == ticket && publishedTicket == ticket }
+            if (unchanged) return response?.let { PublishedManifest(ticket, it) }
         }
+        // 계속 바뀐다 — 이번에는 포기한다. 다음 공개 알림이 다시 부른다.
+        return null
+    }
+
+    /** [loadPublishedWinner] 가 읽는 사이 공개가 계속 바뀔 때 다시 읽는 한도. */
+    private const val MAX_WINNER_READS = 3
 
     /** 조회를 시작하며 표를 뽑는다. 그 응답을 저장할 때 [save] 에 그대로 낸다. */
     fun beginFetch(): Long = synchronized(revisionLock) { ++nextFetchTicket }

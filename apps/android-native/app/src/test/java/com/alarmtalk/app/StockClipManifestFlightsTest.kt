@@ -151,10 +151,12 @@ class StockClipManifestFlightsTest {
         val flights = flights(clock)
         val requests = FakeRequests()
 
-        // 실패(쓰기 실패·확인 못 한 superseded 포함)는 신선도로 세지 않는다 — 다음 호출이 다시 받는다.
+        // 실패(쓰기 실패·확인 못 한 superseded 포함)와, 실었지만 마지막인지 모르는 응답(더 새 표의 쓰기
+        // 실패)은 신선도로 세지 않는다 — 다음 호출이 다시 받는다.
         requests.outcome = ManifestFlightOutcome.FAILED
         assertEquals(ManifestFlightOutcome.FAILED, flights.ensure("u1", ManifestNeed.SESSION) { requests.run() })
-        assertEquals(ManifestFlightOutcome.FAILED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
+        requests.outcome = ManifestFlightOutcome.UNCONFIRMED
+        assertEquals(ManifestFlightOutcome.UNCONFIRMED, flights.ensure("u1", ManifestNeed.RECENT) { requests.run() })
         assertEquals(2, requests.issued)
 
         // 이긴 것이 공개된 superseded 는 '받았다' 다(스펙 「공개 경합의 규칙」) — 이긴 것은 뒤에 출발했다.
@@ -207,6 +209,49 @@ class StockClipManifestFlightsTest {
         assertEquals(ManifestFlightOutcome.PUBLISHED, b.await())
         gate.complete(Unit)
         a.await()
+    }
+
+    @Test
+    fun anOldOwnersQueueDrainingDoesNotEvictTheNewOwnersRequest() = runTest {
+        val flights = flights(Clock())
+        val aFirst = CompletableDeferred<Unit>()
+        val bGate = CompletableDeferred<Unit>()
+        var bRuns = 0
+
+        // 계정 A: 떠 있는 요청 + 그 뒤에 선 LATEST 줄.
+        val a1 = async { flights.ensure("A", ManifestNeed.SESSION) { aFirst.await(); ManifestFlightOutcome.PUBLISHED } }
+        runCurrent()
+        val a2 = async { flights.ensure("A", ManifestNeed.LATEST) { ManifestFlightOutcome.FAILED } }
+        runCurrent()
+        // 로그아웃 → 계정 B 가 요청을 낸다.
+        val b1 = async {
+            flights.ensure("B", ManifestNeed.SESSION) {
+                bRuns += 1
+                bGate.await()
+                ManifestFlightOutcome.PUBLISHED
+            }
+        }
+        runCurrent()
+        assertEquals(1, bRuns)
+
+        // A 의 앞 요청이 끝나 줄 선 요청이 풀린다(세션이 바뀌어 곧바로 실패로 끝난다).
+        aFirst.complete(Unit)
+        a1.await()
+        a2.await()
+        runCurrent()
+
+        // B 의 다음 호출은 B 의 떠 있는 요청을 나눠 써야 한다 — A 의 줄이 B 의 자리를 비우면 또 낸다.
+        val b2 = async {
+            flights.ensure("B", ManifestNeed.RECENT) {
+                bRuns += 1
+                ManifestFlightOutcome.PUBLISHED
+            }
+        }
+        runCurrent()
+        assertEquals("앞 계정의 줄이 풀리면서 새 계정의 떠 있는 요청을 밀어냈다.", 1, bRuns)
+        bGate.complete(Unit)
+        assertEquals(ManifestFlightOutcome.PUBLISHED, b1.await())
+        assertEquals(ManifestFlightOutcome.PUBLISHED, b2.await())
     }
 
     @Test

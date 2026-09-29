@@ -39,6 +39,12 @@ internal enum class ManifestFlightOutcome {
      */
     SUPERSEDED,
 
+    /**
+     * 이 응답은 공개됐고 메모리에도 실었지만, **그 뒤에 본 더 새 표의 쓰기가 실패해** 이게 마지막인지
+     * 확인하지 못했다(Codex #825). 쓸 수는 있지만 신선도로 세지 않는다 — 다음 호출이 다시 받는다.
+     */
+    UNCONFIRMED,
+
     /** 받지 못했거나 디스크에 못 남겼거나, 그사이 계정이 바뀌었다. */
     FAILED,
 }
@@ -81,15 +87,17 @@ internal class StockClipManifestFlights<Owner : Any>(
         var issued = false
     }
 
-    /** 요청을 낸 채 끝나지 않은 것. */
-    private var running: Flight? = null
+    /**
+     * 주인마다 요청을 낸 채 끝나지 않은 것. ⚠ **주인별로** 둔다(Codex #825) — 하나로 두면 계정이 바뀐
+     * 뒤 앞 계정의 줄 선 요청이 풀리면서 새 계정의 떠 있는 요청을 덮어, 새 계정이 같은 요청을 또 낸다.
+     */
+    private val running = HashMap<Owner, Flight>()
 
-    /** [running] 이 끝나면 출발할 것(LATEST 가 세운 줄). */
-    private var queued: Flight? = null
+    /** 주인마다 [running] 이 끝나면 출발할 것(LATEST 가 세운 줄). */
+    private val queued = HashMap<Owner, Flight>()
 
-    /** 마지막으로 **공개된** 응답의 주인과, 그 요청을 낸 시각. */
-    private var freshOwner: Owner? = null
-    private var freshIssuedAt: Long = 0L
+    /** 주인마다 마지막으로 **공개가 확인된** 응답의 요청을 낸 시각. */
+    private val freshIssuedAt = HashMap<Owner, Long>()
 
     /** 지금까지 [run] 을 부른 수(= 낸 요청 수의 상한). 테스트용. */
     var runCount: Int = 0
@@ -106,9 +114,10 @@ internal class StockClipManifestFlights<Owner : Any>(
         need: ManifestNeed,
         run: suspend () -> ManifestFlightOutcome,
     ): ManifestFlightOutcome {
-        val fresh = freshOwner == owner && when (need) {
+        val issuedAt = freshIssuedAt[owner]
+        val fresh = issuedAt != null && when (need) {
             ManifestNeed.SESSION -> true
-            ManifestNeed.RECENT -> clock() - freshIssuedAt < freshWindowMs
+            ManifestNeed.RECENT -> clock() - issuedAt < freshWindowMs
             ManifestNeed.LATEST -> false
         }
         if (fresh) return ManifestFlightOutcome.FRESH
@@ -117,9 +126,9 @@ internal class StockClipManifestFlights<Owner : Any>(
     }
 
     private fun pick(owner: Owner, need: ManifestNeed, run: suspend () -> ManifestFlightOutcome): Flight {
-        val active = running?.takeIf { it.owner == owner && it.result.isActive }
+        val active = running[owner]?.takeIf { it.result.isActive }
         // 줄만 서 있고 아직 요청을 안 낸 것 — 누가 와도 나눠 쓸 수 있다(LATEST 도: 부른 뒤에 출발한다).
-        val waiting = queued?.takeIf { it.owner == owner && !it.issued && it.result.isActive }
+        val waiting = queued[owner]?.takeIf { !it.issued && it.result.isActive }
         if (need == ManifestNeed.LATEST) {
             // 떠 있는 요청은 부르기 **전에** 출발했다 — 그 뒤에 선 줄을 나눠 쓰거나 새로 세운다.
             waiting?.let { return it }
@@ -135,8 +144,8 @@ internal class StockClipManifestFlights<Owner : Any>(
         flight.result = scope.async(start = CoroutineStart.LAZY) {
             // 앞 요청이 끝날 때까지 기다린다. 앞 요청의 성패는 상관없다(join 은 던지지 않는다).
             after?.result?.join()
-            running = flight
-            if (queued === flight) queued = null
+            running[owner] = flight
+            if (queued[owner] === flight) queued.remove(owner)
             flight.issued = true
             runCount += 1
             val issuedAt = clock()
@@ -150,15 +159,14 @@ internal class StockClipManifestFlights<Owner : Any>(
                 }
                 // 이긴 것(SUPERSEDED)은 이 요청보다 뒤에 출발했다 — 이 요청의 출발 시각으로 세면 보수적이다.
                 if (outcome == ManifestFlightOutcome.PUBLISHED || outcome == ManifestFlightOutcome.SUPERSEDED) {
-                    freshOwner = owner
-                    freshIssuedAt = issuedAt
+                    freshIssuedAt[owner] = maxOf(issuedAt, freshIssuedAt[owner] ?: Long.MIN_VALUE)
                 }
                 outcome
             } finally {
-                if (running === flight) running = null
+                if (running[owner] === flight) running.remove(owner)
             }
         }
-        if (after == null) running = flight else queued = flight
+        if (after == null) running[owner] = flight else queued[owner] = flight
         flight.result.start()
         return flight
     }

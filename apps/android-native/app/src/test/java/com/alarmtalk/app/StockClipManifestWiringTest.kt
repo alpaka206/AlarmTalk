@@ -119,6 +119,10 @@ class StockClipManifestWiringTest {
             "공개하고 돌아오는 사이 워커가 더 새 것을 공개했으면 곧바로 따라가지 않는다(Codex #825).",
             published.contains("latestPublishedTicket()") && published.contains("syncStockClipsToPublished(owner)"),
         )
+        assertTrue(
+            "더 새 표의 쓰기가 실패해 마지막인지 모르는 응답을 '받았다'(신선) 로 센다(Codex #825).",
+            published.contains("else -> ManifestFlightOutcome.UNCONFIRMED"),
+        )
         val viewModel = withoutLineComments(readSource("ui/main/MainViewModel.kt"))
         assertTrue(
             "뷰모델이 다른 쪽(워커)의 공개를 따라가지 않는다 — 워커는 메모리를 모른다(Codex #825).",
@@ -163,7 +167,7 @@ class StockClipManifestWiringTest {
     @Test
     fun manifestDiskReadsAndWritesStayOffTheMainThread() {
         val offenders = uiSources.flatMap { (path, code) ->
-            Regex("""StockClipManifestStore\s*\.\s*(save|load)\(""").findAll(code).mapNotNull { match ->
+            Regex("""StockClipManifestStore\s*\.\s*(save|load|beginFetch)\(""").findAll(code).mapNotNull { match ->
                 // 여는 `withContext(Dispatchers.IO) {` 가 바로 앞(같은 블록, 몇 줄 안)에 있어야 한다.
                 val before = code.substring(maxOf(0, match.range.first - 400), match.range.first)
                 if (before.contains("withContext(Dispatchers.IO)")) null else "$path: ${match.value}"
