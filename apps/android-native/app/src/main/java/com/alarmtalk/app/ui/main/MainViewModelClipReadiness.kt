@@ -46,7 +46,7 @@ internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: 
         val statuses = owned.map { voiceId ->
             async {
                 val status = try {
-                    withContext(Dispatchers.IO) { api.getVoicePrerenderStatus(auth, voiceId) }.status
+                    api.getVoicePrerenderStatus(auth, voiceId).status
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -135,7 +135,7 @@ internal suspend fun MainViewModel.retryFailedClipRenders() {
     val session = authSession ?: return
     val auth = AlarmTalkApiClient.bearer(session.token)
     clipReadiness.filter { it.renderFailed }.forEach { voice ->
-        runCatching { withContext(Dispatchers.IO) { api.retryVoicePrerender(auth, voice.voiceProfileId) } }
+        runCatching { api.retryVoicePrerender(auth, voice.voiceProfileId) }
     }
     refreshClipReadiness()
 }

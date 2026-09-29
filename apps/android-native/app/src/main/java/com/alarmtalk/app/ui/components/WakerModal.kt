@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.clip
@@ -383,13 +382,7 @@ internal fun WakerSheetOptionRow(
         if (divider) {
             // 아이콘 배지가 있으면 텍스트 시작선(40+12+20=72)까지 들여쓰고, 아니면
             // **좌우 끝까지** 긋는다 — iOS 선택 시트가 그렇다(2026-08-10 "구분선을 더 길게").
-            Box(
-                modifier = Modifier
-                    .padding(start = if (hasLeading && dividerInset) 72.dp else 0.dp)
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(scheme.outlineVariant),
-            )
+            HorizontalDivider(Modifier.padding(start = if (hasLeading && dividerInset) 72.dp else 0.dp))
         }
     }
 }

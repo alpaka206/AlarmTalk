@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,18 +118,6 @@ internal fun AlarmSettingRow(
             modifier = Modifier.size(16.dp),
         )
     }
-}
-
-@Composable
-internal fun AlarmSettingDivider(modifier: Modifier = Modifier) {
-    // 구분선은 행 텍스트 시작선에 맞춘다 — 세부 설정 카드는 카드 자체 패딩이 있어 그대로,
-    // 목소리 카드처럼 행이 자체 패딩을 갖는 곳은 호출부에서 같은 값으로 인셋을 준다.
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
 }
 
 @Composable
@@ -256,13 +244,7 @@ internal fun CompactSelectionDot(selected: Boolean) {
 @Composable
 internal fun SnoozeOptionDivider() {
     // 라디오 점(18dp) + 좌우 여백에 맞춰 텍스트 시작선(14+18+12)까지 들여쓴다.
-    Box(
-        modifier = Modifier
-            .padding(start = 44.dp)
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
+    HorizontalDivider(Modifier.padding(start = 44.dp))
 }
 
 @Composable
