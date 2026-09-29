@@ -106,15 +106,13 @@ const ANDROID: AppVersionPolicy = {
 };
 
 const IOS: AppVersionPolicy = {
-  // ⚠ **지금은 1 이다 — 7 로 올리는 것은 App Store 에 1.2.10(빌드 7)이 게재된 뒤다.**
-  // 2026-09-28 에 Android 30 과 한 변경(#806)으로 7 을 넣었다가, Play 30 이 먼저 게시되고
-  // App Store 는 심사 대기라 **iOS 만 1 로 되돌려** Android 를 먼저 냈다. 7 이 먼저 나가면 빌드
-  // 5·6(1.2.8·1.2.9) 사용자 전원이 차단 화면(`UpdateRequiredView`)을 보는데 스토어에는 받을
-  // 7 이 없다. 게재를 확인하면(ASC API 의 appStoreVersion 이 `READY_FOR_SALE`) 두 값을 7 로
-  // 올린다 — 올릴 사유는 아래에 그대로 둔다.
-  //
-  // 7 = 1.2.10(빌드 7) — Android 30 과 같은 회차의 강제
-  // 업데이트다. Android 의 출발점(잠금 화면 울림 화면)은 **iOS 에는 없던 결함**이다 — iOS 는
+  // 7 = 1.2.10(빌드 7). 2026-09-29 에 1 에서 올렸다 — Android 30 과 같은 회차의 강제
+  // 업데이트다(Android 는 Play 30 이 먼저 게시돼 2026-09-28 에 먼저 냈다).
+  // ⚠ 올린 근거: App Store 1.2.10 이 **게재된 것을 확인한 뒤**다 — ASC API appStoreVersion
+  // `READY_FOR_SALE`, 공개 조회(`itunes.apple.com/lookup?id=6799711245`, kr·us)가 1.2.10
+  // (`currentVersionReleaseDate` 2026-09-28T04:57Z). 먼저 나가면 빌드 5·6(1.2.8·1.2.9) 사용자
+  // 전원이 차단 화면(`UpdateRequiredView`)을 보는데 스토어에는 받을 7 이 없다.
+  // Android 의 출발점(잠금 화면 울림 화면)은 **iOS 에는 없던 결함**이다 — iOS 는
   // 울림 화면을 AlarmKit 이 그린다. iOS 의 사유는 개인 플랜 종료 안내(두 앱 모두 1.2.10 에만
   // 있다)와 iOS 만의 하나다:
   //   - **기간 한정 개인 플랜에서 구버전 iOS 는 반만 열린다.** 서버는 원시 free 계정의
@@ -122,24 +120,24 @@ const IOS: AppVersionPolicy = {
   //     1.2.10 전의 iOS 출시본에는 그걸 보면 `users.plan` 을 믿지 않는 화면이 있다
   //     (`billing-lifecycle.md` 「기간 한정 개인 플랜」 기간 표의 '시작' 행). 안드로이드
   //     구버전은 `plan` 만으로 열려 이 문제가 없다.
-  //   - 이 틈은 프로모 스위치(`PERSONAL_PROMO_STARTS_AT`)가 켜진 때부터 이 값이 7 로 prod 에
-  //     나갈 때까지 열린다. 스위치는 운영자 결정으로 **App Store 게재 전(2026-09-28)에 먼저
-  //     켜졌다** — 그동안 빌드 5·6 은 반만 열린다(받아들인 틈이다). 7 이 나가도 옛 iOS 는 버전을
-  //     실행 때만 확인하므로 떠 있던 프로세스는 다시 켤 때까지 열린 채다.
+  //   - 스위치는 운영자 결정으로 **App Store 게재 전(2026-09-28)에 먼저 켜졌고**, 이 값이 7 로
+  //     나가며 그 틈을 닫는다. 단 옛 iOS 는 버전을 **실행 때 한 번만** 확인하고(`.active` 에서는
+  //     다시 안 본다) 그 요청이 실패하면(오프라인 등) 막지 않은 채로 둔다 — 그래서 떠 있던
+  //     프로세스와 **확인에 실패한 실행**은 그 프로세스가 끝날 때까지 열린 채다. 이미 나간
+  //     빌드라 서버에서 못 막는다.
   //
   // 막히는 것은 1.2.8(빌드 5)·1.2.9(빌드 6) 게재본이다. 빌드 번호(CFBundleVersion)는
   // versionCode 와 다른 수열이라 Android 값을 물려주지 않는다(30 이면 1.2.10 까지 막힌다).
-  //
-  minSupported: 1,
+  minSupported: 7,
   // ⚠ **iOS 는 이 값을 읽는 클라가 없다**(1.2.10 도 그렇다). `AppVersionGate.checkAppVersion()`
   // 은 `min_supported_version` 만 보고 `updateRequired` 를 정한다 — 안드로이드의 FLEXIBLE
   // 인앱 업데이트(`InAppUpdateManager`)에 해당하는 것이 iOS 에 없어서다(`AppVersionResponse`
   // 에 필드조차 없다).
   //
-  // **`minSupported` 와 같은 값**으로만 둔다(지금 1, 하한을 7 로 올릴 때 같이 7) — 1 로 둔 채
-  // 하한만 올리면 "필수 버전이 최신 버전보다 높다" 는 모순이 된다. 게재본을 따라가는 권장
-  // 기준이 아니다. 권장 업데이트 배너를 만드는 사람은 그때의 게재 빌드로 다시 맞춘다.
-  latest: 1,
+  // **`minSupported` 와 같은 값**으로만 둔다 — 하한만 올리면 "필수 버전이 최신 버전보다
+  // 높다" 는 모순이 된다. 게재본을 따라가는 권장 기준이 아니다. 권장 업데이트 배너를 만드는
+  // 사람은 그때의 게재 빌드로 다시 맞춘다.
+  latest: 7,
   // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
   // 2026-09-22 게재로 실제로 열린다.
   storeUrl: 'https://apps.apple.com/app/id6799711245',
