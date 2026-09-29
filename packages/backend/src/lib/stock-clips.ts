@@ -263,6 +263,20 @@ export const CLONE_FORTUNE_THEMES = [
 ] as const;
 
 /**
+ * 이 클론 클립에 모델이 웃어도 되는가 — 시드 자체가 **약 알림·사과·조심**인 클립은 서버가 막는다(스펙 §9
+ * 「모델이 스스로 넣는 웃음」, Codex #830). 프롬프트(`OWN_LAUGH_INSTRUCTION`)만 믿으면 모델이 어겨도 그대로 굽힌다.
+ * 막는 것: 약(전부) · 날씨 미해결 안내(마지막 시드 — 미안하다고 알린다) · 운세 '조심'(`caution`).
+ * 그 밖의 문맥(날씨 줄 안의 당부 등)은 문장마다 달라 프롬프트가 정한다 — 서버는 글의 뜻을 판정하지 않는다.
+ */
+export function cloneClipAllowsLaughter(category: string, variantIndex: number): boolean {
+  const key = normalizeStockCategory(category);
+  if (key === 'medication') return false;
+  if (key === 'weather') return variantIndex !== CLONE_WEATHER_CONDITIONS.length;
+  if (key === 'fortune') return CLONE_FORTUNE_THEMES[variantIndex] !== 'caution';
+  return true;
+}
+
+/**
  * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
  * generatePrerenderClipText 가 그 목소리의 관계/호칭/말투에 맞춰 실제 문구로 만든다. 소량 유지.
  * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서(0..7) + 미해결 안내 1(마지막),
@@ -1349,6 +1363,7 @@ export async function generateStockClip(
       styleReference: target.styleReference,
       speechStyle: target.speechStyle ?? null,
       humanReference: stockReferenceLine(target.category, target.variantIndex, language),
+      allowLaughter: cloneClipAllowsLaughter(target.category, target.variantIndex),
     });
     // ⚠ **여기서 태그를 다시 붙이지 말 것**(2026-08-20). `generatePrerenderClipText` 가
     // 이미 배치를 확정해서 돌려준다 — 모델이 문장 안에 여러 개를 넣었으면 그대로, 없거나

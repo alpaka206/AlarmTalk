@@ -2392,6 +2392,32 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
     expect(calm.text).toBe('[warmly] 자기야 오늘 운세 좋대. [sincerely] 얼른 일어나 보자.');
   });
 
+  // Codex #830: 꾸밈말을 붙인 대괄호 글자 웃음([haha loudly])도 톤이 아니라 웃음이다.
+  it('꾸밈말을 붙인 대괄호 글자 웃음([haha loudly]·[lol nervously])도 웃음으로 본다', async () => {
+    queueContent(geminiText('{"text":"[haha loudly] 자기야, 오늘 운세 좋대. 얼른 일어나 보자."}'));
+    const lively = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      defaultTag: 'playfully',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(lively.tag).toBe('playfully');
+    expect(lively.text).toBe('[playfully] [laughs] 자기야, 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
+
+    queueContent(geminiText('{"text":"[playfully] 자기야, [lol nervously] 좋은 아침이야."}'));
+    const preview = await generatePrerenderClipText(ENV, {
+      seed: '다정하게 아침 인사를 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+      allowLaughter: false,
+    });
+    expect(preview.text).toBe('[playfully] 자기야, 좋은 아침이야.');
+  });
+
   it('모델이 낸 [giggles]·[chuckles] 는 [laughs] 로 맞춘다', async () => {
     queueContent(geminiText('{"text":"[playfully] 자기야! [giggles] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자."}'));
     const out = await generatePrerenderClipText(ENV, {

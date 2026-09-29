@@ -100,6 +100,24 @@ describe('typedLaughterToTags — 글자 웃음을 소리 태그로', () => {
     expect(typedLaughterToTags('[face] lol')).toBe('[face] [laughs]');
   });
 
+  // Codex #830: 주소를 `\S+` 로 가리면 바로 뒤에 붙여 친 글의 웃음까지 주소가 된다.
+  it('주소 바로 뒤에 붙여 친 웃음은 주소가 아니다 — 쉼표·호환 자모에서 끊는다', () => {
+    expect(typedLaughterToTags('https://example.com,ㅋㅋ 이제 일어나')).toBe('https://example.com, [laughs] 이제 일어나');
+    expect(typedLaughterToTags('lol@example.com,ㅋㅋ 봐')).toBe('lol@example.com, [laughs] 봐');
+    expect(typedLaughterToTags('ㅋㅋlol@example.com')).toBe('[laughs] lol@example.com');
+    expect(typedLaughterToTags('192.168.0.1/lol,ㅋㅋ')).toBe('192.168.0.1/lol, [laughs]');
+  });
+
+  // Codex #830: 앞이 한자·숫자라고 전부 건너뛰면 「遅刻笑」 의 笑 를 글자로 읽는다.
+  it('한자·숫자 뒤의 문장 끝 笑 도 웃음이다 — 笑 로 끝나는 낱말(微笑·苦笑·爆笑·談笑)은 그대로', () => {
+    expect(typedLaughterToTags('遅刻笑')).toBe('遅刻 [laughs]');
+    expect(typedLaughterToTags('もう8時笑')).toBe('もう8時 [laughs]');
+    expect(typedLaughterToTags('だよ笑笑')).toBe('だよ [laughs]');
+    for (const text of ['微笑', '苦笑', '爆笑', '談笑', '友達と談笑']) {
+      expect(typedLaughterToTags(text)).toBe(text);
+    }
+  });
+
   it('스킴 없는 도메인은 라틴 글자로만 본다 — 띄어 쓰지 않은 문장의 웃음은 바꾼다', () => {
     expect(typedLaughterToTags('일어나.ㅋㅋ')).toBe('일어나. [laughs]');
   });

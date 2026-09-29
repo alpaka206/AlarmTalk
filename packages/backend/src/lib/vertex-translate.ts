@@ -313,16 +313,19 @@ export function isCalmIncompatibleTag(tag: string): boolean {
  * - 직접 입력의 글자 웃음(ㅋㅋ)을 바꾼 `[laughs]` 는 사용자가 쓴 것이라 '모델이 태그를 몇 개 배치했는가' 에서도
  *   뺀다(`normalizeSameLanguageTaggedText`).
  *
- * 글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`)도 웃음이다(Codex #830). 소리 태그가 아니라 글자라, 웃음으로
- * 안 보면 톤으로 골라져 문장마다 붙고 등록 미리듣기(`allowLaughter: false`)의 웃음 제거도 비켜 간다. 모델이 낸 것은
+ * 글자 웃음을 대괄호에 넣은 것(`[haha]`·`[lol]`·`[www]`)도, 거기에 꾸밈말을 붙인 것(`[haha loudly]`·`[lol nervously]`)도
+ * 웃음이다(Codex #830) — `[laughs nervously]` 를 웃음으로 보는 것과 같다. 소리 태그가 아니라 글자라, 웃음으로 안 보면
+ * 톤으로 골라져 문장마다 붙고 등록 미리듣기(`allowLaughter: false`)의 웃음 제거도 비켜 간다. 모델이 낸 것은
  * `[laughs]` 로 맞추고(`canonicalizeLaughterTags`), 사용자가 친 것은 친 수만큼 그대로다.
  */
 export function isLaughterTag(tag: string): boolean {
   const normalized = normalizeTag(tag);
   if (!normalized) return false;
   if (['laugh', 'giggl', 'chuckl'].some((word) => normalized.includes(word))) return true;
-  const spoken = typedLaughterToTags(normalized);
-  return spoken !== normalized && !hasSpokenWords(spoken);
+  return normalized.split(/[\s,]+/).some((word) => {
+    const spoken = typedLaughterToTags(word);
+    return spoken !== word && !hasSpokenWords(spoken);
+  });
 }
 
 /// 태그를 벗기고도 낭독할 말(글자·숫자)이 남는가. 문장부호만 남으면 말이 없는 것이다.
