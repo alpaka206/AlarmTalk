@@ -216,7 +216,14 @@ final class ClonePrerenderDrive: ObservableObject {
         )
 
         while !Task.isCancelled {
-            if let progress = await StockClipPrefetcher.progressOffMain(voiceProfileID: voiceProfileID) {
+            // ⚠ **세는 것도 '신호 뒤' 의 목록으로 한다**(코덱스 #827). 위 `start` 는 조회를 걸어 둘
+            //   뿐이라, 디스크에는 아직 생성이 끝나기 전에 출발한 부분 목록이 있을 수 있다 — 그 부분이
+            //   다 받아져 있으면 첫 회차에 '다 받았다' 로 끝나고 뒤늦게 만들어진 클립은 안 받아진다.
+            //   신호 뒤의 공개본이 아직 없으면 nil 이라 기다린다.
+            if let progress = await StockClipPrefetcher.progressOffMain(
+                voiceProfileID: voiceProfileID,
+                manifestDepartedAfter: generationFinishedAt
+            ) {
                 totalKnown = true
                 percent = Self.mergedPercent(
                     generated: generationTotal,

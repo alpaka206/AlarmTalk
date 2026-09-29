@@ -154,11 +154,46 @@ final class EntryRefreshFreshnessTests: XCTestCase {
             let before = meCalls()
             await vm.refreshAllThenUserIfIncomplete(auth: auth)
             XCTAssertFalse(vm.entitlementSnapshotComplete)
-            // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가지만(효율 감사 M7), 구독 조회에서 멈추면
-            // 그 답은 쓰지 않는다 — 떠 있으면 취소된다. 그래서 몇 번 닿았는지는 경합이고, 확실한 것은
-            // 사용자 새로고침이 **한 번** 받는다는 것이다.
-            XCTAssertTrue((before + 1...before + 2).contains(meCalls()), "사용자 새로고침 한 번 + (닿았다면) 버린 이용권 쪽 한 번")
-            XCTAssertEqual(auth.session?.user.plan, "family", "그 사용자 새로고침이 서버의 지금 plan 을 세션에 넣는다")
+            // 이용권 쪽 `/auth/me` 는 구독 조회와 **나란히** 나가고(효율 감사 M7) 그 답은 이 진입의 결과로
+            // 적는다(코덱스 #827) — 스냅샷이 미완이라 사용자 새로고침이 한 번 더 부른다.
+            XCTAssertEqual(meCalls(), before + 2, "이용권 쪽 한 번 + 사용자 새로고침 한 번")
+            XCTAssertEqual(auth.session?.user.plan, "family", "서버의 지금 plan 이 세션에 들어간다")
+        }
+    }
+
+    /// 회귀(코덱스 #827): 네 조회를 한꺼번에 보내므로 구독·공유 코드가 실패해도 `/auth/me` 는 표와 함께
+    /// 이미 나갔다 — 그 답을 **이 진입의 결과로** 적는다(성공 → `onFreshPlan`, 실패 → `onAccountRequestFailed`).
+    /// 버리면 이 진입의 첫 결과가 비어, 뒤에 오는 다른 응답이 세션 한가운데서 종료 안내를 판정한다(D11).
+    /// 권한 스냅샷은 여전히 미완이다(구독 없는 반쪽 스냅샷 금지).
+    func test_구독_조회가_실패해도_나간_계정_요청의_결과를_적는다() async throws {
+        let subscriptionFails = LockedFlag()
+        subscriptionFails.value = true
+        let meFails = LockedFlag()
+        try await withSocialViewModel(
+            clock: TestClock(now: t0), meFails: meFails, subscriptionFails: subscriptionFails
+        ) { vm, current, meCalls, _ in
+            let ticket = AuthViewModel.AccountRequest(seq: 7, entry: 1)
+            vm.beginAccountRequest = { ticket }
+            var answeredPlans: [String] = []
+            var answeredTickets: [AuthViewModel.AccountRequest?] = []
+            var failedTickets: [AuthViewModel.AccountRequest?] = []
+            vm.onFreshPlan = { _, _, plan, _, request in
+                answeredPlans.append(plan)
+                answeredTickets.append(request)
+            }
+            vm.onAccountRequestFailed = { _, request in failedTickets.append(request) }
+
+            await vm.refreshAll(session: current)
+            XCTAssertFalse(vm.entitlementSnapshotComplete, "구독을 못 받았으니 스냅샷은 미완이다")
+            XCTAssertEqual(meCalls(), 1)
+            XCTAssertEqual(answeredPlans, ["family"], "나간 `/auth/me` 의 답을 세션에 넘긴다")
+            XCTAssertEqual(answeredTickets, [ticket], "보내기 전에 뜬 그 표로 넘긴다")
+            XCTAssertTrue(failedTickets.isEmpty)
+
+            meFails.value = true
+            await vm.refreshAll(session: current)
+            XCTAssertEqual(answeredPlans, ["family"])
+            XCTAssertEqual(failedTickets, [ticket], "`/auth/me` 도 실패했으면 그 실패를 이 진입의 결과로 적는다")
         }
     }
 

@@ -68,6 +68,11 @@ enum StockClipManifestStore {
         storage.recentlyPublished(ownerUserID: ownerUserID, within: window, departedAfter: departedAfter)
     }
 
+    /// **'신호 뒤' 의 공개본**(창 없음) — 상세는 `StockClipManifestStorage.publishedManifest`.
+    static func publishedManifest(ownerUserID: String, departedAfter: Date) -> StockClipListResponse? {
+        storage.publishedManifest(ownerUserID: ownerUserID, departedAfter: departedAfter)
+    }
+
     static func clear(preservingOwnerUserID: String? = nil) {
         storage.clear(preservingOwnerUserID: preservingOwnerUserID)
     }
@@ -191,15 +196,40 @@ final class StockClipManifestStorage: @unchecked Sendable {
     ) -> StockClipListResponse? {
         lock.lock()
         defer { lock.unlock() }
+        guard let publication = currentPublicationLocked(ownerUserID: ownerUserID, departedAfter: departedAfter)
+        else { return nil }
+        let current = self.now()
+        guard publication.departedAt <= current,
+              current.timeIntervalSince(publication.departedAt) < window else { return nil }
+        return publication.manifest
+    }
+
+    /// **'신호 뒤' 의 공개본**(창 없음) — 이 계정의 매니페스트가 `departedAfter` 뒤에 출발해 이
+    /// 프로세스에서 공개됐고 그것이 가장 최근에 본 응답이면 그 공개본, 아니면 nil(= 아직 없다).
+    ///
+    /// 클론 생성이 끝난 뒤의 진행률(`ClonePrerenderDrive`)이 본다(코덱스 #827). 디스크의 공개본은
+    /// 생성이 끝나기 **전에** 출발한 부분 목록일 수 있다 — 그걸로 세면 그 부분이 다 받아진 순간
+    /// '다 받았다' 가 되어, 뒤늦게 만들어진 클립을 안 받은 채 등록이 끝난다.
+    func publishedManifest(ownerUserID: String, departedAfter: Date) -> StockClipListResponse? {
+        lock.lock()
+        defer { lock.unlock() }
+        return currentPublicationLocked(ownerUserID: ownerUserID, departedAfter: departedAfter)?.manifest
+    }
+
+    /// 지금 권위인 공개본과 그 출발 시각 — 이 프로세스에서 공개됐고, 가장 최근에 본 응답이며(`clear`·
+    /// 더 새 응답의 쓰기 실패 뒤에는 nil), 이 계정 것이고, `departedAfter` 보다 먼저 출발하지 않았다.
+    /// ⚠ `lock` 을 쥔 채로 부른다.
+    private func currentPublicationLocked(
+        ownerUserID: String,
+        departedAfter: Date?
+    ) -> (manifest: StockClipListResponse, departedAt: Date)? {
         guard !quarantined,
               publishedRevision > 0, publishedRevision == seenRevision,
               let departedAt = publishedDepartedAt,
               let envelope = cached, envelope.ownerUserID == ownerUserID
         else { return nil }
-        let current = self.now()
-        guard departedAt <= current, current.timeIntervalSince(departedAt) < window else { return nil }
         if let departedAfter, departedAt < departedAfter { return nil }
-        return envelope.manifest
+        return (envelope.manifest, departedAt)
     }
 
     func load(ownerUserID: String?) -> StockClipListResponse? {

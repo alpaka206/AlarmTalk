@@ -280,4 +280,31 @@ final class StockClipManifestStoreTests: XCTestCase {
         XCTAssertNotNil(storage.load(ownerUserID: "owner"), "디스크 시드는 남는다")
         XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "로그인이 바뀌면 이 세션에 받은 것이 아니다")
     }
+
+    /// '신호 뒤' 의 공개본(창 없음, 코덱스 #827) — 클론 등록 진행률은 생성이 끝난 **뒤에 출발해** 공개된
+    /// 목록으로만 센다. 그 전에 출발한 부분 목록으로 세면 그 부분만 받고 '다 받았다' 가 된다.
+    func testPublishedManifestNeedsDepartureAfterSignalButNoWindow() throws {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = TestClock(t0)
+        let storage = makeClockedStorage(clock)
+        XCTAssertEqual(storage.save(manifest("partial"), ticket: storage.beginFetch(session: session("owner"))), .published)
+
+        clock.now = t0.addingTimeInterval(5)
+        let signal = clock.now
+        XCTAssertNil(storage.publishedManifest(ownerUserID: "owner", departedAfter: signal), "신호 전에 출발한 목록은 모른다")
+
+        let afterSignal = storage.beginFetch(session: session("owner"))
+        clock.now = t0.addingTimeInterval(600)
+        XCTAssertEqual(storage.save(manifest("full"), ticket: afterSignal), .published)
+        XCTAssertEqual(
+            storage.publishedManifest(ownerUserID: "owner", departedAfter: signal)?.clips.first?.messageId,
+            "full",
+            "신선도 창과 달리 오래돼도 신호 뒤 공개본이면 쓴다"
+        )
+        XCTAssertNil(storage.recentlyPublished(ownerUserID: "owner", within: 45), "창은 이미 닫혔다")
+        XCTAssertNil(storage.publishedManifest(ownerUserID: "other", departedAfter: signal), "다른 계정의 공개본이 아니다")
+
+        storage.clear(preservingOwnerUserID: "owner")
+        XCTAssertNil(storage.publishedManifest(ownerUserID: "owner", departedAfter: signal), "로그인이 바뀌면 다시 받아야 한다")
+    }
 }

@@ -257,14 +257,27 @@ final class StockClipPrefetcher: ObservableObject {
         return clips.filter { missing.contains(AudioCacheStore.stockCacheKey(messageId: $0.messageId)) }
     }
 
+    /// - Parameter manifestDepartedAfter: **'신호 뒤'** — 주면 그 시각 뒤에 출발해 공개된 매니페스트로만
+    ///   센다(`StockClipManifestStore.publishedManifest`). 아직 없으면 nil(= 모른다)이다. 디스크의
+    ///   공개본은 신호 전에 출발한 부분 목록일 수 있어, 그걸로 세면 그 부분만 받고 '다 받았다' 가 된다
+    ///   (코덱스 #827 — `ClonePrerenderDrive`).
     static func progressOffMain(
         voiceProfileID: String? = nil,
-        language: String = VoiceStudioViewModel.appVoiceLanguage()
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        manifestDepartedAfter: Date? = nil
     ) async -> (done: Int, total: Int)? {
         let owner = KeychainStore.readSession()?.user.id
-        let manifest = await Task.detached(priority: .utility) {
-            StockClipManifestStore.load(ownerUserID: owner)
-        }.value
+        let manifest: StockClipListResponse?
+        if let manifestDepartedAfter {
+            // 공개본은 메모리에 있다 — 디스크를 읽지 않는다.
+            manifest = owner.flatMap {
+                StockClipManifestStore.publishedManifest(ownerUserID: $0, departedAfter: manifestDepartedAfter)
+            }
+        } else {
+            manifest = await Task.detached(priority: .utility) {
+                StockClipManifestStore.load(ownerUserID: owner)
+            }.value
+        }
         guard let manifest, !Task.isCancelled,
               KeychainStore.readSession()?.user.id == owner else { return nil }
         let targets = manifest.clips.filter {

@@ -236,6 +236,50 @@ extension StockClipPrefetcherSupersededTests {
         XCTAssertEqual(SupersededManifestURLProtocol.manifestRequestCount, 2, "서버가 바뀐 것을 아는 자리는 창을 쓰지 않는다")
     }
 
+    /// 클론 등록 진행률(`ClonePrerenderDrive`)은 **신호 뒤의 공개본으로만** 센다(코덱스 #827). 디스크에는
+    /// 생성이 끝나기 전에 출발한 부분 목록이 있을 수 있다 — 그걸로 세면 그 부분만 받은 채 '다 받았다' 가 된다.
+    func test_신호_뒤_진행률은_신호_전에_출발한_부분_목록으로_세지_않는다() async throws {
+        let previous = KeychainStore.readSession()
+        try KeychainStore.saveSession(session)
+        defer {
+            if let previous { try? KeychainStore.saveSession(previous) } else { KeychainStore.deleteSession() }
+        }
+        let clone = "clone-progress-signal"
+        func cloneClip(_ id: String) -> StockClip {
+            StockClip(
+                messageId: id, voiceProfileId: clone, voiceName: nil, category: "weather", language: "ko",
+                text: "오늘은 맑아요", audioUrl: "https://r2.example/\(id).mp3", variant: nil, renderedForCurrentVoice: nil
+            )
+        }
+        let partial = StockClipManifestStore.beginFetch(session: session)
+        XCTAssertEqual(
+            StockClipManifestStore.save(
+                StockClipListResponse(clips: [cloneClip("partial-1")], expectedVariants: nil, legacyBucketHints: nil),
+                ticket: partial
+            ),
+            .published
+        )
+        let signal = partial.departedAt.addingTimeInterval(0.001)
+
+        let fromDisk = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone)
+        XCTAssertEqual(fromDisk?.total, 1, "신호 없이 세면 디스크의 부분 목록으로 센다")
+        let beforeSignal = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone, manifestDepartedAfter: signal)
+        XCTAssertNil(beforeSignal, "신호 뒤의 공개본이 아직 없으면 모른다 — 끝났다고 하지 않는다")
+
+        try await Task.sleep(nanoseconds: 5_000_000)
+        let full = StockClipManifestStore.beginFetch(session: session)
+        XCTAssertGreaterThanOrEqual(full.departedAt, signal)
+        XCTAssertEqual(
+            StockClipManifestStore.save(
+                StockClipListResponse(clips: [cloneClip("partial-1"), cloneClip("late-2")], expectedVariants: nil, legacyBucketHints: nil),
+                ticket: full
+            ),
+            .published
+        )
+        let afterSignal = await StockClipPrefetcher.progressOffMain(voiceProfileID: clone, manifestDepartedAfter: signal)
+        XCTAssertEqual(afterSignal?.total, 2, "뒤늦게 만들어진 클립까지 센다")
+    }
+
     /// 로그아웃·계정 전환(`clear`) 뒤에는 창이 닫힌다 — 같은 계정으로 다시 들어와도 다시 받는다.
     func test_clear_뒤에는_창이_닫혀_다시_받는다() async throws {
         let fetched = manifest(["cleared-1"])
