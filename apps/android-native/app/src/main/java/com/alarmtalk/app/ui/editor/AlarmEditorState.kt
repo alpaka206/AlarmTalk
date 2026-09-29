@@ -517,6 +517,24 @@ internal class AlarmEditorState(
         clearTtsMeta()
     }
 
+    /**
+     * 목소리가 비어 있을 때 편집기가 **대신 고른다** — `AlarmEditorScreen` 의 기본 목소리
+     * 선택 `LaunchedEffect`. 사용자가 목소리를 바꾼 게 아니다.
+     *
+     * ⚠ **쳐 둔 직접 입력 문구를 지우지 않는다**(2026-09-29 리뷰). [selectVoiceProfile] 은 기본
+     * 목소리로 바뀌면 문구를 비우는데, 그건 사용자가 "문구가 사라져요" 를 확인하고 목소리를
+     * **바꿀 때**의 규칙이다(`VoiceAudioCard` 의 `losesManualText`). 자동 선택에서 그러면 직전
+     * 선택으로 이은 직접 입력 문구(새 알람·알람 전용 → 목소리, 둘 다 목소리가 비어 있다)가 말없이
+     * 사라지고, 스톡 클립 효과가 그 자리에 테마를 붙인다 — 유료의 `manualChosen` 가드는 이미
+     * 지워진 문구를 못 본다. 무료 등급은 그 효과가 여전히 테마로 강제한다(직접 입력 잠금).
+     * iOS 는 기본 선택이 문구를 비우지 않는다(`AlarmEditorSheet.selectDefaultVoiceProfileIfNeeded`).
+     */
+    fun preselectVoiceProfile(profileId: String) {
+        val typedManualText = voiceText.takeIf { hasTypedManualText() }
+        selectVoiceProfile(profileId)
+        if (typedManualText != null) voiceText = typedManualText
+    }
+
     fun ttsTextForSave(): String = if (voiceRandomPrompt) "" else voiceText.trim()
 
     fun hasFreshTtsAudio(profileId: String, text: String, listenerTitle: String? = null): Boolean {

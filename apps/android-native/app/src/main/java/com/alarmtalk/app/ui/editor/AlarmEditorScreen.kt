@@ -1364,7 +1364,8 @@ internal fun AlarmEditorScreen(
                 familyVoiceIds = readyFamilyVoiceIds,
                 systemVoiceIds = readySystemVoiceIds,
                 profileLoadFinished = voiceProfileLoadFinished,
-            )?.let(editor::selectVoiceProfile)
+            // 자동 선택은 쳐 둔(이어받은) 직접 입력 문구를 비우지 않는다 — `preselectVoiceProfile` 주석.
+            )?.let { editor.preselectVoiceProfile(it) }
         }
     }
 

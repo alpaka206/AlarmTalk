@@ -619,6 +619,38 @@ class AlarmEditorStateTest {
     }
 
     /**
+     * **자동 선택된 기본 목소리가 이은 직접 입력 문구를 지우지 않는다**(2026-09-29 리뷰).
+     * 알람 전용 알람은 목소리가 비어 저장되므로(`toDraft`), '목소리' 로 바꾸면 직전 직접 입력
+     * 문구를 이은 **뒤에** 편집기가 마지막에 쓴 목소리를 고른다. 그게 기본 목소리일 때
+     * `selectVoiceProfile` 의 기본 목소리 갈래가 문구를 비우면, 스톡 클립 효과가 그 자리에
+     * 테마를 붙여 이은 문구가 말없이 사라졌다(유료의 `manualChosen` 가드는 빈 문구를 못 본다).
+     */
+    @Test
+    fun preselectedSystemVoiceKeepsTheAdoptedManualText() {
+        val editor = AlarmEditorState.from(alarm = alarmOnlyEntity())
+        editor.applyAlarmOutput(
+            voice = true,
+            sound = false,
+            signedIn = true,
+            lastMessageContext = "cheer",
+            lastManualText = "회의 자료 챙겨",
+        )
+        assertNull(editor.voiceProfileId)
+
+        // 기본 목소리 선택 `LaunchedEffect` 가 부르는 그대로.
+        editor.preselectVoiceProfile(systemVoiceA)
+
+        assertEquals(systemVoiceA, editor.voiceProfileId)
+        assertEquals("회의 자료 챙겨", editor.voiceText)
+        assertTrue(editor.hasTypedManualText())
+
+        // 사용자가 기본 목소리로 **바꾸는** 것은 예전 그대로 문구를 비운다 — 목소리 시트가
+        // "직접 입력한 문구는 사라져요" 를 확인받은 교체다(`VoiceAudioCard` 의 `losesManualText`).
+        editor.selectTtsVoice(systemVoiceB, lastMessageContext = null, lastManualText = null)
+        assertEquals("", editor.voiceText)
+    }
+
+    /**
      * **테마가 있던 알람은 직접 녹음을 거쳐 다른 기본 목소리로 가도 자기 테마를 지킨다**
      * (2026-09-29 리뷰). 잇기 판정을 `selectVoiceProfile` **뒤**에 하면, 기본 목소리 교체가
      * 테마·랜덤·문구를 비운 상태를 '문구 없음' 으로 읽어 계정의 직전 선택으로 덮었다 —
