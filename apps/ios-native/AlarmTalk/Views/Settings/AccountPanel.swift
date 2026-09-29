@@ -49,7 +49,7 @@ struct AccountPanel: View {
             Divider()
             Button {
                 // ⚠ **즉시 로그아웃하지 않는다.** 누르는 순간 나가지면 잘못 눌렀을 때
-                // 되돌릴 수 없다(안드로이드 `SettingsScreen.kt:143-147` 도 확인을 먼저 띄운다).
+                // 되돌릴 수 없다(안드로이드 `SettingsScreen.kt:135-139` 도 확인을 먼저 띄운다).
                 logoutConfirming = true
             } label: {
                 HStack {

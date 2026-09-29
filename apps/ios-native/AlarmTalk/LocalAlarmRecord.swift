@@ -108,7 +108,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     ///
     /// ⚠ **날씨·운세 테마는 전진하지 않는다.** 그 둘은 '조건에 맞는 클립' 을 고르는
     /// 것이라(비 오는 날엔 비 문구) 순서를 돌리면 엉뚱한 문구가 나온다. 안드로이드
-    /// `MATCHING_BUCKET_IDS` 와 같은 이유다.
+    /// `MatchingBucketIds` 와 같은 이유다.
     var bucketRotationIndex: Int?
 
     /// 날씨 테마가 **실제 예보로 확정한** 클립 자리(0-based, `StockClip.variant` 와 같은 축).
@@ -636,7 +636,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 }
 
 // MARK: - Validation
-// Android `AlarmRepository.kt:471-484` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
+// Android `AlarmRepository.kt:468-481` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
 enum LocalAlarmValidationError: LocalizedError, Equatable {
     case invalidHour
     case invalidMinute

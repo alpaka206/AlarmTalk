@@ -54,7 +54,7 @@ struct MenuView: View {
             VStack(alignment: .leading, spacing: 0) {
                 SettingsValueButton(label: "이용권", action: onOpenBilling)
                 Divider()
-                // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:233-243`).
+                // ⚠ **공유 이용권 유무로 갈린다**(안드로이드 `HomeComponents.kt:219-229`).
                 // 그룹이 없는 사람에게 '구성원 관리' 를 보여주면 관리할 게 없는 화면으로
                 // 보내고, 정작 필요한 **코드 등록** 경로가 더보기에 없어진다.
                 if hasSharedPass {

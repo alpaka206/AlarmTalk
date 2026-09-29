@@ -9,10 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmTimeCalculator
-import com.alarmtalk.app.data.DynamicPromptPreferences
-import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
 import com.alarmtalk.app.network.FamilyVoiceProfile

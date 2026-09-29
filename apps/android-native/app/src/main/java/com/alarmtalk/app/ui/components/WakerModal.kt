@@ -2,8 +2,6 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import com.alarmtalk.app.clearFocusOnOutsideTap
-import com.alarmtalk.app.WakerChipShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement

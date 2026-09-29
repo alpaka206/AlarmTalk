@@ -85,7 +85,7 @@ struct MessageSettingsPane: View {
     /// 다이얼로그를 띄우기 **직전**의 문구 종류. 취소하면 여기로 되돌린다(`select(_:)` 주석).
     @State private var contextBeforeDialog: String?
 
-    /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:502-509`) 순서 그대로.
+    /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:480-487`) 순서 그대로.
     private static let options: [(id: String, label: String)] = [
         ("preset", "기본 인사말"),
         ("wake_weather", "날씨"),

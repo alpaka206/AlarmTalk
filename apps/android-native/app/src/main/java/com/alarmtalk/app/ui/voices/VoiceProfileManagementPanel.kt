@@ -18,7 +18,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,16 +35,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
@@ -72,7 +68,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -82,8 +77,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.alarmtalk.app.clearFocusOnOutsideTap
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmVoiceRecorder
@@ -343,7 +336,6 @@ internal fun VoiceProfileManagementPanel(
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
     // 두 번째 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
     onCreateVoiceProfile: (VoiceProfileCreationDraft, Boolean) -> Boolean,
-    onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
@@ -498,8 +490,8 @@ internal fun VoiceProfileManagementPanel(
     // 지금 3일 — 2026-08-31 정정, 예전 주석의 '30일' 은 TTS 캐시 TTL·Play 계정보류와 섞인
     // 값이었다) UI 에는 노출하지 않는다. 유료여야 쓸 수 있는데 보여 주면 미리듣기·이름 수정·
     // 공유·**삭제**까지 눌리기 때문이다. 유예가 남았다는 안내는 여기 두지 않는다 —
-    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`,
-    // `msg_gb_free_plan_voice_alarms_locked`). 여기 붙이면 무료로 지내는 내내 같은 말이
+    // 강등·잠금 순간의 1회성 안내가 이미 기한과 결과를 말한다(`downgrade_notice_free_message`
+    // — `DowngradeNoticeStore` 대기표로 띄우는 모달). 여기 붙이면 무료로 지내는 내내 같은 말이
     // 영구히 보인다(2026-08-11 에 알람 행에서 같은 이유로 걷어냈다 —
     // `ControlsAndPermissions.kt` 주석).
     // 복구는 재구독 즉시가 아니라 **다음 TTS 합성 때** 지연 재클론이다(`recloneEvictedVoiceProfile`).

@@ -1,7 +1,6 @@
 package com.alarmtalk.app.data
 
 import android.content.Context
-import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmScheduler
@@ -9,12 +8,10 @@ import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
-import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.HolidayApi
 import com.alarmtalk.app.network.toPublicHolidayDates
-import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -1513,7 +1510,7 @@ class AlarmRepository(
     private fun advancedBucketRotationIndex(alarm: AlarmEntity): Int {
         val size = alarm.bucketClipKeys().size
         if (alarm.bucketId == null || size <= 1) return alarm.bucketRotationIndex
-        if (alarm.bucketId in MATCHING_BUCKET_IDS) return alarm.bucketRotationIndex
+        if (alarm.bucketId in MatchingBucketIds) return alarm.bucketRotationIndex
         return (alarm.bucketRotationIndex + 1) % size
     }
 
@@ -2057,18 +2054,6 @@ class AlarmRepository(
         }
     }
 
-    /** 토글 아래 표시할 다가오는 공휴일 목록(선택 국가 기준, 기본 5개). */
-    suspend fun upcomingHolidays(
-        countryCode: String,
-        from: LocalDate = currentLocalDate(System.currentTimeMillis()),
-        count: Int = 5,
-    ): List<HolidayDate> =
-        holidayCalendarStore.upcomingHolidays(
-            countryCode = countryCode,
-            from = from,
-            count = count,
-        )
-
     /**
      * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시
      * 이 메서드를 호출해 DynamicVoiceRefreshWorker(WorkManager)를 예약한다.
@@ -2087,16 +2072,11 @@ class AlarmRepository(
             Log.w(TAG, "Failed to schedule voice refresh worker id=${alarm.id}", error)
         }
     }
-
-    private companion object {
-        // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
-        // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
-        val MATCHING_BUCKET_IDS = MatchingBucketIds
-    }
 }
 
 /**
  * **조건/테마로 클립을 고르는 버킷** — 순차 회전이 아니라 절대 인덱스로 고른다.
+ * bucketId 는 백엔드 category 와 같은 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
  *
  * ⚠ 이 버킷들은 `contextVariantIndex`(날씨) 나 사주 입력(운세)이 있어야 제 클립을 고른다.
  *   그 값이 없는 채로 전체 세트를 묶으면 날씨는 **마지막 '못 알아봤어요' 클립**으로,

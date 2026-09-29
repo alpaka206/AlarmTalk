@@ -101,7 +101,7 @@ struct VoiceProfileManagementPanel: View {
 
     var body: some View {
         // ⚠ **페이지 대제목('목소리')을 두지 않는다.** 하단 탭 라벨이 이미 위치를 말해주고,
-        // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(안드로이드 `AlarmListScreen.kt:212`
+        // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(안드로이드 `AlarmListScreen.kt:208`
         // 주석과 알람 탭의 무제목 규칙에 맞춤).
         //
         // ⚠ **'목소리 슬롯' 진행바 카드도 두지 않는다.** 안드로이드에 없는 컨트롤이다 —
@@ -397,7 +397,7 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 섹션 헤더 오른쪽 — 남은 생성 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1274-1305`.
+    /// 섹션 헤더 오른쪽 — 남은 생성 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1266-1297`.
     private var addVoiceHeaderTrailing: some View {
         HStack(spacing: 10) {
             // ⚠ **유료만 숫자를 본다.** 무료에게 '생성 가능 0/1회'는 마치 이용권만 있으면
@@ -409,7 +409,7 @@ struct VoiceProfileManagementPanel: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
             Button {
-                // ⚠ **세 갈래를 구분한다**(안드로이드 `VoiceProfileManagementPanel.kt:1293-1299`).
+                // ⚠ **세 갈래를 구분한다**(안드로이드 `VoiceProfileManagementPanel.kt:1285-1291`).
                 // 무료면 이용권 안내, 유료인데 이번 달을 다 썼으면 한도 안내.
                 // 예전에는 둘 다 이용권 안내로 보내, 이용권이 있는 사람에게 이용권을
                 // 사라고 말하고 있었다.
@@ -560,7 +560,7 @@ struct VoiceProfileManagementPanel: View {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
                 }
                 // ⚠ **부가설명도 ⋮ 도 두지 않는다.** 섹션 이름이 이미 '기본 목소리' 라고
-                // 말하고, 이 행에는 관리할 게 없다(안드로이드 `VoiceProfileManagementPanel.kt:1411`).
+                // 말하고, 이 행에는 관리할 게 없다(안드로이드 `VoiceProfileManagementPanel.kt:1403`).
                 // 행 전체가 미리듣기다.
                 VoiceCatalogRow(
                     name: profile.name,
@@ -573,7 +573,7 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
-    /// 사전렌더 상태 폴링. 안드로이드는 5초 간격으로 돈다(`VoiceProfileManagementPanel.kt:979-1036`).
+    /// 사전렌더 상태 폴링. 안드로이드는 5초 간격으로 돈다(`VoiceProfileManagementPanel.kt:971-1028`).
     ///
     /// ⚠ **끝나면 멈춘다.** 준비 중(`pending`)인 목소리가 없으면 루프를 빠져나온다 —
     /// 안 그러면 목소리 탭을 열어 둔 내내 5초마다 네트워크를 친다.

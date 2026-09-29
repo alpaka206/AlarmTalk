@@ -8,7 +8,6 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.AccessTicket
 import com.alarmtalk.app.EntitlementWrite
 import com.alarmtalk.app.EntitlementWriter

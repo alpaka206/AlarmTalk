@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 알람 리스트의 한 줄 — 독립 카드.
 ///
-/// Android `ui/components/ControlsAndPermissions.kt:215-386` 의 `AlarmRow` 미러.
+/// Android `ui/components/ControlsAndPermissions.kt` 의 `AlarmRow` 미러.
 /// 본문 탭은 알람 편집 진입, 토글·삭제 액션은 부모(AlarmsListView)에 위임해 본
 /// 컴포넌트는 순수 표시 + 콜백 호출만 책임진다. 표면은 surface + outlineVariant 테두리에
 /// WakerCardShape(22) 라운드, 18 패딩으로 그 자체가 한 장의 카드다.
@@ -314,7 +314,7 @@ struct AlarmRow: View {
         // 화면에서 언제든 확인된다.
         // 이제 `DowngradeNoticeStore` 대기표 → **1회성 모달**이 이 일을 맡는다.
         // ⚠ **동기화 실패(syncFailed)는 행에 띄우지 않는다.** 기준은 안드로이드
-        // `ControlsAndPermissions.kt:577-582` 그대로다 — "사용자가 할 일이 있는가.
+        // `ControlsAndPermissions.kt` 의 `alarmRowNotice` 위 주석 그대로다 — "사용자가 할 일이 있는가.
         // 없으면 넣지 않는다." 서버 저장 실패는 다음 sync 가 알아서 재시도하므로
         // 사용자가 할 일이 없는데, 빨간 경고 톤이라 멀쩡한 알람이 '고장' 으로 읽힌다.
         return nil
@@ -388,7 +388,7 @@ private extension LocalAlarmRecord {
 
 /// 선택 모드 상단 바 — 오른쪽에 [취소][삭제] 둘만.
 ///
-/// 안드로이드 `AlarmListScreen.kt:382-407`. 선택 개수는 행마다 체크 표시로 이미 보이므로
+/// 안드로이드 `AlarmListScreen.kt:377-402`. 선택 개수는 행마다 체크 표시로 이미 보이므로
 /// 숫자를 따로 쓰지 않고, 취소·삭제를 오른쪽에 나란히 둬 엄지 이동을 줄인다
 /// (되돌릴 수 없는 삭제가 바깥쪽).
 struct AlarmSelectionBar: View {

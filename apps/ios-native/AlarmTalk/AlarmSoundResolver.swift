@@ -54,7 +54,7 @@ enum AlarmSoundPlan: Equatable {
 // 출력:
 //   - AlarmSoundResolution: AlarmKit 에 넘길 sound 전략
 //
-// 규칙 (Android `RingingService.kt:141-197` 의 alarm_only / voice_only /
+// 규칙 (Android `RingingService.startRingingAudio` 의 alarm_only / voice_only /
 // sound_then_voice 분기를 iOS 의 AlarmKit 제약 안에서 재현):
 //
 //   1. playMode != alarm_only 이고 audioCacheKey 가 있고 파일이 존재하면

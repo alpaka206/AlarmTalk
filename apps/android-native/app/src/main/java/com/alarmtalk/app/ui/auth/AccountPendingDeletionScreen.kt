@@ -26,7 +26,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
 
 /**
  * 탈퇴 유예(pending_deletion) 상태로 로그인했을 때 표시되는 화면.

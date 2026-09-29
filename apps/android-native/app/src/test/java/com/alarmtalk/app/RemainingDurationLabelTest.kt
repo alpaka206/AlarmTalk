@@ -1,7 +1,6 @@
 package com.alarmtalk.app
 
 
-import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith

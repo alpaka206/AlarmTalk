@@ -26,7 +26,7 @@
     <string name="auth_email_verify">이메일 인증</string>
     <string name="auth_email_verify_done">이메일 인증 완료</string>
     <string name="auth_email_verify_resend">인증 코드 다시 받기</string>    <string name="auth_find_password">비밀번호 찾기</string>
-    <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>    <string name="auth_or">또는</string>
+    <string name="auth_forgot_password">비밀번호를 잊으셨나요?</string>
     <string name="auth_social_divider">간편 로그인</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
@@ -138,20 +138,11 @@
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
     <string name="common_google_continue">Google로 계속하기</string>
     <string name="common_google_login">Google로 로그인</string>
-    <string name="common_permission_allow_action">허용하기</string>
-    <string name="common_permission_allow_all">필요 권한 모두 허용</string>
-    <string name="common_permission_exact_alarm_label">정확한 알람</string>
-    <string name="common_permission_full_screen_label">전체 화면 알람</string>
     <string name="common_permission_gate_allow_action">허용하기</string>
     <string name="common_permission_gate_exact_alarm_title">정확한 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_mic_title">마이크 권한이 필요해요</string>
     <string name="common_permission_gate_notifications_title">알림 권한을 허용해야 알람을 설정할 수 있어요</string>
-    <string name="common_permission_granted">허용됨</string>
-    <string name="common_permission_mic_label">마이크</string>
-    <string name="common_permission_notifications_label">알림</string>
-    <string name="common_permission_required">필요함</string>
-    <string name="common_permission_title">권한</string>
     <string name="common_tab_billing">이용권</string>
     <string name="common_tab_code_register">코드 등록</string>
     <string name="common_voice_capture_mode_file">파일</string>
@@ -204,11 +195,7 @@
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
-    <string name="editor_holiday_show_title">다가오는 공휴일</string>
-    <string name="editor_holiday_cold_cache">불러오는 중…</string>
     <string name="editor_manual_input_placeholder">알람에서 들려줄 문구를 입력해 주세요</string>
-    <string name="editor_minute_label">분</string>
-    <string name="editor_minutes">%1$d분</string>
     <string name="editor_no_voice_profile">아직 사용할 목소리가 없어요.</string>
     <string name="editor_off">꺼짐</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
@@ -369,7 +356,6 @@
     <string name="msg_gb_code_register_failed">코드 등록에 실패했어요</string>
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 3일 안에 다시 등록하면 복구되고, 지나면 목소리가 영구 삭제돼요.</string>
     <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**이라 행마다 경고를
          붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다.
          ⚠ 무료 잠금은 2026-09-29 부터 **기본 목소리**로 바꾼다(알람음이 아니다 —
@@ -478,8 +464,6 @@
     <string name="rd_audio_open_failed">선택한 오디오 파일을 열 수 없어요.</string>
     <string name="rd_audio_over_limit_trim_failed">%1$d초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.</string>
     <string name="rd_audio_trim_failed">선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.</string>
-    <string name="rd_copied_alarm_label">복사한 알람</string>
-    <string name="rd_copied_alarm_label_suffix">%1$s 복사본</string>
     <string name="rd_default_alarm_label">알람</string>
     <string name="rd_duplicate_alarm_time_message">이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요.</string>
     <string name="rd_slide_to_dismiss">밀어서 끄기</string>
@@ -604,7 +588,6 @@
     <string name="voices_reupload">재업로드</string>
     <string name="voices_select_file_first">파일을 선택해 주세요.</string>
     <string name="voices_selected_audio_unusable">선택한 오디오를 사용할 수 없어요.</string>
-    <string name="voices_sharing_shared_desc_disabled">공유는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_desc_enabled">등록한 목소리를 가족·연인도 함께 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인에게 공유 허용</string>
     <string name="voices_step_sharing">공유 설정</string>
@@ -658,9 +641,6 @@
     <string name="label_vibration_sos">SOS</string>
     <string name="label_vibration_off">꺼짐</string>
     <string name="label_vibration_basic_call">기본</string>
-    <string name="editor2_cat_morning">기상</string>
-    <string name="editor2_cat_love">사랑</string>
-    <string name="editor2_cat_medication">약</string>
     <string name="editor2_ctx_wake_weather">날씨</string>
     <string name="editor2_ctx_wake_fortune">운세</string>
     <string name="editor2_ctx_love">응원</string>
@@ -691,8 +671,6 @@
     <string name="editor2_quiet_days_weekend">주말</string>
     <string name="editor2_quiet_days_everyday">매일</string>
     <string name="editor2_fortune_time_unknown">시간 모름</string>
-    <string name="editor2_weather_location_prompt">도시를 입력해 주세요.</string>
-    <string name="editor2_fortune_info_prompt">성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>
     <string name="voices2_record_min_duration">12초 이상 녹음해 주세요.</string>
     <string name="voices2_register_under_two_minutes">2분 이하 음성으로 등록할 수 있어요.</string>
@@ -815,11 +793,6 @@
     <string name="r3dlg_pending_deletion_processing">처리 중…</string>
     <string name="r3dlg_pending_deletion_recover">탈퇴 취소하고 계속 사용하기</string>
     <string name="r3dlg_pending_deletion_logout">로그아웃</string>
-    <string name="r3ed_time_until_days">약 %1$d일 뒤에 울려요</string>
-    <string name="r3ed_time_until_days_hours">약 %1$d일 %2$d시간 뒤에 울려요</string>
-    <string name="r3ed_time_until_minutes">%1$d분 뒤에 울려요</string>
-    <string name="r3ed_time_until_hours">%1$d시간 뒤에 울려요</string>
-    <string name="r3ed_time_until_hours_minutes">%1$d시간 %2$d분 뒤에 울려요</string>
     <string name="r3ed_google_signin_error_config">Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요.</string>
     <string name="r3ed_google_signin_error_network">네트워크 연결을 확인한 뒤 다시 시도해 주세요.</string>
     <string name="r3ed_google_signin_error_failed">Google 로그인에 실패했어요.</string>
@@ -836,7 +809,6 @@
     <string name="r3misc_consent_required">계속하려면 필수 동의가 필요해요.</string>
     <string name="r3misc_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
-    <string name="r3misc_google_signin_failed">Google 로그인에 실패했어요</string>
 
     <string name="r3misc_notif_received_alarm_sent">%1$s이 알람을 보냈어요.</string>
     <string name="r3misc_notif_received_alarm_sent_other">상대가 알람을 보냈어요.</string>

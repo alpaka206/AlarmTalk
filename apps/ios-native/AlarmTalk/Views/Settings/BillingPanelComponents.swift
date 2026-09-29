@@ -288,7 +288,7 @@ struct PlanCard: View {
 }
 
 /// 플랜 카드 안의 기능 한 줄(점 + 텍스트). Android `PlanFeatureRow`
-/// (BillingPanels.kt:663-680): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
+/// (BillingPanels.kt:649-666): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
 struct PlanFeatureRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let text: LocalizedStringKey

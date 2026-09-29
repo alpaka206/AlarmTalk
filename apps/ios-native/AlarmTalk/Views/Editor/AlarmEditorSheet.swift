@@ -75,7 +75,7 @@ struct AlarmEditorSheet: View {
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
-    /// (안드로이드 `VoiceAudioCard.kt:194-201` 의 `pendingVoiceSwitch`).
+    /// (안드로이드 `VoiceAudioCard.kt:166-173` 의 `pendingVoiceSwitch`).
     @State var pendingVoiceSwitch: VoiceSelectionSheet.Option?
     @State var selectedFamilyRecipientID: String?
     @State var voiceSourceMode: VoiceSource = .ttsProfile
@@ -337,7 +337,7 @@ struct AlarmEditorSheet: View {
                 }
 
                 // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드
-                // `ScheduleDetailsCard`(`AlarmEditorControls.kt:47-77`)에는 라벨 입력이
+                // `ScheduleDetailsCard`(`AlarmEditorControls.kt`)에는 라벨 입력이
                 // 없다 — 있다고 적혀 있던 옛 주석은 사실이 아니었다(`editor_label_alarm_name`
                 // 문자열 자체가 존재하지 않는다). 알람 행 둘째 줄은 라벨이 아니라
                 // '다음 울릴 날짜 · 목소리' 라, 라벨을 채워도 어디에도 보이지 않는다.
@@ -740,7 +740,7 @@ struct AlarmEditorSheet: View {
 
     /// 에디터의 모든 미리듣기를 끄는 단일 진입점(change 4). 흩어져 있던
     /// previewPlayer.stop()/localPreviewPlayer.stop()/previewingStockMessageID=nil 을 대체한다.
-    /// Android `stopPreview` (AlarmEditorScreen.kt:280-288) 미러.
+    /// Android `stopPreview` (AlarmEditorScreen.kt:269-277) 미러.
     func stopAllEditorPreviews() {
         editorPreviewPlayer.stop()
         // 공유 음성 미리듣기는 voiceStudio.previewPlayer 경로를 쓰므로 함께 정지해
@@ -750,7 +750,7 @@ struct AlarmEditorSheet: View {
     }
 
     // ⚠ **사용 가이드 시트를 되살리지 말 것.** 안드로이드 편집기에는 없다
-    // (`AlarmEditorScreen.kt:1269` 주석: "상단바(제목·뒤로가기·가이드)는 제거하고,
+    // (`AlarmEditorScreen.kt:1223` 주석: "상단바(제목·뒤로가기·가이드)는 제거하고,
     // 취소·저장을 하단에 모았다"). 게다가 그 가이드의 2번 카드는 지금은 없는
     // '알람 + 음성' 모드를 설명하고 있었다 — 안내가 제품보다 오래 남으면 거짓말이 된다.
 
@@ -1133,7 +1133,7 @@ struct AlarmEditorSheet: View {
     ///
     /// ⚠ **기본(시스템) 목소리 4종을 전부 노출한다.** 예전에는 '기본으로 설정해 둔 1개'
     /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
-    /// (안드로이드 `VoiceAudioCard.kt:130-133` 주석).
+    /// (안드로이드 `VoiceAudioCard.kt:104-107` 주석).
     var voiceProfileOptions: [VoiceSelectionSheet.Option] {
         let own = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
@@ -1859,7 +1859,7 @@ struct AlarmEditorSheet: View {
         target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.fortuneReady == true
     }
 
-    /// 음성 기능 접근 등급 (Android `AlarmEditorScreen.kt:144-146` 미러).
+    /// 음성 기능 접근 등급 (Android `AlarmEditorScreen.kt:133-135` 미러).
     /// - loggedOut: 로그아웃. 음성 모드 자체가 잠긴다 (alarm_only 강제).
     /// - free: 로그인했으나 유료 음성 권한 없음. 음성은 쓰되 시스템 보이스 +
     ///   랜덤 preset 으로만 제한된다.
@@ -2112,7 +2112,7 @@ struct AlarmEditorSheet: View {
         voiceStudio.randomPrompt = false
     }
 
-    /// 무료 등급 음성 제약을 강제한다 (Android `AlarmEditorScreen.kt:863-882` 미러).
+    /// 무료 등급 음성 제약을 강제한다 (Android `AlarmEditorScreen.kt:817-836` 미러).
     /// `freeVoiceTier && playMode != .alarmOnly` 일 때 음성을 다음 4-값으로 고정한다:
     /// tts_profile 소스 + randomPrompt=true + randomContext='preset' + translate=false.
     /// 값이 실제로 달라질 때만 재할당하고 preparedAlarm 을 무효화한다(무한 무효화 방지).

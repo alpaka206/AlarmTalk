@@ -6,14 +6,14 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
     @Published private(set) var isPlaying = false
     /// 네트워크 미리듣기(스톡/공유 음성)가 음원을 받아오는 동안 true. 다운로드/생성이
     /// 진행되는 구간에 스피너를 띄우고, 실제 재생이 시작되거나 실패하면 false 로 내린다.
-    /// Android `previewPreparing` (AlarmEditorScreen.kt:182) 미러.
+    /// Android `previewPreparing`(`AlarmEditorScreen.kt`) 미러.
     @Published private(set) var isPreparing = false
 
     var onFinish: (() -> Void)?
 
     private var player: AVAudioPlayer?
     /// stopAfterMs 윈도우를 위한 예약 정지 작업. AVAudioPlayer 는 종료 시각 지정을
-    /// 지원하지 않으므로 Android `scheduleAutoStop` 처럼 타이머로 정지를 흉내낸다.
+    /// 지원하지 않으므로 타이머로 정지를 흉내낸다(안드로이드 편집기 미리듣기는 끝 시각을 쓰지 않는다).
     /// stop()/재생 종료 시 반드시 취소해 다음 미리듣기를 끊지 않도록 한다.
     /// Swift 6 엄격 동시성: @Sendable DispatchWorkItem 에서 @MainActor stop() 을 직접
     /// 호출하면 데이터 레이스 오류가 나므로 @MainActor Task 로 정지를 예약한다.
@@ -44,7 +44,7 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
 
     /// 크롭 윈도우 미리듣기. `startMs` 로 시작 위치를 맞추고, `stopAfterMs` 가 주어지면
     /// 그 길이만큼 재생 후 자동 정지한다(알람 구간만 들려주기 위함).
-    /// Android `startPreparedPreview(startMillis, stopAfterMillis)` 미러.
+    /// (안드로이드 `startPreparedPreview` 는 이 두 인자를 받지 않는다 — 넘기는 호출이 없어 2026-09-29 에 걷었다.)
     /// - Parameter volumePercent: `nil` 이면 게인을 건드리지 않는다(목소리 고르는 자리의
     ///   미리듣기는 기본 크기다). 값이 있으면 **`play()` 전에** 걸어 첫 샘플부터 그 크기로
     ///   나가게 한다. 울림 경로(AlarmVoicePlayer.swift)가 이미 그렇게 하고,

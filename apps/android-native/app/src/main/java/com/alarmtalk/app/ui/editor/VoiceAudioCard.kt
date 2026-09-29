@@ -1,39 +1,23 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -42,19 +26,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.AlarmAudioLimits
-import com.alarmtalk.app.data.AlarmPlayModes
-import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
@@ -85,8 +62,6 @@ internal fun VoiceAudioCard(
     onNeedsClipPreparation: (String) -> Boolean = { false },
     /** 준비 화면으로 보낸다. */
     onOpenClipPreparation: (String) -> Unit = {},
-    voiceEnabled: Boolean,
-    onVoiceEnabledChange: (Boolean) -> Unit,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     /**
@@ -96,7 +71,6 @@ internal fun VoiceAudioCard(
     settlingVoiceProfileIds: Set<String> = emptySet(),
     voiceProfileBusy: Boolean,
     voiceProfileLoadFinished: Boolean,
-    stockClips: List<com.alarmtalk.app.network.StockClip>,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
     /** 아직 고를 수 없는 목소리를 눌렀을 때 이유를 알린다(교체 정리 중 등). */
@@ -154,8 +128,6 @@ internal fun VoiceAudioCard(
         if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
             onOpenClipPreparation(option.id)
         } else {
-        // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
-        if (!voiceEnabled) onVoiceEnabledChange(true)
         if (option.id == VoiceSources.LOCAL_AUDIO) {
             // ⚠ **옮겨오기 전 오디오를 지운다**(2026-08-16 지적 "녹음 안 했는데 녹음 완료라고
             // 뜨고 알람 문구 소리가 난다"). `localAudioUri` 는 **녹음 전용이 아니라** 캐시된
@@ -262,107 +234,105 @@ internal fun VoiceAudioCard(
                 preparingVoiceId = previewPreparingVoiceId,
             )
         }
-        if (voiceEnabled) {
-            if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
-                // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
-                // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
-                if (voiceProfileBusy || (!voiceProfileLoadFinished && profileOptions.isEmpty())) {
-                    MutedText(stringResource(R.string.editor_voice_loading))
-                } else if (profileOptions.isEmpty()) {
-                    NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
-                } else {
-                    // 문구·목소리 크기를 하나의 카드+구분선으로 묶는다(목소리 선택은 위 카드로 분리).
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerCardShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = wakerCardBorder(),
-                    ) {
-                        Column {
-                            // ⚠ **행은 하나다**(2026-09-02). 유료·무료가 같은 문구 목록을
-                            // 쓰므로 요약 행도 갈리지 않는다 — 갈라 두면 같은 상태를 두 곳이
-                            // 다르게 읽는 사고가 반복된다.
-                            MessageModeSummaryRow(
-                                // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
-                                isManual = editor.isManualForDisplay(),
-                                randomContext = editor.voiceRandomContext,
-                                weatherCity = editor.voiceWeatherCity,
-                                // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
-                                // 이 행이 이걸 `isManual` 보다 먼저 본다.
-                                // ⚠ **스톡 클립 목소리에서만 묻는다** — 클론은 버킷이
-                                // 저장 시점에 붙어 편집 내내 비어 있는 게 정상이다.
-                                nothingChosenYet = usesStockClips &&
-                                    editor.voiceText.isBlank() &&
-                                    !editor.hasBucketMessageChoice(),
-                                onClick = onOpenRandomPromptSettings,
-                            )
-                            AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
-                            VoiceVolumeSummaryRow(
-                                volumePercent = editor.voiceVolumePercent,
-                                onClick = onOpenVoiceOutputSettings,
-                            )
-                        }
-                    }
-                }
-                // ⚠ **'삭제된 목소리' 배너를 되살리지 말 것**(2026-09-29 지시). 목소리를 잃은
-                // 알람은 모달이 이미 알린다(앱 진입 때 강등 안내 `downgrade_notice_*`, 직접 지울
-                // 때 `voicesr_delete_dialog_warning`). 편집기에서 쓸 수 없는 목소리로 저장을
-                // 누르면 `SaveBlockReason.VOICE_UNAVAILABLE` 알럿이 말한다.
-                // 문구(MessageModeSummaryRow)는 위 목소리 카드 안으로 옮겨 구분선으로 묶었다(개별 박스 제거).
+        if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
+            // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
+            // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
+            // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
+            if (voiceProfileBusy || (!voiceProfileLoadFinished && profileOptions.isEmpty())) {
+                MutedText(stringResource(R.string.editor_voice_loading))
+            } else if (profileOptions.isEmpty()) {
+                NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
             } else {
-                // 알람 설정에서는 임의 포맷 파일 업로드(코덱·디코드·크롭이 불안정)를 빼고 녹음만 둔다.
-                // 포맷이 통제된 녹음(MPEG4/AAC)만 남겨 안정성을 확보한다. 파일·영상 업로드는
-                // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
-                // 녹음이 끝나면 마이크→재생 버튼, 우측 시간→'다시 녹음' 아이콘으로 바꾼다.
-                // 미리듣기·지우기 별도 버튼은 두지 않는다(재생/다시 녹음이 대신한다).
-                // ⚠ **녹음 UI 는 `VoiceRecordControls` 하나다**(2026-08-16 정리).
-                // 예전에는 녹음 전/후로 컴포넌트가 갈려(`RecordedPlaybackControls`) 같은
-                // 카드가 상태에 따라 다른 모양으로 바뀌었고, 목소리 등록 화면은 또 다른
-                // 조합을 쓰고 있었다. 이제 두 화면이 같은 카드를 쓴다.
-                VoiceRecordControls(
-                    isRecording = isRecording,
-                    elapsedMillis = recordingElapsedMillis,
-                    maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                    level = recordingLevel,
-                    enabled = true,
-                    onRecordClick = onRecord,
-                    // 녹음물이 있으면(그리고 녹음 중이 아니면) '저장됨' 상태로 그린다.
-                    // 값은 방금 녹음한 길이다 — 기존 알람을 열어 온 경우엔 0 이고,
-                    // 그때도 카드 제목이 "녹음을 저장했어요" 라고 상태를 말한다.
-                    recordedDurationMillis = recordingElapsedMillis
-                        .takeIf { editor.localAudioUri != null && !isRecording },
-                    isRecordedPreviewActive = isCachedAudioPreviewActive,
-                    isRecordedPreviewPreparing = isPreviewPreparing,
-                    onPreviewRecording = onPreviewAudio.takeIf { editor.localAudioUri != null },
-                    // '다시 녹음' 은 재생을 멈추고 녹음물을 비워 대기 상태로 되돌린다.
-                    onRedoRecording = onDiscardRecording.takeIf { editor.localAudioUri != null },
-                )
-                // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(세부설정엔 두지 않음).
+                // 문구·목소리 크기를 하나의 카드+구분선으로 묶는다(목소리 선택은 위 카드로 분리).
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerCardShape,
                     color = MaterialTheme.colorScheme.surface,
                     border = wakerCardBorder(),
                 ) {
-                    VoiceVolumeSummaryRow(
-                        volumePercent = editor.voiceVolumePercent,
-                        onClick = onOpenVoiceOutputSettings,
-                    )
+                    Column {
+                        // ⚠ **행은 하나다**(2026-09-02). 유료·무료가 같은 문구 목록을
+                        // 쓰므로 요약 행도 갈리지 않는다 — 갈라 두면 같은 상태를 두 곳이
+                        // 다르게 읽는 사고가 반복된다.
+                        MessageModeSummaryRow(
+                            // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                            isManual = editor.isManualForDisplay(),
+                            randomContext = editor.voiceRandomContext,
+                            weatherCity = editor.voiceWeatherCity,
+                            // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
+                            // 이 행이 이걸 `isManual` 보다 먼저 본다.
+                            // ⚠ **스톡 클립 목소리에서만 묻는다** — 클론은 버킷이
+                            // 저장 시점에 붙어 편집 내내 비어 있는 게 정상이다.
+                            nothingChosenYet = usesStockClips &&
+                                editor.voiceText.isBlank() &&
+                                !editor.hasBucketMessageChoice(),
+                            onClick = onOpenRandomPromptSettings,
+                        )
+                        AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                        VoiceVolumeSummaryRow(
+                            volumePercent = editor.voiceVolumePercent,
+                            onClick = onOpenVoiceOutputSettings,
+                        )
+                    }
                 }
             }
-            // 목소리 반복 재생은 목소리 크기 상세(목소리 출력 pane)에 함께 있다.
-            if (audioMessage != null) {
-                Text(
-                    text = audioMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isRecording) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+            // ⚠ **'삭제된 목소리' 배너를 되살리지 말 것**(2026-09-29 지시). 목소리를 잃은
+            // 알람은 모달이 이미 알린다(앱 진입 때 강등 안내 `downgrade_notice_*`, 직접 지울
+            // 때 `voicesr_delete_dialog_warning`). 편집기에서 쓸 수 없는 목소리로 저장을
+            // 누르면 `SaveBlockReason.VOICE_UNAVAILABLE` 알럿이 말한다.
+            // 문구(MessageModeSummaryRow)는 위 목소리 카드 안으로 옮겨 구분선으로 묶었다(개별 박스 제거).
+        } else {
+            // 알람 설정에서는 임의 포맷 파일 업로드(코덱·디코드·크롭이 불안정)를 빼고 녹음만 둔다.
+            // 포맷이 통제된 녹음(MPEG4/AAC)만 남겨 안정성을 확보한다. 파일·영상 업로드는
+            // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
+            // 녹음이 끝나면 마이크→재생 버튼, 우측 시간→'다시 녹음' 아이콘으로 바꾼다.
+            // 미리듣기·지우기 별도 버튼은 두지 않는다(재생/다시 녹음이 대신한다).
+            // ⚠ **녹음 UI 는 `VoiceRecordControls` 하나다**(2026-08-16 정리).
+            // 예전에는 녹음 전/후로 컴포넌트가 갈려(`RecordedPlaybackControls`) 같은
+            // 카드가 상태에 따라 다른 모양으로 바뀌었고, 목소리 등록 화면은 또 다른
+            // 조합을 쓰고 있었다. 이제 두 화면이 같은 카드를 쓴다.
+            VoiceRecordControls(
+                isRecording = isRecording,
+                elapsedMillis = recordingElapsedMillis,
+                maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                level = recordingLevel,
+                enabled = true,
+                onRecordClick = onRecord,
+                // 녹음물이 있으면(그리고 녹음 중이 아니면) '저장됨' 상태로 그린다.
+                // 값은 방금 녹음한 길이다 — 기존 알람을 열어 온 경우엔 0 이고,
+                // 그때도 카드 제목이 "녹음을 저장했어요" 라고 상태를 말한다.
+                recordedDurationMillis = recordingElapsedMillis
+                    .takeIf { editor.localAudioUri != null && !isRecording },
+                isRecordedPreviewActive = isCachedAudioPreviewActive,
+                isRecordedPreviewPreparing = isPreviewPreparing,
+                onPreviewRecording = onPreviewAudio.takeIf { editor.localAudioUri != null },
+                // '다시 녹음' 은 재생을 멈추고 녹음물을 비워 대기 상태로 되돌린다.
+                onRedoRecording = onDiscardRecording.takeIf { editor.localAudioUri != null },
+            )
+            // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(세부설정엔 두지 않음).
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = WakerCardShape,
+                color = MaterialTheme.colorScheme.surface,
+                border = wakerCardBorder(),
+            ) {
+                VoiceVolumeSummaryRow(
+                    volumePercent = editor.voiceVolumePercent,
+                    onClick = onOpenVoiceOutputSettings,
                 )
             }
+        }
+        // 목소리 반복 재생은 목소리 크기 상세(목소리 출력 pane)에 함께 있다.
+        if (audioMessage != null) {
+            Text(
+                text = audioMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isRecording) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
         }
     pendingVoiceSwitch?.let { pending ->
@@ -725,12 +695,6 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
     }
 }
 
-/// 목소리를 **끌 때까지 반복**할지. 켜기/끄기 두 값뿐이라 스위치 하나로 낸다.
-///
-/// ⚠ **두 칸짜리 세그먼트('한 번만' / '반복')로 되돌리지 말 것**(2026-08-10 결정).
-/// 값이 둘인 것과 **선택지가 둘인 것은 다르다** — 반복은 켜고 끄는 성질이라 스위치가
-/// 맞고, iOS 가 이미 그렇게 돼 있었다. 세그먼트는 켠 상태가 어느 쪽인지 라벨을 읽어야
-/// 알 수 있는 반면 스위치는 한눈에 보인다.
 @Composable
 private fun VoiceVolumeSelector(
     volumePercent: Int,

@@ -27,7 +27,7 @@ struct TimeWheelPicker: View {
     @Binding var hour: Int
     @Binding var minute: Int
 
-    /// Wheel 한 칸 높이. 안드로이드 `AlarmTimePicker.kt:60` 은 **92dp**(× fontScale)다 —
+    /// Wheel 한 칸 높이. 안드로이드 `AlarmTimePicker.kt:43` 은 **92dp**(× fontScale)다 —
     /// 옛 주석이 "72dp 와 일치" 라고 적었지만 그 값은 안드로이드에 없다. 72 로 두면 같은
     /// 57pt 숫자가 더 좁은 칸에 들어가 위아래가 답답하고, 인접 숫자가 잘려 보인다.
     static let itemHeight: CGFloat = 92
@@ -110,7 +110,7 @@ struct TimeWheelPicker: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 24)
         // ⚠ **배경을 칠하지 말 것.** 안드로이드는 `wheelBackgroundColor = Color.Transparent`
-        // 다(`AlarmTimePicker.kt:65`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
+        // 다(`AlarmTimePicker.kt:48`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
         // 위젯처럼 보여, 화면의 주인공이어야 할 숫자가 배경에 갇힌다.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("시간 선택"))

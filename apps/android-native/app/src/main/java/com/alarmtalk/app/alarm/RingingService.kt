@@ -1,7 +1,5 @@
 package com.alarmtalk.app.alarm
 
-import android.app.Notification
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,11 +13,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.alarmtalk.app.R
@@ -42,7 +38,6 @@ import com.alarmtalk.app.data.DefaultVoiceClipSource
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
-import com.alarmtalk.app.hasCoupleOrFamilyAccess
 import com.alarmtalk.app.isEntitledOptimistic
 import com.alarmtalk.app.resolvePaidVoiceAccess
 import com.alarmtalk.app.storeSignalStillValid
@@ -91,7 +86,6 @@ class RingingService : Service() {
     private var vibrator: Vibrator? = null
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    private var audioSequenceActive = false
     private var voiceLoopActive = false
     private var voiceRepeatJob: Job? = null
     private var currentAlarm: AlarmEntity? = null
@@ -417,7 +411,6 @@ class RingingService : Service() {
      *   없거나 시스템이 목소리 알람을 바꿔 둔 경우라, 꺼진 스위치는 사용자가 고른 무음이 아니다.
      */
     private fun startAlarmToneLoop(alarm: AlarmEntity?, forced: Boolean) {
-        audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
@@ -446,7 +439,6 @@ class RingingService : Service() {
     }
 
     private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
-        audioSequenceActive = false
         voiceLoopActive = true
         cancelVoiceRepeatJob()
         mediaPlayer?.release()
@@ -754,7 +746,6 @@ class RingingService : Service() {
     }
 
     private fun stopMediaOnly() {
-        audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
         mediaPlayer?.run {
@@ -772,22 +763,13 @@ class RingingService : Service() {
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-                .setAudioAttributes(attributes)
-                .setWillPauseWhenDucked(false)
-                .setOnAudioFocusChangeListener { }
-                .build()
-            audioFocusRequest = request
-            manager.requestAudioFocus(request)
-        } else {
-            @Suppress("DEPRECATION")
-            manager.requestAudioFocus(
-                null,
-                AudioManager.STREAM_ALARM,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
-            )
-        }
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(attributes)
+            .setWillPauseWhenDucked(false)
+            .setOnAudioFocusChangeListener { }
+            .build()
+        audioFocusRequest = request
+        val result = manager.requestAudioFocus(request)
         if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             Log.w(TAG, "Alarm audio focus was not granted result=$result")
         }
@@ -795,13 +777,8 @@ class RingingService : Service() {
 
     private fun abandonAlarmAudioFocus() {
         val manager = audioManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            audioFocusRequest?.let(manager::abandonAudioFocusRequest)
-            audioFocusRequest = null
-        } else {
-            @Suppress("DEPRECATION")
-            manager.abandonAudioFocus(null)
-        }
+        audioFocusRequest?.let(manager::abandonAudioFocusRequest)
+        audioFocusRequest = null
     }
 
     companion object {

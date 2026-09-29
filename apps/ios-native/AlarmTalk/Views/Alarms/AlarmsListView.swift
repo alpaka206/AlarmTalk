@@ -18,7 +18,7 @@ struct AlarmsListView: View {
     @State private var wakeTargetSheetOpen = false
 
     /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
-    /// 안드로이드 `AlarmListScreen.kt:138-152`.
+    /// 안드로이드 `AlarmListScreen.kt:135-148`.
     @State private var selectedAlarmIDs: Set<String> = []
 
     /// ＋FAB 의 만들기 요청. 값이 바뀌면 `openCreateAlarm()` 을 탄다 —
@@ -213,7 +213,7 @@ struct AlarmsListView: View {
     private var selectionMode: Bool { !selectedAlarmIDs.isEmpty }
 
     /// 목록에서 사라진 알람(삭제·동기화)은 선택에서도 뺀다 — 안 그러면 '3개 선택' 인데
-    /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:143-146`.
+    /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:140-142`.
     private func pruneSelection() {
         guard selectionMode else { return }
         let present = Set(visibleAlarms.map(\.id))
@@ -222,7 +222,7 @@ struct AlarmsListView: View {
     }
 
     /// 권한 한 줄 배너 — 탭하면 모달을 거치지 않고 곧바로 권한 요청으로 간다.
-    /// 안드로이드 `ControlsAndPermissions.kt:188-217` 의 슬림 배너.
+    /// 안드로이드 `ControlsAndPermissions.kt` 의 슬림 배너(`AlarmPermissionWarningBanner`).
     ///
     /// 문구는 **iOS 의 사실**을 말한다: AlarmKit 권한이 없으면 예약 자체가 안 되므로
     /// 정말로 울리지 않는다. (안드로이드는 권한 셋 중 무엇이 빠져도 울리기는 해서
@@ -283,10 +283,10 @@ struct AlarmsListView: View {
         return nil
     }
 
-    /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:29-92`.
+    /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:28-91`.
     ///
     /// 좌우 2단(제목+보조문 / ＋버튼)이고 **카드 전체가 눌린다**.
-    /// ⚠ "아직 알람이 없어요." 같은 **상황 라벨은 두지 않는다**(HomeCards.kt:54-55 가 못
+    /// ⚠ "아직 알람이 없어요." 같은 **상황 라벨은 두지 않는다**(HomeCards.kt:53-54 가 못
     /// 박은 규칙). 빈 화면인 걸 이미 보고 있는 사람에게 비었다고 말하는 대신, 다음에 할
     /// 일과 그걸 하면 뭐가 좋은지를 말한다.
     private var emptyAlarmCard: some View {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 알람 편집기에서 사용하는 7-일 요일 칩 행.
 ///
-/// Android `AlarmEditorControls.kt:74-201` 의 `RepeatSelector` + `DayTextChip`
+/// Android `AlarmEditorControls.kt:61-179` 의 `RepeatSelector` + `DayTextChip`
 /// 를 SwiftUI 로 포팅. 비트마스크(`RepeatDay` mask) 와 양방향 바인딩한다.
 ///
 /// 색상 규칙 (Android 와 동일):

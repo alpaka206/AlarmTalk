@@ -464,13 +464,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// `isSystemVoiceId(_:)` 가 폴백이다. Android `VoiceProfile.isSystem` 미러.
     var isSystem: Bool? = nil
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
-    /// Android `VoiceProfileApi.kt:72`.
+    /// Android `VoiceProfileApi.kt:65`.
     var isDraft: Bool? = nil
     /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
-    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:73`.
+    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:66`.
     var relationshipLabel: String? = nil
     /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
-    /// Android `VoiceProfileApi.kt:74`.
+    /// Android `VoiceProfileApi.kt:67`.
     var listenerTitle: String? = nil
     /// 말투 분석 상태(`ready` / `failed` / nil). 서버가 `GET /voice-profile` 에 실어 보낸다
     /// (`voice-profile.ts` 의 `speech_style_status`).
@@ -667,7 +667,7 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var cacheHit: Bool?
     var provider: String?
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
-    /// Android `TtsApi.kt:39`.
+    /// Android `TtsApi.kt:37`.
     var randomContext: String?
     /// 초안 미리듣기 합성일 때만 온다. 재생을 **끝까지** 마친 뒤 `preview-played` 로
     /// 돌려주면 서버가 청취를 기록하고 승격이 열린다.
@@ -705,7 +705,7 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
 /// `GET /tts/stock-clips` 응답. 무료 등급이 알람 에디터에서 고르는 기본 제공
 /// 음성 카탈로그. 서버는 모든 인증 사용자에게 동일한 전역 카탈로그를 준다
 /// (tts.ts:1287-1313). 쿼리 파라미터 없음 — 언어 필터는 클라이언트에서 처리한다.
-/// Android `TtsApi.kt:70` `StockClipListResponse` 미러.
+/// Android `TtsApi.kt:67` `StockClipListResponse` 미러.
 struct StockClipListResponse: Codable {
     var clips: [StockClip]
     /// 카테고리별 **완전한 세트의 클립 수**. 없으면(옛 서버) nil.
@@ -751,7 +751,7 @@ struct PrerenderVariantResponse: Decodable {
 
 /// 기본 제공(스톡) 알람 클립 한 건. preset 메시지 × 시스템 보이스 조합.
 /// 인라인 오디오는 없고, 미리듣기/선택 시 `GET /tts/messages/:id/audio` 로
-/// 음원을 받아 캐싱한다. Android `TtsApi.kt:74` `StockClip` 미러(`tags` 는 드롭).
+/// 음원을 받아 캐싱한다. Android `TtsApi.kt:71` `StockClip` 미러(`tags` 는 드롭).
 /// camelCase 필드는 convertFromSnakeCase 로 snake_case 에서 자동 디코드.
 struct StockClip: Codable, Identifiable, Equatable {
     var messageId: String
@@ -1076,7 +1076,7 @@ struct ConsentStatusResponse: Decodable, Equatable {
     var policyVersion: String = "1"
 }
 
-/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:159` `AppVersionResponse`.
+/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:158` `AppVersionResponse`.
 struct AppVersionResponse: Decodable, Equatable {
     var platform: String = "ios"
     var minSupportedVersion: Int = 1
@@ -1139,7 +1139,7 @@ struct PasswordResetConfirmResponse: Decodable, Equatable {
 }
 
 // MARK: - 동의 목록 (GET user/consents)
-// Android `AuthApi.kt:166-175`, 백엔드 user.ts:401-431.
+// Android `AuthApi.kt:165-174`, 백엔드 user.ts:401-431.
 
 /// 동의 기록 1건(유형별 최신값). 백엔드는 snake_case 로 보내며 decoder 의
 /// convertFromSnakeCase 로 camelCase 에 매핑된다. Android `ConsentRecord`.

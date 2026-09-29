@@ -128,9 +128,9 @@ struct AlarmTalkThemeProvider<Content: View>: View {
 /// 화면 배경을 홈 그라데이션으로 깐다.
 ///
 /// 안드로이드는 `homeGradientBrush()` 를 **탭뿐 아니라 하위 전체화면에도** 깐다 —
-/// 설정(`SettingsScreen.kt:73`)·구성원 관리(`MemberManagementScreen.kt:106`)·
-/// 동의 내역(`ConsentHistoryScreen.kt:83`)·약관 전문(`LegalDocumentScreen.kt:41`)·
-/// 오픈소스 라이선스(`OssLicensesScreen.kt:84`)까지. 그래서 탭에서 하위 화면으로
+/// 설정(`SettingsScreen.kt:65`)·구성원 관리(`MemberManagementScreen.kt:100`)·
+/// 동의 내역(`ConsentHistoryScreen.kt:81`)·약관 전문(`LegalDocumentScreen.kt:37`)·
+/// 오픈소스 라이선스(`OssLicensesScreen.kt:83`)까지. 그래서 탭에서 하위 화면으로
 /// 들어가도 배경 톤이 튀지 않는다.
 ///
 /// ⚠ iOS 는 탭(`MainTabsView`)에만 깔고 하위 화면은 단색 `background` 였다 — 설정에

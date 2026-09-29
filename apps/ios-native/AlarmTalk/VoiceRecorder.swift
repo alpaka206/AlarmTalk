@@ -98,7 +98,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 if Int(elapsed) != Int(self.elapsedSeconds) {
                     self.elapsedSeconds = elapsed
                 }
-                // Android `VoiceProfileManagementPanel.kt:599-601` 의 하드 캡 미러 —
+                // Android `VoiceProfileManagementPanel.kt:591-593` 의 하드 캡 미러 —
                 // 2분(MAX_DURATION) 도달 시 녹음을 자동 정지한다. 사용자가 멈추지 않아
                 // 2분을 넘기면 업로드 단계에서 거부되던 문제를 사전 차단한다.
                 if elapsed * 1000 >= Double(VoiceProfileLimits.maxDurationMs) {

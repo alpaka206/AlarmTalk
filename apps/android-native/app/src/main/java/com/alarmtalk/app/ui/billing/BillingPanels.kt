@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,14 +26,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -51,13 +47,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.billing.PlayBillingProducts
-import com.alarmtalk.app.network.BillingPlan
-import com.alarmtalk.app.network.BillingPlanSummary
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.BillingSubscription
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -116,7 +106,6 @@ internal fun SubscriptionPanel(
             key = "free",
             name = stringResource(R.string.billing_plan_free_name),
             price = stringResource(R.string.billing_plan_free_price),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
                 stringResource(R.string.billing_plan_free_feature_stock_voice),
@@ -126,7 +115,6 @@ internal fun SubscriptionPanel(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
             price = planPriceLabel(context, planPrices, "personal"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
                 stringResource(R.string.billing_plan_personal_feature_daily_prompt),
@@ -136,7 +124,6 @@ internal fun SubscriptionPanel(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
             price = planPriceLabel(context, planPrices, "couple"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_couple_feature_voice_share),
@@ -148,7 +135,6 @@ internal fun SubscriptionPanel(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
             price = planPriceLabel(context, planPrices, "family"),
-            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_family_feature_voice_share),
@@ -758,9 +744,6 @@ internal fun SubscriptionPlanCard(
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
                 )
-            }
-            if (option.description.isNotBlank()) {
-                MutedText(option.description)
             }
             Column(
                 modifier = Modifier.padding(bottom = 6.dp),

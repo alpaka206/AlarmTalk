@@ -3,10 +3,8 @@ package com.alarmtalk.app
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
@@ -1292,8 +1290,8 @@ internal fun MainViewModel.showGoogleSetupRequired() {
     message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
 }
 
-internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
-    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
+internal fun MainViewModel.showGoogleSignInFailed(reason: String) {
+    message = reason
 }
 
 internal fun MainViewModel.clearMessage() {

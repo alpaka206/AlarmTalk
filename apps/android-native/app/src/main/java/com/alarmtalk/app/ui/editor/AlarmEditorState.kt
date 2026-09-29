@@ -1,9 +1,7 @@
 package com.alarmtalk.app
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -12,7 +10,6 @@ import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -52,18 +49,14 @@ internal class AlarmEditorState(
     voiceProfileId: String?,
     voiceListenerTitle: String?,
     voiceText: String?,
-    voiceCategory: String?,
     voiceLanguage: String?,
     voiceRandomPrompt: Boolean,
     voiceRandomContext: String?,
     voiceWeatherCountry: String?,
     voiceWeatherCity: String?,
-    voiceWeatherLatitude: Double? = null,
-    voiceWeatherLongitude: Double? = null,
     voiceFortuneGender: String?,
     voiceFortuneBirthDate: String?,
     voiceFortuneBirthTime: String?,
-    voiceRepeat: Boolean,
     voiceVolumePercent: Int,
     ttsMessageId: String?,
     alarmVolumePercent: Int,
@@ -99,18 +92,14 @@ internal class AlarmEditorState(
     // 고리를 끊되, **생성 문구일 때만** 벗긴다 — 직접 입력한 문구의 대괄호는 사용자 것이라
     // 건드리면 저장 시 영구히 사라진다(Codex #660).
     var voiceText by mutableStateOf(voiceText?.stripDeliveryTags(generated = voiceRandomPrompt) ?: "")
-    var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
     var voiceWeatherCity by mutableStateOf(voiceWeatherCity ?: "")
-    var voiceWeatherLatitude by mutableStateOf(voiceWeatherLatitude)
-    var voiceWeatherLongitude by mutableStateOf(voiceWeatherLongitude)
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
-    var voiceRepeat by mutableStateOf(voiceRepeat)
     var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
@@ -698,7 +687,6 @@ internal class AlarmEditorState(
                 voiceProfileId = alarm?.voiceProfileId,
                 voiceListenerTitle = alarm?.voiceListenerTitle,
                 voiceText = alarm?.voiceText ?: seedManualText,
-                voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
                 // 새 알람은 랜덤(기본 문구) ON — 목소리만 고르면 추가 입력 없이 저장 가능.
                 // 단 마지막 선택이 직접 입력이었으면 그 문구로 연다(seedManualText).
@@ -722,7 +710,6 @@ internal class AlarmEditorState(
                 voiceFortuneGender = alarm?.voiceFortuneGender,
                 voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
                 voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
-                voiceRepeat = true,
                 voiceVolumePercent = alarm?.voiceVolumePercent ?: 100,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
@@ -749,9 +736,6 @@ internal fun buildTtsKey(
     listenerTitle: String? = null,
 ): String =
     listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
-
-internal fun normalizedTtsCategory(category: String): String =
-    if (TtsCategories.any { (key, _) -> key == category }) category else DefaultRandomTtsCategory
 
 internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
@@ -830,7 +814,6 @@ internal fun randomPromptContextForBucket(bucket: String?): String? =
         else -> null
     }
 
-private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"
 /**

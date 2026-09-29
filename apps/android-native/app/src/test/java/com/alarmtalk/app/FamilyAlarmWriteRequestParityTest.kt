@@ -10,7 +10,6 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.RemoteAlarmMapper
-import com.alarmtalk.app.network.RemoteAlarmWriteRequest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

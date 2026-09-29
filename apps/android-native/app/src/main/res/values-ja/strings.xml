@@ -24,7 +24,7 @@
     <string name="auth_email_verify">メール認証</string>
     <string name="auth_email_verify_done">メール認証完了</string>
     <string name="auth_email_verify_resend">認証コードを再送信</string>    <string name="auth_find_password">再設定</string>
-    <string name="auth_forgot_password">パスワードをお忘れですか？</string>    <string name="auth_or">または</string>
+    <string name="auth_forgot_password">パスワードをお忘れですか？</string>
     <string name="auth_social_divider">簡単ログイン</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
@@ -131,20 +131,11 @@
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>
-    <string name="common_permission_allow_action">許可する</string>
-    <string name="common_permission_allow_all">必要な権限をすべて許可</string>
-    <string name="common_permission_exact_alarm_label">正確なアラーム</string>
-    <string name="common_permission_full_screen_label">全画面アラーム</string>
     <string name="common_permission_gate_allow_action">許可する</string>
     <string name="common_permission_gate_exact_alarm_title">正確なアラームの権限を許可するとアラームを設定できます</string>
     <string name="common_permission_gate_full_screen_title">ロック画面の権限を許可するとアラームを設定できます</string>
     <string name="common_permission_gate_mic_title">マイクの権限が必要です</string>
     <string name="common_permission_gate_notifications_title">通知の権限を許可するとアラームを設定できます</string>
-    <string name="common_permission_granted">許可済み</string>
-    <string name="common_permission_mic_label">マイク</string>
-    <string name="common_permission_notifications_label">通知</string>
-    <string name="common_permission_required">必要</string>
-    <string name="common_permission_title">権限</string>
     <string name="common_tab_billing">利用券</string>
     <string name="common_tab_code_register">コード登録</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
@@ -197,11 +188,7 @@
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
-    <string name="editor_holiday_show_title">今後の祝日</string>
-    <string name="editor_holiday_cold_cache">読み込み中…</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
-    <string name="editor_minute_label">分</string>
-    <string name="editor_minutes">%1$d分</string>
     <string name="editor_no_voice_profile">まだ使用できる声がありません。</string>
     <string name="editor_off">オフ</string>
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
@@ -353,7 +340,6 @@
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
     <string name="msg_gb_code_registered">コードを登録しました</string>
     <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">無料利用券に切り替わり、声のアラームがロックされました。3日以内に登録し直すと復元され、過ぎると声は完全に削除されます。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
@@ -444,8 +430,6 @@
     <string name="rd_audio_open_failed">選択したオーディオファイルを開けませんでした。</string>
     <string name="rd_audio_over_limit_trim_failed">%1$d秒を超えるファイルを自動で切り取れませんでした。m4a/aac/mp4形式で選び直してください。</string>
     <string name="rd_audio_trim_failed">選択した区間をオーディオファイルに切り出せませんでした。開始点を少し調整するか、別のファイルでもう一度お試しください。</string>
-    <string name="rd_copied_alarm_label">コピーしたアラーム</string>
-    <string name="rd_copied_alarm_label_suffix">%1$s のコピー</string>
     <string name="rd_default_alarm_label">アラーム</string>
     <string name="rd_duplicate_alarm_time_message">すでに同じ時間にアラームがあります。別の時間を選んでください。</string>
     <string name="rd_slide_to_dismiss">スライドして停止</string>
@@ -568,7 +552,6 @@
     <string name="voices_reupload">再アップロード</string>
     <string name="voices_select_file_first">ファイルを選択してください。</string>
     <string name="voices_selected_audio_unusable">選択した音声は使用できません。</string>
-    <string name="voices_sharing_shared_desc_disabled">共有はカップル/ファミリープランでご利用いただけます。</string>
     <string name="voices_sharing_shared_desc_enabled">登録した声を家族・恋人も一緒に使えます。</string>
     <string name="voices_sharing_shared_title">家族・恋人への共有を許可</string>
     <string name="voices_step_sharing">共有設定</string>
@@ -622,9 +605,6 @@
     <string name="label_vibration_sos">SOS</string>
     <string name="label_vibration_off">オフ</string>
     <string name="label_vibration_basic_call">ベーシック</string>
-    <string name="editor2_cat_morning">起床</string>
-    <string name="editor2_cat_love">愛</string>
-    <string name="editor2_cat_medication">服薬</string>
     <string name="editor2_ctx_wake_weather">天気</string>
     <string name="editor2_ctx_wake_fortune">運勢</string>
     <string name="editor2_ctx_love">応援</string>
@@ -655,8 +635,6 @@
     <string name="editor2_quiet_days_weekend">週末</string>
     <string name="editor2_quiet_days_everyday">毎日</string>
     <string name="editor2_fortune_time_unknown">時間不明</string>
-    <string name="editor2_weather_location_prompt">都市を入力してください。</string>
-    <string name="editor2_fortune_info_prompt">性別、生年月日、生まれた時間を入力してください。</string>
     <string name="voices2_audio_duration_unknown">音声の長さを確認できませんでした。</string>
     <string name="voices2_record_min_duration">12秒以上録音してください。</string>
     <string name="voices2_register_under_two_minutes">2分以下の音声で登録できます。</string>
@@ -774,11 +752,6 @@
     <string name="r3dlg_pending_deletion_processing">処理中…</string>
     <string name="r3dlg_pending_deletion_recover">退会を取り消して使い続ける</string>
     <string name="r3dlg_pending_deletion_logout">ログアウト</string>
-    <string name="r3ed_time_until_days">約%1$d日後に鳴ります</string>
-    <string name="r3ed_time_until_days_hours">約%1$d日%2$d時間後に鳴ります</string>
-    <string name="r3ed_time_until_minutes">%1$d分後に鳴ります</string>
-    <string name="r3ed_time_until_hours">%1$d時間後に鳴ります</string>
-    <string name="r3ed_time_until_hours_minutes">%1$d時間%2$d分後に鳴ります</string>
     <string name="r3ed_google_signin_error_config">Googleログインの設定が正しくありません。Android OAuthクライアントのパッケージ名とSHA-1をご確認ください。</string>
     <string name="r3ed_google_signin_error_network">ネットワーク接続をご確認のうえ、もう一度お試しください。</string>
     <string name="r3ed_google_signin_error_failed">Googleログインに失敗しました。</string>
@@ -795,7 +768,6 @@
     <string name="r3misc_consent_required">続けるには必須の同意が必要です。</string>
     <string name="r3misc_login_required_generic">ログイン後にご利用いただけます</string>
     <string name="r3misc_google_signin_unavailable">現在Googleログインはご利用いただけません。メールでログインしてください。</string>
-    <string name="r3misc_google_signin_failed">Googleログインに失敗しました</string>
 
     <string name="r3misc_notif_received_alarm_sent">%1$sがアラームを送りました。</string>
     <string name="r3misc_notif_received_alarm_sent_other">相手がアラームを送りました。</string>

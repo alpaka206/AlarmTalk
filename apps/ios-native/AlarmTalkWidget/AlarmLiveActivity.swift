@@ -76,7 +76,7 @@ struct AlarmLiveActivity: Widget {
                     .foregroundStyle(AlarmTalkBrand.activitySecondaryText)
             }
 
-            // ⚠ **시각이 가장 크다.** 안드로이드 울림 화면(`RingingActivity.kt:266-290`)이
+            // ⚠ **시각이 가장 크다.** 안드로이드 울림 화면(`RingingActivity.kt:265-289`)이
             // 104sp 시계를 첫 요소로 두는 것과 같은 이유 — 잠결에 보는 화면이라
             // "지금 울리는 중" 보다 "오전 7:30" 이 먼저 읽혀야 한다. 옛 레코드(시각 필드
             // 없음)는 종전대로 모드 라벨을 크게 그린다.

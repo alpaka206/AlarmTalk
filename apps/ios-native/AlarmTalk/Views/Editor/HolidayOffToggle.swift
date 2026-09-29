@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 공휴일 OFF 토글.
 ///
-/// Android `AlarmEditorControls.kt:123-146` 의 "공휴일에는 끄기" 행 대응.
+/// Android `AlarmEditorControls.kt` 의 `RepeatSelector` 안 "공휴일에는 끄기" 행 대응.
 /// 반복 요일이 하나라도 켜져 있어야 의미가 있어, 하나도 없으면 부모(에디터)가
 /// Android 의 `if (holidayEnabled)` 처럼 행 전체를 숨긴다(`draft.repeatDaysMask != 0`).
 struct HolidayOffToggle: View {
