@@ -205,7 +205,7 @@ const TAG_EXAMPLES = [
  * 문장마다 되풀이하는 톤 태그로는 쓰지 않는다(`isLaughterTag`).
  */
 const OWN_LAUGH_INSTRUCTION =
-  "LAUGHTER: a laugh is a sound, not a tone. Only when a laugh really fits a light, playful moment, write exactly [laughs] — never [chuckles] or [soft laugh] — at most once, and never as the line's only tag. Most lines need none; never laugh on a caution, an apology, bad news or a medication reminder.";
+  "LAUGHTER: a laugh is a sound, not a tone. Only when a laugh really fits a light, playful moment, write exactly [laughs] — never [chuckles] or [soft laugh], and never laughter spelled in letters (ㅋㅋ, ㅎㅎ, haha, www, 笑), which text-to-speech reads aloud — at most once, and never as the line's only tag. Most lines need none; never laugh on a caution, an apology, bad news or a medication reminder.";
 
 // Bruck/McFarlane: 저각성 신호는 기상을 방해한다. 깨우는 경로(동적 생성·사전렌더)는 서버가
 // 이 뜻을 가진 태그를 무조건 드롭한다.
@@ -1596,7 +1596,11 @@ export async function generatePrerenderClipText(
     //   관계(엄마→딸)에서 세 번 다 `[gently]` 를 붙여 **클립이 영구 실패**했고, 1회차 거절의
     //   대부분(비교 평가 47/210)이 이것이었다. 태그만 빼면 문장은 멀쩡하다. 소괄호 지문처럼
     //   **낭독돼 버리는** 것은 아래 검사가 그대로 거절한다.
-    const tidied = tidyEllipsis(dropWakeUnsafeTags(parsed.text.trim(), { calmVoice }));
+    // 모델이 웃음을 글자로 썼으면(말투 본보기의 ㅋㅋ 를 따라 쓰는 등) 소리 태그로 먼저 바꾼다 — TTS 는 글자를
+    // 읽는다(스펙 §9). 차분 거르기보다 **앞**이어야 차분한 목소리에서 그 웃음도 지워진다.
+    const tidied = tidyEllipsis(
+      dropWakeUnsafeTags(speakTypedLaughter(parsed.text.trim()), { calmVoice }),
+    );
     const text = targetLanguage === 'ko' ? modernizeKoreanHonorific(tidied) : tidied;
     // ⚠ 길이는 **태그를 뺀 본문**으로 잰다. 태그가 인라인으로 들어오면서 `[warmly] ` 같은
     // 장식이 글자 수에 얹히는데, 그걸 그대로 세면 멀쩡한 한 문장이 상한에 걸려 떨어진다.

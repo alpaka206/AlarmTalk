@@ -2099,6 +2099,28 @@ describe('사전렌더의 웃음 — 톤이 아니라 한 번 나는 소리 (§9
     expect(out.text).toBe('[playfully] [laughs] 자기야, 오늘 운세 좋대. [playfully] 얼른 일어나 보자.');
   });
 
+  it('모델이 웃음을 글자로 쓰면 [laughs] 로 바꾸고, 차분한 목소리면 그 웃음도 지운다', async () => {
+    queueContent(geminiText('{"text":"[playfully] 자기야 ㅋㅋ 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자."}'));
+    const lively = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'lively' },
+    });
+    expect(lively.text).toBe('[playfully] 자기야 [laughs] 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자.');
+
+    queueContent(geminiText('{"text":"[warmly] 자기야 ㅋㅋ 오늘 운세 좋대. [sincerely] 얼른 일어나 보자."}'));
+    const calm = await generatePrerenderClipText(ENV, {
+      seed: '오늘 운세가 좋다고 가볍게 알리고 일어나자고 한다.',
+      relationshipLabel: '남자친구',
+      listenerTitle: '자기',
+      targetLanguage: 'ko',
+      speechStyle: { ...style, energy: 'calm' },
+    });
+    expect(calm.text).toBe('[warmly] 자기야 오늘 운세 좋대. [sincerely] 얼른 일어나 보자.');
+  });
+
   it('웃음 규칙(이름 하나·한 번·가벼운 문장)을 싣고, 차분한 목소리에는 싣지 않는다', async () => {
     queueContent(geminiText('{"text":"[playfully] 자기야, 오늘 운세 좋대. [cheerfully] 얼른 일어나 보자."}'));
     await generatePrerenderClipText(ENV, {
